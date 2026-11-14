@@ -156,3 +156,52 @@ describe('resolveBundledCodex', () => {
     expect(resolveBundledCodex('aix', 'ppc64')).toBeUndefined()
   })
 })
+
+describe('Codex 내려받기', () => {
+  it('고정한 SHA-512와 맞을 때만 풀고, vendor 폴더만 남긴다', async () => {
+    const { createHash } = await import('node:crypto')
+    const { mkdtemp, mkdir, writeFile, readdir, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { installCodex } = await import('./download.js')
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-codex-'))
+    try {
+      const tgz = new Uint8Array([9, 8, 7])
+      const integrity = `sha512-${createHash('sha512').update(tgz).digest('base64')}`
+      const pkg = { triple: 'aarch64-apple-darwin', integrity }
+      const fetchOk = (async () => new Response(tgz)) as unknown as typeof fetch
+      const extract = async (_a: string, into: string) => {
+        const bin = join(into, 'package', 'vendor', 'aarch64-apple-darwin', 'bin')
+        await mkdir(bin, { recursive: true })
+        await writeFile(join(bin, 'codex'), 'x')
+        await writeFile(join(into, 'package', 'package.json'), '{}')
+      }
+      const bin = await installCodex({
+        dir,
+        platformArch: 'darwin-arm64',
+        pkg,
+        fetch: fetchOk,
+        extract,
+        url: 'x',
+      })
+      expect(bin).toBe(join(dir, '0.169.0', 'aarch64-apple-darwin', 'bin', 'codex'))
+      expect(await readdir(dir)).toEqual(['0.169.0'])
+
+      const bad = {
+        triple: 'aarch64-apple-darwin',
+        integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+      }
+      await expect(
+        installCodex({ dir, platformArch: 'darwin-arm64', pkg: bad, fetch: fetchOk, extract, url: 'x' }),
+      ).rejects.toThrow('공식 파일과 달라요')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('모든 지원 플랫폼의 무결성 값이 적혀 있다', async () => {
+    const { CODEX_PACKAGES } = await import('./download.js')
+    for (const p of ['darwin-arm64', 'darwin-x64', 'win32-x64', 'win32-arm64'])
+      expect(CODEX_PACKAGES[p]?.integrity).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/)
+  })
+})

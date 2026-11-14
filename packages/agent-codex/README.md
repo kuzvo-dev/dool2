@@ -1,6 +1,6 @@
 # @dool2/agent-codex
 
-Codex 어댑터예요. 고정 버전의 `@openai/codex`(Apache-2.0)를 함께 설치하고 `codex app-server`(JSON-RPC, 한 줄에 메시지 하나)로 실행해요([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
+Codex 어댑터예요. 고정 버전의 `@openai/codex`(Apache-2.0)를 **처음 쓸 때 내려받고** `codex app-server`(JSON-RPC, 한 줄에 메시지 하나)로 실행해요([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
 
 - `CodexRuntime`: `AgentRuntime` 구현. 사용자 본인의 Codex 설정과 섞이지 않게 두리 전용 `CODEX_HOME`을 써요. `login()`은 ChatGPT 로그인을 열어요.
 - `buildCodexArgs()`: 셸·웹 검색을 끄고 읽기 전용 샌드박스로 묶고, 두리 MCP 서버를 필수로 등록해요.
@@ -9,3 +9,6 @@ Codex 어댑터예요. 고정 버전의 `@openai/codex`(Apache-2.0)를 함께 �
 - `resolveBundledCodex()`: 플랫폼별로 함께 설치된 실행 파일 경로를 찾아요.
 
 Codex 버전을 올릴 때는 app-server 규약이 바뀌었는지 테스트로 확인해요.
+
+- `installCodex()`, `CodexInstall`: npm 공식 레지스트리의 플랫폼별 패키지(`@openai/codex@0.169.0-<플랫폼>`)를 받아, **코드에 고정한 SHA-512**(`CODEX_PACKAGES`)와 맞을 때만 OS `tar`로 풀어요. 실행 파일과 함께 쓰는 도우미·자료(`vendor/<triple>`)를 그대로 둬요.
+- 사용자 PATH에 있는 다른 버전의 `codex`는 쓰지 않아요. app-server 규약이 버전마다 달라서 고정 버전만 써요.

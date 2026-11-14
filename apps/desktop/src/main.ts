@@ -122,15 +122,13 @@ function applySettings(settings: Settings) {
 }
 
 /**
- * 배포 앱 안의 두리 도구 서버와 Codex 위치 (scripts/package.mjs가 넣는다).
+ * 배포 앱 안의 두리 도구 서버 위치 (scripts/package.mjs가 넣는다). Codex는 처음 쓸 때 내려받는다.
  * 도구 서버는 Electron을 Node처럼 띄워 실행하므로 asar 밖(app.asar.unpacked)에 둔다.
  */
 function packagedPaths() {
   if (!app.isPackaged) return {}
-  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
   return {
     mcpServerScript: join(here, 'mcp-server.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`),
-    codexBin: join(process.resourcesPath, 'codex', exe),
   }
 }
 
