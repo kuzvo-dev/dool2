@@ -6,6 +6,8 @@ import type {
   AiChoice,
   ChromeStatus,
   DaemonStreamEvent,
+  ExtensionStatus,
+  HandoffRecord,
   Settings,
   StoredMessage,
   ThreadSummary,
@@ -19,6 +21,8 @@ declare global {
     dool2: {
       config(): Promise<{ url: string; token: string; smokeOpen?: string; smokeSetup?: string }>
       ready(summary: string): void
+      extensionDir(): Promise<string>
+      revealExtension(): void
     }
   }
 }
@@ -28,10 +32,22 @@ const AGENT_LABEL: Record<AgentId, string> = {
   codex: 'Codex',
   opencode: 'API 키 (종량제)',
 }
+/** 일하는 중 표시: "웹페이지 여는 중…" (도구 이름 앞의 mcp__dool2__ / dool2_는 떼고 본다) */
 const TOOL_LABEL: Record<string, string> = {
-  mcp__dool2__status: '두리 상태 확인',
-  dool2_status: '두리 상태 확인',
+  status: '두리 상태 확인하는',
+  browser_open: '웹페이지 여는',
+  browser_navigate: '웹페이지 여는',
+  browser_read: '페이지 읽는',
+  browser_click: '누르는',
+  browser_type: '입력하는',
+  browser_press: '키 누르는',
+  browser_scroll: '스크롤하는',
+  browser_screenshot: '화면 보는',
+  browser_back: '뒤로 가는',
+  browser_close: '탭 닫는',
+  browser_handoff: '도움 부탁하는',
 }
+const toolLabel = (name: string) => TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
 
 /** 자가 점검: 마법사를 끝냈는데 일할 AI가 없으면 왼쪽 위에 알리고 [고치기]로 설정을 연다 */
@@ -64,6 +80,7 @@ const state: {
   current?: ThreadSummary
   pick: AgentId
   busy: boolean
+  extension?: ExtensionStatus
 } = { url: '', token: '', agents: [], threads: [], pick: 'claude', busy: false }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -206,9 +223,114 @@ async function openThread(id: string) {
   state.current = thread
   setHeader()
   const box = $('messages')
-  box.replaceChildren(...messages.map((m) => bubble(m.role, m.text)))
+  // 사람에게 넘긴 뒤 아직 사용자가 답하지 않았으면 [다 했어요]를 살려 둔다
+  const lastUser = messages.map((m) => m.role).lastIndexOf('user')
+  // 넘기기 기록은 답보다 먼저 저장되지만, 화면에서는 그 답 아래에 둔다 (대화 중에 보이는 순서와 같게)
+  const order = messages.map((m, i) => ({ m, i }))
+  for (let k = 0; k + 1 < order.length; k++) {
+    const a = order[k]
+    const b = order[k + 1]
+    if (a && b && a.m.role === 'tool' && b.m.role === 'assistant') {
+      order[k] = b
+      order[k + 1] = a
+      k++
+    }
+  }
+  box.replaceChildren(
+    ...order.map(({ m, i }) =>
+      m.role === 'tool' ? handoffCard(m.text, i > lastUser) : bubble(m.role, m.text),
+    ),
+  )
   box.scrollTop = box.scrollHeight
   renderThreads()
+}
+
+// ── 사람에게 넘기기 ──────────────────────────────────
+
+/** 두리가 "직접 해 주세요"라고 넘긴 일. active면 [Chrome에서 보기] [다 했어요] */
+function handoffCard(raw: string, active: boolean) {
+  let rec: HandoffRecord
+  try {
+    rec = JSON.parse(raw) as HandoffRecord
+  } catch {
+    return document.createTextNode('')
+  }
+  const card = document.createElement('div')
+  card.className = `handoff${active ? ' active' : ''}`
+  const title = document.createElement('strong')
+  title.textContent = active ? 'Chrome에서 직접 해 주세요' : '직접 해 주신 일'
+  const reason = document.createElement('p')
+  reason.textContent = rec.reason
+  card.append(title, reason)
+  if (active) {
+    const row = document.createElement('div')
+    row.className = 'handoff-actions'
+    const look = document.createElement('button')
+    look.type = 'button'
+    look.className = 'btn-ghost'
+    look.textContent = 'Chrome에서 보기'
+    look.onclick = () =>
+      void api('/api/browser/focus', { method: 'POST', body: JSON.stringify({ tabId: rec.tabId }) }).catch(
+        () => {},
+      )
+    const doneBtn = document.createElement('button')
+    doneBtn.type = 'button'
+    doneBtn.className = 'btn'
+    doneBtn.textContent = '다 했어요'
+    doneBtn.onclick = () => void send('다 했어요. 이어서 해 주세요.')
+    if (rec.tabId === undefined) look.hidden = true
+    row.append(look, doneBtn)
+    card.append(row)
+  }
+  return card
+}
+
+/** 창이 뒤에 있으면 알림으로도 알린다 */
+function notifyHandoff(reason: string) {
+  if (document.hasFocus()) return
+  try {
+    new Notification('두리가 도움을 기다려요', { body: reason })
+  } catch {}
+}
+
+// ── 브라우저 (Chrome의 두리 확장) ──────────────────────
+
+function renderBrowser() {
+  const box = $('browser')
+  const ext = state.extension
+  const row = document.createElement('div')
+  row.className = 'row'
+  const name = document.createElement('strong')
+  name.textContent = 'Chrome 두리 확장'
+  const chip = document.createElement('span')
+  chip.className = `state ${ext?.connected ? 'ok' : 'warn'}`
+  chip.textContent = ext?.connected ? '연결됨' : '연결 안 됨'
+  row.append(name, chip)
+  const meta = document.createElement('p')
+  meta.className = 'cap'
+  meta.textContent = ext?.connected
+    ? [ext.browser, ext.version && `확장 v${ext.version}`].filter(Boolean).join(' · ')
+    : '웹 일을 하려면 연결해 주세요'
+  const el = document.createElement('div')
+  el.className = 'agent'
+  el.append(row, meta)
+  if (!ext?.connected) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'act'
+    b.textContent = '연결하기 →'
+    b.onclick = () => void openSetup({ step: 'check', action: 'extension-install' })
+    el.append(b)
+  }
+  box.replaceChildren(el)
+}
+
+async function loadExtension() {
+  const { extension } = await api<{ extension: ExtensionStatus }>('/api/browser/extension')
+  const changed = JSON.stringify(extension) !== JSON.stringify(state.extension)
+  state.extension = extension
+  if (changed) renderBrowser()
+  return extension
 }
 
 function setHeader() {
@@ -274,6 +396,11 @@ async function send(text: string) {
       state.current = thread
       setHeader()
     }
+    // 새로 부탁하면 이전 "직접 해 주세요" 카드의 버튼은 거둔다
+    box.querySelectorAll('.handoff.active').forEach((c) => {
+      c.classList.remove('active')
+      c.querySelector('.handoff-actions')?.remove()
+    })
     box.append(bubble('user', text))
     const activity = document.createElement('div')
     activity.className = 'activity'
@@ -283,6 +410,8 @@ async function send(text: string) {
     let answerText = ''
     // 종량제: 이번 답에 쓴 돈
     let usd = 0
+    // 이번 답에서 사람에게 넘긴 일 (답이 끝난 뒤 카드로 보여 준다)
+    let handoff: string | undefined
     box.scrollTop = box.scrollHeight
 
     const res = await fetch(`${state.url}/api/threads/${state.current.id}/messages`, {
@@ -301,7 +430,7 @@ async function send(text: string) {
           box.insertBefore(answer, activity)
         }
         setRich(answer, answerText)
-      } else if (ev.type === 'tool') activity.textContent = `${TOOL_LABEL[ev.name] ?? ev.name} 중…`
+      } else if (ev.type === 'tool') activity.textContent = `${toolLabel(ev.name)} 중…`
       else if (ev.type === 'tool_result') activity.textContent = '정리하는 중…'
       else if (ev.type === 'usage') renderUsage(ev.limits)
       else if (ev.type === 'cost') usd += ev.usd
@@ -322,12 +451,21 @@ async function send(text: string) {
         if (chunk.startsWith('data: ')) {
           const ev = JSON.parse(chunk.slice(6)) as DaemonStreamEvent
           if (ev.type === 'agent') onAgent(ev.event)
+          if (ev.type === 'saved' && ev.message.role === 'tool') {
+            handoff = ev.message.text
+          }
         }
         box.scrollTop = box.scrollHeight
         i = buf.indexOf('\n\n')
       }
     }
     activity.remove()
+    if (handoff) {
+      box.append(handoffCard(handoff, true))
+      try {
+        notifyHandoff((JSON.parse(handoff) as HandoffRecord).reason)
+      } catch {}
+    }
     if (usd > 0) {
       const cost = document.createElement('p')
       cost.className = 'cost'
@@ -396,7 +534,11 @@ async function main() {
     api<{ settings: Settings }>('/api/settings'),
     loadAgents(),
     loadThreads(),
+    loadExtension().catch(() => undefined),
   ])
+  renderBrowser()
+  // 확장이 붙고 떨어지는 걸 왼쪽에 보여 준다
+  setInterval(() => void loadExtension().catch(() => {}), 5_000)
   if (settings.defaultAgent && state.agents.some((a) => a.id === settings.defaultAgent && a.loggedIn)) {
     state.pick = settings.defaultAgent
     renderPick()
@@ -424,6 +566,9 @@ async function main() {
         return state.agents
       },
       loadChrome: async () => (await api<{ chrome: ChromeStatus }>('/api/browser')).chrome,
+      loadExtension,
+      extensionDir: () => window.dool2.extensionDir(),
+      revealExtension: () => window.dool2.revealExtension(),
       ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {

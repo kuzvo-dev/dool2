@@ -58,6 +58,17 @@ describe('첫 실행 마법사', () => {
     expect(checkHeadline('claude', [claudeReady], { installed: true }).title).toBe('준비가 다 됐어요')
   })
 
+  it('Chrome이 있으면 두리 확장 연결을 확인한다', () => {
+    const off = checklist('claude', [claudeReady], { installed: true }, { connected: false })
+    expect(off.at(-1)).toMatchObject({ id: 'extension', ok: false, action: 'extension-install' })
+    const on = checklist('claude', [claudeReady], { installed: true }, { connected: true, version: '0.1.0' })
+    expect(on.at(-1)).toMatchObject({ id: 'extension', ok: true })
+    // Chrome이 없으면 확장은 아직 묻지 않는다
+    expect(
+      checklist('claude', [claudeReady], { installed: false }, { connected: false }).map((i) => i.id),
+    ).not.toContain('extension')
+  })
+
   it('구독 없이 쓰기를 고르면 종량제 실행기와 API 키를 확인한다', () => {
     const items = checklist('payg', [{ id: 'opencode', installed: false, loggedIn: false }])
     expect(items.map((i) => [i.id, i.ok, i.action])).toEqual([

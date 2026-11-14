@@ -28,6 +28,7 @@ import {
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
   type ExtensionStatus,
+  FocusTabSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
   SendMessageRequestSchema,
@@ -309,6 +310,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 브라우저: Chrome 확인·설치 (ADR 0006)
     if (a === 'browser' && !b && req.method === 'GET')
       return json(res, 200, { chrome: await chrome.detect(), extension: browser.status })
+    // 화면이 자주 묻는다 (Chrome 확인보다 가볍게)
+    if (a === 'browser' && b === 'extension' && !c && req.method === 'GET')
+      return json(res, 200, { extension: browser.status })
+    // 사람에게 넘긴 두리 탭을 앞으로 (화면의 [Chrome에서 보기])
+    if (a === 'browser' && b === 'focus' && !c && req.method === 'POST') {
+      const { tabId } = FocusTabSchema.parse(await readJson(req))
+      await browser.call('focus', { tabId }).catch(() => undefined)
+      return json(res, 200, { ok: true })
+    }
     if (a === 'browser' && b === 'install' && !c) {
       if (req.method === 'GET') return json(res, 200, { install: chromeInstall?.status ?? { state: 'idle' } })
       if (req.method === 'POST') {

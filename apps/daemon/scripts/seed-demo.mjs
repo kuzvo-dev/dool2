@@ -37,6 +37,23 @@ store.addMessage(
   'assistant',
   '저는 두리예요. 이 컴퓨터 안에 살면서 부탁하신 일을 대신 해요.\n\n돈이 드는 일이나 누군가에게 연락하는 일은 꼭 먼저 여쭤볼게요. 오늘은 뭐부터 할까요?',
 )
+// 사람에게 넘긴 대화 (로그인이 풀린 경우). 가장 최근 대화라 DOOL2_SMOKE_OPEN=latest로 열린다
+const shop = store.createThread('claude', '장바구니에 담아 둔 귤 가격 봐 줘')
+store.addMessage(shop.id, 'user', '장바구니에 담아 둔 귤 가격 봐 줘')
+store.addMessage(
+  shop.id,
+  'tool',
+  JSON.stringify({
+    kind: 'handoff',
+    tabId: 1,
+    reason: '쇼핑몰 로그인이 풀려 있어요. Chrome의 두리 탭에서 로그인해 주세요.',
+  }),
+)
+store.addMessage(
+  shop.id,
+  'assistant',
+  '장바구니를 보려고 했는데 로그인이 풀려 있어서 멈췄어요. Chrome에 띄워 둔 두리 탭에서 로그인만 해 주시면 바로 이어서 볼게요.',
+)
 // 첫 실행 마법사는 끝낸 상태로 둔다
 store.setSetting('setupDone', true)
 store.setSetting('aiChoice', 'both')

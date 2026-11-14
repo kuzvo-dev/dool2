@@ -87,6 +87,8 @@ await build({
     // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
     files: ['**/*', '!**/node_modules/**'],
     asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs'],
+    // 두리 Chrome 확장 (웹 스토어 전까지 사용자가 직접 올린다)
+    extraResources: [{ from: '../extension/dist', to: 'extension' }],
     icon: 'assets/icon.png',
     mac: {
       category: 'public.app-category.productivity',

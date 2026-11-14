@@ -230,3 +230,12 @@ export interface ExtensionStatus {
   version?: string
   browser?: string
 }
+
+export const FocusTabSchema = z.object({ tabId: z.number().int() })
+
+/** 사람에게 넘기기: 대화 기록에 'tool' 메시지로 남겨 다시 열어도 [다 했어요]를 보여 준다 */
+export interface HandoffRecord {
+  kind: 'handoff'
+  tabId?: number
+  reason: string
+}

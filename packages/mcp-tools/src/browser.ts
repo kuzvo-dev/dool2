@@ -116,5 +116,18 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     true,
   )
   tool('back', '뒤로', '탭에서 뒤로 가기를 누르고 페이지를 읽어 돌려준다.', { tabId }, true)
+  tool(
+    'handoff',
+    '사람에게 넘기기',
+    '로그인, 로봇 확인(캡차), 본인인증, 결제·주문·보내기 같은 마지막 버튼처럼 사람이 직접 해야 할 때 쓴다. 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
+    {
+      tabId,
+      reason: z
+        .string()
+        .max(200)
+        .describe('사용자에게 보일 부탁 (예: "네이버 로그인이 풀려 있어요. 로그인해 주세요")'),
+    },
+    false,
+  )
   tool('close', '탭 닫기', '다 쓴 두리 탭을 닫는다. 일이 끝나면 연 탭을 닫는다.', { tabId }, false)
 }

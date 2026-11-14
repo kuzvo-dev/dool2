@@ -5,6 +5,7 @@ import type {
   AiChoice,
   ChromeStatus,
   ClaudeLoginStatus,
+  ExtensionStatus,
   InstallStatus,
   PaygAccount,
   PaygProvider,
@@ -27,6 +28,10 @@ export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
   loadChrome(): Promise<ChromeStatus>
+  loadExtension(): Promise<ExtensionStatus>
+  /** Chrome에 올릴 두리 확장 폴더를 보여 준다 */
+  revealExtension(): void
+  extensionDir(): Promise<string>
   /** 지금 저장된 설정 (설정 화면에서 보여 주고 바꾼다) */
   settings?: Settings
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
@@ -102,6 +107,10 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let note = ''
   let login: ClaudeLoginStatus = { state: 'idle' }
   let chrome: ChromeStatus | undefined
+  let extension: ExtensionStatus | undefined
+  // 두리 확장 추가 안내 (웹 스토어 전까지는 폴더를 직접 올린다)
+  const ext: { open: boolean; dir: string; copied: boolean } = { open: false, dir: '', copied: false }
+  let extTimer: ReturnType<typeof setTimeout> | undefined
   const installs: Record<InstallKind, InstallStatus> = {
     claude: { state: 'idle' },
     chrome: { state: 'idle' },
@@ -133,6 +142,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
   const done = new Promise<SetupResult>((resolve) => {
     const stopLogin = () => {
+      if (extTimer) clearTimeout(extTimer)
       if (pollTimer) clearTimeout(pollTimer)
       if (login.state === 'waiting')
         void opts.api('/api/agents/claude/login', { method: 'DELETE' }).catch(() => {})
@@ -164,7 +174,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
     // 설치가 끝나면 그 부품의 상태를 다시 확인한다
     const refresh = async (kind: InstallKind) => {
-      if (kind === 'chrome') chrome = await opts.loadChrome()
+      if (kind === 'chrome')
+        [chrome, extension] = await Promise.all([opts.loadChrome(), opts.loadExtension()])
       else agents = await opts.loadAgents()
     }
 
@@ -202,6 +213,22 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         )
       }
       for (let i = 0; i < 80 && early(); i++) await new Promise((res) => setTimeout(res, 250))
+    }
+
+    // 확장이 붙었는지 주기적으로 본다. 붙으면 안내를 닫고 초록불
+    const pollExtension = () => {
+      if (extTimer) clearTimeout(extTimer)
+      if (!ext.open) return
+      extTimer = setTimeout(async () => {
+        const r = await opts.loadExtension().catch(() => undefined)
+        if (r?.connected) {
+          extension = r
+          ext.open = false
+          render()
+          return
+        }
+        pollExtension()
+      }, 2_000)
     }
 
     const startClaudeLogin = async () => {
@@ -274,7 +301,11 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       enter = true
       if (step === 'check' || step === 'settings') {
         render(true)
-        ;[agents, chrome] = await Promise.all([opts.loadAgents(), opts.loadChrome()])
+        ;[agents, chrome, extension] = await Promise.all([
+          opts.loadAgents(),
+          opts.loadChrome(),
+          opts.loadExtension(),
+        ])
       }
       render()
     }
@@ -291,6 +322,12 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         return
       } else if (action === 'payg-key') {
         await openPayg()
+        return
+      } else if (action === 'extension-install') {
+        ext.open = true
+        ext.dir = await opts.extensionDir()
+        render()
+        pollExtension()
         return
       } else {
         const kind: InstallKind =
@@ -380,7 +417,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             el('p', 'setup-sub', '잠깐이면 돼요.'),
           )
         } else {
-          const head = checkHeadline(choice, agents, chrome)
+          const head = checkHeadline(choice, agents, chrome, extension)
           card.append(el('h1', 'setup-title', head.title), el('p', 'setup-sub', head.sub))
           card.append(...checksBlock(choice))
           if (note) card.append(el('p', 'setup-note', note))
@@ -636,7 +673,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     const checksBlock = (choice: AiChoice): HTMLElement[] => {
       const parts: HTMLElement[] = []
       const list = el('ul', 'checks')
-      for (const item of checklist(choice, agents, chrome)) {
+      for (const item of checklist(choice, agents, chrome, extension)) {
         const li = el('li', item.ok ? 'ok' : 'todo')
         const mark = el('span', 'mark', item.ok ? '✓' : '')
         const text = el('div', 'text')
@@ -651,9 +688,11 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
               ? '설치하기'
               : item.action === 'payg-key'
                 ? '키 넣기'
-                : item.action === 'codex-login'
-                  ? 'ChatGPT로 로그인'
-                  : '로그인하기'
+                : item.action === 'extension-install'
+                  ? '추가 방법'
+                  : item.action === 'codex-login'
+                    ? 'ChatGPT로 로그인'
+                    : '로그인하기'
           const action = item.action
           const b = button('btn-small', label, () => void act(action))
           if (action === 'claude-login' && login.state === 'waiting') {
@@ -685,7 +724,54 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }
       if (login.state === 'waiting' || login.state === 'failed') parts.push(loginPanel())
       if (payg.open) parts.push(paygPanel())
+      if (ext.open) parts.push(extensionPanel())
       return parts
+    }
+
+    /** 두리 확장 추가 안내. 웹 스토어에 올리면(M5) 버튼 한 번으로 바뀐다 */
+    const extensionPanel = () => {
+      const panel = el('div', 'login-panel')
+      panel.append(el('strong', undefined, 'Chrome에 두리 확장 추가하기'))
+      const steps = el('ol', 'ext-steps')
+      const li = (...parts: (string | HTMLElement)[]) => {
+        const item = el('li')
+        item.append(...parts)
+        steps.append(item)
+      }
+      const copy = button('btn-link', ext.copied ? '복사했어요' : '주소 복사', async () => {
+        await navigator.clipboard.writeText('chrome://extensions').catch(() => {})
+        ext.copied = true
+        render()
+      })
+      li('Chrome 주소창에 ', el('code', undefined, 'chrome://extensions'), '를 열어요 ', copy)
+      li('오른쪽 위 ', el('b', undefined, '개발자 모드'), '를 켜요')
+      li(
+        button('btn-small', '확장 폴더 열기', () => opts.revealExtension()),
+        ' 를 눌러 나온 ',
+        el('b', undefined, 'chrome-extension'),
+        ' 폴더를 그 화면으로 끌어다 놓아요',
+      )
+      panel.append(steps)
+      const wait = el('p', 'ext-wait')
+      wait.append(el('span', 'spin'), document.createTextNode('추가되면 여기서 바로 알아채요'))
+      panel.append(
+        wait,
+        el(
+          'p',
+          'cap',
+          '두리는 두리가 연 탭만 다루고, 결제·보내기 같은 마지막 버튼은 누르지 않아요. 곧 웹 스토어에서 한 번에 추가할 수 있게 바뀌어요.',
+        ),
+      )
+      const row = el('div', 'login-actions')
+      row.append(
+        button('btn-link', '닫기', () => {
+          ext.open = false
+          if (extTimer) clearTimeout(extTimer)
+          render()
+        }),
+      )
+      panel.append(row)
+      return panel
     }
 
     /** 부품(Claude Code, Chrome) 설치 진행 */
