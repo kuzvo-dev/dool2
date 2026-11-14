@@ -7,6 +7,8 @@ import type {
   ClaudeLoginStatus,
   ExtensionStatus,
   InstallStatus,
+  LinkStatus,
+  PairStatus,
   PaygAccount,
   PaygProvider,
   Settings,
@@ -112,6 +114,14 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   // 두리 확장 추가 안내 (웹 스토어 전까지는 폴더를 직접 올린다)
   const ext: { open: boolean; dir: string; copied: boolean } = { open: false, dir: '', copied: false }
   let extTimer: ReturnType<typeof setTimeout> | undefined
+  // 폰 연결 (설정 화면)
+  const phone: { link?: LinkStatus; pair: PairStatus; relayDraft: string; error?: string } = {
+    pair: { state: 'idle' },
+    relayDraft: '',
+  }
+  let pairTimer: ReturnType<typeof setTimeout> | undefined
+  /** QR·확인 코드가 새로 나오면 그 자리로 화면을 내린다 (설정 화면이 길어서) */
+  let scrollToPair = false
   // 두리 금고 (설정 화면)
   const vault: {
     entries: VaultEntry[]
@@ -153,6 +163,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
   const done = new Promise<SetupResult>((resolve) => {
     const stopLogin = () => {
+      if (pairTimer) clearTimeout(pairTimer)
+      if (phone.pair.state === 'waiting' || phone.pair.state === 'confirm')
+        void opts.api('/api/link/pair', { method: 'DELETE' }).catch(() => {})
       if (extTimer) clearTimeout(extTimer)
       if (pollTimer) clearTimeout(pollTimer)
       if (login.state === 'waiting')
@@ -317,7 +330,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           opts.loadChrome(),
           opts.loadExtension(),
         ])
-        if (step === 'settings') await loadVault()
+        if (step === 'settings') await Promise.all([loadVault(), loadLink()])
       }
       render()
     }
@@ -334,6 +347,15 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         return
       } else if (action === 'payg-key') {
         await openPayg()
+        return
+      } else if (action === 'phone-pair') {
+        const r = await opts
+          .api<{ pair: PairStatus }>('/api/link/pair', { method: 'POST' })
+          .catch(() => undefined)
+        if (r) phone.pair = r.pair
+        scrollToPair = true
+        render()
+        pollPair()
         return
       } else if (action === 'extension-install') {
         ext.open = true
@@ -533,6 +555,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             ),
           )
           card.append(el('h2', 'over', '마지막 확인'), gate)
+          card.append(el('h2', 'over', '폰 연결'), phoneBlock())
           card.append(el('h2', 'over', '두리 금고'), vaultBlock())
           const ai = el('p', 'setup-hint')
           ai.append(
@@ -547,16 +570,188 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }
 
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
-      const typing = ['claude-code', 'payg-key', 'vault-url', 'vault-user', 'vault-pw'].find(
+      const typing = ['claude-code', 'payg-key', 'vault-url', 'vault-user', 'vault-pw', 'relay-url'].find(
         (id) => document.activeElement?.id === id,
       )
       root.replaceChildren(card)
       if (typing) document.getElementById(typing)?.focus()
+      if (scrollToPair) {
+        const panel = card.querySelector('.pair-panel')
+        if (panel) {
+          scrollToPair = false
+          panel.scrollIntoView({ block: 'center' })
+        }
+      }
       // 나타나는 효과가 끝난 뒤에 "다 그려졌다"고 알린다 (점검 캡처가 흐리지 않게)
       if (!loading && !holdShown)
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
+    }
+
+    const loadLink = async () => {
+      const r = await opts.api<{ link: LinkStatus }>('/api/link').catch(() => undefined)
+      phone.link = r?.link
+      phone.relayDraft = phone.relayDraft || r?.link.relay || ''
+    }
+
+    // 폰이 QR을 찍고 확인 코드가 나올 때까지 본다
+    const pollPair = () => {
+      if (pairTimer) clearTimeout(pairTimer)
+      pairTimer = setTimeout(async () => {
+        const r = await opts.api<{ pair: PairStatus }>('/api/link/pair').catch(() => undefined)
+        if (r) {
+          const changed = JSON.stringify(r.pair) !== JSON.stringify(phone.pair)
+          phone.pair = r.pair
+          if (r.pair.state === 'done') await loadLink()
+          if (changed) scrollToPair = true
+          if (changed) render()
+        }
+        if (phone.pair.state === 'waiting' || phone.pair.state === 'confirm') pollPair()
+      }, 1_200)
+    }
+
+    /** 폰 연결: QR → 폰과 같은 확인 코드인지 보고 [연결] (ADR 0012) */
+    const phoneBlock = () => {
+      const box = el('div', 'vault')
+      const link = phone.link
+      if (!link?.relay) {
+        box.append(
+          el(
+            'p',
+            'setup-hint',
+            '폰에서 부탁하려면 중계 서버 주소가 필요해요. 공식 주소는 출시 때 자동으로 들어가요.',
+          ),
+        )
+        const form = el('form', 'key-form')
+        const i = el('input')
+        i.id = 'relay-url'
+        i.placeholder = 'https://… (직접 운영하는 중계 서버)'
+        i.value = phone.relayDraft
+        i.oninput = () => {
+          phone.relayDraft = i.value
+        }
+        const l = el('label', undefined, '중계 서버 주소')
+        l.append(i)
+        const save = el('button', 'btn-small', '저장')
+        save.type = 'submit'
+        form.append(l, save)
+        form.onsubmit = (ev) => {
+          ev.preventDefault()
+          void (async () => {
+            const r = await opts
+              .api<{ settings: Settings }>('/api/settings', {
+                method: 'PATCH',
+                body: JSON.stringify({ relay: phone.relayDraft.trim() }),
+              })
+              .catch((e: Error) => {
+                phone.error = e.message
+                return undefined
+              })
+            if (r) current = r.settings
+            await loadLink()
+            render()
+          })()
+        }
+        box.append(form)
+        if (phone.error) box.append(el('p', 'login-error', phone.error))
+        return box
+      }
+      box.append(
+        el(
+          'p',
+          'setup-hint',
+          `${link.connected ? '중계 서버와 연결돼 있어요.' : '중계 서버에 연결하는 중이에요.'} 폰에서 부탁하고, 결제·보내기는 폰에서 승인해요. 주고받는 내용은 PC와 폰만 열 수 있게 암호화돼요.`,
+        ),
+      )
+      if (link.phones.length) {
+        const list = el('ul', 'vault-list')
+        for (const p of link.phones) {
+          const li = el('li')
+          const text = el('div', 'text')
+          text.append(
+            el('strong', undefined, p.name),
+            el('span', undefined, `연결한 날 ${new Date(p.pairedAt).toLocaleDateString('ko-KR')}`),
+          )
+          li.append(
+            text,
+            button('btn-link', '연결 끊기', async () => {
+              await opts
+                .api(`/api/link/phones/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+                .catch(() => {})
+              await loadLink()
+              render()
+            }),
+          )
+          list.append(li)
+        }
+        box.append(list)
+      }
+      const st = phone.pair
+      if (st.state === 'waiting' || st.state === 'confirm') {
+        const panel = el('div', 'login-panel pair-panel')
+        if (st.state === 'waiting') {
+          panel.append(el('strong', undefined, '폰 카메라로 QR을 찍어 주세요'))
+          const img = el('img', 'pair-qr')
+          img.alt = '폰 연결 QR'
+          img.src = `data:image/svg+xml;base64,${btoa(st.qr)}`
+          panel.append(img, el('p', 'cap', '5분 안에 찍어 주세요. 이 QR은 한 번만 쓸 수 있어요.'))
+        } else {
+          panel.append(
+            el('strong', undefined, `"${st.name}"을(를) 연결할까요?`),
+            el('p', undefined, '폰 화면에 같은 숫자가 보이는지 확인해 주세요.'),
+            el('div', 'pair-code', st.code.replace(/(\d{3})(\d{3})/, '$1 $2')),
+          )
+          const row = el('div', 'login-actions')
+          row.append(
+            button('btn-small', '같아요, 연결', async () => {
+              const r = await opts
+                .api<{ pair: PairStatus }>('/api/link/pair/confirm', {
+                  method: 'POST',
+                  body: JSON.stringify({ accept: true }),
+                })
+                .catch(() => undefined)
+              if (r) phone.pair = r.pair
+              await loadLink()
+              render()
+            }),
+            button('btn-link', '다른 숫자예요', async () => {
+              await opts
+                .api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: false }) })
+                .catch(() => {})
+              phone.pair = { state: 'idle' }
+              render()
+            }),
+          )
+          panel.append(row)
+        }
+        panel.append(
+          button('btn-link', '닫기', () => {
+            void opts.api('/api/link/pair', { method: 'DELETE' }).catch(() => {})
+            phone.pair = { state: 'idle' }
+            render()
+          }),
+        )
+        box.append(panel)
+        return box
+      }
+      if (st.state === 'done') box.append(el('p', 'setup-hint', `"${st.name}"을(를) 연결했어요.`))
+      if (st.state === 'expired') box.append(el('p', 'setup-hint', 'QR 시간이 지났어요. 다시 해 주세요.'))
+      box.append(
+        button('btn-small', link.phones.length ? '폰 더 연결하기' : '폰 연결하기', async () => {
+          const r = await opts
+            .api<{ pair: PairStatus }>('/api/link/pair', { method: 'POST' })
+            .catch((e: Error) => {
+              phone.error = e.message
+              return undefined
+            })
+          if (r) phone.pair = r.pair
+          scrollToPair = true
+          render()
+          pollPair()
+        }),
+      )
+      return box
     }
 
     const loadVault = async () => {

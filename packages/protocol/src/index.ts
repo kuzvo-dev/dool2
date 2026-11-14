@@ -108,6 +108,8 @@ export const SettingsSchema = z.object({
    * (ADR 0006 다시 검토의 "마지막 확인" 스위치)
    */
   finalStep: z.enum(['approve', 'self']).optional(),
+  /** 폰 연결에 쓸 중계 서버 주소 (M6). 비우면 기본 주소 */
+  relay: z.string().url().max(200).optional(),
   /** 종량제 모드에서 고른 제공자·모델 (API 키는 여기 두지 않고 OS 키체인에) */
   payg: z.object({ provider: z.string(), model: z.string() }).optional(),
 })
@@ -299,3 +301,90 @@ export interface ApprovalRecordMessage {
   ref?: string
   what: string
 }
+
+// ── 폰 ↔ PC 메시지 (M6, ADR 0012). 모두 e2e.ts로 암호화된 봉투 안에 들어간다 ──────
+
+/** QR에 담는 페어링 정보 (주소의 #p= 뒤에 base64url JSON) */
+export interface PairInvite {
+  /** PC id */
+  pc: string
+  /** PC X25519 공개키 */
+  k: string
+  /** 일회용 페어링 비밀 */
+  s: string
+  /** PC 이름 */
+  n: string
+}
+
+/** 폰 → PC */
+export type PhoneToPc =
+  | { kind: 'pair'; secret: string; signPub: string; name: string }
+  | { kind: 'hello' }
+  | { kind: 'thread'; id: string }
+  | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string }
+  | { kind: 'cancel'; threadId: string }
+  | { kind: 'approval'; id: string }
+  | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }
+
+/** PC → 폰 */
+export type PcToPhone =
+  | { kind: 'paired'; pcName: string }
+  | { kind: 'pair-rejected' }
+  | {
+      kind: 'state'
+      pcName: string
+      agents: AgentId[]
+      defaultAgent?: AgentId
+      extension: boolean
+      threads: ThreadSummary[]
+      approvals: ApprovalView[]
+    }
+  | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
+  | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
+  | { kind: 'approval'; approval: ApprovalView & { shot?: string } }
+  | { kind: 'decided'; id: string; ok: boolean; message: string }
+  | { kind: 'error'; message: string }
+
+/** 폰이 승인에 서명하는 내용. PC가 같은 방법으로 만들어 서명을 확인한다 */
+export function approvalSignText(a: ApprovalView, decision: 'approve' | 'reject'): string {
+  const o: Record<string, unknown> = {
+    t: 'dool2-approval/v1',
+    id: a.id,
+    decision,
+    label: a.label,
+    url: a.url,
+    what: a.what,
+    amount: a.amount ?? '',
+    expiresAt: a.expiresAt,
+  }
+  return JSON.stringify(
+    Object.keys(o)
+      .sort()
+      .map((k) => [k, o[k]]),
+  )
+}
+
+/** 페어링된 폰 (PC가 보관) */
+export interface PairedPhone {
+  id: string
+  name: string
+  boxPub: string
+  signPub: string
+  pairedAt: string
+}
+
+export interface LinkStatus {
+  relay?: string
+  connected: boolean
+  pcId?: string
+  phones: Omit<PairedPhone, 'boxPub' | 'signPub'>[]
+}
+
+export type PairStatus =
+  | { state: 'idle' }
+  | { state: 'waiting'; url: string; qr: string; expiresAt: string }
+  | { state: 'confirm'; code: string; name: string; url: string; qr: string; expiresAt: string }
+  | { state: 'done'; name: string }
+  | { state: 'expired' }
+
+export const PairConfirmSchema = z.object({ accept: z.boolean() })

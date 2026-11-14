@@ -27,6 +27,11 @@
     "@dool2/engine": "workspace:*",
     "@dool2/mcp-tools": "workspace:*",
     "@dool2/protocol": "workspace:*",
-    "@dool2/store": "workspace:*"
+    "@dool2/store": "workspace:*",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@dool2/relay": "workspace:*",
+    "@types/qrcode": "^1.5.6"
   }
 }

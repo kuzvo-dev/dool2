@@ -33,6 +33,8 @@ export interface NewApproval {
 
 export class Approvals {
   private items = new Map<string, ApprovalRecord>()
+  /** 새 승인 요청이 생기면 (폰에 알리기) */
+  onCreate?: (rec: ApprovalRecord) => void
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -49,6 +51,7 @@ export class Approvals {
       expiresAt: new Date(t + APPROVAL_TTL_MS).toISOString(),
     }
     this.items.set(rec.id, rec)
+    this.onCreate?.(rec)
     return rec
   }
 

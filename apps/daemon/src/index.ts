@@ -32,6 +32,7 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionStatus,
   FocusTabSchema,
+  PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
   SendMessageRequestSchema,
@@ -43,12 +44,14 @@ import {
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
+import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { Skills } from './skills.js'
 import { Vault } from './vault.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
+export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export { parseSkill, Skills, validateSkill } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
@@ -73,6 +76,10 @@ export interface DaemonOptions {
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** 스킬 폴더 (기본: 레포의 skills/, 배포 앱은 앱 안에 넣은 것) */
   skillsDir?: string
+  /** 폰 연결 중계 서버 기본 주소 (설정의 relay가 없을 때). 없으면 폰 연결을 켜지 않는다 */
+  relay?: string
+  /** 폰에 보일 이 PC 이름 */
+  pcName?: string
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
@@ -198,6 +205,65 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   const skills = new Skills(opts.skillsDir ?? defaultSkillsDir())
+
+  // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
+  const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
+  const pickAgent = async (want?: AgentId): Promise<AgentId> => {
+    const ready = (await Promise.all(Object.values(runtimes).map((rt) => rt.detect()))).filter(
+      (a) => a.installed && a.loggedIn,
+    )
+    const ids = ready.map((a) => a.id)
+    const def = readSettings().defaultAgent
+    if (want && ids.includes(want)) return want
+    if (def && ids.includes(def)) return def
+    if (ids[0]) return ids[0]
+    throw new Error('PC에 일할 AI가 연결돼 있지 않아요')
+  }
+  const link = new PhoneLink(
+    secrets,
+    {
+      state: async () => {
+        const agents = (await Promise.all(Object.values(runtimes).map((rt) => rt.detect())))
+          .filter((a) => a.installed && a.loggedIn)
+          .map((a) => a.id)
+        const def = readSettings().defaultAgent
+        return {
+          agents,
+          ...(def ? { defaultAgent: def } : {}),
+          extension: browser.status.connected,
+          threads: store.listThreads().slice(0, 30),
+          approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
+        }
+      },
+      thread: async (id) => {
+        const thread = store.getThread(id)
+        return thread ? { kind: 'thread', thread, messages: store.listMessages(id) } : undefined
+      },
+      ask: async ({ threadId, agent, text }) => {
+        const id =
+          threadId && store.getThread(threadId) ? threadId : store.createThread(await pickAgent(agent)).id
+        if (threads.isRunning(id)) throw new Error('이 대화는 아직 답하는 중이에요')
+        // 폰은 스트림으로 결과를 받으니 여기서는 끝까지 돌리기만 한다
+        void (async () => {
+          for await (const _ of tracked(id, threads.send(id, text))) {
+          }
+        })().catch(() => {})
+        return id
+      },
+      cancel: (id) => threads.cancel(id),
+      approval: (id) => browserTools.approvals.get(id),
+      decide: async (id, decision) =>
+        decision === 'reject'
+          ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
+          : browserTools.approve(id),
+    },
+    {
+      relay: relayUrl,
+      ...(opts.pcName ? { name: opts.pcName } : {}),
+    },
+  )
+  browserTools.approvals.onCreate = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
+  await link.start()
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
     await registerNativeHost({ dataDir: paths.dataDir, runtime: dool2BrowserHost(script), ...where }).catch(
@@ -206,10 +272,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   let running = 0
   /** 대화 한 턴을 감싸서 "일하는 중" 상태를 알린다 */
-  async function* tracked<T>(inner: AsyncIterable<T>): AsyncGenerator<T> {
+  async function* tracked(
+    threadId: string,
+    inner: AsyncIterable<DaemonStreamEvent>,
+  ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
+    // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
+    const toPhones = link.streamer(threadId)
     try {
-      yield* inner
+      for await (const ev of inner) {
+        toPhones(ev)
+        yield ev
+      }
     } finally {
       if (--running === 0) events.emit('busy', false)
     }
@@ -425,6 +499,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     }
 
+    // 폰 연결 (M6): 화면용 토큰으로만. 새 폰은 PC 화면에서 확인 코드를 보고 [연결]해야 붙는다
+    if (a === 'link') {
+      if (!b && req.method === 'GET') return json(res, 200, { link: link.status() })
+      if (b === 'pair' && !c) {
+        if (req.method === 'GET') return json(res, 200, { pair: link.pairStatus() })
+        if (req.method === 'POST') {
+          try {
+            return json(res, 200, { pair: await link.startPairing() })
+          } catch (e) {
+            return json(res, 409, { error: (e as Error).message })
+          }
+        }
+        if (req.method === 'DELETE') {
+          link.cancelPairing()
+          return json(res, 200, { pair: { state: 'idle' } })
+        }
+      }
+      if (b === 'pair' && c === 'confirm' && req.method === 'POST') {
+        const { accept } = PairConfirmSchema.parse(await readJson(req))
+        return json(res, 200, { pair: await link.confirmPairing(accept) })
+      }
+      if (b === 'phones' && c && req.method === 'DELETE')
+        return json(res, 200, { ok: await link.removePhone(c) })
+    }
+
     // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
     if (a === 'vault') {
       if (!b && req.method === 'GET') return json(res, 200, { entries: await vault.list() })
@@ -444,6 +543,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'PATCH') {
         const patch = SettingsPatchSchema.parse(await readJson(req))
         for (const [key, value] of Object.entries(patch)) store.setSetting(key, value)
+        if ('relay' in patch) link.connect()
         const settings = readSettings()
         events.emit('settings', settings)
         return json(res, 200, { settings })
@@ -470,7 +570,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'POST' && c === 'messages') {
         const body = SendMessageRequestSchema.parse(await readJson(req))
         if (threads.isRunning(b)) return json(res, 409, { error: '이 대화는 아직 답하는 중이에요' })
-        return stream(res, tracked(threads.send(b, body.text)), () => threads.cancel(b))
+        return stream(res, tracked(b, threads.send(b, body.text)), () => threads.cancel(b))
       }
     }
 
@@ -502,6 +602,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
         claudeLogin?.cancel()
+        link.stop()
         server.closeAllConnections()
         server.close(() => {
           store.close()
