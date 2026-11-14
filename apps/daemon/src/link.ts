@@ -34,6 +34,7 @@ import {
 } from '@dool2/protocol/e2e'
 import { LinkClient } from '@dool2/protocol/link'
 import QRCode from 'qrcode'
+import { allowedEndpoint, generateVapid, type PushMessage, sendPush, type VapidKeys } from './webpush.js'
 
 export const PAIR_TTL_MS = 5 * 60_000
 
@@ -56,9 +57,11 @@ export interface LinkHost {
 const KEYS = 'link.pc'
 const PHONES = 'link.phones'
 const SEQS = 'link.seqs'
+const VAPID = 'link.vapid'
 
 export class PhoneLink {
   private keys?: DeviceKeys
+  private vapid?: VapidKeys
   private phones: PairedPhone[] = []
   private client?: LinkClient
   private guard = new SeqGuard()
@@ -76,7 +79,13 @@ export class PhoneLink {
   constructor(
     private readonly secrets: SecretStoreLike,
     private readonly host: LinkHost,
-    private readonly opts: { relay?: () => string | undefined; name?: string; now?: () => number } = {},
+    private readonly opts: {
+      relay?: () => string | undefined
+      name?: string
+      now?: () => number
+      /** 테스트용: 푸시 보내기 */
+      push?: typeof sendPush
+    } = {},
   ) {}
 
   private now() {
@@ -91,6 +100,9 @@ export class PhoneLink {
     this.keys = saved ? await importDevice(JSON.parse(saved)) : await generateDevice(true)
     if (!saved) await this.secrets.set(KEYS, JSON.stringify(await exportDevice(this.keys)))
     this.phones = JSON.parse((await this.secrets.get(PHONES)) ?? '[]') as PairedPhone[]
+    const vapid = await this.secrets.get(VAPID)
+    this.vapid = vapid ? (JSON.parse(vapid) as VapidKeys) : generateVapid()
+    if (!vapid) await this.secrets.set(VAPID, JSON.stringify(this.vapid))
     this.guard = new SeqGuard(JSON.parse((await this.secrets.get(SEQS)) ?? '{}'))
     this.seq = Date.now() // 다시 켜도 순번이 줄지 않게 시각에서 시작한다
     this.connect()
@@ -123,7 +135,12 @@ export class PhoneLink {
       ...(relay ? { relay } : {}),
       connected: Boolean(this.client?.ready),
       ...(this.keys ? { pcId: this.keys.id } : {}),
-      phones: this.phones.map(({ id, name, pairedAt }) => ({ id, name, pairedAt })),
+      phones: this.phones.map(({ id, name, pairedAt, push }) => ({
+        id,
+        name,
+        pairedAt,
+        push: Boolean(push),
+      })),
     }
   }
 
@@ -171,7 +188,7 @@ export class PhoneLink {
     await this.secrets.set(PHONES, JSON.stringify(this.phones))
     p.done = phone.name
     await this.send(phone, { kind: 'paired', pcName: this.pcName })
-    await this.send(phone, { kind: 'state', pcName: this.pcName, ...(await this.host.state()) })
+    await this.send(phone, await this.stateFor(phone))
     return this.pairStatus()
   }
 
@@ -240,7 +257,19 @@ export class PhoneLink {
   private async handle(phone: PairedPhone, msg: PhoneToPc) {
     switch (msg.kind) {
       case 'hello':
-        return this.send(phone, { kind: 'state', pcName: this.pcName, ...(await this.host.state()) })
+        return this.send(phone, await this.stateFor(phone))
+      case 'push': {
+        const sub = msg.sub
+        if (sub && (!allowedEndpoint(String(sub.endpoint)) || !sub.keys?.p256dh || !sub.keys?.auth))
+          return this.send(phone, { kind: 'error', message: '이 브라우저의 알림 주소는 쓸 수 없어요' })
+        await this.savePush(
+          phone.id,
+          sub
+            ? { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }
+            : undefined,
+        )
+        return this.send(phone, await this.stateFor(phone))
+      }
       case 'thread': {
         const t = await this.host.thread(msg.id)
         if (t) await this.send(phone, t)
@@ -277,6 +306,44 @@ export class PhoneLink {
         return this.broadcast({ kind: 'decided', id: msg.id, ...r })
       }
     }
+  }
+
+  private async stateFor(phone: PairedPhone): Promise<PcToPhone> {
+    const now = this.phones.find((x) => x.id === phone.id) ?? phone
+    return {
+      kind: 'state',
+      pcName: this.pcName,
+      ...(await this.host.state()),
+      ...(this.vapid ? { vapid: this.vapid.publicKey } : {}),
+      push: Boolean(now.push),
+    }
+  }
+
+  private async savePush(id: string, push: PairedPhone['push']) {
+    this.phones = this.phones.map((x) => {
+      if (x.id !== id) return x
+      const { push: _old, ...rest } = x
+      return push ? { ...rest, push } : rest
+    })
+    await this.secrets.set(PHONES, JSON.stringify(this.phones))
+  }
+
+  /**
+   * 앱이 꺼져 있어도 폰에 알림을 띄운다 (웹 푸시). 승인 요청, 직접 해 주세요, 폰에서 맡긴 일이 끝났을 때.
+   * 내용은 폰 브라우저만 풀 수 있게 암호화된다. 구독이 없어졌으면(410) 지운다
+   */
+  async notify(msg: PushMessage) {
+    const vapid = this.vapid
+    if (!vapid) return
+    const send = this.opts.push ?? sendPush
+    await Promise.all(
+      this.phones
+        .filter((p) => p.push)
+        .map(async (p) => {
+          const r = await send(p.push as NonNullable<PairedPhone['push']>, msg, vapid)
+          if (r === 'gone') await this.savePush(p.id, undefined)
+        }),
+    )
   }
 
   // ── 보내기 ──

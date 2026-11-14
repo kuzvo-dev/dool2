@@ -52,6 +52,7 @@ import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { Skills } from './skills.js'
 import { Vault } from './vault.js'
+import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
@@ -84,6 +85,8 @@ export interface DaemonOptions {
   relay?: string
   /** 폰에 보일 이 PC 이름 */
   pcName?: string
+  /** 테스트용: 웹 푸시 보내기 */
+  push?: typeof sendPush
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
@@ -248,6 +251,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           threadId && store.getThread(threadId) ? threadId : store.createThread(await pickAgent(agent)).id
         if (threads.isRunning(id)) throw new Error('이 대화는 아직 답하는 중이에요')
         // 폰은 스트림으로 결과를 받으니 여기서는 끝까지 돌리기만 한다
+        fromPhone.add(id)
         void (async () => {
           for await (const _ of tracked(id, threads.send(id, text))) {
           }
@@ -269,6 +273,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             decision === 'reject'
               ? appNote(`"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`)
               : appNote(`폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`)
+          fromPhone.add(threadId)
           void (async () => {
             for await (const _ of tracked(threadId, threads.send(threadId, text))) {
             }
@@ -280,6 +285,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     {
       relay: relayUrl,
       ...(opts.pcName ? { name: opts.pcName } : {}),
+      ...(opts.push ? { push: opts.push } : {}),
     },
   )
   browserTools.approvals.onCreate = (rec) => {
@@ -287,6 +293,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
     if (only) approvalThread.set(rec.id, only)
     void link.broadcast({ kind: 'approval', approval: rec })
+    // 앱이 꺼져 있어도 폰에 알린다
+    void link
+      .notify({
+        title: '승인을 기다려요',
+        body: [rec.what, rec.amount].filter(Boolean).join(' · ') || `"${rec.label}" 누르기`,
+        tag: `approval-${rec.id}`,
+        url: `#a=${rec.id}`,
+      })
+      .catch(() => {})
   }
   await link.start()
   if (opts.nativeHost) {
@@ -305,19 +320,58 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     activeThreads.add(threadId)
     // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
     const toPhones = link.streamer(threadId)
+    // 이번 답에서 승인 요청·직접 해 주세요가 나왔는지 (그러면 "끝났어요" 알림은 따로 보내지 않는다)
+    let asked = false
     try {
       for await (const ev of inner) {
         toPhones(ev)
+        if (ev.type === 'saved' && ev.message.role === 'tool') {
+          asked = true
+          const rec = (() => {
+            try {
+              return JSON.parse(ev.message.text) as { kind?: string; reason?: string }
+            } catch {
+              return {}
+            }
+          })()
+          if (rec.kind !== 'approval')
+            void link
+              .notify({
+                title: 'PC에서 직접 해 주세요',
+                body: rec.reason ?? '두리가 도움을 기다려요',
+                tag: `handoff-${threadId}`,
+                url: `#t=${threadId}`,
+              })
+              .catch(() => {})
+        }
         yield ev
       }
     } finally {
       activeThreads.delete(threadId)
       if (--running === 0) events.emit('busy', false)
+      // 폰에서 맡긴 일이 끝나면 폰에 알린다 (앱을 닫아 둔 사이에 끝나도)
+      if (fromPhone.delete(threadId) && !asked) {
+        const t = store.getThread(threadId)
+        const last = store
+          .listMessages(threadId)
+          .filter((m) => m.role === 'assistant')
+          .at(-1)
+        void link
+          .notify({
+            title: t?.title ? `끝났어요 · ${t.title}` : '두리가 일을 끝냈어요',
+            body: last ? previewText(last.text, 120) : '결과를 확인해 주세요',
+            tag: `thread-${threadId}`,
+            url: `#t=${threadId}`,
+          })
+          .catch(() => {})
+      }
     }
   }
   /** 지금 답하는 중인 대화 (승인 요청이 어느 대화에서 나왔는지 알려고) */
   const activeThreads = new Set<string>()
   const approvalThread = new Map<string, string>()
+  /** 폰에서 맡긴 대화 (끝나면 폰에 알림) */
+  const fromPhone = new Set<string>()
   /**
    * 대화 목록 + 홈 화면용 정보: 답하는 중인지, 마지막 답 미리보기(앞의 몇 개만), 기다리는 승인.
    * PC 앱과 폰이 같은 걸 받는다

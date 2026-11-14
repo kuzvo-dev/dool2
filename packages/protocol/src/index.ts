@@ -341,6 +341,14 @@ export type PhoneToPc =
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
   | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }
+  /** 웹 푸시 구독 (알림을 끄면 null). PC가 이 주소로 직접 알림을 보낸다 */
+  | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
+
+/** 폰 브라우저의 PushSubscription.toJSON() 중 PC가 쓰는 것 */
+export interface PushSubscriptionJSONLike {
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+}
 
 /** PC → 폰 */
 export type PcToPhone =
@@ -354,6 +362,10 @@ export type PcToPhone =
       extension: boolean
       threads: ThreadSummary[]
       approvals: ApprovalView[]
+      /** 웹 푸시 VAPID 공개키 (폰의 applicationServerKey) */
+      vapid?: string
+      /** 이 폰이 알림을 받도록 PC에 구독이 등록돼 있는지 */
+      push?: boolean
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
@@ -370,13 +382,15 @@ export interface PairedPhone {
   boxPub: string
   signPub: string
   pairedAt: string
+  /** 웹 푸시 구독. 있으면 앱이 꺼져 있어도 알림을 보낸다 */
+  push?: PushSubscriptionJSONLike
 }
 
 export interface LinkStatus {
   relay?: string
   connected: boolean
   pcId?: string
-  phones: Omit<PairedPhone, 'boxPub' | 'signPub'>[]
+  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push'> & { push: boolean })[]
 }
 
 export type PairStatus =

@@ -48,7 +48,7 @@ const waitFor = async (check: () => boolean, ms = 4000) => {
   expect(check()).toBe(true)
 }
 
-async function boot() {
+async function boot(extra: Partial<Parameters<typeof startDaemon>[0]> = {}) {
   relay = await startRelay()
   dir = await mkdtemp(join(tmpdir(), 'dool2-link-'))
   daemon = await startDaemon({
@@ -58,6 +58,7 @@ async function boot() {
     pcName: '거실 PC',
     runtimes: { claude: new EchoRuntime() },
     chrome: { detect: async () => ({ installed: false }) },
+    ...extra,
   })
   const api = async (path: string, init: RequestInit = {}) =>
     (
@@ -214,5 +215,107 @@ describe('폰 연결', () => {
       sig: await signText(p.keys.signPriv, approvalSignText(rec, 'reject')),
     })
     await waitFor(() => daemon?.approvals.get(rec.id)?.status === 'rejected')
+  })
+})
+
+describe('폰 알림 (웹 푸시)', () => {
+  it('폰이 구독을 알리면 승인 요청 때 PC가 알림을 보내고, 구독이 없어지면(410) 지운다', async () => {
+    const sent: { endpoint: string; title: string; body: string; url?: string }[] = []
+    let gone = false
+    const { api } = await boot({
+      push: async (sub, msg) => {
+        sent.push({ endpoint: sub.endpoint, ...msg })
+        return gone ? 'gone' : 'sent'
+      },
+    })
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state'))
+    // PC가 VAPID 공개키를 알려 준다
+    const first = p.inbox.find((m) => m.kind === 'state') as Extract<PcToPhone, { kind: 'state' }>
+    expect(first.vapid).toMatch(/^[\w-]{80,}$/)
+    expect(first.push).toBe(false)
+
+    // 아무 주소나 받지 않는다
+    await p.send({
+      kind: 'push',
+      sub: { endpoint: 'https://169.254.169.254/x', keys: { p256dh: 'a', auth: 'b' } },
+    })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'error'))
+
+    const endpoint = 'https://fcm.googleapis.com/fcm/send/abc'
+    await p.send({ kind: 'push', sub: { endpoint, keys: { p256dh: 'BPk', auth: 'au' } } })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.push === true))
+    expect((await api('/api/link')).link.phones[0].push).toBe(true)
+
+    daemon?.approvals.create({
+      tabId: 1,
+      ref: 'e2',
+      role: '버튼',
+      label: '결제하기',
+      url: 'https://shop.example/pay',
+      kind: 'money',
+      reason: '"결제"',
+      what: '사과 결제',
+      where: '시험 가게',
+      amount: '9,900원',
+    })
+    await waitFor(() => sent.length === 1)
+    expect(sent[0]).toMatchObject({ endpoint, title: '승인을 기다려요', body: '사과 결제 · 9,900원' })
+    expect(sent[0]?.url).toMatch(/^#a=/)
+
+    // 폰에서 알림을 끄면(410) 다음부터 보내지 않는다
+    gone = true
+    daemon?.approvals.create({
+      tabId: 1,
+      ref: 'e3',
+      role: '버튼',
+      label: '결제하기',
+      url: 'https://shop.example/pay',
+      kind: 'money',
+      reason: '"결제"',
+      what: '배 결제',
+      where: '시험 가게',
+    })
+    await waitFor(() => sent.length === 2)
+    for (let i = 0; i < 100 && (await api('/api/link')).link.phones[0].push; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    expect((await api('/api/link')).link.phones[0].push).toBe(false)
+  })
+
+  it('폰에서 맡긴 일이 끝나면 알린다', async () => {
+    const sent: { title: string; body: string; url?: string }[] = []
+    const { api } = await boot({
+      push: async (_sub, msg) => {
+        sent.push(msg)
+        return 'sent'
+      },
+    })
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state'))
+    await p.send({
+      kind: 'push',
+      sub: { endpoint: 'https://web.push.apple.com/QO', keys: { p256dh: 'B', auth: 'a' } },
+    })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.push === true))
+    await p.send({ kind: 'ask', text: '안녕 두리' })
+    await waitFor(() => sent.length === 1)
+    expect(sent[0]?.body).toBe('받았어요: 안녕 두리')
+    expect(sent[0]?.url).toMatch(/^#t=/)
   })
 })

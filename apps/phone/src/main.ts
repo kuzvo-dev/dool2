@@ -204,6 +204,8 @@ async function receive(env: Envelope) {
       st.pc = msg
       st.threads = msg.threads
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
+      void syncPush()
+      openPending()
       break
     case 'thread':
       st.messages.set(msg.thread.id, msg.messages)
@@ -214,7 +216,8 @@ async function receive(env: Envelope) {
       break
     case 'approval':
       st.approvals.set(msg.approval.id, msg.approval)
-      if (msg.approval.status === 'pending') notify('승인을 기다려요', msg.approval.what)
+      if (msg.approval.status === 'pending')
+        notify('승인을 기다려요', msg.approval.what, `approval-${msg.approval.id}`)
       break
     case 'decided': {
       st.decided.set(msg.id, { ok: msg.ok, message: msg.message })
@@ -281,9 +284,68 @@ function toast(text: string) {
   }, 3500)
 }
 
-function notify(title: string, body: string) {
+function notify(title: string, body: string, tag?: string) {
+  // 앱이 뒤에 있을 때만. PC가 보낸 푸시 알림과 tag가 같아서 둘이 겹치지 않는다
   if (document.visibilityState === 'visible') return
-  if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body })
+  if ('Notification' in window && Notification.permission === 'granted')
+    new Notification(title, { body, ...(tag ? { tag } : {}) })
+}
+
+// ── 웹 푸시: 앱이 꺼져 있어도 알림 ──
+
+const pushReady = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+
+function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
+  if (!a) return false
+  const x = new Uint8Array(a)
+  return x.length === b.length && x.every((v, i) => v === b[i])
+}
+
+/**
+ * 알림을 허락했으면 이 PC의 키로 푸시를 구독하고 PC에 알린다. 다른 PC로 바꿨으면 다시 구독한다.
+ * PC가 이미 알고 있으면(state.push) 다시 보내지 않는다
+ */
+let syncing = false
+async function syncPush() {
+  const vapid = st.pc?.vapid
+  if (syncing || !vapid || !pushReady() || Notification.permission !== 'granted') return
+  syncing = true
+  try {
+    const reg = await navigator.serviceWorker.ready
+    const key = fromB64u(vapid)
+    let sub = await reg.pushManager.getSubscription()
+    if (sub && !sameKey(sub.options.applicationServerKey, key)) {
+      await sub.unsubscribe()
+      sub = null
+    }
+    const fresh = !sub
+    sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
+    if (fresh || !st.pc?.push) {
+      const j = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
+      if (j.endpoint && j.keys?.p256dh && j.keys.auth)
+        await send({
+          kind: 'push',
+          sub: { endpoint: j.endpoint, keys: { p256dh: j.keys.p256dh, auth: j.keys.auth } },
+        })
+    }
+  } catch {
+    // 알림 주소를 못 받는 브라우저 (예: 홈 화면에 추가하지 않은 아이폰 사파리)
+  } finally {
+    syncing = false
+  }
+}
+
+/** 알림을 눌러 열었으면 (#a=승인 id, #t=대화 id) 그 화면으로 간다 */
+let pendingOpen = ''
+function openPending() {
+  const m = /^#([at])=([\w-]+)$/.exec(pendingOpen)
+  if (!m || !st.saved?.paired) return
+  pendingOpen = ''
+  history.replaceState(null, '', location.pathname)
+  if (m[1] === 'a') {
+    go({ name: 'approval', id: m[2] as string })
+    void send({ kind: 'approval', id: m[2] as string })
+  } else openThread(m[2] as string)
 }
 
 // ── 페어링 ──
@@ -534,14 +596,35 @@ function homeView() {
       ),
     )
   box.append(quick)
+  // 아이폰은 홈 화면에 추가한 앱에서만 알림을 받을 수 있다
+  const ios = /iPhone|iPad/.test(navigator.userAgent)
+  const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
+  if (ios && !standalone && !pushReady())
+    box.append(
+      h(
+        'div',
+        { class: 'notify-ask' },
+        icon('bell'),
+        h(
+          'span',
+          { class: 'text' },
+          h('strong', { text: '알림을 받으려면 홈 화면에 추가해 주세요' }),
+          h('span', { text: '사파리 아래 공유 버튼 → 홈 화면에 추가 → 거기서 두리를 열어요' }),
+        ),
+      ),
+    )
   // 알림은 사용자가 눌러서 켤 때만 묻는다 (아무 데나 눌렀다고 권한 창을 띄우지 않는다)
-  if ('Notification' in window && Notification.permission === 'default')
+  else if ('Notification' in window && Notification.permission === 'default')
     box.append(
       h(
         'button',
         {
           class: 'notify-ask',
-          onclick: () => void Notification.requestPermission().then(() => render()),
+          onclick: () =>
+            void Notification.requestPermission().then(() => {
+              render()
+              void syncPush()
+            }),
         },
         icon('bell'),
         h(
@@ -817,7 +900,12 @@ function approvalView(id: string) {
 // 앱이 열려 있는 채로 새 QR을 찍으면 주소의 # 뒤만 바뀐다. 그때도 새로 연결한다
 window.addEventListener('hashchange', () => {
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
-  if (invite) void startPairing(invite)
+  if (invite) return void startPairing(invite)
+  // 앱이 열린 채로 알림을 누르면 주소의 # 뒤만 바뀐다
+  if (/^#[at]=/.test(location.hash)) {
+    pendingOpen = location.hash
+    if (st.online) openPending()
+  }
 })
 
 async function main() {
@@ -830,6 +918,7 @@ async function main() {
   if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js').catch(() => {})
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return startPairing(invite)
+  if (/^#[at]=/.test(location.hash)) pendingOpen = location.hash
   const saved = await load()
   if (!saved) return go({ name: 'intro' })
   st.saved = saved
