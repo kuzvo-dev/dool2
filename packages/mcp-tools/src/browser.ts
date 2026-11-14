@@ -1,0 +1,120 @@
+// 브라우저 도구. AI가 사용자 Chrome의 "두리" 탭에서 웹 일을 한다.
+// 이 서버는 판단하지 않는다: 두리 본체(/api/tools/browser)에 넘기고, 위험한 동작은 본체가 막는다.
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { z } from 'zod'
+
+export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+export interface ToolResult {
+  content: ToolContent[]
+  isError?: boolean
+}
+
+/** 본체에 도구 실행을 부탁한다 */
+export type BrowserClient = (tool: string, args: Record<string, unknown>) => Promise<ToolResult>
+
+/** 본체 주소·토큰은 본체가 이 서버를 띄울 때 환경 변수로 넣어 준다 */
+export function daemonClient(env: NodeJS.ProcessEnv = process.env): BrowserClient {
+  return async (tool, args) => {
+    const api = env.DOOL2_API
+    const token = env.DOOL2_TOOL_TOKEN
+    if (!api || !token) return fail('두리 본체와 연결돼 있지 않아요')
+    try {
+      const res = await fetch(`${api}/api/tools/browser/${encodeURIComponent(tool)}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(args),
+        signal: AbortSignal.timeout(90_000),
+      })
+      if (!res.ok) return fail(`두리 본체가 거절했어요 (${res.status})`)
+      return (await res.json()) as ToolResult
+    } catch (e) {
+      return fail(`두리 본체에 닿지 못했어요: ${(e as Error).message}`)
+    }
+  }
+}
+
+const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
+
+const tabId = z.number().int().describe('탭 번호 (browser_open이 알려 준 [탭 N])')
+const ref = z
+  .string()
+  .regex(/^e\d+$/)
+  .describe('페이지를 읽었을 때 나온 표시 (예: e12)')
+
+export function registerBrowserTools(server: McpServer, client: BrowserClient) {
+  const tool = (
+    name: string,
+    title: string,
+    description: string,
+    // biome-ignore lint/suspicious/noExplicitAny: MCP SDK의 zod 입력 형식
+    inputSchema: Record<string, any>,
+    readOnly: boolean,
+  ) =>
+    server.registerTool(
+      `browser_${name}`,
+      { title, description, inputSchema, annotations: { readOnlyHint: readOnly, openWorldHint: true } },
+      async (args: Record<string, unknown>) => {
+        const r = await client(name, args)
+        return { content: r.content, ...(r.isError ? { isError: true } : {}) }
+      },
+    )
+
+  tool(
+    'open',
+    '새 탭 열기',
+    '사용자 Chrome의 "두리" 창에 새 탭을 열고 페이지를 글로 읽어 돌려준다. 평소 로그인이 그대로 쓰인다. 웹에서 무언가 찾거나 할 때 가장 먼저 쓴다.',
+    { url: z.string().describe('열 주소 (예: https://www.naver.com)') },
+    true,
+  )
+  tool(
+    'navigate',
+    '주소 이동',
+    '이미 연 두리 탭에서 다른 주소로 이동하고 페이지를 읽어 돌려준다.',
+    { tabId, url: z.string() },
+    true,
+  )
+  tool(
+    'read',
+    '페이지 읽기',
+    '탭의 지금 페이지를 글로 읽는다. 누를 수 있는 것은 [e12 버튼 "검색"]처럼 표시된다. 글이 잘렸으면 maxChars를 늘린다.',
+    { tabId, maxChars: z.number().int().min(1000).max(40000).optional() },
+    true,
+  )
+  tool(
+    'click',
+    '누르기',
+    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 결제·주문·보내기·삭제 같은 버튼은 두리가 막고 사용자에게 넘긴다.',
+    { tabId, ref },
+    false,
+  )
+  tool(
+    'type',
+    '입력하기',
+    '표시(ref)한 입력칸에 글자를 넣는다(원래 글자는 바뀐다). submit이 true면 Enter도 누른다. 비밀번호 칸에는 넣을 수 없다.',
+    { tabId, ref, text: z.string().max(2000), submit: z.boolean().optional() },
+    false,
+  )
+  tool(
+    'press',
+    '키 누르기',
+    'Enter, Tab, Escape, ArrowDown, PageDown 같은 키를 누른다.',
+    { tabId, key: z.string().max(20) },
+    false,
+  )
+  tool(
+    'scroll',
+    '스크롤',
+    '화면을 한 화면 위나 아래로 움직인다. 화면 캡처 전에 쓴다(페이지 읽기는 스크롤 없이 전체를 읽는다).',
+    { tabId, direction: z.enum(['up', 'down']) },
+    true,
+  )
+  tool(
+    'screenshot',
+    '화면 보기',
+    '탭의 보이는 화면을 그림으로 본다. 글로 읽어서 알 수 없을 때(그림·지도·표 모양)만 쓴다.',
+    { tabId },
+    true,
+  )
+  tool('back', '뒤로', '탭에서 뒤로 가기를 누르고 페이지를 읽어 돌려준다.', { tabId }, true)
+  tool('close', '탭 닫기', '다 쓴 두리 탭을 닫는다. 일이 끝나면 연 탭을 닫는다.', { tabId }, false)
+}

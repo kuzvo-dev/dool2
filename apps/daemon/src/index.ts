@@ -36,8 +36,10 @@ import {
   SettingsSchema,
 } from '@dool2/protocol'
 import { Store } from '@dool2/store'
+import { BrowserTools } from './browser-tools.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 
+export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 
 export interface DaemonOptions {
@@ -155,11 +157,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
   }
+  // 두리 도구 서버(MCP)는 에이전트가 띄우는 자식이라 화면용 토큰과 다른 토큰을 준다. 이 토큰은 도구 주소만 부를 수 있다 (T5)
+  const toolToken = randomBytes(32).toString('hex')
+  const mcp = dool2McpServer(opts.mcpServerScript)
   const threads = new ThreadService({
     store,
     runtimes,
     workspaceDir: paths.workspace,
-    mcpServers: [dool2McpServer(opts.mcpServerScript)],
+    mcpServers: [mcp],
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 
@@ -169,6 +174,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const browser = new BrowserBridge(paths.dataDir)
   await browser.listen()
   browser.on('status', (s) => events.emit('extension', s))
+  const browserTools = new BrowserTools(browser)
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
     await registerNativeHost({ dataDir: paths.dataDir, runtime: dool2BrowserHost(script), ...where }).catch(
@@ -225,11 +231,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
-    if (!authorized(req, token)) return json(res, 401, { error: '인증이 필요해요' })
     const url = new URL(req.url ?? '/', 'http://localhost')
     const parts = url.pathname.split('/').filter(Boolean) // ['api', ...]
-    if (parts[0] !== 'api') return json(res, 404, { error: '없는 주소예요' })
     const [, a, b, c, d] = parts
+
+    // 두리 도구 서버 전용 주소: 도구 토큰으로만 부를 수 있다
+    if (parts[0] === 'api' && a === 'tools') {
+      if (!authorized(req, toolToken)) return json(res, 401, { error: '인증이 필요해요' })
+      if (req.method === 'POST' && b === 'browser' && c && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        return json(res, 200, await browserTools.run(c, args && typeof args === 'object' ? args : {}))
+      }
+      return json(res, 404, { error: '없는 주소예요' })
+    }
+
+    if (!authorized(req, token)) return json(res, 401, { error: '인증이 필요해요' })
+    if (parts[0] !== 'api') return json(res, 404, { error: '없는 주소예요' })
 
     if (req.method === 'GET' && a === 'health') return json(res, 200, { ok: true, dataDir: paths.dataDir })
 
@@ -399,6 +416,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 이 PC 안에서만 받는다
     server.listen(opts.port ?? 0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port))
   })
+
+  // 이제 주소를 알았으니 도구 서버에 알려 준다 (ThreadService는 같은 객체를 쓴다)
+  mcp.env = { ...mcp.env, DOOL2_API: `http://127.0.0.1:${port}`, DOOL2_TOOL_TOKEN: toolToken }
 
   let closing: Promise<void> | undefined
   return {

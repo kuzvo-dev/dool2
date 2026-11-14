@@ -45,7 +45,8 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
     treeitem: '항목',
   }
   const clean = (s: string | null | undefined, max = 80) => {
-    const t = (s ?? '').replace(/\s+/g, ' ').trim()
+    // 큰따옴표는 표시 [e1 버튼 "이름"]의 경계라서 작은따옴표로 바꾼다
+    const t = (s ?? '').replace(/\s+/g, ' ').replaceAll('"', "'").trim()
     return t.length > max ? `${t.slice(0, max - 1)}…` : t
   }
 

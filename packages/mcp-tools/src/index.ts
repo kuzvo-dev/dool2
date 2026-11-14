@@ -1,13 +1,18 @@
-// 두리 MCP 도구. Claude Code·Codex가 자식 프로세스로 띄운다.
-// M0: 연결 확인용 도구만 있다. M1부터 브라우저·허락 도구가 붙고, 실제 실행은 dool2d에 IPC로 넘긴다
-// (docs/architecture.md 2장 — 브라우저 상태와 승인 게이트는 dool2d 한 곳에만 둔다).
+// 두리 MCP 도구. Claude Code·Codex·종량제 실행기가 자식 프로세스로 띄운다.
+// 실제 실행은 두리 본체(dool2d)에 넘긴다. 브라우저 상태와 승인 게이트는 본체 한 곳에만 둔다
+// (docs/architecture.md 2장).
 import { arch, platform } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { type BrowserClient, daemonClient, registerBrowserTools } from './browser.js'
+
+export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
 
 export const SERVER_NAME = 'dool2'
 
 export interface ToolContext {
   now?: () => Date
+  /** 브라우저 도구를 실행할 곳 (기본: 환경 변수의 두리 본체) */
+  browser?: BrowserClient
 }
 
 export function statusText(ctx: ToolContext = {}) {
@@ -39,5 +44,6 @@ export function createServer(ctx: ToolContext = {}) {
     },
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
+  registerBrowserTools(server, ctx.browser ?? daemonClient())
   return server
 }
