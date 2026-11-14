@@ -4,8 +4,14 @@ import electron = require('electron')
 const { contextBridge, ipcRenderer } = electron
 
 contextBridge.exposeInMainWorld('dool2', {
-  config: (): Promise<{ url: string; token: string; smokeOpen?: string; smokeSetup?: string }> =>
-    ipcRenderer.invoke('dool2:config'),
+  config: (): Promise<{
+    url: string
+    token: string
+    smokeOpen?: string
+    smokeSetup?: string
+    smokeAsk?: string
+    smokeAskWait?: number
+  }> => ipcRenderer.invoke('dool2:config'),
   ready: (summary: string) => ipcRenderer.send('dool2:ready', summary),
   /** Chrome에 올릴 두리 확장 폴더 */
   extensionDir: (): Promise<string> => ipcRenderer.invoke('dool2:extension-dir'),

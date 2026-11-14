@@ -170,7 +170,7 @@ async function prepareExtension(dataDir: string): Promise<string> {
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
     ipcMain.once('dool2:ready', (_e, summary: string) => resolve(summary))
-    setTimeout(() => resolve('timeout'), 20_000)
+    setTimeout(() => resolve('timeout'), process.env.DOOL2_SMOKE_ASK ? 300_000 : 20_000)
   })
   const out = process.env.DOOL2_SMOKE_OUT ?? join(here, '..', 'out')
   await mkdir(out, { recursive: true })
@@ -203,6 +203,10 @@ app.whenReady().then(async () => {
     token: d.token,
     ...(SMOKE && process.env.DOOL2_SMOKE_OPEN ? { smokeOpen: process.env.DOOL2_SMOKE_OPEN } : {}),
     ...(SMOKE && process.env.DOOL2_SMOKE_SETUP ? { smokeSetup: process.env.DOOL2_SMOKE_SETUP } : {}),
+    // 점검: 이 부탁을 보내고, DOOL2_SMOKE_ASK_WAIT(밀리초)가 있으면 그만큼 뒤 일하는 중인 화면을 캡처한다
+    ...(SMOKE && process.env.DOOL2_SMOKE_ASK
+      ? { smokeAsk: process.env.DOOL2_SMOKE_ASK, smokeAskWait: Number(process.env.DOOL2_SMOKE_ASK_WAIT ?? 0) }
+      : {}),
   }))
 
   if (!SMOKE) createTray()

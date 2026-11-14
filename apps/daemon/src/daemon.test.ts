@@ -92,6 +92,12 @@ describe('dool2d 로컬 API', () => {
       messages: { role: string; text: string }[]
     }
     expect(detail.messages.map((m) => m.text)).toEqual(['안녕', '받았어요: 안녕'])
+    // 홈의 맡긴 일 카드: 목록에 마지막 답 미리보기가 같이 온다 (답하는 중이 아니면 busy는 없다)
+    const list = (await (await api('/api/threads')).json()) as {
+      threads: { id: string; preview?: string; busy?: boolean }[]
+    }
+    expect(list.threads[0]).toMatchObject({ id: thread.id, preview: '받았어요: 안녕' })
+    expect(list.threads[0]?.busy).toBeUndefined()
     expect(rt.last?.mcpServers[0]?.name).toBe('dool2')
     expect(rt.last?.cwd).toBe(join(dir as string, 'workspace'))
   })

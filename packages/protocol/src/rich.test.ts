@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { previewText } from './index.js'
 import { richBlocks } from './rich.js'
 
 describe('richBlocks', () => {
@@ -31,5 +32,12 @@ describe('richBlocks', () => {
 
   it('쓰는 중인 답(끝이 잘린 **)도 깨지지 않는다', () => {
     expect(richBlocks('**토요')).toEqual([{ type: 'p', lines: [[{ text: '**토요' }]] }])
+  })
+})
+
+describe('previewText', () => {
+  it('마크다운 기호를 빼고 한 줄로 줄인다', () => {
+    expect(previewText('**토요일**은 비가 와요.\n\n- 우산\n1. 우비')).toBe('토요일은 비가 와요. 우산 우비')
+    expect(previewText('가'.repeat(200), 10)).toBe(`${'가'.repeat(9)}…`)
   })
 })

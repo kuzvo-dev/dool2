@@ -24,6 +24,7 @@ import {
   type AgentId,
   AgentIdSchema,
   ApprovalDecisionSchema,
+  type ApprovalView,
   type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
@@ -35,10 +36,12 @@ import {
   PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
+  previewText,
   SendMessageRequestSchema,
   type Settings,
   SettingsPatchSchema,
   SettingsSchema,
+  type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { Store } from '@dool2/store'
@@ -231,7 +234,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           agents,
           ...(def ? { defaultAgent: def } : {}),
           extension: browser.status.connected,
-          threads: store.listThreads().slice(0, 30),
+          threads: threadSummaries(30),
           approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
         }
       },
@@ -314,6 +317,54 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** 지금 답하는 중인 대화 (승인 요청이 어느 대화에서 나왔는지 알려고) */
   const activeThreads = new Set<string>()
   const approvalThread = new Map<string, string>()
+  /**
+   * 대화 목록 + 홈 화면용 정보: 답하는 중인지, 마지막 답 미리보기(앞의 몇 개만), 기다리는 승인.
+   * PC 앱과 폰이 같은 걸 받는다
+   */
+  function threadSummaries(limit = 50, previews = 6): ThreadSummary[] {
+    const waiting = new Map<string, ApprovalView>()
+    for (const ap of browserTools.approvals.list()) {
+      const t = ap.status === 'pending' ? approvalThread.get(ap.id) : undefined
+      if (t) waiting.set(t, ap)
+    }
+    return store.listThreads(limit).map((t, i) => {
+      const out: ThreadSummary = {
+        id: t.id,
+        agent: t.agent,
+        title: t.title,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+      }
+      if (activeThreads.has(t.id)) out.busy = true
+      if (i < previews) {
+        const messages = store.listMessages(t.id)
+        const last = messages.filter((m) => m.role === 'assistant').at(-1)
+        if (last) out.preview = previewText(last.text)
+        // 승인 기록(tool 메시지)으로도 이 대화의 승인을 찾는다 (답하던 대화가 여럿이었을 때)
+        if (!waiting.has(t.id)) {
+          const recs = messages.filter((m) => m.role === 'tool').map((m) => m.text)
+          const pending = browserTools.approvals.list().filter((ap) => ap.status === 'pending')
+          for (const raw of recs) {
+            try {
+              const rec = JSON.parse(raw) as { kind?: string; tabId?: number; ref?: string }
+              const ap =
+                rec.kind === 'approval' && pending.find((x) => x.tabId === rec.tabId && x.ref === rec.ref)
+              if (ap) waiting.set(t.id, ap)
+            } catch {}
+          }
+        }
+      }
+      const ap = waiting.get(t.id)
+      if (ap)
+        out.approval = {
+          id: ap.id,
+          what: ap.what,
+          label: ap.label,
+          ...(ap.amount ? { amount: ap.amount } : {}),
+        }
+      return out
+    })
+  }
   let claudeInstall: ClaudeInstall | undefined
   let chromeInstall: ChromeInstall | undefined
   let opencodeInstall: OpenCodeInstall | undefined
@@ -577,7 +628,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
 
     if (a === 'threads' && !b) {
-      if (req.method === 'GET') return json(res, 200, { threads: store.listThreads() })
+      if (req.method === 'GET') return json(res, 200, { threads: threadSummaries() })
       if (req.method === 'POST') {
         const body = CreateThreadRequestSchema.parse(await readJson(req))
         if (!runtimes[body.agent]) return json(res, 400, { error: '지원하지 않는 AI예요' })
