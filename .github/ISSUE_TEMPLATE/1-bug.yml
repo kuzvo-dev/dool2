@@ -1,0 +1,57 @@
+name: 버그 신고
+description: 두리가 이상하게 동작하거나 멈췄어요
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        신고해 주셔서 고마워요. **계정, 전화번호, 주소, 실제 대화 내용 같은 개인정보는 지우고** 올려 주세요.
+        보안 문제라면 이 양식 대신 [비공개 신고](https://github.com/kuzvo-dev/dool2/security/advisories/new)를 써 주세요.
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요?
+      description: 무엇을 하려고 했고, 실제로 어떻게 됐는지 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 다시 겪으려면
+      description: 같은 문제를 다시 보려면 어떻게 해야 하나요?
+      placeholder: |
+        1. 두리를 켜요
+        2. "…"라고 부탁해요
+        3. …
+  - type: textarea
+    id: expected
+    attributes:
+      label: 원래 기대한 동작
+  - type: dropdown
+    id: os
+    attributes:
+      label: 운영체제
+      options:
+        - macOS
+        - Windows
+        - 기타
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: 사용한 AI
+      options:
+        - Claude Code
+        - Codex
+        - 상관없음 / 모름
+  - type: input
+    id: version
+    attributes:
+      label: 두리 버전 또는 커밋
+      placeholder: 예) v0.1.0, 또는 main의 커밋 해시
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그나 화면 캡처
+      description: 있으면 붙여 주세요. 개인정보는 가려 주세요.
