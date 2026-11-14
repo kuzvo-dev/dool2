@@ -409,6 +409,7 @@ const RISK_LABEL: Record<ApprovalView['kind'], string> = {
   money: '돈이 나가는 일',
   contact: '다른 사람에게 보내는 일',
   irreversible: '되돌릴 수 없는 일',
+  app: '처음 다루는 PC 앱',
 }
 
 /**
@@ -495,10 +496,10 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     }
     row('무엇을', v.what)
     row('어디서', v.where)
-    row('주소', host, 'host')
+    row('주소', v.url.startsWith('app:') ? '' : host, 'host')
     row('얼마', v.amount, 'money')
     row('취소 조건', v.cancel)
-    row('누를 버튼', `"${v.label}"`)
+    if (v.kind !== 'app') row('누를 버튼', `"${v.label}"`)
     body.replaceChildren(rows)
     if (v.result) {
       const p = document.createElement('p')
@@ -522,7 +523,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     const yes = document.createElement('button')
     yes.type = 'button'
     yes.className = 'btn'
-    yes.textContent = `승인하고 "${v.label}" 누르기`
+    yes.textContent = v.kind === 'app' ? '허용하기' : `승인하고 "${v.label}" 누르기`
     const decide = async (decision: 'approve' | 'reject') => {
       yes.disabled = true
       no.disabled = true

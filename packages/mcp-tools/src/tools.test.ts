@@ -34,6 +34,16 @@ describe('두리 MCP 도구', () => {
       'browser_request_approval',
       'browser_handoff',
       'browser_close',
+      'screen_status',
+      'screen_apps',
+      'screen_open',
+      'screen_read',
+      'screen_click',
+      'screen_type',
+      'screen_key',
+      'screen_screenshot',
+      'screen_request_app',
+      'screen_request_approval',
     ])
 
     const res = await client.callTool({ name: 'status', arguments: {} })

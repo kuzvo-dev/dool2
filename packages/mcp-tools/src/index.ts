@@ -4,6 +4,7 @@
 import { arch, platform } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type BrowserClient, daemonClient, registerBrowserTools, registerSkillTools } from './browser.js'
+import { registerScreenTools } from './screen.js'
 
 export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
 
@@ -15,6 +16,8 @@ export interface ToolContext {
   browser?: BrowserClient
   /** 스킬 도구를 실행할 곳 */
   skills?: BrowserClient
+  /** PC 화면 제어 도구를 실행할 곳 */
+  screen?: BrowserClient
 }
 
 export function statusText(ctx: ToolContext = {}) {
@@ -48,5 +51,6 @@ export function createServer(ctx: ToolContext = {}) {
   )
   registerSkillTools(server, ctx.skills ?? daemonClient(process.env, 'skill'))
   registerBrowserTools(server, ctx.browser ?? daemonClient())
+  registerScreenTools(server, ctx.screen ?? daemonClient(process.env, 'screen'))
   return server
 }

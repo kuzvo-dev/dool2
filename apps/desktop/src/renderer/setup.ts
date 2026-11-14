@@ -11,6 +11,7 @@ import type {
   PairStatus,
   PaygAccount,
   PaygProvider,
+  ScreenControlStatus,
   Settings,
   VaultEntry,
 } from '@dool2/protocol'
@@ -330,7 +331,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           opts.loadChrome(),
           opts.loadExtension(),
         ])
-        if (step === 'settings') await Promise.all([loadVault(), loadLink()])
+        if (step === 'settings') await Promise.all([loadVault(), loadLink(), loadScreen()])
       }
       render()
     }
@@ -557,6 +558,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           card.append(el('h2', 'over', '마지막 확인'), gate)
           card.append(el('h2', 'over', '폰 연결'), phoneBlock())
           card.append(el('h2', 'over', '두리 금고'), vaultBlock())
+          if (screen?.available) card.append(el('h2', 'over', 'PC 앱 조작'), screenBlock())
           const ai = el('p', 'setup-hint')
           ai.append(
             `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
@@ -755,6 +757,87 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           pollPair()
         }),
       )
+      return box
+    }
+
+    // ── PC 앱 조작 (M4): 맥 권한과 허용한 앱 ──
+    let screen: ScreenControlStatus | undefined
+    const loadScreen = async () => {
+      screen = (await opts.api<{ screen: ScreenControlStatus }>('/api/screen').catch(() => undefined))?.screen
+    }
+    /** 맥 시스템 설정의 해당 화면 (사용자가 직접 켜야 한다) */
+    const PANES = {
+      accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+      screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    }
+    const screenBlock = () => {
+      const box = el('div', 'vault')
+      box.append(
+        el(
+          'p',
+          'setup-hint',
+          '카카오톡 PC처럼 앱만 있는 일을 두리가 대신 해요. 허용한 앱만 다루고, 메시지 보내기·결제·삭제는 꼭 승인을 받아요. 화면이 잠겨 있으면 하지 않아요.',
+        ),
+      )
+      const s = screen
+      if (!s) return box
+      const perms = el('ul', 'checks toggles')
+      const permRow = (label: string, detail: string, on: boolean | undefined, pane: string) => {
+        const li = el('li', on ? 'ok' : 'todo')
+        const text = el('div', 'text')
+        text.append(el('strong', undefined, label), el('span', undefined, detail))
+        li.append(el('span', 'mark'), text)
+        if (!on)
+          li.append(
+            button('btn-small', '권한 켜기', async () => {
+              // 시스템 권한 창을 띄우고, 설정 화면도 연다. 켠 뒤에는 두리를 다시 켜야 할 수 있다
+              await opts.api('/api/screen/permissions', { method: 'POST' }).catch(() => {})
+              window.open(pane)
+              setTimeout(() => void loadScreen().then(() => render()), 4000)
+            }),
+          )
+        return li
+      }
+      perms.append(
+        permRow(
+          '손쉬운 사용',
+          s.accessibility ? '켜져 있어요' : '앱 화면을 읽고 누르는 데 필요해요. 설정에서 "두리"를 켜 주세요',
+          s.accessibility,
+          PANES.accessibility,
+        ),
+        permRow(
+          '화면 기록',
+          s.screenRecording ? '켜져 있어요' : '앱 화면을 그림으로 볼 때(승인 카드 캡처) 필요해요',
+          s.screenRecording,
+          PANES.screen,
+        ),
+      )
+      box.append(perms)
+      if (s.allowed.length) {
+        const list = el('ul', 'vault-list')
+        for (const id of s.allowed) {
+          const li = el('li')
+          const text = el('div', 'text')
+          text.append(el('strong', undefined, id), el('span', undefined, '두리가 조작할 수 있어요'))
+          li.append(
+            text,
+            button('btn-link', '허용 끄기', async () => {
+              current = await opts
+                .api<{ settings: Settings }>('/api/settings', {
+                  method: 'PATCH',
+                  body: JSON.stringify({ allowedApps: s.allowed.filter((x) => x !== id) }),
+                })
+                .then((r) => r.settings)
+                .catch(() => current)
+              await loadScreen()
+              render()
+            }),
+          )
+          list.append(li)
+        }
+        box.append(list)
+      } else
+        box.append(el('p', 'setup-hint', '아직 허용한 앱이 없어요. 두리가 처음 다루는 앱은 그때 물어볼게요.'))
       return box
     }
 

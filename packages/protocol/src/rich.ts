@@ -71,6 +71,16 @@ const TOOL_LABEL: Record<string, string> = {
   browser_close: '탭 닫는',
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',
+  screen_status: 'PC 상태 확인하는',
+  screen_apps: '앱 찾는',
+  screen_open: '앱 여는',
+  screen_read: '앱 화면 읽는',
+  screen_click: '앱에서 누르는',
+  screen_type: '앱에 입력하는',
+  screen_key: '앱에서 키 누르는',
+  screen_screenshot: '앱 화면 보는',
+  screen_request_app: '앱 허용 요청하는',
+  screen_request_approval: '승인 요청하는',
 }
 export function toolLabel(name: string): string {
   return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'

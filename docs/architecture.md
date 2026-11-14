@@ -332,7 +332,7 @@ AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드�
 
 ## 5.2 PC 화면 제어 (데스크톱 앱)
 
-**구성**: `packages/hands`에 OS별 작은 도우미 프로그램(`dool2-hands`)을 둔다. Rust로 만들고 맥·윈도우용으로 서명해서 앱에 넣는다. dool2d가 이 도우미를 부른다.
+**구성**: OS별 작은 도우미 프로그램(`dool2-hands`)을 둔다. 맥은 Swift(`apps/hands-mac`), 윈도우는 UI Automation 도우미를 따로 만든다([ADR 0013](decisions/0013-hands-mac-swift.md)). 서명해서 앱에 넣고, dool2d가 자식 프로세스로 띄워 한 줄 JSON으로 부른다.
 
 | 기능 | 맥 | 윈도우 |
 |---|---|---|
@@ -341,7 +341,7 @@ AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드�
 | 마우스·키보드 | CGEvent | SendInput |
 | 앱 열기·창 정리 | NSWorkspace | Shell / Win32 |
 
-**도구**: `screen_snapshot`(접근성 트리 + 요소 번호), `screen_screenshot`(축소한 이미지), `screen_click`(요소 번호나 좌표), `screen_type`(한글은 붙여 넣기 방식), `screen_key`, `app_open`, `app_list`.
+**도구**: `screen_status`, `screen_apps`(켜진 앱·설치된 앱 찾기), `screen_open`, `screen_read`(접근성 트리 + 요소 번호), `screen_click`, `screen_type`(한글은 붙여 넣기 방식), `screen_key`, `screen_screenshot`(축소한 이미지), `screen_request_app`(처음 쓰는 앱 허용 요청), `screen_request_approval`(보내기·결제·삭제·메신저 Enter).
 - 브라우저처럼 **UI 구조를 먼저 읽고**, 구조가 안 잡히는 화면만 스크린샷과 좌표로 처리한다.
 - 접근성 트리를 쓰는 오픈소스 구현(Cua Driver, Windows-MCP, open-codex-computer-use 등)을 참고한다. 그대로 가져다 쓸 수 있는지는 라이선스를 확인한 뒤 결정한다.
 

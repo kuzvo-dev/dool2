@@ -57,6 +57,13 @@ async function createWindow(show: boolean) {
   // 화면 안의 링크는 기본 브라우저로 연다
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
+    // 맥 시스템 설정의 개인정보 보호 화면만 (PC 앱 조작 권한)
+    else if (
+      /^x-apple\.systempreferences:com\.apple\.preference\.security\?Privacy_(?:Accessibility|ScreenCapture)$/.test(
+        url,
+      )
+    )
+      void shell.openExternal(url)
     return { action: 'deny' }
   })
   w.webContents.on('will-navigate', (e) => e.preventDefault())
@@ -130,6 +137,8 @@ function packagedPaths() {
   return {
     mcpServerScript: join(here, 'mcp-server.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`),
     skillsDir: join(process.resourcesPath, 'skills'),
+    // PC 화면 제어 도우미 (맥만). 앱이 띄우므로 맥 권한은 "두리" 앱 이름으로 받는다
+    ...(process.platform === 'darwin' ? { hands: join(process.resourcesPath, 'hands', 'dool2-hands') } : {}),
   }
 }
 

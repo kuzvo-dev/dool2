@@ -128,7 +128,27 @@ export const SettingsSchema = z.object({
   relay: z.string().url().max(200).optional(),
   /** 종량제 모드에서 고른 제공자·모델 (API 키는 여기 두지 않고 OS 키체인에) */
   payg: z.object({ provider: z.string(), model: z.string() }).optional(),
+  /** PC 화면 제어로 다뤄도 된다고 허용한 앱 (맥 번들 id) */
+  allowedApps: z
+    .array(
+      z
+        .string()
+        .regex(/^[\w.-]+$/)
+        .max(200),
+    )
+    .max(100)
+    .optional(),
 })
+
+/** PC 화면 제어 상태 (설정 화면) */
+export interface ScreenControlStatus {
+  /** 이 PC에서 쓸 수 있는지 (도우미가 있는지, 지금은 맥만) */
+  available: boolean
+  accessibility?: boolean
+  screenRecording?: boolean
+  locked?: boolean
+  allowed: string[]
+}
 export type Settings = z.infer<typeof SettingsSchema>
 
 export const DEFAULT_SETTINGS: Settings = { setupDone: false }
@@ -295,7 +315,8 @@ export interface ApprovalView {
   /** 누를 버튼의 글자 (페이지에서 읽은 그대로) */
   label: string
   url: string
-  kind: 'money' | 'contact' | 'irreversible'
+  /** app: 처음 다루는 PC 앱을 두리가 조작해도 되는지 */
+  kind: 'money' | 'contact' | 'irreversible' | 'app'
   reason: string
   /** 아래는 AI가 적은 설명. 틀릴 수 있어서 화면 캡처와 함께 보여 준다 */
   what: string

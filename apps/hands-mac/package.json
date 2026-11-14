@@ -1,0 +1,10 @@
+{
+  "name": "@dool2/hands-mac",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "두리 PC 화면 제어 도우미 (맥, Swift): 접근성 트리, 누르기·입력, 화면 캡처",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  }
+}

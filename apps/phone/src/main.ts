@@ -953,6 +953,7 @@ const RISK: Record<ApprovalView['kind'], string> = {
   money: '돈이 나가는 일',
   contact: '다른 사람에게 보내는 일',
   irreversible: '되돌릴 수 없는 일',
+  app: '처음 다루는 PC 앱',
 }
 
 function approvalView(id: string) {
@@ -976,10 +977,10 @@ function approvalView(id: string) {
     v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
   row('무엇을', a.what)
   row('어디서', a.where)
-  row('주소', host, 'host')
+  row('주소', a.url.startsWith('app:') ? '' : host, 'host')
   row('얼마', a.amount, 'money')
   row('취소 조건', a.cancel)
-  row('누를 버튼', `"${a.label}"`)
+  if (a.kind !== 'app') row('누를 버튼', `"${a.label}"`)
   box.append(
     h(
       'div',
@@ -1038,7 +1039,7 @@ function approvalView(id: string) {
       h('button', { class: 'ghost', text: '거절', onclick: () => void decide('reject') }),
       h('button', {
         class: 'primary',
-        text: `승인하고 "${a.label}" 누르기`,
+        text: a.kind === 'app' ? '허용하기' : `승인하고 "${a.label}" 누르기`,
         onclick: () => void decide('approve'),
       }),
     ),
