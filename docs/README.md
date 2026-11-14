@@ -8,6 +8,8 @@
 |---|---|
 | [아키텍처](architecture.md) | 전체 구조, 에이전트 연동, 승인 게이트, 브라우저·PC 제어, 폰 연결, 설치, 로드맵, 위험 |
 | [페르소나](persona.md) | 두리의 성격과 말투. 사용자에게 보이는 모든 문구의 기준 |
+| [결정 기록 (ADR)](decisions/README.md) | 구조에 관한 결정과 그 이유 |
+| [위협 모델](security/threat-model.md) | 무엇을 지키고, 무엇을 막고, 무엇은 못 막는지 |
 
 ## 운영
 
@@ -16,6 +18,10 @@
 | [오픈소스 운영](open-source.md) | 공개 범위, 라이선스, 수익 구조, 거버넌스, 스킬 기여 |
 | [상표 정책](../TRADEMARKS.md) | "두리" 이름과 로고를 쓸 수 있는 경우 |
 | [보안 신고](../SECURITY.md) | 취약점 비공개 신고 방법 |
+
+## 패키지
+
+각 패키지 폴더의 README에 역할과 주요 API가 있어요: [desktop](../apps/desktop/README.md) · [daemon](../apps/daemon/README.md) · [protocol](../packages/protocol/README.md) · [engine](../packages/engine/README.md) · [agent-claude](../packages/agent-claude/README.md) · [agent-codex](../packages/agent-codex/README.md) · [mcp-tools](../packages/mcp-tools/README.md) · [store](../packages/store/README.md)
 
 ## 기여
 
