@@ -5,7 +5,18 @@
 
 import { type AgentRuntime, findExecutable, runOnce, spawnLines, type TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
+import { ClaudeInstall } from './install.js'
 import { ClaudeLogin, type ClaudeLoginOptions } from './login.js'
+
+export {
+  CLAUDE_DOWNLOAD_BASE,
+  ClaudeInstall,
+  claudePlatform,
+  type InstallClaudeOptions,
+  InstallError,
+  installClaudeCode,
+} from './install.js'
+
 import { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
 export { ClaudeLogin, type ClaudeLoginOptions, type LoginChild, loginEnv, type SpawnLogin } from './login.js'
@@ -93,6 +104,17 @@ export class ClaudeRuntime implements AgentRuntime {
     const bin = await this.bin()
     if (!bin) return undefined
     return new ClaudeLogin({ bin, isLoggedIn: async () => (await this.detect()).loggedIn, ...opts })
+  }
+
+  /** 설치 버튼용 세션을 만든다. 설치가 끝나면 실행 파일을 다시 찾는다 */
+  createInstall(downloadDir: string): ClaudeInstall {
+    return new ClaudeInstall({
+      downloadDir,
+      verify: async () => {
+        this.resolvedPath = this.opts.binPath ?? (await findExecutable('claude'))
+        return Boolean(this.resolvedPath)
+      },
+    })
   }
 
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {

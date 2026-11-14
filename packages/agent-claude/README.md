@@ -8,6 +8,8 @@ Claude Code 어댑터예요. 사용자가 설치하고 로그인한 공식 `clau
 
 - `ClaudeLogin`: 로그인 버튼. 공식 `claude auth login --claudeai`를 띄워 로그인 주소를 찾고, 사용자가 붙여 넣은 코드를 그대로 넘겨요. 브라우저에서 로그인이 끝나면 코드 없이도 `claude auth status`로 알아채요.
 
+- `installClaudeCode()`, `ClaudeInstall`: 설치 버튼. 공식 설치 스크립트와 같은 순서로 공식 배포 서버에서 받아 SHA-256을 확인하고, 공식 `claude install`로 마무리해요.
+
 **두리는 Claude 로그인 정보나 토큰을 읽거나 저장하지 않아요.** 이 원칙을 바꾸는 변경은 받지 않아요.
 
 테스트는 실제 출력을 개인정보 없이 저장한 [`fixtures/`](fixtures)로 해요.

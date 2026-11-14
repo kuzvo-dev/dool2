@@ -18,6 +18,7 @@ pnpm dev:daemon   # 주소와 토큰을 출력해요
 | POST                | `/api/agents/codex/login`       | ChatGPT 로그인 (끝날 때까지 기다림)                   |
 | GET / POST / DELETE | `/api/agents/claude/login`      | Claude 로그인 상태 / 시작(로그인 주소) / 취소         |
 | POST                | `/api/agents/claude/login/code` | 브라우저에 나온 코드를 공식 로그인에 넘김             |
+| GET / POST / DELETE | `/api/agents/claude/install`    | Claude Code 설치 상태(단계·진행률) / 시작 / 취소      |
 | GET / PATCH         | `/api/settings`                 | 설정 읽기 / 바꿀 항목만 저장                          |
 | GET / POST          | `/api/threads`                  | 대화 목록 / 새 대화                                   |
 | GET                 | `/api/threads/:id`              | 대화와 메시지                                         |

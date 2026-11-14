@@ -1,5 +1,12 @@
 // 첫 실행 마법사 화면: 인사 → 어떤 AI 구독을 쓰세요? → 준비 상태 확인
-import type { AgentId, AgentStatus, AiChoice, ClaudeLoginStatus, Settings } from '@dool2/protocol'
+import type {
+  AgentId,
+  AgentStatus,
+  AiChoice,
+  ClaudeLoginStatus,
+  InstallStatus,
+  Settings,
+} from '@dool2/protocol'
 import {
   CHOICES,
   type CheckAction,
@@ -55,6 +62,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let agents: AgentStatus[] = []
   let note = ''
   let login: ClaudeLoginStatus = { state: 'idle' }
+  let install: InstallStatus = { state: 'idle' }
+  let installTimer: ReturnType<typeof setTimeout> | undefined
   let codeDraft = ''
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,6 +103,40 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }, 1_500)
     }
 
+    // 설치 진행률을 주기적으로 받아 온다
+    const pollInstall = () => {
+      if (installTimer) clearTimeout(installTimer)
+      if (install.state !== 'running') return
+      installTimer = setTimeout(async () => {
+        const r = await opts
+          .api<{ install: InstallStatus }>('/api/agents/claude/install')
+          .catch(() => undefined)
+        if (r) {
+          const changed = JSON.stringify(r.install) !== JSON.stringify(install)
+          install = r.install
+          if (install.state === 'done') agents = await opts.loadAgents()
+          if (changed) render()
+        }
+        pollInstall()
+      }, 700)
+    }
+
+    const startInstall = async () => {
+      install = { state: 'running', phase: 'prepare' }
+      render()
+      const r = await opts
+        .api<{ install: InstallStatus }>('/api/agents/claude/install', { method: 'POST' })
+        .catch((err: Error) => ({ install: { state: 'failed', message: err.message } as InstallStatus }))
+      install = r.install
+      render()
+      pollInstall()
+      // 내려받기가 조금 진행될 때까지만 기다린다 (점검 캡처가 진행 중인 화면을 찍게)
+      const early = () =>
+        install.state === 'running' &&
+        (install.phase === 'prepare' || (install.phase === 'download' && (install.percent ?? 0) < 10))
+      for (let i = 0; i < 80 && early(); i++) await new Promise((res) => setTimeout(res, 250))
+    }
+
     const startClaudeLogin = async () => {
       login = { state: 'waiting' }
       codeDraft = ''
@@ -124,6 +167,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
     const finish = async () => {
       stopLogin()
+      if (installTimer) clearTimeout(installTimer)
       const defaultAgent = choice ? pickDefault(choice, agents) : undefined
       const { settings } = await opts.api<{ settings: Settings }>('/api/settings', {
         method: 'PATCH',
@@ -156,7 +200,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         await startClaudeLogin()
         return
       } else {
-        note = 'Claude Code 자동 설치는 곧 붙어요. 그전까지는 claude.com에서 설치해 주세요.'
+        await startInstall()
+        return
       }
       render()
     }
@@ -252,11 +297,16 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
                 b.textContent = '로그인 중…'
                 b.disabled = true
               }
+              if (action === 'claude-install' && install.state === 'running') {
+                b.textContent = '설치 중…'
+                b.disabled = true
+              }
               li.append(b)
             }
             list.append(li)
           }
           card.append(list)
+          if (install.state === 'running' || install.state === 'failed') card.append(installPanel())
           if (login.state === 'waiting' || login.state === 'failed') card.append(loginPanel())
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
@@ -281,6 +331,45 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
+    }
+
+    /** Claude Code 설치 진행 */
+    const installPanel = () => {
+      const panel = el('div', 'login-panel')
+      if (install.state === 'failed') {
+        panel.append(
+          el('strong', undefined, 'Claude Code를 설치하지 못했어요'),
+          el('p', undefined, install.message),
+        )
+        const row = el('div', 'login-actions')
+        row.append(
+          button('btn-small', '다시 시도', () => void startInstall()),
+          button('btn-link', '직접 설치하는 방법', () =>
+            window.open('https://code.claude.com/docs/en/setup'),
+          ),
+        )
+        panel.append(row)
+        return panel
+      }
+      if (install.state !== 'running') return panel
+      const label: Record<string, string> = {
+        prepare: '설치를 준비하는 중이에요',
+        download: `내려받는 중이에요${install.percent !== undefined ? ` · ${install.percent}%` : ''}`,
+        verify: '공식 파일이 맞는지 확인하는 중이에요',
+        setup: '설치를 마무리하는 중이에요',
+      }
+      panel.append(
+        el('strong', undefined, 'Claude Code를 설치하고 있어요'),
+        el('p', undefined, label[install.phase] ?? ''),
+      )
+      const bar = el('div', 'progress')
+      const fill = el('span', 'progress-fill')
+      const pct =
+        install.phase === 'download' ? (install.percent ?? 0) : install.phase === 'prepare' ? 0 : 100
+      fill.style.width = `${Math.max(3, pct)}%`
+      bar.append(fill)
+      panel.append(bar, el('p', 'cap', 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.'))
+      return panel
     }
 
     /** Claude 로그인 안내: 브라우저에서 로그인하거나, 나온 코드를 붙여 넣는다 */

@@ -113,6 +113,17 @@ export type ClaudeLoginStatus =
   | { state: 'done' }
   | { state: 'failed'; message: string }
 
+// ── 부품 설치 (Claude Code, 나중에 Chrome) ─────────────────────────
+
+export type InstallPhase = 'prepare' | 'download' | 'verify' | 'setup'
+
+export type InstallStatus =
+  | { state: 'idle' }
+  /** percent: 내려받기 진행률(0~100) */
+  | { state: 'running'; phase: InstallPhase; percent?: number }
+  | { state: 'done'; version?: string }
+  | { state: 'failed'; message: string }
+
 export const ClaudeLoginCodeSchema = z.object({
   code: z.string().trim().min(1).max(2_000),
 })
