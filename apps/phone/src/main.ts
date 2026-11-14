@@ -78,6 +78,33 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
+/** 선 아이콘 (24 격자). 화면 글자 대신 쓴다 */
+const ICON: Record<'back' | 'send' | 'chevron' | 'bell', string> = {
+  back: 'M15 18l-6-6 6-6',
+  send: 'M12 19V5M6 11l6-6 6 6',
+  chevron: 'M9 6l6 6-6 6',
+  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
+}
+function icon(name: keyof typeof ICON): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('class', 'i')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(ns, 'path')
+  path.setAttribute('d', ICON[name])
+  svg.append(path)
+  return svg
+}
+
+/** 오늘이면 "오전 10:03", 아니면 "11. 14." */
+function shortTime(iso: string) {
+  const d = new Date(iso)
+  return new Date().toDateString() === d.toDateString()
+    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+}
+
 /** **굵게**만 살린다. 나머지는 글자 그대로 */
 function rich(text: string): DocumentFragment {
   const f = document.createDocumentFragment()
@@ -316,9 +343,15 @@ function header(title: string, back?: () => void) {
   return h(
     'header',
     { class: 'bar' },
-    back ? h('button', { class: 'back', text: '‹', onclick: back }) : h('span', { class: 'mark' }),
+    back ? backButton(back) : h('span', { class: 'face' }),
     h('div', { class: 'bar-title' }, h('strong', { text: title }), statusLine()),
   )
+}
+
+function backButton(back: () => void) {
+  const b = h('button', { class: 'back', onclick: back }, icon('back'))
+  b.setAttribute('aria-label', '뒤로')
+  return b
 }
 
 function statusLine() {
@@ -333,7 +366,7 @@ function introView() {
   return h(
     'section',
     { class: 'center' },
-    h('div', { class: 'logo' }),
+    h('div', { class: 'face big' }),
     h('h1', { text: '두리' }),
     h('p', { text: '내 컴퓨터의 두리에게 폰으로 부탁해요.' }),
     h(
@@ -396,8 +429,13 @@ function homeView() {
       h(
         'button',
         { class: 'approve-banner', onclick: () => go({ name: 'approval', id: a.id }) },
-        h('strong', { text: '🔐 승인을 기다려요' }),
-        h('span', { text: `${a.what}${a.amount ? ` · ${a.amount}` : ''}` }),
+        h(
+          'span',
+          { class: 'text' },
+          h('strong', { text: '승인을 기다려요' }),
+          h('span', { text: `${a.what}${a.amount ? ` · ${a.amount}` : ''}` }),
+        ),
+        icon('chevron'),
       ),
     )
   // 알림은 사용자가 눌러서 켤 때만 묻는다 (아무 데나 눌렀다고 권한 창을 띄우지 않는다)
@@ -409,8 +447,14 @@ function homeView() {
           class: 'notify-ask',
           onclick: () => void Notification.requestPermission().then(() => render()),
         },
-        h('strong', { text: '알림 켜기' }),
-        h('span', { text: '승인할 일이 생기면 알려 드릴게요' }),
+        icon('bell'),
+        h(
+          'span',
+          { class: 'text' },
+          h('strong', { text: '알림 켜기' }),
+          h('span', { text: '승인할 일이 생기면 알려 드릴게요' }),
+        ),
+        icon('chevron'),
       ),
     )
   box.append(h('h2', { class: 'over', text: '대화' }))
@@ -433,15 +477,8 @@ function homeView() {
           },
           h('span', { class: 't', text: t.title }),
           h('span', {
-            class: 'm',
-            text: busy
-              ? '두리가 일하는 중…'
-              : new Date(t.updatedAt).toLocaleString('ko-KR', {
-                  month: 'numeric',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
+            class: busy ? 'm busy' : 'm',
+            text: busy ? '일하는 중' : shortTime(t.updatedAt),
           }),
         ),
       ),
@@ -460,10 +497,11 @@ function composer(threadId: string | undefined) {
   ta.oninput = () => {
     st.draft = ta.value
   }
-  const btn = h('button', { class: 'send', text: '보내기' })
+  const btn = h('button', { class: 'send' }, icon('send'))
   btn.type = 'submit'
+  btn.setAttribute('aria-label', '보내기')
   btn.disabled = !st.online || Boolean(threadId && st.live.has(threadId))
-  form.append(ta, btn)
+  form.append(h('div', { class: 'composer-box' }, ta, btn))
   form.onsubmit = (e) => {
     e.preventDefault()
     const text = st.draft.trim()
@@ -510,7 +548,7 @@ function threadView(id: string | undefined) {
   const live = id ? st.live.get(id) : st.waitingNew ? '' : undefined
   if (live !== undefined) {
     if (live) msgs.append(h('div', { class: 'msg assistant' }, rich(live)))
-    msgs.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), '두리가 PC에서 일하는 중…'))
+    msgs.append(h('p', { class: 'activity', text: '두리가 PC에서 일하는 중…' }))
   }
   box.append(msgs, composer(id))
   return box
@@ -534,16 +572,21 @@ function toolCard(raw: string) {
         class: `card approval ${pending ? 'pending' : ''}`,
         onclick: () => a && go({ name: 'approval', id: a.id }),
       },
-      h('strong', {
-        text: pending ? '🔐 승인을 기다려요' : a?.status === 'done' ? '승인해서 눌렀어요' : '승인 요청',
-      }),
-      h('span', { text: rec.what }),
+      h(
+        'span',
+        { class: 'text' },
+        h('strong', {
+          text: pending ? '승인을 기다려요' : a?.status === 'done' ? '승인해서 눌렀어요' : '승인 요청',
+        }),
+        h('span', { text: rec.what }),
+      ),
+      pending && icon('chevron'),
     )
   }
   return h(
     'div',
     { class: 'card handoff' },
-    h('strong', { text: '🙋 PC에서 직접 해 주세요' }),
+    h('strong', { text: 'PC에서 직접 해 주세요' }),
     h('span', { text: rec.reason }),
     h('span', {
       class: 'cap',
@@ -575,17 +618,20 @@ function approvalView(id: string) {
     }
   })()
   const rows = h('dl', { class: 'rows' })
-  const row = (k: string, v?: string) => v && rows.append(h('dt', { text: k }), h('dd', { text: v }))
+  const row = (k: string, v?: string, cls?: string) =>
+    v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
   row('무엇을', a.what)
-  row('어디서', `${a.where} · ${host}`)
-  row('얼마', a.amount)
+  row('어디서', a.where)
+  row('주소', host, 'host')
+  row('얼마', a.amount, 'money')
   row('취소 조건', a.cancel)
   row('누를 버튼', `"${a.label}"`)
   box.append(
     h(
       'div',
       { class: `approval-head ${a.kind}` },
-      h('strong', { text: RISK[a.kind] }),
+      h('span', { class: 'kind', text: RISK[a.kind] }),
+      h('strong', { text: a.what }),
       h('span', { text: a.reason.startsWith('"') ? `누를 버튼에 ${a.reason}이(가) 있어요` : a.reason }),
     ),
     rows,
