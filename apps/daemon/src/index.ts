@@ -5,12 +5,14 @@ import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
-import { ClaudeRuntime } from '@dool2/agent-claude'
+import { type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexRuntime } from '@dool2/agent-codex'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
   type AgentId,
   AgentIdSchema,
+  ClaudeLoginCodeSchema,
+  type ClaudeLoginStatus,
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
@@ -71,6 +73,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 
+  let claudeLogin: ClaudeLogin | undefined
+  const createClaudeLogin = async () => {
+    const rt = runtimes.claude as
+      | (AgentRuntime & { createLogin?: () => Promise<ClaudeLogin | undefined> })
+      | undefined
+    return rt?.createLogin?.()
+  }
+
   /** 저장된 설정을 읽는다. 깨진 값이나 옛 항목이 있어도 기본값으로 메운다 */
   function readSettings(): Settings {
     const parsed = SettingsSchema.partial().safeParse(store.getSettings())
@@ -92,13 +102,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const parts = url.pathname.split('/').filter(Boolean) // ['api', ...]
     if (parts[0] !== 'api') return json(res, 404, { error: '없는 주소예요' })
-    const [, a, b, c] = parts
+    const [, a, b, c, d] = parts
 
     if (req.method === 'GET' && a === 'health') return json(res, 200, { ok: true, dataDir: paths.dataDir })
 
     if (req.method === 'GET' && a === 'agents' && !b) {
       const list = await Promise.all(Object.values(runtimes).map((rt) => rt.detect()))
       return json(res, 200, { agents: list })
+    }
+
+    // Claude 로그인: 공식 `claude auth login`을 띄워 진행한다 (login.ts)
+    if (a === 'agents' && b === 'claude' && c === 'login') {
+      const send = (login: ClaudeLoginStatus) => json(res, 200, { login })
+      if (req.method === 'GET' && !d) return send(claudeLogin?.status ?? { state: 'idle' })
+      if (req.method === 'POST' && !d) {
+        claudeLogin ??= await createClaudeLogin()
+        if (!claudeLogin) return json(res, 409, { error: '먼저 Claude Code를 설치해 주세요' })
+        return send(await claudeLogin.start())
+      }
+      if (req.method === 'POST' && d === 'code') {
+        const { code } = ClaudeLoginCodeSchema.parse(await readJson(req))
+        if (!claudeLogin) return send({ state: 'idle' })
+        return send(await claudeLogin.submitCode(code))
+      }
+      if (req.method === 'DELETE' && !d) {
+        claudeLogin?.cancel()
+        return send({ state: 'idle' })
+      }
     }
 
     if (req.method === 'POST' && a === 'agents' && b && c === 'login') {
@@ -108,10 +138,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const code = await rt.login()
         return json(res, 200, { ok: code === 0 })
       }
-      // Claude는 두리가 로그인을 대신하지 않는다. 공식 `claude auth login`을 사용자가 실행한다 (M0은 안내만)
-      return json(res, 409, {
-        error: 'Claude 로그인은 Claude Code 공식 로그인으로 해 주세요: claude auth login',
-      })
+      return json(res, 404, { error: '이 AI는 이 방법으로 로그인하지 않아요' })
     }
 
     if (a === 'settings' && !b) {
@@ -164,6 +191,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 여러 번 불러도 한 번만 닫는다
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
+        claudeLogin?.cancel()
         server.closeAllConnections()
         server.close(() => {
           store.close()
