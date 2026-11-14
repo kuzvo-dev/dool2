@@ -94,6 +94,15 @@ importers:
         specifier: 0.169.0
         version: 0.169.0
 
+  packages/agent-opencode:
+    dependencies:
+      '@dool2/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@dool2/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/browser:
     dependencies:
       '@dool2/engine':

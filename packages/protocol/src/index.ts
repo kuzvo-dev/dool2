@@ -3,12 +3,14 @@
 import { z } from 'zod'
 
 /** 두리가 실행할 수 있는 AI. 사용자의 구독으로 돈다. */
-export const AgentIdSchema = z.enum(['claude', 'codex'])
+/** claude·codex: 구독, opencode: API 키 종량제 (ADR 0010) */
+export const AgentIdSchema = z.enum(['claude', 'codex', 'opencode'])
 export type AgentId = z.infer<typeof AgentIdSchema>
 
 export const AGENT_LABEL: Record<AgentId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  opencode: 'API 키 (종량제)',
 }
 
 /** 설치·로그인 상태. 첫 설정 마법사와 진단 화면이 쓴다. */
@@ -40,6 +42,8 @@ export type AgentEvent =
   | { type: 'tool'; name: string; input: unknown }
   | { type: 'tool_result'; name?: string; ok: boolean }
   | { type: 'usage'; limits: UsageLimit[] }
+  /** 종량제: 이번 단계에 쓴 돈(USD)과 토큰 */
+  | { type: 'cost'; usd: number; inputTokens: number; outputTokens: number }
   | { type: 'limit_reached'; resetsAt?: string; message: string }
   | { type: 'error'; code: AgentErrorCode; message: string }
   | { type: 'done'; resumeId?: string; text: string }

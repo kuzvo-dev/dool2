@@ -23,7 +23,11 @@ declare global {
   }
 }
 
-const AGENT_LABEL: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Codex' }
+const AGENT_LABEL: Record<AgentId, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  opencode: 'API 키 (종량제)',
+}
 const TOOL_LABEL: Record<string, string> = { mcp__dool2__status: '두리 상태 확인' }
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
 

@@ -1,0 +1,10 @@
+{"type":"session.execution.started","data":{"sessionID":"ses_TEST"}}
+{"type":"session.step.started","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST"}}
+{"type":"session.tool.input.started","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","id":"call_1","name":"dool2_status"}}
+{"type":"session.tool.called","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","id":"call_1","input":{},"executed":true}}
+{"type":"session.tool.success","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","id":"call_1","content":[{"type":"text","text":"두리 연결됨"}],"executed":true}}
+{"type":"session.step.ended","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","finish":"tool-calls","cost":0.0021,"tokens":{"input":1830,"output":42,"reasoning":0,"cache":{"read":0,"write":0}}}}
+{"type":"session.text.delta","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","ordinal":0,"delta":"지금은 "}}
+{"type":"session.text.delta","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","ordinal":0,"delta":"오후 4시예요."}}
+{"type":"session.step.ended","data":{"sessionID":"ses_TEST","assistantMessageID":"msg_TEST","finish":"stop","cost":0.0013,"tokens":{"input":1900,"output":18,"reasoning":0,"cache":{"read":0,"write":0}}}}
+{"type":"session.execution.succeeded","data":{"sessionID":"ses_TEST"}}
