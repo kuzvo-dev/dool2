@@ -88,7 +88,11 @@ await build({
     files: ['**/*', '!**/node_modules/**'],
     asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs'],
     // 두리 Chrome 확장 (웹 스토어 전까지 사용자가 직접 올린다)
-    extraResources: [{ from: '../extension/dist', to: 'extension' }],
+    extraResources: [
+      { from: '../extension/dist', to: 'extension' },
+      // 두리 스킬 (CC BY-SA 4.0). 서명된 스킬 업데이트 채널은 M5
+      { from: '../../skills', to: 'skills', filter: ['**/*', '!_template/**'] },
+    ],
     icon: 'assets/icon.png',
     mac: {
       category: 'public.app-category.productivity',

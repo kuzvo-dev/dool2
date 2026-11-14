@@ -129,6 +129,7 @@ function packagedPaths() {
   if (!app.isPackaged) return {}
   return {
     mcpServerScript: join(here, 'mcp-server.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`),
+    skillsDir: join(process.resourcesPath, 'skills'),
   }
 }
 
