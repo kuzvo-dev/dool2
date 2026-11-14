@@ -6,6 +6,8 @@ import type {
   ChromeStatus,
   ClaudeLoginStatus,
   InstallStatus,
+  PaygAccount,
+  PaygProvider,
   Settings,
 } from '@dool2/protocol'
 import {
@@ -101,6 +103,17 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   }
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
+  // 종량제 API 키 입력
+  const payg: {
+    open: boolean
+    providers: PaygProvider[]
+    provider: string
+    model: string
+    key: string
+    saving: boolean
+    error?: string
+    account?: PaygAccount | null
+  } = { open: false, providers: [], provider: 'anthropic', model: '', key: '', saving: false }
   // "두리가 쉬지 않게" 단계의 선택 (기본은 둘 다 켬, 사용자가 끌 수 있다)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
   let autoStart = current.launchAtLogin ?? true
@@ -270,7 +283,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         await startClaudeLogin()
         return
       } else if (action === 'payg-key') {
-        note = 'API 키 입력 화면은 곧 붙어요.'
+        await openPayg()
+        return
       } else {
         const kind: InstallKind =
           action === 'chrome-install' ? 'chrome' : action === 'opencode-install' ? 'opencode' : 'claude'
@@ -316,13 +330,17 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
       if (step === 'choice') {
         card.append(
-          el('h1', 'setup-title', '어떤 AI 구독을 쓰세요?'),
-          el('p', 'setup-sub', '두리는 이미 쓰고 계신 AI 구독으로 일해요. 나중에 바꿀 수 있어요.'),
+          el('h1', 'setup-title', '어떤 AI로 일할까요?'),
+          el(
+            'p',
+            'setup-sub',
+            '쓰고 계신 AI 구독으로 일해요. 구독이 없으면 쓴 만큼만 내는 방법도 있어요. 나중에 바꿀 수 있어요.',
+          ),
         )
         const list = el('div', 'choices')
         list.setAttribute('role', 'radiogroup')
         for (const c of CHOICES) {
-          const b = button('choice', '', () => {
+          const b = button(c.id === 'payg' ? 'choice wide' : 'choice', '', () => {
             choice = c.id
             render()
           })
@@ -453,14 +471,139 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }
 
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
-      const typing = document.activeElement?.id === 'claude-code'
+      const typing = ['claude-code', 'payg-key'].find((id) => document.activeElement?.id === id)
       root.replaceChildren(card)
-      if (typing) document.getElementById('claude-code')?.focus()
+      if (typing) document.getElementById(typing)?.focus()
       // 나타나는 효과가 끝난 뒤에 "다 그려졌다"고 알린다 (점검 캡처가 흐리지 않게)
       if (!loading && !holdShown)
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
+    }
+
+    const openPayg = async () => {
+      payg.open = true
+      payg.error = undefined
+      render()
+      const [cat, acc] = await Promise.all([
+        opts
+          .api<{ providers: PaygProvider[] }>('/api/agents/opencode/catalog')
+          .catch(() => ({ providers: [] })),
+        opts
+          .api<{ account: PaygAccount | null }>('/api/agents/opencode/account')
+          .catch(() => ({ account: null })),
+      ])
+      payg.providers = cat.providers
+      payg.account = acc.account
+      payg.provider = acc.account?.provider ?? cat.providers[0]?.id ?? 'anthropic'
+      payg.model =
+        acc.account?.model ?? cat.providers.find((p) => p.id === payg.provider)?.models[0]?.id ?? ''
+      render()
+    }
+
+    const savePayg = async () => {
+      if (payg.saving) return
+      if (!payg.key.trim() && !payg.account?.hasKey) {
+        payg.error = 'API 키를 넣어 주세요'
+        render()
+        return
+      }
+      payg.saving = true
+      payg.error = undefined
+      render()
+      try {
+        await opts.api('/api/agents/opencode/account', {
+          method: 'PUT',
+          body: JSON.stringify({
+            provider: payg.provider,
+            model: payg.model,
+            ...(payg.key.trim() ? { apiKey: payg.key.trim() } : {}),
+          }),
+        })
+        payg.open = false
+        payg.key = ''
+        agents = await opts.loadAgents()
+      } catch (err) {
+        payg.error = (err as Error).message
+      }
+      payg.saving = false
+      render()
+    }
+
+    /** 종량제: 제공자·모델을 고르고 API 키를 넣는다. 키는 이 PC의 키체인에만 저장된다 */
+    const paygPanel = () => {
+      const panel = el('div', 'login-panel')
+      panel.append(
+        el('strong', undefined, 'API 키로 쓴 만큼만 내요'),
+        el('p', undefined, '키는 이 컴퓨터의 키체인에 암호화해서 두고, 두리 화면에는 끝 네 자리만 보여요.'),
+      )
+      if (payg.providers.length === 0) {
+        panel.append(el('p', undefined, '불러오는 중이에요…'))
+        return panel
+      }
+      const form = el('form', 'key-form')
+      const provSel = el('select')
+      for (const p of payg.providers) {
+        const o = el('option', undefined, p.label)
+        o.value = p.id
+        o.selected = p.id === payg.provider
+        provSel.append(o)
+      }
+      provSel.onchange = () => {
+        payg.provider = provSel.value
+        payg.model = payg.providers.find((p) => p.id === payg.provider)?.models[0]?.id ?? ''
+        render()
+      }
+      const prov = payg.providers.find((p) => p.id === payg.provider)
+      const modelSel = el('select')
+      for (const m of prov?.models ?? []) {
+        const o = el('option', undefined, m.label)
+        o.value = m.id
+        o.selected = m.id === payg.model
+        modelSel.append(o)
+      }
+      modelSel.onchange = () => {
+        payg.model = modelSel.value
+      }
+      const key = el('input')
+      key.id = 'payg-key'
+      key.type = 'password'
+      key.autocomplete = 'off'
+      key.placeholder =
+        payg.account?.hasKey && payg.account.provider === payg.provider
+          ? `저장된 키 ····${payg.account.keyHint ?? ''} (바꿀 때만 넣어 주세요)`
+          : 'API 키 붙여 넣기'
+      key.value = payg.key
+      key.oninput = () => {
+        payg.key = key.value
+      }
+      const label = (text: string, input: HTMLElement) => {
+        const l = el('label', undefined, text)
+        l.append(input)
+        return l
+      }
+      form.append(label('AI 회사', provSel), label('모델', modelSel), label('API 키', key))
+      form.onsubmit = (e) => {
+        e.preventDefault()
+        void savePayg()
+      }
+      const row = el('div', 'login-actions')
+      const save = el('button', 'btn-small', payg.saving ? '저장하는 중…' : '저장')
+      save.type = 'submit'
+      save.disabled = payg.saving
+      row.append(save)
+      if (prov) row.append(button('btn-link', '키 받는 곳', () => window.open(prov.keyUrl)))
+      row.append(
+        button('btn-link', '닫기', () => {
+          payg.open = false
+          render()
+        }),
+      )
+      form.append(row)
+      panel.append(form)
+      if (payg.error) panel.append(el('p', 'login-error', payg.error))
+      panel.append(el('p', 'cap', '쓴 금액은 답마다 두리 화면에 보여 드려요. 요금은 AI 회사에 직접 내요.'))
+      return panel
     }
 
     /** 켜고 끄는 줄 하나 */
@@ -525,6 +668,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         if (st === 'running' || st === 'failed') parts.push(installPanel(kind))
       }
       if (login.state === 'waiting' || login.state === 'failed') parts.push(loginPanel())
+      if (payg.open) parts.push(paygPanel())
       return parts
     }
 
