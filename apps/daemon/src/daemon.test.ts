@@ -35,7 +35,12 @@ afterEach(async () => {
 async function boot() {
   dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
   const rt = new EchoRuntime()
-  daemon = await startDaemon({ dataDir: dir, token: 't0ken', runtimes: { claude: rt } })
+  daemon = await startDaemon({
+    dataDir: dir,
+    token: 't0ken',
+    runtimes: { claude: rt },
+    chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+  })
   const api = (path: string, init: RequestInit = {}) =>
     fetch(`${daemon?.url}${path}`, {
       ...init,
@@ -194,6 +199,18 @@ describe('Claude 로그인', () => {
     expect(await done.json()).toEqual({ login: { state: 'done' } })
     const empty = await api('/api/agents/claude/login/code', { method: 'POST', body: '{"code":"  "}' })
     expect(empty.status).toBe(400)
+  })
+})
+
+describe('브라우저', () => {
+  it('Chrome 상태를 알려 주고, 이미 있으면 설치하지 않는다', async () => {
+    const { api } = await boot()
+    expect(await (await api('/api/browser')).json()).toEqual({
+      chrome: { installed: true, version: '157.0.8103.79' },
+    })
+    expect(await (await api('/api/browser/install', { method: 'POST' })).json()).toEqual({
+      install: { state: 'done' },
+    })
   })
 })
 

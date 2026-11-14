@@ -3,6 +3,7 @@ import type {
   AgentId,
   AgentStatus,
   AiChoice,
+  ChromeStatus,
   ClaudeLoginStatus,
   InstallStatus,
   Settings,
@@ -22,8 +23,28 @@ type Api = <T>(path: string, init?: RequestInit) => Promise<T>
 export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
+  loadChrome(): Promise<ChromeStatus>
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
+}
+
+type InstallKind = 'claude' | 'chrome'
+
+/** 부품별 설치 주소와 안내 문구 */
+// obj: 조사까지 붙인 이름 (Claude Code를 / Chrome을)
+const INSTALLS: Record<InstallKind, { url: string; obj: string; source: string; help: string }> = {
+  claude: {
+    url: '/api/agents/claude/install',
+    obj: 'Claude Code를',
+    source: 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.',
+    help: 'https://code.claude.com/docs/en/setup',
+  },
+  chrome: {
+    url: '/api/browser/install',
+    obj: 'Chrome을',
+    source: 'Google 공식 서버에서 받아요. Google 서명을 확인한 뒤 설치해요.',
+    help: 'https://www.google.com/chrome/',
+  },
 }
 
 export interface SetupResult {
@@ -62,8 +83,12 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let agents: AgentStatus[] = []
   let note = ''
   let login: ClaudeLoginStatus = { state: 'idle' }
-  let install: InstallStatus = { state: 'idle' }
-  let installTimer: ReturnType<typeof setTimeout> | undefined
+  let chrome: ChromeStatus | undefined
+  const installs: Record<InstallKind, InstallStatus> = {
+    claude: { state: 'idle' },
+    chrome: { state: 'idle' },
+  }
+  const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -103,37 +128,45 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }, 1_500)
     }
 
+    // 설치가 끝나면 그 부품의 상태를 다시 확인한다
+    const refresh = async (kind: InstallKind) => {
+      if (kind === 'claude') agents = await opts.loadAgents()
+      else chrome = await opts.loadChrome()
+    }
+
     // 설치 진행률을 주기적으로 받아 온다
-    const pollInstall = () => {
-      if (installTimer) clearTimeout(installTimer)
-      if (install.state !== 'running') return
-      installTimer = setTimeout(async () => {
-        const r = await opts
-          .api<{ install: InstallStatus }>('/api/agents/claude/install')
-          .catch(() => undefined)
+    const pollInstall = (kind: InstallKind) => {
+      clearTimeout(installTimers[kind])
+      if (installs[kind].state !== 'running') return
+      installTimers[kind] = setTimeout(async () => {
+        const r = await opts.api<{ install: InstallStatus }>(INSTALLS[kind].url).catch(() => undefined)
         if (r) {
-          const changed = JSON.stringify(r.install) !== JSON.stringify(install)
-          install = r.install
-          if (install.state === 'done') agents = await opts.loadAgents()
+          const changed = JSON.stringify(r.install) !== JSON.stringify(installs[kind])
+          installs[kind] = r.install
+          if (r.install.state === 'done') await refresh(kind)
           if (changed) render()
         }
-        pollInstall()
+        pollInstall(kind)
       }, 700)
     }
 
-    const startInstall = async () => {
-      install = { state: 'running', phase: 'prepare' }
+    const startInstall = async (kind: InstallKind) => {
+      installs[kind] = { state: 'running', phase: 'prepare' }
       render()
       const r = await opts
-        .api<{ install: InstallStatus }>('/api/agents/claude/install', { method: 'POST' })
+        .api<{ install: InstallStatus }>(INSTALLS[kind].url, { method: 'POST' })
         .catch((err: Error) => ({ install: { state: 'failed', message: err.message } as InstallStatus }))
-      install = r.install
+      installs[kind] = r.install
       render()
-      pollInstall()
+      pollInstall(kind)
       // 내려받기가 조금 진행될 때까지만 기다린다 (점검 캡처가 진행 중인 화면을 찍게)
-      const early = () =>
-        install.state === 'running' &&
-        (install.phase === 'prepare' || (install.phase === 'download' && (install.percent ?? 0) < 10))
+      const early = () => {
+        const s = installs[kind]
+        return (
+          s.state === 'running' &&
+          (s.phase === 'prepare' || (s.phase === 'download' && (s.percent ?? 0) < 10))
+        )
+      }
       for (let i = 0; i < 80 && early(); i++) await new Promise((res) => setTimeout(res, 250))
     }
 
@@ -167,7 +200,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
     const finish = async () => {
       stopLogin()
-      if (installTimer) clearTimeout(installTimer)
+      for (const t of Object.values(installTimers)) clearTimeout(t)
       const defaultAgent = choice ? pickDefault(choice, agents) : undefined
       const { settings } = await opts.api<{ settings: Settings }>('/api/settings', {
         method: 'PATCH',
@@ -184,7 +217,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       enter = true
       if (step === 'check') {
         render(true)
-        agents = await opts.loadAgents()
+        ;[agents, chrome] = await Promise.all([opts.loadAgents(), opts.loadChrome()])
       }
       render()
     }
@@ -200,7 +233,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         await startClaudeLogin()
         return
       } else {
-        await startInstall()
+        await startInstall(action === 'chrome-install' ? 'chrome' : 'claude')
         return
       }
       render()
@@ -275,10 +308,10 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             el('p', 'setup-sub', '잠깐이면 돼요.'),
           )
         } else {
-          const head = checkHeadline(choice, agents)
+          const head = checkHeadline(choice, agents, chrome)
           card.append(el('h1', 'setup-title', head.title), el('p', 'setup-sub', head.sub))
           const list = el('ul', 'checks')
-          for (const item of checklist(choice, agents)) {
+          for (const item of checklist(choice, agents, chrome)) {
             const li = el('li', item.ok ? 'ok' : 'todo')
             const mark = el('span', 'mark', item.ok ? '✓' : '')
             const text = el('div', 'text')
@@ -286,7 +319,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             li.append(mark, text)
             if (item.action) {
               const label =
-                item.action === 'claude-install'
+                item.action === 'claude-install' || item.action === 'chrome-install'
                   ? '설치하기'
                   : item.action === 'codex-login'
                     ? 'ChatGPT로 로그인'
@@ -297,7 +330,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
                 b.textContent = '로그인 중…'
                 b.disabled = true
               }
-              if (action === 'claude-install' && install.state === 'running') {
+              const kind: InstallKind | undefined =
+                action === 'claude-install' ? 'claude' : action === 'chrome-install' ? 'chrome' : undefined
+              if (kind && installs[kind].state === 'running') {
                 b.textContent = '설치 중…'
                 b.disabled = true
               }
@@ -306,7 +341,10 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             list.append(li)
           }
           card.append(list)
-          if (install.state === 'running' || install.state === 'failed') card.append(installPanel())
+          for (const kind of ['claude', 'chrome'] as const) {
+            const st = installs[kind].state
+            if (st === 'running' || st === 'failed') card.append(installPanel(kind))
+          }
           if (login.state === 'waiting' || login.state === 'failed') card.append(loginPanel())
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
@@ -333,42 +371,38 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         })
     }
 
-    /** Claude Code 설치 진행 */
-    const installPanel = () => {
+    /** 부품(Claude Code, Chrome) 설치 진행 */
+    const installPanel = (kind: InstallKind) => {
+      const info = INSTALLS[kind]
+      const st = installs[kind]
       const panel = el('div', 'login-panel')
-      if (install.state === 'failed') {
-        panel.append(
-          el('strong', undefined, 'Claude Code를 설치하지 못했어요'),
-          el('p', undefined, install.message),
-        )
+      if (st.state === 'failed') {
+        panel.append(el('strong', undefined, `${info.obj} 설치하지 못했어요`), el('p', undefined, st.message))
         const row = el('div', 'login-actions')
         row.append(
-          button('btn-small', '다시 시도', () => void startInstall()),
-          button('btn-link', '직접 설치하는 방법', () =>
-            window.open('https://code.claude.com/docs/en/setup'),
-          ),
+          button('btn-small', '다시 시도', () => void startInstall(kind)),
+          button('btn-link', '직접 설치하는 방법', () => window.open(info.help)),
         )
         panel.append(row)
         return panel
       }
-      if (install.state !== 'running') return panel
+      if (st.state !== 'running') return panel
       const label: Record<string, string> = {
         prepare: '설치를 준비하는 중이에요',
-        download: `내려받는 중이에요${install.percent !== undefined ? ` · ${install.percent}%` : ''}`,
+        download: `내려받는 중이에요${st.percent !== undefined ? ` · ${st.percent}%` : ''}`,
         verify: '공식 파일이 맞는지 확인하는 중이에요',
         setup: '설치를 마무리하는 중이에요',
       }
       panel.append(
-        el('strong', undefined, 'Claude Code를 설치하고 있어요'),
-        el('p', undefined, label[install.phase] ?? ''),
+        el('strong', undefined, `${info.obj} 설치하고 있어요`),
+        el('p', undefined, label[st.phase] ?? ''),
       )
       const bar = el('div', 'progress')
       const fill = el('span', 'progress-fill')
-      const pct =
-        install.phase === 'download' ? (install.percent ?? 0) : install.phase === 'prepare' ? 0 : 100
+      const pct = st.phase === 'download' ? (st.percent ?? 0) : st.phase === 'prepare' ? 0 : 100
       fill.style.width = `${Math.max(3, pct)}%`
       bar.append(fill)
-      panel.append(bar, el('p', 'cap', 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.'))
+      panel.append(bar, el('p', 'cap', info.source))
       return panel
     }
 

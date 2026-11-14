@@ -107,6 +107,7 @@ packages/
   agent-claude/   Claude Code 연동 (`claude -p`, 내장 도구 끔)
   agent-codex/    Codex 연동 (`codex app-server`, 셸 끔, 고정 버전 동봉)
   mcp-tools/      두리 도구 (MCP 서버)
+  browser/        브라우저 손 — Chrome 확인·설치 (M2에서 두리 확장 연결)
   store/          대화 기록 (Node 내장 SQLite)
 docs/             설계·운영 문서
 ```

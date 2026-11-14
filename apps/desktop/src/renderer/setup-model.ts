@@ -1,10 +1,10 @@
 // 첫 실행 마법사의 판단 로직. 화면과 떼어 두어 테스트한다.
-import type { AgentId, AgentStatus, AiChoice } from '@dool2/protocol'
+import type { AgentId, AgentStatus, AiChoice, ChromeStatus } from '@dool2/protocol'
 
 export type SetupStep = 'welcome' | 'choice' | 'check'
 export const SETUP_STEPS: SetupStep[] = ['welcome', 'choice', 'check']
 
-export type CheckAction = 'claude-install' | 'claude-login' | 'codex-login'
+export type CheckAction = 'claude-install' | 'claude-login' | 'codex-login' | 'chrome-install'
 
 export interface CheckItem {
   id: string
@@ -47,7 +47,7 @@ function visibleAgents(choice: AiChoice, agents: AgentStatus[]): AgentId[] {
 }
 
 /** 준비 상태 목록. 사용자에게 보이는 문구라서 기술 용어를 쓰지 않는다 */
-export function checklist(choice: AiChoice, agents: AgentStatus[]): CheckItem[] {
+export function checklist(choice: AiChoice, agents: AgentStatus[], chrome?: ChromeStatus): CheckItem[] {
   const items: CheckItem[] = []
   for (const id of visibleAgents(choice, agents)) {
     const a = agents.find((x) => x.id === id)
@@ -98,13 +98,30 @@ export function checklist(choice: AiChoice, agents: AgentStatus[]): CheckItem[] 
       )
     }
   }
+  // 브라우저 일은 Chrome으로 한다 (ADR 0006). 대화는 없어도 할 수 있어서 시작을 막지는 않는다
+  if (chrome)
+    items.push(
+      chrome.installed
+        ? { id: 'chrome', label: 'Chrome', ok: true, detail: '두리가 브라우저 일을 할 때 써요' }
+        : {
+            id: 'chrome',
+            label: 'Chrome',
+            ok: false,
+            detail: '예약·조회 같은 브라우저 일을 하려면 필요해요',
+            action: 'chrome-install',
+          },
+    )
   return items
 }
 
 const COUNT: Record<number, string> = { 1: '한', 2: '두', 3: '세', 4: '네' }
 
-export function checkHeadline(choice: AiChoice, agents: AgentStatus[]): { title: string; sub: string } {
-  const items = checklist(choice, agents)
+export function checkHeadline(
+  choice: AiChoice,
+  agents: AgentStatus[],
+  chrome?: ChromeStatus,
+): { title: string; sub: string } {
+  const items = checklist(choice, agents, chrome)
   const left = items.filter((i) => !i.ok).length
   if (left === 0) return { title: '준비가 다 됐어요', sub: '이제 부탁만 하시면 돼요.' }
   if (pickDefault(choice, agents))
