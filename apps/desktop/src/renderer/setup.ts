@@ -10,6 +10,7 @@ import type {
   PaygAccount,
   PaygProvider,
   Settings,
+  VaultEntry,
 } from '@dool2/protocol'
 import {
   AI_CHOICE_LABEL,
@@ -111,6 +112,16 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   // 두리 확장 추가 안내 (웹 스토어 전까지는 폴더를 직접 올린다)
   const ext: { open: boolean; dir: string; copied: boolean } = { open: false, dir: '', copied: false }
   let extTimer: ReturnType<typeof setTimeout> | undefined
+  // 두리 금고 (설정 화면)
+  const vault: {
+    entries: VaultEntry[]
+    adding: boolean
+    url: string
+    username: string
+    password: string
+    saving: boolean
+    error?: string
+  } = { entries: [], adding: false, url: '', username: '', password: '', saving: false }
   const installs: Record<InstallKind, InstallStatus> = {
     claude: { state: 'idle' },
     chrome: { state: 'idle' },
@@ -306,6 +317,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           opts.loadChrome(),
           opts.loadExtension(),
         ])
+        if (step === 'settings') await loadVault()
       }
       render()
     }
@@ -508,6 +520,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             ),
           )
           card.append(el('h2', 'over', '두리가 쉬지 않게'), list)
+          card.append(el('h2', 'over', '두리 금고'), vaultBlock())
           const ai = el('p', 'setup-hint')
           ai.append(
             `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
@@ -521,7 +534,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }
 
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
-      const typing = ['claude-code', 'payg-key'].find((id) => document.activeElement?.id === id)
+      const typing = ['claude-code', 'payg-key', 'vault-url', 'vault-user', 'vault-pw'].find(
+        (id) => document.activeElement?.id === id,
+      )
       root.replaceChildren(card)
       if (typing) document.getElementById(typing)?.focus()
       // 나타나는 효과가 끝난 뒤에 "다 그려졌다"고 알린다 (점검 캡처가 흐리지 않게)
@@ -529,6 +544,144 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
+    }
+
+    const loadVault = async () => {
+      const r = await opts.api<{ entries: VaultEntry[] }>('/api/vault').catch(() => ({ entries: [] }))
+      vault.entries = r.entries
+    }
+
+    const saveVault = async () => {
+      if (vault.saving) return
+      if (!vault.url.trim() || !vault.username || !vault.password) {
+        vault.error = '사이트 주소, 아이디, 비밀번호를 모두 넣어 주세요'
+        render()
+        return
+      }
+      vault.saving = true
+      vault.error = undefined
+      render()
+      try {
+        await opts.api('/api/vault', {
+          method: 'POST',
+          body: JSON.stringify({ url: vault.url, username: vault.username, password: vault.password }),
+        })
+        vault.adding = false
+        vault.url = ''
+        vault.username = ''
+        vault.password = ''
+        await loadVault()
+      } catch (e) {
+        vault.error = (e as Error).message
+      }
+      vault.saving = false
+      render()
+    }
+
+    /** 두리 금고: 사이트별 로그인 정보. 비밀번호는 넣기만 하고 다시 보여 주지 않는다 (ADR 0011) */
+    const vaultBlock = () => {
+      const box = el('div', 'vault')
+      box.append(
+        el(
+          'p',
+          'setup-hint',
+          '저장해 둔 사이트는 로그인이 풀려도 두리가 대신 채워요. AI는 비밀번호를 볼 수 없고, 두리가 주소를 확인한 뒤 직접 넣어요.',
+        ),
+      )
+      if (vault.entries.length) {
+        const list = el('ul', 'vault-list')
+        for (const e of vault.entries) {
+          const li = el('li')
+          const text = el('div', 'text')
+          let host = e.origin
+          try {
+            host = new URL(e.origin).host
+          } catch {}
+          const used = e.lastUsedAt
+            ? `마지막 사용 ${new Date(e.lastUsedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+            : '아직 안 썼어요'
+          text.append(el('strong', undefined, host), el('span', undefined, `${e.username} · ${used}`))
+          li.append(
+            text,
+            button('btn-link', '지우기', async () => {
+              await opts.api(`/api/vault/${encodeURIComponent(e.id)}`, { method: 'DELETE' }).catch(() => {})
+              await loadVault()
+              render()
+            }),
+          )
+          list.append(li)
+        }
+        box.append(list)
+      }
+      if (!vault.adding) {
+        box.append(
+          button('btn-small', '사이트 추가', () => {
+            vault.adding = true
+            render()
+          }),
+        )
+        return box
+      }
+      const form = el('form', 'key-form')
+      const input = (
+        id: string,
+        label: string,
+        type: string,
+        value: string,
+        set: (v: string) => void,
+        ph: string,
+      ) => {
+        const i = el('input')
+        i.id = id
+        i.type = type
+        i.autocomplete = 'off'
+        i.placeholder = ph
+        i.value = value
+        i.oninput = () => set(i.value)
+        const l = el('label', undefined, label)
+        l.append(i)
+        return l
+      }
+      form.append(
+        input(
+          'vault-url',
+          '사이트 주소',
+          'text',
+          vault.url,
+          (v) => (vault.url = v),
+          '로그인하는 페이지 주소 (https://…)',
+        ),
+        input('vault-user', '아이디', 'text', vault.username, (v) => (vault.username = v), ''),
+        input('vault-pw', '비밀번호', 'password', vault.password, (v) => (vault.password = v), ''),
+      )
+      form.onsubmit = (ev) => {
+        ev.preventDefault()
+        void saveVault()
+      }
+      const row = el('div', 'login-actions')
+      const save = el('button', 'btn-small', vault.saving ? '저장하는 중…' : '저장')
+      save.type = 'submit'
+      save.disabled = vault.saving
+      row.append(
+        save,
+        button('btn-link', '닫기', () => {
+          vault.adding = false
+          vault.password = ''
+          vault.error = undefined
+          render()
+        }),
+      )
+      form.append(row)
+      box.append(form)
+      if (vault.error) box.append(el('p', 'login-error', vault.error))
+      box.append(
+        el(
+          'p',
+          'cap',
+          '이 PC의 키체인에 암호화해 둬요. 결제 비밀번호·카드 번호·공동인증서 비밀번호는 넣지 마세요. 그런 건 늘 직접 넣어요.',
+        ),
+      )
+      return box
     }
 
     const openPayg = async () => {

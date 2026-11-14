@@ -117,6 +117,17 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   )
   tool('back', '뒤로', '탭에서 뒤로 가기를 누르고 페이지를 읽어 돌려준다.', { tabId }, true)
   tool(
+    'login',
+    '두리 금고로 로그인 칸 채우기',
+    '사용자가 두리 금고에 저장해 둔 사이트면, 아이디·비밀번호 칸을 두리가 직접 채운다. 값은 보이지 않는다. 채운 뒤 로그인 버튼은 browser_click으로 누른다. 금고에 없으면 browser_handoff로 사용자에게 넘긴다.',
+    {
+      tabId,
+      passwordRef: ref.describe('비밀번호칸 표시 (예: e7)'),
+      usernameRef: ref.optional().describe('아이디 입력칸 표시. 아이디가 이미 채워져 있으면 생략'),
+    },
+    false,
+  )
+  tool(
     'handoff',
     '사람에게 넘기기',
     '로그인, 로봇 확인(캡차), 본인인증, 결제·주문·보내기 같은 마지막 버튼처럼 사람이 직접 해야 할 때 쓴다. 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',

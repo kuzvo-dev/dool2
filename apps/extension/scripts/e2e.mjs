@@ -13,7 +13,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startDaemon } from '@dool2/daemon'
+import { BrowserTools, memorySecrets, startDaemon, Vault } from '@dool2/daemon'
 
 const chromeBin = process.env.DOOL2_TEST_CHROME
 if (!chromeBin) {
@@ -35,13 +35,23 @@ const PAGES = {
 <a href="/popup" target="_blank">새 창으로 보기</a>
 <label>비밀번호 <input type="password" id="pw"></label>
 <div class="hidden"><button>숨은 버튼</button></div>
+
 </body></html>`,
+  '/login': `<!doctype html><title>로그인</title><h1>로그인</h1>
+<form action="/welcome" method="get"><label>아이디 <input name="id"></label> <label>비밀번호 <input type="password" name="pw"></label> <button>로그인</button></form>`,
   '/popup': '<!doctype html><title>새 창</title><h1>새 창이에요</h1>',
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
 const site = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x')
+  if (url.pathname === '/welcome') {
+    const ok = url.searchParams.get('id') === 'duri' && url.searchParams.get('pw') === 'pw-금고-123'
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(
+      `<!doctype html><title>${ok ? '환영해요' : '실패'}</title><h1>${ok ? '로그인 성공' : '로그인 실패'}</h1>`,
+    )
+  }
   if (url.pathname === '/search') {
     const q = url.searchParams.get('q') ?? ''
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -150,6 +160,10 @@ try {
     assert.ok(r.newTabId, '새 탭 id가 없어요')
     const p = await call('snapshot', { tabId: r.newTabId })
     assert.match(p.text, /새 창이에요/)
+    // 새 탭이 앞에 있는 동안에도 원래 탭의 버튼을 누를 수 있다 (뒤 탭은 입력을 받지 않아서 앞으로 돌린다)
+    const buy = s.text.match(/\[(e\d+) 버튼 "바로 구매"\]/)?.[1]
+    const bought = await call('click', { tabId, ref: buy })
+    assert.equal(bought.title, '구매됨')
     await call('close', { tabId: r.newTabId })
   })
 
@@ -170,6 +184,24 @@ try {
 
   await step('두리가 열지 않은 탭은 다루지 않는다', async () => {
     await assert.rejects(call('snapshot', { tabId: 1 }), /두리가 연 탭이 아니에요/)
+  })
+
+  await step('두리 금고로 로그인 (AI에게 값이 가지 않는다)', async () => {
+    const vault = new Vault(memorySecrets())
+    await vault.add({ url: `${base}/login`, username: 'duri', password: 'pw-금고-123' })
+    const tools = new BrowserTools(daemon.browser, vault)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/login` })
+    const page = text(await tools.run('read', { tabId }))
+    const user = page.match(/\[(e\d+) 입력칸 "아이디"\]/)?.[1]
+    const pw = page.match(/\[(e\d+) 비밀번호칸 "비밀번호"\]/)?.[1]
+    const login = page.match(/\[(e\d+) 버튼 "로그인"\]/)?.[1]
+    const filled = await tools.run('login', { tabId, usernameRef: user, passwordRef: pw })
+    assert.equal(filled.isError, undefined, text(filled))
+    assert.doesNotMatch(text(filled), /pw-금고-123|값="duri"/)
+    assert.match(text(filled), /금고로 채워짐/)
+    const after = await tools.run('click', { tabId, ref: login })
+    assert.match(text(after), /로그인 성공/)
   })
 
   await step('탭 닫기', async () => {
