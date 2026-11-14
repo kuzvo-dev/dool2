@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
-import { richBlocks } from './rich.js'
+import { appNote, readAppNote, richBlocks } from './rich.js'
 
 describe('richBlocks', () => {
   it('빈 줄로 문단을 나누고 **굵게**를 살린다', () => {
@@ -39,5 +39,13 @@ describe('previewText', () => {
   it('마크다운 기호를 빼고 한 줄로 줄인다', () => {
     expect(previewText('**토요일**은 비가 와요.\n\n- 우산\n1. 우비')).toBe('토요일은 비가 와요. 우산 우비')
     expect(previewText('가'.repeat(200), 10)).toBe(`${'가'.repeat(9)}…`)
+  })
+})
+
+describe('앱 알림', () => {
+  it('화면에는 AI에게만 필요한 꼬리말을 빼고 보여 준다', () => {
+    const t = appNote('폰에서 승인했어요. "바로 구매"를 눌렀어요. 결과를 확인하고 이어서 해 주세요.')
+    expect(readAppNote(t)).toBe('폰에서 승인했어요. "바로 구매"를 눌렀어요.')
+    expect(readAppNote('다 했어요. 이어서 해 주세요.')).toBeUndefined()
   })
 })

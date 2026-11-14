@@ -15,7 +15,7 @@ import type {
   ThreadSummary,
   UsageLimit,
 } from '@dool2/protocol'
-import { type Inline, richBlocks } from './rich.js'
+import { appNote, type Inline, readAppNote, richBlocks, toolLabel } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import { type CheckAction, costLabel, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
 
@@ -42,26 +42,6 @@ const AGENT_LABEL: Record<AgentId, string> = {
   codex: 'Codex',
   opencode: 'API 키 (종량제)',
 }
-/** 일하는 중 표시: "웹페이지 여는 중…" (도구 이름 앞의 mcp__dool2__ / dool2_는 떼고 본다) */
-const TOOL_LABEL: Record<string, string> = {
-  status: '두리 상태 확인하는',
-  skill_find: '사용법 찾는',
-  skill_read: '사용법 읽는',
-  browser_login: '금고로 로그인 칸 채우는',
-  browser_open: '웹페이지 여는',
-  browser_navigate: '웹페이지 여는',
-  browser_read: '페이지 읽는',
-  browser_click: '누르는',
-  browser_type: '입력하는',
-  browser_press: '키 누르는',
-  browser_scroll: '스크롤하는',
-  browser_screenshot: '화면 보는',
-  browser_back: '뒤로 가는',
-  browser_close: '탭 닫는',
-  browser_handoff: '도움 부탁하는',
-  browser_request_approval: '승인 요청하는',
-}
-const toolLabel = (name: string) => TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
 
 /** 자가 점검: 마법사를 끝냈는데 일할 AI가 없으면 왼쪽 위에 알리고 [고치기]로 설정을 연다 */
@@ -556,8 +536,8 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       // AI에게 결과를 알려 이어서 하게 한다
       void send(
         decision === 'reject'
-          ? `"${v.label}"은(는) 거절했어요. 누르지 말아 주세요.`
-          : `${r.message} 결과를 확인하고 이어서 해 주세요.`,
+          ? appNote(`"${v.label}"은(는) 거절했어요. 누르지 말아 주세요.`)
+          : appNote(`${r.message} 결과를 확인하고 이어서 해 주세요.`),
       )
     }
     no.onclick = () => void decide('reject')
@@ -664,9 +644,11 @@ function bubble(role: string, text: string) {
 }
 
 function setRich(el: HTMLElement, text: string) {
-  // 내가 쓴 말은 적은 그대로 보여 준다
+  // 내가 쓴 말은 적은 그대로, 두리 앱이 대신 보낸 알림(승인 결과)은 가운데 알림 줄로
   if (el.classList.contains('user')) {
-    el.textContent = text
+    const note = readAppNote(text)
+    if (note !== undefined) el.className = 'msg note'
+    el.textContent = note ?? text
     return
   }
   const spans = (parent: HTMLElement, parts: Inline[]) => {

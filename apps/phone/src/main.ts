@@ -23,7 +23,7 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { type Inline, richBlocks } from '@dool2/protocol/rich'
+import { type Inline, readAppNote, richBlocks, toolLabel } from '@dool2/protocol/rich'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -48,6 +48,8 @@ const st: {
   messages: Map<string, StoredMessage[]>
   /** 답하는 중인 대화: 지금까지 온 글자 */
   live: Map<string, string>
+  /** 답하는 중인 대화: 지금까지 한 일 ("사용법 찾는 중") */
+  steps: Map<string, string[]>
   approvals: Map<string, ApprovalView & { shot?: string }>
   decided: Map<string, { ok: boolean; message: string }>
   /** 새 대화로 보낸 부탁: 첫 응답이 오면 그 대화로 간다 */
@@ -60,6 +62,7 @@ const st: {
   threads: [],
   messages: new Map(),
   live: new Map(),
+  steps: new Map(),
   approvals: new Map(),
   decided: new Map(),
   draft: '',
@@ -80,12 +83,16 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 /** 선 아이콘 (24 격자). 화면 글자 대신 쓴다 */
-const ICON: Record<'back' | 'send' | 'chevron' | 'bell', string> = {
+const ICON = {
   back: 'M15 18l-6-6 6-6',
+  dining: 'M7 3v8M5 3v4a2 2 0 0 0 4 0V3M7 11v10M17 3c-1.7 0-3 2-3 5s1.3 4 3 4v9',
+  grocery: 'M4 11h16a8 8 0 0 1-16 0ZM9 7c0-1.5 1-2 1-3M13 7c0-1.5 1-2 1-3',
+  parcel: 'M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5ZM3.5 7.5 12 12l8.5-4.5M12 12v9',
+  mail: 'M6 3h8l4 4v14H6ZM14 3v4h4M9 12h6M9 16h6',
   send: 'M12 19V5M6 11l6-6 6 6',
   chevron: 'M9 6l6 6-6 6',
   bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
-}
+} as const
 function icon(name: keyof typeof ICON): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
@@ -248,9 +255,15 @@ function onStream(threadId: string, ev: DaemonStreamEvent) {
       } as ThreadSummary)
   } else if (ev.type === 'agent') {
     if (ev.event.type === 'text') st.live.set(threadId, (st.live.get(threadId) ?? '') + ev.event.delta)
-    else if (ev.event.type === 'tool' && !st.live.has(threadId)) st.live.set(threadId, '')
+    else if (ev.event.type === 'tool') {
+      if (!st.live.has(threadId)) st.live.set(threadId, '')
+      const steps = st.steps.get(threadId) ?? []
+      const label = `${toolLabel(ev.event.name)} 중`
+      if (steps.at(-1) !== label) st.steps.set(threadId, [...steps, label])
+    }
   } else if (ev.type === 'end') {
     st.live.delete(threadId)
+    st.steps.delete(threadId)
     void send({ kind: 'hello' })
   }
 }
@@ -432,9 +445,61 @@ function pendingApprovals() {
   )
 }
 
+/** 바로 맡기기: 누르면 부탁 칸에 예시 글을 채운다 */
+const QUICK: { label: string; icon: keyof typeof ICON; text: string }[] = [
+  { label: '식당 예약', icon: 'dining', text: '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘' },
+  { label: '장보기', icon: 'grocery', text: '늘 사던 걸로 장바구니 채워 줘' },
+  { label: '택배 조회', icon: 'parcel', text: '주문한 택배 어디쯤 왔는지 봐 줘' },
+  { label: '메일 정리', icon: 'mail', text: '답장이 필요한 메일만 골라 줘' },
+]
+
+function whenLabel(iso: string) {
+  const min = Math.floor((Date.now() - Date.parse(iso)) / 60_000)
+  if (min < 2) return '방금 끝났어요'
+  if (min < 60) return `${min}분 전`
+  return shortTime(iso)
+}
+
+function openThread(id: string) {
+  go({ name: 'thread', id })
+  void send({ kind: 'thread', id })
+}
+
+/** 맡긴 일 카드: 상태 줄 → 제목 → 마지막 답 */
+function taskCard(t: ThreadSummary) {
+  const busy = t.busy || st.live.has(t.id)
+  return h(
+    'button',
+    { class: 'task', onclick: () => openThread(t.id) },
+    h(
+      'div',
+      { class: 'task-meta' },
+      h('span', { text: busy ? '일하는 중' : whenLabel(t.updatedAt) }),
+      busy && h('i', { class: 'spin' }),
+    ),
+    h('div', { class: 'task-title', text: t.title }),
+    (t.preview || busy) &&
+      h('p', { class: 'task-body', text: t.preview ?? `${st.saved?.pcName ?? 'PC'}에서 하고 있어요` }),
+  )
+}
+
+function approvalCard(a: ApprovalView) {
+  return h(
+    'div',
+    { class: 'task dark' },
+    h('div', { class: 'task-meta' }, h('i', { class: 'dot mint' }), '승인을 기다려요'),
+    h('div', { class: 'task-title', text: [a.what, a.amount].filter(Boolean).join(' · ') }),
+    h('p', { class: 'task-body', text: `${a.where} · 승인하시면 "${a.label}"을(를) 눌러요` }),
+    h('button', {
+      class: 'btn-light lg',
+      text: '확인하고 승인하기',
+      onclick: () => go({ name: 'approval', id: a.id }),
+    }),
+  )
+}
+
 function homeView() {
-  const pending = pendingApprovals()
-  const box = h('section', { class: 'page' }, header('두리'))
+  const box = h('section', { class: 'page home' }, header('두리'))
   if (st.pc && !st.pc.agents.length)
     box.append(
       h('div', {
@@ -442,20 +507,33 @@ function homeView() {
         text: 'PC에 일할 AI가 연결돼 있지 않아요. PC의 두리 앱에서 확인해 주세요.',
       }),
     )
-  for (const a of pending)
-    box.append(
+  // 승인할 일이 있으면 맨 위에
+  for (const a of pendingApprovals()) box.append(approvalCard(a))
+  // 부탁 칸
+  box.append(
+    composer(undefined, true),
+    h('p', { class: 'cap ask-hint', text: `맡긴 일은 ${st.saved?.pcName ?? '내 컴퓨터'}가 해요` }),
+  )
+  // 바로 맡기기
+  const quick = h('div', { class: 'quick' })
+  for (const q of QUICK)
+    quick.append(
       h(
         'button',
-        { class: 'approve-banner', onclick: () => go({ name: 'approval', id: a.id }) },
-        h(
-          'span',
-          { class: 'text' },
-          h('strong', { text: '승인을 기다려요' }),
-          h('span', { text: `${a.what}${a.amount ? ` · ${a.amount}` : ''}` }),
-        ),
-        icon('chevron'),
+        {
+          onclick: () => {
+            st.draft = q.text
+            render()
+            const ta = app.querySelector<HTMLTextAreaElement>('textarea')
+            ta?.focus()
+            ta?.setSelectionRange(q.text.length, q.text.length)
+          },
+        },
+        h('span', { class: 'quick-icon' }, icon(q.icon)),
+        q.label,
       ),
     )
+  box.append(quick)
   // 알림은 사용자가 눌러서 켤 때만 묻는다 (아무 데나 눌렀다고 권한 창을 띄우지 않는다)
   if ('Notification' in window && Notification.permission === 'default')
     box.append(
@@ -475,42 +553,39 @@ function homeView() {
         icon('chevron'),
       ),
     )
-  box.append(h('h2', { class: 'over', text: '대화' }))
+  // 최근에 맡긴 일: 앞의 셋은 카드, 나머지는 줄
+  box.append(h('h2', { class: 'over', text: '최근에 맡긴 일' }))
   if (!st.threads.length)
-    box.append(h('p', { class: 'cap empty', text: '아직 대화가 없어요. 아래에 부탁을 적어 보세요.' }))
-  const list = h('ul', { class: 'threads' })
-  for (const t of st.threads.slice(0, 30)) {
-    const busy = st.live.has(t.id)
-    list.append(
-      h(
-        'li',
-        {},
+    box.append(h('p', { class: 'cap empty', text: '아직 맡긴 일이 없어요. 위에 부탁을 적어 보세요.' }))
+  const cards = h('div', { class: 'tasks' })
+  for (const t of st.threads.slice(0, 3)) cards.append(taskCard(t))
+  box.append(cards)
+  const rest = st.threads.slice(3, 30)
+  if (rest.length) {
+    const list = h('ul', { class: 'threads' })
+    for (const t of rest)
+      list.append(
         h(
-          'button',
-          {
-            onclick: () => {
-              go({ name: 'thread', id: t.id })
-              void send({ kind: 'thread', id: t.id })
-            },
-          },
-          h('span', { class: 't', text: t.title }),
-          h('span', {
-            class: busy ? 'm busy' : 'm',
-            text: busy ? '일하는 중' : shortTime(t.updatedAt),
-          }),
+          'li',
+          {},
+          h(
+            'button',
+            { onclick: () => openThread(t.id) },
+            h('span', { class: 't', text: t.title }),
+            h('span', { class: 'm', text: shortTime(t.updatedAt) }),
+          ),
         ),
-      ),
-    )
+      )
+    box.append(h('h2', { class: 'over', text: '지난 일' }), list)
   }
-  box.append(list, composer(undefined))
   return box
 }
 
-function composer(threadId: string | undefined) {
-  const form = h('form', { class: 'composer' })
+function composer(threadId: string | undefined, top = false) {
+  const form = h('form', { class: top ? 'composer top' : 'composer' })
   const ta = h('textarea')
   ta.rows = 1
-  ta.placeholder = '두리에게 부탁하기…'
+  ta.placeholder = top ? '무엇을 맡길까요?' : '두리에게 부탁하기…'
   ta.value = st.draft
   ta.oninput = () => {
     st.draft = ta.value
@@ -559,8 +634,15 @@ function threadView(id: string | undefined) {
       i++
     }
   }
+  let prev = ''
+  const who = () => h('div', { class: 'who' }, h('span', { class: 'face' }), '두리')
   for (const m of order) {
+    // 두리 답 위에는 이름표 (이어진 답에는 한 번만)
+    if (m.role === 'assistant' && prev !== 'assistant') msgs.append(who())
+    prev = m.role
     if (m.role === 'tool') msgs.append(toolCard(m.text))
+    else if (m.role === 'user' && readAppNote(m.text) !== undefined)
+      msgs.append(h('div', { class: 'msg note', text: readAppNote(m.text) }))
     else
       msgs.append(
         h(
@@ -572,8 +654,21 @@ function threadView(id: string | undefined) {
   }
   const live = id ? st.live.get(id) : st.waitingNew ? '' : undefined
   if (live !== undefined) {
+    if (prev !== 'assistant') msgs.append(who())
+    const steps = (id && st.steps.get(id)) || []
+    const log = h('ul', { class: 'worklog' })
+    steps.forEach((label, i) => {
+      log.append(h('li', { class: i === steps.length - 1 ? 'now' : 'done', text: label }))
+    })
+    msgs.append(
+      h(
+        'div',
+        { class: 'work' },
+        h('p', { class: 'activity shimmer', text: `${st.saved?.pcName ?? 'PC'}에서 일하는 중…` }),
+        steps.length > 0 && log,
+      ),
+    )
     if (live) msgs.append(h('div', { class: 'msg assistant rich' }, rich(live)))
-    msgs.append(h('p', { class: 'activity shimmer', text: '두리가 PC에서 일하는 중…' }))
   }
   box.append(msgs, composer(id))
   return box
