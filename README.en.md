@@ -62,6 +62,7 @@ The PC side is built first. The phone app and relay come last.
 | ------------------- | ------------------------------------------------------------------------------------------------------- | -------------- |
 | M0 Skeleton         | Monorepo, Claude Code and Codex adapters, chat in the PC app, history, persona                          | ✅ Done        |
 | M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check | 🚧 In progress |
+| M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                              | Planned        |
 | M2 Browser          | dool2 Chrome extension, browser tools, CAPTCHA hand-off                                                 | Planned        |
 | M3 Approval gate    | Risk tiers, signed approvals, gate regression tests                                                     | Planned        |
 | M4 Desktop & skills | App control (e.g. KakaoTalk PC), Korean service skills                                                  | Planned        |

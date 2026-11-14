@@ -13,6 +13,8 @@
 | [0007](0007-pc-first.md) | PC 쪽을 먼저 끝까지 만들고 폰은 마지막에 붙인다 | 채택 |
 | [0008](0008-skills-cc-by-sa.md) | 스킬은 CC BY-SA 4.0으로 공개한다 | 채택 |
 | [0009](0009-node-sqlite.md) | 기록은 Node 내장 SQLite에 저장한다 | 채택 |
+| [0010](0010-pay-as-you-go-opencode.md) | 구독이 없으면 API 키 종량제로 쓴다 (OpenCode) | 채택 (구현 예정) |
+| [0011](0011-login-vault.md) | 로그인 정보는 두리 금고에 두고, AI가 아닌 두리가 채운다 | 채택 (M2~M3) |
 
 ## 새 결정을 쓰는 법
 
