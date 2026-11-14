@@ -3,13 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "두리의 브라우저 손: Chrome 확인·설치 (나중에 두리 확장 연결)",
+  "description": "두리의 브라우저 손: Chrome 확인·설치, 두리 확장과 본체를 잇는 native messaging",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./host": "./dist/host-main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -19,5 +20,8 @@
   "dependencies": {
     "@dool2/engine": "workspace:*",
     "@dool2/protocol": "workspace:*"
+  },
+  "bin": {
+    "dool2-browser-host": "./dist/host-main.js"
   }
 }

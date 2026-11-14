@@ -180,3 +180,53 @@ export type DaemonStreamEvent =
   | { type: 'agent'; event: AgentEvent }
   | { type: 'saved'; message: StoredMessage }
   | { type: 'end' }
+
+// ── 브라우저 손 (ADR 0006): 두리 본체 ↔ native messaging ↔ 두리 확장 ──────
+
+/** native messaging 호스트 이름. Chrome이 이 이름으로 등록 파일을 찾는다 */
+export const BROWSER_HOST_NAME = 'com.dool2.host'
+
+/**
+ * 개발용 확장 id. apps/extension/manifest.json의 `key`(공개키)에서 나온다.
+ * 웹 스토어에 올리면 스토어 id를 여기에 더한다 (M5).
+ */
+export const DEV_EXTENSION_ID = 'mgjjgnbhoaalicncjbbcldjffpecocah'
+export const EXTENSION_IDS = [DEV_EXTENSION_ID]
+
+/** 확장이 할 수 있는 일. 판단은 하지 않고 시킨 것만 한다 */
+export const BrowserCommandSchema = z.enum([
+  'open',
+  'navigate',
+  'snapshot',
+  'click',
+  'type',
+  'press',
+  'scroll',
+  'screenshot',
+  'back',
+  'close',
+  'focus',
+  'fill',
+])
+export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
+
+/** 본체 → 확장 */
+export interface BridgeRequest {
+  id: number
+  cmd: BrowserCommand
+  args: Record<string, unknown>
+}
+
+/** 확장 → 본체: 요청에 대한 답 */
+export type BridgeReply = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string }
+
+/** 확장 → 본체: 알림 */
+export type BridgeNotice =
+  | { event: 'hello'; version: string; browser?: string }
+  | { event: 'tab-closed'; tabId: number }
+
+export interface ExtensionStatus {
+  connected: boolean
+  version?: string
+  browser?: string
+}

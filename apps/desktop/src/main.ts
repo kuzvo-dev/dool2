@@ -2,7 +2,7 @@
 // 두리 본체(dool2d)를 같은 프로세스에서 띄우고, 화면에는 접속 주소와 토큰만 건넨다.
 // 창을 닫아도 트레이에 남아 일을 계속한다. 끝내기는 트레이 메뉴에서 한다 (docs/architecture.md 7.1).
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join, sep } from 'node:path'
+import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
 import type { Settings } from '@dool2/protocol'
@@ -132,6 +132,21 @@ function packagedPaths() {
   }
 }
 
+/**
+ * Chrome에 두리 호스트 등록 (ADR 0006). 배포 앱은 켤 때마다 등록한다.
+ * 개발 중에는 DOOL2_REGISTER_HOST=1일 때만 사용자 Chrome에 등록하고, 점검 모드는 절대 하지 않는다.
+ * DOOL2_HOST_DIRS: 시험용 Chrome 프로필의 NativeMessagingHosts 폴더 (여러 개면 경로 구분자로)
+ */
+function nativeHostOption() {
+  const extraDirs = (process.env.DOOL2_HOST_DIRS ?? '').split(delimiter).filter(Boolean)
+  const defaultTargets = !SMOKE && (app.isPackaged || process.env.DOOL2_REGISTER_HOST === '1')
+  if (!defaultTargets && !extraDirs.length) return {}
+  const script = app.isPackaged
+    ? join(here, 'native-host.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
+    : undefined
+  return { nativeHost: { ...(script ? { script } : {}), extraDirs, defaultTargets } }
+}
+
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
@@ -158,6 +173,7 @@ app.whenReady().then(async () => {
     dataDir,
     secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
     ...packagedPaths(),
+    ...nativeHostOption(),
   })
   daemon = d
   ipcMain.handle('dool2:config', () => ({

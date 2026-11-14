@@ -280,6 +280,7 @@ describe('브라우저', () => {
     const { api } = await boot()
     expect(await (await api('/api/browser')).json()).toEqual({
       chrome: { installed: true, version: '157.0.8103.79' },
+      extension: { connected: false },
     })
     expect(await (await api('/api/browser/install', { method: 'POST' })).json()).toEqual({
       install: { state: 'done' },
