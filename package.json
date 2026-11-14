@@ -1,0 +1,27 @@
+{
+  "name": "dool2",
+  "private": true,
+  "description": "두리 — 내 컴퓨터에 사는 AI 비서",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "dev:daemon": "pnpm build && pnpm --filter @dool2/daemon dev",
+    "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@types/node": "^24.19.2",
+    "turbo": "^2.11.11",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

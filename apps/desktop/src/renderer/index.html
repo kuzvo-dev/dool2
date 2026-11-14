@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data:"
+    />
+    <title>두리</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side">
+        <div class="brand">
+          <span class="dot"></span>
+          <strong>두리</strong>
+          <span class="tag">내 컴퓨터에 사는 AI 비서</span>
+        </div>
+
+        <section class="block">
+          <h2 class="over">AI 연결</h2>
+          <div id="agents" class="agents"><p class="cap">확인하는 중…</p></div>
+        </section>
+
+        <section class="block">
+          <div class="between">
+            <h2 class="over">대화</h2>
+          </div>
+          <div class="new">
+            <div id="agent-pick" class="seg" role="radiogroup" aria-label="새 대화에 쓸 AI"></div>
+            <button id="new-thread" class="btn-ghost" type="button">＋ 새 대화</button>
+          </div>
+          <ul id="threads" class="threads"></ul>
+        </section>
+      </aside>
+
+      <main class="main">
+        <header class="head">
+          <div>
+            <h1 id="title">새 대화</h1>
+            <p id="subtitle" class="cap"></p>
+          </div>
+          <div id="usage" class="usage" hidden></div>
+        </header>
+
+        <div id="messages" class="messages">
+          <div class="empty" id="empty">
+            <p class="hero">무엇을 도와드릴까요?</p>
+            <p class="sub">두리가 이 PC에서 대신 해 드려요. 돈을 쓰거나 연락하는 일은 꼭 먼저 물어봐요.</p>
+            <div class="examples">
+              <button type="button" class="chip" data-example="지금 몇 시야?">지금 몇 시야?</button>
+              <button type="button" class="chip" data-example="두리가 지금 할 수 있는 일을 알려 줘">두리가 할 수 있는 일</button>
+            </div>
+          </div>
+        </div>
+
+        <form id="composer" class="composer">
+          <textarea id="input" rows="1" placeholder="두리에게 부탁하기…" aria-label="부탁 입력"></textarea>
+          <button id="send" class="btn" type="submit">보내기</button>
+        </form>
+      </main>
+    </div>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "@dool2/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "dool2d": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "dev": "node dist/main.js"
+  },
+  "dependencies": {
+    "@dool2/agent-claude": "workspace:*",
+    "@dool2/agent-codex": "workspace:*",
+    "@dool2/engine": "workspace:*",
+    "@dool2/mcp-tools": "workspace:*",
+    "@dool2/protocol": "workspace:*",
+    "@dool2/store": "workspace:*"
+  }
+}
