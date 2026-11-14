@@ -239,6 +239,16 @@ async function startPairing(raw: string) {
     return
   }
   history.replaceState(null, '', location.pathname)
+  // 예전 연결은 끊고 새 PC와 다시 시작한다
+  st.client?.stop()
+  st.client = undefined
+  st.online = false
+  st.threads = []
+  st.messages.clear()
+  st.live.clear()
+  st.approvals.clear()
+  st.decided.clear()
+  st.pc = undefined
   const keys = await generateDevice(false)
   const saved: Saved = { pcId: invite.pc, pcBoxPub: invite.k, pcName: invite.n, keys, paired: false, seq: 0 }
   await save(saved)
@@ -251,7 +261,7 @@ async function startPairing(raw: string) {
   saved.seq += 1
   await save(saved)
   const body: PhoneToPc = { kind: 'pair', secret: invite.s, signPub: keys.signPub, name: deviceName() }
-  st.client?.send({
+  ;(st.client as LinkClient | undefined)?.send({
     ...(await seal(
       st.key,
       { v: LINK_VERSION, from: keys.id, to: invite.pc, kind: 'pair', seq: saved.seq, pub: keys.boxPub },
@@ -576,7 +586,7 @@ function approvalView(id: string) {
       'div',
       { class: `approval-head ${a.kind}` },
       h('strong', { text: RISK[a.kind] }),
-      h('span', { text: a.reason }),
+      h('span', { text: a.reason.startsWith('"') ? `누를 버튼에 ${a.reason}이(가) 있어요` : a.reason }),
     ),
     rows,
   )
@@ -637,6 +647,12 @@ function approvalView(id: string) {
 }
 
 // ── 시작 ──
+
+// 앱이 열려 있는 채로 새 QR을 찍으면 주소의 # 뒤만 바뀐다. 그때도 새로 연결한다
+window.addEventListener('hashchange', () => {
+  const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
+  if (invite) void startPairing(invite)
+})
 
 async function main() {
   if (!globalThis.crypto?.subtle || !('indexedDB' in window)) return go({ name: 'unsupported' })
