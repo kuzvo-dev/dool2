@@ -20,7 +20,7 @@
 
 ## 문의
 
-상표 사용 허락이나 문의는 [Discussions](https://github.com/kuzvo-dev/dool2/discussions)에 남겨 주세요. 공개하기 어려운 내용이면 메인테이너에게 따로 연락해 주세요.
+상표 사용 허락이나 문의는 [Discussions](https://github.com/kuzvo-dev/dool2/discussions)에 남겨 주세요. 공개하기 어려운 내용이면 kuzvomain@gmail.com 으로 연락해 주세요.
 
 ---
 
