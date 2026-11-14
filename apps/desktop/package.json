@@ -1,0 +1,23 @@
+{
+  "name": "@dool2/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "두리 PC 앱 — 내 컴퓨터에 사는 AI 비서",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-static.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "dev": "electron .",
+    "smoke": "DOOL2_SMOKE=1 electron ."
+  },
+  "dependencies": {
+    "@dool2/daemon": "workspace:*",
+    "@dool2/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2"
+  }
+}

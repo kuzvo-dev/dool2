@@ -1,2 +1,10 @@
 # 모든 파일의 리뷰·머지 권한은 메인테이너에게 있어요
 * @kuzvo-dev
+
+# 보안 핵심: 승인 게이트, 암호화, 서명 검증, 업데이트, 에이전트 도구 제한 (docs/open-source.md 3장)
+/packages/gate/          @kuzvo-dev
+/packages/protocol/      @kuzvo-dev
+/packages/agent-claude/  @kuzvo-dev
+/packages/agent-codex/   @kuzvo-dev
+/packages/mcp-tools/     @kuzvo-dev
+/.github/                @kuzvo-dev

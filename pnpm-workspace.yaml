@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# 설치 스크립트를 돌려도 되는 패키지만 허용한다 (나머지는 막힘)
+onlyBuiltDependencies:
+  - electron
+  - esbuild
