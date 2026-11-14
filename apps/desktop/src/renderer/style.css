@@ -890,3 +890,66 @@ button {
   color: var(--red);
   font-size: 13px;
 }
+/* 승인 요청 (M3) */
+.approval {
+  align-self: flex-start;
+  width: min(560px, 80%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #e6e8eb;
+  background: var(--card);
+  font-size: 13.5px;
+  color: var(--ink2);
+}
+.approval.pending {
+  border: 1.5px solid #c2410c;
+  background: #fff7ed;
+}
+.approval strong {
+  font-size: 14px;
+}
+.approval.pending strong {
+  color: #c2410c;
+}
+.approval-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.approval-rows dt {
+  color: var(--faint);
+}
+.approval-rows dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+.approval-shot {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 10px;
+  border: 1px solid #e6e8eb;
+}
+.approval .cap {
+  margin-top: 6px;
+}
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.approval-actions .btn-ghost {
+  height: 40px;
+  padding: 0 16px;
+  border-style: solid;
+  background: #fff;
+}
+.approval-actions .btn {
+  background: #c2410c;
+}

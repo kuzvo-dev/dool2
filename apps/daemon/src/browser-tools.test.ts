@@ -73,14 +73,14 @@ describe('브라우저 도구 실행', () => {
     expect(b.calls.map((c) => c[0])).toEqual(['open', 'snapshot'])
   })
 
-  it('구매 버튼은 누르지 않고 사람에게 넘기라고 한다', async () => {
+  it('구매 버튼은 누르지 않고 승인을 요청하라고 한다', async () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('click', { tabId: 3, ref: 'e4' })
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('"구매"')
-    expect(text(r)).toContain('사용자가 직접')
+    expect(text(r)).toContain('browser_request_approval')
     expect(b.calls.map((c) => c[0])).not.toContain('click')
 
     const ok = await tools.run('click', { tabId: 3, ref: 'e3' })

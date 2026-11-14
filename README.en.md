@@ -64,7 +64,7 @@ The PC side is built first. The phone app and relay come last.
 | M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check | ✅ Done |
 | M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                              | ✅ Done |
 | M2 Browser          | dool2 Chrome extension, browser tools, hand-off, login vault, first skill                               | ✅ Done |
-| M3 Approval gate    | Risk tiers, signed approvals, gate regression tests                                                     | Planned |
+| M3 Approval gate    | Risk tiers, approvals on the PC screen, gate regression tests (phone signing in M6)                     | ✅ Done |
 | M4 Desktop & skills | App control (e.g. KakaoTalk PC), Korean service skills                                                  | Planned |
 | M5 Distribution     | Signed and notarized installers, auto-update                                                            | Planned |
 | M6 Phone            | Phone app, QR pairing, relay, biometric signing                                                         | Planned |

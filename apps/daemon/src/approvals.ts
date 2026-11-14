@@ -1,0 +1,90 @@
+// 승인 게이트 (docs/architecture.md 4장, M3).
+// 위험한 버튼(돈·연락·되돌릴 수 없음)은 AI가 누를 수 없다. AI는 "이 버튼을 눌러도 될지" 요청만 하고,
+// 사용자가 화면 캡처와 내용을 보고 승인하면 **두리 본체가** 그 버튼 하나만 직접 누른다.
+// - 한 번만 쓸 수 있고, 10분이 지나면 끝난다
+// - 누르기 직전 페이지를 다시 읽어, 승인한 버튼(글자)과 주소가 그대로일 때만 누른다
+// - AI가 적은 금액·내용은 틀릴 수 있다(프롬프트 주입). 그래서 승인 카드에 실제 화면 캡처를 함께 보여 준다
+// 폰 생체인증 서명은 폰 앱(M6)과 함께 붙는다. 지금은 PC 앱의 화면용 토큰을 가진 쪽(사용자 화면)만 승인할 수 있다.
+import { randomUUID } from 'node:crypto'
+import type { ApprovalView } from '@dool2/protocol'
+import type { RiskKind } from './browser-tools.js'
+
+export const APPROVAL_TTL_MS = 10 * 60_000
+
+export interface ApprovalRecord extends ApprovalView {
+  /** 승인 카드에 보여 줄 화면 캡처 (JPEG base64) */
+  shot?: string
+}
+
+export interface NewApproval {
+  tabId: number
+  ref: string
+  role: string
+  label: string
+  url: string
+  kind: RiskKind
+  reason: string
+  what: string
+  where: string
+  amount?: string
+  cancel?: string
+  shot?: string
+}
+
+export class Approvals {
+  private items = new Map<string, ApprovalRecord>()
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  create(n: NewApproval): ApprovalRecord {
+    const t = this.now()
+    // 같은 탭·같은 버튼에 기다리는 요청이 있으면 새것으로 바꾼다
+    for (const r of this.items.values())
+      if (r.status === 'pending' && r.tabId === n.tabId && r.ref === n.ref) r.status = 'expired'
+    const rec: ApprovalRecord = {
+      ...n,
+      id: randomUUID(),
+      status: 'pending',
+      createdAt: new Date(t).toISOString(),
+      expiresAt: new Date(t + APPROVAL_TTL_MS).toISOString(),
+    }
+    this.items.set(rec.id, rec)
+    return rec
+  }
+
+  get(id: string): ApprovalRecord | undefined {
+    const r = this.items.get(id)
+    if (r?.status === 'pending' && Date.parse(r.expiresAt) <= this.now()) r.status = 'expired'
+    return r
+  }
+
+  list(): ApprovalView[] {
+    return [...this.items.keys()].map((id) => {
+      const { shot: _s, ...view } = this.get(id) as ApprovalRecord
+      return view
+    })
+  }
+
+  /** 기다리는 요청을 하나 꺼내 처리 중으로 바꾼다. 이미 처리됐거나 만료됐으면 undefined */
+  take(id: string): ApprovalRecord | undefined {
+    const r = this.get(id)
+    if (!r || r.status !== 'pending') return undefined
+    r.status = 'approved'
+    return r
+  }
+
+  reject(id: string): boolean {
+    const r = this.get(id)
+    if (!r || r.status !== 'pending') return false
+    r.status = 'rejected'
+    return true
+  }
+
+  finish(id: string, ok: boolean, result: string) {
+    const r = this.items.get(id)
+    if (!r) return
+    r.status = ok ? 'done' : 'failed'
+    r.result = result
+    r.shot = undefined
+  }
+}

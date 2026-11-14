@@ -520,6 +520,19 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             ),
           )
           card.append(el('h2', 'over', '두리가 쉬지 않게'), list)
+          const approve = (current.finalStep ?? 'approve') === 'approve'
+          const gate = el('ul', 'checks toggles')
+          gate.append(
+            toggleRow(
+              '결제·보내기는 승인하면 두리가 누르기',
+              approve
+                ? '두리가 화면 캡처와 내용을 보여 드리고, 승인하시면 그 버튼 하나만 눌러요.'
+                : '꺼져 있어요. 마지막 버튼은 항상 직접 누르세요. 두리는 바로 앞까지만 준비해요.',
+              approve,
+              () => void save({ finalStep: approve ? 'self' : 'approve' }),
+            ),
+          )
+          card.append(el('h2', 'over', '마지막 확인'), gate)
           card.append(el('h2', 'over', '두리 금고'), vaultBlock())
           const ai = el('p', 'setup-hint')
           ai.append(

@@ -1,4 +1,10 @@
-import type { AgentEvent, AgentId, DaemonStreamEvent, HandoffRecord } from '@dool2/protocol'
+import type {
+  AgentEvent,
+  AgentId,
+  ApprovalRecordMessage,
+  DaemonStreamEvent,
+  HandoffRecord,
+} from '@dool2/protocol'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -76,6 +82,17 @@ export class ThreadService {
             kind: 'handoff',
             ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
             reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
+          }
+          yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+        }
+        // 승인 요청도 남긴다. 카드는 본체에 상태(기다림·승인·거절·만료)를 물어 그린다
+        if (ev.type === 'tool' && /browser_request_approval$/.test(ev.name)) {
+          const input = (ev.input ?? {}) as { tabId?: unknown; ref?: unknown; what?: unknown }
+          const record: ApprovalRecordMessage = {
+            kind: 'approval',
+            ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
+            ...(typeof input.ref === 'string' ? { ref: input.ref } : {}),
+            what: typeof input.what === 'string' ? input.what : '',
           }
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
         }
