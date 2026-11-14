@@ -225,6 +225,56 @@ describe('Claude 로그인', () => {
   })
 })
 
+describe('종량제 계정', () => {
+  it('제공자·모델은 설정에, 키는 비밀값 보관소에 두고, 키는 끝 4자리만 보여 준다', async () => {
+    const { api } = await boot()
+    expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
+    const cat = (await (await api('/api/agents/opencode/catalog')).json()) as { providers: { id: string }[] }
+    expect(cat.providers.map((p) => p.id)).toContain('anthropic')
+
+    const saved = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider: 'anthropic',
+        model: 'claude-sonnet-5-5',
+        apiKey: 'sk-ant-secret-9876',
+      }),
+    })
+    const body = await saved.text()
+    expect(body).not.toContain('secret')
+    expect(JSON.parse(body)).toEqual({
+      account: { provider: 'anthropic', model: 'claude-sonnet-5-5', hasKey: true, keyHint: '9876' },
+    })
+    // 설정에는 키가 없다
+    const settings = await (await api('/api/settings')).text()
+    expect(settings).not.toContain('sk-ant')
+
+    // 키 없이 모델만 바꾸기
+    const changed = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
+    })
+    expect(await changed.json()).toMatchObject({ account: { model: 'claude-haiku-5-5', hasKey: true } })
+
+    await api('/api/agents/opencode/account', { method: 'DELETE' })
+    expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
+  })
+
+  it('모르는 제공자나 키 없는 첫 저장은 거절한다', async () => {
+    const { api } = await boot()
+    const bad = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({ provider: 'nope', model: 'x', apiKey: '12345678' }),
+    })
+    expect(bad.status).toBe(400)
+    const noKey = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({ provider: 'openai', model: 'gpt-5.6' }),
+    })
+    expect(noKey.status).toBe(400)
+  })
+})
+
 describe('브라우저', () => {
   it('Chrome 상태를 알려 주고, 이미 있으면 설치하지 않는다', async () => {
     const { api } = await boot()

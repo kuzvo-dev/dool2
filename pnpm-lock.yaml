@@ -32,6 +32,9 @@ importers:
       '@dool2/agent-codex':
         specifier: workspace:*
         version: link:../../packages/agent-codex
+      '@dool2/agent-opencode':
+        specifier: workspace:*
+        version: link:../../packages/agent-opencode
       '@dool2/browser':
         specifier: workspace:*
         version: link:../../packages/browser

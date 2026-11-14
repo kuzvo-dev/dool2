@@ -6,8 +6,19 @@ import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
 import type { Settings } from '@dool2/protocol'
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerSaveBlocker, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  powerSaveBlocker,
+  safeStorage,
+  shell,
+  Tray,
+} from 'electron'
 import { KeepAwake, loginItemSettings } from './power.js'
+import { fileSecrets } from './secrets.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const assets = join(here, '..', 'assets')
@@ -145,7 +156,11 @@ app.on('second-instance', showWindow)
 
 app.whenReady().then(async () => {
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
-  const d = await startDaemon({ dataDir, ...packagedPaths() })
+  const d = await startDaemon({
+    dataDir,
+    secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
+    ...packagedPaths(),
+  })
   daemon = d
   ipcMain.handle('dool2:config', () => ({
     url: d.url,

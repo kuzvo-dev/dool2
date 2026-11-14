@@ -31,7 +31,7 @@ export interface SetupOptions {
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
 }
 
-type InstallKind = 'claude' | 'chrome'
+type InstallKind = 'claude' | 'chrome' | 'opencode'
 
 /** 부품별 설치 주소와 안내 문구 */
 // obj: 조사까지 붙인 이름 (Claude Code를 / Chrome을)
@@ -41,6 +41,12 @@ const INSTALLS: Record<InstallKind, { url: string; obj: string; source: string; 
     obj: 'Claude Code를',
     source: 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.',
     help: 'https://code.claude.com/docs/en/setup',
+  },
+  opencode: {
+    url: '/api/agents/opencode/install',
+    obj: '종량제 실행기를',
+    source: '오픈소스 OpenCode 공식 릴리스에서 받아요. 확인값을 맞춰 본 뒤 설치해요.',
+    help: 'https://opencode.ai',
   },
   chrome: {
     url: '/api/browser/install',
@@ -91,6 +97,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   const installs: Record<InstallKind, InstallStatus> = {
     claude: { state: 'idle' },
     chrome: { state: 'idle' },
+    opencode: { state: 'idle' },
   }
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
@@ -137,8 +144,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
     // 설치가 끝나면 그 부품의 상태를 다시 확인한다
     const refresh = async (kind: InstallKind) => {
-      if (kind === 'claude') agents = await opts.loadAgents()
-      else chrome = await opts.loadChrome()
+      if (kind === 'chrome') chrome = await opts.loadChrome()
+      else agents = await opts.loadAgents()
     }
 
     // 설치 진행률을 주기적으로 받아 온다
@@ -262,8 +269,12 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       } else if (action === 'claude-login') {
         await startClaudeLogin()
         return
+      } else if (action === 'payg-key') {
+        note = 'API 키 입력 화면은 곧 붙어요.'
       } else {
-        await startInstall(action === 'chrome-install' ? 'chrome' : 'claude')
+        const kind: InstallKind =
+          action === 'chrome-install' ? 'chrome' : action === 'opencode-install' ? 'opencode' : 'claude'
+        await startInstall(kind)
         return
       }
       render()
@@ -477,11 +488,15 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         li.append(mark, text)
         if (item.action) {
           const label =
-            item.action === 'claude-install' || item.action === 'chrome-install'
+            item.action === 'claude-install' ||
+            item.action === 'chrome-install' ||
+            item.action === 'opencode-install'
               ? '설치하기'
-              : item.action === 'codex-login'
-                ? 'ChatGPT로 로그인'
-                : '로그인하기'
+              : item.action === 'payg-key'
+                ? '키 넣기'
+                : item.action === 'codex-login'
+                  ? 'ChatGPT로 로그인'
+                  : '로그인하기'
           const action = item.action
           const b = button('btn-small', label, () => void act(action))
           if (action === 'claude-login' && login.state === 'waiting') {
@@ -489,7 +504,13 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             b.disabled = true
           }
           const kind: InstallKind | undefined =
-            action === 'claude-install' ? 'claude' : action === 'chrome-install' ? 'chrome' : undefined
+            action === 'claude-install'
+              ? 'claude'
+              : action === 'chrome-install'
+                ? 'chrome'
+                : action === 'opencode-install'
+                  ? 'opencode'
+                  : undefined
           if (kind && installs[kind].state === 'running') {
             b.textContent = '설치 중…'
             b.disabled = true
@@ -499,7 +520,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         list.append(li)
       }
       parts.push(list)
-      for (const kind of ['claude', 'chrome'] as const) {
+      for (const kind of ['claude', 'opencode', 'chrome'] as const) {
         const st = installs[kind].state
         if (st === 'running' || st === 'failed') parts.push(installPanel(kind))
       }

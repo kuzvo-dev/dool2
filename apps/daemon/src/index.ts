@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexRuntime } from '@dool2/agent-codex'
+import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS } from '@dool2/agent-opencode'
 import { ChromeInstall, detectChrome } from '@dool2/browser'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
@@ -20,6 +21,8 @@ import {
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
+  type PaygAccount,
+  PaygAccountRequestSchema,
   SendMessageRequestSchema,
   type Settings,
   SettingsPatchSchema,
@@ -39,11 +42,34 @@ export interface DaemonOptions {
   mcpServerScript?: string
   /** 배포 앱: 함께 넣은 Codex 실행 파일 */
   codexBin?: string
+  /** API 키 같은 비밀값 보관소 (기본: 메모리) */
+  secrets?: SecretStore
   /** 테스트용: Chrome 확인·설치를 바꿔 끼운다 */
   chrome?: { detect(): Promise<ChromeStatus>; createInstall?(downloadDir: string): ChromeInstall }
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
+
+/** 비밀값 보관소. PC 앱은 OS 키체인(safeStorage)으로 암호화해 둔다 */
+export interface SecretStore {
+  get(key: string): Promise<string | undefined>
+  /** undefined면 지운다 */
+  set(key: string, value: string | undefined): Promise<void>
+}
+
+/** 개발용: 메모리에만 둔다 (껐다 켜면 사라짐) */
+export function memorySecrets(): SecretStore {
+  const m = new Map<string, string>()
+  return {
+    get: async (k) => m.get(k),
+    set: async (k, v) => {
+      if (v === undefined) m.delete(k)
+      else m.set(k, v)
+    },
+  }
+}
+
+const PAYG_KEY = 'payg.apiKey'
 
 export interface DaemonEvents {
   /** 설정이 바뀌었다 (PC 앱이 전원·자동 시작을 다시 맞춘다) */
@@ -82,12 +108,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   await mkdir(paths.codexHome, { recursive: true })
 
   const store = new Store(paths.db)
+  const secrets = opts.secrets ?? memorySecrets()
+  const savedPayg = () => {
+    const parsed = SettingsSchema.partial().safeParse(store.getSettings())
+    return parsed.success ? parsed.data.payg : undefined
+  }
+  /** 종량제 계정: 제공자·모델은 설정, 키는 비밀값 보관소에서. 실행할 때만 합친다 */
+  const paygAccount = async () => {
+    const payg = savedPayg()
+    const apiKey = await secrets.get(PAYG_KEY)
+    return payg && apiKey ? { ...payg, apiKey } : undefined
+  }
   const runtimes: Partial<Record<AgentId, AgentRuntime>> = opts.runtimes ?? {
     claude: new ClaudeRuntime(),
     codex: new CodexRuntime({
       codexHome: paths.codexHome,
       ...(opts.codexBin ? { binPath: opts.codexBin } : {}),
     }),
+    opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
   }
   const threads = new ThreadService({
     store,
@@ -110,6 +148,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   let claudeInstall: ClaudeInstall | undefined
   let chromeInstall: ChromeInstall | undefined
+  let opencodeInstall: OpenCodeInstall | undefined
+  /** 화면에 보여 줄 종량제 계정. 키는 끝 4자리만 */
+  const paygView = async (): Promise<PaygAccount | null> => {
+    const payg = savedPayg()
+    if (!payg) return null
+    const key = await secrets.get(PAYG_KEY)
+    return { ...payg, hasKey: Boolean(key), ...(key ? { keyHint: key.slice(-4) } : {}) }
+  }
   const chrome = opts.chrome ?? {
     detect: () => detectChrome(),
     createInstall: (downloadDir: string) => new ChromeInstall({ downloadDir }),
@@ -152,6 +198,43 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { agents: list })
     }
 
+    // 종량제 모드: OpenCode 설치, 제공자·모델·API 키 (ADR 0010)
+    if (a === 'agents' && b === 'opencode') {
+      if (c === 'catalog' && req.method === 'GET') return json(res, 200, { providers: PAYG_PROVIDERS })
+      if (c === 'account' && !d) {
+        if (req.method === 'GET') return json(res, 200, { account: await paygView() })
+        if (req.method === 'PUT') {
+          const body = PaygAccountRequestSchema.parse(await readJson(req))
+          const provider = PAYG_PROVIDERS.find((p) => p.id === body.provider)
+          if (!provider) return json(res, 400, { error: '지원하지 않는 AI 제공자예요' })
+          if (!body.apiKey && !(await secrets.get(PAYG_KEY)))
+            return json(res, 400, { error: 'API 키를 넣어 주세요' })
+          if (body.apiKey) await secrets.set(PAYG_KEY, body.apiKey)
+          store.setSetting('payg', { provider: body.provider, model: body.model })
+          events.emit('settings', readSettings())
+          return json(res, 200, { account: await paygView() })
+        }
+        if (req.method === 'DELETE') {
+          await secrets.set(PAYG_KEY, undefined)
+          store.setSetting('payg', undefined)
+          events.emit('settings', readSettings())
+          return json(res, 200, { account: null })
+        }
+      }
+      if (c === 'install' && !d) {
+        if (req.method === 'GET')
+          return json(res, 200, { install: opencodeInstall?.status ?? { state: 'idle' } })
+        if (req.method === 'POST') {
+          opencodeInstall ??= new OpenCodeInstall({ dir: paths.opencode })
+          return json(res, 200, { install: opencodeInstall.start() })
+        }
+        if (req.method === 'DELETE') {
+          opencodeInstall?.cancel()
+          return json(res, 200, { install: { state: 'idle' } })
+        }
+      }
+    }
+
     // 브라우저: Chrome 확인·설치 (ADR 0006)
     if (a === 'browser' && !b && req.method === 'GET')
       return json(res, 200, { chrome: await chrome.detect() })
@@ -165,6 +248,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (req.method === 'DELETE') {
         chromeInstall?.cancel()
+        opencodeInstall?.cancel()
         return json(res, 200, { install: { state: 'idle' } })
       }
     }
