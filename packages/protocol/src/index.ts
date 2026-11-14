@@ -104,6 +104,19 @@ export const DEFAULT_SETTINGS: Settings = { setupDone: false }
 export const SettingsPatchSchema = SettingsSchema.partial().strict()
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
+// ── Claude 로그인 (공식 `claude auth login`을 띄워 진행) ─────────────
+
+export type ClaudeLoginStatus =
+  | { state: 'idle' }
+  /** url: 브라우저에서 열 로그인 주소. codeRejected: 붙여 넣은 코드가 맞지 않았음 */
+  | { state: 'waiting'; url?: string; codeRejected?: boolean }
+  | { state: 'done' }
+  | { state: 'failed'; message: string }
+
+export const ClaudeLoginCodeSchema = z.object({
+  code: z.string().trim().min(1).max(2_000),
+})
+
 /** 데몬이 SSE로 흘려보내는 이벤트 */
 export type DaemonStreamEvent =
   | { type: 'agent'; event: AgentEvent }

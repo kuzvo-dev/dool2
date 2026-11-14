@@ -1,11 +1,14 @@
 // Claude Code 어댑터.
-// 원칙 (docs/architecture.md 3.2): 사용자가 설치하고 로그인한 공식 `claude`를 수정 없이 실행만 한다.
-// 두리는 로그인 화면·토큰을 다루지 않는다. 내장 도구는 모두 끄고 두리 MCP 도구만 쓰게 한다.
+// 원칙 (ADR 0002): 사용자가 설치한 공식 `claude`를 수정 없이 실행만 한다.
+// 로그인도 공식 `claude auth login`이 하고, 두리는 토큰을 읽거나 저장하지 않는다 (login.ts).
+// 내장 도구는 모두 끄고 두리 MCP 도구만 쓰게 한다 (ADR 0003).
 
 import { type AgentRuntime, findExecutable, runOnce, spawnLines, type TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
+import { ClaudeLogin, type ClaudeLoginOptions } from './login.js'
 import { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
+export { ClaudeLogin, type ClaudeLoginOptions, type LoginChild, loginEnv, type SpawnLogin } from './login.js'
 export { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
 /** `claude -p` 인자. 순수 함수라 테스트로 고정한다. */
@@ -83,6 +86,13 @@ export class ClaudeRuntime implements AgentRuntime {
       status.problem = `Claude Code 상태를 확인하지 못했어요: ${(err as Error).message}`
     }
     return status
+  }
+
+  /** 로그인 버튼용 세션을 만든다. 설치돼 있지 않으면 undefined */
+  async createLogin(opts: Partial<ClaudeLoginOptions> = {}): Promise<ClaudeLogin | undefined> {
+    const bin = await this.bin()
+    if (!bin) return undefined
+    return new ClaudeLogin({ bin, isLoggedIn: async () => (await this.detect()).loggedIn, ...opts })
   }
 
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {

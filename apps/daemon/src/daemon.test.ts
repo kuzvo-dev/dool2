@@ -1,6 +1,9 @@
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
+import { ClaudeLogin } from '@dool2/agent-claude'
 import type { AgentRuntime, TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -140,6 +143,57 @@ describe('설정', () => {
     expect(unknown.status).toBe(400)
     const wrong = await api('/api/settings', { method: 'PATCH', body: '{"defaultAgent":"gemini"}' })
     expect(wrong.status).toBe(400)
+  })
+})
+
+describe('Claude 로그인', () => {
+  it('설치돼 있지 않으면 설치부터 안내한다', async () => {
+    const { api } = await boot()
+    const res = await api('/api/agents/claude/login', { method: 'POST' })
+    expect(res.status).toBe(409)
+  })
+
+  it('공식 로그인을 띄워 주소를 주고, 코드를 넘기면 끝난다', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
+    let loggedIn = false
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      kill: () => {},
+    })
+    child.stdin.on('data', () => {
+      loggedIn = true
+    })
+    const rt = Object.assign(new EchoRuntime(), {
+      createLogin: async () =>
+        new ClaudeLogin({
+          bin: 'claude',
+          isLoggedIn: async () => loggedIn,
+          spawn: () => {
+            setTimeout(
+              () => child.stdout.write('visit: https://claude.com/cai/oauth/authorize?code=true&x=1\n'),
+              5,
+            )
+            return child
+          },
+          pollMs: 10,
+        }),
+    })
+    daemon = await startDaemon({ dataDir: dir, token: 't0ken', runtimes: { claude: rt } })
+    const api = (path: string, init: RequestInit = {}) =>
+      fetch(`${daemon?.url}${path}`, {
+        ...init,
+        headers: { authorization: 'Bearer t0ken', 'content-type': 'application/json' },
+      })
+    const started = (await (await api('/api/agents/claude/login', { method: 'POST' })).json()) as {
+      login: { state: string; url?: string }
+    }
+    expect(started.login).toMatchObject({ state: 'waiting', url: expect.stringContaining('oauth/authorize') })
+    const done = await api('/api/agents/claude/login/code', { method: 'POST', body: '{"code":"abc"}' })
+    expect(await done.json()).toEqual({ login: { state: 'done' } })
+    const empty = await api('/api/agents/claude/login/code', { method: 'POST', body: '{"code":"  "}' })
+    expect(empty.status).toBe(400)
   })
 })
 

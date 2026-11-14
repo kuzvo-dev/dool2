@@ -16,6 +16,7 @@ Anthropic은 제3자 앱이 claude.ai 로그인을 대신 처리하거나 구독
 ## 결정
 
 - **Claude**: 사용자가 설치하고 로그인한 공식 `claude` 바이너리를 `claude -p`(헤드리스)로 실행해요. 두리는 Claude 로그인 정보나 토큰을 읽거나 저장하지 않아요. `--bare`처럼 구독 로그인을 무시하는 옵션은 쓰지 않아요.
+  - **로그인 버튼**: 두리는 공식 `claude auth login`을 띄우고, 브라우저에서 받은 코드를 사용자가 붙여 넣으면 그 프로그램에 그대로 전달만 해요. 코드와 토큰은 저장·기록하지 않고, 로그인 성공 여부는 `claude auth status`로만 확인해요.
 - **Codex**: 고정 버전(`@openai/codex`, Apache-2.0)을 앱에 동봉하고 `codex app-server`(JSON-RPC)로 실행해요. 사용자 본인의 Codex와 섞이지 않게 두리 전용 `CODEX_HOME`을 써요.
 - 두 에이전트는 `packages/engine`의 공통 인터페이스(`AgentRuntime`) 뒤에 둬요.
 
