@@ -83,6 +83,27 @@ export const SendMessageRequestSchema = z.object({
 })
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>
 
+// ── 설정 (이 PC에만 저장) ──────────────────────────────────────
+
+/** 첫 실행 때 고른 AI 구독. 잘 모르면 'unsure' */
+export const AiChoiceSchema = z.enum(['claude', 'codex', 'both', 'unsure'])
+export type AiChoice = z.infer<typeof AiChoiceSchema>
+
+export const SettingsSchema = z.object({
+  /** 첫 실행 마법사를 끝냈는지 */
+  setupDone: z.boolean(),
+  aiChoice: AiChoiceSchema.optional(),
+  /** 새 대화를 시작할 때 고를 AI */
+  defaultAgent: AgentIdSchema.optional(),
+})
+export type Settings = z.infer<typeof SettingsSchema>
+
+export const DEFAULT_SETTINGS: Settings = { setupDone: false }
+
+/** 바꿀 항목만 보낸다. 모르는 항목은 거절한다 */
+export const SettingsPatchSchema = SettingsSchema.partial().strict()
+export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
+
 /** 데몬이 SSE로 흘려보내는 이벤트 */
 export type DaemonStreamEvent =
   | { type: 'agent'; event: AgentEvent }

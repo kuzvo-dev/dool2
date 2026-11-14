@@ -106,6 +106,43 @@ describe('dool2d 로컬 API', () => {
   })
 })
 
+describe('설정', () => {
+  it('처음에는 기본값을 준다', async () => {
+    const { api } = await boot()
+    expect(await (await api('/api/settings')).json()).toEqual({ settings: { setupDone: false } })
+  })
+
+  it('바꾼 항목만 저장하고, 다시 켜도 남아 있다', async () => {
+    const { api } = await boot()
+    const res = await api('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ aiChoice: 'both', defaultAgent: 'codex' }),
+    })
+    expect(await res.json()).toEqual({
+      settings: { setupDone: false, aiChoice: 'both', defaultAgent: 'codex' },
+    })
+    await api('/api/settings', { method: 'PATCH', body: '{"setupDone":true}' })
+
+    const keep = dir
+    dir = undefined // 첫 데몬을 닫아도 폴더는 남긴다
+    await daemon?.close()
+    daemon = await startDaemon({ dataDir: keep, token: 't0ken', runtimes: { claude: new EchoRuntime() } })
+    dir = keep
+    const again = await fetch(`${daemon.url}/api/settings`, { headers: { authorization: 'Bearer t0ken' } })
+    expect(await again.json()).toEqual({
+      settings: { setupDone: true, aiChoice: 'both', defaultAgent: 'codex' },
+    })
+  })
+
+  it('모르는 항목이나 틀린 값은 받지 않는다', async () => {
+    const { api } = await boot()
+    const unknown = await api('/api/settings', { method: 'PATCH', body: '{"admin":true}' })
+    expect(unknown.status).toBe(400)
+    const wrong = await api('/api/settings', { method: 'PATCH', body: '{"defaultAgent":"gemini"}' })
+    expect(wrong.status).toBe(400)
+  })
+})
+
 describe('defaultDataDir', () => {
   it('OS별 표준 위치를 쓴다', () => {
     expect(defaultDataDir({}, 'darwin')).toBe(join(homedir(), 'Library', 'Application Support', 'dool2'))

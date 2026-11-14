@@ -37,4 +37,15 @@ describe('Store', () => {
     store = new Store(':memory:')
     expect(() => store?.updateThread('nope', { title: 'x' })).toThrow('대화를 찾을 수 없어요')
   })
+
+  it('설정을 JSON으로 저장하고, undefined면 지운다', () => {
+    store = new Store(':memory:')
+    expect(store.getSetting('setupDone')).toBeUndefined()
+    store.setSetting('setupDone', true)
+    store.setSetting('aiChoice', 'both')
+    store.setSetting('aiChoice', 'claude')
+    expect(store.getSettings()).toEqual({ setupDone: true, aiChoice: 'claude' })
+    store.setSetting('aiChoice', undefined)
+    expect(store.getSettings()).toEqual({ setupDone: true })
+  })
 })

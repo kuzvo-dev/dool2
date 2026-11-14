@@ -13,7 +13,11 @@ import {
   AgentIdSchema,
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
+  DEFAULT_SETTINGS,
   SendMessageRequestSchema,
+  type Settings,
+  SettingsPatchSchema,
+  SettingsSchema,
 } from '@dool2/protocol'
 import { Store } from '@dool2/store'
 import { dataPaths, defaultDataDir } from './paths.js'
@@ -67,6 +71,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 
+  /** 저장된 설정을 읽는다. 깨진 값이나 옛 항목이 있어도 기본값으로 메운다 */
+  function readSettings(): Settings {
+    const parsed = SettingsSchema.partial().safeParse(store.getSettings())
+    return { ...DEFAULT_SETTINGS, ...(parsed.success ? parsed.data : {}) }
+  }
+
   const server = createServer((req, res) => {
     handle(req, res).catch((err: Error) => {
       // 입력 검사 실패는 400, 나머지는 500
@@ -102,6 +112,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 409, {
         error: 'Claude 로그인은 Claude Code 공식 로그인으로 해 주세요: claude auth login',
       })
+    }
+
+    if (a === 'settings' && !b) {
+      if (req.method === 'GET') return json(res, 200, { settings: readSettings() })
+      if (req.method === 'PATCH') {
+        const patch = SettingsPatchSchema.parse(await readJson(req))
+        for (const [key, value] of Object.entries(patch)) store.setSetting(key, value)
+        return json(res, 200, { settings: readSettings() })
+      }
     }
 
     if (a === 'threads' && !b) {
