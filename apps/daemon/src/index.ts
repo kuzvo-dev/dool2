@@ -5,7 +5,8 @@ import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
-import { type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
+import { join } from 'node:path'
+import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexRuntime } from '@dool2/agent-codex'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
@@ -73,6 +74,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 
+  let claudeInstall: ClaudeInstall | undefined
   let claudeLogin: ClaudeLogin | undefined
   const createClaudeLogin = async () => {
     const rt = runtimes.claude as
@@ -111,6 +113,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { agents: list })
     }
 
+    // Claude Code 설치: 공식 배포 서버에서 받아 체크섬을 확인하고 공식 `claude install`로 마무리 (install.ts)
+    if (a === 'agents' && b === 'claude' && c === 'install' && !d) {
+      const rt = runtimes.claude as
+        | (AgentRuntime & { createInstall?: (dir: string) => ClaudeInstall })
+        | undefined
+      if (req.method === 'GET') return json(res, 200, { install: claudeInstall?.status ?? { state: 'idle' } })
+      if (req.method === 'POST') {
+        claudeInstall ??= rt?.createInstall?.(join(paths.dataDir, 'downloads'))
+        if (!claudeInstall) return json(res, 409, { error: '이 컴퓨터에서는 Claude Code를 설치할 수 없어요' })
+        return json(res, 200, { install: claudeInstall.start() })
+      }
+      if (req.method === 'DELETE') {
+        claudeInstall?.cancel()
+        return json(res, 200, { install: { state: 'idle' } })
+      }
+    }
+
     // Claude 로그인: 공식 `claude auth login`을 띄워 진행한다 (login.ts)
     if (a === 'agents' && b === 'claude' && c === 'login') {
       const send = (login: ClaudeLoginStatus) => json(res, 200, { login })
@@ -127,6 +146,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (req.method === 'DELETE' && !d) {
         claudeLogin?.cancel()
+        claudeInstall?.cancel()
         return send({ state: 'idle' })
       }
     }
