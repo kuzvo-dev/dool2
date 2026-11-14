@@ -110,6 +110,16 @@ function renderAgents() {
           [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
           ' '
         el.append(row, meta)
+        // 아직 없는 AI는 마법사의 설치 단계로 바로 데려간다
+        if (!a.installed && (a.id === 'claude' || a.id === 'codex')) {
+          const get = document.createElement('button')
+          get.className = 'act'
+          get.type = 'button'
+          get.textContent = a.id === 'claude' ? 'Claude Code 설치하기 →' : 'Codex 받기 →'
+          const which = a.id === 'claude' ? 'claude' : 'codex'
+          get.onclick = () => void openSetup({ step: 'check', choice: which, action: `${which}-install` })
+          el.append(get)
+        }
         if (a.installed && !a.loggedIn) {
           const btn = document.createElement('button')
           btn.className = 'act'

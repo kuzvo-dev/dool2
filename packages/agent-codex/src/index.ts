@@ -4,14 +4,17 @@
 // 셸·웹 검색을 끄고 읽기 전용 샌드박스로 묶는다. 두리 도구(MCP)가 없으면 시작하지 않는다.
 // TODO(M3): 로그인은 OpenAI "Sign in with ChatGPT"(오픈소스 앱 경로)로 바꾼다. M0은 `codex login`을 쓴다.
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { type AgentRuntime, findExecutable, type McpServerSpec, runOnce, type TurnInput } from '@dool2/engine'
+import { type AgentRuntime, type McpServerSpec, runOnce, type TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { resolveBundledCodex } from './bin.js'
+import { downloadedCodexBin } from './download.js'
 import { CodexEventMapper, rateLimitEvents } from './map.js'
 import { JsonRpcClient } from './rpc.js'
 
 export { CODEX_VERSION, resolveBundledCodex } from './bin.js'
+export * from './download.js'
 export { CodexEventMapper } from './map.js'
 export { JsonRpcClient } from './rpc.js'
 
@@ -44,8 +47,10 @@ export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
 export interface CodexRuntimeOptions {
   /** 두리 전용 CODEX_HOME (로그인·설정·세션이 여기에 남는다) */
   codexHome: string
-  /** 지정하지 않으면 함께 설치된 고정 버전 → PATH 순서로 찾는다 */
+  /** 지정하지 않으면 처음 쓸 때 내려받은 것(installDir) → 개발 중 node_modules의 고정 버전 순서로 찾는다 */
   binPath?: string
+  /** 처음 쓸 때 Codex를 내려받는 폴더 (download.ts) */
+  installDir?: string
 }
 
 export class CodexRuntime implements AgentRuntime {
@@ -55,7 +60,13 @@ export class CodexRuntime implements AgentRuntime {
   constructor(private readonly opts: CodexRuntimeOptions) {}
 
   private async bin() {
-    this.resolved ??= this.opts.binPath ?? resolveBundledCodex() ?? (await findExecutable('codex'))
+    // 사용자 PATH의 다른 버전 codex는 쓰지 않는다 (app-server 규약이 버전마다 달라서 고정 버전만)
+    if (this.resolved) return this.resolved
+    const downloaded = this.opts.installDir ? downloadedCodexBin(this.opts.installDir) : undefined
+    this.resolved =
+      this.opts.binPath ??
+      (downloaded && existsSync(downloaded) ? downloaded : undefined) ??
+      resolveBundledCodex()
     return this.resolved
   }
 
@@ -65,7 +76,8 @@ export class CodexRuntime implements AgentRuntime {
 
   async detect(): Promise<AgentStatus> {
     const path = await this.bin()
-    if (!path) return { id: 'codex', installed: false, loggedIn: false, problem: 'Codex를 찾지 못했어요' }
+    if (!path)
+      return { id: 'codex', installed: false, loggedIn: false, problem: 'Codex를 아직 받지 않았어요' }
     await mkdir(this.opts.codexHome, { recursive: true })
     const status: AgentStatus = { id: 'codex', installed: true, path, loggedIn: false }
     try {

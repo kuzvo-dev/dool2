@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
-import { CodexRuntime } from '@dool2/agent-codex'
+import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
 import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS } from '@dool2/agent-opencode'
 import { ChromeInstall, detectChrome } from '@dool2/browser'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
@@ -40,7 +40,7 @@ export interface DaemonOptions {
   token?: string
   /** 배포 앱: 묶어 둔 두리 도구 서버 스크립트 (없으면 @dool2/mcp-tools/server) */
   mcpServerScript?: string
-  /** 배포 앱: 함께 넣은 Codex 실행 파일 */
+  /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
   secrets?: SecretStore
@@ -123,6 +123,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     claude: new ClaudeRuntime(),
     codex: new CodexRuntime({
       codexHome: paths.codexHome,
+      installDir: paths.codex,
       ...(opts.codexBin ? { binPath: opts.codexBin } : {}),
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
@@ -149,6 +150,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   let claudeInstall: ClaudeInstall | undefined
   let chromeInstall: ChromeInstall | undefined
   let opencodeInstall: OpenCodeInstall | undefined
+  let codexInstall: CodexInstall | undefined
   /** 화면에 보여 줄 종량제 계정. 키는 끝 4자리만 */
   const paygView = async (): Promise<PaygAccount | null> => {
     const payg = savedPayg()
@@ -198,6 +200,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { agents: list })
     }
 
+    // Codex: 처음 쓸 때 npm 공식 레지스트리에서 받아 고정한 SHA-512로 확인 (download.ts)
+    if (a === 'agents' && b === 'codex' && c === 'install' && !d) {
+      if (req.method === 'GET') return json(res, 200, { install: codexInstall?.status ?? { state: 'idle' } })
+      if (req.method === 'POST') {
+        codexInstall ??= new CodexInstall({ dir: paths.codex })
+        return json(res, 200, { install: codexInstall.start() })
+      }
+      if (req.method === 'DELETE') {
+        codexInstall?.cancel()
+        return json(res, 200, { install: { state: 'idle' } })
+      }
+    }
+
     // 종량제 모드: OpenCode 설치, 제공자·모델·API 키 (ADR 0010)
     if (a === 'agents' && b === 'opencode') {
       if (c === 'catalog' && req.method === 'GET') return json(res, 200, { providers: PAYG_PROVIDERS })
@@ -230,6 +245,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
         if (req.method === 'DELETE') {
           opencodeInstall?.cancel()
+          codexInstall?.cancel()
           return json(res, 200, { install: { state: 'idle' } })
         }
       }

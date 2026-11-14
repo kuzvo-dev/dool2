@@ -33,7 +33,7 @@ export interface SetupOptions {
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
 }
 
-type InstallKind = 'claude' | 'chrome' | 'opencode'
+type InstallKind = 'claude' | 'chrome' | 'opencode' | 'codex'
 
 /** 부품별 설치 주소와 안내 문구 */
 // obj: 조사까지 붙인 이름 (Claude Code를 / Chrome을)
@@ -43,6 +43,12 @@ const INSTALLS: Record<InstallKind, { url: string; obj: string; source: string; 
     obj: 'Claude Code를',
     source: 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.',
     help: 'https://code.claude.com/docs/en/setup',
+  },
+  codex: {
+    url: '/api/agents/codex/install',
+    obj: 'Codex를',
+    source: 'OpenAI 공식 배포(npm)에서 받아요. 두리에 적어 둔 확인값과 맞을 때만 설치해요.',
+    help: 'https://developers.openai.com/codex',
   },
   opencode: {
     url: '/api/agents/opencode/install',
@@ -100,6 +106,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     claude: { state: 'idle' },
     chrome: { state: 'idle' },
     opencode: { state: 'idle' },
+    codex: { state: 'idle' },
   }
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
@@ -287,7 +294,13 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         return
       } else {
         const kind: InstallKind =
-          action === 'chrome-install' ? 'chrome' : action === 'opencode-install' ? 'opencode' : 'claude'
+          action === 'chrome-install'
+            ? 'chrome'
+            : action === 'opencode-install'
+              ? 'opencode'
+              : action === 'codex-install'
+                ? 'codex'
+                : 'claude'
         await startInstall(kind)
         return
       }
@@ -633,7 +646,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           const label =
             item.action === 'claude-install' ||
             item.action === 'chrome-install' ||
-            item.action === 'opencode-install'
+            item.action === 'opencode-install' ||
+            item.action === 'codex-install'
               ? '설치하기'
               : item.action === 'payg-key'
                 ? '키 넣기'
@@ -653,7 +667,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
                 ? 'chrome'
                 : action === 'opencode-install'
                   ? 'opencode'
-                  : undefined
+                  : action === 'codex-install'
+                    ? 'codex'
+                    : undefined
           if (kind && installs[kind].state === 'running') {
             b.textContent = '설치 중…'
             b.disabled = true
@@ -663,7 +679,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         list.append(li)
       }
       parts.push(list)
-      for (const kind of ['claude', 'opencode', 'chrome'] as const) {
+      for (const kind of ['claude', 'codex', 'opencode', 'chrome'] as const) {
         const st = installs[kind].state
         if (st === 'running' || st === 'failed') parts.push(installPanel(kind))
       }

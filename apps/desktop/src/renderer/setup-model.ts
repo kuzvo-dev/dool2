@@ -18,6 +18,7 @@ export type CheckAction =
   | 'codex-login'
   | 'chrome-install'
   | 'opencode-install'
+  | 'codex-install'
   | 'payg-key'
 
 export interface CheckItem {
@@ -125,10 +126,16 @@ export function checklist(choice: AiChoice, agents: AgentStatus[], chrome?: Chro
       )
     } else {
       if (!a?.installed) {
-        items.push({ id: 'codex-app', label: 'Codex', ok: false, detail: '이 컴퓨터에서는 쓸 수 없어요' })
+        items.push({
+          id: 'codex-app',
+          label: 'Codex',
+          ok: false,
+          detail: '처음 한 번 받아 둘게요 (약 120MB)',
+          action: 'codex-install',
+        })
         continue
       }
-      items.push({ id: 'codex-app', label: 'Codex', ok: true, detail: '두리에 함께 들어 있어요' })
+      items.push({ id: 'codex-app', label: 'Codex', ok: true, detail: '준비돼 있어요' })
       items.push(
         a.loggedIn
           ? { id: 'codex-login', label: 'ChatGPT 로그인', ok: true, detail: '연결됐어요' }

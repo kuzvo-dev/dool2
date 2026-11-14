@@ -4,17 +4,15 @@
 //
 // 1. 메인 프로세스와 두리 도구 서버를 esbuild로 한 파일씩 묶는다 (pnpm 작업 공간 링크를 따라가지 않게)
 // 2. 의존성 없는 준비 폴더(stage/)에 화면·아이콘과 함께 모은다
-// 3. 이 컴퓨터용 Codex 실행 파일을 extraResources로 넣는다
+// 3. Codex는 넣지 않는다 (처음 쓸 때 두리가 내려받는다, agent-codex/download.ts)
 // 4. electron-builder로 맥 dmg / 윈도우 설치 파일을 만든다 → release/
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolveBundledCodex } from '@dool2/agent-codex'
 import { build as esbuild } from 'esbuild'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const stage = join(root, 'stage')
-const res = join(root, 'build-res')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const electronVersion = JSON.parse(
   readFileSync(join(root, 'node_modules', 'electron', 'package.json'), 'utf8'),
@@ -25,7 +23,6 @@ if (!existsSync(join(root, 'dist', 'main.js'))) {
   process.exit(1)
 }
 rmSync(stage, { recursive: true, force: true })
-rmSync(res, { recursive: true, force: true })
 mkdirSync(join(stage, 'dist'), { recursive: true })
 
 // esm 묶음 안에서 require가 필요한 의존성(cjs)을 위해 넣는다
@@ -70,16 +67,6 @@ writeFileSync(
   ),
 )
 
-const codex = resolveBundledCodex()
-if (!codex) {
-  console.error('이 컴퓨터용 Codex 실행 파일을 찾지 못했어요')
-  process.exit(1)
-}
-mkdirSync(join(res, 'codex'), { recursive: true })
-const codexOut = join(res, 'codex', process.platform === 'win32' ? 'codex.exe' : 'codex')
-cpSync(codex, codexOut)
-if (process.platform !== 'win32') chmodSync(codexOut, 0o755)
-
 const { build } = await import('electron-builder')
 await build({
   projectDir: root,
@@ -97,7 +84,6 @@ await build({
     // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
     files: ['**/*', '!**/node_modules/**'],
     asarUnpack: ['dist/mcp-server.mjs'],
-    extraResources: [{ from: 'build-res/codex', to: 'codex' }],
     icon: 'assets/icon.png',
     mac: {
       category: 'public.app-category.productivity',
