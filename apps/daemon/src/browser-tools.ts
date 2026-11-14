@@ -1,9 +1,10 @@
 // 두리 브라우저 도구의 본체 쪽 실행기. AI(MCP 도구 서버)는 여기로 부탁만 하고, 해도 되는지는 여기서 정한다.
 // 확장은 판단하지 않는 손이라서, 위험한 클릭을 막는 것도 여기서 한다 (docs/architecture.md 4.2, 위협 모델 T2·T3).
 //
-// M2: 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 누르지 않고 사람에게 넘긴다.
-// M3에서 폰 승인을 붙이면 "승인받고 누르기"로 바뀐다.
+// 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
+// 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
 import type { BrowserCommand } from '@dool2/protocol'
+import { type ApprovalRecord, Approvals } from './approvals.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export interface ToolResult {
@@ -28,6 +29,7 @@ export const BROWSER_TOOLS = [
   'close',
   'handoff',
   'login',
+  'request_approval',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -112,10 +114,17 @@ export interface VaultLookup {
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
 
+  readonly approvals: Approvals
+
   constructor(
     private readonly browser: BrowserCaller,
     private readonly vault?: VaultLookup,
-  ) {}
+    /** 마지막 버튼을 승인받아 두리가 누를지(approve), 항상 사용자가 누를지(self) */
+    private readonly finalStep: () => 'approve' | 'self' = () => 'approve',
+    approvals?: Approvals,
+  ) {
+    this.approvals = approvals ?? new Approvals()
+  }
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     try {
@@ -144,7 +153,7 @@ export class BrowserTools {
         const target = page?.refs.get(ref)
         if (!page || !target)
           throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
-        this.guard(`${target.role} ${target.name}`, page.url)
+        this.guard(`${target.role} ${target.name}`, page.url, true)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as {
           newTabId?: number
           coveredBy?: string
@@ -234,6 +243,46 @@ export class BrowserTools {
         await this.vault?.markUsed(entry.id)
         return this.read(tabId, undefined, '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.')
       }
+      case 'request_approval': {
+        const ref = String(a.ref ?? '')
+        const page = this.pages.get(tabId)
+        const target = page?.refs.get(ref)
+        if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+        const risk = classifyRisk(`${target.role} ${target.name}`, page.url)
+        if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
+        if (this.finalStep() === 'self')
+          throw new Error(
+            '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
+          )
+        // 승인 카드에 실제 화면을 함께 보여 준다 (AI가 적은 금액이 틀려도 사용자가 알아챌 수 있게)
+        const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
+          | { data?: string }
+          | undefined
+        const rec = this.approvals.create({
+          tabId,
+          ref,
+          role: target.role,
+          label: target.name,
+          url: page.url,
+          kind: risk.kind,
+          reason: risk.reason,
+          what: String(a.what ?? '').slice(0, 200),
+          where: String(a.where ?? '').slice(0, 100),
+          ...(a.amount ? { amount: String(a.amount).slice(0, 60) } : {}),
+          ...(a.cancel ? { cancel: String(a.cancel).slice(0, 200) } : {}),
+          ...(shot?.data ? { shot: shot.data } : {}),
+        })
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
+                '사용자가 승인하면 두리가 그 버튼을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
+            },
+          ],
+        }
+      }
       case 'handoff': {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
         // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
@@ -254,13 +303,44 @@ export class BrowserTools {
   }
 
   /** 위험한 동작이면 멈추고 이유를 돌려준다 */
-  private guard(label: string, url: string) {
+  private guard(label: string, url: string, clickable = false) {
     const risk = classifyRisk(label, url)
     if (!risk) return
-    throw new Error(
-      `멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 두리가 직접 하지 않아요. ` +
-        '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.',
-    )
+    const next =
+      clickable && this.finalStep() === 'approve'
+        ? 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
+        : '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.'
+    throw new Error(`멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 하지 않아요. ${next}`)
+  }
+
+  /**
+   * 사용자가 승인한 버튼을 누른다. 누르기 직전 페이지를 다시 읽어, 승인한 버튼 글자와 주소가 그대로일 때만.
+   * 화면용 토큰을 가진 쪽(사용자 화면)만 부를 수 있다 (AI의 도구 토큰으로는 못 부른다)
+   */
+  async approve(id: string): Promise<{ ok: boolean; message: string }> {
+    const rec: ApprovalRecord | undefined = this.approvals.take(id)
+    if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
+    try {
+      const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
+      const now = parseRefs(s.text).get(rec.ref)
+      this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text) })
+      if (s.url !== rec.url || !now || now.name !== rec.label || now.role !== rec.role) {
+        const msg = `승인한 뒤 화면이 바뀌어서 "${rec.label}"을(를) 누르지 않았어요. 페이지를 다시 확인해 주세요.`
+        this.approvals.finish(id, false, msg)
+        return { ok: false, message: msg }
+      }
+      const r = (await this.browser.call('click', { tabId: rec.tabId, ref: rec.ref }, 30_000)) as {
+        url?: string
+        title?: string
+      }
+      const msg = `승인해서 "${rec.label}"을(를) 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      this.approvals.finish(id, true, msg)
+      return { ok: true, message: msg }
+    } catch (e) {
+      const msg = `"${rec.label}"을(를) 누르지 못했어요: ${(e as Error).message}`
+      this.approvals.finish(id, false, msg)
+      return { ok: false, message: msg }
+    }
   }
 
   private async read(tabId: number, maxChars?: unknown, note?: string): Promise<ToolResult> {

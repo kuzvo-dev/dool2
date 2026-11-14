@@ -4,6 +4,8 @@ import type {
   AgentId,
   AgentStatus,
   AiChoice,
+  ApprovalRecordMessage,
+  ApprovalView,
   ChromeStatus,
   DaemonStreamEvent,
   ExtensionStatus,
@@ -49,6 +51,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_back: '뒤로 가는',
   browser_close: '탭 닫는',
   browser_handoff: '도움 부탁하는',
+  browser_request_approval: '승인 요청하는',
 }
 const toolLabel = (name: string) => TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
@@ -240,12 +243,159 @@ async function openThread(id: string) {
     }
   }
   box.replaceChildren(
-    ...order.map(({ m, i }) =>
-      m.role === 'tool' ? handoffCard(m.text, i > lastUser) : bubble(m.role, m.text),
-    ),
+    ...order.map(({ m, i }) => (m.role === 'tool' ? toolCard(m.text, i > lastUser) : bubble(m.role, m.text))),
   )
   box.scrollTop = box.scrollHeight
   renderThreads()
+}
+
+// ── 사람에게 넘기기 · 승인 요청 ──────────────────────
+
+/** 대화 기록의 tool 메시지: 넘기기(handoff) 또는 승인 요청(approval) */
+function toolCard(raw: string, active: boolean): Node {
+  try {
+    const rec = JSON.parse(raw) as { kind?: string }
+    if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
+  } catch {
+    return document.createTextNode('')
+  }
+  return handoffCard(raw, active)
+}
+
+const RISK_LABEL: Record<ApprovalView['kind'], string> = {
+  money: '돈이 나가는 일',
+  contact: '다른 사람에게 보내는 일',
+  irreversible: '되돌릴 수 없는 일',
+}
+
+/**
+ * 승인 카드 (M3). 누를 버튼·주소는 본체가 페이지에서 읽은 값, 무엇을·얼마는 AI가 적은 값이라
+ * 실제 화면 캡처를 함께 보여 준다. 승인하면 본체가 그 버튼 하나만 누른다.
+ */
+function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'approval'
+  const title = document.createElement('strong')
+  title.textContent = '승인을 기다려요'
+  card.append(title)
+  const body = document.createElement('div')
+  body.className = 'approval-body'
+  body.textContent = rec.what || '확인하는 중…'
+  card.append(body)
+
+  const fill = async () => {
+    const { approvals } = await api<{ approvals: ApprovalView[] }>('/api/approvals').catch(() => ({
+      approvals: [],
+    }))
+    const view = approvals
+      .filter((x) => x.tabId === rec.tabId && x.ref === rec.ref)
+      .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
+    render(view)
+    if (view?.status === 'pending') {
+      const { approval } = await api<{ approval: ApprovalView & { shot?: string } }>(
+        `/api/approvals/${encodeURIComponent(view.id)}`,
+      ).catch(() => ({ approval: undefined }))
+      if (approval?.shot) {
+        const img = document.createElement('img')
+        img.className = 'approval-shot'
+        img.alt = '승인할 화면'
+        img.src = `data:image/jpeg;base64,${approval.shot}`
+        // 카드가 길어지면 아래 버튼이 보이게 내려 준다
+        img.onload = () => card.scrollIntoView({ block: 'end' })
+        card.querySelector('.approval-rows')?.after(img)
+      }
+    }
+  }
+
+  const render = (v: ApprovalView | undefined) => {
+    card.className = `approval ${v?.status ?? 'expired'}`
+    if (!v) {
+      title.textContent = '승인 요청이 끝났어요'
+      body.textContent = `${rec.what} (두리를 다시 켜서 요청이 사라졌어요. 필요하면 다시 부탁해 주세요)`
+      return
+    }
+    const host = (() => {
+      try {
+        return new URL(v.url).host
+      } catch {
+        return v.url
+      }
+    })()
+    title.textContent =
+      v.status === 'pending'
+        ? `🔐 승인이 필요해요 · ${RISK_LABEL[v.kind]}`
+        : v.status === 'done'
+          ? '승인해서 눌렀어요'
+          : v.status === 'rejected'
+            ? '거절했어요'
+            : v.status === 'expired'
+              ? '승인 시간이 지났어요'
+              : v.status === 'failed'
+                ? '누르지 못했어요'
+                : '누르는 중이에요'
+    const rows = document.createElement('dl')
+    rows.className = 'approval-rows'
+    const row = (k: string, val?: string) => {
+      if (!val) return
+      const dt = document.createElement('dt')
+      dt.textContent = k
+      const dd = document.createElement('dd')
+      dd.textContent = val
+      rows.append(dt, dd)
+    }
+    row('무엇을', v.what)
+    row('어디서', `${v.where} · ${host}`)
+    row('얼마', v.amount)
+    row('취소 조건', v.cancel)
+    row('누를 버튼', `"${v.label}"`)
+    body.replaceChildren(rows)
+    if (v.result) {
+      const p = document.createElement('p')
+      p.className = 'cap'
+      p.textContent = v.result
+      body.append(p)
+    }
+    card.querySelector('.approval-actions')?.remove()
+    if (v.status !== 'pending') return
+    const note = document.createElement('p')
+    note.className = 'cap'
+    note.textContent =
+      '화면과 내용이 맞는지 확인해 주세요. "얼마"·"무엇을"은 두리가 읽어 적은 것이라 틀릴 수 있어요. 승인하면 두리가 이 버튼 하나만 눌러요.'
+    body.append(note)
+    const actions = document.createElement('div')
+    actions.className = 'approval-actions'
+    const no = document.createElement('button')
+    no.type = 'button'
+    no.className = 'btn-ghost'
+    no.textContent = '거절'
+    const yes = document.createElement('button')
+    yes.type = 'button'
+    yes.className = 'btn'
+    yes.textContent = `승인하고 "${v.label}" 누르기`
+    const decide = async (decision: 'approve' | 'reject') => {
+      yes.disabled = true
+      no.disabled = true
+      if (decision === 'approve') yes.textContent = '누르는 중…'
+      const r = await api<{ ok: boolean; message: string }>(`/api/approvals/${encodeURIComponent(v.id)}`, {
+        method: 'POST',
+        body: JSON.stringify({ decision }),
+      }).catch((e: Error) => ({ ok: false, message: e.message }))
+      card.querySelector('.approval-shot')?.remove()
+      await fill()
+      // AI에게 결과를 알려 이어서 하게 한다
+      void send(
+        decision === 'reject'
+          ? `"${v.label}"은(는) 거절했어요. 누르지 말아 주세요.`
+          : `${r.message} 결과를 확인하고 이어서 해 주세요.`,
+      )
+    }
+    no.onclick = () => void decide('reject')
+    yes.onclick = () => void decide('approve')
+    actions.append(no, yes)
+    card.append(actions)
+  }
+  void fill()
+  return card
 }
 
 // ── 사람에게 넘기기 ──────────────────────────────────
@@ -464,9 +614,10 @@ async function send(text: string) {
     }
     activity.remove()
     if (handoff) {
-      box.append(handoffCard(handoff, true))
+      box.append(toolCard(handoff, true))
       try {
-        notifyHandoff((JSON.parse(handoff) as HandoffRecord).reason)
+        const rec = JSON.parse(handoff) as HandoffRecord | ApprovalRecordMessage
+        notifyHandoff(rec.kind === 'approval' ? `승인을 기다려요: ${rec.what}` : rec.reason)
       } catch {}
     }
     if (usd > 0) {

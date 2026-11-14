@@ -1,7 +1,7 @@
 // 두리 PC 앱 (Electron 메인 프로세스).
 // 두리 본체(dool2d)를 같은 프로세스에서 띄우고, 화면에는 접속 주소와 토큰만 건넨다.
 // 창을 닫아도 트레이에 남아 일을 계속한다. 끝내기는 트레이 메뉴에서 한다 (docs/architecture.md 7.1).
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
@@ -210,6 +210,24 @@ app.whenReady().then(async () => {
   d.events.on('busy', () => applySettings(d.settings()))
   applySettings(d.settings())
 
+  // 점검 캡처용: 승인 카드를 보여 주려고 데모 승인 요청을 하나 만든다 (seed-demo의 대화와 짝)
+  if (SMOKE && process.env.DOOL2_SMOKE_APPROVAL) {
+    const shot = await readFile(process.env.DOOL2_SMOKE_APPROVAL).catch(() => undefined)
+    d.approvals.create({
+      tabId: 1,
+      ref: 'e4',
+      role: '버튼',
+      label: '바로 구매',
+      url: 'https://shop.example/item/apple',
+      kind: 'money',
+      reason: '"구매"',
+      what: '사과 1kg 바로 구매',
+      where: '두리 시험 가게',
+      amount: '9,900원',
+      cancel: '배송 전 취소 가능 (상품 페이지 안내)',
+      ...(shot ? { shot: shot.toString('base64') } : {}),
+    })
+  }
   win = await createWindow(!SMOKE && !HIDDEN)
   if (SMOKE) await smoke(win)
 

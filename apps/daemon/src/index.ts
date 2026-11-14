@@ -23,6 +23,7 @@ import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/eng
 import {
   type AgentId,
   AgentIdSchema,
+  ApprovalDecisionSchema,
   type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
@@ -40,11 +41,13 @@ import {
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { Store } from '@dool2/store'
+import type { Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { Skills } from './skills.js'
 import { Vault } from './vault.js'
 
+export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export { parseSkill, Skills, validateSkill } from './skills.js'
@@ -115,6 +118,8 @@ export interface Daemon {
   settings(): Settings
   /** Chrome의 두리 확장과 잇는 다리 */
   browser: BrowserBridge
+  /** 승인 게이트 (점검 화면용으로도 쓴다) */
+  approvals: Approvals
   close(): Promise<void>
 }
 
@@ -191,7 +196,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   await browser.listen()
   browser.on('status', (s) => events.emit('extension', s))
   const vault = new Vault(secrets)
-  const browserTools = new BrowserTools(browser, vault)
+  const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   const skills = new Skills(opts.skillsDir ?? defaultSkillsDir())
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
@@ -404,6 +409,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 404, { error: '이 AI는 이 방법으로 로그인하지 않아요' })
     }
 
+    // 승인 게이트 (M3): 화면용 토큰으로만 승인할 수 있다. AI의 도구 토큰으로는 이 주소에 닿지 못한다
+    if (a === 'approvals') {
+      if (!b && req.method === 'GET') return json(res, 200, { approvals: browserTools.approvals.list() })
+      const rec = b ? browserTools.approvals.get(b) : undefined
+      if (b && !c && req.method === 'GET') {
+        if (!rec) return json(res, 404, { error: '승인 요청을 찾을 수 없어요' })
+        return json(res, 200, { approval: rec })
+      }
+      if (b && !c && req.method === 'POST') {
+        const { decision } = ApprovalDecisionSchema.parse(await readJson(req))
+        if (decision === 'reject')
+          return json(res, 200, { ok: browserTools.approvals.reject(b), message: '거절했어요' })
+        return json(res, 200, await browserTools.approve(b))
+      }
+    }
+
     // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
     if (a === 'vault') {
       if (!b && req.method === 'GET') return json(res, 200, { entries: await vault.list() })
@@ -474,6 +495,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     settings: readSettings,
     browser,
+    approvals: browserTools.approvals,
     port,
     token,
     // 여러 번 불러도 한 번만 닫는다

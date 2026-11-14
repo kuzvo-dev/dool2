@@ -54,6 +54,21 @@ store.addMessage(
   'assistant',
   '장바구니를 보려고 했는데 로그인이 풀려 있어서 멈췄어요. Chrome에 띄워 둔 두리 탭에서 로그인만 해 주시면 바로 이어서 볼게요.',
 )
+// 승인 요청 대화 (DOOL2_SMOKE_APPROVAL=<캡처 이미지>와 함께 쓰면 승인 카드가 보인다)
+if (process.env.SEED_APPROVAL) {
+  const buy = store.createThread('claude', '사과 1kg 바로 사 줘')
+  store.addMessage(buy.id, 'user', '두리 시험 가게에서 사과 1kg 바로 사 줘')
+  store.addMessage(
+    buy.id,
+    'tool',
+    JSON.stringify({ kind: 'approval', tabId: 1, ref: 'e4', what: '사과 1kg 바로 구매' }),
+  )
+  store.addMessage(
+    buy.id,
+    'assistant',
+    '사과 1kg(9,900원) **바로 구매** 버튼 앞까지 왔어요. 화면을 확인하고 승인해 주시면 제가 그 버튼만 누를게요.',
+  )
+}
 // 첫 실행 마법사는 끝낸 상태로 둔다
 store.setSetting('setupDone', true)
 store.setSetting('aiChoice', 'both')

@@ -103,6 +103,11 @@ export const SettingsSchema = z.object({
   keepAwake: z.enum(['working', 'always', 'off']).optional(),
   /** PC를 켜면 두리도 자동으로 켜기 */
   launchAtLogin: z.boolean().optional(),
+  /**
+   * 결제·보내기 같은 마지막 버튼: approve = 승인하면 두리가 누름 / self = 항상 사용자가 직접 누름
+   * (ADR 0006 다시 검토의 "마지막 확인" 스위치)
+   */
+  finalStep: z.enum(['approve', 'self']).optional(),
   /** 종량제 모드에서 고른 제공자·모델 (API 키는 여기 두지 않고 OS 키체인에) */
   payg: z.object({ provider: z.string(), model: z.string() }).optional(),
 })
@@ -256,4 +261,41 @@ export interface VaultEntry {
   username: string
   createdAt: string
   lastUsedAt?: string
+}
+
+// ── 승인 게이트 (M3) ─────────────────────────────────────────
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'done' | 'failed'
+
+/** 화면에 보여 줄 승인 요청. 누를 버튼·주소는 두리 본체가 페이지에서 직접 읽은 값이다 */
+export interface ApprovalView {
+  id: string
+  tabId: number
+  ref: string
+  role: string
+  /** 누를 버튼의 글자 (페이지에서 읽은 그대로) */
+  label: string
+  url: string
+  kind: 'money' | 'contact' | 'irreversible'
+  reason: string
+  /** 아래는 AI가 적은 설명. 틀릴 수 있어서 화면 캡처와 함께 보여 준다 */
+  what: string
+  where: string
+  amount?: string
+  cancel?: string
+  status: ApprovalStatus
+  createdAt: string
+  expiresAt: string
+  /** 처리 결과 (눌렀어요 / 화면이 바뀌어 못 눌렀어요) */
+  result?: string
+}
+
+export const ApprovalDecisionSchema = z.object({ decision: z.enum(['approve', 'reject']) })
+
+/** 대화 기록에 남기는 승인 요청 (카드를 다시 그릴 때 본체에 상태를 묻는다) */
+export interface ApprovalRecordMessage {
+  kind: 'approval'
+  tabId?: number
+  ref?: string
+  what: string
 }

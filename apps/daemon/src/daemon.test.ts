@@ -320,3 +320,18 @@ describe('금고 API', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('승인 API', () => {
+  it('없는 승인은 404, 도구 토큰으로는 승인 주소에 닿지 않는다', async () => {
+    const { api } = await boot()
+    expect((await api('/api/approvals')).status).toBe(200)
+    expect((await api('/api/approvals/nope')).status).toBe(404)
+    const r = await api('/api/approvals/nope', {
+      method: 'POST',
+      body: JSON.stringify({ decision: 'approve' }),
+    })
+    expect(await r.json()).toMatchObject({ ok: false })
+    const tool = await fetch(`${daemon?.url}/api/approvals`, { headers: { authorization: 'Bearer wrong' } })
+    expect(tool.status).toBe(401)
+  })
+})
