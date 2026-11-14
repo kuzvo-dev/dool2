@@ -10,8 +10,8 @@ import type {
   ThreadSummary,
   UsageLimit,
 } from '@dool2/protocol'
-import { runSetup } from './setup.js'
-import { SETUP_STEPS, type SetupStep } from './setup-model.js'
+import { runSetup, type SetupOptions } from './setup.js'
+import { type CheckAction, SETUP_STEPS, type SetupStep } from './setup-model.js'
 
 declare global {
   interface Window {
@@ -25,6 +25,9 @@ declare global {
 const AGENT_LABEL: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Codex' }
 const TOOL_LABEL: Record<string, string> = { mcp__dool2__status: '두리 상태 확인' }
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
+
+/** 첫 실행 마법사를 연다 (main에서 채운다). 왼쪽 "Claude로 로그인"도 이걸 쓴다 */
+let openSetup: (start?: SetupOptions['start']) => Promise<void> = async () => {}
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -90,10 +93,8 @@ function renderAgents() {
             await loadAgents()
           }
         } else {
-          btn.textContent = '로그인 방법 보기'
-          btn.onclick = () => {
-            meta.textContent = '터미널에서 claude auth login 을 실행해 주세요. (곧 버튼 하나로 바뀌어요)'
-          }
+          btn.textContent = 'Claude로 로그인 →'
+          btn.onclick = () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
         }
         el.append(btn)
       }
@@ -355,27 +356,34 @@ async function main() {
   if (cfg.smokeOpen === 'latest' && latest) await openThread(latest.id)
 
   // 첫 실행이면 마법사를 띄운다. 점검 모드에서는 "단계:선택"(예: check:both)으로 바로 연다
-  const [smokeStep, smokeChoice] = (cfg.smokeSetup ?? '').split(':')
+  const [smokeStep, smokeChoice, smokeAction] = (cfg.smokeSetup ?? '').split(':')
   const start = SETUP_STEPS.includes(smokeStep as SetupStep)
-    ? { step: smokeStep as SetupStep, choice: (smokeChoice || undefined) as AiChoice | undefined }
+    ? {
+        step: smokeStep as SetupStep,
+        choice: (smokeChoice || undefined) as AiChoice | undefined,
+        action: (smokeAction || undefined) as CheckAction | undefined,
+      }
     : undefined
-  let setup = 'done'
-  if (start || !settings.setupDone) {
+  openSetup = (from) => {
     const wizard = runSetup({
       api,
       loadAgents: async () => {
         await loadAgents()
         return state.agents
       },
-      start,
+      ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {
       if (r.defaultAgent) state.pick = r.defaultAgent
       renderPick()
       input.focus()
     })
-    await wizard.shown
-    setup = start?.step ?? 'welcome'
+    return wizard.shown
+  }
+  let setup = 'done'
+  if (start || !settings.setupDone) {
+    await openSetup(start)
+    setup = [start?.step ?? 'welcome', start?.action].filter(Boolean).join(':')
   }
   const ready = state.agents.filter((a) => a.installed && a.loggedIn).map((a) => a.id)
   // 화면이 실제로 그려진 뒤에 알린다

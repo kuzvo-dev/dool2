@@ -48,6 +48,6 @@ describe('첫 실행 마법사', () => {
   it('상황에 맞는 제목을 고른다', () => {
     expect(checkHeadline('claude', [claudeReady]).title).toBe('준비가 다 됐어요')
     expect(checkHeadline('both', [claudeReady, codexOut]).title).toBe('바로 시작할 수 있어요')
-    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('2가지만 해 주세요')
+    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
   })
 })

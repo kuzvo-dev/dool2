@@ -101,11 +101,13 @@ export function checklist(choice: AiChoice, agents: AgentStatus[]): CheckItem[] 
   return items
 }
 
+const COUNT: Record<number, string> = { 1: '한', 2: '두', 3: '세', 4: '네' }
+
 export function checkHeadline(choice: AiChoice, agents: AgentStatus[]): { title: string; sub: string } {
   const items = checklist(choice, agents)
   const left = items.filter((i) => !i.ok).length
   if (left === 0) return { title: '준비가 다 됐어요', sub: '이제 부탁만 하시면 돼요.' }
   if (pickDefault(choice, agents))
     return { title: '바로 시작할 수 있어요', sub: '나머지는 나중에 연결해도 괜찮아요.' }
-  return { title: `${left}가지만 해 주세요`, sub: '버튼을 누르면 두리가 이어서 할게요.' }
+  return { title: `${COUNT[left] ?? left} 가지만 해 주세요`, sub: '버튼을 누르면 두리가 이어서 할게요.' }
 }

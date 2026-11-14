@@ -1,5 +1,5 @@
 // 첫 실행 마법사 화면: 인사 → 어떤 AI 구독을 쓰세요? → 준비 상태 확인
-import type { AgentId, AgentStatus, AiChoice, Settings } from '@dool2/protocol'
+import type { AgentId, AgentStatus, AiChoice, ClaudeLoginStatus, Settings } from '@dool2/protocol'
 import {
   CHOICES,
   type CheckAction,
@@ -15,8 +15,8 @@ type Api = <T>(path: string, init?: RequestInit) => Promise<T>
 export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
-  /** 점검 모드: 이 단계와 선택으로 바로 연다 */
-  start?: { step: SetupStep; choice?: AiChoice }
+  /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
+  start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
 }
 
 export interface SetupResult {
@@ -54,9 +54,76 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let choice: AiChoice | undefined = opts.start?.choice
   let agents: AgentStatus[] = []
   let note = ''
+  let login: ClaudeLoginStatus = { state: 'idle' }
+  let codeDraft = ''
+  let sending = false
+  let pollTimer: ReturnType<typeof setTimeout> | undefined
+  // 단계가 바뀔 때만 나타나는 효과를 준다 (입력 중에 다시 그려도 깜빡이지 않게)
+  let enter = true
+  // 점검 모드에서 버튼을 대신 누르면, 그 결과까지 그린 뒤에 캡처한다
+  let holdShown = Boolean(opts.start?.action)
 
   const done = new Promise<SetupResult>((resolve) => {
+    const stopLogin = () => {
+      if (pollTimer) clearTimeout(pollTimer)
+      if (login.state === 'waiting')
+        void opts.api('/api/agents/claude/login', { method: 'DELETE' }).catch(() => {})
+      login = { state: 'idle' }
+    }
+
+    const setLogin = async (next: ClaudeLoginStatus) => {
+      const changed = JSON.stringify(next) !== JSON.stringify(login)
+      login = next
+      if (next.state === 'done') {
+        codeDraft = ''
+        agents = await opts.loadAgents()
+      }
+      if (changed) render()
+    }
+
+    // 브라우저에서 로그인이 끝났는지 주기적으로 본다
+    const pollLogin = () => {
+      if (pollTimer) clearTimeout(pollTimer)
+      if (login.state !== 'waiting') return
+      pollTimer = setTimeout(async () => {
+        const r = await opts
+          .api<{ login: ClaudeLoginStatus }>('/api/agents/claude/login')
+          .catch(() => undefined)
+        if (r && !sending) await setLogin(r.login)
+        pollLogin()
+      }, 1_500)
+    }
+
+    const startClaudeLogin = async () => {
+      login = { state: 'waiting' }
+      codeDraft = ''
+      render()
+      const r = await opts
+        .api<{ login: ClaudeLoginStatus }>('/api/agents/claude/login', { method: 'POST' })
+        .catch((err: Error) => ({ login: { state: 'failed', message: err.message } as ClaudeLoginStatus }))
+      await setLogin(r.login)
+      render()
+      pollLogin()
+    }
+
+    const sendCode = async () => {
+      if (!codeDraft.trim() || sending) return
+      sending = true
+      render()
+      const r = await opts
+        .api<{ login: ClaudeLoginStatus }>('/api/agents/claude/login/code', {
+          method: 'POST',
+          body: JSON.stringify({ code: codeDraft }),
+        })
+        .catch(() => undefined)
+      sending = false
+      if (r) await setLogin(r.login)
+      render()
+      pollLogin()
+    }
+
     const finish = async () => {
+      stopLogin()
       const defaultAgent = choice ? pickDefault(choice, agents) : undefined
       const { settings } = await opts.api<{ settings: Settings }>('/api/settings', {
         method: 'PATCH',
@@ -70,6 +137,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     const go = async (next: SetupStep) => {
       step = next
       note = ''
+      enter = true
       if (step === 'check') {
         render(true)
         agents = await opts.loadAgents()
@@ -85,7 +153,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         agents = await opts.loadAgents()
         note = ''
       } else if (action === 'claude-login') {
-        note = 'Claude 로그인 버튼은 곧 붙어요. 그전까지는 Claude Code에서 직접 로그인해 주세요.'
+        await startClaudeLogin()
+        return
       } else {
         note = 'Claude Code 자동 설치는 곧 붙어요. 그전까지는 claude.com에서 설치해 주세요.'
       }
@@ -93,7 +162,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     }
 
     const render = (loading = false) => {
-      const card = el('div', 'setup-card')
+      const card = el('div', enter ? 'setup-card enter' : 'setup-card')
+      enter = false
       const dots = el('div', 'steps')
       for (const s of SETUP_STEPS) {
         const d = el('span')
@@ -177,11 +247,17 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
                     ? 'ChatGPT로 로그인'
                     : '로그인하기'
               const action = item.action
-              li.append(button('btn-small', label, () => void act(action)))
+              const b = button('btn-small', label, () => void act(action))
+              if (action === 'claude-login' && login.state === 'waiting') {
+                b.textContent = '로그인 중…'
+                b.disabled = true
+              }
+              li.append(b)
             }
             list.append(li)
           }
           card.append(list)
+          if (login.state === 'waiting' || login.state === 'failed') card.append(loginPanel())
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
           const canStart = Boolean(pickDefault(choice, agents))
@@ -196,16 +272,90 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         }
       }
 
+      // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
+      const typing = document.activeElement?.id === 'claude-code'
       root.replaceChildren(card)
+      if (typing) document.getElementById('claude-code')?.focus()
       // 나타나는 효과가 끝난 뒤에 "다 그려졌다"고 알린다 (점검 캡처가 흐리지 않게)
-      if (!loading)
+      if (!loading && !holdShown)
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
     }
 
-    if (step === 'check') void go('check')
-    else render()
+    /** Claude 로그인 안내: 브라우저에서 로그인하거나, 나온 코드를 붙여 넣는다 */
+    const loginPanel = () => {
+      const panel = el('div', 'login-panel')
+      if (login.state === 'failed') {
+        panel.append(
+          el('strong', undefined, 'Claude 로그인을 마치지 못했어요'),
+          el('p', undefined, login.message),
+        )
+        const row = el('div', 'login-actions')
+        row.append(
+          button('btn-small', '다시 시도', () => void startClaudeLogin()),
+          button('btn-link', '닫기', () => {
+            login = { state: 'idle' }
+            render()
+          }),
+        )
+        panel.append(row)
+        return panel
+      }
+      if (login.state !== 'waiting') return panel
+      panel.append(
+        el('strong', undefined, '브라우저에서 Claude에 로그인해 주세요'),
+        el(
+          'p',
+          undefined,
+          '로그인이 끝나면 자동으로 넘어가요. 화면에 코드가 나오면 아래에 붙여 넣어 주세요.',
+        ),
+      )
+      const form = el('form', 'code-row')
+      const input = el('input')
+      input.id = 'claude-code'
+      input.placeholder = '코드 붙여 넣기'
+      input.autocomplete = 'off'
+      input.spellcheck = false
+      input.value = codeDraft
+      input.oninput = () => {
+        codeDraft = input.value
+      }
+      const ok = el('button', 'btn-small', sending ? '확인하는 중…' : '확인')
+      ok.type = 'submit'
+      ok.disabled = sending
+      form.onsubmit = (e) => {
+        e.preventDefault()
+        void sendCode()
+      }
+      form.append(input, ok)
+      panel.append(form)
+      if (login.codeRejected && !sending)
+        panel.append(el('p', 'login-error', '코드가 맞지 않아요. 전부 복사했는지 확인하고 다시 넣어 주세요.'))
+      const row = el('div', 'login-actions')
+      const url = login.url
+      if (url) row.append(button('btn-link', '로그인 창 다시 열기', () => window.open(url)))
+      row.append(
+        button('btn-link', '그만두기', () => {
+          stopLogin()
+          render()
+        }),
+      )
+      panel.append(row)
+      return panel
+    }
+
+    const begin = async () => {
+      if (step === 'check') await go('check')
+      else render()
+      const action = opts.start?.action
+      if (action) {
+        await act(action)
+        holdShown = false
+        render()
+      }
+    }
+    void begin()
   })
   return { shown, done }
 }

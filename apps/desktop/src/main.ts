@@ -50,6 +50,8 @@ async function smoke(win: BrowserWindow) {
   const img = await win.webContents.capturePage()
   await writeFile(join(out, 'smoke.png'), img.toPNG())
   console.log(`DOOL2_SMOKE ${ready}`)
+  // app.exit은 before-quit을 건너뛰므로 본체(로그인 등 자식 프로세스 포함)를 직접 닫는다
+  await daemon?.close()
   app.exit(ready === 'timeout' ? 1 : 0)
 }
 
