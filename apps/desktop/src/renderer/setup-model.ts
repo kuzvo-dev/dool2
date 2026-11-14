@@ -1,8 +1,15 @@
 // 첫 실행 마법사의 판단 로직. 화면과 떼어 두어 테스트한다.
 import type { AgentId, AgentStatus, AiChoice, ChromeStatus } from '@dool2/protocol'
 
-export type SetupStep = 'welcome' | 'choice' | 'check' | 'awake'
+/** settings: 마법사를 끝낸 뒤 여는 설정 화면 (단계 표시 없음) */
+export type SetupStep = 'welcome' | 'choice' | 'check' | 'awake' | 'settings'
 export const SETUP_STEPS: SetupStep[] = ['welcome', 'choice', 'check', 'awake']
+export const AI_CHOICE_LABEL: Record<AiChoice, string> = {
+  claude: 'Claude',
+  codex: 'ChatGPT',
+  both: 'Claude와 ChatGPT 둘 다',
+  unsure: '두리가 고르기',
+}
 
 export type CheckAction = 'claude-install' | 'claude-login' | 'codex-login' | 'chrome-install'
 

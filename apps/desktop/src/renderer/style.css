@@ -391,8 +391,9 @@ button {
   position: fixed;
   inset: 0;
   z-index: 10;
-  display: grid;
-  place-items: center;
+  /* 카드가 창보다 길면 스크롤한다 (가운데 정렬은 카드의 margin: auto로) */
+  display: flex;
+  overflow-y: auto;
   padding: 32px;
   background: radial-gradient(1200px 600px at 50% -10%, #e6f8f0 0%, transparent 60%), var(--card);
 }
@@ -400,6 +401,8 @@ button {
   display: none;
 }
 .setup-card {
+  margin: auto;
+  flex: none;
   width: min(520px, 100%);
   background: var(--bg);
   border: 1px solid var(--line);
@@ -700,4 +703,36 @@ button {
   color: var(--sub);
   font-size: 12.5px;
   line-height: 1.55;
+}
+.gear {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+.gear:hover {
+  background: var(--card2);
+  color: var(--ink);
+}
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fdf0e3;
+  color: #9a4f12;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.notice[hidden] {
+  display: none;
+}
+.notice-text {
+  flex: 1;
+}
+.setup-card .over {
+  margin: 8px 0 -4px;
 }

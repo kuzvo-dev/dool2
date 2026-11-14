@@ -9,6 +9,7 @@ import type {
   Settings,
 } from '@dool2/protocol'
 import {
+  AI_CHOICE_LABEL,
   CHOICES,
   type CheckAction,
   checkHeadline,
@@ -24,6 +25,8 @@ export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
   loadChrome(): Promise<ChromeStatus>
+  /** 지금 저장된 설정 (설정 화면에서 보여 주고 바꾼다) */
+  settings?: Settings
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
 }
@@ -79,7 +82,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   const root = document.getElementById('setup') as HTMLElement
   root.hidden = false
   let step: SetupStep = opts.start?.step ?? 'welcome'
-  let choice: AiChoice | undefined = opts.start?.choice
+  let choice: AiChoice | undefined = opts.start?.choice ?? opts.settings?.aiChoice
+  let current: Settings = opts.settings ?? { setupDone: false }
   let agents: AgentStatus[] = []
   let note = ''
   let login: ClaudeLoginStatus = { state: 'idle' }
@@ -91,8 +95,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
   // "두리가 쉬지 않게" 단계의 선택 (기본은 둘 다 켬, 사용자가 끌 수 있다)
-  let awakeWorking = true
-  let autoStart = true
+  let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
+  let autoStart = current.launchAtLogin ?? true
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   // 단계가 바뀔 때만 나타나는 효과를 준다 (입력 중에 다시 그려도 깜빡이지 않게)
@@ -219,11 +223,29 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       resolve({ settings, defaultAgent })
     }
 
+    /** 설정 화면을 그냥 닫는다 (마법사 완료 표시는 바꾸지 않는다) */
+    const close = () => {
+      stopLogin()
+      for (const t of Object.values(installTimers)) clearTimeout(t)
+      root.hidden = true
+      root.replaceChildren()
+      resolve({ settings: current })
+    }
+
+    /** 설정 화면의 스위치는 누르는 즉시 저장한다 */
+    const save = async (patch: Partial<Settings>) => {
+      const r = await opts
+        .api<{ settings: Settings }>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) })
+        .catch(() => undefined)
+      if (r) current = r.settings
+      render()
+    }
+
     const go = async (next: SetupStep) => {
       step = next
       note = ''
       enter = true
-      if (step === 'check') {
+      if (step === 'check' || step === 'settings') {
         render(true)
         ;[agents, chrome] = await Promise.all([opts.loadAgents(), opts.loadChrome()])
       }
@@ -256,7 +278,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         if (s === step) d.className = 'on'
         dots.append(d)
       }
-      card.append(dots)
+      if (step !== 'settings') card.append(dots)
 
       if (step === 'welcome') {
         card.append(
@@ -318,42 +340,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         } else {
           const head = checkHeadline(choice, agents, chrome)
           card.append(el('h1', 'setup-title', head.title), el('p', 'setup-sub', head.sub))
-          const list = el('ul', 'checks')
-          for (const item of checklist(choice, agents, chrome)) {
-            const li = el('li', item.ok ? 'ok' : 'todo')
-            const mark = el('span', 'mark', item.ok ? '✓' : '')
-            const text = el('div', 'text')
-            text.append(el('strong', undefined, item.label), el('span', undefined, item.detail))
-            li.append(mark, text)
-            if (item.action) {
-              const label =
-                item.action === 'claude-install' || item.action === 'chrome-install'
-                  ? '설치하기'
-                  : item.action === 'codex-login'
-                    ? 'ChatGPT로 로그인'
-                    : '로그인하기'
-              const action = item.action
-              const b = button('btn-small', label, () => void act(action))
-              if (action === 'claude-login' && login.state === 'waiting') {
-                b.textContent = '로그인 중…'
-                b.disabled = true
-              }
-              const kind: InstallKind | undefined =
-                action === 'claude-install' ? 'claude' : action === 'chrome-install' ? 'chrome' : undefined
-              if (kind && installs[kind].state === 'running') {
-                b.textContent = '설치 중…'
-                b.disabled = true
-              }
-              li.append(b)
-            }
-            list.append(li)
-          }
-          card.append(list)
-          for (const kind of ['claude', 'chrome'] as const) {
-            const st = installs[kind].state
-            if (st === 'running' || st === 'failed') card.append(installPanel(kind))
-          }
-          if (login.state === 'waiting' || login.state === 'failed') card.append(loginPanel())
+          card.append(...checksBlock(choice))
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
           const canStart = Boolean(pickDefault(choice, agents))
@@ -378,20 +365,11 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           ),
         )
         const list = el('ul', 'checks toggles')
-        const toggle = (label: string, detail: string, on: boolean, set: (v: boolean) => void) => {
-          const li = el('li', on ? 'ok' : 'todo')
-          const b = button('toggle-row', '', () => {
+        const toggle = (label: string, detail: string, on: boolean, set: (v: boolean) => void) =>
+          toggleRow(label, detail, on, () => {
             set(!on)
             render()
           })
-          b.setAttribute('role', 'checkbox')
-          b.setAttribute('aria-checked', String(on))
-          const text = el('div', 'text')
-          text.append(el('strong', undefined, label), el('span', undefined, detail))
-          b.append(el('span', 'mark', on ? '✓' : ''), text)
-          li.append(b)
-          return li
-        }
         list.append(
           toggle(
             '두리가 일하는 동안 PC가 잠들지 않게 할게요',
@@ -426,6 +404,43 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         card.append(foot)
       }
 
+      if (step === 'settings') {
+        card.append(
+          el('h1', 'setup-title', '설정'),
+          el('p', 'setup-sub', '두리가 일할 준비가 됐는지 확인하고, 쉬는 방식을 바꿀 수 있어요.'),
+        )
+        if (loading) card.append(el('p', 'setup-sub', '이 컴퓨터를 살펴보는 중이에요…'))
+        else {
+          card.append(el('h2', 'over', '준비 상태'), ...checksBlock(choice ?? 'both'))
+          const awake = current.keepAwake === 'working' || current.keepAwake === 'always'
+          const list = el('ul', 'checks toggles')
+          list.append(
+            toggleRow(
+              '두리가 일하는 동안 PC가 잠들지 않게',
+              '화면은 꺼져도 돼요. 일이 끝나면 평소처럼 잠들어요.',
+              awake,
+              () => void save({ keepAwake: awake ? 'off' : 'working' }),
+            ),
+            toggleRow(
+              'PC를 켜면 두리도 자동으로 켜기',
+              '창 없이 조용히 켜져요.',
+              current.launchAtLogin === true,
+              () => void save({ launchAtLogin: current.launchAtLogin !== true }),
+            ),
+          )
+          card.append(el('h2', 'over', '두리가 쉬지 않게'), list)
+          const ai = el('p', 'setup-hint')
+          ai.append(
+            `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
+            button('btn-link', '처음 설정 다시 하기', () => void go('welcome')),
+          )
+          card.append(ai)
+        }
+        const foot = el('div', 'setup-foot')
+        foot.append(button('btn', '닫기', close))
+        card.append(foot)
+      }
+
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
       const typing = document.activeElement?.id === 'claude-code'
       root.replaceChildren(card)
@@ -435,6 +450,61 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
         })
+    }
+
+    /** 켜고 끄는 줄 하나 */
+    const toggleRow = (label: string, detail: string, on: boolean, onClick: () => void) => {
+      const li = el('li', on ? 'ok' : 'todo')
+      const b = button('toggle-row', '', onClick)
+      b.setAttribute('role', 'checkbox')
+      b.setAttribute('aria-checked', String(on))
+      const text = el('div', 'text')
+      text.append(el('strong', undefined, label), el('span', undefined, detail))
+      b.append(el('span', 'mark', on ? '✓' : ''), text)
+      li.append(b)
+      return li
+    }
+
+    /** 준비 목록과 진행 중인 설치·로그인 패널 */
+    const checksBlock = (choice: AiChoice): HTMLElement[] => {
+      const parts: HTMLElement[] = []
+      const list = el('ul', 'checks')
+      for (const item of checklist(choice, agents, chrome)) {
+        const li = el('li', item.ok ? 'ok' : 'todo')
+        const mark = el('span', 'mark', item.ok ? '✓' : '')
+        const text = el('div', 'text')
+        text.append(el('strong', undefined, item.label), el('span', undefined, item.detail))
+        li.append(mark, text)
+        if (item.action) {
+          const label =
+            item.action === 'claude-install' || item.action === 'chrome-install'
+              ? '설치하기'
+              : item.action === 'codex-login'
+                ? 'ChatGPT로 로그인'
+                : '로그인하기'
+          const action = item.action
+          const b = button('btn-small', label, () => void act(action))
+          if (action === 'claude-login' && login.state === 'waiting') {
+            b.textContent = '로그인 중…'
+            b.disabled = true
+          }
+          const kind: InstallKind | undefined =
+            action === 'claude-install' ? 'claude' : action === 'chrome-install' ? 'chrome' : undefined
+          if (kind && installs[kind].state === 'running') {
+            b.textContent = '설치 중…'
+            b.disabled = true
+          }
+          li.append(b)
+        }
+        list.append(li)
+      }
+      parts.push(list)
+      for (const kind of ['claude', 'chrome'] as const) {
+        const st = installs[kind].state
+        if (st === 'running' || st === 'failed') parts.push(installPanel(kind))
+      }
+      if (login.state === 'waiting' || login.state === 'failed') parts.push(loginPanel())
+      return parts
     }
 
     /** 부품(Claude Code, Chrome) 설치 진행 */
@@ -535,7 +605,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     }
 
     const begin = async () => {
-      if (step === 'check') await go('check')
+      if (step === 'check' || step === 'settings') await go(step)
       else render()
       const action = opts.start?.action
       if (action) {

@@ -27,6 +27,23 @@ const AGENT_LABEL: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Co
 const TOOL_LABEL: Record<string, string> = { mcp__dool2__status: '두리 상태 확인' }
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
 
+/** 자가 점검: 마법사를 끝냈는데 일할 AI가 없으면 왼쪽 위에 알리고 [고치기]로 설정을 연다 */
+function renderNotice(settings: Settings) {
+  const box = $('notice')
+  const ready = state.agents.some((a) => a.installed && a.loggedIn)
+  box.hidden = !settings.setupDone || ready
+  if (box.hidden) return
+  const text = document.createElement('span')
+  text.className = 'notice-text'
+  text.textContent = '두리가 일할 AI가 연결돼 있지 않아요'
+  const fix = document.createElement('button')
+  fix.type = 'button'
+  fix.className = 'btn-small'
+  fix.textContent = '고치기'
+  fix.onclick = () => void openSetup({ step: 'settings' })
+  box.replaceChildren(text, fix)
+}
+
 /** 첫 실행 마법사를 연다 (main에서 채운다). 왼쪽 "Claude로 로그인"도 이걸 쓴다 */
 let openSetup: (start?: SetupOptions['start']) => Promise<void> = async () => {}
 
@@ -358,16 +375,18 @@ async function main() {
 
   // 첫 실행이면 마법사를 띄운다. 점검 모드에서는 "단계:선택"(예: check:both)으로 바로 연다
   const [smokeStep, smokeChoice, smokeAction] = (cfg.smokeSetup ?? '').split(':')
-  const start = SETUP_STEPS.includes(smokeStep as SetupStep)
+  const start = [...SETUP_STEPS, 'settings'].includes(smokeStep as SetupStep)
     ? {
         step: smokeStep as SetupStep,
         choice: (smokeChoice || undefined) as AiChoice | undefined,
         action: (smokeAction || undefined) as CheckAction | undefined,
       }
     : undefined
+  let saved = settings
   openSetup = (from) => {
     const wizard = runSetup({
       api,
+      settings: saved,
       loadAgents: async () => {
         await loadAgents()
         return state.agents
@@ -376,8 +395,10 @@ async function main() {
       ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {
+      saved = r.settings
       if (r.defaultAgent) state.pick = r.defaultAgent
       renderPick()
+      renderNotice(saved)
       input.focus()
     })
     return wizard.shown
@@ -387,6 +408,8 @@ async function main() {
     await openSetup(start)
     setup = [start?.step ?? 'welcome', start?.action].filter(Boolean).join(':')
   }
+  $('open-settings').onclick = () => void openSetup({ step: 'settings' })
+  renderNotice(saved)
   const ready = state.agents.filter((a) => a.installed && a.loggedIn).map((a) => a.id)
   // 화면이 실제로 그려진 뒤에 알린다
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
