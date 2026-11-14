@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events'
 import { chmod, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import type {
   BridgeNotice,
   BridgeReply,
@@ -30,8 +30,8 @@ export interface BridgeInfo {
 export function bridgeSocketPath(dataDir: string, platform: NodeJS.Platform = process.platform): string {
   const hash = createHash('sha256').update(dataDir).digest('hex').slice(0, 12)
   if (platform === 'win32') return `\\\\.\\pipe\\dool2-browser-${hash}`
-  const inData = join(dataDir, 'browser.sock')
-  return Buffer.byteLength(inData) <= 100 ? inData : join(tmpdir(), `dool2-${hash}.sock`)
+  const inData = posix.join(dataDir, 'browser.sock')
+  return Buffer.byteLength(inData) <= 100 ? inData : posix.join(tmpdir(), `dool2-${hash}.sock`)
 }
 
 export class BrowserError extends Error {
