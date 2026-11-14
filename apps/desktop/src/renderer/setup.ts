@@ -1025,7 +1025,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       b.setAttribute('aria-checked', String(on))
       const text = el('div', 'text')
       text.append(el('strong', undefined, label), el('span', undefined, detail))
-      b.append(el('span', 'mark', on ? '✓' : ''), text)
+      b.append(text, el('span', 'switch'))
       li.append(b)
       return li
     }
@@ -1036,7 +1036,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       const list = el('ul', 'checks')
       for (const item of checklist(choice, agents, chrome, extension)) {
         const li = el('li', item.ok ? 'ok' : 'todo')
-        const mark = el('span', 'mark', item.ok ? '✓' : '')
+        const mark = el('span', 'mark')
         const text = el('div', 'text')
         text.append(el('strong', undefined, item.label), el('span', undefined, item.detail))
         li.append(mark, text)
