@@ -90,6 +90,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   }
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
+  // "두리가 쉬지 않게" 단계의 선택 (기본은 둘 다 켬, 사용자가 끌 수 있다)
+  let awakeWorking = true
+  let autoStart = true
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   // 단계가 바뀔 때만 나타나는 효과를 준다 (입력 중에 다시 그려도 깜빡이지 않게)
@@ -198,13 +201,18 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       pollLogin()
     }
 
-    const finish = async () => {
+    const finish = async (power?: Pick<Settings, 'keepAwake' | 'launchAtLogin'>) => {
       stopLogin()
       for (const t of Object.values(installTimers)) clearTimeout(t)
       const defaultAgent = choice ? pickDefault(choice, agents) : undefined
       const { settings } = await opts.api<{ settings: Settings }>('/api/settings', {
         method: 'PATCH',
-        body: JSON.stringify({ setupDone: true, ...(choice ? { aiChoice: choice } : {}), defaultAgent }),
+        body: JSON.stringify({
+          setupDone: true,
+          ...(choice ? { aiChoice: choice } : {}),
+          defaultAgent,
+          ...power,
+        }),
       })
       root.hidden = true
       root.replaceChildren()
@@ -349,7 +357,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
           const canStart = Boolean(pickDefault(choice, agents))
-          const startBtn = button('btn', canStart ? '두리 시작하기' : '나중에 할게요', () => void finish())
+          const startBtn = button('btn', canStart ? '다음' : '나중에 할게요', () => void go('awake'))
           if (!canStart) startBtn.className = 'btn-text'
           foot.append(
             button('btn-text', '이전', () => void go('choice')),
@@ -358,6 +366,64 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           )
           card.append(foot)
         }
+      }
+
+      if (step === 'awake') {
+        card.append(
+          el('h1', 'setup-title', '두리가 쉬지 않게 할까요?'),
+          el(
+            'p',
+            'setup-sub',
+            'PC가 잠들면 두리도 잠시 쉬어요. 맡긴 일은 PC가 깨어나면 이어서 할게요. 허락해 주신 것만 바꾸고, 언제든 되돌릴 수 있어요.',
+          ),
+        )
+        const list = el('ul', 'checks toggles')
+        const toggle = (label: string, detail: string, on: boolean, set: (v: boolean) => void) => {
+          const li = el('li', on ? 'ok' : 'todo')
+          const b = button('toggle-row', '', () => {
+            set(!on)
+            render()
+          })
+          b.setAttribute('role', 'checkbox')
+          b.setAttribute('aria-checked', String(on))
+          const text = el('div', 'text')
+          text.append(el('strong', undefined, label), el('span', undefined, detail))
+          b.append(el('span', 'mark', on ? '✓' : ''), text)
+          li.append(b)
+          return li
+        }
+        list.append(
+          toggle(
+            '두리가 일하는 동안 PC가 잠들지 않게 할게요',
+            '화면은 꺼져도 돼요. 일이 끝나면 평소처럼 잠들어요.',
+            awakeWorking,
+            (v) => {
+              awakeWorking = v
+            },
+          ),
+          toggle('PC를 켜면 두리도 자동으로 켜지게 할게요', '창 없이 조용히 켜져요.', autoStart, (v) => {
+            autoStart = v
+          }),
+        )
+        card.append(
+          list,
+          el(
+            'p',
+            'setup-hint',
+            '화면 잠금이나 보안 설정은 건드리지 않아요. 그래서 컴퓨터를 다시 켜면, 로그인한 뒤에 두리가 돌아와요.',
+          ),
+        )
+        const foot = el('div', 'setup-foot')
+        foot.append(
+          button('btn-text', '이전', () => void go('check')),
+          button('btn-text', '나중에', () => void finish()),
+          button(
+            'btn',
+            '이렇게 할게요',
+            () => void finish({ keepAwake: awakeWorking ? 'working' : 'off', launchAtLogin: autoStart }),
+          ),
+        )
+        card.append(foot)
       }
 
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다

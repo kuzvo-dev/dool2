@@ -102,6 +102,20 @@ describe('dool2d 로컬 API', () => {
     expect(res.status).toBe(400)
   })
 
+  it('일하는 동안 busy를 알린다', async () => {
+    const { api } = await boot()
+    const seen: boolean[] = []
+    daemon?.events.on('busy', (b) => seen.push(b))
+    const { thread } = (await (
+      await api('/api/threads', { method: 'POST', body: '{"agent":"claude"}' })
+    ).json()) as { thread: { id: string } }
+    await readSse(
+      await api(`/api/threads/${thread.id}/messages`, { method: 'POST', body: '{"text":"안녕"}' }),
+    )
+    expect(seen).toEqual([true, false])
+    expect(daemon?.busy).toBe(false)
+  })
+
   it('빈 글은 받지 않는다', async () => {
     const { api } = await boot()
     const { thread } = (await (
@@ -140,6 +154,15 @@ describe('설정', () => {
     expect(await again.json()).toEqual({
       settings: { setupDone: true, aiChoice: 'both', defaultAgent: 'codex' },
     })
+  })
+
+  it('바뀐 설정을 PC 앱에 알린다', async () => {
+    const { api } = await boot()
+    const seen: unknown[] = []
+    daemon?.events.on('settings', (s) => seen.push(s))
+    await api('/api/settings', { method: 'PATCH', body: '{"keepAwake":"working","launchAtLogin":true}' })
+    expect(seen).toEqual([{ setupDone: false, keepAwake: 'working', launchAtLogin: true }])
+    expect(daemon?.settings()).toMatchObject({ keepAwake: 'working' })
   })
 
   it('모르는 항목이나 틀린 값은 받지 않는다', async () => {
