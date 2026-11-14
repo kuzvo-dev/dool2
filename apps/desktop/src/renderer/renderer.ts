@@ -3,16 +3,20 @@ import type {
   AgentEvent,
   AgentId,
   AgentStatus,
+  AiChoice,
   DaemonStreamEvent,
+  Settings,
   StoredMessage,
   ThreadSummary,
   UsageLimit,
 } from '@dool2/protocol'
+import { runSetup } from './setup.js'
+import { SETUP_STEPS, type SetupStep } from './setup-model.js'
 
 declare global {
   interface Window {
     dool2: {
-      config(): Promise<{ url: string; token: string; smokeOpen?: string }>
+      config(): Promise<{ url: string; token: string; smokeOpen?: string; smokeSetup?: string }>
       ready(summary: string): void
     }
   }
@@ -337,15 +341,47 @@ async function main() {
   }
   showEmpty()
 
-  await Promise.all([loadAgents(), loadThreads()])
+  const [{ settings }] = await Promise.all([
+    api<{ settings: Settings }>('/api/settings'),
+    loadAgents(),
+    loadThreads(),
+  ])
+  if (settings.defaultAgent && state.agents.some((a) => a.id === settings.defaultAgent && a.loggedIn)) {
+    state.pick = settings.defaultAgent
+    renderPick()
+  }
   // 점검 모드: 최근 대화를 열어 캡처한다
   const latest = state.threads[0]
   if (cfg.smokeOpen === 'latest' && latest) await openThread(latest.id)
+
+  // 첫 실행이면 마법사를 띄운다. 점검 모드에서는 "단계:선택"(예: check:both)으로 바로 연다
+  const [smokeStep, smokeChoice] = (cfg.smokeSetup ?? '').split(':')
+  const start = SETUP_STEPS.includes(smokeStep as SetupStep)
+    ? { step: smokeStep as SetupStep, choice: (smokeChoice || undefined) as AiChoice | undefined }
+    : undefined
+  let setup = 'done'
+  if (start || !settings.setupDone) {
+    const wizard = runSetup({
+      api,
+      loadAgents: async () => {
+        await loadAgents()
+        return state.agents
+      },
+      start,
+    })
+    void wizard.done.then((r) => {
+      if (r.defaultAgent) state.pick = r.defaultAgent
+      renderPick()
+      input.focus()
+    })
+    await wizard.shown
+    setup = start?.step ?? 'welcome'
+  }
   const ready = state.agents.filter((a) => a.installed && a.loggedIn).map((a) => a.id)
   // 화면이 실제로 그려진 뒤에 알린다
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   window.dool2.ready(
-    `agents=${state.agents.length} ready=${ready.join(',') || 'none'} threads=${state.threads.length}`,
+    `agents=${state.agents.length} ready=${ready.join(',') || 'none'} threads=${state.threads.length} setup=${setup}`,
   )
 }
 

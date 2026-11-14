@@ -60,6 +60,7 @@ app.whenReady().then(async () => {
     url: daemon?.url,
     token: daemon?.token,
     ...(SMOKE && process.env.DOOL2_SMOKE_OPEN ? { smokeOpen: process.env.DOOL2_SMOKE_OPEN } : {}),
+    ...(SMOKE && process.env.DOOL2_SMOKE_SETUP ? { smokeSetup: process.env.DOOL2_SMOKE_SETUP } : {}),
   }))
 
   const win = await createWindow()
