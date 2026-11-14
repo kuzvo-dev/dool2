@@ -561,12 +561,19 @@ function threadView(id: string | undefined) {
   }
   for (const m of order) {
     if (m.role === 'tool') msgs.append(toolCard(m.text))
-    else msgs.append(h('div', { class: `msg ${m.role}` }, m.role === 'user' ? m.text : rich(m.text)))
+    else
+      msgs.append(
+        h(
+          'div',
+          { class: m.role === 'assistant' ? 'msg assistant rich' : `msg ${m.role}` },
+          m.role === 'user' ? m.text : rich(m.text),
+        ),
+      )
   }
   const live = id ? st.live.get(id) : st.waitingNew ? '' : undefined
   if (live !== undefined) {
-    if (live) msgs.append(h('div', { class: 'msg assistant' }, rich(live)))
-    msgs.append(h('p', { class: 'activity', text: '두리가 PC에서 일하는 중…' }))
+    if (live) msgs.append(h('div', { class: 'msg assistant rich' }, rich(live)))
+    msgs.append(h('p', { class: 'activity shimmer', text: '두리가 PC에서 일하는 중…' }))
   }
   box.append(msgs, composer(id))
   return box
@@ -635,7 +642,7 @@ function approvalView(id: string) {
       return a.url
     }
   })()
-  const rows = h('dl', { class: 'rows' })
+  const rows = h('dl', { class: 'kv' })
   const row = (k: string, v?: string, cls?: string) =>
     v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
   row('무엇을', a.what)

@@ -353,7 +353,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       title.append(kind)
     }
     const rows = document.createElement('dl')
-    rows.className = 'approval-rows'
+    rows.className = 'kv'
     const row = (k: string, val?: string, cls?: string) => {
       if (!val) return
       const dt = document.createElement('dt')
@@ -508,7 +508,7 @@ function setHeader() {
 /** 말풍선. 두리 답은 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
 function bubble(role: string, text: string) {
   const el = document.createElement('div')
-  el.className = `msg ${role}`
+  el.className = role === 'assistant' ? 'msg assistant rich' : `msg ${role}`
   setRich(el, text)
   return el
 }
@@ -594,7 +594,7 @@ async function send(text: string) {
     })
     box.append(bubble('user', text))
     const activity = document.createElement('div')
-    activity.className = 'activity'
+    activity.className = 'activity shimmer'
     activity.textContent = '두리가 생각하는 중…'
     box.append(activity)
     let answer: HTMLElement | undefined

@@ -1,0 +1,17 @@
+{
+  "name": "@dool2/ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "두리 디자인 시스템: PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품 (CSS만)",
+  "files": [
+    "ui.css",
+    "fonts.css",
+    "fonts",
+    "copy.mjs",
+    "preview.html"
+  ],
+  "scripts": {
+    "test": "node --test copy.test.mjs"
+  }
+}

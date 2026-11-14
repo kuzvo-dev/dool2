@@ -201,6 +201,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/ui: {}
+
 packages:
 
   '@biomejs/biome@2.6.7':

@@ -11,11 +11,12 @@ const sw = self as unknown as {
   addEventListener(type: 'fetch', f: (e: FetchEvent) => void): void
   skipWaiting(): Promise<void>
 }
-const CACHE = 'dool2-shell-v1'
+const CACHE = 'dool2-shell-v2'
 const SHELL = [
   './',
   './index.html',
   './app.js',
+  './ui.css',
   './style.css',
   './manifest.webmanifest',
   './icons/icon192.png',
