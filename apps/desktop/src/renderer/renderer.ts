@@ -12,7 +12,7 @@ import type {
   UsageLimit,
 } from '@dool2/protocol'
 import { runSetup, type SetupOptions } from './setup.js'
-import { type CheckAction, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
+import { type CheckAction, costLabel, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
 
 declare global {
   interface Window {
@@ -28,7 +28,10 @@ const AGENT_LABEL: Record<AgentId, string> = {
   codex: 'Codex',
   opencode: 'API 키 (종량제)',
 }
-const TOOL_LABEL: Record<string, string> = { mcp__dool2__status: '두리 상태 확인' }
+const TOOL_LABEL: Record<string, string> = {
+  mcp__dool2__status: '두리 상태 확인',
+  dool2_status: '두리 상태 확인',
+}
 const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
 
 /** 자가 점검: 마법사를 끝냈는데 일할 AI가 없으면 왼쪽 위에 알리고 [고치기]로 설정을 연다 */
@@ -268,6 +271,8 @@ async function send(text: string) {
     box.append(activity)
     let answer: HTMLElement | undefined
     let answerText = ''
+    // 종량제: 이번 답에 쓴 돈
+    let usd = 0
     box.scrollTop = box.scrollHeight
 
     const res = await fetch(`${state.url}/api/threads/${state.current.id}/messages`, {
@@ -289,6 +294,7 @@ async function send(text: string) {
       } else if (ev.type === 'tool') activity.textContent = `${TOOL_LABEL[ev.name] ?? ev.name} 중…`
       else if (ev.type === 'tool_result') activity.textContent = '정리하는 중…'
       else if (ev.type === 'usage') renderUsage(ev.limits)
+      else if (ev.type === 'cost') usd += ev.usd
       else if (ev.type === 'error' || ev.type === 'limit_reached')
         box.insertBefore(bubble('system', ev.message), activity)
     }
@@ -312,6 +318,12 @@ async function send(text: string) {
       }
     }
     activity.remove()
+    if (usd > 0) {
+      const cost = document.createElement('p')
+      cost.className = 'cost'
+      cost.textContent = `이번 답 ${costLabel(usd)}`
+      box.append(cost)
+    }
   } catch (err) {
     box.append(bubble('system', (err as Error).message))
   } finally {

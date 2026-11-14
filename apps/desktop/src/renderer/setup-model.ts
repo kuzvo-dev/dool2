@@ -33,6 +33,7 @@ export const CHOICES: { id: AiChoice; title: string; sub: string }[] = [
   { id: 'codex', title: 'ChatGPT', sub: 'Plus·Pro 구독. Codex로 일해요' },
   { id: 'both', title: '둘 다 써요', sub: '상황에 맞게 골라 쓸 수 있어요' },
   { id: 'unsure', title: '잘 모르겠어요', sub: '이 컴퓨터를 보고 두리가 골라 드릴게요' },
+  { id: 'payg', title: '구독 없이 쓸래요', sub: 'AI 회사의 API 키로, 쓴 만큼만 내요' },
 ]
 
 /** 고른 구독에 필요한 AI */
@@ -170,4 +171,15 @@ export function checkHeadline(
   if (pickDefault(choice, agents))
     return { title: '바로 시작할 수 있어요', sub: '나머지는 나중에 연결해도 괜찮아요.' }
   return { title: `${COUNT[left] ?? left} 가지만 해 주세요`, sub: '버튼을 누르면 두리가 이어서 할게요.' }
+}
+
+/** 원화 어림값에 쓰는 환율. 정확한 금액이 아니라 감을 잡게 하려는 것이라 넉넉히 반올림한다 */
+export const KRW_PER_USD = 1450
+
+/** 종량제 비용 표시: "$0.0034 · 약 5원", 1원이 안 되면 "1원 미만" */
+export function costLabel(usd: number): string {
+  const krw = usd * KRW_PER_USD
+  const won = krw < 1 ? '1원 미만' : `약 ${Math.round(krw).toLocaleString('ko-KR')}원`
+  const dollars = usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)
+  return `$${dollars} · ${won}`
 }

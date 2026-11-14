@@ -1,6 +1,6 @@
 import type { AgentStatus } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { checkHeadline, checklist, neededAgents, pickDefault } from './setup-model.js'
+import { checkHeadline, checklist, costLabel, neededAgents, pickDefault } from './setup-model.js'
 
 const claudeReady: AgentStatus = { id: 'claude', installed: true, loggedIn: true, plan: 'max' }
 const claudeMissing: AgentStatus = { id: 'claude', installed: false, loggedIn: false }
@@ -56,5 +56,20 @@ describe('첫 실행 마법사', () => {
     expect(items.at(-1)).toMatchObject({ id: 'chrome', ok: false, action: 'chrome-install' })
     expect(checkHeadline('claude', [claudeReady], { installed: false }).title).toBe('바로 시작할 수 있어요')
     expect(checkHeadline('claude', [claudeReady], { installed: true }).title).toBe('준비가 다 됐어요')
+  })
+
+  it('구독 없이 쓰기를 고르면 종량제 실행기와 API 키를 확인한다', () => {
+    const items = checklist('payg', [{ id: 'opencode', installed: false, loggedIn: false }])
+    expect(items.map((i) => [i.id, i.ok, i.action])).toEqual([
+      ['opencode-app', false, 'opencode-install'],
+      ['payg-key', false, 'payg-key'],
+    ])
+    expect(pickDefault('payg', [{ id: 'opencode', installed: true, loggedIn: true }])).toBe('opencode')
+  })
+
+  it('비용을 달러와 원화 어림값으로 보여 준다', () => {
+    expect(costLabel(0.0034)).toBe('$0.0034 · 약 5원')
+    expect(costLabel(0.0003)).toBe('$0.0003 · 1원 미만')
+    expect(costLabel(1.2)).toBe('$1.20 · 약 1,740원')
   })
 })
