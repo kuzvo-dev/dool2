@@ -26,6 +26,7 @@ export const BROWSER_TOOLS = [
   'screenshot',
   'back',
   'close',
+  'handoff',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -191,6 +192,21 @@ export class BrowserTools {
         this.pages.delete(tabId)
         return { content: [{ type: 'text', text: `탭 ${tabId}을(를) 닫았어요.` }] }
       }
+      case 'handoff': {
+        // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
+        // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
+        await this.browser.call('focus', { tabId })
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                'Chrome의 두리 탭을 사용자 앞에 띄웠어요. 사용자에게 무엇을 해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ' +
+                '사용자가 [다 했어요]를 누르면 다음 메시지로 이어서 하라는 부탁이 와요. 그때 페이지를 다시 읽어 확인하고 이어 가세요.',
+            },
+          ],
+        }
+      }
     }
     throw new Error(`모르는 브라우저 도구예요: ${tool}`)
   }
@@ -201,7 +217,7 @@ export class BrowserTools {
     if (!risk) return
     throw new Error(
       `멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 두리가 직접 하지 않아요. ` +
-        '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, 마지막 버튼은 사용자가 직접 누르게 해 주세요.',
+        '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.',
     )
   }
 

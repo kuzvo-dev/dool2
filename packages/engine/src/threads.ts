@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentId, DaemonStreamEvent } from '@dool2/protocol'
+import type { AgentEvent, AgentId, DaemonStreamEvent, HandoffRecord } from '@dool2/protocol'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -69,6 +69,16 @@ export class ThreadService {
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         yield { type: 'agent', event: ev }
+        // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
+        if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
+          const input = (ev.input ?? {}) as { tabId?: unknown; reason?: unknown }
+          const record: HandoffRecord = {
+            kind: 'handoff',
+            ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
+            reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
+          }
+          yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+        }
       }
 
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })

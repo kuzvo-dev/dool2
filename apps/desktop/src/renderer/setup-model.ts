@@ -1,5 +1,5 @@
 // 첫 실행 마법사의 판단 로직. 화면과 떼어 두어 테스트한다.
-import type { AgentId, AgentStatus, AiChoice, ChromeStatus } from '@dool2/protocol'
+import type { AgentId, AgentStatus, AiChoice, ChromeStatus, ExtensionStatus } from '@dool2/protocol'
 
 /** settings: 마법사를 끝낸 뒤 여는 설정 화면 (단계 표시 없음) */
 export type SetupStep = 'welcome' | 'choice' | 'check' | 'awake' | 'settings'
@@ -20,6 +20,7 @@ export type CheckAction =
   | 'opencode-install'
   | 'codex-install'
   | 'payg-key'
+  | 'extension-install'
 
 export interface CheckItem {
   id: string
@@ -64,7 +65,12 @@ function visibleAgents(choice: AiChoice, agents: AgentStatus[]): AgentId[] {
 }
 
 /** 준비 상태 목록. 사용자에게 보이는 문구라서 기술 용어를 쓰지 않는다 */
-export function checklist(choice: AiChoice, agents: AgentStatus[], chrome?: ChromeStatus): CheckItem[] {
+export function checklist(
+  choice: AiChoice,
+  agents: AgentStatus[],
+  chrome?: ChromeStatus,
+  extension?: ExtensionStatus,
+): CheckItem[] {
   const items: CheckItem[] = []
   for (const id of visibleAgents(choice, agents)) {
     const a = agents.find((x) => x.id === id)
@@ -162,6 +168,24 @@ export function checklist(choice: AiChoice, agents: AgentStatus[], chrome?: Chro
             action: 'chrome-install',
           },
     )
+  // Chrome이 있으면 두리 확장 연결을 본다
+  if (chrome?.installed && extension)
+    items.push(
+      extension.connected
+        ? {
+            id: 'extension',
+            label: '두리 확장',
+            ok: true,
+            detail: 'Chrome과 연결됐어요. 평소 로그인 그대로 써요',
+          }
+        : {
+            id: 'extension',
+            label: '두리 확장',
+            ok: false,
+            detail: 'Chrome에 두리 확장을 한 번 추가해 주세요',
+            action: 'extension-install',
+          },
+    )
   return items
 }
 
@@ -171,8 +195,9 @@ export function checkHeadline(
   choice: AiChoice,
   agents: AgentStatus[],
   chrome?: ChromeStatus,
+  extension?: ExtensionStatus,
 ): { title: string; sub: string } {
-  const items = checklist(choice, agents, chrome)
+  const items = checklist(choice, agents, chrome, extension)
   const left = items.filter((i) => !i.ok).length
   if (left === 0) return { title: '준비가 다 됐어요', sub: '이제 부탁만 하시면 돼요.' }
   if (pickDefault(choice, agents))

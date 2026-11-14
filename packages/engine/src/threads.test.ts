@@ -75,4 +75,19 @@ describe('ThreadService', () => {
       text: 'Claude 로그인이 필요해요',
     })
   })
+
+  it('사람에게 넘긴 일을 기록에 남긴다', async () => {
+    const { store, svc } = setup([
+      { type: 'tool', name: 'mcp__dool2__browser_handoff', input: { tabId: 4, reason: '로그인해 주세요' } },
+      { type: 'text', delta: '로그인만 해 주세요' },
+      { type: 'done', text: '로그인만 해 주세요' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '주문 내역 봐 줘'))
+    expect(store.listMessages(t.id).map((m) => [m.role, m.text])).toEqual([
+      ['user', '주문 내역 봐 줘'],
+      ['tool', JSON.stringify({ kind: 'handoff', tabId: 4, reason: '로그인해 주세요' })],
+      ['assistant', '로그인만 해 주세요'],
+    ])
+  })
 })

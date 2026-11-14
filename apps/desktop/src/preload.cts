@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld('dool2', {
   config: (): Promise<{ url: string; token: string; smokeOpen?: string; smokeSetup?: string }> =>
     ipcRenderer.invoke('dool2:config'),
   ready: (summary: string) => ipcRenderer.send('dool2:ready', summary),
+  /** Chrome에 올릴 두리 확장 폴더 */
+  extensionDir: (): Promise<string> => ipcRenderer.invoke('dool2:extension-dir'),
+  revealExtension: () => ipcRenderer.send('dool2:reveal-extension'),
 })

@@ -1,7 +1,7 @@
 // 두리 PC 앱 (Electron 메인 프로세스).
 // 두리 본체(dool2d)를 같은 프로세스에서 띄우고, 화면에는 접속 주소와 토큰만 건넨다.
 // 창을 닫아도 트레이에 남아 일을 계속한다. 끝내기는 트레이 메뉴에서 한다 (docs/architecture.md 7.1).
-import { mkdir, writeFile } from 'node:fs/promises'
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
@@ -147,6 +147,24 @@ function nativeHostOption() {
   return { nativeHost: { ...(script ? { script } : {}), extraDirs, defaultTargets } }
 }
 
+/**
+ * 두리 Chrome 확장 폴더를 데이터 폴더로 복사해 둔다. 웹 스토어에 올리기 전(M5)까지는 사용자가
+ * Chrome에 이 폴더를 직접 올린다. 앱 안이 아니라 데이터 폴더에 두어야 경로가 바뀌지 않고, 앱을 업데이트하면 같이 바뀐다.
+ */
+async function prepareExtension(dataDir: string): Promise<string> {
+  const from = app.isPackaged
+    ? join(process.resourcesPath, 'extension')
+    : join(here, '..', '..', 'extension', 'dist')
+  const to = join(dataDir, 'chrome-extension')
+  try {
+    await rm(to, { recursive: true, force: true })
+    await cp(from, to, { recursive: true })
+  } catch (e) {
+    console.error(`[두리] 확장 폴더를 준비하지 못했어요: ${(e as Error).message}`)
+  }
+  return to
+}
+
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
@@ -176,6 +194,9 @@ app.whenReady().then(async () => {
     ...nativeHostOption(),
   })
   daemon = d
+  const extensionDir = await prepareExtension(dataDir)
+  ipcMain.handle('dool2:extension-dir', () => extensionDir)
+  ipcMain.on('dool2:reveal-extension', () => shell.showItemInFolder(join(extensionDir, 'manifest.json')))
   ipcMain.handle('dool2:config', () => ({
     url: d.url,
     token: d.token,
