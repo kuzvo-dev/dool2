@@ -8,6 +8,10 @@
 - 처음 기여하시는 분의 PR은 메인테이너가 승인해야 CI가 돌아요.
 - 보안 문제는 이슈 대신 [SECURITY.md](SECURITY.md)의 안내를 따라 주세요.
 
+## 작업 방식
+
+작은 단위로 PR을 올리고, 화면이 바뀌면 캡처를 붙여 주세요. 자세한 규칙은 [AGENTS.md](AGENTS.md)에 있어요.
+
 ## 커밋 서명 (DCO)
 
 모든 커밋에 `Signed-off-by` 한 줄이 있어야 해요. "이 코드를 기여할 권리가 있다"는 [Developer Certificate of Origin](https://developercertificate.org/)에 동의한다는 뜻이에요. `git commit -s`로 커밋하면 자동으로 붙어요. CI가 확인해요.
