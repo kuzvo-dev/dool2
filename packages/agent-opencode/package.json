@@ -1,0 +1,23 @@
+{
+  "name": "@dool2/agent-opencode",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "두리 종량제 실행기: OpenCode v2를 API 키로, 두리 도구만 쓰게 묶어 실행한다 (ADR 0010)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dool2/engine": "workspace:*",
+    "@dool2/protocol": "workspace:*"
+  }
+}

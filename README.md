@@ -107,6 +107,7 @@ packages/
   engine/         대화 진행, 에이전트 공통 인터페이스, 페르소나
   agent-claude/   Claude Code 연동 (`claude -p`, 내장 도구 끔)
   agent-codex/    Codex 연동 (`codex app-server`, 셸 끔, 고정 버전 동봉)
+  agent-opencode/ 종량제 실행기 (OpenCode v2, API 키, 두리 도구만)
   mcp-tools/      두리 도구 (MCP 서버)
   browser/        브라우저 손 — Chrome 확인·설치 (M2에서 두리 확장 연결)
   store/          대화 기록 (Node 내장 SQLite)
