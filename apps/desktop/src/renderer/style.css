@@ -685,3 +685,19 @@ button {
   color: var(--sub);
   font-size: 12.5px;
 }
+.toggles li {
+  padding: 0;
+}
+.toggle-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  text-align: left;
+}
+.setup-hint {
+  color: var(--sub);
+  font-size: 12.5px;
+  line-height: 1.55;
+}

@@ -95,6 +95,10 @@ export const SettingsSchema = z.object({
   aiChoice: AiChoiceSchema.optional(),
   /** 새 대화를 시작할 때 고를 AI */
   defaultAgent: AgentIdSchema.optional(),
+  /** PC가 잠들지 않게: 일하는 동안만 / 항상 / 안 함 (docs/architecture.md 7.1) */
+  keepAwake: z.enum(['working', 'always', 'off']).optional(),
+  /** PC를 켜면 두리도 자동으로 켜기 */
+  launchAtLogin: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 

@@ -1,8 +1,8 @@
 // 첫 실행 마법사의 판단 로직. 화면과 떼어 두어 테스트한다.
 import type { AgentId, AgentStatus, AiChoice, ChromeStatus } from '@dool2/protocol'
 
-export type SetupStep = 'welcome' | 'choice' | 'check'
-export const SETUP_STEPS: SetupStep[] = ['welcome', 'choice', 'check']
+export type SetupStep = 'welcome' | 'choice' | 'check' | 'awake'
+export const SETUP_STEPS: SetupStep[] = ['welcome', 'choice', 'check', 'awake']
 
 export type CheckAction = 'claude-install' | 'claude-login' | 'codex-login' | 'chrome-install'
 

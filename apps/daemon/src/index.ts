@@ -1,6 +1,7 @@
 // dool2d — 두리 본체. PC 앱 화면(Electron)이 띄우고, 두리 박스에서는 혼자 돈다.
 // M0: 로컬 API(127.0.0.1 + 토큰)로 대화를 받아 Claude Code·Codex를 돌리고 기록을 남긴다.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
@@ -40,10 +41,22 @@ export interface DaemonOptions {
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
 
+export interface DaemonEvents {
+  /** 설정이 바뀌었다 (PC 앱이 전원·자동 시작을 다시 맞춘다) */
+  settings: [Settings]
+  /** 두리가 일을 시작했거나(true) 모두 끝냈다(false) */
+  busy: [boolean]
+}
+
 export interface Daemon {
   url: string
   port: number
   token: string
+  events: EventEmitter<DaemonEvents>
+  /** 지금 진행 중인 일이 있는지 */
+  readonly busy: boolean
+  /** 저장된 설정 (기본값으로 메운 것) */
+  settings(): Settings
   close(): Promise<void>
 }
 
@@ -78,6 +91,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 
+  const events = new EventEmitter<DaemonEvents>()
+  let running = 0
+  /** 대화 한 턴을 감싸서 "일하는 중" 상태를 알린다 */
+  async function* tracked<T>(inner: AsyncIterable<T>): AsyncGenerator<T> {
+    if (running++ === 0) events.emit('busy', true)
+    try {
+      yield* inner
+    } finally {
+      if (--running === 0) events.emit('busy', false)
+    }
+  }
   let claudeInstall: ClaudeInstall | undefined
   let chromeInstall: ChromeInstall | undefined
   const chrome = opts.chrome ?? {
@@ -193,7 +217,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'PATCH') {
         const patch = SettingsPatchSchema.parse(await readJson(req))
         for (const [key, value] of Object.entries(patch)) store.setSetting(key, value)
-        return json(res, 200, { settings: readSettings() })
+        const settings = readSettings()
+        events.emit('settings', settings)
+        return json(res, 200, { settings })
       }
     }
 
@@ -217,7 +243,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'POST' && c === 'messages') {
         const body = SendMessageRequestSchema.parse(await readJson(req))
         if (threads.isRunning(b)) return json(res, 409, { error: '이 대화는 아직 답하는 중이에요' })
-        return stream(res, threads.send(b, body.text), () => threads.cancel(b))
+        return stream(res, tracked(threads.send(b, body.text)), () => threads.cancel(b))
       }
     }
 
@@ -233,6 +259,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   let closing: Promise<void> | undefined
   return {
     url: `http://127.0.0.1:${port}`,
+    events,
+    get busy() {
+      return running > 0
+    },
+    settings: readSettings,
     port,
     token,
     // 여러 번 불러도 한 번만 닫는다
