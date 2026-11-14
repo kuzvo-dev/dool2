@@ -210,7 +210,9 @@ app.whenReady().then(async () => {
   daemon = d
   // 시험용: 배포 앱을 밖에서 부려 보려고 본체 주소·화면용 토큰을 파일(0600)에 적는다. 이 환경 변수를 줄 때만
   if (process.env.DOOL2_API_INFO)
-    await writeFile(process.env.DOOL2_API_INFO, JSON.stringify({ url: d.url, token: d.token }), { mode: 0o600 })
+    await writeFile(process.env.DOOL2_API_INFO, JSON.stringify({ url: d.url, token: d.token }), {
+      mode: 0o600,
+    })
   const extensionDir = await prepareExtension(dataDir)
   ipcMain.handle('dool2:extension-dir', () => extensionDir)
   ipcMain.on('dool2:reveal-extension', () => shell.showItemInFolder(join(extensionDir, 'manifest.json')))
