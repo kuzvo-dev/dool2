@@ -2,7 +2,7 @@
 //
 //   pnpm build && pnpm --filter @dool2/desktop package
 //
-// 1. 메인 프로세스와 두리 도구 서버를 esbuild로 한 파일씩 묶는다 (pnpm 작업 공간 링크를 따라가지 않게)
+// 1. 메인 프로세스, 두리 도구 서버, 브라우저 호스트를 esbuild로 한 파일씩 묶는다 (pnpm 작업 공간 링크를 따라가지 않게)
 // 2. 의존성 없는 준비 폴더(stage/)에 화면·아이콘과 함께 모은다
 // 3. Codex는 넣지 않는다 (처음 쓸 때 두리가 내려받는다, agent-codex/download.ts)
 // 4. electron-builder로 맥 dmg / 윈도우 설치 파일을 만든다 → release/
@@ -45,6 +45,9 @@ await esbuild({
 })
 const mcpServer = fileURLToPath(import.meta.resolve('@dool2/mcp-tools/server'))
 await esbuild({ ...common, entryPoints: [mcpServer], outfile: join(stage, 'dist', 'mcp-server.mjs') })
+// Chrome이 두리 확장 요청으로 띄우는 native messaging 호스트 (ADR 0006)
+const host = fileURLToPath(import.meta.resolve('@dool2/browser/host'))
+await esbuild({ ...common, entryPoints: [host], outfile: join(stage, 'dist', 'native-host.mjs') })
 
 cpSync(join(root, 'dist', 'preload.cjs'), join(stage, 'dist', 'preload.cjs'))
 cpSync(join(root, 'dist', 'renderer'), join(stage, 'dist', 'renderer'), { recursive: true })
@@ -83,7 +86,7 @@ await build({
     directories: { app: 'stage', output: 'release' },
     // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
     files: ['**/*', '!**/node_modules/**'],
-    asarUnpack: ['dist/mcp-server.mjs'],
+    asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs'],
     icon: 'assets/icon.png',
     mac: {
       category: 'public.app-category.productivity',

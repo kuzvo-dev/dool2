@@ -10,7 +10,13 @@ import { join } from 'node:path'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
 import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS } from '@dool2/agent-opencode'
-import { ChromeInstall, detectChrome } from '@dool2/browser'
+import {
+  BrowserBridge,
+  ChromeInstall,
+  detectChrome,
+  type HostRuntime,
+  registerNativeHost,
+} from '@dool2/browser'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
   type AgentId,
@@ -21,6 +27,7 @@ import {
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
+  type ExtensionStatus,
   type PaygAccount,
   PaygAccountRequestSchema,
   SendMessageRequestSchema,
@@ -46,6 +53,11 @@ export interface DaemonOptions {
   secrets?: SecretStore
   /** 테스트용: Chrome 확인·설치를 바꿔 끼운다 */
   chrome?: { detect(): Promise<ChromeStatus>; createInstall?(downloadDir: string): ChromeInstall }
+  /**
+   * Chrome에 native messaging 호스트를 등록한다 (두리 확장이 본체에 붙는 길, ADR 0006).
+   * 없으면 등록하지 않는다. 점검 모드·테스트는 사용자 Chrome을 건드리지 않게 비워 둔다.
+   */
+  nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
@@ -76,6 +88,8 @@ export interface DaemonEvents {
   settings: [Settings]
   /** 두리가 일을 시작했거나(true) 모두 끝냈다(false) */
   busy: [boolean]
+  /** Chrome의 두리 확장이 붙었거나 떨어졌다 */
+  extension: [ExtensionStatus]
 }
 
 export interface Daemon {
@@ -87,6 +101,8 @@ export interface Daemon {
   readonly busy: boolean
   /** 저장된 설정 (기본값으로 메운 것) */
   settings(): Settings
+  /** Chrome의 두리 확장과 잇는 다리 */
+  browser: BrowserBridge
   close(): Promise<void>
 }
 
@@ -96,6 +112,17 @@ export function dool2McpServer(scriptPath?: string): McpServerSpec {
   const inElectron = Boolean(process.versions.electron)
   return {
     name: 'dool2',
+    command: process.execPath,
+    args: [script],
+    ...(inElectron ? { env: { ELECTRON_RUN_AS_NODE: '1' } } : {}),
+  }
+}
+
+/** native messaging 호스트를 띄우는 방법. Electron 안에서는 Electron을 Node처럼 실행한다 */
+export function dool2BrowserHost(scriptPath?: string): HostRuntime {
+  const script = scriptPath ?? createRequire(import.meta.url).resolve('@dool2/browser/host')
+  const inElectron = Boolean(process.versions.electron)
+  return {
     command: process.execPath,
     args: [script],
     ...(inElectron ? { env: { ELECTRON_RUN_AS_NODE: '1' } } : {}),
@@ -137,6 +164,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const token = opts.token ?? randomBytes(32).toString('hex')
 
   const events = new EventEmitter<DaemonEvents>()
+
+  // 브라우저 다리: 확장 → native messaging 호스트 → 이 소켓
+  const browser = new BrowserBridge(paths.dataDir)
+  await browser.listen()
+  browser.on('status', (s) => events.emit('extension', s))
+  if (opts.nativeHost) {
+    const { script, ...where } = opts.nativeHost
+    await registerNativeHost({ dataDir: paths.dataDir, runtime: dool2BrowserHost(script), ...where }).catch(
+      (e: Error) => console.error(`[두리] 브라우저 호스트를 등록하지 못했어요: ${e.message}`),
+    )
+  }
   let running = 0
   /** 대화 한 턴을 감싸서 "일하는 중" 상태를 알린다 */
   async function* tracked<T>(inner: AsyncIterable<T>): AsyncGenerator<T> {
@@ -253,7 +291,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
 
     // 브라우저: Chrome 확인·설치 (ADR 0006)
     if (a === 'browser' && !b && req.method === 'GET')
-      return json(res, 200, { chrome: await chrome.detect() })
+      return json(res, 200, { chrome: await chrome.detect(), extension: browser.status })
     if (a === 'browser' && b === 'install' && !c) {
       if (req.method === 'GET') return json(res, 200, { install: chromeInstall?.status ?? { state: 'idle' } })
       if (req.method === 'POST') {
@@ -370,6 +408,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return running > 0
     },
     settings: readSettings,
+    browser,
     port,
     token,
     // 여러 번 불러도 한 번만 닫는다
@@ -379,7 +418,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         server.closeAllConnections()
         server.close(() => {
           store.close()
-          resolve()
+          browser.close().then(resolve, resolve)
         })
       })),
   }
