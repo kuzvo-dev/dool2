@@ -211,6 +211,14 @@ button.stat:hover {
   padding: 10px 24px;
   border-bottom: 1px solid var(--line);
 }
+/* 제목이 길면 줄여서 오른쪽 사용량을 밀어내지 않게 */
+.head > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.usage {
+  flex: none;
+}
 .head h1 {
   font-size: 14px;
   font-weight: 500;
@@ -257,20 +265,6 @@ button.stat:hover {
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-.empty .face {
-  --s: 36px;
-  margin-bottom: 8px;
-}
-.empty {
-  margin: auto;
-  text-align: center;
-  max-width: 440px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 6vh;
 }
 .hero {
   font-size: 26px;
@@ -887,4 +881,149 @@ button.stat:hover {
   letter-spacing: 0.12em;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 홈: 인사 → 부탁 칸 → 예시 → 최근에 맡긴 일 ──── */
+.main.home {
+  grid-template-rows: minmax(0, 1fr);
+}
+.main.home .head {
+  display: none;
+}
+.main.home .messages {
+  padding-top: max(48px, 9vh);
+}
+.home-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.home-hero .face {
+  --s: 40px;
+}
+#home-ask .composer {
+  padding: 0;
+}
+#home-ask .composer-box {
+  padding: 14px 12px 10px 18px;
+  border-radius: var(--r-xl);
+}
+#home-ask textarea {
+  min-height: 52px;
+  font-size: 15px;
+}
+.home-hint {
+  margin-top: -4px;
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--faint);
+  text-align: center;
+}
+.home-view .examples {
+  margin-top: 0;
+}
+.recent {
+  margin-top: 30px;
+}
+.recent .over {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tasks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  gap: 12px;
+}
+.tasks .task {
+  min-height: 132px;
+}
+.tasks .task .btn-light {
+  margin-top: auto;
+  height: 32px;
+  font-size: 13px;
+}
+.tasks .task.dark .task-body {
+  margin-bottom: 12px;
+}
+
+/* ── 대화 안의 진행: 지금 하는 일 + 한 일 목록 ───── */
+.work {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.work-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+/* 단계가 생기면 도는 원은 목록의 "지금 하는 일" 하나만 */
+.work:has(.worklog li) .work-head .spin {
+  display: none;
+}
+.work-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.work .worklog {
+  padding-left: 1px;
+}
+/* 길어지면 최근 다섯 단계만 */
+.work:not(.done) .worklog li:nth-last-child(n + 6) {
+  display: none;
+}
+details.work.done {
+  gap: 0;
+  font-size: 13px;
+  color: var(--sub);
+}
+details.work.done summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 2px 0;
+  cursor: pointer;
+  list-style: none;
+}
+details.work.done summary::-webkit-details-marker {
+  display: none;
+}
+details.work.done summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin: 0 3px 2px 1px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s var(--ease);
+}
+details.work.done[open] summary::before {
+  transform: rotate(45deg);
+}
+details.work.done summary:hover {
+  color: var(--ink);
+}
+details.work.done .worklog {
+  margin-top: 10px;
+}
+
+/* 왼쪽 목록의 도는 원·점 */
+.threads .spin,
+.threads .dot {
+  margin-right: 4px;
 }

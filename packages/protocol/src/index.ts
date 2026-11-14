@@ -65,6 +65,22 @@ export interface ThreadSummary {
   title: string
   createdAt: string
   updatedAt: string
+  /** 지금 답하는 중 (홈의 맡긴 일 카드·왼쪽 목록에서 도는 원) */
+  busy?: boolean
+  /** 마지막 두리 답의 앞부분 (마크다운 기호는 뺀 글자) */
+  preview?: string
+  /** 이 대화에서 승인을 기다리는 요청 */
+  approval?: { id: string; what: string; amount?: string; label: string }
+}
+
+/** 미리보기용: 마크다운 기호를 빼고 한 줄로 줄인다 */
+export function previewText(text: string, max = 140): string {
+  const flat = text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/^\s*(?:[-*•]|\d{1,3}[.)])\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
 export interface StoredMessage {

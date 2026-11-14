@@ -22,7 +22,14 @@ import { type CheckAction, costLabel, planLabel, SETUP_STEPS, type SetupStep } f
 declare global {
   interface Window {
     dool2: {
-      config(): Promise<{ url: string; token: string; smokeOpen?: string; smokeSetup?: string }>
+      config(): Promise<{
+        url: string
+        token: string
+        smokeOpen?: string
+        smokeSetup?: string
+        smokeAsk?: string
+        smokeAskWait?: number
+      }>
       ready(summary: string): void
       extensionDir(): Promise<string>
       revealExtension(): void
@@ -201,11 +208,37 @@ function shortTime(iso: string) {
     : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
 }
 
+// ── 읽은 표시: 새로 끝난 일에 초록 점 ──────────────────
+const SEEN_KEY = 'dool2.seen'
+const seen: Record<string, string> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) ?? 'null') ?? {}
+  } catch {
+    return {}
+  }
+})()
+/** 처음 켠 PC에서는 지난 대화를 모두 읽은 걸로 둔다 */
+const firstRun = localStorage.getItem(SEEN_KEY) === null
+function markSeen(t: ThreadSummary) {
+  seen[t.id] = t.updatedAt
+  localStorage.setItem(SEEN_KEY, JSON.stringify(seen))
+}
+const unread = (t: ThreadSummary) =>
+  !t.busy && Boolean(t.preview) && t.id !== state.current?.id && (seen[t.id] ?? '') < t.updatedAt
+
+/** 맡긴 일 카드의 상태 줄: "방금 끝났어요", "12분 전", "오전 10:03", "11. 14." */
+function whenLabel(iso: string) {
+  const min = Math.floor((Date.now() - Date.parse(iso)) / 60_000)
+  if (min < 2) return '방금 끝났어요'
+  if (min < 60) return `${min}분 전`
+  return shortTime(iso)
+}
+
 function renderThreads() {
   if (!state.threads.length) {
     const p = document.createElement('li')
     p.className = 'empty-list'
-    p.textContent = '아직 대화가 없어요'
+    p.textContent = '아직 맡긴 일이 없어요'
     $('threads').replaceChildren(p)
     return
   }
@@ -218,9 +251,11 @@ function renderThreads() {
       const title = document.createElement('span')
       title.className = 't'
       title.textContent = t.title
-      const meta = document.createElement('span')
-      meta.className = 'm'
-      meta.textContent = shortTime(t.updatedAt)
+      // 오른쪽: 일하는 중이면 도는 원, 새로 끝났으면 초록 점, 아니면 시각
+      const busy = t.busy || (state.busy && t.id === state.current?.id)
+      const meta = document.createElement(busy || unread(t) ? 'i' : 'span')
+      meta.className = busy ? 'spin' : t.approval ? 'dot warn' : unread(t) ? 'dot ok' : 'm'
+      if (!busy && !unread(t) && !t.approval) meta.textContent = shortTime(t.updatedAt)
       b.title = `${t.title}\n${AGENT_LABEL[t.agent]} · ${new Date(t.updatedAt).toLocaleString('ko-KR')}`
       b.append(title, meta)
       b.onclick = () => void openThread(t.id)
@@ -232,7 +267,120 @@ function renderThreads() {
 
 async function loadThreads() {
   state.threads = (await api<{ threads: ThreadSummary[] }>('/api/threads')).threads
+  if (firstRun && !Object.keys(seen).length) for (const t of state.threads) markSeen(t)
   renderThreads()
+  if (!state.current) renderHome()
+}
+
+// ── 홈: 부탁 칸과 최근에 맡긴 일 ─────────────────────
+
+const EXAMPLES = ['내일 아침 우산 챙겨야 해?', '이번 주 택배 어디쯤 왔어?', '뭘 할 수 있어?']
+
+/** 부탁 칸(form)을 홈의 가운데로, 대화에서는 아래로 옮긴다 */
+let composerForm: HTMLElement | undefined
+function placeComposer(home: boolean) {
+  // 홈 화면을 지우면 부탁 칸도 문서에서 빠지므로 처음 찾은 걸 붙잡아 둔다
+  composerForm ??= $('composer')
+  const form = composerForm
+  const main = document.querySelector('.main') as HTMLElement
+  main.classList.toggle('home', home)
+  if (home) $('home-ask')?.append(form)
+  else if (form.parentElement !== main) main.append(form)
+}
+
+function taskCard(t: ThreadSummary): HTMLElement {
+  const card = document.createElement('button')
+  card.type = 'button'
+  card.className = t.approval ? 'task dark' : 'task'
+  card.onclick = () => void openThread(t.id)
+  const meta = document.createElement('div')
+  meta.className = 'task-meta'
+  const title = document.createElement('div')
+  title.className = 'task-title'
+  const body = document.createElement('p')
+  body.className = 'task-body'
+  if (t.approval) {
+    const dot = document.createElement('i')
+    dot.className = 'dot mint'
+    meta.append(dot, '승인을 기다려요')
+    title.textContent = [t.approval.what, t.approval.amount].filter(Boolean).join(' · ')
+    body.textContent = `승인하시면 "${t.approval.label}"을(를) 눌러요`
+    const go = document.createElement('span')
+    go.className = 'btn-light'
+    go.textContent = '확인하기'
+    card.append(meta, title, body, go)
+    return card
+  }
+  const busy = t.busy || (state.busy && t.id === state.current?.id)
+  const when = document.createElement('span')
+  when.textContent = busy ? '일하는 중' : whenLabel(t.updatedAt)
+  meta.append(when)
+  if (busy) {
+    const spin = document.createElement('i')
+    spin.className = 'spin'
+    meta.append(spin)
+  } else if (unread(t)) {
+    const dot = document.createElement('i')
+    dot.className = 'dot ok'
+    meta.append(dot)
+  }
+  title.textContent = t.title
+  body.textContent = t.preview ?? (busy ? '두리가 이 컴퓨터에서 하고 있어요' : '')
+  card.append(meta, title, body)
+  return card
+}
+
+/** 새 부탁 화면: 인사 → 부탁 칸 → 예시 → 최근에 맡긴 일 */
+function renderHome() {
+  const box = $('messages')
+  let home = document.getElementById('home')
+  if (!home) {
+    home = document.createElement('div')
+    home.id = 'home'
+    home.className = 'home-view'
+    const hero = document.createElement('div')
+    hero.className = 'home-hero'
+    const face = document.createElement('span')
+    face.className = 'face'
+    const h = document.createElement('p')
+    h.className = 'hero'
+    h.textContent = '오늘은 뭘 대신 해 드릴까요?'
+    hero.append(face, h)
+    const ask = document.createElement('div')
+    ask.id = 'home-ask'
+    const hint = document.createElement('p')
+    hint.className = 'cap home-hint'
+    hint.textContent = '돈 쓰는 일은 꼭 먼저 물어볼게요 · 폰에서 보낸 부탁도 여기서 이어서 해요'
+    const examples = document.createElement('div')
+    examples.className = 'examples'
+    for (const ex of EXAMPLES) {
+      const c = document.createElement('button')
+      c.type = 'button'
+      c.className = 'chip'
+      c.textContent = ex
+      c.onclick = () => void send(ex)
+      examples.append(c)
+    }
+    const recent = document.createElement('section')
+    recent.id = 'recent'
+    recent.className = 'recent'
+    home.append(hero, ask, hint, examples, recent)
+    box.replaceChildren(home)
+    placeComposer(true)
+  }
+  const recent = $('recent')
+  const list = state.threads.slice(0, 3)
+  if (!list.length) {
+    recent.replaceChildren()
+    return
+  }
+  const head = document.createElement('h2')
+  head.className = 'over'
+  head.textContent = '최근에 맡긴 일'
+  const grid = document.createElement('div')
+  grid.className = 'tasks'
+  grid.append(...list.map(taskCard))
+  recent.replaceChildren(head, grid)
 }
 
 async function openThread(id: string) {
@@ -240,7 +388,9 @@ async function openThread(id: string) {
     `/api/threads/${id}`,
   )
   state.current = thread
+  markSeen(state.threads.find((t) => t.id === id) ?? thread)
   setHeader()
+  placeComposer(false)
   const box = $('messages')
   // 사람에게 넘긴 뒤 아직 사용자가 답하지 않았으면 [다 했어요]를 살려 둔다
   const lastUser = messages.map((m) => m.role).lastIndexOf('user')
@@ -498,7 +648,7 @@ async function loadExtension() {
 }
 
 function setHeader() {
-  $('title').textContent = state.current?.title ?? '새 대화'
+  $('title').textContent = state.current?.title ?? '새 부탁'
   $('subtitle').textContent = state.current ? AGENT_LABEL[state.current.agent] : ''
   $('agent-pick').hidden = Boolean(state.current)
 }
@@ -576,7 +726,11 @@ async function send(text: string) {
   state.busy = true
   $<HTMLButtonElement>('send').disabled = true
   const box = $('messages')
-  $('empty')?.remove()
+  // 홈에서 보내면 대화 화면으로 바뀐다
+  if (document.getElementById('home')) {
+    placeComposer(false)
+    box.replaceChildren()
+  }
 
   try {
     if (!state.current) {
@@ -584,7 +738,13 @@ async function send(text: string) {
         method: 'POST',
         body: JSON.stringify({ agent: state.pick }),
       })
-      state.current = thread
+      // 제목은 본체가 첫 답 뒤에 정한다. 그 전까지는 부탁 글로 보여 주고, 왼쪽 목록 맨 위에 바로 넣는다
+      state.current = {
+        ...thread,
+        title: text.trim().split('\n')[0]?.slice(0, 60) || thread.title,
+        busy: true,
+      }
+      state.threads = [state.current, ...state.threads.filter((t) => t.id !== thread.id)]
       setHeader()
     }
     // 새로 부탁하면 이전 "직접 해 주세요" 카드의 버튼은 거둔다
@@ -593,10 +753,42 @@ async function send(text: string) {
       c.querySelector('.handoff-actions')?.remove()
     })
     box.append(bubble('user', text))
-    const activity = document.createElement('div')
+    renderThreads()
+    // 일하는 중: 지금 하는 일(빛) + 한 일 목록. 끝나면 "한 일 N가지"로 접는다
+    const work = document.createElement('div')
+    work.className = 'work'
+    const workHead = document.createElement('div')
+    workHead.className = 'work-head'
+    const spin = document.createElement('i')
+    spin.className = 'spin'
+    const activity = document.createElement('span')
     activity.className = 'activity shimmer'
     activity.textContent = '두리가 생각하는 중…'
-    box.append(activity)
+    const clock = document.createElement('span')
+    clock.className = 'work-time'
+    workHead.append(spin, activity, clock)
+    const log = document.createElement('ul')
+    log.className = 'worklog'
+    work.append(workHead, log)
+    box.append(work)
+    const started = Date.now()
+    const elapsed = () => {
+      const sec = Math.floor((Date.now() - started) / 1000)
+      return sec < 60 ? `${sec}초` : `${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, '0')}초`
+    }
+    const tick = setInterval(() => {
+      clock.textContent = elapsed()
+    }, 1000)
+    const step = (label: string) => {
+      const now = log.querySelector('li.now')
+      if (now?.textContent === label) return
+      now?.classList.replace('now', 'done')
+      const li = document.createElement('li')
+      li.className = 'now'
+      li.textContent = label
+      log.append(li)
+      activity.textContent = `${label}…`
+    }
     let answer: HTMLElement | undefined
     let answerText = ''
     // 종량제: 이번 답에 쓴 돈
@@ -618,15 +810,14 @@ async function send(text: string) {
         answerText += ev.delta
         if (!answer) {
           answer = bubble('assistant', '')
-          box.insertBefore(answer, activity)
+          box.append(answer)
         }
         setRich(answer, answerText)
-      } else if (ev.type === 'tool') activity.textContent = `${toolLabel(ev.name)} 중…`
+      } else if (ev.type === 'tool') step(`${toolLabel(ev.name)} 중`)
       else if (ev.type === 'tool_result') activity.textContent = '정리하는 중…'
       else if (ev.type === 'usage') renderUsage(ev.limits)
       else if (ev.type === 'cost') usd += ev.usd
-      else if (ev.type === 'error' || ev.type === 'limit_reached')
-        box.insertBefore(bubble('system', ev.message), activity)
+      else if (ev.type === 'error' || ev.type === 'limit_reached') box.append(bubble('system', ev.message))
     }
 
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
@@ -650,7 +841,18 @@ async function send(text: string) {
         i = buf.indexOf('\n\n')
       }
     }
-    activity.remove()
+    clearInterval(tick)
+    // 한 일이 있으면 접어서 남기고, 없으면 지운다
+    const steps = [...log.querySelectorAll('li')]
+    if (steps.length) {
+      for (const li of steps) li.className = 'done'
+      const done = document.createElement('details')
+      done.className = 'work done'
+      const summary = document.createElement('summary')
+      summary.textContent = `한 일 ${steps.length}가지 · ${elapsed()}`
+      done.append(summary, log)
+      work.replaceWith(done)
+    } else work.remove()
     if (handoff) {
       box.append(toolCard(handoff, true))
       try {
@@ -665,6 +867,7 @@ async function send(text: string) {
       box.append(cost)
     }
   } catch (err) {
+    box.querySelector('.work:not(.done)')?.remove()
     box.append(bubble('system', (err as Error).message))
   } finally {
     state.busy = false
@@ -703,24 +906,17 @@ async function main() {
     autosize()
     void send(text)
   })
-  // 빈 화면(예시 버튼 포함)을 복제해 두었다가 새 대화에서 다시 쓴다
-  const emptyTemplate = $('empty').cloneNode(true) as HTMLElement
-  const showEmpty = () => {
-    const empty = emptyTemplate.cloneNode(true) as HTMLElement
-    empty.querySelectorAll<HTMLButtonElement>('[data-example]').forEach((b) => {
-      b.onclick = () => void send(b.dataset.example ?? '')
-    })
-    $('messages').replaceChildren(empty)
-  }
   $('new-thread').onclick = () => {
     if (state.busy) return
     state.current = undefined
     setHeader()
-    showEmpty()
+    placeComposer(false)
+    $('messages').replaceChildren()
+    renderHome()
     renderThreads()
     input.focus()
   }
-  showEmpty()
+  renderHome()
 
   const [{ settings }] = await Promise.all([
     api<{ settings: Settings }>('/api/settings'),
@@ -730,7 +926,11 @@ async function main() {
   ])
   renderBrowser()
   // 확장이 붙고 떨어지는 걸 왼쪽에 보여 준다
-  setInterval(() => void loadExtension().catch(() => {}), 5_000)
+  // 폰에서 맡긴 일도 목록·홈에 보이게 맡긴 일을 같이 새로 본다
+  setInterval(() => {
+    void loadExtension().catch(() => {})
+    if (!state.busy) void loadThreads().catch(() => {})
+  }, 5_000)
   if (settings.defaultAgent && state.agents.some((a) => a.id === settings.defaultAgent && a.loggedIn)) {
     state.pick = settings.defaultAgent
     renderPick()
@@ -779,6 +979,11 @@ async function main() {
   }
   $('open-settings').onclick = () => void openSetup({ step: 'settings' })
   renderNotice(saved)
+  if (cfg.smokeAsk) {
+    const done = send(cfg.smokeAsk)
+    if (cfg.smokeAskWait) await new Promise((r) => setTimeout(r, cfg.smokeAskWait))
+    else await done
+  }
   const ready = state.agents.filter((a) => a.installed && a.loggedIn).map((a) => a.id)
   // 화면이 실제로 그려진 뒤에 알린다
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
