@@ -3,7 +3,7 @@
 import { createWriteStream } from 'node:fs'
 import { access, constants, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix, win32 } from 'node:path'
 import { runOnce } from '@dool2/engine'
 import type { ChromeStatus, InstallPhase, InstallStatus } from '@dool2/protocol'
 
@@ -49,17 +49,19 @@ const MAC_APP = 'Google Chrome.app'
 
 /** Chrome이 설치돼 있는지, 어디에 있는지, 버전은 무엇인지 */
 export async function detectChrome(e: ChromeEnv = chromeEnv()): Promise<ChromeStatus> {
+  // 실행 중인 컴퓨터가 아니라 확인 대상 OS의 경로 규칙을 쓴다 (테스트가 모든 OS에서 같게 돈다)
+  const pj = e.platform === 'win32' ? win32.join : posix.join
   if (e.platform === 'darwin') {
-    for (const dir of ['/Applications', join(e.home, 'Applications')]) {
-      const app = join(dir, MAC_APP)
-      const path = join(app, 'Contents', 'MacOS', 'Google Chrome')
+    for (const dir of ['/Applications', pj(e.home, 'Applications')]) {
+      const app = pj(dir, MAC_APP)
+      const path = pj(app, 'Contents', 'MacOS', 'Google Chrome')
       if (!(await e.exists(path))) continue
       const r = await e
         .exec('/usr/bin/plutil', [
           '-extract',
           'CFBundleShortVersionString',
           'raw',
-          join(app, 'Contents', 'Info.plist'),
+          pj(app, 'Contents', 'Info.plist'),
         ])
         .catch(() => undefined)
       const version = r?.stdout.trim().match(/^\d+(\.\d+)+$/)?.[0]
@@ -72,8 +74,8 @@ export async function detectChrome(e: ChromeEnv = chromeEnv()): Promise<ChromeSt
       Boolean,
     ) as string[]
     for (const root of roots) {
-      const dir = join(root, 'Google', 'Chrome', 'Application')
-      const path = join(dir, 'chrome.exe')
+      const dir = pj(root, 'Google', 'Chrome', 'Application')
+      const path = pj(dir, 'chrome.exe')
       if (!(await e.exists(path))) continue
       // 설치 폴더 안의 버전 폴더(예: 157.0.8103.51) 중 가장 높은 것
       const versions = (await e.list(dir)).filter((n) => /^\d+\.\d+\.\d+\.\d+$/.test(n)).sort(compareVersions)

@@ -1,6 +1,6 @@
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type ChromeEnv, compareVersions, detectChrome, type Exec, installChrome } from './chrome.js'
 
@@ -43,12 +43,12 @@ describe('Chrome 확인', () => {
   })
 
   it('윈도우: 사용자 폴더 설치도 찾고, 가장 높은 버전 폴더를 쓴다', async () => {
-    const app = join('C:\\Users\\u\\AppData\\Local', 'Google', 'Chrome', 'Application')
+    const app = win32.join('C:\\Users\\u\\AppData\\Local', 'Google', 'Chrome', 'Application')
     const s = await detectChrome(
       env({
         platform: 'win32',
         env: { ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' },
-        files: [join(app, 'chrome.exe')],
+        files: [win32.join(app, 'chrome.exe')],
         dirs: { [app]: ['156.0.1.2', '157.0.8103.51', 'SetupMetrics', '99.0.0.1'] },
       }),
     )
