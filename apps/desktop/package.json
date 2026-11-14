@@ -11,13 +11,18 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "dev": "electron .",
-    "smoke": "DOOL2_SMOKE=1 electron ."
+    "smoke": "DOOL2_SMOKE=1 electron .",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
+    "@dool2/agent-codex": "workspace:*",
     "@dool2/daemon": "workspace:*",
+    "@dool2/mcp-tools": "workspace:*",
     "@dool2/protocol": "workspace:*"
   },
   "devDependencies": {
-    "electron": "^45.3.2"
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2"
   }
 }

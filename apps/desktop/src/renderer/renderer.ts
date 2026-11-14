@@ -12,7 +12,7 @@ import type {
   UsageLimit,
 } from '@dool2/protocol'
 import { runSetup, type SetupOptions } from './setup.js'
-import { type CheckAction, SETUP_STEPS, type SetupStep } from './setup-model.js'
+import { type CheckAction, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
 
 declare global {
   interface Window {
@@ -97,7 +97,8 @@ function renderAgents() {
       const meta = document.createElement('p')
       meta.className = 'cap'
       meta.textContent =
-        [a.version && `v${a.version}`, a.plan && `${a.plan} 구독`].filter(Boolean).join(' · ') || ' '
+        [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
+        ' '
       el.append(row, meta)
       if (a.installed && !a.loggedIn) {
         const btn = document.createElement('button')
