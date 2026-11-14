@@ -37,6 +37,7 @@ import {
   type PaygAccount,
   PaygAccountRequestSchema,
   previewText,
+  type ScreenControlStatus,
   SendMessageRequestSchema,
   type Settings,
   SettingsPatchSchema,
@@ -48,8 +49,10 @@ import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
+import { type HandsCaller, HandsProcess } from './hands.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
+import { ScreenTools } from './screen-tools.js'
 import { Skills } from './skills.js'
 import { Vault } from './vault.js'
 import type { sendPush } from './webpush.js'
@@ -81,6 +84,8 @@ export interface DaemonOptions {
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** 스킬 폴더 (기본: 레포의 skills/, 배포 앱은 앱 안에 넣은 것) */
   skillsDir?: string
+  /** PC 화면 제어 도우미 실행 파일 (기본: 레포의 apps/hands-mac/dist/dool2-hands). 테스트는 흉내를 넣는다 */
+  hands?: string | HandsCaller
   /** 폰 연결 중계 서버 기본 주소 (설정의 relay가 없을 때). 없으면 폰 연결을 켜지 않는다 */
   relay?: string
   /** 폰에 보일 이 PC 이름 */
@@ -161,6 +166,12 @@ export function dool2BrowserHost(scriptPath?: string): HostRuntime {
 }
 
 /** 개발 중에는 레포의 skills/ (apps/daemon/dist → ../../../skills) */
+/** 개발 중 도우미 위치: 레포의 apps/hands-mac/dist/dool2-hands (배포 앱은 hands 옵션으로 넣는다) */
+export function defaultHandsBin(): string | undefined {
+  if (process.platform !== 'darwin') return undefined
+  return fileURLToPath(new URL('../../hands-mac/dist/dool2-hands', import.meta.url))
+}
+
 function defaultSkillsDir(): string | undefined {
   const dir = fileURLToPath(new URL('../../../skills', import.meta.url))
   return existsSync(dir) ? dir : undefined
@@ -212,6 +223,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   const skills = new Skills(opts.skillsDir ?? defaultSkillsDir())
+  // PC 화면 제어 (M4): 도우미는 처음 쓸 때 띄운다
+  const hands: HandsCaller =
+    typeof opts.hands === 'object' ? opts.hands : new HandsProcess(opts.hands ?? defaultHandsBin())
+  const screenTools = new ScreenTools(hands, browserTools.approvals, {
+    allowed: () => readSettings().allowedApps ?? [],
+    setAllowed: (list) => {
+      store.setSetting('allowedApps', list)
+      events.emit('settings', readSettings())
+    },
+    finalStep: () => readSettings().finalStep ?? 'approve',
+  })
+  /** 승인: 앱(app:…)이면 화면 제어, 아니면 브라우저 */
+  const approveAny = (id: string) =>
+    browserTools.approvals.get(id)?.url.startsWith('app:')
+      ? screenTools.approve(id)
+      : browserTools.approve(id)
 
   // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
@@ -285,7 +312,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const r =
           decision === 'reject'
             ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
-            : await browserTools.approve(id)
+            : await approveAny(id)
         // 폰에서 정했으면 그 결과를 AI에게 알려 이어서 하게 한다 (PC 화면은 화면이 직접 알린다)
         const threadId = approvalThread.get(id)
         if (threadId && store.getThread(threadId) && !threads.isRunning(threadId)) {
@@ -493,6 +520,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = (await readJson(req)) as Record<string, unknown>
         return json(res, 200, await browserTools.run(c, args && typeof args === 'object' ? args : {}))
       }
+      if (req.method === 'POST' && b === 'screen' && c && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        return json(
+          res,
+          200,
+          await screenTools
+            .run(c, args && typeof args === 'object' ? args : {})
+            .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
+        )
+      }
       if (req.method === 'POST' && b === 'skill' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         return json(res, 200, await skills.run(c, args && typeof args === 'object' ? args : {}))
@@ -504,6 +541,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (parts[0] !== 'api') return json(res, 404, { error: '없는 주소예요' })
 
     if (req.method === 'GET' && a === 'health') return json(res, 200, { ok: true, dataDir: paths.dataDir })
+
+    // PC 화면 제어 (M4): 권한·허용한 앱. 권한은 사용자가 맥 설정에서 직접 켠다 ([권한 켜기]는 시스템 창을 띄울 뿐)
+    if (a === 'screen' && !c) {
+      const allowed = readSettings().allowedApps ?? []
+      if (!hands.available()) return json(res, 200, { screen: { available: false, allowed } })
+      if (req.method === 'GET' && !b) {
+        const s = (await hands.call('status').catch(() => ({}))) as Partial<ScreenControlStatus>
+        return json(res, 200, { screen: { available: true, ...s, allowed } })
+      }
+      if (req.method === 'POST' && b === 'permissions') {
+        const s = (await hands.call('request')) as Partial<ScreenControlStatus>
+        return json(res, 200, { screen: { available: true, ...s, allowed } })
+      }
+    }
 
     if (req.method === 'GET' && a === 'agents' && !b) {
       const list = await Promise.all(Object.values(runtimes).map((rt) => rt.detect()))
@@ -649,7 +700,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const { decision } = ApprovalDecisionSchema.parse(await readJson(req))
         if (decision === 'reject')
           return json(res, 200, { ok: browserTools.approvals.reject(b), message: '거절했어요' })
-        return json(res, 200, await browserTools.approve(b))
+        return json(res, 200, await approveAny(b))
       }
     }
 
@@ -760,6 +811,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         server.closeAllConnections()
         server.close(() => {
           store.close()
+          if (hands instanceof HandsProcess) hands.close()
           browser.close().then(resolve, resolve)
         })
       })),

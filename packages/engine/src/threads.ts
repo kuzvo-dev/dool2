@@ -86,13 +86,20 @@ export class ThreadService {
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
         }
         // 승인 요청도 남긴다. 카드는 본체에 상태(기다림·승인·거절·만료)를 물어 그린다
-        if (ev.type === 'tool' && /browser_request_approval$/.test(ev.name)) {
-          const input = (ev.input ?? {}) as { tabId?: unknown; ref?: unknown; what?: unknown }
+        // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
+        const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
+        if (ev.type === 'tool' && (screen || /browser_request_approval$/.test(ev.name))) {
+          const input = (ev.input ?? {}) as { tabId?: unknown; ref?: unknown; what?: unknown; why?: unknown }
+          const appRequest = /screen_request_app$/.test(ev.name)
           const record: ApprovalRecordMessage = {
             kind: 'approval',
-            ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
-            ...(typeof input.ref === 'string' ? { ref: input.ref } : {}),
-            what: typeof input.what === 'string' ? input.what : '',
+            ...(screen ? { tabId: -1 } : typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
+            ...(appRequest ? { ref: 'app' } : typeof input.ref === 'string' ? { ref: input.ref } : {}),
+            what: appRequest
+              ? `앱 조작 허용${typeof input.why === 'string' ? `: ${input.why}` : ''}`
+              : typeof input.what === 'string'
+                ? input.what
+                : '',
           }
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
         }

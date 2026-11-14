@@ -92,6 +92,8 @@ await build({
       { from: '../extension/dist', to: 'extension' },
       // 두리 스킬 (CC BY-SA 4.0). 서명된 스킬 업데이트 채널은 M5
       { from: '../../skills', to: 'skills', filter: ['**/*', '!_template/**'] },
+      // PC 화면 제어 도우미 (맥, ADR 0013). 윈도우 도우미는 따로
+      ...(process.platform === 'darwin' ? [{ from: '../hands-mac/dist', to: 'hands' }] : []),
     ],
     icon: 'assets/icon.png',
     mac: {

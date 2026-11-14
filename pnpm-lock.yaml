@@ -104,6 +104,8 @@ importers:
         specifier: ^0.28.2
         version: 0.28.2
 
+  apps/hands-mac: {}
+
   apps/phone:
     devDependencies:
       '@dool2/daemon':

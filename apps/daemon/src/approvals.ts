@@ -7,7 +7,6 @@
 // 폰 생체인증 서명은 폰 앱(M6)과 함께 붙는다. 지금은 PC 앱의 화면용 토큰을 가진 쪽(사용자 화면)만 승인할 수 있다.
 import { randomUUID } from 'node:crypto'
 import type { ApprovalView } from '@dool2/protocol'
-import type { RiskKind } from './browser-tools.js'
 
 export const APPROVAL_TTL_MS = 10 * 60_000
 
@@ -22,7 +21,7 @@ export interface NewApproval {
   role: string
   label: string
   url: string
-  kind: RiskKind
+  kind: ApprovalView['kind']
   reason: string
   what: string
   where: string
@@ -42,7 +41,8 @@ export class Approvals {
     const t = this.now()
     // 같은 탭·같은 버튼에 기다리는 요청이 있으면 새것으로 바꾼다
     for (const r of this.items.values())
-      if (r.status === 'pending' && r.tabId === n.tabId && r.ref === n.ref) r.status = 'expired'
+      if (r.status === 'pending' && r.tabId === n.tabId && r.ref === n.ref && r.url === n.url)
+        r.status = 'expired'
     const rec: ApprovalRecord = {
       ...n,
       id: randomUUID(),
