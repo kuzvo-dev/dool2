@@ -20,6 +20,10 @@ const MIGRATIONS: string[] = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX messages_thread ON messages(thread_id, created_at);`,
+  `CREATE TABLE settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL
+   );`,
 ]
 
 interface ThreadRow {
@@ -132,6 +136,36 @@ export class Store {
       text: r.text,
       createdAt: r.created_at,
     }))
+  }
+
+  /** 설정 값 하나를 읽는다. 없으면 undefined */
+  getSetting(key: string): unknown {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined
+    return row ? JSON.parse(row.value) : undefined
+  }
+
+  /** 모든 설정을 객체로 읽는다 */
+  getSettings(): Record<string, unknown> {
+    const rows = this.db.prepare('SELECT key, value FROM settings').all() as unknown as {
+      key: string
+      value: string
+    }[]
+    return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]))
+  }
+
+  /** 설정 값을 JSON으로 저장한다. undefined면 지운다 */
+  setSetting(key: string, value: unknown) {
+    if (value === undefined) {
+      this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+      return
+    }
+    this.db
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, JSON.stringify(value))
   }
 
   close() {
