@@ -111,8 +111,13 @@ export interface VaultLookup {
   markUsed(id: string): Promise<void>
 }
 
+/** 사람에게 넘긴 탭을 폰 원격 화면으로 다룰 수 있는 시간 */
+export const REMOTE_TTL_MS = 30 * 60_000
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
+  /** 사람에게 넘긴 탭 → 넘긴 시각. 이 탭만 폰 원격 화면으로 보고 누를 수 있다 */
+  private handedOff = new Map<number, number>()
 
   readonly approvals: Approvals
 
@@ -287,6 +292,7 @@ export class BrowserTools {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
         // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
         await this.browser.call('focus', { tabId })
+        this.handedOff.set(tabId, Date.now())
         return {
           content: [
             {
@@ -300,6 +306,58 @@ export class BrowserTools {
       }
     }
     throw new Error(`모르는 브라우저 도구예요: ${tool}`)
+  }
+
+  /** 이 탭을 지금 폰 원격 화면으로 다뤄도 되는지: 두리가 사람에게 넘긴 지 30분 안 */
+  remoteAllowed(tabId: number, now = Date.now()): boolean {
+    const at = this.handedOff.get(tabId)
+    if (at === undefined) return false
+    if (now - at > REMOTE_TTL_MS) {
+      this.handedOff.delete(tabId)
+      return false
+    }
+    return true
+  }
+
+  /** 원격 화면 한 장 (폰으로 보낼 크기로 줄여서) */
+  async remoteScreen(tabId: number) {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    return (await this.browser.call('screenshot', { tabId, maxWidth: 860, quality: 55 })) as {
+      url: string
+      title: string
+      data: string
+      viewport: { width: number; height: number }
+    }
+  }
+
+  /** 원격 화면에서 사람이 한 입력. 좌표는 사진 비율(0~1)로 받아 페이지 좌표로 바꾼다 */
+  async remoteInput(
+    tabId: number,
+    input: {
+      action: 'tap' | 'text' | 'key' | 'scroll'
+      x?: number
+      y?: number
+      text?: string
+      key?: string
+      dy?: number
+    },
+    viewport: { width: number; height: number },
+  ) {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격으로 다룰 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    const args: Record<string, unknown> = { tabId, action: input.action }
+    if (input.action === 'tap') {
+      const fx = Number(input.x)
+      const fy = Number(input.y)
+      if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) throw new Error('누른 자리가 화면 밖이에요')
+      args.x = fx * viewport.width
+      args.y = fy * viewport.height
+    }
+    if (input.action === 'text') args.text = String(input.text ?? '').slice(0, 500)
+    if (input.action === 'key') args.key = String(input.key ?? '')
+    if (input.action === 'scroll') args.dy = Number(input.dy) < 0 ? -1 : 1
+    return this.browser.call('input', args)
   }
 
   /** 위험한 동작이면 멈추고 이유를 돌려준다 */

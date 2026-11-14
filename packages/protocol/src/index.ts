@@ -230,6 +230,7 @@ export const BrowserCommandSchema = z.enum([
   'close',
   'focus',
   'fill',
+  'input',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 
@@ -341,6 +342,19 @@ export type PhoneToPc =
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
   | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }
+  /** 원격 화면: 두리가 넘긴 탭의 화면 한 장을 달라 */
+  | { kind: 'screen'; tabId: number }
+  /** 원격 화면에서 한 입력. tap 좌표는 사진 비율(0~1) */
+  | {
+      kind: 'remote'
+      tabId: number
+      action: 'tap' | 'text' | 'key' | 'scroll'
+      x?: number
+      y?: number
+      text?: string
+      key?: string
+      dy?: number
+    }
   /** 웹 푸시 구독 (알림을 끄면 null). PC가 이 주소로 직접 알림을 보낸다 */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
 
@@ -370,6 +384,8 @@ export type PcToPhone =
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
   | { kind: 'approval'; approval: ApprovalView & { shot?: string } }
+  /** 원격 화면 한 장 (JPEG base64). 중계 서버는 이 종류를 쌓아 두지 않는다 */
+  | { kind: 'screen'; tabId: number; shot?: string; url?: string; title?: string; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
   | { kind: 'error'; message: string }
 

@@ -18,6 +18,15 @@ const tmp = mkdtempSync(join(tmpdir(), 'dool2-live-'))
 
 const shop = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+  // 로그인 페이지: 두리 금고에 없는 사이트라 사람에게 넘긴다 (원격 화면 시험용)
+  if (req.url?.startsWith('/login')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>두리 시험 가게 로그인</title>
+<h1>로그인</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p>'">
+<p><input name="id" placeholder="아이디" style="font-size:20px;padding:8px"></p>
+<p><input name="pw" type="password" placeholder="비밀번호" style="font-size:20px;padding:8px"></p>
+<p><button style="font-size:20px;padding:8px 20px">로그인</button></p></form>`)
+    return
+  }
   res.end(`<!doctype html><title>두리 시험 가게</title><h1>두리 시험 가게</h1>
 <p>오늘의 추천: 제주 귤 3kg <b>15,900원</b> (무료 배송, 배송 전 취소 가능)</p>
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)

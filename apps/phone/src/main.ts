@@ -36,6 +36,7 @@ type View =
   | { name: 'home' }
   | { name: 'thread'; id?: string }
   | { name: 'approval'; id: string }
+  | { name: 'remote'; tabId: number; threadId?: string }
 
 const st: {
   saved?: Saved
@@ -56,6 +57,9 @@ const st: {
   waitingNew?: string
   draft: string
   toast?: string
+  /** 원격 화면: 지금 보고 있는 PC 탭의 마지막 화면 */
+  screen?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
+  remoteDraft: string
 } = {
   online: false,
   view: { name: 'intro' },
@@ -66,6 +70,7 @@ const st: {
   approvals: new Map(),
   decided: new Map(),
   draft: '',
+  remoteDraft: '',
 }
 
 // ── 화면 그리기 도우미 ──
@@ -227,11 +232,149 @@ async function receive(env: Envelope) {
       void send({ kind: 'approval', id: msg.id })
       break
     }
+    case 'screen':
+      if (st.view.name !== 'remote' || st.view.tabId !== msg.tabId) return
+      st.screen = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
+      if (!msg.error) nextScreen(msg.tabId)
+      break
     case 'error':
       toast(msg.message)
       break
   }
   render()
+}
+
+function pick(m: { shot?: string; url?: string; title?: string }) {
+  return {
+    ...(m.shot ? { shot: m.shot } : {}),
+    ...(m.url ? { url: m.url } : {}),
+    ...(m.title ? { title: m.title } : {}),
+  }
+}
+
+// ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 ──
+
+/** 화면을 받으면 잠깐 뒤 다음 화면을 달라고 한다 (보고 있는 동안만) */
+let screenTimer: ReturnType<typeof setTimeout> | undefined
+function nextScreen(tabId: number) {
+  clearTimeout(screenTimer)
+  screenTimer = setTimeout(() => {
+    if (st.view.name === 'remote' && st.view.tabId === tabId && document.visibilityState === 'visible')
+      void send({ kind: 'screen', tabId })
+  }, 1200)
+}
+
+function openRemote(tabId: number, threadId?: string) {
+  st.screen = { tabId }
+  st.remoteDraft = ''
+  go({ name: 'remote', tabId, ...(threadId ? { threadId } : {}) })
+  void send({ kind: 'screen', tabId })
+}
+
+function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'tabId'>) {
+  if (st.view.name !== 'remote') return
+  const tabId = st.view.tabId
+  clearTimeout(screenTimer)
+  if (st.screen) st.screen.busy = true
+  render()
+  void send({ kind: 'remote', tabId, ...input })
+}
+
+function remoteView(v: Extract<View, { name: 'remote' }>) {
+  const s = st.screen
+  const box = h(
+    'section',
+    { class: 'page remote' },
+    header('PC 화면', () => (v.threadId ? openThread(v.threadId) : go({ name: 'home' }))),
+  )
+  const host = (() => {
+    try {
+      return s?.url ? new URL(s.url).host : ''
+    } catch {
+      return ''
+    }
+  })()
+  box.append(
+    h('p', {
+      class: 'cap remote-where',
+      text: [s?.title, host].filter(Boolean).join(' · ') || '불러오는 중…',
+    }),
+  )
+  if (s?.error) box.append(h('div', { class: 'notice', text: s.error }))
+  if (s?.shot) {
+    const frame = h('div', { class: s.busy ? 'remote-frame busy' : 'remote-frame' })
+    const img = h('img', { class: 'remote-shot' })
+    img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
+    img.src = `data:image/jpeg;base64,${s.shot}`
+    img.addEventListener('click', (e) => {
+      const r = img.getBoundingClientRect()
+      const x = (e.clientX - r.left) / r.width
+      const y = (e.clientY - r.top) / r.height
+      const dot = h('span', { class: 'tap-dot' })
+      dot.style.left = `${x * 100}%`
+      dot.style.top = `${y * 100}%`
+      frame.append(dot)
+      remote({ action: 'tap', x, y })
+    })
+    frame.append(img)
+    box.append(frame)
+  } else if (!s?.error)
+    box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC 화면을 가져오는 중…'))
+  // 글자 넣기와 자주 쓰는 키
+  const form = h('form', { class: 'remote-type' })
+  const ta = h('textarea')
+  ta.rows = 1
+  ta.placeholder = '누른 칸에 넣을 글자'
+  ta.value = st.remoteDraft
+  ta.oninput = () => {
+    st.remoteDraft = ta.value
+  }
+  const put = h('button', { class: 'btn-small', text: '넣기' })
+  put.type = 'submit'
+  form.append(ta, put)
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    if (!st.remoteDraft) return
+    const text = st.remoteDraft
+    st.remoteDraft = ''
+    remote({ action: 'text', text })
+  }
+  const keys = h('div', { class: 'remote-keys' })
+  for (const [label, input] of [
+    ['지우기', { action: 'key', key: 'Backspace' }],
+    ['엔터', { action: 'key', key: 'Enter' }],
+    ['다음 칸', { action: 'key', key: 'Tab' }],
+    ['위로', { action: 'scroll', dy: -1 }],
+    ['아래로', { action: 'scroll', dy: 1 }],
+  ] as const)
+    keys.append(h('button', { class: 'chip', text: label, onclick: () => remote(input) }))
+  box.append(
+    form,
+    keys,
+    h('p', {
+      class: 'cap',
+      text: '여기서 누르고 넣은 것은 PC의 두리 탭에 그대로 전해져요. 두리(AI)는 이 화면에서 넣은 글자를 보지 않아요.',
+    }),
+  )
+  if (v.threadId) {
+    const threadId = v.threadId
+    box.append(
+      h(
+        'div',
+        { class: 'actions' },
+        h('button', {
+          class: 'primary',
+          text: '다 했어요, 이어서 해 줘',
+          onclick: () => {
+            st.live.set(threadId, '')
+            void send({ kind: 'ask', threadId, text: '다 했어요. 이어서 해 주세요.' })
+            openThread(threadId)
+          },
+        }),
+      ),
+    )
+  }
+  return box
 }
 
 function upsertThread(t: ThreadSummary) {
@@ -420,7 +563,9 @@ function render() {
             ? homeView()
             : v.name === 'thread'
               ? threadView(v.id)
-              : approvalView(v.id)
+              : v.name === 'remote'
+                ? remoteView(v)
+                : approvalView(v.id)
   const y = window.scrollY
   app.replaceChildren(screen, ...(st.toast ? [h('div', { class: 'toast', text: st.toast })] : []))
   if (v.name === 'thread' && nearBottom) window.scrollTo(0, document.body.scrollHeight)
@@ -723,7 +868,7 @@ function threadView(id: string | undefined) {
     // 두리 답 위에는 이름표 (이어진 답에는 한 번만)
     if (m.role === 'assistant' && prev !== 'assistant') msgs.append(who())
     prev = m.role
-    if (m.role === 'tool') msgs.append(toolCard(m.text))
+    if (m.role === 'tool') msgs.append(toolCard(m.text, id))
     else if (m.role === 'user' && readAppNote(m.text) !== undefined)
       msgs.append(h('div', { class: 'msg note', text: readAppNote(m.text) }))
     else
@@ -757,7 +902,7 @@ function threadView(id: string | undefined) {
   return box
 }
 
-function toolCard(raw: string) {
+function toolCard(raw: string, threadId?: string) {
   let rec: HandoffRecord | ApprovalRecordMessage
   try {
     rec = JSON.parse(raw)
@@ -789,12 +934,18 @@ function toolCard(raw: string) {
   return h(
     'div',
     { class: 'card handoff' },
-    h('strong', { text: 'PC에서 직접 해 주세요' }),
+    h('strong', { text: '직접 해 주세요' }),
     h('span', { text: rec.reason }),
     h('span', {
       class: 'cap',
-      text: 'PC의 Chrome에 두리 탭을 띄워 뒀어요. 다 하시면 "다 했어요"라고 보내 주세요.',
+      text: 'PC의 Chrome에 두리 탭을 띄워 뒀어요. 폰에서 그 화면을 보고 직접 할 수도 있어요.',
     }),
+    rec.tabId !== undefined &&
+      h('button', {
+        class: 'btn-ghost',
+        text: '폰에서 PC 화면 열기',
+        onclick: () => openRemote(rec.tabId as number, threadId),
+      }),
   )
 }
 

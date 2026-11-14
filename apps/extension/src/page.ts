@@ -301,3 +301,25 @@ export function pageMarkFilled(ref: string) {
   ;(el as HTMLElement).blur()
   return true
 }
+
+/**
+ * 원격 화면(폰)에서 누른 곳: 창이 가려져 있어 마우스 입력이 버려질 때 쓴다.
+ * 그 자리의 요소에 초점을 주고(입력칸이면 거기서 끝), 아니면 누른다. 사이트가 보기에는 스크립트 클릭이다
+ */
+export function pageTapAt(x: number, y: number) {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null
+  if (!el) return { ok: false }
+  const field = el.closest(
+    'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+  ) as HTMLElement | null
+  if (field) {
+    field.focus()
+    return { ok: true, focused: true }
+  }
+  const target = (el.closest(
+    'a, button, label, [role="button"], [role="link"], [role="checkbox"], [onclick]',
+  ) ?? el) as HTMLElement
+  target.focus?.()
+  target.click()
+  return { ok: true, focused: false }
+}

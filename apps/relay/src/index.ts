@@ -140,7 +140,8 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
       if (me.role === 'pc' && rooms.get(env.to) !== undefined && rooms.get(env.to) !== me.id) return
       const target = sockets.get(env.to)
       if (target && target.readyState === WebSocket.OPEN) target.send(text)
-      else enqueue(env.to, text)
+      // 원격 화면은 지금 보는 사람에게만 의미가 있다. 꺼진 기기에 쌓아 두지 않는다
+      else if (env.kind !== 'screen' && env.kind !== 'remote') enqueue(env.to, text)
     })
     ws.on('close', () => {
       clearTimeout(authTimer)

@@ -260,6 +260,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       cancel: (id) => threads.cancel(id),
       approval: (id) => browserTools.approvals.get(id),
+      screen: async (tabId) => {
+        const s = await browserTools.remoteScreen(tabId)
+        remoteViewport.set(tabId, s.viewport)
+        return { shot: s.data, url: s.url, title: s.title }
+      },
+      remote: async ({ tabId, action, x, y, text, key, dy }) => {
+        const viewport = remoteViewport.get(tabId) ?? (await browserTools.remoteScreen(tabId)).viewport
+        await browserTools.remoteInput(
+          tabId,
+          {
+            action,
+            ...(x !== undefined ? { x } : {}),
+            ...(y !== undefined ? { y } : {}),
+            ...(text !== undefined ? { text } : {}),
+            ...(key !== undefined ? { key } : {}),
+            ...(dy !== undefined ? { dy } : {}),
+          },
+          viewport,
+        )
+      },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
         const r =
@@ -372,6 +392,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const approvalThread = new Map<string, string>()
   /** 폰에서 맡긴 대화 (끝나면 폰에 알림) */
   const fromPhone = new Set<string>()
+  /** 원격 화면: 마지막으로 보낸 화면의 페이지 크기 (폰이 누른 비율을 좌표로 바꾸려고) */
+  const remoteViewport = new Map<number, { width: number; height: number }>()
   /**
    * 대화 목록 + 홈 화면용 정보: 답하는 중인지, 마지막 답 미리보기(앞의 몇 개만), 기다리는 승인.
    * PC 앱과 폰이 같은 걸 받는다

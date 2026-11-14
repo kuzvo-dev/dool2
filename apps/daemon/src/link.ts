@@ -52,6 +52,9 @@ export interface LinkHost {
   cancel(threadId: string): void
   approval(id: string): (ApprovalView & { shot?: string }) | undefined
   decide(id: string, decision: 'approve' | 'reject'): Promise<{ ok: boolean; message: string }>
+  /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
+  screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
+  remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
 }
 
 const KEYS = 'link.pc'
@@ -258,6 +261,17 @@ export class PhoneLink {
     switch (msg.kind) {
       case 'hello':
         return this.send(phone, await this.stateFor(phone))
+      case 'screen':
+      case 'remote': {
+        const tabId = Number(msg.tabId)
+        try {
+          if (msg.kind === 'remote') await this.host.remote({ ...msg, tabId })
+          const s = await this.host.screen(tabId)
+          return this.send(phone, { kind: 'screen', tabId, ...s })
+        } catch (e) {
+          return this.send(phone, { kind: 'screen', tabId, error: (e as Error).message })
+        }
+      }
       case 'push': {
         const sub = msg.sub
         if (sub && (!allowedEndpoint(String(sub.endpoint)) || !sub.keys?.p256dh || !sub.keys?.auth))
