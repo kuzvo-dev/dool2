@@ -57,7 +57,9 @@ describe('중계 서버', () => {
     const pcKeys = await generateDevice(true)
     const phone = await client('phone', pcKeys.id)
     const k = await linkKey(phone.keys.boxPriv, pcKeys.boxPub, [phone.keys.id, pcKeys.id])
-    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'ask', seq: 1 }, 'later'))
+    // 원격 화면 요청은 지금 보는 사람에게만 의미가 있어서 쌓아 두지 않는다
+    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'screen', seq: 1 }, 'now'))
+    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'ask', seq: 2 }, 'later'))
     await waitFor(() => relay?.queued(pcKeys.id) === 1)
 
     const got: Envelope[] = []

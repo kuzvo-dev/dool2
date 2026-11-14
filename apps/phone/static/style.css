@@ -613,3 +613,67 @@ svg.i {
 .work .worklog li:nth-last-child(n + 6) {
   display: none;
 }
+
+/* ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 ──────── */
+.page.remote {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+.remote-where {
+  margin: 10px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-frame {
+  position: relative;
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line2);
+  transition: opacity 0.2s;
+}
+.remote-frame.busy {
+  opacity: 0.6;
+}
+.remote-shot {
+  display: block;
+  width: 100%;
+  touch-action: manipulation;
+}
+.tap-dot {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: rgba(47, 196, 141, 0.35);
+  box-shadow: 0 0 0 2px var(--duri);
+  pointer-events: none;
+}
+.remote-type {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.remote-type textarea {
+  flex: 1;
+  resize: none;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line2);
+  font: inherit;
+  outline: none;
+}
+.remote-type .btn-small {
+  height: 40px;
+}
+.remote-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+.card.handoff .btn-ghost {
+  margin-top: 8px;
+}

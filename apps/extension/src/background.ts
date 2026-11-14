@@ -12,6 +12,7 @@ import {
   pageMarkFilled,
   pageScroll,
   pageSnapshot,
+  pageTapAt,
   pageViewport,
 } from './page.js'
 
@@ -430,16 +431,50 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'screenshot': {
       const tabId = await ownedTab(a)
       await frontTab(tabId)
-      // 레티나 화면이면 2배로 찍혀 AI가 읽기에 너무 크다. 보이는 영역만, 가로 1280px 이하로 줄인다
+      // 레티나 화면이면 2배로 찍혀 AI가 읽기에 너무 크다. 보이는 영역만, 가로 1280px(원격 화면은 더 작게) 이하로 줄인다
       const v = await inPage(tabId, pageViewport)
-      const scale = Math.min(1 / v.dpr, 1280 / (v.width * v.dpr)) * v.dpr
+      const maxWidth = Math.min(Math.max(Number(a.maxWidth) || 1280, 320), 1280)
+      const quality = Math.min(Math.max(Number(a.quality) || 60, 30), 80)
+      const scale = Math.min(1, maxWidth / v.width) / v.dpr
       const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
         format: 'jpeg',
-        quality: 60,
+        quality,
         optimizeForSpeed: true,
-        clip: { x: 0, y: 0, width: v.width, height: v.height, scale: Math.min(scale, 1 / v.dpr) },
+        clip: { x: 0, y: 0, width: v.width, height: v.height, scale },
       })
-      return { ...(await pageState(tabId)), mime: 'image/jpeg', data: shot.data }
+      return {
+        ...(await pageState(tabId)),
+        mime: 'image/jpeg',
+        data: shot.data,
+        viewport: { width: v.width, height: v.height },
+      }
+    }
+    case 'input': {
+      // 원격 화면(폰)에서 사람이 하는 입력. 좌표는 CSS 픽셀 (본체가 사진 비율을 바꿔 준다)
+      const tabId = await ownedTab(a)
+      await frontTab(tabId)
+      const before = (await chrome.tabs.get(tabId)).url
+      const v = await inPage(tabId, pageViewport)
+      if (a.action === 'tap') {
+        const x = Math.round(Number(a.x))
+        const y = Math.round(Number(a.y))
+        if (!(x >= 0 && y >= 0 && x <= v.width && y <= v.height)) throw new Error('화면 밖을 눌렀어요')
+        // 창이 보이면 진짜 마우스로, 가려져 있으면 그 자리의 요소를 누른다 (가려진 창은 마우스 입력을 버린다)
+        if (!v.hidden) await clickAt(tabId, x, y)
+        else await inPage(tabId, pageTapAt, x, y)
+      } else if (a.action === 'text') {
+        if (typeof a.text !== 'string' || !a.text) throw new Error('넣을 글자가 없어요')
+        await cdp(tabId, 'Input.insertText', { text: a.text.slice(0, 500) })
+      } else if (a.action === 'key') {
+        const key = String(a.key ?? '')
+        if (!['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp'].includes(key))
+          throw new Error(`이 키는 원격으로 누를 수 없어요: ${key}`)
+        await pressKey(tabId, key)
+      } else if (a.action === 'scroll') {
+        await inPage(tabId, pageScroll, Number(a.dy) < 0 ? -1 : 1)
+      } else throw new Error('모르는 원격 입력이에요')
+      await settle(tabId, before)
+      return pageState(tabId)
     }
     case 'back': {
       const tabId = await ownedTab(a)

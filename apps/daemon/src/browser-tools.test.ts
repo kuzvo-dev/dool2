@@ -125,3 +125,31 @@ describe('브라우저 도구 실행', () => {
     })
   })
 })
+
+describe('원격 화면 (폰)', () => {
+  it('두리가 사람에게 넘긴 탭만, 30분 동안 보고 누를 수 있다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    // 넘기기 전에는 안 된다
+    await expect(tools.remoteScreen(3)).rejects.toThrow('원격 화면으로 볼 수 없어요')
+    await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
+    expect(tools.remoteAllowed(3)).toBe(true)
+    expect(tools.remoteAllowed(4)).toBe(false)
+    expect(tools.remoteAllowed(3, Date.now() + 31 * 60_000)).toBe(false)
+  })
+
+  it('누른 자리(사진 비율)를 페이지 좌표로 바꾸고, 화면 밖은 거절한다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
+    await tools.remoteInput(3, { action: 'tap', x: 0.5, y: 0.25 }, { width: 1200, height: 800 })
+    expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'tap', x: 600, y: 200 }])
+    await expect(
+      tools.remoteInput(3, { action: 'tap', x: 1.5, y: 0 }, { width: 1200, height: 800 }),
+    ).rejects.toThrow('화면 밖')
+    await tools.remoteInput(3, { action: 'text', text: 'a'.repeat(900) }, { width: 1, height: 1 })
+    expect(String(b.calls.at(-1)?.[1]?.text)).toHaveLength(500)
+  })
+})
