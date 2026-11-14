@@ -4,6 +4,7 @@ import type {
   AgentId,
   AgentStatus,
   AiChoice,
+  ChromeStatus,
   DaemonStreamEvent,
   Settings,
   StoredMessage,
@@ -371,6 +372,7 @@ async function main() {
         await loadAgents()
         return state.agents
       },
+      loadChrome: async () => (await api<{ chrome: ChromeStatus }>('/api/browser')).chrome,
       ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {

@@ -21,7 +21,7 @@
 
 ## 패키지
 
-각 패키지 폴더의 README에 역할과 주요 API가 있어요: [desktop](../apps/desktop/README.md) · [daemon](../apps/daemon/README.md) · [protocol](../packages/protocol/README.md) · [engine](../packages/engine/README.md) · [agent-claude](../packages/agent-claude/README.md) · [agent-codex](../packages/agent-codex/README.md) · [mcp-tools](../packages/mcp-tools/README.md) · [store](../packages/store/README.md)
+각 패키지 폴더의 README에 역할과 주요 API가 있어요: [desktop](../apps/desktop/README.md) · [daemon](../apps/daemon/README.md) · [protocol](../packages/protocol/README.md) · [engine](../packages/engine/README.md) · [agent-claude](../packages/agent-claude/README.md) · [agent-codex](../packages/agent-codex/README.md) · [mcp-tools](../packages/mcp-tools/README.md) · [browser](../packages/browser/README.md) · [store](../packages/store/README.md)
 
 ## 기여
 

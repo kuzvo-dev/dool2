@@ -32,6 +32,9 @@ importers:
       '@dool2/agent-codex':
         specifier: workspace:*
         version: link:../../packages/agent-codex
+      '@dool2/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@dool2/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -78,6 +81,15 @@ importers:
       '@openai/codex':
         specifier: 0.169.0
         version: 0.169.0
+
+  packages/browser:
+    dependencies:
+      '@dool2/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@dool2/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/engine:
     dependencies:

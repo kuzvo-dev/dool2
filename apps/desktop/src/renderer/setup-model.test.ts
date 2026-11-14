@@ -50,4 +50,11 @@ describe('첫 실행 마법사', () => {
     expect(checkHeadline('both', [claudeReady, codexOut]).title).toBe('바로 시작할 수 있어요')
     expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
   })
+
+  it('Chrome이 없으면 설치 버튼을 보여 주지만, 대화 시작은 막지 않는다', () => {
+    const items = checklist('claude', [claudeReady], { installed: false })
+    expect(items.at(-1)).toMatchObject({ id: 'chrome', ok: false, action: 'chrome-install' })
+    expect(checkHeadline('claude', [claudeReady], { installed: false }).title).toBe('바로 시작할 수 있어요')
+    expect(checkHeadline('claude', [claudeReady], { installed: true }).title).toBe('준비가 다 됐어요')
+  })
 })

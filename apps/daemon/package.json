@@ -22,6 +22,7 @@
   "dependencies": {
     "@dool2/agent-claude": "workspace:*",
     "@dool2/agent-codex": "workspace:*",
+    "@dool2/browser": "workspace:*",
     "@dool2/engine": "workspace:*",
     "@dool2/mcp-tools": "workspace:*",
     "@dool2/protocol": "workspace:*",

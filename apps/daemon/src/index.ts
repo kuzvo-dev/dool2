@@ -8,10 +8,12 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexRuntime } from '@dool2/agent-codex'
+import { ChromeInstall, detectChrome } from '@dool2/browser'
 import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
   type AgentId,
   AgentIdSchema,
+  type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
   CreateThreadRequestSchema,
@@ -32,6 +34,8 @@ export interface DaemonOptions {
   /** 0이면 빈 포트를 고른다 */
   port?: number
   token?: string
+  /** 테스트용: Chrome 확인·설치를 바꿔 끼운다 */
+  chrome?: { detect(): Promise<ChromeStatus>; createInstall?(downloadDir: string): ChromeInstall }
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
@@ -75,6 +79,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const token = opts.token ?? randomBytes(32).toString('hex')
 
   let claudeInstall: ClaudeInstall | undefined
+  let chromeInstall: ChromeInstall | undefined
+  const chrome = opts.chrome ?? {
+    detect: () => detectChrome(),
+    createInstall: (downloadDir: string) => new ChromeInstall({ downloadDir }),
+  }
   let claudeLogin: ClaudeLogin | undefined
   const createClaudeLogin = async () => {
     const rt = runtimes.claude as
@@ -113,6 +122,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { agents: list })
     }
 
+    // 브라우저: Chrome 확인·설치 (ADR 0006)
+    if (a === 'browser' && !b && req.method === 'GET')
+      return json(res, 200, { chrome: await chrome.detect() })
+    if (a === 'browser' && b === 'install' && !c) {
+      if (req.method === 'GET') return json(res, 200, { install: chromeInstall?.status ?? { state: 'idle' } })
+      if (req.method === 'POST') {
+        if ((await chrome.detect()).installed) return json(res, 200, { install: { state: 'done' } })
+        chromeInstall ??= chrome.createInstall?.(join(paths.dataDir, 'downloads'))
+        if (!chromeInstall) return json(res, 409, { error: '이 컴퓨터에서는 Chrome을 설치할 수 없어요' })
+        return json(res, 200, { install: chromeInstall.start() })
+      }
+      if (req.method === 'DELETE') {
+        chromeInstall?.cancel()
+        return json(res, 200, { install: { state: 'idle' } })
+      }
+    }
+
     // Claude Code 설치: 공식 배포 서버에서 받아 체크섬을 확인하고 공식 `claude install`로 마무리 (install.ts)
     if (a === 'agents' && b === 'claude' && c === 'install' && !d) {
       const rt = runtimes.claude as
@@ -126,6 +152,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (req.method === 'DELETE') {
         claudeInstall?.cancel()
+        chromeInstall?.cancel()
         return json(res, 200, { install: { state: 'idle' } })
       }
     }
