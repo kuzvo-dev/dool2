@@ -102,14 +102,15 @@ pnpm lint && pnpm build && pnpm typecheck && pnpm test
 apps/
   desktop/        PC 앱 (Electron) — 창, 트레이, 설정
   daemon/         두리 본체 dool2d — 로컬 API, 대화 실행, 기록
+  extension/      두리 Chrome 확장 — 판단 없는 얇은 손 (chrome.debugger + native messaging)
 packages/
   protocol/       앱·본체·폰이 함께 쓰는 타입과 규약
   engine/         대화 진행, 에이전트 공통 인터페이스, 페르소나
   agent-claude/   Claude Code 연동 (`claude -p`, 내장 도구 끔)
-  agent-codex/    Codex 연동 (`codex app-server`, 셸 끔, 고정 버전 동봉)
+  agent-codex/    Codex 연동 (`codex app-server`, 셸 끔, 고정 버전을 처음 쓸 때 받기)
   agent-opencode/ 종량제 실행기 (OpenCode v2, API 키, 두리 도구만)
   mcp-tools/      두리 도구 (MCP 서버)
-  browser/        브라우저 손 — Chrome 확인·설치 (M2에서 두리 확장 연결)
+  browser/        브라우저 손 — Chrome 확인·설치, 두리 확장 ↔ 본체 연결
   store/          대화 기록 (Node 내장 SQLite)
 docs/             설계·운영 문서
 ```

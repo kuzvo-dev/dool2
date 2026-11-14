@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "두리",
+  "short_name": "두리",
+  "description": "내 컴퓨터의 두리가 이 브라우저에서 대신 일할 수 있게 연결해요. 두리 PC 앱이 있어야 동작해요.",
+  "version": "0.0.0",
+  "minimum_chrome_version": "121",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw46xN8M9Qjapw+wmg8xB1k2hI284o3/fdTZwZLnKDdLDZ+y0DJaytmDJUe+szi3E6wHKponkkP2OIRwHHpQg2LkvMyQf9+PfooUDvr1ZUMIF0rhyftfaFJw3ozoK9vqh2uoaBb2RPFq2hUAydHHrihXW79T6ulZtx/JqE2aSdasT3ShAvXVXEe27NCCHCWuUHoTdKQObc4uRdhGFF0+QfWz8eWHP8Xxvho4Bvw7zVukHqpbWySirqrgA8TINr4jj5AlqzMdnY9anjl0MCV+hCZGdKFmG+yQFCdV6Agui4LuK3CtIIdwiQ7B4Km+HzaNkVTx8pnohTUNoGuVJiN6N1wIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "debugger",
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "webNavigation",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "두리",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
