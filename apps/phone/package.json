@@ -1,0 +1,20 @@
+{
+  "name": "@dool2/phone",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "두리 폰 앱 (PWA): 폰으로 부탁하고, 결제·보내기는 폰에서 승인",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "live": "node scripts/live.mjs"
+  },
+  "devDependencies": {
+    "@dool2/daemon": "workspace:*",
+    "@dool2/protocol": "workspace:*",
+    "@dool2/relay": "workspace:*",
+    "esbuild": "^0.28.2"
+  }
+}

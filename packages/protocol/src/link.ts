@@ -97,3 +97,25 @@ export class LinkClient {
     ws.onerror = () => {}
   }
 }
+
+/** 폰이 승인에 서명하는 내용. PC가 같은 방법으로 만들어 서명을 확인한다 */
+export function approvalSignText(
+  a: { id: string; label: string; url: string; what: string; amount?: string; expiresAt: string },
+  decision: 'approve' | 'reject',
+): string {
+  const o: Record<string, unknown> = {
+    t: 'dool2-approval/v1',
+    id: a.id,
+    decision,
+    label: a.label,
+    url: a.url,
+    what: a.what,
+    amount: a.amount ?? '',
+    expiresAt: a.expiresAt,
+  }
+  return JSON.stringify(
+    Object.keys(o)
+      .sort()
+      .map((k) => [k, o[k]]),
+  )
+}

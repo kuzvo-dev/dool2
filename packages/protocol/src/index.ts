@@ -345,24 +345,7 @@ export type PcToPhone =
   | { kind: 'decided'; id: string; ok: boolean; message: string }
   | { kind: 'error'; message: string }
 
-/** 폰이 승인에 서명하는 내용. PC가 같은 방법으로 만들어 서명을 확인한다 */
-export function approvalSignText(a: ApprovalView, decision: 'approve' | 'reject'): string {
-  const o: Record<string, unknown> = {
-    t: 'dool2-approval/v1',
-    id: a.id,
-    decision,
-    label: a.label,
-    url: a.url,
-    what: a.what,
-    amount: a.amount ?? '',
-    expiresAt: a.expiresAt,
-  }
-  return JSON.stringify(
-    Object.keys(o)
-      .sort()
-      .map((k) => [k, o[k]]),
-  )
-}
+export { approvalSignText } from './link.js'
 
 /** 페어링된 폰 (PC가 보관) */
 export interface PairedPhone {
