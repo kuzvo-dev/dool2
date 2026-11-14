@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { copyUi } from '../../../packages/ui/copy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -19,3 +20,5 @@ await build({
   logLevel: 'warning',
 })
 cpSync(join(root, 'static'), dist, { recursive: true })
+// 디자인 시스템. 글꼴은 넣지 않는다 (폰은 기기 글꼴)
+copyUi(dist)

@@ -1,62 +1,18 @@
 /*
- * 두리 폰 앱. PC 앱과 같은 원칙: 상자보다 선, 색보다 회색 단계.
- * 색은 두리 초록(연결 점)과 주의 주황(승인·직접 해 주세요)만 쓴다.
+ * 두리 폰 앱 화면 배치. 색·버튼·카드 같은 부품은 @dool2/ui(ui.css)에 있다.
+ * 폰은 글자를 조금 크게(16px) 쓴다.
  */
-:root {
-  --ink: #0b0b0c;
-  --ink2: #3f3f46;
-  --sub: #71717a;
-  --faint: #a1a1aa;
-  --line: rgba(9, 9, 11, 0.08);
-  --line2: rgba(9, 9, 11, 0.13);
-  --bg: #ffffff;
-  --side: #fafafa;
-  --fill: #f4f4f5;
-  --duri: #2fc48d;
-  --warn: #d9730d;
-  --warn-bg: #fff7ed;
-  --shadow: 0 1px 2px rgba(9, 9, 11, 0.04), 0 8px 24px -12px rgba(9, 9, 11, 0.16);
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  color-scheme: light;
-}
-* {
-  box-sizing: border-box;
-}
-html,
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font:
-    16px / 1.55 -apple-system,
-    BlinkMacSystemFont,
-    "Apple SD Gothic Neo",
-    "Pretendard",
-    "Malgun Gothic",
-    sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
   letter-spacing: -0.01em;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
   -webkit-text-size-adjust: 100%;
-  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-}
-button {
-  font: inherit;
-  color: inherit;
-  border: 0;
-  background: none;
-  cursor: pointer;
 }
 svg.i {
   width: 20px;
   height: 20px;
-  flex: none;
-  stroke: currentColor;
-  fill: none;
   stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .page {
   min-height: 100dvh;
@@ -64,48 +20,12 @@ svg.i {
 }
 
 /* 두리 얼굴: 초록 사각형에 두 눈 */
-.face {
-  position: relative;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--duri);
-}
-.face::before,
-.face::after {
-  content: "";
-  position: absolute;
-  top: 11px;
-  width: 4px;
-  height: 7px;
-  border-radius: 2px;
-  background: #fff;
-}
-.face::before {
-  left: 9px;
-}
-.face::after {
-  right: 9px;
-}
 .face.big {
-  width: 64px;
-  height: 64px;
-  border-radius: 19px;
+  --s: 64px;
   margin-bottom: 12px;
 }
-.face.big::before,
-.face.big::after {
-  top: 23px;
-  width: 7px;
-  height: 13px;
-  border-radius: 4px;
-}
-.face.big::before {
-  left: 19px;
-}
-.face.big::after {
-  right: 19px;
+.bar .face {
+  --s: 30px;
 }
 
 /* 첫 화면·연결 화면 */
@@ -162,10 +82,6 @@ svg.i {
   font-size: 12px;
   font-weight: 600;
 }
-.cap {
-  font-size: 13px;
-  color: var(--faint);
-}
 .code {
   margin: 22px 0;
   font-family: var(--mono);
@@ -181,19 +97,6 @@ svg.i {
   gap: 8px;
   color: var(--ink2);
   font-size: 14px;
-}
-.spin {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  border: 1.5px solid var(--line2);
-  border-top-color: var(--ink);
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 위 막대 */
@@ -438,28 +341,7 @@ svg.i {
 .msg.user {
   white-space: pre-wrap;
 }
-.msg p,
-.msg ul,
-.msg ol {
-  margin: 0;
-}
 /* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
-.msg > :not(:first-child) {
-  margin-top: 0.75em;
-}
-.msg ul,
-.msg ol {
-  padding-left: 1.3em;
-}
-.msg li + li {
-  margin-top: 0.25em;
-}
-.msg li::marker {
-  color: var(--faint);
-}
-.msg strong {
-  font-weight: 600;
-}
 .msg.user {
   align-self: flex-end;
   max-width: 84%;
@@ -480,28 +362,6 @@ svg.i {
   margin: 0;
   font-size: 14px;
   font-weight: 500;
-  color: transparent;
-  background:
-    linear-gradient(
-      90deg,
-      var(--faint) 0%,
-      var(--faint) 35%,
-      var(--ink) 50%,
-      var(--faint) 65%,
-      var(--faint) 100%
-    )
-    0 0 / 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation: shimmer 2.2s linear infinite;
-}
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
 }
 .card {
   align-self: stretch;
@@ -588,36 +448,6 @@ svg.i {
   font-size: 13.5px;
   color: var(--sub);
 }
-.rows {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  margin: 18px 0;
-  border-top: 1px solid var(--line);
-}
-.rows dt,
-.rows dd {
-  margin: 0;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--line);
-}
-.rows dt {
-  color: var(--faint);
-  font-size: 14px;
-}
-.rows dd {
-  font-weight: 500;
-}
-.rows dd.money {
-  font-size: 17px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.rows dd.host {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--ink2);
-}
 .shot {
   width: 100%;
   max-height: 45vh;
@@ -625,6 +455,17 @@ svg.i {
   object-position: top;
   border-radius: 12px;
   box-shadow: 0 0 0 1px var(--line2);
+}
+.kv {
+  grid-template-columns: 76px 1fr;
+  margin: 18px 0;
+}
+.kv dt,
+.kv dd {
+  padding: 11px 0;
+}
+.cap {
+  color: var(--faint);
 }
 .page > .cap {
   margin: 14px 0;
@@ -668,13 +509,6 @@ svg.i {
   left: 50%;
   bottom: calc(92px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  max-width: 88%;
-  padding: 10px 16px;
   width: max-content;
-  border-radius: 14px;
-  background: rgba(9, 9, 11, 0.88);
-  color: #fff;
-  font-size: 14px;
-  line-height: 1.45;
-  text-align: center;
+  max-width: 88%;
 }

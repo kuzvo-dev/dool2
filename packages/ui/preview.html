@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>두리 디자인 시스템</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      /* 견본 페이지 배치만 (부품은 ui.css) */
+      body {
+        background: var(--side);
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 56px 32px 96px;
+      }
+      header.top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      header.top .face {
+        --s: 36px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      .lead {
+        margin: 0 0 40px;
+        color: var(--sub);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+      section {
+        margin-top: 48px;
+      }
+      section > h2 {
+        margin: 0 0 4px;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      section > p.cap {
+        margin-bottom: 18px;
+      }
+      .board {
+        padding: 24px;
+        border-radius: var(--r-lg);
+        background: var(--bg);
+        box-shadow: 0 0 0 1px var(--line);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      .grid3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .swatch {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 112px;
+        font-size: 12px;
+        color: var(--sub);
+      }
+      .swatch i {
+        height: 48px;
+        border-radius: 10px;
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+      .swatch code {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--ink2);
+      }
+      .principles {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .principles li {
+        padding: 16px;
+        border-radius: var(--r);
+        background: var(--bg);
+        box-shadow: 0 0 0 1px var(--line);
+        font-size: 13px;
+        color: var(--sub);
+        line-height: 1.55;
+      }
+      .principles strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .type p {
+        margin: 0 0 10px;
+      }
+      .list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+      }
+      .list li span.grow {
+        flex: 1;
+      }
+      .stat {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13px;
+        color: var(--ink2);
+      }
+      .stat .meta {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--faint);
+      }
+      .stat .meta.warn {
+        color: var(--warn);
+        font-weight: 500;
+      }
+      .ask {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 8px 8px 16px;
+        border-radius: var(--r-lg);
+        background: var(--bg);
+        box-shadow:
+          0 0 0 1px var(--line2),
+          var(--shadow);
+      }
+      .ask span {
+        flex: 1;
+        color: var(--ink);
+      }
+      .bubble {
+        align-self: flex-end;
+        padding: 9px 15px;
+        border-radius: 18px;
+        background: var(--fill);
+      }
+      .chat {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 560px;
+        line-height: 1.7;
+      }
+      @media (max-width: 760px) {
+        .grid3,
+        .principles {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="top"><span class="face"></span><h1>두리 디자인 시스템</h1></header>
+      <p class="lead">
+        PC 앱·폰 앱·Chrome 확장이 같이 쓰는 부품이에요. <code class="mono">packages/ui/ui.css</code> 하나에 있고,
+        각 앱은 화면 배치만 따로 가져요. 새 화면을 만들 때는 여기 있는 부품부터 써요.
+      </p>
+
+      <section>
+        <h2>원칙</h2>
+        <p class="cap">"AI가 만든 화면" 같지 않게. 꾸밈을 더하기보다 덜어 낸다.</p>
+        <ul class="principles">
+          <li><strong>상자보다 선</strong>나눌 때는 1px 선, 감쌀 때만 카드. 상자 안에 상자를 넣지 않아요.</li>
+          <li><strong>색보다 회색 단계</strong>중요한 정도는 글자 진하기 네 단계로 나눠요.</li>
+          <li><strong>색은 둘만</strong>두리 초록은 연결·진행·완료, 주황은 승인·직접 해 주세요.</li>
+          <li><strong>상태는 점 하나</strong>색 배지·이모지 대신 7px 점과 회색 글씨.</li>
+          <li><strong>글자 대신 선 아이콘</strong>›, ✓, ← 같은 글자를 아이콘으로 쓰지 않아요.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>색</h2>
+        <p class="cap">글자는 --ink → --ink2 → --sub → --faint 순서로 덜 중요해져요.</p>
+        <div class="board row">
+          <div class="swatch"><i style="background: var(--ink)"></i>본문<code>--ink</code></div>
+          <div class="swatch"><i style="background: var(--ink2)"></i>보조 본문<code>--ink2</code></div>
+          <div class="swatch"><i style="background: var(--sub)"></i>설명<code>--sub</code></div>
+          <div class="swatch"><i style="background: var(--faint)"></i>이름표·시각<code>--faint</code></div>
+          <div class="swatch"><i style="background: var(--fill)"></i>채움<code>--fill</code></div>
+          <div class="swatch"><i style="background: var(--duri)"></i>두리 초록<code>--duri</code></div>
+          <div class="swatch"><i style="background: var(--warn)"></i>주의<code>--warn</code></div>
+          <div class="swatch"><i style="background: var(--mint)"></i>짙은 카드 위<code>--mint</code></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>글자</h2>
+        <p class="cap">Pretendard. 본문 14px(폰 16px), 굵기는 400·500·600만. 한국어는 낱말 단위로 줄을 바꿔요.</p>
+        <div class="board type">
+          <p class="title">오늘은 뭘 대신 해 드릴까요?</p>
+          <p style="font-size: 15px; font-weight: 600">제목 15px 600 · 맡긴 일 카드</p>
+          <p>본문 14px 400 · 토요일 오후에 밖에 계실 거면 우산 챙기시는 게 좋겠어요.</p>
+          <p class="cap">설명 13px --sub · 화면과 내용이 맞는지 확인해 주세요.</p>
+          <p class="over">구역 이름 12px --faint</p>
+          <p><span class="mono">shop.example</span> · 주소·코드는 고정폭</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>두리 얼굴 · 상태</h2>
+        <p class="cap">얼굴 크기는 <code class="mono">--s</code>로. 진행 중은 도는 원과 빛이 지나가는 글자.</p>
+        <div class="board row" style="gap: 24px">
+          <span class="face" style="--s: 18px"></span>
+          <span class="face"></span>
+          <span class="face" style="--s: 36px"></span>
+          <span class="face" style="--s: 56px"></span>
+          <span class="row" style="gap: 14px">
+            <i class="dot ok"></i><i class="dot warn"></i><i class="dot bad"></i><i class="dot"></i>
+            <span class="spin"></span>
+          </span>
+          <span class="shimmer" style="font-weight: 500">창가 자리 고르는 중…</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>버튼 · 고르기</h2>
+        <p class="cap">주 버튼은 검정 하나만. 짙은 카드 위에서는 흰 버튼.</p>
+        <div class="board">
+          <div class="row">
+            <button class="btn" type="button">승인하고 "바로 구매" 누르기</button>
+            <button class="btn-ghost" type="button">거절</button>
+            <button class="btn-text" type="button">이전</button>
+            <button class="btn-small" type="button">로그인하기</button>
+            <button class="btn-link" type="button">처음 설정 다시 하기</button>
+            <button class="send" type="button" aria-label="보내기">
+              <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+            </button>
+          </div>
+          <div class="row" style="margin-top: 18px">
+            <button class="chip" type="button">지금 몇 시야?</button>
+            <button class="chip" type="button">뭘 할 수 있어?</button>
+            <div class="seg">
+              <button type="button" aria-pressed="true">Claude Code</button>
+              <button type="button" aria-pressed="false">Codex</button>
+            </div>
+            <button type="button" role="switch" aria-checked="true" aria-label="켜고 끄기" style="display: inline-flex"><span class="switch"></span></button>
+            <button type="button" role="switch" aria-checked="false" aria-label="켜고 끄기" style="display: inline-flex"><span class="switch"></span></button>
+            <input class="field" placeholder="사이트 주소" />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>목록 · 연결 상태</h2>
+        <p class="cap">선으로 나눈 한 덩어리. 할 일이 있는 줄은 주황 글씨로 무엇을 할지 적어요.</p>
+        <div class="grid3">
+          <ul class="list boxed" style="background: var(--bg); grid-column: span 2">
+            <li><span class="grow">두리가 일하는 동안 PC가 잠들지 않게</span><button type="button" role="switch" aria-checked="true" aria-label="켜고 끄기" style="display: inline-flex"><span class="switch"></span></button></li>
+            <li><span class="grow">PC를 켜면 두리도 자동으로 켜기</span><button type="button" role="switch" aria-checked="false" aria-label="켜고 끄기" style="display: inline-flex"><span class="switch"></span></button></li>
+            <li><span class="grow">ChatGPT 로그인</span><button class="btn-small" type="button">ChatGPT로 로그인</button></li>
+          </ul>
+          <div class="board" style="display: grid; gap: 12px; padding: 16px">
+            <div class="stat"><i class="dot ok"></i>Claude Code<span class="meta">Max</span></div>
+            <div class="stat"><i class="dot warn"></i>Codex<span class="meta warn">로그인 필요</span></div>
+            <div class="stat"><i class="dot warn"></i>Chrome 확장<span class="meta warn">연결하기</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>맡긴 일 카드</h2>
+        <p class="cap">상태 줄 → 제목 → 내용. 일하는 중이면 진행 단계, 끝났으면 결과 한두 줄, 승인이 필요하면 짙은 카드.</p>
+        <div class="grid3">
+          <div class="task">
+            <div class="task-meta"><span>일하는 중 · 2분 14초</span><span class="spin"></span></div>
+            <div class="task-title">SRT 금요일 부산</div>
+            <ul class="worklog" style="margin-top: 10px">
+              <li class="done">SRT 열고 로그인 확인</li>
+              <li class="done">금요일 18시 이후 조회</li>
+              <li class="now"><span class="shimmer">창가 자리 고르는 중</span></li>
+              <li class="next">결제 전에 폰으로 확인받기</li>
+            </ul>
+          </div>
+          <div class="task">
+            <div class="task-meta"><span>방금 끝났어요</span><i class="dot ok"></i></div>
+            <div class="task-title">엄마 생일 선물</div>
+            <p class="task-body">3만 원 안팎으로 세 가지 골라 장바구니에 담았어요. 고르시면 결제 전에 물어볼게요.</p>
+          </div>
+          <div class="task dark">
+            <div class="task-meta"><i class="dot mint"></i>승인을 기다려요</div>
+            <div class="task-title">SRT 결제 · 59,800원</div>
+            <p class="task-body">금 18:30 수서 → 부산 · 창가 5A</p>
+            <button class="btn-light" type="button" style="margin-top: 12px">승인하기</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>승인 카드 · 대화</h2>
+        <p class="cap">승인 내용은 이름·값 표로. 두리 답은 말풍선 없이 본문, 내 말은 연한 회색 말풍선.</p>
+        <div class="grid3">
+          <div class="card" style="grid-column: span 2">
+            <div class="card-label" style="color: var(--ink)"><i class="dot warn"></i>승인이 필요해요 <span style="font-weight: 400; color: var(--sub)">돈이 나가는 일</span></div>
+            <dl class="kv">
+              <dt>무엇을</dt><dd>사과 1kg 바로 구매</dd>
+              <dt>주소</dt><dd class="host">shop.example</dd>
+              <dt>얼마</dt><dd class="money">9,900원</dd>
+              <dt>누를 버튼</dt><dd>"바로 구매"</dd>
+            </dl>
+            <div class="row" style="justify-content: flex-end; gap: 8px">
+              <button class="btn-ghost" type="button">거절</button>
+              <button class="btn" type="button">승인하고 "바로 구매" 누르기</button>
+            </div>
+          </div>
+          <div class="chat">
+            <div class="bubble">토요일 저녁 식당 예약도 해 줄 수 있어?</div>
+            <div class="rich">
+              <p>네, 할 수 있어요. 몇 가지만 알려 주세요.</p>
+              <ul><li>몇 분이세요?</li><li>몇 시쯤이 좋으세요?</li></ul>
+              <p><strong>예약 버튼 누르기 직전에</strong> 한 번 여쭤볼게요.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>부탁 칸 · 알림</h2>
+        <p class="cap">부탁 칸은 테두리 하나짜리 상자에 동그란 보내기. 잠깐 뜨는 알림은 짙은 반투명.</p>
+        <div class="board" style="display: grid; gap: 18px">
+          <div class="ask">
+            <span>다음 주 금요일 저녁, 부산 가는 SRT 창가로 잡아 줘</span>
+            <button class="send" type="button" aria-label="맡기기"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg></button>
+          </div>
+          <div class="row"><span class="toast">연결됐어요. 이제 폰으로 부탁해 보세요</span></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -391,7 +391,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
 
       if (step === 'welcome') {
         card.append(
-          el('div', 'setup-mark'),
+          el('div', 'face setup-mark'),
           el('h1', 'setup-title', '안녕하세요, 저는 두리예요'),
           el(
             'p',

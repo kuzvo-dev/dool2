@@ -103,7 +103,10 @@ apps/
   desktop/        PC 앱 (Electron) — 창, 트레이, 설정
   daemon/         두리 본체 dool2d — 로컬 API, 대화 실행, 기록
   extension/      두리 Chrome 확장 — 판단 없는 얇은 손 (chrome.debugger + native messaging)
+  phone/          폰 앱 (PWA) — 폰에서 부탁하고 승인하기
+  relay/          중계 서버 — 폰과 PC 사이에서 암호화된 메시지만 전달
 packages/
+  ui/             디자인 시스템 — 앱·폰·확장이 같이 쓰는 토큰과 부품 (CSS), Pretendard
   protocol/       앱·본체·폰이 함께 쓰는 타입과 규약
   engine/         대화 진행, 에이전트 공통 인터페이스, 페르소나
   agent-claude/   Claude Code 연동 (`claude -p`, 내장 도구 끔)
@@ -122,6 +125,7 @@ docs/             설계·운영 문서
 | ------------------------------------------- | --------------------------------------------------------------------- |
 | [아키텍처](docs/architecture.md)            | 전체 구조, 에이전트 연동, 승인 게이트, 브라우저·PC 제어, 설치, 로드맵 |
 | [페르소나](docs/persona.md)                 | 두리의 성격과 말투. 사용자에게 보이는 모든 문구의 기준                |
+| [디자인 시스템](packages/ui/README.md)      | 화면 원칙, 토큰, 부품. 견본은 `packages/ui/preview.html`              |
 | [오픈소스 운영](docs/open-source.md)        | 공개 범위, 라이선스, 수익 구조, 거버넌스                              |
 | [결정 기록 (ADR)](docs/decisions/README.md) | 구조에 관한 결정과 그 이유                                            |
 | [위협 모델](docs/security/threat-model.md)  | 무엇을 지키고, 무엇은 못 막는지                                       |

@@ -1,0 +1,11 @@
+/*
+ * Pretendard (SIL OFL 1.1, fonts/OFL.txt). PC 앱·Chrome 확장에만 넣는다.
+ * 폰은 기기 글꼴(애플 SD 산돌고딕 Neo·본고딕)이 충분히 좋고, 2MB를 내려받지 않게 넣지 않는다.
+ */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("fonts/PretendardVariable.woff2") format("woff2-variations");
+}

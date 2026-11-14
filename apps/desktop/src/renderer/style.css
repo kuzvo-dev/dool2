@@ -1,82 +1,20 @@
 /*
- * 두리 PC 앱 화면
- * 원칙: 상자보다 선, 색보다 회색 단계, 굵기보다 크기. 색은 두리 초록(상태 점)과 주의 주황만 쓴다.
+ * 두리 PC 앱 화면 배치. 색·글꼴·버튼·카드 같은 부품은 @dool2/ui(ui.css)에 있다.
+ * 새 화면을 만들 때는 packages/ui/README.md의 원칙과 부품부터 본다.
  */
-:root {
-  --ink: #0b0b0c;
-  --ink2: #3f3f46;
-  --sub: #71717a;
-  --faint: #a1a1aa;
-  --line: rgba(9, 9, 11, 0.08);
-  --line2: rgba(9, 9, 11, 0.13);
-  --bg: #ffffff;
-  --side: #fafafa;
-  --fill: #f4f4f5;
-  --hover: rgba(9, 9, 11, 0.045);
-  --duri: #2fc48d;
-  --ok: #16a36b;
-  --warn: #d9730d;
-  --warn-bg: #fff7ed;
-  --bad: #dc2626;
-  --focus: rgba(9, 9, 11, 0.18);
-  --shadow-sm: 0 1px 2px rgba(9, 9, 11, 0.05);
-  --shadow: 0 1px 2px rgba(9, 9, 11, 0.04), 0 8px 24px -12px rgba(9, 9, 11, 0.14);
-  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-}
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
 html,
 body {
   height: 100%;
 }
-body {
-  font-family:
-    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-    "Malgun Gothic", system-ui, sans-serif;
-  color: var(--ink);
-  background: var(--bg);
-  font-size: 14px;
-  line-height: 1.5;
-  letter-spacing: -0.006em;
-  -webkit-font-smoothing: antialiased;
-  /* 한국어는 낱말 단위로 줄을 바꾼다 */
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+h1,
+h2,
+p,
+ul,
+ol {
+  margin: 0;
+  padding: 0;
 }
-button,
-textarea,
-input,
-select {
-  font-family: inherit;
-  color: inherit;
-}
-button {
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-.seg[hidden],
-.usage[hidden] {
-  display: none;
-}
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-svg.i {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.usage[hidden],
 .app {
   display: grid;
   grid-template-columns: 264px 1fr;
@@ -108,42 +46,6 @@ svg.i {
   letter-spacing: -0.02em;
 }
 /* 두리 얼굴: 초록 사각형에 두 눈 */
-.face {
-  position: relative;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: var(--duri);
-}
-.face::before,
-.face::after {
-  content: "";
-  position: absolute;
-  top: 8px;
-  width: 3px;
-  height: 5px;
-  border-radius: 2px;
-  background: #fff;
-}
-.face::before {
-  left: 6.5px;
-}
-.face::after {
-  right: 6.5px;
-}
-.icon-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  color: var(--sub);
-}
-.icon-btn:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
 .brand .icon-btn {
   margin-left: auto;
 }
@@ -166,17 +68,9 @@ svg.i {
 .nav-item svg.i {
   color: var(--sub);
 }
-.over {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--faint);
+/* 왼쪽 구역 이름은 목록 글자와 줄을 맞춘다 */
+.side .over {
   padding: 0 8px;
-  margin-bottom: 4px;
-}
-.cap {
-  font-size: 13px;
-  color: var(--sub);
-  line-height: 1.55;
 }
 .block.grow {
   flex: 1;
@@ -271,25 +165,6 @@ button.stat:hover {
   color: var(--warn);
   font-weight: 500;
 }
-.dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--faint);
-}
-.dot.ok {
-  background: var(--duri);
-  box-shadow: 0 0 0 3px rgba(47, 196, 141, 0.16);
-}
-.dot.warn {
-  background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(217, 115, 13, 0.14);
-}
-.dot.bad {
-  background: var(--bad);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
-}
 
 .notice {
   display: flex;
@@ -383,6 +258,10 @@ button.stat:hover {
   flex-direction: column;
   gap: 18px;
 }
+.empty .face {
+  --s: 36px;
+  margin-bottom: 8px;
+}
 .empty {
   margin: auto;
   text-align: center;
@@ -392,25 +271,6 @@ button.stat:hover {
   align-items: center;
   gap: 10px;
   padding-bottom: 6vh;
-}
-.empty .face {
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  margin-bottom: 8px;
-}
-.empty .face::before,
-.empty .face::after {
-  top: 13px;
-  width: 4.5px;
-  height: 8px;
-  border-radius: 3px;
-}
-.empty .face::before {
-  left: 10.5px;
-}
-.empty .face::after {
-  right: 10.5px;
 }
 .hero {
   font-size: 26px;
@@ -429,52 +289,17 @@ button.stat:hover {
   margin-top: 14px;
   flex-wrap: wrap;
 }
-.chip {
-  height: 32px;
-  padding: 0 13px;
-  border-radius: 999px;
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line2);
-  font-size: 13px;
-  color: var(--ink2);
-  transition: background 0.15s;
-}
-.chip:hover {
-  background: var(--fill);
-  color: var(--ink);
-}
 .msg {
   line-height: 1.7;
   word-break: keep-all;
   overflow-wrap: anywhere;
   font-size: 14.5px;
 }
-.msg strong {
-  font-weight: 600;
-}
 .msg.user {
   white-space: pre-wrap;
 }
 /* 답 안의 문단·목록 */
-.msg p,
-.msg ul,
-.msg ol {
-  margin: 0;
-}
 /* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
-.msg > :not(:first-child) {
-  margin-top: 0.75em;
-}
-.msg ul,
-.msg ol {
-  padding-left: 1.35em;
-}
-.msg li + li {
-  margin-top: 0.25em;
-}
-.msg li::marker {
-  color: var(--faint);
-}
 .msg.user {
   align-self: flex-end;
   max-width: 78%;
@@ -504,33 +329,11 @@ button.stat:hover {
   background: var(--warn);
   transform: translateY(-1px);
 }
-/* 일하는 중: 글자 위로 빛이 지나간다 */
+/* 일하는 중 (빛 효과는 ui.css의 .shimmer) */
 .activity {
   align-self: flex-start;
   font-size: 13px;
   font-weight: 500;
-  color: transparent;
-  background:
-    linear-gradient(
-      90deg,
-      var(--faint) 0%,
-      var(--faint) 35%,
-      var(--ink) 50%,
-      var(--faint) 65%,
-      var(--faint) 100%
-    )
-    0 0 / 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation: shimmer 2.2s linear infinite;
-}
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
 }
 .cost {
   align-self: flex-start;
@@ -580,128 +383,11 @@ button.stat:hover {
   justify-content: space-between;
   gap: 8px;
 }
-.seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--fill);
-}
-.seg button {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 7px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--sub);
-}
-.seg button:hover {
-  color: var(--ink);
-}
-.seg button[aria-checked="true"] {
-  background: var(--bg);
-  color: var(--ink);
-  box-shadow:
-    0 0 0 1px var(--line),
-    var(--shadow-sm);
-}
 .send {
   margin-left: auto;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: #fff;
-  transition: opacity 0.15s;
-}
-.send svg.i {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2;
-}
-.send:disabled {
-  opacity: 0.25;
-  cursor: default;
 }
 
 /* ── 버튼 ─────────────────────────────────────────── */
-.btn {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 9px;
-  background: var(--ink);
-  color: #fff;
-  font-weight: 500;
-  font-size: 14px;
-  transition: opacity 0.15s;
-}
-.btn:hover {
-  opacity: 0.86;
-}
-.btn:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.btn-ghost {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 9px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow-sm);
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--ink2);
-}
-.btn-ghost:hover {
-  background: var(--fill);
-  color: var(--ink);
-}
-.btn-small {
-  flex: none;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: var(--ink);
-  color: #fff;
-  font-weight: 500;
-  font-size: 13px;
-}
-.btn-small:hover {
-  opacity: 0.86;
-}
-.btn-small:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.btn-text {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 9px;
-  color: var(--sub);
-  font-weight: 500;
-  font-size: 14px;
-}
-.btn-text:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-.btn-link {
-  padding: 2px 4px;
-  color: var(--ink2);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: var(--line2);
-  text-underline-offset: 3px;
-}
-.btn-link:hover {
-  color: var(--ink);
-  text-decoration-color: currentColor;
-}
 
 /* ── 대화 안의 카드: 승인 요청 · 직접 해 주세요 ───── */
 .approval,
@@ -757,38 +443,6 @@ button.stat:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.approval-rows {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 0;
-  margin: 0;
-  border-top: 1px solid var(--line);
-}
-.approval-rows dt,
-.approval-rows dd {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-.approval-rows dt {
-  color: var(--faint);
-  font-size: 13px;
-}
-.approval-rows dd {
-  margin: 0;
-  font-weight: 500;
-  color: var(--ink);
-}
-.approval-rows dd.money {
-  font-size: 15px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.approval-rows dd.host {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--ink2);
 }
 .approval-shot {
   width: 100%;
@@ -871,28 +525,8 @@ button.stat:hover {
   background: var(--ink);
 }
 .setup-mark {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  background: var(--duri);
+  --s: 44px;
   margin-bottom: 8px;
-}
-.setup-mark::before,
-.setup-mark::after {
-  content: "";
-  position: absolute;
-  top: 16px;
-  width: 5px;
-  height: 9px;
-  border-radius: 3px;
-  background: #fff;
-}
-.setup-mark::before {
-  left: 13px;
-}
-.setup-mark::after {
-  right: 13px;
 }
 .setup-title {
   font-size: 22px;
@@ -1050,33 +684,6 @@ button.stat:hover {
   background: var(--side);
 }
 /* 켜고 끄는 스위치 */
-.switch {
-  position: relative;
-  flex: none;
-  width: 32px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--line2);
-  transition: background 0.2s var(--ease);
-}
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(9, 9, 11, 0.2);
-  transition: transform 0.2s var(--ease);
-}
-[aria-checked="true"] > .switch {
-  background: var(--duri);
-}
-[aria-checked="true"] > .switch::after {
-  transform: translateX(12px);
-}
 .setup-hint {
   color: var(--sub);
   font-size: 12.5px;
@@ -1144,11 +751,10 @@ button.stat:hover {
 .key-form input {
   height: 36px;
   padding: 0 11px;
+  border: 0;
   border-radius: 9px;
-  border: none;
   box-shadow: 0 0 0 1px var(--line2);
   background: var(--bg);
-  font: inherit;
   font-size: 14px;
   outline: none;
   transition: box-shadow 0.15s;
@@ -1220,19 +826,6 @@ button.stat:hover {
   gap: 8px;
   font-size: 13px;
   color: var(--sub);
-}
-.ext-wait .spin {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid var(--line2);
-  border-top-color: var(--ink);
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 두리 금고 */

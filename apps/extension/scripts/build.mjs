@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { copyUi } from '../../../packages/ui/copy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -22,6 +23,8 @@ await build({
   logLevel: 'warning',
 })
 cpSync(join(root, 'static'), dist, { recursive: true })
+// 디자인 시스템과 Pretendard 글꼴 (작은 창도 PC 앱과 같은 글꼴로)
+copyUi(dist, { fonts: true })
 const manifest = JSON.parse(readFileSync(join(dist, 'manifest.json'), 'utf8'))
 manifest.version = pkg.version
 writeFileSync(join(dist, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
