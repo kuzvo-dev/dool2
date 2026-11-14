@@ -109,7 +109,7 @@ packages/
   agent-claude/   Claude Code 연동 (`claude -p`, 내장 도구 끔)
   agent-codex/    Codex 연동 (`codex app-server`, 셸 끔, 고정 버전을 처음 쓸 때 받기)
   agent-opencode/ 종량제 실행기 (OpenCode v2, API 키, 두리 도구만)
-  mcp-tools/      두리 도구 (MCP 서버)
+  mcp-tools/      두리 도구 (MCP 서버) — 상태, 브라우저 열기·읽기·누르기·입력·화면 보기
   browser/        브라우저 손 — Chrome 확인·설치, 두리 확장 ↔ 본체 연결
   store/          대화 기록 (Node 내장 SQLite)
 docs/             설계·운영 문서
