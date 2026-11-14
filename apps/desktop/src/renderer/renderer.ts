@@ -106,7 +106,28 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 function agentState(a: AgentStatus): { cls: string; text: string } {
   if (!a.installed) return { cls: 'bad', text: '설치 필요' }
   if (!a.loggedIn) return { cls: 'warn', text: '로그인 필요' }
-  return { cls: 'ok', text: '준비됨' }
+  return { cls: 'ok', text: a.plan ? planLabel(a.plan) : '준비됨' }
+}
+
+/** 왼쪽 아래 연결 상태 한 줄. 할 일이 있으면 줄 전체가 버튼이 된다 */
+function statRow(name: string, cls: string, meta: string, title: string, onClick?: () => void) {
+  const row = document.createElement(onClick ? 'button' : 'div')
+  row.className = 'stat'
+  if (row instanceof HTMLButtonElement) {
+    row.type = 'button'
+    row.onclick = () => onClick?.()
+  }
+  row.title = title
+  const dot = document.createElement('i')
+  dot.className = `dot ${cls}`
+  const n = document.createElement('span')
+  n.className = 'name'
+  n.textContent = name
+  const m = document.createElement('span')
+  m.className = cls === 'ok' ? 'meta' : 'meta warn'
+  m.textContent = meta
+  row.append(dot, n, m)
+  return row
 }
 
 function renderAgents() {
@@ -116,51 +137,25 @@ function renderAgents() {
     ...state.agents
       .filter((a) => a.id !== 'opencode' || a.installed)
       .map((a) => {
-        const el = document.createElement('div')
-        el.className = 'agent'
         const s = agentState(a)
-        const row = document.createElement('div')
-        row.className = 'row'
-        const name = document.createElement('strong')
-        name.textContent = AGENT_LABEL[a.id]
-        const chip = document.createElement('span')
-        chip.className = `state ${s.cls}`
-        chip.textContent = s.text
-        row.append(name, chip)
-        const meta = document.createElement('p')
-        meta.className = 'cap'
-        meta.textContent =
+        const title =
           [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
-          ' '
-        el.append(row, meta)
-        // 아직 없는 AI는 마법사의 설치 단계로 바로 데려간다
+          s.text
+        // 아직 없는 AI는 마법사의 설치 단계로, 로그인 안 된 AI는 로그인으로 바로 데려간다
+        let onClick: (() => void) | undefined
         if (!a.installed && (a.id === 'claude' || a.id === 'codex')) {
-          const get = document.createElement('button')
-          get.className = 'act'
-          get.type = 'button'
-          get.textContent = a.id === 'claude' ? 'Claude Code 설치하기 →' : 'Codex 받기 →'
-          const which = a.id === 'claude' ? 'claude' : 'codex'
-          get.onclick = () => void openSetup({ step: 'check', choice: which, action: `${which}-install` })
-          el.append(get)
+          const which = a.id
+          onClick = () => void openSetup({ step: 'check', choice: which, action: `${which}-install` })
+        } else if (a.installed && !a.loggedIn) {
+          onClick =
+            a.id === 'codex'
+              ? async () => {
+                  await api('/api/agents/codex/login', { method: 'POST' }).catch(() => {})
+                  await loadAgents()
+                }
+              : () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
         }
-        if (a.installed && !a.loggedIn) {
-          const btn = document.createElement('button')
-          btn.className = 'act'
-          btn.type = 'button'
-          if (a.id === 'codex') {
-            btn.textContent = 'ChatGPT로 로그인 →'
-            btn.onclick = async () => {
-              btn.textContent = '브라우저에서 로그인해 주세요…'
-              await api('/api/agents/codex/login', { method: 'POST' }).catch(() => {})
-              await loadAgents()
-            }
-          } else {
-            btn.textContent = 'Claude로 로그인 →'
-            btn.onclick = () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
-          }
-          el.append(btn)
-        }
-        return el
+        return statRow(AGENT_LABEL[a.id], s.cls, s.text, title, onClick)
       }),
   )
   renderPick()
@@ -196,7 +191,23 @@ async function loadAgents() {
 
 // ── 대화 목록 ─────────────────────────────────────────
 
+/** 오늘이면 "오전 10:03", 아니면 "11. 14." */
+function shortTime(iso: string) {
+  const d = new Date(iso)
+  const today = new Date().toDateString() === d.toDateString()
+  return today
+    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+}
+
 function renderThreads() {
+  if (!state.threads.length) {
+    const p = document.createElement('li')
+    p.className = 'empty-list'
+    p.textContent = '아직 대화가 없어요'
+    $('threads').replaceChildren(p)
+    return
+  }
   $('threads').replaceChildren(
     ...state.threads.map((t) => {
       const li = document.createElement('li')
@@ -208,7 +219,8 @@ function renderThreads() {
       title.textContent = t.title
       const meta = document.createElement('span')
       meta.className = 'm'
-      meta.textContent = `${AGENT_LABEL[t.agent]} · ${new Date(t.updatedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+      meta.textContent = shortTime(t.updatedAt)
+      b.title = `${t.title}\n${AGENT_LABEL[t.agent]} · ${new Date(t.updatedAt).toLocaleString('ko-KR')}`
       b.append(title, meta)
       b.onclick = () => void openThread(t.id)
       li.append(b)
@@ -323,7 +335,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     })()
     title.textContent =
       v.status === 'pending'
-        ? `🔐 승인이 필요해요 · ${RISK_LABEL[v.kind]}`
+        ? '승인이 필요해요'
         : v.status === 'done'
           ? '승인해서 눌렀어요'
           : v.status === 'rejected'
@@ -333,19 +345,27 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
               : v.status === 'failed'
                 ? '누르지 못했어요'
                 : '누르는 중이에요'
+    if (v.status === 'pending') {
+      const kind = document.createElement('span')
+      kind.className = 'kind'
+      kind.textContent = RISK_LABEL[v.kind]
+      title.append(kind)
+    }
     const rows = document.createElement('dl')
     rows.className = 'approval-rows'
-    const row = (k: string, val?: string) => {
+    const row = (k: string, val?: string, cls?: string) => {
       if (!val) return
       const dt = document.createElement('dt')
       dt.textContent = k
       const dd = document.createElement('dd')
       dd.textContent = val
+      if (cls) dd.className = cls
       rows.append(dt, dd)
     }
     row('무엇을', v.what)
-    row('어디서', `${v.where} · ${host}`)
-    row('얼마', v.amount)
+    row('어디서', v.where)
+    row('주소', host, 'host')
+    row('얼마', v.amount, 'money')
     row('취소 조건', v.cancel)
     row('누를 버튼', `"${v.label}"`)
     body.replaceChildren(rows)
@@ -449,33 +469,23 @@ function notifyHandoff(reason: string) {
 // ── 브라우저 (Chrome의 두리 확장) ──────────────────────
 
 function renderBrowser() {
-  const box = $('browser')
   const ext = state.extension
-  const row = document.createElement('div')
-  row.className = 'row'
-  const name = document.createElement('strong')
-  name.textContent = 'Chrome 두리 확장'
-  const chip = document.createElement('span')
-  chip.className = `state ${ext?.connected ? 'ok' : 'warn'}`
-  chip.textContent = ext?.connected ? '연결됨' : '연결 안 됨'
-  row.append(name, chip)
-  const meta = document.createElement('p')
-  meta.className = 'cap'
-  meta.textContent = ext?.connected
-    ? [ext.browser, ext.version && `확장 v${ext.version}`].filter(Boolean).join(' · ')
-    : '웹 일을 하려면 연결해 주세요'
-  const el = document.createElement('div')
-  el.className = 'agent'
-  el.append(row, meta)
-  if (!ext?.connected) {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.className = 'act'
-    b.textContent = '연결하기 →'
-    b.onclick = () => void openSetup({ step: 'check', action: 'extension-install' })
-    el.append(b)
-  }
-  box.replaceChildren(el)
+  $('browser').replaceChildren(
+    ext?.connected
+      ? statRow(
+          'Chrome 확장',
+          'ok',
+          '연결됨',
+          [ext.browser, ext.version && `확장 v${ext.version}`].filter(Boolean).join(' · '),
+        )
+      : statRow(
+          'Chrome 확장',
+          'warn',
+          '연결하기',
+          '웹 일을 하려면 연결해 주세요',
+          () => void openSetup({ step: 'check', action: 'extension-install' }),
+        ),
+  )
 }
 
 async function loadExtension() {
@@ -488,7 +498,8 @@ async function loadExtension() {
 
 function setHeader() {
   $('title').textContent = state.current?.title ?? '새 대화'
-  $('subtitle').textContent = state.current ? `${AGENT_LABEL[state.current.agent]}로 실행 중` : ''
+  $('subtitle').textContent = state.current ? AGENT_LABEL[state.current.agent] : ''
+  $('agent-pick').hidden = Boolean(state.current)
 }
 
 // ── 메시지 ───────────────────────────────────────────
