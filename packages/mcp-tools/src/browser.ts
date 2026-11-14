@@ -130,7 +130,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이 "승인 없이는 하지 않아요"라고 할 때). 사용자가 PC 화면에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이 "승인 없이는 하지 않아요"라고 할 때). 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       ref: ref.describe('누를 버튼 표시'),

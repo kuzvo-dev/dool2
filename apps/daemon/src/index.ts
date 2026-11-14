@@ -44,6 +44,7 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
+import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
@@ -266,8 +267,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (threadId && store.getThread(threadId) && !threads.isRunning(threadId)) {
           const text =
             decision === 'reject'
-              ? `"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`
-              : `폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`
+              ? appNote(`"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`)
+              : appNote(`폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`)
           void (async () => {
             for await (const _ of tracked(threadId, threads.send(threadId, text))) {
             }

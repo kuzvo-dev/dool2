@@ -663,6 +663,28 @@ button.task:hover {
   border: 1.6px solid var(--line2);
 }
 
+/* 두리 앱이 대신 보낸 알림 (승인 결과): 가운데 회색 한 줄 */
+.msg.note {
+  align-self: center;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 90%;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--sub);
+  text-align: center;
+}
+.msg.note::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--duri);
+  transform: translateY(-1px);
+}
+
 /* 잠깐 뜨는 알림 */
 .toast {
   padding: 10px 16px;
