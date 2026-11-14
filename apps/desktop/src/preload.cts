@@ -4,6 +4,7 @@ import electron = require('electron')
 const { contextBridge, ipcRenderer } = electron
 
 contextBridge.exposeInMainWorld('dool2', {
-  config: (): Promise<{ url: string; token: string }> => ipcRenderer.invoke('dool2:config'),
+  config: (): Promise<{ url: string; token: string; smokeOpen?: string }> =>
+    ipcRenderer.invoke('dool2:config'),
   ready: (summary: string) => ipcRenderer.send('dool2:ready', summary),
 })

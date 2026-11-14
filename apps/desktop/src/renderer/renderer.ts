@@ -11,7 +11,10 @@ import type {
 
 declare global {
   interface Window {
-    dool2: { config(): Promise<{ url: string; token: string }>; ready(summary: string): void }
+    dool2: {
+      config(): Promise<{ url: string; token: string; smokeOpen?: string }>
+      ready(summary: string): void
+    }
   }
 }
 
@@ -228,7 +231,7 @@ async function send(text: string) {
     box.append(bubble('user', text))
     const activity = document.createElement('div')
     activity.className = 'activity'
-    activity.textContent = '생각하는 중…'
+    activity.textContent = '두리가 생각하는 중…'
     box.append(activity)
     let answer: HTMLElement | undefined
     let answerText = ''
@@ -335,6 +338,9 @@ async function main() {
   showEmpty()
 
   await Promise.all([loadAgents(), loadThreads()])
+  // 점검 모드: 최근 대화를 열어 캡처한다
+  const latest = state.threads[0]
+  if (cfg.smokeOpen === 'latest' && latest) await openThread(latest.id)
   const ready = state.agents.filter((a) => a.installed && a.loggedIn).map((a) => a.id)
   // 화면이 실제로 그려진 뒤에 알린다
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))

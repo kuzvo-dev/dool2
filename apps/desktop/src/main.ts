@@ -56,7 +56,11 @@ async function smoke(win: BrowserWindow) {
 app.whenReady().then(async () => {
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
   daemon = await startDaemon({ dataDir })
-  ipcMain.handle('dool2:config', () => ({ url: daemon?.url, token: daemon?.token }))
+  ipcMain.handle('dool2:config', () => ({
+    url: daemon?.url,
+    token: daemon?.token,
+    ...(SMOKE && process.env.DOOL2_SMOKE_OPEN ? { smokeOpen: process.env.DOOL2_SMOKE_OPEN } : {}),
+  }))
 
   const win = await createWindow()
   if (SMOKE) await smoke(win)
