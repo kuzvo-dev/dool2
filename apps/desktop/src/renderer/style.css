@@ -953,3 +953,22 @@ button {
 .approval-actions .btn {
   background: #c2410c;
 }
+/* 폰 연결 */
+.pair-panel {
+  align-items: center;
+  text-align: center;
+}
+.pair-qr {
+  width: 220px;
+  height: 220px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #fff;
+}
+.pair-code {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}

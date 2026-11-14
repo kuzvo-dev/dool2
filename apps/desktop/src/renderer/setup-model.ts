@@ -21,6 +21,8 @@ export type CheckAction =
   | 'codex-install'
   | 'payg-key'
   | 'extension-install'
+  /** 설정 화면의 폰 연결 (점검 캡처용) */
+  | 'phone-pair'
 
 export interface CheckItem {
   id: string
