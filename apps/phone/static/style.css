@@ -433,8 +433,29 @@ svg.i {
   padding-top: 14px;
 }
 .msg {
-  white-space: pre-wrap;
   line-height: 1.65;
+}
+.msg.user {
+  white-space: pre-wrap;
+}
+.msg p,
+.msg ul,
+.msg ol {
+  margin: 0;
+}
+/* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
+.msg > :not(:first-child) {
+  margin-top: 0.75em;
+}
+.msg ul,
+.msg ol {
+  padding-left: 1.3em;
+}
+.msg li + li {
+  margin-top: 0.25em;
+}
+.msg li::marker {
+  color: var(--faint);
 }
 .msg strong {
   font-weight: 600;

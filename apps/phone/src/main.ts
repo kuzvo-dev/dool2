@@ -23,6 +23,7 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
+import { type Inline, richBlocks } from '@dool2/protocol/rich'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -105,13 +106,30 @@ function shortTime(iso: string) {
     : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
 }
 
-/** **굵게**만 살린다. 나머지는 글자 그대로 */
+/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
 function rich(text: string): DocumentFragment {
   const f = document.createDocumentFragment()
-  for (const part of text.split(/(\*\*[^*]+\*\*)/g)) {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4)
-      f.append(h('strong', { text: part.slice(2, -2) }))
-    else if (part) f.append(part)
+  const spans = (parent: HTMLElement, parts: Inline[]) => {
+    for (const part of parts) parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
+  }
+  for (const block of richBlocks(text)) {
+    if (block.type === 'p') {
+      const p = h('p')
+      block.lines.forEach((line, i) => {
+        if (i) p.append(h('br'))
+        spans(p, line)
+      })
+      f.append(p)
+      continue
+    }
+    const list = h(block.type)
+    if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
+    for (const item of block.items) {
+      const li = h('li')
+      spans(li, item)
+      list.append(li)
+    }
+    f.append(list)
   }
   return f
 }
@@ -543,7 +561,7 @@ function threadView(id: string | undefined) {
   }
   for (const m of order) {
     if (m.role === 'tool') msgs.append(toolCard(m.text))
-    else msgs.append(h('div', { class: `msg ${m.role}` }, rich(m.text)))
+    else msgs.append(h('div', { class: `msg ${m.role}` }, m.role === 'user' ? m.text : rich(m.text)))
   }
   const live = id ? st.live.get(id) : st.waitingNew ? '' : undefined
   if (live !== undefined) {

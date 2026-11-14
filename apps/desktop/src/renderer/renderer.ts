@@ -15,6 +15,7 @@ import type {
   ThreadSummary,
   UsageLimit,
 } from '@dool2/protocol'
+import { type Inline, richBlocks } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import { type CheckAction, costLabel, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
 
@@ -504,7 +505,7 @@ function setHeader() {
 
 // ── 메시지 ───────────────────────────────────────────
 
-/** 아주 작은 마크다운: **굵게**만. 나머지는 글자 그대로 (HTML로 해석하지 않는다) */
+/** 말풍선. 두리 답은 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
 function bubble(role: string, text: string) {
   const el = document.createElement('div')
   el.className = `msg ${role}`
@@ -513,14 +514,40 @@ function bubble(role: string, text: string) {
 }
 
 function setRich(el: HTMLElement, text: string) {
-  el.replaceChildren()
-  text.split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-      const b = document.createElement('strong')
-      b.textContent = part.slice(2, -2)
-      el.append(b)
-    } else if (part) el.append(document.createTextNode(part))
-  })
+  // 내가 쓴 말은 적은 그대로 보여 준다
+  if (el.classList.contains('user')) {
+    el.textContent = text
+    return
+  }
+  const spans = (parent: HTMLElement, parts: Inline[]) => {
+    for (const part of parts) {
+      if (part.bold) {
+        const b = document.createElement('strong')
+        b.textContent = part.text
+        parent.append(b)
+      } else parent.append(part.text)
+    }
+  }
+  el.replaceChildren(
+    ...richBlocks(text).map((block) => {
+      if (block.type === 'p') {
+        const p = document.createElement('p')
+        block.lines.forEach((line, i) => {
+          if (i) p.append(document.createElement('br'))
+          spans(p, line)
+        })
+        return p
+      }
+      const list = document.createElement(block.type)
+      if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
+      for (const item of block.items) {
+        const li = document.createElement('li')
+        spans(li, item)
+        list.append(li)
+      }
+      return list
+    }),
+  )
 }
 
 function renderUsage(limits: UsageLimit[]) {

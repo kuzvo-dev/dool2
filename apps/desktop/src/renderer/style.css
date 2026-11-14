@@ -80,7 +80,10 @@ svg.i {
 .app {
   display: grid;
   grid-template-columns: 264px 1fr;
+  /* 창 높이에 고정한다. 긴 대화는 안쪽(.messages)만 스크롤한다 */
+  grid-template-rows: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 /* ── 왼쪽 ─────────────────────────────────────────── */
@@ -320,7 +323,7 @@ button.stat:hover {
 /* ── 오른쪽 ───────────────────────────────────────── */
 .main {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   height: 100%;
 }
@@ -442,13 +445,35 @@ button.stat:hover {
 }
 .msg {
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: keep-all;
   overflow-wrap: anywhere;
   font-size: 14.5px;
 }
 .msg strong {
   font-weight: 600;
+}
+.msg.user {
+  white-space: pre-wrap;
+}
+/* 답 안의 문단·목록 */
+.msg p,
+.msg ul,
+.msg ol {
+  margin: 0;
+}
+/* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
+.msg > :not(:first-child) {
+  margin-top: 0.75em;
+}
+.msg ul,
+.msg ol {
+  padding-left: 1.35em;
+}
+.msg li + li {
+  margin-top: 0.25em;
+}
+.msg li::marker {
+  color: var(--faint);
 }
 .msg.user {
   align-self: flex-end;
