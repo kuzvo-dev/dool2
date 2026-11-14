@@ -104,6 +104,21 @@ importers:
         specifier: ^0.28.2
         version: 0.28.2
 
+  apps/phone:
+    devDependencies:
+      '@dool2/daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@dool2/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@dool2/relay':
+        specifier: workspace:*
+        version: link:../relay
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+
   apps/relay:
     dependencies:
       '@dool2/protocol':
