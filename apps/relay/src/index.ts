@@ -196,8 +196,8 @@ async function serveHttp(req: IncomingMessage, res: ServerResponse, appDir?: str
   const target = st?.isFile() ? file : join(appDir, 'index.html')
   res.writeHead(200, {
     'content-type': TYPES[extname(target)] ?? 'application/octet-stream',
-    'cache-control':
-      target.endsWith('index.html') || target.endsWith('sw.js') ? 'no-cache' : 'public, max-age=3600',
+    // 앱은 작고 자주 바뀐다. 매번 새것인지 확인하게 해서 업데이트가 바로 닿게 한다 (아이콘만 오래 둔다)
+    'cache-control': extname(target) === '.png' ? 'public, max-age=86400' : 'no-cache',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'content-security-policy':

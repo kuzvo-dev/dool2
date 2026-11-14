@@ -252,17 +252,38 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       cancel: (id) => threads.cancel(id),
       approval: (id) => browserTools.approvals.get(id),
-      decide: async (id, decision) =>
-        decision === 'reject'
-          ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
-          : browserTools.approve(id),
+      decide: async (id, decision) => {
+        const label = browserTools.approvals.get(id)?.label ?? ''
+        const r =
+          decision === 'reject'
+            ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
+            : await browserTools.approve(id)
+        // 폰에서 정했으면 그 결과를 AI에게 알려 이어서 하게 한다 (PC 화면은 화면이 직접 알린다)
+        const threadId = approvalThread.get(id)
+        if (threadId && store.getThread(threadId) && !threads.isRunning(threadId)) {
+          const text =
+            decision === 'reject'
+              ? `"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`
+              : `폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`
+          void (async () => {
+            for await (const _ of tracked(threadId, threads.send(threadId, text))) {
+            }
+          })().catch(() => {})
+        }
+        return r
+      },
     },
     {
       relay: relayUrl,
       ...(opts.pcName ? { name: opts.pcName } : {}),
     },
   )
-  browserTools.approvals.onCreate = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
+  browserTools.approvals.onCreate = (rec) => {
+    // 승인 요청은 답하는 중인 대화의 도구 호출에서 나온다. 하나뿐이면 그 대화로 본다
+    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    if (only) approvalThread.set(rec.id, only)
+    void link.broadcast({ kind: 'approval', approval: rec })
+  }
   await link.start()
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
@@ -277,6 +298,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     inner: AsyncIterable<DaemonStreamEvent>,
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
+    activeThreads.add(threadId)
     // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
     const toPhones = link.streamer(threadId)
     try {
@@ -285,9 +307,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         yield ev
       }
     } finally {
+      activeThreads.delete(threadId)
       if (--running === 0) events.emit('busy', false)
     }
   }
+  /** 지금 답하는 중인 대화 (승인 요청이 어느 대화에서 나왔는지 알려고) */
+  const activeThreads = new Set<string>()
+  const approvalThread = new Map<string, string>()
   let claudeInstall: ClaudeInstall | undefined
   let chromeInstall: ChromeInstall | undefined
   let opencodeInstall: OpenCodeInstall | undefined

@@ -63,6 +63,8 @@ writeFileSync(
 console.log(`준비됐어요: 폰 앱 ${relay.url}/app/ · 본체 ${daemon.url}`)
 
 const stop = async () => {
+  // 시험용 Chrome·열린 연결이 늦게 닫혀도 3초 안에는 끝낸다
+  setTimeout(() => process.exit(0), 3000).unref()
   chrome?.kill()
   await daemon.close()
   await relay.close()
