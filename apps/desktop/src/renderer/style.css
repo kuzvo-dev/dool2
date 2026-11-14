@@ -409,6 +409,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.setup-card.enter {
   animation: rise 0.4s var(--ease);
 }
 @keyframes rise {
@@ -605,4 +607,64 @@ button {
 }
 .setup-foot .btn {
   min-width: 120px;
+}
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--duri);
+  background: #f3fbf7;
+}
+.login-panel p {
+  color: var(--ink2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.code-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.code-row input {
+  flex: 1;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #d5d8dc;
+  background: var(--bg);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.code-row input:focus {
+  border-color: var(--duri);
+}
+.code-row .btn-small {
+  height: 38px;
+}
+.login-panel .login-error {
+  color: var(--red);
+  font-size: 13px;
+}
+.login-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.btn-link {
+  padding: 4px 6px;
+  color: var(--sub);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:hover {
+  color: var(--ink);
+}
+.btn-small:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
