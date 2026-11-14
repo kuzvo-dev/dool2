@@ -14,7 +14,13 @@ export interface SnapshotResult {
 
 /** 페이지를 AI가 읽기 좋은 글로 바꾼다. 누를 수 있는 것에는 [e12 버튼 "검색"]처럼 표시를 붙인다 */
 export function pageSnapshot(maxChars: number): SnapshotResult {
-  type State = { refs: Map<string, WeakRef<Element>>; ids: WeakMap<Element, string>; seq: number }
+  type State = {
+    refs: Map<string, WeakRef<Element>>
+    ids: WeakMap<Element, string>
+    seq: number
+    /** 두리 금고가 채운 칸: 값을 글로 내보내지 않는다 */
+    filled?: WeakSet<Element>
+  }
   const g = globalThis as unknown as { __dool2?: State }
   g.__dool2 ??= { refs: new Map(), ids: new WeakMap(), seq: 0 }
   const st = g.__dool2
@@ -106,6 +112,7 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
   }
 
   const extra = (el: Element): string => {
+    if (st.filled?.has(el)) return ' 금고로 채워짐'
     if (el instanceof HTMLInputElement) {
       if (el.type === 'checkbox' || el.type === 'radio') return el.checked ? ' 선택됨' : ''
       if (el.type === 'password') return el.value ? ' 채워짐' : ''
@@ -189,6 +196,9 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
   return { url: location.href, title: document.title, text, truncated, refs: st.refs.size, captcha }
 }
 
+/** point: 좌표만 / type: 초점 + 기존 글자 선택 / activate: 키보드로 누를 수 있게 초점만 */
+export type LocateMode = 'point' | 'type' | 'activate'
+
 export interface LocateResult {
   ok: true
   x: number
@@ -196,15 +206,18 @@ export interface LocateResult {
   tag: string
   isPassword: boolean
   origin: string
+  /** 탭이 화면에 그려지지 않는 중이다 (창이 가려짐·화면 꺼짐). 이때는 마우스 입력이 버려진다 */
+  hidden: boolean
+  /** activate: 초점을 받았는지 */
+  focused?: boolean
+  /** activate: 체크박스·라디오처럼 Space로 누르는 요소 */
+  toggle?: boolean
   /** 그 자리를 다른 것이 덮고 있다 (팝업 등) */
   coveredBy?: string
 }
 
-/**
- * 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다.
- * focus면 입력할 수 있게 초점을 주고 기존 글자를 선택한다(새 글자로 바뀐다).
- */
-export function pageLocate(ref: string, focus: boolean): LocateResult | { ok: false; error: string } {
+/** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
+export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: false; error: string } {
   type State = { refs: Map<string, WeakRef<Element>> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
@@ -220,8 +233,9 @@ export function pageLocate(ref: string, focus: boolean): LocateResult | { ok: fa
   if (top && top !== el && !el.contains(top) && !(top instanceof HTMLLabelElement && top.control === el)) {
     coveredBy = ((top as HTMLElement).innerText || top.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
   }
-  if (focus) {
-    const h = el as HTMLElement
+  const h = el as HTMLElement
+  let focused: boolean | undefined
+  if (mode === 'type') {
     h.focus()
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.select()
     else if (h.isContentEditable) {
@@ -231,7 +245,13 @@ export function pageLocate(ref: string, focus: boolean): LocateResult | { ok: fa
       sel?.removeAllRanges()
       sel?.addRange(range)
     }
+  } else if (mode === 'activate') {
+    h.focus({ preventScroll: true })
+    focused = document.activeElement === el
   }
+  const toggle =
+    (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) ||
+    ['checkbox', 'radio', 'switch'].includes(el.getAttribute('role') ?? '')
   return {
     ok: true,
     x,
@@ -239,8 +259,22 @@ export function pageLocate(ref: string, focus: boolean): LocateResult | { ok: fa
     tag: el.tagName.toLowerCase(),
     isPassword: el instanceof HTMLInputElement && el.type === 'password',
     origin: location.origin,
+    hidden: document.visibilityState === 'hidden',
+    ...(focused !== undefined ? { focused, toggle } : {}),
     ...(coveredBy ? { coveredBy } : {}),
   }
+}
+
+/** 마지막 수단: 초점을 못 받는 요소를 페이지 안에서 누른다 */
+export function pageClick(ref: string) {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
+  ;(el as HTMLElement | undefined)?.click()
+  return Boolean(el)
+}
+
+export function pageScroll(dir: number) {
+  window.scrollBy({ top: dir * Math.round(window.innerHeight * 0.8), behavior: 'instant' })
 }
 
 export function pageViewport() {
@@ -248,7 +282,22 @@ export function pageViewport() {
     width: window.innerWidth,
     height: window.innerHeight,
     dpr: window.devicePixelRatio || 1,
+    hidden: document.visibilityState === 'hidden',
     url: location.href,
     title: document.title,
   }
+}
+
+/** 두리 금고로 채운 칸이라고 표시한다 (그 뒤 페이지 읽기에서 값이 나가지 않게) */
+export function pageMarkFilled(ref: string) {
+  type State = { refs: Map<string, WeakRef<Element>>; filled?: WeakSet<Element> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!st || !el) return false
+  st.filled ??= new WeakSet()
+  st.filled.add(el)
+  // 칸에서 초점을 뺀다. 비밀번호 칸에 초점이 남아 있으면 Chrome 비밀번호 제안 창이 떠서
+  // 다음 클릭(로그인 버튼)을 그 창이 삼킨다 (실측)
+  ;(el as HTMLElement).blur()
+  return true
 }

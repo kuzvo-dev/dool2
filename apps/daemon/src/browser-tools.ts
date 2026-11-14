@@ -27,6 +27,7 @@ export const BROWSER_TOOLS = [
   'back',
   'close',
   'handoff',
+  'login',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -102,10 +103,19 @@ export function parseRefs(text: string): Map<string, { role: string; name: strin
   return refs
 }
 
+/** 금고에서 지금 사이트의 로그인 정보를 찾는다 (값은 본체 밖으로 나가지 않는다) */
+export interface VaultLookup {
+  findForOrigin(origin: string): Promise<{ id: string; username: string; password: string } | undefined>
+  markUsed(id: string): Promise<void>
+}
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
 
-  constructor(private readonly browser: BrowserCaller) {}
+  constructor(
+    private readonly browser: BrowserCaller,
+    private readonly vault?: VaultLookup,
+  ) {}
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     try {
@@ -191,6 +201,38 @@ export class BrowserTools {
         await this.browser.call('close', { tabId })
         this.pages.delete(tabId)
         return { content: [{ type: 'text', text: `탭 ${tabId}을(를) 닫았어요.` }] }
+      }
+      case 'login': {
+        // 두리 금고 (ADR 0011): AI는 칸만 알려 주고, 값은 본체가 주소를 확인한 뒤 확장에 직접 넘긴다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 로그인 페이지를 읽어 주세요')
+        const pw = page.refs.get(String(a.passwordRef ?? ''))
+        if (pw?.role !== '비밀번호칸') throw new Error('passwordRef는 페이지의 비밀번호칸 표시여야 해요')
+        const userRef = a.usernameRef ? String(a.usernameRef) : undefined
+        if (userRef && !['입력칸', '검색칸'].includes(page.refs.get(userRef)?.role ?? ''))
+          throw new Error('usernameRef는 아이디 입력칸 표시여야 해요')
+        let origin: string
+        try {
+          origin = new URL(page.url).origin
+        } catch {
+          throw new Error('페이지 주소를 알 수 없어요')
+        }
+        const entry = await this.vault?.findForOrigin(origin)
+        if (!entry)
+          throw new Error(
+            `이 사이트(${origin})는 두리 금고에 없어요. browser_handoff로 사용자에게 직접 로그인해 달라고 부탁해 주세요.`,
+          )
+        // 확장도 주소를 다시 확인한다 (그 사이 다른 페이지로 넘어갔으면 채우지 않는다)
+        if (userRef) await this.browser.call('fill', { tabId, ref: userRef, value: entry.username, origin })
+        await this.browser.call('fill', {
+          tabId,
+          ref: String(a.passwordRef),
+          value: entry.password,
+          origin,
+          password: true,
+        })
+        await this.vault?.markUsed(entry.id)
+        return this.read(tabId, undefined, '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.')
       }
       case 'handoff': {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.

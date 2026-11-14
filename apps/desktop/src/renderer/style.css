@@ -855,3 +855,38 @@ button {
   border-style: solid;
   background: #fff;
 }
+/* 두리 금고 */
+.vault {
+  display: grid;
+  gap: 10px;
+}
+.vault > .btn-small {
+  justify-self: start;
+}
+.vault-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.vault-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--card);
+}
+.vault-list .text {
+  flex: 1;
+  display: grid;
+}
+.vault-list .text span {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.vault .login-error {
+  color: var(--red);
+  font-size: 13px;
+}

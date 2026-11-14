@@ -35,13 +35,16 @@ import {
   type Settings,
   SettingsPatchSchema,
   SettingsSchema,
+  VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { Store } from '@dool2/store'
 import { BrowserTools } from './browser-tools.js'
 import { dataPaths, defaultDataDir } from './paths.js'
+import { Vault } from './vault.js'
 
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { dataPaths, defaultDataDir } from './paths.js'
+export { Vault, vaultOrigin } from './vault.js'
 
 export interface DaemonOptions {
   dataDir?: string
@@ -175,7 +178,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const browser = new BrowserBridge(paths.dataDir)
   await browser.listen()
   browser.on('status', (s) => events.emit('extension', s))
-  const browserTools = new BrowserTools(browser)
+  const vault = new Vault(secrets)
+  const browserTools = new BrowserTools(browser, vault)
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
     await registerNativeHost({ dataDir: paths.dataDir, runtime: dool2BrowserHost(script), ...where }).catch(
@@ -381,6 +385,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { ok: code === 0 })
       }
       return json(res, 404, { error: '이 AI는 이 방법으로 로그인하지 않아요' })
+    }
+
+    // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
+    if (a === 'vault') {
+      if (!b && req.method === 'GET') return json(res, 200, { entries: await vault.list() })
+      if (!b && req.method === 'POST') {
+        const body = VaultEntryRequestSchema.parse(await readJson(req))
+        try {
+          return json(res, 200, { entry: await vault.add(body) })
+        } catch (e) {
+          return json(res, 400, { error: (e as Error).message })
+        }
+      }
+      if (b && !c && req.method === 'DELETE') return json(res, 200, { ok: await vault.remove(b) })
     }
 
     if (a === 'settings' && !b) {

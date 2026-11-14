@@ -4,7 +4,16 @@
 // - 클릭·입력은 chrome.debugger(CDP Input)로 실제 입력과 같게 넣는다
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
 import { keyDef, safeUrl } from './keys.js'
-import { type LocateResult, pageLocate, pageSnapshot, pageViewport } from './page.js'
+import {
+  type LocateMode,
+  type LocateResult,
+  pageClick,
+  pageLocate,
+  pageMarkFilled,
+  pageScroll,
+  pageSnapshot,
+  pageViewport,
+} from './page.js'
 
 /** @dool2/protocol의 BROWSER_HOST_NAME과 같아야 한다 (테스트로 확인) */
 export const HOST_NAME = 'com.dool2.host'
@@ -251,22 +260,31 @@ async function inPage<A extends unknown[], R>(
   return res?.result as R
 }
 
-async function locate(tabId: number, ref: unknown, focus: boolean): Promise<LocateResult> {
+/**
+ * 두리 창 안에서 이 탭을 앞 탭으로 둔다. 뒤에 있는 탭은 Chrome이 그리지 않아 입력을 받지 않는다.
+ * 두리 창은 두리 탭만 있으므로 사용자 탭에는 영향이 없다 (창 자체를 앞으로 가져오지는 않는다)
+ */
+async function frontTab(tabId: number) {
+  const t = await chrome.tabs.get(tabId)
+  if (t.active) return
+  await chrome.tabs.update(tabId, { active: true })
+  await sleep(150)
+}
+
+async function locate(tabId: number, ref: unknown, mode: LocateMode): Promise<LocateResult> {
   if (typeof ref !== 'string' || !/^e\d+$/.test(ref)) throw new Error('ref는 e12 같은 표시여야 해요')
-  const r = await inPage(tabId, pageLocate, ref, focus)
+  await frontTab(tabId)
+  const r = await inPage(tabId, pageLocate, ref, mode)
   if (!r?.ok) throw new Error(r?.error ?? '요소를 찾지 못했어요')
   return r
 }
 
 async function clickAt(tabId: number, x: number, y: number) {
-  const base = { x, y, button: 'left', clickCount: 1 }
-  // 두리 창이 다른 창에 가려져 있으면 화면이 그려지지 않아 마우스 이동 확인이 5초씩 늦는다 (실측).
-  // 이동은 메뉴를 펼치는 데만 필요하므로 잠깐만 기다린다
-  await Promise.race([cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }), sleep(300)])
-  await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base })
+  const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
+  await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   // 클릭으로 새 탭이 앞으로 오면 이 탭은 뒤로 가서 그려지지 않고, 입력 확인 답이 몇 초씩 늦는다. 오래 기다리지 않는다
   await Promise.race([
-    cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base }),
+    cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }),
     sleep(1000),
   ])
 }
@@ -330,21 +348,36 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     }
     case 'click': {
       const tabId = await ownedTab(a)
-      const at = await locate(tabId, a.ref, false)
+      const at = await locate(tabId, a.ref, 'point')
       lastPopup = undefined
       const before = (await chrome.tabs.get(tabId)).url
-      await clickAt(tabId, at.x, at.y)
+      let via: 'mouse' | 'key' | 'script' = 'mouse'
+      if (!at.hidden) await clickAt(tabId, at.x, at.y)
+      else {
+        // 두리 창이 가려져 있거나 화면이 꺼져 있으면 Chrome이 마우스 입력을 버린다 (키보드는 받는다, 실측).
+        // 그래서 요소에 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다
+        const act = await locate(tabId, a.ref, 'activate')
+        if (!act.focused) {
+          // 키보드로 누를 수 없는 요소(초점을 못 받는 div 등)는 마지막 수단으로 페이지 안에서 누른다
+          via = 'script'
+          await inPage(tabId, pageClick, String(a.ref))
+        } else {
+          via = 'key'
+          await pressKey(tabId, act.toggle ? 'Space' : 'Enter')
+        }
+      }
       await settle(tabId, before)
       return {
         ...(await pageState(tabId)),
+        via,
         ...takePopup(tabId),
-        ...(at.coveredBy ? { coveredBy: at.coveredBy } : {}),
+        ...(at.coveredBy && !at.hidden ? { coveredBy: at.coveredBy } : {}),
       }
     }
     case 'type': {
       const tabId = await ownedTab(a)
       if (typeof a.text !== 'string') throw new Error('넣을 글자가 없어요')
-      const at = await locate(tabId, a.ref, true)
+      const at = await locate(tabId, a.ref, 'type')
       if (at.isPassword) throw new Error('비밀번호 칸에는 두리 금고로만 채워요')
       await cdp(tabId, 'Input.insertText', { text: a.text })
       if (a.submit) {
@@ -358,14 +391,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 두리 금고 (ADR 0011): 값은 본체가 준다. 주소가 맞을 때만 넣고, 값은 어디에도 돌려주지 않는다
       const tabId = await ownedTab(a)
       if (typeof a.value !== 'string' || typeof a.origin !== 'string') throw new Error('채울 값이 없어요')
-      const at = await locate(tabId, a.ref, true)
+      const at = await locate(tabId, a.ref, 'type')
       if (at.origin !== a.origin) throw new Error('지금 페이지 주소가 저장된 사이트와 달라서 채우지 않았어요')
       if (a.password && !at.isPassword) throw new Error('비밀번호 칸이 아니라서 채우지 않았어요')
       await cdp(tabId, 'Input.insertText', { text: a.value })
+      await inPage(tabId, pageMarkFilled, String(a.ref))
       return { tabId, filled: true }
     }
     case 'press': {
       const tabId = await ownedTab(a)
+      await frontTab(tabId)
       const before = (await chrome.tabs.get(tabId)).url
       await pressKey(tabId, String(a.key ?? ''))
       await settle(tabId, before)
@@ -373,21 +408,28 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     }
     case 'scroll': {
       const tabId = await ownedTab(a)
+      await frontTab(tabId)
       const v = await inPage(tabId, pageViewport)
       const dir = a.direction === 'up' ? -1 : 1
-      const wheel = cdp(tabId, 'Input.dispatchMouseEvent', {
-        type: 'mouseWheel',
-        x: v.width / 2,
-        y: v.height / 2,
-        deltaX: 0,
-        deltaY: dir * Math.round(v.height * 0.8),
-      })
-      await Promise.race([wheel, sleep(1000)])
+      if (v.hidden) {
+        // 가려진 창은 마우스 휠을 받지 않는다. 스크롤은 사이트에 의미 있는 입력이 아니라서 페이지 안에서 옮긴다
+        await inPage(tabId, pageScroll, dir)
+      } else {
+        const wheel = cdp(tabId, 'Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: v.width / 2,
+          y: v.height / 2,
+          deltaX: 0,
+          deltaY: dir * Math.round(v.height * 0.8),
+        })
+        await Promise.race([wheel, sleep(1000)])
+      }
       await sleep(300)
       return pageState(tabId)
     }
     case 'screenshot': {
       const tabId = await ownedTab(a)
+      await frontTab(tabId)
       // 레티나 화면이면 2배로 찍혀 AI가 읽기에 너무 크다. 보이는 영역만, 가로 1280px 이하로 줄인다
       const v = await inPage(tabId, pageViewport)
       const scale = Math.min(1 / v.dpr, 1280 / (v.width * v.dpr)) * v.dpr

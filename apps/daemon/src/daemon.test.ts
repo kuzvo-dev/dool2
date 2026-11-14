@@ -295,3 +295,28 @@ describe('defaultDataDir', () => {
     expect(defaultDataDir({ DOOL2_DATA_DIR: '/x' }, 'darwin')).toBe('/x')
   })
 })
+
+describe('금고 API', () => {
+  it('비밀번호는 넣기만 하고 돌려주지 않는다', async () => {
+    const { api } = await boot()
+    const add = await api('/api/vault', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://shop.example/login', username: 'duri', password: 'pw-123' }),
+    })
+    expect(add.status).toBe(200)
+    const list = await (await api('/api/vault')).text()
+    expect(list).toContain('https://shop.example')
+    expect(list).not.toContain('pw-123')
+    const bad = await api('/api/vault', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'http://shop.example', username: 'a', password: 'b' }),
+    })
+    expect(bad.status).toBe(400)
+  })
+
+  it('도구 토큰으로는 금고를 볼 수 없다', async () => {
+    await boot()
+    const res = await fetch(`${daemon?.url}/api/vault`, { headers: { authorization: 'Bearer nope' } })
+    expect(res.status).toBe(401)
+  })
+})

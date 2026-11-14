@@ -239,3 +239,21 @@ export interface HandoffRecord {
   tabId?: number
   reason: string
 }
+
+// ── 두리 금고 (ADR 0011): 로그인 정보는 PC 키체인에, AI가 아니라 두리가 채운다 ──────
+
+export const VaultEntryRequestSchema = z.object({
+  /** 사이트 주소 (예: https://nid.naver.com/nidlogin.login). 주소의 origin만 저장한다 */
+  url: z.string().trim().min(3).max(500),
+  username: z.string().min(1).max(200),
+  password: z.string().min(1).max(500),
+})
+
+/** 화면에 보여 줄 금고 항목. 비밀번호는 절대 내보내지 않는다 */
+export interface VaultEntry {
+  id: string
+  origin: string
+  username: string
+  createdAt: string
+  lastUsedAt?: string
+}
