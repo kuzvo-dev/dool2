@@ -46,4 +46,5 @@ pnpm lint && pnpm build && pnpm typecheck && pnpm test
 - **AI는 두리 도구만 쓴다.** 에이전트의 셸·파일·웹 기능은 끄고, 돈 내기·연락하기는 폰 서명이 있어야만 실행해요.
 - **공식 프로그램은 수정하지 않고 실행만 한다.** Claude Code 로그인·토큰은 두리가 다루지 않아요.
 - 사용자에게 보이는 문구는 두리 페르소나([docs/persona.md](docs/persona.md))에 맞춰요.
+- 앱 화면·문서·README·랜딩에 **다른 회사의 제품 이름이나 그 내용을 넣지 않아요.** 비교가 필요하면 "클라우드 서버의 브라우저에서 일하는 방식"처럼 방식으로만 써요. 연동하는 도구(Claude Code, Codex, Chrome 등)의 이름은 괜찮아요.
 - 구조를 바꾸는 결정은 [결정 기록(ADR)](docs/decisions/README.md)을 함께 올려요. 보안 가정이 바뀌면 [위협 모델](docs/security/threat-model.md)도 고쳐요.

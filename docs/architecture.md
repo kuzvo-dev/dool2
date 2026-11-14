@@ -215,7 +215,7 @@ interface ThreadHandle {
 
 ## 5. 두리의 손: 브라우저와 PC 제어
 
-두리는 사용자 PC를 원격으로 대신 조작한다. 피클(Pickle)은 같은 일을 **자기 서버의 클라우드 브라우저**에서 한다(미국 Kernel). 그래서 해외 IP 로그인 경고가 뜨고, 브라우저 밖의 일은 못 한다. 두리는 **사용자의 진짜 PC**에서 한다. 집 IP, 이미 깔린 프로그램(카카오톡 PC, 한글, 엑셀, 공동인증서·은행 보안 프로그램)까지 다룰 수 있다.
+두리는 사용자 PC를 원격으로 대신 조작한다. 같은 일을 **서비스 회사 서버의 클라우드 브라우저**에서 하는 방식도 있지만, 그러면 해외·데이터센터 IP 로그인 경고가 뜨고 브라우저 밖의 일은 못 한다. 두리는 **사용자의 진짜 PC**에서 한다. 집 IP, 이미 깔린 프로그램(카카오톡 PC, 한글, 엑셀, 공동인증서·은행 보안 프로그램)까지 다룰 수 있다.
 
 ### 5.0 가장 정확한 방법부터 쓴다
 
@@ -258,7 +258,7 @@ interface ThreadHandle {
   - 확장 프로그램 사이드 패널, 툴바 배지
   - 탭 위에 겹치는 두리 앱의 투명 창. 페이지 코드는 건드리지 않는다.
 
-**쓰지 않는 것**: Chromium 포크(보안 패치를 혼자 따라갈 수 없음), ego lite·Aside 같은 외부 에이전트 브라우저(맥 전용, 본체 비공개, 또는 경쟁 제품).
+**쓰지 않는 것**: Chromium 포크(보안 패치를 혼자 따라갈 수 없음), 외부 AI 전용 브라우저(본체가 비공개이거나 특정 OS 전용이고, 사용자가 브라우저를 바꿔야 함).
 
 ### 브라우저: Chrome 하나로 통일 (없으면 두리가 깔아 준다)
 
@@ -284,7 +284,7 @@ AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드�
 - **같은 브라우저의 "두리" 프로필**에 확장을 설치한다. 진짜 Chrome 그대로이고 로그인만 따로 한 번 하면 된다. 가장 추천하는 대안이다.
 - 확장 설치가 막힌 환경에서만 두리가 Chrome을 별도 데이터 폴더로 평범하게 실행한 뒤 CDP로 붙는다. 이때도 자동화 표시(`--enable-automation`)는 남기지 않는다.
 
-**검토 후 기본안에서 뺀 것: 자체 Chromium + 기존 브라우저 로그인 가져오기** (ego lite의 `import` 방식)
+**검토 후 기본안에서 뺀 것: 자체 Chromium + 기존 브라우저 로그인 가져오기**
 - 맥: 키체인의 "Chrome Safe Storage" 키를 사용자 허용으로 읽으면 쿠키를 복호화해서 옮길 수 있다. 실제로 된다.
 - 윈도우: Chrome 127+의 앱 전용 암호화(App-Bound Encryption) 때문에 다른 프로그램은 쿠키 키를 정상적으로 풀 수 없다. 이걸 뚫는 방법은 정보 탈취 악성코드가 쓰는 기법과 같아서 백신에 걸린다. **사실상 불가**하다.
 - 옮긴 쿠키는 갈수록 덜 통한다.
@@ -399,7 +399,6 @@ AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드�
   - 네이티브는 APNs·FCM으로 보낸다.
   - 푸시 본문에는 내용을 넣지 않는다("두리가 확인할 게 있어요").
 - 자체 호스팅: 같은 규약을 쓰는 Node 버전(Docker 이미지)을 함께 제공한다.
-- 참고 사례: Happy(MIT). Claude Code·Codex를 폰에서 쓰게 해 주는 오픈소스로, 암호문만 저장하는 중계 서버와 QR 키 교환 구조가 두리와 가장 비슷하다.
 
 ### 6.4 사람이 할 차례: 캡차·본인인증·로그인 넘겨받기
 
@@ -425,28 +424,16 @@ AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드�
 - 영상이라 트래픽이 크다. 처음에는 낮은 화질과 프레임으로 중계 서버를 거친다. 나중에 WebRTC P2P로 바꾸고, 중계 서버는 연결 신호만 맡는다.
 - 한계: 결제 팝업, 새 창, 네이티브 대화상자는 따로 붙여야 한다. 은행 보안 키패드는 원격 입력이 막힐 수 있다.
 
-### 6.5 공식 기능과 무엇이 다른가
+### 6.5 두리가 다른 점
 
-**경쟁 상황 (2026-11 기준)**: AI 회사들도 "폰으로 부탁하면 내 PC가 일한다"를 직접 내놓고 있다.
-- Claude Desktop의 Dispatch와 computer use: 폰에서 맡기면 맥·윈도우 PC를 조작한다.
-- Codex 앱: ChatGPT 모바일 원격 조작과 computer use를 제공한다.
-
-두리는 이들과 "원격 채팅"이나 "PC 조작" 자체로 경쟁하지 않는다. 두리가 다른 점은 다음과 같다.
+"폰으로 부탁하면 내 PC가 일한다"는 기능 자체는 여러 곳에서 나오고 있다. 두리는 "원격 채팅"이나 "PC 조작" 자체로 승부하지 않는다. 두리가 다른 점은 다음과 같다.
 1. 돈 내기·연락하기를 **PC가 직접 확인하는 폰 서명**으로 막는다.
-2. 대화가 AI 회사 서버 기록이 아니라 **종단 간 암호화**로 내 PC에만 남는다.
+2. 대화가 서비스 회사 서버 기록이 아니라 **종단 간 암호화**로 내 PC에만 남는다. 구간 암호화(TLS)만 하는 원격 기능과 다르다.
 3. **한국 서비스 스킬**이 있다: SRT, 캐치테이블, 쿠팡, 홈택스, 카카오톡 PC 등.
 4. Claude와 ChatGPT 중 **아무 구독이나** 쓴다.
 5. 개발자 도구가 아니라 **일반인용 화면과 설치**다.
 
 이 다섯 가지가 랜딩 메시지의 중심이어야 한다.
-
-**Anthropic Remote Control과의 차이**
-- Claude Code에는 공식 Remote Control이 있다. 하지만 구간 암호화(TLS)라서 대화 기록이 Anthropic 서버에 남는다. PC가 직접 확인할 수 있는 허락 서명도 없다.
-- 두리가 다른 점은 세 가지다.
-  - 종단 간 암호화
-  - 코드로 강제하는 폰 서명 게이트
-  - 한국 서비스 스킬
-- Remote Control과 기능이 겹치는 부분(그냥 원격 채팅)으로는 경쟁하지 않는다.
 
 ## 7. PC 앱
 
@@ -650,7 +637,6 @@ PC가 잠들면 두리도 잠시 쉬어요. 맡긴 일은 PC가 깨어나면 이
 - Claude Code 법적 고지(인증·자격 사용): https://code.claude.com/docs/en/legal-and-compliance
 - Claude Code 헤드리스·CLI: https://code.claude.com/docs/en/headless , https://code.claude.com/docs/en/cli-reference
 - Agent SDK 개요(제3자 로그인 문구): https://code.claude.com/docs/en/agent-sdk/overview
-- Claude Code Remote Control: https://code.claude.com/docs/en/remote-control
 - Sign in with ChatGPT (오픈소스 앱): https://developers.openai.com/siwc/token-sharing-open-source.md
 - SIWC + app-server: https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server.md
 - Codex app-server: https://learn.chatgpt.com/docs/app-server.md
@@ -660,4 +646,3 @@ PC가 잠들면 두리도 잠시 쉬어요. 맡긴 일은 PC가 깨어나면 이
 - Durable Objects 가격: https://developers.cloudflare.com/durable-objects/platform/pricing/
 - WebAuthn 명세: https://www.w3.org/TR/webauthn-3/
 - 윈도우 코드 서명 선택지: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
-- Happy(참고 구현): https://github.com/slopus/happy
