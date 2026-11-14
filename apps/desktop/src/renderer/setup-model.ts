@@ -9,9 +9,16 @@ export const AI_CHOICE_LABEL: Record<AiChoice, string> = {
   codex: 'ChatGPT',
   both: 'Claude와 ChatGPT 둘 다',
   unsure: '두리가 고르기',
+  payg: '구독 없이 쓴 만큼만 (API 키)',
 }
 
-export type CheckAction = 'claude-install' | 'claude-login' | 'codex-login' | 'chrome-install'
+export type CheckAction =
+  | 'claude-install'
+  | 'claude-login'
+  | 'codex-login'
+  | 'chrome-install'
+  | 'opencode-install'
+  | 'payg-key'
 
 export interface CheckItem {
   id: string
@@ -32,6 +39,7 @@ export const CHOICES: { id: AiChoice; title: string; sub: string }[] = [
 export function neededAgents(choice: AiChoice): AgentId[] {
   if (choice === 'claude') return ['claude']
   if (choice === 'codex') return ['codex']
+  if (choice === 'payg') return ['opencode']
   return ['claude', 'codex']
 }
 
@@ -84,6 +92,34 @@ export function checklist(choice: AiChoice, agents: AgentStatus[], chrome?: Chro
               ok: false,
               detail: 'Claude 계정으로 로그인해 주세요',
               action: 'claude-login',
+            },
+      )
+    } else if (id === 'opencode') {
+      items.push(
+        a?.installed
+          ? { id: 'opencode-app', label: '종량제 실행기', ok: true, detail: '준비돼 있어요' }
+          : {
+              id: 'opencode-app',
+              label: '종량제 실행기',
+              ok: false,
+              detail: '처음 한 번 받아 둘게요 (약 110MB)',
+              action: 'opencode-install',
+            },
+      )
+      items.push(
+        a?.loggedIn
+          ? {
+              id: 'payg-key',
+              label: 'API 키',
+              ok: true,
+              detail: a.plan ? `${a.plan}로 연결됐어요` : '연결됐어요',
+            }
+          : {
+              id: 'payg-key',
+              label: 'API 키',
+              ok: false,
+              detail: '쓸 AI 회사의 API 키를 넣어 주세요',
+              action: 'payg-key',
             },
       )
     } else {

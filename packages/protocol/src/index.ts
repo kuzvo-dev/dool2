@@ -90,7 +90,7 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>
 // ── 설정 (이 PC에만 저장) ──────────────────────────────────────
 
 /** 첫 실행 때 고른 AI 구독. 잘 모르면 'unsure' */
-export const AiChoiceSchema = z.enum(['claude', 'codex', 'both', 'unsure'])
+export const AiChoiceSchema = z.enum(['claude', 'codex', 'both', 'unsure', 'payg'])
 export type AiChoice = z.infer<typeof AiChoiceSchema>
 
 export const SettingsSchema = z.object({
@@ -103,6 +103,8 @@ export const SettingsSchema = z.object({
   keepAwake: z.enum(['working', 'always', 'off']).optional(),
   /** PC를 켜면 두리도 자동으로 켜기 */
   launchAtLogin: z.boolean().optional(),
+  /** 종량제 모드에서 고른 제공자·모델 (API 키는 여기 두지 않고 OS 키체인에) */
+  payg: z.object({ provider: z.string(), model: z.string() }).optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -137,6 +139,37 @@ export interface ChromeStatus {
   version?: string
   path?: string
 }
+
+// ── 종량제 (API 키) ──────────────────────────────────────────────
+
+export interface PaygModel {
+  id: string
+  label: string
+}
+
+export interface PaygProvider {
+  id: string
+  label: string
+  /** 키를 받는 곳 */
+  keyUrl: string
+  models: PaygModel[]
+}
+
+/** 저장된 종량제 계정. API 키 자체는 절대 내보내지 않는다 */
+export interface PaygAccount {
+  provider: string
+  model: string
+  hasKey: boolean
+  /** 키 끝 4자리 (확인용) */
+  keyHint?: string
+}
+
+export const PaygAccountRequestSchema = z.object({
+  provider: z.string().min(1).max(40),
+  model: z.string().min(1).max(120),
+  /** 비우면 모델만 바꾼다 */
+  apiKey: z.string().trim().min(8).max(500).optional(),
+})
 
 export const ClaudeLoginCodeSchema = z.object({
   code: z.string().trim().min(1).max(2_000),

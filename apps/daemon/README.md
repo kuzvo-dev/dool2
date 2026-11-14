@@ -11,21 +11,24 @@ pnpm dev:daemon   # 주소와 토큰을 출력해요
 
 `127.0.0.1`에서만 받고, 모든 요청에 `Authorization: Bearer <토큰>`이 필요해요. 토큰은 실행할 때마다 새로 만들어요.
 
-| 메서드              | 경로                            | 설명                                                  |
-| ------------------- | ------------------------------- | ----------------------------------------------------- |
-| GET                 | `/api/health`                   | 살아 있는지                                           |
-| GET                 | `/api/agents`                   | Claude Code·Codex 설치·로그인 상태                    |
-| POST                | `/api/agents/codex/login`       | ChatGPT 로그인 (끝날 때까지 기다림)                   |
-| GET / POST / DELETE | `/api/agents/claude/login`      | Claude 로그인 상태 / 시작(로그인 주소) / 취소         |
-| POST                | `/api/agents/claude/login/code` | 브라우저에 나온 코드를 공식 로그인에 넘김             |
-| GET / POST / DELETE | `/api/agents/claude/install`    | Claude Code 설치 상태(단계·진행률) / 시작 / 취소      |
-| GET                 | `/api/browser`                  | Chrome 설치 여부·버전                                 |
-| GET / POST / DELETE | `/api/browser/install`          | Chrome 설치 상태 / 시작 / 취소                        |
-| GET / PATCH         | `/api/settings`                 | 설정 읽기 / 바꿀 항목만 저장                          |
-| GET / POST          | `/api/threads`                  | 대화 목록 / 새 대화                                   |
-| GET                 | `/api/threads/:id`              | 대화와 메시지                                         |
-| POST                | `/api/threads/:id/messages`     | 메시지 보내기. 응답은 SSE 스트림(`DaemonStreamEvent`) |
-| POST                | `/api/threads/:id/cancel`       | 진행 중인 답 멈추기                                   |
+| 메서드              | 경로                            | 설명                                                                    |
+| ------------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| GET                 | `/api/health`                   | 살아 있는지                                                             |
+| GET                 | `/api/agents`                   | Claude Code·Codex 설치·로그인 상태                                      |
+| POST                | `/api/agents/codex/login`       | ChatGPT 로그인 (끝날 때까지 기다림)                                     |
+| GET / POST / DELETE | `/api/agents/claude/login`      | Claude 로그인 상태 / 시작(로그인 주소) / 취소                           |
+| POST                | `/api/agents/claude/login/code` | 브라우저에 나온 코드를 공식 로그인에 넘김                               |
+| GET / POST / DELETE | `/api/agents/claude/install`    | Claude Code 설치 상태(단계·진행률) / 시작 / 취소                        |
+| GET                 | `/api/browser`                  | Chrome 설치 여부·버전                                                   |
+| GET / POST / DELETE | `/api/browser/install`          | Chrome 설치 상태 / 시작 / 취소                                          |
+| GET                 | `/api/agents/opencode/catalog`  | 종량제로 고를 수 있는 AI 제공자·모델                                    |
+| GET / PUT / DELETE  | `/api/agents/opencode/account`  | 종량제 계정 (제공자·모델·API 키). 키는 저장만 하고 끝 4자리만 보여 줘요 |
+| GET / POST / DELETE | `/api/agents/opencode/install`  | 종량제 실행기 설치 상태 / 시작 / 취소                                   |
+| GET / PATCH         | `/api/settings`                 | 설정 읽기 / 바꿀 항목만 저장                                            |
+| GET / POST          | `/api/threads`                  | 대화 목록 / 새 대화                                                     |
+| GET                 | `/api/threads/:id`              | 대화와 메시지                                                           |
+| POST                | `/api/threads/:id/messages`     | 메시지 보내기. 응답은 SSE 스트림(`DaemonStreamEvent`)                   |
+| POST                | `/api/threads/:id/cancel`       | 진행 중인 답 멈추기                                                     |
 
 ## 데이터 폴더
 

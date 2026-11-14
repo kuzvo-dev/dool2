@@ -86,43 +86,46 @@ function agentState(a: AgentStatus): { cls: string; text: string } {
 function renderAgents() {
   const box = $('agents')
   box.replaceChildren(
-    ...state.agents.map((a) => {
-      const el = document.createElement('div')
-      el.className = 'agent'
-      const s = agentState(a)
-      const row = document.createElement('div')
-      row.className = 'row'
-      const name = document.createElement('strong')
-      name.textContent = AGENT_LABEL[a.id]
-      const chip = document.createElement('span')
-      chip.className = `state ${s.cls}`
-      chip.textContent = s.text
-      row.append(name, chip)
-      const meta = document.createElement('p')
-      meta.className = 'cap'
-      meta.textContent =
-        [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
-        ' '
-      el.append(row, meta)
-      if (a.installed && !a.loggedIn) {
-        const btn = document.createElement('button')
-        btn.className = 'act'
-        btn.type = 'button'
-        if (a.id === 'codex') {
-          btn.textContent = 'ChatGPT로 로그인 →'
-          btn.onclick = async () => {
-            btn.textContent = '브라우저에서 로그인해 주세요…'
-            await api('/api/agents/codex/login', { method: 'POST' }).catch(() => {})
-            await loadAgents()
+    // 종량제 실행기는 준비한 사람에게만 보여 준다
+    ...state.agents
+      .filter((a) => a.id !== 'opencode' || a.installed)
+      .map((a) => {
+        const el = document.createElement('div')
+        el.className = 'agent'
+        const s = agentState(a)
+        const row = document.createElement('div')
+        row.className = 'row'
+        const name = document.createElement('strong')
+        name.textContent = AGENT_LABEL[a.id]
+        const chip = document.createElement('span')
+        chip.className = `state ${s.cls}`
+        chip.textContent = s.text
+        row.append(name, chip)
+        const meta = document.createElement('p')
+        meta.className = 'cap'
+        meta.textContent =
+          [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
+          ' '
+        el.append(row, meta)
+        if (a.installed && !a.loggedIn) {
+          const btn = document.createElement('button')
+          btn.className = 'act'
+          btn.type = 'button'
+          if (a.id === 'codex') {
+            btn.textContent = 'ChatGPT로 로그인 →'
+            btn.onclick = async () => {
+              btn.textContent = '브라우저에서 로그인해 주세요…'
+              await api('/api/agents/codex/login', { method: 'POST' }).catch(() => {})
+              await loadAgents()
+            }
+          } else {
+            btn.textContent = 'Claude로 로그인 →'
+            btn.onclick = () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
           }
-        } else {
-          btn.textContent = 'Claude로 로그인 →'
-          btn.onclick = () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
+          el.append(btn)
         }
-        el.append(btn)
-      }
-      return el
-    }),
+        return el
+      }),
   )
   renderPick()
 }
@@ -130,18 +133,20 @@ function renderAgents() {
 function renderPick() {
   const box = $('agent-pick')
   box.replaceChildren(
-    ...(['claude', 'codex'] as AgentId[]).map((id) => {
-      const b = document.createElement('button')
-      b.type = 'button'
-      b.setAttribute('role', 'radio')
-      b.setAttribute('aria-checked', String(state.pick === id))
-      b.textContent = AGENT_LABEL[id]
-      b.onclick = () => {
-        state.pick = id
-        renderPick()
-      }
-      return b
-    }),
+    ...(['claude', 'codex', 'opencode'] as AgentId[])
+      .filter((id) => id !== 'opencode' || state.agents.some((a) => a.id === 'opencode' && a.installed))
+      .map((id) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.setAttribute('role', 'radio')
+        b.setAttribute('aria-checked', String(state.pick === id))
+        b.textContent = AGENT_LABEL[id]
+        b.onclick = () => {
+          state.pick = id
+          renderPick()
+        }
+        return b
+      }),
   )
 }
 

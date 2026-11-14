@@ -2,6 +2,7 @@
 // 두리 전용 폴더에서만 돌고, 두리 도구(MCP `dool2`)만 쓸 수 있게 묶는다. 실측: OpenCode v2.3.0, 2026-11-14.
 import { join } from 'node:path'
 import type { McpServerSpec } from '@dool2/engine'
+import type { PaygProvider } from '@dool2/protocol'
 
 export const DOOL2_AGENT = 'dool2'
 /** OpenCode는 MCP 도구 이름을 `<서버>_<도구>`로 만든다 */
@@ -115,3 +116,41 @@ export function buildOpenCodeEnv(input: OpenCodeEnvInput): NodeJS.ProcessEnv {
     [keyVar]: input.apiKey,
   }
 }
+
+/** 화면에서 고를 수 있는 제공자와 모델 (OpenCode v2.3.0 모델 목록에서 확인, 2026-11-14) */
+export const PAYG_PROVIDERS: PaygProvider[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    models: [
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 · 추천' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 · 저렴' },
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · 가장 똑똑함' },
+    ],
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI (GPT)',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    models: [
+      { id: 'gpt-5.6', label: 'GPT-5.6 · 추천' },
+      { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini · 저렴' },
+    ],
+  },
+  {
+    id: 'google',
+    label: 'Google (Gemini)',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · 추천' }],
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter (여러 회사 모델)',
+    keyUrl: 'https://openrouter.ai/keys',
+    models: [
+      { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
+      { id: 'openai/gpt-5.2', label: 'GPT-5.2' },
+    ],
+  },
+]

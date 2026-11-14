@@ -16,5 +16,7 @@ export function dataPaths(dataDir: string) {
     /** 에이전트 작업 폴더. 사용자 파일이 있는 곳이 아니다 */
     workspace: join(dataDir, 'workspace'),
     codexHome: join(dataDir, 'codex-home'),
+    /** 종량제 실행기(OpenCode) 설치와 그 데이터 */
+    opencode: join(dataDir, 'opencode'),
   }
 }
