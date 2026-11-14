@@ -2,7 +2,7 @@
 // 두리 본체(dool2d)를 같은 프로세스에서 띄우고, 화면에는 접속 주소와 토큰만 건넨다.
 // 창을 닫아도 트레이에 남아 일을 계속한다. 끝내기는 트레이 메뉴에서 한다 (docs/architecture.md 7.1).
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
 import type { Settings } from '@dool2/protocol'
@@ -110,6 +110,19 @@ function applySettings(settings: Settings) {
   updateTray()
 }
 
+/**
+ * 배포 앱 안의 두리 도구 서버와 Codex 위치 (scripts/package.mjs가 넣는다).
+ * 도구 서버는 Electron을 Node처럼 띄워 실행하므로 asar 밖(app.asar.unpacked)에 둔다.
+ */
+function packagedPaths() {
+  if (!app.isPackaged) return {}
+  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  return {
+    mcpServerScript: join(here, 'mcp-server.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`),
+    codexBin: join(process.resourcesPath, 'codex', exe),
+  }
+}
+
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
@@ -132,7 +145,7 @@ app.on('second-instance', showWindow)
 
 app.whenReady().then(async () => {
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
-  const d = await startDaemon({ dataDir })
+  const d = await startDaemon({ dataDir, ...packagedPaths() })
   daemon = d
   ipcMain.handle('dool2:config', () => ({
     url: d.url,

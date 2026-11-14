@@ -35,6 +35,10 @@ export interface DaemonOptions {
   /** 0이면 빈 포트를 고른다 */
   port?: number
   token?: string
+  /** 배포 앱: 묶어 둔 두리 도구 서버 스크립트 (없으면 @dool2/mcp-tools/server) */
+  mcpServerScript?: string
+  /** 배포 앱: 함께 넣은 Codex 실행 파일 */
+  codexBin?: string
   /** 테스트용: Chrome 확인·설치를 바꿔 끼운다 */
   chrome?: { detect(): Promise<ChromeStatus>; createInstall?(downloadDir: string): ChromeInstall }
   /** 테스트용: 에이전트를 바꿔 끼운다 */
@@ -61,9 +65,8 @@ export interface Daemon {
 }
 
 /** 두리 MCP 도구 서버를 띄우는 방법. Electron 안에서는 Electron을 Node처럼 실행한다. */
-export function dool2McpServer(): McpServerSpec {
-  const req = createRequire(import.meta.url)
-  const script = req.resolve('@dool2/mcp-tools/server')
+export function dool2McpServer(scriptPath?: string): McpServerSpec {
+  const script = scriptPath ?? createRequire(import.meta.url).resolve('@dool2/mcp-tools/server')
   const inElectron = Boolean(process.versions.electron)
   return {
     name: 'dool2',
@@ -81,13 +84,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const store = new Store(paths.db)
   const runtimes: Partial<Record<AgentId, AgentRuntime>> = opts.runtimes ?? {
     claude: new ClaudeRuntime(),
-    codex: new CodexRuntime({ codexHome: paths.codexHome }),
+    codex: new CodexRuntime({
+      codexHome: paths.codexHome,
+      ...(opts.codexBin ? { binPath: opts.codexBin } : {}),
+    }),
   }
   const threads = new ThreadService({
     store,
     runtimes,
     workspaceDir: paths.workspace,
-    mcpServers: [dool2McpServer()],
+    mcpServers: [dool2McpServer(opts.mcpServerScript)],
   })
   const token = opts.token ?? randomBytes(32).toString('hex')
 

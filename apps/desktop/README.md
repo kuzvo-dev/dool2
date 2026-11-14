@@ -35,3 +35,15 @@ DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=latest pnpm --filter @dool2/desk
 | `DOOL2_DATA_DIR`   | 데이터 폴더 (기본: OS 표준 위치)            |
 | `DOOL2_SMOKE_OUT`  | 캡처를 저장할 폴더                          |
 | `DOOL2_SMOKE_OPEN` | `latest`면 가장 최근 대화를 열어 둔 채 캡처 |
+
+## 설치 파일 만들기 (서명 없음, 개발용)
+
+```bash
+pnpm build
+pnpm --filter @dool2/desktop package   # → apps/desktop/release/dool2-<버전>-<arch>.dmg (윈도우는 .exe)
+```
+
+- 메인 프로세스와 두리 도구 서버를 esbuild로 한 파일씩 묶어 `stage/`에 모으고, 이 컴퓨터용 Codex 실행 파일을 함께 넣어요.
+- 앱 내부 이름은 `Dool2`예요. 한글 이름이면 맥에서 Electron 도우미("두리 Helper")를 못 찾고 켜자마자 꺼져요. 사용자에게 보이는 이름은 "두리"예요.
+- 코드 서명·공증·자동 업데이트는 M5에서 붙여요. 지금 만든 dmg는 서명이 없어서 다른 맥에서는 "확인되지 않은 개발자" 경고가 떠요.
+- 크기 대부분(약 270MB)은 Codex 실행 파일이에요. 처음 쓸 때 내려받는 방식으로 줄이는 걸 검토하고 있어요.
