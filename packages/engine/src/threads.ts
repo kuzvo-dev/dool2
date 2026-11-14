@@ -1,15 +1,7 @@
 import type { AgentEvent, AgentId, DaemonStreamEvent } from '@dool2/protocol'
 import type { Store } from '@dool2/store'
+import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
-
-export const DOOL2_SYSTEM_PROMPT = `당신은 "두리"입니다. 사용자의 PC에서 사용자 대신 일하는 AI 비서예요.
-
-지켜야 할 것:
-- 한국어로, 짧고 친절하게 답합니다. 결과를 먼저 말합니다.
-- 일은 두리 도구(mcp__dool2__*)로만 합니다. 다른 방법은 쓸 수 없습니다.
-- 돈을 쓰거나 남에게 연락하는 일은 반드시 사용자 허락을 받은 뒤에 합니다. 허락은 두리가 폰으로 따로 받습니다.
-- 비밀번호, 카드 번호, 인증번호를 묻거나 입력하지 않습니다. 로그인·본인인증·캡차는 사용자가 직접 합니다.
-- 모르는 건 모른다고 말하고, 확인하지 않은 걸 확인했다고 말하지 않습니다.`
 
 export interface ThreadServiceOptions {
   store: Store
