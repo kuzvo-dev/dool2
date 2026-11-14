@@ -2,11 +2,13 @@
 // M0: 로컬 API(127.0.0.1 + 토큰)로 대화를 받아 Claude Code·Codex를 돌리고 기록을 남긴다.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
 import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS } from '@dool2/agent-opencode'
@@ -40,10 +42,12 @@ import {
 import { Store } from '@dool2/store'
 import { BrowserTools } from './browser-tools.js'
 import { dataPaths, defaultDataDir } from './paths.js'
+import { Skills } from './skills.js'
 import { Vault } from './vault.js'
 
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { dataPaths, defaultDataDir } from './paths.js'
+export { parseSkill, Skills, validateSkill } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
 export interface DaemonOptions {
@@ -64,6 +68,8 @@ export interface DaemonOptions {
    * 없으면 등록하지 않는다. 점검 모드·테스트는 사용자 Chrome을 건드리지 않게 비워 둔다.
    */
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
+  /** 스킬 폴더 (기본: 레포의 skills/, 배포 앱은 앱 안에 넣은 것) */
+  skillsDir?: string
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
 }
@@ -135,6 +141,12 @@ export function dool2BrowserHost(scriptPath?: string): HostRuntime {
   }
 }
 
+/** 개발 중에는 레포의 skills/ (apps/daemon/dist → ../../../skills) */
+function defaultSkillsDir(): string | undefined {
+  const dir = fileURLToPath(new URL('../../../skills', import.meta.url))
+  return existsSync(dir) ? dir : undefined
+}
+
 export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const paths = dataPaths(opts.dataDir ?? defaultDataDir())
   await mkdir(paths.workspace, { recursive: true })
@@ -180,6 +192,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browser.on('status', (s) => events.emit('extension', s))
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault)
+  const skills = new Skills(opts.skillsDir ?? defaultSkillsDir())
   if (opts.nativeHost) {
     const { script, ...where } = opts.nativeHost
     await registerNativeHost({ dataDir: paths.dataDir, runtime: dool2BrowserHost(script), ...where }).catch(
@@ -246,6 +259,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'POST' && b === 'browser' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         return json(res, 200, await browserTools.run(c, args && typeof args === 'object' ? args : {}))
+      }
+      if (req.method === 'POST' && b === 'skill' && c && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        return json(res, 200, await skills.run(c, args && typeof args === 'object' ? args : {}))
       }
       return json(res, 404, { error: '없는 주소예요' })
     }

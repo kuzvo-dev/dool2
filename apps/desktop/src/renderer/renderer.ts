@@ -35,6 +35,9 @@ const AGENT_LABEL: Record<AgentId, string> = {
 /** 일하는 중 표시: "웹페이지 여는 중…" (도구 이름 앞의 mcp__dool2__ / dool2_는 떼고 본다) */
 const TOOL_LABEL: Record<string, string> = {
   status: '두리 상태 확인하는',
+  skill_find: '사용법 찾는',
+  skill_read: '사용법 읽는',
+  browser_login: '금고로 로그인 칸 채우는',
   browser_open: '웹페이지 여는',
   browser_navigate: '웹페이지 여는',
   browser_read: '페이지 읽는',

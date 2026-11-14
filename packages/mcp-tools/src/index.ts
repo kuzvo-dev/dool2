@@ -3,7 +3,7 @@
 // (docs/architecture.md 2장).
 import { arch, platform } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { type BrowserClient, daemonClient, registerBrowserTools } from './browser.js'
+import { type BrowserClient, daemonClient, registerBrowserTools, registerSkillTools } from './browser.js'
 
 export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
 
@@ -13,6 +13,8 @@ export interface ToolContext {
   now?: () => Date
   /** 브라우저 도구를 실행할 곳 (기본: 환경 변수의 두리 본체) */
   browser?: BrowserClient
+  /** 스킬 도구를 실행할 곳 */
+  skills?: BrowserClient
 }
 
 export function statusText(ctx: ToolContext = {}) {
@@ -44,6 +46,7 @@ export function createServer(ctx: ToolContext = {}) {
     },
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
+  registerSkillTools(server, ctx.skills ?? daemonClient(process.env, 'skill'))
   registerBrowserTools(server, ctx.browser ?? daemonClient())
   return server
 }
