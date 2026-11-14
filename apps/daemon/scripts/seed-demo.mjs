@@ -37,5 +37,9 @@ store.addMessage(
   'assistant',
   '저는 두리예요. 이 컴퓨터 안에 살면서 부탁하신 일을 대신 해요.\n\n돈이 드는 일이나 누군가에게 연락하는 일은 꼭 먼저 여쭤볼게요. 오늘은 뭐부터 할까요?',
 )
+// 첫 실행 마법사는 끝낸 상태로 둔다
+store.setSetting('setupDone', true)
+store.setSetting('aiChoice', 'both')
+store.setSetting('defaultAgent', 'claude')
 store.close()
 console.log(`데모 데이터를 만들었어요: ${dir}`)
