@@ -671,7 +671,11 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           const text = el('div', 'text')
           text.append(
             el('strong', undefined, p.name),
-            el('span', undefined, `연결한 날 ${new Date(p.pairedAt).toLocaleDateString('ko-KR')}`),
+            el(
+              'span',
+              undefined,
+              `연결한 날 ${new Date(p.pairedAt).toLocaleDateString('ko-KR')} · ${p.push ? '알림 받음' : '알림 꺼짐 (폰 앱에서 [알림 켜기])'}`,
+            ),
           )
           li.append(
             text,
