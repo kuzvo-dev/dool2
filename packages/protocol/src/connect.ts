@@ -61,6 +61,8 @@ export const ConnectCardSchema = z
       .optional(),
     category: ConnectCategorySchema,
     how: ConnectHowSchema,
+    /** 로그인 화면 주소 (첫 화면에서 로그인 링크를 찾기 어려운 사이트만) */
+    loginUrl: z.string().url().startsWith('https://').optional(),
     /** 연결할 때 사용자가 하는 로그인: "아이디·비밀번호", "카카오·네이버 간편 로그인" */
     login: line(40).optional(),
     /** 상세 화면 첫 문단. "~하면 ~까지 두리에게 맡길 수 있어요." 한두 문장 */
