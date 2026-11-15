@@ -79,6 +79,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/protocol
     devDependencies:
+      '@dool2/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       electron:
         specifier: ^45.3.2
         version: 45.3.2
@@ -97,6 +100,9 @@ importers:
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@dool2/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@types/chrome':
         specifier: ^0.1.0
         version: 0.1.43
@@ -117,6 +123,9 @@ importers:
       '@dool2/relay':
         specifier: workspace:*
         version: link:../relay
+      '@dool2/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
