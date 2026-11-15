@@ -45,6 +45,14 @@ describe('두리 MCP 도구', () => {
       'screen_screenshot',
       'screen_request_app',
       'screen_request_approval',
+      'goal_create',
+      'goal_list',
+      'goal_update',
+      'goal_delete',
+      'library_save',
+      'memory_save',
+      'memory_forget',
+      'feed_post',
     ])
 
     const res = await client.callTool({ name: 'status', arguments: {} })

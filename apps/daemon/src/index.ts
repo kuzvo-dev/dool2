@@ -19,7 +19,13 @@ import {
   type HostRuntime,
   registerNativeHost,
 } from '@dool2/browser'
-import { type AgentRuntime, ConversationService, type McpServerSpec, ThreadService } from '@dool2/engine'
+import {
+  type AgentRuntime,
+  ConversationService,
+  DOOL2_SYSTEM_PROMPT,
+  type McpServerSpec,
+  ThreadService,
+} from '@dool2/engine'
 import {
   type AgentId,
   AgentIdSchema,
@@ -35,11 +41,13 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionStatus,
   FocusTabSchema,
+  type LifeAction,
   LoginSubmitSchema,
   PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
   previewText,
+  type Routine,
   type ScreenControlStatus,
   SendMessageRequestSchema,
   type Settings,
@@ -49,13 +57,14 @@ import {
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
-import { appNote } from '@dool2/protocol/rich'
+import { appNote, readAppNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { autoLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
+import { Life } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { ScreenTools } from './screen-tools.js'
@@ -220,11 +229,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 두리 도구 서버(MCP)는 에이전트가 띄우는 자식이라 화면용 토큰과 다른 토큰을 준다. 이 토큰은 도구 주소만 부를 수 있다 (T5)
   const toolToken = randomBytes(32).toString('hex')
   const mcp = dool2McpServer(opts.mcpServerScript)
+  /** 목표·보관함·기억·피드 */
+  const life = new Life(store)
   const threads = new ThreadService({
     store,
     runtimes,
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
+    // 기억은 대화마다 지침 끝에 붙는다
+    systemPrompt: () => [DOOL2_SYSTEM_PROMPT, life.memoryPrompt()].filter(Boolean).join('\n\n'),
   })
   /** 대화는 하나 (ADR 0015): 구간을 고르고 바꾸는 일 */
   const conversation = new ConversationService({ store, threads })
@@ -426,6 +439,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         connectMark(card.id, action === 'mark')
         return {}
       },
+      life: async () => life.state(),
+      lifeAction: async (a) => {
+        life.act(a)
+        return life.state()
+      },
       connectLogin: async (id, username, password) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
@@ -490,8 +508,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const toPhones = link.streamer(threadId)
     // 이번 답에서 승인 요청·직접 해 주세요가 나왔는지 (그러면 "끝났어요" 알림은 따로 보내지 않는다)
     let asked = false
+    // 피드 "끝낸 일": 도구를 써서 일한 차례의 부탁과 답
+    let askText = ''
+    let usedTool = false
+    let answerText = ''
     try {
       for await (const ev of inner) {
+        if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text))
+          askText = ev.message.text
+        if (ev.type === 'agent' && ev.event.type === 'tool' && !/life|status|skill/.test(ev.event.name))
+          usedTool = true
+        if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, event: ev })
         if (ev.type === 'saved' && ev.message.role === 'tool') {
@@ -517,6 +544,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     } finally {
       activeThreads.delete(threadId)
+      if (usedTool && askText && answerText && !routineThreads.has(threadId))
+        life.feed({
+          kind: 'done',
+          title: askText.slice(0, 60),
+          body: answerText.slice(0, 300),
+          ref: threadId,
+        })
       // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
       const next = pendingFollowUps.get(threadId)?.shift()
       if (next) setTimeout(() => followUp(threadId, next), 0)
@@ -636,6 +670,68 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })().catch(() => {})
     return { queued: false }
   }
+  // ── 목표·알아서 하는 일: 정해진 때 두리가 한다 ──
+  /** 예약한 일을 하고 있는 대화 (그 차례는 피드 "끝낸 일"에 따로 넣지 않는다) */
+  const routineThreads = new Set<string>()
+  /** 피드 글은 대화를 어지럽히지 않게 따로 쓰는 대화에서 */
+  const feedThreadId = async () => {
+    const saved = store.getSetting('feedThread')
+    if (typeof saved === 'string' && store.getThread(saved)) return saved
+    const t = store.createThread(await pickAgent(undefined))
+    store.updateThread(t.id, { title: '두리 피드' })
+    store.setSetting('feedThread', t.id)
+    return t.id
+  }
+  async function runRoutine(r: Routine) {
+    let threadId: string
+    let text: string
+    if (r.target === 'feed') {
+      threadId = await feedThreadId()
+      text = r.prompt
+    } else {
+      // 대화로: 답하는 중이면 줄을 선다
+      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${r.prompt}`)
+      if (conversationBusy()) {
+        queued.push(text)
+        live.emit('event', { kind: 'queued', texts: [...queued] })
+        return
+      }
+      threadId = (await conversation.prepare(await pickAgent(undefined))).session.id
+    }
+    if (threads.isRunning(threadId)) return
+    routineThreads.add(threadId)
+    let answer = ''
+    try {
+      for await (const ev of tracked(threadId, threads.send(threadId, text)))
+        if (ev.type === 'saved' && ev.message.role === 'assistant') answer = ev.message.text
+    } finally {
+      routineThreads.delete(threadId)
+    }
+    if (!answer) return
+    life.noteRun(r.id, answer)
+    void link
+      .notify({
+        title: r.target === 'feed' ? '피드에 새 글' : r.title,
+        body: answer.replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
+        tag: `routine-${r.id}`,
+        url: r.target === 'feed' ? '#tab=feed' : '#tab=chat',
+      })
+      .catch(() => {})
+  }
+  life.onDue = (r) =>
+    void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
+  const lifeTimer = setInterval(() => life.tick(), 30_000)
+  lifeTimer.unref?.()
+  // 바뀌면 폰·PC에 다시 보낸다 (잠깐 모아서)
+  let lifePush: ReturnType<typeof setTimeout> | undefined
+  life.onChange = () => {
+    clearTimeout(lifePush)
+    lifePush = setTimeout(() => {
+      void link.broadcast({ kind: 'life', state: life.state() })
+      live.emit('event', { kind: 'life' } as never)
+    }, 300)
+  }
+
   /** 원격 화면: 마지막으로 보낸 화면의 페이지 크기 (폰이 누른 비율을 좌표로 바꾸려고) */
   const remoteViewport = new Map<number, { width: number; height: number }>()
   /**
@@ -746,6 +842,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .run(c, args && typeof args === 'object' ? args : {})
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
+      }
+      if (req.method === 'POST' && b === 'life' && c && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        return json(res, 200, life.run(c, args && typeof args === 'object' ? args : {}))
       }
       if (req.method === 'POST' && b === 'skill' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
@@ -996,6 +1096,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { connectedAt: connectMark(card.id, req.method === 'PUT') ?? null })
     }
 
+    // 목표·보관함·기억·피드 (PC 화면)
+    if (a === 'life' && !b && req.method === 'GET') return json(res, 200, life.state())
+    if (a === 'life' && b === 'action' && req.method === 'POST') {
+      const id = life.act((await readJson(req)) as LifeAction)
+      return json(res, 200, { ok: true, ...(id ? { id } : {}), state: life.state() })
+    }
+
     // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
     if (a === 'vault') {
       if (!b && req.method === 'GET') return json(res, 200, { entries: await vault.list() })
@@ -1108,6 +1215,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
         claudeLogin?.cancel()
+        clearInterval(lifeTimer)
         loginWatch.stopAll()
         link.stop()
         server.closeAllConnections()

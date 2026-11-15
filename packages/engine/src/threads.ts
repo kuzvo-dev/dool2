@@ -17,7 +17,7 @@ export interface ThreadServiceOptions {
   /** 두리 전용 작업 폴더 */
   workspaceDir: string
   mcpServers: McpServerSpec[]
-  systemPrompt?: string
+  systemPrompt?: string | (() => string)
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -42,7 +42,8 @@ export class ThreadService {
 
   /** 두리 지침 + 앞 구간에서 넘겨받은 내용 (ADR 0015) */
   private systemFor(thread: { carry?: string }) {
-    const base = this.opts.systemPrompt ?? DOOL2_SYSTEM_PROMPT
+    const sp = this.opts.systemPrompt
+    const base = (typeof sp === 'function' ? sp() : sp) ?? DOOL2_SYSTEM_PROMPT
     return thread.carry ? `${base}\n\n${thread.carry}` : base
   }
 

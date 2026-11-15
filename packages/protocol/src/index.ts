@@ -407,6 +407,100 @@ export interface PairInvite {
 }
 
 /** 폰 → PC */
+// ── 두리의 생활 기록: 목표·보관함·기억·피드 (본체 저장소에만 둔다) ──
+
+/** 언제: 매일 HH:MM · 요일마다(0=일) · 한 번 · N분마다 (모두 한국 시간) */
+export type RoutineSchedule =
+  | { kind: 'daily'; time: string }
+  | { kind: 'weekly'; time: string; days: number[] }
+  | { kind: 'once'; at: string }
+  | { kind: 'every'; minutes: number }
+
+export const GOAL_CATEGORIES = ['건강', '관계', '돈', '일', '관심사', '생산성', '기타'] as const
+export type GoalCategory = (typeof GOAL_CATEGORIES)[number]
+
+/**
+ * 목표·알아서 하는 일. category가 있으면 "목표"(계획 단계·진행 기록·체크인),
+ * 없으면 "알아서 하는 일"(아침 브리핑, 취소표 지켜보기, 매달 요금 확인)
+ */
+export interface Routine {
+  id: string
+  title: string
+  /** 정해진 때 두리에게 시킬 말 */
+  prompt: string
+  /** 정해진 때가 없는 목표도 있다 */
+  schedule?: RoutineSchedule
+  enabled: boolean
+  createdAt: string
+  /** 결과를 어디에: 대화(기본) 또는 피드 */
+  target?: 'chat' | 'feed'
+  category?: GoalCategory
+  plan?: { text: string; done: boolean }[]
+  log?: { at: string; text: string }[]
+  nextRunAt?: string
+  lastRunAt?: string
+  lastResult?: string
+}
+
+/** 보관함: 두리가 찾아 준 것·만든 것 중 남겨 둔 것 */
+export interface LibraryItem {
+  id: string
+  kind: 'note' | 'link' | 'product' | 'place' | 'file'
+  title: string
+  body: string
+  url?: string
+  price?: string
+  savedAt: string
+}
+
+/** 기억: 사용자에 대해 알게 된 것 (사용자가 보고 지울 수 있다) */
+export interface MemoryItem {
+  id: string
+  text: string
+  source: 'doori' | 'user'
+  at: string
+}
+
+/** 피드: 두리가 한 일·알아서 한 일·먼저 알려 주는 것 */
+export interface FeedItem {
+  id: string
+  kind: 'done' | 'routine' | 'saved' | 'goal' | 'connected' | 'suggest' | 'post'
+  title: string
+  body?: string
+  /** 관련 목표·보관함·대화 id */
+  ref?: string
+  at: string
+  reaction?: 'up' | 'down'
+}
+
+export interface LifeState {
+  routines: Routine[]
+  library: LibraryItem[]
+  memory: MemoryItem[]
+  feed: FeedItem[]
+  /** 피드에 무엇을 올릴지 사용자가 적은 말 */
+  feedPrompt?: string
+}
+
+export type LifeAction =
+  | {
+      action: 'routine-create'
+      title: string
+      prompt: string
+      schedule?: RoutineSchedule
+      category?: GoalCategory
+    }
+  | { action: 'goal-step'; id: string; index: number; done: boolean }
+  | { action: 'feed-react'; id: string; reaction?: 'up' | 'down' }
+  | { action: 'feed-prompt'; text: string }
+  | { action: 'library-save'; title: string; body: string; kind?: LibraryItem['kind'] }
+  | { action: 'routine-toggle'; id: string; on: boolean }
+  | { action: 'routine-delete'; id: string }
+  | { action: 'routine-run'; id: string }
+  | { action: 'library-delete'; id: string }
+  | { action: 'memory-add'; text: string }
+  | { action: 'memory-delete'; id: string }
+
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
   | { kind: 'hello' }
@@ -438,6 +532,9 @@ export type PhoneToPc =
   | { kind: 'conversation'; before?: string; limit?: number }
   /** 대화에서 지금 하는 일을 멈춘다 */
   | { kind: 'conversation-cancel' }
+  /** 목표·보관함·기억·피드 받기 */
+  | { kind: 'life' }
+  | ({ kind: 'life-action' } & LifeAction)
   /**
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
    * mark·unmark = 연결 표시·해제
@@ -484,6 +581,7 @@ export type PcToPhone =
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** 대화가 답하는 중인지, 줄 선 말 (바뀔 때마다) */
   | { kind: 'conversation-status'; busy: boolean; queued: string[] }
+  | { kind: 'life'; state: LifeState }
   /** 서비스 연결 목록 (카드 + 절차 상태 + 연결 시각) */
   | { kind: 'connections'; services: ConnectionItem[] }
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
