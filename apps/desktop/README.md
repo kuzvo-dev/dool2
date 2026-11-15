@@ -25,16 +25,17 @@ PR에 붙일 화면은 점검 모드로 찍어요. 창을 숨긴 채 띄워 화�
 DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke
 # → apps/desktop/out/smoke.png
 
-# 데모 대화를 열어 둔 화면
+# 데모 대화·목표·보관함·피드를 넣고 탭을 골라 캡처
 node apps/daemon/scripts/seed-demo.mjs /tmp/dool2-demo
-DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=latest pnpm --filter @dool2/desktop smoke
+DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=goals+panel:memory pnpm --filter @dool2/desktop smoke
 ```
 
-| 환경 변수          | 설명                                        |
-| ------------------ | ------------------------------------------- |
-| `DOOL2_DATA_DIR`   | 데이터 폴더 (기본: OS 표준 위치)            |
-| `DOOL2_SMOKE_OUT`  | 캡처를 저장할 폴더                          |
-| `DOOL2_SMOKE_OPEN` | `latest`면 가장 최근 대화를 열어 둔 채 캡처 |
+| 환경 변수           | 설명                                                                                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DOOL2_DATA_DIR`    | 데이터 폴더 (기본: OS 표준 위치)                                                                                                                                                           |
+| `DOOL2_SMOKE_OUT`   | 캡처를 저장할 폴더                                                                                                                                                                         |
+| `DOOL2_SMOKE_THEME` | `dark`·`light`로 고정해서 캡처 (기본: 기기 설정)                                                                                                                                           |
+| `DOOL2_SMOKE_OPEN`  | 열어 둘 화면: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:서비스]`. 뒤에 `+panel:칸`(schedule·memory·screen·activity·approvals)이나 `+nopanel` |
 
 ## 설치 파일 만들기 (서명 없음, 개발용)
 

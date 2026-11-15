@@ -145,6 +145,33 @@ describe('dool2d 로컬 API', () => {
     const res = await api(`/api/threads/${thread.id}/messages`, { method: 'POST', body: '{"text":"   "}' })
     expect(res.status).toBe(400)
   })
+
+  it('PC 화면의 따로 하는 대화: 기본 AI로 만들고, 메인 대화에 섞지 않고, 지울 수 있다', async () => {
+    const { api } = await boot()
+    const { thread } = (await (
+      await api('/api/threads', { method: 'POST', body: '{"side":true}' })
+    ).json()) as {
+      thread: { id: string; agent: string; side?: boolean }
+    }
+    expect(thread).toMatchObject({ agent: 'claude', side: true })
+    await readSse(
+      await api(`/api/threads/${thread.id}/messages`, { method: 'POST', body: '{"text":"여행"}' }),
+    )
+    const conv = (await (await api('/api/conversation')).json()) as { messages: unknown[] }
+    expect(conv.messages).toHaveLength(0)
+    const list = (await (await api('/api/threads')).json()) as { threads: { id: string; side?: boolean }[] }
+    expect(list.threads.find((t) => t.id === thread.id)?.side).toBe(true)
+    expect((await api(`/api/threads/${thread.id}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await api(`/api/threads/${thread.id}`)).status).toBe(404)
+  })
+
+  it('메인 대화의 구간은 지우지 않는다', async () => {
+    const { api } = await boot()
+    const { thread } = (await (
+      await api('/api/threads', { method: 'POST', body: '{"agent":"claude"}' })
+    ).json()) as { thread: { id: string } }
+    expect((await api(`/api/threads/${thread.id}`, { method: 'DELETE' })).status).toBe(400)
+  })
 })
 
 describe('대화 하나 (ADR 0015)', () => {
