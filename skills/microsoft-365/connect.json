@@ -1,0 +1,36 @@
+{
+  "id": "microsoft-365",
+  "name": "마이크로소프트 365",
+  "site": "microsoft.com",
+  "category": "work",
+  "how": "official",
+  "login": "Microsoft 계정",
+  "summary": "Outlook, Teams, OneDrive를 연결하면 메일·대화·파일 챙기기를 두리에게 맡길 수 있어요.",
+  "example": {
+    "ask": "Outlook에 답장해야 할 거 있어?",
+    "working": "Outlook 살펴보는 중",
+    "reply": "세 건이에요. 견적 건으로 이 과장님, 모니터 교체 건으로 총무팀, 금요일 회의 초대로 정 팀장님이에요."
+  },
+  "abilities": [
+    {
+      "title": "챙길 일 한눈에",
+      "say": "Outlook에 급한 거 있어?",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "파일·대화 찾기",
+      "say": "지난달 계약서 어디 있어?",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "대신 답장",
+      "say": "이 과장님한테 그 날짜 괜찮다고 답해 줘",
+      "tier": "연락하기"
+    },
+    {
+      "title": "회의 잡기",
+      "say": "목요일 오후에 팀 회의 잡아 줘",
+      "tier": "연락하기"
+    }
+  ]
+}
