@@ -10,6 +10,8 @@ import {
   approvalSignText,
   type ConversationState,
   type DaemonStreamEvent,
+  type LifeAction,
+  type LifeState,
   type LinkStatus,
   type PairedPhone,
   type PairInvite,
@@ -65,6 +67,9 @@ export interface LinkHost {
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark'): Promise<{ tabId?: number }>
+  /** 목표·보관함·기억·피드 */
+  life(): Promise<LifeState>
+  lifeAction(a: LifeAction): Promise<LifeState>
   /** 연결하기: 금고에 넣고 대신 로그인 */
   connectLogin(
     id: string,
@@ -321,6 +326,16 @@ export class PhoneLink {
           if (action === 'open' && r.tabId !== undefined)
             return this.send(phone, { kind: 'connect-opened', id: String(msg.id), tabId: r.tabId })
           return this.send(phone, { kind: 'connections', services: await this.host.connections() })
+        } catch (e) {
+          return this.send(phone, { kind: 'error', message: (e as Error).message })
+        }
+      }
+      case 'life':
+        return this.send(phone, { kind: 'life', state: await this.host.life() })
+      case 'life-action': {
+        const { kind: _k, ...a } = msg
+        try {
+          return this.send(phone, { kind: 'life', state: await this.host.lifeAction(a as LifeAction) })
         } catch (e) {
           return this.send(phone, { kind: 'error', message: (e as Error).message })
         }
