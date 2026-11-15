@@ -60,7 +60,7 @@ import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
 import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
-import { autoLogin } from './auto-login.js'
+import { autoLogin, probeLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
@@ -346,9 +346,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const url = connectUrl(card)
     if (!url) throw new Error('이 서비스는 폰에서 켜요')
     if (!username.trim() || !password) throw new Error('아이디와 비밀번호를 넣어 주세요')
+    const start = card.loginUrl ?? url
     if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
     await vault.add({ url, username, password })
-    const r = await autoLogin(browser, { card, url, username, password })
+    const r = await autoLogin(browser, { card, url: start, username, password })
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
@@ -1158,6 +1159,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const message = (e as Error).message
           return json(res, message.includes('확장') ? 409 : 400, { error: message })
         }
+      }
+      // 점검: 로그인 칸을 찾기만 한다 (넣거나 누르지 않는다)
+      if (card && c === 'probe' && !d && req.method === 'POST') {
+        const body = (await readJson(req).catch(() => ({}))) as { url?: unknown }
+        const url =
+          typeof body.url === 'string' && body.url.startsWith('https://')
+            ? body.url
+            : (card.loginUrl ?? connectUrl(card))
+        if (!url) return json(res, 400, { error: '사이트 주소가 없어요' })
+        const r = await probeLogin(browser, { card, url })
+        await browser.call('close', { tabId: r.tabId }).catch(() => undefined)
+        return json(res, 200, r)
       }
       // 연결하기: 아이디·비밀번호 → 금고 → 두리 본체가 대신 로그인
       if (card && c === 'login' && !d && req.method === 'POST') {

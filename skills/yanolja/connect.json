@@ -4,6 +4,7 @@
   "site": "yanolja.com",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://nol.yanolja.com/login",
   "login": "아이디·비밀번호",
   "summary": "조건에 맞는 숙소와 레저, 공연·전시 찾기부터 예약까지 두리에게 맡길 수 있어요.",
   "example": {
