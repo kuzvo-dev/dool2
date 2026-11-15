@@ -53,6 +53,8 @@ const st: {
   key?: CryptoKey
   client?: LinkClient
   online: boolean
+  /** 중계에는 붙었는데 PC가 답하지 않는다 (PC가 꺼졌거나, PC에서 이 폰 연결을 지웠다) */
+  pcSilent: boolean
   screen: Screen
   tab: Tab
   overlay: Overlay
@@ -83,6 +85,7 @@ const st: {
   remoteDraft: string
 } = {
   online: false,
+  pcSilent: false,
   screen: { name: 'intro' },
   tab: 'chat',
   overlay: undefined,
@@ -125,6 +128,25 @@ async function sendNow(body: PhoneToPc) {
   )
 }
 
+let heard = false
+let silentTimer: ReturnType<typeof setTimeout> | undefined
+
+/** 이 폰의 연결을 지우고 처음(QR 찍기)으로 */
+async function forgetPc() {
+  st.client?.stop()
+  st.client = undefined
+  await clear()
+  st.saved = undefined
+  st.key = undefined
+  st.online = false
+  st.pcSilent = false
+  st.conv = []
+  st.convLoaded = false
+  st.overlay = undefined
+  st.screen = { name: 'intro' }
+  render()
+}
+
 function connect() {
   const s = st.saved
   if (!s) return
@@ -137,7 +159,15 @@ function connect() {
     onEnvelope: (env) => void receive(env),
     onState: (state) => {
       st.online = state === 'ready'
+      clearTimeout(silentTimer)
       if (state === 'ready' && st.saved?.paired) {
+        // 7초 안에 PC가 아무 말도 없으면 알려 준다 (빈 화면으로 멈춰 있지 않게)
+        heard = false
+        silentTimer = setTimeout(() => {
+          if (heard || !st.online) return
+          st.pcSilent = true
+          render()
+        }, 7000)
         void send({ kind: 'hello' })
         void send({ kind: 'conversation' })
         void send({ kind: 'connections' })
@@ -157,6 +187,8 @@ async function receive(env: Envelope) {
   } catch {
     return
   }
+  heard = true
+  if (st.pcSilent) st.pcSilent = false
   switch (msg.kind) {
     case 'paired':
       s.paired = true
@@ -606,21 +638,30 @@ function renderTop() {
   const t = shell?.top
   if (!t) return
   const waiting = pendingApprovals().length + pendingLogins().length
-  const mood = !st.online ? 'sleeping' : waiting ? 'asking' : st.busy || st.pending.length ? 'working' : ''
+  const mood =
+    !st.online || st.pcSilent
+      ? 'sleeping'
+      : waiting
+        ? 'asking'
+        : st.busy || st.pending.length
+          ? 'working'
+          : ''
   const status = !st.online
     ? 'PC 연결 중…'
-    : waiting
-      ? pendingApprovals().length
-        ? '승인을 기다려요'
-        : '로그인을 기다려요'
-      : st.busy || st.pending.length
-        ? (st.steps.at(-1) ?? '대답하는 중…')
-        : ''
+    : st.pcSilent
+      ? 'PC가 답하지 않아요'
+      : waiting
+        ? pendingApprovals().length
+          ? '승인을 기다려요'
+          : '로그인을 기다려요'
+        : st.busy || st.pending.length
+          ? (st.steps.at(-1) ?? '대답하는 중…')
+          : ''
   const tag = h(
     'span',
     { class: 'agent-tag' },
     '두리',
-    status && h('span', { class: waiting ? 'ask' : !st.online ? 'off' : '', text: status }),
+    status && h('span', { class: waiting ? 'ask' : !st.online || st.pcSilent ? 'off' : '', text: status }),
   )
   const agent = h(
     'button',
@@ -631,7 +672,7 @@ function renderTop() {
   const pill = h(
     'button',
     { class: 'fpill', onclick: () => openOverlay({ kind: 'agent' }) },
-    h('span', { class: st.online ? 'dot work' : 'dot' }),
+    h('span', { class: st.online && !st.pcSilent ? 'dot work' : 'dot' }),
     shortPc(st.saved?.pcName),
   )
   t.replaceChildren(
@@ -718,6 +759,7 @@ type Item = { key: string; sig: string; make: () => HTMLElement }
 
 function chatItems(): Item[] {
   const items: Item[] = []
+  if (st.pcSilent) items.push({ key: 'silent', sig: st.saved?.pcName ?? '', make: silentCard })
   const first = st.conv[0]
   if (st.hasMore && first)
     items.push({
@@ -838,6 +880,26 @@ function syncChat() {
     prev = el
   }
   for (const [k, el] of have) if (!keep.has(k)) el.remove()
+}
+
+/** PC가 답하지 않을 때: 빈 화면 대신 이유와 할 일 */
+function silentCard() {
+  const pc = st.saved?.pcName ?? 'PC'
+  return h(
+    'div',
+    { class: 'card ask-card silent-card' },
+    h('div', { class: 'card-label' }, doori('sleeping', 22), `${pc}가 답하지 않아요`),
+    h('p', {
+      class: 'card-text',
+      text: 'PC가 켜져 있고 두리가 실행 중인지 확인해 주세요. PC에서 이 폰 연결을 지웠다면 다시 연결해야 해요.',
+    }),
+    h(
+      'div',
+      { class: 'approve-actions' },
+      h('button', { class: 'btn-ghost', text: '다시 시도', onclick: () => connect() }),
+      h('button', { class: 'btn', text: '다시 연결하기', onclick: () => void forgetPc() }),
+    ),
+  )
 }
 
 function helloCard() {
@@ -1392,8 +1454,22 @@ function drawerView() {
         'span',
         { class: 'row-text' },
         h('span', { text: st.saved?.pcName ?? '내 PC' }),
-        h('span', { class: 'meta', text: st.online ? '연결돼 있어요' : '연결 중…' }),
+        h('span', {
+          class: 'meta',
+          text: !st.online ? '연결 중…' : st.pcSilent ? '답하지 않아요' : '연결돼 있어요',
+        }),
       ),
+    ),
+    h(
+      'button',
+      {
+        class: 'navi',
+        onclick: () => {
+          if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
+        },
+      },
+      icon('close', 'i md'),
+      '다른 PC와 다시 연결',
     ),
     h('p', { class: 'meta drawer-foot', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
   )
@@ -1401,7 +1477,7 @@ function drawerView() {
 
 function agentPanel() {
   const waiting = pendingApprovals().length + pendingLogins().length
-  const mood = !st.online ? 'sleeping' : waiting ? 'asking' : st.busy ? 'working' : ''
+  const mood = !st.online || st.pcSilent ? 'sleeping' : waiting ? 'asking' : st.busy ? 'working' : ''
   const segs = [
     ['activity', '활동'],
     ['connected', '연결한 곳'],
