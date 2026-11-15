@@ -87,6 +87,14 @@ export function toolLabel(name: string): string {
   return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
 }
 
+/** 폰에서 보낸 사진 표시: 말 끝의 "[사진: 파일이름]" */
+export const PHOTO_MARK = '[사진: '
+/** 말에서 사진 표시를 떼어 낸다: { text, photo } */
+export function splitPhoto(text: string): { text: string; photo?: string } {
+  const m = /\s*\[사진: ([\w-]+\.jpg)\]\s*$/.exec(text)
+  return m ? { text: text.slice(0, m.index).trim(), photo: m[1] as string } : { text }
+}
+
 /**
  * 두리 앱이 사용자 대신 AI에게 보내는 알림 (승인 결과 등). 대화 기록에는 user로 남지만,
  * 화면에서는 내 말풍선이 아니라 가운데 회색 알림 줄로 보여 준다.

@@ -28,6 +28,8 @@ const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 't
 
 const LIMIT = { routines: 50, library: 500, memory: 200, feed: 300 }
 export class Life {
+  /** 폰에서 보낸 사진 읽기 (본체가 붙인다) */
+  photo?: (name: string) => Promise<string>
   /** 바뀌면 (폰·PC에 다시 보내기) */
   onChange?: () => void
   /** 예약한 일을 할 때 (대화로 보내 두리가 한다) */
