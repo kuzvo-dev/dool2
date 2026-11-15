@@ -1,739 +1,353 @@
-/*
- * 두리 폰 앱 화면 배치. 색·버튼·카드 같은 부품은 @dool2/ui(ui.css)에 있다.
- * 폰은 글자를 조금 크게(16px) 쓴다.
- */
+/* 두리 폰 앱: 화면 배치만. 색·모양·그림자는 디자인 시스템(ui.css) 토큰과 부품을 쓴다.
+   기준 화면: docs/design/screens/soft (부드러운 면, 떠 있는 머리·입력칸·탭 막대) */
+
+html,
 body {
-  font-size: 16px;
-  line-height: 1.55;
-  letter-spacing: -0.01em;
-  -webkit-text-size-adjust: 100%;
+  height: 100%;
+}
+body {
+  overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
-svg.i {
-  width: 20px;
-  height: 20px;
-  stroke-width: 1.7;
+#app {
+  height: 100%;
 }
-.page {
-  min-height: 100dvh;
-  padding: 0 20px calc(104px + env(safe-area-inset-bottom));
+button {
+  text-align: inherit;
 }
-
-/* 두리 얼굴: 초록 사각형에 두 눈 */
-.face.big {
-  --s: 64px;
-  margin-bottom: 12px;
-}
-.bar .face {
-  --s: 30px;
+[hidden] {
+  display: none !important;
 }
 
-/* 첫 화면·연결 화면 */
-.center {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  padding: 32px 28px;
-  gap: 4px;
-}
-.center h1 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.center p {
-  margin: 4px 0;
-  color: var(--sub);
-}
-.steps {
-  width: 100%;
-  max-width: 360px;
-  margin: 24px 0 16px;
-  padding: 0;
-  list-style: none;
-  counter-reset: s;
-  text-align: left;
-  border-top: 1px solid var(--line);
-}
-.steps li {
-  counter-increment: s;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 2px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink2);
-  font-size: 15px;
-}
-.steps li::before {
-  content: counter(s);
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--fill);
-  color: var(--sub);
-  font-size: 12px;
-  font-weight: 600;
-}
-.code {
-  margin: 22px 0;
-  font-family: var(--mono);
-  font-size: 40px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  font-variant-numeric: tabular-nums;
-}
-.wait {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--ink2);
-  font-size: 14px;
-}
-
-/* 위 막대 */
-.bar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin: 0 -20px 6px;
-  padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: saturate(1.6) blur(16px);
-  -webkit-backdrop-filter: saturate(1.6) blur(16px);
-  border-bottom: 1px solid var(--line);
-}
-.bar .back {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-left: -8px;
-  border-radius: 8px;
-  color: var(--ink);
-}
-.bar .back svg.i {
-  width: 22px;
-  height: 22px;
-}
-.bar-title {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.bar-title strong {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.status {
-  font-size: 12px;
-  color: var(--faint);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--faint);
-}
-.status.on::before {
-  background: var(--duri);
-  box-shadow: 0 0 0 3px rgba(47, 196, 141, 0.16);
-}
-.over {
-  margin: 22px 0 4px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--faint);
-}
-
-/* 홈: 알림·승인 줄 */
-.notice {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--warn-bg);
-  box-shadow: 0 0 0 1px rgba(217, 115, 13, 0.18);
-  color: var(--ink2);
-  font-size: 14px;
-}
-.notify-ask {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 14px 14px 14px 16px;
-  border-radius: 14px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-  text-align: left;
-}
-.notify-ask .text,
-.card .text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.notify-ask strong {
-  font-size: 15px;
-  font-weight: 600;
-}
-.notify-ask .text span {
-  font-size: 13.5px;
-  color: var(--sub);
-}
-.notify-ask > svg.i:last-child,
-.card > svg.i {
-  width: 18px;
-  height: 18px;
-  color: var(--faint);
-}
-.notify-ask {
-  box-shadow: 0 0 0 1px var(--line);
-  background: var(--side);
-}
-.notify-ask > svg.i:first-child {
-  color: var(--sub);
-}
-
-/* 대화 목록: 선으로 나눈 줄 */
-.threads {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.threads li + li {
-  border-top: 1px solid var(--line);
-}
-.threads button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 12px 0;
-  text-align: left;
-}
-.threads button:active {
-  opacity: 0.6;
-}
-.threads .t {
-  flex: 1;
-  min-width: 0;
-  font-size: 15.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.threads .m {
-  flex: none;
-  font-size: 13px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-.threads .m.busy {
-  color: var(--ink2);
-  font-weight: 500;
-}
-.empty {
-  padding: 8px 0;
-}
-
-/* 입력창: 화면 아래에 떠 있는 테두리 상자
-   (디자인 시스템의 .composer가 테두리·둥근 모서리·flex를 주므로 폰은 바깥 틀만 쓰고 그건 지운다) */
-.composer {
-  display: block;
-  border: 0;
-  border-radius: 0;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 30%);
-}
-.composer-box {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 6px 6px 6px 16px;
-  border-radius: 24px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-}
-.composer textarea {
-  flex: 1;
-  resize: none;
-  min-height: 36px;
-  max-height: 120px;
-  padding: 7px 0;
-  border: none;
-  background: none;
-  font: inherit;
-  outline: none;
-}
-.composer textarea::placeholder {
-  color: var(--faint);
-}
-.composer .send {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: #fff;
-}
-.composer .send svg.i {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.1;
-}
-.composer .send:disabled {
-  opacity: 0.25;
-}
-
-/* 대화 */
-.messages {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-top: 14px;
-}
-.msg {
-  line-height: 1.65;
-}
-.msg.user {
-  white-space: pre-wrap;
-}
-/* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
-.msg.user {
-  align-self: flex-end;
-  max-width: 84%;
-  padding: 9px 15px;
-  border-radius: 20px;
-  background: var(--fill);
-}
-.msg.assistant {
-  align-self: stretch;
-}
-.msg.system {
-  align-self: flex-start;
-  font-size: 13.5px;
-  color: var(--ink2);
-}
-.activity {
-  align-self: flex-start;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-.card {
-  align-self: stretch;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 14px 14px 16px;
-  border-radius: 14px;
-  background: var(--side);
-  box-shadow: 0 0 0 1px var(--line);
-  text-align: left;
-  font-size: 14px;
-}
-.card .text span {
-  color: var(--sub);
-}
-.card strong {
-  font-weight: 600;
-}
-.card.handoff {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-}
-.card.handoff strong,
-.card.approval.pending strong {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card.handoff strong::before,
-.card.approval.pending strong::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(217, 115, 13, 0.14);
-}
-.card.handoff > span {
-  color: var(--ink2);
-}
-.card.approval.pending {
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-}
-
-/* 승인 화면 */
-.approval-head {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 18px;
-}
-.approval-head .kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--warn);
-}
-.approval-head .kind::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(217, 115, 13, 0.14);
-}
-.approval-head strong {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.3;
-}
-.approval-head > span:last-child {
-  font-size: 13.5px;
-  color: var(--sub);
-}
-.shot {
-  width: 100%;
-  max-height: 45vh;
-  object-fit: cover;
-  object-position: top;
-  border-radius: 12px;
-  box-shadow: 0 0 0 1px var(--line2);
-}
-.kv {
-  grid-template-columns: 76px 1fr;
-  margin: 18px 0;
-}
-.kv dt,
-.kv dd {
-  padding: 11px 0;
-}
-.cap {
-  color: var(--faint);
-}
-.page > .cap {
-  margin: 14px 0;
-  line-height: 1.6;
-}
-.actions {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 24%);
-}
-.actions .ghost {
-  height: 52px;
-  padding: 0 20px;
-  border-radius: 14px;
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line2);
-  font-weight: 500;
-}
-.actions .primary {
-  flex: 1;
-  height: 52px;
-  border-radius: 14px;
-  background: var(--ink);
-  color: #fff;
-  font-weight: 600;
-}
-.actions button:active {
-  opacity: 0.8;
-}
-.result {
-  margin: 18px 0 calc(24px + env(safe-area-inset-bottom));
-  font-weight: 500;
-}
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(92px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 88%;
-}
-
-/* ── 홈: 부탁 칸 → 바로 맡기기 → 최근에 맡긴 일 ──── */
-.page.home {
-  padding-bottom: calc(40px + env(safe-area-inset-bottom));
-}
-.composer.top {
-  position: static;
-  margin-top: 14px;
-  padding: 0;
-  background: none;
-}
-.composer.top .composer-box {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  padding: 14px 10px 10px 16px;
-  border-radius: var(--r-xl);
-}
-.composer.top textarea {
-  min-height: 52px;
-  font-size: 16px;
-}
-.composer.top .send {
-  align-self: flex-end;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-}
-.ask-hint {
-  margin: 8px 4px 0;
-  font-size: 12.5px;
-}
-.quick {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 18px;
-}
-.quick button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  padding: 12px 0 10px;
-  border-radius: 14px;
-  background: var(--fill);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--ink2);
-}
-.quick button:active {
-  opacity: 0.7;
-}
-.quick-icon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--ink);
-  box-shadow: 0 2px 6px -3px rgba(9, 9, 11, 0.3);
-}
-.quick-icon svg.i {
-  width: 17px;
-  height: 17px;
-  stroke-width: 1.8;
-}
-.home > .task.dark {
-  margin-top: 14px;
-}
-.task.dark .btn-light {
-  margin-top: 12px;
-  width: 100%;
-}
-.tasks {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.tasks .task {
-  width: 100%;
-}
-.home .over {
-  margin-top: 26px;
-  margin-bottom: 10px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-/* ── 대화: 두리 이름표, 일하는 중 ───────────────── */
-.who {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: -8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink2);
-}
-.who .face {
-  --s: 20px;
-}
-.work {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.work .worklog {
-  font-size: 14px;
-}
-.work .worklog li:nth-last-child(n + 6) {
-  display: none;
-}
-
-/* ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 ──────── */
-.page.remote {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
-}
-.remote-where {
-  margin: 10px 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.remote-frame {
+/* ── 앱 틀: 머리·탭·입력칸이 떠 있고, 그 사이로 내용이 흐른다 ── */
+.app-shell {
   position: relative;
-  border-radius: var(--r);
+  height: 100dvh;
   overflow: hidden;
-  box-shadow: 0 0 0 1px var(--line2);
-  transition: opacity 0.2s;
+  background: radial-gradient(120% 50% at 50% 0%, light-dark(#ffffff, #15181c) 0%, var(--bg) 60%);
 }
-.remote-frame.busy {
-  opacity: 0.6;
+/* 태블릿·PC 브라우저: 폰 너비 한 줄로 가운데 */
+@media (min-width: 640px) {
+  body {
+    background: var(--bg);
+  }
+  .app-shell {
+    max-width: 480px;
+    margin-inline: auto;
+    box-shadow: 0 0 0 1px var(--line);
+  }
 }
-.remote-shot {
-  display: block;
-  width: 100%;
-  touch-action: manipulation;
-}
-.tap-dot {
+.app-top {
   position: absolute;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  border-radius: 50%;
-  background: rgba(47, 196, 141, 0.35);
-  box-shadow: 0 0 0 2px var(--duri);
+  inset: 0 0 auto;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 26px;
+  background: linear-gradient(
+    light-dark(rgba(248, 249, 251, 0.96), rgba(14, 16, 19, 0.96)) 58%,
+    light-dark(rgba(248, 249, 251, 0), rgba(14, 16, 19, 0))
+  );
   pointer-events: none;
 }
-.remote-type {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
+.app-top > * {
+  pointer-events: auto;
 }
-.remote-type textarea {
-  flex: 1;
-  resize: none;
+.app-top .fpill {
+  margin-top: 3px;
+}
+.app-top .agent {
+  position: absolute;
+  left: 50%;
+  top: calc(4px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  max-width: 56%;
+}
+.app-top .agent-tag {
+  max-width: 100%;
+}
+.app-top .agent-tag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-tag span.off::before {
+  background: var(--ink-faint);
+  animation: none;
+}
+.app-page {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(112px + env(safe-area-inset-top)) 16px calc(170px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+.app-page:not([data-tab="chat"]) {
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+}
+.app-composer {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 6;
+  align-items: flex-end;
+  padding: 5px 5px 5px 6px;
+}
+.app-composer textarea {
   min-height: 40px;
-  padding: 9px 12px;
-  border: 0;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--line2);
-  font: inherit;
-  outline: none;
+  max-height: 132px;
+  padding: 9px 2px;
 }
-.remote-type .btn-small {
+.app-composer .cbtn.plus {
+  width: 36px;
+  height: 36px;
+  margin: 2px 0;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+  color: var(--ink-muted);
+}
+.send-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
   height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+  color: var(--ink-faint);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
-.remote-keys {
+.send-btn.ready,
+.send-btn.stop {
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+.send-btn:active {
+  transform: scale(0.94);
+}
+.send-btn:disabled {
+  cursor: default;
+}
+.app-tabs {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 6;
+  transform: translateX(-50%);
+}
+.float-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(150px + env(safe-area-inset-bottom));
+  z-index: 30;
+  max-width: calc(100% - 48px);
+  transform: translateX(-50%);
+  animation: ui-rise var(--dur) var(--ease) both;
+}
+
+/* ── 대화 ── */
+.chat-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 12px;
+  flex-direction: column;
+  gap: 8px;
 }
-.card.handoff .btn-ghost {
+.chat-list > .bubble {
+  max-width: 86%;
+}
+/* 말한 사람이 바뀌면 조금 더 띄운다 */
+.chat-list > .bubble.me + .bubble:not(.me),
+.chat-list > .bubble:not(.me) + .bubble.me,
+.chat-list > .card + *,
+.chat-list > * + .card {
   margin-top: 8px;
 }
-
-/* ── 로그인 카드 ───────────────────────────────── */
-.card.login-card {
+.bubble.rich p {
+  margin: 0;
+}
+.bubble.rich p + p,
+.bubble.rich p + ul,
+.bubble.rich p + ol,
+.bubble.rich ul + p,
+.bubble.rich ol + p {
+  margin-top: 8px;
+}
+.bubble.rich ul,
+.bubble.rich ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.bubble.me {
+  white-space: pre-wrap;
+}
+.bubble.me.sending {
+  opacity: 0.72;
+}
+.queued {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
+  align-items: flex-end;
+  gap: 4px;
 }
-.login-card strong {
-  font-size: 16px;
+.queued .bubble {
+  opacity: 0.6;
 }
-.login-form {
+.step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 0 -2px 4px;
+}
+.more {
+  align-self: center;
+}
+.hello {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 8px 0 4px;
 }
-.login-form .field {
-  height: 46px;
-  font-size: 16px;
+.hello .quick {
+  margin-top: 4px;
 }
-.login-error {
+.done-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  margin: 2px 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+  font: var(--text-caption);
+  color: var(--ink-muted);
+}
+.done-line svg.i {
+  width: 14px;
+  height: 14px;
+}
+.card-text {
   margin: 0;
-  font-size: 13px;
-  color: var(--bad);
+  color: var(--ink);
+  line-height: 1.55;
 }
-
-/* ── 서비스 연결 (connections.ts): 새 디자인 토큰만 쓴다 ── */
-.connect-entry {
+.ask-card {
+  background: var(--butter-soft);
+  border-color: transparent;
+  box-shadow: none;
+}
+.ask-card .btn-ghost {
+  align-self: flex-start;
+}
+.approve-card {
+  gap: 12px;
+}
+.approve-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 14px 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
 }
-.connect-entry > svg.i:last-child,
-.svc-row > svg.i:last-child {
-  flex: none;
+.approve-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.approve-head strong {
+  font: 680 16px / 22px var(--font-sans);
+  letter-spacing: -0.015em;
+}
+.approve-what {
+  margin: -4px 0 0;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+.approve-card .approve-actions,
+.app-sheet .approve-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+  padding: 0;
+}
+.approve-card .btn-link {
+  align-self: center;
+}
+
+/* ── 탭 화면 ── */
+.tab-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ptitle {
+  margin: 4px 0 0;
+  font: 740 30px / 36px var(--font-sans);
+  letter-spacing: -0.035em;
+}
+.psub {
+  margin: -6px 0 2px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+.tab-page .over {
+  margin: 14px 0 -4px;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.page-head.sub .title-2 {
+  margin: 0;
+}
+.fbtn.small {
+  width: 36px;
+  height: 36px;
+}
+.fbtn.small svg.i {
   width: 18px;
   height: 18px;
-  color: var(--ink-muted);
+}
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0.5px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+}
+.task-card.ask {
+  border-color: transparent;
+  background: var(--butter-soft);
+}
+.task-card .meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-card strong {
+  font: 650 15.5px / 22px var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.task-card .worklog {
+  margin-top: 6px;
+}
+.task-card .btn-text {
+  align-self: flex-start;
+  margin: 4px 0 -6px -12px;
+}
+.row {
+  width: 100%;
+  color: var(--ink);
+  text-align: left;
 }
 .row-text {
   display: flex;
@@ -746,35 +360,389 @@ svg.i {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.idea {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 0.5px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+}
+.idea .row-d {
+  white-space: normal;
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 48px 0;
+  text-align: center;
+}
+.empty .doori {
+  margin-bottom: 8px;
+}
+.empty-line {
+  padding: 16px 0;
+  text-align: center;
+}
+
+/* ── 겹쳐 뜨는 것 ── */
+.app-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+}
+.app-overlay .scrim {
+  position: absolute;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: fade var(--dur-sheet) var(--ease) both;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.app-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  gap: 2px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  animation: slide-in var(--dur-sheet) var(--ease) both;
+}
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 8px 14px;
+  font: 700 18px / 24px var(--font-sans);
+}
+.drawer-sec {
+  margin: 18px 12px 4px;
+}
+.navi.static {
+  cursor: default;
+  height: auto;
+  padding: 10px 12px;
+}
+.drawer-foot {
+  margin: auto 12px 8px;
+}
+.agent-panel {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: calc(14px + env(safe-area-inset-top)) 18px 40px;
+  background: var(--surface);
+  animation: sheet-up var(--dur-sheet) var(--ease) both;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+.panel-head {
+  display: flex;
+}
+.agent-big {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  margin: -4px auto 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  box-shadow:
+    0 0 0 5px var(--surface),
+    var(--shadow-float);
+}
+.agent-name {
+  margin: 0;
+  text-align: center;
+  font: 720 22px / 28px var(--font-sans);
+  letter-spacing: -0.02em;
+}
+.agent-where {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 18px;
+  font: var(--text-caption);
+  color: var(--ink-muted);
+}
+.agent-seg {
+  display: flex;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.agent-seg button {
+  flex: 1;
+}
+.agent-body {
+  display: flex;
+  flex-direction: column;
+}
+.act {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 0.5px solid var(--line);
+}
+.agent-body .btn-ghost {
+  margin-top: 14px;
+}
+.app-sheet {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 18px 20px;
+  animation: sheet-up var(--dur-sheet) var(--ease) both;
+}
+.app-sheet::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.sheet-x {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  box-shadow: none;
+  background: var(--raise);
+}
+.app-sheet .approve-head {
+  padding-right: 40px;
+}
+.sheet-shot {
+  width: 100%;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 0.5px var(--line);
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.login-form .field {
+  height: 52px;
+  font-size: 16px;
+}
+.login-error {
+  margin: 0;
+  font: var(--text-caption);
+  color: var(--danger);
+}
+.lock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font: var(--text-caption);
+  color: var(--ink-muted);
+}
+.lock-note svg.i {
+  flex: none;
+  margin-top: 1px;
+}
+.wide {
+  width: 100%;
+}
+
+/* ── 연결 전 화면 ── */
+.center-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100dvh;
+  padding: 32px 28px;
+  text-align: center;
+}
+.center-page .doori {
+  margin-bottom: 8px;
+}
+.display-s {
+  margin: 0;
+  font: 760 34px / 40px var(--font-sans);
+  letter-spacing: -0.035em;
+}
+.center-page .title-2,
+.center-page .psub {
+  margin: 0;
+}
+.steps {
+  margin: 14px 0 8px;
+  padding: 16px 20px 16px 38px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+  line-height: 2;
+}
+.pair-code {
+  margin: 10px 0;
+  font-size: 40px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+/* ── PC 화면 (원격) ── */
+.remote-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100dvh;
+  padding: calc(10px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));
+  background: #0b0c0f;
+  color: #fff;
+}
+.remote-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.remote-bar .fbtn {
+  background: #1d2026;
+  color: #fff;
+  box-shadow: none;
+}
+.remote-url {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: #1d2026;
+  font-size: 13.5px;
+  color: #c9ced6;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.remote-frame {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+}
+.remote-frame.busy {
+  opacity: 0.85;
+}
+.remote-shot {
+  display: block;
+  width: 100%;
+}
+.remote-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 80px 16px;
+  color: #3b4049;
+}
+.tap-dot {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 2px solid #fff;
+  border-radius: var(--radius-full);
+  background: rgba(76, 201, 143, 0.85);
+  box-shadow: 0 0 0 6px rgba(76, 201, 143, 0.25);
+  pointer-events: none;
+  animation: tap 0.8s var(--ease) forwards;
+}
+@keyframes tap {
+  to {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+.remote-type {
+  display: flex;
+  gap: 8px;
+}
+.remote-input {
+  flex: 1;
+  height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #1d2026;
+  color: #fff;
+  font-size: 16px;
+}
+.remote-type .btn {
+  height: 44px;
+}
+.remote-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.remote-keys .chip {
+  background: #1d2026;
+  color: #e6e8eb;
+  box-shadow: none;
+}
+.remote-foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+}
+.remote-foot .btn-ghost {
+  border-color: #2a2e36;
+  color: #fff;
+}
+
+/* ── 서비스 연결 (connections.ts) ── */
 .svc-mark {
   display: inline-grid;
   flex: none;
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--raise);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line),
+    var(--shadow-card);
   color: var(--ink);
   font-size: 16px;
   font-weight: 680;
 }
-.svc-mark svg.i {
-  width: 20px;
-  height: 20px;
-}
 .svc-mark.lg {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  font-size: 22px;
-}
-.page.connect {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  font-size: 21px;
 }
 .connect-intro {
-  margin: 0;
+  margin: -4px 0 0;
 }
 .connect-search {
   width: 100%;
@@ -789,8 +757,12 @@ svg.i {
   border-left: 0;
   background: none;
   color: var(--ink);
-  font: inherit;
   text-align: left;
+}
+.svc-row > svg.i:last-child {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-faint);
 }
 .list > li:last-child > .svc-row {
   border-bottom: 0;
@@ -841,18 +813,17 @@ svg.i {
 .service .over {
   margin: 8px 0 -8px;
 }
-/* 연결 버튼 줄은 아래에 붙어 있다 */
+/* 연결 버튼 줄은 탭 막대 위에 붙어 있다 */
 .svc-action {
   position: sticky;
-  bottom: 0;
+  bottom: calc(-110px - env(safe-area-inset-bottom));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0 -20px;
-  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
-  background: var(--bg);
+  margin: 8px -16px 0;
+  padding: 14px 16px calc(110px + env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(0, 0, 0, 0), var(--bg) 18px);
 }
 .svc-action .btn.lg {
   flex: 1;
