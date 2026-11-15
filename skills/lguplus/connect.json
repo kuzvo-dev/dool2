@@ -4,6 +4,7 @@
   "site": "lguplus.com",
   "category": "telecom",
   "how": "browser",
+  "loginUrl": "https://www.lguplus.com/login",
   "login": "U+ID",
   "summary": "청구 요금과 사용 내역 확인, 요금제 변경, 부가서비스 조회와 해지를 두리에게 맡길 수 있어요.",
   "example": {
