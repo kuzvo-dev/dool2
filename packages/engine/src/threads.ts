@@ -97,6 +97,8 @@ export class ThreadService {
       let answer = ''
       let resumeId = thread.resumeId
       let failed: AgentEvent | undefined
+      // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
+      let saved = false
       const events = this.runtime(thread.agent).runTurn({
         text,
         ...(resumeId ? { resumeId } : {}),
@@ -114,6 +116,11 @@ export class ThreadService {
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         yield { type: 'agent', event: ev }
+        if (ev.type === 'done' && answer && !saved) {
+          saved = true
+          if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
+          yield { type: 'saved', message: store.addMessage(threadId, 'assistant', answer) }
+        }
         // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
           const input = (ev.input ?? {}) as { tabId?: unknown; reason?: unknown }
@@ -155,7 +162,9 @@ export class ThreadService {
       }
 
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
-      if (answer) yield { type: 'saved', message: store.addMessage(threadId, 'assistant', answer) }
+      if (saved) {
+        // 이미 저장했다
+      } else if (answer) yield { type: 'saved', message: store.addMessage(threadId, 'assistant', answer) }
       else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
