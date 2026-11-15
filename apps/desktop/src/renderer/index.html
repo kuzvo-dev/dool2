@@ -12,118 +12,66 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="app">
-      <!-- 왼쪽: 메뉴 · 지금 하는 일 · 이 컴퓨터 -->
+    <div class="app" id="app">
+      <!-- 왼쪽: 탭 5개 · 따로 하는 대화 · 연결 · 설정 -->
       <nav class="side" aria-label="주요 메뉴">
         <div class="brand">
-          <span class="face" aria-hidden="true"></span>
           <span class="wordmark">dool<sup>2</sup><small>두리</small></span>
-          <button id="open-settings" class="icon-btn" type="button" aria-label="설정" title="설정">
-            <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-              <circle cx="16" cy="7" r="2" />
-              <circle cx="10" cy="17" r="2" />
-            </svg>
-          </button>
         </div>
         <div id="notice" class="notice" role="status" hidden></div>
-
-        <button class="navi" type="button" data-view="talk">
-          <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z" />
-          </svg>
-          대화
-        </button>
-        <button class="navi" type="button" data-view="tasks">
-          <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="4" width="16" height="16" rx="3" />
-            <path d="M8 10l2.5 2.5L16 8M8 16h8" />
-          </svg>
-          <span class="grow">맡긴 일</span>
-          <span id="tasks-count" class="count" hidden></span>
-        </button>
-        <button class="navi" type="button" data-view="explore">
-          <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M15.5 8.5l-2 5-5 2 2-5z" />
-          </svg>
-          둘러보기
-        </button>
-        <button class="navi" type="button" data-view="me">
-          <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 21a8 8 0 0 1 16 0" />
-          </svg>
-          나의 두리
-        </button>
+        <div id="tabs" class="side-tabs"></div>
 
         <section id="now" class="now" hidden>
-          <h2 class="meta">지금</h2>
+          <h2 class="over">지금</h2>
           <div id="now-list" class="now-list"></div>
         </section>
 
+        <section id="threads" class="side-threads">
+          <h2 id="threads-head" class="over threads-head">따로 하는 대화</h2>
+          <div id="thread-list" class="thread-list"></div>
+        </section>
+
         <div class="grow"></div>
-        <button id="device" class="device" type="button" data-view="me">
-          <svg class="i md" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="12" rx="2" />
-            <path d="M2 20h20" />
-          </svg>
-          <span class="device-text">
-            <b>이 컴퓨터</b>
-            <span id="device-status" class="meta"><i class="dot"></i>확인하는 중</span>
-          </span>
-        </button>
+        <div id="side-foot" class="side-foot"></div>
       </nav>
 
-      <!-- 가운데: 대화 하나 -->
-      <main class="main">
+      <!-- 가운데: 지금 탭 -->
+      <main class="main" id="main" data-view="talk">
         <header class="head">
-          <span id="head-face" class="doori" aria-hidden="true"></span>
-          <div class="head-text">
-            <h1 id="title">두리</h1>
-            <p id="subtitle" class="meta"></p>
+          <div class="head-left">
+            <div id="usage" class="usage" hidden></div>
           </div>
-          <div id="usage" class="usage" hidden></div>
+          <button id="agent" class="agent" type="button" aria-label="두리 판 열기">
+            <span id="head-av" class="agent-av"></span>
+            <span id="head-tag" class="agent-tag">두리</span>
+          </button>
+          <div class="head-right">
+            <button id="device" class="fpill" type="button" title="이 컴퓨터">
+              <i class="dot"></i><span id="device-text">이 PC</span>
+            </button>
+          </div>
         </header>
 
         <div id="messages" class="messages"></div>
 
         <form id="composer" class="composer-dock">
-          <div class="composer">
-            <textarea
-              id="input"
-              rows="1"
-              placeholder="두리에게 부탁하기 · 돈 드는 일은 먼저 물어봐요"
-              aria-label="두리에게 부탁하기"
-            ></textarea>
-            <button id="send" class="cbtn go" type="submit" title="보내기 (Enter)">
-              <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 19V5M6 11l6-6 6 6" />
-              </svg>
-              보내기
+          <div class="composer float">
+            <button id="ideas-btn" class="cbtn plus" type="button" aria-label="아이디어 보기" title="아이디어 보기">
+              <svg class="i md" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <textarea id="input" rows="1" placeholder="두리에게 부탁하기" aria-label="두리에게 부탁하기"></textarea>
+            <button id="send" class="send-btn" type="submit" aria-label="보내기" title="보내기 (Enter)">
+              <svg class="i md" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
             </button>
           </div>
+          <p class="composer-note meta">돈 드는 일과 누군가에게 보내는 일은 꼭 먼저 물어봐요</p>
         </form>
       </main>
 
-      <!-- 오른쪽: 두리의 화면 -->
-      <aside class="panel" aria-label="두리의 화면">
-        <div class="panel-head">
-          <h2>두리의 화면</h2>
-          <button id="stop" class="btn-danger sm" type="button" hidden>
-            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-            멈추기
-          </button>
-        </div>
-        <div id="work" class="panel-work"></div>
-        <div id="next" class="panel-next"></div>
-        <div class="grow"></div>
-        <p class="panel-foot meta">
-          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /></svg>
-          두리는 이 컴퓨터에서 일하고, 대화도 이 컴퓨터에만 남아요.
-        </p>
-      </aside>
+      <!-- 오른쪽: 두리 판 (캐릭터를 누르면 열고 닫는다) -->
+      <aside id="panel" class="panel" aria-label="두리"></aside>
     </div>
+    <div id="toast" class="toast app-toast" role="status" hidden></div>
     <section id="setup" class="setup" hidden aria-label="첫 설정"></section>
     <script type="module" src="renderer.js"></script>
   </body>

@@ -55,6 +55,15 @@ store.addMessage(
   '장바구니를 보려고 했는데 로그인이 풀려 있어서 멈췄어요. Chrome에 띄워 둔 두리 탭에서 로그인만 해 주시면 바로 이어서 볼게요.',
 )
 // 승인 요청 대화 (DOOL2_SMOKE_APPROVAL=<캡처 이미지>와 함께 쓰면 승인 카드가 보인다)
+// 따로 하는 대화 (메인 대화에 섞이지 않는다)
+store.createThread('claude', '이사 준비', undefined, true)
+const trip = store.createThread('claude', '제주 2박 3일 여행 계획', undefined, true)
+store.addMessage(trip.id, 'user', '다음 달 제주 2박 3일 일정 짜 줘. 아이랑 같이 가요')
+store.addMessage(
+  trip.id,
+  'assistant',
+  '좋아요. 아이랑 가기 좋은 곳 위주로 짰어요.\n\n1. 첫날: 공항 → 협재 해변 → 숙소\n2. 둘째 날: 오름 한 곳, 오후엔 실내 체험관\n3. 셋째 날: 동문시장 들렀다 공항\n\n숙소는 서쪽이 동선이 편해요. 찾아볼까요?',
+)
 if (process.env.SEED_APPROVAL) {
   const buy = store.createThread('claude', '사과 1kg 바로 사 줘')
   store.addMessage(buy.id, 'user', '두리 시험 가게에서 사과 1kg 바로 사 줘')
@@ -68,6 +77,157 @@ if (process.env.SEED_APPROVAL) {
     'assistant',
     '사과 1kg(9,900원) **바로 구매** 버튼 앞까지 왔어요. 화면을 확인하고 승인해 주시면 제가 그 버튼만 누를게요.',
   )
+}
+// 목표·알아서 하는 일·보관함·기억·피드 (PC·폰의 피드·목표·보관함 탭과 두리 판 캡처용). 시각은 지금 기준
+{
+  const day = 24 * 60
+  /** 오늘(0)·내일(1)·그제(-2)의 그 시각 */
+  const on = (offset, h, m = 0) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    d.setHours(h, m, 0, 0)
+    return d.toISOString()
+  }
+  // 몇 분 전·뒤 (보통은 오늘 낮 시각으로 맞춘다)
+  const at = (min) => new Date(Date.parse(on(0, 13, 20)) + min * 60_000).toISOString()
+  const tomorrow730 = on(1, 7, 30)
+  store.setSetting('routines', [
+    {
+      id: 'r-walk',
+      title: '주 3회 30분 걷기',
+      prompt: '오늘 걸었는지 물어보고, 이번 주 몇 번 걸었는지 세어서 짧게 응원해 주세요.',
+      schedule: { kind: 'weekly', time: '20:00', days: [1, 3, 5] },
+      enabled: true,
+      createdAt: at(-6 * day),
+      category: '건강',
+      plan: [
+        { text: '걷기 좋은 동네 코스 2개 찾기', done: true },
+        { text: '월·수·금 저녁 8시로 시간 정하기', done: true },
+        { text: '2주 동안 빠지지 않기', done: false },
+        { text: '30분 → 40분으로 늘리기', done: false },
+      ],
+      log: [
+        { at: at(-2 * day), text: '수요일: 32분 걸었어요. 이번 주 두 번째예요.' },
+        { at: at(-4 * day), text: '월요일: 30분 걸었어요.' },
+      ],
+      nextRunAt: on(0, 20),
+      lastRunAt: on(-2, 20),
+      lastResult: '이번 주 두 번 걸었어요. 금요일만 걸으면 목표를 채워요.',
+    },
+    {
+      id: 'r-save',
+      title: '한 달 식비 40만 원 안으로',
+      prompt: '카드 결제 문자를 보고 이번 주 식비를 정리해 주세요.',
+      schedule: { kind: 'weekly', time: '09:00', days: [1] },
+      enabled: true,
+      createdAt: at(-10 * day),
+      category: '돈',
+      plan: [
+        { text: '지난달 식비 정리', done: true },
+        { text: '배달은 주 2회까지', done: false },
+      ],
+      nextRunAt: on(2, 9),
+    },
+    {
+      id: 'r-brief',
+      title: '아침 브리핑',
+      prompt: '오늘 날씨, 일정, 오는 택배를 짧게 알려 주세요.',
+      schedule: { kind: 'daily', time: '07:30' },
+      enabled: true,
+      createdAt: at(-12 * day),
+      nextRunAt: tomorrow730,
+      lastRunAt: on(0, 7, 30),
+    },
+    {
+      id: 'r-phone',
+      title: '휴대폰 요금 확인',
+      prompt: '이번 달 휴대폰 요금이 얼마 나왔는지 확인해 주세요.',
+      schedule: { kind: 'weekly', time: '10:00', days: [6] },
+      enabled: false,
+      createdAt: at(-20 * day),
+    },
+  ])
+  store.setSetting('library', [
+    {
+      id: 'l-1',
+      kind: 'product',
+      title: '무선 청소기 최저가 3곳 비교',
+      body: '같은 모델 기준으로 **가격·배송·적립**을 비교했어요.\n- 가장 싼 곳: 내일 도착\n- 두 번째: 카드 할인 시 비슷해요',
+      price: '219,000원',
+      url: 'https://shop.example/item/cleaner',
+      savedAt: at(-50),
+    },
+    {
+      id: 'l-2',
+      kind: 'note',
+      title: '제주 2박 3일 일정 초안',
+      body: '1일차 공항 → 협재 해변, 2일차 오름 두 곳, 3일차 시장 들렀다 공항.',
+      savedAt: at(-day - 120),
+    },
+    {
+      id: 'l-3',
+      kind: 'place',
+      title: '성수동 파스타집 (토 7시 두 자리 가능)',
+      body: '창가 자리는 미리 말해야 해요. 주차는 근처 공영 주차장.',
+      savedAt: at(-3 * day),
+    },
+    {
+      id: 'l-4',
+      kind: 'link',
+      title: '연말정산 간소화 서비스 안내',
+      body: '1월 15일부터 열려요. 의료비·교육비 영수증은 따로 챙겨야 해요.',
+      url: 'https://example.com/tax-guide',
+      savedAt: at(-5 * day),
+    },
+  ])
+  store.setSetting('memory', [
+    { id: 'm-1', text: '아침은 7시 반에 먹어요', source: 'user', at: at(-8 * day) },
+    { id: 'm-2', text: '아이가 초등학교 3학년이에요', source: 'doori', at: at(-5 * day) },
+    { id: 'm-3', text: '배달은 주로 저녁에 시켜요', source: 'doori', at: at(-day) },
+  ])
+  store.setSetting('feed', [
+    {
+      id: 'f-1',
+      kind: 'post',
+      title: '오늘 아침 소식',
+      body: '오늘은 **맑고 최고 14도**예요. 오후 3시에 치과 예약이 있어요.\n- 택배 2개가 오늘 와요 (키보드, 휴지)\n- 내일은 비 소식이 있어요. 우산 챙기세요.',
+      at: on(0, 7, 31),
+      reaction: 'up',
+    },
+    {
+      id: 'f-2',
+      kind: 'done',
+      title: '무선 청소기 최저가 찾았어요',
+      body: '세 곳을 비교해서 보관함에 남겨 뒀어요.',
+      at: at(-52),
+    },
+    { id: 'f-3', kind: 'saved', title: '보관함에 남겼어요: 무선 청소기 최저가 3곳 비교', at: at(-50) },
+    {
+      id: 'f-4',
+      kind: 'routine',
+      title: '걷기 체크인',
+      body: '이번 주 두 번 걸었어요. 금요일만 걸으면 목표를 채워요.',
+      ref: 'r-walk',
+      at: on(-2, 20, 2),
+    },
+    {
+      id: 'f-5',
+      kind: 'suggest',
+      title: '안 쓰는 정기 결제 2개를 찾았어요',
+      body: '영상 서비스 두 곳이 석 달째 안 쓰였어요. 정리할까요?',
+      at: at(-day - 30),
+    },
+    {
+      id: 'f-6',
+      kind: 'goal',
+      title: '목표를 세웠어요: 주 3회 30분 걷기',
+      body: '월·수·금 오후 8:00',
+      ref: 'r-walk',
+      at: at(-6 * day),
+    },
+  ])
+  store.setSetting('feedPrompt', '매일 아침 날씨·일정·오는 택배')
+  store.setSetting('connections', { coupang: at(-3 * day), gmail: at(-2 * day) })
 }
 // 첫 실행 마법사는 끝낸 상태로 둔다
 store.setSetting('setupDone', true)
