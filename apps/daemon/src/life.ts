@@ -12,6 +12,7 @@ import {
   type MemoryItem,
   type Routine,
   type RoutineSchedule,
+  type SuggestedIdea,
 } from '@dool2/protocol'
 import { nextRun, scheduleLabel } from '@dool2/protocol/schedule'
 
@@ -34,6 +35,9 @@ export class Life {
   onChange?: () => void
   /** 예약한 일을 할 때 (대화로 보내 두리가 한다) */
   onDue?: (r: Routine) => void
+  /** 맞춤 아이디어를 새로 찾을 때 (본체가 피드 대화에서 두리에게 부탁한다) */
+  onIdeas?: () => void
+  ideasBusy = false
 
   constructor(
     private readonly kv: Kv,
@@ -122,6 +126,8 @@ export class Life {
   }
   /** 지금 해야 할 일을 꺼내고 다음 시각을 정한다 (본체가 30초마다 부른다) */
   tick() {
+    if (this.ideasDue() && !this.ideasBusy && (this.memory().length || this.routines().length))
+      this.refreshIdeas()
     const now = this.now()
     const list = this.routines()
     const due = list.filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now.getTime())
@@ -249,6 +255,36 @@ export class Life {
     else this.onChange?.()
   }
 
+  ideas(): SuggestedIdea[] {
+    return this.list<SuggestedIdea>('ideas')
+  }
+  setIdeas(list: SuggestedIdea[]) {
+    this.kv.setSetting(
+      'ideas',
+      list
+        .slice(0, 6)
+        .map((i) => ({ text: String(i.text).slice(0, 120), why: String(i.why ?? '').slice(0, 120) })),
+    )
+    this.kv.setSetting('ideasAt', this.now().toISOString())
+    this.ideasBusy = false
+    this.onChange?.()
+  }
+  /** 매일 아침 6시(한국)가 지나면 하루 한 번 새로 찾는다 */
+  private ideasDue(): boolean {
+    const at = this.kv.getSetting('ideasAt')
+    const now = this.now()
+    const kst = new Date(now.getTime() + 9 * 3600_000)
+    const six = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), 6) - 9 * 3600_000
+    if (now.getTime() < six) return false
+    return typeof at !== 'string' || Date.parse(at) < six
+  }
+  refreshIdeas() {
+    if (this.ideasBusy) return
+    this.ideasBusy = true
+    this.onChange?.()
+    this.onIdeas?.()
+  }
+
   identity(): Identity {
     const v = this.kv.getSetting('identity')
     return v && typeof v === 'object' ? (v as Identity) : {}
@@ -257,7 +293,12 @@ export class Life {
   state(): LifeState {
     const feedPrompt = this.feedPrompt()
     const identity = this.identity()
+    const ideas = this.ideas()
+    const ideasAt = this.kv.getSetting('ideasAt')
     return {
+      ...(ideas.length ? { ideas } : {}),
+      ...(typeof ideasAt === 'string' ? { ideasAt } : {}),
+      ...(this.ideasBusy ? { ideasBusy: true } : {}),
       ...(Object.keys(identity).length ? { identity } : {}),
       routines: this.routines(),
       library: this.library(),
@@ -318,6 +359,9 @@ export class Life {
       case 'memory-delete':
         this.forget(a.id)
         return
+      case 'ideas-refresh':
+        this.refreshIdeas()
+        return
       case 'identity': {
         const next: Identity = { ...this.identity() }
         if (a.userName !== undefined) next.userName = a.userName.trim().slice(0, 20) || undefined
@@ -363,6 +407,13 @@ export class Life {
           })
           if (!r) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
           return ok(`목표를 고쳤어요: ${r.title}`)
+        }
+        case 'idea_suggest': {
+          const list = Array.isArray(a.ideas) ? (a.ideas as SuggestedIdea[]) : []
+          const ok2 = list.filter((i) => i && typeof i.text === 'string' && i.text.trim())
+          if (!ok2.length) return bad('ideas가 비었어요. [{text, why}] 3~6개를 주세요.')
+          this.setIdeas(ok2)
+          return ok(`아이디어 ${Math.min(ok2.length, 6)}개를 아이디어 탭에 올렸어요.`)
         }
         case 'feed_post': {
           const f = this.feed({

@@ -761,6 +761,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const f = store.getSetting('feedThread')
     if (typeof f === 'string' && store.getThread(f)) store.setSide(f)
   }
+  // 맞춤 아이디어: 피드 대화에서 두리에게 찾아 달라고 한다 (결과는 idea_suggest 도구로 들어온다)
+  life.onIdeas = () =>
+    void (async () => {
+      const threadId = await feedThreadId()
+      if (threads.isRunning(threadId)) return
+      const ask =
+        '아이디어 탭에 올릴 맞춤 할 일을 찾아 주세요. 기억·목표·연결한 서비스·최근 대화를 떠올려, 지금 두리가 실제로 해 줄 수 있는 구체적인 일 3~6개를 골라 idea_suggest로 올려요. 웹을 열 필요는 없어요. 답은 한 문장으로만.'
+      routineThreads.add(threadId)
+      try {
+        for await (const _ of tracked(threadId, threads.send(threadId, ask))) {
+        }
+      } finally {
+        routineThreads.delete(threadId)
+        if (life.ideasBusy) {
+          life.ideasBusy = false
+          life.onChange?.()
+        }
+      }
+    })().catch(() => {
+      life.ideasBusy = false
+    })
   life.onDue = (r) =>
     void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
   const lifeTimer = setInterval(() => life.tick(), 30_000)

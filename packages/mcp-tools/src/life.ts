@@ -132,6 +132,29 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('memory_forget'),
   )
   server.registerTool(
+    'idea_suggest',
+    {
+      title: '맞춤 아이디어 올리기',
+      description:
+        '사용자에게 지금 해 주면 좋을 일 3~6개를 아이디어 탭 맨 위에 올린다. 기억·목표·연결한 서비스·최근 대화를 보고, 실제로 두리가 할 수 있는 구체적인 일만 고른다.',
+      inputSchema: {
+        ideas: z
+          .array(
+            z.object({
+              text: z
+                .string()
+                .max(120)
+                .describe('누르면 그대로 보낼 부탁 (예: "이번 주 금요일 저녁 부산 가는 SRT 자리 찾아 줘")'),
+              why: z.string().max(120).describe('왜 지금 이게 좋은지 한 줄 (예: "주말마다 부산에 가셨어요")'),
+            }),
+          )
+          .min(1)
+          .max(6),
+      },
+    },
+    call('idea_suggest'),
+  )
+  server.registerTool(
     'photo_view',
     {
       title: '보낸 사진 보기',
