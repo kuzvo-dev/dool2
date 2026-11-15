@@ -522,7 +522,8 @@ export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
   | { kind: 'hello' }
   | { kind: 'thread'; id: string }
-  | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string }
+  /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
+  | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
   | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }

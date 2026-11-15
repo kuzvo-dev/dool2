@@ -1359,3 +1359,43 @@ button {
 .identity .seg {
   width: 100%;
 }
+
+/* 사진 보내기 */
+.app-composer {
+  flex-wrap: wrap;
+}
+.attach-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 4px 6px;
+}
+.attach-preview img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.bubble.with-photo {
+  display: grid;
+  gap: 6px;
+}
+.sent-photo {
+  display: block;
+  max-width: 200px;
+  max-height: 240px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+.photo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.photo-chip svg.i {
+  width: 16px;
+  height: 16px;
+}

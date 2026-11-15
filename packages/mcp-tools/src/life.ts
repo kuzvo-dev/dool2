@@ -132,6 +132,17 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('memory_forget'),
   )
   server.registerTool(
+    'photo_view',
+    {
+      title: '보낸 사진 보기',
+      description:
+        '사용자 말 끝에 "[사진: 파일이름.jpg]"가 있으면 그 사진을 본다. 영수증·캡처·상품 사진을 읽고 정리할 때 쓴다.',
+      inputSchema: { name: z.string().max(80).describe('사진 파일 이름 (예: 2026-11-16T01-30-00-000Z.jpg)') },
+      annotations: { readOnlyHint: true },
+    },
+    call('photo_view'),
+  )
+  server.registerTool(
     'feed_post',
     {
       title: '피드에 올리기',

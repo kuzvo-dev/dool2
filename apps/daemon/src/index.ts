@@ -3,7 +3,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
@@ -57,7 +57,7 @@ import {
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
-import { appNote, readAppNote } from '@dool2/protocol/rich'
+import { appNote, PHOTO_MARK, readAppNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { autoLogin } from './auto-login.js'
@@ -231,6 +231,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** 목표·보관함·기억·피드 */
   const life = new Life(store)
+  // 폰에서 보낸 사진: 작업 폴더 photos/에 두고, 말에는 표시만 붙인다 (두리는 photo_view로 본다)
+  const photoDir = join(paths.workspace, 'photos')
+  async function savePhoto(b64: string): Promise<string> {
+    const buf = Buffer.from(b64, 'base64')
+    if (buf.length < 100 || buf[0] !== 0xff || buf[1] !== 0xd8) throw new Error('사진 형식이 맞지 않아요')
+    await mkdir(photoDir, { recursive: true })
+    const name = `${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`
+    await writeFile(join(photoDir, name), buf)
+    return `${PHOTO_MARK}${name}]`
+  }
+  life.photo = async (name) => {
+    if (!/^[\w-]+\.jpg$/.test(name)) throw new Error('사진 이름이 맞지 않아요')
+    return (await readFile(join(photoDir, name))).toString('base64')
+  }
   const threads = new ThreadService({
     store,
     runtimes,
@@ -383,7 +397,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const thread = store.getThread(id)
         return thread ? { kind: 'thread', thread, messages: store.listMessages(id) } : undefined
       },
-      ask: async ({ threadId, agent, text }) => {
+      ask: async ({ threadId, agent, text: said, image }) => {
+        // 사진: 두리 작업 폴더에 두고, 두리가 photo_view로 본다
+        const text = image ? `${said}\n\n${await savePhoto(image)}` : said
         // 대화는 하나: 방을 고르지 않은 부탁은 대화로 보낸다 (일하는 중이면 줄을 선다)
         if (!threadId) {
           await talk(text, { agent, viaPhone: true })
@@ -454,7 +470,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       life: async () => life.state(),
       lifeAction: async (a) => {
         life.act(a)
-        if (a.action === 'identity') conversation.rotateSoon()
+        if (a.action === 'identity')
+          conversation.rotateSoon(
+            '사용자가 두리의 말투·호칭 설정을 바꿨어요. 위 대화의 말투·호칭은 따르지 말고 지침 맨 앞 설정(없으면 기본 해요체)을 따라요.',
+          )
         return life.state()
       },
       connectLogin: async (id, username, password) => {
@@ -868,6 +887,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
       }
+      if (req.method === 'POST' && b === 'life' && c === 'photo_view' && !d) {
+        const args = (await readJson(req)) as { name?: unknown }
+        try {
+          const data = await life.photo?.(String(args.name ?? ''))
+          if (!data) throw new Error('사진을 찾지 못했어요')
+          return json(res, 200, {
+            content: [
+              { type: 'image', data, mimeType: 'image/jpeg' },
+              { type: 'text', text: '사용자가 폰에서 보낸 사진이에요. 보이는 내용을 바탕으로 답해요.' },
+            ],
+          })
+        } catch (e) {
+          return json(res, 200, { isError: true, content: [{ type: 'text', text: (e as Error).message }] })
+        }
+      }
       if (req.method === 'POST' && b === 'life' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         return json(res, 200, life.run(c, args && typeof args === 'object' ? args : {}))
@@ -1126,7 +1160,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (a === 'life' && b === 'action' && req.method === 'POST') {
       const action = (await readJson(req)) as LifeAction
       const id = life.act(action)
-      if (action.action === 'identity') conversation.rotateSoon()
+      if (action.action === 'identity')
+        conversation.rotateSoon(
+          '사용자가 두리의 말투·호칭 설정을 바꿨어요. 위 대화의 말투·호칭은 따르지 말고 지침 맨 앞 설정(없으면 기본 해요체)을 따라요.',
+        )
       return json(res, 200, { ok: true, ...(id ? { id } : {}), state: life.state() })
     }
 
