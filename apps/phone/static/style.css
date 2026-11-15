@@ -1284,3 +1284,34 @@ button {
   padding: 9px 0;
   outline: none;
 }
+
+/* 첫 인사: 시작하는 순서 */
+.start-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.start-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-top: 0.5px solid var(--line);
+  text-align: left;
+}
+.start-step .row-t {
+  flex: 1;
+}
+.start-n {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--me);
+  font: 700 12px / 1 var(--font-sans);
+}
+.plus-sheet {
+  display: grid;
+  gap: 2px;
+}

@@ -190,3 +190,10 @@ export function shortTime(iso: string) {
     ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
     : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
 }
+
+/** 칸 고르기(.seg) 버튼: 고른 칸은 aria-pressed */
+export function segBtn(on: boolean, props: { text: string; onclick: () => void }) {
+  const b = h('button', { text: props.text, onclick: props.onclick })
+  b.setAttribute('aria-pressed', String(on))
+  return b
+}
