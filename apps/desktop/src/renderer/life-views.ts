@@ -215,6 +215,43 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
 
 // ── 아이디어 ─────────────────────────────────────────
 
+/** 두리가 먼저 찾은 할 일 (기억·목표·연결 기반, 매일 아침 새로) */
+function suggestedBox(ctx: LifeCtx) {
+  const life = ctx.life()
+  const ideas = life.ideas ?? []
+  const refresh = button(
+    'btn-ghost sm',
+    () => void ctx.act({ action: 'ideas-refresh' }),
+    life.ideasBusy ? '찾는 중…' : ideas.length ? '새로 찾기' : '찾아 줘',
+  )
+  refresh.disabled = Boolean(life.ideasBusy)
+  return el(
+    'section',
+    'card suggested',
+    el(
+      'div',
+      'suggested-head',
+      doori(life.ideasBusy ? 'thinking' : '', 28),
+      el(
+        'div',
+        'grow',
+        el('p', 'row-t', '두리가 찾은 할 일'),
+        el('p', 'cap', '기억과 목표, 연결한 곳을 보고 매일 아침 새로 찾아요'),
+      ),
+      refresh,
+    ),
+    ...ideas.map((i) =>
+      button(
+        'idea-row',
+        () => ctx.send(i.text),
+        tile('idea', 'amber'),
+        el('span', 'grow', el('span', 'idea-t', i.text), el('span', 'cap', i.why)),
+        icon('send', 'i idea-go'),
+      ),
+    ),
+  )
+}
+
 export function ideasView(ctx: LifeCtx): HTMLElement {
   const mine = personalIdeas(ctx.services(), ctx.life().feed)
   const ideaRow = (idea: Idea) =>
@@ -260,6 +297,7 @@ export function ideasView(ctx: LifeCtx): HTMLElement {
     'div',
     'page',
     pageHead('아이디어', '누르면 두리가 바로 시작해요'),
+    suggestedBox(ctx),
     section('연결한 곳에서', mineBox),
     ...groups,
     el(

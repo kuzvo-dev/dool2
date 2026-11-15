@@ -1749,3 +1749,21 @@ button.side-row:hover {
 .identity .seg {
   width: 100%;
 }
+
+/* 두리가 찾은 할 일 */
+.card.suggested {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.suggested-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.suggested-head .row-text,
+.suggested-head .grow {
+  flex: 1;
+  min-width: 0;
+}
