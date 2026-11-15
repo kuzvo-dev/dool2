@@ -28,6 +28,10 @@
     "./connect-text": {
       "types": "./dist/connect-text.d.ts",
       "default": "./dist/connect-text.js"
+    },
+    "./schedule": {
+      "types": "./dist/schedule.d.ts",
+      "default": "./dist/schedule.js"
     }
   },
   "scripts": {
