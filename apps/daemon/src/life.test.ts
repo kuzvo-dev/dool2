@@ -96,3 +96,17 @@ describe('Life', () => {
     expect(life.feedItems()[0]?.reaction).toBe('up')
   })
 })
+
+describe('피드 글', () => {
+  it('답 첫 줄이 제목이 된다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.act({ action: 'feed-prompt', text: '날씨' })
+    const r = life.routines().find((x) => x.target === 'feed')
+    life.noteRun(r?.id ?? '', '**11/16 서울 날씨**\n- 맑아요\n- 최고 17°')
+    expect(life.feedItems()[0]).toMatchObject({
+      kind: 'post',
+      title: '11/16 서울 날씨',
+      body: '- 맑아요\n- 최고 17°',
+    })
+  })
+})

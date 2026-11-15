@@ -148,12 +148,20 @@ export class Life {
     if (r.category)
       r.log = [{ at: this.now().toISOString(), text: result.slice(0, 300) }, ...(r.log ?? [])].slice(0, 50)
     this.put('routines', list)
-    this.feed({
-      kind: r.target === 'feed' ? 'post' : 'routine',
-      title: r.title,
-      body: result.slice(0, 2000),
-      ref: r.id,
-    })
+    if (r.target === 'feed') {
+      // 답 첫 줄이 제목, 나머지가 글
+      const lines = result.trim().split('\n')
+      const head = (lines[0] ?? '').replace(/^#+\s*|\*\*/g, '').trim()
+      const body = lines.slice(1).join('\n').trim()
+      this.feed({
+        kind: 'post',
+        title: head.slice(0, 80) || '오늘의 소식',
+        body: (body || result).slice(0, 2000),
+        ref: r.id,
+      })
+      return
+    }
+    this.feed({ kind: 'routine', title: r.title, body: result.slice(0, 2000), ref: r.id })
   }
 
   // ── 보관함 ──
@@ -229,7 +237,7 @@ export class Life {
     if (t)
       this.addRoutine({
         title: '피드',
-        prompt: `피드 글을 써 주세요: ${t}\n짧은 제목 한 줄과 핵심 3~5줄로. 확인한 것만 쓰고, 출처 사이트 이름을 끝에 적어요.`,
+        prompt: `오늘의 피드 글을 써 주세요: ${t}\n이 답이 그대로 피드에 올라가요(feed_post 도구는 쓰지 않아요). 첫 줄은 짧은 제목, 그다음 핵심 3~5줄 목록. 확인한 것만 쓰고 맨 끝에 출처 사이트 이름을 적어요. "올렸어요" 같은 말은 쓰지 않아요.`,
         schedule: { kind: 'daily', time: '07:30' },
         target: 'feed',
       })
