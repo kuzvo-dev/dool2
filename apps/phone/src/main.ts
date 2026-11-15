@@ -30,7 +30,7 @@ import {
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, toolLabel } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
-import { doori, h, type IconName, icon, liveDoori, rich, shortTime } from './dom.js'
+import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime } from './dom.js'
 import {
   feedView,
   goalSheet,
@@ -68,6 +68,8 @@ type Overlay =
   | { kind: 'item'; id: string }
   /** 답을 길게 눌렀을 때: 보관함에 남기기·복사 */
   | { kind: 'msg'; id: string }
+  /** 입력칸 + : 빠른 메뉴 */
+  | { kind: 'plus' }
   | undefined
 
 const st: {
@@ -716,7 +718,7 @@ function buildShell() {
   })
   const plus = h(
     'button',
-    { class: 'cbtn plus', label: '아이디어', onclick: () => setTab('ideas') },
+    { class: 'cbtn plus', label: '더 하기', onclick: () => openOverlay({ kind: 'plus' }) },
     icon('plus', 'i md'),
   )
   const sendBtn = h('button', { class: 'send-btn', label: '보내기' })
@@ -788,7 +790,7 @@ function renderTop() {
   )
   const pill = h(
     'button',
-    { class: 'fpill', onclick: () => openOverlay({ kind: 'agent' }) },
+    { class: 'fpill', label: '내 PC', onclick: () => setTab('settings') },
     h('span', { class: st.online && !st.pcSilent ? 'dot work' : 'dot' }),
     shortPc(st.saved?.pcName),
   )
@@ -1074,6 +1076,26 @@ function helloCard() {
       { class: 'quick' },
       ...['택배 어디쯤 왔어?', '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘', '뭘 할 수 있어?'].map((q) =>
         h('button', { text: q, onclick: () => ask(q) }),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'card start-card' },
+      h('strong', { text: '처음이면 이렇게 시작해 보세요' }),
+      ...(
+        [
+          ['apps', '1', '자주 쓰는 쇼핑몰·통신사를 연결해 두기', () => setTab('connect')],
+          ['feed', '2', '매일 아침 받을 소식 정하기', () => setTab('feed')],
+          ['goal', '3', '알아서 챙길 일·목표 만들기', () => setTab('goals')],
+        ] as [IconName, string, string, () => void][]
+      ).map(([ic, n, t, go]) =>
+        h(
+          'button',
+          { class: 'start-step', onclick: go },
+          h('span', { class: 'start-n', text: n }),
+          h('span', { class: 'row-t', text: t }),
+          icon(ic, 'i'),
+        ),
       ),
     ),
   )
@@ -1560,7 +1582,9 @@ function renderOverlay() {
                 ? itemSheet(lifeCtx(), ov.id)
                 : ov.kind === 'msg'
                   ? msgSheet(ov.id)
-                  : loginSheet(ov.id)
+                  : ov.kind === 'plus'
+                    ? plusSheet()
+                    : loginSheet(ov.id)
   // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
   const active = document.activeElement
   const typing =
@@ -1684,8 +1708,7 @@ function settingsView() {
     ['dark', '어둡게'],
   ] as const)
     seg.append(
-      h('button', {
-        class: theme === id ? 'on' : '',
+      segBtn(theme === id, {
         text: label,
         onclick: () => {
           document.documentElement.dataset.theme = id
@@ -1733,6 +1756,32 @@ function settingsView() {
       ),
     )
   return box
+}
+
+/** 입력칸 + : 아이디어·목표·피드·따로 하는 대화·연결 */
+function plusSheet() {
+  const item = (ic: IconName, tone: string, title: string, sub: string, onclick: () => void) =>
+    h(
+      'button',
+      { class: 'set-row', onclick },
+      h('span', { class: `tile sm ${tone}` }, icon(ic, 'i')),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: title }),
+        h('span', { class: 'row-d', text: sub }),
+      ),
+    )
+  return h(
+    'section',
+    { class: 'sheet float app-sheet rise plus-sheet' },
+    item('idea', 'amber', '아이디어', '두리에게 맡길 만한 일 보기', () => setTab('ideas')),
+    item('goal', 'rose', '목표·알림 만들기', '매일 아침 브리핑, 운동, 저축…', () => setTab('goals')),
+    item('feed', 'blue', '피드 받기', '매일 아침 받을 소식 정하기', () => setTab('feed')),
+    item('pencil', 'violet', '따로 하는 대화', '여행 준비처럼 긴 주제는 따로', () => newSide()),
+    item('apps', 'mint', '서비스 연결', '쇼핑몰·통신사·예매 사이트 로그인해 두기', () => setTab('connect')),
+    h('p', { class: 'meta seg-note', text: '사진·파일 보내기는 곧 돼요.' }),
+  )
 }
 
 /** 답을 길게 누르면: 보관함에 남기기 · 복사 */

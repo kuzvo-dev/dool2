@@ -10,7 +10,7 @@ import {
   type Routine,
 } from '@dool2/protocol'
 import { scheduleLabel } from '@dool2/protocol/schedule'
-import { doori, h, type IconName, icon, rich, shortTime } from './dom.js'
+import { doori, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 
 export interface LifeCtx {
   life?: LifeState
@@ -454,8 +454,7 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
     ['media', '사진·파일'],
   ] as const)
     seg.append(
-      h('button', {
-        class: ctx.librarySeg === id ? 'on' : '',
+      segBtn(ctx.librarySeg === id, {
         text: label,
         onclick: () => ctx.setLibrarySeg(id),
       }),
