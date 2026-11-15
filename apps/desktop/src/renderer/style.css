@@ -1767,3 +1767,37 @@ button.side-row:hover {
   flex: 1;
   min-width: 0;
 }
+
+/* 사진: 붙여 넣기·끌어 놓기 */
+.attach-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 6px 8px;
+}
+.attach-preview img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.composer-dock.dropping .composer {
+  box-shadow:
+    0 0 0 2px var(--brand),
+    var(--shadow-float);
+}
+.bubble.with-photo {
+  display: grid;
+  gap: 6px;
+}
+.photo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.photo-chip svg.i {
+  width: 16px;
+  height: 16px;
+}

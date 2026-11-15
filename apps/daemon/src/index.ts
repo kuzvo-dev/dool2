@@ -1229,7 +1229,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     if (a === 'conversation' && b === 'messages' && req.method === 'POST') {
       const body = SendMessageRequestSchema.parse(await readJson(req))
-      return json(res, 202, await talk(body.text))
+      const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text
+      return json(res, 202, await talk(text))
     }
     if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
       conversation.cancel()

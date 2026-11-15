@@ -40,7 +40,7 @@ import {
   memoryTab,
   scheduleTab,
 } from './life-views.js'
-import { appNote, narrationLine, readAppNote, toolLabel } from './rich.js'
+import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import {
   type CheckAction,
@@ -1154,6 +1154,9 @@ function who(iso: string) {
 function messageEl(role: string, text: string, note?: string, tools = true): HTMLElement {
   if (role === 'user') {
     if (note !== undefined) return el('p', 'msg note', note)
+    // 사진을 보낸 말: "[사진: 파일]" 대신 사진 표시
+    const { text: said, photo: sent } = splitPhoto(text)
+    if (sent) return el('div', 'bubble me with-photo', el('span', 'photo-chip', icon('image'), '사진'), said)
     return el('div', 'bubble me', text)
   }
   if (role === 'system') return el('p', 'sysline', el('i', 'dot stop'), text)
@@ -1404,13 +1407,63 @@ async function connectLive() {
 }
 
 /** 말 하나를 보낸다. 두리가 답하는 중이면 본체가 줄을 세웠다가 이어서 전한다 */
+/** 보낼 사진 (줄인 JPEG base64): 입력칸에 붙여 넣거나 끌어 놓는다 */
+let photo: string | undefined
+
+async function shrinkPhoto(file: File): Promise<string> {
+  const bmp = await createImageBitmap(file)
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(bmp.width * scale)
+  c.height = Math.round(bmp.height * scale)
+  c.getContext('2d')?.drawImage(bmp, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.82).split(',')[1] ?? ''
+}
+
+function renderPhoto() {
+  const box = document.getElementById('attach')
+  if (!box) return
+  if (!photo) {
+    box.replaceChildren()
+    box.hidden = true
+    return
+  }
+  const img = document.createElement('img')
+  img.src = `data:image/jpeg;base64,${photo}`
+  img.alt = '보낼 사진'
+  const x = el('button', 'icon-btn', icon('close'))
+  x.type = 'button'
+  x.setAttribute('aria-label', '사진 빼기')
+  x.onclick = () => {
+    photo = undefined
+    renderPhoto()
+    renderSend()
+  }
+  box.replaceChildren(img, x)
+  box.hidden = false
+}
+
+async function attachPhoto(file: File | undefined | null) {
+  if (!file || !file.type.startsWith('image/')) return
+  try {
+    photo = await shrinkPhoto(file)
+    renderPhoto()
+    renderSend()
+  } catch {
+    // 읽을 수 없는 그림이면 그냥 둔다
+  }
+}
+
 async function send(text: string) {
-  if (!text.trim()) return
+  if (!text.trim() && !photo) return
   if (state.view !== 'talk') await show('talk')
+  const image = photo
+  photo = undefined
+  renderPhoto()
   try {
     await api<{ queued: boolean }>('/api/conversation/messages', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: text.trim() || '이 사진 봐 줘', ...(image ? { image } : {}) }),
     })
   } catch (err) {
     document
@@ -1423,7 +1476,7 @@ async function send(text: string) {
 function renderSend() {
   const input = $<HTMLTextAreaElement>('input')
   const btn = $<HTMLButtonElement>('send')
-  const hasText = input.value.trim().length > 0
+  const hasText = input.value.trim().length > 0 || photo !== undefined
   // 따로 하는 대화는 줄 서기 없이 한 번에 하나 (답하는 중엔 멈추기만)
   const inSide = state.view === 'thread'
   const busy = inSide ? side?.busy === true : state.busy
@@ -1776,6 +1829,27 @@ async function main() {
     renderSend()
   }
   input.addEventListener('input', autosize)
+  // 사진: 붙여 넣기 · 끌어 놓기
+  input.addEventListener('paste', (e) => {
+    const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith('image/'))
+    if (f) {
+      e.preventDefault()
+      void attachPhoto(f)
+    }
+  })
+  const dock = $<HTMLFormElement>('composer')
+  dock.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) {
+      e.preventDefault()
+      dock.classList.add('dropping')
+    }
+  })
+  dock.addEventListener('dragleave', () => dock.classList.remove('dropping'))
+  dock.addEventListener('drop', (e) => {
+    e.preventDefault()
+    dock.classList.remove('dropping')
+    void attachPhoto(e.dataTransfer?.files?.[0])
+  })
   input.addEventListener('keydown', (e) => {
     // 한글 조합 중 Enter는 무시한다
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -1798,7 +1872,7 @@ async function main() {
       void sendSide(text)
       return
     }
-    if (!text.trim()) {
+    if (!text.trim() && !photo) {
       if (state.busy) void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {})
       return
     }
