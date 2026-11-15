@@ -1484,6 +1484,8 @@ button {
 /* 두리가 찾은 할 일 */
 .card.suggested {
   display: grid;
+  /* 한 줄로 두는 설명(nowrap)이 칸을 넓히지 않게 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   margin-bottom: 14px;
 }

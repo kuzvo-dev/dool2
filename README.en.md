@@ -14,7 +14,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/desktop-chat.png" alt="dool2 desktop app: connected AI agents and threads on the left, a conversation on the right" width="820">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-feed-dark.png">
+    <img src="docs/assets/pc-feed-light.png" alt="dool2 desktop app, Feed tab: a morning briefing request, finished tasks and the morning update" width="860">
+  </picture>
 </p>
 
 > [!WARNING]
@@ -30,6 +33,25 @@ dool2 is an **open-source personal AI assistant that runs on your own Mac or Win
 - **Built to get Korean services done without getting blocked.** dool2 uses your real, signed-in Chrome. When a CAPTCHA or identity check appears, it hands the screen to you instead of trying to bypass it.
 
 dool2 is **Korean-first**. The UI, the assistant's persona and most docs are in Korean, and the skills target Korean services. Contributions in English are welcome.
+
+## What it does
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-tabs-dark.png">
+    <img src="docs/assets/phone-tabs-light.png" alt="dool2 phone app: Chat, Feed, Ideas, Goals and the assistant panel" width="900">
+  </picture>
+</p>
+
+Both the phone and desktop apps have five tabs.
+
+- **Chat**: one continuous conversation. You can keep sending messages while dool2 is answering, and send photos such as receipts or screenshots.
+- **Feed**: tell dool2 what to report (for example "weather, schedule and incoming parcels every morning") and it posts on schedule. Finished tasks show up here too.
+- **Ideas**: about 400 things you can ask, in 16 categories (groceries, money, trains and flights, paperwork, family and more), plus personal suggestions refreshed every morning from memory, goals and connected services.
+- **Goals**: say "exercise three times a week" or "check my phone bill every month" in chat, and dool2 makes a plan and checks in on schedule.
+- **Library**: comparison tables, itineraries, links and photos dool2 made or received.
+- **Assistant panel**: tap the character to see upcoming runs, memory, a live view of the Chrome tab dool2 is using, activity and approvals. Set how dool2 addresses you, its tone and answer length here.
+- **84 Korean service connections**: enter your ID and password once. They are encrypted in the PC's vault and the dool2 daemon signs in for you, so the AI never sees the password. CAPTCHAs and identity checks are streamed live to your phone so you can finish them yourself.
 
 ## How it works
 
@@ -56,18 +78,19 @@ See the [architecture doc](docs/architecture.md) (Korean) for details.
 
 ## Roadmap
 
-The PC side is built first. The phone app and relay come last.
+Both the desktop and phone apps work end to end as a test build. Next up is an installer anyone can use (M5).
 
-| Milestone           | Scope                                                                                                   | Status  |
-| ------------------- | ------------------------------------------------------------------------------------------------------- | ------- |
-| M0 Skeleton         | Monorepo, Claude Code and Codex adapters, chat in the PC app, history, persona                          | ✅ Done |
-| M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check | ✅ Done |
-| M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                              | ✅ Done |
-| M2 Browser          | dool2 Chrome extension, browser tools, hand-off, login vault, first skill                               | ✅ Done |
-| M3 Approval gate    | Risk tiers, approvals on the PC screen, gate regression tests (phone signing in M6)                     | ✅ Done |
-| M4 Desktop & skills | App control (e.g. KakaoTalk PC), Korean service skills                                                  | Planned |
-| M5 Distribution     | Signed and notarized installers, auto-update                                                            | Planned |
-| M6 Phone            | Phone app, QR pairing, relay, biometric signing                                                         | Planned |
+| Milestone           | Scope                                                                                                   | Status     |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
+| M0 Skeleton         | Monorepo, Claude Code and Codex adapters, chat in the PC app, history, persona                          | ✅ Done    |
+| M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check | ✅ Done    |
+| M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                              | ✅ Done    |
+| M2 Browser          | dool2 Chrome extension, browser tools, hand-off, login vault, first skill                               | ✅ Done    |
+| M3 Approval gate    | Risk tiers, approval screens, gate regression tests                                                     | ✅ Done    |
+| M6 Phone            | Phone app, QR pairing, relay, approvals signed with the phone's key, push, remote view of the PC tab    | ✅ Test build |
+| Life assistant      | Five tabs (Chat, Feed, Ideas, Goals, Library), memory, scheduled runs, photos, assistant settings       | ✅ Test build |
+| M4 Desktop & skills | 84 service connections with sign-in on your behalf, app control such as KakaoTalk PC (macOS permission testing left) | In progress |
+| M5 Distribution     | Signed and notarized installers, auto-update, an always-on relay                                        | Next       |
 
 ## Running from source
 

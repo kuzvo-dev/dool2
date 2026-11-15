@@ -257,8 +257,10 @@ async function receive(env: Envelope) {
       await save(s)
       toast('연결됐어요. 이제 폰으로 부탁해 보세요')
       st.screen = { name: 'app' }
+      // 다시 연결할 때와 같은 것을 받아 온다 (피드·목표·아이디어가 비어 보이지 않게)
       void send({ kind: 'conversation' })
       void send({ kind: 'connections' })
+      void send({ kind: 'life' })
       break
     case 'pair-rejected':
       if (st.screen.name === 'pairing') st.screen = { ...st.screen, rejected: true }
