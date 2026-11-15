@@ -28,7 +28,7 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { narrationLine, readAppNote, splitPhoto, toolLabel } from '@dool2/protocol/rich'
+import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime } from './dom.js'
 import {
@@ -2029,7 +2029,7 @@ function agentPanel() {
             { class: `tile sm ${f.kind === 'done' ? 'blue' : 'violet'}` },
             icon(f.kind === 'done' ? 'check' : 'clock', 'i'),
           ),
-          f.title,
+          withoutPhotoMark(f.title),
           f.body ? plain(f.body, 70) : undefined,
           shortTime(f.at),
         ),

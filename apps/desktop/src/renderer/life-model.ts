@@ -58,6 +58,8 @@ export function timeLabel(iso: string): string {
 /** 미리보기: 마크다운 기호(**, #, 목록 머리, `, [글](주소))를 빼고 한 줄로 */
 export function plain(text: string, max = 160): string {
   const flat = text
+    // 사진 표시(잘린 것 포함)는 "(사진)"으로
+    .replace(/\s*\[사진:[^\]]*\]?/g, ' (사진)')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/__([^_]+)__/g, '$1')

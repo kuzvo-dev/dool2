@@ -9,6 +9,7 @@ import {
   type LifeState,
   type Routine,
 } from '@dool2/protocol'
+import { withoutPhotoMark } from '@dool2/protocol/rich'
 import { scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 
@@ -160,7 +161,7 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
       h('span', { class: 'meta', text: k.label }),
       h('span', { class: 'meta feed-time', text: shortTime(f.at) }),
     ),
-    h('strong', { class: 'feed-title', text: f.title }),
+    h('strong', { class: 'feed-title', text: withoutPhotoMark(f.title) }),
     f.body ? body : undefined,
     h(
       'div',

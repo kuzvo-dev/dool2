@@ -105,6 +105,11 @@ export function splitPhoto(text: string): { text: string; photo?: string } {
   return m ? { text: text.slice(0, m.index).trim(), photo: m[1] as string } : { text }
 }
 
+/** 화면 제목용: 사진 표시(잘린 것 포함)를 "(사진)"으로 */
+export function withoutPhotoMark(text: string): string {
+  return text.replace(/\s*\[사진:[^\]]*\]?/g, ' (사진)').trim()
+}
+
 /**
  * 두리 앱이 사용자 대신 AI에게 보내는 알림 (승인 결과 등). 대화 기록에는 user로 남지만,
  * 화면에서는 내 말풍선이 아니라 가운데 회색 알림 줄로 보여 준다.

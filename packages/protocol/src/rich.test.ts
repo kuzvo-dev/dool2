@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
-import { appNote, josa, narrationLine, readAppNote, richBlocks, stripMonologue } from './rich.js'
+import {
+  appNote,
+  josa,
+  narrationLine,
+  readAppNote,
+  richBlocks,
+  stripMonologue,
+  withoutPhotoMark,
+} from './rich.js'
 
 describe('richBlocks', () => {
   it('빈 줄로 문단을 나누고 **굵게**를 살린다', () => {
@@ -111,5 +119,12 @@ describe('stripMonologue', () => {
   })
   it('다 걷어 내면 원래 글', () => {
     expect(stripMonologue('Let me think.')).toBe('Let me think.')
+  })
+})
+
+describe('withoutPhotoMark', () => {
+  it('사진 표시를 (사진)으로, 잘린 것도', () => {
+    expect(withoutPhotoMark('합계 알려 줘 [사진: 2026-11-15T17-03-24-937Z.jpg]')).toBe('합계 알려 줘 (사진)')
+    expect(withoutPhotoMark('정리해 줘 [사진: 2026-11-15T16-54-57-062Z.j')).toBe('정리해 줘 (사진)')
   })
 })
