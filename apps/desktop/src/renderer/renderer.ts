@@ -17,7 +17,14 @@ import type {
 } from '@dool2/protocol'
 import { appNote, type Inline, readAppNote, richBlocks, toolLabel } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
-import { type CheckAction, costLabel, planLabel, SETUP_STEPS, type SetupStep } from './setup-model.js'
+import {
+  type CheckAction,
+  costLabel,
+  neededAgents,
+  planLabel,
+  SETUP_STEPS,
+  type SetupStep,
+} from './setup-model.js'
 
 declare global {
   interface Window {
@@ -75,6 +82,8 @@ const state: {
   pick: AgentId
   busy: boolean
   extension?: ExtensionStatus
+  /** 첫 설정에서 고른 AI 구독 */
+  choice?: AiChoice
 } = { url: '', token: '', agents: [], threads: [], pick: 'claude', busy: false }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -121,9 +130,14 @@ function statRow(name: string, cls: string, meta: string, title: string, onClick
 function renderAgents() {
   const box = $('agents')
   box.replaceChildren(
-    // 종량제 실행기는 준비한 사람에게만 보여 준다
+    // 깔려 있거나, 고른 구독에 필요한 AI만 보여 준다 (Claude만 고른 사람에게 "Codex 설치 필요"를 띄우지 않게).
+    // 종량제 실행기는 준비한 사람에게만
     ...state.agents
-      .filter((a) => a.id !== 'opencode' || a.installed)
+      .filter((a) =>
+        a.id === 'opencode'
+          ? a.installed
+          : a.installed || !state.choice || neededAgents(state.choice).includes(a.id),
+      )
       .map((a) => {
         const s = agentState(a)
         const title =
@@ -907,6 +921,8 @@ async function main() {
     loadThreads(),
     loadExtension().catch(() => undefined),
   ])
+  if (settings.aiChoice) state.choice = settings.aiChoice
+  renderAgents()
   renderBrowser()
   // 확장이 붙고 떨어지는 걸 왼쪽에 보여 준다
   // 폰에서 맡긴 일도 목록·홈에 보이게 맡긴 일을 같이 새로 본다
@@ -948,6 +964,8 @@ async function main() {
     })
     void wizard.done.then((r) => {
       saved = r.settings
+      if (saved.aiChoice) state.choice = saved.aiChoice
+      renderAgents()
       if (r.defaultAgent) state.pick = r.defaultAgent
       renderPick()
       renderNotice(saved)
