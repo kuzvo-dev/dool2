@@ -351,6 +351,11 @@ export class BrowserTools {
   }
 
   /** 이 탭을 지금 폰 원격 화면으로 다뤄도 되는지: 두리가 사람에게 넘긴 지 30분 안 */
+  /** 사람이 직접 할 탭으로 표시 (서비스 연결에서 연 탭을 폰 원격 화면으로 로그인할 때) */
+  allowRemote(tabId: number) {
+    this.handedOff.set(tabId, Date.now())
+  }
+
   remoteAllowed(tabId: number, now = Date.now()): boolean {
     const at = this.handedOff.get(tabId)
     if (at === undefined) return false

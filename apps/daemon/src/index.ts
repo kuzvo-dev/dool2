@@ -48,7 +48,7 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
-import { connectUrl } from '@dool2/protocol/connect'
+import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
 import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
@@ -270,6 +270,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (ids[0]) return ids[0]
     throw new Error('PC에 일할 AI가 연결돼 있지 않아요')
   }
+  // 서비스 연결 (ADR 0014): PC 화면(HTTP)과 폰(연결)이 같이 쓴다
+  const connectOpen = async (card: ConnectCard, forPhone: boolean): Promise<number> => {
+    const url = connectUrl(card)
+    if (!url) throw new Error('이 서비스는 폰에서 켜요')
+    if (!browser.status.connected) throw new Error('Chrome의 두리 확장이 아직 연결되지 않았어요')
+    const r = (await browser.call('open', { url }, 40_000)) as { tabId: number }
+    // 폰에서 연결하면 PC 앞에 없으니 그 탭을 원격 화면으로 넘긴다. PC면 앞으로 띄운다
+    if (forPhone) browserTools.allowRemote(r.tabId)
+    else await browser.call('focus', { tabId: r.tabId }).catch(() => undefined)
+    return r.tabId
+  }
+  const connectMark = (id: string, on: boolean): string | undefined => {
+    const next = { ...(readSettings().connections ?? {}) }
+    if (on) next[id] = new Date().toISOString()
+    else delete next[id]
+    store.setSetting('connections', next)
+    events.emit('settings', readSettings())
+    return next[id]
+  }
   const link = new PhoneLink(
     secrets,
     {
@@ -331,6 +350,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
+      connections: () => skills.connections(),
+      connect: async (id, action) => {
+        const card = await skills.card(id)
+        if (!card) throw new Error('그런 서비스가 없어요')
+        if (action === 'open') return { tabId: await connectOpen(card, true) }
+        connectMark(card.id, action === 'mark')
+        return {}
+      },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
         const r =
@@ -872,22 +899,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const card = b ? await skills.card(b) : undefined
       if (b && !card) return json(res, 404, { error: '그런 서비스가 없어요' })
       if (card && c === 'open' && !d && req.method === 'POST') {
-        const url = connectUrl(card)
-        if (!url) return json(res, 400, { error: '이 서비스는 폰에서 켜요' })
-        if (!browser.status.connected)
-          return json(res, 409, { error: 'Chrome의 두리 확장이 아직 연결되지 않았어요' })
-        const r = (await browser.call('open', { url }, 40_000)) as { tabId: number }
-        await browser.call('focus', { tabId: r.tabId }).catch(() => undefined)
-        return json(res, 200, { tabId: r.tabId })
+        try {
+          return json(res, 200, { tabId: await connectOpen(card, false) })
+        } catch (e) {
+          const message = (e as Error).message
+          return json(res, message.includes('확장') ? 409 : 400, { error: message })
+        }
       }
-      if (card && !c && (req.method === 'PUT' || req.method === 'DELETE')) {
-        const next = { ...(readSettings().connections ?? {}) }
-        if (req.method === 'PUT') next[card.id] = new Date().toISOString()
-        else delete next[card.id]
-        store.setSetting('connections', next)
-        events.emit('settings', readSettings())
-        return json(res, 200, { connectedAt: next[card.id] ?? null })
-      }
+      if (card && !c && (req.method === 'PUT' || req.method === 'DELETE'))
+        return json(res, 200, { connectedAt: connectMark(card.id, req.method === 'PUT') ?? null })
     }
 
     // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)

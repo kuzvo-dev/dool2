@@ -16,6 +16,7 @@ import {
   type PcToPhone,
   type PhoneToPc,
 } from '@dool2/protocol'
+import type { ConnectionItem } from '@dool2/protocol/connect'
 import {
   b64u,
   type DeviceKeys,
@@ -57,6 +58,9 @@ export interface LinkHost {
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
+  /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
+  connections(): Promise<ConnectionItem[]>
+  connect(id: string, action: 'open' | 'mark' | 'unmark'): Promise<{ tabId?: number }>
 }
 
 const KEYS = 'link.pc'
@@ -285,6 +289,20 @@ export class PhoneLink {
             : undefined,
         )
         return this.send(phone, await this.stateFor(phone))
+      }
+      case 'connections':
+        return this.send(phone, { kind: 'connections', services: await this.host.connections() })
+      case 'connect': {
+        const action = msg.action
+        if (action !== 'open' && action !== 'mark' && action !== 'unmark') return
+        try {
+          const r = await this.host.connect(String(msg.id), action)
+          if (action === 'open' && r.tabId !== undefined)
+            return this.send(phone, { kind: 'connect-opened', id: String(msg.id), tabId: r.tabId })
+          return this.send(phone, { kind: 'connections', services: await this.host.connections() })
+        } catch (e) {
+          return this.send(phone, { kind: 'error', message: (e as Error).message })
+        }
       }
       case 'thread': {
         const t = await this.host.thread(msg.id)
