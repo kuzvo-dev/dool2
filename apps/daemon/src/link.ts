@@ -52,6 +52,8 @@ export interface LinkHost {
   cancel(threadId: string): void
   approval(id: string): (ApprovalView & { shot?: string }) | undefined
   decide(id: string, decision: 'approve' | 'reject'): Promise<{ ok: boolean; message: string }>
+  /** 로그인 카드에 넣은 값을 금고에 저장 */
+  login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
@@ -302,6 +304,16 @@ export class PhoneLink {
       case 'approval': {
         const a = this.host.approval(msg.id)
         if (a) await this.send(phone, { kind: 'approval', approval: a })
+        return
+      }
+      case 'login': {
+        const r = await this.host.login(
+          String(msg.id),
+          String(msg.username ?? '').slice(0, 200),
+          String(msg.password ?? '').slice(0, 500),
+        )
+        // 실패만 이 폰에 알린다 (성공은 본체가 모든 폰에 알린다)
+        if (!r.ok) return this.send(phone, { kind: 'login-done', id: String(msg.id), ...r })
         return
       }
       case 'decide': {

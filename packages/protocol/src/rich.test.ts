@@ -47,5 +47,12 @@ describe('앱 알림', () => {
     const t = appNote('폰에서 승인했어요. "바로 구매"를 눌렀어요. 결과를 확인하고 이어서 해 주세요.')
     expect(readAppNote(t)).toBe('폰에서 승인했어요. "바로 구매"를 눌렀어요.')
     expect(readAppNote('다 했어요. 이어서 해 주세요.')).toBeUndefined()
+    expect(
+      readAppNote(
+        appNote(
+          '폰에서 시험 가게 로그인 정보를 두리 금고에 저장했어요. browser_login으로 채우고 로그인한 뒤 하던 일을 이어서 해 주세요.',
+        ),
+      ),
+    ).toBe('폰에서 시험 가게 로그인 정보를 두리 금고에 저장했어요.')
   })
 })
