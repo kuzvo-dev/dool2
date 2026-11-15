@@ -440,6 +440,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         connectMark(card.id, action === 'mark')
         return {}
       },
+      sideNew: async () => {
+        const t = store.createThread(await pickAgent(undefined), '새 대화', undefined, true)
+        return { kind: 'thread', thread: t, messages: [] }
+      },
+      sideDelete: async (id) => {
+        const t = store.getThread(id)
+        if (!t?.side || threads.isRunning(id)) return false
+        store.deleteThread(id)
+        return true
+      },
       life: async () => life.state(),
       lifeAction: async (a) => {
         life.act(a)
@@ -683,8 +693,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const feedThreadId = async () => {
     const saved = store.getSetting('feedThread')
     if (typeof saved === 'string' && store.getThread(saved)) return saved
-    const t = store.createThread(await pickAgent(undefined))
-    store.updateThread(t.id, { title: '두리 피드' })
+    const t = store.createThread(await pickAgent(undefined), '두리 피드', undefined, true)
     store.setSetting('feedThread', t.id)
     return t.id
   }
@@ -724,6 +733,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
       .catch(() => {})
   }
+  // 예전에 만든 피드 대화도 따로 하는 대화로 (메인 대화에 섞이지 않게)
+  {
+    const f = store.getSetting('feedThread')
+    if (typeof f === 'string' && store.getThread(f)) store.setSide(f)
+  }
   life.onDue = (r) =>
     void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
   const lifeTimer = setInterval(() => life.tick(), 30_000)
@@ -757,6 +771,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         title: t.title,
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
+        ...(t.side ? { side: true } : {}),
       }
       if (activeThreads.has(t.id)) out.busy = true
       if (i < previews) {

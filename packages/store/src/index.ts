@@ -30,6 +30,8 @@ const MIGRATIONS: string[] = [
    ALTER TABLE threads ADD COLUMN summary TEXT;
    ALTER TABLE threads ADD COLUMN closed_at TEXT;
    CREATE INDEX messages_time ON messages(created_at);`,
+  // 따로 하는 대화(주제별·피드 글): 메인 대화의 구간이 아니다. 메인 대화 기록과 "지금 구간"에서 뺀다
+  `ALTER TABLE threads ADD COLUMN side INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 interface ThreadRow {
@@ -42,6 +44,7 @@ interface ThreadRow {
   carry: string | null
   summary: string | null
   closed_at: string | null
+  side?: number
 }
 
 interface MessageRow {
@@ -101,15 +104,42 @@ export class Store {
     }
   }
 
-  createThread(agent: AgentId, title = '새 대화', carry?: string): ThreadRecord {
+  createThread(agent: AgentId, title = '새 대화', carry?: string, side = false): ThreadRecord {
     const id = randomUUID()
     const at = this.stamp()
     this.db
       .prepare(
-        'INSERT INTO threads (id, agent, title, carry, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO threads (id, agent, title, carry, created_at, updated_at, side) VALUES (?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(id, agent, title, carry ?? null, at, at)
-    return { id, agent, title, createdAt: at, updatedAt: at, ...(carry ? { carry } : {}) }
+      .run(id, agent, title, carry ?? null, at, at, side ? 1 : 0)
+    return {
+      id,
+      agent,
+      title,
+      createdAt: at,
+      updatedAt: at,
+      ...(carry ? { carry } : {}),
+      ...(side ? { side: true } : {}),
+    }
+  }
+
+  /** 따로 하는 대화를 지운다 (말도 함께) */
+  deleteThread(id: string) {
+    this.db.prepare('DELETE FROM messages WHERE thread_id = ?').run(id)
+    this.db.prepare('DELETE FROM threads WHERE id = ?').run(id)
+  }
+
+  /** 따로 하는 대화로 표시한다 (메인 대화에서 뺀다) */
+  setSide(id: string, side = true) {
+    this.db.prepare('UPDATE threads SET side = ? WHERE id = ?').run(side ? 1 : 0, id)
+  }
+
+  /** 따로 하는 대화 목록 (최근 것부터) */
+  listSideThreads(limit = 50): ThreadRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM threads WHERE side = 1 ORDER BY updated_at DESC LIMIT ?')
+      .all(limit) as unknown as ThreadRow[]
+    return rows.map(toThread)
   }
 
   // ── 대화 하나 (ADR 0015) ─────────────────────────────
@@ -117,7 +147,7 @@ export class Store {
   /** 지금 열려 있는 구간 (닫히지 않은 것 중 가장 최근) */
   currentSession(): ThreadRecord | undefined {
     const row = this.db
-      .prepare('SELECT * FROM threads WHERE closed_at IS NULL ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT * FROM threads WHERE closed_at IS NULL AND side = 0 ORDER BY updated_at DESC LIMIT 1')
       .get() as ThreadRow | undefined
     return row ? toThread(row) : undefined
   }
@@ -132,7 +162,7 @@ export class Store {
   /** 열려 있는 다른 구간을 모두 닫는다 (예전 여러 방 → 대화 하나로 넘어올 때) */
   closeOtherSessions(keepId: string) {
     this.db
-      .prepare('UPDATE threads SET closed_at = ? WHERE closed_at IS NULL AND id != ?')
+      .prepare('UPDATE threads SET closed_at = ? WHERE closed_at IS NULL AND side = 0 AND id != ?')
       .run(this.stamp(), keepId)
   }
 
@@ -153,10 +183,14 @@ export class Store {
     const limit = opts.limit ?? 100
     const rows = (opts.before
       ? this.db
-          .prepare('SELECT * FROM messages WHERE created_at < ? ORDER BY created_at DESC LIMIT ?')
+          .prepare(
+            'SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.side = 0 AND m.created_at < ? ORDER BY m.created_at DESC LIMIT ?',
+          )
           .all(opts.before, limit)
       : this.db
-          .prepare('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?')
+          .prepare(
+            'SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.side = 0 ORDER BY m.created_at DESC LIMIT ?',
+          )
           .all(limit)) as unknown as MessageRow[]
     return rows.reverse().map(toMessage)
   }
@@ -244,6 +278,7 @@ function toThread(r: ThreadRow): ThreadRecord {
     ...(r.carry ? { carry: r.carry } : {}),
     ...(r.summary ? { summary: r.summary } : {}),
     ...(r.closed_at ? { closedAt: r.closed_at } : {}),
+    ...(r.side ? { side: true } : {}),
   }
 }
 

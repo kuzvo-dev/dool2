@@ -72,6 +72,8 @@ export interface ThreadSummary {
   preview?: string
   /** 이 대화에서 승인을 기다리는 요청 */
   approval?: { id: string; what: string; amount?: string; label: string }
+  /** 따로 하는 대화 (메인 대화가 아니다) */
+  side?: boolean
 }
 
 /** 미리보기용: 마크다운 기호를 빼고 한 줄로 줄인다 */
@@ -532,6 +534,9 @@ export type PhoneToPc =
   | { kind: 'conversation'; before?: string; limit?: number }
   /** 대화에서 지금 하는 일을 멈춘다 */
   | { kind: 'conversation-cancel' }
+  /** 따로 하는 대화: 새로 만들기(→ thread로 답), 지우기 */
+  | { kind: 'side-new' }
+  | { kind: 'side-delete'; id: string }
   /** 목표·보관함·기억·피드 받기 */
   | { kind: 'life' }
   | ({ kind: 'life-action' } & LifeAction)
