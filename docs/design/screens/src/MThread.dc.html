@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>두리 — 대화 (하나로 이어지는)</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+@font-face{font-family:"Pretendard Variable";src:url(../../../../packages/ui/fonts/PretendardVariable.woff2) format("woff2");font-weight:45 920;font-display:swap}
+body{margin:0;background:#121418}
+a{color:inherit;text-decoration:none}a:hover{color:inherit}
+.t-dark{--bg:#121418;--surface:#1b1d23;--sunken:#0b0c0f;--raise:#23262d;--line:#2a2d35;--line-strong:#5c616b;--ink:#f2f3f5;--muted:#a3a8b1;--inv:#111214;--brand:#4cc98f;--brand-text:#6fe0a8;--brand-soft:#15302a;--butter:#ffd66b;--butter-soft:#352d14;--danger:#ff7a72;--me:#f2f3f5;--me-ink:#111214;--scrim:rgba(0,0,0,.6);--seat:#2a2d35;--seat-x:#1b1d23}
+.t-light{--bg:#ffffff;--surface:#ffffff;--sunken:#f4f5f7;--raise:#f1f2f4;--line:#e6e8eb;--line-strong:#8b9099;--ink:#111214;--muted:#5f646d;--inv:#ffffff;--brand:#4cc98f;--brand-text:#167a4b;--brand-soft:#e5f7ee;--butter:#ffd66b;--butter-soft:#fff4d1;--danger:#d0342c;--me:#111214;--me-ink:#ffffff;--scrim:rgba(17,18,20,.42);--seat:#e7e9ed;--seat-x:#f4f5f7}
+.root{word-break:keep-all;overflow-wrap:break-word;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--ink);font-family:"Pretendard Variable",-apple-system,"Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+.mono{font-variant-numeric:tabular-nums}
+.ic{stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.meta{font-size:12.5px;line-height:17px;color:var(--muted);font-weight:500}
+.dot{width:8px;height:8px;border-radius:999px;flex:none;display:inline-block;background:var(--brand)}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1.6s linear infinite}
+@keyframes bob{50%{transform:translateY(-3px)}}
+.bob{animation:bob 3.2s ease-in-out infinite}
+.iconbtn{width:44px;height:44px;border-radius:14px;border:0;background:transparent;color:var(--ink);display:grid;place-items:center;cursor:pointer;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 16px;border-radius:12px;border:1px solid transparent;font:600 14px/20px "Pretendard Variable",sans-serif;cursor:pointer;white-space:nowrap;letter-spacing:-.01em}
+.btn-p{background:var(--ink);color:var(--inv)}
+.btn-s{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+.btn-sm{height:34px;padding:0 12px;font-size:13px;border-radius:10px}
+.me{align-self:flex-end;max-width:80%;background:var(--me);color:var(--me-ink);padding:10px 14px;border-radius:20px 20px 6px 20px;font-size:16px;line-height:24px}
+.say{margin:0;font-size:16px;line-height:25px}
+.bub{align-self:flex-start;max-width:84%;background:var(--raise);color:var(--ink);padding:10px 14px;border-radius:20px 20px 20px 6px;font-size:16px;line-height:24px;margin:0}
+.bub+.bub{margin-top:-6px;border-top-left-radius:6px}
+.me+.me{margin-top:-6px;border-top-right-radius:6px}
+.qr{display:flex;gap:6px;flex-wrap:wrap}
+.qr button{height:36px;padding:0 14px;border-radius:12px;border:1px solid var(--line-strong);background:transparent;color:var(--ink);font:550 14px/18px "Pretendard Variable",sans-serif;cursor:pointer}
+.react{position:absolute;right:-6px;bottom:-14px;width:26px;height:26px;border-radius:999px;background:var(--bg);display:grid;place-items:center;box-shadow:0 0 0 1px var(--line)}
+.wave{display:flex;align-items:center;gap:4px;height:40px}
+.wave i{display:block;width:4px;border-radius:2px;background:var(--brand);animation:wv 1s ease-in-out infinite}
+@keyframes wv{50%{transform:scaleY(.4)}}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;line-height:18px}
+.sep{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);font-weight:500}
+.sep:before,.sep:after{content:"";flex:1;height:1px;background:var(--line)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.screen{background:var(--sunken);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.urlbar{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--line);font:450 11.5px/16px "JetBrains Mono",ui-monospace,monospace;color:var(--muted)}
+.urlbar b{color:var(--ink);font-weight:500}
+.seat{border-radius:4px;background:var(--seat);height:16px}
+.seat.x{background:var(--seat-x);border:1px dashed var(--line)}
+.seat.pick{background:var(--brand-soft);outline:2px solid var(--brand);outline-offset:-2px}
+.step{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 0;font-size:14px;line-height:20px}
+.step .t{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.step.done{color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:600}
+.composer{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:6px}
+.composer input{flex:1;min-width:0;height:44px;border:0;outline:0;background:transparent;font:450 16px/22px "Pretendard Variable",sans-serif;color:var(--ink)}
+.composer input::placeholder{color:var(--muted)}
+.cbtn{width:44px;height:44px;border-radius:16px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;flex:none;cursor:pointer}
+.cbtn.go{background:var(--ink);color:var(--inv)}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);padding:6px 8px 22px;background:var(--bg)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:11px;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--ink)}
+.row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.rt{font-size:15.5px;line-height:22px;font-weight:620;margin:0}
+.rd{font-size:13px;line-height:19px;color:var(--muted);margin:2px 0 0}
+.h-sec{font-size:13px;font-weight:600;color:var(--muted);margin:24px 0 2px}
+.tile{width:40px;height:40px;border-radius:12px;background:var(--raise);display:grid;place-items:center;color:var(--ink);flex:none}
+.mono-tile{width:40px;height:40px;border-radius:12px;background:var(--raise);display:grid;place-items:center;font-size:14px;font-weight:700;color:var(--ink);flex:none}
+.toggle{width:44px;height:26px;border-radius:999px;background:var(--line-strong);position:relative;flex:none}
+.toggle:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:999px;background:var(--bg)}
+.toggle.on{background:var(--brand)}
+.toggle.on:after{left:21px;background:#0f2a1d}
+.t-light .toggle.on:after{background:#ffffff}
+.chip{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:transparent;font:550 14px/18px "Pretendard Variable",sans-serif;color:var(--ink);white-space:nowrap;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--inv);border-color:var(--ink)}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px;line-height:21px}
+.kv span:first-child{color:var(--muted)}
+.kv span:last-child{font-weight:600;text-align:right}
+.navi{display:flex;align-items:center;gap:12px;height:44px;padding:0 12px;border-radius:12px;font-size:14.5px;font-weight:550;color:var(--muted)}
+.navi.on{background:var(--raise);color:var(--ink)}
+.livebar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--brand-soft);color:var(--ink)}
+</style>
+</helmet>
+<div class="root t-{{theme}}" style="width: 390px; height: 844px; display: flex; flex-direction: column; overflow: hidden; position: relative">
+  <header style="display: grid; grid-template-columns: 44px 1fr 44px; align-items: start; padding: 14px 16px 8px">
+    <button class="iconbtn" aria-label="메뉴"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><path d="M4 8h16M4 16h10"/></svg></button>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px">
+      <img class="bob" src="../../system/assets/Character/doori-working.svg" alt="두리" style="width: 56px; height: 56px">
+      <div style="font-size: 15px; font-weight: 700; line-height: 20px">두리</div>
+      <div class="meta" style="display: flex; align-items: center; gap: 6px; color: var(--brand-text)">우리 집 MacBook에서 일하는 중</div>
+    </div>
+    <button class="iconbtn" aria-label="연결된 컴퓨터" style="position: relative"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg><span class="dot" style="position: absolute; top: 9px; right: 9px; box-shadow: 0 0 0 2px var(--bg)"></span></button>
+  </header>
+  <main style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; padding: 0 16px 12px">
+    <p class="bub">벌써 1시인데 점심은요? 어제 맛있다던 국밥집, 배달 열려 있어요.</p>
+    <div class="qr" style="margin-left: 2px"><button>응 시켜줘</button><button>이따 먹을게</button><button>다른 거 추천해줘</button></div>
+    <div class="me" style="margin-top: 8px; position: relative">아 이따 ㅎㅎ 그보다 내일 아침 부산 KTX 창가로 잡아줘<span class="react" aria-label="두리 반응: 좋아요"><img src="../../system/assets/Character/doori-done.svg" alt="" style="width: 22px; height: 22px"></span></div>
+    <p class="bub" style="margin-top: 12px">좋아요! 9시 KTX 101이 제일 맞아요. 창가로 골라볼게요, 결제 전엔 꼭 물어볼게요.</p>
+    <article class="card" aria-label="진행 중인 일: KTX 예매">
+      <div style="display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 10px">
+        <div style="flex: 1; font-size: 15px; font-weight: 700; line-height: 21px">KTX 예매</div>
+        <span style="font-size: 13px; font-weight: 600; color: var(--brand-text)">좌석 고르는 중</span>
+      </div>
+      <div class="screen" style="margin: 0 12px">
+        <div class="urlbar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><b>letskorail.com</b><span style="flex: 1"></span><span>두리 화면</span></div>
+        <div style="padding: 14px 14px 16px; position: relative">
+          <div style="display: flex; align-items: baseline; justify-content: space-between">
+            <div style="font-size: 24px; font-weight: 780; letter-spacing: -.035em; line-height: 28px">7호차 12A</div>
+            <div style="font-size: 15px; font-weight: 650">₩59,800</div>
+          </div>
+          <div class="meta" style="margin: 2px 0 14px">내일 09:00 서울→부산 · 창가 · 순방향</div>
+          <div style="display: flex; gap: 4px"><span style="flex: 1; height: 22px; border-radius: 5px; background: transparent; border: 1px dashed var(--line); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: transparent; border: 1px dashed var(--line); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: transparent; border: 1px dashed var(--line); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--brand); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: transparent; border: 1px dashed var(--line); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span><span style="flex: 1; height: 22px; border-radius: 5px; background: var(--seat); box-sizing: border-box"></span></div>
+          <div aria-hidden="true" style="position: absolute; left: 212px; bottom: 2px; display: flex; align-items: flex-start; pointer-events: none">
+            <svg viewBox="0 0 24 24" style="width: 18px; height: 18px"><path d="M5 3l14 7-6 2-2 6z" fill="#4cc98f" stroke="#0f2a1d" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            <span style="margin-top: 12px; background: #4cc98f; color: #0f2a1d; font-size: 10.5px; font-weight: 700; line-height: 15px; padding: 1px 5px; border-radius: 5px">두리</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 10px 16px 14px; display: flex; gap: 6px; align-items: center">
+        <span style="flex: 1; height: 4px; border-radius: 2px; background: var(--brand)"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--brand)"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--brand); opacity: .5"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: var(--line)"></span>
+        <span class="meta" style="margin-left: 8px">결제 전엔 물어볼게요</span>
+      </div>
+    </article>
+  </main>
+  <div style="padding: 4px 16px 10px"><div class="composer">
+      <button class="cbtn" aria-label="첨부"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><path d="M12 5v14M5 12h14"/></svg></button>
+      <label for="ask" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">두리한테 말 걸기</label>
+      <input id="ask" placeholder="두리한테 말 걸기">
+      <button class="cbtn" aria-label="말로 부탁하기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <a class="cbtn go" href="MVoice.dc.html" aria-label="두리랑 말로 이야기하기" style="width: auto; padding: 0 14px; gap: 6px; display: inline-flex; align-items: center; font: 650 14px/20px 'Pretendard Variable', sans-serif"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 18px; height: 18px"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>말하기</a>
+    </div></div>
+  <nav class="tabs" aria-label="주요 메뉴"><a class="tab on" href="MThread.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>대화</a><a class="tab" href="MTasks.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 10l2.5 2.5L16 8M8 16h8"/></svg>맡긴 일</a><a class="tab" href="MExplore.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>둘러보기</a><a class="tab" href="MMe.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>나의 두리</a></nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>
