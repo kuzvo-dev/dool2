@@ -82,6 +82,16 @@ const TOOL_LABEL: Record<string, string> = {
   screen_screenshot: '앱 화면 보는',
   screen_request_app: '앱 허용 요청하는',
   screen_request_approval: '승인 요청하는',
+  goal_create: '목표 만드는',
+  goal_list: '목표 보는',
+  goal_update: '목표 고치는',
+  goal_delete: '목표 지우는',
+  library_save: '보관함에 남기는',
+  memory_save: '기억하는',
+  memory_forget: '잊는',
+  idea_suggest: '할 일 찾는',
+  photo_view: '사진 보는',
+  feed_post: '피드에 올리는',
 }
 export function toolLabel(name: string): string {
   return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
