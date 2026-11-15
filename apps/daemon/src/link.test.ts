@@ -319,3 +319,42 @@ describe('폰 알림 (웹 푸시)', () => {
     expect(sent[0]?.url).toMatch(/^#t=/)
   })
 })
+
+describe('폰에서 서비스 연결', () => {
+  it('목록을 받고, 연결 표시·해제하고, 확장이 없으면 열기를 안내한다', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+
+    const lists = () =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'connections' }> => m.kind === 'connections')
+    await p.send({ kind: 'connections' })
+    await waitFor(() => lists().length === 1)
+    expect(lists()[0]?.services.some((s) => s.card.id === 'coupang' && !s.connectedAt)).toBe(true)
+
+    await p.send({ kind: 'connect', id: 'coupang', action: 'mark' })
+    await waitFor(() => lists().length === 2)
+    expect(lists()[1]?.services.find((s) => s.card.id === 'coupang')?.connectedAt).toMatch(/^\d{4}-/)
+    // PC 화면도 같은 상태를 본다
+    const pc = await api('/api/connections')
+    expect(
+      pc.services.find((s: { card: { id: string } }) => s.card.id === 'coupang').connectedAt,
+    ).toBeDefined()
+
+    await p.send({ kind: 'connect', id: 'coupang', action: 'unmark' })
+    await waitFor(() => lists().length === 3)
+    expect(lists()[2]?.services.find((s) => s.card.id === 'coupang')?.connectedAt).toBeUndefined()
+
+    await p.send({ kind: 'connect', id: 'coupang', action: 'open' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'error'))
+    expect(JSON.stringify(p.inbox.find((m) => m.kind === 'error'))).toContain('확장')
+  })
+})

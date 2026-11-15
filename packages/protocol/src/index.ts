@@ -1,6 +1,7 @@
 // 두리 공통 타입: 에이전트 이벤트, 대화, 데몬 API.
 // 폰↔PC 암호화 규약은 M2에서 이 패키지에 추가한다.
 import { z } from 'zod'
+import type { ConnectionItem } from './connect.js'
 
 /** 두리가 실행할 수 있는 AI. 사용자의 구독으로 돈다. */
 /** claude·codex: 구독, opencode: API 키 종량제 (ADR 0010) */
@@ -431,6 +432,13 @@ export type PhoneToPc =
     }
   /** 웹 푸시 구독 (알림을 끄면 null). PC가 이 주소로 직접 알림을 보낸다 */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
+  /** 서비스 연결 목록을 달라 (ADR 0014) */
+  | { kind: 'connections' }
+  /**
+   * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
+   * mark·unmark = 연결 표시·해제
+   */
+  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' }
 
 /** 폰 브라우저의 PushSubscription.toJSON() 중 PC가 쓰는 것 */
 export interface PushSubscriptionJSONLike {
@@ -466,6 +474,10 @@ export type PcToPhone =
   /** 원격 화면 한 장 (JPEG base64). 중계 서버는 이 종류를 쌓아 두지 않는다 */
   | { kind: 'screen'; tabId: number; shot?: string; url?: string; title?: string; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
+  /** 서비스 연결 목록 (카드 + 절차 상태 + 연결 시각) */
+  | { kind: 'connections'; services: ConnectionItem[] }
+  /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
+  | { kind: 'connect-opened'; id: string; tabId: number }
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'
