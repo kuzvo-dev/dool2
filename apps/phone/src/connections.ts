@@ -82,7 +82,9 @@ export function whenLabel(iso: string, now = new Date()): string {
 
 /** 서비스 아이콘: 로고 파일 없이 이름 첫 글자 */
 function mark(card: ConnectCard, big = false) {
-  const m = el('span', big ? 'svc-mark lg' : 'svc-mark', [...card.name][0] ?? '')
+  // 숫자로 시작하면 숫자 묶음(11번가 → 11), 아니면 첫 글자
+  const lead = /^\d+/.exec(card.name)?.[0] ?? [...card.name][0] ?? ''
+  const m = el('span', big ? 'svc-mark lg' : 'svc-mark', lead)
   m.setAttribute('aria-hidden', 'true')
   return m
 }
@@ -186,7 +188,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
   const it = ctx.services?.find((s) => s.card.id === id)
   if (!it) return connectionsView(ctx)
   const c = it.card
-  const box = el('section', 'tab-page connect service', ctx.header(c.name, ctx.list))
+  const box = el('section', 'tab-page connect service', ctx.header('', ctx.list))
 
   box.append(
     el(

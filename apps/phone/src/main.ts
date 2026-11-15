@@ -1075,7 +1075,7 @@ function tasksView() {
       box.append(
         h(
           'button',
-          { class: 'row', onclick: () => setTab('chat') },
+          { class: 'row', onclick: () => showInChat(d.id) },
           h(
             'span',
             { class: 'row-text' },
@@ -1101,18 +1101,55 @@ function lastUserText() {
   ][0]
 }
 
-/** 부탁 → 답 짝 (최근 6개) */
+/** 답을 한 줄 미리 보기로: 굵게·목록 표시를 빼고 공백을 줄인다 */
+function plainPreview(text: string, max = 80) {
+  const t = text
+    .replace(/\*\*/g, '')
+    .replace(/^\s*(?:[-*•]|\d+\.)\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
+/**
+ * 맡긴 일 목록 (최근 6개). 부탁 하나가 일 하나:
+ * - 두리가 되물어서 이어 답한 말("동탄역"), 앱 알림(승인 결과)은 새 일이 아니라 앞 일에 이어 붙인다
+ * - 제목은 처음 부탁, 설명은 마지막 답
+ */
 function recentDone() {
-  const out: { ask: string; answer: string; at: string }[] = []
-  let lastAsk: StoredMessage | undefined
+  const out: { ask: string; answer: string; at: string; id: string }[] = []
+  let open: { ask: string; asked: boolean } | undefined
+  let last: { text: string; at: number } | undefined
   for (const m of st.conv) {
-    if (m.role === 'user') lastAsk = m
-    else if (m.role === 'assistant' && lastAsk) {
-      out.push({ ask: lastAsk.text, answer: m.text.replace(/\s+/g, ' ').slice(0, 80), at: m.createdAt })
-      lastAsk = undefined
+    if (m.role === 'user') {
+      // 두리가 묻고 바로 짧게 답한 말("동탄역")은 앞 일의 이어짐
+      const quickReply =
+        !!last && m.text.trim().length <= 8 && Date.parse(m.createdAt) - last.at < 10 * 60_000
+      const followUp = readAppNote(m.text) !== undefined || quickReply
+      if (!followUp || !out.length) open = { ask: m.text, asked: true }
+      else open = { ask: '', asked: false }
+    } else if (m.role === 'assistant') {
+      last = { text: m.text, at: Date.parse(m.createdAt) }
+      const item = { answer: plainPreview(m.text), at: m.createdAt, id: m.id }
+      if (open?.asked) out.push({ ask: open.ask, ...item })
+      else if (out.length) Object.assign(out[out.length - 1] as object, item)
+      open = undefined
     }
   }
   return out.reverse().slice(0, 6)
+}
+
+/** 대화 탭으로 가서 그 말이 보이게 */
+function showInChat(id: string) {
+  setTab('chat')
+  requestAnimationFrame(() => {
+    const el = shell?.chat.querySelector<HTMLElement>(`[data-key="${CSS.escape(id)}"]`)
+    if (!el) return
+    stickToBottom = false
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.add('flash')
+    setTimeout(() => el.classList.remove('flash'), 1400)
+  })
 }
 
 function emptyState(mood: string, title: string, sub: string) {
@@ -1234,7 +1271,7 @@ function connectCtx(): ConnectCtx {
         'div',
         { class: back ? 'page-head sub' : 'page-head' },
         back && h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
-        h(back ? 'h2' : 'h1', { class: back ? 'title-2' : 'ptitle', text: title }),
+        title && h(back ? 'h2' : 'h1', { class: back ? 'title-2' : 'ptitle', text: title }),
       ),
     home: () => setTab('chat'),
     list: () => {
