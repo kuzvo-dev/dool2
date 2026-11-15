@@ -610,7 +610,9 @@ function renderTop() {
   const status = !st.online
     ? 'PC 연결 중…'
     : waiting
-      ? '승인을 기다려요'
+      ? pendingApprovals().length
+        ? '승인을 기다려요'
+        : '로그인을 기다려요'
       : st.busy || st.pending.length
         ? (st.steps.at(-1) ?? '대답하는 중…')
         : ''
