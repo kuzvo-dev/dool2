@@ -1,5 +1,6 @@
-// 두리 폰 앱. PC의 두리와 중계 서버를 거쳐 종단 간 암호화로 이야기한다 (ADR 0012).
-// 화면: 연결(페어링) → 홈(승인 대기·대화 목록·부탁) → 대화 → 승인
+// 두리 폰 앱 (v2 디자인: docs/design/screens/soft). PC의 두리와 중계 서버를 거쳐 종단 간 암호화로 이야기한다 (ADR 0012).
+// 화면: 연결(페어링) → 앱(대화 하나 · 맡긴 일 · 아이디어 · 연결) + 메뉴 서랍 · 두리 패널 · 승인/로그인 시트 · PC 화면
+// 머리·탭·입력칸은 한 번만 만들고, 대화는 바뀐 말만 덧붙인다 (다시 그려도 깜빡이거나 스크롤이 튀지 않게).
 import type {
   ApprovalRecordMessage,
   ApprovalView,
@@ -11,7 +12,6 @@ import type {
   PcToPhone,
   PhoneToPc,
   StoredMessage,
-  ThreadSummary,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import {
@@ -26,148 +26,84 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { type Inline, readAppNote, richBlocks, toolLabel } from '@dool2/protocol/rich'
-import { type ConnectCtx, connectEntry, connectionsView, serviceView } from './connections.js'
+import { readAppNote, toolLabel } from '@dool2/protocol/rich'
+import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
+import { doori, h, type IconName, icon, rich, shortTime } from './dom.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
 
 // ── 상태 ──
-type View =
+type Tab = 'chat' | 'tasks' | 'ideas' | 'connect'
+type Screen =
   | { name: 'intro' }
   | { name: 'unsupported' }
   | { name: 'pairing'; code: string; pcName: string; rejected?: boolean }
-  | { name: 'home' }
-  | { name: 'thread'; id?: string }
-  | { name: 'approval'; id: string }
-  | { name: 'remote'; tabId: number; threadId?: string; connectId?: string }
-  | { name: 'connections' }
-  | { name: 'service'; id: string }
+  | { name: 'app' }
+  | { name: 'remote'; tabId: number; connectId?: string }
+type Overlay =
+  | { kind: 'drawer' }
+  | { kind: 'agent' }
+  | { kind: 'approval'; id: string }
+  | { kind: 'login'; id: string }
+  | undefined
 
 const st: {
   saved?: Saved
   key?: CryptoKey
   client?: LinkClient
   online: boolean
-  view: View
+  screen: Screen
+  tab: Tab
+  overlay: Overlay
   pc?: Extract<PcToPhone, { kind: 'state' }>
-  threads: ThreadSummary[]
-  messages: Map<string, StoredMessage[]>
-  /** 답하는 중인 대화: 지금까지 온 글자 */
-  live: Map<string, string>
-  /** 답하는 중인 대화: 지금까지 한 일 ("사용법 찾는 중") */
-  steps: Map<string, string[]>
+  /** 대화 하나 */
+  conv: StoredMessage[]
+  convLoaded: boolean
+  hasMore: boolean
+  busy: boolean
+  queued: string[]
+  /** 지금 답에서 온 글자와 한 일 */
+  live: string
+  steps: string[]
+  /** 보냈지만 PC가 아직 받았다고 하지 않은 말 (바로 화면에 띄운다) */
+  pending: { id: number; text: string }[]
   approvals: Map<string, ApprovalView & { shot?: string }>
-  /** 로그인 카드 요청 (PC가 알려 준 것) */
-  logins: Map<string, LoginRequestView>
-  /** 로그인 카드에 넣는 중인 값 (다시 그려도 지워지지 않게. 저장하면 바로 비운다) */
-  loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
   decided: Map<string, { ok: boolean; message: string }>
-  /** 새 대화로 보낸 부탁: 첫 응답이 오면 그 대화로 간다 */
-  waitingNew?: string
-  draft: string
-  toast?: string
-  /** 원격 화면: 지금 보고 있는 PC 탭의 마지막 화면 */
-  screen?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
-  remoteDraft: string
-  /** 서비스 연결 (PC가 보내 준 목록), 찾기 칸, 연결하기를 누르고 기다리는 서비스 */
+  logins: Map<string, LoginRequestView>
+  loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
   services?: ConnectionItem[]
   connectQuery: string
+  connectDetail?: string
   opening?: string
+  agentSeg: 'activity' | 'connected' | 'promise'
+  draft: string
+  toast?: string
+  screenShot?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
+  remoteDraft: string
 } = {
   online: false,
-  view: { name: 'intro' },
-  threads: [],
-  messages: new Map(),
-  live: new Map(),
-  steps: new Map(),
+  screen: { name: 'intro' },
+  tab: 'chat',
+  overlay: undefined,
+  conv: [],
+  convLoaded: false,
+  hasMore: false,
+  busy: false,
+  queued: [],
+  live: '',
+  steps: [],
+  pending: [],
   approvals: new Map(),
+  decided: new Map(),
   logins: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
-  decided: new Map(),
+  connectQuery: '',
+  agentSeg: 'activity',
   draft: '',
   remoteDraft: '',
-  connectQuery: '',
 }
-
-// ── 화면 그리기 도우미 ──
-function h<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: { class?: string; text?: string; onclick?: () => void } = {},
-  ...children: (Node | string | false | undefined)[]
-): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag)
-  if (props.class) e.className = props.class
-  if (props.text !== undefined) e.textContent = props.text
-  if (props.onclick) e.addEventListener('click', props.onclick)
-  for (const c of children) if (c) e.append(c)
-  return e
-}
-
-/** 선 아이콘 (24 격자). 화면 글자 대신 쓴다 */
-const ICON = {
-  back: 'M15 18l-6-6 6-6',
-  dining: 'M7 3v8M5 3v4a2 2 0 0 0 4 0V3M7 11v10M17 3c-1.7 0-3 2-3 5s1.3 4 3 4v9',
-  grocery: 'M4 11h16a8 8 0 0 1-16 0ZM9 7c0-1.5 1-2 1-3M13 7c0-1.5 1-2 1-3',
-  parcel: 'M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5ZM3.5 7.5 12 12l8.5-4.5M12 12v9',
-  mail: 'M6 3h8l4 4v14H6ZM14 3v4h4M9 12h6M9 16h6',
-  send: 'M12 19V5M6 11l6-6 6 6',
-  chevron: 'M9 6l6 6-6 6',
-  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
-} as const
-function icon(name: keyof typeof ICON): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg'
-  const svg = document.createElementNS(ns, 'svg')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('class', 'i')
-  svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS(ns, 'path')
-  path.setAttribute('d', ICON[name])
-  svg.append(path)
-  return svg
-}
-
-/** 오늘이면 "오전 10:03", 아니면 "11. 14." */
-function shortTime(iso: string) {
-  const d = new Date(iso)
-  return new Date().toDateString() === d.toDateString()
-    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
-}
-
-/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
-function rich(text: string): DocumentFragment {
-  const f = document.createDocumentFragment()
-  const spans = (parent: HTMLElement, parts: Inline[]) => {
-    for (const part of parts) parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
-  }
-  for (const block of richBlocks(text)) {
-    if (block.type === 'p') {
-      const p = h('p')
-      block.lines.forEach((line, i) => {
-        if (i) p.append(h('br'))
-        spans(p, line)
-      })
-      f.append(p)
-      continue
-    }
-    const list = h(block.type)
-    if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
-    for (const item of block.items) {
-      const li = h('li')
-      spans(li, item)
-      list.append(li)
-    }
-    f.append(list)
-  }
-  return f
-}
-
-const go = (v: View) => {
-  st.view = v
-  render()
-  window.scrollTo(0, v.name === 'thread' ? document.body.scrollHeight : 0)
-}
+let pendingSeq = 0
 
 // ── 연결 ──
 
@@ -203,6 +139,7 @@ function connect() {
       st.online = state === 'ready'
       if (state === 'ready' && st.saved?.paired) {
         void send({ kind: 'hello' })
+        void send({ kind: 'conversation' })
         void send({ kind: 'connections' })
       }
       render()
@@ -226,27 +163,47 @@ async function receive(env: Envelope) {
       s.pcName = msg.pcName
       await save(s)
       toast('연결됐어요. 이제 폰으로 부탁해 보세요')
-      go({ name: 'home' })
-      return
+      st.screen = { name: 'app' }
+      void send({ kind: 'conversation' })
+      void send({ kind: 'connections' })
+      break
     case 'pair-rejected':
-      if (st.view.name === 'pairing') go({ ...st.view, rejected: true })
+      if (st.screen.name === 'pairing') st.screen = { ...st.screen, rejected: true }
       await clear()
       st.saved = undefined
-      return
+      break
     case 'state':
       st.pc = msg
-      st.threads = msg.threads
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
       void syncPush()
       openPending()
       break
-    case 'thread':
-      st.messages.set(msg.thread.id, msg.messages)
-      upsertThread(msg.thread)
+    case 'conversation':
+      if (msg.before) {
+        const have = new Set(st.conv.map((m) => m.id))
+        st.conv = [...msg.state.messages.filter((m) => !have.has(m.id)), ...st.conv]
+      } else {
+        st.conv = msg.state.messages
+        st.convLoaded = true
+        stickToBottom = true
+      }
+      st.hasMore = msg.state.hasMore
+      st.busy = msg.state.busy
+      st.queued = msg.state.queued
+      break
+    case 'conversation-status':
+      st.busy = msg.busy
+      st.queued = msg.queued
+      // 줄 선 말로 넘어간 건 "보내는 중"에서 뺀다
+      st.pending = st.pending.filter((p) => !msg.queued.includes(p.text))
+      if (!msg.busy) {
+        st.live = ''
+        st.steps = []
+      }
       break
     case 'stream':
-      onStream(msg.threadId, msg.event)
+      onStream(msg.event)
       break
     case 'approval':
       st.approvals.set(msg.approval.id, msg.approval)
@@ -275,39 +232,69 @@ async function receive(env: Envelope) {
       if (st.loginDraft.id === msg.id) {
         st.loginDraft.busy = false
         st.loginDraft.error = msg.ok ? undefined : msg.message
+        if (msg.ok && st.overlay?.kind === 'login') st.overlay = undefined
       }
       toast(msg.message)
       break
     }
     case 'screen':
-      if (st.view.name !== 'remote' || st.view.tabId !== msg.tabId) return
-      st.screen = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
+      if (st.screen.name !== 'remote' || st.screen.tabId !== msg.tabId) return
+      st.screenShot = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
       if (!msg.error) nextScreen(msg.tabId)
       break
     case 'connections': {
       st.services = msg.services
       // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
-      const v = st.view
+      const v = st.screen
       if (v.name === 'remote' && v.connectId) {
         const done = msg.services.find((x) => x.card.id === v.connectId && x.connectedAt)
         if (done) {
+          st.screen = { name: 'app' }
+          st.tab = 'connect'
+          st.connectDetail = done.card.id
           toast(`${done.card.name} 로그인을 확인했어요`)
-          go({ name: 'service', id: done.card.id })
-          return
         }
       }
       break
     }
     case 'connect-opened':
       st.opening = undefined
-      openRemote(msg.tabId, undefined, msg.id)
+      openRemote(msg.tabId, msg.id)
       return
     case 'error':
       st.opening = undefined
       toast(msg.message)
       break
+    case 'thread':
+      return
   }
   render()
+}
+
+function onStream(ev: DaemonStreamEvent) {
+  if (ev.type === 'saved') {
+    const m = ev.message
+    if (!st.conv.some((x) => x.id === m.id)) st.conv = [...st.conv, m]
+    if (m.role === 'user') {
+      const i = st.pending.findIndex((p) => p.text === m.text)
+      if (i >= 0) st.pending.splice(i, 1)
+    }
+    if (m.role === 'assistant') {
+      st.live = ''
+      st.steps = []
+    }
+  } else if (ev.type === 'agent') {
+    st.busy = true
+    if (ev.event.type === 'text') st.live += ev.event.delta
+    else if (ev.event.type === 'tool') {
+      const label = `${toolLabel(ev.event.name)} 중`
+      if (st.steps.at(-1) !== label) st.steps = [...st.steps, label]
+    }
+  } else if (ev.type === 'end') {
+    st.live = ''
+    st.steps = []
+    void send({ kind: 'hello' })
+  }
 }
 
 function pick(m: { shot?: string; url?: string; title?: string }) {
@@ -318,192 +305,64 @@ function pick(m: { shot?: string; url?: string; title?: string }) {
   }
 }
 
-// ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 ──
+// ── 할 일 ──
 
-/** 화면을 받으면 잠깐 뒤 다음 화면을 달라고 한다 (보고 있는 동안만) */
+/** 부탁 보내기: 내 말을 바로 화면에 띄우고 PC에 보낸다 */
+function ask(text: string) {
+  const t = text.trim()
+  if (!t || !st.online) return
+  st.pending.push({ id: ++pendingSeq, text: t })
+  st.draft = ''
+  st.tab = 'chat'
+  stickToBottom = true
+  render()
+  void send({ kind: 'ask', text: t })
+}
+
+async function decide(a: ApprovalView, decision: 'approve' | 'reject') {
+  const s = st.saved
+  if (!s) return
+  // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
+  const sig = await signText(s.keys.signPriv, approvalSignText(a, decision))
+  st.decided.set(a.id, {
+    ok: true,
+    message: decision === 'approve' ? '승인을 보냈어요. PC에서 누르는 중…' : '거절을 보냈어요',
+  })
+  render()
+  await send({ kind: 'decide', id: a.id, decision, sig })
+}
+
+const pendingApprovals = () =>
+  [...st.approvals.values()].filter((a) => a.status === 'pending' && !st.decided.has(a.id))
+const pendingLogins = () => [...st.logins.values()].filter((l) => l.status === 'pending')
+
+// ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 (다음 단계에서 실시간 화면으로 바꾼다) ──
+
 let screenTimer: ReturnType<typeof setTimeout> | undefined
 function nextScreen(tabId: number) {
   clearTimeout(screenTimer)
   screenTimer = setTimeout(() => {
-    if (st.view.name === 'remote' && st.view.tabId === tabId && document.visibilityState === 'visible')
+    if (st.screen.name === 'remote' && st.screen.tabId === tabId && document.visibilityState === 'visible')
       void send({ kind: 'screen', tabId })
-  }, 1200)
+  }, 1000)
 }
 
-function openRemote(tabId: number, threadId?: string, connectId?: string) {
-  st.screen = { tabId }
+function openRemote(tabId: number, connectId?: string) {
+  st.screenShot = { tabId }
   st.remoteDraft = ''
-  go({ name: 'remote', tabId, ...(threadId ? { threadId } : {}), ...(connectId ? { connectId } : {}) })
+  st.overlay = undefined
+  st.screen = { name: 'remote', tabId, ...(connectId ? { connectId } : {}) }
+  render()
   void send({ kind: 'screen', tabId })
 }
 
 function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'tabId'>) {
-  if (st.view.name !== 'remote') return
-  const tabId = st.view.tabId
+  if (st.screen.name !== 'remote') return
+  const tabId = st.screen.tabId
   clearTimeout(screenTimer)
-  if (st.screen) st.screen.busy = true
+  if (st.screenShot) st.screenShot.busy = true
   render()
   void send({ kind: 'remote', tabId, ...input })
-}
-
-function remoteView(v: Extract<View, { name: 'remote' }>) {
-  const s = st.screen
-  const box = h(
-    'section',
-    { class: 'page remote' },
-    header('PC 화면', () =>
-      v.threadId
-        ? openThread(v.threadId)
-        : go(v.connectId ? { name: 'service', id: v.connectId } : { name: 'home' }),
-    ),
-  )
-  const host = (() => {
-    try {
-      return s?.url ? new URL(s.url).host : ''
-    } catch {
-      return ''
-    }
-  })()
-  box.append(
-    h('p', {
-      class: 'cap remote-where',
-      text: [s?.title, host].filter(Boolean).join(' · ') || '불러오는 중…',
-    }),
-  )
-  if (s?.error) box.append(h('div', { class: 'notice', text: s.error }))
-  if (s?.shot) {
-    const frame = h('div', { class: s.busy ? 'remote-frame busy' : 'remote-frame' })
-    const img = h('img', { class: 'remote-shot' })
-    img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
-    img.src = `data:image/jpeg;base64,${s.shot}`
-    img.addEventListener('click', (e) => {
-      const r = img.getBoundingClientRect()
-      const x = (e.clientX - r.left) / r.width
-      const y = (e.clientY - r.top) / r.height
-      const dot = h('span', { class: 'tap-dot' })
-      dot.style.left = `${x * 100}%`
-      dot.style.top = `${y * 100}%`
-      frame.append(dot)
-      remote({ action: 'tap', x, y })
-    })
-    frame.append(img)
-    box.append(frame)
-  } else if (!s?.error)
-    box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC 화면을 가져오는 중…'))
-  // 글자 넣기와 자주 쓰는 키
-  const form = h('form', { class: 'remote-type' })
-  const ta = h('textarea')
-  ta.rows = 1
-  ta.placeholder = '누른 칸에 넣을 글자'
-  ta.value = st.remoteDraft
-  ta.oninput = () => {
-    st.remoteDraft = ta.value
-  }
-  const put = h('button', { class: 'btn-small', text: '넣기' })
-  put.type = 'submit'
-  form.append(ta, put)
-  form.onsubmit = (e) => {
-    e.preventDefault()
-    if (!st.remoteDraft) return
-    const text = st.remoteDraft
-    st.remoteDraft = ''
-    remote({ action: 'text', text })
-  }
-  const keys = h('div', { class: 'remote-keys' })
-  for (const [label, input] of [
-    ['지우기', { action: 'key', key: 'Backspace' }],
-    ['엔터', { action: 'key', key: 'Enter' }],
-    ['다음 칸', { action: 'key', key: 'Tab' }],
-    ['위로', { action: 'scroll', dy: -1 }],
-    ['아래로', { action: 'scroll', dy: 1 }],
-  ] as const)
-    keys.append(h('button', { class: 'chip', text: label, onclick: () => remote(input) }))
-  box.append(
-    form,
-    keys,
-    h('p', {
-      class: 'cap',
-      text: '여기서 누르고 넣은 것은 PC의 두리 탭에 그대로 전해져요. 두리(AI)는 이 화면에서 넣은 글자를 보지 않아요.',
-    }),
-  )
-  // 서비스 연결: 폰에서 로그인을 마치면 연결로 표시하고 그 서비스로 돌아간다
-  if (v.connectId) {
-    const id = v.connectId
-    box.append(
-      h(
-        'div',
-        { class: 'actions' },
-        h('button', {
-          class: 'primary',
-          text: '로그인했어요',
-          onclick: () => {
-            void send({ kind: 'connect', id, action: 'mark' })
-            go({ name: 'service', id })
-          },
-        }),
-      ),
-      h('p', {
-        class: 'cap',
-        text: '로그인하면 두리가 화면을 보고 알아서 확인해요. 안 넘어가면 위 버튼을 눌러 주세요.',
-      }),
-    )
-  }
-  if (v.threadId) {
-    const threadId = v.threadId
-    box.append(
-      h(
-        'div',
-        { class: 'actions' },
-        h('button', {
-          class: 'primary',
-          text: '다 했어요, 이어서 해 줘',
-          onclick: () => {
-            st.live.set(threadId, '')
-            void send({ kind: 'ask', threadId, text: '다 했어요. 이어서 해 주세요.' })
-            openThread(threadId)
-          },
-        }),
-      ),
-    )
-  }
-  return box
-}
-
-function upsertThread(t: ThreadSummary) {
-  st.threads = [t, ...st.threads.filter((x) => x.id !== t.id)]
-}
-
-function onStream(threadId: string, ev: DaemonStreamEvent) {
-  const list = st.messages.get(threadId) ?? []
-  if (ev.type === 'saved') {
-    st.messages.set(threadId, [...list.filter((m) => m.id !== ev.message.id), ev.message])
-    if (ev.message.role === 'assistant') st.live.delete(threadId)
-    // 이 폰에서 보낸 새 부탁이면 그 대화로 간다
-    if (st.waitingNew && ev.message.role === 'user' && ev.message.text === st.waitingNew) {
-      st.waitingNew = undefined
-      if (st.view.name === 'thread' && !st.view.id) st.view = { name: 'thread', id: threadId }
-    }
-    if (!st.threads.some((t) => t.id === threadId))
-      upsertThread({
-        id: threadId,
-        title: ev.message.text.slice(0, 30),
-        agent: 'claude',
-        createdAt: ev.message.createdAt,
-        updatedAt: ev.message.createdAt,
-      } as ThreadSummary)
-  } else if (ev.type === 'agent') {
-    if (ev.event.type === 'text') st.live.set(threadId, (st.live.get(threadId) ?? '') + ev.event.delta)
-    else if (ev.event.type === 'tool') {
-      if (!st.live.has(threadId)) st.live.set(threadId, '')
-      const steps = st.steps.get(threadId) ?? []
-      const label = `${toolLabel(ev.event.name)} 중`
-      if (steps.at(-1) !== label) st.steps.set(threadId, [...steps, label])
-    }
-  } else if (ev.type === 'end') {
-    st.live.delete(threadId)
-    st.steps.delete(threadId)
-    void send({ kind: 'hello' })
-  }
 }
 
 // ── 알림 ──
@@ -516,7 +375,7 @@ function toast(text: string) {
       st.toast = undefined
       render()
     }
-  }, 3500)
+  }, 3200)
 }
 
 function notify(title: string, body: string, tag?: string) {
@@ -526,8 +385,6 @@ function notify(title: string, body: string, tag?: string) {
     new Notification(title, { body, ...(tag ? { tag } : {}) })
 }
 
-// ── 웹 푸시: 앱이 꺼져 있어도 알림 ──
-
 const pushReady = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
 function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
@@ -536,10 +393,7 @@ function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
   return x.length === b.length && x.every((v, i) => v === b[i])
 }
 
-/**
- * 알림을 허락했으면 이 PC의 키로 푸시를 구독하고 PC에 알린다. 다른 PC로 바꿨으면 다시 구독한다.
- * PC가 이미 알고 있으면(state.push) 다시 보내지 않는다
- */
+/** 알림을 허락했으면 이 PC의 키로 푸시를 구독하고 PC에 알린다 */
 let syncing = false
 async function syncPush() {
   const vapid = st.pc?.vapid
@@ -570,17 +424,18 @@ async function syncPush() {
   }
 }
 
-/** 알림을 눌러 열었으면 (#a=승인 id, #t=대화 id) 그 화면으로 간다 */
+/** 알림을 눌러 열었으면 (#a=승인 id, #t=대화) 그 화면으로 간다 */
 let pendingOpen = ''
 function openPending() {
   const m = /^#([at])=([\w-]+)$/.exec(pendingOpen)
   if (!m || !st.saved?.paired) return
   pendingOpen = ''
   history.replaceState(null, '', location.pathname)
+  st.screen = { name: 'app' }
   if (m[1] === 'a') {
-    go({ name: 'approval', id: m[2] as string })
+    st.overlay = { kind: 'approval', id: m[2] as string }
     void send({ kind: 'approval', id: m[2] as string })
-  } else openThread(m[2] as string)
+  } else st.tab = 'chat'
 }
 
 // ── 페어링 ──
@@ -594,13 +449,11 @@ async function startPairing(raw: string) {
     return
   }
   history.replaceState(null, '', location.pathname)
-  // 예전 연결은 끊고 새 PC와 다시 시작한다
   st.client?.stop()
   st.client = undefined
   st.online = false
-  st.threads = []
-  st.messages.clear()
-  st.live.clear()
+  st.conv = []
+  st.pending = []
   st.approvals.clear()
   st.decided.clear()
   st.pc = undefined
@@ -610,7 +463,8 @@ async function startPairing(raw: string) {
   st.saved = saved
   st.key = await linkKey(keys.boxPriv, invite.k, [keys.id, invite.pc])
   const code = await pairCode(keys.boxPriv, invite.k)
-  go({ name: 'pairing', code, pcName: invite.n })
+  st.screen = { name: 'pairing', code, pcName: invite.n }
+  render()
   connect()
   // 페어링 요청: 이 폰의 X25519 공개키를 머리에 실어, PC가 키를 만들 수 있게 한다
   saved.seq += 1
@@ -635,181 +489,719 @@ function deviceName() {
 
 // ── 화면 ──
 
+/** 대화 아래쪽을 보고 있으면 새 말이 와도 아래에 붙어 있는다 */
+let stickToBottom = true
+let shell:
+  | {
+      top: HTMLElement
+      page: HTMLElement
+      chat: HTMLElement
+      composerBox: HTMLElement
+      textarea: HTMLTextAreaElement
+      sendBtn: HTMLButtonElement
+      tabs: HTMLElement
+      overlay: HTMLElement
+      toast: HTMLElement
+    }
+  | undefined
+
 function render() {
-  // 입력 중이던 칸의 커서와, 대화 아래쪽을 보고 있었는지를 기억해 다시 그린 뒤 되돌린다
-  const active = document.activeElement
-  const typing =
-    active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
-      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
-      : undefined
-  const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 120
-  const v = st.view
-  const screen =
-    v.name === 'intro'
-      ? introView()
-      : v.name === 'unsupported'
-        ? unsupportedView()
-        : v.name === 'pairing'
-          ? pairingView(v)
-          : v.name === 'home'
-            ? homeView()
-            : v.name === 'thread'
-              ? threadView(v.id)
-              : v.name === 'remote'
-                ? remoteView(v)
-                : v.name === 'connections'
-                  ? connectionsView(connectCtx())
-                  : v.name === 'service'
-                    ? serviceView(connectCtx(), v.id)
-                    : approvalView(v.id)
-  const y = window.scrollY
-  app.replaceChildren(screen, ...(st.toast ? [h('div', { class: 'toast', text: st.toast })] : []))
-  if (v.name === 'thread' && nearBottom) window.scrollTo(0, document.body.scrollHeight)
-  else window.scrollTo(0, y)
-  const input = typing?.id
-    ? (document.getElementById(typing.id) as HTMLInputElement | HTMLTextAreaElement | null)
-    : app.querySelector<HTMLTextAreaElement>('textarea')
-  if (input && typing) {
-    input.focus()
-    try {
-      input.setSelectionRange(typing.start, typing.end)
-    } catch {}
+  const s = st.screen
+  if (s.name !== 'app') {
+    shell = undefined
+    const view =
+      s.name === 'intro'
+        ? introView()
+        : s.name === 'unsupported'
+          ? unsupportedView()
+          : s.name === 'pairing'
+            ? pairingView(s)
+            : remoteView(s)
+    const t = h('div', { class: 'toast float-toast', text: st.toast ?? '' })
+    t.hidden = !st.toast
+    app.replaceChildren(view, t)
+    return
+  }
+  if (!shell) buildShell()
+  renderTop()
+  renderPage()
+  renderComposer()
+  renderTabs()
+  renderOverlay()
+  if (shell) {
+    shell.toast.textContent = st.toast ?? ''
+    shell.toast.hidden = !st.toast
   }
 }
 
-function header(title: string, back?: () => void) {
-  return h(
-    'header',
-    { class: 'bar' },
-    back ? backButton(back) : h('span', { class: 'face' }),
-    h('div', { class: 'bar-title' }, h('strong', { text: title }), statusLine()),
+function buildShell() {
+  const top = h('header', { class: 'app-top' })
+  const page = h('main', { class: 'app-page' })
+  const chat = h('div', { class: 'chat-list' })
+  page.addEventListener(
+    'scroll',
+    () => {
+      if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+    },
+    { passive: true },
   )
-}
-
-function backButton(back: () => void) {
-  const b = h('button', { class: 'back', onclick: back }, icon('back'))
-  b.setAttribute('aria-label', '뒤로')
-  return b
-}
-
-function statusLine() {
-  const name = st.saved?.pcName ?? 'PC'
-  return h('span', {
-    class: `status ${st.online ? 'on' : 'off'}`,
-    text: st.online ? `${name}와 연결됨` : `${name} 연결 중…`,
+  const textarea = h('textarea')
+  textarea.rows = 1
+  textarea.placeholder = '두리에게 부탁하기'
+  textarea.setAttribute('aria-label', '부탁')
+  textarea.addEventListener('input', () => {
+    st.draft = textarea.value
+    autosize(textarea)
+    renderComposer()
   })
-}
-
-function introView() {
-  return h(
-    'section',
-    { class: 'center' },
-    h('div', { class: 'face big' }),
-    h('h1', { text: '두리' }),
-    h('p', { text: '내 컴퓨터의 두리에게 폰으로 부탁해요.' }),
-    h(
-      'ol',
-      { class: 'steps' },
-      h('li', { text: 'PC에서 두리 앱을 열어요' }),
-      h('li', { text: '설정 → 폰 연결 → [폰 연결하기]' }),
-      h('li', { text: '폰 카메라로 QR을 찍어요' }),
-    ),
-    h('p', { class: 'cap', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
-  )
-}
-
-function unsupportedView() {
-  return h(
-    'section',
-    { class: 'center' },
-    h('h1', { text: '이 브라우저는 아직 안 돼요' }),
-    h('p', { text: '최신 Safari(iOS 17 이상)나 Chrome으로 열어 주세요.' }),
-  )
-}
-
-function pairingView(v: Extract<View, { name: 'pairing' }>) {
-  if (v.rejected)
-    return h(
-      'section',
-      { class: 'center' },
-      h('h1', { text: '연결하지 않았어요' }),
-      h('p', { text: 'PC에서 "다른 숫자예요"를 눌렀어요. PC에서 QR을 다시 띄워 찍어 주세요.' }),
-    )
-  return h(
-    'section',
-    { class: 'center' },
-    h('h1', { text: `${v.pcName}에 연결할게요` }),
-    h('p', { text: 'PC 화면에 이 숫자가 보이나요?' }),
-    h('div', { class: 'code', text: v.code.replace(/(\d{3})(\d{3})/, '$1 $2') }),
-    h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 [같아요, 연결]을 눌러 주세요'),
-    h('p', { class: 'cap', text: '숫자가 다르면 PC에서 "다른 숫자예요"를 눌러 주세요.' }),
-  )
-}
-
-function pendingApprovals() {
-  return [...st.approvals.values()].filter(
-    (a) => a.status === 'pending' && Date.parse(a.expiresAt) > Date.now(),
-  )
-}
-
-/** 바로 맡기기: 누르면 부탁 칸에 예시 글을 채운다 */
-const QUICK: { label: string; icon: keyof typeof ICON; text: string }[] = [
-  { label: '식당 예약', icon: 'dining', text: '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘' },
-  { label: '장보기', icon: 'grocery', text: '늘 사던 걸로 장바구니 채워 줘' },
-  { label: '택배 조회', icon: 'parcel', text: '주문한 택배 어디쯤 왔는지 봐 줘' },
-  { label: '메일 정리', icon: 'mail', text: '답장이 필요한 메일만 골라 줘' },
-]
-
-function whenLabel(iso: string) {
-  const min = Math.floor((Date.now() - Date.parse(iso)) / 60_000)
-  if (min < 2) return '방금 끝났어요'
-  if (min < 60) return `${min}분 전`
-  return shortTime(iso)
-}
-
-function openThread(id: string) {
-  go({ name: 'thread', id })
-  void send({ kind: 'thread', id })
-}
-
-/** 맡긴 일 카드: 상태 줄 → 제목 → 마지막 답 */
-function taskCard(t: ThreadSummary) {
-  const busy = t.busy || st.live.has(t.id)
-  return h(
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(pointer: fine)').matches) {
+      e.preventDefault()
+      ask(st.draft)
+      textarea.value = ''
+      autosize(textarea)
+    }
+  })
+  const plus = h(
     'button',
-    { class: 'task', onclick: () => openThread(t.id) },
+    { class: 'cbtn plus', label: '아이디어', onclick: () => setTab('ideas') },
+    icon('plus', 'i md'),
+  )
+  const sendBtn = h('button', { class: 'send-btn', label: '보내기' })
+  sendBtn.addEventListener('click', () => {
+    if (!st.draft.trim() && st.busy) return void send({ kind: 'conversation-cancel' })
+    ask(st.draft)
+    textarea.value = ''
+    autosize(textarea)
+    textarea.focus()
+  })
+  const composerBox = h('div', { class: 'composer float app-composer' }, plus, textarea, sendBtn)
+  const tabs = h('nav', { class: 'tabs app-tabs', label: '탭' })
+  const overlay = h('div', { class: 'app-overlay' })
+  const toast = h('div', { class: 'toast float-toast' })
+  toast.setAttribute('role', 'status')
+  app.replaceChildren(h('div', { class: 'app-shell' }, top, page, composerBox, tabs, overlay, toast))
+  shell = { top, page, chat, composerBox, textarea, sendBtn, tabs, overlay, toast }
+}
+
+function autosize(t: HTMLTextAreaElement) {
+  t.style.height = 'auto'
+  t.style.height = `${Math.min(t.scrollHeight, 132)}px`
+}
+
+function setTab(tab: Tab) {
+  st.tab = tab
+  st.overlay = undefined
+  if (tab === 'chat') stickToBottom = true
+  if (tab === 'connect') st.connectDetail = undefined
+  render()
+  shell?.page.scrollTo({ top: tab === 'chat' ? shell.page.scrollHeight : 0 })
+}
+
+/** 머리: 메뉴 · 두리(지금 하는 일) · 내 PC */
+function renderTop() {
+  const t = shell?.top
+  if (!t) return
+  const waiting = pendingApprovals().length + pendingLogins().length
+  const mood = !st.online ? 'sleeping' : waiting ? 'asking' : st.busy || st.pending.length ? 'working' : ''
+  const status = !st.online
+    ? 'PC 연결 중…'
+    : waiting
+      ? '승인을 기다려요'
+      : st.busy || st.pending.length
+        ? (st.steps.at(-1) ?? '대답하는 중…')
+        : ''
+  const tag = h(
+    'span',
+    { class: 'agent-tag' },
+    '두리',
+    status && h('span', { class: waiting ? 'ask' : !st.online ? 'off' : '', text: status }),
+  )
+  const agent = h(
+    'button',
+    { class: 'agent', label: '두리 패널 열기', onclick: () => openOverlay({ kind: 'agent' }) },
+    h('span', { class: 'agent-av' }, doori(mood)),
+    tag,
+  )
+  const pill = h(
+    'button',
+    { class: 'fpill', onclick: () => openOverlay({ kind: 'agent' }) },
+    h('span', { class: st.online ? 'dot work' : 'dot' }),
+    shortPc(st.saved?.pcName),
+  )
+  t.replaceChildren(
     h(
-      'div',
-      { class: 'task-meta' },
-      h('span', { text: busy ? '일하는 중' : whenLabel(t.updatedAt) }),
-      busy && h('i', { class: 'spin' }),
+      'button',
+      { class: 'fbtn', label: '메뉴', onclick: () => openOverlay({ kind: 'drawer' }) },
+      icon('menu'),
     ),
-    h('div', { class: 'task-title', text: t.title }),
-    (t.preview || busy) &&
-      h('p', { class: 'task-body', text: t.preview ?? `${st.saved?.pcName ?? 'PC'}에서 하고 있어요` }),
+    agent,
+    pill,
   )
 }
 
-function approvalCard(a: ApprovalView) {
-  return h(
-    'div',
-    { class: 'task dark' },
-    h('div', { class: 'task-meta' }, h('i', { class: 'dot mint' }), '승인을 기다려요'),
-    h('div', { class: 'task-title', text: [a.what, a.amount].filter(Boolean).join(' · ') }),
-    h('p', { class: 'task-body', text: `${a.where} · 승인하시면 "${a.label}"을(를) 눌러요` }),
-    h('button', {
-      class: 'btn-light lg',
-      text: '확인하고 승인하기',
-      onclick: () => go({ name: 'approval', id: a.id }),
+function shortPc(name?: string) {
+  if (!name) return '내 PC'
+  return name.length > 8 ? `${name.slice(0, 7)}…` : name
+}
+
+function openOverlay(o: Overlay) {
+  st.overlay = o
+  render()
+}
+
+function renderTabs() {
+  const t = shell?.tabs
+  if (!t) return
+  const waiting = pendingApprovals().length + pendingLogins().length
+  const items: [Tab, IconName, string][] = [
+    ['chat', 'chat', '대화'],
+    ['tasks', 'tasks', '맡긴 일'],
+    ['ideas', 'idea', '아이디어'],
+    ['connect', 'apps', '연결'],
+  ]
+  t.replaceChildren(
+    ...items.map(([id, ic, label]) => {
+      const b = h(
+        'button',
+        { class: st.tab === id ? 'tab on' : 'tab', label, onclick: () => setTab(id) },
+        icon(ic),
+        h('span', { class: 'tab-label', text: label }),
+        id === 'tasks' && waiting > 0 && h('span', { class: 'badge' }),
+      )
+      if (st.tab === id) b.setAttribute('aria-current', 'page')
+      return b
     }),
   )
 }
 
-// ── 서비스 연결 (connections.ts) ──
-function openConnections() {
-  go({ name: 'connections' })
-  void send({ kind: 'connections' })
+function renderComposer() {
+  if (!shell) return
+  const { composerBox, textarea, sendBtn } = shell
+  composerBox.hidden = st.tab !== 'chat'
+  if (textarea.value !== st.draft) {
+    textarea.value = st.draft
+    autosize(textarea)
+  }
+  const stop = !st.draft.trim() && st.busy
+  sendBtn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
+  sendBtn.setAttribute('aria-label', stop ? '멈추기' : '보내기')
+  sendBtn.classList.toggle('ready', Boolean(st.draft.trim()))
+  sendBtn.classList.toggle('stop', stop)
+  sendBtn.disabled = !st.online || (!st.draft.trim() && !st.busy)
 }
+
+function renderPage() {
+  if (!shell) return
+  const { page, chat } = shell
+  page.dataset.tab = st.tab
+  if (st.tab === 'chat') {
+    if (page.firstChild !== chat || page.childNodes.length !== 1) page.replaceChildren(chat)
+    syncChat()
+    if (stickToBottom) requestAnimationFrame(() => page.scrollTo({ top: page.scrollHeight }))
+    return
+  }
+  const y = page.scrollTop
+  page.replaceChildren(st.tab === 'tasks' ? tasksView() : st.tab === 'ideas' ? ideasView() : connectView())
+  page.scrollTop = y
+}
+
+// ── 대화: 바뀐 말만 ──
+
+/** 대화 목록에 있어야 할 것 (key, 서명, 만들기). 서명이 같으면 그대로 둔다 */
+type Item = { key: string; sig: string; make: () => HTMLElement }
+
+function chatItems(): Item[] {
+  const items: Item[] = []
+  const first = st.conv[0]
+  if (st.hasMore && first)
+    items.push({
+      key: 'more',
+      sig: first.id,
+      make: () =>
+        h('button', {
+          class: 'btn-text more',
+          text: '이전 대화 더 보기',
+          onclick: () => void send({ kind: 'conversation', before: first.id }),
+        }),
+    })
+  if (st.convLoaded && !st.conv.length && !st.pending.length)
+    items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
+  for (const m of st.conv) {
+    if (m.role === 'tool') items.push({ key: m.id, sig: toolSig(m.text), make: () => toolCard(m.text) })
+    else if (m.role === 'user')
+      items.push({ key: m.id, sig: '', make: () => h('div', { class: 'bubble me', text: m.text }) })
+    else if (m.role === 'assistant')
+      items.push({
+        key: m.id,
+        sig: '',
+        make: () => {
+          const b = h('div', { class: 'bubble rich' })
+          b.append(rich(m.text))
+          return b
+        },
+      })
+    else {
+      const note = readAppNote(m.text)
+      items.push({
+        key: m.id,
+        sig: '',
+        make: () => h('p', { class: 'msg note', text: note ?? m.text }),
+      })
+    }
+  }
+  for (const p of st.pending)
+    items.push({
+      key: `p${p.id}`,
+      sig: '',
+      make: () => h('div', { class: 'bubble me sending', text: p.text }),
+    })
+  st.queued.forEach((q, i) => {
+    items.push({
+      key: `q${i}`,
+      sig: q,
+      make: () =>
+        h(
+          'div',
+          { class: 'queued' },
+          h('div', { class: 'bubble me', text: q }),
+          h('span', { class: 'meta', text: '이어서 말할게요' }),
+        ),
+    })
+  })
+  if (st.busy || st.pending.length) {
+    const step = st.steps.at(-1)
+    if (step)
+      items.push({
+        key: 'step',
+        sig: step,
+        make: () => h('p', { class: 'meta step' }, h('span', { class: 'dot work pulse' }), step),
+      })
+    if (st.live) items.push({ key: 'live', sig: '', make: liveBubble })
+    else
+      items.push({
+        key: 'typing',
+        sig: '',
+        make: () => h('span', { class: 'typing', label: '대답 중' }, h('i'), h('i'), h('i')),
+      })
+  }
+  return items
+}
+
+function liveBubble() {
+  const b = h('div', { class: 'bubble rich streaming' })
+  b.append(rich(st.live))
+  return b
+}
+
+function syncChat() {
+  const list = shell?.chat
+  if (!list) return
+  const want = chatItems()
+  const have = new Map<string, HTMLElement>()
+  for (const el of [...list.children] as HTMLElement[]) if (el.dataset.key) have.set(el.dataset.key, el)
+  const keep = new Set<string>()
+  let prev: Element | null = null
+  for (const it of want) {
+    keep.add(it.key)
+    let el = have.get(it.key)
+    if (el && it.key === 'live') {
+      // 흘러오는 답은 글자만 바꾼다
+      el.replaceChildren(rich(st.live))
+    } else if (!el || el.dataset.sig !== it.sig) {
+      const fresh = it.make()
+      fresh.dataset.key = it.key
+      fresh.dataset.sig = it.sig
+      if (!el) fresh.classList.add('rise')
+      if (el) el.replaceWith(fresh)
+      el = fresh
+    }
+    const next: Element | null = prev ? prev.nextElementSibling : list.firstElementChild
+    if (next !== el) {
+      if (prev) prev.after(el)
+      else list.prepend(el)
+    }
+    prev = el
+  }
+  for (const [k, el] of have) if (!keep.has(k)) el.remove()
+}
+
+function helloCard() {
+  return h(
+    'div',
+    { class: 'hello' },
+    h('div', { class: 'bubble', text: `안녕하세요, 두리예요. ${st.saved?.pcName ?? '내 PC'}에서 일해요.` }),
+    h('div', {
+      class: 'bubble',
+      text: '예약·장보기·택배·서류처럼 귀찮은 일을 말로 맡겨 주세요. 돈 쓰는 일은 꼭 먼저 물어볼게요.',
+    }),
+    h(
+      'div',
+      { class: 'quick' },
+      ...['택배 어디쯤 왔어?', '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘', '뭘 할 수 있어?'].map((q) =>
+        h('button', { text: q, onclick: () => ask(q) }),
+      ),
+    ),
+  )
+}
+
+function toolSig(raw: string) {
+  try {
+    const rec = JSON.parse(raw) as { kind?: string }
+    if (rec.kind === 'approval') {
+      const a = approvalFor(rec as ApprovalRecordMessage)
+      return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}`
+    }
+    if (rec.kind === 'login') {
+      const l = loginFor(rec as LoginRecordMessage)
+      return `${l?.id}:${l?.status}`
+    }
+  } catch {}
+  return ''
+}
+
+function approvalFor(rec: ApprovalRecordMessage) {
+  return [...st.approvals.values()]
+    .filter((x) => x.tabId === rec.tabId && x.ref === rec.ref)
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
+}
+
+function loginFor(rec: LoginRecordMessage) {
+  return [...st.logins.values()]
+    .filter((x) => x.tabId === rec.tabId)
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
+}
+
+function toolCard(raw: string): HTMLElement {
+  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
+  try {
+    rec = JSON.parse(raw)
+  } catch {
+    return h('span')
+  }
+  if (rec.kind === 'approval') return approvalInline(rec)
+  if (rec.kind === 'login') return loginInline(rec)
+  // 직접 해 주세요
+  const tabId = rec.tabId
+  return h(
+    'div',
+    { class: 'card ask-card' },
+    h('div', { class: 'card-label' }, doori('asking', 22), '직접 해 주세요'),
+    h('p', { class: 'card-text', text: rec.reason }),
+    tabId !== undefined &&
+      h('button', { class: 'btn-ghost', text: '폰에서 PC 화면 열기', onclick: () => openRemote(tabId) }),
+  )
+}
+
+/** 대화 안의 승인 카드: 무엇을 · 얼마 · [거절][승인하기] */
+function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
+  const a = approvalFor(rec)
+  const decided = a ? st.decided.get(a.id) : undefined
+  if (!a || a.status !== 'pending' || decided)
+    return h(
+      'p',
+      { class: 'done-line' },
+      icon('check'),
+      decided?.message ??
+        (a?.status === 'done'
+          ? `승인해서 눌렀어요 · ${rec.what}`
+          : a?.status === 'rejected'
+            ? `거절했어요 · ${rec.what}`
+            : rec.what || '승인 요청'),
+    )
+  const tone: IconName = a.kind === 'money' ? 'cart' : a.kind === 'contact' ? 'mail' : 'hand'
+  return h(
+    'div',
+    { class: 'card approve-card' },
+    h(
+      'div',
+      { class: 'approve-head' },
+      h('span', { class: 'tile amber' }, icon(tone, 'i md')),
+      h(
+        'div',
+        {},
+        h('strong', { text: approveQuestion(a) }),
+        h('span', { class: 'meta', text: [a.where, hostOf(a.url)].filter(Boolean).join(' · ') }),
+      ),
+    ),
+    a.amount && h('p', { class: 'approve-amount', text: a.amount }),
+    h('p', { class: 'approve-what', text: a.what }),
+    h(
+      'div',
+      { class: 'approve-actions' },
+      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', { class: 'btn btn-approve', text: '승인하기', onclick: () => void decide(a, 'approve') }),
+    ),
+    h('button', {
+      class: 'btn-link',
+      text: '화면 보고 결정하기',
+      onclick: () => openOverlay({ kind: 'approval', id: a.id }),
+    }),
+  )
+}
+
+function approveQuestion(a: ApprovalView) {
+  if (a.kind === 'money') return '결제할까요?'
+  if (a.kind === 'contact') return '보낼까요?'
+  if (a.kind === 'app') return '이 PC 앱을 다뤄도 될까요?'
+  return '진행할까요?'
+}
+
+function hostOf(url: string) {
+  if (url.startsWith('app:')) return ''
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
+}
+
+function loginInline(rec: LoginRecordMessage): HTMLElement {
+  const r = loginFor(rec)
+  if (!r || r.status !== 'pending')
+    return h(
+      'p',
+      { class: 'done-line' },
+      icon('lock'),
+      r?.status === 'saved'
+        ? `${r.site} 로그인 정보를 PC 금고에 저장했어요`
+        : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+    )
+  return h(
+    'div',
+    { class: 'card approve-card' },
+    h(
+      'div',
+      { class: 'approve-head' },
+      h('span', { class: 'svc-mark', text: [...r.site][0] ?? '' }),
+      h(
+        'div',
+        {},
+        h('strong', { text: `${r.site} 로그인이 필요해요` }),
+        h('span', { class: 'meta', text: hostOf(r.origin) }),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'approve-actions' },
+      h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: () => openRemote(r.tabId) }),
+      h('button', {
+        class: 'btn',
+        text: '로그인하기',
+        onclick: () => openOverlay({ kind: 'login', id: r.id }),
+      }),
+    ),
+  )
+}
+
+// ── 맡긴 일 ──
+
+function tasksView() {
+  const box = h('section', { class: 'tab-page' }, h('h1', { class: 'ptitle', text: '맡긴 일' }))
+  const approvals = pendingApprovals()
+  const logins = pendingLogins()
+  if (approvals.length || logins.length) {
+    box.append(h('h2', { class: 'over', text: '나를 기다려요' }))
+    for (const a of approvals)
+      box.append(
+        h(
+          'button',
+          { class: 'task-card ask', onclick: () => openOverlay({ kind: 'approval', id: a.id }) },
+          h('span', { class: 'meta' }, h('span', { class: 'dot ask' }), '승인을 기다려요'),
+          h('strong', { text: [a.what, a.amount].filter(Boolean).join(' · ') }),
+          h('span', { class: 'meta', text: a.where }),
+        ),
+      )
+    for (const l of logins)
+      box.append(
+        h(
+          'button',
+          { class: 'task-card ask', onclick: () => openOverlay({ kind: 'login', id: l.id }) },
+          h('span', { class: 'meta' }, h('span', { class: 'dot ask' }), '로그인이 필요해요'),
+          h('strong', { text: `${l.site} 로그인` }),
+          h('span', { class: 'meta', text: hostOf(l.origin) }),
+        ),
+      )
+  }
+  if (st.busy) {
+    const log = h('ul', { class: 'worklog' })
+    st.steps.forEach((s, i) => {
+      log.append(h('li', { class: i === st.steps.length - 1 ? 'now' : 'done', text: s }))
+    })
+    box.append(
+      h('h2', { class: 'over', text: '지금 하는 일' }),
+      h(
+        'div',
+        { class: 'task-card' },
+        h('span', { class: 'meta' }, h('span', { class: 'dot work pulse' }), '하는 중'),
+        h('strong', { text: lastUserText() ?? '부탁하신 일' }),
+        st.steps.length ? log : h('span', { class: 'meta', text: '대답을 쓰는 중이에요' }),
+        h('button', {
+          class: 'btn-text',
+          text: '멈추기',
+          onclick: () => void send({ kind: 'conversation-cancel' }),
+        }),
+      ),
+    )
+  }
+  if (st.queued.length) {
+    box.append(h('h2', { class: 'over', text: '다음 차례' }))
+    for (const q of st.queued) box.append(h('div', { class: 'row' }, h('span', { class: 'row-t', text: q })))
+  }
+  const done = recentDone()
+  if (done.length) {
+    box.append(h('h2', { class: 'over', text: '최근에 한 일' }))
+    for (const d of done)
+      box.append(
+        h(
+          'button',
+          { class: 'row', onclick: () => setTab('chat') },
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: d.ask }),
+            h('span', { class: 'row-d', text: d.answer }),
+          ),
+          h('span', { class: 'meta', text: shortTime(d.at) }),
+        ),
+      )
+  }
+  if (!approvals.length && !logins.length && !st.busy && !done.length)
+    box.append(emptyState('sleeping', '아직 맡긴 일이 없어요', '대화에서 부탁하면 여기에 모여요.'))
+  return box
+}
+
+function lastUserText() {
+  return [
+    ...st.pending.map((p) => p.text).reverse(),
+    ...[...st.conv]
+      .reverse()
+      .filter((m) => m.role === 'user')
+      .map((m) => m.text),
+  ][0]
+}
+
+/** 부탁 → 답 짝 (최근 6개) */
+function recentDone() {
+  const out: { ask: string; answer: string; at: string }[] = []
+  let lastAsk: StoredMessage | undefined
+  for (const m of st.conv) {
+    if (m.role === 'user') lastAsk = m
+    else if (m.role === 'assistant' && lastAsk) {
+      out.push({ ask: lastAsk.text, answer: m.text.replace(/\s+/g, ' ').slice(0, 80), at: m.createdAt })
+      lastAsk = undefined
+    }
+  }
+  return out.reverse().slice(0, 6)
+}
+
+function emptyState(mood: string, title: string, sub: string) {
+  return h(
+    'div',
+    { class: 'empty' },
+    doori(mood, 64),
+    h('strong', { text: title }),
+    h('span', { class: 'meta', text: sub }),
+  )
+}
+
+// ── 아이디어 ──
+
+const IDEAS: { text: string; icon: IconName; tone: string; note: string }[] = [
+  {
+    text: '택배 어디쯤 왔어?',
+    icon: 'box',
+    tone: 'blue',
+    note: '쇼핑몰 주문 내역이나 운송장 번호로 찾아봐요',
+  },
+  {
+    text: '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘',
+    icon: 'heart',
+    tone: 'rose',
+    note: '예약 확정 직전에 꼭 물어볼게요',
+  },
+  {
+    text: '안 쓰는 구독 찾아서 정리해 줘',
+    icon: 'card',
+    tone: 'mint',
+    note: '결제 메일로 찾고, 해지는 승인받고 해요',
+  },
+  {
+    text: '내일 아침 KTX 부산 가는 창가 자리 찾아 줘',
+    icon: 'calendar',
+    tone: 'amber',
+    note: '결제는 폰에서 승인해야 해요',
+  },
+  {
+    text: '메일함에서 이번 달 영수증만 모아 줘',
+    icon: 'mail',
+    tone: 'violet',
+    note: '첨부 파일까지 한 번에',
+  },
+  { text: '이번 달 휴대폰 요금 얼마 나왔어?', icon: 'pc', tone: 'blue', note: '통신사 사이트에서 확인해요' },
+]
+
+function ideasView() {
+  const box = h(
+    'section',
+    { class: 'tab-page' },
+    h('h1', { class: 'ptitle', text: '아이디어' }),
+    h('p', { class: 'psub', text: '눌러서 그대로 보내거나, 고쳐서 보내세요' }),
+  )
+  const fill = (text: string) => {
+    st.draft = text
+    setTab('chat')
+    shell?.textarea.focus()
+  }
+  const connected = (st.services ?? []).filter((s) => s.connectedAt)
+  if (connected.length) {
+    box.append(h('h2', { class: 'over', text: '연결한 곳에서' }))
+    for (const s of connected.slice(0, 4))
+      for (const a of s.card.abilities.slice(0, 2))
+        box.append(
+          h(
+            'button',
+            { class: 'idea', onclick: () => fill(a.say) },
+            h('span', { class: 'svc-mark', text: [...s.card.name][0] ?? '' }),
+            h(
+              'span',
+              { class: 'row-text' },
+              h('span', { class: 'row-t', text: a.say }),
+              h('span', { class: 'row-d', text: `${s.card.name} · ${a.title}` }),
+            ),
+          ),
+        )
+  }
+  box.append(h('h2', { class: 'over', text: '이런 걸 많이 맡겨요' }))
+  for (const i of IDEAS)
+    box.append(
+      h(
+        'button',
+        { class: 'idea', onclick: () => fill(i.text) },
+        h('span', { class: `tile ${i.tone}` }, icon(i.icon, 'i md')),
+        h(
+          'span',
+          { class: 'row-text' },
+          h('span', { class: 'row-t', text: i.text }),
+          h('span', { class: 'row-d', text: i.note }),
+        ),
+      ),
+    )
+  box.append(
+    h(
+      'div',
+      { class: 'card ask-card' },
+      h('div', { class: 'card-label' }, doori('asking', 22), '이건 직접 해 주셔야 해요'),
+      h('p', {
+        class: 'card-text',
+        text: '본인인증, 보안 문자, 공동인증서. 대신 그 화면을 폰에 바로 띄워 드릴게요.',
+      }),
+    ),
+  )
+  return box
+}
+
+// ── 연결 (connections.ts) ──
 
 function connectCtx(): ConnectCtx {
   return {
@@ -817,13 +1209,30 @@ function connectCtx(): ConnectCtx {
     query: st.connectQuery,
     online: st.online,
     ...(st.opening ? { opening: st.opening } : {}),
-    header,
-    home: () => go({ name: 'home' }),
-    list: () => go({ name: 'connections' }),
-    detail: (id) => go({ name: 'service', id }),
+    header: (title, back) =>
+      h(
+        'div',
+        { class: back ? 'page-head sub' : 'page-head' },
+        back && h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
+        h(back ? 'h2' : 'h1', { class: back ? 'title-2' : 'ptitle', text: title }),
+      ),
+    home: () => setTab('chat'),
+    list: () => {
+      st.connectDetail = undefined
+      render()
+      shell?.page.scrollTo({ top: 0 })
+    },
+    detail: (id) => {
+      st.connectDetail = id
+      render()
+      shell?.page.scrollTo({ top: 0 })
+    },
     setQuery: (q) => {
       st.connectQuery = q
       render()
+      const input = document.getElementById('connect-search') as HTMLInputElement | null
+      input?.focus()
+      input?.setSelectionRange(q.length, q.length)
     },
     open: (id) => {
       st.opening = id
@@ -831,275 +1240,291 @@ function connectCtx(): ConnectCtx {
       void send({ kind: 'connect', id, action: 'open' })
     },
     mark: (id, on) => void send({ kind: 'connect', id, action: on ? 'mark' : 'unmark' }),
-    tryAsk: (text) => {
-      st.draft = text
-      go({ name: 'home' })
-    },
+    tryAsk: (text) => ask(text),
   }
 }
 
-function homeView() {
-  const box = h('section', { class: 'page home' }, header('두리'))
-  if (st.pc && !st.pc.agents.length)
-    box.append(
-      h('div', {
-        class: 'notice',
-        text: 'PC에 일할 AI가 연결돼 있지 않아요. PC의 두리 앱에서 확인해 주세요.',
-      }),
-    )
-  // 승인할 일이 있으면 맨 위에
-  for (const a of pendingApprovals()) box.append(approvalCard(a))
-  // 부탁 칸
-  box.append(
-    composer(undefined, true),
-    h('p', { class: 'cap ask-hint', text: `맡긴 일은 ${st.saved?.pcName ?? '내 컴퓨터'}가 해요` }),
-  )
-  // 바로 맡기기
-  const quick = h('div', { class: 'quick' })
-  for (const q of QUICK)
-    quick.append(
-      h(
-        'button',
-        {
-          onclick: () => {
-            st.draft = q.text
-            render()
-            const ta = app.querySelector<HTMLTextAreaElement>('textarea')
-            ta?.focus()
-            ta?.setSelectionRange(q.text.length, q.text.length)
+function connectView() {
+  return st.connectDetail ? serviceView(connectCtx(), st.connectDetail) : connectionsView(connectCtx())
+}
+
+// ── 겹쳐 뜨는 것: 메뉴 서랍 · 두리 패널 · 승인 시트 · 로그인 시트 ──
+
+function renderOverlay() {
+  const o = shell?.overlay
+  if (!o) return
+  const ov = st.overlay
+  if (!ov) {
+    o.replaceChildren()
+    o.hidden = true
+    return
+  }
+  o.hidden = false
+  o.dataset.kind = ov.kind
+  const scrim = h('div', { class: 'scrim', onclick: () => openOverlay(undefined) })
+  const body =
+    ov.kind === 'drawer'
+      ? drawerView()
+      : ov.kind === 'agent'
+        ? agentPanel()
+        : ov.kind === 'approval'
+          ? approvalSheet(ov.id)
+          : loginSheet(ov.id)
+  // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
+  const active = document.activeElement
+  const typing =
+    active instanceof HTMLInputElement && o.contains(active)
+      ? { id: active.id, s: active.selectionStart }
+      : undefined
+  o.replaceChildren(scrim, body)
+  if (typing?.id) {
+    const el = document.getElementById(typing.id) as HTMLInputElement | null
+    el?.focus()
+    if (typing.s !== null) el?.setSelectionRange(typing.s, typing.s)
+  }
+}
+
+function drawerView() {
+  const notif =
+    'Notification' in window && Notification.permission === 'default'
+      ? h(
+          'button',
+          {
+            class: 'navi',
+            onclick: () =>
+              void Notification.requestPermission().then(() => {
+                void syncPush()
+                render()
+              }),
           },
-        },
-        h('span', { class: 'quick-icon' }, icon(q.icon)),
-        q.label,
-      ),
-    )
-  box.append(quick, connectEntry(st.services, openConnections))
-  // 아이폰은 홈 화면에 추가한 앱에서만 알림을 받을 수 있다
-  const ios = /iPhone|iPad/.test(navigator.userAgent)
-  const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
-  if (ios && !standalone && !pushReady())
-    box.append(
-      h(
-        'div',
-        { class: 'notify-ask' },
-        icon('bell'),
-        h(
-          'span',
-          { class: 'text' },
-          h('strong', { text: '알림을 받으려면 홈 화면에 추가해 주세요' }),
-          h('span', { text: '사파리 아래 공유 버튼 → 홈 화면에 추가 → 거기서 두리를 열어요' }),
-        ),
-      ),
-    )
-  // 알림은 사용자가 눌러서 켤 때만 묻는다 (아무 데나 눌렀다고 권한 창을 띄우지 않는다)
-  else if ('Notification' in window && Notification.permission === 'default')
-    box.append(
-      h(
-        'button',
-        {
-          class: 'notify-ask',
-          onclick: () =>
-            void Notification.requestPermission().then(() => {
-              render()
-              void syncPush()
-            }),
-        },
-        icon('bell'),
-        h(
-          'span',
-          { class: 'text' },
-          h('strong', { text: '알림 켜기' }),
-          h('span', { text: '승인할 일이 생기면 알려 드릴게요' }),
-        ),
-        icon('chevron'),
-      ),
-    )
-  // 최근에 맡긴 일: 앞의 셋은 카드, 나머지는 줄
-  box.append(h('h2', { class: 'over', text: '최근에 맡긴 일' }))
-  if (!st.threads.length)
-    box.append(h('p', { class: 'cap empty', text: '아직 맡긴 일이 없어요. 위에 부탁을 적어 보세요.' }))
-  const cards = h('div', { class: 'tasks' })
-  for (const t of st.threads.slice(0, 3)) cards.append(taskCard(t))
-  box.append(cards)
-  const rest = st.threads.slice(3, 30)
-  if (rest.length) {
-    const list = h('ul', { class: 'threads' })
-    for (const t of rest)
-      list.append(
-        h(
-          'li',
-          {},
-          h(
-            'button',
-            { onclick: () => openThread(t.id) },
-            h('span', { class: 't', text: t.title }),
-            h('span', { class: 'm', text: shortTime(t.updatedAt) }),
-          ),
-        ),
-      )
-    box.append(h('h2', { class: 'over', text: '지난 일' }), list)
-  }
-  return box
-}
-
-function composer(threadId: string | undefined, top = false) {
-  const form = h('form', { class: top ? 'composer top' : 'composer' })
-  const ta = h('textarea')
-  ta.rows = 1
-  ta.placeholder = top ? '무엇을 맡길까요?' : '두리에게 부탁하기…'
-  ta.value = st.draft
-  ta.oninput = () => {
-    st.draft = ta.value
-  }
-  const btn = h('button', { class: 'send' }, icon('send'))
-  btn.type = 'submit'
-  btn.setAttribute('aria-label', '보내기')
-  btn.disabled = !st.online || Boolean(threadId && st.live.has(threadId))
-  form.append(h('div', { class: 'composer-box' }, ta, btn))
-  form.onsubmit = (e) => {
-    e.preventDefault()
-    const text = st.draft.trim()
-    if (!text || !st.online) return
-    st.draft = ''
-    if (threadId) {
-      st.live.set(threadId, '')
-      void send({ kind: 'ask', threadId, text })
-    } else {
-      st.waitingNew = text
-      void send({ kind: 'ask', text })
-      st.view = { name: 'thread' }
-    }
-    render()
-  }
-  return form
-}
-
-function threadView(id: string | undefined) {
-  const t = st.threads.find((x) => x.id === id)
-  const box = h(
-    'section',
-    { class: 'page thread' },
-    header(t?.title ?? '새 부탁', () => go({ name: 'home' })),
-  )
-  const msgs = h('div', { class: 'messages' })
-  const list = id ? (st.messages.get(id) ?? []) : []
-  if (!id && st.waitingNew) msgs.append(h('div', { class: 'msg user' }, st.waitingNew))
-  // 넘기기·승인 기록은 그 다음 답 아래에 둔다 (PC 화면과 같은 순서)
-  const order = [...list]
-  for (let i = 0; i + 1 < order.length; i++) {
-    const a = order[i]
-    const b = order[i + 1]
-    if (a && b && a.role === 'tool' && b.role === 'assistant') {
-      order[i] = b
-      order[i + 1] = a
-      i++
-    }
-  }
-  let prev = ''
-  const who = () => h('div', { class: 'who' }, h('span', { class: 'face' }), '두리')
-  for (const m of order) {
-    // 두리 답 위에는 이름표 (이어진 답에는 한 번만)
-    if (m.role === 'assistant' && prev !== 'assistant') msgs.append(who())
-    prev = m.role
-    if (m.role === 'tool') msgs.append(toolCard(m.text, id))
-    else if (m.role === 'user' && readAppNote(m.text) !== undefined)
-      msgs.append(h('div', { class: 'msg note', text: readAppNote(m.text) }))
-    else
-      msgs.append(
-        h(
-          'div',
-          { class: m.role === 'assistant' ? 'msg assistant rich' : `msg ${m.role}` },
-          m.role === 'user' ? m.text : rich(m.text),
-        ),
-      )
-  }
-  const live = id ? st.live.get(id) : st.waitingNew ? '' : undefined
-  if (live !== undefined) {
-    if (prev !== 'assistant') msgs.append(who())
-    const steps = (id && st.steps.get(id)) || []
-    const log = h('ul', { class: 'worklog' })
-    steps.forEach((label, i) => {
-      log.append(h('li', { class: i === steps.length - 1 ? 'now' : 'done', text: label }))
-    })
-    msgs.append(
-      h(
-        'div',
-        { class: 'work' },
-        h('p', { class: 'activity shimmer', text: `${st.saved?.pcName ?? 'PC'}에서 일하는 중…` }),
-        steps.length > 0 && log,
-      ),
-    )
-    if (live) msgs.append(h('div', { class: 'msg assistant rich' }, rich(live)))
-  }
-  box.append(msgs, composer(id))
-  return box
-}
-
-function toolCard(raw: string, threadId?: string) {
-  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
-  try {
-    rec = JSON.parse(raw)
-  } catch {
-    return h('span')
-  }
-  if (rec.kind === 'login') return loginCard(rec)
-  if (rec.kind === 'approval') {
-    const a = [...st.approvals.values()]
-      .filter((x) => x.tabId === rec.tabId && x.ref === rec.ref)
-      .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
-    const pending = a?.status === 'pending'
-    return h(
+          icon('bell', 'i md'),
+          '알림 켜기',
+        )
+      : undefined
+  return h(
+    'aside',
+    { class: 'drawer app-drawer' },
+    h('div', { class: 'drawer-title' }, doori('', 28), '두리'),
+    h(
       'button',
-      {
-        class: `card approval ${pending ? 'pending' : ''}`,
-        onclick: () => a && go({ name: 'approval', id: a.id }),
-      },
+      { class: st.tab === 'chat' ? 'navi on' : 'navi', onclick: () => setTab('chat') },
+      icon('chat', 'i md'),
+      '메인 대화',
+    ),
+    h(
+      'button',
+      { class: st.tab === 'tasks' ? 'navi on' : 'navi', onclick: () => setTab('tasks') },
+      icon('tasks', 'i md'),
+      '맡긴 일',
+    ),
+    h(
+      'button',
+      { class: st.tab === 'connect' ? 'navi on' : 'navi', onclick: () => setTab('connect') },
+      icon('apps', 'i md'),
+      '연결한 곳',
+    ),
+    h('p', { class: 'over drawer-sec', text: '이 폰' }),
+    notif,
+    h(
+      'div',
+      { class: 'navi static' },
+      icon('pc', 'i md'),
       h(
         'span',
-        { class: 'text' },
-        h('strong', {
-          text: pending ? '승인을 기다려요' : a?.status === 'done' ? '승인해서 눌렀어요' : '승인 요청',
-        }),
-        h('span', { text: rec.what }),
+        { class: 'row-text' },
+        h('span', { text: st.saved?.pcName ?? '내 PC' }),
+        h('span', { class: 'meta', text: st.online ? '연결돼 있어요' : '연결 중…' }),
       ),
-      pending && icon('chevron'),
-    )
-  }
-  return h(
-    'div',
-    { class: 'card handoff' },
-    h('strong', { text: '직접 해 주세요' }),
-    h('span', { text: rec.reason }),
-    h('span', {
-      class: 'cap',
-      text: 'PC의 Chrome에 두리 탭을 띄워 뒀어요. 폰에서 그 화면을 보고 직접 할 수도 있어요.',
-    }),
-    rec.tabId !== undefined &&
-      h('button', {
-        class: 'btn-ghost',
-        text: '폰에서 PC 화면 열기',
-        onclick: () => openRemote(rec.tabId as number, threadId),
-      }),
+    ),
+    h('p', { class: 'meta drawer-foot', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
   )
 }
 
-/** 로그인 카드: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
-function loginCard(rec: LoginRecordMessage) {
-  const r = [...st.logins.values()]
-    .filter((x) => x.tabId === rec.tabId)
-    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
-  if (!r || r.status !== 'pending')
-    return h(
+function agentPanel() {
+  const waiting = pendingApprovals().length + pendingLogins().length
+  const mood = !st.online ? 'sleeping' : waiting ? 'asking' : st.busy ? 'working' : ''
+  const segs = [
+    ['activity', '활동'],
+    ['connected', '연결한 곳'],
+    ['promise', '약속'],
+  ] as const
+  const seg = h(
+    'div',
+    { class: 'seg agent-seg' },
+    ...segs.map(([id, label]) => {
+      const b = h('button', {
+        text: label,
+        onclick: () => {
+          st.agentSeg = id
+          render()
+        },
+      })
+      b.setAttribute('aria-pressed', String(st.agentSeg === id))
+      return b
+    }),
+  )
+  const body = h('div', { class: 'agent-body' })
+  const act = (tile: Node, title: string, sub?: string, time?: string) =>
+    h(
       'div',
-      { class: 'card' },
-      h('span', {
-        class: 'text',
+      { class: 'act' },
+      tile,
+      h(
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: title }),
+        sub && h('span', { class: 'row-d', text: sub }),
+      ),
+      time && h('span', { class: 'meta', text: time }),
+    )
+  if (st.agentSeg === 'activity') {
+    const acts = recentDone()
+    if (st.busy)
+      body.append(
+        act(
+          h('span', { class: 'tile mint' }, icon('globe', 'i md')),
+          st.steps.at(-1) ?? '대답하는 중',
+          lastUserText(),
+        ),
+      )
+    for (const a of acts)
+      body.append(
+        act(h('span', { class: 'tile blue' }, icon('check', 'i md')), a.ask, a.answer, shortTime(a.at)),
+      )
+    if (!acts.length && !st.busy)
+      body.append(h('p', { class: 'meta empty-line', text: '아직 한 일이 없어요' }))
+  } else if (st.agentSeg === 'connected') {
+    const list = (st.services ?? []).filter((s) => s.connectedAt)
+    for (const s of list)
+      body.append(
+        act(
+          h('span', { class: 'svc-mark', text: [...s.card.name][0] ?? '' }),
+          s.card.name,
+          s.card.abilities
+            .slice(0, 2)
+            .map((a) => a.title)
+            .join(' · '),
+        ),
+      )
+    if (!list.length) body.append(h('p', { class: 'meta empty-line', text: '아직 로그인해 둔 곳이 없어요' }))
+    body.append(
+      h('button', { class: 'btn-ghost wide', text: '서비스 연결하기', onclick: () => setTab('connect') }),
+    )
+  } else {
+    const promises: [IconName, string][] = [
+      ['card', '돈 쓰는 일은 꼭 먼저 물어봐요. 이건 끌 수 없어요.'],
+      ['lock', '비밀번호와 카드 번호는 두리(AI)도 저희도 못 봐요.'],
+      ['pc', '대화는 내 PC에만 저장돼요. 폰과 PC 사이는 암호화돼요.'],
+      ['hand', '본인인증·보안 문자는 화면을 띄워 드리고 직접 하시게 해요.'],
+    ]
+    for (const [ic, t] of promises) body.append(act(h('span', { class: 'tile mint' }, icon(ic, 'i md')), t))
+  }
+  const where = st.saved?.pcName ?? '내 PC'
+  return h(
+    'section',
+    { class: 'agent-panel rise' },
+    h(
+      'div',
+      { class: 'panel-head' },
+      h('button', { class: 'fbtn', label: '닫기', onclick: () => openOverlay(undefined) }, icon('close')),
+    ),
+    h('div', { class: 'agent-big' }, doori(mood, 64)),
+    h('h2', { class: 'agent-name', text: '두리' }),
+    h(
+      'p',
+      { class: 'agent-where' },
+      h('span', { class: st.online ? 'dot work' : 'dot' }),
+      st.online ? `${where}에서 ${st.busy ? '일하는 중' : '쉬는 중'}` : `${where}에 연결 중…`,
+    ),
+    seg,
+    body,
+  )
+}
+
+function approvalSheet(id: string) {
+  const a = st.approvals.get(id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise' })
+  const close = h(
+    'button',
+    { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+    icon('close'),
+  )
+  if (!a) {
+    sheet.append(close, h('p', { class: 'meta', text: '불러오는 중…' }))
+    return sheet
+  }
+  if (!a.shot && a.status === 'pending') void send({ kind: 'approval', id })
+  const rows = h('dl', { class: 'kv' })
+  const row = (k: string, v?: string, cls?: string) =>
+    v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
+  row('무엇을', a.what)
+  row('어디서', a.where)
+  row('주소', hostOf(a.url), 'host')
+  row('취소 조건', a.cancel)
+  if (a.kind !== 'app') row('누를 버튼', `"${a.label}"`)
+  sheet.append(
+    close,
+    h(
+      'div',
+      { class: 'approve-head' },
+      doori('asking', 40),
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: approveQuestion(a) }),
+        h('span', { class: 'meta', text: [a.where, st.saved?.pcName].filter(Boolean).join(' · ') }),
+      ),
+    ),
+    ...(a.amount ? [h('p', { class: 'approve-amount', text: a.amount })] : []),
+    rows,
+  )
+  if (a.shot) {
+    const img = h('img', { class: 'sheet-shot' })
+    img.alt = 'PC 화면'
+    img.src = `data:image/jpeg;base64,${a.shot}`
+    sheet.append(img)
+  }
+  const done = st.decided.get(id)
+  if (a.status !== 'pending' || done) {
+    sheet.append(
+      h('p', {
+        class: 'done-line',
         text:
-          r?.status === 'saved'
-            ? `${r.site} 로그인 정보를 PC 금고에 저장했어요`
-            : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+          done?.message ??
+          a.result ??
+          (a.status === 'rejected'
+            ? '거절했어요'
+            : a.status === 'expired'
+              ? '승인 시간이 지났어요'
+              : '처리했어요'),
       }),
     )
+    return sheet
+  }
+  sheet.append(
+    h('p', {
+      class: 'meta',
+      text: '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+    }),
+    h(
+      'div',
+      { class: 'approve-actions' },
+      h('button', { class: 'btn-ghost lg', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', {
+        class: 'btn btn-approve lg',
+        text: a.kind === 'app' ? '허용하기' : '승인하기',
+        onclick: () => void decide(a, 'approve'),
+      }),
+    ),
+  )
+  return sheet
+}
+
+/** 로그인 시트: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
+function loginSheet(id: string) {
+  const r = st.logins.get(id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise' })
+  if (!r) return sheet
   const d = st.loginDraft
   if (d.id !== r.id) Object.assign(d, { id: r.id, user: '', pw: '', busy: false, error: undefined })
   const user = h('input', { class: 'field' })
@@ -1119,13 +1544,15 @@ function loginCard(rec: LoginRecordMessage) {
   pw.oninput = () => {
     d.pw = pw.value
   }
+  const submit = h('button', { class: 'btn lg', text: d.busy ? '저장하는 중…' : '로그인하기' })
+  submit.type = 'submit'
   const form = h(
     'form',
     { class: 'login-form' },
     user,
     pw,
     d.error && h('p', { class: 'login-error', text: d.error }),
-    h('button', { class: 'btn lg', text: d.busy ? '저장하는 중…' : '로그인' }),
+    submit,
   )
   form.onsubmit = (e) => {
     e.preventDefault()
@@ -1137,145 +1564,223 @@ function loginCard(rec: LoginRecordMessage) {
     void send({ kind: 'login', id: r.id, username: d.user.trim(), password })
     render()
   }
-  return h(
-    'div',
-    { class: 'card login-card' },
-    h('strong', { text: `${r.site} 로그인` }),
-    h('span', { class: 'cap', text: new URL(r.origin).host }),
-    form,
-    h('span', { class: 'cap', text: '암호화돼 PC의 두리 금고에만 저장돼요. 두리(AI)는 볼 수 없어요.' }),
-  )
-}
-
-const RISK: Record<ApprovalView['kind'], string> = {
-  money: '돈이 나가는 일',
-  contact: '다른 사람에게 보내는 일',
-  irreversible: '되돌릴 수 없는 일',
-  app: '처음 다루는 PC 앱',
-}
-
-function approvalView(id: string) {
-  const a = st.approvals.get(id)
-  const box = h(
-    'section',
-    { class: 'page' },
-    header('승인', () => go({ name: 'home' })),
-  )
-  if (!a) return box
-  if (!a.shot && a.status === 'pending') void send({ kind: 'approval', id })
-  const host = (() => {
-    try {
-      return new URL(a.url).host
-    } catch {
-      return a.url
-    }
-  })()
-  const rows = h('dl', { class: 'kv' })
-  const row = (k: string, v?: string, cls?: string) =>
-    v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
-  row('무엇을', a.what)
-  row('어디서', a.where)
-  row('주소', a.url.startsWith('app:') ? '' : host, 'host')
-  row('얼마', a.amount, 'money')
-  row('취소 조건', a.cancel)
-  if (a.kind !== 'app') row('누를 버튼', `"${a.label}"`)
-  box.append(
+  sheet.append(
+    h(
+      'button',
+      { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+      icon('close'),
+    ),
     h(
       'div',
-      { class: `approval-head ${a.kind}` },
-      h('span', { class: 'kind', text: RISK[a.kind] }),
-      h('strong', { text: a.what }),
-      h('span', { text: a.reason.startsWith('"') ? `누를 버튼에 ${a.reason}이(가) 있어요` : a.reason }),
+      { class: 'approve-head' },
+      h('span', { class: 'svc-mark lg', text: [...r.site][0] ?? '' }),
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: `${r.site} 로그인` }),
+        h('span', {
+          class: 'meta',
+          text: `${hostOf(r.origin)} · ${st.saved?.pcName ?? '내 PC'}의 Chrome에 넣어요`,
+        }),
+      ),
     ),
-    rows,
-  )
-  if (a.shot) {
-    const img = h('img', { class: 'shot' })
-    img.alt = 'PC 화면'
-    img.src = `data:image/jpeg;base64,${a.shot}`
-    box.append(img)
-  }
-  const done = st.decided.get(id)
-  if (a.status !== 'pending' || done) {
-    box.append(
-      h('p', {
-        class: 'result',
-        text:
-          done?.message ??
-          a.result ??
-          (a.status === 'rejected'
-            ? '거절했어요'
-            : a.status === 'expired'
-              ? '승인 시간이 지났어요'
-              : '처리했어요'),
-      }),
-    )
-    return box
-  }
-  box.append(
-    h('p', {
-      class: 'cap',
-      text: '화면과 내용이 맞는지 확인해 주세요. "얼마"·"무엇을"은 두리가 읽어 적은 것이라 틀릴 수 있어요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+    form,
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
+    ),
+    h('button', {
+      class: 'btn-ghost lg wide',
+      text: '화면 보면서 직접 할게요',
+      onclick: () => openRemote(r.tabId),
     }),
   )
-  const decide = async (decision: 'approve' | 'reject') => {
-    const s = st.saved
-    if (!s) return
-    // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
-    const sig = await signText(s.keys.signPriv, approvalSignText(a, decision))
-    st.decided.set(id, {
-      ok: true,
-      message: decision === 'approve' ? '승인을 보냈어요. PC에서 누르는 중…' : '거절을 보냈어요',
-    })
+  return sheet
+}
+
+// ── 연결 전 화면 ──
+
+function introView() {
+  return h(
+    'section',
+    { class: 'center-page' },
+    doori('', 88),
+    h('h1', { class: 'display-s', text: '두리' }),
+    h('p', { class: 'psub', text: '내 컴퓨터의 두리에게 폰으로 부탁해요.' }),
+    h(
+      'ol',
+      { class: 'steps' },
+      h('li', { text: 'PC에서 두리 앱을 열어요' }),
+      h('li', { text: '설정 → 폰 연결 → [폰 연결하기]' }),
+      h('li', { text: '폰 카메라로 QR을 찍어요' }),
+    ),
+    h('p', { class: 'meta', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
+  )
+}
+
+function unsupportedView() {
+  return h(
+    'section',
+    { class: 'center-page' },
+    doori('asking', 72),
+    h('h1', { class: 'title-2', text: '이 브라우저에서는 열 수 없어요' }),
+    h('p', { class: 'psub', text: '아이폰은 사파리 17 이상, 안드로이드는 크롬 최신 버전에서 열어 주세요.' }),
+  )
+}
+
+function pairingView(v: Extract<Screen, { name: 'pairing' }>) {
+  if (v.rejected)
+    return h(
+      'section',
+      { class: 'center-page' },
+      doori('asking', 72),
+      h('h1', { class: 'title-2', text: 'PC에서 연결을 거절했어요' }),
+      h('p', { class: 'psub', text: '숫자가 달랐다면 PC에서 QR을 새로 띄워 다시 찍어 주세요.' }),
+    )
+  return h(
+    'section',
+    { class: 'center-page' },
+    doori('thinking', 72),
+    h('h1', { class: 'title-2', text: `${v.pcName}에 연결할게요` }),
+    h('p', { class: 'psub', text: 'PC 화면에 이 숫자가 보이나요?' }),
+    h('p', { class: 'pair-code mono', text: v.code }),
+    h('p', {
+      class: 'meta',
+      text: 'PC에서 [같아요, 연결]을 눌러 주세요. 숫자가 다르면 "다른 숫자예요"를 눌러 주세요.',
+    }),
+  )
+}
+
+/** PC 화면 (지금은 화면 한 장씩. 로그인 단계에서 실시간 화면으로 바꾼다) */
+function remoteView(v: Extract<Screen, { name: 'remote' }>) {
+  const s = st.screenShot
+  const back = () => {
+    st.screen = { name: 'app' }
+    if (v.connectId) {
+      st.tab = 'connect'
+      st.connectDetail = v.connectId
+    }
     render()
-    await send({ kind: 'decide', id, decision, sig })
   }
-  box.append(
+  const frame = h('div', { class: s?.busy ? 'remote-frame busy' : 'remote-frame' })
+  if (s?.error) frame.append(h('p', { class: 'remote-msg', text: s.error }))
+  else if (s?.shot) {
+    const img = h('img', { class: 'remote-shot' })
+    img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
+    img.src = `data:image/jpeg;base64,${s.shot}`
+    img.addEventListener('click', (e) => {
+      const r = img.getBoundingClientRect()
+      const x = (e.clientX - r.left) / r.width
+      const y = (e.clientY - r.top) / r.height
+      const dot = h('span', { class: 'tap-dot' })
+      dot.style.left = `${x * 100}%`
+      dot.style.top = `${y * 100}%`
+      frame.append(dot)
+      remote({ action: 'tap', x, y })
+    })
+    frame.append(img)
+  } else frame.append(h('p', { class: 'remote-msg' }, h('span', { class: 'spin' }), 'PC 화면을 가져오는 중…'))
+  const input = h('input', { class: 'remote-input' })
+  input.id = 'remote-input'
+  input.placeholder = '누른 칸에 넣을 글자'
+  input.value = st.remoteDraft
+  input.oninput = () => {
+    st.remoteDraft = input.value
+  }
+  const put = h('button', { class: 'btn small', text: '넣기' })
+  put.type = 'submit'
+  const form = h('form', { class: 'remote-type' }, input, put)
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    if (!st.remoteDraft) return
+    const text = st.remoteDraft
+    st.remoteDraft = ''
+    remote({ action: 'text', text })
+  }
+  const keys = h('div', { class: 'remote-keys' })
+  const presets = [
+    ['지우기', { action: 'key', key: 'Backspace' }],
+    ['엔터', { action: 'key', key: 'Enter' }],
+    ['다음 칸', { action: 'key', key: 'Tab' }],
+    ['위로', { action: 'scroll', dy: -1 }],
+    ['아래로', { action: 'scroll', dy: 1 }],
+  ] as const
+  for (const [label, inp] of presets)
+    keys.append(h('button', { class: 'chip', text: label, onclick: () => remote(inp) }))
+  const done = h('button', {
+    class: 'btn btn-approve',
+    text: v.connectId ? '로그인했어요' : '다 했어요',
+    onclick: () => {
+      if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
+      else ask('다 했어요. 이어서 해 주세요.')
+      back()
+    },
+  })
+  return h(
+    'section',
+    { class: 'remote-page' },
     h(
       'div',
-      { class: 'actions' },
-      h('button', { class: 'ghost', text: '거절', onclick: () => void decide('reject') }),
-      h('button', {
-        class: 'primary',
-        text: a.kind === 'app' ? '허용하기' : `승인하고 "${a.label}" 누르기`,
-        onclick: () => void decide('approve'),
-      }),
+      { class: 'remote-bar' },
+      h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
+      h('span', { class: 'remote-url' }, icon('lock'), hostOf(s?.url ?? '') || s?.title || '불러오는 중…'),
+    ),
+    frame,
+    form,
+    keys,
+    h(
+      'div',
+      { class: 'remote-foot' },
+      h('button', { class: 'btn-ghost', text: '두리에게 다시 맡기기', onclick: back }),
+      done,
     ),
   )
-  return box
 }
 
 // ── 시작 ──
 
-// 앱이 열려 있는 채로 새 QR을 찍으면 주소의 # 뒤만 바뀐다. 그때도 새로 연결한다
+// 앱이 열려 있는 채로 새 QR을 찍거나 알림을 누르면 주소의 # 뒤만 바뀐다
 window.addEventListener('hashchange', () => {
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return void startPairing(invite)
-  // 앱이 열린 채로 알림을 누르면 주소의 # 뒤만 바뀐다
   if (/^#[at]=/.test(location.hash)) {
     pendingOpen = location.hash
-    if (st.online) openPending()
+    if (st.online) {
+      openPending()
+      render()
+    }
   }
 })
 
 async function main() {
-  if (!globalThis.crypto?.subtle || !('indexedDB' in window)) return go({ name: 'unsupported' })
+  document.documentElement.dataset.theme = 'auto'
+  if (!globalThis.crypto?.subtle || !('indexedDB' in window)) {
+    st.screen = { name: 'unsupported' }
+    return render()
+  }
   try {
     await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])
   } catch {
-    return go({ name: 'unsupported' })
+    st.screen = { name: 'unsupported' }
+    return render()
   }
   if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js').catch(() => {})
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return startPairing(invite)
   if (/^#[at]=/.test(location.hash)) pendingOpen = location.hash
   const saved = await load()
-  if (!saved) return go({ name: 'intro' })
+  if (!saved) {
+    st.screen = { name: 'intro' }
+    return render()
+  }
   st.saved = saved
   st.key = await linkKey(saved.keys.boxPriv, saved.pcBoxPub, [saved.keys.id, saved.pcId])
-  if (!saved.paired) {
-    go({ name: 'pairing', code: await pairCode(saved.keys.boxPriv, saved.pcBoxPub), pcName: saved.pcName })
-  } else go({ name: 'home' })
+  st.screen = saved.paired
+    ? { name: 'app' }
+    : { name: 'pairing', code: await pairCode(saved.keys.boxPriv, saved.pcBoxPub), pcName: saved.pcName }
+  render()
   connect()
 }
 

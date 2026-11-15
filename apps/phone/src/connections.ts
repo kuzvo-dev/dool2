@@ -15,7 +15,8 @@ export interface ConnectCtx {
   online: boolean
   /** 연결하기를 눌러 PC 답을 기다리는 서비스 */
   opening?: string
-  header(title: string, back: () => void): HTMLElement
+  /** 화면 머리: back이 있으면 뒤로 버튼 */
+  header(title: string, back?: () => void): HTMLElement
   home(): void
   list(): void
   detail(id: string): void
@@ -140,7 +141,7 @@ function row(it: ConnectionItem, ctx: ConnectCtx): HTMLElement {
 }
 
 export function connectionsView(ctx: ConnectCtx): HTMLElement {
-  const box = el('section', 'page connect', ctx.header('서비스 연결', ctx.home))
+  const box = el('section', 'tab-page connect', ctx.header('연결'))
   if (!ctx.services) {
     box.append(el('p', 'wait', el('span', 'spin'), 'PC에서 서비스 목록을 받는 중…'))
     return box
@@ -185,7 +186,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
   const it = ctx.services?.find((s) => s.card.id === id)
   if (!it) return connectionsView(ctx)
   const c = it.card
-  const box = el('section', 'page connect service', ctx.header(c.name, ctx.list))
+  const box = el('section', 'tab-page connect service', ctx.header(c.name, ctx.list))
 
   box.append(
     el(

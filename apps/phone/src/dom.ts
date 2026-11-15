@@ -1,0 +1,118 @@
+// 화면 그리기 도우미: 요소 만들기, 선 아이콘, 두리 답(문단·목록·굵게)
+import { type Inline, richBlocks } from '@dool2/protocol/rich'
+
+type Child = Node | string | false | undefined | null
+
+export function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  props: { class?: string; text?: string; onclick?: (e: MouseEvent) => void; label?: string } = {},
+  ...children: Child[]
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag)
+  if (props.class) e.className = props.class
+  if (props.text !== undefined) e.textContent = props.text
+  if (props.onclick) e.addEventListener('click', props.onclick as EventListener)
+  if (props.label) e.setAttribute('aria-label', props.label)
+  if (e instanceof HTMLButtonElement) e.type = 'button'
+  for (const c of children) if (c) e.append(c)
+  return e
+}
+
+/** 24 격자 선 아이콘. 글자(›, ✓)를 아이콘으로 쓰지 않는다 */
+export const ICON = {
+  menu: ['M5 9h14M5 15h14'],
+  close: ['M6 6l12 12M18 6 6 18'],
+  back: ['M15 18l-6-6 6-6'],
+  chevron: ['m9 6 6 6-6 6'],
+  plus: ['M12 5v14M5 12h14'],
+  mic: ['M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0Z', 'M5 11a7 7 0 0 0 14 0M12 18v3'],
+  send: ['M12 19V5M6 11l6-6 6 6'],
+  stop: ['M8 8h8v8H8Z'],
+  chat: ['M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z'],
+  tasks: ['M8 4h8a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z', 'm8.5 12 2.5 2.5 4.5-5'],
+  idea: ['M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z'],
+  apps: [
+    'M7.5 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+    'M15 4.5h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 13.5 9V6A1.5 1.5 0 0 1 15 4.5Z',
+    'M6 13.5h3a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 9 19.5H6A1.5 1.5 0 0 1 4.5 18v-3A1.5 1.5 0 0 1 6 13.5Z',
+    'M16.5 19.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+  ],
+  globe: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'],
+  cart: [
+    'M6 6h15l-1.5 9h-12L6 6Zm0 0L5 3H2',
+    'M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM18 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
+  ],
+  lock: ['M6 11h12v10H6Z', 'M8 11V8a4 4 0 0 1 8 0v3'],
+  hand: [
+    'M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.2-2.3L4 13.7a1.5 1.5 0 0 1 2.4-1.8L8 13',
+  ],
+  bell: ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'],
+  pc: ['M4 5h16v11H4Z', 'M9 20h6M12 16v4'],
+  check: ['m5 12.5 4.5 4.5L19 7.5'],
+  card: ['M3 7h18v10H3z', 'M3 11h18'],
+  mail: ['M4 7h16v10H4z', 'm4 7 8 6 8-6'],
+  star: ['M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9Z'],
+  box: ['M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5ZM3.5 7.5 12 12l8.5-4.5M12 12v9'],
+  heart: ['M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z'],
+  calendar: ['M4 6h16v14H4Z', 'M4 10h16M9 3v4M15 3v4'],
+  shield: ['M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z'],
+} as const
+export type IconName = keyof typeof ICON
+
+export function icon(name: IconName, cls = 'i'): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('class', cls)
+  svg.setAttribute('aria-hidden', 'true')
+  for (const d of ICON[name]) {
+    const p = document.createElementNS(ns, 'path')
+    p.setAttribute('d', d)
+    svg.append(p)
+  }
+  return svg
+}
+
+/** 두리 캐릭터 (표정: idle·working·asking·done·thinking·sleeping) */
+export function doori(mood = '', size?: number) {
+  const s = h('span', { class: `doori ${mood}`.trim() })
+  if (size) s.style.setProperty('--s', `${size}px`)
+  s.setAttribute('aria-hidden', 'true')
+  return s
+}
+
+/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
+export function rich(text: string): DocumentFragment {
+  const f = document.createDocumentFragment()
+  const spans = (parent: HTMLElement, parts: Inline[]) => {
+    for (const part of parts) parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
+  }
+  for (const block of richBlocks(text)) {
+    if (block.type === 'p') {
+      const p = h('p')
+      block.lines.forEach((line, i) => {
+        if (i) p.append(h('br'))
+        spans(p, line)
+      })
+      f.append(p)
+      continue
+    }
+    const list = h(block.type)
+    if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
+    for (const item of block.items) {
+      const li = h('li')
+      spans(li, item)
+      list.append(li)
+    }
+    f.append(list)
+  }
+  return f
+}
+
+/** 오늘이면 "오전 10:03", 아니면 "11. 14." */
+export function shortTime(iso: string) {
+  const d = new Date(iso)
+  return new Date().toDateString() === d.toDateString()
+    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+}
