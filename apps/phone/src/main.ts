@@ -27,6 +27,14 @@ import {
   seal,
   signText,
 } from '@dool2/protocol/e2e'
+import {
+  type IdeaItem,
+  type IdeaSection,
+  ideaCatalog,
+  ideaCount,
+  needsConnect,
+  searchIdeas,
+} from '@dool2/protocol/ideas'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
@@ -104,6 +112,11 @@ const st: {
   connectTabs: Map<string, number>
   services?: ConnectionItem[]
   connectQuery: string
+  /** 아이디어 탭: 고른 분류('all' = 전체)와 찾는 말 */
+  ideaCat: string
+  ideaQuery: string
+  /** 연결하고 나서 바로 보낼 아이디어 (연결 안 한 곳의 아이디어를 눌렀을 때) */
+  afterConnect?: { id: string; text: string; at: number }
   connectDetail?: string
   opening?: string
   agentSeg: 'upcoming' | 'memory' | 'screen' | 'activity' | 'approvals'
@@ -146,6 +159,8 @@ const st: {
   loginDraft: { id: '', user: '', pw: '' },
   connectTabs: new Map(),
   connectQuery: '',
+  ideaCat: 'all',
+  ideaQuery: '',
   agentSeg: 'activity',
   librarySeg: 'made',
   draft: '',
@@ -349,6 +364,7 @@ async function receive(env: Envelope) {
           st.tab = 'connect'
           st.connectDetail = done.card.id
           toast(`${done.card.name} 로그인을 확인했어요`)
+          runAfterConnect(done.card.id)
         }
       }
       break
@@ -367,6 +383,7 @@ async function receive(env: Envelope) {
         st.connectTabs.delete(msg.id)
         if (st.overlay?.kind === 'connect') st.overlay = undefined
         toast(msg.message)
+        runAfterConnect(msg.id)
       } else if (msg.tabId !== undefined && msg.human) {
         // 로봇 확인·본인인증: 그 화면을 바로 열어 직접 마치게 한다
         toast(msg.message)
@@ -1501,49 +1518,49 @@ function emptyState(mood: string, title: string, sub: string) {
 
 // ── 아이디어 ──
 
-const IDEAS: { text: string; icon: IconName; tone: string; note: string }[] = [
-  {
-    text: '택배 어디쯤 왔어?',
-    icon: 'box',
-    tone: 'blue',
-    note: '쇼핑몰 주문 내역이나 운송장 번호로 찾아봐요',
-  },
-  {
-    text: '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘',
-    icon: 'heart',
-    tone: 'rose',
-    note: '예약 확정 직전에 꼭 물어볼게요',
-  },
-  {
-    text: '안 쓰는 구독 찾아서 정리해 줘',
-    icon: 'card',
-    tone: 'mint',
-    note: '결제 메일로 찾고, 해지는 승인받고 해요',
-  },
-  {
-    text: '내일 아침 KTX 부산 가는 창가 자리 찾아 줘',
-    icon: 'calendar',
-    tone: 'amber',
-    note: '결제는 폰에서 승인해야 해요',
-  },
-  {
-    text: '메일함에서 이번 달 영수증만 모아 줘',
-    icon: 'mail',
-    tone: 'violet',
-    note: '첨부 파일까지 한 번에',
-  },
-  { text: '이번 달 휴대폰 요금 얼마 나왔어?', icon: 'pc', tone: 'blue', note: '통신사 사이트에서 확인해요' },
-]
+/** 연결하고 나서 미뤄 둔 아이디어를 보낸다 (10분 안에 연결했을 때만) */
+function runAfterConnect(id: string) {
+  const p = st.afterConnect
+  if (!p || p.id !== id) return
+  st.afterConnect = undefined
+  if (Date.now() - p.at < 10 * 60_000) setTimeout(() => ask(p.text), 400)
+}
+
+function tapIdea(it: IdeaItem) {
+  if (needsConnect(it) && it.service) {
+    st.afterConnect = { id: it.service.id, text: it.ask, at: Date.now() }
+    openOverlay({ kind: 'connect', id: it.service.id })
+    return
+  }
+  ask(it.ask)
+}
+
+function ideaRow(it: IdeaItem, sec: IdeaSection) {
+  const lead = it.service
+    ? h('span', { class: 'svc-mark', text: it.service.mark })
+    : h('span', { class: `tile ${sec.tone}` }, icon(sec.icon, 'i md'))
+  return h(
+    'button',
+    { class: 'idea', onclick: () => tapIdea(it) },
+    lead,
+    h(
+      'span',
+      { class: 'row-text' },
+      h('span', { class: 'row-t', text: it.text }),
+      h('span', { class: 'row-d', text: it.note }),
+    ),
+    needsConnect(it) ? h('span', { class: 'idea-tag', text: '연결' }) : undefined,
+  )
+}
 
 function ideasView() {
+  const groups = ideaCatalog(st.services ?? [])
   const box = h(
     'section',
     { class: 'tab-page' },
     h('h1', { class: 'ptitle', text: '아이디어' }),
-    h('p', { class: 'psub', text: '누르면 두리가 바로 시작해요' }),
+    h('p', { class: 'psub', text: `누르면 두리가 바로 시작해요 · ${ideaCount(groups)}가지` }),
   )
-  // 누르면 바로 시작한다
-  const fill = (text: string) => ask(text)
   // 두리가 먼저 찾은 할 일 (기억·목표·연결 기반, 매일 아침 새로)
   const ideas = st.life?.ideas ?? []
   const busy = Boolean(st.life?.ideasBusy)
@@ -1572,7 +1589,7 @@ function ideasView() {
       ...ideas.map((i) =>
         h(
           'button',
-          { class: 'idea', onclick: () => fill(i.text) },
+          { class: 'idea', onclick: () => ask(i.text) },
           h('span', { class: 'tile amber' }, icon('idea', 'i md')),
           h(
             'span',
@@ -1584,40 +1601,108 @@ function ideasView() {
       ),
     ),
   )
-  const connected = (st.services ?? []).filter((s) => s.connectedAt)
-  if (connected.length) {
-    box.append(h('h2', { class: 'over', text: '연결한 곳에서' }))
-    for (const s of connected.slice(0, 4))
-      for (const a of s.card.abilities.slice(0, 2))
-        box.append(
+
+  // 찾기 + 분류. 글자를 칠 때마다 페이지 전체를 다시 그리면 한글 조합이 끊기므로 아래 목록만 다시 그린다
+  const wasTyping = document.activeElement?.id === 'idea-search'
+  const search = h('input', { class: 'field idea-search' })
+  search.id = 'idea-search'
+  search.type = 'search'
+  search.placeholder = '아이디어 찾기 (택배, 항공권, 영수증…)'
+  search.value = st.ideaQuery
+  if (wasTyping)
+    queueMicrotask(() => {
+      search.focus()
+      search.setSelectionRange(search.value.length, search.value.length)
+    })
+  const chips = h('div', { class: 'chips idea-cats' })
+  const body = h('div', { class: 'idea-body' })
+  const list = (items: { section: IdeaSection; item: IdeaItem }[]) =>
+    h('div', { class: 'idea-list' }, ...items.map((x) => ideaRow(x.item, x.section)))
+  const pick = (id: string) => {
+    st.ideaCat = id
+    st.ideaQuery = ''
+    search.value = ''
+    draw()
+    chips.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+    chips.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  const draw = () => {
+    const cat = groups.some((g) => g.section.id === st.ideaCat) ? st.ideaCat : 'all'
+    const q = st.ideaQuery.trim()
+    const chip = (id: string, label: string) =>
+      h('button', {
+        class: `chip quiet${cat === id && !q ? ' on' : ''}`,
+        text: label,
+        onclick: () => pick(id),
+      })
+    chips.replaceChildren(chip('all', '전체'), ...groups.map((g) => chip(g.section.id, g.section.label)))
+    body.replaceChildren()
+    if (q) {
+      const found = searchIdeas(groups, q)
+      if (found.length) body.append(list(found))
+      body.append(
+        h(
+          'button',
+          { class: 'idea idea-raw', onclick: () => ask(q) },
+          h('span', { class: 'tile' }, icon('send', 'i md')),
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: `"${q}" 그대로 부탁하기` }),
+            h('span', {
+              class: 'row-d',
+              text: found.length
+                ? '찾는 게 없으면 그냥 말해 보세요'
+                : '맞는 아이디어가 없어요. 그래도 두리가 해 볼게요',
+            }),
+          ),
+        ),
+      )
+      return
+    }
+    if (cat === 'all') {
+      for (const g of groups) {
+        const sec = g.section
+        body.append(
           h(
             'button',
-            { class: 'idea', onclick: () => fill(a.say) },
-            h('span', { class: 'svc-mark', text: [...s.card.name][0] ?? '' }),
-            h(
-              'span',
-              { class: 'row-text' },
-              h('span', { class: 'row-t', text: a.say }),
-              h('span', { class: 'row-d', text: `${s.card.name} · ${a.title}` }),
-            ),
+            { class: 'idea-sec-head', onclick: () => pick(sec.id) },
+            h('span', { class: `tile ${sec.tone}` }, icon(sec.icon, 'i')),
+            h('strong', { text: sec.label }),
+            h('span', { class: 'meta', text: `${g.items.length}가지` }),
+            icon('chevron', 'i chev'),
           ),
+          list(g.items.slice(0, 3).map((item) => ({ section: sec, item }))),
         )
+      }
+      return
+    }
+    const g = groups.find((x) => x.section.id === cat)
+    if (!g) return
+    const ready = g.items.filter((i) => !needsConnect(i))
+    const later = g.items.filter(needsConnect)
+    if (ready.length)
+      body.append(
+        h('h2', { class: 'over', text: '바로 할 수 있어요' }),
+        list(ready.map((item) => ({ section: g.section, item }))),
+      )
+    if (later.length)
+      body.append(
+        h('h2', { class: 'over', text: '연결하면 할 수 있어요' }),
+        h('p', {
+          class: 'meta idea-later',
+          text: '누르면 아이디·비밀번호를 한 번 넣고, 연결되면 바로 시작해요',
+        }),
+        list(later.map((item) => ({ section: g.section, item }))),
+      )
   }
-  box.append(h('h2', { class: 'over', text: '이런 걸 많이 맡겨요' }))
-  for (const i of IDEAS)
-    box.append(
-      h(
-        'button',
-        { class: 'idea', onclick: () => fill(i.text) },
-        h('span', { class: `tile ${i.tone}` }, icon(i.icon, 'i md')),
-        h(
-          'span',
-          { class: 'row-text' },
-          h('span', { class: 'row-t', text: i.text }),
-          h('span', { class: 'row-d', text: i.note }),
-        ),
-      ),
-    )
+  search.oninput = () => {
+    st.ideaQuery = search.value
+    draw()
+  }
+  draw()
+  box.append(search, chips, body)
+
   box.append(
     h(
       'div',
@@ -2191,6 +2276,8 @@ interface CredTarget {
   submitText: string
   submit(user: string, password: string): void
   direct?: { text: string; onclick(): void }
+  /** 연결되면 바로 시작할 부탁 */
+  next?: string
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -2256,6 +2343,7 @@ function credSheet(t: CredTarget) {
         }),
       ),
     ),
+    ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), `연결되면 바로 시작해요: ${t.next}`)] : []),
     form,
     h(
       'p',
@@ -2295,6 +2383,7 @@ function connectSheet(id: string) {
     busyText: '두리가 로그인하는 중…',
     submitText: '연결하기',
     submit: (username, password) => void send({ kind: 'connect-login', id, username, password }),
+    ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     direct: {
       text: st.connectTabs.has(id)
         ? 'PC 화면 보면서 마저 하기'

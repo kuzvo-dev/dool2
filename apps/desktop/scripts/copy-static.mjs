@@ -8,6 +8,7 @@ for (const f of ['index.html', 'style.css']) cpSync(`src/renderer/${f}`, `dist/r
 // 답 그리기(작은 마크다운)와 일정 문구는 @dool2/protocol의 것을 그대로 쓴다. 화면은 묶지 않고 불러오므로 파일을 옆에 둔다
 cpSync('../../packages/protocol/dist/rich.js', 'dist/renderer/rich.js')
 cpSync('../../packages/protocol/dist/schedule.js', 'dist/renderer/schedule.js')
+cpSync('../../packages/protocol/dist/ideas.js', 'dist/renderer/ideas.js')
 
 // 디자인 시스템(ui.css)과 Pretendard 글꼴
 copyUi('dist/renderer', { fonts: true })

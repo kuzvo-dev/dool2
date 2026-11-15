@@ -364,6 +364,7 @@ const lifeCtx: LifeCtx = {
   compose,
   openGoal: (id) => void show('goal', id),
   openView: (v) => void show(v),
+  openService: (id) => void show('connect', id),
   toast,
   waiting: () => waitingBars(true),
   working: () =>
