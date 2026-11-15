@@ -3,12 +3,12 @@
  * PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품. 화면 배치는 각 앱의 style.css가 맡는다.
  * 디자인 원본: docs/design (다르면 원본이 기준), 쓰는 법: packages/ui/README.md, 견본: packages/ui/preview.html
  *
- * 깨끗한 도구 위에 민트 친구 하나.
- * 1. 하는 일이 보여야 믿는다 — "두리의 화면"과 단계 기록으로 보여 준다
- * 2. 돈과 메시지는 사람이 누른다 — 승인은 버터 노랑 카드에서 멈춘다
- * 3. 민트는 두리의 색 — 캐릭터·²·일하는 중 점에만. 버튼과 내 말풍선은 ink
- * 4. 카드보다 선 — 1px 선과 회색 면. 그림자는 떠 있는 것에만
- * 5. 상태는 색으로 약속한다 — 민트 = 일하는 중, 노랑 = 당신이 필요해요, ink 체크 = 끝, 빨강 = 멈춤
+ * 부드러운 면 위에 민트 친구 하나. (v2, docs/design/screens/soft)
+ * 1. 하는 일이 보여야 믿는다 — 머리의 두리 이름표에 지금 하는 일, 대화 안에 실시간 화면 카드
+ * 2. 돈과 메시지는 사람이 누른다 — 승인 카드에서 멈추고, 승인 버튼(짙은 민트)이 화면에서 가장 무겁다
+ * 3. 민트는 두리의 색 — 캐릭터, 일하는 중, 승인 버튼, 옅은 민트의 내 말풍선
+ * 4. 상자보다 면, 떠 있는 것은 유리 — 회색 면으로 나누고, 머리 버튼·입력칸·탭 막대·시트만 떠 있다
+ * 5. 상태는 색으로 약속한다 — 민트 = 일하는 중, 노랑 점 = 당신이 필요해요, ink 체크 = 끝, 빨강 = 멈춤
  *
  * 테마: <html data-theme="auto">면 기기 설정을 따르고, "dark"·"light"로 고정할 수 있다. 없으면 라이트.
  */
@@ -18,11 +18,11 @@
   color-scheme: light;
 
   /* 바탕 */
-  --bg: light-dark(#ffffff, #121418);
-  --surface: light-dark(#ffffff, #1b1d23); /* 한 단 올라온 곳: 입력창, 승인 시트, 옆 판 */
-  --surface-sunken: light-dark(#f4f5f7, #0b0c0f); /* 들어간 곳: 두리의 화면, 기록 */
-  --raise: light-dark(#f1f2f4, #23262d); /* 두리 말풍선, 선택된 메뉴, 아이콘 칸 */
-  --line: light-dark(#e6e8eb, #2a2d35);
+  --bg: light-dark(#f5f6f8, #0d0f12); /* 앱 바탕: 아주 옅은 회색 (흰 카드가 떠 보이게) */
+  --surface: light-dark(#ffffff, #17191d); /* 카드, 시트, 옆 판 */
+  --surface-sunken: light-dark(#f0f2f5, #0a0b0d); /* 들어간 곳: 두리의 화면, 상품 미리보기 */
+  --raise: light-dark(#eef0f3, #202328); /* 두리 말풍선, 선택된 메뉴, 아이콘 칸 */
+  --line: light-dark(#e6e8ed, #262a31);
   --line-strong: light-dark(#8b9099, #5c616b); /* 입력 테두리, 보조 버튼 */
   --scrim: light-dark(rgba(17, 18, 20, 0.42), rgba(0, 0, 0, 0.6));
 
@@ -32,11 +32,15 @@
   --ink-faint: light-dark(#8b9099, #6c717b); /* 빈 상태, 자리 표시 */
   --ink-inverse: light-dark(#ffffff, #111214); /* ink 위의 글자 */
   --on-accent: #0f2a1d; /* 민트·노랑 위의 글자 */
+  --me: light-dark(#d4f1e3, #1b4733); /* 내 말풍선: 옅은 민트 */
+  --me-ink: light-dark(#08331f, #e9fff4);
 
   /* 색: 상태로만 쓴다 */
   --brand: #4cc98f; /* 두리 민트: 캐릭터, ², 일하는 중 */
   --brand-text: light-dark(#167a4b, #6fe0a8);
   --brand-soft: light-dark(#e5f7ee, #15302a);
+  --approve: #13885a; /* 승인 버튼 하나에만 (짙은 민트) */
+  --approve-hi: #1aa369;
   --butter: #ffd66b; /* 당신이 필요해요: 승인, 본인인증 */
   --butter-soft: light-dark(#fff4d1, #352d14);
   --danger: light-dark(#d0342c, #ff7a72); /* 멈추기, 거절, 오류: 글자로만 */
@@ -55,20 +59,30 @@
 
   /* 모서리 */
   --radius-sm: 6px; /* 칩, 기록 줄 */
-  --radius-md: 12px; /* 버튼, 입력, 목록 줄 */
-  --radius-lg: 20px; /* 말풍선, 카드, 승인 시트 */
-  --radius-xl: 28px; /* 모바일 바텀시트 */
-  --radius-full: 999px; /* 캐릭터·점·토글만. 버튼은 알약으로 만들지 않는다 */
+  --radius-md: 14px; /* 버튼, 입력, 목록 줄 */
+  --radius-lg: 20px; /* 말풍선, 카드 */
+  --radius-xl: 32px; /* 바텀시트, 서랍 */
+  --radius-full: 999px; /* 캐릭터·점·토글, 떠 있는 탭 막대·입력칸·빠른 답. 주 버튼은 알약 아님 */
 
   /* 그림자: 떠 있는 것(승인 시트, 팝오버)에만 */
   --shadow-a: light-dark(rgba(24, 24, 27, 0.04), rgba(0, 0, 0, 0.4));
   --shadow-b: light-dark(rgba(24, 24, 27, 0.18), rgba(0, 0, 0, 0.6));
   --shadow-sheet: 0 1px 0 var(--shadow-a), 0 14px 36px -12px var(--shadow-b);
+  --shadow-card:
+    0 0.5px 0 light-dark(rgba(16, 24, 40, 0.04), transparent),
+    0 1px 2px light-dark(rgba(16, 24, 40, 0.05), transparent);
+  /* 떠 있는 유리: 머리 버튼, 입력칸, 탭 막대 */
+  --glass: light-dark(rgba(255, 255, 255, 0.74), rgba(30, 33, 38, 0.72));
+  --glass-line: light-dark(rgba(16, 24, 40, 0.07), rgba(255, 255, 255, 0.07));
+  --shadow-float:
+    0 0 0 0.5px var(--glass-line), 0 12px 32px -12px light-dark(rgba(16, 24, 40, 0.28), rgba(0, 0, 0, 0.8)),
+    0 2px 6px -2px light-dark(rgba(16, 24, 40, 0.08), rgba(0, 0, 0, 0.4));
 
   /* 움직임 */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 160ms;
-  --dur-sheet: 240ms;
+  --dur-tab: 220ms;
+  --dur-sheet: 280ms;
 
   /* 글꼴 */
   --font-sans:
@@ -80,6 +94,7 @@
   --text-title-2: 680 20px / 28px var(--font-sans);
   --text-body-lg: 450 17px / 26px var(--font-sans);
   --text-body: 450 15px / 23px var(--font-sans);
+  --text-bubble: 450 15px / 1.55 var(--font-sans);
   --text-label: 600 14px / 20px var(--font-sans);
   --text-caption: 500 12.5px / 17px var(--font-sans);
   --text-log: 450 12.5px / 19px var(--font-mono);
@@ -699,14 +714,17 @@ svg.i.md {
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
   background: var(--raise);
   color: var(--ink);
+  font: var(--text-bubble);
+  letter-spacing: -0.012em;
 }
 .bubble.me {
   position: relative;
   align-self: flex-end;
   max-width: 80%;
   border-radius: var(--radius-lg) var(--radius-lg) 6px var(--radius-lg);
-  background: var(--ink);
-  color: var(--ink-inverse);
+  background: var(--me);
+  color: var(--me-ink);
+  font-weight: 500;
 }
 .bubble + .bubble:not(.me) {
   border-top-left-radius: 6px;
@@ -834,6 +852,184 @@ svg.i.md {
 .cbtn.go:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* ── 떠 있는 머리: 메뉴 · 두리 · 내 PC ───────────────── */
+/* 동그란 유리 버튼 (메뉴, 닫기) */
+.fbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  backdrop-filter: saturate(1.8) blur(20px);
+  box-shadow: var(--shadow-float);
+}
+.fbtn svg.i {
+  width: 22px;
+  height: 22px;
+}
+/* 알약 유리 버튼 (내 PC 상태) */
+.fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px 0 12px;
+  border-radius: var(--radius-full);
+  font: 620 13.5px / 1 var(--font-sans);
+  color: var(--ink);
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  backdrop-filter: saturate(1.8) blur(20px);
+  box-shadow: var(--shadow-float);
+}
+/* 가운데 두리: 캐릭터 동그라미 + 이름표(지금 하는 일) */
+.agent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.agent-av {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 3px var(--bg),
+    var(--shadow-float);
+}
+.agent-av .doori {
+  --s: 40px;
+}
+.agent-tag {
+  margin-top: -7px;
+  padding: 3px 11px 4px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  font: 680 12px / 16px var(--font-sans);
+  text-align: center;
+}
+.agent-tag span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font: 450 11px / 14px var(--font-sans);
+  color: var(--ink-muted);
+}
+.agent-tag span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--brand);
+  animation: ui-pulse 1.6s var(--ease) infinite;
+}
+.agent-tag span.ask::before {
+  background: var(--butter);
+}
+@keyframes ui-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+/* 떠 있는 입력칸: + · 글 · 말하기 */
+.composer.float {
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(1.8) blur(22px);
+  backdrop-filter: saturate(1.8) blur(22px);
+  box-shadow: var(--shadow-float);
+}
+/* 빠른 답: 두리가 물은 말 아래 */
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.quick button {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line),
+    var(--shadow-card);
+  font: 550 13.5px / 1 var(--font-sans);
+}
+/* 대답 중: 점 셋 */
+.typing {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 4px;
+  padding: 13px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--raise);
+}
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--ink-muted);
+  opacity: 0.5;
+  animation: ui-bounce 1.2s var(--ease) infinite;
+}
+.typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes ui-bounce {
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+/* 대화 안의 실시간 화면 카드: 회색 판 + 머리(무엇을 하는 중) + 미리보기 + 크게 보기 */
+.livecard {
+  width: min(320px, 100%);
+  padding: 12px;
+  border-radius: 22px;
+  background: var(--raise);
+}
+.livecard .screen {
+  position: relative;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--glass-line);
+}
+.live-badge {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(20, 22, 26, 0.78);
+  color: #fff;
+  font: 650 10px / 14px var(--font-sans);
+}
+.live-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: #ff5a52;
+  animation: ui-pulse 1.4s infinite;
 }
 
 /* ── 일 ───────────────────────────────────────────── */
@@ -1031,7 +1227,6 @@ svg.i.md {
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-  background: var(--butter-soft);
 }
 .approve-top .doori {
   --s: 36px;
@@ -1043,6 +1238,25 @@ svg.i.md {
 }
 .approve-body {
   padding: 6px 16px 4px;
+}
+.approve-amount {
+  margin: 0;
+  font: 740 28px / 34px var(--font-sans);
+  letter-spacing: -0.03em;
+}
+.approve-amount small {
+  margin-left: 6px;
+  font: var(--text-caption);
+  letter-spacing: 0;
+  color: var(--ink-muted);
+}
+/* 승인 버튼: 화면에서 가장 무겁다. 한 화면에 하나 */
+.btn-approve {
+  background: linear-gradient(180deg, var(--approve-hi), var(--approve));
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 12px -4px rgba(19, 136, 90, 0.55);
 }
 .approve-actions {
   display: grid;
@@ -1151,9 +1365,10 @@ svg.i.md {
   flex-direction: column;
   gap: 10px;
   padding: 16px 18px;
-  border: 1px solid var(--line);
+  border: 0.5px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
 /* 끝난 일·기록: 가볍게 */
 .card.quiet {
@@ -1233,6 +1448,28 @@ button.task:hover {
   justify-content: flex-start;
 }
 
+/* 아이콘 칸 색 (아이디어·활동 기록): 옅은 그라데이션 다섯 가지 */
+.tile.blue {
+  background: linear-gradient(145deg, light-dark(#eef4ff, #1c2a44), light-dark(#dbe7ff, #18233a));
+  color: light-dark(#2d62c8, #8fb4ff);
+}
+.tile.mint {
+  background: linear-gradient(145deg, light-dark(#ecfaf3, #16352a), light-dark(#d3f2e3, #122c23));
+  color: light-dark(#17905c, #6fe0a8);
+}
+.tile.amber {
+  background: linear-gradient(145deg, light-dark(#fff6e8, #3a2c14), light-dark(#ffe8c4, #33270f));
+  color: light-dark(#b56a00, #ffc46b);
+}
+.tile.rose {
+  background: linear-gradient(145deg, light-dark(#fff0f5, #3a1c27), light-dark(#fcd9e6, #331722));
+  color: light-dark(#c23a6a, #ff9dbd);
+}
+.tile.violet {
+  background: linear-gradient(145deg, light-dark(#f4f0ff, #2a2346), light-dark(#e3dafe, #241e3c));
+  color: light-dark(#6a4bd0, #b9a6ff);
+}
+
 /* ── 틀 ───────────────────────────────────────────── */
 /* PC 왼쪽 메뉴 한 줄 */
 .navi {
@@ -1257,32 +1494,66 @@ button.task:hover {
   background: var(--raise);
   color: var(--ink);
 }
-/* 모바일 아래 탭 4개 */
+/* 모바일 아래 탭 4개: 떠 있는 알약. 지금 탭만 이름을 펼친다 */
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
-  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 56px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(1.8) blur(22px);
+  backdrop-filter: saturate(1.8) blur(22px);
+  box-shadow: var(--shadow-float);
 }
 .tab {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 6px 0;
-  font-size: 11px;
-  font-weight: 600;
+  justify-content: center;
+  gap: 7px;
+  width: 58px;
+  height: 46px;
+  border-radius: var(--radius-full);
   color: var(--ink-muted);
   text-decoration: none;
+  transition:
+    width var(--dur-tab) var(--ease),
+    background var(--dur-tab) var(--ease),
+    color var(--dur-tab) var(--ease);
 }
 .tab svg.i {
   width: 22px;
   height: 22px;
 }
+.tab .tab-label {
+  display: none;
+  font: 650 13.5px / 1 var(--font-sans);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
 .tab.on,
 .tab[aria-current="page"] {
-  color: var(--ink);
+  width: auto;
+  padding: 0 16px 0 14px;
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+.tab.on .tab-label,
+.tab[aria-current="page"] .tab-label {
+  display: inline;
+}
+/* 나를 기다리는 것이 있으면 노랑 점 */
+.tab .badge {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--butter);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 /* 바텀시트 (모바일 승인) */
 .scrim {
@@ -1305,6 +1576,31 @@ button.task:hover {
   background: var(--line-strong);
   opacity: 0.6;
 }
+/* 떠 있는 바텀시트: 네 모서리 둥글게, 화면 가장자리에서 8px 떨어진다 */
+.sheet.float {
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 -0.5px 0 var(--glass-line),
+    var(--shadow-sheet);
+}
+/* 왼쪽 메뉴 서랍 (모바일): 메인 대화 + 따로 하는 대화 */
+.drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(316px, 84vw);
+  padding: 16px 14px;
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  background: var(--surface);
+  box-shadow: var(--shadow-sheet);
+}
+.drawer .navi {
+  color: var(--ink);
+  font-weight: 450;
+}
+.drawer .navi.on {
+  font-weight: 650;
+}
+
 /* 잠깐 뜨는 알림 */
 .toast {
   padding: 10px 16px;
@@ -1334,6 +1630,9 @@ button.task:hover {
   .dot.pulse,
   .doori.bob,
   .worklog li.now::before,
+  .agent-tag span::before,
+  .typing i,
+  .live-badge::before,
   .rise {
     animation: none;
   }

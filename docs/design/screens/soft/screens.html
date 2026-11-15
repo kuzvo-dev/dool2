@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>두리 화면 예시 — 부드러운 면 (v2)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<style>
+:root{
+  --page:#eef1f5;
+  --bg:#f7f8fa; --surface:#ffffff; --raise:#eceef2; --sunken:#f1f3f6;
+  --line:#e4e7ec; --ink:#14161a; --ink2:#3b4049; --muted:#7a808b; --faint:#a7adb7;
+  --me:#dcf3e8; --me-ink:#0f2a1e;
+  --brand:#4cc98f; --brand-ink:#17905c; --brand-soft:#e3f6ed;
+  --ask:#ffd66b; --ask-soft:#fff4d4;
+  --danger:#d0342c;
+  --r-sm:10px; --r:16px; --r-lg:22px; --r-xl:28px;
+  --sh-1:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+  --sh-2:0 8px 24px -8px rgba(16,24,40,.18),0 2px 6px rgba(16,24,40,.06);
+  --sh-3:0 24px 48px -16px rgba(16,24,40,.28);
+  --doori-idle:url("../../../../packages/ui/doori/idle.svg");
+  --doori-working:url("../../../../packages/ui/doori/working.svg");
+  --doori-asking:url("../../../../packages/ui/doori/asking.svg");
+  --doori-done:url("../../../../packages/ui/doori/done.svg");
+}
+.dark{
+  --bg:#0f1114; --surface:#191c21; --raise:#22262d; --sunken:#0b0d10;
+  --line:#2a2e36; --ink:#f2f4f7; --ink2:#c9ced6; --muted:#8b919c; --faint:#5f6570;
+  --me:#1f5a40; --me-ink:#eafff4;
+  --brand-soft:#16352a; --ask-soft:#3a3014;
+  --sh-1:none; --sh-2:0 8px 24px -8px rgba(0,0,0,.6); --sh-3:0 24px 48px -16px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);font-family:"Pretendard Variable",Pretendard,system-ui,sans-serif;color:#14161a;word-break:keep-all;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1500px;margin:0 auto;padding:56px 40px 120px}
+h1.doc{font-size:40px;letter-spacing:-.035em;margin:0 0 8px;font-weight:720}
+.lede{font-size:17px;color:#4b515c;line-height:1.7;max-width:820px;margin:0}
+.sec{margin-top:72px}
+.sec>h2{font-size:24px;letter-spacing:-.02em;margin:0 0 6px;font-weight:700}
+.sec>p.sd{color:#5b616c;margin:0 0 28px;line-height:1.7;max-width:860px}
+.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.note{background:#fff;border-radius:18px;padding:20px 22px;box-shadow:var(--sh-1)}
+.note h3{margin:0 0 10px;font-size:15px;font-weight:680}
+.note ul{margin:0;padding-left:18px;color:#3b4049;font-size:14px;line-height:1.75}
+.note .src{font-size:12px;color:#8b919c;margin-top:10px}
+.row{display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start}
+.shot{display:flex;flex-direction:column;gap:12px;width:390px}
+.shot .cap{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.shot .cap small{display:block;font-weight:450;color:#6b717c;font-size:13px;line-height:1.6;margin-top:4px}
+
+/* ── 폰 틀 ── */
+.phone{width:390px;height:844px;border-radius:52px;background:var(--bg);position:relative;overflow:hidden;box-shadow:0 0 0 10px #101216,0 30px 60px -20px rgba(0,0,0,.35);color:var(--ink)}
+.status{height:50px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 30px 6px;font-size:15px;font-weight:620}
+.status .r{display:flex;gap:6px;align-items:center}
+.bat{width:24px;height:12px;border-radius:3.5px;border:1.5px solid currentColor;position:relative;opacity:.9}
+.bat:after{content:"";position:absolute;inset:1.5px;border-radius:1.5px;background:currentColor;width:70%}
+.top{position:absolute;top:50px;left:0;right:0;height:104px;display:flex;justify-content:space-between;align-items:flex-start;padding:10px 18px 0;z-index:5;background:linear-gradient(var(--bg) 62%,transparent)}
+.cbtn{width:44px;height:44px;border-radius:50%;background:var(--surface);box-shadow:var(--sh-2);display:grid;place-items:center;color:var(--ink)}
+.pillbtn{height:40px;padding:0 15px;border-radius:20px;background:var(--surface);box-shadow:var(--sh-2);display:flex;align-items:center;gap:7px;font-size:14px;font-weight:620;color:var(--ink)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--brand);flex:none}
+.dot.ask{background:var(--ask)}
+.who{display:flex;flex-direction:column;align-items:center;gap:0;position:absolute;left:50%;transform:translateX(-50%);top:4px}
+.av{width:56px;height:56px;border-radius:50%;background:var(--surface) var(--doori-idle) center/76% no-repeat;box-shadow:var(--sh-2)}
+.av.working{background-image:var(--doori-working)}
+.av.asking{background-image:var(--doori-asking)}
+.av.done{background-image:var(--doori-done)}
+.who .nm{margin-top:-8px;background:var(--surface);box-shadow:var(--sh-1);border-radius:12px;padding:3px 10px 4px;font-size:12.5px;font-weight:680;text-align:center;line-height:1.25}
+.who .nm span{display:block;font-weight:450;color:var(--muted);font-size:11.5px}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+svg.s{width:18px;height:18px}
+
+.chat{position:absolute;top:154px;bottom:150px;left:0;right:0;overflow:hidden;padding:0 16px;display:flex;flex-direction:column;gap:10px;justify-content:flex-end}
+.b{max-width:84%;padding:11px 15px;border-radius:22px;background:var(--raise);font-size:15.5px;line-height:1.5;align-self:flex-start;color:var(--ink)}
+.b.me{align-self:flex-end;background:var(--me);color:var(--me-ink);border-radius:22px 22px 6px 22px}
+.b+.b:not(.me){border-top-left-radius:8px}
+.meta{font-size:12px;color:var(--muted)}
+.typing{align-self:flex-start;display:flex;gap:4px;padding:13px 16px;border-radius:20px;background:var(--raise)}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);opacity:.5}
+.typing i:nth-child(2){opacity:.8}
+
+/* 카드 */
+.card{align-self:stretch;background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--sh-1);border:1px solid var(--line);overflow:hidden}
+.card.grayc{background:var(--raise);border:0;box-shadow:none;align-self:flex-start;width:300px;padding:12px}
+.ch{display:flex;gap:10px;align-items:center;padding:12px 14px}
+.ch .ic{width:34px;height:34px;border-radius:10px;background:var(--sunken);display:grid;place-items:center;color:var(--ink2);flex:none}
+.grayc .ch{padding:0 2px 10px}
+.grayc .ch .ic{background:var(--surface)}
+.ch b{font-size:14.5px;font-weight:650;display:block}
+.ch span{font-size:13px;color:var(--muted)}
+.live{border-radius:14px;background:var(--surface);height:150px;position:relative;overflow:hidden}
+.seat{position:absolute;inset:36px 22px 12px}
+.seat .scr{height:5px;border-radius:3px;background:var(--line);margin:0 18px 12px}
+.seat .g{display:grid;grid-template-columns:repeat(12,1fr);gap:5px}
+.seat .g i{height:12px;border-radius:3px;background:#d7dbe2}
+.seat .g i.t{background:#eef0f3}
+.seat .g i.on{background:var(--brand)}
+.livebadge{position:absolute;top:8px;left:8px;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:650;background:rgba(20,22,26,.72);color:#fff;border-radius:8px;padding:3px 7px}
+.livebadge i{width:6px;height:6px;border-radius:50%;background:#ff5a52}
+.btnrow{display:flex;gap:8px;padding:10px 0 0}
+.btn{height:42px;border-radius:13px;border:0;font:inherit;font-size:14.5px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:6px;flex:1;background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.ink{background:var(--ink);color:var(--bg);box-shadow:none}
+.btn.go{background:var(--brand-ink);color:#fff;box-shadow:none}
+.btn.soft{background:var(--raise);box-shadow:none}
+
+.approve{padding:14px}
+.approve .q{display:flex;gap:10px;align-items:flex-start}
+.approve .q .ic{width:34px;height:34px;border-radius:10px;background:var(--ask-soft);display:grid;place-items:center;flex:none;color:#8a6200}
+.approve .q b{font-size:15px;display:block;font-weight:680}
+.approve .q span{font-size:12.5px;color:var(--muted);line-height:1.5}
+.pv{margin:12px 0;border-radius:14px;background:var(--sunken);height:110px;display:flex;gap:12px;align-items:center;padding:12px}
+.pv .img{width:86px;height:86px;border-radius:12px;background:linear-gradient(135deg,#dfe7ef,#c7d2de);flex:none}
+.pv b{font-size:14px;display:block}
+.pv .pr{font-size:15px;font-weight:700;margin-top:4px}
+.pv .pr s{color:var(--muted);font-weight:450;font-size:12.5px;margin-left:4px}
+.kv{display:flex;justify-content:space-between;align-items:center;font-size:14px;padding:9px 2px;border-top:1px solid var(--line)}
+.kv span{color:var(--muted)}
+.kv b{font-weight:650}
+.kv .pay{display:flex;align-items:center;gap:8px}
+.cardmark{width:28px;height:19px;border-radius:4px;background:linear-gradient(135deg,#2b3340,#4b5566)}
+.anote{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+
+.plist{align-self:flex-start;width:300px;background:var(--raise);border-radius:22px;padding:6px}
+.pi{display:flex;gap:11px;align-items:center;padding:8px 8px}
+.pi+.pi{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.pi .th{width:46px;height:46px;border-radius:11px;background:var(--surface);flex:none;display:grid;place-items:center;color:var(--faint)}
+.pi b{font-size:14px;display:block;font-weight:650}
+.pi span{font-size:12.5px;color:var(--muted)}
+.pi em{font-style:normal;font-size:13px;font-weight:650;margin-left:auto}
+
+.file{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.file .fi{width:40px;height:48px;border-radius:8px;background:#ffe2de;color:#c3392f;font-size:10px;font-weight:800;display:grid;place-items:center;flex:none}
+.file b{font-size:14px;display:block}
+.file span{font-size:12.5px;color:var(--muted)}
+.docpv{height:120px;margin:0 12px;border-radius:12px 12px 0 0;background:var(--sunken);padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.docpv i{height:7px;border-radius:4px;background:var(--line);display:block}
+
+/* 입력칸 + 탭 막대 */
+.composer{position:absolute;left:14px;right:14px;bottom:92px;height:50px;border-radius:25px;background:var(--surface);box-shadow:var(--sh-2);display:flex;align-items:center;gap:10px;padding:0 8px 0 16px;color:var(--muted);font-size:15.5px}
+.composer .sp{flex:1}
+.composer .mic{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--ink2)}
+.tabs{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;height:58px;border-radius:29px;background:var(--surface);box-shadow:var(--sh-2);display:flex;align-items:center;gap:2px;padding:0 6px}
+.tab{width:62px;height:46px;border-radius:23px;display:grid;place-items:center;color:var(--ink2);position:relative}
+.tab.on{background:var(--raise);color:var(--ink)}
+.tab .badge{position:absolute;top:8px;right:15px;width:8px;height:8px;border-radius:50%;background:var(--ask);box-shadow:0 0 0 2px var(--surface)}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--ink);opacity:.85}
+
+/* 시트 */
+.scrim{position:absolute;inset:0;background:rgba(10,12,16,.38);z-index:8}
+.sheet{position:absolute;left:8px;right:8px;bottom:8px;background:var(--surface);border-radius:34px;z-index:9;padding:16px 18px 22px;box-shadow:var(--sh-3)}
+.sheet .grab{width:38px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 12px}
+.sheet .x{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:50%;background:var(--raise);display:grid;place-items:center}
+.sheet h3{margin:6px 0 4px;font-size:21px;letter-spacing:-.02em}
+.bigimg{height:230px;border-radius:22px;background:linear-gradient(135deg,#e5ebf2,#cdd6e0);margin-bottom:14px;display:grid;place-items:center;color:#9aa4b2}
+
+/* 드로어 */
+.drawer{position:absolute;top:0;bottom:0;left:0;width:316px;background:var(--surface);z-index:9;box-shadow:var(--sh-3);padding:62px 14px 20px;display:flex;flex-direction:column}
+.drawer .ttl{font-size:17px;font-weight:700;text-align:center;margin-bottom:14px}
+.ditem{padding:12px 12px;border-radius:13px;font-size:15.5px;display:flex;align-items:center;gap:10px}
+.ditem.on{background:var(--raise);font-weight:650}
+.ditem .live{width:auto;height:auto;background:none;margin-left:auto}
+.dsec{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--muted);padding:16px 12px 6px;border-top:1px solid var(--line);margin-top:8px}
+.dfoot{margin-top:auto;display:flex;gap:8px;align-items:center}
+.dfoot .search{flex:1;height:44px;border-radius:22px;background:var(--raise);display:flex;align-items:center;padding:0 16px;color:var(--muted);font-size:14.5px;gap:8px}
+.dfoot .cbtn{box-shadow:none;background:var(--raise)}
+
+/* 목록 화면 */
+.page{position:absolute;top:154px;bottom:0;left:0;right:0;overflow:hidden;padding:0 20px 160px}
+.ptitle{font-size:28px;font-weight:740;letter-spacing:-.03em;margin:4px 0 4px}
+.psub{color:var(--muted);font-size:14.5px;margin:0 0 14px;line-height:1.55}
+.chips{display:flex;gap:7px;margin:4px 0 14px;flex-wrap:nowrap;overflow:hidden}
+.chip{height:34px;padding:0 13px;border-radius:17px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);display:flex;align-items:center;font-size:14px;white-space:nowrap;color:var(--ink2)}
+.chip.on{background:var(--ink);color:var(--bg);box-shadow:none}
+.idea{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--line)}
+.tile{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex:none}
+.idea b{font-size:15.5px;font-weight:660;display:block;letter-spacing:-.01em}
+.idea p{margin:3px 0 0;font-size:13.5px;color:var(--muted);line-height:1.5}
+.t1{background:#e6f0ff;color:#2d62c8}.t2{background:#e3f6ed;color:#17905c}.t3{background:#fff1dc;color:#b56a00}.t4{background:#fde8ef;color:#c23a6a}.t5{background:#efeafe;color:#6a4bd0}
+.dark .t1{background:#1c2a44;color:#8fb4ff}.dark .t2{background:#16352a;color:#6fe0a8}.dark .t3{background:#3a2c14;color:#ffc46b}.dark .t4{background:#3a1c27;color:#ff9dbd}.dark .t5{background:#2a2346;color:#b9a6ff}
+.grp{font-size:13px;font-weight:650;color:var(--muted);margin:18px 0 0}
+.task{background:var(--surface);border-radius:20px;padding:14px 16px;box-shadow:var(--sh-1);border:1px solid var(--line);margin-bottom:10px}
+.task .tt{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.task b{font-size:15.5px;display:block;margin-top:5px}
+.task p{margin:4px 0 0;font-size:13.5px;color:var(--muted);line-height:1.5}
+.bar{height:5px;border-radius:3px;background:var(--raise);margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;width:62%;background:var(--brand)}
+.task.ask{background:var(--ask-soft);border-color:transparent}
+.sw{width:42px;height:26px;border-radius:13px;background:var(--brand);position:relative;flex:none;margin-left:auto}
+.sw:after{content:"";position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.sw.off{background:var(--line)}.sw.off:after{right:auto;left:3px}
+.lrow{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.lrow b{font-size:15px;font-weight:640;display:block}
+.lrow span{font-size:13px;color:var(--muted)}
+.lrow .end{margin-left:auto;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.mk{width:42px;height:42px;border-radius:13px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);display:grid;place-items:center;font-weight:700;font-size:16px;flex:none}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}
+.svc{display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2)}
+.svc .mk{width:56px;height:56px;border-radius:17px;font-size:19px}
+
+/* 프로필 패널 */
+.panel{position:absolute;inset:0;background:var(--surface);z-index:7;padding:62px 18px 0}
+.panel .hd{display:flex;justify-content:space-between}
+.panel .hd .cbtn{box-shadow:none;background:var(--raise)}
+.bigav{width:96px;height:96px;border-radius:50%;margin:-6px auto 8px;background:var(--bg) var(--doori-working) center/74% no-repeat;box-shadow:var(--sh-2)}
+.panel .nm{text-align:center;font-size:22px;font-weight:720;letter-spacing:-.02em}
+.panel .st{display:flex;justify-content:center;align-items:center;gap:6px;color:var(--muted);font-size:13.5px;margin-top:3px}
+.seg{display:flex;background:var(--raise);border-radius:16px;padding:4px;margin:18px 0 6px}
+.seg span{flex:1;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--muted)}
+.seg span.on{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1)}
+.act{display:flex;gap:12px;padding:11px 0}
+.act .tile{width:38px;height:38px;border-radius:12px}
+.act b{font-size:14.5px;font-weight:640;display:block}
+.act p{margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.45}
+.act time{font-size:12px;color:var(--faint);display:block;margin-top:3px}
+
+/* 로그인 시트 */
+.field{height:52px;border-radius:15px;background:var(--sunken);display:flex;align-items:center;padding:0 16px;font-size:15.5px;color:var(--muted);margin-top:10px;gap:10px}
+.field.f{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--ink);color:var(--ink)}
+.lock{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+.stream{position:absolute;inset:0;background:#0b0c0f;z-index:9;display:flex;flex-direction:column}
+.stream .sb{height:50px}
+.stream .bar2{display:flex;align-items:center;gap:10px;padding:8px 14px;color:#fff}
+.stream .bar2 .url{flex:1;height:36px;border-radius:12px;background:#1d2026;display:flex;align-items:center;gap:7px;padding:0 12px;font-size:13.5px;color:#c9ced6}
+.stream .vp{flex:1;margin:4px 10px;border-radius:18px;background:#fff;position:relative;overflow:hidden}
+.mlogin{position:absolute;inset:0;padding:26px 22px;color:#1d1f23}
+.mlogin .lg{font-weight:800;font-size:22px;color:#e8392b;margin-bottom:24px;letter-spacing:-.02em}
+.mlogin .in{height:50px;border:1px solid #d5d9df;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;padding:0 14px;color:#8a9099;font-size:15px}
+.mlogin .in.f{border-color:#1d1f23;color:#1d1f23}
+.mlogin .go{height:52px;border-radius:6px;background:#2b67f6;color:#fff;font-weight:700;display:grid;place-items:center;margin-top:6px}
+.cursor{position:absolute;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(76,201,143,.85);box-shadow:0 0 0 6px rgba(76,201,143,.25)}
+.stream .foot{padding:12px 14px 30px;display:flex;gap:8px}
+.stream .foot .btn{background:#1d2026;color:#fff;box-shadow:none}
+.stream .foot .btn.go{background:var(--brand-ink)}
+.lat{position:absolute;top:10px;right:10px;font-size:11px;font-weight:650;background:rgba(20,22,26,.72);color:#9ff0c6;border-radius:8px;padding:3px 7px}
+
+/* PC */
+.pc{width:1280px;height:800px;border-radius:22px;background:var(--bg);overflow:hidden;position:relative;box-shadow:0 0 0 1px #d6dbe2,0 40px 80px -30px rgba(0,0,0,.35);display:flex;color:var(--ink)}
+.pc .side{width:270px;background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column}
+.pc .mid{flex:1;position:relative}
+.pc .right{width:360px;background:var(--surface);border-left:1px solid var(--line);padding:20px 18px}
+.pc .chat{top:120px;bottom:108px;padding:0 max(24px,calc((100% - 640px)/2))}
+.pc .composer{left:max(24px,calc((100% - 640px)/2));right:max(24px,calc((100% - 640px)/2));bottom:30px}
+.pc .top{top:0;height:110px;padding:16px 20px 0}
+.pc .who{top:14px}
+.decide{background:#fff;border-radius:18px;padding:22px 24px;box-shadow:var(--sh-1);margin-bottom:12px}
+.decide b{font-size:16px}
+.decide p{margin:6px 0 0;color:#4b515c;line-height:1.7;font-size:14.5px}
+.decide .opt{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.decide .opt span{font-size:13px;border-radius:10px;padding:5px 10px;background:#eef1f5;color:#3b4049}
+.decide .opt span.rec{background:#dcf3e8;color:#0f5a3a;font-weight:650}
+.tok{display:flex;gap:10px;flex-wrap:wrap}
+.tok div{width:150px;border-radius:14px;background:#fff;box-shadow:var(--sh-1);overflow:hidden;font-size:12.5px}
+.tok i{display:block;height:54px}
+.tok div span{display:block;padding:8px 10px;line-height:1.4}
+.tok div span b{display:block;font-size:13px}
+
+/* ═══ v2: 더 세련되게 ═══ */
+:root{
+  --bg:#f5f6f8; --raise:#eef0f3; --line:#e6e8ed; --sunken:#f0f2f5;
+  --me:#d4f1e3; --me-ink:#08331f;
+  --glass:rgba(255,255,255,.74); --glass-line:rgba(16,24,40,.07);
+  --sh-1:0 .5px 0 rgba(16,24,40,.04),0 1px 2px rgba(16,24,40,.05);
+  --sh-2:0 1px 1px rgba(16,24,40,.03),0 8px 24px -8px rgba(16,24,40,.18);
+  --sh-float:0 0 0 .5px var(--glass-line),0 12px 32px -12px rgba(16,24,40,.28),0 2px 6px -2px rgba(16,24,40,.08);
+  --ease:cubic-bezier(.2,.7,.2,1);
+}
+.dark{--bg:#0d0f12;--surface:#17191d;--raise:#202328;--sunken:#0a0b0d;--line:#262a31;--me:#1b4733;--me-ink:#e9fff4;--glass:rgba(30,33,38,.72);--glass-line:rgba(255,255,255,.07);--sh-float:0 0 0 .5px var(--glass-line),0 14px 36px -12px rgba(0,0,0,.8)}
+body{letter-spacing:-.006em}
+.phone{background:radial-gradient(120% 60% at 50% 0%,#ffffff 0%,var(--bg) 55%)}
+.phone.dark{background:radial-gradient(120% 60% at 50% 0%,#15181c 0%,var(--bg) 55%)}
+.top{background:none}
+.phone:not(.dark) .top{background:linear-gradient(rgba(248,249,251,.96) 55%,rgba(248,249,251,0))}
+.phone.dark .top{background:linear-gradient(rgba(14,16,19,.96) 55%,rgba(14,16,19,0))}
+.cbtn,.pillbtn{background:var(--glass);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px);box-shadow:var(--sh-float)}
+.pillbtn{font-size:13.5px;height:38px;padding:0 14px 0 12px}
+.av{width:54px;height:54px;background-color:var(--surface);box-shadow:0 0 0 3px var(--bg),var(--sh-float)}
+.who .nm{margin-top:-7px;background:var(--glass);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:var(--sh-float);border-radius:999px;padding:3px 11px 4px;font-size:12px;letter-spacing:-.01em}
+.who .nm span{display:flex;align-items:center;gap:4px;justify-content:center;font-size:11px}
+.who .nm span:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--brand);animation:pulse 1.6s var(--ease) infinite}
+@keyframes pulse{50%{opacity:.25}}
+.b{font-size:15px;line-height:1.55;padding:10px 14px;border-radius:20px;letter-spacing:-.012em}
+.b.me{border-radius:20px 20px 6px 20px;font-weight:500}
+.chat{gap:8px}
+.chat>.b.me+.b:not(.me),.chat>.b:not(.me)+.b.me,.chat>.card+.b,.chat>.b+.card,.chat>.plist+.b{margin-top:8px}
+.typing i{animation:bounce 1.2s var(--ease) infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bounce{30%{transform:translateY(-3px);opacity:1}}
+.card{border:.5px solid var(--line);border-radius:20px;box-shadow:var(--sh-1)}
+.card.grayc{border-radius:22px;background:var(--raise)}
+.live{border-radius:14px;box-shadow:0 0 0 .5px var(--glass-line)}
+.urlbar{position:absolute;top:0;left:0;right:0;height:26px;display:flex;align-items:center;gap:6px;padding:0 9px;font-size:10.5px;color:var(--muted);background:var(--sunken);border-bottom:.5px solid var(--line)}
+.urlbar i{width:6px;height:6px;border-radius:50%;background:var(--line)}
+.urlbar span{margin-left:6px;margin-right:52px;flex:1;background:var(--surface);border-radius:6px;height:16px;display:flex;align-items:center;padding:0 7px}
+.livebadge{top:5px;bottom:auto;left:auto;right:7px;font-size:10px;padding:2px 6px;background:rgba(20,22,26,.78);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.livebadge i{animation:pulse 1.4s infinite}
+.seat{inset:38px 26px 12px}
+.btn{height:44px;border-radius:14px;font-weight:620;letter-spacing:-.01em}
+.btn.go{background:linear-gradient(180deg,#1aa369,#13885a);box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 4px 12px -4px rgba(19,136,90,.55)}
+.btn.ink{box-shadow:0 4px 12px -6px rgba(0,0,0,.5)}
+.approve .amt{font-size:28px;font-weight:740;letter-spacing:-.03em;margin:12px 2px 2px}
+.approve .amt small{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:6px}
+.pv{height:auto;padding:10px;margin:10px 0 6px;background:var(--sunken);border-radius:14px}
+.pv .img{width:60px;height:60px;border-radius:11px;background:linear-gradient(145deg,#f3f5f8,#d9e0e8)}
+.composer,.tabs{background:var(--glass);-webkit-backdrop-filter:saturate(1.8) blur(22px);backdrop-filter:saturate(1.8) blur(22px);box-shadow:var(--sh-float)}
+.composer{height:48px;font-size:15px;color:var(--faint)}
+.composer>svg.i:first-child{width:30px;height:30px;padding:5px;border-radius:50%;background:var(--raise);color:var(--ink2)}
+.tabs{height:56px;padding:0 5px;gap:0}
+.tab{width:58px;height:46px;transition:all .25s var(--ease)}
+.tab.on{width:auto;padding:0 16px 0 14px;display:flex;gap:7px;background:var(--ink);color:var(--bg)}
+.tab.on em{white-space:nowrap;font-style:normal;font-size:13.5px;font-weight:650;letter-spacing:-.01em}
+.tab .badge{top:10px;right:16px}
+.qr{display:flex;gap:6px;flex-wrap:wrap;align-self:flex-start;margin-top:2px}
+.qr span{height:34px;padding:0 13px;border-radius:17px;display:flex;align-items:center;font-size:13.5px;font-weight:550;background:var(--surface);box-shadow:inset 0 0 0 .5px var(--line),var(--sh-1);color:var(--ink)}
+.sheet{border-radius:32px;box-shadow:0 -1px 0 var(--glass-line),var(--sh-3)}
+.scrim{background:rgba(10,12,16,.32);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.drawer{border-radius:0 30px 30px 0}
+.ditem{font-size:15px;letter-spacing:-.01em}
+.ptitle{font-size:30px;letter-spacing:-.035em}
+.task{border:.5px solid var(--line);border-radius:20px}
+.task.ask{background:linear-gradient(180deg,#fff8e1,#fff3cf);border-color:#f6e2a3}
+.dark .task.ask{background:#2d2614;border-color:#4a3d18}
+.tile{border-radius:13px}
+.t1{background:linear-gradient(145deg,#eef4ff,#dbe7ff)}.t2{background:linear-gradient(145deg,#ecfaf3,#d3f2e3)}.t3{background:linear-gradient(145deg,#fff6e8,#ffe8c4)}.t4{background:linear-gradient(145deg,#fff0f5,#fcd9e6)}.t5{background:linear-gradient(145deg,#f4f0ff,#e3dafe)}
+.mk{border-radius:12px;box-shadow:inset 0 0 0 .5px var(--line),var(--sh-1)}
+.seg{border-radius:14px;padding:3px}
+.seg span{height:34px;border-radius:11px;font-size:13px;font-weight:600;gap:5px;display:flex;align-items:center;justify-content:center}
+.bigav{box-shadow:0 0 0 5px var(--surface),var(--sh-float)}
+.sw{background:#1aa369}
+.home{opacity:.75}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="doc">두리 화면 예시 — 부드러운 면 (v2)</h1>
+  <p class="lede">부드러운 회색 면 위에 떠 있는 둥근 부품(머리 버튼·입력칸·알약 탭 막대·시트), 가운데 두리와 지금 하는 일, 대화 안의 살아 있는 카드. 2026-11-15 확정. 코드 부품은 packages/ui.</p>
+
+  <section class="sec">
+    <h2>1. 폰 — 대화</h2>
+    <p class="sd">탭 막대와 입력칸은 떠 있고, 대화가 그 뒤로 흘러요. 두리는 머리 가운데에 있고, 아래 이름표에 지금 하는 일이 한 줄로 보여요.</p>
+    <div class="row">
+      <div class="shot"><div class="cap">1-1. 대화 · 일하는 중<small>두리가 PC의 Chrome에서 좌석을 고르는 모습을 카드 안에 실시간으로. 누르면 크게.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><svg class="i s" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/></svg><span class="bat"></span></span></div>
+          <div class="top">
+            <div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div>
+            <div class="who"><div class="av working"></div><div class="nm">두리<span>좌석 고르는 중…</span></div></div>
+            <div class="pillbtn"><span class="dot"></span>내 PC</div>
+          </div>
+          <div class="chat">
+            <div class="b">보고 싶다던 영화 예매가 열렸어요. 토요일 4:30, 7:30이 있어요. 어떻게 할까요?</div>
+            <div class="b me">7:30으로 둘이요. 가운데 자리로</div>
+            <div class="card grayc">
+              <div class="ch"><div class="ic"><svg class="i s" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div><div><b>CGV · 내 PC의 Chrome</b><span>좌석 고르는 중…</span></div></div>
+              <div class="live"><div class="urlbar"><i></i><i></i><i></i><span>cgv.co.kr › 빠른예매 › 좌석</span></div><span class="livebadge"><i></i>실시간</span><div class="seat"><div class="scr"></div><div class="g">
+                <i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i>
+                <i></i><i class="t"></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i>
+                <i class="t"></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="t"></i><i></i><i></i>
+                <i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i>
+                <i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i>
+              </div></div></div>
+              <div class="btnrow"><div class="btn">화면 크게 보기</div></div>
+            </div>
+            <div class="typing"><i></i><i></i><i></i></div>
+          </div>
+          <div class="composer"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="sp">두리에게 부탁하기</span><span class="mic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          <div class="tabs">
+            <div class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div>
+            <div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span class="badge"></span></div>
+            <div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div>
+            <div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div>
+          </div>
+          <div class="home"></div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">1-2. 대화 · 결제 승인<small>돈이 나가는 순간에만 멈춰서 물어요. 결제 수단은 마지막에 결제 앱에서 한 번 더.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top">
+            <div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div>
+            <div class="who"><div class="av asking"></div><div class="nm">두리<span>승인을 기다려요</span></div></div>
+            <div class="pillbtn"><span class="dot"></span>내 PC</div>
+          </div>
+          <div class="chat">
+            <div class="b">찾던 접이식 유모차, 쿠팡에서 8만 원이에요(평소 12만 원). 담아 둘까요?</div>
+            <div class="b me">응 사 줘</div>
+            <div class="card approve">
+              <div class="q"><div class="ic"><svg class="i s" viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12L6 6Zm0 0L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></div><div><b>쿠팡에서 주문할까요?</b><span>주문서 화면을 두리가 직접 확인했어요</span></div></div><div class="amt">80,000원<small>배송비 0원 · 내일 도착</small></div>
+              <div class="pv"><div class="img"></div><div><b>접이식 휴대용 유모차</b><span class="meta">로켓배송 · 내일 도착</span><div class="meta" style="margin-top:3px">평소 <s>120,000원</s> · 33% 낮아요</div></div></div>
+              <div class="kv"><span>결제</span><span class="pay"><span class="cardmark"></span><b>쿠페이 · 신한 1234</b></span></div>
+              
+              <div class="btnrow"><div class="btn soft">거절</div><div class="btn go">승인하기</div></div>
+              <div class="anote">승인하면 두리가 그 버튼 하나만 눌러요 · Face ID</div>
+            </div>
+          </div>
+          <div class="composer"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="sp">두리에게 부탁하기</span><span class="mic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          <div class="tabs"><div class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span class="badge"></span></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home"></div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">1-3. 대화 · 결과 카드<small>찾은 것은 목록 카드로, 만든 문서는 파일 카드로. 두리가 먼저 말 걸기도 해요.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top">
+            <div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div>
+            <div class="who"><div class="av done"></div><div class="nm">두리<span>다 했어요</span></div></div>
+            <div class="pillbtn"><span class="dot"></span>내 PC</div>
+          </div>
+          <div class="chat">
+            <div class="b">아이 체험학습 신청서가 메일로 와서 채워 뒀어요. 보호자 서명만 남았어요.</div>
+            <div class="card">
+              <div class="docpv"><i style="width:60%"></i><i></i><i style="width:85%"></i><i style="width:70%"></i><i></i></div>
+              <div class="file"><div class="fi">PDF</div><div><b>체험학습 신청서</b><span>메일에서 받은 양식 · 채움</span></div></div>
+            </div>
+            <div class="b">비슷한 가격대 유모차도 찾아봤어요.</div>
+            <div class="plist">
+              <div class="pi"><div class="th"><svg class="i s" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div><b>접이식 유모차 A</b><span>쿠팡 · 로켓배송</span></div><em>80,000원</em></div>
+              <div class="pi"><div class="th"><svg class="i s" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div><b>경량 유모차 B</b><span>11번가</span></div><em>87,500원</em></div>
+              <div class="pi"><div class="th"><svg class="i s" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/></svg></div><div><b>휴대용 C</b><span>SSG닷컴</span></div><em>91,000원</em></div>
+            </div>
+          </div>
+          <div class="composer"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="sp">두리에게 부탁하기</span><span class="mic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          <div class="tabs"><div class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>2. 폰 — 로그인 (새 방식)</h2>
+    <p class="sd">사진을 넘겨 보는 지금 방식 대신 둘로 나눠요. 아이디·비밀번호는 폰 카드에 넣으면 PC 금고로만 가고 두리 본체가 채워요(AI는 못 봐요). 로봇 확인·본인인증처럼 화면이 꼭 필요할 때만 Chrome 화면을 실시간으로 받아 폰에서 바로 눌러요.</p>
+    <div class="row">
+      <div class="shot"><div class="cap">2-1. 로그인 카드 (바텀시트)<small>대화 중 "쿠팡 로그인이 필요해요" → 이 시트가 올라와요.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av asking"></div><div class="nm">두리<span>로그인을 기다려요</span></div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="chat"><div class="b me">쿠팡에서 최근에 산 거 뭐지?</div><div class="b">쿠팡 로그인이 풀려 있어요. 아이디·비밀번호를 넣어 주시면 이어서 볼게요.</div></div>
+          <div class="scrim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div style="display:flex;gap:12px;align-items:center"><div class="mk" style="color:#e8392b">쿠</div><div><h3 style="margin:0">쿠팡 로그인</h3><span class="meta">coupang.com · 내 PC의 Chrome에 넣어요</span></div></div>
+            <div class="field f">kim.doori@…<span style="margin-left:auto;width:2px;height:20px;background:var(--ink)"></span></div>
+            <div class="field">비밀번호</div>
+            <div class="btnrow" style="padding-top:14px"><div class="btn ink" style="height:50px">로그인하기</div></div>
+            <div class="lock"><svg class="i s" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.</span></div>
+            <div class="btnrow"><div class="btn soft">화면 보면서 직접 할게요</div></div>
+          </div>
+          <div class="home" style="z-index:10"></div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">2-2. 실시간 화면 (로봇 확인·본인인증일 때만)<small>Chrome 화면을 영상처럼 받아요(목표 0.2초 안쪽). 누른 자리는 초록 점으로, 글자는 폰 키보드로 바로.</small></div>
+        <div class="phone">
+          <div class="stream">
+            <div class="sb"></div>
+            <div class="bar2"><div class="cbtn" style="width:36px;height:36px;background:#1d2026;box-shadow:none;color:#fff"><svg class="i s" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></div><div class="url"><svg class="i s" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>login.coupang.com</div></div>
+            <div class="vp"><span class="lat">실시간 · 0.1초</span>
+              <div class="mlogin"><div class="lg">coupang</div><div class="in f">kim.doori@…</div><div class="in">비밀번호</div><div class="go">로그인</div>
+                <div style="margin-top:22px;border:1px solid #d5d9df;border-radius:6px;padding:14px;font-size:14px;display:flex;gap:10px;align-items:center"><span style="width:22px;height:22px;border:2px solid #9aa1ab;border-radius:4px"></span>로봇이 아닙니다</div>
+              </div>
+              <span class="cursor" style="left:30px;top:252px"></span>
+            </div>
+            <div class="foot"><div class="btn">두리에게 다시 맡기기</div><div class="btn go">다 했어요</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">2-3. 바텀시트 · 상품 상세<small>목록 카드의 상품을 누르면. 사기는 두리에게, 보기는 사이트에서.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av done"></div><div class="nm">두리<span>다 했어요</span></div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="chat"><div class="b">비슷한 가격대 유모차도 찾아봤어요.</div><div class="plist"><div class="pi"><div class="th"></div><div><b>접이식 유모차 A</b><span>쿠팡</span></div><em>80,000원</em></div></div></div>
+          <div class="scrim"></div>
+          <div class="sheet">
+            <div class="x"><svg class="i s" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></div>
+            <div class="bigimg"><svg class="i" viewBox="0 0 24 24" style="width:48px;height:48px"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.5"/><path d="m4 16 5-5 7 7"/></svg></div>
+            <span class="meta">쿠팡 · 로켓배송 · 내일 도착</span>
+            <h3>접이식 휴대용 유모차</h3>
+            <div style="font-size:20px;font-weight:720">80,000원 <s style="font-size:14px;color:var(--muted);font-weight:450">120,000원</s></div>
+            <div class="btnrow" style="padding-top:16px"><div class="btn go" style="height:52px">두리에게 사 달라기</div></div>
+            <div class="btnrow"><div class="btn soft" style="height:48px">사이트에서 보기</div></div>
+          </div>
+          <div class="home" style="z-index:10"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>3. 폰 — 메뉴 · 맡긴 일 · 아이디어 · 연결</h2>
+    <p class="sd">탭은 4칸을 제안해요: 대화 / 맡긴 일 / 아이디어 / 연결. 두리 자신(활동·권한·기억)은 캐릭터를 눌러 열어요.</p>
+    <div class="row">
+      <div class="shot"><div class="cap">3-1. 메뉴 서랍<small>메인 대화 하나 + 주제별로 따로 하는 대화. 일하는 중인 대화엔 점.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="chat" style="filter:blur(1px)"><div class="b">보고 싶다던 영화 예매가 열렸어요.</div></div>
+          <div class="scrim" style="z-index:8"></div>
+          <div class="drawer">
+            <div class="ttl">두리</div>
+            <div class="ditem on">메인 대화</div>
+            <div class="dsec"><span>따로 하는 대화</span><svg class="i s" viewBox="0 0 24 24"><path d="M4 7h16M6 7v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M9 7V4h6v3"/></svg></div>
+            <div class="ditem">영화 예매 지켜보기<span class="dot" style="margin-left:auto"></span></div>
+            <div class="ditem">아이 생일 파티 준비</div>
+            <div class="ditem">연말정산 서류 모으기</div>
+            <div class="ditem">제주 여행 계획</div>
+            <div class="ditem">가계부 정리</div>
+            <div class="dfoot"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></div><div class="search"><svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>찾기</div><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">3-2. 맡긴 일<small>지금 하는 일 · 나를 기다리는 것 · 알아서 하는 일 · 끝낸 일.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av working"></div><div class="nm">두리<span>2개 하는 중</span></div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="page">
+            <div class="ptitle">맡긴 일</div>
+            <div class="task ask"><div class="tt"><span class="dot ask"></span>승인을 기다려요</div><b>유모차 주문 · 80,000원</b><p>쿠팡 주문서까지 채웠어요</p></div>
+            <div class="task"><div class="tt"><span class="dot"></span>하는 중 · 3/5단계</div><b>KTX 부산 금요일 저녁 2장</b><p>취소표 나오면 바로 잡을게요</p><div class="bar"><i></i></div></div>
+            <div class="grp">알아서 해요</div>
+            <div class="lrow"><div><b>매일 아침 브리핑</b><span>오전 7:30 · 일정·날씨·택배</span></div><span class="sw"></span></div>
+            <div class="lrow"><div><b>카드값 미리보기</b><span>매달 1일</span></div><span class="sw off"></span></div>
+            <div class="grp">끝낸 일</div>
+            <div class="lrow"><div><b>체험학습 신청서 채우기</b><span>어제 · 메일</span></div><span class="end">보기</span></div>
+          </div>
+          <div class="composer" style="display:none"></div>
+          <div class="tabs"><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab on"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home"></div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">3-3. 아이디어<small>빈 화면 대신 "이런 걸 해 드릴 수 있어요". 연결한 서비스·메일을 보고 두리가 먼저 찾은 것이 위에.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av"></div><div class="nm">두리</div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="page">
+            <div class="ptitle">아이디어</div>
+            <div class="chips"><span class="chip on">추천</span><span class="chip">아끼기</span><span class="chip">예약</span><span class="chip">장보기</span><span class="chip">서류</span></div>
+            <div class="idea"><div class="tile t2"><svg class="i" viewBox="0 0 24 24"><path d="M3 7h18v10H3z"/><path d="M3 11h18"/></svg></div><div><b>안 쓰는 구독 3개, 월 27,900원</b><p>결제 메일을 보니 OTT·클라우드가 30일 동안 두 번만 쓰였어요. 정리할까요?</p></div></div>
+            <div class="idea"><div class="tile t3"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9Z"/></svg></div><div><b>이번 달 사라지는 포인트 4,200P</b><p>자주 사는 세제로 쓰면 딱 맞아요.</p></div></div>
+            <div class="idea"><div class="tile t1"><svg class="i" viewBox="0 0 24 24"><path d="M4 17h16l-2-6H6Z"/><path d="M7 11l1.5-4h7L17 11"/></svg></div><div><b>운동화 반품 기한이 이틀 남았어요</b><p>사이즈가 작다고 하셨죠? 수거 예약을 잡아 둘게요.</p></div></div>
+            <div class="idea"><div class="tile t4"><svg class="i" viewBox="0 0 24 24"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z"/></svg></div><div><b>결혼기념일 저녁 예약</b><p>저장해 둔 성수동 식당에 토요일 7시 자리가 났어요.</p></div></div>
+          </div>
+          <div class="tabs"><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home"></div>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:44px">
+      <div class="shot"><div class="cap">3-4. 연결<small>로그인해 둔 곳을 위에, 아래는 분류별 서비스. 누르면 지금의 서비스 상세(시트)로.</small></div>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av"></div><div class="nm">두리</div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="page">
+            <div class="ptitle">연결</div>
+            <p class="psub">한 번 로그인해 두면 부탁만 하면 돼요</p>
+            <div class="grp" style="margin-top:4px">두리가 로그인해 둔 곳</div>
+            <div class="lrow"><div class="mk" style="color:#e8392b">쿠</div><div><b>쿠팡</b><span>장보기 · 결제는 매번 물어봐요</span></div><span class="end">목요일</span></div>
+            <div class="lrow"><div class="mk" style="color:#1f9d55">네</div><div><b>네이버</b><span>메일 · 예약</span></div><span class="end">오늘</span></div>
+            <div class="grp">많이 연결해요</div>
+            <div class="grid4">
+              <div class="svc"><div class="mk" style="color:#e04b8a">컬</div>컬리</div>
+              <div class="svc"><div class="mk" style="color:#d6261c">C</div>CGV</div>
+              <div class="svc"><div class="mk" style="color:#ff5a1f">캐</div>캐치테이블</div>
+              <div class="svc"><div class="mk" style="color:#3b2bd6">T</div>T월드</div>
+              <div class="svc"><div class="mk" style="color:#111">무</div>무신사</div>
+              <div class="svc"><div class="mk" style="color:#4cae2c">올</div>올리브영</div>
+              <div class="svc"><div class="mk" style="color:#0a66c2">야</div>야놀자</div>
+              <div class="svc"><div class="mk" style="color:#555">+</div>전체 84</div>
+            </div>
+          </div>
+          <div class="tabs"><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab on"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home"></div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">3-5. 두리 (캐릭터를 누르면)<small>어디서 일하는지(내 PC), 활동 기록·권한·예정·기억. 활동은 날짜별 한 줄씩.</small></div>
+        <div class="phone">
+          <div class="panel">
+            <div class="hd"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></div><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg></div></div>
+            <div class="bigav"></div>
+            <div class="nm">두리</div>
+            <div class="st"><span class="dot"></span>우리 집 MacBook에서 일하는 중</div>
+            <div class="seg"><span class="on">활동</span><span>권한</span><span>예정</span><span>기억</span></div><div style="display:none"><span><svg class="i s" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/></svg></span><span><svg class="i s" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span><svg class="i s" viewBox="0 0 24 24"><path d="M12 11c0 3-1 6-3 8M8 9a4 4 0 0 1 8 0c0 4-.6 7-2 10M5 12c0-4 3-7 7-7 2.4 0 4.5 1.2 5.8 3M17 13c0 2.5-.5 4.5-1.2 6"/></svg></span></div>
+            <div class="grp">어제</div>
+            <div class="act"><div class="tile t1"><svg class="i s" viewBox="0 0 24 24"><path d="M4 7h16v10H4z"/><path d="m4 7 8 6 8-6"/></svg></div><div><b>체험학습 신청서 채움</b><p>메일 첨부 양식 · 서명만 남음</p><time>오후 2:00</time></div></div>
+            <div class="act"><div class="tile t2"><svg class="i s" viewBox="0 0 24 24"><path d="M3 7h18v10H3z"/><path d="M3 11h18"/></svg></div><div><b>새는 돈 찾기</b><p>안 쓰는 구독 3개 · 월 27,900원</p><time>오후 2:10</time></div></div>
+            <div class="grp">목요일</div>
+            <div class="act"><div class="tile t3"><svg class="i s" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></div><div><b>여행 짐 목록 일정에 넣음</b><p>숙소 2곳 · 항공 2편 · 캘린더 4개</p><time>오전 11:55</time></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shot"><div class="cap">3-6. 다크 · 대화<small>기기 설정을 따라가요(결정한 그대로). 내 말풍선은 짙은 민트.</small></div>
+        <div class="phone dark">
+          <div class="status" style="color:#fff"><span>9:41</span><span class="r"><span class="bat"></span></span></div>
+          <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av"></div><div class="nm">두리</div></div><div class="pillbtn"><span class="dot"></span>내 PC</div></div>
+          <div class="chat">
+            <div class="b">좋은 아침이에요. 오늘 할 일 셋이에요.</div>
+            <div class="b">10시 주간 회의, 2시 병원, 저녁엔 친구 생일 저녁이에요. 택배 하나는 오늘 와요.</div>
+            <div class="b me">병원 3시로 옮겨 줄 수 있어?</div>
+            <div class="b">3시는 비어 있어요. 병원 예약 페이지에서 바꾸기 전에 한 번 보여 드릴까요?</div>
+            <div class="qr"><span>응, 보여 줘</span><span>바로 바꿔 줘</span><span>4시로</span></div>
+          </div>
+          <div class="composer"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="sp">두리에게 부탁하기</span><span class="mic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          <div class="tabs"><div class="tab on"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z"/></svg></div><div class="tab"><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="7.5" r="3"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.5"/><circle cx="16.5" cy="16.5" r="3"/></svg></div></div>
+          <div class="home" style="background:#fff"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>4. PC — 같은 화면을 넓게</h2>
+    <p class="sd">왼쪽 메뉴(메인 대화·따로 하는 대화, 아래에 맡긴 일·아이디어·연결), 가운데 대화, 오른쪽 두리(활동·권한·예정·기억). PC에서는 오른쪽 패널을 열어 둔 채로 써요.</p>
+    <div class="pc">
+      <div class="side">
+        <div style="font-weight:720;font-size:16px;text-align:center;margin:6px 0 14px">두리</div>
+        <div class="ditem on">메인 대화</div>
+        <div class="dsec"><span>따로 하는 대화</span></div>
+        <div class="ditem">영화 예매 지켜보기<span class="dot" style="margin-left:auto"></span></div>
+        <div class="ditem">아이 생일 파티 준비</div>
+        <div class="ditem">연말정산 서류 모으기</div>
+        <div class="ditem">제주 여행 계획</div>
+        <div class="dfoot"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></div><div class="search"><svg class="i s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>찾기</div><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div></div>
+      </div>
+      <div class="mid">
+        <div class="top"><div class="cbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg></div><div class="who"><div class="av working"></div><div class="nm">두리<span>좌석 고르는 중…</span></div></div><div class="pillbtn"><span class="dot"></span>이 PC</div></div>
+        <div class="chat">
+          <div class="b">보고 싶다던 영화 예매가 열렸어요. 토요일 4:30, 7:30이 있어요. 어떻게 할까요?</div>
+          <div class="b me">7:30으로 둘이요. 가운데 자리로</div>
+          <div class="card grayc" style="width:340px"><div class="ch"><div class="ic"><svg class="i s" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg></div><div><b>CGV · Chrome</b><span>좌석 고르는 중…</span></div></div><div class="live"><div class="urlbar"><i></i><i></i><i></i><span>cgv.co.kr › 빠른예매 › 좌석</span></div><span class="livebadge"><i></i>실시간</span><div class="seat"><div class="scr"></div><div class="g"><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i><i></i><i></i><i class="t"></i><i></i><i></i><i></i></div></div></div><div class="btnrow"><div class="btn">Chrome에서 보기</div></div></div>
+          <div class="typing"><i></i><i></i><i></i></div>
+        </div>
+        <div class="composer"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="sp">두리에게 부탁하기</span><span class="mic"><svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+      </div>
+      <div class="right">
+        <div style="display:flex;justify-content:flex-end"><div class="cbtn" style="box-shadow:none;background:var(--raise)"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></div></div>
+        <div class="bigav" style="width:80px;height:80px;margin-top:-10px"></div>
+        <div style="text-align:center;font-weight:720;font-size:19px">두리</div>
+        <div class="st" style="display:flex;justify-content:center;gap:6px;align-items:center;color:var(--muted);font-size:13px;margin-top:2px"><span class="dot"></span>이 MacBook에서 일하는 중</div>
+        <div class="seg"><span class="on">활동</span><span>권한</span><span>예정</span><span>기억</span></div>
+        <div class="grp">오늘</div>
+        <div class="act"><div class="tile t1" style="width:34px;height:34px"><svg class="i s" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg></div><div><b>CGV 좌석 고르는 중</b><p>토 7:30 · 2명 · 가운데</p><time>방금</time></div></div>
+        <div class="act"><div class="tile t2" style="width:34px;height:34px"><svg class="i s" viewBox="0 0 24 24"><path d="M3 7h18v10H3z"/></svg></div><div><b>예매 열림 알림</b><p>지켜보던 영화</p><time>9:20</time></div></div>
+        <div class="grp">어제</div>
+        <div class="act"><div class="tile t3" style="width:34px;height:34px"><svg class="i s" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/></svg></div><div><b>체험학습 신청서 채움</b><p>서명만 남음</p><time>오후 2:00</time></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>5. 색과 모양 (지금 디자인 시스템에서 바뀌는 것)</h2>
+    <p class="sd">다크 기본 + 선 위주 → <b>밝고 부드러운 면 + 떠 있는 둥근 부품</b>. 민트는 그대로 두리의 색, 승인은 노랑 대신 "짙은 민트 버튼 + 노랑 점"으로.</p>
+    <div class="tok">
+      <div><i style="background:#f7f8fa;box-shadow:inset 0 -1px #e4e7ec"></i><span><b>바탕 #F7F8FA</b>앱 바탕</span></div>
+      <div><i style="background:#eceef2"></i><span><b>두리 말 #ECEEF2</b>회색 말풍선</span></div>
+      <div><i style="background:#dcf3e8"></i><span><b>내 말 #DCF3E8</b>옅은 민트</span></div>
+      <div><i style="background:#4cc98f"></i><span><b>두리 #4CC98F</b>캐릭터·일하는 중</span></div>
+      <div><i style="background:#17905c"></i><span><b>승인 #17905C</b>승인 버튼 하나</span></div>
+      <div><i style="background:#ffd66b"></i><span><b>기다려요 #FFD66B</b>점·배지</span></div>
+      <div><i style="background:#14161a"></i><span><b>잉크 #14161A</b>글자·주 버튼</span></div>
+    </div>
+    <p class="sd" style="margin-top:18px">모양: 말풍선 22 · 카드 22 · 시트 34 · 버튼 13 / 떠 있는 것(머리 버튼·입력칸·탭 막대·시트)에만 그림자. 움직임: 탭 전환 0.2초 밀기, 시트 올라오기, 보낸 말은 바로 화면에(답 기다리지 않음), 대답은 쓰는 대로 흘러나오기.</p>
+  </section>
+
+</div>
+<script>
+const L=['대화','맡긴 일','아이디어','연결'];
+document.querySelectorAll('.tabs').forEach(t=>{[...t.querySelectorAll('.tab')].forEach((x,i)=>{if(x.classList.contains('on')){const e=document.createElement('em');e.textContent=L[i];x.append(e)}})});
+</script></body>
+</html>

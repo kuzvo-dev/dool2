@@ -23,23 +23,23 @@ copyUi('dist') // 폰 앱
 
 ## 원칙
 
-**깨끗한 도구 위에 민트 친구 하나.** 화면은 흰색·검정·회색 선으로 단정하게, 귀여움은 두리 캐릭터와 "일하는 중" 표시에만 모아요.
+**부드러운 면 위에 민트 친구 하나 (v2).** 옅은 회색 바탕 위 흰 카드·회색 말풍선, 손이 닿는 것(머리 버튼·입력칸·탭 막대·시트)만 유리처럼 떠 있어요. 귀여움은 두리 캐릭터와 "일하는 중" 표시에 모아요. 기준 화면: [docs/design/screens/soft](../../docs/design/screens/soft).
 
-1. **하는 일이 보여야 믿는다.** "두리의 화면"(`.workcard`, `.screen`)과 단계 기록(`.log`, `.worklog`)으로 보여 줘요. "생각 중…" 같은 막연한 표시는 쓰지 않아요.
-2. **돈과 메시지는 사람이 누른다.** 결제·전송은 승인 카드(`.approve`)에서 멈춰요. 승인 버튼이 화면에서 가장 무거워요.
-3. **민트는 두리의 색.** `--brand`는 캐릭터, 워드마크의 ², 일하는 중 점에만. 버튼과 내 말풍선은 `--ink`(다크에서는 흰색)예요.
-4. **카드보다 선.** 1px `--line`과 회색 면(`--surface-sunken`, `--raise`)으로 나눠요. 그림자는 떠 있는 것(승인 시트, 팝오버)에만. 카드 안에 카드를 넣지 않아요.
-5. **상태는 색으로 약속한다.** 민트 = 일하는 중, 노랑(`--butter`) = 당신이 필요해요, ink 체크 = 끝났어요, 빨강 = 멈춤·오류. 다른 뜻으로 색을 쓰지 않아요.
+1. **하는 일이 보여야 믿는다.** 머리의 두리 이름표(`.agent-tag`)에 지금 하는 일, 대화 안에 실시간 화면 카드(`.livecard`), 단계 기록(`.log`, `.worklog`). "생각 중…" 같은 막연한 표시는 쓰지 않아요.
+2. **돈과 메시지는 사람이 누른다.** 결제·전송은 승인 카드(`.approve`)에서 멈춰요. 승인 버튼(`.btn-approve`, 짙은 민트)이 화면에서 가장 무거워요.
+3. **민트는 두리의 색.** 캐릭터, 일하는 중, 승인 버튼, 옅은 민트의 내 말풍선(`--me`).
+4. **상자보다 면, 떠 있는 것은 유리.** 회색 면(`--raise`, `--surface-sunken`)과 0.5px 선으로 나눠요. 머리 버튼(`.fbtn`, `.fpill`)·입력칸(`.composer.float`)·탭 막대(`.tabs`)·시트만 `--glass` + `--shadow-float`로 떠 있어요. 카드 안에 카드를 넣지 않아요.
+5. **상태는 색으로 약속한다.** 민트 = 일하는 중, 노랑(`--butter`) 점·배지 = 당신이 필요해요, ink 체크 = 끝났어요, 빨강 = 멈춤·오류.
 
 그 밖의 규칙:
 
-- 버튼은 동사로 끝내요(`승인하기`, `대신 해줘`, `내가 할게요`). 주 버튼은 한 화면에 하나, 모서리 12px, 알약 모양으로 만들지 않아요.
+- 버튼은 동사로 끝내요(`승인하기`, `대신 해줘`, `내가 할게요`). 주 버튼은 한 화면에 하나, 모서리 14px, 알약 모양으로 만들지 않아요(떠 있는 탭 막대·입력칸·빠른 답만 알약).
 - Pretendard 하나로 써요. 제목은 680–760, 본문 450. 큰 글자일수록 자간을 좁혀요(display −0.035em).
 - 고정폭(`.mono`, `--font-mono`)은 기록·영수증·도메인처럼 줄을 맞춰야 하는 곳에만.
 - 한국어는 낱말 단위로 줄을 바꾸고(`keep-all`), 숫자는 고정폭 숫자로 맞춰요. 바탕에 들어 있어요.
 - 아이콘은 24 격자, 선 1.75의 SVG(`svg.i`)예요. 이모지나 `›`·`✓` 같은 글자를 아이콘으로 쓰지 않아요.
 - 문구는 평소 쓰는 말로 써요. "허락" 대신 "승인", "잠긴 봉투" 대신 "암호화".
-- 금지: 보라·파랑 그라데이션, 글로우, 글래스모피즘, 카드 안의 카드, 알약 배지 남발, 이모지 아이콘, 의미 없는 통계 블록, 스크롤마다 페이드업.
+- 금지: 보라·파랑 그라데이션, 글로우, 떠 있는 것 말고 쓰는 유리 효과, 카드 안의 카드, 알약 배지 남발, 이모지 아이콘, 의미 없는 통계 블록, 스크롤마다 페이드업.
 
 ## 토큰
 
@@ -65,19 +65,22 @@ copyUi('dist') // 폰 앱
 
 ## 부품
 
-| 부품        | 클래스                                                                                                                                  | 쓰는 곳                                       |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 두리 캐릭터 | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (크기 `--s`, `.bob`)                                                    | 상태 머리, 말한 사람, 빈 화면, 승인           |
-| 워드마크    | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                    | PC 메뉴 위, 견본                              |
-| 상태        | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                              | 연결·진행·승인 대기                           |
-| 버튼        | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                  |                                               |
-| 고르기      | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                          | 빠른 답·예시 부탁, AI 고르기, 켜고 끄기, 입력 |
-| 글자        | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                   |                                               |
-| 대화        | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                    | 대화 하나, 입력창                             |
-| 일          | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.stepbar`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | 지금 하는 일, 두리의 화면, 단계 기록          |
-| 승인        | `.approve` (`-top` `-q` `-body` `-actions` `-note`), `.kv` (`dd.money` `dd.host`)                                                       | 결제·전송 승인                                |
-| 목록·카드   | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                   | 설정, 맡긴 일, 기록                           |
-| 틀          | `.navi`, `.tabs` + `.tab`, `.sheet`, `.scrim`, `.toast`, `.rise`                                                                        | PC 메뉴, 모바일 탭, 바텀시트                  |
+| 부품         | 클래스                                                                                                                                  | 쓰는 곳                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| 두리 캐릭터  | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (크기 `--s`, `.bob`)                                                    | 상태 머리, 말한 사람, 빈 화면, 승인               |
+| 워드마크     | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                    | PC 메뉴 위, 견본                                  |
+| 상태         | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                              | 연결·진행·승인 대기                               |
+| 버튼         | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                  |                                                   |
+| 고르기       | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                          | 빠른 답·예시 부탁, AI 고르기, 켜고 끄기, 입력     |
+| 글자         | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                   |                                                   |
+| 대화         | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                    | 대화 하나, 입력창                                 |
+| 일           | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.stepbar`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | 지금 하는 일, 두리의 화면, 단계 기록              |
+| 승인         | `.approve` (`-top` `-q` `-amount` `-body` `-actions` `-note`), `.btn-approve`, `.kv` (`dd.money` `dd.host`)                             | 결제·전송 승인                                    |
+| 목록·카드    | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                   | 설정, 맡긴 일, 기록                               |
+| 틀           | `.navi`, `.tabs` + `.tab` (`.tab-label`, `.badge`), `.sheet` (`.float`), `.drawer`, `.scrim`, `.toast`, `.rise`                         | PC 메뉴, 떠 있는 모바일 탭, 바텀시트, 메뉴 서랍   |
+| 떠 있는 머리 | `.fbtn`, `.fpill`, `.agent` + `.agent-av` + `.agent-tag` (`span.ask`), `.composer.float`, `.quick`, `.typing`                           | 메뉴·두리·내 PC, 떠 있는 입력칸, 빠른 답, 대답 중 |
+| 실시간 화면  | `.livecard` + `.screen` + `.urlbar` + `.live-badge`                                                                                     | 대화 안에서 두리가 PC Chrome에서 하는 일          |
+| 아이콘 칸 색 | `.tile.blue` `.mint` `.amber` `.rose` `.violet`                                                                                         | 아이디어, 활동 기록                               |
 
 자세한 모양은 [preview.html](preview.html)을 열어 보세요.
 
