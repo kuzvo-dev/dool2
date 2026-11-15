@@ -81,6 +81,48 @@ export function doori(mood = '', size?: number) {
   return s
 }
 
+/** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
+interface LiveDoori {
+  setMood(mood: string): void
+  destroy(): void
+}
+type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
+const DOORI3D = './doori3d.js' // 글자로 넘겨야 빌드가 app.js에 묶지 않는다
+let doori3dModule: Promise<Doori3d> | undefined
+const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
+const MOOD_CLASSES = ['thinking', 'working', 'asking', 'done', 'sleeping']
+
+/**
+ * 큰 자리의 두리: 먼저 정지 그림을 보이고, 3D가 준비되면 그 위에서 움직인다.
+ * 자리(slot)마다 하나를 만들어 다시 그려도 같은 캔버스를 옮겨 쓴다. 3D를 못 쓰는 기기는 그림 그대로.
+ */
+export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
+  const hit = liveSlots.get(slot)
+  if (hit) {
+    if (hit.mood !== mood) {
+      hit.mood = mood
+      hit.el.classList.remove(...MOOD_CLASSES)
+      if (mood) hit.el.classList.add(mood)
+      hit.live?.setMood(mood || 'idle')
+    }
+    hit.el.style.setProperty('--s', `${size}px`)
+    return hit.el
+  }
+  const el = doori(mood, size)
+  const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el, mood }
+  liveSlots.set(slot, rec)
+  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
+  doori3dModule
+    .then((m) => {
+      rec.live = m.mountDoori(el, { mood: rec.mood || 'idle' })
+      el.classList.add('live-ready')
+    })
+    .catch(() => {
+      // WebGL이 없거나 파일을 못 받으면 그림 그대로
+    })
+  return el
+}
+
 /** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
 export function rich(text: string): DocumentFragment {
   const f = document.createDocumentFragment()

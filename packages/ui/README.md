@@ -3,10 +3,11 @@
 PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품이에요. 디자인 원본은 [docs/design](../../docs/design/README.md)에 있고, 다르면 원본을 따라 여기를 고쳐요.
 
 - `ui.css` — 토큰(색·글자·여백·모서리·그림자)과 부품
-- `doori/` — 두리 캐릭터 표정 6개와 로고 (SVG). `ui.css`의 `.doori`가 불러요
+- `doori3d.js` — 3D 두리(랜딩과 같은 모양)와 표정 6개. 큰 자리(64px 이상)는 앱 빌드가 three와 함께 묶어 `mountDoori()`로 움직이게 띄워요
+- `doori/` — 3D 두리를 표정마다 미리 뽑은 그림(webp)과 로고(SVG). `ui.css`의 `.doori`가 불러요. 다시 뽑을 땐 `doori-render.html`
 - `fonts.css`, `fonts/` — Pretendard 가변 글꼴 ([SIL OFL 1.1](fonts/OFL.txt)). PC 앱·확장에만 넣고, 폰은 기기 글꼴을 써요
 - `preview.html` — 모든 부품을 한 화면에 모은 견본. 브라우저로 열고 위에서 다크·라이트를 바꿔 봐요
-- `copy.mjs` — 앱 빌드가 `ui.css`·`doori/`(와 글꼴)를 자기 `dist`로 복사할 때 써요
+- `copy.mjs` — 앱 빌드가 `ui.css`·`doori/`(와 글꼴)를 자기 `dist`로 복사하고(`copyUi`), 3D 두리를 묶을 때(`bundleDoori3d`) 써요
 
 ```js
 import { copyUi } from '../../../packages/ui/copy.mjs'

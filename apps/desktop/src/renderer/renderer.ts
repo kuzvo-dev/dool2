@@ -152,6 +152,43 @@ const doori = (mood = '', size?: number) => {
   return d
 }
 
+/** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
+interface LiveDoori {
+  setMood(mood: string): void
+}
+type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
+const DOORI3D = './doori3d.js' // 글자로 넘겨야 화면 코드와 따로 불러온다
+let doori3dModule: Promise<Doori3d> | undefined
+const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
+
+/** 큰 자리의 두리: 먼저 그림을 보이고 3D가 준비되면 움직인다. 자리마다 캔버스 하나를 옮겨 쓴다 */
+const liveDoori = (slot: string, mood: string, size: number) => {
+  const hit = liveSlots.get(slot)
+  if (hit) {
+    if (hit.mood !== mood) {
+      hit.mood = mood
+      hit.el.classList.remove('thinking', 'working', 'asking', 'done', 'sleeping')
+      if (mood) hit.el.classList.add(mood)
+      hit.live?.setMood(mood || 'idle')
+    }
+    hit.el.style.setProperty('--s', `${size}px`)
+    return hit.el
+  }
+  const d = doori(mood, size)
+  const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el: d, mood }
+  liveSlots.set(slot, rec)
+  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
+  doori3dModule
+    .then((m) => {
+      rec.live = m.mountDoori(d, { mood: rec.mood || 'idle' })
+      d.classList.add('live-ready')
+    })
+    .catch(() => {
+      // 3D를 못 쓰면 그림 그대로
+    })
+  return d
+}
+
 // ── 시각 ─────────────────────────────────────────────
 
 const hhmm = (iso: string) =>
@@ -656,7 +693,7 @@ function emptyView() {
   return el(
     'div',
     'empty-view',
-    doori('', 96),
+    liveDoori('home', '', 120),
     el('p', 'title-2', '오늘은 뭘 대신 해 드릴까요?'),
     el('p', 'cap', '돈 쓰는 일은 꼭 먼저 물어볼게요 · 폰에서 한 말도 여기 이어져요'),
     chips,
@@ -1175,7 +1212,7 @@ function renderMe() {
     el(
       'div',
       'me-hero',
-      doori(ready ? '' : 'sleeping', 72),
+      liveDoori('me', ready ? '' : 'sleeping', 104),
       el('p', 'title-2', ready ? '이 컴퓨터에서 일하고 있어요' : '두리가 쉬고 있어요'),
       el(
         'p',
