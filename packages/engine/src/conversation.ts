@@ -37,6 +37,12 @@ export class ConversationService {
     this.now = opts.now ?? (() => new Date())
   }
 
+  /** 다음 말부터 새 구간으로 (두리 말투 설정을 바꿨을 때: 앞 대화의 말투를 따라가지 않게) */
+  private rotateNext = false
+  rotateSoon() {
+    this.rotateNext = true
+  }
+
   /** 지금 구간 */
   current(): ThreadRecord | undefined {
     return this.opts.store.currentSession()
@@ -64,6 +70,7 @@ export class ConversationService {
     if (cur.agent !== agent) return 'agent'
     const size = this.opts.store.sessionSize(cur.id)
     if (size.turns === 0) return undefined
+    if (this.rotateNext) return 'idle'
     if (this.now().getTime() - Date.parse(cur.updatedAt) > this.limits.idleMs) return 'idle'
     if (size.turns >= this.limits.turns || size.chars >= this.limits.chars) return 'long'
     return undefined
@@ -85,6 +92,7 @@ export class ConversationService {
       store.closeSession(cur.id, summary)
       carry = buildCarry(cur, summary, store.listMessages(cur.id))
     }
+    this.rotateNext = false
     const next = store.createThread(agent, '새 대화', carry)
     store.closeOtherSessions(next.id)
     return { session: next, rotated: reason }

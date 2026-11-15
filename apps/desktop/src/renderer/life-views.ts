@@ -588,6 +588,60 @@ export function scheduleTab(ctx: LifeCtx): HTMLElement {
   )
 }
 
+/** 두리 설정: 나를 부르는 이름 · 말투 · 답 길이 */
+function identityBlock(ctx: LifeCtx): HTMLElement {
+  const id = ctx.life().identity ?? {}
+  const name = el('input', 'field grow')
+  name.placeholder = '예: 민지 (비우면 호칭 없이)'
+  name.setAttribute('aria-label', '나를 부르는 이름')
+  name.value = id.userName ?? ''
+  const save = el('button', 'btn sm', '저장')
+  save.type = 'submit'
+  const form = el('form', 'feed-form', name, save)
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    void ctx.act({ action: 'identity', userName: name.value }).then(() => ctx.toast('이제 그렇게 부를게요'))
+  }
+  const seg = <T extends string>(cur: T, opts: [T, string][], pick: (v: T) => void) => {
+    const box = el('div', 'seg')
+    for (const [v, label] of opts) {
+      const b = el('button', '', label)
+      b.type = 'button'
+      b.setAttribute('aria-pressed', String(cur === v))
+      b.onclick = () => pick(v)
+      box.append(b)
+    }
+    return box
+  }
+  return el(
+    'div',
+    'identity',
+    el('p', 'over', '나를 부르는 이름'),
+    form,
+    el('p', 'over', '말투'),
+    seg(
+      id.tone ?? 'warm',
+      [
+        ['warm', '다정하게'],
+        ['neat', '깔끔하게'],
+        ['buddy', '친구처럼'],
+      ],
+      (tone) => void ctx.act({ action: 'identity', tone }),
+    ),
+    el('p', 'over', '답 길이'),
+    seg(
+      id.length ?? 'normal',
+      [
+        ['short', '짧게'],
+        ['normal', '보통'],
+        ['detail', '자세히'],
+      ],
+      (length) => void ctx.act({ action: 'identity', length }),
+    ),
+    el('p', 'over', '기억'),
+  )
+}
+
 export function memoryTab(ctx: LifeCtx): HTMLElement {
   const input = el('input', 'field grow')
   input.placeholder = '예: 아이가 초3이에요'
@@ -607,6 +661,7 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
   return el(
     'div',
     'memory',
+    identityBlock(ctx),
     el(
       'p',
       'cap',

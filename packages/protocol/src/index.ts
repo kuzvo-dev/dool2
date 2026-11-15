@@ -481,7 +481,15 @@ export interface FeedItem {
   reaction?: 'up' | 'down'
 }
 
+/** 두리 설정: 사용자를 부르는 이름, 말투, 답 길이 */
+export interface Identity {
+  userName?: string
+  tone?: 'warm' | 'neat' | 'buddy'
+  length?: 'short' | 'normal' | 'detail'
+}
+
 export interface LifeState {
+  identity?: Identity
   routines: Routine[]
   library: LibraryItem[]
   memory: MemoryItem[]
@@ -508,6 +516,7 @@ export type LifeAction =
   | { action: 'library-delete'; id: string }
   | { action: 'memory-add'; text: string }
   | { action: 'memory-delete'; id: string }
+  | ({ action: 'identity' } & Identity)
 
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }

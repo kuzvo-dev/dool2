@@ -21,3 +21,13 @@ describe('두리 페르소나 지침', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('호칭을 생략')
   })
 })
+
+describe('두리 설정', () => {
+  it('말투·길이·호칭이 지침에 들어간다', () => {
+    const p = buildSystemPrompt({ userName: '민지', tone: 'buddy', length: 'short' })
+    expect(p).toContain('"민지님"')
+    expect(p).toContain('친구처럼')
+    expect(p).toContain('짧게')
+    expect(buildSystemPrompt()).not.toContain('사용자가 정한 설정')
+  })
+})
