@@ -275,11 +275,22 @@ async function receive(env: Envelope) {
       toast(msg.message)
       break
     }
-    case 'screen':
+    case 'screen': {
       if (st.screen.name !== 'remote' || st.screen.tabId !== msg.tabId) return
+      const hadShot = !!st.screenShot?.shot
       st.screenShot = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
-      if (!msg.error) nextScreen(msg.tabId)
+      if (msg.error) break
+      frameTimes.push(performance.now())
+      nextScreen(msg.tabId)
+      // 실시간 화면: 그림만 바꾼다 (화면 전체를 다시 그리지 않아 깜빡이지 않는다)
+      const img = document.querySelector<HTMLImageElement>('.remote-shot')
+      if (hadShot && img && msg.shot) {
+        img.src = `data:image/jpeg;base64,${msg.shot}`
+        updateRemoteMeta()
+        return
+      }
       break
+    }
     case 'connections': {
       st.services = msg.services
       // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
@@ -398,12 +409,27 @@ const pendingLogins = () => [...st.logins.values()].filter((l) => l.status === '
 // ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 (다음 단계에서 실시간 화면으로 바꾼다) ──
 
 let screenTimer: ReturnType<typeof setTimeout> | undefined
+/** 실시간 화면: 그림이 오면 곧바로 다음 그림을 부탁한다 (초당 3~5장). 2초 동안 안 오면 다시 부탁 */
+const frameTimes: number[] = []
 function nextScreen(tabId: number) {
   clearTimeout(screenTimer)
-  screenTimer = setTimeout(() => {
-    if (st.screen.name === 'remote' && st.screen.tabId === tabId && document.visibilityState === 'visible')
+  const ask = () => {
+    if (st.screen.name === 'remote' && st.screen.tabId === tabId && document.visibilityState === 'visible') {
       void send({ kind: 'screen', tabId })
-  }, 1000)
+      screenTimer = setTimeout(ask, 2000)
+    }
+  }
+  screenTimer = setTimeout(ask, 120)
+}
+
+/** 초당 몇 장 오는지 (최근 2초) */
+function updateRemoteMeta() {
+  const now = performance.now()
+  while (frameTimes.length && now - (frameTimes[0] ?? 0) > 2000) frameTimes.shift()
+  const el = document.querySelector('.live-rate')
+  if (el) el.textContent = `실시간 · 초당 ${Math.max(1, Math.round(frameTimes.length / 2))}장`
+  const url = document.querySelector('.remote-url-text')
+  if (url) url.textContent = hostOf(st.screenShot?.url ?? '') || st.screenShot?.title || ''
 }
 
 function openRemote(tabId: number, connectId?: string) {
@@ -1931,7 +1957,13 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
       'div',
       { class: 'remote-bar' },
       h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
-      h('span', { class: 'remote-url' }, icon('lock'), hostOf(s?.url ?? '') || s?.title || '불러오는 중…'),
+      h(
+        'span',
+        { class: 'remote-url' },
+        icon('lock'),
+        h('span', { class: 'remote-url-text', text: hostOf(s?.url ?? '') || s?.title || '불러오는 중…' }),
+      ),
+      h('span', { class: 'live-badge live-rate', text: '실시간' }),
     ),
     frame,
     form,
