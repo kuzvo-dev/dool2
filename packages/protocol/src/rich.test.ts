@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
-import { appNote, readAppNote, richBlocks } from './rich.js'
+import { appNote, narrationLine, readAppNote, richBlocks } from './rich.js'
 
 describe('richBlocks', () => {
   it('빈 줄로 문단을 나누고 **굵게**를 살린다', () => {
@@ -54,5 +54,25 @@ describe('앱 알림', () => {
         ),
       ),
     ).toBe('폰에서 시험 가게 로그인 정보를 두리 금고에 저장했어요.')
+  })
+})
+
+describe('narrationLine', () => {
+  it('영어 속생각은 버리고 한국어 마지막 문장만', () => {
+    expect(
+      narrationLine('Focus is on the pin. Three more Tabs to reach the date.날짜를 내일로 맞췄어요.'),
+    ).toBe('날짜를 내일로 맞췄어요.')
+    expect(narrationLine('SRT 사이트를 열게요. 출발역을 동탄으로 고르는 중이에요.')).toBe(
+      '출발역을 동탄으로 고르는 중이에요.',
+    )
+  })
+  it('한국어가 없으면 없음', () => {
+    expect(narrationLine('No skill; go to SRT site directly.')).toBeUndefined()
+    expect(narrationLine('')).toBeUndefined()
+  })
+  it('길면 자른다', () => {
+    const line = narrationLine('가'.repeat(80))
+    expect(line?.length).toBe(60)
+    expect(line?.endsWith('…')).toBe(true)
   })
 })

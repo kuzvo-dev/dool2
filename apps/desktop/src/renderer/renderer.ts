@@ -19,7 +19,7 @@ import type {
   UsageLimit,
 } from '@dool2/protocol'
 import { renderConnections } from './connections.js'
-import { appNote, type Inline, readAppNote, richBlocks, toolLabel } from './rich.js'
+import { appNote, type Inline, narrationLine, readAppNote, richBlocks, toolLabel } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import {
   type CheckAction,
@@ -756,7 +756,9 @@ function onAgent(ev: AgentEvent) {
     return
   }
   if (ev.type === 'tool') {
-    const label = `${toolLabel(ev.name)} 중`
+    // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 흘러오던 말은 비운다
+    const label = narrationLine(t.text) ?? `${toolLabel(ev.name)} 중`
+    t.text = ''
     if (t.steps.at(-1) !== label) t.steps.push(label)
     t.activity = label
   } else if (ev.type === 'tool_result') t.activity = '정리하는 중'

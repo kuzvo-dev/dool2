@@ -56,6 +56,35 @@ describe('ThreadService', () => {
     expect(rt.inputs[0]?.mcpServers[0]?.name).toBe('dool2')
   })
 
+  it('도구 앞 혼잣말은 답에 넣지 않고 마지막 말만 저장한다', async () => {
+    const { store, svc } = setup([
+      { type: 'text', delta: 'No skill; go to SRT site directly.' },
+      { type: 'tool', name: 'mcp__dool2__browser_open', input: {} },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__browser_open' },
+      { type: 'text', delta: '날짜를 내일로 맞췄어요.' },
+      { type: 'tool', name: 'mcp__dool2__browser_click', input: {} },
+      { type: 'text', delta: '05:47 열차에 자리가 있어요.' },
+      { type: 'done', text: '05:47 열차에 자리가 있어요.' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '기차 찾아 줘'))
+    expect(store.listMessages(t.id).map((m) => [m.role, m.text])).toEqual([
+      ['user', '기차 찾아 줘'],
+      ['assistant', '05:47 열차에 자리가 있어요.'],
+    ])
+  })
+
+  it('마지막이 도구로 끝나 말이 없으면 CLI가 준 마지막 글을 쓴다', async () => {
+    const { store, svc } = setup([
+      { type: 'text', delta: '열어 볼게요.' },
+      { type: 'tool', name: 'mcp__dool2__browser_open', input: {} },
+      { type: 'done', text: '열어 뒀어요.' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '열어 줘'))
+    expect(store.listMessages(t.id).at(-1)?.text).toBe('열어 뒀어요.')
+  })
+
   it('답은 done이 오자마자 저장한다 (CLI 끝 정리를 기다리지 않는다)', async () => {
     const store = new Store(':memory:')
     let exited = false

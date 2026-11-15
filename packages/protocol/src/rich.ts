@@ -109,3 +109,18 @@ export function readAppNote(text: string): string | undefined {
     .join(' ')
     .trim()
 }
+
+/**
+ * 일하는 중간에 한 말(도구를 쓰기 전 혼잣말)에서 "지금 하는 일"로 보여 줄 한 줄.
+ * 한글이 있는 마지막 문장만 쓰고(영어 속생각은 버린다), 60자를 넘으면 자른다.
+ */
+export function narrationLine(text: string): string | undefined {
+  const sentences = text
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?…요다])\s+|(?<=[.!?])(?=\S)/)
+    .map((x) => x.trim())
+    .filter((x) => /[가-힣]/.test(x))
+  const last = sentences.at(-1)
+  if (!last) return undefined
+  return last.length > 60 ? `${last.slice(0, 59)}…` : last
+}
