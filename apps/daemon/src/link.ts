@@ -353,17 +353,13 @@ export class PhoneLink {
       }
       case 'connect-login': {
         const id = String(msg.id)
-        try {
-          const r = await this.host.connectLogin(
-            id,
-            String(msg.username).slice(0, 200),
-            String(msg.password).slice(0, 500),
+        // 기다리지 않는다: 로그인은 본체가 뒤에서 하고, 결과(connect-result·연결 목록)는 모든 폰에 따로 간다
+        void this.host
+          .connectLogin(id, String(msg.username).slice(0, 200), String(msg.password).slice(0, 500))
+          .catch((e: Error) =>
+            this.send(phone, { kind: 'connect-result', id, ok: false, message: e.message }),
           )
-          await this.send(phone, { kind: 'connect-result', id, ...r })
-        } catch (e) {
-          await this.send(phone, { kind: 'connect-result', id, ok: false, message: (e as Error).message })
-        }
-        return this.send(phone, { kind: 'connections', services: await this.host.connections() })
+        return
       }
       case 'thread': {
         const t = await this.host.thread(msg.id)

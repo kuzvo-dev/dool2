@@ -4,6 +4,7 @@
 import type {
   ApprovalRecordMessage,
   ApprovalView,
+  ConnectRecordMessage,
   DaemonStreamEvent,
   HandoffRecord,
   LifeAction,
@@ -16,6 +17,7 @@ import type {
   StoredMessage,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
+import { findCard } from '@dool2/protocol/connect-text'
 import {
   type Envelope,
   fromB64u,
@@ -114,6 +116,8 @@ const st: {
   connectQuery: string
   /** 아이디어 탭: 고른 분류('all' = 전체)와 찾는 말 */
   ideaCat: string
+  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  connecting: Set<string>
   ideaQuery: string
   /** 연결하고 나서 바로 보낼 아이디어 (연결 안 한 곳의 아이디어를 눌렀을 때) */
   afterConnect?: { id: string; text: string; at: number }
@@ -160,6 +164,7 @@ const st: {
   connectTabs: new Map(),
   connectQuery: '',
   ideaCat: 'all',
+  connecting: new Set(),
   ideaQuery: '',
   agentSeg: 'activity',
   librarySeg: 'made',
@@ -271,6 +276,7 @@ async function receive(env: Envelope) {
       st.pc = msg
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
+      st.connecting = new Set(msg.connecting ?? [])
       void syncPush()
       openPending()
       break
@@ -374,6 +380,9 @@ async function receive(env: Envelope) {
     case 'life':
       st.life = msg.state
       break
+    case 'connect-status':
+      st.connecting = new Set(msg.connecting)
+      break
     case 'connect-result': {
       const d = st.loginDraft
       if (d.id === `connect:${msg.id}`) {
@@ -391,7 +400,7 @@ async function receive(env: Envelope) {
         toast(msg.message)
         openRemote(msg.tabId, msg.id)
         return
-      }
+      } else toast(msg.message)
       break
     }
     case 'connect-opened':
@@ -1213,6 +1222,10 @@ function toolSig(raw: string) {
       const l = loginFor(rec as LoginRecordMessage)
       return `${l?.id}:${l?.status}`
     }
+    if (rec.kind === 'connect') {
+      const it = connectFor(rec as ConnectRecordMessage)
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}`
+    }
   } catch {}
   return ''
 }
@@ -1230,7 +1243,7 @@ function loginFor(rec: LoginRecordMessage) {
 }
 
 function toolCard(raw: string): HTMLElement {
-  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
+  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage | ConnectRecordMessage
   try {
     rec = JSON.parse(raw)
   } catch {
@@ -1238,6 +1251,7 @@ function toolCard(raw: string): HTMLElement {
   }
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
+  if (rec.kind === 'connect') return connectInline(rec)
   // 직접 해 주세요
   const tabId = rec.tabId
   return h(
@@ -1329,6 +1343,83 @@ function hostOf(url: string) {
   } catch {
     return ''
   }
+}
+
+function connectFor(rec: ConnectRecordMessage) {
+  const services = st.services ?? []
+  const card = findCard(
+    services.map((s) => s.card),
+    rec.service,
+  )
+  return card ? services.find((s) => s.card.id === card.id) : undefined
+}
+
+/** 대화 안의 연결 카드 (connect_ask): [연결하기] → 아이디·비밀번호 시트 → 본체가 뒤에서 로그인 */
+function connectInline(rec: ConnectRecordMessage): HTMLElement {
+  const it = connectFor(rec)
+  if (!it) return h('p', { class: 'done-line' }, icon('link'), `${rec.service} 연결 카드를 찾지 못했어요`)
+  const c = it.card
+  const mark = (big = false) =>
+    withLogo(
+      h('span', {
+        class: big ? 'svc-mark' : 'svc-mark sm',
+        text: /^\d+/.exec(c.name)?.[0] ?? [...c.name][0] ?? '',
+      }),
+      c.id,
+    )
+  if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결돼 있어요`)
+  const busy = st.connecting.has(c.id)
+  const browser = c.how === 'browser'
+  return h(
+    'div',
+    { class: 'card approve-card connect-card' },
+    h(
+      'div',
+      { class: 'approve-head' },
+      mark(true),
+      h(
+        'div',
+        {},
+        h('strong', { text: busy ? `${c.name}에 로그인하는 중이에요` : `${c.name} 연결` }),
+        h('span', {
+          class: 'meta',
+          text: busy
+            ? 'PC에서 두리가 하고 있어요. 다른 일을 하셔도 돼요'
+            : browser
+              ? '아이디·비밀번호를 넣으면 두리가 PC에서 로그인해요'
+              : '연결 화면에서 켜요',
+        }),
+      ),
+      busy ? h('span', { class: 'spin' }) : undefined,
+    ),
+    busy
+      ? undefined
+      : h(
+          'div',
+          { class: 'approve-actions' },
+          browser
+            ? h('button', {
+                class: 'btn-ghost',
+                text: '화면 보며 직접',
+                onclick: () => {
+                  st.opening = c.id
+                  render()
+                  void send({ kind: 'connect', id: c.id, action: 'open' })
+                },
+              })
+            : undefined,
+          h('button', {
+            class: 'btn',
+            text: '연결하기',
+            onclick: () => {
+              if (browser) return openOverlay({ kind: 'connect', id: c.id })
+              st.tab = 'connect'
+              st.connectDetail = c.id
+              render()
+            },
+          }),
+        ),
+  )
 }
 
 function loginInline(rec: LoginRecordMessage): HTMLElement {
@@ -1735,6 +1826,7 @@ function connectCtx(): ConnectCtx {
   return {
     ...(st.services ? { services: st.services } : {}),
     query: st.connectQuery,
+    connecting: st.connecting,
     online: st.online,
     ...(st.opening ? { opening: st.opening } : {}),
     header: (title, back) =>
@@ -2400,7 +2492,14 @@ function connectSheet(id: string) {
     host: it.card.site ?? '',
     busyText: '두리가 로그인하는 중…',
     submitText: '연결하기',
-    submit: (username, password) => void send({ kind: 'connect-login', id, username, password }),
+    submit: (username, password) => {
+      // 기다리지 않는다: 시트를 닫고, 로그인은 두리 본체가 뒤에서 한다 (끝나면 대화·알림으로)
+      void send({ kind: 'connect-login', id, username, password })
+      st.loginDraft.busy = false
+      st.overlay = undefined
+      st.connecting.add(id)
+      toast(`${it.card.name} 로그인은 두리가 PC에서 할게요. 끝나면 대화로 알려 드릴게요`)
+    },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
     direct: {

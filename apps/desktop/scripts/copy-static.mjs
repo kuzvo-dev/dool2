@@ -9,6 +9,7 @@ for (const f of ['index.html', 'style.css']) cpSync(`src/renderer/${f}`, `dist/r
 cpSync('../../packages/protocol/dist/rich.js', 'dist/renderer/rich.js')
 cpSync('../../packages/protocol/dist/schedule.js', 'dist/renderer/schedule.js')
 cpSync('../../packages/protocol/dist/ideas.js', 'dist/renderer/ideas.js')
+cpSync('../../packages/protocol/dist/connect-text.js', 'dist/renderer/connect-text.js')
 
 // 디자인 시스템(ui.css)과 Pretendard 글꼴
 copyUi('dist/renderer', { fonts: true })

@@ -304,9 +304,13 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
           go.disabled = true
           go.textContent = '두리가 로그인하는 중…'
           try {
-            const r = await opts.api<{ ok: boolean; message: string; human?: boolean }>(
+            // 뒤에서: 바로 돌아오고, 결과는 대화 알림으로 온다 (이 화면에서 기다리지 않아도 된다)
+            const r = await opts.api<{ ok: boolean; message: string; human?: boolean; started?: boolean }>(
               `/api/connections/${c.id}/login`,
-              { method: 'POST', body: JSON.stringify({ username: user.value.trim(), password: pw.value }) },
+              {
+                method: 'POST',
+                body: JSON.stringify({ username: user.value.trim(), password: pw.value, background: true }),
+              },
             )
             pw.value = ''
             if (r.ok) {

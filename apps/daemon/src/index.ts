@@ -57,6 +57,7 @@ import {
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
+import { findCard } from '@dool2/protocol/connect-text'
 import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
@@ -367,8 +368,71 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     browserTools.allowRemote(r.tabId)
     return { ok: false, tabId: r.tabId, message: r.message }
   }
+  type ConnectResult = { ok: boolean; message: string; human?: boolean; tabId?: number }
+  /**
+   * 연결하기는 뒤에서 한다: 폰·PC는 기다리지 않고 다른 일을 해도 된다.
+   * 끝나면 모든 폰에 결과·연결 목록을 보내고, 대화에 알림을 남겨 두리가 사용자에게 알리고 멈춘 일을 이어 가게 한다
+   */
+  const connecting = new Map<string, Promise<ConnectResult>>()
+  /** 로봇 확인·본인인증을 사람에게 넘긴 연결 (화면에서 마치면 connectMark가 대화에 알린다) */
+  const connectHuman = new Set<string>()
+  const connectStatus = () => {
+    const list = [...connecting.keys()]
+    void link.broadcast({ kind: 'connect-status', connecting: list })
+    live.emit('event', { kind: 'connect', connecting: list })
+  }
+  const connectDone = (card: ConnectCard) => {
+    void talk(
+      appNote(
+        `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. 사용자에게 한두 문장으로 알려 주고, ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요.`,
+      ),
+    ).catch(() => {})
+    void link
+      .notify({
+        title: `${card.name} 연결됐어요`,
+        body: '이제 부탁만 하면 돼요',
+        tag: `connect-${card.id}`,
+        url: '#tab=chat',
+      })
+      .catch(() => {})
+  }
+  function startConnect(card: ConnectCard, username: string, password: string): Promise<ConnectResult> {
+    const running = connecting.get(card.id)
+    if (running) return running
+    const p: Promise<ConnectResult> = connectLogin(card, username, password).catch((e: Error) => ({
+      ok: false,
+      message: e.message,
+    }))
+    connecting.set(card.id, p)
+    connectStatus()
+    void p.then((r) => {
+      connecting.delete(card.id)
+      connectStatus()
+      void link.broadcast({ kind: 'connect-result', id: card.id, ...r })
+      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+      if (r.ok) connectDone(card)
+      else if (r.human) connectHuman.add(card.id)
+      else {
+        void talk(
+          appNote(
+            `${card.name} 로그인이 안 됐어요. ${r.message} 사용자에게 무엇이 안 됐는지 짧게 알리고, 다시 하려면 connect_ask로 연결 카드를 다시 띄워 주세요.`,
+          ),
+        ).catch(() => {})
+        void link
+          .notify({
+            title: `${card.name} 로그인이 안 됐어요`,
+            body: r.message,
+            tag: `connect-${card.id}`,
+            url: '#tab=chat',
+          })
+          .catch(() => {})
+      }
+    })
+    return p
+  }
   const connectMark = (id: string, on: boolean): string | undefined => {
     loginWatch.stop(id)
+    if (on && connectHuman.delete(id)) void skills.card(id).then((card) => card && connectDone(card))
     const next = { ...(readSettings().connections ?? {}) }
     if (on) next[id] = new Date().toISOString()
     else delete next[id]
@@ -391,6 +455,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           threads: threadSummaries(30),
           approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
           logins: browserTools.logins.list().filter((x) => x.status === 'pending'),
+          ...(connecting.size ? { connecting: [...connecting.keys()] } : {}),
           ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
         }
       },
@@ -480,7 +545,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connectLogin: async (id, username, password) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
-        return connectLogin(card, username, password)
+        return startConnect(card, username, password)
       },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
@@ -909,6 +974,41 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
       }
+      if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {
+        const args = (await readJson(req)) as { service?: unknown }
+        const q = String(args.service ?? '').slice(0, 60)
+        const text = (t: string, isError = false) =>
+          json(res, 200, { ...(isError ? { isError: true } : {}), content: [{ type: 'text', text: t }] })
+        const items = await skills.connections()
+        const card = findCard(
+          items.map((x) => x.card),
+          q,
+        )
+        if (!card)
+          return text(
+            `"${q}" 연결 카드가 없어요. 목록에 없는 사이트면 browser_open으로 열고, 로그인이 필요하면 browser_request_login을 써요.`,
+            true,
+          )
+        if (items.find((x) => x.card.id === card.id)?.connectedAt)
+          return text(`${card.name}은 이미 연결돼 있어요. 바로 하면 돼요.`)
+        if (card.how === 'device')
+          return text(`${card.name}은 폰 권한이에요. 사용자에게 폰의 연결 화면에서 켜 달라고 말해요.`)
+        if (connecting.has(card.id))
+          return text(`지금 ${card.name}에 로그인하는 중이에요. 끝나면 대화로 알림이 와요.`)
+        void link
+          .notify({
+            title: `${card.name} 연결`,
+            body: '아이디·비밀번호를 넣으면 두리가 로그인해요',
+            tag: `connect-ask-${card.id}`,
+            url: '#tab=chat',
+          })
+          .catch(() => {})
+        return text(
+          card.how === 'browser'
+            ? `대화에 ${card.name} 연결 카드를 띄웠어요. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 로그인하고, 결과는 대화 알림으로 와요. 비밀번호를 묻지 말고 한 문장으로 안내한 뒤 기다려요.`
+            : `대화에 ${card.name} 연결 카드를 띄웠어요. 카드를 누르면 연결 화면이 열려요. 한 문장으로 안내한 뒤 기다려요.`,
+        )
+      }
       if (req.method === 'POST' && b === 'life' && c === 'photo_view' && !d) {
         const args = (await readJson(req)) as { name?: unknown }
         try {
@@ -1174,13 +1274,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // 연결하기: 아이디·비밀번호 → 금고 → 두리 본체가 대신 로그인
       if (card && c === 'login' && !d && req.method === 'POST') {
-        const body = (await readJson(req)) as { username?: unknown; password?: unknown }
+        const body = (await readJson(req)) as { username?: unknown; password?: unknown; background?: unknown }
         try {
-          return json(
-            res,
-            200,
-            await connectLogin(card, String(body.username ?? ''), String(body.password ?? '')),
-          )
+          const username = String(body.username ?? '')
+          const password = String(body.password ?? '')
+          if (!username.trim() || !password) throw new Error('아이디와 비밀번호를 넣어 주세요')
+          const p = startConnect(card, username, password)
+          // 뒤에서: 바로 답하고, 결과는 대화 알림으로
+          if (body.background === true)
+            return json(res, 200, {
+              ok: false,
+              started: true,
+              message: `두리가 ${card.name}에 로그인하고 있어요. 다른 일을 하셔도 돼요. 끝나면 대화로 알려 드릴게요.`,
+            })
+          return json(res, 200, await p)
         } catch (e) {
           return json(res, 400, { error: (e as Error).message })
         }

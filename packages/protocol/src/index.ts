@@ -255,6 +255,8 @@ export type ConversationLiveEvent =
   | { kind: 'busy'; busy: boolean }
   /** 목표·보관함·기억·피드가 바뀌었다 (GET /api/life로 다시 받는다) */
   | { kind: 'life' }
+  /** 연결하기: 지금 로그인하는 서비스가 바뀌었다 */
+  | { kind: 'connect'; connecting: string[] }
 
 // ── 브라우저 손 (ADR 0006): 두리 본체 ↔ native messaging ↔ 두리 확장 ──────
 
@@ -341,6 +343,13 @@ export interface LoginRecordMessage {
   kind: 'login'
   tabId?: number
   site: string
+}
+
+/** 대화 기록에 남기는 서비스 연결 부탁 (connect_ask). 카드는 연결 목록에서 그 서비스를 찾아 그린다 */
+export interface ConnectRecordMessage {
+  kind: 'connect'
+  /** 카드 id 또는 서비스 이름 (AI가 넘긴 그대로) */
+  service: string
 }
 
 export const LoginSubmitSchema = z.object({
@@ -606,6 +615,8 @@ export type PcToPhone =
       vapid?: string
       /** 이 폰이 알림을 받도록 PC에 구독이 등록돼 있는지 */
       push?: boolean
+      /** 두리 본체가 지금 로그인하고 있는 서비스 */
+      connecting?: string[]
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
@@ -627,6 +638,8 @@ export type PcToPhone =
   | { kind: 'connect-opened'; id: string; tabId: number }
   /** 대신 로그인 결과. human이면 그 탭을 원격 화면으로 넘겼다(로봇 확인·본인인증) */
   | { kind: 'connect-result'; id: string; ok: boolean; message: string; human?: boolean; tabId?: number }
+  /** 두리 본체가 지금 로그인하고 있는 서비스 (연결하기는 뒤에서 하고, 끝나면 connect-result와 대화 알림) */
+  | { kind: 'connect-status'; connecting: string[] }
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'

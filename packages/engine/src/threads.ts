@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   AgentId,
   ApprovalRecordMessage,
+  ConnectRecordMessage,
   DaemonStreamEvent,
   HandoffRecord,
   LoginRecordMessage,
@@ -146,6 +147,17 @@ export class ThreadService {
             site: typeof input.site === 'string' ? input.site : '',
           }
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+        }
+        // 서비스 연결 부탁: 대화에 연결 카드를 남긴다 (값은 카드 → 금고로만 간다)
+        if (ev.type === 'tool' && /connect_ask$/.test(ev.name)) {
+          const input = (ev.input ?? {}) as { service?: unknown }
+          if (typeof input.service === 'string' && input.service.trim()) {
+            const record: ConnectRecordMessage = {
+              kind: 'connect',
+              service: input.service.trim().slice(0, 60),
+            }
+            yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+          }
         }
         // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
