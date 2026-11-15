@@ -1,7 +1,6 @@
 // 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
 // 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
 import type { ConnectCard, ConnectionItem, Tier } from '@dool2/protocol/connect'
-import { withLogo } from './dom.js'
 
 /** @dool2/protocol/connect의 분류 이름 (화면 번들에 zod를 넣지 않으려고 복사해 둔다. 테스트가 같은지 본다) */
 export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
@@ -72,7 +71,15 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 function mark(card: ConnectCard, size: 'sm' | 'lg' = 'sm'): HTMLElement {
   const m = el('span', `svc-mark ${size}`, [...card.name][0] ?? '')
   m.setAttribute('aria-hidden', 'true')
-  return withLogo(m, card.id)
+  // 로고 (dom.ts의 withLogo와 같다. 이 파일은 시험에서 dom.ts 없이 불러온다)
+  const img = document.createElement('img')
+  img.className = 'svc-logo'
+  img.alt = ''
+  img.onload = () => m.classList.add('has-logo')
+  img.onerror = () => img.remove()
+  img.src = `logos/${encodeURIComponent(card.id)}.png`
+  m.append(img)
+  return m
 }
 
 function approvalLine(card: ConnectCard): string | undefined {
