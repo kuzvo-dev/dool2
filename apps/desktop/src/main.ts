@@ -9,12 +9,14 @@ import type { Settings } from '@dool2/protocol'
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   ipcMain,
   Menu,
   nativeImage,
   powerSaveBlocker,
   safeStorage,
   shell,
+  systemPreferences,
   Tray,
 } from 'electron'
 import { KeepAwake, loginItemSettings } from './power.js'
@@ -206,6 +208,25 @@ app.whenReady().then(async () => {
     secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
     ...packagedPaths(),
     ...nativeHostOption(),
+    // 맥 권한(손쉬운 사용·화면 기록)은 앱이 직접 묻고 확인한다 ("두리" 이름으로 뜨게)
+    ...(process.platform === 'darwin'
+      ? {
+          appPermissions: {
+            status: () => ({
+              accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+              screenRecording: systemPreferences.getMediaAccessStatus('screen') === 'granted',
+            }),
+            request: async () => {
+              systemPreferences.isTrustedAccessibilityClient(true)
+              // 화면 기록은 화면 목록을 처음 요청할 때 시스템이 묻는다
+              if (systemPreferences.getMediaAccessStatus('screen') !== 'granted')
+                await desktopCapturer
+                  .getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+                  .catch(() => [])
+            },
+          },
+        }
+      : {}),
   })
   daemon = d
   // 시험용: 배포 앱을 밖에서 부려 보려고 본체 주소·화면용 토큰을 파일(0600)에 적는다. 이 환경 변수를 줄 때만
