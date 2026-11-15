@@ -286,23 +286,44 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       action.replaceChildren(...kids)
     }
     // Chrome에서 열어 둔 뒤: 사용자가 로그인을 마치면 [로그인했어요]
+    // Chrome에서 열어 둔 뒤: 로그인을 마치면 두리가 화면을 보고 알아서 연결로 표시한다. 안 되면 [로그인했어요]
+    let poll: ReturnType<typeof setInterval> | undefined
+    const stopPoll = () => {
+      if (poll) clearInterval(poll)
+      poll = undefined
+    }
     const drawWaiting = () => {
       const msg = el(
         'p',
         'sub',
-        `Chrome에서 ${c.name}을(를) 열었어요. 로그인돼 있지 않으면 로그인한 뒤 눌러 주세요.`,
+        `Chrome에서 ${c.name}을(를) 열었어요. 로그인하면 두리가 화면을 보고 알아서 확인해요.`,
       )
       const done = el('button', 'btn', '로그인했어요')
       done.type = 'button'
       done.onclick = async () => {
+        stopPoll()
         const r = await opts.api<{ connectedAt: string }>(`/api/connections/${c.id}`, { method: 'PUT' })
         it.connectedAt = r.connectedAt
         drawAction()
       }
       const cancel = el('button', 'btn-text', '나중에')
       cancel.type = 'button'
-      cancel.onclick = () => drawAction()
+      cancel.onclick = () => {
+        stopPoll()
+        drawAction()
+      }
       action.replaceChildren(msg, done, cancel)
+      stopPoll()
+      poll = setInterval(async () => {
+        // 다른 화면으로 가면 그만 묻는다
+        if (!action.isConnected) return stopPoll()
+        const list = await opts.api<{ services: ConnectionItem[] }>('/api/connections').catch(() => undefined)
+        const at = list?.services.find((x) => x.card.id === c.id)?.connectedAt
+        if (!at) return
+        stopPoll()
+        it.connectedAt = at
+        drawAction('로그인을 확인했어요. 이제 부탁만 하면 돼요.')
+      }, 2_000)
     }
     drawAction()
 

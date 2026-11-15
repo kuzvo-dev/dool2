@@ -284,9 +284,20 @@ async function receive(env: Envelope) {
       st.screen = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
       if (!msg.error) nextScreen(msg.tabId)
       break
-    case 'connections':
+    case 'connections': {
       st.services = msg.services
+      // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
+      const v = st.view
+      if (v.name === 'remote' && v.connectId) {
+        const done = msg.services.find((x) => x.card.id === v.connectId && x.connectedAt)
+        if (done) {
+          toast(`${done.card.name} 로그인을 확인했어요`)
+          go({ name: 'service', id: done.card.id })
+          return
+        }
+      }
       break
+    }
     case 'connect-opened':
       st.opening = undefined
       openRemote(msg.tabId, undefined, msg.id)
@@ -431,6 +442,10 @@ function remoteView(v: Extract<View, { name: 'remote' }>) {
           },
         }),
       ),
+      h('p', {
+        class: 'cap',
+        text: '로그인하면 두리가 화면을 보고 알아서 확인해요. 안 넘어가면 위 버튼을 눌러 주세요.',
+      }),
     )
   }
   if (v.threadId) {
