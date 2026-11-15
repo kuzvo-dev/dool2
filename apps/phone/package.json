@@ -15,6 +15,7 @@
     "@dool2/daemon": "workspace:*",
     "@dool2/protocol": "workspace:*",
     "@dool2/relay": "workspace:*",
+    "@dool2/ui": "workspace:*",
     "esbuild": "^0.28.2"
   }
 }
