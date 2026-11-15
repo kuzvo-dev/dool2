@@ -27,7 +27,8 @@ describe('연결 화면 문구', () => {
   })
 
   it('안전 안내는 연결 방식과 등급에서', () => {
-    expect(safetyLines(card)[0]).toContain('카카오 간편 로그인')
+    expect(safetyLines(card)[1]).toContain('카카오 간편 로그인')
+    expect(safetyLines(card)[0]).toContain('금고')
     expect(safetyLines(card).at(-1)).toContain('폰에서 승인')
     expect(
       safetyLines({

@@ -1081,3 +1081,11 @@ ol {
   flex-basis: 100%;
   color: var(--ink);
 }
+
+/* 연결하기: 아이디·비밀번호 칸 */
+.svc-login {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+}

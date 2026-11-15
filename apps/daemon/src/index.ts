@@ -52,6 +52,7 @@ import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
 import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
+import { autoLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
@@ -312,6 +313,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     loginWatch.start(card, r.tabId)
     return r.tabId
   }
+  /** 연결하기: 아이디·비밀번호를 금고에 넣고 본체가 대신 로그인한다. AI는 값을 보지 않는다 */
+  const connectLogin = async (card: ConnectCard, username: string, password: string) => {
+    const url = connectUrl(card)
+    if (!url) throw new Error('이 서비스는 폰에서 켜요')
+    if (!username.trim() || !password) throw new Error('아이디와 비밀번호를 넣어 주세요')
+    if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
+    await vault.add({ url, username, password })
+    const r = await autoLogin(browser, { card, url, username, password })
+    // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
+    if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
+      await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
+    if (r.status === 'ok') {
+      connectMark(card.id, true)
+      await browser.call('close', { tabId: r.tabId }).catch(() => undefined)
+      return { ok: true, message: `${card.name}에 로그인했어요. 이제 부탁만 하면 돼요.` }
+    }
+    if (r.status === 'human') {
+      // 사람이 해야 하는 단계: 폰에서 그 화면을 보고 마치면 연결로 표시한다
+      browserTools.allowRemote(r.tabId)
+      loginWatch.start(card, r.tabId)
+      return { ok: false, human: true, tabId: r.tabId, message: `${r.reason}. 화면을 열어 직접 마쳐 주세요.` }
+    }
+    browserTools.allowRemote(r.tabId)
+    return { ok: false, tabId: r.tabId, message: r.message }
+  }
   const connectMark = (id: string, on: boolean): string | undefined => {
     loginWatch.stop(id)
     const next = { ...(readSettings().connections ?? {}) }
@@ -399,6 +425,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (action === 'open') return { tabId: await connectOpen(card, true) }
         connectMark(card.id, action === 'mark')
         return {}
+      },
+      connectLogin: async (id, username, password) => {
+        const card = await skills.card(id)
+        if (!card) throw new Error('그런 서비스가 없어요')
+        return connectLogin(card, username, password)
       },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
@@ -946,6 +977,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         } catch (e) {
           const message = (e as Error).message
           return json(res, message.includes('확장') ? 409 : 400, { error: message })
+        }
+      }
+      // 연결하기: 아이디·비밀번호 → 금고 → 두리 본체가 대신 로그인
+      if (card && c === 'login' && !d && req.method === 'POST') {
+        const body = (await readJson(req)) as { username?: unknown; password?: unknown }
+        try {
+          return json(
+            res,
+            200,
+            await connectLogin(card, String(body.username ?? ''), String(body.password ?? '')),
+          )
+        } catch (e) {
+          return json(res, 400, { error: (e as Error).message })
         }
       }
       if (card && !c && (req.method === 'PUT' || req.method === 'DELETE'))

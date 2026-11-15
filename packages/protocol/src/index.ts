@@ -443,6 +443,8 @@ export type PhoneToPc =
    * mark·unmark = 연결 표시·해제
    */
   | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' }
+  /** 연결하기: 아이디·비밀번호를 금고에 넣고 두리 본체가 대신 로그인한다 (값은 AI를 거치지 않는다) */
+  | { kind: 'connect-login'; id: string; username: string; password: string }
 
 /** 폰 브라우저의 PushSubscription.toJSON() 중 PC가 쓰는 것 */
 export interface PushSubscriptionJSONLike {
@@ -486,6 +488,8 @@ export type PcToPhone =
   | { kind: 'connections'; services: ConnectionItem[] }
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
   | { kind: 'connect-opened'; id: string; tabId: number }
+  /** 대신 로그인 결과. human이면 그 탭을 원격 화면으로 넘겼다(로봇 확인·본인인증) */
+  | { kind: 'connect-result'; id: string; ok: boolean; message: string; human?: boolean; tabId?: number }
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'

@@ -40,8 +40,8 @@ export function safetyLines(card: Pick<ConnectCard, 'how' | 'login' | 'abilities
   switch (card.how) {
     case 'browser':
       return [
-        `로그인은 직접 해요(${card.login ?? '아이디·비밀번호'}). 두리(AI)는 비밀번호를 보지 않아요.`,
-        '로그인이 풀리면 두리 금고에 저장한 값을 두리 본체가 채우거나, 화면을 넘겨 드려요.',
+        '아이디·비밀번호는 PC의 두리 금고에만 암호화해 저장하고, 로그인은 두리 본체가 해요. 두리(AI)는 비밀번호를 보지 않아요.',
+        `${card.login && card.login !== '아이디·비밀번호' ? `${card.login}처럼 ` : ''}로봇 확인·본인인증이 필요하면 그 화면만 폰에 띄워 직접 하게 해요.`,
         ...approval,
       ]
     case 'official':

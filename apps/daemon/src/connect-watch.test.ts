@@ -12,10 +12,17 @@ describe('로그인 확인', () => {
     expect(looksSignedIn(card, { url: 'https://demo.co.kr/', text: '[e3 링크 "로그인"] 회원가입' })).toBe(
       false,
     )
-    // 로그인 화면 주소면 글자가 있어도 아직 아니다
-    expect(looksSignedIn(card, { url: 'https://demo.co.kr/member/login?next=/', text: '로그아웃' })).toBe(
-      false,
-    )
+    // 로그인 화면 주소에 비밀번호 칸이 있으면 글자가 있어도 아직 아니다
+    expect(
+      looksSignedIn(card, {
+        url: 'https://demo.co.kr/member/login?next=/',
+        text: '로그아웃 [e2 비밀번호칸 "비밀번호"]',
+      }),
+    ).toBe(false)
+    // 주소가 그대로여도 비밀번호 칸이 사라지고 로그아웃이 보이면 로그인됐다
+    expect(
+      looksSignedIn(card, { url: 'https://demo.co.kr/member/login', text: '[e3 링크 "로그아웃"]' }),
+    ).toBe(true)
     // 카드에 적은 말이 있으면 그 말로 본다
     const own = { ...card, signedIn: ['마이데모'] }
     expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '로그아웃' })).toBe(false)
