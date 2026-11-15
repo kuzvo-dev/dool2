@@ -24,6 +24,12 @@ const MIGRATIONS: string[] = [
      key TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );`,
+  // 대화는 하나 (ADR 0015): threads는 대화의 구간. 구간을 닫을 때 요약을 남기고,
+  // 새 구간은 앞 구간에서 넘겨받은 내용(carry)을 지침에 붙여 이어 간다
+  `ALTER TABLE threads ADD COLUMN carry TEXT;
+   ALTER TABLE threads ADD COLUMN summary TEXT;
+   ALTER TABLE threads ADD COLUMN closed_at TEXT;
+   CREATE INDEX messages_time ON messages(created_at);`,
 ]
 
 interface ThreadRow {
@@ -33,6 +39,9 @@ interface ThreadRow {
   resume_id: string | null
   created_at: string
   updated_at: string
+  carry: string | null
+  summary: string | null
+  closed_at: string | null
 }
 
 interface MessageRow {
@@ -45,6 +54,12 @@ interface MessageRow {
 
 export interface ThreadRecord extends ThreadSummary {
   resumeId?: string
+  /** 앞 구간에서 넘겨받은 내용 (요약·최근 대화). 이 구간의 매 차례 지침에 붙는다 */
+  carry?: string
+  /** 구간을 닫을 때 남긴 요약 */
+  summary?: string
+  /** 닫힌 구간이면 닫은 시각 */
+  closedAt?: string
 }
 
 /** 같은 밀리초에 여러 번 저장해도 순서가 유지되게 단조 증가 시각을 쓴다. */
@@ -86,13 +101,64 @@ export class Store {
     }
   }
 
-  createThread(agent: AgentId, title = '새 대화'): ThreadRecord {
+  createThread(agent: AgentId, title = '새 대화', carry?: string): ThreadRecord {
     const id = randomUUID()
     const at = this.stamp()
     this.db
-      .prepare('INSERT INTO threads (id, agent, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-      .run(id, agent, title, at, at)
-    return { id, agent, title, createdAt: at, updatedAt: at }
+      .prepare(
+        'INSERT INTO threads (id, agent, title, carry, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(id, agent, title, carry ?? null, at, at)
+    return { id, agent, title, createdAt: at, updatedAt: at, ...(carry ? { carry } : {}) }
+  }
+
+  // ── 대화 하나 (ADR 0015) ─────────────────────────────
+
+  /** 지금 열려 있는 구간 (닫히지 않은 것 중 가장 최근) */
+  currentSession(): ThreadRecord | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM threads WHERE closed_at IS NULL ORDER BY updated_at DESC LIMIT 1')
+      .get() as ThreadRow | undefined
+    return row ? toThread(row) : undefined
+  }
+
+  /** 구간을 닫는다. 요약이 있으면 남긴다 */
+  closeSession(id: string, summary?: string) {
+    this.db
+      .prepare('UPDATE threads SET closed_at = ?, summary = COALESCE(?, summary) WHERE id = ?')
+      .run(this.stamp(), summary ?? null, id)
+  }
+
+  /** 열려 있는 다른 구간을 모두 닫는다 (예전 여러 방 → 대화 하나로 넘어올 때) */
+  closeOtherSessions(keepId: string) {
+    this.db
+      .prepare('UPDATE threads SET closed_at = ? WHERE closed_at IS NULL AND id != ?')
+      .run(this.stamp(), keepId)
+  }
+
+  /** 구간의 길이: 사용자 차례 수와 저장된 글자 수 */
+  sessionSize(id: string): { turns: number; chars: number } {
+    const row = this.db
+      .prepare(
+        "SELECT SUM(role = 'user') AS turns, COALESCE(SUM(LENGTH(text)), 0) AS chars FROM messages WHERE thread_id = ?",
+      )
+      .get(id) as { turns: number | null; chars: number }
+    return { turns: row.turns ?? 0, chars: row.chars }
+  }
+
+  /**
+   * 대화 하나: 모든 구간의 메시지를 시간순으로. before(시각)보다 앞의 것 중 마지막 limit개.
+   */
+  listConversation(opts: { before?: string; limit?: number } = {}): StoredMessage[] {
+    const limit = opts.limit ?? 100
+    const rows = (opts.before
+      ? this.db
+          .prepare('SELECT * FROM messages WHERE created_at < ? ORDER BY created_at DESC LIMIT ?')
+          .all(opts.before, limit)
+      : this.db
+          .prepare('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?')
+          .all(limit)) as unknown as MessageRow[]
+    return rows.reverse().map(toMessage)
   }
 
   getThread(id: string): ThreadRecord | undefined {
@@ -129,13 +195,7 @@ export class Store {
     const rows = this.db
       .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC')
       .all(threadId) as unknown as MessageRow[]
-    return rows.map((r) => ({
-      id: r.id,
-      threadId: r.thread_id,
-      role: r.role as MessageRole,
-      text: r.text,
-      createdAt: r.created_at,
-    }))
+    return rows.map(toMessage)
   }
 
   /** 설정 값 하나를 읽는다. 없으면 undefined */
@@ -181,5 +241,18 @@ function toThread(r: ThreadRow): ThreadRecord {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     ...(r.resume_id ? { resumeId: r.resume_id } : {}),
+    ...(r.carry ? { carry: r.carry } : {}),
+    ...(r.summary ? { summary: r.summary } : {}),
+    ...(r.closed_at ? { closedAt: r.closed_at } : {}),
+  }
+}
+
+function toMessage(r: MessageRow): StoredMessage {
+  return {
+    id: r.id,
+    threadId: r.thread_id,
+    role: r.role as MessageRole,
+    text: r.text,
+    createdAt: r.created_at,
   }
 }

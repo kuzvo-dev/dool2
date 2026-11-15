@@ -19,7 +19,7 @@ import {
   type HostRuntime,
   registerNativeHost,
 } from '@dool2/browser'
-import { type AgentRuntime, type McpServerSpec, ThreadService } from '@dool2/engine'
+import { type AgentRuntime, ConversationService, type McpServerSpec, ThreadService } from '@dool2/engine'
 import {
   type AgentId,
   AgentIdSchema,
@@ -28,6 +28,8 @@ import {
   type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
+  type ConversationLiveEvent,
+  type ConversationState,
   CreateThreadRequestSchema,
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
@@ -222,6 +224,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
   })
+  /** 대화는 하나 (ADR 0015): 구간을 고르고 바꾸는 일 */
+  const conversation = new ConversationService({ store, threads })
+  /** 대화에서 일어나는 일을 PC 화면(GET /api/conversation/live)에 흘려보낸다 */
+  const live = new EventEmitter<{ event: [ConversationLiveEvent] }>()
+  live.setMaxListeners(50)
   const token = opts.token ?? randomBytes(32).toString('hex')
 
   const events = new EventEmitter<DaemonEvents>()
@@ -285,6 +292,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return thread ? { kind: 'thread', thread, messages: store.listMessages(id) } : undefined
       },
       ask: async ({ threadId, agent, text }) => {
+        // 대화는 하나: 방을 고르지 않은 부탁은 대화로 보낸다 (일하는 중이면 줄을 선다)
+        if (!threadId) {
+          await talk(text, { agent, viaPhone: true })
+          return conversation.current()?.id ?? ''
+        }
         const id =
           threadId && store.getThread(threadId) ? threadId : store.createThread(await pickAgent(agent)).id
         if (threads.isRunning(id)) throw new Error('이 대화는 아직 답하는 중이에요')
@@ -373,6 +385,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
     activeThreads.add(threadId)
+    live.emit('event', { kind: 'busy', busy: true })
     // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
     const toPhones = link.streamer(threadId)
     // 이번 답에서 승인 요청·직접 해 주세요가 나왔는지 (그러면 "끝났어요" 알림은 따로 보내지 않는다)
@@ -380,6 +393,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     try {
       for await (const ev of inner) {
         toPhones(ev)
+        live.emit('event', { kind: 'turn', threadId, event: ev })
         if (ev.type === 'saved' && ev.message.role === 'tool') {
           asked = true
           const rec = (() => {
@@ -406,7 +420,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
       const next = pendingFollowUps.get(threadId)?.shift()
       if (next) setTimeout(() => followUp(threadId, next), 0)
+      // 대화: 답하는 동안 줄 선 말을 한 차례로 모아 이어서 보낸다
+      else if (queued.length && conversation.current()?.id === threadId) {
+        const text = queued.splice(0).join('\n\n')
+        live.emit('event', { kind: 'queued', texts: [] })
+        setTimeout(() => void talk(text).catch(() => {}), 0)
+      }
       if (--running === 0) events.emit('busy', false)
+      live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 })
       // 폰에서 맡긴 일이 끝나면 폰에 알린다 (앱을 닫아 둔 사이에 끝나도)
       if (fromPhone.delete(threadId) && !asked) {
         const t = store.getThread(threadId)
@@ -486,6 +507,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** 폰에서 맡긴 대화 (끝나면 폰에 알림) */
   const fromPhone = new Set<string>()
+  /** 대화: 두리가 답하는 동안 들어와 차례를 기다리는 말 */
+  const queued: string[] = []
+  /** 구간을 고르는 중 (요약 부탁이 오래 걸릴 수 있어서, 그동안 온 말도 줄을 세운다) */
+  let preparing = false
+  const conversationBusy = () => preparing || conversation.isRunning()
+  /**
+   * 대화에 말 하나를 보낸다. 답하는 중이면 줄을 세웠다가 그 차례가 끝나면 이어서 보낸다 (ADR 0015).
+   * 진행은 GET /api/conversation/live와 폰 스트림으로 간다
+   */
+  async function talk(text: string, o: { agent?: AgentId; viaPhone?: boolean } = {}) {
+    if (conversationBusy()) {
+      queued.push(text)
+      live.emit('event', { kind: 'queued', texts: [...queued] })
+      return { queued: true }
+    }
+    preparing = true
+    let sessionId: string
+    try {
+      sessionId = (await conversation.prepare(await pickAgent(o.agent))).session.id
+    } finally {
+      preparing = false
+    }
+    if (o.viaPhone) fromPhone.add(sessionId)
+    void (async () => {
+      for await (const _ of tracked(sessionId, threads.send(sessionId, text))) {
+      }
+    })().catch(() => {})
+    return { queued: false }
+  }
   /** 원격 화면: 마지막으로 보낸 화면의 페이지 크기 (폰이 누른 비율을 좌표로 바꾸려고) */
   const remoteViewport = new Map<number, { width: number; height: number }>()
   /**
@@ -864,6 +914,40 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         events.emit('settings', settings)
         return json(res, 200, { settings })
       }
+    }
+
+    // 대화 하나 (ADR 0015)
+    if (a === 'conversation' && !b && req.method === 'GET') {
+      const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 500)
+      const before = url.searchParams.get('before') ?? undefined
+      const messages = conversation.history({ limit, ...(before ? { before } : {}) })
+      const body: ConversationState = {
+        messages,
+        busy: conversationBusy(),
+        queued: [...queued],
+        hasMore: messages.length === limit,
+      }
+      return json(res, 200, body)
+    }
+    if (a === 'conversation' && b === 'messages' && req.method === 'POST') {
+      const body = SendMessageRequestSchema.parse(await readJson(req))
+      return json(res, 202, await talk(body.text))
+    }
+    if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
+      conversation.cancel()
+      return json(res, 200, { ok: true })
+    }
+    if (a === 'conversation' && b === 'live' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      })
+      const send = (ev: ConversationLiveEvent) => res.write(`data: ${JSON.stringify(ev)}\n\n`)
+      send({ kind: 'busy', busy: conversationBusy() })
+      live.on('event', send)
+      res.on('close', () => live.off('event', send))
+      return
     }
 
     if (a === 'threads' && !b) {

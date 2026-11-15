@@ -39,6 +39,44 @@ export class ThreadService {
     this.running.get(threadId)?.abort()
   }
 
+  /** 두리 지침 + 앞 구간에서 넘겨받은 내용 (ADR 0015) */
+  private systemFor(thread: { carry?: string }) {
+    const base = this.opts.systemPrompt ?? DOOL2_SYSTEM_PROMPT
+    return thread.carry ? `${base}\n\n${thread.carry}` : base
+  }
+
+  /**
+   * 기록에 남기지 않는 한 차례: 구간을 닫기 전에 그 AI에게 요약을 부탁한다.
+   * 이어 할 세션이 없거나 답하는 중이면 하지 않는다. 오래 걸리면 그만둔다
+   */
+  async summarize(threadId: string, timeoutMs = 90_000): Promise<string | undefined> {
+    const thread = this.opts.store.getThread(threadId)
+    if (!thread?.resumeId || this.running.has(threadId)) return undefined
+    const ac = new AbortController()
+    this.running.set(threadId, ac)
+    try {
+      let text = ''
+      const events = this.runtime(thread.agent).runTurn({
+        text: SUMMARY_REQUEST,
+        resumeId: thread.resumeId,
+        systemPrompt: this.systemFor(thread),
+        mcpServers: this.opts.mcpServers,
+        cwd: this.opts.workspaceDir,
+        signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs)]),
+      })
+      for await (const ev of events) {
+        if (ev.type === 'text') text += ev.delta
+        if (ev.type === 'done' && !text && ev.text) text = ev.text
+        if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
+      }
+      return text.trim() || undefined
+    } catch {
+      return undefined
+    } finally {
+      this.running.delete(threadId)
+    }
+  }
+
   /**
    * 사용자 글을 저장하고 에이전트를 한 턴 돌린다.
    * 같은 대화에서 동시에 두 턴은 돌리지 않는다.
@@ -62,7 +100,7 @@ export class ThreadService {
       const events = this.runtime(thread.agent).runTurn({
         text,
         ...(resumeId ? { resumeId } : {}),
-        systemPrompt: this.opts.systemPrompt ?? DOOL2_SYSTEM_PROMPT,
+        systemPrompt: this.systemFor(thread),
         mcpServers: this.opts.mcpServers,
         cwd: this.opts.workspaceDir,
         signal: ac.signal,
@@ -127,6 +165,12 @@ export class ThreadService {
     }
   }
 }
+
+/** 구간을 닫을 때 AI에게 보내는 요약 부탁 (기록에 남지 않는다) */
+export const SUMMARY_REQUEST =
+  '[두리 앱 알림] 대화가 길어져서 새 대화로 이어 가요. 지금까지 사용자와 나눈 이야기에서 앞으로도 기억해야 할 것' +
+  '(사용자 취향, 약속, 진행 중이거나 끝낸 일, 정해진 날짜·시간·금액)을 한국어 글머리표 15줄 안으로 요약해 주세요. ' +
+  '도구는 쓰지 말고 요약만 답해 주세요.'
 
 function titleFrom(text: string) {
   const one = text.replace(/\s+/g, ' ').trim()
