@@ -19,6 +19,8 @@ export interface TurnInput {
   mcpServers: McpServerSpec[]
   /** 두리 전용 작업 폴더. 사용자 파일이 있는 곳이 아니다 */
   cwd: string
+  /** 쓸 모델 (Claude: sonnet·opus·haiku 같은 별칭). 없으면 에이전트별 기본값 */
+  model?: string
   signal?: AbortSignal
 }
 

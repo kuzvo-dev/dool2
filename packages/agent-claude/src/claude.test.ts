@@ -131,3 +131,13 @@ describe('ClaudeStreamParser — 안전장치', () => {
     expect(parseAll(['not json', ''])).toEqual([])
   })
 })
+
+describe('모델', () => {
+  it('기본은 sonnet, 지정하면 그 모델', () => {
+    const base = { systemPrompt: 'x', mcpServers: [] }
+    const a = buildClaudeArgs(base)
+    expect(a[a.indexOf('--model') + 1]).toBe('sonnet')
+    const b = buildClaudeArgs({ ...base, model: 'opus' })
+    expect(b[b.indexOf('--model') + 1]).toBe('opus')
+  })
+})

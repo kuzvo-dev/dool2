@@ -22,9 +22,12 @@ import { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 export { ClaudeLogin, type ClaudeLoginOptions, type LoginChild, loginEnv, type SpawnLogin } from './login.js'
 export { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
+/** 두리가 Claude Code에 쓰는 기본 모델 */
+export const CLAUDE_DEFAULT_MODEL = 'sonnet'
+
 /** `claude -p` 인자. 순수 함수라 테스트로 고정한다. */
 export function buildClaudeArgs(
-  input: Pick<TurnInput, 'resumeId' | 'systemPrompt' | 'mcpServers'>,
+  input: Pick<TurnInput, 'resumeId' | 'systemPrompt' | 'mcpServers' | 'model'>,
 ): string[] {
   const mcpConfig = {
     mcpServers: Object.fromEntries(
@@ -55,6 +58,9 @@ export function buildClaudeArgs(
     '',
     '--append-system-prompt',
     input.systemPrompt,
+    // 기본은 Sonnet: 빠르고 충분히 똑똑하다 (사용자가 설정에서 바꿀 수 있다)
+    '--model',
+    input.model || CLAUDE_DEFAULT_MODEL,
   ]
   if (input.resumeId) args.push('--resume', input.resumeId)
   return args

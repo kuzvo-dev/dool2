@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
-import { appNote, josa, narrationLine, readAppNote, richBlocks } from './rich.js'
+import { appNote, josa, narrationLine, readAppNote, richBlocks, stripMonologue } from './rich.js'
 
 describe('richBlocks', () => {
   it('빈 줄로 문단을 나누고 **굵게**를 살린다', () => {
@@ -95,5 +95,21 @@ describe('readAppNote', () => {
         ),
       ),
     ).toBe('폰에서 승인했어요. "바로 구매" 버튼을 눌렀어요.')
+  })
+})
+
+describe('stripMonologue', () => {
+  it('한글 없는 속생각 문단은 뺀다', () => {
+    expect(stripMonologue('Let me check the SRT site first.\n\n05:47 열차에 자리가 있어요.')).toBe(
+      '05:47 열차에 자리가 있어요.',
+    )
+  })
+  it('영어라도 속생각이 아니면 남긴다', () => {
+    expect(stripMonologue('Apple Watch Series 11\n\n이 제품이 제일 싸요.')).toBe(
+      'Apple Watch Series 11\n\n이 제품이 제일 싸요.',
+    )
+  })
+  it('다 걷어 내면 원래 글', () => {
+    expect(stripMonologue('Let me think.')).toBe('Let me think.')
   })
 })
