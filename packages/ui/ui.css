@@ -910,22 +910,22 @@ svg.i.md {
   gap: 8px;
   padding: 10px 16px 14px;
 }
-/* 단계 막대: <span class="progress"><i class="on"></i><i class="now"></i><i></i></span> */
-.progress {
+/* 단계 막대: <span class="stepbar"><i class="on"></i><i class="now"></i><i></i></span> */
+.stepbar {
   flex: 1;
   display: flex;
   gap: 6px;
 }
-.progress i {
+.stepbar i {
   flex: 1;
   height: 4px;
   border-radius: 2px;
   background: var(--line);
 }
-.progress i.on {
+.stepbar i.on {
   background: var(--brand);
 }
-.progress i.now {
+.stepbar i.now {
   background: var(--brand);
   opacity: 0.5;
 }
