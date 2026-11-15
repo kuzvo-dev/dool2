@@ -54,6 +54,7 @@ describe('두리 MCP 도구', () => {
       'memory_forget',
       'idea_suggest',
       'photo_view',
+      'connect_ask',
       'feed_post',
     ])
 

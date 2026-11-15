@@ -92,6 +92,7 @@ const TOOL_LABEL: Record<string, string> = {
   idea_suggest: '할 일 찾는',
   photo_view: '사진 보는',
   feed_post: '피드에 올리는',
+  connect_ask: '연결 카드 띄우는',
 }
 export function toolLabel(name: string): string {
   return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
@@ -116,7 +117,8 @@ export function withoutPhotoMark(text: string): string {
  */
 export const APP_NOTE = '[두리 앱 알림] '
 /** AI에게만 필요한 문장 (화면 알림 줄에서는 뺀다): 도구 이름, "이어서 해 주세요" 같은 지시 */
-const AI_ONLY = /browser_\w+|screen_\w+|이어서 해 주세요|누르지 말아 주세요|^지금 화면:/
+const AI_ONLY =
+  /browser_\w+|screen_\w+|connect_\w+|이어서 해 주세요|누르지 말아 주세요|^지금 화면:|^사용자에게/
 
 export function appNote(text: string): string {
   return APP_NOTE + text

@@ -9,6 +9,7 @@ import type {
   ApprovalRecordMessage,
   ApprovalView,
   ChromeStatus,
+  ConnectRecordMessage,
   ConversationLiveEvent,
   ConversationState,
   DaemonStreamEvent,
@@ -24,8 +25,9 @@ import type {
   UsageLimit,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
+import { findCard } from './connect-text.js'
 import { renderConnections } from './connections.js'
-import { button, doori, el, emptyState, type IconName, icon, liveDoori, setRich } from './dom.js'
+import { button, doori, el, emptyState, type IconName, icon, liveDoori, setRich, withLogo } from './dom.js'
 import type { LibraryTab } from './life-model.js'
 import { dayLabel, isFeedRoutine, plain, titleFrom } from './life-model.js'
 import {
@@ -134,6 +136,8 @@ const state: {
   logins: LoginRequestView[]
   life: LifeState
   services: ConnectionItem[]
+  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  connecting: Set<string>
   threads: ThreadSummary[]
 } = {
   url: '',
@@ -151,6 +155,7 @@ const state: {
   logins: [],
   life: emptyLife(),
   services: [],
+  connecting: new Set(),
   threads: [],
 }
 
@@ -1235,6 +1240,17 @@ function onLive(ev: ConversationLiveEvent) {
     void loadLife().catch(() => {})
     return
   }
+  if (ev.kind === 'connect') {
+    // 연결하기가 끝났거나 시작했다: 연결 목록을 다시 받고 대화 안 연결 카드를 고친다
+    state.connecting = new Set(ev.connecting)
+    void loadServices()
+      .then(() => {
+        for (const c of document.querySelectorAll<HTMLElement>('.connect-card[data-service]'))
+          c.replaceWith(connectCard({ kind: 'connect', service: c.dataset.service ?? '' }))
+      })
+      .catch(() => {})
+    return
+  }
   if (ev.kind === 'busy') {
     // 본체의 busy는 따로 하는 대화·피드 글까지 센다. 메인 대화가 일하는지는 대화 상태로 확인한다
     if (!ev.busy) setMainBusy(false)
@@ -1504,10 +1520,100 @@ function toolCard(raw: string, active: boolean): Node {
     const rec = JSON.parse(raw) as { kind?: string }
     if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
+    if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
   } catch {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/**
+ * 연결 카드 (connect_ask): 아이디·비밀번호를 넣으면 두리 본체가 뒤에서 로그인한다.
+ * 기다리지 않아도 된다. 끝나면 대화 알림이 오고 이 카드는 "연결돼 있어요"로 바뀐다
+ */
+function connectCard(rec: ConnectRecordMessage): HTMLElement {
+  const card = el('div', 'card connect-card')
+  card.dataset.service = rec.service
+  const found = findCard(
+    state.services.map((s) => s.card),
+    rec.service,
+  )
+  const it = found ? state.services.find((s) => s.card.id === found.id) : undefined
+  if (!it) {
+    card.className = 'card quiet connect-card'
+    card.append(el('div', 'card-label', icon('link'), `${rec.service} 연결 카드를 찾지 못했어요`))
+    return card
+  }
+  const c = it.card
+  const mark = withLogo(el('span', 'svc-mark', /^\d+/.exec(c.name)?.[0] ?? [...c.name][0] ?? ''), c.id)
+  if (it.connectedAt) {
+    card.className = 'card quiet connect-card'
+    card.append(el('div', 'card-label', mark, `${c.name} 연결돼 있어요`))
+    return card
+  }
+  const busy = state.connecting.has(c.id)
+  card.className = 'card ask connect-card'
+  const head = el(
+    'div',
+    'login-head',
+    mark,
+    el(
+      'div',
+      '',
+      el('strong', '', busy ? `${c.name}에 로그인하는 중이에요` : `${c.name} 연결`),
+      el(
+        'span',
+        'cap',
+        busy
+          ? '두리가 Chrome에서 하고 있어요. 다른 일을 하셔도 돼요'
+          : '아이디·비밀번호를 넣으면 두리가 Chrome에서 대신 로그인해요',
+      ),
+    ),
+    busy ? el('span', 'spin') : undefined,
+  )
+  if (busy || c.how !== 'browser') {
+    card.append(head)
+    if (!busy) card.append(button('btn', () => void show('connect', c.id), '연결 화면 열기'))
+    return card
+  }
+  const form = el('form', 'login-form')
+  const user = el('input', 'field')
+  user.placeholder = '아이디 또는 이메일'
+  user.autocomplete = 'username'
+  const pw = el('input', 'field')
+  pw.type = 'password'
+  pw.placeholder = '비밀번호'
+  pw.autocomplete = 'current-password'
+  const err = el('p', 'login-error')
+  const go = el('button', 'btn', '연결하기')
+  go.type = 'submit'
+  form.append(user, pw, err, go)
+  form.onsubmit = async (e) => {
+    e.preventDefault()
+    if (!user.value.trim() || !pw.value) {
+      err.textContent = '아이디와 비밀번호를 모두 넣어 주세요'
+      return
+    }
+    go.disabled = true
+    const res = await api<{ message: string }>(`/api/connections/${encodeURIComponent(c.id)}/login`, {
+      method: 'POST',
+      body: JSON.stringify({ username: user.value.trim(), password: pw.value, background: true }),
+    }).catch((x: Error) => ({ message: x.message, failed: true }))
+    pw.value = ''
+    if ('failed' in res) {
+      go.disabled = false
+      err.textContent = res.message
+      return
+    }
+    state.connecting.add(c.id)
+    card.replaceWith(connectCard(rec))
+  }
+  card.append(
+    head,
+    form,
+    el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),
+  )
+  return card
 }
 
 /**

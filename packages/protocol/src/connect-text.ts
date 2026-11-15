@@ -58,6 +58,29 @@ export function safetyLines(card: Pick<ConnectCard, 'how' | 'login' | 'abilities
 }
 
 /** 찾기 칸: 이름·도메인·분류·소개·할 수 있는 일 중 하나에 들어 있으면 */
+/** 카드 id나 서비스 이름으로 카드를 찾는다 ("쿠팡", "coupang", "야놀자", "KT M모바일") */
+export function findCard<T extends Pick<ConnectCard, 'id' | 'name'>>(
+  cards: readonly T[],
+  query: string,
+): T | undefined {
+  const norm = (s: string) =>
+    s
+      .replace(/\s*\(.*?\)\s*/g, '')
+      .replace(/\s+/g, '')
+      .toLowerCase()
+  const q = query.trim().toLowerCase()
+  if (!q) return undefined
+  const nq = norm(q)
+  return (
+    cards.find((c) => c.id === q) ??
+    cards.find((c) => norm(c.name) === nq || c.name.toLowerCase() === q) ??
+    cards.find((c) => c.name.toLowerCase().includes(q)) ??
+    [...cards]
+      .sort((a, b) => norm(b.name).length - norm(a.name).length)
+      .find((c) => nq.includes(norm(c.name)))
+  )
+}
+
 export function matchesCard(card: ConnectCard, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
