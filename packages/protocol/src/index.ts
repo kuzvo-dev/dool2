@@ -226,6 +226,25 @@ export type DaemonStreamEvent =
   | { type: 'saved'; message: StoredMessage }
   | { type: 'end' }
 
+// ── 대화 하나 (ADR 0015) ───────────────────────────────────────
+
+/** GET /api/conversation: 대화 기록 (모든 구간을 시간순으로) */
+export interface ConversationState {
+  messages: StoredMessage[]
+  /** 지금 답하는 중 */
+  busy: boolean
+  /** 답하는 동안 보내서 차례를 기다리는 말 */
+  queued: string[]
+  /** 더 앞의 말이 있을 수 있음 (before로 더 불러오기) */
+  hasMore: boolean
+}
+
+/** GET /api/conversation/live: 대화에서 일어나는 일 (어디서 시작한 차례든) */
+export type ConversationLiveEvent =
+  | { kind: 'turn'; threadId: string; event: DaemonStreamEvent }
+  | { kind: 'queued'; texts: string[] }
+  | { kind: 'busy'; busy: boolean }
+
 // ── 브라우저 손 (ADR 0006): 두리 본체 ↔ native messaging ↔ 두리 확장 ──────
 
 /** native messaging 호스트 이름. Chrome이 이 이름으로 등록 파일을 찾는다 */

@@ -32,9 +32,22 @@ afterEach(async () => {
   dir = undefined
 })
 
-async function boot() {
+/** 열어 줄 때까지 답을 끝내지 않는 AI (줄 세우기 시험용) */
+class GateRuntime extends EchoRuntime {
+  inputs: string[] = []
+  private open: (() => void)[] = []
+  release() {
+    for (const f of this.open.splice(0)) f()
+  }
+  override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+    this.inputs.push(input.text)
+    await new Promise<void>((r) => this.open.push(r))
+    yield* super.runTurn(input)
+  }
+}
+
+async function boot(rt: EchoRuntime = new EchoRuntime()) {
   dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
-  const rt = new EchoRuntime()
   daemon = await startDaemon({
     dataDir: dir,
     token: 't0ken',
@@ -131,6 +144,70 @@ describe('dool2d 로컬 API', () => {
     }
     const res = await api(`/api/threads/${thread.id}/messages`, { method: 'POST', body: '{"text":"   "}' })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('대화 하나 (ADR 0015)', () => {
+  type State = { messages: { role: string; text: string }[]; busy: boolean; queued: string[] }
+  const until = async (f: () => Promise<boolean>) => {
+    for (let i = 0; i < 200; i++) {
+      if (await f()) return
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    throw new Error('기다리다 지쳤어요')
+  }
+
+  it('말을 보내면 대화에 이어 쌓이고, 화면은 live로 진행을 받는다', async () => {
+    const { api } = await boot()
+    const live = await api('/api/conversation/live')
+    const reader = live.body?.getReader()
+    const r = await api('/api/conversation/messages', { method: 'POST', body: '{"text":"안녕"}' })
+    expect(r.status).toBe(202)
+    expect(await r.json()).toEqual({ queued: false })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    expect((await state()).messages.map((m) => m.text)).toEqual(['안녕', '받았어요: 안녕'])
+    // live: 일하는 중 → 차례 진행 → 끝
+    let seen = ''
+    const dec = new TextDecoder()
+    while (!seen.includes('"type":"end"')) seen += dec.decode((await reader?.read())?.value)
+    expect(seen).toContain('"kind":"turn"')
+    await reader?.cancel()
+  })
+
+  it('답하는 동안 보낸 말은 줄을 섰다가 한 차례로 이어서 간다', async () => {
+    const rt = new GateRuntime()
+    const { api } = await boot(rt)
+    const send = async (text: string) =>
+      (await (
+        await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text }) })
+      ).json()) as {
+        queued: boolean
+      }
+    expect(await send('KTX 잡아줘')).toEqual({ queued: false })
+    await until(async () => rt.inputs.length === 1)
+    expect(await send('창가로')).toEqual({ queued: true })
+    expect(await send('9시 전후')).toEqual({ queued: true })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    expect((await state()).queued).toEqual(['창가로', '9시 전후'])
+    rt.release()
+    await until(async () => rt.inputs.length === 2)
+    expect(rt.inputs[1]).toBe('창가로\n\n9시 전후')
+    rt.release()
+    await until(async () => !(await state()).busy && (await state()).messages.length === 4)
+    expect((await state()).queued).toEqual([])
+    // 두 차례 모두 같은 AI 세션으로 이어 간다
+    expect(rt.last?.resumeId).toBe('r1')
+  })
+
+  it('멈추기는 지금 차례를 그만두게 한다', async () => {
+    const rt = new GateRuntime()
+    const { api } = await boot(rt)
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"오래 걸리는 일"}' })
+    await until(async () => rt.inputs.length === 1)
+    const r = await api('/api/conversation/cancel', { method: 'POST' })
+    expect(r.status).toBe(200)
+    rt.release()
   })
 })
 
