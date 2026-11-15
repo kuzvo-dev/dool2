@@ -39,8 +39,10 @@ export class ConversationService {
 
   /** 다음 말부터 새 구간으로 (두리 말투 설정을 바꿨을 때: 앞 대화의 말투를 따라가지 않게) */
   private rotateNext = false
-  rotateSoon() {
+  private rotateNote = ''
+  rotateSoon(note = '') {
     this.rotateNext = true
+    this.rotateNote = note
   }
 
   /** 지금 구간 */
@@ -91,8 +93,10 @@ export class ConversationService {
       const summary = reason === 'long' ? await threads.summarize(cur.id) : undefined
       store.closeSession(cur.id, summary)
       carry = buildCarry(cur, summary, store.listMessages(cur.id))
+      if (this.rotateNote) carry = `${carry}\n\n${this.rotateNote}`
     }
     this.rotateNext = false
+    this.rotateNote = ''
     const next = store.createThread(agent, '새 대화', carry)
     store.closeOtherSessions(next.id)
     return { session: next, rotated: reason }

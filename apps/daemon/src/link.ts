@@ -52,7 +52,7 @@ export interface LinkHost {
   state(): Promise<Omit<Extract<PcToPhone, { kind: 'state' }>, 'kind' | 'pcName'>>
   thread(id: string): Promise<Extract<PcToPhone, { kind: 'thread' }> | undefined>
   /** 대화를 시작하고 스트림 이벤트를 돌려준다. 이벤트는 broadcastStream으로도 나간다 */
-  ask(input: { threadId?: string; agent?: AgentId; text: string }): Promise<string>
+  ask(input: { threadId?: string; agent?: AgentId; text: string; image?: string }): Promise<string>
   cancel(threadId: string): void
   approval(id: string): (ApprovalView & { shot?: string }) | undefined
   decide(id: string, decision: 'approve' | 'reject'): Promise<{ ok: boolean; message: string }>
@@ -375,6 +375,7 @@ export class PhoneLink {
           ...(msg.threadId ? { threadId: msg.threadId } : {}),
           ...(msg.agent ? { agent: msg.agent } : {}),
           text: String(msg.text).slice(0, 4000),
+          ...(typeof msg.image === 'string' && msg.image.length < 420_000 ? { image: msg.image } : {}),
         })
         return
       }

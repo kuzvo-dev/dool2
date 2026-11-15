@@ -28,7 +28,7 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { narrationLine, readAppNote, toolLabel } from '@dool2/protocol/rich'
+import { narrationLine, readAppNote, splitPhoto, toolLabel } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime } from './dom.js'
 import {
@@ -93,7 +93,9 @@ const st: {
   live: string
   steps: string[]
   /** 보냈지만 PC가 아직 받았다고 하지 않은 말 (바로 화면에 띄운다) */
-  pending: { id: number; text: string }[]
+  pending: { id: number; text: string; photo?: string }[]
+  /** 보낼 사진 (줄인 JPEG base64) */
+  attach?: string
   approvals: Map<string, ApprovalView & { shot?: string }>
   decided: Map<string, { ok: boolean; message: string }>
   logins: Map<string, LoginRequestView>
@@ -403,7 +405,7 @@ function onStream(ev: DaemonStreamEvent) {
     const m = ev.message
     if (!st.conv.some((x) => x.id === m.id)) st.conv = [...st.conv, m]
     if (m.role === 'user') {
-      const i = st.pending.findIndex((p) => p.text === m.text)
+      const i = st.pending.findIndex((p) => p.text === splitPhoto(m.text).text)
       if (i >= 0) st.pending.splice(i, 1)
     }
     if (m.role === 'assistant') {
@@ -438,14 +440,56 @@ function pick(m: { shot?: string; url?: string; title?: string }) {
 
 /** 부탁 보내기: 내 말을 바로 화면에 띄우고 PC에 보낸다 */
 function ask(text: string) {
-  const t = text.trim()
+  const photo = st.attach
+  const t = text.trim() || (photo ? '이 사진 봐 줘' : '')
   if (!t || !st.online) return
-  st.pending.push({ id: ++pendingSeq, text: t })
+  st.pending.push({ id: ++pendingSeq, text: t, ...(photo ? { photo } : {}) })
   st.draft = ''
+  st.attach = undefined
   st.tab = 'chat'
   stickToBottom = true
   render()
-  void send({ kind: 'ask', text: t })
+  void send({ kind: 'ask', text: t, ...(photo ? { image: photo } : {}) })
+}
+
+/** 사진을 가로 1024px·300KB 이하 JPEG로 줄인다 (중계 한 번에 보낼 수 있게) */
+async function shrinkPhoto(file: File): Promise<string> {
+  const bmp = await createImageBitmap(file)
+  for (const [max, q] of [
+    [1024, 0.78],
+    [900, 0.65],
+    [720, 0.55],
+  ] as const) {
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height))
+    const c = document.createElement('canvas')
+    c.width = Math.round(bmp.width * scale)
+    c.height = Math.round(bmp.height * scale)
+    c.getContext('2d')?.drawImage(bmp, 0, 0, c.width, c.height)
+    const data = c.toDataURL('image/jpeg', q).split(',')[1] ?? ''
+    if (data.length < 300_000) return data
+  }
+  throw new Error('사진이 너무 커요')
+}
+
+/** + > 사진 보내기 */
+function pickPhoto() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.onchange = async () => {
+    const f = input.files?.[0]
+    if (!f) return
+    try {
+      st.attach = await shrinkPhoto(f)
+      st.overlay = undefined
+      st.tab = 'chat'
+      render()
+      shell?.textarea.focus()
+    } catch (e) {
+      toast((e as Error).message)
+    }
+  }
+  input.click()
 }
 
 async function decide(a: ApprovalView, decision: 'approve' | 'reject') {
@@ -723,13 +767,14 @@ function buildShell() {
   )
   const sendBtn = h('button', { class: 'send-btn', label: '보내기' })
   sendBtn.addEventListener('click', () => {
-    if (!st.draft.trim() && st.busy) return void send({ kind: 'conversation-cancel' })
+    if (!st.draft.trim() && !st.attach && st.busy) return void send({ kind: 'conversation-cancel' })
     ask(st.draft)
     textarea.value = ''
     autosize(textarea)
     textarea.focus()
   })
-  const composerBox = h('div', { class: 'composer float app-composer' }, plus, textarea, sendBtn)
+  const attachBox = h('div', { class: 'attach-preview' })
+  const composerBox = h('div', { class: 'composer float app-composer' }, attachBox, plus, textarea, sendBtn)
   const tabs = h('nav', { class: 'tabs app-tabs', label: '탭' })
   const overlay = h('div', { class: 'app-overlay' })
   const toast = h('div', { class: 'toast float-toast' })
@@ -845,16 +890,42 @@ function renderComposer() {
   if (!shell) return
   const { composerBox, textarea, sendBtn } = shell
   composerBox.hidden = st.tab !== 'chat'
+  const attachBox = composerBox.querySelector('.attach-preview') as HTMLElement
+  if (st.attach) {
+    const img = h('img')
+    img.src = `data:image/jpeg;base64,${st.attach}`
+    img.alt = '보낼 사진'
+    attachBox.replaceChildren(
+      img,
+      h(
+        'button',
+        {
+          class: 'fbtn small',
+          label: '사진 빼기',
+          onclick: () => {
+            st.attach = undefined
+            render()
+          },
+        },
+        icon('close'),
+      ),
+    )
+    attachBox.hidden = false
+  } else {
+    attachBox.replaceChildren()
+    attachBox.hidden = true
+  }
   if (textarea.value !== st.draft) {
     textarea.value = st.draft
     autosize(textarea)
   }
-  const stop = !st.draft.trim() && st.busy
+  const has = Boolean(st.draft.trim() || st.attach)
+  const stop = !has && st.busy
   sendBtn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
   sendBtn.setAttribute('aria-label', stop ? '멈추기' : '보내기')
-  sendBtn.classList.toggle('ready', Boolean(st.draft.trim()))
+  sendBtn.classList.toggle('ready', has)
   sendBtn.classList.toggle('stop', stop)
-  sendBtn.disabled = !st.online || (!st.draft.trim() && !st.busy)
+  sendBtn.disabled = !st.online || (!has && !st.busy)
 }
 
 function renderPage() {
@@ -915,10 +986,7 @@ function chatItems(): Item[] {
       items.push({
         key: m.id,
         sig: '',
-        make: () =>
-          note !== undefined
-            ? h('p', { class: 'msg note' }, note)
-            : h('div', { class: 'bubble me', text: m.text }),
+        make: () => (note !== undefined ? h('p', { class: 'msg note' }, note) : meBubble(m.text)),
       })
     } else if (m.role === 'assistant')
       items.push({
@@ -944,7 +1012,7 @@ function chatItems(): Item[] {
     items.push({
       key: `p${p.id}`,
       sig: '',
-      make: () => h('div', { class: 'bubble me sending', text: p.text }),
+      make: () => meBubble(p.text, p.photo, 'bubble me sending'),
     })
   st.queued.forEach((q, i) => {
     items.push({
@@ -976,6 +1044,20 @@ function chatItems(): Item[] {
       })
   }
   return items
+}
+
+/** 내 말풍선: 사진을 보냈으면 사진(보낸 직후) 또는 "사진" 표시 */
+function meBubble(raw: string, photo?: string, cls = 'bubble me') {
+  const { text, photo: name } = splitPhoto(raw)
+  const b = h('div', { class: `${cls}${photo || name ? ' with-photo' : ''}` })
+  if (photo) {
+    const img = h('img', { class: 'sent-photo' })
+    img.src = `data:image/jpeg;base64,${photo}`
+    img.alt = '보낸 사진'
+    b.append(img)
+  } else if (name) b.append(h('span', { class: 'photo-chip' }, icon('image', 'i'), '사진'))
+  if (text) b.append(h('span', { text }))
+  return b
 }
 
 /** 길게 누르기 (폰) · 오른쪽 클릭 (PC 브라우저) */
@@ -1775,12 +1857,12 @@ function plusSheet() {
   return h(
     'section',
     { class: 'sheet float app-sheet rise plus-sheet' },
+    item('image', 'blue', '사진 보내기', '영수증·캡처·상품 사진을 보여 주고 부탁하기', () => pickPhoto()),
     item('idea', 'amber', '아이디어', '두리에게 맡길 만한 일 보기', () => setTab('ideas')),
     item('goal', 'rose', '목표·알림 만들기', '매일 아침 브리핑, 운동, 저축…', () => setTab('goals')),
     item('feed', 'blue', '피드 받기', '매일 아침 받을 소식 정하기', () => setTab('feed')),
     item('pencil', 'violet', '따로 하는 대화', '여행 준비처럼 긴 주제는 따로', () => newSide()),
     item('apps', 'mint', '서비스 연결', '쇼핑몰·통신사·예매 사이트 로그인해 두기', () => setTab('connect')),
-    h('p', { class: 'meta seg-note', text: '사진·파일 보내기는 곧 돼요.' }),
   )
 }
 
