@@ -1,0 +1,224 @@
+// 화면 그리기 도우미: 요소 만들기, 선 아이콘, 두리 캐릭터, 두리 답 (renderer.ts와 life-views.ts가 같이 쓴다)
+import { type Inline, richBlocks } from './rich.js'
+
+export function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  ...children: (Node | string | false | undefined | null)[]
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  for (const c of children) if (c !== false && c !== undefined && c !== null) e.append(c)
+  return e
+}
+
+/** 버튼 (type="button") */
+export function button(
+  cls: string,
+  onClick: (e: MouseEvent) => void,
+  ...children: (Node | string | false | undefined | null)[]
+): HTMLButtonElement {
+  const b = el('button', cls, ...children)
+  b.type = 'button'
+  b.addEventListener('click', onClick)
+  return b
+}
+
+/** 24 격자 선 아이콘 (폰 앱 apps/phone/src/dom.ts와 같은 모양). 글자(›, ✓)나 이모지를 아이콘으로 쓰지 않는다 */
+export const ICON = {
+  menu: ['M5 9h14M5 15h14'],
+  close: ['M6 6l12 12M18 6 6 18'],
+  back: ['M15 18l-6-6 6-6'],
+  chevron: ['m9 6 6 6-6 6'],
+  plus: ['M12 5v14M5 12h14'],
+  mic: ['M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0Z', 'M5 11a7 7 0 0 0 14 0M12 18v3'],
+  send: ['M12 19V5M6 11l6-6 6 6'],
+  stop: ['M8 8h8v8H8Z'],
+  chat: ['M4 12a8 8 0 1 1 3.3 6.5L4 20l1.2-3.4A8 8 0 0 1 4 12Z'],
+  tasks: ['M8 4h8a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z', 'm8.5 12 2.5 2.5 4.5-5'],
+  idea: ['M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z'],
+  apps: [
+    'M7.5 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+    'M15 4.5h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 13.5 9V6A1.5 1.5 0 0 1 15 4.5Z',
+    'M6 13.5h3a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 9 19.5H6A1.5 1.5 0 0 1 4.5 18v-3A1.5 1.5 0 0 1 6 13.5Z',
+    'M16.5 19.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+  ],
+  globe: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'],
+  cart: [
+    'M6 6h15l-1.5 9h-12L6 6Zm0 0L5 3H2',
+    'M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM18 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
+  ],
+  lock: ['M6 11h12v10H6Z', 'M8 11V8a4 4 0 0 1 8 0v3'],
+  hand: [
+    'M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.2-2.3L4 13.7a1.5 1.5 0 0 1 2.4-1.8L8 13',
+  ],
+  bell: ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'],
+  pc: ['M4 5h16v11H4Z', 'M9 20h6M12 16v4'],
+  check: ['m5 12.5 4.5 4.5L19 7.5'],
+  card: ['M3 7h18v10H3z', 'M3 11h18'],
+  mail: ['M4 7h16v10H4z', 'm4 7 8 6 8-6'],
+  star: ['M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9Z'],
+  box: ['M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5ZM3.5 7.5 12 12l8.5-4.5M12 12v9'],
+  heart: ['M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z'],
+  calendar: ['M4 6h16v14H4Z', 'M4 10h16M9 3v4M15 3v4'],
+  shield: ['M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z'],
+  feed: ['M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z', 'M8 8h8M8 12h8M8 16h5'],
+  goal: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M12 12h.01'],
+  library: ['M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z'],
+  up: ['M7 11v9H4v-9Z', 'M7 11l4-7a2 2 0 0 1 3 2l-1 4h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7'],
+  down: ['M17 13V4h3v9Z', 'M17 13l-4 7a2 2 0 0 1-3-2l1-4H6a2 2 0 0 1-2-2.3l1.2-6A2 2 0 0 1 7.2 4H17'],
+  reply: ['M9 14 4 9l5-5', 'M4 9h10a6 6 0 0 1 6 6v4'],
+  pencil: ['M12 20h8', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'],
+  gear: [
+    'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+    'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
+  ],
+  clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7v5l3 2'],
+  brain: [
+    'M9 4a3 3 0 0 0-3 3v.5A3 3 0 0 0 4 13a3 3 0 0 0 2 4.5V18a3 3 0 0 0 6 0V5a1 1 0 0 0-1-1Z',
+    'M15 4a3 3 0 0 1 3 3v.5a3 3 0 0 1 2 5.5 3 3 0 0 1-2 4.5V18a3 3 0 0 1-6 0',
+  ],
+  list: ['M9 6h11M9 12h11M9 18h11', 'M4.5 6h.01M4.5 12h.01M4.5 18h.01'],
+  copy: ['M9 9h10v10H9Z', 'M5 15V5h10'],
+  bookmark: ['M6 4h12v17l-6-4-6 4Z'],
+  trash: ['M4 7h16', 'M10 11v6M14 11v6', 'M6 7l1 13h10l1-13', 'M9 7V4h6v3'],
+  play: ['M8 5v14l11-7Z'],
+  link: [
+    'M9 15l6-6',
+    'M11 6.5l1.5-1.5a4.2 4.2 0 0 1 6 6L17 12.5',
+    'M13 17.5 11.5 19a4.2 4.2 0 0 1-6-6L7 11.5',
+  ],
+  image: ['M4 5h16v14H4Z', 'm4 16 5-5 4 4 3-3 4 4', 'M15.5 9.5h.01'],
+  place: [
+    'M12 21s7-6.3 7-12a7 7 0 0 0-14 0c0 5.7 7 12 7 12Z',
+    'M12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  ],
+  note: ['M6 3h9l4 4v14H6Z', 'M14 3v5h5', 'M9 13h7M9 17h5'],
+  sun: [
+    'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z',
+    'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  ],
+  file: ['M6 3h8l4 4v14H6Z', 'M14 3v4h4'],
+  external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v6H4V6h6'],
+  eye: [
+    'M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z',
+    'M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5',
+  ],
+} as const
+export type IconName = keyof typeof ICON
+
+export function icon(name: IconName, cls = 'i'): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('class', cls)
+  svg.setAttribute('aria-hidden', 'true')
+  for (const d of ICON[name]) {
+    const p = document.createElementNS(ns, 'path')
+    p.setAttribute('d', d)
+    svg.append(p)
+  }
+  return svg
+}
+
+/** 아이콘 칸 (ui.css .tile + 색) */
+export function tile(name: IconName, tone = '', size?: number): HTMLElement {
+  const t = el('span', `tile ${tone}`.trim(), icon(name, 'i md'))
+  if (size) {
+    t.style.width = `${size}px`
+    t.style.height = `${size}px`
+  }
+  return t
+}
+
+/** 두리 캐릭터 그림 (표정: thinking·working·asking·done·sleeping) */
+export function doori(mood = '', size?: number): HTMLElement {
+  const d = el('span', `doori ${mood}`.trim())
+  d.setAttribute('aria-hidden', 'true')
+  if (size) d.style.setProperty('--s', `${size}px`)
+  return d
+}
+
+/** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
+interface LiveDoori {
+  setMood(mood: string): void
+}
+type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
+const DOORI3D = './doori3d.js' // 글자로 넘겨야 화면 코드와 따로 불러온다
+let doori3dModule: Promise<Doori3d> | undefined
+const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
+
+/** 큰 자리의 두리: 먼저 그림을 보이고 3D가 준비되면 움직인다. 자리마다 캔버스 하나를 옮겨 쓴다 */
+export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
+  const hit = liveSlots.get(slot)
+  if (hit) {
+    if (hit.mood !== mood) {
+      hit.mood = mood
+      hit.el.classList.remove('thinking', 'working', 'asking', 'done', 'sleeping')
+      if (mood) hit.el.classList.add(mood)
+      hit.live?.setMood(mood || 'idle')
+    }
+    hit.el.style.setProperty('--s', `${size}px`)
+    return hit.el
+  }
+  const d = doori(mood, size)
+  const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el: d, mood }
+  liveSlots.set(slot, rec)
+  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
+  doori3dModule
+    .then((m) => {
+      rec.live = m.mountDoori(d, { mood: rec.mood || 'idle' })
+      d.classList.add('live-ready')
+    })
+    .catch(() => {
+      // 3D를 못 쓰면 그림 그대로
+    })
+  return d
+}
+
+/** 빈 화면: 두리 + 한 줄 + 설명 (+ 버튼) */
+export function emptyState(mood: string, title: string, sub: string, action?: HTMLElement): HTMLElement {
+  return el('div', 'empty', doori(mood, 64), el('p', 'empty-t', title), el('p', 'cap', sub), action)
+}
+
+/** 켜고 끄기 (ui.css .switch, 부모 aria-checked) */
+export function toggle(on: boolean, label: string, onChange: (on: boolean) => void): HTMLButtonElement {
+  const b = button('toggle', (e) => {
+    e.stopPropagation()
+    const next = b.getAttribute('aria-checked') !== 'true'
+    b.setAttribute('aria-checked', String(next))
+    onChange(next)
+  })
+  b.setAttribute('role', 'switch')
+  b.setAttribute('aria-checked', String(on))
+  b.setAttribute('aria-label', label)
+  b.append(el('span', 'switch'))
+  return b
+}
+
+/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
+export function setRich(target: HTMLElement, text: string) {
+  const spans = (parent: HTMLElement, parts: Inline[]) => {
+    for (const part of parts) parent.append(part.bold ? el('strong', '', part.text) : part.text)
+  }
+  target.replaceChildren(
+    ...richBlocks(text).map((block) => {
+      if (block.type === 'p') {
+        const p = el('p')
+        block.lines.forEach((line, i) => {
+          if (i) p.append(el('br'))
+          spans(p, line)
+        })
+        return p
+      }
+      const list = el(block.type)
+      if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
+      for (const item of block.items) {
+        const li = el('li')
+        spans(li, item)
+        list.append(li)
+      }
+      return list
+    }),
+  )
+}

@@ -97,7 +97,10 @@ export interface StoredMessage {
 // ── 데몬 로컬 API (PC 앱 화면 ↔ dool2d) ──────────────────────────
 
 export const CreateThreadRequestSchema = z.object({
-  agent: AgentIdSchema,
+  /** 없으면 설정의 기본 AI (준비된 것 중) */
+  agent: AgentIdSchema.optional(),
+  /** 따로 하는 대화 (메인 대화에 섞지 않는다) */
+  side: z.boolean().optional(),
 })
 export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>
 
@@ -244,9 +247,12 @@ export interface ConversationState {
 
 /** GET /api/conversation/live: 대화에서 일어나는 일 (어디서 시작한 차례든) */
 export type ConversationLiveEvent =
-  | { kind: 'turn'; threadId: string; event: DaemonStreamEvent }
+  /** side: 따로 하는 대화(피드 글 포함)의 차례. 메인 대화 화면에는 넣지 않는다 */
+  | { kind: 'turn'; threadId: string; side?: boolean; event: DaemonStreamEvent }
   | { kind: 'queued'; texts: string[] }
   | { kind: 'busy'; busy: boolean }
+  /** 목표·보관함·기억·피드가 바뀌었다 (GET /api/life로 다시 받는다) */
+  | { kind: 'life' }
 
 // ── 브라우저 손 (ADR 0006): 두리 본체 ↔ native messaging ↔ 두리 확장 ──────
 

@@ -518,6 +518,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
     // 피드 글을 쓰는 따로 대화는 폰 대화 화면에 흘리지 않는다 (결과는 피드로 간다)
     const toPhones = threadId === store.getSetting('feedThread') ? () => {} : link.streamer(threadId)
+    // PC 화면이 메인 대화와 따로 하는 대화를 나눠 그리게
+    const side = store.getThread(threadId)?.side === true
     // 이번 답에서 승인 요청·직접 해 주세요가 나왔는지 (그러면 "끝났어요" 알림은 따로 보내지 않는다)
     let asked = false
     // 피드 "끝낸 일": 도구를 써서 일한 차례의 부탁과 답
@@ -536,7 +538,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           usedTool = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
         toPhones(ev)
-        live.emit('event', { kind: 'turn', threadId, event: ev })
+        live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
         if (ev.type === 'saved' && ev.message.role === 'tool') {
           asked = true
           const rec = (() => {
@@ -748,7 +750,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     clearTimeout(lifePush)
     lifePush = setTimeout(() => {
       void link.broadcast({ kind: 'life', state: life.state() })
-      live.emit('event', { kind: 'life' } as never)
+      live.emit('event', { kind: 'life' })
     }, 300)
   }
 
@@ -1188,8 +1190,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'GET') return json(res, 200, { threads: threadSummaries() })
       if (req.method === 'POST') {
         const body = CreateThreadRequestSchema.parse(await readJson(req))
-        if (!runtimes[body.agent]) return json(res, 400, { error: '지원하지 않는 AI예요' })
-        return json(res, 201, { thread: store.createThread(body.agent) })
+        if (body.agent && !runtimes[body.agent]) return json(res, 400, { error: '지원하지 않는 AI예요' })
+        const agent = body.agent ?? (await pickAgent(undefined))
+        return json(res, 201, { thread: store.createThread(agent, '새 대화', undefined, body.side === true) })
       }
     }
 
@@ -1197,6 +1200,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const thread = store.getThread(b)
       if (!thread) return json(res, 404, { error: '대화를 찾을 수 없어요' })
       if (req.method === 'GET' && !c) return json(res, 200, { thread, messages: store.listMessages(b) })
+      // 따로 하는 대화만 지울 수 있다 (메인 대화의 구간은 지우지 않는다)
+      if (req.method === 'DELETE' && !c) {
+        if (!thread.side) return json(res, 400, { error: '메인 대화는 지울 수 없어요' })
+        if (threads.isRunning(b)) return json(res, 409, { error: '이 대화는 아직 답하는 중이에요' })
+        store.deleteThread(b)
+        return json(res, 200, { ok: true })
+      }
       if (req.method === 'POST' && c === 'cancel') {
         threads.cancel(b)
         return json(res, 200, { ok: true })
