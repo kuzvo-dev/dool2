@@ -62,3 +62,15 @@ describe('autoLogin', () => {
     expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
   })
 })
+
+describe('두 단계 로그인', () => {
+  it('아이디를 넣고 계속을 누른 뒤 비밀번호를 넣는다', async () => {
+    const step1 = { url: 'https://acc.test/signin', text: '[e1 입력칸 "이메일 주소"] [e2 버튼 "계속"]' }
+    const step2 = { url: 'https://acc.test/signin/pw', text: '[e3 비밀번호칸 "비밀번호"] [e4 버튼 "로그인"]' }
+    const done = { url: 'https://acc.test/', text: '[e9 링크 "로그아웃"]' }
+    const b = fakeBrowser([step1, step2, done])
+    const r = await autoLogin(b, { card, url: step1.url, username: 'a@b.c', password: 'pw' }, { wait: 0 })
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'fill').map(([, a]) => a.ref)).toEqual(['e1', 'e3'])
+  })
+})

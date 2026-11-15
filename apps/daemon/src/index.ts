@@ -1169,7 +1169,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             : (card.loginUrl ?? connectUrl(card))
         if (!url) return json(res, 400, { error: '사이트 주소가 없어요' })
         const r = await probeLogin(browser, { card, url })
-        await browser.call('close', { tabId: r.tabId }).catch(() => undefined)
+        for (const t of r.tabs ?? [r.tabId]) await browser.call('close', { tabId: t }).catch(() => undefined)
         return json(res, 200, r)
       }
       // 연결하기: 아이디·비밀번호 → 금고 → 두리 본체가 대신 로그인
