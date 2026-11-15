@@ -5,6 +5,7 @@ import {
   type FeedItem,
   GOAL_CATEGORIES,
   type GoalCategory,
+  type Identity,
   type LibraryItem,
   type LifeAction,
   type LifeState,
@@ -246,9 +247,16 @@ export class Life {
     else this.onChange?.()
   }
 
+  identity(): Identity {
+    const v = this.kv.getSetting('identity')
+    return v && typeof v === 'object' ? (v as Identity) : {}
+  }
+
   state(): LifeState {
     const feedPrompt = this.feedPrompt()
+    const identity = this.identity()
     return {
+      ...(Object.keys(identity).length ? { identity } : {}),
       routines: this.routines(),
       library: this.library(),
       memory: this.memory(),
@@ -308,6 +316,15 @@ export class Life {
       case 'memory-delete':
         this.forget(a.id)
         return
+      case 'identity': {
+        const next: Identity = { ...this.identity() }
+        if (a.userName !== undefined) next.userName = a.userName.trim().slice(0, 20) || undefined
+        if (a.tone) next.tone = a.tone
+        if (a.length) next.length = a.length
+        this.kv.setSetting('identity', JSON.parse(JSON.stringify(next)))
+        this.onChange?.()
+        return
+      }
     }
   }
 

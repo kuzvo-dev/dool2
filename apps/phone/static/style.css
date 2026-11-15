@@ -1346,3 +1346,16 @@ button {
   background: var(--approve);
   box-shadow: none;
 }
+
+/* 두리 설정 (기억 칸 위) */
+.identity {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.identity .over {
+  margin: 6px 0 0;
+}
+.identity .seg {
+  width: 100%;
+}

@@ -21,8 +21,8 @@ import {
 } from '@dool2/browser'
 import {
   type AgentRuntime,
+  buildSystemPrompt,
   ConversationService,
-  DOOL2_SYSTEM_PROMPT,
   type McpServerSpec,
   ThreadService,
 } from '@dool2/engine'
@@ -237,7 +237,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
     // 기억은 대화마다 지침 끝에 붙는다
-    systemPrompt: () => [DOOL2_SYSTEM_PROMPT, life.memoryPrompt()].filter(Boolean).join('\n\n'),
+    systemPrompt: () =>
+      [buildSystemPrompt(life.identity()), life.memoryPrompt()].filter(Boolean).join('\n\n'),
   })
   /** 대화는 하나 (ADR 0015): 구간을 고르고 바꾸는 일 */
   const conversation = new ConversationService({ store, threads })
@@ -453,6 +454,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       life: async () => life.state(),
       lifeAction: async (a) => {
         life.act(a)
+        if (a.action === 'identity') conversation.rotateSoon()
         return life.state()
       },
       connectLogin: async (id, username, password) => {
@@ -1122,7 +1124,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 목표·보관함·기억·피드 (PC 화면)
     if (a === 'life' && !b && req.method === 'GET') return json(res, 200, life.state())
     if (a === 'life' && b === 'action' && req.method === 'POST') {
-      const id = life.act((await readJson(req)) as LifeAction)
+      const action = (await readJson(req)) as LifeAction
+      const id = life.act(action)
+      if (action.action === 'identity') conversation.rotateSoon()
       return json(res, 200, { ok: true, ...(id ? { id } : {}), state: life.state() })
     }
 
