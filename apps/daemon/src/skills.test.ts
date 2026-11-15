@@ -1,20 +1,33 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkConnectCard } from '@dool2/protocol/connect'
 import { describe, expect, it } from 'vitest'
 import { Skills, validateSkill } from './skills.js'
 
 const REPO_SKILLS = fileURLToPath(new URL('../../../skills', import.meta.url))
 
 describe('레포의 스킬', () => {
-  it('모든 스킬이 안전 규칙을 지킨다', async () => {
-    const dirs = (await readdir(REPO_SKILLS, { withFileTypes: true })).filter(
+  const services = async () =>
+    (await readdir(REPO_SKILLS, { withFileTypes: true })).filter(
       (d) => d.isDirectory() && !d.name.startsWith('_'),
     )
+
+  it('모든 스킬이 안전 규칙을 지킨다', async () => {
+    const dirs = await services()
     expect(dirs.length).toBeGreaterThan(0)
     for (const d of dirs) {
-      const text = await readFile(join(REPO_SKILLS, d.name, 'SKILL.md'), 'utf8')
-      expect(validateSkill(d.name, text), d.name).toEqual([])
+      // SKILL.md(절차)는 실제로 돌려 본 서비스부터 붙는다. 없으면 연결 카드만 있는 것
+      const text = await readFile(join(REPO_SKILLS, d.name, 'SKILL.md'), 'utf8').catch(() => undefined)
+      if (text) expect(validateSkill(d.name, text), d.name).toEqual([])
+    }
+  })
+
+  it('모든 서비스에 연결 카드(connect.json)가 있고 형식을 지킨다', async () => {
+    for (const d of await services()) {
+      const raw = await readFile(join(REPO_SKILLS, d.name, 'connect.json'), 'utf8').catch(() => undefined)
+      expect(raw, `${d.name}/connect.json이 없어요`).toBeDefined()
+      expect(checkConnectCard(d.name, JSON.parse(raw ?? '{}')), d.name).toEqual([])
     }
   })
 })

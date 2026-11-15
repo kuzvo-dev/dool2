@@ -20,6 +20,10 @@
     "./rich": {
       "types": "./dist/rich.d.ts",
       "default": "./dist/rich.js"
+    },
+    "./connect": {
+      "types": "./dist/connect.d.ts",
+      "default": "./dist/connect.js"
     }
   },
   "scripts": {
