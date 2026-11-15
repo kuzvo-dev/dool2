@@ -6,6 +6,7 @@
 // 2. 의존성 없는 준비 폴더(stage/)에 화면·아이콘과 함께 모은다
 // 3. Codex는 넣지 않는다 (처음 쓸 때 두리가 내려받는다, agent-codex/download.ts)
 // 4. electron-builder로 맥 dmg / 윈도우 설치 파일을 만든다 → release/
+import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -95,6 +96,13 @@ await build({
       // PC 화면 제어 도우미 (맥, ADR 0013). 윈도우 도우미는 따로
       ...(process.platform === 'darwin' ? [{ from: '../hands-mac/dist', to: 'hands' }] : []),
     ],
+    // 개발자 ID 서명(M5) 전에는 앱 전체를 ad-hoc으로 다시 서명한다. Electron 기본 서명은 앱 묶음이 봉인되지 않아
+    // 맥이 앱을 알아보지 못하고, 손쉬운 사용·화면 기록 권한을 켜도 적용되지 않는다 (실측)
+    afterPack: async (ctx) => {
+      if (ctx.electronPlatformName !== 'darwin') return
+      const appPath = join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`)
+      execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' })
+    },
     icon: 'assets/icon.png',
     mac: {
       category: 'public.app-category.productivity',

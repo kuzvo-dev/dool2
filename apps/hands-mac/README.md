@@ -20,3 +20,10 @@ printf '%s\n' '{"id":1,"cmd":"status"}' | ./dist/dool2-hands
 | `screenshot`         | 앱 창 캡처(ScreenCaptureKit, JPEG)                                               |
 
 브라우저·비밀번호 관리자·두리 자신은 본체가 시켜도 다루지 않아요.
+
+## 맥 권한
+
+손쉬운 사용·화면 기록 권한은 도우미가 아니라 **도우미를 띄운 앱(두리)** 이름으로 받아요. 앱 서명이 깨져 있으면 맥이 앱을 알아보지 못해서 설정에서 켜도 적용되지 않아요(실측).
+
+- 배포 앱: 패키징할 때 앱 전체를 ad-hoc으로 다시 서명해요(`scripts/package.mjs`의 `afterPack`). 개발자 ID 서명은 M5
+- 개발 중: npm으로 받은 `Electron.app`도 서명이 깨져 있어요. 한 번 `codesign --force --deep --sign - <Electron.app>`으로 다시 서명하고, `open -n Electron.app --args apps/desktop`으로 띄운 뒤 "Electron"에 권한을 켜요. 두리 코드를 고쳐도 Electron은 그대로라 다시 켤 필요가 없어요

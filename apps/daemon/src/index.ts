@@ -86,6 +86,14 @@ export interface DaemonOptions {
   skillsDir?: string
   /** PC 화면 제어 도우미 실행 파일 (기본: 레포의 apps/hands-mac/dist/dool2-hands). 테스트는 흉내를 넣는다 */
   hands?: string | HandsCaller
+  /**
+   * 앱 자신의 맥 권한 (Electron이 채운다). 권한 요청은 앱이 해야 "두리" 이름으로 뜬다.
+   * 도우미는 앱이 띄우므로 같은 권한을 쓴다
+   */
+  appPermissions?: {
+    status(): { accessibility: boolean; screenRecording: boolean }
+    request(): Promise<void>
+  }
   /** 폰 연결 중계 서버 기본 주소 (설정의 relay가 없을 때). 없으면 폰 연결을 켜지 않는다 */
   relay?: string
   /** 폰에 보일 이 PC 이름 */
@@ -546,13 +554,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (a === 'screen' && !c) {
       const allowed = readSettings().allowedApps ?? []
       if (!hands.available()) return json(res, 200, { screen: { available: false, allowed } })
-      if (req.method === 'GET' && !b) {
-        const s = (await hands.call('status').catch(() => ({}))) as Partial<ScreenControlStatus>
-        return json(res, 200, { screen: { available: true, ...s, allowed } })
+      const read = async () => {
+        const helper = (await hands.call('status').catch(() => ({}))) as Partial<ScreenControlStatus>
+        const app = opts.appPermissions?.status()
+        return {
+          available: true,
+          ...helper,
+          // 앱 권한이 켜져 있는데 도우미는 꺼져 있으면 도우미가 권한을 물려받지 못한 것 (진단용)
+          ...(app ? { app } : {}),
+          allowed,
+        }
       }
+      if (req.method === 'GET' && !b) return json(res, 200, { screen: await read() })
       if (req.method === 'POST' && b === 'permissions') {
-        const s = (await hands.call('request')) as Partial<ScreenControlStatus>
-        return json(res, 200, { screen: { available: true, ...s, allowed } })
+        if (opts.appPermissions) await opts.appPermissions.request()
+        else await hands.call('request')
+        return json(res, 200, { screen: await read() })
       }
     }
 
