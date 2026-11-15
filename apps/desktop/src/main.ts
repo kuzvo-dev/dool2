@@ -204,6 +204,8 @@ app.on('second-instance', showWindow)
 app.whenReady().then(async () => {
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
   const d = await startDaemon({
+    // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다
+    ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
     dataDir,
     secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
     ...packagedPaths(),

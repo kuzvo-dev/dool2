@@ -781,7 +781,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       )
       const s = screen
       if (!s) return box
-      const perms = el('ul', 'checks toggles')
+      const perms = el('ul', 'checks')
       const permRow = (label: string, detail: string, on: boolean | undefined, pane: string) => {
         const li = el('li', on ? 'ok' : 'todo')
         const text = el('div', 'text')
