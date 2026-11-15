@@ -57,7 +57,7 @@ import {
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
 import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
-import { appNote, PHOTO_MARK, readAppNote } from '@dool2/protocol/rich'
+import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { autoLogin } from './auto-login.js'
@@ -550,7 +550,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     try {
       for await (const ev of inner) {
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text))
-          askText = ev.message.text
+          askText = withoutPhotoMark(ev.message.text)
         if (
           ev.type === 'agent' &&
           ev.event.type === 'tool' &&
