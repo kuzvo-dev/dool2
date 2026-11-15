@@ -3,6 +3,12 @@
 // (docs/architecture.md 3.1). 스킬은 읽을거리일 뿐, 승인 게이트는 스킬 밖 코드가 지킨다.
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import {
+  CONNECT_CATEGORIES,
+  type ConnectCard,
+  ConnectCardSchema,
+  type ConnectionItem,
+} from '@dool2/protocol/connect'
 import type { ToolResult } from './browser-tools.js'
 
 export interface SkillInfo {
@@ -53,8 +59,37 @@ export function validateSkill(dir: string, text: string): string[] {
   return problems
 }
 
+const HOW: Record<ConnectCard['how'], string> = {
+  browser: '사용자 Chrome에서 로그인해 두고 씀',
+  official: '공식 연동 (준비 전엔 사용자 Chrome에서)',
+  open: '로그인 없이',
+  device: '폰 권한',
+}
+
+/** 절차 문서가 없는 서비스: 카드에 적힌 할 수 있는 일을 AI가 읽을 글로 */
+export function cardForAgent(card: ConnectCard, connectedAt?: string): string {
+  const lines = [
+    `# ${card.name}${card.site ? ` (${card.site})` : ''}`,
+    '',
+    `- 분류: ${CONNECT_CATEGORIES[card.category]} · 연결 방식: ${HOW[card.how]}${card.login ? ` · 로그인: ${card.login}` : ''}`,
+    `- 연결: ${connectedAt ? `사용자가 연결함(${connectedAt.slice(0, 10)})` : card.how === 'browser' || card.how === 'official' ? '아직 연결 안 함 — 로그인이 풀려 있으면 browser_request_login이나 browser_handoff로 사람에게' : '필요 없음'}`,
+    '',
+    card.summary,
+    '',
+    '## 할 수 있는 일 (등급)',
+    ...card.abilities.map((a) => `- [${a.tier}] ${a.title} — 예: "${a.say}"`),
+    '',
+    '절차 문서(SKILL.md)는 아직 없어요. 일반적인 방법으로 하되 등급을 지키고, 캡차·본인인증·막히는 곳은 사람에게 넘겨 주세요(browser_handoff).',
+  ]
+  return lines.join('\n')
+}
+
 export class Skills {
-  constructor(private readonly dir: string | undefined) {}
+  constructor(
+    private readonly dir: string | undefined,
+    /** 연결을 마친 서비스 id → 시각 (설정) */
+    private readonly connected: () => Record<string, string> = () => ({}),
+  ) {}
 
   async list(): Promise<SkillInfo[]> {
     if (!this.dir) return []
@@ -74,6 +109,37 @@ export class Skills {
     return readFile(join(this.dir, name, 'SKILL.md'), 'utf8').catch(() => undefined)
   }
 
+  /** 연결 카드 (형식이 틀린 카드는 건너뛴다. 레포 테스트가 미리 잡는다) */
+  async card(name: string): Promise<ConnectCard | undefined> {
+    if (!this.dir || !NAME.test(name)) return undefined
+    const raw = await readFile(join(this.dir, name, 'connect.json'), 'utf8').catch(() => undefined)
+    if (!raw) return undefined
+    try {
+      const r = ConnectCardSchema.safeParse(JSON.parse(raw))
+      return r.success && r.data.id === name ? r.data : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /** 연결 화면 목록: 카드가 있는 서비스 전부 (분류 순서, 같은 분류 안에서는 폴더 순서) */
+  async connections(): Promise<ConnectionItem[]> {
+    if (!this.dir) return []
+    const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => NAME.test(n)).sort()
+    const skills = new Map((await this.list()).map((s) => [s.name, s.status]))
+    const connected = this.connected()
+    const order = Object.keys(CONNECT_CATEGORIES)
+    const out: ConnectionItem[] = []
+    for (const n of names) {
+      const card = await this.card(n)
+      if (!card) continue
+      const skill = skills.get(n)
+      const at = connected[n]
+      out.push({ card, ...(skill ? { skill } : {}), ...(at ? { connectedAt: at } : {}) })
+    }
+    return out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
+  }
+
   /** 두리 도구: skill_find, skill_read */
   async run(tool: string, a: Record<string, unknown>): Promise<ToolResult> {
     const text = (t: string, isError = false): ToolResult => ({
@@ -81,27 +147,72 @@ export class Skills {
       ...(isError ? { isError: true } : {}),
     })
     if (tool === 'find') {
-      const all = await this.list()
+      const all = await this.connections()
+      // 카드 없이 절차만 있는 스킬도 찾을 수 있게
+      const skills = await this.list()
       const words = String(a.query ?? '')
         .toLowerCase()
         .split(/\s+/)
         .filter((w) => w.length > 0)
-      const hit = all.filter((s) => {
-        const hay = `${s.name} ${s.description}`.toLowerCase()
-        return words.length === 0 || words.some((w) => hay.includes(w))
-      })
-      if (!hit.length)
+      // 이름·도메인에 맞으면 크게, 소개·할 수 있는 일에 맞으면 작게. 절차가 있는 서비스를 앞으로
+      const score = (it: ConnectionItem) => {
+        const head = [it.card.id, it.card.name, it.card.site ?? ''].join(' ').toLowerCase()
+        const body = [
+          it.card.summary,
+          CONNECT_CATEGORIES[it.card.category],
+          skills.find((s) => s.name === it.card.id)?.description ?? '',
+          ...it.card.abilities.flatMap((x) => [x.title, x.say]),
+        ]
+          .join(' ')
+          .toLowerCase()
+        const n = words.reduce((sum, w) => sum + (head.includes(w) ? 3 : body.includes(w) ? 1 : 0), 0)
+        return n > 0 ? n + (it.skill ? 2 : 0) : 0
+      }
+      const hit = (
+        words.length === 0
+          ? all
+          : all
+              .map((it) => ({ it, n: score(it) }))
+              .filter((x) => x.n > 0)
+              .sort((x, y) => y.n - x.n)
+              .map((x) => x.it)
+      ).slice(0, 10)
+      const loose = skills.filter(
+        (s) =>
+          !all.some((it) => it.card.id === s.name) &&
+          (words.length === 0 || words.some((w) => `${s.name} ${s.description}`.toLowerCase().includes(w))),
+      )
+      if (!hit.length && !loose.length)
         return text(
-          '맞는 스킬이 없어요. 일반적인 방법으로 하되, 막히면 사람에게 넘겨 주세요. (스킬 목록: ' +
-            (all.map((s) => s.name).join(', ') || '없음') +
+          '맞는 스킬이 없어요. 일반적인 방법으로 하되, 막히면 사람에게 넘겨 주세요. (서비스 목록: ' +
+            (all.map((it) => it.card.id).join(', ') || '없음') +
             ')',
         )
-      return text(hit.map((s) => `- ${s.name} [${s.status}]: ${s.description}`).join('\n'))
+      const line = (it: ConnectionItem) => {
+        const tags = [
+          it.connectedAt
+            ? '연결됨'
+            : it.card.how === 'browser' || it.card.how === 'official'
+              ? '연결 전'
+              : undefined,
+          it.skill ? `절차 ${it.skill}` : '절차 없음',
+        ].filter(Boolean)
+        return `- ${it.card.id} ${it.card.name} [${tags.join(', ')}]: ${it.card.summary}`
+      }
+      return text(
+        [
+          ...hit.slice(0, 15).map(line),
+          ...loose.map((s) => `- ${s.name} [${s.status}]: ${s.description}`),
+        ].join('\n'),
+      )
     }
     if (tool === 'read') {
-      const body = await this.read(String(a.name ?? ''))
-      if (!body) return text('그런 스킬이 없어요. skill_find로 이름을 확인해 주세요.', true)
-      return text(body)
+      const name = String(a.name ?? '')
+      const body = await this.read(name)
+      if (body) return text(body)
+      const card = await this.card(name)
+      if (card) return text(cardForAgent(card, this.connected()[name]))
+      return text('그런 스킬이 없어요. skill_find로 이름을 확인해 주세요.', true)
     }
     return text(`모르는 스킬 도구예요: ${tool}`, true)
   }

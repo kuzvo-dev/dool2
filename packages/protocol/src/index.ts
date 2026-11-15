@@ -138,6 +138,8 @@ export const SettingsSchema = z.object({
     )
     .max(100)
     .optional(),
+  /** 연결을 마친 서비스 (skills/<id>/connect.json의 id → 연결한 시각) ADR 0014 */
+  connections: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/), z.string().max(40)).optional(),
 })
 
 /** PC 화면 제어 상태 (설정 화면) */

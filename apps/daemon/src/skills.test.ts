@@ -84,3 +84,56 @@ describe('스킬 도구', () => {
     expect((await s.run('read', { name: '_template' })).isError).toBe(true)
   })
 })
+
+describe('연결 카드와 스킬 도구', () => {
+  const card = {
+    id: 'demo-mall',
+    name: '데모몰',
+    site: 'demo.co.kr',
+    category: 'shopping',
+    how: 'browser',
+    login: '아이디·비밀번호',
+    summary: '데모몰을 연결하면 주문부터 배송 확인까지 두리에게 맡길 수 있어요.',
+    example: { ask: '주문한 거 언제 와?', working: '배송 조회 중', reply: '내일 오전에 도착해요.' },
+    abilities: [
+      { title: '배송 조회', say: '주문한 거 언제 와?', tier: '찾아보기' },
+      { title: '주문', say: '늘 사던 걸로 시켜 줘', tier: '돈 내기' },
+    ],
+  }
+  const setup = async () => {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-skills-'))
+    await mkdir(join(dir, 'demo-mall'))
+    await writeFile(join(dir, 'demo-mall', 'connect.json'), JSON.stringify(card))
+    await mkdir(join(dir, 'demo'))
+    await writeFile(join(dir, 'demo', 'SKILL.md'), GOOD)
+    await mkdir(join(dir, 'broken'))
+    await writeFile(join(dir, 'broken', 'connect.json'), '{"id":"broken"')
+    return dir
+  }
+
+  it('목록은 카드가 있는 서비스만, 연결 상태를 붙인다', async () => {
+    const skills = new Skills(await setup(), () => ({ 'demo-mall': '2026-11-15T01:00:00.000Z' }))
+    const list = await skills.connections()
+    expect(list.map((x) => x.card.id)).toEqual(['demo-mall'])
+    expect(list[0]?.connectedAt).toBe('2026-11-15T01:00:00.000Z')
+  })
+
+  it('skill_find는 할 수 있는 일로도 찾고 연결 여부를 알려 준다', async () => {
+    const skills = new Skills(await setup())
+    const r = await skills.run('find', { query: '배송' })
+    expect(r.content[0]?.text).toContain('demo-mall 데모몰 [연결 전, 절차 없음]')
+    const both = await skills.run('find', { query: '' })
+    expect(both.content[0]?.text).toContain('- demo [초안]')
+  })
+
+  it('절차가 없으면 skill_read가 카드의 할 수 있는 일과 등급을 준다', async () => {
+    const skills = new Skills(await setup())
+    const r = await skills.run('read', { name: 'demo-mall' })
+    expect(r.content[0]?.text).toContain('[돈 내기] 주문')
+    expect(r.content[0]?.text).toContain('절차 문서(SKILL.md)는 아직 없어요')
+    expect((await skills.run('read', { name: 'demo' })).content[0]?.text).toContain('## 절차')
+    expect((await skills.run('read', { name: 'nope' })).isError).toBe(true)
+  })
+})
