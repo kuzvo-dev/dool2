@@ -358,3 +358,42 @@ describe('폰에서 서비스 연결', () => {
     expect(JSON.stringify(p.inbox.find((m) => m.kind === 'error'))).toContain('확장')
   })
 })
+
+describe('폰에서 대화 하나', () => {
+  it('기록을 받고, 부탁하면 답하는 중 → 답 → 끝 상태를 받는다', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+
+    await p.send({ kind: 'conversation' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'conversation'))
+    const first = p.inbox.find((m) => m.kind === 'conversation')
+    expect(first?.kind === 'conversation' && first.state.messages).toEqual([])
+
+    await p.send({ kind: 'ask', text: '안녕' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'conversation-status' && m.busy))
+    await waitFor(() =>
+      p.inbox.some(
+        (m) => m.kind === 'stream' && m.event.type === 'saved' && m.event.message.role === 'assistant',
+      ),
+    )
+    await waitFor(() => p.inbox.some((m) => m.kind === 'conversation-status' && !m.busy))
+
+    p.inbox.length = 0
+    await p.send({ kind: 'conversation' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'conversation'))
+    const again = p.inbox.find((m) => m.kind === 'conversation')
+    expect(again?.kind === 'conversation' && again.state.messages.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+    ])
+  })
+})

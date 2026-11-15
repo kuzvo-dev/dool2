@@ -8,6 +8,7 @@ import {
   type AgentId,
   type ApprovalView,
   approvalSignText,
+  type ConversationState,
   type DaemonStreamEvent,
   type LinkStatus,
   type PairedPhone,
@@ -60,6 +61,9 @@ export interface LinkHost {
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
   /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
   connections(): Promise<ConnectionItem[]>
+  /** 대화 하나 (ADR 0015) */
+  conversation(o: { before?: string; limit?: number }): ConversationState
+  cancelConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark'): Promise<{ tabId?: number }>
 }
 
@@ -292,6 +296,17 @@ export class PhoneLink {
       }
       case 'connections':
         return this.send(phone, { kind: 'connections', services: await this.host.connections() })
+      case 'conversation': {
+        const before = typeof msg.before === 'string' ? msg.before.slice(0, 80) : undefined
+        const limit = Math.min(Math.max(Number(msg.limit) || 60, 1), 200)
+        return this.send(phone, {
+          kind: 'conversation',
+          state: this.host.conversation({ limit, ...(before ? { before } : {}) }),
+          ...(before ? { before } : {}),
+        })
+      }
+      case 'conversation-cancel':
+        return this.host.cancelConversation()
       case 'connect': {
         const action = msg.action
         if (action !== 'open' && action !== 'mark' && action !== 'unmark') return
@@ -409,7 +424,7 @@ export class PhoneLink {
     for (const p of this.phones) await this.send(p, body).catch(() => {})
   }
 
-  /** 대화 진행을 폰에도 흘려보낸다. 글자 조각은 모아서 보낸다 */
+  /** 대화 진행을 폰에도 흘려보낸다. 글자 조각은 0.12초씩 모아서 보낸다 (쓰는 대로 보이게, 너무 잘게 쪼개지 않게) */
   streamer(threadId: string) {
     let buf = ''
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -428,7 +443,7 @@ export class PhoneLink {
       if (!this.phones.length) return
       if (ev.type === 'agent' && ev.event.type === 'text') {
         buf += ev.event.delta
-        timer ??= setTimeout(flush, 400)
+        timer ??= setTimeout(flush, 120)
         return
       }
       flush()

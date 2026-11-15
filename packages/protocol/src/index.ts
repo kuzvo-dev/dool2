@@ -434,6 +434,10 @@ export type PhoneToPc =
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
   /** 서비스 연결 목록을 달라 (ADR 0014) */
   | { kind: 'connections' }
+  /** 대화 하나의 기록을 달라 (ADR 0015). before를 주면 그보다 앞의 말 */
+  | { kind: 'conversation'; before?: string; limit?: number }
+  /** 대화에서 지금 하는 일을 멈춘다 */
+  | { kind: 'conversation-cancel' }
   /**
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
    * mark·unmark = 연결 표시·해제
@@ -474,6 +478,10 @@ export type PcToPhone =
   /** 원격 화면 한 장 (JPEG base64). 중계 서버는 이 종류를 쌓아 두지 않는다 */
   | { kind: 'screen'; tabId: number; shot?: string; url?: string; title?: string; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
+  /** 대화 하나의 기록 (before에 대한 답이면 before가 같이 온다) */
+  | { kind: 'conversation'; state: ConversationState; before?: string }
+  /** 대화가 답하는 중인지, 줄 선 말 (바뀔 때마다) */
+  | { kind: 'conversation-status'; busy: boolean; queued: string[] }
   /** 서비스 연결 목록 (카드 + 절차 상태 + 연결 시각) */
   | { kind: 'connections'; services: ConnectionItem[] }
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
