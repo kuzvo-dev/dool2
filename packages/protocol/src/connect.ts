@@ -115,3 +115,17 @@ export function checkConnectCard(dir: string, raw: unknown): string[] {
   if (r.success && r.data.id !== dir) problems.push(`id(${r.data.id})가 폴더 이름(${dir})과 달라요`)
   return problems
 }
+
+/** 연결 화면 한 줄: 카드 + 절차 문서 상태 + 연결 상태 (GET /api/connections) */
+export interface ConnectionItem {
+  card: ConnectCard
+  /** SKILL.md가 있으면 그 상태 (초안 / 검증됨(날짜) / 막힘(사유)) */
+  skill?: string
+  /** 사용자가 연결을 마친 시각. open·device는 연결 없이 쓰거나 폰에서 켠다 */
+  connectedAt?: string
+}
+
+/** 서비스 첫 화면 주소 (연결할 때 Chrome에서 연다) */
+export function connectUrl(card: Pick<ConnectCard, 'site'>): string | undefined {
+  return card.site ? `https://${card.site}/` : undefined
+}

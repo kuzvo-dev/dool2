@@ -164,7 +164,7 @@ export function registerSkillTools(server: McpServer, client: BrowserClient) {
     {
       title: '스킬 찾기',
       description:
-        '특정 서비스(택배 조회, 기차 예매, 홈택스 등)에서 일하기 전에 먼저 쓴다. 두리가 정리해 둔 그 서비스 사용법(스킬)이 있는지 찾는다.',
+        '특정 서비스(택배 조회, 기차 예매, 홈택스 등)에서 일하기 전에 먼저 쓴다. 두리가 정리해 둔 그 서비스 사용법(스킬)이 있는지, 사용자가 그 서비스를 연결해 뒀는지 찾는다.',
       inputSchema: { query: z.string().max(100).describe('서비스 이름이나 할 일 (예: "CJ 택배 조회")') },
       annotations: { readOnlyHint: true },
     },

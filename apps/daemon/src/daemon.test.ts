@@ -341,3 +341,32 @@ describe('승인 API', () => {
     expect(tool.status).toBe(401)
   })
 })
+
+describe('서비스 연결', () => {
+  it('레포의 카드 목록을 주고, 연결 표시를 저장·해제한다', async () => {
+    const { api } = await boot()
+    const list = (await (await api('/api/connections')).json()) as { services: { card: { id: string } }[] }
+    expect(list.services.length).toBeGreaterThan(50)
+    expect(list.services.some((s) => s.card.id === 'coupang')).toBe(true)
+
+    const on = (await (await api('/api/connections/coupang', { method: 'PUT' })).json()) as {
+      connectedAt: string
+    }
+    expect(on.connectedAt).toMatch(/^\d{4}-/)
+    const after = (await (await api('/api/connections')).json()) as {
+      services: { card: { id: string }; connectedAt?: string }[]
+    }
+    expect(after.services.find((s) => s.card.id === 'coupang')?.connectedAt).toBe(on.connectedAt)
+
+    expect(await (await api('/api/connections/coupang', { method: 'DELETE' })).json()).toEqual({
+      connectedAt: null,
+    })
+    expect((await api('/api/connections/nope', { method: 'PUT' })).status).toBe(404)
+  })
+
+  it('확장이 없으면 Chrome에서 열기를 거절한다', async () => {
+    const { api } = await boot()
+    const r = await api('/api/connections/coupang/open', { method: 'POST' })
+    expect(r.status).toBe(409)
+  })
+})

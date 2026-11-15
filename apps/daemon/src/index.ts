@@ -45,6 +45,7 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
+import { connectUrl } from '@dool2/protocol/connect'
 import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
@@ -230,7 +231,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browser.on('status', (s) => events.emit('extension', s))
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
-  const skills = new Skills(opts.skillsDir ?? defaultSkillsDir())
+  const skills = new Skills(opts.skillsDir ?? defaultSkillsDir(), () => readSettings().connections ?? {})
   // PC 화면 제어 (M4): 도우미는 처음 쓸 때 띄운다
   const hands: HandsCaller =
     typeof opts.hands === 'object' ? opts.hands : new HandsProcess(opts.hands ?? defaultHandsBin())
@@ -744,6 +745,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (b === 'phones' && c && req.method === 'DELETE')
         return json(res, 200, { ok: await link.removePhone(c) })
+    }
+
+    // 서비스 연결 (ADR 0014): 카드 목록, 로그인하러 Chrome에서 열기, 연결 표시
+    if (a === 'connections') {
+      if (!b && req.method === 'GET') return json(res, 200, { services: await skills.connections() })
+      const card = b ? await skills.card(b) : undefined
+      if (b && !card) return json(res, 404, { error: '그런 서비스가 없어요' })
+      if (card && c === 'open' && !d && req.method === 'POST') {
+        const url = connectUrl(card)
+        if (!url) return json(res, 400, { error: '이 서비스는 폰에서 켜요' })
+        if (!browser.status.connected)
+          return json(res, 409, { error: 'Chrome의 두리 확장이 아직 연결되지 않았어요' })
+        const r = (await browser.call('open', { url }, 40_000)) as { tabId: number }
+        await browser.call('focus', { tabId: r.tabId }).catch(() => undefined)
+        return json(res, 200, { tabId: r.tabId })
+      }
+      if (card && !c && (req.method === 'PUT' || req.method === 'DELETE')) {
+        const next = { ...(readSettings().connections ?? {}) }
+        if (req.method === 'PUT') next[card.id] = new Date().toISOString()
+        else delete next[card.id]
+        store.setSetting('connections', next)
+        events.emit('settings', readSettings())
+        return json(res, 200, { connectedAt: next[card.id] ?? null })
+      }
     }
 
     // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
