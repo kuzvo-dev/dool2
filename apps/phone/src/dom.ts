@@ -219,3 +219,17 @@ export function segBtn(on: boolean, props: { text: string; onclick: () => void }
   b.setAttribute('aria-pressed', String(on))
   return b
 }
+
+/** 서비스 표시에 로고를 얹는다 (logos/<카드 id>.png). 없거나 못 불러오면 이름 첫 글자가 그대로 보인다 */
+export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
+  if (!id) return mark
+  const img = document.createElement('img')
+  img.className = 'svc-logo'
+  img.alt = ''
+  img.decoding = 'async'
+  img.onload = () => mark.classList.add('has-logo')
+  img.onerror = () => img.remove()
+  img.src = `logos/${encodeURIComponent(id)}.png`
+  mark.append(img)
+  return mark
+}

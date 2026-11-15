@@ -38,7 +38,7 @@ import {
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
-import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime } from './dom.js'
+import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime, withLogo } from './dom.js'
 import {
   feedView,
   goalSheet,
@@ -1312,6 +1312,16 @@ function approveQuestion(a: ApprovalView) {
   return '진행할까요?'
 }
 
+/** 로그인할 주소가 어느 연결 카드의 사이트인지 (로고) */
+function cardIdFor(url: string): string | undefined {
+  const host = hostOf(url).replace(/^www\./, '')
+  if (!host) return undefined
+  return st.services?.find((s) => {
+    const site = (s.card.site ?? '').replace(/^www\./, '')
+    return site && (host === site || host.endsWith(`.${site}`))
+  })?.card.id
+}
+
 function hostOf(url: string) {
   if (url.startsWith('app:')) return ''
   try {
@@ -1338,7 +1348,7 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
     h(
       'div',
       { class: 'approve-head' },
-      h('span', { class: 'svc-mark', text: [...r.site][0] ?? '' }),
+      withLogo(h('span', { class: 'svc-mark', text: [...r.site][0] ?? '' }), cardIdFor(r.origin)),
       h(
         'div',
         {},
@@ -1539,7 +1549,7 @@ function tapIdea(it: IdeaItem) {
 
 function ideaRow(it: IdeaItem, sec: IdeaSection) {
   const lead = it.service
-    ? h('span', { class: 'svc-mark', text: it.service.mark })
+    ? withLogo(h('span', { class: 'svc-mark', text: it.service.mark }), it.service.id)
     : h('span', { class: `tile ${sec.tone}` }, icon(sec.icon, 'i md'))
   return h(
     'button',
@@ -2280,6 +2290,8 @@ interface CredTarget {
   direct?: { text: string; onclick(): void }
   /** 연결되면 바로 시작할 부탁 */
   next?: string
+  /** 로고를 보여 줄 연결 카드 id */
+  logo?: string
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -2334,7 +2346,10 @@ function credSheet(t: CredTarget) {
     h(
       'div',
       { class: 'approve-head' },
-      h('span', { class: 'svc-mark lg', text: /^\d+/.exec(t.site)?.[0] ?? [...t.site][0] ?? '' }),
+      withLogo(
+        h('span', { class: 'svc-mark lg', text: /^\d+/.exec(t.site)?.[0] ?? [...t.site][0] ?? '' }),
+        t.logo,
+      ),
       h(
         'div',
         {},
@@ -2367,6 +2382,7 @@ function loginSheet(id: string) {
     key: r.id,
     site: r.site,
     host: hostOf(r.origin),
+    ...(cardIdFor(r.origin) ? { logo: cardIdFor(r.origin) } : {}),
     busyText: '저장하는 중…',
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
@@ -2386,6 +2402,7 @@ function connectSheet(id: string) {
     submitText: '연결하기',
     submit: (username, password) => void send({ kind: 'connect-login', id, username, password }),
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
+    logo: id,
     direct: {
       text: st.connectTabs.has(id)
         ? 'PC 화면 보면서 마저 하기'

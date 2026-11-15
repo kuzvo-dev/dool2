@@ -71,6 +71,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 function mark(card: ConnectCard, size: 'sm' | 'lg' = 'sm'): HTMLElement {
   const m = el('span', `svc-mark ${size}`, [...card.name][0] ?? '')
   m.setAttribute('aria-hidden', 'true')
+  // 로고 (dom.ts의 withLogo와 같다. 이 파일은 시험에서 dom.ts 없이 불러온다)
+  const img = document.createElement('img')
+  img.className = 'svc-logo'
+  img.alt = ''
+  img.onload = () => m.classList.add('has-logo')
+  img.onerror = () => img.remove()
+  img.src = `logos/${encodeURIComponent(card.id)}.png`
+  m.append(img)
   return m
 }
 

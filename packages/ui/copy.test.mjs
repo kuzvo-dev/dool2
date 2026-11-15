@@ -13,6 +13,8 @@ test('ui.css·캐릭터·글꼴을 복사한다', () => {
     for (const mood of ['idle', 'thinking', 'working', 'asking', 'done', 'sleeping'])
       assert.ok(existsSync(join(dir, 'a', 'doori', `${mood}.webp`)), mood)
     assert.ok(existsSync(join(dir, 'a', 'doori', 'mark.svg')))
+    assert.ok(existsSync(join(dir, 'a', 'logos', 'coupang.png')))
+    assert.ok(!existsSync(join(dir, 'a', 'logos', 'README.md')))
     assert.ok(!existsSync(join(dir, 'a', 'fonts')))
     copyUi(join(dir, 'b'), { fonts: true })
     assert.ok(existsSync(join(dir, 'b', 'fonts', 'PretendardVariable.woff2')))
