@@ -65,19 +65,19 @@ copyUi('dist') // 폰 앱
 
 ## 부품
 
-| 부품        | 클래스                                                                                                                                   | 쓰는 곳                                       |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 두리 캐릭터 | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (크기 `--s`, `.bob`)                                                     | 상태 머리, 말한 사람, 빈 화면, 승인           |
-| 워드마크    | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                     | PC 메뉴 위, 견본                              |
-| 상태        | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                               | 연결·진행·승인 대기                           |
-| 버튼        | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                   |                                               |
-| 고르기      | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                           | 빠른 답·예시 부탁, AI 고르기, 켜고 끄기, 입력 |
-| 글자        | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                    |                                               |
-| 대화        | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                     | 대화 하나, 입력창                             |
-| 일          | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.progress`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | 지금 하는 일, 두리의 화면, 단계 기록          |
-| 승인        | `.approve` (`-top` `-q` `-body` `-actions` `-note`), `.kv` (`dd.money` `dd.host`)                                                        | 결제·전송 승인                                |
-| 목록·카드   | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                    | 설정, 맡긴 일, 기록                           |
-| 틀          | `.navi`, `.tabs` + `.tab`, `.sheet`, `.scrim`, `.toast`, `.rise`                                                                         | PC 메뉴, 모바일 탭, 바텀시트                  |
+| 부품        | 클래스                                                                                                                                  | 쓰는 곳                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 두리 캐릭터 | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (크기 `--s`, `.bob`)                                                    | 상태 머리, 말한 사람, 빈 화면, 승인           |
+| 워드마크    | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                    | PC 메뉴 위, 견본                              |
+| 상태        | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                              | 연결·진행·승인 대기                           |
+| 버튼        | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                  |                                               |
+| 고르기      | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                          | 빠른 답·예시 부탁, AI 고르기, 켜고 끄기, 입력 |
+| 글자        | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                   |                                               |
+| 대화        | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                    | 대화 하나, 입력창                             |
+| 일          | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.stepbar`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | 지금 하는 일, 두리의 화면, 단계 기록          |
+| 승인        | `.approve` (`-top` `-q` `-body` `-actions` `-note`), `.kv` (`dd.money` `dd.host`)                                                       | 결제·전송 승인                                |
+| 목록·카드   | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                   | 설정, 맡긴 일, 기록                           |
+| 틀          | `.navi`, `.tabs` + `.tab`, `.sheet`, `.scrim`, `.toast`, `.rise`                                                                        | PC 메뉴, 모바일 탭, 바텀시트                  |
 
 자세한 모양은 [preview.html](preview.html)을 열어 보세요.
 

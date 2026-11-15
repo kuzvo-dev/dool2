@@ -1,6 +1,7 @@
 /*
  * 두리 PC 앱 화면 배치. 색·글꼴·버튼·카드 같은 부품은 @dool2/ui(ui.css)에 있다.
- * 새 화면을 만들 때는 packages/ui/README.md의 원칙과 부품부터 본다.
+ * 디자인 원본: docs/design/screens/pc-dark.png · pc-light.png (메뉴 / 대화 하나 / 두리의 화면)
+ * 여기에는 배치(그리드·여백·위치)만 둔다.
  */
 html,
 body {
@@ -14,454 +15,453 @@ ol {
   margin: 0;
   padding: 0;
 }
-.usage[hidden],
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+[hidden] {
+  display: none !important;
+}
 .app {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 264px minmax(0, 1fr) minmax(360px, 440px);
   /* 창 높이에 고정한다. 긴 대화는 안쪽(.messages)만 스크롤한다 */
   grid-template-rows: 100%;
   height: 100%;
   overflow: hidden;
 }
 
-/* ── 왼쪽 ─────────────────────────────────────────── */
+/* ── 왼쪽: 메뉴 · 지금 · 이 컴퓨터 ───────────────── */
 .side {
-  background: var(--side);
-  border-right: 1px solid var(--line);
-  padding: 14px 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 2px;
   min-height: 0;
+  padding: 18px 12px 14px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 2px 6px;
+  gap: 8px;
+  padding: 4px 4px 18px 12px;
 }
-.brand strong {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+.brand .face {
+  --s: 26px;
 }
-/* 두리 얼굴: 초록 사각형에 두 눈 */
-.brand .icon-btn {
+.brand .wordmark {
+  flex: 1;
+}
+.side .navi .count {
   margin-left: auto;
 }
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  height: 32px;
-  padding: 0 8px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--ink2);
-  text-align: left;
-}
-.nav-item:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-.nav-item svg.i {
-  color: var(--sub);
-}
-/* 왼쪽 구역 이름은 목록 글자와 줄을 맞춘다 */
-.side .over {
-  padding: 0 8px;
-}
-.block.grow {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  margin: 0 -10px;
-  padding: 0 10px;
-}
-.threads {
-  list-style: none;
+.now {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 6px;
+  padding: 22px 4px 0;
 }
-.threads button {
-  width: 100%;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: 8px;
-  text-align: left;
-  color: var(--ink2);
+.now > h2 {
+  padding: 0 8px 2px;
 }
-.threads button:hover {
-  background: var(--hover);
-}
-.threads button[aria-current="true"] {
-  background: var(--bg);
-  color: var(--ink);
-  box-shadow:
-    0 0 0 1px var(--line),
-    var(--shadow-sm);
-}
-.threads .t {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.threads .m {
-  flex: none;
-  font-size: 12px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-.threads .empty-list {
-  padding: 4px 8px;
-  font-size: 13px;
-  color: var(--faint);
-}
-
-/* 연결 상태: 점 하나 + 이름 + 회색 설명 */
-.status {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-.status-list {
+.now-list {
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
-.stat {
+.now-list .livebar {
+  width: 100%;
+}
+.device {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
-  min-height: 30px;
-  padding: 0 8px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--ink2);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink-muted);
   text-align: left;
 }
-button.stat:hover {
-  background: var(--hover);
+.device:hover {
+  border-color: var(--line-strong);
 }
-.stat .name {
-  flex: 1;
+.device-text {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.stat .meta {
-  flex: none;
-  font-size: 12px;
-  color: var(--faint);
+.device-text b {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 18px;
+  color: var(--ink);
 }
-.stat .meta.warn {
-  color: var(--warn);
-  font-weight: 500;
+.device-text .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-
 .notice {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 8px 9px 10px;
-  border-radius: 10px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line),
-    var(--shadow-sm);
+  gap: 8px;
+  margin: 0 4px 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--butter-soft);
   font-size: 13px;
-  line-height: 1.45;
-  color: var(--ink2);
-}
-.notice::before {
-  content: "";
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-}
-.notice[hidden] {
-  display: none;
+  line-height: 18px;
 }
 .notice-text {
   flex: 1;
 }
 
-/* ── 오른쪽 ───────────────────────────────────────── */
+/* ── 가운데: 대화 하나 ───────────────────────────── */
 .main {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
-  height: 100%;
+  min-height: 0;
 }
 .head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  min-height: 52px;
-  padding: 10px 24px;
+  gap: 12px;
+  padding: 14px 28px;
   border-bottom: 1px solid var(--line);
 }
-/* 제목이 길면 줄여서 오른쪽 사용량을 밀어내지 않게 */
-.head > div:first-child {
+.head .doori {
+  --s: 40px;
+}
+.head-text {
   flex: 1;
   min-width: 0;
 }
-.usage {
-  flex: none;
-}
 .head h1 {
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 720;
+  line-height: 22px;
 }
-.head .cap {
-  font-size: 12px;
-  color: var(--faint);
+.head .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.head .meta.live {
+  color: var(--brand-text);
 }
 .usage {
   display: flex;
-  gap: 16px;
+  gap: 14px;
 }
 .usage .u {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  min-width: 104px;
+  gap: 4px;
+  min-width: 108px;
   font-size: 12px;
-  color: var(--sub);
-  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
 }
 .usage .bar {
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
-  background: var(--fill);
+  background: var(--line);
   overflow: hidden;
 }
 .usage .bar i {
   display: block;
   height: 100%;
-  background: var(--ink);
+  background: var(--ink-muted);
 }
 .usage .bar i.hi {
-  background: var(--warn);
+  background: var(--butter);
 }
 .messages {
+  min-height: 0;
   overflow-y: auto;
-  /* 글이 너무 넓게 퍼지지 않게 가운데 720px 단에 모은다 */
-  padding: 32px max(28px, calc((100% - 720px) / 2)) 24px;
+  padding: 24px max(28px, calc((100% - 720px) / 2)) 16px;
+}
+.thread,
+.live {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
-.hero {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.25;
+.live:not(:empty) {
+  margin-top: 12px;
 }
-.sub {
-  color: var(--sub);
-  line-height: 1.65;
+.thread .sep {
+  margin: 12px 0 2px;
 }
-.examples {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 14px;
-  flex-wrap: wrap;
+.thread .sep:first-child {
+  margin-top: 0;
 }
-.msg {
-  line-height: 1.7;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-  font-size: 14.5px;
+/* 두리 → 나, 나 → 두리로 말한 사람이 바뀌면 조금 더 띄운다 */
+.thread .bubble.me + .who,
+.thread .bubble + .bubble.me {
+  margin-top: 8px;
 }
-.msg.user {
+.bubble {
   white-space: pre-wrap;
 }
-/* 답 안의 문단·목록 */
-/* 문단 사이는 반 줄쯤 띄운다 (.msg p의 margin: 0보다 우선) */
-.msg.user {
+.bubble.rich {
+  white-space: normal;
+}
+.bubble.queued {
+  opacity: 0.55;
+}
+.queued-note {
   align-self: flex-end;
-  max-width: 78%;
-  background: var(--fill);
-  padding: 9px 15px;
-  border-radius: 18px;
+  margin-top: -6px;
 }
-.msg.assistant {
-  align-self: stretch;
-  color: var(--ink);
-}
-.msg.system {
-  align-self: flex-start;
+.sysline {
   display: flex;
-  gap: 8px;
   align-items: baseline;
-  font-size: 13px;
-  color: var(--ink2);
-  line-height: 1.55;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-muted);
 }
-.msg.system::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warn);
-  transform: translateY(-1px);
-}
-/* 일하는 중 (빛 효과는 ui.css의 .shimmer) */
-.activity {
-  align-self: flex-start;
-  font-size: 13px;
-  font-weight: 500;
+.working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
 }
 .cost {
   align-self: flex-start;
-  margin-top: -8px;
-  font-size: 12px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
+}
+.thread > .card,
+.thread > .approve {
+  max-width: 560px;
+}
+/* 대화가 비었을 때: 두리 + 인사 + 예시 */
+.empty-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 100%;
+  text-align: center;
+}
+.empty-view .title-2 {
+  margin-top: 8px;
+}
+.empty-view .chips {
+  justify-content: center;
+  margin-top: 8px;
+}
+.composer-dock {
+  padding: 8px max(28px, calc((100% - 720px) / 2)) 24px;
+}
+.composer-dock textarea {
+  max-height: 160px;
 }
 
-/* 입력창: 테두리 하나짜리 상자, 아래 줄에 AI 고르기와 보내기 */
-.composer-dock {
-  padding: 0 max(28px, calc((100% - 720px) / 2)) 20px;
+/* ── 대화 안의 카드 ─────────────────────────────── */
+.approval-shot {
+  display: block;
+  width: 100%;
+  margin: 10px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
-.composer-box {
+.approve-done .card-label svg.i {
+  width: 16px;
+  height: 16px;
+}
+.handoff-reason {
+  font-size: 14px;
+}
+.handoff-actions {
+  display: flex;
+  gap: 8px;
+}
+.login-card {
+  gap: 14px;
+}
+.login-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.login-head > div {
+  display: flex;
+  flex-direction: column;
+}
+.login-head strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pw-row {
+  position: relative;
+}
+.pw-row .field {
+  width: 100%;
+  padding-right: 44px;
+}
+.pw-row .icon-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.login-form .field {
+  width: 100%;
+}
+.login-error {
+  min-height: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+.login-error:empty {
+  display: none;
+}
+.login-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── 다른 화면: 맡긴 일 · 둘러보기 · 나의 두리 ───── */
+.main.panel-view {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.main.panel-view .composer-dock {
+  display: none;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+}
+.page > .over {
+  margin-bottom: 2px;
+}
+.page-sec {
+  margin-top: 32px;
+}
+.page-empty {
+  padding: 12px 0;
+}
+.page .row {
+  width: 100%;
+  text-align: left;
+}
+.page .row svg.i:last-child {
+  color: var(--ink-muted);
+}
+.page .row .meta.need {
+  color: var(--ink);
+}
+.me-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.me-hero .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.promise {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 10px 8px 14px;
-  border-radius: 16px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-  transition: box-shadow 0.15s;
-}
-.composer-box:focus-within {
-  box-shadow:
-    0 0 0 1px rgba(9, 9, 11, 0.24),
-    var(--shadow);
-}
-.composer-dock textarea {
-  resize: none;
-  border: none;
-  outline: none;
-  background: none;
-  padding: 4px 0;
-  font-size: 14.5px;
-  line-height: 1.55;
-  max-height: 160px;
-}
-.composer-dock textarea::placeholder {
-  color: var(--faint);
-}
-.composer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.send {
-  margin-left: auto;
-}
-
-/* ── 버튼 ─────────────────────────────────────────── */
-
-/* ── 대화 안의 카드: 승인 요청 · 직접 해 주세요 ───── */
-.approval,
-.handoff {
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 18px;
+  margin-top: 28px;
+  padding: 14px 16px;
   border-radius: 14px;
-  background: var(--bg);
-  box-shadow:
-    0 0 0 1px var(--line2),
-    var(--shadow);
-  font-size: 13.5px;
-  color: var(--ink2);
+  background: var(--raise);
+  font-size: 14px;
 }
-.approval > strong,
-.handoff > strong {
+.page-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* ── 오른쪽: 두리의 화면 ─────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 20px 20px;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  overflow-y: auto;
+}
+.panel-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--sub);
+  min-height: 34px;
 }
-.approval.pending > strong,
-.handoff.active > strong {
-  color: var(--ink);
+.panel-head h2 {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 720;
 }
-.approval.pending > strong::before,
-.handoff.active > strong::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(217, 115, 13, 0.14);
+.panel-log {
+  margin: 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
 }
-.approval .kind {
-  font-weight: 400;
-  color: var(--sub);
+.workcard.quiet .workcard-head span.done-label {
+  color: var(--ink-muted);
 }
-/* 끝난 카드는 한 줄 기록처럼 가볍게 */
-.approval:not(.pending),
-.handoff:not(.active) {
-  box-shadow: 0 0 0 1px var(--line);
-  background: var(--side);
-  padding: 12px 16px;
-  gap: 6px;
-}
-.approval-body {
+.panel-empty {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 12px;
+  padding: 28px 12px;
+  text-align: center;
 }
-.approval-shot {
-  width: 100%;
-  max-height: 220px;
-  object-fit: cover;
-  object-position: top;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--line2);
-}
-.approval .cap {
-  font-size: 12.5px;
-  color: var(--sub);
-}
-.approval-actions,
-.handoff-actions {
+.panel-next {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+}
+.panel-label {
+  margin-bottom: 2px;
+}
+.panel-next .row {
+  padding: 10px 0;
+}
+.panel-next .row-t {
+  font-size: 14px;
+  font-weight: 550;
+}
+.panel-next svg.i {
+  color: var(--ink-muted);
+}
+.panel-foot {
+  display: flex;
   gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
-.handoff-actions {
-  justify-content: flex-start;
+.panel-foot svg.i {
+  margin-top: 1px;
 }
-.handoff p {
-  line-height: 1.6;
-  color: var(--ink2);
+
+/* 좁은 창: 두리의 화면을 접는다 */
+@media (max-width: 1100px) {
+  .app {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .panel {
+    display: none;
+  }
 }
 
 /* ── 첫 실행 마법사 · 설정 ─────────────────────────── */
@@ -473,7 +473,7 @@ button.stat:hover {
   display: flex;
   overflow-y: auto;
   padding: 32px;
-  background: var(--side);
+  background: var(--raise);
 }
 .setup[hidden] {
   display: none;
@@ -511,7 +511,7 @@ button.stat:hover {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: var(--line2);
+  background: var(--line);
   transition: width 0.3s var(--ease);
 }
 .steps span.on {
@@ -529,7 +529,7 @@ button.stat:hover {
   line-height: 1.3;
 }
 .setup-sub {
-  color: var(--sub);
+  color: var(--ink-muted);
   line-height: 1.65;
 }
 .setup-card .over {
@@ -548,7 +548,7 @@ button.stat:hover {
   padding: 11px 0 11px 26px;
   border-bottom: 1px solid var(--line);
   line-height: 1.5;
-  color: var(--ink2);
+  color: var(--ink-muted);
 }
 .promise li::before {
   content: "";
@@ -557,8 +557,8 @@ button.stat:hover {
   top: 16px;
   width: 9px;
   height: 5px;
-  border-left: 1.6px solid var(--ok);
-  border-bottom: 1.6px solid var(--ok);
+  border-left: 1.6px solid var(--brand-text);
+  border-bottom: 1.6px solid var(--brand-text);
   transform: rotate(-45deg);
 }
 .choices {
@@ -575,13 +575,13 @@ button.stat:hover {
   padding: 14px 16px;
   border-radius: 12px;
   background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line2);
+  box-shadow: 0 0 0 1px var(--line);
   transition:
     box-shadow 0.15s,
     background 0.15s;
 }
 .choice:hover {
-  background: var(--side);
+  background: var(--raise);
 }
 .choice strong {
   font-size: 15px;
@@ -589,14 +589,14 @@ button.stat:hover {
   letter-spacing: -0.015em;
 }
 .choice span {
-  color: var(--sub);
+  color: var(--ink-muted);
   font-size: 13px;
   line-height: 1.5;
 }
 .choice[aria-checked="true"] {
   box-shadow:
     0 0 0 1.5px var(--ink),
-    var(--shadow-sm);
+    0 0 0 0 transparent;
 }
 .choice.wide {
   grid-column: 1 / -1;
@@ -609,7 +609,7 @@ button.stat:hover {
   flex-direction: column;
   margin-top: 4px;
   border-radius: 12px;
-  box-shadow: 0 0 0 1px var(--line2);
+  box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
 }
 .checks li {
@@ -632,7 +632,7 @@ button.stat:hover {
   font-size: 0;
 }
 .checks li.ok .mark {
-  background: var(--duri);
+  background: var(--brand);
 }
 .checks li.ok .mark::after {
   content: "";
@@ -646,7 +646,7 @@ button.stat:hover {
   transform: rotate(-45deg);
 }
 .checks li.todo .mark {
-  box-shadow: inset 0 0 0 1.5px var(--line2);
+  box-shadow: inset 0 0 0 1.5px var(--line);
 }
 .checks .text {
   flex: 1;
@@ -659,7 +659,7 @@ button.stat:hover {
   font-weight: 500;
 }
 .checks .text span {
-  color: var(--sub);
+  color: var(--ink-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -675,11 +675,11 @@ button.stat:hover {
   text-align: left;
 }
 .toggle-row:hover {
-  background: var(--side);
+  background: var(--raise);
 }
 /* 켜고 끄는 스위치 */
 .setup-hint {
-  color: var(--sub);
+  color: var(--ink-muted);
   font-size: 12.5px;
   line-height: 1.6;
 }
@@ -688,8 +688,8 @@ button.stat:hover {
   gap: 8px;
   font-size: 13px;
   line-height: 1.55;
-  color: var(--ink2);
-  background: var(--warn-bg);
+  color: var(--ink-muted);
+  background: var(--butter-soft);
   box-shadow: 0 0 0 1px rgba(217, 115, 13, 0.18);
   padding: 10px 12px;
   border-radius: 10px;
@@ -713,21 +713,21 @@ button.stat:hover {
   gap: 10px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--side);
-  box-shadow: 0 0 0 1px var(--line2);
+  background: var(--raise);
+  box-shadow: 0 0 0 1px var(--line);
 }
 .login-panel p {
-  color: var(--ink2);
+  color: var(--ink-muted);
   font-size: 13.5px;
   line-height: 1.55;
 }
 .login-panel .cap {
-  color: var(--sub);
+  color: var(--ink-muted);
   font-size: 12.5px;
 }
 .login-panel .login-error,
 .vault .login-error {
-  color: var(--bad);
+  color: var(--danger);
   font-size: 13px;
 }
 .login-actions {
@@ -747,7 +747,7 @@ button.stat:hover {
   padding: 0 11px;
   border: 0;
   border-radius: 9px;
-  box-shadow: 0 0 0 1px var(--line2);
+  box-shadow: 0 0 0 1px var(--line);
   background: var(--bg);
   font-size: 14px;
   outline: none;
@@ -775,7 +775,7 @@ button.stat:hover {
   gap: 5px;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--ink2);
+  color: var(--ink-muted);
 }
 .progress {
   height: 4px;
@@ -798,11 +798,11 @@ button.stat:hover {
   display: grid;
   gap: 8px;
   font-size: 13.5px;
-  color: var(--ink2);
+  color: var(--ink-muted);
   line-height: 1.55;
 }
 .ext-steps code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 1px 6px;
   border-radius: 5px;
@@ -819,7 +819,7 @@ button.stat:hover {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--sub);
+  color: var(--ink-muted);
 }
 
 /* 두리 금고 */
@@ -834,7 +834,7 @@ button.stat:hover {
   list-style: none;
   display: grid;
   border-radius: 12px;
-  box-shadow: 0 0 0 1px var(--line2);
+  box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
 }
 .vault-list li {
@@ -852,13 +852,13 @@ button.stat:hover {
   display: grid;
 }
 .vault-list .text strong {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 12.5px;
   font-weight: 500;
 }
 .vault-list .text span {
   font-size: 12.5px;
-  color: var(--faint);
+  color: var(--ink-faint);
 }
 
 /* 폰 연결 */
@@ -875,7 +875,7 @@ button.stat:hover {
   box-shadow: 0 0 0 1px var(--line);
 }
 .pair-code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 30px;
   font-weight: 500;
   letter-spacing: 0.12em;
@@ -883,237 +883,11 @@ button.stat:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 홈: 인사 → 부탁 칸 → 예시 → 최근에 맡긴 일 ──── */
-.main.home {
-  grid-template-rows: minmax(0, 1fr);
-}
-.main.home .head {
-  display: none;
-}
-.main.home .messages {
-  padding-top: max(48px, 9vh);
-}
-.home-view {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.home-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 10px;
-  text-align: center;
-}
-.home-hero .face {
-  --s: 40px;
-}
-#home-ask .composer-dock {
-  padding: 0;
-}
-#home-ask .composer-box {
-  padding: 14px 12px 10px 18px;
-  border-radius: var(--r-xl);
-}
-#home-ask textarea {
-  min-height: 52px;
-  font-size: 15px;
-}
-.home-hint {
-  margin-top: -4px;
-  padding: 0 4px;
-  font-size: 12.5px;
-  color: var(--faint);
-  text-align: center;
-}
-.home-view .examples {
-  margin-top: 0;
-}
-.recent {
-  margin-top: 30px;
-}
-.recent .over {
-  margin-bottom: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.tasks {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
-  gap: 12px;
-}
-.tasks .task {
-  min-height: 132px;
-}
-.tasks .task .btn-light {
-  margin-top: auto;
-  height: 32px;
-  font-size: 13px;
-}
-.tasks .task.dark .task-body {
-  margin-bottom: 12px;
-}
-
-/* ── 대화 안의 진행: 지금 하는 일 + 한 일 목록 ───── */
-.work {
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.work-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-/* 단계가 생기면 도는 원은 목록의 "지금 하는 일" 하나만 */
-.work:has(.worklog li) .work-head .spin {
-  display: none;
-}
-.work-time {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-}
-.work .worklog {
-  padding-left: 1px;
-}
-/* 길어지면 최근 다섯 단계만 */
-.work:not(.done) .worklog li:nth-last-child(n + 6) {
-  display: none;
-}
-details.work.done {
-  gap: 0;
-  font-size: 13px;
-  color: var(--sub);
-}
-details.work.done summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  padding: 2px 0;
-  cursor: pointer;
-  list-style: none;
-}
-details.work.done summary::-webkit-details-marker {
-  display: none;
-}
-details.work.done summary::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  margin: 0 3px 2px 1px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 0.15s var(--ease);
-}
-details.work.done[open] summary::before {
-  transform: rotate(45deg);
-}
-details.work.done summary:hover {
-  color: var(--ink);
-}
-details.work.done .worklog {
-  margin-top: 10px;
-}
-
-/* 왼쪽 목록의 도는 원·점 */
-.threads .spin,
-.threads .dot {
-  margin-right: 4px;
-}
-
-/* ── 로그인 카드: 넣은 값은 금고로만 ─────────────── */
-.login-card {
-  max-width: 440px;
-  gap: 14px;
-}
-.login-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.login-head > div {
-  display: flex;
-  flex-direction: column;
-}
-.login-head strong {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.login-head .mono {
-  font-size: 12px;
-  color: var(--faint);
-}
-.login-badge {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--fill);
-  color: var(--ink2);
-}
-.login-badge svg.i {
-  width: 20px;
-  height: 20px;
-}
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.login-form .field {
-  width: 100%;
-  height: 42px;
-}
-.pw-row {
-  position: relative;
-}
-.pw-row .field {
-  padding-right: 40px;
-}
-.pw-row .icon-btn {
-  position: absolute;
-  top: 7px;
-  right: 6px;
-}
-.login-form .btn {
-  height: 42px;
-  margin-top: 4px;
-}
-.login-error {
-  min-height: 0;
-  font-size: 12.5px;
-  color: var(--bad);
-}
-.login-error:empty {
-  display: none;
-}
-.login-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--sub);
-}
-.login-foot svg.i,
-.login-card .card-label svg.i {
-  width: 14px;
-  height: 14px;
-}
-
 /* ── 서비스 연결: 분류별 목록 → 상세 ─────────────── */
-.main.panel {
+.main.panel-view {
   grid-template-rows: auto minmax(0, 1fr);
 }
-.main.panel .composer-dock {
+.main.panel-view .composer-dock {
   display: none;
 }
 .connect-view {
@@ -1140,7 +914,7 @@ details.work.done .worklog {
   width: 100%;
   padding: 10px 6px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   background: none;
   color: inherit;
   font: inherit;
@@ -1174,7 +948,7 @@ details.work.done .worklog {
   gap: 6px;
   margin-left: auto;
   font-size: 12.5px;
-  color: var(--faint);
+  color: var(--ink-faint);
 }
 .svc-state svg.i {
   width: 16px;
@@ -1188,9 +962,9 @@ details.work.done .worklog {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--fill);
+  background: var(--raise);
   box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink2);
+  color: var(--ink-muted);
   font-size: 15px;
   font-weight: 600;
 }
@@ -1226,7 +1000,7 @@ details.work.done .worklog {
 }
 .svc-summary {
   margin: 0;
-  color: var(--ink2);
+  color: var(--ink-muted);
   line-height: 1.7;
 }
 .svc-demo {
@@ -1246,7 +1020,7 @@ details.work.done .worklog {
   gap: 8px;
   margin: 0;
   font-size: 13px;
-  color: var(--sub);
+  color: var(--ink-muted);
 }
 .svc-detail > .over {
   margin: 8px 0 -6px;
@@ -1259,7 +1033,7 @@ details.work.done .worklog {
 }
 .svc-abilities > li > svg.i {
   flex: none;
-  color: var(--sub);
+  color: var(--ink-muted);
 }
 .svc-approval {
   margin-top: -6px;
@@ -1274,7 +1048,7 @@ details.work.done .worklog {
   gap: 6px;
   margin: 8px 0 0;
   padding-left: 18px;
-  color: var(--sub);
+  color: var(--ink-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -1301,9 +1075,9 @@ details.work.done .worklog {
   gap: 8px;
   margin: 0 8px 0 0;
   font-size: 13.5px;
-  color: var(--ink2);
+  color: var(--ink-muted);
 }
 .svc-note {
   flex-basis: 100%;
-  color: var(--warn);
+  color: var(--ink);
 }
