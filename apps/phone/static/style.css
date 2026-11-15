@@ -455,17 +455,11 @@ button {
 .panel-head {
   display: flex;
 }
+/* 두리 판의 큰 두리: 바탕 없이 3D가 그대로 떠 있다 */
 .agent-big {
   display: grid;
   place-items: center;
-  width: 96px;
-  height: 96px;
-  margin: -4px auto 10px;
-  border-radius: var(--radius-full);
-  background: var(--bg);
-  box-shadow:
-    0 0 0 5px var(--surface),
-    var(--shadow-float);
+  margin: -18px auto 0;
 }
 .agent-name {
   margin: 0;

@@ -10,8 +10,9 @@ test('ui.css·캐릭터·글꼴을 복사한다', () => {
   try {
     copyUi(join(dir, 'a'))
     assert.ok(existsSync(join(dir, 'a', 'ui.css')))
-    for (const mood of ['idle', 'thinking', 'working', 'asking', 'done', 'sleeping', 'mark'])
-      assert.ok(existsSync(join(dir, 'a', 'doori', `${mood}.svg`)), mood)
+    for (const mood of ['idle', 'thinking', 'working', 'asking', 'done', 'sleeping'])
+      assert.ok(existsSync(join(dir, 'a', 'doori', `${mood}.webp`)), mood)
+    assert.ok(existsSync(join(dir, 'a', 'doori', 'mark.svg')))
     assert.ok(!existsSync(join(dir, 'a', 'fonts')))
     copyUi(join(dir, 'b'), { fonts: true })
     assert.ok(existsSync(join(dir, 'b', 'fonts', 'PretendardVariable.woff2')))
@@ -29,7 +30,7 @@ test('토큰에 쓰지 않기로 한 것이 없다 (이모지·글자 아이콘)
 
 test('ui.css가 부르는 캐릭터 파일이 모두 있다', () => {
   const css = readFileSync(new URL('./ui.css', import.meta.url), 'utf8')
-  const urls = [...css.matchAll(/url\("(doori\/[a-z-]+\.svg)"\)/g)].map((m) => m[1])
+  const urls = [...css.matchAll(/url\("(doori\/[a-z-]+\.(?:svg|webp))"\)/g)].map((m) => m[1])
   assert.ok(urls.length >= 7)
   for (const u of urls) assert.ok(existsSync(new URL(`./${u}`, import.meta.url)), u)
 })

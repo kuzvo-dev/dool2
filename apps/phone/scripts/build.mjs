@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { copyUi } from '../../../packages/ui/copy.mjs'
+import { bundleDoori3d, copyUi } from '../../../packages/ui/copy.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -22,3 +22,5 @@ await build({
 cpSync(join(root, 'static'), dist, { recursive: true })
 // 디자인 시스템. 글꼴은 넣지 않는다 (폰은 기기 글꼴)
 copyUi(dist)
+// 큰 자리의 움직이는 두리: 화면이 필요할 때만 불러온다
+await bundleDoori3d(build, join(dist, 'doori3d.js'))

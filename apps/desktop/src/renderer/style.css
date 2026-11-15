@@ -519,8 +519,8 @@ ol {
   background: var(--ink);
 }
 .setup-mark {
-  --s: 44px;
-  margin-bottom: 8px;
+  --s: 72px;
+  margin: -8px 0 4px -6px;
 }
 .setup-title {
   font-size: 22px;

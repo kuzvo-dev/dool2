@@ -1,5 +1,6 @@
 import { cpSync, mkdirSync } from 'node:fs'
-import { copyUi } from '../../../packages/ui/copy.mjs'
+import { build } from 'esbuild'
+import { bundleDoori3d, copyUi } from '../../../packages/ui/copy.mjs'
 
 mkdirSync('dist/renderer', { recursive: true })
 for (const f of ['index.html', 'style.css']) cpSync(`src/renderer/${f}`, `dist/renderer/${f}`)
@@ -9,3 +10,6 @@ cpSync('../../packages/protocol/dist/rich.js', 'dist/renderer/rich.js')
 
 // 디자인 시스템(ui.css)과 Pretendard 글꼴
 copyUi('dist/renderer', { fonts: true })
+
+// 큰 자리의 움직이는 두리 (three 포함). 화면이 필요할 때만 불러온다
+await bundleDoori3d(build, 'dist/renderer/doori3d.js')

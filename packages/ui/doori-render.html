@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<!--
+  두리 그림 다시 뽑기 (개발용). doori3d.js를 고친 뒤 이 페이지를 http로 열면
+  표정 그림(doori/*.webp)과 앱 아이콘을 그려서 보여 주고, 눌러서 내려받을 수 있다.
+    cd packages/ui && python3 -m http.server 8799   →   http://127.0.0.1:8799/doori-render.html
+  three는 CDN에서 불러온다 (package.json의 three 버전과 맞출 것).
+-->
+<head>
+<meta charset="utf-8" />
+<title>두리 그림 뽑기</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/": "https://cdn.jsdelivr.net/npm/three@0.187.0/"
+} }
+</script>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 24px; background: #f5f6f8; }
+  .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+  figure { margin: 0; background: #fff; border-radius: 16px; padding: 12px; text-align: center; }
+  figure img { display: block; max-width: 160px; max-height: 160px; margin: 0 auto 6px; background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+</style>
+</head>
+<body>
+<h1>두리 그림</h1>
+<div class="grid" id="out"></div>
+<script type="module">
+import { createDoori, MOODS, makeCamera, makeRenderer } from './doori3d.js'
+
+const out = {}
+const renderer = makeRenderer({ preserveDrawingBuffer: true })
+renderer.setPixelRatio(1)
+const d = createDoori(renderer)
+const camera = makeCamera(1)
+
+/** 표정 하나를 size 크기 캔버스로 */
+function shot(mood, size) {
+  renderer.setSize(size, size, false)
+  d.setMood(mood)
+  d.animate(0.9)
+  renderer.render(d.scene, camera)
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  c.getContext('2d').drawImage(renderer.domElement, 0, 0)
+  return c
+}
+
+// 표정 그림: 256px webp (화면에서 최대 120px까지, 2배 밀도)
+for (const m of MOODS) out[`doori/${m}.webp`] = shot(m, 256).toDataURL('image/webp', 0.9)
+
+/** 앱 아이콘: 연한 민트 바탕 위 두리. tile=true면 macOS처럼 둥근 판(824/1024) */
+function icon(size, { tile = false, scale = 0.66 } = {}) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const g = c.getContext('2d')
+  const inset = tile ? size * 0.0977 : 0
+  const w = size - inset * 2
+  const bg = g.createLinearGradient(0, inset, 0, inset + w)
+  bg.addColorStop(0, '#ffffff')
+  bg.addColorStop(1, '#dcf5e9')
+  if (tile) {
+    g.save()
+    g.shadowColor = 'rgba(10,40,25,0.22)'
+    g.shadowBlur = size * 0.03
+    g.shadowOffsetY = size * 0.012
+    g.beginPath()
+    g.roundRect(inset, inset, w, w, w * 0.225)
+    g.fillStyle = bg
+    g.fill()
+    g.restore()
+  } else {
+    g.fillStyle = bg
+    g.fillRect(0, 0, size, size)
+  }
+  const s = w * scale
+  g.drawImage(shot('idle', Math.round(s * 1.0)), inset + (w - s) / 2 + s * 0.065, inset + (w - s) / 2 + w * 0.02, s, s) // 소품 자리 때문에 몸이 그림 왼쪽에 있어 오른쪽으로
+  return c.toDataURL('image/png')
+}
+out['icon-mac-1024.png'] = icon(1024, { tile: true, scale: 0.94 })
+out['icon-512.png'] = icon(512, { scale: 0.78 })
+out['icon-192.png'] = icon(192, { scale: 0.86 })
+// 확장 아이콘: 바탕 없이 두리만
+for (const s of [16, 32, 48, 128]) out[`ext-${s}.png`] = shot('idle', s * 2).toDataURL('image/png')
+
+window.__out = out
+const box = document.getElementById('out')
+for (const [name, url] of Object.entries(out)) {
+  const f = document.createElement('figure')
+  f.innerHTML = `<a download="${name.replace('/', '-')}" href="${url}"><img src="${url}" alt=""></a>${name}`
+  box.append(f)
+}
+document.body.dataset.ready = '1'
+</script>
+</body>
+</html>

@@ -28,7 +28,7 @@ import {
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { readAppNote, toolLabel } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
-import { doori, h, type IconName, icon, rich, shortTime } from './dom.js'
+import { doori, h, type IconName, icon, liveDoori, rich, shortTime } from './dom.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -1428,7 +1428,7 @@ function agentPanel() {
       { class: 'panel-head' },
       h('button', { class: 'fbtn', label: '닫기', onclick: () => openOverlay(undefined) }, icon('close')),
     ),
-    h('div', { class: 'agent-big' }, doori(mood, 64)),
+    h('div', { class: 'agent-big' }, liveDoori('agent', mood, 136)),
     h('h2', { class: 'agent-name', text: '두리' }),
     h(
       'p',
@@ -1606,7 +1606,7 @@ function introView() {
   return h(
     'section',
     { class: 'center-page' },
-    doori('', 88),
+    liveDoori('intro', '', 120),
     h('h1', { class: 'display-s', text: '두리' }),
     h('p', { class: 'psub', text: '내 컴퓨터의 두리에게 폰으로 부탁해요.' }),
     h(
@@ -1624,7 +1624,7 @@ function unsupportedView() {
   return h(
     'section',
     { class: 'center-page' },
-    doori('asking', 72),
+    liveDoori('center', 'asking', 104),
     h('h1', { class: 'title-2', text: '이 브라우저에서는 열 수 없어요' }),
     h('p', { class: 'psub', text: '아이폰은 사파리 17 이상, 안드로이드는 크롬 최신 버전에서 열어 주세요.' }),
   )
@@ -1635,14 +1635,14 @@ function pairingView(v: Extract<Screen, { name: 'pairing' }>) {
     return h(
       'section',
       { class: 'center-page' },
-      doori('asking', 72),
+      liveDoori('center', 'asking', 104),
       h('h1', { class: 'title-2', text: 'PC에서 연결을 거절했어요' }),
       h('p', { class: 'psub', text: '숫자가 달랐다면 PC에서 QR을 새로 띄워 다시 찍어 주세요.' }),
     )
   return h(
     'section',
     { class: 'center-page' },
-    doori('thinking', 72),
+    liveDoori('center', 'thinking', 104),
     h('h1', { class: 'title-2', text: `${v.pcName}에 연결할게요` }),
     h('p', { class: 'psub', text: 'PC 화면에 이 숫자가 보이나요?' }),
     h('p', { class: 'pair-code mono', text: v.code }),

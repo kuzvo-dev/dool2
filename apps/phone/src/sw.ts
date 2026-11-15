@@ -32,7 +32,7 @@ const sw = self as unknown as {
     openWindow(url: string): Promise<unknown>
   }
 }
-const CACHE = 'dool2-shell-v3'
+const CACHE = 'dool2-shell-v4'
 const SHELL = [
   './',
   './index.html',
@@ -41,6 +41,7 @@ const SHELL = [
   './style.css',
   './manifest.webmanifest',
   './icons/icon192.png',
+  './doori/idle.webp',
 ]
 
 sw.addEventListener('install', (e) => {

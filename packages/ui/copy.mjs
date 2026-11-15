@@ -18,3 +18,21 @@ export function copyUi(to, opts = {}) {
     cpSync(join(here, 'fonts'), join(to, 'fonts'), { recursive: true })
   }
 }
+
+/**
+ * 3D 두리(doori3d.js + three)를 화면이 따로 불러올 파일 하나로 묶는다. 앱의 esbuild를 넘겨받는다.
+ * 화면은 import('./doori3d.js')로 필요할 때만 불러오고, 실패하면 정지 그림을 그대로 둔다.
+ * @param {typeof import('esbuild').build} build @param {string} outfile
+ */
+export function bundleDoori3d(build, outfile) {
+  return build({
+    entryPoints: [join(here, 'doori3d.js')],
+    outfile,
+    bundle: true,
+    format: 'esm',
+    target: ['safari17', 'chrome120'],
+    minify: true,
+    legalComments: 'none',
+    logLevel: 'warning',
+  })
+}

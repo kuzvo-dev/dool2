@@ -193,29 +193,43 @@ svg.i.md {
 }
 
 /* ── 두리 ─────────────────────────────────────────── */
-/* 캐릭터: <span class="doori working"></span>. 크기는 --s (24/32/40–48/72–120만) */
+/* 캐릭터: <span class="doori working"></span>. 크기는 --s (22–56은 그림, 64 이상은 .live로 3D)
+   그림은 3D 두리(doori3d.js)를 표정마다 미리 뽑은 것. 머리 오른쪽 위에 소품 자리가 있어 몸은 조금 왼쪽에 있다 */
 .doori {
   --s: 32px;
+  position: relative;
   flex: none;
   display: inline-block;
   width: var(--s);
   height: var(--s);
-  background: url("doori/idle.svg") center / contain no-repeat;
+  background: url("doori/idle.webp") center / contain no-repeat;
 }
 .doori.thinking {
-  background-image: url("doori/thinking.svg");
+  background-image: url("doori/thinking.webp");
 }
 .doori.working {
-  background-image: url("doori/working.svg");
+  background-image: url("doori/working.webp");
 }
 .doori.asking {
-  background-image: url("doori/asking.svg");
+  background-image: url("doori/asking.webp");
 }
 .doori.done {
-  background-image: url("doori/done.svg");
+  background-image: url("doori/done.webp");
 }
 .doori.sleeping {
-  background-image: url("doori/sleeping.svg");
+  background-image: url("doori/sleeping.webp");
+}
+/* 움직이는 3D: 그림 위에 캔버스를 얹고, 그려지면 그림을 감춘다 */
+.doori .doori-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.doori.live-ready {
+  background-image: none;
 }
 /* 일하는 중에 천천히 떠 있는 움직임 (큰 캐릭터 하나에만) */
 .doori.bob {
@@ -905,7 +919,7 @@ svg.i.md {
     var(--shadow-float);
 }
 .agent-av .doori {
-  --s: 40px;
+  --s: 52px;
 }
 .agent-tag {
   margin-top: -7px;
