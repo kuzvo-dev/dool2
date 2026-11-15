@@ -175,7 +175,13 @@ export function rich(text: string): DocumentFragment {
     if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
     for (const item of block.items) {
       const li = h('li')
-      spans(li, item)
+      // 할 일 목록 "[ ] 항목" / "[x] 항목"은 동그라미 체크로
+      const first = item[0]
+      const m = first && !first.bold ? /^\[( |x|X)\]\s*/.exec(first.text) : null
+      if (m && first) {
+        li.className = m[1] === ' ' ? 'todo' : 'todo done'
+        spans(li, [{ ...first, text: first.text.slice(m[0].length) }, ...item.slice(1)])
+      } else spans(li, item)
       list.append(li)
     }
     f.append(list)

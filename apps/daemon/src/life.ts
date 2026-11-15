@@ -75,12 +75,14 @@ export class Life {
       ...(next ? { nextRunAt: next.toISOString() } : {}),
     }
     this.put('routines', [r, ...this.routines()])
-    this.feed({
-      kind: 'goal',
-      title: `${r.category ? '목표를 세웠어요' : '알아서 할 일을 정했어요'}: ${r.title}`,
-      ...(r.schedule ? { body: scheduleLabel(r.schedule) } : {}),
-      ref: r.id,
-    })
+    // 피드 지시로 만든 일은 피드에 따로 알리지 않는다
+    if (r.target !== 'feed')
+      this.feed({
+        kind: 'goal',
+        title: `${r.category ? '목표를 세웠어요' : '알아서 할 일을 정했어요'}: ${r.title}`,
+        ...(r.schedule ? { body: scheduleLabel(r.schedule) } : {}),
+        ref: r.id,
+      })
     return r
   }
   /** 목표 고치기: 계획 단계·진행 기록 */

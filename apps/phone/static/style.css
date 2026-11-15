@@ -1315,3 +1315,34 @@ button {
   display: grid;
   gap: 2px;
 }
+.card.lib-card {
+  display: flex;
+  flex-direction: row;
+}
+/* 답 안의 할 일 목록 */
+.rich li.todo,
+.bubble li.todo,
+.feed-body li.todo {
+  list-style: none;
+  position: relative;
+  margin-left: -2px;
+  padding-left: 24px;
+}
+.rich li.todo::before,
+.bubble li.todo::before,
+.feed-body li.todo::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.28em;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+.rich li.todo.done::before,
+.bubble li.todo.done::before,
+.feed-body li.todo.done::before {
+  background: var(--approve);
+  box-shadow: none;
+}

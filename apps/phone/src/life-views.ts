@@ -55,6 +55,8 @@ export function plain(text: string, max = 120) {
   const t = text
     .replace(/\*\*/g, '')
     .replace(/^\s*(?:[-*•]|\d+\.)\s+/gm, '')
+    .replace(/\[( |x|X)\]\s*/g, '')
+    .replace(/^#+\s*/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
