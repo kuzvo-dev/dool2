@@ -75,6 +75,11 @@ export const ConnectCardSchema = z
       })
       .strict(),
     abilities: z.array(ConnectAbilitySchema).min(2).max(6),
+    /**
+     * 로그인한 사람에게만 보이는 말 (예: "로그아웃", "마이쿠팡"). 연결할 때 두리가 이 말이 보이면 로그인을 마친 걸로 본다.
+     * 없으면 "로그아웃"·"Logout" 같은 흔한 말로 확인한다
+     */
+    signedIn: z.array(line(30)).min(1).max(5).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {

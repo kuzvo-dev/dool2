@@ -53,6 +53,7 @@ import { appNote } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
+import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
@@ -271,6 +272,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     throw new Error('PC에 일할 AI가 연결돼 있지 않아요')
   }
   // 서비스 연결 (ADR 0014): PC 화면(HTTP)과 폰(연결)이 같이 쓴다
+  // 연결하려고 연 탭을 지켜보다가 로그인한 사람에게만 보이는 말이 나오면 알아서 연결로 표시한다 (AI 없이)
+  const loginWatch = new LoginWatch({
+    snapshot: async (tabId) => {
+      const r = (await browser.call('snapshot', { tabId, maxChars: 6_000 }, 20_000)) as {
+        url: string
+        text: string
+      }
+      return { url: r.url, text: r.text }
+    },
+    connected: (id) => Boolean(readSettings().connections?.[id]),
+    onSignedIn: (card) => {
+      connectMark(card.id, true)
+      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+    },
+  })
   const connectOpen = async (card: ConnectCard, forPhone: boolean): Promise<number> => {
     const url = connectUrl(card)
     if (!url) throw new Error('이 서비스는 폰에서 켜요')
@@ -279,9 +295,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 폰에서 연결하면 PC 앞에 없으니 그 탭을 원격 화면으로 넘긴다. PC면 앞으로 띄운다
     if (forPhone) browserTools.allowRemote(r.tabId)
     else await browser.call('focus', { tabId: r.tabId }).catch(() => undefined)
+    loginWatch.start(card, r.tabId)
     return r.tabId
   }
   const connectMark = (id: string, on: boolean): string | undefined => {
+    loginWatch.stop(id)
     const next = { ...(readSettings().connections ?? {}) }
     if (on) next[id] = new Date().toISOString()
     else delete next[id]
@@ -1022,6 +1040,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
         claudeLogin?.cancel()
+        loginWatch.stopAll()
         link.stop()
         server.closeAllConnections()
         server.close(() => {
