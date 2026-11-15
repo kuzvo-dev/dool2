@@ -13,6 +13,7 @@ import type {
   StoredMessage,
   ThreadSummary,
 } from '@dool2/protocol'
+import type { ConnectionItem } from '@dool2/protocol/connect'
 import {
   type Envelope,
   fromB64u,
@@ -26,6 +27,7 @@ import {
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { type Inline, readAppNote, richBlocks, toolLabel } from '@dool2/protocol/rich'
+import { type ConnectCtx, connectEntry, connectionsView, serviceView } from './connections.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -38,7 +40,9 @@ type View =
   | { name: 'home' }
   | { name: 'thread'; id?: string }
   | { name: 'approval'; id: string }
-  | { name: 'remote'; tabId: number; threadId?: string }
+  | { name: 'remote'; tabId: number; threadId?: string; connectId?: string }
+  | { name: 'connections' }
+  | { name: 'service'; id: string }
 
 const st: {
   saved?: Saved
@@ -66,6 +70,10 @@ const st: {
   /** 원격 화면: 지금 보고 있는 PC 탭의 마지막 화면 */
   screen?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
   remoteDraft: string
+  /** 서비스 연결 (PC가 보내 준 목록), 찾기 칸, 연결하기를 누르고 기다리는 서비스 */
+  services?: ConnectionItem[]
+  connectQuery: string
+  opening?: string
 } = {
   online: false,
   view: { name: 'intro' },
@@ -79,6 +87,7 @@ const st: {
   decided: new Map(),
   draft: '',
   remoteDraft: '',
+  connectQuery: '',
 }
 
 // ── 화면 그리기 도우미 ──
@@ -162,13 +171,21 @@ const go = (v: View) => {
 
 // ── 연결 ──
 
-async function send(body: PhoneToPc) {
+// 보내기는 한 줄로 세운다. 순번(seq)을 올리고 저장·암호화를 기다리는 사이 다른 메시지가 끼면
+// 같은 순번으로 나가거나 순서가 뒤집혀, PC가 뒤의 것을 재전송으로 보고 버린다
+let sending = Promise.resolve()
+function send(body: PhoneToPc): Promise<void> {
+  sending = sending.then(() => sendNow(body)).catch(() => {})
+  return sending
+}
+
+async function sendNow(body: PhoneToPc) {
   const s = st.saved
   if (!s || !st.key || !st.client) return
-  s.seq += 1
+  const seq = ++s.seq
   await save(s)
   st.client.send(
-    await seal(st.key, { v: LINK_VERSION, from: s.keys.id, to: s.pcId, kind: body.kind, seq: s.seq }, body),
+    await seal(st.key, { v: LINK_VERSION, from: s.keys.id, to: s.pcId, kind: body.kind, seq }, body),
   )
 }
 
@@ -184,7 +201,10 @@ function connect() {
     onEnvelope: (env) => void receive(env),
     onState: (state) => {
       st.online = state === 'ready'
-      if (state === 'ready' && st.saved?.paired) void send({ kind: 'hello' })
+      if (state === 'ready' && st.saved?.paired) {
+        void send({ kind: 'hello' })
+        void send({ kind: 'connections' })
+      }
       render()
     },
   })
@@ -264,7 +284,15 @@ async function receive(env: Envelope) {
       st.screen = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
       if (!msg.error) nextScreen(msg.tabId)
       break
+    case 'connections':
+      st.services = msg.services
+      break
+    case 'connect-opened':
+      st.opening = undefined
+      openRemote(msg.tabId, undefined, msg.id)
+      return
     case 'error':
+      st.opening = undefined
       toast(msg.message)
       break
   }
@@ -291,10 +319,10 @@ function nextScreen(tabId: number) {
   }, 1200)
 }
 
-function openRemote(tabId: number, threadId?: string) {
+function openRemote(tabId: number, threadId?: string, connectId?: string) {
   st.screen = { tabId }
   st.remoteDraft = ''
-  go({ name: 'remote', tabId, ...(threadId ? { threadId } : {}) })
+  go({ name: 'remote', tabId, ...(threadId ? { threadId } : {}), ...(connectId ? { connectId } : {}) })
   void send({ kind: 'screen', tabId })
 }
 
@@ -312,7 +340,11 @@ function remoteView(v: Extract<View, { name: 'remote' }>) {
   const box = h(
     'section',
     { class: 'page remote' },
-    header('PC 화면', () => (v.threadId ? openThread(v.threadId) : go({ name: 'home' }))),
+    header('PC 화면', () =>
+      v.threadId
+        ? openThread(v.threadId)
+        : go(v.connectId ? { name: 'service', id: v.connectId } : { name: 'home' }),
+    ),
   )
   const host = (() => {
     try {
@@ -383,6 +415,24 @@ function remoteView(v: Extract<View, { name: 'remote' }>) {
       text: '여기서 누르고 넣은 것은 PC의 두리 탭에 그대로 전해져요. 두리(AI)는 이 화면에서 넣은 글자를 보지 않아요.',
     }),
   )
+  // 서비스 연결: 폰에서 로그인을 마치면 연결로 표시하고 그 서비스로 돌아간다
+  if (v.connectId) {
+    const id = v.connectId
+    box.append(
+      h(
+        'div',
+        { class: 'actions' },
+        h('button', {
+          class: 'primary',
+          text: '로그인했어요',
+          onclick: () => {
+            void send({ kind: 'connect', id, action: 'mark' })
+            go({ name: 'service', id })
+          },
+        }),
+      ),
+    )
+  }
   if (v.threadId) {
     const threadId = v.threadId
     box.append(
@@ -592,7 +642,11 @@ function render() {
               ? threadView(v.id)
               : v.name === 'remote'
                 ? remoteView(v)
-                : approvalView(v.id)
+                : v.name === 'connections'
+                  ? connectionsView(connectCtx())
+                  : v.name === 'service'
+                    ? serviceView(connectCtx(), v.id)
+                    : approvalView(v.id)
   const y = window.scrollY
   app.replaceChildren(screen, ...(st.toast ? [h('div', { class: 'toast', text: st.toast })] : []))
   if (v.name === 'thread' && nearBottom) window.scrollTo(0, document.body.scrollHeight)
@@ -736,6 +790,39 @@ function approvalCard(a: ApprovalView) {
   )
 }
 
+// ── 서비스 연결 (connections.ts) ──
+function openConnections() {
+  go({ name: 'connections' })
+  void send({ kind: 'connections' })
+}
+
+function connectCtx(): ConnectCtx {
+  return {
+    ...(st.services ? { services: st.services } : {}),
+    query: st.connectQuery,
+    online: st.online,
+    ...(st.opening ? { opening: st.opening } : {}),
+    header,
+    home: () => go({ name: 'home' }),
+    list: () => go({ name: 'connections' }),
+    detail: (id) => go({ name: 'service', id }),
+    setQuery: (q) => {
+      st.connectQuery = q
+      render()
+    },
+    open: (id) => {
+      st.opening = id
+      render()
+      void send({ kind: 'connect', id, action: 'open' })
+    },
+    mark: (id, on) => void send({ kind: 'connect', id, action: on ? 'mark' : 'unmark' }),
+    tryAsk: (text) => {
+      st.draft = text
+      go({ name: 'home' })
+    },
+  }
+}
+
 function homeView() {
   const box = h('section', { class: 'page home' }, header('두리'))
   if (st.pc && !st.pc.agents.length)
@@ -771,7 +858,7 @@ function homeView() {
         q.label,
       ),
     )
-  box.append(quick)
+  box.append(quick, connectEntry(st.services, openConnections))
   // 아이폰은 홈 화면에 추가한 앱에서만 알림을 받을 수 있다
   const ios = /iPhone|iPad/.test(navigator.userAgent)
   const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true

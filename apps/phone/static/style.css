@@ -706,3 +706,157 @@ svg.i {
   font-size: 13px;
   color: var(--bad);
 }
+
+/* ── 서비스 연결 (connections.ts): 새 디자인 토큰만 쓴다 ── */
+.connect-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.connect-entry > svg.i:last-child,
+.svc-row > svg.i:last-child {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-muted);
+}
+.row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.row-text .row-d {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.svc-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--raise);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 680;
+}
+.svc-mark svg.i {
+  width: 20px;
+  height: 20px;
+}
+.svc-mark.lg {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  font-size: 22px;
+}
+.page.connect {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.connect-intro {
+  margin: 0;
+}
+.connect-search {
+  width: 100%;
+}
+.connect-group .over {
+  margin-bottom: 0;
+}
+.svc-row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.list > li:last-child > .svc-row {
+  border-bottom: 0;
+}
+.svc-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.svc-head .title {
+  margin: 0;
+}
+.svc-summary {
+  margin: 0;
+  line-height: 1.65;
+}
+.svc-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+.svc-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.svc-abilities > .row > svg.i {
+  flex: none;
+  color: var(--ink-muted);
+}
+.svc-abilities .pill {
+  flex: none;
+}
+.svc-safety {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.service .over {
+  margin: 8px 0 -8px;
+}
+/* 연결 버튼 줄은 아래에 붙어 있다 */
+.svc-action {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -20px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.svc-action .btn.lg {
+  flex: 1;
+}
+.svc-action .cap {
+  flex-basis: 100%;
+  margin: 0;
+}
+.svc-connected {
+  flex-basis: 100%;
+  margin: 0;
+}

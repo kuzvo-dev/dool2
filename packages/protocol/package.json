@@ -24,6 +24,10 @@
     "./connect": {
       "types": "./dist/connect.d.ts",
       "default": "./dist/connect.js"
+    },
+    "./connect-text": {
+      "types": "./dist/connect-text.d.ts",
+      "default": "./dist/connect-text.js"
     }
   },
   "scripts": {
