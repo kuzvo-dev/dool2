@@ -56,9 +56,19 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
     return t.length > max ? `${t.slice(0, max - 1)}…` : t
   }
 
+  /** 안에 누르거나 입력할 것이 따로 있는 큰 상자 (페이지 전체를 감싼 tabindex·role 상자): 하나로 묶지 않는다 */
+  const INNER =
+    'input:not([type=hidden]),select,textarea,button,a[href],[role=button],[role=link],[role=textbox]'
+  const wrapsControls = (el: Element) => el.querySelector(INNER) !== null
+
   const interactiveRole = (el: Element): string | undefined => {
     const role = el.getAttribute('role')
-    if (role && ROLES[role]) return ROLES[role]
+    if (role && ROLES[role]) {
+      // 네이티브가 아닌 role 상자가 안에 칸·버튼을 품고 있으면 안을 읽는다
+      if (!['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) && wrapsControls(el))
+        return undefined
+      return ROLES[role]
+    }
     switch (el.tagName) {
       case 'A':
         return el.hasAttribute('href') ? '링크' : undefined
@@ -81,7 +91,8 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
       }
     }
     if ((el as HTMLElement).isContentEditable && !el.parentElement?.isContentEditable) return '입력칸'
-    if (el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') return '버튼'
+    if ((el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') && !wrapsControls(el))
+      return '버튼'
     return undefined
   }
 
