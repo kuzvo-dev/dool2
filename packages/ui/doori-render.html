@@ -74,12 +74,12 @@ function icon(size, { tile = false, scale = 0.66 } = {}) {
     g.fillRect(0, 0, size, size)
   }
   const s = w * scale
-  g.drawImage(shot('idle', Math.round(s * 1.0)), inset + (w - s) / 2 + s * 0.065, inset + (w - s) / 2 + w * 0.02, s, s) // 소품 자리 때문에 몸이 그림 왼쪽에 있어 오른쪽으로
+  g.drawImage(shot('idle', Math.round(s * 1.0)), inset + (w - s) / 2, inset + (w - s) / 2 + w * 0.02, s, s)
   return c.toDataURL('image/png')
 }
-out['icon-mac-1024.png'] = icon(1024, { tile: true, scale: 0.94 })
-out['icon-512.png'] = icon(512, { scale: 0.78 })
-out['icon-192.png'] = icon(192, { scale: 0.86 })
+out['icon-mac-1024.png'] = icon(1024, { tile: true, scale: 0.88 })
+out['icon-512.png'] = icon(512, { scale: 0.74 })
+out['icon-192.png'] = icon(192, { scale: 0.82 })
 // 확장 아이콘: 바탕 없이 두리만
 for (const s of [16, 32, 48, 128]) out[`ext-${s}.png`] = shot('idle', s * 2).toDataURL('image/png')
 

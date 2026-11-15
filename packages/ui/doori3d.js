@@ -155,9 +155,9 @@ export function createDoori(renderer) {
   // 생각 중: 점 세 개
   const dots = new THREE.Group()
   ;[
-    [1.0, 1.0, 0.07],
-    [1.2, 1.2, 0.095],
-    [1.45, 1.42, 0.125],
+    [0.9, 0.92, 0.07],
+    [1.06, 1.08, 0.09],
+    [1.24, 1.24, 0.115],
   ].forEach(([x, y, r]) => {
     const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 24), glossy('#a9b7c6'))
     s.position.set(x, y, 0.2)
@@ -182,8 +182,8 @@ export function createDoori(renderer) {
   const qDot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 20), butter)
   qDot.position.y = -0.24
   ask.add(qDot)
-  ask.scale.setScalar(1.6)
-  ask.position.set(1.12, 1.15, 0.3)
+  ask.scale.setScalar(1.35)
+  ask.position.set(1.0, 0.95, 0.3)
   ask.rotation.z = -0.18
   root.add(ask)
   // 일하는 중: 땀방울
@@ -192,7 +192,7 @@ export function createDoori(renderer) {
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 24), glossy('#7fc6ff'))
   tip.position.y = 0.12
   sweat.add(drop, tip)
-  sweat.position.set(1.04, 0.55, 0.45)
+  sweat.position.set(0.98, 0.5, 0.45)
   sweat.rotation.z = -0.35
   sweat.scale.setScalar(1.45)
   root.add(sweat)
@@ -213,8 +213,8 @@ export function createDoori(renderer) {
   })
   const sparks = new THREE.Group()
   ;[
-    [1.12, 0.98, 1],
-    [-1.12, 0.8, 0.7],
+    [1.02, 0.95, 1],
+    [-1.02, 0.78, 0.7],
   ].forEach(([x, y, s]) => {
     const m = new THREE.Mesh(starGeo, butter)
     m.position.set(x, y, 0.3)
@@ -248,8 +248,8 @@ export function createDoori(renderer) {
   })
   const zs = new THREE.Group()
   ;[
-    [1.02, 1.0, 0.2],
-    [1.36, 1.36, 0.27],
+    [0.95, 0.94, 0.18],
+    [1.2, 1.18, 0.24],
   ].forEach(([x, y, s]) => {
     const m = new THREE.Mesh(zGeo, glossy('#a98bff'))
     m.position.set(x, y, 0.2)
@@ -302,16 +302,16 @@ export function createDoori(renderer) {
     if (since > 0.13) nextBlink = t + 2.2 + Math.random() * 3
     for (const e of openEyes) e.scale.y = blink ? 0.1 : e.userData.sy
     dots.children.forEach((d, i) => {
-      d.position.y = [1.0, 1.2, 1.42][i] + Math.sin(t * 2.4 - i * 0.7) * 0.05
+      d.position.y = [0.92, 1.08, 1.24][i] + Math.sin(t * 2.4 - i * 0.7) * 0.05
     })
-    ask.position.y = 1.15 + Math.sin(t * 2) * 0.06
+    ask.position.y = 0.95 + Math.sin(t * 2) * 0.06
     ask.rotation.z = -0.18 + Math.sin(t * 1.6) * 0.08
-    sweat.position.y = 0.55 - ((t * 0.5) % 1) * 0.15
+    sweat.position.y = 0.5 - ((t * 0.5) % 1) * 0.15
     sparks.children.forEach((s, i) => {
       s.rotation.z = t * (i ? -1.2 : 1)
     })
     zs.children.forEach((z, i) => {
-      z.position.y = [1.0, 1.36][i] + Math.sin(t * 1.2 + i) * 0.06
+      z.position.y = [0.94, 1.18][i] + Math.sin(t * 1.2 + i) * 0.06
     })
   }
 
@@ -320,8 +320,9 @@ export function createDoori(renderer) {
 
 export function makeCamera(aspect = 1) {
   const camera = new THREE.PerspectiveCamera(26, aspect, 0.1, 100)
-  camera.position.set(0.22, 0.12, 7.2)
-  camera.lookAt(0.22, 0.12, 0)
+  // 몸이 그림 정가운데 (소품은 머리 오른쪽 위 모서리에 붙어 그림 안에 들어온다)
+  camera.position.set(0, 0, 7.3)
+  camera.lookAt(0, 0, 0)
   return camera
 }
 
