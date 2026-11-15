@@ -2,7 +2,7 @@
 // 문구·아이콘·빈 상태는 폰 앱(apps/phone/src/life-views.ts)과 같게 둔다. PC는 넓은 화면에 맞춰 배치만 다르다.
 import type { FeedItem, GoalCategory, LibraryItem, LifeAction, LifeState, Routine } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
-import { button, doori, el, emptyState, type IconName, icon, setRich, tile, toggle } from './dom.js'
+import { button, doori, el, emptyState, type IconName, icon, setRich, tile, toggle, withLogo } from './dom.js'
 import {
   type IdeaGroup,
   type IdeaItem,
@@ -273,7 +273,7 @@ function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
         ctx.openService(it.service.id)
       } else ctx.send(it.ask)
     },
-    it.service ? el('span', 'svc-mark', it.service.mark) : tile(sec.icon, sec.tone),
+    it.service ? withLogo(el('span', 'svc-mark', it.service.mark), it.service.id) : tile(sec.icon, sec.tone),
     el('span', 'grow', el('span', 'idea-t', it.text), el('span', 'cap', it.note)),
     later ? el('span', 'idea-tag', '연결') : icon('send', 'i idea-go'),
   )

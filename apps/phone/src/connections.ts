@@ -8,6 +8,7 @@ import {
   matchesCard,
   safetyLines,
 } from '@dool2/protocol/connect-text'
+import { withLogo } from './dom.js'
 
 export interface ConnectCtx {
   services?: ConnectionItem[]
@@ -86,7 +87,7 @@ function mark(card: ConnectCard, big = false) {
   const lead = /^\d+/.exec(card.name)?.[0] ?? [...card.name][0] ?? ''
   const m = el('span', big ? 'svc-mark lg' : 'svc-mark', lead)
   m.setAttribute('aria-hidden', 'true')
-  return m
+  return withLogo(m, card.id)
 }
 
 /** 홈에 두는 입구 한 줄: "서비스 연결 · 연결한 곳 3" */
