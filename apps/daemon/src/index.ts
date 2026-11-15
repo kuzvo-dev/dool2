@@ -375,6 +375,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           threads: threadSummaries(30),
           approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
           logins: browserTools.logins.list().filter((x) => x.status === 'pending'),
+          ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
         }
       },
       thread: async (id) => {
@@ -505,7 +506,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     activeThreads.add(threadId)
     live.emit('event', { kind: 'busy', busy: true })
     // 연결된 폰에도 같은 진행을 보낸다 (PC에서 시작한 대화도 폰에서 보이게)
-    const toPhones = link.streamer(threadId)
+    // 피드 글을 쓰는 따로 대화는 폰 대화 화면에 흘리지 않는다 (결과는 피드로 간다)
+    const toPhones = threadId === store.getSetting('feedThread') ? () => {} : link.streamer(threadId)
     // 이번 답에서 승인 요청·직접 해 주세요가 나왔는지 (그러면 "끝났어요" 알림은 따로 보내지 않는다)
     let asked = false
     // 피드 "끝낸 일": 도구를 써서 일한 차례의 부탁과 답
@@ -516,7 +518,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       for await (const ev of inner) {
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text))
           askText = ev.message.text
-        if (ev.type === 'agent' && ev.event.type === 'tool' && !/life|status|skill/.test(ev.event.name))
+        if (
+          ev.type === 'agent' &&
+          ev.event.type === 'tool' &&
+          !/(goal|memory|library|feed)_|status|skill_/.test(ev.event.name)
+        )
           usedTool = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
         toPhones(ev)

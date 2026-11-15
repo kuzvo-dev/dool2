@@ -868,3 +868,363 @@ button {
     margin-inline: auto;
   }
 }
+
+/* ── 피드 ── */
+.feed-prompt {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.feed-form {
+  display: flex;
+  gap: 8px;
+}
+.feed-form .field {
+  flex: 1;
+  min-width: 0;
+}
+.feed-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.feed-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.feed-time {
+  margin-left: auto;
+}
+.feed-title {
+  font: 650 16px / 22px var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.feed-body {
+  color: var(--ink-muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.feed-body p {
+  margin: 0 0 6px;
+}
+.feed-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.feed-actions .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.feed-actions .chip svg.i {
+  width: 16px;
+  height: 16px;
+}
+.feed-actions .chip.on {
+  background: var(--me);
+  color: var(--ink);
+}
+.tile.sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+.tile.sm svg.i {
+  width: 16px;
+  height: 16px;
+}
+.waiting {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+/* ── 목표 ── */
+.goal-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.goal-card.off {
+  opacity: 0.6;
+}
+.goal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.goal-head .row-text {
+  flex: 1;
+  min-width: 0;
+}
+.goal-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.goal-progress .bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--raise);
+  overflow: hidden;
+}
+.goal-progress .bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+.goal-last {
+  margin: 0;
+}
+.goal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.goal-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line),
+    var(--shadow-card);
+  text-align: left;
+}
+.goal-tile .row-text {
+  flex: 1;
+  min-width: 0;
+}
+.goal-tile .plus {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-faint);
+}
+.switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--line-strong, #c9ced6);
+  transition: background var(--dur) var(--ease);
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform var(--dur) var(--ease);
+}
+.switch.on {
+  background: var(--approve);
+}
+.switch.on::after {
+  transform: translateX(18px);
+}
+.plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.plan-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--raise);
+  text-align: left;
+}
+.plan-step .check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink-faint);
+}
+.plan-step.done .check {
+  background: var(--approve);
+  box-shadow: none;
+  color: #fff;
+}
+.plan-step.done .check svg.i {
+  width: 14px;
+  height: 14px;
+}
+.plan-step.done > span:last-child {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+}
+.log-line {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.sheet-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sheet-actions > * {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-text.danger {
+  color: var(--danger);
+}
+.goal-sheet,
+.item-sheet {
+  max-height: 86dvh;
+  overflow-y: auto;
+}
+
+/* ── 보관함 ── */
+.library .seg {
+  margin-bottom: 14px;
+}
+.lib-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+}
+.lib-card .row-text {
+  min-width: 0;
+}
+.item-body {
+  margin-top: 12px;
+  max-width: 100%;
+}
+
+/* ── 설정 · 답 메뉴 ── */
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 4px;
+  border-bottom: 0.5px solid var(--line);
+  text-align: left;
+}
+.set-row .row-text {
+  flex: 1;
+  min-width: 0;
+}
+.settings .seg {
+  width: 100%;
+}
+.msg-quote {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--raise);
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.navi-count {
+  margin-left: auto;
+}
+
+/* ── 두리 판 아이콘 5개 ── */
+.agent-icons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin: 4px 0 12px;
+}
+.agent-icons button {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-radius: var(--radius-md);
+  color: var(--ink-muted);
+}
+.agent-icons .ic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--raise);
+}
+.agent-icons .ic .badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+.agent-icons .lb {
+  font: 600 12px / 16px var(--font-sans);
+}
+.agent-icons button.on {
+  color: var(--ink);
+}
+.agent-icons button.on .ic {
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
+.act-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 2px;
+  border-bottom: 0.5px solid var(--line);
+  text-align: left;
+}
+.act-row .row-text {
+  flex: 1;
+  min-width: 0;
+}
+.seg-note,
+.seg-empty {
+  margin: 4px 2px 12px;
+  line-height: 1.5;
+}
+.feed-body.clamp {
+  position: relative;
+  max-height: 168px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.feed-body.clamp::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--surface));
+}
+.feed-body.clamp.open {
+  max-height: none;
+}
+.feed-body.clamp.open::after {
+  display: none;
+}

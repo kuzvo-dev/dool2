@@ -136,7 +136,14 @@ export class BrowserTools {
     this.logins = logins ?? new LoginRequests()
   }
 
+  /** 두리가 마지막으로 다룬 탭 (폰의 "두리 화면 보기"가 실시간으로 본다) */
+  lastTabId?: number
+
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+    if (typeof args.tabId === 'number') {
+      this.lastTabId = args.tabId
+      this.allowRemote(args.tabId)
+    }
     try {
       return await this.dispatch(tool, args)
     } catch (e) {
@@ -149,6 +156,8 @@ export class BrowserTools {
     switch (tool as BrowserTool) {
       case 'open': {
         const r = (await this.browser.call('open', { url: a.url }, 40_000)) as { tabId: number }
+        this.lastTabId = r.tabId
+        this.allowRemote(r.tabId)
         return this.read(r.tabId, undefined, '새 탭을 열었어요.')
       }
       case 'navigate': {

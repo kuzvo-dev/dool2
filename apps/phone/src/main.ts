@@ -6,6 +6,8 @@ import type {
   ApprovalView,
   DaemonStreamEvent,
   HandoffRecord,
+  LifeAction,
+  LifeState,
   LoginRecordMessage,
   LoginRequestView,
   PairInvite,
@@ -29,12 +31,24 @@ import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, toolLabel } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import { doori, h, type IconName, icon, liveDoori, rich, shortTime } from './dom.js'
+import {
+  feedView,
+  goalSheet,
+  goalsView,
+  itemSheet,
+  type LifeCtx,
+  libraryView,
+  memorySeg,
+  plain,
+  upcomingSeg,
+} from './life-views.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
 
 // ── 상태 ──
-type Tab = 'chat' | 'tasks' | 'ideas' | 'connect'
+/** 탭 막대 5칸 + 메뉴에서 여는 쪽(연결·설정) */
+type Tab = 'chat' | 'feed' | 'ideas' | 'goals' | 'library' | 'connect' | 'settings'
 type Screen =
   | { name: 'intro' }
   | { name: 'unsupported' }
@@ -48,6 +62,10 @@ type Overlay =
   | { kind: 'login'; id: string }
   /** 서비스 연결하기: 아이디·비밀번호 → 두리가 대신 로그인 */
   | { kind: 'connect'; id: string }
+  | { kind: 'goal'; id: string }
+  | { kind: 'item'; id: string }
+  /** 답을 길게 눌렀을 때: 보관함에 남기기·복사 */
+  | { kind: 'msg'; id: string }
   | undefined
 
 const st: {
@@ -82,7 +100,10 @@ const st: {
   connectQuery: string
   connectDetail?: string
   opening?: string
-  agentSeg: 'activity' | 'connected' | 'promise'
+  agentSeg: 'upcoming' | 'memory' | 'screen' | 'activity' | 'approvals'
+  /** 목표·보관함·기억·피드 (PC 본체) */
+  life?: LifeState
+  librarySeg: 'made' | 'media'
   draft: string
   toast?: string
   screenShot?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
@@ -108,6 +129,7 @@ const st: {
   connectTabs: new Map(),
   connectQuery: '',
   agentSeg: 'activity',
+  librarySeg: 'made',
   draft: '',
   remoteDraft: '',
 }
@@ -176,6 +198,7 @@ function connect() {
         void send({ kind: 'hello' })
         void send({ kind: 'conversation' })
         void send({ kind: 'connections' })
+        void send({ kind: 'life' })
       }
       render()
     },
@@ -306,6 +329,9 @@ async function receive(env: Envelope) {
       }
       break
     }
+    case 'life':
+      st.life = msg.state
+      break
     case 'connect-result': {
       const d = st.loginDraft
       if (d.id === `connect:${msg.id}`) {
@@ -512,6 +538,14 @@ async function syncPush() {
 /** 알림을 눌러 열었으면 (#a=승인 id, #t=대화) 그 화면으로 간다 */
 let pendingOpen = ''
 function openPending() {
+  const tab = /^#tab=(chat|feed|ideas|goals|library)$/.exec(pendingOpen)?.[1] as Tab | undefined
+  if (tab && st.saved?.paired) {
+    pendingOpen = ''
+    history.replaceState(null, '', location.pathname)
+    st.screen = { name: 'app' }
+    st.tab = tab
+    return
+  }
   const m = /^#([at])=([\w-]+)$/.exec(pendingOpen)
   if (!m || !st.saved?.paired) return
   pendingOpen = ''
@@ -752,9 +786,10 @@ function renderTabs() {
   const waiting = pendingApprovals().length + pendingLogins().length
   const items: [Tab, IconName, string][] = [
     ['chat', 'chat', '대화'],
-    ['tasks', 'tasks', '맡긴 일'],
+    ['feed', 'feed', '피드'],
     ['ideas', 'idea', '아이디어'],
-    ['connect', 'apps', '연결'],
+    ['goals', 'goal', '목표'],
+    ['library', 'library', '보관함'],
   ]
   t.replaceChildren(
     ...items.map(([id, ic, label]) => {
@@ -763,7 +798,7 @@ function renderTabs() {
         { class: st.tab === id ? 'tab on' : 'tab', label, onclick: () => setTab(id) },
         icon(ic),
         h('span', { class: 'tab-label', text: label }),
-        id === 'tasks' && waiting > 0 && h('span', { class: 'badge' }),
+        id === 'feed' && waiting > 0 && h('span', { class: 'badge' }),
       )
       if (st.tab === id) b.setAttribute('aria-current', 'page')
       return b
@@ -798,7 +833,20 @@ function renderPage() {
     return
   }
   const y = page.scrollTop
-  page.replaceChildren(st.tab === 'tasks' ? tasksView() : st.tab === 'ideas' ? ideasView() : connectView())
+  const ctx = lifeCtx()
+  page.replaceChildren(
+    st.tab === 'feed'
+      ? feedView(ctx)
+      : st.tab === 'ideas'
+        ? ideasView()
+        : st.tab === 'goals'
+          ? goalsView(ctx)
+          : st.tab === 'library'
+            ? libraryView(ctx)
+            : st.tab === 'settings'
+              ? settingsView()
+              : connectView(),
+  )
   page.scrollTop = y
 }
 
@@ -844,6 +892,7 @@ function chatItems(): Item[] {
         make: () => {
           const b = h('div', { class: 'bubble rich' })
           b.append(rich(m.text))
+          onLongPress(b, () => openOverlay({ kind: 'msg', id: m.id }))
           return b
         },
       })
@@ -892,6 +941,32 @@ function chatItems(): Item[] {
       })
   }
   return items
+}
+
+/** 길게 누르기 (폰) · 오른쪽 클릭 (PC 브라우저) */
+function onLongPress(el: HTMLElement, fn: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let x = 0
+  let y = 0
+  const cancel = () => clearTimeout(timer)
+  el.addEventListener('pointerdown', (e) => {
+    x = e.clientX
+    y = e.clientY
+    timer = setTimeout(() => {
+      navigator.vibrate?.(10)
+      fn()
+    }, 480)
+  })
+  el.addEventListener('pointermove', (e) => {
+    if (Math.abs(e.clientX - x) > 8 || Math.abs(e.clientY - y) > 8) cancel()
+  })
+  el.addEventListener('pointerup', cancel)
+  el.addEventListener('pointercancel', cancel)
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    cancel()
+    fn()
+  })
 }
 
 function liveBubble() {
@@ -1130,8 +1205,9 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
 
 // ── 맡긴 일 ──
 
-function tasksView() {
-  const box = h('section', { class: 'tab-page' }, h('h1', { class: 'ptitle', text: '맡긴 일' }))
+/** 피드 맨 위: 나를 기다리는 것·지금 하는 일·다음 차례 */
+function waitingCards(): HTMLElement[] {
+  const box = h('div', { class: 'waiting' })
   const approvals = pendingApprovals()
   const logins = pendingLogins()
   if (approvals.length || logins.length) {
@@ -1182,27 +1258,37 @@ function tasksView() {
     box.append(h('h2', { class: 'over', text: '다음 차례' }))
     for (const q of st.queued) box.append(h('div', { class: 'row' }, h('span', { class: 'row-t', text: q })))
   }
-  const done = recentDone()
-  if (done.length) {
-    box.append(h('h2', { class: 'over', text: '최근에 한 일' }))
-    for (const d of done)
-      box.append(
-        h(
-          'button',
-          { class: 'row', onclick: () => showInChat(d.id) },
-          h(
-            'span',
-            { class: 'row-text' },
-            h('span', { class: 'row-t', text: d.ask }),
-            h('span', { class: 'row-d', text: d.answer }),
-          ),
-          h('span', { class: 'meta', text: shortTime(d.at) }),
-        ),
-      )
+  return box.childNodes.length ? [box] : []
+}
+
+function lifeAct(a: LifeAction) {
+  void send({ kind: 'life-action', ...a })
+}
+
+function lifeCtx(): LifeCtx {
+  return {
+    ...(st.life ? { life: st.life } : {}),
+    online: st.online,
+    act: lifeAct,
+    ask: (text) => ask(text),
+    fill: (text) => {
+      st.draft = text
+      setTab('chat')
+      requestAnimationFrame(() => {
+        shell?.textarea.focus()
+        shell?.textarea.setSelectionRange(text.length, text.length)
+      })
+    },
+    openGoal: (id) => openOverlay({ kind: 'goal', id }),
+    openItem: (id) => openOverlay({ kind: 'item', id }),
+    close: () => openOverlay(undefined),
+    waiting: waitingCards(),
+    librarySeg: st.librarySeg,
+    setLibrarySeg: (seg) => {
+      st.librarySeg = seg
+      render()
+    },
   }
-  if (!approvals.length && !logins.length && !st.busy && !done.length)
-    box.append(emptyState('sleeping', '아직 맡긴 일이 없어요', '대화에서 부탁하면 여기에 모여요.'))
-  return box
 }
 
 function lastUserText() {
@@ -1317,13 +1403,10 @@ function ideasView() {
     'section',
     { class: 'tab-page' },
     h('h1', { class: 'ptitle', text: '아이디어' }),
-    h('p', { class: 'psub', text: '눌러서 그대로 보내거나, 고쳐서 보내세요' }),
+    h('p', { class: 'psub', text: '누르면 두리가 바로 시작해요' }),
   )
-  const fill = (text: string) => {
-    st.draft = text
-    setTab('chat')
-    shell?.textarea.focus()
-  }
+  // 누르면 바로 시작한다
+  const fill = (text: string) => ask(text)
   const connected = (st.services ?? []).filter((s) => s.connectedAt)
   if (connected.length) {
     box.append(h('h2', { class: 'over', text: '연결한 곳에서' }))
@@ -1438,7 +1521,13 @@ function renderOverlay() {
           ? approvalSheet(ov.id)
           : ov.kind === 'connect'
             ? connectSheet(ov.id)
-            : loginSheet(ov.id)
+            : ov.kind === 'goal'
+              ? goalSheet(lifeCtx(), ov.id)
+              : ov.kind === 'item'
+                ? itemSheet(lifeCtx(), ov.id)
+                : ov.kind === 'msg'
+                  ? msgSheet(ov.id)
+                  : loginSheet(ov.id)
   // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
   const active = document.activeElement
   const typing =
@@ -1454,46 +1543,35 @@ function renderOverlay() {
 }
 
 function drawerView() {
-  const notif =
-    'Notification' in window && Notification.permission === 'default'
-      ? h(
-          'button',
-          {
-            class: 'navi',
-            onclick: () =>
-              void Notification.requestPermission().then(() => {
-                void syncPush()
-                render()
-              }),
-          },
-          icon('bell', 'i md'),
-          '알림 켜기',
-        )
-      : undefined
+  const tabs: [Tab, IconName, string][] = [
+    ['chat', 'chat', '대화'],
+    ['feed', 'feed', '피드'],
+    ['ideas', 'idea', '아이디어'],
+    ['goals', 'goal', '목표'],
+    ['library', 'library', '보관함'],
+  ]
+  const navi = (tab: Tab, ic: IconName, label: string, extra?: Node) =>
+    h(
+      'button',
+      { class: st.tab === tab ? 'navi on' : 'navi', onclick: () => setTab(tab) },
+      icon(ic, 'i md'),
+      label,
+      extra,
+    )
+  const connected = (st.services ?? []).filter((x) => x.connectedAt).length
   return h(
     'aside',
     { class: 'drawer app-drawer' },
     h('div', { class: 'drawer-title' }, doori('', 28), '두리'),
-    h(
-      'button',
-      { class: st.tab === 'chat' ? 'navi on' : 'navi', onclick: () => setTab('chat') },
-      icon('chat', 'i md'),
-      '메인 대화',
+    ...tabs.map(([t, ic, label]) => navi(t, ic, label)),
+    h('p', { class: 'over drawer-sec', text: '설정' }),
+    navi(
+      'connect',
+      'apps',
+      '연결',
+      connected ? h('span', { class: 'meta navi-count', text: `${connected}곳` }) : undefined,
     ),
-    h(
-      'button',
-      { class: st.tab === 'tasks' ? 'navi on' : 'navi', onclick: () => setTab('tasks') },
-      icon('tasks', 'i md'),
-      '맡긴 일',
-    ),
-    h(
-      'button',
-      { class: st.tab === 'connect' ? 'navi on' : 'navi', onclick: () => setTab('connect') },
-      icon('apps', 'i md'),
-      '연결한 곳',
-    ),
-    h('p', { class: 'over drawer-sec', text: '이 폰' }),
-    notif,
+    navi('settings', 'gear', '설정'),
     h(
       'div',
       { class: 'navi static' },
@@ -1508,49 +1586,186 @@ function drawerView() {
         }),
       ),
     ),
+    h('p', { class: 'meta drawer-foot', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
+  )
+}
+
+/** 설정 (메뉴 > 설정): 알림·화면·내 PC·약속 */
+function settingsView() {
+  const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: '설정' }))
+  const row = (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) =>
+    h(
+      onclick ? 'button' : 'div',
+      { class: 'set-row', ...(onclick ? { onclick } : {}) },
+      h('span', { class: 'tile sm blue' }, icon(ic, 'i')),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: title }),
+        h('span', { class: 'row-d', text: sub }),
+      ),
+      right,
+    )
+  const perm = 'Notification' in window ? Notification.permission : 'denied'
+  box.append(
+    h('h2', { class: 'over', text: '알림' }),
+    row(
+      'bell',
+      '폰 알림',
+      perm === 'granted'
+        ? '켜져 있어요 · 승인 요청·끝낸 일·피드 새 글'
+        : perm === 'denied'
+          ? '브라우저 설정에서 막혀 있어요'
+          : '꺼져 있어요',
+      perm === 'default' ? h('span', { class: 'btn small', text: '켜기' }) : undefined,
+      perm === 'default'
+        ? () =>
+            void Notification.requestPermission().then(() => {
+              void syncPush()
+              render()
+            })
+        : undefined,
+    ),
+  )
+  const theme = document.documentElement.dataset.theme ?? 'auto'
+  const seg = h('div', { class: 'seg' })
+  for (const [id, label] of [
+    ['auto', '기기 따라'],
+    ['light', '밝게'],
+    ['dark', '어둡게'],
+  ] as const)
+    seg.append(
+      h('button', {
+        class: theme === id ? 'on' : '',
+        text: label,
+        onclick: () => {
+          document.documentElement.dataset.theme = id
+          localStorage.setItem('dool2-theme', id)
+          render()
+        },
+      }),
+    )
+  box.append(h('h2', { class: 'over', text: '화면' }), seg)
+  box.append(
+    h('h2', { class: 'over', text: '내 PC' }),
+    row(
+      'pc',
+      st.saved?.pcName ?? '내 PC',
+      !st.online
+        ? '연결 중…'
+        : st.pcSilent
+          ? '답하지 않아요'
+          : '연결돼 있어요 · 두리는 이 PC의 Chrome에서 일해요',
+    ),
+    row(
+      'apps',
+      '연결한 서비스',
+      `${(st.services ?? []).filter((x) => x.connectedAt).length}곳 · 아이디·비밀번호는 PC 금고에만`,
+      icon('chevron'),
+      () => setTab('connect'),
+    ),
+    row('close', '다른 PC와 다시 연결', '이 폰의 연결을 지우고 QR을 다시 찍어요', undefined, () => {
+      if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
+    }),
+  )
+  box.append(h('h2', { class: 'over', text: '두리의 약속' }))
+  for (const [ic, t] of [
+    ['card', '돈 쓰는 일과 메시지 보내기는 꼭 먼저 물어봐요. 이건 끌 수 없어요.'],
+    ['lock', '비밀번호와 카드 번호는 두리(AI)도 저희도 못 봐요.'],
+    ['pc', '대화·기억·보관함은 내 PC에만 저장돼요. 폰과 PC 사이는 암호화돼요.'],
+    ['hand', '본인인증·보안 문자는 화면을 띄워 드리고 직접 하시게 해요.'],
+  ] as [IconName, string][])
+    box.append(
+      h(
+        'div',
+        { class: 'set-row' },
+        h('span', { class: 'tile sm mint' }, icon(ic, 'i')),
+        h('span', { class: 'row-t', text: t }),
+      ),
+    )
+  return box
+}
+
+/** 답을 길게 누르면: 보관함에 남기기 · 복사 */
+function msgSheet(id: string) {
+  const m = st.conv.find((x) => x.id === id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise msg-sheet' })
+  if (!m) return sheet
+  const title = plain(m.text, 30)
+  sheet.append(
+    h('p', { class: 'msg-quote', text: plain(m.text, 140) }),
     h(
       'button',
       {
-        class: 'navi',
+        class: 'set-row',
         onclick: () => {
-          if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
+          lifeAct({ action: 'library-save', title, body: m.text })
+          openOverlay(undefined)
+          toast('보관함에 남겼어요')
         },
       },
-      icon('close', 'i md'),
-      '다른 PC와 다시 연결',
+      h('span', { class: 'tile sm amber' }, icon('bookmark', 'i')),
+      h('span', { class: 'row-t', text: '보관함에 남기기' }),
     ),
-    h('p', { class: 'meta drawer-foot', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
+    h(
+      'button',
+      {
+        class: 'set-row',
+        onclick: () => {
+          void navigator.clipboard?.writeText(m.text).then(() => toast('복사했어요'))
+          openOverlay(undefined)
+        },
+      },
+      h('span', { class: 'tile sm blue' }, icon('copy', 'i')),
+      h('span', { class: 'row-t', text: '복사' }),
+    ),
+    h('button', { class: 'btn-ghost wide', text: '닫기', onclick: () => openOverlay(undefined) }),
   )
+  return sheet
 }
 
 function agentPanel() {
   const waiting = pendingApprovals().length + pendingLogins().length
   const mood = !st.online || st.pcSilent ? 'sleeping' : waiting ? 'asking' : st.busy ? 'working' : ''
-  const segs = [
-    ['activity', '활동'],
-    ['connected', '연결한 곳'],
-    ['promise', '약속'],
-  ] as const
+  const segs: [typeof st.agentSeg, IconName, string][] = [
+    ['upcoming', 'clock', '예정'],
+    ['memory', 'brain', '기억'],
+    ['screen', 'pc', '화면'],
+    ['activity', 'list', '활동'],
+    ['approvals', 'hand', '승인'],
+  ]
   const seg = h(
     'div',
-    { class: 'seg agent-seg' },
-    ...segs.map(([id, label]) => {
-      const b = h('button', {
-        text: label,
-        onclick: () => {
-          st.agentSeg = id
-          render()
+    { class: 'agent-icons' },
+    ...segs.map(([id, ic, label]) => {
+      const b = h(
+        'button',
+        {
+          class: st.agentSeg === id ? 'on' : '',
+          label,
+          onclick: () => {
+            st.agentSeg = id
+            render()
+          },
         },
-      })
+        h(
+          'span',
+          { class: 'ic' },
+          icon(ic, 'i md'),
+          id === 'approvals' && waiting ? h('span', { class: 'badge' }) : undefined,
+        ),
+        h('span', { class: 'lb', text: label }),
+      )
       b.setAttribute('aria-pressed', String(st.agentSeg === id))
       return b
     }),
   )
   const body = h('div', { class: 'agent-body' })
-  const act = (tile: Node, title: string, sub?: string, time?: string) =>
+  const ctx = lifeCtx()
+  const act = (tile: Node, title: string, sub?: string, time?: string, onclick?: () => void) =>
     h(
-      'div',
-      { class: 'act' },
+      onclick ? 'button' : 'div',
+      { class: 'act-row', ...(onclick ? { onclick } : {}) },
       tile,
       h(
         'span',
@@ -1560,47 +1775,89 @@ function agentPanel() {
       ),
       time && h('span', { class: 'meta', text: time }),
     )
-  if (st.agentSeg === 'activity') {
-    const acts = recentDone()
+  if (st.agentSeg === 'upcoming') body.append(...upcomingSeg(ctx))
+  else if (st.agentSeg === 'memory') body.append(...memorySeg(ctx))
+  else if (st.agentSeg === 'screen') {
+    const tab = st.pc?.activeTab
+    body.append(
+      h('p', {
+        class: 'meta seg-note',
+        text: '두리가 PC의 Chrome에서 보고 있는 화면을 실시간으로 봐요. 직접 누르면 두리는 잠깐 멈춰요.',
+      }),
+      tab !== undefined
+        ? h('button', { class: 'btn wide', onclick: () => openRemote(tab) }, icon('pc'), '두리 화면 보기')
+        : h('p', {
+            class: 'meta seg-empty',
+            text: '지금 두리가 연 화면이 없어요. 웹에서 일을 시작하면 볼 수 있어요.',
+          }),
+    )
+  } else if (st.agentSeg === 'activity') {
     if (st.busy)
       body.append(
         act(
-          h('span', { class: 'tile mint' }, icon('globe', 'i md')),
+          h('span', { class: 'tile sm mint' }, icon('globe', 'i')),
           st.steps.at(-1) ?? '대답하는 중',
           lastUserText(),
         ),
       )
-    for (const a of acts)
-      body.append(
-        act(h('span', { class: 'tile blue' }, icon('check', 'i md')), a.ask, a.answer, shortTime(a.at)),
-      )
-    if (!acts.length && !st.busy)
-      body.append(h('p', { class: 'meta empty-line', text: '아직 한 일이 없어요' }))
-  } else if (st.agentSeg === 'connected') {
-    const list = (st.services ?? []).filter((s) => s.connectedAt)
-    for (const s of list)
+    const done = (st.life?.feed ?? []).filter((f) => f.kind === 'done' || f.kind === 'routine').slice(0, 30)
+    for (const f of done)
       body.append(
         act(
-          h('span', { class: 'svc-mark', text: [...s.card.name][0] ?? '' }),
-          s.card.name,
-          s.card.abilities
-            .slice(0, 2)
-            .map((a) => a.title)
-            .join(' · '),
+          h(
+            'span',
+            { class: `tile sm ${f.kind === 'done' ? 'blue' : 'violet'}` },
+            icon(f.kind === 'done' ? 'check' : 'clock', 'i'),
+          ),
+          f.title,
+          f.body ? plain(f.body, 70) : undefined,
+          shortTime(f.at),
         ),
       )
-    if (!list.length) body.append(h('p', { class: 'meta empty-line', text: '아직 로그인해 둔 곳이 없어요' }))
-    body.append(
-      h('button', { class: 'btn-ghost wide', text: '서비스 연결하기', onclick: () => setTab('connect') }),
-    )
+    if (!done.length && !st.busy)
+      body.append(h('p', { class: 'meta seg-empty', text: '아직 한 일이 없어요' }))
   } else {
-    const promises: [IconName, string][] = [
-      ['card', '돈 쓰는 일은 꼭 먼저 물어봐요. 이건 끌 수 없어요.'],
-      ['lock', '비밀번호와 카드 번호는 두리(AI)도 저희도 못 봐요.'],
-      ['pc', '대화는 내 PC에만 저장돼요. 폰과 PC 사이는 암호화돼요.'],
-      ['hand', '본인인증·보안 문자는 화면을 띄워 드리고 직접 하시게 해요.'],
-    ]
-    for (const [ic, t] of promises) body.append(act(h('span', { class: 'tile mint' }, icon(ic, 'i md')), t))
+    const approvals = pendingApprovals()
+    const logins = pendingLogins()
+    for (const a of approvals)
+      body.append(
+        act(
+          h('span', { class: 'tile sm amber' }, icon('card', 'i')),
+          [a.what, a.amount].filter(Boolean).join(' · '),
+          a.where,
+          '기다려요',
+          () => openOverlay({ kind: 'approval', id: a.id }),
+        ),
+      )
+    for (const l of logins)
+      body.append(
+        act(
+          h('span', { class: 'tile sm amber' }, icon('lock', 'i')),
+          `${l.site} 로그인`,
+          hostOf(l.origin),
+          '기다려요',
+          () => openOverlay({ kind: 'login', id: l.id }),
+        ),
+      )
+    const history = [...st.approvals.values()]
+      .filter((a) => a.status !== 'pending')
+      .slice(-10)
+      .reverse()
+    for (const a of history)
+      body.append(
+        act(
+          h('span', { class: 'tile sm mint' }, icon(a.status === 'rejected' ? 'close' : 'check', 'i')),
+          [a.what, a.amount].filter(Boolean).join(' · '),
+          a.status === 'rejected' ? '거절했어요' : a.status === 'expired' ? '시간이 지났어요' : '승인했어요',
+        ),
+      )
+    if (!approvals.length && !logins.length && !history.length)
+      body.append(
+        h('p', {
+          class: 'meta seg-empty',
+          text: '기다리는 승인이 없어요. 돈 쓰는 일·보내기 전에 여기로 물어봐요.',
+        }),
+      )
   }
   const where = st.saved?.pcName ?? '내 PC'
   return h(
@@ -1612,12 +1869,14 @@ function agentPanel() {
       h('button', { class: 'fbtn', label: '닫기', onclick: () => openOverlay(undefined) }, icon('close')),
     ),
     h('div', { class: 'agent-big' }, liveDoori('agent', mood, 136)),
-    h('h2', { class: 'agent-name', text: '두리' }),
+    h('h2', { class: 'agent-name', text: st.busy ? '두리가 일하는 중' : '두리' }),
     h(
       'p',
       { class: 'agent-where' },
       h('span', { class: st.online ? 'dot work' : 'dot' }),
-      st.online ? `${where}에서 ${st.busy ? '일하는 중' : '쉬는 중'}` : `${where}에 연결 중…`,
+      st.online
+        ? `${where}에서 ${st.busy ? (st.steps.at(-1) ?? '일하는 중') : '쉬는 중'}`
+        : `${where}에 연결 중…`,
     ),
     seg,
     body,
@@ -1983,7 +2242,7 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
 window.addEventListener('hashchange', () => {
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return void startPairing(invite)
-  if (/^#[at]=/.test(location.hash)) {
+  if (/^#([at]=|tab=)/.test(location.hash)) {
     pendingOpen = location.hash
     if (st.online) {
       openPending()
@@ -2004,10 +2263,12 @@ async function main() {
     st.screen = { name: 'unsupported' }
     return render()
   }
+  const theme = localStorage.getItem('dool2-theme')
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
   if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js').catch(() => {})
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return startPairing(invite)
-  if (/^#[at]=/.test(location.hash)) pendingOpen = location.hash
+  if (/^#([at]=|tab=)/.test(location.hash)) pendingOpen = location.hash
   const saved = await load()
   if (!saved) {
     st.screen = { name: 'intro' }

@@ -493,7 +493,7 @@ export type LifeAction =
   | { action: 'goal-step'; id: string; index: number; done: boolean }
   | { action: 'feed-react'; id: string; reaction?: 'up' | 'down' }
   | { action: 'feed-prompt'; text: string }
-  | { action: 'library-save'; title: string; body: string; kind?: LibraryItem['kind'] }
+  | { action: 'library-save'; title: string; body: string; itemKind?: LibraryItem['kind'] }
   | { action: 'routine-toggle'; id: string; on: boolean }
   | { action: 'routine-delete'; id: string }
   | { action: 'routine-run'; id: string }
@@ -563,6 +563,8 @@ export type PcToPhone =
       approvals: ApprovalView[]
       /** 기다리는 로그인 요청 */
       logins?: LoginRequestView[]
+      /** 두리가 마지막으로 다룬 Chrome 탭 (실시간 화면으로 볼 수 있다) */
+      activeTab?: number
       /** 웹 푸시 VAPID 공개키 (폰의 applicationServerKey) */
       vapid?: string
       /** 이 폰이 알림을 받도록 PC에 구독이 등록돼 있는지 */
