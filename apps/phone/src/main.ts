@@ -46,6 +46,8 @@ type Overlay =
   | { kind: 'agent' }
   | { kind: 'approval'; id: string }
   | { kind: 'login'; id: string }
+  /** 서비스 연결하기: 아이디·비밀번호 → 두리가 대신 로그인 */
+  | { kind: 'connect'; id: string }
   | undefined
 
 const st: {
@@ -74,6 +76,8 @@ const st: {
   decided: Map<string, { ok: boolean; message: string }>
   logins: Map<string, LoginRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
+  /** 대신 로그인이 끝까지 못 간 서비스 → 그 화면(탭) */
+  connectTabs: Map<string, number>
   services?: ConnectionItem[]
   connectQuery: string
   connectDetail?: string
@@ -101,6 +105,7 @@ const st: {
   decided: new Map(),
   logins: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
+  connectTabs: new Map(),
   connectQuery: '',
   agentSeg: 'activity',
   draft: '',
@@ -287,6 +292,25 @@ async function receive(env: Envelope) {
           st.connectDetail = done.card.id
           toast(`${done.card.name} 로그인을 확인했어요`)
         }
+      }
+      break
+    }
+    case 'connect-result': {
+      const d = st.loginDraft
+      if (d.id === `connect:${msg.id}`) {
+        d.busy = false
+        d.error = msg.ok || msg.human ? undefined : msg.message
+      }
+      if (msg.tabId !== undefined) st.connectTabs.set(msg.id, msg.tabId)
+      if (msg.ok) {
+        st.connectTabs.delete(msg.id)
+        if (st.overlay?.kind === 'connect') st.overlay = undefined
+        toast(msg.message)
+      } else if (msg.tabId !== undefined && msg.human) {
+        // 로봇 확인·본인인증: 그 화면을 바로 열어 직접 마치게 한다
+        toast(msg.message)
+        openRemote(msg.tabId, msg.id)
+        return
       }
       break
     }
@@ -1355,11 +1379,7 @@ function connectCtx(): ConnectCtx {
       input?.focus()
       input?.setSelectionRange(q.length, q.length)
     },
-    open: (id) => {
-      st.opening = id
-      render()
-      void send({ kind: 'connect', id, action: 'open' })
-    },
+    open: (id) => openOverlay({ kind: 'connect', id }),
     mark: (id, on) => void send({ kind: 'connect', id, action: on ? 'mark' : 'unmark' }),
     tryAsk: (text) => ask(text),
   }
@@ -1390,7 +1410,9 @@ function renderOverlay() {
         ? agentPanel()
         : ov.kind === 'approval'
           ? approvalSheet(ov.id)
-          : loginSheet(ov.id)
+          : ov.kind === 'connect'
+            ? connectSheet(ov.id)
+            : loginSheet(ov.id)
   // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
   const active = document.activeElement
   const typing =
@@ -1656,12 +1678,21 @@ function approvalSheet(id: string) {
 }
 
 /** 로그인 시트: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
-function loginSheet(id: string) {
-  const r = st.logins.get(id)
+interface CredTarget {
+  key: string
+  site: string
+  host: string
+  busyText: string
+  submitText: string
+  submit(user: string, password: string): void
+  direct?: { text: string; onclick(): void }
+}
+
+/** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
+function credSheet(t: CredTarget) {
   const sheet = h('section', { class: 'sheet float app-sheet rise' })
-  if (!r) return sheet
   const d = st.loginDraft
-  if (d.id !== r.id) Object.assign(d, { id: r.id, user: '', pw: '', busy: false, error: undefined })
+  if (d.id !== t.key) Object.assign(d, { id: t.key, user: '', pw: '', busy: false, error: undefined })
   const user = h('input', { class: 'field' })
   user.id = 'login-user'
   user.placeholder = '아이디 또는 이메일'
@@ -1679,8 +1710,9 @@ function loginSheet(id: string) {
   pw.oninput = () => {
     d.pw = pw.value
   }
-  const submit = h('button', { class: 'btn lg', text: d.busy ? '저장하는 중…' : '로그인하기' })
+  const submit = h('button', { class: 'btn lg', text: d.busy ? t.busyText : t.submitText })
   submit.type = 'submit'
+  submit.disabled = !!d.busy
   const form = h(
     'form',
     { class: 'login-form' },
@@ -1696,7 +1728,7 @@ function loginSheet(id: string) {
     d.error = undefined
     const password = d.pw
     d.pw = ''
-    void send({ kind: 'login', id: r.id, username: d.user.trim(), password })
+    t.submit(d.user.trim(), password)
     render()
   }
   sheet.append(
@@ -1708,14 +1740,14 @@ function loginSheet(id: string) {
     h(
       'div',
       { class: 'approve-head' },
-      h('span', { class: 'svc-mark lg', text: [...r.site][0] ?? '' }),
+      h('span', { class: 'svc-mark lg', text: /^\d+/.exec(t.site)?.[0] ?? [...t.site][0] ?? '' }),
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: `${r.site} 로그인` }),
+        h('strong', { class: 'title-2', text: `${t.site} 로그인` }),
         h('span', {
           class: 'meta',
-          text: `${hostOf(r.origin)} · ${st.saved?.pcName ?? '내 PC'}의 Chrome에 넣어요`,
+          text: `${t.host} · ${st.saved?.pcName ?? '내 PC'}의 Chrome에서 두리가 로그인해요`,
         }),
       ),
     ),
@@ -1726,13 +1758,52 @@ function loginSheet(id: string) {
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
-    h('button', {
-      class: 'btn-ghost lg wide',
-      text: '화면 보면서 직접 할게요',
-      onclick: () => openRemote(r.tabId),
-    }),
+    ...(t.direct
+      ? [h('button', { class: 'btn-ghost lg wide', text: t.direct.text, onclick: t.direct.onclick })]
+      : []),
   )
   return sheet
+}
+
+function loginSheet(id: string) {
+  const r = st.logins.get(id)
+  if (!r) return h('section', { class: 'sheet float app-sheet rise' })
+  return credSheet({
+    key: r.id,
+    site: r.site,
+    host: hostOf(r.origin),
+    busyText: '저장하는 중…',
+    submitText: '로그인하기',
+    submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
+    direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+  })
+}
+
+/** 서비스 연결하기: 아이디·비밀번호를 넣으면 두리가 PC Chrome에서 대신 로그인하고 결과를 알려 준다 */
+function connectSheet(id: string) {
+  const it = st.services?.find((x) => x.card.id === id)
+  if (!it) return h('section', { class: 'sheet float app-sheet rise' })
+  return credSheet({
+    key: `connect:${id}`,
+    site: it.card.name,
+    host: it.card.site ?? '',
+    busyText: '두리가 로그인하는 중…',
+    submitText: '연결하기',
+    submit: (username, password) => void send({ kind: 'connect-login', id, username, password }),
+    direct: {
+      text: st.connectTabs.has(id)
+        ? 'PC 화면 보면서 마저 하기'
+        : '화면 보면서 직접 로그인할게요 (카카오·네이버로 로그인하는 곳)',
+      onclick: () => {
+        const tab = st.connectTabs.get(id)
+        if (tab !== undefined) return openRemote(tab, id)
+        st.opening = id
+        st.overlay = undefined
+        render()
+        void send({ kind: 'connect', id, action: 'open' })
+      },
+    },
+  })
 }
 
 // ── 연결 전 화면 ──

@@ -57,7 +57,7 @@ export const ConnectCardSchema = z
     /** 주소창의 도메인 (https:// 없이): "coupang.com". 아이콘·로그인 확인에 쓴다. 폰 권한이면 생략 */
     site: z
       .string()
-      .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'https:// 없이 도메인만 적어 주세요')
+      .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{2,5})?$/, 'https:// 없이 도메인만 적어 주세요')
       .optional(),
     category: ConnectCategorySchema,
     how: ConnectHowSchema,
@@ -109,5 +109,8 @@ export interface ConnectionItem {
 
 /** 서비스 첫 화면 주소 (연결할 때 Chrome에서 연다) */
 export function connectUrl(card: Pick<ConnectCard, 'site'>): string | undefined {
-  return card.site ? `https://${card.site}/` : undefined
+  if (!card.site) return undefined
+  // 이 PC 안의 시험 사이트(127.0.0.1·localhost)만 http
+  const local = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(card.site)
+  return `${local ? 'http' : 'https'}://${card.site}/`
 }

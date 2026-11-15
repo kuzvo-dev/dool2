@@ -13,7 +13,8 @@ export function looksSignedIn(
   card: Pick<ConnectCard, 'signedIn'>,
   page: { url: string; text: string },
 ): boolean {
-  if (LOGIN_URL.test(page.url)) return false
+  // 로그인 화면 주소라도 비밀번호 칸이 사라지고 로그인한 사람의 말이 보이면 로그인됐다 (주소가 안 바뀌는 사이트)
+  if (LOGIN_URL.test(page.url) && /비밀번호칸|type="?password/.test(page.text)) return false
   const marks = card.signedIn?.length ? card.signedIn : DEFAULT_SIGNED_IN
   return marks.some((m) => page.text.includes(m))
 }

@@ -65,6 +65,12 @@ export interface LinkHost {
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark'): Promise<{ tabId?: number }>
+  /** 연결하기: 금고에 넣고 대신 로그인 */
+  connectLogin(
+    id: string,
+    username: string,
+    password: string,
+  ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
 }
 
 const KEYS = 'link.pc'
@@ -318,6 +324,20 @@ export class PhoneLink {
         } catch (e) {
           return this.send(phone, { kind: 'error', message: (e as Error).message })
         }
+      }
+      case 'connect-login': {
+        const id = String(msg.id)
+        try {
+          const r = await this.host.connectLogin(
+            id,
+            String(msg.username).slice(0, 200),
+            String(msg.password).slice(0, 500),
+          )
+          await this.send(phone, { kind: 'connect-result', id, ...r })
+        } catch (e) {
+          await this.send(phone, { kind: 'connect-result', id, ok: false, message: (e as Error).message })
+        }
+        return this.send(phone, { kind: 'connections', services: await this.host.connections() })
       }
       case 'thread': {
         const t = await this.host.thread(msg.id)

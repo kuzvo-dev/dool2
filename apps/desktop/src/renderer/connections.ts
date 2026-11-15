@@ -269,10 +269,20 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         }
         kids.push(state, tryAsk, off)
       } else {
+        // 아이디·비밀번호를 넣으면 두리 본체가 Chrome에서 대신 로그인한다 (값은 금고로만)
+        const form = el('form', 'svc-login')
+        const user = el('input', 'field')
+        user.placeholder = '아이디 또는 이메일'
+        user.autocomplete = 'username'
+        const pw = el('input', 'field')
+        pw.type = 'password'
+        pw.placeholder = '비밀번호'
+        pw.autocomplete = 'current-password'
         const go = el('button', 'btn', '연결하기')
-        go.type = 'button'
-        go.onclick = async () => {
-          go.disabled = true
+        go.type = 'submit'
+        const direct = el('button', 'btn-text', '카카오·네이버로 로그인하는 곳이면 Chrome에서 직접')
+        direct.type = 'button'
+        direct.onclick = async () => {
           try {
             await opts.api(`/api/connections/${c.id}/open`, { method: 'POST' })
             drawWaiting()
@@ -280,7 +290,32 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
             drawAction((e as Error).message)
           }
         }
-        kids.push(go)
+        form.onsubmit = async (e) => {
+          e.preventDefault()
+          if (!user.value.trim() || !pw.value) return
+          go.disabled = true
+          go.textContent = '두리가 로그인하는 중…'
+          try {
+            const r = await opts.api<{ ok: boolean; message: string; human?: boolean }>(
+              `/api/connections/${c.id}/login`,
+              { method: 'POST', body: JSON.stringify({ username: user.value.trim(), password: pw.value }) },
+            )
+            pw.value = ''
+            if (r.ok) {
+              it.connectedAt = new Date().toISOString()
+              drawAction(r.message)
+            } else if (r.human) drawWaiting()
+            else drawAction(r.message)
+          } catch (e) {
+            drawAction((e as Error).message)
+          }
+        }
+        form.append(user, pw, go)
+        kids.push(
+          form,
+          el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),
+          direct,
+        )
       }
       if (note) kids.push(el('p', 'cap svc-note', note))
       action.replaceChildren(...kids)

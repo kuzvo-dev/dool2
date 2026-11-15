@@ -1,4 +1,4 @@
-// 폰 앱: 서비스 연결 (ADR 0014). 목록 → 서비스 상세 → PC Chrome에 열고 원격 화면으로 로그인 → 연결 표시.
+// 폰 앱: 서비스 연결 (ADR 0014). 목록 → 서비스 상세 → 아이디·비밀번호(금고) → 두리가 PC Chrome에서 대신 로그인 → 연결 표시.
 // 화면은 연결 카드(skills/<id>/connect.json)를 그리기만 한다. 탭 개편 때 "나의 두리"에 그대로 끼운다.
 import type { ConnectCard, ConnectionItem, Tier } from '@dool2/protocol/connect'
 import {
@@ -152,7 +152,7 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
     el(
       'p',
       'cap connect-intro',
-      '한 번 연결해 두면 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 로그인은 PC 화면을 폰으로 보면서 직접 해요.',
+      '한 번 연결해 두면 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 아이디·비밀번호는 PC 금고에만 저장돼요.',
     ),
   )
   const search = el('input', 'field connect-search')
@@ -249,7 +249,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     go.type = 'button'
     go.disabled = !ctx.online || ctx.opening === c.id
     go.onclick = () => ctx.open(c.id)
-    bar.append(go, el('p', 'cap', 'PC Chrome에 열고, 그 화면을 폰에서 보면서 로그인해요.'))
+    bar.append(go, el('p', 'cap', '아이디·비밀번호를 넣으면 두리가 PC의 Chrome에서 대신 로그인해요.'))
   }
   box.append(bar)
   return box

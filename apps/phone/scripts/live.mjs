@@ -5,7 +5,7 @@
 //   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     → /tmp/dool2-live.json 에 주소·토큰
 //   DOOL2_LIVE_DIR=<폴더> 를 주면 그 폴더를 계속 쓴다 (다시 켜도 폰 연결이 남는다)
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -24,13 +24,17 @@ const shop = createServer((req, res) => {
   // 로그인 페이지: 두리 금고에 없는 사이트라 사람에게 넘긴다 (원격 화면 시험용)
   if (req.url?.startsWith('/login')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>두리 시험 가게 로그인</title>
-<h1>로그인</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p>'">
+<h1>로그인</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p><a href=/>로그아웃</a>'">
 <p><input name="id" placeholder="아이디" style="font-size:20px;padding:8px"></p>
 <p><input name="pw" type="password" placeholder="비밀번호" style="font-size:20px;padding:8px"></p>
 <p><button style="font-size:20px;padding:8px 20px">로그인</button></p></form>`)
     return
   }
-  res.end(`<!doctype html><title>두리 시험 가게</title><h1>두리 시험 가게</h1>
+  if (req.url?.startsWith('/me')) {
+    res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
+    return
+  }
+  res.end(`<!doctype html><title>두리 시험 가게</title><p><a href="/login">로그인</a></p><h1>두리 시험 가게</h1>
 <p>오늘의 추천: 제주 귤 3kg <b>15,900원</b> (무료 배송, 배송 전 취소 가능)</p>
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)
 })
@@ -56,7 +60,30 @@ const fileSecrets = {
     writeFileSync(secretFile, JSON.stringify(all), { mode: 0o600 })
   },
 }
+// 연결 카드: 저장소의 카드에 시험 가게를 하나 더한다 (연결하기 끝-끝 시험)
+const skillsDir = join(tmp, 'skills')
+cpSync(join(root, 'skills'), skillsDir, { recursive: true })
+mkdirSync(join(skillsDir, 'test-shop'), { recursive: true })
+writeFileSync(
+  join(skillsDir, 'test-shop', 'connect.json'),
+  JSON.stringify({
+    id: 'test-shop',
+    name: '두리 시험 가게',
+    site: '127.0.0.1:8790',
+    category: 'shopping',
+    how: 'browser',
+    login: '아이디·비밀번호',
+    summary: '연결하기를 끝까지 시험해 보는 가게예요.',
+    example: { ask: '추천 상품 뭐야?', working: '가게 보는 중', reply: '오늘은 제주 귤 3kg이에요.' },
+    abilities: [
+      { title: '추천 상품 보기', say: '추천 상품 뭐야?', tier: '찾아보기' },
+      { title: '바로 구매', say: '귤 사 줘', tier: '돈 내기' },
+    ],
+    signedIn: ['로그아웃'],
+  }),
+)
 const daemon = await startDaemon({
+  skillsDir,
   ...(keep ? { secrets: fileSecrets } : {}),
   dataDir: join(tmp, 'data'),
   relay: relay.url,
