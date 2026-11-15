@@ -385,6 +385,87 @@ button {
 .idea .row-d {
   white-space: normal;
 }
+.idea-list .idea:last-child {
+  border-bottom: 0;
+}
+.idea-search {
+  width: 100%;
+  margin-top: 6px;
+}
+/* 분류: 한 줄로 옆으로 밀어 본다 */
+.idea-cats {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  scrollbar-width: none;
+  scroll-margin-top: calc(118px + env(safe-area-inset-top));
+}
+.idea-cats::-webkit-scrollbar {
+  display: none;
+}
+.idea-cats .chip {
+  flex: none;
+}
+.idea-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 4px 0;
+  color: var(--ink);
+  text-align: left;
+}
+.idea-sec-head .tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+.idea-sec-head strong {
+  font: 680 16px / 22px var(--font-sans);
+}
+.idea-sec-head .meta {
+  margin-left: auto;
+}
+.idea-sec-head .chev {
+  color: var(--ink-muted);
+}
+.idea-tag {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--raise);
+  font: var(--text-caption);
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.idea-later {
+  margin: 0;
+}
+.idea-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.idea-raw {
+  border-bottom: 0;
+}
+.cred-next {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--raise);
+  font: var(--text-caption);
+  color: var(--ink);
+}
+.cred-next svg.i {
+  flex: none;
+  margin-top: 1px;
+}
 .empty {
   display: flex;
   flex-direction: column;

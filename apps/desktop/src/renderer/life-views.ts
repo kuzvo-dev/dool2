@@ -4,6 +4,15 @@ import type { FeedItem, GoalCategory, LibraryItem, LifeAction, LifeState, Routin
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import { button, doori, el, emptyState, type IconName, icon, setRich, tile, toggle } from './dom.js'
 import {
+  type IdeaGroup,
+  type IdeaItem,
+  type IdeaSection,
+  ideaCatalog,
+  ideaCount,
+  needsConnect,
+  searchIdeas,
+} from './ideas.js'
+import {
   continueText,
   FEED_KIND,
   GOAL_CATEGORY_LIST,
@@ -11,13 +20,10 @@ import {
   goalStarter,
   groupByDay,
   hostOf,
-  IDEA_GROUPS,
-  type Idea,
   isFeedRoutine,
   LIBRARY_KIND,
   type LibraryTab,
   libraryTab,
-  personalIdeas,
   plain,
   planProgress,
   ROUTINE_EXAMPLES,
@@ -41,6 +47,8 @@ export interface LifeCtx {
   compose(text: string): void
   openGoal(id: string): void
   openView(view: 'feed' | 'ideas' | 'goals' | 'library' | 'connect'): void
+  /** 서비스 연결 화면 (아이디·비밀번호 넣는 곳) */
+  openService(id: string): void
   toast(text: string): void
   /** 피드 맨 위: 나를 기다리는 승인·로그인, 지금 하는 일 */
   waiting(): HTMLElement[]
@@ -252,54 +260,138 @@ function suggestedBox(ctx: LifeCtx) {
   )
 }
 
-export function ideasView(ctx: LifeCtx): HTMLElement {
-  const mine = personalIdeas(ctx.services(), ctx.life().feed)
-  const ideaRow = (idea: Idea) =>
-    button(
-      'idea-row',
-      () => ctx.send(idea.text),
-      idea.mark ? el('span', 'svc-mark', idea.mark) : tile(idea.icon, idea.tone),
-      el(
-        'span',
-        'grow',
-        el('span', 'idea-t', idea.text),
-        idea.hint ? el('span', 'cap', idea.hint) : undefined,
-      ),
-      icon('send', 'i idea-go'),
-    )
-  const mineBox = mine.length
-    ? el('div', 'idea-list', ...mine.map(ideaRow))
-    : el(
-        'div',
-        'card quiet idea-empty',
-        tile('link', 'blue'),
+/** 아이디어 탭에서 고른 분류와 찾는 말 (탭을 오가도 남는다) */
+const ideaPick = { cat: 'all', query: '' }
+
+function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
+  const later = needsConnect(it)
+  return button(
+    'idea-row',
+    () => {
+      if (later && it.service) {
+        ctx.toast(`${it.service.name}을(를) 연결하면 바로 맡길 수 있어요`)
+        ctx.openService(it.service.id)
+      } else ctx.send(it.ask)
+    },
+    it.service ? el('span', 'svc-mark', it.service.mark) : tile(sec.icon, sec.tone),
+    el('span', 'grow', el('span', 'idea-t', it.text), el('span', 'cap', it.note)),
+    later ? el('span', 'idea-tag', '연결') : icon('send', 'i idea-go'),
+  )
+}
+
+function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
+  const box = el('div', 'idea-catalog')
+  const search = el('input', 'field idea-search')
+  search.type = 'search'
+  search.placeholder = '아이디어 찾기 (택배, 항공권, 영수증…)'
+  search.value = ideaPick.query
+  const chips = el('div', 'chips idea-cats')
+  const body = el('div', 'idea-body')
+  const list = (items: { section: IdeaSection; item: IdeaItem }[]) =>
+    el('div', 'idea-list', ...items.map((x) => ideaRow(ctx, x.item, x.section)))
+  const draw = () => {
+    const cat = groups.some((g) => g.section.id === ideaPick.cat) ? ideaPick.cat : 'all'
+    const q = ideaPick.query.trim()
+    const chip = (id: string, label: string) => {
+      const c = button(
+        `chip quiet${cat === id && !q ? ' on' : ''}`,
+        () => {
+          ideaPick.cat = id
+          ideaPick.query = ''
+          search.value = ''
+          draw()
+        },
+        label,
+      )
+      return c
+    }
+    chips.replaceChildren(chip('all', '전체'), ...groups.map((g) => chip(g.section.id, g.section.label)))
+    body.replaceChildren()
+    if (q) {
+      const found = searchIdeas(groups, q)
+      if (found.length) body.append(list(found))
+      body.append(
         el(
           'div',
-          'grow',
-          el('p', 'row-t', '서비스를 연결하면 맞춤 아이디어가 생겨요'),
-          el('p', 'cap', '쇼핑·메일·예약 사이트를 연결해 두면 거기서 할 만한 일을 먼저 찾아 드려요.'),
+          'idea-list idea-raw',
+          button(
+            'idea-row',
+            () => ctx.send(q),
+            tile('send', ''),
+            el(
+              'span',
+              'grow',
+              el('span', 'idea-t', `"${q}" 그대로 부탁하기`),
+              el(
+                'span',
+                'cap',
+                found.length
+                  ? '찾는 게 없으면 그냥 말해 보세요'
+                  : '맞는 아이디어가 없어요. 그래도 두리가 해 볼게요',
+              ),
+            ),
+          ),
         ),
-        button('btn-ghost sm', () => ctx.openView('connect'), '연결하러 가기'),
       )
-  const groups = IDEA_GROUPS.map((g) =>
-    section(
-      g.name,
-      el(
-        'div',
-        'idea-grid',
-        ...g.asks.map((text) =>
-          button('idea', () => ctx.send(text), tile(g.icon, g.tone), el('span', 'idea-t', text)),
+      return
+    }
+    if (cat === 'all') {
+      for (const g of groups) {
+        const sec = g.section
+        body.append(
+          el(
+            'section',
+            'page-sec idea-sec',
+            button(
+              'idea-sec-head',
+              () => {
+                ideaPick.cat = sec.id
+                draw()
+                chips.scrollIntoView({ block: 'start', behavior: 'smooth' })
+              },
+              tile(sec.icon, sec.tone, 28),
+              el('strong', '', sec.label),
+              el('span', 'cap', `${g.items.length}가지 모두 보기`),
+              icon('chevron', 'i'),
+            ),
+            list(g.items.slice(0, 4).map((item) => ({ section: sec, item }))),
+          ),
+        )
+      }
+      return
+    }
+    const g = groups.find((x) => x.section.id === cat)
+    if (!g) return
+    const ready = g.items.filter((i) => !needsConnect(i))
+    const later = g.items.filter(needsConnect)
+    if (ready.length)
+      body.append(section('바로 할 수 있어요', list(ready.map((item) => ({ section: g.section, item })))))
+    if (later.length)
+      body.append(
+        section(
+          '연결하면 할 수 있어요',
+          el('p', 'cap idea-later', '아이디·비밀번호를 한 번 넣어 두면 그다음부터는 말로만 맡기면 돼요'),
+          list(later.map((item) => ({ section: g.section, item }))),
         ),
-      ),
-    ),
-  )
+      )
+  }
+  search.oninput = () => {
+    ideaPick.query = search.value
+    draw()
+  }
+  draw()
+  box.append(search, chips, body)
+  return box
+}
+
+export function ideasView(ctx: LifeCtx): HTMLElement {
+  const groups = ideaCatalog(ctx.services())
   return el(
     'div',
     'page',
-    pageHead('아이디어', '누르면 두리가 바로 시작해요'),
+    pageHead('아이디어', `누르면 두리가 바로 시작해요 · ${ideaCount(groups)}가지`),
     suggestedBox(ctx),
-    section('연결한 곳에서', mineBox),
-    ...groups,
+    ideaCatalogBox(ctx, groups),
     el(
       'div',
       'card ask idea-human',
