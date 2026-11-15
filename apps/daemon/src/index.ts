@@ -229,6 +229,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const conversation = new ConversationService({ store, threads })
   /** 대화에서 일어나는 일을 PC 화면(GET /api/conversation/live)에 흘려보낸다 */
   const live = new EventEmitter<{ event: [ConversationLiveEvent] }>()
+  // 폰에도 대화 상태(답하는 중·줄 선 말)를 알린다. 바뀔 때만
+  let lastStatus = ''
+  live.on('event', (ev) => {
+    if (ev.kind !== 'busy' && ev.kind !== 'queued') return
+    const status = {
+      kind: 'conversation-status' as const,
+      busy: conversationBusy() || activeThreads.size > 0,
+      queued: [...queued],
+    }
+    const key = JSON.stringify(status)
+    if (key === lastStatus) return
+    lastStatus = key
+    void link.broadcast(status)
+  })
   live.setMaxListeners(50)
   const token = opts.token ?? randomBytes(32).toString('hex')
 
@@ -369,6 +383,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
       connections: () => skills.connections(),
+      conversation: ({ before, limit }) => {
+        const messages = conversation.history({ limit: limit ?? 60, ...(before ? { before } : {}) })
+        return {
+          messages,
+          busy: conversationBusy(),
+          queued: [...queued],
+          hasMore: messages.length === (limit ?? 60),
+        }
+      },
+      cancelConversation: () => conversation.cancel(),
       connect: async (id, action) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
