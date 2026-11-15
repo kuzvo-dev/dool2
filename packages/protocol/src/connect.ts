@@ -2,29 +2,16 @@
 // 연결 화면(목록·상세)에 보일 내용과 두리가 그 서비스에서 할 수 있는 일을 적은 템플릿이다.
 // 서비스를 하나 더하려면 폴더 하나에 이 파일 하나를 넣으면 된다. 코드는 바꾸지 않는다.
 import { z } from 'zod'
+import { APPROVAL_TIERS, approvalLine, CATEGORY_LABEL } from './connect-text.js'
+
+export { APPROVAL_TIERS, approvalLine }
 
 /** 권한 등급 (docs/architecture.md 4.1). 돈 내기·연락하기는 폰 승인이 있어야만 실행된다 */
 export const TierSchema = z.enum(['찾아보기', '채워 두기', '돈 내기', '연락하기'])
 export type Tier = z.infer<typeof TierSchema>
-export const APPROVAL_TIERS: readonly Tier[] = ['돈 내기', '연락하기']
 
-/** 연결 화면의 분류. 순서가 곧 목록 순서다 */
-export const CONNECT_CATEGORIES = {
-  shopping: '쇼핑',
-  grocery: '장보기·배달',
-  fashion: '패션·뷰티',
-  travel: '여행·숙소',
-  flight: '항공',
-  tickets: '예매·예약',
-  media: '영상·음악',
-  books: '책',
-  social: 'SNS',
-  work: '업무',
-  mail: '메일·일정',
-  telecom: '통신',
-  life: '생활',
-  device: '휴대폰',
-} as const
+/** 연결 화면의 분류 (connect-text.ts의 CATEGORY_LABEL). 순서가 곧 목록 순서다 */
+export const CONNECT_CATEGORIES = CATEGORY_LABEL
 export const ConnectCategorySchema = z.enum(
   Object.keys(CONNECT_CATEGORIES) as [
     keyof typeof CONNECT_CATEGORIES,
@@ -97,16 +84,6 @@ export const ConnectCardSchema = z
       ctx.addIssue({ code: 'custom', path: ['login'], message: '어떻게 로그인하는지(login) 적어 주세요' })
   })
 export type ConnectCard = z.infer<typeof ConnectCardSchema>
-
-/**
- * 상세 화면의 안전 문장. 카드에 따로 적지 않고 등급에서 만든다 (적은 말과 실제 동작이 어긋나지 않게)
- * 예: "주문, 반품 같은 일은 폰에서 승인한 뒤에만 해요."
- */
-export function approvalLine(card: Pick<ConnectCard, 'abilities'>): string | undefined {
-  const risky = card.abilities.filter((a) => APPROVAL_TIERS.includes(a.tier)).map((a) => a.title)
-  if (!risky.length) return undefined
-  return `${risky.slice(0, 3).join(', ')} 같은 일은 폰에서 승인한 뒤에만 해요.`
-}
 
 /** 카드 문제를 사람이 읽을 수 있는 목록으로 (스킬 검사 테스트·기여 안내에서 쓴다) */
 export function checkConnectCard(dir: string, raw: unknown): string[] {
