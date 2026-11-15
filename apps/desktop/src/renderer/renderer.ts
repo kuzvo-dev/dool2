@@ -17,6 +17,7 @@ import type {
   ThreadSummary,
   UsageLimit,
 } from '@dool2/protocol'
+import { renderConnections } from './connections.js'
 import { appNote, type Inline, readAppNote, richBlocks, toolLabel } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import {
@@ -86,6 +87,8 @@ const state: {
   extension?: ExtensionStatus
   /** 첫 설정에서 고른 AI 구독 */
   choice?: AiChoice
+  /** 서비스 연결처럼 대화가 아닌 화면을 보고 있으면 true (홈으로 덮어쓰지 않게) */
+  panel?: boolean
 } = { url: '', token: '', agents: [], threads: [], pick: 'claude', busy: false }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -266,7 +269,8 @@ async function loadThreads() {
   if (firstRun && !Object.keys(seen).length) for (const t of state.threads) markSeen(t)
   renderThreads()
   // 목록을 받는 사이 부탁을 보내기 시작했으면 홈을 다시 그리지 않는다 (대화 위에 홈이 끼어들어 대화를 지우던 버그)
-  if (!state.current && !state.busy) renderHome()
+  // 서비스 연결처럼 대화가 아닌 화면을 보고 있을 때도
+  if (!state.current && !state.busy && !state.panel) renderHome()
 }
 
 // ── 홈: 부탁 칸과 최근에 맡긴 일 ─────────────────────
@@ -281,6 +285,8 @@ function placeComposer(home: boolean) {
   const form = composerForm
   const main = document.querySelector('.main') as HTMLElement
   main.classList.toggle('home', home)
+  main.classList.remove('panel')
+  state.panel = false
   if (home) $('home-ask')?.append(form)
   else if (form.parentElement !== main) main.append(form)
 }
@@ -378,6 +384,32 @@ function renderHome() {
   grid.className = 'tasks'
   grid.append(...list.map(taskCard))
   recent.replaceChildren(head, grid)
+}
+
+/** 서비스 연결 화면: 부탁 칸을 숨기고 가운데에 목록·상세를 그린다 */
+async function openConnections(id?: string) {
+  if (state.busy) return
+  state.current = undefined
+  placeComposer(false)
+  ;(document.querySelector('.main') as HTMLElement).classList.add('panel')
+  state.panel = true
+  $('agent-pick').hidden = true
+  renderThreads()
+  await renderConnections(
+    {
+      api,
+      box: $('messages'),
+      setHeader: (title, sub) => {
+        $('title').textContent = title
+        $('subtitle').textContent = sub
+      },
+      ask: (text) => {
+        $('new-thread').click()
+        void send(text)
+      },
+    },
+    id,
+  )
 }
 
 async function openThread(id: string) {
@@ -1045,6 +1077,7 @@ async function main() {
     input.focus()
   }
   renderHome()
+  $('open-connections').onclick = () => void openConnections()
 
   const [{ settings }] = await Promise.all([
     api<{ settings: Settings }>('/api/settings'),
@@ -1065,9 +1098,10 @@ async function main() {
     state.pick = settings.defaultAgent
     renderPick()
   }
-  // 점검 모드: 최근 대화를 열어 캡처한다
+  // 점검 모드: 최근 대화를 열어 캡처한다. connections(:서비스 id)면 연결 화면
   const latest = state.threads[0]
   if (cfg.smokeOpen === 'latest' && latest) await openThread(latest.id)
+  if (cfg.smokeOpen?.startsWith('connections')) await openConnections(cfg.smokeOpen.split(':')[1])
 
   // 첫 실행이면 마법사를 띄운다. 점검 모드에서는 "단계:선택"(예: check:both)으로 바로 연다
   const [smokeStep, smokeChoice, smokeAction] = (cfg.smokeSetup ?? '').split(':')
