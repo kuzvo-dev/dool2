@@ -11,7 +11,6 @@ import {
   groupByDay,
   hostOf,
   libraryTab,
-  personalIdeas,
   plain,
   routineWhen,
   sortRoutines,
@@ -105,34 +104,5 @@ describe('life-model', () => {
     expect(libraryTab(items, 'files').map((i) => i.id)).toEqual(['2'])
     expect(hostOf('https://www.coupang.com/vp/1')).toBe('coupang.com')
     expect(hostOf('이상한 주소')).toBe('')
-  })
-
-  it('맞춤 아이디어: 제안 먼저, 연결한 서비스마다 돌아가며 찾아보기부터', () => {
-    const svc = (id: string, name: string, at?: string): ConnectionItem =>
-      ({
-        card: {
-          id,
-          name,
-          abilities: [
-            { title: '다시 주문', say: `${name} 다시 주문`, tier: '돈 내기' },
-            { title: '배송 조회', say: `${name} 배송 조회`, tier: '찾아보기' },
-          ],
-        },
-        ...(at ? { connectedAt: at } : {}),
-      }) as unknown as ConnectionItem
-    const feed: FeedItem[] = [{ id: 's', kind: 'suggest', title: '**정기 결제** 정리', at: '2026-11-16' }]
-    const ideas = personalIdeas(
-      [svc('a', '가게', '2026-11-10'), svc('b', '메일', '2026-11-12'), svc('c', '안 씀')],
-      feed,
-    )
-    expect(ideas.map((i) => i.text)).toEqual([
-      '정기 결제 정리',
-      '메일 배송 조회',
-      '가게 배송 조회',
-      '메일 다시 주문',
-      '가게 다시 주문',
-    ])
-    expect(ideas[1]?.mark).toBe('메')
-    expect(personalIdeas([], [])).toEqual([])
   })
 })

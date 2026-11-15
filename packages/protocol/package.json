@@ -32,6 +32,10 @@
     "./schedule": {
       "types": "./dist/schedule.d.ts",
       "default": "./dist/schedule.js"
+    },
+    "./ideas": {
+      "types": "./dist/ideas.d.ts",
+      "default": "./dist/ideas.js"
     }
   },
   "scripts": {

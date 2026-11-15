@@ -709,6 +709,58 @@ ol {
 .idea-human {
   margin-top: 32px;
 }
+/* 분류별 모음: 찾기 · 분류 칩 · 목록 */
+.idea-catalog {
+  margin-top: 28px;
+}
+.idea-search {
+  width: 100%;
+  max-width: 420px;
+}
+.idea-cats {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 12px 0 0;
+  padding: 8px 0;
+  background: var(--bg);
+}
+.idea-body > .page-sec:first-child {
+  margin-top: 12px;
+}
+.idea-raw {
+  margin-top: 10px;
+}
+.idea-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 10px;
+  text-align: left;
+  color: var(--ink);
+}
+.idea-sec-head strong {
+  font: 680 16px / 22px var(--font-sans);
+}
+.idea-sec-head .cap {
+  margin-left: auto;
+}
+.idea-sec-head:hover .cap {
+  color: var(--ink);
+}
+.idea-tag {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: var(--raise);
+  font: var(--text-caption);
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.idea-later {
+  margin: -4px 0 10px;
+}
 
 /* ── 목표 ──────────────────────────────────────── */
 .goal-list {
