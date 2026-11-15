@@ -16,6 +16,8 @@ export interface ConnectCtx {
   online: boolean
   /** 연결하기를 눌러 PC 답을 기다리는 서비스 */
   opening?: string
+  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  connecting?: Set<string>
   /** 화면 머리: back이 있으면 뒤로 버튼 */
   header(title: string, back?: () => void): HTMLElement
   home(): void
@@ -246,9 +248,14 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     off.onclick = () => ctx.mark(c.id, false)
     bar.append(el('p', 'meta svc-connected', `${whenLabel(it.connectedAt)} 연결했어요`), tryAsk, off)
   } else {
-    const go = el('button', 'btn lg', ctx.opening === c.id ? 'PC에서 여는 중…' : '연결하기')
+    const busy = ctx.connecting?.has(c.id)
+    const go = el(
+      'button',
+      'btn lg',
+      busy ? '두리가 로그인하는 중…' : ctx.opening === c.id ? 'PC에서 여는 중…' : '연결하기',
+    )
     go.type = 'button'
-    go.disabled = !ctx.online || ctx.opening === c.id
+    go.disabled = !ctx.online || ctx.opening === c.id || Boolean(busy)
     go.onclick = () => ctx.open(c.id)
     bar.append(go, el('p', 'cap', '아이디·비밀번호를 넣으면 두리가 PC의 Chrome에서 대신 로그인해요.'))
   }

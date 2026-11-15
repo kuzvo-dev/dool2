@@ -166,6 +166,20 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('photo_view'),
   )
   server.registerTool(
+    'connect_ask',
+    {
+      title: '서비스 연결 카드 띄우기',
+      description:
+        '사용자가 "쿠팡 연결해 줘"라고 하거나, 하려는 일에 연결(로그인)이 안 된 서비스가 필요하면 쓴다. ' +
+        '대화에 그 서비스의 [연결하기] 카드를 띄운다. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 PC Chrome에서 대신 로그인하고, ' +
+        '끝나면 대화로 알림이 온다. 아이디·비밀번호를 대화로 묻거나 받지 않는다. 카드를 띄웠다고 짧게 말하고 기다린다.',
+      inputSchema: {
+        service: z.string().max(60).describe('연결 카드 id나 서비스 이름 (예: "coupang", "쿠팡", "KT")'),
+      },
+    },
+    call('connect_ask'),
+  )
+  server.registerTool(
     'feed_post',
     {
       title: '피드에 올리기',
