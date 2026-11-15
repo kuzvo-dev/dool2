@@ -589,8 +589,57 @@ export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
   )
 }
 
+/** 두리 설정: 나를 부르는 이름 · 말투 · 답 길이 */
+function identityBlock(ctx: LifeCtx): HTMLElement {
+  const id = ctx.life?.identity ?? {}
+  const name = h('input', { class: 'field' })
+  name.id = 'identity-name'
+  name.placeholder = '예: 민지 (비우면 호칭 없이)'
+  name.value = id.userName ?? ''
+  const save = h('button', { class: 'btn small', text: '저장' })
+  save.type = 'submit'
+  const form = h('form', { class: 'feed-form' }, name, save)
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    ctx.act({ action: 'identity', userName: name.value })
+  }
+  const seg = <T extends string>(cur: T, opts: [T, string][], pick: (v: T) => void) =>
+    h(
+      'div',
+      { class: 'seg' },
+      ...opts.map(([v, label]) => segBtn(cur === v, { text: label, onclick: () => pick(v) })),
+    )
+  return h(
+    'div',
+    { class: 'identity' },
+    h('p', { class: 'over', text: '나를 부르는 이름' }),
+    form,
+    h('p', { class: 'over', text: '말투' }),
+    seg(
+      id.tone ?? 'warm',
+      [
+        ['warm', '다정하게'],
+        ['neat', '깔끔하게'],
+        ['buddy', '친구처럼'],
+      ],
+      (tone) => ctx.act({ action: 'identity', tone }),
+    ),
+    h('p', { class: 'over', text: '답 길이' }),
+    seg(
+      id.length ?? 'normal',
+      [
+        ['short', '짧게'],
+        ['normal', '보통'],
+        ['detail', '자세히'],
+      ],
+      (length) => ctx.act({ action: 'identity', length }),
+    ),
+    h('p', { class: 'over', text: '기억' }),
+  )
+}
+
 export function memorySeg(ctx: LifeCtx): HTMLElement[] {
-  const out: HTMLElement[] = []
+  const out: HTMLElement[] = [identityBlock(ctx)]
   const input = h('input', { class: 'field' })
   input.id = 'memory-add'
   input.placeholder = '두리가 알아 두면 좋은 것 (예: 아이가 초3이에요)'

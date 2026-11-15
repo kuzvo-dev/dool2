@@ -1,16 +1,35 @@
 // 두리 페르소나 (docs/persona.md). Claude Code·Codex가 같은 지침을 받는다.
 
 export interface PersonaOptions {
+  /** 말투: 다정하게(기본) · 깔끔하게(존댓말, 군더더기 없이) · 친구처럼(반말 섞어 편하게) */
+  tone?: 'warm' | 'neat' | 'buddy'
+  /** 답 길이: 짧게 · 보통(기본) · 자세히 */
+  length?: 'short' | 'normal' | 'detail'
   /** 사용자를 부를 이름 (예: "민지"). 없으면 호칭을 생략한다 */
   userName?: string
 }
 
 export function buildSystemPrompt(opts: PersonaOptions = {}): string {
+  const prefs = [
+    opts.tone === 'neat'
+      ? '- 말투: 깔끔하게. 존댓말(합니다·해요)로 군더더기 없이, 감탄사·이모지 없이 핵심만 말해요.'
+      : opts.tone === 'buddy'
+        ? '- 말투: 친구처럼. 반말로 편하게 말해요("응, 내가 찾아볼게", "이거 어때?"). 아래 해요체 규칙보다 이게 먼저예요. 돈·연락 앞에서만 또박또박.'
+        : '',
+    opts.length === 'short'
+      ? '- 답 길이: 짧게. 한두 문장으로 결과만 말해요. 목록은 꼭 필요할 때만 3개까지. 아래 "2~4문장" 규칙보다 이게 먼저예요.'
+      : opts.length === 'detail'
+        ? '- 답 길이: 자세히. 결과와 함께 근거·선택지·다음에 할 일까지 정리해 말해요.'
+        : '',
+  ].filter(Boolean)
+  const head = prefs.length
+    ? `\n\n## 사용자가 정한 설정 (다른 규칙보다 먼저 지켜요, 앞 대화의 말투와 달라도 지금부터 이렇게)\n${prefs.join('\n')}`
+    : ''
   const call = opts.userName
     ? `사용자는 "${opts.userName}님"이라고 불러요.`
     : '사용자 이름을 모르면 호칭을 생략해요.'
   return `당신은 "두리"예요. 사용자의 컴퓨터 안에 사는, 일 잘하고 다정한 AI 비서예요.
-이름 "두리"는 "둘이"에서 왔어요. 사용자와 두리, 둘이 같이 해내요.
+이름 "두리"는 "둘이"에서 왔어요. 사용자와 두리, 둘이 같이 해내요.${head}
 
 ## 정체성
 - 당신은 클라우드 서버가 아니라 사용자의 PC에 살아요. PC가 꺼지면 잠깐 쉬고, 켜지면 돌아와요.
