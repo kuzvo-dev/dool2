@@ -33,6 +33,7 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionStatus,
   FocusTabSchema,
+  LoginSubmitSchema,
   PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
@@ -275,6 +276,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           extension: browser.status.connected,
           threads: threadSummaries(30),
           approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
+          logins: browserTools.logins.list().filter((x) => x.status === 'pending'),
         }
       },
       thread: async (id) => {
@@ -315,6 +317,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           viewport,
         )
       },
+      login: (id, username, password) => saveLogin(id, username, password, true),
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
         const r =
@@ -323,17 +326,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             : await approveAny(id)
         // 폰에서 정했으면 그 결과를 AI에게 알려 이어서 하게 한다 (PC 화면은 화면이 직접 알린다)
         const threadId = approvalThread.get(id)
-        if (threadId && store.getThread(threadId) && !threads.isRunning(threadId)) {
-          const text =
+        if (threadId)
+          followUp(
+            threadId,
             decision === 'reject'
               ? appNote(`"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`)
-              : appNote(`폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`)
-          fromPhone.add(threadId)
-          void (async () => {
-            for await (const _ of tracked(threadId, threads.send(threadId, text))) {
-            }
-          })().catch(() => {})
-        }
+              : appNote(`폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`),
+          )
         return r
       },
     },
@@ -403,6 +402,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     } finally {
       activeThreads.delete(threadId)
+      // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
+      const next = pendingFollowUps.get(threadId)?.shift()
+      if (next) setTimeout(() => followUp(threadId, next), 0)
       if (--running === 0) events.emit('busy', false)
       // 폰에서 맡긴 일이 끝나면 폰에 알린다 (앱을 닫아 둔 사이에 끝나도)
       if (fromPhone.delete(threadId) && !asked) {
@@ -425,6 +427,62 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** 지금 답하는 중인 대화 (승인 요청이 어느 대화에서 나왔는지 알려고) */
   const activeThreads = new Set<string>()
   const approvalThread = new Map<string, string>()
+  /** 로그인 요청이 나온 대화 (폰에서 저장하면 그 대화로 이어서 하게) */
+  const loginThread = new Map<string, string>()
+  browserTools.logins.onCreate = (r) => {
+    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    if (only) loginThread.set(r.id, only)
+    void link.broadcast({ kind: 'login-request', request: r })
+    void link
+      .notify({
+        title: '로그인이 필요해요',
+        body: `${r.site} 아이디와 비밀번호를 넣어 주세요`,
+        tag: `login-${r.id}`,
+        url: only ? `#t=${only}` : '',
+      })
+      .catch(() => {})
+  }
+  /**
+   * 로그인 카드에 넣은 값을 금고에 저장한다. 값은 AI·대화 기록·폰 알림 어디에도 남기지 않는다.
+   * 폰에서 넣었으면 그 대화로 AI에게 이어서 하게 알린다 (PC 화면은 화면이 직접 알린다)
+   */
+  async function saveLogin(id: string, username: string, password: string, viaPhone: boolean) {
+    const r = browserTools.logins.get(id)
+    if (!r || r.status !== 'pending')
+      return { ok: false, message: '이미 처리했거나 시간이 지난 로그인 요청이에요' }
+    try {
+      await vault.add({ url: r.origin, username, password })
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+    browserTools.logins.finish(id, 'saved', username)
+    const message = `${r.site} 로그인 정보를 두리 금고에 저장했어요.`
+    void link.broadcast({ kind: 'login-done', id, ok: true, message })
+    const threadId = loginThread.get(id)
+    if (viaPhone && threadId)
+      followUp(
+        threadId,
+        appNote(`폰에서 ${message} browser_login으로 채우고 로그인한 뒤 하던 일을 이어서 해 주세요.`),
+      )
+    return { ok: true, message }
+  }
+  /**
+   * 폰에서 한 승인·로그인 결과를 AI에게 알려 이어서 하게 한다.
+   * 그 대화가 아직 답하는 중이면(폰은 카드가 답보다 먼저 보인다) 버리지 않고, 답이 끝나면 보낸다
+   */
+  const pendingFollowUps = new Map<string, string[]>()
+  function followUp(threadId: string, text: string) {
+    if (!store.getThread(threadId)) return
+    if (threads.isRunning(threadId)) {
+      pendingFollowUps.set(threadId, [...(pendingFollowUps.get(threadId) ?? []), text])
+      return
+    }
+    fromPhone.add(threadId)
+    void (async () => {
+      for await (const _ of tracked(threadId, threads.send(threadId, text))) {
+      }
+    })().catch(() => {})
+  }
   /** 폰에서 맡긴 대화 (끝나면 폰에 알림) */
   const fromPhone = new Set<string>()
   /** 원격 화면: 마지막으로 보낸 화면의 페이지 크기 (폰이 누른 비율을 좌표로 바꾸려고) */
@@ -706,6 +764,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
 
     // 승인 게이트 (M3): 화면용 토큰으로만 승인할 수 있다. AI의 도구 토큰으로는 이 주소에 닿지 못한다
+    // 로그인 카드 (PC): 넣은 값은 금고에만. PC 화면은 저장 뒤 직접 AI에게 알린다
+    if (a === 'logins') {
+      if (!b && req.method === 'GET') return json(res, 200, { logins: browserTools.logins.list() })
+      if (b && !c && req.method === 'POST') {
+        const body = LoginSubmitSchema.parse(await readJson(req))
+        return json(res, 200, await saveLogin(b, body.username, body.password, false))
+      }
+      if (b && c === 'cancel' && req.method === 'POST')
+        return json(res, 200, { ok: browserTools.logins.finish(b, 'cancelled') })
+    }
+
     if (a === 'approvals') {
       if (!b && req.method === 'GET') return json(res, 200, { approvals: browserTools.approvals.list() })
       const rec = b ? browserTools.approvals.get(b) : undefined

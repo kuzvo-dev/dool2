@@ -286,6 +286,36 @@ export interface HandoffRecord {
 
 // ── 두리 금고 (ADR 0011): 로그인 정보는 PC 키체인에, AI가 아니라 두리가 채운다 ──────
 
+/**
+ * 대화 안 로그인 카드: 금고에 없는 사이트에서 두리가 아이디·비밀번호를 부탁한다.
+ * 사용자가 카드에 넣은 값은 AI를 거치지 않고 금고에만 저장된다
+ */
+export interface LoginRequestView {
+  id: string
+  tabId: number
+  /** 금고에 저장할 사이트 주소 (https://…) */
+  origin: string
+  /** 사용자에게 보일 사이트 이름 */
+  site: string
+  status: 'pending' | 'saved' | 'cancelled' | 'expired'
+  /** 저장한 아이디 (비밀번호는 어디에도 돌려주지 않는다) */
+  username?: string
+  createdAt: string
+  expiresAt: string
+}
+
+/** 대화 기록에 남기는 로그인 요청 (카드는 본체에 상태를 물어 그린다) */
+export interface LoginRecordMessage {
+  kind: 'login'
+  tabId?: number
+  site: string
+}
+
+export const LoginSubmitSchema = z.object({
+  username: z.string().min(1).max(200),
+  password: z.string().min(1).max(500),
+})
+
 export const VaultEntryRequestSchema = z.object({
   /** 사이트 주소 (예: https://nid.naver.com/nidlogin.login). 주소의 origin만 저장한다 */
   url: z.string().trim().min(3).max(500),
@@ -363,6 +393,8 @@ export type PhoneToPc =
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
   | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }
+  /** 로그인 카드에 넣은 아이디·비밀번호 (PC 금고에만 저장된다) */
+  | { kind: 'login'; id: string; username: string; password: string }
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장을 달라 */
   | { kind: 'screen'; tabId: number }
   /** 원격 화면에서 한 입력. tap 좌표는 사진 비율(0~1) */
@@ -397,6 +429,8 @@ export type PcToPhone =
       extension: boolean
       threads: ThreadSummary[]
       approvals: ApprovalView[]
+      /** 기다리는 로그인 요청 */
+      logins?: LoginRequestView[]
       /** 웹 푸시 VAPID 공개키 (폰의 applicationServerKey) */
       vapid?: string
       /** 이 폰이 알림을 받도록 PC에 구독이 등록돼 있는지 */
@@ -405,6 +439,9 @@ export type PcToPhone =
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
   | { kind: 'approval'; approval: ApprovalView & { shot?: string } }
+  /** 새 로그인 요청, 저장 결과 */
+  | { kind: 'login-request'; request: LoginRequestView }
+  | { kind: 'login-done'; id: string; ok: boolean; message: string }
   /** 원격 화면 한 장 (JPEG base64). 중계 서버는 이 종류를 쌓아 두지 않는다 */
   | { kind: 'screen'; tabId: number; shot?: string; url?: string; title?: string; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }

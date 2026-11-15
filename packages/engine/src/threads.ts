@@ -4,6 +4,7 @@ import type {
   ApprovalRecordMessage,
   DaemonStreamEvent,
   HandoffRecord,
+  LoginRecordMessage,
 } from '@dool2/protocol'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
@@ -86,6 +87,16 @@ export class ThreadService {
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
         }
         // 승인 요청도 남긴다. 카드는 본체에 상태(기다림·승인·거절·만료)를 물어 그린다
+        // 로그인 카드 요청도 남긴다 (값은 남기지 않는다. 카드가 본체에 상태를 묻는다)
+        if (ev.type === 'tool' && /browser_request_login$/.test(ev.name)) {
+          const input = (ev.input ?? {}) as { tabId?: unknown; site?: unknown }
+          const record: LoginRecordMessage = {
+            kind: 'login',
+            ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
+            site: typeof input.site === 'string' ? input.site : '',
+          }
+          yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+        }
         // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
         if (ev.type === 'tool' && (screen || /browser_request_approval$/.test(ev.name))) {

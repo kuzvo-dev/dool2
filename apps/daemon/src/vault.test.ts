@@ -70,7 +70,7 @@ describe('금고로 로그인 칸 채우기', () => {
     await tools.run('read', { tabId: 1 })
     const r = await tools.run('login', { tabId: 1, usernameRef: 'e1', passwordRef: 'e2' })
     expect(r.isError).toBe(true)
-    expect(JSON.stringify(r)).toContain('browser_handoff')
+    expect(JSON.stringify(r)).toContain('browser_request_login')
     expect(b.calls.map((c) => c[0])).not.toContain('fill')
   })
 

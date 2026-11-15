@@ -10,6 +10,8 @@ import type {
   DaemonStreamEvent,
   ExtensionStatus,
   HandoffRecord,
+  LoginRecordMessage,
+  LoginRequestView,
   Settings,
   StoredMessage,
   ThreadSummary,
@@ -263,7 +265,8 @@ async function loadThreads() {
   state.threads = (await api<{ threads: ThreadSummary[] }>('/api/threads')).threads
   if (firstRun && !Object.keys(seen).length) for (const t of state.threads) markSeen(t)
   renderThreads()
-  if (!state.current) renderHome()
+  // 목록을 받는 사이 부탁을 보내기 시작했으면 홈을 다시 그리지 않는다 (대화 위에 홈이 끼어들어 대화를 지우던 버그)
+  if (!state.current && !state.busy) renderHome()
 }
 
 // ── 홈: 부탁 칸과 최근에 맡긴 일 ─────────────────────
@@ -413,10 +416,131 @@ function toolCard(raw: string, active: boolean): Node {
   try {
     const rec = JSON.parse(raw) as { kind?: string }
     if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
+    if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
   } catch {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/** 선 아이콘 (24 격자) */
+function svgIcon(d: string): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('class', 'i')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(ns, 'path')
+  path.setAttribute('d', d)
+  svg.append(path)
+  return svg
+}
+const ICON_LOCK = 'M6 11h12v9H6ZM8 11V8a4 4 0 0 1 8 0v3'
+const ICON_GLOBE =
+  'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9'
+const ICON_EYE =
+  'M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12ZM12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5'
+
+/**
+ * 로그인 카드: 금고에 없는 사이트에서 두리가 아이디·비밀번호를 부탁할 때.
+ * 넣은 값은 본체 금고(OS 키체인)로만 간다. AI·대화 기록에는 남지 않는다
+ */
+function loginCard(rec: LoginRecordMessage): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'card login-card'
+  const render = (r: LoginRequestView | undefined) => {
+    if (!r || r.status !== 'pending') {
+      card.className = 'card quiet login-card'
+      const done = document.createElement('div')
+      done.className = 'card-label'
+      done.append(svgIcon(ICON_LOCK))
+      done.append(
+        r?.status === 'saved'
+          ? `${r.site} 로그인 정보를 금고에 저장했어요${r.username ? ` · ${r.username}` : ''}`
+          : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+      )
+      card.replaceChildren(done)
+      return
+    }
+    const head = document.createElement('div')
+    head.className = 'login-head'
+    const badge = document.createElement('span')
+    badge.className = 'login-badge'
+    badge.append(svgIcon(ICON_GLOBE))
+    const title = document.createElement('div')
+    const t = document.createElement('strong')
+    t.textContent = `${r.site} 로그인`
+    const host = document.createElement('span')
+    host.className = 'mono'
+    host.textContent = new URL(r.origin).host
+    title.append(t, host)
+    head.append(badge, title)
+    const form = document.createElement('form')
+    form.className = 'login-form'
+    const user = document.createElement('input')
+    user.className = 'field'
+    user.placeholder = '아이디 또는 이메일'
+    user.autocomplete = 'username'
+    const pwRow = document.createElement('div')
+    pwRow.className = 'pw-row'
+    const pw = document.createElement('input')
+    pw.className = 'field'
+    pw.type = 'password'
+    pw.placeholder = '비밀번호'
+    pw.autocomplete = 'current-password'
+    const eye = document.createElement('button')
+    eye.type = 'button'
+    eye.className = 'icon-btn'
+    eye.setAttribute('aria-label', '비밀번호 보기')
+    eye.append(svgIcon(ICON_EYE))
+    eye.onclick = () => {
+      pw.type = pw.type === 'password' ? 'text' : 'password'
+    }
+    pwRow.append(pw, eye)
+    const err = document.createElement('p')
+    err.className = 'login-error'
+    const go = document.createElement('button')
+    go.type = 'submit'
+    go.className = 'btn'
+    go.textContent = '로그인'
+    form.append(user, pwRow, err, go)
+    form.onsubmit = async (e) => {
+      e.preventDefault()
+      if (!user.value.trim() || !pw.value) {
+        err.textContent = '아이디와 비밀번호를 모두 넣어 주세요'
+        return
+      }
+      go.disabled = true
+      go.textContent = '저장하는 중…'
+      const res = await api<{ ok: boolean; message: string }>(`/api/logins/${encodeURIComponent(r.id)}`, {
+        method: 'POST',
+        body: JSON.stringify({ username: user.value.trim(), password: pw.value }),
+      }).catch((x: Error) => ({ ok: false, message: x.message }))
+      pw.value = ''
+      if (!res.ok) {
+        go.disabled = false
+        go.textContent = '로그인'
+        err.textContent = res.message
+        return
+      }
+      render({ ...r, status: 'saved', username: user.value.trim() })
+      // AI에게는 "저장됐어요"만 알린다. 값은 보내지 않는다
+      void send(appNote(`${res.message} browser_login으로 채우고 로그인한 뒤 하던 일을 이어서 해 주세요.`))
+    }
+    const foot = document.createElement('p')
+    foot.className = 'login-foot'
+    foot.append(svgIcon(ICON_LOCK), '이 PC의 두리 금고에만 암호화해서 저장돼요. 두리(AI)는 볼 수 없어요.')
+    card.replaceChildren(head, form, foot)
+    setTimeout(() => user.focus(), 50)
+  }
+  void api<{ logins: LoginRequestView[] }>('/api/logins')
+    .then(({ logins }) =>
+      render(
+        logins.filter((x) => x.tabId === rec.tabId).sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0],
+      ),
+    )
+    .catch(() => render(undefined))
+  return card
 }
 
 const RISK_LABEL: Record<ApprovalView['kind'], string> = {
@@ -724,9 +848,10 @@ async function send(text: string) {
   $<HTMLButtonElement>('send').disabled = true
   const box = $('messages')
   // 홈에서 보내면 대화 화면으로 바뀐다
+  // 홈만 걷어 낸다 (대화 내용은 건드리지 않는다)
   if (document.getElementById('home')) {
     placeComposer(false)
-    box.replaceChildren()
+    document.getElementById('home')?.remove()
   }
 
   try {
@@ -853,8 +978,14 @@ async function send(text: string) {
     if (handoff) {
       box.append(toolCard(handoff, true))
       try {
-        const rec = JSON.parse(handoff) as HandoffRecord | ApprovalRecordMessage
-        notifyHandoff(rec.kind === 'approval' ? `승인을 기다려요: ${rec.what}` : rec.reason)
+        const rec = JSON.parse(handoff) as HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
+        notifyHandoff(
+          rec.kind === 'approval'
+            ? `승인을 기다려요: ${rec.what}`
+            : rec.kind === 'login'
+              ? `${rec.site} 로그인 정보를 넣어 주세요`
+              : rec.reason,
+        )
       } catch {}
     }
     if (usd > 0) {

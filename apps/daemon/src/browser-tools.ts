@@ -5,6 +5,7 @@
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
 import type { BrowserCommand } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
+import { LoginRequests } from './logins.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export interface ToolResult {
@@ -29,6 +30,7 @@ export const BROWSER_TOOLS = [
   'close',
   'handoff',
   'login',
+  'request_login',
   'request_approval',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
@@ -120,6 +122,7 @@ export class BrowserTools {
   private handedOff = new Map<number, number>()
 
   readonly approvals: Approvals
+  readonly logins: LoginRequests
 
   constructor(
     private readonly browser: BrowserCaller,
@@ -127,8 +130,10 @@ export class BrowserTools {
     /** 마지막 버튼을 승인받아 두리가 누를지(approve), 항상 사용자가 누를지(self) */
     private readonly finalStep: () => 'approve' | 'self' = () => 'approve',
     approvals?: Approvals,
+    logins?: LoginRequests,
   ) {
     this.approvals = approvals ?? new Approvals()
+    this.logins = logins ?? new LoginRequests()
   }
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
@@ -234,7 +239,7 @@ export class BrowserTools {
         const entry = await this.vault?.findForOrigin(origin)
         if (!entry)
           throw new Error(
-            `이 사이트(${origin})는 두리 금고에 없어요. browser_handoff로 사용자에게 직접 로그인해 달라고 부탁해 주세요.`,
+            `이 사이트(${origin})는 두리 금고에 없어요. browser_request_login으로 사용자에게 로그인 카드를 띄우고 이번 답을 끝내세요.`,
           )
         // 확장도 주소를 다시 확인한다 (그 사이 다른 페이지로 넘어갔으면 채우지 않는다)
         if (userRef) await this.browser.call('fill', { tabId, ref: userRef, value: entry.username, origin })
@@ -284,6 +289,43 @@ export class BrowserTools {
               text:
                 `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
                 '사용자가 승인하면 두리가 그 버튼을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
+            },
+          ],
+        }
+      }
+      case 'request_login': {
+        // 로그인 카드: 사용자가 PC·폰 카드에 넣은 값은 금고에만 들어간다. AI는 값을 보지 않는다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 로그인 페이지를 읽어 주세요')
+        let origin: string
+        try {
+          origin = new URL(page.url).origin
+        } catch {
+          throw new Error('페이지 주소를 알 수 없어요')
+        }
+        const local = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(origin)
+        if (!origin.startsWith('https://') && !local)
+          throw new Error(
+            'https 사이트만 로그인 정보를 저장할 수 있어요. browser_handoff로 사용자에게 넘겨 주세요.',
+          )
+        if (await this.vault?.findForOrigin(origin))
+          return {
+            content: [
+              { type: 'text', text: '이 사이트는 이미 두리 금고에 있어요. browser_login으로 채우세요.' },
+            ],
+          }
+        const site =
+          String(a.site ?? '')
+            .trim()
+            .slice(0, 60) || new URL(origin).hostname
+        const r = this.logins.create({ tabId, origin, site })
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `로그인 카드를 띄웠어요(${r.id.slice(0, 8)}). 사용자에게 카드에 ${site} 아이디와 비밀번호를 넣어 달라고 한두 문장으로 말하고 이번 답을 끝내세요. ` +
+                '넣은 값은 두리 금고에만 저장되고 당신에게는 오지 않아요. 저장되면 다음 메시지로 알려 줘요. 그때 페이지를 다시 읽고 browser_login으로 채운 뒤 로그인 버튼을 누르세요.',
             },
           ],
         }

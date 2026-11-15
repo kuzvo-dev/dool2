@@ -52,6 +52,14 @@ const shop = createServer((req, res) => {
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)
 })
 await new Promise((r) => shop.listen(8790, '127.0.0.1', r))
+// 두 번째 사이트 (폰에서 로그인 카드를 시험할 다른 주소)
+const shop2 = createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+  res.end(`<!doctype html><title>두리 시험 쇼핑몰 로그인</title><h1>시험 쇼핑몰 로그인</h1>
+<form onsubmit="event.preventDefault();document.title='로그인 완료';document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p>'">
+<p><input name="id" placeholder="이메일"></p><p><input name="pw" type="password" placeholder="비밀번호"></p><p><button>로그인</button></p></form>`)
+})
+await new Promise((r) => shop2.listen(8791, '127.0.0.1', r))
 const relay = await startRelay({ port: 8787, appDir: join(root, 'apps', 'phone', 'dist') })
 log('시험 가게 :8790, 중계 서버 :8787')
 
@@ -315,6 +323,27 @@ try {
   await sleep(2000)
   note('승인 → 두리가 누르고 확인', await shot('approved'))
 
+  // 4-2. 로그인 카드 (PC): 금고에 없는 사이트 → 대화 안 카드에 넣으면 금고에만 저장 → 두리가 채우고 로그인
+  await click('새 부탁', '.nav-item')
+  await sleep(800)
+  await type('#input', '두리 시험 가게 로그인 페이지(http://127.0.0.1:8790/login)에 로그인해 줘')
+  await click('', '#send')
+  await waitFor(`!!document.querySelector('.login-card form')`, 300_000, '로그인 카드')
+  await sleep(1500)
+  note('로그인 카드 (PC)', await shot('login-card'))
+  await type('.login-card input[autocomplete=username]', 'dool2')
+  await type('.login-card input[type=password]', 'test-password')
+  await sleep(400)
+  note('로그인 카드에 입력', await shot('login-typed'))
+  await click('로그인', '.login-card button')
+  await waitFor(
+    `!document.querySelector('.work:not(.done)') && [...document.querySelectorAll('.msg.assistant')].length >= 2`,
+    300_000,
+    '로그인 뒤 답',
+  )
+  await sleep(2000)
+  note('두리가 금고로 채우고 로그인', await shot('login-done'))
+
   // 5. 설정 → 폰 연결
   await click('', '#open-settings')
   await waitFor(`!!document.querySelector('.setup-card .checks')`, 30_000, '설정')
@@ -344,37 +373,29 @@ await snap(${JSON.stringify(pshot('pair-code'))});`)
   await sleep(1500)
   note('폰 연결됨', await shot('paired'))
 
-  // 6. 폰에서 부탁 → 사람에게 넘김 → 원격 화면으로 로그인
+  // 6. 폰에서 부탁 → 로그인 카드 → 두리가 로그인
   await phone(`await page.waitForSelector(".quick", { timeout: 30000 });
 await page.waitForTimeout(2500);
 await snap(${JSON.stringify(pshot('home'))});
-await page.fill("textarea", "두리 시험 가게 로그인 페이지(http://127.0.0.1:8790/login)에 로그인해 줘");
+await page.fill("textarea", "두리 시험 쇼핑몰(http://127.0.0.1:8791/)에 로그인해 줘");
 await page.click(".send");
 await page.waitForSelector(".worklog li", { timeout: 120000 }).catch(() => {});
 await page.waitForTimeout(1500);
 await snap(${JSON.stringify(pshot('working'))});
-await page.waitForSelector(".card.handoff .btn-ghost", { timeout: 300000 });
+await page.waitForSelector(".login-card form", { timeout: 300000 });
 await page.waitForTimeout(2500);
-await snap(${JSON.stringify(pshot('handoff'))});
-await page.click(".card.handoff .btn-ghost");
-await page.waitForSelector(".remote-shot", { timeout: 40000 });
-await page.waitForTimeout(1200);
-await snap(${JSON.stringify(pshot('remote'))});
-const fresh = async () => { await page.waitForFunction(() => !document.querySelector(".remote-frame.busy"), undefined, { timeout: 20000 }); await page.waitForTimeout(500); };
-await page.click("text=다음 칸"); await fresh();
-await page.fill(".remote-type textarea", "dool2"); await page.click(".remote-type .btn-small"); await fresh();
-await page.click("text=다음 칸"); await fresh();
-await page.fill(".remote-type textarea", "test-password"); await page.click(".remote-type .btn-small"); await fresh();
-await snap(${JSON.stringify(pshot('remote-typed'))});
-await page.click("text=엔터"); await fresh(); await page.waitForTimeout(1500);
-await snap(${JSON.stringify(pshot('remote-logged-in'))});
-await page.click("text=다 했어요, 이어서 해 줘");
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await snap(${JSON.stringify(pshot('login-card'))});
+await page.fill("#login-user", "dool2@example.com");
+await page.fill("#login-pw", "test-password");
+await snap(${JSON.stringify(pshot('login-typed'))});
+await page.click(".login-card button");
 await page.waitForSelector(".activity", { timeout: 30000 }).catch(() => {});
 await page.waitForFunction(() => !document.querySelector(".activity") && document.querySelectorAll(".msg.assistant").length >= 2, undefined, { timeout: 300000 });
 await page.waitForTimeout(1500);
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-await snap(${JSON.stringify(pshot('done'))});`)
-  note('폰: 부탁 → 직접 해 주세요 → 원격 화면 로그인 → 두리가 확인', '')
+await snap(${JSON.stringify(pshot('login-done'))});`)
+  note('폰: 부탁 → 로그인 카드 → 금고에 저장 → 두리가 로그인', '')
 
   // 7. PC에서도 폰 대화가 보이는지, PC 앱 조작 설정
   await click('닫기')
@@ -428,6 +449,7 @@ await snap(${JSON.stringify(pshot('done'))});`)
   ws.close()
   await relay.close()
   shop.close()
+  shop2.close()
   if (space !== undefined) await ego(`const t = await taskSpace(${space}); await t.finish({ keep: [] });`)
   process.exit(0)
 }

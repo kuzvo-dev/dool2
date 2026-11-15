@@ -153,3 +153,57 @@ describe('원격 화면 (폰)', () => {
     expect(String(b.calls.at(-1)?.[1]?.text)).toHaveLength(500)
   })
 })
+
+describe('로그인 카드', () => {
+  it('금고에 없는 사이트면 로그인 요청을 만들고, 있으면 browser_login을 쓰게 한다', async () => {
+    const b = fakeBrowser()
+    let saved: { id: string; username: string; password: string } | undefined
+    const vault = {
+      findForOrigin: async (origin: string) => (origin === 'https://shop.example' ? saved : undefined),
+      markUsed: async () => {},
+    }
+    const tools = new BrowserTools(b, vault)
+    await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_login', { tabId: 3, site: '시험 가게' })
+    expect(text(r)).toContain('로그인 카드를 띄웠어요')
+    expect(text(r)).not.toMatch(/password|비밀번호:/)
+    const req = tools.logins.list()[0]
+    expect(req).toMatchObject({
+      tabId: 3,
+      origin: 'https://shop.example',
+      site: '시험 가게',
+      status: 'pending',
+    })
+    // 사용자가 카드에 넣으면 금고에 들어가고, 요청은 "저장됨"
+    saved = { id: 'v1', username: 'dool2', password: 'pw' }
+    expect(tools.logins.finish(req?.id ?? '', 'saved', 'dool2')).toBe(true)
+    expect(tools.logins.get(req?.id ?? '')).toMatchObject({ status: 'saved', username: 'dool2' })
+    expect(JSON.stringify(tools.logins.list())).not.toContain('"pw"')
+    // 한 번만
+    expect(tools.logins.finish(req?.id ?? '', 'saved')).toBe(false)
+    expect(text(await tools.run('request_login', { tabId: 3, site: '시험 가게' }))).toContain('browser_login')
+  })
+
+  it('https가 아닌 사이트는 로그인 정보를 받지 않는다', async () => {
+    const b = fakeBrowser()
+    b.call = (async (cmd: string) =>
+      cmd === 'snapshot'
+        ? {
+            tabId: 3,
+            url: 'http://shop.example/login',
+            title: '',
+            text: PAGE,
+            truncated: false,
+            captcha: false,
+          }
+        : { tabId: 3 }) as typeof b.call
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'http://shop.example/login' })
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_login', { tabId: 3, site: '가게' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('https')
+    expect(tools.logins.list()).toHaveLength(0)
+  })
+})

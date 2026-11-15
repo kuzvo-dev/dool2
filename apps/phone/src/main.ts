@@ -5,6 +5,8 @@ import type {
   ApprovalView,
   DaemonStreamEvent,
   HandoffRecord,
+  LoginRecordMessage,
+  LoginRequestView,
   PairInvite,
   PcToPhone,
   PhoneToPc,
@@ -52,6 +54,10 @@ const st: {
   /** 답하는 중인 대화: 지금까지 한 일 ("사용법 찾는 중") */
   steps: Map<string, string[]>
   approvals: Map<string, ApprovalView & { shot?: string }>
+  /** 로그인 카드 요청 (PC가 알려 준 것) */
+  logins: Map<string, LoginRequestView>
+  /** 로그인 카드에 넣는 중인 값 (다시 그려도 지워지지 않게. 저장하면 바로 비운다) */
+  loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
   decided: Map<string, { ok: boolean; message: string }>
   /** 새 대화로 보낸 부탁: 첫 응답이 오면 그 대화로 간다 */
   waitingNew?: string
@@ -68,6 +74,8 @@ const st: {
   live: new Map(),
   steps: new Map(),
   approvals: new Map(),
+  logins: new Map(),
+  loginDraft: { id: '', user: '', pw: '' },
   decided: new Map(),
   draft: '',
   remoteDraft: '',
@@ -209,6 +217,7 @@ async function receive(env: Envelope) {
       st.pc = msg
       st.threads = msg.threads
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
+      for (const l of msg.logins ?? []) st.logins.set(l.id, l)
       void syncPush()
       openPending()
       break
@@ -230,6 +239,24 @@ async function receive(env: Envelope) {
       if (a && msg.ok) st.approvals.set(msg.id, { ...a, status: a.status === 'pending' ? 'done' : a.status })
       toast(msg.message)
       void send({ kind: 'approval', id: msg.id })
+      break
+    }
+    case 'login-request':
+      st.logins.set(msg.request.id, msg.request)
+      notify(
+        '로그인이 필요해요',
+        `${msg.request.site} 아이디와 비밀번호를 넣어 주세요`,
+        `login-${msg.request.id}`,
+      )
+      break
+    case 'login-done': {
+      const l = st.logins.get(msg.id)
+      if (msg.ok && l) st.logins.set(msg.id, { ...l, status: 'saved' })
+      if (st.loginDraft.id === msg.id) {
+        st.loginDraft.busy = false
+        st.loginDraft.error = msg.ok ? undefined : msg.message
+      }
+      toast(msg.message)
       break
     }
     case 'screen':
@@ -547,8 +574,8 @@ function render() {
   // 입력 중이던 칸의 커서와, 대화 아래쪽을 보고 있었는지를 기억해 다시 그린 뒤 되돌린다
   const active = document.activeElement
   const typing =
-    active instanceof HTMLTextAreaElement
-      ? { start: active.selectionStart, end: active.selectionEnd }
+    active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
+      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
       : undefined
   const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 120
   const v = st.view
@@ -570,10 +597,14 @@ function render() {
   app.replaceChildren(screen, ...(st.toast ? [h('div', { class: 'toast', text: st.toast })] : []))
   if (v.name === 'thread' && nearBottom) window.scrollTo(0, document.body.scrollHeight)
   else window.scrollTo(0, y)
-  const input = app.querySelector<HTMLTextAreaElement>('textarea')
+  const input = typing?.id
+    ? (document.getElementById(typing.id) as HTMLInputElement | HTMLTextAreaElement | null)
+    : app.querySelector<HTMLTextAreaElement>('textarea')
   if (input && typing) {
     input.focus()
-    input.setSelectionRange(typing.start, typing.end)
+    try {
+      input.setSelectionRange(typing.start, typing.end)
+    } catch {}
   }
 }
 
@@ -903,12 +934,13 @@ function threadView(id: string | undefined) {
 }
 
 function toolCard(raw: string, threadId?: string) {
-  let rec: HandoffRecord | ApprovalRecordMessage
+  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
   try {
     rec = JSON.parse(raw)
   } catch {
     return h('span')
   }
+  if (rec.kind === 'login') return loginCard(rec)
   if (rec.kind === 'approval') {
     const a = [...st.approvals.values()]
       .filter((x) => x.tabId === rec.tabId && x.ref === rec.ref)
@@ -946,6 +978,70 @@ function toolCard(raw: string, threadId?: string) {
         text: '폰에서 PC 화면 열기',
         onclick: () => openRemote(rec.tabId as number, threadId),
       }),
+  )
+}
+
+/** 로그인 카드: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
+function loginCard(rec: LoginRecordMessage) {
+  const r = [...st.logins.values()]
+    .filter((x) => x.tabId === rec.tabId)
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
+  if (!r || r.status !== 'pending')
+    return h(
+      'div',
+      { class: 'card' },
+      h('span', {
+        class: 'text',
+        text:
+          r?.status === 'saved'
+            ? `${r.site} 로그인 정보를 PC 금고에 저장했어요`
+            : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+      }),
+    )
+  const d = st.loginDraft
+  if (d.id !== r.id) Object.assign(d, { id: r.id, user: '', pw: '', busy: false, error: undefined })
+  const user = h('input', { class: 'field' })
+  user.id = 'login-user'
+  user.placeholder = '아이디 또는 이메일'
+  user.autocomplete = 'username'
+  user.value = d.user
+  user.oninput = () => {
+    d.user = user.value
+  }
+  const pw = h('input', { class: 'field' })
+  pw.id = 'login-pw'
+  pw.type = 'password'
+  pw.placeholder = '비밀번호'
+  pw.autocomplete = 'current-password'
+  pw.value = d.pw
+  pw.oninput = () => {
+    d.pw = pw.value
+  }
+  const form = h(
+    'form',
+    { class: 'login-form' },
+    user,
+    pw,
+    d.error && h('p', { class: 'login-error', text: d.error }),
+    h('button', { class: 'btn lg', text: d.busy ? '저장하는 중…' : '로그인' }),
+  )
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    if (!d.user.trim() || !d.pw || d.busy) return
+    d.busy = true
+    d.error = undefined
+    const password = d.pw
+    d.pw = ''
+    void send({ kind: 'login', id: r.id, username: d.user.trim(), password })
+    render()
+  }
+  return h(
+    'div',
+    { class: 'card login-card' },
+    h('strong', { text: `${r.site} 로그인` }),
+    h('span', { class: 'cap', text: new URL(r.origin).host }),
+    form,
+    h('span', { class: 'cap', text: '암호화돼 PC의 두리 금고에만 저장돼요. 두리(AI)는 볼 수 없어요.' }),
   )
 }
 

@@ -71,6 +71,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_close: '탭 닫는',
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',
+  browser_request_login: '로그인 카드 띄우는',
   screen_status: 'PC 상태 확인하는',
   screen_apps: '앱 찾는',
   screen_open: '앱 여는',
@@ -91,7 +92,8 @@ export function toolLabel(name: string): string {
  * 화면에서는 내 말풍선이 아니라 가운데 회색 알림 줄로 보여 준다.
  */
 export const APP_NOTE = '[두리 앱 알림] '
-const NOTE_TAIL = / ?(결과를 확인하고 이어서 해 주세요|누르지 말아 주세요)\.$/
+/** AI에게만 필요한 문장 (화면 알림 줄에서는 뺀다): 도구 이름, "이어서 해 주세요" 같은 지시 */
+const AI_ONLY = /browser_\w+|screen_\w+|이어서 해 주세요|누르지 말아 주세요/
 
 export function appNote(text: string): string {
   return APP_NOTE + text
@@ -100,5 +102,10 @@ export function appNote(text: string): string {
 /** 알림이면 화면에 보여 줄 글 (AI에게만 필요한 꼬리말은 뺀다), 아니면 undefined */
 export function readAppNote(text: string): string | undefined {
   if (!text.startsWith(APP_NOTE)) return undefined
-  return text.slice(APP_NOTE.length).replace(NOTE_TAIL, '').trim()
+  return text
+    .slice(APP_NOTE.length)
+    .split(/(?<=[.!?요])\s+/)
+    .filter((sentence) => !AI_ONLY.test(sentence))
+    .join(' ')
+    .trim()
 }
