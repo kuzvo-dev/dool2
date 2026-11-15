@@ -1544,6 +1544,46 @@ function ideasView() {
   )
   // 누르면 바로 시작한다
   const fill = (text: string) => ask(text)
+  // 두리가 먼저 찾은 할 일 (기억·목표·연결 기반, 매일 아침 새로)
+  const ideas = st.life?.ideas ?? []
+  const busy = Boolean(st.life?.ideasBusy)
+  const refresh = h('button', {
+    class: 'btn-ghost small',
+    text: busy ? '찾는 중…' : ideas.length ? '새로 찾기' : '찾아 줘',
+    onclick: () => lifeAct({ action: 'ideas-refresh' }),
+  })
+  refresh.disabled = busy || !st.online
+  box.append(
+    h(
+      'div',
+      { class: 'card suggested' },
+      h(
+        'div',
+        { class: 'suggested-head' },
+        doori(busy ? 'thinking' : '', 28),
+        h(
+          'span',
+          { class: 'row-text' },
+          h('span', { class: 'row-t', text: '두리가 찾은 할 일' }),
+          h('span', { class: 'row-d', text: '기억과 목표, 연결한 곳을 보고 매일 아침 새로 찾아요' }),
+        ),
+        refresh,
+      ),
+      ...ideas.map((i) =>
+        h(
+          'button',
+          { class: 'idea', onclick: () => fill(i.text) },
+          h('span', { class: 'tile amber' }, icon('idea', 'i md')),
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: i.text }),
+            h('span', { class: 'row-d', text: i.why }),
+          ),
+        ),
+      ),
+    ),
+  )
   const connected = (st.services ?? []).filter((s) => s.connectedAt)
   if (connected.length) {
     box.append(h('h2', { class: 'over', text: '연결한 곳에서' }))

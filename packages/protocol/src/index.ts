@@ -488,8 +488,21 @@ export interface Identity {
   length?: 'short' | 'normal' | 'detail'
 }
 
+/** 두리가 먼저 찾은 할 일 (아이디어 탭 맨 위) */
+export interface SuggestedIdea {
+  /** 누르면 그대로 두리에게 보낼 부탁 */
+  text: string
+  /** 왜 이걸 제안하는지 한 줄 */
+  why: string
+}
+
 export interface LifeState {
   identity?: Identity
+  ideas?: SuggestedIdea[]
+  /** 아이디어를 마지막으로 찾은 때 */
+  ideasAt?: string
+  /** 지금 아이디어를 찾는 중 */
+  ideasBusy?: boolean
   routines: Routine[]
   library: LibraryItem[]
   memory: MemoryItem[]
@@ -517,6 +530,7 @@ export type LifeAction =
   | { action: 'memory-add'; text: string }
   | { action: 'memory-delete'; id: string }
   | ({ action: 'identity' } & Identity)
+  | { action: 'ideas-refresh' }
 
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
