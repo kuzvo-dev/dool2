@@ -3,6 +3,7 @@
 //
 //   pnpm build
 //   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     → /tmp/dool2-live.json 에 주소·토큰
+//   DOOL2_LIVE_DIR=<폴더> 를 주면 그 폴더를 계속 쓴다 (다시 켜도 폰 연결이 남는다)
 import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -14,7 +15,9 @@ import { startRelay } from '@dool2/relay'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const chromeBin = process.env.DOOL2_TEST_CHROME
-const tmp = mkdtempSync(join(tmpdir(), 'dool2-live-'))
+// DOOL2_LIVE_DIR를 주면 그 폴더를 다시 쓴다 (본체를 다시 켜도 폰 연결·대화가 남는다)
+const keep = process.env.DOOL2_LIVE_DIR
+const tmp = keep ?? mkdtempSync(join(tmpdir(), 'dool2-live-'))
 
 const shop = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -78,7 +81,7 @@ const stop = async () => {
   await daemon.close()
   await relay.close()
   shop.close()
-  rmSync(tmp, { recursive: true, force: true })
+  if (!keep) rmSync(tmp, { recursive: true, force: true })
   process.exit(0)
 }
 process.on('SIGINT', stop)

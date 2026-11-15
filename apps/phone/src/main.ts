@@ -26,7 +26,7 @@ import {
   signText,
 } from '@dool2/protocol/e2e'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { readAppNote, toolLabel } from '@dool2/protocol/rich'
+import { narrationLine, readAppNote, toolLabel } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import { doori, h, type IconName, icon, liveDoori, rich, shortTime } from './dom.js'
 import { clear, load, type Saved, save } from './store.js'
@@ -287,7 +287,9 @@ function onStream(ev: DaemonStreamEvent) {
     st.busy = true
     if (ev.event.type === 'text') st.live += ev.event.delta
     else if (ev.event.type === 'tool') {
-      const label = `${toolLabel(ev.event.name)} 중`
+      // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
+      const label = narrationLine(st.live) ?? `${toolLabel(ev.event.name)} 중`
+      st.live = ''
       if (st.steps.at(-1) !== label) st.steps = [...st.steps, label]
     }
   } else if (ev.type === 'end') {

@@ -65,8 +65,9 @@ export class ThreadService {
         signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs)]),
       })
       for await (const ev of events) {
+        if (ev.type === 'tool') text = ''
         if (ev.type === 'text') text += ev.delta
-        if (ev.type === 'done' && !text && ev.text) text = ev.text
+        if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
         if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
       }
       return text.trim() || undefined
@@ -109,10 +110,12 @@ export class ThreadService {
       })
       for await (const ev of events) {
         if (ev.type === 'started' && ev.resumeId) resumeId = ev.resumeId
+        // 답은 마지막 도구 뒤의 말만. 도구 앞 혼잣말("날짜를 맞출게요")은 일하는 중 표시일 뿐이다
+        if (ev.type === 'tool') answer = ''
         if (ev.type === 'text') answer += ev.delta
         if (ev.type === 'done') {
           if (ev.resumeId) resumeId = ev.resumeId
-          if (!answer && ev.text) answer = ev.text
+          if (!answer.trim() && ev.text) answer = ev.text
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         yield { type: 'agent', event: ev }
