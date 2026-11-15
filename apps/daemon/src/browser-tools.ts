@@ -370,7 +370,8 @@ export class BrowserTools {
   async remoteScreen(tabId: number) {
     if (!this.remoteAllowed(tabId))
       throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
-    return (await this.browser.call('screenshot', { tabId, maxWidth: 860, quality: 55 })) as {
+    // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장)
+    return (await this.browser.call('screenshot', { tabId, maxWidth: 720, quality: 50 })) as {
       url: string
       title: string
       data: string

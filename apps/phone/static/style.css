@@ -853,3 +853,18 @@ button {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 55%, transparent);
   }
 }
+
+/* 실시간 화면 머리의 "실시간 · 초당 n장" */
+.remote-bar .live-badge {
+  position: static;
+  flex: none;
+}
+.remote-shot {
+  transition: none;
+}
+@media (min-width: 640px) {
+  .remote-page {
+    max-width: 480px;
+    margin-inline: auto;
+  }
+}
