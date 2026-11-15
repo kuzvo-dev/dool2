@@ -111,6 +111,21 @@ export function readAppNote(text: string): string | undefined {
 }
 
 /**
+ * 답에 섞여 나온 영어 속생각 문단을 걷어 낸다. 한글이 하나도 없고 속생각 말투인 문단만 뺀다
+ * (URL·상품명·코드처럼 영어인 문단은 남긴다). 다 걷어 내면 원래 글을 그대로 둔다.
+ */
+export function stripMonologue(text: string): string {
+  const THINK =
+    /\b(I'll|I will|I'm going to|Let me|Let's|Now I|Now let|First,|Next,|Then I|skill|tool|tab \d|ref|click|scroll|navigate|snapshot)\b/i
+  const kept = text
+    .split(/\n{2,}/)
+    .filter((para) => /[가-힣]/.test(para) || !THINK.test(para))
+    .join('\n\n')
+    .trim()
+  return kept || text
+}
+
+/**
  * 일하는 중간에 한 말(도구를 쓰기 전 혼잣말)에서 "지금 하는 일"로 보여 줄 한 줄.
  * 한글이 있는 마지막 문장만 쓰고(영어 속생각은 버린다), 60자를 넘으면 자른다.
  */

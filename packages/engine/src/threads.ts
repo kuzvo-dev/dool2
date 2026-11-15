@@ -6,6 +6,7 @@ import type {
   HandoffRecord,
   LoginRecordMessage,
 } from '@dool2/protocol'
+import { stripMonologue } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -122,7 +123,7 @@ export class ThreadService {
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
-          yield { type: 'saved', message: store.addMessage(threadId, 'assistant', answer) }
+          yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
         }
         // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
@@ -167,7 +168,8 @@ export class ThreadService {
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
       if (saved) {
         // 이미 저장했다
-      } else if (answer) yield { type: 'saved', message: store.addMessage(threadId, 'assistant', answer) }
+      } else if (answer)
+        yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
       else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
