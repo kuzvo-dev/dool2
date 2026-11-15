@@ -80,17 +80,17 @@ See the [architecture doc](docs/architecture.md) (Korean) for details.
 
 Both the desktop and phone apps work end to end as a test build. Next up is an installer anyone can use (M5).
 
-| Milestone           | Scope                                                                                                   | Status     |
-| ------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
-| M0 Skeleton         | Monorepo, Claude Code and Codex adapters, chat in the PC app, history, persona                          | ✅ Done    |
-| M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check | ✅ Done    |
-| M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                              | ✅ Done    |
-| M2 Browser          | dool2 Chrome extension, browser tools, hand-off, login vault, first skill                               | ✅ Done    |
-| M3 Approval gate    | Risk tiers, approval screens, gate regression tests                                                     | ✅ Done    |
-| M6 Phone            | Phone app, QR pairing, relay, approvals signed with the phone's key, push, remote view of the PC tab    | ✅ Test build |
-| Life assistant      | Five tabs (Chat, Feed, Ideas, Goals, Library), memory, scheduled runs, photos, assistant settings       | ✅ Test build |
-| M4 Desktop & skills | 84 service connections with sign-in on your behalf, app control such as KakaoTalk PC (macOS permission testing left) | In progress |
-| M5 Distribution     | Signed and notarized installers, auto-update, an always-on relay                                        | Next       |
+| Milestone           | Scope                                                                                                                | Status        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------- |
+| M0 Skeleton         | Monorepo, Claude Code and Codex adapters, chat in the PC app, history, persona                                       | ✅ Done       |
+| M1 Install & setup  | First-run wizard, AI sign-in, automatic installation of required components, power settings, self-check              | ✅ Done       |
+| M1+ Pay as you go   | No subscription needed: bring an API key via OpenCode, per-turn cost shown                                           | ✅ Done       |
+| M2 Browser          | dool2 Chrome extension, browser tools, hand-off, login vault, first skill                                            | ✅ Done       |
+| M3 Approval gate    | Risk tiers, approval screens, gate regression tests                                                                  | ✅ Done       |
+| M6 Phone            | Phone app, QR pairing, relay, approvals signed with the phone's key, push, remote view of the PC tab                 | ✅ Test build |
+| Life assistant      | Five tabs (Chat, Feed, Ideas, Goals, Library), memory, scheduled runs, photos, assistant settings                    | ✅ Test build |
+| M4 Desktop & skills | 84 service connections with sign-in on your behalf, app control such as KakaoTalk PC (macOS permission testing left) | In progress   |
+| M5 Distribution     | Signed and notarized installers, auto-update, an always-on relay                                                     | Next          |
 
 ## Running from source
 
