@@ -87,7 +87,7 @@ const daemon = await startDaemon({
   ...(keep ? { secrets: fileSecrets } : {}),
   dataDir: join(tmp, 'data'),
   relay: relay.url,
-  pcName: '시험 PC',
+  pcName: process.env.DOOL2_PC_NAME ?? '시험 PC',
   nativeHost: { defaultTargets: false, extraDirs: [join(profile, 'NativeMessagingHosts')] },
 })
 const chrome = chromeBin

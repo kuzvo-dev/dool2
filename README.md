@@ -15,7 +15,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/assets/desktop-chat.png" alt="두리 PC 앱: 왼쪽에 연결된 AI와 대화 목록, 오른쪽에 두리와 나눈 대화" width="820">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-feed-dark.png">
+    <img src="docs/assets/pc-feed-light.png" alt="두리 PC 앱의 피드: 매일 아침 받을 소식 설정, 두리가 끝낸 일과 아침 소식" width="860">
+  </picture>
 </p>
 
 > [!WARNING]
@@ -26,15 +29,53 @@
 두리는 **내 PC(맥·윈도우)에서 돌아가는 오픈소스 AI 비서**예요. 폰으로 "다음 주 금요일 부산 가는 KTX 찾아 줘"라고 부탁하면, 집에 켜 둔 내 컴퓨터가 평소 쓰던 브라우저와 프로그램으로 대신 일을 해요.
 
 - **내가 이미 쓰는 AI 구독으로 돌아가요.** Claude Code 또는 Codex(ChatGPT)를 사용자 계정 그대로 써요. 두리 이용료는 0원이에요.
-- **돈 쓰는 일은 꼭 먼저 물어봐요.** 결제·예약·메시지 보내기처럼 되돌리기 어려운 일은 사용자가 허락해야만 실행돼요. 이 규칙은 AI가 아니라 코드가 강제해요.
+- **돈 쓰는 일은 꼭 먼저 물어봐요.** 결제·예약·메시지 보내기처럼 되돌리기 어려운 일은 사용자가 승인해야만 실행돼요. 이 규칙은 AI가 아니라 코드가 강제해요.
 - **대화는 내 컴퓨터에만 남아요.** 폰과 PC 사이는 종단 간 암호화로 연결하고, 중계 서버는 암호문만 전달해요.
 - **한국 서비스를 막히지 않고 끝까지.** 평소 로그인된 내 Chrome을 쓰고, 캡차·본인인증이 나오면 우회하지 않고 사람에게 화면을 넘겨요.
+
+## 할 수 있는 일
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-tabs-dark.png">
+    <img src="docs/assets/phone-tabs-light.png" alt="두리 폰 앱: 대화, 피드, 아이디어, 목표, 두리 판" width="900">
+  </picture>
+</p>
+
+폰과 PC 앱 모두 탭 다섯 개로 되어 있어요.
+
+- **대화**: 하나로 이어지는 대화예요. 두리가 답하는 중에도 다음 말을 보낼 수 있고, 영수증·캡처 사진을 보내면 읽고 정리해요.
+- **피드**: "매일 아침 날씨·일정·오는 택배"처럼 받을 소식을 적어 두면 정해진 때 글이 올라와요. 두리가 끝낸 일도 여기 모여요.
+- **아이디어**: 맡길 만한 일 400여 가지를 16개 분류(장보기, 돈 관리, 기차·항공, 서류·행정, 아이·가족 등)로 모았어요. 맨 위에는 기억·목표·연결한 곳을 보고 매일 아침 새로 찾은 맞춤 아이디어가 있어요.
+- **목표**: "주 3회 운동", "매달 휴대폰 요금 확인"처럼 대화로 말하면 계획을 세우고 정한 때 알아서 체크인해요.
+- **보관함**: 두리가 만든 비교표·일정·링크와 보낸 사진을 모아 둬요.
+- **두리 판**: 캐릭터를 누르면 예정, 기억, 화면(두리가 보는 Chrome을 실시간으로), 활동, 승인을 볼 수 있어요. 나를 부르는 이름·말투·답 길이도 여기서 정해요.
+- **서비스 연결 84곳**: 쿠팡·11번가·컬리·무신사·야놀자·항공사·통신사·영화관 등. [연결하기]에 아이디·비밀번호를 넣으면 PC 금고에만 암호화해 저장하고, 두리 본체가 대신 로그인해요. AI는 비밀번호를 볼 수 없어요. 로봇 확인·본인인증이 나오면 그 화면을 폰에 실시간으로 띄워요.
+
+<table>
+  <tr>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-ideas-dark.png"><img src="docs/assets/pc-ideas-light.png" alt="PC 앱 아이디어: 찾기, 분류 칩, 분류별 부탁"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-goal-dark.png"><img src="docs/assets/pc-goal-light.png" alt="PC 앱 목표 상세: 체크인 일정, 계획 단계, 두리가 할 일"></picture></td>
+  </tr>
+  <tr>
+    <td align="center">아이디어</td>
+    <td align="center">목표</td>
+  </tr>
+  <tr>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-library-dark.png"><img src="docs/assets/pc-library-light.png" alt="PC 앱 보관함: 상품 비교, 일정 초안, 장소, 링크"></picture></td>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-talk-panel-memory-dark.png"><img src="docs/assets/pc-talk-panel-memory-light.png" alt="PC 앱 대화와 두리 판의 기억: 호칭, 말투, 답 길이, 기억 목록"></picture></td>
+  </tr>
+  <tr>
+    <td align="center">보관함</td>
+    <td align="center">대화 + 두리 판(기억)</td>
+  </tr>
+</table>
 
 ## 어떻게 동작하나요
 
 ```mermaid
 flowchart LR
-  phone["📱 폰<br/>부탁하기 · 허락 서명"]
+  phone["📱 폰<br/>부탁하기 · 승인 서명"]
   relay["중계 서버<br/>(암호문만 전달)"]
   subgraph pc["💻 내 PC"]
     app["두리 앱"]
@@ -48,25 +89,26 @@ flowchart LR
 ```
 
 1. 두리는 사용자가 설치·로그인한 **공식 Claude Code(`claude -p`) 또는 Codex(`codex app-server`)** 를 수정 없이 실행해요.
-2. AI의 기본 셸·파일·웹 기능은 끄고, **두리 도구(MCP)만** 쓰게 해요. 그래서 허락 없이 위험한 일을 할 길이 없어요.
+2. AI의 기본 셸·파일·웹 기능은 끄고, **두리 도구(MCP)만** 쓰게 해요. 그래서 승인 없이 위험한 일을 할 길이 없어요.
 3. 위험한 동작은 **승인 게이트**를 거쳐요. 결제·연락은 폰에서 서명해야 실행되고, PC가 서명을 검증해요.
 
 자세한 설계는 [아키텍처 문서](docs/architecture.md)에 있어요.
 
 ## 지금 어디까지 왔나요
 
-PC 쪽을 먼저 끝까지 만들고, 폰 앱과 중계 서버는 마지막에 붙여요.
+PC 앱과 폰 앱 모두 시험 판으로 끝까지 돌아가요. 다음은 누구나 설치할 수 있는 설치 파일(M5)이에요.
 
-| 단계            | 내용                                                             | 상태    |
-| --------------- | ---------------------------------------------------------------- | ------- |
-| M0 뼈대         | 모노레포, Claude Code·Codex 연동, PC 창에서 대화, 기록, 페르소나 | ✅ 완료 |
-| M1 설치·첫 설정 | 첫 실행 마법사, AI 로그인, 부품 자동 설치, 전원 설정, 자가 점검  | ✅ 완료 |
-| M1+ 종량제 모드 | 구독 없이 API 키로 쓴 만큼만 (OpenCode), 사용 금액 표시          | ✅ 완료 |
-| M2 브라우저 손  | 두리 Chrome 확장, 브라우저 도구, 넘겨받기, 두리 금고, 첫 스킬    | ✅ 완료 |
-| M3 승인 게이트  | 위험도 분류, PC 화면 승인, 게이트 회귀 테스트 (폰 서명은 M6)     | ✅ 완료 |
-| M4 PC 제어·스킬 | 카카오톡 PC 등 앱 제어, 한국 서비스 스킬                         | 진행 중 |
-| M5 배포         | 서명·공증된 원터치 설치 파일, 자동 업데이트                      | 예정    |
-| M6 폰           | 폰 앱, QR 페어링, 중계 서버, 생체인증 서명                       | 예정    |
+| 단계            | 내용                                                                                     | 상태       |
+| --------------- | ---------------------------------------------------------------------------------------- | ---------- |
+| M0 뼈대         | 모노레포, Claude Code·Codex 연동, PC 창에서 대화, 기록, 페르소나                         | ✅ 완료    |
+| M1 설치·첫 설정 | 첫 실행 마법사, AI 로그인, 부품 자동 설치, 전원 설정, 자가 점검                          | ✅ 완료    |
+| M1+ 종량제 모드 | 구독 없이 API 키로 쓴 만큼만 (OpenCode), 사용 금액 표시                                  | ✅ 완료    |
+| M2 브라우저 손  | 두리 Chrome 확장, 브라우저 도구, 넘겨받기, 두리 금고, 첫 스킬                            | ✅ 완료    |
+| M3 승인 게이트  | 위험도 분류, 승인 화면, 게이트 회귀 테스트                                               | ✅ 완료    |
+| M6 폰           | 폰 앱, QR 연결, 중계 서버, 폰 키로 서명하는 승인, 알림, 폰에서 PC 화면 보고 누르기       | ✅ 시험 판 |
+| 생활 비서       | 탭 다섯 개(대화·피드·아이디어·목표·보관함), 기억, 정해진 때 알아서 하기, 사진, 두리 설정 | ✅ 시험 판 |
+| M4 PC 제어·연결 | 서비스 연결 84곳과 대신 로그인, 카카오톡 PC 등 앱 제어 (맥 권한 시험이 남았어요)         | 진행 중    |
+| M5 배포         | 서명·공증된 원터치 설치 파일, 자동 업데이트, 상시 중계 서버                              | 다음       |
 
 ## 개발 환경에서 실행하기
 
@@ -104,7 +146,7 @@ apps/
   daemon/         두리 본체 dool2d — 로컬 API, 대화 실행, 기록
   extension/      두리 Chrome 확장 — 판단 없는 얇은 손 (chrome.debugger + native messaging)
   hands-mac/      PC 화면 제어 도우미 (맥, Swift) — 접근성 트리 읽기, 누르기·입력, 창 캡처
-  phone/          폰 앱 (PWA) — 폰에서 부탁하고 승인하기
+  phone/          폰 앱 (PWA) — 대화·피드·아이디어·목표·보관함, 승인, PC 화면 보기
   relay/          중계 서버 — 폰과 PC 사이에서 암호화된 메시지만 전달
 packages/
   ui/             디자인 시스템 — 앱·폰·확장이 같이 쓰는 토큰과 부품 (CSS), Pretendard
@@ -116,7 +158,7 @@ packages/
   mcp-tools/      두리 도구 (MCP 서버) — 상태, 브라우저 열기·읽기·누르기·입력·화면 보기
   browser/        브라우저 손 — Chrome 확인·설치, 두리 확장 ↔ 본체 연결
   store/          대화 기록 (Node 내장 SQLite)
-skills/           한국 서비스 스킬 (CC BY-SA 4.0)
+skills/           한국 서비스 연결 카드 84곳과 사용법(스킬) (CC BY-SA 4.0)
 docs/             설계·운영 문서
 ```
 
