@@ -78,7 +78,7 @@ dool2/
 ```
 Electron main ──spawn──▶ dool2d (Node, utilityProcess 또는 자식 프로세스)
                            │
-                           ├─spawn──▶ claude -p … (부탁 하나당 대화 세션 하나, --resume로 이어감)
+                           ├─spawn──▶ claude -p … (대화 하나를 구간 세션으로, --resume로 이어감: ADR 0015)
                            │             └─spawn──▶ dool2-mcp (stdio)  ─┐
                            ├─spawn──▶ codex app-server (상주, JSON-RPC)   │ 로컬 IPC
                            │             └─spawn──▶ dool2-mcp (stdio)  ─┤ (유닉스 소켓 / 윈도우 named pipe,
