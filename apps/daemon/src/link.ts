@@ -67,6 +67,9 @@ export interface LinkHost {
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark'): Promise<{ tabId?: number }>
+  /** 따로 하는 대화: 새로 만들기·지우기 */
+  sideNew(): Promise<Extract<PcToPhone, { kind: 'thread' }>>
+  sideDelete(id: string): Promise<boolean>
   /** 목표·보관함·기억·피드 */
   life(): Promise<LifeState>
   lifeAction(a: LifeAction): Promise<LifeState>
@@ -329,6 +332,14 @@ export class PhoneLink {
         } catch (e) {
           return this.send(phone, { kind: 'error', message: (e as Error).message })
         }
+      }
+      case 'side-new': {
+        await this.send(phone, await this.host.sideNew())
+        return this.send(phone, await this.stateFor(phone))
+      }
+      case 'side-delete': {
+        await this.host.sideDelete(String(msg.id))
+        return this.send(phone, await this.stateFor(phone))
       }
       case 'life':
         return this.send(phone, { kind: 'life', state: await this.host.life() })

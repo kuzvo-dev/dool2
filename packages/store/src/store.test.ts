@@ -89,3 +89,21 @@ describe('Store', () => {
     })
   })
 })
+
+describe('따로 하는 대화', () => {
+  it('메인 대화의 지금 구간·기록에서 빠진다', () => {
+    const db = new Store(':memory:')
+    store = db
+    const main = db.createThread('claude')
+    db.addMessage(main.id, 'user', '메인')
+    const side = db.createThread('claude', '새 대화', undefined, true)
+    db.addMessage(side.id, 'user', '따로')
+    expect(db.currentSession()?.id).toBe(main.id)
+    expect(db.listConversation().map((m) => m.text)).toEqual(['메인'])
+    expect(db.listSideThreads().map((t) => t.id)).toEqual([side.id])
+    db.closeOtherSessions(main.id)
+    expect(db.getThread(side.id)?.closedAt).toBeUndefined()
+    db.deleteThread(side.id)
+    expect(db.getThread(side.id)).toBeUndefined()
+  })
+})

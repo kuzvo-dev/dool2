@@ -55,6 +55,8 @@ type Screen =
   | { name: 'pairing'; code: string; pcName: string; rejected?: boolean }
   | { name: 'app' }
   | { name: 'remote'; tabId: number; connectId?: string }
+  /** 따로 하는 대화 하나 */
+  | { name: 'side'; id: string }
 type Overlay =
   | { kind: 'drawer' }
   | { kind: 'agent' }
@@ -103,6 +105,18 @@ const st: {
   agentSeg: 'upcoming' | 'memory' | 'screen' | 'activity' | 'approvals'
   /** 목표·보관함·기억·피드 (PC 본체) */
   life?: LifeState
+  /** 열어 둔 따로 하는 대화 */
+  side?: {
+    id: string
+    title: string
+    messages: StoredMessage[]
+    live: string
+    steps: string[]
+    busy: boolean
+    draft: string
+  }
+  /** 새 따로 하는 대화를 만들어 달라고 했다 (만들어지면 바로 연다) */
+  sideWanted?: boolean
   librarySeg: 'made' | 'media'
   draft: string
   toast?: string
@@ -263,6 +277,12 @@ async function receive(env: Envelope) {
       }
       break
     case 'stream':
+      // 따로 하는 대화의 진행은 그 화면으로, 나머지는 메인 대화로
+      if (isSideThread(msg.threadId)) {
+        onSideStream(msg.threadId, msg.event)
+        if (st.screen.name !== 'side') return
+        break
+      }
       onStream(msg.event)
       break
     case 'approval':
@@ -359,8 +379,19 @@ async function receive(env: Envelope) {
       st.opening = undefined
       toast(msg.message)
       break
-    case 'thread':
-      return
+    case 'thread': {
+      const t = msg.thread
+      if (st.sideWanted && t.side && !msg.messages.length) {
+        st.sideWanted = false
+        openSide(t.id, t.title)
+      }
+      if (st.side?.id === t.id) {
+        st.side.title = t.title
+        st.side.messages = msg.messages
+        st.side.busy = Boolean(t.busy)
+      }
+      break
+    }
   }
   render()
 }
@@ -635,7 +666,9 @@ function render() {
           ? unsupportedView()
           : s.name === 'pairing'
             ? pairingView(s)
-            : remoteView(s)
+            : s.name === 'side'
+              ? sideView(s.id)
+              : remoteView(s)
     const t = h('div', { class: 'toast float-toast', text: st.toast ?? '' })
     t.hidden = !st.toast
     app.replaceChildren(view, t)
@@ -867,7 +900,7 @@ function chatItems(): Item[] {
         h('button', {
           class: 'btn-text more',
           text: '이전 대화 더 보기',
-          onclick: () => void send({ kind: 'conversation', before: first.id }),
+          onclick: () => void send({ kind: 'conversation', before: first.createdAt }),
         }),
     })
   if (st.convLoaded && !st.conv.length && !st.pending.length)
@@ -1564,6 +1597,22 @@ function drawerView() {
     { class: 'drawer app-drawer' },
     h('div', { class: 'drawer-title' }, doori('', 28), '두리'),
     ...tabs.map(([t, ic, label]) => navi(t, ic, label)),
+    h(
+      'div',
+      { class: 'drawer-sec side-head' },
+      h('span', { class: 'over', text: '따로 하는 대화' }),
+      h('button', { class: 'fbtn small', label: '새 대화', onclick: newSide }, icon('pencil')),
+    ),
+    ...sideThreads()
+      .slice(0, 12)
+      .map((t) =>
+        h(
+          'button',
+          { class: 'navi side-item', onclick: () => openSide(t.id, t.title) },
+          h('span', { class: t.busy ? 'dot work pulse' : 'dot' }),
+          h('span', { class: 'side-name', text: t.title }),
+        ),
+      ),
     h('p', { class: 'over drawer-sec', text: '설정' }),
     navi(
       'connect',
@@ -2089,6 +2138,167 @@ function connectSheet(id: string) {
       },
     },
   })
+}
+
+// ── 따로 하는 대화 ──
+
+function sideThreads() {
+  return (st.pc?.threads ?? []).filter((t) => t.side && t.title !== '두리 피드')
+}
+
+function isSideThread(id: string) {
+  return st.side?.id === id || (st.pc?.threads ?? []).some((t) => t.id === id && t.side)
+}
+
+function openSide(id: string, title = '따로 하는 대화') {
+  st.side = { id, title, messages: [], live: '', steps: [], busy: false, draft: '' }
+  st.overlay = undefined
+  st.screen = { name: 'side', id }
+  render()
+  void send({ kind: 'thread', id })
+}
+
+function newSide() {
+  st.sideWanted = true
+  st.overlay = undefined
+  render()
+  void send({ kind: 'side-new' })
+}
+
+function onSideStream(threadId: string, ev: DaemonStreamEvent) {
+  const sd = st.side
+  if (!sd || sd.id !== threadId) return
+  if (ev.type === 'saved') {
+    if (ev.message.role === 'user')
+      sd.messages = sd.messages.filter((m) => !(m.id.startsWith('p') && m.text === ev.message.text))
+    if (!sd.messages.some((m) => m.id === ev.message.id)) sd.messages = [...sd.messages, ev.message]
+    if (ev.message.role === 'assistant') {
+      sd.live = ''
+      sd.steps = []
+    }
+  } else if (ev.type === 'agent') {
+    sd.busy = true
+    if (ev.event.type === 'text') sd.live += ev.event.delta
+    else if (ev.event.type === 'tool') {
+      const label = narrationLine(sd.live) ?? `${toolLabel(ev.event.name)} 중`
+      sd.live = ''
+      if (sd.steps.at(-1) !== label) sd.steps = [...sd.steps, label]
+    }
+  } else if (ev.type === 'end') {
+    sd.busy = false
+    sd.live = ''
+    sd.steps = []
+    void send({ kind: 'thread', id: sd.id })
+    void send({ kind: 'hello' })
+  }
+}
+
+function sideView(id: string) {
+  const sd = st.side?.id === id ? st.side : undefined
+  const back = () => {
+    st.screen = { name: 'app' }
+    render()
+  }
+  const list = h('div', { class: 'chat-list side-list' })
+  for (const m of sd?.messages ?? []) {
+    if (m.role === 'user') {
+      const note = readAppNote(m.text)
+      list.append(
+        note !== undefined
+          ? h('p', { class: 'msg note' }, note)
+          : h('div', { class: 'bubble me', text: m.text }),
+      )
+    } else if (m.role === 'assistant') {
+      const b = h('div', { class: 'bubble rich' })
+      b.append(rich(m.text))
+      list.append(b)
+    } else if (m.role === 'tool') list.append(toolCard(m.text))
+  }
+  if (sd?.busy) {
+    const step = sd.steps.at(-1)
+    if (step) list.append(h('p', { class: 'meta step' }, h('span', { class: 'dot work pulse' }), step))
+    if (sd.live) {
+      const b = h('div', { class: 'bubble rich streaming' })
+      b.append(rich(sd.live))
+      list.append(b)
+    } else list.append(h('span', { class: 'typing', label: '대답 중' }, h('i'), h('i'), h('i')))
+  }
+  if (sd && !sd.messages.length && !sd.busy)
+    list.append(
+      h(
+        'div',
+        { class: 'card ask-card' },
+        h('div', { class: 'card-label' }, doori('', 22), '주제 하나를 따로 이야기해요'),
+        h('p', {
+          class: 'card-text',
+          text: '여행 계획, 이사 준비처럼 길게 이어질 일을 여기서 하면 메인 대화가 어지럽지 않아요. 두리는 메인 대화에서 알게 된 것도 기억해요.',
+        }),
+      ),
+    )
+  const ta = h('textarea')
+  ta.id = 'side-input'
+  ta.rows = 1
+  ta.placeholder = '두리에게 부탁하기'
+  ta.value = sd?.draft ?? ''
+  ta.oninput = () => {
+    if (sd) sd.draft = ta.value
+    autosize(ta)
+  }
+  const go = h('button', { class: 'send-btn ready', label: '보내기' }, icon('send', 'i md'))
+  const submit = () => {
+    const text = ta.value.trim()
+    if (!text || !sd || !st.online) return
+    sd.draft = ''
+    sd.busy = true
+    sd.messages = [
+      ...sd.messages,
+      { id: `p${Date.now()}`, threadId: sd.id, role: 'user', text, createdAt: new Date().toISOString() },
+    ]
+    render()
+    void send({ kind: 'ask', threadId: sd.id, text })
+  }
+  go.onclick = submit
+  ta.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault()
+      submit()
+    }
+  }
+  const page = h(
+    'section',
+    { class: 'side-page' },
+    h(
+      'header',
+      { class: 'side-top' },
+      h('button', { class: 'fbtn', label: '뒤로', onclick: back }, icon('back')),
+      h('strong', { class: 'side-title', text: sd?.title ?? '따로 하는 대화' }),
+      h(
+        'button',
+        {
+          class: 'fbtn',
+          label: '지우기',
+          onclick: () => {
+            if (!confirm('이 대화를 지울까요?')) return
+            void send({ kind: 'side-delete', id })
+            back()
+          },
+        },
+        icon('trash'),
+      ),
+    ),
+    h('div', { class: 'side-scroll' }, list),
+    h('div', { class: 'composer float side-composer' }, ta, go),
+  )
+  requestAnimationFrame(() => {
+    const sc = page.querySelector('.side-scroll')
+    sc?.scrollTo({ top: sc.scrollHeight })
+    if (sd?.draft && document.activeElement?.id !== 'side-input') {
+      const el = document.getElementById('side-input') as HTMLTextAreaElement | null
+      el?.focus()
+      el?.setSelectionRange(el.value.length, el.value.length)
+    }
+  })
+  return page
 }
 
 // ── 연결 전 화면 ──
