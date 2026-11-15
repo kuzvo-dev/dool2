@@ -56,6 +56,36 @@ describe('ThreadService', () => {
     expect(rt.inputs[0]?.mcpServers[0]?.name).toBe('dool2')
   })
 
+  it('답은 done이 오자마자 저장한다 (CLI 끝 정리를 기다리지 않는다)', async () => {
+    const store = new Store(':memory:')
+    let exited = false
+    const rt: AgentRuntime = {
+      id: 'claude',
+      detect: async () => ({ id: 'claude', installed: true, loggedIn: true }),
+      async *runTurn() {
+        yield { type: 'text', delta: '네' } as AgentEvent
+        yield { type: 'done', resumeId: 's2', text: '네' } as AgentEvent
+        // 공식 CLI가 끝 정리를 하는 동안
+        await new Promise((r) => setTimeout(r, 30))
+        exited = true
+      },
+    }
+    const svc = new ThreadService({
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [],
+    })
+    const t = store.createThread('claude')
+    let savedBeforeExit = false
+    for await (const ev of svc.send(t.id, '응')) {
+      if (ev.type === 'saved' && ev.message.role === 'assistant') savedBeforeExit = !exited
+    }
+    expect(savedBeforeExit).toBe(true)
+    expect(store.listMessages(t.id).filter((m) => m.role === 'assistant')).toHaveLength(1)
+    expect(store.getThread(t.id)?.resumeId).toBe('s2')
+  })
+
   it('두 번째 턴에는 이어 하기 id를 넘긴다', async () => {
     const { store, rt, svc } = setup([{ type: 'done', resumeId: 's9', text: '네' }])
     const t = store.createThread('claude')
