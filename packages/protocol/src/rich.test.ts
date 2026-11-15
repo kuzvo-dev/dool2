@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
-import { appNote, narrationLine, readAppNote, richBlocks } from './rich.js'
+import { appNote, josa, narrationLine, readAppNote, richBlocks } from './rich.js'
 
 describe('richBlocks', () => {
   it('빈 줄로 문단을 나누고 **굵게**를 살린다', () => {
@@ -74,5 +74,26 @@ describe('narrationLine', () => {
     const line = narrationLine('가'.repeat(80))
     expect(line?.length).toBe(60)
     expect(line?.endsWith('…')).toBe(true)
+  })
+})
+
+describe('josa', () => {
+  it('받침에 맞춰 붙인다', () => {
+    expect(josa('카카오톡', '을/를')).toBe('카카오톡을')
+    expect(josa('메모', '을/를')).toBe('메모를')
+    expect(josa('한글', '은/는')).toBe('한글은')
+    expect(josa('Notes', '을/를')).toBe('Notes를')
+  })
+})
+
+describe('readAppNote', () => {
+  it('지금 화면 정보와 AI 지시는 화면에서 뺀다', () => {
+    expect(
+      readAppNote(
+        appNote(
+          '폰에서 승인했어요. "바로 구매" 버튼을 눌렀어요. 지금 화면: 주문 완료 (http://x/) 결과를 확인하고 이어서 해 주세요.',
+        ),
+      ),
+    ).toBe('폰에서 승인했어요. "바로 구매" 버튼을 눌렀어요.')
   })
 })

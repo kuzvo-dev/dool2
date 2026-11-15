@@ -5,6 +5,7 @@
 // - 터미널·시스템 설정·Finder는 기본으로 막는다(셸을 끈 의미가 없어진다). 브라우저는 브라우저 도구로만 (도우미도 막는다)
 // - 보내기·결제·삭제 성격의 버튼, 메신저에서 Enter는 승인을 받은 뒤 본체가 직접 누른다 (브라우저와 같은 승인 게이트)
 // - 비밀번호 칸 값은 읽지도 넣지도 않는다
+import { josa } from '@dool2/protocol/rich'
 import type { ApprovalRecord, Approvals } from './approvals.js'
 import { classifyRisk, parseRefs, type RiskKind, type ToolResult } from './browser-tools.js'
 import type { HandsCaller } from './hands.js'
@@ -259,7 +260,7 @@ export class ScreenTools {
           url: `app:${a.bundleId}`,
           kind: 'app',
           reason: '처음 다루는 앱',
-          what: `두리가 ${name}을(를) 조작해도 될까요?`,
+          what: `두리가 ${josa(name, '을/를')} 조작해도 될까요?`,
           where: name,
           ...(typeof a.why === 'string' ? { cancel: `하려는 일: ${a.why.slice(0, 200)}` } : {}),
         })
@@ -351,13 +352,13 @@ export class ScreenTools {
     try {
       if (rec.kind === 'app') {
         await this.settings.setAllowed([...new Set([...this.settings.allowed(), bundleId])])
-        return finish(true, `${rec.label}을(를) 두리가 조작하도록 허용했어요.`)
+        return finish(true, `${josa(rec.label, '을/를')} 두리가 조작하도록 허용했어요.`)
       }
       const r = await this.ready()
       if (r) return finish(false, r.content.map((c) => (c.type === 'text' ? c.text : '')).join(' '))
       if (rec.ref === 'key:Enter') {
         await this.hands.call('key', { bundleId, key: 'Enter', modifiers: [] })
-        return finish(true, `승인해서 ${rec.where}에서 Enter를 눌렀어요.`)
+        return finish(true, `${rec.where}에서 Enter를 눌렀어요.`)
       }
       // 누르기 직전 화면을 다시 읽어, 승인한 버튼이 그대로일 때만 누른다
       await this.read(bundleId)
@@ -365,10 +366,10 @@ export class ScreenTools {
       if (!now || now.name !== rec.label || now.role !== rec.role)
         return finish(
           false,
-          `승인한 뒤 화면이 바뀌어서 "${rec.label}"을(를) 누르지 않았어요. 화면을 다시 확인해 주세요.`,
+          `승인한 뒤 화면이 바뀌어서 "${rec.label}" 버튼을 누르지 않았어요. 화면을 다시 확인해 주세요.`,
         )
       await this.hands.call('click', { bundleId, ref: rec.ref })
-      return finish(true, `승인해서 ${rec.where}의 "${rec.label}"을(를) 눌렀어요.`)
+      return finish(true, `${rec.where}의 "${rec.label}" 버튼을 눌렀어요.`)
     } catch (e) {
       return finish(false, `"${rec.label}"을(를) 하지 못했어요: ${(e as Error).message}`)
     }

@@ -412,7 +412,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           followUp(
             threadId,
             decision === 'reject'
-              ? appNote(`"${label}"은(는) 폰에서 거절했어요. 누르지 말아 주세요.`)
+              ? appNote(`폰에서 거절했어요("${label}"). 누르지 말아 주세요.`)
               : appNote(`폰에서 승인했어요. ${r.message} 결과를 확인하고 이어서 해 주세요.`),
           )
         return r

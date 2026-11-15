@@ -93,7 +93,7 @@ export function toolLabel(name: string): string {
  */
 export const APP_NOTE = '[두리 앱 알림] '
 /** AI에게만 필요한 문장 (화면 알림 줄에서는 뺀다): 도구 이름, "이어서 해 주세요" 같은 지시 */
-const AI_ONLY = /browser_\w+|screen_\w+|이어서 해 주세요|누르지 말아 주세요/
+const AI_ONLY = /browser_\w+|screen_\w+|이어서 해 주세요|누르지 말아 주세요|^지금 화면:/
 
 export function appNote(text: string): string {
   return APP_NOTE + text
@@ -123,4 +123,17 @@ export function narrationLine(text: string): string | undefined {
   const last = sentences.at(-1)
   if (!last) return undefined
   return last.length > 60 ? `${last.slice(0, 59)}…` : last
+}
+
+/** 받침에 맞는 조사: josa('주문', '을/를') → '주문을'. 한글이 아니면 받침 없는 쪽 */
+export function josa(word: string, pair: '을/를' | '은/는' | '이/가' | '과/와'): string {
+  const [withFinal, without] = pair.split('/') as [string, string]
+  const last =
+    word
+      .trim()
+      .replace(/["'”’)\]]+$/, '')
+      .at(-1) ?? ''
+  const code = last.charCodeAt(0) - 0xac00
+  const hasFinal = code >= 0 && code <= 11171 && code % 28 !== 0
+  return word + (hasFinal ? withFinal : without)
 }
