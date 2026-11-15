@@ -46,7 +46,7 @@ button {
   align-items: flex-start;
   padding: calc(10px + env(safe-area-inset-top)) 16px 26px;
   background: linear-gradient(
-    light-dark(rgba(248, 249, 251, 0.96), rgba(14, 16, 19, 0.96)) 58%,
+    light-dark(rgba(248, 249, 251, 0.97), rgba(14, 16, 19, 0.97)) 70%,
     light-dark(rgba(248, 249, 251, 0), rgba(14, 16, 19, 0))
   );
   pointer-events: none;
@@ -146,7 +146,16 @@ button {
   left: 50%;
   bottom: calc(150px + env(safe-area-inset-bottom));
   z-index: 30;
+  width: max-content;
   max-width: calc(100% - 48px);
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font: var(--text-caption);
   transform: translateX(-50%);
   animation: ui-rise var(--dur) var(--ease) both;
 }
@@ -225,6 +234,9 @@ button {
   background: var(--raise);
   font: var(--text-caption);
   color: var(--ink-muted);
+}
+.done-line.warn {
+  color: var(--danger);
 }
 .done-line svg.i {
   width: 14px;

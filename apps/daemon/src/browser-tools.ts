@@ -430,7 +430,7 @@ export class BrowserTools {
       const now = parseRefs(s.text).get(rec.ref)
       this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text) })
       if (s.url !== rec.url || !now || now.name !== rec.label || now.role !== rec.role) {
-        const msg = `승인한 뒤 화면이 바뀌어서 "${rec.label}"을(를) 누르지 않았어요. 페이지를 다시 확인해 주세요.`
+        const msg = `승인한 뒤 화면이 바뀌어서 "${rec.label}" 버튼을 누르지 않았어요. 페이지를 다시 확인해 주세요.`
         this.approvals.finish(id, false, msg)
         return { ok: false, message: msg }
       }
@@ -438,11 +438,11 @@ export class BrowserTools {
         url?: string
         title?: string
       }
-      const msg = `승인해서 "${rec.label}"을(를) 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      const msg = `"${rec.label}" 버튼을 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
-      const msg = `"${rec.label}"을(를) 누르지 못했어요: ${(e as Error).message}`
+      const msg = `"${rec.label}" 버튼을 누르지 못했어요: ${(e as Error).message}`
       this.approvals.finish(id, false, msg)
       return { ok: false, message: msg }
     }

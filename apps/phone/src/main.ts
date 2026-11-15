@@ -214,7 +214,8 @@ async function receive(env: Envelope) {
       st.decided.set(msg.id, { ok: msg.ok, message: msg.message })
       const a = st.approvals.get(msg.id)
       if (a && msg.ok) st.approvals.set(msg.id, { ...a, status: a.status === 'pending' ? 'done' : a.status })
-      toast(msg.message)
+      // 잘 됐으면 카드가 바로 바뀌니 알림 막대는 띄우지 않는다
+      if (!msg.ok) toast(msg.message)
       void send({ kind: 'approval', id: msg.id })
       break
     }
@@ -731,9 +732,18 @@ function chatItems(): Item[] {
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
   for (const m of st.conv) {
     if (m.role === 'tool') items.push({ key: m.id, sig: toolSig(m.text), make: () => toolCard(m.text) })
-    else if (m.role === 'user')
-      items.push({ key: m.id, sig: '', make: () => h('div', { class: 'bubble me', text: m.text }) })
-    else if (m.role === 'assistant')
+    else if (m.role === 'user') {
+      // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
+      const note = readAppNote(m.text)
+      items.push({
+        key: m.id,
+        sig: '',
+        make: () =>
+          note !== undefined
+            ? h('p', { class: 'msg note' }, note)
+            : h('div', { class: 'bubble me', text: m.text }),
+      })
+    } else if (m.role === 'assistant')
       items.push({
         key: m.id,
         sig: '',
@@ -899,18 +909,26 @@ function toolCard(raw: string): HTMLElement {
 function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
   const a = approvalFor(rec)
   const decided = a ? st.decided.get(a.id) : undefined
-  if (!a || a.status !== 'pending' || decided)
+  if (!a || a.status !== 'pending' || decided) {
+    // 정한 뒤에는 한 줄로: 승인했어요 · 15,900원 · 제주 귤 3kg 바로 구매
+    const what = a?.what || rec.what || '승인 요청'
+    const failed = (decided && !decided.ok) || a?.status === 'failed'
+    const head = failed
+      ? '못 눌렀어요'
+      : a?.status === 'rejected'
+        ? '거절했어요'
+        : a?.status === 'expired'
+          ? '시간이 지나 취소됐어요'
+          : a || decided
+            ? '승인했어요'
+            : ''
     return h(
       'p',
-      { class: 'done-line' },
-      icon('check'),
-      decided?.message ??
-        (a?.status === 'done'
-          ? `승인해서 눌렀어요 · ${rec.what}`
-          : a?.status === 'rejected'
-            ? `거절했어요 · ${rec.what}`
-            : rec.what || '승인 요청'),
+      { class: `done-line${failed ? ' warn' : ''}` },
+      icon(failed || a?.status === 'rejected' ? 'close' : 'check'),
+      [head, a?.amount, failed ? (decided?.message ?? what) : what].filter(Boolean).join(' · '),
     )
+  }
   const tone: IconName = a.kind === 'money' ? 'cart' : a.kind === 'contact' ? 'mail' : 'hand'
   return h(
     'div',

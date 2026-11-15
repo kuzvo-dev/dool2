@@ -5,7 +5,7 @@
 //   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     → /tmp/dool2-live.json 에 주소·토큰
 //   DOOL2_LIVE_DIR=<폴더> 를 주면 그 폴더를 계속 쓴다 (다시 켜도 폰 연결이 남는다)
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -42,7 +42,22 @@ const relay = await startRelay({
   log: (l) => console.log(`[중계] ${l}`),
 })
 const profile = join(tmp, 'profile')
+// 폴더를 다시 쓸 때는 폰 연결 키도 파일에 남긴다 (시험 판 전용, 실제 앱은 키체인)
+const secretFile = join(tmp, 'secrets.json')
+const fileSecrets = {
+  read: () => (existsSync(secretFile) ? JSON.parse(readFileSync(secretFile, 'utf8')) : {}),
+  async get(key) {
+    return this.read()[key]
+  },
+  async set(key, value) {
+    const all = this.read()
+    if (value === undefined) delete all[key]
+    else all[key] = value
+    writeFileSync(secretFile, JSON.stringify(all), { mode: 0o600 })
+  },
+}
 const daemon = await startDaemon({
+  ...(keep ? { secrets: fileSecrets } : {}),
   dataDir: join(tmp, 'data'),
   relay: relay.url,
   pcName: '시험 PC',
