@@ -740,6 +740,7 @@ button {
   color: var(--ink);
   font-size: 16px;
   font-weight: 680;
+  letter-spacing: -0.04em;
 }
 .svc-mark.lg {
   width: 52px;
@@ -841,4 +842,14 @@ button {
 .svc-connected {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* 맡긴 일에서 눌러 온 말: 잠깐 민트로 */
+.chat-list > .flash {
+  animation: chat-flash 1.4s var(--ease);
+}
+@keyframes chat-flash {
+  20% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 55%, transparent);
+  }
 }
