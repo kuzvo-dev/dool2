@@ -1,0 +1,79 @@
+/* 두리 components — plain CSS, reads tokens.css custom properties */
+.d-root{font-family:var(--font-sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;font-feature-settings:"ss06","tnum" 0}
+.d-root *{box-sizing:border-box}
+
+/* Button */
+.d-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);height:44px;padding:0 18px;border-radius:var(--radius-md);border:1px solid transparent;font:600 14px/20px var(--font-sans);letter-spacing:-.005em;cursor:pointer;transition:background .16s cubic-bezier(.2,.8,.2,1),transform .16s}
+.d-btn:active{transform:translateY(1px)}
+.d-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.d-btn--primary{background:var(--ink);color:var(--ink-inverse)}
+.d-btn--secondary{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
+.d-btn--ghost{background:transparent;color:var(--ink)}
+.d-btn--ghost:hover{background:var(--surface-sunken)}
+.d-btn--danger{background:transparent;color:var(--danger);border-color:var(--line)}
+.d-btn--lg{height:52px;font-size:16px;padding:0 22px}
+.d-btn--sm{height:34px;padding:0 12px;font-size:13px;border-radius:10px}
+.d-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* Avatar */
+.d-av{display:inline-block;width:32px;height:32px;flex:none}
+.d-av img{width:100%;height:100%;display:block}
+.d-av--24{width:24px;height:24px}.d-av--48{width:48px;height:48px}.d-av--96{width:96px;height:96px}
+
+/* Message */
+.d-msgs{display:flex;flex-direction:column;gap:var(--space-3)}
+.d-msg{max-width:78%;font-size:15px;line-height:23px;letter-spacing:-.005em}
+.d-msg--user{align-self:flex-end;background:var(--ink);color:var(--ink-inverse);padding:10px 14px;border-radius:var(--radius-lg) var(--radius-lg) 6px var(--radius-lg)}
+.d-msg--doori{align-self:flex-start;color:var(--ink);padding:0}
+.d-msg-head{display:flex;align-items:center;gap:var(--space-2);margin-bottom:6px;font:600 13px/18px var(--font-sans)}
+.d-msg-head .d-meta{font-weight:500}
+.d-meta{font-size:12.5px;line-height:17px;color:var(--ink-muted);font-weight:500}
+
+/* Status dot */
+.d-dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-full);background:var(--ink-muted);flex:none}
+.d-dot--work{background:var(--brand)}.d-dot--ask{background:var(--butter);box-shadow:0 0 0 1.5px var(--ink) inset}.d-dot--done{background:var(--ink)}.d-dot--brand{background:var(--brand)}
+
+/* Agent log */
+.d-log{background:var(--surface-sunken);border-radius:var(--radius-md);padding:6px;font:450 12.5px/19px var(--font-mono)}
+.d-log-row{display:grid;grid-template-columns:16px 1fr auto;gap:10px;align-items:start;padding:7px 8px;border-radius:var(--radius-sm);color:var(--ink-muted)}
+.d-log-row b{font-weight:500;color:var(--ink)}
+.d-log-row .d-time{color:var(--ink-muted);font-size:11.5px}
+.d-log-row--live{background:var(--brand-soft);color:var(--ink)}
+.d-log-row--live .d-ic{color:var(--brand-text)}
+.d-log-row--ask{background:var(--butter-soft);color:var(--ink)}
+.d-ic{width:16px;height:16px;margin-top:1.5px;color:var(--ink)}
+.d-ic svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}
+.d-spin{animation:d-spin 2.4s linear infinite;transform-origin:50% 50%}
+@keyframes d-spin{to{transform:rotate(360deg)}}
+
+/* Approval card */
+.d-approve{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sheet)}
+.d-approve-top{background:var(--butter-soft);padding:14px 16px;display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line)}
+.d-approve-q{font:680 18px/25px var(--font-sans);letter-spacing:-.015em;margin:0}
+.d-approve-body{padding:6px 16px 4px}
+.d-kv{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:20px}
+.d-kv:last-child{border-bottom:0}
+.d-kv span:first-child{color:var(--ink-muted)}
+.d-kv span:last-child{font-weight:600;text-align:right}
+.d-kv--total span:last-child{font:700 17px/22px var(--font-sans);letter-spacing:-.01em}
+.d-approve-actions{display:grid;grid-template-columns:1fr 2fr;gap:8px;padding:12px 16px 16px}
+.d-approve-note{display:flex;align-items:center;gap:6px;justify-content:center;padding:0 16px 14px;color:var(--ink-muted);font-size:12.5px}
+
+/* Composer */
+.d-composer{display:flex;align-items:flex-end;gap:8px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:8px 8px 8px 16px}
+.d-composer-input{flex:1;min-height:40px;padding:9px 0;font:450 15px/22px var(--font-sans);color:var(--ink);border:0;outline:0;background:transparent;resize:none}
+.d-composer-input::placeholder{color:var(--ink-muted)}
+.d-composer:focus-within{border-color:var(--ink)}
+.d-send{width:40px;height:40px;border-radius:var(--radius-md);background:var(--ink);color:var(--ink-inverse);display:grid;place-items:center;border:0;flex:none}
+.d-send svg,.d-icbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.d-icbtn{width:40px;height:40px;border-radius:var(--radius-md);background:transparent;color:var(--ink-muted);display:grid;place-items:center;border:0;flex:none}
+.d-suggest{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.d-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:transparent;font:500 13px/18px var(--font-sans);color:var(--ink)}
+
+/* Status header */
+.d-status{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.d-status-t{font:680 15px/20px var(--font-sans);letter-spacing:-.01em}
+.d-status-s{display:flex;align-items:center;gap:6px;font-size:12.5px;line-height:17px;color:var(--ink-muted);font-weight:500}
+
+.d-wordmark{font:800 22px/1 var(--font-sans);letter-spacing:-.04em;color:var(--ink)}
+.d-wordmark sup{font-size:.55em;color:var(--brand);margin-left:1px;vertical-align:.7em}

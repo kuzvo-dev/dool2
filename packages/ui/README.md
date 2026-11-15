@@ -1,6 +1,6 @@
 # @dool2/ui — 두리 디자인 시스템
 
-PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품이에요. CSS 파일 하나(`ui.css`)이고, 각 앱은 화면 배치만 자기 `style.css`에 둬요.
+PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품이에요. 디자인 원본은 [docs/design](../../docs/design/README.md)에 있고, 다르면 원본을 따라 여기를 고쳐요. CSS 파일 하나(`ui.css`)이고, 각 앱은 화면 배치만 자기 `style.css`에 둬요.
 
 - `ui.css` — 토큰(색·모양·글꼴)과 부품
 - `fonts.css`, `fonts/` — Pretendard 가변 글꼴 ([SIL OFL 1.1](fonts/OFL.txt)). PC 앱·확장에만 넣고, 폰은 기기 글꼴을 써요

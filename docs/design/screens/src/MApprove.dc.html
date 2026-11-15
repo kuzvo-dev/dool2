@@ -1,0 +1,145 @@
+<!doctype html>
+<meta charset="utf-8"><style data-dc-design-system-vars>@layer{:root{--bg:#ffffff;--surface:#ffffff;--surface-sunken:#f4f5f7;--line:#e7e9ed;--line-strong:#8b9099;--ink:#111214;--ink-muted:#5f646d;--ink-inverse:#ffffff;--on-accent:#0f2a1d;--brand:#4cc98f;--brand-text:#167a4b;--brand-soft:#e5f7ee;--night:#1d2846;--butter:#ffd66b;--butter-soft:#fff4d1;--danger:#d0342c;--danger-soft:#fde4e2;--focus:#111214;--shadow-sheet:0 1px 0 rgba(24,24,27,0.04), 0 12px 32px -12px rgba(24,24,27,0.18);--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--radius-sm:6px;--radius-md:12px;--radius-lg:20px;--radius-xl:28px;--radius-full:999px;--font-sans:"Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;--font-mono:"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;--text-display:760 44px/48px var(--font-sans);--text-title-1:720 28px/34px var(--font-sans);--text-title-2:680 20px/28px var(--font-sans);--text-body-lg:450 17px/26px var(--font-sans);--text-body:450 15px/23px var(--font-sans);--text-label:600 14px/20px var(--font-sans);--text-caption:500 12.5px/17px var(--font-sans);--text-log:450 12.5px/19px var(--font-mono);}}</style>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>두리 — 결제 승인</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+@font-face{font-family:"Pretendard Variable";src:url(../../../../packages/ui/fonts/PretendardVariable.woff2) format("woff2");font-weight:45 920;font-display:swap}
+body{margin:0;background:#121418}
+a{color:inherit;text-decoration:none}a:hover{color:inherit}
+.t-dark{--bg:#121418;--surface:#1b1d23;--sunken:#0b0c0f;--raise:#23262d;--line:#2a2d35;--line-strong:#5c616b;--ink:#f2f3f5;--muted:#a3a8b1;--inv:#111214;--brand:#4cc98f;--brand-text:#6fe0a8;--brand-soft:#15302a;--butter:#ffd66b;--butter-soft:#352d14;--danger:#ff7a72;--me:#f2f3f5;--me-ink:#111214;--scrim:rgba(0,0,0,.6);--seat:#2a2d35;--seat-x:#1b1d23}
+.t-light{--bg:#ffffff;--surface:#ffffff;--sunken:#f4f5f7;--raise:#f1f2f4;--line:#e6e8eb;--line-strong:#8b9099;--ink:#111214;--muted:#5f646d;--inv:#ffffff;--brand:#4cc98f;--brand-text:#167a4b;--brand-soft:#e5f7ee;--butter:#ffd66b;--butter-soft:#fff4d1;--danger:#d0342c;--me:#111214;--me-ink:#ffffff;--scrim:rgba(17,18,20,.42);--seat:#e7e9ed;--seat-x:#f4f5f7}
+.root{word-break:keep-all;overflow-wrap:break-word;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--ink);font-family:"Pretendard Variable",-apple-system,"Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+.mono{font-variant-numeric:tabular-nums}
+.ic{stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.meta{font-size:12.5px;line-height:17px;color:var(--muted);font-weight:500}
+.dot{width:8px;height:8px;border-radius:999px;flex:none;display:inline-block;background:var(--brand)}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1.6s linear infinite}
+@keyframes bob{50%{transform:translateY(-3px)}}
+.bob{animation:bob 3.2s ease-in-out infinite}
+.iconbtn{width:44px;height:44px;border-radius:14px;border:0;background:transparent;color:var(--ink);display:grid;place-items:center;cursor:pointer;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 16px;border-radius:12px;border:1px solid transparent;font:600 14px/20px "Pretendard Variable",sans-serif;cursor:pointer;white-space:nowrap;letter-spacing:-.01em}
+.btn-p{background:var(--ink);color:var(--inv)}
+.btn-s{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+.btn-sm{height:34px;padding:0 12px;font-size:13px;border-radius:10px}
+.me{align-self:flex-end;max-width:80%;background:var(--me);color:var(--me-ink);padding:10px 14px;border-radius:20px 20px 6px 20px;font-size:16px;line-height:24px}
+.say{margin:0;font-size:16px;line-height:25px}
+.bub{align-self:flex-start;max-width:84%;background:var(--raise);color:var(--ink);padding:10px 14px;border-radius:20px 20px 20px 6px;font-size:16px;line-height:24px;margin:0}
+.bub+.bub{margin-top:-6px;border-top-left-radius:6px}
+.me+.me{margin-top:-6px;border-top-right-radius:6px}
+.qr{display:flex;gap:6px;flex-wrap:wrap}
+.qr button{height:36px;padding:0 14px;border-radius:12px;border:1px solid var(--line-strong);background:transparent;color:var(--ink);font:550 14px/18px "Pretendard Variable",sans-serif;cursor:pointer}
+.react{position:absolute;right:-6px;bottom:-14px;width:26px;height:26px;border-radius:999px;background:var(--bg);display:grid;place-items:center;box-shadow:0 0 0 1px var(--line)}
+.wave{display:flex;align-items:center;gap:4px;height:40px}
+.wave i{display:block;width:4px;border-radius:2px;background:var(--brand);animation:wv 1s ease-in-out infinite}
+@keyframes wv{50%{transform:scaleY(.4)}}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;line-height:18px}
+.sep{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);font-weight:500}
+.sep:before,.sep:after{content:"";flex:1;height:1px;background:var(--line)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.screen{background:var(--sunken);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.urlbar{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--line);font:450 11.5px/16px "JetBrains Mono",ui-monospace,monospace;color:var(--muted)}
+.urlbar b{color:var(--ink);font-weight:500}
+.seat{border-radius:4px;background:var(--seat);height:16px}
+.seat.x{background:var(--seat-x);border:1px dashed var(--line)}
+.seat.pick{background:var(--brand-soft);outline:2px solid var(--brand);outline-offset:-2px}
+.step{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 0;font-size:14px;line-height:20px}
+.step .t{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.step.done{color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:600}
+.composer{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:6px}
+.composer input{flex:1;min-width:0;height:44px;border:0;outline:0;background:transparent;font:450 16px/22px "Pretendard Variable",sans-serif;color:var(--ink)}
+.composer input::placeholder{color:var(--muted)}
+.cbtn{width:44px;height:44px;border-radius:16px;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;flex:none;cursor:pointer}
+.cbtn.go{background:var(--ink);color:var(--inv)}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);padding:6px 8px 22px;background:var(--bg)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:11px;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--ink)}
+.row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.rt{font-size:15.5px;line-height:22px;font-weight:620;margin:0}
+.rd{font-size:13px;line-height:19px;color:var(--muted);margin:2px 0 0}
+.h-sec{font-size:13px;font-weight:600;color:var(--muted);margin:24px 0 2px}
+.tile{width:40px;height:40px;border-radius:12px;background:var(--raise);display:grid;place-items:center;color:var(--ink);flex:none}
+.mono-tile{width:40px;height:40px;border-radius:12px;background:var(--raise);display:grid;place-items:center;font-size:14px;font-weight:700;color:var(--ink);flex:none}
+.toggle{width:44px;height:26px;border-radius:999px;background:var(--line-strong);position:relative;flex:none}
+.toggle:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:999px;background:var(--bg)}
+.toggle.on{background:var(--brand)}
+.toggle.on:after{left:21px;background:#0f2a1d}
+.t-light .toggle.on:after{background:#ffffff}
+.chip{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:transparent;font:550 14px/18px "Pretendard Variable",sans-serif;color:var(--ink);white-space:nowrap;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--inv);border-color:var(--ink)}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px;line-height:21px}
+.kv span:first-child{color:var(--muted)}
+.kv span:last-child{font-weight:600;text-align:right}
+.navi{display:flex;align-items:center;gap:12px;height:44px;padding:0 12px;border-radius:12px;font-size:14.5px;font-weight:550;color:var(--muted)}
+.navi.on{background:var(--raise);color:var(--ink)}
+.livebar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--brand-soft);color:var(--ink)}
+</style>
+</helmet>
+<div class="root t-{{theme}}" style="width: 390px; height: 844px; display: flex; flex-direction: column; overflow: hidden; position: relative">
+  <header style="display: grid; grid-template-columns: 44px 1fr 44px; align-items: start; padding: 14px 16px 8px">
+    <button class="iconbtn" aria-label="메뉴"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><path d="M4 8h16M4 16h10"></path></svg></button>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px">
+      <img class="bob" src="../../system/assets/Character/doori-asking.svg" alt="두리" style="width: 56px; height: 56px">
+      <div style="font-size: 15px; font-weight: 700; line-height: 20px">두리</div>
+      <div class="meta" style="display: flex; align-items: center; gap: 6px; color: var(--brand-text)"><span class="dot" style="background: var(--butter)"></span><span style="color: var(--ink)">승인을 기다리고 있어요</span></div>
+    </div>
+    <button class="iconbtn" aria-label="연결된 컴퓨터" style="position: relative"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M2 20h20"></path></svg><span class="dot" style="position: absolute; top: 9px; right: 9px; box-shadow: 0 0 0 2px var(--bg)"></span></button>
+  </header>
+  <main aria-hidden="true" style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding: 0 16px 12px">
+    <div class="me">7호차 이상이면 좋겠어</div>
+    <p class="say">7호차 12A 창가로 골라뒀어요. 결제만 남았어요.</p>
+  </main>
+  <div style="padding: 4px 16px 10px"><div class="composer">
+      <button class="cbtn" aria-label="첨부"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><path d="M12 5v14M5 12h14"></path></svg></button>
+      <label for="ask" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">두리한테 말 걸기</label>
+      <input id="ask" placeholder="두리한테 말 걸기">
+      <button class="cbtn" aria-label="말로 부탁하기"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px"><rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></button>
+      <a class="cbtn go" href="MVoice.dc.html" aria-label="두리랑 말로 이야기하기" style="width: auto; padding: 0 14px; gap: 6px; display: inline-flex; align-items: center; font: 650 14px/20px 'Pretendard Variable', sans-serif"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 18px; height: 18px"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"></path></svg>말하기</a>
+    </div></div>
+  <nav class="tabs" aria-label="주요 메뉴"><a class="tab on" href="MThread.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"></path></svg>대화</a><a class="tab" href="MTasks.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 10l2.5 2.5L16 8M8 16h8"></path></svg>맡긴 일</a><a class="tab" href="MExplore.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><circle cx="12" cy="12" r="9"></circle><path d="M15.5 8.5l-2 5-5 2 2-5z"></path></svg>둘러보기</a><a class="tab" href="MMe.dc.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>나의 두리</a></nav>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: var(--scrim)"></div>
+  <section role="dialog" aria-label="결제 승인" style="position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 28px 28px 0 0; border-top: 1px solid var(--line); padding: 10px 20px 30px">
+    <div style="width: 40px; height: 5px; border-radius: 999px; background: var(--line-strong); margin: 0 auto 18px; opacity: .6"></div>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <img src="../../system/assets/Character/doori-asking.svg" alt="질문하는 두리" style="width: 52px; height: 52px">
+      <div style="flex: 1">
+        <div class="meta">코레일 · 우리 집 MacBook에서 결제돼요</div>
+        <h1 style="margin: 2px 0 0; font-size: 26px; line-height: 32px; font-weight: 760; letter-spacing: -.03em">₩59,800 결제할까요?</h1>
+      </div>
+    </div>
+    <div style="margin: 14px 0 18px">
+      <div class="kv"><span>열차</span><span>KTX 101 · 11/16(월) 09:00</span></div>
+      <div class="kv"><span>구간</span><span>서울 → 부산 · 2시간 38분</span></div>
+      <div class="kv"><span>좌석</span><span>7호차 12A · 창가</span></div>
+      <div class="kv" style="border-bottom: 0"><span>결제</span><span>저장된 카드 ····4821</span></div>
+    </div>
+    <a href="MThread.dc.html" class="btn btn-p" style="width: 100%; height: 56px; font-size: 16px; border-radius: 16px; box-sizing: border-box"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px"><path d="M7 3H5a2 2 0 0 0-2 2v2M17 3h2a2 2 0 0 1 2 2v2M7 21H5a2 2 0 0 1-2-2v-2M17 21h2a2 2 0 0 0 2-2v-2M9 9v1M15 9v1M12 9v4h-1M9.5 16a3.5 3.5 0 0 0 5 0"></path></svg>Face ID로 승인하기</a>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px">
+      <button class="btn btn-s" style="height: 48px">내가 직접 할게요</button>
+      <button class="btn btn-s" style="height: 48px; color: var(--danger); border-color: var(--line)">거절</button>
+    </div>
+    <div class="meta" style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width: 14px; height: 14px"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"></path></svg>카드 번호는 두리도 저희도 볼 수 없어요</div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>
