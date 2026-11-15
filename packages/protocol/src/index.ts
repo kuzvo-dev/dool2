@@ -106,6 +106,8 @@ export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>
 
 export const SendMessageRequestSchema = z.object({
   text: z.string().trim().min(1).max(20_000),
+  /** 사진 (JPEG base64) */
+  image: z.string().max(2_000_000).optional(),
 })
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>
 
