@@ -1,4 +1,5 @@
 import type { AgentId, DaemonStreamEvent, StoredMessage } from '@dool2/protocol'
+import { APP_NOTE } from '@dool2/protocol/rich'
 import type { Store, ThreadRecord } from '@dool2/store'
 import type { ThreadService } from './threads.js'
 
@@ -10,9 +11,19 @@ export interface ConversationLimits {
   chars: number
   /** 마지막 말에서 이만큼 지나면 새 구간 (밀리초) */
   idleMs: number
+  /**
+   * AI가 마지막 차례에 실제로 읽은 토큰 수. 브라우저 페이지 같은 도구 결과는 저장된 글자 수에 안 잡혀서,
+   * 웹 일이 많은 구간은 차례·글자 기준보다 훨씬 먼저 느려지고 사용량이 커진다
+   */
+  contextTokens: number
 }
 
-export const DEFAULT_LIMITS: ConversationLimits = { turns: 40, chars: 60_000, idleMs: 12 * 60 * 60 * 1000 }
+export const DEFAULT_LIMITS: ConversationLimits = {
+  turns: 40,
+  chars: 60_000,
+  idleMs: 12 * 60 * 60 * 1000,
+  contextTokens: 120_000,
+}
 
 export type RotateReason = 'first' | 'agent' | 'idle' | 'long'
 
@@ -74,8 +85,29 @@ export class ConversationService {
     if (size.turns === 0) return undefined
     if (this.rotateNext) return 'idle'
     if (this.now().getTime() - Date.parse(cur.updatedAt) > this.limits.idleMs) return 'idle'
-    if (size.turns >= this.limits.turns || size.chars >= this.limits.chars) return 'long'
+    if (
+      size.turns >= this.limits.turns ||
+      size.chars >= this.limits.chars ||
+      size.contextTokens >= this.limits.contextTokens
+    )
+      return 'long'
     return undefined
+  }
+
+  /**
+   * 지난 대화 찾기 (conversation_search 도구). 요약에서 빠진 앞 구간의 말을 AI가 다시 찾아본다.
+   * 지금 구간의 말은 AI가 이미 알고 있으니 뺀다 (방금 한 질문이 맨 위에 걸리지 않게)
+   */
+  search(query: string, limit = 10): string {
+    const q = query.replace(/\s+/g, ' ').trim()
+    if (!q) return '찾을 낱말을 주세요.'
+    const n = Math.min(Math.max(1, Math.floor(limit) || 10), 20)
+    const cur = this.current()
+    const found = this.opts.store.searchConversation(q, {
+      limit: n,
+      ...(cur ? { excludeThreadId: cur.id } : {}),
+    })
+    return formatSearch(q, found, this.now())
   }
 
   /**
@@ -131,6 +163,41 @@ export function buildCarry(
       `최근 대화:\n${recent.map((m) => `${m.role === 'user' ? '사용자' : '두리'}: ${cut(m.text, 400)}`).join('\n')}`,
     )
   return cut(parts.join('\n\n'), CARRY_MAX)
+}
+
+const SEARCH_DATE = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  weekday: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+/** 찾은 말을 AI가 읽을 글로: 날짜(한국 시간)·누가·찾은 낱말 둘레의 짧은 글 */
+export function formatSearch(query: string, found: StoredMessage[], now = new Date()): string {
+  if (!found.length)
+    return `"${query}"에 대한 지난 대화를 찾지 못했어요. 다른 낱말로 다시 찾거나, 기억나지 않는다고 솔직히 말해요.`
+  const words = query.split(' ').filter(Boolean)
+  const lines = found.map((m) => {
+    const who = m.text.startsWith(APP_NOTE) ? '두리 앱 알림' : m.role === 'user' ? '사용자' : '두리'
+    return `- ${SEARCH_DATE.format(new Date(m.createdAt))} · ${who}: ${snippet(m.text, words)}`
+  })
+  return [
+    `"${query}"로 찾은 지난 대화 ${found.length}개 (맞는 낱말이 많은 것부터, 같으면 최근 것부터 · 지금 ${SEARCH_DATE.format(now)}):`,
+    ...lines,
+  ].join('\n')
+}
+
+/** 찾은 낱말 둘레만 잘라 한 줄로 */
+function snippet(text: string, words: string[], max = 160): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  if (flat.length <= max) return flat
+  const lower = flat.toLowerCase()
+  const at = words.map((w) => lower.indexOf(w.toLowerCase())).find((i) => i >= 0) ?? 0
+  const start = Math.max(0, Math.min(at - 40, flat.length - max))
+  return `${start > 0 ? '…' : ''}${flat.slice(start, start + max).trim()}${start + max < flat.length ? '…' : ''}`
 }
 
 function cut(text: string, max: number) {

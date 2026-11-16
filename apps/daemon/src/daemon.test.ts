@@ -202,6 +202,25 @@ describe('대화 하나 (ADR 0015)', () => {
     await reader?.cancel()
   })
 
+  it('도구 서버는 지난 대화를 찾을 수 있다 (도구 토큰으로만)', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"청소기 찾아 줘"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN
+    expect(toolToken).toBeTruthy()
+    const search = (token: string) =>
+      fetch(`${daemon?.url}/api/tools/life/conversation_search`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ query: '청소기' }),
+      })
+    expect((await search('t0ken')).status).toBe(401)
+    // 지금 구간의 말은 AI가 이미 알고 있어서 빼고 찾는다
+    const r = (await (await search(toolToken ?? '')).json()) as { content: { text: string }[] }
+    expect(r.content[0]?.text).toContain('찾지 못했어요')
+  })
+
   it('답하는 동안 보낸 말은 줄을 섰다가 한 차례로 이어서 간다', async () => {
     const rt = new GateRuntime()
     const { api } = await boot(rt)

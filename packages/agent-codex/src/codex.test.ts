@@ -49,6 +49,25 @@ describe('CodexEventMapper', () => {
     expect(results.at(-1)?.finished).toBe(true)
   })
 
+  it('세션 크기는 마지막 호출의 입력 토큰으로, 차례 끝에 한 번 알린다', () => {
+    const usage = (lastInput: number, totalInput: number) => ({
+      tokenUsage: {
+        last: { inputTokens: lastInput, cachedInputTokens: lastInput - 100, outputTokens: 20 },
+        total: { inputTokens: totalInput, cachedInputTokens: 0, outputTokens: 40 },
+        modelContextWindow: 258_400,
+      },
+    })
+    const events = run([
+      ['thread/tokenUsage/updated', usage(3_000, 3_000)],
+      ['thread/tokenUsage/updated', usage(35_000, 38_000)],
+      ['turn/completed', { turn: { status: 'completed' } }],
+    ]).flatMap((r) => r.events)
+    expect(events).toEqual<AgentEvent[]>([
+      { type: 'context', tokens: 35_000 },
+      { type: 'done', resumeId: 'th1', text: '' },
+    ])
+  })
+
   it('셸 실행이 보이면 즉시 멈춘다', () => {
     const [r] = run([['item/started', { item: { type: 'commandExecution', command: 'curl x' } }]])
     expect(r?.abort).toBe(true)

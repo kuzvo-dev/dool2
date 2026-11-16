@@ -46,8 +46,12 @@ describe('buildClaudeArgs', () => {
 describe('ClaudeStreamParser — 실제 출력', () => {
   const events = parseAll(fixture('hello.jsonl'))
 
-  it('시작·글·사용량·끝 이벤트를 낸다', () => {
-    expect(events.map((e) => e.type)).toEqual(['started', 'usage', 'text', 'done'])
+  it('시작·글·사용량·세션 크기·끝 이벤트를 낸다', () => {
+    expect(events.map((e) => e.type)).toEqual(['started', 'usage', 'text', 'context', 'done'])
+  })
+
+  it('세션 크기는 입력 토큰 + 캐시 읽기 + 캐시 만들기', () => {
+    expect(events.find((e) => e.type === 'context')).toEqual({ type: 'context', tokens: 2 + 2102 + 649 })
   })
 
   it('부분 메시지와 완성 메시지의 글을 두 번 내지 않는다', () => {
@@ -125,6 +129,37 @@ describe('ClaudeStreamParser — 안전장치', () => {
       }),
     ])
     expect(events[0]).toMatchObject({ type: 'error', code: 'not_logged_in' })
+  })
+
+  it('세션 크기는 마지막 AI 호출 기준이고, 합친 result 사용량은 쓰지 않는다', () => {
+    const assistant = (input: number, cacheRead: number, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        type: 'assistant',
+        ...extra,
+        message: {
+          content: [{ type: 'text', text: '.' }],
+          usage: { input_tokens: input, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: 0 },
+        },
+      })
+    const events = parseAll([
+      assistant(10, 1000),
+      // 브라우저 페이지를 읽은 뒤의 호출: 세션이 커졌다
+      assistant(5, 40_000),
+      // 다른 세션(하위 작업)의 호출은 세지 않는다
+      assistant(1, 999_999, { parent_tool_use_id: 'x' }),
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: '.',
+        usage: { input_tokens: 15, cache_read_input_tokens: 41_000 },
+      }),
+    ])
+    expect(events.filter((e) => e.type === 'context')).toEqual([{ type: 'context', tokens: 40_005 }])
+  })
+
+  it('사용량이 없으면 세션 크기를 내지 않는다', () => {
+    const events = parseAll([JSON.stringify({ type: 'result', subtype: 'success', result: '네' })])
+    expect(events).toEqual([{ type: 'done', text: '네' }])
   })
 
   it('JSON이 아닌 줄은 무시한다', () => {

@@ -1009,6 +1009,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             : `대화에 ${card.name} 연결 카드를 띄웠어요. 카드를 누르면 연결 화면이 열려요. 한 문장으로 안내한 뒤 기다려요.`,
         )
       }
+      // 지난 대화 찾기: 요약에서 빠진 앞 구간의 말을 AI가 다시 찾아본다 (ADR 0015)
+      if (req.method === 'POST' && b === 'life' && c === 'conversation_search' && !d) {
+        const args = (await readJson(req)) as { query?: unknown; limit?: unknown }
+        const text = conversation.search(
+          String(args.query ?? '').slice(0, 100),
+          typeof args.limit === 'number' ? args.limit : 10,
+        )
+        return json(res, 200, { content: [{ type: 'text', text }] })
+      }
       if (req.method === 'POST' && b === 'life' && c === 'photo_view' && !d) {
         const args = (await readJson(req)) as { name?: unknown }
         try {
