@@ -3,7 +3,7 @@
 //
 // 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
-import type { BrowserCommand } from '@dool2/protocol'
+import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
 
@@ -389,29 +389,56 @@ export class BrowserTools {
   async remoteScreen(tabId: number, fit?: { width: number; height: number }) {
     if (!this.remoteAllowed(tabId))
       throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
-    // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장).
-    // fit을 주면 PC 탭을 폰 화면 크기로 그리게 해서 폰에 꽉 찬다 (선명하게 2배로)
+    // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장). 화면의 입력칸·버튼·지금 칸도 같이 (remote).
+    // fit을 주면 PC 탭을 폰 화면 크기로 그리게 한다 (폰 너비 그리기는 원격 입력 view로도)
     const args = fit
-      ? { tabId, fit, maxWidth: Math.min(fit.width * 2, 1000), quality: 55 }
-      : { tabId, maxWidth: 720, quality: 50 }
+      ? { tabId, fit, maxWidth: Math.min(fit.width * 2, 1000), quality: 55, remote: true }
+      : { tabId, maxWidth: 780, quality: 55, remote: true }
     return (await this.browser.call('screenshot', args)) as {
       url: string
       title: string
       data: string
       viewport: { width: number; height: number }
-    }
+    } & RemoteInfo
+  }
+
+  /** 원격 화면 '필요한 칸만': 사람이 채울 칸·고를 것·버튼 (두리가 넘긴 탭만) */
+  async remoteForm(tabId: number): Promise<RemoteForm> {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    return (await this.browser.call('form', { tabId }, 20_000)) as RemoteForm
+  }
+
+  /** 칸만 화면에서 채운 값을 넣고 버튼을 누른다. 값은 AI에게 가지 않고 페이지 칸에만 들어간다 */
+  async remoteFill(tabId: number, values: RemoteFormValue[], press?: string) {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격으로 다룰 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    const id = (x: unknown) => String(x ?? '').slice(0, 24)
+    const clean = (Array.isArray(values) ? values : []).slice(0, 30).map((v) => ({
+      id: id(v.id),
+      ...(typeof v.value === 'string' ? { value: v.value.slice(0, 200) } : {}),
+      ...(typeof v.checked === 'boolean' ? { checked: v.checked } : {}),
+      ...(typeof v.pick === 'string' ? { pick: id(v.pick) } : {}),
+    }))
+    return this.browser.call(
+      'form-fill',
+      { tabId, values: clean, ...(press ? { press: id(press) } : {}) },
+      30_000,
+    )
   }
 
   /** 원격 화면에서 사람이 한 입력. 좌표는 사진 비율(0~1)로 받아 페이지 좌표로 바꾼다 */
   async remoteInput(
     tabId: number,
     input: {
-      action: 'tap' | 'text' | 'key' | 'scroll'
+      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave'
       x?: number
       y?: number
       text?: string
       key?: string
       dy?: number
+      w?: number
+      h?: number
     },
     viewport: { width: number; height: number },
   ) {
@@ -427,7 +454,21 @@ export class BrowserTools {
     }
     if (input.action === 'text') args.text = String(input.text ?? '').slice(0, 500)
     if (input.action === 'key') args.key = String(input.key ?? '')
-    if (input.action === 'scroll') args.dy = Number(input.dy) < 0 ? -1 : 1
+    if (input.action === 'scroll') {
+      const dy = Number(input.dy) || 0
+      // ±1은 한 화면씩, 그보다 크면 손가락으로 끈 페이지 픽셀 (끈 자리에서 굴린다)
+      args.dy = Math.abs(dy) <= 1 ? (dy < 0 ? -1 : 1) : Math.max(-3000, Math.min(3000, dy))
+      const fx = Number(input.x)
+      const fy = Number(input.y)
+      if (fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+        args.x = fx * viewport.width
+        args.y = fy * viewport.height
+      }
+    }
+    if (input.action === 'view') {
+      args.w = Number(input.w) || 390
+      args.h = Number(input.h) || 700
+    }
     return this.browser.call('input', args)
   }
 

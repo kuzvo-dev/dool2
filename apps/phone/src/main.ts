@@ -69,7 +69,6 @@ import {
   drawCheck,
   gooFilter,
   holdButton,
-  otpBoxes,
   playFlip,
   playSeg,
   riseIn,
@@ -79,6 +78,7 @@ import {
 } from './motion.js'
 import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
+import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -170,12 +170,7 @@ const st: {
   librarySeg: 'made' | 'media'
   draft: string
   toast?: string
-  screenShot?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
-  remoteDraft: string
-  /** 원격 화면에서 키보드 줄을 펼쳤는지 */
-  remoteKeyboard?: boolean
-  /** 원격 화면의 인증번호 칸 (열려 있으면 지금까지 넣은 숫자) */
-  otp?: string
+  screenShot?: Shot
 } = {
   online: false,
   pcSilent: false,
@@ -203,7 +198,6 @@ const st: {
   agentSeg: 'activity',
   librarySeg: 'made',
   draft: '',
-  remoteDraft: '',
 }
 let pendingSeq = 0
 
@@ -389,6 +383,10 @@ async function receive(env: Envelope) {
       toast(msg.message)
       break
     }
+    case 'form': {
+      if (remoteUi?.tabId === msg.tabId) remoteUi.setForm(msg.form, msg.error)
+      return
+    }
     case 'screen': {
       if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
         // 대화 안 일하는 화면: 그림만 바꾼다
@@ -408,10 +406,9 @@ async function receive(env: Envelope) {
       frameTimes.push(performance.now())
       nextScreen(msg.tabId)
       // 실시간 화면: 그림만 바꾼다 (화면 전체를 다시 그리지 않아 깜빡이지 않는다)
-      const img = document.querySelector<HTMLImageElement>('.remote-shot')
-      if (hadShot && img && msg.shot) {
-        img.src = `data:image/jpeg;base64,${msg.shot}`
-        updateRemoteMeta()
+      // 원격 화면은 한 번 만든 화면에 그림·정보만 바꾼다
+      if (remoteUi?.tabId === msg.tabId && hadShot) {
+        remoteUi.update(st.screenShot, fps())
         return
       }
       break
@@ -523,11 +520,14 @@ function onStream(ev: DaemonStreamEvent) {
   }
 }
 
-function pick(m: { shot?: string; url?: string; title?: string }) {
+function pick(m: Omit<Shot, 'tabId'>) {
   return {
     ...(m.shot ? { shot: m.shot } : {}),
     ...(m.url ? { url: m.url } : {}),
     ...(m.title ? { title: m.title } : {}),
+    ...(m.fields ? { fields: m.fields } : {}),
+    ...(m.actions ? { actions: m.actions } : {}),
+    ...(m.focus !== undefined ? { focus: m.focus } : {}),
   }
 }
 
@@ -619,7 +619,7 @@ function nextScreen(tabId: number) {
   clearTimeout(screenTimer)
   const ask = () => {
     if (st.screen.name === 'remote' && st.screen.tabId === tabId && document.visibilityState === 'visible') {
-      void send({ kind: 'screen', tabId, fit: remoteFit() })
+      void send({ kind: 'screen', tabId })
       screenTimer = setTimeout(ask, 2000)
     }
   }
@@ -627,22 +627,18 @@ function nextScreen(tabId: number) {
 }
 
 /** 초당 몇 장 오는지 (최근 2초) */
-function updateRemoteMeta() {
+function fps() {
   const now = performance.now()
   while (frameTimes.length && now - (frameTimes[0] ?? 0) > 2000) frameTimes.shift()
-  const el = document.querySelector('.live-rate')
-  if (el) el.textContent = `실시간 · 초당 ${Math.max(1, Math.round(frameTimes.length / 2))}장`
-  const url = document.querySelector('.remote-url-text')
-  if (url) url.textContent = hostOf(st.screenShot?.url ?? '') || st.screenShot?.title || ''
+  return Math.max(1, Math.round(frameTimes.length / 2))
 }
 
 function openRemote(tabId: number, connectId?: string) {
   st.screenShot = { tabId }
-  st.remoteDraft = ''
   st.overlay = undefined
   st.screen = { name: 'remote', tabId, ...(connectId ? { connectId } : {}) }
   render()
-  void send({ kind: 'screen', tabId, fit: remoteFit() })
+  void send({ kind: 'screen', tabId })
 }
 
 function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'tabId'>) {
@@ -650,8 +646,8 @@ function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'ta
   const tabId = st.screen.tabId
   clearTimeout(screenTimer)
   if (st.screenShot) st.screenShot.busy = true
-  render()
-  void send({ kind: 'remote', tabId, ...input, fit: remoteFit() })
+  remoteUi?.update(st.screenShot, fps())
+  void send({ kind: 'remote', tabId, ...input })
 }
 
 // ── 일하는 화면: 두리가 웹에서 일하는 동안 대화에 그 탭을 작게 실시간으로 ──
@@ -869,6 +865,14 @@ function render() {
             : s.name === 'side'
               ? sideView(s.id)
               : remoteView(s)
+    if (s.name === 'remote') {
+      // 같은 원격 화면이면 그대로 둔다 (다시 꽂으면 키보드가 닫힌다)
+      remoteToast ??= h('div', { class: 'toast float-toast' })
+      remoteToast.textContent = st.toast ?? ''
+      remoteToast.hidden = !st.toast
+      if (app.firstElementChild !== view) app.replaceChildren(view, remoteToast)
+      return
+    }
     const t = h('div', { class: 'toast float-toast', text: st.toast ?? '' })
     t.hidden = !st.toast
     app.replaceChildren(view, t)
@@ -3346,168 +3350,40 @@ function pairingView(v: Extract<Screen, { name: 'pairing' }>) {
 }
 
 /** PC 화면 (지금은 화면 한 장씩. 로그인 단계에서 실시간 화면으로 바꾼다) */
-/** 원격 화면 크기: 위 막대·아래 줄을 뺀 폰 화면. PC 탭을 이 크기로 그리게 한다 */
-function remoteFit() {
-  const top = document.querySelector('.remote-top')?.getBoundingClientRect().height ?? 60
-  const dock = document.querySelector('.remote-dock')?.getBoundingClientRect().height ?? 84
-  return { width: Math.round(innerWidth), height: Math.max(400, Math.round(innerHeight - top - dock)) }
-}
+let remoteUi: RemoteScreen | undefined
+let remoteToast: HTMLElement | undefined
 
+/** 원격 화면: 탭마다 한 번 만들고 그 뒤로는 그림·정보만 바꾼다 (remote.ts) */
 function remoteView(v: Extract<Screen, { name: 'remote' }>) {
-  const s = st.screenShot
-  const back = () => {
-    st.screen = { name: 'app' }
-    st.remoteKeyboard = false
-    if (v.connectId) {
-      st.tab = 'connect'
-      st.connectDetail = v.connectId
+  if (remoteUi?.tabId !== v.tabId) {
+    const back = () => {
+      st.screen = { name: 'app' }
+      remoteUi = undefined
+      if (v.connectId) {
+        st.tab = 'connect'
+        st.connectDetail = v.connectId
+      }
+      render()
     }
-    render()
-  }
-  // 화면: 폰 크기로 그린 PC 탭이 꽉 찬다. 누르면 그 자리를, 위아래로 밀면 스크롤
-  const stage = h('div', { class: s?.busy ? 'remote-stage busy' : 'remote-stage' })
-  if (s?.error) stage.append(h('p', { class: 'remote-msg', text: s.error }))
-  else if (s?.shot) {
-    const img = h('img', { class: 'remote-shot' })
-    img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
-    img.src = `data:image/jpeg;base64,${s.shot}`
-    img.draggable = false
-    let start: { x: number; y: number } | undefined
-    img.addEventListener('pointerdown', (e) => {
-      start = { x: e.clientX, y: e.clientY }
+    remoteUi = createRemote({
+      tabId: v.tabId,
+      ...(v.connectId ? { connectId: v.connectId } : {}),
+      input: (i) => remote(i),
+      back,
+      handBack: back,
+      done: () => {
+        if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
+        else ask('다 했어요. 이어서 해 주세요.')
+        back()
+      },
+      hostOf,
+      form: () => void send({ kind: 'form', tabId: v.tabId }),
+      fill: (values, press) =>
+        void send({ kind: 'form-fill', tabId: v.tabId, values, ...(press ? { press } : {}) }),
     })
-    img.addEventListener('pointerup', (e) => {
-      if (!start) return
-      const dx = e.clientX - start.x
-      const dy = e.clientY - start.y
-      start = undefined
-      if (Math.abs(dy) > 36 && Math.abs(dy) > Math.abs(dx))
-        return remote({ action: 'scroll', dy: dy < 0 ? 1 : -1 })
-      // 그림은 가운데·위 맞춤(contain)이라 실제로 그려진 자리 기준으로 비율을 낸다
-      const r = img.getBoundingClientRect()
-      const k = Math.min(r.width / (img.naturalWidth || r.width), r.height / (img.naturalHeight || r.height))
-      const cw = (img.naturalWidth || r.width) * k
-      const ch = (img.naturalHeight || r.height) * k
-      const left = r.left + (r.width - cw) / 2
-      const x = (e.clientX - left) / cw
-      const y = (e.clientY - r.top) / ch
-      if (x < 0 || x > 1 || y < 0 || y > 1) return
-      const dot = h('span', { class: 'tap-dot' })
-      dot.style.left = `${e.clientX - r.left}px`
-      dot.style.top = `${e.clientY - r.top}px`
-      stage.append(dot)
-      remote({ action: 'tap', x, y })
-    })
-    stage.append(img)
-  } else
-    stage.append(
-      h(
-        'div',
-        { class: 'remote-loading' },
-        liveDoori('center', 'working', 96),
-        h('p', { text: 'PC 화면을 폰에 맞춰 여는 중…' }),
-      ),
-    )
-
-  // 키보드: 누른 칸에 글자 넣기 (필요할 때만 펼친다)
-  const input = h('input', { class: 'remote-input' })
-  input.id = 'remote-input'
-  input.placeholder = '화면에서 칸을 누른 뒤 여기에 써요'
-  input.value = st.remoteDraft
-  input.enterKeyHint = 'send'
-  input.oninput = () => {
-    st.remoteDraft = input.value
   }
-  const put = h('button', { class: 'btn small', text: '넣기' })
-  put.type = 'submit'
-  const form = h('form', { class: 'remote-type' }, input, put)
-  form.onsubmit = (e) => {
-    e.preventDefault()
-    if (!st.remoteDraft) return
-    const text = st.remoteDraft
-    st.remoteDraft = ''
-    remote({ action: 'text', text })
-  }
-  const otp =
-    st.otp === undefined
-      ? undefined
-      : otpBoxes({
-          value: st.otp,
-          onInput: (val) => {
-            st.otp = val
-          },
-          onDone: (code) => {
-            remote({ action: 'text', text: code })
-            setTimeout(() => {
-              st.otp = undefined
-              render()
-            }, 1400)
-          },
-        })
-  const tool = (label: string, on: boolean, onclick: () => void) =>
-    h('button', { class: on ? 'rtool on' : 'rtool', text: label, onclick })
-  const done = h('button', {
-    class: 'btn btn-approve rdone',
-    text: v.connectId ? '로그인했어요' : '다 했어요',
-    onclick: () => {
-      if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
-      else ask('다 했어요. 이어서 해 주세요.')
-      back()
-    },
-  })
-  const dock = h(
-    'div',
-    { class: 'remote-dock' },
-    ...(otp
-      ? [
-          h(
-            'div',
-            { class: 'remote-otp' },
-            h('p', { class: 'meta', text: '화면에서 인증번호 칸을 먼저 눌러 주세요' }),
-            otp,
-          ),
-        ]
-      : st.remoteKeyboard
-        ? [form]
-        : []),
-    h(
-      'div',
-      { class: 'remote-tools' },
-      tool('키보드', Boolean(st.remoteKeyboard), () => {
-        st.remoteKeyboard = !st.remoteKeyboard
-        st.otp = undefined
-        render()
-        if (st.remoteKeyboard) queueMicrotask(() => document.getElementById('remote-input')?.focus())
-      }),
-      tool('인증번호', st.otp !== undefined, () => {
-        st.otp = st.otp === undefined ? '' : undefined
-        st.remoteKeyboard = false
-        render()
-        if (st.otp !== undefined) queueMicrotask(() => document.getElementById('otp-input')?.focus())
-      }),
-      tool('지우기', false, () => remote({ action: 'key', key: 'Backspace' })),
-      tool('엔터', false, () => remote({ action: 'key', key: 'Enter' })),
-      done,
-    ),
-  )
-  return h(
-    'section',
-    { class: 'remote-page' },
-    h(
-      'div',
-      { class: 'remote-top' },
-      h('button', { class: 'rtop-btn', label: '뒤로', onclick: back }, icon('back')),
-      h(
-        'span',
-        { class: 'remote-url' },
-        icon('lock'),
-        h('span', { class: 'remote-url-text', text: hostOf(s?.url ?? '') || s?.title || '불러오는 중…' }),
-      ),
-      h('span', { class: 'live-dot', label: '실시간' }),
-    ),
-    stage,
-    dock,
-  )
+  remoteUi.update(st.screenShot, fps())
+  return remoteUi.el
 }
 
 // ── 시작 ──

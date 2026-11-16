@@ -152,6 +152,57 @@ describe('원격 화면 (폰)', () => {
     await tools.remoteInput(3, { action: 'text', text: 'a'.repeat(900) }, { width: 1, height: 1 })
     expect(String(b.calls.at(-1)?.[1]?.text)).toHaveLength(500)
   })
+
+  it('폰 너비로 그리기·손가락 스크롤: 크기와 끈 만큼을 넘기고, 스크롤 자리는 페이지 좌표로 바꾼다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
+    await tools.remoteInput(3, { action: 'view', w: 370, h: 640 }, { width: 1200, height: 800 })
+    expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'view', w: 370, h: 640 }])
+    await tools.remoteInput(3, { action: 'scroll', dy: 240, x: 0.5, y: 0.5 }, { width: 370, height: 640 })
+    expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'scroll', dy: 240, x: 185, y: 320 }])
+    // 예전 폰: ±1은 한 화면씩
+    await tools.remoteInput(3, { action: 'scroll', dy: -1 }, { width: 370, height: 640 })
+    expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'scroll', dy: -1 }])
+    // 너무 크게 끈 건 잘라서
+    await tools.remoteInput(3, { action: 'scroll', dy: 99999 }, { width: 370, height: 640 })
+    expect(b.calls.at(-1)?.[1]).toMatchObject({ dy: 3000 })
+    await tools.remoteInput(3, { action: 'leave' }, { width: 370, height: 640 })
+    expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'leave' }])
+  })
+})
+
+describe('원격 화면 필요한 칸만', () => {
+  it('넘긴 탭만, 값은 잘라서 넘기고 버튼 id도 함께', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://card.example/verify' })
+    // 두리가 다룬 적 없는 탭은 안 된다
+    await expect(tools.remoteForm(99)).rejects.toThrow('두리가 넘긴 탭만')
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
+    await tools.remoteForm(3)
+    expect(b.calls.at(-1)).toEqual(['form', { tabId: 3 }])
+    await tools.remoteFill(
+      3,
+      [
+        { id: 'f1', value: 'x'.repeat(500) },
+        { id: 'f2', pick: 'f9' },
+        { id: 'f3', checked: true },
+        { id: 'f4', value: 1 as unknown as string },
+      ],
+      'f7',
+    )
+    const [cmd, args] = b.calls.at(-1) ?? []
+    expect(cmd).toBe('form-fill')
+    expect(args).toMatchObject({ tabId: 3, press: 'f7' })
+    const values = (args as { values: Record<string, unknown>[] }).values
+    expect(String(values[0]?.value)).toHaveLength(200)
+    expect(values[1]).toEqual({ id: 'f2', pick: 'f9' })
+    expect(values[2]).toEqual({ id: 'f3', checked: true })
+    // 글자가 아닌 값은 버린다
+    expect(values[3]).toEqual({ id: 'f4' })
+  })
 })
 
 describe('로그인 카드', () => {
