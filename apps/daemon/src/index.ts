@@ -360,7 +360,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const start = card.loginUrl ?? url
     if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
     await vault.add({ url, username, password })
-    const r = await autoLogin(browser, { card, url: start, username, password, ask: loginAsk(card.name) })
+    const r = await autoLogin(browser, {
+      card,
+      url: start,
+      username,
+      password,
+      ask: loginAsk(card.name),
+      step: connectStep(card.id),
+    })
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
@@ -377,6 +384,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       provider,
       creds: (origin) => vault.findForOrigin(origin),
       ask: loginAsk(card.name),
+      step: connectStep(card.id),
     })
     return connectFinish(card, r)
   }
@@ -402,6 +410,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 끝나면 모든 폰에 결과·연결 목록을 보내고, 대화에 알림을 남겨 두리가 사용자에게 알리고 멈춘 일을 이어 가게 한다
    */
   const connecting = new Map<string, Promise<ConnectResult>>()
+  /** 연결하는 동안의 단계: 폰 연결 카드에 "○○ 여는 중 → 아이디·비밀번호 넣는 중 → …"으로 보인다 */
+  const connectSteps = new Map<string, { text: string; at: number }[]>()
+  function connectStep(id: string) {
+    return (text: string) => {
+      const steps = connectSteps.get(id) ?? []
+      if (steps.at(-1)?.text === text) return
+      steps.push({ text, at: Date.now() })
+      connectSteps.set(id, steps)
+      void link.broadcast({ kind: 'connect-progress', id, steps })
+    }
+  }
   /** 로봇 확인·본인인증을 사람에게 넘긴 연결 (화면에서 마치면 connectMark가 대화에 알린다) */
   const connectHuman = new Set<string>()
   const connectStatus = () => {
@@ -438,10 +457,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     postSaved(cur.id, store.addMessage(cur.id, 'user', `${card.name} 연결해 줘`))
     const record: ConnectRecordMessage = { kind: 'connect', service: card.id }
     postSaved(cur.id, store.addMessage(cur.id, 'tool', JSON.stringify(record)))
-    connectFromChat.add(card.id)
   }
-  /** 대화에서 시작한 연결 (끝나면 카드가 바뀌니 알림 줄은 남기지 않는다) */
-  const connectFromChat = new Set<string>()
+  /** 대화 끝(8줄 안)에 이 서비스 연결 카드가 있나 (본체를 다시 켜도 기록으로 판단한다) */
+  const cardNearEnd = (card: ConnectCard) => {
+    const cur = conversation.current()
+    if (!cur) return false
+    return store
+      .listMessages(cur.id)
+      .slice(-8)
+      .some(
+        (m) =>
+          m.role === 'tool' &&
+          m.text.includes('"kind":"connect"') &&
+          [card.id, card.name].some((k) => m.text.includes(`"service":${JSON.stringify(k)}`)),
+      )
+  }
   const connectDone = (card: ConnectCard) => {
     const asked = connectAsked.get(card.id)
     connectAsked.delete(card.id)
@@ -451,8 +481,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요. 없었으면 연결됐다고 한 문장으로만 말해 주세요.`,
         ),
       ).catch(() => {})
-    // 대화에서 시작한 연결은 그 카드가 "연결돼 있어요"로 바뀐다. 같은 말을 알림 줄로 또 남기지 않는다
-    else if (!connectFromChat.delete(card.id)) postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
+    // 대화 끝 가까이에 이 서비스 연결 카드가 있으면 그 카드가 "연결돼 있어요"로 바뀐다. 같은 말을 알림 줄로 또 남기지 않는다
+    else if (!cardNearEnd(card)) postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
     void link
       .notify({
         title: `${card.name} 연결됐어요`,
@@ -473,6 +503,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connectStatus()
     void p.then((r) => {
       connecting.delete(card.id)
+      connectSteps.delete(card.id)
       connectStatus()
       void link.broadcast({ kind: 'connect-result', id: card.id, ...r })
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))

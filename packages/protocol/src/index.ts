@@ -808,6 +808,8 @@ export type PcToPhone =
   | { kind: 'work-tab'; tabId: number }
   /** 두리 본체가 지금 로그인하고 있는 서비스 (연결하기는 뒤에서 하고, 끝나면 connect-result와 대화 알림) */
   | { kind: 'connect-status'; connecting: string[] }
+  /** 연결하는 동안 본체가 지금 하는 단계 (연결 카드에 보여 준다. at = 시작 시각 ms) */
+  | { kind: 'connect-progress'; id: string; steps: { text: string; at: number }[] }
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'

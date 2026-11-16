@@ -159,6 +159,8 @@ const st: {
   ideaCat: string
   /** 두리 본체가 지금 로그인하고 있는 서비스 */
   connecting: Set<string>
+  /** 연결하는 동안 본체가 알려 온 단계 (서비스 id → 단계) */
+  connectSteps: Map<string, { text: string; at: number }[]>
   /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
   work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
@@ -208,6 +210,7 @@ const st: {
   connectQuery: '',
   ideaCat: 'all',
   connecting: new Set(),
+  connectSteps: new Map(),
   work: { web: false },
   ideaQuery: '',
   agentSeg: 'activity',
@@ -472,6 +475,10 @@ async function receive(env: Envelope) {
       return
     case 'connect-status':
       st.connecting = new Set(msg.connecting)
+      for (const id of st.connectSteps.keys()) if (!st.connecting.has(id)) st.connectSteps.delete(id)
+      break
+    case 'connect-progress':
+      st.connectSteps.set(msg.id, msg.steps)
       break
     case 'connect-result': {
       const d = st.loginDraft
@@ -853,6 +860,29 @@ function updateWorkPanel(card: HTMLElement) {
       if (s) springTo(s, [{ transform: 'scale(0.4)' }, { transform: 'scale(1)' }], 'pop')
     }
   })
+}
+
+/** 연결하는 동안 단계: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
+function connectStepList(id: string): HTMLElement | undefined {
+  const steps = st.connectSteps.get(id)
+  if (!steps?.length) return undefined
+  const list = h('ol', { class: 'wp-steps connect-steps' })
+  steps.forEach((s, i) => {
+    const next = steps[i + 1]
+    list.append(stepRow(s.text, next ? 'done' : 'doing', next ? next.at - s.at : undefined))
+  })
+  // 새로 온 단계만 아래에서 떠오른다
+  const last = list.lastElementChild
+  if (last && steps.length > 1)
+    springTo(
+      last,
+      [
+        { opacity: 0, transform: 'translateY(8px)' },
+        { opacity: 1, transform: 'none' },
+      ],
+      'item',
+    )
+  return list
 }
 
 /** 끝난 뒤: 답 위에 접힌 "일한 과정" (누르면 단계가 펼쳐진다) */
@@ -1587,13 +1617,21 @@ function chatItems(): Item[] {
   if (st.convLoaded && !st.conv.length && !st.pending.length)
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
   let lastNote = ''
+  const superseded = oldConnectCards()
   for (const m of st.conv) {
     // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue
     lastNote = noteText ?? ''
-    if (m.role === 'tool') items.push({ key: m.id, sig: toolSig(m.text), make: () => toolCard(m.text) })
-    else if (m.role === 'user') {
+    if (m.role === 'tool') {
+      // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
+      const old = superseded.has(m.id)
+      items.push({
+        key: m.id,
+        sig: `${old ? 'old:' : ''}${toolSig(m.text)}:${st.services ? 1 : 0}`,
+        make: () => toolCard(m.text, !old),
+      })
+    } else if (m.role === 'user') {
       // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
       const note = readAppNote(m.text)
       items.push({
@@ -1854,7 +1892,8 @@ function toolSig(raw: string) {
     }
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}`
+      const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}`
     }
   } catch {}
   return ''
@@ -1872,7 +1911,24 @@ function loginFor(rec: LoginRecordMessage) {
     .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
 }
 
-function toolCard(raw: string): HTMLElement {
+/** 뒤에 같은 서비스 연결 카드가 또 있는 카드들 (메시지 id) */
+function oldConnectCards(): Set<string> {
+  const lastFor = new Map<string, string>()
+  const out = new Set<string>()
+  for (const m of st.conv) {
+    if (m.role !== 'tool' || !m.text.includes('"kind":"connect"')) continue
+    try {
+      const rec = JSON.parse(m.text) as ConnectRecordMessage
+      const id = connectFor(rec)?.card.id ?? rec.service
+      const prev = lastFor.get(id)
+      if (prev) out.add(prev)
+      lastFor.set(id, m.id)
+    } catch {}
+  }
+  return out
+}
+
+function toolCard(raw: string, live = true): HTMLElement {
   let rec:
     | HandoffRecord
     | ApprovalRecordMessage
@@ -1886,7 +1942,7 @@ function toolCard(raw: string): HTMLElement {
   }
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
-  if (rec.kind === 'connect') return connectInline(rec)
+  if (rec.kind === 'connect') return connectInline(rec, live)
   if (rec.kind === 'work') return workDone(rec)
   // 직접 해 주세요
   const tabId = rec.tabId
@@ -1997,8 +2053,10 @@ function connectFor(rec: ConnectRecordMessage) {
 }
 
 /** 대화 안의 연결 카드 (connect_ask): [연결하기] → 아이디·비밀번호 시트 → 본체가 뒤에서 로그인 */
-function connectInline(rec: ConnectRecordMessage): HTMLElement {
+function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   const it = connectFor(rec)
+  // 서비스 목록이 아직 안 왔으면(앱을 막 열었을 때) 조용히 자리만 둔다. 오면 다시 그린다
+  if (!it && !st.services) return h('p', { class: 'done-line connect-line' }, icon('link'), '연결 카드')
   if (!it) return h('p', { class: 'done-line' }, icon('link'), `${rec.service} 연결 카드를 찾지 못했어요`)
   const c = it.card
   const mark = (big = false) =>
@@ -2010,6 +2068,7 @@ function connectInline(rec: ConnectRecordMessage): HTMLElement {
       c.id,
     )
   if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결돼 있어요`)
+  if (!live) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결 카드`)
   const busy = st.connecting.has(c.id)
   const browser = c.how === 'browser'
   return h(
@@ -2032,10 +2091,10 @@ function connectInline(rec: ConnectRecordMessage): HTMLElement {
               : '연결 화면에서 켜요',
         }),
       ),
-      busy ? h('span', { class: 'spin' }) : undefined,
+      busy && !st.connectSteps.get(c.id)?.length ? h('span', { class: 'spin' }) : undefined,
     ),
     busy
-      ? undefined
+      ? connectStepList(c.id)
       : h(
           'div',
           { class: 'approve-actions' },
