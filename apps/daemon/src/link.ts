@@ -18,6 +18,8 @@ import {
   type PairStatus,
   type PcToPhone,
   type PhoneToPc,
+  type RemoteForm,
+  type RemoteFormValue,
   type RemoteInfo,
   type ScreenFit,
 } from '@dool2/protocol'
@@ -62,6 +64,10 @@ export interface LinkHost {
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
+  /** 원격 화면 '필요한 칸만' */
+  form(tabId: number): Promise<RemoteForm>
+  /** 칸만 화면에서 채운 값 넣기·버튼 누르기 */
+  fill(tabId: number, values: RemoteFormValue[], press?: string): Promise<void>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
   /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
   connections(): Promise<ConnectionItem[]>
@@ -331,6 +337,21 @@ export class PhoneLink {
           return this.send(phone, { kind: 'screen', tabId, ...s })
         } catch (e) {
           return this.send(phone, { kind: 'screen', tabId, error: (e as Error).message })
+        }
+      }
+      case 'form':
+      case 'form-fill': {
+        const tabId = Number(msg.tabId)
+        try {
+          if (msg.kind === 'form-fill') {
+            await this.host.fill(tabId, msg.values, msg.press)
+            // 눌렀으면 화면이 바뀌었을 수 있어 그림도 새로
+            const s = await this.host.screen(tabId).catch(() => undefined)
+            if (s) await this.send(phone, { kind: 'screen', tabId, ...s })
+          }
+          return this.send(phone, { kind: 'form', tabId, form: await this.host.form(tabId) })
+        } catch (e) {
+          return this.send(phone, { kind: 'form', tabId, error: (e as Error).message })
         }
       }
       case 'push': {

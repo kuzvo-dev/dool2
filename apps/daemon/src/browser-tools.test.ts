@@ -173,6 +173,38 @@ describe('원격 화면 (폰)', () => {
   })
 })
 
+describe('원격 화면 필요한 칸만', () => {
+  it('넘긴 탭만, 값은 잘라서 넘기고 버튼 id도 함께', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://card.example/verify' })
+    // 두리가 다룬 적 없는 탭은 안 된다
+    await expect(tools.remoteForm(99)).rejects.toThrow('두리가 넘긴 탭만')
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
+    await tools.remoteForm(3)
+    expect(b.calls.at(-1)).toEqual(['form', { tabId: 3 }])
+    await tools.remoteFill(
+      3,
+      [
+        { id: 'f1', value: 'x'.repeat(500) },
+        { id: 'f2', pick: 'f9' },
+        { id: 'f3', checked: true },
+        { id: 'f4', value: 1 as unknown as string },
+      ],
+      'f7',
+    )
+    const [cmd, args] = b.calls.at(-1) ?? []
+    expect(cmd).toBe('form-fill')
+    expect(args).toMatchObject({ tabId: 3, press: 'f7' })
+    const values = (args as { values: Record<string, unknown>[] }).values
+    expect(String(values[0]?.value)).toHaveLength(200)
+    expect(values[1]).toEqual({ id: 'f2', pick: 'f9' })
+    expect(values[2]).toEqual({ id: 'f3', checked: true })
+    // 글자가 아닌 값은 버린다
+    expect(values[3]).toEqual({ id: 'f4' })
+  })
+})
+
 describe('로그인 카드', () => {
   it('금고에 없는 사이트면 로그인 요청을 만들고, 있으면 browser_login을 쓰게 한다', async () => {
     const b = fakeBrowser()

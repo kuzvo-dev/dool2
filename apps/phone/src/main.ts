@@ -383,6 +383,10 @@ async function receive(env: Envelope) {
       toast(msg.message)
       break
     }
+    case 'form': {
+      if (remoteUi?.tabId === msg.tabId) remoteUi.setForm(msg.form, msg.error)
+      return
+    }
     case 'screen': {
       if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
         // 대화 안 일하는 화면: 그림만 바꾼다
@@ -3373,6 +3377,9 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
         back()
       },
       hostOf,
+      form: () => void send({ kind: 'form', tabId: v.tabId }),
+      fill: (values, press) =>
+        void send({ kind: 'form-fill', tabId: v.tabId, values, ...(press ? { press } : {}) }),
     })
   }
   remoteUi.update(st.screenShot, fps())

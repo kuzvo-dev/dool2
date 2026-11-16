@@ -3,7 +3,7 @@
 //
 // 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
-import type { BrowserCommand, RemoteInfo } from '@dool2/protocol'
+import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
 
@@ -400,6 +400,31 @@ export class BrowserTools {
       data: string
       viewport: { width: number; height: number }
     } & RemoteInfo
+  }
+
+  /** 원격 화면 '필요한 칸만': 사람이 채울 칸·고를 것·버튼 (두리가 넘긴 탭만) */
+  async remoteForm(tabId: number): Promise<RemoteForm> {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    return (await this.browser.call('form', { tabId }, 20_000)) as RemoteForm
+  }
+
+  /** 칸만 화면에서 채운 값을 넣고 버튼을 누른다. 값은 AI에게 가지 않고 페이지 칸에만 들어간다 */
+  async remoteFill(tabId: number, values: RemoteFormValue[], press?: string) {
+    if (!this.remoteAllowed(tabId))
+      throw new Error('이 탭은 원격으로 다룰 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
+    const id = (x: unknown) => String(x ?? '').slice(0, 24)
+    const clean = (Array.isArray(values) ? values : []).slice(0, 30).map((v) => ({
+      id: id(v.id),
+      ...(typeof v.value === 'string' ? { value: v.value.slice(0, 200) } : {}),
+      ...(typeof v.checked === 'boolean' ? { checked: v.checked } : {}),
+      ...(typeof v.pick === 'string' ? { pick: id(v.pick) } : {}),
+    }))
+    return this.browser.call(
+      'form-fill',
+      { tabId, values: clean, ...(press ? { press: id(press) } : {}) },
+      30_000,
+    )
   }
 
   /** 원격 화면에서 사람이 한 입력. 좌표는 사진 비율(0~1)로 받아 페이지 좌표로 바꾼다 */

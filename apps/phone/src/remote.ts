@@ -4,9 +4,10 @@
 // - 입력칸을 누르면 아래에 글자 막대가 뜨고 폰 키보드가 바로 열린다. 쓰는 대로 PC 칸에 들어간다
 // - 화면의 버튼은 아래에 큰 버튼으로도 모은다
 // 이 화면은 한 번 만들고 그림·정보만 바꾼다 (다시 그리면 키보드가 닫히고 손가락 동작이 끊긴다)
-import type { RemoteButton, RemoteField, RemoteFocus } from '@dool2/protocol'
+import type { RemoteButton, RemoteField, RemoteFocus, RemoteForm, RemoteFormValue } from '@dool2/protocol'
 import { h, icon } from './dom.js'
 import { otpBoxes, reduced, Spring, springTo, tick } from './motion.js'
+import { createFormPane } from './remote-form.js'
 
 export interface Shot {
   tabId: number
@@ -36,12 +37,17 @@ export interface RemoteOpts {
   done(): void
   handBack(): void
   hostOf(url: string): string
+  /** '필요한 칸만'을 달라 */
+  form(): void
+  /** 칸만 화면에서 채운 값 넣기·버튼 누르기 */
+  fill(values: RemoteFormValue[], press?: string): void
 }
 
 export interface RemoteScreen {
   tabId: number
   el: HTMLElement
   update(s: Shot | undefined, rate?: number): void
+  setForm(form: RemoteForm | undefined, error?: string): void
 }
 
 const HOLD_MS = 280
@@ -127,7 +133,55 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       onclick: () => leave(o.done),
     }),
   )
-  const el = h('section', { class: 'remote-page' }, head, where, frame, acts, otpBox, typeBar, tools, foot)
+  // ── 필요한 칸만 / 화면 보기 ──
+  let mode: 'form' | 'screen' = 'screen'
+  let chosen = false
+  const formPane = createFormPane({
+    fill: (values, press) => o.fill(values, press),
+    finish: () => leave(o.done),
+    showScreen: () => setMode('screen', true),
+  })
+  formPane.el.hidden = true
+  const segForm = h('button', { text: '필요한 칸만', onclick: () => setMode('form', true) })
+  const segScreen = h('button', { text: '화면 보기', onclick: () => setMode('screen', true) })
+  const seg = h('div', { class: 'remote-seg' }, segForm, segScreen)
+  seg.hidden = true
+  const setMode = (m: 'form' | 'screen', byUser = false) => {
+    if (byUser) chosen = true
+    mode = m
+    const f = m === 'form'
+    formPane.el.hidden = !f
+    frame.hidden = f
+    acts.hidden = f || !(shot?.actions?.length ?? 0)
+    tools.hidden = f
+    if (f) {
+      typeInput.blur()
+      typeBar.hidden = true
+      otpBox.hidden = true
+    } else {
+      // 화면 보기로 오면 폰 너비 그리기를 다시 부탁한다 (그동안 풀렸을 수 있다)
+      viewSent = false
+      requestAnimationFrame(sendView)
+    }
+    segForm.setAttribute('aria-pressed', String(f))
+    segScreen.setAttribute('aria-pressed', String(!f))
+    if (f && byUser) o.form()
+  }
+
+  const el = h(
+    'section',
+    { class: 'remote-page' },
+    head,
+    where,
+    seg,
+    frame,
+    formPane.el,
+    acts,
+    otpBox,
+    typeBar,
+    tools,
+    foot,
+  )
 
   const leave = (then: () => void) => {
     o.input({ action: 'leave' })
@@ -142,7 +196,27 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     viewH = Math.round(Math.max(420, frame.clientHeight || window.innerHeight * 0.62))
     if (!w) return
     viewSent = true
+    viewW = w
     o.input({ action: 'view', w, h: viewH })
+  }
+
+  // 받은 그림이 폰 너비 모양이 아니면(PC에서 풀렸으면) 다시 부탁한다 (3초에 한 번까지)
+  let viewW = 0
+  let lastViewAsk = 0
+  const checkView = () => {
+    img.decode?.().then(
+      () => {
+        if (!viewW || !viewH || !img.naturalWidth || mode !== 'screen') return
+        const want = viewW / viewH
+        const got = img.naturalWidth / img.naturalHeight
+        if (Math.abs(got - want) / want < 0.06) return
+        const now = performance.now()
+        if (now - lastViewAsk < 3000) return
+        lastViewAsk = now
+        o.input({ action: 'view', w: viewW, h: viewH })
+      },
+      () => {},
+    )
   }
 
   // ── 확대·이동·스크롤 미리 보기 ──
@@ -502,8 +576,21 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   }
 
   // ── 새 그림·정보 ──
+  let formUrl = ''
+  let formAskedAt = 0
+  const askForm = () => {
+    const now = performance.now()
+    if (now - formAskedAt < 1200) return
+    formAskedAt = now
+    o.form()
+  }
   const update = (s: Shot | undefined, fps?: number) => {
     shot = s
+    // 처음 화면이 오거나 주소가 바뀌면 칸을 새로 받아 온다
+    if (s?.url && s.url !== formUrl) {
+      formUrl = s.url
+      setTimeout(askForm, 600)
+    }
     if (!viewSent) requestAnimationFrame(sendView)
     if (s?.url || s?.title) host.textContent = o.hostOf(s.url ?? '') || s.title || ''
     rate.textContent = fps ? `실시간 · 초당 ${fps}장` : '실시간'
@@ -517,6 +604,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       const src = `data:image/jpeg;base64,${s.shot}`
       if (img.src !== src) {
         img.src = src
+        checkView()
         // 스크롤을 보낸 뒤 온 그림이면 미리 보기를 푼다
         if (scrollPreview && !gesture && performance.now() - lastScrollSend > 150) {
           scrollPreview = 0
@@ -542,7 +630,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
           }),
         ),
       )
-      acts.hidden = !list.length
+      acts.hidden = !list.length || mode === 'form'
     }
     // 칸을 누른 뒤 첫 그림: 칸에 이미 있는 글자를 막대에 채운다 (비밀번호 칸은 비워 둔다)
     // 누르기 전에 찍힌 그림이 늦게 올 수 있어서, 누른 칸과 같은 칸일 때만 받는다
@@ -563,6 +651,16 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     }
   }
 
+  const setForm = (form: RemoteForm | undefined, error?: string) => {
+    formPane.set(form, error)
+    const usable = formPane.usable()
+    seg.hidden = !usable && mode !== 'form'
+    // 사람이 채울 칸이 있으면 처음엔 칸만 보여 준다 (사람이 고른 쪽이 있으면 그대로)
+    if (!chosen && usable && mode !== 'form') setMode('form')
+    if (!chosen && !usable && mode === 'form' && !formPane.finishing()) setMode('screen')
+  }
+
   applyStage()
-  return { tabId: o.tabId, el, update }
+  setMode('screen')
+  return { tabId: o.tabId, el, update, setForm }
 }

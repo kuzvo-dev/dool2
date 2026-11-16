@@ -537,6 +537,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(s.focus !== undefined ? { focus: s.focus } : {}),
         }
       },
+      form: (tabId) => browserTools.remoteForm(tabId),
+      fill: async (tabId, values, press) => {
+        await browserTools.remoteFill(tabId, values, press)
+      },
       remote: async ({ tabId, action, x, y, text, key, dy, w, h }) => {
         const viewport = remoteViewport.get(tabId) ?? (await browserTools.remoteScreen(tabId)).viewport
         await browserTools.remoteInput(

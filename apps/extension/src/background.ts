@@ -9,6 +9,9 @@ import {
   type LocateResult,
   pageCaretEnd,
   pageClick,
+  pageForm,
+  pageFormFocus,
+  pageFormTarget,
   pageLocate,
   pageMarkFilled,
   pageRemoteInfo,
@@ -705,6 +708,63 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           return pageState(tabId)
         }
       } else throw new Error('모르는 원격 입력이에요')
+      await settle(tabId, before)
+      return pageState(tabId)
+    }
+    case 'form': {
+      // 원격 화면 '필요한 칸만': 칸·고를 것·버튼을 뽑고, 보안문자 그림은 잘라 붙인다
+      const tabId = await ownedTab(a)
+      await frontTab(tabId)
+      const form = await inPage(tabId, pageForm)
+      for (const f of form.fields as {
+        captchaRect?: { x: number; y: number; w: number; h: number }
+        captcha?: string
+      }[]) {
+        const r = f.captchaRect
+        delete f.captchaRect
+        if (!r) continue
+        const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+          format: 'jpeg',
+          quality: 80,
+          captureBeyondViewport: true,
+          clip: { x: r.x, y: r.y, width: r.w, height: r.h, scale: 2 },
+        }).catch(() => undefined)
+        if (shot) f.captcha = shot.data
+      }
+      return form
+    }
+    case 'form-fill': {
+      const tabId = await ownedTab(a)
+      await frontTab(tabId)
+      const before = (await chrome.tabs.get(tabId)).url
+      const v = await inPage(tabId, pageViewport)
+      const tap = async (t: { x?: number; y?: number; lx?: number; ly?: number }) => {
+        if (!v.hidden && t.x !== undefined && t.y !== undefined)
+          await clickAt(tabId, Math.round(t.x), Math.round(t.y))
+        else if (t.lx !== undefined && t.ly !== undefined) await inPage(tabId, pageTapAt, t.lx, t.ly)
+      }
+      const values = Array.isArray(a.values) ? (a.values as Record<string, unknown>[]).slice(0, 30) : []
+      for (const it of values) {
+        const id = String(it.id ?? '')
+        if (typeof it.pick === 'string') {
+          const t = await inPage(tabId, pageFormTarget, it.pick)
+          if (t.ok && !t.done) await tap(t)
+        } else if (typeof it.checked === 'boolean') {
+          const t = await inPage(tabId, pageFormTarget, id)
+          if (t.ok && !t.done && t.checked !== it.checked) await tap(t)
+        } else if (typeof it.value === 'string') {
+          // 진짜 키 입력처럼: 칸을 비우고(전체 선택) 새 글자를 넣는다
+          if (!(await inPage(tabId, pageFormFocus, id))) continue
+          if (it.value) await cdp(tabId, 'Input.insertText', { text: it.value.slice(0, 200) })
+          else await pressKey(tabId, 'Backspace')
+        }
+        await sleep(60)
+      }
+      if (typeof a.press === 'string' && a.press) {
+        const t = await inPage(tabId, pageFormTarget, a.press)
+        if (!t.ok) throw new Error('누를 버튼을 찾지 못했어요. 화면이 바뀌었을 수 있어요')
+        await tap(t)
+      }
       await settle(tabId, before)
       return pageState(tabId)
     }

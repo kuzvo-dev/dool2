@@ -508,3 +508,306 @@ export function pageScrollBy(x: number, y: number, dy: number) {
   }
   window.scrollBy({ top: dy, behavior: 'instant' })
 }
+
+// ── 원격 화면 '필요한 칸만': 페이지에서 사람이 채울 칸·고를 것·누를 버튼을 뽑는다 ──
+// 폰은 이걸 폰 입력칸으로 다시 그리고, 쓴 값은 pageFormFill로 진짜 칸에 넣는다.
+// 비밀번호 칸의 글자는 내보내지 않는다
+
+type FormField = {
+  id: string
+  kind: 'text' | 'secret' | 'number' | 'tel' | 'email' | 'choice' | 'check'
+  label: string
+  value?: string
+  checked?: boolean
+  options?: { id: string; label: string; on?: boolean }[]
+  max?: number
+  hint?: string
+  code?: boolean
+  captchaRect?: { x: number; y: number; w: number; h: number }
+}
+
+export function pageForm() {
+  type Store = { els: Map<string, WeakRef<Element>>; n: number }
+  const g = globalThis as unknown as { __dool2form?: Store }
+  const st: Store = { els: new Map(), n: 0 }
+  g.__dool2form = st
+  const keep = (el: Element) => {
+    const id = `f${++st.n}`
+    st.els.set(id, new WeakRef(el))
+    return id
+  }
+  const clip = (s: string, n: number) => s.replace(/\s+/g, ' ').trim().slice(0, n)
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    if (r.width < 2 || r.height < 2) return false
+    const cs = getComputedStyle(el)
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05
+  }
+  const textOf = (el: Element | null | undefined) =>
+    clip((el as HTMLElement | null)?.innerText ?? el?.textContent ?? '', 40)
+  const labelOf = (el: HTMLElement) => {
+    const f = el as HTMLInputElement
+    const by = el.getAttribute('aria-labelledby')
+    const cands = [
+      el.getAttribute('aria-label'),
+      by
+        ? by
+            .split(/\s+/)
+            .map((i) => document.getElementById(i)?.innerText ?? '')
+            .join(' ')
+        : '',
+      f.labels?.[0] ? textOf(f.labels[0]) : '',
+      el.closest('label') ? textOf(el.closest('label')) : '',
+      el.closest('tr')?.querySelector('th') ? textOf(el.closest('tr')?.querySelector('th')) : '',
+      el.closest('dd')?.previousElementSibling?.tagName === 'DT'
+        ? textOf(el.closest('dd')?.previousElementSibling)
+        : '',
+      f.placeholder,
+      el.title,
+    ]
+    for (const c of cands) if (c && clip(c, 40)) return clip(c, 40)
+    // 바로 앞의 짧은 글 (같은 줄 제목)
+    let p: Element | null = el
+    for (let i = 0; i < 3 && p; i++) {
+      let s = p.previousElementSibling
+      while (s) {
+        const t = textOf(s)
+        if (t && t.length <= 20) return t
+        s = s.previousElementSibling
+      }
+      p = p.parentElement
+    }
+    return clip(f.name || '', 30)
+  }
+  const fields: FormField[] = []
+  const used = new Set<Element>()
+  const CODE = /인증\s*번호|인증코드|확인\s*코드|otp|verification|auth.?code|certi.?num|보안\s*코드/i
+  const CAPTCHA_INPUT = /보안\s*문자|자동\s*입력|captcha|자동등록방지|문자를\s*입력/i
+  // 글자 칸
+  for (const el of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
+    if (fields.length >= 16) break
+    if (
+      el instanceof HTMLInputElement &&
+      /^(hidden|checkbox|radio|submit|button|reset|image|file|range|color)$/.test(el.type)
+    )
+      continue
+    if (el.disabled || el.readOnly || !visible(el)) continue
+    const label = labelOf(el)
+    const t = el instanceof HTMLInputElement ? el.type : 'text'
+    const kind: FormField['kind'] =
+      t === 'password'
+        ? 'secret'
+        : t === 'tel'
+          ? 'tel'
+          : t === 'email'
+            ? 'email'
+            : t === 'number'
+              ? 'number'
+              : 'text'
+    const max = el.maxLength > 0 && el.maxLength < 200 ? el.maxLength : undefined
+    const hay = `${label} ${el.getAttribute('placeholder') ?? ''} ${el.name} ${el.id}`
+    const code = CODE.test(hay) && !/휴대|전화|핸드폰|phone/i.test(hay)
+    used.add(el)
+    fields.push({
+      id: keep(el),
+      kind: kind === 'text' && (el.inputMode === 'numeric' || el.inputMode === 'tel') ? 'number' : kind,
+      label,
+      ...(kind !== 'secret' && el.value ? { value: el.value.slice(0, 200) } : {}),
+      ...(max ? { max } : {}),
+      ...(el.getAttribute('placeholder') ? { hint: clip(el.getAttribute('placeholder') ?? '', 40) } : {}),
+      ...(code ? { code: true } : {}),
+      ...(CAPTCHA_INPUT.test(hay) ? { captchaRect: { x: 0, y: 0, w: 0, h: 0 } } : {}),
+    })
+  }
+  // 고르기: 셀렉트
+  for (const el of document.querySelectorAll<HTMLSelectElement>('select')) {
+    if (fields.length >= 20 || el.disabled || !visible(el)) continue
+    const options = [...el.options]
+      .filter((o) => !o.disabled && o.value !== '')
+      .slice(0, 30)
+      .map((o) => ({
+        id: `${keep(el)}:${o.index}`,
+        label: clip(o.text, 30),
+        ...(o.selected ? { on: true } : {}),
+      }))
+    if (!options.length) continue
+    fields.push({ id: keep(el), kind: 'choice', label: labelOf(el), options })
+  }
+  // 고르기: 라디오 묶음
+  const groups = new Map<string, HTMLInputElement[]>()
+  for (const el of document.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+    if (el.disabled) continue
+    const vis = visible(el) || (el.labels?.[0] && visible(el.labels[0]))
+    if (!vis) continue
+    const k = el.name || keep(el)
+    groups.set(k, [...(groups.get(k) ?? []), el])
+  }
+  for (const [, els] of groups) {
+    if (fields.length >= 20) break
+    const first = els[0] as HTMLInputElement
+    const box = first.closest('fieldset, tr, dl, ul, div')
+    const legend = box?.querySelector('legend, th, dt, strong, h3, h4')
+    fields.push({
+      id: keep(first),
+      kind: 'choice',
+      label: clip(textOf(legend) || first.name, 30),
+      options: els.map((e) => ({
+        id: keep(e),
+        label: clip(e.labels?.[0] ? textOf(e.labels[0]) : e.value, 30),
+        ...(e.checked ? { on: true } : {}),
+      })),
+    })
+  }
+  // 고르기: 통신사 버튼 (폼 칸이 아니라 버튼으로 만든 사이트가 많다)
+  const CARRIER =
+    /^(SKT|KT|LG\s?U\+|LGU\+|알뜰폰|SKT\s?알뜰폰|KT\s?알뜰폰|LG\s?U\+\s?알뜰폰|SK텔레콤|LG유플러스)$/i
+  const carriers: { el: HTMLElement; label: string }[] = []
+  for (const el of document.querySelectorAll<HTMLElement>(
+    'button, a, label, li, [role="tab"], [role="radio"], span',
+  )) {
+    const t = textOf(el)
+    if (!CARRIER.test(t) || !visible(el)) continue
+    if (carriers.some((c) => c.el.contains(el) || el.contains(c.el) || c.label === t)) continue
+    carriers.push({ el, label: t })
+  }
+  if (carriers.length >= 2) {
+    for (const c of carriers) used.add(c.el)
+    fields.push({
+      id: keep(carriers[0]?.el as Element),
+      kind: 'choice',
+      label: '통신사',
+      options: carriers.map((c) => ({
+        id: keep(c.el),
+        label: c.label,
+        ...(/\b(on|active|selected|checked|current)\b/.test(c.el.className) ||
+        c.el.getAttribute('aria-selected') === 'true' ||
+        c.el.getAttribute('aria-pressed') === 'true' ||
+        c.el.getAttribute('aria-checked') === 'true'
+          ? { on: true }
+          : {}),
+      })),
+    })
+  }
+  // 체크 (약관 동의 등). 진짜 칸은 숨기고 라벨만 보이는 사이트가 많아 라벨도 본다
+  let checks = 0
+  for (const el of document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+    if (checks >= 8 || el.disabled) continue
+    const lab = el.labels?.[0] ?? el.closest('label')
+    if (!visible(el) && !(lab && visible(lab))) continue
+    const label = clip(lab ? textOf(lab) : labelOf(el), 50)
+    if (!label) continue
+    checks++
+    fields.push({ id: keep(el), kind: 'check', label, ...(el.checked ? { checked: true } : {}) })
+  }
+  // 보안문자 그림: 근처 글자 칸에 붙인다
+  for (const img of document.querySelectorAll<HTMLImageElement | HTMLCanvasElement>('img, canvas')) {
+    const hay = `${img.getAttribute('alt') ?? ''} ${img.getAttribute('src') ?? ''} ${img.id} ${img.className} ${img.getAttribute('title') ?? ''}`
+    if (!/captcha|kaptcha|보안|자동입력|security.?(code|img)|simplecaptcha/i.test(hay) || !visible(img))
+      continue
+    const r = img.getBoundingClientRect()
+    let best: { f: FormField; d: number } | undefined
+    for (const f of fields) {
+      if (f.kind !== 'text' && f.kind !== 'number') continue
+      const el = st.els.get(f.id)?.deref()
+      if (!el) continue
+      const q = el.getBoundingClientRect()
+      const d = Math.hypot(q.left - r.left, q.top - r.bottom)
+      if (!best || d < best.d) best = { f, d }
+    }
+    if (best && best.d < 400) {
+      best.f.captchaRect = { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height }
+      best.f.code = false
+    }
+    break
+  }
+  for (const f of fields) if (f.captchaRect && !f.captchaRect.w) delete f.captchaRect
+  // 페이지에 나온 순서대로 (글자 칸·고르기·체크를 따로 모았으므로)
+  const at = (f: FormField) => {
+    const id = f.kind === 'choice' && f.options?.[0] && !st.els.get(f.id)?.deref() ? f.options[0].id : f.id
+    return st.els.get(id.split(':')[0] ?? id)?.deref()
+  }
+  fields.sort((a, b) => {
+    const x = at(a)
+    const y = at(b)
+    if (!x || !y || x === y) return 0
+    return x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+  })
+  // 누를 버튼
+  const buttons: { id: string; label: string; main?: boolean }[] = []
+  const seen = new Set<string>()
+  const MAIN =
+    /^(다음|확인|로그인|인증|인증번호\s*(받기|요청|전송)|본인\s*인증|완료|동의|신청|제출|계속|조회|등록|next|ok|continue|submit|sign in|log in)/i
+  for (const el of document.querySelectorAll<HTMLElement>(
+    'button, input[type="submit"], input[type="button"], [role="button"], a[class*="btn"], a[class*="button"]',
+  )) {
+    if (buttons.length >= 6 || used.has(el) || !visible(el)) continue
+    if ((el as HTMLButtonElement).disabled) continue
+    const label = clip(
+      el instanceof HTMLInputElement ? el.value : el.innerText || el.getAttribute('aria-label') || '',
+      20,
+    )
+    if (!label || seen.has(label) || CARRIER.test(label)) continue
+    seen.add(label)
+    const main = (el as HTMLButtonElement).type === 'submit' || MAIN.test(label)
+    buttons.push({ id: keep(el), label, ...(main ? { main: true } : {}) })
+  }
+  buttons.sort((a, b) => Number(Boolean(b.main)) - Number(Boolean(a.main)))
+  const h = document.querySelector('h1, h2, h3')
+  const title = clip((h && visible(h) ? textOf(h) : '') || document.title, 40)
+  return { title, fields, buttons, url: location.href }
+}
+
+/** 폰에서 고른 것: 진짜 칸을 화면 가운데로 옮기고 자리를 알려 준다 (보이는 화면 기준, CSS 픽셀) */
+export function pageFormTarget(id: string) {
+  const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
+  const [base, opt] = id.split(':')
+  const el = st?.els.get(base ?? '')?.deref() as HTMLElement | undefined
+  if (!el) return { ok: false as const }
+  if (el instanceof HTMLSelectElement && opt !== undefined) {
+    el.selectedIndex = Number(opt)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    return { ok: true as const, done: true }
+  }
+  // 숨긴 체크·라디오는 라벨을 누른다
+  let target: HTMLElement = el
+  if (
+    el instanceof HTMLInputElement &&
+    (el.type === 'checkbox' || el.type === 'radio') &&
+    el.getBoundingClientRect().width < 4
+  ) {
+    target = (el.labels?.[0] ?? el.closest('label') ?? el) as HTMLElement
+  }
+  target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+  const r = target.getBoundingClientRect()
+  const vv = window.visualViewport
+  const ox = vv?.offsetLeft ?? 0
+  const oy = vv?.offsetTop ?? 0
+  const sc = vv?.scale ?? 1
+  return {
+    ok: true as const,
+    done: false,
+    x: (r.left + r.width / 2 - ox) * sc,
+    y: (r.top + r.height / 2 - oy) * sc,
+    lx: r.left + r.width / 2,
+    ly: r.top + r.height / 2,
+    checked: el instanceof HTMLInputElement ? el.checked : undefined,
+    text: el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement,
+  }
+}
+
+/** 글자 칸 비우고 초점 (그다음 확장이 진짜 키 입력처럼 넣는다) */
+export function pageFormFocus(id: string) {
+  const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
+  const el = st?.els.get(id)?.deref()
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return false
+  el.focus()
+  el.select?.()
+  return true
+}
+
+/** 보안문자 그림 자리 (문서 기준 → 지금 보이는 화면 기준) */
+export function pageScrollToDoc(x: number, y: number) {
+  window.scrollTo({ left: Math.max(0, x - 40), top: Math.max(0, y - 120), behavior: 'instant' })
+  return { sx: window.scrollX, sy: window.scrollY }
+}
