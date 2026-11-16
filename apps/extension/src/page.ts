@@ -216,12 +216,31 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   if (text.length > maxChars) text = text.slice(0, maxChars)
 
   const bodyText = document.body?.innerText ?? ''
-  const captcha =
-    Boolean(
-      document.querySelector(
-        'iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="challenges.cloudflare.com"], [class*="captcha" i], [id*="captcha" i], img[src*="captcha" i]',
-      ),
-    ) || /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot/i.test(bodyText)
+  // 보안 문자: 실제로 풀어야 하는 것만. 보이지 않는 reCAPTCHA(오른쪽 아래 배지, "protected by reCAPTCHA")는
+  // 사람이 할 게 없는데 예전에는 이것 때문에 KT·CGV·링크드인 같은 곳을 "사람 차례"로 넘겼다
+  const shown = (el: Element) => {
+    if (el.closest('.grecaptcha-badge')) return false
+    const r = el.getBoundingClientRect()
+    const cs = getComputedStyle(el)
+    return (
+      r.width >= 40 &&
+      r.height >= 20 &&
+      cs.visibility !== 'hidden' &&
+      cs.display !== 'none' &&
+      Number(cs.opacity) > 0.1
+    )
+  }
+  const challenge = [
+    ...document.querySelectorAll(
+      'iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="challenges.cloudflare.com"], [class*="captcha" i], [id*="captcha" i], img[src*="captcha" i]',
+    ),
+  ].some((el) => {
+    if (!shown(el)) return false
+    const src = el instanceof HTMLIFrameElement ? el.src : ''
+    // 보이지 않는 reCAPTCHA의 틀(size=invisible)은 문제가 아니다
+    return !/[?&]size=invisible/.test(src)
+  })
+  const captcha = challenge || /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot/i.test(bodyText)
 
   return { url: location.href, title: document.title, text, truncated, refs: st.refs.size, captcha }
 }
