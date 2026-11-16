@@ -400,12 +400,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       // 사람이 해야 하는 단계: 폰에서 그 화면을 보고 마치면 연결로 표시한다
       browserTools.allowRemote(r.tabId)
       loginWatch.start(card, r.tabId)
-      return { ok: false, human: true, tabId: r.tabId, message: `${r.reason}. 화면을 열어 직접 마쳐 주세요.` }
+      return {
+        ok: false,
+        human: true,
+        reason: 'human',
+        tabId: r.tabId,
+        message: `${r.reason}. 화면을 열어 직접 마쳐 주세요.`,
+      }
     }
     browserTools.allowRemote(r.tabId)
-    return { ok: false, tabId: r.tabId, message: r.message }
+    // 아이디·비밀번호가 틀렸거나 결과를 몰라도, 사용자가 그 화면에서 마치면 알아서 연결로 표시한다
+    loginWatch.start(card, r.tabId)
+    return {
+      ok: false,
+      reason: r.status === 'wrong' ? 'wrong' : 'unknown',
+      tabId: r.tabId,
+      message: r.message,
+    }
   }
-  type ConnectResult = { ok: boolean; message: string; human?: boolean; tabId?: number }
+  type ConnectResult = {
+    ok: boolean
+    message: string
+    human?: boolean
+    tabId?: number
+    reason?: 'human' | 'wrong' | 'unknown'
+  }
   /**
    * 연결하기는 뒤에서 한다: 폰·PC는 기다리지 않고 다른 일을 해도 된다.
    * 끝나면 모든 폰에 결과·연결 목록을 보내고, 대화에 알림을 남겨 두리가 사용자에게 알리고 멈춘 일을 이어 가게 한다
@@ -505,19 +524,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void p.then((r) => {
       connecting.delete(card.id)
       connectSteps.delete(card.id)
-      connectStatus()
-      void link.broadcast({ kind: 'connect-result', id: card.id, ...r })
+      // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)
+      void link.broadcast({ kind: 'connect-result', id: card.id, ...r }).then(() => connectStatus())
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
       if (r.ok) connectDone(card)
       else if (r.human || r.tabId !== undefined) {
         // 사람이 마칠 차례: 그 화면을 폰·PC에서 열어 직접 로그인하면 두리가 알아서 확인한다
         connectHuman.add(card.id)
-        if (!r.human && r.tabId !== undefined) loginWatch.start(card, r.tabId)
-        postNote(
-          `${card.name} 자동 로그인이 안 됐어요. 열어 둔 화면에서 직접 로그인하면 두리가 알아서 확인해요.`,
-        )
+        // 대화 끝에 그 연결 카드가 있으면 카드가 "직접 마쳐 주세요 [화면 열기]"로 바뀐다 (알림 줄을 또 남기지 않는다)
+        if (!cardNearEnd(card))
+          postNote(
+            `${card.name} 자동 로그인이 안 됐어요. 열어 둔 화면에서 직접 로그인하면 두리가 알아서 확인해요.`,
+          )
+        void link
+          .notify({
+            title: `${card.name} 연결을 마쳐 주세요`,
+            body: r.message,
+            tag: `connect-${card.id}`,
+            url: '#tab=chat',
+          })
+          .catch(() => {})
       } else {
-        postNote(`${card.name} 로그인이 안 됐어요. ${r.message}`)
+        if (!cardNearEnd(card)) postNote(`${card.name} 로그인이 안 됐어요. ${r.message}`)
         void link
           .notify({
             title: `${card.name} 로그인이 안 됐어요`,

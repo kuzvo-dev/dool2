@@ -2,6 +2,7 @@
 // 1) 사이트를 열고 로그인 화면을 찾는다 (비밀번호 칸이 없으면 "로그인" 링크·버튼을 누른다)
 // 2) 금고 값을 칸에 넣고 로그인 버튼(없으면 Enter)을 누른다
 // 3) 화면 글자로 결과를 본다: 로그인됨 / 로봇 확인·본인인증(사람이 해야 함) / 아이디·비밀번호 틀림 / 모름
+import type { ConnectStep } from '@dool2/protocol'
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { parseRefs } from './browser-tools.js'
 import { looksSignedIn } from './connect-watch.js'
@@ -11,13 +12,13 @@ export interface AutoLoginBrowser {
 }
 
 export interface AutoLoginInput {
-  card: Pick<ConnectCard, 'id' | 'name' | 'signedIn'>
+  card: Pick<ConnectCard, 'id' | 'name' | 'signedIn'> & { site?: string }
   url: string
   username: string
   password: string
   ask?: LoginAsk
   /** 지금 하는 단계 (폰 연결 카드에 보여 준다). 값(아이디·비밀번호)은 넣지 않는다 */
-  step?: (text: string) => void
+  step?: StepFn
 }
 
 /** 사람에게 넘기는 대신 폰 입력 화면으로 묻기 (원격 화면보다 빠르고 편하다) */
@@ -139,8 +140,59 @@ const USER_FIELD = /아이디|이메일|email|e-mail|\bid\b|휴대폰|전화|pho
 const CAPTCHA = /보안\s?문자|자동\s?입력\s?방지|로봇이 아닙니다|I'm not a robot|문자를 입력해/i
 /** 로그인을 누른 뒤의 추가 인증 (로그인 화면의 "아이디 찾기(본인인증)" 같은 안내와 헷갈리지 않게 좁게) */
 const STEP2 =
-  /인증\s?번호를?\s?(입력|받|보내)|새로운\s?(기기|환경|브라우저)에서|2단계\s?인증|추가\s?인증이\s?필요|본인\s?확인이\s?필요|본인인증을\s?진행|OTP\s?(번호|입력)/i
+  /인증\s?번호를?\s?(입력|받|보내)|(확인|로그인|보안)\s?코드를?\s?(입력|받|보냈|보내)|새로운\s?(기기|환경|브라우저)에서|2단계\s?인증|추가\s?인증이\s?필요|본인\s?확인이\s?필요|본인인증을\s?진행|OTP\s?(번호|입력)/i
 const HUMAN = new RegExp(`${CAPTCHA.source}|${STEP2.source}`, 'i')
+/**
+ * 휴대폰 앱에서 승인을 누르라는 화면 (카카오톡 로그인 확인, 네이버 앱 2단계 인증, 구글 "휴대전화를 확인하세요", 토스 푸시).
+ * 칸이 없어 넣을 것도 없다: 사용자에게 알리고 화면이 바뀔 때까지 기다린다
+ */
+const APP_CONFIRM =
+  /(카카오톡|네이버\s?앱|토스\s?앱|앱|휴대\s?전화|휴대폰|기기)(에서|으로|로)\s?.{0,14}(확인|승인|인증|허용|눌러|탭)|알림을\s?(보냈|확인|탭|눌러)|푸시\s?(알림|인증)|check your phone|tap yes|approve (the |this )?sign.?in|로그인\s?(요청|확인)을?\s?(보냈|확인해)/i
+/** 승인을 기다리는 최대 시간 */
+export const CONFIRM_WAIT_MS = 3 * 60_000
+
+export type StepFn = (text: string, ask?: ConnectStep['ask']) => void
+
+/** 어느 앱에서 누르면 되는지 (화면 글로 짐작) */
+function confirmWhere(text: string): string {
+  if (/카카오톡|kakaotalk/i.test(text)) return '카카오톡'
+  if (/네이버\s?앱|naver app/i.test(text)) return '네이버 앱'
+  if (/토스/i.test(text)) return '토스 앱'
+  if (/google|구글|휴대\s?전화를\s?확인|check your phone/i.test(text)) return '휴대전화'
+  return '휴대폰 앱'
+}
+
+/**
+ * 앱 승인 화면이면 카드에 "○○에서 확인을 눌러 주세요"를 띄우고 화면이 바뀔 때까지(최대 3분) 기다린다.
+ * 바뀌면 'moved', 시간이 지나면 'timeout', 승인 화면이 아니면 'none'
+ */
+async function waitConfirm(
+  page: Snap,
+  tabId: number,
+  snap: (tabId: number) => Promise<Snap>,
+  step: StepFn | undefined,
+  wait: number,
+  limitMs = CONFIRM_WAIT_MS,
+): Promise<'none' | 'moved' | 'timeout'> {
+  if (hasPassword(page.text) || !APP_CONFIRM.test(page.text)) return 'none'
+  const where = confirmWhere(page.text)
+  step?.(`${where}에서 확인을 눌러 주세요`, {
+    kind: 'confirm',
+    id: String(tabId),
+    label: '화면 보기',
+    detail: `${where}에 온 로그인 확인을 눌러 주시면 두리가 이어서 해요`,
+  })
+  const until = Date.now() + limitMs
+  while (Date.now() < until) {
+    await sleep(Math.max(wait, 2_000))
+    const now = await snap(tabId).catch(() => undefined)
+    if (now && !APP_CONFIRM.test(now.text)) {
+      step?.('확인됐어요, 이어서 하는 중')
+      return 'moved'
+    }
+  }
+  return 'timeout'
+}
 const WRONG =
   /(비밀번호|아이디|계정).{0,20}(잘못|틀|일치하지|확인해|올바르지|맞지 않)|등록되지 않은|incorrect|invalid (password|username|email)|wrong password/i
 
@@ -150,9 +202,22 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
   let page = await snap()
   // 글이 거의 없거나 누를 것이 두세 개뿐이면 아직 그리는 중이다 (로그인 창을 늦게 띄우는 사이트)
+  const fields = (p: Snap) => /\[e\d+ (입력칸|비밀번호칸)/.test(p.text)
+  // 로그인 주소인데 입력칸이 하나도 없으면 아직 본문을 그리는 중이다 (KT: 바닥글만 먼저 그려진다)
+  const loginPath = (p: Snap) => {
+    try {
+      return /log-?in|sign-?in|auth|member|account/i.test(new URL(p.url).pathname)
+    } catch {
+      return false
+    }
+  }
   const thin = (p: Snap) =>
     p.text.replace(/\s/g, '').length < 12 ||
-    ((p.text.match(/\[e\d+ /g)?.length ?? 0) < 3 && !/\[e\d+ (입력칸|비밀번호칸)/.test(p.text))
+    ((p.text.match(/\[e\d+ /g)?.length ?? 0) < 3 && !fields(p)) ||
+    // 간편 로그인만 있는 화면("카카오로 시작")은 칸이 없어도 다 그려진 것이다
+    (loginPath(p) &&
+      !fields(p) &&
+      !/\[e\d+ (버튼|링크) "[^"]*(로그인|시작|계속|login|sign|continue)/i.test(p.text))
   for (let i = 0; i < 4 && thin(page); i++) {
     await sleep(Math.max(wait, 800))
     page = await snap()
@@ -255,6 +320,8 @@ export async function probeLogin(
     captcha: Boolean(page.captcha),
     sample: page.text.slice(0, 1500),
   }
+  // 간편 로그인 공급자 화면에 와 버렸으면 칸이 있어도 이 서비스 로그인 칸이 아니다
+  if (providerPage(page.url, input.card)) return { status: 'unknown', ...base }
   // 로그인 화면에는 눈에 안 보이는 로봇 확인이 깔린 곳이 많다 (쿠팡·11번가). 칸이 보이면 그대로 간다
   if (CAPTCHA.test(page.text)) return { status: 'human', ...base }
   const two = twoStep(page.text)
@@ -286,6 +353,26 @@ const JOIN_ONLY = (name: string) =>
 /** 로그인 방법 고르기 화면의 "아이디·이메일로 로그인" (소셜·가입 말고 우리가 채울 수 있는 방법) */
 const ID_LOGIN =
   /^((이메일|아이디|ID|e-?mail|휴대폰\s?번호|통합\s?(아이디|계정)).{0,12}(로그인|계속하기|시작하기)|(이?메일|아이디)로\s?(로그인|시작하기|계속하기)|이메일|이메일\s?주소|메일|아이디|email|e-?mail\s?address)$/i
+
+/**
+ * 지금 화면이 다른 회사 간편 로그인(네이버·카카오·구글…) 화면인가.
+ * 아이디·비밀번호 연결 중에 여기로 오면 그 서비스 아이디를 공급자 칸에 넣게 된다 — 절대 넣지 않는다
+ */
+function providerPage(url: string, card: { site?: string }): string | undefined {
+  let host = ''
+  try {
+    host = new URL(url).hostname
+  } catch {
+    return undefined
+  }
+  for (const p of Object.values(SOCIAL_PROVIDERS)) {
+    if (!p.host.test(host)) continue
+    // 네이버 연결 카드가 네이버 로그인 화면에 있는 건 괜찮다
+    if (card.site && p.host.test(card.site.replace(/^www\./, ''))) return undefined
+    return p.label
+  }
+  return undefined
+}
 
 function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): RefEntry | undefined {
   const refs = ([...parseRefs(text)] as RefEntry[]).filter(
@@ -401,6 +488,13 @@ export async function autoLogin(
     await sleep(wait)
     page = await settled(() => snap(tabId), wait)
   }
+  const other = providerPage(page.url, input.card)
+  if (other)
+    return {
+      status: 'unknown',
+      tabId,
+      message: `${other} 간편 로그인 화면으로 넘어가서 멈췄어요. ${other}로 연결하거나 화면을 보며 직접 해 주세요.`,
+    }
   if (CAPTCHA.test(page.text)) return { status: 'human', tabId, reason: humanReason(page.text) }
   // 두 단계: 아이디를 넣고 계속을 누르면 비밀번호 칸이 나온다
   const two = twoStep(page.text)
@@ -478,6 +572,14 @@ async function watchResult(
     page = await snap(tabId).catch(() => page)
     if (!page) continue
     if (looksSignedIn(input.card, page)) return { loginOrigin, status: 'ok', tabId }
+    // 휴대폰 앱에서 승인하라는 화면: 카드에 알리고 기다린다 (넣을 칸이 없다)
+    const confirm = await waitConfirm(page, tabId, snap, input.step, wait)
+    if (confirm === 'moved') {
+      i = Math.max(0, i - 2)
+      continue
+    }
+    if (confirm === 'timeout')
+      return { loginOrigin, status: 'human', tabId, reason: '휴대폰에서 확인을 3분 동안 기다렸어요' }
     if (STEP2.test(page.text) && !CAPTCHA.test(page.text) && !WRONG.test(page.text)) {
       // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
       input.step?.('인증번호를 기다리는 중')
@@ -562,7 +664,7 @@ export interface SocialLoginInput {
   /** 공급자 로그인 화면이 나오면 쓸 금고 값 (그 공급자 주소의 항목). 없으면 폰에 묻고, 그래도 없으면 사람에게 */
   creds(origin: string): Promise<{ username: string; password: string } | undefined>
   ask?: LoginAsk
-  step?: (text: string) => void
+  step?: StepFn
 }
 
 /**
@@ -639,6 +741,11 @@ export async function socialLogin(
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
     if (!onProvider) continue
+    // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다
+    const confirm = await waitConfirm(p, providerTab, snap, input.step, wait)
+    if (confirm === 'moved') continue
+    if (confirm === 'timeout')
+      return { status: 'human', tabId: providerTab, reason: `${label}에서 확인을 3분 동안 기다렸어요` }
     if (STEP2.test(p.text) && !CAPTCHA.test(p.text)) {
       step('인증번호를 기다리는 중')
       const a = await answerOnScreen(browser, providerTab, p, input.ask, askedInfo)

@@ -4,7 +4,11 @@
   "site": "joongna.com",
   "category": "shopping",
   "how": "browser",
-  "login": "아이디·비밀번호",
+  "social": [
+    "kakao",
+    "naver"
+  ],
+  "login": "네이버·카카오 간편 로그인",
   "summary": "중고나라 앱과 카페에 올라온 매물 찾기부터 판매글 쓰기, 채팅 정리까지 두리에게 맡길 수 있어요.",
   "example": {
     "ask": "아이패드 에어 중고 50만 원 이하로 찾아 줘",

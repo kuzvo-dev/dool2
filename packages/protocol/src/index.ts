@@ -341,7 +341,11 @@ export interface ConnectStep {
   text: string
   /** 시작 시각 (ms) */
   at: number
-  ask?: { kind: 'login' | 'info'; id: string; label: string }
+  /**
+   * 사람이 해 줘야 다음으로 가는 단계.
+   * login·info: 그 요청(id)을 폰 입력 화면으로 연다 / confirm: 휴대폰 앱에서 승인을 누르면 된다(id = 탭 번호, 화면 보기용)
+   */
+  ask?: { kind: 'login' | 'info' | 'confirm'; id: string; label: string; detail?: string }
 }
 
 /** 사람에게 넘기기: 대화 기록에 'tool' 메시지로 남겨 다시 열어도 [다 했어요]를 보여 준다 */
@@ -811,7 +815,16 @@ export type PcToPhone =
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
   | { kind: 'connect-opened'; id: string; tabId: number }
   /** 대신 로그인 결과. human이면 그 탭을 원격 화면으로 넘겼다(로봇 확인·본인인증) */
-  | { kind: 'connect-result'; id: string; ok: boolean; message: string; human?: boolean; tabId?: number }
+  | {
+      kind: 'connect-result'
+      id: string
+      ok: boolean
+      message: string
+      human?: boolean
+      tabId?: number
+      /** 왜 못 했는지: 사람 차례(보안문자·본인인증) / 아이디·비밀번호 틀림 / 로그인 칸·결과를 몰라서 */
+      reason?: 'human' | 'wrong' | 'unknown'
+    }
   /** 두리가 지금 다루는 Chrome 탭 (대화에 일하는 화면을 실시간으로 띄운다) */
   | { kind: 'work-tab'; tabId: number }
   /** 두리 본체가 지금 로그인하고 있는 서비스 (연결하기는 뒤에서 하고, 끝나면 connect-result와 대화 알림) */
