@@ -16,6 +16,8 @@ export interface AutoLoginInput {
   username: string
   password: string
   ask?: LoginAsk
+  /** 지금 하는 단계 (폰 연결 카드에 보여 준다). 값(아이디·비밀번호)은 넣지 않는다 */
+  step?: (text: string) => void
 }
 
 /** 사람에게 넘기는 대신 폰 입력 화면으로 묻기 (원격 화면보다 빠르고 편하다) */
@@ -336,6 +338,8 @@ export async function autoLogin(
 ): Promise<AutoLoginResult> {
   const wait = opts.wait ?? 1_500
   const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const step = input.step ?? (() => {})
+  step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
   let tabId = opened.tabId
   /** 연 탭들 (로그인이 새 창으로 열리면 늘어난다) */
@@ -344,7 +348,10 @@ export async function autoLogin(
   // 1) 로그인 화면 찾기: 비밀번호 칸이 보일 때까지 "로그인"을 누른다 (최대 3번)
   let page = await settled(() => snap(tabId), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId }
-  if (!hasPassword(page.text)) page = await closePopups(browser, tabId, page, snap, wait)
+  if (!hasPassword(page.text)) {
+    step('로그인 화면 찾는 중')
+    page = await closePopups(browser, tabId, page, snap, wait)
+  }
   let retried = false
   const tried = new Set<string>()
   for (let i = 0; i < 4 && !hasPassword(page.text) && !twoStep(page.text); i++) {
@@ -359,6 +366,7 @@ export async function autoLogin(
       continue
     }
     tried.add(target[1].name.trim())
+    step(`"${target[1].name.trim().slice(0, 20)}" 누르는 중`)
     // 로그인이 새 창(팝업)으로 열리면 그 창을 따라간다
     const clicked = (await browser.call('click', { tabId, ref: target[0] }, 30_000).catch(() => undefined)) as
       | { newTabId?: number }
@@ -375,6 +383,7 @@ export async function autoLogin(
   const two = twoStep(page.text)
   if (two) {
     const origin0 = new URL(page.url).origin
+    step('아이디 넣는 중')
     await browser.call('fill', { tabId, ref: two.user[0], value: input.username, origin: origin0 })
     await browser.call('click', { tabId, ref: two.next[0] }, 30_000).catch(() => undefined)
     await sleep(wait)
@@ -383,6 +392,7 @@ export async function autoLogin(
       // 비밀번호만 남은 화면: 비밀번호만 넣고 누른다
       const f = loginFields(page.text)
       const o = new URL(page.url).origin
+      step('비밀번호 넣고 로그인 누르는 중')
       await browser.call('fill', {
         tabId,
         ref: f.password[0],
@@ -392,6 +402,7 @@ export async function autoLogin(
       })
       if (f.submit) await browser.call('click', { tabId, ref: f.submit[0] }, 30_000).catch(() => undefined)
       else await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
+      step('로그인됐는지 확인하는 중')
       return watchResult(browser, input, tabId, o, wait, opts.tries ?? 8, snap)
     }
   }
@@ -410,15 +421,18 @@ export async function autoLogin(
   const userRef = fields.user?.[0]
   const origin = new URL(page.url).origin
   const loginOrigin = origin
+  step('아이디·비밀번호 넣는 중')
   if (userRef) await browser.call('fill', { tabId, ref: userRef, value: input.username, origin })
   await browser.call('fill', { tabId, ref: pwRef, value: input.password, origin, password: true })
 
   // 3) 로그인 누르기: 비밀번호 칸 뒤의 "로그인" 버튼, 없으면 Enter
+  step('로그인 누르는 중')
   const submit = fields.submit
   if (submit) await browser.call('click', { tabId, ref: submit[0] }, 30_000).catch(() => undefined)
   else await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
 
   // 4) 결과 보기
+  step('로그인됐는지 확인하는 중')
   return watchResult(browser, input, tabId, loginOrigin, wait, opts.tries ?? 8, snap)
 }
 
@@ -443,6 +457,7 @@ async function watchResult(
     if (looksSignedIn(input.card, page)) return { loginOrigin, status: 'ok', tabId }
     if (STEP2.test(page.text) && !CAPTCHA.test(page.text) && !WRONG.test(page.text)) {
       // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
+      input.step?.('인증번호를 기다리는 중')
       const a = await answerOnScreen(_browser, tabId, page, input.ask, asked)
       if (a === 'done') {
         grace = 3
@@ -524,6 +539,7 @@ export interface SocialLoginInput {
   /** 공급자 로그인 화면이 나오면 쓸 금고 값 (그 공급자 주소의 항목). 없으면 폰에 묻고, 그래도 없으면 사람에게 */
   creds(origin: string): Promise<{ username: string; password: string } | undefined>
   ask?: LoginAsk
+  step?: (text: string) => void
 }
 
 /**
@@ -538,10 +554,13 @@ export async function socialLogin(
   const wait = opts.wait ?? 1_500
   const label = SOCIAL_PROVIDERS[input.provider].label
   const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const step = input.step ?? (() => {})
+  step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
   const siteTab = opened.tabId
   let page = await settled(() => snap(siteTab), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId: siteTab }
+  step(`${label} 로그인 버튼 찾는 중`)
   page = await closePopups(browser, siteTab, page, snap, wait)
 
   // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
@@ -564,6 +583,7 @@ export async function socialLogin(
     }
 
   // 2) 공급자 버튼 → 새 창(팝업)이거나 같은 탭에서 공급자 화면으로 간다
+  step(`${label} 로그인 누르는 중`)
   const clicked = (await browser
     .call('click', { tabId: siteTab, ref: btn[0] }, 30_000)
     .catch(() => undefined)) as { newTabId?: number } | undefined
@@ -597,6 +617,7 @@ export async function socialLogin(
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
     if (!onProvider) continue
     if (STEP2.test(p.text) && !CAPTCHA.test(p.text)) {
+      step('인증번호를 기다리는 중')
       const a = await answerOnScreen(browser, providerTab, p, input.ask, askedInfo)
       if (a === 'done') {
         graceInfo = 3
@@ -621,6 +642,7 @@ export async function socialLogin(
           reason: `${label} 로그인이 필요해요. 한 번 로그인해 두면 다음부터는 두리가 버튼만 눌러요`,
         }
       filled.add(p.url)
+      step(`${label} 계정 넣는 중`)
       if (two && !hasPassword(p.text)) {
         await browser.call('fill', { tabId: providerTab, ref: two.user[0], value: creds.username, origin })
         await browser.call('click', { tabId: providerTab, ref: two.next[0] }, 30_000).catch(() => undefined)
@@ -655,6 +677,7 @@ export async function socialLogin(
     const next = account ?? consent
     if (next && !pressed.has(`${p.url}|${next[1].name}`)) {
       pressed.add(`${p.url}|${next[1].name}`)
+      step(account ? '계정 고르는 중' : '정보 제공 동의 넘기는 중')
       await browser.call('click', { tabId: providerTab, ref: next[0] }, 30_000).catch(() => undefined)
     }
   }
