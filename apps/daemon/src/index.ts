@@ -34,6 +34,7 @@ import {
   type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
+  type ConnectRecordMessage,
   type ConversationLiveEvent,
   type ConversationState,
   CreateThreadRequestSchema,
@@ -53,6 +54,7 @@ import {
   type Settings,
   SettingsPatchSchema,
   SettingsSchema,
+  type StoredMessage,
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
@@ -413,11 +415,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const postNote = (text: string) => {
     const cur = conversation.current()
     if (!cur) return
-    const message = store.addMessage(cur.id, 'user', appNote(text))
-    const event = { type: 'saved' as const, message }
-    void link.broadcast({ kind: 'stream', threadId: cur.id, event })
-    live.emit('event', { kind: 'turn', threadId: cur.id, event })
+    // 같은 알림을 10분 안에 또 남기지 않는다 (연결을 여러 번 눌러 실패하면 같은 줄이 세 번씩 쌓였다)
+    const note = appNote(text)
+    const since = Date.now() - 10 * 60_000
+    const recent = store.listMessages(cur.id).slice(-8)
+    if (recent.some((m) => m.text === note && Date.parse(m.createdAt) >= since)) return
+    postSaved(cur.id, store.addMessage(cur.id, 'user', note))
   }
+  /** 저장한 말을 폰·PC 화면에 바로 흘린다 */
+  const postSaved = (threadId: string, message: StoredMessage) => {
+    const event = { type: 'saved' as const, message }
+    void link.broadcast({ kind: 'stream', threadId, event })
+    live.emit('event', { kind: 'turn', threadId, event })
+  }
+  /**
+   * 연결하기를 대화에서: 내 말 "○○ 연결해 줘"와 두리의 연결 카드를 바로 남긴다.
+   * AI를 부르지 않아 기다림이 없고, 로그인은 카드에서 이어 간다 (진행·결과도 같은 대화에 남는다)
+   */
+  const connectInChat = (card: ConnectCard) => {
+    const cur = conversation.current()
+    if (!cur) throw new Error('대화를 아직 열지 못했어요')
+    postSaved(cur.id, store.addMessage(cur.id, 'user', `${card.name} 연결해 줘`))
+    const record: ConnectRecordMessage = { kind: 'connect', service: card.id }
+    postSaved(cur.id, store.addMessage(cur.id, 'tool', JSON.stringify(record)))
+    connectFromChat.add(card.id)
+  }
+  /** 대화에서 시작한 연결 (끝나면 카드가 바뀌니 알림 줄은 남기지 않는다) */
+  const connectFromChat = new Set<string>()
   const connectDone = (card: ConnectCard) => {
     const asked = connectAsked.get(card.id)
     connectAsked.delete(card.id)
@@ -427,7 +451,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요. 없었으면 연결됐다고 한 문장으로만 말해 주세요.`,
         ),
       ).catch(() => {})
-    else postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
+    // 대화에서 시작한 연결은 그 카드가 "연결돼 있어요"로 바뀐다. 같은 말을 알림 줄로 또 남기지 않는다
+    else if (!connectFromChat.delete(card.id)) postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
     void link
       .notify({
         title: `${card.name} 연결됐어요`,
@@ -578,6 +603,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
         if (action === 'open') return { tabId: await connectOpen(card, true) }
+        if (action === 'chat') {
+          connectInChat(card)
+          return {}
+        }
         connectMark(card.id, action === 'mark')
         return {}
       },
