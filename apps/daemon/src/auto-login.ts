@@ -68,7 +68,13 @@ async function answerOnScreen(
   // 화면 안내 한 줄 ("카카오톡으로 보낸 6자리를 넣어 주세요")
   const hint = page.text
     .split('\n')
-    .map((l) => l.replace(/\[[^\]]*\]/g, '').trim())
+    // 화면 읽기의 표시(제목 #, 목록 -, [e3 버튼 …])는 떼고 사람 말만
+    .map((l) =>
+      l
+        .replace(/\[[^\]]*\]/g, '')
+        .replace(/^\s*(#+|[-*•]|\d+\.)\s*/, '')
+        .trim(),
+    )
     .find((l) => l.length >= 8 && l.length <= 80 && /인증|번호|보냈|문자|입력/.test(l))
   const host = (() => {
     try {
@@ -84,11 +90,28 @@ async function answerOnScreen(
     host,
   })
   if (!value) return 'cancel'
-  await browser.call('type', { tabId, ref: target[0], text: value })
-  const after = refs.slice(refs.indexOf(target) + 1)
+  // 사람이 넣는 동안 화면을 다시 읽었을 수 있다(폰 원격 화면·일하는 화면): 그때 표시(e12 같은 번호)가 바뀌므로
+  // 넣기 전·누르기 전에 화면을 새로 읽어 같은 이름의 칸·버튼을 다시 찾는다 (옛 번호로 누르면 조용히 실패했다)
+  const fresh = async () => {
+    const now = (await browser.call('snapshot', { tabId, maxChars: 12_000 }).catch(() => undefined)) as
+      | Snap
+      | undefined
+    return now ? ([...parseRefs(now.text)] as RefEntry[]) : refs
+  }
+  let cur = await fresh()
+  const field = cur.find(([, r]) => r.role === '입력칸' && r.name === target[1].name) ?? target
+  await browser.call('type', { tabId, ref: field[0], text: value })
+  cur = await fresh()
+  const at = cur.findIndex(([, r]) => r.role === '입력칸' && r.name.startsWith(target[1].name))
+  const after = at >= 0 ? cur.slice(at + 1) : cur
   const submit = after.find(([, r]) => r.role === '버튼' && ANSWER_SUBMIT.test(r.name.trim()))
-  if (submit) await browser.call('click', { tabId, ref: submit[0] }, 30_000).catch(() => undefined)
-  else await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
+  const clicked = submit
+    ? await browser.call('click', { tabId, ref: submit[0] }, 30_000).then(
+        () => true,
+        () => false,
+      )
+    : false
+  if (!clicked) await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
   return 'done'
 }
 

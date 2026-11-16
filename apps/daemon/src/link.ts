@@ -275,19 +275,29 @@ export class PhoneLink {
     if (env.kind === 'pair') return this.receivePair(env)
     const phone = this.phones.find((x) => x.id === env.from)
     if (!phone) return // 페어링 안 된 기기
-    let msg: PhoneToPc
-    try {
-      msg = await open<PhoneToPc>(await this.keyFor(phone.id, phone.boxPub), env)
-    } catch {
-      return
-    }
-    if (msg.kind !== env.kind) return
-    if (!this.guard.accept(phone.id, env.seq)) return
-    this.lastSeen.set(phone.id, this.now())
-    if (msg.kind === 'ping') return
-    await this.secrets.set(SEQS, JSON.stringify(this.guard.snapshot()))
+    // 푸는 일은 받은 순서대로 하나씩: 동시에 풀면 끝나는 순서가 뒤섞여, 순번 검사(작은 순번은 버림)가
+    // 앞선 메시지를 버렸다 (본체를 막 켠 뒤 앱을 열면 서비스 목록 요청이 사라져 "받는 중…"에서 멈춤)
+    const opened = this.inbox.then(async () => {
+      let m: PhoneToPc
+      try {
+        m = await open<PhoneToPc>(await this.keyFor(phone.id, phone.boxPub), env)
+      } catch {
+        return undefined
+      }
+      if (m.kind !== env.kind) return undefined
+      if (!this.guard.accept(phone.id, env.seq)) return undefined
+      this.lastSeen.set(phone.id, this.now())
+      if (m.kind !== 'ping') await this.secrets.set(SEQS, JSON.stringify(this.guard.snapshot()))
+      return m
+    })
+    this.inbox = opened.catch(() => undefined)
+    const msg = await opened
+    if (!msg || msg.kind === 'ping') return
+    // 처리는 기다리지 않고 나란히 (오래 걸리는 부탁이 다음 메시지를 막지 않게)
     await this.handle(phone, msg).catch((e: Error) => this.send(phone, { kind: 'error', message: e.message }))
   }
+  /** 받은 봉투를 하나씩 푸는 줄 */
+  private inbox: Promise<unknown> = Promise.resolve()
 
   private async receivePair(env: Envelope) {
     const p = this.pairing

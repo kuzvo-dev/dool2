@@ -5,6 +5,7 @@ import type {
   ApprovalRecordMessage,
   ApprovalView,
   ConnectRecordMessage,
+  ConnectStep,
   DaemonStreamEvent,
   HandoffRecord,
   InfoRequestView,
@@ -160,7 +161,7 @@ const st: {
   /** 두리 본체가 지금 로그인하고 있는 서비스 */
   connecting: Set<string>
   /** 연결하는 동안 본체가 알려 온 단계 (서비스 id → 단계) */
-  connectSteps: Map<string, { text: string; at: number }[]>
+  connectSteps: Map<string, ConnectStep[]>
   /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
   work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
@@ -862,9 +863,27 @@ function updateWorkPanel(card: HTMLElement) {
   })
 }
 
+/**
+ * 연결이 사람을 기다리는지: 마지막 단계가 계정·인증번호를 묻고 있고 그 요청이 아직 열려 있으면.
+ * 단계를 못 받았으면(앱을 나중에 열었거나 예전 PC) 연결용 로그인 요청이 열려 있는지로 본다
+ */
+function connectWaiting(id: string): ConnectStep['ask'] | undefined {
+  const open = (a: NonNullable<ConnectStep['ask']>) =>
+    a.kind === 'login' ? st.logins.get(a.id)?.status === 'pending' : st.infos.has(a.id)
+  const last = st.connectSteps.get(id)?.at(-1)?.ask
+  if (last) return open(last) ? last : undefined
+  if (!st.connecting.has(id)) return undefined
+  const login = [...st.logins.values()].find((l) => l.status === 'pending' && l.connect)
+  if (login) return { kind: 'login', id: login.id, label: `${login.site} 넣기` }
+  const info = [...st.infos.values()].at(-1)
+  return info ? { kind: 'info', id: info.id, label: `${info.label} 넣기` } : undefined
+}
+
 /** 연결하는 동안 단계: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
-function connectStepList(id: string): HTMLElement | undefined {
-  const steps = st.connectSteps.get(id)
+function connectStepList(id: string, waiting = false): HTMLElement | undefined {
+  const all = st.connectSteps.get(id)
+  // 사람을 기다릴 때는 카드 제목이 "○○이 필요해요"라서 같은 말의 마지막 단계는 뺀다
+  const steps = waiting && all?.at(-1)?.ask ? all.slice(0, -1) : all
   if (!steps?.length) return undefined
   const list = h('ol', { class: 'wp-steps connect-steps' })
   steps.forEach((s, i) => {
@@ -1893,7 +1912,8 @@ function toolSig(raw: string) {
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}`
+      const wait = it ? (connectWaiting(it.card.id)?.id ?? '') : ''
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}`
     }
   } catch {}
   return ''
@@ -2071,6 +2091,36 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   if (!live) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결 카드`)
   const busy = st.connecting.has(c.id)
   const browser = c.how === 'browser'
+  // 계정·인증번호를 기다리면: 무엇이 필요한지와 [넣기] 버튼 (빙글빙글만 돌지 않게)
+  const wait = busy ? connectWaiting(c.id) : undefined
+  if (wait) {
+    const what = wait.label.replace(/ 넣기$/, '')
+    return h(
+      'div',
+      { class: 'card approve-card connect-card ask' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark(true),
+        h(
+          'div',
+          {},
+          h('strong', { text: `${josa(what, '이/가')} 필요해요` }),
+          h('span', { class: 'meta', text: `넣어 주시면 두리가 이어서 ${c.name}에 로그인해요` }),
+        ),
+      ),
+      connectStepList(c.id, true),
+      h(
+        'div',
+        { class: 'approve-actions' },
+        h('button', {
+          class: 'btn',
+          text: wait.label,
+          onclick: () => openOverlay({ kind: wait.kind, id: wait.id }),
+        }),
+      ),
+    )
+  }
   return h(
     'div',
     { class: 'card approve-card connect-card' },
@@ -3320,7 +3370,7 @@ function infoSheet(id: string) {
     ),
   )
   const body: Node[] = []
-  if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint }))
+  if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
   if (q.field === 'otp') {
     body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
     body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))

@@ -282,6 +282,50 @@ describe('폰 입력 화면으로 묻기', () => {
     expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e8')).toBe(true)
   })
 
+  it('번호를 기다리는 사이 화면 표시가 바뀌어도 새로 읽어 맞는 확인을 누른다', async () => {
+    const otp = {
+      url: 'https://login.shop.test/verify',
+      text: '인증번호를 입력해 주세요 [e7 입력칸 "인증번호"] [e8 버튼 "확인"]',
+    }
+    // 폰이 원격 화면으로 같은 화면을 다시 읽으면 표시 번호가 바뀐다
+    const reread = {
+      url: otp.url,
+      text: '인증번호를 입력해 주세요 [e31 입력칸 "인증번호"] [e32 버튼 "확인"]',
+    }
+    const b = fakeBrowser([form, otp, signed])
+    let asked = false
+    const orig = b.call.bind(b)
+    b.call = async (method, args) => {
+      if (method === 'snapshot' && asked) {
+        b.calls.push([method, args])
+        return b.calls.some(([m]) => m === 'click' && (args as { tabId?: number }).tabId !== undefined) &&
+          b.calls.filter(([m]) => m === 'click').at(-1)?.[1].ref === 'e32'
+          ? signed
+          : reread
+      }
+      return orig(method, args)
+    }
+    const r = await autoLogin(
+      b,
+      {
+        card,
+        url: form.url,
+        username: 'a',
+        password: 'b',
+        ask: {
+          info: async () => {
+            asked = true
+            return '123456'
+          },
+        },
+      },
+      { wait: 0 },
+    )
+    expect(b.calls.some(([m, a]) => m === 'type' && a.ref === 'e31')).toBe(true)
+    expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e32')).toBe(true)
+    expect(r.status).toBe('ok')
+  })
+
   it('인증번호를 안 넣으면 사람에게 넘긴다', async () => {
     const otp = {
       url: 'https://login.shop.test/verify',

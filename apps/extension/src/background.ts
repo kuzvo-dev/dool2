@@ -566,8 +566,30 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       lastPopup = undefined
       const before = (await chrome.tabs.get(tabId)).url
       let via: 'mouse' | 'key' | 'script' = 'mouse'
-      if (!at.hidden) await clickAt(tabId, at.x, at.y)
-      else {
+      // 창이 일부 가려져 있으면 '보인다'고 나와도 Chrome이 마우스 입력을 버릴 때가 있다 (실측: 인증번호 확인 버튼).
+      // 눌러도 화면이 하나도 안 바뀌었으면 아래 키보드 방식으로 한 번 더 누른다
+      // 화면 변화: 주소·초점·체크된 칸 수·문서 크기 (마우스가 먹으면 적어도 초점이 버튼으로 간다)
+      const mark = () =>
+        inPage(tabId, () => {
+          const f = document.activeElement
+          return [
+            location.href,
+            f ? `${f.tagName}#${f.id}.${f.getAttribute('name') ?? ''}` : '',
+            document.querySelectorAll(':checked').length,
+            document.body?.getElementsByTagName('*').length ?? 0,
+            document.body?.innerText.length ?? 0,
+          ].join('|')
+        }).catch(() => '')
+      let mouseIgnored = false
+      if (!at.hidden) {
+        const sig = await mark()
+        await clickAt(tabId, at.x, at.y)
+        await settle(tabId, before)
+        mouseIgnored = sig !== '' && sig === (await mark())
+      }
+      // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 마우스가 안 먹은 것처럼 보여도 다시 누르지 않는다
+      const retry = mouseIgnored && !(await locate(tabId, a.ref, 'activate')).toggle
+      if (at.hidden || retry) {
         // 두리 창이 가려져 있거나 화면이 꺼져 있으면 Chrome이 마우스 입력을 버린다 (키보드는 받는다, 실측).
         // 그래서 요소에 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다
         const act = await locate(tabId, a.ref, 'activate')
@@ -577,10 +599,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageClick, String(a.ref))
         } else {
           via = 'key'
+          const sig = await mark()
           await pressKey(tabId, act.toggle ? 'Space' : 'Enter')
+          await settle(tabId, before)
+          // 뒤에 가려진 창은 키도 안 먹을 때가 있다 (실측): 그래도 그대로면 페이지 안에서 누른다
+          if (!act.toggle && sig !== '' && sig === (await mark())) {
+            via = 'script'
+            await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageClick, String(a.ref))
+          }
         }
+        await settle(tabId, before)
       }
-      await settle(tabId, before)
       return {
         ...(await pageState(tabId)),
         via,
