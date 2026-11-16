@@ -326,6 +326,75 @@ describe('폰 입력 화면으로 묻기', () => {
     expect(r.status).toBe('ok')
   })
 
+  it('휴대폰 앱에서 승인하라는 화면이면 카드에 알리고, 승인되면 이어서 끝낸다', async () => {
+    const confirmPage = {
+      url: 'https://login.shop.test/confirm',
+      text: '카카오톡으로 로그인 확인 요청을 보냈어요. 카카오톡에서 확인을 눌러 주세요 [e3 버튼 "다시 보내기"]',
+    }
+    const done = { url: 'https://shop.test/', text: '홍길동님 [e9 링크 "로그아웃"]' }
+    const calls: string[] = []
+    let i = 0
+    let seenConfirm = 0
+    const pages = [form, confirmPage]
+    const b = {
+      async call(method: string, _args: Record<string, unknown>) {
+        calls.push(method)
+        if (method === 'open') return { tabId: 7 }
+        if (method === 'snapshot') {
+          const p = pages[Math.min(i, pages.length - 1)]
+          // 승인 화면을 두 번 본 뒤 사용자가 휴대폰에서 눌렀다고 치고 로그인된 화면으로
+          if (p === confirmPage && ++seenConfirm > 2) return done
+          return p
+        }
+        if (method === 'click' || method === 'press') i++
+        return {}
+      },
+    }
+    const steps: { text: string; ask?: { kind: string } }[] = []
+    const r = await autoLogin(
+      b,
+      {
+        card,
+        url: form.url,
+        username: 'a',
+        password: 'b',
+        step: (text, ask) => steps.push({ text, ...(ask ? { ask } : {}) }),
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(steps.find((s) => s.ask?.kind === 'confirm')?.text).toBe('카카오톡에서 확인을 눌러 주세요')
+  }, 15_000)
+
+  it('아이디·비밀번호 연결 중 네이버 같은 간편 로그인 화면에 오면 절대 넣지 않는다', async () => {
+    const naver = {
+      url: 'https://nid.naver.com/oauth2.0/authorize?client_id=x',
+      text: '[e5 입력칸 "아이디 또는 전화번호"] [e6 비밀번호칸 "비밀번호"] [e7 버튼 "로그인"]',
+    }
+    const b = fakeBrowser([home, naver])
+    const r = await autoLogin(
+      b,
+      { card: { ...card, site: 'trip.com' }, url: home.url, username: 'a', password: 'b' },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('unknown')
+    expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
+  })
+
+  it('네이버 연결 카드는 네이버 로그인 화면에 넣는다', async () => {
+    const naver = {
+      url: 'https://nid.naver.com/nidlogin.login',
+      text: '[e5 입력칸 "아이디 또는 전화번호"] [e6 비밀번호칸 "비밀번호"] [e7 버튼 "로그인"]',
+    }
+    const b = fakeBrowser([naver, { url: 'https://www.naver.com/', text: '[e1 링크 "로그아웃"]' }])
+    const r = await autoLogin(
+      b,
+      { card: { ...card, id: 'naver', site: 'naver.com' }, url: naver.url, username: 'a', password: 'b' },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+  })
+
   it('인증번호를 안 넣으면 사람에게 넘긴다', async () => {
     const otp = {
       url: 'https://login.shop.test/verify',

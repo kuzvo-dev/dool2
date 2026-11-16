@@ -162,6 +162,8 @@ const st: {
   connecting: Set<string>
   /** 연결하는 동안 본체가 알려 온 단계 (서비스 id → 단계) */
   connectSteps: Map<string, ConnectStep[]>
+  /** 연결이 끝까지 못 갔을 때 그 까닭 (카드가 "직접 마쳐 주세요"·"다시 넣기"로 남는다) */
+  connectFails: Map<string, { reason: 'human' | 'wrong' | 'unknown'; message: string; tabId?: number }>
   /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
   work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
@@ -212,6 +214,7 @@ const st: {
   ideaCat: 'all',
   connecting: new Set(),
   connectSteps: new Map(),
+  connectFails: new Map(),
   work: { web: false },
   ideaQuery: '',
   agentSeg: 'activity',
@@ -453,6 +456,7 @@ async function receive(env: Envelope) {
     }
     case 'connections': {
       st.services = msg.services
+      for (const s of msg.services) if (s.connectedAt) st.connectFails.delete(s.card.id)
       // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
       const v = st.screen
       if (v.name === 'remote' && v.connectId) {
@@ -476,6 +480,8 @@ async function receive(env: Envelope) {
       return
     case 'connect-status':
       st.connecting = new Set(msg.connecting)
+      // 다시 하기 시작하면 지난번 실패는 지운다
+      for (const id of msg.connecting) st.connectFails.delete(id)
       for (const id of st.connectSteps.keys()) if (!st.connecting.has(id)) st.connectSteps.delete(id)
       break
     case 'connect-progress':
@@ -489,13 +495,26 @@ async function receive(env: Envelope) {
       }
       if (msg.tabId !== undefined) st.connectTabs.set(msg.id, msg.tabId)
       if (msg.ok) {
+        st.connectFails.delete(msg.id)
+        // 연결 목록이 오기 전에도 카드가 바로 "연결돼 있어요"로 (잠깐 처음 상태로 돌아가 보이지 않게)
+        const it = st.services?.find((x) => x.card.id === msg.id)
+        if (it && !it.connectedAt) it.connectedAt = new Date().toISOString()
+      } else
+        st.connectFails.set(msg.id, {
+          reason: msg.reason ?? (msg.human ? 'human' : 'unknown'),
+          message: msg.message,
+          ...(msg.tabId !== undefined ? { tabId: msg.tabId } : {}),
+        })
+      if (msg.ok) {
         st.connectTabs.delete(msg.id)
         if (st.overlay?.kind === 'connect') st.overlay = undefined
         // 대화를 보고 있으면 카드가 "연결돼 있어요"로 바뀌는 걸로 충분하다 (같은 말을 또 띄우지 않는다)
         if (st.tab !== 'chat' || st.screen.name !== 'app') toast(msg.message)
         runAfterConnect(msg.id)
+      } else if (st.tab === 'chat' && st.screen.name === 'app') {
+        // 대화를 보고 있으면 연결 카드가 까닭과 [화면 열기]·[다시 넣기]로 바뀐다 (화면을 갑자기 바꾸지 않는다)
       } else if (msg.tabId !== undefined) {
-        // 로봇 확인·본인인증, 자동 로그인 실패: 그 화면을 바로 열어 직접 마치게 한다
+        // 연결 화면에서 기다리던 중: 그 화면을 바로 열어 직접 마치게 한다
         toast(msg.message)
         openRemote(msg.tabId, msg.id)
         return
@@ -869,7 +888,11 @@ function updateWorkPanel(card: HTMLElement) {
  */
 function connectWaiting(id: string): ConnectStep['ask'] | undefined {
   const open = (a: NonNullable<ConnectStep['ask']>) =>
-    a.kind === 'login' ? st.logins.get(a.id)?.status === 'pending' : st.infos.has(a.id)
+    a.kind === 'confirm'
+      ? st.connecting.has(id)
+      : a.kind === 'login'
+        ? st.logins.get(a.id)?.status === 'pending'
+        : st.infos.has(a.id)
   const last = st.connectSteps.get(id)?.at(-1)?.ask
   if (last) return open(last) ? last : undefined
   if (!st.connecting.has(id)) return undefined
@@ -877,6 +900,62 @@ function connectWaiting(id: string): ConnectStep['ask'] | undefined {
   if (login) return { kind: 'login', id: login.id, label: `${login.site} 넣기` }
   const info = [...st.infos.values()].at(-1)
   return info ? { kind: 'info', id: info.id, label: `${info.label} 넣기` } : undefined
+}
+
+/**
+ * 연결이 끝까지 못 갔을 때 카드: 까닭 + 바로 할 수 있는 것 하나.
+ * 사람 차례(보안문자·본인인증)는 [화면 열기] — 마치면 두리가 알아서 연결로 표시한다
+ */
+function connectFailCard(
+  c: ConnectionItem['card'],
+  fail: NonNullable<ReturnType<typeof st.connectFails.get>>,
+  mark: HTMLElement,
+): HTMLElement {
+  const tab = fail.tabId
+  const openScreen = () => tab !== undefined && openRemote(tab, c.id)
+  const retry = () => openOverlay({ kind: 'connect', id: c.id })
+  const view =
+    fail.reason === 'wrong'
+      ? {
+          title: '아이디나 비밀번호가 맞지 않아요',
+          meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
+          main: h('button', { class: 'btn', text: '다시 넣기', onclick: retry }),
+          sub:
+            tab !== undefined
+              ? h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen })
+              : undefined,
+        }
+      : fail.reason === 'human'
+        ? {
+            title: '이 단계는 직접 해 주셔야 해요',
+            meta: `${fail.message.replace(/\.?\s*화면을 열어 직접 마쳐 주세요\.?$/, '')}. 마치시면 두리가 알아서 연결해요`,
+            main:
+              tab !== undefined
+                ? h('button', { class: 'btn', text: '화면 열기', onclick: openScreen })
+                : undefined,
+            sub: h('button', { class: 'btn-ghost', text: '처음부터 다시', onclick: retry }),
+          }
+        : {
+            title: `${c.name} 로그인을 끝까지 못 했어요`,
+            meta:
+              tab !== undefined ? `${fail.message} 화면에서 마치시면 두리가 알아서 연결해요` : fail.message,
+            main:
+              tab !== undefined
+                ? h('button', { class: 'btn', text: '화면 보며 직접', onclick: openScreen })
+                : undefined,
+            sub: h('button', { class: 'btn-ghost', text: '다시 해 보기', onclick: retry }),
+          }
+  return h(
+    'div',
+    { class: 'card approve-card connect-card ask' },
+    h(
+      'div',
+      { class: 'approve-head' },
+      mark,
+      h('div', {}, h('strong', { text: view.title }), h('span', { class: 'meta', text: view.meta })),
+    ),
+    h('div', { class: 'approve-actions' }, view.sub, view.main),
+  )
 }
 
 /** 연결하는 동안 단계: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
@@ -1912,8 +1991,9 @@ function toolSig(raw: string) {
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
-      const wait = it ? (connectWaiting(it.card.id)?.id ?? '') : ''
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}`
+      const wait = it ? (connectWaiting(it.card.id)?.kind ?? '') + (connectWaiting(it.card.id)?.id ?? '') : ''
+      const fail = it ? (st.connectFails.get(it.card.id)?.reason ?? '') : ''
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}`
     }
   } catch {}
   return ''
@@ -2092,7 +2172,34 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   const busy = st.connecting.has(c.id)
   const browser = c.how === 'browser'
   // 계정·인증번호를 기다리면: 무엇이 필요한지와 [넣기] 버튼 (빙글빙글만 돌지 않게)
+  const fail = busy ? undefined : st.connectFails.get(c.id)
+  if (fail) return connectFailCard(c, fail, mark(true))
   const wait = busy ? connectWaiting(c.id) : undefined
+  if (wait?.kind === 'confirm') {
+    // 휴대폰 앱에서 승인: 넣을 건 없고, 누르면 두리가 알아서 이어 간다
+    const step = st.connectSteps.get(c.id)?.at(-1)?.text ?? '휴대폰에서 확인을 눌러 주세요'
+    return h(
+      'div',
+      { class: 'card approve-card connect-card ask' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark(true),
+        h('div', {}, h('strong', { text: step }), h('span', { class: 'meta', text: wait.detail ?? '' })),
+        h('span', { class: 'spin' }),
+      ),
+      connectStepList(c.id, true),
+      h(
+        'div',
+        { class: 'approve-actions' },
+        h('button', {
+          class: 'btn-ghost',
+          text: 'PC 화면 보기',
+          onclick: () => openRemote(Number(wait.id), c.id),
+        }),
+      ),
+    )
+  }
   if (wait) {
     const what = wait.label.replace(/ 넣기$/, '')
     return h(
@@ -2116,7 +2223,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         h('button', {
           class: 'btn',
           text: wait.label,
-          onclick: () => openOverlay({ kind: wait.kind, id: wait.id }),
+          onclick: () => openOverlay({ kind: wait.kind === 'login' ? 'login' : 'info', id: wait.id }),
         }),
       ),
     )
@@ -3246,6 +3353,8 @@ interface CredTarget {
   logo?: string
   /** 카카오·네이버 같은 공급자 계정이면 그 로고 */
   brand?: SocialProvider
+  /** 간편 로그인만 되는 곳 (아이디·비밀번호 로그인이 없다): 아이디 칸을 보여 주지 않는다 */
+  socialOnly?: boolean
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -3329,10 +3438,12 @@ function credSheet(t: CredTarget) {
               return b
             }),
           ),
-          h('p', { class: 'social-or' }, h('span', { text: '또는 아이디·비밀번호로' })),
+          ...(t.socialOnly
+            ? []
+            : [h('p', { class: 'social-or' }, h('span', { text: '또는 아이디·비밀번호로' }))]),
         ]
       : []),
-    form,
+    ...(t.socialOnly && t.social?.length ? [] : [form]),
     h(
       'p',
       { class: 'lock-note' },
@@ -3457,6 +3568,8 @@ function connectSheet(id: string) {
     },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
+    // 간편 로그인·문자 인증만 되는 곳(캐치테이블·에이블리): 아이디 칸은 헷갈리기만 한다
+    socialOnly: Boolean(it.card.social?.length) && !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
     social: (it.card.social ?? []).map((provider) => ({
       provider,
       onclick: () => {
