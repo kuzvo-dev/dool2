@@ -587,7 +587,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     {
       relay: relayUrl,
       appUrl: () => process.env.DOOL2_APP_URL || opts.appUrl,
-      ...(opts.pcName ? { name: opts.pcName } : {}),
+      name: () => readSettings().pcName || opts.pcName,
+      rename: (name) => {
+        store.setSetting('pcName', name)
+        events.emit('settings', readSettings())
+      },
       ...(opts.push ? { push: opts.push } : {}),
     },
   )

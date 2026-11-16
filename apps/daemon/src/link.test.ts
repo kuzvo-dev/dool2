@@ -154,6 +154,11 @@ describe('폰 연결', () => {
       (m) => m.kind === 'stream' && m.event.type === 'saved' && m.event.message.role === 'assistant',
     )
     expect(JSON.stringify(answer)).toContain('받았어요: 안녕 두리')
+
+    // 폰에서 PC 이름을 바꾸면 PC 설정에 남고, 폰에 새 이름이 온다
+    await p.send({ kind: 'rename-pc', name: '  집 맥북  ' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.pcName === '집 맥북'))
+    expect((await api('/api/settings')).settings.pcName).toBe('집 맥북')
   })
 
   it('페어링 안 된 기기, 틀린 비밀, 재전송은 버린다', async () => {
