@@ -2790,3 +2790,50 @@ textarea.ghosting {
   margin-top: 2px;
   font-size: 14px;
 }
+
+/* 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호) */
+.info-sheet .otp {
+  margin: 6px 0 2px;
+}
+.info-hint {
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.info-sheet .cred-form {
+  display: grid;
+  gap: 10px;
+}
+/* 공급자 계정 시트의 로고 칸 */
+.brand-tile .brand-mark {
+  position: static;
+  width: 30px;
+  height: 30px;
+  transform: none;
+}
+.brand-tile.kakao {
+  background: #fee500;
+}
+.brand-tile.naver {
+  background: #03c75a;
+}
+.brand-tile.google {
+  background: #fff;
+  border: 1px solid #dadce0;
+}
+.brand-tile.apple {
+  background: #000;
+}
+.brand-tile.facebook {
+  background: #1877f2;
+}
+.brand-tile.payco {
+  background: #fa2828;
+}
+.brand-tile.naver .brand-mark {
+  width: 22px;
+  height: 22px;
+}

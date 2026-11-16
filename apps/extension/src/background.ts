@@ -21,6 +21,7 @@ import {
   pageTapAt,
   pageViewport,
 } from './page.js'
+import { tidyPlan } from './tidy.js'
 
 /** @dool2/protocol의 BROWSER_HOST_NAME과 같아야 한다 (테스트로 확인) */
 export const HOST_NAME = 'com.dool2.host'
@@ -81,6 +82,8 @@ function onMessage(p: chrome.runtime.Port, msg: unknown) {
   const req = msg as BridgeRequest
   if (typeof req.id !== 'number') return
   setStatus({ state: 'on' })
+  const tabId = (req.args as { tabId?: unknown } | undefined)?.tabId
+  if (typeof tabId === 'number') touch(tabId)
   run(req.cmd, req.args ?? {}).then(
     (result) => p.postMessage({ id: req.id, ok: true, result }),
     (e: Error) => p.postMessage({ id: req.id, ok: false, error: e.message || String(e) }),
@@ -90,7 +93,9 @@ function onMessage(p: chrome.runtime.Port, msg: unknown) {
 // 서비스 워커는 쉬면 꺼진다. 연결이 살아 있으면 Chrome이 깨워 두고, 끊기면 30초마다 다시 붙는다
 chrome.alarms.create('dool2-reconnect', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === 'dool2-reconnect') connect()
+  if (a.name !== 'dool2-reconnect') return
+  connect()
+  void tidy()
 })
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
@@ -109,6 +114,8 @@ interface Saved {
   windowId?: number
   owned: number[]
   groupId?: number
+  /** 탭마다 두리가 마지막으로 쓴 때 (서비스 워커가 쉬었다 깨도 남게) */
+  used?: Record<string, number>
 }
 async function load(): Promise<Saved> {
   const s = (await chrome.storage.session.get('dool2')).dool2 as Saved | undefined
@@ -135,10 +142,16 @@ async function ownedTab(args: Record<string, unknown>): Promise<number> {
   const s = await load()
   if (!Number.isInteger(tabId) || !s.owned.includes(tabId))
     throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+  let tab: chrome.tabs.Tab
   try {
-    await chrome.tabs.get(tabId)
+    tab = await chrome.tabs.get(tabId)
   } catch {
     throw new Error('탭이 닫혔어요')
+  }
+  // 오래 안 써서 잠재운 탭이면 다시 불러온다
+  if (tab.discarded) {
+    await chrome.tabs.reload(tabId)
+    await waitLoad(tabId)
   }
   return tabId
 }
@@ -166,8 +179,62 @@ async function openTab(url: string): Promise<chrome.tabs.Tab> {
     x.owned = [...new Set([...x.owned, id])]
     if (s.windowId !== undefined) x.windowId = s.windowId
   })
+  touch(id)
   await groupTab(id)
+  void tidy(id)
   return tab
+}
+
+// ── 다 쓴 두리 탭 정리 (메모리) ─────────────────────────────
+// AI가 일 끝에 탭 닫기를 잊으면 탭이 쌓여 Chrome이 몇 GB씩 먹는다.
+// 오래 안 쓴 탭은 잠재우고(discard), 더 오래되거나 너무 많으면 닫는다 (tidy.ts)
+
+const usedAt = new Map<number, number>()
+let usedSavedAt = 0
+function touch(tabId: number) {
+  usedAt.set(tabId, Date.now())
+  // 저장은 가끔만 (명령마다 저장하면 느려진다)
+  if (Date.now() - usedSavedAt < 30_000) return
+  usedSavedAt = Date.now()
+  void update((s) => {
+    s.used = Object.fromEntries([...usedAt].filter(([id]) => s.owned.includes(id)))
+  })
+}
+
+let tidying = false
+async function tidy(fresh?: number) {
+  if (tidying) return
+  tidying = true
+  try {
+    const s = await load()
+    const now = Date.now()
+    const tabs = []
+    for (const id of s.owned) {
+      const t = await chrome.tabs.get(id).catch(() => undefined)
+      if (!t) continue
+      // 서비스 워커가 다시 깨어나 기록이 없으면 지금 쓴 것으로 본다 (깨자마자 몽땅 닫지 않게)
+      const at = usedAt.get(id) ?? s.used?.[id] ?? now
+      usedAt.set(id, at)
+      tabs.push({
+        id,
+        usedAt: at,
+        keep: id === fresh || phoneView.has(id) || emulated.has(id),
+        discarded: Boolean(t.discarded),
+        active: Boolean(t.active),
+      })
+    }
+    const plan = tidyPlan(tabs, now)
+    for (const id of plan.close) {
+      await detach(id)
+      await chrome.tabs.remove(id).catch(() => undefined)
+    }
+    for (const id of plan.sleep) {
+      await detach(id)
+      await chrome.tabs.discard(id).catch(() => undefined)
+    }
+  } finally {
+    tidying = false
+  }
 }
 
 async function groupTab(tabId: number) {
@@ -224,6 +291,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     s.owned = s.owned.filter((t) => t !== tabId)
   })
   if (!had) return
+  usedAt.delete(tabId)
   frameMaps.delete(tabId)
   attached.delete(tabId)
   port?.postMessage({ event: 'tab-closed', tabId })
