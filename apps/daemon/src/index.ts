@@ -528,9 +528,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       screen: async (tabId, fit) => {
         const s = await browserTools.remoteScreen(tabId, fit)
         remoteViewport.set(tabId, s.viewport)
-        return { shot: s.data, url: s.url, title: s.title }
+        return {
+          shot: s.data,
+          url: s.url,
+          title: s.title,
+          ...(s.fields ? { fields: s.fields } : {}),
+          ...(s.actions ? { actions: s.actions } : {}),
+          ...(s.focus !== undefined ? { focus: s.focus } : {}),
+        }
       },
-      remote: async ({ tabId, action, x, y, text, key, dy }) => {
+      remote: async ({ tabId, action, x, y, text, key, dy, w, h }) => {
         const viewport = remoteViewport.get(tabId) ?? (await browserTools.remoteScreen(tabId)).viewport
         await browserTools.remoteInput(
           tabId,
@@ -541,6 +548,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ...(text !== undefined ? { text } : {}),
             ...(key !== undefined ? { key } : {}),
             ...(dy !== undefined ? { dy } : {}),
+            ...(w !== undefined ? { w } : {}),
+            ...(h !== undefined ? { h } : {}),
           },
           viewport,
         )
