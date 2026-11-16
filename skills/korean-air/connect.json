@@ -4,6 +4,13 @@
   "site": "koreanair.com",
   "category": "flight",
   "how": "browser",
+  "loginUrl": "https://www.koreanair.com/login",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "스카이패스 아이디·비밀번호",
   "summary": "항공권 검색과 예매부터 예약 확인과 취소, 스카이패스 마일리지 확인까지 두리에게 맡길 수 있어요.",
   "example": {

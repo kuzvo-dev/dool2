@@ -4,6 +4,9 @@
   "site": "uniqlo.com",
   "category": "fashion",
   "how": "browser",
+  "social": [
+    "kakao"
+  ],
   "login": "아이디·비밀번호",
   "summary": "유니클로에서 맞는 사이즈 재고 확인과 주문, 배송 확인, 찜한 상품 세일 알림까지 두리에게 맡길 수 있어요.",
   "example": {

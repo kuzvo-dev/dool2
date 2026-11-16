@@ -4,6 +4,12 @@
   "site": "kt.com",
   "category": "telecom",
   "how": "browser",
+  "loginUrl": "https://accounts.kt.com/login/id",
+  "social": [
+    "kakao",
+    "naver",
+    "apple"
+  ],
   "login": "KT 아이디",
   "summary": "데이터 이용량과 실시간 요금 확인, 요금제 변경, 부가서비스 가입과 해지를 두리에게 맡길 수 있어요.",
   "example": {

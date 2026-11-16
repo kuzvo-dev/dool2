@@ -4,6 +4,13 @@
   "site": "kyobobook.co.kr",
   "category": "books",
   "how": "browser",
+  "loginUrl": "https://mmbr.kyobobook.co.kr/login",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "집으로 받든 매장에서 찾아가든, 책 주문과 확인을 두리에게 맡길 수 있어요.",
   "example": {

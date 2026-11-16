@@ -4,6 +4,12 @@
   "site": "jinair.com",
   "category": "flight",
   "how": "browser",
+  "loginUrl": "https://www.jinair.com/login/login",
+  "social": [
+    "kakao",
+    "naver",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "최저가 항공권 찾기와 예매, 예약 내역 확인까지 두리에게 맡길 수 있어요.",
   "example": {
