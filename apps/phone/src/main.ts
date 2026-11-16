@@ -70,6 +70,7 @@ import {
   drawCheck,
   gooFilter,
   holdButton,
+  otpBoxes,
   playFlip,
   playSeg,
   riseIn,
