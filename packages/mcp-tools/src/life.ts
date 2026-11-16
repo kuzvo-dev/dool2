@@ -192,4 +192,24 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     },
     call('feed_post'),
   )
+  server.registerTool(
+    'conversation_search',
+    {
+      title: '지난 대화 찾기',
+      description:
+        '사용자와 예전에 나눈 대화를 찾는다. 사용자가 앞에서 한 이야기("지난주에 본 청소기 뭐였지?", "그때 말한 식당")를 꺼냈는데 ' +
+        '지금 기억(앞 대화 요약·최근 대화)에 없으면 짐작하지 말고 이것으로 먼저 찾아본다. ' +
+        '날짜(한국 시간)·누가 한 말인지와 함께 짧은 글이 온다. 맞는 게 없으면 낱말을 바꿔 한 번 더 찾는다.',
+      inputSchema: {
+        query: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe('찾을 낱말 1~3개 (예: "청소기", "부산 SRT", "국밥집"). 문장 대신 핵심 낱말로'),
+        limit: z.number().int().min(1).max(20).optional().describe('최대 몇 개 (기본 10)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('conversation_search'),
+  )
 }

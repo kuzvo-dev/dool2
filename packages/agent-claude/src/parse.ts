@@ -6,6 +6,7 @@ export const DOOL2_TOOL_PREFIX = 'mcp__dool2__'
 type Json = Record<string, unknown>
 
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 /**
  * `claude -p --output-format stream-json --verbose --include-partial-messages` 출력을
@@ -15,6 +16,7 @@ export class ClaudeStreamParser {
   private readonly toolNames = new Map<string, string>()
   private sawDelta = false
   private sessionId: string | undefined
+  private contextTokens = 0
 
   push(line: string): AgentEvent[] {
     let msg: unknown
@@ -91,6 +93,13 @@ export class ClaudeStreamParser {
   }
 
   private onAssistant(msg: Json): AgentEvent[] {
+    // AI 호출마다 들어오는 사용량. 마지막 호출의 입력 토큰(캐시 포함)이 지금 세션의 크기다.
+    // result의 사용량은 호출들을 더한 값이라 크기로 쓰면 안 된다
+    if (isObj(msg.message) && isObj(msg.message.usage) && typeof msg.parent_tool_use_id !== 'string') {
+      const u = msg.message.usage
+      const tokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
+      if (tokens > 0) this.contextTokens = tokens
+    }
     const content = isObj(msg.message) && Array.isArray(msg.message.content) ? msg.message.content : []
     const out: AgentEvent[] = []
     for (const block of content) {
@@ -135,7 +144,8 @@ export class ClaudeStreamParser {
         },
       ]
     }
-    return [{ type: 'done', text, ...(this.sessionId ? { resumeId: this.sessionId } : {}) }]
+    const done: AgentEvent = { type: 'done', text, ...(this.sessionId ? { resumeId: this.sessionId } : {}) }
+    return this.contextTokens ? [{ type: 'context', tokens: this.contextTokens }, done] : [done]
   }
 }
 

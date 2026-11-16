@@ -59,6 +59,7 @@ export class OpenCodeEventMapper {
   private text = ''
   private toolNames = new Map<string, string>()
   private reported = false
+  private contextTokens = 0
 
   constructor(private readonly sessionId: string) {}
 
@@ -105,7 +106,15 @@ export class OpenCodeEventMapper {
         }
       }
       case 'session.step.ended': {
-        const tokens = (d.tokens ?? {}) as { input?: number; output?: number }
+        const tokens = (d.tokens ?? {}) as {
+          input?: number
+          output?: number
+          cache?: { read?: number; write?: number }
+        }
+        // 단계(AI 호출 한 번)의 입력은 캐시를 뺀 값이라 캐시 읽기·쓰기를 더해야 세션 크기가 된다.
+        // 마지막 단계의 값을 차례 끝에 한 번 알린다
+        const size = num(tokens.input) + num(tokens.cache?.read) + num(tokens.cache?.write)
+        if (size > 0) this.contextTokens = size
         return {
           events: [
             {
@@ -117,8 +126,13 @@ export class OpenCodeEventMapper {
           ],
         }
       }
-      case 'session.execution.succeeded':
-        return { events: [{ type: 'done', resumeId: this.sessionId, text: this.text }], finished: true }
+      case 'session.execution.succeeded': {
+        const done: AgentEvent = { type: 'done', resumeId: this.sessionId, text: this.text }
+        return {
+          events: this.contextTokens ? [{ type: 'context', tokens: this.contextTokens }, done] : [done],
+          finished: true,
+        }
+      }
       case 'session.execution.failed':
       case 'session.step.failed': {
         // 단계 실패 다음에 실행 실패가 한 번 더 온다. 한 번만 알린다

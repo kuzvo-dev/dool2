@@ -121,6 +121,8 @@ export class ThreadService {
           if (!answer.trim() && ev.text) answer = ev.text
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
+        // 구간의 실제 크기: 다음 말 전에 구간을 바꿀지 볼 때 쓴다 (ADR 0015)
+        if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
         yield { type: 'agent', event: ev }
         if (ev.type === 'done' && answer && !saved) {
           saved = true

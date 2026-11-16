@@ -93,6 +93,7 @@ const TOOL_LABEL: Record<string, string> = {
   photo_view: '사진 보는',
   feed_post: '피드에 올리는',
   connect_ask: '연결 카드 띄우는',
+  conversation_search: '지난 대화 찾는',
 }
 export function toolLabel(name: string): string {
   return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'

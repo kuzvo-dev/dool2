@@ -32,6 +32,8 @@ const MIGRATIONS: string[] = [
    CREATE INDEX messages_time ON messages(created_at);`,
   // 따로 하는 대화(주제별·피드 글): 메인 대화의 구간이 아니다. 메인 대화 기록과 "지금 구간"에서 뺀다
   `ALTER TABLE threads ADD COLUMN side INTEGER NOT NULL DEFAULT 0;`,
+  // 구간의 실제 크기: AI가 마지막 차례에 읽은 토큰 수 (브라우저 페이지 같은 도구 결과 포함)
+  `ALTER TABLE threads ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 interface ThreadRow {
@@ -166,14 +168,54 @@ export class Store {
       .run(this.stamp(), keepId)
   }
 
-  /** 구간의 길이: 사용자 차례 수와 저장된 글자 수 */
-  sessionSize(id: string): { turns: number; chars: number } {
+  /** 구간의 길이: 사용자 차례 수, 저장된 글자 수, AI가 마지막 차례에 읽은 토큰 수 */
+  sessionSize(id: string): { turns: number; chars: number; contextTokens: number } {
     const row = this.db
       .prepare(
         "SELECT SUM(role = 'user') AS turns, COALESCE(SUM(LENGTH(text)), 0) AS chars FROM messages WHERE thread_id = ?",
       )
       .get(id) as { turns: number | null; chars: number }
-    return { turns: row.turns ?? 0, chars: row.chars }
+    const t = this.db.prepare('SELECT context_tokens FROM threads WHERE id = ?').get(id) as
+      | { context_tokens: number | null }
+      | undefined
+    return { turns: row.turns ?? 0, chars: row.chars, contextTokens: t?.context_tokens ?? 0 }
+  }
+
+  /** 구간의 실제 크기(토큰)를 남긴다. 쉰 시간 계산이 흔들리지 않게 updated_at은 건드리지 않는다 */
+  setContextTokens(id: string, tokens: number) {
+    this.db
+      .prepare('UPDATE threads SET context_tokens = ? WHERE id = ?')
+      .run(Math.max(0, Math.round(tokens)), id)
+  }
+
+  /**
+   * 대화 기록 찾기: 메인 대화(모든 구간)의 사용자·두리 말에서 찾는다. 따로 하는 대화는 뺀다.
+   * 띄어쓰기는 무시하고("로봇청소기" = "로봇 청소기"), 낱말이 여럿이면 많이 맞은 것부터, 같으면 최근 것부터.
+   */
+  searchConversation(
+    query: string,
+    opts: { limit?: number; excludeThreadId?: string } = {},
+  ): StoredMessage[] {
+    const words = [...new Set(query.split(/\s+/).filter(Boolean))]
+    // 낱말이 여럿이면 한 글자 낱말("본", "거")은 뺀다. 거의 모든 말에 걸린다
+    const long = words.filter((w) => w.length > 1)
+    const terms = (words.length > 1 && long.length ? long : words)
+      .slice(0, 6)
+      .map((w) => `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`)
+    if (!terms.length) return []
+    const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 10)), 50)
+    const flat =
+      "REPLACE(REPLACE(REPLACE(REPLACE(m.text, ' ', ''), char(10), ''), char(13), ''), char(9), '')"
+    const score = terms.map(() => `(${flat} LIKE ? ESCAPE '\\')`).join(' + ')
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT m.*, (${score}) AS score FROM messages m JOIN threads t ON t.id = m.thread_id
+           WHERE t.side = 0 AND m.role IN ('user', 'assistant') AND m.thread_id != ?
+         ) WHERE score > 0 ORDER BY score DESC, created_at DESC LIMIT ?`,
+      )
+      .all(...terms, opts.excludeThreadId ?? '', limit) as unknown as MessageRow[]
+    return rows.map(toMessage)
   }
 
   /**

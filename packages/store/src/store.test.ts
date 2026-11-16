@@ -82,11 +82,79 @@ describe('Store', () => {
     it('구간 길이를 센다', () => {
       store = new Store(':memory:')
       const t = store.createThread('claude')
-      expect(store.sessionSize(t.id)).toEqual({ turns: 0, chars: 0 })
+      expect(store.sessionSize(t.id)).toEqual({ turns: 0, chars: 0, contextTokens: 0 })
       store.addMessage(t.id, 'user', '안녕')
       store.addMessage(t.id, 'assistant', '반가워요')
-      expect(store.sessionSize(t.id)).toEqual({ turns: 1, chars: 6 })
+      expect(store.sessionSize(t.id)).toEqual({ turns: 1, chars: 6, contextTokens: 0 })
     })
+
+    it('구간의 실제 크기(토큰)를 남기고, 마지막 말 시각은 그대로 둔다', () => {
+      store = new Store(':memory:')
+      const t = store.createThread('claude')
+      store.addMessage(t.id, 'user', '쿠팡에서 청소기 찾아 줘')
+      const before = store.getThread(t.id)?.updatedAt
+      store.setContextTokens(t.id, 84_321.6)
+      expect(store.sessionSize(t.id).contextTokens).toBe(84_322)
+      expect(store.getThread(t.id)?.updatedAt).toBe(before)
+    })
+  })
+})
+
+describe('대화 기록 찾기', () => {
+  function seed() {
+    const db = new Store(':memory:')
+    store = db
+    const old = db.createThread('claude')
+    db.addMessage(old.id, 'user', '로봇 청소기 30만 원 아래로 찾아 줘')
+    db.addMessage(old.id, 'assistant', '로보락 Q7이 27만 9천 원이에요. 물걸레도 돼요.')
+    db.addMessage(old.id, 'tool', '{"kind":"approval","what":"청소기 결제"}')
+    db.addMessage(old.id, 'user', '100% 할인_쿠폰 있어?')
+    db.closeSession(old.id)
+    const side = db.createThread('claude', '피드', undefined, true)
+    db.addMessage(side.id, 'assistant', '청소기 특가 소식이에요')
+    const cur = db.createThread('claude')
+    db.addMessage(cur.id, 'user', '지난주에 본 청소기 뭐였지?')
+    return { db, cur }
+  }
+
+  it('모든 구간의 사용자·두리 말을 최근 것부터 찾고, 도구 기록·따로 하는 대화는 뺀다', () => {
+    const { db } = seed()
+    expect(db.searchConversation('청소기').map((m) => m.text)).toEqual([
+      '지난주에 본 청소기 뭐였지?',
+      '로봇 청소기 30만 원 아래로 찾아 줘',
+    ])
+  })
+
+  it('지금 구간은 뺄 수 있다 (AI가 이미 알고 있다)', () => {
+    const { db, cur } = seed()
+    expect(db.searchConversation('청소기', { excludeThreadId: cur.id }).map((m) => m.text)).toEqual([
+      '로봇 청소기 30만 원 아래로 찾아 줘',
+    ])
+  })
+
+  it('띄어쓰기를 무시하고, 낱말이 여럿이면 많이 맞은 것부터', () => {
+    const { db } = seed()
+    expect(db.searchConversation('로봇청소기').map((m) => m.text)).toEqual([
+      '로봇 청소기 30만 원 아래로 찾아 줘',
+    ])
+    // 두 낱말이 다 맞은 앞의 말이 하나만 맞은 최근 말보다 먼저
+    expect(db.searchConversation('청소기 30만', { limit: 2 }).map((m) => m.text)).toEqual([
+      '로봇 청소기 30만 원 아래로 찾아 줘',
+      '지난주에 본 청소기 뭐였지?',
+    ])
+    // 한 글자 낱말("본")은 낱말이 여럿일 때 빼고 찾는다
+    expect(db.searchConversation('본 로보락').map((m) => m.text)).toEqual([
+      '로보락 Q7이 27만 9천 원이에요. 물걸레도 돼요.',
+    ])
+  })
+
+  it('%·_는 글자 그대로 찾는다', () => {
+    const { db } = seed()
+    expect(db.searchConversation('100%').map((m) => m.text)).toEqual(['100% 할인_쿠폰 있어?'])
+    expect(db.searchConversation('할인_').map((m) => m.text)).toEqual(['100% 할인_쿠폰 있어?'])
+    expect(db.searchConversation('0%할')).toHaveLength(1)
+    expect(db.searchConversation('_')).toHaveLength(1)
+    expect(db.searchConversation('   ')).toEqual([])
   })
 })
 
