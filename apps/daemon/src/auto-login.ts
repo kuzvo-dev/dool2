@@ -15,6 +15,79 @@ export interface AutoLoginInput {
   url: string
   username: string
   password: string
+  ask?: LoginAsk
+}
+
+/** 사람에게 넘기는 대신 폰 입력 화면으로 묻기 (원격 화면보다 빠르고 편하다) */
+export interface LoginAsk {
+  /** 공급자 계정(카카오 등) 아이디·비밀번호를 폰에서 받아 금고에 넣고 돌려준다 */
+  credentials?(
+    origin: string,
+    site: string,
+    tabId: number,
+  ): Promise<{ username: string; password: string } | undefined>
+  /** 화면이 묻는 것 (인증번호·휴대폰 번호) */
+  info?(req: {
+    field: 'otp' | 'tel' | 'text'
+    label: string
+    hint?: string
+    host: string
+  }): Promise<string | undefined>
+}
+
+/** 인증번호 칸 */
+const CODE_FIELD =
+  /인증\s?번호|인증\s?코드|보안\s?코드|확인\s?코드|승인\s?번호|OTP|verification|one[-\s]?time|\bcode\b/i
+const TEL_FIELD = /휴대폰\s?번호|휴대전화|전화\s?번호|phone/i
+const ANSWER_SUBMIT =
+  /^(확인|인증|인증하기|확인하기|인증\s?완료|다음|계속|계속하기|로그인|제출|완료|submit|verify|continue|next|confirm|done)$/i
+
+/**
+ * 화면이 인증번호·휴대폰 번호를 물으면 폰 입력 화면으로 받아 그 칸에 넣고 확인을 누른다.
+ * done: 넣고 눌렀다 / none: 물을 칸이 없다 / cancel: 사용자가 안 넣었다
+ */
+async function answerOnScreen(
+  browser: AutoLoginBrowser,
+  tabId: number,
+  page: Snap,
+  ask: LoginAsk | undefined,
+  asked: Set<string>,
+): Promise<'done' | 'none' | 'cancel'> {
+  if (!ask?.info) return 'none'
+  const refs = [...parseRefs(page.text)] as RefEntry[]
+  const inputs = refs.filter(([, r]) => r.role === '입력칸' && !/값="/.test(r.name))
+  const code = inputs.find(([, r]) => CODE_FIELD.test(r.name))
+  const tel = inputs.find(([, r]) => TEL_FIELD.test(r.name))
+  const target = code ?? tel
+  if (!target) return 'none'
+  const key = `${page.url}|${target[1].name}`
+  if (asked.has(key)) return 'none'
+  asked.add(key)
+  // 화면 안내 한 줄 ("카카오톡으로 보낸 6자리를 넣어 주세요")
+  const hint = page.text
+    .split('\n')
+    .map((l) => l.replace(/\[[^\]]*\]/g, '').trim())
+    .find((l) => l.length >= 8 && l.length <= 80 && /인증|번호|보냈|문자|입력/.test(l))
+  const host = (() => {
+    try {
+      return new URL(page.url).hostname
+    } catch {
+      return ''
+    }
+  })()
+  const value = await ask.info({
+    field: code ? 'otp' : 'tel',
+    label: target[1].name || (code ? '인증번호' : '휴대폰 번호'),
+    ...(hint ? { hint } : {}),
+    host,
+  })
+  if (!value) return 'cancel'
+  await browser.call('type', { tabId, ref: target[0], text: value })
+  const after = refs.slice(refs.indexOf(target) + 1)
+  const submit = after.find(([, r]) => r.role === '버튼' && ANSWER_SUBMIT.test(r.name.trim()))
+  if (submit) await browser.call('click', { tabId, ref: submit[0] }, 30_000).catch(() => undefined)
+  else await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
+  return 'done'
 }
 
 export type AutoLoginResult = (
@@ -360,11 +433,24 @@ async function watchResult(
   snap: (tabId: number) => Promise<Snap>,
 ): Promise<AutoLoginResult> {
   let page: Snap | undefined
+  const asked = new Set<string>()
+  /** 인증번호를 넣고 확인을 누른 뒤 화면이 바뀌기를 기다리는 동안 (같은 화면이 잠깐 더 보인다) */
+  let grace = 0
   for (let i = 0; i < tries; i++) {
     await sleep(wait)
     page = await snap(tabId).catch(() => page)
     if (!page) continue
     if (looksSignedIn(input.card, page)) return { loginOrigin, status: 'ok', tabId }
+    if (STEP2.test(page.text) && !CAPTCHA.test(page.text) && !WRONG.test(page.text)) {
+      // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
+      const a = await answerOnScreen(_browser, tabId, page, input.ask, asked)
+      if (a === 'done') {
+        grace = 3
+        i = Math.max(0, i - 2)
+        continue
+      }
+      if (grace-- > 0) continue
+    }
     if (HUMAN.test(page.text) && !WRONG.test(page.text))
       return { loginOrigin, status: 'human', tabId, reason: humanReason(page.text) }
     if (WRONG.test(page.text))
@@ -435,8 +521,9 @@ export interface SocialLoginInput {
   card: AutoLoginInput['card']
   url: string
   provider: SocialProvider
-  /** 공급자 로그인 화면이 나오면 쓸 금고 값 (그 공급자 주소의 항목). 없으면 사람에게 넘긴다 */
+  /** 공급자 로그인 화면이 나오면 쓸 금고 값 (그 공급자 주소의 항목). 없으면 폰에 묻고, 그래도 없으면 사람에게 */
   creds(origin: string): Promise<{ username: string; password: string } | undefined>
+  ask?: LoginAsk
 }
 
 /**
@@ -483,6 +570,8 @@ export async function socialLogin(
   let providerTab = clicked?.newTabId ?? siteTab
   const filled = new Set<string>()
   const pressed = new Set<string>()
+  const askedInfo = new Set<string>()
+  let graceInfo = 0
 
   // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
   for (let i = 0; i < (opts.tries ?? 14); i++) {
@@ -507,13 +596,24 @@ export async function socialLogin(
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
     if (!onProvider) continue
+    if (STEP2.test(p.text) && !CAPTCHA.test(p.text)) {
+      const a = await answerOnScreen(browser, providerTab, p, input.ask, askedInfo)
+      if (a === 'done') {
+        graceInfo = 3
+        continue
+      }
+      if (graceInfo-- > 0) continue
+    }
     if (CAPTCHA.test(p.text) || p.captcha || STEP2.test(p.text))
       return { status: 'human', tabId: providerTab, reason: humanReason(p.text) }
     const origin = new URL(p.url).origin
     // 공급자 로그인 화면: 금고 값이 있으면 넣고, 없으면 사람 차례
     const two = twoStep(p.text)
     if (hasPassword(p.text) || two) {
-      const creds = await input.creds(origin)
+      // 금고에 없으면 폰 입력 화면으로 받는다 (한 번 넣으면 금고에 남아 다음부터는 안 묻는다)
+      const creds =
+        (await input.creds(origin)) ??
+        (filled.has(p.url) ? undefined : await input.ask?.credentials?.(origin, `${label} 계정`, providerTab))
       if (!creds || filled.has(p.url))
         return {
           status: 'human',
