@@ -2,7 +2,19 @@
 // 문구·아이콘·빈 상태는 폰 앱(apps/phone/src/life-views.ts)과 같게 둔다. PC는 넓은 화면에 맞춰 배치만 다르다.
 import type { FeedItem, GoalCategory, LibraryItem, LifeAction, LifeState, Routine } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
-import { button, doori, el, emptyState, type IconName, icon, setRich, tile, toggle, withLogo } from './dom.js'
+import {
+  button,
+  doori,
+  el,
+  emoTile,
+  emptyState,
+  type IconName,
+  icon,
+  setRich,
+  tile,
+  toggle,
+  withLogo,
+} from './dom.js'
 import {
   type IdeaGroup,
   type IdeaItem,
@@ -33,6 +45,7 @@ import {
   upcoming,
   whenLabel,
 } from './life-model.js'
+import { resultLine } from './rich.js'
 import { scheduleLabel } from './schedule.js'
 
 export interface LifeCtx {
@@ -129,7 +142,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
     el('div', 'card-label', doori('', 22), '어떤 소식을 받을까요?'),
     prompt
       ? el('p', 'feed-prompt-now', el('strong', '', prompt), el('span', 'meta', ' · 매일 오전 7:30에 올려요'))
-      : el('p', 'cap', '적어 두면 두리가 매일 아침 찾아서 짧게 정리해 올려요.'),
+      : el('p', 'cap', '적어 두면 매일 아침 7시 반에 정리해서 올려 드려요.'),
     el(
       'div',
       'feed-prompt-row',
@@ -150,11 +163,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   if (waiting.length) body.push(el('div', 'feed-waiting', ...waiting))
   if (!life.feed.length)
     body.push(
-      emptyState(
-        'sleeping',
-        '아직 올라온 소식이 없어요',
-        '두리가 한 일과 알아서 한 일, 받기로 한 소식이 여기에 모여요.',
-      ),
+      emptyState('sleeping', '아직 올라온 소식이 없어요', '두리가 끝낸 일과 매일 아침 소식이 여기 모여요.'),
     )
   for (const g of groupByDay(life.feed)) {
     const ul = el('ul', 'feed-list')
@@ -209,7 +218,7 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
   return el(
     'li',
     'feed-item',
-    tile(k.icon, k.tone),
+    emoTile(k.emo),
     el(
       'div',
       'grow',
@@ -240,19 +249,14 @@ function suggestedBox(ctx: LifeCtx) {
       'div',
       'suggested-head',
       doori(life.ideasBusy ? 'thinking' : '', 28),
-      el(
-        'div',
-        'grow',
-        el('p', 'row-t', '두리가 찾은 할 일'),
-        el('p', 'cap', '기억과 목표, 연결한 곳을 보고 매일 아침 새로 찾아요'),
-      ),
+      el('div', 'grow', el('p', 'row-t', '오늘의 추천'), el('p', 'cap', '나에게 맞춰 매일 아침 새로 골라요')),
       refresh,
     ),
     ...ideas.map((i) =>
       button(
         'idea-row',
         () => ctx.send(i.text),
-        tile('idea', 'amber'),
+        emoTile('bulb'),
         el('span', 'grow', el('span', 'idea-t', i.text), el('span', 'cap', i.why)),
         icon('send', 'i idea-go'),
       ),
@@ -273,7 +277,7 @@ function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
         ctx.openService(it.service.id)
       } else ctx.send(it.ask)
     },
-    it.service ? withLogo(el('span', 'svc-mark', it.service.mark), it.service.id) : tile(sec.icon, sec.tone),
+    it.service ? withLogo(el('span', 'svc-mark', it.service.mark), it.service.id) : emoTile(sec.emo),
     el('span', 'grow', el('span', 'idea-t', it.text), el('span', 'cap', it.note)),
     later ? el('span', 'idea-tag', '연결') : icon('send', 'i idea-go'),
   )
@@ -349,7 +353,7 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
                 draw()
                 chips.scrollIntoView({ block: 'start', behavior: 'smooth' })
               },
-              tile(sec.icon, sec.tone, 28),
+              emoTile(sec.emo, 'sm'),
               el('strong', '', sec.label),
               el('span', 'cap', `${g.items.length}가지 모두 보기`),
               icon('chevron', 'i'),
@@ -405,10 +409,9 @@ export function ideasView(ctx: LifeCtx): HTMLElement {
 
 function routineTile(r: Routine) {
   if (r.category) {
-    const m = GOAL_META[r.category]
-    return tile(m.icon, m.tone)
+    return emoTile(GOAL_META[r.category].emo)
   }
-  return tile('clock', 'violet')
+  return emoTile('routine')
 }
 
 function progressBar(done: number, total: number) {
@@ -436,7 +439,9 @@ function goalRow(ctx: LifeCtx, r: Routine) {
             el('span', 'meta', `계획 ${p.done}/${p.total}`),
           )
         : undefined,
-      r.lastResult ? el('span', 'meta goal-last', `지난번: ${plain(r.lastResult, 90)}`) : undefined,
+      r.lastResult
+        ? el('span', 'meta goal-last', `최근 결과 · ${plain(resultLine(r.lastResult), 90)}`)
+        : undefined,
     ),
   )
   row.append(
@@ -458,7 +463,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
     return button(
       'goal-new',
       () => ctx.compose(goalStarter(c)),
-      tile(m.icon, m.tone),
+      emoTile(m.emo),
       el('span', 'grow', el('span', 'row-t', c), el('span', 'cap', m.hint)),
       icon('plus', 'i md goal-plus'),
     )
@@ -466,12 +471,12 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
   return el(
     'div',
     'page',
-    pageHead('목표', '두리가 알아서 챙기고, 때가 되면 먼저 알려 줘요'),
+    pageHead('목표', '정해 둔 때가 되면 두리가 먼저 해요'),
     goals.length
-      ? section('진행 중인 목표', el('div', 'goal-list', ...goals.map((r) => goalRow(ctx, r))))
+      ? section('진행 중', el('div', 'goal-list', ...goals.map((r) => goalRow(ctx, r))))
       : undefined,
     routines.length
-      ? section('알아서 하는 일', el('div', 'goal-list', ...routines.map((r) => goalRow(ctx, r))))
+      ? section('예약한 일', el('div', 'goal-list', ...routines.map((r) => goalRow(ctx, r))))
       : undefined,
     list.length
       ? undefined
@@ -485,9 +490,9 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
             '"매일 아침 7시 반에 날씨랑 일정 알려 줘", "주 3회 운동하고 싶어"처럼 말하면 두리가 목표와 일정을 만들어요.',
           ),
         ),
-    section('목표 만들기', el('div', 'goal-grid', ...create)),
+    section('새 목표 세우기', el('div', 'goal-grid', ...create)),
     section(
-      '이런 것도 맡겨 보세요',
+      '이렇게 많이 예약해요',
       el(
         'div',
         'idea-list',
@@ -495,7 +500,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
           button(
             'idea-row',
             () => ctx.send(text),
-            tile('clock', 'violet'),
+            emoTile('routine'),
             el('span', 'grow', el('span', 'idea-t', text), el('span', 'cap', note)),
             icon('send', 'i idea-go'),
           ),
@@ -521,9 +526,9 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
   const fact = (k: string, v?: string) => {
     if (v) facts.append(el('dt', '', k), el('dd', '', v))
   }
-  fact('언제', r.schedule ? scheduleLabel(r.schedule) : '정한 때 없음')
+  fact('언제', r.schedule ? scheduleLabel(r.schedule) : '시간 정하지 않음')
   fact('다음 체크인', r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : '꺼 둠')
-  fact('지난번', r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
+  fact('최근', r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
   fact('결과는', r.target === 'feed' ? '피드에 올려요' : '대화로 알려 드려요')
 
   const actions = el(
@@ -542,7 +547,7 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
       'btn-ghost sm',
       () => ctx.compose(`"${r.title}" 목표 말인데요, `),
       icon('reply'),
-      '대화에서 이어 하기',
+      '대화로 이어 가기',
     ),
     el('span', 'grow'),
     button(
@@ -589,7 +594,7 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
         'div',
         'grow',
         el('h1', 'title-2', r.title),
-        el('p', 'cap', [r.category ?? '알아서 하는 일', when(r, now)].join(' · ')),
+        el('p', 'cap', [r.category ?? '예약한 일', when(r, now)].join(' · ')),
       ),
     ),
     actions,
@@ -679,7 +684,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
     el(
       'div',
       'lib-top',
-      tile(k.icon, k.tone),
+      emoTile(k.emo),
       el('span', 'meta grow', [k.label, host].filter(Boolean).join(' · ')),
       el('time', 'meta', shortWhen(it.savedAt)),
     ),
@@ -705,7 +710,7 @@ export function scheduleTab(ctx: LifeCtx): HTMLElement {
       button(
         'side-row',
         () => ctx.openGoal(r.id),
-        tile('clock', 'violet', 36),
+        emoTile('routine'),
         el(
           'span',
           'grow',

@@ -9,9 +9,9 @@ import {
   type LifeState,
   type Routine,
 } from '@dool2/protocol'
-import { withoutPhotoMark } from '@dool2/protocol/rich'
+import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
 import { scheduleLabel } from '@dool2/protocol/schedule'
-import { doori, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
+import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 
 export interface LifeCtx {
   life?: LifeState
@@ -31,24 +31,24 @@ export interface LifeCtx {
   setLibrarySeg(seg: 'made' | 'media'): void
 }
 
-const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconName; tone: string }> = {
-  post: { label: '두리 소식', icon: 'feed', tone: 'blue' },
-  done: { label: '끝낸 일', icon: 'check', tone: 'mint' },
-  routine: { label: '알아서 한 일', icon: 'clock', tone: 'violet' },
-  saved: { label: '보관함', icon: 'bookmark', tone: 'amber' },
-  goal: { label: '목표', icon: 'goal', tone: 'rose' },
-  connected: { label: '연결', icon: 'link', tone: 'blue' },
-  suggest: { label: '제안', icon: 'idea', tone: 'amber' },
+const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconName; tone: string; emo: string }> = {
+  post: { label: '소식', icon: 'feed', tone: 'blue', emo: 'news' },
+  done: { label: '끝낸 일', icon: 'check', tone: 'mint', emo: 'check' },
+  routine: { label: '예약한 일', icon: 'clock', tone: 'violet', emo: 'routine' },
+  saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
+  goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
+  connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
+  suggest: { label: '제안', icon: 'idea', tone: 'amber', emo: 'bulb' },
 }
 
-const CATEGORY: Record<GoalCategory, { icon: IconName; tone: string; hint: string }> = {
-  건강: { icon: 'heart', tone: 'rose', hint: '운동·잠·식단' },
-  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구 챙기기' },
-  돈: { icon: 'card', tone: 'mint', hint: '저축·지출 줄이기' },
-  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부' },
-  관심사: { icon: 'star', tone: 'amber', hint: '취미·여행·배우기' },
-  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리·루틴' },
-  기타: { icon: 'goal', tone: 'mint', hint: '무엇이든' },
+const CATEGORY: Record<GoalCategory, { icon: IconName; tone: string; hint: string; emo: string }> = {
+  건강: { icon: 'heart', tone: 'rose', hint: '운동·수면·식단', emo: 'health' },
+  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구', emo: 'relation' },
+  돈: { icon: 'card', tone: 'mint', hint: '저축·지출', emo: 'money' },
+  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부', emo: 'work' },
+  관심사: { icon: 'star', tone: 'amber', hint: '취미·배우기', emo: 'interest' },
+  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리', emo: 'productivity' },
+  기타: { icon: 'goal', tone: 'mint', hint: '그 밖의 목표', emo: 'other' },
 }
 
 /** 답·글에서 굵게 표시를 빼고 한 줄로 */
@@ -108,7 +108,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
             h('strong', { text: prompt }),
             h('span', { class: 'meta', text: ' · 매일 오전 7:30에 올려요' }),
           )
-        : h('p', { class: 'meta', text: '적어 두면 두리가 매일 아침 찾아서 짧게 정리해 올려요.' }),
+        : h('p', { class: 'meta', text: '적어 두면 매일 아침 7시 반에 정리해서 올려 드려요.' }),
       form,
       prompt
         ? h('button', {
@@ -124,11 +124,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
   else if (!items.length)
     box.append(
-      empty(
-        'sleeping',
-        '아직 올라온 소식이 없어요',
-        '두리가 한 일과 알아서 한 일, 받기로 한 소식이 여기에 모여요.',
-      ),
+      empty('sleeping', '아직 올라온 소식이 없어요', '두리가 끝낸 일과 매일 아침 소식이 여기 모여요.'),
     )
   let day = ''
   for (const f of items) {
@@ -157,7 +153,7 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
     h(
       'div',
       { class: 'feed-head' },
-      h('span', { class: `tile sm ${k.tone}` }, icon(k.icon, 'i')),
+      emoTile(k.emo, 'sm'),
       h('span', { class: 'meta', text: k.label }),
       h('span', { class: 'meta feed-time', text: shortTime(f.at) }),
     ),
@@ -204,7 +200,7 @@ function dayLabel(iso: string) {
 
 export function whenText(r: Routine) {
   if (!r.enabled) return '꺼 둠'
-  if (!r.schedule) return '정한 때 없음'
+  if (!r.schedule) return '시간 정하지 않음'
   const next = r.nextRunAt ? ` · 다음 ${nextText(r.nextRunAt)}` : ''
   return `${scheduleLabel(r.schedule)}${next}`
 }
@@ -225,18 +221,18 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
   const box = h(
     'section',
     { class: 'tab-page goals' },
-    ...header('목표', '두리가 알아서 챙기고, 때가 되면 먼저 알려 줘요'),
+    ...header('목표', '정해 둔 때가 되면 두리가 먼저 해요'),
   )
   const list = (ctx.life?.routines ?? []).filter((r) => !(r.target === 'feed' && r.title === '피드'))
   const goals = list.filter((r) => r.category)
   const routines = list.filter((r) => !r.category)
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
   if (goals.length) {
-    box.append(h('h2', { class: 'over', text: '진행 중인 목표' }))
+    box.append(h('h2', { class: 'over', text: '진행 중' }))
     for (const g of goals) box.append(goalCard(ctx, g))
   }
   if (routines.length) {
-    box.append(h('h2', { class: 'over', text: '알아서 하는 일' }))
+    box.append(h('h2', { class: 'over', text: '예약한 일' }))
     for (const r of routines) box.append(goalCard(ctx, r))
   }
   if (ctx.life && !list.length)
@@ -251,7 +247,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
         }),
       ),
     )
-  box.append(h('h2', { class: 'over', text: '목표 만들기' }))
+  box.append(h('h2', { class: 'over', text: '새 목표 세우기' }))
   const grid = h('div', { class: 'goal-grid' })
   for (const c of GOAL_CATEGORIES) {
     const k = CATEGORY[c]
@@ -259,7 +255,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       h(
         'button',
         { class: 'goal-tile', onclick: () => ctx.fill(`${c} 목표를 세우고 싶어요: `) },
-        h('span', { class: `tile ${k.tone}` }, icon(k.icon, 'i md')),
+        emoTile(k.emo),
         h(
           'span',
           { class: 'row-text' },
@@ -271,7 +267,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
     )
   }
   box.append(grid)
-  box.append(h('h2', { class: 'over', text: '이런 것도 맡겨 보세요' }))
+  box.append(h('h2', { class: 'over', text: '이렇게 많이 예약해요' }))
   for (const [t, note] of [
     ['매일 아침 7시 반에 날씨·일정·오는 택배 알려 줘', '아침 브리핑'],
     ['매주 월요일 아침에 지난주 카드 쓴 돈 정리해 줘', '주간 가계부'],
@@ -282,7 +278,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       h(
         'button',
         { class: 'idea', onclick: () => ctx.ask(t) },
-        h('span', { class: 'tile violet' }, icon('clock', 'i md')),
+        emoTile('routine'),
         h(
           'span',
           { class: 'row-text' },
@@ -320,7 +316,7 @@ function goalCard(ctx: LifeCtx, r: Routine) {
     h(
       'div',
       { class: 'goal-head' },
-      h('span', { class: `tile ${k?.tone ?? 'violet'}` }, icon(k?.icon ?? 'clock', 'i md')),
+      emoTile(k?.emo ?? 'routine'),
       h(
         'span',
         { class: 'row-text' },
@@ -338,7 +334,7 @@ function goalCard(ctx: LifeCtx, r: Routine) {
         )
       : undefined,
     r.lastResult
-      ? h('p', { class: 'meta goal-last', text: `지난번: ${plain(r.lastResult, 90)}` })
+      ? h('p', { class: 'meta goal-last', text: `최근 결과 · ${plain(resultLine(r.lastResult), 90)}` })
       : undefined,
   )
 }
@@ -354,12 +350,12 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
     h(
       'div',
       { class: 'approve-head' },
-      h('span', { class: `tile ${k?.tone ?? 'violet'}` }, icon(k?.icon ?? 'clock', 'i md')),
+      emoTile(k?.emo ?? 'routine'),
       h(
         'div',
         {},
         h('strong', { class: 'title-2', text: r.title }),
-        h('span', { class: 'meta', text: [r.category ?? '알아서 하는 일', whenText(r)].join(' · ') }),
+        h('span', { class: 'meta', text: [r.category ?? '예약한 일', whenText(r)].join(' · ') }),
       ),
     ),
   )
@@ -413,7 +409,7 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
         'button',
         { class: 'btn-ghost', onclick: () => ctx.fill(`"${r.title}" 목표 말인데요, `) },
         icon('reply'),
-        '대화에서 이어 하기',
+        '대화로 이어 가기',
       ),
     ),
     h(
@@ -441,12 +437,12 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
 
 // ── 보관함 ──
 
-const ITEM: Record<LibraryItem['kind'], { icon: IconName; tone: string; label: string }> = {
-  note: { icon: 'note', tone: 'blue', label: '정리' },
-  link: { icon: 'link', tone: 'violet', label: '링크' },
-  product: { icon: 'cart', tone: 'amber', label: '상품' },
-  place: { icon: 'place', tone: 'rose', label: '장소' },
-  file: { icon: 'image', tone: 'mint', label: '파일' },
+const ITEM: Record<LibraryItem['kind'], { icon: IconName; tone: string; label: string; emo: string }> = {
+  note: { icon: 'note', tone: 'blue', label: '정리', emo: 'memo' },
+  link: { icon: 'link', tone: 'violet', label: '링크', emo: 'link' },
+  product: { icon: 'cart', tone: 'amber', label: '상품', emo: 'shopping' },
+  place: { icon: 'place', tone: 'rose', label: '장소', emo: 'pin' },
+  file: { icon: 'image', tone: 'mint', label: '파일', emo: 'picture' },
 }
 
 export function libraryView(ctx: LifeCtx): HTMLElement {
@@ -473,7 +469,7 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
         ctx.librarySeg === 'media' ? '아직 사진·파일이 없어요' : '아직 남긴 게 없어요',
         ctx.librarySeg === 'media'
           ? '두리가 만든 파일과 받은 사진이 여기에 모여요.'
-          : '두리가 찾아 준 상품, 정리한 글, 링크를 남겨 두면 여기에 모여요. 답을 길게 누르면 남길 수 있어요.',
+          : '상품 비교, 정리한 글, 링크를 모아 두는 곳이에요. 두리 답을 길게 누르면 남길 수 있어요.',
       ),
     )
   for (const it of list) {
@@ -482,7 +478,7 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
       h(
         'button',
         { class: 'card lib-card', onclick: () => ctx.openItem(it.id) },
-        h('span', { class: `tile ${k.tone}` }, icon(k.icon, 'i md')),
+        emoTile(k.emo),
         h(
           'span',
           { class: 'row-text' },
@@ -511,7 +507,7 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
     h(
       'div',
       { class: 'approve-head' },
-      h('span', { class: `tile ${k.tone}` }, icon(k.icon, 'i md')),
+      emoTile(k.emo),
       h(
         'div',
         {},
@@ -578,7 +574,7 @@ export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
     h(
       'button',
       { class: 'act-row', onclick: () => ctx.openGoal(r.id) },
-      h('span', { class: 'tile sm violet' }, icon('clock', 'i')),
+      emoTile('routine', 'sm'),
       h(
         'span',
         { class: 'row-text' },

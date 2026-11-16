@@ -794,7 +794,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       text = r.prompt
     } else {
       // 대화로: 답하는 중이면 줄을 선다
-      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${r.prompt}`)
+      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${r.prompt} 인사 없이 결과부터 짧게 써 주세요.`)
       if (conversationBusy()) {
         queued.push(text)
         live.emit('event', { kind: 'queued', texts: [...queued] })

@@ -233,3 +233,15 @@ export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
   mark.append(img)
   return mark
 }
+
+/** 입체 이모지 칸 (packages/ui/emoji/<key>.webp, Fluent Emoji 3D · MIT). 내용 분류에 쓴다 */
+export function emoTile(key: string, cls = ''): HTMLElement {
+  const s = document.createElement('span')
+  s.className = `tile emo ${cls}`.trim()
+  const img = document.createElement('img')
+  img.src = `emoji/${key}.webp`
+  img.alt = ''
+  img.decoding = 'async'
+  s.append(img)
+  return s
+}
