@@ -6,8 +6,9 @@ import type {
   DaemonStreamEvent,
   HandoffRecord,
   LoginRecordMessage,
+  WorkRecordMessage,
 } from '@dool2/protocol'
-import { stripMonologue } from '@dool2/protocol/rich'
+import { narrationLine, stripMonologue, toolLabel } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -103,6 +104,7 @@ export class ThreadService {
       let failed: AgentEvent | undefined
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
+      const work = new WorkLog()
       const events = this.runtime(thread.agent).runTurn({
         text,
         ...(resumeId ? { resumeId } : {}),
@@ -114,7 +116,10 @@ export class ThreadService {
       for await (const ev of events) {
         if (ev.type === 'started' && ev.resumeId) resumeId = ev.resumeId
         // 답은 마지막 도구 뒤의 말만. 도구 앞 혼잣말("날짜를 맞출게요")은 일하는 중 표시일 뿐이다
-        if (ev.type === 'tool') answer = ''
+        if (ev.type === 'tool') {
+          work.tool(ev.name, answer, ev.input)
+          answer = ''
+        }
         if (ev.type === 'text') answer += ev.delta
         if (ev.type === 'done') {
           if (ev.resumeId) resumeId = ev.resumeId
@@ -127,6 +132,8 @@ export class ThreadService {
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
+          const rec = work.record()
+          if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
           yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
         }
         // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
@@ -183,9 +190,11 @@ export class ThreadService {
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
       if (saved) {
         // 이미 저장했다
-      } else if (answer)
+      } else if (answer) {
+        const rec = work.record()
+        if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
         yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
-      else if (failed && 'message' in failed) {
+      } else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
     } finally {
@@ -204,4 +213,43 @@ export const SUMMARY_REQUEST =
 function titleFrom(text: string) {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length > 30 ? `${one.slice(0, 30)}…` : one
+}
+
+/** 정리·기억 같은 속일만 한 차례에는 일한 과정을 남기지 않는다 (답마다 카드가 붙지 않게) */
+const QUIET_TOOL = /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search/
+
+/** 한 차례 동안 한 일을 모아 '일한 과정' 기록(WorkRecordMessage)을 만든다. 폰·PC 화면의 단계 표시와 같은 이름을 쓴다 */
+export class WorkLog {
+  private readonly started: number
+  private steps: { text: string; at: number }[] = []
+  private worked = false
+  private host: string | undefined
+  constructor(private readonly now: () => number = Date.now) {
+    this.started = now()
+  }
+  /** 도구를 부를 때: 그 앞에 한 혼잣말 한 줄, 없으면 도구 이름("웹페이지 여는 중") */
+  tool(name: string, before: string, input?: unknown) {
+    const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
+    if (!QUIET_TOOL.test(bare)) this.worked = true
+    const url = (input as { url?: unknown } | undefined)?.url
+    if (/^browser_(open|navigate)$/.test(bare) && typeof url === 'string') {
+      try {
+        this.host = new URL(url).host
+      } catch {}
+    }
+    const text = narrationLine(before) ?? `${toolLabel(name)} 중`
+    if (this.steps.at(-1)?.text !== text) this.steps.push({ text, at: this.now() })
+  }
+  record(): WorkRecordMessage | undefined {
+    if (!this.worked || !this.steps.length) return undefined
+    const end = this.now()
+    const steps = this.steps.map((s, i) => ({ text: s.text, ms: (this.steps[i + 1]?.at ?? end) - s.at }))
+    return {
+      kind: 'work',
+      steps: steps.slice(-30),
+      count: steps.length,
+      ms: end - this.started,
+      ...(this.host ? { host: this.host } : {}),
+    }
+  }
 }

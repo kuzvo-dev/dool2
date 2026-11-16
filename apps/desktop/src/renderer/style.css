@@ -1936,3 +1936,53 @@ button.side-row:hover {
 .social-or {
   margin-top: 10px;
 }
+
+/* 일한 과정: 답 위에 접힌 한 줄 */
+.work-done {
+  align-self: flex-start;
+  max-width: 520px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.work-done[open] {
+  align-self: stretch;
+  background: var(--raise);
+  box-shadow: none;
+}
+.work-done summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.work-done summary::-webkit-details-marker {
+  display: none;
+}
+.work-done summary svg {
+  width: 14px;
+  height: 14px;
+  color: var(--brand-text);
+}
+.work-done summary b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.work-done ol {
+  margin: 0;
+  padding: 0 14px 12px 36px;
+}
+.work-done li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--ink);
+}
+.work-done .meta {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}

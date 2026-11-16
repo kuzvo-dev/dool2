@@ -320,6 +320,22 @@ export interface ExtensionStatus {
 
 export const FocusTabSchema = z.object({ tabId: z.number().int() })
 
+/**
+ * 일한 과정: 도구를 써서 일한 차례면 답 바로 앞에 'tool' 메시지로 남긴다.
+ * 화면은 접힌 카드("캐치테이블에서 일했어요 · 5단계 · 32초")로 그리고, 펼치면 단계가 보인다
+ */
+export interface WorkRecordMessage {
+  kind: 'work'
+  /** 단계 이름과 걸린 시간(ms). 많으면 마지막 30개만 */
+  steps: { text: string; ms: number }[]
+  /** 전체 단계 수 (steps가 잘렸을 때도 원래 수) */
+  count: number
+  /** 차례 전체에 걸린 시간(ms) */
+  ms: number
+  /** 웹에서 일했으면 마지막으로 연 사이트 (www.catchtable.co.kr) */
+  host?: string
+}
+
 /** 사람에게 넘기기: 대화 기록에 'tool' 메시지로 남겨 다시 열어도 [다 했어요]를 보여 준다 */
 export interface HandoffRecord {
   kind: 'handoff'
