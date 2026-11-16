@@ -30,6 +30,19 @@ export type ConnectCategory = z.infer<typeof ConnectCategorySchema>
 export const ConnectHowSchema = z.enum(['browser', 'official', 'open', 'device'])
 export type ConnectHow = z.infer<typeof ConnectHowSchema>
 
+/** 간편 로그인 공급자 */
+export const SocialProviderSchema = z.enum(['kakao', 'naver', 'google', 'apple', 'facebook', 'payco', 'toss'])
+export type SocialProvider = z.infer<typeof SocialProviderSchema>
+export const SOCIAL_LABEL: Record<SocialProvider, string> = {
+  kakao: '카카오',
+  naver: '네이버',
+  google: '구글',
+  apple: 'Apple',
+  facebook: '페이스북',
+  payco: '페이코',
+  toss: '토스',
+}
+
 const line = (max: number) =>
   z
     .string()
@@ -63,6 +76,8 @@ export const ConnectCardSchema = z
     how: ConnectHowSchema,
     /** 로그인 화면 주소 (첫 화면에서 로그인 링크를 찾기 어려운 사이트만) */
     loginUrl: z.string().url().startsWith('https://').optional(),
+    /** 로그인 화면에 있는 간편 로그인 (실제 사이트 점검으로 확인한 것만). 연결 화면에 "카카오로 연결" 버튼이 생긴다 */
+    social: z.array(SocialProviderSchema).min(1).max(7).optional(),
     /** 연결할 때 사용자가 하는 로그인: "아이디·비밀번호", "카카오·네이버 간편 로그인" */
     login: line(40).optional(),
     /** 상세 화면 첫 문단. "~하면 ~까지 두리에게 맡길 수 있어요." 한두 문장 */

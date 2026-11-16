@@ -93,7 +93,25 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
     if ((el as HTMLElement).isContentEditable && !el.parentElement?.isContentEditable) return '입력칸'
     if ((el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') && !wrapsControls(el))
       return '버튼'
+    // 손가락 커서만 준 글자 상자 ("카카오로 로그인" div 등): 짧은 글이면 버튼으로 본다
+    if (pointerBox(el)) return '버튼'
     return undefined
+  }
+
+  /** 커서가 손가락인 짧은 상자 (부모부터 손가락이면 가장 바깥 하나만) */
+  const POINTER_TAGS = new Set(['DIV', 'SPAN', 'LI', 'P', 'LABEL', 'IMG', 'DT', 'DD'])
+  const pointerBox = (el: Element): boolean => {
+    if (!POINTER_TAGS.has(el.tagName) || wrapsControls(el)) return false
+    if (getComputedStyle(el).cursor !== 'pointer') return false
+    const parent = el.parentElement
+    if (parent && POINTER_TAGS.has(parent.tagName) && getComputedStyle(parent).cursor === 'pointer') {
+      // 부모가 짧은 손가락 상자면 부모가 이미 버튼이다
+      const pt = (parent as HTMLElement).innerText?.trim() ?? ''
+      if (pt.length > 0 && pt.length <= 40) return false
+    }
+    const t = (el as HTMLElement).innerText?.trim() ?? ''
+    if (t.length > 40) return false
+    return t.length > 0 || el.hasAttribute('aria-label') || el.querySelector('img[alt]') !== null
   }
 
   const nameOf = (el: Element): string => {

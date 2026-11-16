@@ -2298,3 +2298,56 @@ textarea.ghosting {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
+/* 간편 로그인으로 연결 (공급자 고유 색은 공급자 안내를 따른다) */
+.social-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+.btn-social {
+  min-height: 48px;
+  border-radius: var(--r-md, 14px);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+.btn-social:active {
+  transform: scale(0.98);
+}
+.btn-social.kakao {
+  background: #fee500;
+  color: #191919;
+}
+.btn-social.naver {
+  background: #03c75a;
+  color: #fff;
+}
+.btn-social.google {
+  background: #fff;
+  color: #1f1f1f;
+  border-color: #dadce0;
+}
+.btn-social.apple {
+  background: #000;
+  color: #fff;
+}
+.btn-social.facebook {
+  background: #1877f2;
+  color: #fff;
+}
+.btn-social.payco {
+  background: #fa2828;
+  color: #fff;
+}
+.btn-social.toss {
+  background: #0064ff;
+  color: #fff;
+}
+.social-or {
+  text-align: center;
+  margin: 10px 0 2px;
+}

@@ -19,7 +19,7 @@ import {
   type PcToPhone,
   type PhoneToPc,
 } from '@dool2/protocol'
-import type { ConnectionItem } from '@dool2/protocol/connect'
+import { type ConnectionItem, type SocialProvider, SocialProviderSchema } from '@dool2/protocol/connect'
 import {
   b64u,
   type DeviceKeys,
@@ -78,6 +78,11 @@ export interface LinkHost {
     id: string,
     username: string,
     password: string,
+  ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
+  /** 간편 로그인으로 연결하기 */
+  connectSocial(
+    id: string,
+    provider: SocialProvider,
   ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
 }
 
@@ -381,6 +386,23 @@ export class PhoneLink {
         // 기다리지 않는다: 로그인은 본체가 뒤에서 하고, 결과(connect-result·연결 목록)는 모든 폰에 따로 간다
         void this.host
           .connectLogin(id, String(msg.username).slice(0, 200), String(msg.password).slice(0, 500))
+          .catch((e: Error) =>
+            this.send(phone, { kind: 'connect-result', id, ok: false, message: e.message }),
+          )
+        return
+      }
+      case 'connect-social': {
+        const id = String(msg.id)
+        const provider = SocialProviderSchema.safeParse(msg.provider)
+        if (!provider.success)
+          return this.send(phone, {
+            kind: 'connect-result',
+            id,
+            ok: false,
+            message: '간편 로그인 종류가 이상해요',
+          })
+        void this.host
+          .connectSocial(id, provider.data)
           .catch((e: Error) =>
             this.send(phone, { kind: 'connect-result', id, ok: false, message: e.message }),
           )

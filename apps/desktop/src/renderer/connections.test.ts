@@ -1,10 +1,11 @@
-import { CONNECT_CATEGORIES, type ConnectCard } from '@dool2/protocol/connect'
+import { CONNECT_CATEGORIES, type ConnectCard, SOCIAL_LABEL as SOCIAL } from '@dool2/protocol/connect'
 import { describe, expect, it } from 'vitest'
-import { CATEGORY_LABEL, safetyLines } from './connections.js'
+import { CATEGORY_LABEL, SOCIAL_LABEL, safetyLines } from './connections.js'
 
 describe('서비스 연결 화면', () => {
   it('분류 이름이 프로토콜과 같다 (화면 번들용 복사본)', () => {
     expect(CATEGORY_LABEL).toEqual(CONNECT_CATEGORIES)
+    expect(SOCIAL_LABEL).toEqual(SOCIAL)
   })
 
   it('안전 안내는 연결 방식과 등급에서 만든다', () => {

@@ -16,7 +16,7 @@ import type {
   PhoneToPc,
   StoredMessage,
 } from '@dool2/protocol'
-import type { ConnectionItem } from '@dool2/protocol/connect'
+import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import {
   type Envelope,
@@ -2903,6 +2903,8 @@ interface CredTarget {
   submitText: string
   submit(user: string, password: string): void
   direct?: { text: string; onclick(): void }
+  /** 간편 로그인 버튼 (카카오로 연결…): 아이디·비밀번호 없이 공급자 계정으로 */
+  social?: { provider: SocialProvider; onclick(): void }[]
   /** 연결되면 바로 시작할 부탁 */
   next?: string
   /** 로고를 보여 줄 연결 카드 id */
@@ -2976,6 +2978,22 @@ function credSheet(t: CredTarget) {
       ),
     ),
     ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), `연결되면 바로 시작해요: ${t.next}`)] : []),
+    ...(t.social?.length
+      ? [
+          h(
+            'div',
+            { class: 'social-row' },
+            ...t.social.map((x) =>
+              h('button', {
+                class: `btn-social ${x.provider}`,
+                text: `${SOCIAL_LABEL[x.provider]}로 연결`,
+                onclick: x.onclick,
+              }),
+            ),
+          ),
+          h('p', { class: 'meta social-or', text: '또는 아이디·비밀번호로' }),
+        ]
+      : []),
     form,
     h(
       'p',
@@ -3025,6 +3043,16 @@ function connectSheet(id: string) {
     },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
+    social: (it.card.social ?? []).map((provider) => ({
+      provider,
+      onclick: () => {
+        // 공급자 쪽(카카오 등)이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
+        void send({ kind: 'connect-social', id, provider })
+        st.overlay = undefined
+        st.connecting.add(id)
+        toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+      },
+    })),
     direct: {
       text: st.connectTabs.has(id)
         ? 'PC 화면 보면서 마저 하기'
