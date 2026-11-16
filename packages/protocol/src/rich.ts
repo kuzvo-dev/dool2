@@ -139,6 +139,14 @@ export function readAppNote(text: string): string | undefined {
  * 답에 섞여 나온 영어 속생각 문단을 걷어 낸다. 한글이 하나도 없고 속생각 말투인 문단만 뺀다
  * (URL·상품명·코드처럼 영어인 문단은 남긴다). 다 걷어 내면 원래 글을 그대로 둔다.
  */
+/** 결과 한 줄: 앞의 인사("좋은 아침이에요." 등)를 빼고 결과부터 */
+export function resultLine(text: string): string {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/^\s*(?:좋은\s*(?:아침|오후|저녁|하루)이?에요|안녕하세요|안녕)[.!~,]*\s*/u, '')
+    .trim()
+}
+
 export function stripMonologue(text: string): string {
   const THINK =
     /\b(I'll|I will|I'm going to|Let me|Let's|Now I|Now let|First,|Next,|Then I|skill|tool|tab \d|ref|click|scroll|navigate|snapshot)\b/i

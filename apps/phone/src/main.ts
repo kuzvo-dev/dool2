@@ -40,7 +40,18 @@ import {
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
-import { doori, h, type IconName, icon, liveDoori, rich, segBtn, shortTime, withLogo } from './dom.js'
+import {
+  doori,
+  emoTile,
+  h,
+  type IconName,
+  icon,
+  liveDoori,
+  rich,
+  segBtn,
+  shortTime,
+  withLogo,
+} from './dom.js'
 import {
   feedView,
   goalSheet,
@@ -760,6 +771,8 @@ function render() {
   }
 }
 
+let lastScrollY = 0
+
 function buildShell() {
   const top = h('header', { class: 'app-top' })
   const page = h('main', { class: 'app-page' })
@@ -768,6 +781,11 @@ function buildShell() {
     'scroll',
     () => {
       if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+      // 긴 목록을 내리면 탭 막대를 숨기고, 올리면 다시 보인다 (대화는 입력칸이 있어 그대로)
+      const y = page.scrollTop
+      const away = st.tab !== 'chat' && y > 80 && y > lastScrollY + 6
+      if (away || y < lastScrollY - 6 || y <= 80) shell?.tabs.classList.toggle('away', away)
+      lastScrollY = y
     },
     { passive: true },
   )
@@ -816,14 +834,32 @@ function autosize(t: HTMLTextAreaElement) {
   t.style.height = `${Math.min(t.scrollHeight, 132)}px`
 }
 
+const TAB_ORDER: Tab[] = ['chat', 'feed', 'ideas', 'goals', 'library']
+
 function setTab(tab: Tab) {
+  const from = TAB_ORDER.indexOf(st.tab)
+  const to = TAB_ORDER.indexOf(tab)
   st.tab = tab
   st.overlay = undefined
   if (tab === 'chat') stickToBottom = true
   if (tab === 'connect') st.connectDetail = undefined
   render()
-  shell?.page.scrollTo({ top: tab === 'chat' ? shell.page.scrollHeight : 0 })
+  const page = shell?.page
+  if (!page) return
+  page.scrollTo({ top: tab === 'chat' ? page.scrollHeight : 0 })
+  shell?.tabs.classList.remove('away')
+  // 탭 순서대로 옆에서 밀려 들어온다
+  if (from >= 0 && to >= 0 && from !== to && !reducedMotion())
+    page.animate(
+      [
+        { opacity: 0, transform: `translateX(${to > from ? 18 : -18}px)` },
+        { opacity: 1, transform: 'none' },
+      ],
+      { duration: 240, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    )
 }
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** 머리: 메뉴 · 두리(지금 하는 일) · 내 PC */
 function renderTop() {
@@ -899,19 +935,81 @@ function renderTabs() {
     ['goals', 'goal', '목표'],
     ['library', 'library', '보관함'],
   ]
-  t.replaceChildren(
-    ...items.map(([id, ic, label]) => {
-      const b = h(
-        'button',
-        { class: st.tab === id ? 'tab on' : 'tab', label, onclick: () => setTab(id) },
-        icon(ic),
-        h('span', { class: 'tab-label', text: label }),
-        id === 'feed' && waiting > 0 && h('span', { class: 'badge' }),
-      )
-      if (st.tab === id) b.setAttribute('aria-current', 'page')
-      return b
-    }),
+  // 버튼은 한 번만 만든다: 다시 그리면 움직임이 끊긴다
+  if (!t.querySelector('.tab')) {
+    t.classList.add('has-pill')
+    t.replaceChildren(
+      h('span', { class: 'tab-pill' }),
+      ...items.map(([id, ic, label]) =>
+        h(
+          'button',
+          { class: 'tab', label, onclick: () => setTab(id) },
+          icon(ic),
+          h('span', { class: 'tab-label', text: label }),
+          h('span', { class: 'badge' }),
+        ),
+      ),
+    )
+    items.forEach(([id], i) => {
+      ;(t.querySelectorAll('.tab')[i] as HTMLElement).dataset.tab = id
+    })
+  }
+  const btns = [...t.querySelectorAll<HTMLElement>('.tab')]
+  const pill = t.querySelector<HTMLElement>('.tab-pill') as HTMLElement
+  const ready = t.dataset.ready === '1'
+  const before = new Map(btns.map((b) => [b, b.offsetLeft]))
+  const pillFrom = { x: pill.offsetLeft, w: pill.offsetWidth }
+  let changed = false
+  for (const b of btns) {
+    const on = b.dataset.tab === st.tab
+    if (b.classList.contains('on') !== on) changed = true
+    b.classList.toggle('on', on)
+    if (on) b.setAttribute('aria-current', 'page')
+    else b.removeAttribute('aria-current')
+    ;(b.querySelector('.badge') as HTMLElement).hidden = !(b.dataset.tab === 'feed' && waiting > 0)
+  }
+  const active = btns.find((b) => b.classList.contains('on'))
+  pill.hidden = !active
+  if (!active) return
+  pill.style.left = `${active.offsetLeft}px`
+  pill.style.width = `${active.offsetWidth}px`
+  t.dataset.ready = '1'
+  if (!ready || !changed || reducedMotion()) return
+  // 알약은 앞 탭에서 늘어나며 옮겨 가고, 나머지 아이콘은 제자리로 미끄러진다
+  const spring = 'cubic-bezier(0.3, 1.25, 0.4, 1)'
+  pill.animate(
+    [
+      { left: `${pillFrom.x}px`, width: `${pillFrom.w}px` },
+      { left: `${active.offsetLeft}px`, width: `${active.offsetWidth}px` },
+    ],
+    { duration: 340, easing: spring },
   )
+  for (const b of btns) {
+    const dx = (before.get(b) ?? 0) - b.offsetLeft
+    if (dx)
+      b.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], {
+        duration: 340,
+        easing: spring,
+      })
+  }
+  active
+    .querySelector('svg')
+    ?.animate([{ transform: 'scale(0.8)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], {
+      duration: 300,
+      easing: 'ease-out',
+    })
+  active.querySelector('.tab-label')?.animate(
+    [
+      { opacity: 0, transform: 'translateX(-4px)' },
+      { opacity: 1, transform: 'none' },
+    ],
+    {
+      duration: 220,
+      delay: 60,
+      fill: 'backwards',
+    },
+  )
+  navigator.vibrate?.(8)
 }
 
 function renderComposer() {
@@ -1196,7 +1294,7 @@ function helloCard() {
         [
           ['apps', '1', '자주 쓰는 쇼핑몰·통신사를 연결해 두기', () => setTab('connect')],
           ['feed', '2', '매일 아침 받을 소식 정하기', () => setTab('feed')],
-          ['goal', '3', '알아서 챙길 일·목표 만들기', () => setTab('goals')],
+          ['goal', '3', '예약하고 목표 세우기', () => setTab('goals')],
         ] as [IconName, string, string, () => void][]
       ).map(([ic, n, t, go]) =>
         h(
@@ -1641,7 +1739,7 @@ function tapIdea(it: IdeaItem) {
 function ideaRow(it: IdeaItem, sec: IdeaSection) {
   const lead = it.service
     ? withLogo(h('span', { class: 'svc-mark', text: it.service.mark }), it.service.id)
-    : h('span', { class: `tile ${sec.tone}` }, icon(sec.icon, 'i md'))
+    : emoTile(sec.emo)
   return h(
     'button',
     { class: 'idea', onclick: () => tapIdea(it) },
@@ -1684,8 +1782,8 @@ function ideasView() {
         h(
           'span',
           { class: 'row-text' },
-          h('span', { class: 'row-t', text: '두리가 찾은 할 일' }),
-          h('span', { class: 'row-d', text: '기억과 목표, 연결한 곳을 보고 매일 아침 새로 찾아요' }),
+          h('span', { class: 'row-t', text: '오늘의 추천' }),
+          h('span', { class: 'row-d', text: '나에게 맞춰 매일 아침 새로 골라요' }),
         ),
         refresh,
       ),
@@ -1693,7 +1791,7 @@ function ideasView() {
         h(
           'button',
           { class: 'idea', onclick: () => ask(i.text) },
-          h('span', { class: 'tile amber' }, icon('idea', 'i md')),
+          emoTile('bulb'),
           h(
             'span',
             { class: 'row-text' },
@@ -1770,7 +1868,7 @@ function ideasView() {
           h(
             'button',
             { class: 'idea-sec-head', onclick: () => pick(sec.id) },
-            h('span', { class: `tile ${sec.tone}` }, icon(sec.icon, 'i')),
+            emoTile(sec.emo, 'sm'),
             h('strong', { text: sec.label }),
             h('span', { class: 'meta', text: `${g.items.length}가지` }),
             icon('chevron', 'i chev'),

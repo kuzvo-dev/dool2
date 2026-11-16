@@ -48,7 +48,7 @@ describe('life-model', () => {
 
   it('목표의 언제: 꺼 둠 · 정한 때 없음 · 일정과 다음 시각', () => {
     expect(routineWhen(routine({ enabled: false }), scheduleLabel, now)).toBe('꺼 둠')
-    expect(routineWhen(routine({}), scheduleLabel, now)).toBe('정한 때 없음')
+    expect(routineWhen(routine({}), scheduleLabel, now)).toBe('시간 정하지 않음')
     expect(
       routineWhen(
         routine({

@@ -86,7 +86,7 @@ export class Life {
     if (r.target !== 'feed')
       this.feed({
         kind: 'goal',
-        title: `${r.category ? '목표를 세웠어요' : '알아서 할 일을 정했어요'}: ${r.title}`,
+        title: `${r.category ? '목표를 세웠어요' : '예약했어요'}: ${r.title}`,
         ...(r.schedule ? { body: scheduleLabel(r.schedule) } : {}),
         ref: r.id,
       })
@@ -395,7 +395,7 @@ export class Life {
             ...(a.target === 'feed' ? { target: 'feed' as const } : {}),
           })
           return ok(
-            `${category ? '목표' : '알아서 할 일'}을 만들었어요: "${r.title}"${r.schedule ? ` (${scheduleLabel(r.schedule)})` : ''} [id ${r.id.slice(0, 8)}]. 사용자에게 무엇을 언제 할지 한두 문장으로 다시 확인해 주세요.`,
+            `${category ? '목표를' : '예약을'} 만들었어요: "${r.title}"${r.schedule ? ` (${scheduleLabel(r.schedule)})` : ''} [id ${r.id.slice(0, 8)}]. 사용자에게 무엇을 언제 할지 한두 문장으로 다시 확인해 주세요.`,
           )
         }
         case 'goal_update': {

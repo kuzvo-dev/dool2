@@ -75,7 +75,7 @@ export function plain(text: string, max = 160): string {
 /** 목표의 언제 한 줄 (폰과 같은 말): "꺼 둠" · "정한 때 없음" · "평일 오전 7:30 · 다음 내일 오전 7:30" */
 export function routineWhen(r: Routine, label: ScheduleLabel, now = new Date()): string {
   if (!r.enabled) return '꺼 둠'
-  if (!r.schedule) return '정한 때 없음'
+  if (!r.schedule) return '시간 정하지 않음'
   return `${label(r.schedule)}${r.nextRunAt ? ` · 다음 ${whenLabel(r.nextRunAt, now)}` : ''}`
 }
 
@@ -132,15 +132,16 @@ export type IconKey =
   | 'box'
 
 /** 피드 종류 (폰 앱과 같은 이름·아이콘·색) */
-export const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconKey; tone: Tone }> = {
-  post: { label: '두리 소식', icon: 'feed', tone: 'blue' },
-  done: { label: '끝낸 일', icon: 'check', tone: 'mint' },
-  routine: { label: '알아서 한 일', icon: 'clock', tone: 'violet' },
-  saved: { label: '보관함', icon: 'bookmark', tone: 'amber' },
-  goal: { label: '목표', icon: 'goal', tone: 'rose' },
-  connected: { label: '연결', icon: 'link', tone: 'blue' },
-  suggest: { label: '제안', icon: 'idea', tone: 'amber' },
-}
+export const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconKey; tone: Tone; emo: string }> =
+  {
+    post: { label: '소식', icon: 'feed', tone: 'blue', emo: 'news' },
+    done: { label: '끝낸 일', icon: 'check', tone: 'mint', emo: 'check' },
+    routine: { label: '예약한 일', icon: 'clock', tone: 'violet', emo: 'routine' },
+    saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
+    goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
+    connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
+    suggest: { label: '제안', icon: 'idea', tone: 'amber', emo: 'bulb' },
+  }
 
 /** 피드를 날짜별로 묶는다 (새 것부터) */
 export function groupByDay<T extends { at: string }>(
@@ -165,14 +166,14 @@ export function continueText(item: Pick<FeedItem, 'title'>): string {
 // ── 목표 ──
 
 /** 목표 분류 7개 (폰 앱과 같은 아이콘·색·힌트) */
-export const GOAL_META: Record<GoalCategory, { icon: IconKey; tone: Tone; hint: string }> = {
-  건강: { icon: 'heart', tone: 'rose', hint: '운동·잠·식단' },
-  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구 챙기기' },
-  돈: { icon: 'card', tone: 'mint', hint: '저축·지출 줄이기' },
-  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부' },
-  관심사: { icon: 'star', tone: 'amber', hint: '취미·여행·배우기' },
-  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리·루틴' },
-  기타: { icon: 'goal', tone: 'mint', hint: '무엇이든' },
+export const GOAL_META: Record<GoalCategory, { icon: IconKey; tone: Tone; hint: string; emo: string }> = {
+  건강: { icon: 'heart', tone: 'rose', hint: '운동·수면·식단', emo: 'health' },
+  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구', emo: 'relation' },
+  돈: { icon: 'card', tone: 'mint', hint: '저축·지출', emo: 'money' },
+  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부', emo: 'work' },
+  관심사: { icon: 'star', tone: 'amber', hint: '취미·배우기', emo: 'interest' },
+  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리', emo: 'productivity' },
+  기타: { icon: 'goal', tone: 'mint', hint: '그 밖의 목표', emo: 'other' },
 }
 
 /** 맡겨 볼 만한 알아서 하는 일 (폰과 같은 예시) */
@@ -191,12 +192,15 @@ export function goalStarter(category: GoalCategory): string {
 // ── 보관함 ──
 
 /** 보관함 종류 (폰 앱과 같은 이름·아이콘·색) */
-export const LIBRARY_KIND: Record<LibraryItem['kind'], { label: string; icon: IconKey; tone: Tone }> = {
-  note: { label: '정리', icon: 'note', tone: 'blue' },
-  link: { label: '링크', icon: 'link', tone: 'violet' },
-  product: { label: '상품', icon: 'cart', tone: 'amber' },
-  place: { label: '장소', icon: 'place', tone: 'rose' },
-  file: { label: '파일', icon: 'image', tone: 'mint' },
+export const LIBRARY_KIND: Record<
+  LibraryItem['kind'],
+  { label: string; icon: IconKey; tone: Tone; emo: string }
+> = {
+  note: { label: '정리', icon: 'note', tone: 'blue', emo: 'memo' },
+  link: { label: '링크', icon: 'link', tone: 'violet', emo: 'link' },
+  product: { label: '상품', icon: 'cart', tone: 'amber', emo: 'shopping' },
+  place: { label: '장소', icon: 'place', tone: 'rose', emo: 'pin' },
+  file: { label: '파일', icon: 'image', tone: 'mint', emo: 'picture' },
 }
 
 export type LibraryTab = 'made' | 'files'

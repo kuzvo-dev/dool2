@@ -1463,25 +1463,27 @@ button.task:hover {
 }
 
 /* 아이콘 칸 색 (아이디어·활동 기록): 옅은 그라데이션 다섯 가지 */
-.tile.blue {
-  background: linear-gradient(145deg, light-dark(#eef4ff, #1c2a44), light-dark(#dbe7ff, #18233a));
-  color: light-dark(#2d62c8, #8fb4ff);
-}
-.tile.mint {
-  background: linear-gradient(145deg, light-dark(#ecfaf3, #16352a), light-dark(#d3f2e3, #122c23));
-  color: light-dark(#17905c, #6fe0a8);
-}
-.tile.amber {
-  background: linear-gradient(145deg, light-dark(#fff6e8, #3a2c14), light-dark(#ffe8c4, #33270f));
-  color: light-dark(#b56a00, #ffc46b);
-}
-.tile.rose {
-  background: linear-gradient(145deg, light-dark(#fff0f5, #3a1c27), light-dark(#fcd9e6, #331722));
-  color: light-dark(#c23a6a, #ff9dbd);
-}
+/* 기능 아이콘 칸: 색을 빼고 차분하게 (내용 분류는 아래 입체 이모지) */
+.tile.blue,
+.tile.mint,
+.tile.amber,
+.tile.rose,
 .tile.violet {
-  background: linear-gradient(145deg, light-dark(#f4f0ff, #2a2346), light-dark(#e3dafe, #241e3c));
-  color: light-dark(#6a4bd0, #b9a6ff);
+  background: var(--raise);
+  color: var(--ink);
+}
+/* 내용 분류: 입체 이모지 (Fluent Emoji 3D) */
+.tile.emo {
+  background: transparent;
+  box-shadow: none;
+}
+.tile.emo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.12));
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ── 틀 ───────────────────────────────────────────── */
