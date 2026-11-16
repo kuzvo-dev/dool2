@@ -12,10 +12,17 @@
     "live": "node scripts/live.mjs"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@dool2/daemon": "workspace:*",
     "@dool2/protocol": "workspace:*",
     "@dool2/relay": "workspace:*",
     "@dool2/ui": "workspace:*",
     "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^8.2.2",
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2"
   }
 }

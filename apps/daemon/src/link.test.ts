@@ -104,7 +104,7 @@ async function phone(url: string) {
 }
 
 describe('폰 연결', () => {
-  it('폰 앱이 다른 곳(dool2.com/space)이면 초대에 중계 주소를 싣는다', async () => {
+  it('초대에는 늘 중계 주소를 싣는다 (스토어 앱·다른 곳의 폰 앱)', async () => {
     const { api } = await boot({ appUrl: 'https://dool2.com/space/' })
     const { pair } = (await api('/api/link/pair', { method: 'POST' })) as { pair: { url: string } }
     expect(pair.url.startsWith('https://dool2.com/space/#p=')).toBe(true)

@@ -77,6 +77,7 @@ import {
   tick,
 } from './motion.js'
 import { rollNumbers, swipeDeck } from './motion-cards.js'
+import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -247,7 +248,7 @@ function connect() {
   if (!s) return
   st.client?.stop()
   st.client = new LinkClient({
-    relay: s.relay ?? location.origin,
+    relay: s.relay ?? defaultRelay(),
     role: 'phone',
     keys: s.keys,
     room: s.pcId,
@@ -3199,10 +3200,43 @@ function introView() {
       { class: 'steps' },
       h('li', { text: 'PC에서 두리 앱을 열어요' }),
       h('li', { text: '설정 → 폰 연결 → [폰 연결하기]' }),
-      h('li', { text: '폰 카메라로 QR을 찍어요' }),
+      h('li', { text: isNative() ? '아래 [QR 찍기]로 PC 화면의 QR을 찍어요' : '폰 카메라로 QR을 찍어요' }),
     ),
+    isNative() ? h('button', { class: 'btn', text: 'QR 찍기', onclick: () => void scanInvite() }) : null,
     h('p', { class: 'meta', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
   )
+}
+
+/** 앱: PC 화면의 연결 QR을 찍어 연결을 시작한다 */
+async function scanInvite() {
+  try {
+    const text = await scanQr()
+    if (!text) return
+    const invite = inviteFrom(text)
+    if (!invite) return toast('두리 연결 QR이 아니에요. PC의 설정 → 폰 연결에서 띄운 QR을 찍어 주세요')
+    await startPairing(invite)
+  } catch (e) {
+    toast((e as Error).message || 'QR을 찍지 못했어요')
+  }
+}
+
+/** 안드로이드 뒤로 가기: 열린 창 → 따로 하는 대화·원격 화면 → 대화 탭 순서로 닫는다. 더 닫을 게 없으면 false */
+function goBack(): boolean {
+  if (st.overlay) {
+    st.overlay = undefined
+    render()
+    return true
+  }
+  if (st.screen.name === 'remote' || st.screen.name === 'side') {
+    st.screen = { name: 'app' }
+    render()
+    return true
+  }
+  if (st.screen.name === 'app' && st.tab !== 'chat') {
+    setTab('chat')
+    return true
+  }
+  return false
 }
 
 function unsupportedView() {
@@ -3210,8 +3244,29 @@ function unsupportedView() {
     'section',
     { class: 'center-page' },
     liveDoori('center', 'asking', 104),
-    h('h1', { class: 'title-2', text: '이 브라우저에서는 열 수 없어요' }),
-    h('p', { class: 'psub', text: '아이폰은 사파리 17 이상, 안드로이드는 크롬 최신 버전에서 열어 주세요.' }),
+    ...(isNative()
+      ? [
+          // 앱 안의 화면은 폰의 WebView로 그린다. 암호화(X25519·Ed25519)는 WebView 137 이상에서 된다
+          h('h1', { class: 'title-2', text: '업데이트가 하나 필요해요' }),
+          h('p', {
+            class: 'psub',
+            text: '폰의 Android System WebView가 오래돼서 암호화를 쓸 수 없어요. Play 스토어에서 업데이트한 뒤 다시 열어 주세요.',
+          }),
+          h('button', {
+            class: 'btn',
+            text: 'Play 스토어에서 업데이트',
+            onclick: () => {
+              location.href = 'https://play.google.com/store/apps/details?id=com.google.android.webview'
+            },
+          }),
+        ]
+      : [
+          h('h1', { class: 'title-2', text: '이 브라우저에서는 열 수 없어요' }),
+          h('p', {
+            class: 'psub',
+            text: '아이폰은 사파리 17 이상, 안드로이드는 크롬 최신 버전에서 열어 주세요.',
+          }),
+        ]),
   )
 }
 
@@ -3510,15 +3565,26 @@ async function main() {
     return render()
   }
   try {
+    // 암호화(X25519)와 서명(Ed25519) 둘 다 되어야 한다. 크롬·WebView는 X25519가 133, Ed25519가 137부터
     await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])
+    await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
   } catch {
     st.screen = { name: 'unsupported' }
     return render()
   }
   const theme = localStorage.getItem('dool2-theme')
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
-  if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js').catch(() => {})
-  const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
+  // 앱에서는 서비스 워커를 쓰지 않는다 (앱 코드가 이미 앱 안에 있다)
+  if (!isNative() && 'serviceWorker' in navigator)
+    void navigator.serviceWorker.register('sw.js').catch(() => {})
+  listenNative({
+    open: (url) => {
+      const invite = inviteFrom(url)
+      if (invite) void startPairing(invite)
+    },
+    back: goBack,
+  })
+  const invite = inviteFrom(location.hash) ?? (await launchInvite())
   if (invite) return startPairing(invite)
   if (/^#([at]=|tab=)/.test(location.hash)) pendingOpen = location.hash
   const saved = await load()

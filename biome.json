@@ -9,6 +9,7 @@
       "!**/.wrangler",
       "!**/out",
       "!apps/desktop/stage",
+      "!apps/phone/android",
       "!apps/desktop/release",
       "!apps/desktop/build-res",
       "!docs",

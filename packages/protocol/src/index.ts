@@ -428,7 +428,7 @@ export interface PairInvite {
   s: string
   /** PC 이름 */
   n: string
-  /** 중계 서버 주소 (폰 앱이 다른 곳에 있을 때: dool2.com/space ↔ relay.dool2.com). 없으면 폰 앱을 연 주소 */
+  /** 중계 서버 주소. 예전 초대에는 없을 수 있다(그땐 폰 앱을 연 주소, 스토어 앱은 공식 중계 서버) */
   r?: string
 }
 

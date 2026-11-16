@@ -180,14 +180,13 @@ export class PhoneLink {
     if (!relay || !this.keys) throw new Error('중계 서버 주소가 정해지지 않았어요')
     const secret = b64u(randomBytes(24))
     const app = this.opts.appUrl?.() || new URL('/app/', relay).href
-    // 폰 앱과 중계 서버가 다른 곳이면 중계 주소를 초대에 실어 보낸다
-    const sameOrigin = new URL(app).origin === new URL(relay).origin
+    // 중계 주소는 늘 초대에 싣는다: 스토어 앱은 QR을 찍은 주소가 아니라 초대에 적힌 중계 서버로 붙는다
     const invite: PairInvite = {
       pc: this.keys.id,
       k: this.keys.boxPub,
       s: secret,
       n: this.pcName,
-      ...(sameOrigin ? {} : { r: relay }),
+      r: relay,
     }
     const url = `${app}#p=${b64u(new TextEncoder().encode(JSON.stringify(invite)))}`
     const qr = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1 })
