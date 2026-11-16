@@ -63,6 +63,7 @@ import {
   plain,
   upcomingSeg,
 } from './life-views.js'
+import { gooFilter, holdButton, playFlip, playSeg, Spring, springTo, tick } from './motion.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -847,6 +848,9 @@ function render() {
     shell.toast.textContent = st.toast ?? ''
     shell.toast.hidden = !st.toast
   }
+  // 다시 그린 뒤: 칸 하이라이트·스위치 손잡이를 앞 자리에서 새 자리로 움직인다
+  playSeg()
+  playFlip()
 }
 
 let lastScrollY = 0
@@ -983,6 +987,11 @@ function renderTop() {
     h('span', { class: st.online && !st.pcSilent ? 'dot work' : 'dot' }),
     shortPc(st.saved?.pcName),
   )
+  // 상태 섬: 글이 바뀌면 앞 크기에서 새 크기로 스프링 (가로가 먼저 닿고 세로가 따라온다), 글은 흐려졌다 또렷해진다
+  const old = t.querySelector<HTMLElement>('.agent-tag')
+  const before =
+    old && old.dataset.status !== status ? { w: old.offsetWidth, h: old.offsetHeight } : undefined
+  tag.dataset.status = status
   t.replaceChildren(
     h(
       'button',
@@ -992,6 +1001,23 @@ function renderTop() {
     agent,
     pill,
   )
+  if (before) {
+    const w = tag.offsetWidth
+    const ht = tag.offsetHeight
+    if (Math.abs(w - before.w) > 1) springTo(tag, [{ width: `${before.w}px` }, { width: `${w}px` }], 'lead')
+    if (Math.abs(ht - before.h) > 1)
+      springTo(tag, [{ height: `${before.h}px` }, { height: `${ht}px` }], 'soft')
+    const line = tag.querySelector('span')
+    if (line)
+      springTo(
+        line,
+        [
+          { opacity: 0, filter: 'blur(4px)', transform: 'translateY(3px)' },
+          { opacity: 1, filter: 'blur(0)', transform: 'none' },
+        ],
+        'fade',
+      )
+  }
 }
 
 function shortPc(name?: string) {
@@ -1003,6 +1029,8 @@ function openOverlay(o: Overlay) {
   st.overlay = o
   render()
 }
+
+let pillStop: (() => void) | undefined
 
 function renderTabs() {
   const t = shell?.tabs
@@ -1062,15 +1090,23 @@ function renderTabs() {
   pill.style[S] = `${size(active)}px`
   t.dataset.ready = '1'
   if (!ready || !changed || reducedMotion()) return
-  // 알약은 앞 탭에서 늘어나며 옮겨 가고, 나머지 아이콘은 제자리로 미끄러진다
+  // 알약: 가는 쪽 끝이 먼저(lead) 닿고 뒤쪽 끝이 늦게(trail) 따라와서, 움직이는 동안 늘어났다가 줄어든다
   const spring = 'cubic-bezier(0.3, 1.25, 0.4, 1)'
-  pill.animate(
-    [
-      { [P]: `${pillFrom.x}px`, [S]: `${pillFrom.w}px` },
-      { [P]: `${pos(active)}px`, [S]: `${size(active)}px` },
-    ],
-    { duration: 340, easing: spring },
-  )
+  const toA = pos(active)
+  const toB = toA + size(active)
+  const fwd = toA > pillFrom.x
+  const A = new Spring(pillFrom.x).use(fwd ? 'trail' : 'lead')
+  const B = new Spring(pillFrom.x + pillFrom.w).use(fwd ? 'lead' : 'trail')
+  A.t = toA
+  B.t = toB
+  pillStop?.()
+  pillStop = tick((dt) => {
+    A.step(dt)
+    B.step(dt)
+    pill.style[P] = `${A.x.toFixed(2)}px`
+    pill.style[S] = `${Math.max(8, B.x - A.x).toFixed(2)}px`
+    return !(A.resting && B.resting)
+  })
   for (const b of btns) {
     const dx = (before.get(b) ?? 0) - pos(b)
     if (dx)
@@ -1259,7 +1295,7 @@ function chatItems(): Item[] {
       items.push({
         key: 'typing',
         sig: '',
-        make: () => h('span', { class: 'typing', label: '대답 중' }, h('i'), h('i'), h('i')),
+        make: thinkingDots,
       })
   }
   return items
@@ -1305,10 +1341,53 @@ function onLongPress(el: HTMLElement, fn: () => void) {
   })
 }
 
+/** 생각하는 중: 점 셋이 차례로 통통 튀고, 쫀득한 필터로 서로 늘어나 붙는다 */
+function thinkingDots() {
+  gooFilter()
+  return h(
+    'span',
+    { class: 'typing goo', label: '생각하는 중' },
+    h('span', { class: 'goo-dots' }, h('i'), h('i'), h('i')),
+  )
+}
+
 function liveBubble() {
   const b = h('div', { class: 'bubble rich streaming' })
   b.append(rich(st.live))
+  riseWords(b)
   return b
+}
+
+/**
+ * 흘러오는 답: 새로 온 낱말만 아래에서 떠오르며 또렷해진다.
+ * 글을 다시 그릴 때마다 낱말을 감싸고, 앞에서 이미 보인 낱말 수보다 뒤에 있는 것만 움직인다
+ */
+function riseWords(el: HTMLElement) {
+  const seen = Number(el.dataset.words ?? 0)
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text)
+  let i = 0
+  for (const node of nodes) {
+    const parts = (node.textContent ?? '').split(/(\s+)/)
+    if (parts.length <= 1 && !parts[0]?.trim()) continue
+    const frag = document.createDocumentFragment()
+    for (const p of parts) {
+      if (!p) continue
+      if (/^\s+$/.test(p)) {
+        frag.append(p)
+        continue
+      }
+      const w = document.createElement('span')
+      w.className = i >= seen ? 'wd wd-in' : 'wd'
+      if (i >= seen) w.style.animationDelay = `${Math.min(i - seen, 8) * 35}ms`
+      w.textContent = p
+      frag.append(w)
+      i++
+    }
+    node.replaceWith(frag)
+  }
+  el.dataset.words = String(i)
 }
 
 function syncChat() {
@@ -1325,6 +1404,7 @@ function syncChat() {
     if (el && it.key === 'live') {
       // 흘러오는 답은 글자만 바꾼다
       el.replaceChildren(rich(st.live))
+      riseWords(el)
     } else if (!el || el.dataset.sig !== it.sig) {
       const fresh = it.make()
       fresh.dataset.key = it.key
@@ -1500,7 +1580,12 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
       'div',
       { class: 'approve-actions' },
       h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
-      h('button', { class: 'btn btn-approve', text: '승인하기', onclick: () => void decide(a, 'approve') }),
+      holdButton({
+        label: '꾹 눌러 승인',
+        done: '승인했어요',
+        cls: 'btn btn-approve',
+        onDone: () => void decide(a, 'approve'),
+      }),
     ),
     h('button', {
       class: 'btn-link',
@@ -2592,10 +2677,11 @@ function approvalSheet(id: string) {
       'div',
       { class: 'approve-actions' },
       h('button', { class: 'btn-ghost lg', text: '거절', onclick: () => void decide(a, 'reject') }),
-      h('button', {
-        class: 'btn btn-approve lg',
-        text: a.kind === 'app' ? '허용하기' : '승인하기',
-        onclick: () => void decide(a, 'approve'),
+      holdButton({
+        label: a.kind === 'app' ? '꾹 눌러 허용' : '꾹 눌러 승인',
+        done: a.kind === 'app' ? '허용했어요' : '승인했어요',
+        cls: 'btn btn-approve lg',
+        onDone: () => void decide(a, 'approve'),
       }),
     ),
   )
@@ -2830,7 +2916,7 @@ function sideView(id: string) {
       const b = h('div', { class: 'bubble rich streaming' })
       b.append(rich(sd.live))
       list.append(b)
-    } else list.append(h('span', { class: 'typing', label: '대답 중' }, h('i'), h('i'), h('i')))
+    } else list.append(thinkingDots())
   }
   if (sd && !sd.messages.length && !sd.busy)
     list.append(
@@ -3154,6 +3240,8 @@ function pullToRefresh(page: HTMLElement) {
 }
 
 async function main() {
+  // 아이폰 사파리는 viewport의 확대 막기를 무시해서, 꼬집기 확대를 따로 막는다 (원격 화면은 자체로 처리)
+  document.addEventListener('gesturestart', (e) => e.preventDefault())
   document.documentElement.dataset.theme = 'auto'
   if (!globalThis.crypto?.subtle || !('indexedDB' in window)) {
     st.screen = { name: 'unsupported' }
