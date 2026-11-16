@@ -1,0 +1,11 @@
+{
+  "appId": "com.dool2.app",
+  "appName": "두리",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
