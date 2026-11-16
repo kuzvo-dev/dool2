@@ -303,6 +303,11 @@ async function receive(env: Envelope) {
       st.hasMore = msg.state.hasMore
       st.busy = msg.state.busy
       st.queued = msg.state.queued
+      // 다시 받아 온 기록이 끝난 상태면, 놓친 끝 신호 때문에 남은 "대답하는 중"을 지운다
+      if (!msg.before && !msg.state.busy) {
+        st.live = ''
+        st.steps = []
+      }
       break
     case 'conversation-status':
       st.busy = msg.busy
@@ -406,8 +411,8 @@ async function receive(env: Envelope) {
         if (st.overlay?.kind === 'connect') st.overlay = undefined
         toast(msg.message)
         runAfterConnect(msg.id)
-      } else if (msg.tabId !== undefined && msg.human) {
-        // 로봇 확인·본인인증: 그 화면을 바로 열어 직접 마치게 한다
+      } else if (msg.tabId !== undefined) {
+        // 로봇 확인·본인인증, 자동 로그인 실패: 그 화면을 바로 열어 직접 마치게 한다
         toast(msg.message)
         openRemote(msg.tabId, msg.id)
         return
@@ -440,6 +445,7 @@ async function receive(env: Envelope) {
 }
 
 function onStream(ev: DaemonStreamEvent) {
+  lastStreamAt = Date.now()
   if (ev.type === 'saved') {
     const m = ev.message
     if (!st.conv.some((x) => x.id === m.id)) st.conv = [...st.conv, m]
@@ -827,6 +833,7 @@ function buildShell() {
   toast.setAttribute('role', 'status')
   app.replaceChildren(h('div', { class: 'app-shell' }, top, page, composerBox, tabs, overlay, toast))
   shell = { top, page, chat, composerBox, textarea, sendBtn, tabs, overlay, toast }
+  pullToRefresh(page)
 }
 
 function autosize(t: HTMLTextAreaElement) {
@@ -2937,6 +2944,84 @@ window.addEventListener('hashchange', () => {
   }
 })
 
+// ── 다시 맞추기: 앱을 내렸다 오거나 신호가 끊겨도 PC와 같은 화면이 되게 ──
+
+let lastStreamAt = Date.now()
+
+/** PC에서 대화·상태·생활·연결을 다시 받아 온다 */
+function resync() {
+  if (!st.online || !st.saved?.paired) return
+  void send({ kind: 'hello' })
+  void send({ kind: 'conversation' })
+  void send({ kind: 'life' })
+  void send({ kind: 'connections' })
+}
+
+function startResync() {
+  // 앱으로 돌아오면 (폰은 뒤로 가 있는 동안 연결이 끊기거나 신호를 놓친다)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    if (st.client && !st.online) connect()
+    else resync()
+  })
+  // 답하는 중인데 40초 넘게 아무 신호가 없으면 기록을 다시 받는다
+  setInterval(() => {
+    if (st.busy && Date.now() - lastStreamAt > 40_000) {
+      lastStreamAt = Date.now()
+      resync()
+    }
+  }, 10_000)
+}
+
+/** 당겨서 새로고침: 목록 맨 위에서 아래로 당겼다 놓으면 PC에서 다시 받아 온다 */
+function pullToRefresh(page: HTMLElement) {
+  const ind = h('div', { class: 'ptr' }, doori('', 28))
+  page.before(ind)
+  let y0 = -1
+  let dy = 0
+  const reset = () => {
+    y0 = -1
+    dy = 0
+    ind.style.transform = ''
+    ind.classList.remove('ready')
+  }
+  page.addEventListener(
+    'touchstart',
+    (e) => {
+      y0 = page.scrollTop <= 0 ? (e.touches[0]?.clientY ?? -1) : -1
+    },
+    { passive: true },
+  )
+  page.addEventListener(
+    'touchmove',
+    (e) => {
+      if (y0 < 0) return
+      dy = Math.max(0, (e.touches[0]?.clientY ?? y0) - y0)
+      if (!dy || page.scrollTop > 0) return
+      const d = Math.min(110, dy * 0.5)
+      ind.style.transform = `translate(-50%, ${d}px) rotate(${d * 3}deg)`
+      ind.style.opacity = String(Math.min(1, d / 60))
+      ind.classList.toggle('ready', d >= 60)
+    },
+    { passive: true },
+  )
+  page.addEventListener('touchend', () => {
+    const go = ind.classList.contains('ready')
+    if (!go) {
+      ind.style.opacity = '0'
+      return reset()
+    }
+    ind.classList.add('spinning')
+    resync()
+    navigator.vibrate?.(8)
+    setTimeout(() => {
+      ind.classList.remove('spinning')
+      ind.style.opacity = '0'
+      reset()
+    }, 900)
+  })
+}
+
 async function main() {
   document.documentElement.dataset.theme = 'auto'
   if (!globalThis.crypto?.subtle || !('indexedDB' in window)) {
@@ -2967,6 +3052,7 @@ async function main() {
     : { name: 'pairing', code: await pairCode(saved.keys.boxPriv, saved.pcBoxPub), pcName: saved.pcName }
   render()
   connect()
+  startResync()
 }
 
 void main()
