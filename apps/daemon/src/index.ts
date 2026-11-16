@@ -707,6 +707,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const approvalThread = new Map<string, string>()
   /** 로그인 요청이 나온 대화 (폰에서 저장하면 그 대화로 이어서 하게) */
   const loginThread = new Map<string, string>()
+  browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
     if (only) loginThread.set(r.id, only)

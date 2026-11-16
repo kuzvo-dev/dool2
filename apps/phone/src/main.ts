@@ -129,6 +129,8 @@ const st: {
   ideaCat: string
   /** 두리 본체가 지금 로그인하고 있는 서비스 */
   connecting: Set<string>
+  /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
+  work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
   /** 연결하고 나서 바로 보낼 아이디어 (연결 안 한 곳의 아이디어를 눌렀을 때) */
   afterConnect?: { id: string; text: string; at: number }
@@ -176,6 +178,7 @@ const st: {
   connectQuery: '',
   ideaCat: 'all',
   connecting: new Set(),
+  work: { web: false },
   ideaQuery: '',
   agentSeg: 'activity',
   librarySeg: 'made',
@@ -362,6 +365,17 @@ async function receive(env: Envelope) {
       break
     }
     case 'screen': {
+      if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
+        // 대화 안 일하는 화면: 그림만 바꾼다
+        const first = !st.work.shot
+        st.work = { ...st.work, shot: msg.shot, ...(msg.url ? { url: msg.url } : {}) }
+        const img = document.querySelector<HTMLImageElement>('.work-shot')
+        if (img) img.src = `data:image/jpeg;base64,${msg.shot}`
+        const host = document.querySelector('.work-host')
+        if (host) host.textContent = hostOf(msg.url ?? '')
+        if (first) render()
+        return
+      }
       if (st.screen.name !== 'remote' || st.screen.tabId !== msg.tabId) return
       const hadShot = !!st.screenShot?.shot
       st.screenShot = { tabId: msg.tabId, ...(msg.error ? { error: msg.error } : {}), ...pick(msg) }
@@ -396,6 +410,10 @@ async function receive(env: Envelope) {
     case 'life':
       st.life = msg.state
       break
+    case 'work-tab':
+      st.work = { ...st.work, tabId: msg.tabId }
+      pollWork()
+      return
     case 'connect-status':
       st.connecting = new Set(msg.connecting)
       break
@@ -461,6 +479,12 @@ function onStream(ev: DaemonStreamEvent) {
     st.busy = true
     if (ev.event.type === 'text') st.live += ev.event.delta
     else if (ev.event.type === 'tool') {
+      // 웹에서 일하기 시작하면 대화에 그 화면을 띄운다
+      const web = /browser_/.test(ev.event.name)
+      if (web !== st.work.web) {
+        st.work = { ...st.work, web }
+        if (web) pollWork()
+      }
       // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
       const label = narrationLine(st.live) ?? `${toolLabel(ev.event.name)} 중`
       st.live = ''
@@ -469,6 +493,7 @@ function onStream(ev: DaemonStreamEvent) {
   } else if (ev.type === 'end') {
     st.live = ''
     st.steps = []
+    st.work = { ...st.work, web: false, shot: undefined }
     void send({ kind: 'hello' })
   }
 }
@@ -596,6 +621,45 @@ function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'ta
   if (st.screenShot) st.screenShot.busy = true
   render()
   void send({ kind: 'remote', tabId, ...input })
+}
+
+// ── 일하는 화면: 두리가 웹에서 일하는 동안 대화에 그 탭을 작게 실시간으로 ──
+
+let workTimer: ReturnType<typeof setTimeout> | undefined
+function pollWork() {
+  clearTimeout(workTimer)
+  const tick = () => {
+    const tab = st.work.tabId
+    const watching =
+      st.work.web &&
+      st.busy &&
+      tab !== undefined &&
+      st.tab === 'chat' &&
+      st.screen.name === 'app' &&
+      document.visibilityState === 'visible'
+    if (!watching) return
+    void send({ kind: 'screen', tabId: tab })
+    workTimer = setTimeout(tick, 1500)
+  }
+  workTimer = setTimeout(tick, 300)
+}
+
+function workCard(tab: number): HTMLElement {
+  const img = h('img', { class: 'work-shot' })
+  img.alt = '두리가 보고 있는 화면'
+  if (st.work.shot) img.src = `data:image/jpeg;base64,${st.work.shot}`
+  return h(
+    'button',
+    { class: 'work-card', label: '두리 화면 크게 보기', onclick: () => openRemote(tab) },
+    img,
+    h(
+      'span',
+      { class: 'work-meta' },
+      h('span', { class: 'dot work pulse' }),
+      h('span', { class: 'work-host', text: hostOf(st.work.url ?? '') }),
+      h('span', { class: 'work-open' }, '크게 보기', icon('chevron', 'i')),
+    ),
+  )
 }
 
 // ── 알림 ──
@@ -855,6 +919,7 @@ function setTab(tab: Tab) {
   if (!page) return
   page.scrollTo({ top: tab === 'chat' ? page.scrollHeight : 0 })
   shell?.tabs.classList.remove('away')
+  if (tab === 'chat') pollWork()
   // 탭 순서대로 옆에서 밀려 들어온다
   if (from >= 0 && to >= 0 && from !== to && !reducedMotion())
     page.animate(
@@ -964,8 +1029,13 @@ function renderTabs() {
   const btns = [...t.querySelectorAll<HTMLElement>('.tab')]
   const pill = t.querySelector<HTMLElement>('.tab-pill') as HTMLElement
   const ready = t.dataset.ready === '1'
-  const before = new Map(btns.map((b) => [b, b.offsetLeft]))
-  const pillFrom = { x: pill.offsetLeft, w: pill.offsetWidth }
+  // 태블릿은 왼쪽 세로 막대: 알약이 위아래로 움직인다
+  const vertical = getComputedStyle(t).flexDirection === 'column'
+  const pos = (e: HTMLElement) => (vertical ? e.offsetTop : e.offsetLeft)
+  const size = (e: HTMLElement) => (vertical ? e.offsetHeight : e.offsetWidth)
+  const [P, S] = vertical ? (['top', 'height'] as const) : (['left', 'width'] as const)
+  const before = new Map(btns.map((b) => [b, pos(b)]))
+  const pillFrom = { x: pos(pill), w: size(pill) }
   let changed = false
   for (const b of btns) {
     const on = b.dataset.tab === st.tab
@@ -978,26 +1048,31 @@ function renderTabs() {
   const active = btns.find((b) => b.classList.contains('on'))
   pill.hidden = !active
   if (!active) return
-  pill.style.left = `${active.offsetLeft}px`
-  pill.style.width = `${active.offsetWidth}px`
+  pill.style.removeProperty(vertical ? 'left' : 'top')
+  pill.style.removeProperty(vertical ? 'width' : 'height')
+  pill.style[P] = `${pos(active)}px`
+  pill.style[S] = `${size(active)}px`
   t.dataset.ready = '1'
   if (!ready || !changed || reducedMotion()) return
   // 알약은 앞 탭에서 늘어나며 옮겨 가고, 나머지 아이콘은 제자리로 미끄러진다
   const spring = 'cubic-bezier(0.3, 1.25, 0.4, 1)'
   pill.animate(
     [
-      { left: `${pillFrom.x}px`, width: `${pillFrom.w}px` },
-      { left: `${active.offsetLeft}px`, width: `${active.offsetWidth}px` },
+      { [P]: `${pillFrom.x}px`, [S]: `${pillFrom.w}px` },
+      { [P]: `${pos(active)}px`, [S]: `${size(active)}px` },
     ],
     { duration: 340, easing: spring },
   )
   for (const b of btns) {
-    const dx = (before.get(b) ?? 0) - b.offsetLeft
+    const dx = (before.get(b) ?? 0) - pos(b)
     if (dx)
-      b.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], {
-        duration: 340,
-        easing: spring,
-      })
+      b.animate(
+        [{ transform: vertical ? `translateY(${dx}px)` : `translateX(${dx}px)` }, { transform: 'none' }],
+        {
+          duration: 340,
+          easing: spring,
+        },
+      )
   }
   active
     .querySelector('svg')
@@ -1162,6 +1237,9 @@ function chatItems(): Item[] {
   })
   if (st.busy || st.pending.length) {
     const step = st.steps.at(-1)
+    const tab = st.work.tabId
+    if (st.work.web && st.busy && tab !== undefined && st.work.shot)
+      items.push({ key: 'work', sig: String(tab), make: () => workCard(tab) })
     if (step)
       items.push({
         key: 'step',
@@ -2955,6 +3033,7 @@ function resync() {
   void send({ kind: 'conversation' })
   void send({ kind: 'life' })
   void send({ kind: 'connections' })
+  pollWork()
 }
 
 function startResync() {
@@ -2964,6 +3043,10 @@ function startResync() {
     if (st.client && !st.online) connect()
     else resync()
   })
+  // 앱을 켜 두고 있다고 1분마다 알린다 (PC는 켜 둔 폰에만 흘려 쓰는 답을 보낸다)
+  setInterval(() => {
+    if (st.online && st.saved?.paired && document.visibilityState === 'visible') void send({ kind: 'ping' })
+  }, 60_000)
   // 답하는 중인데 40초 넘게 아무 신호가 없으면 기록을 다시 받는다
   setInterval(() => {
     if (st.busy && Date.now() - lastStreamAt > 40_000) {
@@ -3053,6 +3136,8 @@ async function main() {
   render()
   connect()
   startResync()
+  // 태블릿을 돌리거나 창 크기가 바뀌면 탭 알약 자리를 다시 잡는다
+  addEventListener('resize', () => renderTabs())
 }
 
 void main()

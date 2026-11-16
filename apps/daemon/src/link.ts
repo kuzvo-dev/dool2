@@ -255,6 +255,8 @@ export class PhoneLink {
     }
     if (msg.kind !== env.kind) return
     if (!this.guard.accept(phone.id, env.seq)) return
+    this.lastSeen.set(phone.id, this.now())
+    if (msg.kind === 'ping') return
     await this.secrets.set(SEQS, JSON.stringify(this.guard.snapshot()))
     await this.handle(phone, msg).catch((e: Error) => this.send(phone, { kind: 'error', message: e.message }))
   }
@@ -462,9 +464,20 @@ export class PhoneLink {
     return this.sendTo(phone.id, phone.boxPub, body)
   }
 
-  /** 모든 폰에 보낸다 (대화 진행, 새 승인 요청) */
-  async broadcast(body: PcToPhone) {
-    for (const p of this.phones) await this.send(p, body).catch(() => {})
+  /** 폰마다 마지막으로 소식을 받은 때 */
+  private lastSeen = new Map<string, number>()
+
+  /**
+   * 모든 폰에 보낸다 (새 승인 요청, 연결 결과 등).
+   * live면 지금 앱을 켜 둔 폰(3분 안에 소식이 온 폰)에만: 흘려 쓰는 답·실시간 화면은 꺼진 폰에 쌓아 둘 필요가 없고,
+   * 예전에 연결했던 폰이 많으면 중계 한도를 넘어 연결이 끊긴다
+   */
+  async broadcast(body: PcToPhone, o: { live?: boolean } = {}) {
+    const now = this.now()
+    for (const p of this.phones) {
+      if (o.live && now - (this.lastSeen.get(p.id) ?? 0) > 180_000) continue
+      await this.send(p, body).catch(() => {})
+    }
   }
 
   /** 대화 진행을 폰에도 흘려보낸다. 글자 조각은 0.12초씩 모아서 보낸다 (쓰는 대로 보이게, 너무 잘게 쪼개지 않게) */
@@ -476,11 +489,14 @@ export class PhoneLink {
       if (!buf) return
       const delta = buf
       buf = ''
-      void this.broadcast({
-        kind: 'stream',
-        threadId,
-        event: { type: 'agent', event: { type: 'text', delta } },
-      })
+      void this.broadcast(
+        {
+          kind: 'stream',
+          threadId,
+          event: { type: 'agent', event: { type: 'text', delta } },
+        },
+        { live: true },
+      )
     }
     return (ev: DaemonStreamEvent) => {
       if (!this.phones.length) return
@@ -489,8 +505,10 @@ export class PhoneLink {
         timer ??= setTimeout(flush, 120)
         return
       }
+      // 화면이 쓰는 것만 보낸다 (글자·도구 단계). 사용량·크기 같은 안쪽 신호는 보내지 않는다
+      if (ev.type === 'agent' && ev.event.type !== 'tool') return
       flush()
-      void this.broadcast({ kind: 'stream', threadId, event: ev })
+      void this.broadcast({ kind: 'stream', threadId, event: ev }, { live: ev.type === 'agent' })
     }
   }
 }
