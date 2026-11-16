@@ -113,11 +113,12 @@ export class Spring {
 
 /** 프레임마다 부른다. false를 돌려주면 멈춘다 */
 export function tick(frame: (dt: number) => boolean | undefined): () => void {
-  let last = performance.now()
+  // 시간은 프레임 시각끼리만 잰다. 프레임 시각이 시작 시각보다 앞설 수 있어서(뒤로 가면 스프링이 터진다) 0 아래로 내려가지 않게 한다
+  let last: number | undefined
   let stop = false
   const loop = (now: number) => {
     if (stop) return
-    const dt = Math.min((now - last) / 1000, 1 / 30)
+    const dt = last === undefined ? 1 / 60 : Math.min(Math.max((now - last) / 1000, 0), 1 / 30)
     last = now
     // 프레임 안에서 4번 나눠 계산하면 단단한 스프링도 튀지 않는다
     let go: boolean | undefined = true
@@ -340,27 +341,24 @@ export function burst(from: Element) {
     const a = (i / BURST.length) * Math.PI * 2 + 0.2
     const x = Math.cos(a) * 30
     const y = Math.sin(a) * 30
-    springTo(
-      d,
+    // 점은 스프링이 아니라 한 번에 퍼졌다 사라진다 (스프링은 넘쳤다 돌아오며 점이 되돌아온다)
+    const far = 34 + (i % 2) * 6
+    d.animate(
       [
-        { transform: 'translate(-50%, -50%) scale(0.4)', opacity: 1 },
+        { transform: 'translate(-50%, -50%) scale(0.3)', opacity: 1 },
         {
-          transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(1)`,
+          transform: `translate(calc(-50% + ${x * 0.8}px), calc(-50% + ${y * 0.8}px)) scale(1.1)`,
           opacity: 1,
-          offset: 0.6,
+          offset: 0.45,
         },
         {
-          transform: `translate(calc(-50% + ${x * 1.15}px), calc(-50% + ${y * 1.15}px)) scale(0.2)`,
+          transform: `translate(calc(-50% + ${(x / 30) * far}px), calc(-50% + ${(y / 30) * far}px)) scale(0.2)`,
           opacity: 0,
         },
       ],
-      'pop',
+      { duration: 620, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' },
     )
   })
-  springTo(
-    from,
-    [{ transform: 'scale(0.82)' }, { transform: 'scale(1.12)', offset: 0.4 }, { transform: 'scale(1)' }],
-    'pop',
-  )
+  springTo(from, [{ transform: 'scale(0.8)' }, { transform: 'scale(1)' }], 'pop')
   setTimeout(() => box.remove(), 900)
 }
