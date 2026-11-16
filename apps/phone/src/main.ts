@@ -54,6 +54,7 @@ import {
   shortTime,
   withLogo,
 } from './dom.js'
+import { matchTextBox, recentTalk, ghostRest as suggestRest } from './ghost.js'
 import {
   feedView,
   goalSheet,
@@ -992,12 +993,12 @@ let ghostEl: HTMLElement | undefined
 let ghostRest = ''
 
 function ghostFor(draft: string): string {
-  const d = draft.trimStart()
-  if (d.length < 2 || d.includes('\n')) return ''
-  const mine = (st.life?.ideas ?? []).map((i) => i.text)
-  const all = ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text))
-  const hit = [...mine, ...all].find((t) => t.startsWith(d) && t.length > d.length)
-  return hit ? hit.slice(d.length) : ''
+  return suggestRest({
+    draft,
+    talk: recentTalk(st.conv),
+    mine: (st.life?.ideas ?? []).map((i) => i.text),
+    catalog: ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text)),
+  })
 }
 
 function updateGhost() {
@@ -1016,10 +1017,7 @@ function updateGhost() {
   if (rest === ghostRest && !g.hidden) return
   ghostRest = rest
   // 입력칸과 같은 글꼴·안쪽 여백으로 겹쳐 그린다
-  const cs = getComputedStyle(t)
-  g.style.font = cs.font
-  g.style.letterSpacing = cs.letterSpacing
-  g.style.padding = cs.padding
+  matchTextBox(g, t)
   const typed = h('span', { class: 'ghost-typed', text: st.draft })
   const letters = [...rest].map((ch) => h('span', { class: 'g', text: ch }))
   const restEl = h('span', { class: 'ghost-rest', onclick: takeGhost }, ...letters)
@@ -1030,6 +1028,8 @@ function updateGhost() {
   )
   g.replaceChildren(typed, restEl, key)
   g.hidden = false
+  // 넘칠 때만 오른쪽을 흐린다 (다 들어가면 마지막 글자까지 또렷하게)
+  restEl.classList.toggle('clip', restEl.scrollWidth > restEl.clientWidth + 1)
   springTo(restEl, [{ opacity: 0 }, { opacity: 1 }], 'fade')
   springTo(
     key,
