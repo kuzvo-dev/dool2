@@ -5,31 +5,26 @@
 // - PC 방(id)마다 PC 하나와 폰 여럿을 잇는다. 받는 쪽이 꺼져 있으면 7일까지 쌓아 두고, 켜지면 넘긴다
 // - 누가 페어링된 폰인지는 모른다. 그건 PC가 판단해서 나머지는 버린다
 //
-// 이 Node 버전은 자체 호스팅·개발용이다. 같은 규약으로 Cloudflare Durable Objects 버전을 배포한다(M5).
+// 이 Node 버전은 자체 호스팅·개발용이다. 공식 서버는 같은 규칙(core.ts)으로 Cloudflare Durable Objects에 올린다(worker.ts).
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, sep } from 'node:path'
-import { deviceId, type Envelope, verifyText } from '@dool2/protocol/e2e'
-import { helloText } from '@dool2/protocol/link'
 import { WebSocket, WebSocketServer } from 'ws'
+import {
+  AUTH_TIMEOUT_MS,
+  CLOSE,
+  checkHello,
+  MAX_MESSAGE,
+  type Me,
+  QUEUE_MAX,
+  QUEUE_TTL_MS,
+  RATE_LIMIT,
+  route,
+} from './core.js'
 
-export const MAX_MESSAGE = 512 * 1024
-export const QUEUE_TTL_MS = 7 * 24 * 60 * 60_000
-export const QUEUE_MAX = 500
-const AUTH_SKEW_MS = 2 * 60_000
-
-/** 연결 직후 첫 메시지. ts를 서명해서 다른 연결의 증명을 다시 쓰지 못하게 한다 */
-export interface Hello {
-  role: 'pc' | 'phone'
-  id: string
-  signPub: string
-  /** 폰: 연결할 PC 방 */
-  room?: string
-  ts: number
-  sig: string
-}
+export { type Hello, MAX_MESSAGE, QUEUE_MAX, QUEUE_TTL_MS } from './core.js'
 
 interface Queued {
   at: number
@@ -91,43 +86,33 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
     for (const m of q) ws.send(m.data)
   }
 
-  wss.on('connection', (ws) => {
-    let me: { id: string; role: 'pc' | 'phone'; room: string } | undefined
-    const authTimer = setTimeout(() => ws.close(4001, 'hello timeout'), 10_000)
-    // 연결마다 1초에 보낼 수 있는 수: PC는 여러 폰에 흘려 쓰는 답·실시간 화면을 보내서 넉넉히, 폰은 적게.
-    // 넘으면 끊는다 (끊기면 그사이 메시지를 잃으니, 정상 사용으로는 닿지 않게 잡는다)
-    const LIMIT = { pc: 600, phone: 60 }
-    let budget = LIMIT.phone
+  wss.on('connection', (ws, req) => {
+    // 주소에 방이 실려 오면(`/link?room=`) 증명한 방과 같아야 한다. 예전 접속기는 방 없이 온다
+    const urlRoom = new URL(req.url ?? '/', 'http://x').searchParams.get('room') ?? undefined
+    let me: Me | undefined
+    const authTimer = setTimeout(() => ws.close(CLOSE.helloTimeout, 'hello timeout'), AUTH_TIMEOUT_MS)
+    let budget: number = RATE_LIMIT.phone
     const refill = setInterval(() => {
-      budget = me?.role === 'pc' ? LIMIT.pc : LIMIT.phone
+      budget = RATE_LIMIT[me?.role ?? 'phone']
     }, 1_000)
 
     ws.on('message', async (raw, isBinary) => {
-      if (isBinary) return ws.close(4002, 'text only')
+      if (isBinary) return ws.close(CLOSE.badJson, 'text only')
       const text = raw.toString()
       let msg: unknown
       try {
         msg = JSON.parse(text)
       } catch {
-        return ws.close(4002, 'bad json')
+        return ws.close(CLOSE.badJson, 'bad json')
       }
       if (!me) {
-        const h = msg as Hello
-        const ok =
-          (h?.role === 'pc' || h?.role === 'phone') &&
-          typeof h.id === 'string' &&
-          typeof h.signPub === 'string' &&
-          typeof h.sig === 'string' &&
-          Math.abs(now() - Number(h.ts)) < AUTH_SKEW_MS &&
-          (h.role === 'pc' || typeof h.room === 'string') &&
-          (await deviceId(h.signPub).catch(() => '')) === h.id &&
-          (await verifyText(h.signPub, helloText(h), h.sig))
-        if (!ok) return ws.close(4003, 'bad hello')
+        const who = await checkHello(msg, now(), urlRoom)
+        if (!who) return ws.close(CLOSE.badHello, 'bad hello')
         clearTimeout(authTimer)
-        me = { id: h.id, role: h.role, room: h.role === 'pc' ? h.id : (h.room as string) }
-        if (me.role === 'pc') budget = LIMIT.pc
+        me = who
+        budget = RATE_LIMIT[me.role]
         // 같은 기기가 다시 붙으면 예전 연결을 닫는다
-        sockets.get(me.id)?.close(4004, 'replaced')
+        sockets.get(me.id)?.close(CLOSE.replaced, 'replaced')
         sockets.set(me.id, ws)
         rooms.set(me.id, me.room)
         ws.send(JSON.stringify({ relay: 'ready', id: me.id }))
@@ -135,16 +120,13 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
         log(`연결: ${me.role} ${me.id.slice(0, 6)}`)
         return
       }
-      if (--budget < 0) return ws.close(4008, 'too fast')
-      const env = msg as Envelope
-      if (env?.from !== me.id || typeof env.to !== 'string') return ws.close(4005, 'bad from')
-      // PC는 자기 방의 폰에게만, 폰은 자기 방의 PC에게만 보낼 수 있다
-      if (me.role === 'phone' && env.to !== me.room) return
-      if (me.role === 'pc' && rooms.get(env.to) !== undefined && rooms.get(env.to) !== me.id) return
-      const target = sockets.get(env.to)
+      if (--budget < 0) return ws.close(CLOSE.tooFast, 'too fast')
+      const r = route(me, msg, (id) => rooms.get(id))
+      if (!r.ok) return ws.close(r.close, r.reason)
+      if (r.drop) return
+      const target = sockets.get(r.to)
       if (target && target.readyState === WebSocket.OPEN) target.send(text)
-      // 원격 화면은 지금 보는 사람에게만 의미가 있다. 꺼진 기기에 쌓아 두지 않는다
-      else if (env.kind !== 'screen' && env.kind !== 'remote') enqueue(env.to, text)
+      else if (r.queue) enqueue(r.to, text)
     })
     ws.on('close', () => {
       clearTimeout(authTimer)
