@@ -34,7 +34,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm typecheck
+      # 맥 러너에서 가끔 테스트가 멈춰 15분 뒤 취소되면 로그가 남지 않는다: 단계 시간 제한으로 실패시켜 로그를 남긴다
       - run: pnpm test
+        timeout-minutes: 8
 
   dco:
     name: DCO 서명 확인
