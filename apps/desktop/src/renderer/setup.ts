@@ -28,6 +28,12 @@ import {
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>
 
+/** 화면에는 런타임 import 없이 이름만 보여 준다 (공식 주소는 @dool2/protocol/link의 OFFICIAL_RELAY) */
+const relayName = (relay?: string) =>
+  !relay || new URL(relay).host === 'relay.dool2.com'
+    ? '두리 중계 서버'
+    : `직접 운영하는 중계 서버(${new URL(relay).host})`
+
 export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
@@ -663,7 +669,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         el(
           'p',
           'setup-hint',
-          `${link.connected ? '중계 서버와 연결돼 있어요.' : '중계 서버에 연결하는 중이에요.'} 폰에서 부탁하고, 결제·보내기는 폰에서 승인해요. 주고받는 내용은 PC와 폰만 열 수 있게 암호화돼요.`,
+          `${relayName(link.relay)}${link.connected ? '와 연결돼 있어요.' : '에 연결하는 중이에요.'} 폰에서 부탁하고, 결제·보내기는 폰에서 승인해요. 주고받는 내용은 PC와 폰만 열 수 있게 암호화돼요.`,
         ),
       )
       if (link.phones.length) {

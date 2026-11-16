@@ -2,6 +2,9 @@
 // 끊기면 점점 늘어나는 간격(최대 30초)으로 다시 붙는다.
 import { type DeviceKeys, type Envelope, signText } from './e2e.js'
 
+/** 두리 공식 중계 서버 (Cloudflare Workers + Durable Objects, apps/relay/src/worker.ts). 내용은 볼 수 없다 */
+export const OFFICIAL_RELAY = 'https://relay.dool2.com'
+
 export interface LinkOptions {
   /** 중계 서버 주소 (http(s)://…) */
   relay: string
