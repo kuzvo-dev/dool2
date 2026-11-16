@@ -51,7 +51,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /** 화면이 다 그려질 때까지 (글이 거의 없으면 조금씩 기다려 다시 읽는다) */
 async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
   let page = await snap()
-  for (let i = 0; i < 4 && page.text.replace(/\s/g, '').length < 12; i++) {
+  // 글이 거의 없거나 누를 것이 두세 개뿐이면 아직 그리는 중이다 (로그인 창을 늦게 띄우는 사이트)
+  const thin = (p: Snap) =>
+    p.text.replace(/\s/g, '').length < 12 ||
+    ((p.text.match(/\[e\d+ /g)?.length ?? 0) < 3 && !/\[e\d+ (입력칸|비밀번호칸)/.test(p.text))
+  for (let i = 0; i < 4 && thin(page); i++) {
     await sleep(Math.max(wait, 800))
     page = await snap()
   }
@@ -71,6 +75,8 @@ export interface ProbeResult {
   passwordField?: string
   submit?: string
   clicks: string[]
+  /** 지나온 로그인 화면들에 있던 간편 로그인 */
+  social?: SocialProvider[]
 }
 
 /** 점검: 로그인 칸을 찾기만 하고 넣거나 누르지 않는다 (실제 사이트에서 찾을 수 있는지 보기) */
@@ -88,9 +94,11 @@ export async function probeLogin(
   const clicks: string[] = []
   let page = await settled(() => snap(tabId), wait)
   if (looksSignedIn(input.card, page)) return { status: 'signed-in', url: page.url, clicks, tabId }
+  const social = new Set<SocialProvider>(socialProvidersIn(page.text))
   let retried = false
-  for (let i = 0; i < 3 && !hasPassword(page.text); i++) {
-    const target = findLoginLink(page.text)
+  const tried = new Set<string>()
+  for (let i = 0; i < 4 && !hasPassword(page.text) && !twoStep(page.text); i++) {
+    const target = findLoginLink(page.text, tried)
     if (!target) {
       // 화면이 아직 바뀌는 중일 수 있다 (다른 주소로 넘어가거나 늦게 그려지는 사이트): 한 번만 더 기다려 본다
       if (retried) break
@@ -101,6 +109,7 @@ export async function probeLogin(
       continue
     }
     clicks.push(target[1].name)
+    tried.add(target[1].name.trim())
     // 로그인이 새 창(팝업)으로 열리면 그 창을 따라간다
     const clicked = (await browser.call('click', { tabId, ref: target[0] }, 30_000).catch(() => undefined)) as
       | { newTabId?: number }
@@ -111,8 +120,10 @@ export async function probeLogin(
     }
     await sleep(wait)
     page = await settled(() => snap(tabId), wait)
+    for (const p of socialProvidersIn(page.text)) social.add(p)
   }
   const base = {
+    social: [...social],
     url: page.url,
     ...(page.title ? { title: page.title } : {}),
     clicks,
@@ -146,23 +157,29 @@ const SOCIAL =
 /** 가입·비회원만 하는 링크 ("로그인/회원가입"처럼 로그인이 같이 있으면 괜찮다) */
 const JOIN_ONLY = (name: string) => /가입|비회원/.test(name) && !/로그인|log ?in|sign ?in/i.test(name)
 
-function findLoginLink(text: string): RefEntry | undefined {
+/** 로그인 방법 고르기 화면의 "아이디·이메일로 로그인" (소셜·가입 말고 우리가 채울 수 있는 방법) */
+const ID_LOGIN =
+  /^((이메일|아이디|ID|e-?mail|휴대폰\s?번호|통합\s?(아이디|계정)).{0,12}(로그인|계속하기|시작하기)|(이메일|아이디)로\s?(로그인|시작하기|계속하기))$/i
+
+function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): RefEntry | undefined {
   const refs = ([...parseRefs(text)] as RefEntry[]).filter(
     ([, r]) =>
       (r.role === '링크' || r.role === '버튼') &&
-      r.name.trim().length <= 20 &&
+      r.name.trim().length <= 24 &&
+      // 이미 눌렀는데 화면이 그대로면 다른 걸 눌러 본다 (위쪽 "로그인/회원가입"만 계속 누르지 않게)
+      !skip.has(r.name.trim()) &&
       !SOCIAL.test(r.name) &&
       !JOIN_ONLY(r.name),
   )
   return (
+    // 로그인 방법 고르기 화면: "이메일 로그인", "아이디로 로그인", "무신사 통합계정 … 로그인"
+    refs.find(([, r]) => ID_LOGIN.test(r.name.trim())) ??
+    refs.find(([, r]) => /(아이디|이메일|ID|통합\s?계정).{0,12}로그인/i.test(r.name)) ??
     refs.find(([, r]) => LOGIN_WORD.test(r.name.trim())) ??
     refs.find(([, r]) => /^로그인\s?[/·|]\s?회원\s?가입$/.test(r.name.trim())) ??
-    refs.find(([, r]) => /(아이디|이메일|ID)\s?로그인/i.test(r.name)) ??
     // 로그인 방법 고르기 화면: 통신사·포털 자체 아이디 (U+ID, T아이디, KT ID…)
     refs.find(([, r]) =>
-      /^(U\+\s?ID|MYLGID|T\s?아이디|KT\s?ID|통합\s?아이디|아이디|(이?메일|이메일)로\s?(시작하기|로그인|계속하기))$/i.test(
-        r.name.trim(),
-      ),
+      /^(U\+\s?ID|MYLGID|T\s?아이디|KT\s?ID|통합\s?아이디|아이디)$/i.test(r.name.trim()),
     ) ??
     refs.find(([, r]) => LOGIN_LINK.test(r.name)) ??
     // 아이콘만 있는 사이트: 마이페이지·내 정보를 누르면 로그인 화면으로 간다
@@ -219,8 +236,9 @@ export async function autoLogin(
   let page = await settled(() => snap(tabId), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId }
   let retried = false
-  for (let i = 0; i < 3 && !hasPassword(page.text); i++) {
-    const target = findLoginLink(page.text)
+  const tried = new Set<string>()
+  for (let i = 0; i < 4 && !hasPassword(page.text) && !twoStep(page.text); i++) {
+    const target = findLoginLink(page.text, tried)
     if (!target) {
       // 화면이 아직 바뀌는 중일 수 있다 (다른 주소로 넘어가거나 늦게 그려지는 사이트): 한 번만 더 기다려 본다
       if (retried) break
@@ -230,6 +248,7 @@ export async function autoLogin(
       i--
       continue
     }
+    tried.add(target[1].name.trim())
     // 로그인이 새 창(팝업)으로 열리면 그 창을 따라간다
     const clicked = (await browser.call('click', { tabId, ref: target[0] }, 30_000).catch(() => undefined)) as
       | { newTabId?: number }
@@ -335,4 +354,180 @@ function humanReason(text: string) {
   if (/보안\s?문자|자동\s?입력\s?방지|로봇|captcha/i.test(text)) return '로봇 확인(보안 문자)이 떴어요'
   if (/본인\s?인증|휴대폰\s?인증|인증\s?번호|2단계|추가\s?인증|OTP/i.test(text)) return '본인인증이 필요해요'
   return '직접 확인이 필요해요'
+}
+
+// ── 간편 로그인 (카카오·네이버·구글…) ─────────────────────────────
+
+/** 간편 로그인 공급자: 사이트의 버튼 글자, 공급자 로그인 화면 주소 */
+export const SOCIAL_PROVIDERS = {
+  kakao: { label: '카카오', button: /카카오|kakao/i, host: /(^|\.)kakao\.com$/ },
+  naver: { label: '네이버', button: /네이버|naver/i, host: /(^|\.)naver\.com$/ },
+  google: { label: '구글', button: /구글|google/i, host: /(^|\.)google\.com$/ },
+  apple: { label: 'Apple', button: /애플|apple/i, host: /(^|\.)apple\.com$/ },
+  facebook: { label: '페이스북', button: /페이스북|facebook/i, host: /(^|\.)facebook\.com$/ },
+  payco: { label: '페이코', button: /페이코|payco/i, host: /(^|\.)payco\.com$/ },
+  toss: { label: '토스', button: /토스|toss/i, host: /(^|\.)toss\.im$/ },
+} as const
+export type SocialProvider = keyof typeof SOCIAL_PROVIDERS
+
+/** 공급자 화면의 "동의하고 계속하기" 같은 버튼 (처음 한 번 묻는 정보 제공 동의) */
+const CONSENT =
+  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm)$/i
+
+/** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
+function findProviderButton(text: string, provider: SocialProvider): RefEntry | undefined {
+  const p = SOCIAL_PROVIDERS[provider]
+  const refs = ([...parseRefs(text)] as RefEntry[]).filter(
+    ([, r]) =>
+      (r.role === '링크' || r.role === '버튼') && p.button.test(r.name) && r.name.trim().length <= 30,
+  )
+  // 앱 내려받기·공식 계정 링크("kakao 채널", "google playstore")는 빼고, 로그인 말이 있는 것부터
+  const ok = refs.filter(
+    ([, r]) =>
+      !/스토어|store|채널|channel|play|플레이|앱\s?다운|블로그|blog|youtube|유튜브/i.test(r.name) &&
+      // 아래쪽 "facebook" 링크는 회사 페이스북 페이지다 (페이스북 로그인은 늘 "로그인·계속" 말이 붙는다)
+      !(r.role === '링크' && /^(facebook|페이스북|instagram|인스타그램)$/i.test(r.name.trim())),
+  )
+  return (
+    ok.find(([, r]) => /로그인|시작|계속|login|sign|continue/i.test(r.name)) ??
+    ok.find(([, r]) => r.name.trim().length <= 12)
+  )
+}
+
+export interface SocialLoginInput {
+  card: AutoLoginInput['card']
+  url: string
+  provider: SocialProvider
+  /** 공급자 로그인 화면이 나오면 쓸 금고 값 (그 공급자 주소의 항목). 없으면 사람에게 넘긴다 */
+  creds(origin: string): Promise<{ username: string; password: string } | undefined>
+}
+
+/**
+ * 간편 로그인으로 연결: 사이트 로그인 화면에서 공급자 버튼을 누르고,
+ * 공급자 쪽이 이미 로그인돼 있으면 동의만 넘기고, 로그인 화면이면 금고 값을 넣는다(없으면 사람 차례).
+ */
+export async function socialLogin(
+  browser: AutoLoginBrowser,
+  input: SocialLoginInput,
+  opts: { wait?: number; tries?: number } = {},
+): Promise<AutoLoginResult> {
+  const wait = opts.wait ?? 1_500
+  const label = SOCIAL_PROVIDERS[input.provider].label
+  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
+  const siteTab = opened.tabId
+  let page = await settled(() => snap(siteTab), wait)
+  if (looksSignedIn(input.card, page)) return { status: 'ok', tabId: siteTab }
+
+  // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
+  const tried = new Set<string>()
+  let btn = findProviderButton(page.text, input.provider)
+  for (let i = 0; i < 4 && !btn; i++) {
+    const target = findLoginLink(page.text, tried)
+    if (!target) break
+    tried.add(target[1].name.trim())
+    await browser.call('click', { tabId: siteTab, ref: target[0] }, 30_000).catch(() => undefined)
+    await sleep(wait)
+    page = await settled(() => snap(siteTab), wait)
+    btn = findProviderButton(page.text, input.provider)
+  }
+  if (!btn)
+    return {
+      status: 'unknown',
+      tabId: siteTab,
+      message: `로그인 화면에서 ${label} 버튼을 찾지 못했어요. 화면을 보면서 직접 로그인해 주세요.`,
+    }
+
+  // 2) 공급자 버튼 → 새 창(팝업)이거나 같은 탭에서 공급자 화면으로 간다
+  const clicked = (await browser
+    .call('click', { tabId: siteTab, ref: btn[0] }, 30_000)
+    .catch(() => undefined)) as { newTabId?: number } | undefined
+  let providerTab = clicked?.newTabId ?? siteTab
+  const filled = new Set<string>()
+  const pressed = new Set<string>()
+
+  // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
+  for (let i = 0; i < (opts.tries ?? 14); i++) {
+    await sleep(wait)
+    const site = await snap(siteTab).catch(() => undefined)
+    if (site && looksSignedIn(input.card, site)) {
+      if (providerTab !== siteTab) await browser.call('close', { tabId: providerTab }).catch(() => undefined)
+      return { status: 'ok', tabId: siteTab }
+    }
+    const p = await snap(providerTab).catch(() => undefined)
+    if (!p) {
+      // 팝업이 닫혔다: 사이트 탭에서 마저 본다
+      providerTab = siteTab
+      continue
+    }
+    const host = (() => {
+      try {
+        return new URL(p.url).hostname
+      } catch {
+        return ''
+      }
+    })()
+    const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
+    if (!onProvider) continue
+    if (CAPTCHA.test(p.text) || p.captcha || STEP2.test(p.text))
+      return { status: 'human', tabId: providerTab, reason: humanReason(p.text) }
+    const origin = new URL(p.url).origin
+    // 공급자 로그인 화면: 금고 값이 있으면 넣고, 없으면 사람 차례
+    const two = twoStep(p.text)
+    if (hasPassword(p.text) || two) {
+      const creds = await input.creds(origin)
+      if (!creds || filled.has(p.url))
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${label} 로그인이 필요해요. 한 번 로그인해 두면 다음부터는 두리가 버튼만 눌러요`,
+        }
+      filled.add(p.url)
+      if (two && !hasPassword(p.text)) {
+        await browser.call('fill', { tabId: providerTab, ref: two.user[0], value: creds.username, origin })
+        await browser.call('click', { tabId: providerTab, ref: two.next[0] }, 30_000).catch(() => undefined)
+        continue
+      }
+      const f = loginFields(p.text)
+      if (f.user)
+        await browser.call('fill', { tabId: providerTab, ref: f.user[0], value: creds.username, origin })
+      await browser.call('fill', {
+        tabId: providerTab,
+        ref: f.password[0],
+        value: creds.password,
+        origin,
+        password: true,
+      })
+      if (f.submit)
+        await browser.call('click', { tabId: providerTab, ref: f.submit[0] }, 30_000).catch(() => undefined)
+      else await browser.call('press', { tabId: providerTab, key: 'Enter' }).catch(() => undefined)
+      continue
+    }
+    if (WRONG.test(p.text))
+      return {
+        status: 'wrong',
+        tabId: providerTab,
+        message: `${label} 아이디나 비밀번호가 맞지 않는 것 같아요. 화면을 보고 확인해 주세요.`,
+      }
+    // 계정 고르기(구글): 이메일이 적힌 줄을 누른다
+    const refs = [...parseRefs(p.text)] as RefEntry[]
+    const account = refs.find(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    // 정보 제공 동의: "동의하고 계속하기"
+    const consent = refs.find(([, r]) => r.role === '버튼' && CONSENT.test(r.name.trim()))
+    const next = account ?? consent
+    if (next && !pressed.has(`${p.url}|${next[1].name}`)) {
+      pressed.add(`${p.url}|${next[1].name}`)
+      await browser.call('click', { tabId: providerTab, ref: next[0] }, 30_000).catch(() => undefined)
+    }
+  }
+  return {
+    status: 'unknown',
+    tabId: providerTab,
+    message: `${label} 로그인을 마쳤는지 확인하지 못했어요. 화면을 보고 확인해 주세요.`,
+  }
+}
+
+/** 점검용: 로그인 화면에 있는 간편 로그인 공급자 */
+export function socialProvidersIn(text: string): SocialProvider[] {
+  return (Object.keys(SOCIAL_PROVIDERS) as SocialProvider[]).filter((p) => findProviderButton(text, p))
 }

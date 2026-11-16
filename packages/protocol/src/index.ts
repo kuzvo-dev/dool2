@@ -1,7 +1,7 @@
 // 두리 공통 타입: 에이전트 이벤트, 대화, 데몬 API.
 // 폰↔PC 암호화 규약은 M2에서 이 패키지에 추가한다.
 import { z } from 'zod'
-import type { ConnectionItem } from './connect.js'
+import type { ConnectionItem, SocialProvider } from './connect.js'
 
 /** 두리가 실행할 수 있는 AI. 사용자의 구독으로 돈다. */
 /** claude·codex: 구독, opencode: API 키 종량제 (ADR 0010) */
@@ -601,6 +601,8 @@ export type PhoneToPc =
   | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' }
   /** 연결하기: 아이디·비밀번호를 금고에 넣고 두리 본체가 대신 로그인한다 (값은 AI를 거치지 않는다) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
+  /** 간편 로그인으로 연결 (카카오·네이버…). 공급자 쪽 로그인이 필요하면 원격 화면으로 넘긴다 */
+  | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
 /** 폰 브라우저의 PushSubscription.toJSON() 중 PC가 쓰는 것 */
 export interface PushSubscriptionJSONLike {
