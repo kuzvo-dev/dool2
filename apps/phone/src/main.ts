@@ -3246,7 +3246,7 @@ function unsupportedView() {
     liveDoori('center', 'asking', 104),
     ...(isNative()
       ? [
-          // 앱 안의 화면은 폰의 WebView로 그린다. 암호화(X25519)는 WebView 133 이상에서 된다
+          // 앱 안의 화면은 폰의 WebView로 그린다. 암호화(X25519·Ed25519)는 WebView 137 이상에서 된다
           h('h1', { class: 'title-2', text: '업데이트가 하나 필요해요' }),
           h('p', {
             class: 'psub',
@@ -3565,7 +3565,9 @@ async function main() {
     return render()
   }
   try {
+    // 암호화(X25519)와 서명(Ed25519) 둘 다 되어야 한다. 크롬·WebView는 X25519가 133, Ed25519가 137부터
     await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])
+    await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
   } catch {
     st.screen = { name: 'unsupported' }
     return render()
