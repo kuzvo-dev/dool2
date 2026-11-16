@@ -231,7 +231,7 @@ function connect() {
   if (!s) return
   st.client?.stop()
   st.client = new LinkClient({
-    relay: location.origin,
+    relay: s.relay ?? location.origin,
     role: 'phone',
     keys: s.keys,
     room: s.pcId,
@@ -763,7 +763,15 @@ async function startPairing(raw: string) {
   st.decided.clear()
   st.pc = undefined
   const keys = await generateDevice(false)
-  const saved: Saved = { pcId: invite.pc, pcBoxPub: invite.k, pcName: invite.n, keys, paired: false, seq: 0 }
+  const saved: Saved = {
+    pcId: invite.pc,
+    pcBoxPub: invite.k,
+    pcName: invite.n,
+    keys,
+    paired: false,
+    seq: 0,
+    ...(typeof invite.r === 'string' && /^https?:\/\//.test(invite.r) ? { relay: invite.r } : {}),
+  }
   await save(saved)
   st.saved = saved
   st.key = await linkKey(keys.boxPriv, invite.k, [keys.id, invite.pc])
@@ -2158,6 +2166,45 @@ function drawerView() {
 }
 
 /** 설정 (메뉴 > 설정): 알림·화면·내 PC·약속 */
+// ── 앱으로 설치 (PWA): 안드로이드·PC 크롬은 설치 창, 아이폰은 공유 → 홈 화면에 추가 ──
+
+type InstallPrompt = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> }
+let installPrompt: InstallPrompt | undefined
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  installPrompt = e as InstallPrompt
+  render()
+})
+addEventListener('appinstalled', () => {
+  installPrompt = undefined
+  toast('홈 화면에 두리를 추가했어요')
+})
+const installed = () =>
+  matchMedia('(display-mode: standalone)').matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
+
+function installRow(
+  row: (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) => HTMLElement,
+) {
+  if (installed()) return row('check', '앱으로 쓰는 중', '홈 화면에서 열었어요')
+  if (installPrompt)
+    return row(
+      'plus',
+      '홈 화면에 두리 추가',
+      '앱처럼 바로 열고, 알림도 받아요',
+      h('span', { class: 'btn small', text: '추가' }),
+      () => {
+        const p = installPrompt
+        installPrompt = undefined
+        void p?.prompt().then(() => render())
+      },
+    )
+  if (isIos())
+    return row('plus', '홈 화면에 두리 추가', '사파리 아래 공유 버튼 → "홈 화면에 추가"를 눌러 주세요')
+  return row('plus', '홈 화면에 두리 추가', '브라우저 메뉴에서 "앱 설치" 또는 "홈 화면에 추가"를 눌러 주세요')
+}
+
 function settingsView() {
   const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: '설정' }))
   const row = (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) =>
@@ -2174,6 +2221,7 @@ function settingsView() {
       right,
     )
   const perm = 'Notification' in window ? Notification.permission : 'denied'
+  box.append(h('h2', { class: 'over', text: '앱' }), installRow(row))
   box.append(
     h('h2', { class: 'over', text: '알림' }),
     row(

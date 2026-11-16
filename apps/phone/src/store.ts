@@ -10,6 +10,8 @@ export interface Saved {
   paired: boolean
   /** 보낸 봉투 순번 (다시 열어도 줄지 않게) */
   seq: number
+  /** 중계 서버 주소 (초대에 있었으면). 없으면 폰 앱을 연 주소 */
+  relay?: string
 }
 
 const DB = 'dool2'
