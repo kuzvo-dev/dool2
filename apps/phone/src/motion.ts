@@ -513,3 +513,110 @@ export function drawCheck(box: Element, delay = 0) {
     })
   }
 }
+
+// ── 인증번호 칸: 숨은 입력칸 하나 + 보이는 칸 여섯. 숫자가 톡 떨어지고, 다 차면 칸이 붙어 초록 알약이 된다 ──
+
+export function otpBoxes(o: {
+  value?: string
+  length?: number
+  onInput?(v: string): void
+  onDone(code: string): void
+}): HTMLElement {
+  const N = o.length ?? 6
+  const box = document.createElement('div')
+  box.className = 'otp'
+  const row = document.createElement('div')
+  row.className = 'otp-row'
+  const inp = document.createElement('input')
+  inp.className = 'otp-input'
+  inp.id = 'otp-input'
+  inp.inputMode = 'numeric'
+  inp.autocomplete = 'one-time-code'
+  inp.maxLength = N
+  inp.setAttribute('aria-label', `인증번호 ${N}자리`)
+  const cells = [...Array(N)].map(() => {
+    const el = document.createElement('span')
+    el.className = 'otp-bx'
+    const d = document.createElement('i')
+    el.append(d)
+    row.append(el)
+    return { el, d }
+  })
+  const ok = document.createElement('span')
+  ok.className = 'otp-ok'
+  ok.innerHTML = `${CHECK_SVG}<span>넣었어요</span>`
+  box.append(row, ok, inp)
+  let val = ''
+  let done = false
+  const set = (raw: string, quiet = false) => {
+    const v = raw.replace(/\D/g, '').slice(0, N)
+    cells.forEach((c, i) => {
+      const ch = v[i] ?? ''
+      if (ch && c.d.textContent !== ch && !quiet)
+        springTo(
+          c.d,
+          [
+            { opacity: 0, transform: 'translateY(-14px)' },
+            { opacity: 1, transform: 'none' },
+          ],
+          'squash',
+        )
+      c.d.textContent = ch
+      c.el.classList.toggle('on', !done && i === Math.min(v.length, N - 1))
+    })
+    val = v
+    inp.value = v
+    if (v.length === N && !done) {
+      // 다시 그려져 다 찬 채로 시작하면 이미 보낸 것: 초록으로만 보이고 다시 보내지 않는다
+      if (quiet) {
+        done = true
+        for (const c of cells) c.el.classList.remove('on')
+        row.style.gap = '0px'
+        box.classList.add('joined', 'ok')
+        ok.style.opacity = '1'
+        ;(ok.querySelector('path') as SVGElement | null)?.style.setProperty('stroke-dashoffset', '0')
+      } else finish()
+    }
+  }
+  const finish = () => {
+    done = true
+    for (const c of cells) c.el.classList.remove('on')
+    // 칸 사이가 닫히며 하나로 붙고, 초록이 되며 '넣었어요'
+    springTo(row, [{ gap: '8px' }, { gap: '0px' }], 'soft', { delay: 200, fill: 'forwards' })
+    setTimeout(() => box.classList.add('joined'), 200)
+    setTimeout(() => {
+      box.classList.add('ok')
+      springTo(
+        ok,
+        [
+          { opacity: 0, transform: 'translateY(8px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        'fade',
+        {
+          fill: 'forwards',
+        },
+      )
+      drawCheck(ok.querySelector('svg') as Element)
+      navigator.vibrate?.(12)
+      o.onDone(val)
+    }, 520)
+  }
+  inp.addEventListener('input', () => {
+    if (done) return
+    set(inp.value)
+    o.onInput?.(val)
+  })
+  box.addEventListener('click', () => inp.focus())
+  set(o.value ?? '', true)
+  return box
+}
+
+// ── 이어 쓰기 제안: 쓰는 말 뒤에 흐린 글씨로 나머지를 보여 주고, 받으면 글자가 하나씩 밝아지며 톡 ──
+
+export function acceptGhost(letters: HTMLElement[]) {
+  letters.forEach((l, i) => {
+    l.classList.add('ok')
+    springTo(l, [{ transform: 'translateY(-5px)' }, { transform: 'none' }], 'squash', { delay: i * 16 })
+  })
+}

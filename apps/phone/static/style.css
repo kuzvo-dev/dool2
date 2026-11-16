@@ -1847,6 +1847,172 @@ button {
   }
 }
 
+/* 이어 쓰기 제안: 입력칸 위에 같은 글꼴로 겹쳐 흐린 나머지를 그린다 */
+.ghost-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.ghost-wrap textarea {
+  width: 100%;
+}
+.ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  color: transparent;
+  white-space: pre;
+  pointer-events: none;
+}
+.ghost .ghost-typed {
+  flex: none;
+}
+/* 한 줄만: 넘치면 오른쪽이 흐려지고 → 칸은 늘 보인다 */
+.ghost .ghost-rest {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+.ghost[hidden] {
+  display: none;
+}
+.ghost .ghost-typed {
+  color: transparent;
+}
+.ghost .ghost-rest {
+  color: var(--ink-faint, var(--ink-muted));
+  opacity: 0.75;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.ghost .g {
+  display: inline-block;
+  white-space: pre;
+}
+.ghost .g.ok,
+.ghost.taking .ghost-rest,
+.ghost.taking .ghost-typed {
+  color: var(--ink);
+  opacity: 1;
+}
+.ghost.taking .ghost-rest {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.ghost-key {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 22px;
+  margin-left: 4px;
+  border-radius: 7px;
+  background: var(--raise);
+  color: var(--ink-muted);
+  pointer-events: auto;
+}
+.ghost-key svg.i {
+  width: 14px;
+  height: 14px;
+}
+textarea.ghosting {
+  color: transparent;
+  caret-color: transparent;
+}
+
+/* 인증번호 칸: 여섯 칸 → 다 차면 붙어서 초록 알약 */
+.remote-otp {
+  display: grid;
+  gap: 8px;
+}
+.otp {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 56px;
+}
+.otp-row {
+  display: flex;
+  gap: 8px;
+}
+.otp-bx {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 54px;
+  border-radius: 14px;
+  background: #1d2026;
+  font: 650 24px / 1 var(--font-sans);
+  color: #fff;
+  transition:
+    background 160ms ease,
+    border-radius 200ms ease;
+}
+.otp-bx i {
+  font-style: normal;
+}
+.otp-bx.on {
+  background: #2b3038;
+  box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.5);
+}
+.otp-bx.on:empty::after,
+.otp-bx.on i:empty::after {
+  content: "";
+  display: block;
+  width: 2px;
+  height: 24px;
+  background: #fff;
+  animation: otp-caret 1s steps(1) infinite;
+}
+@keyframes otp-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.otp.joined .otp-bx {
+  border-radius: 0;
+}
+.otp.joined .otp-bx:first-child {
+  border-radius: 14px 0 0 14px;
+}
+.otp.joined .otp-bx:last-child {
+  border-radius: 0 14px 14px 0;
+}
+.otp.ok .otp-bx {
+  background: var(--approve);
+  color: transparent;
+}
+.otp-ok {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #fff;
+  font: 650 16px / 1 var(--font-sans);
+  opacity: 0;
+  pointer-events: none;
+}
+.otp-ok svg {
+  width: 20px;
+  height: 20px;
+}
+.otp-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font-size: 16px;
+  caret-color: transparent;
+}
+
 /* 칸 고르기: 하이라이트 판이 앞 칸에서 미끄러져 온다 */
 .seg {
   position: relative;
