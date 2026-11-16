@@ -34,6 +34,12 @@ export const SPRING = {
   bar: [340, 28],
   /** 아래 탭: 아이콘이 찌그러졌다 톡 */
   squash: [520, 14],
+  /** 숫자 자리마다 굴러 서기 */
+  count: [320, 24],
+  /** 손가락을 바로 따라가기 (넘침 없음) */
+  follow: [900, 50],
+  /** 덜 던진 카드가 돌아오기 */
+  back: [280, 16],
 } as const satisfies Record<string, readonly [number, number]>
 
 export type SpringName = keyof typeof SPRING

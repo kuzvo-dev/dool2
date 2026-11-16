@@ -13,6 +13,7 @@ import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
 import { scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
+import { statCard } from './motion-cards.js'
 
 export interface LifeCtx {
   life?: LifeState
@@ -82,6 +83,8 @@ function empty(mood: string, title: string, sub: string) {
 
 export function feedView(ctx: LifeCtx): HTMLElement {
   const box = h('section', { class: 'tab-page feed' }, ...header('피드'))
+  // 이번 주 두리가 한 일: 한 일이 하나라도 있으면
+  if (ctx.life?.feed.length) box.append(statCard(ctx.life.feed))
   // 피드 지시: 무엇을 올릴지 말로 정한다
   const prompt = ctx.life?.feedPrompt
   const input = h('input', { class: 'field' })
