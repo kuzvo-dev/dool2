@@ -4,6 +4,13 @@
   "site": "wconcept.co.kr",
   "category": "fashion",
   "how": "browser",
+  "loginUrl": "https://www.wconcept.co.kr/Member/Login",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "W컨셉에서 위시리스트에 담아 둔 옷 주문과 배송 확인, 기다리던 세일 알림까지 두리에게 맡길 수 있어요.",
   "example": {

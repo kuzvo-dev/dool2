@@ -4,6 +4,13 @@
   "site": "hotels.com",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://kr.hotels.com/login",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "내가 중요하게 여기는 조건으로 호텔을 비교하고, 무료 취소가 되는 곳으로 예약까지 두리에게 맡길 수 있어요.",
   "example": {

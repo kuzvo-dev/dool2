@@ -4,6 +4,10 @@
   "site": "melon.com",
   "category": "media",
   "how": "browser",
+  "loginUrl": "https://accounts.melon.com/login/loginm",
+  "social": [
+    "kakao"
+  ],
   "login": "아이디·비밀번호",
   "summary": "듣고 싶은 노래 찾기부터 플레이리스트 정리, 이용권 확인까지 두리에게 맡길 수 있어요.",
   "example": {

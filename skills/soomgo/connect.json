@@ -4,6 +4,11 @@
   "site": "soomgo.com",
   "category": "life",
   "how": "browser",
+  "loginUrl": "https://soomgo.com/login",
+  "social": [
+    "kakao",
+    "naver"
+  ],
   "login": "아이디·비밀번호",
   "summary": "이사·청소·수리처럼 필요한 일에 맞는 고수를 찾아 견적을 받고, 고수와 채팅까지 두리에게 맡길 수 있어요. 요청서와 채팅은 승인한 뒤에만 보내요.",
   "example": {

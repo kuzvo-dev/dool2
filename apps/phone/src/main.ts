@@ -16,7 +16,7 @@ import type {
   PhoneToPc,
   StoredMessage,
 } from '@dool2/protocol'
-import type { ConnectionItem } from '@dool2/protocol/connect'
+import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import {
   type Envelope,
@@ -39,6 +39,7 @@ import {
 } from '@dool2/protocol/ideas'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
 import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
+import { brandMark, SOCIAL_CTA } from './brands.js'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import {
   doori,
@@ -68,7 +69,6 @@ import {
   drawCheck,
   gooFilter,
   holdButton,
-  otpBoxes,
   playFlip,
   playSeg,
   riseIn,
@@ -78,6 +78,7 @@ import {
 } from './motion.js'
 import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
+import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -169,10 +170,7 @@ const st: {
   librarySeg: 'made' | 'media'
   draft: string
   toast?: string
-  screenShot?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
-  remoteDraft: string
-  /** 원격 화면의 인증번호 칸 (열려 있으면 지금까지 넣은 숫자) */
-  otp?: string
+  screenShot?: Shot
 } = {
   online: false,
   pcSilent: false,
@@ -200,7 +198,6 @@ const st: {
   agentSeg: 'activity',
   librarySeg: 'made',
   draft: '',
-  remoteDraft: '',
 }
 let pendingSeq = 0
 
@@ -386,6 +383,10 @@ async function receive(env: Envelope) {
       toast(msg.message)
       break
     }
+    case 'form': {
+      if (remoteUi?.tabId === msg.tabId) remoteUi.setForm(msg.form, msg.error)
+      return
+    }
     case 'screen': {
       if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
         // 대화 안 일하는 화면: 그림만 바꾼다
@@ -405,10 +406,9 @@ async function receive(env: Envelope) {
       frameTimes.push(performance.now())
       nextScreen(msg.tabId)
       // 실시간 화면: 그림만 바꾼다 (화면 전체를 다시 그리지 않아 깜빡이지 않는다)
-      const img = document.querySelector<HTMLImageElement>('.remote-shot')
-      if (hadShot && img && msg.shot) {
-        img.src = `data:image/jpeg;base64,${msg.shot}`
-        updateRemoteMeta()
+      // 원격 화면은 한 번 만든 화면에 그림·정보만 바꾼다
+      if (remoteUi?.tabId === msg.tabId && hadShot) {
+        remoteUi.update(st.screenShot, fps())
         return
       }
       break
@@ -520,11 +520,14 @@ function onStream(ev: DaemonStreamEvent) {
   }
 }
 
-function pick(m: { shot?: string; url?: string; title?: string }) {
+function pick(m: Omit<Shot, 'tabId'>) {
   return {
     ...(m.shot ? { shot: m.shot } : {}),
     ...(m.url ? { url: m.url } : {}),
     ...(m.title ? { title: m.title } : {}),
+    ...(m.fields ? { fields: m.fields } : {}),
+    ...(m.actions ? { actions: m.actions } : {}),
+    ...(m.focus !== undefined ? { focus: m.focus } : {}),
   }
 }
 
@@ -624,18 +627,14 @@ function nextScreen(tabId: number) {
 }
 
 /** 초당 몇 장 오는지 (최근 2초) */
-function updateRemoteMeta() {
+function fps() {
   const now = performance.now()
   while (frameTimes.length && now - (frameTimes[0] ?? 0) > 2000) frameTimes.shift()
-  const el = document.querySelector('.live-rate')
-  if (el) el.textContent = `실시간 · 초당 ${Math.max(1, Math.round(frameTimes.length / 2))}장`
-  const url = document.querySelector('.remote-url-text')
-  if (url) url.textContent = hostOf(st.screenShot?.url ?? '') || st.screenShot?.title || ''
+  return Math.max(1, Math.round(frameTimes.length / 2))
 }
 
 function openRemote(tabId: number, connectId?: string) {
   st.screenShot = { tabId }
-  st.remoteDraft = ''
   st.overlay = undefined
   st.screen = { name: 'remote', tabId, ...(connectId ? { connectId } : {}) }
   render()
@@ -647,7 +646,7 @@ function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'ta
   const tabId = st.screen.tabId
   clearTimeout(screenTimer)
   if (st.screenShot) st.screenShot.busy = true
-  render()
+  remoteUi?.update(st.screenShot, fps())
   void send({ kind: 'remote', tabId, ...input })
 }
 
@@ -781,6 +780,12 @@ async function startPairing(raw: string) {
     toast('QR이 올바르지 않아요. PC에서 다시 띄워 주세요')
     return
   }
+  // 이미 연결된 그 PC의 초대면 지금 연결을 지우지 않는다 (같은 링크가 다시 들어온 경우)
+  if (st.saved?.paired && st.saved.pcId === invite.pc) {
+    history.replaceState(null, '', location.pathname)
+    toast(`${st.saved.pcName ?? 'PC'}와 이미 연결돼 있어요`)
+    return
+  }
   history.replaceState(null, '', location.pathname)
   st.client?.stop()
   st.client = undefined
@@ -860,6 +865,14 @@ function render() {
             : s.name === 'side'
               ? sideView(s.id)
               : remoteView(s)
+    if (s.name === 'remote') {
+      // 같은 원격 화면이면 그대로 둔다 (다시 꽂으면 키보드가 닫힌다)
+      remoteToast ??= h('div', { class: 'toast float-toast' })
+      remoteToast.textContent = st.toast ?? ''
+      remoteToast.hidden = !st.toast
+      if (app.firstElementChild !== view) app.replaceChildren(view, remoteToast)
+      return
+    }
     const t = h('div', { class: 'toast float-toast', text: st.toast ?? '' })
     t.hidden = !st.toast
     app.replaceChildren(view, t)
@@ -1218,6 +1231,8 @@ function renderTabs() {
   if (!active) return
   pill.style.removeProperty(vertical ? 'left' : 'top')
   pill.style.removeProperty(vertical ? 'width' : 'height')
+  // 화면이 바뀌는 도중이라 칸 크기가 0이면 다음에 다시 잰다
+  if (!size(active)) return
   pill.style[P] = `${pos(active)}px`
   pill.style[S] = `${size(active)}px`
   t.dataset.ready = '1'
@@ -2903,6 +2918,8 @@ interface CredTarget {
   submitText: string
   submit(user: string, password: string): void
   direct?: { text: string; onclick(): void }
+  /** 간편 로그인 버튼 (카카오로 연결…): 아이디·비밀번호 없이 공급자 계정으로 */
+  social?: { provider: SocialProvider; onclick(): void }[]
   /** 연결되면 바로 시작할 부탁 */
   next?: string
   /** 로고를 보여 줄 연결 카드 id */
@@ -2976,6 +2993,21 @@ function credSheet(t: CredTarget) {
       ),
     ),
     ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), `연결되면 바로 시작해요: ${t.next}`)] : []),
+    ...(t.social?.length
+      ? [
+          h(
+            'div',
+            { class: 'social-list' },
+            ...t.social.map((x) => {
+              const b = h('button', { class: `btn-social ${x.provider}`, onclick: x.onclick })
+              b.type = 'button'
+              b.append(brandMark(x.provider), h('span', { text: SOCIAL_CTA[x.provider] }))
+              return b
+            }),
+          ),
+          h('p', { class: 'social-or' }, h('span', { text: '또는 아이디·비밀번호로' })),
+        ]
+      : []),
     form,
     h(
       'p',
@@ -2984,7 +3016,7 @@ function credSheet(t: CredTarget) {
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
     ...(t.direct
-      ? [h('button', { class: 'btn-ghost lg wide', text: t.direct.text, onclick: t.direct.onclick })]
+      ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
   )
   return sheet
@@ -3025,10 +3057,18 @@ function connectSheet(id: string) {
     },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
+    social: (it.card.social ?? []).map((provider) => ({
+      provider,
+      onclick: () => {
+        // 공급자 쪽(카카오 등)이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
+        void send({ kind: 'connect-social', id, provider })
+        st.overlay = undefined
+        st.connecting.add(id)
+        toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+      },
+    })),
     direct: {
-      text: st.connectTabs.has(id)
-        ? 'PC 화면 보면서 마저 하기'
-        : '화면 보면서 직접 로그인할게요 (카카오·네이버로 로그인하는 곳)',
+      text: st.connectTabs.has(id) ? 'PC 화면 보면서 마저 하기' : '화면 보면서 직접 로그인할게요',
       onclick: () => {
         const tab = st.connectTabs.get(id)
         if (tab !== undefined) return openRemote(tab, id)
@@ -3310,130 +3350,40 @@ function pairingView(v: Extract<Screen, { name: 'pairing' }>) {
 }
 
 /** PC 화면 (지금은 화면 한 장씩. 로그인 단계에서 실시간 화면으로 바꾼다) */
+let remoteUi: RemoteScreen | undefined
+let remoteToast: HTMLElement | undefined
+
+/** 원격 화면: 탭마다 한 번 만들고 그 뒤로는 그림·정보만 바꾼다 (remote.ts) */
 function remoteView(v: Extract<Screen, { name: 'remote' }>) {
-  const s = st.screenShot
-  const back = () => {
-    st.screen = { name: 'app' }
-    if (v.connectId) {
-      st.tab = 'connect'
-      st.connectDetail = v.connectId
+  if (remoteUi?.tabId !== v.tabId) {
+    const back = () => {
+      st.screen = { name: 'app' }
+      remoteUi = undefined
+      if (v.connectId) {
+        st.tab = 'connect'
+        st.connectDetail = v.connectId
+      }
+      render()
     }
-    render()
-  }
-  const frame = h('div', { class: s?.busy ? 'remote-frame busy' : 'remote-frame' })
-  if (s?.error) frame.append(h('p', { class: 'remote-msg', text: s.error }))
-  else if (s?.shot) {
-    const img = h('img', { class: 'remote-shot' })
-    img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
-    img.src = `data:image/jpeg;base64,${s.shot}`
-    img.addEventListener('click', (e) => {
-      const r = img.getBoundingClientRect()
-      const x = (e.clientX - r.left) / r.width
-      const y = (e.clientY - r.top) / r.height
-      const dot = h('span', { class: 'tap-dot' })
-      dot.style.left = `${x * 100}%`
-      dot.style.top = `${y * 100}%`
-      frame.append(dot)
-      remote({ action: 'tap', x, y })
-    })
-    frame.append(img)
-  } else frame.append(h('p', { class: 'remote-msg' }, h('span', { class: 'spin' }), 'PC 화면을 가져오는 중…'))
-  const input = h('input', { class: 'remote-input' })
-  input.id = 'remote-input'
-  input.placeholder = '누른 칸에 넣을 글자'
-  input.value = st.remoteDraft
-  input.oninput = () => {
-    st.remoteDraft = input.value
-  }
-  const put = h('button', { class: 'btn small', text: '넣기' })
-  put.type = 'submit'
-  const form = h('form', { class: 'remote-type' }, input, put)
-  form.onsubmit = (e) => {
-    e.preventDefault()
-    if (!st.remoteDraft) return
-    const text = st.remoteDraft
-    st.remoteDraft = ''
-    remote({ action: 'text', text })
-  }
-  const keys = h('div', { class: 'remote-keys' })
-  const presets = [
-    ['지우기', { action: 'key', key: 'Backspace' }],
-    ['엔터', { action: 'key', key: 'Enter' }],
-    ['다음 칸', { action: 'key', key: 'Tab' }],
-    ['위로', { action: 'scroll', dy: -1 }],
-    ['아래로', { action: 'scroll', dy: 1 }],
-  ] as const
-  keys.append(
-    h('button', {
-      class: st.otp === undefined ? 'chip' : 'chip on',
-      text: '인증번호',
-      onclick: () => {
-        st.otp = st.otp === undefined ? '' : undefined
-        render()
-        if (st.otp !== undefined) queueMicrotask(() => document.getElementById('otp-input')?.focus())
+    remoteUi = createRemote({
+      tabId: v.tabId,
+      ...(v.connectId ? { connectId: v.connectId } : {}),
+      input: (i) => remote(i),
+      back,
+      handBack: back,
+      done: () => {
+        if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
+        else ask('다 했어요. 이어서 해 주세요.')
+        back()
       },
-    }),
-  )
-  for (const [label, inp] of presets)
-    keys.append(h('button', { class: 'chip', text: label, onclick: () => remote(inp) }))
-  // 문자로 온 인증번호: 여섯 칸에 넣으면 PC에서 누른 칸에 들어간다 (아이폰은 문자에서 바로 채워 준다)
-  const otp =
-    st.otp === undefined
-      ? undefined
-      : otpBoxes({
-          value: st.otp,
-          onInput: (v) => {
-            st.otp = v
-          },
-          onDone: (code) => {
-            remote({ action: 'text', text: code })
-            setTimeout(() => {
-              st.otp = undefined
-              render()
-            }, 1400)
-          },
-        })
-  const done = h('button', {
-    class: 'btn btn-approve',
-    text: v.connectId ? '로그인했어요' : '다 했어요',
-    onclick: () => {
-      if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
-      else ask('다 했어요. 이어서 해 주세요.')
-      back()
-    },
-  })
-  return h(
-    'section',
-    { class: 'remote-page' },
-    h(
-      'div',
-      { class: 'remote-bar' },
-      h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
-      h(
-        'span',
-        { class: 'remote-url' },
-        icon('lock'),
-        h('span', { class: 'remote-url-text', text: hostOf(s?.url ?? '') || s?.title || '불러오는 중…' }),
-      ),
-      h('span', { class: 'live-badge live-rate', text: '실시간' }),
-    ),
-    frame,
-    otp
-      ? h(
-          'div',
-          { class: 'remote-otp' },
-          h('p', { class: 'meta', text: 'PC 화면에서 인증번호 칸을 먼저 눌러 주세요' }),
-          otp,
-        )
-      : form,
-    keys,
-    h(
-      'div',
-      { class: 'remote-foot' },
-      h('button', { class: 'btn-ghost', text: '두리에게 다시 맡기기', onclick: back }),
-      done,
-    ),
-  )
+      hostOf,
+      form: () => void send({ kind: 'form', tabId: v.tabId }),
+      fill: (values, press) =>
+        void send({ kind: 'form-fill', tabId: v.tabId, values, ...(press ? { press } : {}) }),
+    })
+  }
+  remoteUi.update(st.screenShot, fps())
+  return remoteUi.el
 }
 
 // ── 시작 ──
@@ -3617,7 +3567,17 @@ async function main() {
   connect()
   startResync()
   // 태블릿을 돌리거나 창 크기가 바뀌면 탭 알약 자리를 다시 잡는다
-  addEventListener('resize', () => renderTabs())
+  // 폴드를 펴고 접거나 태블릿을 돌리면 탭 막대 모양(가로·세로, 칸 너비)이 바뀐다.
+  // 바뀌는 도중에 재면 알약 자리가 틀어지므로, 움직이던 알약은 멈추고 자리가 잡힌 뒤 다시 잰다
+  let settleTabs: ReturnType<typeof setTimeout> | undefined
+  const onResize = () => {
+    pillStop?.()
+    renderTabs()
+    clearTimeout(settleTabs)
+    settleTabs = setTimeout(() => renderTabs(), 450)
+  }
+  addEventListener('resize', onResize)
+  screen.orientation?.addEventListener?.('change', onResize)
 }
 
 void main()

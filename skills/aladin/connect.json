@@ -4,6 +4,7 @@
   "site": "aladin.co.kr",
   "category": "books",
   "how": "browser",
+  "loginUrl": "https://www.aladin.co.kr/login/wlogin_popup.aspx?SecureOpener=1",
   "login": "아이디·비밀번호",
   "summary": "책 찾기와 더 싼 중고 확인, 주문, 배송 확인까지 두리에게 맡길 수 있어요.",
   "example": {

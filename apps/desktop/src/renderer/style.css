@@ -1883,3 +1883,56 @@ button.side-row:hover {
   border-radius: 7px;
   font-size: 11px;
 }
+
+/* 간편 로그인으로 연결 (공급자 고유 색) */
+.social-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.btn-social {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-social:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-social.kakao {
+  background: #fee500;
+  color: #191919;
+}
+.btn-social.naver {
+  background: #03c75a;
+  color: #fff;
+}
+.btn-social.google {
+  background: #fff;
+  color: #1f1f1f;
+  border-color: #dadce0;
+}
+.btn-social.apple {
+  background: #000;
+  color: #fff;
+}
+.btn-social.facebook {
+  background: #1877f2;
+  color: #fff;
+}
+.btn-social.payco {
+  background: #fa2828;
+  color: #fff;
+}
+.btn-social.toss {
+  background: #0064ff;
+  color: #fff;
+}
+.social-or {
+  margin-top: 10px;
+}

@@ -1,6 +1,17 @@
 // 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
 // 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
-import type { ConnectCard, ConnectionItem, Tier } from '@dool2/protocol/connect'
+import type { ConnectCard, ConnectionItem, SocialProvider, Tier } from '@dool2/protocol/connect'
+
+/** 간편 로그인 이름 (@dool2/protocol/connect의 SOCIAL_LABEL 복사, 테스트가 같은지 본다) */
+export const SOCIAL_LABEL: Record<SocialProvider, string> = {
+  kakao: '카카오',
+  naver: '네이버',
+  google: '구글',
+  apple: 'Apple',
+  facebook: '페이스북',
+  payco: '페이코',
+  toss: '토스',
+}
 
 /** @dool2/protocol/connect의 분류 이름 (화면 번들에 zod를 넣지 않으려고 복사해 둔다. 테스트가 같은지 본다) */
 export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
@@ -323,6 +334,31 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
           }
         }
         form.append(user, pw, go)
+        // 간편 로그인: 이 PC Chrome의 카카오·네이버… 로그인을 이어 쓰고, 처음이면 그 화면을 띄워 드린다
+        if (c.social?.length) {
+          const row = el('div', 'social-row')
+          for (const provider of c.social) {
+            const b = el('button', `btn-social ${provider}`, `${SOCIAL_LABEL[provider]}로 연결`)
+            b.type = 'button'
+            b.onclick = async () => {
+              for (const x of row.querySelectorAll('button')) x.disabled = true
+              b.textContent = '두리가 로그인하는 중…'
+              try {
+                const r = await opts.api<{ ok: boolean; message: string; human?: boolean }>(
+                  `/api/connections/${c.id}/social`,
+                  { method: 'POST', body: JSON.stringify({ provider, background: true }) },
+                )
+                if (r.ok) it.connectedAt = new Date().toISOString()
+                if (r.human) drawWaiting()
+                else drawAction(r.message)
+              } catch (e) {
+                drawAction((e as Error).message)
+              }
+            }
+            row.append(b)
+          }
+          kids.push(row, el('p', 'cap social-or', '또는 아이디·비밀번호로'))
+        }
         kids.push(
           form,
           el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),

@@ -4,6 +4,13 @@
   "site": "11st.co.kr",
   "category": "shopping",
   "how": "browser",
+  "loginUrl": "https://login.11st.co.kr/auth/v2/login?isPopup=false&adultLoginRequired=N&isNonMemberBuy=false",
+  "social": [
+    "kakao",
+    "naver",
+    "apple",
+    "payco"
+  ],
   "login": "아이디·비밀번호",
   "summary": "11번가를 연결하면 주문 내역과 배송 조회, 원하는 상품 최저가 찾기를 두리에게 맡길 수 있어요.",
   "example": {

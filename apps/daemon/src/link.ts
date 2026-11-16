@@ -18,8 +18,12 @@ import {
   type PairStatus,
   type PcToPhone,
   type PhoneToPc,
+  type RemoteForm,
+  type RemoteFormValue,
+  type RemoteInfo,
+  type ScreenFit,
 } from '@dool2/protocol'
-import type { ConnectionItem } from '@dool2/protocol/connect'
+import { type ConnectionItem, type SocialProvider, SocialProviderSchema } from '@dool2/protocol/connect'
 import {
   b64u,
   type DeviceKeys,
@@ -59,7 +63,11 @@ export interface LinkHost {
   /** 로그인 카드에 넣은 값을 금고에 저장 */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
-  screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
+  screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
+  /** 원격 화면 '필요한 칸만' */
+  form(tabId: number): Promise<RemoteForm>
+  /** 칸만 화면에서 채운 값 넣기·버튼 누르기 */
+  fill(tabId: number, values: RemoteFormValue[], press?: string): Promise<void>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
   /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
   connections(): Promise<ConnectionItem[]>
@@ -78,6 +86,11 @@ export interface LinkHost {
     id: string,
     username: string,
     password: string,
+  ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
+  /** 간편 로그인으로 연결하기 */
+  connectSocial(
+    id: string,
+    provider: SocialProvider,
   ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
 }
 
@@ -315,10 +328,30 @@ export class PhoneLink {
         const tabId = Number(msg.tabId)
         try {
           if (msg.kind === 'remote') await this.host.remote({ ...msg, tabId })
-          const s = await this.host.screen(tabId)
+          const f = msg.fit
+          const fit =
+            f && Number(f.width) >= 200 && Number(f.height) >= 200
+              ? { width: Math.round(Number(f.width)), height: Math.round(Number(f.height)) }
+              : undefined
+          const s = await this.host.screen(tabId, fit)
           return this.send(phone, { kind: 'screen', tabId, ...s })
         } catch (e) {
           return this.send(phone, { kind: 'screen', tabId, error: (e as Error).message })
+        }
+      }
+      case 'form':
+      case 'form-fill': {
+        const tabId = Number(msg.tabId)
+        try {
+          if (msg.kind === 'form-fill') {
+            await this.host.fill(tabId, msg.values, msg.press)
+            // 눌렀으면 화면이 바뀌었을 수 있어 그림도 새로
+            const s = await this.host.screen(tabId).catch(() => undefined)
+            if (s) await this.send(phone, { kind: 'screen', tabId, ...s })
+          }
+          return this.send(phone, { kind: 'form', tabId, form: await this.host.form(tabId) })
+        } catch (e) {
+          return this.send(phone, { kind: 'form', tabId, error: (e as Error).message })
         }
       }
       case 'push': {
@@ -381,6 +414,23 @@ export class PhoneLink {
         // 기다리지 않는다: 로그인은 본체가 뒤에서 하고, 결과(connect-result·연결 목록)는 모든 폰에 따로 간다
         void this.host
           .connectLogin(id, String(msg.username).slice(0, 200), String(msg.password).slice(0, 500))
+          .catch((e: Error) =>
+            this.send(phone, { kind: 'connect-result', id, ok: false, message: e.message }),
+          )
+        return
+      }
+      case 'connect-social': {
+        const id = String(msg.id)
+        const provider = SocialProviderSchema.safeParse(msg.provider)
+        if (!provider.success)
+          return this.send(phone, {
+            kind: 'connect-result',
+            id,
+            ok: false,
+            message: '간편 로그인 종류가 이상해요',
+          })
+        void this.host
+          .connectSocial(id, provider.data)
           .catch((e: Error) =>
             this.send(phone, { kind: 'connect-result', id, ok: false, message: e.message }),
           )

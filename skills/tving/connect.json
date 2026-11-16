@@ -4,6 +4,12 @@
   "site": "tving.com",
   "category": "media",
   "how": "browser",
+  "loginUrl": "https://www.tving.com/account/login",
+  "social": [
+    "kakao",
+    "naver",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "볼 작품 찾기부터 찜 목록 정리, 이용권과 시청 내역 확인까지 두리에게 맡길 수 있어요.",
   "example": {

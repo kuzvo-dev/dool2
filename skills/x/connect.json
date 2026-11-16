@@ -4,6 +4,10 @@
   "site": "x.com",
   "category": "social",
   "how": "browser",
+  "social": [
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "멘션과 DM 따라잡기부터 내가 쓴 글 돌아보기까지 두리에게 맡길 수 있어요.",
   "example": {

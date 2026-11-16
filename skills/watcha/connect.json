@@ -4,6 +4,12 @@
   "site": "watcha.com",
   "category": "media",
   "how": "browser",
+  "loginUrl": "https://watcha.com/ko/sign_in",
+  "social": [
+    "kakao",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "볼 작품 찾기부터 보고 싶은 작품 담기, 구독권과 감상 내역 확인까지 두리에게 맡길 수 있어요.",
   "example": {

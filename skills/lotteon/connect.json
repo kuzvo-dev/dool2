@@ -4,6 +4,11 @@
   "site": "lotteon.com",
   "category": "shopping",
   "how": "browser",
+  "loginUrl": "https://www.lotteon.com/p/member/login/common",
+  "social": [
+    "kakao",
+    "naver"
+  ],
   "login": "아이디·비밀번호",
   "summary": "롯데ON을 연결하면 백화점 상품 찾기부터 주문, 배송 조회와 취소까지 두리에게 맡길 수 있어요.",
   "example": {
