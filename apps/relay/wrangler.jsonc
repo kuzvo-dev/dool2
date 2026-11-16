@@ -1,0 +1,14 @@
+// 두리 공식 중계 서버 (Cloudflare Workers + Durable Objects). 배포: pnpm --filter @dool2/relay deploy
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dool2-relay",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "relay.dool2.com", "custom_domain": true }],
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RelayRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayRoom"] }],
+  "observability": { "enabled": true }
+}

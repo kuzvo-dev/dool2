@@ -19,9 +19,11 @@ export function helloText(h: { role: string; id: string; room?: string; ts: numb
   return `dool2-relay/v1/${h.role}/${h.id}/${h.room ?? ''}/${h.ts}`
 }
 
-export function linkUrl(relay: string): string {
+/** 접속 주소. 방(PC id)을 주소에 실어서, 공식 서버가 접속을 그 방으로 바로 보낼 수 있게 한다 */
+export function linkUrl(relay: string, room?: string): string {
   const u = new URL('/link', relay)
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+  if (room) u.searchParams.set('room', room)
   return u.href
 }
 
@@ -57,7 +59,7 @@ export class LinkClient {
   private open() {
     const WS = this.opts.WebSocketImpl ?? globalThis.WebSocket
     this.opts.onState?.('connecting')
-    const ws = new WS(linkUrl(this.opts.relay))
+    const ws = new WS(linkUrl(this.opts.relay, this.opts.role === 'pc' ? this.opts.keys.id : this.opts.room))
     this.ws = ws
     ws.onopen = async () => {
       const { role, keys, room } = this.opts
