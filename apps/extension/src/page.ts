@@ -13,7 +13,8 @@ export interface SnapshotResult {
 }
 
 /** 페이지를 AI가 읽기 좋은 글로 바꾼다. 누를 수 있는 것에는 [e12 버튼 "검색"]처럼 표시를 붙인다 */
-export function pageSnapshot(maxChars: number): SnapshotResult {
+/** base: 화면 안 액자(iframe)는 표시 번호를 10000씩 띄워 매긴다 (액자 1 → e10001…) */
+export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   type State = {
     refs: Map<string, WeakRef<Element>>
     ids: WeakMap<Element, string>
@@ -185,7 +186,7 @@ export function pageSnapshot(maxChars: number): SnapshotResult {
     if (role) {
       let ref = st.ids.get(el)
       if (!ref) {
-        ref = `e${++st.seq}`
+        ref = `e${base + ++st.seq}`
         st.ids.set(el, ref)
       }
       st.refs.set(ref, new WeakRef(el))
@@ -243,6 +244,8 @@ export interface LocateResult {
   toggle?: boolean
   /** 그 자리를 다른 것이 덮고 있다 (팝업 등) */
   coveredBy?: string
+  /** 화면 안 액자(iframe) 속 요소 (좌표는 페이지 화면 기준으로 바꿔 둠) */
+  frame?: boolean
 }
 
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
