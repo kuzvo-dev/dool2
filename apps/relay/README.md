@@ -27,6 +27,22 @@ pnpm --filter @dool2/relay start      # http://127.0.0.1:8787 (폰 앱: /app/)
 | -------------------------------------------------------- | ------------------------------ |
 | 기기 id, 메시지 크기, 시각, 봉투 종류(`ask`, `reply` 등) | 부탁 내용, 답, 승인 내용, 화면 |
 
-## 배포
+## 공식 서버 (Cloudflare)
 
-이 Node 버전은 자체 호스팅·개발용이에요. 공식 서비스는 같은 규약으로 Cloudflare Workers + Durable Objects에 올려요(M5). 쌓아 둔 봉투는 지금은 메모리에만 있어서 서버를 다시 켜면 사라져요.
+공식 중계 서버는 **Cloudflare Workers + Durable Objects**에서 돌아요(`src/worker.ts`). 규칙은 Node 버전과 같은 `src/core.ts`를 써요.
+
+- PC 방(PC id)마다 Durable Object 하나. 접속 주소는 `wss://relay.dool2.com/link?room=<PC id>`예요.
+- WebSocket Hibernation으로 메시지가 없을 때는 잠들어 있어요(요금 없음).
+- 꺼진 기기로 가는 봉투는 그 방의 SQLite에 **암호문 그대로** 7일까지 쌓아 둬요. 서버를 다시 켜도 남아요.
+- 폰 앱은 내려주지 않아요. 폰 앱은 스토어 앱으로만 배포해요(서버가 앱 코드를 바꿔치기할 수 없게).
+
+```bash
+pnpm --filter @dool2/relay dev:cf                     # 내 컴퓨터에서 Cloudflare 환경으로 띄우기
+node apps/relay/scripts/smoke.mjs http://127.0.0.1:8787 # 전달·쌓아 두기·서명 확인
+pnpm --filter @dool2/relay deploy                     # 배포 (wrangler login 필요)
+node apps/relay/scripts/smoke.mjs https://relay.dool2.com
+```
+
+## 직접 운영 (Node)
+
+`src/main.ts`는 자체 호스팅·개발용이에요. 같은 규약이라 PC 앱 설정에서 주소만 바꾸면 돼요. 쌓아 둔 봉투는 메모리에만 있어서 서버를 다시 켜면 사라져요.

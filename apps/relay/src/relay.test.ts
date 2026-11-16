@@ -1,5 +1,5 @@
-import { type Envelope, generateDevice, linkKey, open, seal } from '@dool2/protocol/e2e'
-import { LinkClient } from '@dool2/protocol/link'
+import { type Envelope, generateDevice, linkKey, open, seal, signText } from '@dool2/protocol/e2e'
+import { helloText, LinkClient, linkUrl } from '@dool2/protocol/link'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { type Relay, startRelay } from './index.js'
@@ -111,5 +111,26 @@ describe('중계 서버', () => {
     await waitFor(() => pc1.got.length === 1)
     expect(pc2.got).toHaveLength(0)
     expect(relay.queued(pc2.keys.id)).toBe(0)
+  })
+
+  it('접속 주소의 방과 증명한 방이 다르면 끊는다', async () => {
+    relay = await startRelay()
+    const pc = await client('pc')
+    const other = await generateDevice(true)
+    const phoneKeys = await generateDevice(false)
+    // 주소는 다른 방인데, 증명은 pc 방으로 → 공식 서버(방마다 따로 도는)에서 엉뚱한 방에 붙지 않게
+    const raw = new WebSocket(linkUrl(relay.url, other.id))
+    await new Promise((r) => raw.once('open', r))
+    const ts = Date.now()
+    const h = { role: 'phone', id: phoneKeys.id, room: pc.keys.id, ts }
+    raw.send(
+      JSON.stringify({
+        ...h,
+        signPub: phoneKeys.signPub,
+        sig: await signText(phoneKeys.signPriv, helloText(h)),
+      }),
+    )
+    const code = await new Promise<number>((r) => raw.once('close', (c) => r(c)))
+    expect(code).toBe(4003)
   })
 })
