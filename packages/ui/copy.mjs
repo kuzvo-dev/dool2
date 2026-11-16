@@ -13,6 +13,8 @@ export function copyUi(to, opts = {}) {
   mkdirSync(to, { recursive: true })
   cpSync(join(here, 'ui.css'), join(to, 'ui.css'))
   cpSync(join(here, 'doori'), join(to, 'doori'), { recursive: true })
+  // 입체 이모지 (Fluent Emoji 3D, MIT · emoji/LICENSE)
+  cpSync(join(here, 'emoji'), join(to, 'emoji'), { recursive: true })
   // 서비스 로고 (연결 카드 id.png). 없는 카드는 화면이 이름 첫 글자를 보여 준다
   cpSync(join(here, 'logos'), join(to, 'logos'), { recursive: true, filter: (f) => !f.endsWith('.md') })
   if (opts.fonts) {

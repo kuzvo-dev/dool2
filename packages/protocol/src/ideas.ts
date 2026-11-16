@@ -35,6 +35,8 @@ export interface IdeaSection {
   label: string
   icon: IdeaIcon
   tone: IdeaTone
+  /** 입체 이모지 (packages/ui/emoji/<emo>.webp) */
+  emo: string
   /** 이 분류에 넣을 연결 카드 분류 */
   cats: ConnectCard['category'][]
   /** 분류와 상관없이 이 분류로 옮길 카드 */
@@ -45,7 +47,8 @@ export interface IdeaSection {
 export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'routine',
-    label: '알아서 매일',
+    label: '매일 챙기기',
+    emo: 'routine',
     icon: 'goal',
     tone: 'mint',
     cats: [],
@@ -62,6 +65,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'grocery',
     label: '장보기·배달',
+    emo: 'grocery',
     icon: 'cart',
     tone: 'mint',
     cats: ['grocery'],
@@ -76,6 +80,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'shopping',
     label: '쇼핑',
+    emo: 'shopping',
     icon: 'box',
     tone: 'blue',
     cats: ['shopping'],
@@ -93,6 +98,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'fashion',
     label: '패션·뷰티',
+    emo: 'beauty',
     icon: 'star',
     tone: 'rose',
     cats: ['fashion'],
@@ -106,6 +112,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'money',
     label: '돈 관리',
+    emo: 'card',
     icon: 'card',
     tone: 'blue',
     cats: ['telecom'],
@@ -121,6 +128,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'travel',
     label: '여행·숙소',
+    emo: 'travel',
     icon: 'place',
     tone: 'amber',
     cats: ['travel'],
@@ -135,6 +143,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'transport',
     label: '기차·항공',
+    emo: 'plane',
     icon: 'plane',
     tone: 'violet',
     cats: ['flight'],
@@ -149,6 +158,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'tickets',
     label: '예매·예약',
+    emo: 'ticket',
     icon: 'ticket',
     tone: 'rose',
     cats: ['tickets'],
@@ -163,6 +173,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'admin',
     label: '서류·행정',
+    emo: 'document',
     icon: 'note',
     tone: 'violet',
     cats: [],
@@ -178,6 +189,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'mail',
     label: '메일·일정',
+    emo: 'calendar',
     icon: 'mail',
     tone: 'blue',
     cats: ['mail', 'device'],
@@ -191,6 +203,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'life',
     label: '생활',
+    emo: 'home',
     icon: 'sun',
     tone: 'amber',
     cats: ['life'],
@@ -205,6 +218,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'health',
     label: '건강',
+    emo: 'medical',
     icon: 'heart',
     tone: 'rose',
     cats: [],
@@ -218,6 +232,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'family',
     label: '아이·가족',
+    emo: 'family',
     icon: 'users',
     tone: 'mint',
     cats: [],
@@ -232,6 +247,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'media',
     label: '영상·음악·책',
+    emo: 'media',
     icon: 'play',
     tone: 'violet',
     cats: ['media', 'books'],
@@ -245,6 +261,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'social',
     label: 'SNS',
+    emo: 'camera',
     icon: 'image',
     tone: 'rose',
     cats: ['social'],
@@ -256,6 +273,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'work',
     label: '일·공부',
+    emo: 'laptop',
     icon: 'pc',
     tone: 'blue',
     cats: ['work'],
