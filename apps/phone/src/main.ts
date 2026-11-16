@@ -64,9 +64,11 @@ import {
   upcomingSeg,
 } from './life-views.js'
 import {
+  acceptGhost,
   drawCheck,
   gooFilter,
   holdButton,
+  otpBoxes,
   playFlip,
   playSeg,
   riseIn,
@@ -167,6 +169,8 @@ const st: {
   toast?: string
   screenShot?: { tabId: number; shot?: string; url?: string; title?: string; error?: string; busy?: boolean }
   remoteDraft: string
+  /** 원격 화면의 인증번호 칸 (열려 있으면 지금까지 넣은 숫자) */
+  otp?: string
 } = {
   online: false,
   pcSilent: false,
@@ -897,6 +901,16 @@ function buildShell() {
     renderComposer()
   })
   textarea.addEventListener('keydown', (e) => {
+    // 이어 쓰기 제안 받기: Tab, 또는 글 끝에서 →
+    if (
+      ghostRest &&
+      (e.key === 'Tab' || (e.key === 'ArrowRight' && textarea.selectionStart === textarea.value.length)) &&
+      !e.isComposing
+    ) {
+      e.preventDefault()
+      takeGhost()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(pointer: fine)').matches) {
       e.preventDefault()
       ask(st.draft)
@@ -918,14 +932,103 @@ function buildShell() {
     textarea.focus()
   })
   const attachBox = h('div', { class: 'attach-preview' })
-  const composerBox = h('div', { class: 'composer float app-composer' }, attachBox, plus, textarea, sendBtn)
+  const ghost = h('div', { class: 'ghost' })
+  ghost.hidden = true
+  ghost.setAttribute('aria-hidden', 'true')
+  const field = h('div', { class: 'ghost-wrap' }, textarea, ghost)
+  const composerBox = h('div', { class: 'composer float app-composer' }, attachBox, plus, field, sendBtn)
   const tabs = h('nav', { class: 'tabs app-tabs', label: '탭' })
   const overlay = h('div', { class: 'app-overlay' })
   const toast = h('div', { class: 'toast float-toast' })
   toast.setAttribute('role', 'status')
   app.replaceChildren(h('div', { class: 'app-shell' }, top, page, composerBox, tabs, overlay, toast))
   shell = { top, page, chat, composerBox, textarea, sendBtn, tabs, overlay, toast }
+  ghostEl = ghost
   pullToRefresh(page)
+}
+
+// ── 이어 쓰기 제안: 쓰는 말이 아이디어의 앞부분과 같으면 나머지를 흐리게 보여 준다 (누르거나 Tab으로 받기) ──
+
+let ghostEl: HTMLElement | undefined
+let ghostRest = ''
+
+function ghostFor(draft: string): string {
+  const d = draft.trimStart()
+  if (d.length < 2 || d.includes('\n')) return ''
+  const mine = (st.life?.ideas ?? []).map((i) => i.text)
+  const all = ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text))
+  const hit = [...mine, ...all].find((t) => t.startsWith(d) && t.length > d.length)
+  return hit ? hit.slice(d.length) : ''
+}
+
+function updateGhost() {
+  const g = ghostEl
+  const t = shell?.textarea
+  if (!g || !t) return
+  const rest = ghostFor(st.draft)
+  // 한 줄일 때만: 쓴 말이 두 줄로 넘어가면 글자 자리가 어긋나서 보이지 않는다
+  const oneLine = t.scrollHeight <= Number.parseFloat(getComputedStyle(t).minHeight) + 2
+  if (!rest || !oneLine) {
+    ghostRest = ''
+    g.hidden = true
+    g.replaceChildren()
+    return
+  }
+  if (rest === ghostRest && !g.hidden) return
+  ghostRest = rest
+  // 입력칸과 같은 글꼴·안쪽 여백으로 겹쳐 그린다
+  const cs = getComputedStyle(t)
+  g.style.font = cs.font
+  g.style.letterSpacing = cs.letterSpacing
+  g.style.padding = cs.padding
+  const typed = h('span', { class: 'ghost-typed', text: st.draft })
+  const letters = [...rest].map((ch) => h('span', { class: 'g', text: ch }))
+  const restEl = h('span', { class: 'ghost-rest', onclick: takeGhost }, ...letters)
+  const key = h(
+    'button',
+    { class: 'ghost-key', label: '이어 쓰기 받기', onclick: takeGhost },
+    icon('chevron', 'i'),
+  )
+  g.replaceChildren(typed, restEl, key)
+  g.hidden = false
+  springTo(restEl, [{ opacity: 0 }, { opacity: 1 }], 'fade')
+  springTo(
+    key,
+    [
+      { opacity: 0, transform: 'scale(0.6)' },
+      { opacity: 1, transform: 'none' },
+    ],
+    'squash',
+  )
+}
+
+function takeGhost() {
+  const g = ghostEl
+  const t = shell?.textarea
+  if (!g || !t || !ghostRest) return
+  const full = st.draft + ghostRest
+  ghostRest = ''
+  // 흐린 글자가 왼쪽부터 밝아지며 톡, 그다음 진짜 글자로 바꾼다
+  const letters = [...g.querySelectorAll<HTMLElement>('.ghost-rest .g')]
+  acceptGhost(letters)
+  g.querySelector('.ghost-key')?.remove()
+  g.classList.add('taking')
+  t.classList.add('ghosting')
+  setTimeout(
+    () => {
+      st.draft = full
+      t.value = full
+      t.classList.remove('ghosting')
+      g.classList.remove('taking')
+      g.hidden = true
+      g.replaceChildren()
+      autosize(t)
+      renderComposer()
+      t.focus()
+      t.setSelectionRange(full.length, full.length)
+    },
+    reducedMotion() ? 0 : 260 + letters.length * 16,
+  )
 }
 
 /** 입력칸 높이: 줄이 늘고 줄 때 스프링으로 */
@@ -1206,6 +1309,7 @@ function renderComposer() {
   sendBtn.classList.toggle('ready', has)
   sendBtn.classList.toggle('stop', stop)
   sendBtn.disabled = !st.online || (!has && !st.busy)
+  if (!shell.textarea.classList.contains('ghosting')) updateGhost()
 }
 
 function renderPage() {
@@ -3182,8 +3286,36 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
     ['위로', { action: 'scroll', dy: -1 }],
     ['아래로', { action: 'scroll', dy: 1 }],
   ] as const
+  keys.append(
+    h('button', {
+      class: st.otp === undefined ? 'chip' : 'chip on',
+      text: '인증번호',
+      onclick: () => {
+        st.otp = st.otp === undefined ? '' : undefined
+        render()
+        if (st.otp !== undefined) queueMicrotask(() => document.getElementById('otp-input')?.focus())
+      },
+    }),
+  )
   for (const [label, inp] of presets)
     keys.append(h('button', { class: 'chip', text: label, onclick: () => remote(inp) }))
+  // 문자로 온 인증번호: 여섯 칸에 넣으면 PC에서 누른 칸에 들어간다 (아이폰은 문자에서 바로 채워 준다)
+  const otp =
+    st.otp === undefined
+      ? undefined
+      : otpBoxes({
+          value: st.otp,
+          onInput: (v) => {
+            st.otp = v
+          },
+          onDone: (code) => {
+            remote({ action: 'text', text: code })
+            setTimeout(() => {
+              st.otp = undefined
+              render()
+            }, 1400)
+          },
+        })
   const done = h('button', {
     class: 'btn btn-approve',
     text: v.connectId ? '로그인했어요' : '다 했어요',
@@ -3209,7 +3341,14 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
       h('span', { class: 'live-badge live-rate', text: '실시간' }),
     ),
     frame,
-    form,
+    otp
+      ? h(
+          'div',
+          { class: 'remote-otp' },
+          h('p', { class: 'meta', text: 'PC 화면에서 인증번호 칸을 먼저 눌러 주세요' }),
+          otp,
+        )
+      : form,
     keys,
     h(
       'div',
