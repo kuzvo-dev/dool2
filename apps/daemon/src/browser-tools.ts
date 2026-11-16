@@ -386,11 +386,15 @@ export class BrowserTools {
   }
 
   /** 원격 화면 한 장 (폰으로 보낼 크기로 줄여서) */
-  async remoteScreen(tabId: number) {
+  async remoteScreen(tabId: number, fit?: { width: number; height: number }) {
     if (!this.remoteAllowed(tabId))
       throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
-    // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장)
-    return (await this.browser.call('screenshot', { tabId, maxWidth: 720, quality: 50 })) as {
+    // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장).
+    // fit을 주면 PC 탭을 폰 화면 크기로 그리게 해서 폰에 꽉 찬다 (선명하게 2배로)
+    const args = fit
+      ? { tabId, fit, maxWidth: Math.min(fit.width * 2, 1000), quality: 55 }
+      : { tabId, maxWidth: 720, quality: 50 }
+    return (await this.browser.call('screenshot', args)) as {
       url: string
       title: string
       data: string

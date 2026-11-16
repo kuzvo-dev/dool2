@@ -707,32 +707,39 @@ button {
   font-weight: 600;
 }
 
-/* ── PC 화면 (원격) ── */
+/* ── PC 화면 (원격): 폰 화면 크기로 그린 PC 탭이 꽉 찬다 ── */
 .remote-page {
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 100dvh;
-  padding: calc(10px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));
   background: #0b0c0f;
   color: #fff;
+  z-index: 40;
 }
-.remote-bar {
+.remote-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+  background: #0b0c0f;
 }
-.remote-bar .fbtn {
+.rtop-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 12px;
   background: #1d2026;
   color: #fff;
-  box-shadow: none;
 }
 .remote-url {
   flex: 1;
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 36px;
+  height: 38px;
   padding: 0 12px;
   border-radius: 12px;
   background: #1d2026;
@@ -741,33 +748,65 @@ button {
   overflow: hidden;
   white-space: nowrap;
 }
-.remote-frame {
+.live-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: #4cc98f;
+  box-shadow: 0 0 0 4px rgba(76, 201, 143, 0.22);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgba(76, 201, 143, 0.05);
+  }
+}
+.remote-stage {
   position: relative;
-  border-radius: 16px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: #fff;
+  touch-action: none;
 }
-.remote-frame.busy {
-  opacity: 0.85;
+.remote-stage.busy .remote-shot {
+  opacity: 0.88;
 }
 .remote-shot {
   display: block;
   width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.remote-loading {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  height: 100%;
+  background: #0b0c0f;
+  color: #c9ced6;
+  font-size: 15px;
+}
+.remote-loading p {
+  margin: 0;
 }
 .remote-msg {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   margin: 0;
-  padding: 80px 16px;
+  padding: 80px 20px;
+  text-align: center;
   color: #3b4049;
 }
 .tap-dot {
   position: absolute;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
   border: 2px solid #fff;
   border-radius: var(--radius-full);
   background: rgba(76, 201, 143, 0.85);
@@ -781,13 +820,46 @@ button {
     transform: scale(1.4);
   }
 }
+.remote-dock {
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  background: #0b0c0f;
+}
+.remote-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rtool {
+  flex: none;
+  height: 44px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 12px;
+  background: #1d2026;
+  color: #e6e8eb;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+.rtool.on {
+  background: #e6e8eb;
+  color: #0b0c0f;
+}
+.rdone {
+  flex: 1;
+  height: 44px;
+  margin-left: auto;
+  white-space: nowrap;
+}
 .remote-type {
   display: flex;
   gap: 8px;
 }
 .remote-input {
   flex: 1;
-  height: 44px;
+  height: 46px;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
@@ -796,27 +868,7 @@ button {
   font-size: 16px;
 }
 .remote-type .btn {
-  height: 44px;
-}
-.remote-keys {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.remote-keys .chip {
-  background: #1d2026;
-  color: #e6e8eb;
-  box-shadow: none;
-}
-.remote-foot {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: auto;
-}
-.remote-foot .btn-ghost {
-  border-color: #2a2e36;
-  color: #fff;
+  height: 46px;
 }
 
 /* ── 서비스 연결 (connections.ts) ── */
@@ -945,21 +997,6 @@ button {
 @keyframes chat-flash {
   20% {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 55%, transparent);
-  }
-}
-
-/* 실시간 화면 머리의 "실시간 · 초당 n장" */
-.remote-bar .live-badge {
-  position: static;
-  flex: none;
-}
-.remote-shot {
-  transition: none;
-}
-@media (min-width: 640px) {
-  .remote-page {
-    max-width: 480px;
-    margin-inline: auto;
   }
 }
 
@@ -1726,7 +1763,6 @@ button {
   .chat-list .bubble {
     max-width: min(72%, 560px);
   }
-  .remote-page,
   .side-page {
     max-width: 760px;
   }
@@ -2302,32 +2338,57 @@ textarea.ghosting {
   gap: 8px;
 }
 
-/* 간편 로그인으로 연결 (공급자 고유 색은 공급자 안내를 따른다) */
-.social-row {
+/* 간편 로그인으로 연결: 공급자 로고 + 가운데 글, 세로로 쌓는다 (공급자 고유 색은 공급자 안내를 따른다) */
+.social-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
-  margin: 4px 0 2px;
+  margin: 2px 0 0;
 }
 .btn-social {
-  min-height: 48px;
-  border-radius: var(--r-md, 14px);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 52px;
+  padding: 0 52px;
   border: 1px solid transparent;
+  border-radius: 14px;
   font: inherit;
+  font-size: 15.5px;
   font-weight: 700;
-  font-size: 15px;
+  letter-spacing: -0.01em;
   cursor: pointer;
 }
 .btn-social:active {
-  transform: scale(0.98);
+  transform: scale(0.985);
+}
+.brand-mark {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+}
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
 }
 .btn-social.kakao {
   background: #fee500;
-  color: #191919;
+  color: rgba(0, 0, 0, 0.85);
 }
 .btn-social.naver {
   background: #03c75a;
   color: #fff;
+}
+.btn-social.naver .brand-mark {
+  width: 16px;
+  height: 16px;
+  left: 21px;
 }
 .btn-social.google {
   background: #fff;
@@ -2351,6 +2412,22 @@ textarea.ghosting {
   color: #fff;
 }
 .social-or {
-  text-align: center;
-  margin: 10px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  color: var(--text-3, #8a8f98);
+  font-size: 13px;
+}
+.social-or::before,
+.social-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line, rgba(127, 127, 127, 0.25));
+}
+.cred-direct {
+  justify-self: center;
+  margin-top: 2px;
+  font-size: 14px;
 }

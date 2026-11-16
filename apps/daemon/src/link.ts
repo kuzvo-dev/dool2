@@ -18,6 +18,7 @@ import {
   type PairStatus,
   type PcToPhone,
   type PhoneToPc,
+  type ScreenFit,
 } from '@dool2/protocol'
 import { type ConnectionItem, type SocialProvider, SocialProviderSchema } from '@dool2/protocol/connect'
 import {
@@ -59,7 +60,7 @@ export interface LinkHost {
   /** 로그인 카드에 넣은 값을 금고에 저장 */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
-  screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
+  screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string }>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
   /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
   connections(): Promise<ConnectionItem[]>
@@ -320,7 +321,12 @@ export class PhoneLink {
         const tabId = Number(msg.tabId)
         try {
           if (msg.kind === 'remote') await this.host.remote({ ...msg, tabId })
-          const s = await this.host.screen(tabId)
+          const f = msg.fit
+          const fit =
+            f && Number(f.width) >= 200 && Number(f.height) >= 200
+              ? { width: Math.round(Number(f.width)), height: Math.round(Number(f.height)) }
+              : undefined
+          const s = await this.host.screen(tabId, fit)
           return this.send(phone, { kind: 'screen', tabId, ...s })
         } catch (e) {
           return this.send(phone, { kind: 'screen', tabId, error: (e as Error).message })
