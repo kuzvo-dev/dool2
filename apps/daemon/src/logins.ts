@@ -12,7 +12,7 @@ export class LoginRequests {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  create(n: { tabId: number; origin: string; site: string }): LoginRequestView {
+  create(n: { tabId: number; origin: string; site: string; connect?: boolean }): LoginRequestView {
     // 같은 사이트에 기다리는 요청이 있으면 새것으로 바꾼다
     for (const r of this.items.values())
       if (r.status === 'pending' && r.origin === n.origin) r.status = 'expired'
