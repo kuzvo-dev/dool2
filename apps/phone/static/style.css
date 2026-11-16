@@ -2123,3 +2123,178 @@ textarea.ghosting {
     filter: none;
   }
 }
+
+/* ── 숫자 굴리기: 자리마다 0~9 띠가 굴러 제 숫자에 선다 ── */
+.roll-num {
+  display: inline-flex;
+  white-space: nowrap;
+}
+.roll-col {
+  display: inline-block;
+  height: 1lh;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.roll-strip {
+  display: block;
+  width: 1ch;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* ── 이번 주 두리가 한 일 ── */
+.stat-card {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 14px 8px;
+}
+.stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stat-label {
+  font: 600 13px / 18px var(--font-sans);
+  color: var(--ink-muted);
+}
+.stat-seg {
+  position: relative;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+}
+.stat-seg button {
+  position: relative;
+  z-index: 1;
+  height: 26px;
+  padding: 0 11px;
+  font: 600 12px / 1 var(--font-sans);
+  color: var(--ink-muted);
+}
+.stat-seg button[aria-pressed="true"] {
+  color: var(--ink);
+}
+.stat-pill {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  height: 26px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.stat-num {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.stat-big {
+  font: 700 32px / 1.1 var(--font-sans);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stat-unit {
+  font: 600 15px / 1 var(--font-sans);
+  color: var(--ink-muted);
+}
+.stat-delta {
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+  font: 600 12px / 1.2 var(--font-sans);
+  color: var(--ink-muted);
+}
+.stat-delta.up {
+  background: color-mix(in srgb, var(--approve) 18%, transparent);
+  color: var(--approve-hi);
+}
+.stat-chart {
+  display: block;
+  width: 100%;
+}
+.stat-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.stat-fill {
+  fill: color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+/* ── 오늘의 추천 카드 더미 ── */
+.deck-wrap {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+}
+.deck {
+  position: relative;
+  height: 148px;
+  touch-action: pan-y;
+}
+.deck-card {
+  position: absolute;
+  inset: 0 0 auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  height: 120px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: var(--raise);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+}
+.deck-card:not(.top) {
+  filter: brightness(0.86);
+}
+.deck-card.top {
+  background: var(--raise);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line),
+    var(--shadow-card);
+  cursor: grab;
+}
+.deck-t {
+  font: 650 16px / 1.4 var(--font-sans);
+  letter-spacing: -0.01em;
+}
+.deck-why {
+  font: 450 13px / 1.45 var(--font-sans);
+  color: var(--ink-muted);
+}
+.deck-card .stamp {
+  position: absolute;
+  top: 14px;
+  padding: 4px 10px;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  font: 700 13px / 1 var(--font-sans);
+  opacity: 0;
+  pointer-events: none;
+}
+.deck-card .stamp.take {
+  left: 14px;
+  color: var(--approve-hi);
+  transform: rotate(-8deg);
+}
+.deck-card .stamp.skip {
+  right: 14px;
+  color: var(--ink-muted);
+  transform: rotate(8deg);
+}
+.deck-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}

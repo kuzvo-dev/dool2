@@ -76,6 +76,7 @@ import {
   springTo,
   tick,
 } from './motion.js'
+import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -1380,6 +1381,8 @@ function chatItems(): Item[] {
           const b = h('div', { class: 'bubble rich' })
           b.append(rich(m.text))
           onLongPress(b, () => openOverlay({ kind: 'msg', id: m.id }))
+          // 방금 온 답이면 돈·퍼센트가 굴러서 선다 (지난 대화를 불러올 때는 그대로)
+          if (Date.now() - Date.parse(m.createdAt) < 60_000) rollNumbers(b)
           return b
         },
       })
@@ -2115,19 +2118,22 @@ function ideasView() {
         ),
         refresh,
       ),
-      ...ideas.map((i) =>
-        h(
-          'button',
-          { class: 'idea', onclick: () => ask(i.text) },
-          emoTile('bulb'),
-          h(
-            'span',
-            { class: 'row-text' },
-            h('span', { class: 'row-t', text: i.text }),
-            h('span', { class: 'row-d', text: i.why }),
-          ),
-        ),
-      ),
+      // 둘 이상이면 카드 더미로: 오른쪽으로 넘기면 맡기고, 왼쪽은 다음에
+      ...(ideas.length > 1
+        ? [swipeDeck(ideas, { onTake: (text) => ask(text) })]
+        : ideas.map((i) =>
+            h(
+              'button',
+              { class: 'idea', onclick: () => ask(i.text) },
+              emoTile('bulb'),
+              h(
+                'span',
+                { class: 'row-text' },
+                h('span', { class: 'row-t', text: i.text }),
+                h('span', { class: 'row-d', text: i.why }),
+              ),
+            ),
+          )),
     ),
   )
 
