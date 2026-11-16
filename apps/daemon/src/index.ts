@@ -694,15 +694,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
-        if (ev.type === 'saved' && ev.message.role === 'tool') {
+        const rec =
+          ev.type === 'saved' && ev.message.role === 'tool'
+            ? (() => {
+                try {
+                  return JSON.parse(ev.message.text) as { kind?: string; reason?: string }
+                } catch {
+                  return {}
+                }
+              })()
+            : undefined
+        // 일한 과정 기록은 화면용일 뿐: 사람을 기다리는 게 아니다 ("끝났어요" 알림은 그대로 간다)
+        if (rec && rec.kind !== 'work') {
           asked = true
-          const rec = (() => {
-            try {
-              return JSON.parse(ev.message.text) as { kind?: string; reason?: string }
-            } catch {
-              return {}
-            }
-          })()
           if (rec.kind !== 'approval')
             void link
               .notify({

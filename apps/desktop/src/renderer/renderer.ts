@@ -23,6 +23,7 @@ import type {
   StoredMessage,
   ThreadSummary,
   UsageLimit,
+  WorkRecordMessage,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import { findCard } from './connect-text.js'
@@ -1121,7 +1122,8 @@ function renderTalk() {
   for (let k = 0; k + 1 < order.length; k++) {
     const a = order[k]
     const b = order[k + 1]
-    if (a && b && a.m.role === 'tool' && b.m.role === 'assistant') {
+    // 일한 과정은 답 위 그대로 둔다
+    if (a && b && a.m.role === 'tool' && b.m.role === 'assistant' && !a.m.text.includes('"kind":"work"')) {
       order[k] = b
       order[k + 1] = a
       k++
@@ -1521,10 +1523,36 @@ function toolCard(raw: string, active: boolean): Node {
     if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
+    if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
   } catch {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/** 일한 과정: 답 위에 접힌 한 줄, 누르면 단계와 걸린 시간 */
+function workDoneCard(rec: WorkRecordMessage): HTMLElement {
+  const secs = (ms: number) => {
+    const s = Math.max(1, Math.round(ms / 1000))
+    return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
+  }
+  const box = el('details', 'work-done')
+  const where = rec.host ? `${rec.host.replace(/^(www|m|app)\./, '')}에서 일했어요` : '일한 과정'
+  box.append(
+    el(
+      'summary',
+      '',
+      icon('check'),
+      el('b', '', where),
+      el('span', 'meta', `${rec.count}단계 · ${secs(rec.ms)}`),
+    ),
+    el(
+      'ol',
+      '',
+      ...rec.steps.map((s) => el('li', '', el('span', '', s.text), el('span', 'meta', secs(s.ms)))),
+    ),
+  )
+  return box
 }
 
 /**

@@ -2,7 +2,7 @@ import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
 import type { AgentRuntime, TurnInput } from './runtime.js'
-import { ThreadService } from './threads.js'
+import { ThreadService, WorkLog } from './threads.js'
 
 class FakeRuntime implements AgentRuntime {
   readonly id = 'claude' as const
@@ -68,7 +68,9 @@ describe('ThreadService', () => {
     ])
     const t = store.createThread('claude')
     await collect(svc.send(t.id, '기차 찾아 줘'))
-    expect(store.listMessages(t.id).map((m) => [m.role, m.text])).toEqual([
+    // 웹에서 일했으니 답 바로 앞에 일한 과정 기록이 남는다
+    const rows = store.listMessages(t.id).filter((m) => !m.text.includes('"kind":"work"'))
+    expect(rows.map((m) => [m.role, m.text])).toEqual([
       ['user', '기차 찾아 줘'],
       ['assistant', '05:47 열차에 자리가 있어요.'],
     ])
@@ -143,10 +145,58 @@ describe('ThreadService', () => {
     ])
     const t = store.createThread('claude')
     await collect(svc.send(t.id, '주문 내역 봐 줘'))
-    expect(store.listMessages(t.id).map((m) => [m.role, m.text])).toEqual([
+    const rows = store.listMessages(t.id).filter((m) => !m.text.includes('"kind":"work"'))
+    expect(rows.map((m) => [m.role, m.text])).toEqual([
       ['user', '주문 내역 봐 줘'],
       ['tool', JSON.stringify({ kind: 'handoff', tabId: 4, reason: '로그인해 주세요' })],
       ['assistant', '로그인만 해 주세요'],
     ])
+  })
+})
+
+describe('일한 과정 기록 (WorkLog)', () => {
+  it('혼잣말 한 줄, 없으면 도구 이름으로 단계를 쌓고 걸린 시간을 잰다', () => {
+    let t = 1000
+    const log = new WorkLog(() => t)
+    t = 1500
+    log.tool('mcp__dool2__browser_open', '캐치테이블을 열어 볼게요.', {
+      url: 'https://app.catchtable.co.kr/x',
+    })
+    t = 4500
+    log.tool('mcp__dool2__browser_read', '')
+    t = 4600
+    log.tool('mcp__dool2__browser_read', '')
+    t = 9500
+    expect(log.record()).toEqual({
+      kind: 'work',
+      steps: [
+        { text: '캐치테이블을 열어 볼게요.', ms: 3000 },
+        { text: '페이지 읽는 중', ms: 5000 },
+      ],
+      count: 2,
+      ms: 8500,
+      host: 'app.catchtable.co.kr',
+    })
+  })
+
+  it('기억·목표 같은 속일만 했으면 남기지 않는다', () => {
+    const log = new WorkLog()
+    log.tool('mcp__dool2__memory_save', '')
+    log.tool('mcp__dool2__status', '')
+    expect(log.record()).toBeUndefined()
+  })
+
+  it('웹에서 일한 차례는 답 바로 앞에 기록이 남는다', async () => {
+    const { store, svc } = setup([
+      { type: 'text', delta: '찾아볼게요.' },
+      { type: 'tool', name: 'mcp__dool2__browser_open', input: { url: 'https://example.com' } },
+      { type: 'text', delta: '세 곳을 찾았어요.' },
+      { type: 'done', text: '세 곳을 찾았어요.' },
+    ])
+    const th = store.createThread('claude')
+    await collect(svc.send(th.id, '찾아 줘'))
+    const msgs = store.listMessages(th.id)
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(JSON.parse(msgs[1]?.text ?? '')).toMatchObject({ kind: 'work', count: 1, host: 'example.com' })
   })
 })
