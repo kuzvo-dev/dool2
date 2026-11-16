@@ -18,6 +18,22 @@ export const SPRING = {
   fade: [420, 32],
   /** 일찍 놓았을 때 되돌아가기 */
   release: [260, 14],
+  /** 펼치는 카드 (참고 값: expand 240 21) */
+  expand: [240, 21],
+  /** 당긴 목록이 돌아오기 */
+  pull: [260, 18],
+  /** 입력칸 높이 */
+  field: [420, 34],
+  /** 버튼 모양 바뀜 (보내기 ↔ 멈추기) */
+  morph: [520, 30],
+  /** 메뉴 줄이 하나씩 떠오르기 */
+  item: [260, 22],
+  /** 체크가 그려지기 */
+  check: [140, 20],
+  /** 아래 탭: 버튼·글자 자리 */
+  bar: [340, 28],
+  /** 아래 탭: 아이콘이 찌그러졌다 톡 */
+  squash: [520, 14],
 } as const satisfies Record<string, readonly [number, number]>
 
 export type SpringName = keyof typeof SPRING
@@ -132,6 +148,10 @@ export function tick(frame: (dt: number) => boolean | undefined): () => void {
 }
 
 // ── 꾹 눌러 승인: 누르는 동안 왼쪽부터 차오르고, 다 차면 승인. 일찍 놓으면 되돌아가며 고개를 젓는다 ──
+// 다 차면 글자가 빠지고 도는 고리(보내는 중) → 체크가 그려지며 "승인했어요"가 떠오른다 → 잠깐 뒤 after()
+
+const CHECK_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 
 export function holdButton(o: {
   label: string
@@ -139,7 +159,10 @@ export function holdButton(o: {
   cls?: string
   /** 다 차는 데 걸리는 시간(초) */
   sec?: number
-  onDone(): void
+  /** 다 찼을 때. 프로미스를 돌려주면 끝날 때까지 도는 고리를 보이고, 실패하면 되돌린다 */
+  onDone(): unknown
+  /** 체크까지 보여 준 뒤 (카드를 접는 등) */
+  after?(): void
 }): HTMLButtonElement {
   const btn = document.createElement('button')
   btn.className = `hold ${o.cls ?? ''}`.trim()
@@ -152,11 +175,18 @@ export function holdButton(o: {
   under.textContent = o.label
   const over = document.createElement('span')
   over.className = 'hold-label top'
-  over.textContent = o.label
+  const overText = document.createElement('span')
+  overText.textContent = o.label
+  const ok = document.createElement('span')
+  ok.className = 'hold-ok'
+  ok.innerHTML = CHECK_SVG
+  over.append(ok, overText)
+  const spin = document.createElement('span')
+  spin.className = 'hold-spin'
   const hint = document.createElement('span')
   hint.className = 'hold-hint'
   hint.textContent = '꾹 누르고 있어 주세요'
-  btn.append(under, fill, over, hint)
+  btn.append(under, fill, over, spin, hint)
   const sec = o.sec ?? 0.9
   const p = new Spring(0).use('release')
   const shake = new Spring(0, 700, 9)
@@ -180,11 +210,9 @@ export function holdButton(o: {
         if (p.x >= 1 && !finished) {
           finished = true
           holding = false
-          btn.classList.add('done')
-          over.textContent = o.done
-          under.textContent = o.done
+          btn.classList.remove('holding')
           navigator.vibrate?.(18)
-          o.onDone()
+          complete()
         }
       } else p.step(dt)
       shake.step(dt)
@@ -192,9 +220,79 @@ export function holdButton(o: {
       return holding || !p.resting || !shake.resting
     })
   }
+  const complete = () => {
+    btn.classList.add('busy')
+    btn.setAttribute('aria-busy', 'true')
+    springTo(
+      overText,
+      [
+        { opacity: 1, transform: 'none' },
+        { opacity: 0, transform: 'translateY(-12px)' },
+      ],
+      'fade',
+      {
+        fill: 'forwards',
+      },
+    )
+    springTo(
+      spin,
+      [
+        { opacity: 0, transform: 'scale(0.6)' },
+        { opacity: 1, transform: 'scale(1)' },
+      ],
+      'settle',
+      {
+        fill: 'forwards',
+      },
+    )
+    Promise.resolve()
+      .then(() => o.onDone())
+      .then(
+        () => {
+          btn.classList.remove('busy')
+          btn.classList.add('done')
+          btn.removeAttribute('aria-busy')
+          btn.setAttribute('aria-label', o.done)
+          overText.textContent = o.done
+          under.textContent = o.done
+          springTo(spin, [{ opacity: 1 }, { opacity: 0 }], 'fade', { fill: 'forwards' })
+          springTo(
+            overText,
+            [
+              { opacity: 0, transform: 'translateY(12px)' },
+              { opacity: 1, transform: 'none' },
+            ],
+            'fade',
+            {
+              fill: 'forwards',
+            },
+          )
+          springTo(ok, [{ transform: 'scale(0.4)' }, { transform: 'scale(1)' }], 'pop')
+          springTo(
+            ok.querySelector('path') as Element,
+            [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }],
+            'check',
+            { delay: 120, fill: 'both' },
+          )
+          setTimeout(() => o.after?.(), 750)
+        },
+        () => {
+          // 보내지 못했으면 처음으로: 초록이 빠지며 흔들린다
+          btn.classList.remove('busy')
+          btn.removeAttribute('aria-busy')
+          springTo(spin, [{ opacity: 1 }, { opacity: 0 }], 'fade', { fill: 'forwards' })
+          springTo(overText, [{ opacity: 0 }, { opacity: 1 }], 'fade', { fill: 'forwards' })
+          finished = false
+          p.t = 0
+          shake.v += 300
+          run()
+        },
+      )
+  }
   const start = (e?: PointerEvent) => {
     if (finished) return
     holding = true
+    btn.classList.add('holding')
     hint.classList.remove('show')
     if (e) btn.setPointerCapture?.(e.pointerId)
     run()
@@ -202,6 +300,7 @@ export function holdButton(o: {
   const end = () => {
     if (!holding) return
     holding = false
+    btn.classList.remove('holding')
     if (p.x < 1) {
       p.t = 0
       shake.v += 260 * Math.min(1, p.x * 2 + 0.3)
@@ -361,4 +460,56 @@ export function burst(from: Element) {
   })
   springTo(from, [{ transform: 'scale(0.8)' }, { transform: 'scale(1)' }], 'pop')
   setTimeout(() => box.remove(), 900)
+}
+
+// ── 펼치는 카드: 바꾸기 전·후 높이를 재서 스프링으로 늘였다 줄인다 ──
+
+export function springHeight(el: HTMLElement, change: () => void, name: SpringName = 'expand') {
+  const h0 = el.getBoundingClientRect().height
+  change()
+  const h1 = el.getBoundingClientRect().height
+  if (Math.abs(h1 - h0) < 1) return
+  // 접을 때 최대 높이에 막혀 바로 줄어들지 않게, 움직이는 동안은 풀어 둔다
+  el.style.overflow = 'hidden'
+  el.style.maxHeight = 'none'
+  const a = springTo(el, [{ height: `${h0}px` }, { height: `${h1}px` }], name)
+  const done = () => {
+    el.style.removeProperty('overflow')
+    el.style.removeProperty('max-height')
+  }
+  if (a) a.onfinish = a.oncancel = done
+  else done()
+}
+
+// ── 메뉴 줄: 아래에서 하나씩 떠오른다 ──
+
+export function riseIn(els: Iterable<Element>, gap = 45) {
+  let i = 0
+  for (const el of els)
+    springTo(
+      el,
+      [
+        { opacity: 0, transform: 'translateY(18px)' },
+        { opacity: 1, transform: 'none' },
+      ],
+      'item',
+      {
+        delay: 60 + i++ * gap,
+        fill: 'backwards',
+      },
+    )
+}
+
+// ── 체크: 톡 커지며 선이 그려진다 ──
+
+export function drawCheck(box: Element, delay = 0) {
+  springTo(box, [{ transform: 'scale(0.7)' }, { transform: 'scale(1)' }], 'pop', { delay })
+  for (const path of box.querySelectorAll('path, polyline')) {
+    path.setAttribute('pathLength', '1')
+    ;(path as SVGElement).style.strokeDasharray = '1'
+    springTo(path, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], 'check', {
+      delay: delay + 100,
+      fill: 'both',
+    })
+  }
 }

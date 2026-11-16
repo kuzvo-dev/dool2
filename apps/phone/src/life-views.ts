@@ -12,7 +12,7 @@ import {
 import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
 import { scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
-import { burst, rememberFlip } from './motion.js'
+import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
 
 export interface LifeCtx {
   life?: LifeState
@@ -145,7 +145,7 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
   const body = h('div', { class: long ? 'feed-body clamp' : 'feed-body' })
   if (f.body) body.append(long ? rich(f.body) : plain(f.body, 160))
   // 긴 글은 접어 두고 누르면 펼친다
-  if (long) body.onclick = () => body.classList.toggle('open')
+  if (long) body.onclick = () => springHeight(body, () => body.classList.toggle('open'))
   const react = (r: 'up' | 'down') => () =>
     ctx.act({ action: 'feed-react', id: f.id, ...(f.reaction === r ? {} : { reaction: r }) })
   return h(
@@ -377,7 +377,17 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
         'button',
         {
           class: p.done ? 'plan-step done' : 'plan-step',
-          onclick: () => ctx.act({ action: 'goal-step', id: r.id, index: i, done: !p.done }),
+          onclick: (e: MouseEvent) => {
+            // 끝냈다고 누르면 바로 체크가 그려진다 (PC 답을 기다리지 않는다)
+            const b = e.currentTarget as HTMLElement
+            if (!p.done) {
+              b.classList.add('done')
+              const box = b.querySelector('.check') as HTMLElement
+              box.replaceChildren(icon('check'))
+              drawCheck(box)
+            }
+            ctx.act({ action: 'goal-step', id: r.id, index: i, done: !p.done })
+          },
         },
         h('span', { class: 'check' }, p.done ? icon('check') : undefined),
         h('span', { text: p.text }),
