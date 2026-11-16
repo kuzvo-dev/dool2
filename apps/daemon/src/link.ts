@@ -18,6 +18,7 @@ import {
   type PairStatus,
   type PcToPhone,
   type PhoneToPc,
+  type RemoteInfo,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import {
@@ -59,7 +60,7 @@ export interface LinkHost {
   /** 로그인 카드에 넣은 값을 금고에 저장 */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
-  screen(tabId: number): Promise<{ shot: string; url: string; title: string }>
+  screen(tabId: number): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
   /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
   connections(): Promise<ConnectionItem[]>

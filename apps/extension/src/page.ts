@@ -289,9 +289,14 @@ export function pageScroll(dir: number) {
 }
 
 export function pageViewport() {
+  // 폰 너비로 그릴 때 페이지가 넓으면 폰처럼 줄여 보인다: 실제로 보이는 영역(visualViewport)도 같이
+  const vv = window.visualViewport
   return {
     width: window.innerWidth,
     height: window.innerHeight,
+    vv: vv
+      ? { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, scale: vv.scale }
+      : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight, scale: 1 },
     dpr: window.devicePixelRatio || 1,
     hidden: document.visibilityState === 'hidden',
     url: location.href,
@@ -333,4 +338,152 @@ export function pageTapAt(x: number, y: number) {
   target.focus?.()
   target.click()
   return { ok: true, focused: false }
+}
+
+/**
+ * 원격 화면(폰)에 같이 보낼 것: 보이는 입력칸 자리, 누를 만한 버튼, 지금 글자가 들어갈 칸.
+ * 자리는 화면 비율(0~1). 비밀번호 칸의 글자는 보내지 않는다
+ */
+export function pageRemoteInfo() {
+  // 자리는 보이는 영역(visualViewport) 기준 비율: 폰에 간 그림과 같은 기준
+  const vv = window.visualViewport
+  const OX = vv?.offsetLeft ?? 0
+  const OY = vv?.offsetTop ?? 0
+  const W = vv?.width || window.innerWidth || 1
+  const H = vv?.height || window.innerHeight || 1
+  const shown = (el: Element, r: DOMRect) => {
+    if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.right <= 0 || r.top >= H || r.left >= W)
+      return false
+    const cs = getComputedStyle(el)
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05
+  }
+  const clip = (s: string, n: number) => s.replace(/\s+/g, ' ').trim().slice(0, n)
+  const labelOf = (el: HTMLElement) => {
+    const f = el as HTMLInputElement
+    const own = el.getAttribute('aria-label') || f.placeholder || f.labels?.[0]?.innerText || f.title || ''
+    return clip(own, 40)
+  }
+  const modeOf = (el: HTMLElement) => {
+    const f = el as HTMLInputElement
+    if (f.inputMode) return f.inputMode
+    if (f.type === 'tel') return 'tel'
+    if (f.type === 'number') return 'numeric'
+    if (f.type === 'email') return 'email'
+    return ''
+  }
+  const SKIP = /^(hidden|checkbox|radio|submit|button|reset|image|file|range|color)$/
+  const editable = (el: Element | null): el is HTMLElement => {
+    if (!el) return false
+    if (el instanceof HTMLInputElement) return !SKIP.test(el.type) && !el.disabled && !el.readOnly
+    if (el instanceof HTMLTextAreaElement) return !el.disabled && !el.readOnly
+    return (el as HTMLElement).isContentEditable === true
+  }
+  const fields: {
+    x: number
+    y: number
+    w: number
+    h: number
+    secret?: boolean
+    mode?: string
+    label?: string
+  }[] = []
+  for (const el of document.querySelectorAll(
+    'input, textarea, [contenteditable=""], [contenteditable="true"]',
+  )) {
+    if (!editable(el)) continue
+    const r = el.getBoundingClientRect()
+    if (!shown(el, r)) continue
+    const mode = modeOf(el)
+    const label = labelOf(el)
+    fields.push({
+      x: (r.left - OX) / W,
+      y: (r.top - OY) / H,
+      w: r.width / W,
+      h: r.height / H,
+      ...((el as HTMLInputElement).type === 'password' ? { secret: true } : {}),
+      ...(mode ? { mode } : {}),
+      ...(label ? { label } : {}),
+    })
+    if (fields.length >= 24) break
+  }
+  const seen = new Set<string>()
+  const buttons: { label: string; x: number; y: number; main?: boolean; area: number }[] = []
+  const BTN =
+    'button, [role="button"], input[type="submit"], input[type="button"], a[class*="btn"], a[class*="button"]'
+  for (const el of document.querySelectorAll<HTMLElement>(BTN)) {
+    const r = el.getBoundingClientRect()
+    if (!shown(el, r)) continue
+    const text = clip(
+      el instanceof HTMLInputElement ? el.value : el.innerText || el.getAttribute('aria-label') || '',
+      18,
+    )
+    if (!text || text.length < 1 || seen.has(text)) continue
+    // 다른 것에 가려진 버튼은 빼고
+    const cx = r.left + r.width / 2
+    const cy = r.top + r.height / 2
+    if (cx < OX || cy < OY || cx > OX + W || cy > OY + H) continue
+    const top = document.elementFromPoint(cx, cy)
+    if (!top || !(top === el || el.contains(top) || top.contains(el))) continue
+    seen.add(text)
+    const main =
+      (el as HTMLButtonElement).type === 'submit' ||
+      /^(다음|확인|로그인|인증|완료|동의|신청|제출|계속|next|ok|continue|submit|sign in|log in)/i.test(text)
+    buttons.push({
+      label: text,
+      x: cx / W,
+      y: cy / H,
+      ...(main ? { main: true } : {}),
+      area: r.width * r.height,
+    })
+  }
+  buttons.sort((a, b) => Number(Boolean(b.main)) - Number(Boolean(a.main)) || b.area - a.area)
+  const actions = buttons.slice(0, 6).map(({ area: _a, ...b }) => b)
+  let a: Element | null = document.activeElement
+  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement
+  let focus: { label?: string; secret?: boolean; mode?: string; value?: string } | null = null
+  if (editable(a)) {
+    const secret = (a as HTMLInputElement).type === 'password'
+    const value = secret
+      ? undefined
+      : (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement ? a.value : a.innerText).slice(
+          0,
+          300,
+        )
+    const label = labelOf(a)
+    const mode = modeOf(a)
+    focus = {
+      ...(label ? { label } : {}),
+      ...(secret ? { secret: true } : {}),
+      ...(mode ? { mode } : {}),
+      ...(value !== undefined ? { value } : {}),
+    }
+  }
+  return { fields, actions, focus }
+}
+
+/** 원격으로 칸을 누른 뒤: 글자를 이어 쓰기 좋게 커서를 칸 끝으로 */
+export function pageCaretEnd() {
+  const el = document.activeElement
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    try {
+      const n = el.value.length
+      el.setSelectionRange(n, n)
+    } catch {
+      // 숫자·이메일 칸은 커서를 옮길 수 없다
+    }
+  }
+}
+
+/** 원격 화면에서 손가락으로 끈 만큼 (가려진 창용): 그 자리의 스크롤 되는 상자부터 */
+export function pageScrollBy(x: number, y: number, dy: number) {
+  let el = document.elementFromPoint(x, y) as HTMLElement | null
+  while (el && el !== document.body) {
+    const cs = getComputedStyle(el)
+    if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) {
+      el.scrollBy({ top: dy, behavior: 'instant' })
+      return
+    }
+    el = el.parentElement
+  }
+  window.scrollBy({ top: dy, behavior: 'instant' })
 }

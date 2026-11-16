@@ -707,61 +707,173 @@ button {
   font-weight: 600;
 }
 
-/* ── PC 화면 (원격) ── */
+/* ── PC 화면 (원격): 폰 너비로 그린 PC 탭을 바로 누르고 쓰기 ── */
 .remote-page {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 100dvh;
-  padding: calc(10px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));
+  gap: 8px;
+  height: 100dvh;
+  padding: calc(8px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
   background: #0b0c0f;
   color: #fff;
+  overflow: hidden;
 }
 .remote-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .remote-bar .fbtn {
+  flex: none;
   background: #1d2026;
   color: #fff;
   box-shadow: none;
 }
-.remote-url {
+.remote-pill {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   height: 36px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-full);
   background: #1d2026;
-  font-size: 13.5px;
-  color: #c9ced6;
-  overflow: hidden;
+  font: 600 13px / 1 var(--font-sans);
+  color: #d5d9df;
   white-space: nowrap;
+  overflow: hidden;
+}
+.remote-pill .live-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--butter);
+  animation: ui-pulse 1.6s var(--ease) infinite;
+}
+.remote-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #8d939d;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.remote-where svg.i {
+  width: 12px;
+  height: 12px;
+}
+.remote-url-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.remote-rate {
+  flex: none;
 }
 .remote-frame {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   border-radius: 16px;
   overflow: hidden;
   background: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
-.remote-frame.busy {
-  opacity: 0.85;
+.remote-frame.busy .remote-shot {
+  opacity: 0.92;
+}
+.remote-stage {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.remote-stage[hidden] {
+  display: none;
 }
 .remote-shot {
   display: block;
   width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top;
+  pointer-events: none;
+}
+.remote-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 .remote-msg {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   margin: 0;
-  padding: 80px 16px;
+  padding: 24px;
   color: #3b4049;
+  text-align: center;
+}
+.remote-msg[hidden] {
+  display: none;
+}
+.remote-loupe {
+  position: absolute;
+  z-index: 3;
+  width: 104px;
+  height: 104px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.38);
+  pointer-events: none;
+}
+.remote-loupe[hidden] {
+  display: none;
+}
+.remote-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 2;
+  padding: 6px 11px;
+  border-radius: var(--radius-full);
+  background: rgb(15 17 20 / 0.8);
+  color: #fff;
+  font: 500 11.5px / 1.2 var(--font-sans);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+.remote-hint.gone {
+  opacity: 0;
+}
+.remote-zoom {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 2;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: rgb(15 17 20 / 0.82);
+  color: #fff;
+  font: 600 12px / 1 var(--font-sans);
+}
+.remote-zoom[hidden] {
+  display: none;
 }
 .tap-dot {
   position: absolute;
@@ -770,8 +882,8 @@ button {
   margin: -11px 0 0 -11px;
   border: 2px solid #fff;
   border-radius: var(--radius-full);
-  background: rgba(76, 201, 143, 0.85);
-  box-shadow: 0 0 0 6px rgba(76, 201, 143, 0.25);
+  background: rgb(76 201 143 / 0.85);
+  box-shadow: 0 0 0 6px rgb(76 201 143 / 0.25);
   pointer-events: none;
   animation: tap 0.8s var(--ease) forwards;
 }
@@ -781,38 +893,104 @@ button {
     transform: scale(1.4);
   }
 }
-.remote-type {
+.remote-acts,
+.remote-tools {
   display: flex;
-  gap: 8px;
+  flex: none;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.remote-input {
+.remote-acts[hidden] {
+  display: none;
+}
+.remote-acts .chip,
+.remote-tools .chip {
+  flex: none;
+  height: 36px;
+  background: #23262d;
+  color: #eceef1;
+  box-shadow: none;
+}
+.remote-acts .chip.main {
+  background: #f2f3f5;
+  color: #111214;
+}
+.remote-tools .chip {
+  height: 32px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #2c3038;
+  color: #b9bec7;
+}
+/* 입력칸을 누르면: 쓰는 대로 PC 칸에 들어가는 글자 막대 */
+.remote-typebar {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--kb, 0px) + 10px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  gap: 6px;
+  max-width: 500px;
+  margin-inline: auto;
+  padding: 10px;
+  border-radius: 18px;
+  background: #17191d;
+  box-shadow:
+    inset 0 0 0 1px #2a2e36,
+    0 12px 30px rgb(0 0 0 / 0.5);
+}
+.remote-typebar[hidden] {
+  display: none;
+}
+.remote-type-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.remote-type-label {
   flex: 1;
-  height: 44px;
+  min-width: 0;
+  overflow: hidden;
+  font: 600 12.5px / 1.2 var(--font-sans);
+  color: var(--brand);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.remote-type-head .chip {
+  height: 30px;
+  background: #23262d;
+  color: #eceef1;
+  box-shadow: none;
+}
+.remote-type-head .chip.on {
+  background: #f2f3f5;
+  color: #111214;
+}
+.remote-type-input {
+  height: 46px;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
-  background: #1d2026;
+  background: #23262d;
   color: #fff;
   font-size: 16px;
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--brand);
 }
-.remote-type .btn {
-  height: 44px;
+.remote-otp {
+  display: grid;
+  flex: none;
+  gap: 8px;
 }
-.remote-keys {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.remote-keys .chip {
-  background: #1d2026;
-  color: #e6e8eb;
-  box-shadow: none;
+.remote-otp[hidden] {
+  display: none;
 }
 .remote-foot {
   display: grid;
+  flex: none;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: auto;
 }
 .remote-foot .btn-ghost {
   border-color: #2a2e36;
@@ -948,14 +1126,6 @@ button {
   }
 }
 
-/* 실시간 화면 머리의 "실시간 · 초당 n장" */
-.remote-bar .live-badge {
-  position: static;
-  flex: none;
-}
-.remote-shot {
-  transition: none;
-}
 @media (min-width: 640px) {
   .remote-page {
     max-width: 480px;
@@ -1926,10 +2096,6 @@ textarea.ghosting {
 }
 
 /* 인증번호 칸: 여섯 칸 → 다 차면 붙어서 초록 알약 */
-.remote-otp {
-  display: grid;
-  gap: 8px;
-}
 .otp {
   position: relative;
   display: grid;

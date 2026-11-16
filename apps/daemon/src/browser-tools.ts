@@ -3,7 +3,7 @@
 //
 // 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
-import type { BrowserCommand } from '@dool2/protocol'
+import type { BrowserCommand, RemoteInfo } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
 
@@ -390,24 +390,27 @@ export class BrowserTools {
     if (!this.remoteAllowed(tabId))
       throw new Error('이 탭은 원격 화면으로 볼 수 없어요 (두리가 넘긴 탭만, 30분 동안)')
     // 실시간 화면용: 폰 화면에 맞는 크기·화질로 빠르게 (초당 여러 장)
-    return (await this.browser.call('screenshot', { tabId, maxWidth: 720, quality: 50 })) as {
+    // 폰 너비로 그릴 때는 2배로 찍어 또렷하게. 화면의 입력칸·버튼·지금 칸도 같이 (remote)
+    return (await this.browser.call('screenshot', { tabId, maxWidth: 780, quality: 55, remote: true })) as {
       url: string
       title: string
       data: string
       viewport: { width: number; height: number }
-    }
+    } & RemoteInfo
   }
 
   /** 원격 화면에서 사람이 한 입력. 좌표는 사진 비율(0~1)로 받아 페이지 좌표로 바꾼다 */
   async remoteInput(
     tabId: number,
     input: {
-      action: 'tap' | 'text' | 'key' | 'scroll'
+      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave'
       x?: number
       y?: number
       text?: string
       key?: string
       dy?: number
+      w?: number
+      h?: number
     },
     viewport: { width: number; height: number },
   ) {
@@ -423,7 +426,21 @@ export class BrowserTools {
     }
     if (input.action === 'text') args.text = String(input.text ?? '').slice(0, 500)
     if (input.action === 'key') args.key = String(input.key ?? '')
-    if (input.action === 'scroll') args.dy = Number(input.dy) < 0 ? -1 : 1
+    if (input.action === 'scroll') {
+      const dy = Number(input.dy) || 0
+      // ±1은 한 화면씩, 그보다 크면 손가락으로 끈 페이지 픽셀 (끈 자리에서 굴린다)
+      args.dy = Math.abs(dy) <= 1 ? (dy < 0 ? -1 : 1) : Math.max(-3000, Math.min(3000, dy))
+      const fx = Number(input.x)
+      const fy = Number(input.y)
+      if (fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+        args.x = fx * viewport.width
+        args.y = fy * viewport.height
+      }
+    }
+    if (input.action === 'view') {
+      args.w = Number(input.w) || 390
+      args.h = Number(input.h) || 700
+    }
     return this.browser.call('input', args)
   }
 

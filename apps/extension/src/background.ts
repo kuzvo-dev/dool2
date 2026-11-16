@@ -7,10 +7,13 @@ import { keyDef, safeUrl } from './keys.js'
 import {
   type LocateMode,
   type LocateResult,
+  pageCaretEnd,
   pageClick,
   pageLocate,
   pageMarkFilled,
+  pageRemoteInfo,
   pageScroll,
+  pageScrollBy,
   pageSnapshot,
   pageTapAt,
   pageViewport,
@@ -226,6 +229,8 @@ const stoppedByUser = new Set<number>()
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return
+  // 떼면 Chrome이 폰 너비 그리기도 푼다
+  phoneView.delete(source.tabId)
   clearTimeout(attached.get(source.tabId))
   attached.delete(source.tabId)
   // 사용자가 "취소"를 눌렀다면 그 탭은 더 이상 다루지 않는다
@@ -245,6 +250,14 @@ async function cdp<T = unknown>(tabId: number, method: string, params?: Record<s
     }, DEBUGGER_IDLE_MS),
   )
   return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T
+}
+
+/** 폰 너비로 그리고 있는 탭 (원격 화면) */
+const phoneView = new Set<number>()
+
+async function leavePhoneView(tabId: number) {
+  if (!phoneView.delete(tabId)) return
+  await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
 }
 
 async function detach(tabId: number) {
@@ -435,18 +448,32 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const v = await inPage(tabId, pageViewport)
       const maxWidth = Math.min(Math.max(Number(a.maxWidth) || 1280, 320), 1280)
       const quality = Math.min(Math.max(Number(a.quality) || 60, 30), 80)
-      const scale = Math.min(1, maxWidth / v.width) / v.dpr
-      const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
-        format: 'jpeg',
-        quality,
-        optimizeForSpeed: true,
-        clip: { x: 0, y: 0, width: v.width, height: v.height, scale },
-      })
+      // 원격 화면을 폰 너비로 그릴 때는 2배까지 찍어 폰에서 또렷하게
+      const scale = Math.min(a.remote ? 2 : 1, maxWidth / v.width) / v.dpr
+      // 폰 너비로 그리는 중이면 화면에 보이는 그대로 찍는다 (넓은 페이지는 폰처럼 줄어 보인다).
+      // 그때 누르는 자리는 보이는 화면 기준이라 viewport도 그 크기로 알려 준다
+      const phone = Boolean(a.remote) && phoneView.has(tabId)
+      const shot = phone
+        ? await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+            format: 'jpeg',
+            quality,
+            optimizeForSpeed: true,
+          })
+        : await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+            format: 'jpeg',
+            quality,
+            optimizeForSpeed: true,
+            clip: { x: 0, y: 0, width: v.width, height: v.height, scale },
+          })
+      const shown = phone
+        ? { width: Math.round(v.vv.w * v.vv.scale), height: Math.round(v.vv.h * v.vv.scale) }
+        : { width: v.width, height: v.height }
       return {
         ...(await pageState(tabId)),
         mime: 'image/jpeg',
         data: shot.data,
-        viewport: { width: v.width, height: v.height },
+        viewport: shown,
+        ...(a.remote ? await inPage(tabId, pageRemoteInfo).catch(() => ({})) : {}),
       }
     }
     case 'input': {
@@ -458,10 +485,38 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (a.action === 'tap') {
         const x = Math.round(Number(a.x))
         const y = Math.round(Number(a.y))
-        if (!(x >= 0 && y >= 0 && x <= v.width && y <= v.height)) throw new Error('화면 밖을 눌렀어요')
-        // 창이 보이면 진짜 마우스로, 가려져 있으면 그 자리의 요소를 누른다 (가려진 창은 마우스 입력을 버린다)
+        if (
+          !(
+            x >= 0 &&
+            y >= 0 &&
+            x <= Math.max(v.width, v.vv.w * v.vv.scale) &&
+            y <= Math.max(v.height, v.vv.h * v.vv.scale)
+          )
+        )
+          throw new Error('화면 밖을 눌렀어요')
+        // 창이 보이면 진짜 마우스로(보이는 화면 기준 자리), 가려져 있으면 그 자리의 요소를 누른다 (가려진 창은 마우스 입력을 버린다)
         if (!v.hidden) await clickAt(tabId, x, y)
+        else if (phoneView.has(tabId))
+          await inPage(tabId, pageTapAt, v.vv.x + x / v.vv.scale, v.vv.y + y / v.vv.scale)
         else await inPage(tabId, pageTapAt, x, y)
+        // 입력칸을 눌렀으면 커서를 끝으로 (폰에서 이어 쓰고 지우기 좋게)
+        await inPage(tabId, pageCaretEnd).catch(() => {})
+      } else if (a.action === 'view') {
+        // 폰 너비로 그리기: 사이트가 폰 화면으로 보여 주어 글씨가 제 크기다
+        const width = Math.round(Math.min(Math.max(Number(a.w) || 390, 320), 520))
+        const height = Math.round(Math.min(Math.max(Number(a.h) || 700, 360), 1100))
+        await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+          width,
+          height,
+          deviceScaleFactor: 2,
+          mobile: true,
+        })
+        phoneView.add(tabId)
+        await sleep(250)
+        return pageState(tabId)
+      } else if (a.action === 'leave') {
+        await leavePhoneView(tabId)
+        return pageState(tabId)
       } else if (a.action === 'text') {
         if (typeof a.text !== 'string' || !a.text) throw new Error('넣을 글자가 없어요')
         await cdp(tabId, 'Input.insertText', { text: a.text.slice(0, 500) })
@@ -471,7 +526,28 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           throw new Error(`이 키는 원격으로 누를 수 없어요: ${key}`)
         await pressKey(tabId, key)
       } else if (a.action === 'scroll') {
-        await inPage(tabId, pageScroll, Number(a.dy) < 0 ? -1 : 1)
+        const dy = Number(a.dy) || 0
+        if (Math.abs(dy) <= 1) await inPage(tabId, pageScroll, dy < 0 ? -1 : 1)
+        else {
+          // 손가락으로 끈 만큼: 그 자리에서 휠을 굴려 안쪽 상자도 같이 내려간다
+          const x = Math.max(Math.round(Number(a.x) || v.width / 2), 0)
+          const y = Math.max(Math.round(Number(a.y) || v.height / 2), 0)
+          const d = Math.max(-3000, Math.min(3000, Math.round(dy)))
+          if (v.hidden)
+            await inPage(
+              tabId,
+              pageScrollBy,
+              phoneView.has(tabId) ? v.vv.x + x / v.vv.scale : x,
+              phoneView.has(tabId) ? v.vv.y + y / v.vv.scale : y,
+              d,
+            )
+          else
+            await Promise.race([
+              cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY: d }),
+              sleep(600),
+            ])
+          return pageState(tabId)
+        }
       } else throw new Error('모르는 원격 입력이에요')
       await settle(tabId, before)
       return pageState(tabId)
@@ -488,6 +564,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'focus': {
       // 사람에게 넘길 때: 두리 창과 탭을 앞으로
       const tabId = await ownedTab(a)
+      await leavePhoneView(tabId)
       const t = await chrome.tabs.update(tabId, { active: true })
       if (t?.windowId !== undefined)
         await chrome.windows.update(t.windowId, { focused: true, drawAttention: true })
