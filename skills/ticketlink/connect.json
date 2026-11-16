@@ -4,6 +4,10 @@
   "site": "ticketlink.co.kr",
   "category": "tickets",
   "how": "browser",
+  "social": [
+    "naver",
+    "payco"
+  ],
   "login": "PAYCO 아이디",
   "summary": "보고 싶은 공연과 경기를 찾고, 좌석 예매까지 두리에게 맡길 수 있어요.",
   "example": {

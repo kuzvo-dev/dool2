@@ -4,6 +4,10 @@
   "site": "saramin.co.kr",
   "category": "work",
   "how": "browser",
+  "loginUrl": "https://www.saramin.co.kr/zf_user/auth",
+  "social": [
+    "naver"
+  ],
   "login": "아이디·비밀번호",
   "summary": "조건에 맞는 채용 공고 찾기부터 지원, 이력서 관리와 지원 현황 확인까지 두리에게 맡길 수 있어요.",
   "example": {

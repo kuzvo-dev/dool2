@@ -4,6 +4,11 @@
   "site": "socar.kr",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://auth.socar.kr/auth/sign-in/email",
+  "social": [
+    "kakao",
+    "naver"
+  ],
   "login": "아이디·비밀번호",
   "summary": "가까운 쏘카존에서 탈 차를 찾아 예약하고, 이용 내역 확인과 예약 취소까지 두리에게 맡길 수 있어요.",
   "example": {

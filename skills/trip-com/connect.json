@@ -4,6 +4,12 @@
   "site": "trip.com",
   "category": "travel",
   "how": "browser",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "항공권과 호텔, 해외 기차표까지 찾아 예약하고, 예약 확인과 취소도 두리에게 맡길 수 있어요.",
   "example": {

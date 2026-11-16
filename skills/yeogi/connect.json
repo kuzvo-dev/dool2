@@ -4,6 +4,13 @@
   "site": "yeogi.com",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://platform.yeogi.com/login/email",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "오늘 밤 묵을 곳부터 주말 여행 숙소까지 찾아 예약하고, 예약 내역 확인도 두리에게 맡길 수 있어요.",
   "example": {

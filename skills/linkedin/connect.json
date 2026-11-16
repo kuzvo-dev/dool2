@@ -4,6 +4,9 @@
   "site": "linkedin.com",
   "category": "work",
   "how": "browser",
+  "social": [
+    "google"
+  ],
   "login": "아이디·비밀번호",
   "summary": "메시지 확인과 답장부터 1촌 요청, 조건에 맞는 채용공고 지원까지 두리에게 맡길 수 있어요. 보내고 지원하는 건 승인한 뒤에만 해요.",
   "example": {
