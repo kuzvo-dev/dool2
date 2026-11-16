@@ -137,15 +137,25 @@ export class BrowserTools {
   }
 
   /** 두리가 마지막으로 다룬 탭 (폰의 "두리 화면 보기"가 실시간으로 본다) */
-  lastTabId?: number
+  private _lastTabId?: number
+  get lastTabId(): number | undefined {
+    return this._lastTabId
+  }
+  set lastTabId(id: number | undefined) {
+    const changed = id !== this._lastTabId
+    this._lastTabId = id
+    if (changed && id !== undefined) this.onActiveTab?.(id)
+  }
+  /** 두리가 다루는 탭이 바뀌었을 때 (폰 대화에 일하는 화면을 띄운다) */
+  onActiveTab?: (tabId: number) => void
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
-    if (typeof args.tabId === 'number') {
-      this.lastTabId = args.tabId
-      this.allowRemote(args.tabId)
-    }
+    if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
     try {
-      return await this.dispatch(tool, args)
+      const r = await this.dispatch(tool, args)
+      // 잘 다룬 탭만 "지금 두리가 보는 탭"으로 (틀린 번호로 부른 도구는 빼야 실시간 화면이 엉뚱한 탭을 찍지 않는다)
+      if (!r.isError && typeof args.tabId === 'number') this.lastTabId = args.tabId
+      return r
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: (e as Error).message }] }
     }

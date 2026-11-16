@@ -94,10 +94,12 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
   wss.on('connection', (ws) => {
     let me: { id: string; role: 'pc' | 'phone'; room: string } | undefined
     const authTimer = setTimeout(() => ws.close(4001, 'hello timeout'), 10_000)
-    // 연결마다 1초에 30개까지
-    let budget = 30
+    // 연결마다 1초에 보낼 수 있는 수: PC는 여러 폰에 흘려 쓰는 답·실시간 화면을 보내서 넉넉히, 폰은 적게.
+    // 넘으면 끊는다 (끊기면 그사이 메시지를 잃으니, 정상 사용으로는 닿지 않게 잡는다)
+    const LIMIT = { pc: 600, phone: 60 }
+    let budget = LIMIT.phone
     const refill = setInterval(() => {
-      budget = 30
+      budget = me?.role === 'pc' ? LIMIT.pc : LIMIT.phone
     }, 1_000)
 
     ws.on('message', async (raw, isBinary) => {
@@ -123,6 +125,7 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
         if (!ok) return ws.close(4003, 'bad hello')
         clearTimeout(authTimer)
         me = { id: h.id, role: h.role, room: h.role === 'pc' ? h.id : (h.room as string) }
+        if (me.role === 'pc') budget = LIMIT.pc
         // 같은 기기가 다시 붙으면 예전 연결을 닫는다
         sockets.get(me.id)?.close(4004, 'replaced')
         sockets.set(me.id, ws)
