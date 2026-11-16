@@ -381,12 +381,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void link.broadcast({ kind: 'connect-status', connecting: list })
     live.emit('event', { kind: 'connect', connecting: list })
   }
+  /** 두리가 대화에 연결 카드를 띄운 때 (그 뒤 30분 안에 연결되면 멈춘 일을 이어 가게 AI에게 알린다) */
+  const connectAsked = new Map<string, number>()
+  /** AI를 부르지 않고 대화에 알림 줄만 남긴다 (폰·PC에 바로 보인다) */
+  const postNote = (text: string) => {
+    const cur = conversation.current()
+    if (!cur) return
+    const message = store.addMessage(cur.id, 'user', appNote(text))
+    const event = { type: 'saved' as const, message }
+    void link.broadcast({ kind: 'stream', threadId: cur.id, event })
+    live.emit('event', { kind: 'turn', threadId: cur.id, event })
+  }
   const connectDone = (card: ConnectCard) => {
-    void talk(
-      appNote(
-        `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. 사용자에게 한두 문장으로 알려 주고, ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요.`,
-      ),
-    ).catch(() => {})
+    const asked = connectAsked.get(card.id)
+    connectAsked.delete(card.id)
+    if (asked && Date.now() - asked < 30 * 60_000)
+      void talk(
+        appNote(
+          `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요. 없었으면 연결됐다고 한 문장으로만 말해 주세요.`,
+        ),
+      ).catch(() => {})
+    else postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
     void link
       .notify({
         title: `${card.name} 연결됐어요`,
@@ -411,13 +426,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       void link.broadcast({ kind: 'connect-result', id: card.id, ...r })
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
       if (r.ok) connectDone(card)
-      else if (r.human) connectHuman.add(card.id)
-      else {
-        void talk(
-          appNote(
-            `${card.name} 로그인이 안 됐어요. ${r.message} 사용자에게 무엇이 안 됐는지 짧게 알리고, 다시 하려면 connect_ask로 연결 카드를 다시 띄워 주세요.`,
-          ),
-        ).catch(() => {})
+      else if (r.human || r.tabId !== undefined) {
+        // 사람이 마칠 차례: 그 화면을 폰·PC에서 열어 직접 로그인하면 두리가 알아서 확인한다
+        connectHuman.add(card.id)
+        if (!r.human && r.tabId !== undefined) loginWatch.start(card, r.tabId)
+        postNote(
+          `${card.name} 자동 로그인이 안 됐어요. 열어 둔 화면에서 직접 로그인하면 두리가 알아서 확인해요.`,
+        )
+      } else {
+        postNote(`${card.name} 로그인이 안 됐어요. ${r.message}`)
         void link
           .notify({
             title: `${card.name} 로그인이 안 됐어요`,
@@ -995,6 +1012,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return text(`${card.name}은 폰 권한이에요. 사용자에게 폰의 연결 화면에서 켜 달라고 말해요.`)
         if (connecting.has(card.id))
           return text(`지금 ${card.name}에 로그인하는 중이에요. 끝나면 대화로 알림이 와요.`)
+        connectAsked.set(card.id, Date.now())
         void link
           .notify({
             title: `${card.name} 연결`,
