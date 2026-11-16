@@ -292,6 +292,8 @@ export const BrowserCommandSchema = z.enum([
   'focus',
   'fill',
   'input',
+  'form',
+  'form-fill',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 
@@ -496,6 +498,84 @@ export interface MemoryItem {
 }
 
 /** 피드: 두리가 한 일·알아서 한 일·먼저 알려 주는 것 */
+/** 원격 화면의 입력칸 자리 (사진 비율 0~1). 폰은 여기를 누르면 키보드를 바로 연다 */
+export interface RemoteField {
+  x: number
+  y: number
+  w: number
+  h: number
+  /** 비밀번호 칸 */
+  secret?: boolean
+  /** 폰 키보드 종류 (numeric·tel·email…) */
+  mode?: string
+  label?: string
+}
+
+/** 원격 화면에 보이는 버튼 (가운데 자리, 사진 비율). 폰은 아래에 큰 버튼으로 모아 보여 준다 */
+export interface RemoteButton {
+  label: string
+  x: number
+  y: number
+  /** 제출 버튼처럼 주 버튼 */
+  main?: boolean
+}
+
+/** 지금 글자가 들어갈 칸 */
+export interface RemoteFocus {
+  label?: string
+  secret?: boolean
+  mode?: string
+  /** 칸에 이미 있는 글자 (비밀번호 칸은 보내지 않는다) */
+  value?: string
+}
+
+/**
+ * 원격 화면의 '필요한 칸만': 사람이 채울 칸·고를 것·누를 버튼.
+ * 브라우저 탭(확장)이든 PC 앱 창(접근성)이든 같은 모양으로 폰에 보낸다
+ */
+export interface RemoteFormField {
+  id: string
+  kind: 'text' | 'secret' | 'number' | 'tel' | 'email' | 'choice' | 'check'
+  label: string
+  /** 칸에 이미 있는 글자 (비밀번호 칸은 보내지 않는다) */
+  value?: string
+  checked?: boolean
+  options?: { id: string; label: string; on?: boolean }[]
+  max?: number
+  hint?: string
+  /** 문자로 받는 인증번호 칸 (폰은 여섯 칸으로) */
+  code?: boolean
+  /** 보안문자 그림 (JPEG base64): 이 칸에 그림의 글자를 쓴다 */
+  captcha?: string
+}
+
+export interface RemoteFormButton {
+  id: string
+  label: string
+  main?: boolean
+}
+
+export interface RemoteForm {
+  title?: string
+  url?: string
+  fields: RemoteFormField[]
+  buttons: RemoteFormButton[]
+}
+
+/** 폰에서 채운 값 하나: 글자(value), 체크(checked), 고르기(pick = 고른 것의 id) */
+export interface RemoteFormValue {
+  id: string
+  value?: string
+  checked?: boolean
+  pick?: string
+}
+
+export interface RemoteInfo {
+  fields?: RemoteField[]
+  actions?: RemoteButton[]
+  focus?: RemoteFocus | null
+}
+
 export interface FeedItem {
   id: string
   kind: 'done' | 'routine' | 'saved' | 'goal' | 'connected' | 'suggest' | 'post'
@@ -576,18 +656,28 @@ export type PhoneToPc =
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장을 달라 */
   /** fit: 폰 화면 크기(CSS px). 주면 PC 탭을 그 크기로 그려 폰에 꽉 차게 보낸다 */
   | { kind: 'screen'; tabId: number; fit?: ScreenFit }
-  /** 원격 화면에서 한 입력. tap 좌표는 사진 비율(0~1) */
+  /**
+   * 원격 화면에서 한 입력. tap·scroll 좌표는 사진 비율(0~1).
+   * scroll의 dy는 ±1이면 한 화면씩, 그보다 크면 페이지 픽셀(손가락으로 끈 만큼).
+   * view는 그 탭을 폰 너비(w×h CSS 픽셀)로 그리게 하고, leave는 원래대로 돌린다
+   */
   | {
       kind: 'remote'
       tabId: number
-      action: 'tap' | 'text' | 'key' | 'scroll'
+      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave'
       x?: number
       y?: number
       text?: string
       key?: string
       dy?: number
       fit?: ScreenFit
+      w?: number
+      h?: number
     }
+  /** 원격 화면의 '필요한 칸만'을 달라 */
+  | { kind: 'form'; tabId: number }
+  /** 칸만 화면에서 채운 값을 넣고, press가 있으면 그 버튼을 누른다 */
+  | { kind: 'form-fill'; tabId: number; values: RemoteFormValue[]; press?: string }
   /** 웹 푸시 구독 (알림을 끄면 null). PC가 이 주소로 직접 알림을 보낸다 */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
   /** 서비스 연결 목록을 달라 (ADR 0014) */
@@ -647,8 +737,17 @@ export type PcToPhone =
   /** 새 로그인 요청, 저장 결과 */
   | { kind: 'login-request'; request: LoginRequestView }
   | { kind: 'login-done'; id: string; ok: boolean; message: string }
-  /** 원격 화면 한 장 (JPEG base64). 중계 서버는 이 종류를 쌓아 두지 않는다 */
-  | { kind: 'screen'; tabId: number; shot?: string; url?: string; title?: string; error?: string }
+  /** 원격 화면 한 장 (JPEG base64)과 그 화면의 입력칸·버튼·지금 칸. 중계 서버는 이 종류를 쌓아 두지 않는다 */
+  | ({
+      kind: 'screen'
+      tabId: number
+      shot?: string
+      url?: string
+      title?: string
+      error?: string
+    } & RemoteInfo)
+  /** 원격 화면의 '필요한 칸만' (form-fill 뒤에도 새로 보낸다) */
+  | { kind: 'form'; tabId: number; form?: RemoteForm; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
   /** 대화 하나의 기록 (before에 대한 답이면 before가 같이 온다) */
   | { kind: 'conversation'; state: ConversationState; before?: string }

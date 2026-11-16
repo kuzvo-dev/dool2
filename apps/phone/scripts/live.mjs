@@ -30,6 +30,55 @@ const shop = createServer((req, res) => {
 <p><button style="font-size:20px;padding:8px 20px">로그인</button></p></form>`)
     return
   }
+  // 본인인증 흉내 (원격 화면 '필요한 칸만' 시험): 이름·생년월일 6+1·통신사 버튼·번호·약관 → 인증번호 → 끝
+  if (req.url?.startsWith('/verify/code')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>인증번호 입력</title>
+<style>body{font:16px sans-serif;padding:16px}input{font-size:18px;padding:8px}</style>
+<h2>인증번호를 입력해 주세요</h2><p>문자로 보낸 6자리 번호예요. 남은 시간 2:59</p>
+<form action="/verified"><input type="hidden" name="from" value="${encodeURIComponent(req.url ?? '')}"><label for="code">인증번호</label><br><input id="code" name="code" maxlength="6" inputmode="numeric" placeholder="인증번호 6자리"><br><br>
+<button type="submit">확인</button> <button type="button">다시 받기</button></form>`)
+    return
+  }
+  if (req.url?.startsWith('/verified')) {
+    // 받은 값을 보여 준다 (폰에서 넣은 값이 진짜 칸에 들어갔는지 시험)
+    const q = new URL(req.url ?? '/', 'http://x').searchParams
+    const first = new URL(decodeURIComponent(q.get('from') ?? '/'), 'http://x').searchParams
+    const show = [...first.entries(), ['code', q.get('code') ?? '']]
+      .map(([k, v]) => `<li>${k}: ${String(v).replace(/[<>&]/g, '')}</li>`)
+      .join('')
+    res.end(
+      `<!doctype html><meta name="viewport" content="width=device-width"><title>본인인증 완료</title><h1>본인인증이 끝났어요</h1><p>카드 신청을 이어서 진행해요.</p><ul>${show}</ul>`,
+    )
+    return
+  }
+  if (req.url?.startsWith('/verify')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>휴대폰 본인인증</title>
+<style>body{font:15px sans-serif;padding:16px}input{font-size:16px;padding:8px;margin:4px 0}.tel button{padding:8px 12px;margin:2px}.tel button.on{background:#1a4fd6;color:#fff}.agree input{position:absolute;opacity:0;width:1px;height:1px}.agree label{display:inline-block;padding:6px 0}</style>
+<h2>휴대폰 본인인증</h2>
+<form action="/verify/code">
+<table><tr><th>이름</th><td><input name="name" placeholder="이름"></td></tr>
+<tr><th>생년월일</th><td><input name="birth" maxlength="6" inputmode="numeric" placeholder="앞 6자리"> - <input name="sex" maxlength="1" inputmode="numeric" style="width:30px">●●●●●●</td></tr></table>
+<div class="tel"><strong>통신사</strong><br><button type="button" class="on">SKT</button><button type="button">KT</button><button type="button">LG U+</button><button type="button">알뜰폰</button></div>
+<p><input name="phone" type="tel" placeholder="휴대폰 번호 (- 없이)"></p>
+<div class="agree"><input type="checkbox" id="a1"><label for="a1">개인정보 수집·이용 동의 (필수)</label><br><input type="checkbox" id="a2"><label for="a2">본인확인 서비스 이용약관 동의 (필수)</label></div>
+<p><button type="submit">인증번호 받기</button></p></form>
+<script>document.querySelectorAll('.tel button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tel button').forEach(x=>x.classList.remove('on'));b.classList.add('on')})</script>`)
+    return
+  }
+  // 보안문자 흉내
+  if (req.url?.startsWith('/captcha')) {
+    const ok = /answer=7K2Q8/i.test(req.url)
+    const svg = encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><rect width="200" height="60" fill="#e9ecef"/><text x="20" y="42" font-family="monospace" font-size="34" font-weight="bold" fill="#3b4a63" transform="skewX(-12)">7K2Q8</text><line x1="0" y1="35" x2="200" y2="22" stroke="#53627e" stroke-width="2"/></svg>',
+    )
+    res.end(
+      ok
+        ? '<!doctype html><title>확인됐어요</title><h1>확인됐어요</h1><p>사람인 걸 확인했어요.</p>'
+        : `<!doctype html><meta name="viewport" content="width=device-width"><title>보안문자 확인</title><h2>자동입력 방지</h2>
+<form action="/captcha"><img alt="보안문자" src="data:image/svg+xml,${svg}"><br><input name="answer" placeholder="보안문자 입력"> <button type="submit">확인</button></form>`,
+    )
+    return
+  }
   if (req.url?.startsWith('/me')) {
     res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
     return

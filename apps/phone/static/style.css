@@ -707,110 +707,183 @@ button {
   font-weight: 600;
 }
 
-/* ── PC 화면 (원격): 폰 화면 크기로 그린 PC 탭이 꽉 찬다 ── */
+/* ── PC 화면 (원격): 폰 너비로 그린 PC 탭을 바로 누르고 쓰기 ── */
 .remote-page {
-  position: fixed;
-  inset: 0;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  height: 100dvh;
+  padding: calc(8px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
   background: #0b0c0f;
   color: #fff;
-  z-index: 40;
+  overflow: hidden;
 }
-.remote-top {
+.remote-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
-  background: #0b0c0f;
 }
-.rtop-btn {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 12px;
+.remote-bar .fbtn {
+  flex: none;
   background: #1d2026;
   color: #fff;
+  box-shadow: none;
 }
-.remote-url {
+.remote-pill {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 7px;
-  height: 38px;
+  gap: 8px;
+  height: 36px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-full);
   background: #1d2026;
-  font-size: 13.5px;
-  color: #c9ced6;
-  overflow: hidden;
+  font: 600 13px / 1 var(--font-sans);
+  color: #d5d9df;
   white-space: nowrap;
+  overflow: hidden;
 }
-.live-dot {
+.remote-pill .live-dot {
   flex: none;
-  width: 10px;
-  height: 10px;
-  margin: 0 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #4cc98f;
-  box-shadow: 0 0 0 4px rgba(76, 201, 143, 0.22);
-  animation: live-pulse 1.6s ease-in-out infinite;
+  background: var(--butter);
+  animation: ui-pulse 1.6s var(--ease) infinite;
 }
-@keyframes live-pulse {
-  50% {
-    box-shadow: 0 0 0 7px rgba(76, 201, 143, 0.05);
-  }
+.remote-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #8d939d;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.remote-stage {
-  position: relative;
+.remote-where svg.i {
+  width: 12px;
+  height: 12px;
+}
+.remote-url-text {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.remote-rate {
+  flex: none;
+}
+.remote-frame {
+  position: relative;
+  flex: 1 1 auto;
   min-height: 0;
+  border-radius: 16px;
   overflow: hidden;
   background: #fff;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
-.remote-stage.busy .remote-shot {
-  opacity: 0.88;
+.remote-frame.busy .remote-shot {
+  opacity: 0.92;
+}
+.remote-stage {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.remote-stage[hidden] {
+  display: none;
 }
 .remote-shot {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  object-position: top center;
-  user-select: none;
-  -webkit-user-select: none;
+  object-position: top;
+  pointer-events: none;
 }
-.remote-loading {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 14px;
-  height: 100%;
-  background: #0b0c0f;
-  color: #c9ced6;
-  font-size: 15px;
-}
-.remote-loading p {
-  margin: 0;
+.remote-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 .remote-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin: 0;
-  padding: 80px 20px;
-  text-align: center;
+  padding: 24px;
   color: #3b4049;
+  text-align: center;
+}
+.remote-msg[hidden] {
+  display: none;
+}
+.remote-loupe {
+  position: absolute;
+  z-index: 3;
+  width: 104px;
+  height: 104px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.38);
+  pointer-events: none;
+}
+.remote-loupe[hidden] {
+  display: none;
+}
+.remote-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 2;
+  padding: 6px 11px;
+  border-radius: var(--radius-full);
+  background: rgb(15 17 20 / 0.8);
+  color: #fff;
+  font: 500 11.5px / 1.2 var(--font-sans);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+.remote-hint.gone {
+  opacity: 0;
+}
+.remote-zoom {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 2;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-full);
+  background: rgb(15 17 20 / 0.82);
+  color: #fff;
+  font: 600 12px / 1 var(--font-sans);
+}
+.remote-zoom[hidden] {
+  display: none;
 }
 .tap-dot {
   position: absolute;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
   border: 2px solid #fff;
   border-radius: var(--radius-full);
-  background: rgba(76, 201, 143, 0.85);
-  box-shadow: 0 0 0 6px rgba(76, 201, 143, 0.25);
+  background: rgb(76 201 143 / 0.85);
+  box-shadow: 0 0 0 6px rgb(76 201 143 / 0.25);
   pointer-events: none;
   animation: tap 0.8s var(--ease) forwards;
 }
@@ -820,55 +893,326 @@ button {
     transform: scale(1.4);
   }
 }
-.remote-dock {
-  display: grid;
-  gap: 8px;
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
-  background: #0b0c0f;
-}
+.remote-acts,
 .remote-tools {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.remote-acts[hidden] {
+  display: none;
+}
+.remote-acts .chip,
+.remote-tools .chip {
+  flex: none;
+  height: 36px;
+  background: #23262d;
+  color: #eceef1;
+  box-shadow: none;
+}
+.remote-acts .chip.main {
+  background: #f2f3f5;
+  color: #111214;
+}
+.remote-tools .chip {
+  height: 32px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #2c3038;
+  color: #b9bec7;
+}
+/* 입력칸을 누르면: 쓰는 대로 PC 칸에 들어가는 글자 막대 */
+.remote-typebar {
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--kb, 0px) + 10px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  gap: 6px;
+  max-width: 500px;
+  margin-inline: auto;
+  padding: 10px;
+  border-radius: 18px;
+  background: #17191d;
+  box-shadow:
+    inset 0 0 0 1px #2a2e36,
+    0 12px 30px rgb(0 0 0 / 0.5);
+}
+.remote-typebar[hidden] {
+  display: none;
+}
+.remote-type-head {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.rtool {
-  flex: none;
-  height: 44px;
-  padding: 0 13px;
-  border: 0;
-  border-radius: 12px;
-  background: #1d2026;
-  color: #e6e8eb;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-}
-.rtool.on {
-  background: #e6e8eb;
-  color: #0b0c0f;
-}
-.rdone {
+.remote-type-label {
   flex: 1;
-  height: 44px;
-  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  font: 600 12.5px / 1.2 var(--font-sans);
+  color: var(--brand);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.remote-type {
-  display: flex;
-  gap: 8px;
+.remote-type-head .chip {
+  height: 30px;
+  background: #23262d;
+  color: #eceef1;
+  box-shadow: none;
 }
-.remote-input {
-  flex: 1;
+.remote-type-head .chip.on {
+  background: #f2f3f5;
+  color: #111214;
+}
+.remote-type-input {
   height: 46px;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
-  background: #1d2026;
+  background: #23262d;
   color: #fff;
   font-size: 16px;
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--brand);
 }
-.remote-type .btn {
-  height: 46px;
+.remote-otp {
+  display: grid;
+  flex: none;
+  gap: 8px;
+}
+.remote-otp[hidden] {
+  display: none;
+}
+.remote-foot {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.remote-foot .btn-ghost {
+  border-color: #2a2e36;
+  color: #fff;
+}
+
+/* 필요한 칸만 / 화면 보기 */
+.remote-seg {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: #17191d;
+}
+.remote-seg[hidden] {
+  display: none;
+}
+.remote-seg button {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  border-radius: 10px;
+  font: 600 13.5px / 1 var(--font-sans);
+  color: #9aa0a9;
+}
+.remote-seg button[aria-pressed="true"] {
+  background: #f2f3f5;
+  color: #111214;
+}
+.remote-frame[hidden],
+.remote-tools[hidden] {
+  display: none;
+}
+
+/* ── 필요한 칸만: PC 화면의 칸을 폰 입력칸으로 ── */
+.rform {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 2px 8px;
+  transition: opacity 160ms ease;
+}
+.rform[hidden] {
+  display: none;
+}
+.rform.busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.rform-title {
+  padding: 0 4px;
+  font: 700 18px / 1.35 var(--font-sans);
+  letter-spacing: -0.015em;
+}
+.rform-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: #17191d;
+  box-shadow: inset 0 0 0 1px #24282f;
+}
+.rform-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.rform-label {
+  font: 500 12.5px / 1.3 var(--font-sans);
+  color: #9aa0a9;
+}
+.rform-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: #23262d;
+  color: #fff;
+  font-size: 16px;
+  outline: none;
+}
+.rform-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--brand);
+}
+.rform-input.big {
+  height: 58px;
+  font: 700 24px / 1 var(--font-sans);
+  letter-spacing: 0.12em;
+}
+select.rform-input {
+  appearance: none;
+}
+.rform-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rform-line > .rform-input {
+  flex: 1;
+  min-width: 0;
+}
+.rform-dash {
+  color: #6c717b;
+}
+.rform-tiny {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.rform-input.tiny {
+  width: 48px;
+  padding: 0;
+  text-align: center;
+}
+.rform-dots {
+  color: #6c717b;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+.rform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rform-chips .chip {
+  height: 38px;
+  padding: 0 14px;
+  background: #23262d;
+  color: #c9ced6;
+  box-shadow: none;
+  font-weight: 600;
+}
+.rform-chips .chip.on {
+  background: #f2f3f5;
+  color: #111214;
+}
+.rform-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  text-align: left;
+  font-size: 14px;
+  color: #e6e8eb;
+}
+.rform-box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1.5px #4a4f58;
+}
+.rform-box.on {
+  background: var(--brand);
+  color: #0b1f15;
+  box-shadow: none;
+}
+.rform-box svg {
+  width: 15px;
+  height: 15px;
+}
+.rform-captcha {
+  display: block;
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+}
+.rform-code .otp-bx {
+  background: #23262d;
+}
+.rform-main {
+  height: 54px;
+  flex: none;
+  border-radius: 16px;
+  font-size: 16px;
+}
+.rform-screen {
+  align-self: center;
+  color: #9aa0a9;
+}
+.rform-empty {
+  margin: 24px 0 4px;
+  color: #9aa0a9;
+  text-align: center;
+}
+.rform-moved {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--approve) 22%, #17191d);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--approve) 45%, transparent);
+}
+.rform-moved strong {
+  font-size: 15px;
+}
+.rform-moved span {
+  font-size: 13px;
+  color: #b9e8cf;
+}
+.rform-moved-btns {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.rform-moved-btns .btn-ghost {
+  border-color: #2a2e36;
+  color: #fff;
 }
 
 /* ── 서비스 연결 (connections.ts) ── */
@@ -997,6 +1341,13 @@ button {
 @keyframes chat-flash {
   20% {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 55%, transparent);
+  }
+}
+
+@media (min-width: 640px) {
+  .remote-page {
+    max-width: 480px;
+    margin-inline: auto;
   }
 }
 
@@ -1962,10 +2313,6 @@ textarea.ghosting {
 }
 
 /* 인증번호 칸: 여섯 칸 → 다 차면 붙어서 초록 알약 */
-.remote-otp {
-  display: grid;
-  gap: 8px;
-}
 .otp {
   position: relative;
   display: grid;
