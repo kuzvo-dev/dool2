@@ -374,6 +374,30 @@ describe('폰에서 서비스 연결', () => {
   })
 })
 
+describe('폰이 한꺼번에 보낸 요청', () => {
+  it('본체를 막 다시 켠 뒤 앱을 열 때처럼 연달아 보내도 하나도 버리지 않는다', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    // 다시 켠 본체처럼 열쇠를 아직 안 만든 상태에서 (앱을 열면 폰이 보내는 것과 같은 순서)
+    ;(daemon as unknown as { link: { keyCache: Map<string, unknown> } }).link?.keyCache?.clear()
+    // 진짜 폰처럼 순서대로, 답을 기다리지 않고 연달아 보낸다
+    for (const kind of ['hello', 'conversation', 'connections', 'life'] as const) await p.send({ kind })
+    await waitFor(
+      () => ['conversation', 'connections', 'life'].every((k) => p.inbox.some((m) => m.kind === k)),
+      10_000,
+    )
+  })
+})
+
 describe('폰에서 대화 하나', () => {
   it('기록을 받고, 부탁하면 답하는 중 → 답 → 끝 상태를 받는다', async () => {
     const { api } = await boot()
