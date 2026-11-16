@@ -4,6 +4,10 @@
   "site": "yogiyo.co.kr",
   "category": "grocery",
   "how": "browser",
+  "social": [
+    "kakao",
+    "naver"
+  ],
   "login": "아이디·비밀번호",
   "summary": "요기요에 한 번 로그인해 두면 저녁 주문도, 배달 확인도, 늘 먹던 메뉴 재주문도 말 한마디면 돼요.",
   "example": {

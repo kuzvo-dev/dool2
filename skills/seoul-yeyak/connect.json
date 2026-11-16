@@ -4,6 +4,10 @@
   "site": "yeyak.seoul.go.kr",
   "category": "tickets",
   "how": "browser",
+  "social": [
+    "kakao",
+    "naver"
+  ],
   "login": "서울시 통합회원 아이디·비밀번호",
   "summary": "서울시 체육시설·공간 예약과 추첨 신청부터 예약 내역 확인까지 두리에게 맡길 수 있어요.",
   "example": {

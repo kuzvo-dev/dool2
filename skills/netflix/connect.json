@@ -4,6 +4,7 @@
   "site": "netflix.com",
   "category": "media",
   "how": "browser",
+  "loginUrl": "https://www.netflix.com/kr/login",
   "login": "아이디·비밀번호",
   "summary": "볼 만한 작품 찾기부터 내가 찜한 리스트 정리, 멤버십 관리까지 두리에게 맡길 수 있어요.",
   "example": {

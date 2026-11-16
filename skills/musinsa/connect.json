@@ -4,6 +4,11 @@
   "site": "musinsa.com",
   "category": "fashion",
   "how": "browser",
+  "loginUrl": "https://member.one.musinsa.com/login",
+  "social": [
+    "kakao",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "무신사를 연결하면 옷 주문과 배송 확인, 기다리던 세일 알림까지 두리에게 맡길 수 있어요.",
   "example": {

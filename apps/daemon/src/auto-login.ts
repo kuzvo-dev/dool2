@@ -62,6 +62,30 @@ async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
   return page
 }
 
+/** 첫 화면을 덮는 광고·공지 팝업 닫기 ("오늘은 그만 보기", "닫기"). 로그인 버튼이 그 아래에 깔려 눌리지 않는다 */
+const POPUP_CLOSE =
+  /^(닫기|팝업\s?닫기|close|오늘은?\s?그만\s?보기|오늘\s?하루\s?(동안\s?)?(보지|열지)\s?않기|다시\s?보지\s?않기|일주일간\s?보지\s?않기)$/i
+async function closePopups(
+  browser: AutoLoginBrowser,
+  tabId: number,
+  page: Snap,
+  snap: (tabId: number) => Promise<Snap>,
+  wait: number,
+): Promise<Snap> {
+  // "오늘은 그만 보기"가 있으면 그것부터 (다시 안 뜨게), 많아야 두 번
+  for (let i = 0; i < 2; i++) {
+    const refs = ([...parseRefs(page.text)] as RefEntry[]).filter(
+      ([, r]) => (r.role === '버튼' || r.role === '링크') && POPUP_CLOSE.test(r.name.trim()),
+    )
+    const target = refs.find(([, r]) => /오늘|다시|일주일/.test(r.name)) ?? refs[0]
+    if (!target) break
+    await browser.call('click', { tabId, ref: target[0] }, 15_000).catch(() => undefined)
+    await sleep(Math.min(wait, 800))
+    page = await snap(tabId)
+  }
+  return page
+}
+
 export interface ProbeResult {
   /** 점검이 연 탭들 (닫을 때) */
   tabs?: number[]
@@ -94,6 +118,7 @@ export async function probeLogin(
   const clicks: string[] = []
   let page = await settled(() => snap(tabId), wait)
   if (looksSignedIn(input.card, page)) return { status: 'signed-in', url: page.url, clicks, tabId }
+  if (!hasPassword(page.text)) page = await closePopups(browser, tabId, page, snap, wait)
   const social = new Set<SocialProvider>(socialProvidersIn(page.text))
   let retried = false
   const tried = new Set<string>()
@@ -155,11 +180,14 @@ type RefEntry = [string, { role: string; name: string }]
 const SOCIAL =
   /패스키|QR|간편|휴대폰|카카오|네이버|애플|구글|페이코|SNS|kakao|naver|apple|google|facebook|페이스북/i
 /** 가입·비회원만 하는 링크 ("로그인/회원가입"처럼 로그인이 같이 있으면 괜찮다) */
-const JOIN_ONLY = (name: string) => /가입|비회원/.test(name) && !/로그인|log ?in|sign ?in/i.test(name)
+const JOIN_ONLY = (name: string) =>
+  (/가입|비회원/.test(name) && !/로그인|log ?in|sign ?in/i.test(name)) ||
+  // 사업자·파트너·판매자 로그인은 사용자 계정이 아니다
+  /파트너|사업자|판매자|셀러|기업\s?회원|partner|seller|business/i.test(name)
 
 /** 로그인 방법 고르기 화면의 "아이디·이메일로 로그인" (소셜·가입 말고 우리가 채울 수 있는 방법) */
 const ID_LOGIN =
-  /^((이메일|아이디|ID|e-?mail|휴대폰\s?번호|통합\s?(아이디|계정)).{0,12}(로그인|계속하기|시작하기)|(이메일|아이디)로\s?(로그인|시작하기|계속하기))$/i
+  /^((이메일|아이디|ID|e-?mail|휴대폰\s?번호|통합\s?(아이디|계정)).{0,12}(로그인|계속하기|시작하기)|(이?메일|아이디)로\s?(로그인|시작하기|계속하기)|이메일|이메일\s?주소|메일|아이디|email|e-?mail\s?address)$/i
 
 function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): RefEntry | undefined {
   const refs = ([...parseRefs(text)] as RefEntry[]).filter(
@@ -168,6 +196,8 @@ function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): Ref
       r.name.trim().length <= 24 &&
       // 이미 눌렀는데 화면이 그대로면 다른 걸 눌러 본다 (위쪽 "로그인/회원가입"만 계속 누르지 않게)
       !skip.has(r.name.trim()) &&
+      // 아이디·비밀번호 찾기·재설정은 로그인 화면이 아니다
+      !/찾기|잊으셨|재설정|forgot|reset/i.test(r.name) &&
       !SOCIAL.test(r.name) &&
       !JOIN_ONLY(r.name),
   )
@@ -175,6 +205,8 @@ function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): Ref
     // 로그인 방법 고르기 화면: "이메일 로그인", "아이디로 로그인", "무신사 통합계정 … 로그인"
     refs.find(([, r]) => ID_LOGIN.test(r.name.trim())) ??
     refs.find(([, r]) => /(아이디|이메일|ID|통합\s?계정).{0,12}로그인/i.test(r.name)) ??
+    // "서울시통합 계정으로 시작하기"처럼 앞에 이름이 붙은 통합 계정
+    refs.find(([, r]) => /통합\s?(계정|아이디|회원).{0,12}(시작|로그인|계속)/.test(r.name)) ??
     refs.find(([, r]) => LOGIN_WORD.test(r.name.trim())) ??
     refs.find(([, r]) => /^로그인\s?[/·|]\s?회원\s?가입$/.test(r.name.trim())) ??
     // 로그인 방법 고르기 화면: 통신사·포털 자체 아이디 (U+ID, T아이디, KT ID…)
@@ -182,15 +214,19 @@ function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): Ref
       /^(U\+\s?ID|MYLGID|T\s?아이디|KT\s?ID|통합\s?아이디|아이디)$/i.test(r.name.trim()),
     ) ??
     refs.find(([, r]) => LOGIN_LINK.test(r.name)) ??
+    // 방법 고르기 화면의 "더 많은 옵션 보기"·"다른 방법으로 로그인" (이메일 로그인이 그 안에 있다)
+    refs.find(([, r]) => /^(더\s?많은\s?(옵션|방법)|다른\s?방법)/.test(r.name.trim())) ??
     // 아이콘만 있는 사이트: 마이페이지·내 정보를 누르면 로그인 화면으로 간다
     refs.find(([, r]) =>
-      /^(마이\s?페이지|마이|MY|내\s?정보|my\s?page|account|계정|sign in|signin)$/i.test(r.name.trim()),
+      /^(마이\s?페이지|마이|MY|내\s?정보|my\s?page|account|계정|sign in|signin)($|\s?[ㆍ·/|])/i.test(
+        r.name.trim(),
+      ),
     )
   )
 }
 
 const NEXT =
-  /^(계속|다음|계속하기|이메일로 계속|continue|next|이메일로 계속하기|로그인 계속|이메일로 로그인|continue with email)$/i
+  /^(계속|다음|계속하기|진행|진행하기|이메일로 계속|continue|next|이메일로 계속하기|로그인 계속|이메일로 로그인|continue with email)$|^비밀번호로\s?로그인/i
 
 /** 두 단계 로그인 (아이디·이메일 먼저 → 계속 → 비밀번호): 아이디 칸과 계속 버튼 */
 function twoStep(text: string): { user: RefEntry; next: RefEntry } | undefined {
@@ -235,6 +271,7 @@ export async function autoLogin(
   // 1) 로그인 화면 찾기: 비밀번호 칸이 보일 때까지 "로그인"을 누른다 (최대 3번)
   let page = await settled(() => snap(tabId), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId }
+  if (!hasPassword(page.text)) page = await closePopups(browser, tabId, page, snap, wait)
   let retried = false
   const tried = new Set<string>()
   for (let i = 0; i < 4 && !hasPassword(page.text) && !twoStep(page.text); i++) {
@@ -418,6 +455,7 @@ export async function socialLogin(
   const siteTab = opened.tabId
   let page = await settled(() => snap(siteTab), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId: siteTab }
+  page = await closePopups(browser, siteTab, page, snap, wait)
 
   // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
   const tried = new Set<string>()

@@ -4,7 +4,11 @@
   "site": "a-bly.com",
   "category": "fashion",
   "how": "browser",
-  "login": "아이디·비밀번호",
+  "social": [
+    "kakao",
+    "apple"
+  ],
+  "login": "카카오·Apple 간편 로그인",
   "summary": "에이블리를 연결하면 옷 주문과 배송 확인, 찜해 둔 상품의 세일 알림까지 두리에게 맡길 수 있어요.",
   "example": {
     "ask": "찜해 둔 가디건 베이지 프리 사이즈로 시켜 줘",

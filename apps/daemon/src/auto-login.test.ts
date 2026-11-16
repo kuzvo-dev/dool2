@@ -87,6 +87,40 @@ describe('로그인 방법 고르기 화면', () => {
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)[0]).toBe('e22')
   })
 
+  it('"메일로 시작하기"·"이메일 주소" 같은 이름도 아이디 로그인으로 본다', async () => {
+    for (const name of ['메일로 시작하기', '이메일 주소', '이메일']) {
+      const chooser = {
+        url: 'https://acc.test/login',
+        text: `[e1 버튼 "카카오로 시작하기"] [e2 버튼 "파트너 로그인"] [e5 버튼 "${name}"]`,
+      }
+      const b = fakeBrowser([chooser, form, { url: 'https://shop.test/', text: '[e9 링크 "로그아웃"]' }])
+      const r = await autoLogin(b, { card, url: chooser.url, username: 'a', password: 'b' }, { wait: 0 })
+      expect(r.status).toBe('ok')
+      expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)[0]).toBe('e5')
+    }
+  })
+
+  it('첫 화면을 덮은 팝업("오늘은 그만 보기")을 먼저 닫는다', async () => {
+    const withPopup = {
+      url: 'https://shop.test/',
+      text: '[e1 링크 "로그인"] 이벤트! [e30 버튼 "오늘은 그만 보기"] [e31 버튼 "닫기"]',
+    }
+    const b = fakeBrowser([
+      withPopup,
+      home,
+      form,
+      { url: 'https://shop.test/', text: '[e9 링크 "로그아웃"]' },
+    ])
+    const r = await autoLogin(b, { card, url: home.url, username: 'a', password: 'b' }, { wait: 0 })
+    expect(r.status).toBe('ok')
+    expect(
+      b.calls
+        .filter(([m]) => m === 'click')
+        .map(([, a]) => a.ref)
+        .slice(0, 2),
+    ).toEqual(['e30', 'e1'])
+  })
+
   it('점검은 지나온 화면의 간편 로그인도 모은다', async () => {
     const chooser = {
       url: 'https://auth.shop.test/login',

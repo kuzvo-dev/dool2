@@ -4,6 +4,10 @@
   "site": "foresttrip.go.kr",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://www.foresttrip.go.kr/com/login.do",
+  "social": [
+    "kakao"
+  ],
   "login": "아이디·비밀번호",
   "summary": "자연휴양림 빈 객실 찾기와 추첨 신청, 예약과 결제 내역 확인까지 두리에게 맡길 수 있어요.",
   "example": {

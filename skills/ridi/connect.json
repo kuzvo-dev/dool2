@@ -4,6 +4,13 @@
   "site": "ridibooks.com",
   "category": "books",
   "how": "browser",
+  "loginUrl": "https://ridibooks.com/account/login",
+  "social": [
+    "kakao",
+    "naver",
+    "google",
+    "apple"
+  ],
   "login": "아이디·비밀번호",
   "summary": "읽고 싶은 전자책과 웹툰 찾기부터 구매, 내 서재 확인까지 두리에게 맡길 수 있어요.",
   "example": {
