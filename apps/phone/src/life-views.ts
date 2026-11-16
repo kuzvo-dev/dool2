@@ -12,6 +12,7 @@ import {
 import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
 import { scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
+import { burst, rememberFlip } from './motion.js'
 
 export interface LifeCtx {
   life?: LifeState
@@ -164,7 +165,15 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
       { class: 'feed-actions' },
       h(
         'button',
-        { class: f.reaction === 'up' ? 'chip on' : 'chip', label: '좋아요', onclick: react('up') },
+        {
+          class: f.reaction === 'up' ? 'chip on' : 'chip',
+          label: '좋아요',
+          onclick: (e: MouseEvent) => {
+            // 새로 누를 때만 터진다 (취소할 때는 조용히)
+            if (f.reaction !== 'up') burst(e.currentTarget as HTMLElement)
+            react('up')()
+          },
+        },
         icon('up'),
       ),
       h(
@@ -305,9 +314,11 @@ function goalCard(ctx: LifeCtx, r: Routine) {
     label: r.enabled ? '끄기' : '켜기',
     onclick: (e) => {
       e.stopPropagation()
+      rememberFlip(r.id, !r.enabled)
       ctx.act({ action: 'routine-toggle', id: r.id, on: !r.enabled })
     },
   })
+  sw.dataset.id = r.id
   sw.setAttribute('role', 'switch')
   sw.setAttribute('aria-checked', String(r.enabled))
   return h(
