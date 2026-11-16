@@ -224,3 +224,75 @@ describe('간편 로그인', () => {
     expect(r.status).toBe('unknown')
   })
 })
+
+describe('폰 입력 화면으로 묻기', () => {
+  const login = {
+    url: 'https://shop.test/login',
+    text: '[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"] [e8 버튼 "카카오로 시작하기"]',
+  }
+  const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+
+  it('카카오 계정이 금고에 없으면 폰에서 받아 넣는다', async () => {
+    const kakaoLogin = {
+      url: 'https://accounts.kakao.com/login',
+      text: '[e2 입력칸 "아이디"] [e3 비밀번호칸 "비밀번호"] [e4 버튼 "로그인"]',
+    }
+    const b = tabsBrowser({ 7: [login, kakaoLogin, signed] })
+    const asked: string[] = []
+    const r = await socialLogin(
+      b,
+      {
+        card,
+        url: login.url,
+        provider: 'kakao',
+        creds: async () => undefined,
+        ask: {
+          credentials: async (origin, site, _tab) => {
+            asked.push(`${origin} ${site}`)
+            return { username: 'me@kakao.com', password: 'pw' }
+          },
+        },
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(asked).toEqual(['https://accounts.kakao.com 카카오 계정'])
+    expect(b.calls.filter(([m]) => m === 'fill').map(([, a]) => a.value)).toEqual(['me@kakao.com', 'pw'])
+  })
+
+  it('인증번호를 물으면 폰에서 받아 칸에 넣고 확인을 누른다', async () => {
+    const otp = {
+      url: 'https://login.shop.test/verify',
+      text: '새로운 기기에서 로그인했어요. 문자로 보낸 인증번호를 입력해 주세요 [e7 입력칸 "인증번호 6자리"] [e8 버튼 "확인"]',
+    }
+    const b = fakeBrowser([form, otp, signed])
+    const r = await autoLogin(
+      b,
+      {
+        card,
+        url: form.url,
+        username: 'a',
+        password: 'b',
+        ask: { info: async (q) => (q.field === 'otp' ? '123456' : undefined) },
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.some(([m, a]) => m === 'type' && a.ref === 'e7' && a.text === '123456')).toBe(true)
+    expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e8')).toBe(true)
+  })
+
+  it('인증번호를 안 넣으면 사람에게 넘긴다', async () => {
+    const otp = {
+      url: 'https://login.shop.test/verify',
+      text: '인증번호를 입력해 주세요 [e7 입력칸 "인증번호"] [e8 버튼 "확인"]',
+    }
+    const b = fakeBrowser([form, otp])
+    const r = await autoLogin(
+      b,
+      { card, url: form.url, username: 'a', password: 'b', ask: { info: async () => undefined } },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('human')
+  })
+})
