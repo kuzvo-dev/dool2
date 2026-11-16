@@ -1602,3 +1602,126 @@ button {
     transform: rotate(360deg);
   }
 }
+/* 대화 안 일하는 화면: 두리가 보고 있는 Chrome 탭 (누르면 크게) */
+.work-card {
+  position: relative;
+  display: block;
+  align-self: flex-start;
+  width: min(78%, 320px);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 0.5px var(--line),
+    var(--shadow-card);
+  animation: ui-rise var(--dur) var(--ease) both;
+}
+.work-shot {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  object-position: top;
+}
+.work-meta {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 10px 8px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.55));
+  color: #fff;
+  font: var(--text-caption);
+}
+.work-host {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 650;
+}
+.work-open svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── 태블릿: 넓은 화면을 쓰고, 탭은 왼쪽 세로 막대 ── */
+@media (min-width: 760px) {
+  .app-shell {
+    max-width: none;
+    margin-inline: 0;
+    box-shadow: none;
+  }
+  .app-page {
+    --rail: 112px;
+    --col: min(760px, calc(100vw - var(--rail) - 48px));
+    padding-left: calc(var(--rail) + (100vw - var(--rail) - var(--col)) / 2);
+    padding-right: calc((100vw - var(--rail) - var(--col)) / 2);
+  }
+  .app-composer {
+    left: calc(112px + (100vw - 112px - min(760px, calc(100vw - 160px))) / 2);
+    right: auto;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    width: min(760px, calc(100vw - 160px));
+  }
+  .app-page[data-tab="chat"] {
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  }
+  .app-tabs,
+  .app-tabs.away {
+    left: 20px;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .tabs.app-tabs {
+    flex-direction: column;
+    width: 76px;
+    height: auto;
+    padding: 6px 0;
+    gap: 4px;
+    border-radius: 30px;
+  }
+  .tabs.app-tabs .tab,
+  .tabs.app-tabs .tab.on {
+    flex-direction: column;
+    width: 64px;
+    height: 62px;
+    gap: 3px;
+    padding: 0;
+  }
+  .tabs.app-tabs .tab .tab-label {
+    display: inline;
+    font-size: 11px;
+  }
+  .tabs.has-pill.app-tabs .tab-pill {
+    left: 6px;
+    width: 64px;
+    border-radius: 22px;
+  }
+  .tabs.app-tabs .tab .badge {
+    top: 8px;
+    right: 14px;
+  }
+  .chat-list .bubble {
+    max-width: min(72%, 560px);
+  }
+  .remote-page,
+  .side-page {
+    max-width: 760px;
+  }
+  .app-sheet {
+    left: 50%;
+    right: auto;
+    width: min(560px, calc(100vw - 48px));
+    transform: translateX(-50%);
+  }
+}

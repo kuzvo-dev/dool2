@@ -551,6 +551,8 @@ export type LifeAction =
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
   | { kind: 'hello' }
+  /** 앱을 켜 두고 있어요 (1분마다). PC는 흘려 쓰는 답·실시간 화면을 켜 둔 폰에만 보낸다 */
+  | { kind: 'ping' }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
@@ -643,6 +645,8 @@ export type PcToPhone =
   | { kind: 'connect-opened'; id: string; tabId: number }
   /** 대신 로그인 결과. human이면 그 탭을 원격 화면으로 넘겼다(로봇 확인·본인인증) */
   | { kind: 'connect-result'; id: string; ok: boolean; message: string; human?: boolean; tabId?: number }
+  /** 두리가 지금 다루는 Chrome 탭 (대화에 일하는 화면을 실시간으로 띄운다) */
+  | { kind: 'work-tab'; tabId: number }
   /** 두리 본체가 지금 로그인하고 있는 서비스 (연결하기는 뒤에서 하고, 끝나면 connect-result와 대화 알림) */
   | { kind: 'connect-status'; connecting: string[] }
   | { kind: 'error'; message: string }
