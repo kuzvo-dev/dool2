@@ -343,7 +343,28 @@ export interface LoginRequestView {
   status: 'pending' | 'saved' | 'cancelled' | 'expired'
   /** 저장한 아이디 (비밀번호는 어디에도 돌려주지 않는다) */
   username?: string
+  /** 서비스 연결 중 두리가 부탁한 것 (폰은 바로 입력 화면을 띄운다) */
+  connect?: boolean
   createdAt: string
+  expiresAt: string
+}
+
+/**
+ * 로그인 중에 화면이 묻는 것 (인증번호·휴대폰 번호 등)을 폰 입력 화면으로 받는다.
+ * 값은 AI를 거치지 않고 그 칸에만 넣고, 저장하지 않는다
+ */
+export interface InfoRequestView {
+  id: string
+  /** 사람에게 보일 사이트 이름·주소 */
+  site: string
+  host: string
+  /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 */
+  field: 'otp' | 'tel' | 'text'
+  /** 화면의 칸 이름 ("인증번호 6자리") */
+  label: string
+  /** 화면의 안내 한 줄 ("카카오톡으로 보낸 번호를 넣어 주세요") */
+  hint?: string
+  status: 'pending' | 'answered' | 'cancelled' | 'expired'
   expiresAt: string
 }
 
@@ -699,6 +720,8 @@ export type PhoneToPc =
   | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' }
   /** 연결하기: 아이디·비밀번호를 금고에 넣고 두리 본체가 대신 로그인한다 (값은 AI를 거치지 않는다) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
+  /** 로그인 중 화면이 묻는 것에 대한 답 (인증번호 등). value가 없으면 취소 */
+  | { kind: 'info-answer'; id: string; value?: string }
   /** 간편 로그인으로 연결 (카카오·네이버…). 공급자 쪽 로그인이 필요하면 원격 화면으로 넘긴다 */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
@@ -722,6 +745,8 @@ export type PcToPhone =
       approvals: ApprovalView[]
       /** 기다리는 로그인 요청 */
       logins?: LoginRequestView[]
+      /** 로그인 중 폰에서 받을 것 (인증번호 등) */
+      infos?: InfoRequestView[]
       /** 두리가 마지막으로 다룬 Chrome 탭 (실시간 화면으로 볼 수 있다) */
       activeTab?: number
       /** 웹 푸시 VAPID 공개키 (폰의 applicationServerKey) */
@@ -736,6 +761,8 @@ export type PcToPhone =
   | { kind: 'approval'; approval: ApprovalView & { shot?: string } }
   /** 새 로그인 요청, 저장 결과 */
   | { kind: 'login-request'; request: LoginRequestView }
+  | { kind: 'info-request'; request: InfoRequestView }
+  | { kind: 'info-done'; id: string }
   | { kind: 'login-done'; id: string; ok: boolean; message: string }
   /** 원격 화면 한 장 (JPEG base64)과 그 화면의 입력칸·버튼·지금 칸. 중계 서버는 이 종류를 쌓아 두지 않는다 */
   | ({
