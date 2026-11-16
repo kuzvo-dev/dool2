@@ -2972,3 +2972,8 @@ textarea.ghosting {
   width: 22px;
   height: 22px;
 }
+
+/* 연결 카드 안 단계 (일하는 카드와 같은 모양) */
+.connect-card .connect-steps {
+  padding: 2px 0 0;
+}
