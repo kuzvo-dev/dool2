@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 맥·윈도우까지 돌리고 싶을 때: Actions 탭 → CI → Run workflow (full 켜기)
+  workflow_dispatch:
+    inputs:
+      full:
+        description: 맥·윈도우도 검사
+        type: boolean
+        default: true
 
 # 기본은 읽기 전용. 외부 기여자 PR은 메인테이너 승인 뒤에만 돈다 (레포 설정)
 permissions:
@@ -19,9 +26,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 맥은 Intel 러너로: GitHub의 맥 arm64(macos-latest) 자리가 모자라 몇 시간씩 잡히지 않고
-        # 15분 뒤 단계 0개로 취소되는 일이 잦았다 (2026-11-16, PR 5개가 막힘). 검사(lint·build·typecheck·test)는 CPU 종류와 상관없다
-        os: [macos-15-intel, windows-latest, ubuntu-latest]
+        # 지금은 혼자 개발하는 동안이라 리눅스 하나만 (2026-11-17, 기여자가 생기면 셋 다로 되돌린다).
+        # 맥·윈도우는 손으로 돌리기(workflow_dispatch, full)로. 되돌릴 때 맥은 Intel 러너:
+        # GitHub 맥 arm64(macos-latest)는 자리가 모자라 몇 시간씩 못 잡히는 일이 있었다 (2026-11-16)
+        os: ${{ fromJSON(inputs.full && '["macos-15-intel","windows-latest","ubuntu-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     env:
       # CI에서는 Electron 창을 띄우지 않으니 바이너리를 받지 않는다
