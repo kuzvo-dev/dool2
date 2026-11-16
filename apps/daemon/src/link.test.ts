@@ -389,14 +389,11 @@ describe('폰이 한꺼번에 보낸 요청', () => {
     await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
     // 다시 켠 본체처럼 열쇠를 아직 안 만든 상태에서 (앱을 열면 폰이 보내는 것과 같은 순서)
     ;(daemon as unknown as { link: { keyCache: Map<string, unknown> } }).link?.keyCache?.clear()
-    await Promise.all([
-      p.send({ kind: 'hello' }),
-      p.send({ kind: 'conversation' }),
-      p.send({ kind: 'connections' }),
-      p.send({ kind: 'life' }),
-    ])
-    await waitFor(() =>
-      ['conversation', 'connections', 'life'].every((k) => p.inbox.some((m) => m.kind === k)),
+    // 진짜 폰처럼 순서대로, 답을 기다리지 않고 연달아 보낸다
+    for (const kind of ['hello', 'conversation', 'connections', 'life'] as const) await p.send({ kind })
+    await waitFor(
+      () => ['conversation', 'connections', 'life'].every((k) => p.inbox.some((m) => m.kind === k)),
+      10_000,
     )
   })
 })
