@@ -434,6 +434,12 @@ export interface PairInvite {
   r?: string
 }
 
+/** 원격 화면을 폰 화면 크기로 */
+export interface ScreenFit {
+  width: number
+  height: number
+}
+
 /** 폰 → PC */
 // ── 두리의 생활 기록: 목표·보관함·기억·피드 (본체 저장소에만 둔다) ──
 
@@ -568,7 +574,8 @@ export type PhoneToPc =
   /** 로그인 카드에 넣은 아이디·비밀번호 (PC 금고에만 저장된다) */
   | { kind: 'login'; id: string; username: string; password: string }
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장을 달라 */
-  | { kind: 'screen'; tabId: number }
+  /** fit: 폰 화면 크기(CSS px). 주면 PC 탭을 그 크기로 그려 폰에 꽉 차게 보낸다 */
+  | { kind: 'screen'; tabId: number; fit?: ScreenFit }
   /** 원격 화면에서 한 입력. tap 좌표는 사진 비율(0~1) */
   | {
       kind: 'remote'
@@ -579,6 +586,7 @@ export type PhoneToPc =
       text?: string
       key?: string
       dy?: number
+      fit?: ScreenFit
     }
   /** 웹 푸시 구독 (알림을 끄면 null). PC가 이 주소로 직접 알림을 보낸다 */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }

@@ -525,8 +525,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       cancel: (id) => threads.cancel(id),
       approval: (id) => browserTools.approvals.get(id),
-      screen: async (tabId) => {
-        const s = await browserTools.remoteScreen(tabId)
+      screen: async (tabId, fit) => {
+        const s = await browserTools.remoteScreen(tabId, fit)
         remoteViewport.set(tabId, s.viewport)
         return { shot: s.data, url: s.url, title: s.title }
       },
