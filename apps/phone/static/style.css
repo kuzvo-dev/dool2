@@ -2237,6 +2237,9 @@ textarea.ghosting {
 }
 .deck {
   position: relative;
+  /* 카드의 겹침 순서는 이 안에서만: 메뉴·시트 위로 올라오지 않게 */
+  z-index: 0;
+  isolation: isolate;
   height: 148px;
   touch-action: pan-y;
 }

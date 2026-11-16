@@ -1218,6 +1218,8 @@ function renderTabs() {
   if (!active) return
   pill.style.removeProperty(vertical ? 'left' : 'top')
   pill.style.removeProperty(vertical ? 'width' : 'height')
+  // 화면이 바뀌는 도중이라 칸 크기가 0이면 다음에 다시 잰다
+  if (!size(active)) return
   pill.style[P] = `${pos(active)}px`
   pill.style[S] = `${size(active)}px`
   t.dataset.ready = '1'
@@ -3645,7 +3647,17 @@ async function main() {
   connect()
   startResync()
   // 태블릿을 돌리거나 창 크기가 바뀌면 탭 알약 자리를 다시 잡는다
-  addEventListener('resize', () => renderTabs())
+  // 폴드를 펴고 접거나 태블릿을 돌리면 탭 막대 모양(가로·세로, 칸 너비)이 바뀐다.
+  // 바뀌는 도중에 재면 알약 자리가 틀어지므로, 움직이던 알약은 멈추고 자리가 잡힌 뒤 다시 잰다
+  let settleTabs: ReturnType<typeof setTimeout> | undefined
+  const onResize = () => {
+    pillStop?.()
+    renderTabs()
+    clearTimeout(settleTabs)
+    settleTabs = setTimeout(() => renderTabs(), 450)
+  }
+  addEventListener('resize', onResize)
+  screen.orientation?.addEventListener?.('change', onResize)
 }
 
 void main()
