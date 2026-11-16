@@ -35,6 +35,7 @@ import {
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
   type ConnectRecordMessage,
+  type ConnectStep,
   type ConversationLiveEvent,
   type ConversationState,
   CreateThreadRequestSchema,
@@ -65,7 +66,7 @@ import {
   SocialProviderSchema,
 } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
-import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
+import { appNote, josa, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
@@ -365,7 +366,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       url: start,
       username,
       password,
-      ask: loginAsk(card.name),
+      ask: loginAsk(card),
       step: connectStep(card.id),
     })
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
@@ -383,7 +384,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       url: card.loginUrl ?? url,
       provider,
       creds: (origin) => vault.findForOrigin(origin),
-      ask: loginAsk(card.name),
+      ask: loginAsk(card),
       step: connectStep(card.id),
     })
     return connectFinish(card, r)
@@ -411,12 +412,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    */
   const connecting = new Map<string, Promise<ConnectResult>>()
   /** 연결하는 동안의 단계: 폰 연결 카드에 "○○ 여는 중 → 아이디·비밀번호 넣는 중 → …"으로 보인다 */
-  const connectSteps = new Map<string, { text: string; at: number }[]>()
+  const connectSteps = new Map<string, ConnectStep[]>()
   function connectStep(id: string) {
-    return (text: string) => {
+    return (text: string, ask?: ConnectStep['ask']) => {
       const steps = connectSteps.get(id) ?? []
-      if (steps.at(-1)?.text === text) return
-      steps.push({ text, at: Date.now() })
+      if (steps.at(-1)?.text === text && !ask) return
+      steps.push({ text, at: Date.now(), ...(ask ? { ask } : {}) })
       connectSteps.set(id, steps)
       void link.broadcast({ kind: 'connect-progress', id, steps })
     }
@@ -839,11 +840,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /**
    * 연결 중 사람에게 넘기는 대신 폰에 묻는다: 공급자 계정은 로그인 카드(금고)로, 인증번호는 입력 화면으로
    */
-  const loginAsk = (site: string): LoginAsk => ({
+  const loginAsk = (card: ConnectCard): LoginAsk => ({
     credentials: async (origin, label, tabId) => {
       // 폰에서 "화면 보면서 직접 할게요"를 고르면 그 로그인 탭을 원격 화면으로 연다
       browserTools.allowRemote(tabId)
       const r = browserTools.logins.create({ tabId, origin, site: label, connect: true })
+      // 연결 카드에 "카카오 계정이 필요해요 [넣기]"가 보이게 한다 (빙글빙글 도는 동안 무엇을 기다리는지 모르지 않게)
+      connectStep(card.id)(`${josa(label, '이/가')} 필요해요`, {
+        kind: 'login',
+        id: r.id,
+        label: `${label} 넣기`,
+      })
       // 폰에서 넣으면 saveLogin이 금고에 넣고 요청을 끝낸다. 그때 금고 값을 돌려준다
       for (let i = 0; i < 300; i++) {
         await new Promise((ok) => setTimeout(ok, 1_000))
@@ -853,7 +860,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       return undefined
     },
-    info: (q) => infoRequests.ask({ ...q, site }),
+    info: (q) => {
+      const answer = infoRequests.ask({ ...q, site: card.name })
+      const req = infoRequests.pending().at(-1)
+      if (req)
+        connectStep(card.id)(`${josa(q.label, '이/가')} 필요해요`, {
+          kind: 'info',
+          id: req.id,
+          label: `${q.label} 넣기`,
+        })
+      return answer
+    },
   })
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {

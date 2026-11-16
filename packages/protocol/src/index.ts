@@ -336,6 +336,14 @@ export interface WorkRecordMessage {
   host?: string
 }
 
+/** 연결하는 동안의 한 단계. ask가 있으면 사람이 넣어 줘야 다음으로 간다 (그 요청을 카드에서 바로 연다) */
+export interface ConnectStep {
+  text: string
+  /** 시작 시각 (ms) */
+  at: number
+  ask?: { kind: 'login' | 'info'; id: string; label: string }
+}
+
 /** 사람에게 넘기기: 대화 기록에 'tool' 메시지로 남겨 다시 열어도 [다 했어요]를 보여 준다 */
 export interface HandoffRecord {
   kind: 'handoff'
@@ -809,7 +817,7 @@ export type PcToPhone =
   /** 두리 본체가 지금 로그인하고 있는 서비스 (연결하기는 뒤에서 하고, 끝나면 connect-result와 대화 알림) */
   | { kind: 'connect-status'; connecting: string[] }
   /** 연결하는 동안 본체가 지금 하는 단계 (연결 카드에 보여 준다. at = 시작 시각 ms) */
-  | { kind: 'connect-progress'; id: string; steps: { text: string; at: number }[] }
+  | { kind: 'connect-progress'; id: string; steps: ConnectStep[] }
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'
