@@ -62,6 +62,8 @@ export interface LinkHost {
   decide(id: string, decision: 'approve' | 'reject'): Promise<{ ok: boolean; message: string }>
   /** 로그인 카드에 넣은 값을 금고에 저장 */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
+  /** 로그인 중 화면이 물은 것에 대한 폰의 답 (인증번호 등) */
+  infoAnswer(id: string, value: string | undefined): void
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   /** 원격 화면 '필요한 칸만' */
@@ -467,6 +469,8 @@ export class PhoneLink {
         if (!r.ok) return this.send(phone, { kind: 'login-done', id: String(msg.id), ...r })
         return
       }
+      case 'info-answer':
+        return this.host.infoAnswer(String(msg.id), typeof msg.value === 'string' ? msg.value : undefined)
       case 'decide': {
         const a = this.host.approval(msg.id)
         if (!a)

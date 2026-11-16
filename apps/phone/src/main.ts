@@ -7,6 +7,7 @@ import type {
   ConnectRecordMessage,
   DaemonStreamEvent,
   HandoffRecord,
+  InfoRequestView,
   LifeAction,
   LifeState,
   LoginRecordMessage,
@@ -61,6 +62,7 @@ import {
   shortTime,
   withLogo,
 } from './dom.js'
+import { matchTextBox, recentTalk, ghostRest as suggestRest } from './ghost.js'
 import {
   feedView,
   goalSheet,
@@ -77,6 +79,7 @@ import {
   drawCheck,
   gooFilter,
   holdButton,
+  otpBoxes,
   playFlip,
   playSeg,
   riseIn,
@@ -107,6 +110,8 @@ type Overlay =
   | { kind: 'agent' }
   | { kind: 'approval'; id: string }
   | { kind: 'login'; id: string }
+  /** 로그인 중 화면이 묻는 것 (인증번호 등) */
+  | { kind: 'info'; id: string }
   /** 서비스 연결하기: 아이디·비밀번호 → 두리가 대신 로그인 */
   | { kind: 'connect'; id: string }
   | { kind: 'goal'; id: string }
@@ -144,6 +149,7 @@ const st: {
   approvals: Map<string, ApprovalView & { shot?: string }>
   decided: Map<string, { ok: boolean; message: string }>
   logins: Map<string, LoginRequestView>
+  infos: Map<string, InfoRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
   /** 대신 로그인이 끝까지 못 간 서비스 → 그 화면(탭) */
   connectTabs: Map<string, number>
@@ -196,6 +202,7 @@ const st: {
   approvals: new Map(),
   decided: new Map(),
   logins: new Map(),
+  infos: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
   connectTabs: new Map(),
   connectQuery: '',
@@ -317,6 +324,8 @@ async function receive(env: Envelope) {
       }
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
+      for (const q of msg.infos ?? []) st.infos.set(q.id, q)
+      for (const id of st.infos.keys()) if (!(msg.infos ?? []).some((q) => q.id === id)) st.infos.delete(id)
       st.connecting = new Set(msg.connecting ?? [])
       void syncPush()
       openPending()
@@ -372,8 +381,19 @@ async function receive(env: Envelope) {
       void send({ kind: 'approval', id: msg.id })
       break
     }
+    case 'info-request':
+      // 연결 중 화면이 묻는 것: 입력 화면을 바로 띄운다 (PC 화면을 찾아 칠 필요 없이)
+      st.infos.set(msg.request.id, msg.request)
+      openOverlay({ kind: 'info', id: msg.request.id })
+      break
+    case 'info-done':
+      st.infos.delete(msg.id)
+      if (st.overlay?.kind === 'info' && st.overlay.id === msg.id) st.overlay = undefined
+      break
     case 'login-request':
       st.logins.set(msg.request.id, msg.request)
+      // 서비스 연결 중 두리가 부탁한 계정(카카오 등): 입력 화면을 바로 띄운다
+      if (msg.request.connect) openOverlay({ kind: 'login', id: msg.request.id })
       notify(
         '로그인이 필요해요',
         `${msg.request.site} 아이디와 비밀번호를 넣어 주세요`,
@@ -1106,12 +1126,12 @@ let ghostEl: HTMLElement | undefined
 let ghostRest = ''
 
 function ghostFor(draft: string): string {
-  const d = draft.trimStart()
-  if (d.length < 2 || d.includes('\n')) return ''
-  const mine = (st.life?.ideas ?? []).map((i) => i.text)
-  const all = ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text))
-  const hit = [...mine, ...all].find((t) => t.startsWith(d) && t.length > d.length)
-  return hit ? hit.slice(d.length) : ''
+  return suggestRest({
+    draft,
+    talk: recentTalk(st.conv),
+    mine: (st.life?.ideas ?? []).map((i) => i.text),
+    catalog: ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text)),
+  })
 }
 
 function updateGhost() {
@@ -1130,10 +1150,7 @@ function updateGhost() {
   if (rest === ghostRest && !g.hidden) return
   ghostRest = rest
   // 입력칸과 같은 글꼴·안쪽 여백으로 겹쳐 그린다
-  const cs = getComputedStyle(t)
-  g.style.font = cs.font
-  g.style.letterSpacing = cs.letterSpacing
-  g.style.padding = cs.padding
+  matchTextBox(g, t)
   const typed = h('span', { class: 'ghost-typed', text: st.draft })
   const letters = [...rest].map((ch) => h('span', { class: 'g', text: ch }))
   const restEl = h('span', { class: 'ghost-rest', onclick: takeGhost }, ...letters)
@@ -1144,6 +1161,8 @@ function updateGhost() {
   )
   g.replaceChildren(typed, restEl, key)
   g.hidden = false
+  // 넘칠 때만 오른쪽을 흐린다 (다 들어가면 마지막 글자까지 또렷하게)
+  restEl.classList.toggle('clip', restEl.scrollWidth > restEl.clientWidth + 1)
   springTo(restEl, [{ opacity: 0 }, { opacity: 1 }], 'fade')
   springTo(
     key,
@@ -2489,7 +2508,9 @@ function renderOverlay() {
                   ? msgSheet(ov.id)
                   : ov.kind === 'plus'
                     ? plusSheet()
-                    : loginSheet(ov.id)
+                    : ov.kind === 'info'
+                      ? infoSheet(ov.id)
+                      : loginSheet(ov.id)
   // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
   const active = document.activeElement
   const typing =
@@ -3059,6 +3080,8 @@ interface CredTarget {
   next?: string
   /** 로고를 보여 줄 연결 카드 id */
   logo?: string
+  /** 카카오·네이버 같은 공급자 계정이면 그 로고 */
+  brand?: SocialProvider
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -3113,10 +3136,12 @@ function credSheet(t: CredTarget) {
     h(
       'div',
       { class: 'approve-head' },
-      withLogo(
-        h('span', { class: 'svc-mark lg', text: /^\d+/.exec(t.site)?.[0] ?? [...t.site][0] ?? '' }),
-        t.logo,
-      ),
+      t.brand
+        ? h('span', { class: `svc-mark lg brand-tile ${t.brand}` }, brandMark(t.brand))
+        : withLogo(
+            h('span', { class: 'svc-mark lg', text: /^\d+/.exec(t.site)?.[0] ?? [...t.site][0] ?? '' }),
+            t.logo,
+          ),
       h(
         'div',
         {},
@@ -3157,6 +3182,80 @@ function credSheet(t: CredTarget) {
   return sheet
 }
 
+/** 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호): 폰 입력 화면으로 받아 PC 칸에 넣는다 */
+function infoSheet(id: string) {
+  const q = st.infos.get(id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
+  if (!q) return sheet
+  const answer = (value?: string) => {
+    void send({ kind: 'info-answer', id, ...(value ? { value } : {}) })
+    st.infos.delete(id)
+    st.overlay = undefined
+    render()
+    if (value) toast('넣었어요. 두리가 이어서 할게요')
+  }
+  const head = h(
+    'div',
+    { class: 'approve-head' },
+    withLogo(h('span', { class: 'svc-mark lg', text: [...q.site][0] ?? '' }), undefined),
+    h(
+      'div',
+      {},
+      h('strong', { class: 'title-2', text: q.field === 'otp' ? '인증번호를 넣어 주세요' : q.label }),
+      h('span', { class: 'meta', text: `${q.site} · ${q.host}` }),
+    ),
+  )
+  const body: Node[] = []
+  if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint }))
+  if (q.field === 'otp') {
+    body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
+    body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
+    queueMicrotask(() => document.getElementById('otp-input')?.focus())
+  } else {
+    const input = h('input', { class: 'field' })
+    input.id = 'info-input'
+    input.placeholder = q.label
+    if (q.field === 'tel') {
+      input.type = 'tel'
+      input.inputMode = 'tel'
+      input.autocomplete = 'tel'
+    }
+    const go = h('button', { class: 'btn lg', text: '넣기' })
+    go.type = 'submit'
+    const form = h('form', { class: 'cred-form' }, input, go)
+    form.onsubmit = (e) => {
+      e.preventDefault()
+      if (input.value.trim()) answer(input.value.trim())
+    }
+    body.push(form)
+    queueMicrotask(() => input.focus())
+  }
+  sheet.append(
+    head,
+    ...body,
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
+    ),
+    h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),
+  )
+  return sheet
+}
+
+/** 공급자 계정 주소면 그 공급자 (accounts.kakao.com → kakao) */
+function brandOf(origin: string): SocialProvider | undefined {
+  const h = hostOf(origin)
+  if (/(^|\.)kakao\.com$/.test(h)) return 'kakao'
+  if (/(^|\.)naver\.com$/.test(h)) return 'naver'
+  if (/(^|\.)google\.com$/.test(h)) return 'google'
+  if (/(^|\.)apple\.com$/.test(h)) return 'apple'
+  if (/(^|\.)facebook\.com$/.test(h)) return 'facebook'
+  if (/(^|\.)payco\.com$/.test(h)) return 'payco'
+  return undefined
+}
+
 function loginSheet(id: string) {
   const r = st.logins.get(id)
   if (!r) return h('section', { class: 'sheet float app-sheet rise' })
@@ -3165,6 +3264,7 @@ function loginSheet(id: string) {
     site: r.site,
     host: hostOf(r.origin),
     ...(cardIdFor(r.origin) ? { logo: cardIdFor(r.origin) } : {}),
+    ...(brandOf(r.origin) ? { brand: brandOf(r.origin) } : {}),
     busyText: '저장하는 중…',
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),

@@ -19,7 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # 맥은 Intel 러너로: GitHub의 맥 arm64(macos-latest) 자리가 모자라 몇 시간씩 잡히지 않고
+        # 15분 뒤 단계 0개로 취소되는 일이 잦았다 (2026-11-16, PR 5개가 막힘). 검사(lint·build·typecheck·test)는 CPU 종류와 상관없다
+        os: [macos-15-intel, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       # CI에서는 Electron 창을 띄우지 않으니 바이너리를 받지 않는다
@@ -31,10 +33,16 @@ jobs:
           node-version-file: .nvmrc
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+        timeout-minutes: 6
       - run: pnpm lint
+        timeout-minutes: 4
       - run: pnpm build
+        timeout-minutes: 8
       - run: pnpm typecheck
+        timeout-minutes: 6
+      # 맥 러너에서 가끔 테스트가 멈춰 15분 뒤 취소되면 로그가 남지 않는다: 단계 시간 제한으로 실패시켜 로그를 남긴다
       - run: pnpm test
+        timeout-minutes: 8
 
   dco:
     name: DCO 서명 확인

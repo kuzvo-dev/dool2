@@ -66,10 +66,11 @@ import { findCard } from '@dool2/protocol/connect-text'
 import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
-import { type AutoLoginResult, autoLogin, probeLogin, socialLogin } from './auto-login.js'
+import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
+import { InfoRequests } from './info-requests.js'
 import { Life } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
@@ -357,7 +358,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const start = card.loginUrl ?? url
     if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
     await vault.add({ url, username, password })
-    const r = await autoLogin(browser, { card, url: start, username, password })
+    const r = await autoLogin(browser, { card, url: start, username, password, ask: loginAsk(card.name) })
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
@@ -373,6 +374,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       url: card.loginUrl ?? url,
       provider,
       creds: (origin) => vault.findForOrigin(origin),
+      ask: loginAsk(card.name),
     })
     return connectFinish(card, r)
   }
@@ -496,6 +498,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           threads: threadSummaries(30),
           approvals: browserTools.approvals.list().filter((x) => x.status === 'pending'),
           logins: browserTools.logins.list().filter((x) => x.status === 'pending'),
+          infos: infoRequests.pending(),
           ...(connecting.size ? { connecting: [...connecting.keys()] } : {}),
           ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
         }
@@ -559,6 +562,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
+      infoAnswer: (id, value) => void infoRequests.answer(id, value),
       connections: () => skills.connections(),
       conversation: ({ before, limit }) => {
         const messages = conversation.history({ limit: limit ?? 60, ...(before ? { before } : {}) })
@@ -758,6 +762,39 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const approvalThread = new Map<string, string>()
   /** 로그인 요청이 나온 대화 (폰에서 저장하면 그 대화로 이어서 하게) */
   const loginThread = new Map<string, string>()
+  /** 로그인 중 화면이 묻는 것(인증번호 등)을 폰 입력 화면으로 받는다 */
+  const infoRequests = new InfoRequests()
+  infoRequests.onCreate = (request) => {
+    void link.broadcast({ kind: 'info-request', request })
+    void link
+      .notify({
+        title: `${request.site}: ${request.field === 'otp' ? '인증번호가 필요해요' : '입력이 필요해요'}`,
+        body: request.hint ?? request.label,
+        tag: `info-${request.id}`,
+        url: '',
+      })
+      .catch(() => {})
+  }
+  infoRequests.onDone = (id) => void link.broadcast({ kind: 'info-done', id })
+  /**
+   * 연결 중 사람에게 넘기는 대신 폰에 묻는다: 공급자 계정은 로그인 카드(금고)로, 인증번호는 입력 화면으로
+   */
+  const loginAsk = (site: string): LoginAsk => ({
+    credentials: async (origin, label, tabId) => {
+      // 폰에서 "화면 보면서 직접 할게요"를 고르면 그 로그인 탭을 원격 화면으로 연다
+      browserTools.allowRemote(tabId)
+      const r = browserTools.logins.create({ tabId, origin, site: label, connect: true })
+      // 폰에서 넣으면 saveLogin이 금고에 넣고 요청을 끝낸다. 그때 금고 값을 돌려준다
+      for (let i = 0; i < 300; i++) {
+        await new Promise((ok) => setTimeout(ok, 1_000))
+        const x = browserTools.logins.get(r.id)
+        if (x?.status === 'saved') return vault.findForOrigin(origin)
+        if (!x || x.status !== 'pending') return undefined
+      }
+      return undefined
+    },
+    info: (q) => infoRequests.ask({ ...q, site }),
+  })
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
