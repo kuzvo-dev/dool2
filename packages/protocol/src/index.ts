@@ -45,6 +45,11 @@ export type AgentEvent =
   | { type: 'usage'; limits: UsageLimit[] }
   /** 종량제: 이번 단계에 쓴 돈(USD)과 토큰 */
   | { type: 'cost'; usd: number; inputTokens: number; outputTokens: number }
+  /**
+   * 지금 AI 세션이 실제로 읽는 양(토큰). 차례의 마지막 AI 호출 기준, 차례마다 한 번 (ADR 0015).
+   * 브라우저 페이지 같은 도구 결과까지 들어 있어서, 구간을 바꿀 때를 정하는 데 쓴다. 화면에는 쓰지 않는다
+   */
+  | { type: 'context'; tokens: number }
   | { type: 'limit_reached'; resetsAt?: string; message: string }
   | { type: 'error'; code: AgentErrorCode; message: string }
   | { type: 'done'; resumeId?: string; text: string }

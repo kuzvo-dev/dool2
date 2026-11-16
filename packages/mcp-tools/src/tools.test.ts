@@ -56,6 +56,7 @@ describe('두리 MCP 도구', () => {
       'photo_view',
       'connect_ask',
       'feed_post',
+      'conversation_search',
     ])
 
     const res = await client.callTool({ name: 'status', arguments: {} })

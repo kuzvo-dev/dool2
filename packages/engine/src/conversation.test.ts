@@ -1,12 +1,14 @@
 import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol'
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
-import { buildCarry, ConversationService } from './conversation.js'
+import { buildCarry, ConversationService, formatSearch } from './conversation.js'
 import type { AgentRuntime, TurnInput } from './runtime.js'
 import { SUMMARY_REQUEST, ThreadService } from './threads.js'
 
 class EchoRuntime implements AgentRuntime {
   inputs: TurnInput[] = []
+  /** 있으면 차례 끝에 세션 크기(토큰)를 알린다 */
+  contextTokens: number | undefined
   private n = 0
   constructor(readonly id: 'claude' | 'codex') {}
   async detect(): Promise<AgentStatus> {
@@ -18,6 +20,7 @@ class EchoRuntime implements AgentRuntime {
     yield { type: 'started', resumeId, tools: [] }
     const reply = input.text === SUMMARY_REQUEST ? '- 국밥을 좋아함' : `받았어요: ${input.text}`
     yield { type: 'text', delta: reply }
+    if (this.contextTokens) yield { type: 'context', tokens: this.contextTokens }
     yield { type: 'done', resumeId, text: reply }
   }
 }
@@ -122,5 +125,53 @@ describe('ConversationService (대화는 하나)', () => {
       })),
     )
     expect(carry?.length).toBeLessThanOrEqual(6000)
+  })
+
+  it('AI가 실제로 읽는 양(토큰)이 기준을 넘으면 차례가 적어도 요약을 받아 새 구간으로 넘긴다', async () => {
+    const { convo, claude, store } = setup({ contextTokens: 100_000 })
+    // 브라우저 페이지를 많이 읽은 차례: 저장된 글은 짧아도 세션은 크다
+    claude.contextTokens = 99_999
+    await drain(convo.send('claude', '쿠팡에서 청소기 비교해 줘'))
+    const first = convo.current()
+    expect(store.sessionSize(first?.id ?? '').contextTokens).toBe(99_999)
+    expect(convo.needsRotate('claude')).toBeUndefined()
+    claude.contextTokens = 140_000
+    await drain(convo.send('claude', '두 번째 것도 봐 줘'))
+    expect(convo.needsRotate('claude')).toBe('long')
+    claude.contextTokens = undefined
+    await drain(convo.send('claude', '셋'))
+    expect(convo.current()?.id).not.toBe(first?.id)
+    expect(claude.inputs.some((i) => i.text === SUMMARY_REQUEST)).toBe(true)
+    expect(store.getThread(first?.id ?? '')).toMatchObject({ summary: '- 국밥을 좋아함' })
+    // 새 구간은 크기 0부터
+    expect(store.sessionSize(convo.current()?.id ?? '').contextTokens).toBe(0)
+  })
+
+  it('지난 대화 찾기: 앞 구간의 말을 날짜(한국 시간)·누가와 함께 찾고, 지금 구간은 뺀다', async () => {
+    const { convo, tick } = setup()
+    await drain(convo.send('claude', '로봇 청소기 30만 원 아래로 찾아 줘'))
+    tick(13 * 60 * 60 * 1000)
+    await drain(convo.send('claude', '지난번 청소기 뭐였지?'))
+    const out = convo.search('청소기')
+    expect(out).toContain('지난 대화 2개')
+    // 2026-11-15T00:00Z = 한국 시간 11월 15일(일) 오전 9시
+    expect(out).toContain('2026년 11월 15일 일 오전 9:00 · 사용자: 로봇 청소기 30만 원 아래로 찾아 줘')
+    expect(out).toContain('· 두리: 받았어요: 로봇 청소기 30만 원 아래로 찾아 줘')
+    expect(out).not.toContain('지난번 청소기 뭐였지?')
+    expect(convo.search('냉장고')).toContain('찾지 못했어요')
+    expect(convo.search('  ')).toBe('찾을 낱말을 주세요.')
+  })
+
+  it('찾은 말이 길면 낱말 둘레만 잘라 보여 준다', () => {
+    const text = `${'가'.repeat(300)} 로보락 Q7 ${'나'.repeat(300)}`
+    const out = formatSearch(
+      '로보락',
+      [{ id: '1', threadId: 't', role: 'assistant', text, createdAt: '2026-11-09T06:20:00Z' }],
+      new Date('2026-11-16T00:00:00Z'),
+    )
+    const line = out.split('\n')[1] ?? ''
+    expect(line).toContain('2026년 11월 9일 월 오후 3:20 · 두리: …')
+    expect(line).toContain('로보락 Q7')
+    expect(line.length).toBeLessThan(220)
   })
 })

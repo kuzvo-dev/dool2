@@ -113,8 +113,22 @@ describe('OpenCode 사건 → 두리 사건', () => {
       { type: 'text', delta: '지금은 ' },
       { type: 'text', delta: '오후 4시예요.' },
       { type: 'cost', usd: 0.0013, inputTokens: 1900, outputTokens: 18 },
+      { type: 'context', tokens: 1900 },
       { type: 'done', resumeId: 'ses_TEST', text: '지금은 오후 4시예요.' },
     ])
+  })
+
+  it('세션 크기는 마지막 단계의 입력 + 캐시 읽기·쓰기', () => {
+    const m = new OpenCodeEventMapper('s')
+    const step = (input: number, read: number, write: number) =>
+      m.map({
+        type: 'session.step.ended',
+        data: { sessionID: 's', cost: 0, tokens: { input, output: 5, cache: { read, write } } },
+      })
+    step(500, 2_000, 100)
+    step(300, 30_000, 4_000)
+    const end = m.map({ type: 'session.execution.succeeded', data: { sessionID: 's' } })
+    expect(end.events[0]).toEqual({ type: 'context', tokens: 34_300 })
   })
 
   it('틀린 API 키면 한 번만 "키를 다시 넣어 주세요"라고 알린다 (실제 v2.3.0 출력)', () => {

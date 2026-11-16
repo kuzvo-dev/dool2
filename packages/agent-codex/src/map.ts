@@ -24,6 +24,7 @@ export interface MapResult {
 export class CodexEventMapper {
   private finalText = ''
   private streamed = ''
+  private contextTokens = 0
 
   constructor(private readonly threadId: string) {}
 
@@ -42,6 +43,15 @@ export class CodexEventMapper {
         return this.onItem(params.item, 'completed')
       case 'account/rateLimits/updated':
         return { events: rateLimitEvents(params.rateLimits) }
+      case 'thread/tokenUsage/updated': {
+        // last = 마지막 AI 호출의 사용량. 입력 토큰(캐시된 것 포함)이 지금 세션의 크기다.
+        // total은 차례 동안 더한 값이라 크기로 쓰지 않는다. 차례가 끝날 때 한 번 알린다
+        const usage = isObj(params.tokenUsage) ? params.tokenUsage : {}
+        const last = isObj(usage.last) ? usage.last : {}
+        if (typeof last.inputTokens === 'number' && last.inputTokens > 0)
+          this.contextTokens = last.inputTokens
+        return { events: [] }
+      }
       case 'error':
         return this.onError(params)
       case 'turn/completed':
@@ -131,9 +141,14 @@ export class CodexEventMapper {
   private onTurnCompleted(params: Json): MapResult {
     const turn = isObj(params.turn) ? params.turn : {}
     if (turn.status === 'completed') {
+      const done: AgentEvent = {
+        type: 'done',
+        resumeId: this.threadId,
+        text: this.finalText || this.streamed,
+      }
       return {
         finished: true,
-        events: [{ type: 'done', resumeId: this.threadId, text: this.finalText || this.streamed }],
+        events: this.contextTokens ? [{ type: 'context', tokens: this.contextTokens }, done] : [done],
       }
     }
     if (turn.status === 'interrupted') {
