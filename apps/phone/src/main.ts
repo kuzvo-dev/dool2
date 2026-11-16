@@ -16,6 +16,7 @@ import type {
   PcToPhone,
   PhoneToPc,
   StoredMessage,
+  WorkRecordMessage,
 } from '@dool2/protocol'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -39,7 +40,14 @@ import {
   searchIdeas,
 } from '@dool2/protocol/ideas'
 import { approvalSignText, LinkClient } from '@dool2/protocol/link'
-import { narrationLine, readAppNote, splitPhoto, toolLabel, withoutPhotoMark } from '@dool2/protocol/rich'
+import {
+  josa,
+  narrationLine,
+  readAppNote,
+  splitPhoto,
+  toolLabel,
+  withoutPhotoMark,
+} from '@dool2/protocol/rich'
 import { brandMark, SOCIAL_CTA } from './brands.js'
 import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
 import {
@@ -414,8 +422,6 @@ async function receive(env: Envelope) {
         st.work = { ...st.work, shot: msg.shot, ...(msg.url ? { url: msg.url } : {}) }
         const img = document.querySelector<HTMLImageElement>('.work-shot')
         if (img) img.src = `data:image/jpeg;base64,${msg.shot}`
-        const host = document.querySelector('.work-host')
-        if (host) host.textContent = hostOf(msg.url ?? '')
         if (first) render()
         return
       }
@@ -513,7 +519,7 @@ function onStream(ev: DaemonStreamEvent) {
       const i = st.pending.findIndex((p) => p.text === splitPhoto(m.text).text)
       if (i >= 0) st.pending.splice(i, 1)
     }
-    if (m.role === 'assistant') {
+    if (m.role === 'assistant' || (m.role === 'tool' && m.text.includes('"kind":"work"'))) {
       st.live = ''
       st.steps = []
     }
@@ -530,7 +536,11 @@ function onStream(ev: DaemonStreamEvent) {
       // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
       const label = narrationLine(st.live) ?? `${toolLabel(ev.event.name)} 중`
       st.live = ''
-      if (st.steps.at(-1) !== label) st.steps = [...st.steps, label]
+      if (st.steps.at(-1) !== label) {
+        st.steps = [...st.steps, label]
+        if (st.steps.length === 1) stepAt.length = 0
+        stepAt[st.steps.length - 1] = Date.now()
+      }
     }
   } else if (ev.type === 'end') {
     st.live = ''
@@ -691,22 +701,145 @@ function pollWork() {
   workTimer = setTimeout(tick, 300)
 }
 
-function workCard(tab: number): HTMLElement {
-  const img = h('img', { class: 'work-shot' })
-  img.alt = '두리가 보고 있는 화면'
-  if (st.work.shot) img.src = `data:image/jpeg;base64,${st.work.shot}`
+/** 단계가 시작된 때 (st.steps와 같은 순서) */
+const stepAt: number[] = []
+
+/** 사이트 주소 → 연결 카드 이름 (catchtable.co.kr → 캐치테이블), 없으면 주소 */
+function siteName(host: string): string {
+  const bare = host.replace(/^(www|m|app)\./, '')
+  const card = st.services?.find(
+    (s) =>
+      s.card.site && (bare === s.card.site || bare.endsWith(`.${s.card.site}`) || s.card.site.endsWith(bare)),
+  )
+  return card?.card.name ?? bare
+}
+
+function secs(ms: number) {
+  const s = Math.max(1, Math.round(ms / 1000))
+  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
+}
+
+function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
   return h(
+    'li',
+    { class: `ws ${state}` },
+    h('span', { class: 's' }, state === 'done' ? icon('check', 'i') : ''),
+    h('span', { class: 'wt', text }),
+    h('span', { class: 't', text: ms !== undefined ? secs(ms) : '' }),
+  )
+}
+
+/** 대화 안 일하는 카드: 두리 + "○○을 살펴보는 중", 지금 보는 화면, 단계 (끝난 단계는 ✓와 걸린 시간) */
+function workPanel(): HTMLElement {
+  const peek = h(
     'button',
-    { class: 'work-card', label: '두리 화면 크게 보기', onclick: () => openRemote(tab) },
-    img,
+    {
+      class: 'wp-peek',
+      label: '두리 화면 크게 보기',
+      onclick: () => st.work.tabId !== undefined && openRemote(st.work.tabId),
+    },
     h(
       'span',
-      { class: 'work-meta' },
-      h('span', { class: 'dot work pulse' }),
-      h('span', { class: 'work-host', text: hostOf(st.work.url ?? '') }),
-      h('span', { class: 'work-open' }, '크게 보기', icon('chevron', 'i')),
+      { class: 'wp-bar' },
+      h('span', { text: '두리가 보고 있는 화면' }),
+      h('span', { class: 'wp-live', text: '지금' }),
     ),
+    h('img', { class: 'work-shot' }),
   )
+  const card = h(
+    'div',
+    { class: 'work-panel' },
+    h('div', { class: 'wp-head' }, doori('thinking', 26), h('b', { class: 'wp-title' })),
+    peek,
+    h('ol', { class: 'wp-steps' }),
+  )
+  updateWorkPanel(card)
+  return card
+}
+
+function updateWorkPanel(card: HTMLElement) {
+  const host = st.work.web ? hostOf(st.work.url ?? '') : ''
+  const title = host ? `${josa(siteName(host), '을/를')} 살펴보는 중` : '부탁하신 일을 하는 중'
+  const t = card.querySelector('.wp-title')
+  if (t && t.textContent !== title) t.textContent = title
+  // 지금 화면: 웹에서 일하고 그림이 왔을 때만
+  const peek = card.querySelector<HTMLElement>('.wp-peek')
+  const img = card.querySelector<HTMLImageElement>('.work-shot')
+  const shot = st.work.web ? st.work.shot : undefined
+  if (peek) peek.hidden = !shot
+  if (img && shot) {
+    const src = `data:image/jpeg;base64,${shot}`
+    if (img.src !== src) img.src = src
+  }
+  // 단계: 바뀐 것만. 새 단계는 아래에서 떠오르고, 방금 끝난 단계는 ✓가 톡
+  const list = card.querySelector<HTMLElement>('.wp-steps')
+  if (!list) return
+  const rows = [...list.children] as HTMLElement[]
+  if (
+    rows.length > st.steps.length ||
+    rows.some((r, i) => r.querySelector('.wt')?.textContent !== st.steps[i])
+  )
+    list.replaceChildren()
+  st.steps.forEach((text, i) => {
+    const last = i === st.steps.length - 1
+    const row = list.children[i] as HTMLElement | undefined
+    const ms =
+      !last && stepAt[i] && stepAt[i + 1] ? (stepAt[i + 1] as number) - (stepAt[i] as number) : undefined
+    if (!row) {
+      const fresh = stepRow(text, last ? 'doing' : 'done', ms)
+      list.append(fresh)
+      if (i > 0)
+        springTo(
+          fresh,
+          [
+            { opacity: 0, transform: 'translateY(8px)' },
+            { opacity: 1, transform: 'none' },
+          ],
+          'item',
+        )
+    } else if (!last && row.classList.contains('doing')) {
+      const done = stepRow(text, 'done', ms)
+      row.replaceWith(done)
+      const s = done.querySelector('.s')
+      if (s) springTo(s, [{ transform: 'scale(0.4)' }, { transform: 'scale(1)' }], 'pop')
+    }
+  })
+}
+
+/** 끝난 뒤: 답 위에 접힌 "일한 과정" (누르면 단계가 펼쳐진다) */
+function workDone(rec: WorkRecordMessage): HTMLElement {
+  const where = rec.host ? `${siteName(rec.host)}에서 일했어요` : '일한 과정'
+  const list = h('ol', { class: 'wp-steps' })
+  if (rec.count > rec.steps.length)
+    list.append(h('li', { class: 'ws more', text: `앞의 ${rec.count - rec.steps.length}단계는 줄였어요` }))
+  for (const s of rec.steps) list.append(stepRow(s.text, 'done', s.ms))
+  list.hidden = true
+  const head = h(
+    'button',
+    { class: 'wd-head', label: '일한 과정 펼치기' },
+    h('span', { class: 'wd-ok' }, icon('check', 'i')),
+    h('span', { class: 'wd-title', text: where }),
+    h('span', { class: 'wd-meta', text: `${rec.count}단계 · ${secs(rec.ms)}` }),
+    icon('chevron', 'i wd-chev'),
+  )
+  head.setAttribute('aria-expanded', 'false')
+  const card = h('div', { class: 'work-panel done' }, head, list)
+  head.addEventListener('click', () => {
+    const open = list.hidden !== false
+    list.hidden = !open
+    card.classList.toggle('open', open)
+    head.setAttribute('aria-expanded', String(open))
+    if (open)
+      springTo(
+        list,
+        [
+          { opacity: 0, transform: 'translateY(-6px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        'item',
+      )
+  })
+  return card
 }
 
 // ── 알림 ──
@@ -1455,18 +1588,11 @@ function chatItems(): Item[] {
     })
   })
   if (st.busy || st.pending.length) {
-    const step = st.steps.at(-1)
-    const tab = st.work.tabId
-    if (st.work.web && st.busy && tab !== undefined && st.work.shot)
-      items.push({ key: 'work', sig: String(tab), make: () => workCard(tab) })
-    if (step)
-      items.push({
-        key: 'step',
-        sig: step,
-        make: () => h('p', { class: 'meta step' }, h('span', { class: 'dot work pulse' }), step),
-      })
+    const shot = st.work.web && st.busy && st.work.tabId !== undefined && st.work.shot
+    // 일하는 과정은 카드 하나로: 지금 보는 화면 + 단계 (랜딩의 "○○을 살펴보는 중")
+    if (st.busy && (st.steps.length || shot)) items.push({ key: 'work', sig: '', make: workPanel })
     if (st.live) items.push({ key: 'live', sig: '', make: liveBubble })
-    else
+    else if (!st.steps.length)
       items.push({
         key: 'typing',
         sig: '',
@@ -1580,6 +1706,9 @@ function syncChat() {
       // 흘러오는 답은 글자만 바꾼다
       el.replaceChildren(rich(st.live))
       riseWords(el)
+    } else if (el && it.key === 'work') {
+      // 일하는 카드는 새 단계만 붙인다 (지금 화면 그림은 그대로 두고)
+      updateWorkPanel(el)
     } else if (!el || el.dataset.sig !== it.sig) {
       const fresh = it.make()
       fresh.dataset.key = it.key
@@ -1689,7 +1818,12 @@ function loginFor(rec: LoginRecordMessage) {
 }
 
 function toolCard(raw: string): HTMLElement {
-  let rec: HandoffRecord | ApprovalRecordMessage | LoginRecordMessage | ConnectRecordMessage
+  let rec:
+    | HandoffRecord
+    | ApprovalRecordMessage
+    | LoginRecordMessage
+    | ConnectRecordMessage
+    | WorkRecordMessage
   try {
     rec = JSON.parse(raw)
   } catch {
@@ -1698,6 +1832,7 @@ function toolCard(raw: string): HTMLElement {
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec)
+  if (rec.kind === 'work') return workDone(rec)
   // 직접 해 주세요
   const tabId = rec.tabId
   return h(
