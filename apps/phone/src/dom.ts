@@ -1,5 +1,6 @@
 // 화면 그리기 도우미: 요소 만들기, 선 아이콘, 두리 답(문단·목록·굵게)
 import { type Inline, richBlocks } from '@dool2/protocol/rich'
+import { rememberSeg } from './motion.js'
 
 type Child = Node | string | false | undefined | null
 
@@ -215,7 +216,13 @@ export function shortTime(iso: string) {
 
 /** 칸 고르기(.seg) 버튼: 고른 칸은 aria-pressed */
 export function segBtn(on: boolean, props: { text: string; onclick: () => void }) {
-  const b = h('button', { text: props.text, onclick: props.onclick })
+  const b: HTMLButtonElement = h('button', {
+    text: props.text,
+    onclick: () => {
+      rememberSeg(b)
+      props.onclick()
+    },
+  })
   b.setAttribute('aria-pressed', String(on))
   return b
 }
