@@ -1,4 +1,5 @@
 // 폰에 남기는 것: PC 정보와 이 폰의 키. 키는 IndexedDB에 CryptoKey 그대로(꺼낼 수 없는 키) 둔다.
+import type { StoredMessage } from '@dool2/protocol'
 import type { DeviceKeys } from '@dool2/protocol/e2e'
 
 export interface Saved {
@@ -39,3 +40,12 @@ export const load = () =>
   tx<Saved | undefined>('readonly', (s) => s.get('link') as IDBRequest<Saved | undefined>)
 export const save = (v: Saved) => tx('readwrite', (s) => s.put(v, 'link'))
 export const clear = () => tx('readwrite', (s) => s.delete('link'))
+
+/**
+ * 마지막 대화 몇 줄: 앱을 열자마자 PC 연결을 기다리지 않고 보이게 (연결되면 PC 기록으로 바뀐다).
+ * 이 폰 앱 저장소에만 두고, 연결을 지우면 같이 지운다
+ */
+export const loadConv = () =>
+  tx<StoredMessage[] | undefined>('readonly', (s) => s.get('conv') as IDBRequest<StoredMessage[] | undefined>)
+export const saveConv = (v: StoredMessage[]) => tx('readwrite', (s) => s.put(v, 'conv'))
+export const clearConv = () => tx('readwrite', (s) => s.delete('conv'))

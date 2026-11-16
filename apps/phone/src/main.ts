@@ -90,7 +90,7 @@ import {
 import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
-import { clear, load, type Saved, save } from './store.js'
+import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
 
@@ -244,6 +244,7 @@ async function forgetPc() {
   st.client?.stop()
   st.client = undefined
   await clear()
+  await clearConv().catch(() => undefined)
   st.saved = undefined
   st.key = undefined
   st.online = false
@@ -342,6 +343,13 @@ async function receive(env: Envelope) {
       st.hasMore = msg.state.hasMore
       st.busy = msg.state.busy
       st.queued = msg.state.queued
+      // 다시 받아 온 기록에 이미 있거나 줄 선 말은 "보내는 중"에서 뺀다 (안 그러면 같은 말이 두 번 보인다)
+      if (!msg.before) {
+        const mine = new Set(
+          msg.state.messages.filter((m) => m.role === 'user').map((m) => splitPhoto(m.text).text),
+        )
+        st.pending = st.pending.filter((p) => !mine.has(p.text) && !msg.state.queued.includes(p.text))
+      }
       // 다시 받아 온 기록이 끝난 상태면, 놓친 끝 신호 때문에 남은 "대답하는 중"을 지운다
       if (!msg.before && !msg.state.busy) {
         st.live = ''
@@ -475,7 +483,8 @@ async function receive(env: Envelope) {
       if (msg.ok) {
         st.connectTabs.delete(msg.id)
         if (st.overlay?.kind === 'connect') st.overlay = undefined
-        toast(msg.message)
+        // 대화를 보고 있으면 카드가 "연결돼 있어요"로 바뀌는 걸로 충분하다 (같은 말을 또 띄우지 않는다)
+        if (st.tab !== 'chat' || st.screen.name !== 'app') toast(msg.message)
         runAfterConnect(msg.id)
       } else if (msg.tabId !== undefined) {
         // 로봇 확인·본인인증, 자동 로그인 실패: 그 화면을 바로 열어 직접 마치게 한다
@@ -575,6 +584,46 @@ function ask(text: string) {
   stickToBottom = true
   render()
   void send({ kind: 'ask', text: t, ...(photo ? { image: photo } : {}) })
+}
+
+/**
+ * 연결하기는 대화에서: 내 말 "○○ 연결해 줘"를 바로 띄우고, PC가 연결 카드를 대화에 남긴다.
+ * 로그인은 그 카드에서 이어 가고, 진행·결과도 같은 대화에 남는다 (연결 화면에서 기다리지 않게)
+ */
+function connectInChat(id: string) {
+  const it = st.services?.find((s) => s.card.id === id)
+  if (!it || it.card.how !== 'browser') return openOverlay({ kind: 'connect', id })
+  if (!st.online) return toast('PC와 연결되면 할 수 있어요')
+  // 같은 연결 카드가 대화 끝 가까이에 이미 있으면 새로 쌓지 않고 그 카드로 간다
+  const near = st.conv.slice(-6).some((m) => {
+    if (m.role !== 'tool') return false
+    try {
+      const rec = JSON.parse(m.text) as ConnectRecordMessage
+      return rec.kind === 'connect' && connectFor(rec)?.card.id === id
+    } catch {
+      return false
+    }
+  })
+  st.connectDetail = undefined
+  if (near) return setTab('chat')
+  st.pending.push({ id: ++pendingSeq, text: `${it.card.name} 연결해 줘` })
+  setTab('chat')
+  void send({ kind: 'connect', id, action: 'chat' })
+}
+
+let convSaveTimer: ReturnType<typeof setTimeout> | undefined
+let convSavedLast = ''
+/** 마지막 대화 40줄을 폰에 남긴다 (바뀌었을 때만, 1초 모아서) */
+function keepConv() {
+  if (!st.convLoaded) return
+  const tail = st.conv.slice(-40)
+  const sig = `${tail.length}:${tail.at(-1)?.id ?? ''}`
+  if (sig === convSavedLast) return
+  clearTimeout(convSaveTimer)
+  convSaveTimer = setTimeout(() => {
+    convSavedLast = sig
+    void saveConv(tail).catch(() => undefined)
+  }, 1000)
 }
 
 /** 사진을 가로 1024px·300KB 이하 JPEG로 줄인다 (중계 한 번에 보낼 수 있게) */
@@ -1005,6 +1054,7 @@ let shell:
   | undefined
 
 function render() {
+  keepConv()
   const s = st.screen
   if (s.name !== 'app') {
     shell = undefined
@@ -1536,7 +1586,12 @@ function chatItems(): Item[] {
     })
   if (st.convLoaded && !st.conv.length && !st.pending.length)
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
+  let lastNote = ''
   for (const m of st.conv) {
+    // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
+    const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
+    if (noteText !== undefined && noteText === lastNote) continue
+    lastNote = noteText ?? ''
     if (m.role === 'tool') items.push({ key: m.id, sig: toolSig(m.text), make: () => toolCard(m.text) })
     else if (m.role === 'user') {
       // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
@@ -2236,7 +2291,7 @@ function runAfterConnect(id: string) {
 function tapIdea(it: IdeaItem) {
   if (needsConnect(it) && it.service) {
     st.afterConnect = { id: it.service.id, text: it.ask, at: Date.now() }
-    openOverlay({ kind: 'connect', id: it.service.id })
+    connectInChat(it.service.id)
     return
   }
   ask(it.ask)
@@ -2461,7 +2516,7 @@ function connectCtx(): ConnectCtx {
       input?.focus()
       input?.setSelectionRange(q.length, q.length)
     },
-    open: (id) => openOverlay({ kind: 'connect', id }),
+    open: (id) => connectInChat(id),
     mark: (id, on) => void send({ kind: 'connect', id, action: on ? 'mark' : 'unmark' }),
     tryAsk: (text) => ask(text),
   }
@@ -3288,7 +3343,8 @@ function connectSheet(id: string) {
       st.loginDraft.busy = false
       st.overlay = undefined
       st.connecting.add(id)
-      toast(`${it.card.name} 로그인은 두리가 PC에서 할게요. 끝나면 대화로 알려 드릴게요`)
+      if (st.tab !== 'chat')
+        toast(`${it.card.name} 로그인은 두리가 PC에서 할게요. 끝나면 대화로 알려 드릴게요`)
     },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
@@ -3299,7 +3355,8 @@ function connectSheet(id: string) {
         void send({ kind: 'connect-social', id, provider })
         st.overlay = undefined
         st.connecting.add(id)
-        toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+        if (st.tab !== 'chat')
+          toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
       },
     })),
     direct: {
@@ -3794,6 +3851,8 @@ async function main() {
     return render()
   }
   st.saved = saved
+  // 지난번 대화를 먼저 보여 준다 (PC 연결을 기다리는 동안 빈 화면이 아니게)
+  if (saved.paired) st.conv = (await loadConv().catch(() => undefined)) ?? []
   st.key = await linkKey(saved.keys.boxPriv, saved.pcBoxPub, [saved.keys.id, saved.pcId])
   st.screen = saved.paired
     ? { name: 'app' }

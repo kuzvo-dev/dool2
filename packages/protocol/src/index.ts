@@ -733,7 +733,8 @@ export type PhoneToPc =
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
    * mark·unmark = 연결 표시·해제
    */
-  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' }
+  /** chat: 대화에 "○○ 연결해 줘"와 연결 카드를 바로 남긴다 (AI를 부르지 않는다) */
+  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' }
   /** 연결하기: 아이디·비밀번호를 금고에 넣고 두리 본체가 대신 로그인한다 (값은 AI를 거치지 않는다) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
   /** 로그인 중 화면이 묻는 것에 대한 답 (인증번호 등). value가 없으면 취소 */
