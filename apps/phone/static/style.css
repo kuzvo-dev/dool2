@@ -1605,7 +1605,6 @@ button {
   opacity: 0;
   transform: translate(-50%, 0);
   pointer-events: none;
-  transition: opacity 160ms ease;
 }
 .ptr.spinning .doori {
   animation: ptr-spin 0.8s linear infinite;
@@ -1802,6 +1801,52 @@ button {
   transform: translate(-50%, 0);
 }
 
+/* 다 찬 뒤: 도는 고리(보내는 중) → 체크가 그려지며 '승인했어요' */
+.hold .hold-label.top {
+  gap: 6px;
+}
+.hold .hold-ok {
+  display: none;
+}
+.hold.done .hold-ok {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+}
+.hold .hold-ok svg {
+  width: 18px;
+  height: 18px;
+}
+.hold .hold-ok path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.hold .hold-spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  opacity: 0;
+  pointer-events: none;
+}
+.hold .hold-spin::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2.4px solid rgb(255 255 255 / 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: hold-spin 0.8s linear infinite;
+}
+@keyframes hold-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 칸 고르기: 하이라이트 판이 앞 칸에서 미끄러져 온다 */
 .seg {
   position: relative;
@@ -1903,6 +1948,7 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hold .hold-spin::before,
   .wd-in,
   .typing.goo i {
     animation: none;

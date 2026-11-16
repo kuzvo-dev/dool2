@@ -63,7 +63,17 @@ import {
   plain,
   upcomingSeg,
 } from './life-views.js'
-import { gooFilter, holdButton, playFlip, playSeg, Spring, springTo, tick } from './motion.js'
+import {
+  drawCheck,
+  gooFilter,
+  holdButton,
+  playFlip,
+  playSeg,
+  riseIn,
+  Spring,
+  springTo,
+  tick,
+} from './motion.js'
 import { clear, load, type Saved, save } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
@@ -563,17 +573,23 @@ function pickPhoto() {
   input.click()
 }
 
-async function decide(a: ApprovalView, decision: 'approve' | 'reject') {
+async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = false) {
   const s = st.saved
   if (!s) return
   // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
   const sig = await signText(s.keys.signPriv, approvalSignText(a, decision))
+  // 꾹 눌러 승인은 체크를 보여 준 뒤에 카드를 접는다 (markDecided를 나중에 부른다)
+  if (!quiet) markDecided(a, decision)
+  await send({ kind: 'decide', id: a.id, decision, sig })
+}
+
+function markDecided(a: ApprovalView, decision: 'approve' | 'reject') {
+  if (st.decided.has(a.id)) return
   st.decided.set(a.id, {
     ok: true,
     message: decision === 'approve' ? '승인을 보냈어요. PC에서 누르는 중…' : '거절을 보냈어요',
   })
   render()
-  await send({ kind: 'decide', id: a.id, decision, sig })
 }
 
 const pendingApprovals = () =>
@@ -912,9 +928,13 @@ function buildShell() {
   pullToRefresh(page)
 }
 
+/** 입력칸 높이: 줄이 늘고 줄 때 스프링으로 */
 function autosize(t: HTMLTextAreaElement) {
+  const h0 = t.offsetHeight
   t.style.height = 'auto'
-  t.style.height = `${Math.min(t.scrollHeight, 132)}px`
+  const h1 = Math.min(t.scrollHeight, 132)
+  t.style.height = `${h1}px`
+  if (h0 && Math.abs(h1 - h0) > 1) springTo(t, [{ height: `${h0}px` }, { height: `${h1}px` }], 'field')
 }
 
 const TAB_ORDER: Tab[] = ['chat', 'feed', 'ideas', 'goals', 'library']
@@ -1031,6 +1051,8 @@ function openOverlay(o: Overlay) {
 }
 
 let pillStop: (() => void) | undefined
+/** 지금 하는 일에서 이미 보여 준 단계 수 (새로 온 단계만 움직인다) */
+let shownSteps = 0
 
 function renderTabs() {
   const t = shell?.tabs
@@ -1091,7 +1113,6 @@ function renderTabs() {
   t.dataset.ready = '1'
   if (!ready || !changed || reducedMotion()) return
   // 알약: 가는 쪽 끝이 먼저(lead) 닿고 뒤쪽 끝이 늦게(trail) 따라와서, 움직이는 동안 늘어났다가 줄어든다
-  const spring = 'cubic-bezier(0.3, 1.25, 0.4, 1)'
   const toA = pos(active)
   const toB = toA + size(active)
   const fwd = toA > pillFrom.x
@@ -1107,34 +1128,32 @@ function renderTabs() {
     pill.style[S] = `${Math.max(8, B.x - A.x).toFixed(2)}px`
     return !(A.resting && B.resting)
   })
+  // 나머지 탭은 제자리로 스프링, 고른 탭 아이콘은 찌그러졌다 톡, 이름은 떠오른다 (참고 값: bar 340 28, squash 520 14)
   for (const b of btns) {
     const dx = (before.get(b) ?? 0) - pos(b)
     if (dx)
-      b.animate(
+      springTo(
+        b,
         [{ transform: vertical ? `translateY(${dx}px)` : `translateX(${dx}px)` }, { transform: 'none' }],
-        {
-          duration: 340,
-          easing: spring,
-        },
+        'bar',
       )
   }
-  active
-    .querySelector('svg')
-    ?.animate([{ transform: 'scale(0.8)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], {
-      duration: 300,
-      easing: 'ease-out',
-    })
-  active.querySelector('.tab-label')?.animate(
-    [
-      { opacity: 0, transform: 'translateX(-4px)' },
-      { opacity: 1, transform: 'none' },
-    ],
-    {
-      duration: 220,
-      delay: 60,
-      fill: 'backwards',
-    },
-  )
+  const svg = active.querySelector('svg')
+  if (svg) springTo(svg, [{ transform: 'scale(0.72)' }, { transform: 'scale(1)' }], 'squash')
+  const label = active.querySelector('.tab-label')
+  if (label)
+    springTo(
+      label,
+      [
+        { opacity: 0, transform: 'translateX(-6px)' },
+        { opacity: 1, transform: 'none' },
+      ],
+      'fade',
+      {
+        delay: 60,
+        fill: 'backwards',
+      },
+    )
   navigator.vibrate?.(8)
 }
 
@@ -1173,7 +1192,16 @@ function renderComposer() {
   }
   const has = Boolean(st.draft.trim() || st.attach)
   const stop = !has && st.busy
-  sendBtn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
+  // 보내기 ↔ 멈추기: 앞 아이콘은 돌며 작아지고 새 아이콘이 톡 커진다
+  const mode = stop ? 'stop' : 'send'
+  if (sendBtn.dataset.mode !== mode) {
+    const first = !sendBtn.dataset.mode
+    sendBtn.dataset.mode = mode
+    const ic = icon(mode, 'i md')
+    sendBtn.replaceChildren(ic)
+    if (!first)
+      springTo(ic, [{ transform: `scale(0) rotate(${stop ? -90 : 90}deg)` }, { transform: 'none' }], 'morph')
+  }
   sendBtn.setAttribute('aria-label', stop ? '멈추기' : '보내기')
   sendBtn.classList.toggle('ready', has)
   sendBtn.classList.toggle('stop', stop)
@@ -1584,7 +1612,8 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
         label: '꾹 눌러 승인',
         done: '승인했어요',
         cls: 'btn btn-approve',
-        onDone: () => void decide(a, 'approve'),
+        onDone: () => decide(a, 'approve', true),
+        after: () => markDecided(a, 'approve'),
       }),
     ),
     h('button', {
@@ -1768,9 +1797,26 @@ function waitingCards(): HTMLElement[] {
   }
   if (st.busy) {
     const log = h('ul', { class: 'worklog' })
+    if (st.steps.length < shownSteps) shownSteps = 0
     st.steps.forEach((s, i) => {
-      log.append(h('li', { class: i === st.steps.length - 1 ? 'now' : 'done', text: s }))
+      const li = h('li', { class: i === st.steps.length - 1 ? 'now' : 'done', text: s })
+      // 새 단계가 오면: 방금 끝난 단계의 동그라미가 톡, 새 단계는 아래에서 떠오른다
+      if (i >= shownSteps && i > 0) {
+        springTo(
+          li,
+          [
+            { opacity: 0, transform: 'translateY(10px)' },
+            { opacity: 1, transform: 'none' },
+          ],
+          'item',
+        )
+        const prev = log.lastElementChild
+        if (prev)
+          springTo(prev, [{ transform: 'scale(0.6)' }, { transform: 'scale(1)' }], 'pop', {}, '::before')
+      }
+      log.append(li)
     })
+    shownSteps = st.steps.length
     box.append(
       h('h2', { class: 'over', text: '지금 하는 일' }),
       h(
@@ -2149,9 +2195,15 @@ function renderOverlay() {
   if (!ov) {
     o.replaceChildren()
     o.hidden = true
+    delete o.dataset.key
     return
   }
   o.hidden = false
+  // 꾹 누르는 중·보내는 중에 다시 그리면 버튼이 처음으로 돌아가서, 그동안은 그대로 둔다
+  const key = 'id' in ov ? `${ov.kind}:${ov.id}` : ov.kind
+  if (o.dataset.key === key && o.querySelector('.hold.holding, .hold.busy, .hold.done')) return
+  const opening = o.dataset.key !== key
+  o.dataset.key = key
   o.dataset.kind = ov.kind
   const scrim = h('div', { class: 'scrim', onclick: () => openOverlay(undefined) })
   const body =
@@ -2179,6 +2231,8 @@ function renderOverlay() {
       ? { id: active.id, s: active.selectionStart }
       : undefined
   o.replaceChildren(scrim, body)
+  // 처음 열 때만: 메뉴 줄이 하나씩 떠오른다
+  if (opening) riseIn(body.querySelectorAll(':scope > .set-row, :scope > .navi, :scope > .row'))
   if (typing?.id) {
     const el = document.getElementById(typing.id) as HTMLInputElement | null
     el?.focus()
@@ -2436,9 +2490,33 @@ function msgSheet(id: string) {
       'button',
       {
         class: 'set-row',
-        onclick: () => {
-          void navigator.clipboard?.writeText(m.text).then(() => toast('복사했어요'))
-          openOverlay(undefined)
+        onclick: (e: MouseEvent) => {
+          const row = e.currentTarget as HTMLElement
+          void navigator.clipboard?.writeText(m.text).then(
+            () => {
+              // 복사 아이콘이 돌며 작아지고 체크가 그려진다, 글은 '복사했어요'로 올라간다
+              const tile = row.querySelector('.tile') as HTMLElement
+              const label = row.querySelector('.row-t') as HTMLElement
+              const ok = icon('check', 'i')
+              tile.replaceChildren(ok)
+              tile.classList.replace('blue', 'mint')
+              drawCheck(ok)
+              label.textContent = '복사했어요'
+              springTo(
+                label,
+                [
+                  { opacity: 0, transform: 'translateY(10px)' },
+                  { opacity: 1, transform: 'none' },
+                ],
+                'fade',
+              )
+              setTimeout(() => openOverlay(undefined), 700)
+            },
+            () => {
+              toast('복사하지 못했어요')
+              openOverlay(undefined)
+            },
+          )
         },
       },
       h('span', { class: 'tile sm blue' }, icon('copy', 'i')),
@@ -2681,7 +2759,8 @@ function approvalSheet(id: string) {
         label: a.kind === 'app' ? '꾹 눌러 허용' : '꾹 눌러 승인',
         done: a.kind === 'app' ? '허용했어요' : '승인했어요',
         cls: 'btn btn-approve lg',
-        onDone: () => void decide(a, 'approve'),
+        onDone: () => decide(a, 'approve', true),
+        after: () => markDecided(a, 'approve'),
       }),
     ),
   )
@@ -3191,20 +3270,40 @@ function startResync() {
 }
 
 /** 당겨서 새로고침: 목록 맨 위에서 아래로 당겼다 놓으면 PC에서 다시 받아 온다 */
+/**
+ * 당겨서 새로고침: 처음엔 반만 따라오고 멀리 당길수록 무거워진다(고무줄).
+ * 넘으면 두리가 톡 커지며 알려 주고, 놓으면 그 자리에서 돌다가 스프링으로 돌아간다
+ */
 function pullToRefresh(page: HTMLElement) {
   const ind = h('div', { class: 'ptr' }, doori('', 28))
   page.before(ind)
+  const TH = 64
+  const HOLD = 56
+  const rubber = (d: number) => (d <= 180 ? d * 0.55 : 99 + 60 * (1 - 1 / (((d - 180) * 0.55) / 60 + 1)))
+  const P = new Spring(0).use('pull')
+  const POP = new Spring(1).use('pop')
   let y0 = -1
-  let dy = 0
-  const reset = () => {
-    y0 = -1
-    dy = 0
-    ind.style.transform = ''
-    ind.classList.remove('ready')
+  let mode: 'idle' | 'pulling' | 'loading' = 'idle'
+  let armed = false
+  let stop: (() => void) | undefined
+  const draw = () => {
+    const d = Math.max(0, P.x)
+    ind.style.transform = `translate(-50%, ${d.toFixed(2)}px) rotate(${(mode === 'loading' ? 0 : d * 3).toFixed(1)}deg) scale(${POP.x.toFixed(3)})`
+    ind.style.opacity = String(Math.min(1, d / 40))
+  }
+  const run = () => {
+    stop?.()
+    stop = tick((dt) => {
+      P.step(dt)
+      POP.step(dt)
+      draw()
+      return mode === 'pulling' || !(P.resting && POP.resting)
+    })
   }
   page.addEventListener(
     'touchstart',
     (e) => {
+      if (mode === 'loading') return
       y0 = page.scrollTop <= 0 ? (e.touches[0]?.clientY ?? -1) : -1
     },
     { passive: true },
@@ -3212,29 +3311,47 @@ function pullToRefresh(page: HTMLElement) {
   page.addEventListener(
     'touchmove',
     (e) => {
-      if (y0 < 0) return
-      dy = Math.max(0, (e.touches[0]?.clientY ?? y0) - y0)
-      if (!dy || page.scrollTop > 0) return
-      const d = Math.min(110, dy * 0.5)
-      ind.style.transform = `translate(-50%, ${d}px) rotate(${d * 3}deg)`
-      ind.style.opacity = String(Math.min(1, d / 60))
-      ind.classList.toggle('ready', d >= 60)
+      if (y0 < 0 || mode === 'loading') return
+      const dy = (e.touches[0]?.clientY ?? y0) - y0
+      if (dy <= 0 || page.scrollTop > 0) return
+      if (mode !== 'pulling') {
+        mode = 'pulling'
+        armed = false
+        run()
+      }
+      // 손가락을 바로 따라간다
+      P.x = P.t = rubber(dy)
+      P.v = 0
+      const over = P.x >= TH
+      if (over && !armed) {
+        armed = true
+        POP.v += 5
+        navigator.vibrate?.(6)
+      }
+      if (!over) armed = false
+      ind.classList.toggle('ready', over)
     },
     { passive: true },
   )
   page.addEventListener('touchend', () => {
-    const go = ind.classList.contains('ready')
-    if (!go) {
-      ind.style.opacity = '0'
-      return reset()
+    if (mode !== 'pulling') return
+    y0 = -1
+    if (!armed) {
+      mode = 'idle'
+      P.t = 0
+      ind.classList.remove('ready')
+      return run()
     }
+    mode = 'loading'
+    P.t = HOLD
     ind.classList.add('spinning')
+    run()
     resync()
-    navigator.vibrate?.(8)
     setTimeout(() => {
-      ind.classList.remove('spinning')
-      ind.style.opacity = '0'
-      reset()
+      ind.classList.remove('spinning', 'ready')
+      mode = 'idle'
+      P.t = 0
+      run()
     }, 900)
   })
 }
