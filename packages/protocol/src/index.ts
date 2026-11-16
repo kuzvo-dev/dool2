@@ -428,6 +428,8 @@ export interface PairInvite {
   s: string
   /** PC 이름 */
   n: string
+  /** 중계 서버 주소 (폰 앱이 다른 곳에 있을 때: dool2.com/space ↔ relay.dool2.com). 없으면 폰 앱을 연 주소 */
+  r?: string
 }
 
 /** 폰 → PC */

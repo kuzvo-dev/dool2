@@ -108,6 +108,8 @@ export class PhoneLink {
     private readonly host: LinkHost,
     private readonly opts: {
       relay?: () => string | undefined
+      /** 폰 앱 주소 (예: https://dool2.com/space/). 없으면 중계 서버의 /app/ */
+      appUrl?: () => string | undefined
       name?: string
       now?: () => number
       /** 테스트용: 푸시 보내기 */
@@ -177,8 +179,17 @@ export class PhoneLink {
     const relay = this.opts.relay?.()
     if (!relay || !this.keys) throw new Error('중계 서버 주소가 정해지지 않았어요')
     const secret = b64u(randomBytes(24))
-    const invite: PairInvite = { pc: this.keys.id, k: this.keys.boxPub, s: secret, n: this.pcName }
-    const url = `${new URL('/app/', relay).href}#p=${b64u(new TextEncoder().encode(JSON.stringify(invite)))}`
+    const app = this.opts.appUrl?.() || new URL('/app/', relay).href
+    // 폰 앱과 중계 서버가 다른 곳이면 중계 주소를 초대에 실어 보낸다
+    const sameOrigin = new URL(app).origin === new URL(relay).origin
+    const invite: PairInvite = {
+      pc: this.keys.id,
+      k: this.keys.boxPub,
+      s: secret,
+      n: this.pcName,
+      ...(sameOrigin ? {} : { r: relay }),
+    }
+    const url = `${app}#p=${b64u(new TextEncoder().encode(JSON.stringify(invite)))}`
     const qr = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1 })
     this.pairing = { secret, expiresAt: this.now() + PAIR_TTL_MS, url, qr }
     return this.pairStatus()

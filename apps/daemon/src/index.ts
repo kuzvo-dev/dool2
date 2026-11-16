@@ -112,6 +112,8 @@ export interface DaemonOptions {
   }
   /** 폰 연결 중계 서버 기본 주소 (설정의 relay가 없을 때). 없으면 폰 연결을 켜지 않는다 */
   relay?: string
+  /** 폰 앱 주소 (예: https://dool2.com/space/). 없으면 중계 서버의 /app/ */
+  appUrl?: string
   /** 폰에 보일 이 PC 이름 */
   pcName?: string
   /** 테스트용: 웹 푸시 보내기 */
@@ -584,6 +586,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     {
       relay: relayUrl,
+      appUrl: () => process.env.DOOL2_APP_URL || opts.appUrl,
       ...(opts.pcName ? { name: opts.pcName } : {}),
       ...(opts.push ? { push: opts.push } : {}),
     },

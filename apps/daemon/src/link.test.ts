@@ -104,6 +104,16 @@ async function phone(url: string) {
 }
 
 describe('폰 연결', () => {
+  it('폰 앱이 다른 곳(dool2.com/space)이면 초대에 중계 주소를 싣는다', async () => {
+    const { api } = await boot({ appUrl: 'https://dool2.com/space/' })
+    const { pair } = (await api('/api/link/pair', { method: 'POST' })) as { pair: { url: string } }
+    expect(pair.url.startsWith('https://dool2.com/space/#p=')).toBe(true)
+    const invite = JSON.parse(
+      new TextDecoder().decode(fromB64u(pair.url.split('#p=')[1] ?? '')),
+    ) as PairInvite
+    expect(invite.r).toBe(relay?.url)
+  })
+
   it('QR → 확인 코드 → PC에서 연결 → 폰이 부탁하고 답을 받는다', async () => {
     const { api } = await boot()
     const start = await api('/api/link/pair', { method: 'POST' })
