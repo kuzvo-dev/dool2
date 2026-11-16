@@ -137,6 +137,8 @@ export const SettingsSchema = z.object({
    * (ADR 0006 다시 검토의 "마지막 확인" 스위치)
    */
   finalStep: z.enum(['approve', 'self']).optional(),
+  /** 폰에 보일 이 PC 이름. 비우면 컴퓨터 이름 */
+  pcName: z.string().trim().min(1).max(40).optional(),
   /** 폰 연결에 쓸 중계 서버 주소 (M6). 비우면 기본 주소 */
   relay: z.string().url().max(200).optional(),
   /** 종량제 모드에서 고른 제공자·모델 (API 키는 여기 두지 않고 OS 키체인에) */
@@ -553,6 +555,8 @@ export type LifeAction =
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
   | { kind: 'hello' }
+  /** 폰에 보일 이 PC 이름 바꾸기 (PC 설정에 저장돼 다른 폰에도 같이 보인다) */
+  | { kind: 'rename-pc'; name: string }
   /** 앱을 켜 두고 있어요 (1분마다). PC는 흘려 쓰는 답·실시간 화면을 켜 둔 폰에만 보낸다 */
   | { kind: 'ping' }
   | { kind: 'thread'; id: string }

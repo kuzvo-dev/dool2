@@ -305,6 +305,11 @@ async function receive(env: Envelope) {
       break
     case 'state':
       st.pc = msg
+      // PC 이름을 PC나 다른 폰에서 바꿨으면 따라간다
+      if (msg.pcName && msg.pcName !== s.pcName) {
+        s.pcName = msg.pcName
+        await save(s)
+      }
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
       st.connecting = new Set(msg.connecting ?? [])
@@ -2415,6 +2420,15 @@ function drawerView() {
   )
 }
 
+/** 내 PC 이름 바꾸기: PC 설정에 저장돼서, 같은 PC에 연결한 다른 폰에도 새 이름이 보여요 */
+function renamePc() {
+  if (!st.online) return toast('PC와 연결된 뒤에 바꿀 수 있어요')
+  const name = prompt('이 PC를 뭐라고 부를까요? (예: 집 맥북, 회사 PC)', st.saved?.pcName ?? '')?.trim()
+  if (!name || name === st.saved?.pcName) return
+  void send({ kind: 'rename-pc', name: name.slice(0, 40) })
+  toast(`"${name.slice(0, 40)}"(으)로 바꿨어요`)
+}
+
 /** 설정 (메뉴 > 설정): 알림·화면·내 PC·약속 */
 // ── 앱으로 설치 (PWA): 안드로이드·PC 크롬은 설치 창, 아이폰은 공유 → 홈 화면에 추가 ──
 
@@ -2520,6 +2534,8 @@ function settingsView() {
         : st.pcSilent
           ? '답하지 않아요'
           : '연결돼 있어요 · 두리는 이 PC의 Chrome에서 일해요',
+      h('span', { class: 'meta', text: '이름 바꾸기' }),
+      () => renamePc(),
     ),
     row(
       'apps',

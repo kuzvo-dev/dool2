@@ -110,7 +110,10 @@ export class PhoneLink {
       relay?: () => string | undefined
       /** 폰 앱 주소 (예: https://dool2.com/space/). 없으면 중계 서버의 /app/ */
       appUrl?: () => string | undefined
-      name?: string
+      /** 폰에 보일 이 PC 이름 (설정에서 바꿀 수 있어서 함수) */
+      name?: () => string | undefined
+      /** 폰에서 PC 이름을 바꿨다: 설정에 저장한다 */
+      rename?: (name: string) => void
       now?: () => number
       /** 테스트용: 푸시 보내기 */
       push?: typeof sendPush
@@ -121,7 +124,7 @@ export class PhoneLink {
     return (this.opts.now ?? Date.now)()
   }
   private get pcName() {
-    return this.opts.name ?? hostname().replace(/\.local$/, '')
+    return this.opts.name?.() || hostname().replace(/\.local$/, '')
   }
 
   async start() {
@@ -297,6 +300,16 @@ export class PhoneLink {
     switch (msg.kind) {
       case 'hello':
         return this.send(phone, await this.stateFor(phone))
+      case 'rename-pc': {
+        const name = String(msg.name ?? '')
+          .trim()
+          .slice(0, 40)
+        if (!name || !this.opts.rename) return
+        this.opts.rename(name)
+        // 연결된 폰 모두에 새 이름이 보이게
+        for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
+        return
+      }
       case 'screen':
       case 'remote': {
         const tabId = Number(msg.tabId)
