@@ -254,10 +254,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const attached = new Map<number, ReturnType<typeof setTimeout>>()
 const stoppedByUser = new Set<number>()
 
+/** 원격 화면으로 폰 크기를 흉내 내는 탭 (디버거가 떨어지면 Chrome이 원래 크기로 되돌린다) */
+const emulated = new Map<number, string>()
+
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return
   clearTimeout(attached.get(source.tabId))
   attached.delete(source.tabId)
+  emulated.delete(source.tabId)
   // 사용자가 "취소"를 눌렀다면 그 탭은 더 이상 다루지 않는다
   if (reason === 'canceled_by_user') stoppedByUser.add(source.tabId)
 })
@@ -560,11 +564,33 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'screenshot': {
       const tabId = await ownedTab(a)
       await frontTab(tabId)
+      // 원격 화면: 폰 화면 크기로 그리게 한다 (모바일 화면으로 다시 그려져 폰에 꽉 차고, 누른 자리가 그대로 맞는다).
+      // 폰이 화면을 그만 부탁하면 디버거가 떨어지면서 원래 크기로 돌아온다
+      const fit = a.fit as { width?: unknown; height?: unknown } | undefined
+      if (fit) {
+        const width = Math.round(Math.min(Math.max(Number(fit.width) || 0, 320), 1024))
+        const height = Math.round(Math.min(Math.max(Number(fit.height) || 0, 400), 2000))
+        const key = `${width}x${height}`
+        if (emulated.get(tabId) !== key) {
+          await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+            width,
+            height,
+            deviceScaleFactor: 2,
+            mobile: true,
+          })
+          emulated.set(tabId, key)
+          await sleep(350)
+        }
+      } else if (emulated.has(tabId)) {
+        await cdp(tabId, 'Emulation.clearDeviceMetricsOverride', {})
+        emulated.delete(tabId)
+      }
       // 레티나 화면이면 2배로 찍혀 AI가 읽기에 너무 크다. 보이는 영역만, 가로 1280px(원격 화면은 더 작게) 이하로 줄인다
       const v = await inPage(tabId, pageViewport)
       const maxWidth = Math.min(Math.max(Number(a.maxWidth) || 1280, 320), 1280)
       const quality = Math.min(Math.max(Number(a.quality) || 60, 30), 80)
-      const scale = Math.min(1, maxWidth / v.width) / v.dpr
+      // 원격 화면(fit)은 폰이 선명하게 보도록 화면 배율(2배)까지 그대로 찍는다
+      const scale = (fit ? Math.min(v.dpr, maxWidth / v.width) : Math.min(1, maxWidth / v.width)) / v.dpr
       const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
         format: 'jpeg',
         quality,

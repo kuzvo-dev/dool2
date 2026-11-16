@@ -33,25 +33,38 @@ export async function scanQr(): Promise<string | undefined> {
   }
 }
 
-let launchUrl: string | undefined
+/** 이미 쓴 연결 초대 (앱이 다시 켜질 때 안드로이드가 처음 링크를 또 넘겨줘서, 같은 초대로 다시 연결하지 않게) */
+const USED = 'dool2-used-invites'
+function used(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(USED) ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+/** 처음 보는 초대면 쓴 것으로 적고 true */
+export function claimInvite(invite: string): boolean {
+  const list = used()
+  if (list.includes(invite)) return false
+  localStorage.setItem(USED, JSON.stringify([...list, invite].slice(-10)))
+  return true
+}
 
-/** 앱이 꺼져 있다가 연결 링크(dool2://pair#p=…)로 켜졌으면 그 초대 */
+/** 앱이 꺼져 있다가 연결 링크(dool2://pair#p=…)로 켜졌으면 그 초대 (이미 쓴 초대면 없음) */
 export async function launchInvite(): Promise<string | undefined> {
   if (!isNative()) return undefined
-  launchUrl = (await App.getLaunchUrl())?.url
-  const invite = launchUrl ? inviteFrom(launchUrl) : undefined
-  // 최근 앱 목록에서 다시 켜면 같은 링크가 또 온다. 이미 쓴 초대로 지금 연결을 지우지 않게 한 번만 쓴다
-  if (!invite || localStorage.getItem('dool2-launch-invite') === invite) return undefined
-  localStorage.setItem('dool2-launch-invite', invite)
-  return invite
+  const url = (await App.getLaunchUrl())?.url
+  const invite = url ? inviteFrom(url) : undefined
+  return invite && claimInvite(invite) ? invite : undefined
 }
 
 /** 앱 밖에서 링크(https://…#p=…)로 열렸을 때, 안드로이드 뒤로 가기 */
 export function listenNative(on: { open(url: string): void; back(): boolean }) {
   if (!isNative()) return
   void App.addListener('appUrlOpen', (e) => {
-    // 시작 주소(launchInvite)로 이미 받은 링크가 이벤트로 한 번 더 올 수 있다
-    if (e.url !== launchUrl) on.open(e.url)
+    // 시작 링크가 이벤트로 한 번 더 오거나, 화면이 다시 켜지며 처음 링크가 또 온다: 쓴 초대는 넘긴다
+    const invite = inviteFrom(e.url)
+    if (invite && claimInvite(invite)) on.open(e.url)
   })
   void App.addListener('backButton', () => {
     if (!on.back()) void App.minimizeApp()
