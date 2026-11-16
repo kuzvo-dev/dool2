@@ -6,6 +6,7 @@ import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Daemon, startDaemon } from '@dool2/daemon'
 import type { Settings } from '@dool2/protocol'
+import { OFFICIAL_RELAY } from '@dool2/protocol/link'
 import {
   app,
   BrowserWindow,
@@ -212,6 +213,8 @@ app.whenReady().then(async () => {
     ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
     dataDir,
     secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
+    // 폰 연결은 공식 중계 서버로. 직접 운영하는 서버는 설정(relay)이나 DOOL2_RELAY가 먼저다
+    relay: OFFICIAL_RELAY,
     ...packagedPaths(),
     ...nativeHostOption(),
     // 맥 권한(손쉬운 사용·화면 기록)은 앱이 직접 묻고 확인한다 ("두리" 이름으로 뜨게)
