@@ -56,12 +56,17 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
-import { type ConnectCard, connectUrl } from '@dool2/protocol/connect'
+import {
+  type ConnectCard,
+  connectUrl,
+  type SocialProvider,
+  SocialProviderSchema,
+} from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import { appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
-import { autoLogin, probeLogin } from './auto-login.js'
+import { type AutoLoginResult, autoLogin, probeLogin, socialLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
@@ -356,6 +361,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
+    return connectFinish(card, r)
+  }
+  /** 간편 로그인으로 연결: 공급자 쪽이 이미 로그인돼 있으면 버튼·동의만 넘기고, 아니면 금고 값 또는 사람 차례 */
+  const connectSocial = async (card: ConnectCard, provider: SocialProvider) => {
+    const url = connectUrl(card)
+    if (!url) throw new Error('이 서비스는 폰에서 켜요')
+    if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
+    const r = await socialLogin(browser, {
+      card,
+      url: card.loginUrl ?? url,
+      provider,
+      creds: (origin) => vault.findForOrigin(origin),
+    })
+    return connectFinish(card, r)
+  }
+  /** 자동 로그인 결과 → 연결 표시 / 사람 차례(원격 화면) / 안내 */
+  const connectFinish = async (card: ConnectCard, r: AutoLoginResult): Promise<ConnectResult> => {
     if (r.status === 'ok') {
       connectMark(card.id, true)
       await browser.call('close', { tabId: r.tabId }).catch(() => undefined)
@@ -413,10 +435,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
       .catch(() => {})
   }
-  function startConnect(card: ConnectCard, username: string, password: string): Promise<ConnectResult> {
+  function startConnect(card: ConnectCard, run: () => Promise<ConnectResult>): Promise<ConnectResult> {
     const running = connecting.get(card.id)
     if (running) return running
-    const p: Promise<ConnectResult> = connectLogin(card, username, password).catch((e: Error) => ({
+    const p: Promise<ConnectResult> = run().catch((e: Error) => ({
       ok: false,
       message: e.message,
     }))
@@ -564,7 +586,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connectLogin: async (id, username, password) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
-        return startConnect(card, username, password)
+        return startConnect(card, () => connectLogin(card, username, password))
+      },
+      connectSocial: async (id, provider) => {
+        const card = await skills.card(id)
+        if (!card) throw new Error('그런 서비스가 없어요')
+        return startConnect(card, () => connectSocial(card, provider))
       },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
@@ -1307,6 +1334,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         for (const t of r.tabs ?? [r.tabId]) await browser.call('close', { tabId: t }).catch(() => undefined)
         return json(res, 200, r)
       }
+      // 간편 로그인으로 연결하기 (카카오·네이버…)
+      if (card && c === 'social' && !d && req.method === 'POST') {
+        const body = (await readJson(req)) as { provider?: unknown; background?: unknown }
+        const provider = SocialProviderSchema.safeParse(body.provider)
+        if (!provider.success) return json(res, 400, { error: '간편 로그인 종류를 골라 주세요' })
+        const p = startConnect(card, () => connectSocial(card, provider.data))
+        if (body.background === true)
+          return json(res, 200, {
+            ok: false,
+            started: true,
+            message: `두리가 ${card.name}에 간편 로그인하고 있어요. 끝나면 대화로 알려 드릴게요.`,
+          })
+        return json(res, 200, await p)
+      }
       // 연결하기: 아이디·비밀번호 → 금고 → 두리 본체가 대신 로그인
       if (card && c === 'login' && !d && req.method === 'POST') {
         const body = (await readJson(req)) as { username?: unknown; password?: unknown; background?: unknown }
@@ -1314,7 +1355,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const username = String(body.username ?? '')
           const password = String(body.password ?? '')
           if (!username.trim() || !password) throw new Error('아이디와 비밀번호를 넣어 주세요')
-          const p = startConnect(card, username, password)
+          const p = startConnect(card, () => connectLogin(card, username, password))
           // 뒤에서: 바로 답하고, 결과는 대화 알림으로
           if (body.background === true)
             return json(res, 200, {
