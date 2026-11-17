@@ -1,0 +1,286 @@
+{
+  "id": "camfit",
+  "tools": [
+    {
+      "name": "search",
+      "title": "캠핑장 빈자리 찾기",
+      "description": "로그인 없이 된다. 지역·캠핑장 이름·테마(예: 양평, 가평 글램핑, 애견 캠핑)로 그 날짜·인원에 캠핑장을 찾아 캠핑장마다 이름·캠핑장 id·한 줄 소개·지역·캠핑로그 수·사이트 목록(사이트 이름·1박 가격, 바로 앞 줄에 '예약 마감'·'인원 초과'가 있으면 그 사이트는 못 고름)·링크를 돌려준다. 날짜는 한국 시간 0시의 밀리초 값으로 넣는다(아래 칸 설명). 첫 화면 10곳 안팎이다. 예약하려면 camfit_prepare_booking에 camp_id를 넘긴다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 양평 날짜·인원별 캠핑장·사이트 가격·마감 표시)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "지역·캠핑장 이름·테마 (예: 양평, 가평 글램핑, 포천 카라반)",
+            "maxLength": 40
+          },
+          "start_ms": {
+            "type": "integer",
+            "minimum": 1700000000000,
+            "description": "입실 날짜(한국 0시)의 밀리초. 2026-11-28은 1795791600000, 하루 늘 때마다 86400000을 더한다"
+          },
+          "end_ms": {
+            "type": "integer",
+            "minimum": 1700000000000,
+            "description": "퇴실 날짜(한국 0시)의 밀리초. 1박이면 start_ms + 86400000"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "성인 인원 (기본 2)"
+          },
+          "kids": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 0,
+            "description": "어린이 인원 (기본 0)"
+          }
+        },
+        "required": [
+          "keyword",
+          "start_ms",
+          "end_ms"
+        ]
+      },
+      "output": {
+        "camps": {
+          "type": "list",
+          "description": "캠핑장",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "camp_id": {
+              "type": "string",
+              "description": "camfit_prepare_booking에 넘길 캠핑장 id"
+            },
+            "intro": {
+              "type": "string",
+              "description": "한 줄 소개"
+            },
+            "area": {
+              "type": "string",
+              "description": "지역 (예: 경기 양평군)"
+            },
+            "logs": {
+              "type": "integer",
+              "description": "캠핑로그(후기) 수"
+            },
+            "sites": {
+              "type": "string",
+              "description": "사이트 이름과 '₩ 1박 가격'이 줄마다. '예약 마감'·'인원 초과'·'최대 N박' 표시는 바로 다음 줄 사이트에 붙은 것"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "양평",
+          "start_ms": 1795791600000,
+          "end_ms": 1795878000000,
+          "adults": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://camfit.co.kr/search/result?keyword={{keyword|url}}&startTimestamp={{start_ms}}&endTimestamp={{end_ms}}&adultCnt={{adults}}&teenCnt=0&childCnt={{kids}}"
+        },
+        {
+          "wait": {
+            "text": "총 \\d+개|검색 결과가 없",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "stop_if": "검색 결과가 없",
+          "say": "'{{keyword}}'(으)로는 캠핑장이 안 나와요. 지역 이름(예: 가평, 포천)으로 다시 찾아볼까요?"
+        },
+        {
+          "wait": {
+            "items": "div:has(> a[href*='/camp/'])",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "sleep": 3000
+        },
+        {
+          "extract": {
+            "items": "div:has(> a[href*='/camp/'])",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "css": "a[href*='/camp/']:last-of-type",
+                "line": 0
+              },
+              "camp_id": {
+                "css": "a[href*='/camp/']",
+                "attr": "href",
+                "match": "/camp/([0-9a-f]{24})"
+              },
+              "intro": {
+                "css": "a[href*='/camp/']:last-of-type",
+                "line": 1
+              },
+              "area": {
+                "css": "a[href*='/camp/']:last-of-type",
+                "match": "\\n([^\\n]+)\\n•"
+              },
+              "logs": {
+                "match": "캠핑로그\\n([\\d,]+)개"
+              },
+              "sites": {
+                "match": "^([\\s\\S]*₩ [\\d,]+원)"
+              },
+              "link": {
+                "css": "a[href*='/camp/']",
+                "attr": "href",
+                "match": "^([^?]+)"
+              }
+            }
+          },
+          "as": "camps"
+        }
+      ],
+      "result": {
+        "camps": "{{camps}}"
+      },
+      "next": "'예약 마감'·'인원 초과'가 안 붙은 사이트가 있는 곳 2~3곳을 사이트 이름·가격과 함께 짧게 보여 주고 고르게 해요. 예약하려면 camfit_prepare_booking에 camp_id·날짜·인원·사이트 이름을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "캠핑장 예약 준비",
+      "description": "camfit_search로 고른 캠핑장 화면을 그 날짜·인원으로 열어 사이트별 가격·남은 자리·환불 규정·예약 오픈일을 읽고, 사용자가 고른 사이트의 '예약하기'까지 데려간다. 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 예약은 로그인이 필요하다: 연결 전이면 그때 connect_ask('camfit').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "camp_id": {
+            "type": "string",
+            "description": "camfit_search가 준 캠핑장 id (24자리)",
+            "pattern": "^[0-9a-f]{24}$"
+          },
+          "camp": {
+            "type": "string",
+            "description": "캠핑장 이름 (사용자에게 보일 말)",
+            "maxLength": 60
+          },
+          "start_ms": {
+            "type": "integer",
+            "minimum": 1700000000000,
+            "description": "입실 날짜(한국 0시) 밀리초 (camfit_search와 같게)"
+          },
+          "end_ms": {
+            "type": "integer",
+            "minimum": 1700000000000,
+            "description": "퇴실 날짜(한국 0시) 밀리초"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "성인 인원"
+          },
+          "kids": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 0,
+            "description": "어린이 인원"
+          },
+          "site": {
+            "type": "string",
+            "description": "고른 사이트 이름 (예: 타프&데크 A). 없으면 비워 둔다",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "camp_id",
+          "start_ms",
+          "end_ms"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "camp_id": "66de7d0c32c221001ebd7e5b",
+          "camp": "두물머리 IC 캠핑장",
+          "start_ms": 1795791600000,
+          "end_ms": 1795878000000,
+          "adults": 2,
+          "site": "타프&데크 A"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://camfit.co.kr/camp/{{camp_id}}?startTimestamp={{start_ms}}&endTimestamp={{end_ms}}&adultCnt={{adults}}&teenCnt=0&childCnt={{kids}}"
+        },
+        {
+          "wait": {
+            "text": "캠핑존 선택|예약 마감|오픈 일정",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "handoff_to_agent": "캠핏 {{camp}} 화면이에요(날짜·인원은 주소로 맞춰 둠). '캠핑존 선택' 칸(아래쪽)의 사이트 목록에서 사이트마다 이름·1박 가격·'예약 마감'·'인원 초과' 여부를 읽고, 사용자가 고른 사이트({{site}})가 비었는지 확인해요. '오픈 일정'에 다음 예약 오픈일이 있으면 그 날짜를 알려 줘요. 고른 사이트를 눌러 '예약하기'로 가고, 결제 화면에서 캠핑장·사이트·날짜·인원·총 금액·추가 요금(인원·차량·전기)·환불 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인 화면이 나오면 연결 전엔 connect_ask('camfit'), 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "reservations",
+      "title": "예약 확인",
+      "description": "로그인해야 된다. 캠핏 예약 내역을 열어 다가오는 예약부터 캠핑장·사이트·입실/퇴실 날짜·인원·결제 금액·상태(예약 확정·대기·취소)를 정리한다. 취소는 사용자가 그 예약을 콕 집어 부탁하고 환불 규정·환불 금액을 승인받아야만 한다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://camfit.co.kr/mypage"
+        },
+        {
+          "wait": {
+            "text": "로그인이 필요해요|쿠폰|포인트",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "sleep": 1000
+        },
+        {
+          "stop_if": "로그인이 필요해요",
+          "say": "캠핏 로그인이 필요해요. 연결하면 예약 내역을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "open": "https://camfit.co.kr/reservation"
+        },
+        {
+          "sleep": 3000
+        },
+        {
+          "handoff_to_agent": "캠핏 예약 내역 화면이에요. 다가오는 예약부터 캠핑장·사이트·입실~퇴실·인원·결제 금액·상태를 읽어 짧게 정리해요. 예약 번호는 끝 4자리만 보여 줘요. 로그인 화면이면 연결 전엔 connect_ask('camfit'), 풀렸으면 browser_handoff. 취소 버튼은 사용자가 그 예약을 콕 집어 부탁하고 환불 규정·환불 금액을 browser_request_approval로 승인받기 전에는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

@@ -1,0 +1,310 @@
+{
+  "id": "hotels-com",
+  "tools": [
+    {
+      "name": "search",
+      "title": "호텔 찾기·비교",
+      "description": "로그인 없이 된다. 도시·지역(예: 도쿄, 싱가포르, 오사카 난바)의 호텔을 체크인·체크아웃·인원·객실 수에 맞춰 찾아 호텔마다 이름·호텔 id·지역·평점(10점 만점)·평가 문구·이용 후기 수·1박 요금·총 요금(세금 포함)·전액 환불 가능 표시·남은 객실·광고 표시·링크를 돌려준다. 첫 화면 10곳 안팎이다. max_price를 주면 1박 요금이 그 값 이하만 남긴다. 예약하려면 hotels_com_prepare_booking에 hotel_id를 넘긴다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 도쿄·싱가포르 날짜·인원별 호텔·1박/총 요금·전액 환불)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "도시·지역 (예: 도쿄, 싱가포르 마리나베이, 방콕)",
+            "maxLength": 60
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 YYYY-MM-DD (예: 2026-12-10)"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 YYYY-MM-DD (예: 2026-12-12)"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 14,
+            "default": 2,
+            "description": "성인 인원 (기본 2)"
+          },
+          "rooms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "default": 1,
+            "description": "객실 수 (기본 1)"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1박 최대 요금(원). 20만 원 이하면 200000. 없으면 비워 둔다"
+          }
+        },
+        "required": [
+          "keyword",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {
+        "hotels": {
+          "type": "list",
+          "description": "호텔",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "hotel_id": {
+              "type": "string",
+              "description": "hotels_com_prepare_booking에 넘길 호텔 id"
+            },
+            "area": {
+              "type": "string"
+            },
+            "rating": {
+              "type": "number",
+              "description": "평점 (10점 만점)"
+            },
+            "reviews": {
+              "type": "integer",
+              "description": "이용 후기 수"
+            },
+            "price": {
+              "type": "integer",
+              "description": "1박 요금(원)"
+            },
+            "total_price": {
+              "type": "integer",
+              "description": "그 기간 총 요금(원, 세금 포함)"
+            },
+            "refundable": {
+              "type": "string",
+              "description": "'전액 환불 가능'이면 무료 취소 요금"
+            },
+            "rooms_left": {
+              "type": "string",
+              "description": "남은 객실 안내"
+            },
+            "ad": {
+              "type": "string",
+              "description": "'광고'면 광고 숙소"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "도쿄",
+          "checkin": "2026-12-10",
+          "checkout": "2026-12-12",
+          "adults": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://kr.hotels.com/Hotel-Search?destination={{keyword|url}}&startDate={{checkin}}&endDate={{checkout}}&adults={{adults}}&rooms={{rooms}}"
+        },
+        {
+          "wait": {
+            "items": "[data-stid='lodging-card-responsive']",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 800
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 800
+        },
+        {
+          "extract": {
+            "items": "[data-stid='lodging-card-responsive']",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "match": "^(.+?)의 사진 갤러리"
+              },
+              "hotel_id": {
+                "css": "a[href*='/ho']",
+                "attr": "href",
+                "match": "/ho(\\d+)"
+              },
+              "area": {
+                "match": "(?:\\n광고|\\nVIP Access(?!\\n광고))\\n[^\\n]+\\n([^\\n]+)"
+              },
+              "rating": {
+                "match": "10점 만점 중 ([\\d.]+)점"
+              },
+              "reviews": {
+                "match": "이용 후기 ([\\d,]+)개"
+              },
+              "price": {
+                "match": "₩([\\d,]+)\\n총 요금"
+              },
+              "total_price": {
+                "match": "총 요금: ₩([\\d,]+)"
+              },
+              "refundable": {
+                "match": "(전액 환불 가능)"
+              },
+              "rooms_left": {
+                "match": "(\\d+개 남았어요)"
+              },
+              "ad": {
+                "match": "\\n(광고)\\n"
+              },
+              "link": {
+                "css": "a[href*='/ho']",
+                "attr": "href",
+                "match": "^([^?]+\\?chkin=[\\d-]+&chkout=[\\d-]+)"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "hotels"
+        }
+      ],
+      "result": {
+        "hotels": "{{hotels}}"
+      },
+      "next": "사용자가 중요하게 여긴 조건(위치·평점·전액 환불·가격)으로 2~3곳을 짧게 견줘 보여 줘요(광고 숙소는 광고라고). 예약하려면 hotels_com_prepare_booking에 hotel_id·날짜·인원을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "호텔 예약 준비",
+      "description": "hotels_com_search로 고른 호텔 화면을 그 날짜·인원으로 열어 객실별 요금·환불 규정·조식·남은 객실을 읽고, 사용자가 고른 객실의 '예약하기'까지 데려간다. 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 로그인을 요구하면 연결 전엔 connect_ask('hotels-com').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "hotel_id": {
+            "type": "string",
+            "description": "hotels_com_search가 준 호텔 id (예: 251532)",
+            "pattern": "^\\d{1,12}$"
+          },
+          "hotel": {
+            "type": "string",
+            "description": "호텔 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 YYYY-MM-DD"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 YYYY-MM-DD"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 14,
+            "default": 2,
+            "description": "성인 인원"
+          },
+          "room_wish": {
+            "type": "string",
+            "description": "원하는 객실 조건 (예: 전액 환불, 조식 포함, 트윈). 없으면 비워 둔다",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "hotel_id",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "hotel_id": "251532",
+          "hotel": "호텔 몬토레 아카사카",
+          "checkin": "2026-12-10",
+          "checkout": "2026-12-12",
+          "adults": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://kr.hotels.com/ho{{hotel_id|digits}}/?chkin={{checkin}}&chkout={{checkout}}&rm1=a{{adults}}"
+        },
+        {
+          "wait": {
+            "text": "객실 선택|객실 선택하기|예약하기|이용 가능한 객실이 없",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "handoff_to_agent": "{{hotel}} {{checkin}}~{{checkout}} 성인 {{adults}}명 호텔 화면이에요. 날짜·인원이 맞는지 먼저 보고, 객실 목록에서 객실마다 이름·정원·1박/총 요금·환불 규정(전액 환불 가능 기한)·조식·'N개 남음'을 읽어 사용자 바람({{room_wish}})에 맞는 2~3개를 보여 주고 고르게 해요. 고르면 '예약하기'를 누르고, 결제 화면에서 호텔·객실·날짜·인원·총 요금(세금 포함)·취소 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 카드 정보는 사람이 직접 넣게 browser_handoff. 로그인을 요구하면 연결 전엔 connect_ask('hotels-com')."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "trips",
+      "title": "예약 확인",
+      "description": "로그인해야 된다. 호텔스닷컴 '내 여행' 화면을 열어 다가오는 예약부터 호텔 이름·체크인/체크아웃·객실·인원·총 요금·환불 규정·상태를 정리한다. 취소·변경은 사용자가 그 예약을 콕 집어 부탁하고 취소 규정·환불 금액을 승인받아야만 한다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://kr.hotels.com/trips"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "wait": {
+            "text": "계정이 없으세요|예정된 여행|지난 여행|취소된 여행",
+            "timeoutMs": 12000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "계정이 없으세요|일정 번호와 이메일을 사용하여 예약 찾기",
+          "say": "호텔스닷컴 로그인이 필요해요. 연결하면 예약을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "호텔스닷컴 내 여행 화면이에요. 다가오는 예약부터 호텔 이름·체크인~체크아웃·객실·인원·총 요금·환불 규정·상태를 읽어 짧게 정리해요. 예약 번호는 끝 4자리만 보여 줘요. 로그인 화면이거나 '로그인' 안내만 보이면 연결 전엔 connect_ask('hotels-com'), 풀렸으면 browser_handoff. 취소·변경 버튼은 사용자가 그 예약을 콕 집어 부탁하고 취소 규정·환불 금액을 browser_request_approval로 승인받기 전에는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

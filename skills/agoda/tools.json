@@ -1,0 +1,372 @@
+{
+  "id": "agoda",
+  "tools": [
+    {
+      "name": "search",
+      "title": "해외 숙소 찾기",
+      "description": "로그인 없이 된다. 인기 도시(city 목록에서 고름)의 숙소를 체크인·체크아웃·인원·객실 수로 찾아 숙소마다 이름·숙소 id·성급·지역·주변 명소·평점(10점 만점)·이용후기 수·1박 요금(세금 전)·1박 세금 포함 요금·남은 객실·무료 취소 표시·광고 표시·링크를 돌려준다. 첫 화면 10곳 안팎이다. max_price를 주면 1박 요금이 그 값 이하만 남긴다. 목록에 없는 도시는 브라우저 도구로 아고다 검색칸에서 찾는다. 예약하려면 agoda_prepare_booking에 hotel_id를 넘긴다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 방콕·도쿄 날짜·인원별 숙소, 1박 요금 거르기)",
+      "input": {
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "도시 (목록에서 그대로 고름, 뒤의 수가 아고다 도시 번호)",
+            "enum": [
+              "방콕 9395",
+              "푸켓 16056",
+              "파타야 8584",
+              "치앙마이 7401",
+              "도쿄 5085",
+              "오사카 9590",
+              "교토 1784",
+              "후쿠오카 16527",
+              "서울 14690",
+              "부산 17172",
+              "제주 16901",
+              "타이베이 4951",
+              "홍콩 16808",
+              "싱가포르 4064",
+              "다낭 16440",
+              "하노이 2758",
+              "호치민 13170",
+              "나트랑 2679",
+              "세부 4001",
+              "발리 17193"
+            ]
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 YYYY-MM-DD (예: 2026-12-10)"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 YYYY-MM-DD (예: 2026-12-13)"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "성인 인원 (기본 2)"
+          },
+          "rooms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+            "description": "객실 수 (기본 1)"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1박 최대 요금(원, 세금 전). 10만 원 이하면 100000. 없으면 비워 둔다"
+          }
+        },
+        "required": [
+          "city",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {
+        "hotels": {
+          "type": "list",
+          "description": "숙소",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "hotel_id": {
+              "type": "string",
+              "description": "agoda_prepare_booking에 넘길 숙소 id"
+            },
+            "stars": {
+              "type": "integer",
+              "description": "성급"
+            },
+            "area": {
+              "type": "string",
+              "description": "지역 (예: 수쿰윗, 방콕 - 도심에 위치)"
+            },
+            "landmarks": {
+              "type": "string",
+              "description": "가까운 역·명소"
+            },
+            "rating": {
+              "type": "number",
+              "description": "평점 (10점 만점)"
+            },
+            "reviews": {
+              "type": "integer",
+              "description": "이용후기 수"
+            },
+            "price": {
+              "type": "integer",
+              "description": "1박 요금(원, 세금·수수료 전)"
+            },
+            "price_with_tax": {
+              "type": "integer",
+              "description": "1박 세금·수수료 포함 요금(원)"
+            },
+            "rooms_left": {
+              "type": "string",
+              "description": "남은 객실 안내 (예: 단 1개 남음)"
+            },
+            "free_cancel": {
+              "type": "string",
+              "description": "무료 취소 표시, 없으면 비어 있음"
+            },
+            "ad": {
+              "type": "string",
+              "description": "'광고'면 광고 숙소"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "city": "방콕 9395",
+          "checkin": "2026-12-10",
+          "checkout": "2026-12-13",
+          "adults": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.agoda.com/ko-kr/search?city={{city|digits}}&checkIn={{checkin}}&checkOut={{checkout}}&rooms={{rooms}}&adults={{adults}}&children=0"
+        },
+        {
+          "wait": {
+            "items": "li[data-selenium='hotel-item']",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 700
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 700
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 700
+        },
+        {
+          "press": "PageDown"
+        },
+        {
+          "sleep": 700
+        },
+        {
+          "extract": {
+            "items": "li[data-selenium='hotel-item']",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "css": "[data-selenium='hotel-name']"
+              },
+              "hotel_id": {
+                "attr": "data-hotelid"
+              },
+              "stars": {
+                "match": "\\n(\\d)성급\\n"
+              },
+              "area": {
+                "css": "[data-selenium='area-city-text']"
+              },
+              "landmarks": {
+                "css": "[data-selenium='popular-landmarks-text']"
+              },
+              "rating": {
+                "match": "\\n(\\d{1,2}(?:\\.\\d)?)\\n[^\\n]{1,10}\\n[\\d,]+ 이용후기"
+              },
+              "reviews": {
+                "match": "([\\d,]+) 이용후기"
+              },
+              "price": {
+                "css": "[data-selenium='display-price']"
+              },
+              "price_with_tax": {
+                "css": "[data-selenium='total-price-per-night']",
+                "match": "₩\\s?([\\d,]+)"
+              },
+              "rooms_left": {
+                "match": "(단 \\d+개 남음)"
+              },
+              "free_cancel": {
+                "match": "(무료 취소[^\\n]{0,30})"
+              },
+              "ad": {
+                "match": "\\n(광고)\\n"
+              },
+              "link": {
+                "css": "a[href*='propertyId=']",
+                "attr": "href"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "name",
+            "op": "has"
+          },
+          "as": "loaded"
+        },
+        {
+          "filter": {
+            "from": "loaded",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "hotels"
+        }
+      ],
+      "result": {
+        "hotels": "{{hotels}}"
+      },
+      "next": "평점·이용후기 수·위치·1박 요금(세금 포함도 같이)을 견줘 2~3곳을 짧게 보여 주고(광고 숙소는 광고라고 알려요) 고르게 해요. 객실·취소 규정을 보거나 예약하려면 agoda_prepare_booking에 hotel_id·날짜·인원을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "숙소 예약 준비",
+      "description": "agoda_search로 고른 숙소 화면을 그 날짜·인원·객실 수로 열어, 객실별 요금·무료 취소 기한·조식 포함·남은 객실을 읽고 사용자가 고른 객실의 '예약하기'까지 데려간다. 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 예약 단계에서 로그인을 권하면 연결 전엔 connect_ask('agoda').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "hotel_id": {
+            "type": "string",
+            "description": "agoda_search가 준 숙소 id (예: 286830)",
+            "pattern": "^\\d{1,12}$"
+          },
+          "hotel": {
+            "type": "string",
+            "description": "숙소 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 YYYY-MM-DD"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 YYYY-MM-DD"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "성인 인원"
+          },
+          "rooms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+            "description": "객실 수"
+          },
+          "room_wish": {
+            "type": "string",
+            "description": "원하는 객실 조건 (예: 무료 취소, 조식 포함, 트윈). 없으면 비워 둔다",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "hotel_id",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "hotel_id": "286830",
+          "hotel": "그랜드 센터 포인트 호텔 터미널 21",
+          "checkin": "2026-12-10",
+          "checkout": "2026-12-13",
+          "adults": 2,
+          "room_wish": "무료 취소"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.agoda.com/ko-kr/accom/property?propertyId={{hotel_id|digits}}&checkIn={{checkin}}&checkOut={{checkout}}&adults={{adults}}&rooms={{rooms}}&children=0"
+        },
+        {
+          "wait": {
+            "text": "객실을 선택하세요|예약 가능한 객실이 없|매진",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "handoff_to_agent": "아고다 {{hotel}} {{checkin}}~{{checkout}} 성인 {{adults}}명 객실 {{rooms}}개 화면이에요. 객실 목록에서 객실마다 이름·1박 요금(세금 포함 총액도)·무료 취소 기한·조식 포함·'N개 남음'을 읽어 사용자 바람({{room_wish}})에 맞는 2~3개를 보여 주고 고르게 해요. 고르면 그 줄의 '예약하기'를 누르고, 투숙객 정보 화면에서 숙소·객실·날짜·인원·총 결제 금액(세금·수수료 포함, 통화)·취소 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 투숙객 이름·연락처는 사용자에게 물어 채우고, 결제 정보는 사람이 직접 넣게 browser_handoff. 로그인을 권하면 연결 전엔 connect_ask('agoda')."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "bookings",
+      "title": "예약 확인",
+      "description": "로그인해야 된다. 아고다 내 예약 화면을 열어 다가오는 예약부터 숙소 이름·체크인/체크아웃·객실·인원·결제 금액·무료 취소 기한·상태(확정·취소)를 정리한다. 취소는 사용자가 그 예약을 콕 집어 부탁하고 취소 규정·환불 금액을 승인받아야만 한다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.agoda.com/ko-kr/account/bookings.html"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "wait": {
+            "text": "회원 가입|예약",
+            "timeoutMs": 12000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "회원 가입",
+          "say": "아고다 로그인이 필요해요. 연결하면 예약을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "아고다 내 예약 화면이에요. 다가오는 예약부터 줄마다 숙소 이름·체크인~체크아웃·객실·인원·결제 금액·무료 취소 기한·상태를 읽어 짧게 정리해요. 예약 번호는 끝 4자리만 보여 줘요. 로그인 화면이면 연결 전엔 connect_ask('agoda'), 풀렸으면 browser_handoff. 예약 취소 버튼은 사용자가 그 예약을 콕 집어 부탁하고 취소 규정·환불 금액을 browser_request_approval로 승인받기 전에는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

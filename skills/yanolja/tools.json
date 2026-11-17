@@ -1,0 +1,523 @@
+{
+  "id": "yanolja",
+  "tools": [
+    {
+      "name": "search",
+      "title": "국내 숙소 찾기",
+      "description": "로그인 없이 된다. 지역·숙소 이름·테마(예: 강릉, 가평 풀빌라)로 NOL(야놀자) 국내 숙소를 그 체크인·체크아웃으로 찾아 숙소마다 이름·숙소 id·종류·위치 안내·평점·후기 수·1박 최저가(회원가, 성인 2명 기준)·정가·입실 시각·광고 표시·링크를 돌려준다. 화면에 처음 뜨는 15곳 안팎이다. max_price를 주면 그 값 이하만 남긴다. 인원 맞춘 객실·무료 취소·남은 객실은 yanolja_prepare_booking이 연 숙소 화면에서 본다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 강릉·해운대 날짜별 숙소 목록·1박 가격 거르기. 인원은 성인 2 고정)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "지역·숙소 이름·테마 (예: 강릉, 가평 풀빌라, 해운대 호텔)",
+            "maxLength": 40
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 날짜 YYYY-MM-DD (예: 2026-11-28)"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 날짜 YYYY-MM-DD (예: 2026-11-29)"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1박 최대 가격(원). 15만 원 이하면 150000. 없으면 비워 둔다"
+          }
+        },
+        "required": [
+          "keyword",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {
+        "stays": {
+          "type": "list",
+          "description": "숙소",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "stay_id": {
+              "type": "string",
+              "description": "yanolja_prepare_booking에 넘길 숙소 id"
+            },
+            "kind": {
+              "type": "string",
+              "description": "숙소 종류 (호텔·펜션·모텔 …)"
+            },
+            "area": {
+              "type": "string",
+              "description": "위치 안내"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "price": {
+              "type": "integer",
+              "description": "1박 최저가(원, 회원가)"
+            },
+            "original_price": {
+              "type": "integer",
+              "description": "정가(원), 할인 없으면 비어 있음"
+            },
+            "checkin_time": {
+              "type": "string",
+              "description": "숙박 입실 시각"
+            },
+            "ad": {
+              "type": "string",
+              "description": "'광고'면 광고 숙소"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "강릉",
+          "checkin": "2026-11-28",
+          "checkout": "2026-11-29"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://nol.yanolja.com/discovery/list/search/PRODUCT_CATEGORY_KOREA_ACCOMMODATION?q={{keyword|url}}&checkInDate={{checkin}}&checkOutDate={{checkout}}"
+        },
+        {
+          "wait": {
+            "text": "개 검색결과|검색 결과가 없|검색결과가 없",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "검색 결과가 없|검색결과가 없",
+          "say": "'{{keyword}}'(으)로는 숙소가 안 나와요. 지역 이름(예: 강릉, 해운대)으로 다시 찾아볼까요?"
+        },
+        {
+          "wait": {
+            "items": "a[data-card-type][href*='/stay/']",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "extract": {
+            "items": "a[data-card-type][href*='/stay/']",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "css": "span.line-clamp-2"
+              },
+              "stay_id": {
+                "attr": "href",
+                "match": "/stay/[a-z]+/(\\d+)"
+              },
+              "kind": {
+                "css": "span.text-text-neutral-sub"
+              },
+              "area": {
+                "css": "[aria-label^='위치 ']",
+                "attr": "aria-label",
+                "match": "위치 (.+)"
+              },
+              "rating": {
+                "css": "[aria-label^='리뷰 정보']",
+                "attr": "aria-label",
+                "match": "평점 ([\\d.]+)"
+              },
+              "reviews": {
+                "css": "[aria-label^='리뷰 정보']",
+                "attr": "aria-label",
+                "match": "후기 ([\\d,]+)"
+              },
+              "price": {
+                "css": "[aria-label^='판매가']",
+                "attr": "aria-label",
+                "match": "([\\d,]+)"
+              },
+              "original_price": {
+                "css": "[aria-label^='정상가']",
+                "attr": "aria-label",
+                "match": "([\\d,]+)"
+              },
+              "checkin_time": {
+                "match": "숙박 (\\d{1,2}:\\d{2})"
+              },
+              "ad": {
+                "match": "\\n(광고)\\n"
+              },
+              "link": {
+                "attr": "href"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "stays"
+        }
+      ],
+      "result": {
+        "stays": "{{stays}}"
+      },
+      "next": "평점·후기 수·가격을 견줘 2~3곳을 짧게 보여 주고(광고 숙소는 광고라고 알려요) 고르게 해요. 객실·무료 취소·남은 방을 보거나 예약하려면 yanolja_prepare_booking에 stay_id·날짜·인원을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "leisure_search",
+      "title": "레저·입장권 찾기",
+      "description": "로그인 없이 된다. 키워드(예: 아쿠아리움, 워터파크, 서울 스파)로 NOL(야놀자) 국내 레저·입장권 상품을 찾아 이름·상품 id·분류·지역·평점·후기 수·최저가·정가·링크를 돌려준다. 날짜별 남은 수량과 권종은 상품 화면에서 본다: 사려면 yanolja_prepare_ticket.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "찾을 레저·입장권 (예: 아쿠아리움, 캐리비안베이, 제주 요트)",
+            "maxLength": 40
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최대 가격(원). 없으면 비워 둔다"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "items": {
+          "type": "list",
+          "description": "레저·입장권 상품",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "product_id": {
+              "type": "string",
+              "description": "yanolja_prepare_ticket에 넘길 상품 id"
+            },
+            "kind": {
+              "type": "string",
+              "description": "분류 (테마파크·워터파크 …)"
+            },
+            "area": {
+              "type": "string"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "price": {
+              "type": "integer",
+              "description": "최저가(원)"
+            },
+            "original_price": {
+              "type": "integer",
+              "description": "정가(원)"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "아쿠아리움"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://nol.yanolja.com/discovery/list/search/PRODUCT_CATEGORY_LEISURE?q={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "text": "개 검색결과|검색 결과가 없|검색결과가 없",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "stop_if": "검색 결과가 없|검색결과가 없",
+          "say": "'{{keyword}}'(으)로는 레저·입장권 상품이 안 나와요. 다른 말로 찾아볼까요?"
+        },
+        {
+          "wait": {
+            "items": "a[data-card-type][href*='/leisure/']",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "extract": {
+            "items": "a[data-card-type][href*='/leisure/']",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "css": "span.line-clamp-2"
+              },
+              "product_id": {
+                "attr": "href",
+                "match": "/leisure/(\\d+)"
+              },
+              "kind": {
+                "css": "span.text-text-neutral-sub"
+              },
+              "area": {
+                "css": "[aria-label^='위치 ']",
+                "attr": "aria-label",
+                "match": "위치 (.+)"
+              },
+              "rating": {
+                "css": "[aria-label^='리뷰 정보']",
+                "attr": "aria-label",
+                "match": "평점 ([\\d.]+)"
+              },
+              "reviews": {
+                "css": "[aria-label^='리뷰 정보']",
+                "attr": "aria-label",
+                "match": "후기 ([\\d,]+)"
+              },
+              "price": {
+                "css": "[aria-label^='판매가']",
+                "attr": "aria-label",
+                "match": "([\\d,]+)"
+              },
+              "original_price": {
+                "css": "[aria-label^='정상가']",
+                "attr": "aria-label",
+                "match": "([\\d,]+)"
+              },
+              "link": {
+                "attr": "href"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "items"
+        }
+      ],
+      "result": {
+        "items": "{{items}}"
+      },
+      "next": "가격·평점으로 2~3개를 보여 주고 고르게 해요. 사려면 yanolja_prepare_ticket에 product_id·날짜·수량을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "숙소 예약 준비",
+      "description": "yanolja_search로 고른 숙소의 객실 선택 화면을 그 날짜·인원으로 열어, 객실별 가격·무료 취소 기한·남은 객실을 읽고 사용자가 고른 객실의 '예약하기'까지 데려간다. 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 예약 단계에서 로그인이 필요하면 connect_ask('yanolja').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "stay_id": {
+            "type": "string",
+            "description": "yanolja_search가 준 숙소 id (예: 3013417)",
+            "pattern": "^\\d{1,12}$"
+          },
+          "stay": {
+            "type": "string",
+            "description": "숙소 이름 (사용자에게 보일 말)",
+            "maxLength": 60
+          },
+          "checkin": {
+            "type": "string",
+            "format": "date",
+            "description": "체크인 YYYY-MM-DD"
+          },
+          "checkout": {
+            "type": "string",
+            "format": "date",
+            "description": "체크아웃 YYYY-MM-DD"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "성인 인원"
+          },
+          "room_wish": {
+            "type": "string",
+            "description": "원하는 객실 조건 (예: 오션뷰, 조식 포함, 트윈, 무료 취소). 없으면 비워 둔다",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "stay_id",
+          "checkin",
+          "checkout"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "stay_id": "3013417",
+          "stay": "강릉 세인트존스호텔",
+          "checkin": "2026-11-28",
+          "checkout": "2026-11-29",
+          "adults": 2,
+          "room_wish": "오션뷰"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://nol.yanolja.com/stay/domestic/{{stay_id|digits}}?adultCount={{adults}}&checkInDate={{checkin}}&checkOutDate={{checkout}}"
+        },
+        {
+          "wait": {
+            "text": "객실 선택|예약하기|예약마감|선택한 날짜에",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "handoff_to_agent": "NOL(야놀자) {{stay}} {{checkin}}~{{checkout}} 성인 {{adults}}명의 '객실 선택' 화면이에요. 객실마다 이름·기준/최대 인원·숙박 요금(회원가)·무료취소 기한·'N개 남음'·조식 여부를 읽어 사용자 바람({{room_wish}})에 맞는 것 2~3개를 보여 주고 고르게 해요. 고르면 그 요금 줄의 '예약하기'를 누르고, 예약 화면에서 숙소·객실·날짜·인원·총 금액·취소 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. '예약마감'이면 다른 날짜나 yanolja_search로 다른 숙소를 권해요. 로그인 화면이 나오면 연결 전엔 connect_ask('yanolja'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_ticket",
+      "title": "레저·입장권 구매 준비",
+      "description": "yanolja_leisure_search로 고른 레저·입장권 상품 화면을 열어 권종·날짜·수량을 고르는 데까지 데려간다. 결제는 사용자 승인(browser_request_approval)을 받아야만 한다. 구매 단계에서 로그인이 필요하면 connect_ask('yanolja').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "yanolja_leisure_search가 준 상품 id (예: 10381165)",
+            "pattern": "^\\d{1,12}$"
+          },
+          "product": {
+            "type": "string",
+            "description": "상품 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "이용 날짜 YYYY-MM-DD"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 1,
+            "description": "수량(장)"
+          },
+          "ticket_wish": {
+            "type": "string",
+            "description": "권종 바람 (예: 성인 2, 어린이 1, 종일권). 없으면 비워 둔다",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "product_id",
+          "date"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "product_id": "10381165",
+          "product": "롯데월드 아쿠아리움 입장권",
+          "date": "2026-11-29",
+          "count": 2,
+          "ticket_wish": "성인 2"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://leisure-web.yanolja.com/leisure/{{product_id|digits}}"
+        },
+        {
+          "wait": {
+            "text": "구매하기|예약하기|옵션|판매 종료|판매종료",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "handoff_to_agent": "NOL(야놀자) 레저 상품 {{product}} 화면이에요. '구매하기'(또는 옵션 선택)를 눌러 {{date}} 날짜와 권종({{ticket_wish}})·수량 {{count}}장을 고르고, 날짜가 마감이면 사용자에게 다른 날짜를 물어요. 주문 화면에서 상품·이용일·권종·수량·총 금액·취소/환불 규정(유효기간 포함)을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 판매 종료면 yanolja_leisure_search로 다른 상품을 권해요. 로그인 화면이 나오면 연결 전엔 connect_ask('yanolja'), 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "reservations",
+      "title": "예약 내역",
+      "description": "로그인해야 된다. NOL(야놀자)에서 예약한 국내 숙소·레저·교통 예약 내역을 열어 다가오는 예약부터 숙소·상품 이름, 이용 날짜, 객실·권종, 인원, 금액, 상태(예약확정·이용완료·취소)를 정리한다. 변경·취소는 이 화면에서 사용자가 고른 예약을 열어 규정을 보여 준 뒤 승인받아야만 한다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://nol.yanolja.com/member/mypage"
+        },
+        {
+          "wait": {
+            "text": "국내숙소/레저/교통",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "click": {
+            "text": "국내숙소/레저/교통"
+          }
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "비회원 예약조회|회원으로 예약한 경우 로그인|로그인 또는 회원가입",
+          "say": "야놀자 로그인이 필요해요. 연결하면 예약 내역을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "NOL(야놀자) 국내숙소/레저/교통 예약 내역 화면이에요. 다가오는 예약부터 줄마다 숙소·상품 이름, 이용 날짜(체크인~체크아웃), 객실·권종, 인원, 결제 금액, 상태를 읽어 짧게 정리해요. 예약 번호는 끝 4자리만 보여 줘요. 화면이 비어 있거나 로그인·비회원 조회 화면이면 로그인이 안 된 것: 연결 전엔 connect_ask('yanolja'), 풀렸으면 browser_handoff. 취소 버튼은 사용자가 그 예약을 콕 집어 부탁하고 취소 규정·환불 금액을 browser_request_approval로 승인받기 전에는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
