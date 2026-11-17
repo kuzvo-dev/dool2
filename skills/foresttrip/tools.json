@@ -1,0 +1,263 @@
+{
+  "id": "foresttrip",
+  "tools": [
+    {
+      "name": "search",
+      "title": "빈 객실 찾기",
+      "description": "지역(또는 휴양림 이름)·들어가는 날·나오는 날·인원으로 자연휴양림 빈 객실(숙박시설)을 찾아 휴양림 이름·객실 이름·정원·1박 요금·예약 가능 여부를 정리한다. 조회 화면은 로그인 없이 열리지만, 이 사이트는 지역·날짜를 화면에서 골라야 하고 대기열(넷퍼넬)이 있어 열어 둔 탭에서 브라우저 도구로 이어서 한다. 예약(결제)은 로그인이 필요하다: foresttrip_prepare_booking.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": [
+              "서울/인천/경기",
+              "충북",
+              "대전/충남",
+              "전북",
+              "전남/광주",
+              "강원",
+              "대구/경북",
+              "부산/경남",
+              "제주"
+            ],
+            "description": "지역"
+          },
+          "forest": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "휴양림 이름 일부 (예: 유명산). 있으면 지역보다 먼저"
+          },
+          "check_in": {
+            "type": "string",
+            "format": "date",
+            "description": "들어가는 날 YYYY-MM-DD"
+          },
+          "check_out": {
+            "type": "string",
+            "format": "date",
+            "description": "나오는 날 YYYY-MM-DD"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "인원 (기본 2)"
+          }
+        },
+        "required": [
+          "check_in",
+          "check_out"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "region": "서울/인천/경기",
+          "check_in": "2026-11-28",
+          "check_out": "2026-11-29",
+          "people": 4
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.foresttrip.go.kr/main.do?hmpgId=FRIP"
+        },
+        {
+          "wait": {
+            "text": "날짜선택|조회하기",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "handoff_to_agent": "숲나들e 첫 화면이에요. 위쪽 조회 칸에서 지역 '{{region}}'(휴양림 이름 '{{forest}}'가 있으면 그 이름으로 검색해 고름)을 고르고, 날짜 칸 달력에서 {{check_in}}~{{check_out}}을, 인원을 {{people}}명으로 맞춘 뒤 '조회하기'를 눌러요. 대기 화면(접속 대기)이 나오면 끝날 때까지 기다려요. 결과에서 예약할 수 있는 객실만 휴양림·객실 이름·정원·1박 요금으로 3~5개 정리해요. 없으면 그렇다고 알리고 다른 날짜·지역을 권해요. 예약 버튼은 누르지 않아요. 로그인하라는 안내가 나오면 연결 전엔 connect_ask('foresttrip')."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "예약 준비",
+      "description": "고른 휴양림 객실을 결제 직전까지 예약 준비한다. 로그인해야 한다(숲나들e 회원). 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 국립 휴양림 주말·성수기는 추첨제라 바로 예약이 안 될 수 있다: 그때는 foresttrip_lottery.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "forest": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "휴양림 이름 (예: 국립유명산자연휴양림)"
+          },
+          "room": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "객실 이름 (예: 숲속의집 4인실)"
+          },
+          "check_in": {
+            "type": "string",
+            "format": "date",
+            "description": "들어가는 날 YYYY-MM-DD"
+          },
+          "check_out": {
+            "type": "string",
+            "format": "date",
+            "description": "나오는 날 YYYY-MM-DD"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "인원"
+          }
+        },
+        "required": [
+          "forest",
+          "check_in",
+          "check_out"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "forest": "유명산",
+          "room": "숲속의집",
+          "check_in": "2026-11-28",
+          "check_out": "2026-11-29",
+          "people": 4
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.foresttrip.go.kr/main.do?hmpgId=FRIP"
+        },
+        {
+          "wait": {
+            "text": "날짜선택|조회하기",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "회원가입",
+          "say": "휴양림을 예약하려면 먼저 숲나들e를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "숲나들e 첫 화면이에요(로그인됨). '{{forest}}'를 검색해 고르고 {{check_in}}~{{check_out}}, {{people}}명으로 조회해 '{{room}}' 객실의 예약 버튼을 눌러요(없으면 비슷한 객실을 사용자에게 물어요). 대기 화면이 나오면 기다려요. 이용자 정보·차량 번호 등은 회원 정보에 없으면 물어요. 결제 화면에서 휴양림·객실·날짜·인원·요금·취소 수수료 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "lottery",
+      "title": "추첨 신청",
+      "description": "국립 자연휴양림 주말·성수기 추첨(대기 신청)을 신청 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 결과 확인은 foresttrip_reservations.",
+      "tier": "채워 두기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "forest": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "휴양림 이름 (예: 유명산)"
+          },
+          "check_in": {
+            "type": "string",
+            "format": "date",
+            "description": "들어가는 날 YYYY-MM-DD"
+          },
+          "nights": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "default": 1,
+            "description": "몇 박"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 2,
+            "description": "인원"
+          }
+        },
+        "required": [
+          "forest",
+          "check_in"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "forest": "유명산",
+          "check_in": "2026-12-19",
+          "nights": 1,
+          "people": 4
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.foresttrip.go.kr/main.do?hmpgId=FRIP"
+        },
+        {
+          "wait": {
+            "text": "날짜선택|조회하기",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "회원가입",
+          "say": "추첨을 신청하려면 먼저 숲나들e를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "숲나들e 첫 화면이에요(로그인됨). 메뉴의 추첨(주말·성수기) 신청 화면으로 가서 '{{forest}}', {{check_in}}부터 {{nights}}박, {{people}}명으로 신청할 수 있는 객실을 골라요. 신청 기간이 아니면 신청 기간을 알려 주고 멈춰요. 신청 버튼 전에 휴양림·객실·날짜·인원·당첨 후 결제 기한을 정리해 browser_request_approval로 승인을 받은 뒤에만 신청 버튼을 눌러요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "reservations",
+      "title": "예약·추첨 확인",
+      "description": "로그인해야 한다. 숲나들e 마이페이지에서 예약 내역(휴양림·객실·날짜·결제 상태·결제 기한)과 추첨 신청·당첨 결과를 정리한다. '휴양림 예약 결제됐어?', '추첨 결과 나왔어?'에 쓴다. 취소는 하지 않는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.foresttrip.go.kr/main.do?hmpgId=FRIP"
+        },
+        {
+          "wait": {
+            "text": "날짜선택|조회하기",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "회원가입",
+          "say": "숲나들e 예약을 보려면 먼저 숲나들e를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "숲나들e 첫 화면이에요(로그인됨). 마이페이지의 예약 내역과 추첨 신청 내역을 열어 다가오는 예약(휴양림·객실·날짜·결제 상태·결제 기한)과 추첨 결과(당첨/낙첨/발표 전, 당첨이면 결제 기한)를 짧게 정리해요. 결제 기한이 얼마 안 남았으면 먼저 알려요. 취소·결제 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 1800
+    }
+  ]
+}
