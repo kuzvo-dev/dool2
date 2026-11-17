@@ -73,7 +73,9 @@ export class Skills {
       const c = it.card
       const can = c.abilities.map((a) => a.title).join('·')
       // 무엇을 하는 곳인지(소개)와 할 수 있는 일: AI가 부탁에 맞는 서비스를 스스로 고른다
-      const line = `${c.name}(${c.id})${connected[c.id] ? '✓' : ''}${it.tools?.length ? '⚡' : ''} — ${c.summary} [${can}]`
+      // 연결 전이어도 로그인 없이 되는 도구는 알려 둔다 (연결을 먼저 묻지 않게)
+      const free = !connected[c.id] ? (it.tools ?? []).filter((t) => !t.login).map((t) => t.name) : []
+      const line = `${c.name}(${c.id})${connected[c.id] ? '✓' : ''}${it.tools?.length ? '⚡' : ''} — ${c.summary} [${can}]${free.length ? ` (로그인 없이: ${free.join(', ')})` : ''}`
       const k = CONNECT_CATEGORIES[c.category]
       by.set(k, [...(by.get(k) ?? []), line])
     }

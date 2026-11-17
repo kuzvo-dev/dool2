@@ -79,10 +79,36 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
     )
     await s.connections()
     const map = s.serviceMap()
-    expect(map).toMatch(/- 캐치테이블\(catchtable\)✓⚡ — .*식당.*\[식당 예약/)
+    expect(map).toMatch(/- 캐치테이블\(catchtable\)✓⚡ — .*식당.*\[식당 예약[^\n]*\]$/m)
     expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) — /)
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
     expect(map.length).toBeLessThan(12000)
+  })
+})
+
+describe('로그인 없이 되는 도구 알리기', () => {
+  it('연결 전 서비스는 로그인 없이 쓰는 도구 이름을 지도에 붙인다', async () => {
+    const s = new Skills(
+      REPO_SKILLS,
+      () => ({}),
+      async (id) =>
+        id === 'catchtable'
+          ? {
+              tools: [
+                {
+                  name: 'catchtable_search',
+                  title: '식당 빈자리 찾기',
+                  tier: '찾아보기',
+                  login: false,
+                  verified: true,
+                },
+                { name: 'catchtable_my', title: '내 예약', tier: '찾아보기', login: true, verified: false },
+              ],
+            }
+          : {},
+    )
+    await s.connections()
+    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ — .*\(로그인 없이: catchtable_search\)$/m)
   })
 })

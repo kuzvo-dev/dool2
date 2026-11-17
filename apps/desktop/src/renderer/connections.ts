@@ -159,6 +159,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
     if (it.connectedAt) {
       right.append(el('span', 'dot ok'), el('span', '', '연결됨'))
     } else if (it.card.how === 'open') right.append(el('span', '', '로그인 없이'))
+    else if (it.tools?.some((t) => !t.login)) right.append(el('span', '', '연결 없이도 찾기'))
     right.append(icon(ICON.chevron))
     b.append(mark(it.card), text, right)
     b.onclick = () => showDetail(it.card.id)
@@ -172,7 +173,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
     const intro = el(
       'p',
       'sub',
-      '한 번 연결해 두면 폰에서 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 로그인은 내 Chrome에서 직접 해요.',
+      '찾기·비교는 연결 없이도 돼요. 주문·예약·내역 보기처럼 로그인이 필요한 일만 한 번 연결해 두면, 폰에서 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 로그인은 내 Chrome에서 직접 해요.',
     )
     const search = el('input', 'field svc-search') as HTMLInputElement
     search.type = 'search'
@@ -268,9 +269,13 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       for (const t of it.tools ?? []) {
         const li = el('li')
         li.append(icon(TIER_ICON[t.tier]), el('span', 'svc-name', t.title))
-        if (t.login && !it.connectedAt) {
+        if (!it.connectedAt) {
+          // 로그인 없이 바로 되는 일과, 연결해야 되는 일을 나눠 보여 준다
           const tag = el('span', 'svc-state')
-          tag.append(el('span', 'dot'), el('span', '', '연결하면'))
+          tag.append(
+            el('span', t.login ? 'dot' : 'dot ok'),
+            el('span', '', t.login ? '연결하면' : '로그인 없이'),
+          )
           li.append(tag)
         }
         list.append(li)

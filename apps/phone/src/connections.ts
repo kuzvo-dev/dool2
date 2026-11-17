@@ -123,7 +123,9 @@ function row(it: ConnectionItem, ctx: ConnectCtx): HTMLElement {
     ? el('span', 'meta', whenLabel(it.connectedAt))
     : it.card.how === 'open'
       ? el('span', 'meta', '로그인 없이')
-      : svg(PATH.chevron)
+      : it.tools?.some((t) => !t.login)
+        ? el('span', 'meta', '연결 없이도 찾기')
+        : svg(PATH.chevron)
   b.append(
     mark(it.card),
     el(
@@ -155,7 +157,7 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
     el(
       'p',
       'cap connect-intro',
-      '한 번 연결해 두면 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 아이디·비밀번호는 PC 금고에만 저장돼요.',
+      '찾기·비교는 연결 없이도 돼요. 주문·예약·내역 보기처럼 로그인이 필요한 일만 한 번 연결해 두면 부탁만 하면 돼요. 아이디·비밀번호는 PC 금고에만 저장돼요.',
     ),
   )
   const search = el('input', 'field connect-search')
@@ -234,7 +236,8 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     const fast = el('ul', 'list svc-abilities')
     for (const t of it.tools) {
       const li = el('li', 'row', svg(TIER_ICON[t.tier]), el('span', 'row-text', el('span', 'row-t', t.title)))
-      if (t.login && !it.connectedAt) li.append(el('span', 'pill', '연결하면'))
+      if (!it.connectedAt)
+        li.append(el('span', t.login ? 'pill' : 'meta', t.login ? '연결하면' : '로그인 없이'))
       fast.append(li)
     }
     box.append(
