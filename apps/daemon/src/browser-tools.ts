@@ -46,7 +46,7 @@ export interface Risk {
 const RISK_WORDS: [RiskKind, RegExp][] = [
   [
     'money',
-    /결제|구매|주문|구독|충전|송금|이체|입금|예약\s*(?:확정|완료|하기)|예매\s*하기|후원|기부|계좌\s*등록|\b(?:pay|checkout|purchase|buy\s*now|place\s*order)\b/i,
+    /결제|구매|주문|구독|충전|송금|이체|입금|예약\s*(?:확정|완료|하기)|\S(?:으로|로)\s*예약$|바로\s*예약$|예매\s*하기|후원|기부|계좌\s*등록|\b(?:pay|checkout|purchase|buy\s*now|place\s*order)\b/i,
   ],
   [
     'contact',
@@ -59,11 +59,26 @@ const RISK_WORDS: [RiskKind, RegExp][] = [
 const RISK_URL =
   /\/(?:checkout|payment|payments|pay|order\/?(?:sheet|form|confirm)|orderform|ordersheet)(?:[/?#.]|$)|(?:^|\.)(?:pay\.naver\.com|kakaopay\.com|tosspayments\.com|toss\.im|inicis\.com|nicepay\.co\.kr|kcp\.co\.kr|danal\.co\.kr|payco\.com|paypal\.com)/i
 
-export function classifyRisk(label: string, url: string): Risk | undefined {
+// 결제 화면 (주소는 그대로인 창 안 단계: 캐치테이블은 검색 지도 주소 위에서 결제 방법 고르기까지 간다)
+// (실측: 제목이 '결제 방법 선택'일 때도, '결제 방식 선택'일 때도 있다)
+const PAY_SCREEN = /결제\s*(?:방법|방식|수단)|최종\s*결제|총\s*결제\s*금액|결제\s*금액|결제\s*동의/
+// 그런 화면에서 다음 단계로 넘기는 버튼은 결제·확정일 수 있다
+const ADVANCE = /(?:^|\s)(?:다음|확인|완료|진행|계속|예약|신청|제출|동의하고\s*\S+|next|continue|confirm)$/i
+
+/** 화면 글에 결제 단계 표시가 있으면 그 말 (없으면 undefined) */
+export function payScreen(text: string): string | undefined {
+  return PAY_SCREEN.exec(text)?.[0]
+}
+
+export function classifyRisk(label: string, url: string, pay?: string): Risk | undefined {
+  // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
+  if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
   for (const [kind, re] of RISK_WORDS) {
     const m = re.exec(label)
     if (m) return { kind, reason: `"${m[0]}"` }
   }
+  const name = label.replace(/^(?:버튼|링크|메뉴|항목)\s*/, '').trim()
+  if (pay && ADVANCE.test(name)) return { kind: 'money', reason: `'${pay}' 화면의 "${name}"` }
   let host = ''
   let path = ''
   try {
@@ -84,6 +99,8 @@ const RISK_TEXT: Record<RiskKind, string> = {
 interface PageInfo {
   url: string
   refs: Map<string, { role: string; name: string }>
+  /** 결제 단계 화면이면 그 표시 말 (예: '결제 방법 선택') */
+  pay?: string
 }
 
 interface Snapshot {
@@ -186,7 +203,7 @@ export class BrowserTools {
         const target = page?.refs.get(ref)
         if (!page || !target)
           throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
-        this.guard(`${target.role} ${target.name}`, page.url, true)
+        this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as {
           newTabId?: number
           coveredBy?: string
@@ -204,7 +221,7 @@ export class BrowserTools {
         const ref = String(a.ref ?? '')
         const page = this.pages.get(tabId)
         if (!page?.refs.has(ref)) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        if (a.submit) this.guard('', page.url)
+        if (a.submit) this.guard('', page.url, false, page.pay)
         await this.browser.call('type', { tabId, ref, text: String(a.text ?? ''), submit: Boolean(a.submit) })
         return this.read(tabId, undefined, a.submit ? '입력하고 Enter를 눌렀어요.' : '입력했어요.')
       }
@@ -281,7 +298,7 @@ export class BrowserTools {
         const page = this.pages.get(tabId)
         const target = page?.refs.get(ref)
         if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        const risk = classifyRisk(`${target.role} ${target.name}`, page.url)
+        const risk = classifyRisk(`${target.role} ${target.name}`, page.url, page.pay)
         if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
         if (this.finalStep() === 'self')
           throw new Error(
@@ -477,8 +494,8 @@ export class BrowserTools {
   }
 
   /** 위험한 동작이면 멈추고 이유를 돌려준다 */
-  private guard(label: string, url: string, clickable = false) {
-    const risk = classifyRisk(label, url)
+  private guard(label: string, url: string, clickable = false, pay?: string) {
+    const risk = classifyRisk(label, url, pay)
     if (!risk) return
     const next =
       clickable && this.finalStep() === 'approve'
@@ -497,7 +514,7 @@ export class BrowserTools {
     try {
       const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
       const now = parseRefs(s.text).get(rec.ref)
-      this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text) })
+      this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
       if (s.url !== rec.url || !now || now.name !== rec.label || now.role !== rec.role) {
         const msg = `승인한 뒤 화면이 바뀌어서 "${rec.label}" 버튼을 누르지 않았어요. 페이지를 다시 확인해 주세요.`
         this.approvals.finish(id, false, msg)
@@ -534,7 +551,7 @@ export class BrowserTools {
       await new Promise((r) => setTimeout(r, 1500))
       s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
     }
-    this.pages.set(tabId, { url: s.url, refs: parseRefs(s.text) })
+    this.pages.set(tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
     const guide = await this.guideFor(tabId, s.url)
     const lines = [
       ...(note ? [note] : []),
