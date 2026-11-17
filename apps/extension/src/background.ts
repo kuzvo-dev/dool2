@@ -15,6 +15,7 @@ import {
   pageLocate,
   pageMarkFilled,
   pageMarkTaps,
+  pageMarkText,
   pageRemoteInfo,
   pageScroll,
   pageScrollBy,
@@ -577,6 +578,13 @@ function takePopup(opener: number) {
 
 async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
+    case 'mark-text': {
+      // 글자로 누를 곳에 표시를 붙인다 (그 뒤 보통 click으로 누른다)
+      const tabId = await ownedTab(a)
+      const r = await inPage(tabId, pageMarkText, String(a.text ?? ''))
+      if (!r.ok) throw new Error(r.error)
+      return r
+    }
     case 'reload': {
       // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
       setTimeout(() => chrome.runtime.reload(), 200)

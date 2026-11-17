@@ -335,3 +335,49 @@ describe('사이트 요령·빈 화면', () => {
     expect(r).toContain('홈')
   })
 })
+
+describe('글자로 누르기', () => {
+  const marking = () => {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://shop.example/list',
+            title: '가게',
+            text: PAGE,
+            truncated: false,
+            captcha: false,
+          }
+        if (cmd === 'mark-text') {
+          const text = String(args?.text)
+          return { ok: true, ref: 'e90', name: text === '결제' ? '결제하기' : `${text} 4.6 (394)` }
+        }
+        return { tabId: 3 }
+      },
+    }
+  }
+
+  it('표시가 없는 상자는 화면 글자로 표시를 붙인 뒤 누른다', async () => {
+    const b = marking()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, text: 'ACENO 아세누' })
+    expect(r.isError).toBeUndefined()
+    expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'mark-text', 'click', 'snapshot'])
+    expect(b.calls[2]?.[1]).toMatchObject({ ref: 'e90' })
+  })
+
+  it('글자로 눌러도 승인 게이트를 똑같이 거친다', async () => {
+    const b = marking()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, text: '결제' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('멈췄어요')
+    expect(b.calls.map((c) => c[0])).not.toContain('click')
+  })
+})
