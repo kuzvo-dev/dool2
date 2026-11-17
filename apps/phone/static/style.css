@@ -3055,3 +3055,24 @@ textarea.ghosting {
 .suggest-actions .btn-ghost {
   flex: 1;
 }
+
+/* 대화 안 먼저 챙긴 일 카드 (ADR 0019) */
+.tell-card .tell-title {
+  display: block;
+  margin-top: 8px;
+}
+.tell-card .tell-body {
+  margin-top: 4px;
+}
+.tell-card .meta {
+  margin-top: 4px;
+}
+.tell-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tell-actions .btn,
+.tell-actions .btn-ghost {
+  flex: 1;
+}

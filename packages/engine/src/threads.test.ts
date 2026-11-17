@@ -56,6 +56,16 @@ describe('ThreadService', () => {
     expect(rt.inputs[0]?.mcpServers[0]?.name).toBe('dool2')
   })
 
+  it('덧붙인 배경(aside)은 AI에게만 가고 기록에는 내 말만 남는다', async () => {
+    const { store, rt, svc } = setup([{ type: 'done', resumeId: 's1', text: '내일 오전에 와요' }])
+    const t = store.createThread('claude')
+    await collect(
+      svc.send(t.id, '러닝화 언제 온다고?', { aside: '[두리 앱 알림] 먼저 알린 것: 러닝화 내일 도착' }),
+    )
+    expect(rt.inputs[0]?.text).toBe('[두리 앱 알림] 먼저 알린 것: 러닝화 내일 도착\n\n러닝화 언제 온다고?')
+    expect(store.listMessages(t.id)[0]?.text).toBe('러닝화 언제 온다고?')
+  })
+
   it('도구 앞 혼잣말은 답에 넣지 않고 마지막 말만 저장한다', async () => {
     const { store, svc } = setup([
       { type: 'text', delta: 'No skill; go to SRT site directly.' },

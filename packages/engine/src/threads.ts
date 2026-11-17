@@ -88,7 +88,8 @@ export class ThreadService {
    * 사용자 글을 저장하고 에이전트를 한 턴 돌린다.
    * 같은 대화에서 동시에 두 턴은 돌리지 않는다.
    */
-  async *send(threadId: string, text: string): AsyncGenerator<DaemonStreamEvent> {
+  /** aside: 이번 차례에만 AI에게 덧붙여 보낼 배경 (기록·화면에는 남기지 않는다. 예: 방금 먼저 알린 것) */
+  async *send(threadId: string, text: string, o: { aside?: string } = {}): AsyncGenerator<DaemonStreamEvent> {
     const { store } = this.opts
     const thread = store.getThread(threadId)
     if (!thread) throw new Error(`대화를 찾을 수 없어요: ${threadId}`)
@@ -108,7 +109,7 @@ export class ThreadService {
       let saved = false
       const work = new WorkLog()
       const events = this.runtime(thread.agent).runTurn({
-        text,
+        text: o.aside ? `${o.aside}\n\n${text}` : text,
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: this.systemFor(thread),
         mcpServers: this.opts.mcpServers,

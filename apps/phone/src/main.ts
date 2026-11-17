@@ -17,6 +17,7 @@ import type {
   PcToPhone,
   PhoneToPc,
   StoredMessage,
+  TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
@@ -2014,6 +2015,8 @@ function toolSig(raw: string) {
       const steps = link ? (st.connectSteps.get(link.cid)?.length ?? 0) : 0
       return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${steps}`
     }
+    if (rec.kind === 'tell')
+      return `tell:${st.life?.feed.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
@@ -2061,6 +2064,7 @@ function toolCard(raw: string, live = true): HTMLElement {
     | LoginRecordMessage
     | ConnectRecordMessage
     | WorkRecordMessage
+    | TellRecordMessage
   try {
     rec = JSON.parse(raw)
   } catch {
@@ -2070,6 +2074,7 @@ function toolCard(raw: string, live = true): HTMLElement {
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec, live)
   if (rec.kind === 'work') return workDone(rec)
+  if (rec.kind === 'tell') return tellInline(rec)
   // 직접 해 주세요
   const tabId = rec.tabId
   return h(
@@ -2179,6 +2184,41 @@ function connectFor(rec: ConnectRecordMessage) {
 }
 
 /** 대화 안의 연결 카드 (connect_ask): [연결하기] → 아이디·비밀번호 시트 → 본체가 뒤에서 로그인 */
+/** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
+function tellInline(rec: TellRecordMessage): HTMLElement {
+  const answered = st.life?.feed.find((f) => f.id === rec.id)?.answered
+  const say = rec.ask
+  return h(
+    'div',
+    { class: 'card tell-card' },
+    h('div', { class: 'card-label' }, doori('', 22), '먼저 챙겼어요'),
+    h('strong', { class: 'tell-title', text: rec.title }),
+    rec.body ? h('p', { class: 'tell-body', text: rec.body }) : undefined,
+    rec.from ? h('p', { class: 'meta', text: rec.from }) : undefined,
+    say
+      ? answered
+        ? h('p', { class: 'meta tell-done', text: answered === 'yes' ? '맡겼어요' : '넘겼어요' })
+        : h(
+            'div',
+            { class: 'tell-actions' },
+            h('button', {
+              class: 'btn small',
+              text: rec.askLabel || '해 줘',
+              onclick: () => {
+                lifeAct({ action: 'feed-answer', id: rec.id, answer: 'yes' })
+                ask(say)
+              },
+            }),
+            h('button', {
+              class: 'btn-ghost small',
+              text: '괜찮아요',
+              onclick: () => lifeAct({ action: 'feed-answer', id: rec.id, answer: 'no' }),
+            }),
+          )
+      : undefined,
+  )
+}
+
 function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   const it = connectFor(rec)
   // 서비스 목록이 아직 안 왔으면(앱을 막 열었을 때) 조용히 자리만 둔다. 오면 다시 그린다
