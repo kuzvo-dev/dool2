@@ -48,6 +48,7 @@
 | `steps` | 실행 순서 (아래 동작만) |
 | `result` | 출력 칸 → 채우기 (`"{{shops}}"`처럼 하나면 값을 그대로) |
 | `next` | 결과 끝에 붙는 다음 할 일 안내 |
+| `expect` | 건강 기준 (ADR 0020): `rows` 매일 점검에서 적어도 몇 줄, `filled` 결과 줄의 80% 넘게 채워져야 하는 칸. 못 미치면 "조용한 고장"으로 봐요 |
 | `minIntervalSec` | 같은 입력으로 다시 부를 수 있는 간격(초). 사이트에 자주 묻지 않게 |
 
 ### 동작 (steps)
@@ -89,7 +90,7 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # npx @puppeteer/brow
 pnpm connector check catchtable                            # 형식·안전 규칙
 pnpm connector page "https://…" "li.item"                  # 화면 글 / 목록 선택자 시험
 pnpm connector try catchtable search '{"keyword":"성수","date":"2026-11-27","people":4}'
-pnpm connector canary                                      # 찾아보기 도구를 예시 입력으로 모두
+pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues]   # 찾아보기 도구를 예시 입력으로 모두 (조용한 고장까지)
 ```
 
 ## 상태
@@ -100,3 +101,8 @@ pnpm connector canary                                      # 찾아보기 도구
 | [cj-logistics](cj-logistics/tools.json) | `cj_logistics_track` 택배 조회 | 검증됨(2026-11-17, 등록 전 번호 안내까지) |
 
 연결 카드(`connect.json`)는 쇼핑·장보기·여행·항공·예매·통신사 등 80여 개 서비스에 있어요. 커넥터가 없는 서비스는 두리가 범용 브라우저 도구로 일해요. 커넥터를 만들어 `검증됨`으로 올리는 일이 좋은 첫 기여예요.
+
+## 고장 감시 (ADR 0020)
+
+- **실사용**: 두리가 도구를 쓸 때마다 결과를 기록해요. 하루 안에 3번 잇달아 막히거나 칸이 비면 그 도구는 6시간 쉬고, 그동안 두리는 브라우저로 일해요.
+- **매일 밤**: 메인테이너 PC에서 `scripts/connector-nightly.sh`가 모든 찾아보기 도구를 실제 사이트에서 돌려요. 깨진 도구는 GitHub 이슈(`connector-broken`)로 올리고, 몇 개는 코딩 에이전트가 수리 PR 초안을 만들어요. 설치: `scripts/install-nightly-mac.sh`.

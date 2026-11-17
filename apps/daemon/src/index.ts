@@ -74,6 +74,7 @@ import type { Approvals } from './approvals.js'
 import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
+import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
@@ -87,6 +88,7 @@ import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
+export { ConnectorHealth } from './connector-health.js'
 export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
@@ -311,6 +313,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     browser,
     tools: browserTools,
     connected: () => readSettings().connections ?? {},
+    health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
   })
   const skills = new Skills(
     skillsDir,

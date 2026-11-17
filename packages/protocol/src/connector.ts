@@ -259,6 +259,17 @@ export const ConnectorToolSchema = z
     result: z.record(Key, z.string().max(500)),
     /** 결과 글 끝에 붙일 다음 할 일 안내 (채우기 가능) */
     next: z.string().max(400).optional(),
+    /**
+     * 건강 기준 (ADR 0020): 결과 목록이 적어도 rows줄(매일 점검에서만), filled 칸은 줄의 80% 넘게 채워져야 한다.
+     * 못 미치면 "조용한 고장"(사이트가 바뀌어 칸이 비는 것)으로 본다
+     */
+    expect: z
+      .object({
+        rows: z.number().int().min(0).max(100).optional(),
+        filled: z.array(Key).max(10).optional(),
+      })
+      .strict()
+      .optional(),
     /** 같은 입력으로 다시 부를 수 있는 간격(초). 그 안에 다시 부르면 지난 결과를 돌려준다 */
     minIntervalSec: z.number().int().min(0).max(86_400).optional(),
   })
@@ -517,6 +528,10 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
       useAll(tpl, `result.${k}`)
     }
     if (t.next) useAll(t.next, 'next')
+    for (const k of t.expect?.filled ?? []) {
+      const ok = Object.values(t.output).some((o) => o.type === 'list' && k in o.fields) || k in t.output
+      if (!ok) problems.push(`${at} expect.filled의 ${k}가 output에 없어요`)
+    }
     for (const [i, ex] of t.examples.entries()) {
       for (const k of t.input.required) if (!(k in ex)) problems.push(`${at} 예시 ${i + 1}에 ${k}가 없어요`)
       for (const k of Object.keys(ex))
@@ -580,4 +595,34 @@ export function matches(v: unknown, op: string, want: string): boolean {
   const b = num(want)
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false
   return op === 'lt' ? a < b : op === 'lte' ? a <= b : op === 'gt' ? a > b : a >= b
+}
+
+/**
+ * 결과가 건강한지 (ADR 0020). 문제 목록 (없으면 건강).
+ * canary면 목록 줄 수(expect.rows, 기본 1)도 본다. 실사용에서는 0줄이 정상일 수 있어 칸 채움만 본다
+ */
+export function healthProblems(tool: ConnectorTool, out: Record<string, unknown>, canary = false): string[] {
+  const problems: string[] = []
+  const lists = Object.entries(tool.output).filter(([, o]) => o.type === 'list')
+  const filled = tool.expect?.filled ?? []
+  for (const [k] of lists) {
+    const rows = Array.isArray(out[k]) ? (out[k] as Record<string, unknown>[]) : []
+    const min = tool.expect?.rows ?? 1
+    if (canary && rows.length < min) problems.push(`${k}가 ${rows.length}줄이에요 (적어도 ${min}줄)`)
+    if (!rows.length) continue
+    for (const f of filled) {
+      if (!(f in ((tool.output[k] as { fields?: Record<string, unknown> }).fields ?? {}))) continue
+      const n = rows.filter((r) => {
+        const v = r?.[f]
+        return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)
+      }).length
+      if (n / rows.length < 0.8) problems.push(`${k}.${f} 칸이 ${rows.length}줄 중 ${n}줄만 채워졌어요`)
+    }
+  }
+  for (const f of filled) {
+    if (!(f in tool.output) || tool.output[f]?.type === 'list') continue
+    const v = out[f]
+    if (v === null || v === undefined || v === '') problems.push(`${f} 칸이 비었어요`)
+  }
+  return problems
 }

@@ -82,6 +82,14 @@
           "description": "전체 검색 결과 수"
         }
       },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "price",
+          "product_id"
+        ]
+      },
       "examples": [
         {
           "keyword": "올리브유"

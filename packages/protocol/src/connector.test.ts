@@ -171,3 +171,26 @@ describe('조건부 채우기와 거르기', async () => {
     expect(p.join('\n')).toMatch(/\{\{nope\}\}가 무엇인지 몰라요/)
   })
 })
+
+describe('건강 기준 (ADR 0020)', async () => {
+  const { healthProblems } = await import('./connector.js')
+  const t = {
+    ...tool(),
+    output: { rows: { type: 'list', fields: { name: { type: 'string' }, price: { type: 'number' } } } },
+    expect: { rows: 3, filled: ['name', 'price'] },
+  } as never
+  it('canary는 줄 수까지, 실사용은 채움만', () => {
+    const out = {
+      rows: [
+        { name: 'a', price: 1 },
+        { name: 'b', price: null },
+      ],
+    }
+    expect(healthProblems(t, out, true)).toEqual([
+      'rows가 2줄이에요 (적어도 3줄)',
+      'rows.price 칸이 2줄 중 1줄만 채워졌어요',
+    ])
+    expect(healthProblems(t, out)).toEqual(['rows.price 칸이 2줄 중 1줄만 채워졌어요'])
+    expect(healthProblems(t, { rows: [] })).toEqual([])
+  })
+})
