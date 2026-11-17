@@ -148,6 +148,10 @@ export class BrowserTools {
   }
   /** 두리가 다루는 탭이 바뀌었을 때 (폰 대화에 일하는 화면을 띄운다) */
   onActiveTab?: (tabId: number) => void
+  /** 주소의 사이트에 두리 스킬(절차)이 있으면 그 이름·설명 */
+  siteSkill?: (url: string) => Promise<{ name: string; description: string } | undefined>
+  /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
+  private guided = new Map<number, string>()
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
@@ -513,16 +517,37 @@ export class BrowserTools {
     }
   }
 
+  /** 처음 들어온 사이트에 스킬이 있으면 먼저 읽으라고 알린다 (요령 없이 주소를 짐작해 빈 화면에서 멈추던 것) */
+  private async guideFor(tabId: number, url: string): Promise<string | undefined> {
+    if (!this.siteSkill) return undefined
+    const skill = await this.siteSkill(url).catch(() => undefined)
+    if (!skill || this.guided.get(tabId) === skill.name) return undefined
+    this.guided.set(tabId, skill.name)
+    return `📘 이 사이트는 두리 스킬 '${skill.name}'이 있어요. 아직 안 읽었으면 skill_read('${skill.name}')로 먼저 읽고 그 절차(주소·순서·멈출 곳)를 따르세요.`
+  }
+
   private async read(tabId: number, maxChars?: unknown, note?: string): Promise<ToolResult> {
     const max = Number(maxChars) || 8_000
-    const s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+    let s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+    // 늦게 그리는 사이트는 막 연 화면이 비어 있다 (캐치테이블: 링크 4개뿐). 한 번 기다렸다 다시 읽는다
+    if (nearlyEmpty(s.text)) {
+      await new Promise((r) => setTimeout(r, 1500))
+      s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+    }
     this.pages.set(tabId, { url: s.url, refs: parseRefs(s.text) })
+    const guide = await this.guideFor(tabId, s.url)
     const lines = [
       ...(note ? [note] : []),
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
       ...(s.captcha
         ? [
             '⚠ 로봇 확인(캡차·자동입력 방지) 화면이 보여요. 풀려고 하지 말고 사용자에게 직접 해 달라고 부탁해 주세요.',
+          ]
+        : []),
+      ...(guide ? [guide] : []),
+      ...(nearlyEmpty(s.text)
+        ? [
+            '⚠ 화면에 글이 거의 없어요. 주소가 틀렸을 수 있어요(사이트에 없는 주소는 빈 화면만 나와요). 사이트 홈을 열어 검색칸으로 찾아보세요. 사람에게 넘기기 전에 다른 길을 먼저 해 보세요.',
           ]
         : []),
       '',
@@ -533,4 +558,10 @@ export class BrowserTools {
     ]
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
+}
+
+/** 표시(e12)를 빼고 글이 거의 없는 화면 (늦게 그리는 중이거나 없는 주소) */
+export function nearlyEmpty(text: string): boolean {
+  const words = text.replace(/\[e\d+ [^\]]*\]/g, '').replace(/\s+/g, '')
+  return words.length < 8
 }
