@@ -1436,7 +1436,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { extension: browser.status })
     // 확장을 새 코드로 다시 켜기 (확장을 다시 빌드한 뒤. 다시 연결되면 새 코드가 돈다)
     if (a === 'browser' && b === 'extension' && c === 'reload' && req.method === 'POST') {
-      const ok = await browser.call('reload', {}, 5_000).then(() => true, () => false)
+      const ok = await browser.call('reload', {}, 5_000).then(
+        () => true,
+        () => false,
+      )
       return json(res, 200, { ok })
     }
     // 사람에게 넘긴 두리 탭을 앞으로 (화면의 [Chrome에서 보기])
