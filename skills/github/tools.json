@@ -1,0 +1,297 @@
+{
+  "id": "github",
+  "tools": [
+    {
+      "name": "commits",
+      "title": "무슨 일이 있었는지",
+      "description": "로그인 없이 된다(공개 저장소). GitHub 저장소의 커밋 기록을 최신순으로 돌려준다(제목·작성자·시각·커밋 링크). path로 파일·폴더를, since로 날짜를 좁힌다. '지난주에 결제 코드 누가 바꿨어?'에 쓴다: repo와 path(예: src/payment)를 넣는다. 비공개 저장소는 연결(로그인)해야 보인다. 바뀐 내용은 link를 열어 본다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-18, 공개 저장소 폴더별 커밋·since 거르기)",
+      "input": {
+        "properties": {
+          "repo": {
+            "type": "string",
+            "pattern": "^[\\w.-]+/[\\w.-]+$",
+            "description": "저장소 owner/name (예: react/react)"
+          },
+          "path": {
+            "type": "string",
+            "description": "파일·폴더 경로 (예: packages/react-dom). 없으면 전체",
+            "maxLength": 200
+          },
+          "since": {
+            "type": "string",
+            "format": "date",
+            "description": "이 날짜 이후 커밋만 YYYY-MM-DD (예: 2026-11-10)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 35,
+            "default": 15,
+            "description": "몇 개까지 (기본 15)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      },
+      "output": {
+        "commits": {
+          "type": "list",
+          "description": "커밋 (최신순)",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string",
+              "description": "작성자 GitHub 아이디"
+            },
+            "time": {
+              "type": "string",
+              "description": "커밋 시각(ISO)"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "title",
+          "time",
+          "link"
+        ]
+      },
+      "examples": [
+        {
+          "repo": "react/react",
+          "path": "packages/react-dom"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://github.com/{{repo}}/commits?path={{path|url}}{{#since}}&since={{since}}{{/since}}"
+        },
+        {
+          "wait": {
+            "items": "li[data-testid='commit-row-item']",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "extract": {
+            "items": "li[data-testid='commit-row-item']",
+            "limit": 35,
+            "fields": {
+              "title": {
+                "css": "h4"
+              },
+              "author": {
+                "css": "a[href*='author=']"
+              },
+              "time": {
+                "css": "relative-time",
+                "attr": "datetime"
+              },
+              "link": {
+                "css": "h4 a",
+                "attr": "href"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "author": "author",
+              "time": "time",
+              "link": "link"
+            }
+          },
+          "as": "commits"
+        }
+      ],
+      "result": {
+        "commits": "{{commits}}"
+      },
+      "next": "누가·언제·무엇을(제목) 바꿨는지 짧게 정리해요. 시각은 한국 시간으로 바꿔 말해요. 바뀐 줄이 궁금하면 link를 열어 봐요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "reviews",
+      "title": "리뷰·CI 챙기기",
+      "description": "GitHub에서 내게 리뷰 요청된 PR과 내 PR의 CI(검사) 상태를 정리한다. 로그인해야 한다. '내가 리뷰해야 할 거 남았어?', '내 PR 검사 통과했어?'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://github.com/pulls/review-requested"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "Sign in to GitHub|Username or email address|Forgot password\\?",
+          "say": "GitHub 리뷰 요청을 보려면 먼저 GitHub를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "GitHub '리뷰 요청된 PR' 목록이에요. 열린 PR을 저장소·제목·작성자·올린 지 얼마나 됐는지로 정리해요. 이어서 https://github.com/pulls (내가 만든 PR)를 열어 각 PR의 검사 상태(통과·실패·진행 중)와 리뷰 상태(승인·변경 요청)를 읽고, 실패한 검사가 있으면 그 검사 이름을 짚어요. 승인·머지·댓글 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 300
+    },
+    {
+      "name": "comment",
+      "title": "댓글 남기기",
+      "description": "GitHub 이슈·PR에 남길 댓글을 써 두고, 올리기 직전에 사용자에게 보여 승인받는다. 로그인해야 한다. 댓글 올리기는 사용자 승인(browser_request_approval)을 받아야만 한다. '이 이슈에 재현 방법 물어봐 줘'에 쓴다: 문장은 사용자와 먼저 정한다.",
+      "tier": "연락하기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "repo": {
+            "type": "string",
+            "pattern": "^[\\w.-]+/[\\w.-]+$",
+            "description": "저장소 owner/name"
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "이슈·PR 번호"
+          },
+          "body": {
+            "type": "string",
+            "description": "댓글 내용 (마크다운)",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "body"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "repo": "octocat/Hello-World",
+          "number": 1,
+          "body": "재현 방법을 알려 주실 수 있을까요? 브라우저와 버전도 함께 부탁드려요."
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://github.com/{{repo}}/issues/{{number}}"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "Sign in to GitHub|Username or email address|Forgot password\\?",
+          "say": "GitHub에 댓글을 남기려면 먼저 GitHub를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "GitHub {{repo}} #{{number}} 화면이에요(PR이면 같은 번호로 열려요). 본문과 최근 댓글을 읽어 맥락을 확인하고, 맨 아래 댓글 칸에 '{{body}}'를 그대로 넣어요. 'Comment' 버튼은 누르지 말고 어디에·무슨 글을 올리는지 보여 주며 browser_request_approval로 승인받아야만 눌러요. 'Close' 같은 다른 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_pr",
+      "title": "작은 수정 올리기",
+      "description": "GitHub 웹 편집기로 파일 하나를 고쳐(오타 등) PR을 올리기 직전까지 간다. 로그인해야 한다. 커밋·PR 만들기는 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 내용은 사용자와 먼저 정한다.",
+      "tier": "연락하기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "repo": {
+            "type": "string",
+            "pattern": "^[\\w.-]+/[\\w.-]+$",
+            "description": "저장소 owner/name"
+          },
+          "path": {
+            "type": "string",
+            "description": "고칠 파일 경로 (예: README.md)",
+            "maxLength": 200
+          },
+          "branch": {
+            "type": "string",
+            "default": "main",
+            "description": "기준 브랜치 (기본 main)",
+            "maxLength": 60
+          },
+          "find": {
+            "type": "string",
+            "description": "바꿀 원래 글",
+            "maxLength": 300
+          },
+          "replace": {
+            "type": "string",
+            "description": "새 글",
+            "maxLength": 300
+          },
+          "message": {
+            "type": "string",
+            "description": "커밋 메시지 (예: README 오타 고치기)",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "find",
+          "replace"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "repo": "octocat/Hello-World",
+          "path": "README",
+          "branch": "master",
+          "find": "Hello World!",
+          "replace": "Hello, World!",
+          "message": "README 문장부호 고치기"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://github.com/{{repo}}/edit/{{branch}}/{{path}}"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "Sign in to GitHub|Username or email address|Forgot password\\?",
+          "say": "GitHub에서 수정하려면 먼저 GitHub를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "GitHub 웹 편집기({{repo}} {{path}})예요. 쓰기 권한이 없으면 GitHub가 포크를 만들자고 해요: 그건 승인 뒤에만 눌러요. '{{find}}'를 찾아 '{{replace}}'로만 바꾸고 다른 줄은 건드리지 않아요. 'Commit changes'를 누르면 나오는 창에서 메시지를 '{{message}}'로 하고 새 브랜치+PR을 고른 뒤, 확정 버튼은 누르지 말고 바뀐 줄·메시지를 보여 주며 browser_request_approval로 승인받아야만 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+{
+  "id": "kidsnote",
+  "tools": [
+    {
+      "name": "reports",
+      "title": "알림장 확인",
+      "description": "키즈노트 알림장(선생님이 쓴 오늘 하루·식사·낮잠·건강·배변 기록과 사진 수)을 읽어 정리한다. 로그인해야 한다. '오늘 낮잠 얼마나 잤대?', '어제 알림장 뭐래?'에 쓴다. date를 주면 그날 것을 찾는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "날짜 YYYY-MM-DD (없으면 가장 최근)"
+          },
+          "child": {
+            "type": "string",
+            "description": "아이 이름 (아이가 여럿일 때만). 없으면 첫 아이",
+            "maxLength": 20
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.kidsnote.com/service"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "아이디 찾기|비밀번호 찾기|로그인 상태 유지",
+          "say": "키즈노트 알림장을 보려면 먼저 키즈노트를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "키즈노트 서비스 화면이에요. 아이가 여럿이면 '{{child}}'(없으면 첫 아이)를 고르고 '알림장'으로 가요. date({{date}}, 없으면 가장 최근) 알림장을 열어 선생님 글 요약과 식사·낮잠(시간)·건강/체온·배변·투약 기록, 사진 수를 정리해요. 사용자가 물은 것(예: 낮잠)이 있으면 그걸 먼저 답해요. 댓글·답장은 쓰지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('kidsnote'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "album",
+      "title": "앨범 사진 보기",
+      "description": "키즈노트 앨범에서 최근(또는 그 주) 올라온 앨범 제목·날짜·사진 수를 정리하고 사진을 열어 보여 줄 수 있게 한다. 로그인해야 한다. '이번 주 사진 보여 줘'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "description": "이 날짜 이후 앨범 YYYY-MM-DD (없으면 최근 7일)"
+          },
+          "child": {
+            "type": "string",
+            "description": "아이 이름 (아이가 여럿일 때만). 없으면 첫 아이",
+            "maxLength": 20
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.kidsnote.com/service"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "아이디 찾기|비밀번호 찾기|로그인 상태 유지",
+          "say": "키즈노트 앨범을 보려면 먼저 키즈노트를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "키즈노트 서비스 화면이에요. 아이가 여럿이면 '{{child}}'(없으면 첫 아이)를 고르고 '앨범'으로 가요. since({{since}}, 없으면 최근 7일) 이후 앨범을 날짜·제목·사진 수로 정리하고, 사용자가 보고 싶다고 하면 그 앨범을 열어 둔 채 알려 줘요(사진 저장·내려받기는 사용자가 원할 때만). 댓글은 쓰지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('kidsnote'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "notices",
+      "title": "공지사항 챙기기",
+      "description": "키즈노트 원 공지사항(제목·날짜·준비물·마감일·행사 일정)을 최근 것부터 정리한다. 로그인해야 한다. '원에서 새 공지 올라왔어?', 매일 확인(새 공지 알림)에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "description": "이 날짜 이후 공지 YYYY-MM-DD (없으면 최근 7일)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.kidsnote.com/service"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "아이디 찾기|비밀번호 찾기|로그인 상태 유지",
+          "say": "키즈노트 공지를 보려면 먼저 키즈노트를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "키즈노트 서비스 화면이에요. '공지사항'으로 가서 since({{since}}, 없으면 최근 7일) 이후 공지를 날짜·제목으로 나열하고, 각 공지에서 준비물·회신 마감·행사 날짜·비용처럼 부모가 할 일을 한 줄로 뽑아요. 회신·동의 버튼(설문·참가 신청)은 누르지 않고 할 일로만 알려요. 로그인 화면이 나오면 연결 전이면 connect_ask('kidsnote'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_medication",
+      "title": "투약의뢰서 준비",
+      "description": "키즈노트 투약의뢰서를 써 두고, 보내기 직전에 사용자에게 보여 승인받는다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 약 이름·용량·시간·보관 방법을 사용자에게 먼저 확인한다.",
+      "tier": "연락하기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "투약 날짜 YYYY-MM-DD"
+          },
+          "medicine": {
+            "type": "string",
+            "description": "약 이름·종류·용량 (예: 해열제 시럽 5ml)",
+            "maxLength": 100
+          },
+          "time": {
+            "type": "string",
+            "description": "투약 시간 (예: 점심 먹고 12:30)",
+            "maxLength": 40
+          },
+          "symptom": {
+            "type": "string",
+            "description": "증상 (예: 감기, 미열)",
+            "maxLength": 60
+          },
+          "storage": {
+            "type": "string",
+            "enum": [
+              "실온",
+              "냉장"
+            ],
+            "description": "보관 방법"
+          },
+          "child": {
+            "type": "string",
+            "description": "아이 이름 (아이가 여럿일 때만). 없으면 첫 아이",
+            "maxLength": 20
+          }
+        },
+        "required": [
+          "date",
+          "medicine",
+          "time"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "date": "2026-11-19",
+          "medicine": "해열제 시럽 5ml",
+          "time": "점심 먹고 12:30",
+          "symptom": "미열",
+          "storage": "실온"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.kidsnote.com/service"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "아이디 찾기|비밀번호 찾기|로그인 상태 유지",
+          "say": "키즈노트 투약의뢰서를 쓰려면 먼저 키즈노트를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "키즈노트 서비스 화면이에요. 아이가 여럿이면 '{{child}}'를 고르고 '투약의뢰서'에서 새로 쓰기로 가요. 날짜 {{date}}, 증상 '{{symptom}}', 약 '{{medicine}}', 투약 시간 '{{time}}', 보관 '{{storage}}'를 칸에 맞게 넣어요(빈 칸은 비워 둬요). 보내기(등록) 버튼은 누르지 말고 넣은 내용을 그대로 보여 주며 browser_request_approval로 승인받아야만 눌러요. 서명 칸이 있으면 browser_handoff로 사용자에게 넘겨요. 로그인 화면이 나오면 연결 전이면 connect_ask('kidsnote'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
