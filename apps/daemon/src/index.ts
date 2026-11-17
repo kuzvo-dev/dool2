@@ -71,7 +71,7 @@ import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
-import { LoginWatch } from './connect-watch.js'
+import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Life } from './life.js'
@@ -478,6 +478,53 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const record: ConnectRecordMessage = { kind: 'connect', service: card.id }
     postSaved(cur.id, store.addMessage(cur.id, 'tool', JSON.stringify(record)))
   }
+  /**
+   * [로그인했어요]: 믿고 표시하지 않고 확인한다. 지켜보던 탭, 그래도 모르면 사이트 첫 화면을 새로 열어
+   * 로그인한 사람에게만 보이는 말이 있는지 본다 (간편 로그인 창에서 마쳤어도 사이트 쿠키로 보인다)
+   */
+  const connectVerify = async (card: ConnectCard) => {
+    const check = async (tabId: number) =>
+      looksSignedIn(
+        card,
+        (await browser.call('snapshot', { tabId, maxChars: 8_000 }, 20_000)) as { url: string; text: string },
+      )
+    let ok = false
+    const watched = loginWatch.tabOf(card.id)
+    if (watched !== undefined) ok = await check(watched).catch(() => false)
+    const url = connectUrl(card)
+    if (!ok && url && browser.status.connected) {
+      const opened = (await browser.call('open', { url }, 40_000).catch(() => undefined)) as
+        | { tabId: number }
+        | undefined
+      if (opened) {
+        await new Promise((r) => setTimeout(r, 2_500))
+        ok = await check(opened.tabId).catch(() => false)
+        await browser.call('close', { tabId: opened.tabId }).catch(() => undefined)
+      }
+    }
+    if (ok) {
+      connectMark(card.id, true)
+      if (watched !== undefined) await browser.call('close', { tabId: watched }).catch(() => undefined)
+      void link.broadcast({
+        kind: 'connect-result',
+        id: card.id,
+        ok: true,
+        message: `${card.name}에 로그인돼 있어요.`,
+      })
+      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+      return
+    }
+    // 아직: 그 화면에서 마치면 알아서 연결된다 (지켜보기를 다시 켠다)
+    if (watched !== undefined) loginWatch.start(card, watched)
+    void link.broadcast({
+      kind: 'connect-result',
+      id: card.id,
+      ok: false,
+      reason: 'human',
+      ...(watched !== undefined ? { tabId: watched } : {}),
+      message: `아직 ${card.name}에 로그인이 안 된 것 같아요. 화면을 열어 직접 마쳐 주세요.`,
+    })
+  }
   /** 대화 끝(8줄 안)에 이 서비스 연결 카드가 있나 (본체를 다시 켜도 기록으로 판단한다) */
   const cardNearEnd = (card: ConnectCard) => {
     const cur = conversation.current()
@@ -558,8 +605,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
     return p
   }
+  /**
+   * 연결이 끝나면(간편 로그인 포함) 그 사이트를 기다리던 로그인 요청(두리가 일하다 띄운 로그인 카드)도 끝낸다.
+   * 금고 값 없이 간편 로그인으로 들어갔으니 AI에게 그 탭을 새로 고쳐 이어서 하라고 알린다
+   */
+  const resolveLoginRequests = (card: ConnectCard) => {
+    const site = card.site?.replace(/^www\./, '')
+    if (!site) return
+    for (const r of browserTools.logins.list()) {
+      if (r.status !== 'pending') continue
+      let host = ''
+      try {
+        host = new URL(r.origin).hostname
+      } catch {}
+      if (host !== site && !host.endsWith(`.${site}`)) continue
+      browserTools.logins.finish(r.id, 'saved')
+      void link.broadcast({ kind: 'login-done', id: r.id, ok: true, message: `${card.name}에 로그인했어요.` })
+      const threadId = loginThread.get(r.id)
+      if (threadId)
+        followUp(
+          threadId,
+          appNote(
+            `${card.name}에 로그인했어요(간편 로그인이라 금고 값은 없어요). 그 탭을 새로 고치고 하던 일을 이어서 해 주세요.`,
+          ),
+        )
+    }
+  }
   const connectMark = (id: string, on: boolean): string | undefined => {
     loginWatch.stop(id)
+    if (on) void skills.card(id).then((card) => card && resolveLoginRequests(card))
     if (on && connectHuman.delete(id)) void skills.card(id).then((card) => card && connectDone(card))
     const next = { ...(readSettings().connections ?? {}) }
     if (on) next[id] = new Date().toISOString()
@@ -665,6 +739,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (action === 'open') return { tabId: await connectOpen(card, true) }
         if (action === 'chat') {
           connectInChat(card)
+          return {}
+        }
+        if (action === 'verify') {
+          void connectVerify(card)
           return {}
         }
         connectMark(card.id, action === 'mark')
