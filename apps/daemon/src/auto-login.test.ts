@@ -181,6 +181,26 @@ describe('간편 로그인', () => {
     expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
   })
 
+  it('MY를 누르는 순간 뜬 광고 팝업이 클릭을 가로채면 팝업을 닫고 다시 누른다', async () => {
+    const home = {
+      url: 'https://shop.test/',
+      text: '[e1 링크 "홈"] [e2 링크 "저장"] [e3 버튼 "내 주변"] [e9 링크 "MY"]',
+    }
+    const popup = { url: home.url, text: `${home.text}\n1/3 [e20 버튼 "다시 보지 않기"] [e21 버튼 "닫기"]` }
+    const ctLogin = {
+      url: 'https://shop.test/ct/login',
+      text: '5초만에 빠른 회원가입 [e30 버튼 "카카오로 시작"] [e31 버튼 "네이버로 시작"]',
+    }
+    const b = tabsBrowser({ 7: [home, popup, home, ctLogin, signed] })
+    const r = await socialLogin(
+      b,
+      { card, url: home.url, provider: 'kakao', creds: async () => undefined },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e9', 'e20', 'e9', 'e30'])
+  })
+
   it('카카오 로그인 화면이 나오면 금고 값을 넣는다', async () => {
     const kakaoLogin = {
       url: 'https://accounts.kakao.com/login',
