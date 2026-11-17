@@ -72,6 +72,7 @@ import type { Approvals } from './approvals.js'
 import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
+import { Connectors } from './connectors.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Life, watchPrompt } from './life.js'
@@ -84,6 +85,7 @@ import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
+export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export { parseSkill, Skills, validateSkill } from './skills.js'
@@ -300,7 +302,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browser.on('status', (s) => events.emit('extension', s))
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
-  const skills = new Skills(opts.skillsDir ?? defaultSkillsDir(), () => readSettings().connections ?? {})
+  const skillsDir = opts.skillsDir ?? defaultSkillsDir()
+  // 서비스 도구(커넥터, ADR 0018): 연결 카드 옆 tools.json을 엔진 동작으로 실행한다
+  const connectors = new Connectors({
+    dir: skillsDir,
+    browser,
+    tools: browserTools,
+    connected: () => readSettings().connections ?? {},
+  })
+  const skills = new Skills(
+    skillsDir,
+    () => readSettings().connections ?? {},
+    (id) => connectors.summary(id),
+  )
   // 지침의 서비스 지도는 마지막으로 읽은 목록을 쓴다: 처음 한 번 읽어 둔다
   void skills.connections().catch(() => undefined)
   // PC 화면 제어 (M4): 도우미는 처음 쓸 때 띄운다
@@ -991,9 +1005,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteSkill = (url) => skills.forUrl(url)
+  browserTools.siteConnector = (url) => connectors.forUrl(url)
   // 확장이 닫힌 두리 탭을 알리면 그 탭 기록을 지운다 (안 지우면 하루 내내 쌓인다)
   browser.on('notice', (n) => {
-    if (n.event === 'tab-closed') browserTools.forgetTab(n.tabId)
+    if (n.event === 'tab-closed') {
+      browserTools.forgetTab(n.tabId)
+      connectors.forgetTab(n.tabId)
+    }
   })
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
@@ -1368,6 +1386,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'POST' && b === 'life' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         return json(res, 200, life.run(c, args && typeof args === 'object' ? args : {}))
+      }
+      // 서비스 도구: catalog(바로 보일 도구), find(서비스 찾기), call(실행)
+      if (req.method === 'POST' && b === 'service' && c && !d) {
+        const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
+        if (c === 'catalog') return json(res, 200, { tools: await connectors.catalog() })
+        if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
+        if (c === 'call') {
+          const input =
+            args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
+          return json(res, 200, await connectors.call(String(args.tool ?? ''), input))
+        }
+        return json(res, 404, { error: '없는 주소예요' })
       }
       if (req.method === 'POST' && b === 'skill' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>

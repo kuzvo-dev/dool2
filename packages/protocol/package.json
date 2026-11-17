@@ -21,6 +21,10 @@
       "types": "./dist/rich.d.ts",
       "default": "./dist/rich.js"
     },
+    "./connector": {
+      "types": "./dist/connector.d.ts",
+      "default": "./dist/connector.js"
+    },
     "./connect": {
       "types": "./dist/connect.d.ts",
       "default": "./dist/connect.js"

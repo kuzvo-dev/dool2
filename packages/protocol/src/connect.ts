@@ -97,6 +97,11 @@ export const ConnectCardSchema = z
      * 없으면 "로그아웃"·"Logout" 같은 흔한 말로 확인한다
      */
     signedIn: z.array(line(30)).min(1).max(5).optional(),
+    /**
+     * 커넥터(tools.json)가 아직 없을 때 범용 브라우저로 일하는 짧은 요령 1~3줄 (검색 주소 등, ADR 0018).
+     * 커넥터가 생기면 지운다
+     */
+    hints: z.array(z.string().trim().min(5).max(200)).min(1).max(3).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
@@ -118,8 +123,10 @@ export function checkConnectCard(dir: string, raw: unknown): string[] {
 /** 연결 화면 한 줄: 카드 + 절차 문서 상태 + 연결 상태 (GET /api/connections) */
 export interface ConnectionItem {
   card: ConnectCard
-  /** SKILL.md가 있으면 그 상태 (초안 / 검증됨(날짜) / 막힘(사유)) */
+  /** 커넥터(tools.json)가 있으면 그 상태 요약 (검증됨(날짜) / 초안 / 막힘(사유)) */
   skill?: string
+  /** 커넥터 도구 이름들 (catchtable_search …) */
+  tools?: string[]
   /** 사용자가 연결을 마친 시각. open·device는 연결 없이 쓰거나 폰에서 켠다 */
   connectedAt?: string
 }

@@ -91,6 +91,8 @@ export class Skills {
     private readonly dir: string | undefined,
     /** 연결을 마친 서비스 id → 시각 (설정) */
     private readonly connected: () => Record<string, string> = () => ({}),
+    /** 서비스 도구(tools.json) 상태 요약 (ADR 0018) */
+    private readonly connector?: (id: string) => Promise<{ status?: string; tools?: string[] }>,
   ) {}
 
   async list(): Promise<SkillInfo[]> {
@@ -150,9 +152,15 @@ export class Skills {
     for (const n of names) {
       const card = await this.card(n)
       if (!card) continue
-      const skill = skills.get(n)
+      const c = (await this.connector?.(n).catch(() => undefined)) ?? {}
+      const skill = c.status ?? skills.get(n)
       const at = connected[n]
-      out.push({ card, ...(skill ? { skill } : {}), ...(at ? { connectedAt: at } : {}) })
+      out.push({
+        card,
+        ...(skill ? { skill } : {}),
+        ...(c.tools?.length ? { tools: c.tools } : {}),
+        ...(at ? { connectedAt: at } : {}),
+      })
     }
     const sorted = out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
     this.last = sorted
