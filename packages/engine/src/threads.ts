@@ -20,6 +20,11 @@ export interface ThreadServiceOptions {
   workspaceDir: string
   mcpServers: McpServerSpec[]
   systemPrompt?: string | (() => string)
+  /**
+   * 부탁에 붙여 AI에게만 보내는 참고 (기록에는 남기지 않는다).
+   * 예: 서비스 이름이 없는 "기념일 식당 찾아 줘"에 맞는 서비스(캐치테이블)를 알려 준다
+   */
+  hint?: (text: string) => string | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -105,8 +110,9 @@ export class ThreadService {
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
       const work = new WorkLog()
+      const hint = this.opts.hint?.(text)
       const events = this.runtime(thread.agent).runTurn({
-        text,
+        text: hint ? `${text}\n\n${hint}` : text,
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: this.systemFor(thread),
         mcpServers: this.opts.mcpServers,

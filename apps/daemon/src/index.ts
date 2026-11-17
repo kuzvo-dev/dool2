@@ -263,8 +263,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
     // 기억은 대화마다 지침 끝에 붙는다
+    // 부탁에 맞는 서비스를 AI에게만 짚어 준다 (기록에 안 남음)
+    hint: (text) => skills.routeHint(text),
+    // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>
-      [buildSystemPrompt(life.identity()), life.memoryPrompt()].filter(Boolean).join('\n\n'),
+      [buildSystemPrompt(life.identity()), skills.serviceMap(), life.memoryPrompt()]
+        .filter(Boolean)
+        .join('\n\n'),
   })
   /** 대화는 하나 (ADR 0015): 구간을 고르고 바꾸는 일 */
   const conversation = new ConversationService({ store, threads })
@@ -296,6 +301,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   const skills = new Skills(opts.skillsDir ?? defaultSkillsDir(), () => readSettings().connections ?? {})
+  // 지침의 서비스 지도는 마지막으로 읽은 목록을 쓴다: 처음 한 번 읽어 둔다
+  void skills.connections().catch(() => undefined)
   // PC 화면 제어 (M4): 도우미는 처음 쓸 때 띄운다
   const hands: HandsCaller =
     typeof opts.hands === 'object' ? opts.hands : new HandsProcess(opts.hands ?? defaultHandsBin())

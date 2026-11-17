@@ -84,7 +84,31 @@ export function cardForAgent(card: ConnectCard, connectedAt?: string): string {
   return lines.join('\n')
 }
 
+/**
+ * 일 낱말 → 서비스 카드에 쓰인 말. "기념일 식당 찾아 줘"처럼 서비스 이름이 없어도 맞는 서비스를 찾게 한다
+ */
+const TASK_WORDS: [RegExp, string[]][] = [
+  [
+    /식당|맛집|레스토랑|기념일|데이트|회식|점심|저녁|오마카세|파인다이닝|룸\s?식당/,
+    ['식당', '예약', '갈 만한 곳'],
+  ],
+  [/영화|상영|극장/, ['영화', '예매']],
+  [/공연|뮤지컬|콘서트|연극|전시|티켓/, ['공연', '예매']],
+  [/숙소|호텔|펜션|리조트|모텔|게스트하우스|에어비앤비|캠핑/, ['숙소', '예약']],
+  [/비행기|항공|항공권|공항/, ['항공', '항공권']],
+  [/장보기|우유|계란|과일|채소|반찬|생필품|식료품|새벽\s?배송/, ['장보기', '주문']],
+  [/배달|치킨|피자|야식/, ['배달', '주문']],
+  [/옷|신발|코디|패션|화장품|뷰티/, ['패션', '뷰티', '주문']],
+  [/택배|배송\s?조회|송장/, ['택배', '배송']],
+  [/책|도서|전자책/, ['책', '주문']],
+  [/요금|데이터|휴대폰\s?요금|통신/, ['요금', '통신']],
+  [/메일|일정|캘린더|회의/, ['메일', '일정']],
+  [/로또|복권/, ['로또']],
+]
+
 export class Skills {
+  /** 마지막으로 읽은 서비스 목록 (지침에 넣는 서비스 지도는 동기라 이것을 쓴다) */
+  private last: ConnectionItem[] = []
   constructor(
     private readonly dir: string | undefined,
     /** 연결을 마친 서비스 id → 시각 (설정) */
@@ -137,7 +161,72 @@ export class Skills {
       const at = connected[n]
       out.push({ card, ...(skill ? { skill } : {}), ...(at ? { connectedAt: at } : {}) })
     }
-    return out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
+    const sorted = out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
+    this.last = sorted
+    return sorted
+  }
+
+  /**
+   * 부탁에 맞는 서비스 참고 (AI에게만, 기록에 안 남음). 일 낱말이 있을 때만:
+   * "기념일 식당 찾아 줘" → (두리 참고: … 캐치테이블(catchtable, 연결 전): 식당 예약·갈 만한 곳 …)
+   */
+  routeHint(text: string): string | undefined {
+    if (text.startsWith('[두리 앱 알림]')) return undefined
+    const q = text.toLowerCase()
+    const hits = TASK_WORDS.filter(([re]) => re.test(q))
+    if (!hits.length) return undefined
+    // 일의 핵심어(식당·장보기·숙소·영화…)가 맞아야 한다. "예약"처럼 흔한 말만 겹치는 서비스는 빼고
+    const core = hits.map(([, w]) => w[0] as string)
+    const extra = hits.flatMap(([, w]) => w.slice(1))
+    const connected = this.connected()
+    const scored = this.last
+      .filter((it) => it.card.how !== 'device')
+      .map((it) => {
+        const body = [it.card.summary, ...it.card.abilities.map((a) => `${a.title} ${a.say}`)].join(' ')
+        if (!core.some((w) => body.includes(w))) return { it, n: 0 }
+        const n = 3 + extra.reduce((s, w) => s + (body.includes(w) ? 1 : 0), 0)
+        return { it, n: n + (connected[it.card.id] ? 2 : 0) }
+      })
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 3)
+    if (!scored.length) return undefined
+    const list = scored
+      .map(({ it }) => {
+        const c = it.card
+        const can = c.abilities
+          .slice(0, 2)
+          .map((a) => a.title)
+          .join('·')
+        return `${c.name}(${c.id}, ${connected[c.id] ? '연결됨' : '연결 전'}): ${can}`
+      })
+      .join(' / ')
+    return `(두리 참고: 이 부탁에 맞는 서비스 — ${list}. 포털 검색보다 이 서비스에서 먼저 찾아보고, skill_read로 절차를 확인해요. 예약·주문에 로그인이 필요한데 연결 전이면 connect_ask.)`
+  }
+
+  /**
+   * AI 지침에 넣는 서비스 지도: 서비스 이름이 없는 부탁("기념일 식당 찾아 줘")에도 맞는 서비스를 고르게.
+   * 분류마다 "이름(id)✓: 할 수 있는 일" 한 줄. ✓ = 연결됨 (로그인돼 있어 예약·주문까지 된다)
+   */
+  serviceMap(): string {
+    const connected = this.connected()
+    const by = new Map<string, string[]>()
+    for (const it of this.last) {
+      if (it.card.how === 'device') continue
+      const c = it.card
+      const can = c.abilities
+        .slice(0, 3)
+        .map((a) => a.title)
+        .join('·')
+      const line = `${c.name}(${c.id})${connected[c.id] ? '✓' : ''}: ${can}`
+      const k = CONNECT_CATEGORIES[c.category]
+      by.set(k, [...(by.get(k) ?? []), line])
+    }
+    if (!by.size) return ''
+    return [
+      '## 쓸 수 있는 서비스 (✓ = 연결됨)',
+      ...[...by].map(([k, lines]) => `- ${k}: ${lines.join(' / ')}`),
+    ].join('\n')
   }
 
   /** 두리 도구: skill_find, skill_read */
@@ -150,10 +239,10 @@ export class Skills {
       const all = await this.connections()
       // 카드 없이 절차만 있는 스킬도 찾을 수 있게
       const skills = await this.list()
-      const words = String(a.query ?? '')
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length > 0)
+      const query = String(a.query ?? '').toLowerCase()
+      const words = query.split(/\s+/).filter((w) => w.length > 0)
+      // 일 낱말로도 찾는다: "기념일 식당" → 식당·예약
+      for (const [re, more] of TASK_WORDS) if (re.test(query)) words.push(...more)
       // 이름·도메인에 맞으면 크게, 소개·할 수 있는 일에 맞으면 작게. 절차가 있는 서비스를 앞으로
       const score = (it: ConnectionItem) => {
         const head = [it.card.id, it.card.name, it.card.site ?? ''].join(' ').toLowerCase()
@@ -166,7 +255,7 @@ export class Skills {
           .join(' ')
           .toLowerCase()
         const n = words.reduce((sum, w) => sum + (head.includes(w) ? 3 : body.includes(w) ? 1 : 0), 0)
-        return n > 0 ? n + (it.skill ? 2 : 0) : 0
+        return n > 0 ? n + (it.skill ? 2 : 0) + (it.connectedAt ? 3 : 0) : 0
       }
       const hit = (
         words.length === 0
