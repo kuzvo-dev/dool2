@@ -1246,7 +1246,11 @@ export async function pageFetch(
   method: 'GET' | 'POST',
   body: string | null,
   type: string | null,
-): Promise<{ status: number; type: string; body: string; truncated: boolean } | { error: string }> {
+  /** JSON에서 꺼낼 경로 (data.list, items.*.name). 주면 그 부분만 돌려준다 (응답이 커도 잘리지 않게) */
+  path: string | null,
+): Promise<
+  { status: number; type: string; body: string; truncated: boolean; json?: unknown } | { error: string }
+> {
   try {
     const res = await fetch(url, {
       method,
@@ -1258,6 +1262,42 @@ export async function pageFetch(
       ...(body !== null ? { body } : {}),
     })
     const text = await res.text()
+    if (path !== null) {
+      let data: unknown
+      try {
+        data = JSON.parse(text)
+      } catch {
+        return {
+          status: res.status,
+          type: res.headers.get('content-type') ?? '',
+          body: text.slice(0, 200),
+          truncated: true,
+        }
+      }
+      const pick = (v: unknown, keys: string[]): unknown => {
+        let cur = v
+        for (const [i, k] of keys.entries()) {
+          if (cur === null || cur === undefined) return undefined
+          if (k === '*') {
+            if (!Array.isArray(cur)) return undefined
+            const rest = keys.slice(i + 1)
+            return cur
+              .map((x) => (rest.length ? pick(x, rest) : x))
+              .filter((x) => x !== undefined && x !== null)
+          }
+          cur =
+            Array.isArray(cur) && /^-\d+$/.test(k) ? cur.at(Number(k)) : (cur as Record<string, unknown>)[k]
+        }
+        return cur
+      }
+      return {
+        status: res.status,
+        type: res.headers.get('content-type') ?? '',
+        body: '',
+        truncated: false,
+        json: pick(data, path.split('.').filter(Boolean)) ?? null,
+      }
+    }
     const max = 400_000
     return {
       status: res.status,

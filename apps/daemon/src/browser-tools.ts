@@ -167,8 +167,6 @@ export class BrowserTools {
   }
   /** 두리가 다루는 탭이 바뀌었을 때 (폰 대화에 일하는 화면을 띄운다) */
   onActiveTab?: (tabId: number) => void
-  /** 주소의 사이트에 두리 스킬(절차)이 있으면 그 이름·설명 */
-  siteSkill?: (url: string) => Promise<{ name: string; description: string } | undefined>
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
@@ -592,7 +590,7 @@ export class BrowserTools {
     if (this._lastTabId === tabId) this._lastTabId = undefined
   }
 
-  /** 처음 들어온 사이트에 스킬이 있으면 먼저 읽으라고 알린다 (요령 없이 주소를 짐작해 빈 화면에서 멈추던 것) */
+  /** 처음 들어온 사이트에 서비스 도구가 있으면 그걸 쓰라고 알린다 (화면을 하나씩 누르기보다 빠르고 정확하다) */
   private async guideFor(tabId: number, url: string): Promise<string | undefined> {
     const svc = await this.siteConnector?.(url).catch(() => undefined)
     if (svc) {
@@ -600,11 +598,7 @@ export class BrowserTools {
       this.guided.set(tabId, svc.id)
       return `📘 이 사이트(${svc.name})는 두리 서비스 도구가 있어요: ${svc.tools.join(', ')}. 화면을 하나씩 누르기보다 이 도구를 먼저 쓰세요(바로 보이는 도구 목록에 없으면 service_call). 도구로 안 되는 일만 브라우저로 이어서 해요.`
     }
-    if (!this.siteSkill) return undefined
-    const skill = await this.siteSkill(url).catch(() => undefined)
-    if (!skill || this.guided.get(tabId) === skill.name) return undefined
-    this.guided.set(tabId, skill.name)
-    return `📘 이 사이트는 두리 스킬 '${skill.name}'이 있어요. 아직 안 읽었으면 skill_read('${skill.name}')로 먼저 읽고 그 절차(주소·순서·멈출 곳)를 따르세요.`
+    return undefined
   }
 
   private async read(tabId: number, maxChars?: unknown, note?: string): Promise<ToolResult> {

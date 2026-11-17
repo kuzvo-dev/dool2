@@ -117,7 +117,7 @@ interface ThreadHandle {
 ```
 
 - 사용자는 설정에서 "Claude Code로 실행"과 "Codex로 실행" 중 하나를 고른다. 둘 다 연결해 두면 한쪽 한도가 차면 다른 쪽으로 넘길 수 있다(사용자가 켰을 때만).
-- 스킬은 각 CLI의 스킬 기능을 쓰지 않는다. 대신 두리 MCP 도구(`skill_find`, `skill_read`)로 제공한다. 그러면 두 에이전트가 같은 스킬을 쓰고, 서명 확인도 한곳에서 한다.
+- 서비스별 요령은 각 CLI의 스킬 기능을 쓰지 않는다. 대신 두리 서비스 도구(커넥터, `skills/<id>/tools.json`, ADR 0018)로 제공한다: 연결한 서비스의 도구(`catchtable_search` …)는 바로 보이고, 나머지는 `service_find` → `service_call`. 그러면 두 에이전트가 같은 도구를 쓰고, 승인 게이트와 서명 확인도 한곳에서 한다.
 
 ### 3.2 Claude Code
 

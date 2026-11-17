@@ -137,9 +137,22 @@ export const StepSchema = z.union([
   z
     .object({
       map: z
-        .object({ from: Text(200), fields: z.record(Key, Text(200)), limit: z.number().int().optional() })
+        .object({
+          from: Text(200),
+          fields: z.record(Key, Text(200)),
+          /** 몇 줄까지 (수나 "{{limit}}") */
+          limit: z.union([z.number().int().min(1).max(200), z.string().max(40)]).optional(),
+        })
         .strict(),
       as: Key,
+    })
+    .strict(),
+  /** 이 말이 (기다려도) 안 나오면 멈추고 알리기: "그 시간은 마감이에요" 같은 결과 (막힘이 아니다) */
+  z
+    .object({
+      require: Text(300),
+      say: Text(300),
+      timeoutMs: z.number().int().min(500).max(20_000).optional(),
     })
     .strict(),
   /** 이 말이 보이면 멈추고 알리기. login이면 연결(로그인) 안내로 돌려준다 */
@@ -175,6 +188,7 @@ export const STEP_KINDS = [
   'fetch',
   'map',
   'stop_if',
+  'require',
   'approve',
   'handoff_to_agent',
 ] as const
@@ -249,14 +263,30 @@ export function tierAnnotations(tier: Tier) {
 
 export type Scope = Record<string, unknown>
 
-/** 점 경로로 값 꺼내기: "shops.0.name", "data.list" */
+/**
+ * 점 경로로 값 꺼내기: "shops.0.name", "data.list", 뒤에서 "events.-1.status",
+ * 목록의 칸 모으기 "slots.*.time" → ["12:00", "19:30"]
+ */
 export function pick(scope: unknown, path: string): unknown {
+  const keys = path.split('.').filter(Boolean)
   let cur: unknown = scope
-  for (const k of path.split('.').filter(Boolean)) {
+  for (const [i, k] of keys.entries()) {
     if (cur === null || cur === undefined) return undefined
-    cur = (cur as Record<string, unknown>)[k]
+    if (k === '*') {
+      if (!Array.isArray(cur)) return undefined
+      const rest = keys.slice(i + 1).join('.')
+      return cur.map((x) => (rest ? pick(x, rest) : x)).filter((x) => x !== undefined && x !== null)
+    }
+    if (Array.isArray(cur) && /^-\d+$/.test(k)) cur = cur.at(Number(k))
+    else cur = (cur as Record<string, unknown>)[k]
   }
   return cur
+}
+
+const DOW = ['일', '월', '화', '수', '목', '금', '토']
+/** 한국 날짜 (YYYY-MM-DD) */
+function kstDate(ms: number): string {
+  return new Date(ms + 9 * 3600_000).toISOString().slice(0, 10)
 }
 
 const FILTERS: Record<string, (v: string) => string> = {
@@ -280,6 +310,19 @@ const FILTERS: Record<string, (v: string) => string> = {
     return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${m[2]}`
   },
   json: (v) => JSON.stringify(v),
+  /** 2026-11-27 → 금 */
+  dow: (v) => {
+    const t = Date.parse(`${v.slice(0, 10)}T00:00:00Z`)
+    return Number.isNaN(t) ? '' : (DOW[new Date(t).getUTCDay()] ?? '')
+  },
+  /** 오늘·내일이면 그 말, 아니면 11.27 (예약 앱의 날짜 칸) */
+  kday: (v) => {
+    const now = Date.now()
+    if (v.startsWith(kstDate(now))) return '오늘'
+    if (v.startsWith(kstDate(now + 86_400_000))) return '내일'
+    const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v)
+    return m ? `${m[1]}.${m[2]}` : v
+  },
 }
 /** 실행할 때 늘 있는 이름: today = 오늘 날짜(한국, YYYY-MM-DD) */
 export const BUILTIN_NAMES = ['today']
@@ -398,7 +441,14 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
       }
       if ('wait' in s) for (const v of [s.wait.text, s.wait.gone]) if (v) useAll(v, where)
       if ('find' in s) for (const v of Object.values(s.find)) useAll(v, where)
-      if ('stop_if' in s) useAll(s.stop_if, where)
+      if ('stop_if' in s) {
+        useAll(s.stop_if, where)
+        useAll(s.say, where)
+      }
+      if ('require' in s) {
+        useAll(s.require, where)
+        useAll(s.say, where)
+      }
       if ('fetch' in s) {
         useAll(s.fetch.url, where)
         if (s.fetch.body) useAll(s.fetch.body, where)
@@ -409,7 +459,10 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
         if (s.fetch.method === 'POST' && t.tier !== '찾아보기' && t.tier !== '채워 두기')
           problems.push(`${at} ${where}: 돈 내기·연락하기 도구는 POST 요청을 쓸 수 없어요`)
       }
-      if ('map' in s) useAll(`{{${s.map.from}}}`, where)
+      if ('map' in s) {
+        useAll(`{{${s.map.from}}}`, where)
+        if (typeof s.map.limit === 'string') useAll(s.map.limit, where)
+      }
       if ('approve' in s) {
         for (const v of Object.values(s.approve)) if (v) useAll(v, where)
         if (t.tier !== '돈 내기' && t.tier !== '연락하기')
