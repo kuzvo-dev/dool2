@@ -1,0 +1,506 @@
+{
+  "id": "oliveyoung",
+  "tools": [
+    {
+      "name": "search",
+      "title": "상품 찾기",
+      "description": "로그인 없이 된다. 올리브영에서 검색어로 화장품·생활용품을 찾아 브랜드·이름·정가·판매가·별점(100점 만점)·리뷰 수·표시(세일·쿠폰·증정·오늘드림)·상품 번호·링크를 돌려준다. 검색 화면을 열고 sort 글자를 눌러 정렬한 뒤 화면 목록(24개)을 읽는다. '건성용 수분크림'처럼 피부 타입·기능을 검색어에 넣으면 된다. '2만 원 이하'는 max_price로 거른다. 많이 팔리는 순위는 oliveyoung_ranking, 주문은 oliveyoung_prepare_order에 product_no를 넘긴다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 수분크림·클렌징폼 검색, 정렬 누르기·가격 거르기, 화면 목록 읽기)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "찾을 상품·브랜드·성분 (예: 건성 수분크림, 클렌징폼, 선크림, 라운드랩)",
+            "maxLength": 40
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "인기순",
+              "판매순",
+              "낮은 가격순",
+              "높은 가격순",
+              "리뷰 많은 순",
+              "할인율순",
+              "신상품순"
+            ],
+            "default": "인기순",
+            "description": "정렬 (기본 인기순)"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최대 판매가(원) (예: 2만 원 이하면 20000). 없으면 비워 둔다"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "default": 10,
+            "description": "몇 개까지 (기본 10)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "상품 이름 (용량·기획 구성 포함)"
+            },
+            "brand": {
+              "type": "string"
+            },
+            "product_no": {
+              "type": "string",
+              "description": "oliveyoung_prepare_order에 넘길 상품 번호 (A000000192782처럼)"
+            },
+            "price": {
+              "type": "string",
+              "description": "지금 판매가 (원, 23,100처럼. 옵션마다 다르면 가장 싼 값)"
+            },
+            "normal_price": {
+              "type": "string",
+              "description": "정가 (원, 할인이 없으면 비어 있음)"
+            },
+            "rating": {
+              "type": "integer",
+              "description": "별점 (100점 만점, 96 = 별 4.8개)"
+            },
+            "reviews": {
+              "type": "string",
+              "description": "리뷰 수 (17,824처럼)"
+            },
+            "flags": {
+              "type": "strings",
+              "description": "세일·쿠폰·증정·오늘드림 등"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "brand",
+          "product_no",
+          "price",
+          "link"
+        ]
+      },
+      "examples": [
+        {
+          "keyword": "수분크림"
+        },
+        {
+          "keyword": "클렌징폼",
+          "sort": "리뷰 많은 순",
+          "max_price": 20000,
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "items": "ul.cate_prd_list > li",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "click": {
+            "text": "{{sort}}"
+          },
+          "optional": true
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "wait": {
+            "items": "ul.cate_prd_list > li",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "extract": {
+            "items": "ul.cate_prd_list > li:has(.tx_name)",
+            "limit": 24,
+            "fields": {
+              "name": {
+                "css": ".tx_name"
+              },
+              "brand": {
+                "css": ".tx_brand"
+              },
+              "product_no": {
+                "css": "a.prd_thumb",
+                "attr": "href",
+                "match": "goodsNo=([A-Z]?\\d+)"
+              },
+              "price": {
+                "css": ".tx_cur .tx_num"
+              },
+              "normal_price": {
+                "css": ".tx_org .tx_num"
+              },
+              "rating": {
+                "css": ".review_point .point",
+                "attr": "style",
+                "match": "(\\d+)%"
+              },
+              "reviews": {
+                "css": ".prd_point_area",
+                "match": "^\\(?([\\d,]+\\+?)"
+              },
+              "flags": {
+                "css": ".prd_flag .icon_flag",
+                "list": true
+              }
+            }
+          },
+          "as": "found",
+          "min": 1
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "cheap"
+        },
+        {
+          "map": {
+            "from": "cheap",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "brand": "brand",
+              "product_no": "product_no",
+              "price": "price",
+              "normal_price": "normal_price",
+              "rating": "rating",
+              "reviews": "reviews",
+              "flags": "flags",
+              "link": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={{product_no}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": {
+        "products": "{{products}}"
+      },
+      "next": "값이 맞는 것 3~5개를 브랜드·이름·판매가·별점·리뷰 수로 짧게 보여 주고, 세일·쿠폰·증정 표시가 있으면 함께 알려 줘요. 주문하려면 oliveyoung_prepare_order에 product_no를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "ranking",
+      "title": "랭킹·세일 보기",
+      "description": "로그인 없이 된다. 올리브영 랭킹(오늘 많이 팔린 순) 화면을 열어 분야(전체·스킨케어·마스크팩·클렌징·선케어·메이크업 등)를 누른 뒤 순위대로 브랜드·이름·정가·판매가·표시(세일·쿠폰·증정·오늘드림)·상품 번호·링크를 돌려준다. '요즘 뭐가 인기야?', '선크림 1위 뭐야?', '지금 세일하는 거'에 쓴다(세일 표시가 있는 것만 보려면 on_sale=true). 올영세일 같은 행사 시작 알림은 이 도구를 goal_create로 하루 한 번 불러 세일 표시가 늘었는지 보면 된다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 전체·선케어 랭킹, 세일만 거르기)",
+      "input": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "전체",
+              "스킨케어",
+              "마스크팩",
+              "클렌징",
+              "선케어",
+              "메이크업",
+              "네일",
+              "뷰티소품",
+              "더모 코스메틱",
+              "향수/탈취제",
+              "헤어케어",
+              "바디케어",
+              "맨즈에딧",
+              "건강식품",
+              "푸드",
+              "구강용품",
+              "위생용품"
+            ],
+            "default": "전체",
+            "description": "분야 (기본 전체)"
+          },
+          "on_sale": {
+            "type": "boolean",
+            "description": "세일 표시가 있는 것만 (예: '지금 세일하는 것'이면 true). 아니면 비워 둔다"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "몇 위까지 (기본 10)"
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "순위대로",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "brand": {
+              "type": "string"
+            },
+            "product_no": {
+              "type": "string",
+              "description": "oliveyoung_prepare_order에 넘길 상품 번호"
+            },
+            "price": {
+              "type": "string",
+              "description": "지금 판매가 (원)"
+            },
+            "normal_price": {
+              "type": "string",
+              "description": "정가 (원, 할인이 없으면 비어 있음)"
+            },
+            "flags": {
+              "type": "strings",
+              "description": "세일·쿠폰·증정·오늘드림 등"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 5,
+        "filled": [
+          "name",
+          "product_no",
+          "price",
+          "link"
+        ]
+      },
+      "examples": [
+        {
+          "category": "전체"
+        },
+        {
+          "category": "선케어",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.oliveyoung.co.kr/store/main/getBestList.do"
+        },
+        {
+          "wait": {
+            "items": "li:has(a.prd_thumb)",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "click": {
+            "text": "{{category}}"
+          },
+          "optional": true
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "extract": {
+            "items": "li:has(a.prd_thumb):has(.tx_name)",
+            "limit": 100,
+            "fields": {
+              "name": {
+                "css": ".tx_name"
+              },
+              "brand": {
+                "css": ".tx_brand"
+              },
+              "product_no": {
+                "css": "a.prd_thumb",
+                "attr": "href",
+                "match": "goodsNo=([A-Z]?\\d+)"
+              },
+              "price": {
+                "css": ".tx_cur .tx_num"
+              },
+              "normal_price": {
+                "css": ".tx_org .tx_num"
+              },
+              "flags": {
+                "css": ".prd_flag .icon_flag",
+                "list": true
+              }
+            }
+          },
+          "as": "found",
+          "min": 1
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "flags",
+            "op": "contains",
+            "value": "{{#on_sale}}세일{{/on_sale}}"
+          },
+          "as": "picked"
+        },
+        {
+          "map": {
+            "from": "picked",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "brand": "brand",
+              "product_no": "product_no",
+              "price": "price",
+              "normal_price": "normal_price",
+              "flags": "flags",
+              "link": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={{product_no}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": {
+        "products": "{{products}}"
+      },
+      "next": "1~5위를 순위·브랜드·이름·판매가로 짧게 보여 주고 세일·증정이 있으면 함께 알려 줘요. 주문하려면 oliveyoung_prepare_order에 product_no를 넘겨요.",
+      "minIntervalSec": 1800
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 확인",
+      "description": "로그인(연결)해야 된다. 올리브영 주문/배송 조회 화면을 열어 최근 주문의 주문일·상품·결제 금액·배송 방법(오늘드림·일반 배송·매장 픽업)·지금 상태(결제 완료·배송 준비·배송 중·배송 완료·취소/반품)를 읽어 정리한다. '주문한 거 언제 와?', '쓰던 클렌징폼 뭐였지?'에 먼저 쓴다. 다시 사려면 상품 번호로 oliveyoung_prepare_order에 넘긴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "최근 주문 몇 건까지 (기본 3)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {
+          "count": 3
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.oliveyoung.co.kr/store/mypage/getOrderList.do"
+        },
+        {
+          "wait": {
+            "text": "CJ ONE 통합회원 아이디|주문일자|주문/배송 조회|배송조회",
+            "timeoutMs": 8000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "CJ ONE 통합회원 아이디|아이디 저장",
+          "say": "올리브영에 로그인해야 주문 내역을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "올리브영 주문/배송 조회 화면이에요. 최근 주문 {{count}}건까지 주문일·상품 이름과 개수·결제 금액·배송 방법(오늘드림·일반 배송·매장 픽업)·지금 상태(결제 완료·배송 준비·배송 중·배송 완료·취소/반품)를 읽어 짧게 정리해요. 배송 중인 주문은 '배송조회'로 택배사와 마지막 단계만 읽어요. 다시 사려는 상품이면 상품 링크의 goodsNo를 함께 알려 줘요. 취소·반품·리뷰 쓰기 버튼은 누르지 않아요. 주문 번호·주소·전화번호는 사용자에게 다시 말하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 상품 화면을 열어 옵션·개수를 맞추고 주문 직전까지 간다. 옵션 고르기·바로구매·결제 화면(오늘드림·일반 배송 고르기 포함)은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제·주문 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('oliveyoung').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "oliveyoung_search·ranking이 준 상품 번호 (예: A000000192782)",
+            "pattern": "^[A-Z]?\\d{6,15}$"
+          },
+          "product": {
+            "type": "string",
+            "description": "상품 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "option": {
+            "type": "string",
+            "description": "옵션 (색상·용량·구성, 예: 21호). 없으면 비워 둔다",
+            "maxLength": 60
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1,
+            "description": "개수 (기본 1)"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "일반 배송",
+              "오늘드림"
+            ],
+            "default": "일반 배송",
+            "description": "배송 방법 (기본 일반 배송)"
+          }
+        },
+        "required": [
+          "product_no"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "product_no": "A000000192782",
+          "product": "에스네이처 아쿠아 스쿠알란 수분크림",
+          "quantity": 1
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo={{product_no}}"
+        },
+        {
+          "require": "바로구매|장바구니|일시품절|품절",
+          "say": "이 상품 화면이 열리지 않았어요. 판매가 끝났거나 번호가 바뀌었을 수 있어요. oliveyoung_search로 다시 찾아볼게요.",
+          "timeoutMs": 10000
+        },
+        {
+          "handoff_to_agent": "{{product}} 상품 화면이에요. 옵션이 있으면 '{{option}}'을 고르고(품절이면 사용자에게 알리고 다른 옵션을 물어요), 개수를 {{quantity}}개로 맞춰 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('oliveyoung'), 연결했는데 풀렸으면 browser_handoff. 로봇 확인이 나오면 풀지 말고 browser_handoff. 주문서에서 배송 방법을 '{{delivery}}'로 고르고 결제 전에 멈춰, 상품·옵션·개수·상품 금액·쿠폰·CJ ONE 포인트·배송비·최종 결제 금액·도착 예정·배송지 이름만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
