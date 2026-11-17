@@ -96,12 +96,93 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 
 ## 상태
 
-| 서비스 | 도구 | 상태 |
-| --- | --- | --- |
-| [catchtable](catchtable/tools.json) | `catchtable_search` 식당 빈자리 찾기 · `catchtable_prepare_booking` 예약 준비 | 검증됨(2026-11-17, 예약금 결제 방법 화면까지) |
-| [cj-logistics](cj-logistics/tools.json) | `cj_logistics_track` 택배 조회 | 검증됨(2026-11-17, 등록 전 번호 안내까지) |
+서비스 81곳, 도구 311개 중 **실제 사이트에서 확인한 도구 87개**예요. 로그인 없이 되는 찾아보기 도구는 97개이고 그중 86개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
 
-연결 카드(`connect.json`)는 쇼핑·장보기·여행·항공·예매·통신사 등 80여 개 서비스에 있어요. 커넥터가 없는 서비스는 두리가 범용 브라우저 도구로 일해요. 커넥터를 만들어 `검증됨`으로 올리는 일이 좋은 첫 기여예요.
+| 분류 | 서비스 | 도구 | 검증된 도구 |
+| --- | --- | --- | --- |
+| 쇼핑 | [11번가](11st/tools.json) | 4 | `search` |
+| 쇼핑 | [G마켓](gmarket/tools.json) | 4 | — |
+| 쇼핑 | [다이소몰](daiso-mall/tools.json) | 4 | `search` |
+| 쇼핑 | [롯데ON](lotteon/tools.json) | 4 | `search` |
+| 쇼핑 | [신라면세점](shilla-dfs/tools.json) | 3 | `search` |
+| 쇼핑 | [신세계면세점](shinsegae-dfs/tools.json) | 3 | `search` |
+| 쇼핑 | [오늘의집](ohouse/tools.json) | 4 | `search` |
+| 쇼핑 | [중고나라](joongna/tools.json) | 4 | `search` |
+| 쇼핑 | [코스트코](costco/tools.json) | 4 | `search` |
+| 쇼핑 | [쿠팡](coupang/tools.json) | 4 | — |
+| 쇼핑 | [크림(KREAM)](kream/tools.json) | 5 | `search`, `price` |
+| 장보기·배달 | [CJ더마켓](cj-the-market/tools.json) | 4 | `search`, `deals` |
+| 장보기·배달 | [SSG닷컴](ssg/tools.json) | 3 | — |
+| 장보기·배달 | [오아시스마켓](oasis-market/tools.json) | 4 | `search` |
+| 장보기·배달 | [요기요](yogiyo/tools.json) | 3 | `search` |
+| 장보기·배달 | [컬리](kurly/tools.json) | 3 | `search` |
+| 패션·뷰티 | [29CM](29cm/tools.json) | 4 | `search` |
+| 패션·뷰티 | [W컨셉](wconcept/tools.json) | 3 | `search` |
+| 패션·뷰티 | [무신사](musinsa/tools.json) | 4 | `search`, `product` |
+| 패션·뷰티 | [에이블리](ably/tools.json) | 4 | `search` |
+| 패션·뷰티 | [올리브영](oliveyoung/tools.json) | 4 | `search`, `ranking` |
+| 패션·뷰티 | [유니클로](uniqlo/tools.json) | 5 | `search`, `stock` |
+| 패션·뷰티 | [지그재그](zigzag/tools.json) | 3 | `search` |
+| 여행·숙소 | [Airbnb](airbnb/tools.json) | 4 | `search` |
+| 여행·숙소 | [Booking.com](booking/tools.json) | 3 | `search` |
+| 여행·숙소 | [Uber](uber/tools.json) | 3 | — |
+| 여행·숙소 | [마이리얼트립](myrealtrip/tools.json) | 3 | `search` |
+| 여행·숙소 | [숲나들e](foresttrip/tools.json) | 4 | — |
+| 여행·숙소 | [쏘카](socar/tools.json) | 2 | `search` |
+| 여행·숙소 | [아고다](agoda/tools.json) | 3 | `search` |
+| 여행·숙소 | [야놀자(NOL)](yanolja/tools.json) | 5 | `search` |
+| 여행·숙소 | [여기어때](yeogi/tools.json) | 4 | `search`, `rooms` |
+| 여행·숙소 | [캠핏](camfit/tools.json) | 3 | `search` |
+| 여행·숙소 | [클룩](klook/tools.json) | 3 | `search` |
+| 여행·숙소 | [트립닷컴](trip-com/tools.json) | 3 | `hotel_search` |
+| 여행·숙소 | [호텔스닷컴](hotels-com/tools.json) | 3 | `search` |
+| 항공 | [대한항공](korean-air/tools.json) | 4 | — |
+| 항공 | [아시아나항공](asiana/tools.json) | 4 | — |
+| 항공 | [에어부산](air-busan/tools.json) | 4 | `search` |
+| 항공 | [이스타항공](eastar-jet/tools.json) | 3 | — |
+| 항공 | [제주항공](jeju-air/tools.json) | 4 | `search` |
+| 항공 | [진에어](jin-air/tools.json) | 3 | — |
+| 예매·예약 | [CGV](cgv/tools.json) | 5 | `theaters`, `movies`, `showtimes` |
+| 예매·예약 | [국립현대미술관](mmca/tools.json) | 3 | `exhibitions` |
+| 예매·예약 | [롯데시네마](lotte-cinema/tools.json) | 4 | `showtimes`, `movies` |
+| 예매·예약 | [메가박스](megabox/tools.json) | 5 | `theaters`, `movies`, `showtimes` |
+| 예매·예약 | [서울시 공공서비스예약](seoul-yeyak/tools.json) | 3 | `search` |
+| 예매·예약 | [캐치테이블](catchtable/tools.json) | 2 | `search`, `prepare_booking` |
+| 예매·예약 | [티켓링크](ticketlink/tools.json) | 4 | `search`, `details` |
+| 영상·음악 | [넷플릭스](netflix/tools.json) | 6 | `browse`, `top10`, `title` |
+| 영상·음악 | [멜론](melon/tools.json) | 5 | `chart`, `search`, `lyrics` |
+| 영상·음악 | [왓챠](watcha/tools.json) | 6 | `search`, `tag`, `content` |
+| 영상·음악 | [티빙](tving/tools.json) | 6 | `search`, `browse`, `content` |
+| 책 | [yes24](yes24/tools.json) | 4 | `search` |
+| 책 | [교보문고](kyobo/tools.json) | 4 | `search`, `store_stock` |
+| 책 | [리디](ridi/tools.json) | 3 | `search` |
+| 책 | [밀리의서재](millie/tools.json) | 5 | `best`, `book` |
+| 책 | [알라딘](aladin/tools.json) | 4 | `search`, `used` |
+| SNS | [X(트위터)](x/tools.json) | 3 | — |
+| SNS | [스레드](threads/tools.json) | 4 | — |
+| SNS | [인스타그램](instagram/tools.json) | 4 | — |
+| SNS | [핀터레스트](pinterest/tools.json) | 3 | — |
+| 업무 | [GitHub](github/tools.json) | 4 | `commits` |
+| 업무 | [링크드인](linkedin/tools.json) | 6 | `search_jobs`, `job` |
+| 업무 | [마이크로소프트 365](microsoft-365/tools.json) | 4 | — |
+| 업무 | [사람인](saramin/tools.json) | 5 | `search`, `job` |
+| 업무 | [슬랙](slack/tools.json) | 3 | — |
+| 메일·일정 | [구글 캘린더](google-calendar/tools.json) | 4 | — |
+| 메일·일정 | [네이버 메일](naver-mail/tools.json) | 3 | — |
+| 메일·일정 | [지메일](gmail/tools.json) | 3 | — |
+| 통신 | [KT](kt/tools.json) | 5 | `plans` |
+| 통신 | [KT M모바일](kt-mmobile/tools.json) | 5 | `plans` |
+| 통신 | [LG유플러스](lguplus/tools.json) | 5 | `plans` |
+| 통신 | [SKT T월드](skt/tools.json) | 5 | `plans` |
+| 생활 | [CJ대한통운](cj-logistics/tools.json) | 1 | `track` |
+| 생활 | [동행복권](dhlottery/tools.json) | 4 | `results` |
+| 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
+| 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |
+| 생활 | [에브리타임](everytime/tools.json) | 4 | — |
+| 생활 | [키즈노트](kidsnote/tools.json) | 4 | — |
+| 생활 | [패널나우](panelnow/tools.json) | 3 | `surveys` |
+
+폰 권한 서비스(연락처·위치·폰 캘린더)는 브라우저가 아니라 폰 앱에서 다뤄서 서비스 도구가 없어요.
 
 ## 고장 감시 (ADR 0020)
 
