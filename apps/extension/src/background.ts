@@ -5,10 +5,14 @@
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
 import { keyDef, safeUrl } from './keys.js'
 import {
+  type ExtractSpec,
   type LocateMode,
   type LocateResult,
   pageCaretEnd,
   pageClick,
+  pageExtract,
+  pageFetch,
+  pageFind,
   pageForm,
   pageFormFocus,
   pageFormTarget,
@@ -583,6 +587,38 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       const r = await inPage(tabId, pageMarkText, String(a.text ?? ''))
       if (!r.ok) throw new Error(r.error)
+      return r
+    }
+    case 'extract': {
+      // 커넥터: 화면 목록을 칸별로 뽑는다 (읽기만)
+      const tabId = await ownedTab(a)
+      await waitLoad(tabId, 10_000)
+      if (attached.has(tabId)) await paint(tabId)
+      const r = await inPage(tabId, pageExtract, a.spec as ExtractSpec)
+      if (!r.ok) throw new Error(r.error)
+      return r
+    }
+    case 'find': {
+      // 커넥터: 화면 글에 이 말들이 있는지 (기다리기·화면 확인)
+      const tabId = await ownedTab(a)
+      if (attached.has(tabId)) await paint(tabId)
+      const patterns = (a.patterns ?? {}) as Record<string, string>
+      return inPage(tabId, pageFind, patterns)
+    }
+    case 'fetch': {
+      // 커넥터: 이 탭의 사이트 안에서 데이터 요청. 다른 사이트 주소는 부르지 않는다
+      const tabId = await ownedTab(a)
+      const tab = await chrome.tabs.get(tabId)
+      const url = safeUrl(a.url)
+      if (!url || !tab.url) throw new Error('http·https 주소만 부를 수 있어요')
+      if (siteOf(new URL(url).origin) !== siteOf(new URL(tab.url).origin))
+        throw new Error(`이 탭의 사이트(${siteOf(new URL(tab.url).origin)}) 주소만 부를 수 있어요`)
+      const method = a.method === 'POST' ? 'POST' : 'GET'
+      // executeScript 인자에는 undefined를 넘길 수 없다
+      const body = typeof a.body === 'string' ? a.body.slice(0, 20_000) : null
+      const type = typeof a.type === 'string' ? a.type : null
+      const r = await inPage(tabId, pageFetch, url, method, body, type)
+      if ('error' in r) throw new Error(`요청하지 못했어요: ${r.error}`)
       return r
     }
     case 'reload': {

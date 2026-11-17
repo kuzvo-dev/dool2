@@ -84,6 +84,13 @@ const q = document.getElementById('q')
 q.addEventListener('input', () => setTimeout(() => { kw = q.value }, 100))
 q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '검색: ' + (kw || '(빈칸)') })
 </script></body></html>`,
+  // 커넥터 엔진: 목록 뽑기 (숨은 줄은 빼고, 칸마다 선택자·속성·줄·정규식)
+  '/list': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>가게 목록</title></head><body>
+<ul id="shops"><li class="shop"><a href="/shop/1"><b>가게 가</b></a>
+<p>4.5 (120) · 한식</p><em>오후 7:00</em><em>오후 7:30</em></li>
+<li class="shop"><a href="/shop/2"><b>가게 나</b></a>
+<p>4.1 (8) · 술집</p></li>
+<li class="shop" style="display:none"><b>숨은 가게</b></li></ul></body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -95,6 +102,10 @@ const site = createServer((req, res) => {
     return res.end(
       `<!doctype html><title>${ok ? '환영해요' : '실패'}</title><h1>${ok ? '로그인 성공' : '로그인 실패'}</h1>`,
     )
+  }
+  if (url.pathname === '/api/items') {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ items: [{ name: '가게 가', q: url.searchParams.get('q') }] }))
   }
   if (url.pathname === '/search') {
     const q = url.searchParams.get('q') ?? ''
@@ -288,6 +299,40 @@ try {
     assert.match(s.text, /버튼 "수량 줄이기" 비활성\]\s+0\s+\[e\d+ 버튼 "수량 늘리기"\]/, s.text)
     assert.match(s.text, /\[e\d+ 버튼 "닫기"\]/)
     assert.match(s.text, /안내는 그림이라 글로 읽을 수 없어요/)
+  })
+
+  await step('커넥터 엔진: 목록 뽑기·글자 찾기·같은 사이트 데이터 요청', async () => {
+    await call('navigate', { tabId, url: `${base}/list` })
+    const r = await call('extract', {
+      tabId,
+      spec: {
+        items: 'li.shop',
+        fields: {
+          name: { css: 'b' },
+          link: { css: 'a', attr: 'href' },
+          rating: { css: 'p', match: '^(\\d\\.\\d)' },
+          kind: { css: 'p', match: '· (\\S+)$' },
+          times: { css: 'em', list: true },
+        },
+      },
+    })
+    assert.equal(r.total, 3)
+    assert.deepEqual(r.rows, [
+      {
+        name: '가게 가',
+        link: `${base}/shop/1`,
+        rating: '4.5',
+        kind: '한식',
+        times: ['오후 7:00', '오후 7:30'],
+      },
+      { name: '가게 나', link: `${base}/shop/2`, rating: '4.1', kind: '술집', times: [] },
+    ])
+    const f = await call('find', { tabId, patterns: { has: '가게 나', no: '없는 말' } })
+    assert.deepEqual(f.found, { has: '가게 나', no: null })
+    const d = await call('fetch', { tabId, url: `${base}/api/items?q=%EC%84%B1%EC%88%98` })
+    assert.equal(d.status, 200)
+    assert.deepEqual(JSON.parse(d.body), { items: [{ name: '가게 가', q: '성수' }] })
+    await assert.rejects(call('fetch', { tabId, url: 'https://example.com/api' }), /사이트/)
   })
 
   await step('캡차 화면을 알아챈다', async () => {

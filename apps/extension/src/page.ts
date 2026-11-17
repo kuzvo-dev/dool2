@@ -1112,3 +1112,160 @@ export function pageScrollToDoc(x: number, y: number) {
   window.scrollTo({ left: Math.max(0, x - 40), top: Math.max(0, y - 120), behavior: 'instant' })
   return { sx: window.scrollX, sy: window.scrollY }
 }
+
+// ── 커넥터 엔진 동작 (ADR 0018): 목록 뽑기·글자 찾기·같은 사이트 데이터 요청 ──
+// 커넥터(tools.json)는 데이터라서, 무엇을 뽑을지만 넘기고 실제 일은 여기 고정된 함수가 한다.
+
+/** 한 칸을 어떻게 뽑을지 */
+export interface ExtractField {
+  /** 줄(항목) 안에서 찾을 선택자. 없으면 줄 자체 */
+  css?: string
+  /** 읽을 속성 (href·src는 전체 주소로). 없으면 보이는 글 */
+  attr?: string
+  /** 글을 줄로 나눠 n번째(0부터, 음수는 뒤에서) */
+  line?: number
+  /** 정규식. 묶음 1이 있으면 그것, 없으면 맞은 글 전체 */
+  match?: string
+  /** css에 맞는 것을 모두 (글 목록) */
+  list?: boolean
+}
+export interface ExtractSpec {
+  /** 목록의 줄(항목) 선택자 */
+  items: string
+  fields: Record<string, ExtractField>
+  /** 이 안에서만 찾기 */
+  within?: string
+  limit?: number
+}
+export type ExtractValue = string | string[] | null
+export type ExtractResult =
+  | { ok: true; rows: Record<string, ExtractValue>[]; total: number; url: string }
+  | { ok: false; error: string }
+
+/** 화면의 목록을 칸별로 뽑는다 (보이지 않는 줄은 건너뛴다). 읽기만 하고 아무것도 누르지 않는다 */
+export function pageExtract(spec: ExtractSpec): ExtractResult {
+  const norm = (s: string) =>
+    s
+      .replace(/[ \t ]+/g, ' ')
+      .replace(/ *\n[\s]*/g, '\n')
+      .trim()
+  const q = (root: ParentNode, sel: string, all: boolean): Element[] => {
+    try {
+      return all
+        ? Array.from(root.querySelectorAll(sel))
+        : [root.querySelector(sel)].filter((x) => x !== null)
+    } catch {
+      throw new Error(`선택자가 틀렸어요: ${sel}`)
+    }
+  }
+  try {
+    let root: ParentNode = document
+    if (spec.within) {
+      const w = q(document, spec.within, false)[0]
+      if (!w) return { ok: false, error: `"${spec.within}" 영역이 화면에 없어요` }
+      root = w
+    }
+    const res: Record<string, RegExp | undefined> = {}
+    for (const [k, f] of Object.entries(spec.fields)) {
+      try {
+        res[k] = f.match ? new RegExp(f.match) : undefined
+      } catch {
+        return { ok: false, error: `${k}의 정규식이 틀렸어요: ${f.match}` }
+      }
+    }
+    const read = (el: Element, f: ExtractField, re: RegExp | undefined): string | null => {
+      let v: string | null
+      if (f.attr) {
+        v = el.getAttribute(f.attr)
+        if (v !== null && (f.attr === 'href' || f.attr === 'src')) {
+          try {
+            v = new URL(v, location.href).href
+          } catch {}
+        }
+      } else v = (el as HTMLElement).innerText ?? el.textContent
+      if (v === null) return null
+      v = norm(v)
+      if (f.line !== undefined) v = v.split('\n').filter(Boolean).at(f.line) ?? null
+      if (v !== null && re) {
+        const m = re.exec(v)
+        v = m ? (m[1] ?? m[0]).trim() : null
+      }
+      return v === null ? null : v.slice(0, 500)
+    }
+    const items = q(root, spec.items, true)
+    const limit = Math.min(Math.max(spec.limit ?? 30, 1), 200)
+    const rows: Record<string, ExtractValue>[] = []
+    for (const el of items) {
+      const r = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const shown = cs.display === 'contents' || r.width > 0 || r.height > 0
+      if (!shown || cs.visibility === 'hidden') continue
+      const row: Record<string, ExtractValue> = {}
+      for (const [k, f] of Object.entries(spec.fields)) {
+        const targets = f.css ? q(el, f.css, Boolean(f.list)) : [el]
+        if (f.list) {
+          row[k] = targets.map((t) => read(t, f, res[k])).filter((x): x is string => Boolean(x))
+          continue
+        }
+        const t = targets[0]
+        row[k] = t ? read(t, f, res[k]) : null
+      }
+      rows.push(row)
+      if (rows.length >= limit) break
+    }
+    return { ok: true, rows, total: items.length, url: location.href }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** 화면 글에 이 말들이 있는지 (정규식, 여러 개). 기다리기·화면 확인에 쓴다 */
+export function pageFind(patterns: Record<string, string>): {
+  url: string
+  title: string
+  found: Record<string, string | null>
+} {
+  const text = (document.body?.innerText ?? '').replace(/[ \t ]+/g, ' ')
+  const found: Record<string, string | null> = {}
+  for (const [k, p] of Object.entries(patterns)) {
+    let m: RegExpExecArray | null = null
+    try {
+      m = new RegExp(p).exec(text)
+    } catch {}
+    found[k] = m ? (m[1] ?? m[0]).slice(0, 200) : null
+  }
+  return { url: location.href, title: document.title, found }
+}
+
+/**
+ * 이 탭의 사이트 안에서 데이터 요청 (사이트가 자기 화면을 그릴 때 부르는 것과 같은 요청).
+ * 쿠키는 브라우저 안에 그대로 있고 밖으로 나가지 않는다. 같은 사이트 주소인지는 서비스 워커가 먼저 확인한다
+ */
+export async function pageFetch(
+  url: string,
+  method: 'GET' | 'POST',
+  body: string | null,
+  type: string | null,
+): Promise<{ status: number; type: string; body: string; truncated: boolean } | { error: string }> {
+  try {
+    const res = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        ...(body !== null ? { 'content-type': type ?? 'application/json' } : {}),
+      },
+      ...(body !== null ? { body } : {}),
+    })
+    const text = await res.text()
+    const max = 400_000
+    return {
+      status: res.status,
+      type: res.headers.get('content-type') ?? '',
+      body: text.slice(0, max),
+      truncated: text.length > max,
+    }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+}
