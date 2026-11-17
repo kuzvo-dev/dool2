@@ -275,7 +275,21 @@ export const BROWSER_HOST_NAME = 'com.dool2.host'
  * 웹 스토어에 올리면 스토어 id를 여기에 더한다 (M5).
  */
 export const DEV_EXTENSION_ID = 'mgjjgnbhoaalicncjbbcldjffpecocah'
-export const EXTENSION_IDS = [DEV_EXTENSION_ID]
+
+/**
+ * Chrome 웹 스토어에 올린 두리 확장 id. 스토어가 처음 올릴 때 정해 주므로 올린 뒤에 채운다.
+ * 채우면 PC 앱이 "웹 스토어에서 추가(클릭 한 번)"와 외부 확장 등록을 쓴다. 비어 있으면 확장 폴더를 직접 올리는 안내.
+ * Edge·웨일도 Chrome 웹 스토어의 같은 확장을 쓴다 (Edge는 외부 등록에 스토어 주소를 그대로 받는다).
+ */
+export const STORE_EXTENSION_ID: string | undefined = undefined
+
+/** 확장 업데이트를 받는 Chrome 웹 스토어 주소 (외부 확장 등록에 쓴다) */
+export const CHROME_STORE_UPDATE_URL = 'https://clients2.google.com/service/update2/crx'
+
+/** 웹 스토어의 두리 확장 페이지 ([Chrome에 추가] 한 번) */
+export const storeExtensionPage = (id: string) => `https://chromewebstore.google.com/detail/${id}`
+
+export const EXTENSION_IDS = [DEV_EXTENSION_ID, ...(STORE_EXTENSION_ID ? [STORE_EXTENSION_ID] : [])]
 
 /** 확장이 할 수 있는 일. 판단은 하지 않고 시킨 것만 한다 */
 export const BrowserCommandSchema = z.enum([

@@ -68,6 +68,8 @@ declare global {
       ready(summary: string): void
       extensionDir(): Promise<string>
       revealExtension(): void
+      storeExtension(): Promise<string | null>
+      openStore(): void
     }
   }
 }
@@ -2104,6 +2106,8 @@ async function main() {
       loadExtension,
       extensionDir: () => window.dool2.extensionDir(),
       revealExtension: () => window.dool2.revealExtension(),
+      storeExtension: () => window.dool2.storeExtension(),
+      openStore: () => window.dool2.openStore(),
       ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {

@@ -42,6 +42,10 @@ export interface SetupOptions {
   /** Chrome에 올릴 두리 확장 폴더를 보여 준다 */
   revealExtension(): void
   extensionDir(): Promise<string>
+  /** 웹 스토어 확장 id (없으면 null). 있으면 [Chrome에서 추가] 한 번으로 안내한다 */
+  storeExtension?(): Promise<string | null>
+  /** Chrome에서 웹 스토어의 두리 확장 페이지를 연다 */
+  openStore?(): void
   /** 지금 저장된 설정 (설정 화면에서 보여 주고 바꾼다) */
   settings?: Settings
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
@@ -119,7 +123,11 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let chrome: ChromeStatus | undefined
   let extension: ExtensionStatus | undefined
   // 두리 확장 추가 안내 (웹 스토어 전까지는 폴더를 직접 올린다)
-  const ext: { open: boolean; dir: string; copied: boolean } = { open: false, dir: '', copied: false }
+  const ext: { open: boolean; dir: string; copied: boolean; store?: string | null } = {
+    open: false,
+    dir: '',
+    copied: false,
+  }
   let extTimer: ReturnType<typeof setTimeout> | undefined
   // 폰 연결 (설정 화면)
   const phone: { link?: LinkStatus; pair: PairStatus; relayDraft: string; error?: string } = {
@@ -366,7 +374,10 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         return
       } else if (action === 'extension-install') {
         ext.open = true
-        ext.dir = await opts.extensionDir()
+        ext.store = (await opts.storeExtension?.().catch(() => null)) ?? null
+        // 웹 스토어에 있으면 바로 Chrome에서 그 페이지를 연다 (사용자는 [Chrome에 추가]만 누르면 된다)
+        if (ext.store) opts.openStore?.()
+        else ext.dir = await opts.extensionDir()
         render()
         pollExtension()
         return
@@ -1182,8 +1193,48 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       return parts
     }
 
-    /** 두리 확장 추가 안내. 웹 스토어에 올리면(M5) 버튼 한 번으로 바뀐다 */
-    const extensionPanel = () => {
+    /** 두리 확장 추가 안내: 웹 스토어에 있으면 [Chrome에 추가] 한 번, 아니면 폴더를 직접 올린다 */
+    const extensionPanel = () => (ext.store ? storePanel() : folderPanel())
+
+    /** 웹 스토어에 있을 때: Chrome에 열린 페이지에서 [Chrome에 추가] → [확장 프로그램 추가] */
+    const storePanel = () => {
+      const panel = el('div', 'login-panel')
+      panel.append(el('strong', undefined, 'Chrome에 두리 확장 추가하기'))
+      const steps = el('ol', 'ext-steps')
+      for (const parts of [
+        ['Chrome에 열린 두리 확장 페이지에서 ', el('b', undefined, 'Chrome에 추가'), '를 눌러요'],
+        ['물어보면 ', el('b', undefined, '확장 프로그램 추가'), '를 눌러요'],
+      ] as (string | HTMLElement)[][]) {
+        const item = el('li')
+        item.append(...parts)
+        steps.append(item)
+      }
+      panel.append(steps)
+      const wait = el('p', 'ext-wait')
+      wait.append(el('span', 'spin'), document.createTextNode('추가되면 여기서 바로 알아채요'))
+      panel.append(
+        wait,
+        el(
+          'p',
+          'cap',
+          '두리는 두리가 연 탭만 다루고, 결제·보내기 같은 마지막 버튼은 누르지 않아요. 지금 건너뛰어도 Chrome을 다음에 켤 때 [사용 설정]을 물어봐요.',
+        ),
+      )
+      const row = el('div', 'login-actions')
+      row.append(
+        button('btn-small', 'Chrome에서 다시 열기', () => opts.openStore?.()),
+        button('btn-link', '닫기', () => {
+          ext.open = false
+          if (extTimer) clearTimeout(extTimer)
+          render()
+        }),
+      )
+      panel.append(row)
+      return panel
+    }
+
+    /** 웹 스토어에 올리기 전: 확장 폴더를 개발자 모드로 직접 올린다 */
+    const folderPanel = () => {
       const panel = el('div', 'login-panel')
       panel.append(el('strong', undefined, 'Chrome에 두리 확장 추가하기'))
       const steps = el('ol', 'ext-steps')

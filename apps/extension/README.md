@@ -41,7 +41,7 @@ pnpm build                       # → apps/extension/dist (Chrome에 올릴 폴
 ```
 
 - 사용자 Chrome에서 시험하려면 `chrome://extensions` → 개발자 모드 → **압축해제된 확장 프로그램을 로드합니다** → `apps/extension/dist`. 그리고 두리 앱을 `DOOL2_REGISTER_HOST=1 pnpm dev:desktop`으로 켜야 Chrome이 두리 호스트를 찾아요.
-- 확장 id는 `manifest.json`의 `key`(공개키)로 고정돼 있어요(`mgjjgnbhoaalicncjbbcldjffpecocah`). 본체는 이 id에만 호스트를 열어 줘요. 웹 스토어에 올리면 스토어 id를 더해요(M5).
+- 확장 id는 `manifest.json`의 `key`(공개키)로 고정돼 있어요(`mgjjgnbhoaalicncjbbcldjffpecocah`). 본체는 이 id에만 호스트를 열어 줘요. 웹 스토어에 올리면 스토어 id를 `@dool2/protocol`의 `STORE_EXTENSION_ID`에 채워요. 그러면 PC 앱이 [Chrome에 추가] 한 번과 외부 확장 등록으로 바뀌어요. 제출 방법·문구는 [docs/store/chrome-web-store.md](../../docs/store/chrome-web-store.md), 제출용 zip은 `pnpm --filter @dool2/extension pack`.
 
 ### 끝-끝 확인
 
