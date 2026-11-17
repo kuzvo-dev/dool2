@@ -194,6 +194,40 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('feed_post'),
   )
   server.registerTool(
+    'feed_tell',
+    {
+      title: '먼저 챙긴 일 알리기',
+      description:
+        '사용자가 묻지 않았지만 지금 알면 좋을 일을 비서처럼 먼저 알린다. 피드 맨 위에 올라가고 폰에도 알림이 간다. ' +
+        '연결한 서비스에서 직접 확인한 새 소식만 (배송·도착 예정, 다가오는 예약·일정, 답이 필요한 메일, 기록·결과 발표, 결제·만료 예정, 기억해 둔 기념일 등). ' +
+        '짐작이나 광고·일반 상식은 올리지 않는다. 같은 일은 key가 같으면 다시 올라가지 않는다. 살펴보기 한 번에 3개까지. ' +
+        '두리가 이어서 해 줄 수 있는 일이 있으면 ask에 사용자가 [해 줘]를 눌렀을 때 보낼 부탁을 적는다 (돈 내기·보내기는 여기서 하지 않고 ask로 제안만).',
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .max(80)
+          .describe('알림 한 줄, 두리 말투 (예: "어제 주문한 러닝화, 내일 오전에 도착해요")'),
+        body: z.string().max(600).optional().describe('덧붙일 한두 문장 (예: "문 앞에 두고 간대요")'),
+        from: z.string().max(60).optional().describe('어디서 알았는지 (예: "쿠팡 주문 내역을 보고")'),
+        key: z
+          .string()
+          .min(1)
+          .max(120)
+          .describe('같은 일을 또 알리지 않을 열쇠: 서비스-대상-상태 (예: "coupang-주문12345-도착예정")'),
+        ask: z
+          .string()
+          .max(300)
+          .optional()
+          .describe(
+            '[해 줘]를 누르면 두리에게 보낼 부탁 (예: "엄마 생신 선물 3만 원대로 골라 줘"). 알리기만 하면 비운다',
+          ),
+        ask_label: z.string().max(12).optional().describe('[해 줘] 버튼 글자 (예: "골라 줘")'),
+      },
+    },
+    call('feed_tell'),
+  )
+  server.registerTool(
     'conversation_search',
     {
       title: '지난 대화 찾기',
