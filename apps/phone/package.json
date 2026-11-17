@@ -1,6 +1,6 @@
 {
   "name": "@dool2/phone",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "두리 폰 앱 (PWA): 폰으로 부탁하고, 결제·보내기는 폰에서 승인",

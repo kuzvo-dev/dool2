@@ -362,4 +362,12 @@ describe('서비스 도구 실행기', () => {
     const rest = await connectors.call('demo_eats_search', { keyword: '홍대' })
     expect(textOf(rest)).toMatch(/잠시 쉬고 있어요.*브라우저 도구로/)
   })
+
+  it('예전 확장(커넥터 엔진 없음)이면 서비스 도구를 내보이지 않고 브라우저로 하라고 한다', async () => {
+    const { connectors: on } = await setup({ connected: true })
+    ;(on as unknown as { opts: { extensionVersion: () => string } }).opts.extensionVersion = () => '0.1.0'
+    expect(await on.catalog()).toEqual([])
+    const r = await on.call('demo_eats_search', { keyword: '성수' })
+    expect(textOf(r)).toMatch(/예전 버전\(0\.1\.0\).*브라우저 도구로/)
+  })
 })

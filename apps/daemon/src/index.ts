@@ -313,6 +313,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     browser,
     tools: browserTools,
     connected: () => readSettings().connections ?? {},
+    extensionVersion: () => (browser.status.connected ? browser.status.version : undefined),
     health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
   })
   const skills = new Skills(
