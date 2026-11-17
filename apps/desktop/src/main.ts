@@ -71,11 +71,10 @@ async function createWindow(show: boolean) {
     return { action: 'deny' }
   })
   w.webContents.on('will-navigate', (e) => e.preventDefault())
-  // 창을 닫아도 두리는 쉬지 않는다. 트레이에서 다시 열 수 있다
-  w.on('close', (e) => {
-    if (quitting || SMOKE) return
-    e.preventDefault()
-    w.hide()
+  // 창을 닫아도 두리(본체)는 쉬지 않는다. 창은 숨기지 않고 없앤다: 화면·GPU 프로세스가 300MB 남짓 쓰고,
+  // 숨긴 창에서도 3D 두리를 계속 그려 CPU를 먹었다(실측). 트레이에서 열면 새로 만든다
+  w.on('closed', () => {
+    if (win === w) win = undefined
   })
   await w.loadFile(join(here, 'renderer', 'index.html'))
   return w
@@ -280,8 +279,9 @@ app.whenReady().then(async () => {
       ...(shot ? { shot: shot.toString('base64') } : {}),
     })
   }
-  win = await createWindow(!SMOKE && !HIDDEN)
-  if (SMOKE) await smoke(win)
+  // 로그인할 때 자동으로 켜졌으면 창을 만들지 않는다 (트레이에서 열 때 만든다)
+  if (!HIDDEN || SMOKE) win = await createWindow(!SMOKE)
+  if (SMOKE && win) await smoke(win)
 
   app.on('activate', showWindow)
 })

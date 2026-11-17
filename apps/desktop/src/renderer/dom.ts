@@ -154,11 +154,51 @@ export function doori(mood = '', size?: number): HTMLElement {
 /** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
 interface LiveDoori {
   setMood(mood: string): void
+  destroy(): void
 }
 type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
 const DOORI3D = './doori3d.js' // 글자로 넘겨야 화면 코드와 따로 불러온다
 let doori3dModule: Promise<Doori3d> | undefined
-const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
+type Slot = {
+  el: HTMLElement
+  mood: string
+  live?: LiveDoori
+  drop?: ReturnType<typeof setTimeout>
+  want?: boolean
+}
+const liveSlots = new Map<string, Slot>()
+const slotOf = new WeakMap<Element, Slot>()
+
+/** 3D는 화면에 보이는 자리만 띄운다. 20초 넘게 안 보이면 내려 GPU 메모리를 돌려준다 (자리마다 WebGL 하나라 셋이면 셋) */
+const seen = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    const rec = slotOf.get(e.target)
+    if (!rec) continue
+    clearTimeout(rec.drop)
+    if (e.isIntersecting) mountLive(rec)
+    else rec.drop = setTimeout(() => unmountLive(rec), 20_000)
+  }
+})
+function mountLive(rec: Slot) {
+  rec.want = true
+  if (rec.live) return
+  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
+  doori3dModule
+    .then((m) => {
+      if (rec.live || !rec.want) return
+      rec.live = m.mountDoori(rec.el, { mood: rec.mood || 'idle' })
+      rec.el.classList.add('live-ready')
+    })
+    .catch(() => {
+      // 3D를 못 쓰면 그림 그대로
+    })
+}
+function unmountLive(rec: Slot) {
+  rec.want = false
+  rec.live?.destroy()
+  rec.live = undefined
+  rec.el.classList.remove('live-ready')
+}
 
 /** 큰 자리의 두리: 먼저 그림을 보이고 3D가 준비되면 움직인다. 자리마다 캔버스 하나를 옮겨 쓴다 */
 export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
@@ -174,17 +214,10 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
     return hit.el
   }
   const d = doori(mood, size)
-  const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el: d, mood }
+  const rec: Slot = { el: d, mood }
   liveSlots.set(slot, rec)
-  doori3dModule ??= import(DOORI3D) as Promise<Doori3d>
-  doori3dModule
-    .then((m) => {
-      rec.live = m.mountDoori(d, { mood: rec.mood || 'idle' })
-      d.classList.add('live-ready')
-    })
-    .catch(() => {
-      // 3D를 못 쓰면 그림 그대로
-    })
+  slotOf.set(d, rec)
+  seen.observe(d)
   return d
 }
 
