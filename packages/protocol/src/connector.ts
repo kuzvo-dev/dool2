@@ -352,6 +352,11 @@ const FILTERS: Record<string, (v: string) => string> = {
     return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${m[2]}`
   },
   json: (v) => JSON.stringify(v),
+  /** 2026-11-28 → 그날 한국 0시의 밀리초 (1795791600000) */
+  ms: (v) => {
+    const t = Date.parse(`${v.slice(0, 10)}T00:00:00+09:00`)
+    return Number.isNaN(t) ? '' : String(t)
+  },
   /** 2026-11-27 → 2026 */
   yyyy: (v) => /^(\d{4})-/.exec(v)?.[1] ?? '',
   /** 2026-03-07 → 03 */
