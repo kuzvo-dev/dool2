@@ -744,8 +744,8 @@ export class Connectors {
           Object.fromEntries(
             Object.entries(s.map.fields).map(([k, p]) => [
               k,
-              // "{{…}}"가 있으면 줄 안의 값으로 채운 글, 아니면 경로
-              (p.includes('{{') ? fill(p, row as Scope).trim() : pick(row, p)) ?? null,
+              // "{{…}}"가 있으면 줄 안의 값(없으면 입력·앞 단계 값)으로 채운 글, 아니면 경로
+              (p.includes('{{') ? fill(p, { ...c.scope, ...(row as Scope) }).trim() : pick(row, p)) ?? null,
             ]),
           ),
         )
