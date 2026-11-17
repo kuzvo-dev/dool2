@@ -1,0 +1,306 @@
+{
+  "id": "air-busan",
+  "tools": [
+    {
+      "name": "search",
+      "title": "항공편 찾기",
+      "description": "로그인 없이 된다. 출발·도착 공항 코드와 가는 날·인원으로 에어부산 편도 항공편을 찾아 편마다 출발-도착 시각, 편명, 운임 종류별 가격(특가·실속·일반, 원, 1명 기준 — '마감'이면 매진)을 돌려준다. 국내선에서 확인됐고 국제선은 결과가 비면 air_busan_prepare_booking으로 화면에서 찾는다. 왕복은 오는 날로 출발·도착을 바꿔 한 번 더 부른다. 예매하려면 air_busan_prepare_booking.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 김해→김포 편도: 시각·편명·특가/실속/일반 운임·마감. 국제선은 주소로 연 표가 비어 아직 안 됨)",
+      "input": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "출발 공항 코드 3글자 (예: PUS 김해(부산), GMP 김포, ICN 인천, CJU 제주, USN 울산, TAE 대구)"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "도착 공항 코드 3글자 (예: GMP 김포, CJU 제주, KIX 오사카, FUK 후쿠오카, NRT 도쿄 나리타)"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "가는 날 YYYY-MM-DD (예: 2026-11-27)"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+            "description": "어른 수 (기본 1)"
+          },
+          "children": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "default": 0,
+            "description": "만 2~12세 어린이 수"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "date"
+        ]
+      },
+      "output": {
+        "flights": {
+          "type": "list",
+          "description": "항공편",
+          "fields": {
+            "time": {
+              "type": "string",
+              "description": "출발 - 도착 시각 (예: 07:10 - 08:15)"
+            },
+            "flight_no": {
+              "type": "string",
+              "description": "편명 (예: BX8032)"
+            },
+            "special": {
+              "type": "string",
+              "description": "특가 운임(원, 무료 위탁수하물 없음) 또는 마감"
+            },
+            "saver": {
+              "type": "string",
+              "description": "실속 운임(원) 또는 마감"
+            },
+            "normal": {
+              "type": "string",
+              "description": "일반 운임(원) 또는 마감"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "from": "PUS",
+          "to": "GMP",
+          "date": "2026-11-27"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.airbusan.com/web/individual/booking/flightsAvail?bookingCategory=Individual&onLoadSearchYN=Y&tripType=OW&depCity1={{from|url}}&arrCity1={{to|url}}&depDate1={{date}}&passengerCountAdult={{adults}}&passengerCountChild={{children}}&passengerCountInfant=0"
+        },
+        {
+          "wait": {
+            "text": "BX\\d{3,4}|운항편이 없|항공편이 없|조회된 항공편",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "require": "BX\\d{3,4}",
+          "timeoutMs": 3000,
+          "say": "{{date}} {{from}} → {{to}} 에어부산 항공편이 없어요. 운항하지 않는 노선·날짜일 수 있어요. 날짜나 공항을 바꿔 볼까요?"
+        },
+        {
+          "extract": {
+            "items": "table tr:has(> td:nth-child(5))",
+            "limit": 40,
+            "fields": {
+              "time": {
+                "css": "td:nth-child(1)",
+                "match": "(\\d{2}:\\d{2}\\s*-\\s*\\d{2}:\\d{2})"
+              },
+              "flight_no": {
+                "css": "td:nth-child(2)",
+                "match": "([A-Z0-9]{2}\\d{2,4})"
+              },
+              "special": {
+                "css": "td:nth-child(3)"
+              },
+              "saver": {
+                "css": "td:nth-child(4)"
+              },
+              "normal": {
+                "css": "td:nth-child(5)"
+              }
+            }
+          },
+          "as": "flights"
+        },
+        {
+          "filter": {
+            "from": "flights",
+            "where": "flight_no",
+            "op": "has"
+          },
+          "as": "flights"
+        }
+      ],
+      "result": {
+        "flights": "{{flights}}"
+      },
+      "next": "마감이 아닌 운임이 있는 편 2~4개를 시각·편명·가장 싼 운임(특가는 위탁수하물 없음)으로 짧게 보여 주고 고르게 해요. 예매하려면 air_busan_prepare_booking.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "예매 준비",
+      "description": "고른 에어부산 편(편명)과 운임으로 예매를 결제 직전까지 준비한다. 운임 고르기는 로그인 없이 되고, 탑승객 정보·결제는 로그인(또는 비회원 예매)이 필요하다. 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. air_busan_search로 편명과 운임을 먼저 확인한다(국제선은 이 도구가 화면에서 직접 찾는다).",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "출발 공항 코드 (예: PUS)"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "도착 공항 코드 (예: GMP)"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "가는 날 YYYY-MM-DD"
+          },
+          "adults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9,
+            "default": 1,
+            "description": "어른 수"
+          },
+          "children": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "default": 0,
+            "description": "어린이 수"
+          },
+          "flight_no": {
+            "type": "string",
+            "pattern": "^([A-Z0-9]{2}\\d{2,4})?$",
+            "description": "편명 (예: BX8032). 국제선이라 모르면 비움"
+          },
+          "fare": {
+            "type": "string",
+            "enum": [
+              "특가",
+              "실속",
+              "일반"
+            ],
+            "default": "실속",
+            "description": "운임 종류 (특가는 무료 위탁수하물 없음)"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "date"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "from": "PUS",
+          "to": "GMP",
+          "date": "2026-11-27",
+          "flight_no": "BX8032",
+          "fare": "실속"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.airbusan.com/web/individual/booking/flightsAvail?bookingCategory=Individual&onLoadSearchYN=Y&tripType=OW&depCity1={{from|url}}&arrCity1={{to|url}}&depDate1={{date}}&passengerCountAdult={{adults}}&passengerCountChild={{children}}&passengerCountInfant=0"
+        },
+        {
+          "wait": {
+            "text": "항공권 예매",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "handoff_to_agent": "에어부산 가는 편 고르기 화면이에요({{date}} {{from}}→{{to}}, 어른 {{adults}}명 어린이 {{children}}명). 표가 비었으면 '검색'을 눌러요. {{flight_no}} 줄의 '{{fare}}' 운임을 골라요(편명이 비었거나 마감이면 사용자에게 물어요). 다음 단계로 가요. 로그인 화면이면 연결 전엔 connect_ask('air-busan'), 풀렸으면 browser_handoff. 탑승객 정보는 회원 정보에 없으면 물어요. 결제 화면에서 편명·날짜·시각·운임·인원·총액(세금 포함)·환불 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요. 부가서비스 권유는 원할 때만."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "reservations",
+      "title": "예약 내역",
+      "description": "로그인해야 한다. 에어부산 나의 예약조회 화면을 열어 다가오는 여정(편명·날짜·출발 시각·공항·인원·결제 상태)을 정리한다. '오사카 비행기 몇 시 출발이야?'에 쓴다. 취소·변경은 하지 않는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "특정 여정만 볼 때 도시·날짜 (예: 오사카). 없으면 전체"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.airbusan.com/web/individual/reserve/index"
+        },
+        {
+          "wait": {
+            "text": "로그인 후 조회 가능|예약|여정",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "로그인 후 조회 가능합니다",
+          "say": "에어부산 예약을 보려면 먼저 에어부산을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "에어부산 나의 예약조회 화면이에요. 다가오는 여정을 위에서부터 읽어 편명·날짜·출발/도착 시각·공항·인원·좌석(지정했으면)·결제 상태를 짧게 정리해요. 예약번호는 끝 2자리만 보여 줘요. '{{keyword}}'가 있으면 그 여정만 골라요. 취소·변경·환불 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "stamps",
+      "title": "스탬프 확인",
+      "description": "로그인해야 한다. 에어부산 FLY&STAMP 전체조회 화면을 열어 모은 스탬프 수, 소멸 예정 스탬프(날짜), 스탬프로 갈 수 있는 구간(필요 스탬프 수가 보이면)을 정리한다. '스탬프로 제주 갈 수 있어?'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.airbusan.com/web/individual/flynstamp/stamp"
+        },
+        {
+          "wait": {
+            "text": "회원 로그인|STAMP|스탬프",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "회원 로그인|ID 저장",
+          "say": "에어부산 스탬프를 보려면 먼저 에어부산을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "에어부산 나의 STAMP 화면이에요. 지금 쓸 수 있는 스탬프 수, 소멸 예정 스탬프와 날짜를 읽어요. 사용자가 특정 구간(예: 제주)을 물었으면 FLY&STAMP 안내의 구간별 필요 스탬프 수와 견줘 갈 수 있는지 알려 줘요. 읽기만 하고 구매·양도 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 3600
+    }
+  ]
+}
