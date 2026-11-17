@@ -62,7 +62,20 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
       REPO_SKILLS,
       () => ({ catchtable: '2026-11-17T00:00:00.000Z' }),
       async (id) =>
-        id === 'catchtable' ? { status: '검증됨(2026-11-17)', tools: ['catchtable_search'] } : {},
+        id === 'catchtable'
+          ? {
+              status: '검증됨(2026-11-17)',
+              tools: [
+                {
+                  name: 'catchtable_search',
+                  title: '식당 빈자리 찾기',
+                  tier: '찾아보기',
+                  login: false,
+                  verified: true,
+                },
+              ],
+            }
+          : {},
     )
     await s.connections()
     const map = s.serviceMap()
