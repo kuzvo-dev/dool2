@@ -1,0 +1,145 @@
+{
+  "id": "11st",
+  "tools": [
+    {
+      "name": "search",
+      "title": "상품 찾기",
+      "description": "11번가에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 id·가격·배송비·판매자 평점·리뷰 수·구매 수·판매자·배송 안내·링크). 로그인 없이 된다. 최저가를 찾으면 sort를 L(낮은 가격순)로, 가격대가 있으면 min_price·max_price를 넣는다. 광고·묶음 상품이 섞여 있으니 이름을 보고 고른다. 사려면 11st_prepare_order에 product_id를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 검색·낮은 가격순·가격대)",
+      "input": {
+        "properties": {
+          "keyword": { "type": "string", "description": "찾을 상품 (예: 무선 이어폰, 섬유유연제 3L)", "maxLength": 60 },
+          "sort": {
+            "type": "string",
+            "enum": ["NP", "SPS", "L"],
+            "default": "NP",
+            "description": "정렬: NP = 11번가 랭킹순(기본), SPS = 인기순, L = 낮은 가격순(최저가 찾기)"
+          },
+          "min_price": { "type": "integer", "minimum": 0, "description": "최소 가격(원). 없으면 비워 둔다" },
+          "max_price": { "type": "integer", "minimum": 0, "description": "최대 가격(원) (예: 3만 원 이하면 30000)" }
+        },
+        "required": ["keyword"]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": { "type": "string" },
+            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 id" },
+            "price": { "type": "integer", "description": "지금 가격(원)" },
+            "shipping": { "type": "string", "description": "배송비" },
+            "rating": { "type": "number", "description": "판매자 평점(5점 만점)" },
+            "reviews": { "type": "integer" },
+            "sold": { "type": "string", "description": "구매 수" },
+            "seller": { "type": "string" },
+            "delivery": { "type": "string", "description": "배송 안내 (예: 오늘출발, 내일도착)" },
+            "link": { "type": "string" }
+          }
+        }
+      },
+      "examples": [{ "keyword": "섬유유연제" }, { "keyword": "무선 이어폰", "sort": "L", "min_price": 20000 }],
+      "steps": [
+        { "open": "https://search.11st.co.kr/pc/total-search?kwd={{keyword|url}}&tabId=TOTAL_SEARCH&sortCd={{sort}}&fromPrice={{min_price}}&toPrice={{max_price}}" },
+        { "wait": { "text": "배송비|검색 결과가 없", "timeoutMs": 12000 } },
+        { "stop_if": "검색 결과가 없습니다", "say": "11번가에서 '{{keyword}}' 상품을 찾지 못했어요. 더 짧은 이름이나 다른 말로 찾아볼까요?" },
+        {
+          "extract": {
+            "items": "li.c-search-list__item:has(a.c-card-item__anchor[href*='/products/'])",
+            "limit": 20,
+            "fields": {
+              "name": { "css": ".c-card-item__name dd" },
+              "product_id": { "css": "a.c-card-item__anchor", "attr": "href", "match": "/products/(\\d+)" },
+              "price": { "css": ".c-card-item__price" },
+              "shipping": { "css": ".c-card-item__price-delivery .value" },
+              "rating": { "css": ".c-starrate__sati .c-starrate__text" },
+              "reviews": { "css": ".c-starrate__review .value" },
+              "sold": { "css": ".c-qty__value" },
+              "seller": { "css": ".c-seller__name" },
+              "delivery": { "css": ".c-card-item__delivery" },
+              "link": { "css": "a.c-card-item__anchor", "attr": "href", "match": "^([^?]+)" }
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": { "products": "{{products}}" },
+      "next": "가격·평점·리뷰 수·배송을 견줘 2~3개를 짧은 표로 보여 주고 고르게 해요. 사려면 11st_prepare_order에 product_id를 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 조회",
+      "description": "11번가 주문 내역(최근 주문, 상품, 결제 금액, 주문 상태·배송 상태)을 연다. 로그인해야 한다. '이번 주에 오는 거', '출발했어?' 같은 질문, 다시 주문할 상품 찾기, 취소·반품 전 확인에 쓴다. 다시 주문은 여기서 찾은 상품 번호로 11st_prepare_order, 취소·반품은 11st_cancel_return.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "특정 상품만 볼 때 그 이름 일부 (예: 이어폰). 없으면 최근 주문 전체", "maxLength": 40 }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [{}, { "item": "섬유유연제" }],
+      "steps": [
+        { "open": "https://buy.11st.co.kr/my11st/order/OrderList.tmall" },
+        { "sleep": 1500 },
+        { "stop_if": "아이디찾기|비밀번호찾기", "say": "11번가 주문을 보려면 먼저 11번가를 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "11번가 주문/배송 조회 화면이에요. 최근 주문을 위에서부터 읽어 주문일·상품 이름·옵션·수량·결제 금액·주문 상태(결제완료/배송준비중/배송중/배송완료 등)·도착 예정일을 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요. 배송중이면 '배송조회' 버튼으로 택배사·운송장·현재 위치를 읽어도 돼요(읽기만). 다시 주문할 거면 상품 링크의 products/숫자(상품 번호)도 적어 둬요. 취소·반품·구매확정 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('11st'), 연결했는데 풀렸으면 browser_handoff." }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 11번가 상품 화면을 열어 옵션·수량을 고르고 주문서(결제 직전)까지 간다. 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 주문서는 로그인이 필요하다: 연결 전이면 connect_ask('11st'). 다시 주문도 이 도구로(11st_orders에서 찾은 상품 번호).",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_id": { "type": "string", "pattern": "^\\d{5,12}$", "description": "11st_search나 주문 내역의 상품 번호 (예: 9609877731)" },
+          "option": { "type": "string", "description": "고를 옵션 (색상·사이즈·용량 등, 예: 화이트 / 3L). 없으면 비워 둔다", "maxLength": 80 },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 50, "default": 1, "description": "수량 (기본 1)" }
+        },
+        "required": ["product_id"]
+      },
+      "output": {},
+      "examples": [{ "product_id": "9609877731", "quantity": 1 }],
+      "steps": [
+        { "open": "https://www.11st.co.kr/products/{{product_id}}" },
+        { "wait": { "text": "구매하기|품절|판매종료", "timeoutMs": 12000 } },
+        { "stop_if": "판매종료|판매가 종료", "say": "이 상품은 11번가에서 판매가 끝났어요. 11st_search로 비슷한 상품을 찾아볼까요?" },
+        { "handoff_to_agent": "11번가 상품 화면이에요(상품 번호 {{product_id}}). 옵션이 있으면 '{{option}}'에 맞는 것을 고르고(모르면 사용자에게 물어요), 수량 {{quantity}}개로 맞춘 뒤 '구매하기'를 눌러 주문서로 가요. 로그인 화면이 나오면 연결 전이면 connect_ask('11st'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·옵션·수량·배송지(동네까지만)·배송비·할인·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 쿠폰·포인트는 사용자가 말한 것만 써요." }
+      ],
+      "result": {}
+    },
+    {
+      "name": "cancel_return",
+      "title": "취소·반품 신청",
+      "description": "11번가 주문 내역에서 고른 주문의 취소(배송 전)나 반품·교환 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유와 수거 방법을 먼저 사용자에게 확인한다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "취소·반품할 상품 이름 일부 (예: 섬유유연제)", "maxLength": 40 },
+          "kind": { "type": "string", "enum": ["취소", "반품", "교환"], "description": "무엇을 할지" },
+          "reason": { "type": "string", "description": "사유 (예: 단순 변심, 파손, 다른 상품 배송)", "maxLength": 80 }
+        },
+        "required": ["item", "kind"]
+      },
+      "output": {},
+      "examples": [{ "item": "섬유유연제", "kind": "취소", "reason": "단순 변심" }],
+      "steps": [
+        { "open": "https://buy.11st.co.kr/my11st/order/OrderList.tmall" },
+        { "sleep": 1500 },
+        { "stop_if": "아이디찾기|비밀번호찾기", "say": "11번가 주문을 취소·반품하려면 먼저 11번가를 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "11번가 주문/배송 조회 화면이에요. '{{item}}' 주문을 찾아 {{kind}} 신청 버튼(주문취소/반품신청/교환신청)을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고, 반품·교환이면 수거 방법·반품 배송비(누가 내는지)·환불 예정 금액을 확인해요. 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·환불 금액·반품 배송비를 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요. 배송이 이미 시작돼 취소가 안 되면 그렇다고 알리고 반품을 권해요." }
+      ],
+      "result": {}
+    }
+  ]
+}

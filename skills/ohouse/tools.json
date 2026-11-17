@@ -1,0 +1,148 @@
+{
+  "id": "ohouse",
+  "tools": [
+    {
+      "name": "search",
+      "title": "가구·소품 찾기",
+      "description": "오늘의집 쇼핑에서 가구·소품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 id·브랜드·판매가·정가·쿠폰가·평점·리뷰 수·무료배송·오늘출발·품절 여부·링크). 로그인 없이 된다. '2인용 소파 50만 원 이하'처럼 가격대가 있으면 max_price를 넣는다. 사려면 ohouse_prepare_order에 product_id를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 검색·가격대)",
+      "input": {
+        "properties": {
+          "keyword": { "type": "string", "description": "찾을 가구·소품 (예: 2인용 소파, 퀸 침대 프레임, 러그)", "maxLength": 60 },
+          "min_price": { "type": "integer", "minimum": 0, "default": 0, "description": "최소 가격(원) (기본 0)" },
+          "max_price": { "type": "integer", "minimum": 0, "default": 100000000, "description": "최대 가격(원) (예: 50만 원 이하면 500000)" }
+        },
+        "required": ["keyword"]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": { "type": "string" },
+            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 id" },
+            "brand": { "type": "string" },
+            "price": { "type": "integer", "description": "판매가(원)" },
+            "original": { "type": "integer", "description": "정가(원)" },
+            "coupon_price": { "type": "integer", "description": "쿠폰 쓰면 가격(원), 없으면 비어 있음" },
+            "rating": { "type": "number" },
+            "reviews": { "type": "integer" },
+            "free_delivery": { "type": "boolean" },
+            "departure_today": { "type": "boolean", "description": "오늘 출발" },
+            "sold_out": { "type": "boolean" },
+            "link": { "type": "string" }
+          }
+        },
+        "total": { "type": "integer", "description": "전체 검색 결과 수" }
+      },
+      "examples": [{ "keyword": "2인용 소파", "max_price": 500000 }],
+      "steps": [
+        { "open": "https://ohou.se/productions/feed?query={{keyword|url}}" },
+        {
+          "fetch": {
+            "url": "https://ohou.se/productions/feed.json?v=7&query={{keyword|url}}&page=1&per=20&prop%5B100%5D={{min_price}}%7E{{max_price}}"
+          },
+          "as": "res"
+        },
+        {
+          "map": {
+            "from": "res.productions",
+            "limit": 20,
+            "fields": {
+              "name": "name",
+              "product_id": "id",
+              "brand": "brand_name",
+              "price": "selling_price",
+              "original": "original_price",
+              "coupon_price": "coupon_discount_price",
+              "rating": "review_avg",
+              "reviews": "review_count",
+              "free_delivery": "is_free_delivery",
+              "departure_today": "is_departure_today",
+              "sold_out": "is_sold_out",
+              "link": "https://store.ohou.se/goods/{{id}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": { "products": "{{products}}", "total": "{{res.total_count}}" },
+      "next": "가격(쿠폰가 있으면 함께)·평점·리뷰 수·배송을 견줘 2~3개를 짧은 표로 보여 주고 고르게 해요. 가구는 크기·색상 옵션을 상품 화면에서 꼭 확인해요. 사려면 ohouse_prepare_order.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 조회",
+      "description": "오늘의집 주문배송 내역(주문일·상품·옵션·결제 금액·주문 상태·배송·설치 일정)을 연다. 로그인해야 한다. '침대 프레임 언제 와?' 같은 질문, 교환·반품 전 확인에 쓴다. 교환·반품은 ohouse_exchange_return.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "특정 상품만 볼 때 그 이름 일부 (예: 침대 프레임). 없으면 최근 주문 전체", "maxLength": 40 }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [{}, { "item": "침대 프레임" }],
+      "steps": [
+        { "open": "https://ohou.se/user_shopping_pages/order_list" },
+        { "sleep": 1500 },
+        { "stop_if": "비밀번호 재설정|SNS계정으로 간편 로그인|로그인 상태 유지", "say": "오늘의집 주문을 보려면 먼저 오늘의집을 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "오늘의집 나의 쇼핑(주문배송 내역) 화면이에요. 최근 주문을 위에서부터 읽어 주문일·상품 이름·옵션·수량·결제 금액·주문 상태(결제완료/배송준비/배송중/배송완료)·도착 예정일이나 설치 일정을 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요. 배송중이면 배송조회로 택배사·현재 위치를 읽어도 돼요(읽기만). 교환·반품·구매확정 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('ohouse'), 연결했는데 풀렸으면 browser_handoff." }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 오늘의집 상품 화면을 열어 옵션(색상·크기)·수량을 고르고 결제 직전까지 간다. 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 주문은 로그인이 필요하다: 연결 전이면 connect_ask('ohouse').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_id": { "type": "string", "pattern": "^\\d{3,12}$", "description": "ohouse_search의 상품 id (예: 2088501)" },
+          "option": { "type": "string", "description": "고를 옵션 (색상·크기 등, 예: 퀸 / 그레이). 모르면 비워 두고 화면에서 물어본다", "maxLength": 80 },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 20, "default": 1, "description": "수량 (기본 1)" }
+        },
+        "required": ["product_id"]
+      },
+      "output": {},
+      "examples": [{ "product_id": "2088501", "quantity": 1 }],
+      "steps": [
+        { "open": "https://store.ohou.se/goods/{{product_id}}" },
+        { "wait": { "text": "구매하기|바로구매|품절|판매 종료", "timeoutMs": 12000 } },
+        { "handoff_to_agent": "오늘의집 상품 화면이에요(상품 id {{product_id}}). 품절·판매 종료면 그렇다고 알리고 멈춰요. 옵션은 '{{option}}'에 맞게 고르고(모르면 사용자에게 보기 목록을 보여 주고 물어요), 수량 {{quantity}}개로 맞춰요. 설치·배송비 별도 안내가 있으면 그대로 읽어 둬요. '바로구매'를 누르기 전에 로그인 화면이 나오면 연결 전이면 connect_ask('ohouse'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·옵션·수량·배송지(동네까지만)·배송비·설치비·쿠폰·최종 결제 금액을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요." }
+      ],
+      "result": {}
+    },
+    {
+      "name": "exchange_return",
+      "title": "교환·반품 신청",
+      "description": "오늘의집 주문배송 내역에서 고른 주문의 교환·반품(취소 포함) 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유·원하는 옵션(교환)·사진 첨부 여부를 먼저 사용자에게 확인한다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "교환·반품할 상품 이름 일부 (예: 러그)", "maxLength": 40 },
+          "kind": { "type": "string", "enum": ["교환", "반품", "취소"], "description": "무엇을 할지" },
+          "reason": { "type": "string", "description": "사유 (예: 색이 사진과 달라요, 사이즈 안 맞음)", "maxLength": 80 },
+          "new_option": { "type": "string", "description": "교환이면 바꿀 옵션 (예: 베이지 / 160x230)", "maxLength": 80 }
+        },
+        "required": ["item", "kind"]
+      },
+      "output": {},
+      "examples": [{ "item": "러그", "kind": "교환", "reason": "색이 사진과 달라요", "new_option": "베이지" }],
+      "steps": [
+        { "open": "https://ohou.se/user_shopping_pages/order_list" },
+        { "sleep": 1500 },
+        { "stop_if": "비밀번호 재설정|SNS계정으로 간편 로그인|로그인 상태 유지", "say": "오늘의집 주문을 교환·반품하려면 먼저 오늘의집을 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "오늘의집 주문배송 내역 화면이에요. '{{item}}' 주문을 찾아 {{kind}} 신청 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고(색상 차이·불량이면 판매자 책임 사유), 교환이면 '{{new_option}}'으로 옵션을 골라요. 사진이 필요하면 사용자에게 받아요. 수거 방법·왕복 배송비·환불 예정 금액을 확인하고, 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·바꿀 옵션·비용·환불 금액을 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요." }
+      ],
+      "result": {}
+    }
+  ]
+}

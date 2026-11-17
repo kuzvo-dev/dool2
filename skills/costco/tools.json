@@ -1,0 +1,147 @@
+{
+  "id": "costco",
+  "tools": [
+    {
+      "name": "search",
+      "title": "상품 찾기",
+      "description": "코스트코 온라인몰에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 번호·가격·단위 가격·할인 금액·평점·리뷰 수·재고·배송비 포함 여부·링크). 로그인 없이 된다. '커클랜드 올리브유 있어?'처럼 있는지 확인하거나 단위 가격을 견줄 때 쓴다. 매장 가격과 다를 수 있다. 사려면 costco_prepare_order에 product_id를 넘긴다(회원 로그인 필요).",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 검색·낮은 가격순)",
+      "input": {
+        "properties": {
+          "keyword": { "type": "string", "description": "찾을 상품 (예: 커클랜드 올리브유, 키친타월)", "maxLength": 60 },
+          "sort": {
+            "type": "string",
+            "enum": ["relevance", "price-asc", "price-desc", "ratings-desc"],
+            "default": "relevance",
+            "description": "정렬: relevance = 관련순(기본), price-asc = 낮은 가격순, price-desc = 높은 가격순, ratings-desc = 평점순"
+          }
+        },
+        "required": ["keyword"]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": { "type": "string" },
+            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 번호" },
+            "price": { "type": "integer", "description": "지금 가격(원, 할인 반영)" },
+            "unit_price": { "type": "string", "description": "단위 가격 (unit 하나당, 예: 1,899원)" },
+            "unit": { "type": "string", "description": "단위 가격의 단위 (예: 100㎖, 10매)" },
+            "discount": { "type": "string", "description": "할인 금액" },
+            "rating": { "type": "number" },
+            "reviews": { "type": "integer" },
+            "stock": { "type": "string", "description": "inStock = 재고 있음, outOfStock = 품절" },
+            "shipping_included": { "type": "boolean", "description": "배송비 포함 가격인지" },
+            "link": { "type": "string" }
+          }
+        },
+        "total": { "type": "integer", "description": "전체 검색 결과 수" }
+      },
+      "examples": [{ "keyword": "올리브유" }, { "keyword": "키친타월", "sort": "price-asc" }],
+      "steps": [
+        { "open": "https://www.costco.co.kr/search?text={{keyword|url}}" },
+        {
+          "fetch": { "url": "https://www.costco.co.kr/api/v2/sites/korea/search?pageSize=20&query={{keyword|url}}&sortCode={{sort}}&curr=KRW&locale=ko&lang=ko" },
+          "as": "res"
+        },
+        {
+          "map": {
+            "from": "res.products",
+            "limit": 20,
+            "fields": {
+              "name": "name",
+              "product_id": "code",
+              "price": "price.value",
+              "unit_price": "pricePerUnit.formattedValue",
+              "unit": "unitType",
+              "discount": "discountPrice.formattedValue",
+              "rating": "averageRating",
+              "reviews": "numberOfReviews",
+              "stock": "stock.stockLevelStatus",
+              "shipping_included": "shippingIncluded",
+              "link": "https://www.costco.co.kr{{url}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": { "products": "{{products}}", "total": "{{res.pagination.totalResults}}" },
+      "next": "있는지·가격·단위 가격·평점을 짧게 알려 줘요. 품절(outOfStock)이면 그렇다고 말해요. 주문하려면 costco_prepare_order에 product_id를 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 조회",
+      "description": "코스트코 온라인 주문 내역(주문일·상품·금액·주문 상태·출고·배송 상태)을 연다. 로그인해야 한다. '전기포트 출고됐어?' 같은 질문, 다시 주문할 상품 찾기, 취소·반품 전 확인에 쓴다. 다시 주문은 costco_prepare_order, 취소·반품은 costco_cancel_return.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "특정 상품만 볼 때 그 이름 일부 (예: 전기포트). 없으면 최근 주문 전체", "maxLength": 40 }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [{}, { "item": "전기포트" }],
+      "steps": [
+        { "open": "https://www.costco.co.kr/my-account/orders" },
+        { "sleep": 1500 },
+        { "stop_if": "비밀번호 찾기|비밀번호를 잊으셨|로그인 상태 유지", "say": "코스트코 주문을 보려면 먼저 코스트코를 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "코스트코 주문 내역 화면이에요. 최근 주문을 위에서부터 읽어 주문일·주문 번호 끝 4자리·상품 이름·수량·금액·주문 상태(주문접수/출고/배송중/배송완료 등)를 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요. 주문 상세를 열어 택배사·배송 상태를 읽어도 돼요(읽기만). 다시 주문할 거면 상품 번호(링크의 /p/숫자)도 적어 둬요. 취소·반품 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('costco'), 연결했는데 풀렸으면 browser_handoff." }
+      ],
+      "result": {},
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 코스트코 상품 화면을 열어 수량을 맞추고 결제 직전까지 간다. 온라인 주문은 회원 로그인이 필요하다: 연결 전이면 connect_ask('costco'). 장바구니 담기·결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 다시 주문도 이 도구로.",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_id": { "type": "string", "pattern": "^\\d{3,10}$", "description": "costco_search의 상품 번호 (예: 671069)" },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 30, "default": 1, "description": "수량 (기본 1)" }
+        },
+        "required": ["product_id"]
+      },
+      "output": {},
+      "examples": [{ "product_id": "671069", "quantity": 1 }],
+      "steps": [
+        { "open": "https://www.costco.co.kr/p/{{product_id}}" },
+        { "wait": { "text": "장바구니|품절|일시 품절|구매할 수 없", "timeoutMs": 12000 } },
+        { "stop_if": "일시 품절|품절된 상품", "say": "이 상품은 지금 코스트코 온라인몰에서 품절이에요. costco_search로 비슷한 상품을 찾아볼까요?" },
+        { "handoff_to_agent": "코스트코 상품 화면이에요(상품 번호 {{product_id}}). 옵션이 있으면 사용자에게 확인해 고르고 수량을 {{quantity}}개로 맞춰요. 로그인(회원) 화면이 나오면 연결 전이면 connect_ask('costco'), 연결했는데 풀렸으면 browser_handoff. 장바구니에 담기 전에 상품·수량·가격을 browser_request_approval로 승인받고, 결제 화면에서는 상품·수량·배송지(동네까지만)·배송비·최종 결제 금액·결제 수단을 정리해 다시 승인을 받은 뒤에만 '결제하기'를 눌러요." }
+      ],
+      "result": {}
+    },
+    {
+      "name": "cancel_return",
+      "title": "취소·반품 신청",
+      "description": "코스트코 온라인 주문 내역에서 고른 주문의 취소(출고 전)나 반품 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유와 수거 방법을 먼저 사용자에게 확인한다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": { "type": "string", "description": "취소·반품할 상품 이름 일부 (예: 청소기)", "maxLength": 40 },
+          "kind": { "type": "string", "enum": ["취소", "반품"], "description": "무엇을 할지" },
+          "reason": { "type": "string", "description": "사유 (예: 단순 변심, 불량, 파손)", "maxLength": 80 }
+        },
+        "required": ["item", "kind"]
+      },
+      "output": {},
+      "examples": [{ "item": "청소기", "kind": "반품", "reason": "단순 변심" }],
+      "steps": [
+        { "open": "https://www.costco.co.kr/my-account/orders" },
+        { "sleep": 1500 },
+        { "stop_if": "비밀번호 찾기|비밀번호를 잊으셨|로그인 상태 유지", "say": "코스트코 주문을 취소·반품하려면 먼저 코스트코를 연결(로그인)해야 해요.", "login": true },
+        { "handoff_to_agent": "코스트코 주문 내역 화면이에요. '{{item}}' 주문을 찾아 상세를 열고 {{kind}} 신청 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고, 반품이면 수거 방법·환불 예정 금액을 확인해요. 온라인에서 반품 신청이 안 되는 상품이면 그 안내(고객센터·매장 반품)를 그대로 알려 줘요. 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·환불 금액을 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요." }
+      ],
+      "result": {}
+    }
+  ]
+}
