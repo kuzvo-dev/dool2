@@ -179,6 +179,38 @@ export function rich(text: string): DocumentFragment {
     for (const part of parts) parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
   }
   for (const block of richBlocks(text)) {
+    if (block.type === 'h') {
+      const t = h(block.level === 1 ? 'h3' : 'h4', { class: 'rich-h' })
+      spans(t, block.text)
+      f.append(t)
+      continue
+    }
+    if (block.type === 'table') {
+      // 표: 좁은 폰에서는 옆으로 밀어 본다 (줄바꿈으로 칸이 무너지지 않게)
+      const table = h('table', { class: 'rich-table' })
+      if (block.head) {
+        const tr = h('tr')
+        for (const c of block.head) {
+          const th = h('th')
+          spans(th, c)
+          tr.append(th)
+        }
+        table.append(h('thead', {}, tr))
+      }
+      const tbody = h('tbody')
+      for (const row of block.rows) {
+        const tr = h('tr')
+        for (const c of row) {
+          const td = h('td')
+          spans(td, c)
+          tr.append(td)
+        }
+        tbody.append(tr)
+      }
+      table.append(tbody)
+      f.append(h('div', { class: 'rich-table-wrap' }, table))
+      continue
+    }
     if (block.type === 'p') {
       const p = h('p')
       block.lines.forEach((line, i) => {
