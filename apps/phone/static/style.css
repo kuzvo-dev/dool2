@@ -2672,8 +2672,7 @@ textarea.ghosting {
   text-align: center;
   white-space: normal;
   word-break: break-all;
-  word-break: keep-all;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* ── 이번 주 두리가 한 일 ── */
