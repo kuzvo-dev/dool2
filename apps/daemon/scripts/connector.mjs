@@ -49,7 +49,7 @@ if (cmd === 'check' || !cmd) {
     const c = toolsOf(id)
     if (c) {
       count++
-      problems.push(...checkConnector(id, c, card.site))
+      problems.push(...checkConnector(id, c, [card.site, ...(card.alsoSites ?? [])].filter(Boolean)))
     }
     if (problems.length) {
       bad++

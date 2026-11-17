@@ -2,6 +2,13 @@
   "id": "microsoft-365",
   "name": "마이크로소프트 365",
   "site": "microsoft.com",
+  "alsoSites": [
+    "office.com",
+    "outlook.office.com",
+    "outlook.live.com",
+    "live.com",
+    "microsoft365.com"
+  ],
   "category": "work",
   "how": "official",
   "login": "Microsoft 계정",

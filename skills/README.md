@@ -18,6 +18,7 @@
 | --- | --- |
 | `id` | 폴더 이름과 같게. 영어 소문자·숫자·`-` |
 | `name` | 화면에 보일 이름 |
+| `alsoSites` | (선택) 같은 서비스가 쓰는 다른 도메인 (예: Gmail 화면은 `mail.google.com`). 서비스 도구가 열 수 있어요 |
 | `site` | 도메인만, `https://` 없이 (예: `coupang.com`). 폰 권한(`device`)이면 생략 |
 | `category` | `shopping` 쇼핑 · `grocery` 장보기·배달 · `fashion` 패션·뷰티 · `travel` 여행·숙소 · `flight` 항공 · `tickets` 예매·예약 · `media` 영상·음악 · `books` 책 · `social` SNS · `work` 업무 · `mail` 메일·일정 · `telecom` 통신 · `life` 생활 · `device` 휴대폰 |
 | `how` | `browser` 사용자 Chrome에서 한 번 로그인 · `official` 공식 연동(준비 전엔 browser처럼) · `open` 로그인 없이 · `device` 폰 권한 |
@@ -71,7 +72,7 @@
 | `approve` | 돈 내기·연락하기 도구의 마지막: 그 버튼을 누를지 **사용자 승인**을 받아요 |
 | `handoff_to_agent` | 정해진 순서로 하기 어려운 곳: 여기까지 데려온 탭을 AI에게 넘기며 할 일을 알려요 |
 
-채우기: `{{keyword}}`, 값이 있을 때만 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, 거르개 `|url` `|digits` `|json` `|re` `|yymmdd`(261127) `|yyyy` `|mm`·`|m`(03·3) `|dd`·`|d`(07·7) `|ms`(그날 한국 0시 밀리초) `|mmdd`(11.27) `|dow`(금) `|kday`(오늘·내일·11.27) `|ampm`(오후 7:30). 늘 있는 이름 `today`.
+채우기: `{{keyword}}`, 값이 있을 때만 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, 없을 때만 `{{^id}}…{{/id}}`, 거르개 `|url` `|digits` `|json` `|re` `|yymmdd`(261127) `|yyyy` `|mm`·`|m`(03·3) `|dd`·`|d`(07·7) `|ms`(그날 한국 0시 밀리초) `|mmdd`(11.27) `|dow`(금) `|kday`(오늘·내일·11.27) `|ampm`(오후 7:30). 늘 있는 이름 `today`.
 
 ## 안전 규칙 (테스트로 검사해요)
 
