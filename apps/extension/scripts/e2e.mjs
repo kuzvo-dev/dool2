@@ -53,6 +53,8 @@ const PAGES = {
 <div id="times"><label><input type="radio" name="t" value="1900" style="position:absolute;width:0;height:0;margin:0;opacity:0;appearance:none"><span>오후 7:00</span></label>
 <label><input type="radio" name="t" value="1930" style="position:absolute;width:0;height:0;margin:0;opacity:0;appearance:none"><span>오후 7:30</span></label></div>
 <div style="display:contents"><button id="dc" style="display:contents" onclick="document.title='상자 없는 버튼'"><span>지도에서 보기</span></button></div>
+<div style="position:relative;height:60px"><button id="under" onclick="document.title='아래 버튼'">아래 버튼</button>
+<div id="pop" style="position:absolute;inset:0;background:#fff"><button onclick="document.title='팝업 예약'" style="width:100%;height:100%">팝업 예약</button></div></div>
 <div id="long">${'성수동 골목 이야기 '.repeat(20)}<span>끝 문장</span></div>
 <script>
 const props = (el, p) => { el['__reactProps$t3st'] = p; el.addEventListener('click', (e) => p.onClick?.(e)) }
@@ -251,6 +253,16 @@ try {
     const dc = s.text.match(/\[(e\d+) 버튼 "지도에서 보기"\]/)?.[1]
     assert.ok(dc, `상자 없는 버튼이 없어요:\n${s.text}`)
     assert.equal((await call('click', { tabId, ref: dc })).title, '상자 없는 버튼')
+  })
+
+  await step('다른 버튼이 덮은 자리는 누르지 않는다', async () => {
+    await call('navigate', { tabId, url: `${base}/app` })
+    const s = await call('snapshot', { tabId })
+    const under = s.text.match(/\[(e\d+) 버튼 "아래 버튼"\]/)?.[1]
+    assert.ok(under, `아래 버튼이 없어요:\n${s.text}`)
+    await assert.rejects(call('click', { tabId, ref: under }), /덮고 있어서 누르지 않았어요/)
+    const t = await call('snapshot', { tabId })
+    assert.doesNotMatch(t.text, /팝업 예약 눌림/)
   })
 
   await step('캡차 화면을 알아챈다', async () => {
