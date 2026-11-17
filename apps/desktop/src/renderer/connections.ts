@@ -261,6 +261,27 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       abilities.append(li)
     }
 
+    // 서비스 도구(ADR 0018)가 있으면: 화면을 하나씩 누르지 않고 바로 하는 일
+    const fast = (it.tools ?? []).length ? el('section', 'svc-fast') : undefined
+    if (fast) {
+      const list = el('ul', 'list svc-abilities')
+      for (const t of it.tools ?? []) {
+        const li = el('li')
+        li.append(icon(TIER_ICON[t.tier]), el('span', 'svc-name', t.title))
+        if (t.login && !it.connectedAt) {
+          const tag = el('span', 'svc-state')
+          tag.append(el('span', 'dot'), el('span', '', '연결하면'))
+          li.append(tag)
+        }
+        list.append(li)
+      }
+      fast.append(
+        el('h2', 'over', '바로 해요'),
+        el('p', 'cap', '두리가 이 일은 화면을 하나씩 누르지 않고 바로 해서 빨라요.'),
+        list,
+      )
+    }
+
     const safety = el('section', 'svc-safety')
     const ul = el('ul')
     for (const line of safetyLines(c)) ul.append(el('li', '', line))
@@ -419,6 +440,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       el('h2', 'over', '이렇게 맡겨요'),
       abilities,
       ...(approval ? [el('p', 'cap svc-approval', approval)] : []),
+      ...(fast ? [fast] : []),
       safety,
       action,
     )

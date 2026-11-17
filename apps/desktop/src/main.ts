@@ -213,6 +213,16 @@ async function smoke(w: BrowserWindow) {
   })
   const out = process.env.DOOL2_SMOKE_OUT ?? join(here, '..', 'out')
   await mkdir(out, { recursive: true })
+  // 화면 아래쪽을 찍을 때: 이 선택자의 요소가 보이게 굴린 뒤 찍는다 (예: .svc-fast)
+  const scroll = process.env.DOOL2_SMOKE_SCROLL
+  if (scroll) {
+    await w.webContents
+      .executeJavaScript(
+        `document.querySelector(${JSON.stringify(scroll)})?.scrollIntoView({ block: 'center' })`,
+      )
+      .catch(() => {})
+    await new Promise((r) => setTimeout(r, 400))
+  }
   const img = await w.webContents.capturePage()
   await writeFile(join(out, 'smoke.png'), img.toPNG())
   console.log(`DOOL2_SMOKE ${ready}`)

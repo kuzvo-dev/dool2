@@ -229,6 +229,21 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
   box.append(el('h2', 'over', '이렇게 맡겨요'), abilities)
   if (approval) box.append(el('p', 'cap', approval))
 
+  // 서비스 도구(ADR 0018)가 있으면: 화면을 하나씩 누르지 않고 바로 하는 일
+  if (it.tools?.length) {
+    const fast = el('ul', 'list svc-abilities')
+    for (const t of it.tools) {
+      const li = el('li', 'row', svg(TIER_ICON[t.tier]), el('span', 'row-text', el('span', 'row-t', t.title)))
+      if (t.login && !it.connectedAt) li.append(el('span', 'pill', '연결하면'))
+      fast.append(li)
+    }
+    box.append(
+      el('h2', 'over', '바로 해요'),
+      el('p', 'cap', '두리가 이 일은 화면을 하나씩 누르지 않고 바로 해서 빨라요.'),
+      fast,
+    )
+  }
+
   const safety = el('ul', 'svc-safety')
   for (const line of safetyLines(c)) safety.append(el('li', '', line))
   box.append(el('h2', 'over', '안전하게 지키는 방법'), safety)

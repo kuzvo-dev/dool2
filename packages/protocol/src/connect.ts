@@ -120,13 +120,26 @@ export function checkConnectCard(dir: string, raw: unknown): string[] {
   return problems
 }
 
-/** 연결 화면 한 줄: 카드 + 절차 문서 상태 + 연결 상태 (GET /api/connections) */
+/** 서비스 도구 하나의 요약 (tools.json, ADR 0018) */
+export interface ConnectionTool {
+  /** catchtable_search */
+  name: string
+  /** 식당 빈자리 찾기 */
+  title: string
+  tier: Tier
+  /** 연결(로그인)해야 쓰는 도구 */
+  login: boolean
+  /** 실제로 돌려 본 도구 */
+  verified: boolean
+}
+
+/** 연결 화면 한 줄: 카드 + 서비스 도구 상태 + 연결 상태 (GET /api/connections) */
 export interface ConnectionItem {
   card: ConnectCard
   /** 커넥터(tools.json)가 있으면 그 상태 요약 (검증됨(날짜) / 초안 / 막힘(사유)) */
   skill?: string
-  /** 커넥터 도구 이름들 (catchtable_search …) */
-  tools?: string[]
+  /** 서비스 도구(커넥터) — 연결 화면의 "빠르게 바로 하는 일"과 AI 서비스 지도에 쓴다 */
+  tools?: ConnectionTool[]
   /** 사용자가 연결을 마친 시각. open·device는 연결 없이 쓰거나 폰에서 켠다 */
   connectedAt?: string
 }

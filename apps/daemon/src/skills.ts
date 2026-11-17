@@ -7,6 +7,7 @@ import {
   type ConnectCard,
   ConnectCardSchema,
   type ConnectionItem,
+  type ConnectionTool,
 } from '@dool2/protocol/connect'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
@@ -19,7 +20,7 @@ export class Skills {
     /** 연결을 마친 서비스 id → 시각 (설정) */
     private readonly connected: () => Record<string, string> = () => ({}),
     /** 서비스 도구(tools.json) 상태 요약 (ADR 0018) */
-    private readonly connector?: (id: string) => Promise<{ status?: string; tools?: string[] }>,
+    private readonly connector?: (id: string) => Promise<{ status?: string; tools?: ConnectionTool[] }>,
   ) {}
 
   /** 연결 카드 (형식이 틀린 카드는 건너뛴다. 레포 테스트가 미리 잡는다) */

@@ -6,7 +6,7 @@
 // - 막히면 열어 둔 탭 번호와 함께 "브라우저 도구로 이어서"를 돌려준다. 사이트가 바뀐 것일 수 있어 기록해 둔다.
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CONNECT_CATEGORIES, type ConnectCard } from '@dool2/protocol/connect'
+import { CONNECT_CATEGORIES, type ConnectCard, type ConnectionTool } from '@dool2/protocol/connect'
 import {
   type Connector,
   ConnectorSchema,
@@ -206,7 +206,7 @@ export class Connectors {
   }
 
   /** 연결 화면에 보일 커넥터 상태 요약과 도구 이름 */
-  async summary(id: string): Promise<{ status?: string; tools?: string[] }> {
+  async summary(id: string): Promise<{ status?: string; tools?: ConnectionTool[] }> {
     const c = (await this.load()).get(id)?.connector
     if (!c) return {}
     const ok = c.tools.filter((t) => t.status.startsWith('검증됨'))
@@ -218,7 +218,16 @@ export class Connectors {
       : c.tools.some((t) => this.usable(t))
         ? '초안'
         : '막힘'
-    return { status, tools: c.tools.map((t) => connectorToolName(id, t.name)) }
+    const tools = c.tools
+      .filter((t) => this.usable(t))
+      .map((t) => ({
+        name: connectorToolName(id, t.name),
+        title: t.title,
+        tier: t.tier,
+        login: t.login,
+        verified: t.status.startsWith('검증됨'),
+      }))
+    return { status, tools }
   }
 
   forgetTab(tabId: number) {
