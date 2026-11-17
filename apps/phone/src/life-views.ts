@@ -40,7 +40,7 @@ const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconName; tone:
   saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
   goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
   connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
-  suggest: { label: '제안', icon: 'idea', tone: 'amber', emo: 'bulb' },
+  suggest: { label: '먼저 챙겼어요', icon: 'idea', tone: 'amber', emo: 'bulb' },
 }
 
 const CATEGORY: Record<GoalCategory, { icon: IconName; tone: string; hint: string; emo: string }> = {
@@ -123,6 +123,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
         : undefined,
     ),
   )
+  if (ctx.life) box.append(watchCard(ctx))
   if (ctx.waiting.length) box.append(...ctx.waiting)
   const items = ctx.life?.feed ?? []
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
@@ -163,37 +164,108 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
     ),
     h('strong', { class: 'feed-title', text: withoutPhotoMark(f.title) }),
     f.body ? body : undefined,
-    h(
+    f.from ? h('p', { class: 'meta feed-from', text: f.from }) : undefined,
+    f.kind === 'suggest' && f.ask
+      ? suggestActions(ctx, f, f.ask)
+      : h(
+          'div',
+          { class: 'feed-actions' },
+          h(
+            'button',
+            {
+              class: f.reaction === 'up' ? 'chip on' : 'chip',
+              label: '좋아요',
+              onclick: (e: MouseEvent) => {
+                // 새로 누를 때만 터진다 (취소할 때는 조용히)
+                if (f.reaction !== 'up') burst(e.currentTarget as HTMLElement)
+                react('up')()
+              },
+            },
+            icon('up'),
+          ),
+          h(
+            'button',
+            { class: f.reaction === 'down' ? 'chip on' : 'chip', label: '별로예요', onclick: react('down') },
+            icon('down'),
+          ),
+          h(
+            'button',
+            {
+              class: 'chip',
+              onclick: () => ctx.fill(`"${plain(f.title, 40)}" 이야기인데요, `),
+            },
+            icon('reply'),
+            '이어서 말하기',
+          ),
+        ),
+  )
+}
+
+/** 먼저 챙긴 일의 제안: [해 줘]는 그 부탁을 대화로 보내고, [괜찮아요]는 넘긴다 */
+function suggestActions(ctx: LifeCtx, f: FeedItem, ask: string) {
+  if (f.answered)
+    return h(
       'div',
       { class: 'feed-actions' },
+      h('span', { class: 'meta', text: f.answered === 'yes' ? '맡겼어요' : '넘겼어요' }),
+    )
+  return h(
+    'div',
+    { class: 'feed-actions suggest-actions' },
+    h('button', {
+      class: 'btn small',
+      text: f.askLabel || '해 줘',
+      onclick: () => {
+        ctx.act({ action: 'feed-answer', id: f.id, answer: 'yes' })
+        ctx.ask(ask)
+      },
+    }),
+    h('button', {
+      class: 'btn-ghost small',
+      text: '괜찮아요',
+      onclick: () => ctx.act({ action: 'feed-answer', id: f.id, answer: 'no' }),
+    }),
+  )
+}
+
+/** 먼저 챙기기 스위치: 연결한 서비스를 아침·저녁에 살펴 챙길 일만 알린다 (ADR 0019) */
+function watchCard(ctx: LifeCtx) {
+  const w = ctx.life?.watch ?? { on: true }
+  const sw = h('button', {
+    class: w.on ? 'switch on' : 'switch',
+    label: w.on ? '먼저 챙기기 끄기' : '먼저 챙기기 켜기',
+    onclick: () => ctx.act({ action: 'watch', on: !w.on }),
+  })
+  sw.setAttribute('role', 'switch')
+  sw.setAttribute('aria-checked', String(w.on))
+  return h(
+    'div',
+    { class: 'card watch-card' },
+    h(
+      'div',
+      { class: 'watch-row' },
       h(
-        'button',
-        {
-          class: f.reaction === 'up' ? 'chip on' : 'chip',
-          label: '좋아요',
-          onclick: (e: MouseEvent) => {
-            // 새로 누를 때만 터진다 (취소할 때는 조용히)
-            if (f.reaction !== 'up') burst(e.currentTarget as HTMLElement)
-            react('up')()
-          },
-        },
-        icon('up'),
+        'div',
+        { class: 'grow' },
+        h('strong', { text: '먼저 챙기기' }),
+        h('p', {
+          class: 'meta',
+          text: w.busy
+            ? '연결한 서비스를 살펴보는 중이에요…'
+            : w.on
+              ? '연결한 서비스를 아침·저녁에 살펴보고 챙길 일만 알려 드려요.'
+              : '꺼 두었어요.',
+        }),
       ),
-      h(
-        'button',
-        { class: f.reaction === 'down' ? 'chip on' : 'chip', label: '별로예요', onclick: react('down') },
-        icon('down'),
-      ),
-      h(
-        'button',
-        {
-          class: 'chip',
-          onclick: () => ctx.fill(`"${plain(f.title, 40)}" 이야기인데요, `),
-        },
-        icon('reply'),
-        '이어서 말하기',
-      ),
+      sw,
     ),
+    w.on && !w.busy
+      ? h('button', {
+          class: 'btn-text small',
+          text: '지금 살펴보기',
+          onclick: () => ctx.act({ action: 'watch-now' }),
+        })
+      : undefined,
   )
 }
 

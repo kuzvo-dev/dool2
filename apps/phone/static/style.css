@@ -3030,3 +3030,28 @@ textarea.ghosting {
 .rich-table td:first-child {
   white-space: nowrap;
 }
+
+/* 먼저 챙기기 (ADR 0019) */
+.watch-card .watch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.watch-card .watch-row .grow {
+  flex: 1;
+  min-width: 0;
+}
+.watch-card .watch-row .meta {
+  margin-top: 2px;
+}
+.watch-card .btn-text.small {
+  margin-top: 6px;
+  padding-left: 0;
+}
+.feed-from {
+  margin-top: 4px;
+}
+.suggest-actions .btn,
+.suggest-actions .btn-ghost {
+  flex: 1;
+}

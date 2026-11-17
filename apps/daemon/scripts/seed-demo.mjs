@@ -186,6 +186,39 @@ if (process.env.SEED_APPROVAL) {
     { id: 'm-3', text: '배달은 주로 저녁에 시켜요', source: 'doori', at: at(-day) },
   ])
   store.setSetting('feed', [
+    // 먼저 챙긴 일 (ADR 0019): 부탁 없이 연결한 서비스를 살펴 올린 것
+    {
+      id: 'f-w1',
+      kind: 'suggest',
+      title: '어제 주문한 러닝화, 내일 오전에 도착해요',
+      body: '문 앞에 두고 간대요.',
+      from: '쿠팡 주문 내역을 보고',
+      key: 'coupang-러닝화-도착예정',
+      at: at(-3),
+    },
+    {
+      id: 'f-w2',
+      kind: 'suggest',
+      title: '토요일이 엄마 생신이에요',
+      body: '작년엔 꽃을 보냈어요. 올해도 3만 원대로 골라 둘까요?',
+      from: '기억해 둔 것과 지난 주문을 보고',
+      key: 'memory-엄마생신',
+      ask: '토요일 엄마 생신 선물 3만 원대로 골라 줘. 작년엔 꽃을 보냈어',
+      askLabel: '골라 줘',
+      at: at(-4),
+    },
+    {
+      id: 'f-w3',
+      kind: 'suggest',
+      title: '답장이 필요한 메일이 1개 있어요',
+      body: '집주인이 다음 주 점검 시간을 물어봤어요.',
+      from: 'Gmail 받은편지함을 보고',
+      key: 'gmail-점검시간',
+      ask: '집주인 메일에 답장 초안 써 줘',
+      askLabel: '초안 써 줘',
+      answered: 'yes',
+      at: at(-6 * 60),
+    },
     {
       id: 'f-1',
       kind: 'post',
@@ -228,6 +261,8 @@ if (process.env.SEED_APPROVAL) {
   ])
   store.setSetting('feedPrompt', '매일 아침 날씨·일정·오는 택배')
   store.setSetting('connections', { coupang: at(-3 * day), gmail: at(-2 * day) })
+  // 캡처하는 동안 살펴보기가 돌지 않게 (실제 AI를 부르지 않는다)
+  store.setSetting('watchAt', new Date().toISOString())
 }
 // 첫 실행 마법사는 끝낸 상태로 둔다
 store.setSetting('setupDone', true)

@@ -2032,3 +2032,16 @@ button.side-row:hover {
 .rich-table td:first-child {
   white-space: nowrap;
 }
+
+/* 먼저 챙기기 (ADR 0019) */
+.watch-card {
+  margin-top: 12px;
+}
+.watch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.feed-from {
+  margin-top: 4px;
+}

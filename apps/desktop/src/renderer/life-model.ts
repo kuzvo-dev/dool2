@@ -140,7 +140,7 @@ export const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconKey;
     saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
     goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
     connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
-    suggest: { label: '제안', icon: 'idea', tone: 'amber', emo: 'bulb' },
+    suggest: { label: '먼저 챙겼어요', icon: 'idea', tone: 'amber', emo: 'bulb' },
   }
 
 /** 피드를 날짜별로 묶는다 (새 것부터) */

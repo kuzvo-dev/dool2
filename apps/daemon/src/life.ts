@@ -443,6 +443,15 @@ export class Life {
       case 'feed-react':
         this.react(a.id, a.reaction)
         return
+      case 'feed-answer': {
+        const list = this.feedItems()
+        const f = list.find((x) => x.id === a.id)
+        if (f?.ask && !f.answered) {
+          f.answered = a.answer
+          this.put('feed', list)
+        }
+        return
+      }
       case 'feed-prompt':
         this.setFeedPrompt(a.text)
         return

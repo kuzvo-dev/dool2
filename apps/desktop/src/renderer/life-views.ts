@@ -175,7 +175,41 @@ export function feedView(ctx: LifeCtx): HTMLElement {
     'page page-narrow',
     pageHead('피드', '두리가 한 일과 먼저 알려 드릴 것을 모아 둬요'),
     askCard,
+    watchCard(ctx),
     ...body,
+  )
+}
+
+/** 먼저 챙기기: 연결한 서비스를 아침·저녁에 살펴 챙길 일만 알린다 (ADR 0019) */
+function watchCard(ctx: LifeCtx): HTMLElement {
+  const w = ctx.life().watch ?? { on: true }
+  const linked = ctx.services().filter((c) => c.connectedAt && c.card.how !== 'device')
+  const sub = !linked.length
+    ? '서비스를 연결하면 아침·저녁에 살펴보고 챙길 일만 알려 드려요.'
+    : w.busy
+      ? `${linked.map((c) => c.card.name).join(', ')} 살펴보는 중이에요…`
+      : w.on
+        ? `아침 8:30·저녁 6:30에 살펴봐요: ${linked.map((c) => c.card.name).join(', ')}`
+        : '꺼 두었어요. 켜면 연결한 서비스를 살펴 먼저 알려 드려요.'
+  const now = button(
+    'btn-ghost sm',
+    () =>
+      void ctx
+        .act({ action: 'watch-now' })
+        .then(() => ctx.toast('지금 살펴볼게요. 챙길 일이 있으면 알려 드릴게요')),
+    w.busy ? '살펴보는 중…' : '지금 살펴보기',
+  )
+  now.disabled = Boolean(w.busy) || !linked.length
+  return el(
+    'div',
+    'card watch-card',
+    el(
+      'div',
+      'watch-row',
+      el('div', 'grow', el('p', 'row-t', '먼저 챙기기'), el('p', 'cap', sub)),
+      linked.length ? now : button('btn-ghost sm', () => ctx.openView('connect'), '연결하기'),
+      toggle(w.on, '먼저 챙기기', (on) => void ctx.act({ action: 'watch', on })),
+    ),
   )
 }
 
@@ -209,6 +243,27 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
     chip('down', '별로예요', f.reaction === 'down', react('down')),
     button('chip quiet', () => ctx.compose(continueText(f)), icon('reply'), '이어서 말하기'),
   )
+  // 먼저 챙긴 일의 제안: [해 줘]는 그 부탁을 대화로 보내고, [괜찮아요]는 넘긴다. 답하면 고른 것만 남긴다
+  if (f.kind === 'suggest' && f.ask) {
+    const ask = f.ask
+    actions.replaceChildren(
+      ...(f.answered
+        ? [el('span', 'cap', f.answered === 'yes' ? '맡겼어요' : '넘겼어요')]
+        : [
+            button(
+              'btn sm',
+              () =>
+                void ctx.act({ action: 'feed-answer', id: f.id, answer: 'yes' }).then(() => ctx.send(ask)),
+              f.askLabel || '해 줘',
+            ),
+            button(
+              'btn-ghost sm',
+              () => void ctx.act({ action: 'feed-answer', id: f.id, answer: 'no' }),
+              '괜찮아요',
+            ),
+          ]),
+    )
+  }
   // 결과가 흩어지지 않게: 목표·보관함에서 나온 글이면 그리로
   const goal = f.ref ? ctx.life().routines.find((r) => r.id === f.ref) : undefined
   if (goal && !isFeedRoutine(goal))
@@ -225,6 +280,7 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
       el('p', 'feed-head meta', el('span', '', k.label), el('span', '', timeLabel(f.at))),
       el('p', 'feed-title', plain(f.title, 120)),
       text,
+      f.from ? el('p', 'cap feed-from', f.from) : undefined,
       actions,
     ),
   )

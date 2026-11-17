@@ -712,6 +712,8 @@ export type LifeAction =
     }
   | { action: 'goal-step'; id: string; index: number; done: boolean }
   | { action: 'feed-react'; id: string; reaction?: 'up' | 'down' }
+  /** 먼저 챙긴 일의 제안에 답하기 ([해 줘]는 화면이 그 부탁을 대화로 따로 보낸다) */
+  | { action: 'feed-answer'; id: string; answer: 'yes' | 'no' }
   | { action: 'feed-prompt'; text: string }
   | { action: 'library-save'; title: string; body: string; itemKind?: LibraryItem['kind'] }
   | { action: 'routine-toggle'; id: string; on: boolean }
