@@ -513,6 +513,11 @@ function takePopup(opener: number) {
 
 async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
+    case 'reload': {
+      // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
+      setTimeout(() => chrome.runtime.reload(), 200)
+      return { ok: true }
+    }
     case 'open': {
       const url = safeUrl(a.url)
       if (!url) throw new Error('http·https 주소만 열 수 있어요')
