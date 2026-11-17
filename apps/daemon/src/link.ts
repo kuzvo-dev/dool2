@@ -76,7 +76,7 @@ export interface LinkHost {
   /** 대화 하나 (ADR 0015) */
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
-  connect(id: string, action: 'open' | 'mark' | 'unmark' | 'chat'): Promise<{ tabId?: number }>
+  connect(id: string, action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify'): Promise<{ tabId?: number }>
   /** 따로 하는 대화: 새로 만들기·지우기 */
   sideNew(): Promise<Extract<PcToPhone, { kind: 'thread' }>>
   sideDelete(id: string): Promise<boolean>
@@ -393,13 +393,20 @@ export class PhoneLink {
         return this.host.cancelConversation()
       case 'connect': {
         const action = msg.action
-        if (action !== 'open' && action !== 'mark' && action !== 'unmark' && action !== 'chat') return
+        if (
+          action !== 'open' &&
+          action !== 'mark' &&
+          action !== 'unmark' &&
+          action !== 'chat' &&
+          action !== 'verify'
+        )
+          return
         try {
           const r = await this.host.connect(String(msg.id), action)
           if (action === 'open' && r.tabId !== undefined)
             return this.send(phone, { kind: 'connect-opened', id: String(msg.id), tabId: r.tabId })
           // 대화에 남긴 말·카드는 대화 흐름(stream)으로 이미 갔다
-          if (action === 'chat') return
+          if (action === 'chat' || action === 'verify') return
           return this.send(phone, { kind: 'connections', services: await this.host.connections() })
         } catch (e) {
           return this.send(phone, { kind: 'error', message: (e as Error).message })

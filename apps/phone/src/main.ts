@@ -488,6 +488,7 @@ async function receive(env: Envelope) {
       st.connectSteps.set(msg.id, msg.steps)
       break
     case 'connect-result': {
+      st.connecting.delete(msg.id)
       const d = st.loginDraft
       if (d.id === `connect:${msg.id}`) {
         d.busy = false
@@ -511,14 +512,10 @@ async function receive(env: Envelope) {
         // 대화를 보고 있으면 카드가 "연결돼 있어요"로 바뀌는 걸로 충분하다 (같은 말을 또 띄우지 않는다)
         if (st.tab !== 'chat' || st.screen.name !== 'app') toast(msg.message)
         runAfterConnect(msg.id)
-      } else if (st.tab === 'chat' && st.screen.name === 'app') {
-        // 대화를 보고 있으면 연결 카드가 까닭과 [화면 열기]·[다시 넣기]로 바뀐다 (화면을 갑자기 바꾸지 않는다)
-      } else if (msg.tabId !== undefined) {
-        // 연결 화면에서 기다리던 중: 그 화면을 바로 열어 직접 마치게 한다
+      } else if (st.tab !== 'chat' || st.screen.name !== 'app') {
+        // 화면을 멋대로 바꾸지 않는다: 알리기만 하고, 대화의 연결 카드가 까닭과 [화면 열기]·[다시 넣기]로 남는다
         toast(msg.message)
-        openRemote(msg.tabId, msg.id)
-        return
-      } else toast(msg.message)
+      }
       break
     }
     case 'connect-opened':
@@ -739,7 +736,10 @@ function fps() {
   return Math.max(1, Math.round(frameTimes.length / 2))
 }
 
+/** 원격 화면을 열기 전 탭 (닫으면 거기로 돌아간다: 대화에서 열었으면 대화로) */
+let remoteFrom: Tab = 'chat'
 function openRemote(tabId: number, connectId?: string) {
+  if (st.screen.name === 'app') remoteFrom = st.tab
   st.screenShot = { tabId }
   st.overlay = undefined
   st.screen = { name: 'remote', tabId, ...(connectId ? { connectId } : {}) }
@@ -956,6 +956,15 @@ function connectFailCard(
     ),
     h('div', { class: 'approve-actions' }, view.sub, view.main),
   )
+}
+
+/** 연결 카드 설명: 그 서비스가 실제로 되는 방법대로 (간편 로그인만 되는 곳에 "아이디·비밀번호"라고 하지 않는다) */
+function connectHow(c: ConnectionItem['card']): string {
+  const social = (c.social ?? []).slice(0, 2).map((p) => SOCIAL_LABEL[p])
+  const idLogin = /아이디|비밀번호|이메일/.test(c.login ?? '')
+  if (social.length && !idLogin) return `${social.join('·')} 간편 로그인으로 두리가 PC에서 연결해요`
+  if (social.length) return `아이디·비밀번호나 ${social.join('·')} 간편 로그인으로 연결해요`
+  return '아이디·비밀번호를 넣으면 두리가 PC에서 로그인해요'
 }
 
 /** 연결하는 동안 단계: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
@@ -2244,7 +2253,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
           text: busy
             ? 'PC에서 두리가 하고 있어요. 다른 일을 하셔도 돼요'
             : browser
-              ? '아이디·비밀번호를 넣으면 두리가 PC에서 로그인해요'
+              ? connectHow(c)
               : '연결 화면에서 켜요',
         }),
       ),
@@ -3544,7 +3553,31 @@ function loginSheet(id: string) {
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
     direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    // 연결 카드가 있는 사이트면 간편 로그인도 같이 (연결하기 화면과 같은 선택지)
+    ...loginChoices(cardIdFor(r.origin)),
   })
+}
+
+/** 연결 카드의 간편 로그인 버튼 (로그인 요청 카드·연결하기 화면이 같은 선택지를 쓴다) */
+function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | 'socialOnly'> {
+  const it = cardId ? st.services?.find((x) => x.card.id === cardId) : undefined
+  if (!it?.card.social?.length) return {}
+  const id = it.card.id
+  return {
+    socialOnly: !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
+    social: it.card.social.map((provider) => ({
+      provider,
+      onclick: () => {
+        // 공급자 쪽이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
+        void send({ kind: 'connect-social', id, provider })
+        st.overlay = undefined
+        st.connecting.add(id)
+        if (st.tab !== 'chat')
+          toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+        render()
+      },
+    })),
+  }
 }
 
 /** 서비스 연결하기: 아이디·비밀번호를 넣으면 두리가 PC Chrome에서 대신 로그인하고 결과를 알려 준다 */
@@ -3873,10 +3906,9 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
     const back = () => {
       st.screen = { name: 'app' }
       remoteUi = undefined
-      if (v.connectId) {
-        st.tab = 'connect'
-        st.connectDetail = v.connectId
-      }
+      // 열기 전 화면으로 (대화의 연결 카드에서 열었으면 대화로, 연결 화면에서 열었으면 그 서비스로)
+      st.tab = remoteFrom
+      if (v.connectId && remoteFrom === 'connect') st.connectDetail = v.connectId
       render()
     }
     remoteUi = createRemote({
@@ -3886,8 +3918,12 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
       back,
       handBack: back,
       done: () => {
-        if (v.connectId) void send({ kind: 'connect', id: v.connectId, action: 'mark' })
-        else ask('다 했어요. 이어서 해 주세요.')
+        // 연결: 눌렀다고 바로 연결로 치지 않는다. PC가 정말 로그인됐는지 보고 알려 준다
+        if (v.connectId) {
+          st.connecting.add(v.connectId)
+          void send({ kind: 'connect', id: v.connectId, action: 'verify' })
+          toast('로그인됐는지 확인할게요')
+        } else ask('다 했어요. 이어서 해 주세요.')
         back()
       },
       hostOf,

@@ -746,7 +746,8 @@ export type PhoneToPc =
    * mark·unmark = 연결 표시·해제
    */
   /** chat: 대화에 "○○ 연결해 줘"와 연결 카드를 바로 남긴다 (AI를 부르지 않는다) */
-  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' }
+  /** verify: [로그인했어요]를 눌렀을 때 — 본체가 사이트를 열어 정말 로그인됐는지 보고 연결로 표시한다 */
+  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' }
   /** 연결하기: 아이디·비밀번호를 금고에 넣고 두리 본체가 대신 로그인한다 (값은 AI를 거치지 않는다) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
   /** 로그인 중 화면이 묻는 것에 대한 답 (인증번호 등). value가 없으면 취소 */
