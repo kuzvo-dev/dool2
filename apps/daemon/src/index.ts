@@ -96,6 +96,8 @@ export interface DaemonOptions {
   token?: string
   /** 배포 앱: 묶어 둔 두리 도구 서버 스크립트 (없으면 @dool2/mcp-tools/server) */
   mcpServerScript?: string
+  /** 시험용: 도구 주소(/api/tools) 토큰을 정해 둔다 (없으면 켤 때마다 새로 만든다) */
+  toolToken?: string
   /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
@@ -239,7 +241,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
   }
   // 두리 도구 서버(MCP)는 에이전트가 띄우는 자식이라 화면용 토큰과 다른 토큰을 준다. 이 토큰은 도구 주소만 부를 수 있다 (T5)
-  const toolToken = randomBytes(32).toString('hex')
+  const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** 목표·보관함·기억·피드 */
   const life = new Life(store)
@@ -487,7 +489,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * [로그인했어요]: 믿고 표시하지 않고 확인한다. 지켜보던 탭, 그래도 모르면 사이트 첫 화면을 새로 열어
    * 로그인한 사람에게만 보이는 말이 있는지 본다 (간편 로그인 창에서 마쳤어도 사이트 쿠키로 보인다)
    */
-  const connectVerify = async (card: ConnectCard) => {
+  const connectVerify = async (card: ConnectCard): Promise<boolean> => {
     const check = async (tabId: number) =>
       looksSignedIn(
         card,
@@ -517,7 +519,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         message: `${card.name}에 로그인돼 있어요.`,
       })
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
-      return
+      return true
     }
     // 아직: 그 화면에서 마치면 알아서 연결된다 (지켜보기를 다시 켠다)
     if (watched !== undefined) loginWatch.start(card, watched)
@@ -529,6 +531,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       ...(watched !== undefined ? { tabId: watched } : {}),
       message: `아직 ${card.name}에 로그인이 안 된 것 같아요. 화면을 열어 직접 마쳐 주세요.`,
     })
+    return false
   }
   /** 대화 끝(8줄 안)에 이 서비스 연결 카드가 있나 (본체를 다시 켜도 기록으로 판단한다) */
   const cardNearEnd = (card: ConnectCard) => {
@@ -1611,6 +1614,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         } catch (e) {
           return json(res, 400, { error: (e as Error).message })
         }
+      }
+      // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
+      if (card && c === 'verify' && !d && req.method === 'POST') {
+        const ok = await connectVerify(card)
+        return json(res, 200, { ok, connectedAt: readSettings().connections?.[card.id] ?? null })
       }
       if (card && !c && (req.method === 'PUT' || req.method === 'DELETE'))
         return json(res, 200, { connectedAt: connectMark(card.id, req.method === 'PUT') ?? null })
