@@ -1,0 +1,275 @@
+{
+  "id": "klook",
+  "tools": [
+    {
+      "name": "search",
+      "title": "투어·입장권 찾기",
+      "description": "로그인 없이 된다. 도시·명소·키워드(예: 홍콩 디즈니랜드, 세부 호핑 투어, 도쿄 타워)로 투어·액티비티·입장권·교통 패스를 찾아 상품마다 분류·지역·이름·상품 id·평점(5점 만점)·후기 수·이용자 수·시작 가격·일반가·무료 취소·즉시 확정·링크를 돌려준다. 호텔은 빼고 돌려준다. max_price를 주면 그 값 이하만 남긴다. 날짜별 판매 여부·옵션 가격은 klook_prepare_booking이 연 상품 화면에서 본다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 홍콩 디즈니랜드 검색 상품·평점·시작 가격)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "도시·명소·키워드 (예: 홍콩 디즈니랜드, 다낭 바나힐, 오사카 유니버설)",
+            "maxLength": 60
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1인(1장) 최대 가격(원). 없으면 비워 둔다"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "items": {
+          "type": "list",
+          "description": "투어·입장권 상품",
+          "fields": {
+            "category": {
+              "type": "string",
+              "description": "분류·지역 (예: 테마파크 • 홍콩)"
+            },
+            "name": {
+              "type": "string"
+            },
+            "activity_id": {
+              "type": "string",
+              "description": "klook_prepare_booking에 넘길 상품 id"
+            },
+            "rating": {
+              "type": "number",
+              "description": "평점 (5점 만점)"
+            },
+            "reviews": {
+              "type": "string",
+              "description": "후기 수 (예: 192.8K)"
+            },
+            "booked": {
+              "type": "string",
+              "description": "이용자 수 (예: 9M+ 명의 선택)"
+            },
+            "price": {
+              "type": "integer",
+              "description": "시작 가격(원)"
+            },
+            "original_price": {
+              "type": "integer",
+              "description": "일반가(원)"
+            },
+            "free_cancel": {
+              "type": "string"
+            },
+            "instant": {
+              "type": "string",
+              "description": "'예약 즉시 확정'이면 바로 확정"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "홍콩 디즈니랜드"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.klook.com/ko/search/result/?query={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "text": "건의 검색 결과|검색 결과가 없",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "stop_if": "검색 결과가 없",
+          "say": "'{{keyword}}'(으)로는 상품이 안 나와요. 도시 이름이나 명소 이름으로 다시 찾아볼까요?"
+        },
+        {
+          "extract": {
+            "items": "a[href*='/activity/']",
+            "limit": 30,
+            "fields": {
+              "category": {
+                "line": 0
+              },
+              "name": {
+                "line": 1
+              },
+              "activity_id": {
+                "attr": "href",
+                "match": "/activity/(\\d+)"
+              },
+              "rating": {
+                "match": "★ ([\\d.]+)"
+              },
+              "reviews": {
+                "match": "★ [\\d.]+ \\(([^)]+)\\)"
+              },
+              "booked": {
+                "match": "([\\d.,]+[KM]?\\+? 명의 선택)"
+              },
+              "price": {
+                "match": "₩ ([\\d,]+)"
+              },
+              "original_price": {
+                "match": "일반가: ₩ ([\\d,]+)"
+              },
+              "free_cancel": {
+                "match": "(무료 취소)"
+              },
+              "instant": {
+                "match": "(예약 즉시 확정)"
+              },
+              "link": {
+                "attr": "href",
+                "match": "^([^?]+)"
+              }
+            }
+          },
+          "as": "found",
+          "min": 0
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "items"
+        }
+      ],
+      "result": {
+        "items": "{{items}}"
+      },
+      "next": "평점·이용자 수·가격·무료 취소를 견줘 2~3개를 짧게 보여 주고 고르게 해요. 날짜·옵션을 고르거나 사려면 klook_prepare_booking에 activity_id·날짜·수량을 넘겨요. 목록이 비면 다른 말로 다시 찾아요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "투어·입장권 예약 준비",
+      "description": "klook_search로 고른 상품 화면을 열어 패키지(옵션)·날짜·수량을 고르고 '예약하기' 직전까지 데려간다. 결제는 사용자 승인(browser_request_approval)을 받아야만 한다. 예약은 로그인이 필요하다: 연결 전이면 그때 connect_ask('klook').",
+      "tier": "돈 내기",
+      "login": false,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "activity_id": {
+            "type": "string",
+            "description": "klook_search가 준 상품 id (예: 39)",
+            "pattern": "^\\d{1,12}$"
+          },
+          "item": {
+            "type": "string",
+            "description": "상품 이름 (사용자에게 보일 말)",
+            "maxLength": 100
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "이용 날짜 YYYY-MM-DD"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 1,
+            "description": "수량(성인 기준 인원·장)"
+          },
+          "option_wish": {
+            "type": "string",
+            "description": "원하는 패키지·옵션 (예: 1일권, 한국어 가이드, 성인 2 어린이 1). 없으면 비워 둔다",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "activity_id",
+          "date"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "activity_id": "39",
+          "item": "홍콩 디즈니랜드 파크 티켓",
+          "date": "2026-12-13",
+          "count": 2,
+          "option_wish": "1일권"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.klook.com/ko/activity/{{activity_id|digits}}/"
+        },
+        {
+          "wait": {
+            "text": "이용 가능 여부 확인하기|부터|판매 종료|판매가 종료",
+            "timeoutMs": 20000
+          }
+        },
+        {
+          "click": {
+            "text": "이용 가능 여부 확인하기"
+          },
+          "optional": true
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "handoff_to_agent": "클룩 {{item}} 상품 화면이에요('이용 가능 여부 확인하기'를 눌러 패키지 옵션 칸을 열어 둠). 패키지 옵션에서 사용자 바람({{option_wish}})에 맞는 것을 고르고, 날짜 {{date}}와 수량 {{count}}을 골라요(그 날짜가 매진·불가면 가까운 날짜를 사용자에게 물어요). 옵션별 가격·취소 규정·확정 방식·바우처 사용법을 읽어 정리하고, '예약하기'를 누른 뒤 결제 화면에서 상품·옵션·날짜·수량·총 금액·취소 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인 화면이 나오면 연결 전엔 connect_ask('klook'), 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "bookings",
+      "title": "예약·바우처 보기",
+      "description": "로그인해야 된다. 클룩 '예약 내역'을 열어 다가오는 것부터 상품 이름·옵션·이용 날짜·수량·금액·상태(확정·대기·취소)·바우처 여부를 정리한다. 취소는 사용자가 그 예약을 콕 집어 부탁하고 환불 금액을 승인받아야만 한다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.klook.com/ko/bookings/"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "wait": {
+            "text": "로그인 또는 회원가입|예약 내역|예약이 없",
+            "timeoutMs": 12000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "로그인 또는 회원가입|스캔으로 로그인하기",
+          "say": "클룩 로그인이 필요해요. 연결하면 예약과 바우처를 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "클룩 예약 내역 화면이에요. 다가오는 것부터 상품 이름·옵션·이용 날짜·수량·금액·상태·바우처 여부를 읽어 짧게 정리해요. 예약 번호는 끝 4자리만 보여 줘요. 로그인 화면이면 연결 전엔 connect_ask('klook'), 풀렸으면 browser_handoff. 취소 버튼은 사용자가 그 예약을 콕 집어 부탁하고 환불 금액을 browser_request_approval로 승인받기 전에는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
