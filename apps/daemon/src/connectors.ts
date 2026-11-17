@@ -6,6 +6,7 @@
 // - 막히면 열어 둔 탭 번호와 함께 "브라우저 도구로 이어서"를 돌려준다. 사이트가 바뀐 것일 수 있어 기록해 둔다.
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { MIN_CONNECTOR_EXTENSION, versionAtLeast } from '@dool2/protocol'
 import { CONNECT_CATEGORIES, type ConnectCard, type ConnectionTool } from '@dool2/protocol/connect'
 import {
   type Connector,
@@ -93,8 +94,16 @@ export class Connectors {
       pollMs?: number
       /** 건강 기록 (ADR 0020): 잇달아 깨지는 도구는 잠시 쉰다 */
       health?: ConnectorHealth
+      /** 연결된 확장 버전 (예전 확장에는 커넥터 엔진이 없다) */
+      extensionVersion?: () => string | undefined
     },
   ) {}
+
+  /** 연결된 확장이 커넥터 엔진보다 예전이면 그 버전 (모르면 undefined: 실행해 보고 판단) */
+  private oldExtension(): string | undefined {
+    const v = this.opts.extensionVersion?.()
+    return v && !versionAtLeast(v, MIN_CONNECTOR_EXTENSION) ? v : undefined
+  }
 
   /** 쉬는 중이 아니고 막힘 표시도 없는 도구 */
   private live(card: ConnectCard, t: ConnectorTool) {
@@ -161,6 +170,7 @@ export class Connectors {
   /** 바로 보이는 도구: 연결한 서비스와 로그인 없는 서비스(open)의 도구 */
   async catalog(): Promise<ServiceToolSpec[]> {
     const out: ServiceToolSpec[] = []
+    if (this.oldExtension()) return out
     for (const { card, connector } of (await this.load()).values()) {
       if (!connector || !this.isConnected(card)) continue
       for (const t of connector.tools) if (this.live(card, t)) out.push(this.spec(card, t))
@@ -366,6 +376,12 @@ export class Connectors {
         ],
       }
     }
+    const old = this.oldExtension()
+    if (old)
+      return text(
+        `Chrome의 두리 확장이 예전 버전(${old})이라 서비스 도구를 쓸 수 없어요. 브라우저 도구로 같은 일을 해 주세요. 확장이 ${MIN_CONNECTOR_EXTENSION} 이상으로 업데이트되면 다시 돼요.`,
+        true,
+      )
     const rest = this.opts.health?.resting(name)
     if (rest)
       return text(

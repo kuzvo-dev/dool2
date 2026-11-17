@@ -296,6 +296,20 @@ export const CHROME_STORE_UPDATE_URL = 'https://clients2.google.com/service/upda
 /** 웹 스토어의 두리 확장 페이지 ([Chrome에 추가] 한 번) */
 export const storeExtensionPage = (id: string) => `https://chromewebstore.google.com/detail/${id}`
 
+/** 서비스 도구(커넥터) 엔진이 들어간 확장 버전 (extract·find·capture). 이보다 낮으면 서비스 도구를 쓰지 않는다 */
+export const MIN_CONNECTOR_EXTENSION = '0.2.0'
+
+/** "0.10.1" >= "0.2.0" 같은 버전 비교 */
+export function versionAtLeast(v: string, min: string): boolean {
+  const a = v.split('.').map((x) => Number.parseInt(x, 10) || 0)
+  const b = min.split('.').map((x) => Number.parseInt(x, 10) || 0)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0)
+    if (d !== 0) return d > 0
+  }
+  return true
+}
+
 export const EXTENSION_IDS = [DEV_EXTENSION_ID, ...(STORE_EXTENSION_ID ? [STORE_EXTENSION_ID] : [])]
 
 /** 확장이 할 수 있는 일. 판단은 하지 않고 시킨 것만 한다 */
