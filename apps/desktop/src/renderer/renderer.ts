@@ -2041,13 +2041,22 @@ async function main() {
   renderDevice(settings)
   renderSend()
   void connectLive()
-  // 확장·승인·로그인 요청을 새로 본다 (폰에서 한 일도 보이게)
+  // 확장·승인·로그인 요청을 새로 본다 (폰에서 한 일도 보이게). 창이 앞에 있을 때만 3초마다, 뒤에 있으면 15초마다
+  let polledAt = 0
   setInterval(() => {
-    void loadExtension().catch(() => {})
-    void loadWaiting().catch(() => {})
     const clock = document.getElementById('work-clock')
     if (clock && state.turn) clock.textContent = elapsed(Math.floor((Date.now() - state.turn.started) / 1000))
+    if (!document.hasFocus() && Date.now() - polledAt < 15_000) return
+    polledAt = Date.now()
+    void loadExtension().catch(() => {})
+    void loadWaiting().catch(() => {})
   }, 3_000)
+  // 창으로 돌아오면 바로 새로 본다
+  window.addEventListener('focus', () => {
+    polledAt = Date.now()
+    void loadExtension().catch(() => {})
+    void loadWaiting().catch(() => {})
+  })
 
   // 점검 모드: "화면[:id][+panel:칸|+nopanel]"으로 그 화면을 열어 캡처한다
   // 예: feed, ideas, goals, goal(첫 목표), library:files, connections:coupang, thread(최근), talk+panel:memory

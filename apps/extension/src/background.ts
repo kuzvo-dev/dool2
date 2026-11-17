@@ -216,6 +216,8 @@ async function openTab(url: string): Promise<chrome.tabs.Tab> {
     if (s.windowId !== undefined) x.windowId = s.windowId
   })
   touch(id)
+  // 두리 탭은 소리 없이 (쇼핑몰 영상 등). 사용자가 듣고 싶으면 탭에서 켜면 된다
+  void chrome.tabs.update(id, { muted: true }).catch(() => undefined)
   await groupTab(id)
   void tidy(id)
   return tab
@@ -306,6 +308,7 @@ async function adopt(opener: number, tabId: number) {
   })
   if (!took) return
   lastPopup = { opener, tabId }
+  void chrome.tabs.update(tabId, { muted: true }).catch(() => undefined)
   await groupTab(tabId)
 }
 // 미리 그려 둔 페이지로 바뀌면(prerender) 탭 번호가 바뀐다: 두리 탭이면 새 번호도 두리 탭
