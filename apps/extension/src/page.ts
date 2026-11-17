@@ -207,12 +207,53 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     const text = clean((el as HTMLElement).innerText)
     if (text) return text
     const img = el.querySelector('img[alt]')
-    return clean(
-      el.getAttribute('placeholder') ??
-        el.getAttribute('title') ??
-        img?.getAttribute('alt') ??
-        el.getAttribute('name'),
+    return (
+      clean(
+        el.getAttribute('placeholder') ??
+          el.getAttribute('title') ??
+          img?.getAttribute('alt') ??
+          el.getAttribute('name'),
+      ) || iconName(el)
     )
+  }
+
+  /** 글 없는 아이콘 버튼의 뜻을 속성(테스트 id·클래스·아이콘 이름·svg 제목)에서 찾는다. 못 찾으면 '' */
+  const ICONS: [RegExp, string][] = [
+    [/(?:^|[^a-z])(?:minus|decrease|decrement|subtract|remove-one|qty-down|count-down)(?:[^a-z]|$)/i, '빼기'],
+    [/(?:^|[^a-z])(?:plus|increase|increment|add-one|qty-up|count-up)(?:[^a-z]|$)/i, '더하기'],
+    [/(?:^|[^a-z])(?:close|dismiss|x-?mark|cancel)(?:[^a-z]|$)/i, '닫기'],
+    [/(?:^|[^a-z])(?:search|magnif[a-z]*)(?:[^a-z]|$)/i, '검색'],
+    [/(?:^|[^a-z])(?:back|prev|arrow-?left|chevron-?left)(?:[^a-z]|$)/i, '이전'],
+    [/(?:^|[^a-z])(?:next|forward|arrow-?right|chevron-?right)(?:[^a-z]|$)/i, '다음'],
+    [/(?:^|[^a-z])(?:menu|hamburger|more|kebab|ellipsis)(?:[^a-z]|$)/i, '메뉴'],
+    [/(?:^|[^a-z])(?:share)(?:[^a-z]|$)/i, '공유'],
+    [/(?:^|[^a-z])(?:heart|like|bookmark|favorite|wish)(?:[^a-z]|$)/i, '찜'],
+    [/(?:^|[^a-z])(?:delete|trash|bin)(?:[^a-z]|$)/i, '삭제'],
+    [/(?:^|[^a-z])(?:cart|basket)(?:[^a-z]|$)/i, '장바구니'],
+    [/(?:^|[^a-z])(?:home)(?:[^a-z]|$)/i, '홈'],
+  ]
+  const iconName = (el: Element): string => {
+    const bits: string[] = []
+    for (const e of [el, ...Array.from(el.querySelectorAll('svg, use, img, i, span')).slice(0, 6)]) {
+      for (const a of [
+        'data-testid',
+        'data-icon',
+        'data-name',
+        'class',
+        'id',
+        'href',
+        'xlink:href',
+        'src',
+        'name',
+      ])
+        bits.push(String(e.getAttribute(a) ?? ''))
+      const t = e.querySelector?.('title')?.textContent
+      if (t) bits.push(t)
+    }
+    // IconPlus·icMinus 같은 낙타 표기도 단어로 나눈다
+    const hay = bits.join(' ').replace(/([a-z])([A-Z])/g, '$1 $2')
+    for (const [re, name] of ICONS) if (re.test(hay)) return name
+    return ''
   }
 
   const extra = (el: Element): string => {
@@ -278,6 +319,26 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     }
     const block = BLOCK.has(el.tagName)
     if (block) flush()
+    // 팝업인데 버튼 말고 글이 거의 없으면(안내를 그림으로 그린 팝업) AI가 화면을 찍어 보게 알린다
+    if (
+      el.tagName === 'DIALOG' ||
+      el.getAttribute('role') === 'dialog' ||
+      el.getAttribute('role') === 'alertdialog' ||
+      el.getAttribute('aria-modal') === 'true'
+    ) {
+      const box = el.getBoundingClientRect()
+      if (box.width >= 160 && box.height >= 120) {
+        let words = (el as HTMLElement).innerText ?? ''
+        for (const b of el.querySelectorAll('button, a, [role=button]'))
+          words = words.replace((b as HTMLElement).innerText ?? '', '')
+        if (
+          words.replace(/\s+/g, '').length < 8 &&
+          el.querySelector('img, canvas, svg, picture, [style*="background"]')
+        )
+          cur +=
+            ' [이 창의 안내는 그림이라 글로 읽을 수 없어요. 무엇인지 알아야 하면 화면을 찍어 확인하세요] '
+      }
+    }
     const h = /^H([1-6])$/.exec(el.tagName)
     if (h) cur += `${'#'.repeat(Number(h[1]))} `
     if (el.tagName === 'IMG') {
@@ -293,7 +354,14 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   if (document.body) walk(document.body)
   flush()
 
-  let text = lines.join('\n')
+  let text = lines
+    .join('\n')
+    // 이름 없는 버튼 둘 사이에 숫자 하나 (수량 고르기): 앞은 줄이기, 뒤는 늘리기 (캐치테이블 추가 상품 등)
+    .replace(
+      /\[(e\d+) 버튼(( [^\]"]*)?)\](\s+)(\d{1,3})(\s+)\[(e\d+) 버튼(( [^\]"]*)?)\]/g,
+      (_m, a: string, ax: string, _a2, s1: string, n: string, s2: string, b: string, bx: string) =>
+        `[${a} 버튼 "수량 줄이기"${ax}]${s1}${n}${s2}[${b} 버튼 "수량 늘리기"${bx}]`,
+    )
   const truncated = text.length > maxChars || budget <= 0
   if (text.length > maxChars) text = text.slice(0, maxChars)
 
