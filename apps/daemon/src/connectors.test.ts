@@ -126,7 +126,14 @@ const CONNECTOR = {
 const PAGE = '[e1 버튼 "오후 7:00"] [e2 버튼 "예약하기"] [e3 버튼 "바로 구매"]'
 
 async function setup(
-  opts: { connected?: boolean; rows?: Record<string, unknown>[]; health?: ConnectorHealth } = {},
+  opts: {
+    connected?: boolean
+    rows?: Record<string, unknown>[]
+    health?: ConnectorHealth
+    gapMs?: number
+    /** find가 찾았다고 할 패턴 이름 (막힘 화면 등) */
+    found?: Record<string, string>
+  } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
   await mkdir(join(dir, 'demo-eats'))
@@ -150,7 +157,7 @@ async function setup(
           total: 1,
           url,
         }
-      if (cmd === 'find') return { url, title: '', found: {} }
+      if (cmd === 'find') return { url, title: '', found: opts.found ?? {} }
       if (cmd === 'capture')
         return { url: 'https://eats.example/api/list', status: 200, json: [{ n: '가게 다' }] }
       if (cmd === 'mark-text') return { ok: true, ref: 'e9', name: String(args?.text) }
@@ -165,6 +172,7 @@ async function setup(
     tools,
     connected: () => (opts.connected ? { 'demo-eats': '2026-11-17T00:00:00Z' } : {}),
     pollMs: 1,
+    gapMs: opts.gapMs ?? 0,
     ...(opts.health ? { health: opts.health } : {}),
   })
   return { connectors, calls, tools }
@@ -369,5 +377,68 @@ describe('서비스 도구 실행기', () => {
     expect(await on.catalog()).toEqual([])
     const r = await on.call('demo_eats_search', { keyword: '성수' })
     expect(textOf(r)).toMatch(/예전 버전\(0\.1\.0\).*브라우저 도구로/)
+  })
+
+  it('같은 서비스는 한 번에 하나씩, 사이를 두고 연다 (한 탭을 동시에 옮기면 사이트가 막는다)', async () => {
+    const { connectors, calls } = await setup({ gapMs: 40 })
+    const stamps: [string, number][] = []
+    const orig = calls.push.bind(calls)
+    calls.push = (...items) => {
+      for (const it of items) stamps.push([it[0], Date.now()])
+      return orig(...items)
+    }
+    const [a, b] = await Promise.all([
+      connectors.call('demo_eats_search', { keyword: '성수' }),
+      connectors.call('demo_eats_search', { keyword: '한남' }),
+    ])
+    expect(a.isError).toBeUndefined()
+    expect(b.isError).toBeUndefined()
+    // 두 번째 주소 열기는 첫 부름이 목록을 다 뽑은 뒤, 간격을 두고
+    const opens = stamps.filter(([c]) => c === 'open' || c === 'navigate')
+    const extracts = stamps.filter(([c]) => c === 'extract')
+    expect(opens).toHaveLength(2)
+    expect(opens[1][1]).toBeGreaterThanOrEqual(extracts[1][1] + 35)
+    expect(calls.findIndex((c) => c[0] === 'navigate')).toBeGreaterThan(
+      calls.findIndex((c, i) => c[0] === 'extract' && i > 1),
+    )
+  })
+
+  it('사이트가 막은 화면이면 막힘으로 멈추고, 곧바로 다시 부르지 말라고 한다', async () => {
+    const health = new ConnectorHealth()
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+    const tool = CONNECTOR.tools[0]
+    const blocked = {
+      ...CONNECTOR,
+      tools: [
+        {
+          ...tool,
+          steps: [
+            tool.steps[0],
+            { stop_if: '사용권한이 없', say: '데모맛집이 이 브라우저를 막았어요.', blocked: true },
+            ...tool.steps.slice(1),
+          ],
+        },
+      ],
+    }
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(blocked))
+    const browser = {
+      call: async (cmd: string) =>
+        cmd === 'find' ? { url: '', title: '', found: { hit: '사용권한이 없' } } : { tabId: 7 },
+    }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+      pollMs: 1,
+      gapMs: 0,
+      health,
+    })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.structuredContent).toEqual({ stopped: '데모맛집이 이 브라우저를 막았어요.', blocked: true })
+    expect(textOf(r)).toContain('바로 다시 부르지 말고')
+    expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 })

@@ -31,6 +31,8 @@ import type { BrowserCaller, BrowserTools, RiskKind, ToolResult } from './browse
 import type { ConnectorHealth, Outcome } from './connector-health.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
+/** 같은 서비스를 잇달아 열 때 사이 간격. 한꺼번에 여러 번 열면 사이트가 막는다 (쿠팡, 2026-11-18) */
+const SITE_GAP_MS = 1500
 
 /** AI에게 내보이는 도구 하나 (MCP 서버가 그대로 등록한다) */
 export interface ServiceToolSpec {
@@ -80,6 +82,9 @@ export class Connectors {
   private tabs = new Map<string, number>()
   /** 같은 입력으로 다시 부르면 지난 결과 (minIntervalSec) */
   private recent = new Map<string, { at: number; result: ToolResult }>()
+  /** 서비스마다 한 번에 하나씩: 같은 탭을 여러 부름이 동시에 옮기지 않게 줄을 세운다 */
+  private lanes = new Map<string, Promise<unknown>>()
+  private lastRun = new Map<string, number>()
   readonly breakages: Breakage[] = []
 
   constructor(
@@ -96,6 +101,8 @@ export class Connectors {
       health?: ConnectorHealth
       /** 연결된 확장 버전 (예전 확장에는 커넥터 엔진이 없다) */
       extensionVersion?: () => string | undefined
+      /** 같은 서비스를 잇달아 열 때 사이 간격 (시험에서 줄인다) */
+      gapMs?: number
     },
   ) {}
 
@@ -388,7 +395,7 @@ export class Connectors {
         `${card.name}의 '${tool.title}' 도구는 요즘 사이트가 바뀌어 잠시 쉬고 있어요(${rest.reason}). 브라우저 도구로 같은 일을 해 주세요.`,
         true,
       )
-    const { outcome, detail, ...result } = await this.execute(card, tool, args)
+    const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
     // 결과는 왔는데 꼭 채워질 칸이 비면 조용한 고장 (ADR 0020)
     let final: ToolResult = result
     let seen = outcome
@@ -414,6 +421,29 @@ export class Connectors {
     if (!final.isError && seen === 'ok' && tool.minIntervalSec)
       this.recent.set(key, { at: Date.now(), result: final })
     return final
+  }
+
+  /** 같은 서비스 부름은 앞 부름이 끝나고 간격을 둔 뒤에 (다른 서비스는 그대로 동시에) */
+  private inLane<T>(id: string, run: () => Promise<T>): Promise<T> {
+    const gap = this.opts.gapMs ?? SITE_GAP_MS
+    const prev = this.lanes.get(id) ?? Promise.resolve()
+    const next = prev
+      .catch(() => undefined)
+      .then(async () => {
+        const wait = (this.lastRun.get(id) ?? 0) + gap - Date.now()
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+        try {
+          return await run()
+        } finally {
+          this.lastRun.set(id, Date.now())
+        }
+      })
+    const tail = next.catch(() => undefined)
+    this.lanes.set(id, tail)
+    void tail.then(() => {
+      if (this.lanes.get(id) === tail) this.lanes.delete(id)
+    })
+    return next
   }
 
   private async execute(
@@ -472,9 +502,9 @@ export class Connectors {
         if (done) {
           const r = this.finish(done, tabId)
           // 승인 요청·AI에게 넘기기는 잘 된 것, 마감·로그인 필요 같은 멈춤은 정상 멈춤
-          const stopped =
-            r.isError || Boolean((r.structuredContent as { stopped?: unknown } | undefined)?.stopped)
-          return { ...r, outcome: stopped ? 'stopped' : 'ok' }
+          const sc = r.structuredContent as { stopped?: unknown; blocked?: unknown } | undefined
+          const stopped = r.isError || Boolean(sc?.stopped)
+          return { ...r, outcome: sc?.blocked ? 'blocked' : stopped ? 'stopped' : 'ok' }
         }
       } catch (e) {
         const optional = 'optional' in step && step.optional
@@ -614,6 +644,16 @@ export class Connectors {
           `${say} 로그인이 필요한 화면이에요. 연결이 안 됐으면 connect_ask로 연결 카드를, 연결했는데 로그인이 풀렸으면 browser_handoff로 사람에게 넘겨 주세요. [탭 ${c.need()}]`,
           true,
         )
+      if (s.blocked)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고 사용자에게 알려 주세요)`,
+            },
+          ],
+          structuredContent: { stopped: say, blocked: true },
+        }
       return { content: [{ type: 'text', text: say }], structuredContent: { stopped: say } }
     }
     if ('require' in s) {

@@ -6,7 +6,7 @@
       "title": "상품 찾기",
       "description": "쿠팡에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 id·지금 가격·할인 전 가격·평점·리뷰 수·배송 배지(로켓배송 등)·도착 예정·배송비·광고 여부·링크). 로그인 없이 된다. 싼 것부터 보려면 sort를 salePriceAsc로. 가격 거르기는 없어서 '3만 원 이하'면 price로 골라 준다. 광고(ad)는 따로 알려 준다. 사려면 coupang_prepare_order에 product_id·item_id·vendor_item_id를 넘긴다.",
       "tier": "찾아보기",
-      "status": "초안",
+      "status": "검증됨(2026-11-18, 사용자 Chrome에서 두부·김치 검색 20개)",
       "input": {
         "properties": {
           "keyword": { "type": "string", "description": "찾을 상품 (예: 무선 청소기, 물티슈 캡형)", "maxLength": 60 },
@@ -44,7 +44,7 @@
       "steps": [
         { "open": "https://www.coupang.com/np/search?q={{keyword|url}}&sorter={{sort}}&listSize=36" },
         { "wait": { "text": "에 대한 검색결과|검색결과가 없|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요." },
+        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
         { "stop_if": "검색결과가 없", "say": "쿠팡에서 '{{keyword}}' 상품을 찾지 못했어요. 더 짧은 이름이나 다른 말로 찾아볼까요?" },
         {
           "extract": {
@@ -137,7 +137,7 @@
       "steps": [
         { "open": "https://www.coupang.com/vp/products/{{product_id}}?itemId={{item_id}}&vendorItemId={{vendor_item_id}}" },
         { "wait": { "text": "바로구매|장바구니 담기|품절|일시품절|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요." },
+        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
         { "handoff_to_agent": "쿠팡 상품 화면이에요(상품 id {{product_id}}). 품절·일시품절이면 그렇다고 알리고 멈춰요. 옵션(색상·용량·개수)이 사용자가 원한 것과 맞는지 확인하고(다르면 물어요), 수량을 {{quantity}}개로 맞춘 뒤 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('coupang'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·옵션·수량·배송지(동네까지만)·도착 예정일·배송비·할인·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 정기배송·멤버십 가입 권유는 고르지 않아요." }
       ],
       "result": {}

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 
 /** ok 잘 됨 · broke 막힘(시끄러운 고장) · empty 칸이 빔(조용한 고장) · stopped 정상 멈춤(마감·로그인 필요 등) */
-export type Outcome = 'ok' | 'broke' | 'empty' | 'stopped'
+export type Outcome = 'ok' | 'broke' | 'empty' | 'stopped' | 'blocked'
 
 interface Rec {
   at: number
