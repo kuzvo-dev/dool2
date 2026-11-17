@@ -71,7 +71,7 @@
 | `approve` | 돈 내기·연락하기 도구의 마지막: 그 버튼을 누를지 **사용자 승인**을 받아요 |
 | `handoff_to_agent` | 정해진 순서로 하기 어려운 곳: 여기까지 데려온 탭을 AI에게 넘기며 할 일을 알려요 |
 
-채우기: `{{keyword}}`, 값이 있을 때만 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, 거르개 `|url` `|digits` `|json` `|re` `|yymmdd`(261127) `|mmdd`(11.27) `|dow`(금) `|kday`(오늘·내일·11.27) `|ampm`(오후 7:30). 늘 있는 이름 `today`.
+채우기: `{{keyword}}`, 값이 있을 때만 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, 거르개 `|url` `|digits` `|json` `|re` `|yymmdd`(261127) `|yyyy` `|mm`·`|m`(03·3) `|dd`·`|d`(07·7) `|mmdd`(11.27) `|dow`(금) `|kday`(오늘·내일·11.27) `|ampm`(오후 7:30). 늘 있는 이름 `today`.
 
 ## 안전 규칙 (테스트로 검사해요)
 

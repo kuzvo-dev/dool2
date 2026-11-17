@@ -194,3 +194,11 @@ describe('건강 기준 (ADR 0020)', async () => {
     expect(healthProblems(t, { rows: [] })).toEqual([])
   })
 })
+
+describe('날짜 거르개', () => {
+  it('연·월·일 따로', () => {
+    expect(fill('{{x|yyyy}} {{x|mm}} {{x|m}} {{x|dd}} {{x|d}} {{x|dow}}', { x: '2026-03-07' })).toBe(
+      '2026 03 3 07 7 토',
+    )
+  })
+})
