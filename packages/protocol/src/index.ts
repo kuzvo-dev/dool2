@@ -315,6 +315,7 @@ export const BrowserCommandSchema = z.enum([
   'input',
   'form',
   'form-fill',
+  'mark-text',
   /** 확장을 새 코드로 다시 켠다 (압축해제 확장을 다시 빌드한 뒤) */
   'reload',
 ])

@@ -83,8 +83,16 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'click',
     '누르기',
-    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 결제·주문·보내기·삭제 같은 버튼은 두리가 막고 사용자에게 넘긴다.',
-    { tabId, ref },
+    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 표시가 없는 상자(검색 결과의 가게·상품 카드 등)는 ref 대신 text에 화면에 보이는 글자(가게 이름 등)를 그대로 넣으면 그 글자를 누른다. 결제·주문·보내기·삭제 같은 버튼은 두리가 막고 사용자에게 넘긴다.',
+    {
+      tabId,
+      ref: ref.optional(),
+      text: z
+        .string()
+        .max(80)
+        .optional()
+        .describe('ref가 없을 때: 누를 곳의 화면 글자 그대로 (예: 가게 이름 "ACENO 아세누")'),
+    },
     false,
   )
   tool(

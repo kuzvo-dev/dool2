@@ -198,6 +198,17 @@ export class BrowserTools {
       case 'read':
         return this.read(tabId, a.maxChars)
       case 'click': {
+        // 표시가 없는 상자(가게 카드 등)는 화면 글자로 찾아 표시를 붙인 뒤 누른다. 승인 게이트는 그 글자로 똑같이 거친다
+        if (!a.ref && typeof a.text === 'string' && a.text.trim()) {
+          const page = this.pages.get(tabId)
+          if (!page) throw new Error('먼저 페이지를 읽어(browser_read) 주세요')
+          const m = (await this.browser.call('mark-text', { tabId, text: a.text }, 15_000)) as {
+            ref: string
+            name: string
+          }
+          page.refs.set(m.ref, { role: '글', name: m.name })
+          a.ref = m.ref
+        }
         const ref = String(a.ref ?? '')
         const page = this.pages.get(tabId)
         const target = page?.refs.get(ref)

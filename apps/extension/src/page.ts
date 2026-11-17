@@ -355,6 +355,51 @@ export interface LocateResult {
   moved?: boolean
 }
 
+/**
+ * 화면에 보이는 글자로 누를 곳 찾기: 그 글자를 가진 가장 작은 보이는 요소에 표시(ref)를 붙인다.
+ * 가게 카드처럼 링크·버튼·손가락 커서 없이 사이트 스크립트로만 눌리는 상자가 있다 (캐치테이블 검색 결과).
+ * 글자 요소를 누르면 클릭이 카드까지 올라가 카드가 눌린다
+ */
+export function pageMarkText(
+  text: string,
+): { ok: true; ref: string; name: string } | { ok: false; error: string } {
+  type State = { refs: Map<string, WeakRef<Element>>; ids: WeakMap<Element, string>; seq: number }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  if (!st) return { ok: false, error: '먼저 페이지를 읽어 주세요' }
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim()
+  const want = norm(text)
+  if (!want) return { ok: false, error: '누를 글자를 주세요' }
+  let best: { el: Element; exact: boolean; area: number; rank: number } | undefined
+  for (const el of Array.from(document.body?.querySelectorAll('*') ?? [])) {
+    if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|HTML|BODY)$/.test(el.tagName)) continue
+    const t = norm((el as HTMLElement).innerText ?? '')
+    if (!t.includes(want)) continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) continue
+    const cs = getComputedStyle(el)
+    if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue
+    const exact = t === want
+    const area = r.width * r.height
+    // 화면 안에 있는데 다른 것이 덮고 있으면(목록 창 뒤 지도 이름표 등) 누를 곳이 아니다: 맨 뒤로
+    const cx = r.left + r.width / 2
+    const cy = r.top + r.height / 2
+    const inView = cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight
+    const top = inView ? document.elementFromPoint(cx, cy) : null
+    const covered = inView && !(top && (top === el || el.contains(top) || top.contains(el)))
+    const rank = (exact ? 2 : 0) + (covered ? 0 : 4)
+    if (!best || rank > best.rank || (rank === best.rank && area < best.area))
+      best = { el, exact, area, rank }
+  }
+  if (!best) return { ok: false, error: `화면에서 "${want}" 글자를 찾지 못했어요` }
+  let ref = st.ids.get(best.el)
+  if (!ref) {
+    ref = `e${++st.seq}`
+    st.ids.set(best.el, ref)
+  }
+  st.refs.set(ref, new WeakRef(best.el))
+  return { ok: true, ref, name: norm((best.el as HTMLElement).innerText ?? '').slice(0, 60) }
+}
+
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
 export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: false; error: string } {
   type State = {

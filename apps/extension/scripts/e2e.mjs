@@ -55,6 +55,7 @@ const PAGES = {
 <div style="display:contents"><button id="dc" style="display:contents" onclick="document.title='상자 없는 버튼'"><span>지도에서 보기</span></button></div>
 <div style="position:relative;height:60px"><button id="under" onclick="document.title='아래 버튼'">아래 버튼</button>
 <div id="pop" style="position:absolute;inset:0;background:#fff"><button onclick="document.title='팝업 예약'" style="width:100%;height:100%">팝업 예약</button></div></div>
+<div id="plain"><span>골목 식당 카드</span> <small>4.6 (394)</small></div>
 <div id="long">${'성수동 골목 이야기 '.repeat(20)}<span>끝 문장</span></div>
 <script>
 const props = (el, p) => { el['__reactProps$t3st'] = p; el.addEventListener('click', (e) => p.onClick?.(e)) }
@@ -73,6 +74,8 @@ document.getElementById('shuffle').addEventListener('click', () => {
     b.querySelector(sel).textContent = t
   }
 })
+// 처리기 표시도 손가락 커서도 없는 상자 (사이트가 위에서 클릭을 받는 경우): 글자로만 누를 수 있다
+document.addEventListener('click', (e) => { if (e.target.closest?.('#plain')) document.title = '고름: 골목 식당' })
 let kw = ''
 const q = document.getElementById('q')
 q.addEventListener('input', () => setTimeout(() => { kw = q.value }, 100))
@@ -263,6 +266,17 @@ try {
     await assert.rejects(call('click', { tabId, ref: under }), /덮고 있어서 누르지 않았어요/)
     const t = await call('snapshot', { tabId })
     assert.doesNotMatch(t.text, /팝업 예약 눌림/)
+  })
+
+  await step('표시가 없는 상자는 화면 글자로 누른다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/app` })
+    const page = text(await tools.run('read', { tabId }))
+    assert.doesNotMatch(page, /버튼 "골목 식당 카드/)
+    const r = await tools.run('click', { tabId, text: '골목 식당 카드' })
+    assert.equal(r.isError, undefined, text(r))
+    assert.match(text(r), /고름: 골목 식당/)
   })
 
   await step('캡차 화면을 알아챈다', async () => {
