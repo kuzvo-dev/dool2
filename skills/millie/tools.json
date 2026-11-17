@@ -1,0 +1,379 @@
+{
+  "id": "millie",
+  "tools": [
+    {
+      "name": "best",
+      "title": "인기 책 보기",
+      "description": "로그인 없이 된다. 밀리의서재 밀리 랭킹(회원이 많이 담은 책, 일간)을 분야별로 돌려준다: 순위 순서대로 제목·부제·저자·분야·오디오북인지·서재에 담은 사람 수·출간일·책 번호·링크. 밀리의서재 검색은 로그인해야 돼서, 연결 전에는 이 목록에서 고르거나 millie_book으로 책 하나를 자세히 본다(완독 예상 시간 등). 검색은 millie_search(연결 필요).",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 종합·소설 일간 랭킹, 화면이 받은 응답 읽기)",
+      "input": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "종합",
+              "소설",
+              "경제경영",
+              "자기계발",
+              "에세이/시",
+              "인문/교양",
+              "취미/실용",
+              "어린이/청소년"
+            ],
+            "default": "종합",
+            "description": "분야 (기본 종합)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "몇 권까지 (기본 10)"
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "books": {
+          "type": "list",
+          "description": "순위 순서대로",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "subtitle": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string",
+              "description": "분야"
+            },
+            "audiobook": {
+              "type": "boolean",
+              "description": "오디오북인지"
+            },
+            "shelved": {
+              "type": "integer",
+              "description": "서재에 담은 사람 수"
+            },
+            "published": {
+              "type": "string",
+              "description": "출간일"
+            },
+            "book_id": {
+              "type": "string",
+              "description": "millie_book·담기에 넘길 책 번호"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "category": "종합"
+        },
+        {
+          "category": "소설",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.millie.co.kr/v4/now/millie-ranking"
+        },
+        {
+          "wait": {
+            "items": "a[href*='/v4/book/']",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "click": {
+            "text": "{{category}}"
+          }
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "capture": {
+            "url": "/public/rank/millie/\\?",
+            "pick": "data",
+            "timeoutMs": 12000
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "book_name",
+              "subtitle": "subtitle",
+              "author": "author",
+              "category": "category_name",
+              "audiobook": "badge.is_audiobook",
+              "shelved": "library_take_count_all",
+              "published": "publish_date",
+              "book_id": "book_id",
+              "link": "https://www.millie.co.kr/v4/book/{{book_id}}"
+            }
+          },
+          "as": "books"
+        }
+      ],
+      "result": {
+        "books": "{{books}}"
+      },
+      "next": "사용자 취향에 맞는 3~5권을 제목·저자·분야로 보여 줘요. 하루 만에 읽을 만한지 궁금하면 millie_book으로 완독 예상 시간을 봐요. 내 서재에 담으려면 millie_add_to_library(연결 필요).",
+      "minIntervalSec": 3600
+    },
+    {
+      "name": "book",
+      "title": "책 자세히 보기",
+      "description": "밀리의서재 책 화면을 열어 별점·출판사·분야·출간일·서재에 담은 사람 수·리뷰 수·완독 예상 시간(분)·완독할 확률(%)을 돌려준다. 로그인 없이 된다. '2시간이면 다 읽는 소설'처럼 읽는 시간으로 고를 때 millie_best 결과의 책마다 쓴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 책 화면 완독 지수)",
+      "input": {
+        "properties": {
+          "book_id": {
+            "type": "string",
+            "description": "millie_best가 준 책 번호 (예: 3c6a6202ffc142a6)",
+            "pattern": "^[0-9a-f]{8,32}$"
+          }
+        },
+        "required": [
+          "book_id"
+        ]
+      },
+      "output": {
+        "rating": {
+          "type": "number",
+          "description": "별점 (5점 만점)"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "description": "분야"
+        },
+        "published": {
+          "type": "string",
+          "description": "출간일"
+        },
+        "shelved": {
+          "type": "string",
+          "description": "이 책이 담긴 서재 수 (2.7만+ 등)"
+        },
+        "reviews": {
+          "type": "integer",
+          "description": "리뷰 수"
+        },
+        "read_minutes": {
+          "type": "integer",
+          "description": "완독 예상 시간 (분)"
+        },
+        "finish_rate": {
+          "type": "integer",
+          "description": "완독할 확률 (%)"
+        },
+        "link": {
+          "type": "string"
+        }
+      },
+      "examples": [
+        {
+          "book_id": "3c6a6202ffc142a6"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.millie.co.kr/v4/book/{{book_id}}"
+        },
+        {
+          "require": "이 책이 담긴 서재|책 소개",
+          "say": "이 책 화면이 열리지 않았어요. 서비스가 끝났거나 번호가 바뀌었을 수 있어요.",
+          "timeoutMs": 12000
+        },
+        {
+          "sleep": 1000
+        },
+        {
+          "find": {
+            "rating": "\\n(\\d\\.\\d)\\n+[^\\n]+\\n+[^\\n]+\\n+\\d{4}\\.\\d{2}\\.\\d{2}",
+            "publisher": "\\n\\d\\.\\d\\n+([^\\n]+)\\n+[^\\n]+\\n+\\d{4}\\.\\d{2}\\.\\d{2}",
+            "category": "\\n\\d\\.\\d\\n+[^\\n]+\\n+([^\\n]+)\\n+\\d{4}\\.\\d{2}\\.\\d{2}",
+            "published": "\\n(\\d{4}\\.\\d{2}\\.\\d{2})\\n+이 책이 담긴",
+            "shelved": "이 책이 담긴 서재 ([^\\n]+)",
+            "reviews": "리뷰 (\\d[\\d,]*)",
+            "read_minutes": "완독 예상 시간 (\\d+)분",
+            "finish_rate": "완독할 확률 (\\d+)%"
+          },
+          "as": "info"
+        }
+      ],
+      "result": {
+        "rating": "{{info.rating}}",
+        "publisher": "{{info.publisher}}",
+        "category": "{{info.category}}",
+        "published": "{{info.published}}",
+        "shelved": "{{info.shelved}}",
+        "reviews": "{{info.reviews}}",
+        "read_minutes": "{{info.read_minutes}}",
+        "finish_rate": "{{info.finish_rate}}",
+        "link": "https://www.millie.co.kr/v4/book/{{book_id}}"
+      },
+      "next": "완독 예상 시간은 분 단위예요. 사용자에게는 '3시간 반쯤'처럼 시간으로 바꿔 말해요.",
+      "minIntervalSec": 3600
+    },
+    {
+      "name": "search",
+      "title": "책 검색",
+      "description": "밀리의서재에서 책·오디오북을 검색어로 찾아 제목·저자·종류(전자책·오디오북·챗북)를 읽어 정리한다. 밀리의서재 검색은 로그인해야 돼서 연결이 필요하다. 연결 전이면 millie_best로 인기 책을 먼저 보여 준다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "제목·저자·키워드 (예: 데미안, 오디오북 에세이)",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "keyword": "데미안"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.millie.co.kr/v3/search/result/{{keyword|url}}?type=total&searchBack=y&category=total"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "로그인 후 이용 가능한 서비스",
+          "say": "밀리의서재 검색은 로그인해야 쓸 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "밀리의서재 '{{keyword}}' 검색 결과 화면이에요. 위에서부터 8권까지 제목·저자·종류(전자책·오디오북·챗북)를 읽고, 책 번호는 링크 주소(/v4/book/…)에서 읽어 함께 정리해요. 완독 예상 시간이 필요하면 millie_book에 책 번호를 넘겨요. 담기·바로 읽기 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "add_to_library",
+      "title": "내 서재에 담기",
+      "description": "고른 책을 밀리의서재 내 서재에 담는다(되돌릴 수 있는 일). 로그인(연결)해야 된다. 구독이 끝났으면 담기 대신 구독 안내가 나올 수 있다: 그때는 담지 않고 사용자에게 알린다.",
+      "tier": "채워 두기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "book_id": {
+            "type": "string",
+            "description": "millie_best·millie_search가 준 책 번호 (예: 3c6a6202ffc142a6)",
+            "pattern": "^[0-9a-f]{8,32}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "책 제목 (사용자에게 보일 말)",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "book_id"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "book_id": "3c6a6202ffc142a6",
+          "title": "트렌드 코리아 2027"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.millie.co.kr/v4/book/{{book_id}}"
+        },
+        {
+          "require": "내서재에 담기|내서재에서 빼기|서재에 담김",
+          "say": "이 책 화면에서 담기 버튼을 찾지 못했어요. 이미 담겨 있거나 서비스가 끝난 책일 수 있어요.",
+          "timeoutMs": 12000
+        },
+        {
+          "stop_if": "내서재에서 빼기|서재에 담김",
+          "say": "{{title}}은(는) 이미 내 서재에 있어요."
+        },
+        {
+          "stop_if": "회원가입\\n로그인",
+          "say": "밀리의서재에 로그인해야 내 서재에 담을 수 있어요.",
+          "login": true
+        },
+        {
+          "click": {
+            "text": "내서재에 담기"
+          }
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "require": "담았|담겼|내서재에서 빼기|서재에 담김",
+          "say": "담기를 눌렀는데 담겼다는 표시가 안 보여요. 구독이 필요하다는 안내가 떴는지 화면을 한 번 봐 주세요.",
+          "timeoutMs": 6000
+        }
+      ],
+      "result": {},
+      "next": "{{title}}을(를) 내 서재에 담았다고 짧게 알려 줘요."
+    },
+    {
+      "name": "subscription",
+      "title": "구독 확인",
+      "description": "밀리의서재 구독 관리 화면을 열어 지금 쓰는 구독 상품·다음 결제일·결제 금액·결제 수단(카드 끝자리 정도)을 읽어 정리한다. 로그인(연결)해야 된다. '다음 결제일 언제야?'에 쓴다. 해지·변경은 하지 않는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.millie.co.kr/v3/management"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "로그인 후 이용 가능한 서비스",
+          "say": "밀리의서재에 로그인해야 구독 정보를 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "밀리의서재 관리 화면이에요. '구독 관리'(또는 '이용권·결제')를 열어 지금 구독 상품 이름·다음 결제일·결제 금액·결제 수단(카드사와 끝 4자리까지만)을 읽어 짧게 정리해요. 해지·변경·결제 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

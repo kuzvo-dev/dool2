@@ -1,0 +1,373 @@
+{
+  "id": "yes24",
+  "tools": [
+    {
+      "name": "search",
+      "title": "책 찾기",
+      "description": "yes24에서 책을 제목·저자·주제로 찾아 제목·종류([도서]/[eBook])·저자·출판사·출간일·판매가·정가·할인율·별점·배송(언제 도착)·전자책 가격·중고 상품 수·품절 여부·상품 번호·링크를 돌려준다. 로그인 없이 된다. 전자책만 보려면 kind=EBOOK. 주문하려면 yes24_prepare_order에 goods_no를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 어린왕자·데미안 검색)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "책 제목·저자·주제 (예: 어린 왕자, 한강, 파이썬 입문)",
+            "maxLength": 60
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "BOOK",
+              "EBOOK",
+              "ALL"
+            ],
+            "default": "BOOK",
+            "description": "BOOK 국내도서(기본) · EBOOK 전자책 · ALL 전체(음반·굿즈 포함)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "default": 8,
+            "description": "몇 권까지 (기본 8)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "books": {
+          "type": "list",
+          "description": "책",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "description": "[도서]·[eBook] 등"
+            },
+            "author": {
+              "type": "string",
+              "description": "저자·역자"
+            },
+            "publisher": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string",
+              "description": "출간 (2021년 10월)"
+            },
+            "price": {
+              "type": "integer",
+              "description": "판매가 (원)"
+            },
+            "regular_price": {
+              "type": "integer",
+              "description": "정가 (원)"
+            },
+            "discount": {
+              "type": "string"
+            },
+            "rating": {
+              "type": "number",
+              "description": "별점 (10점 만점)"
+            },
+            "delivery": {
+              "type": "string",
+              "description": "도착 예정"
+            },
+            "ebook_price": {
+              "type": "integer",
+              "description": "전자책이 있으면 그 가격 (원)"
+            },
+            "used_count": {
+              "type": "integer",
+              "description": "중고 상품 수"
+            },
+            "stock": {
+              "type": "string",
+              "description": "품절·절판·예약판매면 그 말"
+            },
+            "goods_no": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 번호"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "어린 왕자"
+        },
+        {
+          "keyword": "데미안",
+          "kind": "EBOOK",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.yes24.com/"
+        },
+        {
+          "open": "https://www.yes24.com/product/search?domain={{kind}}&query={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "text": "검색결과가 없습니다|검색 결과가 없습니다|카트에 넣기",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "yes24에서 '{{keyword}}'(으)로 찾은 책이 없어요. 제목이나 저자를 조금 바꿔 볼까요?"
+        },
+        {
+          "extract": {
+            "items": "#yesSchList > li[data-goods-no]",
+            "limit": 24,
+            "fields": {
+              "title": {
+                "css": ".info_name .gd_name"
+              },
+              "kind": {
+                "css": ".info_name .gd_res"
+              },
+              "author": {
+                "css": ".info_pubGrp .info_auth"
+              },
+              "publisher": {
+                "css": ".info_pubGrp .info_pub"
+              },
+              "date": {
+                "css": ".info_pubGrp .info_date"
+              },
+              "price": {
+                "css": ".info_price .txt_num .yes_b"
+              },
+              "regular_price": {
+                "css": ".info_price .dash .yes_m"
+              },
+              "discount": {
+                "css": ".info_price .txt_sale"
+              },
+              "rating": {
+                "css": ".rating_grade .yes_b"
+              },
+              "delivery": {
+                "css": ".info_deli"
+              },
+              "ebook_price": {
+                "css": ".info_relG",
+                "match": "eBook ([\\d,]+)원"
+              },
+              "used_count": {
+                "css": ".info_relG",
+                "match": "중고상품 ([\\d,]+)개"
+              },
+              "stock": {
+                "match": "(일시품절|품절|절판|예약판매)"
+              },
+              "goods_no": {
+                "attr": "data-goods-no"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "kind": "kind",
+              "author": "author",
+              "publisher": "publisher",
+              "date": "date",
+              "price": "price",
+              "regular_price": "regular_price",
+              "discount": "discount",
+              "rating": "rating",
+              "delivery": "delivery",
+              "ebook_price": "ebook_price",
+              "used_count": "used_count",
+              "stock": "stock",
+              "goods_no": "goods_no",
+              "link": "https://www.yes24.com/product/goods/{{goods_no}}"
+            }
+          },
+          "as": "books"
+        }
+      ],
+      "result": {
+        "books": "{{books}}"
+      },
+      "next": "찾는 책으로 보이는 2~3권을 제목·저자·출판사·가격·도착 예정으로 보여 줘요. 같은 책의 다른 판(양장·개정판)이 여럿이면 차이를 짧게 말해요. 주문하려면 yes24_prepare_order에 goods_no를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 확인",
+      "description": "yes24 주문/배송 조회 화면을 열어 최근 주문의 주문일·책 제목·결제 금액·지금 상태(출고 준비·배송 중·배송 완료)와 도착 예정을 읽어 정리한다. 로그인(연결)해야 된다. '주문한 책 언제 와?'에 쓴다. 취소·반품은 yes24_prepare_cancel.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "최근 주문 몇 건까지 (기본 3)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {
+          "count": 3
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.yes24.com/"
+        },
+        {
+          "open": "https://ssl.yes24.com/dMyPage/MyPageOrderList"
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "stop_if": "아이디 저장|비밀번호 찾기|로그인 상태 유지",
+          "say": "yes24에 로그인해야 주문 내역을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "yes24 주문/배송 조회 화면이에요. 최근 주문 {{count}}건까지 주문일·책 제목(여러 권이면 대표 1권 외 몇 권)·결제 금액·지금 상태(결제 완료·출고 준비·배송 중·배송 완료)와 도착 예정을 읽어 짧게 정리해요. 배송 중이면 택배사와 함께 말해요. 취소·반품·재구매 버튼은 누르지 않아요. 주문 번호·주소·전화번호는 사용자에게 다시 말하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 책 화면을 열어 개수를 맞추고 주문 직전까지 간다. 카트 담기·배송지·결제 화면은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제·주문 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('yes24').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "goods_no": {
+            "type": "string",
+            "description": "yes24_search가 준 상품 번호 (예: 22431294)",
+            "pattern": "^\\d{4,12}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "책 제목 (사용자에게 보일 말)",
+            "maxLength": 100
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 1,
+            "description": "권수 (기본 1)"
+          }
+        },
+        "required": [
+          "goods_no"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "goods_no": "22431294",
+          "title": "어린 왕자 (열린책들)",
+          "quantity": 1
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.yes24.com/"
+        },
+        {
+          "open": "https://www.yes24.com/product/goods/{{goods_no|digits}}"
+        },
+        {
+          "require": "카트에 넣기|바로구매|품절|절판",
+          "say": "이 책 화면이 열리지 않았어요. 번호가 바뀌었을 수 있어요. yes24_search로 다시 찾아볼게요.",
+          "timeoutMs": 10000
+        },
+        {
+          "stop_if": "일시품절|절판",
+          "say": "{{title}}은(는) 지금 품절이거나 절판이에요. 다른 판이나 중고·전자책을 yes24_search로 찾아볼 수 있어요."
+        },
+        {
+          "handoff_to_agent": "{{title}} 책 화면이에요. 수량을 {{quantity}}권으로 맞춰 '바로구매'를 눌러요(로그인 화면이 나오면 연결 전이면 connect_ask('yes24'), 연결했는데 풀렸으면 browser_handoff). 결제 화면에서 멈추고 책 제목·권수·상품 금액·배송비·할인·쿠폰·최종 결제 금액·도착 예정·배송지 이름을 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_cancel",
+      "title": "취소·반품 준비",
+      "description": "yes24 주문 내역에서 고른 주문의 취소(출고 전)나 반품(받은 뒤) 신청 화면까지 간다. 사유 고르기·환불 금액 확인은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 취소·반품 신청 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 로그인(연결)해야 된다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "취소·반품할 책 제목 (주문 내역에서 찾을 말)",
+            "maxLength": 100
+          },
+          "reason": {
+            "type": "string",
+            "description": "사유 (예: 잘못 주문, 파본)",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "title": "어린 왕자",
+          "reason": "잘못 주문"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.yes24.com/"
+        },
+        {
+          "open": "https://ssl.yes24.com/dMyPage/MyPageOrderList"
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "stop_if": "아이디 저장|비밀번호 찾기|로그인 상태 유지",
+          "say": "yes24에 로그인해야 주문을 취소하거나 반품할 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "yes24 주문 내역 화면이에요. '{{title}}'이 든 주문을 찾아 출고 전이면 '주문취소', 받은 뒤면 '반품신청' 화면을 열어요. 사유는 '{{reason}}'에 맞는 것을 골라요. 환불 금액·반품 배송비(파본·오배송이면 무료인지)·환불 수단을 화면에 적힌 그대로 정리해 browser_request_approval로 승인을 받고, 승인 전에는 신청 버튼을 누르지 않아요. 여러 주문에 같은 책이 있으면 사용자에게 어느 주문인지 먼저 물어요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

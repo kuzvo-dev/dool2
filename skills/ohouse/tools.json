@@ -4,9 +4,9 @@
     {
       "name": "search",
       "title": "가구·소품 찾기",
-      "description": "오늘의집 쇼핑에서 가구·소품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 id·브랜드·판매가·정가·쿠폰가·평점·리뷰 수·무료배송·오늘출발·품절 여부·링크). 로그인 없이 된다. '2인용 소파 50만 원 이하'처럼 가격대가 있으면 max_price를 넣는다. 사려면 ohouse_prepare_order에 product_id를 넘긴다.",
+      "description": "로그인 없이 된다. 오늘의집 쇼핑에서 가구·소품을 검색어로 찾아 이름·브랜드·판매가·할인율·평점·리뷰 수·배송비(무료배송/배송비 별도)·상품 id·링크를 돌려준다. '2인용 소파 50만 원 이하'처럼 가격대가 있으면 max_price(와 min_price)를 넣는다. 광고(AD) 상품도 섞여 있다. 사려면 ohouse_prepare_order에 product_id를 넘긴다.",
       "tier": "찾아보기",
-      "status": "초안",
+      "status": "검증됨(2026-11-17, 2인용 소파·러그 검색, 가격 거르기)",
       "input": {
         "properties": {
           "keyword": {
@@ -23,17 +23,72 @@
             "type": "integer",
             "minimum": 0,
             "description": "최대 가격(원) (예: 50만 원 이하면 500000)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40,
+            "default": 10,
+            "description": "몇 개까지 (기본 10)"
           }
         },
         "required": [
           "keyword"
         ]
       },
-      "output": {},
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "brand": {
+              "type": "string"
+            },
+            "price": {
+              "type": "integer",
+              "description": "판매가 (원, 할인 반영)"
+            },
+            "discount": {
+              "type": "string",
+              "description": "할인율"
+            },
+            "rating": {
+              "type": "number",
+              "description": "평점 (5점 만점)"
+            },
+            "reviews": {
+              "type": "integer",
+              "description": "리뷰 수"
+            },
+            "shipping": {
+              "type": "string",
+              "description": "무료배송·배송비 별도"
+            },
+            "ad": {
+              "type": "string",
+              "description": "광고 상품이면 AD"
+            },
+            "product_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 id"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "examples": [
         {
           "keyword": "2인용 소파",
           "max_price": 500000
+        },
+        {
+          "keyword": "러그",
+          "limit": 5
         }
       ],
       "steps": [
@@ -42,16 +97,109 @@
         },
         {
           "wait": {
-            "text": "{{keyword|re}}",
-            "timeoutMs": 10000
+            "items": "a[href*='/goods/']",
+            "timeoutMs": 12000
           }
         },
         {
-          "handoff_to_agent": "오늘의집 상품 검색 결과 화면이에요. 상품마다 이름·브랜드·가격·할인율·평점·리뷰 수를 읽어 비교해 주세요. {{#max_price}}{{max_price}}원 이하만 골라 주세요.{{/max_price}}"
+          "extract": {
+            "items": "a[href*='/goods/']:has(> div > div:nth-child(2))",
+            "limit": 60,
+            "fields": {
+              "name": {
+                "css": "div > div:nth-child(2) > div:nth-child(2)"
+              },
+              "brand": {
+                "line": 0
+              },
+              "price": {
+                "match": "\\n([\\d,]+)원(?:\\n|$)"
+              },
+              "discount": {
+                "match": "\\n(\\d+%)\\n"
+              },
+              "rating": {
+                "match": "\\n(\\d\\.\\d)\\n리뷰"
+              },
+              "reviews": {
+                "match": "리뷰 ([\\d,]+)"
+              },
+              "shipping": {
+                "match": "(무료배송|배송비 별도)"
+              },
+              "ad": {
+                "match": "^[^\\n]*\\n(AD)\\n"
+              },
+              "product_id": {
+                "attr": "href",
+                "match": "/goods/(\\d+)"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": 60,
+            "fields": {
+              "name": "name",
+              "brand": "brand",
+              "price": "price",
+              "discount": "discount",
+              "rating": "rating",
+              "reviews": "reviews",
+              "shipping": "shipping",
+              "ad": "ad",
+              "product_id": "product_id",
+              "link": "https://store.ohou.se/goods/{{product_id}}"
+            }
+          },
+          "as": "all"
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "price",
+            "op": "gte",
+            "value": "{{min_price}}"
+          },
+          "as": "all"
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "all"
+        },
+        {
+          "map": {
+            "from": "all",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "brand": "brand",
+              "price": "price",
+              "discount": "discount",
+              "rating": "rating",
+              "reviews": "reviews",
+              "shipping": "shipping",
+              "ad": "ad",
+              "product_id": "product_id",
+              "link": "link"
+            }
+          },
+          "as": "products"
         }
       ],
-      "result": {},
-      "minIntervalSec": 300
+      "result": {
+        "products": "{{products}}"
+      },
+      "minIntervalSec": 300,
+      "next": "광고가 아닌 것 위주로 2~4개를 이름·브랜드·가격·평점·리뷰 수로 보여 주고 고르게 해요. 같은 상품이 여러 번 나오면 한 번만 말해요. 배송비 별도면 그렇다고 알려 줘요. 사려면 ohouse_prepare_order에 product_id를 넘겨요."
     },
     {
       "name": "orders",
