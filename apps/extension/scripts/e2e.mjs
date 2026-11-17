@@ -40,6 +40,22 @@ const PAGES = {
   '/login': `<!doctype html><title>로그인</title><h1>로그인</h1>
 <form action="/welcome" method="get"><label>아이디 <input name="id"></label> <label>비밀번호 <input type="password" name="pw"></label> <button>로그인</button></form>`,
   '/popup': '<!doctype html><title>새 창</title><h1>새 창이에요</h1>',
+  // 휴대폰용 React 사이트 흉내 (캐치테이블): 목록 줄은 div + onClick 처리기만 있고 손가락 커서·role이 없다.
+  // 검색칸은 입력을 조금 늦게 상태에 반영해서, 글을 넣자마자 Enter를 치면 빈 검색이 된다
+  '/app': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>맛집 앱</title></head><body>
+<input id="q" placeholder="어떤 맛집 찾으시나요?">
+<div id="list"><div class="row"><span>성수 사위식당</span> <span>4.3 · 한식</span></div>
+<div class="row"><span>성수 까망</span> <span>4.7 · 이탈리아음식</span></div></div>
+<div id="long">${'성수동 골목 이야기 '.repeat(20)}<span>끝 문장</span></div>
+<script>
+const props = (el, p) => { el['__reactProps$t3st'] = p; el.addEventListener('click', (e) => p.onClick?.(e)) }
+for (const r of document.querySelectorAll('.row')) props(r, { onClick: () => { document.title = '고름: ' + r.firstChild.textContent } })
+props(document.getElementById('long'), { onClick: () => {} })
+let kw = ''
+const q = document.getElementById('q')
+q.addEventListener('input', () => setTimeout(() => { kw = q.value }, 100))
+q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '검색: ' + (kw || '(빈칸)') })
+</script></body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -169,6 +185,21 @@ try {
 
   await step('스크롤', async () => {
     await call('scroll', { tabId, direction: 'down' })
+  })
+
+  await step('React 클릭 상자도 누를 수 있게 읽고, 늦게 받는 칸도 Enter로 검색된다', async () => {
+    await call('navigate', { tabId, url: `${base}/app` })
+    const s = await call('snapshot', { tabId })
+    writeFileSync(join(out, 'e2e-app-snapshot.txt'), s.text)
+    const row = s.text.match(/\[(e\d+) 버튼 "성수 까망 4\.7 · 이탈리아음식"\]/)?.[1]
+    assert.ok(row, `목록 줄에 표시가 없어요:\n${s.text}`)
+    // 긴 상자는 표시만 붙이고 안의 글은 그대로 읽는다
+    assert.match(s.text, /끝 문장/)
+    const picked = await call('click', { tabId, ref: row })
+    assert.equal(picked.title, '고름: 성수 까망')
+    const q = s.text.match(/\[(e\d+) 입력칸 "어떤 맛집 찾으시나요\?"\]/)?.[1]
+    const r = await call('type', { tabId, ref: q, text: '성수', submit: true })
+    assert.equal(r.title, '검색: 성수')
   })
 
   await step('캡차 화면을 알아챈다', async () => {

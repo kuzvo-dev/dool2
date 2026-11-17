@@ -14,6 +14,7 @@ import {
   pageFormTarget,
   pageLocate,
   pageMarkFilled,
+  pageMarkTaps,
   pageRemoteInfo,
   pageScroll,
   pageScrollBy,
@@ -390,6 +391,12 @@ async function inFrame<A extends unknown[], R>(
   return res?.result as R
 }
 
+/** React·Vue 클릭 처리기만 붙은 상자에 표시 달기 (페이지 스크립트 공간에서만 보인다). 실패해도 화면 읽기는 계속한다 */
+async function markTaps(tabId: number, frameId: number) {
+  const target = frameId ? { tabId, frameIds: [frameId] } : { tabId }
+  await chrome.scripting.executeScript({ target, world: 'MAIN', func: pageMarkTaps }).catch(() => {})
+}
+
 // ── 화면 안 액자 (iframe): 로그인 칸을 액자 안에 두는 사이트 (아고다 등) ──
 /** 액자 하나의 표시 번호 대역 (액자 n → e{n*10000+1}…) */
 const FRAME_SPAN = 10_000
@@ -539,6 +546,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       const max = Math.min(Math.max(Number(a.maxChars) || 12_000, 1_000), 40_000)
+      await markTaps(tabId, 0)
       const main = await inPage(tabId, pageSnapshot, max, 0)
       // 화면 안 액자(로그인 창 등): 누를 것이 있는 액자만 아래에 붙인다
       const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
@@ -549,6 +557,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       for (const fr of frames) {
         if (fr.frameId === 0 || !/^https?:/.test(fr.url) || index >= 6) continue
         index++
+        await markTaps(tabId, fr.frameId)
         const r = await inFrame(
           tabId,
           fr.frameId,
@@ -630,6 +639,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await cdp(tabId, 'Input.insertText', { text: a.text })
       if (a.submit) {
         const before = (await chrome.tabs.get(tabId)).url
+        // 글을 넣자마자 Enter를 치면 사이트가 입력을 받아들이기 전이라 검색이 안 된다 (실측: 캐치테이블 검색칸)
+        await sleep(300)
         await pressKey(tabId, 'Enter')
         await settle(tabId, before)
       }
