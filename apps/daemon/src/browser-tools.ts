@@ -11,6 +11,8 @@ export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data
 export interface ToolResult {
   content: ToolContent[]
   isError?: boolean
+  /** 서비스 도구(커넥터)의 구조화된 결과 (MCP structuredContent) */
+  structuredContent?: Record<string, unknown>
 }
 
 export interface BrowserCaller {
@@ -167,6 +169,8 @@ export class BrowserTools {
   onActiveTab?: (tabId: number) => void
   /** 주소의 사이트에 두리 스킬(절차)이 있으면 그 이름·설명 */
   siteSkill?: (url: string) => Promise<{ name: string; description: string } | undefined>
+  /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
+  siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
 
@@ -200,14 +204,7 @@ export class BrowserTools {
       case 'click': {
         // 표시가 없는 상자(가게 카드 등)는 화면 글자로 찾아 표시를 붙인 뒤 누른다. 승인 게이트는 그 글자로 똑같이 거친다
         if (!a.ref && typeof a.text === 'string' && a.text.trim()) {
-          const page = this.pages.get(tabId)
-          if (!page) throw new Error('먼저 페이지를 읽어(browser_read) 주세요')
-          const m = (await this.browser.call('mark-text', { tabId, text: a.text }, 15_000)) as {
-            ref: string
-            name: string
-          }
-          page.refs.set(m.ref, { role: '글', name: m.name })
-          a.ref = m.ref
+          a.ref = (await this.markText(tabId, a.text)).ref
         }
         const ref = String(a.ref ?? '')
         const page = this.pages.get(tabId)
@@ -306,43 +303,12 @@ export class BrowserTools {
       }
       case 'request_approval': {
         const ref = String(a.ref ?? '')
-        const page = this.pages.get(tabId)
-        const target = page?.refs.get(ref)
-        if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        const risk = classifyRisk(`${target.role} ${target.name}`, page.url, page.pay)
-        if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
-        if (this.finalStep() === 'self')
-          throw new Error(
-            '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
-          )
-        // 승인 카드에 실제 화면을 함께 보여 준다 (AI가 적은 금액이 틀려도 사용자가 알아챌 수 있게)
-        const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
-          | { data?: string }
-          | undefined
-        const rec = this.approvals.create({
-          tabId,
-          ref,
-          role: target.role,
-          label: target.name,
-          url: page.url,
-          kind: risk.kind,
-          reason: risk.reason,
-          what: String(a.what ?? '').slice(0, 200),
-          where: String(a.where ?? '').slice(0, 100),
-          ...(a.amount ? { amount: String(a.amount).slice(0, 60) } : {}),
-          ...(a.cancel ? { cancel: String(a.cancel).slice(0, 200) } : {}),
-          ...(shot?.data ? { shot: shot.data } : {}),
+        return this.askApproval(tabId, ref, {
+          what: String(a.what ?? ''),
+          where: String(a.where ?? ''),
+          ...(a.amount ? { amount: String(a.amount) } : {}),
+          ...(a.cancel ? { cancel: String(a.cancel) } : {}),
         })
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
-                '사용자가 승인하면 두리가 그 버튼을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
-            },
-          ],
-        }
       }
       case 'request_login': {
         // 로그인 카드: 사용자가 PC·폰 카드에 넣은 값은 금고에만 들어간다. AI는 값을 보지 않는다
@@ -399,6 +365,71 @@ export class BrowserTools {
       }
     }
     throw new Error(`모르는 브라우저 도구예요: ${tool}`)
+  }
+
+  /**
+   * 이 버튼을 누를지 사용자 승인을 받는다 (AI의 request_approval, 커넥터의 approve 단계).
+   * kind를 주면(커넥터 등급이 돈 내기·연락하기) 버튼 글자로 위험이 안 보여도 승인을 받는다
+   */
+  async askApproval(
+    tabId: number,
+    ref: string,
+    d: { what: string; where: string; amount?: string; cancel?: string },
+    kind?: RiskKind,
+  ): Promise<ToolResult> {
+    const page = this.pages.get(tabId)
+    const target = page?.refs.get(ref)
+    if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    const risk =
+      classifyRisk(`${target.role} ${target.name}`, page.url, page.pay) ??
+      (kind ? { kind, reason: '서비스 도구 등급' } : undefined)
+    if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
+    if (this.finalStep() === 'self')
+      throw new Error(
+        '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
+      )
+    // 승인 카드에 실제 화면을 함께 보여 준다 (AI가 적은 금액이 틀려도 사용자가 알아챌 수 있게)
+    const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
+      | { data?: string }
+      | undefined
+    const rec = this.approvals.create({
+      tabId,
+      ref,
+      role: target.role,
+      label: target.name,
+      url: page.url,
+      kind: risk.kind,
+      reason: risk.reason,
+      what: d.what.slice(0, 200),
+      where: d.where.slice(0, 100),
+      ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
+      ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
+      ...(shot?.data ? { shot: shot.data } : {}),
+    })
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
+            '사용자가 승인하면 두리가 그 버튼을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
+        },
+      ],
+    }
+  }
+
+  /** 화면 글자로 누를 곳에 표시를 붙인다 (먼저 읽은 페이지여야 한다). 붙인 표시와 그 글 */
+  async markText(tabId: number, text: string): Promise<{ ref: string; name: string }> {
+    const page = this.pages.get(tabId)
+    if (!page) throw new Error('먼저 페이지를 읽어(browser_read) 주세요')
+    const m = (await this.browser.call('mark-text', { tabId, text }, 15_000)) as { ref: string; name: string }
+    page.refs.set(m.ref, { role: '글', name: m.name })
+    return m
+  }
+
+  /** 마지막으로 읽은 탭의 표시 목록 (커넥터가 입력칸을 찾을 때) */
+  refsOf(tabId: number): Map<string, { role: string; name: string }> | undefined {
+    return this.pages.get(tabId)?.refs
   }
 
   /** 이 탭을 지금 폰 원격 화면으로 다뤄도 되는지: 두리가 사람에게 넘긴 지 30분 안 */
@@ -524,8 +555,15 @@ export class BrowserTools {
     if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
     try {
       const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
-      const now = parseRefs(s.text).get(rec.ref)
+      let now = parseRefs(s.text).get(rec.ref)
       this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
+      // 글자로 찾은 곳(서비스 도구의 마지막 버튼)은 표시 목록에 없다: 같은 글자로 다시 찾아 같은 곳인지 본다
+      if (rec.role === '글' && s.url === rec.url) {
+        const m = (await this.browser
+          .call('mark-text', { tabId: rec.tabId, text: rec.label }, 15_000)
+          .catch(() => undefined)) as { ref: string; name: string } | undefined
+        if (m?.ref === rec.ref) now = { role: '글', name: m.name }
+      }
       if (s.url !== rec.url || !now || now.name !== rec.label || now.role !== rec.role) {
         const msg = `승인한 뒤 화면이 바뀌어서 "${rec.label}" 버튼을 누르지 않았어요. 페이지를 다시 확인해 주세요.`
         this.approvals.finish(id, false, msg)
@@ -556,6 +594,12 @@ export class BrowserTools {
 
   /** 처음 들어온 사이트에 스킬이 있으면 먼저 읽으라고 알린다 (요령 없이 주소를 짐작해 빈 화면에서 멈추던 것) */
   private async guideFor(tabId: number, url: string): Promise<string | undefined> {
+    const svc = await this.siteConnector?.(url).catch(() => undefined)
+    if (svc) {
+      if (this.guided.get(tabId) === svc.id) return undefined
+      this.guided.set(tabId, svc.id)
+      return `📘 이 사이트(${svc.name})는 두리 서비스 도구가 있어요: ${svc.tools.join(', ')}. 화면을 하나씩 누르기보다 이 도구를 먼저 쓰세요(바로 보이는 도구 목록에 없으면 service_call). 도구로 안 되는 일만 브라우저로 이어서 해요.`
+    }
     if (!this.siteSkill) return undefined
     const skill = await this.siteSkill(url).catch(() => undefined)
     if (!skill || this.guided.get(tabId) === skill.name) return undefined
