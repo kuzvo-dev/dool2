@@ -83,6 +83,13 @@
           "description": "전체 검색 결과 수"
         }
       },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "price"
+        ]
+      },
       "examples": [
         {
           "keyword": "남성 겨울 코트",

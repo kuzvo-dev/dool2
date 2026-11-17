@@ -15,6 +15,7 @@ import {
   connectorToolName,
   fill,
   fillValue,
+  healthProblems,
   matches,
   type OutputField,
   onSite,
@@ -25,6 +26,7 @@ import {
   tierAnnotations,
 } from '@dool2/protocol/connector'
 import type { BrowserCaller, BrowserTools, RiskKind, ToolResult } from './browser-tools.js'
+import type { ConnectorHealth, Outcome } from './connector-health.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
 
@@ -88,8 +90,15 @@ export class Connectors {
       now?: () => Date
       /** 기다리기 간격 (시험에서 줄인다) */
       pollMs?: number
+      /** 건강 기록 (ADR 0020): 잇달아 깨지는 도구는 잠시 쉰다 */
+      health?: ConnectorHealth
     },
   ) {}
+
+  /** 쉬는 중이 아니고 막힘 표시도 없는 도구 */
+  private live(card: ConnectCard, t: ConnectorTool) {
+    return this.usable(t) && !this.opts.health?.resting(connectorToolName(card.id, t.name))
+  }
 
   private now() {
     return (this.opts.now ?? (() => new Date()))()
@@ -153,7 +162,7 @@ export class Connectors {
     const out: ServiceToolSpec[] = []
     for (const { card, connector } of (await this.load()).values()) {
       if (!connector || !this.isConnected(card)) continue
-      for (const t of connector.tools) if (this.usable(t)) out.push(this.spec(card, t))
+      for (const t of connector.tools) if (this.live(card, t)) out.push(this.spec(card, t))
     }
     return out
   }
@@ -198,7 +207,7 @@ export class Connectors {
       const site = card.site?.replace(/:\d+$/, '')
       if (!connector || !site || !(host === site || host.endsWith(`.${site}`))) continue
       const tools = connector.tools
-        .filter((t) => this.usable(t))
+        .filter((t) => this.live(card, t))
         .map((t) => connectorToolName(card.id, t.name))
       if (tools.length) return { id: card.id, name: card.name, tools }
     }
@@ -286,7 +295,13 @@ export class Connectors {
       return lines.join('\n')
     }
     for (const t of tools) {
-      const need = t.login && !connected ? '연결 필요' : t.login ? '연결됨' : '로그인 없이'
+      const need = this.opts.health?.resting(connectorToolName(card.id, t.name))
+        ? '요즘 막혀서 쉬는 중 — 브라우저 도구로'
+        : t.login && !connected
+          ? '연결 필요'
+          : t.login
+            ? '연결됨'
+            : '로그인 없이'
       const args = Object.entries(t.input.properties)
         .map(
           ([k, p]) =>
@@ -348,16 +363,45 @@ export class Connectors {
         ],
       }
     }
-    const result = await this.execute(card, tool, args)
-    if (!result.isError && tool.minIntervalSec) this.recent.set(key, { at: Date.now(), result })
-    return result
+    const rest = this.opts.health?.resting(name)
+    if (rest)
+      return text(
+        `${card.name}의 '${tool.title}' 도구는 요즘 사이트가 바뀌어 잠시 쉬고 있어요(${rest.reason}). 브라우저 도구로 같은 일을 해 주세요.`,
+        true,
+      )
+    const { outcome, detail, ...result } = await this.execute(card, tool, args)
+    // 결과는 왔는데 꼭 채워질 칸이 비면 조용한 고장 (ADR 0020)
+    let final: ToolResult = result
+    let seen = outcome
+    let why = detail
+    if (outcome === 'ok' && result.structuredContent) {
+      const sick = healthProblems(tool, result.structuredContent)
+      if (sick.length) {
+        seen = 'empty'
+        why = sick.join(', ')
+        final = {
+          ...result,
+          content: [
+            ...result.content,
+            {
+              type: 'text',
+              text: `(결과 칸이 비어 있어요: ${why}. 사이트가 바뀌었을 수 있으니 브라우저 도구로 화면을 확인해 주세요)`,
+            },
+          ],
+        }
+      }
+    }
+    if (seen) this.opts.health?.record(name, seen, why)
+    if (!final.isError && seen === 'ok' && tool.minIntervalSec)
+      this.recent.set(key, { at: Date.now(), result: final })
+    return final
   }
 
   private async execute(
     card: ConnectCard,
     tool: ConnectorTool,
     args: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  ): Promise<ToolResult & { outcome?: Outcome; detail?: string }> {
     const b = this.opts.browser
     const scope: Scope = { ...args, today: today(this.now()) }
     let tabId: number | undefined = this.tabs.get(card.id)
@@ -405,13 +449,26 @@ export class Connectors {
             this.tabs.set(card.id, r.tabId)
           },
         })
-        if (done) return this.finish(done, tabId)
+        if (done) {
+          const r = this.finish(done, tabId)
+          // 승인 요청·AI에게 넘기기는 잘 된 것, 마감·로그인 필요 같은 멈춤은 정상 멈춤
+          const stopped =
+            r.isError || Boolean((r.structuredContent as { stopped?: unknown } | undefined)?.stopped)
+          return { ...r, outcome: stopped ? 'stopped' : 'ok' }
+        }
       } catch (e) {
         const optional = 'optional' in step && step.optional
         if (e instanceof GuardStop)
-          return text(`${e.message}${tabId !== undefined ? ` [탭 ${tabId}]` : ''}`, true)
+          return {
+            ...text(`${e.message}${tabId !== undefined ? ` [탭 ${tabId}]` : ''}`, true),
+            outcome: 'stopped',
+          }
         if (optional && e instanceof StepError) continue
-        return this.broke(card, tool, i, kind, (e as Error).message, tabId)
+        return {
+          ...this.broke(card, tool, i, kind, (e as Error).message, tabId),
+          outcome: 'broke',
+          detail: `${i + 1}단계(${kind}): ${(e as Error).message}`,
+        }
       }
     }
     // 돌려줄 값
@@ -426,7 +483,7 @@ export class Connectors {
       lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')
     if (tabId !== undefined) lines.push(`[탭 ${tabId}]`)
     this.opts.tools.lastTabId = tabId
-    return { content: [{ type: 'text', text: lines.join('\n') }], structuredContent: out }
+    return { content: [{ type: 'text', text: lines.join('\n') }], structuredContent: out, outcome: 'ok' }
   }
 
   /** 끝내는 단계(승인 요청·AI에게 넘기기·멈춤)의 결과 */

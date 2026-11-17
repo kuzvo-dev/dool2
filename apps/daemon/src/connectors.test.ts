@@ -6,6 +6,7 @@ import { checkConnectCard } from '@dool2/protocol/connect'
 import { checkConnector } from '@dool2/protocol/connector'
 import { describe, expect, it } from 'vitest'
 import { BrowserTools } from './browser-tools.js'
+import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 
 const REPO_SKILLS = fileURLToPath(new URL('../../../skills', import.meta.url))
@@ -121,7 +122,9 @@ const CONNECTOR = {
 
 const PAGE = '[e1 버튼 "오후 7:00"] [e2 버튼 "예약하기"] [e3 버튼 "바로 구매"]'
 
-async function setup(opts: { connected?: boolean; rows?: Record<string, unknown>[] } = {}) {
+async function setup(
+  opts: { connected?: boolean; rows?: Record<string, unknown>[]; health?: ConnectorHealth } = {},
+) {
   const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
   await mkdir(join(dir, 'demo-eats'))
   await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
@@ -159,6 +162,7 @@ async function setup(opts: { connected?: boolean; rows?: Record<string, unknown>
     tools,
     connected: () => (opts.connected ? { 'demo-eats': '2026-11-17T00:00:00Z' } : {}),
     pollMs: 1,
+    ...(opts.health ? { health: opts.health } : {}),
   })
   return { connectors, calls, tools }
 }
@@ -330,5 +334,29 @@ describe('서비스 도구 실행기', () => {
     expect(calls[1]?.[0]).toBe('capture')
     expect(calls.some((x) => x[0] === 'fetch')).toBe(false)
     expect(r.structuredContent).toEqual({ shops: [{ name: '가게 다' }] })
+  })
+
+  it('칸이 비어 오면 조용한 고장으로 알리고 기록하며, 잇달아 깨지면 도구를 쉬게 한다', async () => {
+    const health = new ConnectorHealth()
+    const { connectors } = await setup({
+      health,
+      connected: true,
+      rows: [{ name: null, rating: null }, { name: null }],
+    })
+    const raw = JSON.parse(JSON.stringify(CONNECTOR))
+    raw.tools[0].expect = { filled: ['name'] }
+    const c = connectors as unknown as {
+      cache?: unknown
+      load: () => Promise<Map<string, { connector: unknown }>>
+    }
+    ;(await c.load()).get('demo-eats')!.connector = raw
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(textOf(r)).toContain('결과 칸이 비어 있어요: shops.name 칸이 2줄 중 0줄만 채워졌어요')
+    expect(health.summary().demo_eats_search?.last).toBe('empty')
+    await connectors.call('demo_eats_search', { keyword: '한남' })
+    await connectors.call('demo_eats_search', { keyword: '강남' })
+    expect((await connectors.catalog()).map((t) => t.name)).not.toContain('demo_eats_search')
+    const rest = await connectors.call('demo_eats_search', { keyword: '홍대' })
+    expect(textOf(rest)).toMatch(/잠시 쉬고 있어요.*브라우저 도구로/)
   })
 })

@@ -79,6 +79,14 @@
           }
         }
       },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "shop_id",
+          "rating"
+        ]
+      },
       "examples": [
         {
           "keyword": "성수",

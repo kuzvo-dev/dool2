@@ -10,13 +10,14 @@
 //
 // 로그인이 필요한 도구: DOOL2_DEV_PROFILE=<폴더>로 같은 프로필을 계속 쓰고, 그 Chrome에서 직접 로그인해 둔다
 // (try에 --connected를 붙이면 연결한 것으로 본다). 비밀번호는 이 도구가 다루지 않는다.
-import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkConnectCard } from '@dool2/protocol/connect'
-import { checkConnector, connectorToolName } from '@dool2/protocol/connector'
+import { checkConnector, connectorToolName, healthProblems } from '@dool2/protocol/connector'
 import { BrowserTools, Connectors, startDaemon } from '../dist/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -125,32 +126,56 @@ try {
     await done(r.isError ? 1 : 0)
   }
   if (cmd === 'canary') {
-    let fail = 0
-    let n = 0
-    for (const id of args.length ? args : services()) {
+    // 실제 사이트 점검 (ADR 0020): 찾아보기 도구를 예시 입력으로 돌려 시끄러운 고장(막힘)과
+    // 조용한 고장(줄 수·꼭 채워질 칸)을 함께 본다. --json 파일, --report HTML, --issues GitHub 이슈
+    const opt = (name) => {
+      const i = rest.indexOf(name)
+      return i >= 0 ? rest[i + 1] : undefined
+    }
+    const ids = args.filter((a) => a !== opt('--json') && a !== opt('--report'))
+    const results = []
+    for (const id of ids.length ? ids : services()) {
       const c = toolsOf(id)
       for (const t of c?.tools ?? []) {
         if (t.tier !== '찾아보기' || t.login || t.status.startsWith('막힘')) continue
+        const name = connectorToolName(id, t.name)
         for (const ex of t.examples) {
-          n++
           const t0 = Date.now()
-          const r = await connectors.call(connectorToolName(id, t.name), ex)
-          const s = ((Date.now() - t0) / 1000).toFixed(1)
+          const r = await connectors
+            .call(name, ex)
+            .catch((e) => ({ isError: true, content: [{ type: 'text', text: String(e) }] }))
+          const ms = Date.now() - t0
+          const text = r.content.map((x) => x.text ?? '').join('\n')
+          const stopped = Boolean(r.structuredContent?.stopped)
+          const problems = r.isError ? [] : stopped ? [] : healthProblems(t, r.structuredContent ?? {}, true)
           const rows = Object.values(r.structuredContent ?? {}).find(Array.isArray)
-          if (r.isError) {
-            fail++
-            console.log(
-              `✗ ${connectorToolName(id, t.name)} ${JSON.stringify(ex)} (${s}초)\n  ${r.content[0]?.text}`,
-            )
-          } else
-            console.log(
-              `✓ ${connectorToolName(id, t.name)} ${JSON.stringify(ex)} (${s}초${rows ? `, ${rows.length}줄` : ''})`,
-            )
+          const ok = !r.isError && !problems.length
+          results.push({
+            service: id,
+            tool: name,
+            status: t.status,
+            input: ex,
+            ok,
+            ms,
+            rows: rows?.length ?? null,
+            problems,
+            error: r.isError ? text.slice(0, 400) : undefined,
+          })
+          console.log(
+            `${ok ? '✓' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}초${rows ? `, ${rows.length}줄` : ''})${ok ? '' : `\n  ${r.isError ? text.split('\n')[0] : problems.join(' · ')}`}`,
+          )
         }
       }
     }
-    console.log(`${n}개 중 실패 ${fail}`)
-    await done(fail ? 1 : 0)
+    const fail = results.filter((x) => !x.ok)
+    console.log(`${results.length}개 중 실패 ${fail.length}`)
+    const at = new Date().toISOString()
+    const jsonOut = opt('--json')
+    if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at, results }, null, 2))
+    const reportOut = opt('--report')
+    if (reportOut) writeFileSync(reportOut, healthReport(at, results))
+    if (flags.has('--issues')) await syncIssues(results)
+    await done(fail.length ? 1 : 0)
   }
   if (cmd === 'page') {
     const [url, items] = args
@@ -175,4 +200,114 @@ try {
 } catch (e) {
   console.error(e)
   await done(1)
+}
+
+// ── 점검 보고서 (HTML) ──
+function healthReport(at, results) {
+  const esc = (x) =>
+    String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+  const by = new Map()
+  for (const r of results) by.set(r.service, [...(by.get(r.service) ?? []), r])
+  const bad = results.filter((r) => !r.ok).length
+  const rows = [...by]
+    .map(([svc, list]) =>
+      list
+        .map(
+          (r, i) =>
+            `<tr class="${r.ok ? 'ok' : 'bad'}">${i === 0 ? `<td rowspan="${list.length}">${esc(svc)}</td>` : ''}<td>${esc(r.tool)}</td><td>${esc(JSON.stringify(r.input))}</td><td>${r.ok ? '정상' : '고장'}</td><td>${(r.ms / 1000).toFixed(1)}초</td><td>${r.rows ?? ''}</td><td>${esc(r.error?.split('\n')[0] ?? r.problems.join(' · '))}</td></tr>`,
+        )
+        .join(''),
+    )
+    .join('')
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>두리 서비스 도구 점검</title>
+<style>body{font:14px -apple-system,sans-serif;margin:24px;background:#111318;color:#e8e8ea}h1{font-size:20px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #2a2d35;padding:6px 8px;text-align:left;vertical-align:top}tr.bad td{color:#ffb4a8}tr.ok td:nth-child(4){color:#7ee2b8}.sum{margin:8px 0 16px;color:#a8acb6}</style></head><body>
+<h1>두리 서비스 도구 점검</h1><p class="sum">${esc(at)} · ${results.length}개 시험 · 고장 ${bad}개</p>
+<table><tr><th>서비스</th><th>도구</th><th>입력</th><th>결과</th><th>시간</th><th>줄</th><th>문제</th></tr>${rows}</table></body></html>`
+}
+
+// ── GitHub 이슈 맞추기 (gh CLI, GH_TOKEN) ──
+// 깨진 도구마다 이슈 하나 ([커넥터] 도구 이름, 라벨 connector-broken). 다시 되면 댓글 남기고 닫는다
+async function syncIssues(results) {
+  const repo = process.env.DOOL2_REPO ?? 'kuzvo-dev/dool2'
+  const gh = (...a) => execFileSync('gh', a, { encoding: 'utf8', env: process.env })
+  try {
+    gh(
+      'label',
+      'create',
+      'connector-broken',
+      '--repo',
+      repo,
+      '--color',
+      'E99695',
+      '--description',
+      '서비스 도구가 실제 사이트에서 깨짐 (ADR 0020)',
+    )
+  } catch {}
+  const open = JSON.parse(
+    gh(
+      'issue',
+      'list',
+      '--repo',
+      repo,
+      '--label',
+      'connector-broken',
+      '--state',
+      'open',
+      '--json',
+      'number,title',
+      '--limit',
+      '200',
+    ),
+  )
+  const issueOf = (tool) => open.find((x) => x.title === `[커넥터] ${tool}`)
+  const tools = new Map()
+  for (const r of results) tools.set(r.tool, [...(tools.get(r.tool) ?? []), r])
+  const today = new Date().toISOString().slice(0, 10)
+  for (const [tool, list] of tools) {
+    const bad = list.filter((r) => !r.ok)
+    const issue = issueOf(tool)
+    if (bad.length) {
+      const svc = list[0].service
+      const body = [
+        `매일 점검(${today})에서 **${tool}** 이(가) 실제 사이트에서 깨졌어요.`,
+        '',
+        ...bad.map(
+          (r) =>
+            `- 입력 \`${JSON.stringify(r.input)}\`: ${r.error?.split('\n')[0] ?? r.problems.join(' · ')}`,
+        ),
+        '',
+        '재현과 고치기 (`.claude/skills/connector`):',
+        '```bash',
+        `pnpm connector try ${svc} ${tool.slice(svc.replace(/-/g, '_').length + 1)} '${JSON.stringify(bad[0].input)}'`,
+        `pnpm connector page "<그 화면 주소>"`,
+        '```',
+      ].join('\n')
+      if (issue) gh('issue', 'comment', String(issue.number), '--repo', repo, '--body', body)
+      else
+        gh(
+          'issue',
+          'create',
+          '--repo',
+          repo,
+          '--title',
+          `[커넥터] ${tool}`,
+          '--label',
+          'connector-broken',
+          '--body',
+          body,
+        )
+      console.log(`이슈 ${issue ? `#${issue.number}에 댓글` : '새로'}: ${tool}`)
+    } else if (issue) {
+      gh(
+        'issue',
+        'close',
+        String(issue.number),
+        '--repo',
+        repo,
+        '--comment',
+        `매일 점검(${today})에서 다시 잘 돼요. 닫을게요.`,
+      )
+      console.log(`이슈 #${issue.number} 닫음: ${tool}`)
+    }
+  }
 }
