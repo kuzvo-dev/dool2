@@ -412,6 +412,21 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   let coveredBy: string | undefined
   if (top && top !== el && !el.contains(top) && top.closest('label')?.control !== el) {
     coveredBy = ((top as HTMLElement).innerText || top.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
+    // 덮은 것이 다른 버튼·링크면 누르지 않는다: 그 자리를 누르면 덮은 버튼이 눌린다
+    // (캐치테이블: 결제 방식 화면의 '다음' 위에 '이 방식으로 예약' 팝업이 떠 있었다)
+    const other = top.closest(
+      'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=radio],[role=checkbox],[onclick],[data-dool2-tap]',
+    )
+    if (other && other !== el && !other.contains(el)) {
+      const name = ((other as HTMLElement).innerText || other.getAttribute('aria-label') || other.tagName)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 40)
+      return {
+        ok: false,
+        error: `${ref} 자리를 다른 버튼 "${name}"이(가) 덮고 있어서 누르지 않았어요. 팝업이면 먼저 닫고(닫기·X) 다시 읽어 주세요`,
+      }
+    }
   }
   const h = el as HTMLElement
   let focused: boolean | undefined
