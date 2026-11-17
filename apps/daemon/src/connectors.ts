@@ -19,7 +19,6 @@ import {
   type OutputField,
   onSite,
   pick,
-  riskyFetch,
   type Scope,
   type Step,
   stepKind,
@@ -367,6 +366,8 @@ export class Connectors {
       return tabId
     }
     const site = card.site ?? ''
+    // 페이지가 받은 응답을 읽는 도구면 주소를 열 때부터 응답 듣기를 켠다
+    const capture = tool.steps.some((x) => 'capture' in x)
     const pollMs = this.opts.pollMs ?? 300
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
     const read = async () => {
@@ -389,13 +390,17 @@ export class Connectors {
             if (!onSite(url, site)) throw new StepError(`${site} 밖의 주소는 열지 않아요: ${url}`)
             // 이 서비스에 쓰던 탭이 있으면 그 탭에서 (없어졌으면 새로 연다)
             if (tabId !== undefined) {
-              const ok = await b.call('navigate', { tabId, url }, 40_000).then(
-                () => true,
-                () => false,
-              )
+              const ok = await b
+                .call('navigate', { tabId, url, ...(capture ? { capture } : {}) }, 40_000)
+                .then(
+                  () => true,
+                  () => false,
+                )
               if (ok) return
             }
-            const r = (await b.call('open', { url }, 40_000)) as { tabId: number }
+            const r = (await b.call('open', { url, ...(capture ? { capture } : {}) }, 40_000)) as {
+              tabId: number
+            }
             tabId = r.tabId
             this.tabs.set(card.id, r.tabId)
           },
@@ -623,26 +628,44 @@ export class Connectors {
         await c.sleep(c.pollMs)
       }
     }
-    if ('fetch' in s) {
-      const url = f(s.fetch.url)
-      const body = s.fetch.body !== undefined ? f(s.fetch.body) : undefined
-      if (!onSite(url, c.site)) throw new StepError(`${c.site} 밖의 주소에는 요청하지 않아요: ${url}`)
-      const bad = riskyFetch(url, body)
-      if (bad) throw new GuardStop(`멈췄어요: ${bad}는 데이터 요청으로 하지 않아요.`)
-      const method = s.fetch.method ?? 'GET'
-      if (method === 'POST' && c.tier !== '찾아보기' && c.tier !== '채워 두기')
-        throw new GuardStop('멈췄어요: 돈 내기·연락하기 도구는 데이터 요청(POST)을 쓰지 않아요.')
-      // 꺼낼 경로는 페이지 안에서 먼저 꺼낸다 (사진 주소가 많은 큰 응답도 잘리지 않게). 경로가 없으면 전체('')
-      const r = (await b.call(
-        'fetch',
-        { tabId: c.need(), url, method, ...(body !== undefined ? { body } : {}), pick: s.fetch.pick ?? '' },
-        30_000,
-      )) as { status: number; body: string; json?: unknown }
-      if (r.status >= 400) throw new StepError(`사이트가 요청을 거절했어요 (${r.status})`)
-      if (r.json === undefined)
-        throw new StepError(
-          `사이트가 데이터 대신 다른 것을 돌려줬어요 (JSON 아님, ${r.status}: ${r.body.replace(/\s+/g, ' ').slice(0, 80)})`,
+    if ('embedded' in s) {
+      const until = Date.now() + 6000
+      for (;;) {
+        const r = (await b.call('extract', {
+          tabId: c.need(),
+          spec: { items: f(s.embedded.css), hidden: true, limit: 1, fields: { t: { raw: true } } },
+        })) as { rows: { t: string | null }[] }
+        const text = r.rows[0]?.t
+        if (text) {
+          let data: unknown
+          try {
+            data = JSON.parse(text)
+          } catch {
+            throw new StepError(`${s.embedded.css} 안의 글이 JSON이 아니에요`)
+          }
+          c.scope[s.as] = s.embedded.pick ? pick(data, s.embedded.pick) : data
+          return
+        }
+        if (Date.now() > until) throw new StepError(`화면에 ${s.embedded.css} 데이터가 없어요`)
+        await c.sleep(c.pollMs)
+      }
+    }
+    if ('capture' in s) {
+      // 페이지가 스스로 받은 응답을 읽는다 (두리가 요청을 보내지 않는다)
+      const r = (await b
+        .call(
+          'capture',
+          {
+            tabId: c.need(),
+            url: f(s.capture.url),
+            pick: s.capture.pick ?? '',
+            timeoutMs: s.capture.timeoutMs ?? 10_000,
+          },
+          40_000,
         )
+        .catch((e: Error) => {
+          throw new StepError(e.message)
+        })) as { json: unknown }
       c.scope[s.as] = r.json
       return
     }

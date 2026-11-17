@@ -3,7 +3,7 @@
 // - 두리가 연 탭만 다룬다. 사용자가 연 탭은 건드리지 않는다
 // - 클릭·입력은 chrome.debugger(CDP Input)로 실제 입력과 같게 넣는다
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
-import { keyDef, safeUrl } from './keys.js'
+import { keyDef, pickPath, safeUrl } from './keys.js'
 import {
   type ExtractSpec,
   type LocateMode,
@@ -11,7 +11,6 @@ import {
   pageCaretEnd,
   pageClick,
   pageExtract,
-  pageFetch,
   pageFind,
   pageForm,
   pageFormFocus,
@@ -381,6 +380,8 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return
   // 떼면 Chrome이 폰 너비 그리기도 푼다
   phoneView.delete(source.tabId)
+  listening.delete(source.tabId)
+  netLog.delete(source.tabId)
   clearTimeout(attached.get(source.tabId))
   attached.delete(source.tabId)
   emulated.delete(source.tabId)
@@ -402,6 +403,42 @@ async function cdp<T = unknown>(tabId: number, method: string, params?: Record<s
   )
   return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T
 }
+
+// ── 페이지가 받은 응답 듣기 (커넥터 capture) ──
+// 두리가 요청을 보내지 않는다. 사람이 그 화면을 열 때 사이트가 스스로 받는 응답 중 필요한 것을 읽을 뿐이다.
+interface NetEntry {
+  id: string
+  url: string
+  status: number
+  done: boolean
+}
+const netLog = new Map<number, NetEntry[]>()
+const listening = new Set<number>()
+
+async function listen(tabId: number) {
+  await cdp(tabId, 'Network.enable', { maxTotalBufferSize: 30_000_000, maxResourceBufferSize: 8_000_000 })
+  listening.add(tabId)
+  netLog.set(tabId, [])
+}
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  const tabId = source.tabId
+  if (tabId === undefined || !listening.has(tabId)) return
+  const p = params as {
+    requestId?: string
+    type?: string
+    response?: { url: string; status: number }
+  }
+  const log = netLog.get(tabId)
+  if (!log || !p.requestId) return
+  if (method === 'Network.responseReceived' && p.response && (p.type === 'XHR' || p.type === 'Fetch')) {
+    log.push({ id: p.requestId, url: p.response.url, status: p.response.status, done: false })
+    if (log.length > 300) log.splice(0, log.length - 300)
+  } else if (method === 'Network.loadingFinished') {
+    const e = log.find((x) => x.id === p.requestId)
+    if (e) e.done = true
+  }
+})
 
 /**
  * 탭을 한 장 그리게 한다. 창이 다른 창 뒤에 가려져 있으면 Chrome이 그 탭을 그리지 않아서,
@@ -605,22 +642,39 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const patterns = (a.patterns ?? {}) as Record<string, string>
       return inPage(tabId, pageFind, patterns)
     }
-    case 'fetch': {
-      // 커넥터: 이 탭의 사이트 안에서 데이터 요청. 다른 사이트 주소는 부르지 않는다
+    case 'capture': {
+      // 커넥터: 이 탭의 페이지가 스스로 받은 응답(JSON)을 읽는다. 두리가 따로 요청하지 않는다 (ADR 0018)
       const tabId = await ownedTab(a)
-      const tab = await chrome.tabs.get(tabId)
-      const url = safeUrl(a.url)
-      if (!url || !tab.url) throw new Error('http·https 주소만 부를 수 있어요')
-      if (siteOf(new URL(url).origin) !== siteOf(new URL(tab.url).origin))
-        throw new Error(`이 탭의 사이트(${siteOf(new URL(tab.url).origin)}) 주소만 부를 수 있어요`)
-      const method = a.method === 'POST' ? 'POST' : 'GET'
-      // executeScript 인자에는 undefined를 넘길 수 없다
-      const body = typeof a.body === 'string' ? a.body.slice(0, 20_000) : null
-      const type = typeof a.type === 'string' ? a.type : null
-      const path = typeof a.pick === 'string' ? a.pick : null
-      const r = await inPage(tabId, pageFetch, url, method, body, type, path)
-      if ('error' in r) throw new Error(`요청하지 못했어요: ${r.error}`)
-      return r
+      if (!listening.has(tabId))
+        throw new Error('이 탭은 응답을 듣고 있지 않아요 (주소를 열 때 capture를 켜야 해요)')
+      let re: RegExp
+      try {
+        re = new RegExp(String(a.url ?? ''))
+      } catch {
+        throw new Error(`주소 패턴이 틀렸어요: ${String(a.url)}`)
+      }
+      const until = Date.now() + Math.min(Math.max(Number(a.timeoutMs) || 10_000, 500), 30_000)
+      for (;;) {
+        const hit = (netLog.get(tabId) ?? []).filter((e) => e.done && re.test(e.url)).at(-1)
+        if (hit) {
+          const r = await cdp<{ body: string; base64Encoded: boolean }>(tabId, 'Network.getResponseBody', {
+            requestId: hit.id,
+          })
+          const text = r.base64Encoded
+            ? new TextDecoder().decode(Uint8Array.from(atob(r.body), (c) => c.charCodeAt(0)))
+            : r.body
+          let data: unknown
+          try {
+            data = JSON.parse(text)
+          } catch {
+            throw new Error(`페이지가 받은 응답이 JSON이 아니에요 (${hit.url.slice(0, 80)})`)
+          }
+          const path = typeof a.pick === 'string' ? a.pick : ''
+          return { url: hit.url, status: hit.status, json: pickPath(data, path) ?? null }
+        }
+        if (Date.now() > until) throw new Error(`페이지가 그 데이터를 받지 않았어요 (${String(a.url)})`)
+        await sleep(200)
+      }
     }
     case 'reload': {
       // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
@@ -630,8 +684,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'open': {
       const url = safeUrl(a.url)
       if (!url) throw new Error('http·https 주소만 열 수 있어요')
-      const tab = await openTab(url)
+      // capture: 페이지가 받는 응답을 처음부터 듣도록, 빈 탭을 먼저 열고 듣기를 켠 뒤 주소로 간다
+      const tab = await openTab(a.capture ? 'about:blank' : url)
       if (tab.id === undefined) throw new Error('탭을 열지 못했어요')
+      if (a.capture) {
+        await listen(tab.id)
+        await chrome.tabs.update(tab.id, { url })
+        await sleep(200)
+      }
       await waitLoad(tab.id)
       return pageState(tab.id)
     }
@@ -639,6 +699,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       const url = safeUrl(a.url)
       if (!url) throw new Error('http·https 주소만 열 수 있어요')
+      if (a.capture) await listen(tabId)
       await chrome.tabs.update(tabId, { url })
       await sleep(200)
       await waitLoad(tabId)

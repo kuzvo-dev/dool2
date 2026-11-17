@@ -1113,7 +1113,7 @@ export function pageScrollToDoc(x: number, y: number) {
   return { sx: window.scrollX, sy: window.scrollY }
 }
 
-// ── 커넥터 엔진 동작 (ADR 0018): 목록 뽑기·글자 찾기·같은 사이트 데이터 요청 ──
+// ── 커넥터 엔진 동작 (ADR 0018): 목록 뽑기·글자 찾기 (페이지가 받은 응답 읽기는 background.ts의 capture) ──
 // 커넥터(tools.json)는 데이터라서, 무엇을 뽑을지만 넘기고 실제 일은 여기 고정된 함수가 한다.
 
 /** 한 칸을 어떻게 뽑을지 */
@@ -1128,6 +1128,8 @@ export interface ExtractField {
   match?: string
   /** css에 맞는 것을 모두 (글 목록) */
   list?: boolean
+  /** 글을 다듬거나 자르지 않고 그대로 (화면에 박힌 JSON 읽기) */
+  raw?: boolean
 }
 export interface ExtractSpec {
   /** 목록의 줄(항목) 선택자 */
@@ -1136,6 +1138,8 @@ export interface ExtractSpec {
   /** 이 안에서만 찾기 */
   within?: string
   limit?: number
+  /** 보이지 않는 요소도 (script 안의 데이터 등) */
+  hidden?: boolean
 }
 export type ExtractValue = string | string[] | null
 export type ExtractResult =
@@ -1182,8 +1186,9 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
             v = new URL(v, location.href).href
           } catch {}
         }
-      } else v = (el as HTMLElement).innerText ?? el.textContent
+      } else v = f.raw ? el.textContent : ((el as HTMLElement).innerText ?? el.textContent)
       if (v === null) return null
+      if (f.raw) return v.slice(0, 3_000_000)
       v = norm(v)
       if (f.line !== undefined) v = v.split('\n').filter(Boolean).at(f.line) ?? null
       if (v !== null && re) {
@@ -1199,7 +1204,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
       const r = el.getBoundingClientRect()
       const cs = getComputedStyle(el)
       const shown = cs.display === 'contents' || r.width > 0 || r.height > 0
-      if (!shown || cs.visibility === 'hidden') continue
+      if (!spec.hidden && (!shown || cs.visibility === 'hidden')) continue
       const row: Record<string, ExtractValue> = {}
       for (const [k, f] of Object.entries(spec.fields)) {
         const targets = f.css ? q(el, f.css, Boolean(f.list)) : [el]
@@ -1235,77 +1240,4 @@ export function pageFind(patterns: Record<string, string>): {
     found[k] = m ? (m[1] ?? m[0]).slice(0, 200) : null
   }
   return { url: location.href, title: document.title, found }
-}
-
-/**
- * 이 탭의 사이트 안에서 데이터 요청 (사이트가 자기 화면을 그릴 때 부르는 것과 같은 요청).
- * 쿠키는 브라우저 안에 그대로 있고 밖으로 나가지 않는다. 같은 사이트 주소인지는 서비스 워커가 먼저 확인한다
- */
-export async function pageFetch(
-  url: string,
-  method: 'GET' | 'POST',
-  body: string | null,
-  type: string | null,
-  /** JSON에서 꺼낼 경로 (data.list, items.*.name). 주면 그 부분만 돌려준다 (응답이 커도 잘리지 않게) */
-  path: string | null,
-): Promise<
-  { status: number; type: string; body: string; truncated: boolean; json?: unknown } | { error: string }
-> {
-  try {
-    const res = await fetch(url, {
-      method,
-      credentials: 'include',
-      headers: {
-        accept: 'application/json, text/plain, */*',
-        ...(body !== null ? { 'content-type': type ?? 'application/json' } : {}),
-      },
-      ...(body !== null ? { body } : {}),
-    })
-    const text = await res.text()
-    if (path !== null) {
-      let data: unknown
-      try {
-        data = JSON.parse(text)
-      } catch {
-        return {
-          status: res.status,
-          type: res.headers.get('content-type') ?? '',
-          body: text.slice(0, 200),
-          truncated: true,
-        }
-      }
-      const pick = (v: unknown, keys: string[]): unknown => {
-        let cur = v
-        for (const [i, k] of keys.entries()) {
-          if (cur === null || cur === undefined) return undefined
-          if (k === '*') {
-            if (!Array.isArray(cur)) return undefined
-            const rest = keys.slice(i + 1)
-            return cur
-              .map((x) => (rest.length ? pick(x, rest) : x))
-              .filter((x) => x !== undefined && x !== null)
-          }
-          cur =
-            Array.isArray(cur) && /^-\d+$/.test(k) ? cur.at(Number(k)) : (cur as Record<string, unknown>)[k]
-        }
-        return cur
-      }
-      return {
-        status: res.status,
-        type: res.headers.get('content-type') ?? '',
-        body: '',
-        truncated: false,
-        json: pick(data, path.split('.').filter(Boolean)) ?? null,
-      }
-    }
-    const max = 400_000
-    return {
-      status: res.status,
-      type: res.headers.get('content-type') ?? '',
-      body: text.slice(0, max),
-      truncated: text.length > max,
-    }
-  } catch (e) {
-    return { error: (e as Error).message }
-  }
 }

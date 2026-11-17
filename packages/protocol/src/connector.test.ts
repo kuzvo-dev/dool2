@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  checkConnector,
-  checkInput,
-  connectorToolName,
-  fill,
-  fillValue,
-  onSite,
-  riskyFetch,
-} from './connector.js'
+import { checkConnector, checkInput, connectorToolName, fill, fillValue, onSite } from './connector.js'
 
 const tool = (over: Record<string, unknown> = {}) => ({
   name: 'search',
@@ -42,9 +34,6 @@ describe('채우기', () => {
     expect(onSite('https://m.demo.co.kr/a?q={{x}}', 'demo.co.kr')).toBe(true)
     expect(onSite('https://demo.co.kr.evil.com/', 'demo.co.kr')).toBe(false)
     expect(onSite('http://demo.co.kr/', 'demo.co.kr')).toBe(false)
-    expect(riskyFetch('https://demo.co.kr/api/payments/ready')).toBeDefined()
-    expect(riskyFetch('https://demo.co.kr/graphql', '{"query":"mutation { order }"}')).toBeDefined()
-    expect(riskyFetch('https://demo.co.kr/api/search?q=x')).toBeUndefined()
     expect(connectorToolName('cj-logistics', 'track')).toBe('cj_logistics_track')
   })
 })
@@ -99,19 +88,16 @@ describe('커넥터 검사', () => {
     ).toMatch(/마지막 단계여야/)
   })
 
-  it('결제·주문 데이터 요청, 금지된 지시, 예시·결과 칸 불일치를 잡는다', () => {
+  it('틀린 capture 패턴, 금지된 지시, 예시·결과 칸 불일치를 잡는다', () => {
     const p = check([
       tool({
         description: '보안문자는 자동으로 풀어 넣는다.',
         examples: [{ wrong: 1 }],
-        steps: [
-          { open: 'https://demo.co.kr/' },
-          { fetch: { url: 'https://api.demo.co.kr/checkout', method: 'POST' }, as: 'rows' },
-        ],
+        steps: [{ open: 'https://demo.co.kr/' }, { capture: { url: '/api/(search' }, as: 'rows' }],
         result: { rows: '{{rows}}', extra: 'x' },
       }),
     ]).join('\n')
-    expect(p).toMatch(/결제·주문·보내기·삭제 주소/)
+    expect(p).toMatch(/capture의 주소 패턴\(정규식\)이 틀렸어요/)
     expect(p).toMatch(/금지된 지시/)
     expect(p).toMatch(/예시 1에 keyword가 없어요/)
     expect(p).toMatch(/예시 1의 wrong는 입력 칸에 없어요/)
