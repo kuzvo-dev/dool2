@@ -101,6 +101,8 @@ chrome.alarms.onAlarm.addListener((a) => {
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
 connect()
+// 서비스 워커가 새로 떴는데 두리 탭 목록이 비어 있으면(확장 다시 켜기·Chrome 다시 켜기) 그룹에서 되찾는다
+void load().then((s) => (s.owned.length ? undefined : reclaim()))
 
 // 팝업: 연결 상태 보기, 다시 연결
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -110,6 +112,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 })
 
 // ── 두리 탭 ──────────────────────────────────────────────────
+
+const GROUP_TITLE = '두리'
 
 interface Saved {
   windowId?: number
@@ -121,6 +125,37 @@ interface Saved {
 async function load(): Promise<Saved> {
   const s = (await chrome.storage.session.get('dool2')).dool2 as Saved | undefined
   return s ?? { owned: [] }
+}
+
+/**
+ * 두리 탭 목록 되찾기. 목록은 session 저장소라 확장을 다시 켜거나(자동 업데이트 포함) Chrome을 다시 켜면 비워진다.
+ * 그러면 열려 있던 두리 탭이 주인 없는 탭이 되어 정리(tidy)에서 빠지고, 새 "두리" 그룹이 또 생겨 탭이 쌓였다
+ * (실측: 하루 시험 뒤 두리 탭 20여 개·Chrome 10GB, 8GB 맥이 멈춤).
+ * 탭 번호는 Chrome을 다시 켜면 새로 매겨져 옛 번호를 믿으면 사용자 탭과 겹칠 수 있다. 그래서 번호 대신
+ * "두리" 그룹(두리 탭은 열 때 늘 이 그룹에 넣는다)에 든 탭을 두리 탭으로 거둬들이고, 그룹이 여럿이면 하나로 합친다.
+ */
+async function reclaim() {
+  const groups = await chrome.tabGroups.query({ title: GROUP_TITLE }).catch(() => [])
+  if (!groups.length) return
+  const tabs = (await chrome.tabs.query({})).filter((t) => groups.some((g) => g.id === t.groupId))
+  const ids = tabs.map((t) => t.id).filter((id): id is number => id !== undefined)
+  const [main, ...rest] = groups
+  if (!main) return
+  // 여러 "두리" 그룹은 첫 그룹으로 합친다 (같은 창의 것만. 다른 창 그룹은 그대로 두고 탭만 거둔다)
+  for (const g of rest) {
+    if (g.windowId !== main.windowId) continue
+    const inG = tabs.filter((t) => t.groupId === g.id && t.id !== undefined).map((t) => t.id as number)
+    if (inG.length)
+      await chrome.tabs
+        .group({ groupId: main.id, tabIds: inG as [number, ...number[]] })
+        .catch(() => undefined)
+  }
+  await update((x) => {
+    x.owned = [...new Set([...x.owned, ...ids])]
+    x.groupId ??= main.id
+    x.windowId ??= main.windowId
+  })
+  void tidy()
 }
 async function save(s: Saved) {
   await chrome.storage.session.set({ dool2: s })
@@ -250,7 +285,7 @@ async function groupTab(tabId: number) {
       }
     }
     groupId = await chrome.tabs.group({ tabIds: [tabId], ...(groupId !== undefined ? { groupId } : {}) })
-    await chrome.tabGroups.update(groupId, { title: '두리', color: 'green' })
+    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: 'green' })
     const gid = groupId
     await update((x) => {
       x.groupId = gid
@@ -313,8 +348,8 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
 async function settle(tabId: number, before?: string) {
   for (let i = 0; i < 12; i++) {
     await sleep(100)
-    // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게
-    if (attached.has(tabId)) await paint(tabId)
+    // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게. 한 장 그리기가 40ms쯤 들어서(실측) 4번에 1번만
+    if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!t) return
     if (t.status === 'loading' || (before !== undefined && t.url !== before)) {
