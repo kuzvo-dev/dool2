@@ -14,6 +14,7 @@ import {
   type RoutineSchedule,
   type SuggestedIdea,
 } from '@dool2/protocol'
+import type { ConnectionItem } from '@dool2/protocol/connect'
 import { nextRun, scheduleLabel } from '@dool2/protocol/schedule'
 
 export { nextRun, scheduleLabel }
@@ -38,6 +39,15 @@ export class Life {
   /** 맞춤 아이디어를 새로 찾을 때 (본체가 피드 대화에서 두리에게 부탁한다) */
   onIdeas?: () => void
   ideasBusy = false
+  /** 먼저 챙기기: 연결한 서비스가 있는지 (본체가 붙인다. 없으면 살펴보지 않는다) */
+  watchSources?: () => string[]
+  /** 먼저 챙기기: 살펴볼 때 (본체가 피드 대화에서 두리에게 부탁한다) */
+  onWatch?: () => void
+  /** 먼저 챙긴 일을 피드에 올렸을 때 (본체가 폰에 알린다) */
+  onTell?: (f: FeedItem) => void
+  watchBusy = false
+  /** 이번 살펴보기에서 올린 개수 (한 번에 너무 많이 알리지 않게) */
+  private told = 0
 
   constructor(
     private readonly kv: Kv,
@@ -128,6 +138,7 @@ export class Life {
   tick() {
     if (this.ideasDue() && !this.ideasBusy && (this.memory().length || this.routines().length))
       this.refreshIdeas()
+    if (this.watchOn() && !this.watchBusy && this.watchSources?.().length && this.watchDue()) this.watchNow()
     const now = this.now()
     const list = this.routines()
     const due = list.filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now.getTime())
@@ -235,6 +246,90 @@ export class Life {
     else delete f.reaction
     this.put('feed', list)
   }
+  /**
+   * 먼저 챙긴 일 올리기: 같은 열쇠(없으면 같은 제목)로 30일 안에 알린 적 있으면 올리지 않는다.
+   * 올리면 onTell로 폰에 알린다. 살펴보기 한 번에 3개까지
+   */
+  tell(input: {
+    title: string
+    body?: string
+    from?: string
+    key?: string
+    ask?: string
+    askLabel?: string
+  }): FeedItem | 'dup' | 'full' {
+    const title = input.title.trim().slice(0, 80)
+    const key = (input.key ?? '').trim().toLowerCase().slice(0, 120) || undefined
+    const since = this.now().getTime() - 30 * 86_400_000
+    const dup = this.feedItems().some(
+      (f) => f.kind === 'suggest' && Date.parse(f.at) >= since && (key ? f.key === key : f.title === title),
+    )
+    if (dup) return 'dup'
+    if (this.watchBusy && this.told >= 3) return 'full'
+    const f = this.feed({
+      kind: 'suggest',
+      title: title || '두리가 먼저 챙겼어요',
+      ...(input.body?.trim() ? { body: input.body.trim().slice(0, 600) } : {}),
+      ...(input.from?.trim() ? { from: input.from.trim().slice(0, 60) } : {}),
+      ...(key ? { key } : {}),
+      ...(input.ask?.trim() ? { ask: input.ask.trim().slice(0, 300) } : {}),
+      ...(input.ask?.trim() && input.askLabel?.trim()
+        ? { askLabel: input.askLabel.trim().slice(0, 12) }
+        : {}),
+    })
+    if (this.watchBusy) this.told++
+    this.onTell?.(f)
+    return f
+  }
+  /** 최근에 먼저 알린 것 (살펴볼 때 같은 걸 또 올리지 않게 두리에게 보여 준다) */
+  recentTells(days = 14): FeedItem[] {
+    const since = this.now().getTime() - days * 86_400_000
+    return this.feedItems()
+      .filter((f) => f.kind === 'suggest' && Date.parse(f.at) >= since)
+      .slice(0, 20)
+  }
+
+  // ── 먼저 챙기기 ──
+  watchOn(): boolean {
+    return this.kv.getSetting('watchOff') !== true
+  }
+  setWatch(on: boolean) {
+    this.kv.setSetting('watchOff', !on)
+    this.onChange?.()
+  }
+  /**
+   * 하루 두 번(한국 시간 8:30, 18:30) 그 시각이 지나면 한 번씩 살펴본다.
+   * 밤(22시~7시)에는 하지 않는다: 자는 사이에 폰을 울리지 않게. PC를 늦게 켜도 그 낮 안이면 한다
+   */
+  private watchDue(): boolean {
+    const now = this.now()
+    const KST = 9 * 3600_000
+    const kst = new Date(now.getTime() + KST)
+    const hour = kst.getUTCHours()
+    if (hour < 7 || hour >= 22) return false
+    const at = (h: number, m: number) =>
+      Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), h, m) - KST
+    const slots = [at(8, 30), at(18, 30)].filter((t) => t <= now.getTime())
+    const last = slots.at(-1)
+    if (last === undefined) return false
+    const done = this.kv.getSetting('watchAt')
+    return typeof done !== 'string' || Date.parse(done) < last
+  }
+  /** 지금 살펴보기 (정해진 때가 되었거나, 화면에서 눌렀을 때) */
+  watchNow() {
+    if (this.watchBusy) return
+    this.watchBusy = true
+    this.told = 0
+    this.kv.setSetting('watchAt', this.now().toISOString())
+    this.onChange?.()
+    this.onWatch?.()
+  }
+  watchDone() {
+    if (!this.watchBusy) return
+    this.watchBusy = false
+    this.onChange?.()
+  }
+
   feedPrompt(): string | undefined {
     const v = this.kv.getSetting('feedPrompt')
     return typeof v === 'string' && v ? v : undefined
@@ -295,6 +390,7 @@ export class Life {
     const identity = this.identity()
     const ideas = this.ideas()
     const ideasAt = this.kv.getSetting('ideasAt')
+    const watchAt = this.kv.getSetting('watchAt')
     return {
       ...(ideas.length ? { ideas } : {}),
       ...(typeof ideasAt === 'string' ? { ideasAt } : {}),
@@ -305,6 +401,11 @@ export class Life {
       memory: this.memory(),
       feed: this.feedItems().slice(0, 100),
       ...(feedPrompt ? { feedPrompt } : {}),
+      watch: {
+        on: this.watchOn(),
+        ...(typeof watchAt === 'string' ? { at: watchAt } : {}),
+        ...(this.watchBusy ? { busy: true } : {}),
+      },
     }
   }
 
@@ -361,6 +462,12 @@ export class Life {
         return
       case 'ideas-refresh':
         this.refreshIdeas()
+        return
+      case 'watch':
+        this.setWatch(a.on)
+        return
+      case 'watch-now':
+        if (this.watchSources?.().length) this.watchNow()
         return
       case 'identity': {
         const next: Identity = { ...this.identity() }
@@ -422,6 +529,19 @@ export class Life {
             body: String(a.body ?? '').slice(0, 1500),
           })
           return ok(`피드에 올렸어요: ${f.title}`)
+        }
+        case 'feed_tell': {
+          const r = this.tell({
+            title: String(a.title ?? ''),
+            ...(a.body ? { body: String(a.body) } : {}),
+            ...(a.from ? { from: String(a.from) } : {}),
+            ...(a.key ? { key: String(a.key) } : {}),
+            ...(a.ask ? { ask: String(a.ask) } : {}),
+            ...(a.ask_label ? { askLabel: String(a.ask_label) } : {}),
+          })
+          if (r === 'dup') return ok('이미 알린 일이에요. 다시 올리지 않았어요.')
+          if (r === 'full') return bad('이번에는 3개까지만 알려요. 가장 중요한 것만 남기고 마쳐요.')
+          return ok(`피드에 올리고 폰에 알렸어요: ${r.title}`)
         }
         case 'goal_list': {
           const list = this.routines()
@@ -490,4 +610,38 @@ export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | und
   if (kind === 'every' && Number(a.minutes) >= 15)
     return { kind: 'every', minutes: Math.round(Number(a.minutes)) }
   return undefined
+}
+
+/**
+ * 먼저 챙기기: 피드 대화에서 두리에게 보내는 부탁.
+ * 연결한 서비스만, 확인한 새 소식만, 한 번에 3개까지, 이미 알린 건 빼고, 없으면 조용히.
+ */
+export function watchPrompt(services: ConnectionItem[], recent: FeedItem[], now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 3600_000)
+  const when = `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][kst.getUTCDay()]}요일 ${kst.getUTCHours()}시`
+  const list = services
+    .map((c) => {
+      const look = c.card.abilities.filter((a) => a.tier === '찾아보기').map((a) => a.title)
+      return `- ${c.card.name}(${c.card.id})${look.length ? `: ${look.join(', ')}` : ''}`
+    })
+    .join('\n')
+  const told = recent.length
+    ? recent.map((f) => `- ${f.title}${f.key ? ` [${f.key}]` : ''}`).join('\n')
+    : '- (아직 없음)'
+  return [
+    `먼저 챙기기 시간이에요 (지금 ${when}, 한국 시간). 사용자는 아무것도 부탁하지 않았어요. 비서처럼 먼저 살펴봐 주세요.`,
+    '',
+    '연결한 서비스 (이것만 열어 봐요):',
+    list,
+    '',
+    '할 일:',
+    '1. 위 서비스에서 사용자가 지금 알면 좋을 새 소식을 확인해요. 예: 배송·도착 예정, 다가오는 예약·일정, 답이 필요한 메일, 기록·결과 발표, 결제·만료·마감 예정. 기억해 둔 기념일·약속이 가까우면 그것도요.',
+    '2. 직접 확인한 것만 feed_tell로 하나씩 올려요 (중요한 것부터 3개까지). title은 두리 말투 한 줄, from은 어디서 봤는지, key는 같은 일을 또 알리지 않을 열쇠.',
+    '3. 두리가 이어서 해 줄 수 있으면 ask에 부탁을 적어요 (예: 선물 고르기, 답장 초안, 예약 다시 확인). 돈 내기·보내기·지우기는 지금 하지 않아요.',
+    '4. 알릴 게 없으면 아무것도 올리지 않아요. 로그인이 풀렸으면 로그인하지 말고 넘어가요. 사람이 해야 하는 단계가 나와도 멈추고 넘어가요.',
+    '5. 답은 한 문장으로만 (예: "2개 알렸어요", "새 소식 없어요").',
+    '',
+    '최근에 이미 알린 것 (다시 올리지 않아요):',
+    told,
+  ].join('\n')
 }

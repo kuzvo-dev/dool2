@@ -130,6 +130,7 @@ const TOOL_LABEL: Record<string, string> = {
   idea_suggest: '할 일 찾는',
   photo_view: '사진 보는',
   feed_post: '피드에 올리는',
+  feed_tell: '먼저 챙긴 일 알리는',
   connect_ask: '연결 카드 띄우는',
   conversation_search: '지난 대화 찾는',
 }

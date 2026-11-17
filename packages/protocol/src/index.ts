@@ -658,6 +658,16 @@ export interface FeedItem {
   ref?: string
   at: string
   reaction?: 'up' | 'down'
+  /** 먼저 챙기기(kind 'suggest'): 어디서 알게 됐는지 한 줄 (예: "쿠팡 주문 내역을 보고") */
+  from?: string
+  /** 먼저 챙기기: 같은 일을 두 번 알리지 않으려는 열쇠 (예: "coupang-order-123-도착") */
+  key?: string
+  /** 먼저 챙기기: [해 줘]를 누르면 두리에게 보낼 부탁. 없으면 알리기만 */
+  ask?: string
+  /** [해 줘] 버튼 글자 (예: "골라 줘"). 없으면 "해 줘" */
+  askLabel?: string
+  /** 사용자가 고른 답 */
+  answered?: 'yes' | 'no'
 }
 
 /** 두리 설정: 사용자를 부르는 이름, 말투, 답 길이 */
@@ -688,6 +698,8 @@ export interface LifeState {
   feed: FeedItem[]
   /** 피드에 무엇을 올릴지 사용자가 적은 말 */
   feedPrompt?: string
+  /** 먼저 챙기기: 연결한 서비스를 하루 두 번 살펴 챙길 일만 알린다 (기본 켜짐) */
+  watch?: { on: boolean; at?: string; busy?: boolean }
 }
 
 export type LifeAction =
@@ -710,6 +722,8 @@ export type LifeAction =
   | { action: 'memory-delete'; id: string }
   | ({ action: 'identity' } & Identity)
   | { action: 'ideas-refresh' }
+  | { action: 'watch'; on: boolean }
+  | { action: 'watch-now' }
 
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }

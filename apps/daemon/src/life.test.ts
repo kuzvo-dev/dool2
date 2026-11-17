@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Life, nextRun, parseSchedule, scheduleLabel } from './life.js'
+import { Life, nextRun, parseSchedule, scheduleLabel, watchPrompt } from './life.js'
 
 function kv() {
   const m = new Map<string, unknown>()
@@ -108,5 +108,127 @@ describe('피드 글', () => {
       title: '11/16 서울 날씨',
       body: '- 맑아요\n- 최고 17°',
     })
+  })
+})
+
+describe('먼저 챙기기', () => {
+  // 한국 시간을 UTC로 (hh:mm, 2026-11-16 월요일 기준 + 일)
+  const kst = (h: number, m = 0, day = 0) => new Date(Date.UTC(2026, 10, 16 + day, h - 9, m))
+  const setup = (start: Date, sources = ['coupang']) => {
+    let now = start
+    const life = new Life(kv(), () => now)
+    life.watchSources = () => sources
+    let runs = 0
+    life.onWatch = () => {
+      runs++
+    }
+    return {
+      life,
+      runs: () => runs,
+      at: (d: Date) => {
+        now = d
+      },
+    }
+  }
+
+  it('하루 두 번(8:30, 18:30)이 지나면 한 번씩 살펴본다', () => {
+    const t = setup(kst(8, 0))
+    t.life.tick()
+    expect(t.runs()).toBe(0)
+    t.at(kst(8, 31))
+    t.life.tick()
+    expect(t.runs()).toBe(1)
+    // 살펴보는 동안·끝난 뒤 같은 칸에서는 다시 하지 않는다
+    t.life.tick()
+    t.life.watchDone()
+    t.at(kst(12, 0))
+    t.life.tick()
+    expect(t.runs()).toBe(1)
+    t.at(kst(18, 45))
+    t.life.tick()
+    expect(t.runs()).toBe(2)
+    t.life.watchDone()
+    // 다음 날 아침
+    t.at(kst(9, 10, 1))
+    t.life.tick()
+    expect(t.runs()).toBe(3)
+  })
+
+  it('밤에는 하지 않고, 연결한 서비스가 없거나 끄면 하지 않는다', () => {
+    const night = setup(kst(23, 0))
+    night.life.tick()
+    expect(night.runs()).toBe(0)
+    const none = setup(kst(9, 0), [])
+    none.life.tick()
+    none.life.act({ action: 'watch-now' })
+    expect(none.runs()).toBe(0)
+    const off = setup(kst(9, 0))
+    off.life.act({ action: 'watch', on: false })
+    off.life.tick()
+    expect(off.runs()).toBe(0)
+    expect(off.life.state().watch).toEqual({ on: false })
+    off.life.act({ action: 'watch-now' })
+    expect(off.runs()).toBe(1)
+    expect(off.life.state().watch?.busy).toBe(true)
+  })
+
+  it('먼저 챙긴 일: 피드에 올리고 알리며, 같은 일은 다시 올리지 않고 한 번에 3개까지', () => {
+    const t = setup(kst(9, 0))
+    const told: string[] = []
+    t.life.onTell = (f) => told.push(f.title)
+    t.life.watchNow()
+    const first = t.life.run('feed_tell', {
+      title: '어제 주문한 러닝화, 내일 오전에 도착해요',
+      from: '쿠팡 주문 내역을 보고',
+      key: 'Coupang-123-도착',
+    })
+    expect(first.isError).toBeUndefined()
+    expect(t.life.feedItems()[0]).toMatchObject({
+      kind: 'suggest',
+      from: '쿠팡 주문 내역을 보고',
+      key: 'coupang-123-도착',
+    })
+    expect(
+      t.life.run('feed_tell', { title: '러닝화가 내일 와요', key: 'coupang-123-도착' }).content[0]?.text,
+    ).toContain('이미 알린')
+    t.life.run('feed_tell', {
+      title: '토요일이 엄마 생신이에요',
+      key: 'memory-엄마생신-2026',
+      ask: '엄마 생신 선물 3만 원대로 골라 줘',
+      ask_label: '골라 줘',
+    })
+    expect(t.life.feedItems()[0]).toMatchObject({
+      ask: '엄마 생신 선물 3만 원대로 골라 줘',
+      askLabel: '골라 줘',
+    })
+    t.life.run('feed_tell', { title: '내일 9시 치과 예약', key: 'cal-치과' })
+    expect(t.life.run('feed_tell', { title: '네 번째', key: 'x' }).isError).toBe(true)
+    expect(told).toHaveLength(3)
+    expect(t.life.recentTells().map((f) => f.key)).toEqual([
+      'cal-치과',
+      'memory-엄마생신-2026',
+      'coupang-123-도착',
+    ])
+  })
+
+  it('살펴보기 부탁: 연결한 서비스와 이미 알린 것을 담는다', () => {
+    const card = {
+      id: 'coupang',
+      name: '쿠팡',
+      abilities: [
+        { title: '배송 조회', say: '', tier: '찾아보기' },
+        { title: '장바구니 담기', say: '', tier: '채워 두기' },
+      ],
+    }
+    const text = watchPrompt(
+      [{ card, connectedAt: '2026-11-16T00:00:00Z' } as never],
+      [{ id: '1', kind: 'suggest', title: '러닝화 내일 도착', key: 'coupang-123', at: '' }],
+      kst(8, 30),
+    )
+    expect(text).toContain('11월 16일 월요일 8시')
+    expect(text).toContain('- 쿠팡(coupang): 배송 조회')
+    expect(text).not.toContain('장바구니')
+    expect(text).toContain('- 러닝화 내일 도착 [coupang-123]')
+    expect(text).toContain('feed_tell')
   })
 })

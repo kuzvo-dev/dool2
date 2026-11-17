@@ -74,7 +74,7 @@ import { BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
-import { Life } from './life.js'
+import { Life, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { ScreenTools } from './screen-tools.js'
@@ -1154,6 +1154,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })().catch(() => {
       life.ideasBusy = false
     })
+  // 먼저 챙기기: 하루 두 번, 연결한 서비스만 살펴 챙길 일이 있으면 feed_tell로 올린다 (없으면 조용히)
+  life.watchSources = () => Object.keys(readSettings().connections ?? {})
+  life.onWatch = () =>
+    void (async () => {
+      const threadId = await feedThreadId()
+      if (threads.isRunning(threadId)) return
+      const services = (await skills.connections()).filter((c) => c.connectedAt && c.card.how !== 'device')
+      if (!services.length) return
+      routineThreads.add(threadId)
+      try {
+        for await (const _ of tracked(
+          threadId,
+          threads.send(threadId, watchPrompt(services, life.recentTells())),
+        )) {
+        }
+      } finally {
+        routineThreads.delete(threadId)
+      }
+    })()
+      .catch(() => {})
+      .finally(() => life.watchDone())
+  life.onTell = (f) =>
+    void link
+      .notify({ title: f.title, body: f.body ?? f.from ?? '', tag: `tell-${f.id}`, url: '#tab=feed' })
+      .catch(() => {})
   life.onDue = (r) =>
     void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
   const lifeTimer = setInterval(() => life.tick(), 30_000)
