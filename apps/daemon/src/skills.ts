@@ -111,6 +111,21 @@ export class Skills {
     return readFile(join(this.dir, name, 'SKILL.md'), 'utf8').catch(() => undefined)
   }
 
+  /** 이 주소의 사이트에 절차(SKILL.md)가 있으면 그 스킬. 브라우저로 사이트를 열 때 요령을 먼저 읽게 알린다 */
+  async forUrl(url: string): Promise<SkillInfo | undefined> {
+    let host: string
+    try {
+      host = new URL(url).hostname
+    } catch {
+      return undefined
+    }
+    for (const info of await this.list()) {
+      const site = (await this.card(info.name))?.site
+      if (site && (host === site || host.endsWith(`.${site}`))) return info
+    }
+    return undefined
+  }
+
   /** 연결 카드 (형식이 틀린 카드는 건너뛴다. 레포 테스트가 미리 잡는다) */
   async card(name: string): Promise<ConnectCard | undefined> {
     if (!this.dir || !NAME.test(name)) return undefined

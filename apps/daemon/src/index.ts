@@ -990,6 +990,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return answer
     },
   })
+  browserTools.siteSkill = (url) => skills.forUrl(url)
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined

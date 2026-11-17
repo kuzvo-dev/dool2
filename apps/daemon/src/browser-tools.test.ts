@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BrowserTools, classifyRisk, parseRefs } from './browser-tools.js'
+import { BrowserTools, classifyRisk, nearlyEmpty, parseRefs } from './browser-tools.js'
 
 const PAGE = `# 두리 시험 가게
 검색어 [e1 입력칸 "검색어" 값="사과"] [e2 버튼 "검색"]
@@ -256,5 +256,56 @@ describe('로그인 카드', () => {
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('https')
     expect(tools.logins.list()).toHaveLength(0)
+  })
+})
+
+describe('사이트 요령·빈 화면', () => {
+  const EMPTY = '[e1 링크] [e2 링크] [e3 링크] [e4 링크]'
+  const browserWith = (texts: string[]) => {
+    let n = 0
+    return {
+      call: async (cmd: string) => {
+        if (cmd === 'open') return { tabId: 3 }
+        if (cmd === 'snapshot') {
+          const t = texts[Math.min(n++, texts.length - 1)]
+          return {
+            tabId: 3,
+            url: 'https://app.catchtable.co.kr/ct/x',
+            title: '캐치테이블',
+            text: t,
+            truncated: false,
+            captcha: false,
+          }
+        }
+        return { tabId: 3 }
+      },
+    }
+  }
+
+  it('표시만 있는 화면을 빈 화면으로 본다', () => {
+    expect(nearlyEmpty(EMPTY)).toBe(true)
+    expect(nearlyEmpty(PAGE)).toBe(false)
+  })
+
+  it('스킬이 있는 사이트를 처음 열면 먼저 읽으라고 한 번만 알린다', async () => {
+    const tools = new BrowserTools(browserWith([PAGE]))
+    tools.siteSkill = async (url) =>
+      url.includes('catchtable') ? { name: 'catchtable', description: '식당' } : undefined
+    const first = text(await tools.run('open', { url: 'https://app.catchtable.co.kr/' }))
+    expect(first).toContain("skill_read('catchtable')")
+    const again = text(await tools.run('read', { tabId: 3 }))
+    expect(again).not.toContain('skill_read')
+  })
+
+  it('막 연 화면이 비어 있으면 한 번 기다렸다 다시 읽는다', async () => {
+    const r = text(await new BrowserTools(browserWith([EMPTY, PAGE])).run('read', { tabId: 3 }))
+    expect(r).toContain('사과 1kg')
+    expect(r).not.toContain('글이 거의 없어요')
+  })
+
+  it('계속 비어 있으면 주소가 틀렸을 수 있다고 다른 길을 알린다', async () => {
+    const r = text(await new BrowserTools(browserWith([EMPTY])).run('read', { tabId: 3 }))
+    expect(r).toContain('글이 거의 없어요')
+    expect(r).toContain('홈')
   })
 })

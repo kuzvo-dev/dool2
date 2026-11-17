@@ -73,6 +73,16 @@ describe('스킬 검사', () => {
 })
 
 describe('스킬 도구', () => {
+  it('주소로 그 사이트의 스킬을 찾는다', async () => {
+    const s = new Skills(REPO_SKILLS)
+    expect((await s.forUrl('https://app.catchtable.co.kr/ct/map/search-map?keyword=성수'))?.name).toBe(
+      'catchtable',
+    )
+    expect((await s.forUrl('https://www.cjlogistics.com/ko/tool/parcel/tracking'))?.name).toBe('cj-logistics')
+    expect(await s.forUrl('https://example.com/')).toBeUndefined()
+    expect(await s.forUrl('not a url')).toBeUndefined()
+  })
+
   it('찾고 읽는다', async () => {
     const s = new Skills(REPO_SKILLS)
     const found = await s.run('find', { query: '택배 조회' })
