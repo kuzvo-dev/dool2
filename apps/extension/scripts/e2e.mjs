@@ -90,7 +90,9 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <p>4.5 (120) · 한식</p><em>오후 7:00</em><em>오후 7:30</em></li>
 <li class="shop"><a href="/shop/2"><b>가게 나</b></a>
 <p>4.1 (8) · 술집</p></li>
-<li class="shop" style="display:none"><b>숨은 가게</b></li></ul></body></html>`,
+<li class="shop" style="display:none"><b>숨은 가게</b></li></ul>
+<script>fetch('/api/items?q=%EC%84%B1%EC%88%98').then((r) => r.json()).then((d) => { document.title = '목록 ' + d.items.length })</script>
+</body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -301,7 +303,7 @@ try {
     assert.match(s.text, /안내는 그림이라 글로 읽을 수 없어요/)
   })
 
-  await step('커넥터 엔진: 목록 뽑기·글자 찾기·같은 사이트 데이터 요청', async () => {
+  await step('커넥터 엔진: 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기', async () => {
     await call('navigate', { tabId, url: `${base}/list` })
     const r = await call('extract', {
       tabId,
@@ -329,10 +331,15 @@ try {
     ])
     const f = await call('find', { tabId, patterns: { has: '가게 나', no: '없는 말' } })
     assert.deepEqual(f.found, { has: '가게 나', no: null })
-    const d = await call('fetch', { tabId, url: `${base}/api/items?q=%EC%84%B1%EC%88%98` })
-    assert.equal(d.status, 200)
-    assert.deepEqual(JSON.parse(d.body), { items: [{ name: '가게 가', q: '성수' }] })
-    await assert.rejects(call('fetch', { tabId, url: 'https://example.com/api' }), /사이트/)
+    // 페이지가 스스로 받은 응답 읽기: 두리는 요청하지 않고 듣기만 한다
+    const opened = await call('open', { url: `${base}/list`, capture: true })
+    const d = await call('capture', { tabId: opened.tabId, url: 'api/items', pick: 'items.*.name' })
+    assert.deepEqual(d.json, ['가게 가'])
+    await assert.rejects(
+      call('capture', { tabId: opened.tabId, url: 'api/none', timeoutMs: 600 }),
+      /받지 않았어요/,
+    )
+    await call('close', { tabId: opened.tabId })
   })
 
   await step('캡차 화면을 알아챈다', async () => {

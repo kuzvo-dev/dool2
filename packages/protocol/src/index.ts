@@ -316,10 +316,10 @@ export const BrowserCommandSchema = z.enum([
   'form',
   'form-fill',
   'mark-text',
-  /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·같은 사이트 데이터 요청 */
+  /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기 */
   'extract',
   'find',
-  'fetch',
+  'capture',
   /** 확장을 새 코드로 다시 켠다 (압축해제 확장을 다시 빌드한 뒤) */
   'reload',
 ])

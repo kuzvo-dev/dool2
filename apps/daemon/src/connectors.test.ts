@@ -145,6 +145,8 @@ async function setup(opts: { connected?: boolean; rows?: Record<string, unknown>
           url,
         }
       if (cmd === 'find') return { url, title: '', found: {} }
+      if (cmd === 'capture')
+        return { url: 'https://eats.example/api/list', status: 200, json: [{ n: '가게 다' }] }
       if (cmd === 'mark-text') return { ok: true, ref: 'e9', name: String(args?.text) }
       if (cmd === 'screenshot') return { data: 'AAAA', mime: 'image/jpeg', url, title: '' }
       return { tabId: 7 }
@@ -303,5 +305,30 @@ describe('서비스 도구 실행기', () => {
     scope.max = ''
     await c.step({ filter: { from: 'rows', where: 'price', op: 'lte', value: '{{max}}' }, as: 'all' }, ctx)
     expect(scope.all).toHaveLength(2)
+  })
+
+  it('capture는 주소를 열 때 응답 듣기를 켜고, 페이지가 받은 응답만 읽는다', async () => {
+    const { connectors, calls } = await setup()
+    const c = connectors as unknown as {
+      execute: (card: unknown, tool: unknown, args: unknown) => Promise<{ structuredContent?: unknown }>
+    }
+    const card = { ...CARD }
+    const tool = {
+      ...CONNECTOR.tools[0],
+      steps: [
+        { open: 'https://eats.example/search?q={{keyword|url}}' },
+        { capture: { url: 'api/list', pick: 'data' }, as: 'raw' },
+        { map: { from: 'raw', fields: { name: 'n' } }, as: 'shops' },
+      ],
+      output: { shops: { type: 'list', fields: { name: { type: 'string' } } } },
+    }
+    const r = await c.execute(card, tool, { keyword: '성수' })
+    expect(calls[0]).toEqual([
+      'open',
+      { url: 'https://eats.example/search?q=%EC%84%B1%EC%88%98', capture: true },
+    ])
+    expect(calls[1]?.[0]).toBe('capture')
+    expect(calls.some((x) => x[0] === 'fetch')).toBe(false)
+    expect(r.structuredContent).toEqual({ shops: [{ name: '가게 다' }] })
   })
 })

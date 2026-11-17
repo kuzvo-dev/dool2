@@ -9,42 +9,80 @@
       "status": "검증됨(2026-11-17, 검색·정렬)",
       "input": {
         "properties": {
-          "keyword": { "type": "string", "description": "찾을 상품 (예: 서랍 정리함, AA 건전지)", "maxLength": 60 },
-          "sort": {
+          "keyword": {
             "type": "string",
-            "enum": ["order", "revw", "new"],
-            "default": "order",
-            "description": "정렬: order = 많이 팔린 순(기본), revw = 리뷰 많은 순, new = 신상품 순"
+            "description": "찾을 상품 (예: 서랍 정리함, AA 건전지)",
+            "maxLength": 60
           }
         },
-        "required": ["keyword"]
+        "required": [
+          "keyword"
+        ]
       },
       "output": {
         "products": {
           "type": "list",
           "description": "상품",
           "fields": {
-            "name": { "type": "string" },
-            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 번호" },
-            "price": { "type": "integer", "description": "가격(원)" },
-            "rating": { "type": "number" },
-            "reviews": { "type": "integer" },
-            "ordered": { "type": "integer", "description": "누적 주문 수" },
-            "category": { "type": "string" },
-            "sold_out": { "type": "string", "description": "품절이면 Y" },
-            "pickup": { "type": "string", "description": "매장 픽업 가능하면 Y" },
-            "link": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "product_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 번호"
+            },
+            "price": {
+              "type": "integer",
+              "description": "가격(원)"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "ordered": {
+              "type": "integer",
+              "description": "누적 주문 수"
+            },
+            "category": {
+              "type": "string"
+            },
+            "sold_out": {
+              "type": "string",
+              "description": "품절이면 Y"
+            },
+            "pickup": {
+              "type": "string",
+              "description": "매장 픽업 가능하면 Y"
+            },
+            "link": {
+              "type": "string"
+            }
           }
         },
-        "total": { "type": "integer", "description": "전체 검색 결과 수" }
+        "total": {
+          "type": "integer",
+          "description": "전체 검색 결과 수"
+        }
       },
-      "examples": [{ "keyword": "서랍 정리함" }, { "keyword": "AA 건전지", "sort": "revw" }],
-      "steps": [
-        { "open": "https://www.daisomall.co.kr/ds/dst/SCR_DST_0015?searchTerm={{keyword|url}}" },
+      "examples": [
         {
-          "fetch": {
-            "url": "https://www.daisomall.co.kr/ssn/search/SearchGoods?searchTerm={{keyword|url}}&pageNum=1&cntPerPage=20&searchSort={{sort}}",
-            "pick": "resultSet.result.-1"
+          "keyword": "서랍 정리함"
+        },
+        {
+          "keyword": "AA 건전지"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.daisomall.co.kr/ds/dst/SCR_DST_0015?searchTerm={{keyword|url}}"
+        },
+        {
+          "capture": {
+            "url": "/ssn/search/SearchGoods\\?",
+            "pick": "resultSet.result.-1",
+            "timeoutMs": 12000
           },
           "as": "res"
         },
@@ -68,7 +106,10 @@
           "as": "products"
         }
       ],
-      "result": { "products": "{{products}}", "total": "{{res.totalSize}}" },
+      "result": {
+        "products": "{{products}}",
+        "total": "{{res.totalSize}}"
+      },
       "next": "가격·평점·리뷰 수를 견줘 2~3개를 짧게 보여 주고 고르게 해요. 가격 조건이 있으면 price로 걸러요. 사려면 daiso_mall_prepare_order에 product_id를 넘겨요.",
       "minIntervalSec": 300
     },
@@ -81,17 +122,36 @@
       "status": "초안",
       "input": {
         "properties": {
-          "item": { "type": "string", "description": "특정 상품만 볼 때 그 이름 일부 (예: 건전지). 없으면 최근 주문 전체", "maxLength": 40 }
+          "item": {
+            "type": "string",
+            "description": "특정 상품만 볼 때 그 이름 일부 (예: 건전지). 없으면 최근 주문 전체",
+            "maxLength": 40
+          }
         },
         "required": []
       },
       "output": {},
-      "examples": [{}, { "item": "건전지" }],
+      "examples": [
+        {},
+        {
+          "item": "건전지"
+        }
+      ],
       "steps": [
-        { "open": "https://www.daisomall.co.kr/or/orb/SCR_ORB_0001?tab=tab1" },
-        { "sleep": 1500 },
-        { "stop_if": "아이디 저장|비밀번호 찾기|간편 로그인", "say": "다이소몰 주문을 보려면 먼저 다이소몰을 연결(로그인)해야 해요.", "login": true },
-        { "handoff_to_agent": "다이소몰 주문내역 화면이에요. 최근 주문을 위에서부터 읽어 주문일·상품 이름·수량·결제 금액·받는 방법(택배/매장 픽업/오늘배송)·주문 상태(결제완료/상품준비중/배송중/배송완료/픽업대기 등)를 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요. 배송중이면 배송조회로 택배사·현재 위치를 읽어도 돼요(읽기만). 다시 주문할 거면 상품 번호(링크의 pdNo)도 적어 둬요. 취소·반품 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('daiso-mall'), 연결했는데 풀렸으면 browser_handoff." }
+        {
+          "open": "https://www.daisomall.co.kr/or/orb/SCR_ORB_0001?tab=tab1"
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "stop_if": "아이디 저장|비밀번호 찾기|간편 로그인",
+          "say": "다이소몰 주문을 보려면 먼저 다이소몰을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "다이소몰 주문내역 화면이에요. 최근 주문을 위에서부터 읽어 주문일·상품 이름·수량·결제 금액·받는 방법(택배/매장 픽업/오늘배송)·주문 상태(결제완료/상품준비중/배송중/배송완료/픽업대기 등)를 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요. 배송중이면 배송조회로 택배사·현재 위치를 읽어도 돼요(읽기만). 다시 주문할 거면 상품 번호(링크의 pdNo)도 적어 둬요. 취소·반품 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('daiso-mall'), 연결했는데 풀렸으면 browser_handoff."
+        }
       ],
       "result": {},
       "minIntervalSec": 600
@@ -104,18 +164,52 @@
       "status": "초안",
       "input": {
         "properties": {
-          "product_id": { "type": "string", "pattern": "^[A-Z0-9]{3,20}$", "description": "daiso_mall_search의 상품 번호 (예: 1065176)" },
-          "quantity": { "type": "integer", "minimum": 1, "maximum": 99, "default": 1, "description": "수량 (기본 1)" },
-          "receive": { "type": "string", "enum": ["택배", "매장 픽업"], "default": "택배", "description": "받는 방법 (기본 택배)" }
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{3,20}$",
+            "description": "daiso_mall_search의 상품 번호 (예: 1065176)"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1,
+            "description": "수량 (기본 1)"
+          },
+          "receive": {
+            "type": "string",
+            "enum": [
+              "택배",
+              "매장 픽업"
+            ],
+            "default": "택배",
+            "description": "받는 방법 (기본 택배)"
+          }
         },
-        "required": ["product_id"]
+        "required": [
+          "product_id"
+        ]
       },
       "output": {},
-      "examples": [{ "product_id": "1065176", "quantity": 2 }],
+      "examples": [
+        {
+          "product_id": "1065176",
+          "quantity": 2
+        }
+      ],
       "steps": [
-        { "open": "https://www.daisomall.co.kr/pd/pdr/SCR_PDR_0001?pdNo={{product_id}}" },
-        { "wait": { "text": "바로구매|장바구니|품절", "timeoutMs": 12000 } },
-        { "handoff_to_agent": "다이소몰 상품 화면이에요(상품 번호 {{product_id}}). 품절이면 그렇다고 알리고 멈춰요. 수량을 {{quantity}}개로 맞추고 받는 방법을 '{{receive}}'로 골라요(매장 픽업이면 사용자에게 매장을 물어요). '바로구매'를 누르기 전에 로그인 화면이 나오면 연결 전이면 connect_ask('daiso-mall'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·수량·받는 방법·배송지(동네까지만)나 픽업 매장·배송비·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 무료배송 기준 금액이 모자라면 그 차액을 알려 줘요." }
+        {
+          "open": "https://www.daisomall.co.kr/pd/pdr/SCR_PDR_0001?pdNo={{product_id}}"
+        },
+        {
+          "wait": {
+            "text": "바로구매|장바구니|품절",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "handoff_to_agent": "다이소몰 상품 화면이에요(상품 번호 {{product_id}}). 품절이면 그렇다고 알리고 멈춰요. 수량을 {{quantity}}개로 맞추고 받는 방법을 '{{receive}}'로 골라요(매장 픽업이면 사용자에게 매장을 물어요). '바로구매'를 누르기 전에 로그인 화면이 나오면 연결 전이면 connect_ask('daiso-mall'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·수량·받는 방법·배송지(동네까지만)나 픽업 매장·배송비·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 무료배송 기준 금액이 모자라면 그 차액을 알려 줘요."
+        }
       ],
       "result": {}
     },
@@ -128,19 +222,54 @@
       "status": "초안",
       "input": {
         "properties": {
-          "item": { "type": "string", "description": "반품할 상품 이름 일부 (예: 유리컵)", "maxLength": 40 },
-          "kind": { "type": "string", "enum": ["반품", "교환", "취소"], "default": "반품", "description": "무엇을 할지 (기본 반품)" },
-          "reason": { "type": "string", "description": "사유 (예: 깨져서 왔어요, 단순 변심)", "maxLength": 80 }
+          "item": {
+            "type": "string",
+            "description": "반품할 상품 이름 일부 (예: 유리컵)",
+            "maxLength": 40
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "반품",
+              "교환",
+              "취소"
+            ],
+            "default": "반품",
+            "description": "무엇을 할지 (기본 반품)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "사유 (예: 깨져서 왔어요, 단순 변심)",
+            "maxLength": 80
+          }
         },
-        "required": ["item"]
+        "required": [
+          "item"
+        ]
       },
       "output": {},
-      "examples": [{ "item": "유리컵", "kind": "반품", "reason": "깨져서 왔어요" }],
+      "examples": [
+        {
+          "item": "유리컵",
+          "kind": "반품",
+          "reason": "깨져서 왔어요"
+        }
+      ],
       "steps": [
-        { "open": "https://www.daisomall.co.kr/or/orb/SCR_ORB_0001?tab=tab1" },
-        { "sleep": 1500 },
-        { "stop_if": "아이디 저장|비밀번호 찾기|간편 로그인", "say": "다이소몰 주문을 반품하려면 먼저 다이소몰을 연결(로그인)해야 해요.", "login": true },
-        { "handoff_to_agent": "다이소몰 주문내역 화면이에요. '{{item}}' 주문을 찾아 {{kind}} 신청 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고(파손·불량이면 판매자 책임 사유), 사진 첨부가 필요하면 사용자에게 사진을 받아요. 수거 방법·반품 배송비·환불 예정 금액을 확인하고, 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·환불 금액·반품 배송비를 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요. 매장 픽업 상품이면 매장 반품 안내를 그대로 알려 줘요." }
+        {
+          "open": "https://www.daisomall.co.kr/or/orb/SCR_ORB_0001?tab=tab1"
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "stop_if": "아이디 저장|비밀번호 찾기|간편 로그인",
+          "say": "다이소몰 주문을 반품하려면 먼저 다이소몰을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "다이소몰 주문내역 화면이에요. '{{item}}' 주문을 찾아 {{kind}} 신청 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고(파손·불량이면 판매자 책임 사유), 사진 첨부가 필요하면 사용자에게 사진을 받아요. 수거 방법·반품 배송비·환불 예정 금액을 확인하고, 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·환불 금액·반품 배송비를 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요. 매장 픽업 상품이면 매장 반품 안내를 그대로 알려 줘요."
+        }
       ],
       "result": {}
     }

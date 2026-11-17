@@ -69,3 +69,19 @@ export function safeUrl(raw: unknown): string | undefined {
     return undefined
   }
 }
+
+/** JSON에서 점 경로로 꺼내기: "data.list", 뒤에서 "items.-1", 모으기 "items.*.name" (빈 경로면 전체) */
+export function pickPath(v: unknown, path: string): unknown {
+  const keys = path.split('.').filter(Boolean)
+  let cur = v
+  for (const [i, k] of keys.entries()) {
+    if (cur === null || cur === undefined) return undefined
+    if (k === '*') {
+      if (!Array.isArray(cur)) return undefined
+      const rest = keys.slice(i + 1).join('.')
+      return cur.map((x) => (rest ? pickPath(x, rest) : x)).filter((x) => x !== undefined && x !== null)
+    }
+    cur = Array.isArray(cur) && /^-\d+$/.test(k) ? cur.at(Number(k)) : (cur as Record<string, unknown>)[k]
+  }
+  return cur
+}

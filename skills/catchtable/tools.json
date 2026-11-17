@@ -4,7 +4,7 @@
     {
       "name": "search",
       "title": "식당 빈자리 찾기",
-      "description": "지역·가게 이름·음식으로 캐치테이블 식당을 찾고, 그 날짜·인원으로 예약할 수 있는 시간을 가게마다 돌려준다(이름·지역·음식·별점·리뷰 수·가격대·한 줄 소개·빈 시간). 로그인 없이 된다. 사용자가 고르면 catchtable_prepare_booking으로 예약 직전까지 간다. 요일만 들었으면 날짜로 바꿔 쓴다.",
+      "description": "지역·가게 이름·음식으로 캐치테이블 식당을 찾고, 그 날짜·인원으로 예약할 수 있는 시간을 가게마다 돌려준다(이름·지역·음식·별점·리뷰 수·가격대·한 줄 소개·빈 시간). 로그인 없이 된다. 캐치테이블 검색 화면을 그 날짜·인원으로 열고 화면이 받은 결과를 읽는다. 사용자가 고르면 catchtable_prepare_booking으로 예약 직전까지 간다. 요일만 들었으면 날짜로 바꿔 쓴다.",
       "tier": "찾아보기",
       "status": "검증됨(2026-11-17, 성수·한남 검색, 날짜·인원별 빈 시간)",
       "input": {
@@ -88,14 +88,13 @@
       ],
       "steps": [
         {
-          "open": "https://app.catchtable.co.kr/ct/map/search-map?keyword={{keyword|url}}&keywordSearch={{keyword|url}}&serviceType=INTEGRATION"
+          "open": "https://app.catchtable.co.kr/ct/map/search-map?keyword={{keyword|url}}&keywordSearch={{keyword|url}}&serviceType=INTEGRATION&date={{date|yymmdd}}&personCount={{people}}"
         },
         {
-          "fetch": {
-            "url": "https://ct-api.catchtable.co.kr/api/v7/search/list",
-            "method": "POST",
-            "body": "{\"paging\":{\"offset\":\"0\",\"size\":{{limit|json}}},\"listType\":\"GENERAL\",\"reservationParams\":{\"reservationDate\":{{date|json}},\"personCount\":{{people|json}}},\"divideType\":\"DIVIDE_BY_AVAILABILITY\",\"sort\":{\"sortType\":\"recommended\"},\"filters\":{\"contractedType\":\"CONTRACTED_ONLY\"},\"keywordSearch\":{\"keyword\":{{keyword|json}}}}",
-            "pick": "data.shopResults.shops"
+          "capture": {
+            "url": "/api/v\\d+/search/list$",
+            "pick": "data.shopResults.shops",
+            "timeoutMs": 12000
           },
           "as": "found"
         },

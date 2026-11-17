@@ -119,15 +119,27 @@ export const StepSchema = z.union([
       min: z.number().int().min(0).max(50).optional(),
     })
     .strict(),
-  /** 이 탭의 사이트 안에서 데이터 요청 (JSON). pick = 결과에서 꺼낼 경로 (예: data.list) */
+  /**
+   * 화면에 박혀 있는 데이터(JSON) 읽기: 서버가 결과를 화면과 함께 보내는 사이트 (script#__NEXT_DATA__ 등).
+   * css = 그 요소, pick = 꺼낼 경로
+   */
   z
     .object({
-      fetch: z
+      embedded: z.object({ css: Text(300), pick: z.string().max(300).optional() }).strict(),
+      as: Key,
+    })
+    .strict(),
+  /**
+   * 페이지가 스스로 받은 응답(JSON) 읽기. 두리가 요청을 보내지 않는다: 사람이 그 화면을 열 때 사이트가 받는 데이터 중
+   * 주소가 url(정규식)에 맞는 마지막 응답을 읽고 pick 경로를 꺼낸다. 이 도구의 open이 응답 듣기를 켠다
+   */
+  z
+    .object({
+      capture: z
         .object({
-          url: Text(800),
-          method: z.enum(['GET', 'POST']).optional(),
-          body: z.string().max(4000).optional(),
+          url: Text(300),
           pick: z.string().max(200).optional(),
+          timeoutMs: z.number().int().min(500).max(30_000).optional(),
         })
         .strict(),
       as: Key,
@@ -202,7 +214,8 @@ export const STEP_KINDS = [
   'press',
   'sleep',
   'extract',
-  'fetch',
+  'capture',
+  'embedded',
   'map',
   'filter',
   'stop_if',
@@ -412,16 +425,6 @@ export function onSite(url: string, site: string): boolean {
   }
 }
 
-/** 데이터 요청으로 해서는 안 되는 일 (결제·주문·보내기): 그런 일은 화면 버튼 + 승인으로만 */
-const RISKY_FETCH =
-  /\/(?:checkout|payments?|pay|orders?\/(?:create|place|submit)|purchase|send|delete|remove|withdraw|transfer)(?:[/?#.]|$)/i
-
-export function riskyFetch(url: string, body?: string): string | undefined {
-  if (RISKY_FETCH.test(url.replace(EXPR, 'x'))) return '결제·주문·보내기·삭제 주소'
-  if (body && /\bmutation\b/.test(body)) return '데이터를 바꾸는 요청(mutation)'
-  return undefined
-}
-
 const BANNED = [
   /(캡차|보안\s*문자|자동입력\s*방지|captcha|본인\s*인증|인증번호)[^\n]{0,20}(풀|우회|입력해|넣어|자동으로)/i,
   /(비밀번호|카드\s*번호|cvc|공동인증서\s*암호)[^\n]{0,15}(입력|넣)(?![^\n]*(사람|사용자|넘긴|하지 않))/i,
@@ -476,15 +479,13 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
         useAll(s.require, where)
         useAll(s.say, where)
       }
-      if ('fetch' in s) {
-        useAll(s.fetch.url, where)
-        if (s.fetch.body) useAll(s.fetch.body, where)
-        if (site && !onSite(s.fetch.url, site))
-          problems.push(`${at} ${where}: ${site} 주소에만 요청할 수 있어요 (${s.fetch.url})`)
-        const bad = riskyFetch(s.fetch.url, s.fetch.body)
-        if (bad) problems.push(`${at} ${where}: ${bad}는 데이터 요청으로 할 수 없어요 (화면 버튼 + 승인으로)`)
-        if (s.fetch.method === 'POST' && t.tier !== '찾아보기' && t.tier !== '채워 두기')
-          problems.push(`${at} ${where}: 돈 내기·연락하기 도구는 POST 요청을 쓸 수 없어요`)
+      if ('capture' in s) {
+        useAll(s.capture.url, where)
+        try {
+          new RegExp(s.capture.url.replace(/\{\{[^}]*\}\}/g, 'x'))
+        } catch {
+          problems.push(`${at} ${where}: capture의 주소 패턴(정규식)이 틀렸어요`)
+        }
       }
       if ('filter' in s) {
         useAll(`{{${s.filter.from}}}`, where)
