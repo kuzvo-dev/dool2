@@ -4,6 +4,7 @@
   "site": "yogiyo.co.kr",
   "category": "grocery",
   "how": "browser",
+  "loginUrl": "https://www.yogiyo.co.kr/mobile/#/login/",
   "social": [
     "kakao",
     "naver"

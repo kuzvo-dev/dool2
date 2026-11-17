@@ -4,7 +4,7 @@
   "site": "musinsa.com",
   "category": "fashion",
   "how": "browser",
-  "loginUrl": "https://member.one.musinsa.com/login",
+  "loginUrl": "https://www.musinsa.com/auth/login",
   "social": [
     "kakao",
     "apple"

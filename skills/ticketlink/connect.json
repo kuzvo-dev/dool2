@@ -4,6 +4,7 @@
   "site": "ticketlink.co.kr",
   "category": "tickets",
   "how": "browser",
+  "loginUrl": "https://www.ticketlink.co.kr/auth/login",
   "social": [
     "naver",
     "payco"
