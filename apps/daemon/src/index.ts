@@ -88,7 +88,7 @@ export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './br
 export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
-export { parseSkill, Skills, validateSkill } from './skills.js'
+export { Skills } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
 export interface DaemonOptions {
@@ -1004,7 +1004,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return answer
     },
   })
-  browserTools.siteSkill = (url) => skills.forUrl(url)
   browserTools.siteConnector = (url) => connectors.forUrl(url)
   // 확장이 닫힌 두리 탭을 알리면 그 탭 기록을 지운다 (안 지우면 하루 내내 쌓인다)
   browser.on('notice', (n) => {
@@ -1398,10 +1397,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return json(res, 200, await connectors.call(String(args.tool ?? ''), input))
         }
         return json(res, 404, { error: '없는 주소예요' })
-      }
-      if (req.method === 'POST' && b === 'skill' && c && !d) {
-        const args = (await readJson(req)) as Record<string, unknown>
-        return json(res, 200, await skills.run(c, args && typeof args === 'object' ? args : {}))
       }
       return json(res, 404, { error: '없는 주소예요' })
     }

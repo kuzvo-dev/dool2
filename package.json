@@ -15,7 +15,8 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "dev:daemon": "pnpm build && pnpm --filter @dool2/daemon dev",
-    "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev"
+    "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev",
+    "connector": "node apps/daemon/scripts/connector.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

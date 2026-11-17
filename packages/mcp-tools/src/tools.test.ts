@@ -19,8 +19,6 @@ describe('두리 MCP 도구', () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name)).toEqual([
       'status',
-      'skill_find',
-      'skill_read',
       'browser_open',
       'browser_navigate',
       'browser_read',

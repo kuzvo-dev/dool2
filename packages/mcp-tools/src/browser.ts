@@ -174,34 +174,3 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   )
   tool('close', '탭 닫기', '다 쓴 두리 탭을 닫는다. 일이 끝나면 연 탭을 닫는다.', { tabId }, false)
 }
-
-/** 스킬 도구: 한국 서비스별 사용법 문서를 찾고 읽는다 (skills/, CC BY-SA 4.0) */
-export function registerSkillTools(server: McpServer, client: BrowserClient) {
-  server.registerTool(
-    'skill_find',
-    {
-      title: '스킬 찾기',
-      description:
-        '특정 서비스(택배 조회, 기차 예매, 홈택스 등)에서 일하기 전에 먼저 쓴다. 두리가 정리해 둔 그 서비스 사용법(스킬)이 있는지, 사용자가 그 서비스를 연결해 뒀는지 찾는다.',
-      inputSchema: { query: z.string().max(100).describe('서비스 이름이나 할 일 (예: "CJ 택배 조회")') },
-      annotations: { readOnlyHint: true },
-    },
-    async (args) => {
-      const r = await client('find', args)
-      return { content: r.content, ...(r.isError ? { isError: true } : {}) }
-    },
-  )
-  server.registerTool(
-    'skill_read',
-    {
-      title: '스킬 읽기',
-      description: 'skill_find로 찾은 스킬을 읽는다. 적힌 절차·막힐 때·하지 말 것을 따른다.',
-      inputSchema: { name: z.string().max(60).describe('스킬 이름 (예: cj-logistics)') },
-      annotations: { readOnlyHint: true },
-    },
-    async (args) => {
-      const r = await client('read', args)
-      return { content: r.content, ...(r.isError ? { isError: true } : {}) }
-    },
-  )
-}
