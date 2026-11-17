@@ -96,6 +96,8 @@ export interface DaemonOptions {
   token?: string
   /** 배포 앱: 묶어 둔 두리 도구 서버 스크립트 (없으면 @dool2/mcp-tools/server) */
   mcpServerScript?: string
+  /** 시험용: 도구 주소(/api/tools) 토큰을 정해 둔다 (없으면 켤 때마다 새로 만든다) */
+  toolToken?: string
   /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
@@ -239,7 +241,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
   }
   // 두리 도구 서버(MCP)는 에이전트가 띄우는 자식이라 화면용 토큰과 다른 토큰을 준다. 이 토큰은 도구 주소만 부를 수 있다 (T5)
-  const toolToken = randomBytes(32).toString('hex')
+  const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** 목표·보관함·기억·피드 */
   const life = new Life(store)

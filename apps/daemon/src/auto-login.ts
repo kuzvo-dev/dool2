@@ -214,7 +214,8 @@ async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
   }
   const thin = (p: Snap) =>
     p.text.replace(/\s/g, '').length < 12 ||
-    ((p.text.match(/\[e\d+ /g)?.length ?? 0) < 3 && !fields(p)) ||
+    // 이름 있는 것이 세 개 안 되면 아직 껍데기만 그렸다 (캐치테이블: 이름 없는 링크 넷만 먼저 뜬다)
+    ((p.text.match(/\[e\d+ [^\]"]*"[^"]+"/g)?.length ?? 0) < 3 && !fields(p)) ||
     // 간편 로그인만 있는 화면("카카오로 시작")은 칸이 없어도 다 그려진 것이다.
     // 위쪽 메뉴의 "로그인" 버튼, 화면 안 액자(구글 버튼)는 본문이 그려졌다는 뜻이 아니다
     (loginPath(p) &&
@@ -232,6 +233,10 @@ async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
 /** 첫 화면을 덮는 광고·공지 팝업 닫기 ("오늘은 그만 보기", "닫기"). 로그인 버튼이 그 아래에 깔려 눌리지 않는다 */
 const POPUP_CLOSE =
   /^(닫기|팝업\s?닫기|close|오늘은?\s?그만\s?보기|오늘\s?하루\s?(동안\s?)?(보지|열지)\s?않기|다시\s?보지\s?않기|일주일간\s?보지\s?않기)$/i
+const hasPopup = (text: string) =>
+  ([...parseRefs(text)] as RefEntry[]).some(
+    ([, r]) => (r.role === '버튼' || r.role === '링크') && POPUP_CLOSE.test(r.name.trim()),
+  )
 async function closePopups(
   browser: AutoLoginBrowser,
   tabId: number,
@@ -698,14 +703,28 @@ export async function socialLogin(
   // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
   const tried = new Set<string>()
   let btn = findProviderButton(page.text, input.provider)
-  for (let i = 0; i < 4 && !btn; i++) {
+  for (let i = 0, late = 0; i < 4 && !btn; i++) {
     const target = findLoginLink(page.text, tried)
-    if (!target) break
+    if (!target) {
+      // 아래쪽 메뉴(MY)를 늦게 그리는 사이트: 조금 기다렸다 다시 본다 (캐치테이블)
+      if (late++ >= 3) break
+      await sleep(wait)
+      page = await snap(siteTab)
+      btn = findProviderButton(page.text, input.provider)
+      i--
+      continue
+    }
     tried.add(target[1].name.trim())
+    const before = page.url
     await browser.call('click', { tabId: siteTab, ref: target[0] }, 30_000).catch(() => undefined)
     await sleep(wait)
     page = await settled(() => snap(siteTab), wait)
     btn = findProviderButton(page.text, input.provider)
+    // 누르는 순간 광고 팝업이 떠서 클릭을 가로챘다: 팝업을 닫고 같은 링크를 한 번 더 누른다
+    if (!btn && page.url === before && hasPopup(page.text)) {
+      page = await closePopups(browser, siteTab, page, snap, wait)
+      tried.delete(target[1].name.trim())
+    }
   }
   if (!btn)
     return {
