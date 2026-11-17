@@ -1,0 +1,276 @@
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { checkConnectCard } from '@dool2/protocol/connect'
+import { checkConnector } from '@dool2/protocol/connector'
+import { describe, expect, it } from 'vitest'
+import { BrowserTools } from './browser-tools.js'
+import { Connectors } from './connectors.js'
+
+const REPO_SKILLS = fileURLToPath(new URL('../../../skills', import.meta.url))
+
+describe('레포의 서비스 도구', () => {
+  it('모든 tools.json이 형식과 안전 규칙을 지킨다', async () => {
+    for (const d of await readdir(REPO_SKILLS, { withFileTypes: true })) {
+      if (!d.isDirectory() || d.name.startsWith('_')) continue
+      const raw = await readFile(join(REPO_SKILLS, d.name, 'tools.json'), 'utf8').catch(() => undefined)
+      if (!raw) continue
+      const card = JSON.parse(await readFile(join(REPO_SKILLS, d.name, 'connect.json'), 'utf8'))
+      expect(checkConnectCard(d.name, card), d.name).toEqual([])
+      expect(checkConnector(d.name, JSON.parse(raw), card.site), d.name).toEqual([])
+    }
+  })
+})
+
+const CARD = {
+  id: 'demo-eats',
+  name: '데모맛집',
+  site: 'eats.example',
+  category: 'tickets',
+  how: 'browser',
+  login: '아이디·비밀번호',
+  summary: '데모맛집을 연결하면 식당 찾기부터 예약까지 두리에게 맡길 수 있어요.',
+  example: { ask: '성수 저녁 4명', working: '빈자리 찾는 중', reply: '가게 가에 7시 자리가 있어요.' },
+  abilities: [
+    { title: '식당 찾기', say: '성수 저녁 4명', tier: '찾아보기' },
+    { title: '예약', say: '거기 7시로 잡아 줘', tier: '돈 내기' },
+  ],
+}
+
+const CONNECTOR = {
+  id: 'demo-eats',
+  tools: [
+    {
+      name: 'search',
+      title: '식당 찾기',
+      description: '지역·가게 이름으로 식당과 날짜별 빈자리를 찾는다. 가게 이름·별점·빈 시간을 돌려준다.',
+      tier: '찾아보기',
+      status: '검증됨(2026-11-17)',
+      input: {
+        properties: {
+          keyword: { type: 'string', description: '지역이나 가게 이름 (예: 성수)' },
+          date: { type: 'string', format: 'date', description: '날짜 YYYY-MM-DD' },
+        },
+        required: ['keyword'],
+      },
+      output: {
+        shops: {
+          type: 'list',
+          description: '가게',
+          fields: { name: { type: 'string' }, rating: { type: 'number' }, times: { type: 'strings' } },
+        },
+      },
+      examples: [{ keyword: '성수' }],
+      steps: [
+        { open: 'https://eats.example/search?q={{keyword|url}}&d={{date|yymmdd}}' },
+        { wait: { items: 'li.shop', timeoutMs: 500 } },
+        {
+          extract: {
+            items: 'li.shop',
+            fields: {
+              name: { css: 'b' },
+              rating: { css: 'p', match: '(\\d\\.\\d)' },
+              times: { css: 'em', list: true },
+            },
+          },
+          as: 'shops',
+        },
+      ],
+      result: { shops: '{{shops}}' },
+      next: '예약하려면 demo_eats_book을 불러요.',
+      minIntervalSec: 300,
+    },
+    {
+      name: 'book',
+      title: '예약',
+      description: '고른 가게의 시간을 골라 예약 직전까지 간 뒤 사용자 승인을 받는다.',
+      tier: '돈 내기',
+      login: true,
+      status: '초안',
+      input: {
+        properties: {
+          shop: { type: 'string', description: '가게 이름' },
+          time: { type: 'string', format: 'time', description: '시간 HH:MM' },
+        },
+        required: ['shop', 'time'],
+      },
+      output: {},
+      examples: [{ shop: '가게 가', time: '19:00' }],
+      steps: [
+        { open: 'https://eats.example/shop?name={{shop|url}}' },
+        { click: { text: '{{time|ampm}}' } },
+        { approve: { text: '예약하기', what: '{{shop}} {{time}} 예약', where: '데모맛집' } },
+      ],
+      result: {},
+    },
+    {
+      name: 'peek',
+      title: '나쁜 도구',
+      description: '찾아보기인데 위험한 버튼을 누르려는 도구 (시험용).',
+      tier: '찾아보기',
+      status: '초안',
+      input: { properties: {}, required: [] },
+      output: {},
+      examples: [{}],
+      steps: [{ open: 'https://eats.example/' }, { click: { text: '바로 구매' } }],
+      result: {},
+    },
+  ],
+}
+
+const PAGE = '[e1 버튼 "오후 7:00"] [e2 버튼 "예약하기"] [e3 버튼 "바로 구매"]'
+
+async function setup(opts: { connected?: boolean; rows?: Record<string, unknown>[] } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+  await mkdir(join(dir, 'demo-eats'))
+  await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+  await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(CONNECTOR))
+  const calls: [string, Record<string, unknown> | undefined][] = []
+  let url = 'https://eats.example/'
+  const browser = {
+    call: async (cmd: string, args?: Record<string, unknown>) => {
+      calls.push([cmd, args])
+      if (cmd === 'open' || cmd === 'navigate') {
+        url = String(args?.url)
+        return { tabId: 7 }
+      }
+      if (cmd === 'snapshot')
+        return { tabId: 7, url, title: '데모', text: PAGE, truncated: false, captcha: false }
+      if (cmd === 'extract')
+        return {
+          ok: true,
+          rows: opts.rows ?? [{ name: '가게 가', rating: '4.5 (12)', times: ['오후 7:00'] }],
+          total: 1,
+          url,
+        }
+      if (cmd === 'find') return { url, title: '', found: {} }
+      if (cmd === 'mark-text') return { ok: true, ref: 'e9', name: String(args?.text) }
+      if (cmd === 'screenshot') return { data: 'AAAA', mime: 'image/jpeg', url, title: '' }
+      return { tabId: 7 }
+    },
+  }
+  const tools = new BrowserTools(browser)
+  const connectors = new Connectors({
+    dir,
+    browser,
+    tools,
+    connected: () => (opts.connected ? { 'demo-eats': '2026-11-17T00:00:00Z' } : {}),
+    pollMs: 1,
+  })
+  return { connectors, calls, tools }
+}
+
+const textOf = (r: { content: { type: string; text?: string }[] }) =>
+  r.content.map((c) => c.text ?? '').join('\n')
+
+describe('서비스 도구 실행기', () => {
+  it('정해진 순서로 열고 목록을 뽑아 글과 구조화된 결과로 돌려준다', async () => {
+    const { connectors, calls } = await setup()
+    const r = await connectors.call('demo_eats_search', { keyword: '성수 맛집', date: '2026-11-27' })
+    expect(r.isError).toBeUndefined()
+    expect(calls[0]).toEqual([
+      'open',
+      { url: 'https://eats.example/search?q=%EC%84%B1%EC%88%98%20%EB%A7%9B%EC%A7%91&d=261127' },
+    ])
+    expect(r.structuredContent).toEqual({ shops: [{ name: '가게 가', rating: 4.5, times: ['오후 7:00'] }] })
+    expect(textOf(r)).toContain('1. name: 가게 가 · rating: 4.5 · times: 오후 7:00')
+    expect(textOf(r)).toContain('예약하려면 demo_eats_book')
+    expect(textOf(r)).toContain('[탭 7]')
+  })
+
+  it('같은 입력은 정한 간격 안에 다시 사이트에 묻지 않는다', async () => {
+    const { connectors, calls } = await setup()
+    await connectors.call('demo_eats_search', { keyword: '성수' })
+    const n = calls.length
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(calls.length).toBe(n)
+    expect(textOf(r)).toContain('전에 본 결과')
+  })
+
+  it('입력이 틀리면 실행하지 않고 무엇을 고칠지 알려 준다', async () => {
+    const { connectors, calls } = await setup()
+    const r = await connectors.call('demo_eats_search', { date: '11월 27일' })
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toMatch(/keyword가 필요해요.*date는 YYYY-MM-DD/)
+    expect(calls).toEqual([])
+  })
+
+  it('목록이 안 나오면 막힌 단계와 탭을 알려 브라우저 도구로 잇게 한다', async () => {
+    const { connectors } = await setup({ rows: [] })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toMatch(/2단계\(wait\)에서 막혔어요.*\[탭 7\].*browser_read/)
+    expect(connectors.breakages[0]).toMatchObject({ tool: 'demo_eats_search', step: 2, kind: 'wait' })
+  })
+
+  it('연결이 필요한 도구는 연결 전이면 실행 대신 연결 안내', async () => {
+    const { connectors, calls } = await setup()
+    const r = await connectors.call('demo_eats_book', { shop: '가게 가', time: '19:00' })
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain("connect_ask('demo-eats')")
+    expect(calls).toEqual([])
+  })
+
+  it('돈 내기 도구는 마지막 버튼을 누르지 않고 승인 요청으로 끝낸다', async () => {
+    const { connectors, calls, tools } = await setup({ connected: true })
+    const r = await connectors.call('demo_eats_book', { shop: '가게 가', time: '19:00' })
+    expect(textOf(r)).toContain('승인을 요청했어요')
+    // 시간 버튼은 눌렀고(오후 7:00), 예약하기는 누르지 않았다
+    const clicks = calls.filter((c) => c[0] === 'click')
+    expect(clicks).toHaveLength(1)
+    const pending = tools.approvals.list()
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      label: '예약하기',
+      kind: 'money',
+      what: '가게 가 19:00 예약',
+      where: '데모맛집',
+    })
+  })
+
+  it('찾아보기 도구도 위험한 버튼은 못 누른다 (승인 게이트 그대로)', async () => {
+    const { connectors, calls } = await setup()
+    await expect(connectors.catalog()).resolves.toEqual([])
+    const r = await connectors.call('demo_eats_peek', {})
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toMatch(/^멈췄어요: "구매"/)
+    expect(calls.some((c) => c[0] === 'click')).toBe(false)
+  })
+
+  it('바로 보이는 도구는 연결한 서비스의 것만, 등급으로 MCP 힌트를 단다', async () => {
+    const off = await setup()
+    expect(await off.connectors.catalog()).toEqual([])
+    const on = await setup({ connected: true })
+    const cat = await on.connectors.catalog()
+    expect(cat.map((t) => t.name)).toEqual(['demo_eats_search', 'demo_eats_book', 'demo_eats_peek'])
+    expect(cat[0]?.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    })
+    expect(cat[1]?.annotations.destructiveHint).toBe(true)
+    expect(cat[0]?.description).toContain('입력 예: {"keyword":"성수"}')
+  })
+
+  it('서비스 찾기는 도구·등급·입력 칸과 연결하면 되는 일을 알려 준다', async () => {
+    const { connectors } = await setup()
+    const r = textOf(await connectors.find('성수 식당'))
+    expect(r).toContain('## 데모맛집 (demo-eats) — 연결 전')
+    expect(r).toContain(
+      '- demo_eats_search [찾아보기 · 로그인 없이] 식당 찾기 — 입력: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
+    )
+    expect(r).toContain("연결하면 바로: 예약. 그 단계가 되면 connect_ask('demo-eats')")
+  })
+
+  it('주소로 그 사이트의 도구를 찾는다 (브라우저로 열었을 때 도구를 쓰라고)', async () => {
+    const { connectors } = await setup()
+    expect(await connectors.forUrl('https://m.eats.example/x')).toEqual({
+      id: 'demo-eats',
+      name: '데모맛집',
+      tools: ['demo_eats_search', 'demo_eats_book', 'demo_eats_peek'],
+    })
+    expect(await connectors.forUrl('https://other.example/')).toBeUndefined()
+  })
+})

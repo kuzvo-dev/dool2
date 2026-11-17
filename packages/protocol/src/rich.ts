@@ -132,9 +132,19 @@ const TOOL_LABEL: Record<string, string> = {
   feed_post: '피드에 올리는',
   connect_ask: '연결 카드 띄우는',
   conversation_search: '지난 대화 찾는',
+  service_find: '서비스 찾는',
+  service_call: '서비스에서 일하는',
 }
+/** 서비스 도구(catchtable_search …)는 끝말로: 찾기·조회·보기·준비 */
+const SERVICE_VERB: [RegExp, string][] = [
+  [/_(?:search|find)$/, '찾는'],
+  [/_(?:track|check|status)$/, '조회하는'],
+  [/_(?:list|orders|history|view|detail|slots)$/, '보는'],
+  [/_(?:prepare|book|reserve|order|cart)\w*$/, '준비하는'],
+]
 export function toolLabel(name: string): string {
-  return TOOL_LABEL[name.replace(/^(mcp__dool2__|dool2_)/, '')] ?? '일하는'
+  const n = name.replace(/^(mcp__dool2__|dool2_)/, '')
+  return TOOL_LABEL[n] ?? SERVICE_VERB.find(([re]) => re.test(n))?.[1] ?? '일하는'
 }
 
 /** 폰에서 보낸 사진 표시: 말 끝의 "[사진: 파일이름]" */
