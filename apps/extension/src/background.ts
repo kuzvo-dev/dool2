@@ -313,6 +313,8 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
 async function settle(tabId: number, before?: string) {
   for (let i = 0; i < 12; i++) {
     await sleep(100)
+    // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게
+    if (attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!t) return
     if (t.status === 'loading' || (before !== undefined && t.url !== before)) {
@@ -356,6 +358,20 @@ async function cdp<T = unknown>(tabId: number, method: string, params?: Record<s
     }, DEBUGGER_IDLE_MS),
   )
   return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T
+}
+
+/**
+ * 탭을 한 장 그리게 한다. 창이 다른 창 뒤에 가려져 있으면 Chrome이 그 탭을 그리지 않아서,
+ * 다음 그리기에 맞춰 상태를 바꾸는 사이트는 입력·Enter·팝업 닫기가 반쯤 멈춘 채 남는다
+ * (실측: 사람이 없는 맥의 평소 Chrome에서 캐치테이블 검색 Enter가 안 먹고, 닫은 팝업 버튼이 계속 읽혔다).
+ * 1×1로 화면을 찍으면 한 장을 그린다. 창을 앞으로 끌어오지 않으니 맥을 쓰는 사람을 방해하지 않는다
+ */
+async function paint(tabId: number) {
+  await cdp(tabId, 'Page.captureScreenshot', {
+    format: 'jpeg',
+    quality: 10,
+    clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 },
+  }).catch(() => {})
 }
 
 /** 폰 너비로 그리고 있는 탭 (원격 화면) */
@@ -478,6 +494,7 @@ async function locate(tabId: number, ref: unknown, mode: LocateMode): Promise<Lo
 
 async function clickAt(tabId: number, x: number, y: number) {
   const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
+  await paint(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   // 클릭으로 새 탭이 앞으로 오면 이 탭은 뒤로 가서 그려지지 않고, 입력 확인 답이 몇 초씩 늦는다. 오래 기다리지 않는다
   await Promise.race([
@@ -489,6 +506,8 @@ async function clickAt(tabId: number, x: number, y: number) {
 async function pressKey(tabId: number, name: string) {
   const k = keyDef(name)
   if (!k) throw new Error(`모르는 키예요: ${name}`)
+  // 넣은 글이 사이트 상태에 반영되게 먼저 한 장 그린다 (가려진 창에서 Enter가 빈 검색이 되던 것)
+  await paint(tabId)
   const common = {
     key: k.key,
     code: k.code,
@@ -546,6 +565,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       const max = Math.min(Math.max(Number(a.maxChars) || 12_000, 1_000), 40_000)
+      // 닫힌 팝업이 사라지는 등 멈춰 있던 화면 바뀜을 마저 끝내고 읽는다
+      if (attached.has(tabId)) await paint(tabId)
       await markTaps(tabId, 0)
       const main = await inPage(tabId, pageSnapshot, max, 0)
       // 화면 안 액자(로그인 창 등): 누를 것이 있는 액자만 아래에 붙인다
@@ -639,7 +660,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await cdp(tabId, 'Input.insertText', { text: a.text })
       if (a.submit) {
         const before = (await chrome.tabs.get(tabId)).url
-        // 글을 넣자마자 Enter를 치면 사이트가 입력을 받아들이기 전이라 검색이 안 된다 (실측: 캐치테이블 검색칸)
+        // 입력을 조금 늦게 상태에 반영하는 칸이 있다: 잠깐 기다린 뒤 Enter (pressKey가 한 장 그리기도 한다)
         await sleep(300)
         await pressKey(tabId, 'Enter')
         await settle(tabId, before)
