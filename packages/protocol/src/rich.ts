@@ -13,6 +13,10 @@ export type RichBlock =
   | { type: 'p'; lines: Inline[][] }
   | { type: 'ul'; items: Inline[][] }
   | { type: 'ol'; start: number; items: Inline[][] }
+  /** "## 제목" (1~3) */
+  | { type: 'h'; level: 1 | 2 | 3; text: Inline[] }
+  /** 마크다운 표 "| a | b |" (둘째 줄 "|---|---|"이 있으면 첫 줄이 머리) */
+  | { type: 'table'; head?: Inline[][]; rows: Inline[][][] }
 
 export function inline(text: string): Inline[] {
   const out: Inline[] = []
@@ -25,7 +29,19 @@ export function inline(text: string): Inline[] {
   return out
 }
 
-/** 빈 줄로 문단을 나누고, 이어진 "- "·"1. " 줄은 목록으로 묶는다 */
+/** 표 한 줄 "| a | b |" → 칸들 */
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((c) => c.trim())
+}
+const TABLE_LINE = /^\s*\|.*\|\s*$/
+const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
+
+/** 빈 줄로 문단을 나누고, 이어진 "- "·"1. " 줄은 목록으로, "| |" 줄은 표로, "## "는 제목으로 묶는다 */
 export function richBlocks(text: string): RichBlock[] {
   const blocks: RichBlock[] = []
   for (const chunk of text.replace(/\r\n/g, '\n').split(/\n{2,}/)) {
@@ -35,7 +51,29 @@ export function richBlocks(text: string): RichBlock[] {
       cur = b
       return b
     }
-    for (const line of chunk.split('\n')) {
+    const lines = chunk.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      // 표: 이어진 "| … |" 줄. 둘째 줄이 "|---|"면 첫 줄이 머리
+      if (TABLE_LINE.test(line)) {
+        const rows: string[] = []
+        while (i < lines.length && TABLE_LINE.test(lines[i] ?? '')) rows.push(lines[i++] ?? '')
+        i--
+        const hasHead = rows.length > 1 && TABLE_RULE.test(rows[1] ?? '')
+        const body = rows.filter((r, k) => !(hasHead && k === 1) && !TABLE_RULE.test(r))
+        const cells = body.map((r) => tableCells(r).map(inline))
+        open(
+          hasHead ? { type: 'table', head: cells[0], rows: cells.slice(1) } : { type: 'table', rows: cells },
+        )
+        cur = undefined
+        continue
+      }
+      const heading = /^\s*(#{1,3})\s+(.+)$/.exec(line)
+      if (heading) {
+        open({ type: 'h', level: (heading[1]?.length ?? 2) as 1 | 2 | 3, text: inline(heading[2] ?? '') })
+        cur = undefined
+        continue
+      }
       const bullet = /^\s*[-*•]\s+(.*)$/.exec(line)
       const num = /^\s*(\d{1,3})[.)]\s+(.*)$/.exec(line)
       if (bullet) {

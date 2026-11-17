@@ -2672,7 +2672,8 @@ textarea.ghosting {
   text-align: center;
   white-space: normal;
   word-break: break-all;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* ── 이번 주 두리가 한 일 ── */
@@ -2983,4 +2984,50 @@ textarea.ghosting {
   pointer-events: auto;
   cursor: pointer;
   box-shadow: inset 0 0 0 1px var(--butter);
+}
+
+/* 답 속 표·제목 (마크다운 표가 | 글자로 보이지 않게) */
+.rich-table-wrap {
+  max-width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rich-table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.rich-table th,
+.rich-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  min-width: 64px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.rich-table td:first-child,
+.rich-table th:first-child {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.rich-table thead th {
+  color: var(--ink);
+  font-weight: 700;
+  white-space: normal;
+}
+.rich-h {
+  margin: 12px 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+/* 표가 있는 답은 화면 폭까지 (칸이 잘리지 않게) */
+.chat-list > .bubble.rich:has(.rich-table-wrap) {
+  max-width: 100%;
+}
+.rich-table td:first-child {
+  white-space: nowrap;
 }

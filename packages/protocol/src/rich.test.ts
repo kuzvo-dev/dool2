@@ -128,3 +128,25 @@ describe('withoutPhotoMark', () => {
     expect(withoutPhotoMark('정리해 줘 [사진: 2026-11-15T16-54-57-062Z.j')).toBe('정리해 줘 (사진)')
   })
 })
+
+describe('표·제목', () => {
+  it('마크다운 표를 머리와 줄로 나눈다 (구분 줄은 뺀다)', () => {
+    const b = richBlocks(
+      '비교했어요.\n\n|  | 아이닉 | 샤오미 |\n|---|---|---|\n| 가격 | **282,110원** | 132,240원 |\n| 무게 | 2.7kg | 1.5kg |',
+    )
+    expect(b[0]?.type).toBe('p')
+    const t = b[1]
+    expect(t?.type).toBe('table')
+    if (t?.type !== 'table') return
+    expect(t.head?.map((c) => c.map((x) => x.text).join(''))).toEqual(['', '아이닉', '샤오미'])
+    expect(t.rows).toHaveLength(2)
+    expect(t.rows[0]?.[1]).toEqual([{ text: '282,110원', bold: true }])
+  })
+
+  it('문단 바로 아래 붙은 표, 머리 없는 표, 제목', () => {
+    const b = richBlocks('## 후보\n세 곳이에요\n| a | b |\n| c | d |')
+    expect(b.map((x) => x.type)).toEqual(['h', 'p', 'table'])
+    const t = b[2]
+    if (t?.type === 'table') expect(t.head).toBeUndefined()
+  })
+})
