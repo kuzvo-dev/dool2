@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BrowserTools, classifyRisk, nearlyEmpty, parseRefs } from './browser-tools.js'
+import { BrowserTools, classifyRisk, nearlyEmpty, parseRefs, payScreen } from './browser-tools.js'
 
 const PAGE = `# 두리 시험 가게
 검색어 [e1 입력칸 "검색어" 값="사과"] [e2 버튼 "검색"]
@@ -20,6 +20,32 @@ describe('위험한 동작 가리기', () => {
   it('결제 단계 페이지에서는 무엇이든 위험으로 본다', () => {
     expect(classifyRisk('버튼 다음', 'https://order.example.com/checkout/step2')?.kind).toBe('money')
     expect(classifyRisk('버튼 확인', 'https://pay.naver.com/x')?.kind).toBe('money')
+  })
+
+  it('주소가 그대로인 결제 화면에서는 "다음"·"확인"도 막는다', () => {
+    const map = 'https://app.catchtable.co.kr/ct/map/search-map?keyword=성수'
+    const pay = payScreen(
+      '## 예약금 결제 방법 선택\n[e454 라디오 "예약금 0원 결제" 선택됨]\n[e456 버튼 "이전"] [e457 버튼 "다음"]',
+    )
+    expect(pay).toBe('결제 방법')
+    expect(classifyRisk('버튼 다음', map, pay)?.kind).toBe('money')
+    expect(classifyRisk('버튼 확인', map, pay)?.kind).toBe('money')
+    expect(classifyRisk('버튼 이전', map, pay)).toBeUndefined()
+    // 방식 고르기 라디오는 확정이 아니라서 막지 않는다 (마지막 버튼에서 승인)
+    expect(classifyRisk('라디오 예약금 결제예약금 40,000원', map, pay)).toBeUndefined()
+    expect(classifyRisk('체크박스 결제 진행 필수 동의', map, pay)).toBeUndefined()
+    // 예약금 안내(결제 방법 고르기 전)의 "다음"은 막지 않는다
+    expect(payScreen('## 예약금 안내\n1인당 예약금 10,000원\n총 예약금 40,000원')).toBeUndefined()
+    expect(classifyRisk('버튼 다음', map, undefined)).toBeUndefined()
+    // 실제 캐치테이블 화면: "결제 방식 선택"과 팝업의 "이 방식으로 예약"
+    const pay2 = payScreen(
+      '## 결제 방식 선택\n[e206 라디오 "예약금 0원 + 자동결제" 선택됨]\n[e210 버튼 "다음"]',
+    )
+    expect(classifyRisk('버튼 다음', map, pay2)?.kind).toBe('money')
+    expect(classifyRisk('버튼 최대 혜택 이 방식으로 예약', map)?.kind).toBe('money')
+    expect(classifyRisk('버튼 바로 예약', map)?.kind).toBe('money')
+    expect(classifyRisk('버튼 예약', map)).toBeUndefined() // 검색 화면의 '예약' 탭
+    expect(classifyRisk('버튼 11.27 (금) 예약 가능', map)).toBeUndefined()
   })
 
   it('보통 조회는 막지 않는다', () => {
