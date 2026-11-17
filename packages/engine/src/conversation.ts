@@ -48,6 +48,21 @@ export class ConversationService {
     this.now = opts.now ?? (() => new Date())
   }
 
+  /** 미리 시작한 요약 (구간 id → 요약) */
+  private readonly early = new Map<string, Promise<string | undefined>>()
+  /**
+   * 답이 끝난 뒤 부른다. 다음 말에서 길어서 구간을 바꿀 참이면 요약을 미리 시작해 둔다.
+   * 예전에는 다음 말을 받고 나서야 요약을 부탁해서, 그동안(10초 남짓) 말이 저장되지도 않고 아무 반응이 없었다
+   */
+  prewarm() {
+    const cur = this.current()
+    if (!cur || this.early.has(cur.id) || this.needsRotate(cur.agent, cur) !== 'long') return
+    this.early.set(
+      cur.id,
+      this.opts.threads.summarize(cur.id).catch(() => undefined),
+    )
+  }
+
   /** 다음 말부터 새 구간으로 (두리 말투 설정을 바꿨을 때: 앞 대화의 말투를 따라가지 않게) */
   private rotateNext = false
   private rotateNote = ''
@@ -122,7 +137,9 @@ export class ConversationService {
 
     let carry: string | undefined
     if (cur) {
-      const summary = reason === 'long' ? await threads.summarize(cur.id) : undefined
+      const early = this.early.get(cur.id)
+      this.early.delete(cur.id)
+      const summary = reason === 'long' ? ((await early) ?? (await threads.summarize(cur.id))) : undefined
       store.closeSession(cur.id, summary)
       carry = buildCarry(cur, summary, store.listMessages(cur.id))
       if (this.rotateNote) carry = `${carry}\n\n${this.rotateNote}`

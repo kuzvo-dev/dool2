@@ -905,6 +905,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           body: answerText.slice(0, 300),
           ref: threadId,
         })
+      // 다음 말에서 구간을 바꿀 참이면 요약을 미리 해 둔다 (다음 말이 바로 저장되고 바로 답하게)
+      if (conversation.current()?.id === threadId) conversation.prewarm()
       // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
       const next = pendingFollowUps.get(threadId)?.shift()
       if (next) setTimeout(() => followUp(threadId, next), 0)

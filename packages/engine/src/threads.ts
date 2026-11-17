@@ -34,6 +34,7 @@ export class ThreadService {
     return rt
   }
 
+  private readonly summarizing = new Set<string>()
   isRunning(threadId: string) {
     return this.running.has(threadId)
   }
@@ -55,9 +56,10 @@ export class ThreadService {
    */
   async summarize(threadId: string, timeoutMs = 90_000): Promise<string | undefined> {
     const thread = this.opts.store.getThread(threadId)
-    if (!thread?.resumeId || this.running.has(threadId)) return undefined
+    if (!thread?.resumeId || this.running.has(threadId) || this.summarizing.has(threadId)) return undefined
+    // 요약은 "답하는 중"이 아니다: 답이 끝난 뒤 미리 요약하는 동안 새 말이 줄에 서지 않게 따로 센다
     const ac = new AbortController()
-    this.running.set(threadId, ac)
+    this.summarizing.add(threadId)
     try {
       let text = ''
       const events = this.runtime(thread.agent).runTurn({
@@ -78,7 +80,7 @@ export class ThreadService {
     } catch {
       return undefined
     } finally {
-      this.running.delete(threadId)
+      this.summarizing.delete(threadId)
     }
   }
 

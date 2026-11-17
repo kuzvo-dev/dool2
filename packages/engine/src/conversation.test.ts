@@ -85,6 +85,21 @@ describe('ConversationService (대화는 하나)', () => {
     expect(convo.history()).toHaveLength(6)
   })
 
+  it('답이 끝난 뒤 미리 요약해 두면 다음 말은 요약을 다시 기다리지 않고, 그동안 답하는 중으로 보이지 않는다', async () => {
+    const { convo, claude, store } = setup({ turns: 2 })
+    await drain(convo.send('claude', '국밥 좋아해'))
+    await drain(convo.send('claude', '둘'))
+    const first = convo.current()
+    convo.prewarm()
+    convo.prewarm() // 두 번 불러도 한 번만
+    expect(convo.isRunning()).toBe(false)
+    await new Promise((r) => setTimeout(r, 0))
+    await drain(convo.send('claude', '셋'))
+    expect(claude.inputs.filter((i) => i.text === SUMMARY_REQUEST)).toHaveLength(1)
+    expect(store.getThread(first?.id ?? '')).toMatchObject({ summary: '- 국밥을 좋아함' })
+    expect(convo.current()?.id).not.toBe(first?.id)
+  })
+
   it('오래 쉬었으면 요약 없이 최근 대화만 넘긴다', async () => {
     const { convo, claude, tick } = setup()
     await drain(convo.send('claude', '점심 뭐 먹지'))
