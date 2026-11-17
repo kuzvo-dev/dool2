@@ -4,6 +4,7 @@
   "site": "trip.com",
   "category": "travel",
   "how": "browser",
+  "loginUrl": "https://kr.trip.com/account/signin",
   "social": [
     "kakao",
     "naver",

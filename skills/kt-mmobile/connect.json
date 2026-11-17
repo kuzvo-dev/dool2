@@ -4,6 +4,7 @@
   "site": "ktmmobile.com",
   "category": "telecom",
   "how": "browser",
+  "loginUrl": "https://www.ktmmobile.com/loginForm.do",
   "login": "아이디·비밀번호",
   "summary": "알뜰폰 데이터 이용량과 요금 확인, 요금제 변경, 부가서비스 신청과 해지를 두리에게 맡길 수 있어요.",
   "example": {

@@ -395,6 +395,25 @@ describe('폰 입력 화면으로 묻기', () => {
     expect(r.status).toBe('ok')
   })
 
+  it('공급자 계정이 곧 그 서비스 아이디인 곳(티켓링크 = PAYCO 아이디)은 넣는다', async () => {
+    const payco = {
+      url: 'https://id.payco.com/oauth2.0/authorize?serviceProviderCode=TKLINK',
+      text: '[e5 입력칸 "이메일 또는 휴대폰 아이디"] [e6 비밀번호칸 "비밀번호"] [e7 버튼 "로그인"]',
+    }
+    const b = fakeBrowser([payco, { url: 'https://www.ticketlink.co.kr/', text: '[e1 링크 "로그아웃"]' }])
+    const r = await autoLogin(
+      b,
+      {
+        card: { ...card, site: 'ticketlink.co.kr', login: 'PAYCO 아이디' },
+        url: payco.url,
+        username: 'a',
+        password: 'b',
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+  })
+
   it('인증번호를 안 넣으면 사람에게 넘긴다', async () => {
     const otp = {
       url: 'https://login.shop.test/verify',

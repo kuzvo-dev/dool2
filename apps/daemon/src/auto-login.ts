@@ -12,7 +12,7 @@ export interface AutoLoginBrowser {
 }
 
 export interface AutoLoginInput {
-  card: Pick<ConnectCard, 'id' | 'name' | 'signedIn'> & { site?: string }
+  card: Pick<ConnectCard, 'id' | 'name' | 'signedIn'> & { site?: string; login?: string }
   url: string
   username: string
   password: string
@@ -214,10 +214,13 @@ async function settled(snap: () => Promise<Snap>, wait: number): Promise<Snap> {
   const thin = (p: Snap) =>
     p.text.replace(/\s/g, '').length < 12 ||
     ((p.text.match(/\[e\d+ /g)?.length ?? 0) < 3 && !fields(p)) ||
-    // 간편 로그인만 있는 화면("카카오로 시작")은 칸이 없어도 다 그려진 것이다
+    // 간편 로그인만 있는 화면("카카오로 시작")은 칸이 없어도 다 그려진 것이다.
+    // 위쪽 메뉴의 "로그인" 버튼, 화면 안 액자(구글 버튼)는 본문이 그려졌다는 뜻이 아니다
     (loginPath(p) &&
       !fields(p) &&
-      !/\[e\d+ (버튼|링크) "[^"]*(로그인|시작|계속|login|sign|continue)/i.test(p.text))
+      !/\[e\d+ (버튼|링크) "[^"]*(카카오|네이버|구글|애플|apple|google|kakao|naver|휴대폰\s?번호)[^"]*(로그인|시작|계속|login|sign|continue)/i.test(
+        p.text.split('## 화면 안 액자')[0] ?? '',
+      ))
   for (let i = 0; i < 4 && thin(page); i++) {
     await sleep(Math.max(wait, 800))
     page = await snap()
@@ -358,7 +361,7 @@ const ID_LOGIN =
  * 지금 화면이 다른 회사 간편 로그인(네이버·카카오·구글…) 화면인가.
  * 아이디·비밀번호 연결 중에 여기로 오면 그 서비스 아이디를 공급자 칸에 넣게 된다 — 절대 넣지 않는다
  */
-function providerPage(url: string, card: { site?: string }): string | undefined {
+function providerPage(url: string, card: { site?: string; login?: string }): string | undefined {
   let host = ''
   try {
     host = new URL(url).hostname
@@ -369,6 +372,8 @@ function providerPage(url: string, card: { site?: string }): string | undefined 
     if (!p.host.test(host)) continue
     // 네이버 연결 카드가 네이버 로그인 화면에 있는 건 괜찮다
     if (card.site && p.host.test(card.site.replace(/^www\./, ''))) return undefined
+    // 그 공급자 계정이 곧 이 서비스 아이디인 곳 (티켓링크 = PAYCO 아이디)
+    if (card.login && p.button.test(card.login)) return undefined
     return p.label
   }
   return undefined
@@ -411,7 +416,7 @@ function findLoginLink(text: string, skip: ReadonlySet<string> = new Set()): Ref
 }
 
 const NEXT =
-  /^(계속|다음|계속하기|진행|진행하기|이메일로 계속|continue|next|이메일로 계속하기|로그인 계속|이메일로 로그인|continue with email)$|^비밀번호로\s?로그인/i
+  /^(계속|다음|계속하기|진행|진행하기|이메일로 계속|continue|next|이메일로 계속하기|로그인 계속|이메일로 로그인|continue with email)$|^비밀번호로\s?로그인|^(이메일|아이디)\s?(계정)?으?로\s?계속(하기)?$/i
 
 /** 두 단계 로그인 (아이디·이메일 먼저 → 계속 → 비밀번호): 아이디 칸과 계속 버튼 */
 function twoStep(text: string): { user: RefEntry; next: RefEntry } | undefined {
