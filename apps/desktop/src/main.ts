@@ -1,11 +1,13 @@
 // 두리 PC 앱 (Electron 메인 프로세스).
 // 두리 본체(dool2d)를 같은 프로세스에서 띄우고, 화면에는 접속 주소와 토큰만 건넨다.
 // 창을 닫아도 트레이에 남아 일을 계속한다. 끝내기는 트레이 메뉴에서 한다 (docs/architecture.md 7.1).
+import { execFile } from 'node:child_process'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registerExternalExtension } from '@dool2/browser'
 import { type Daemon, startDaemon } from '@dool2/daemon'
-import type { Settings } from '@dool2/protocol'
+import { type Settings, STORE_EXTENSION_ID, storeExtensionPage } from '@dool2/protocol'
 import { OFFICIAL_RELAY } from '@dool2/protocol/link'
 import {
   app,
@@ -182,6 +184,21 @@ async function prepareExtension(dataDir: string): Promise<string> {
   return to
 }
 
+/** 웹 스토어 확장 id. 시험할 때는 DOOL2_STORE_EXTENSION_ID로 바꿀 수 있다 */
+function storeExtensionId(): string | undefined {
+  const id = process.env.DOOL2_STORE_EXTENSION_ID ?? STORE_EXTENSION_ID
+  return id && /^[a-p]{32}$/.test(id) ? id : undefined
+}
+
+/** 주소를 기본 브라우저가 아니라 Chrome에서 연다 (확장은 Chrome에 추가해야 한다). Chrome이 없으면 기본 브라우저로 */
+function openInChrome(url: string) {
+  const fallback = () => void shell.openExternal(url)
+  if (process.platform === 'darwin') execFile('open', ['-a', 'Google Chrome', url], (e) => e && fallback())
+  else if (process.platform === 'win32')
+    execFile('cmd', ['/c', 'start', '""', 'chrome', url], { windowsHide: true }, (e) => e && fallback())
+  else fallback()
+}
+
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
@@ -245,6 +262,20 @@ app.whenReady().then(async () => {
   const extensionDir = await prepareExtension(dataDir)
   ipcMain.handle('dool2:extension-dir', () => extensionDir)
   ipcMain.on('dool2:reveal-extension', () => shell.showItemInFolder(join(extensionDir, 'manifest.json')))
+  const storeId = storeExtensionId()
+  ipcMain.handle('dool2:store-extension', () => storeId ?? null)
+  ipcMain.on('dool2:open-store', () => {
+    if (storeId && !SMOKE) openInChrome(storeExtensionPage(storeId))
+  })
+  // 웹 스토어에 올라간 확장이면 Chrome·Edge에 "설치 대기"로도 올려 둔다: 첫 화면에서 건너뛰어도
+  // 브라우저를 다음에 켤 때 [사용 설정]이 뜬다. 시험할 때(DOOL2_REGISTER_HOST=0)는 사용자 브라우저를 건드리지 않는다
+  if (
+    storeId &&
+    !SMOKE &&
+    process.env.DOOL2_REGISTER_HOST !== '0' &&
+    (app.isPackaged || process.env.DOOL2_REGISTER_HOST === '1')
+  )
+    void registerExternalExtension({ id: storeId }).catch(() => undefined)
   ipcMain.handle('dool2:config', () => ({
     url: d.url,
     token: d.token,
