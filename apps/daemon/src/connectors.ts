@@ -524,9 +524,30 @@ export class Connectors {
         )
       return { content: [{ type: 'text', text: say }], structuredContent: { stopped: say } }
     }
+    if ('require' in s) {
+      const until = Date.now() + (s.timeoutMs ?? 6000)
+      for (;;) {
+        const r = (await b.call('find', { tabId: c.need(), patterns: { hit: f(s.require) } })) as {
+          found: Record<string, string | null>
+        }
+        if (r.found.hit) return
+        if (Date.now() > until) {
+          const say = f(s.say)
+          return { content: [{ type: 'text', text: say }], structuredContent: { stopped: say } }
+        }
+        await c.sleep(c.pollMs)
+      }
+    }
     if ('click' in s) {
       await c.read()
-      const r = await this.opts.tools.run('click', { tabId: c.need(), text: f(s.click.text) })
+      const tabId = c.need()
+      const want = f(s.click.text)
+      // 화면 읽기에 같은 이름의 버튼·라디오·링크가 있으면 그 표시로 (뒤에 깔린 화면의 같은 글자를 누르지 않게)
+      const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+      const ref = [...(this.opts.tools.refsOf(tabId) ?? [])].find(
+        ([, v]) => v.role !== '글' && norm(v.name) === norm(want),
+      )?.[0]
+      const r = await this.opts.tools.run('click', ref ? { tabId, ref } : { tabId, text: want })
       if (r.isError) {
         const msg = firstText(r)
         // 위험 판단에 걸린 것은 커넥터가 넘을 수 없다: 그대로 AI에게
@@ -601,31 +622,33 @@ export class Connectors {
       const method = s.fetch.method ?? 'GET'
       if (method === 'POST' && c.tier !== '찾아보기' && c.tier !== '채워 두기')
         throw new GuardStop('멈췄어요: 돈 내기·연락하기 도구는 데이터 요청(POST)을 쓰지 않아요.')
+      // 꺼낼 경로는 페이지 안에서 먼저 꺼낸다 (사진 주소가 많은 큰 응답도 잘리지 않게). 경로가 없으면 전체('')
       const r = (await b.call(
         'fetch',
-        { tabId: c.need(), url, method, ...(body !== undefined ? { body } : {}) },
+        { tabId: c.need(), url, method, ...(body !== undefined ? { body } : {}), pick: s.fetch.pick ?? '' },
         30_000,
-      )) as {
-        status: number
-        body: string
-      }
+      )) as { status: number; body: string; json?: unknown }
       if (r.status >= 400) throw new StepError(`사이트가 요청을 거절했어요 (${r.status})`)
-      let data: unknown
-      try {
-        data = JSON.parse(r.body)
-      } catch {
-        throw new StepError('사이트가 데이터 대신 다른 것을 돌려줬어요 (JSON 아님)')
-      }
-      c.scope[s.as] = s.fetch.pick ? pick(data, s.fetch.pick) : data
+      if (r.json === undefined)
+        throw new StepError(
+          `사이트가 데이터 대신 다른 것을 돌려줬어요 (JSON 아님, ${r.status}: ${r.body.replace(/\s+/g, ' ').slice(0, 80)})`,
+        )
+      c.scope[s.as] = r.json
       return
     }
     if ('map' in s) {
       const from = pick(c.scope, s.map.from)
       if (!Array.isArray(from)) throw new StepError(`${s.map.from}이(가) 목록이 아니에요`)
       c.scope[s.as] = from
-        .slice(0, s.map.limit ?? 50)
+        .slice(0, Number(typeof s.map.limit === 'string' ? f(s.map.limit) : s.map.limit) || 50)
         .map((row) =>
-          Object.fromEntries(Object.entries(s.map.fields).map(([k, p]) => [k, pick(row, p) ?? null])),
+          Object.fromEntries(
+            Object.entries(s.map.fields).map(([k, p]) => [
+              k,
+              // "{{…}}"가 있으면 줄 안의 값으로 채운 글, 아니면 경로
+              (p.includes('{{') ? fill(p, row as Scope).trim() : pick(row, p)) ?? null,
+            ]),
+          ),
         )
       return
     }

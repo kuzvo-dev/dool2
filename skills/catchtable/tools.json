@@ -1,0 +1,204 @@
+{
+  "id": "catchtable",
+  "tools": [
+    {
+      "name": "search",
+      "title": "식당 빈자리 찾기",
+      "description": "지역·가게 이름·음식으로 캐치테이블 식당을 찾고, 그 날짜·인원으로 예약할 수 있는 시간을 가게마다 돌려준다(이름·지역·음식·별점·리뷰 수·가격대·한 줄 소개·빈 시간). 로그인 없이 된다. 사용자가 고르면 catchtable_prepare_booking으로 예약 직전까지 간다. 요일만 들었으면 날짜로 바꿔 쓴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 성수·한남 검색, 날짜·인원별 빈 시간)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "지역·가게 이름·음식 (예: 성수, 한남동 오마카세, ACENO)",
+            "maxLength": 40
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "방문 날짜 YYYY-MM-DD (예: 2026-11-27)"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 2,
+            "description": "인원 (기본 2)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 10,
+            "description": "가게 몇 곳까지 (기본 10)"
+          }
+        },
+        "required": [
+          "keyword",
+          "date"
+        ]
+      },
+      "output": {
+        "shops": {
+          "type": "list",
+          "description": "가게",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "shop_id": {
+              "type": "string",
+              "description": "예약 준비에 넘길 가게 id"
+            },
+            "area": {
+              "type": "string"
+            },
+            "food": {
+              "type": "string"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "price": {
+              "type": "string"
+            },
+            "about": {
+              "type": "string"
+            },
+            "times": {
+              "type": "strings",
+              "description": "그 날짜·인원으로 예약할 수 있는 시간 (HH:MM)"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "성수",
+          "date": "2026-11-27",
+          "people": 4
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://app.catchtable.co.kr/ct/map/search-map?keyword={{keyword|url}}&keywordSearch={{keyword|url}}&serviceType=INTEGRATION"
+        },
+        {
+          "fetch": {
+            "url": "https://ct-api.catchtable.co.kr/api/v7/search/list",
+            "method": "POST",
+            "body": "{\"paging\":{\"offset\":\"0\",\"size\":{{limit|json}}},\"listType\":\"GENERAL\",\"reservationParams\":{\"reservationDate\":{{date|json}},\"personCount\":{{people|json}}},\"divideType\":\"DIVIDE_BY_AVAILABILITY\",\"sort\":{\"sortType\":\"recommended\"},\"filters\":{\"contractedType\":\"CONTRACTED_ONLY\"},\"keywordSearch\":{\"keyword\":{{keyword|json}}}}",
+            "pick": "data.shopResults.shops"
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "shopMeta.shopName",
+              "shop_id": "shopMeta.urlPathAlias",
+              "area": "shopMeta.landName",
+              "food": "shopMeta.foodKind",
+              "rating": "shopMeta.avgScore",
+              "reviews": "shopMeta.reviewCount",
+              "price": "{{shopMeta.prices.lunchAndDinnerPriceText}} {{shopMeta.prices.lunchPriceText}} {{shopMeta.prices.dinnerPriceText}}",
+              "about": "shopMeta.reviewOverview.title",
+              "times": "dining.singleDateSlotInfo.timeSlotList.*.time",
+              "link": "https://app.catchtable.co.kr/ct/shop/{{shopMeta.urlPathAlias}}"
+            }
+          },
+          "as": "shops"
+        }
+      ],
+      "result": {
+        "shops": "{{shops}}"
+      },
+      "next": "빈 시간이 있는 곳 2~3곳을 골라 보여 주고 고르게 해요. 예약하려면 catchtable_prepare_booking에 shop_id·날짜·시간·인원을 넘겨요.",
+      "minIntervalSec": 300
+    },
+    {
+      "name": "prepare_booking",
+      "title": "예약 준비",
+      "description": "고른 가게에서 날짜·인원·시간을 골라 예약 직전까지 간다. 테이블 타입·추가 상품 단계와 예약금 화면은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 예약금 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 예약금 결제는 로그인이 필요하다: 연결 전이면 그때 connect_ask('catchtable').",
+      "tier": "돈 내기",
+      "status": "검증됨(2026-11-17, 시간 고르기 → 예약금 결제 방법 화면까지. 결제는 하지 않음)",
+      "input": {
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "catchtable_search가 준 가게 id (예: aceno)",
+            "maxLength": 80
+          },
+          "shop": {
+            "type": "string",
+            "description": "가게 이름 (사용자에게 보일 말)",
+            "maxLength": 60
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "방문 날짜 YYYY-MM-DD"
+          },
+          "time": {
+            "type": "string",
+            "format": "time",
+            "description": "시간 HH:MM (catchtable_search의 빈 시간 중 하나, 예: 19:30)"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "인원"
+          }
+        },
+        "required": [
+          "shop_id",
+          "date",
+          "time",
+          "people"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "shop_id": "aceno",
+          "shop": "ACENO 아세누",
+          "date": "2026-11-27",
+          "time": "19:30",
+          "people": 4
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://app.catchtable.co.kr/ct/shop/{{shop_id|url}}?date={{date|yymmdd}}&personCount={{people}}"
+        },
+        {
+          "require": "{{time|ampm|re}}",
+          "say": "{{shop}}은(는) {{date}} {{time}}에 {{people}}명 자리가 없어요(마감이거나 휴무). catchtable_search로 다른 시간이나 다른 가게를 찾아볼 수 있어요.",
+          "timeoutMs": 8000
+        },
+        {
+          "click": {
+            "text": "{{time|ampm}}"
+          }
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "handoff_to_agent": "{{shop}} {{date}} {{time}} {{people}}명을 골라 둔 화면이에요. 테이블 타입이 나오면 사용자가 원한 것(모르면 홀)을 고르고('비활성'은 못 고름) '다음', 추가 상품(꽃다발·위스키)은 고르지 말고 '다음'. '예약금 안내'나 '결제 방법 선택'이 나오면 거기서 멈추고 가게·날짜·시간·인원·테이블·예약금(1인당 × 인원)·환불 규정을 정리해 browser_request_approval로 승인을 받아요. '예약금 0원 결제란?' 팝업은 '닫기'만 눌러요(같은 팝업의 '0원 결제로 예약'은 예약 확정이라 누르지 않아요). 로그인 화면이 나오면 연결 전이면 connect_ask('catchtable'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

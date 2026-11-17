@@ -313,14 +313,16 @@ describe('사이트 요령·빈 화면', () => {
     expect(nearlyEmpty(PAGE)).toBe(false)
   })
 
-  it('스킬이 있는 사이트를 처음 열면 먼저 읽으라고 한 번만 알린다', async () => {
+  it('서비스 도구가 있는 사이트를 처음 열면 그 도구를 쓰라고 한 번만 알린다', async () => {
     const tools = new BrowserTools(browserWith([PAGE]))
-    tools.siteSkill = async (url) =>
-      url.includes('catchtable') ? { name: 'catchtable', description: '식당' } : undefined
+    tools.siteConnector = async (url) =>
+      url.includes('catchtable')
+        ? { id: 'catchtable', name: '캐치테이블', tools: ['catchtable_search'] }
+        : undefined
     const first = text(await tools.run('open', { url: 'https://app.catchtable.co.kr/' }))
-    expect(first).toContain("skill_read('catchtable')")
+    expect(first).toContain('두리 서비스 도구가 있어요: catchtable_search')
     const again = text(await tools.run('read', { tabId: 3 }))
-    expect(again).not.toContain('skill_read')
+    expect(again).not.toContain('서비스 도구')
   })
 
   it('막 연 화면이 비어 있으면 한 번 기다렸다 다시 읽는다', async () => {

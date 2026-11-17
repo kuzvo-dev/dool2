@@ -617,7 +617,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // executeScript 인자에는 undefined를 넘길 수 없다
       const body = typeof a.body === 'string' ? a.body.slice(0, 20_000) : null
       const type = typeof a.type === 'string' ? a.type : null
-      const r = await inPage(tabId, pageFetch, url, method, body, type)
+      const path = typeof a.pick === 'string' ? a.pick : null
+      const r = await inPage(tabId, pageFetch, url, method, body, type, path)
       if ('error' in r) throw new Error(`요청하지 못했어요: ${r.error}`)
       return r
     }
