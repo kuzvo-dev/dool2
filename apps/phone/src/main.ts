@@ -513,8 +513,11 @@ async function receive(env: Envelope) {
         if (st.tab !== 'chat' || st.screen.name !== 'app') toast(msg.message)
         runAfterConnect(msg.id)
       } else if (st.tab !== 'chat' || st.screen.name !== 'app') {
-        // 화면을 멋대로 바꾸지 않는다: 알리기만 하고, 대화의 연결 카드가 까닭과 [화면 열기]·[다시 넣기]로 남는다
-        toast(msg.message)
+        // 화면을 멋대로 바꾸지 않는다: 알리기만 한다. 사람 차례면 알림을 눌러 바로 그 화면을 연다
+        const tab = msg.tabId
+        if (tab !== undefined && msg.reason === 'human')
+          toast(`${msg.message} 눌러서 열기`, () => openRemote(tab, msg.id))
+        else toast(msg.message)
       }
       break
     }
@@ -1030,8 +1033,11 @@ function workDone(rec: WorkRecordMessage): HTMLElement {
 
 // ── 알림 ──
 
-function toast(text: string) {
+/** 알림 막대 (누를 수 있으면 onTap: 예를 들어 [화면 열기]) */
+let toastTap: (() => void) | undefined
+function toast(text: string, onTap?: () => void) {
   st.toast = text
+  toastTap = onTap
   render()
   setTimeout(() => {
     if (st.toast === text) {
@@ -1227,6 +1233,15 @@ function render() {
   if (shell) {
     shell.toast.textContent = st.toast ?? ''
     shell.toast.hidden = !st.toast
+    shell.toast.classList.toggle('tap', Boolean(toastTap))
+    shell.toast.onclick = toastTap
+      ? () => {
+          const f = toastTap
+          toastTap = undefined
+          st.toast = undefined
+          f?.()
+        }
+      : null
   }
   // 다시 그린 뒤: 칸 하이라이트·스위치 손잡이를 앞 자리에서 새 자리로 움직인다
   playSeg()
@@ -1995,7 +2010,9 @@ function toolSig(raw: string) {
     }
     if (rec.kind === 'login') {
       const l = loginFor(rec as LoginRecordMessage)
-      return `${l?.id}:${l?.status}`
+      const link = l ? loginLink(l.origin) : undefined
+      const steps = link ? (st.connectSteps.get(link.cid)?.length ?? 0) : 0
+      return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${steps}`
     }
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
@@ -2289,8 +2306,32 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   )
 }
 
+/**
+ * 로그인 요청(두리가 일하다 띄운 카드)과 같은 사이트의 연결 상태.
+ * 간편 로그인으로 이어서 하는 중이거나 사람 차례로 멈췄으면, 로그인 카드도 그 상태를 보여 준다 (제자리 돌기 막기)
+ */
+function loginLink(origin: string) {
+  const cid = cardIdFor(origin)
+  if (!cid) return undefined
+  const busy = st.connecting.has(cid)
+  const fail = st.connectFails.get(cid)
+  return busy || fail ? { cid, busy, fail } : undefined
+}
+
+/** 나를 기다려요의 로그인 카드를 눌렀을 때: 사람 차례면 그 화면, 하는 중이면 대화(카드), 아니면 로그인 화면 */
+function openLogin(l: LoginRequestView) {
+  const link = loginLink(l.origin)
+  if (link?.fail?.tabId !== undefined && link.fail.reason === 'human')
+    return openRemote(link.fail.tabId, link.cid)
+  if (link?.busy) return setTab('chat')
+  openOverlay({ kind: 'login', id: l.id })
+}
+
 function loginInline(rec: LoginRecordMessage): HTMLElement {
   const r = loginFor(rec)
+  // 같은 사이트를 간편 로그인으로 잇는 중·멈춤: 연결 카드와 같은 모양(단계·까닭·[화면 열기])
+  const link = r?.status === 'pending' ? loginLink(r.origin) : undefined
+  if (link) return connectInline({ kind: 'connect', service: link.cid }, true)
   if (!r || r.status !== 'pending')
     return h(
       'p',
@@ -2346,16 +2387,32 @@ function waitingCards(): HTMLElement[] {
           h('span', { class: 'meta', text: a.where }),
         ),
       )
-    for (const l of logins)
+    for (const l of logins) {
+      const link = loginLink(l.origin)
+      const state = link?.busy
+        ? (st.connectSteps.get(link.cid)?.at(-1)?.text ?? '두리가 로그인하는 중이에요')
+        : link?.fail?.reason === 'human'
+          ? '직접 해 주셔야 해요 · 눌러서 화면 열기'
+          : link?.fail?.reason === 'wrong'
+            ? '아이디나 비밀번호가 맞지 않아요'
+            : link?.fail
+              ? '로그인을 끝까지 못 했어요'
+              : '로그인이 필요해요'
       box.append(
         h(
           'button',
-          { class: 'task-card ask', onclick: () => openOverlay({ kind: 'login', id: l.id }) },
-          h('span', { class: 'meta' }, h('span', { class: 'dot ask' }), '로그인이 필요해요'),
+          { class: 'task-card ask', onclick: () => openLogin(l) },
+          h(
+            'span',
+            { class: 'meta' },
+            h('span', { class: `dot ${link?.busy ? 'work pulse' : 'ask'}` }),
+            state,
+          ),
           h('strong', { text: `${l.site} 로그인` }),
           h('span', { class: 'meta', text: hostOf(l.origin) }),
         ),
       )
+    }
   }
   if (st.busy) {
     const log = h('ul', { class: 'worklog' })
@@ -3217,7 +3274,7 @@ function agentPanel() {
           `${l.site} 로그인`,
           hostOf(l.origin),
           '기다려요',
-          () => openOverlay({ kind: 'login', id: l.id }),
+          () => openLogin(l),
         ),
       )
     const history = [...st.approvals.values()]
