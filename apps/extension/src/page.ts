@@ -366,11 +366,37 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   const el = st?.refs.get(ref)?.deref()
   if (!el || !el.isConnected)
     return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
-  const r0 = el.getBoundingClientRect()
+  // 상자가 없는 요소(display: contents 버튼 등)는 크기가 0으로 재진다: 안에 그려진 자식들의 영역을 쓴다
+  // (캐치테이블 날짜·인원 창의 시간 버튼: 화면엔 보이는데 "보이지 않아요"로 못 눌렀다)
+  const drawn = (e: Element) => {
+    const b = e.getBoundingClientRect()
+    return b.width > 0 && b.height > 0
+  }
+  // 숨긴 라디오·체크박스(크기 0 input)는 감싼 라벨을 누른다 (캐치테이블 시간 칸: <label><input radio><span>오후 7:30</span></label>)
+  const label =
+    el instanceof HTMLInputElement && !drawn(el) ? Array.from(el.labels ?? []).find(drawn) : undefined
+  const anchor = label ?? (drawn(el) ? el : (Array.from(el.querySelectorAll('*')).find(drawn) ?? el))
+  const box = (): DOMRect => {
+    if (label) return label.getBoundingClientRect()
+    if (drawn(el)) return el.getBoundingClientRect()
+    const kids = Array.from(el.querySelectorAll('*'))
+      .map((k) => k.getBoundingClientRect())
+      .filter((k) => k.width > 0 && k.height > 0)
+    if (!kids.length) return el.getBoundingClientRect()
+    const left = Math.min(...kids.map((k) => k.left))
+    const top = Math.min(...kids.map((k) => k.top))
+    return new DOMRect(
+      left,
+      top,
+      Math.max(...kids.map((k) => k.right)) - left,
+      Math.max(...kids.map((k) => k.bottom)) - top,
+    )
+  }
+  const r0 = box()
   const moved = r0.bottom < 0 || r0.top > window.innerHeight || r0.right < 0 || r0.left > window.innerWidth
   // 가로는 필요할 때만 옮긴다: 가로로 넘기는 달력(캐치테이블)은 가운데로 옮기면 사이트가 바로 되돌려서
   // 두 칸 옆 날짜가 눌렸다 (27일을 눌렀는데 25일)
-  el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+  anchor.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
   // 읽은 뒤 같은 칸에 다른 것이 그려졌으면 누르지 않는다 (가게 목록 칸 재활용: 아세누 27일을 눌렀는데 다른 가게가 열렸다)
   const was = st?.ctx?.get(ref)
   if (was !== undefined && st?.ctxOf && st.ctxOf(el) !== was)
@@ -378,13 +404,13 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
       ok: false,
       error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
     }
-  const r = el.getBoundingClientRect()
+  const r = box()
   if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref}가 화면에 보이지 않아요` }
   const x = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1)
   const y = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1)
   const top = document.elementFromPoint(x, y)
   let coveredBy: string | undefined
-  if (top && top !== el && !el.contains(top) && !(top instanceof HTMLLabelElement && top.control === el)) {
+  if (top && top !== el && !el.contains(top) && top.closest('label')?.control !== el) {
     coveredBy = ((top as HTMLElement).innerText || top.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
   }
   const h = el as HTMLElement

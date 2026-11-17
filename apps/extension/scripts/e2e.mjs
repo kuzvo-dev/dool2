@@ -50,6 +50,9 @@ const PAGES = {
 <div id="cards"><div class="card"><b>가게 가</b> <i>조용한 한식집</i> <span class="chip">27일 예약</span></div>
 <div class="card"><b>가게 나</b> <i>시끄러운 술집</i> <span class="chip">27일 예약</span></div></div>
 <button id="shuffle">섞기</button>
+<div id="times"><label><input type="radio" name="t" value="1900" style="position:absolute;width:0;height:0;margin:0;opacity:0;appearance:none"><span>오후 7:00</span></label>
+<label><input type="radio" name="t" value="1930" style="position:absolute;width:0;height:0;margin:0;opacity:0;appearance:none"><span>오후 7:30</span></label></div>
+<div style="display:contents"><button id="dc" style="display:contents" onclick="document.title='상자 없는 버튼'"><span>지도에서 보기</span></button></div>
 <div id="long">${'성수동 골목 이야기 '.repeat(20)}<span>끝 문장</span></div>
 <script>
 const props = (el, p) => { el['__reactProps$t3st'] = p; el.addEventListener('click', (e) => p.onClick?.(e)) }
@@ -236,6 +239,18 @@ try {
     const chip = s3.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
     const r = await call('click', { tabId, ref: chip })
     assert.equal(r.title, '예약: 가게 가')
+  })
+
+  await step('숨긴 라디오는 라벨을, 상자 없는 버튼은 안의 글을 누른다', async () => {
+    await call('navigate', { tabId, url: `${base}/app` })
+    const s = await call('snapshot', { tabId })
+    const t730 = s.text.match(/\[(e\d+) 라디오 "오후 7:30"\]/)?.[1]
+    assert.ok(t730, `시간 라디오가 없어요:\n${s.text}`)
+    await call('click', { tabId, ref: t730 })
+    assert.match((await call('snapshot', { tabId })).text, /라디오 "오후 7:30" 선택됨/)
+    const dc = s.text.match(/\[(e\d+) 버튼 "지도에서 보기"\]/)?.[1]
+    assert.ok(dc, `상자 없는 버튼이 없어요:\n${s.text}`)
+    assert.equal((await call('click', { tabId, ref: dc })).title, '상자 없는 버튼')
   })
 
   await step('캡차 화면을 알아챈다', async () => {
