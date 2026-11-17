@@ -46,11 +46,28 @@ const PAGES = {
 <input id="q" placeholder="어떤 맛집 찾으시나요?">
 <div id="list"><div class="row"><span>성수 사위식당</span> <span>4.3 · 한식</span></div>
 <div class="row"><span>성수 까망</span> <span>4.7 · 이탈리아음식</span></div></div>
+<div role="radiogroup" aria-label="테이블 타입"><label role="radio" aria-checked="false" aria-label="홀" tabindex="0" id="hall"><input type="radio" name="seat" aria-hidden="true" tabindex="-1" style="appearance:none;position:absolute;width:0;height:0;margin:0;border:0"><span aria-hidden="true">홀</span></label><label role="radio" aria-checked="false" aria-disabled="true" aria-label="룸" tabindex="0">룸</label></div>
+<div id="cards"><div class="card"><b>가게 가</b> <i>조용한 한식집</i> <span class="chip">27일 예약</span></div>
+<div class="card"><b>가게 나</b> <i>시끄러운 술집</i> <span class="chip">27일 예약</span></div></div>
+<button id="shuffle">섞기</button>
 <div id="long">${'성수동 골목 이야기 '.repeat(20)}<span>끝 문장</span></div>
 <script>
 const props = (el, p) => { el['__reactProps$t3st'] = p; el.addEventListener('click', (e) => p.onClick?.(e)) }
 for (const r of document.querySelectorAll('.row')) props(r, { onClick: () => { document.title = '고름: ' + r.firstChild.textContent } })
 props(document.getElementById('long'), { onClick: () => {} })
+const hall = document.getElementById('hall')
+hall.addEventListener('click', () => hall.setAttribute('aria-checked', 'true'))
+for (const c of document.querySelectorAll('.chip'))
+  props(c, { onClick: () => { document.title = '예약: ' + c.parentElement.querySelector('b').textContent } })
+// 목록 칸 재활용 흉내: 같은 칸(DOM)에 다른 가게를 그린다
+document.getElementById('shuffle').addEventListener('click', () => {
+  const [a, b] = document.querySelectorAll('.card')
+  for (const sel of ['b', 'i']) {
+    const t = a.querySelector(sel).textContent
+    a.querySelector(sel).textContent = b.querySelector(sel).textContent
+    b.querySelector(sel).textContent = t
+  }
+})
 let kw = ''
 const q = document.getElementById('q')
 q.addEventListener('input', () => setTimeout(() => { kw = q.value }, 100))
@@ -200,6 +217,25 @@ try {
     const q = s.text.match(/\[(e\d+) 입력칸 "어떤 맛집 찾으시나요\?"\]/)?.[1]
     const r = await call('type', { tabId, ref: q, text: '성수', submit: true })
     assert.equal(r.title, '검색: 성수')
+  })
+
+  await step('숨은 칸을 품은 라디오 라벨을 읽고, 칸이 재활용되면 엉뚱한 것을 누르지 않는다', async () => {
+    await call('navigate', { tabId, url: `${base}/app` })
+    const s = await call('snapshot', { tabId })
+    const hall = s.text.match(/\[(e\d+) 라디오 "홀"\]/)?.[1]
+    assert.ok(hall, `라디오 "홀"이 없어요:\n${s.text}`)
+    assert.match(s.text, /라디오 "룸" 비활성/)
+    await call('click', { tabId, ref: hall })
+    assert.match((await call('snapshot', { tabId })).text, /라디오 "홀" 선택됨/)
+    const s2 = await call('snapshot', { tabId })
+    const chipA = s2.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
+    assert.ok(chipA, `가게 가의 날짜 칸이 없어요:\n${s2.text}`)
+    await call('click', { tabId, ref: s2.text.match(/\[(e\d+) 버튼 "섞기"\]/)?.[1] })
+    await assert.rejects(call('click', { tabId, ref: chipA }), /다시 읽/)
+    const s3 = await call('snapshot', { tabId })
+    const chip = s3.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
+    const r = await call('click', { tabId, ref: chip })
+    assert.equal(r.title, '예약: 가게 가')
   })
 
   await step('캡차 화면을 알아챈다', async () => {

@@ -597,7 +597,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     }
     case 'click': {
       const tabId = await ownedTab(a)
-      const at = await locate(tabId, a.ref, 'point')
+      let at = await locate(tabId, a.ref, 'point')
+      // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
+      // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
+      if (at.moved) {
+        await sleep(300)
+        await paint(tabId)
+        at = await locate(tabId, a.ref, 'point')
+      }
       lastPopup = undefined
       const before = (await chrome.tabs.get(tabId)).url
       let via: 'mouse' | 'key' | 'script' = 'mouse'

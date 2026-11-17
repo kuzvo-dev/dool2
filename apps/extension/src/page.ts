@@ -62,11 +62,29 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     seq: number
     /** 두리 금고가 채운 칸: 값을 글로 내보내지 않는다 */
     filled?: WeakSet<Element>
+    /** 표시마다 읽을 때의 앞쪽 글 (누르기 직전에 견줘 다른 칸이 됐는지 본다) */
+    ctx?: Map<string, string>
+    ctxOf?: (el: Element) => string
   }
   const g = globalThis as unknown as { __dool2?: State }
   g.__dool2 ??= { refs: new Map(), ids: new WeakMap(), seq: 0 }
   const st = g.__dool2
   st.refs = new Map()
+  const ctx = new Map<string, string>()
+  st.ctx = ctx
+  // 요소 앞쪽 글 300자. 목록을 굴리면 칸을 재활용하는 사이트(캐치테이블 가게 목록)는 같은 칸에 다른 가게를
+  // 그린다: 날짜 칸 글("11.27 (금) 예약 가능")은 같아도 앞쪽의 가게 이름·설명이 달라진다
+  const ctxOf = (el: Element) => {
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    w.currentNode = el
+    let out = ''
+    for (let n = w.previousNode(); n && out.length < 300; n = w.previousNode()) {
+      const t = (n as Text).data.replace(/\s+/g, ' ').trim()
+      if (t) out = `${t} ${out}`
+    }
+    return out.slice(-300)
+  }
+  st.ctxOf = ctxOf
 
   const BLOCK = new Set(
     'ADDRESS ARTICLE ASIDE BLOCKQUOTE DD DETAILS DIALOG DIV DL DT FIELDSET FIGCAPTION FIGURE FOOTER FORM H1 H2 H3 H4 H5 H6 HEADER HR LI MAIN NAV OL P PRE SECTION TABLE TR UL'.split(
@@ -104,7 +122,17 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   const LONG_TAP = 120
   const INNER =
     'input:not([type=hidden]),select,textarea,button,a[href],[role=button],[role=link],[role=textbox],[data-dool2-tap]'
-  const wrapsControls = (el: Element) => el.querySelector(INNER) !== null
+  const wrapsControls = (el: Element) => {
+    for (const c of el.querySelectorAll(INNER)) {
+      // 꾸밈용 숨은 칸은 치지 않는다: <label role="radio" aria-label="홀"> 안의 크기 0·aria-hidden input
+      // (캐치테이블 테이블 타입). 이걸 진짜 칸으로 보면 라벨을 건너뛰고, 안의 글은 aria-hidden이라 다 사라졌다
+      if (c.closest('[aria-hidden="true"]')) continue
+      const r = c.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) continue
+      return true
+    }
+    return false
+  }
 
   const interactiveRole = (el: Element): string | undefined => {
     const role = el.getAttribute('role')
@@ -201,7 +229,7 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     if (el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true')
       return ' 선택됨'
     if (el.getAttribute('aria-expanded') === 'true') return ' 펼침'
-    if ((el as HTMLButtonElement).disabled) return ' 비활성'
+    if ((el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') return ' 비활성'
     return ''
   }
 
@@ -241,6 +269,7 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
         st.ids.set(el, ref)
       }
       st.refs.set(ref, new WeakRef(el))
+      ctx.set(ref, ctxOf(el))
       // 클릭 처리기만 붙은 긴 상자 (글 단락·카드 전체): 표시만 붙이고 안의 글은 그대로 읽는다
       const long = el.hasAttribute(TAP) && ((el as HTMLElement).innerText?.trim().length ?? 0) > LONG_TAP
       const name = long ? clean((el as HTMLElement).innerText, 30) : nameOf(el)
@@ -322,16 +351,33 @@ export interface LocateResult {
   coveredBy?: string
   /** 화면 안 액자(iframe) 속 요소 (좌표는 페이지 화면 기준으로 바꿔 둠) */
   frame?: boolean
+  /** 화면 밖에 있어서 굴려 옮겼다 (늦게 뜨는 그림·목록으로 자리가 밀릴 수 있어 부르는 쪽이 다시 잰다) */
+  moved?: boolean
 }
 
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
 export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: false; error: string } {
-  type State = { refs: Map<string, WeakRef<Element>> }
+  type State = {
+    refs: Map<string, WeakRef<Element>>
+    ctx?: Map<string, string>
+    ctxOf?: (el: Element) => string
+  }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
   if (!el || !el.isConnected)
     return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
-  el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+  const r0 = el.getBoundingClientRect()
+  const moved = r0.bottom < 0 || r0.top > window.innerHeight || r0.right < 0 || r0.left > window.innerWidth
+  // 가로는 필요할 때만 옮긴다: 가로로 넘기는 달력(캐치테이블)은 가운데로 옮기면 사이트가 바로 되돌려서
+  // 두 칸 옆 날짜가 눌렸다 (27일을 눌렀는데 25일)
+  el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+  // 읽은 뒤 같은 칸에 다른 것이 그려졌으면 누르지 않는다 (가게 목록 칸 재활용: 아세누 27일을 눌렀는데 다른 가게가 열렸다)
+  const was = st?.ctx?.get(ref)
+  if (was !== undefined && st?.ctxOf && st.ctxOf(el) !== was)
+    return {
+      ok: false,
+      error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
+    }
   const r = el.getBoundingClientRect()
   if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref}가 화면에 보이지 않아요` }
   const x = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1)
@@ -362,6 +408,7 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
     ['checkbox', 'radio', 'switch'].includes(el.getAttribute('role') ?? '')
   return {
     ok: true,
+    ...(moved ? { moved } : {}),
     x,
     y,
     tag: el.tagName.toLowerCase(),
