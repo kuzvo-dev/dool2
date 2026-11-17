@@ -294,6 +294,8 @@ export const BrowserCommandSchema = z.enum([
   'input',
   'form',
   'form-fill',
+  /** 확장을 새 코드로 다시 켠다 (압축해제 확장을 다시 빌드한 뒤) */
+  'reload',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 

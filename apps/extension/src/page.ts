@@ -180,7 +180,12 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     const el = node as Element
     if (SKIP.has(el.tagName)) return
     if (el.getAttribute('aria-hidden') === 'true') return
-    if (!el.checkVisibility({ visibilityProperty: true })) return
+    // display: contents 상자는 자기 상자가 없어서 checkVisibility가 늘 false다. 안은 보이니 계속 읽는다
+    // (캐치테이블 검색 화면 전체가 이 상자 안에 있다)
+    if (!el.checkVisibility({ visibilityProperty: true })) {
+      const cs = getComputedStyle(el)
+      if (cs.display !== 'contents' || cs.visibility === 'hidden') return
+    }
 
     const role = interactiveRole(el)
     if (role) {
