@@ -1,0 +1,221 @@
+{
+  "id": "oasis-market",
+  "tools": [
+    {
+      "name": "search",
+      "title": "상품 찾기",
+      "description": "오아시스마켓에서 상품을 검색어로 찾아 이름(용량 포함)·판매가·정가·할인율·쿠폰 적용가·단위 가격·보관(냉장·냉동)·배송 종류(오아시스배송 등)·별점·리뷰 수·상품 번호·링크를 돌려준다. 로그인 없이 된다. 유기농·무항생제 같은 조건은 검색어에 넣는다(예: 유기농 바나나). 주문하려면 oasis_market_prepare_order에 product_id를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 우유·유기농 바나나 검색)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "찾을 상품 (예: 우유, 유기농 바나나, 두부)",
+            "maxLength": 40
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 10,
+            "description": "몇 개까지 (기본 10)"
+          }
+        },
+        "required": ["keyword"]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": { "type": "string", "description": "상품 이름 (용량·개수 포함)" },
+            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 번호" },
+            "price": { "type": "integer", "description": "판매가 (원)" },
+            "regular_price": { "type": "integer", "description": "정가 (원)" },
+            "discount": { "type": "string", "description": "할인율" },
+            "coupon_price": { "type": "integer", "description": "쿠폰 적용가 (원, 쿠폰을 받아야 이 값)" },
+            "unit_price": { "type": "string", "description": "단위 가격 (100ml당 245원 등)" },
+            "storage": { "type": "strings", "description": "보관 (냉장·냉동 등)" },
+            "delivery": { "type": "strings", "description": "배송 종류" },
+            "rating": { "type": "number" },
+            "reviews": { "type": "integer" },
+            "link": { "type": "string" }
+          }
+        }
+      },
+      "examples": [
+        { "keyword": "우유" },
+        { "keyword": "유기농 바나나", "limit": 5 }
+      ],
+      "steps": [
+        { "open": "https://www.oasis.co.kr/product/search?keyword={{keyword|url}}" },
+        {
+          "wait": { "items": "li.pListItem", "timeoutMs": 10000 },
+          "optional": true
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "오아시스마켓에서 '{{keyword}}'(으)로 찾은 상품이 없어요. 다른 말로 찾아볼까요?"
+        },
+        {
+          "extract": {
+            "items": "li.pListItem",
+            "limit": 60,
+            "fields": {
+              "name": { "css": ".info_title a.listTit" },
+              "product_id": { "css": ".info_title a.listTit", "attr": "href", "match": "/detail/(\\d+)" },
+              "price": { "css": ".info_price .price_discount" },
+              "regular_price": { "css": ".info_price .price_original" },
+              "discount": { "css": ".info_price .price_discountRate" },
+              "coupon_price": { "css": ".info_cpPrice", "match": "([\\d,]+)원" },
+              "unit_price": { "css": ".info_option" },
+              "storage": { "css": ".info_keyword .badge_keyword", "list": true },
+              "delivery": { "css": ".info_badges.btm [class*='badge_delivery']", "list": true },
+              "rating": { "css": ".info_reviewLike", "match": "^([\\d.]+)" },
+              "reviews": { "css": ".info_reviewNumber" }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "product_id": "product_id",
+              "price": "price",
+              "regular_price": "regular_price",
+              "discount": "discount",
+              "coupon_price": "coupon_price",
+              "unit_price": "unit_price",
+              "storage": "storage",
+              "delivery": "delivery",
+              "rating": "rating",
+              "reviews": "reviews",
+              "link": "https://www.oasis.co.kr/product/detail/{{product_id}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": { "products": "{{products}}" },
+      "next": "2~4개를 이름·가격으로 짧게 보여 주고 고르게 해요. 쿠폰 적용가는 쿠폰을 받아야 되는 값이라고 함께 말해요. 3만 원 미만이면 배송비가 붙을 수 있어요. 주문하려면 oasis_market_prepare_order에 product_id와 개수를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 확인",
+      "description": "오아시스마켓 주문/배송조회 화면을 열어 최근 주문의 주문일·상품·결제 금액·배송 상태(새벽배송 도착 예정 포함)를 읽어 정리한다. 로그인(연결)해야 된다. '어제 주문한 거 언제 와?'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "최근 주문 몇 건까지 (기본 3)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [{ "count": 3 }],
+      "steps": [
+        { "open": "https://www.oasis.co.kr/myPage/orderList" },
+        { "sleep": 1500 },
+        {
+          "stop_if": "아이디 저장|비밀번호 재발급",
+          "say": "오아시스마켓에 로그인해야 주문 내역을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "오아시스마켓 주문/배송조회 화면이에요. 최근 주문 {{count}}건까지 주문일·대표 상품과 개수·결제 금액·지금 상태(주문 접수·상품 준비·배송 중·배송 완료)와 도착 예정을 읽어 짧게 정리해요. 취소·반품·재구매 버튼은 누르지 않아요. 주문 번호·주소·전화번호는 사용자에게 다시 말하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "frequent",
+      "title": "자주 사는 상품",
+      "description": "오아시스마켓 '자주구매' 목록을 열어 자주 산 상품의 이름·가격·지금 살 수 있는지(품절 여부)를 읽어 정리한다. 로그인(연결)해야 된다. '늘 사던 걸로 담아 줘'에서 무엇을 담을지 먼저 사용자에게 보여 줄 때 쓴다. 담고 주문하려면 oasis_market_prepare_order로 하나씩 이어 간다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 10,
+            "description": "몇 개까지 (기본 10)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [{ "count": 10 }],
+      "steps": [
+        { "open": "https://www.oasis.co.kr/myPage/frequencyList" },
+        { "sleep": 1500 },
+        {
+          "stop_if": "아이디 저장|비밀번호 재발급",
+          "say": "오아시스마켓에 로그인해야 자주 산 상품을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "오아시스마켓 자주구매 목록이에요. 상품 {{count}}개까지 이름·가격·품절 여부를 읽고, 상품 번호는 링크 주소(/product/detail/숫자)에서 읽어 함께 정리해요. 장바구니 담기 버튼은 아직 누르지 않아요. 사용자가 고르면 oasis_market_prepare_order에 상품 번호를 넘겨요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 상품 화면을 열어 개수를 맞추고 주문 직전까지 간다. 장바구니 담기·결제 화면은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제·주문 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('oasis-market').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "oasis_market_search가 준 상품 번호 (예: 81798)",
+            "pattern": "^\\d{2,10}$"
+          },
+          "product": {
+            "type": "string",
+            "description": "상품 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 1,
+            "description": "개수 (기본 1)"
+          }
+        },
+        "required": ["product_id"]
+      },
+      "output": {},
+      "examples": [{ "product_id": "81798", "product": "소화가 잘되는 락토프리 우유", "quantity": 1 }],
+      "steps": [
+        { "open": "https://www.oasis.co.kr/product/detail/{{product_id|digits}}" },
+        {
+          "require": "장바구니|바로구매|품절",
+          "say": "이 상품 화면이 열리지 않았어요. 판매가 끝났거나 번호가 바뀌었을 수 있어요. oasis_market_search로 다시 찾아볼게요.",
+          "timeoutMs": 10000
+        },
+        {
+          "handoff_to_agent": "{{product}} 상품 화면이에요. 품절이면 사용자에게 알리고 멈춰요. 옵션이 있으면 사용자가 말한 것을 고르고, 개수를 {{quantity}}개로 맞춰 장바구니에 담아요(로그인 화면이 나오면 연결 전이면 connect_ask('oasis-market'), 연결했는데 풀렸으면 browser_handoff). 장바구니에서 주문하기를 누르고 결제 화면에서 멈춰 상품·개수·상품 금액·배송비(3만 원 미만이면 붙는지)·쿠폰·최종 결제 금액·배송 종류와 도착 예정·배송지 이름만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

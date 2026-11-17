@@ -1,0 +1,291 @@
+{
+  "id": "ssg",
+  "tools": [
+    {
+      "name": "search",
+      "title": "상품 찾기",
+      "description": "SSG닷컴(이마트몰·트레이더스·백화점 상품 포함)에서 상품을 검색어로 찾아 브랜드·이름(용량 포함)·판매가·정상가·할인율·단위 가격(100ml당 등)·배송 종류(주간배송·새벽배송·트레이더스 배송 등)·도착 예정·별점·상품 번호·링크를 돌려준다. 로그인 없이 된다. 할인하는 것만 보려면 sale=true. 주문하려면 ssg_prepare_order에 item_id를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "찾을 상품 (예: 우유, 두부, 딸기)",
+            "maxLength": 40
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "추천순",
+              "판매량순",
+              "낮은가격순",
+              "할인율순"
+            ],
+            "default": "추천순",
+            "description": "정렬 (기본 추천순, 할인 찾기는 할인율순)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40,
+            "default": 10,
+            "description": "몇 개까지 (기본 10)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "products": {
+          "type": "list",
+          "description": "상품",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "브랜드와 상품 이름 (용량 포함)"
+            },
+            "item_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 번호"
+            },
+            "price": {
+              "type": "integer",
+              "description": "판매가 (원, 할인 반영)"
+            },
+            "regular_price": {
+              "type": "integer",
+              "description": "정상가 (할인할 때만)"
+            },
+            "discount": {
+              "type": "string",
+              "description": "할인율 (할인할 때만)"
+            },
+            "unit_price": {
+              "type": "string",
+              "description": "단위 가격 (100ml당 297원 등)"
+            },
+            "delivery": {
+              "type": "strings",
+              "description": "배송 종류"
+            },
+            "arrival": {
+              "type": "string",
+              "description": "도착 예정 (내일(수) 14:00까지 도착 등)"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "우유"
+        },
+        {
+          "keyword": "딸기",
+          "sort": "할인율순",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.ssg.com/search.ssg?target=all&query={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "text": "판매가격|검색결과가 없습니다|검색 결과가 없",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없",
+          "say": "SSG닷컴에서 '{{keyword}}'(으)로 찾은 상품이 없어요. 다른 말로 찾아볼까요?"
+        },
+        {
+          "click": {
+            "text": "{{sort}}"
+          },
+          "optional": true
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "extract": {
+            "items": "div:has(> a[href*='itemView.ssg']):has(> div > a[href*='itemView.ssg'] img)",
+            "limit": 40,
+            "fields": {
+              "name": {
+                "css": "a[href*='itemView.ssg'] img",
+                "attr": "alt"
+              },
+              "item_id": {
+                "css": "a[href*='itemView.ssg']",
+                "attr": "href",
+                "match": "itemId=(\\d+)"
+              },
+              "price": {
+                "match": "판매가격\\n([\\d,]+)원"
+              },
+              "regular_price": {
+                "match": "정상가격\\n([\\d,]+)원"
+              },
+              "discount": {
+                "match": "할인율\\n(\\d+%)"
+              },
+              "unit_price": {
+                "match": "\\((\\S+당 [\\d,]+원)\\)"
+              },
+              "delivery": {
+                "css": "[data-badge-type^='delivery']",
+                "list": true
+              },
+              "arrival": {
+                "match": "\\n([^\\n]*도착[^\\n]*)\\n"
+              },
+              "rating": {
+                "match": "리뷰 별점\\n([\\d.]+)"
+              },
+              "link": {
+                "css": "a[href*='itemView.ssg']",
+                "attr": "href"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "item_id": "item_id",
+              "price": "price",
+              "regular_price": "regular_price",
+              "discount": "discount",
+              "unit_price": "unit_price",
+              "delivery": "delivery",
+              "arrival": "arrival",
+              "rating": "rating",
+              "link": "https://www.ssg.com/item/itemView.ssg?itemId={{item_id}}"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": {
+        "products": "{{products}}"
+      },
+      "next": "2~4개를 이름·가격·배송 종류로 짧게 보여 주고 고르게 해요. 할인 중인 것은 정상가와 함께 알려 줘요. 주문하려면 ssg_prepare_order에 item_id와 개수를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 확인",
+      "description": "SSG닷컴 주문·배송 조회 화면을 열어 최근 주문의 주문일·상품·결제 금액·배송 상태·받는 날짜와 시간대(쓱배송 시간 지정)를 읽어 정리한다. 로그인(연결)해야 된다. '장 본 거 언제 와?', '지난주 장 본 거 그대로'처럼 지난 주문을 알아야 할 때 먼저 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "최근 주문 몇 건까지 (기본 3)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {
+          "count": 3
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://pay.ssg.com/myssg/orderInfo.ssg"
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "stop_if": "아이디 저장|비밀번호 재설정",
+          "say": "SSG닷컴에 로그인해야 주문 내역을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "SSG닷컴 주문·배송 조회 화면이에요. 최근 주문 {{count}}건까지 주문일·대표 상품과 개수·결제 금액·지금 상태(결제 완료·상품 준비·배송 중·배송 완료)·받는 날짜와 시간대를 읽어 짧게 정리해요. 상품이 접혀 있으면 '상세보기'를 열어 읽기만 해요. 취소·반품·재구매 버튼은 누르지 않아요. 주문 번호·주소·전화번호는 사용자에게 다시 말하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 상품 화면을 열어 개수를 맞추고 주문 직전까지 간다. 장바구니 담기·배송 시간 고르기·결제 화면은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제·주문 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('ssg').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "ssg_search가 준 상품 번호 (예: 0000006615474)",
+            "pattern": "^\\d{6,16}$"
+          },
+          "product": {
+            "type": "string",
+            "description": "상품 이름 (사용자에게 보일 말)",
+            "maxLength": 80
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 1,
+            "description": "개수 (기본 1)"
+          },
+          "when": {
+            "type": "string",
+            "description": "받고 싶은 때 (예: 토요일 오전, 내일 아침). 모르면 비워 둔다",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "item_id": "0000006615474",
+          "product": "서울우유 1000ml",
+          "quantity": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.ssg.com/item/itemView.ssg?itemId={{item_id|digits}}"
+        },
+        {
+          "require": "장바구니|바로구매|일시품절|품절",
+          "say": "이 상품 화면이 열리지 않았어요. 판매가 끝났거나 번호가 바뀌었을 수 있어요. ssg_search로 다시 찾아볼게요.",
+          "timeoutMs": 12000
+        },
+        {
+          "handoff_to_agent": "{{product}} 상품 화면이에요. 품절이면 사용자에게 알리고 멈춰요. 옵션이 있으면 사용자가 말한 것을 고르고, 개수를 {{quantity}}개로 맞춰 '장바구니'에 담아요(로그인 화면이 나오면 연결 전이면 connect_ask('ssg'), 연결했는데 풀렸으면 browser_handoff). 장바구니에서 주문하기를 누르고, 배송 시간을 고르는 화면이 나오면 '{{when}}'에 맞는 칸(비어 있으면 가장 빠른 칸)을 고르되 마감된 칸은 고르지 않아요. 결제 화면에서 멈추고 상품·개수·상품 금액·배송비·할인·최종 결제 금액·받는 날짜와 시간대·배송지 이름만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

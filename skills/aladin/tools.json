@@ -1,0 +1,492 @@
+{
+  "id": "aladin",
+  "tools": [
+    {
+      "name": "search",
+      "title": "책 찾기",
+      "description": "알라딘에서 새 책을 제목·저자·주제로 찾아 제목·종류([국내도서]/[eBook] 등)·저자·출판사·출간·판매가·정가·할인율·별점·배송(양탄자배송 도착 예정)·전자책 가격·품절 여부·상품 번호·링크를 돌려준다. 로그인 없이 된다. 더 싼 중고를 보려면 aladin_used, 주문하려면 aladin_prepare_order에 item_id를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 데미안·어린왕자 검색)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "책 제목·저자·주제 (예: 어린 왕자, 데미안, 한강)",
+            "maxLength": 60
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "Book",
+              "eBook",
+              "All"
+            ],
+            "default": "Book",
+            "description": "Book 국내도서(기본) · eBook 전자책 · All 전체(음반·굿즈 포함)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 8,
+            "description": "몇 권까지 (기본 8)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "books": {
+          "type": "list",
+          "description": "책",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "description": "[국내도서]·[eBook] 등"
+            },
+            "author": {
+              "type": "string",
+              "description": "저자·역자"
+            },
+            "publisher": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string",
+              "description": "출간 (2020년 9월)"
+            },
+            "price": {
+              "type": "integer",
+              "description": "판매가 (원)"
+            },
+            "regular_price": {
+              "type": "integer",
+              "description": "정가 (원)"
+            },
+            "discount": {
+              "type": "string"
+            },
+            "rating": {
+              "type": "number",
+              "description": "별점 (10점 만점)"
+            },
+            "delivery": {
+              "type": "string",
+              "description": "배송 (양탄자배송 내일 아침 7시 등)"
+            },
+            "ebook_price": {
+              "type": "integer",
+              "description": "다른 판 가격: 새 책 검색이면 전자책 구매가, 전자책 검색이면 종이책 가격 (원)"
+            },
+            "stock": {
+              "type": "string",
+              "description": "품절·절판이면 그 말"
+            },
+            "item_id": {
+              "type": "string",
+              "description": "중고 보기·주문 준비에 넘길 상품 번호"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "데미안"
+        },
+        {
+          "keyword": "어린 왕자",
+          "kind": "eBook",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget={{kind}}&SearchWord={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "items": "div.ss_book_box",
+            "timeoutMs": 10000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "알라딘에서 '{{keyword}}'(으)로 찾은 책이 없어요. 제목이나 저자를 조금 바꿔 볼까요?"
+        },
+        {
+          "extract": {
+            "items": "div.ss_book_box[itemid]",
+            "limit": 25,
+            "fields": {
+              "title": {
+                "css": "a.bo3"
+              },
+              "kind": {
+                "css": ".tit_category"
+              },
+              "author": {
+                "css": ".ss_book_list li:has(a[href*='AuthorSearch'])",
+                "match": "^(.*?) \\|"
+              },
+              "publisher": {
+                "css": ".ss_book_list li:has(a[href*='AuthorSearch'])",
+                "match": "\\| ([^|]+?) \\|"
+              },
+              "date": {
+                "css": ".ss_book_list li:has(a[href*='AuthorSearch'])",
+                "match": "(\\d{4}년 \\d{1,2}월)"
+              },
+              "price": {
+                "css": ".ss_p2"
+              },
+              "regular_price": {
+                "css": ".ss_book_list li:has(.ss_p2)",
+                "match": "^([\\d,]+)원"
+              },
+              "discount": {
+                "css": ".ss_book_list li:has(.ss_p2)",
+                "match": "\\((\\d+%)할인\\)"
+              },
+              "rating": {
+                "css": ".star_score"
+              },
+              "delivery": {
+                "css": ".ss_book_list li:has(.b_ytz_delivery)",
+                "match": "^(.*?)(?: 지역변경)?$"
+              },
+              "ebook_price": {
+                "css": ".ebook_price",
+                "match": "([\\d,]+)원$"
+              },
+              "stock": {
+                "match": "(구판절판|절판|일시품절|품절)"
+              },
+              "item_id": {
+                "attr": "itemid"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "kind": "kind",
+              "author": "author",
+              "publisher": "publisher",
+              "date": "date",
+              "price": "price",
+              "regular_price": "regular_price",
+              "discount": "discount",
+              "rating": "rating",
+              "delivery": "delivery",
+              "ebook_price": "ebook_price",
+              "stock": "stock",
+              "item_id": "item_id",
+              "link": "https://www.aladin.co.kr/shop/wproduct.aspx?ItemId={{item_id}}"
+            }
+          },
+          "as": "books"
+        }
+      ],
+      "result": {
+        "books": "{{books}}"
+      },
+      "next": "찾는 책으로 보이는 2~3권을 제목·저자·출판사·가격으로 보여 줘요. 싸게 사고 싶다고 했으면 aladin_used로 중고 가격을 함께 봐요. 주문하려면 aladin_prepare_order에 item_id를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "used",
+      "title": "중고 가격 보기",
+      "description": "알라딘 중고 검색으로 책마다 새 책 가격·전자책 가격·알라딘 직접 중고 최저가·광활한 우주점(매장) 중고 최저가·판매자 중고 최저가와 각각의 개수를 돌려준다. 로그인 없이 된다. '새 책보다 싼 중고 있어?'에 쓴다. 가격이 '-'면 그 종류 중고가 없다. 중고로 주문하려면 aladin_prepare_order에 item_id와 used=true를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 데미안 중고 검색)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "책 제목·저자 (예: 어린 왕자, 데미안 민음사)",
+            "maxLength": 60
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 5,
+            "description": "몇 권까지 (기본 5)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "books": {
+          "type": "list",
+          "description": "책과 중고 가격",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string",
+              "description": "저자·역자"
+            },
+            "publisher": {
+              "type": "string"
+            },
+            "new_price": {
+              "type": "string",
+              "description": "새 책 판매가 ((품절)이 붙으면 새 책은 품절)"
+            },
+            "ebook_price": {
+              "type": "string",
+              "description": "전자책 가격 (-면 없음)"
+            },
+            "aladin_used": {
+              "type": "string",
+              "description": "알라딘 직접 중고 최저가 (-면 없음)"
+            },
+            "aladin_used_count": {
+              "type": "integer"
+            },
+            "store_used": {
+              "type": "string",
+              "description": "광활한 우주점(매장) 중고 최저가 (-면 없음)"
+            },
+            "store_used_count": {
+              "type": "integer"
+            },
+            "seller_used": {
+              "type": "string",
+              "description": "판매자 중고 최저가 (-면 없음)"
+            },
+            "seller_used_count": {
+              "type": "integer"
+            },
+            "item_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 번호"
+            },
+            "used_link": {
+              "type": "string",
+              "description": "중고 모두 보기 주소"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "데미안"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Used&SearchWord={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "items": "div.ss_book_box",
+            "timeoutMs": 10000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "알라딘에 '{{keyword}}' 중고가 없어요. 새 책은 aladin_search로 찾아볼 수 있어요."
+        },
+        {
+          "extract": {
+            "items": "div.ss_book_box:has(table.usedtable01)",
+            "limit": 25,
+            "fields": {
+              "title": {
+                "css": "a.bo3"
+              },
+              "author": {
+                "css": ".ss_book_list li:has(a[href*='AuthorSearch'])",
+                "match": "^(.*?) \\|"
+              },
+              "publisher": {
+                "css": ".ss_book_list li:has(a[href*='AuthorSearch'])",
+                "match": "\\| ([^|]+?) \\|"
+              },
+              "new_price": {
+                "css": "table.usedtable01 tr:nth-child(2) td:nth-child(1)"
+              },
+              "ebook_price": {
+                "css": "table.usedtable01 tr:nth-child(2) td:nth-child(2)"
+              },
+              "aladin_used": {
+                "css": "table.usedtable01 tr:nth-child(2) td:nth-child(3)",
+                "line": 0
+              },
+              "aladin_used_count": {
+                "css": "table.usedtable01 th:nth-child(3)",
+                "match": "\\((\\d+)\\)"
+              },
+              "store_used": {
+                "css": "table.usedtable01 tr:nth-child(2) td:nth-child(4)",
+                "line": 0
+              },
+              "store_used_count": {
+                "css": "table.usedtable01 th:nth-child(4)",
+                "match": "\\((\\d+)\\)"
+              },
+              "seller_used": {
+                "css": "table.usedtable01 tr:nth-child(2) td:nth-child(5)",
+                "line": 0
+              },
+              "seller_used_count": {
+                "css": "table.usedtable01 th:nth-child(5)",
+                "match": "\\((\\d+)\\)"
+              },
+              "item_id": {
+                "css": "a.bo3",
+                "attr": "href",
+                "match": "ItemId=(\\d+)"
+              },
+              "used_link": {
+                "css": "a.bo3",
+                "attr": "href"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "author": "author",
+              "publisher": "publisher",
+              "new_price": "new_price",
+              "ebook_price": "ebook_price",
+              "aladin_used": "aladin_used",
+              "aladin_used_count": "aladin_used_count",
+              "store_used": "store_used",
+              "store_used_count": "store_used_count",
+              "seller_used": "seller_used",
+              "seller_used_count": "seller_used_count",
+              "item_id": "item_id",
+              "used_link": "used_link"
+            }
+          },
+          "as": "books"
+        }
+      ],
+      "result": {
+        "books": "{{books}}"
+      },
+      "next": "찾는 책의 새 책 가격과 가장 싼 중고(알라딘 직접·매장·판매자 중)를 나란히 보여 줘요. 판매자 중고는 배송비가 따로 붙을 수 있다고 말해요. 중고로 주문하려면 aladin_prepare_order에 item_id와 used=true를 넘겨요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "orders",
+      "title": "주문·배송 확인",
+      "description": "알라딘 주문 내역 화면을 열어 최근 주문의 주문일·책 제목·결제 금액·지금 상태(출고 준비·출고 완료·배송 중·배송 완료)와 도착 예정을 읽어 정리한다. 로그인(연결)해야 된다. '주문한 책 출고됐어?'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "최근 주문 몇 건까지 (기본 3)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {
+          "count": 3
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.aladin.co.kr/account/wmaininfo.aspx?pType=OrderList"
+        },
+        {
+          "sleep": 2000
+        },
+        {
+          "stop_if": "비회원 주문 조회|E-Mail 저장|아이디 찾기",
+          "say": "알라딘에 로그인해야 주문 내역을 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "알라딘 주문 내역 화면이에요(주문 목록이 안 보이면 '주문조회'를 눌러요). 최근 주문 {{count}}건까지 주문일·책 제목(여러 권이면 대표 1권 외 몇 권)·결제 금액·지금 상태(결제 완료·출고 준비·출고 완료·배송 중·배송 완료)·도착 예정을 읽어 짧게 정리해요. 중고 판매자 주문은 판매자 발송 상태로 따로 말해요. 취소·반품 버튼은 누르지 않아요. 주문 번호·주소·전화번호는 다시 말하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "prepare_order",
+      "title": "주문 준비",
+      "description": "고른 책을 새 책이나 중고로 주문 직전까지 간다. 새 책은 상품 화면, 중고는 중고 모두 보기 화면을 연다. 장바구니·결제 화면은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제·주문 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('aladin').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "aladin_search·aladin_used가 준 상품 번호 (예: 251847567)",
+            "pattern": "^\\d{3,12}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "책 제목 (사용자에게 보일 말)",
+            "maxLength": 100
+          },
+          "used": {
+            "type": "boolean",
+            "default": false,
+            "description": "중고로 살지 (true면 가장 싼 상태 좋은 중고)"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "item_id": "260084",
+          "title": "데미안 (민음사)",
+          "used": true
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.aladin.co.kr/shop/UsedShop/wuseditemall.aspx?ItemId={{item_id|digits}}&TabType=0"
+        },
+        {
+          "require": "새상품|중고|판매자",
+          "say": "이 책 화면이 열리지 않았어요. 번호가 바뀌었을 수 있어요. aladin_search로 다시 찾아볼게요.",
+          "timeoutMs": 10000
+        },
+        {
+          "handoff_to_agent": "{{title}}의 새 책·중고 목록 화면이에요. 중고(used={{used}})가 true면 알라딘 직접 중고·매장 중고·판매자 중고 중 상태('최상·상·중')가 괜찮고 배송비까지 합쳐 가장 싼 것을 골라 사용자에게 상태·가격·배송비를 먼저 알려 줘요. false면 새 책 상품 화면으로 가요. 그다음 '장바구니'나 '바로구매'로 결제 화면까지 가요(로그인 화면이 나오면 연결 전이면 connect_ask('aladin'), 연결했는데 풀렸으면 browser_handoff). 결제 화면에서 멈추고 책 제목·새 책/중고(상태)·상품 금액·배송비·할인·최종 결제 금액·도착 예정을 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
