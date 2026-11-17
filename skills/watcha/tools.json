@@ -1,0 +1,440 @@
+{
+  "id": "watcha",
+  "tools": [
+    {
+      "name": "search",
+      "title": "작품 찾기",
+      "description": "로그인 없이 된다. 왓챠에서 작품 이름·사람·주제어로 영화·시리즈를 찾아 이름·종류(영화/시리즈)·감독·연도·작품 번호와, 맞는 태그(예: 로맨스 구독 태그)의 번호를 돌려준다. '구독으로 볼 수 있는 로맨스'처럼 분위기·장르로 찾을 때는 tags의 tag_id를 watcha_tag에 넘긴다. 별점·상영 시간은 watcha_content.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, 작품·태그 검색, 화면 읽기)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "작품 이름·배우·감독·주제어 (예: 로맨스, 미국 드라마, 이선균)",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "titles": {
+          "type": "list",
+          "description": "찾은 작품",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "작품 이름"
+            },
+            "info": {
+              "type": "string",
+              "description": "종류 · 감독 · 연도 (예: 영화 · 이원석 · 2021)"
+            },
+            "content_id": {
+              "type": "string",
+              "description": "왓챠 작품 번호 (watcha_content에 넘김)"
+            }
+          }
+        },
+        "tags": {
+          "type": "list",
+          "description": "맞는 태그",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "태그 이름 (구독 태그면 '구독'이 붙음)"
+            },
+            "tag_id": {
+              "type": "string",
+              "description": "태그 번호 (watcha_tag에 넘김)"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "로맨스"
+        },
+        {
+          "keyword": "코미디"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/ko/search?query={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "items": "a[href*=\"/contents/\"] img, a[href*=\"/tag?\"]",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "extract": {
+            "items": "a[href*=\"/contents/\"]:has(img)",
+            "limit": 20,
+            "fields": {
+              "name": {
+                "css": "img",
+                "attr": "alt"
+              },
+              "info": {
+                "line": 1
+              },
+              "content_id": {
+                "attr": "href",
+                "match": "/contents/([A-Za-z0-9]+)"
+              }
+            }
+          },
+          "as": "titles",
+          "min": 0
+        },
+        {
+          "extract": {
+            "items": "a[href*=\"/tag?\"]",
+            "limit": 10,
+            "fields": {
+              "name": {},
+              "tag_id": {
+                "attr": "href",
+                "match": "ids=(\\d+)"
+              }
+            }
+          },
+          "as": "tags",
+          "min": 0
+        }
+      ],
+      "result": {
+        "titles": "{{titles}}",
+        "tags": "{{tags}}"
+      },
+      "next": "찾던 작품이 맞는지 이름·연도로 물어요. 분위기·장르로 찾는 중이면 '구독' 태그의 tag_id를 watcha_tag에 넘겨요.",
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "content_id"
+        ]
+      },
+      "minIntervalSec": 600
+    },
+    {
+      "name": "tag",
+      "title": "태그로 작품 보기",
+      "description": "로그인 없이 된다. 왓챠 태그(예: 로맨스, 로맨틱 코미디) 화면을 열어 그 태그의 작품 이름과 번호를 돌려준다. 구독 태그면 구독으로 볼 수 있는 작품이다. 태그 번호는 watcha_search의 tags에서 (예: 266015 로맨스, 260635 로맨틱 코미디). 별점·상영 시간을 보려면 watcha_content.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, 태그 작품 목록, 화면 읽기)",
+      "input": {
+        "properties": {
+          "tag_id": {
+            "type": "string",
+            "description": "태그 번호 (예: 266015)",
+            "pattern": "^\\d{3,9}$"
+          }
+        },
+        "required": [
+          "tag_id"
+        ]
+      },
+      "output": {
+        "titles": {
+          "type": "list",
+          "description": "태그의 작품",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "작품 이름"
+            },
+            "content_id": {
+              "type": "string",
+              "description": "왓챠 작품 번호"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "tag_id": "266015"
+        },
+        {
+          "tag_id": "260635"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/ko/tag?ids={{tag_id}}&domain=video"
+        },
+        {
+          "wait": {
+            "items": "a[aria-label][href*=\"/contents/\"]",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "extract": {
+            "items": "a[aria-label][href*=\"/contents/\"]",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "attr": "aria-label"
+              },
+              "content_id": {
+                "attr": "href",
+                "match": "/contents/([A-Za-z0-9]+)"
+              }
+            }
+          },
+          "as": "titles",
+          "min": 3
+        }
+      ],
+      "result": {
+        "titles": "{{titles}}"
+      },
+      "next": "이름으로 5편 안팎을 보여 줘요. 별점·상영 시간으로 고르려면 후보 몇 편만 watcha_content로 봐요.",
+      "expect": {
+        "rows": 10,
+        "filled": [
+          "name",
+          "content_id"
+        ]
+      },
+      "minIntervalSec": 3600
+    },
+    {
+      "name": "content",
+      "title": "작품 정보",
+      "description": "로그인 없이 된다. 왓챠 작품 번호로 작품 화면을 열어 이름·개봉일·평균 별점(5점 만점)·평가 수·상영 시간·줄거리·감독·출연과, 구독으로 볼 수 있는지(또는 개별 구매만)를 돌려준다. 번호는 watcha_search·watcha_tag에서.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, 작품 정보·별점, 화면에 박힌 데이터)",
+      "input": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "description": "작품 번호 (예: mdKpKpk)",
+            "pattern": "^[A-Za-z0-9]{5,12}$"
+          }
+        },
+        "required": [
+          "content_id"
+        ]
+      },
+      "output": {
+        "name": {
+          "type": "string",
+          "description": "작품 이름"
+        },
+        "released": {
+          "type": "string",
+          "description": "개봉·공개일"
+        },
+        "rating": {
+          "type": "string",
+          "description": "평균 별점 (5점 만점)"
+        },
+        "rating_count": {
+          "type": "string",
+          "description": "평가 수"
+        },
+        "runtime": {
+          "type": "string",
+          "description": "상영 시간 (영화)"
+        },
+        "availability": {
+          "type": "string",
+          "description": "볼 수 있는 방법 (구독·개별 구매)"
+        },
+        "synopsis": {
+          "type": "string",
+          "description": "줄거리"
+        },
+        "cast": {
+          "type": "list",
+          "description": "출연",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "배우"
+            }
+          }
+        },
+        "url": {
+          "type": "string",
+          "description": "작품 화면 주소"
+        }
+      },
+      "examples": [
+        {
+          "content_id": "mdKpKpk"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/ko/contents/{{content_id}}"
+        },
+        {
+          "wait": {
+            "text": "평균 별점|감독/출연",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "embedded": {
+            "css": "script[type=\"application/ld+json\"]"
+          },
+          "as": "ld"
+        },
+        {
+          "find": {
+            "runtime": "(?:19|20)\\d{2}\\s*((?:\\d{1,2}시간\\s*)?\\d{1,3}분)",
+            "availability": "(구독하면 바로 감상할 수 있어요|개별 구매로[^\\n]{0,40}|[^\\n]{0,20}공개 예정[^\\n]{0,20})"
+          },
+          "as": "more"
+        },
+        {
+          "map": {
+            "from": "ld.actor",
+            "limit": 6,
+            "fields": {
+              "name": "name"
+            }
+          },
+          "as": "cast"
+        }
+      ],
+      "result": {
+        "name": "{{ld.name}}",
+        "released": "{{ld.dateCreated}}",
+        "rating": "{{ld.aggregateRating.ratingValue}}",
+        "rating_count": "{{ld.aggregateRating.ratingCount}}",
+        "runtime": "{{more.runtime}}",
+        "availability": "{{more.availability}}",
+        "synopsis": "{{ld.description}}",
+        "cast": "{{cast}}",
+        "url": "https://watcha.com/ko/contents/{{content_id}}"
+      },
+      "next": "이름·별점·상영 시간·구독 여부를 한 줄로 말해요. 담아 달라고 하면 브라우저로 작품 화면의 '보고싶어요'를 눌러요(로그인 필요).",
+      "expect": {
+        "filled": [
+          "name",
+          "rating",
+          "synopsis"
+        ]
+      },
+      "minIntervalSec": 86400
+    },
+    {
+      "name": "history",
+      "title": "감상 내역",
+      "description": "로그인해야 된다. 왓챠에서 보고 있는(이어 보기) 작품과 어디까지 봤는지를 읽는다. '그 드라마 몇 화까지 봤지?'에 쓴다. 프로필 고르기가 나오면 사용자에게 어느 프로필인지 묻는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "찾는 작품 이름 (비우면 전체)",
+            "maxLength": 50,
+            "default": ""
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/watching/video"
+        },
+        {
+          "sleep": 3000
+        },
+        {
+          "stop_if": "왓챠파티\\n로그인\\n|로그인/가입 방법을 선택해 주세요",
+          "say": "왓챠 로그인이 필요해요. 연결하면 감상 내역을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "왓챠 '보는 중' 화면이에요. 프로필 고르기가 나오면 사용자에게 어느 프로필인지 물어요. 작품 이름과 회차, 남은 시간(진행 막대)을 읽어요. 찾는 작품({{title}})이 있으면 그 작품만, 없으면 최근 5개를 정리해요. 지우기 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "membership",
+      "title": "구독권 확인",
+      "description": "로그인해야 된다. 왓챠 설정에서 지금 구독권 이름·다음 결제일·결제 금액·결제 수단(끝자리만)을 확인한다. 해지는 watcha_cancel.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/ko/settings"
+        },
+        {
+          "sleep": 3000
+        },
+        {
+          "stop_if": "로그인/가입 방법을 선택해 주세요",
+          "say": "왓챠 로그인이 필요해요. 연결하면 구독권과 다음 결제일을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "왓챠 설정 화면이에요. '구독 정보'(또는 '이용권·결제')를 열어 지금 구독권 이름, 다음 결제일, 결제 금액, 결제 수단(카드 번호는 끝 4자리만)을 읽어 짧게 정리해요. 해지·변경 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "cancel",
+      "title": "구독 해지",
+      "description": "로그인해야 된다. 왓챠 구독 해지 화면까지 데려가 AI에게 넘긴다. 언제까지 볼 수 있는지와 환불 여부를 정리해 browser_request_approval로 사용자 승인을 받아야만 최종 해지 버튼을 누른다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://watcha.com/ko/settings"
+        },
+        {
+          "sleep": 3000
+        },
+        {
+          "stop_if": "로그인/가입 방법을 선택해 주세요",
+          "say": "왓챠 로그인이 필요해요. 연결하면 구독을 해지할 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "왓챠 설정 화면이에요. '구독 정보'에서 '구독 해지'(또는 '정기 결제 해지')로 들어가요. 해지 이유를 묻는 화면은 사용자에게 물어 고르고, 혜택 제안은 받지 않고 넘어가요. 마지막 해지 버튼은 누르기 전에 구독권 이름, 이용 가능 기한(다음 결제일 전날까지 등), 환불 여부를 화면 그대로 정리해 browser_request_approval로 승인받아야만 눌러요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

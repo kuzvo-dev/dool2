@@ -1,0 +1,497 @@
+{
+  "id": "melon",
+  "tools": [
+    {
+      "name": "chart",
+      "title": "차트 보기",
+      "description": "로그인 없이 된다. 멜론 차트(기본 TOP100 실시간, 또는 일간·주간·월간·HOT100)를 순위대로 돌려준다: 순위·곡·가수·앨범·순위 변화(예: 2단계 상승, 순위 진입)·곡 번호. '오늘 TOP 100에 새로 들어온 곡', '요즘 1위 뭐야'에 쓴다. 기준 시각은 chart_time. 곡을 더 찾으려면 melon_search, 플레이리스트에 담으려면 melon_prepare_playlist.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, TOP100·일간 순위, 화면 읽기)",
+      "input": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "hot100"
+            ],
+            "description": "차트 종류. 비우면 TOP100 실시간(1시간마다), day 일간, week 주간, month 월간, hot100 HOT100(발매 100일 안의 곡)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 30,
+            "description": "몇 위까지 (기본 30, 최대 100)"
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "chart_time": {
+          "type": "string",
+          "description": "차트 기준 날짜·시각"
+        },
+        "songs": {
+          "type": "list",
+          "description": "순위대로",
+          "fields": {
+            "rank": {
+              "type": "string",
+              "description": "순위"
+            },
+            "title": {
+              "type": "string",
+              "description": "곡 이름"
+            },
+            "artist": {
+              "type": "strings",
+              "description": "가수"
+            },
+            "album": {
+              "type": "string",
+              "description": "앨범"
+            },
+            "change": {
+              "type": "string",
+              "description": "순위 변화 (순위 동일·N단계 상승·N단계 하락·순위 진입)"
+            },
+            "song_id": {
+              "type": "string",
+              "description": "멜론 곡 번호"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "limit": 30
+        },
+        {
+          "period": "day",
+          "limit": 10
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.melon.com/chart/{{#period}}{{period}}/{{/period}}index.htm"
+        },
+        {
+          "wait": {
+            "items": "tr.lst50",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "find": {
+            "time": "(\\d{4}\\.\\d{2}\\.\\d{2}(?:\\s*~\\s*\\d{4}\\.\\d{2}\\.\\d{2})?(?:\\s+\\d{1,2}:\\d{2})?)"
+          },
+          "as": "when"
+        },
+        {
+          "extract": {
+            "items": "tr.lst50, tr.lst100",
+            "limit": 100,
+            "fields": {
+              "rank": {
+                "css": "span.rank"
+              },
+              "title": {
+                "css": ".rank01 a"
+              },
+              "artist": {
+                "css": ".rank02 > a",
+                "list": true
+              },
+              "album": {
+                "css": ".rank03 a"
+              },
+              "change": {
+                "css": ".rank_wrap",
+                "attr": "title"
+              },
+              "song_id": {
+                "attr": "data-song-no"
+              }
+            }
+          },
+          "as": "rows",
+          "min": 10
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "rank": "rank",
+              "title": "title",
+              "artist": "artist",
+              "album": "album",
+              "change": "change",
+              "song_id": "song_id"
+            }
+          },
+          "as": "songs"
+        }
+      ],
+      "result": {
+        "chart_time": "{{when.time}}",
+        "songs": "{{songs}}"
+      },
+      "next": "1~10위나 사용자가 물은 부분(새로 들어온 곡은 change가 '순위 진입'인 줄)만 짧게 보여 줘요. 담아 달라고 하면 melon_prepare_playlist에 song_id를 넘겨요.",
+      "expect": {
+        "rows": 10,
+        "filled": [
+          "rank",
+          "title",
+          "artist",
+          "song_id"
+        ]
+      },
+      "minIntervalSec": 1800
+    },
+    {
+      "name": "search",
+      "title": "노래 찾기",
+      "description": "로그인 없이 된다. 곡 이름·가수 이름으로 멜론에서 노래를 찾아 곡·가수·앨범·좋아요 수·곡 번호를 돌려준다(정확도순). 가사 한 구절로 찾으려면 melon_lyrics. 플레이리스트에 담으려면 song_id를 melon_prepare_playlist에 넘긴다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, 곡 검색·결과 없음 안내, 화면 읽기)",
+      "input": {
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "곡 이름이나 가수 이름 (예: 아이유, 밤양갱)",
+            "maxLength": 60
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 15,
+            "description": "몇 곡까지 (기본 15)"
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "output": {
+        "songs": {
+          "type": "list",
+          "description": "찾은 곡",
+          "fields": {
+            "title": {
+              "type": "string",
+              "description": "곡 이름"
+            },
+            "artist": {
+              "type": "strings",
+              "description": "가수"
+            },
+            "album": {
+              "type": "string",
+              "description": "앨범"
+            },
+            "likes": {
+              "type": "string",
+              "description": "좋아요 수"
+            },
+            "song_id": {
+              "type": "string",
+              "description": "멜론 곡 번호"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "keyword": "아이유"
+        },
+        {
+          "keyword": "봄날"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.melon.com/search/song/index.htm?q={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "text": "곡 총 \\d",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "곡 총 0건",
+          "say": "멜론에서 '{{keyword}}'(으)로 찾은 노래가 없어요. 띄어쓰기나 다른 이름으로 다시 찾아볼까요?"
+        },
+        {
+          "extract": {
+            "items": "tbody tr:has(input[name=input_check])",
+            "limit": 50,
+            "fields": {
+              "title": {
+                "css": "a.fc_gray",
+                "attr": "title"
+              },
+              "artist": {
+                "css": "#artistName > a",
+                "list": true
+              },
+              "album": {
+                "css": "td:nth-child(5) a"
+              },
+              "likes": {
+                "css": "button.like .cnt",
+                "match": "([\\d,]+)"
+              },
+              "song_id": {
+                "css": "input[name=input_check]",
+                "attr": "value"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "artist": "artist",
+              "album": "album",
+              "likes": "likes",
+              "song_id": "song_id"
+            }
+          },
+          "as": "songs"
+        }
+      ],
+      "result": {
+        "songs": "{{songs}}"
+      },
+      "next": "곡·가수를 몇 개 보여 주고 사용자가 찾던 곡이 맞는지 물어요. 담아 달라고 하면 melon_prepare_playlist.",
+      "expect": {
+        "rows": 5,
+        "filled": [
+          "title",
+          "artist",
+          "song_id"
+        ]
+      },
+      "minIntervalSec": 600
+    },
+    {
+      "name": "lyrics",
+      "title": "가사로 노래 찾기",
+      "description": "로그인 없이 된다. 가사에 들어간 말로 멜론에서 노래를 찾는다('가사에 바다 들어간 노래', '…라는 가사 나오는 노래 뭐지?'). 곡 이름·가수·가사 일부·곡 번호를 돌려준다. 계절·분위기 같은 조건은 결과를 보고 AI가 골라 말한다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-18, 가사 검색, 화면 읽기)",
+      "input": {
+        "properties": {
+          "words": {
+            "type": "string",
+            "description": "가사에 들어간 말 (예: 바다, 너의 의미)",
+            "maxLength": 60
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 15,
+            "description": "몇 곡까지 (기본 15)"
+          }
+        },
+        "required": [
+          "words"
+        ]
+      },
+      "output": {
+        "songs": {
+          "type": "list",
+          "description": "가사가 맞는 곡",
+          "fields": {
+            "title": {
+              "type": "string",
+              "description": "곡 이름"
+            },
+            "artist": {
+              "type": "strings",
+              "description": "가수"
+            },
+            "lyric": {
+              "type": "string",
+              "description": "가사 일부"
+            },
+            "song_id": {
+              "type": "string",
+              "description": "멜론 곡 번호"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "words": "바다"
+        },
+        {
+          "words": "사랑해"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.melon.com/search/lyric/index.htm?q={{words|url}}"
+        },
+        {
+          "wait": {
+            "text": "가사 총 \\d",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "가사 총 0건",
+          "say": "'{{words}}'(이)가 들어간 가사를 멜론에서 못 찾았어요. 다른 구절로 찾아볼까요?"
+        },
+        {
+          "extract": {
+            "items": "li:has(> dl.cntt_lyric)",
+            "limit": 30,
+            "fields": {
+              "title": {
+                "css": "dt a.text"
+              },
+              "artist": {
+                "css": "dd.info .atist > a",
+                "list": true
+              },
+              "lyric": {
+                "css": "dd.lyric a"
+              },
+              "song_id": {
+                "css": "dt a[data-song-no]",
+                "attr": "data-song-no"
+              }
+            }
+          },
+          "as": "rows"
+        },
+        {
+          "map": {
+            "from": "rows",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "artist": "artist",
+              "lyric": "lyric",
+              "song_id": "song_id"
+            }
+          },
+          "as": "songs"
+        }
+      ],
+      "result": {
+        "songs": "{{songs}}"
+      },
+      "next": "곡·가수와 가사 한 줄을 보여 줘요. 담아 달라고 하면 melon_prepare_playlist.",
+      "expect": {
+        "rows": 5,
+        "filled": [
+          "title",
+          "artist",
+          "song_id"
+        ]
+      },
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_playlist",
+      "title": "플레이리스트 만들기",
+      "description": "로그인해야 된다. 고른 곡(곡 번호)을 멜론 플레이리스트에 담을 수 있게 내 플레이리스트 화면을 열어 AI에게 넘긴다. 곡은 melon_chart·melon_search·melon_lyrics에서 받은 song_id로. 새 플레이리스트 이름과 담을 곡 목록을 사용자에게 먼저 보여 주고 확인받은 뒤에 만든다.",
+      "tier": "채워 두기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "플레이리스트 이름 (예: 출근길)",
+            "maxLength": 40
+          },
+          "song_ids": {
+            "type": "string",
+            "description": "담을 곡 번호를 쉼표로 (예: 602290711,603712834)",
+            "pattern": "^\\d+(,\\d+)*$",
+            "maxLength": 1500
+          }
+        },
+        "required": [
+          "name",
+          "song_ids"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "name": "출근길",
+          "song_ids": "602290711,603712834"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.melon.com/mymusic/main/mymusicmain_list.htm"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "멜론아이디 로그인|카카오계정 로그인",
+          "say": "멜론 로그인이 필요해요. 연결하면 플레이리스트를 바로 만들 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "멜론 마이뮤직 화면이에요. '플레이리스트' 탭을 열어요. 같은 이름 '{{name}}'이 이미 있으면 그 플레이리스트에 곡을 더할지 사용자에게 물어요. 없으면 '플레이리스트 만들기'로 이름을 '{{name}}'으로 적고, 곡 번호 {{song_ids}}의 곡을 담아요(곡 화면 https://www.melon.com/song/detail.htm?songId=번호 의 '담기'). 저장하기 전에 이름과 곡 목록을 사용자에게 보여 주고 확인받아요. 지우기는 하지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "membership",
+      "title": "이용권 확인",
+      "description": "로그인해야 된다. 멜론에서 쓰고 있는 이용권 이름·다음 결제일·결제 금액·결제 수단(끝자리만)을 확인한다. '다음 결제일이랑 금액 알려 줘'에 쓴다. 해지·변경은 하지 않는다(사용자가 원하면 화면만 안내).",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.melon.com/commerce/mypage/product/web/producthistory_listCurUserProdView.htm"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "멜론아이디 로그인|카카오계정 로그인|접속이 지연되고",
+          "say": "멜론 로그인이 필요해요. 연결하면 이용권과 다음 결제일을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "멜론 '이용 중인 이용권' 화면이에요. 로그인했는데도 '접속이 지연' 화면이면 상단 '마이 영역 > 이용권 내역'으로 들어가요. 지금 쓰는 이용권 이름, 이용 기간, 다음 결제일, 결제 금액, 결제 수단(카드 번호는 끝 4자리만)을 읽어 짧게 정리해요. 해지·변경 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
