@@ -1,0 +1,278 @@
+{
+  "id": "soomgo",
+  "tools": [
+    {
+      "name": "search_pros",
+      "title": "고수 찾기",
+      "description": "로그인 없이 된다. 서비스 이름(에어컨 청소·입주청소·이사·피아노 레슨 등)으로 숨고 고수를 검색 결과 순으로 찾아 고수 이름·평점·리뷰 수·고용 횟수·경력·한 줄 소개·프로필 주소를 돌려준다. 지역은 검색어에 붙여 본다(예: 성동구 에어컨 청소). 견적을 받으려면 soomgo_prepare_request.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-17, 에어컨 청소·이사 고수 목록)",
+      "input": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "필요한 서비스 (예: 에어컨 청소, 입주청소, 원룸 이사)",
+            "maxLength": 40
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 10,
+            "description": "몇 명까지 (기본 10)"
+          }
+        },
+        "required": [
+          "service"
+        ]
+      },
+      "output": {
+        "pros": {
+          "type": "list",
+          "description": "고수 (검색 결과 순)",
+          "fields": {
+            "name": {
+              "type": "string",
+              "description": "고수·업체 이름"
+            },
+            "rating": {
+              "type": "string",
+              "description": "평점 (5점 만점)"
+            },
+            "reviews": {
+              "type": "string",
+              "description": "리뷰 수"
+            },
+            "hires": {
+              "type": "string",
+              "description": "숨고 고용 횟수"
+            },
+            "career": {
+              "type": "string",
+              "description": "경력"
+            },
+            "intro": {
+              "type": "string",
+              "description": "한 줄 소개"
+            },
+            "link": {
+              "type": "string",
+              "description": "프로필 주소"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "service": "에어컨 청소"
+        },
+        {
+          "service": "이사",
+          "limit": 5
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://soomgo.com/search/pro?sort=review_count&q={{service|url}}&search_type=%EC%A7%81%EC%A0%91%EC%9E%85%EB%A0%A5"
+        },
+        {
+          "wait": {
+            "items": "a[href*='/profile/users/']",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "extract": {
+            "items": "a[href*='/profile/users/']:is([href*='from=search_result'],[href*='from=pro_list'])",
+            "limit": 30,
+            "fields": {
+              "name": {
+                "line": 0
+              },
+              "rating": {
+                "match": "\\n(\\d\\.\\d)\\n"
+              },
+              "reviews": {
+                "match": "\\(([\\d,]+)\\)"
+              },
+              "hires": {
+                "match": "([\\d,]+)회 고용"
+              },
+              "career": {
+                "match": "경력 (\\d+년)"
+              },
+              "intro": {
+                "match": "경력 \\d+년\\n([^\\n]+)"
+              },
+              "link": {
+                "attr": "href"
+              }
+            }
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "name",
+              "rating": "rating",
+              "reviews": "reviews",
+              "hires": "hires",
+              "career": "career",
+              "intro": "intro",
+              "link": "link"
+            }
+          },
+          "as": "pros"
+        }
+      ],
+      "result": {
+        "pros": "{{pros}}"
+      },
+      "next": "평점·리뷰 수·고용 횟수로 2~3명을 짧게 비교해 보여 줘요. 여러 고수에게 견적을 받으려면 soomgo_prepare_request로 요청서를 써요.",
+      "minIntervalSec": 600
+    },
+    {
+      "name": "prepare_request",
+      "title": "견적 요청서 쓰기",
+      "description": "숨고 견적 요청서를 서비스 질문지에 맞춰 채워 '요청서 보내기' 직전까지 간다. 보내면 여러 고수에게 요청이 가니 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 보내기 단계에서 로그인이 필요하다: 연결 전이면 그때 connect_ask('soomgo').",
+      "tier": "연락하기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "서비스 (예: 입주청소, 원룸 이사)",
+            "maxLength": 40
+          },
+          "details": {
+            "type": "string",
+            "description": "질문지에 채울 내용: 날짜·지역·평수·방 개수·짐 양·원하는 점 등 사용자가 말한 그대로",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "service",
+          "details"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "service": "입주청소",
+          "details": "다음 달 12일, 성동구 행당동, 24평 아파트, 방 3개 화장실 2개"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://soomgo.com/categories?from=web_gnb"
+        },
+        {
+          "wait": {
+            "text": "견적|서비스",
+            "timeoutMs": 10000
+          }
+        },
+        {
+          "handoff_to_agent": "숨고 견적요청 화면이에요. 검색이나 분류에서 '{{service}}'에 맞는 서비스를 골라 요청서를 시작하고, 질문지 단계마다 사용자 내용({{details}})에 맞는 답을 골라요. 내용에 없는 필수 질문은 사용자에게 물어요. 마지막 '요청서 보내기'(또는 '견적 받기') 전에 서비스·날짜·지역·답한 내용을 정리해 browser_request_approval로 승인받은 뒤에만 눌러요. 로그인이 나오면 연결 전엔 connect_ask('soomgo'), 휴대폰 확인은 사용자에게 browser_handoff."
+        }
+      ],
+      "result": {},
+      "login": false
+    },
+    {
+      "name": "quotes",
+      "title": "받은 견적 보기",
+      "description": "로그인한 사용자가 보낸 요청서와 고수들이 보낸 견적을 본다. '받은 견적 중에 제일 괜찮은 거 골라 줘'에 쓴다. 요청서마다 고수 이름·견적 금액·평점·리뷰 수·메시지 요지를 정리해 비교한다. 고용·결제는 하지 않는다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://soomgo.com/requests/sent"
+        },
+        {
+          "wait": {
+            "text": "이메일 로그인|받은 견적|요청서",
+            "timeoutMs": 10000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "이메일 로그인",
+          "say": "숨고 로그인이 필요해요. 연결하면 받은 견적을 바로 비교해 드릴게요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "숨고 받은 견적 화면이에요. 진행 중인 요청서부터 열어 고수마다 이름·견적 금액(총액·단위)·평점·리뷰 수·첫 메시지 요지를 읽어 표로 정리하고, 금액과 평점을 함께 봐서 추천 1~2곳과 이유를 적어요. 고용하기·결제·채팅 보내기는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    },
+    {
+      "name": "send_message",
+      "title": "고수에게 메시지",
+      "description": "로그인한 사용자 대신 숨고 채팅방에서 고수에게 메시지를 보낼 준비를 한다(방문 시간 확인·추가 질문 등). 채팅 목록에서 그 고수의 방을 열어 입력칸에 글을 써 두고, 보내기는 사용자 승인(browser_request_approval)을 받아야만 누른다.",
+      "tier": "연락하기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "pro": {
+            "type": "string",
+            "description": "고수·업체 이름 (채팅 목록에 보이는 이름)",
+            "maxLength": 60
+          },
+          "message": {
+            "type": "string",
+            "description": "보낼 메시지 (사용자 말투로 정중하게)",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "pro",
+          "message"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "pro": "청소해방",
+          "message": "안녕하세요, 방문 시간을 오전 10시로 할 수 있을까요?"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://soomgo.com/chats"
+        },
+        {
+          "wait": {
+            "text": "이메일 로그인|채팅",
+            "timeoutMs": 10000
+          },
+          "optional": true
+        },
+        {
+          "stop_if": "이메일 로그인",
+          "say": "숨고 로그인이 필요해요. 연결하면 고수에게 보낼 메시지를 준비해 드릴게요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "숨고 채팅 목록이에요. '{{pro}}' 채팅방을 열어 최근 대화를 읽고, 입력칸에 '{{message}}'를 써 둬요. 받는 고수·보낼 글을 정리해 browser_request_approval로 승인받은 뒤에만 '전송'을 눌러요. 결제·고용 확정 버튼은 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

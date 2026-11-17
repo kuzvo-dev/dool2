@@ -1,0 +1,233 @@
+{
+  "id": "mmca",
+  "tools": [
+    {
+      "name": "exhibitions",
+      "title": "볼 만한 전시",
+      "description": "로그인 없이 된다. 국립현대미술관(서울·과천·덕수궁·청주)의 현재·예정 전시를 돌려준다: 전시명·관·전시실·기간(시작·끝)·관람료·작가·한 줄 소개·예약 주소(booking_url). 한 쪽에 8개씩이라 더 보려면 page를 늘린다. '이번 달에 끝나는 전시'는 end로 고른다. 관람 예약은 mmca_prepare_booking에 booking_url 끝 숫자(booking_id)를 넘긴다.",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-17, 전체·과천 현재 전시, 예정 전시, 화면이 받은 목록 읽기)",
+      "input": {
+        "properties": {
+          "branch": {
+            "type": "string",
+            "pattern": "^(|130|110|120|150)$",
+            "default": "",
+            "description": "관: 비우면 전체, 130 서울, 110 과천, 120 덕수궁, 150 청주"
+          },
+          "when": {
+            "type": "string",
+            "enum": [
+              "progressList",
+              "futureProgressList"
+            ],
+            "default": "progressList",
+            "description": "progressList 현재 전시, futureProgressList 예정 전시"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1,
+            "description": "쪽 (8개씩)"
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "total": {
+          "type": "integer",
+          "description": "조건에 맞는 전시 수"
+        },
+        "exhibitions": {
+          "type": "list",
+          "description": "전시",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string",
+              "description": "관"
+            },
+            "room": {
+              "type": "string",
+              "description": "전시실"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            },
+            "fee": {
+              "type": "string",
+              "description": "관람료"
+            },
+            "kind": {
+              "type": "string",
+              "description": "전시 종류"
+            },
+            "artists": {
+              "type": "string"
+            },
+            "about": {
+              "type": "string"
+            },
+            "booking_url": {
+              "type": "string",
+              "description": "예약 화면 주소. 끝 숫자가 mmca_prepare_booking의 booking_id"
+            },
+            "link": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {},
+        {
+          "branch": "110"
+        },
+        {
+          "when": "futureProgressList"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.mmca.go.kr/exhibitions/{{when|url}}.do?searchExhPlaCd={{branch|url}}&pageIndex={{page}}"
+        },
+        {
+          "capture": {
+            "url": "/exhibitions/AjaxExhibitionList\\.do",
+            "pick": "",
+            "timeoutMs": 12000
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found.exhibitionsList",
+            "limit": 20,
+            "fields": {
+              "title": "exhTitle",
+              "branch": "exhPlaNm",
+              "room": "exhPlaDtl",
+              "start": "exhStDt",
+              "end": "exhEdDt",
+              "fee": "exhAdm",
+              "kind": "exhTpCd",
+              "artists": "exhArtist",
+              "about": "exhContentsSumm",
+              "booking_url": "bookingUrl",
+              "link": "https://www.mmca.go.kr/exhibitions/exhibitionsDetail.do?exhFlag=1&exhId={{exhId}}"
+            }
+          },
+          "as": "exhibitions"
+        }
+      ],
+      "result": {
+        "total": "{{found.paginationInfo.totalRecordCount}}",
+        "exhibitions": "{{exhibitions}}"
+      },
+      "next": "사용자 조건(관·끝나는 날)에 맞는 2~4개를 전시명·관·기간·관람료로 보여 줘요. total이 8보다 많으면 page를 늘려 더 볼 수 있어요. 예약하려면 mmca_prepare_booking에 booking_url 끝 숫자를 booking_id로 넘겨요.",
+      "minIntervalSec": 3600,
+      "login": false
+    },
+    {
+      "name": "prepare_booking",
+      "title": "관람 예약 준비",
+      "description": "전시 예약 화면(booking_id)을 열어 날짜·관람 시간을 골라 '예매하기' 직전까지 간다. 관람권은 대개 무료~수천 원이고 일주일 단위로 열린다(매주 월요일 오후 6시). 인원 입력과 예약 확정·결제는 사용자 승인(browser_request_approval)을 받아야만 한다. 예매하기부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('mmca').",
+      "tier": "돈 내기",
+      "status": "초안",
+      "input": {
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "description": "예약 상품 번호 = mmca_exhibitions의 booking_url 끝 숫자 (예: 396 과천 전시관람권)",
+            "pattern": "^\\d{1,6}$"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "관람 날짜 YYYY-MM-DD"
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "default": 1,
+            "description": "인원 (최대 4)"
+          },
+          "time": {
+            "type": "string",
+            "description": "원하는 관람 시간 (예: 오후 1시 회차). 모르면 비움",
+            "maxLength": 30,
+            "default": ""
+          }
+        },
+        "required": [
+          "booking_id",
+          "date"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "booking_id": "396",
+          "date": "2026-11-21",
+          "people": 2
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://booking.mmca.go.kr/product/ko/performance/{{booking_id|digits}}"
+        },
+        {
+          "wait": {
+            "text": "예약날짜선택",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "handoff_to_agent": "국립현대미술관 전시 예약 화면이에요. 달력 위 연·월이 {{date}}의 달인지 보고(아니면 '다음 달') 그 날의 숫자를 눌러요. '관람 시간을 선택해 주세요'에서 {{time}}(없으면 가장 이른 회차)을 고르고, 매진·마감이면 그대로 알려요. '예매하기'를 누르면 로그인·인원 화면이 나와요: 연결 전엔 connect_ask('mmca'). 인원 {{people}}명과 관람권 종류·금액·날짜·시간·취소 기한을 정리해 browser_request_approval로 승인받은 뒤에만 예약 확정·결제를 눌러요."
+        }
+      ],
+      "result": {},
+      "login": false
+    },
+    {
+      "name": "reservations",
+      "title": "예약 보기",
+      "description": "로그인한 사용자의 국립현대미술관 전시 예약 내역을 본다. '예약한 전시 언제였지?'에 쓴다. 전시·관·날짜·시간·인원·상태를 정리한다. 예약 취소는 하지 않는다(취소는 사용자 승인 뒤 브라우저 도구로).",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {},
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://booking.mmca.go.kr/product/performance"
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "stop_if": "MMCA 회원가입",
+          "say": "국립현대미술관 로그인이 필요해요. 연결하면 예약 내역을 바로 볼 수 있어요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "국립현대미술관 예약 사이트예요(로그인됨). 위 메뉴의 마이페이지 > 예약/신청 내역 > 전시로 가서 다가오는 예약부터 전시·관·날짜·관람 시간·인원·상태를 읽어 정리해요. 예약 번호는 끝 4자리만. 예약 취소는 누르지 않아요."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
