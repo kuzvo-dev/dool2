@@ -215,6 +215,26 @@ export function setRich(target: HTMLElement, text: string) {
   }
   target.replaceChildren(
     ...richBlocks(text).map((block) => {
+      if (block.type === 'h') {
+        const t = el(block.level === 1 ? 'h3' : 'h4', 'rich-h')
+        spans(t, block.text)
+        return t
+      }
+      if (block.type === 'table') {
+        const table = el('table', 'rich-table')
+        const row = (cells: Inline[][], tag: 'th' | 'td') => {
+          const tr = el('tr')
+          for (const c of cells) {
+            const cell = el(tag)
+            spans(cell, c)
+            tr.append(cell)
+          }
+          return tr
+        }
+        if (block.head) table.append(el('thead', '', row(block.head, 'th')))
+        table.append(el('tbody', '', ...block.rows.map((r) => row(r, 'td'))))
+        return el('div', 'rich-table-wrap', table)
+      }
       if (block.type === 'p') {
         const p = el('p')
         block.lines.forEach((line, i) => {
