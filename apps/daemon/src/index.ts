@@ -991,6 +991,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteSkill = (url) => skills.forUrl(url)
+  // 확장이 닫힌 두리 탭을 알리면 그 탭 기록을 지운다 (안 지우면 하루 내내 쌓인다)
+  browser.on('notice', (n) => {
+    if (n.event === 'tab-closed') browserTools.forgetTab(n.tabId)
+  })
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
