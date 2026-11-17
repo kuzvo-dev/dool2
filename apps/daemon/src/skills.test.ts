@@ -138,38 +138,21 @@ describe('연결 카드와 스킬 도구', () => {
   })
 })
 
-describe('서비스 고르기 (서비스 이름이 없는 부탁)', () => {
-  it('"기념일 식당"으로 찾으면 식당 예약 서비스가 맨 앞에 나온다', async () => {
-    const s = new Skills(REPO_SKILLS)
-    const r = await s.run('find', { query: '판교 기념일 식당' })
-    const first = r.content[0]?.text.split('\n')[0] ?? ''
-    expect(first).toMatch(/catchtable/)
-  })
-
-  it('연결된 서비스가 같은 일의 다른 서비스보다 앞에 나온다', async () => {
-    const s = new Skills(REPO_SKILLS, () => ({ kurly: '2026-11-17T00:00:00.000Z' }))
-    const r = await s.run('find', { query: '우유랑 계란 사 줘' })
-    expect(r.content[0]?.text.split('\n')[0]).toMatch(/kurly .*연결됨/)
-  })
-
-  it('지침에 넣는 서비스 지도: 분류마다 할 수 있는 일, 연결된 곳에 ✓', async () => {
+describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르게)', () => {
+  it('서비스마다 무엇을 하는 곳인지(소개)와 할 수 있는 일, 연결된 곳에 ✓', async () => {
     const s = new Skills(REPO_SKILLS, () => ({ catchtable: '2026-11-17T00:00:00.000Z' }))
     await s.connections()
     const map = s.serviceMap()
-    expect(map).toMatch(/캐치테이블\(catchtable\)✓: 식당 예약/)
-    expect(map).toMatch(/장보기·배달: .*컬리\(kurly\):/)
+    expect(map).toMatch(/- 캐치테이블\(catchtable\)✓ — .*식당.*\[식당 예약/)
+    expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) — /)
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
-    expect(map.length).toBeLessThan(6000)
+    expect(map.length).toBeLessThan(12000)
   })
-})
 
-describe('부탁에 맞는 서비스 참고', () => {
-  it('기념일 식당 → 식당 예약 서비스를 짚고, 일 낱말이 없으면 붙이지 않는다', async () => {
-    const s = new Skills(REPO_SKILLS)
-    await s.connections()
-    expect(s.routeHint('판교에서 기념일 식당 찾아 줘')).toMatch(/catchtable/)
-    expect(s.routeHint('안녕')).toBeUndefined()
-    expect(s.routeHint('[두리 앱 알림] 승인했어요')).toBeUndefined()
+  it('연결된 서비스가 같은 이름 찾기에서 앞에 나온다', async () => {
+    const s = new Skills(REPO_SKILLS, () => ({ kurly: '2026-11-17T00:00:00.000Z' }))
+    const r = await s.run('find', { query: '장보기' })
+    expect(r.content[0]?.text.split('\n')[0]).toMatch(/kurly .*연결됨/)
   })
 })

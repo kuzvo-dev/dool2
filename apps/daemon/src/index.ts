@@ -263,8 +263,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
     // 기억은 대화마다 지침 끝에 붙는다
-    // 부탁에 맞는 서비스를 AI에게만 짚어 준다 (기록에 안 남음)
-    hint: (text) => skills.routeHint(text),
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>
       [buildSystemPrompt(life.identity()), skills.serviceMap(), life.memoryPrompt()]
