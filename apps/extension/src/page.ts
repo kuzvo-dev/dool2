@@ -1,5 +1,5 @@
 // 페이지 안에서 도는 함수들. chrome.scripting.executeScript로 확장 전용 공간(ISOLATED world)에 넣는다.
-// 그래서 페이지 스크립트는 두리가 붙인 표시(ref)를 볼 수 없다.
+// 그래서 페이지 스크립트는 두리가 붙인 표시(ref)를 볼 수 없다. (예외: pageMarkTaps만 페이지 공간에서 돈다)
 // 주의: 각 함수는 바깥 변수를 쓰면 안 된다 (문자열로 옮겨져 따로 실행된다).
 
 export interface SnapshotResult {
@@ -10,6 +10,47 @@ export interface SnapshotResult {
   refs: number
   /** 캡차·자동입력 방지 화면이 보인다 */
   captcha: boolean
+}
+
+/**
+ * 페이지 스크립트 공간(MAIN world)에서 돈다: React·Vue가 클릭 처리기만 붙인 상자에 data-dool2-tap 표시를 단다.
+ * 휴대폰용 사이트(캐치테이블 등)는 목록 줄·카드를 손가락 커서·role 없이 div + onClick으로 만들어서,
+ * 확장 공간에서는 누를 수 있는지 알 길이 없다 (처리기는 페이지 스크립트 쪽 속성에만 있다).
+ * 표시만 달고 아무것도 누르거나 읽어 가지 않는다. 사이트가 같은 표시를 직접 달아도 버튼으로 보일 뿐이다.
+ */
+export function pageMarkTaps(): number {
+  const TAP = 'data-dool2-tap'
+  const EVENTS = ['onClick', 'onMouseDown', 'onMouseUp', 'onPointerDown', 'onPointerUp', 'onTouchEnd']
+  const VUE = /^on(click|mousedown|mouseup|pointerdown|pointerup|touchend)/i
+  const NATIVE = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'BODY', 'HTML'])
+  const hasTap = (el: Element): boolean => {
+    const o = el as unknown as Record<string, unknown>
+    for (const k of Object.keys(o)) {
+      // React 17+: __reactProps$무작위 = 그 요소의 props
+      if (k.startsWith('__reactProps$')) {
+        const p = o[k] as Record<string, unknown> | null
+        if (p && EVENTS.some((e) => typeof p[e] === 'function')) return true
+      }
+      // Vue 3: _vei = 붙인 처리기 (onClick 등)
+      if (k === '_vei') {
+        const v = o[k] as Record<string, unknown> | null
+        if (v && Object.keys(v).some((e) => VUE.test(e))) return true
+      }
+    }
+    return false
+  }
+  for (const el of document.querySelectorAll(`[${TAP}]`)) el.removeAttribute(TAP)
+  let n = 0
+  let seen = 0
+  for (const el of document.body?.getElementsByTagName('*') ?? []) {
+    if (++seen > 30_000) break
+    if (NATIVE.has(el.tagName) || el.hasAttribute('role') || el.hasAttribute('onclick')) continue
+    if (hasTap(el)) {
+      el.setAttribute(TAP, '')
+      n++
+    }
+  }
+  return n
 }
 
 /** 페이지를 AI가 읽기 좋은 글로 바꾼다. 누를 수 있는 것에는 [e12 버튼 "검색"]처럼 표시를 붙인다 */
@@ -58,8 +99,11 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   }
 
   /** 안에 누르거나 입력할 것이 따로 있는 큰 상자 (페이지 전체를 감싼 tabindex·role 상자): 하나로 묶지 않는다 */
+  const TAP = 'data-dool2-tap'
+  /** 이보다 글이 긴 클릭 상자는 이름만 짧게 달고 안을 계속 읽는다 */
+  const LONG_TAP = 120
   const INNER =
-    'input:not([type=hidden]),select,textarea,button,a[href],[role=button],[role=link],[role=textbox]'
+    'input:not([type=hidden]),select,textarea,button,a[href],[role=button],[role=link],[role=textbox],[data-dool2-tap]'
   const wrapsControls = (el: Element) => el.querySelector(INNER) !== null
 
   const interactiveRole = (el: Element): string | undefined => {
@@ -94,6 +138,8 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     if ((el as HTMLElement).isContentEditable && !el.parentElement?.isContentEditable) return '입력칸'
     if ((el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') && !wrapsControls(el))
       return '버튼'
+    // React·Vue가 클릭 처리기만 붙인 상자 (휴대폰용 사이트의 목록 줄·가게 카드): pageMarkTaps가 표시해 둔다
+    if (el.hasAttribute(TAP) && !wrapsControls(el)) return '버튼'
     // 손가락 커서만 준 글자 상자 ("카카오로 로그인" div 등): 짧은 글이면 버튼으로 본다
     if (pointerBox(el)) return '버튼'
     return undefined
@@ -195,9 +241,11 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
         st.ids.set(el, ref)
       }
       st.refs.set(ref, new WeakRef(el))
-      const name = nameOf(el)
+      // 클릭 처리기만 붙은 긴 상자 (글 단락·카드 전체): 표시만 붙이고 안의 글은 그대로 읽는다
+      const long = el.hasAttribute(TAP) && ((el as HTMLElement).innerText?.trim().length ?? 0) > LONG_TAP
+      const name = long ? clean((el as HTMLElement).innerText, 30) : nameOf(el)
       cur += ` [${ref} ${role}${name ? ` "${name}"` : ''}${extra(el)}] `
-      return
+      if (!long) return
     }
     const block = BLOCK.has(el.tagName)
     if (block) flush()
