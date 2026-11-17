@@ -82,7 +82,9 @@ sw.addEventListener('push', (e) => {
 sw.addEventListener('notificationclick', (e) => {
   e.notification.close()
   const hash = String(e.notification.data?.url ?? '')
-  const target = new URL(`./${/^#[at]=[\w-]+$/.test(hash) ? hash : ''}`, sw.registration.scope).href
+  // #a=승인, #t=대화, #tab=탭 (예약한 일·먼저 챙긴 일은 피드로)
+  const ok = /^#(?:[at]=[\w-]+|tab=(?:chat|feed|ideas|goals|library))$/.test(hash)
+  const target = new URL(`./${ok ? hash : ''}`, sw.registration.scope).href
   e.waitUntil(
     (async () => {
       const wins = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })

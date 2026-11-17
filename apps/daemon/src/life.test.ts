@@ -211,6 +211,17 @@ describe('먼저 챙기기', () => {
     ])
   })
 
+  it('제안에 답하면 고른 것만 남고, 다시 답할 수 없다', () => {
+    const t = setup(kst(9, 0))
+    t.life.tell({ title: '엄마 생신', key: 'm', ask: '선물 골라 줘' })
+    t.life.tell({ title: '택배 도착', key: 'p' })
+    const [gift, parcel] = [t.life.feedItems()[1], t.life.feedItems()[0]]
+    t.life.act({ action: 'feed-answer', id: gift?.id ?? '', answer: 'yes' })
+    t.life.act({ action: 'feed-answer', id: gift?.id ?? '', answer: 'no' })
+    t.life.act({ action: 'feed-answer', id: parcel?.id ?? '', answer: 'yes' })
+    expect(t.life.feedItems().map((f) => f.answered)).toEqual([undefined, 'yes'])
+  })
+
   it('살펴보기 부탁: 연결한 서비스와 이미 알린 것을 담는다', () => {
     const card = {
       id: 'coupang',
