@@ -15,6 +15,7 @@ import {
   connectorToolName,
   fill,
   fillValue,
+  matches,
   type OutputField,
   onSite,
   pick,
@@ -645,9 +646,18 @@ export class Connectors {
       c.scope[s.as] = r.json
       return
     }
+    if ('filter' in s) {
+      const from = pick(c.scope, s.filter.from)
+      if (!Array.isArray(from)) throw new StepError(`${s.filter.from}이(가) 목록이 아니에요`)
+      const want = s.filter.value !== undefined ? f(s.filter.value).trim() : ''
+      c.scope[s.as] = from.filter((row) => matches(pick(row, s.filter.where), s.filter.op, want))
+      return
+    }
     if ('map' in s) {
-      const from = pick(c.scope, s.map.from)
-      if (!Array.isArray(from)) throw new StepError(`${s.map.from}이(가) 목록이 아니에요`)
+      const raw = pick(c.scope, s.map.from)
+      if (!Array.isArray(raw)) throw new StepError(`${s.map.from}이(가) 목록이 아니에요`)
+      // 여러 묶음으로 나뉜 목록("groups.*.items")은 한 줄로 펼친다
+      const from: unknown[] = raw.length && raw.every(Array.isArray) ? raw.flat() : raw
       c.scope[s.as] = from
         .slice(0, Number(typeof s.map.limit === 'string' ? f(s.map.limit) : s.map.limit) || 50)
         .map((row) =>

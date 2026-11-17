@@ -273,4 +273,35 @@ describe('서비스 도구 실행기', () => {
     })
     expect(await connectors.forUrl('https://other.example/')).toBeUndefined()
   })
+
+  it('목록 거르기(입력이 비면 그대로)와 여러 묶음 펼치기', async () => {
+    const { connectors } = await setup()
+    const c = connectors as unknown as {
+      step: (s: unknown, c: unknown) => Promise<unknown>
+    }
+    const scope: Record<string, unknown> = {
+      groups: [{ items: [{ n: 'a', p: 10 }] }, { items: [{ n: 'b', p: 40 }] }],
+      max: '30',
+    }
+    const ctx = {
+      scope,
+      tier: '찾아보기',
+      site: 'eats.example',
+      pollMs: 1,
+      sleep: async () => {},
+      read: async () => '',
+      need: () => 7,
+      open: async () => {},
+    }
+    await c.step({ map: { from: 'groups.*.items', fields: { name: 'n', price: 'p' } }, as: 'rows' }, ctx)
+    expect(scope.rows).toEqual([
+      { name: 'a', price: 10 },
+      { name: 'b', price: 40 },
+    ])
+    await c.step({ filter: { from: 'rows', where: 'price', op: 'lte', value: '{{max}}' }, as: 'cheap' }, ctx)
+    expect(scope.cheap).toEqual([{ name: 'a', price: 10 }])
+    scope.max = ''
+    await c.step({ filter: { from: 'rows', where: 'price', op: 'lte', value: '{{max}}' }, as: 'all' }, ctx)
+    expect(scope.all).toHaveLength(2)
+  })
 })

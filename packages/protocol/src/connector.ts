@@ -133,6 +133,23 @@ export const StepSchema = z.union([
       as: Key,
     })
     .strict(),
+  /**
+   * 목록 거르기: from의 줄 중 조건에 맞는 것만. value가 비면(입력을 안 줬으면) 거르지 않는다.
+   * 예: { "from": "products", "where": "price", "op": "lte", "value": "{{max_price}}" }
+   */
+  z
+    .object({
+      filter: z
+        .object({
+          from: Text(200),
+          where: Text(200),
+          op: z.enum(['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'contains', 'has', 'not']),
+          value: z.string().max(200).optional(),
+        })
+        .strict(),
+      as: Key,
+    })
+    .strict(),
   /** 목록 모양 바꾸기: from(변수 경로)의 줄마다 fields(새 이름 → 줄 안 경로) */
   z
     .object({
@@ -187,6 +204,7 @@ export const STEP_KINDS = [
   'extract',
   'fetch',
   'map',
+  'filter',
   'stop_if',
   'require',
   'approve',
@@ -331,8 +349,16 @@ export const TEMPLATE_FILTERS = Object.keys(FILTERS)
 const EXPR = /\{\{\s*([a-zA-Z_][\w.]*)((?:\s*\|\s*[a-z0-9]+)*)\s*\}\}/g
 
 /** 글 속 {{이름|거르개}}를 채운다. 없는 값은 빈칸 */
+/** {{#name}}…{{/name}}: 값이 있을 때만 안을 채운다 (빈 입력이면 &fromPrice= 같은 칸을 빼기) */
+const SECTION = /\{\{#\s*([a-zA-Z_][\w.]*)\s*\}\}([\s\S]*?)\{\{\/\s*\1\s*\}\}/g
+const present = (v: unknown) =>
+  v !== undefined && v !== null && v !== '' && v !== false && !(Array.isArray(v) && v.length === 0)
+
 export function fill(template: string, scope: Scope): string {
-  return template.replace(EXPR, (_m, path: string, filters: string) => {
+  const t = template.replace(SECTION, (_m, path: string, inner: string) =>
+    present(pick(scope, path)) ? inner : '',
+  )
+  return t.replace(EXPR, (_m, path: string, filters: string) => {
     const raw = pick(scope, path)
     let v = raw === undefined || raw === null ? '' : typeof raw === 'string' ? raw : String(raw)
     for (const f of filters
@@ -358,6 +384,7 @@ export function fillValue(template: string, scope: Scope): unknown {
 export function templateNames(template: string): { names: string[]; filters: string[] } {
   const names: string[] = []
   const filters: string[] = []
+  for (const m of template.matchAll(SECTION)) names.push((m[1] ?? '').split('.')[0] ?? '')
   for (const m of template.matchAll(EXPR)) {
     names.push((m[1] ?? '').split('.')[0] ?? '')
     for (const f of (m[2] ?? '')
@@ -459,6 +486,10 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
         if (s.fetch.method === 'POST' && t.tier !== '찾아보기' && t.tier !== '채워 두기')
           problems.push(`${at} ${where}: 돈 내기·연락하기 도구는 POST 요청을 쓸 수 없어요`)
       }
+      if ('filter' in s) {
+        useAll(`{{${s.filter.from}}}`, where)
+        if (s.filter.value) useAll(s.filter.value, where)
+      }
       if ('map' in s) {
         useAll(`{{${s.map.from}}}`, where)
         if (typeof s.map.limit === 'string') useAll(s.map.limit, where)
@@ -532,4 +563,20 @@ export function checkInput(input: ConnectorInput, args: Record<string, unknown>)
     }
   }
   return problems
+}
+
+/** 거르기 조건 하나 (filter 단계). want가 비면 늘 참 */
+export function matches(v: unknown, op: string, want: string): boolean {
+  if (op === 'has') return v !== undefined && v !== null && v !== '' && v !== false
+  if (op === 'not') return v === undefined || v === null || v === '' || v === false
+  if (want === '') return true
+  const num = (x: unknown) => (typeof x === 'number' ? x : Number(String(x).replace(/[^\d.-]/g, '')))
+  if (op === 'contains')
+    return Array.isArray(v) ? v.some((x) => String(x).includes(want)) : String(v ?? '').includes(want)
+  if (op === 'eq') return String(v ?? '') === want
+  if (op === 'ne') return String(v ?? '') !== want
+  const a = num(v)
+  const b = num(want)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false
+  return op === 'lt' ? a < b : op === 'lte' ? a <= b : op === 'gt' ? a > b : a >= b
 }

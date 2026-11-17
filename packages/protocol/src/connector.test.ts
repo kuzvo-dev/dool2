@@ -149,3 +149,39 @@ describe('일하는 중 표시', async () => {
     expect(toolLabel('mcp__dool2__service_find')).toBe('서비스 찾는')
   })
 })
+
+describe('조건부 채우기와 거르기', async () => {
+  const { matches } = await import('./connector.js')
+  it('{{#name}}…{{/name}}은 값이 있을 때만', () => {
+    const t = 'q={{q|url}}{{#max}}&toPrice={{max}}{{/max}}'
+    expect(fill(t, { q: '사과', max: 30000 })).toBe('q=%EC%82%AC%EA%B3%BC&toPrice=30000')
+    expect(fill(t, { q: '사과' })).toBe('q=%EC%82%AC%EA%B3%BC')
+    expect(fill(t, { q: '사과', max: '' })).toBe('q=%EC%82%AC%EA%B3%BC')
+  })
+  it('조건: 값이 비면 거르지 않는다', () => {
+    expect(matches(12900, 'lte', '30000')).toBe(true)
+    expect(matches('32,000원', 'lte', '30000')).toBe(false)
+    expect(matches(12900, 'lte', '')).toBe(true)
+    expect(matches(['로켓배송', '무료'], 'contains', '로켓')).toBe(true)
+    expect(matches(true, 'not', '')).toBe(false)
+    expect(matches(null, 'not', '')).toBe(true)
+  })
+  it('검사기는 조건부 채우기의 이름도 본다', () => {
+    const p = checkConnector(
+      'demo',
+      {
+        id: 'demo',
+        tools: [
+          tool({
+            steps: [
+              { open: 'https://www.demo.co.kr/s?q={{keyword|url}}{{#nope}}&x=1{{/nope}}' },
+              { extract: { items: 'li', fields: { name: {} } }, as: 'rows' },
+            ],
+          }),
+        ],
+      },
+      'demo.co.kr',
+    )
+    expect(p.join('\n')).toMatch(/\{\{nope\}\}가 무엇인지 몰라요/)
+  })
+})

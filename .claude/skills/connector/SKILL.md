@@ -40,6 +40,7 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # 없으면: npx @pup
 - **description**: ① 언제 쓰는지 ② 무엇을 돌려주는지 ③ 다음에 무엇을 하면 되는지(다음 도구 이름). 사이트 요령도 여기에. 600자 안.
 - **input**: 꼭 필요한 칸만 `required`. 날짜는 `format: date`, 시간은 `format: time`, 고르기는 `enum`, 번호는 `pattern`. 칸 설명에 형식과 예를 적어요("날짜 YYYY-MM-DD (예: 2026-11-27)"). 기본값이 자연스러우면 `default`.
 - **output**: 사용자에게 말할 칸만, 10개 안팎. 다음 도구에 넘길 id(`shop_id`)는 꼭 넣어요. 목록은 `list` + `fields`.
+- **선택 입력**(최대 가격, 지역 등)은 주소에 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`로 넣거나, 사이트가 못 거르면 `filter` 단계(value가 비면 그대로)로 걸러요.
 - **결과가 없을 때도 결과예요**: "등록 전 운송장", "그 시간은 마감"은 `require`/`stop_if` + `say`로 사용자에게 할 말을 돌려줘요. 막힘(사이트가 바뀜)과 구분돼요.
 - **next**: 결과 뒤에 AI가 할 일 (예: "2~3곳을 보여 주고 고르게 해요. 예약하려면 catchtable_prepare_booking").
 - **tier**: 읽기만 = 찾아보기, 장바구니·임시 저장처럼 되돌릴 수 있는 것 = 채워 두기, 돈이 나가거나 예약이 확정되는 것 = 돈 내기, 남에게 보내는 것 = 연락하기.
