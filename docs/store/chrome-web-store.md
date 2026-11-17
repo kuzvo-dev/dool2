@@ -25,9 +25,10 @@ PC 앱의 "Chrome에서 두리 확장 추가(클릭 한 번)"와 외부 확장 �
 4. **심사**
    - `debugger` 권한과 모든 사이트 접근 때문에 정밀 심사가 붙을 수 있어요. 며칠에서 몇 주까지 걸려요.
    - 반려되면 사유를 받아 이 문서와 권한 설명을 고쳐 다시 올려요.
-5. **id 채우기**
+5. **id 채우기** (2026-11-17 제출: `ogpbnlgnijmebpeiaceeepemcngiocif`, 미등록, 검토 통과 후 자동 게시)
    - 대시보드에 나온 항목 id(32글자)를 `packages/protocol/src/index.ts`의 `STORE_EXTENSION_ID`에 넣어요.
-   - 그러면 PC 앱이 웹 스토어 방식으로 바뀌고, 연결 통로(native messaging)도 그 id를 허용해요.
+   - 연결 통로(native messaging)는 바로 그 id를 허용해요.
+   - 심사를 통과해 게시되면 `STORE_EXTENSION_PUBLISHED`를 `true`로 바꿔요. 그때부터 PC 앱이 웹 스토어 방식([Chrome에 추가]·외부 등록)으로 바뀌어요.
 6. **확인 (실제 Chrome)**
    - 맥: 첫 실행 화면 → [추가 방법] → Chrome에 열린 페이지에서 [Chrome에 추가] → 초록 불이 들어오는지 봐요.
    - 맥: 확장을 지운 상태로 Chrome을 다시 켰을 때 [사용 설정]이 뜨는지 봐요.

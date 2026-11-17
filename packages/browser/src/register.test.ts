@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BROWSER_HOST_NAME, DEV_EXTENSION_ID } from '@dool2/protocol'
+import { BROWSER_HOST_NAME, DEV_EXTENSION_ID, STORE_EXTENSION_ID } from '@dool2/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hostTargets, launcherScript, registerNativeHost } from './register.js'
 
@@ -60,7 +60,8 @@ describe('native messaging 호스트 등록', () => {
       name: BROWSER_HOST_NAME,
       type: 'stdio',
       path: reg.launcher,
-      allowed_origins: [`chrome-extension://${DEV_EXTENSION_ID}/`],
+      // 개발용 id와 웹 스토어 id 둘 다 허용한다
+      allowed_origins: [DEV_EXTENSION_ID, STORE_EXTENSION_ID].map((id) => `chrome-extension://${id}/`),
     })
     if (process.platform !== 'win32') expect((await stat(reg.launcher)).mode & 0o111).toBeTruthy()
   })

@@ -7,7 +7,12 @@ import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerExternalExtension } from '@dool2/browser'
 import { type Daemon, startDaemon } from '@dool2/daemon'
-import { type Settings, STORE_EXTENSION_ID, storeExtensionPage } from '@dool2/protocol'
+import {
+  type Settings,
+  STORE_EXTENSION_ID,
+  STORE_EXTENSION_PUBLISHED,
+  storeExtensionPage,
+} from '@dool2/protocol'
 import { OFFICIAL_RELAY } from '@dool2/protocol/link'
 import {
   app,
@@ -186,7 +191,8 @@ async function prepareExtension(dataDir: string): Promise<string> {
 
 /** 웹 스토어 확장 id. 시험할 때는 DOOL2_STORE_EXTENSION_ID로 바꿀 수 있다 */
 function storeExtensionId(): string | undefined {
-  const id = process.env.DOOL2_STORE_EXTENSION_ID ?? STORE_EXTENSION_ID
+  const id =
+    process.env.DOOL2_STORE_EXTENSION_ID ?? (STORE_EXTENSION_PUBLISHED ? STORE_EXTENSION_ID : undefined)
   return id && /^[a-p]{32}$/.test(id) ? id : undefined
 }
 
