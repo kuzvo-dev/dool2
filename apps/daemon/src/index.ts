@@ -542,8 +542,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .some(
         (m) =>
           m.role === 'tool' &&
-          m.text.includes('"kind":"connect"') &&
-          [card.id, card.name].some((k) => m.text.includes(`"service":${JSON.stringify(k)}`)),
+          // 연결 카드, 또는 같은 사이트의 로그인 카드(일하다 띄운 것)도 상태를 보여 주니 알림 줄이 필요 없다
+          ((m.text.includes('"kind":"connect"') &&
+            [card.id, card.name].some((k) => m.text.includes(`"service":${JSON.stringify(k)}`))) ||
+            (m.text.includes('"kind":"login"') && m.text.includes(`"site":${JSON.stringify(card.name)}`))),
       )
   }
   const connectDone = (card: ConnectCard) => {
