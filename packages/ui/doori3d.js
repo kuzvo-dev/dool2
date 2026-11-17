@@ -342,7 +342,8 @@ export function makeRenderer(opts = {}) {
  */
 export function mountDoori(host, opts = {}) {
   const renderer = makeRenderer()
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  // 작은 캔버스라 1.5배면 레티나에서도 충분하다 (2배는 그릴 픽셀이 1.8배)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
   const canvas = renderer.domElement
   canvas.className = 'doori-canvas'
   host.append(canvas)
@@ -352,7 +353,9 @@ export function mountDoori(host, opts = {}) {
   const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const start = performance.now()
   let hopAt = -10
+  let moodAt = 0
   let raf = 0
+  let last = 0
   let visible = true
   let mood = opts.mood ?? 'idle'
 
@@ -371,9 +374,21 @@ export function mountDoori(host, opts = {}) {
     if (!still) d.root.rotation.y = (mood === 'thinking' ? -0.32 : -0.18) + Math.sin(t * 0.5) * 0.06
     renderer.render(d.scene, camera)
   }
-  const loop = () => {
+  // 늘 60~120장을 그리면 GPU·CPU를 50% 넘게 쓴다(실측, 두리 셋). 그래서
+  // - 폴짝·표정 바꾸기·마우스 올리기 뒤 1초는 제 속도로
+  // - 일하는 중·생각 중은 움직임이 보이게 초당 15장 (창이 뒤에 있으면 6장)
+  // - 가만히 있으면 6초 뒤 멈추고 마지막 장면을 둔다. 다시 건드리면 움직인다
+  const busyMood = () => mood === 'working' || mood === 'thinking'
+  const loop = (now = performance.now()) => {
     raf = 0
-    draw()
+    const t = (now - start) / 1000
+    const since = Math.min(t - hopAt, t - moodAt)
+    if (!busyMood() && since > 6) return
+    const fps = since < 1 ? 0 : document.hasFocus() ? 15 : 6
+    if (!fps || now - last >= 1000 / fps - 2) {
+      last = now
+      draw()
+    }
     if (!still && visible && host.isConnected) raf = requestAnimationFrame(loop)
   }
   const wake = () => {
@@ -384,6 +399,11 @@ export function mountDoori(host, opts = {}) {
     wake()
   }
   canvas.addEventListener('pointerdown', onTap)
+  const onHover = () => {
+    moodAt = (performance.now() - start) / 1000
+    wake()
+  }
+  canvas.addEventListener('pointerenter', onHover)
   const ro = new ResizeObserver(() => {
     resize()
     draw()
@@ -406,8 +426,10 @@ export function mountDoori(host, opts = {}) {
   return {
     setMood(m) {
       mood = m
+      moodAt = (performance.now() - start) / 1000
       d.setMood(m)
       draw()
+      wake()
     },
     destroy() {
       cancelAnimationFrame(raf)
@@ -415,8 +437,11 @@ export function mountDoori(host, opts = {}) {
       io.disconnect()
       document.removeEventListener('visibilitychange', onVis)
       canvas.removeEventListener('pointerdown', onTap)
+      canvas.removeEventListener('pointerenter', onHover)
       d.dispose()
       renderer.dispose()
+      // WebGL 문맥을 바로 돌려준다 (안 하면 GC 때까지 GPU 메모리를 쥔다)
+      renderer.forceContextLoss()
       canvas.remove()
     },
   }
