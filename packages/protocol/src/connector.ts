@@ -184,8 +184,16 @@ export const StepSchema = z.union([
       timeoutMs: z.number().int().min(500).max(20_000).optional(),
     })
     .strict(),
-  /** 이 말이 보이면 멈추고 알리기. login이면 연결(로그인) 안내로 돌려준다 */
-  z.object({ stop_if: Text(300), say: Text(300), login: z.boolean().optional() }).strict(),
+  /** 이 말이 보이면 멈추고 알리기. login이면 연결(로그인) 안내로, blocked면 사이트가 이 브라우저를 막은 것
+   *  (고칠 커넥터 문제가 아니라서 점검에서 고장과 따로 센다) */
+  z
+    .object({
+      stop_if: Text(300),
+      say: Text(300),
+      login: z.boolean().optional(),
+      blocked: z.boolean().optional(),
+    })
+    .strict(),
   /** 돈 내기·연락하기 도구의 마지막: 이 버튼을 누를지 사용자 승인을 받는다 (두리가 누르는 건 승인 뒤) */
   z
     .object({

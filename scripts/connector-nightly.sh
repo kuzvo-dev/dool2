@@ -36,7 +36,7 @@ pnpm install --frozen-lockfile >/dev/null && pnpm build >/dev/null || { echo "�
 
 # 2. 점검 (깨진 도구가 있으면 1로 끝나지만 다음 단계는 이어 간다)
 pnpm -s connector canary --json "$OUT/$DAY.json" --report "$OUT/latest.html" --issues
-echo "점검 끝: $(node -e "const r=require('$OUT/$DAY.json').results;console.log(r.length+'개 중 고장 '+r.filter(x=>!x.ok&&x.verified).length+', 초안이라 안 된 것 '+r.filter(x=>!x.ok&&!x.verified).length)")"
+echo "점검 끝: $(node -e "const r=require('$OUT/$DAY.json').results;console.log(r.length+'개 중 고장 '+r.filter(x=>!x.ok&&!x.blocked&&x.verified).length+', 초안이라 안 된 것 '+r.filter(x=>!x.ok&&!x.blocked&&!x.verified).length+', 사이트가 막음 '+r.filter(x=>x.blocked).length)")"
 [ -n "${DOOL2_REPORT_COPY:-}" ] && cp "$OUT/latest.html" "$DOOL2_REPORT_COPY"
 
 # 3. 수리 초안
@@ -44,7 +44,7 @@ if [ "$FIX_MAX" -le 0 ] || ! command -v claude >/dev/null; then
   echo "수리 초안은 건너뜀"; exit 0
 fi
 node -e "
-const r = require('$OUT/$DAY.json').results.filter((x) => !x.ok && x.verified)
+const r = require('$OUT/$DAY.json').results.filter((x) => !x.ok && !x.blocked && x.verified)
 const seen = new Set()
 for (const x of r) {
   if (seen.has(x.tool) || seen.size >= $FIX_MAX) continue

@@ -146,12 +146,14 @@ try {
               .call(name, ex)
               .catch((e) => ({ isError: true, content: [{ type: 'text', text: String(e) }] }))
             const stopped = Boolean(r.structuredContent?.stopped)
+            // 사이트가 이 브라우저를 막은 것 (커넥터를 고칠 일이 아니다): 정상도 고장도 아닌 '막힘'
+            const blocked = Boolean(r.structuredContent?.blocked)
             const problems = r.isError
               ? []
               : stopped
                 ? []
                 : healthProblems(t, r.structuredContent ?? {}, true)
-            return { r, problems, ok: !r.isError && !problems.length }
+            return { r, problems, blocked, ok: !r.isError && !blocked && !problems.length }
           }
           // 한 번 실패는 일시적일 수 있다 (브라우저 지연 등): 30초 쉬고 한 번 더 해 본 뒤에야 고장으로 본다
           let run = await once()
@@ -161,7 +163,7 @@ try {
             await new Promise((res) => setTimeout(res, 30_000))
             run = await once()
           }
-          const { r, problems, ok } = run
+          const { r, problems, ok, blocked } = run
           const ms = Date.now() - t0
           const text = r.content.map((x) => x.text ?? '').join('\n')
           const rows = Object.values(r.structuredContent ?? {}).find(Array.isArray)
@@ -175,18 +177,20 @@ try {
             rows: rows?.length ?? null,
             problems,
             retried,
+            blocked,
             // 검증된 도구가 깨진 것만 고장(이슈·수리 대상). 초안은 보고서에만
             verified: String(t.status).startsWith('검증됨'),
-            error: r.isError ? text.slice(0, 400) : undefined,
+            error: r.isError || blocked ? text.slice(0, 400) : undefined,
           })
           console.log(
-            `${ok ? '✓' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}초${rows ? `, ${rows.length}줄` : ''})${ok ? '' : `\n  ${r.isError ? text.split('\n')[0] : problems.join(' · ')}`}`,
+            `${ok ? '✓' : blocked ? '⊘' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}초${rows ? `, ${rows.length}줄` : ''})${ok ? '' : `\n  ${r.isError || blocked ? text.split('\n')[0] : problems.join(' · ')}`}`,
           )
         }
       }
     }
-    const fail = results.filter((x) => !x.ok)
-    console.log(`${results.length}개 중 실패 ${fail.length}`)
+    const fail = results.filter((x) => !x.ok && !x.blocked)
+    const blockedN = results.filter((x) => x.blocked).length
+    console.log(`${results.length}개 중 실패 ${fail.length}${blockedN ? `, 사이트가 막음 ${blockedN}` : ''}`)
     const at = new Date().toISOString()
     const jsonOut = opt('--json')
     if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at, results }, null, 2))
@@ -226,21 +230,22 @@ function healthReport(at, results) {
     String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
   const by = new Map()
   for (const r of results) by.set(r.service, [...(by.get(r.service) ?? []), r])
-  const bad = results.filter((r) => !r.ok && r.verified).length
-  const draft = results.filter((r) => !r.ok && !r.verified).length
+  const bad = results.filter((r) => !r.ok && !r.blocked && r.verified).length
+  const draft = results.filter((r) => !r.ok && !r.blocked && !r.verified).length
+  const blocked = results.filter((r) => r.blocked).length
   const rows = [...by]
     .map(([svc, list]) =>
       list
         .map(
           (r, i) =>
-            `<tr class="${r.ok ? 'ok' : 'bad'}">${i === 0 ? `<td rowspan="${list.length}">${esc(svc)}</td>` : ''}<td>${esc(r.tool)}</td><td>${esc(JSON.stringify(r.input))}</td><td>${r.ok ? (r.retried ? '정상(다시 해서)' : '정상') : r.verified ? '고장' : '초안·안 됨'}</td><td>${(r.ms / 1000).toFixed(1)}초</td><td>${r.rows ?? ''}</td><td>${esc(r.error?.split('\n')[0] ?? r.problems.join(' · '))}</td></tr>`,
+            `<tr class="${r.ok ? 'ok' : 'bad'}">${i === 0 ? `<td rowspan="${list.length}">${esc(svc)}</td>` : ''}<td>${esc(r.tool)}</td><td>${esc(JSON.stringify(r.input))}</td><td>${r.ok ? (r.retried ? '정상(다시 해서)' : '정상') : r.blocked ? '사이트가 막음' : r.verified ? '고장' : '초안·안 됨'}</td><td>${(r.ms / 1000).toFixed(1)}초</td><td>${r.rows ?? ''}</td><td>${esc(r.error?.split('\n')[0] ?? r.problems.join(' · '))}</td></tr>`,
         )
         .join(''),
     )
     .join('')
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>두리 서비스 도구 점검</title>
 <style>body{font:14px -apple-system,sans-serif;margin:24px;background:#111318;color:#e8e8ea}h1{font-size:20px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #2a2d35;padding:6px 8px;text-align:left;vertical-align:top}tr.bad td{color:#ffb4a8}tr.ok td:nth-child(4){color:#7ee2b8}.sum{margin:8px 0 16px;color:#a8acb6}</style></head><body>
-<h1>두리 서비스 도구 점검</h1><p class="sum">${esc(at)} · ${results.length}개 시험 · 고장 ${bad}개 · 초안이라 안 된 것 ${draft}개</p>
+<h1>두리 서비스 도구 점검</h1><p class="sum">${esc(at)} · ${results.length}개 시험 · 고장 ${bad}개 · 초안이라 안 된 것 ${draft}개 · 사이트가 이 브라우저를 막음 ${blocked}개</p>
 <table><tr><th>서비스</th><th>도구</th><th>입력</th><th>결과</th><th>시간</th><th>줄</th><th>문제</th></tr>${rows}</table></body></html>`
 }
 
@@ -285,7 +290,9 @@ async function syncIssues(results) {
   for (const [tool, list] of tools) {
     // 초안 도구는 아직 확인 전이라 이슈를 열지 않는다 (보고서에만)
     if (!list[0].verified) continue
-    const bad = list.filter((r) => !r.ok)
+    // 사이트가 막은 것만 있으면 고쳐졌는지도 모른다: 이슈를 열지도 닫지도 않는다
+    if (list.every((r) => r.blocked)) continue
+    const bad = list.filter((r) => !r.ok && !r.blocked)
     const issue = issueOf(tool)
     if (bad.length) {
       const svc = list[0].service
