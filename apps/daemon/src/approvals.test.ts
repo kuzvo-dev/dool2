@@ -1,6 +1,6 @@
 // 승인 게이트 회귀 테스트: 이 테스트가 깨지면 위험한 버튼이 승인 없이 눌릴 수 있다는 뜻이다
 import { describe, expect, it } from 'vitest'
-import { APPROVAL_TTL_MS, Approvals } from './approvals.js'
+import { APPROVAL_KEEP_MS, APPROVAL_TTL_MS, Approvals } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
 
 const PAGE = `# 주문서
@@ -99,6 +99,36 @@ describe('승인 게이트', () => {
     expect(approvals.get(id2)?.status).toBe('expired')
     expect((await tools.approve(id2)).ok).toBe(false)
     expect(b.calls).not.toContain('click:e2')
+  })
+
+  it('끝난 요청은 화면 캡처를 버리고, 오래되면 지운다 (하루 내내 쌓이지 않게)', async () => {
+    let now = 0
+    const approvals = new Approvals(() => now)
+    const tools = new BrowserTools(shop(), undefined, () => 'approve', approvals)
+    await tools.run('read', { tabId: 1 })
+    await tools.run('request_approval', ask)
+    const id = approvals.list()[0]?.id ?? ''
+    expect(approvals.get(id)?.shot).toBe('SHOT')
+    approvals.reject(id)
+    expect(approvals.get(id)?.shot).toBeUndefined()
+    now += APPROVAL_KEEP_MS + 1
+    await tools.run('request_approval', ask)
+    expect(approvals.get(id)).toBeUndefined()
+    expect(approvals.list()).toHaveLength(1)
+  })
+
+  it('탭이 닫히면 그 탭의 기다리던 승인은 만료되고 탭 기록도 지운다', async () => {
+    const approvals = new Approvals()
+    const tools = new BrowserTools(shop(), undefined, () => 'approve', approvals)
+    await tools.run('read', { tabId: 1 })
+    await tools.run('request_approval', ask)
+    const id = approvals.list()[0]?.id ?? ''
+    tools.forgetTab(1)
+    expect(approvals.get(id)?.status).toBe('expired')
+    expect(approvals.get(id)?.shot).toBeUndefined()
+    expect((await tools.approve(id)).ok).toBe(false)
+    const r = await tools.run('click', { tabId: 1, ref: 'e1' })
+    expect(r.isError).toBe(true) // 기록이 지워져서 다시 읽어야 한다
   })
 
   it('위험하지 않은 버튼은 승인 요청을 받지 않는다', async () => {

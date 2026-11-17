@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto'
 import type { ApprovalView } from '@dool2/protocol'
 
 export const APPROVAL_TTL_MS = 10 * 60_000
+/** 끝난 요청을 남겨 두는 시간 (폰 기록용). 지나면 지운다 — 본체가 하루 내내 켜져 있어도 쌓이지 않게 */
+export const APPROVAL_KEEP_MS = 60 * 60_000
 
 export interface ApprovalRecord extends ApprovalView {
   /** 승인 카드에 보여 줄 화면 캡처 (JPEG base64) */
@@ -39,6 +41,7 @@ export class Approvals {
 
   create(n: NewApproval): ApprovalRecord {
     const t = this.now()
+    this.prune(t)
     // 같은 탭·같은 버튼에 기다리는 요청이 있으면 새것으로 바꾼다
     for (const r of this.items.values())
       if (r.status === 'pending' && r.tabId === n.tabId && r.ref === n.ref && r.url === n.url)
@@ -57,7 +60,10 @@ export class Approvals {
 
   get(id: string): ApprovalRecord | undefined {
     const r = this.items.get(id)
-    if (r?.status === 'pending' && Date.parse(r.expiresAt) <= this.now()) r.status = 'expired'
+    if (r?.status === 'pending' && Date.parse(r.expiresAt) <= this.now()) {
+      r.status = 'expired'
+      r.shot = undefined
+    }
     return r
   }
 
@@ -80,7 +86,27 @@ export class Approvals {
     const r = this.get(id)
     if (!r || r.status !== 'pending') return false
     r.status = 'rejected'
+    r.shot = undefined
     return true
+  }
+
+  /** 탭이 닫히면 그 탭에서 기다리던 요청은 더 누를 수 없다 */
+  expireTab(tabId: number) {
+    for (const r of this.items.values())
+      if (r.status === 'pending' && r.tabId === tabId) {
+        r.status = 'expired'
+        r.shot = undefined
+      }
+  }
+
+  /** 끝난 지 오래된 요청을 지우고, 끝난 요청의 화면 캡처(수백 KB)는 바로 버린다 */
+  private prune(now: number) {
+    for (const [id, r] of this.items) {
+      this.get(id)
+      if (r.status === 'pending') continue
+      r.shot = undefined
+      if (now - Date.parse(r.createdAt) > APPROVAL_KEEP_MS) this.items.delete(id)
+    }
   }
 
   finish(id: string, ok: boolean, result: string) {

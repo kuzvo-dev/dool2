@@ -534,6 +534,15 @@ export class BrowserTools {
     }
   }
 
+  /** 탭이 닫혔다 (사용자·탭 정리): 그 탭의 기록을 지우고, 기다리던 승인은 만료시킨다 */
+  forgetTab(tabId: number) {
+    this.pages.delete(tabId)
+    this.guided.delete(tabId)
+    this.handedOff.delete(tabId)
+    this.approvals.expireTab(tabId)
+    if (this._lastTabId === tabId) this._lastTabId = undefined
+  }
+
   /** 처음 들어온 사이트에 스킬이 있으면 먼저 읽으라고 알린다 (요령 없이 주소를 짐작해 빈 화면에서 멈추던 것) */
   private async guideFor(tabId: number, url: string): Promise<string | undefined> {
     if (!this.siteSkill) return undefined
