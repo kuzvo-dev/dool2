@@ -1,0 +1,149 @@
+{
+  "id": "slack",
+  "tools": [
+    {
+      "name": "mentions",
+      "title": "멘션 놓치지 않기",
+      "description": "Slack에서 나를 멘션했거나 DM으로 부탁한 것(누가·어느 채널·무엇을·언제까지)을 골라 정리한다. 로그인해야 한다. '오늘 나한테 부탁한 거 있어?'에 쓴다. (공식 연동 전 웹 화면 기준)",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "description": "이 날짜 이후 YYYY-MM-DD (없으면 오늘)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://app.slack.com/client"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "워크스페이스에 로그인|워크스페이스의 Slack URL|이메일 주소로 로그인",
+          "say": "Slack을 보려면 먼저 Slack을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "Slack 웹 화면이에요. 워크스페이스가 여럿이면 사용자가 말한 곳(모르면 첫 곳)을 골라요. '활동'의 멘션과 읽지 않은 DM을 since({{since}}, 없으면 오늘) 이후로 보고, 부탁·질문만 골라 누가·채널·요청 내용·기한을 정리해요. 이미 답한 것은 따로 표시해요. 메시지를 보내거나 반응(이모지)을 달지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('slack'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 300
+    },
+    {
+      "name": "catch_up",
+      "title": "빠르게 따라잡기",
+      "description": "Slack 채널에서 기간 동안 오간 이야기를 결정·할 일·질문 위주로 요약한다. 로그인해야 한다. '나 없는 동안 #dev에서 무슨 일 있었어?'에 쓴다.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "채널 이름 (예: #dev)",
+            "maxLength": 80
+          },
+          "since": {
+            "type": "string",
+            "format": "date",
+            "description": "이 날짜 이후 YYYY-MM-DD (없으면 최근 하루)"
+          }
+        },
+        "required": [
+          "channel"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "channel": "#general"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://app.slack.com/client"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "워크스페이스에 로그인|워크스페이스의 Slack URL|이메일 주소로 로그인",
+          "say": "Slack을 보려면 먼저 Slack을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "Slack 웹 화면이에요. 왼쪽 목록이나 위 검색으로 '{{channel}}' 채널을 열어 since({{since}}, 없으면 최근 하루) 이후 메시지와 스레드를 읽어요. 결정된 것·누가 맡은 할 일·아직 답 없는 질문·사용자 이름이 나온 곳을 나눠 짧게 요약하고, 중요한 메시지는 시간과 함께 적어요. 메시지를 보내거나 반응을 달지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('slack'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 300
+    },
+    {
+      "name": "post",
+      "title": "대신 올리기",
+      "description": "Slack 채널이나 DM에 올릴 메시지를 입력칸에 써 두고, 보내기 직전에 승인받는다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 문장은 사용자와 먼저 정한다.",
+      "tier": "연락하기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "채널(#design)이나 사람 이름",
+            "maxLength": 80
+          },
+          "text": {
+            "type": "string",
+            "description": "올릴 메시지",
+            "maxLength": 2000
+          },
+          "thread": {
+            "type": "string",
+            "description": "스레드로 답할 원래 글 일부 (스레드일 때만)",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "to",
+          "text"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "to": "#design",
+          "text": "내일 오전까지 보고 의견 드릴게요."
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://app.slack.com/client"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "워크스페이스에 로그인|워크스페이스의 Slack URL|이메일 주소로 로그인",
+          "say": "Slack에 올리려면 먼저 Slack을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "Slack 웹 화면이에요. '{{to}}'(채널이나 사람)를 열고, thread('{{thread}}')가 있으면 그 글의 스레드에서, 없으면 채널 입력칸에 '{{text}}'를 그대로 넣어요. 엔터·보내기는 누르지 말고 어디에·무슨 글을 올리는지 보여 주며 browser_request_approval로 승인받아야만 보내요. 로그인 화면이 나오면 연결 전이면 connect_ask('slack'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}

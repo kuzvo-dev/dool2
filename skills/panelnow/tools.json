@@ -1,0 +1,200 @@
+{
+  "id": "panelnow",
+  "tools": [
+    {
+      "name": "surveys",
+      "title": "설문 찾기",
+      "description": "로그인 없이 된다. 패널나우 설문조사 목록(설문 종류·제목·설문 번호·응답 시간·적립 일정·포인트)을 돌려준다. 연결(로그인)한 상태면 같은 화면이 '내게 온 설문'으로 바뀌어 내가 참여할 수 있는 설문이 나온다. '포인트 바로 들어오는 설문 있어?', 매일 저녁 새 설문 확인에 쓴다. 참여는 사용자가 직접 한다(두리가 대신 응답하지 않음).",
+      "tier": "찾아보기",
+      "status": "검증됨(2026-11-18, 로그인 전 설문 목록 6개: 종류·번호·시간·포인트)",
+      "input": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "설문 종류로 거르기 (예: 일반 조사, 보너스 조사, 기본 조사). 없으면 전체",
+            "maxLength": 20
+          }
+        },
+        "required": []
+      },
+      "output": {
+        "surveys": {
+          "type": "list",
+          "description": "설문",
+          "fields": {
+            "kind": {
+              "type": "string",
+              "description": "설문 종류"
+            },
+            "name": {
+              "type": "string",
+              "description": "설문 제목"
+            },
+            "survey_no": {
+              "type": "string"
+            },
+            "minutes": {
+              "type": "string",
+              "description": "응답 시간"
+            },
+            "schedule": {
+              "type": "string",
+              "description": "적립 일정 (예: 실시간 적립)"
+            },
+            "points": {
+              "type": "string",
+              "description": "포인트"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "survey_no",
+          "points"
+        ]
+      },
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.panelnow.co.kr/survey"
+        },
+        {
+          "wait": {
+            "items": "div.survey-item",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "extract": {
+            "items": "div.survey-item",
+            "limit": 40,
+            "fields": {
+              "kind": {
+                "line": 0
+              },
+              "name": {
+                "line": 1
+              },
+              "survey_no": {
+                "match": "포인트\\n(\\S+)\\n"
+              },
+              "minutes": {
+                "match": "포인트\\n\\S+\\n([^\\n]+)"
+              },
+              "schedule": {
+                "match": "포인트\\n\\S+\\n[^\\n]+\\n([^\\n]+)"
+              },
+              "points": {
+                "match": "([^\\n]+)\\n설문 참여하기"
+              }
+            }
+          },
+          "as": "found",
+          "min": 0
+        },
+        {
+          "filter": {
+            "from": "found",
+            "where": "kind",
+            "op": "contains",
+            "value": "{{kind}}"
+          },
+          "as": "surveys"
+        }
+      ],
+      "result": {
+        "surveys": "{{surveys}}"
+      },
+      "next": "포인트가 크고 시간이 짧은 것, '실시간 적립'인 것을 먼저 짧게 알려 줘요. 참여는 사용자가 직접 해요(설문 응답을 대신하지 않아요). 연결 전이면 '기본 조사'를 마쳐야 다른 설문에 참여할 수 있다고 알려 줘요.",
+      "minIntervalSec": 1800
+    },
+    {
+      "name": "points",
+      "title": "포인트 내역",
+      "description": "패널나우 내 포인트(지금 잔액·이번 달 적립·최근 적립/사용 내역)를 읽는다. 로그인해야 한다. '이번 달에 포인트 얼마나 모았어?'에 쓴다. 바꾸려면 panelnow_exchange.",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$",
+            "description": "월 YYYY-MM (없으면 이번 달)"
+          }
+        },
+        "required": []
+      },
+      "output": {},
+      "examples": [
+        {}
+      ],
+      "steps": [
+        {
+          "open": "https://www.panelnow.co.kr/"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "로그인\\s+회원가입",
+          "say": "패널나우 포인트를 보려면 먼저 패널나우를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "패널나우 첫 화면이에요. 오른쪽 위 내 계정 메뉴에서 포인트 내역(마이페이지)으로 가요. 지금 포인트 잔액, month({{month}}, 없으면 이번 달) 적립 합계, 최근 적립·사용 내역(날짜·설문 번호·포인트)을 정리해요. 적립 예정(대기) 포인트가 따로 보이면 함께 알려요. 교환 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('panelnow'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {},
+      "minIntervalSec": 1800
+    },
+    {
+      "name": "exchange",
+      "title": "포인트 교환",
+      "description": "패널나우 포인트 교환 화면에서 사용자가 고른 교환 상품(현금·네이버페이 포인트·상품권·기부 등)을 신청 직전까지 간다. 로그인해야 한다. 교환 신청은 사용자 승인(browser_request_approval)을 받아야만 한다. 교환 상품과 필요 포인트는 로그인 없이도 이 화면에 보인다.",
+      "tier": "돈 내기",
+      "login": true,
+      "status": "초안",
+      "input": {
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "교환 상품 이름 (예: 현금 교환, 네이버페이 포인트 3,000원)",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "output": {},
+      "examples": [
+        {
+          "item": "현금 교환"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.panelnow.co.kr/exchange"
+        },
+        {
+          "sleep": 2500
+        },
+        {
+          "stop_if": "로그인\\s+회원가입",
+          "say": "패널나우 포인트를 교환하려면 먼저 패널나우를 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "패널나우 '포인트 교환' 화면이에요. 지금 포인트 잔액을 먼저 읽고, '{{item}}'(예: 현금 교환)을 골라 신청 화면까지만 가요. 계좌·휴대폰 번호 같은 받는 곳 정보는 이미 저장된 것만 쓰고, 없으면 browser_handoff로 사용자에게 넘겨요. 신청 버튼은 누르지 말고 상품·차감 포인트·남는 포인트·받는 곳·소요 기간을 정리해 browser_request_approval로 승인받아야만 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('panelnow'), 연결했는데 풀렸으면 browser_handoff."
+        }
+      ],
+      "result": {}
+    }
+  ]
+}
