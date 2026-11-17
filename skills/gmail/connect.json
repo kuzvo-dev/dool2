@@ -2,6 +2,9 @@
   "id": "gmail",
   "name": "지메일",
   "site": "gmail.com",
+  "alsoSites": [
+    "mail.google.com"
+  ],
   "category": "mail",
   "how": "official",
   "login": "Google 계정",

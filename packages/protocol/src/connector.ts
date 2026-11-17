@@ -388,14 +388,14 @@ export const TEMPLATE_FILTERS = Object.keys(FILTERS)
 const EXPR = /\{\{\s*([a-zA-Z_][\w.]*)((?:\s*\|\s*[a-z0-9]+)*)\s*\}\}/g
 
 /** 글 속 {{이름|거르개}}를 채운다. 없는 값은 빈칸 */
-/** {{#name}}…{{/name}}: 값이 있을 때만 안을 채운다 (빈 입력이면 &fromPrice= 같은 칸을 빼기) */
-const SECTION = /\{\{#\s*([a-zA-Z_][\w.]*)\s*\}\}([\s\S]*?)\{\{\/\s*\1\s*\}\}/g
+/** {{#name}}…{{/name}}: 값이 있을 때만, {{^name}}…{{/name}}: 값이 없을 때만 안을 채운다 (빈 입력이면 &fromPrice= 같은 칸을 빼기) */
+const SECTION = /\{\{([#^])\s*([a-zA-Z_][\w.]*)\s*\}\}([\s\S]*?)\{\{\/\s*\2\s*\}\}/g
 const present = (v: unknown) =>
   v !== undefined && v !== null && v !== '' && v !== false && !(Array.isArray(v) && v.length === 0)
 
 export function fill(template: string, scope: Scope): string {
-  const t = template.replace(SECTION, (_m, path: string, inner: string) =>
-    present(pick(scope, path)) ? inner : '',
+  const t = template.replace(SECTION, (_m, kind: string, path: string, inner: string) =>
+    present(pick(scope, path)) === (kind === '#') ? inner : '',
   )
   return t.replace(EXPR, (_m, path: string, filters: string) => {
     const raw = pick(scope, path)
@@ -423,7 +423,7 @@ export function fillValue(template: string, scope: Scope): unknown {
 export function templateNames(template: string): { names: string[]; filters: string[] } {
   const names: string[] = []
   const filters: string[] = []
-  for (const m of template.matchAll(SECTION)) names.push((m[1] ?? '').split('.')[0] ?? '')
+  for (const m of template.matchAll(SECTION)) names.push((m[2] ?? '').split('.')[0] ?? '')
   for (const m of template.matchAll(EXPR)) {
     names.push((m[1] ?? '').split('.')[0] ?? '')
     for (const f of (m[2] ?? '')
@@ -438,6 +438,11 @@ export function templateNames(template: string): { names: string[]; filters: str
 // ── 검사 (레포 테스트와 본체가 불러올 때) ──
 
 /** 사이트 주소인지: 채우기를 빼고 본 주소의 호스트가 site이거나 그 아래 */
+/** 여러 도메인 중 하나라도 맞으면 (연결 카드의 site + alsoSites) */
+export function onSites(url: string, sites: string | string[]): boolean {
+  return (Array.isArray(sites) ? sites : [sites]).some((x) => onSite(url, x))
+}
+
 export function onSite(url: string, site: string): boolean {
   try {
     const u = new URL(url.replace(EXPR, 'x'))
@@ -457,7 +462,7 @@ const BANNED = [
 ]
 
 /** 커넥터 문제를 사람이 읽을 수 있는 목록으로. site = 연결 카드의 도메인 */
-export function checkConnector(dir: string, raw: unknown, site?: string): string[] {
+export function checkConnector(dir: string, raw: unknown, site?: string | string[]): string[] {
   const r = ConnectorSchema.safeParse(raw)
   if (!r.success) return r.error.issues.map((i) => `${i.path.join('.') || '(전체)'}: ${i.message}`)
   const c = r.data
@@ -487,7 +492,7 @@ export function checkConnector(dir: string, raw: unknown, site?: string): string
       const where = `${i + 1}단계`
       if ('open' in s) {
         useAll(s.open, where)
-        if (site && !onSite(s.open, site))
+        if (site && !onSites(s.open, site))
           problems.push(`${at} ${where}: ${site} 주소만 열 수 있어요 (${s.open})`)
       }
       if ('click' in s) useAll(s.click.text, where)

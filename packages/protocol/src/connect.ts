@@ -72,6 +72,12 @@ export const ConnectCardSchema = z
       .string()
       .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{2,5})?$/, 'https:// 없이 도메인만 적어 주세요')
       .optional(),
+    /** 같은 서비스가 쓰는 다른 도메인 (메일 화면이 mail.google.com처럼 다른 주소일 때). 서비스 도구가 열 수 있다 */
+    alsoSites: z
+      .array(z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'https:// 없이 도메인만 적어 주세요'))
+      .min(1)
+      .max(6)
+      .optional(),
     category: ConnectCategorySchema,
     how: ConnectHowSchema,
     /** 로그인 화면 주소 (첫 화면에서 로그인 링크를 찾기 어려운 사이트만) */

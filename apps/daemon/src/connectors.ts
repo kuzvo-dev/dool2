@@ -19,6 +19,7 @@ import {
   matches,
   type OutputField,
   onSite,
+  onSites,
   pick,
   type Scope,
   type Step,
@@ -204,8 +205,10 @@ export class Connectors {
       return undefined
     }
     for (const { card, connector } of (await this.load()).values()) {
-      const site = card.site?.replace(/:\d+$/, '')
-      if (!connector || !site || !(host === site || host.endsWith(`.${site}`))) continue
+      const sites = [card.site, ...(card.alsoSites ?? [])]
+        .filter(Boolean)
+        .map((x) => (x as string).replace(/:\d+$/, ''))
+      if (!connector || !sites.some((site) => host === site || host.endsWith(`.${site}`))) continue
       const tools = connector.tools
         .filter((t) => this.live(card, t))
         .map((t) => connectorToolName(card.id, t.name))
@@ -431,7 +434,8 @@ export class Connectors {
           read,
           need,
           open: async (url) => {
-            if (!onSite(url, site)) throw new StepError(`${site} 밖의 주소는 열지 않아요: ${url}`)
+            if (!onSites(url, [site, ...(card.alsoSites ?? [])]))
+              throw new StepError(`${site} 밖의 주소는 열지 않아요: ${url}`)
             // 이 서비스에 쓰던 탭이 있으면 그 탭에서 (없어졌으면 새로 연다)
             if (tabId !== undefined) {
               const ok = await b

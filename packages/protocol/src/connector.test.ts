@@ -208,3 +208,16 @@ describe('밀리초 거르개', () => {
     expect(fill('{{x|ms}}', { x: '2026-11-28' })).toBe('1795791600000')
   })
 })
+
+describe('값이 없을 때만 채우기와 여러 도메인', async () => {
+  const { onSites } = await import('./connector.js')
+  it('{{^x}}', () => {
+    const t = '{{#id}}/item/{{id}}{{/id}}{{^id}}/search?q={{q|url}}{{/id}}'
+    expect(fill(t, { id: 7 })).toBe('/item/7')
+    expect(fill(t, { q: '가' })).toBe('/search?q=%EA%B0%80')
+  })
+  it('site와 alsoSites 중 하나', () => {
+    expect(onSites('https://mail.google.com/mail/u/0/', ['gmail.com', 'mail.google.com'])).toBe(true)
+    expect(onSites('https://evil.com/', ['gmail.com', 'mail.google.com'])).toBe(false)
+  })
+})
