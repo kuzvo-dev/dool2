@@ -137,7 +137,8 @@ const LOGIN_WORD = /^(로그인|로그인하기|login|log in|sign in|signin)$/i
 const LOGIN_LINK = /로그인|log ?in|sign ?in/i
 const USER_FIELD = /아이디|이메일|email|e-mail|\bid\b|휴대폰|전화|phone|계정|사용자/i
 /** 로봇 확인: 로그인 화면에 떠 있으면 사람이 풀어야 한다 */
-const CAPTCHA = /보안\s?문자|자동\s?입력\s?방지|로봇이 아닙니다|I'm not a robot|문자를 입력해/i
+const CAPTCHA =
+  /보안\s?문자|자동\s?입력\s?방지|로봇이 아닙니다|I'm not a robot|문자를 입력해|아래\s?문제에\s?답해|DKAPTCHA|지도에서\s?.{0,8}눌러/i
 /** 로그인을 누른 뒤의 추가 인증 (로그인 화면의 "아이디 찾기(본인인증)" 같은 안내와 헷갈리지 않게 좁게) */
 const STEP2 =
   /인증\s?번호를?\s?(입력|받|보내)|(확인|로그인|보안)\s?코드를?\s?(입력|받|보냈|보내)|새로운\s?(기기|환경|브라우저)에서|2단계\s?인증|추가\s?인증이\s?필요|본인\s?확인이\s?필요|본인인증을\s?진행|OTP\s?(번호|입력)/i
@@ -619,7 +620,8 @@ function hasPassword(text: string) {
 }
 
 function humanReason(text: string) {
-  if (/보안\s?문자|자동\s?입력\s?방지|로봇|captcha/i.test(text)) return '로봇 확인(보안 문자)이 떴어요'
+  if (/보안\s?문자|자동\s?입력\s?방지|로봇|captcha|문제에\s?답해|지도에서/i.test(text))
+    return '로봇 확인(보안 문자)이 떴어요'
   if (/본인\s?인증|휴대폰\s?인증|인증\s?번호|2단계|추가\s?인증|OTP/i.test(text)) return '본인인증이 필요해요'
   return '직접 확인이 필요해요'
 }

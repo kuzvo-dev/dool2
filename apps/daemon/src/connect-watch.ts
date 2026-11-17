@@ -29,6 +29,11 @@ export interface LoginWatchDeps {
 /** 연결하려고 연 탭을 잠깐 지켜본다. 탭이 닫히거나, 확인되거나, 시간이 지나면 멈춘다 */
 export class LoginWatch {
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 서비스마다 지켜보는 탭 */
+  private tabs = new Map<string, number>()
+  tabOf(id: string): number | undefined {
+    return this.tabs.get(id)
+  }
 
   constructor(
     private readonly deps: LoginWatchDeps,
@@ -38,6 +43,7 @@ export class LoginWatch {
 
   start(card: ConnectCard, tabId: number) {
     this.stop(card.id)
+    this.tabs.set(card.id, tabId)
     const until = Date.now() + this.forMs
     const tick = async () => {
       this.timers.delete(card.id)

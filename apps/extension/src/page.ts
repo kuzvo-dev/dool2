@@ -240,7 +240,11 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     // 보이지 않는 reCAPTCHA의 틀(size=invisible)은 문제가 아니다
     return !/[?&]size=invisible/.test(src)
   })
-  const captcha = challenge || /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot/i.test(bodyText)
+  const captcha =
+    challenge ||
+    /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot|아래\s*문제에\s*답해|DKAPTCHA/i.test(
+      bodyText,
+    )
 
   return { url: location.href, title: document.title, text, truncated, refs: st.refs.size, captcha }
 }
@@ -556,11 +560,35 @@ export function pageForm() {
     return id
   }
   const clip = (s: string, n: number) => s.replace(/\s+/g, ' ').trim().slice(0, n)
+  /**
+   * 다른 창(보안문자·안내 팝업·액자)에 가려진 칸인가. 가려진 칸을 폰에 보여 주면 사용자는 엉뚱한 칸을 채운다
+   * (카카오 지도 보안문자가 로그인 칸 위에 떠 있는데 로그인 칸을 보여 줬다)
+   */
+  const covered = (el: Element) => {
+    const r = el.getBoundingClientRect()
+    const x = r.left + r.width / 2
+    const y = r.top + r.height / 2
+    if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false
+    const top = document.elementFromPoint(x, y)
+    if (!top || top === el || el.contains(top) || top.contains(el)) return false
+    if ([...((el as HTMLInputElement).labels ?? [])].some((l) => l === top || l.contains(top))) return false
+    // 덮은 것이 팝업(고정 위치·대화 상자)이나 액자 안이면 가려진 것. 칸 위에 얹힌 자리 글씨는 아니다
+    for (let n: Element | null = top; n && n !== document.body; n = n.parentElement) {
+      if (n.contains(el)) return false
+      if (
+        n instanceof HTMLIFrameElement ||
+        n.matches('dialog, [role="dialog"], [aria-modal="true"]') ||
+        getComputedStyle(n).position === 'fixed'
+      )
+        return true
+    }
+    return false
+  }
   const visible = (el: Element) => {
     const r = el.getBoundingClientRect()
     if (r.width < 2 || r.height < 2) return false
     const cs = getComputedStyle(el)
-    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05 && !covered(el)
   }
   const textOf = (el: Element | null | undefined) =>
     clip((el as HTMLElement | null)?.innerText ?? el?.textContent ?? '', 40)
