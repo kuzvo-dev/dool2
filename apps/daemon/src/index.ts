@@ -42,6 +42,7 @@ import {
   type DaemonStreamEvent,
   DEFAULT_SETTINGS,
   type ExtensionStatus,
+  type FeedItem,
   FocusTabSchema,
   type LifeAction,
   LoginSubmitSchema,
@@ -56,6 +57,7 @@ import {
   SettingsPatchSchema,
   SettingsSchema,
   type StoredMessage,
+  type TellRecordMessage,
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
@@ -1092,12 +1094,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       preparing = false
     }
     if (o.viaPhone) fromPhone.add(sessionId)
+    // 먼저 챙긴 일은 AI를 부르지 않고 대화에 카드로만 남겼다. 사용자가 그 얘기를 이어 하면 알아듣게 이번 차례에 덧붙인다
+    const told = unseenTells.splice(0)
+    const aside = told.length
+      ? appNote(
+          `대화에 먼저 알린 것 (사용자가 이 이야기를 할 수 있어요):\n${told.map((t) => `- ${t.title}${t.body ? ` — ${t.body}` : ''}${t.from ? ` (${t.from})` : ''}`).join('\n')}`,
+        )
+      : undefined
     void (async () => {
-      for await (const _ of tracked(sessionId, threads.send(sessionId, text))) {
+      for await (const _ of tracked(sessionId, threads.send(sessionId, text, aside ? { aside } : {}))) {
       }
     })().catch(() => {})
     return { queued: false }
   }
+  /** 대화에 카드로 남겼지만 AI는 아직 모르는 먼저 챙긴 일 */
+  const unseenTells: TellRecordMessage[] = []
   // ── 목표·알아서 하는 일: 정해진 때 두리가 한다 ──
   /** 예약한 일을 하고 있는 대화 (그 차례는 피드 "끝낸 일"에 따로 넣지 않는다) */
   const routineThreads = new Set<string>()
@@ -1192,10 +1203,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })()
       .catch(() => {})
       .finally(() => life.watchDone())
-  life.onTell = (f) =>
+  // 먼저 챙긴 일: 메인 대화에도 두리 카드로 남긴다 (AI를 부르지 않는다). 답하는 중이면 끝난 뒤에 (5분까지 기다림)
+  const tellInChat = (f: FeedItem, tries = 0) => {
+    const cur = conversation.current()
+    if (!cur) return
+    if (conversationBusy() && tries < 60) {
+      setTimeout(() => tellInChat(f, tries + 1), 5_000).unref?.()
+      return
+    }
+    const rec: TellRecordMessage = {
+      kind: 'tell',
+      id: f.id,
+      title: f.title,
+      ...(f.body ? { body: f.body } : {}),
+      ...(f.from ? { from: f.from } : {}),
+      ...(f.ask ? { ask: f.ask } : {}),
+      ...(f.askLabel ? { askLabel: f.askLabel } : {}),
+    }
+    postSaved(cur.id, store.addMessage(cur.id, 'tool', JSON.stringify(rec)))
+    unseenTells.push(rec)
+    if (unseenTells.length > 6) unseenTells.shift()
+  }
+  life.onTell = (f) => {
+    tellInChat(f)
     void link
-      .notify({ title: f.title, body: f.body ?? f.from ?? '', tag: `tell-${f.id}`, url: '#tab=feed' })
+      .notify({ title: f.title, body: f.body ?? f.from ?? '', tag: `tell-${f.id}`, url: '#tab=chat' })
       .catch(() => {})
+  }
   life.onDue = (r) =>
     void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
   const lifeTimer = setInterval(() => life.tick(), 30_000)

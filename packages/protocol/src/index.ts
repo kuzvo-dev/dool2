@@ -431,6 +431,21 @@ export interface LoginRecordMessage {
   site: string
 }
 
+/**
+ * 대화 기록에 남기는 먼저 챙긴 일 (ADR 0019). 피드 글(id)과 같은 내용이고,
+ * 답(맡겼어요·넘겼어요)은 생활 기록의 그 피드 글에서 읽어 피드 카드와 같이 바뀐다
+ */
+export interface TellRecordMessage {
+  kind: 'tell'
+  /** 피드 글 id */
+  id: string
+  title: string
+  body?: string
+  from?: string
+  ask?: string
+  askLabel?: string
+}
+
 /** 대화 기록에 남기는 서비스 연결 부탁 (connect_ask). 카드는 연결 목록에서 그 서비스를 찾아 그린다 */
 export interface ConnectRecordMessage {
   kind: 'connect'

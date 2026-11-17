@@ -21,6 +21,7 @@ import type {
   LoginRequestView,
   Settings,
   StoredMessage,
+  TellRecordMessage,
   ThreadSummary,
   UsageLimit,
   WorkRecordMessage,
@@ -340,6 +341,9 @@ async function loadLife() {
 /** 생활 기록이 바뀌면 그 화면만 다시 그린다 (입력하는 중이면 건드리지 않는다) */
 function onLifeChanged() {
   renderPanel('life')
+  // 대화 안 먼저 챙긴 일 카드: 폰·피드에서 답했으면 같이 바꾼다
+  for (const c of document.querySelectorAll<HTMLElement>('.tell-card[data-rec]'))
+    c.replaceWith(tellCard(JSON.parse(c.dataset.rec ?? '{}') as TellRecordMessage))
   const box = $('messages')
   const typing = document.activeElement instanceof HTMLInputElement && box.contains(document.activeElement)
   if (state.view !== 'talk' && state.view !== 'connect' && state.view !== 'thread' && !typing)
@@ -1526,10 +1530,45 @@ function toolCard(raw: string, active: boolean): Node {
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
     if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
+    if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
   } catch {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
+function tellCard(rec: TellRecordMessage): HTMLElement {
+  const f = state.life.feed.find((x) => x.id === rec.id)
+  const ask = rec.ask
+  const card = el(
+    'div',
+    'card tell-card',
+    el('div', 'card-label', doori('', 22), '먼저 챙겼어요'),
+    el('p', 'tell-title', rec.title),
+    rec.body ? el('p', 'tell-body', rec.body) : undefined,
+    rec.from ? el('p', 'cap', rec.from) : undefined,
+    ask
+      ? f?.answered
+        ? el('p', 'cap tell-done', f.answered === 'yes' ? '맡겼어요' : '넘겼어요')
+        : el(
+            'div',
+            'tell-actions',
+            button(
+              'btn sm',
+              () => void lifeAct({ action: 'feed-answer', id: rec.id, answer: 'yes' }).then(() => send(ask)),
+              rec.askLabel || '해 줘',
+            ),
+            button(
+              'btn-ghost sm',
+              () => void lifeAct({ action: 'feed-answer', id: rec.id, answer: 'no' }),
+              '괜찮아요',
+            ),
+          )
+      : undefined,
+  )
+  card.dataset.rec = JSON.stringify(rec)
+  return card
 }
 
 /** 일한 과정: 답 위에 접힌 한 줄, 누르면 단계와 걸린 시간 */

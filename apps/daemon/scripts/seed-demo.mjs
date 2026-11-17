@@ -54,6 +54,33 @@ store.addMessage(
   'assistant',
   '장바구니를 보려고 했는데 로그인이 풀려 있어서 멈췄어요. Chrome에 띄워 둔 두리 탭에서 로그인만 해 주시면 바로 이어서 볼게요.',
 )
+// 먼저 챙긴 일 카드 (SEED_TELL=1): 아래 피드의 f-w1·f-w2와 같은 글
+if (process.env.SEED_TELL) {
+  store.addMessage(
+    shop.id,
+    'tool',
+    JSON.stringify({
+      kind: 'tell',
+      id: 'f-w1',
+      title: '어제 주문한 러닝화, 내일 오전에 도착해요',
+      body: '문 앞에 두고 간대요.',
+      from: '쿠팡 주문 내역을 보고',
+    }),
+  )
+  store.addMessage(
+    shop.id,
+    'tool',
+    JSON.stringify({
+      kind: 'tell',
+      id: 'f-w2',
+      title: '토요일이 엄마 생신이에요',
+      body: '작년엔 꽃을 보냈어요. 올해도 3만 원대로 골라 둘까요?',
+      from: '기억해 둔 것과 지난 주문을 보고',
+      ask: '토요일 엄마 생신 선물 3만 원대로 골라 줘. 작년엔 꽃을 보냈어',
+      askLabel: '골라 줘',
+    }),
+  )
+}
 // 승인 요청 대화 (DOOL2_SMOKE_APPROVAL=<캡처 이미지>와 함께 쓰면 승인 카드가 보인다)
 // 따로 하는 대화 (메인 대화에 섞이지 않는다)
 store.createThread('claude', '이사 준비', undefined, true)

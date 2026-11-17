@@ -2045,3 +2045,17 @@ button.side-row:hover {
 .feed-from {
   margin-top: 4px;
 }
+
+/* 대화 안 먼저 챙긴 일 카드 (ADR 0019) */
+.tell-card p {
+  margin: 4px 0 0;
+}
+.tell-card p.tell-title {
+  margin-top: 10px;
+  font-weight: 700;
+}
+.tell-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
