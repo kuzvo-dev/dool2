@@ -6,6 +6,10 @@ import { helloText } from '@dool2/protocol/link'
 export const MAX_MESSAGE = 512 * 1024
 export const QUEUE_TTL_MS = 7 * 24 * 60 * 60_000
 export const QUEUE_MAX = 500
+/** 쌓아 두지 않는 봉투 종류 (지금 보는 사람에게만 의미가 있다) */
+export const LIVE_KINDS = new Set(['screen', 'remote', 'stream'])
+/** 대기열 자르기는 이만큼 쌓일 때마다 한 번 (자를 때 줄을 많이 읽는다) */
+export const TRIM_EVERY = 50
 export const AUTH_SKEW_MS = 2 * 60_000
 /** 연결하고 이 시간 안에 증명하지 않으면 끊는다 */
 export const AUTH_TIMEOUT_MS = 10_000
@@ -81,6 +85,7 @@ export function route(me: Me, msg: unknown, roomOf?: (id: string) => string | un
   if (me.role === 'phone' && env.to !== me.room) return { ok: true, drop: true }
   const targetRoom = roomOf?.(env.to)
   if (me.role === 'pc' && targetRoom !== undefined && targetRoom !== me.id) return { ok: true, drop: true }
-  // 원격 화면은 지금 보는 사람에게만 의미가 있다. 꺼진 기기에 쌓아 두지 않는다
-  return { ok: true, drop: false, to: env.to, queue: env.kind !== 'screen' && env.kind !== 'remote' }
+  // 원격 화면·흘려 쓰는 답(stream)은 지금 보는 사람에게만 의미가 있다. 꺼진 기기에 쌓아 두지 않는다
+  // (폰은 다시 붙으면 대화를 처음부터 받아 온다. 실측: 시험 대화 150번의 글자 조각이 쌓여 하루 읽기 한도 90%)
+  return { ok: true, drop: false, to: env.to, queue: !LIVE_KINDS.has(String(env.kind)) }
 }
