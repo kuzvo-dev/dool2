@@ -4511,6 +4511,21 @@ function infoSheet(id: string) {
   )
   const body: Node[] = []
   if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
+  if (q.field === 'choice' && q.options?.length) {
+    // 하나 고르기 (예: 구글 계정이 여럿일 때). 고른 글을 그대로 답한다
+    body.push(
+      h(
+        'div',
+        { class: 'choice-list' },
+        ...q.options.map((o) =>
+          h('button', { class: 'btn ghost lg choice-btn', text: o, onclick: () => answer(o) }),
+        ),
+      ),
+      h('button', { class: 'btn-link', text: '나중에 할게요', onclick: () => answer() }),
+    )
+    sheet.append(head, ...body)
+    return sheet
+  }
   if (q.field === 'form' && q.fields?.length) {
     // 내 정보 카드: 여러 칸을 한 번에 받는다. 값은 PC 금고에만, 두리(AI)는 가린 값만 본다
     const inputs = q.fields.map((f) => {

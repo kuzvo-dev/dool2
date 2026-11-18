@@ -33,11 +33,17 @@ export interface LoginAsk {
   ): Promise<{ username: string; password: string } | undefined>
   /** 화면이 묻는 것 (인증번호·휴대폰 번호) */
   info?(req: {
-    field: 'otp' | 'tel' | 'text'
+    field: 'otp' | 'tel' | 'text' | 'choice'
     label: string
     hint?: string
     host: string
+    options?: string[]
   }): Promise<string | undefined>
+  /** 공급자 계정이 여럿일 때 전에 고른 계정(화면에 보이는 글) */
+  account?: {
+    get(provider: SocialProvider): string | undefined
+    set(provider: SocialProvider, label: string): void
+  }
 }
 
 /** 인증번호 칸 */
@@ -650,8 +656,9 @@ export const SOCIAL_PROVIDERS = {
 export type SocialProvider = keyof typeof SOCIAL_PROVIDERS
 
 /** 공급자 화면의 "동의하고 계속하기" 같은 버튼 (처음 한 번 묻는 정보 제공 동의) */
+// 페이스북은 "○○님으로 계속"·"Continue as ○○"처럼 사용자 이름이 들어간다 (실측 예스24)
 const CONSENT =
-  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm)$/i
+  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
 
 /** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
 function findProviderButton(text: string, provider: SocialProvider): RefEntry | undefined {
@@ -669,7 +676,14 @@ function findProviderButton(text: string, provider: SocialProvider): RefEntry | 
   )
   return (
     ok.find(([, r]) => /로그인|시작|계속|login|sign|continue/i.test(r.name)) ??
-    ok.find(([, r]) => r.name.trim().length <= 12)
+    // 말 없이 공급자 이름만 있는 버튼("kakao", "네이버"). "SSG 페이스북"처럼 앞에 다른 말이 붙은 건 회사 계정 링크다
+    ok.find(
+      ([, r]) =>
+        r.name
+          .trim()
+          .replace(p.button, '')
+          .replace(/[\s·|-]/g, '').length <= 2,
+    )
   )
 }
 
@@ -682,6 +696,11 @@ export interface SocialLoginInput {
   ask?: LoginAsk
   step?: StepFn
   onTab?: (tabId: number) => void
+  /**
+   * 연결된 회원이 없을 때 간편 가입까지 해도 되는지. 이 사이트에 이미 되는 계정(다른 간편 로그인·금고 아이디)이 있으면
+   * 새로 가입하면 같은 사이트에 계정이 둘이 된다: 그땐 가입하지 않고 사람에게 알린다
+   */
+  join?: boolean
 }
 
 /**
@@ -774,7 +793,50 @@ export async function socialLogin(
       }
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
-    if (!onProvider) continue
+    if (!onProvider) {
+      // 공급자 인증은 끝났는데 이 계정과 연결된 사이트 회원이 없다: "이미 회원이신가요? / 회원가입" 화면
+      // (실측 교보·예스24). 필수 약관만 있는 간편 가입이면 두리가 가입하고, 본인인증이 필요하면 사람에게 넘긴다
+      const join = joinScreen(p.text)
+      // 가입 버튼을 누른 뒤 본인인증 화면이 나오면 사람 차례 (실측 교보: 회원가입 → 휴대폰 본인인증)
+      const joined = [...pressed].some((k) => k.endsWith('|join'))
+      const hum = joined && !join && JOIN_HUMAN.exec(p.text)
+      if (hum)
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name} 가입에 ${hum[0].replace(/\s/g, '')}이 필요해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
+        }
+      if (join?.kind === 'existing')
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name}에 이미 계정${join.account ? `(${join.account})` : ''}이 있어요. 그 계정 비밀번호로 한 번 로그인하면 ${label}와 연결돼요`,
+        }
+      if (join) {
+        const key = `${p.url}|join`
+        if (join.kind === 'auto' && !input.join)
+          return {
+            status: 'human',
+            tabId: providerTab,
+            reason: `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없어요. 이미 쓰는 계정이 있으면 그 방법으로 연결해 주시고, 처음이면 가입할게요`,
+          }
+        if (join.kind === 'human' || pressed.has(key))
+          return {
+            status: 'human',
+            tabId: providerTab,
+            reason:
+              join.kind === 'human'
+                ? `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없어요. 가입에 ${join.why}이 필요해요`
+                : `${input.card.name} 가입을 마치지 못했어요. 화면을 보면서 마저 해 주세요`,
+          }
+        pressed.add(key)
+        step(`${input.card.name}에 ${label} 계정으로 가입하는 중`)
+        for (const ref of join.required)
+          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
+        await browser.call('click', { tabId: providerTab, ref: join.submit }, 30_000).catch(() => undefined)
+      }
+      continue
+    }
     // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다
     const confirm = await waitConfirm(p, providerTab, snap, input.step, wait)
     if (confirm === 'moved') continue
@@ -833,9 +895,51 @@ export async function socialLogin(
         tabId: providerTab,
         message: `${label} 아이디나 비밀번호가 맞지 않는 것 같아요. 화면을 보고 확인해 주세요.`,
       }
-    // 계정 고르기(구글): 이메일이 적힌 줄을 누른다
+    // 계정 고르기(구글): 이메일이 적힌 줄을 누른다. 여럿이면 전에 고른 것, 없으면 사람에게 한 번 묻고 기억한다
+    // (실측 알라딘: 구글 계정이 둘이라 첫째를 누르면 엉뚱한 계정으로 가입될 수 있다)
     const refs = [...parseRefs(p.text)] as RefEntry[]
-    const account = refs.find(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    const accounts = refs.filter(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    let account = accounts.length === 1 ? accounts[0] : undefined
+    if (accounts.length > 1) {
+      const names = accounts.map(([, r]) => r.name.trim())
+      const remembered = input.ask?.account?.get(input.provider)
+      let pick = remembered && names.find((n) => n === remembered)
+      if (!pick && input.ask?.info) {
+        step(`${label} 계정 고르기를 기다리는 중`)
+        const a = await input.ask.info({
+          field: 'choice',
+          label: `어느 ${label} 계정으로 할까요?`,
+          hint: `${input.card.name}에 이 계정으로 로그인해요. 고른 계정은 기억해 두고 다음부터 묻지 않아요.`,
+          host,
+          options: names,
+        })
+        pick = a && names.find((n) => n === a.trim())
+        if (pick) input.ask.account?.set(input.provider, pick)
+      }
+      if (!pick)
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${label} 계정이 여러 개라 어느 것으로 할지 골라 주셔야 해요`,
+        }
+      account = accounts.find(([, r]) => r.name.trim() === pick)
+    }
+    // 정보 제공 동의에 (필수) 칸이 있으면 그것만 고른다 (선택 항목은 건드리지 않는다). 실측 알라딘 카카오
+    const required = refs.filter(
+      ([, r]) => r.role === '체크박스' && /\(필수\)|\[필수\]|필수\s/.test(r.name) && !/선택됨/.test(r.name),
+    )
+    if (required.length && !account) {
+      const checked = new Set(
+        [...p.text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string),
+      )
+      for (const [ref] of required)
+        if (!checked.has(ref))
+          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
+      if (required.some(([ref]) => !checked.has(ref))) {
+        step('필수 정보 제공 동의 고르는 중')
+        continue
+      }
+    }
     // 정보 제공 동의: "동의하고 계속하기"
     const consent = refs.find(([, r]) => r.role === '버튼' && CONSENT.test(r.name.trim()))
     const next = account ?? consent
@@ -850,6 +954,50 @@ export async function socialLogin(
     tabId: providerTab,
     message: `${label} 로그인을 마쳤는지 확인하지 못했어요. 화면을 보고 확인해 주세요.`,
   }
+}
+
+const JOIN_PAGE =
+  /(이미|기존)\s?.{0,12}회원이신가요|아직\s?.{0,12}회원이\s?아니|회원가입을\s?하시겠|SNS\s?(로그인\s?)?연동|계정\s?연동|간편\s?회원\s?가입/
+const JOIN_HUMAN = /본인\s?인증|휴대폰\s?인증|휴대전화\s?인증|아이핀|i-?PIN|인증번호/
+
+/**
+ * 간편 로그인 뒤 "이 계정과 연결된 회원이 없어요" 화면. 가입 버튼과 아직 고르지 않은 (필수) 약관 칸.
+ * 같은 화면에 본인인증이 있으면 사람 차례(why). 아니면 undefined
+ */
+export function joinScreen(
+  text: string,
+):
+  | { kind: 'auto'; submit: string; required: string[] }
+  | { kind: 'human'; why: string }
+  | { kind: 'existing'; account?: string }
+  | undefined {
+  // 가입하려 했더니 "이미 가입된 정보가 있어요(아이디 coffeeplan)": 그 계정으로 로그인하면 연동된다 (실측 교보)
+  if (/이미\s?가입된\s?(정보|계정|회원)|기존\s?계정\s?안내|이미\s?가입하신/.test(text)) {
+    const id =
+      /\[e\d+ 라디오 "([^"]{2,40})"/.exec(text)?.[1] ?? /아이디[:\s]+([A-Za-z0-9_.@*-]{3,40})/.exec(text)?.[1]
+    return { kind: 'existing', ...(id ? { account: id } : {}) }
+  }
+  if (!JOIN_PAGE.test(text)) return undefined
+  const refs = [...parseRefs(text)] as RefEntry[]
+  const submit = refs.find(
+    ([, r]) =>
+      (r.role === '버튼' || r.role === '링크') &&
+      /^(간편\s?)?(회원\s?가입|가입하기|가입\s?완료|동의하고\s?가입(하기)?)$/.test(r.name.trim()),
+  )
+  if (!submit) return undefined
+  // 가입 버튼을 누르기 전 화면에 본인인증 칸이 보이면 사람 차례 (가입 버튼 뒤에 나오는 건 다음 화면에서 본다)
+  const human = JOIN_HUMAN.exec(
+    text
+      .split('\n')
+      .filter((l) => !/본인인증이 필요한 서비스|본인인증 이후 이용/.test(l))
+      .join('\n'),
+  )
+  if (human) return { kind: 'human', why: human[0].replace(/\s/g, '') }
+  const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
+  const required = refs
+    .filter(([ref, r]) => r.role === '체크박스' && /필수/.test(r.name) && !checked.has(ref))
+    .map(([ref]) => ref)
+  return { kind: 'auto', submit: submit[0], required }
 }
 
 /** 점검용: 로그인 화면에 있는 간편 로그인 공급자 */

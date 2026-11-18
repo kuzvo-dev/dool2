@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoLogin, probeLogin, socialLogin } from './auto-login.js'
+import { autoLogin, joinScreen, probeLogin, socialLogin, socialProvidersIn } from './auto-login.js'
 
 /** 확장 대신: 화면 차례대로 돌려주고 부른 것을 적는다 */
 function fakeBrowser(pages: { url: string; text: string; captcha?: boolean }[]) {
@@ -179,6 +179,73 @@ describe('간편 로그인', () => {
     expect(r.status).toBe('ok')
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2'])
     expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
+  })
+
+  it('카카오 동의 화면의 (필수) 칸만 고르고 동의한다 (실측 알라딘)', async () => {
+    const consent = {
+      url: 'https://kauth.kakao.com/oauth/authorize',
+      text: '[e2 체크박스 "(필수) 카카오 개인정보 제3자 제공 동의"] [e5 체크박스 "(선택) 카카오 개인정보 제3자 제공 동의"] [e9 버튼 "동의하고 계속하기"]',
+    }
+    const checked = { ...consent, text: consent.text.replace('동의"]', '동의" 선택됨]') }
+    const b = tabsBrowser({ 7: [login, signed], 8: [consent, checked] }, (tab, ref) =>
+      tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e9' ? { advance: [7] } : {},
+    )
+    const r = await socialLogin(
+      b,
+      { card, url: login.url, provider: 'kakao', creds: async () => undefined },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e9'])
+  })
+
+  it('구글 계정이 여럿이면 한 번 묻고 기억해 둔 계정을 고른다', async () => {
+    const gLogin = {
+      url: login.url,
+      text: login.text.replace('[e8 버튼 "카카오로 시작하기"]', '[e8 버튼 "구글 로그인"]'),
+    }
+    const chooser = {
+      url: 'https://accounts.google.com/v3/signin/accountchooser',
+      text: '# 계정을 선택하세요.\n[e2 링크 "회사 k***@gmail.com"]\n[e3 링크 "홍길동 m***@gmail.com"]\n[e4 링크 "다른 계정 사용"]',
+    }
+    const saved: Record<string, string> = {}
+    const asked: string[][] = []
+    const ask = {
+      info: async (q: { options?: string[] }) => {
+        asked.push(q.options ?? [])
+        return '홍길동 m***@gmail.com'
+      },
+      account: {
+        get: (p: string) => saved[p],
+        set: (p: string, v: string) => {
+          saved[p] = v
+        },
+      },
+    }
+    const run = async () => {
+      const b = tabsBrowser({ 7: [gLogin, signed], 8: [chooser] }, (tab, ref) =>
+        tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e3' ? { advance: [7] } : {},
+      )
+      const r = await socialLogin(
+        b,
+        { card, url: gLogin.url, provider: 'google', creds: async () => undefined, ask: ask as never },
+        { wait: 0 },
+      )
+      return { r, clicks: b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref) }
+    }
+    const first = await run()
+    expect(first.r.status).toBe('ok')
+    expect(first.clicks).toEqual(['e8', 'e3'])
+    expect(saved.google).toBe('홍길동 m***@gmail.com')
+    // 두 번째는 묻지 않는다
+    await run()
+    expect(asked).toHaveLength(1)
+  })
+
+  it('"SSG 페이스북" 같은 회사 계정 링크는 간편 로그인 버튼이 아니다', () => {
+    expect(
+      socialProvidersIn('[e21 링크 "네이버 로그인"] [e39 링크 "SSG 페이스북"] [e40 링크 "kakao"]'),
+    ).toEqual(['kakao', 'naver'])
   })
 
   it('MY를 누르는 순간 뜬 광고 팝업이 클릭을 가로채면 팝업을 닫고 다시 누른다', async () => {
@@ -446,5 +513,54 @@ describe('폰 입력 화면으로 묻기', () => {
       { wait: 0 },
     )
     expect(r.status).toBe('human')
+  })
+})
+
+describe('간편 로그인 뒤 가입 화면', () => {
+  it('필수 약관만 있는 간편 가입은 두리가 고르고 누른다 (실측 예스24 페이스북)', () => {
+    const t = `# 페이스북 계정 연동
+예스24 회원님이신가요?
+[e3 링크 "로그인"]
+아직 예스24 회원이 아니시라면 회원가입을 해주세요.
+[e4 체크박스 "모두 동의"] 모두 동의
+[e5 체크박스 "예스24 이용약관 동의 (필수)"] 예스24 이용약관 동의 (필수) [e6 링크 "보기"]
+상품구매 등 본인인증(휴대폰인증, 아이핀인증)이 필요한 서비스는 본인인증 이후 이용 가능합니다.
+[e8 링크 "간편 회원가입"]`
+    expect(joinScreen(t)).toEqual({ kind: 'auto', submit: 'e8', required: ['e5'] })
+  })
+
+  it('이 사이트에 이미 되는 계정이 있으면(join 아님) 새로 가입하지 않고 알린다', async () => {
+    const login = {
+      url: 'https://shop.test/login',
+      text: '[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"] [e8 버튼 "카카오로 시작하기"]',
+    }
+    const join = {
+      url: 'https://shop.test/sns/join',
+      text: '이미 회원이신가요? [e2 링크 "로그인"] 아직 회원이 아니시라면 [e5 체크박스 "이용약관 동의 (필수)"] [e8 링크 "간편 회원가입"]',
+    }
+    const run = (allow: boolean) => {
+      const b = tabsBrowser({ 7: [login, join] }, () => ({}))
+      return socialLogin(
+        b,
+        { card, url: login.url, provider: 'kakao', creds: async () => undefined, join: allow },
+        { wait: 0, tries: 3 },
+      ).then((r) => ({ r, clicks: b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref) }))
+    }
+    const no = await run(false)
+    expect(no.r.status).toBe('human')
+    expect(no.clicks).toEqual(['e8'])
+    const yes = await run(true)
+    expect(yes.clicks).toEqual(['e8', 'e5', 'e8'])
+  })
+
+  it('가입하려니 이미 가입된 계정이 있으면 그 아이디를 알려 준다 (실측 교보)', () => {
+    const t = `[e6 링크 "카카오로 회원가입"]\n기존 계정 안내\n회원님께서는 이미 가입된 정보가 있습니다.\n아래 교보문고 아이디를 통해 로그인하시면 kakao 아이디와 자동으로 연동됩니다.\n[e13 라디오 "coffeeplan" 선택됨] [e14 버튼 "coffeeplan"]\n[e15 버튼 "로그인"]`
+    expect(joinScreen(t)).toEqual({ kind: 'existing', account: 'coffeeplan' })
+  })
+
+  it('가입에 본인인증이 필요하면 사람 차례, 로그인 화면은 가입 화면이 아니다', () => {
+    const t = `## 회원가입을 하시겠습니까?\n[e7 링크 "회원가입"]\n휴대폰 본인인증 [e8 버튼 "인증번호 받기"]`
+    expect(joinScreen(t)).toMatchObject({ kind: 'human' })
+    expect(joinScreen('[e3 입력칸 "아이디"] [e9 링크 "회원가입"]')).toBeUndefined()
   })
 })

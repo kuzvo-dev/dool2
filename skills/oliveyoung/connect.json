@@ -32,5 +32,9 @@
       "say": "주문한 거 언제 와?",
       "tier": "찾아보기"
     }
+  ],
+  "loginUrl": "https://www.oliveyoung.co.kr/store/login/loginForm.do",
+  "social": [
+    "kakao"
   ]
 }

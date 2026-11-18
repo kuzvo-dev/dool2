@@ -3147,6 +3147,15 @@ textarea.ghosting {
 .info-sheet .otp {
   margin: 6px 0 2px;
 }
+.choice-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+.choice-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
 .info-hint {
   margin: 4px 0 10px;
   padding: 12px 14px;
