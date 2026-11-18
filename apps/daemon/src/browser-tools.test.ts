@@ -783,6 +783,11 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
   it('결제 화면을 여는 버튼과 결제 화면을 알아본다', () => {
     expect(isCheckoutEntry('예약하기 예약')).toBe(true)
     expect(isCheckoutEntry('구매하기')).toBe(true)
+    // 실측 이름 변형: 화면 읽기가 겹쳐 읽은 이름, 대상이 붙은 이름
+    expect(isCheckoutEntry('예약 예약하기')).toBe(true)
+    expect(isCheckoutEntry('상품 예약하기')).toBe(true)
+    expect(isCheckoutEntry('바로 예약하기')).toBe(false)
+    expect(isCheckoutEntry('지금 예약하기')).toBe(false)
     expect(isCheckoutEntry('바로 구매')).toBe(true)
     expect(isCheckoutEntry('예약 완료하기')).toBe(false)
     expect(isCheckoutEntry('0원 결제로 예약')).toBe(false)
@@ -792,8 +797,18 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     const notice = `${ROOMS}\n이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다.\n결제 가능한 신용카드: Visa, Mastercard`
     expect(checkoutScreen(notice, room.url)).toBeUndefined()
     expect(payScreen(notice)).toBeUndefined()
-    expect(checkoutScreen('## 결제 수단\n[e1 라디오 "신용카드"]', room.url)).toBe('결제 수단')
-    expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('체크인 고객 정보')
+    expect(checkoutScreen('## 결제 수단\n[e1 라디오 "신용카드"]\n## 배송지 정보', room.url)).toBe(
+      '결제 수단·예약자 정보',
+    )
+    // 상품·상세 화면의 '결제' 한 줄이나 버튼 이름으로는 결제 화면이 아니다 (실측: 11번가·지마켓·무신사·트립닷컴)
+    expect(checkoutScreen('여부 및 배송비 결제 방법 선택\n총 상품금액 12,900원', room.url)).toBeUndefined()
+    expect(
+      checkoutScreen(
+        '46,200원결제할인가 [e39 버튼 "결제수단 즉시 할인 안내창 열기"]\n[e40 버튼 "결제 정보"]',
+        room.url,
+      ),
+    ).toBeUndefined()
+    expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('결제 금액·예약자 정보')
     expect(checkoutScreen('주문 상품', 'https://shop.example/order/sheet')).toBe('결제 단계 주소')
     expect(confirmedScreen('예약이 완료되었습니다. 예약 번호: HC12345678')).toBeTruthy()
     expect(confirmedScreen('예약 완료하기')).toBeUndefined()
