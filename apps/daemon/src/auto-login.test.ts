@@ -242,6 +242,46 @@ describe('간편 로그인', () => {
     expect(asked).toHaveLength(1)
   })
 
+  it('기억한 이메일(전체 주소)로 가린 계정 줄을 고른다', async () => {
+    const gLogin = {
+      url: login.url,
+      text: login.text.replace('[e8 버튼 "카카오로 시작하기"]', '[e8 버튼 "구글 로그인"]'),
+    }
+    const chooser = {
+      url: 'https://accounts.google.com/v3/signin/accountchooser',
+      text: '# 계정을 선택하세요.\n[e2 링크 "회사 k***@gmail.com"]\n[e3 링크 "홍길동 m***@gmail.com"]',
+    }
+    const b = tabsBrowser({ 7: [gLogin, signed], 8: [chooser] }, (tab, ref) =>
+      tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e3' ? { advance: [7] } : {},
+    )
+    const ask = { info: async () => undefined, account: { get: () => 'mdjoo0810@gmail.com', set: () => {} } }
+    const r = await socialLogin(
+      b,
+      { card, url: gLogin.url, provider: 'google', creds: async () => undefined, ask: ask as never },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e3'])
+  })
+
+  it('카카오톡 확인을 기다리기 전에 "이 브라우저에서 2단계 인증 사용 안 함"을 고른다', async () => {
+    const twoFa = {
+      url: 'https://accounts.kakao.com/login/',
+      text: '## 2단계 인증을 진행해 주세요.\n카카오톡으로 로그인 확인 메시지가 전송되었습니다. 전송된 카카오톡 메시지에서 확인 버튼을 눌러 주세요.\n[e15 체크박스 "이 브라우저에서 2단계 인증 사용 안 함"]',
+    }
+    const b = tabsBrowser(
+      { 7: [login, signed], 8: [twoFa, { url: 'https://kauth.kakao.com/x', text: '' }] },
+      (tab, ref) =>
+        tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e15' ? { advance: [7, 8] } : {},
+    )
+    await socialLogin(
+      b,
+      { card, url: login.url, provider: 'kakao', creds: async () => undefined },
+      { wait: 0, tries: 3 },
+    )
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toContain('e15')
+  })
+
   it('"SSG 페이스북" 같은 회사 계정 링크는 간편 로그인 버튼이 아니다', () => {
     expect(
       socialProvidersIn('[e21 링크 "네이버 로그인"] [e39 링크 "SSG 페이스북"] [e40 링크 "kakao"]'),
