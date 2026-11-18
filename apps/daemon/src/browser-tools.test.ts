@@ -7,6 +7,7 @@ import {
   confirmedScreen,
   cookieReject,
   isCheckoutEntry,
+  makePassword,
   nearlyEmpty,
   PAY_FLOW_TTL_MS,
   parseRefs,
@@ -1367,5 +1368,90 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(sameFinal('카카오페이로 결제하기', '토스페이로 결제하기')).toBe(true)
     expect(sameFinal('네이버페이로 예약하기', '예약 취소하기')).toBe(false)
     expect(sameFinal('결제하기', '결제하기')).toBe(false) // 같은 이름은 sameControl이 본다
+  })
+})
+
+describe('새 비밀번호 만들기', () => {
+  it('강한 비밀번호를 만든다 (대·소문자·숫자·특수문자, 16자, 매번 다름)', () => {
+    const a = makePassword()
+    const b = makePassword()
+    expect(a).toHaveLength(16)
+    expect(a).not.toBe(b)
+    expect(a).toMatch(/[A-Z]/)
+    expect(a).toMatch(/[a-z]/)
+    expect(a).toMatch(/[0-9]/)
+    expect(a).toMatch(/[!@#$%^&*]/)
+  })
+
+  it('가입 화면에서 만들어 넣고 금고에 저장하되, 값은 돌려주지 않는다', async () => {
+    const saved: { origin: string; username: string; password: string }[] = []
+    const calls: { cmd: string; value?: string; password?: boolean }[] = []
+    const b = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push({ cmd, value: args?.value as string, password: args?.password as boolean })
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://shop.example/signup',
+            title: '회원가입',
+            text: '[e1 입력칸 "이메일"] [e2 비밀번호칸 "비밀번호"] [e3 비밀번호칸 "비밀번호 확인"]',
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3, url: 'https://shop.example/signup' }
+      },
+    }
+    const vault = {
+      findForOrigin: async () => undefined,
+      markUsed: async () => {},
+      savePassword: async (origin: string, username: string, password: string) =>
+        void saved.push({ origin, username, password }),
+    }
+    const tools = new BrowserTools(b, vault)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('new_password', {
+      tabId: 3,
+      password: 'e2',
+      confirm: 'e3',
+      username: 'me@example.com',
+    })
+    const text = r.content.map((c) => c.text).join('\n')
+    expect(r.isError).toBeUndefined()
+    // 비밀번호 두 칸에 password:true로 넣는다
+    const fills = calls.filter((c) => c.cmd === 'fill')
+    expect(fills).toHaveLength(2)
+    expect(fills.every((f) => f.password === true)).toBe(true)
+    expect(fills[0]?.value).toBe(fills[1]?.value)
+    // 금고에 저장하고, 답에는 실제 비밀번호가 없다
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ origin: 'https://shop.example', username: 'me@example.com' })
+    expect(saved[0]?.password).toHaveLength(16)
+    expect(text).not.toContain(saved[0]?.password as string)
+    expect(text).toContain('me@example.com')
+  })
+
+  it('로그인 화면의 비밀번호 칸이 아니라 비밀번호 칸만 받는다', async () => {
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? {
+              tabId: 3,
+              url: 'https://shop.example/x',
+              title: 'x',
+              text: '[e1 입력칸 "쿠폰 코드"]',
+              truncated: false,
+              captcha: false,
+            }
+          : { tabId: 3, url: 'https://shop.example/x' },
+    }
+    const tools = new BrowserTools(b, {
+      findForOrigin: async () => undefined,
+      markUsed: async () => {},
+      savePassword: async () => {},
+    })
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('new_password', { tabId: 3, password: 'e1', username: 'a@b.com' })).isError).toBe(
+      true,
+    )
   })
 })

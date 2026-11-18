@@ -110,6 +110,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_request_login: '로그인 카드 띄우는',
   browser_fill_profile: '내 정보 채우는',
   browser_request_profile: '내 정보 카드 띄우는',
+  browser_new_password: '새 비밀번호 만드는',
   browser_dialog: '사이트 확인 창 고르는',
   browser_steps: '여러 동작 하는',
   browser_hover: '마우스 올려 보는',

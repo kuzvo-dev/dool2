@@ -145,6 +145,23 @@ go.onclick = () => { const how = method === '카드' ? ccv.textContent + ' · ' 
 go.onclick = () => { const how = card.hidden ? go.textContent : cardno.value + ' · ' + months.value; document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2><p>' + how + '</p>') }</script>`)
     return
   }
+  // 회원가입 화면 (가입 흐름 시험): 이름·이메일·비밀번호·확인·필수 약관
+  if (req.url?.startsWith('/signup')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>회원가입</title>
+<h1>회원가입</h1>
+<form id="f">
+<label>이름 <input name="name" autocomplete="name"></label>
+<label>이메일 <input name="email" type="email" autocomplete="email"></label>
+<label>비밀번호 <input name="pw" type="password" autocomplete="new-password"></label>
+<label>비밀번호 확인 <input name="pw2" type="password" autocomplete="new-password"></label>
+<label><input type="checkbox" name="t1"> (필수) 이용약관 동의</label>
+<label><input type="checkbox" name="t2"> (선택) 마케팅 수신 동의</label>
+<button type="submit">가입하기</button>
+</form>
+<script>f.onsubmit=e=>{e.preventDefault();const d=new FormData(f);if(!d.get('t1')){document.title='약관 필요';return}
+document.title='가입 완료';document.body.insertAdjacentHTML('beforeend','<h2>가입이 완료됐어요</h2><p>'+d.get('email')+' / 비번길이 '+(d.get('pw')||'').length+'</p>')}</script>`)
+    return
+  }
   if (req.url?.startsWith('/me')) {
     res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
     return

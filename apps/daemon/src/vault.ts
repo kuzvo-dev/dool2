@@ -95,6 +95,11 @@ export class Vault {
     return e ? { id: e.id, username: e.username, password: e.password } : undefined
   }
 
+  /** 두리가 만든 새 비밀번호를 저장한다 (가입·비번 변경). origin은 이미 origin 형태 */
+  async savePassword(origin: string, username: string, password: string) {
+    await this.add({ url: origin, username, password })
+  }
+
   async markUsed(id: string) {
     const list = await this.load()
     const e = list.find((x) => x.id === id)
