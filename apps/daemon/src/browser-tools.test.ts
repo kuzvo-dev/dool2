@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  askedForAccount,
   BrowserTools,
   checkoutScreen,
   classifyDialogRisk,
@@ -16,6 +17,7 @@ import {
   type SiteDialog,
   sameFinal,
   scopeLines,
+  siteKey,
 } from './browser-tools.js'
 import { ProfileStore } from './profile.js'
 
@@ -1383,51 +1385,158 @@ describe('새 비밀번호 만들기', () => {
     expect(a).toMatch(/[!@#$%^&*]/)
   })
 
-  it('가입 화면에서 만들어 넣고 금고에 저장하되, 값은 돌려주지 않는다', async () => {
+  /** 가입 화면 흉내: snapshot은 page.now를 돌려주고, fill은 maxLen만큼만 들어간 길이를 알린다 */
+  function signupBench(o: { maxLen?: number; ask?: 'ok' | 'asked' } = {}) {
     const saved: { origin: string; username: string; password: string }[] = []
-    const calls: { cmd: string; value?: string; password?: boolean }[] = []
+    const fills: { ref: string; value: string }[] = []
+    const form = {
+      url: 'https://www.shop.example/signup',
+      title: '회원가입',
+      text: '가입 완료 시 쿠폰을 드려요. 이미 가입된 회원이신가요? [e1 입력칸 "이메일"] [e2 비밀번호칸 "비밀번호"] [e3 비밀번호칸 "비밀번호 확인"] [e4 버튼 "가입하기"]',
+    }
+    const page = { now: form }
     const b = {
       call: async (cmd: string, args?: Record<string, unknown>) => {
-        calls.push({ cmd, value: args?.value as string, password: args?.password as boolean })
-        if (cmd === 'snapshot')
-          return {
-            tabId: 3,
-            url: 'https://shop.example/signup',
-            title: '회원가입',
-            text: '[e1 입력칸 "이메일"] [e2 비밀번호칸 "비밀번호"] [e3 비밀번호칸 "비밀번호 확인"]',
-            truncated: false,
-            captcha: false,
-          }
-        return { tabId: 3, url: 'https://shop.example/signup' }
+        if (cmd === 'snapshot') return { tabId: 3, ...page.now, truncated: false, captcha: false }
+        if (cmd === 'fill') {
+          const value = String(args?.value)
+          fills.push({ ref: String(args?.ref), value })
+          return { tabId: 3, filled: true, length: Math.min(value.length, o.maxLen ?? 999) }
+        }
+        return { tabId: 3, url: page.now.url }
       },
     }
-    const vault = {
+    const tools = new BrowserTools(b, {
       findForOrigin: async () => undefined,
       markUsed: async () => {},
       savePassword: async (origin: string, username: string, password: string) =>
         void saved.push({ origin, username, password }),
-    }
-    const tools = new BrowserTools(b, vault)
-    await tools.run('read', { tabId: 3 })
-    const r = await tools.run('new_password', {
+    })
+    const asked: string[] = []
+    if (o.ask)
+      tools.askSignup = (site) => {
+        asked.push(site)
+        return o.ask
+      }
+    const text = (r: { content: { type: string; text?: string }[] }) =>
+      r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
+    return { tools, saved, fills, page, form, asked, text }
+  }
+
+  it('가입 화면에서 만들어 넣되, 금고에는 완료 화면을 본 뒤에 넣고 값은 돌려주지 않는다', async () => {
+    const t = signupBench()
+    t.tools.allowSignup('shop.example')
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('new_password', {
       tabId: 3,
       password: 'e2',
       confirm: 'e3',
       username: 'me@example.com',
     })
-    const text = r.content.map((c) => c.text).join('\n')
     expect(r.isError).toBeUndefined()
-    // 비밀번호 두 칸에 password:true로 넣는다
-    const fills = calls.filter((c) => c.cmd === 'fill')
-    expect(fills).toHaveLength(2)
-    expect(fills.every((f) => f.password === true)).toBe(true)
-    expect(fills[0]?.value).toBe(fills[1]?.value)
-    // 금고에 저장하고, 답에는 실제 비밀번호가 없다
-    expect(saved).toHaveLength(1)
-    expect(saved[0]).toMatchObject({ origin: 'https://shop.example', username: 'me@example.com' })
-    expect(saved[0]?.password).toHaveLength(16)
-    expect(text).not.toContain(saved[0]?.password as string)
-    expect(text).toContain('me@example.com')
+    expect(t.fills).toHaveLength(2)
+    expect(t.fills[0]?.value).toBe(t.fills[1]?.value)
+    expect(t.fills[0]?.value).toHaveLength(16)
+    // 가입 화면에 원래 있던 "가입 완료 시"·"이미 가입된 회원" 글로는 저장하지 않는다
+    expect(t.saved).toHaveLength(0)
+    await t.tools.run('read', { tabId: 3 })
+    expect(t.saved).toHaveLength(0)
+    // 완료 화면이 보이면 저장
+    t.page.now = { ...t.form, title: '가입 완료', text: '가입이 완료됐어요 me@example.com' }
+    const done = t.text(await t.tools.run('read', { tabId: 3 }))
+    expect(t.saved).toHaveLength(1)
+    expect(t.saved[0]).toMatchObject({ origin: 'https://www.shop.example', username: 'me@example.com' })
+    expect(t.saved[0]?.password).toBe(t.fills[0]?.value)
+    expect(done).toContain('금고에 저장')
+    expect(t.text(r)).not.toContain(t.saved[0]?.password as string)
+    expect(done).not.toContain(t.saved[0]?.password as string)
+  })
+
+  it('칸이 글자 수를 막으면(maxlength 15) 그 길이로 다시 만들어 금고 값과 사이트 값이 같게 한다', async () => {
+    const t = signupBench({ maxLen: 15 })
+    t.tools.allowSignup('www.shop.example')
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('new_password', {
+      tabId: 3,
+      password: 'e2',
+      confirm: 'e3',
+      username: 'me@example.com',
+    })
+    expect(r.isError).toBeUndefined()
+    const last = t.fills.at(-1)?.value as string
+    expect(last).toHaveLength(15)
+    expect(t.fills.filter((f) => f.ref === 'e2').at(-1)?.value).toBe(last)
+    t.page.now = {
+      ...t.form,
+      url: 'https://www.shop.example/welcome',
+      title: '환영해요',
+      text: '회원가입을 축하해요',
+    }
+    await t.tools.run('read', { tabId: 3 })
+    expect(t.saved[0]?.password).toBe(last)
+  })
+
+  it('칸이 8자보다 적게 받으면 넣었다고 하지 않고 사람에게 넘기게 한다', async () => {
+    const t = signupBench({ maxLen: 6 })
+    t.tools.allowSignup('shop.example')
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+    expect(r.isError).toBe(true)
+    expect(t.text(r)).toContain('browser_handoff')
+  })
+
+  it('"이미 가입된 이메일"이 새로 뜨면 만든 비밀번호를 버리고 로그인으로 바꾸라고 한다', async () => {
+    const t = signupBench()
+    t.tools.allowSignup('shop.example')
+    await t.tools.run('read', { tabId: 3 })
+    await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+    t.page.now = { ...t.form, text: `${t.form.text} 이미 가입된 이메일이에요. 로그인해 주세요.` }
+    const out = t.text(await t.tools.run('read', { tabId: 3 }))
+    expect(out).toContain('버렸어요')
+    // 그 뒤 완료처럼 보이는 글이 와도 저장할 것이 없다
+    t.page.now = { ...t.form, title: '가입 완료', text: '가입이 완료됐어요' }
+    await t.tools.run('read', { tabId: 3 })
+    expect(t.saved).toHaveLength(0)
+  })
+
+  it('사용자가 고르지 않은 사이트면 아무것도 넣지 않고 폰에 먼저 묻는다', async () => {
+    const t = signupBench({ ask: 'asked' })
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+    expect(r.isError).toBeUndefined()
+    expect(t.fills).toHaveLength(0)
+    expect(t.asked).toEqual(['shop.example'])
+    expect(t.text(r)).toContain('물었어요')
+    // 묻는 길이 없으면 거절
+    const t2 = signupBench()
+    await t2.tools.run('read', { tabId: 3 })
+    expect(
+      (await t2.tools.run('new_password', { tabId: 3, password: 'e2', username: 'a@b.com' })).isError,
+    ).toBe(true)
+    expect(t2.fills).toHaveLength(0)
+  })
+
+  it('대화에서 이미 가입을 부탁했으면(ok) 묻지 않고 넣는다', async () => {
+    const t = signupBench({ ask: 'ok' })
+    await t.tools.run('read', { tabId: 3 })
+    await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+    expect(t.fills).toHaveLength(1)
+  })
+
+  it('askedForAccount: 주소 안의 /signup은 가입 부탁이 아니다', () => {
+    expect(askedForAccount('http://127.0.0.1:8790/signup 열어서 칸 채워 줘', 'signup')).toBe(false)
+    expect(askedForAccount('shop.example.com/join 들어가서 봐 줘', 'signup')).toBe(false)
+    expect(askedForAccount('알라딘 회원가입해서 이어서 해 줘', 'signup')).toBe(true)
+    expect(askedForAccount('거기 계정 하나 만들어 줘', 'signup')).toBe(true)
+    expect(askedForAccount('쿠팡 비밀번호 찾아서 바꿔 줘', 'reset')).toBe(true)
+    expect(askedForAccount('쿠팡 가입해 줘', 'reset')).toBe(false)
+  })
+
+  it('siteKey: 같은 사이트의 다른 주소를 묶는다', () => {
+    expect(siteKey('https://member.ssg.com/login')).toBe('ssg.com')
+    expect(siteKey('www.aladin.co.kr')).toBe('aladin.co.kr')
+    expect(siteKey('https://mmbr.kyobobook.co.kr')).toBe('kyobobook.co.kr')
+    expect(siteKey('http://127.0.0.1:8787/signup')).toBe('127.0.0.1')
   })
 
   it('로그인 화면의 비밀번호 칸이 아니라 비밀번호 칸만 받는다', async () => {

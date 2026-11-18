@@ -149,16 +149,19 @@ go.onclick = () => { const how = card.hidden ? go.textContent : cardno.value + '
   if (req.url?.startsWith('/signup')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>회원가입</title>
 <h1>회원가입</h1>
+<p>가입 완료 시 3,000원 쿠폰을 드려요. 이미 가입된 회원이신가요? <a href="/login">로그인</a></p>
 <form id="f">
 <label>이름 <input name="name" autocomplete="name"></label>
 <label>이메일 <input name="email" type="email" autocomplete="email"></label>
-<label>비밀번호 <input name="pw" type="password" autocomplete="new-password"></label>
-<label>비밀번호 확인 <input name="pw2" type="password" autocomplete="new-password"></label>
+<label>비밀번호 (8~15자) <input name="pw" type="password" maxlength="15" autocomplete="new-password"></label>
+<label>비밀번호 확인 <input name="pw2" type="password" maxlength="15" autocomplete="new-password"></label>
 <label><input type="checkbox" name="t1"> (필수) 이용약관 동의</label>
 <label><input type="checkbox" name="t2"> (선택) 마케팅 수신 동의</label>
 <button type="submit">가입하기</button>
 </form>
 <script>f.onsubmit=e=>{e.preventDefault();const d=new FormData(f);if(!d.get('t1')){document.title='약관 필요';return}
+if(d.get('pw')!==d.get('pw2')){document.body.insertAdjacentHTML('beforeend','<p>비밀번호가 서로 달라요</p>');return}
+if(/taken/.test(d.get('email')||'')||location.search.includes('taken')){document.body.insertAdjacentHTML('beforeend','<p role="alert">이미 가입된 이메일이에요. 로그인해 주세요.</p>');return}
 document.title='가입 완료';document.body.insertAdjacentHTML('beforeend','<h2>가입이 완료됐어요</h2><p>'+d.get('email')+' / 비번길이 '+(d.get('pw')||'').length+'</p>')}</script>`)
     return
   }

@@ -79,7 +79,7 @@ import {
   SOCIAL_PROVIDERS,
   socialLogin,
 } from './auto-login.js'
-import { BrowserTools } from './browser-tools.js'
+import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -993,6 +993,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
       infoAnswer: (id, value) => void infoRequests.answer(id, value),
+      // 카드의 "처음이에요 · 가입해 주세요": 그 사이트 가입을 고른 것으로 두고, 기다리던 로그인 카드는 닫는다
+      signup: (site, loginId) => {
+        browserTools.allowSignup(site)
+        if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
+          void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: '가입으로 바꿨어요' })
+      },
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       thumb: (url) => thumbs.get(url),
       profile: async (action) => {
@@ -1280,6 +1286,55 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .catch(() => {})
   }
   infoRequests.onDone = (id) => void link.broadcast({ kind: 'info-done', id })
+  // 가입·비번 변경 전 묻기: 사용자가 대화에서 그렇게 부탁했으면 그대로, 아니면 폰에 고르기 카드를 띄운다.
+  // 지침만으로는 AI가 묻지 않고 가입할 수 있어서, 새 비밀번호를 만들기 전에 본체가 확인한다
+  browserTools.askSignup = (site, key, purpose) => {
+    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const lastAsk = threadId
+      ? (store
+          .listMessages(threadId)
+          .filter((m) => m.role === 'user')
+          .at(-1)?.text ?? '')
+      : ''
+    if (askedForAccount(lastAsk, purpose)) return 'ok'
+    const options =
+      purpose === 'reset' ? ['새로 바꿔 주세요', '그만둘게요'] : ['가입해 주세요', '이미 계정 있어요']
+    const answer = infoRequests.ask(
+      {
+        site,
+        host: key,
+        field: 'choice',
+        label:
+          purpose === 'reset'
+            ? `${site} 비밀번호를 새로 바꿀까요?`
+            : `${josa(site, '은/는')} 어떻게 로그인할까요?`,
+        hint:
+          purpose === 'reset'
+            ? '비밀번호 찾기로 새 비밀번호를 만들어 금고에 넣어요. 예전 비밀번호는 더 못 써요.'
+            : '처음이면 두리가 가입해 드려요(아이디는 내 정보 이메일, 비밀번호는 두리가 만들어 금고에). 이미 계정이 있으면 로그인 카드를 띄울게요.',
+        options,
+      },
+      30 * 60_000,
+    )
+    void answer.then((v) => {
+      if (!v || !threadId) return
+      const yes = v.trim() === options[0]
+      if (yes) browserTools.allowSignup(key)
+      followUp(
+        threadId,
+        appNote(
+          purpose === 'reset'
+            ? yes
+              ? `사용자가 ${site} 비밀번호를 새로 바꾸기로 했어요. browser_new_password(purpose: "reset")로 이어서 해 주세요.`
+              : `사용자가 ${site} 비밀번호 변경을 그만뒀어요. 하던 일에서 로그인이 필요한 부분은 사용자에게 알려 주세요.`
+            : yes
+              ? `사용자가 ${site} 가입을 골랐어요. 가입 화면에서 browser_new_password로 이어서 해 주세요.`
+              : `사용자가 ${site} 계정이 이미 있대요. 가입하지 말고 로그인 화면에서 browser_login, 금고에 없으면 browser_request_login 카드를 띄워 주세요.`,
+        ),
+      )
+    })
+    return 'asked'
+  }
   // 내 정보 카드: 처음 한 번만 받아 금고에 두고, 저장되면 그 대화로 이어서 하라고 알린다
   browserTools.requestProfile = (fields, reason) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined

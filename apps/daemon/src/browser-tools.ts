@@ -453,22 +453,84 @@ export interface VaultLookup {
   savePassword?(origin: string, username: string, password: string): Promise<void>
 }
 
-/** 가입·비번 변경에 쓸 강한 비밀번호 (대·소문자·숫자·특수문자 각 1개 이상, 16자). AI에게 주지 않는다 */
-export function makePassword(): string {
+/**
+ * 가입·비번 변경에 쓸 강한 비밀번호 (대·소문자·숫자·특수문자 각 1개 이상). AI에게 주지 않는다.
+ * 특수문자는 국내 사이트가 거의 다 받는 것만 ('&'·따옴표는 막는 곳이 있다)
+ */
+export function makePassword(length = 16): string {
   const U = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
   const L = 'abcdefghijkmnpqrstuvwxyz'
   const D = '23456789'
-  const S = '!@#$%^&*'
+  const S = '!@#$%^*'
   const all = U + L + D + S
   const pick = (set: string) => set[randomInt(set.length)] as string
   const chars = [pick(U), pick(L), pick(D), pick(S)]
-  while (chars.length < 16) chars.push(pick(all))
+  while (chars.length < Math.max(8, length)) chars.push(pick(all))
   // 자리를 섞는다 (앞 네 자리가 늘 종류별로 오지 않게)
   for (let i = chars.length - 1; i > 0; i--) {
     const j = randomInt(i + 1)
     ;[chars[i], chars[j]] = [chars[j] as string, chars[i] as string]
   }
   return chars.join('')
+}
+
+/** 사이트 묶음 (member.ssg.com·www.ssg.com → ssg.com, www.aladin.co.kr → aladin.co.kr) */
+export function siteKey(hostOrUrl: string): string {
+  let host = hostOrUrl.trim().toLowerCase()
+  try {
+    if (/^[a-z][a-z0-9+.-]*:\/\//.test(host)) host = new URL(host).hostname
+  } catch {}
+  host = host.replace(/^\.+|\.+$/g, '')
+  if (/^[\d.]+$/.test(host) || host === 'localhost') return host
+  const parts = host.split('.')
+  const second = parts.slice(-2).join('.')
+  const n = /^(co|or|go|ne|ac|re|pe|com|net|org)\.[a-z]{2}$/.test(second) ? 3 : 2
+  return parts.slice(-n).join('.')
+}
+
+const DONE_RE =
+  /(회원\s*)?가입(이|을)?\s*(완료|축하|환영)|가입(이|을)?\s*(되었|됐|마쳤|끝났)|비밀번호(가|를)?\s*(변경|재설정)(이|을)?\s*(완료|되었|됐|했)|welcome to|registration (is )?complete|account (has been |was )?created/i
+const EXISTS_RE =
+  /이미\s*(가입|사용\s*중|등록|존재)(된|인|하는|한|되어\s*있는|돼\s*있는)?\s*(이메일|아이디|계정|회원|ID|e-?mail)|already (registered|exists|in use|taken)/i
+
+/** 새 비밀번호를 넣은 뒤 화면이 알려 주는 결과: 끝남·이미 있는 계정 (처음 화면에도 있던 글은 셈하지 않는다) */
+export function accountOutcome(
+  now: { url: string; title: string; text: string },
+  base: { url: string; title: string; text: string },
+): 'done' | 'exists' | undefined {
+  const moved = now.url.split('#')[0] !== base.url.split('#')[0]
+  // 몇 번 나오는지로 본다: 가입 화면에 원래 "이미 가입된 회원이신가요?"가 있어도, 새로 뜬 "이미 가입된 이메일이에요"는 하나 더 늘어난다
+  const count = (re: RegExp, t: string) => t.match(new RegExp(re.source, 'gi'))?.length ?? 0
+  if (count(DONE_RE, now.title) > count(DONE_RE, base.title)) return 'done'
+  if (count(EXISTS_RE, now.text) > count(EXISTS_RE, base.text)) return 'exists'
+  if (count(DONE_RE, now.text) > 0 && (moved || count(DONE_RE, now.text) > count(DONE_RE, base.text)))
+    return 'done'
+  return undefined
+}
+
+/**
+ * 사용자의 말이 그 일(가입·비번 변경)을 부탁한 것인지. 주소 안의 /signup·/join은 셈하지 않는다
+ * (실측: "…/signup 열어서 칸 채워 줘"를 가입 부탁으로 보고 묻지 않았다)
+ */
+export function askedForAccount(text: string, purpose: 'signup' | 'reset'): boolean {
+  const said = text.replace(
+    /\b(?:https?:\/\/|www\.)\S+|\b[\w-]+(?:\.[\w-]+)+(?::\d+)?\/\S*|\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\S*/gi,
+    ' ',
+  )
+  return purpose === 'reset'
+    ? /(비밀번호|비번)\s*(을|를|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)/.test(said)
+    : /(회원\s*)?가입|계정\s*(을|도)?\s*(만들|새로|생성|하나)/.test(said)
+}
+
+/** 금고에 넣기 전, 가입·변경이 끝나기를 기다리는 비밀번호 */
+interface PendingPassword {
+  key: string
+  origin: string
+  username: string
+  password: string
+  purpose: 'signup' | 'reset'
+  at: number
+  base?: { url: string; title: string; text: string }
 }
 
 /** 사람에게 넘긴 탭을 폰 원격 화면으로 다룰 수 있는 시간 */
@@ -576,6 +638,24 @@ export class BrowserTools {
   }
   /** 쿠키 동의 창을 닫아 본 탭·사이트 (같은 곳에서 되풀이하지 않는다) */
   private cookieTried = new Set<string>()
+  /** 사용자가 가입·비번 변경을 고른 사이트 (siteKey → 만료 시각). 이게 없으면 새 비밀번호를 만들지 않고 먼저 묻는다 */
+  private signupOk = new Map<string, number>()
+  /** 가입·변경이 끝나기를 기다리는 새 비밀번호 (끝난 걸 화면에서 보면 금고에 넣는다) */
+  private pendingPw: PendingPassword[] = []
+  /** 사용자가 이 사이트의 가입·비번 변경을 골랐다 (폰 카드·대화) */
+  allowSignup(hostOrUrl: string, ms = 60 * 60_000) {
+    const key = siteKey(hostOrUrl)
+    if (key) this.signupOk.set(key, Date.now() + ms)
+  }
+  private signupAllowed(key: string) {
+    const t = this.signupOk.get(key)
+    return t !== undefined && t > Date.now()
+  }
+  /**
+   * 가입·비번 변경 전에 사용자에게 묻는다. 'ok' = 이미 그렇게 부탁했다(대화), 'asked' = 폰에 고르기 카드를 띄웠다.
+   * 고르면 본체가 그 대화로 이어서 하라고 알린다
+   */
+  askSignup?: (site: string, key: string, purpose: 'signup' | 'reset') => 'ok' | 'asked' | undefined
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
@@ -782,7 +862,7 @@ export class BrowserTools {
         return this.read(tabId, undefined, lines.join(' '))
       }
       case 'new_password': {
-        // 가입·비번 변경: 강한 비밀번호를 만들어 넣고 금고에 저장한다. AI는 값을 받지 않는다
+        // 가입·비번 변경: 강한 비밀번호를 만들어 넣는다. 금고에는 끝난 걸 화면에서 본 뒤에 넣는다. AI는 값을 받지 않는다
         const page = this.pages.get(tabId)
         if (!page) throw new Error('먼저 페이지를 읽어 주세요')
         let origin: string
@@ -791,6 +871,7 @@ export class BrowserTools {
         } catch {
           throw new Error('페이지 주소를 알 수 없어요')
         }
+        const purpose = a.purpose === 'reset' ? 'reset' : 'signup'
         const pwRef = String(a.password ?? a.ref ?? '')
         const confirmRef = a.confirm ? String(a.confirm) : ''
         if (!pwRef) throw new Error('새 비밀번호를 넣을 칸(password: ref)을 알려 주세요')
@@ -803,6 +884,30 @@ export class BrowserTools {
             (role === '입력칸' && /비밀번호|password|passwd|\bpw\b|암호/i.test(c?.name ?? ''))
           if (!looksPw) throw new Error(`${r}는 비밀번호 칸이 아니에요. 페이지를 다시 읽어 주세요`)
         }
+        // 실제 계정을 만들거나 비밀번호를 바꾸는 일: 사용자가 고른 사이트에서만 (지침만으로는 막지 못한다)
+        const key = siteKey(origin)
+        if (!this.signupAllowed(key)) {
+          // 카드에는 서비스 이름으로 (커넥터가 있으면 "알라딘", 없으면 주소)
+          const name = (await this.siteConnector?.(page.url).catch(() => undefined))?.name ?? key
+          const said = this.askSignup?.(name, key, purpose)
+          if (said === 'ok') this.allowSignup(key)
+          else if (said === 'asked')
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    purpose === 'reset'
+                      ? `${name} 비밀번호를 새로 바꿀지 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`
+                      : `${name}에 가입할지(또는 이미 계정이 있는지) 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`,
+                },
+              ],
+            }
+          else
+            throw new Error(
+              '가입·비밀번호 변경은 사용자가 고른 뒤에만 해요. 사용자에게 "로그인할까요, 가입할까요?"를 먼저 물어 주세요.',
+            )
+        }
         // 아이디(이메일): AI가 정한 것, 없으면 내 정보 이메일
         let username = String(a.username ?? '').trim()
         if (!username && this.profile) username = profileValue(await this.profile.get(), 'email') ?? ''
@@ -810,16 +915,44 @@ export class BrowserTools {
           throw new Error(
             '어떤 아이디로 가입·변경하는지 알려 주세요(username). 내 정보에 이메일이 없으면 browser_request_profile로 받아요.',
           )
-        const pw = makePassword()
-        await this.browser.call('fill', { tabId, ref: pwRef, value: pw, origin, password: true })
-        if (confirmRef)
-          await this.browser.call('fill', { tabId, ref: confirmRef, value: pw, origin, password: true })
-        await this.vault?.savePassword?.(origin, username, pw)
+        // 넣고 나서 칸에 실제로 들어간 길이를 본다: 칸이 글자 수를 막으면(maxlength) 잘려 들어가서,
+        // 금고 값과 사이트 비밀번호가 달라진다. 그 길이에 맞춰 다시 만든다
+        const fill = async (ref: string, value: string) => {
+          const r = (await this.browser.call('fill', { tabId, ref, value, origin, password: true })) as
+            | { length?: number }
+            | undefined
+          return typeof r?.length === 'number' ? r.length : undefined
+        }
+        let pw = makePassword()
+        let got = await fill(pwRef, pw)
+        if (got !== undefined && got !== pw.length) {
+          if (got < 8)
+            throw new Error(
+              '이 칸은 넣은 비밀번호를 그대로 받지 않아요(글자가 빠짐). 비밀번호 규칙을 읽어 사용자에게 알리고, 이 칸은 browser_handoff로 넘겨 주세요.',
+            )
+          pw = makePassword(got)
+          got = await fill(pwRef, pw)
+          if (got !== undefined && got !== pw.length)
+            throw new Error(
+              '이 칸은 넣은 비밀번호를 그대로 받지 않아요(특수문자를 빼는 칸일 수 있어요). 비밀번호 규칙을 읽어 사용자에게 알리고, 이 칸은 browser_handoff로 넘겨 주세요.',
+            )
+        }
+        if (confirmRef) {
+          const c = await fill(confirmRef, pw)
+          if (c !== undefined && c !== pw.length)
+            throw new Error(
+              '비밀번호 확인 칸에 같은 값이 다 들어가지 않았어요. 이 칸은 browser_handoff로 넘겨 주세요.',
+            )
+        }
+        // 금고에는 아직 넣지 않는다: 가입이 끝난 걸 화면에서 보면 넣는다 (실패·"이미 가입" 때 틀린 값이 남지 않게)
+        this.pendingPw = this.pendingPw.filter((p) => p.key !== key)
+        this.pendingPw.push({ key, origin, username, password: pw, purpose, at: Date.now() })
         return this.read(
           tabId,
           undefined,
-          `새 비밀번호를 만들어 "${pwRef}"${confirmRef ? `·"${confirmRef}"` : ''} 칸에 넣고, 금고에 ${username} 계정으로 저장했어요. ` +
-            '당신에게는 비밀번호가 오지 않아요. 가입·변경을 마치면 다음부터 두리가 그 계정으로 로그인해요. 비밀번호 규칙(자릿수·특수문자)에 걸리면 사용자에게 알려 주세요.',
+          `새 비밀번호(${pw.length}자)를 만들어 "${pwRef}"${confirmRef ? `·"${confirmRef}"` : ''} 칸에 넣었어요(${username}). ` +
+            '당신에게는 비밀번호가 오지 않아요. 나머지 칸을 채우고 가입·변경 버튼을 눌러 주세요. 완료 화면이 보이면 두리가 금고에 저장하고 알려 드려요. ' +
+            '비밀번호 규칙(자릿수·특수문자)에 걸리면 사용자에게 알려 주세요.',
         )
       }
       case 'request_profile': {
@@ -1626,6 +1759,33 @@ export class BrowserTools {
     return undefined
   }
 
+  /** 새 비밀번호를 넣은 뒤의 화면: 끝났으면 금고에 넣고, 이미 있는 계정이면 버린다 */
+  private async settlePassword(s: {
+    url: string
+    title?: string
+    text: string
+  }): Promise<string | undefined> {
+    this.pendingPw = this.pendingPw.filter((p) => Date.now() - p.at < 60 * 60_000)
+    const key = siteKey(s.url)
+    const p = this.pendingPw.find((x) => x.key === key)
+    if (!p) return undefined
+    const now = { url: s.url, title: s.title ?? '', text: s.text }
+    // 넣은 직후 화면이 기준 (가입 화면에 원래 있던 "이미 가입하셨나요?" 같은 글은 셈하지 않는다)
+    if (!p.base) {
+      p.base = now
+      return undefined
+    }
+    const r = accountOutcome(now, p.base)
+    if (!r) return undefined
+    this.pendingPw = this.pendingPw.filter((x) => x !== p)
+    if (r === 'exists')
+      return `🔐 "${p.username}"은(는) 이미 가입된 계정이래요. 만든 비밀번호는 버렸어요(금고에 넣지 않음). 가입을 멈추고 로그인으로 바꿔요: 비밀번호를 모르면 비밀번호 찾기(사용자 확인 뒤 purpose: "reset").`
+    await this.vault?.savePassword?.(p.origin, p.username, p.password)
+    return p.purpose === 'reset'
+      ? `🔐 비밀번호 변경이 끝난 걸 확인하고 금고에 새 비밀번호를 저장했어요(${p.username}). 다음부터 두리가 이걸로 로그인해요.`
+      : `🔐 가입이 끝난 걸 확인하고 금고에 저장했어요(${p.username}). 다음부터 두리가 이 계정으로 로그인해요.`
+  }
+
   private async read(
     tabId: number,
     maxChars?: unknown,
@@ -1705,12 +1865,14 @@ export class BrowserTools {
     this.dialogs.delete(tabId)
     const info = pageInfo(s.url, s.text)
     this.pages.set(tabId, info)
+    const accountNote = await this.settlePassword(s)
     const guide = await this.guideFor(tabId, s.url)
     const flow = this.payFlow(tabId)
     const lines = [
       ...(note ? [note] : []),
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
       ...(cookieNote ? [cookieNote] : []),
+      ...(accountNote ? [accountNote] : []),
       ...(flow && info.confirmed
         ? [
             `⚠ 화면에 "${info.confirmed}"이(가) 보여요. 예약·주문이 이미 확정됐을 수 있어요. 사용자에게 그대로 알리고 내역 화면에서 확인해 주세요.`,

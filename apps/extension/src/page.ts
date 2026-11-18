@@ -921,6 +921,15 @@ export function pageViewport() {
 }
 
 /** 두리 금고로 채운 칸이라고 표시한다 (그 뒤 페이지 읽기에서 값이 나가지 않게) */
+/** 칸에 실제로 들어간 글자 수 (금고 값이 잘려 들어갔는지 본다. 값은 돌려주지 않는다) */
+export function pageValueLength(ref: string): number {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.length
+  return -1
+}
+
 export function pageMarkFilled(ref: string) {
   type State = { refs: Map<string, WeakRef<Element>>; filled?: WeakSet<Element> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2

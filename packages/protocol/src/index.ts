@@ -949,6 +949,8 @@ export type PhoneToPc =
   | { kind: 'connect-login'; id: string; username: string; password: string }
   /** 로그인 중 화면이 묻는 것에 대한 답 (인증번호 등). value가 없으면 취소 */
   | { kind: 'info-answer'; id: string; value?: string }
+  /** 카드의 "처음이에요 · 가입해 주세요": 그 사이트(주소) 가입을 사용자가 골랐다. loginId면 그 로그인 카드는 닫는다 */
+  | { kind: 'signup'; site: string; loginId?: string }
   /** 간편 로그인으로 연결 (카카오·네이버…). 공급자 쪽 로그인이 필요하면 원격 화면으로 넘긴다 */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 

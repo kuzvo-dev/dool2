@@ -30,6 +30,7 @@ import {
   pageSelectOptions,
   pageSnapshot,
   pageTapAt,
+  pageValueLength,
   pageViewport,
   type ReadScope,
 } from './page.js'
@@ -1209,8 +1210,11 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (inFrameRef && !at.hidden) await clickAt(tabId, at.x, at.y, '두리 금고로 채우는 중')
       else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리 금고로 채우는 중')
       await cdp(tabId, 'Input.insertText', { text: a.value })
-      await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageMarkFilled, String(a.ref))
-      return { tabId, filled: true }
+      const frameId = frameOf(tabId, String(a.ref)).frameId
+      // 칸이 글자 수를 막으면(maxlength) 잘려 들어간다: 들어간 길이만 알린다 (값은 돌려주지 않는다)
+      const length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref)).catch(() => -1)) as number
+      await inFrame(tabId, frameId, pageMarkFilled, String(a.ref))
+      return { tabId, filled: true, ...(length >= 0 ? { length } : {}) }
     }
     case 'press': {
       const tabId = await ownedTab(a)
