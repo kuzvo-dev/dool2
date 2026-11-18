@@ -36,6 +36,7 @@ export const BROWSER_TOOLS = [
   'request_approval',
   'dialog',
   'steps',
+  'hover',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -293,6 +294,8 @@ export class BrowserTools {
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
       case 'press':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
+      case 'hover':
+        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'hover' })).note)
       case 'steps':
         return this.steps(tabId, a)
       case 'scroll': {
@@ -506,6 +509,14 @@ export class BrowserTools {
         const r = (await this.browser.call('press', { tabId, key })) as BrowserState
         return { note: `${key} 키를 눌렀어요.`, ...state(r) }
       }
+      case 'hover': {
+        // 올려 두기만 한다 (누르지 않으니 위험 검사는 없다)
+        const ref = String(s.ref ?? '')
+        const target = this.pages.get(tabId)?.refs.get(ref)
+        if (!target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+        const r = (await this.browser.call('hover', { tabId, ref })) as BrowserState
+        return { note: `${target.role} "${target.name}"에 마우스를 올렸어요.`, ...state(r) }
+      }
       case 'scroll': {
         const r = (await this.browser.call('scroll', {
           tabId,
@@ -519,7 +530,7 @@ export class BrowserTools {
         return { note: `${(ms / 1000).toFixed(1)}초 기다렸어요.` }
       }
     }
-    throw new Error(`모르는 동작이에요: ${String(s.do)} (click·type·press·scroll·wait)`)
+    throw new Error(`모르는 동작이에요: ${String(s.do)} (click·type·press·hover·scroll·wait)`)
   }
 
   /**

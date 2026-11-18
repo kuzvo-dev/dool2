@@ -419,6 +419,16 @@ describe('여러 동작 한 번에', () => {
     expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(0)
   })
 
+  it('올려 두기는 누르지 않으니 위험한 버튼에도 막지 않는다', async () => {
+    const b = formBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('hover', { tabId: 3, ref: 'e5' })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toContain('버튼 "바로 구매"에 마우스를 올렸어요.')
+    expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'hover', 'snapshot'])
+  })
+
   it('정해진 동작만, 먼저 읽은 화면에서만 한다', async () => {
     const tools = new BrowserTools(formBrowser())
     expect((await tools.run('steps', { tabId: 3, steps: [{ do: 'wait' }] })).isError).toBe(true)

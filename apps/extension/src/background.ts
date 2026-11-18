@@ -10,6 +10,7 @@ import {
   type LocateResult,
   pageCaretEnd,
   pageClick,
+  pageCursor,
   pageExtract,
   pageFind,
   pageForm,
@@ -343,6 +344,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   attached.delete(tabId)
   dialogs.delete(tabId)
   dialogNotes.delete(tabId)
+  pointer.delete(tabId)
   port?.postMessage({ event: 'tab-closed', tabId })
 })
 
@@ -672,8 +674,68 @@ async function locate(tabId: number, ref: unknown, mode: LocateMode): Promise<Lo
   return { ...r, x: r.x + off.x, y: r.y + off.y, frame: true }
 }
 
-async function clickAt(tabId: number, x: number, y: number) {
+// ── 마우스 움직임 ──
+// 사람처럼 마우스를 목표까지 옮긴 뒤 누른다. 움직임 없이 바로 누르면 올려 두어야 열리는 메뉴가 안 열리고,
+// 마우스가 들어온 적 없는 버튼을 누르는 셈이라 사이트가 사람 입력이 아니라고 볼 수 있다
+/** 탭마다 마지막 마우스 자리 */
+const pointer = new Map<number, { x: number; y: number }>()
+
+async function moveMouse(tabId: number, x: number, y: number) {
+  const from = pointer.get(tabId) ?? { x: Math.max(x - 140, 0), y: y + 90 }
+  const dist = Math.hypot(x - from.x, y - from.y)
+  const n = Math.min(12, Math.max(3, Math.round(dist / 60)))
+  // 끝으로 갈수록 느려지고, 살짝 휘어 간다 (곧은 등속 직선은 사람 손이 아니다)
+  const bend = Math.min(dist * 0.08, 18) * (from.x < x ? 1 : -1)
+  for (let i = 1; i <= n; i++) {
+    const t = i / n
+    const e = 1 - (1 - t) ** 3
+    const px = from.x + (x - from.x) * e
+    const py = from.y + (y - from.y) * e + Math.sin(Math.PI * t) * bend
+    // 가려진 탭은 입력 확인 답이 늦다: 오래 기다리지 않는다
+    await Promise.race([
+      cdp(tabId, 'Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: px,
+        y: py,
+        button: 'none',
+        pointerType: 'mouse',
+      }),
+      sleep(300),
+    ])
+    await sleep(8)
+  }
+  pointer.set(tabId, { x, y })
+}
+
+/** 두리가 하는 일을 페이지 위 커서로 보여 준다 (실패해도 일은 계속한다) */
+function showCursor(tabId: number, x: number, y: number, label: string) {
+  if (dialogs.has(tabId)) return Promise.resolve()
+  return chrome.scripting
+    .executeScript({ target: { tabId }, world: 'ISOLATED', func: pageCursor, args: [x, y, label] })
+    .then(() => undefined)
+    .catch(() => undefined)
+}
+
+/** label: 두리가 하는 일이면 커서를 보여 주고 마우스를 옮겨 간다. 없으면(사람이 원격으로 누름) 그 자리로 바로 */
+async function clickAt(tabId: number, x: number, y: number, label?: string) {
   const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
+  if (label) {
+    await showCursor(tabId, x, y, label)
+    await moveMouse(tabId, x, y)
+    await sleep(40)
+  } else {
+    await Promise.race([
+      cdp(tabId, 'Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x,
+        y,
+        button: 'none',
+        pointerType: 'mouse',
+      }),
+      sleep(300),
+    ])
+    pointer.set(tabId, { x, y })
+  }
   await paint(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   // 클릭으로 새 탭이 앞으로 오면 이 탭은 뒤로 가서 그려지지 않고, 입력 확인 답이 몇 초씩 늦는다. 오래 기다리지 않는다
@@ -793,6 +855,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await settle(tabId, before)
       return pageState(tabId)
     }
+    case 'hover': {
+      // 올려 두기: 마우스를 그 자리로 옮기기만 한다 (올려 두어야 열리는 메뉴·설명)
+      const tabId = await ownedTab(a)
+      const at = await locate(tabId, a.ref, 'point')
+      if (at.hidden) throw new Error('두리 창이 가려져 있어서 마우스를 올릴 수 없어요')
+      await showCursor(tabId, at.x, at.y, '두리가 올려 보는 중')
+      await moveMouse(tabId, at.x, at.y)
+      await settle(tabId)
+      return pageState(tabId)
+    }
     case 'reload': {
       // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
       setTimeout(() => chrome.runtime.reload(), 200)
@@ -906,7 +978,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       let mouseIgnored = false
       if (!at.hidden) {
         const sig = await mark()
-        await clickAt(tabId, at.x, at.y)
+        await clickAt(tabId, at.x, at.y, '두리가 누르는 중')
         await settle(tabId, before)
         mouseIgnored = sig !== '' && sig === (await mark())
       }
@@ -945,6 +1017,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (typeof a.text !== 'string') throw new Error('넣을 글자가 없어요')
       const at = await locate(tabId, a.ref, 'type')
       if (at.isPassword) throw new Error('비밀번호 칸에는 두리 금고로만 채워요')
+      if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리가 입력하는 중')
       await cdp(tabId, 'Input.insertText', { text: a.text })
       if (a.submit) {
         const before = (await chrome.tabs.get(tabId)).url
@@ -966,7 +1039,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (!ok) throw new Error('지금 페이지 주소가 저장된 사이트와 달라서 채우지 않았어요')
       if (a.password && !at.isPassword) throw new Error('비밀번호 칸이 아니라서 채우지 않았어요')
       // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있어, 칸을 한 번 눌러 초점을 준다
-      if (inFrameRef && !at.hidden) await clickAt(tabId, at.x, at.y)
+      if (inFrameRef && !at.hidden) await clickAt(tabId, at.x, at.y, '두리 금고로 채우는 중')
+      else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리 금고로 채우는 중')
       await cdp(tabId, 'Input.insertText', { text: a.value })
       await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageMarkFilled, String(a.ref))
       return { tabId, filled: true }
