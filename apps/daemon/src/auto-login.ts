@@ -157,6 +157,9 @@ const HUMAN = new RegExp(`${CAPTCHA.source}|${STEP2.source}`, 'i')
  */
 const APP_CONFIRM =
   /(카카오톡|네이버\s?앱|토스\s?앱|앱|휴대\s?전화|휴대폰|기기)(에서|으로|로)\s?.{0,14}(확인|승인|인증|허용|눌러|탭)|알림을\s?(보냈|확인|탭|눌러)|푸시\s?(알림|인증)|check your phone|tap yes|approve (the |this )?sign.?in|로그인\s?(요청|확인)을?\s?(보냈|확인해)/i
+/** "이 브라우저에서 2단계 인증 사용 안 함"·"이 기기 기억하기" 같은 칸 */
+const REMEMBER_BROWSER =
+  /(이\s?(브라우저|기기|PC|컴퓨터)에서|이\s?(기기|브라우저)를?\s?기억).{0,16}(사용\s?안\s?함|묻지\s?않|기억|건너뛰)|다시\s?묻지\s?않|don'?t ask again|remember (this )?(device|browser)/i
 /** 승인을 기다리는 최대 시간 */
 export const CONFIRM_WAIT_MS = 3 * 60_000
 
@@ -837,7 +840,18 @@ export async function socialLogin(
       }
       continue
     }
-    // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다
+    // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다.
+    // "이 브라우저에서 2단계 인증 사용 안 함"이 있으면 먼저 고른다 (사용자 PC의 평소 브라우저라 다음부터 묻지 않게)
+    if (APP_CONFIRM.test(p.text)) {
+      const remember = ([...parseRefs(p.text)] as RefEntry[]).find(
+        ([ref, r]) =>
+          r.role === '체크박스' &&
+          REMEMBER_BROWSER.test(r.name) &&
+          !new RegExp(`\\[${ref} 체크박스[^\\]]*선택됨`).test(p.text),
+      )
+      if (remember)
+        await browser.call('click', { tabId: providerTab, ref: remember[0] }, 15_000).catch(() => undefined)
+    }
     const confirm = await waitConfirm(p, providerTab, snap, input.step, wait)
     if (confirm === 'moved') continue
     if (confirm === 'timeout')
@@ -903,7 +917,20 @@ export async function socialLogin(
     if (accounts.length > 1) {
       const names = accounts.map(([, r]) => r.name.trim())
       const remembered = input.ask?.account?.get(input.provider)
-      let pick = remembered && names.find((n) => n === remembered)
+      // 기억한 것은 화면 글 그대로이거나 이메일 주소(mdjoo…@gmail.com): 가린 이메일(m***@gmail.com)과 맞춰 본다
+      const sameMail = (n: string, mail: string) => {
+        const shown = /([^\s@]+)@([^\s@]+)/.exec(n)
+        const [user = '', domain = ''] = mail.toLowerCase().split('@')
+        if (!shown || !domain) return false
+        const head = (shown[1] ?? '').toLowerCase().replace(/\*+.*$/, '')
+        return (shown[2] ?? '').toLowerCase() === domain && head.length > 0 && user.startsWith(head)
+      }
+      const byMail =
+        remembered?.includes('@') && !remembered.includes(' ')
+          ? names.filter((n) => sameMail(n, remembered))
+          : []
+      let pick =
+        (remembered && names.find((n) => n === remembered)) || (byMail.length === 1 ? byMail[0] : undefined)
       if (!pick && input.ask?.info) {
         step(`${label} 계정 고르기를 기다리는 중`)
         const a = await input.ask.info({
