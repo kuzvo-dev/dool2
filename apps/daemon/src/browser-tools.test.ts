@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  askedForAccount,
   BrowserTools,
   checkoutScreen,
   classifyDialogRisk,
@@ -1520,6 +1521,15 @@ describe('새 비밀번호 만들기', () => {
     await t.tools.run('read', { tabId: 3 })
     await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
     expect(t.fills).toHaveLength(1)
+  })
+
+  it('askedForAccount: 주소 안의 /signup은 가입 부탁이 아니다', () => {
+    expect(askedForAccount('http://127.0.0.1:8790/signup 열어서 칸 채워 줘', 'signup')).toBe(false)
+    expect(askedForAccount('shop.example.com/join 들어가서 봐 줘', 'signup')).toBe(false)
+    expect(askedForAccount('알라딘 회원가입해서 이어서 해 줘', 'signup')).toBe(true)
+    expect(askedForAccount('거기 계정 하나 만들어 줘', 'signup')).toBe(true)
+    expect(askedForAccount('쿠팡 비밀번호 찾아서 바꿔 줘', 'reset')).toBe(true)
+    expect(askedForAccount('쿠팡 가입해 줘', 'reset')).toBe(false)
   })
 
   it('siteKey: 같은 사이트의 다른 주소를 묶는다', () => {

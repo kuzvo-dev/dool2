@@ -508,6 +508,20 @@ export function accountOutcome(
   return undefined
 }
 
+/**
+ * 사용자의 말이 그 일(가입·비번 변경)을 부탁한 것인지. 주소 안의 /signup·/join은 셈하지 않는다
+ * (실측: "…/signup 열어서 칸 채워 줘"를 가입 부탁으로 보고 묻지 않았다)
+ */
+export function askedForAccount(text: string, purpose: 'signup' | 'reset'): boolean {
+  const said = text.replace(
+    /\b(?:https?:\/\/|www\.)\S+|\b[\w-]+(?:\.[\w-]+)+(?::\d+)?\/\S*|\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\S*/gi,
+    ' ',
+  )
+  return purpose === 'reset'
+    ? /(비밀번호|비번)\s*(을|를|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)/.test(said)
+    : /(회원\s*)?가입|계정\s*(을|도)?\s*(만들|새로|생성|하나)/.test(said)
+}
+
 /** 금고에 넣기 전, 가입·변경이 끝나기를 기다리는 비밀번호 */
 interface PendingPassword {
   key: string

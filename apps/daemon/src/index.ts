@@ -79,7 +79,7 @@ import {
   SOCIAL_PROVIDERS,
   socialLogin,
 } from './auto-login.js'
-import { BrowserTools } from './browser-tools.js'
+import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -1296,11 +1296,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           .filter((m) => m.role === 'user')
           .at(-1)?.text ?? '')
       : ''
-    const wants =
-      purpose === 'reset'
-        ? /비밀번호\s*(를|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)|비번\s*(을|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)/
-        : /(회원\s*)?가입|계정\s*(을|도)?\s*(만들|새로|생성|하나)|sign\s*-?up/i
-    if (wants.test(lastAsk)) return 'ok'
+    if (askedForAccount(lastAsk, purpose)) return 'ok'
     const options =
       purpose === 'reset' ? ['새로 바꿔 주세요', '그만둘게요'] : ['가입해 주세요', '이미 계정 있어요']
     const answer = infoRequests.ask(
