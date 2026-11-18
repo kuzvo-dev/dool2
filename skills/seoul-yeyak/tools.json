@@ -104,6 +104,14 @@
             "use_period": {
               "type": "string",
               "description": "이용 기간"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "예약 화면 주소"
             }
           }
         }
@@ -174,6 +182,14 @@
               "use_period": {
                 "css": ".ib_attr li:nth-child(4)",
                 "match": "이용기간\\s*(.+)"
+              },
+              "image": {
+                "image": true
+              },
+              "svc_id": {
+                "css": "a[onclick*='fnDetailPage']",
+                "attr": "onclick",
+                "match": "fnDetailPage\\('([A-Z0-9]+)'"
               }
             }
           },
@@ -186,13 +202,15 @@
             "limit": "{{limit}}",
             "fields": {
               "title": "title",
+              "image": "image",
               "status": "status",
               "fee": "fee",
               "method": "method",
               "place": "place",
               "target": "target",
               "apply_period": "apply_period",
-              "use_period": "use_period"
+              "use_period": "use_period",
+              "link": "{{#svc_id}}https://yeyak.seoul.go.kr/web/reservation/selectReservView.do?rsv_svc_id={{svc_id}}{{/svc_id}}"
             }
           },
           "as": "services"

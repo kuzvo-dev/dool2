@@ -58,6 +58,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         },
@@ -107,7 +111,8 @@
               "category": "exhSmallCtgrNm",
               "sold_out": "soldOutYn",
               "pickup": "pkupOrPsblYn",
-              "link": "https://www.daisomall.co.kr/pd/pdr/SCR_PDR_0001?pdNo={{pdNo}}"
+              "link": "https://www.daisomall.co.kr/pd/pdr/SCR_PDR_0001?pdNo={{pdNo}}",
+              "image": "{{#pdImgUrl}}https://cdn.daisomall.co.kr{{pdImgUrl}}{{/pdImgUrl}}"
             }
           },
           "as": "products"

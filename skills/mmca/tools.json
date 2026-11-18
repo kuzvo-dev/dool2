@@ -80,6 +80,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -120,7 +124,8 @@
               "artists": "exhArtist",
               "about": "exhContentsSumm",
               "booking_url": "bookingUrl",
-              "link": "https://www.mmca.go.kr/exhibitions/exhibitionsDetail.do?exhFlag=1&exhId={{exhId}}"
+              "link": "https://www.mmca.go.kr/exhibitions/exhibitionsDetail.do?exhFlag=1&exhId={{exhId}}",
+              "image": "{{#exhThumbImg}}https://www.mmca.go.kr{{exhThumbImg}}{{/exhThumbImg}}"
             }
           },
           "as": "exhibitions"

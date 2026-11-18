@@ -79,6 +79,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -120,7 +124,8 @@
               "complete": "book.series.isCompleted",
               "badges": "badges.*.text",
               "book_id": "id",
-              "link": "https://ridibooks.com/books/{{id}}"
+              "link": "https://ridibooks.com/books/{{id}}",
+              "image": "{{#id}}https://img.ridicdn.net/cover/{{id}}/large{{/id}}"
             }
           },
           "as": "books"

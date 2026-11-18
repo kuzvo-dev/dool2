@@ -26,8 +26,17 @@
             "name": {
               "type": "string"
             },
+            "price": {
+              "type": "integer",
+              "description": "가격(원)"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (답에 카드로 보여요)"
+            },
             "link": {
-              "type": "string"
+              "type": "string",
+              "description": "상품 주소"
             }
           }
         }
@@ -52,6 +61,12 @@
             "fields": {
               "name": {
                 "css": ".name"
+              },
+              "price": {
+                "css": ".price"
+              },
+              "image": {
+                "image": true
               },
               "link": {
                 "css": "a",

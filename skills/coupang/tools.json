@@ -295,6 +295,14 @@
             },
             "vendor_item_ids": {
               "type": "strings"
+            },
+            "image": {
+              "type": "string",
+              "description": "첫 상품 사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "주문 상세 주소"
             }
           }
         },
@@ -352,7 +360,9 @@
               "order_id": "orderId",
               "product_ids": "deliveryGroupList.*.productList.*.productId",
               "item_ids": "deliveryGroupList.*.productList.*.itemId",
-              "vendor_item_ids": "deliveryGroupList.*.productList.*.vendorItemId"
+              "vendor_item_ids": "deliveryGroupList.*.productList.*.vendorItemId",
+              "image": "deliveryGroupList.*.productList.*.imagePath",
+              "link": "https://mc.coupang.com/ssr/desktop/order/{{orderId}}"
             }
           },
           "as": "orders"

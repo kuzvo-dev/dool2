@@ -86,6 +86,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -171,6 +175,9 @@
               },
               "sold_out": {
                 "match": "(일시품절|품절)"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -192,6 +199,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "brand": "brand",
               "product_no": "product_no",
               "price_usd": "price_usd",

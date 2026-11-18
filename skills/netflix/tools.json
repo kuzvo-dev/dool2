@@ -145,7 +145,8 @@
           "title_ids"
         ]
       },
-      "minIntervalSec": 3600
+      "minIntervalSec": 3600,
+      "cards": false
     },
     {
       "name": "top10",
@@ -184,6 +185,14 @@
             "weeks": {
               "type": "string",
               "description": "TOP 10에 든 주 수"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "넷플릭스에서 찾기"
             }
           }
         }
@@ -226,11 +235,28 @@
               },
               "weeks": {
                 "css": "td[data-uia=\"top10-table-row-weeks\"]"
+              },
+              "image": {
+                "image": true
               }
             }
           },
-          "as": "ranking",
+          "as": "ranking_rows",
           "min": 5
+        },
+        {
+          "map": {
+            "from": "ranking_rows",
+            "limit": 50,
+            "fields": {
+              "rank": "rank",
+              "name": "name",
+              "weeks": "weeks",
+              "image": "image",
+              "link": "{{#name}}https://www.netflix.com/search?q={{name|url}}{{/name}}"
+            }
+          },
+          "as": "ranking"
         }
       ],
       "result": {

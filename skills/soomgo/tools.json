@@ -59,6 +59,10 @@
             "link": {
               "type": "string",
               "description": "프로필 주소"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -107,6 +111,9 @@
               },
               "link": {
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -118,6 +125,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "rating": "rating",
               "reviews": "reviews",
               "hires": "hires",

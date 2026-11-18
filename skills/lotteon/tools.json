@@ -75,6 +75,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         },
@@ -123,7 +127,8 @@
               "flags": "additionalFlagList.*.name",
               "tomorrow": "deliveryInfo.tomorrowArriveYn",
               "sold_out": "soldOutYn",
-              "link": "https://www.lotteon.com/p/product/{{pdId}}"
+              "link": "https://www.lotteon.com/p/product/{{pdId}}",
+              "image": "brazeData.image"
             }
           },
           "as": "products"

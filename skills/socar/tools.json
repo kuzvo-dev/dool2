@@ -131,7 +131,8 @@
         "zones": "{{zones}}"
       },
       "next": "가까운 쏘카존 2~3곳에서 빌릴 수 있는 차와 대여료를 짧게 보여 주고 고르게 해요(주행요금·보험은 따로라고 알려요). 비었으면 그 시간엔 근처에 빈 차가 없다고 말하고 시간이나 장소를 바꿔 볼지 물어요. 예약하려면 socar_prepare_booking에 zone_id·car_class와 같은 시간을.",
-      "minIntervalSec": 300
+      "minIntervalSec": 300,
+      "cards": false
     },
     {
       "name": "prepare_booking",
