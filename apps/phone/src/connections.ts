@@ -165,27 +165,36 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
   search.type = 'search'
   search.placeholder = '서비스 찾기 (쿠팡, 항공권, 택배…)'
   search.value = ctx.query
-  search.oninput = () => ctx.setQuery(search.value)
-  box.append(search)
-
-  const shown = ctx.services
-    .filter((it) => matchesCard(it.card, ctx.query))
-    .sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
-  const group = (name: string, list: ConnectionItem[]) => {
-    const ul = el('ul', 'list')
-    for (const it of list) ul.append(row(it, ctx))
-    return el('section', 'connect-group', el('h2', 'over', `${name} ${list.length}`), ul)
+  // 찾는 글자를 칠 때는 아래 목록만 다시 그린다 (칸까지 새로 만들면 한글을 조합하는 중에 글자가 끊긴다)
+  const results = el('div', 'connect-results')
+  const services = ctx.services
+  const draw = (query: string) => {
+    const shown = services
+      .filter((it) => matchesCard(it.card, query))
+      .sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
+    const group = (name: string, list: ConnectionItem[]) => {
+      const ul = el('ul', 'list')
+      for (const it of list) ul.append(row(it, ctx))
+      return el('section', 'connect-group', el('h2', 'over', `${name} ${list.length}`), ul)
+    }
+    results.replaceChildren()
+    const connected = shown.filter((it) => it.connectedAt)
+    if (connected.length && !query.trim()) results.append(group('두리가 로그인해 둔 곳', connected))
+    for (const cat of Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]) {
+      const list = shown.filter((it) => it.card.category === cat)
+      if (list.length) results.append(group(CATEGORY_LABEL[cat], list))
+    }
+    if (!shown.length)
+      results.append(
+        el('p', 'cap empty', '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.'),
+      )
   }
-  const connected = shown.filter((it) => it.connectedAt)
-  if (connected.length && !ctx.query.trim()) box.append(group('두리가 로그인해 둔 곳', connected))
-  for (const cat of Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]) {
-    const list = shown.filter((it) => it.card.category === cat)
-    if (list.length) box.append(group(CATEGORY_LABEL[cat], list))
+  search.oninput = () => {
+    draw(search.value)
+    ctx.setQuery(search.value)
   }
-  if (!shown.length)
-    box.append(
-      el('p', 'cap empty', '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.'),
-    )
+  draw(ctx.query)
+  box.append(search, results)
   return box
 }
 

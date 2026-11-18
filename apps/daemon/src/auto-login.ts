@@ -19,6 +19,8 @@ export interface AutoLoginInput {
   ask?: LoginAsk
   /** 지금 하는 단계 (폰 연결 카드에 보여 준다). 값(아이디·비밀번호)은 넣지 않는다 */
   step?: StepFn
+  /** 지금 로그인하고 있는 탭 (폰 연결 카드에 그 화면을 보여 준다). 새 창으로 넘어가면 다시 부른다 */
+  onTab?: (tabId: number) => void
 }
 
 /** 사람에게 넘기는 대신 폰 입력 화면으로 묻기 (원격 화면보다 빠르고 편하다) */
@@ -463,6 +465,7 @@ export async function autoLogin(
   step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
   let tabId = opened.tabId
+  input.onTab?.(tabId)
   /** 연 탭들 (로그인이 새 창으로 열리면 늘어난다) */
   const tabs = [tabId]
 
@@ -495,6 +498,7 @@ export async function autoLogin(
     if (clicked?.newTabId) {
       tabId = clicked.newTabId
       tabs.push(tabId)
+      input.onTab?.(tabId)
     }
     await sleep(wait)
     page = await settled(() => snap(tabId), wait)
@@ -677,6 +681,7 @@ export interface SocialLoginInput {
   creds(origin: string): Promise<{ username: string; password: string } | undefined>
   ask?: LoginAsk
   step?: StepFn
+  onTab?: (tabId: number) => void
 }
 
 /**
@@ -695,6 +700,7 @@ export async function socialLogin(
   step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
   const siteTab = opened.tabId
+  input.onTab?.(siteTab)
   let page = await settled(() => snap(siteTab), wait)
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId: siteTab }
   step(`${label} 로그인 버튼 찾는 중`)
@@ -739,6 +745,7 @@ export async function socialLogin(
     .call('click', { tabId: siteTab, ref: btn[0] }, 30_000)
     .catch(() => undefined)) as { newTabId?: number } | undefined
   let providerTab = clicked?.newTabId ?? siteTab
+  if (providerTab !== siteTab) input.onTab?.(providerTab)
   const filled = new Set<string>()
   const pressed = new Set<string>()
   const askedInfo = new Set<string>()
@@ -755,6 +762,7 @@ export async function socialLogin(
     const p = await snap(providerTab).catch(() => undefined)
     if (!p) {
       // 팝업이 닫혔다: 사이트 탭에서 마저 본다
+      if (providerTab !== siteTab) input.onTab?.(siteTab)
       providerTab = siteTab
       continue
     }
