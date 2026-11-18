@@ -651,7 +651,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const postSaved = (threadId: string, message: StoredMessage) => {
     const event = { type: 'saved' as const, message }
     void link.broadcast({ kind: 'stream', threadId, event })
-    live.emit('event', { kind: 'turn', threadId, event })
+    live.emit('event', { kind: 'turn', threadId, posted: true, event })
   }
   /**
    * 연결하기를 대화에서: 내 말 "○○ 연결해 줘"와 두리의 연결 카드를 바로 남긴다.
@@ -660,6 +660,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectInChat = (card: ConnectCard) => {
     const cur = conversation.current()
     if (!cur) throw new Error('대화를 아직 열지 못했어요')
+    // 같은 연결 카드가 대화 끝 가까이에 이미 있으면 또 쌓지 않는다 (여러 번 눌러도 카드 하나)
+    const near = store
+      .listMessages(cur.id)
+      .slice(-6)
+      .some((m) => {
+        if (m.role !== 'tool') return false
+        try {
+          const rec = JSON.parse(m.text) as { kind?: string; service?: string }
+          return rec.kind === 'connect' && rec.service === card.id
+        } catch {
+          return false
+        }
+      })
+    if (near) return
     postSaved(cur.id, store.addMessage(cur.id, 'user', `${card.name} 연결해 줘`))
     postConnectCard(card)
   }
@@ -2260,6 +2274,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           200,
           await startConnect(card, () => connectLogin(card, creds.username, creds.password), 'relogin'),
         )
+      }
+      // 연결하기는 대화에서 (ADR 0021): 내 말과 연결 카드를 메인 대화에 남긴다. 화면은 대화로 옮겨 간다
+      if (card && c === 'chat' && !d && req.method === 'POST') {
+        if (card.how === 'open' || card.how === 'device')
+          return json(res, 400, { error: '이 서비스는 연결하지 않아도 돼요' })
+        connectInChat(card)
+        return json(res, 200, { ok: true })
       }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
       if (card && c === 'verify' && !d && req.method === 'POST') {

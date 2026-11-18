@@ -28,8 +28,8 @@ import type {
   WorkRecordMessage,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
-import { findCard } from './connect-text.js'
-import { renderConnections } from './connections.js'
+import { findCard, socialOrder } from './connect-text.js'
+import { renderConnections, SOCIAL_LABEL } from './connections.js'
 import { button, doori, el, emptyState, type IconName, icon, liveDoori, setRich, withLogo } from './dom.js'
 import type { LibraryTab } from './life-model.js'
 import { dayLabel, isFeedRoutine, plain, titleFrom } from './life-model.js'
@@ -1315,6 +1315,16 @@ function onLive(ev: ConversationLiveEvent) {
     onSideTurn(ev.threadId, e)
     return
   }
+  // 본체가 바로 남긴 말·카드(연결 카드 등): 답하는 차례가 아니니 일하는 중으로 바꾸지 않고 대화에 그대로 그린다
+  if (ev.posted && e.type === 'saved') {
+    if (state.messages.some((m) => m.id === e.message.id)) return
+    state.messages.push(e.message)
+    if (state.view === 'talk') {
+      renderTalk()
+      scrollDown()
+    }
+    return
+  }
   // 메인 대화의 차례가 흐르고 있으면 일하는 중
   if (e.type !== 'end' && !state.busy) setMainBusy(true)
   if (e.type === 'saved') {
@@ -1803,10 +1813,39 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
     ),
     busy ? el('span', 'spin') : undefined,
   )
-  if (busy || c.how !== 'browser') {
+  // 공식 연동(지메일 등)도 준비되기 전까지는 Chrome에 로그인해서 쓴다: 브라우저 연결과 같은 카드
+  if (busy || (c.how !== 'browser' && c.how !== 'official')) {
     card.append(head)
     if (!busy) card.append(button('btn', () => void show('connect', c.id), '연결 화면 열기'))
     return card
+  }
+  const err = el('p', 'login-error')
+  const redraw = () => card.replaceWith(connectCard(rec))
+  // 간편 로그인: 이 PC Chrome의 카카오·네이버… 로그인을 이어 쓴다 (쓰던 순서로)
+  const social = el('div', 'social-row')
+  for (const { provider, hint } of c.social?.length ? socialOrder(c, state.services) : []) {
+    const b = button(
+      `btn-social ${provider}`,
+      async () => {
+        for (const x of social.querySelectorAll('button')) x.disabled = true
+        const r = await api<{ ok: boolean; message: string }>(
+          `/api/connections/${encodeURIComponent(c.id)}/social`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ provider, background: true }),
+          },
+        ).catch((x: Error) => ({ ok: false, message: x.message }))
+        if (r.ok || /하고 있어요|하는 중/.test(r.message)) {
+          state.connecting.add(c.id)
+          return redraw()
+        }
+        for (const x of social.querySelectorAll('button')) x.disabled = false
+        err.textContent = r.message
+      },
+      `${SOCIAL_LABEL[provider]}로 연결`,
+    )
+    if (hint) b.append(el('span', 'social-hint', hint))
+    social.append(b)
   }
   const form = el('form', 'login-form')
   const user = el('input', 'field')
@@ -1816,7 +1855,6 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
   pw.type = 'password'
   pw.placeholder = '비밀번호'
   pw.autocomplete = 'current-password'
-  const err = el('p', 'login-error')
   const go = el('button', 'btn', '연결하기')
   go.type = 'submit'
   form.append(user, pw, err, go)
@@ -1838,12 +1876,47 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
       return
     }
     state.connecting.add(c.id)
-    card.replaceWith(connectCard(rec))
+    redraw()
   }
+  // 직접 하기: Chrome에 로그인 화면을 열어 두고, 마치면 두리가 화면을 보고 확인한다
+  const direct = button(
+    'btn-text sm',
+    async () => {
+      direct.disabled = true
+      try {
+        await api(`/api/connections/${encodeURIComponent(c.id)}/open`, { method: 'POST' })
+      } catch (x) {
+        direct.disabled = false
+        err.textContent = (x as Error).message
+        return
+      }
+      const done = button(
+        'btn',
+        async () => {
+          done.disabled = true
+          const r = await api<{ ok: boolean }>(`/api/connections/${encodeURIComponent(c.id)}/verify`, {
+            method: 'POST',
+          }).catch(() => ({ ok: false }))
+          if (r.ok) {
+            await loadServices().catch(() => {})
+            return redraw()
+          }
+          done.disabled = false
+          wait.textContent = `아직 ${c.name}에 로그인하지 않은 화면이에요. Chrome에서 마치고 다시 눌러 주세요.`
+        },
+        '로그인했어요',
+      )
+      const wait = el('p', 'cap', `Chrome에 ${c.name} 로그인 화면을 열었어요. 마치면 두리가 알아서 확인해요.`)
+      card.replaceChildren(head, wait, done, button('btn-text sm', redraw, '돌아가기'))
+    },
+    'Chrome에서 직접 할게요',
+  )
   card.append(
     head,
+    ...(social.childElementCount ? [social, el('p', 'cap social-or', '또는 아이디·비밀번호로')] : []),
     form,
     el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),
+    direct,
   )
   return card
 }
@@ -2122,6 +2195,14 @@ async function show(view: View, id?: string) {
         box,
         setHeader: () => {},
         ask: (text) => void send(text),
+        // 연결하기는 대화에서: 대화에 연결 카드를 띄우고 대화로 간다
+        connect: async (cid) => {
+          await api(`/api/connections/${encodeURIComponent(cid)}/chat`, { method: 'POST' })
+          await show('talk')
+          document
+            .querySelector(`.connect-card[data-service="${CSS.escape(cid)}"]`)
+            ?.scrollIntoView({ block: 'center' })
+        },
       },
       id,
     )

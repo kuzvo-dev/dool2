@@ -262,7 +262,14 @@ export interface ConversationState {
 /** GET /api/conversation/live: 대화에서 일어나는 일 (어디서 시작한 차례든) */
 export type ConversationLiveEvent =
   /** side: 따로 하는 대화(피드 글 포함)의 차례. 메인 대화 화면에는 넣지 않는다 */
-  | { kind: 'turn'; threadId: string; side?: boolean; event: DaemonStreamEvent }
+  | {
+      kind: 'turn'
+      threadId: string
+      side?: boolean
+      /** 본체가 대화에 바로 남긴 말·카드 (연결 카드·앱 알림). 두리가 답하는 차례가 아니다 */
+      posted?: boolean
+      event: DaemonStreamEvent
+    }
   | { kind: 'queued'; texts: string[] }
   | { kind: 'busy'; busy: boolean }
   /** 목표·보관함·기억·피드가 바뀌었다 (GET /api/life로 다시 받는다) */

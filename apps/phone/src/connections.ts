@@ -287,7 +287,10 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     go.type = 'button'
     go.disabled = !ctx.online || ctx.opening === c.id || Boolean(busy)
     go.onclick = () => ctx.open(c.id)
-    bar.append(go, el('p', 'cap', '아이디·비밀번호를 넣으면 두리가 PC의 Chrome에서 대신 로그인해요.'))
+    bar.append(
+      go,
+      el('p', 'cap', '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 PC Chrome에 로그인해요.'),
+    )
   }
   box.append(bar)
   return box
