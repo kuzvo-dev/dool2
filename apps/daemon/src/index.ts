@@ -1315,6 +1315,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 연결 중 사람에게 넘기는 대신 폰에 묻는다: 공급자 계정은 로그인 카드(금고)로, 인증번호는 입력 화면으로
    */
   const loginAsk = (card: ConnectCard): LoginAsk => ({
+    // 공급자 계정이 여럿일 때 고른 계정 (구글 계정 고르기 화면에 보이는 글: "이름 m***@gmail.com")
+    account: {
+      get: (provider) =>
+        (store.getSetting('providerAccounts') as Record<string, string> | undefined)?.[provider],
+      set: (provider, label) =>
+        store.setSetting('providerAccounts', {
+          ...((store.getSetting('providerAccounts') as Record<string, string> | undefined) ?? {}),
+          [provider]: label.slice(0, 120),
+        }),
+    },
     credentials: async (origin, label, tabId) => {
       // 폰에서 "화면 보면서 직접 할게요"를 고르면 그 로그인 탭을 원격 화면으로 연다
       browserTools.allowRemote(tabId)

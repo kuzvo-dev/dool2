@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoLogin, probeLogin, socialLogin } from './auto-login.js'
+import { autoLogin, probeLogin, socialLogin, socialProvidersIn } from './auto-login.js'
 
 /** 확장 대신: 화면 차례대로 돌려주고 부른 것을 적는다 */
 function fakeBrowser(pages: { url: string; text: string; captcha?: boolean }[]) {
@@ -179,6 +179,73 @@ describe('간편 로그인', () => {
     expect(r.status).toBe('ok')
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2'])
     expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
+  })
+
+  it('카카오 동의 화면의 (필수) 칸만 고르고 동의한다 (실측 알라딘)', async () => {
+    const consent = {
+      url: 'https://kauth.kakao.com/oauth/authorize',
+      text: '[e2 체크박스 "(필수) 카카오 개인정보 제3자 제공 동의"] [e5 체크박스 "(선택) 카카오 개인정보 제3자 제공 동의"] [e9 버튼 "동의하고 계속하기"]',
+    }
+    const checked = { ...consent, text: consent.text.replace('동의"]', '동의" 선택됨]') }
+    const b = tabsBrowser({ 7: [login, signed], 8: [consent, checked] }, (tab, ref) =>
+      tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e9' ? { advance: [7] } : {},
+    )
+    const r = await socialLogin(
+      b,
+      { card, url: login.url, provider: 'kakao', creds: async () => undefined },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e9'])
+  })
+
+  it('구글 계정이 여럿이면 한 번 묻고 기억해 둔 계정을 고른다', async () => {
+    const gLogin = {
+      url: login.url,
+      text: login.text.replace('[e8 버튼 "카카오로 시작하기"]', '[e8 버튼 "구글 로그인"]'),
+    }
+    const chooser = {
+      url: 'https://accounts.google.com/v3/signin/accountchooser',
+      text: '# 계정을 선택하세요.\n[e2 링크 "회사 k***@gmail.com"]\n[e3 링크 "홍길동 m***@gmail.com"]\n[e4 링크 "다른 계정 사용"]',
+    }
+    const saved: Record<string, string> = {}
+    const asked: string[][] = []
+    const ask = {
+      info: async (q: { options?: string[] }) => {
+        asked.push(q.options ?? [])
+        return '홍길동 m***@gmail.com'
+      },
+      account: {
+        get: (p: string) => saved[p],
+        set: (p: string, v: string) => {
+          saved[p] = v
+        },
+      },
+    }
+    const run = async () => {
+      const b = tabsBrowser({ 7: [gLogin, signed], 8: [chooser] }, (tab, ref) =>
+        tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e3' ? { advance: [7] } : {},
+      )
+      const r = await socialLogin(
+        b,
+        { card, url: gLogin.url, provider: 'google', creds: async () => undefined, ask: ask as never },
+        { wait: 0 },
+      )
+      return { r, clicks: b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref) }
+    }
+    const first = await run()
+    expect(first.r.status).toBe('ok')
+    expect(first.clicks).toEqual(['e8', 'e3'])
+    expect(saved.google).toBe('홍길동 m***@gmail.com')
+    // 두 번째는 묻지 않는다
+    await run()
+    expect(asked).toHaveLength(1)
+  })
+
+  it('"SSG 페이스북" 같은 회사 계정 링크는 간편 로그인 버튼이 아니다', () => {
+    expect(
+      socialProvidersIn('[e21 링크 "네이버 로그인"] [e39 링크 "SSG 페이스북"] [e40 링크 "kakao"]'),
+    ).toEqual(['kakao', 'naver'])
   })
 
   it('MY를 누르는 순간 뜬 광고 팝업이 클릭을 가로채면 팝업을 닫고 다시 누른다', async () => {

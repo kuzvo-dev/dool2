@@ -33,11 +33,17 @@ export interface LoginAsk {
   ): Promise<{ username: string; password: string } | undefined>
   /** 화면이 묻는 것 (인증번호·휴대폰 번호) */
   info?(req: {
-    field: 'otp' | 'tel' | 'text'
+    field: 'otp' | 'tel' | 'text' | 'choice'
     label: string
     hint?: string
     host: string
+    options?: string[]
   }): Promise<string | undefined>
+  /** 공급자 계정이 여럿일 때 전에 고른 계정(화면에 보이는 글) */
+  account?: {
+    get(provider: SocialProvider): string | undefined
+    set(provider: SocialProvider, label: string): void
+  }
 }
 
 /** 인증번호 칸 */
@@ -670,7 +676,14 @@ function findProviderButton(text: string, provider: SocialProvider): RefEntry | 
   )
   return (
     ok.find(([, r]) => /로그인|시작|계속|login|sign|continue/i.test(r.name)) ??
-    ok.find(([, r]) => r.name.trim().length <= 12)
+    // 말 없이 공급자 이름만 있는 버튼("kakao", "네이버"). "SSG 페이스북"처럼 앞에 다른 말이 붙은 건 회사 계정 링크다
+    ok.find(
+      ([, r]) =>
+        r.name
+          .trim()
+          .replace(p.button, '')
+          .replace(/[\s·|-]/g, '').length <= 2,
+    )
   )
 }
 
@@ -834,9 +847,51 @@ export async function socialLogin(
         tabId: providerTab,
         message: `${label} 아이디나 비밀번호가 맞지 않는 것 같아요. 화면을 보고 확인해 주세요.`,
       }
-    // 계정 고르기(구글): 이메일이 적힌 줄을 누른다
+    // 계정 고르기(구글): 이메일이 적힌 줄을 누른다. 여럿이면 전에 고른 것, 없으면 사람에게 한 번 묻고 기억한다
+    // (실측 알라딘: 구글 계정이 둘이라 첫째를 누르면 엉뚱한 계정으로 가입될 수 있다)
     const refs = [...parseRefs(p.text)] as RefEntry[]
-    const account = refs.find(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    const accounts = refs.filter(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    let account = accounts.length === 1 ? accounts[0] : undefined
+    if (accounts.length > 1) {
+      const names = accounts.map(([, r]) => r.name.trim())
+      const remembered = input.ask?.account?.get(input.provider)
+      let pick = remembered && names.find((n) => n === remembered)
+      if (!pick && input.ask?.info) {
+        step(`${label} 계정 고르기를 기다리는 중`)
+        const a = await input.ask.info({
+          field: 'choice',
+          label: `어느 ${label} 계정으로 할까요?`,
+          hint: `${input.card.name}에 이 계정으로 로그인해요. 고른 계정은 기억해 두고 다음부터 묻지 않아요.`,
+          host,
+          options: names,
+        })
+        pick = a && names.find((n) => n === a.trim())
+        if (pick) input.ask.account?.set(input.provider, pick)
+      }
+      if (!pick)
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${label} 계정이 여러 개라 어느 것으로 할지 골라 주셔야 해요`,
+        }
+      account = accounts.find(([, r]) => r.name.trim() === pick)
+    }
+    // 정보 제공 동의에 (필수) 칸이 있으면 그것만 고른다 (선택 항목은 건드리지 않는다). 실측 알라딘 카카오
+    const required = refs.filter(
+      ([, r]) => r.role === '체크박스' && /\(필수\)|\[필수\]|필수\s/.test(r.name) && !/선택됨/.test(r.name),
+    )
+    if (required.length && !account) {
+      const checked = new Set(
+        [...p.text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string),
+      )
+      for (const [ref] of required)
+        if (!checked.has(ref))
+          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
+      if (required.some(([ref]) => !checked.has(ref))) {
+        step('필수 정보 제공 동의 고르는 중')
+        continue
+      }
+    }
     // 정보 제공 동의: "동의하고 계속하기"
     const consent = refs.find(([, r]) => r.role === '버튼' && CONSENT.test(r.name.trim()))
     const next = account ?? consent
