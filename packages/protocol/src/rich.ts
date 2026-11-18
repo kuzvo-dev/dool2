@@ -133,6 +133,7 @@ const TOOL_LABEL: Record<string, string> = {
   feed_post: '피드에 올리는',
   feed_tell: '먼저 챙긴 일 알리는',
   connect_ask: '연결 카드 띄우는',
+  show_cards: '카드 만드는',
   conversation_search: '지난 대화 찾는',
   service_find: '서비스 찾는',
   service_call: '서비스에서 일하는',

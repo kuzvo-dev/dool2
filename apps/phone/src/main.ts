@@ -4,6 +4,7 @@
 import type {
   ApprovalRecordMessage,
   ApprovalView,
+  CardsRecordMessage,
   ConnectRecordMessage,
   ConnectStep,
   DaemonStreamEvent,
@@ -258,7 +259,7 @@ function mark(what: string) {
   if (trail.length > 300) trail.splice(0, trail.length - 300)
 }
 /** 너무 자주 오가서 적지 않는 것 */
-const QUIET_SEND = new Set<string>(['screen', 'ping', 'remote', 'report'])
+const QUIET_SEND = new Set<string>(['screen', 'ping', 'remote', 'report', 'thumb'])
 
 async function sendNow(body: PhoneToPc) {
   const s = st.saved
@@ -443,6 +444,9 @@ async function receive(env: Envelope) {
       st.approvals.set(msg.approval.id, msg.approval)
       if (msg.approval.status === 'pending')
         notify('승인을 기다려요', msg.approval.what, `approval-${msg.approval.id}`)
+      break
+    case 'thumb':
+      gotThumb(msg.url, msg.data)
       break
     case 'reset-done': {
       toast(msg.message)
@@ -2368,6 +2372,7 @@ function toolCard(raw: string, live = true): HTMLElement {
     | ConnectRecordMessage
     | WorkRecordMessage
     | TellRecordMessage
+    | CardsRecordMessage
   try {
     rec = JSON.parse(raw)
   } catch {
@@ -2378,6 +2383,7 @@ function toolCard(raw: string, live = true): HTMLElement {
   if (rec.kind === 'connect') return connectInline(rec, live)
   if (rec.kind === 'work') return workDone(rec)
   if (rec.kind === 'tell') return tellInline(rec)
+  if (rec.kind === 'cards') return cardsInline(rec)
   // 직접 해 주세요
   const tabId = rec.tabId
   return h(
@@ -2488,6 +2494,87 @@ function connectFor(rec: ConnectRecordMessage) {
 
 /** 대화 안의 연결 카드 (connect_ask): [연결하기] → 아이디·비밀번호 시트 → 본체가 뒤에서 로그인 */
 /** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
+// ── 답에 붙는 카드 (상품·숙소·식당) ──
+// 사진은 폰이 바깥 서버에 직접 붙지 않고 PC에 부탁해 data: 주소로 받는다 (한 번 받은 건 앱을 켜 둔 동안 기억)
+const thumbCache = new Map<string, string | null>()
+const thumbAsked = new Set<string>()
+function wantThumb(url: string) {
+  if (thumbCache.has(url) || thumbAsked.has(url)) return
+  thumbAsked.add(url)
+  void send({ kind: 'thumb', url })
+}
+function gotThumb(url: string, data: string | undefined) {
+  thumbAsked.delete(url)
+  thumbCache.set(url, data ?? null)
+  if (!data) return
+  for (const img of document.querySelectorAll<HTMLImageElement>('img[data-thumb]'))
+    if (img.dataset.thumb === url) showThumb(img, data)
+}
+function showThumb(img: HTMLImageElement, data: string) {
+  img.onload = () => img.classList.add('on')
+  img.src = data
+}
+
+function cardsInline(rec: CardsRecordMessage): HTMLElement {
+  return h(
+    'div',
+    { class: 'pick-cards' },
+    ...rec.cards.map((c) => {
+      let img: HTMLImageElement | undefined
+      if (c.image) {
+        img = document.createElement('img')
+        img.alt = ''
+        img.dataset.thumb = c.image
+      }
+      if (img && c.image) {
+        const have = thumbCache.get(c.image)
+        if (have) showThumb(img, have)
+        else wantThumb(c.image)
+      }
+      return h(
+        'div',
+        { class: 'pick-card' },
+        h(
+          'div',
+          { class: 'pick-photo' },
+          img ?? icon('box', 'i'),
+          c.badge ? h('span', { class: 'pick-badge', text: c.badge }) : undefined,
+        ),
+        h(
+          'div',
+          { class: 'pick-body' },
+          h('span', { class: 'pick-title', text: c.title }),
+          c.price ? h('span', { class: 'pick-price', text: c.price }) : undefined,
+          c.note ? h('span', { class: 'pick-note', text: c.note }) : undefined,
+        ),
+        h(
+          'div',
+          { class: 'pick-actions' },
+          c.url
+            ? h('button', {
+                text: '보기',
+                onclick: () => {
+                  mark(`카드 보기 ${new URL(c.url ?? '').host}`)
+                  // 앱 밖 브라우저(또는 그 서비스 앱)로 연다
+                  const a = document.createElement('a')
+                  a.href = c.url ?? ''
+                  a.target = '_blank'
+                  a.rel = 'noopener noreferrer'
+                  a.click()
+                },
+              })
+            : undefined,
+          h('button', {
+            class: 'go',
+            text: '이걸로',
+            onclick: () => ask(`이걸로 할게: ${c.title}${c.price ? ` (${c.price})` : ''}`),
+          }),
+        ),
+      )
+    }),
+  )
+}
+
 function tellInline(rec: TellRecordMessage): HTMLElement {
   const answered = st.life?.feed.find((f) => f.id === rec.id)?.answered
   const say = rec.ask

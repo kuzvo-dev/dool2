@@ -147,6 +147,45 @@ describe('ThreadService', () => {
     })
   })
 
+  it('show_cards 카드는 다듬어서 답 바로 아래에 남긴다', async () => {
+    const { store, svc } = setup([
+      {
+        type: 'tool',
+        name: 'mcp__dool2__show_cards',
+        input: {
+          cards: [
+            {
+              title: '고메 돈카츠',
+              price: '9,880원',
+              image: 'https://img.example.com/a.jpg',
+              url: 'https://shop.example/1',
+            },
+            { title: '나쁜 주소', image: 'javascript:alert(1)', url: 'http://shop.example/2' },
+            { price: '이름 없음' },
+          ],
+        },
+      },
+      { type: 'text', delta: '돈카츠가 가장 무난해요.' },
+      { type: 'done', resumeId: 's1', text: '돈카츠가 가장 무난해요.' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '추천해 줘'))
+    const msgs = store.listMessages(t.id)
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
+    expect(JSON.parse(msgs[2]?.text ?? '{}')).toEqual({
+      kind: 'cards',
+      cards: [
+        {
+          title: '고메 돈카츠',
+          price: '9,880원',
+          image: 'https://img.example.com/a.jpg',
+          url: 'https://shop.example/1',
+        },
+        { title: '나쁜 주소' },
+      ],
+    })
+  })
+
   it('사람에게 넘긴 일을 기록에 남긴다', async () => {
     const { store, svc } = setup([
       { type: 'tool', name: 'mcp__dool2__browser_handoff', input: { tabId: 4, reason: '로그인해 주세요' } },

@@ -84,6 +84,7 @@ import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { ScreenTools } from './screen-tools.js'
 import { Skills } from './skills.js'
+import { Thumbs } from './thumbs.js'
 import { Vault } from './vault.js'
 import type { sendPush } from './webpush.js'
 
@@ -820,6 +821,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     events.emit('settings', readSettings())
     return next[id]
   }
+  /** 카드 사진: 화면이 바깥 서버에 직접 붙지 않게 본체가 받아 넘긴다 */
+  const thumbs = new Thumbs()
   const devReset = opts.devReset ?? process.env.DOOL2_DEV_RESET === '1'
   /** 처음부터 다시 (시험용 PC): 새 사용자처럼. 금고의 비밀번호·폰 짝짓기·PC 설정(이름·AI 고르기)·일한 기록은 남긴다 */
   async function resetAll(
@@ -924,6 +927,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       login: (id, username, password) => saveLogin(id, username, password, true),
       infoAnswer: (id, value) => void infoRequests.answer(id, value),
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
+      thumb: (url) => thumbs.get(url),
       report: (phone, r) => {
         // 그때 PC 쪽은 어땠는지도 같이 남긴다
         journal.write('phone-report', {
@@ -1986,6 +1990,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
 
     // 목표·보관함·기억·피드 (PC 화면)
+    if (a === 'thumb' && !b && req.method === 'GET') {
+      const url = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? ''
+      const data = await thumbs.get(url.slice(0, 800))
+      return json(res, 200, data ? { data } : {})
+    }
     if (a === 'life' && !b && req.method === 'GET') return json(res, 200, life.state())
     if (a === 'life' && b === 'action' && req.method === 'POST') {
       const action = (await readJson(req)) as LifeAction

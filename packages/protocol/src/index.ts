@@ -466,6 +466,64 @@ export interface TellRecordMessage {
   askLabel?: string
 }
 
+/** 답에 붙는 카드 한 장 (상품·숙소·식당·공연 등) */
+export interface ChatCard {
+  title: string
+  /** 사진 주소 (https). 화면은 PC에 물어 받는다 (폰이 바깥 서버에 직접 붙지 않는다) */
+  image?: string
+  /** 가격 한 줄 (예: 350,100원 · 1박 112,260원) */
+  price?: string
+  /** 짧은 정보 한 줄 (예: ★4.8 (1,203) · 내일 도착) */
+  note?: string
+  /** 눌렀을 때 열 주소 (https) */
+  url?: string
+  /** 눈에 띄게 붙일 말 (예: 최저가 · 추천) */
+  badge?: string
+}
+
+/** 대화 기록에 남기는 카드 묶음 (show_cards). 답 바로 아래에 붙는다 */
+export interface CardsRecordMessage {
+  kind: 'cards'
+  cards: ChatCard[]
+}
+
+/** AI가 넘긴 카드를 믿을 수 있는 모양으로 다듬는다: 10장까지, 글 길이 자르기, https 주소만 */
+export function cleanCards(input: unknown): ChatCard[] {
+  const list = Array.isArray(input) ? input : []
+  const str = (v: unknown, n: number) =>
+    typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : undefined
+  const https = (v: unknown) => {
+    const u = str(v, 800)
+    if (!u) return undefined
+    try {
+      const x = new URL(u)
+      return x.protocol === 'https:' ? x.toString() : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const out: ChatCard[] = []
+  for (const raw of list.slice(0, 10)) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const title = str(r.title, 80)
+    if (!title) continue
+    const card: ChatCard = { title }
+    const image = https(r.image)
+    const url = https(r.url)
+    const price = str(r.price, 40)
+    const note = str(r.note, 60)
+    const badge = str(r.badge, 12)
+    if (image) card.image = image
+    if (price) card.price = price
+    if (note) card.note = note
+    if (url) card.url = url
+    if (badge) card.badge = badge
+    out.push(card)
+  }
+  return out
+}
+
 /** 대화 기록에 남기는 서비스 연결 부탁 (connect_ask). 카드는 연결 목록에서 그 서비스를 찾아 그린다 */
 export interface ConnectRecordMessage {
   kind: 'connect'
@@ -783,6 +841,8 @@ export type PhoneToPc =
    * services면 연결한 서비스 표시도 지운다 (금고의 비밀번호·폰 짝짓기는 남는다)
    */
   | { kind: 'reset'; at: number; services: boolean; sig: string }
+  /** 카드 사진을 PC에 부탁한다 (폰은 바깥 서버에 직접 붙지 않는다) */
+  | { kind: 'thumb'; url: string }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
@@ -897,6 +957,8 @@ export type PcToPhone =
   /** 원격 화면의 '필요한 칸만' (form-fill 뒤에도 새로 보낸다) */
   | { kind: 'form'; tabId: number; form?: RemoteForm; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
+  /** 카드 사진 (PC가 받아 data: 주소로). 못 받으면 data가 없다 */
+  | { kind: 'thumb'; url: string; data?: string }
   /** 처음부터 다시의 결과 */
   | { kind: 'reset-done'; ok: boolean; message: string }
   /** 대화 하나의 기록 (before에 대한 답이면 before가 같이 온다) */

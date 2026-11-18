@@ -2,6 +2,7 @@
 // 모두 이 PC의 저장소(설정 표)에만 둔다. AI는 도구(life_*)로 만들고, 폰·PC 화면은 같은 목록을 본다.
 import { randomUUID } from 'node:crypto'
 import {
+  cleanCards,
   type FeedItem,
   GOAL_CATEGORIES,
   type GoalCategory,
@@ -538,6 +539,15 @@ export class Life {
             body: String(a.body ?? '').slice(0, 1500),
           })
           return ok(`피드에 올렸어요: ${f.title}`)
+        }
+        case 'show_cards': {
+          // 기록은 대화 엔진이 답 아래에 남긴다 (threads.ts). 여기서는 다듬은 결과만 알려 준다
+          const cards = cleanCards(a.cards)
+          if (!cards.length) return bad('붙일 카드가 없어요. title이 있는 카드를 넣어 주세요.')
+          const pics = cards.filter((c) => c.image).length
+          return ok(
+            `카드 ${cards.length}장을 답 아래에 붙여요(사진 ${pics}장). 답 글에는 같은 목록을 되풀이하지 말고 고른 이유·차이만 짧게 말해요.`,
+          )
         }
         case 'feed_tell': {
           const r = this.tell({

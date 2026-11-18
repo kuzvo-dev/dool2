@@ -24,6 +24,10 @@ describe('두리 페르소나 지침', () => {
     expect(DOOL2_SYSTEM_PROMPT).not.toContain('짐작하지 말고 사용자에게 먼저 물어요')
   })
 
+  it('고를 후보는 사진 카드로 붙이고 목록을 되풀이하지 않는다', () => {
+    expect(DOOL2_SYSTEM_PROMPT).toContain('show_cards로 답 아래에 사진 카드를 붙여요')
+  })
+
   it('넘기기 전에 다시 읽고 보이는 화면대로 말한다', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('넘기기 전에 페이지를 다시 읽어요')
     expect(DOOL2_SYSTEM_PROMPT).toContain('지금 화면에 보이는 그대로')

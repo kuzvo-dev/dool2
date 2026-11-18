@@ -8,6 +8,7 @@ import type {
   AiChoice,
   ApprovalRecordMessage,
   ApprovalView,
+  CardsRecordMessage,
   ChromeStatus,
   ConnectRecordMessage,
   ConversationLiveEvent,
@@ -1536,10 +1537,63 @@ function toolCard(raw: string, active: boolean): Node {
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
     if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
     if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
+    if (rec.kind === 'cards') return pickCards(rec as CardsRecordMessage)
   } catch {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/** 카드 사진: 화면은 바깥 서버에 직접 붙지 않고 본체(/api/thumb)에 받아 온다. 받은 건 기억해 둔다 */
+const thumbCache = new Map<string, Promise<string | undefined>>()
+function thumb(url: string): Promise<string | undefined> {
+  let p = thumbCache.get(url)
+  if (!p) {
+    p = api<{ data?: string }>(`/api/thumb?url=${encodeURIComponent(url)}`)
+      .then((r) => r.data)
+      .catch(() => undefined)
+    thumbCache.set(url, p)
+  }
+  return p
+}
+
+/** 답에 붙는 카드 (상품·숙소·식당): 옆으로 넘겨 보고, [보기]는 기본 브라우저, [이걸로]는 고른 걸 대화로 */
+function pickCards(rec: CardsRecordMessage): HTMLElement {
+  return el(
+    'div',
+    'pick-cards',
+    ...rec.cards.map((c) => {
+      let img: HTMLImageElement | undefined
+      if (c.image) {
+        const pic = document.createElement('img')
+        pic.alt = ''
+        img = pic
+        void thumb(c.image).then((data) => {
+          if (!data) return
+          pic.onload = () => pic.classList.add('on')
+          pic.src = data
+        })
+      }
+      return el(
+        'div',
+        'pick-card',
+        el('div', 'pick-photo', img ?? icon('box'), c.badge ? el('span', 'pick-badge', c.badge) : undefined),
+        el(
+          'div',
+          'pick-body',
+          el('span', 'pick-title', c.title),
+          c.price ? el('span', 'pick-price', c.price) : undefined,
+          c.note ? el('span', 'pick-note', c.note) : undefined,
+        ),
+        el(
+          'div',
+          'pick-actions',
+          c.url ? button('', () => window.open(c.url, '_blank'), '보기') : undefined,
+          button('go', () => void send(`이걸로 할게: ${c.title}${c.price ? ` (${c.price})` : ''}`), '이걸로'),
+        ),
+      )
+    }),
+  )
 }
 
 /** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */

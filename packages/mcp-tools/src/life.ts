@@ -181,6 +181,36 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('connect_ask'),
   )
   server.registerTool(
+    'show_cards',
+    {
+      title: '답에 카드 붙이기',
+      description:
+        '상품·숙소·식당·공연처럼 고를 후보를 보여 줄 때 답 아래에 사진 카드로 붙인다 (옆으로 넘겨 보고, 누르면 그 페이지, [이걸로]를 누르면 고른 게 대화로 온다). ' +
+        '서비스 도구 결과에 있는 사진(image)·주소(link)·가격을 그대로 넣는다. 지어낸 주소·사진은 넣지 않는다. 2~8장, 추천 순서대로. ' +
+        '카드를 붙였으면 답 글에는 같은 목록·표를 다시 늘어놓지 말고 고른 이유와 차이만 2~4문장으로 말한다.',
+      inputSchema: {
+        cards: z
+          .array(
+            z.object({
+              title: z.string().max(80).describe('이름 (예: "쿠진아트 스팀 에어프라이어 오븐 CSO-500KR")'),
+              image: z.string().max(800).optional().describe('사진 주소 (https, 도구 결과의 image 그대로)'),
+              price: z.string().max(40).optional().describe('가격 한 줄 (예: "350,100원", "1박 112,260원")'),
+              note: z.string().max(60).optional().describe('짧은 정보 (예: "★4.8 (1,203) · 내일 도착")'),
+              url: z
+                .string()
+                .max(800)
+                .optional()
+                .describe('눌렀을 때 열 주소 (https, 도구 결과의 link 그대로)'),
+              badge: z.string().max(12).optional().describe('눈에 띌 말 (예: "최저가", "추천")'),
+            }),
+          )
+          .min(1)
+          .max(10),
+      },
+    },
+    call('show_cards'),
+  )
+  server.registerTool(
     'feed_post',
     {
       title: '피드에 올리기',
