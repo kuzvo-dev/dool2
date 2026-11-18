@@ -42,6 +42,10 @@
       },
       "examples": [{ "keyword": "무선 청소기", "sort": "salePriceAsc" }, { "keyword": "물티슈 캡형" }],
       "steps": [
+        { "open": "https://www.coupang.com/" },
+        { "wait": { "text": "로켓배송|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
+        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
+        { "sleep": 1200 },
         { "open": "https://www.coupang.com/np/search?q={{keyword|url}}&sorter={{sort}}&listSize=36" },
         { "wait": { "text": "에 대한 검색결과|검색결과가 없|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
         { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
@@ -135,6 +139,10 @@
       "output": {},
       "examples": [{ "product_id": "7706232248", "item_id": "20645329542", "vendor_item_id": "88421220703", "quantity": 1 }],
       "steps": [
+        { "open": "https://www.coupang.com/" },
+        { "wait": { "text": "로켓배송|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
+        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
+        { "sleep": 1200 },
         { "open": "https://www.coupang.com/vp/products/{{product_id}}?itemId={{item_id}}&vendorItemId={{vendor_item_id}}" },
         { "wait": { "text": "바로구매|장바구니 담기|품절|일시품절|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
         { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
