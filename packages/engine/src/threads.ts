@@ -10,7 +10,7 @@ import {
   type LoginRecordMessage,
   type WorkRecordMessage,
 } from '@dool2/protocol'
-import { narrationLine, stripMonologue, toolLabel } from '@dool2/protocol/rich'
+import { narrationLine, stripMonologue, toolLabel, toolPlace } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -22,6 +22,8 @@ export interface ThreadServiceOptions {
   workspaceDir: string
   mcpServers: McpServerSpec[]
   systemPrompt?: string | (() => string)
+  /** 탭 번호 → 그 탭의 사이트 주소 (일한 과정을 사이트별로 묶는다) */
+  tabHost?: (tabId: number) => string | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -109,7 +111,7 @@ export class ThreadService {
       let failed: AgentEvent | undefined
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
-      const work = new WorkLog()
+      const work = new WorkLog(Date.now, this.opts.tabHost)
       // 답에 붙일 카드 (show_cards): 답을 저장한 바로 뒤에 남겨 메시지 첨부처럼 답 아래에 보인다
       let cards: CardsRecordMessage | undefined
       const saveCards = () => {
@@ -251,29 +253,34 @@ const QUIET_TOOL = /(goal|memory|library|feed|idea)_|status$|skill_|conversation
 /** 한 차례 동안 한 일을 모아 '일한 과정' 기록(WorkRecordMessage)을 만든다. 폰·PC 화면의 단계 표시와 같은 이름을 쓴다 */
 export class WorkLog {
   private readonly started: number
-  private steps: { text: string; at: number }[] = []
+  private steps: { text: string; act: string; place?: string; at: number }[] = []
   private worked = false
   private host: string | undefined
-  constructor(private readonly now: () => number = Date.now) {
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly tabHost?: (tabId: number) => string | undefined,
+  ) {
     this.started = now()
   }
-  /** 도구를 부를 때: 그 앞에 한 혼잣말 한 줄, 없으면 도구 이름("웹페이지 여는 중") */
+  /** 도구를 부를 때: 그 앞에 한 혼잣말 한 줄, 없으면 도구 이름("웹페이지 여는 중"). 일한 곳(place)도 같이 남긴다 */
   tool(name: string, before: string, input?: unknown) {
     const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
     if (!QUIET_TOOL.test(bare)) this.worked = true
-    const url = (input as { url?: unknown } | undefined)?.url
-    if (/^browser_(open|navigate)$/.test(bare) && typeof url === 'string') {
-      try {
-        this.host = new URL(url).host
-      } catch {}
-    }
-    const text = narrationLine(before) ?? `${toolLabel(name)} 중`
-    if (this.steps.at(-1)?.text !== text) this.steps.push({ text, at: this.now() })
+    // 주소 없는 웹 도구: 그 탭의 사이트, 모르면 마지막으로 연 사이트
+    const tabId = (input as { tabId?: unknown } | undefined)?.tabId
+    const here = (typeof tabId === 'number' ? this.tabHost?.(tabId) : undefined) ?? this.host
+    const place = toolPlace(name, input, here)
+    if (/^browser_(open|navigate)$/.test(bare) && place) this.host = place
+    const act = `${toolLabel(name)} 중`
+    const text = narrationLine(before) ?? act
+    const last = this.steps.at(-1)
+    if (last?.text !== text || last.place !== place)
+      this.steps.push({ text, act, ...(place ? { place } : {}), at: this.now() })
   }
   record(): WorkRecordMessage | undefined {
     if (!this.worked || !this.steps.length) return undefined
     const end = this.now()
-    const steps = this.steps.map((s, i) => ({ text: s.text, ms: (this.steps[i + 1]?.at ?? end) - s.at }))
+    const steps = this.steps.map(({ at, ...s }, i) => ({ ...s, ms: (this.steps[i + 1]?.at ?? end) - at }))
     return {
       kind: 'work',
       steps: steps.slice(-30),

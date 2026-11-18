@@ -7,6 +7,7 @@ import {
   readAppNote,
   richBlocks,
   stripMonologue,
+  toolPlace,
   withoutPhotoMark,
 } from './rich.js'
 
@@ -148,5 +149,30 @@ describe('표·제목', () => {
     expect(b.map((x) => x.type)).toEqual(['h', 'p', 'table'])
     const t = b[2]
     if (t?.type === 'table') expect(t.head).toBeUndefined()
+  })
+})
+
+describe('toolPlace (일하는 카드를 서비스별로 묶는 기준)', () => {
+  it('웹 도구는 연 주소, 주소가 없으면 지금 보는 곳', () => {
+    expect(toolPlace('mcp__dool2__browser_open', { url: 'https://search.naver.com/x?q=1' })).toBe(
+      'search.naver.com',
+    )
+    expect(toolPlace('mcp__dool2__browser_click', { ref: 3 }, 'www.sparkplus.co.kr')).toBe(
+      'www.sparkplus.co.kr',
+    )
+    expect(toolPlace('mcp__dool2__browser_read', {})).toBeUndefined()
+  })
+  it('서비스 도구·PC 앱·파일', () => {
+    expect(toolPlace('mcp__dool2__catchtable_search', { keyword: '성수' })).toBe('tool:catchtable_search')
+    expect(toolPlace('mcp__dool2__service_call', { tool: 'cj_logistics_track', input: {} })).toBe(
+      'tool:cj_logistics_track',
+    )
+    expect(toolPlace('mcp__dool2__screen_click', {})).toBe('app')
+    expect(toolPlace('mcp__dool2__file_write', {})).toBe('file')
+  })
+  it('두리 안에서 하는 일은 곳이 없다', () => {
+    expect(toolPlace('mcp__dool2__memory_save', {})).toBeUndefined()
+    expect(toolPlace('mcp__dool2__service_find', { query: '택배' })).toBeUndefined()
+    expect(toolPlace('mcp__dool2__show_cards', {})).toBeUndefined()
   })
 })

@@ -304,6 +304,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     runtimes,
     workspaceDir: paths.workspace,
     mcpServers: [mcp],
+    // 일한 과정 기록: 탭 번호만 받은 웹 도구가 어느 사이트에서 일했는지
+    tabHost: (tabId) => browserTools.tabHost(tabId),
     // 기억은 대화마다 지침 끝에 붙는다
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>

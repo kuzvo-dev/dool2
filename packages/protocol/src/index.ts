@@ -379,8 +379,12 @@ export const FocusTabSchema = z.object({ tabId: z.number().int() })
  */
 export interface WorkRecordMessage {
   kind: 'work'
-  /** 단계 이름과 걸린 시간(ms). 많으면 마지막 30개만 */
-  steps: { text: string; ms: number }[]
+  /**
+   * 단계 이름과 걸린 시간(ms). 많으면 마지막 30개만.
+   * act: 도구가 한 일("웹페이지 여는 중"), place: 일한 곳(toolPlace — 사이트 주소·"tool:…"·"app"·"file").
+   * 화면은 place가 같은 단계를 서비스 한 줄로 묶는다 (예전 기록에는 둘 다 없다)
+   */
+  steps: { text: string; ms: number; act?: string; place?: string }[]
   /** 전체 단계 수 (steps가 잘렸을 때도 원래 수) */
   count: number
   /** 차례 전체에 걸린 시간(ms) */

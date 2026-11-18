@@ -49,6 +49,7 @@ import {
   readAppNote,
   splitPhoto,
   toolLabel,
+  toolPlace,
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
 import { brandMark, SOCIAL_CTA } from './brands.js'
@@ -94,6 +95,7 @@ import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
+import { bareHost, cardForHost, doneLine, groupSteps, type PlaceCard, type WorkGroup } from './work-steps.js'
 
 const app = document.getElementById('app') as HTMLElement
 
@@ -529,8 +531,10 @@ async function receive(env: Envelope) {
         // 대화 안 일하는 화면: 그림만 바꾼다
         const first = !st.work.shot
         st.work = { ...st.work, shot: msg.shot, ...(msg.url ? { url: msg.url } : {}) }
-        const img = document.querySelector<HTMLImageElement>('.work-shot')
-        if (img) img.src = `data:image/jpeg;base64,${msg.shot}`
+        const shotHost = msg.url ? hostOf(msg.url) : ''
+        if (shotHost) tabHosts.set(msg.tabId, shotHost)
+        for (const img of document.querySelectorAll<HTMLImageElement>('.work-shot, .work-thumb'))
+          img.src = `data:image/jpeg;base64,${msg.shot}`
         if (first) render()
         return
       }
@@ -578,6 +582,11 @@ async function receive(env: Envelope) {
       // 두리가 이 탭에서 일하기 시작했다 (브라우저 도구든 서비스 도구든): 답하는 중이면 대화에 그 화면을 띄운다.
       // 예전에는 도구 이름이 browser_일 때만 띄워서, 서비스 도구로 일하면 화면이 안 보였다
       const fresh = msg.tabId !== st.work.tabId
+      // 방금 연 사이트의 새 탭이면 그 탭의 사이트로 기억한다
+      if (openedHost && !tabHosts.has(msg.tabId)) {
+        tabHosts.set(msg.tabId, openedHost)
+        openedHost = undefined
+      }
       st.work = {
         ...st.work,
         tabId: msg.tabId,
@@ -711,17 +720,40 @@ function onStream(ev: DaemonStreamEvent) {
         pollWork()
       }
       // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
-      const label = narrationLine(st.live) ?? `${toolLabel(ev.event.name)} 중`
+      const act = `${toolLabel(ev.event.name)} 중`
+      const label = narrationLine(st.live) ?? act
       st.live = ''
-      if (st.steps.at(-1) !== label) {
+      // 일한 곳: 연 주소, 주소 없는 웹 도구는 지금 보는 화면의 사이트
+      const tabId = (ev.event.input as { tabId?: unknown } | undefined)?.tabId
+      const shown = st.work.url && tabId === st.work.tabId ? hostOf(st.work.url) : ''
+      const here = (typeof tabId === 'number' ? tabHosts.get(tabId) : undefined) || shown || workHost
+      const place = toolPlace(ev.event.name, ev.event.input, here)
+      if (/browser_open$/.test(ev.event.name) && place) {
+        workHost = place
+        openedHost = place
+      }
+      if (/browser_navigate$/.test(ev.event.name) && place) {
+        workHost = place
+        if (typeof tabId === 'number') tabHosts.set(tabId, place)
+      }
+      const n = st.steps.length
+      if (st.steps.at(-1) !== label || stepInfo[n - 1]?.place !== place) {
+        if (n === 0) {
+          stepAt.length = 0
+          stepInfo.length = 0
+          workAllSteps = false
+        }
         st.steps = [...st.steps, label]
-        if (st.steps.length === 1) stepAt.length = 0
-        stepAt[st.steps.length - 1] = Date.now()
+        stepAt[n] = Date.now()
+        stepInfo[n] = { act, ...(place ? { place } : {}) }
       }
     }
   } else if (ev.type === 'end') {
     st.live = ''
     st.steps = []
+    workHost = undefined
+    openedHost = undefined
+    tabHosts.clear()
     st.work = { ...st.work, web: false, shot: undefined }
     void send({ kind: 'hello' })
   }
@@ -1066,15 +1098,31 @@ function connectPeek(id: string): HTMLElement | undefined {
 
 /** 단계가 시작된 때 (st.steps와 같은 순서) */
 const stepAt: number[] = []
+/** 단계마다 도구가 한 일·일한 곳 (st.steps와 같은 순서) */
+const stepInfo: { act: string; place?: string }[] = []
+/** 마지막으로 연 사이트 (탭을 모르는 browser_ 도구가 이어서 쓴다) */
+let workHost: string | undefined
+/** 탭 번호 → 그 탭의 사이트. 화면 그림의 주소와 '연 직후 새 탭' 알림으로 채운다 (여러 탭을 오가도 맞는 줄에) */
+const tabHosts = new Map<number, string>()
+/** 방금 browser_open으로 연 사이트: 다음에 처음 보는 탭이 그 사이트 */
+let openedHost: string | undefined
+/** 일하는 카드에서 앞 단계까지 펼쳤는지 (차례마다 처음엔 접힘) */
+let workAllSteps = false
+/** 두리가 보고 있는 화면을 펼쳐 둘지 (기본은 접힘, 펼쳐 두면 다음 일에도 그대로) */
+const PEEK_KEY = 'dool2.workPeek'
+const peekOpen = () => localStorage.getItem(PEEK_KEY) === '1'
 
 /** 사이트 주소 → 연결 카드 이름 (catchtable.co.kr → 캐치테이블), 없으면 주소 */
 function siteName(host: string): string {
-  const bare = host.replace(/^(www|m|app)\./, '')
-  const card = st.services?.find(
-    (s) =>
-      s.card.site && (bare === s.card.site || bare.endsWith(`.${s.card.site}`) || s.card.site.endsWith(bare)),
-  )
-  return card?.card.name ?? bare
+  return cardForHost(host, placeCards())?.name ?? bareHost(host)
+}
+
+function placeCards(): PlaceCard[] {
+  return (st.services ?? []).map((s) => ({
+    id: s.card.id,
+    name: s.card.name,
+    ...(s.card.site ? { site: s.card.site } : {}),
+  }))
 }
 
 function secs(ms: number) {
@@ -1082,88 +1130,196 @@ function secs(ms: number) {
   return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
 }
 
-function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
+/** 줄 왼쪽 아이콘: 서비스 로고(없으면 첫 글자), PC 앱·파일·두리 일은 선 아이콘. 모서리에 빙글빙글/체크 */
+function groupMark(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
+  const glyph: IconName | undefined =
+    g.kind === 'app' ? 'pc' : g.kind === 'file' ? 'note' : g.kind === 'doori' ? 'brain' : undefined
+  const mark = h('span', { class: `svc-mark ws-mark${glyph ? ' plain' : ''}`, text: glyph ? '' : g.letter })
+  if (glyph) mark.append(icon(glyph, 'i'))
+  else withLogo(mark, g.cardId)
   return h(
-    'li',
-    { class: `ws ${state}` },
-    h('span', { class: 's' }, state === 'done' ? icon('check', 'i') : ''),
-    h('span', { class: 'wt', text }),
-    h('span', { class: 't', text: ms !== undefined ? secs(ms) : '' }),
+    'span',
+    { class: 'ws-ico' },
+    mark,
+    h('span', { class: `ws-badge ${state}` }, state === 'done' ? icon('check', 'i') : ''),
   )
 }
 
-/** 대화 안 일하는 카드: 두리 + "○○을 살펴보는 중", 지금 보는 화면, 단계 (끝난 단계는 ✓와 걸린 시간) */
+/** 서비스 한 줄: 아이콘 · 이름 / 하는 일 · 걸린 시간 */
+function groupRow(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
+  const sub = state === 'doing' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
+  return h(
+    'li',
+    { class: `ws ${state}` },
+    groupMark(g, state),
+    h(
+      'span',
+      { class: 'wt' },
+      h('b', { text: g.title }),
+      sub && sub !== g.title ? h('span', { class: 'wsub', text: sub }) : '',
+    ),
+    h('span', { class: 't', text: state === 'done' && g.ms !== undefined ? secs(g.ms) : '' }),
+  )
+}
+
+/** 같은 줄인지 (다시 그릴 때 그대로 둘지) */
+const groupSig = (g: WorkGroup, state: string) => `${g.key}|${g.title}|${g.act}|${g.count}|${state}`
+
+/** 지금 하는 일의 줄들 (끝난 줄은 걸린 시간까지) */
+function liveGroups(): WorkGroup[] {
+  const steps = st.steps.map((text, i) => {
+    const next = stepAt[i + 1]
+    const at = stepAt[i]
+    const info = stepInfo[i]
+    return {
+      text,
+      act: info?.act ?? text,
+      ...(info?.place ? { place: info.place } : {}),
+      ...(next && at ? { ms: next - at } : {}),
+    }
+  })
+  return groupSteps(steps, placeCards())
+}
+
+/** 두리 혼잣말 가운데 마지막 것 (도구 이름이 아닌 것) */
+function lastNarration(): string | undefined {
+  for (let i = st.steps.length - 1; i >= 0; i--) {
+    const t = st.steps[i] as string
+    if (t !== stepInfo[i]?.act) return t
+  }
+  return undefined
+}
+
+function clockText() {
+  const from = stepAt[0]
+  if (!from) return ''
+  const s = Math.max(0, Math.floor((Date.now() - from) / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * 대화 안 일하는 카드: 두리 + 지금 하는 말 · 서비스별 줄(빙글빙글 → 체크) · 접힌 '두리가 보고 있는 화면'.
+ * 화면은 기본 접힘(작은 미리보기 + 지금 점), 누르면 펼쳐지고 펼친 화면을 누르면 크게 본다
+ */
 function workPanel(): HTMLElement {
-  const peek = h(
+  const toggle = h(
+    'button',
+    { class: 'wp-peek-bar', label: '두리가 보고 있는 화면 펼치기' },
+    h('img', { class: 'work-thumb' }),
+    h('span', { class: 'wp-peek-t', text: '두리가 보고 있는 화면' }),
+    h('span', { class: 'wp-live', text: '지금' }),
+    icon('chevron', 'i wp-chev'),
+  )
+  const big = h(
     'button',
     {
-      class: 'wp-peek',
+      class: 'wp-peek wp-peek-in',
       label: '두리 화면 크게 보기',
       onclick: () => st.work.tabId !== undefined && openRemote(st.work.tabId),
     },
-    h(
-      'span',
-      { class: 'wp-bar' },
-      h('span', { text: '두리가 보고 있는 화면' }),
-      h('span', { class: 'wp-live', text: '지금' }),
-    ),
     h('img', { class: 'work-shot' }),
+    h('span', { class: 'wp-hint', text: '누르면 크게 보고 직접 누를 수 있어요' }),
   )
+  const wrap = h('div', { class: 'wp-view' }, toggle, h('div', { class: 'wp-shot-box' }, h('div', {}, big)))
+  const setOpen = (open: boolean) => {
+    wrap.classList.toggle('open', open)
+    toggle.setAttribute('aria-expanded', String(open))
+  }
+  setOpen(peekOpen())
+  toggle.addEventListener('click', () => {
+    const open = !wrap.classList.contains('open')
+    localStorage.setItem(PEEK_KEY, open ? '1' : '0')
+    setOpen(open)
+  })
+  const clock = h('span', { class: 'wp-clock' })
   const card = h(
     'div',
     { class: 'work-panel' },
-    h('div', { class: 'wp-head' }, doori('thinking', 26), h('b', { class: 'wp-title' })),
-    peek,
+    h('div', { class: 'wp-head' }, doori('thinking', 26), h('b', { class: 'wp-title' }), clock),
     h('ol', { class: 'wp-steps' }),
+    wrap,
   )
+  // 걸린 시간: 카드가 화면에 있는 동안만 1초마다
+  const tick = () => {
+    if (!card.isConnected && clock.textContent) return
+    clock.textContent = clockText()
+    setTimeout(tick, 1000)
+  }
+  tick()
   updateWorkPanel(card)
   return card
 }
 
 function updateWorkPanel(card: HTMLElement) {
-  const host = st.work.web ? hostOf(st.work.url ?? '') : ''
-  const title = host ? `${josa(siteName(host), '을/를')} 살펴보는 중` : '부탁하신 일을 하는 중'
+  const title = lastNarration() ?? '부탁하신 일을 하는 중'
   const t = card.querySelector('.wp-title')
   if (t && t.textContent !== title) t.textContent = title
   // 지금 화면: 웹에서 일하고 그림이 왔을 때만
-  const peek = card.querySelector<HTMLElement>('.wp-peek')
-  const img = card.querySelector<HTMLImageElement>('.work-shot')
+  const view = card.querySelector<HTMLElement>('.wp-view')
   const shot = st.work.web ? st.work.shot : undefined
-  if (peek) peek.hidden = !shot
-  if (img && shot) {
+  if (view) view.hidden = !shot
+  if (shot) {
     const src = `data:image/jpeg;base64,${shot}`
-    if (img.src !== src) img.src = src
+    for (const img of card.querySelectorAll<HTMLImageElement>('.work-shot, .work-thumb'))
+      if (img.src !== src) img.src = src
   }
-  // 단계: 바뀐 것만. 새 단계는 아래에서 떠오르고, 방금 끝난 단계는 ✓가 톡
+  // 줄: 바뀐 것만. 새 줄은 아래에서 떠오르고, 방금 끝난 줄은 체크가 톡
   const list = card.querySelector<HTMLElement>('.wp-steps')
   if (!list) return
-  const rows = [...list.children] as HTMLElement[]
-  if (
-    rows.length > st.steps.length ||
-    rows.some((r, i) => r.querySelector('.wt')?.textContent !== st.steps[i])
-  )
-    list.replaceChildren()
-  st.steps.forEach((text, i) => {
-    const last = i === st.steps.length - 1
-    const row = list.children[i] as HTMLElement | undefined
-    const ms =
-      !last && stepAt[i] && stepAt[i + 1] ? (stepAt[i + 1] as number) - (stepAt[i] as number) : undefined
-    if (!row) {
-      const fresh = stepRow(text, last ? 'doing' : 'done', ms)
-      list.append(fresh)
-      if (i > 0)
-        springTo(
-          fresh,
-          [
-            { opacity: 0, transform: 'translateY(8px)' },
-            { opacity: 1, transform: 'none' },
-          ],
-          'item',
-        )
-    } else if (!last && row.classList.contains('doing')) {
-      const done = stepRow(text, 'done', ms)
-      row.replaceWith(done)
-      const s = done.querySelector('.s')
+  const groups = liveGroups()
+  const hidden = workAllSteps ? 0 : Math.max(0, groups.length - 4)
+  const shown = groups.slice(hidden)
+  const more = list.querySelector<HTMLElement>('.ws.more')
+  if (hidden) {
+    const text = `앞 단계 ${hidden}개`
+    if (!more)
+      list.prepend(
+        h(
+          'li',
+          { class: 'ws more' },
+          h('button', {
+            text,
+            label: '앞 단계 펼치기',
+            onclick: () => {
+              workAllSteps = true
+              updateWorkPanel(card)
+            },
+          }),
+        ),
+      )
+    else if (more.textContent !== text) (more.firstElementChild as HTMLElement).textContent = text
+  } else more?.remove()
+  // 줄은 곳(key)마다 하나: 있던 줄은 옮기고(다시 간 곳은 맨 아래로), 바뀐 줄만 새로 그린다
+  const old = new Map<string, HTMLElement>()
+  for (const r of list.querySelectorAll<HTMLElement>('.ws:not(.more)')) old.set(r.dataset.key ?? '', r)
+  const keep = new Set(shown.map((g) => g.key))
+  for (const [k, r] of old) if (!keep.has(k)) r.remove()
+  shown.forEach((g, i) => {
+    const state = i === shown.length - 1 ? 'doing' : 'done'
+    const sig = groupSig(g, state)
+    const row = old.get(g.key)
+    let el = row
+    if (row?.dataset.sig !== sig) {
+      el = groupRow(g, state)
+      el.dataset.key = g.key
+      el.dataset.sig = sig
+      if (row) row.replaceWith(el)
+    }
+    if (!el) return
+    // 제자리가 아니면 옮긴다 (더 보기 줄 뒤로 i번째)
+    const at = list.querySelectorAll('.ws:not(.more)')[i]
+    if (at !== el) list.insertBefore(el, at ?? null)
+    if (!row && (i > 0 || groups.length > 1))
+      springTo(
+        el,
+        [
+          { opacity: 0, transform: 'translateY(8px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        'item',
+      )
+    else if (row && state === 'done' && row.classList.contains('doing')) {
+      const s = el.querySelector('.ws-badge')
       if (s) springTo(s, [{ transform: 'scale(0.4)' }, { transform: 'scale(1)' }], 'pop')
     }
   })
@@ -1312,20 +1468,58 @@ function connectStepList(id: string, waiting = false): HTMLElement | undefined {
   return list
 }
 
-/** 끝난 뒤: 답 위에 접힌 "일한 과정" (누르면 단계가 펼쳐진다) */
+/** 연결하는 동안 단계 한 줄: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
+function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
+  return h(
+    'li',
+    { class: `ws ${state}` },
+    h('span', { class: 's' }, state === 'done' ? icon('check', 'i') : ''),
+    h('span', { class: 'wt', text }),
+    h('span', { class: 't', text: ms !== undefined ? secs(ms) : '' }),
+  )
+}
+
+/**
+ * 끝난 뒤: 답 위에 접힌 한 줄 "아이콘 묶음 · 4곳 살펴봤어요 · 41초" (누르면 서비스별 줄이 펼쳐진다).
+ * 예전 기록(곳 정보 없음)은 "일한 과정 · N단계"
+ */
 function workDone(rec: WorkRecordMessage): HTMLElement {
-  const where = rec.host ? `${siteName(rec.host)}에서 일했어요` : '일한 과정'
+  const groups = groupSteps(rec.steps, placeCards())
+  const places = [
+    ...new Map(
+      groups.filter((g) => g.kind === 'web' || g.kind === 'service').map((g) => [g.key, g]),
+    ).values(),
+  ]
   const list = h('ol', { class: 'wp-steps' })
   if (rec.count > rec.steps.length)
     list.append(h('li', { class: 'ws more', text: `앞의 ${rec.count - rec.steps.length}단계는 줄였어요` }))
-  for (const s of rec.steps) list.append(stepRow(s.text, 'done', s.ms))
+  for (const g of groups) list.append(groupRow(g, 'done'))
   list.hidden = true
+  const lead = places.length
+    ? h(
+        'span',
+        { class: 'wd-stack' },
+        ...places
+          .slice(0, 4)
+          .map((g) => withLogo(h('span', { class: 'svc-mark', text: g.letter }), g.cardId)),
+      )
+    : h('span', { class: 'wd-ok' }, icon('check', 'i'))
+  const title = places.length
+    ? places.length === 1
+      ? `${places[0]?.title}에서 일했어요`
+      : `${places.length}곳 살펴봤어요`
+    : rec.host
+      ? `${siteName(rec.host)}에서 일했어요`
+      : '일한 과정'
   const head = h(
     'button',
     { class: 'wd-head', label: '일한 과정 펼치기' },
-    h('span', { class: 'wd-ok' }, icon('check', 'i')),
-    h('span', { class: 'wd-title', text: where }),
-    h('span', { class: 'wd-meta', text: `${rec.count}단계 · ${secs(rec.ms)}` }),
+    lead,
+    h('span', { class: 'wd-title', text: title }),
+    h('span', {
+      class: 'wd-meta',
+      text: places.length ? secs(rec.ms) : `${rec.count}단계 · ${secs(rec.ms)}`,
+    }),
     icon('chevron', 'i wd-chev'),
   )
   head.setAttribute('aria-expanded', 'false')
