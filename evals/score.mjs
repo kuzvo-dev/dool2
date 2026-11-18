@@ -33,7 +33,7 @@ const NOT_CLAIM =
 const QUESTION =
   /[?？]\s*$|(?:할까요|드릴까요|볼까요|주세요|알려 주세요|말씀해 주세요|어떤 걸로|어느 쪽|골라 주세요)[.!]?\s*$/m
 const REFUSE =
-  /못 해요|못해요|할 수 없어요|어려워요|지원하지 않|안 돼요|아직 못|직접 하셔야|직접 해 주셔야|범위 밖/
+  /못 해요|못해요|할 수 없|할 수가 없|어려워요|지원하지 않|안 돼요|아직 못|방법이 없|못 보내|못 드려요|대신 (?:못|할 수 없)|직접 하셔야|직접 해 주셔야|범위 밖|정해 드릴 수 없|확인이 필요해요/
 
 const HANDOFF = new Set([
   'browser_handoff',
@@ -209,10 +209,12 @@ if (flag('judge')) {
   await Promise.all([worker(), worker(), worker()])
   console.log('')
 }
-for (const { f, r } of rows) writeFileSync(join(dir, f), JSON.stringify(r, null, 1))
 
 // 요약
+// 대화로 보낼 수 없는 부탁(먼저 챙기기 상황 설명·캡처·사진이 있어야 하는 것)은 이 시험에서 셈하지 않는다
+const notChat = (r) => /^\((?:부탁 없음|캡처|사진)/.test(r.scenario.ask.trim())
 const final = (r) => {
+  if (notChat(r)) return 'na'
   const c = r.check.pass
   const j = r.judge?.score
   if (c === false) return 'fail'
@@ -221,16 +223,17 @@ const final = (r) => {
   if (j >= 2) return 'part'
   return 'fail'
 }
-const tally = { pass: 0, part: 0, fail: 0, unknown: 0 }
+const tally = { pass: 0, part: 0, fail: 0, unknown: 0, na: 0 }
 const byType = {}
 for (const { r } of rows) {
   const v = final(r)
   r.final_verdict = v
   tally[v]++
   const t = r.scenario.type
-  byType[t] ??= { pass: 0, part: 0, fail: 0, unknown: 0 }
+  byType[t] ??= { pass: 0, part: 0, fail: 0, unknown: 0, na: 0 }
   byType[t][v]++
 }
+for (const { f, r } of rows) writeFileSync(join(dir, f), JSON.stringify(r, null, 1))
 console.log(
   `시나리오 ${rows.length} · 통과 ${tally.pass} · 일부 ${tally.part} · 실패 ${tally.fail} · 미판정 ${tally.unknown}`,
 )
@@ -243,7 +246,7 @@ const html = arg('html')
 if (html) {
   const esc = (s) =>
     String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
-  const badge = { pass: '통과', part: '일부', fail: '실패', unknown: '미판정' }
+  const badge = { pass: '통과', part: '일부', fail: '실패', unknown: '미판정', na: '셈 안 함' }
   const list = rows
     .map(({ r }) => r)
     .sort(
@@ -278,7 +281,7 @@ ${(r.approvals ?? []).map((a) => `<p><b>승인 요청</b> ${esc(a.label)} · ${e
 h1{font-size:22px}table{border-collapse:collapse;margin:8px 0 20px}td,th{border:1px solid #d6dae1;padding:4px 10px;text-align:center}
 .sum{display:flex;gap:10px;margin:12px 0}.sum div{background:#fff;border-radius:12px;padding:10px 16px;box-shadow:0 1px 2px #0001}.sum b{font-size:22px;display:block}
 details{background:#fff;border-radius:10px;margin:6px 0;padding:8px 12px;box-shadow:0 1px 2px #0001}summary{cursor:pointer}
-.v{display:inline-block;min-width:40px;text-align:center;border-radius:6px;padding:0 6px;color:#fff}.pass .v{background:#2f9e6e}.part .v{background:#d9a21b}.fail .v{background:#d64545}.unknown .v{background:#8a93a3}
+.v{display:inline-block;min-width:40px;text-align:center;border-radius:6px;padding:0 6px;color:#fff}.pass .v{background:#2f9e6e}.part .v{background:#d9a21b}.fail .v{background:#d64545}.unknown .v,.na .v{background:#8a93a3}
 .t{color:#5a6475;font-size:13px}.m{color:#8a93a3;font-size:13px}.bad{color:#b42318}pre{white-space:pre-wrap;background:#f3f4f6;padding:10px;border-radius:8px;font-size:13px}</style>
 <h1>두리 시나리오 성적표</h1><p>${esc(new Date().toLocaleString('ko-KR'))} · 실제 AI·실제 사이트(승인은 모두 거절, 결제·보내기 없음)</p>
 <div class="sum"><div>시나리오<b>${rows.length}</b></div><div>통과<b>${tally.pass}</b></div><div>일부<b>${tally.part}</b></div><div>실패<b>${tally.fail}</b></div><div>미판정<b>${tally.unknown}</b></div></div>

@@ -5,7 +5,8 @@
 //   node evals/run.mjs --daemon http://127.0.0.1:8833 --token <화면 토큰> [고르기] [--out evals/out/<날짜>]
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EVALS, scenarios } from './lib/bank.mjs'
 
@@ -83,7 +84,14 @@ async function lifeIds() {
   }
 }
 
+// 시험이 PC에 만든 파일(file_write)은 지우지 않고 따로 옮겨 둔다 (같은 PC의 본체만, --keep-files면 그대로)
+const FOLDERS = ['Desktop', 'Documents', 'Downloads'].map((d) => join(homedir(), d))
+const listFiles = () =>
+  new Set(FOLDERS.flatMap((d) => (existsSync(d) ? readdirSync(d).map((n) => join(d, n)) : [])))
+const local = /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(daemon) && !flag('keep-files')
+
 async function runOne(sc) {
+  const filesBefore = local ? listFiles() : new Set()
   const before = await lifeIds()
   const started = new Date()
   const { thread } = await api('/api/threads', { method: 'POST', body: JSON.stringify({ side: true }) })
@@ -173,6 +181,17 @@ async function runOne(sc) {
         method: 'POST',
         body: JSON.stringify({ action: `${kind}-delete`, id }),
       })
+    }
+  }
+  if (local) {
+    rec.created.files = []
+    const keep = join(out, '_files', sc.id.replace(/[^\w.-]+/g, '_'))
+    for (const p of listFiles()) {
+      if (filesBefore.has(p)) continue
+      mkdirSync(keep, { recursive: true })
+      const to = join(keep, p.split('/').pop())
+      renameSync(p, to)
+      rec.created.files.push({ from: p, to })
     }
   }
   const s2 = await api('/api/life')
