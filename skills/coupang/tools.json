@@ -82,6 +82,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "상품 사진 (카드에 넣는다)"
             }
           }
         }
@@ -182,6 +186,11 @@
               },
               "ad": {
                 "match": "\\n(광고)(?:\\n|$)"
+              },
+              "img_path": {
+                "css": "img[src*='coupangcdn.com/thumbnails/remote/']",
+                "attr": "src",
+                "match": "/thumbnails/remote/[^/]+(/[^?#]+)"
               }
             }
           },
@@ -192,6 +201,7 @@
             "from": "rows",
             "fields": {
               "name": "name",
+              "image": "{{#img_path}}https://thumbnail.coupangcdn.com/thumbnails/remote/230x230ex{{img_path}}{{/img_path}}",
               "product_id": "product_id",
               "item_id": "item_id",
               "vendor_item_id": "vendor_item_id",
@@ -212,7 +222,7 @@
       "result": {
         "products": "{{products}}"
       },
-      "next": "가격·평점·리뷰 수·로켓배송 여부·도착 예정을 견줘 2~3개를 짧은 표로 보여 주고 고르게 해요(광고는 광고라고 밝혀요). 사려면 coupang_prepare_order.",
+      "next": "가격·평점·리뷰 수·로켓배송 여부·도착 예정을 견줘 2~4개를 골라 show_cards로 사진(image)·가격·주소(link)를 카드로 붙이고, 글로는 고른 이유·차이만 짧게 말해요(광고는 광고라고 밝혀요). 사려면 coupang_prepare_order.",
       "minIntervalSec": 300
     },
     {

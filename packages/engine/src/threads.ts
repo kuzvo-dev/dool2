@@ -1,12 +1,14 @@
-import type {
-  AgentEvent,
-  AgentId,
-  ApprovalRecordMessage,
-  ConnectRecordMessage,
-  DaemonStreamEvent,
-  HandoffRecord,
-  LoginRecordMessage,
-  WorkRecordMessage,
+import {
+  type AgentEvent,
+  type AgentId,
+  type ApprovalRecordMessage,
+  type CardsRecordMessage,
+  type ConnectRecordMessage,
+  cleanCards,
+  type DaemonStreamEvent,
+  type HandoffRecord,
+  type LoginRecordMessage,
+  type WorkRecordMessage,
 } from '@dool2/protocol'
 import { narrationLine, stripMonologue, toolLabel } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
@@ -108,6 +110,14 @@ export class ThreadService {
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
       const work = new WorkLog()
+      // 답에 붙일 카드 (show_cards): 답을 저장한 바로 뒤에 남겨 메시지 첨부처럼 답 아래에 보인다
+      let cards: CardsRecordMessage | undefined
+      const saveCards = () => {
+        if (!cards) return undefined
+        const m = store.addMessage(threadId, 'tool', JSON.stringify(cards))
+        cards = undefined
+        return m
+      }
       const events = this.runtime(thread.agent).runTurn({
         text: o.aside ? `${o.aside}\n\n${text}` : text,
         ...(resumeId ? { resumeId } : {}),
@@ -122,6 +132,11 @@ export class ThreadService {
         if (ev.type === 'tool') {
           work.tool(ev.name, answer, ev.input)
           answer = ''
+        }
+        if (ev.type === 'tool' && /show_cards$/.test(ev.name)) {
+          const list = cleanCards((ev.input as { cards?: unknown } | undefined)?.cards)
+          // 한 차례에 여러 번 부르면 이어 붙인다 (10장까지)
+          if (list.length) cards = { kind: 'cards', cards: [...(cards?.cards ?? []), ...list].slice(0, 10) }
         }
         if (ev.type === 'text') answer += ev.delta
         if (ev.type === 'done') {
@@ -138,6 +153,8 @@ export class ThreadService {
           const rec = work.record()
           if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
           yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
+          const c = saveCards()
+          if (c) yield { type: 'saved', message: c }
         }
         // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
@@ -197,6 +214,8 @@ export class ThreadService {
         const rec = work.record()
         if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
         yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
+        const c = saveCards()
+        if (c) yield { type: 'saved', message: c }
       } else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
@@ -219,7 +238,7 @@ function titleFrom(text: string) {
 }
 
 /** 정리·기억 같은 속일만 한 차례에는 일한 과정을 남기지 않는다 (답마다 카드가 붙지 않게) */
-const QUIET_TOOL = /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search/
+const QUIET_TOOL = /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search|show_cards/
 
 /** 한 차례 동안 한 일을 모아 '일한 과정' 기록(WorkRecordMessage)을 만든다. 폰·PC 화면의 단계 표시와 같은 이름을 쓴다 */
 export class WorkLog {

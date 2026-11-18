@@ -128,4 +128,4 @@ Lucide 계열 선 아이콘, 1.75px, 20px 박스, 끝 둥글게, ink/ink-muted. 
 
 ## 컴포넌트
 
-Button · Composer · Message · ApprovalCard · AgentLog · StatusHeader · Avatar. 각 폴더 README에 규칙이 있어요.
+Button · Composer · Message · ApprovalCard · AgentLog · StatusHeader · Avatar · PickCards. 각 폴더 README에 규칙이 있어요.

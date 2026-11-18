@@ -66,6 +66,8 @@ export interface LinkHost {
   infoAnswer(id: string, value: string | undefined): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
+  /** 카드 사진을 받아 data: 주소로 (못 받으면 undefined) */
+  thumb?(url: string): Promise<string | undefined>
   /** 처음부터 다시 (시험용 PC만, 없으면 거절). services면 연결한 서비스 표시도 */
   reset?(phone: string, o: { services: boolean }): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
@@ -506,6 +508,11 @@ export class PhoneLink {
           ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
         })
         return
+      }
+      case 'thumb': {
+        const url = typeof msg.url === 'string' ? msg.url.slice(0, 800) : ''
+        const data = url ? await this.host.thumb?.(url).catch(() => undefined) : undefined
+        return this.send(phone, { kind: 'thumb', url, ...(data ? { data } : {}) })
       }
       case 'reset': {
         const no = (message: string) => this.send(phone, { kind: 'reset-done', ok: false, message })
