@@ -155,6 +155,8 @@ const st: {
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
   /** 대신 로그인이 끝까지 못 간 서비스 → 그 화면(탭) */
   connectTabs: Map<string, number>
+  /** 연결하는 동안 두리가 로그인하고 있는 탭과 그 화면 (연결 카드에 작게 실시간으로) */
+  connectLive: Map<string, { tabId: number; shot?: string }>
   services?: ConnectionItem[]
   connectQuery: string
   /** 아이디어 탭: 고른 분류('all' = 전체)와 찾는 말 */
@@ -211,6 +213,7 @@ const st: {
   infos: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
   connectTabs: new Map(),
+  connectLive: new Map(),
   connectQuery: '',
   ideaCat: 'all',
   connecting: new Set(),
@@ -341,6 +344,9 @@ async function receive(env: Envelope) {
       for (const q of msg.infos ?? []) st.infos.set(q.id, q)
       for (const id of st.infos.keys()) if (!(msg.infos ?? []).some((q) => q.id === id)) st.infos.delete(id)
       st.connecting = new Set(msg.connecting ?? [])
+      // 일하는 중에 앱을 다시 열었으면: 두리가 보고 있는 탭을 받아 일하는 화면을 이어서 띄운다
+      if (msg.activeTab !== undefined && st.work.tabId === undefined)
+        st.work = { ...st.work, tabId: msg.activeTab }
       void syncPush()
       openPending()
       break
@@ -437,6 +443,19 @@ async function receive(env: Envelope) {
       return
     }
     case 'screen': {
+      const live =
+        st.screen.name !== 'remote' && msg.shot
+          ? [...st.connectLive.values()].find((l) => l.tabId === msg.tabId)
+          : undefined
+      if (live && msg.shot) {
+        // 연결 카드 안 로그인 화면: 그림만 바꾼다
+        const first = !live.shot
+        live.shot = msg.shot
+        const img = document.querySelector<HTMLImageElement>(`.connect-shot[data-tab="${msg.tabId}"]`)
+        if (img) img.src = `data:image/jpeg;base64,${msg.shot}`
+        if (first) renderSoon()
+        return
+      }
       if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
         // 대화 안 일하는 화면: 그림만 바꾼다
         const first = !st.work.shot
@@ -480,21 +499,37 @@ async function receive(env: Envelope) {
     case 'life':
       st.life = msg.state
       break
-    case 'work-tab':
-      st.work = { ...st.work, tabId: msg.tabId }
+    case 'work-tab': {
+      // 두리가 이 탭에서 일하기 시작했다 (브라우저 도구든 서비스 도구든): 답하는 중이면 대화에 그 화면을 띄운다.
+      // 예전에는 도구 이름이 browser_일 때만 띄워서, 서비스 도구로 일하면 화면이 안 보였다
+      const fresh = msg.tabId !== st.work.tabId
+      st.work = {
+        ...st.work,
+        tabId: msg.tabId,
+        web: st.work.web || st.busy,
+        ...(fresh ? { shot: undefined, url: undefined } : {}),
+      }
       pollWork()
+      renderSoon()
       return
+    }
     case 'connect-status':
       st.connecting = new Set(msg.connecting)
       // 다시 하기 시작하면 지난번 실패는 지운다
       for (const id of msg.connecting) st.connectFails.delete(id)
       for (const id of st.connectSteps.keys()) if (!st.connecting.has(id)) st.connectSteps.delete(id)
+      for (const id of st.connectLive.keys()) if (!st.connecting.has(id)) st.connectLive.delete(id)
       break
     case 'connect-progress':
       st.connectSteps.set(msg.id, msg.steps)
+      if (msg.tabId !== undefined && st.connectLive.get(msg.id)?.tabId !== msg.tabId) {
+        st.connectLive.set(msg.id, { tabId: msg.tabId })
+        pollConnect()
+      }
       break
     case 'connect-result': {
       st.connecting.delete(msg.id)
+      st.connectLive.delete(msg.id)
       const d = st.loginDraft
       if (d.id === `connect:${msg.id}`) {
         d.busy = false
@@ -570,10 +605,10 @@ function onStream(ev: DaemonStreamEvent) {
     if (ev.event.type === 'text') st.live += ev.event.delta
     else if (ev.event.type === 'tool') {
       // 웹에서 일하기 시작하면 대화에 그 화면을 띄운다
-      const web = /browser_/.test(ev.event.name)
-      if (web !== st.work.web) {
-        st.work = { ...st.work, web }
-        if (web) pollWork()
+      // (서비스 도구는 본체가 탭을 열면서 work-tab으로 알린다. 다른 도구를 잠깐 쓴다고 화면을 끄지 않는다)
+      if (/browser_/.test(ev.event.name) && !st.work.web) {
+        st.work = { ...st.work, web: true }
+        pollWork()
       }
       // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
       const label = narrationLine(st.live) ?? `${toolLabel(ev.event.name)} 중`
@@ -791,6 +826,41 @@ function pollWork() {
     workTimer = setTimeout(tick, 1500)
   }
   workTimer = setTimeout(tick, 300)
+}
+
+/** 연결하는 동안: 대화의 연결 카드에 두리가 로그인하고 있는 화면을 작게 실시간으로 */
+let connectTimer: ReturnType<typeof setTimeout> | undefined
+function pollConnect() {
+  clearTimeout(connectTimer)
+  const tick = () => {
+    const tabs = [...st.connectLive.entries()].filter(([id]) => st.connecting.has(id))
+    const watching =
+      tabs.length && st.tab === 'chat' && st.screen.name === 'app' && document.visibilityState === 'visible'
+    if (!watching) return
+    for (const [, l] of tabs) void send({ kind: 'screen', tabId: l.tabId })
+    connectTimer = setTimeout(tick, 1500)
+  }
+  connectTimer = setTimeout(tick, 300)
+}
+
+/** 연결 카드 안의 로그인 화면 (누르면 크게 열어 직접 할 수 있다) */
+function connectPeek(id: string): HTMLElement | undefined {
+  const l = st.connectLive.get(id)
+  if (!l?.shot) return undefined
+  const img = h('img', { class: 'connect-shot' })
+  img.dataset.tab = String(l.tabId)
+  img.src = `data:image/jpeg;base64,${l.shot}`
+  return h(
+    'button',
+    { class: 'wp-peek', label: '로그인 화면 크게 보기', onclick: () => openRemote(l.tabId, id) },
+    h(
+      'span',
+      { class: 'wp-bar' },
+      h('span', { text: '두리가 로그인하고 있는 화면' }),
+      h('span', { class: 'wp-live', text: '지금' }),
+    ),
+    img,
+  )
 }
 
 /** 단계가 시작된 때 (st.steps와 같은 순서) */
@@ -1458,7 +1528,10 @@ function setTab(tab: Tab) {
   if (!page) return
   page.scrollTo({ top: tab === 'chat' ? page.scrollHeight : 0 })
   shell?.tabs.classList.remove('away')
-  if (tab === 'chat') pollWork()
+  if (tab === 'chat') {
+    pollWork()
+    pollConnect()
+  }
   // 탭 순서대로 옆에서 밀려 들어온다
   if (from >= 0 && to >= 0 && from !== to && !reducedMotion())
     page.animate(
@@ -1741,7 +1814,11 @@ function renderPage() {
     pageDrawn = ''
     if (page.firstChild !== chat || page.childNodes.length !== 1) page.replaceChildren(chat)
     syncChat()
-    if (stickToBottom) requestAnimationFrame(() => page.scrollTo({ top: page.scrollHeight }))
+    // (그 사이 다른 탭으로 갔으면 그 탭을 끝으로 내리지 않는다)
+    if (stickToBottom)
+      requestAnimationFrame(() => {
+        if (st.tab === 'chat') page.scrollTo({ top: page.scrollHeight })
+      })
     return
   }
   const ctx = lifeCtx()
@@ -1771,6 +1848,12 @@ function renderPage() {
 
 /** 마지막으로 그린 탭 화면의 모양 (대화 탭은 바뀐 말만 따로 맞춘다) */
 let pageDrawn = ''
+
+/** 탭 화면이 스스로 일부를 다시 그렸을 때(찾기): 지금 모양을 기억해 둔다 (다음 소식에 통째로 다시 꽂지 않게) */
+function pageSettled() {
+  const view = shell?.page.firstElementChild
+  if (view && st.tab !== 'chat') pageDrawn = `${st.tab}\n${view.outerHTML}`
+}
 
 /**
  * 다시 그리기 전에: 그 안에서 글을 쓰는 중이면 쓰던 글자·커서를 기억했다가 새 칸에 돌려준다.
@@ -2119,7 +2202,8 @@ function toolSig(raw: string) {
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
       const wait = it ? (connectWaiting(it.card.id)?.kind ?? '') + (connectWaiting(it.card.id)?.id ?? '') : ''
       const fail = it ? (st.connectFails.get(it.card.id)?.reason ?? '') : ''
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}`
+      const peek = it && st.connectLive.get(it.card.id)?.shot ? 1 : 0
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}`
     }
   } catch {}
   return ''
@@ -2405,7 +2489,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         h('span', {
           class: 'meta',
           text: busy
-            ? 'PC에서 두리가 하고 있어요. 다른 일을 하셔도 돼요'
+            ? 'PC에서 두리가 하고 있어요. 아래 화면에서 지켜볼 수 있어요'
             : browser
               ? connectHow(c)
               : '연결 화면에서 켜요',
@@ -2413,6 +2497,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       ),
       busy && !st.connectSteps.get(c.id)?.length ? h('span', { class: 'spin' }) : undefined,
     ),
+    busy ? connectPeek(c.id) : undefined,
     busy
       ? connectStepList(c.id)
       : h(
@@ -2807,6 +2892,7 @@ function ideasView() {
     st.ideaQuery = ''
     search.value = ''
     draw()
+    pageSettled()
     chips.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' })
     chips.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
@@ -2883,6 +2969,7 @@ function ideasView() {
   search.oninput = () => {
     st.ideaQuery = search.value
     draw()
+    pageSettled()
   }
   draw()
   box.append(search, chips, body)
@@ -2929,11 +3016,9 @@ function connectCtx(): ConnectCtx {
       shell?.page.scrollTo({ top: 0 })
     },
     setQuery: (q) => {
+      // 목록은 연결 화면이 제자리에서 다시 그렸다: 찾는 말만 기억한다
       st.connectQuery = q
-      render()
-      const input = document.getElementById('connect-search') as HTMLInputElement | null
-      input?.focus()
-      input?.setSelectionRange(q.length, q.length)
+      pageSettled()
     },
     open: (id) => connectInChat(id),
     mark: (id, on) => void send({ kind: 'connect', id, action: on ? 'mark' : 'unmark' }),
@@ -4225,6 +4310,9 @@ function startResync() {
     if (document.visibilityState !== 'visible') return
     if (st.client && !st.online) connect()
     else resync()
+    // 보던 화면(일하는 화면·연결 중 화면)을 다시 받아 오기 시작한다
+    pollWork()
+    pollConnect()
   })
   // 앱을 켜 두고 있다고 1분마다 알린다 (PC는 켜 둔 폰에만 흘려 쓰는 답을 보낸다)
   setInterval(() => {

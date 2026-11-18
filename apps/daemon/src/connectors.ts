@@ -490,13 +490,18 @@ export class Connectors {
                   () => true,
                   () => false,
                 )
-              if (ok) return
+              if (ok) {
+                this.opts.tools.watchTab(tabId)
+                return
+              }
             }
             const r = (await b.call('open', { url, ...(capture ? { capture } : {}) }, 40_000)) as {
               tabId: number
             }
             tabId = r.tabId
             this.tabs.set(card.id, r.tabId)
+            // 일하는 동안 폰 대화에 이 화면이 보이게 (끝난 뒤에 알리면 일하는 내내 화면이 비어 있다)
+            this.opts.tools.watchTab(r.tabId)
           },
         })
         if (done) {

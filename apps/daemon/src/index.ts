@@ -395,6 +395,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       password,
       ask: loginAsk(card),
       step: connectStep(card.id),
+      onTab: connectTab(card.id),
     })
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
@@ -413,6 +414,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       creds: (origin) => vault.findForOrigin(origin),
       ask: loginAsk(card),
       step: connectStep(card.id),
+      onTab: connectTab(card.id),
     })
     return connectFinish(card, r)
   }
@@ -465,7 +467,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (steps.at(-1)?.text === text && !ask) return
       steps.push({ text, at: Date.now(), ...(ask ? { ask } : {}) })
       connectSteps.set(id, steps)
-      void link.broadcast({ kind: 'connect-progress', id, steps })
+      connectProgress(id)
+    }
+  }
+  /** 연결하는 동안 로그인하고 있는 탭: 폰 연결 카드에 그 화면이 작게 실시간으로 보인다 (무엇을 하는지 보이게) */
+  const connectTabs = new Map<string, number>()
+  function connectProgress(id: string) {
+    const tabId = connectTabs.get(id)
+    void link.broadcast({
+      kind: 'connect-progress',
+      id,
+      steps: connectSteps.get(id) ?? [],
+      ...(tabId !== undefined ? { tabId } : {}),
+    })
+  }
+  function connectTab(id: string) {
+    return (tabId: number) => {
+      browserTools.allowRemote(tabId)
+      connectTabs.set(id, tabId)
+      connectProgress(id)
     }
   }
   /** 로봇 확인·본인인증을 사람에게 넘긴 연결 (화면에서 마치면 connectMark가 대화에 알린다) */
@@ -615,6 +635,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (!r.ok) console.warn(`[연결] ${card.id} 끝까지 못 감: ${JSON.stringify(r).slice(0, 300)}`)
       connecting.delete(card.id)
       connectSteps.delete(card.id)
+      connectTabs.delete(card.id)
       // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)
       void link.broadcast({ kind: 'connect-result', id: card.id, ...r }).then(() => connectStatus())
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))

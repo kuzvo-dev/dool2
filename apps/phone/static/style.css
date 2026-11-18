@@ -2071,7 +2071,8 @@ select.rform-input {
     opacity: 0.2;
   }
 }
-.work-shot {
+.work-shot,
+.connect-shot {
   display: block;
   width: 100%;
   max-height: 220px;
@@ -3083,4 +3084,9 @@ textarea.ghosting {
 .tell-actions .btn,
 .tell-actions .btn-ghost {
   flex: 1;
+}
+
+/* 연결 화면: 찾기 결과 묶음 (찾는 글자를 칠 때 이 안만 다시 그린다. 배치는 그대로) */
+.connect-results {
+  display: contents;
 }

@@ -167,6 +167,15 @@ export class BrowserTools {
   }
   /** 두리가 다루는 탭이 바뀌었을 때 (폰 대화에 일하는 화면을 띄운다) */
   onActiveTab?: (tabId: number) => void
+  /**
+   * 서비스 도구가 지금부터 이 탭에서 일한다: 폰이 그 화면을 볼 수 있게 하고 바로 알린다.
+   * 같은 탭을 다시 써도 알린다 (서비스마다 탭 하나를 계속 쓰는데, 폰은 일을 시작할 때마다 알아야 화면을 띄운다)
+   */
+  watchTab(tabId: number) {
+    this.allowRemote(tabId)
+    this._lastTabId = tabId
+    this.onActiveTab?.(tabId)
+  }
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
