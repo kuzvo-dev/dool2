@@ -91,26 +91,41 @@ function screenMark(text: string, re: RegExp): string | undefined {
   return undefined
 }
 
-// 결제 화면에 들어왔다는 표시: 결제 수단 말고도 예약자·투숙객·배송지를 적는 화면이면 결제 화면이다
-// (실측: 호텔스닷컴 결제 화면은 '체크인 고객 정보'·'요금 세부 정보'가 먼저 보이고 결제 수단은 아래에 있다)
-const CHECKOUT_SCREEN =
-  /(?:예약자|주문자|구매자|투숙객|탑승객|예매자|신청자)\s*정보|체크인\s*고객\s*정보|받는\s*(?:분|사람)\s*정보|배송지\s*(?:정보|입력|선택)|결제\s*정보|결제\s*수단/
+// 결제 화면 표시 묶음. 상품·상세 화면에도 '결제 방법' 안내나 '결제 정보' 접힘 버튼은 흔해서(실측: 11번가·지마켓·
+// 무신사·제주항공·트립닷컴), 서로 다른 묶음이 두 가지 이상 함께 보여야 결제 화면으로 본다. 버튼 이름 속 글은 세지 않는다
+const CHECKOUT_MARKS: [string, RegExp][] = [
+  ['결제 수단', /결제\s*(?:수단|방법|방식)|카드\s*번호|간편\s*결제\s*(?:선택|수단)/],
+  [
+    '예약자 정보',
+    /(?:예약자|주문자|구매자|투숙객|탑승객|예매자|신청자|이용자)\s*정보|체크인\s*고객\s*정보|받는\s*(?:분|사람)\s*정보|배송지\s*(?:정보|입력|선택|변경)/,
+  ],
+  ['결제 금액', /(?:총|최종)\s*(?:결제\s*)?금액|결제\s*(?:예정\s*)?금액|결제\s*요금/],
+  ['약관 동의', /(?:약관|결제\s*진행|구매\s*조건|개인정보\s*(?:제3자\s*)?제공)[^\n]{0,12}동의/],
+]
 
 /** 결제 화면(결제 수단·예약자 정보를 넣는 화면)이면 그 표시 말. 주소가 결제 단계여도 결제 화면이다 */
 export function checkoutScreen(text: string, url: string): string | undefined {
-  const pay = payScreen(text) ?? screenMark(text, CHECKOUT_SCREEN)
-  if (pay) return pay
   try {
     const u = new URL(url)
     if (RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)) return '결제 단계 주소'
   } catch {}
-  return undefined
+  const seen = new Set<string>()
+  for (const raw of text.split('\n')) {
+    if (/\[e\d+ /.test(raw)) continue // 버튼·칸 이름 속 글은 세지 않는다
+    const line = raw.replace(/^[#\s>*-]+/, '').trim()
+    if (!line || line.length > 60) continue
+    if (/[.。!?]$|(?:니다|어요|아요|해요|세요|예요|이에요)$/.test(line)) continue
+    for (const [name, re] of CHECKOUT_MARKS) if (re.test(line)) seen.add(name)
+  }
+  return seen.size >= 2 ? [...seen].join('·') : undefined
 }
 
 // 결제 화면으로 '들어가는' 버튼: 상품·객실·좌석 화면의 [예약하기]·[구매하기]·[주문하기]는 결제 화면을 열 뿐이다.
 // 돈이 나가는 건 결제 화면의 마지막 버튼이라, 승인은 거기서 받는다. (버튼 이름 뒤 짧은 덧말은 허용: "예약하기 예약")
+// 앞에 붙는 짧은 말도 허용: 화면 읽기가 이름을 겹쳐 읽거나("예약 예약하기", 호텔스닷컴) 대상이 붙는다("상품 예약하기").
+// '바로·지금·즉시'처럼 그 자리에서 확정될 수 있는 말은 앞말로 받지 않는다
 const CHECKOUT_ENTRY =
-  /^(?:예약\s*하기|구매\s*하기|주문\s*하기|예매\s*하기|바로\s*구매(?:\s*하기)?|구매\s*진행|주문\s*진행)(?:\s+\S{1,6})?$/
+  /^(?:(?:예약|구매|주문|예매|상품|객실|숙소|티켓|좌석)\s+)?(?:예약\s*하기|구매\s*하기|주문\s*하기|예매\s*하기|바로\s*구매(?:\s*하기)?|구매\s*진행|주문\s*진행)(?:\s+\S{1,6})?$/
 
 /** 결제 화면으로 들어가는 버튼 이름인지 (역할 이름은 뺀 버튼 글) */
 export function isCheckoutEntry(name: string): boolean {
@@ -1024,7 +1039,7 @@ export class BrowserTools {
 
   /** 결제 흐름 탭에서, 아직 결제 화면이 아닌 곳의 결제 화면 들어가기 버튼인지 */
   private entersCheckout(tabId: number, page: PageInfo, name: string): boolean {
-    return this.payFlow(tabId) !== undefined && !page.checkout && !page.pay && isCheckoutEntry(name)
+    return this.payFlow(tabId) !== undefined && !page.checkout && isCheckoutEntry(name)
   }
 
   /** 탭이 닫혔다 (사용자·탭 정리): 그 탭의 기록을 지우고, 기다리던 승인은 만료시킨다 */
