@@ -3,6 +3,8 @@
 //
 // 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
+
+import { randomInt } from 'node:crypto'
 import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
@@ -45,6 +47,7 @@ export const BROWSER_TOOLS = [
   'request_login',
   'fill_profile',
   'request_profile',
+  'new_password',
   'request_approval',
   'dialog',
   'steps',
@@ -446,6 +449,26 @@ export function sameFinal(a: string, b: string): boolean {
 export interface VaultLookup {
   findForOrigin(origin: string): Promise<{ id: string; username: string; password: string } | undefined>
   markUsed(id: string): Promise<void>
+  /** 새 비밀번호를 금고에 저장한다 (가입·비번 변경). AI는 값을 받지 않는다 */
+  savePassword?(origin: string, username: string, password: string): Promise<void>
+}
+
+/** 가입·비번 변경에 쓸 강한 비밀번호 (대·소문자·숫자·특수문자 각 1개 이상, 16자). AI에게 주지 않는다 */
+export function makePassword(): string {
+  const U = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const L = 'abcdefghijkmnpqrstuvwxyz'
+  const D = '23456789'
+  const S = '!@#$%^&*'
+  const all = U + L + D + S
+  const pick = (set: string) => set[randomInt(set.length)] as string
+  const chars = [pick(U), pick(L), pick(D), pick(S)]
+  while (chars.length < 16) chars.push(pick(all))
+  // 자리를 섞는다 (앞 네 자리가 늘 종류별로 오지 않게)
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1)
+    ;[chars[i], chars[j]] = [chars[j] as string, chars[i] as string]
+  }
+  return chars.join('')
 }
 
 /** 사람에게 넘긴 탭을 폰 원격 화면으로 다룰 수 있는 시간 */
@@ -757,6 +780,47 @@ export class BrowserTools {
             : '',
         ].filter(Boolean)
         return this.read(tabId, undefined, lines.join(' '))
+      }
+      case 'new_password': {
+        // 가입·비번 변경: 강한 비밀번호를 만들어 넣고 금고에 저장한다. AI는 값을 받지 않는다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        let origin: string
+        try {
+          origin = new URL(page.url).origin
+        } catch {
+          throw new Error('페이지 주소를 알 수 없어요')
+        }
+        const pwRef = String(a.password ?? a.ref ?? '')
+        const confirmRef = a.confirm ? String(a.confirm) : ''
+        if (!pwRef) throw new Error('새 비밀번호를 넣을 칸(password: ref)을 알려 주세요')
+        for (const r of [pwRef, confirmRef].filter(Boolean)) {
+          const c = page.refs.get(r)
+          const role = c?.role ?? ''
+          // 비밀번호 칸만 (글 입력칸은 이름에 '비밀번호'가 있을 때만 — 쿠폰·검색 칸에 넣지 않게)
+          const looksPw =
+            role === '비밀번호칸' ||
+            (role === '입력칸' && /비밀번호|password|passwd|\bpw\b|암호/i.test(c?.name ?? ''))
+          if (!looksPw) throw new Error(`${r}는 비밀번호 칸이 아니에요. 페이지를 다시 읽어 주세요`)
+        }
+        // 아이디(이메일): AI가 정한 것, 없으면 내 정보 이메일
+        let username = String(a.username ?? '').trim()
+        if (!username && this.profile) username = profileValue(await this.profile.get(), 'email') ?? ''
+        if (!username)
+          throw new Error(
+            '어떤 아이디로 가입·변경하는지 알려 주세요(username). 내 정보에 이메일이 없으면 browser_request_profile로 받아요.',
+          )
+        const pw = makePassword()
+        await this.browser.call('fill', { tabId, ref: pwRef, value: pw, origin, password: true })
+        if (confirmRef)
+          await this.browser.call('fill', { tabId, ref: confirmRef, value: pw, origin, password: true })
+        await this.vault?.savePassword?.(origin, username, pw)
+        return this.read(
+          tabId,
+          undefined,
+          `새 비밀번호를 만들어 "${pwRef}"${confirmRef ? `·"${confirmRef}"` : ''} 칸에 넣고, 금고에 ${username} 계정으로 저장했어요. ` +
+            '당신에게는 비밀번호가 오지 않아요. 가입·변경을 마치면 다음부터 두리가 그 계정으로 로그인해요. 비밀번호 규칙(자릿수·특수문자)에 걸리면 사용자에게 알려 주세요.',
+        )
       }
       case 'request_profile': {
         if (!this.profile || !this.requestProfile) throw new Error('내 정보 카드를 띄울 수 없어요')
