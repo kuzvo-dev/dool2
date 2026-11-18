@@ -345,6 +345,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 내 정보(예약자·주문자 칸): 금고와 같은 보관소에, AI는 가린 값만 (browser_fill_profile)
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
+  // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
+  {
+    const saved = store.getSetting('payChoices')
+    if (saved && typeof saved === 'object') browserTools.loadChoices(saved as Record<string, string>)
+    browserTools.onChoice = (host, label) => {
+      const now = (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}
+      store.setSetting('payChoices', { ...now, [host]: label.slice(0, 40) })
+    }
+  }
   const skillsDir = opts.skillsDir ?? defaultSkillsDir()
   // 서비스 도구(커넥터, ADR 0018): 연결 카드 옆 tools.json을 엔진 동작으로 실행한다
   const connectors = new Connectors({
@@ -375,10 +384,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     finalStep: () => readSettings().finalStep ?? 'approve',
   })
   /** 승인: 앱(app:…)이면 화면 제어, 아니면 브라우저 */
-  const approveAny = (id: string) =>
+  const approveAny = (id: string, choice?: string) =>
     browserTools.approvals.get(id)?.url.startsWith('app:')
       ? screenTools.approve(id)
-      : browserTools.approve(id)
+      : browserTools.approve(id, choice)
 
   // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
@@ -1008,12 +1017,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (!card) throw new Error('그런 서비스가 없어요')
         return startConnect(card, () => connectSocial(card, provider), `social:${provider}`)
       },
-      decide: async (id, decision) => {
+      decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
         const r =
           decision === 'reject'
             ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
-            : await approveAny(id)
+            : await approveAny(id, choice)
         // 폰에서 정했으면 그 결과를 AI에게 알려 이어서 하게 한다 (PC 화면은 화면이 직접 알린다)
         const threadId = approvalThread.get(id)
         if (threadId)
@@ -1267,6 +1276,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteConnector = (url) => connectors.forUrl(url)
+  void connectors
+    .paySites()
+    .then((sites) => browserTools.setPayServiceSites(sites))
+    .catch(() => {})
   // 연결을 이어받은 탭: 로그인 화면이 그 서비스 사이트의 다른 주소(login.사이트)면 연결할 때 넣은 계정을 쓴다.
   // 다른 사이트(간편 로그인 공급자 등)로 넘어간 화면에는 넣지 않는다
   browserTools.siteLogin = async (tabId, origin) => {
@@ -1914,10 +1927,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { approval: rec })
       }
       if (b && !c && req.method === 'POST') {
-        const { decision } = ApprovalDecisionSchema.parse(await readJson(req))
+        const { decision, choice } = ApprovalDecisionSchema.parse(await readJson(req))
         if (decision === 'reject')
           return json(res, 200, { ok: browserTools.approvals.reject(b), message: '거절했어요' })
-        return json(res, 200, await approveAny(b))
+        return json(res, 200, await approveAny(b, choice))
       }
     }
 

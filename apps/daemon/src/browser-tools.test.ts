@@ -12,6 +12,7 @@ import {
   parseRefs,
   payScreen,
   type SiteDialog,
+  sameFinal,
   scopeLines,
 } from './browser-tools.js'
 import { ProfileStore } from './profile.js'
@@ -35,6 +36,10 @@ describe('위험한 동작 가리기', () => {
   it('결제 단계 페이지에서는 무엇이든 위험으로 본다', () => {
     expect(classifyRisk('버튼 다음', 'https://order.example.com/checkout/step2')?.kind).toBe('money')
     expect(classifyRisk('버튼 확인', 'https://pay.naver.com/x')?.kind).toBe('money')
+    // 결제 단계 주소에서도 결제가 될 수 없는 이름은 누른다 (닫기·이전·자세히 보기)
+    expect(classifyRisk('버튼 close', 'https://kr.hotels.com/checkout/s')).toBeUndefined()
+    expect(classifyRisk('버튼 자세히 보기', 'https://order.example.com/checkout/step2')).toBeUndefined()
+    expect(classifyRisk('버튼 예약 계속하기', 'https://kr.hotels.com/checkout/s')?.kind).toBe('money')
   })
 
   it('주소가 그대로인 결제 화면에서는 "다음"·"확인"도 막는다', () => {
@@ -886,6 +891,14 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     expect(r.isError).toBeUndefined()
   })
 
+  it('돈 내기 도구가 있는 서비스 사이트면 도구를 거치지 않고 연 탭도 결제 흐름이다', async () => {
+    const tools = new BrowserTools(payBrowser([room, checkout]))
+    tools.setPayServiceSites(['hotels.com'])
+    await tools.run('read', { tabId: 3 })
+    expect(tools.payFlow(3)).toBe('site:hotels.com')
+    expect((await tools.run('click', { tabId: 3, ref: 'e58' })).isError).toBeUndefined()
+  })
+
   it('탭을 닫거나 한 시간이 지나면 결제 흐름을 잊는다', () => {
     const tools = new BrowserTools(payBrowser([room]))
     tools.startPayFlow(3, 'x.prepare', [], 0)
@@ -1085,5 +1098,106 @@ describe('내 정보로 예약자 칸 채우기', () => {
     expect(
       (await tools.run('fill_profile', { tabId: 3, fields: [{ ref: 'e7', key: 'name' }] })).isError,
     ).toBe(true)
+  })
+})
+
+describe('승인 카드에서 결제 수단 고르기', () => {
+  // 실측(호텔스닷컴): 결제 수단을 바꾸면 마지막 버튼 이름도 '네이버페이로 예약하기' ↔ '카드로 예약하기'로 바뀐다
+  function payPage() {
+    let method = '네이버페이'
+    const calls: string[] = []
+    const text = () =>
+      `## 결제 수단\n[e1 라디오 "네이버페이"${method === '네이버페이' ? ' 선택됨' : ''}] [e2 라디오 "카드"${method === '카드' ? ' 선택됨' : ''}]\n총 금액 ₩519,720\n[e9 버튼 "${method}로 예약하기"]`
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}`)
+        if (cmd === 'click' && args?.ref === 'e2') method = '카드'
+        if (cmd === 'click' && args?.ref === 'e1') method = '네이버페이'
+        if (cmd === 'click' && args?.ref === 'e9') method = '완료'
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://kr.hotels.com/checkout/s',
+            title: '결제',
+            text: method === '완료' ? '예약 정보를 확인하고 있어요' : text(),
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3, url: 'https://kr.hotels.com/checkout/s' }
+      },
+    }
+  }
+
+  it('사용자가 고른 수단을 먼저 누르고, 이름이 바뀐 마지막 버튼을 누른다. 다음엔 그 수단이 기본값', async () => {
+    const b = payPage()
+    const tools = new BrowserTools(b)
+    const remembered: string[] = []
+    tools.onChoice = (host, label) => remembered.push(`${host} ${label}`)
+    await tools.run('read', { tabId: 3 })
+    const asked = await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e9',
+      what: '슈피리어 더블룸 3박',
+      where: '호텔스닷컴',
+      amount: '₩519,720',
+      choices: ['e1', 'e2'],
+    })
+    expect(asked.isError).toBeUndefined()
+    const [rec] = tools.approvals.list()
+    expect(rec?.choices).toEqual([
+      { id: 'c1', label: '네이버페이' },
+      { id: 'c2', label: '카드' },
+    ])
+    expect(rec?.choice).toBe('c1')
+    const done = await tools.approve(rec?.id as string, 'c2')
+    expect(done.ok).toBe(true)
+    expect(done.message).toContain('결제 수단 "카드"')
+    expect(done.message).toContain('"카드로 예약하기" 버튼을 눌렀어요')
+    expect(b.calls.filter((c) => c.startsWith('click'))).toEqual(['click e2', 'click e9'])
+    expect(remembered).toEqual(['kr.hotels.com 카드'])
+
+    // 다음 결제에서는 카드가 기본값
+    const b2 = payPage()
+    const tools2 = new BrowserTools(b2)
+    tools2.loadChoices({ 'kr.hotels.com': '카드' })
+    await tools2.run('read', { tabId: 3 })
+    await tools2.run('request_approval', {
+      tabId: 3,
+      ref: 'e9',
+      what: 'x',
+      where: 'y',
+      choices: ['e1', 'e2'],
+    })
+    expect(tools2.approvals.list()[0]?.choice).toBe('c2')
+  })
+
+  it('AI가 선택지를 안 넘겨도 결제 화면의 결제 수단 칸을 승인 카드에 싣는다', async () => {
+    const tools = new BrowserTools(payPage())
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e9', what: 'x', where: 'y' })
+    expect(tools.approvals.list()[0]?.choices?.map((c) => c.label)).toEqual(['네이버페이', '카드'])
+    // 마지막으로 쓴 수단이 없으면 화면에서 지금 골라진 수단이 기본값
+    expect(tools.approvals.list()[0]?.choice).toBe('c1')
+  })
+
+  it('결제·확정 버튼은 선택지로 넣을 수 없다', async () => {
+    const tools = new BrowserTools(payPage())
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e9',
+      what: 'x',
+      where: 'y',
+      choices: ['e9'],
+    })
+    expect(r.isError).toBe(true)
+  })
+
+  it('결제 수단 이름만 다른 같은 마지막 버튼을 알아본다', () => {
+    expect(sameFinal('네이버페이로 예약하기', '카드로 예약하기')).toBe(true)
+    expect(sameFinal('카카오페이로 결제하기', '토스페이로 결제하기')).toBe(true)
+    expect(sameFinal('네이버페이로 예약하기', '예약 취소하기')).toBe(false)
+    expect(sameFinal('결제하기', '결제하기')).toBe(false) // 같은 이름은 sameControl이 본다
   })
 })

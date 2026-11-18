@@ -172,9 +172,16 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
     host = u.hostname
     path = u.pathname
   } catch {}
-  if (RISK_URL.test(path) || RISK_URL.test(host)) return { kind: 'money', reason: '결제 단계 페이지' }
+  // 결제 단계 주소에서는 버튼을 넓게 막는다. 다만 결제가 될 수 없는 이름(닫기·이전·자세히 보기 등)은 누른다
+  // (실측: 호텔스닷컴 결제 화면의 재촉 창 [close]조차 승인을 받아야 했다)
+  if ((RISK_URL.test(path) || RISK_URL.test(host)) && !HARMLESS.test(name))
+    return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
+
+// 결제가 될 수 없는 버튼 이름 (결제 단계 주소에서도 승인 없이 누른다)
+const HARMLESS =
+  /^(?:닫기|창\s*닫기|close|×|✕|x|이전|이전\s*단계|뒤로(?:\s*가기)?|돌아가기|취소|변경|수정|자세히(?:\s*보기)?|더\s*보기|접기|펼치기|전체\s*보기|약관\s*보기|보기|도움말|안내(?:\s*보기)?|알아보기)$/i
 
 // 사이트 확인 창(confirm) 글로 보는 위험: "예약하시겠습니까?", "주문을 진행할까요?", "삭제하시겠습니까?"
 const DIALOG_RISK: [RiskKind, RegExp][] = [
@@ -213,17 +220,23 @@ interface PageInfo {
   checkout?: string
   /** 예약·주문이 확정된 화면이면 그 말 */
   confirmed?: string
+  /** 지금 골라져 있는 라디오·체크박스 표시 */
+  selected?: Set<string>
 }
 
 function pageInfo(url: string, text: string): PageInfo {
   const checkout = checkoutScreen(text, url)
   const confirmed = confirmedScreen(text)
+  const selected = new Set(
+    [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
+  )
   return {
     url,
     refs: parseRefs(text),
     pay: payScreen(text),
     ...(checkout ? { checkout } : {}),
     ...(confirmed ? { confirmed } : {}),
+    ...(selected.size ? { selected } : {}),
   }
 }
 
@@ -305,6 +318,44 @@ export function cookieReject(text: string): string | undefined {
   return undefined
 }
 
+/** 같은 칸 찾기: 표시 번호가 그대로면 그것, 바뀌었으면 같은 역할·같은 글자인 칸이 하나뿐일 때 그것 */
+export function sameControl(
+  refs: Map<string, { role: string; name: string }>,
+  ref: string,
+  role: string,
+  name: string,
+): string | undefined {
+  const at = refs.get(ref)
+  if (at && at.role === role && at.name === name) return ref
+  const same = [...refs].filter(([, v]) => v.role === role && v.name === name)
+  return same.length === 1 ? same[0]?.[0] : undefined
+}
+
+// 결제 수단에 따라 이름이 바뀌는 마지막 버튼 ("네이버페이로 예약하기" ↔ "카드로 예약하기")
+const PAY_METHOD =
+  /(?:네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|L\.?\s*PAY|N\s*pay|신용\s*카드|체크\s*카드|카드|휴대폰|계좌\s*이체|무통장(?:\s*입금)?|포인트|머니)\s*(?:으로|로)?\s*/gi
+
+// 결제 수단을 고르는 칸 이름 (라디오·버튼)
+const PAY_OPTION =
+  /^(?:(?:신용|체크)\s*)?카드(?:\s*결제)?$|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰\s*결제|계좌\s*이체|무통장(?:\s*입금)?|간편\s*결제|(?:지금|나중에|현장에서|숙박\s*시설에서)\s*결제/i
+
+/** 결제 화면의 결제 수단 고르기 칸들 (AI가 choices를 안 넘겨도 승인 카드에 싣는다) */
+export function payOptions(refs: Map<string, { role: string; name: string }>): string[] {
+  return [...refs]
+    .filter(
+      ([, v]) =>
+        ['라디오', '선택지'].includes(v.role) && v.name.length <= 30 && PAY_OPTION.test(v.name.trim()),
+    )
+    .map(([k]) => k)
+    .slice(0, 8)
+}
+
+/** 결제 수단 이름만 다른 같은 마지막 버튼인지 */
+export function sameFinal(a: string, b: string): boolean {
+  const strip = (x: string) => x.replace(PAY_METHOD, '').replace(/\s+/g, ' ').trim()
+  return a !== b && strip(a) !== '' && strip(a) === strip(b)
+}
+
 /** 금고에서 지금 사이트의 로그인 정보를 찾는다 (값은 본체 밖으로 나가지 않는다) */
 export interface VaultLookup {
   findForOrigin(origin: string): Promise<{ id: string; username: string; password: string } | undefined>
@@ -326,6 +377,11 @@ export class BrowserTools {
   private payFlows = new Map<number, { tool: string; at: number }>()
   /** 결제 흐름의 서비스 사이트 (AI가 같은 사이트를 새 탭으로 다시 열어도 결제 흐름이다) */
   private paySites = new Map<string, { tool: string; at: number }>()
+  /** 돈 내기 서비스 도구가 있는 사이트들: 도구를 거치지 않고 연 탭도 결제 흐름이다 */
+  private payServiceSites = new Set<string>()
+  setPayServiceSites(sites: string[]) {
+    this.payServiceSites = new Set(sites.map((x) => x.toLowerCase()))
+  }
 
   readonly approvals: Approvals
   readonly logins: LoginRequests
@@ -379,6 +435,23 @@ export class BrowserTools {
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
+  /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
+  private lastChoice = new Map<string, string>()
+  /** 마지막으로 고른 결제 수단이 바뀌면 (본체가 설정에 남긴다) */
+  onChoice?: (host: string, label: string) => void
+  /** 설정에 남겨 둔 사이트별 마지막 결제 수단을 불러온다 */
+  loadChoices(map: Record<string, string>) {
+    for (const [k, v] of Object.entries(map)) this.lastChoice.set(k, v)
+  }
+  private rememberChoice(url: string, label: string) {
+    let host = ''
+    try {
+      host = new URL(url).hostname
+    } catch {}
+    if (!host) return
+    this.lastChoice.set(host, label)
+    this.onChoice?.(host, label)
+  }
   /** 쿠키 동의 창을 닫아 본 탭·사이트 (같은 곳에서 되풀이하지 않는다) */
   private cookieTried = new Set<string>()
 
@@ -522,11 +595,19 @@ export class BrowserTools {
             ...(a.cancel ? { cancel: String(a.cancel) } : {}),
           })
         const ref = String(a.ref ?? '')
+        const choices = Array.isArray(a.choices)
+          ? (a.choices as unknown[]).map((c) =>
+              typeof c === 'string' ? c : String((c as { ref?: unknown })?.ref ?? ''),
+            )
+          : []
         return this.askApproval(tabId, ref, {
           what: String(a.what ?? ''),
           where: String(a.where ?? ''),
           ...(a.amount ? { amount: String(a.amount) } : {}),
           ...(a.cancel ? { cancel: String(a.cancel) } : {}),
+          ...(choices.length
+            ? { choices, choiceTitle: String(a.choiceTitle ?? '결제 수단').slice(0, 20) }
+            : {}),
         })
       }
       case 'fill_profile': {
@@ -785,12 +866,41 @@ export class BrowserTools {
   async askApproval(
     tabId: number,
     ref: string,
-    d: { what: string; where: string; amount?: string; cancel?: string },
+    d: {
+      what: string
+      where: string
+      amount?: string
+      cancel?: string
+      /** 승인하며 고를 칸들의 표시 (결제 수단 라디오 등) */
+      choices?: string[]
+      choiceTitle?: string
+    },
     kind?: RiskKind,
   ): Promise<ToolResult> {
     const page = this.pages.get(tabId)
     const target = page?.refs.get(ref)
     if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    // 선택지: 결제 화면에 실제로 있는 고르기 칸만. 그 자체가 결제·확정 버튼이면 안 된다
+    const picks: { id: string; label: string; ref: string; role: string; name: string }[] = []
+    // AI가 선택지를 안 넘겨도, 결제 화면에 결제 수단 고르기 칸이 둘 이상이면 본체가 승인 카드에 싣는다
+    // (실측: AI가 도구 설명을 따르지 않고 네이버페이를 스스로 골랐다)
+    const auto = !d.choices?.length && page.checkout ? payOptions(page.refs) : []
+    const asked = d.choices?.length ? d.choices : auto.length >= 2 ? auto : []
+    for (const cref of asked.slice(0, 8)) {
+      const c = page.refs.get(cref)
+      if (!c) throw new Error(`선택지 ${cref}가 화면에 없어요. 페이지를 다시 읽어 주세요`)
+      if (!['라디오', '버튼', '선택지', '체크박스', '탭', '항목', '링크'].includes(c.role))
+        throw new Error(`선택지 ${cref}는 고르는 칸이 아니에요`)
+      if (cref === ref || (c.role !== '라디오' && classifyRisk(`${c.role} ${c.name}`, page.url)))
+        throw new Error(`선택지 ${cref}("${c.name}")는 결제·확정 버튼이라 선택지로 쓸 수 없어요`)
+      picks.push({
+        id: `c${picks.length + 1}`,
+        label: c.name.slice(0, 40),
+        ref: cref,
+        role: c.role,
+        name: c.name,
+      })
+    }
     // 승인은 결제 화면에서 받는다: 결제 화면을 여는 버튼에 승인을 받으면, 결제 화면의 진짜 금액·조건을 못 본 채 승인하게 된다
     if (this.entersCheckout(tabId, page, target.name))
       throw new Error(
@@ -812,6 +922,16 @@ export class BrowserTools {
     const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
       | { data?: string }
       | undefined
+    // 기본 선택: 이 사이트에서 마지막으로 고른 것, 없으면 첫째
+    let host = ''
+    try {
+      host = new URL(page.url).hostname
+    } catch {}
+    const last = this.lastChoice.get(host)
+    const preferred =
+      picks.find((p) => last && (p.name === last || p.name.includes(last))) ??
+      picks.find((p) => page.selected?.has(p.ref)) ??
+      picks[0]
     const rec = this.approvals.create({
       tabId,
       ref,
@@ -825,6 +945,16 @@ export class BrowserTools {
       ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
       ...(shot?.data ? { shot: shot.data } : {}),
+      ...(picks.length
+        ? {
+            choices: picks.map(({ id, label }) => ({ id, label })),
+            choiceTitle: d.choiceTitle ?? '결제 수단',
+            ...(preferred ? { choice: preferred.id } : {}),
+            choiceRefs: Object.fromEntries(
+              picks.map((p) => [p.id, { ref: p.ref, role: p.role, name: p.name }]),
+            ),
+          }
+        : {}),
     })
     return {
       content: [
@@ -1009,7 +1139,7 @@ export class BrowserTools {
    * 사용자가 승인한 버튼을 누른다. 누르기 직전 페이지를 다시 읽어, 승인한 버튼 글자와 주소가 그대로일 때만.
    * 화면용 토큰을 가진 쪽(사용자 화면)만 부를 수 있다 (AI의 도구 토큰으로는 못 부른다)
    */
-  async approve(id: string): Promise<{ ok: boolean; message: string }> {
+  async approve(id: string, choice?: string): Promise<{ ok: boolean; message: string }> {
     const rec: ApprovalRecord | undefined = this.approvals.take(id)
     if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
     const dialogText = this.dialogApprovals.get(id)
@@ -1051,7 +1181,35 @@ export class BrowserTools {
         this.approvals.finish(id, false, msg)
         return { ok: false, message: msg }
       }
-      let r = (await this.browser.call('click', { tabId: rec.tabId, ref: rec.ref }, 30_000)) as {
+      // 고른 결제 수단(선택지)을 먼저 누른다. 그 뒤 화면을 다시 읽어 마지막 버튼이 같은지 본다
+      let base = s
+      let finalRef = rec.ref
+      let finalName = rec.label
+      let chosen: string | undefined
+      if (choice && rec.choiceRefs) {
+        const c = rec.choiceRefs[choice]
+        const fail = (why: string) => {
+          const msg = `${why} 결제는 하지 않았어요. 페이지를 다시 읽고 승인을 다시 받아 주세요.`
+          this.approvals.finish(id, false, msg)
+          return { ok: false, message: msg }
+        }
+        if (!c) return fail('고른 결제 수단을 찾을 수 없어요.')
+        const at = sameControl(parseRefs(s.text), c.ref, c.role, c.name)
+        if (!at) return fail(`"${c.name}" 칸이 화면에서 바뀌었어요.`)
+        await this.browser.call('click', { tabId: rec.tabId, ref: at }, 30_000)
+        base = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
+        this.pages.set(rec.tabId, pageInfo(base.url, base.text))
+        if (base.url !== rec.url) return fail(`"${c.name}"을(를) 고르자 다른 화면으로 넘어갔어요.`)
+        const refs = parseRefs(base.text)
+        const next =
+          sameControl(refs, rec.ref, rec.role, rec.label) ??
+          [...refs].find(([, v]) => v.role === rec.role && sameFinal(v.name, rec.label))?.[0]
+        if (!next) return fail(`"${c.name}"을(를) 고르자 마지막 버튼("${rec.label}")이 바뀌었어요.`)
+        finalRef = next
+        finalName = refs.get(next)?.name ?? rec.label
+        chosen = c.name
+      }
+      let r = (await this.browser.call('click', { tabId: rec.tabId, ref: finalRef }, 30_000)) as {
         url?: string
         title?: string
         dialog?: SiteDialog
@@ -1067,11 +1225,11 @@ export class BrowserTools {
       }
       // 눌렀는데 아무 일도 안 일어났으면 '눌렀어요'라고 하지 않는다 (실측: 쿠키 창 막이 덮어 클릭이 먹지 않았는데
       // '눌렀어요'로 알려, AI가 원인을 '로그인'으로 짐작했다). 새 창·확인 창·주소·화면 글 중 하나라도 바뀌면 먹은 것이다
-      if (!also && !r.dialog && !r.newTabId && (r.url ?? s.url) === s.url) {
+      if (!also && !r.dialog && !r.newTabId && (r.url ?? base.url) === base.url) {
         const after = (await this.browser
           .call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })
           .catch(() => undefined)) as Snapshot | undefined
-        if (after && after.url === s.url && after.text === s.text) {
+        if (after && after.url === base.url && after.text === base.text) {
           this.pages.set(rec.tabId, pageInfo(after.url, after.text))
           const msg =
             `"${rec.label}" 버튼을 눌렀는데 화면이 그대로예요` +
@@ -1081,7 +1239,8 @@ export class BrowserTools {
           return { ok: false, message: msg }
         }
       }
-      const msg = `"${rec.label}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      if (chosen) this.rememberChoice(rec.url, chosen)
+      const msg = `${chosen ? `결제 수단 "${chosen}"을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
@@ -1117,6 +1276,8 @@ export class BrowserTools {
       }
       if (host === site || host.endsWith(`.${site}`)) return s.tool
     }
+    for (const site of this.payServiceSites)
+      if (host === site || host.endsWith(`.${site}`)) return `site:${site}`
     return undefined
   }
 

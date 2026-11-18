@@ -15,6 +15,8 @@ export const APPROVAL_KEEP_MS = 60 * 60_000
 export interface ApprovalRecord extends ApprovalView {
   /** 승인 카드에 보여 줄 화면 캡처 (JPEG base64) */
   shot?: string
+  /** 선택지 id → 결제 화면의 그 칸(표시와 글자). 화면에는 보내지 않는다 */
+  choiceRefs?: Record<string, { ref: string; role: string; name: string }>
 }
 
 export interface NewApproval {
@@ -30,6 +32,10 @@ export interface NewApproval {
   amount?: string
   cancel?: string
   shot?: string
+  choices?: ApprovalView['choices']
+  choiceTitle?: string
+  choice?: string
+  choiceRefs?: ApprovalRecord['choiceRefs']
 }
 
 export class Approvals {

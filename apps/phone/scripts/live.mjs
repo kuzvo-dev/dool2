@@ -95,6 +95,21 @@ const shop = createServer((req, res) => {
     )
     return
   }
+  // 결제 화면 (결제 흐름 시험): 배송지·결제 수단 라디오·총 결제 금액. 결제 수단을 바꾸면 마지막 버튼 이름도 바뀐다
+  if (req.url?.startsWith('/checkout')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>주문 결제</title>
+<h1>주문 결제</h1><p>제주 귤 3kg 1개</p>
+<h2>배송지 정보</h2><p>서울 강남구 테헤란로 123 (시험)</p>
+<h2>결제 수단</h2>
+<p><label><input type="radio" name="pay" value="카드" checked> 카드</label>
+<label><input type="radio" name="pay" value="네이버페이"> 네이버페이</label>
+<label><input type="radio" name="pay" value="카카오페이"> 카카오페이</label></p>
+<h3>총 결제 금액 15,900원</h3>
+<button id="go">카드로 결제하기</button>
+<script>for (const r of document.querySelectorAll('input[name=pay]')) r.onchange = () => { go.textContent = r.value + '로 결제하기' }
+go.onclick = () => { document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2>') }</script>`)
+    return
+  }
   if (req.url?.startsWith('/me')) {
     res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
     return

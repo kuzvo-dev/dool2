@@ -3107,3 +3107,28 @@ textarea.ghosting {
   padding-top: 12px;
   resize: none;
 }
+
+/* 승인 카드: 어떤 걸로 결제할까요? (사이트가 받는 결제 수단) */
+.approve-choices {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.approve-choices .chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.approve-choices .chip {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface-2, #23262d);
+  color: var(--ink-2, #c9ced6);
+  box-shadow: none;
+  font-weight: 600;
+}
+.approve-choices .chip.on {
+  background: var(--mint, #5fe0b4);
+  color: #0d1110;
+}

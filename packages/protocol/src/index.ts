@@ -586,9 +586,21 @@ export interface ApprovalView {
   expiresAt: string
   /** 처리 결과 (눌렀어요 / 화면이 바뀌어 못 눌렀어요) */
   result?: string
+  /**
+   * 승인할 때 고르는 것 (결제 수단, '지금 결제·숙박 시설에서 결제'). 결제 화면에 실제로 있는 칸만 들어 있다.
+   * 사용자가 고른 것은 승인 서명에 함께 묶인다
+   */
+  choices?: { id: string; label: string }[]
+  /** 선택지 제목 (예: '결제 수단') */
+  choiceTitle?: string
+  /** 기본으로 고른 것 (이 사이트에서 마지막으로 쓴 것, 없으면 화면에서 이미 골라진 것) */
+  choice?: string
 }
 
-export const ApprovalDecisionSchema = z.object({ decision: z.enum(['approve', 'reject']) })
+export const ApprovalDecisionSchema = z.object({
+  decision: z.enum(['approve', 'reject']),
+  choice: z.string().max(40).optional(),
+})
 
 /** 대화 기록에 남기는 승인 요청 (카드를 다시 그릴 때 본체에 상태를 묻는다) */
 export interface ApprovalRecordMessage {
@@ -856,7 +868,7 @@ export type PhoneToPc =
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
-  | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string }
+  | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string; choice?: string }
   /** 로그인 카드에 넣은 아이디·비밀번호 (PC 금고에만 저장된다) */
   | { kind: 'login'; id: string; username: string; password: string }
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장을 달라 */
