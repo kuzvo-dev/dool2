@@ -224,6 +224,8 @@ interface PageInfo {
   selected?: Set<string>
   /** 이름 없는 버튼·라디오 → 바로 뒤 글 (쿠팡 결제 화면: [e8 버튼] 다음 줄 '쿠페이 머니: 0원') */
   near?: Map<string, string>
+  /** 표시가 화면 글에서 나오는 순서 (결제 수단 아래 딸린 목록을 찾을 때) */
+  pos?: Map<string, number>
 }
 
 /** 이름 없는 버튼·라디오에 붙은 글: 같은 줄 뒤, 없으면 다음 줄 (':' 앞까지, 다른 표시 줄은 아님) */
@@ -246,7 +248,9 @@ function pageInfo(url: string, text: string): PageInfo {
     [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
   )
   const near = nearLabels(text)
+  const pos = new Map([...text.matchAll(/\[(e\d+) /g)].map((m) => [m[1] as string, m.index ?? 0]))
   return {
+    ...(pos.size ? { pos } : {}),
     url,
     refs: parseRefs(text),
     pay: payScreen(text),
@@ -917,11 +921,21 @@ export class BrowserTools {
     return this.read(at, a.maxChars, lines.join('\n'))
   }
 
-  /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined) */
+  /** 고칠 때 볼 일한 기록 (못 읽은 결제 화면 목록의 모양 등) */
+  onNote?: (kind: string, data: Record<string, unknown>) => void
+
+  /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined, 그 이유는 일한 기록에) */
   private async selectOptions(tabId: number, ref: string) {
-    const r = (await this.browser.call('options', { tabId, ref }).catch(() => undefined)) as
-      | { options?: { label: string; selected: boolean }[] | null }
+    const r = (await this.browser.call('options', { tabId, ref }, 15_000).catch(() => undefined)) as
+      | { options?: { label: string; selected: boolean }[] | null; why?: string }
       | undefined
+    if (!r?.options && r?.why) {
+      let host = ''
+      try {
+        host = new URL(this.pages.get(tabId)?.url ?? '').hostname
+      } catch {}
+      this.onNote?.('select-unread', { host, ref, why: r.why })
+    }
     return r?.options ?? undefined
   }
 
@@ -931,10 +945,15 @@ export class BrowserTools {
     const selects = [...page.refs].filter(([, v]) => v.role === '선택 상자').slice(0, 6)
     for (const [ref] of selects) {
       if (out.length >= 3) break
-      const opts = (await this.selectOptions(tabId, ref))?.slice(0, 12)
+      let opts = (await this.selectOptions(tabId, ref))?.slice(0, 40)
       if (!opts) continue
       const title = subChoiceTitle(opts.map((o) => o.label))
       if (!title) continue
+      // 카드 목록에 등록 카드(번호 일부가 가려진 것)가 있으면 그것만: 뒤에 붙은 카드사 이름은 새 카드 등록이다
+      // (실측 쿠팡: 등록 카드 4장 뒤에 'KB국민카드·삼성카드…'가 이어진다)
+      const saved = opts.filter((o) => /\*{3,}/.test(o.label))
+      if (title === '카드' && saved.length) opts = saved
+      opts = opts.slice(0, 12)
       out.push({
         key: `s${out.length + 1}`,
         title,
@@ -1046,11 +1065,21 @@ export class BrowserTools {
       host = new URL(page.url).hostname
     } catch {}
     const last = this.lastChoice.get(host)
-    const preferred =
-      picks.find((p) => last && (p.name === last || p.name.includes(last))) ??
+    // 지금 골라진 결제 수단: 화면 표시(선택됨), 없으면 카드·할부 목록 바로 위에 있는 결제 수단
+    // (실측 쿠팡: 고른 수단 버튼에 표시가 없고, 고른 수단 아래에만 등록 카드·할부 목록이 보인다)
+    const at = (r: string) => page.pos?.get(r) ?? -1
+    const firstSub = subs.length ? Math.min(...subs.map((g) => at(g.ref))) : -1
+    const onPage =
       picks.find((p) => page.selected?.has(p.ref)) ??
+      (firstSub >= 0
+        ? picks.filter((p) => at(p.ref) >= 0 && at(p.ref) < firstSub).sort((a, b) => at(b.ref) - at(a.ref))[0]
+        : undefined)
+    const preferred =
+      picks.find(
+        (p) => last && (p.name === last || p.near === last || (p.name || p.near || '').includes(last)),
+      ) ??
+      onPage ??
       picks[0]
-    const onPage = picks.find((p) => page.selected?.has(p.ref))
     const rec = this.approvals.create({
       tabId,
       ref,

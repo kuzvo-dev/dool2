@@ -280,7 +280,11 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     }
     if (el instanceof HTMLTextAreaElement && el.value) return ` 값="${clean(el.value, 60)}"`
     if (el instanceof HTMLSelectElement) return ` 값="${clean(el.selectedOptions[0]?.textContent, 40)}"`
-    if (el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true')
+    if (
+      el.getAttribute('aria-checked') === 'true' ||
+      el.getAttribute('aria-selected') === 'true' ||
+      el.getAttribute('aria-pressed') === 'true'
+    )
       return ' 선택됨'
     if (el.getAttribute('aria-expanded') === 'true') return ' 펼침'
     if ((el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') return ' 비활성'
@@ -653,33 +657,183 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   }
 }
 
-/** 펼침 목록(select)의 고를 것들. select가 아니면 null */
-export function pageSelectOptions(ref: string) {
+/**
+ * 펼침 목록의 고를 것들. 진짜 select는 그대로 읽고, 꾸민 목록(role=combobox: 쿠팡 결제 화면의 카드·할부)은
+ * 근처에 숨은 select가 있으면 그것을, 없으면 눌러 열어 새로 보인 항목을 읽은 뒤 다시 닫는다.
+ * 못 읽으면 options 없이 왜 못 읽었는지(why: 요소 모양)를 돌려준다 (일한 기록에 남겨 고칠 때 쓴다)
+ */
+export async function pageSelectOptions(
+  ref: string,
+): Promise<{ options?: { label: string; selected: boolean }[]; why?: string }> {
   type State = { refs: Map<string, WeakRef<Element>> }
   const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
-  if (!(el instanceof HTMLSelectElement)) return null
-  return [...el.options]
-    .filter((o) => !o.disabled && o.textContent?.trim())
-    .slice(0, 40)
-    .map((o) => ({
-      label: (o.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
-      selected: o.selected,
-    }))
+  const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
+  const shownEl = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'
+  }
+  const press = (t: Element) => {
+    for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
+      t.dispatchEvent(new MouseEvent(k, { bubbles: true, cancelable: true, view: window }))
+  }
+  /**
+   * 목록 열기. 상자를 눌러 보고, 안 열리면 감싼 칸(…control)을 누르고, 그래도 안 열리면 초점을 주고 ↓ 키
+   * (실측 쿠팡: react-select. 보이는 상자는 감싼 칸이고 role=combobox는 숨은 입력칸이라 그 자체를 눌러서는 안 열린다)
+   */
+  const openList = async (box: HTMLElement) => {
+    const opened = () => box.getAttribute('aria-expanded') === 'true'
+    const wait = () => new Promise((r) => setTimeout(r, 350))
+    press(box)
+    await wait()
+    if (opened()) return
+    const control = box.closest('[class*="control"],[class*="Control"]') ?? box.parentElement?.parentElement
+    if (control) {
+      press(control)
+      await wait()
+      if (opened()) return
+    }
+    box.focus()
+    box.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }),
+    )
+    await wait()
+  }
+  const fromSelect = (sel: HTMLSelectElement) =>
+    [...sel.options]
+      .filter((o) => !o.disabled && norm(o.textContent))
+      .slice(0, 40)
+      .map((o) => ({ label: norm(o.textContent).slice(0, 60), selected: o.selected }))
+  if (el instanceof HTMLSelectElement) return { options: fromSelect(el) }
+  if (!el || !(el instanceof HTMLElement)) return { why: 'no-element' }
+  const shape = (e: Element) =>
+    `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ''}${[...e.attributes]
+      .filter((a) => /^(role|aria-|class|type|name|data-)/.test(a.name))
+      .map((a) => `[${a.name}=${a.value.slice(0, 40)}]`)
+      .join('')}`
+  // 꾸민 목록 뒤에 숨은 진짜 select (모양만 바꾼 목록)
+  let up: Element | null = el
+  for (let i = 0; i < 3 && up; i++, up = up.parentElement) {
+    const sel = up.querySelector('select')
+    if (sel && sel.options.length >= 2) return { options: fromSelect(sel) }
+  }
+  const before = new Set([...document.querySelectorAll('body *')].filter(shownEl))
+  const wasOpen = el.getAttribute('aria-expanded') === 'true'
+  if (!wasOpen) await openList(el)
+  const ids = `${el.getAttribute('aria-controls') ?? ''} ${el.getAttribute('aria-owns') ?? ''}`
+    .trim()
+    .split(/\s+/)
+  let items: Element[] = []
+  for (const id of ids) {
+    const list = id ? document.getElementById(id) : null
+    if (list) items = [...list.querySelectorAll('[role=option],li')].filter(shownEl)
+    if (items.length) break
+  }
+  const fresh = [...document.querySelectorAll('body *')].filter((e) => shownEl(e) && !before.has(e))
+  if (items.length < 2)
+    items = fresh.filter((e) => e.matches('[role=option],li,[role=menuitem],[role=menuitemradio]'))
+  // 그래도 없으면 새로 보인 글 조각 중 가장 안쪽(글만 있는 것)
+  if (items.length < 2)
+    items = fresh.filter((e) => {
+      const t = norm(e.textContent)
+      return !!t && t.length <= 60 && ![...e.children].some((c) => norm(c.textContent))
+    })
+  items = items.filter((e) => !items.some((o) => o !== e && e.contains(o)))
+  const now = norm(el.getAttribute('aria-valuetext') || el.textContent || el.nextElementSibling?.textContent)
+  const options = items.slice(0, 40).map((o) => {
+    const label = norm(o.textContent).slice(0, 60)
+    const selected =
+      o.getAttribute('aria-selected') === 'true' ||
+      /(?:^|[\s_-])(?:selected|active|is-selected|on|checked)(?:$|[\s_-])/i.test(o.className) ||
+      (!!now && label === now)
+    return { label, selected }
+  })
+  // 연 목록은 닫아 둔다
+  if (!wasOpen && (el.getAttribute('aria-expanded') === 'true' || items.some(shownEl))) {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 150))
+    if (el.getAttribute('aria-expanded') === 'true' || items.some(shownEl)) press(el)
+    await new Promise((r) => setTimeout(r, 150))
+  }
+  if (options.length >= 2) return { options: options.filter((o) => o.label) }
+  const sample = fresh
+    .slice(0, 6)
+    .map((e) => `${shape(e)}"${norm(e.textContent).slice(0, 20)}"`)
+    .join(' | ')
+  return {
+    why: `${shape(el)} < ${el.parentElement ? shape(el.parentElement) : ''} · 연 뒤 expanded=${el.getAttribute('aria-expanded')} 새로 보인 요소 ${fresh.length}개: ${sample}`.slice(
+      0,
+      900,
+    ),
+  }
 }
 
-/** 펼침 목록에서 글자가 같은 것을 고른다 (사이트가 듣는 input·change를 같이 보낸다) */
-export function pageSelectChoose(ref: string, label: string) {
+/** 펼침 목록에서 글자가 같은 것을 고른다 (진짜·숨은 select는 값을 바꾸고 input·change, 꾸민 목록은 열어 그 항목을 누른다) */
+export async function pageSelectChoose(ref: string, label: string) {
   type State = { refs: Map<string, WeakRef<Element>> }
   const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
-  if (!(el instanceof HTMLSelectElement)) return { ok: false, error: `${ref}는 펼침 목록이 아니에요` }
-  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
-  const opt = [...el.options].find((o) => !o.disabled && norm(o.textContent ?? '') === norm(label))
-  if (!opt) return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
-  el.value = opt.value
-  opt.selected = true
-  el.dispatchEvent(new Event('input', { bubbles: true }))
-  el.dispatchEvent(new Event('change', { bubbles: true }))
-  return { ok: true, label: norm(opt.textContent ?? '') }
+  const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
+  const setSelect = (sel: HTMLSelectElement) => {
+    const opt = [...sel.options].find((o) => !o.disabled && norm(o.textContent) === norm(label))
+    if (!opt) return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
+    sel.value = opt.value
+    opt.selected = true
+    sel.dispatchEvent(new Event('input', { bubbles: true }))
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    return { ok: true, label: norm(opt.textContent) }
+  }
+  if (el instanceof HTMLSelectElement) return setSelect(el)
+  if (!(el instanceof HTMLElement)) return { ok: false, error: `${ref}는 펼침 목록이 아니에요` }
+  // 꾸민 목록 뒤에 숨은 진짜 select면 그 값을 바꾼다 (읽을 때와 같은 순서)
+  let up: Element | null = el
+  for (let i = 0; i < 3 && up; i++, up = up.parentElement) {
+    const sel = up.querySelector('select')
+    if (sel && sel.options.length >= 2) return setSelect(sel)
+  }
+  const press = (t: Element) => {
+    for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
+      t.dispatchEvent(new MouseEvent(k, { bubbles: true, cancelable: true, view: window }))
+  }
+  const shown = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return r.width > 0 && r.height > 0
+  }
+  const before = new Set([...document.querySelectorAll('body *')].filter(shown))
+  if (el.getAttribute('aria-expanded') !== 'true') {
+    // 읽을 때와 같은 순서로 연다: 상자 → 감싼 칸 → ↓ 키
+    const opened = () => el.getAttribute('aria-expanded') === 'true'
+    const wait = () => new Promise((r) => setTimeout(r, 350))
+    press(el)
+    await wait()
+    const control = el.closest('[class*="control"],[class*="Control"]') ?? el.parentElement?.parentElement
+    if (!opened() && control) {
+      press(control)
+      await wait()
+    }
+    if (!opened()) {
+      el.focus()
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }),
+      )
+      await wait()
+    }
+  }
+  // 읽을 때처럼 새로 보인 것 중 글이 같은 가장 안쪽 (늘 DOM에 있는 aria-controls 목록이면 보이는 것 전부)
+  const cands = [...document.querySelectorAll('body *')].filter(
+    (e) =>
+      shown(e) &&
+      (!before.has(e) || !!el.getAttribute('aria-controls')) &&
+      e !== el &&
+      !el.contains(e) &&
+      norm(e.textContent) === norm(label),
+  )
+  const opt = cands.filter((e) => !cands.some((o) => o !== e && e.contains(o)))[0]
+  if (!opt) {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
+  }
+  press(opt)
+  await new Promise((r) => setTimeout(r, 250))
+  return { ok: true, label: norm(opt.textContent) }
 }
 
 /** 마지막 수단: 초점을 못 받는 요소를 페이지 안에서 누른다 */

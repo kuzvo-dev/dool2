@@ -95,6 +95,39 @@ const shop = createServer((req, res) => {
     )
     return
   }
+  // 쿠팡 모양 결제 화면: 이름 없는 결제 수단 버튼(바로 뒤 글), 꾸민 펼침 목록(role=combobox, 눌러야 항목이 보임)
+  if (req.url?.startsWith('/checkout2')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>주문/결제</title>
+<style>.combo{display:inline-block;min-width:200px;border:1px solid #999;padding:4px;cursor:pointer}.list{border:1px solid #999;margin:0;padding:0;list-style:none}.list li{padding:4px;cursor:pointer}.list li.selected{font-weight:bold}</style>
+<h1>주문/결제</h1><p>제주 귤 3kg 1개</p>
+<h2>결제수단</h2>
+<div><button id="m1"></button>쿠페이 머니: 0원</div>
+<div><button id="m2"></button>신용/체크카드</div>
+<div id="cardbox"><div><div role="combobox" class="combo" id="cc"></div><span id="ccv">신한카드 / 5155****3361</span></div>
+<div><div role="combobox" class="combo" id="mm"></div><span id="mmv">일시불</span></div></div>
+<h3>총 결제 금액 15,900원</h3>
+<button id="go">결제하기</button>
+<script>
+let method = '카드'
+m1.onclick = () => { method = '쿠페이 머니'; cardbox.hidden = true }
+m2.onclick = () => { method = '카드'; cardbox.hidden = false }
+function combo(box, view, items) {
+  box.addEventListener('click', () => {
+    const open = box.parentElement.querySelector('ul')
+    if (open) { open.remove(); return }
+    const ul = document.createElement('ul'); ul.className = 'list'
+    for (const t of items) { const li = document.createElement('li'); li.textContent = t; if (t === view.textContent) li.className = 'selected'
+      li.addEventListener('click', () => { view.textContent = t; ul.remove() }); ul.append(li) }
+    box.parentElement.append(ul)
+  })
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') box.parentElement.querySelector('ul')?.remove() })
+}
+combo(cc, ccv, ['신한카드 / 5155****3361', '국민카드 / 9409****1234'])
+combo(mm, mmv, ['일시불', '2개월(무이자)', '3개월(무이자)'])
+go.onclick = () => { const how = method === '카드' ? ccv.textContent + ' · ' + mmv.textContent : method; document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2><p>' + how + '</p>') }
+</script>`)
+    return
+  }
   // 결제 화면 (결제 흐름 시험): 배송지·결제 수단 라디오·총 결제 금액. 결제 수단을 바꾸면 마지막 버튼 이름도 바뀐다
   if (req.url?.startsWith('/checkout')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>주문 결제</title>

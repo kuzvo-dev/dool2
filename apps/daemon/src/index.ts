@@ -352,6 +352,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 내 정보(예약자·주문자 칸): 금고와 같은 보관소에, AI는 가린 값만 (browser_fill_profile)
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
+  browserTools.onNote = (kind, data) => journal.write(kind, data)
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')
