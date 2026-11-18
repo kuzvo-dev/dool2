@@ -887,7 +887,9 @@ export class BrowserTools {
         // 실제 계정을 만들거나 비밀번호를 바꾸는 일: 사용자가 고른 사이트에서만 (지침만으로는 막지 못한다)
         const key = siteKey(origin)
         if (!this.signupAllowed(key)) {
-          const said = this.askSignup?.(key, key, purpose)
+          // 카드에는 서비스 이름으로 (커넥터가 있으면 "알라딘", 없으면 주소)
+          const name = (await this.siteConnector?.(page.url).catch(() => undefined))?.name ?? key
+          const said = this.askSignup?.(name, key, purpose)
           if (said === 'ok') this.allowSignup(key)
           else if (said === 'asked')
             return {
@@ -896,8 +898,8 @@ export class BrowserTools {
                   type: 'text',
                   text:
                     purpose === 'reset'
-                      ? `${key} 비밀번호를 새로 바꿀지 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`
-                      : `${key}에 가입할지(또는 이미 계정이 있는지) 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`,
+                      ? `${name} 비밀번호를 새로 바꿀지 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`
+                      : `${name}에 가입할지(또는 이미 계정이 있는지) 사용자 폰에 물었어요. 아직 아무것도 넣지 않았어요. 이번 답은 "폰에서 골라 주세요"라고 짧게 끝내요. 고르면 이어서 하라고 알려 드려요.`,
                 },
               ],
             }

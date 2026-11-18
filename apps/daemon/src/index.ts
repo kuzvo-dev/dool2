@@ -1304,7 +1304,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         site,
         host: key,
         field: 'choice',
-        label: purpose === 'reset' ? `${site} 비밀번호를 새로 바꿀까요?` : `${site}는 어떻게 로그인할까요?`,
+        label:
+          purpose === 'reset'
+            ? `${site} 비밀번호를 새로 바꿀까요?`
+            : `${josa(site, '은/는')} 어떻게 로그인할까요?`,
         hint:
           purpose === 'reset'
             ? '비밀번호 찾기로 새 비밀번호를 만들어 금고에 넣어요. 예전 비밀번호는 더 못 써요.'
