@@ -1271,6 +1271,7 @@ describe('승인 카드에서 결제 수단 고르기', () => {
           { id: 's1o2', label: '국민카드 / 940915******123*' },
         ],
         choice: 's1o1',
+        when: 'c2',
       },
       {
         key: 's2',
@@ -1281,8 +1282,11 @@ describe('승인 카드에서 결제 수단 고르기', () => {
           { id: 's2o3', label: '3개월(무이자)' },
         ],
         choice: 's2o1',
+        when: 'c2',
       },
     ])
+    // 고른 수단 버튼에 표시가 없어도, 카드·할부 목록 바로 위의 '신용/체크카드'가 지금 골라진 것이다
+    expect(rec?.choice).toBe('c2')
     const done = await tools.approve(rec?.id as string, 'c2,s1o1,s2o3')
     expect(done.ok).toBe(true)
     expect(b.months).toBe('3개월(무이자)')

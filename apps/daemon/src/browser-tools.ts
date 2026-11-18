@@ -224,6 +224,8 @@ interface PageInfo {
   selected?: Set<string>
   /** 이름 없는 버튼·라디오 → 바로 뒤 글 (쿠팡 결제 화면: [e8 버튼] 다음 줄 '쿠페이 머니: 0원') */
   near?: Map<string, string>
+  /** 표시가 화면 글에서 나오는 순서 (결제 수단 아래 딸린 목록을 찾을 때) */
+  pos?: Map<string, number>
 }
 
 /** 이름 없는 버튼·라디오에 붙은 글: 같은 줄 뒤, 없으면 다음 줄 (':' 앞까지, 다른 표시 줄은 아님) */
@@ -246,7 +248,9 @@ function pageInfo(url: string, text: string): PageInfo {
     [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
   )
   const near = nearLabels(text)
+  const pos = new Map([...text.matchAll(/\[(e\d+) /g)].map((m) => [m[1] as string, m.index ?? 0]))
   return {
+    ...(pos.size ? { pos } : {}),
     url,
     refs: parseRefs(text),
     pay: payScreen(text),
@@ -1046,11 +1050,21 @@ export class BrowserTools {
       host = new URL(page.url).hostname
     } catch {}
     const last = this.lastChoice.get(host)
-    const preferred =
-      picks.find((p) => last && (p.name === last || p.name.includes(last))) ??
+    // 지금 골라진 결제 수단: 화면 표시(선택됨), 없으면 카드·할부 목록 바로 위에 있는 결제 수단
+    // (실측 쿠팡: 고른 수단 버튼에 표시가 없고, 고른 수단 아래에만 등록 카드·할부 목록이 보인다)
+    const at = (r: string) => page.pos?.get(r) ?? -1
+    const firstSub = subs.length ? Math.min(...subs.map((g) => at(g.ref))) : -1
+    const onPage =
       picks.find((p) => page.selected?.has(p.ref)) ??
+      (firstSub >= 0
+        ? picks.filter((p) => at(p.ref) >= 0 && at(p.ref) < firstSub).sort((a, b) => at(b.ref) - at(a.ref))[0]
+        : undefined)
+    const preferred =
+      picks.find(
+        (p) => last && (p.name === last || p.near === last || (p.name || p.near || '').includes(last)),
+      ) ??
+      onPage ??
       picks[0]
-    const onPage = picks.find((p) => page.selected?.has(p.ref))
     const rec = this.approvals.create({
       tabId,
       ref,
