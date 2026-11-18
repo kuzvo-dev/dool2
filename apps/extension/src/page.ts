@@ -64,7 +64,7 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     filled?: WeakSet<Element>
     /** 표시마다 읽을 때의 앞쪽 글 (누르기 직전에 견줘 다른 칸이 됐는지 본다) */
     ctx?: Map<string, string>
-    ctxOf?: (el: Element) => string
+    ctxOf?: (el: Element, max?: number) => string
   }
   const g = globalThis as unknown as { __dool2?: State }
   g.__dool2 ??= { refs: new Map(), ids: new WeakMap(), seq: 0 }
@@ -74,15 +74,15 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
   st.ctx = ctx
   // 요소 앞쪽 글 300자. 목록을 굴리면 칸을 재활용하는 사이트(캐치테이블 가게 목록)는 같은 칸에 다른 가게를
   // 그린다: 날짜 칸 글("11.27 (금) 예약 가능")은 같아도 앞쪽의 가게 이름·설명이 달라진다
-  const ctxOf = (el: Element) => {
+  const ctxOf = (el: Element, max = 300) => {
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     w.currentNode = el
     let out = ''
-    for (let n = w.previousNode(); n && out.length < 300; n = w.previousNode()) {
+    for (let n = w.previousNode(); n && out.length < max; n = w.previousNode()) {
       const t = (n as Text).data.replace(/\s+/g, ' ').trim()
       if (t) out = `${t} ${out}`
     }
-    return out.slice(-300)
+    return out.slice(-max)
   }
   st.ctxOf = ctxOf
 
@@ -468,12 +468,22 @@ export function pageMarkText(
   return { ok: true, ref, name: norm((best.el as HTMLElement).innerText ?? '').slice(0, 60) }
 }
 
+/** 읽을 때의 앞쪽 글(was)이 지금 앞쪽 글(now)에서 사라졌나: 다른 칸이 그려졌다는 뜻.
+ *  더해진 글은 괜찮다 (pageLocate 안에 같은 규칙이 있다) */
+export function ctxReplaced(was: string, now: string): boolean {
+  if (now.endsWith(was)) return false
+  const have = new Set(now.split(' '))
+  const words = was.split(' ').filter((x) => x.length > 1)
+  const gone = words.filter((x) => !have.has(x)).length
+  return gone >= 3 && gone >= words.length * 0.2
+}
+
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
 export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: false; error: string } {
   type State = {
     refs: Map<string, WeakRef<Element>>
     ctx?: Map<string, string>
-    ctxOf?: (el: Element) => string
+    ctxOf?: (el: Element, max?: number) => string
   }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
@@ -511,12 +521,24 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   // 두 칸 옆 날짜가 눌렸다 (27일을 눌렀는데 25일)
   anchor.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
   // 읽은 뒤 같은 칸에 다른 것이 그려졌으면 누르지 않는다 (가게 목록 칸 재활용: 아세누 27일을 눌렀는데 다른 가게가 열렸다)
+  // 글이 더해진 것(아이디를 넣으면 생기는 '지우기' 버튼·안내 등)은 괜찮다. 읽을 때 있던 글이 사라졌을 때만
+  // 다른 칸이 그려진 것으로 본다 (무신사·카카오 로그인: 아이디를 채우자 비밀번호 칸 앞 글이 늘어 채우기가 막혔다).
+  // 입력은 목록 칸 재활용과 상관없어 보지 않는다
+  // (규칙은 ctxReplaced와 같다. 페이지에 넣는 함수라 따로 부를 수 없어 여기 그대로 둔다)
   const was = st?.ctx?.get(ref)
-  if (was !== undefined && st?.ctxOf && st.ctxOf(el) !== was)
-    return {
-      ok: false,
-      error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
+  if (mode !== 'type' && was !== undefined && st?.ctxOf) {
+    const now = st.ctxOf(el, 900)
+    if (!now.endsWith(was)) {
+      const have = new Set(now.split(' '))
+      const words = was.split(' ').filter((x) => x.length > 1)
+      const gone = words.filter((x) => !have.has(x)).length
+      if (gone >= 3 && gone >= words.length * 0.2)
+        return {
+          ok: false,
+          error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
+        }
     }
+  }
   const r = box()
   if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref}가 화면에 보이지 않아요` }
   const x = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1)
