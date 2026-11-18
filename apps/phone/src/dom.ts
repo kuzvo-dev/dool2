@@ -158,6 +158,8 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
     return hit.el
   }
   const el = doori(mood, size)
+  // 다시 그릴 때 새로 만들지 않고 옮겨 쓰는 부품이라는 표시 (main.ts의 holdLive)
+  el.dataset.liveSlot = slot
   const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el, mood }
   liveSlots.set(slot, rec)
   doori3dModule ??= import(DOORI3D) as Promise<Doori3d>

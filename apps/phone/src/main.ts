@@ -549,7 +549,7 @@ async function receive(env: Envelope) {
       break
     }
   }
-  render()
+  renderSoon()
 }
 
 function onStream(ev: DaemonStreamEvent) {
@@ -1209,7 +1209,24 @@ let shell:
     }
   | undefined
 
+/**
+ * PC에서 온 소식으로 다시 그릴 때: 한 프레임에 한 번만 그린다.
+ * 답이 흘러오는 동안에는 소식이 초당 수십 번 와서, 올 때마다 그리면 화면 전체가 그만큼 다시 만들어졌다
+ */
+let renderQueued = 0
+function renderSoon() {
+  if (renderQueued) return
+  renderQueued = requestAnimationFrame(() => {
+    renderQueued = 0
+    render()
+  })
+}
+
 function render() {
+  if (renderQueued) {
+    cancelAnimationFrame(renderQueued)
+    renderQueued = 0
+  }
   keepConv()
   const s = st.screen
   if (s.name !== 'app') {
@@ -1479,38 +1496,53 @@ function renderTop() {
         : st.busy || st.pending.length
           ? (st.steps.at(-1) ?? '대답하는 중…')
           : ''
+  const pcOn = st.online && !st.pcSilent
+  const pcName = shortPc(st.saved?.pcName)
+  // 바뀐 것이 없으면 그대로 둔다. 답이 흘러오는 동안 매번 버튼을 새로 만들면
+  // 누르는 사이에 버튼이 사라져서 메뉴·두리 버튼이 안 눌리는 일이 생겼다
+  const sig = [mood, status, waiting ? 1 : 0, pcOn ? 1 : 0, pcName].join('|')
+  if (t.dataset.sig === sig && t.childElementCount) return
+  t.dataset.sig = sig
+  if (!t.childElementCount)
+    t.replaceChildren(
+      h(
+        'button',
+        { class: 'fbtn', label: '메뉴', onclick: () => openOverlay({ kind: 'drawer' }) },
+        icon('menu'),
+      ),
+      h(
+        'button',
+        { class: 'agent', label: '두리 패널 열기', onclick: () => openOverlay({ kind: 'agent' }) },
+        h('span', { class: 'agent-av' }),
+        h('span', { class: 'agent-tag' }),
+      ),
+      h(
+        'button',
+        { class: 'fpill', label: '내 PC', onclick: () => setTab('settings') },
+        h('span', { class: 'dot' }),
+        h('span', { class: 'fpill-name' }),
+      ),
+    )
+  const av = t.querySelector<HTMLElement>('.agent-av')
+  if (av && av.dataset.mood !== mood) {
+    av.dataset.mood = mood
+    av.replaceChildren(doori(mood))
+  }
+  t.querySelector('.fpill .dot')?.classList.toggle('work', pcOn)
+  const nameEl = t.querySelector('.fpill-name')
+  if (nameEl && nameEl.textContent !== pcName) nameEl.textContent = pcName
+  // 상태 섬: 글이 바뀌면 앞 크기에서 새 크기로 스프링 (가로가 먼저 닿고 세로가 따라온다), 글은 흐려졌다 또렷해진다
+  const old = t.querySelector<HTMLElement>('.agent-tag')
+  if (!old || old.dataset.status === status) return
+  const before = old.dataset.status !== undefined ? { w: old.offsetWidth, h: old.offsetHeight } : undefined
   const tag = h(
     'span',
     { class: 'agent-tag' },
     '두리',
-    status && h('span', { class: waiting ? 'ask' : !st.online || st.pcSilent ? 'off' : '', text: status }),
+    status && h('span', { class: waiting ? 'ask' : !pcOn ? 'off' : '', text: status }),
   )
-  const agent = h(
-    'button',
-    { class: 'agent', label: '두리 패널 열기', onclick: () => openOverlay({ kind: 'agent' }) },
-    h('span', { class: 'agent-av' }, doori(mood)),
-    tag,
-  )
-  const pill = h(
-    'button',
-    { class: 'fpill', label: '내 PC', onclick: () => setTab('settings') },
-    h('span', { class: st.online && !st.pcSilent ? 'dot work' : 'dot' }),
-    shortPc(st.saved?.pcName),
-  )
-  // 상태 섬: 글이 바뀌면 앞 크기에서 새 크기로 스프링 (가로가 먼저 닿고 세로가 따라온다), 글은 흐려졌다 또렷해진다
-  const old = t.querySelector<HTMLElement>('.agent-tag')
-  const before =
-    old && old.dataset.status !== status ? { w: old.offsetWidth, h: old.offsetHeight } : undefined
   tag.dataset.status = status
-  t.replaceChildren(
-    h(
-      'button',
-      { class: 'fbtn', label: '메뉴', onclick: () => openOverlay({ kind: 'drawer' }) },
-      icon('menu'),
-    ),
-    agent,
-    pill,
-  )
+  old.replaceWith(tag)
   if (before) {
     const w = tag.offsetWidth
     const ht = tag.offsetHeight
@@ -1706,14 +1738,14 @@ function renderPage() {
   const { page, chat } = shell
   page.dataset.tab = st.tab
   if (st.tab === 'chat') {
+    pageDrawn = ''
     if (page.firstChild !== chat || page.childNodes.length !== 1) page.replaceChildren(chat)
     syncChat()
     if (stickToBottom) requestAnimationFrame(() => page.scrollTo({ top: page.scrollHeight }))
     return
   }
-  const y = page.scrollTop
   const ctx = lifeCtx()
-  page.replaceChildren(
+  const view =
     st.tab === 'feed'
       ? feedView(ctx)
       : st.tab === 'ideas'
@@ -1724,9 +1756,62 @@ function renderPage() {
             ? libraryView(ctx)
             : st.tab === 'settings'
               ? settingsView()
-              : connectView(),
-  )
+              : connectView()
+  // 모양이 그대로면 손대지 않는다. PC에서 소식이 올 때마다 탭 화면을 통째로 다시 꽂으면
+  // 그림이 깜빡이고, 찾기 칸에 쓰던 글자의 커서와 키보드가 사라진다
+  const drawn = `${st.tab}\n${view.outerHTML}`
+  if (drawn === pageDrawn && page.firstChild && page.firstChild !== chat) return
+  pageDrawn = drawn
+  const y = page.scrollTop
+  const typing = typingIn(page)
+  page.replaceChildren(view)
   page.scrollTop = y
+  typing?.()
+}
+
+/** 마지막으로 그린 탭 화면의 모양 (대화 탭은 바뀐 말만 따로 맞춘다) */
+let pageDrawn = ''
+
+/**
+ * 다시 그리기 전에: 그 안에서 글을 쓰는 중이면 쓰던 글자·커서를 기억했다가 새 칸에 돌려준다.
+ * (id가 있는 칸만. 새 칸이 이미 값을 갖고 그려졌으면 그 값을 둔다)
+ */
+function typingIn(box: HTMLElement): (() => void) | undefined {
+  const fields = [...box.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[id], textarea[id]')]
+    .filter((f) => f.type !== 'file' && f.value)
+    .map((f) => ({ id: f.id, value: f.value }))
+  const a = document.activeElement
+  const active =
+    (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) && a.id && box.contains(a)
+      ? { id: a.id, at: safeCaret(a) }
+      : undefined
+  if (!fields.length && !active) return undefined
+  return () => {
+    for (const f of fields) {
+      const el = document.getElementById(f.id) as HTMLInputElement | null
+      if (!el || !box.contains(el) || el.value) continue
+      el.value = f.value
+      // 칸을 보고 그리는 것(인증번호 상자)이 따라오게
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    if (!active) return
+    const el = document.getElementById(active.id) as HTMLInputElement | null
+    if (!el || !box.contains(el)) return
+    el.focus({ preventScroll: true })
+    if (active.at !== null)
+      try {
+        el.setSelectionRange(active.at, active.at)
+      } catch {}
+  }
+}
+
+/** 커서 자리 (이메일·숫자 칸은 물으면 오류가 난다) */
+function safeCaret(el: HTMLInputElement | HTMLTextAreaElement): number | null {
+  try {
+    return el.selectionStart
+  } catch {
+    return null
+  }
 }
 
 // ── 대화: 바뀐 말만 ──
@@ -2862,24 +2947,25 @@ function connectView() {
 
 // ── 겹쳐 뜨는 것: 메뉴 서랍 · 두리 패널 · 승인 시트 · 로그인 시트 ──
 
+/** 마지막으로 그린 겹침 화면의 모양 (같으면 다시 꽂지 않는다) */
+let overlayDrawn = ''
+/** 닫히는 움직임 (닫히는 중에 다시 열면 그만둔다) */
+let overlayClosing: Animation[] = []
+
 function renderOverlay() {
   const o = shell?.overlay
   if (!o) return
   const ov = st.overlay
-  if (!ov) {
-    o.replaceChildren()
-    o.hidden = true
-    delete o.dataset.key
-    return
-  }
+  if (!ov) return closeOverlay(o)
+  for (const a of overlayClosing) a.cancel()
+  overlayClosing = []
+  delete o.dataset.closing
   o.hidden = false
   // 꾹 누르는 중·보내는 중에 다시 그리면 버튼이 처음으로 돌아가서, 그동안은 그대로 둔다
   const key = 'id' in ov ? `${ov.kind}:${ov.id}` : ov.kind
   if (o.dataset.key === key && o.querySelector('.hold.holding, .hold.busy, .hold.done')) return
   const opening = o.dataset.key !== key
-  o.dataset.key = key
-  o.dataset.kind = ov.kind
-  const scrim = h('div', { class: 'scrim', onclick: () => openOverlay(undefined) })
+  const putBack = holdLive(o)
   const body =
     ov.kind === 'drawer'
       ? drawerView()
@@ -2900,20 +2986,79 @@ function renderOverlay() {
                     : ov.kind === 'info'
                       ? infoSheet(ov.id)
                       : loginSheet(ov.id)
-  // 입력 중인 칸은 다시 그려도 커서를 잃지 않게
-  const active = document.activeElement
-  const typing =
-    active instanceof HTMLInputElement && o.contains(active)
-      ? { id: active.id, s: active.selectionStart }
-      : undefined
+  // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
+  // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
+  const drawn = body.outerHTML
+  if (!opening && drawn === overlayDrawn && o.childElementCount) return putBack()
+  overlayDrawn = drawn
+  o.dataset.key = key
+  o.dataset.kind = ov.kind
+  const scrim = h('div', { class: 'scrim', onclick: () => openOverlay(undefined) })
+  // 내용만 바뀐 것이면 제자리에서 바꾼다 (올라오는 움직임은 처음 열 때 한 번만)
+  if (!opening) {
+    scrim.classList.add('still')
+    body.classList.add('still')
+  }
+  const was = o.lastElementChild
+  const y = !opening && was instanceof HTMLElement ? was.scrollTop : 0
+  const typing = opening ? undefined : typingIn(o)
   o.replaceChildren(scrim, body)
+  if (y) body.scrollTop = y
   // 처음 열 때만: 메뉴 줄이 하나씩 떠오른다
   if (opening) riseIn(body.querySelectorAll(':scope > .set-row, :scope > .navi, :scope > .row'))
-  if (typing?.id) {
-    const el = document.getElementById(typing.id) as HTMLInputElement | null
-    el?.focus()
-    if (typing.s !== null) el?.setSelectionRange(typing.s, typing.s)
+  typing?.()
+}
+
+/**
+ * 움직이는 두리처럼 새로 만들지 않고 옮겨 쓰는 부품이 지금 있는 자리.
+ * 새 화면을 만들면 그 부품이 새 화면으로 옮겨 가므로, 새 화면을 버릴 때는 제자리로 돌려놓는다
+ */
+function holdLive(box: HTMLElement): () => void {
+  const spots = [...box.querySelectorAll<HTMLElement>('[data-live-slot]')].map((el) => ({
+    el,
+    parent: el.parentNode,
+    next: el.nextSibling,
+  }))
+  return () => {
+    for (const s of spots) if (s.el.parentNode !== s.parent) s.parent?.insertBefore(s.el, s.next)
   }
+}
+
+/** 닫기: 열릴 때의 반대로 내려가며 사라진다 (뚝 끊기지 않게) */
+function closeOverlay(o: HTMLElement) {
+  if (o.hidden || o.dataset.closing) return
+  const done = () => {
+    o.replaceChildren()
+    o.hidden = true
+    delete o.dataset.closing
+    overlayClosing = []
+  }
+  // 같은 것을 바로 다시 열어도 처음 여는 것으로 본다
+  delete o.dataset.key
+  overlayDrawn = ''
+  const els = [...o.children] as HTMLElement[]
+  if (!els.length || reducedMotion()) return done()
+  o.dataset.closing = '1'
+  overlayClosing = els.map((el) =>
+    el.animate(
+      el.classList.contains('scrim')
+        ? [{ opacity: 1 }, { opacity: 0 }]
+        : el.classList.contains('drawer')
+          ? [{ transform: 'none' }, { transform: 'translateX(-100%)' }]
+          : [
+              { transform: 'none', opacity: 1 },
+              { transform: 'translateY(24px)', opacity: 0 },
+            ],
+      { duration: 170, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' },
+    ),
+  )
+  const closing = overlayClosing
+  const end = () => {
+    if (overlayClosing === closing) done()
+  }
+  void Promise.all(closing.map((a) => a.finished)).then(end, () => {})
+  // 화면이 가려져 움직임이 멈춰도(앱이 뒤로 감) 닫히다 만 채로 남지 않게
+  setTimeout(end, 600)
 }
 
 function drawerView() {
