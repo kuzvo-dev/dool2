@@ -2951,6 +2951,16 @@ textarea.ghosting {
   display: grid;
   gap: 10px;
 }
+/* 내 정보 카드: 칸 이름을 위에, 시트가 길면 안에서 굴린다 */
+.info-sheet .profile-form {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  padding-bottom: 2px;
+}
+.info-sheet .field-label {
+  display: grid;
+  gap: 4px;
+}
 /* 공급자 계정 시트의 로고 칸 */
 .brand-tile .brand-mark {
   position: static;

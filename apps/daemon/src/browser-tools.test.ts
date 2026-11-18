@@ -14,6 +14,7 @@ import {
   type SiteDialog,
   scopeLines,
 } from './browser-tools.js'
+import { ProfileStore } from './profile.js'
 
 const PAGE = `# 두리 시험 가게
 검색어 [e1 입력칸 "검색어" 값="사과"] [e2 버튼 "검색"]
@@ -981,5 +982,99 @@ describe('승인한 버튼이 실제로 눌렸는지', () => {
   it('화면 글이 바뀌거나 새 창이 뜨면 눌린 것이다', async () => {
     expect((await approveOnce(stuckBrowser({}, true))).result.ok).toBe(true)
     expect((await approveOnce(stuckBrowser({ newTabId: 9 }))).result.ok).toBe(true)
+  })
+})
+
+describe('내 정보로 예약자 칸 채우기', () => {
+  const FORM = `체크인 고객 정보
+[e3 입력칸 "성 *"] [e4 입력칸 "이름 *"] [e5 입력칸 "이메일 주소 *"] [e6 입력칸 "전화번호 *"] [e7 버튼 "예약 완료하기"]`
+  function formBrowser2() {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://kr.hotels.com/checkout/s',
+            title: '결제',
+            text: FORM,
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3 }
+      },
+    }
+  }
+  function store(p: Record<string, string>) {
+    const m = new Map<string, string>([['profile.v1', JSON.stringify(p)]])
+    return new ProfileStore({
+      get: async (k) => m.get(k),
+      set: async (k, v) => void (v ? m.set(k, v) : m.delete(k)),
+    })
+  }
+
+  it('칸과 항목만 받아 본체가 채우고, AI에게는 가린 값만 돌려준다', async () => {
+    const b = formBrowser2()
+    const tools = new BrowserTools(b)
+    tools.profile = store({
+      name_en_last: 'HONG',
+      name_en_first: 'GILDONG',
+      email: 'hong.gd@example.com',
+      phone: '010-1234-5678',
+    })
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('fill_profile', {
+      tabId: 3,
+      fields: [
+        { ref: 'e3', key: 'name_en_last' },
+        { ref: 'e4', key: 'name_en_first' },
+        { ref: 'e5', key: 'email' },
+        { ref: 'e6', key: 'phone_local' },
+      ],
+    })
+    expect(r.isError).toBeUndefined()
+    const fills = b.calls.filter((c) => c[0] === 'fill').map((c) => c[1])
+    expect(fills).toEqual([
+      { tabId: 3, ref: 'e3', value: 'HONG', origin: 'https://kr.hotels.com' },
+      { tabId: 3, ref: 'e4', value: 'GILDONG', origin: 'https://kr.hotels.com' },
+      { tabId: 3, ref: 'e5', value: 'hong.gd@example.com', origin: 'https://kr.hotels.com' },
+      { tabId: 3, ref: 'e6', value: '1012345678', origin: 'https://kr.hotels.com' },
+    ])
+    const t = text(r)
+    expect(t).toContain('내 정보로 채웠어요')
+    expect(t).toContain('ho*****@example.com')
+    expect(t).not.toContain('hong.gd@')
+    expect(t).not.toContain('1234-5678')
+  })
+
+  it('없는 항목은 채우지 않고 내 정보 카드를 띄우라고 한다', async () => {
+    const b = formBrowser2()
+    const tools = new BrowserTools(b)
+    tools.profile = store({ name_en_last: 'HONG' })
+    const asked: string[][] = []
+    tools.requestProfile = (fields) => {
+      asked.push(fields)
+      return 'req-1'
+    }
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('fill_profile', {
+      tabId: 3,
+      fields: [
+        { ref: 'e3', key: 'name_en_last' },
+        { ref: 'e5', key: 'email' },
+      ],
+    })
+    expect(text(r)).toContain('이메일이(가) 없어요')
+    expect(text(r)).toContain('browser_request_profile')
+    expect(b.calls.filter((c) => c[0] === 'fill')).toHaveLength(1)
+    const card = await tools.run('request_profile', { fields: ['email', 'phone'], reason: '호텔 예약자 칸' })
+    expect(card.isError).toBeUndefined()
+    expect(asked).toEqual([['email', 'phone']])
+    // 버튼에는 채우지 않는다
+    expect(
+      (await tools.run('fill_profile', { tabId: 3, fields: [{ ref: 'e7', key: 'name' }] })).isError,
+    ).toBe(true)
   })
 })

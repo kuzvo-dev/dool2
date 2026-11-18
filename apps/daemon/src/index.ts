@@ -82,6 +82,7 @@ import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js
 import { Life, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
+import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import { ScreenTools } from './screen-tools.js'
 import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
@@ -341,6 +342,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
+  // 내 정보(예약자·주문자 칸): 금고와 같은 보관소에, AI는 가린 값만 (browser_fill_profile)
+  const profile = new ProfileStore(secrets)
+  browserTools.profile = profile
   const skillsDir = opts.skillsDir ?? defaultSkillsDir()
   // 서비스 도구(커넥터, ADR 0018): 연결 카드 옆 tools.json을 엔진 동작으로 실행한다
   const connectors = new Connectors({
@@ -1178,7 +1182,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void link.broadcast({ kind: 'info-request', request })
     void link
       .notify({
-        title: `${request.site}: ${request.field === 'otp' ? '인증번호가 필요해요' : '입력이 필요해요'}`,
+        title:
+          request.field === 'form'
+            ? '내 정보를 한 번만 넣어 주세요'
+            : `${request.site}: ${request.field === 'otp' ? '인증번호가 필요해요' : '입력이 필요해요'}`,
         body: request.hint ?? request.label,
         tag: `info-${request.id}`,
         url: '',
@@ -1186,6 +1193,43 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .catch(() => {})
   }
   infoRequests.onDone = (id) => void link.broadcast({ kind: 'info-done', id })
+  // 내 정보 카드: 처음 한 번만 받아 금고에 두고, 저장되면 그 대화로 이어서 하라고 알린다
+  browserTools.requestProfile = (fields, reason) => {
+    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const answer = infoRequests.ask(
+      {
+        site: '두리',
+        host: '내 정보',
+        field: 'form',
+        label: '내 정보',
+        hint: `${reason || '예약·주문 칸을 채우려고 해요'}. 한 번만 넣어 두면 다음부터는 두리가 알아서 채워요.`,
+        fields: fields.map((key) => ({ key, ...PROFILE_FIELDS[key] })),
+      },
+      30 * 60_000,
+    )
+    const id = infoRequests.pending().at(-1)?.id
+    void answer.then(async (raw) => {
+      if (!raw) return
+      let input: Record<string, unknown> = {}
+      try {
+        input = JSON.parse(raw) as Record<string, unknown>
+      } catch {
+        return
+      }
+      const { saved, bad } = await profile.update(input)
+      journal.write('profile', { saved, bad })
+      if (!threadId) return
+      const names = (list: string[]) =>
+        list.map((f) => PROFILE_FIELDS[f as keyof typeof PROFILE_FIELDS].label).join('·')
+      followUp(
+        threadId,
+        appNote(
+          `내 정보를 저장했어요(${names(saved) || '없음'})${bad.length ? `. 형식이 맞지 않아 빠진 것: ${names(bad)}` : ''}. browser_fill_profile로 칸을 채우고 하던 일을 이어서 해 주세요.`,
+        ),
+      )
+    })
+    return id
+  }
   /**
    * 연결 중 사람에게 넘기는 대신 폰에 묻는다: 공급자 계정은 로그인 카드(금고)로, 인증번호는 입력 화면으로
    */
@@ -2035,6 +2079,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
       }
       if (b && !c && req.method === 'DELETE') return json(res, 200, { ok: await vault.remove(b) })
+    }
+
+    // 내 정보 (예약자·주문자 칸): 화면은 가린 값만 받는다. 고칠 땐 넣은 칸만 바뀐다 (빈 값 = 지우기)
+    if (a === 'profile' && !b) {
+      if (req.method === 'GET') return json(res, 200, await profile.masked())
+      if (req.method === 'PUT') {
+        const body = (await readJson(req)) as Record<string, unknown>
+        const r = await profile.update(body && typeof body === 'object' ? body : {})
+        journal.write('profile', r)
+        return json(res, 200, { ...r, ...(await profile.masked()) })
+      }
+      if (req.method === 'DELETE') {
+        await profile.clear()
+        return json(res, 200, { ok: true })
+      }
+    }
+    // 정보 요청(인증번호·내 정보 카드)에 PC 화면에서 답하기 (폰은 연결로 답한다)
+    if (a === 'info' && !b && req.method === 'GET')
+      return json(res, 200, { requests: infoRequests.pending() })
+    if (a === 'info' && b && !c && req.method === 'POST') {
+      const body = (await readJson(req)) as { value?: unknown }
+      return json(res, 200, {
+        ok: infoRequests.answer(b, typeof body?.value === 'string' ? body.value : undefined),
+      })
     }
 
     if (a === 'settings' && !b) {
