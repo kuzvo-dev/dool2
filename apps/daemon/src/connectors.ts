@@ -732,7 +732,7 @@ export class Connectors {
       const say = f(s.say)
       if (s.login)
         return text(
-          `${say} 로그인이 필요한 화면이에요. 연결이 안 됐으면 connect_ask로 연결 카드를, 연결했는데 로그인이 풀렸으면 browser_handoff로 사람에게 넘겨 주세요. [탭 ${c.need()}]`,
+          `${say} 로그인이 필요한 화면이에요. connect_ask를 부르세요. 연결한 적이 있으면(금고 계정·간편 로그인) 두리 본체가 알아서 다시 로그인하고, 처음이면 연결 카드가 떠요. [탭 ${c.need()}]`,
           true,
         )
       if (s.blocked)
@@ -949,7 +949,7 @@ export const PAY_ORDER = [
   '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정을 읽고, 예약자·주문자 칸은 browser_fill_profile로 채운 뒤(없는 항목은 browser_request_profile) 마지막 버튼에 browser_request_approval을 써요. 결제 수단·결제 시점처럼 고를 칸은 직접 고르지 말고 choices로 넘겨 승인 카드에서 사용자가 고르게 해요. 승인은 이때 한 번이에요.',
   '④ 카드 번호·결제 비밀번호·본인인증처럼 사람만 할 수 있는 것만 browser_handoff로 넘겨요. 나머지를 통째로 넘기지 않아요.',
   '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
-  '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 연결 전엔 connect_ask, 로그인 화면이면 browser_request_login.',
+  '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login.',
 ].join('\n')
 
 function firstText(r: ToolResult): string {
