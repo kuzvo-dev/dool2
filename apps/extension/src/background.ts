@@ -936,9 +936,24 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       } catch {
         throw new Error(`주소 패턴이 틀렸어요: ${String(a.url)}`)
       }
-      const until = Date.now() + Math.min(Math.max(Number(a.timeoutMs) || 10_000, 500), 30_000)
+      const wait = Math.min(Math.max(Number(a.timeoutMs) || 10_000, 500), 30_000)
+      const until = Date.now() + wait
+      // 새 탭이 열리자마자 데이터를 부르면 듣기가 붙기 전에 지나간다(사용자 Chrome에서 유니클로·다이소몰이 들쭉날쭉).
+      // 반쯤 기다려도 그 주소를 하나도 못 들었으면 한 번만 새로 고쳐 다시 부르게 한다
+      const halfway = Date.now() + wait / 2
+      let reloaded = false
       for (;;) {
         const hit = (netLog.get(tabId) ?? []).filter((e) => e.done && re.test(e.url)).at(-1)
+        if (
+          !hit &&
+          !reloaded &&
+          Date.now() > halfway &&
+          !(netLog.get(tabId) ?? []).some((e) => re.test(e.url))
+        ) {
+          reloaded = true
+          await cdp(tabId, 'Page.reload', { ignoreCache: false }).catch(() => {})
+          await sleep(300)
+        }
         if (hit) {
           const r = await cdp<{ body: string; base64Encoded: boolean }>(tabId, 'Network.getResponseBody', {
             requestId: hit.id,
