@@ -155,6 +155,31 @@ export function toolLabel(name: string): string {
   return TOOL_LABEL[n] ?? SERVICE_VERB.find(([re]) => re.test(n))?.[1] ?? '일하는'
 }
 
+/**
+ * 단계가 일어난 곳 (일하는 카드에서 서비스 아이콘으로 묶는 기준).
+ * - 웹: 사이트 주소 "search.naver.com" (주소가 없는 browser_ 도구는 지금 보고 있는 곳 here)
+ * - 서비스 도구: "tool:catchtable_search" (어느 연결 카드인지는 화면이 카드 목록으로 찾는다)
+ * - PC 앱 "app", 파일 "file". 그 밖(기억·목표처럼 두리 안에서 하는 일)은 undefined
+ */
+export function toolPlace(name: string, input?: unknown, here?: string): string | undefined {
+  const n = name.replace(/^(mcp__dool2__|dool2_)/, '')
+  const arg = (input ?? {}) as { url?: unknown; tool?: unknown }
+  if (n.startsWith('browser_')) {
+    if (typeof arg.url === 'string') {
+      try {
+        const host = new URL(arg.url).host
+        if (host) return host
+      } catch {}
+    }
+    return here
+  }
+  if (n.startsWith('screen_')) return 'app'
+  if (n.startsWith('file_')) return 'file'
+  if (n === 'service_call') return typeof arg.tool === 'string' ? `tool:${arg.tool}` : undefined
+  if (!(n in TOOL_LABEL) && /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(n)) return `tool:${n}`
+  return undefined
+}
+
 /** 폰에서 보낸 사진 표시: 말 끝의 "[사진: 파일이름]" */
 export const PHOTO_MARK = '[사진: '
 /** 말에서 사진 표시를 떼어 낸다: { text, photo } */

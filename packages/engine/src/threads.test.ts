@@ -234,13 +234,33 @@ describe('일한 과정 기록 (WorkLog)', () => {
     expect(log.record()).toEqual({
       kind: 'work',
       steps: [
-        { text: '캐치테이블을 열어 볼게요.', ms: 3000 },
-        { text: '페이지 읽는 중', ms: 5000 },
+        {
+          text: '캐치테이블을 열어 볼게요.',
+          act: '웹페이지 여는 중',
+          place: 'app.catchtable.co.kr',
+          ms: 3000,
+        },
+        { text: '페이지 읽는 중', act: '페이지 읽는 중', place: 'app.catchtable.co.kr', ms: 5000 },
       ],
       count: 2,
       ms: 8500,
       host: 'app.catchtable.co.kr',
     })
+  })
+
+  it('탭 번호만 받은 웹 도구는 그 탭의 사이트로 묶는다', () => {
+    const tabs: Record<number, string> = { 7: 'search.naver.com', 9: 'www.sparkplus.co.kr' }
+    const log = new WorkLog(Date.now, (id) => tabs[id])
+    log.tool('mcp__dool2__browser_open', '', { url: 'https://search.naver.com/?q=1' })
+    log.tool('mcp__dool2__browser_open', '', { url: 'https://www.sparkplus.co.kr/' })
+    log.tool('mcp__dool2__browser_click', '', { tabId: 7, ref: 'e1' })
+    log.tool('mcp__dool2__browser_read', '', { tabId: 9 })
+    expect(log.record()?.steps.map((s) => s.place)).toEqual([
+      'search.naver.com',
+      'www.sparkplus.co.kr',
+      'search.naver.com',
+      'www.sparkplus.co.kr',
+    ])
   })
 
   it('기억·목표 같은 속일만 했으면 남기지 않는다', () => {

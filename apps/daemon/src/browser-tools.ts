@@ -456,6 +456,15 @@ export class BrowserTools {
     this.logins = logins ?? new LoginRequests()
   }
 
+  /** 탭이 마지막으로 읽힌 사이트 주소 (일한 과정 기록이 단계를 사이트별로 묶을 때). 모르면 undefined */
+  tabHost(tabId: number): string | undefined {
+    try {
+      return new URL(this.pages.get(tabId)?.url ?? '').host || undefined
+    } catch {
+      return undefined
+    }
+  }
+
   /** 두리가 마지막으로 다룬 탭 (폰의 "두리 화면 보기"가 실시간으로 본다) */
   private _lastTabId?: number
   get lastTabId(): number | undefined {
