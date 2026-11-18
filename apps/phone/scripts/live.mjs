@@ -22,6 +22,22 @@ const tmp = keep ?? mkdtempSync(join(tmpdir(), 'dool2-live-'))
 const shop = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   // 로그인 페이지: 두리 금고에 없는 사이트라 사람에게 넘긴다 (원격 화면 시험용)
+  // 낯선 가게 (DOOL2_SHOP_ODD=1, 자동 로그인이 화면을 못 알아보는 경우 시험): '로그인'이라는 말이 없고 칸 이름도 다르다.
+  // 정해 둔 순서로는 못 들어가서 두리(AI)가 대화에서 화면을 읽고 이어받아야 한다
+  if (req.url?.startsWith('/odd/enter')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>단골 창구</title>
+<h1>단골 창구</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>어서 오세요</h1><p>'+this.no.value+'님 반가워요</p><a href=/odd>로그아웃</a>'">
+<p><input name="no" placeholder="단골 번호" style="font-size:20px;padding:8px"></p>
+<p><input name="pw" type="password" placeholder="암호" style="font-size:20px;padding:8px"></p>
+<p><button style="font-size:20px;padding:8px 20px">들어가기</button></p></form>`)
+    return
+  }
+  if (req.url?.startsWith('/odd') || (process.env.DOOL2_SHOP_ODD === '1' && req.url === '/')) {
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>두리 낯선 가게</title>
+<h1>두리 낯선 가게</h1><p>단골만 주문 내역을 볼 수 있어요.</p>
+<p><button onclick="location.href='/odd/enter'" style="font-size:18px;padding:8px 16px">단골 창구 열기</button></p>`)
+    return
+  }
   if (req.url?.startsWith('/login')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>두리 시험 가게 로그인</title>
 <h1>로그인</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p><a href=/>로그아웃</a>'">

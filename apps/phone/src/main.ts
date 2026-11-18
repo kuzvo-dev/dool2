@@ -166,7 +166,16 @@ const st: {
   /** 연결하는 동안 본체가 알려 온 단계 (서비스 id → 단계) */
   connectSteps: Map<string, ConnectStep[]>
   /** 연결이 끝까지 못 갔을 때 그 까닭 (카드가 "직접 마쳐 주세요"·"다시 넣기"로 남는다) */
-  connectFails: Map<string, { reason: 'human' | 'wrong' | 'unknown'; message: string; tabId?: number }>
+  connectFails: Map<
+    string,
+    {
+      reason: 'human' | 'wrong' | 'unknown'
+      message: string
+      tabId?: number
+      agent?: boolean
+      at?: number
+    }
+  >
   /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
   work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
@@ -482,14 +491,20 @@ async function receive(env: Envelope) {
     case 'connections': {
       st.services = msg.services
       for (const s of msg.services) if (s.connectedAt) st.connectFails.delete(s.card.id)
+      // 사람이나 두리가 화면에서 로그인을 마쳐 연결된 경우에도, 미뤄 둔 부탁(연결하면 바로 시작)을 이어서 보낸다
+      if (st.afterConnect && msg.services.some((s) => s.card.id === st.afterConnect?.id && s.connectedAt))
+        runAfterConnect(st.afterConnect.id)
       // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
       const v = st.screen
       if (v.name === 'remote' && v.connectId) {
         const done = msg.services.find((x) => x.card.id === v.connectId && x.connectedAt)
         if (done) {
+          // 대화로 돌아간다: 연결 카드가 "연결돼 있어요"로 바뀌고 이어지는 일도 거기서 보인다
+          // (연결 화면에서 시작했을 때만 그 서비스 화면으로)
           st.screen = { name: 'app' }
-          st.tab = 'connect'
-          st.connectDetail = done.card.id
+          st.tab = remoteFrom === 'connect' ? 'connect' : 'chat'
+          if (st.tab === 'connect') st.connectDetail = done.card.id
+          else stickToBottom = true
           toast(`${done.card.name} 로그인을 확인했어요`)
           runAfterConnect(done.card.id)
         }
@@ -546,6 +561,8 @@ async function receive(env: Envelope) {
           reason: msg.reason ?? (msg.human ? 'human' : 'unknown'),
           message: msg.message,
           ...(msg.tabId !== undefined ? { tabId: msg.tabId } : {}),
+          // 두리가 이어받았으면 그때부터 (답하기 시작하기 전 잠깐도 '이어서 하는 중'으로 보이게)
+          ...(msg.agent ? { agent: true, at: Date.now() } : {}),
         })
       if (msg.ok) {
         st.connectTabs.delete(msg.id)
@@ -1000,6 +1017,34 @@ function connectFailCard(
   const tab = fail.tabId
   const openScreen = () => tab !== undefined && openRemote(tab, c.id)
   const retry = () => openOverlay({ kind: 'connect', id: c.id })
+  // 자동 로그인이 멈춰 두리가 대화에서 이어받은 동안: 실패가 아니라 하는 중이다 (진행은 바로 아래 일하는 카드에 보인다)
+  if (agentOn(fail))
+    return h(
+      'div',
+      { class: 'card approve-card connect-card' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark,
+        h(
+          'div',
+          {},
+          h('strong', { text: '두리가 화면을 보며 이어서 하고 있어요' }),
+          h('span', {
+            class: 'meta',
+            text: '로그인 화면이 예상과 달라서, 직접 읽어 가며 로그인하는 중이에요',
+          }),
+        ),
+        h('span', { class: 'spin' }),
+      ),
+      tab !== undefined
+        ? h(
+            'div',
+            { class: 'approve-actions' },
+            h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen }),
+          )
+        : undefined,
+    )
   const view =
     fail.reason === 'wrong'
       ? {
@@ -1042,6 +1087,11 @@ function connectFailCard(
     ),
     h('div', { class: 'approve-actions' }, view.sub, view.main),
   )
+}
+
+/** 자동 로그인이 멈춘 뒤 두리가 이어받아 하는 중인가 (답하는 중이거나, 넘겨받은 지 20초 안) */
+function agentOn(fail: { agent?: boolean; at?: number }): boolean {
+  return Boolean(fail.agent) && (st.busy || Date.now() - (fail.at ?? 0) < 20_000)
 }
 
 /** 연결 카드 설명: 그 서비스가 실제로 되는 방법대로 (간편 로그인만 되는 곳에 "아이디·비밀번호"라고 하지 않는다) */
@@ -2201,7 +2251,8 @@ function toolSig(raw: string) {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
       const wait = it ? (connectWaiting(it.card.id)?.kind ?? '') + (connectWaiting(it.card.id)?.id ?? '') : ''
-      const fail = it ? (st.connectFails.get(it.card.id)?.reason ?? '') : ''
+      const f = it ? st.connectFails.get(it.card.id) : undefined
+      const fail = f ? `${f.reason}${agentOn(f) ? ':agent' : ''}` : ''
       const peek = it && st.connectLive.get(it.card.id)?.shot ? 1 : 0
       return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}`
     }

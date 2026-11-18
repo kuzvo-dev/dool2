@@ -453,6 +453,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     human?: boolean
     tabId?: number
     reason?: 'human' | 'wrong' | 'unknown'
+    agent?: boolean
+  }
+  /**
+   * 자동 로그인이 화면을 못 알아봐 멈췄을 때: 실패 카드로 끝내지 않고 두리(AI)가 대화에서 그 탭을 이어받는다.
+   * 정해 둔 순서로만 누르는 자동 로그인과 달리 화면을 읽고 맞춰 가므로, 사이트마다 다른 로그인 화면에서도 이어 갈 수 있다.
+   * 하는 일은 대화에 그대로 보인다(일하는 화면·단계). 아이디·비밀번호는 금고에서 칸으로만 들어가고 AI에게는 가지 않는다.
+   * 서비스마다 10분에 한 번만 (그래도 안 되면 사용자가 화면을 보며 직접)
+   */
+  const takeoverAt = new Map<string, number>()
+  /** 이어받은 탭 → 서비스 (그 서비스 사이트의 다른 주소에서도 연결할 때 넣은 계정을 쓰게) */
+  const takeoverTabs = new Map<number, string>()
+  const agentTakeover = (card: ConnectCard, r: ConnectResult): boolean => {
+    if (r.ok || r.human || r.reason !== 'unknown' || r.tabId === undefined) return false
+    if (Date.now() - (takeoverAt.get(card.id) ?? 0) < 10 * 60_000) return false
+    takeoverAt.set(card.id, Date.now())
+    takeoverTabs.set(r.tabId, card.id)
+    // 로그인되면 지켜보던 쪽(loginWatch)이 연결로 표시하고 대화에 알린다
+    connectHuman.add(card.id)
+    // 화면에는 앞의 두 문장만 보인다 (도구 이름이 든 문장은 AI에게만 간다)
+    const why = (r.message.split(/[.!?]/)[0] ?? '').replace(/요\s+/g, '요·').trim()
+    void talk(
+      appNote(
+        `${card.name} 자동 로그인이 중간에 멈췄어요. 두리가 화면을 보며 이어서 해 볼게요. ` +
+          `browser_read로 탭 ${r.tabId}을 읽고(멈춘 까닭: ${why}) 로그인을 이어서 해 주세요. ` +
+          `아이디·비밀번호는 금고에 있으니 browser_login으로만 넣고 browser_click으로 로그인 버튼을 눌러요. ` +
+          `browser_handoff는 로봇 확인·본인인증·인증번호가 나왔을 때 써요. ` +
+          `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭을 닫지 않은 채 결과만 한두 문장으로 말해요.`,
+      ),
+    ).catch(() => {})
+    return true
   }
   /**
    * 연결하기는 뒤에서 한다: 폰·PC는 기다리지 않고 다른 일을 해도 된다.
@@ -636,11 +666,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connecting.delete(card.id)
       connectSteps.delete(card.id)
       connectTabs.delete(card.id)
+      // 화면을 못 알아봐 멈춘 것이면 두리(AI)가 대화에서 이어받는다
+      const agent = agentTakeover(card, r)
       // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)
-      void link.broadcast({ kind: 'connect-result', id: card.id, ...r }).then(() => connectStatus())
+      void link
+        .broadcast({ kind: 'connect-result', id: card.id, ...r, ...(agent ? { agent } : {}) })
+        .then(() => connectStatus())
       void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
       if (r.ok) connectDone(card)
-      else if (r.human || r.tabId !== undefined) {
+      else if (agent) {
+        // 대화 끝에 그 연결 카드가 없으면 띄운다 (카드가 "두리가 이어서 해 보는 중"을 보여 준다)
+        if (!cardNearEnd(card)) postConnectCard(card)
+      } else if (r.human || r.tabId !== undefined) {
         // 사람이 마칠 차례: 그 화면을 폰·PC에서 열어 직접 로그인하면 두리가 알아서 확인한다
         connectHuman.add(card.id)
         // 대화 끝에 그 연결 카드가 있으면 카드가 "직접 마쳐 주세요 [화면 열기]"로 바뀐다.
@@ -1044,9 +1081,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteConnector = (url) => connectors.forUrl(url)
+  // 연결을 이어받은 탭: 로그인 화면이 그 서비스 사이트의 다른 주소(login.사이트)면 연결할 때 넣은 계정을 쓴다.
+  // 다른 사이트(간편 로그인 공급자 등)로 넘어간 화면에는 넣지 않는다
+  browserTools.siteLogin = async (tabId, origin) => {
+    const id = takeoverTabs.get(tabId)
+    const card = id ? await skills.card(id) : undefined
+    const url = card ? connectUrl(card) : undefined
+    const site = card?.site?.replace(/^www\./, '')
+    if (!url || !site) return undefined
+    let host = ''
+    try {
+      host = new URL(origin).hostname
+    } catch {
+      return undefined
+    }
+    if (host !== site && !host.endsWith(`.${site}`)) return undefined
+    return vault.findForOrigin(new URL(url).origin)
+  }
   // 확장이 닫힌 두리 탭을 알리면 그 탭 기록을 지운다 (안 지우면 하루 내내 쌓인다)
   browser.on('notice', (n) => {
     if (n.event === 'tab-closed') {
+      takeoverTabs.delete(n.tabId)
       browserTools.forgetTab(n.tabId)
       connectors.forgetTab(n.tabId)
     }

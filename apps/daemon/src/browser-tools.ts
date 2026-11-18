@@ -176,6 +176,14 @@ export class BrowserTools {
     this._lastTabId = tabId
     this.onActiveTab?.(tabId)
   }
+  /**
+   * 금고에 그 주소가 없을 때 한 번 더 물어볼 곳: 연결을 이어받은 탭이면 그 서비스에 넣은 계정
+   * (로그인 화면이 login.사이트처럼 같은 사이트의 다른 주소일 때). 같은 사이트인지는 묻는 쪽이 확인한다
+   */
+  siteLogin?: (
+    tabId: number,
+    origin: string,
+  ) => Promise<{ id: string; username: string; password: string } | undefined>
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
@@ -291,7 +299,7 @@ export class BrowserTools {
         } catch {
           throw new Error('페이지 주소를 알 수 없어요')
         }
-        const entry = await this.vault?.findForOrigin(origin)
+        const entry = (await this.vault?.findForOrigin(origin)) ?? (await this.siteLogin?.(tabId, origin))
         if (!entry)
           throw new Error(
             `이 사이트(${origin})는 두리 금고에 없어요. browser_request_login으로 사용자에게 로그인 카드를 띄우고 이번 답을 끝내세요.`,
