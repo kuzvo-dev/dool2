@@ -349,6 +349,11 @@ export class BrowserTools {
   private payFlows = new Map<number, { tool: string; at: number }>()
   /** 결제 흐름의 서비스 사이트 (AI가 같은 사이트를 새 탭으로 다시 열어도 결제 흐름이다) */
   private paySites = new Map<string, { tool: string; at: number }>()
+  /** 돈 내기 서비스 도구가 있는 사이트들: 도구를 거치지 않고 연 탭도 결제 흐름이다 */
+  private payServiceSites = new Set<string>()
+  setPayServiceSites(sites: string[]) {
+    this.payServiceSites = new Set(sites.map((x) => x.toLowerCase()))
+  }
 
   readonly approvals: Approvals
   readonly logins: LoginRequests
@@ -1234,6 +1239,8 @@ export class BrowserTools {
       }
       if (host === site || host.endsWith(`.${site}`)) return s.tool
     }
+    for (const site of this.payServiceSites)
+      if (host === site || host.endsWith(`.${site}`)) return `site:${site}`
     return undefined
   }
 

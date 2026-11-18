@@ -1276,6 +1276,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteConnector = (url) => connectors.forUrl(url)
+  void connectors
+    .paySites()
+    .then((sites) => browserTools.setPayServiceSites(sites))
+    .catch(() => {})
   // 연결을 이어받은 탭: 로그인 화면이 그 서비스 사이트의 다른 주소(login.사이트)면 연결할 때 넣은 계정을 쓴다.
   // 다른 사이트(간편 로그인 공급자 등)로 넘어간 화면에는 넣지 않는다
   browserTools.siteLogin = async (tabId, origin) => {

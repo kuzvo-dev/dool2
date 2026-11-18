@@ -887,6 +887,14 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     expect(r.isError).toBeUndefined()
   })
 
+  it('돈 내기 도구가 있는 서비스 사이트면 도구를 거치지 않고 연 탭도 결제 흐름이다', async () => {
+    const tools = new BrowserTools(payBrowser([room, checkout]))
+    tools.setPayServiceSites(['hotels.com'])
+    await tools.run('read', { tabId: 3 })
+    expect(tools.payFlow(3)).toBe('site:hotels.com')
+    expect((await tools.run('click', { tabId: 3, ref: 'e58' })).isError).toBeUndefined()
+  })
+
   it('탭을 닫거나 한 시간이 지나면 결제 흐름을 잊는다', () => {
     const tools = new BrowserTools(payBrowser([room]))
     tools.startPayFlow(3, 'x.prepare', [], 0)

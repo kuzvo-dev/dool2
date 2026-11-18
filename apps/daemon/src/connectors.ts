@@ -281,6 +281,20 @@ export class Connectors {
     return undefined
   }
 
+  /**
+   * 돈 내기 도구가 있는 서비스의 사이트들. 이 사이트의 탭은 도구를 거치지 않고 열었어도 결제 흐름으로 본다
+   * (실측: 앞 대화에서 열어 둔 호텔 탭으로 바로 가서, 결제 화면을 여는 [예약하기]에 승인을 다시 받았다)
+   */
+  async paySites(): Promise<string[]> {
+    const out: string[] = []
+    for (const { card, connector } of (await this.load()).values()) {
+      if (!connector?.tools.some((t) => t.tier === '돈 내기' && this.usable(t))) continue
+      for (const site of [card.site, ...(card.alsoSites ?? [])])
+        if (site) out.push(site.replace(/:\d+$/, '').replace(/^www\./, ''))
+    }
+    return out
+  }
+
   /** 연결 화면에 보일 커넥터 상태 요약과 도구 이름 */
   async summary(id: string): Promise<{ status?: string; tools?: ConnectionTool[] }> {
     const c = (await this.load()).get(id)?.connector
