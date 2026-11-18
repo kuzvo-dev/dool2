@@ -72,8 +72,62 @@ const ADVANCE = /(?:^|\s)(?:다음|확인|완료|진행|계속|예약|신청|제
 
 /** 화면 글에 결제 단계 표시가 있으면 그 말 (없으면 undefined) */
 export function payScreen(text: string): string | undefined {
-  return PAY_SCREEN.exec(text)?.[0]
+  return screenMark(text, PAY_SCREEN)
 }
+
+/**
+ * 화면의 제목·칸 이름에 그 표시가 있으면 그 말. 안내 문장 속 말은 세지 않는다
+ * (실측: 호텔 상세 화면의 "이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다." 때문에
+ * 객실 목록을 결제 화면으로 잘못 봤다)
+ */
+function screenMark(text: string, re: RegExp): string | undefined {
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/^[#\s>*-]+/, '').trim()
+    if (!line || line.length > 60) continue
+    if (/[.。!?]$|(?:니다|어요|아요|해요|세요|예요|이에요)$/.test(line)) continue
+    const m = re.exec(line)
+    if (m) return m[0]
+  }
+  return undefined
+}
+
+// 결제 화면에 들어왔다는 표시: 결제 수단 말고도 예약자·투숙객·배송지를 적는 화면이면 결제 화면이다
+// (실측: 호텔스닷컴 결제 화면은 '체크인 고객 정보'·'요금 세부 정보'가 먼저 보이고 결제 수단은 아래에 있다)
+const CHECKOUT_SCREEN =
+  /(?:예약자|주문자|구매자|투숙객|탑승객|예매자|신청자)\s*정보|체크인\s*고객\s*정보|받는\s*(?:분|사람)\s*정보|배송지\s*(?:정보|입력|선택)|결제\s*정보|결제\s*수단/
+
+/** 결제 화면(결제 수단·예약자 정보를 넣는 화면)이면 그 표시 말. 주소가 결제 단계여도 결제 화면이다 */
+export function checkoutScreen(text: string, url: string): string | undefined {
+  const pay = payScreen(text) ?? screenMark(text, CHECKOUT_SCREEN)
+  if (pay) return pay
+  try {
+    const u = new URL(url)
+    if (RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)) return '결제 단계 주소'
+  } catch {}
+  return undefined
+}
+
+// 결제 화면으로 '들어가는' 버튼: 상품·객실·좌석 화면의 [예약하기]·[구매하기]·[주문하기]는 결제 화면을 열 뿐이다.
+// 돈이 나가는 건 결제 화면의 마지막 버튼이라, 승인은 거기서 받는다. (버튼 이름 뒤 짧은 덧말은 허용: "예약하기 예약")
+const CHECKOUT_ENTRY =
+  /^(?:예약\s*하기|구매\s*하기|주문\s*하기|예매\s*하기|바로\s*구매(?:\s*하기)?|구매\s*진행|주문\s*진행)(?:\s+\S{1,6})?$/
+
+/** 결제 화면으로 들어가는 버튼 이름인지 (역할 이름은 뺀 버튼 글) */
+export function isCheckoutEntry(name: string): boolean {
+  return CHECKOUT_ENTRY.test(name.replace(/\s+/g, ' ').trim())
+}
+
+// 들어가는 버튼이라 믿고 눌렀는데 바로 확정된 화면 (결제 화면 없이 확정하는 사이트를 놓치지 않게)
+const CONFIRMED =
+  /(?:예약|주문|결제|구매|예매|신청)(?:이|가)?\s*(?:완료|확정)\s*(?:되었|됐|했|하였)|(?:예약|주문|예매)\s*번호\s*[:：]?\s*[A-Z0-9-]{5,}/
+
+/** 결제 확정 화면이면 그 말 */
+export function confirmedScreen(text: string): string | undefined {
+  return CONFIRMED.exec(text)?.[0]
+}
+
+/** 결제 흐름(돈 내기 서비스 도구가 AI에게 넘긴 탭)을 기억하는 시간 */
+export const PAY_FLOW_TTL_MS = 60 * 60_000
 
 export function classifyRisk(label: string, url: string, pay?: string): Risk | undefined {
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
@@ -128,6 +182,22 @@ interface PageInfo {
   refs: Map<string, { role: string; name: string }>
   /** 결제 단계 화면이면 그 표시 말 (예: '결제 방법 선택') */
   pay?: string
+  /** 결제 화면(결제 수단·예약자 정보를 넣는 화면)이면 그 표시 말 */
+  checkout?: string
+  /** 예약·주문이 확정된 화면이면 그 말 */
+  confirmed?: string
+}
+
+function pageInfo(url: string, text: string): PageInfo {
+  const checkout = checkoutScreen(text, url)
+  const confirmed = confirmedScreen(text)
+  return {
+    url,
+    refs: parseRefs(text),
+    pay: payScreen(text),
+    ...(checkout ? { checkout } : {}),
+    ...(confirmed ? { confirmed } : {}),
+  }
 }
 
 /** 한 번에 할 수 있는 동작 수 */
@@ -204,6 +274,8 @@ export class BrowserTools {
   private dialogs = new Map<number, SiteDialog>()
   /** 확인 창 [확인]의 승인 요청 → 그 창의 글 (누르기 직전 같은 창인지 본다) */
   private dialogApprovals = new Map<string, string>()
+  /** 결제 흐름 탭 → {돈 내기 도구 이름, 시작 시각}. 돈 내기 서비스 도구가 AI에게 넘긴 탭이다 */
+  private payFlows = new Map<number, { tool: string; at: number }>()
 
   readonly approvals: Approvals
   readonly logins: LoginRequests
@@ -473,13 +545,18 @@ export class BrowserTools {
         const target = page?.refs.get(ref)
         if (!page || !target)
           throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
-        this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
+        // 결제 흐름에서 결제 화면 전의 [예약하기]·[구매하기]는 결제 화면을 여는 버튼이라 승인 없이 누른다
+        const entry = this.entersCheckout(tabId, page, target.name)
+        if (!entry) this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
           newTabId?: number
           coveredBy?: string
         }
         const note = [
           `${target.role} "${target.name}"을(를) 눌렀어요.`,
+          entry
+            ? '(결제 화면으로 넘어가는 버튼이라 승인 없이 눌렀어요. 결제 화면에서 최종 금액·취소 규정을 읽고, 그 화면의 마지막 버튼을 누르기 전에 승인을 받아요.)'
+            : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
         ]
           .filter(Boolean)
@@ -594,6 +671,12 @@ export class BrowserTools {
     const page = this.pages.get(tabId)
     const target = page?.refs.get(ref)
     if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    // 승인은 결제 화면에서 받는다: 결제 화면을 여는 버튼에 승인을 받으면, 결제 화면의 진짜 금액·조건을 못 본 채 승인하게 된다
+    if (this.entersCheckout(tabId, page, target.name))
+      throw new Error(
+        `"${target.name}"은(는) 결제 화면으로 넘어가는 버튼이라 승인이 필요 없어요. browser_click으로 눌러 결제 화면까지 간 뒤, ` +
+          '그 화면에서 최종 금액·취소 규정을 읽고 마지막 버튼(결제하기·예약 완료 등)에 browser_request_approval을 쓰세요.',
+      )
     const risk =
       classifyRisk(`${target.role} ${target.name}`, page.url, page.pay) ??
       (kind ? { kind, reason: '서비스 도구 등급' } : undefined)
@@ -832,7 +915,7 @@ export class BrowserTools {
     try {
       const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
       let now = parseRefs(s.text).get(rec.ref)
-      this.pages.set(rec.tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
+      this.pages.set(rec.tabId, pageInfo(s.url, s.text))
       // 글자로 찾은 곳(서비스 도구의 마지막 버튼)은 표시 목록에 없다: 같은 글자로 다시 찾아 같은 곳인지 본다
       if (rec.role === '글' && s.url === rec.url) {
         const m = (await this.browser
@@ -867,12 +950,37 @@ export class BrowserTools {
     }
   }
 
+  /**
+   * 돈 내기 서비스 도구가 이 탭을 AI에게 넘겼다: 여기서부터 결제 흐름이다.
+   * 이 탭에서는 결제 화면 전의 [예약하기]·[구매하기]를 승인 없이 누르고, 승인은 결제 화면에서만 받는다
+   */
+  startPayFlow(tabId: number, tool: string, now = Date.now()) {
+    this.payFlows.set(tabId, { tool, at: now })
+  }
+
+  /** 결제 흐름 탭이면 그 도구 이름 (한 시간이 지나면 잊는다) */
+  payFlow(tabId: number, now = Date.now()): string | undefined {
+    const f = this.payFlows.get(tabId)
+    if (!f) return undefined
+    if (now - f.at > PAY_FLOW_TTL_MS) {
+      this.payFlows.delete(tabId)
+      return undefined
+    }
+    return f.tool
+  }
+
+  /** 결제 흐름 탭에서, 아직 결제 화면이 아닌 곳의 결제 화면 들어가기 버튼인지 */
+  private entersCheckout(tabId: number, page: PageInfo, name: string): boolean {
+    return this.payFlow(tabId) !== undefined && !page.checkout && !page.pay && isCheckoutEntry(name)
+  }
+
   /** 탭이 닫혔다 (사용자·탭 정리): 그 탭의 기록을 지우고, 기다리던 승인은 만료시킨다 */
   forgetTab(tabId: number) {
     this.pages.delete(tabId)
     this.guided.delete(tabId)
     this.handedOff.delete(tabId)
     this.dialogs.delete(tabId)
+    this.payFlows.delete(tabId)
     this.approvals.expireTab(tabId)
     if (this._lastTabId === tabId) this._lastTabId = undefined
   }
@@ -922,11 +1030,22 @@ export class BrowserTools {
       }
     }
     this.dialogs.delete(tabId)
-    this.pages.set(tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
+    const info = pageInfo(s.url, s.text)
+    this.pages.set(tabId, info)
     const guide = await this.guideFor(tabId, s.url)
+    const flow = this.payFlow(tabId)
     const lines = [
       ...(note ? [note] : []),
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
+      ...(flow && info.confirmed
+        ? [
+            `⚠ 화면에 "${info.confirmed}"이(가) 보여요. 예약·주문이 이미 확정됐을 수 있어요. 사용자에게 그대로 알리고 내역 화면에서 확인해 주세요.`,
+          ]
+        : flow && info.checkout
+          ? [
+              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_request_approval로 승인받아요. 카드 번호·결제 비밀번호처럼 사람만 넣을 수 있는 칸만 browser_handoff로 넘겨요.`,
+            ]
+          : []),
       ...(s.captcha
         ? [
             '⚠ 로봇 확인(캡차·자동입력 방지) 화면이 보여요. 풀려고 하지 말고 사용자에게 직접 해 달라고 부탁해 주세요.',

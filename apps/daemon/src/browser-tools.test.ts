@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   BrowserTools,
+  checkoutScreen,
   classifyDialogRisk,
   classifyRisk,
+  confirmedScreen,
+  isCheckoutEntry,
   nearlyEmpty,
+  PAY_FLOW_TTL_MS,
   parseRefs,
   payScreen,
   type SiteDialog,
@@ -735,5 +739,124 @@ describe('글자로 누르기', () => {
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('멈췄어요')
     expect(b.calls.map((c) => c[0])).not.toContain('click')
+  })
+})
+
+// 실측 (2026-11-18, 호텔스닷컴): 객실 목록의 [예약하기]는 결제 화면(/checkout/…)을 열 뿐이고,
+// 결제 화면은 '체크인 고객 정보'·'요금 세부 정보'가 먼저 보이고 결제 수단은 아래에 있다
+const ROOMS = `### 슈피리어 더블룸
+총 요금: ₩519,720
+[e58 링크 "예약하기 예약"]
+[e9 버튼 "로그인"]
+[e60 버튼 "바로 예약"]`
+const CHECKOUT = `요금 세부 정보
+총 금액 ₩519,720
+안전한 보안 예약
+체크인 고객 정보
+[e3 입력칸 "성 *"] [e4 입력칸 "이름 *"]
+[e9 버튼 "예약하기"] [e10 버튼 "예약 완료하기"]`
+
+function payBrowser(pages: { url: string; text: string }[]) {
+  const calls: [string, Record<string, unknown> | undefined][] = []
+  let i = 0
+  return {
+    calls,
+    next: () => {
+      i = Math.min(i + 1, pages.length - 1)
+    },
+    call: async (cmd: string, args?: Record<string, unknown>) => {
+      calls.push([cmd, args])
+      const page = pages[i] ?? { url: '', text: '' }
+      if (cmd === 'snapshot')
+        return { tabId: 3, url: page.url, title: '호텔', text: page.text, truncated: false, captcha: false }
+      if (cmd === 'click') i = Math.min(i + 1, pages.length - 1)
+      return { tabId: 3 }
+    },
+  }
+}
+
+describe('결제 흐름 (돈 내기 표준 순서)', () => {
+  const room = { url: 'https://kr.hotels.com/ho480371/?chkin=2027-04-10', text: ROOMS }
+  const checkout = { url: 'https://kr.hotels.com/checkout/session/abc', text: CHECKOUT }
+
+  it('결제 화면을 여는 버튼과 결제 화면을 알아본다', () => {
+    expect(isCheckoutEntry('예약하기 예약')).toBe(true)
+    expect(isCheckoutEntry('구매하기')).toBe(true)
+    expect(isCheckoutEntry('바로 구매')).toBe(true)
+    expect(isCheckoutEntry('예약 완료하기')).toBe(false)
+    expect(isCheckoutEntry('0원 결제로 예약')).toBe(false)
+    expect(isCheckoutEntry('결제하기')).toBe(false)
+    expect(checkoutScreen(ROOMS, room.url)).toBeUndefined()
+    // 상세 화면의 안내 문장 속 '결제 수단'은 결제 화면 표시가 아니다 (실측 문장)
+    const notice = `${ROOMS}\n이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다.\n결제 가능한 신용카드: Visa, Mastercard`
+    expect(checkoutScreen(notice, room.url)).toBeUndefined()
+    expect(payScreen(notice)).toBeUndefined()
+    expect(checkoutScreen('## 결제 수단\n[e1 라디오 "신용카드"]', room.url)).toBe('결제 수단')
+    expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('체크인 고객 정보')
+    expect(checkoutScreen('주문 상품', 'https://shop.example/order/sheet')).toBe('결제 단계 주소')
+    expect(confirmedScreen('예약이 완료되었습니다. 예약 번호: HC12345678')).toBeTruthy()
+    expect(confirmedScreen('예약 완료하기')).toBeUndefined()
+  })
+
+  it('결제 흐름이 아니면 [예약하기]는 지금처럼 승인을 요구한다', async () => {
+    const b = payBrowser([room, checkout])
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
+    expect(r.isError).toBe(true)
+    expect(b.calls.map((c) => c[0])).not.toContain('click')
+  })
+
+  it('결제 흐름에서는 [예약하기]를 승인 없이 눌러 결제 화면까지 가고, 승인은 결제 화면에서 받는다', async () => {
+    const b = payBrowser([room, checkout])
+    const tools = new BrowserTools(b)
+    tools.startPayFlow(3, 'hotels-com.prepare_booking')
+    await tools.run('read', { tabId: 3 })
+
+    // 결제 화면을 여는 버튼에 승인을 받으려 하면 막는다 (이번 실패: 객실 목록에서 승인을 받았다)
+    const early = await tools.run('request_approval', { tabId: 3, ref: 'e58', what: '예약', where: '호텔' })
+    expect(early.isError).toBe(true)
+    expect(text(early)).toContain('browser_click')
+
+    // '바로 예약'은 그 자리에서 확정될 수 있어 그대로 승인을 요구한다
+    expect((await tools.run('click', { tabId: 3, ref: 'e60' })).isError).toBe(true)
+
+    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toContain('승인 없이 눌렀어요')
+    expect(text(r)).toContain('결제 화면이에요')
+
+    // 결제 화면에서는 같은 [예약하기]도 마지막 버튼일 수 있어 승인을 받는다
+    const again = await tools.run('click', { tabId: 3, ref: 'e9' })
+    expect(again.isError).toBe(true)
+    const ok = await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e10',
+      what: '슈피리어 더블룸 3박',
+      where: '호텔스닷컴',
+      amount: '₩519,720',
+    })
+    expect(ok.isError).toBeUndefined()
+    expect(tools.approvals.list().filter((a) => a.status === 'pending')).toHaveLength(1)
+  })
+
+  it('들어가는 버튼이 바로 확정해 버린 화면이면 숨기지 않고 알린다', async () => {
+    const done = { url: 'https://kr.hotels.com/trip/1', text: '예약이 완료되었습니다. 예약 번호: HC12345678' }
+    const b = payBrowser([room, done])
+    const tools = new BrowserTools(b)
+    tools.startPayFlow(3, 'hotels-com.prepare_booking')
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
+    expect(text(r)).toContain('이미 확정됐을 수 있어요')
+  })
+
+  it('탭을 닫거나 한 시간이 지나면 결제 흐름을 잊는다', () => {
+    const tools = new BrowserTools(payBrowser([room]))
+    tools.startPayFlow(3, 'x.prepare', 0)
+    expect(tools.payFlow(3, 1000)).toBe('x.prepare')
+    expect(tools.payFlow(3, PAY_FLOW_TTL_MS + 1)).toBeUndefined()
+    tools.startPayFlow(4, 'x.prepare')
+    tools.forgetTab(4)
+    expect(tools.payFlow(4)).toBeUndefined()
   })
 })
