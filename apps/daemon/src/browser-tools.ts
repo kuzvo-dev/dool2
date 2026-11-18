@@ -439,6 +439,10 @@ export class BrowserTools {
   private lastChoice = new Map<string, string>()
   /** 마지막으로 고른 결제 수단이 바뀌면 (본체가 설정에 남긴다) */
   onChoice?: (host: string, label: string) => void
+  /** 설정에서 그 사이트의 결제 수단을 잊었을 때 */
+  forgetChoice(host: string) {
+    this.lastChoice.delete(host)
+  }
   /** 설정에 남겨 둔 사이트별 마지막 결제 수단을 불러온다 */
   loadChoices(map: Record<string, string>) {
     for (const [k, v] of Object.entries(map)) this.lastChoice.set(k, v)

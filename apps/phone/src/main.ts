@@ -123,6 +123,8 @@ type Overlay =
   | { kind: 'msg'; id: string }
   /** 문제 알리기: 방금 있었던 일을 PC의 기록에 남긴다 */
   | { kind: 'report' }
+  /** 설정 > 내 정보: 가린 값 보기·고치기·지우기 */
+  | { kind: 'profile' }
   /** 입력칸 + : 빠른 메뉴 */
   | { kind: 'plus' }
   | undefined
@@ -155,6 +157,8 @@ const st: {
   decided: Map<string, { ok: boolean; message: string }>
   /** 승인 카드에서 고른 선택지 (결제 수단): 승인 id → 선택지 id */
   choice: Map<string, string>
+  /** 설정 > 내 정보(가린 값)·사이트별 마지막 결제 수단 (PC에 물어 받는다) */
+  profile?: { have: Record<string, string>; missing: string[]; payChoices: Record<string, string> }
   logins: Map<string, LoginRequestView>
   infos: Map<string, InfoRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
@@ -450,6 +454,10 @@ async function receive(env: Envelope) {
       break
     case 'thumb':
       gotThumb(msg.url, msg.data)
+      break
+    case 'profile':
+      st.profile = { have: msg.have, missing: msg.missing, payChoices: msg.payChoices }
+      if (msg.message) toast(msg.message)
       break
     case 'reset-done': {
       toast(msg.message)
@@ -3325,9 +3333,11 @@ function renderOverlay() {
                     ? plusSheet()
                     : ov.kind === 'info'
                       ? infoSheet(ov.id)
-                      : ov.kind === 'report'
-                        ? reportSheet()
-                        : loginSheet(ov.id)
+                      : ov.kind === 'profile'
+                        ? profileSheet()
+                        : ov.kind === 'report'
+                          ? reportSheet()
+                          : loginSheet(ov.id)
   // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
   // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
   const drawn = body.outerHTML
@@ -3477,45 +3487,6 @@ function renamePc() {
 }
 
 /** 설정 (메뉴 > 설정): 알림·화면·내 PC·약속 */
-// ── 앱으로 설치 (PWA): 안드로이드·PC 크롬은 설치 창, 아이폰은 공유 → 홈 화면에 추가 ──
-
-type InstallPrompt = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> }
-let installPrompt: InstallPrompt | undefined
-addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault()
-  installPrompt = e as InstallPrompt
-  render()
-})
-addEventListener('appinstalled', () => {
-  installPrompt = undefined
-  toast('홈 화면에 두리를 추가했어요')
-})
-const installed = () =>
-  matchMedia('(display-mode: standalone)').matches ||
-  (navigator as Navigator & { standalone?: boolean }).standalone === true
-const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent)
-
-function installRow(
-  row: (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) => HTMLElement,
-) {
-  if (installed()) return row('check', '앱으로 쓰는 중', '홈 화면에서 열었어요')
-  if (installPrompt)
-    return row(
-      'plus',
-      '홈 화면에 두리 추가',
-      '앱처럼 바로 열고, 알림도 받아요',
-      h('span', { class: 'btn small', text: '추가' }),
-      () => {
-        const p = installPrompt
-        installPrompt = undefined
-        void p?.prompt().then(() => render())
-      },
-    )
-  if (isIos())
-    return row('plus', '홈 화면에 두리 추가', '사파리 아래 공유 버튼 → "홈 화면에 추가"를 눌러 주세요')
-  return row('plus', '홈 화면에 두리 추가', '브라우저 메뉴에서 "앱 설치" 또는 "홈 화면에 추가"를 눌러 주세요')
-}
-
 function settingsView() {
   const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: '설정' }))
   const row = (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) =>
@@ -3532,7 +3503,6 @@ function settingsView() {
       right,
     )
   const perm = 'Notification' in window ? Notification.permission : 'denied'
-  box.append(h('h2', { class: 'over', text: '앱' }), installRow(row))
   box.append(
     h('h2', { class: 'over', text: '알림' }),
     row(
@@ -3598,6 +3568,39 @@ function settingsView() {
       if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
     }),
   )
+  // 내 정보·결제 수단: 예약·주문 칸을 두리가 채울 때 쓰는 것. 값은 PC 금고에만, 여기서도 가린 값만 보인다
+  if (!st.profile) void send({ kind: 'profile-get' })
+  const have = Object.keys(st.profile?.have ?? {})
+  box.append(
+    h('h2', { class: 'over', text: '내 정보 · 결제' }),
+    row(
+      'note',
+      '내 정보',
+      !st.profile
+        ? '불러오는 중…'
+        : have.length
+          ? `${have.map((k) => PROFILE_LABEL[k] ?? k).join('·')} · 예약·주문 칸을 두리가 채워요`
+          : '아직 없어요 · 처음 예약할 때 한 번만 물어봐요',
+      icon('chevron'),
+      () => openOverlay({ kind: 'profile' }),
+    ),
+  )
+  const pays = Object.entries(st.profile?.payChoices ?? {})
+  if (pays.length)
+    for (const [host, label] of pays)
+      box.append(
+        row(
+          'card',
+          `${label}`,
+          `${host.replace(/^www\./, '')} · 다음에도 이 수단을 먼저 골라 둬요`,
+          h('span', { class: 'meta', text: '잊기' }),
+          () => void send({ kind: 'pay-choice-forget', host }),
+        ),
+      )
+  else
+    box.append(
+      row('card', '결제 수단', '결제할 때 고른 수단을 사이트마다 기억해요 · 카드 번호는 저장하지 않아요'),
+    )
   // 시험용 PC에서만: 새 사용자처럼 처음부터 다시 해 보기
   if (st.pc?.dev)
     box.append(
@@ -3626,6 +3629,86 @@ function settingsView() {
       ),
     )
   return box
+}
+
+const PROFILE_LABEL: Record<string, string> = {
+  name: '이름',
+  name_en_last: '영문 성',
+  name_en_first: '영문 이름',
+  email: '이메일',
+  phone: '휴대폰 번호',
+  birth: '생년월일',
+  zip: '우편번호',
+  address: '주소',
+  address_detail: '상세 주소',
+}
+
+/** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */
+function profileSheet() {
+  const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
+  const p = st.profile
+  sheet.append(
+    h(
+      'div',
+      { class: 'approve-head' },
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: '내 정보' }),
+        h('span', { class: 'meta', text: '예약·주문 칸을 두리가 채울 때 써요' }),
+      ),
+    ),
+  )
+  if (!p) {
+    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    return sheet
+  }
+  const inputs = Object.entries(PROFILE_LABEL).map(([key, label]) => {
+    const input = h('input', { class: 'field' })
+    input.name = key
+    input.placeholder = p.have[key] ? `${p.have[key]} (바꿀 때만 넣기)` : '없음'
+    input.setAttribute('aria-label', label)
+    if (key === 'phone') input.type = 'tel'
+    if (key === 'email') input.type = 'email'
+    return { key, label, input }
+  })
+  const go = h('button', { class: 'btn lg', text: '저장' })
+  go.type = 'submit'
+  const form = h(
+    'form',
+    { class: 'cred-form profile-form' },
+    ...inputs.map(({ label, input }) =>
+      h('label', { class: 'field-label' }, h('span', { class: 'meta', text: label }), input),
+    ),
+    go,
+  )
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    const values: Record<string, string> = {}
+    for (const { key, input } of inputs) if (input.value.trim()) values[key] = input.value.trim()
+    if (!Object.keys(values).length) return openOverlay(undefined)
+    void send({ kind: 'profile-set', values })
+    openOverlay(undefined)
+  }
+  sheet.append(
+    form,
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '값은 이 PC의 두리 금고에만 있어요. 여기와 두리(AI)에게는 가린 값만 보여요.',
+    ),
+    h('button', {
+      class: 'btn-text cred-direct',
+      text: '내 정보 모두 지우기',
+      onclick: () => {
+        if (!confirm('내 정보를 모두 지울까요? 다음 예약 때 다시 물어봐요.')) return
+        void send({ kind: 'profile-clear' })
+        openOverlay(undefined)
+      },
+    }),
+  )
+  return sheet
 }
 
 /** 입력칸 + : 아이디어·목표·피드·따로 하는 대화·연결 */

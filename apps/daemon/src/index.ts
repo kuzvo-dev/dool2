@@ -945,6 +945,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       infoAnswer: (id, value) => void infoRequests.answer(id, value),
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       thumb: (url) => thumbs.get(url),
+      profile: async (action) => {
+        let message: string | undefined
+        if (action.kind === 'set') {
+          const r = await profile.update(action.values)
+          journal.write('profile', r)
+          const names = (l: string[]) =>
+            l.map((f) => PROFILE_FIELDS[f as keyof typeof PROFILE_FIELDS]?.label ?? f).join('·')
+          message = r.bad.length ? `형식이 맞지 않아 빼고 저장했어요: ${names(r.bad)}` : '저장했어요'
+        } else if (action.kind === 'clear') {
+          await profile.clear()
+          journal.write('profile', { cleared: true })
+          message = '내 정보를 모두 지웠어요'
+        } else if (action.kind === 'forget-pay') {
+          const now = { ...((store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}) }
+          delete now[action.host]
+          store.setSetting('payChoices', now)
+          browserTools.forgetChoice(action.host)
+          message = '그 사이트의 결제 수단을 잊었어요'
+        }
+        const { have, missing } = await profile.masked()
+        return {
+          have,
+          missing,
+          payChoices: (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {},
+          ...(message ? { message } : {}),
+        }
+      },
       report: (phone, r) => {
         // 그때 PC 쪽은 어땠는지도 같이 남긴다
         journal.write('phone-report', {

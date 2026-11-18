@@ -70,6 +70,14 @@ export interface LinkHost {
   infoAnswer(id: string, value: string | undefined): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
+  /** 설정 > 내 정보·결제 수단 (값은 가려서만 돌려준다) */
+  profile?(
+    action:
+      | { kind: 'get' }
+      | { kind: 'set'; values: Record<string, string> }
+      | { kind: 'clear' }
+      | { kind: 'forget-pay'; host: string },
+  ): Promise<Omit<Extract<PcToPhone, { kind: 'profile' }>, 'kind'>>
   /** 카드 사진을 받아 data: 주소로 (못 받으면 undefined) */
   thumb?(url: string): Promise<string | undefined>
   /** 처음부터 다시 (시험용 PC만, 없으면 거절). services면 연결한 서비스 표시도 */
@@ -512,6 +520,27 @@ export class PhoneLink {
           ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
         })
         return
+      }
+      case 'profile-get':
+      case 'profile-set':
+      case 'profile-clear':
+      case 'pay-choice-forget': {
+        if (!this.host.profile) return
+        // 폰이 보낸 것을 그대로 믿지 않는다: 칸 수·길이를 자른다
+        const values: Record<string, string> = {}
+        if (msg.kind === 'profile-set' && msg.values && typeof msg.values === 'object')
+          for (const [k, v] of Object.entries(msg.values).slice(0, 20))
+            if (typeof v === 'string') values[k.slice(0, 40)] = v.slice(0, 200)
+        const r = await this.host.profile(
+          msg.kind === 'profile-set'
+            ? { kind: 'set', values }
+            : msg.kind === 'profile-clear'
+              ? { kind: 'clear' }
+              : msg.kind === 'pay-choice-forget'
+                ? { kind: 'forget-pay', host: String(msg.host ?? '').slice(0, 200) }
+                : { kind: 'get' },
+        )
+        return this.send(phone, { kind: 'profile', ...r })
       }
       case 'thumb': {
         const url = typeof msg.url === 'string' ? msg.url.slice(0, 800) : ''
