@@ -52,6 +52,14 @@ import {
   toolPlace,
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
+import {
+  bareHost,
+  cardForHost,
+  doneLine,
+  groupSteps,
+  type PlaceCard,
+  type WorkGroup,
+} from '@dool2/protocol/work-steps'
 import { brandMark, SOCIAL_CTA } from './brands.js'
 import { type ConnectCtx, connectionsView, serviceView, socialOrder } from './connections.js'
 import {
@@ -95,7 +103,6 @@ import { rollNumbers, swipeDeck } from './motion-cards.js'
 import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
-import { bareHost, cardForHost, doneLine, groupSteps, type PlaceCard, type WorkGroup } from './work-steps.js'
 
 const app = document.getElementById('app') as HTMLElement
 

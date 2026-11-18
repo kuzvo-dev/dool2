@@ -21,6 +21,10 @@
       "types": "./dist/rich.d.ts",
       "default": "./dist/rich.js"
     },
+    "./work-steps": {
+      "types": "./dist/work-steps.d.ts",
+      "default": "./dist/work-steps.js"
+    },
     "./connector": {
       "types": "./dist/connector.d.ts",
       "default": "./dist/connector.js"

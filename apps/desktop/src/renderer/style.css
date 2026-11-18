@@ -1971,17 +1971,6 @@ button.side-row:hover {
   color: var(--ink);
   font-weight: 600;
 }
-.work-done ol {
-  margin: 0;
-  padding: 0 14px 12px 36px;
-}
-.work-done li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0;
-  color: var(--ink);
-}
 .work-done .meta {
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
@@ -2058,4 +2047,115 @@ button.side-row:hover {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* 일하는 과정: 일한 곳(서비스)마다 한 줄 — 로고(모서리에 빙글빙글/체크) · 이름 / 하는 일 · 걸린 시간 (폰과 같은 모양) */
+.worklog li.ws {
+  gap: 12px;
+  padding: 2px 0;
+  line-height: 1.35;
+}
+.worklog li.ws::before {
+  display: none;
+}
+.ws-ico {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+.svc-mark.ws-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.svc-mark.ws-mark svg {
+  width: 15px;
+  height: 15px;
+}
+.ws-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  box-sizing: content-box;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--on-accent);
+}
+.ws-badge svg {
+  width: 8px;
+  height: 8px;
+  stroke-width: 3.4;
+}
+.ws-badge.now {
+  background: var(--surface);
+}
+.ws-badge.now::after {
+  width: 9px;
+  height: 9px;
+  border: 1.6px solid var(--ink-faint);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  content: "";
+  animation: ui-spin 0.8s linear infinite;
+}
+.ws .wt {
+  flex: 1;
+  min-width: 0;
+}
+.ws .wt b {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws.done .wt b {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+.ws .wsub {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws .meta {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.work-done .worklog {
+  padding: 2px 14px 12px;
+}
+.work-done[open] .ws-badge {
+  border-color: var(--raise);
+}
+.wd-stack {
+  display: flex;
+  flex: none;
+}
+.wd-stack .svc-mark.ws-mark {
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border-radius: 6px;
+  font-size: 10px;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    inset 0 0 0 1px var(--line);
+}
+.wd-stack .svc-mark.ws-mark:first-child {
+  margin-left: 0;
 }
