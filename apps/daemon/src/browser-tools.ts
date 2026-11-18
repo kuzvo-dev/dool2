@@ -957,6 +957,8 @@ export class BrowserTools {
         url?: string
         title?: string
         dialog?: SiteDialog
+        newTabId?: number
+        coveredBy?: string
       }
       // 승인한 버튼을 누르자 사이트가 "정말 하시겠어요?"를 물으면, 사용자가 승인한 그 일이니 [확인]을 누른다
       let also = ''
@@ -964,6 +966,22 @@ export class BrowserTools {
         const asked = r.dialog.message
         r = (await this.browser.call('dialog', { tabId: rec.tabId, accept: true, expect: asked })) as typeof r
         also = ` 사이트가 확인 창("${asked.slice(0, 80)}")을 띄워 [확인]도 눌렀어요.`
+      }
+      // 눌렀는데 아무 일도 안 일어났으면 '눌렀어요'라고 하지 않는다 (실측: 쿠키 창 막이 덮어 클릭이 먹지 않았는데
+      // '눌렀어요'로 알려, AI가 원인을 '로그인'으로 짐작했다). 새 창·확인 창·주소·화면 글 중 하나라도 바뀌면 먹은 것이다
+      if (!also && !r.dialog && !r.newTabId && (r.url ?? s.url) === s.url) {
+        const after = (await this.browser
+          .call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })
+          .catch(() => undefined)) as Snapshot | undefined
+        if (after && after.url === s.url && after.text === s.text) {
+          this.pages.set(rec.tabId, pageInfo(after.url, after.text))
+          const msg =
+            `"${rec.label}" 버튼을 눌렀는데 화면이 그대로예요` +
+            (r.coveredBy ? ` ("${r.coveredBy}"이(가) 그 자리를 덮고 있었어요)` : '') +
+            '. 결제 창도 새 화면도 뜨지 않았어요. 페이지를 읽어 무엇이 막는지(덮은 창·빈 필수 칸·안내 문구) 확인하고, 고친 뒤 다시 승인을 받아 주세요.'
+          this.approvals.finish(id, false, msg)
+          return { ok: false, message: msg }
+        }
       }
       const msg = `"${rec.label}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)

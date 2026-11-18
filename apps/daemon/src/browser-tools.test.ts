@@ -916,3 +916,55 @@ describe('쿠키 동의 창', () => {
     expect(calls.filter((c) => c.startsWith('click'))).toHaveLength(1)
   })
 })
+
+describe('승인한 버튼이 실제로 눌렸는지', () => {
+  // 결제 화면: 마지막 버튼 [결제하기]
+  const PAY = '## 결제 수단\n[e1 라디오 "카드"]\n총 결제 금액 9,900원\n[e2 버튼 "결제하기"]'
+  function stuckBrowser(click: Record<string, unknown>, changes = false) {
+    let clicked = false
+    return {
+      call: async (cmd: string) => {
+        if (cmd === 'click') {
+          clicked = true
+          return { tabId: 3, url: 'https://shop.example/pay', ...click }
+        }
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://shop.example/pay',
+            title: '결제',
+            text: changes && clicked ? `${PAY}\n결제 창을 여는 중이에요` : PAY,
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3 }
+      },
+    }
+  }
+  async function approveOnce(b: ReturnType<typeof stuckBrowser>) {
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e2',
+      what: '사과 결제',
+      where: '가게',
+      amount: '9,900원',
+    })
+    const [rec] = tools.approvals.list()
+    return { tools, result: await tools.approve(rec?.id as string), rec }
+  }
+
+  it('눌렀는데 화면이 그대로면 "눌렀어요" 대신 실패로 알린다 (덮은 창이 있으면 그것도)', async () => {
+    const { tools, result, rec } = await approveOnce(stuckBrowser({ coveredBy: '쿠키 설정' }))
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('화면이 그대로예요')
+    expect(result.message).toContain('"쿠키 설정"이(가) 그 자리를 덮고')
+    expect(tools.approvals.get(rec?.id as string)?.status).toBe('failed')
+  })
+
+  it('화면 글이 바뀌거나 새 창이 뜨면 눌린 것이다', async () => {
+    expect((await approveOnce(stuckBrowser({}, true))).result.ok).toBe(true)
+    expect((await approveOnce(stuckBrowser({ newTabId: 9 }))).result.ok).toBe(true)
+  })
+})

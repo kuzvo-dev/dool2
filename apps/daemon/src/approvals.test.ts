@@ -17,6 +17,8 @@ function shop(url = 'https://shop.example/item/1', text = PAGE) {
       if (cmd === 'snapshot')
         return { tabId: 1, url: state.url, title: '가게', text: state.text, truncated: false, captcha: false }
       if (cmd === 'screenshot') return { data: 'SHOT', mime: 'image/jpeg', url: state.url, title: '가게' }
+      // 버튼을 누르면 가게가 다음 화면을 보여 준다 (눌렸는지 확인하는 검사가 본다)
+      if (cmd === 'click') state.text = `${state.text}\n처리 중이에요`
       return { tabId: 1, url: state.url, title: '가게' }
     },
   }
