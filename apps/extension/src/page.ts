@@ -390,11 +390,14 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     // 보이지 않는 reCAPTCHA의 틀(size=invisible)은 문제가 아니다
     return !/[?&]size=invisible/.test(src)
   })
+  // 글자로만 찾는 것은 짧은 화면(로그인·확인 화면)에서만: 긴 화면(메일함·글)은 내용에 그 말이 섞인다
+  // (지메일 받은편지함: 메일 제목의 '보안문자' 때문에 로봇 확인으로 보였다)
   const captcha =
     challenge ||
-    /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot|아래\s*문제에\s*답해|DKAPTCHA/i.test(
-      bodyText,
-    )
+    (bodyText.length < 6000 &&
+      /자동입력\s*방지|보안\s*문자|로봇이 아닙니다|I'm not a robot|아래\s*문제에\s*답해|DKAPTCHA/i.test(
+        bodyText,
+      ))
 
   return { url: location.href, title: document.title, text, truncated, refs: st.refs.size, captcha }
 }
