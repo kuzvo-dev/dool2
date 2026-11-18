@@ -25,6 +25,7 @@ import {
   pageSnapshot,
   pageTapAt,
   pageViewport,
+  type ReadScope,
 } from './page.js'
 import { tidyPlan } from './tidy.js'
 
@@ -837,7 +838,12 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 닫힌 팝업이 사라지는 등 멈춰 있던 화면 바뀜을 마저 끝내고 읽는다
       if (attached.has(tabId)) await paint(tabId)
       await markTaps(tabId, 0)
-      const main = await inPage(tabId, pageSnapshot, max, 0)
+      const scope: ReadScope = {
+        ...(a.view === true ? { view: true } : {}),
+        ...(typeof a.from === 'string' && a.from.trim() ? { from: a.from.trim().slice(0, 100) } : {}),
+        ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
+      }
+      const main = await inPage(tabId, pageSnapshot, max, 0, scope)
       // 화면 안 액자(로그인 창 등): 누를 것이 있는 액자만 아래에 붙인다
       const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
       const map = new Map<number, { frameId: number; url: string }>()

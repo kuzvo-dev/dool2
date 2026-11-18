@@ -76,8 +76,19 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'read',
     '페이지 읽기',
-    '탭의 지금 페이지를 글로 읽는다. 누를 수 있는 것은 [e12 버튼 "검색"]처럼 표시된다. 글이 잘렸으면 maxChars를 늘린다.',
-    { tabId, maxChars: z.number().int().min(1000).max(40000).optional() },
+    '탭의 지금 페이지를 글로 읽는다. 누를 수 있는 것은 [e12 버튼 "검색"]처럼 표시된다. 긴 페이지는 필요한 부분만: from에 찾는 글자(예: "검색 결과")를 넣으면 그 줄부터, view: true면 지금 화면에 보이는 부분만, 잘렸으면 안내된 skip으로 이어서 읽는다.',
+    {
+      tabId,
+      maxChars: z.number().int().min(1000).max(40000).optional(),
+      view: z.boolean().optional().describe('true면 지금 화면에 보이는 부분만 (스크롤한 뒤 쓴다)'),
+      from: z.string().max(100).optional().describe('이 글자가 나오는 줄부터 읽는다 (위쪽 메뉴 건너뛰기)'),
+      skip: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe('앞에서 이만큼(글자) 건너뛰고 읽는다 (잘린 뒤를 이어 읽을 때)'),
+    },
     true,
   )
   tool(
@@ -141,7 +152,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'scroll',
     '스크롤',
-    '화면을 한 화면 위나 아래로 움직인다. 화면 캡처 전에 쓴다(페이지 읽기는 스크롤 없이 전체를 읽는다).',
+    '화면을 한 화면 위나 아래로 움직이고, 지금 화면에 보이는 부분을 읽어 돌려준다. 페이지 읽기(browser_read)는 스크롤 없이도 전체를 읽으니, 화면에 보이는 것을 따라가며 볼 때만 쓴다.',
     { tabId, direction: z.enum(['up', 'down']) },
     true,
   )

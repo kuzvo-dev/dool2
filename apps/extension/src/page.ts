@@ -10,6 +10,19 @@ export interface SnapshotResult {
   refs: number
   /** 캡차·자동입력 방지 화면이 보인다 */
   captcha: boolean
+  /** view로 읽었을 때: 화면 위·아래에 남은 글 (대략의 글자 수) */
+  around?: { above: number; below: number }
+  /** from·skip으로 앞에서 건너뛴 글자 수 */
+  skipped?: number
+  /** from 글자를 페이지에서 찾지 못했다 (처음부터 읽었다) */
+  fromMissing?: boolean
+}
+
+/** 어디를 읽을지. view: 지금 화면에 보이는 부분만, from: 이 글자가 나오는 줄부터, skip: 앞에서 이만큼 건너뛰고 */
+export interface ReadScope {
+  view?: boolean
+  from?: string
+  skip?: number
 }
 
 /**
@@ -55,7 +68,7 @@ export function pageMarkTaps(): number {
 
 /** 페이지를 AI가 읽기 좋은 글로 바꾼다. 누를 수 있는 것에는 [e12 버튼 "검색"]처럼 표시를 붙인다 */
 /** base: 화면 안 액자(iframe)는 표시 번호를 10000씩 띄워 매긴다 (액자 1 → e10001…) */
-export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
+export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}): SnapshotResult {
   type State = {
     refs: Map<string, WeakRef<Element>>
     ids: WeakMap<Element, string>
@@ -281,7 +294,20 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     if (t && t !== lines[lines.length - 1]) lines.push(t)
     cur = ''
   }
-  let budget = maxChars * 2
+  const skip = Math.max(0, Math.floor(Number(scope.skip) || 0))
+  // 건너뛸 글도 읽어야 어디서부터인지 안다 (from은 어디 있을지 몰라 넉넉히)
+  let budget = scope.from ? Math.max((maxChars + skip) * 2, 400_000) : (maxChars + skip) * 2
+  // view: 화면 위·아래로 완전히 벗어난 상자는 읽지 않고 글자 수만 센다 (고정된 머리말·팝업은 화면 안이라 읽는다)
+  const vh = window.innerHeight
+  const around = { above: 0, below: 0 }
+  const offscreen = (el: Element): number => {
+    if (!scope.view) return 0
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 && r.height === 0) return 0
+    if (r.bottom <= 0) return -1
+    if (r.top >= vh) return 1
+    return 0
+  }
 
   const walk = (node: Node) => {
     if (budget <= 0) return
@@ -300,6 +326,13 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
     if (!el.checkVisibility({ visibilityProperty: true })) {
       const cs = getComputedStyle(el)
       if (cs.display !== 'contents' || cs.visibility === 'hidden') return
+    }
+    const off = offscreen(el)
+    if (off) {
+      const n = (el.textContent ?? '').replace(/\s+/g, ' ').trim().length
+      if (off < 0) around.above += n
+      else around.below += n
+      return
     }
 
     const role = interactiveRole(el)
@@ -362,8 +395,16 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
       (_m, a: string, ax: string, _a2, s1: string, n: string, s2: string, b: string, bx: string) =>
         `[${a} 버튼 "수량 줄이기"${ax}]${s1}${n}${s2}[${b} 버튼 "수량 늘리기"${bx}]`,
     )
-  const truncated = text.length > maxChars || budget <= 0
-  if (text.length > maxChars) text = text.slice(0, maxChars)
+  let start = 0
+  let fromMissing = false
+  if (scope.from) {
+    const at = text.indexOf(scope.from)
+    if (at < 0) fromMissing = true
+    else start = text.lastIndexOf('\n', at) + 1
+  }
+  start = Math.min(start + skip, text.length)
+  const truncated = text.length > start + maxChars || budget <= 0
+  text = text.slice(start, start + maxChars)
 
   const bodyText = document.body?.innerText ?? ''
   // 보안 문자: 실제로 풀어야 하는 것만. 보이지 않는 reCAPTCHA(오른쪽 아래 배지, "protected by reCAPTCHA")는
@@ -399,7 +440,17 @@ export function pageSnapshot(maxChars: number, base = 0): SnapshotResult {
         bodyText,
       ))
 
-  return { url: location.href, title: document.title, text, truncated, refs: st.refs.size, captcha }
+  return {
+    url: location.href,
+    title: document.title,
+    text,
+    truncated,
+    refs: st.refs.size,
+    captcha,
+    ...(scope.view ? { around } : {}),
+    ...(start ? { skipped: start } : {}),
+    ...(fromMissing ? { fromMissing } : {}),
+  }
 }
 
 /** point: 좌표만 / type: 초점 + 기존 글자 선택 / activate: 키보드로 누를 수 있게 초점만 */
