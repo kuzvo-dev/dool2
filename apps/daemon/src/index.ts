@@ -611,6 +611,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connecting.set(card.id, p)
     connectStatus()
     void p.then((r) => {
+      // 실패 까닭은 기록에 남긴다 (사용자가 "실패했어"라고 할 때 볼 곳)
+      if (!r.ok) console.warn(`[연결] ${card.id} 끝까지 못 감: ${JSON.stringify(r).slice(0, 300)}`)
       connecting.delete(card.id)
       connectSteps.delete(card.id)
       // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)

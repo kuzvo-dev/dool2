@@ -8,6 +8,10 @@ export const DEFAULT_SIGNED_IN = ['로그아웃', 'Logout', 'Log out', 'Sign out
 /** 로그인 화면 주소에 흔한 말. 여기 있으면 아직 로그인 전이다 */
 const LOGIN_URL = /\/(login|signin|sign-in|member\/login|auth)(\b|[/?#])/i
 
+/** 이름 + 님이 적힌 버튼·링크 ("주*돈 님", "홍길동님"): 로그아웃을 마우스를 올려야 펼치는 메뉴에 숨긴
+ *  한국 사이트(컬리 등)는 위쪽에 이것만 보인다. "고객님"·"회원님" 같은 부름말은 빼고 */
+const NAME_BUTTON = /\[e\d+ (?:버튼|링크) "(?!고객|회원|손님)[^"\]\n]{1,20}?\s?님"\]/
+
 /** 화면 글자·주소로 로그인했는지 */
 export function looksSignedIn(
   card: Pick<ConnectCard, 'signedIn'>,
@@ -16,7 +20,7 @@ export function looksSignedIn(
   // 로그인 화면 주소라도 비밀번호 칸이 사라지고 로그인한 사람의 말이 보이면 로그인됐다 (주소가 안 바뀌는 사이트)
   if (LOGIN_URL.test(page.url) && /비밀번호칸|type="?password/.test(page.text)) return false
   const marks = card.signedIn?.length ? card.signedIn : DEFAULT_SIGNED_IN
-  return marks.some((m) => page.text.includes(m))
+  return marks.some((m) => page.text.includes(m)) || NAME_BUTTON.test(page.text)
 }
 
 export interface LoginWatchDeps {
