@@ -671,17 +671,41 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
  */
 export async function pageSelectOptions(
   ref: string,
+  opened = false,
 ): Promise<{ options?: { label: string; selected: boolean }[]; why?: string }> {
-  type State = { refs: Map<string, WeakRef<Element>> }
-  const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
+  type State = { refs: Map<string, WeakRef<Element>>; shownBefore?: Set<Element> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
   const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
   const shownEl = (e: Element) => {
     const r = e.getBoundingClientRect()
     return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'
   }
   const press = (t: Element) => {
+    // pointer*는 PointerEvent로 (요즘 목록 부품(Radix 등)은 MouseEvent로 온 pointerdown을 무시한다. 실측 무신사·오늘의집)
+    const r = t.getBoundingClientRect()
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
     for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
-      t.dispatchEvent(new MouseEvent(k, { bubbles: true, cancelable: true, view: window }))
+      t.dispatchEvent(
+        k.startsWith('pointer')
+          ? new PointerEvent(k, {
+              ...at,
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              pointerType: 'mouse',
+              isPrimary: true,
+              pointerId: 1,
+              buttons: k === 'pointerdown' ? 1 : 0,
+            })
+          : new MouseEvent(k, {
+              ...at,
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              buttons: k === 'mousedown' ? 1 : 0,
+            }),
+      )
   }
   /**
    * 목록 열기. 상자를 눌러 보고, 안 열리면 감싼 칸(…control)을 누르고, 그래도 안 열리면 초점을 주고 ↓ 키
@@ -723,9 +747,13 @@ export async function pageSelectOptions(
     const sel = up.querySelector('select')
     if (sel && sel.options.length >= 2) return { options: fromSelect(sel) }
   }
-  const before = new Set([...document.querySelectorAll('body *')].filter(shownEl))
-  const wasOpen = el.getAttribute('aria-expanded') === 'true'
-  if (!wasOpen) await openList(el)
+  // opened: 본체가 진짜 마우스로 이미 열었다 (누르기 전 보이던 것은 pageRememberShown이 남겨 둠)
+  const before =
+    opened && st?.shownBefore
+      ? st.shownBefore
+      : new Set([...document.querySelectorAll('body *')].filter(shownEl))
+  const wasOpen = !opened && el.getAttribute('aria-expanded') === 'true'
+  if (!wasOpen && !opened) await openList(el)
   const ids = `${el.getAttribute('aria-controls') ?? ''} ${el.getAttribute('aria-owns') ?? ''}`
     .trim()
     .split(/\s+/)
@@ -738,6 +766,19 @@ export async function pageSelectOptions(
   const fresh = [...document.querySelectorAll('body *')].filter((e) => shownEl(e) && !before.has(e))
   if (items.length < 2)
     items = fresh.filter((e) => e.matches('[role=option],li,[role=menuitem],[role=menuitemradio]'))
+  // 같은 모양으로 늘어선 줄 묶음 (줄마다 "S" + "내일 도착보장"처럼 글이 여럿이면 줄 전체가 항목. 실측 무신사)
+  if (items.length < 2) {
+    let rows: Element[] = []
+    for (const e of fresh) {
+      const kids = [...e.children].filter((c) => {
+        const t = norm(c.textContent)
+        return shownEl(c) && !!t && t.length <= 80
+      })
+      if (kids.length >= 2 && kids.length > rows.length && kids.every((k) => k.tagName === kids[0]?.tagName))
+        rows = kids
+    }
+    if (rows.length >= 2) items = rows
+  }
   // 그래도 없으면 새로 보인 글 조각 중 가장 안쪽(글만 있는 것)
   if (items.length < 2)
     items = fresh.filter((e) => {
@@ -747,7 +788,8 @@ export async function pageSelectOptions(
   items = items.filter((e) => !items.some((o) => o !== e && e.contains(o)))
   const now = norm(el.getAttribute('aria-valuetext') || el.textContent || el.nextElementSibling?.textContent)
   const options = items.slice(0, 40).map((o) => {
-    const label = norm(o.textContent).slice(0, 60)
+    // innerText: 줄 안의 글 조각 사이를 띄운다 ("S내일 도착" → "S 내일 도착")
+    const label = norm((o as HTMLElement).innerText || o.textContent).slice(0, 60)
     const selected =
       o.getAttribute('aria-selected') === 'true' ||
       /(?:^|[\s_-])(?:selected|active|is-selected|on|checked)(?:$|[\s_-])/i.test(o.className) ||
@@ -774,6 +816,57 @@ export async function pageSelectOptions(
   }
 }
 
+/** 진짜 마우스로 목록을 열기 전에 지금 보이는 것을 남겨 둔다 (연 뒤 새로 보인 것만 목록으로 읽으려고) */
+export function pageRememberShown(): number {
+  type State = { refs: Map<string, WeakRef<Element>>; shownBefore?: Set<Element> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  if (!st) return 0
+  st.shownBefore = new Set(
+    [...document.querySelectorAll('body *')].filter((e) => {
+      const r = e.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    }),
+  )
+  return st.shownBefore.size
+}
+
+/**
+ * 연 목록에서 글자가 같은 항목의 화면 자리 (본체가 진짜 마우스로 누른다).
+ * 새로 보인 것 중 가장 안쪽을 먼저, 같은 글이 없으면 그 글로 시작하는 것이 하나뿐일 때 그것
+ */
+export function pageOptionPoint(
+  label: string,
+): { ok: true; x: number; y: number; label: string } | { ok: false; error: string } {
+  type State = { shownBefore?: Set<Element> }
+  const before = (globalThis as unknown as { __dool2?: State }).__dool2?.shownBefore
+  const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
+  // innerText: 줄 안의 글 조각 사이를 띄운다 ("S내일 도착" → "S 내일 도착"). 목록 읽기와 같은 글
+  const text = (e: Element) => norm((e as HTMLElement).innerText || e.textContent)
+  const want = norm(label)
+  const shown = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'
+  }
+  const all = [...document.querySelectorAll('body *')].filter(shown)
+  const fresh = before ? all.filter((e) => !before.has(e)) : all
+  const inner = (list: Element[]) => list.filter((e) => !list.some((o) => o !== e && e.contains(o)))
+  for (const pool of [fresh, all]) {
+    // 줄 전체 글이 같으면 그 줄(가장 안쪽 줄)을, 아니면 글 조각이 같은 것을, 그다음 그 글로 시작하는 것이 하나뿐일 때
+    let hit = inner(pool.filter((e) => text(e) === want))
+    if (!hit.length) {
+      const starts = inner(pool.filter((e) => text(e).startsWith(want) && text(e).length <= want.length + 40))
+      if (starts.length === 1) hit = starts
+    }
+    const e = hit[0]
+    if (e) {
+      e.scrollIntoView({ block: 'nearest' })
+      const r = e.getBoundingClientRect()
+      return { ok: true, x: r.left + r.width / 2, y: r.top + r.height / 2, label: text(e).slice(0, 60) }
+    }
+  }
+  return { ok: false, error: `"${label}"을(를) 연 목록에서 찾지 못했어요` }
+}
+
 /** 펼침 목록에서 글자가 같은 것을 고른다 (진짜·숨은 select는 값을 바꾸고 input·change, 꾸민 목록은 열어 그 항목을 누른다) */
 export async function pageSelectChoose(ref: string, label: string) {
   type State = { refs: Map<string, WeakRef<Element>> }
@@ -797,8 +890,30 @@ export async function pageSelectChoose(ref: string, label: string) {
     if (sel && sel.options.length >= 2) return setSelect(sel)
   }
   const press = (t: Element) => {
+    // pointer*는 PointerEvent로 (요즘 목록 부품(Radix 등)은 MouseEvent로 온 pointerdown을 무시한다. 실측 무신사·오늘의집)
+    const r = t.getBoundingClientRect()
+    const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
     for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
-      t.dispatchEvent(new MouseEvent(k, { bubbles: true, cancelable: true, view: window }))
+      t.dispatchEvent(
+        k.startsWith('pointer')
+          ? new PointerEvent(k, {
+              ...at,
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              pointerType: 'mouse',
+              isPrimary: true,
+              pointerId: 1,
+              buttons: k === 'pointerdown' ? 1 : 0,
+            })
+          : new MouseEvent(k, {
+              ...at,
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              buttons: k === 'mousedown' ? 1 : 0,
+            }),
+      )
   }
   const shown = (e: Element) => {
     const r = e.getBoundingClientRect()

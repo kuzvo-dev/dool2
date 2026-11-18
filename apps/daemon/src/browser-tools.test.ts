@@ -9,7 +9,9 @@ import {
   cookieReject,
   isCheckoutEntry,
   makePassword,
+  matchOption,
   nearlyEmpty,
+  optionFields,
   PAY_FLOW_TTL_MS,
   parseRefs,
   payScreen,
@@ -1562,5 +1564,96 @@ describe('새 비밀번호 만들기', () => {
     expect((await tools.run('new_password', { tabId: 3, password: 'e1', username: 'a@b.com' })).isError).toBe(
       true,
     )
+  })
+})
+
+describe('상품 옵션 고르기 (browser_select)', () => {
+  it('matchOption: 같은 글 → 품절·가격 뗀 글 → 하나뿐인 시작·포함', () => {
+    expect(matchOption(['S', 'M', 'L'], 'm')).toBe('M')
+    expect(matchOption(['옵션01 블랙 89,000 원', '옵션02 화이트 95,200 원'], '블랙')).toBe(
+      '옵션01 블랙 89,000 원',
+    )
+    expect(matchOption(['아이보리(SF-V넥)', '올리브(SF-V넥)'], '올리브')).toBe('올리브(SF-V넥)')
+    expect(matchOption(['M (품절)', 'L'], 'M')).toBe('M (품절)')
+    // 여러 개와 비슷하면 고르지 않는다
+    expect(matchOption(['블랙 S', '블랙 M'], '블랙')).toBeUndefined()
+    expect(matchOption(['250', '260', '270'], '26')).toBeUndefined()
+  })
+
+  it('optionFields: 옵션 칸만 짚는다', () => {
+    const refs = new Map([
+      ['e1', { role: '버튼', name: '옵션 열기' }],
+      ['e2', { role: '버튼', name: '장바구니' }],
+      ['e3', { role: '선택 상자', name: '색상' }],
+      ['e4', { role: '버튼', name: '선택해 주세요.' }],
+      ['e5', { role: '입력칸', name: '사이즈' }],
+      ['e6', { role: '버튼', name: '사이즈 가이드' }],
+    ])
+    expect(optionFields(refs).map((x) => x.split(' ')[0])).toEqual(['[e1', '[e3', '[e4', '[e5'])
+  })
+
+  /** 상품 화면 흉내: options는 목록을, choose는 고른 글을 남긴다 */
+  function shop(list: string[], dialog?: string) {
+    const chosen: string[] = []
+    let notes = dialog ? [{ type: 'alert', message: dialog }] : []
+    const b = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === 'snapshot') {
+          const r = {
+            tabId: 3,
+            url: 'https://shop.example/products/1',
+            title: '니트',
+            text: '[e1 버튼 "옵션 열기"] [e2 버튼 "구매하기"] [e3 결제 버튼 없음]',
+            truncated: false,
+            captcha: false,
+            dialogNotes: notes,
+          }
+          notes = []
+          return r
+        }
+        if (cmd === 'options') return { tabId: 3, options: list.map((label) => ({ label, selected: false })) }
+        if (cmd === 'choose') {
+          chosen.push(String(args?.label))
+          return { tabId: 3, label: args?.label }
+        }
+        return { tabId: 3, url: 'https://shop.example/products/1' }
+      },
+    }
+    const tools = new BrowserTools(b)
+    const text = (r: { content: { type: string; text?: string }[] }) =>
+      r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
+    return { tools, chosen, text }
+  }
+
+  it('choose 없이 부르면 목록(품절 표시)을 보여 주고, 말한 옵션을 고른다', async () => {
+    const t = shop(['S', 'M (품절)', 'L'])
+    await t.tools.run('read', { tabId: 3 })
+    const listed = t.text(await t.tools.run('select', { tabId: 3, ref: 'e1' }))
+    expect(listed).toContain('2. M (품절) — 고를 수 없음')
+    const r = await t.tools.run('select', { tabId: 3, ref: 'e1', choose: 'l' })
+    expect(r.isError).toBeUndefined()
+    expect(t.chosen).toEqual(['L'])
+    // 품절은 고르지 않는다
+    const sold = await t.tools.run('select', { tabId: 3, ref: 'e1', choose: 'M' })
+    expect(sold.isError).toBe(true)
+    expect(t.chosen).toEqual(['L'])
+  })
+
+  it('결제 수단·할부 목록은 고르지 않고 승인 카드로 돌린다', async () => {
+    const t = shop(['신용카드', '네이버페이', '카카오페이'])
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('select', { tabId: 3, ref: 'e1', choose: '네이버페이' })
+    expect(r.isError).toBe(true)
+    expect(t.text(r)).toContain('choices')
+    expect(t.chosen).toHaveLength(0)
+  })
+
+  it('"옵션을 선택해 주세요" 알림이 뜨면 옵션 칸을 짚어 알린다', async () => {
+    const t = shop(['S'], '옵션을 선택해 주세요.')
+    const out = t.text(await t.tools.run('read', { tabId: 3 }))
+    expect(out).toContain('🧩 옵션을 먼저 골라야 해요')
+    expect(out).toContain('[e1 버튼 "옵션 열기"]')
+    const again = t.text(await t.tools.run('read', { tabId: 3 }))
+    expect(again).not.toContain('🧩')
   })
 })

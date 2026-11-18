@@ -48,6 +48,7 @@ export const BROWSER_TOOLS = [
   'fill_profile',
   'request_profile',
   'new_password',
+  'select',
   'request_approval',
   'dialog',
   'steps',
@@ -474,6 +475,54 @@ export function makePassword(length = 16): string {
   return chars.join('')
 }
 
+/** 목록에서 사용자가 말한 옵션 찾기: 글이 같은 것, 없으면 그 글로 시작·그 글을 담은 것이 하나뿐일 때 */
+export function matchOption(options: string[], want: string): string | undefined {
+  const n = (x: string) => x.replace(/\s+/g, ' ').trim().toLowerCase()
+  const w = n(want)
+  if (!w) return undefined
+  const exact = options.find((o) => n(o) === w)
+  if (exact) return exact
+  // 품절 표시·가격은 떼고 본다 ("M (품절)", "옵션01 89,000 원")
+  const core = (o: string) =>
+    n(o)
+      .replace(/\s*[([]?\s*(품절|일시품절|재입고\s*알림)\s*[)\]]?\s*/g, '')
+      .replace(/\s*[+-]?[\d,]+\s*원\s*$/, '')
+  const same = options.filter((o) => core(o) === w)
+  if (same.length === 1) return same[0]
+  // 숫자 사이즈(260·95·32)는 정확히 같을 때만 ("26"이 "260"이 되면 안 된다)
+  if (/^\d+(\.\d+)?$/.test(w)) return undefined
+  const starts = options.filter((o) => core(o).startsWith(w))
+  if (starts.length === 1) return starts[0]
+  const has = options.filter((o) =>
+    new RegExp(`(^|[^a-z0-9가-힣])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9가-힣])`).test(
+      core(o),
+    ),
+  )
+  return has.length === 1 ? has[0] : undefined
+}
+
+/** 상품 옵션을 먼저 골라야 한다는 신호 (사이트 알림창·안내 글) */
+export const NEED_OPTION =
+  /옵션.{0,8}(선택|골라)|(사이즈|색상|컬러|옵션)(을|를)\s*(먼저\s*)?선택|선택.{0,6}옵션/
+
+/** 화면에서 옵션 칸으로 보이는 것 (선택 상자, "옵션 열기"·"사이즈"·"선택해 주세요" 같은 버튼·입력칸) */
+export function optionFields(refs: Map<string, { role: string; name: string }>): string[] {
+  const out: string[] = []
+  for (const [ref, c] of refs) {
+    const name = c.name.trim()
+    if (
+      c.role === '선택 상자' ||
+      ((c.role === '버튼' || c.role === '입력칸') &&
+        /^(옵션|사이즈|색상|컬러|용량|수량 선택|선택|선택해 ?주세요\.?|.{0,6}(옵션|사이즈|색상) ?(열기|선택)|선택 목록 열기)$/.test(
+          name,
+        ))
+    )
+      out.push(`[${ref} ${c.role} "${name.slice(0, 30)}"]`)
+    if (out.length >= 6) break
+  }
+  return out
+}
+
 /** 사이트 묶음 (member.ssg.com·www.ssg.com → ssg.com, www.aladin.co.kr → aladin.co.kr) */
 export function siteKey(hostOrUrl: string): string {
   let host = hostOrUrl.trim().toLowerCase()
@@ -860,6 +909,57 @@ export class BrowserTools {
             : '',
         ].filter(Boolean)
         return this.read(tabId, undefined, lines.join(' '))
+      }
+      case 'select': {
+        // 펼침 목록(상품 옵션·선택 상자): choose가 없으면 목록을 보여 주고, 있으면 그 글로 고른다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        const ref = String(a.ref ?? '')
+        if (!page.refs.has(ref)) throw new Error(`${ref} 표시가 없어요. 페이지를 다시 읽어 주세요`)
+        const list = await this.selectOptions(tabId, ref)
+        if (!list?.length)
+          throw new Error(
+            `${ref} 목록을 읽지 못했어요. browser_click으로 그 칸을 눌러 연 뒤 페이지를 읽고, 보이는 항목을 browser_click으로 눌러 주세요.`,
+          )
+        const labels = list.map((o) => o.label)
+        // 결제 수단·할부는 사용자가 승인 카드에서 고른다 (AI가 고르지 않는다)
+        if (
+          labels.filter((l) => /카드|페이|할부|일시불|계좌이체|무통장|간편결제|휴대폰 결제/.test(l)).length >=
+          2
+        )
+          throw new Error(
+            '결제 수단·할부 목록은 직접 고르지 않아요. 결제 버튼의 browser_request_approval에 이 칸을 choices로 넣으면 사용자가 승인 카드에서 골라요.',
+          )
+        const want = typeof a.choose === 'string' ? a.choose.trim() : ''
+        if (!want) {
+          const lines = list.map(
+            (o, i) =>
+              `${i + 1}. ${o.label}${o.selected ? ' ✓(지금 골라진 것)' : ''}${/품절|재입고/.test(o.label) ? ' — 고를 수 없음' : ''}`,
+          )
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `[탭 ${tabId}] ${ref} 목록 (${list.length}개)\n${lines.join('\n')}\n\n고르려면 browser_select에 choose로 항목 글을 넣어 주세요(사용자가 말한 옵션, 없으면 기억한 사이즈·색).`,
+              },
+            ],
+          }
+        }
+        const hit = matchOption(labels, want)
+        if (!hit)
+          throw new Error(
+            `"${want}"이(가) 목록에 없거나 여러 개와 비슷해요. 목록: ${labels.slice(0, 20).join(' · ')}. 맞는 것이 없으면 사용자에게 어느 걸로 할지 물어 주세요.`,
+          )
+        if (/품절|재입고/.test(hit))
+          throw new Error(
+            `"${hit}"은(는) 품절이에요. 사용자에게 알리고 다른 옵션을 물어 주세요(재입고 알림을 원하면 그것도).`,
+          )
+        await this.browser.call('choose', { tabId, ref, label: hit }, 20_000)
+        return this.read(
+          tabId,
+          undefined,
+          `${ref} 목록에서 "${hit}"을(를) 골랐어요. 옵션이 더 있으면 같은 방법으로 고르고, 다 고르면 수량·금액을 확인해 주세요.`,
+        )
       }
       case 'new_password': {
         // 가입·비번 변경: 강한 비밀번호를 만들어 넣는다. 금고에는 끝난 걸 화면에서 본 뒤에 넣는다. AI는 값을 받지 않는다
@@ -1866,6 +1966,15 @@ export class BrowserTools {
     const info = pageInfo(s.url, s.text)
     this.pages.set(tabId, info)
     const accountNote = await this.settlePassword(s)
+    // 구매 버튼을 눌렀는데 "옵션을 선택해 주세요"가 떴으면, 옵션 칸을 짚어 고르는 법을 알린다
+    const optionNote =
+      notes.some((d) => d.type !== 'beforeunload' && NEED_OPTION.test(d.message)) ||
+      /옵션\s*선택\s*후에|옵션을\s*(먼저\s*)?선택해\s*주세요/.test(s.text)
+        ? (() => {
+            const fields = optionFields(info.refs)
+            return `🧩 옵션을 먼저 골라야 해요.${fields.length ? ` 옵션 칸: ${fields.join(' ')}.` : ''} browser_select(ref)로 목록을 보고, 사용자가 말한 옵션(없으면 기억해 둔 사이즈·색)을 choose로 고른 뒤 다시 구매 버튼을 눌러요. 기억에도 없으면 사용자에게 한 번만 물어요(목록에서 고를 수 있는 것과 품절을 같이 알려 주기).`
+          })()
+        : undefined
     const guide = await this.guideFor(tabId, s.url)
     const flow = this.payFlow(tabId)
     const lines = [
@@ -1873,6 +1982,7 @@ export class BrowserTools {
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
       ...(cookieNote ? [cookieNote] : []),
       ...(accountNote ? [accountNote] : []),
+      ...(optionNote ? [optionNote] : []),
       ...(flow && info.confirmed
         ? [
             `⚠ 화면에 "${info.confirmed}"이(가) 보여요. 예약·주문이 이미 확정됐을 수 있어요. 사용자에게 그대로 알리고 내역 화면에서 확인해 주세요.`,
