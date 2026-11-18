@@ -2183,8 +2183,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
 
     // 내 정보 (예약자·주문자 칸): 화면은 가린 값만 받는다. 고칠 땐 넣은 칸만 바뀐다 (빈 값 = 지우기)
+    const payChoices = () => (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}
+    // 사이트별로 기억한 결제 수단 잊기 (PC 설정 화면)
+    if (a === 'profile' && b === 'pay' && c && req.method === 'DELETE') {
+      const now = { ...payChoices() }
+      delete now[c]
+      store.setSetting('payChoices', now)
+      browserTools.forgetChoice(c)
+      return json(res, 200, { ok: true, payChoices: now })
+    }
     if (a === 'profile' && !b) {
-      if (req.method === 'GET') return json(res, 200, await profile.masked())
+      if (req.method === 'GET')
+        return json(res, 200, { ...(await profile.masked()), payChoices: payChoices() })
       if (req.method === 'PUT') {
         const body = (await readJson(req)) as Record<string, unknown>
         const r = await profile.update(body && typeof body === 'object' ? body : {})

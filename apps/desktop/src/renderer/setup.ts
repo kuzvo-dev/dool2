@@ -99,6 +99,30 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
+/** 내 정보 항목 (본체 profile.ts PROFILE_FIELDS와 같은 순서) */
+const PROFILE_LABELS: Record<string, string> = {
+  name: '이름',
+  name_en_last: '영문 성',
+  name_en_first: '영문 이름',
+  email: '이메일',
+  phone: '휴대폰 번호',
+  birth: '생년월일',
+  zip: '우편번호',
+  address: '주소',
+  address_detail: '상세 주소',
+}
+const PROFILE_EXAMPLES: Record<string, string> = {
+  name: '홍길동',
+  name_en_last: 'HONG',
+  name_en_first: 'GILDONG',
+  email: 'me@example.com',
+  phone: '010-1234-5678',
+  birth: '1990-01-31',
+  zip: '06236',
+  address: '서울 강남구 테헤란로 123',
+  address_detail: '4층 401호',
+}
+
 function button(cls: string, text: string, onClick: () => void) {
   const b = el('button', cls, text)
   b.type = 'button'
@@ -137,6 +161,15 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let pairTimer: ReturnType<typeof setTimeout> | undefined
   /** QR·확인 코드가 새로 나오면 그 자리로 화면을 내린다 (설정 화면이 길어서) */
   let scrollToPair = false
+  // 내 정보 · 결제 (설정 화면): 가린 값만 받는다. 고칠 땐 넣은 칸만 바뀐다
+  const me: {
+    have: Record<string, string>
+    payChoices: Record<string, string>
+    editing: boolean
+    draft: Record<string, string>
+    saving: boolean
+    note?: string
+  } = { have: {}, payChoices: {}, editing: false, draft: {}, saving: false }
   // 두리 금고 (설정 화면)
   const vault: {
     entries: VaultEntry[]
@@ -345,7 +378,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           opts.loadChrome(),
           opts.loadExtension(),
         ])
-        if (step === 'settings') await Promise.all([loadVault(), loadLink(), loadScreen()])
+        if (step === 'settings') await Promise.all([loadVault(), loadLink(), loadScreen(), loadMe()])
       }
       render()
     }
@@ -575,6 +608,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           card.append(el('h2', 'over', '마지막 확인'), gate)
           card.append(el('h2', 'over', '폰 연결'), phoneBlock())
           card.append(el('h2', 'over', '두리 금고'), vaultBlock())
+          card.append(el('h2', 'over', '내 정보 · 결제'), meBlock())
           if (screen?.available) card.append(el('h2', 'over', 'PC 앱 조작'), screenBlock())
           const ai = el('p', 'setup-hint')
           ai.append(
@@ -855,6 +889,159 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         box.append(list)
       } else
         box.append(el('p', 'setup-hint', '아직 허용한 앱이 없어요. 두리가 처음 다루는 앱은 그때 물어볼게요.'))
+      return box
+    }
+
+    const loadMe = async () => {
+      const r = await opts
+        .api<{ have: Record<string, string>; payChoices?: Record<string, string> }>('/api/profile')
+        .catch(() => ({ have: {}, payChoices: {} }))
+      me.have = r.have ?? {}
+      me.payChoices = r.payChoices ?? {}
+    }
+
+    const saveMe = async () => {
+      if (me.saving) return
+      const body = Object.fromEntries(Object.entries(me.draft).filter(([, v]) => v.trim()))
+      if (!Object.keys(body).length) {
+        me.editing = false
+        render()
+        return
+      }
+      me.saving = true
+      render()
+      const r = await opts
+        .api<{ bad?: string[] }>('/api/profile', { method: 'PUT', body: JSON.stringify(body) })
+        .catch(() => ({ bad: Object.keys(body) }))
+      const bad = (r.bad ?? []).map((k) => PROFILE_LABELS[k] ?? k)
+      me.note = bad.length ? `형식이 맞지 않아 빼고 저장했어요: ${bad.join('·')}` : '저장했어요'
+      me.saving = false
+      me.editing = false
+      me.draft = {}
+      await loadMe()
+      render()
+    }
+
+    /** 내 정보: 예약·주문 칸에 두리가 채우는 값. 화면에도 가린 값만 보인다 (값은 이 PC 키체인에만) */
+    const meBlock = () => {
+      const box = el('div', 'vault')
+      box.append(
+        el(
+          'p',
+          'setup-hint',
+          '예약자·주문자 칸은 두리가 여기 값으로 직접 채워요. AI에게는 가린 값만 보여요. 처음 필요할 때 폰 카드로 받기도 해요.',
+        ),
+      )
+      if (!me.editing) {
+        // 있는 항목만 줄로, 없는 항목은 한 줄로 모은다 (아홉 줄이 다 '아직 없어요'면 읽기 힘들다)
+        const list = el('ul', 'vault-list')
+        const missing: string[] = []
+        for (const [k, label] of Object.entries(PROFILE_LABELS)) {
+          const v = me.have[k]
+          if (!v) {
+            missing.push(label)
+            continue
+          }
+          const li = el('li')
+          const text = el('div', 'text')
+          text.append(el('strong', undefined, label), el('span', undefined, v))
+          li.append(text)
+          list.append(li)
+        }
+        if (list.childElementCount) box.append(list)
+        if (missing.length)
+          box.append(
+            el(
+              'p',
+              'cap',
+              list.childElementCount
+                ? `아직 없어요: ${missing.join('·')}`
+                : '아직 넣은 정보가 없어요. 처음 예약·주문할 때 폰 카드로 받거나 [고치기]로 넣어요.',
+            ),
+          )
+        const row = el('div', 'login-actions')
+        row.append(
+          button('btn-small', '고치기', () => {
+            me.editing = true
+            me.note = undefined
+            render()
+          }),
+        )
+        if (Object.keys(me.have).length)
+          row.append(
+            button('btn-link', '모두 지우기', async () => {
+              await opts.api('/api/profile', { method: 'DELETE' }).catch(() => {})
+              me.note = '내 정보를 모두 지웠어요'
+              await loadMe()
+              render()
+            }),
+          )
+        box.append(row)
+      } else {
+        const form = el('form', 'key-form')
+        for (const [k, label] of Object.entries(PROFILE_LABELS)) {
+          const i = el('input')
+          i.id = `me-${k}`
+          i.autocomplete = 'off'
+          // 지금 값은 가린 채로 자리 표시에만. 비워 두면 그대로 둔다
+          i.placeholder = me.have[k] ?? (PROFILE_EXAMPLES[k] ? `예: ${PROFILE_EXAMPLES[k]}` : '')
+          i.value = me.draft[k] ?? ''
+          i.oninput = () => {
+            me.draft[k] = i.value
+          }
+          const l = el('label', undefined, label)
+          l.append(i)
+          form.append(l)
+        }
+        form.onsubmit = (ev) => {
+          ev.preventDefault()
+          void saveMe()
+        }
+        const row = el('div', 'login-actions')
+        const save = el('button', 'btn-small', me.saving ? '저장하는 중…' : '저장')
+        save.type = 'submit'
+        save.disabled = me.saving
+        row.append(
+          save,
+          button('btn-link', '닫기', () => {
+            me.editing = false
+            me.draft = {}
+            render()
+          }),
+        )
+        form.append(row, el('p', 'cap', '바꿀 칸만 넣으세요. 비워 둔 칸은 그대로예요.'))
+        box.append(form)
+      }
+      if (me.note) box.append(el('p', 'cap', me.note))
+      // 사이트별로 기억한 결제 수단 (승인 카드의 기본값)
+      const pays = Object.entries(me.payChoices)
+      if (pays.length) {
+        box.append(
+          el(
+            'p',
+            'setup-hint',
+            '사이트별로 마지막에 고른 결제 수단이에요. 다음 승인 카드에서 먼저 골라 둬요.',
+          ),
+        )
+        const list = el('ul', 'vault-list')
+        for (const [host, label] of pays) {
+          const li = el('li')
+          const text = el('div', 'text')
+          text.append(el('strong', undefined, host), el('span', undefined, label))
+          li.append(
+            text,
+            button('btn-link', '잊기', async () => {
+              await opts
+                .api(`/api/profile/pay/${encodeURIComponent(host)}`, { method: 'DELETE' })
+                .catch(() => {})
+              await loadMe()
+              render()
+            }),
+          )
+          list.append(li)
+        }
+        box.append(list)
+      }
       return box
     }
 
