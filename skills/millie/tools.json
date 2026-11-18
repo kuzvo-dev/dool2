@@ -70,6 +70,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -122,7 +126,8 @@
               "shelved": "library_take_count_all",
               "published": "publish_date",
               "book_id": "book_id",
-              "link": "https://www.millie.co.kr/v4/book/{{book_id}}"
+              "link": "https://www.millie.co.kr/v4/book/{{book_id}}",
+              "image": "cover_image_url"
             }
           },
           "as": "books"

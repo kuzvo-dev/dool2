@@ -77,6 +77,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -133,6 +137,9 @@
               "product_id": {
                 "attr": "href",
                 "match": "/goods/(\\d+)"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -144,6 +151,7 @@
             "limit": 60,
             "fields": {
               "name": "name",
+              "image": "image",
               "brand": "brand",
               "price": "price",
               "discount": "discount",
@@ -181,6 +189,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "brand": "brand",
               "price": "price",
               "discount": "discount",

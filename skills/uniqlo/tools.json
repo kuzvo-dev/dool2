@@ -93,6 +93,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -145,7 +149,8 @@
               "color_names": "colors.*.name",
               "sizes": "sizes.*.name",
               "size_codes": "sizes.*.displayCode",
-              "link": "https://www.uniqlo.com/kr/ko/products/{{productId}}/{{priceGroup}}"
+              "link": "https://www.uniqlo.com/kr/ko/products/{{productId}}/{{priceGroup}}",
+              "image": "images.main.*.image"
             }
           },
           "as": "all"
@@ -184,7 +189,8 @@
               "color_names": "color_names",
               "sizes": "sizes",
               "size_codes": "size_codes",
-              "link": "link"
+              "link": "link",
+              "image": "image"
             }
           },
           "as": "products"

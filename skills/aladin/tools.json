@@ -92,6 +92,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -171,6 +175,9 @@
               },
               "item_id": {
                 "attr": "itemid"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -182,6 +189,7 @@
             "limit": "{{limit}}",
             "fields": {
               "title": "title",
+              "image": "image",
               "kind": "kind",
               "author": "author",
               "publisher": "publisher",
@@ -282,6 +290,14 @@
             "used_link": {
               "type": "string",
               "description": "중고 모두 보기 주소"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "주소"
             }
           }
         }
@@ -360,6 +376,9 @@
               "used_link": {
                 "css": "a.bo3",
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -371,6 +390,7 @@
             "limit": "{{limit}}",
             "fields": {
               "title": "title",
+              "image": "image",
               "author": "author",
               "publisher": "publisher",
               "new_price": "new_price",
@@ -382,7 +402,8 @@
               "seller_used": "seller_used",
               "seller_used_count": "seller_used_count",
               "item_id": "item_id",
-              "used_link": "used_link"
+              "used_link": "used_link",
+              "link": "{{#item_id}}https://www.aladin.co.kr/shop/wproduct.aspx?ItemId={{item_id}}{{/item_id}}"
             }
           },
           "as": "books"

@@ -95,6 +95,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -147,7 +151,8 @@
               "likes": "itemInfo.likeCount",
               "sold_out": "itemInfo.isSoldOut",
               "badges": "itemInfo.textBadges.*.text",
-              "link": "https://www.29cm.co.kr/products/{{itemId}}"
+              "link": "https://www.29cm.co.kr/products/{{itemId}}",
+              "image": "itemInfo.thumbnailUrl"
             }
           },
           "as": "all"
@@ -177,7 +182,8 @@
               "likes": "likes",
               "sold_out": "sold_out",
               "badges": "badges",
-              "link": "link"
+              "link": "link",
+              "image": "image"
             }
           },
           "as": "products"

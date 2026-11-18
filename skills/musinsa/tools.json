@@ -109,6 +109,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -161,7 +165,8 @@
               "sold_out": "isSoldOut",
               "gender": "displayGenderText",
               "delivery": "plusDeliveryGuideText",
-              "link": "https://www.musinsa.com/products/{{goodsNo}}"
+              "link": "https://www.musinsa.com/products/{{goodsNo}}",
+              "image": "thumbnail"
             }
           },
           "as": "products"

@@ -285,6 +285,11 @@ export const ConnectorToolSchema = z
       .optional(),
     /** 같은 입력으로 다시 부를 수 있는 간격(초). 그 안에 다시 부르면 지난 결과를 돌려준다 */
     minIntervalSec: z.number().int().min(0).max(86_400).optional(),
+    /**
+     * false: 고를 후보 목록이 아니라 카드로 보여 주지 않는다 (극장 목록·상영 시간·가사·택배 단계 등).
+     * 쇼핑·숙소·책·예매·영상 분야의 찾아보기 목록은 기본으로 사진(image)·링크(link) 칸이 있어야 한다
+     */
+    cards: z.boolean().optional(),
   })
   .strict()
 export type ConnectorTool = z.infer<typeof ConnectorToolSchema>
@@ -481,7 +486,15 @@ const BANNED = [
 ]
 
 /** 커넥터 문제를 사람이 읽을 수 있는 목록으로. site = 연결 카드의 도메인 */
-export function checkConnector(dir: string, raw: unknown, site?: string | string[]): string[] {
+/** 고를 후보를 사진 카드로 보여 주는 분야 (연결 카드의 category) */
+export const CARD_CATEGORIES = ['shopping', 'grocery', 'fashion', 'travel', 'tickets', 'media', 'books']
+
+export function checkConnector(
+  dir: string,
+  raw: unknown,
+  site?: string | string[],
+  category?: string,
+): string[] {
   const r = ConnectorSchema.safeParse(raw)
   if (!r.success) return r.error.issues.map((i) => `${i.path.join('.') || '(전체)'}: ${i.message}`)
   const c = r.data
@@ -505,6 +518,15 @@ export function checkConnector(dir: string, raw: unknown, site?: string | string
       for (const n of names) if (!known.has(n)) problems.push(`${at} ${where}의 {{${n}}}가 무엇인지 몰라요`)
       for (const f of filters)
         if (!TEMPLATE_FILTERS.includes(f)) problems.push(`${at} ${where}의 거르개 |${f}를 몰라요`)
+    }
+    // 사진 카드(show_cards): 이 분야의 찾아보기 목록은 사진·링크 칸이 있어야 카드로 보인다 (앞으로 만드는 도구도)
+    const lists = Object.values(t.output).filter((o) => o.type === 'list')
+    if (category && CARD_CATEGORIES.includes(category) && t.tier === '찾아보기' && t.cards !== false && lists.length) {
+      const has = (k: string) => lists.some((o) => o.type === 'list' && k in o.fields)
+      if (!has('image') || !has('link'))
+        problems.push(
+          `${at} 고를 후보 목록이면 사진(image)·링크(link) 칸을 넣어요 (답에 사진 카드로 보여요). 사진은 extract의 {"image": true}나 데이터의 사진 경로. 카드가 안 맞는 목록이면 "cards": false`,
+        )
     }
     const kinds = t.steps.map(stepKind)
     t.steps.forEach((s, i) => {

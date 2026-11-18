@@ -62,6 +62,14 @@
             "song_id": {
               "type": "string",
               "description": "멜론 곡 번호"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "주소"
             }
           }
         }
@@ -115,6 +123,9 @@
               },
               "song_id": {
                 "attr": "data-song-no"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -128,10 +139,12 @@
             "fields": {
               "rank": "rank",
               "title": "title",
+              "image": "image",
               "artist": "artist",
               "album": "album",
               "change": "change",
-              "song_id": "song_id"
+              "song_id": "song_id",
+              "link": "{{#song_id}}https://www.melon.com/song/detail.htm?songId={{song_id}}{{/song_id}}"
             }
           },
           "as": "songs"
@@ -284,7 +297,8 @@
           "song_id"
         ]
       },
-      "minIntervalSec": 600
+      "minIntervalSec": 600,
+      "cards": false
     },
     {
       "name": "lyrics",
@@ -407,7 +421,8 @@
           "song_id"
         ]
       },
-      "minIntervalSec": 600
+      "minIntervalSec": 600,
+      "cards": false
     },
     {
       "name": "prepare_playlist",

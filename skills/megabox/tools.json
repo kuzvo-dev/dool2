@@ -92,7 +92,8 @@
       },
       "next": "사용자가 말한 극장의 theater_id로 megabox_showtimes를 불러요. 비슷한 이름이 여럿이면 물어봐요.",
       "minIntervalSec": 3600,
-      "login": false
+      "login": false,
+      "cards": false
     },
     {
       "name": "movies",
@@ -143,6 +144,14 @@
             "grade": {
               "type": "string",
               "description": "관람 등급 표시(age-15 등)"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "주소"
             }
           }
         }
@@ -188,6 +197,9 @@
                 "css": ".tit-area .movie-grade",
                 "attr": "class",
                 "match": "(age-\\w+)"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -209,10 +221,12 @@
             "fields": {
               "rank": "rank",
               "title": "title",
+              "image": "image",
               "movie_id": "movie_id",
               "booking_rate": "booking_rate",
               "opened": "opened",
-              "grade": "grade"
+              "grade": "grade",
+              "link": "{{#movie_id}}https://www.megabox.co.kr/movie-detail?rpstMovieNo={{movie_id}}{{/movie_id}}"
             }
           },
           "as": "movies"
@@ -330,7 +344,8 @@
       },
       "next": "목록이 비면 그날 시간표가 아직 없거나 극장 화면 날짜(약 2주) 밖이에요. 사용자가 말한 영화·시간대에 맞는 회차 2~4개를 시각(오후 9:05처럼)·상영관·남은 좌석으로 보여 줘요. 예매하려면 megabox_prepare_booking.",
       "minIntervalSec": 300,
-      "login": false
+      "login": false,
+      "cards": false
     },
     {
       "name": "prepare_booking",

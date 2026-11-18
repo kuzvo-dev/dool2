@@ -73,6 +73,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -113,7 +117,8 @@
               "sold_out": "isSoldOut",
               "reviews": "reviewCount",
               "about": "shortDescription",
-              "link": "https://www.kurly.com/goods/{{no}}"
+              "link": "https://www.kurly.com/goods/{{no}}",
+              "image": "listImageUrl"
             }
           },
           "as": "all"
@@ -141,7 +146,8 @@
               "sold_out": "sold_out",
               "reviews": "reviews",
               "about": "about",
-              "link": "link"
+              "link": "link",
+              "image": "image"
             }
           },
           "as": "products"

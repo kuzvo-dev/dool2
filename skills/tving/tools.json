@@ -32,6 +32,14 @@
             "content_id": {
               "type": "string",
               "description": "티빙 작품 번호 (P로 시작)"
+            },
+            "image": {
+              "type": "string",
+              "description": "포스터 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "작품 주소"
             }
           }
         },
@@ -46,6 +54,14 @@
             "content_id": {
               "type": "string",
               "description": "티빙 작품 번호 (M으로 시작)"
+            },
+            "image": {
+              "type": "string",
+              "description": "포스터 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "작품 주소"
             }
           }
         }
@@ -102,6 +118,12 @@
               "content_id": {
                 "attr": "href",
                 "match": "/contents/([A-Z]\\d+)"
+              },
+              "image": {
+                "image": true
+              },
+              "link": {
+                "attr": "href"
               }
             }
           },
@@ -121,6 +143,12 @@
               "content_id": {
                 "attr": "href",
                 "match": "/contents/([A-Z]\\d+)"
+              },
+              "image": {
+                "image": true
+              },
+              "link": {
+                "attr": "href"
               }
             }
           },
@@ -282,7 +310,8 @@
           "content_ids"
         ]
       },
-      "minIntervalSec": 3600
+      "minIntervalSec": 3600,
+      "cards": false
     },
     {
       "name": "content",
@@ -419,7 +448,8 @@
           "year"
         ]
       },
-      "minIntervalSec": 3600
+      "minIntervalSec": 3600,
+      "cards": false
     },
     {
       "name": "history",
