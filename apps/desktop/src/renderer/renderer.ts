@@ -932,7 +932,9 @@ function screenTab(): HTMLElement {
   if (state.busy && t) {
     const log = el('ul', 'worklog')
     const groups = groupSteps(turnSteps(t.steps, t.info), placeCards())
-    groups.forEach((g, i) => log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done')))
+    groups.forEach((g, i) => {
+      log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done'))
+    })
     if (!t.steps.length) log.append(el('li', 'now', '무엇부터 할지 정하는 중'))
     log.append(el('li', 'next', '돈 드는 일은 먼저 물어볼게요'))
     const clock = el('span', 'meta', elapsed(Math.floor((Date.now() - t.started) / 1000)))
