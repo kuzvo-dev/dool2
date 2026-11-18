@@ -90,6 +90,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -128,7 +132,8 @@
               "original_price": "room.stay.price.strikePrice",
               "rooms_left": "room.stay.label.remain",
               "sale_status": "room.stay.status",
-              "link": "https://www.yeogi.com/domestic-accommodations/{{meta.id}}"
+              "link": "https://www.yeogi.com/domestic-accommodations/{{meta.id}}",
+              "image": "meta.newImages.0"
             }
           },
           "as": "rows"
@@ -308,7 +313,8 @@
         "rooms": "{{rooms}}"
       },
       "next": "인원(max_people)에 맞고 사용자가 바란 조건(무료 취소·조식·뷰)에 맞는 객실 2~3개를 가격·취소 규정과 함께 보여 줘요. 예약하려면 yeogi_prepare_booking에 stay_id·날짜·인원·객실 이름을 넘겨요.",
-      "minIntervalSec": 300
+      "minIntervalSec": 300,
+      "cards": false
     },
     {
       "name": "prepare_booking",

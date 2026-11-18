@@ -69,6 +69,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -127,7 +131,8 @@
               "discount": "item.discount_rate",
               "sold": "item.sell_count",
               "category": "item.category_name",
-              "link": "https://m.a-bly.com/goods/{{item.sno}}"
+              "link": "https://m.a-bly.com/goods/{{item.sno}}",
+              "image": "item.image"
             }
           },
           "as": "all"
@@ -154,7 +159,8 @@
               "discount": "discount",
               "sold": "sold",
               "category": "category",
-              "link": "link"
+              "link": "link",
+              "image": "image"
             }
           },
           "as": "products"

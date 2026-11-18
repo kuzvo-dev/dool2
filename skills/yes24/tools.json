@@ -96,6 +96,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -175,6 +179,9 @@
               },
               "goods_no": {
                 "attr": "data-goods-no"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -186,6 +193,7 @@
             "limit": "{{limit}}",
             "fields": {
               "title": "title",
+              "image": "image",
               "kind": "kind",
               "author": "author",
               "publisher": "publisher",

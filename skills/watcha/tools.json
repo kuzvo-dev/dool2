@@ -36,6 +36,14 @@
             "content_id": {
               "type": "string",
               "description": "왓챠 작품 번호 (watcha_content에 넘김)"
+            },
+            "image": {
+              "type": "string",
+              "description": "포스터 (카드에 넣어요)"
+            },
+            "link": {
+              "type": "string",
+              "description": "작품 주소"
             }
           }
         },
@@ -87,6 +95,12 @@
               "content_id": {
                 "attr": "href",
                 "match": "/contents/([A-Za-z0-9]+)"
+              },
+              "image": {
+                "image": true
+              },
+              "link": {
+                "attr": "href"
               }
             }
           },
@@ -205,7 +219,8 @@
           "content_id"
         ]
       },
-      "minIntervalSec": 3600
+      "minIntervalSec": 3600,
+      "cards": false
     },
     {
       "name": "content",
@@ -328,7 +343,8 @@
           "synopsis"
         ]
       },
-      "minIntervalSec": 86400
+      "minIntervalSec": 86400,
+      "cards": false
     },
     {
       "name": "history",

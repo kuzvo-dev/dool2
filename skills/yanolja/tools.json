@@ -81,6 +81,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -160,6 +164,9 @@
               },
               "link": {
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -240,6 +247,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -311,6 +322,9 @@
               },
               "link": {
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },

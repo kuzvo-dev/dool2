@@ -75,6 +75,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -120,7 +124,8 @@
               "price": "{{shopMeta.prices.lunchAndDinnerPriceText}} {{shopMeta.prices.lunchPriceText}} {{shopMeta.prices.dinnerPriceText}}",
               "about": "shopMeta.reviewOverview.title",
               "times": "dining.singleDateSlotInfo.timeSlotList.*.time",
-              "link": "https://app.catchtable.co.kr/ct/shop/{{shopMeta.urlPathAlias}}"
+              "link": "https://app.catchtable.co.kr/ct/shop/{{shopMeta.urlPathAlias}}",
+              "image": "shopMeta.images.0.thumbUrl"
             }
           },
           "as": "shops"

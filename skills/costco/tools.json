@@ -74,6 +74,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         },
@@ -125,7 +129,8 @@
               "reviews": "numberOfReviews",
               "stock": "stock.stockLevelStatus",
               "shipping_included": "shippingIncluded",
-              "link": "https://www.costco.co.kr{{url}}"
+              "link": "https://www.costco.co.kr{{url}}",
+              "image": "{{#images.0.url}}https://www.costco.co.kr{{images.0.url}}{{/images.0.url}}"
             }
           },
           "as": "products"

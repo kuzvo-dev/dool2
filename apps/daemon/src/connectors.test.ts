@@ -20,7 +20,12 @@ describe('레포의 서비스 도구', () => {
       const card = JSON.parse(await readFile(join(REPO_SKILLS, d.name, 'connect.json'), 'utf8'))
       expect(checkConnectCard(d.name, card), d.name).toEqual([])
       expect(
-        checkConnector(d.name, JSON.parse(raw), [card.site, ...(card.alsoSites ?? [])].filter(Boolean)),
+        checkConnector(
+          d.name,
+          JSON.parse(raw),
+          [card.site, ...(card.alsoSites ?? [])].filter(Boolean),
+          card.category,
+        ),
         d.name,
       ).toEqual([])
     }

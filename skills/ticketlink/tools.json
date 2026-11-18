@@ -49,6 +49,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -97,6 +101,9 @@
               "link": {
                 "css": "a.result_info",
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -109,6 +116,7 @@
             "limit": "{{limit}}",
             "fields": {
               "title": "title",
+              "image": "image",
               "place": "place",
               "period": "period",
               "price": "price",
@@ -329,7 +337,8 @@
       },
       "next": "회차와 등급별 남은 좌석을 짧게 알려 주고, 사용자가 다른 날짜를 원하면 dates에서 골라 ticketlink_prepare_booking으로 그 날짜를 열어 남은 좌석을 읽어요. 다 매진이면 다른 날짜를 권해요.",
       "minIntervalSec": 300,
-      "login": false
+      "login": false,
+      "cards": false
     },
     {
       "name": "prepare_booking",

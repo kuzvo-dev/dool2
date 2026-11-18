@@ -84,6 +84,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -168,6 +172,9 @@
               "flags": {
                 "css": ".prd_flag .icon_flag",
                 "list": true
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -189,6 +196,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "brand": "brand",
               "product_no": "product_no",
               "price": "price",
@@ -284,6 +292,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -350,6 +362,9 @@
               "flags": {
                 "css": ".prd_flag .icon_flag",
                 "list": true
+              },
+              "image": {
+                "image": true
               }
             }
           },
@@ -371,6 +386,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "brand": "brand",
               "product_no": "product_no",
               "price": "price",

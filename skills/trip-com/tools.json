@@ -115,6 +115,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -176,6 +180,9 @@
                 "css": "a[href*='hotelId=']",
                 "attr": "href",
                 "match": "^([^#]+?)&hoteluniquekey"
+              },
+              "image": {
+                "image": true
               }
             }
           },

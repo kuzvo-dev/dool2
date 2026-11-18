@@ -100,6 +100,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -168,6 +172,9 @@
               "link": {
                 "css": "a[data-testid='title-link']",
                 "attr": "href"
+              },
+              "image": {
+                "image": true
               }
             }
           },

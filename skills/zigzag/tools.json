@@ -84,6 +84,10 @@
             },
             "link": {
               "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
             }
           }
         }
@@ -144,7 +148,8 @@
               "reviews": "display_review_count",
               "free_shipping": "free_shipping",
               "status": "sellable_status",
-              "link": "https://zigzag.kr/catalog/products/{{catalog_product_id}}"
+              "link": "https://zigzag.kr/catalog/products/{{catalog_product_id}}",
+              "image": "image_url"
             }
           },
           "as": "all"
@@ -172,7 +177,8 @@
               "reviews": "reviews",
               "free_shipping": "free_shipping",
               "status": "status",
-              "link": "link"
+              "link": "link",
+              "image": "image"
             }
           },
           "as": "products"

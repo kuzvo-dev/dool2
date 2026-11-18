@@ -22,36 +22,85 @@
             "description": "몇 개까지 (기본 10)"
           }
         },
-        "required": ["keyword"]
+        "required": [
+          "keyword"
+        ]
       },
       "output": {
         "products": {
           "type": "list",
           "description": "상품",
           "fields": {
-            "name": { "type": "string", "description": "상품 이름 (용량·개수 포함)" },
-            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 번호" },
-            "price": { "type": "integer", "description": "판매가 (원)" },
-            "regular_price": { "type": "integer", "description": "정가 (원)" },
-            "discount": { "type": "string", "description": "할인율" },
-            "coupon_price": { "type": "integer", "description": "쿠폰 적용가 (원, 쿠폰을 받아야 이 값)" },
-            "unit_price": { "type": "string", "description": "단위 가격 (100ml당 245원 등)" },
-            "storage": { "type": "strings", "description": "보관 (냉장·냉동 등)" },
-            "delivery": { "type": "strings", "description": "배송 종류" },
-            "rating": { "type": "number" },
-            "reviews": { "type": "integer" },
-            "link": { "type": "string" }
+            "name": {
+              "type": "string",
+              "description": "상품 이름 (용량·개수 포함)"
+            },
+            "product_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 번호"
+            },
+            "price": {
+              "type": "integer",
+              "description": "판매가 (원)"
+            },
+            "regular_price": {
+              "type": "integer",
+              "description": "정가 (원)"
+            },
+            "discount": {
+              "type": "string",
+              "description": "할인율"
+            },
+            "coupon_price": {
+              "type": "integer",
+              "description": "쿠폰 적용가 (원, 쿠폰을 받아야 이 값)"
+            },
+            "unit_price": {
+              "type": "string",
+              "description": "단위 가격 (100ml당 245원 등)"
+            },
+            "storage": {
+              "type": "strings",
+              "description": "보관 (냉장·냉동 등)"
+            },
+            "delivery": {
+              "type": "strings",
+              "description": "배송 종류"
+            },
+            "rating": {
+              "type": "number"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "link": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string",
+              "description": "사진 (카드에 넣어요)"
+            }
           }
         }
       },
       "examples": [
-        { "keyword": "우유" },
-        { "keyword": "유기농 바나나", "limit": 5 }
+        {
+          "keyword": "우유"
+        },
+        {
+          "keyword": "유기농 바나나",
+          "limit": 5
+        }
       ],
       "steps": [
-        { "open": "https://www.oasis.co.kr/product/search?keyword={{keyword|url}}" },
         {
-          "wait": { "items": "li.pListItem", "timeoutMs": 10000 },
+          "open": "https://www.oasis.co.kr/product/search?keyword={{keyword|url}}"
+        },
+        {
+          "wait": {
+            "items": "li.pListItem",
+            "timeoutMs": 10000
+          },
           "optional": true
         },
         {
@@ -63,17 +112,48 @@
             "items": "li.pListItem",
             "limit": 60,
             "fields": {
-              "name": { "css": ".info_title a.listTit" },
-              "product_id": { "css": ".info_title a.listTit", "attr": "href", "match": "/detail/(\\d+)" },
-              "price": { "css": ".info_price .price_discount" },
-              "regular_price": { "css": ".info_price .price_original" },
-              "discount": { "css": ".info_price .price_discountRate" },
-              "coupon_price": { "css": ".info_cpPrice", "match": "([\\d,]+)원" },
-              "unit_price": { "css": ".info_option" },
-              "storage": { "css": ".info_keyword .badge_keyword", "list": true },
-              "delivery": { "css": ".info_badges.btm [class*='badge_delivery']", "list": true },
-              "rating": { "css": ".info_reviewLike", "match": "^([\\d.]+)" },
-              "reviews": { "css": ".info_reviewNumber" }
+              "name": {
+                "css": ".info_title a.listTit"
+              },
+              "product_id": {
+                "css": ".info_title a.listTit",
+                "attr": "href",
+                "match": "/detail/(\\d+)"
+              },
+              "price": {
+                "css": ".info_price .price_discount"
+              },
+              "regular_price": {
+                "css": ".info_price .price_original"
+              },
+              "discount": {
+                "css": ".info_price .price_discountRate"
+              },
+              "coupon_price": {
+                "css": ".info_cpPrice",
+                "match": "([\\d,]+)원"
+              },
+              "unit_price": {
+                "css": ".info_option"
+              },
+              "storage": {
+                "css": ".info_keyword .badge_keyword",
+                "list": true
+              },
+              "delivery": {
+                "css": ".info_badges.btm [class*='badge_delivery']",
+                "list": true
+              },
+              "rating": {
+                "css": ".info_reviewLike",
+                "match": "^([\\d.]+)"
+              },
+              "reviews": {
+                "css": ".info_reviewNumber"
+              },
+              "image": {
+                "image": true
+              }
             }
           },
           "as": "rows"
@@ -84,6 +164,7 @@
             "limit": "{{limit}}",
             "fields": {
               "name": "name",
+              "image": "image",
               "product_id": "product_id",
               "price": "price",
               "regular_price": "regular_price",
@@ -100,7 +181,9 @@
           "as": "products"
         }
       ],
-      "result": { "products": "{{products}}" },
+      "result": {
+        "products": "{{products}}"
+      },
       "next": "2~4개를 이름·가격으로 짧게 보여 주고 고르게 해요. 쿠폰 적용가는 쿠폰을 받아야 되는 값이라고 함께 말해요. 3만 원 미만이면 배송비가 붙을 수 있어요. 주문하려면 oasis_market_prepare_order에 product_id와 개수를 넘겨요.",
       "minIntervalSec": 600
     },
@@ -124,10 +207,18 @@
         "required": []
       },
       "output": {},
-      "examples": [{ "count": 3 }],
+      "examples": [
+        {
+          "count": 3
+        }
+      ],
       "steps": [
-        { "open": "https://www.oasis.co.kr/myPage/orderList" },
-        { "sleep": 1500 },
+        {
+          "open": "https://www.oasis.co.kr/myPage/orderList"
+        },
+        {
+          "sleep": 1500
+        },
         {
           "stop_if": "아이디 저장|비밀번호 재발급",
           "say": "오아시스마켓에 로그인해야 주문 내역을 볼 수 있어요.",
@@ -159,10 +250,18 @@
         "required": []
       },
       "output": {},
-      "examples": [{ "count": 10 }],
+      "examples": [
+        {
+          "count": 10
+        }
+      ],
       "steps": [
-        { "open": "https://www.oasis.co.kr/myPage/frequencyList" },
-        { "sleep": 1500 },
+        {
+          "open": "https://www.oasis.co.kr/myPage/frequencyList"
+        },
+        {
+          "sleep": 1500
+        },
         {
           "stop_if": "아이디 저장|비밀번호 재발급",
           "say": "오아시스마켓에 로그인해야 자주 산 상품을 볼 수 있어요.",
@@ -200,12 +299,22 @@
             "description": "개수 (기본 1)"
           }
         },
-        "required": ["product_id"]
+        "required": [
+          "product_id"
+        ]
       },
       "output": {},
-      "examples": [{ "product_id": "81798", "product": "소화가 잘되는 락토프리 우유", "quantity": 1 }],
+      "examples": [
+        {
+          "product_id": "81798",
+          "product": "소화가 잘되는 락토프리 우유",
+          "quantity": 1
+        }
+      ],
       "steps": [
-        { "open": "https://www.oasis.co.kr/product/detail/{{product_id|digits}}" },
+        {
+          "open": "https://www.oasis.co.kr/product/detail/{{product_id|digits}}"
+        },
         {
           "require": "장바구니|바로구매|품절",
           "say": "이 상품 화면이 열리지 않았어요. 판매가 끝났거나 번호가 바뀌었을 수 있어요. oasis_market_search로 다시 찾아볼게요.",
