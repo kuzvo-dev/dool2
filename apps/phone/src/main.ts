@@ -881,6 +881,19 @@ function finalLabel(a: ApprovalView): string {
 }
 
 /** 승인 카드의 '어떤 걸로 결제할까요?' 줄 (사이트가 받는 수단만, 기본은 이 사이트에서 마지막으로 쓴 것) */
+/**
+ * 고를 것이 많으면(할부 12개월 등) 자주 쓰는 것만 먼저: 지금 고른 것, 일시불·무이자, 앞에서 몇 개. 나머지는 [더 보기]
+ * (실측 쿠팡 할부: 일시불~12개월 12개가 칩으로 늘어서 승인 카드가 길었다)
+ */
+function shown(options: { id: string; label: string }[], now: string | undefined, key: string) {
+  if (options.length <= 6 || st.choice.get(`${key}:more`)) return options
+  const keep = options.filter((o, i) => i < 3 || /일시불|무이자/.test(o.label)).slice(0, 5)
+  // 지금 고른 것은 늘 보인다
+  const cur = options.find((o) => o.id === now)
+  if (cur && !keep.includes(cur)) keep.push(cur)
+  return keep.length < options.length ? keep : options
+}
+
 function choiceRow(a: ApprovalView): HTMLElement | undefined {
   const subs = subsFor(a)
   if (!a.choices?.length && !subs.length) return undefined
@@ -897,7 +910,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
       h(
         'div',
         { class: 'chip-row' },
-        ...options.map((c) =>
+        ...shown(options, now, key).map((c) =>
           h('button', {
             class: `chip${c.id === now ? ' on' : ''}`,
             text: c.label,
@@ -907,6 +920,18 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
             },
           }),
         ),
+        ...(shown(options, now, key).length < options.length
+          ? [
+              h('button', {
+                class: 'chip chip-more',
+                text: `더 보기 ${options.length - shown(options, now, key).length}`,
+                onclick: () => {
+                  st.choice.set(`${key}:more`, '1')
+                  render()
+                },
+              }),
+            ]
+          : []),
       ),
     )
   return h(
