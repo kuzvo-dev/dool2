@@ -369,6 +369,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const now = (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}
       store.setSetting('payChoices', { ...now, [host]: label.slice(0, 40) })
     }
+    // 사이트별 등록 카드·할부 ("host|카드" → 가린 카드 이름)
+    const subs = store.getSetting('paySubChoices')
+    if (subs && typeof subs === 'object') browserTools.loadSubChoices(subs as Record<string, string>)
+    browserTools.onSubChoice = (key, label) => {
+      const now = (store.getSetting('paySubChoices') as Record<string, string> | undefined) ?? {}
+      store.setSetting('paySubChoices', { ...now, [key]: label.slice(0, 60) })
+    }
+  }
+  /** 설정에서 그 사이트 결제 기억을 잊을 때 카드·할부 기억도 같이 */
+  const forgetPaySubs = (host: string) => {
+    const now = { ...((store.getSetting('paySubChoices') as Record<string, string> | undefined) ?? {}) }
+    for (const k of Object.keys(now)) if (k.startsWith(`${host}|`)) delete now[k]
+    store.setSetting('paySubChoices', now)
   }
   const skillsDir = opts.skillsDir ?? defaultSkillsDir()
   // 서비스 도구(커넥터, ADR 0018): 연결 카드 옆 tools.json을 엔진 동작으로 실행한다
@@ -1018,6 +1031,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const now = { ...((store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}) }
           delete now[action.host]
           store.setSetting('payChoices', now)
+          forgetPaySubs(action.host)
           browserTools.forgetChoice(action.host)
           message = '그 사이트의 결제 수단을 잊었어요'
         }
@@ -2294,6 +2308,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const now = { ...payChoices() }
       delete now[c]
       store.setSetting('payChoices', now)
+      forgetPaySubs(c)
       browserTools.forgetChoice(c)
       return json(res, 200, { ok: true, payChoices: now })
     }

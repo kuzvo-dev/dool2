@@ -668,9 +668,17 @@ export class BrowserTools {
   private lastChoice = new Map<string, string>()
   /** 마지막으로 고른 결제 수단이 바뀌면 (본체가 설정에 남긴다) */
   onChoice?: (host: string, label: string) => void
-  /** 설정에서 그 사이트의 결제 수단을 잊었을 때 */
+  /** 사이트·묶음(카드·할부)마다 마지막으로 고른 것 ("www.coupang.com|할부" → "일시불"). 카드 번호는 화면에 보이는 가린 글만 */
+  private lastSub = new Map<string, string>()
+  /** 마지막으로 고른 등록 카드·할부가 바뀌면 (본체가 설정에 남긴다) */
+  onSubChoice?: (key: string, label: string) => void
+  loadSubChoices(map: Record<string, string>) {
+    for (const [k, v] of Object.entries(map)) this.lastSub.set(k, v)
+  }
+  /** 설정에서 그 사이트의 결제 수단을 잊었을 때 (카드·할부 기억도 같이) */
   forgetChoice(host: string) {
     this.lastChoice.delete(host)
+    for (const k of [...this.lastSub.keys()]) if (k.startsWith(`${host}|`)) this.lastSub.delete(k)
   }
   /** 설정에 남겨 둔 사이트별 마지막 결제 수단을 불러온다 */
   loadChoices(map: Record<string, string>) {
@@ -1283,6 +1291,10 @@ export class BrowserTools {
   /** 결제 화면의 세부 결제 선택 묶음 (등록 카드·할부). 많아야 3묶음, 묶음마다 12개 */
   private async subChoices(tabId: number, page: PageInfo) {
     const out: { key: string; title: string; ref: string; options: string[]; selected: number }[] = []
+    let host = ''
+    try {
+      host = new URL(page.url).hostname
+    } catch {}
     const selects = [...page.refs].filter(([, v]) => v.role === '선택 상자').slice(0, 6)
     for (const [ref] of selects) {
       if (out.length >= 3) break
@@ -1295,15 +1307,20 @@ export class BrowserTools {
       const saved = opts.filter((o) => /\*{3,}/.test(o.label))
       if (title === '카드' && saved.length) opts = saved
       opts = opts.slice(0, 12)
+      // 기본값: 이 사이트에서 지난번에 고른 카드·할부가 목록에 있으면 그것, 없으면 화면에 골라진 것
+      const remembered = opts.findIndex((o) => o.label === this.lastSub.get(`${host}|${title}`))
       out.push({
         key: `s${out.length + 1}`,
         title,
         ref,
         options: opts.map((o) => o.label),
-        selected: Math.max(
-          0,
-          opts.findIndex((o) => o.selected),
-        ),
+        selected:
+          remembered >= 0
+            ? remembered
+            : Math.max(
+                0,
+                opts.findIndex((o) => o.selected),
+              ),
       })
     }
     return out
@@ -1695,6 +1712,7 @@ export class BrowserTools {
       let finalName = rec.label
       let chosen: string | undefined
       const picked: string[] = []
+      const pickedSubs: [string, string][] = []
       // 고른 것: 결제 수단(c1)과 세부 선택(s1o2)을 쉼표로 이은 글 (폰이 서명한 그대로)
       const parts = (choice ?? '').split(',').filter(Boolean)
       const main = parts.find((p) => rec.choiceRefs?.[p])
@@ -1744,6 +1762,7 @@ export class BrowserTools {
             changed = true
           }
           picked.push(label)
+          if (group?.title) pickedSubs.push([group.title, label])
         }
         if (changed && !(await reread())) return fail('카드·할부를 고르자 다른 화면으로 넘어갔어요.')
         if (base !== s) {
@@ -1787,6 +1806,14 @@ export class BrowserTools {
         }
       }
       if (chosen) this.rememberChoice(rec.url, chosen)
+      // 고른 등록 카드·할부도 사이트별로 기억 (다음 승인 카드의 기본값)
+      try {
+        const host = new URL(rec.url).hostname
+        for (const [title, label] of pickedSubs) {
+          this.lastSub.set(`${host}|${title}`, label)
+          this.onSubChoice?.(`${host}|${title}`, label)
+        }
+      } catch {}
       const how = [chosen ? `결제 수단 "${chosen}"` : '', ...picked.map((p) => `"${p}"`)]
         .filter(Boolean)
         .join(', ')
