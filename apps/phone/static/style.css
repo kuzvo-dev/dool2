@@ -2863,6 +2863,23 @@ textarea.ghosting {
   letter-spacing: -0.01em;
   cursor: pointer;
 }
+/* 표시가 붙은 버튼은 글을 왼쪽으로 (좁은 폰에서 가운데 글과 표시가 겹치지 않게) */
+.btn-social:has(.social-hint) {
+  justify-content: flex-start;
+  padding-right: 108px;
+}
+.social-hint {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.12);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .btn-social:active {
   transform: scale(0.985);
 }

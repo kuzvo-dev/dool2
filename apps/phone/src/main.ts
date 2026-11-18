@@ -52,7 +52,7 @@ import {
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
 import { brandMark, SOCIAL_CTA } from './brands.js'
-import { type ConnectCtx, connectionsView, serviceView } from './connections.js'
+import { type ConnectCtx, connectionsView, serviceView, socialOrder } from './connections.js'
 import {
   doori,
   emoTile,
@@ -4086,7 +4086,7 @@ interface CredTarget {
   submit(user: string, password: string): void
   direct?: { text: string; onclick(): void }
   /** 간편 로그인 버튼 (카카오로 연결…): 아이디·비밀번호 없이 공급자 계정으로 */
-  social?: { provider: SocialProvider; onclick(): void }[]
+  social?: { provider: SocialProvider; hint?: string; onclick(): void }[]
   /** 연결되면 바로 시작할 부탁 */
   next?: string
   /** 로고를 보여 줄 연결 카드 id */
@@ -4175,6 +4175,8 @@ function credSheet(t: CredTarget) {
               const b = h('button', { class: `btn-social ${x.provider}`, onclick: x.onclick })
               b.type = 'button'
               b.append(brandMark(x.provider), h('span', { text: SOCIAL_CTA[x.provider] }))
+              // 이어 쓰면 새 계정이 안 생기는 공급자 표시 (최근 사용·N곳에서 사용)
+              if (x.hint) b.append(h('span', { class: 'social-hint', text: x.hint }))
               return b
             }),
           ),
@@ -4402,8 +4404,9 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
   const id = it.card.id
   return {
     socialOnly: !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
-    social: it.card.social.map((provider) => ({
+    social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
       provider,
+      ...(hint ? { hint } : {}),
       onclick: () => {
         // 공급자 쪽이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
         void send({ kind: 'connect-social', id, provider })
@@ -4440,8 +4443,9 @@ function connectSheet(id: string) {
     logo: id,
     // 간편 로그인·문자 인증만 되는 곳(캐치테이블·에이블리): 아이디 칸은 헷갈리기만 한다
     socialOnly: Boolean(it.card.social?.length) && !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
-    social: (it.card.social ?? []).map((provider) => ({
+    social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
       provider,
+      ...(hint ? { hint } : {}),
       onclick: () => {
         // 공급자 쪽(카카오 등)이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
         void send({ kind: 'connect-social', id, provider })
