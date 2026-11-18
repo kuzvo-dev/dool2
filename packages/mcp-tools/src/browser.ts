@@ -260,7 +260,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 쓴 뒤에는 이번 답을 끝낸다.',
+    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
@@ -269,6 +269,12 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
       where: z.string().max(100).describe('어디서 (예: "두리 시험 가게")'),
       amount: z.string().max(60).optional().describe('얼마 (페이지에 적힌 그대로, 예: "9,900원")'),
       cancel: z.string().max(200).optional().describe('취소·환불 조건 (모르면 "안내 없음")'),
+      choices: z
+        .array(ref)
+        .max(8)
+        .optional()
+        .describe('승인하며 사용자가 고를 칸들의 표시 (결제 수단 라디오 등, 예: ["e31","e32"])'),
+      choiceTitle: z.string().max(20).optional().describe('선택지 제목 (기본: 결제 수단)'),
     },
     false,
   )

@@ -153,6 +153,8 @@ const st: {
   attach?: string
   approvals: Map<string, ApprovalView & { shot?: string }>
   decided: Map<string, { ok: boolean; message: string }>
+  /** 승인 카드에서 고른 선택지 (결제 수단): 승인 id → 선택지 id */
+  choice: Map<string, string>
   logins: Map<string, LoginRequestView>
   infos: Map<string, InfoRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
@@ -221,6 +223,7 @@ const st: {
   pending: [],
   approvals: new Map(),
   decided: new Map(),
+  choice: new Map(),
   logins: new Map(),
   infos: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
@@ -823,14 +826,47 @@ function pickPhoto() {
   input.click()
 }
 
+/** 승인할 때 고른 선택지 (결제 수단). 고르지 않았으면 카드의 기본값 */
+function chosenOf(a: ApprovalView): string | undefined {
+  if (!a.choices?.length) return undefined
+  return st.choice.get(a.id) ?? a.choice ?? a.choices[0]?.id
+}
+
 async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = false) {
   const s = st.saved
   if (!s) return
+  // 고른 결제 수단도 서명에 함께 묶는다 (중간에서 다른 수단으로 바꿀 수 없다)
+  const choice = decision === 'approve' ? chosenOf(a) : undefined
   // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
-  const sig = await signText(s.keys.signPriv, approvalSignText(a, decision))
+  const sig = await signText(s.keys.signPriv, approvalSignText(a, decision, choice))
   // 꾹 눌러 승인은 체크를 보여 준 뒤에 카드를 접는다 (markDecided를 나중에 부른다)
   if (!quiet) markDecided(a, decision)
-  await send({ kind: 'decide', id: a.id, decision, sig })
+  await send({ kind: 'decide', id: a.id, decision, sig, ...(choice ? { choice } : {}) })
+}
+
+/** 승인 카드의 '어떤 걸로 결제할까요?' 줄 (사이트가 받는 수단만, 기본은 이 사이트에서 마지막으로 쓴 것) */
+function choiceRow(a: ApprovalView): HTMLElement | undefined {
+  if (!a.choices?.length) return undefined
+  const now = chosenOf(a)
+  return h(
+    'div',
+    { class: 'approve-choices' },
+    h('span', { class: 'meta', text: `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?` }),
+    h(
+      'div',
+      { class: 'chip-row' },
+      ...a.choices.map((c) =>
+        h('button', {
+          class: `chip${c.id === now ? ' on' : ''}`,
+          text: c.label,
+          onclick: () => {
+            st.choice.set(a.id, c.id)
+            render()
+          },
+        }),
+      ),
+    ),
+  )
 }
 
 function markDecided(a: ApprovalView, decision: 'approve' | 'reject') {
@@ -2437,6 +2473,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     ),
     a.amount && h('p', { class: 'approve-amount', text: a.amount }),
     h('p', { class: 'approve-what', text: a.what }),
+    choiceRow(a),
     h(
       'div',
       { class: 'approve-actions' },
@@ -3867,6 +3904,8 @@ function approvalSheet(id: string) {
     ...(a.amount ? [h('p', { class: 'approve-amount', text: a.amount })] : []),
     rows,
   )
+  const pick = a.status === 'pending' ? choiceRow(a) : undefined
+  if (pick) sheet.append(pick)
   if (a.shot) {
     const img = h('img', { class: 'sheet-shot' })
     img.alt = 'PC 화면'

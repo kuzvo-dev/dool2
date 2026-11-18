@@ -107,6 +107,8 @@ export class LinkClient {
 export function approvalSignText(
   a: { id: string; label: string; url: string; what: string; amount?: string; expiresAt: string },
   decision: 'approve' | 'reject',
+  /** 고른 결제 수단 등 (있을 때만 서명에 넣는다: 고르지 않는 승인은 예전 폰과 같은 글) */
+  choice?: string,
 ): string {
   const o: Record<string, unknown> = {
     t: 'dool2-approval/v1',
@@ -117,6 +119,7 @@ export function approvalSignText(
     what: a.what,
     amount: a.amount ?? '',
     expiresAt: a.expiresAt,
+    ...(choice ? { choice } : {}),
   }
   return JSON.stringify(
     Object.keys(o)

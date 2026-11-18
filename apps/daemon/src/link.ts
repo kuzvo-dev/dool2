@@ -59,7 +59,11 @@ export interface LinkHost {
   ask(input: { threadId?: string; agent?: AgentId; text: string; image?: string }): Promise<string>
   cancel(threadId: string): void
   approval(id: string): (ApprovalView & { shot?: string }) | undefined
-  decide(id: string, decision: 'approve' | 'reject'): Promise<{ ok: boolean; message: string }>
+  decide(
+    id: string,
+    decision: 'approve' | 'reject',
+    choice?: string,
+  ): Promise<{ ok: boolean; message: string }>
   /** 로그인 카드에 넣은 값을 금고에 저장 */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 로그인 중 화면이 물은 것에 대한 폰의 답 (인증번호 등) */
@@ -542,9 +546,11 @@ export class PhoneLink {
             message: '승인 요청을 찾을 수 없어요',
           })
         // 폰 서명을 PC가 직접 확인한다. 중계 서버나 다른 기기는 승인을 만들 수 없다
-        if (!(await verifyText(phone.signPub, approvalSignText(a, msg.decision), msg.sig)))
+        // 고른 결제 수단도 서명에 묶여 있다 (중간에서 다른 수단으로 바꿀 수 없다)
+        const choice = typeof msg.choice === 'string' && msg.choice ? msg.choice : undefined
+        if (!(await verifyText(phone.signPub, approvalSignText(a, msg.decision, choice), msg.sig)))
           return this.send(phone, { kind: 'decided', id: msg.id, ok: false, message: '서명이 맞지 않아요' })
-        const r = await this.host.decide(msg.id, msg.decision)
+        const r = await this.host.decide(msg.id, msg.decision, choice)
         return this.broadcast({ kind: 'decided', id: msg.id, ...r })
       }
     }
