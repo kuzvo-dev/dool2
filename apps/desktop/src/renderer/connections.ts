@@ -1,12 +1,8 @@
 // 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
 // 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
-import {
-  type ConnectCard,
-  type ConnectionItem,
-  type SocialProvider,
-  socialOrder,
-  type Tier,
-} from '@dool2/protocol/connect'
+import type { ConnectCard, ConnectionItem, SocialProvider, Tier } from '@dool2/protocol/connect'
+// 화면은 묶지 않고 불러온다: zod가 없는 connect-text.js(빌드 때 옆에 복사)에서 가져온다
+import { socialOrder } from './connect-text.js'
 
 /** 간편 로그인 이름 (@dool2/protocol/connect의 SOCIAL_LABEL 복사, 테스트가 같은지 본다) */
 export const SOCIAL_LABEL: Record<SocialProvider, string> = {
