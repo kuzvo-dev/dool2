@@ -45,7 +45,7 @@ import {
   memoryTab,
   scheduleTab,
 } from './life-views.js'
-import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel } from './rich.js'
+import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import {
   type CheckAction,
@@ -55,6 +55,7 @@ import {
   SETUP_STEPS,
   type SetupStep,
 } from './setup-model.js'
+import { doneLine, groupSteps, type PlaceCard, type WorkGroup, type WorkStepIn } from './work-steps.js'
 
 declare global {
   interface Window {
@@ -109,6 +110,10 @@ interface Turn {
   ask: string
   started: number
   steps: string[]
+  /** 단계마다 도구가 한 일·일한 곳 (steps와 같은 순서, 서비스별 줄로 묶는다) */
+  info: { act: string; place?: string; at: number }[]
+  /** 마지막으로 연 사이트 */
+  host?: string
   activity: string
   text: string
   usd: number
@@ -136,7 +141,7 @@ const state: {
   queued: string[]
   turn?: Turn
   /** 마지막으로 끝난 차례 (쉬는 동안 두리 판에 남겨 둔다) */
-  lastTurn?: { ask: string; steps: string[]; seconds: number }
+  lastTurn?: { ask: string; steps: string[]; info: Turn['info']; seconds: number }
   approvals: ApprovalView[]
   logins: LoginRequestView[]
   life: LifeState
@@ -926,9 +931,8 @@ function screenTab(): HTMLElement {
   const t = state.turn
   if (state.busy && t) {
     const log = el('ul', 'worklog')
-    t.steps.forEach((s, i) => {
-      log.append(el('li', i === t.steps.length - 1 ? 'now' : 'done', s))
-    })
+    const groups = groupSteps(turnSteps(t.steps, t.info), placeCards())
+    groups.forEach((g, i) => log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done')))
     if (!t.steps.length) log.append(el('li', 'now', '무엇부터 할지 정하는 중'))
     log.append(el('li', 'next', '돈 드는 일은 먼저 물어볼게요'))
     const clock = el('span', 'meta', elapsed(Math.floor((Date.now() - t.started) / 1000)))
@@ -956,7 +960,8 @@ function screenTab(): HTMLElement {
   } else if (state.lastTurn?.steps.length) {
     const lt = state.lastTurn
     const log = el('ul', 'worklog')
-    for (const s of lt.steps) log.append(el('li', 'done', s))
+    for (const g of groupSteps(turnSteps(lt.steps, lt.info, Date.now()), placeCards()))
+      log.append(groupRow(g, 'done'))
     box.append(
       el(
         'article',
@@ -1324,7 +1329,7 @@ function setMainBusy(busy: boolean) {
 }
 
 function newTurn(ask: string): Turn {
-  return { ask, started: Date.now(), steps: [], activity: '', text: '', usd: 0, records: [] }
+  return { ask, started: Date.now(), steps: [], info: [], activity: '', text: '', usd: 0, records: [] }
 }
 
 function onAgent(ev: AgentEvent) {
@@ -1338,9 +1343,15 @@ function onAgent(ev: AgentEvent) {
   }
   if (ev.type === 'tool') {
     // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 흘러오던 말은 비운다
-    const label = narrationLine(t.text) ?? `${toolLabel(ev.name)} 중`
+    const act = `${toolLabel(ev.name)} 중`
+    const label = narrationLine(t.text) ?? act
     t.text = ''
-    if (t.steps.at(-1) !== label) t.steps.push(label)
+    const place = toolPlace(ev.name, ev.input, t.host)
+    if (/browser_(open|navigate)$/.test(ev.name) && place) t.host = place
+    if (t.steps.at(-1) !== label || t.info.at(-1)?.place !== place) {
+      t.steps.push(label)
+      t.info.push({ act, ...(place ? { place } : {}), at: Date.now() })
+    }
     t.activity = label
   } else if (ev.type === 'tool_result') t.activity = '정리하는 중'
   else if (ev.type === 'usage') renderUsage(ev.limits)
@@ -1375,7 +1386,12 @@ async function finishTurn() {
   const t = state.turn
   state.turn = undefined
   if (t) {
-    state.lastTurn = { ask: t.ask, steps: t.steps, seconds: Math.floor((Date.now() - t.started) / 1000) }
+    state.lastTurn = {
+      ask: t.ask,
+      steps: t.steps,
+      info: t.info,
+      seconds: Math.floor((Date.now() - t.started) / 1000),
+    }
     for (const raw of t.records) notifyRecord(raw)
   }
   await loadConversation().catch(() => {})
@@ -1631,27 +1647,89 @@ function tellCard(rec: TellRecordMessage): HTMLElement {
   return card
 }
 
-/** 일한 과정: 답 위에 접힌 한 줄, 누르면 단계와 걸린 시간 */
+/** 걸린 시간: "5초", "1분 20초" */
+function secs(ms: number) {
+  const s = Math.max(1, Math.round(ms / 1000))
+  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
+}
+
+function placeCards(): PlaceCard[] {
+  return state.services.map((s) => ({
+    id: s.card.id,
+    name: s.card.name,
+    ...(s.card.site ? { site: s.card.site } : {}),
+  }))
+}
+
+/** 지금 차례의 단계 → 묶기 입력 (걸린 시간은 다음 단계까지) */
+function turnSteps(steps: string[], info: Turn['info'], end?: number): WorkStepIn[] {
+  return steps.map((text, i) => {
+    const it = info[i]
+    const next = info[i + 1]?.at ?? end
+    return {
+      text,
+      act: it?.act ?? text,
+      ...(it?.place ? { place: it.place } : {}),
+      ...(it && next ? { ms: next - it.at } : {}),
+    }
+  })
+}
+
+/** 서비스 아이콘: 로고(없으면 첫 글자), PC 앱·파일·두리 일은 선 아이콘 */
+function groupMark(g: WorkGroup): HTMLElement {
+  const glyph: IconName | undefined =
+    g.kind === 'app' ? 'pc' : g.kind === 'file' ? 'file' : g.kind === 'doori' ? 'brain' : undefined
+  const mark = el('span', `svc-mark ws-mark${glyph ? ' plain' : ''}`, glyph ? '' : g.letter)
+  if (glyph) mark.append(icon(glyph))
+  else withLogo(mark, g.cardId)
+  return mark
+}
+
+/** 서비스 한 줄: 아이콘(모서리에 빙글빙글/체크) · 이름 / 하는 일 · 걸린 시간 */
+function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
+  const sub = state === 'now' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
+  return el(
+    'li',
+    `ws ${state}`,
+    el(
+      'span',
+      'ws-ico',
+      groupMark(g),
+      el('span', `ws-badge ${state}`, state === 'done' ? icon('check') : ''),
+    ),
+    el('span', 'wt', el('b', '', g.title), sub && sub !== g.title ? el('span', 'wsub', sub) : ''),
+    el('span', 'meta', state === 'done' && g.ms !== undefined ? secs(g.ms) : ''),
+  )
+}
+
+/** 일한 과정: 답 위에 접힌 한 줄 "로고 묶음 · 4곳 살펴봤어요 · 37초", 누르면 서비스별 줄 */
 function workDoneCard(rec: WorkRecordMessage): HTMLElement {
-  const secs = (ms: number) => {
-    const s = Math.max(1, Math.round(ms / 1000))
-    return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
-  }
+  const groups = groupSteps(rec.steps, placeCards())
+  const places = [
+    ...new Map(
+      groups.filter((g) => g.kind === 'web' || g.kind === 'service').map((g) => [g.key, g]),
+    ).values(),
+  ]
   const box = el('details', 'work-done')
-  const where = rec.host ? `${rec.host.replace(/^(www|m|app)\./, '')}에서 일했어요` : '일한 과정'
+  const title = places.length
+    ? places.length === 1
+      ? `${places[0]?.title}에서 일했어요`
+      : `${places.length}곳 살펴봤어요`
+    : rec.host
+      ? `${rec.host.replace(/^(www|m|app)\./, '')}에서 일했어요`
+      : '일한 과정'
+  const lead = places.length
+    ? el('span', 'wd-stack', ...places.slice(0, 4).map((g) => groupMark(g)))
+    : icon('check')
   box.append(
     el(
       'summary',
       '',
-      icon('check'),
-      el('b', '', where),
-      el('span', 'meta', `${rec.count}단계 · ${secs(rec.ms)}`),
+      lead,
+      el('b', '', title),
+      el('span', 'meta', places.length ? secs(rec.ms) : `${rec.count}단계 · ${secs(rec.ms)}`),
     ),
-    el(
-      'ol',
-      '',
-      ...rec.steps.map((s) => el('li', '', el('span', '', s.text), el('span', 'meta', secs(s.ms)))),
-    ),
+    el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
   )
   return box
 }
