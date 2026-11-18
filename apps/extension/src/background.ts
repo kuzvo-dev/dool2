@@ -16,6 +16,7 @@ import {
   pageForm,
   pageFormFocus,
   pageFormTarget,
+  pageFrameBox,
   pageLocate,
   pageMarkFilled,
   pageMarkTaps,
@@ -611,8 +612,15 @@ function frameOf(tabId: number, ref: string): { frameId: number; url?: string; i
   return { frameId: f.frameId, url: f.url, index }
 }
 
-/** 액자가 페이지 화면의 어디에 있는지 (CDP: 액자 주인 요소의 상자) */
+/** 액자가 페이지 화면의 어디에 있는지. 먼저 페이지에서 그 주소의 액자 상자를 재고, 못 찾으면 CDP로 */
 async function frameOffset(tabId: number, url: string): Promise<{ x: number; y: number }> {
+  const box = await inPage(tabId, pageFrameBox, url).catch(() => undefined)
+  if (box) return box
+  return frameOffsetCdp(tabId, url)
+}
+
+/** CDP: 액자 주인 요소의 상자 (같은 주소의 액자) */
+async function frameOffsetCdp(tabId: number, url: string): Promise<{ x: number; y: number }> {
   type Tree = { frame: { id: string; url: string }; childFrames?: Tree[] }
   const tree = (await cdp(tabId, 'Page.getFrameTree', {})) as { frameTree: Tree }
   const all: Tree[] = []
@@ -963,9 +971,12 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       let via: 'mouse' | 'key' | 'script' = 'mouse'
       // 창이 일부 가려져 있으면 '보인다'고 나와도 Chrome이 마우스 입력을 버릴 때가 있다 (실측: 인증번호 확인 버튼).
       // 눌러도 화면이 하나도 안 바뀌었으면 아래 키보드 방식으로 한 번 더 누른다
-      // 화면 변화: 주소·초점·체크된 칸 수·문서 크기 (마우스가 먹으면 적어도 초점이 버튼으로 간다)
+      // 화면 변화: 주소·초점·체크된 칸 수·문서 크기 (마우스가 먹으면 적어도 초점이 버튼으로 간다).
+      // 액자 속 요소는 그 액자 안에서 본다: 다른 주소 액자는 가려진 창에서 마우스를 못 받는데, 바깥 페이지 초점만
+      // 액자로 옮겨 가서 눌린 것처럼 보였다 (실측)
+      const markFrame = frameOf(tabId, String(a.ref)).frameId
       const mark = () =>
-        inPage(tabId, () => {
+        inFrame(tabId, markFrame, () => {
           const f = document.activeElement
           return [
             location.href,

@@ -13,9 +13,18 @@ describe('누르기 전 둘레 글 견주기', () => {
     const now = '라망시크레 한남 · 프렌치 코스 ★4.6 (884) 디너 18만원 11.26 (목) 마감'
     expect(ctxReplaced(was, now)).toBe(true)
   })
+  it('바로 앞 짧은 가게 이름·설명만 바뀌어도 막는다 (멀리 있는 글은 그대로인 재활용 칸)', () => {
+    const head = '오늘의 추천 성수 맛집 모음 지도에서 보기 필터 거리순 평점순'
+    expect(ctxReplaced(`${head} 가게 가 조용한 한식집`, `${head} 가게 나 시끄러운 술집`)).toBe(true)
+    // 글이 더해진 것은 여전히 괜찮다
+    expect(ctxReplaced(`${head} 가게 가 조용한 한식집`, `${head} 가게 가 조용한 한식집 새로 생김`)).toBe(
+      false,
+    )
+  })
   it('페이지에 넣는 pageLocate도 같은 규칙을 쓴다', () => {
     const src = pageLocate.toString().replace(/\s+/g, '')
-    expect(src).toMatch(/gone>=3&&gone>=words\.length\*0?\.2/)
+    expect(src).toMatch(/gone>=3&&gone>=words\.length\*0?\.2\)?\|\|goneNear>=2/)
+    expect(src).toMatch(/words\.slice\(-6\)/)
     expect(src).toMatch(/mode!==["']type["']/)
   })
 })

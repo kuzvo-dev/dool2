@@ -145,6 +145,38 @@ const site = createServer((req, res) => {
       `<!doctype html><title>가입 확인</title><h1>가입 정보 확인</h1><p>${v('name')} / ${v('phone')} / ${v('addr')} / 동의 ${v('a1')}${v('a2')}</p>`,
     )
   }
+  // 실제 사이트에서 만나는 까다로운 모양 모음: 열린 shadow DOM, 다른 주소의 액자, 늦게 넘어가는 화면, 내려받기
+  if (url.pathname === '/robust') {
+    const port = site.address().port
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>까다로운 가게</title></head><body>
+<h1>까다로운 가게</h1><p>여러 가지 모양의 버튼이 있어요. 하나씩 눌러 보세요.</p>
+<div id="topbar"></div>
+<shop-card></shop-card>
+<button onclick="setTimeout(() => { location.href = '/search?q=late' }, 600)">늦게 넘어가기</button>
+<a href="/file.csv" download="주문내역.csv">주문 내역 내려받기</a>
+<button id="keep" onclick="document.title='그대로 눌림'">그대로 버튼</button>
+<button onclick="document.getElementById('topbar').innerHTML = '<p>새 배너가 위에 생겼어요</p><button>배너 닫기</button>'">배너 띄우기</button>
+<iframe src="http://localhost:${port}/frame" style="width:420px;height:120px;border:1px solid #ccc"></iframe>
+<script>customElements.define('shop-card', class extends HTMLElement { connectedCallback() {
+  const r = this.attachShadow({ mode: 'open' })
+  r.innerHTML = '<p>그림자 속 상품 귤 3kg</p><button>귤 담기</button>'
+  r.querySelector('button').addEventListener('click', () => { document.title = '귤 담음' })
+} })</script></body></html>`)
+  }
+  if (url.pathname === '/frame') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(
+      '<!doctype html><meta charset="utf-8"><title>액자</title><p>다른 주소 액자 안 쿠폰</p><button onclick="document.body.insertAdjacentHTML(\'beforeend\', \'<p>쿠폰 받음</p>\')">쿠폰 받기</button>',
+    )
+  }
+  if (url.pathname === '/file.csv') {
+    res.writeHead(200, {
+      'content-type': 'text/csv',
+      'content-disposition': 'attachment; filename="orders.csv"',
+    })
+    return res.end('주문,금액\n사과,9900\n')
+  }
   if (url.pathname === '/api/items') {
     res.writeHead(200, { 'content-type': 'application/json' })
     return res.end(JSON.stringify({ items: [{ name: '가게 가', q: url.searchParams.get('q') }] }))
@@ -180,6 +212,8 @@ const chrome = spawn(
     '--no-first-run',
     '--no-default-browser-check',
     '--window-size=1200,900',
+    // GitHub 리눅스 러너는 Chrome 샌드박스를 쓸 수 없다 (사용자 이름공간 제한)
+    ...(process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
   ],
   { stdio: 'ignore' },
@@ -586,6 +620,39 @@ try {
     writeFileSync(join(out, 'e2e-cursor.jpg'), Buffer.from(shot.data, 'base64'))
     // 커서는 읽기에 섞이지 않는다
     assert.doesNotMatch(text(await tools.run('read', { tabId })), /누르는 중/)
+  })
+
+  await step('까다로운 모양: shadow DOM·다른 주소 액자·늦게 넘어가기·내려받기·표시 유지', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/robust` })
+    let page = text(await tools.run('read', { tabId }))
+    const btn = (label, p = page) => p.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
+    // 열린 shadow DOM 속 글과 버튼
+    assert.match(page, /그림자 속 상품 귤 3kg/)
+    assert.match(text(await tools.run('click', { tabId, ref: btn('귤 담기') })), /귤 담음/)
+    // 다른 주소(localhost)의 액자 속 버튼
+    page = text(await tools.run('read', { tabId }))
+    assert.match(page, /화면 안 액자 \(localhost\)/, page.slice(-600))
+    assert.match(text(await tools.run('click', { tabId, ref: btn('쿠폰 받기') })), /쿠폰 받음/)
+    // 표시 유지: 위에 새 상자가 생겨도 같은 버튼은 같은 표시
+    page = text(await tools.run('read', { tabId }))
+    const keep = btn('그대로 버튼')
+    await tools.run('click', { tabId, ref: btn('배너 띄우기') })
+    page = text(await tools.run('read', { tabId }))
+    assert.match(page, /새 배너가 위에 생겼어요/)
+    assert.equal(btn('그대로 버튼'), keep, '같은 버튼의 표시가 바뀌었어요')
+    assert.match(text(await tools.run('click', { tabId, ref: keep })), /그대로 눌림/)
+    // 내려받기 링크: 멈추지 않고, 탭을 계속 쓸 수 있다
+    let t = Date.now()
+    await tools.run('click', { tabId, ref: page.match(/\[(e\d+) 링크 "주문 내역 내려받기"\]/)?.[1] })
+    assert.ok(Date.now() - t < 6000, `내려받기 누르기가 너무 느려요 (${Date.now() - t}ms)`)
+    page = text(await tools.run('read', { tabId }))
+    assert.match(page, /까다로운 가게/)
+    // 누르고 0.6초 뒤에 넘어가는 화면: 누른 결과로 새 화면을 읽는다
+    t = Date.now()
+    const moved = text(await tools.run('click', { tabId, ref: btn('늦게 넘어가기') }))
+    assert.match(moved, /"late" 검색 결과/, moved.slice(0, 300))
   })
 
   await step('탭 닫기', async () => {
