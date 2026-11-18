@@ -1299,7 +1299,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const wants =
       purpose === 'reset'
         ? /비밀번호\s*(를|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)|비번\s*(을|도)?\s*(찾|바꿔|바꾸|재설정|변경|새로)/
-        : /(회원\s*)?가입/
+        : /(회원\s*)?가입|계정\s*(을|도)?\s*(만들|새로|생성|하나)|sign\s*-?up/i
     if (wants.test(lastAsk)) return 'ok'
     const options =
       purpose === 'reset' ? ['새로 바꿔 주세요', '그만둘게요'] : ['가입해 주세요', '이미 계정 있어요']
