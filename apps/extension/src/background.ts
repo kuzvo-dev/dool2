@@ -177,7 +177,7 @@ function update(fn: (s: Saved) => void | Promise<void>): Promise<Saved> {
   return run
 }
 
-async function ownedTab(args: Record<string, unknown>): Promise<number> {
+async function ownedTab(args: Record<string, unknown>, watching = true): Promise<number> {
   const tabId = Number(args.tabId)
   const s = await load()
   if (!Number.isInteger(tabId) || !s.owned.includes(tabId))
@@ -193,6 +193,8 @@ async function ownedTab(args: Record<string, unknown>): Promise<number> {
     await chrome.tabs.reload(tabId)
     await waitLoad(tabId)
   }
+  // 다루는 동안 뜨는 사이트 알림창을 받는다 (사람에게 넘길 때·닫을 때는 붙이지 않는다)
+  if (watching) await watch(tabId)
   return tabId
 }
 
@@ -312,6 +314,7 @@ async function adopt(opener: number, tabId: number) {
   })
   if (!took) return
   lastPopup = { opener, tabId }
+  void watch(tabId)
   void chrome.tabs.update(tabId, { muted: true }).catch(() => undefined)
   await groupTab(tabId)
 }
@@ -337,6 +340,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   usedAt.delete(tabId)
   frameMaps.delete(tabId)
   attached.delete(tabId)
+  dialogs.delete(tabId)
+  dialogNotes.delete(tabId)
   port?.postMessage({ event: 'tab-closed', tabId })
 })
 
@@ -346,6 +351,8 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!t) throw new Error('탭이 닫혔어요')
     if (t.status === 'complete') return t
+    // 여는 중에 확인 창이 뜨면 고를 때까지 다 열리지 않는다: 기다리지 않고 알린다
+    if (dialogs.has(tabId)) return t
     await sleep(200)
   }
   return chrome.tabs.get(tabId)
@@ -355,6 +362,8 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
 async function settle(tabId: number, before?: string) {
   for (let i = 0; i < 12; i++) {
     await sleep(100)
+    // 확인 창이 뜨면 화면은 더 바뀌지 않는다 (고를 때까지 멈춰 있다)
+    if (dialogs.has(tabId)) return
     // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게. 한 장 그리기가 40ms쯤 들어서(실측) 4번에 1번만
     if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
@@ -385,23 +394,110 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   clearTimeout(attached.get(source.tabId))
   attached.delete(source.tabId)
   emulated.delete(source.tabId)
+  // 떼면 알림창은 Chrome이 다시 직접 띄운다 (두리가 고를 수 없다)
+  dialogs.delete(source.tabId)
   // 사용자가 "취소"를 눌렀다면 그 탭은 더 이상 다루지 않는다
   if (reason === 'canceled_by_user') stoppedByUser.add(source.tabId)
 })
 
+/** 확인 창이 떠 있어도 할 수 있는 명령 (나머지는 페이지가 멈춰 있어 답이 오지 않는다) */
+const DIALOG_SAFE = /^(?:Page\.(?:enable|handleJavaScriptDialog)|Network\.|Emulation\.clear)/
+
 async function cdp<T = unknown>(tabId: number, method: string, params?: Record<string, unknown>): Promise<T> {
   if (stoppedByUser.has(tabId)) throw new Error('사용자가 이 탭의 두리 제어를 멈췄어요')
-  if (!attached.has(tabId)) await chrome.debugger.attach({ tabId }, '1.3')
+  if (!attached.has(tabId)) {
+    await chrome.debugger.attach({ tabId }, '1.3')
+    attached.set(
+      tabId,
+      setTimeout(() => {}, 0),
+    )
+    // 붙이자마자 사이트 알림창을 받는다. 이걸 안 하면 디버거가 붙은 탭에서 뜬 알림창이 아무도 닫지 못한 채
+    // 페이지를 영원히 멈춰 세운다 (실측: 클릭 뒤 읽기가 계속 시간 초과). 알림창이 이미 떠 있으면 답이 안 오니 오래 기다리지 않는다
+    await Promise.race([chrome.debugger.sendCommand({ tabId }, 'Page.enable').catch(() => {}), sleep(2000)])
+  }
+  const open = dialogs.get(tabId)
+  if (open && !DIALOG_SAFE.test(method)) throw new Error(dialogBlocked(open))
   // 한동안 안 쓰면 뗀다 (브라우저 위 "제어 중" 막대가 계속 떠 있지 않게)
   clearTimeout(attached.get(tabId))
   attached.set(
     tabId,
-    setTimeout(() => {
-      attached.delete(tabId)
-      chrome.debugger.detach({ tabId }).catch(() => {})
-    }, DEBUGGER_IDLE_MS),
+    setTimeout(() => idleDetach(tabId), DEBUGGER_IDLE_MS),
   )
   return (await chrome.debugger.sendCommand({ tabId }, method, params)) as T
+}
+
+function idleDetach(tabId: number) {
+  // 확인 창이 떠 있는 동안 떼면 아무도 닫을 수 없어 페이지가 멈춘 채 남는다: 붙여 둔다
+  if (dialogs.has(tabId)) {
+    attached.set(
+      tabId,
+      setTimeout(() => idleDetach(tabId), DEBUGGER_IDLE_MS),
+    )
+    return
+  }
+  attached.delete(tabId)
+  chrome.debugger.detach({ tabId }).catch(() => {})
+}
+
+// ── 사이트 알림창 (alert·confirm·prompt·떠나기 확인) ──
+// 알림(alert)은 [확인] 하나뿐이라 바로 닫고 글만 남긴다 ("아이디 또는 비밀번호가 틀렸어요" 같은 말을 AI가 봐야 한다).
+// 떠나기 확인은 두리가 그 페이지를 떠나려 할 때만 뜨니 떠난다.
+// 확인(confirm)·입력(prompt)은 고르는 일이라 손이 정하지 않는다: 떠 있는 채로 두고 본체가 고르게 한다 (dialog 명령)
+
+interface SiteDialog {
+  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+  message: string
+  url: string
+  defaultPrompt?: string
+}
+/** 탭마다 떠 있는 확인 창 (confirm·prompt) */
+const dialogs = new Map<number, SiteDialog>()
+/** 탭마다 두리가 바로 닫은 알림창 (다음에 페이지를 읽을 때 함께 알린다) */
+const dialogNotes = new Map<number, SiteDialog[]>()
+
+function dialogBlocked(d: SiteDialog) {
+  return `사이트 확인 창이 떠 있어서 페이지가 멈춰 있어요: "${d.message.slice(0, 200)}" — 먼저 확인이나 취소를 골라 주세요`
+}
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  const tabId = source.tabId
+  if (tabId === undefined) return
+  if (method === 'Page.javascriptDialogClosed') {
+    dialogs.delete(tabId)
+    return
+  }
+  if (method !== 'Page.javascriptDialogOpening') return
+  const p = params as { type?: string; message?: string; url?: string; defaultPrompt?: string }
+  const d: SiteDialog = {
+    type: (['alert', 'confirm', 'prompt', 'beforeunload'] as const).find((t) => t === p.type) ?? 'alert',
+    message: String(p.message ?? '').slice(0, 1000),
+    url: String(p.url ?? ''),
+    ...(p.type === 'prompt' ? { defaultPrompt: String(p.defaultPrompt ?? '') } : {}),
+  }
+  if (d.type === 'confirm' || d.type === 'prompt') {
+    dialogs.set(tabId, d)
+    return
+  }
+  const notes = dialogNotes.get(tabId) ?? []
+  // 같은 알림창이 한 번에 여러 번 알려질 때가 있다 (실측): 한 번만 남긴다
+  const last = notes.at(-1)
+  if (!last || last.type !== d.type || last.message !== d.message) notes.push(d)
+  dialogNotes.set(tabId, notes.slice(-5))
+  chrome.debugger.sendCommand({ tabId }, 'Page.handleJavaScriptDialog', { accept: true }).catch(() => {})
+})
+
+/** 읽을 때 함께 알릴 알림창: 떠 있는 확인 창, 그리고 그동안 바로 닫은 알림창 (한 번 알리면 지운다) */
+function takeDialogs(tabId: number): { dialog?: SiteDialog; dialogNotes?: SiteDialog[] } {
+  const notes = dialogNotes.get(tabId)
+  dialogNotes.delete(tabId)
+  const open = dialogs.get(tabId)
+  return { ...(open ? { dialog: open } : {}), ...(notes?.length ? { dialogNotes: notes } : {}) }
+}
+
+/** 이 탭의 알림창을 받기 시작한다 (디버거를 붙이고 Page.enable). 이미 붙어 있으면 그대로 */
+async function watch(tabId: number) {
+  if (attached.has(tabId) || stoppedByUser.has(tabId)) return
+  await Promise.race([cdp(tabId, 'Page.enable').catch(() => {}), sleep(2500)])
 }
 
 // ── 페이지가 받은 응답 듣기 (커넥터 capture) ──
@@ -482,6 +578,9 @@ async function inFrame<A extends unknown[], R>(
   func: (...args: A) => R,
   ...args: A
 ): Promise<R> {
+  // 확인 창이 떠 있으면 페이지 스크립트가 멈춰 있어 답이 오지 않는다 (기다리지 않고 알린다)
+  const open = dialogs.get(tabId)
+  if (open) throw new Error(dialogBlocked(open))
   const target = frameId ? { tabId, frameIds: [frameId] } : { tabId }
   const [res] = await chrome.scripting.executeScript({ target, world: 'ISOLATED', func, args })
   return res?.result as R
@@ -604,7 +703,8 @@ async function pressKey(tabId: number, name: string) {
 
 async function pageState(tabId: number) {
   const t = await chrome.tabs.get(tabId)
-  return { tabId, url: t.url ?? '', title: t.title ?? '' }
+  const open = dialogs.get(tabId)
+  return { tabId, url: t.url ?? '', title: t.title ?? '', ...(open ? { dialog: open } : {}) }
 }
 
 /** 클릭 동안 새 탭이 열렸으면 알려 준다 */
@@ -676,6 +776,22 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         await sleep(200)
       }
     }
+    case 'dialog': {
+      // 떠 있는 확인 창에서 고른다 (고르는 판단은 본체가 한다). expect: 본체가 본 창과 같은 창일 때만
+      const tabId = await ownedTab(a)
+      const d = dialogs.get(tabId)
+      if (!d) throw new Error('떠 있는 사이트 확인 창이 없어요')
+      if (typeof a.expect === 'string' && a.expect.slice(0, 200) !== d.message.slice(0, 200))
+        throw new Error('확인 창 내용이 바뀌어서 고르지 않았어요')
+      const before = (await chrome.tabs.get(tabId)).url
+      await cdp(tabId, 'Page.handleJavaScriptDialog', {
+        accept: a.accept !== false,
+        ...(d.type === 'prompt' && typeof a.text === 'string' ? { promptText: a.text.slice(0, 500) } : {}),
+      })
+      dialogs.delete(tabId)
+      await settle(tabId, before)
+      return pageState(tabId)
+    }
     case 'reload': {
       // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
       setTimeout(() => chrome.runtime.reload(), 200)
@@ -684,14 +800,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'open': {
       const url = safeUrl(a.url)
       if (!url) throw new Error('http·https 주소만 열 수 있어요')
-      // capture: 페이지가 받는 응답을 처음부터 듣도록, 빈 탭을 먼저 열고 듣기를 켠 뒤 주소로 간다
-      const tab = await openTab(a.capture ? 'about:blank' : url)
+      // 빈 탭을 먼저 열고 알림창 받기를 켠 뒤 주소로 간다 (여는 중에 뜨는 알림창도 받게).
+      // capture면 페이지가 받는 응답도 처음부터 듣는다
+      const tab = await openTab('about:blank')
       if (tab.id === undefined) throw new Error('탭을 열지 못했어요')
-      if (a.capture) {
-        await listen(tab.id)
-        await chrome.tabs.update(tab.id, { url })
-        await sleep(200)
-      }
+      await watch(tab.id)
+      if (a.capture) await listen(tab.id)
+      await chrome.tabs.update(tab.id, { url })
+      await sleep(200)
       await waitLoad(tab.id)
       return pageState(tab.id)
     }
@@ -709,6 +825,15 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       const max = Math.min(Math.max(Number(a.maxChars) || 12_000, 1_000), 40_000)
+      // 확인 창이 떠 있으면 페이지가 멈춰 있어 읽을 수 없다: 창 내용만 알린다
+      if (dialogs.has(tabId))
+        return {
+          ...(await pageState(tabId)),
+          text: '',
+          truncated: false,
+          captcha: false,
+          ...takeDialogs(tabId),
+        }
       // 닫힌 팝업이 사라지는 등 멈춰 있던 화면 바뀜을 마저 끝내고 읽는다
       if (attached.has(tabId)) await paint(tabId)
       await markTaps(tabId, 0)
@@ -737,7 +862,13 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         text += `\n## 화면 안 액자 (${new URL(fr.url).hostname})\n${r.text}`
       }
       frameMaps.set(tabId, map)
-      return { tabId, ...main, text: text.slice(0, max + Math.floor(max / 2)), captcha }
+      return {
+        tabId,
+        ...main,
+        text: text.slice(0, max + Math.floor(max / 2)),
+        captcha,
+        ...takeDialogs(tabId),
+      }
     }
     case 'click': {
       const tabId = await ownedTab(a)
@@ -1064,7 +1195,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     }
     case 'focus': {
       // 사람에게 넘길 때: 두리 창과 탭을 앞으로
-      const tabId = await ownedTab(a)
+      const tabId = await ownedTab(a, false)
       await leavePhoneView(tabId)
       const t = await chrome.tabs.update(tabId, { active: true })
       if (t?.windowId !== undefined)
@@ -1073,7 +1204,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'close': {
-      const tabId = await ownedTab(a)
+      const tabId = await ownedTab(a, false)
       await detach(tabId)
       await chrome.tabs.remove(tabId)
       return { tabId, closed: true }

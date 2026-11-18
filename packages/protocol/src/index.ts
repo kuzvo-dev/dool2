@@ -336,6 +336,8 @@ export const BrowserCommandSchema = z.enum([
   'capture',
   /** 확장을 새 코드로 다시 켠다 (압축해제 확장을 다시 빌드한 뒤) */
   'reload',
+  /** 떠 있는 사이트 확인 창(confirm·prompt)에서 확인·취소를 고른다 */
+  'dialog',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 

@@ -93,6 +93,18 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <li class="shop" style="display:none"><b>숨은 가게</b></li></ul>
 <script>fetch('/api/items?q=%EC%84%B1%EC%88%98').then((r) => r.json()).then((d) => { document.title = '목록 ' + d.items.length })</script>
 </body></html>`,
+  // 사이트 알림창: 알림(alert)·확인(confirm)·입력(prompt), 여는 중 알림, 떠나기 확인
+  '/dialogs': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>알림창 가게</title></head><body>
+<h1>알림창 가게</h1><p>사과 1kg 9,900원. 버튼마다 사이트 알림창이 떠요.</p>
+<button onclick="alert('아이디 또는 비밀번호가 틀렸어요'); document.title='알림 뒤'">로그인</button>
+<button onclick="document.title = confirm('장바구니로 이동할까요?') ? '이동함' : '머무름'">담기</button>
+<button onclick="document.title = '수량 ' + prompt('수량을 넣어 주세요', '1')">수량</button>
+<button onclick="document.title = confirm('사과 1kg 9,900원을 주문하시겠습니까?') ? '주문됨' : '주문 안 함'">다음</button>
+</body></html>`,
+  '/hello-alert':
+    '<!doctype html><meta charset="utf-8"><title>여는 중 알림</title><script>alert("로그인이 필요한 서비스입니다")</script><h1>로그인이 필요해요</h1>',
+  '/leave': `<!doctype html><meta charset="utf-8"><title>쓰는 중</title><h1>글쓰기</h1><label>제목 <input id="t"></label>
+<script>addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = '' })</script>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -145,7 +157,8 @@ const chrome = spawn(
   { stdio: 'ignore' },
 )
 
-const step = async (name, fn) => {
+// 한 단계가 실패해도 나머지 단계는 이어서 돌려 전체 결과를 본다 (앞 단계가 꼭 필요한 단계만 멈춘다)
+const step = async (name, fn, { must = false } = {}) => {
   const t = Date.now()
   try {
     const r = await fn()
@@ -153,37 +166,50 @@ const step = async (name, fn) => {
     return r
   } catch (e) {
     console.log(`✗ ${name}: ${e.message}`)
-    throw e
+    failed = true
+    if (must) throw e
   }
 }
 const call = (cmd, args) => daemon.browser.call(cmd, args)
 
 let failed = false
 try {
-  await step('확장이 본체에 붙는다', async () => {
-    for (let i = 0; i < 150 && !daemon.browser.status.connected; i++)
-      await new Promise((r) => setTimeout(r, 200))
-    assert.equal(daemon.browser.status.connected, true, '30초 안에 연결되지 않았어요')
-    console.log(`  ${JSON.stringify(daemon.browser.status)}`)
-  })
+  await step(
+    '확장이 본체에 붙는다',
+    async () => {
+      for (let i = 0; i < 150 && !daemon.browser.status.connected; i++)
+        await new Promise((r) => setTimeout(r, 200))
+      assert.equal(daemon.browser.status.connected, true, '30초 안에 연결되지 않았어요')
+      console.log(`  ${JSON.stringify(daemon.browser.status)}`)
+    },
+    { must: true },
+  )
 
-  const { tabId } = await step('탭 열기', async () => {
-    const r = await call('open', { url: base })
-    assert.equal(r.title, '두리 시험 가게')
-    return r
-  })
+  const { tabId } = await step(
+    '탭 열기',
+    async () => {
+      const r = await call('open', { url: base })
+      assert.equal(r.title, '두리 시험 가게')
+      return r
+    },
+    { must: true },
+  )
 
-  const snap = await step('페이지 읽기', async () => {
-    const r = await call('snapshot', { tabId })
-    writeFileSync(join(out, 'e2e-snapshot.txt'), r.text)
-    assert.match(r.text, /# 두리 시험 가게/)
-    assert.match(r.text, /사과 1kg 9,900원/)
-    assert.match(r.text, /\[e\d+ 입력칸 "검색어"\]/)
-    assert.match(r.text, /\[e\d+ 비밀번호칸 "비밀번호"\]/)
-    assert.doesNotMatch(r.text, /숨은 버튼/)
-    assert.equal(r.captcha, false)
-    return r
-  })
+  const snap = await step(
+    '페이지 읽기',
+    async () => {
+      const r = await call('snapshot', { tabId })
+      writeFileSync(join(out, 'e2e-snapshot.txt'), r.text)
+      assert.match(r.text, /# 두리 시험 가게/)
+      assert.match(r.text, /사과 1kg 9,900원/)
+      assert.match(r.text, /\[e\d+ 입력칸 "검색어"\]/)
+      assert.match(r.text, /\[e\d+ 비밀번호칸 "비밀번호"\]/)
+      assert.doesNotMatch(r.text, /숨은 버튼/)
+      assert.equal(r.captcha, false)
+      return r
+    },
+    { must: true },
+  )
   const ref = (re) => {
     const m = snap.text.match(re)
     assert.ok(m, `${re} 를 찾지 못했어요`)
@@ -373,6 +399,75 @@ try {
     assert.match(text(filled), /금고로 채워짐/)
     const after = await tools.run('click', { tabId, ref: login })
     assert.match(text(after), /로그인 성공/)
+  })
+
+  await step('사이트 알림창: 알림은 닫고 글을 알리고, 확인·입력 창은 AI가 고른다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/dialogs` })
+    const page = text(await tools.run('read', { tabId }))
+    const btn = (label) => page.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
+    // 알림(alert): 멈추지 않고, 알림 글을 읽어 준다
+    let t = Date.now()
+    let r = text(await tools.run('click', { tabId, ref: btn('로그인') }))
+    assert.ok(Date.now() - t < 5000, `알림창 클릭이 너무 느려요 (${Date.now() - t}ms)`)
+    assert.match(r, /💬 사이트 알림창: "아이디 또는 비밀번호가 틀렸어요"/)
+    assert.match(r, /알림 뒤/)
+    // 확인(confirm): 떠 있는 채로 AI에게 알리고, [취소]를 고르면 페이지가 false를 받는다
+    t = Date.now()
+    r = text(await tools.run('click', { tabId, ref: btn('담기') }))
+    assert.ok(Date.now() - t < 5000, `확인 창 클릭이 너무 느려요 (${Date.now() - t}ms)`)
+    assert.match(r, /⚠ 사이트 확인 창이 떠 있어요: "장바구니로 이동할까요\?"/)
+    // 떠 있는 동안 다른 명령은 기다리지 않고 바로 알린다
+    t = Date.now()
+    await assert.rejects(call('click', { tabId, ref: btn('수량') }), /확인 창이 떠 있어서/)
+    assert.ok(Date.now() - t < 2000)
+    r = text(await tools.run('dialog', { tabId, accept: false }))
+    assert.match(r, /머무름/)
+    // 입력(prompt): 글을 넣어 [확인]
+    r = text(await tools.run('click', { tabId, ref: btn('수량') }))
+    assert.match(r, /사이트 확인 창이 떠 있어요: "수량을 넣어 주세요"/)
+    r = text(await tools.run('dialog', { tabId, accept: true, text: '3' }))
+    assert.match(r, /수량 3/)
+    // 버튼('다음')은 위험해 보이지 않아도, 주문이 되는 확인 창의 [확인]은 승인 없이 누르지 않는다 → 승인하면 두리가 누른다
+    text(await tools.run('read', { tabId }))
+    r = text(await tools.run('click', { tabId, ref: btn('다음') }))
+    assert.match(r, /주문하시겠습니까/)
+    const blocked = await tools.run('dialog', { tabId, accept: true })
+    assert.equal(blocked.isError, true)
+    assert.match(text(blocked), /승인 없이는 \[확인\]을 누르지 않아요/)
+    const asked = await tools.run('request_approval', {
+      tabId,
+      dialog: true,
+      what: '사과 주문',
+      where: '시험 가게',
+    })
+    assert.equal(asked.isError, undefined, text(asked))
+    const pending = tools.approvals.list().find((x) => x.status === 'pending')
+    assert.equal(pending?.role, '확인 창')
+    const done = await tools.approve(pending.id)
+    assert.equal(done.ok, true, done.message)
+    assert.equal((await call('snapshot', { tabId })).title, '주문됨')
+  })
+
+  await step('여는 중 알림창과 떠나기 확인 창에서 멈추지 않는다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    let t = Date.now()
+    const opened = await tools.run('open', { url: `${base}/hello-alert` })
+    assert.ok(Date.now() - t < 8000, `여는 데 너무 오래 걸려요 (${Date.now() - t}ms)`)
+    assert.match(text(opened), /💬 사이트 알림창: "로그인이 필요한 서비스입니다"/)
+    assert.match(text(opened), /로그인이 필요해요/)
+    const other = Number(text(opened).match(/\[탭 (\d+)\]/)?.[1])
+    await call('close', { tabId: other })
+    await call('navigate', { tabId, url: `${base}/leave` })
+    const s = await call('snapshot', { tabId })
+    await call('type', { tabId, ref: s.text.match(/\[(e\d+) 입력칸 "제목"\]/)?.[1], text: '쓰던 글' })
+    t = Date.now()
+    const moved = await tools.run('navigate', { tabId, url: `${base}/list` })
+    assert.ok(Date.now() - t < 8000, `떠나는 데 너무 오래 걸려요 (${Date.now() - t}ms)`)
+    assert.match(text(moved), /\[e\d+ 링크 "가게 가"\]/)
+    assert.match(text(moved), /떠날지 묻는 창이 떠서/)
   })
 
   await step('탭 닫기', async () => {

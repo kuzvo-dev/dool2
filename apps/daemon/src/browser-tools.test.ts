@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { BrowserTools, classifyRisk, nearlyEmpty, parseRefs, payScreen } from './browser-tools.js'
+import {
+  BrowserTools,
+  classifyDialogRisk,
+  classifyRisk,
+  nearlyEmpty,
+  parseRefs,
+  payScreen,
+  type SiteDialog,
+} from './browser-tools.js'
 
 const PAGE = `# 두리 시험 가게
 검색어 [e1 입력칸 "검색어" 값="사과"] [e2 버튼 "검색"]
@@ -149,6 +157,162 @@ describe('브라우저 도구 실행', () => {
       isError: true,
       content: [{ type: 'text', text: 'Chrome의 두리 확장 프로그램과 연결돼 있지 않아요' }],
     })
+  })
+})
+
+describe('사이트 알림창', () => {
+  it('확인 창 글로 결제·보내기·삭제가 되는 [확인]을 알아본다', () => {
+    const at = 'https://shop.example/item/1'
+    expect(classifyDialogRisk('사과 1kg을 주문하시겠습니까?', at)?.kind).toBe('money')
+    expect(classifyDialogRisk('예약하시겠습니까?', at)?.kind).toBe('money')
+    expect(classifyDialogRisk('결제를 진행할까요?', at)?.kind).toBe('money')
+    expect(classifyDialogRisk('메시지를 보내시겠습니까?', at)?.kind).toBe('contact')
+    expect(classifyDialogRisk('선택한 상품을 삭제할까요?', at)?.kind).toBe('irreversible')
+    expect(classifyDialogRisk('예약을 취소하시겠습니까?', at)).toBeDefined()
+    // 결제 단계 페이지의 확인 창은 무엇이든
+    expect(classifyDialogRisk('쿠폰을 적용할까요?', 'https://shop.example/checkout')?.kind).toBe('money')
+    // 보통 확인은 막지 않는다
+    expect(classifyDialogRisk('장바구니로 이동할까요?', at)).toBeUndefined()
+    expect(classifyDialogRisk('로그인이 필요합니다. 로그인 페이지로 이동할까요?', at)).toBeUndefined()
+    expect(classifyDialogRisk('예약 내역을 보시겠어요?', at)).toBeUndefined()
+  })
+
+  function dialogBrowser(dialog?: SiteDialog, notes?: SiteDialog[]) {
+    const state = { dialog, notes }
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    return {
+      calls,
+      state,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot') {
+          const s = {
+            tabId: 3,
+            url: 'https://shop.example/item/1',
+            title: '가게',
+            text: state.dialog ? '' : PAGE,
+            truncated: false,
+            captcha: false,
+            ...(state.dialog ? { dialog: state.dialog } : {}),
+            ...(state.notes ? { dialogNotes: state.notes } : {}),
+          }
+          state.notes = undefined
+          return s
+        }
+        if (cmd === 'dialog') state.dialog = undefined
+        if (cmd === 'click' && state.dialog)
+          return { tabId: 3, url: 'https://shop.example/item/1', dialog: state.dialog }
+        return { tabId: 3, url: 'https://shop.example/item/1', title: '가게' }
+      },
+    }
+  }
+
+  it('바로 닫은 알림창 글을 페이지와 함께 알린다', async () => {
+    const b = dialogBrowser(undefined, [
+      { type: 'alert', message: '아이디 또는 비밀번호가 틀렸어요', url: 'https://shop.example/' },
+      { type: 'beforeunload', message: '', url: 'https://shop.example/' },
+    ])
+    const r = text(await new BrowserTools(b).run('read', { tabId: 3 }))
+    expect(r).toContain('💬 사이트 알림창: "아이디 또는 비밀번호가 틀렸어요"')
+    expect(r).toContain('떠날지 묻는 창')
+    expect(r).toContain('[e4 버튼 "바로 구매"]')
+  })
+
+  it('떠 있는 확인 창은 AI가 고르고, 페이지가 멈춰 있으니 다시 읽지 않는다', async () => {
+    const b = dialogBrowser({
+      type: 'confirm',
+      message: '장바구니로 이동할까요?',
+      url: 'https://shop.example/',
+    })
+    const tools = new BrowserTools(b)
+    const r = text(await tools.run('read', { tabId: 3 }))
+    expect(r).toContain('⚠ 사이트 확인 창이 떠 있어요: "장바구니로 이동할까요?"')
+    expect(r).toContain('browser_dialog')
+    // 빈 화면이라고 1.5초 기다려 다시 읽지 않는다
+    expect(b.calls.filter((c) => c[0] === 'snapshot')).toHaveLength(1)
+    const done = await tools.run('dialog', { tabId: 3, accept: false })
+    expect(done.isError).toBeUndefined()
+    expect(b.calls.find((c) => c[0] === 'dialog')?.[1]).toEqual({
+      tabId: 3,
+      accept: false,
+      expect: '장바구니로 이동할까요?',
+    })
+    expect(text(done)).toContain('[취소]')
+    expect(text(done)).toContain('[e4 버튼 "바로 구매"]')
+  })
+
+  it('입력 창은 넣을 글을 함께 넘긴다', async () => {
+    const b = dialogBrowser({ type: 'prompt', message: '수량', url: 'https://x/', defaultPrompt: '1' })
+    const tools = new BrowserTools(b)
+    expect(text(await tools.run('read', { tabId: 3 }))).toContain('미리 적힌 글: "1"')
+    await tools.run('dialog', { tabId: 3, accept: true, text: '3' })
+    expect(b.calls.find((c) => c[0] === 'dialog')?.[1]).toMatchObject({ accept: true, text: '3' })
+  })
+
+  it('떠 있는 창이 없으면 고르지 않는다', async () => {
+    const r = await new BrowserTools(dialogBrowser()).run('dialog', { tabId: 3, accept: true })
+    expect(r.isError).toBe(true)
+  })
+
+  it('주문이 되는 [확인]은 승인을 받아야 두리가 누른다', async () => {
+    const b = dialogBrowser({
+      type: 'confirm',
+      message: '9,900원을 결제하시겠습니까?',
+      url: 'https://shop.example/',
+    })
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const blocked = await tools.run('dialog', { tabId: 3, accept: true })
+    expect(blocked.isError).toBe(true)
+    expect(text(blocked)).toContain('dialog: true')
+    expect(b.calls.map((c) => c[0])).not.toContain('dialog')
+    // [취소]는 막지 않는다
+    expect(tools.approvals.list()).toHaveLength(0)
+    const asked = await tools.run('request_approval', {
+      tabId: 3,
+      dialog: true,
+      what: '사과 결제',
+      where: '가게',
+    })
+    expect(asked.isError).toBeUndefined()
+    const [rec] = tools.approvals.list()
+    expect(rec).toMatchObject({ role: '확인 창', kind: 'money', label: '확인 — 9,900원을 결제하시겠습니까?' })
+    // 화면이 멈춰 있어 캡처를 찍으려 기다리지 않는다
+    expect(b.calls.map((c) => c[0])).not.toContain('screenshot')
+    const ok = await tools.approve(rec?.id as string)
+    expect(ok.ok).toBe(true)
+    expect(b.calls.find((c) => c[0] === 'dialog')?.[1]).toEqual({
+      tabId: 3,
+      accept: true,
+      expect: '9,900원을 결제하시겠습니까?',
+    })
+  })
+
+  it('승인한 버튼을 누르자 뜬 "정말 하시겠어요?" 창은 함께 확인한다', async () => {
+    const b = dialogBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e4', what: '사과', where: '가게' })
+    const [rec] = tools.approvals.list()
+    b.state.dialog = { type: 'confirm', message: '구매하시겠습니까?', url: 'https://shop.example/' }
+    const real = b.call
+    // 누르기 직전 다시 읽을 때는 창이 없고, 누른 뒤에 뜬다
+    let clicked = false
+    b.call = async (cmd, args) => {
+      if (cmd === 'snapshot' && !clicked) {
+        const keep = b.state.dialog
+        b.state.dialog = undefined
+        const r = await real(cmd, args)
+        b.state.dialog = keep
+        return r
+      }
+      if (cmd === 'click') clicked = true
+      return real(cmd, args)
+    }
+    const ok = await tools.approve(rec?.id as string)
+    expect(ok.ok).toBe(true)
+    expect(ok.message).toContain('구매하시겠습니까?')
+    expect(b.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['click', 'dialog']))
   })
 })
 
