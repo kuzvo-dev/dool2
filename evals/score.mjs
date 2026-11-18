@@ -298,6 +298,26 @@ for (const { r } of rows) if (r.cause) causes[r.cause] = (causes[r.cause] ?? 0) 
 const causeList = Object.entries(causes).sort((a, b) => b[1] - a[1])
 if (causeList.length) console.log(`원인: ${causeList.map(([k, v]) => `${k} ${v}`).join(' · ')}`)
 writeFileSync(join(dir, '_causes.json'), JSON.stringify(Object.fromEntries(causeList)))
+// 환경 빼고(두리 몫): 시험 PC에 연결·데이터가 없거나 사람이 해야 해서 못 간 것은 빼고 본다
+const ENV = new Set(['연결 없음', '시험 상황 다름', '사람 단계'])
+const own = counted.filter((rs) => !rs.every((r) => ENV.has(r.cause)))
+const ownRuns = own.flat().filter((r) => !ENV.has(r.cause))
+const ownScored = ownRuns.filter((r) => typeof r.judge?.score === 'number' && !ENV.has(r.cause))
+const ownAvg = ownScored.length ? ownScored.reduce((x, r) => x + r.judge.score, 0) / ownScored.length : 0
+const ownPass = ownRuns.filter((r) => r.final_verdict === 'pass').length
+const aiFault = ownRuns.filter((r) => r.cause === 'AI 판단').length
+const envSummary = {
+  scenarios: own.length,
+  runs: ownRuns.length,
+  pass: ownPass,
+  avg: Number(ownAvg.toFixed(2)),
+  aiFault,
+  aiFaultRate: ownRuns.length ? Number((aiFault / ownRuns.length).toFixed(2)) : 0,
+}
+console.log(
+  `환경 빼고(두리 몫): 시나리오 ${own.length}개·${ownRuns.length}번 · 통과 ${ownPass} · AI 평균 ${envSummary.avg}/3 · 'AI 판단' 원인 ${aiFault}번(${Math.round(envSummary.aiFaultRate * 100)}%)`,
+)
+writeFileSync(join(dir, '_own.json'), JSON.stringify(envSummary))
 const gates = rows.filter(({ r }) => r.check.gates.length)
 if (gates.length) console.log(`관문 걸림 ${gates.length}: ${gates.map(({ r }) => r.id).join(', ')}`)
 
@@ -344,6 +364,7 @@ details{background:#fff;border-radius:10px;margin:6px 0;padding:8px 12px;box-sha
 .t{color:#5a6475;font-size:13px}.m{color:#8a93a3;font-size:13px}.bad{color:#b42318}pre{white-space:pre-wrap;background:#f3f4f6;padding:10px;border-radius:8px;font-size:13px}</style>
 <h1>두리 시나리오 성적표</h1><p>${esc(new Date().toLocaleString('ko-KR'))} · 실제 AI·실제 사이트(승인은 모두 거절, 결제·보내기 없음)</p>
 <div class="sum"><div>시나리오<b>${rows.length}</b></div><div>통과<b>${tally.pass}</b></div><div>일부<b>${tally.part}</b></div><div>실패<b>${tally.fail}</b></div><div>미판정<b>${tally.unknown}</b></div></div>
+<p><b>환경 빼고(두리 몫)</b>: 연결 없음·시험 상황 다름·사람 단계로 못 간 것을 빼면 시나리오 ${envSummary.scenarios}개 · ${envSummary.runs}번 중 통과 ${envSummary.pass} · AI 평균 ${envSummary.avg}/3 · 'AI 판단' 원인 ${envSummary.aiFault}번(${Math.round(envSummary.aiFaultRate * 100)}%)</p>
 <table><tr><th>종류</th><th>통과</th><th>일부</th><th>실패</th><th>미판정</th></tr>${typeRows}</table>
 ${causeList.length ? `<h2 style="font-size:17px">실패·일부의 원인</h2><table><tr><th>원인</th><th>수</th></tr>${causeList.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>` : ''}
 ${body}`,
