@@ -148,6 +148,8 @@ export interface ConnectionItem {
   tools?: ConnectionTool[]
   /** 사용자가 연결을 마친 시각. open·device는 연결 없이 쓰거나 폰에서 켠다 */
   connectedAt?: string
+  /** 마지막으로 연결한 방법 ('vault' 아이디·비밀번호, 'social:kakao' 간편 로그인). 연결 카드의 추천 순서에 쓴다 */
+  via?: string
 }
 
 /** 서비스 첫 화면 주소 (연결할 때 Chrome에서 연다) */

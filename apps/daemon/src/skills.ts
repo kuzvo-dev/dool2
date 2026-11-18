@@ -21,6 +21,8 @@ export class Skills {
     private readonly connected: () => Record<string, string> = () => ({}),
     /** 서비스 도구(tools.json) 상태 요약 (ADR 0018) */
     private readonly connector?: (id: string) => Promise<{ status?: string; tools?: ConnectionTool[] }>,
+    /** 서비스 id → 마지막으로 연결한 방법 (설정 connectVia) */
+    private readonly via: () => Record<string, string> = () => ({}),
   ) {}
 
   /** 연결 카드 (형식이 틀린 카드는 건너뛴다. 레포 테스트가 미리 잡는다) */
@@ -41,6 +43,7 @@ export class Skills {
     if (!this.dir) return []
     const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => NAME.test(n)).sort()
     const connected = this.connected()
+    const via = this.via()
     const order = Object.keys(CONNECT_CATEGORIES)
     const out: ConnectionItem[] = []
     for (const n of names) {
@@ -54,6 +57,7 @@ export class Skills {
         ...(skill ? { skill } : {}),
         ...(c.tools?.length ? { tools: c.tools } : {}),
         ...(at ? { connectedAt: at } : {}),
+        ...(via[n] ? { via: via[n] } : {}),
       })
     }
     const sorted = out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))

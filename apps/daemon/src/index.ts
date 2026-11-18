@@ -376,6 +376,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     skillsDir,
     () => readSettings().connections ?? {},
     (id) => connectors.summary(id),
+    () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {},
   )
   // 지침의 서비스 지도는 마지막으로 읽은 목록을 쓴다: 처음 한 번 읽어 둔다
   void skills.connections().catch(() => undefined)
