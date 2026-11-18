@@ -68,6 +68,8 @@ export interface LinkHost {
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 로그인 중 화면이 물은 것에 대한 폰의 답 (인증번호 등) */
   infoAnswer(id: string, value: string | undefined): void
+  /** 카드에서 "처음이에요 · 가입해 주세요"를 눌렀다 (site: 사이트 주소, loginId: 닫을 로그인 카드) */
+  signup?(site: string, loginId: string | undefined): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
   /** 설정 > 내 정보·결제 수단 (값은 가려서만 돌려준다) */
@@ -506,6 +508,12 @@ export class PhoneLink {
         if (!r.ok) return this.send(phone, { kind: 'login-done', id: String(msg.id), ...r })
         return
       }
+      case 'signup':
+        if (typeof msg.site !== 'string' || !msg.site) return
+        return this.host.signup?.(
+          msg.site.slice(0, 200),
+          typeof msg.loginId === 'string' ? msg.loginId : undefined,
+        )
       case 'info-answer':
         return this.host.infoAnswer(String(msg.id), typeof msg.value === 'string' ? msg.value : undefined)
       case 'report': {

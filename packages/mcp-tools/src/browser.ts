@@ -260,7 +260,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'new_password',
     '새 비밀번호 만들기',
-    '회원가입이나 비밀번호 찾기·변경 화면에서 "새 비밀번호" 칸을 채울 때 쓴다. 두리가 규칙에 맞는 강한 비밀번호를 만들어 그 칸(과 확인 칸)에 넣고 금고에 저장한다. 너는 비밀번호를 받지 않는다(결과에 값이 안 온다). 아이디(이메일)는 username으로 주거나, 내 정보 이메일을 쓴다. 가입·변경을 마치면 다음부터 두리가 그 계정으로 로그인한다. 로그인 화면의 비밀번호 칸(이미 있는 계정)에는 쓰지 않는다.',
+    '회원가입이나 비밀번호 찾기·변경 화면에서 "새 비밀번호" 칸을 채울 때 쓴다. 두리가 칸의 글자 수에 맞는 강한 비밀번호를 만들어 그 칸(과 확인 칸)에 넣는다. 너는 비밀번호를 받지 않는다(결과에 값이 안 온다). 금고에는 가입·변경이 끝난 화면을 두리가 본 뒤에 저장한다. 사용자가 그 사이트 가입·변경을 고르지 않았으면 두리가 폰에 먼저 묻고 아무것도 넣지 않는다(그러면 답을 끝낸다). 아이디(이메일)는 username으로 주거나, 내 정보 이메일을 쓴다. 로그인 화면의 비밀번호 칸(이미 있는 계정)에는 쓰지 않는다.',
     {
       tabId,
       password: ref.describe('새 비밀번호를 넣을 칸'),
@@ -270,6 +270,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(120)
         .optional()
         .describe('가입·변경에 쓰는 아이디. 보통 이메일. 비우면 내 정보 이메일을 쓴다'),
+      purpose: z
+        .enum(['signup', 'reset'])
+        .optional()
+        .describe('signup 회원가입(기본) · reset 비밀번호 찾기·변경'),
     },
     false,
   )

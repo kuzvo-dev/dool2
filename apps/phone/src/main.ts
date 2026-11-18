@@ -4689,6 +4689,14 @@ function loginSheet(id: string) {
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
     direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    // 계정이 없으면 두리가 가입해 줘요: 이 사이트 가입을 고른 것으로 알리고, 대화로 부탁을 보낸다
+    signup: () => {
+      void send({ kind: 'signup', site: r.origin, loginId: r.id })
+      void send({ kind: 'ask', text: `${r.site} 회원가입해서 이어서 해 줘` })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${r.site} 가입을 두리가 해 볼게요`)
+    },
     // 연결 카드가 있는 사이트면 간편 로그인도 같이 (연결하기 화면과 같은 선택지)
     ...loginChoices(cardIdFor(r.origin)),
   })
@@ -4765,6 +4773,7 @@ function connectSheet(id: string) {
     },
     // 계정이 없으면 두리가 가입해 줘요: 대화로 부탁을 보내고 두리가 가입 흐름을 한다
     signup: () => {
+      if (it.card.site) void send({ kind: 'signup', site: it.card.site })
       void send({ kind: 'ask', text: `${it.card.name} 회원가입해서 이어서 해 줘` })
       st.overlay = undefined
       st.tab = 'chat'
