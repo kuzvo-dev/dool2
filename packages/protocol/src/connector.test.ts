@@ -221,3 +221,16 @@ describe('값이 없을 때만 채우기와 여러 도메인', async () => {
     expect(onSites('https://evil.com/', ['gmail.com', 'mail.google.com'])).toBe(false)
   })
 })
+
+describe('경로 고르기 (pick)', () => {
+  it('별(*)이 칸 묶음에도 먹고, 두 번이면 한 목록으로 펼친다', async () => {
+    const { pick } = await import('./connector.js')
+    expect(
+      pick(
+        { images: { main: { '67': { image: 'a.jpg' }, '09': { image: 'b.jpg' } } } },
+        'images.main.*.image',
+      ),
+    ).toEqual(['a.jpg', 'b.jpg'])
+    expect(pick({ o: [{ g: [{ p: 1 }, { p: 2 }] }, { g: [{ p: 3 }] }] }, 'o.*.g.*.p')).toEqual([1, 2, 3])
+  })
+})

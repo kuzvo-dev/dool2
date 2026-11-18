@@ -72,6 +72,8 @@ if (flags.has('--pc')) {
     console.error('DOOL2_TOOL_TOKEN에 본체의 도구 토큰을 넣어 주세요')
     process.exit(2)
   }
+  // 결과를 다 쓴 뒤에 끝낸다 (파이프로 받을 때 process.exit가 큰 출력을 자른다)
+  const exit = (code) => process.stdout.write('', () => process.exit(code))
   const run = async (id, tool, input, close = false) => {
     const res = await fetch(`${base}/api/tools/service/try`, {
       method: 'POST',
@@ -94,7 +96,8 @@ if (flags.has('--pc')) {
     console.log(
       `\n${r.isError ? '✗ 실패' : '✓ 성공'} (${((Date.now() - t0) / 1000).toFixed(1)}초, 사용자 Chrome)`,
     )
-    process.exit(r.isError ? 1 : 0)
+    exit(r.isError ? 1 : 0)
+    await new Promise(() => {})
   }
   if (cmd === 'canary') {
     const results = []
@@ -132,7 +135,8 @@ if (flags.has('--pc')) {
     const jsonOut = rest.find((a) => a.startsWith('--json='))?.slice(7)
     if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at: new Date().toISOString(), results }, null, 2))
     console.log(`${results.length}개 중 실패 ${results.filter((x) => !x.ok).length} (사용자 Chrome)`)
-    process.exit(0)
+    exit(0)
+    await new Promise(() => {})
   }
   console.error('--pc는 try·canary에만 써요')
   process.exit(2)

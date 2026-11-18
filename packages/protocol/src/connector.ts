@@ -328,6 +328,8 @@ export function pick(scope: unknown, path: string): unknown {
   for (const [i, k] of keys.entries()) {
     if (cur === null || cur === undefined) return undefined
     if (k === '*') {
+      // 칸 묶음(색상 코드별 사진 같은)이면 그 값들을 목록으로
+      if (cur && typeof cur === 'object' && !Array.isArray(cur)) cur = Object.values(cur)
       if (!Array.isArray(cur)) return undefined
       const rest = keys.slice(i + 1).join('.')
       const out = cur.map((x) => (rest ? pick(x, rest) : x)).filter((x) => x !== undefined && x !== null)

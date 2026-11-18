@@ -876,7 +876,9 @@ export class Connectors {
             Object.entries(s.map.fields).map(([k, p]) => [
               k,
               // "{{…}}"가 있으면 줄 안의 값(없으면 입력·앞 단계 값)으로 채운 글, 아니면 경로
-              (p.includes('{{') ? fill(p, { ...c.scope, ...(row as Scope) }).trim() : pick(row, p)) ?? null,
+              (p.includes('{{')
+                ? fill(p, { ...c.scope, ...(row as Scope) }).trim()
+                : firstImage(k, pick(row, p))) ?? null,
             ]),
           ),
         )
@@ -918,6 +920,11 @@ function firstText(r: ToolResult): string {
 }
 
 /** 출력 칸 모양에 맞추기 ('4.5' → 4.5, 빈 값은 null) */
+/** 사진 칸(image)에 여러 장이 잡히면 첫 장 (색상별 사진 등) */
+function firstImage(key: string, v: unknown): unknown {
+  return key === 'image' && Array.isArray(v) ? v.find((x) => typeof x === 'string' && x) : v
+}
+
 export function coerce(v: unknown, field: OutputField): unknown {
   const one = (x: unknown, type: string): unknown => {
     if (x === undefined || x === null || x === '') return null
