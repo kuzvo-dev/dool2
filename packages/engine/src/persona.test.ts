@@ -20,6 +20,7 @@ describe('두리 페르소나 지침', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('되묻지 말고 흔한 값으로 잡아 바로 찾아요')
     expect(DOOL2_SYSTEM_PROMPT).toContain('되돌리기 어려운 일(예약 확정·주문·결제·보내기)에서만')
     expect(DOOL2_SYSTEM_PROMPT).toContain('같은 도구를 다시 부르지 않아요')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('사용자 말을 의심하지 말고 더 찾아요')
     expect(DOOL2_SYSTEM_PROMPT).not.toContain('짐작하지 말고 사용자에게 먼저 물어요')
   })
 
