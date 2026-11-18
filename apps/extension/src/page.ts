@@ -523,13 +523,15 @@ export function pageMarkText(
 }
 
 /** 읽을 때의 앞쪽 글(was)이 지금 앞쪽 글(now)에서 사라졌나: 다른 칸이 그려졌다는 뜻.
- *  더해진 글은 괜찮다 (pageLocate 안에 같은 규칙이 있다) */
+ *  더해진 글은 괜찮다. 바로 앞 낱말 6개 중 둘이 사라져도 다른 칸이다 (짧은 가게 이름·설명만 바뀐 칸).
+ *  (pageLocate 안에 같은 규칙이 있다) */
 export function ctxReplaced(was: string, now: string): boolean {
   if (now.endsWith(was)) return false
   const have = new Set(now.split(' '))
   const words = was.split(' ').filter((x) => x.length > 1)
   const gone = words.filter((x) => !have.has(x)).length
-  return gone >= 3 && gone >= words.length * 0.2
+  const goneNear = words.slice(-6).filter((x) => !have.has(x)).length
+  return (gone >= 3 && gone >= words.length * 0.2) || goneNear >= 2
 }
 
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
@@ -586,7 +588,8 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
       const have = new Set(now.split(' '))
       const words = was.split(' ').filter((x) => x.length > 1)
       const gone = words.filter((x) => !have.has(x)).length
-      if (gone >= 3 && gone >= words.length * 0.2)
+      const goneNear = words.slice(-6).filter((x) => !have.has(x)).length
+      if ((gone >= 3 && gone >= words.length * 0.2) || goneNear >= 2)
         return {
           ok: false,
           error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
@@ -1344,4 +1347,27 @@ export function pageCursor(x: number, y: number, label: string) {
   host.__dool2Hide = setTimeout(() => {
     h.style.opacity = '0'
   }, 2500)
+}
+
+/** 액자(iframe) 속 화면이 페이지의 어디에 그려지는지: 주소가 같은 액자의 안쪽 상자 왼쪽 위 (없으면 undefined).
+ *  다른 주소의 액자는 Chrome이 따로 그려서 디버거의 액자 목록으로는 자리를 못 찾을 때가 있다 */
+export function pageFrameBox(url: string): { x: number; y: number } | undefined {
+  const norm = (u: string) => {
+    try {
+      const x = new URL(u, location.href)
+      return `${x.origin}${x.pathname}`
+    } catch {
+      return u
+    }
+  }
+  const want = norm(url)
+  const frames = Array.from(document.querySelectorAll('iframe, frame')) as HTMLIFrameElement[]
+  const hit = frames.find((f) => f.src === url) ?? frames.find((f) => norm(f.src) === want)
+  if (!hit) return undefined
+  const r = hit.getBoundingClientRect()
+  const cs = getComputedStyle(hit)
+  return {
+    x: r.left + hit.clientLeft + Number.parseFloat(cs.paddingLeft || '0'),
+    y: r.top + hit.clientTop + Number.parseFloat(cs.paddingTop || '0'),
+  }
 }
