@@ -2,16 +2,20 @@
 // AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·옮기기·덮어쓰기는 없다.
 // 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(간단한 글 뽑기).
 // 민감한 파일(인증서·키·비밀번호 파일·숨은 폴더)은 읽지 않는다.
+
+import { execFile } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync, inflateSync } from 'node:zlib'
 
 export interface FileToolResult {
-  content: { type: 'text'; text: string }[]
+  content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   isError?: boolean
 }
+/** AI에게 넘기는 그림 한 장의 한도 (모델이 받는 크기) */
+const IMAGE_MAX = 4_500_000
 const ok = (text: string): FileToolResult => ({ content: [{ type: 'text', text }] })
 const fail = (text: string): FileToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
@@ -169,12 +173,30 @@ export class FileTools {
       text = pdfText(buf)
       note =
         '\n(PDF 글은 간단한 방식으로 뽑아서 표·글꼴에 따라 빠지거나 깨질 수 있어요. 깨졌으면 사용자에게 알려 주세요.)'
-      if (!text.trim())
-        return fail('이 PDF에서는 글을 뽑지 못했어요(스캔 이미지거나 특수 글꼴). 사용자에게 알려 주세요.')
+      if (!text.trim()) {
+        // 스캔한 PDF: 안에 든 사진(JPEG)을 그대로 보여 준다 (사업자등록증·영수증 스캔)
+        const imgs = pdfImages(buf).slice(0, 3)
+        if (imgs.length)
+          return {
+            content: [
+              ...imgs.map((data) => ({
+                type: 'image' as const,
+                data: data.toString('base64'),
+                mimeType: 'image/jpeg',
+              })),
+              {
+                type: 'text',
+                text: `${this.show(p)}: 글이 없는 스캔 PDF라 쪽 그림 ${imgs.length}장을 보여 드려요. 그림에 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+              },
+            ],
+          }
+        return fail('이 PDF에서는 글도 그림도 뽑지 못했어요(특수 글꼴). 사용자에게 알려 주세요.')
+      }
     } else if (ext === '.hwp')
       return fail('한글(.hwp) 파일은 아직 못 읽어요. 한글에서 hwpx나 PDF로 저장해 주시면 읽을 수 있어요.')
-    else if (/\.(png|jpe?g|gif|webp|heic|zip|exe|dmg|mp4|mov|mp3)$/i.test(ext))
-      return fail('글이 아닌 파일이라 읽을 수 없어요.')
+    else if (/^\.(png|jpe?g|gif|webp|heic|heif)$/.test(ext)) return this.image(p, buf, ext)
+    else if (/\.(zip|exe|dmg|mp4|mov|mp3|m4a|wav)$/i.test(ext))
+      return fail('글이 아닌 파일이라 읽을 수 없어요. (녹음은 받아쓰기한 글이 있어야 해요)')
     else {
       text = buf.toString('utf8').replace(/^﻿/, '')
       // UTF-8이 아니면(옛 한국어 CSV는 EUC-KR) 깨진 글자가 많다
@@ -195,6 +217,51 @@ export class FileTools {
           : '') +
         note,
     )
+  }
+
+  /** 사진 파일: 그림으로 넘긴다 (면허증·영수증 사진). 아이폰 HEIC는 맥에서 sips로 JPEG로 바꾼다 */
+  private async image(p: string, buf: Buffer, ext: string): Promise<FileToolResult> {
+    let data = buf
+    let mime =
+      ext === '.png'
+        ? 'image/png'
+        : ext === '.gif'
+          ? 'image/gif'
+          : ext === '.webp'
+            ? 'image/webp'
+            : 'image/jpeg'
+    if (ext === '.heic' || ext === '.heif' || buf.length > IMAGE_MAX) {
+      // 큰 사진·HEIC: 맥이면 sips로 줄여 JPEG로 (윈도우는 아직)
+      if (process.platform !== 'darwin')
+        return fail('이 사진 형식·크기는 아직 못 읽어요. JPEG로 저장해 주세요.')
+      const out = join(tmpdir(), `dool2-img-${process.pid}-${Date.now()}.jpg`)
+      try {
+        await new Promise<void>((res, rej) =>
+          execFile(
+            'sips',
+            ['-s', 'format', 'jpeg', '-Z', '2000', p, '--out', out],
+            { timeout: 20_000 },
+            (e) => (e ? rej(e) : res()),
+          ),
+        )
+        data = await readFile(out)
+        mime = 'image/jpeg'
+      } catch {
+        return fail('사진을 바꾸지 못했어요. JPEG로 저장해 주세요.')
+      } finally {
+        await rm(out, { force: true })
+      }
+    }
+    if (data.length > IMAGE_MAX) return fail('사진이 너무 커요.')
+    return {
+      content: [
+        { type: 'image', data: data.toString('base64'), mimeType: mime },
+        {
+          type: 'text',
+          text: `${this.show(p)} 사진이에요. 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+        },
+      ],
+    }
   }
 
   private async listDir(p: string): Promise<FileToolResult> {
@@ -451,6 +518,27 @@ export function pdfText(buf: Buffer): string {
     }
   }
   return lines.join('\n')
+}
+
+/** 스캔 PDF 안의 사진(JPEG, DCTDecode) */
+export function pdfImages(buf: Buffer): Buffer[] {
+  const src = buf.toString('latin1')
+  const out: Buffer[] = []
+  const re = /<<([\s\S]{0,2000}?)>>\s*stream\r?\n/g
+  for (let m = re.exec(src); m && out.length < 6; m = re.exec(src)) {
+    const dict = m[1] ?? ''
+    const start = m.index + m[0].length
+    const end = src.indexOf('endstream', start)
+    if (end < 0) break
+    re.lastIndex = end
+    if (!/\/Subtype\s*\/Image/.test(dict) || !/DCTDecode/.test(dict) || /FlateDecode/.test(dict)) continue
+    const data = buf.subarray(start, end)
+    // JPEG 시작 표시(FFD8)부터, 너무 작은 것(아이콘)은 뺀다
+    const at = data.indexOf(Buffer.from([0xff, 0xd8]))
+    if (at >= 0 && data.length > 20_000 && data.length - at <= IMAGE_MAX)
+      out.push(Buffer.from(data.subarray(at)))
+  }
+  return out
 }
 
 // ── 만들기 ─────────────────────────────────────────────

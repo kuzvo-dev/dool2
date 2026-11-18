@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { FileTools, officeText, pdfText, unzip, xlsx, zip } from './files.js'
+import { FileTools, officeText, pdfImages, pdfText, unzip, xlsx, zip } from './files.js'
 
 function setup() {
   const home = mkdtempSync(join(tmpdir(), 'dool2-files-'))
@@ -14,7 +14,7 @@ function setup() {
   }
   return { home, tools: new FileTools(folders, home) }
 }
-const text = (r: { content: { text: string }[] }) => r.content.map((c) => c.text).join('\n')
+const text = (r: { content: { text?: string }[] }) => r.content.map((c) => c.text ?? '').join('\n')
 
 describe('PC 파일 도구', () => {
   it('이름으로 찾고 읽는다 (한글 이름, 맥의 자모 나눈 이름도)', async () => {
@@ -87,6 +87,31 @@ describe('PC 파일 도구', () => {
     ])
     expect(officeText(hwpx, '.hwpx')).toBe('한글 문서')
     expect(unzip(xlsx([['a']])).has('xl/worksheets/sheet1.xml')).toBe(true)
+  })
+
+  it('사진은 그림으로, 스캔 PDF는 안의 사진을 그림으로 넘긴다', async () => {
+    const { home, tools } = setup()
+    const jpeg = Buffer.concat([
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      Buffer.alloc(30_000, 7),
+      Buffer.from([0xff, 0xd9]),
+    ])
+    writeFileSync(join(home, 'Downloads', '면허증.jpg'), jpeg)
+    const r = await tools.run('file_read', { path: '~/Downloads/면허증.jpg' })
+    expect(r.content[0]).toMatchObject({ type: 'image', mimeType: 'image/jpeg' })
+    const pdf = Buffer.concat([
+      Buffer.from(
+        '%PDF-1.4\n1 0 obj <</Type /XObject /Subtype /Image /Filter /DCTDecode /Length 30006>> stream\n',
+        'latin1',
+      ),
+      jpeg,
+      Buffer.from('\nendstream endobj\n%%EOF', 'latin1'),
+    ])
+    expect(pdfImages(pdf)).toHaveLength(1)
+    writeFileSync(join(home, 'Documents', '사업자등록증.pdf'), pdf)
+    const s = await tools.run('file_read', { path: '~/Documents/사업자등록증.pdf' })
+    expect(s.content[0]).toMatchObject({ type: 'image' })
+    expect(text(s as never)).toContain('스캔 PDF')
   })
 
   it('PDF: 글 그리기 명령과 한글 글꼴 표(ToUnicode)', () => {
