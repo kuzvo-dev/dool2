@@ -193,7 +193,12 @@ for (const [id, p] of plan) {
   for (const t of toolsOf(id)) {
     if (!t.login) continue
     if (t.tier !== '찾아보기' && !flags.has('--deep')) {
-      row.tools.push({ tool: name(id, t.name), title: t.title, outcome: '건너뜀', note: `${t.tier} 도구 (--deep일 때만)` })
+      row.tools.push({
+        tool: name(id, t.name),
+        title: t.title,
+        outcome: '건너뜀',
+        note: `${t.tier} 도구 (--deep일 때만)`,
+      })
       continue
     }
     if (t.steps.some((st) => 'approve' in st)) {
