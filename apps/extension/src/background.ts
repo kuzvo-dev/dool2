@@ -874,6 +874,12 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (at.hidden) throw new Error('두리 창이 가려져 있어서 마우스를 올릴 수 없어요')
       await showCursor(tabId, at.x, at.y, '두리가 올려 보는 중')
       await moveMouse(tabId, at.x, at.y)
+      // 그려지지 않던 창은 올려 둔 상태(:hover)를 다음 그리기·움직임에서야 반영한다: 한 장 그리고 제자리에서 한 번 더
+      await paint(tabId)
+      await Promise.race([
+        cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none' }),
+        sleep(300),
+      ])
       await settle(tabId)
       return pageState(tabId)
     }
