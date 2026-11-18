@@ -592,10 +592,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   function startConnect(card: ConnectCard, run: () => Promise<ConnectResult>): Promise<ConnectResult> {
     const running = connecting.get(card.id)
     if (running) return running
-    const p: Promise<ConnectResult> = run().catch((e: Error) => ({
-      ok: false,
-      message: e.message,
-    }))
+    // 던져진 오류는 화면 표시(e2 등)가 섞인 속 이야기라 사용자에게는 쉬운 말로, 원문은 기록에만
+    const p: Promise<ConnectResult> = run().catch((e: Error) => {
+      console.warn(`[연결] ${card.id} 자동 로그인 오류: ${e.message}`)
+      return {
+        ok: false,
+        message: /\be\d+\b|ref|tabId/.test(e.message)
+          ? '로그인 화면이 예상과 달라 멈췄어요. 다시 해 보기를 눌러 주세요.'
+          : e.message,
+      }
+    })
     connecting.set(card.id, p)
     connectStatus()
     void p.then((r) => {
