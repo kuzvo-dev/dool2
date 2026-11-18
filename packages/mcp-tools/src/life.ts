@@ -206,6 +206,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           )
           .min(1)
           .max(10),
+        shape: z
+          .enum(['square', 'portrait'])
+          .optional()
+          .describe(
+            '사진 모양: 영화 포스터·책 표지·공연 포스터는 portrait(세로), 그 밖(상품·숙소·식당)은 square',
+          ),
       },
     },
     call('show_cards'),

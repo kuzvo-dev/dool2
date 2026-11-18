@@ -134,9 +134,17 @@ export class ThreadService {
           answer = ''
         }
         if (ev.type === 'tool' && /show_cards$/.test(ev.name)) {
-          const list = cleanCards((ev.input as { cards?: unknown } | undefined)?.cards)
+          const input = ev.input as { cards?: unknown; shape?: unknown } | undefined
+          const list = cleanCards(input?.cards)
           // 한 차례에 여러 번 부르면 이어 붙인다 (10장까지)
-          if (list.length) cards = { kind: 'cards', cards: [...(cards?.cards ?? []), ...list].slice(0, 10) }
+          if (list.length)
+            cards = {
+              kind: 'cards',
+              cards: [...(cards?.cards ?? []), ...list].slice(0, 10),
+              ...(input?.shape === 'portrait' || cards?.shape === 'portrait'
+                ? { shape: 'portrait' as const }
+                : {}),
+            }
         }
         if (ev.type === 'text') answer += ev.delta
         if (ev.type === 'done') {

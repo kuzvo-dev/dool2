@@ -186,6 +186,21 @@ describe('ThreadService', () => {
     })
   })
 
+  it('세로 포스터 묶음(shape: portrait)은 기록에 남긴다', async () => {
+    const { store, svc } = setup([
+      {
+        type: 'tool',
+        name: 'mcp__dool2__show_cards',
+        input: { shape: 'portrait', cards: [{ title: '폭설', image: 'https://img.example.com/p.jpg' }] },
+      },
+      { type: 'done', resumeId: 's1', text: '폭설이 좋아요.' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '영화 추천'))
+    const rec = JSON.parse(store.listMessages(t.id).at(-1)?.text ?? '{}')
+    expect(rec).toMatchObject({ kind: 'cards', shape: 'portrait' })
+  })
+
   it('사람에게 넘긴 일을 기록에 남긴다', async () => {
     const { store, svc } = setup([
       { type: 'tool', name: 'mcp__dool2__browser_handoff', input: { tabId: 4, reason: '로그인해 주세요' } },

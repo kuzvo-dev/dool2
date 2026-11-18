@@ -2518,7 +2518,7 @@ function showThumb(img: HTMLImageElement, data: string) {
 function cardsInline(rec: CardsRecordMessage): HTMLElement {
   return h(
     'div',
-    { class: 'pick-cards' },
+    { class: rec.shape === 'portrait' ? 'pick-cards portrait' : 'pick-cards' },
     ...rec.cards.map((c) => {
       let img: HTMLImageElement | undefined
       if (c.image) {
@@ -2544,8 +2544,9 @@ function cardsInline(rec: CardsRecordMessage): HTMLElement {
           'div',
           { class: 'pick-body' },
           h('span', { class: 'pick-title', text: c.title }),
-          c.price ? h('span', { class: 'pick-price', text: c.price }) : undefined,
-          c.note ? h('span', { class: 'pick-note', text: c.note }) : undefined,
+          // 비어 있어도 자리는 둔다 (카드마다 가격·정보 줄이 같은 높이에)
+          h('span', { class: 'pick-price', text: c.price ?? '' }),
+          h('span', { class: 'pick-note', text: c.note ?? '' }),
         ),
         h(
           'div',
