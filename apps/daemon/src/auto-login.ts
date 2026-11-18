@@ -650,8 +650,9 @@ export const SOCIAL_PROVIDERS = {
 export type SocialProvider = keyof typeof SOCIAL_PROVIDERS
 
 /** 공급자 화면의 "동의하고 계속하기" 같은 버튼 (처음 한 번 묻는 정보 제공 동의) */
+// 페이스북은 "○○님으로 계속"·"Continue as ○○"처럼 사용자 이름이 들어간다 (실측 예스24)
 const CONSENT =
-  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm)$/i
+  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
 
 /** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
 function findProviderButton(text: string, provider: SocialProvider): RefEntry | undefined {
