@@ -33,5 +33,11 @@
       "say": "파본이야, 반품해 줘",
       "tier": "돈 내기"
     }
+  ],
+  "social": [
+    "naver",
+    "kakao",
+    "google",
+    "apple"
   ]
 }

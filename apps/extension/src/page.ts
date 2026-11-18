@@ -244,6 +244,13 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     [/(?:^|[^a-z])(?:delete|trash|bin)(?:[^a-z]|$)/i, '삭제'],
     [/(?:^|[^a-z])(?:cart|basket)(?:[^a-z]|$)/i, '장바구니'],
     [/(?:^|[^a-z])(?:home)(?:[^a-z]|$)/i, '홈'],
+    // 글 없는 간편 로그인 아이콘 (실측 알라딘: <a class="naver" href="javascript:goNaverLogin()">)
+    [/(?:^|[^a-z])kakao(?:[^a-z]|$)/i, '카카오 로그인'],
+    [/(?:^|[^a-z])naver(?:[^a-z]|$)/i, '네이버 로그인'],
+    [/(?:^|[^a-z])google(?:[^a-z]|$)/i, '구글 로그인'],
+    [/(?:^|[^a-z])apple(?:[^a-z]|$)/i, 'Apple 로그인'],
+    [/(?:^|[^a-z])(?:facebook|fb)(?:[^a-z]|$)/i, '페이스북 로그인'],
+    [/(?:^|[^a-z])payco(?:[^a-z]|$)/i, '페이코 로그인'],
   ]
   const iconName = (el: Element): string => {
     const bits: string[] = []
