@@ -788,7 +788,38 @@ export async function socialLogin(
       }
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
-    if (!onProvider) continue
+    if (!onProvider) {
+      // 공급자 인증은 끝났는데 이 계정과 연결된 사이트 회원이 없다: "이미 회원이신가요? / 회원가입" 화면
+      // (실측 교보·예스24). 필수 약관만 있는 간편 가입이면 두리가 가입하고, 본인인증이 필요하면 사람에게 넘긴다
+      const join = joinScreen(p.text)
+      // 가입 버튼을 누른 뒤 본인인증 화면이 나오면 사람 차례 (실측 교보: 회원가입 → 휴대폰 본인인증)
+      const joined = [...pressed].some((k) => k.endsWith('|join'))
+      const hum = joined && !join && JOIN_HUMAN.exec(p.text)
+      if (hum)
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name} 가입에 ${hum[0].replace(/\s/g, '')}이 필요해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
+        }
+      if (join) {
+        const key = `${p.url}|join`
+        if (join.kind === 'human' || pressed.has(key))
+          return {
+            status: 'human',
+            tabId: providerTab,
+            reason:
+              join.kind === 'human'
+                ? `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없어요. 가입에 ${join.why}이 필요해요`
+                : `${input.card.name} 가입을 마치지 못했어요. 화면을 보면서 마저 해 주세요`,
+          }
+        pressed.add(key)
+        step(`${input.card.name}에 ${label} 계정으로 가입하는 중`)
+        for (const ref of join.required)
+          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
+        await browser.call('click', { tabId: providerTab, ref: join.submit }, 30_000).catch(() => undefined)
+      }
+      continue
+    }
     // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다
     const confirm = await waitConfirm(p, providerTab, snap, input.step, wait)
     if (confirm === 'moved') continue
@@ -906,6 +937,40 @@ export async function socialLogin(
     tabId: providerTab,
     message: `${label} 로그인을 마쳤는지 확인하지 못했어요. 화면을 보고 확인해 주세요.`,
   }
+}
+
+const JOIN_PAGE =
+  /(이미|기존)\s?.{0,12}회원이신가요|아직\s?.{0,12}회원이\s?아니|회원가입을\s?하시겠|SNS\s?(로그인\s?)?연동|계정\s?연동|간편\s?회원\s?가입/
+const JOIN_HUMAN = /본인\s?인증|휴대폰\s?인증|휴대전화\s?인증|아이핀|i-?PIN|인증번호/
+
+/**
+ * 간편 로그인 뒤 "이 계정과 연결된 회원이 없어요" 화면. 가입 버튼과 아직 고르지 않은 (필수) 약관 칸.
+ * 같은 화면에 본인인증이 있으면 사람 차례(why). 아니면 undefined
+ */
+export function joinScreen(
+  text: string,
+): { kind: 'auto'; submit: string; required: string[] } | { kind: 'human'; why: string } | undefined {
+  if (!JOIN_PAGE.test(text)) return undefined
+  const refs = [...parseRefs(text)] as RefEntry[]
+  const submit = refs.find(
+    ([, r]) =>
+      (r.role === '버튼' || r.role === '링크') &&
+      /^(간편\s?)?(회원\s?가입|가입하기|가입\s?완료|동의하고\s?가입(하기)?)$/.test(r.name.trim()),
+  )
+  if (!submit) return undefined
+  // 가입 버튼을 누르기 전 화면에 본인인증 칸이 보이면 사람 차례 (가입 버튼 뒤에 나오는 건 다음 화면에서 본다)
+  const human = JOIN_HUMAN.exec(
+    text
+      .split('\n')
+      .filter((l) => !/본인인증이 필요한 서비스|본인인증 이후 이용/.test(l))
+      .join('\n'),
+  )
+  if (human) return { kind: 'human', why: human[0].replace(/\s/g, '') }
+  const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
+  const required = refs
+    .filter(([ref, r]) => r.role === '체크박스' && /필수/.test(r.name) && !checked.has(ref))
+    .map(([ref]) => ref)
+  return { kind: 'auto', submit: submit[0], required }
 }
 
 /** 점검용: 로그인 화면에 있는 간편 로그인 공급자 */

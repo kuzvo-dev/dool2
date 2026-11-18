@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoLogin, probeLogin, socialLogin, socialProvidersIn } from './auto-login.js'
+import { autoLogin, joinScreen, probeLogin, socialLogin, socialProvidersIn } from './auto-login.js'
 
 /** 확장 대신: 화면 차례대로 돌려주고 부른 것을 적는다 */
 function fakeBrowser(pages: { url: string; text: string; captcha?: boolean }[]) {
@@ -513,5 +513,25 @@ describe('폰 입력 화면으로 묻기', () => {
       { wait: 0 },
     )
     expect(r.status).toBe('human')
+  })
+})
+
+describe('간편 로그인 뒤 가입 화면', () => {
+  it('필수 약관만 있는 간편 가입은 두리가 고르고 누른다 (실측 예스24 페이스북)', () => {
+    const t = `# 페이스북 계정 연동
+예스24 회원님이신가요?
+[e3 링크 "로그인"]
+아직 예스24 회원이 아니시라면 회원가입을 해주세요.
+[e4 체크박스 "모두 동의"] 모두 동의
+[e5 체크박스 "예스24 이용약관 동의 (필수)"] 예스24 이용약관 동의 (필수) [e6 링크 "보기"]
+상품구매 등 본인인증(휴대폰인증, 아이핀인증)이 필요한 서비스는 본인인증 이후 이용 가능합니다.
+[e8 링크 "간편 회원가입"]`
+    expect(joinScreen(t)).toEqual({ kind: 'auto', submit: 'e8', required: ['e5'] })
+  })
+
+  it('가입에 본인인증이 필요하면 사람 차례, 로그인 화면은 가입 화면이 아니다', () => {
+    const t = `## 회원가입을 하시겠습니까?\n[e7 링크 "회원가입"]\n휴대폰 본인인증 [e8 버튼 "인증번호 받기"]`
+    expect(joinScreen(t)).toMatchObject({ kind: 'human' })
+    expect(joinScreen('[e3 입력칸 "아이디"] [e9 링크 "회원가입"]')).toBeUndefined()
   })
 })
