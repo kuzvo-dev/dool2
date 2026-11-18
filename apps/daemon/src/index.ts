@@ -502,6 +502,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const cur = conversation.current()
     if (!cur) throw new Error('대화를 아직 열지 못했어요')
     postSaved(cur.id, store.addMessage(cur.id, 'user', `${card.name} 연결해 줘`))
+    postConnectCard(card)
+  }
+  /** 대화에 연결 카드만 남긴다. 카드는 마지막 연결 결과대로 [화면 열기]·[다시 해 보기]를 보여 준다 */
+  const postConnectCard = (card: ConnectCard) => {
+    const cur = conversation.current()
+    if (!cur) return
     const record: ConnectRecordMessage = { kind: 'connect', service: card.id }
     postSaved(cur.id, store.addMessage(cur.id, 'tool', JSON.stringify(record)))
   }
@@ -614,11 +620,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       else if (r.human || r.tabId !== undefined) {
         // 사람이 마칠 차례: 그 화면을 폰·PC에서 열어 직접 로그인하면 두리가 알아서 확인한다
         connectHuman.add(card.id)
-        // 대화 끝에 그 연결 카드가 있으면 카드가 "직접 마쳐 주세요 [화면 열기]"로 바뀐다 (알림 줄을 또 남기지 않는다)
-        if (!cardNearEnd(card))
-          postNote(
-            `${card.name} 자동 로그인이 안 됐어요. 열어 둔 화면에서 직접 로그인하면 두리가 알아서 확인해요.`,
-          )
+        // 대화 끝에 그 연결 카드가 있으면 카드가 "직접 마쳐 주세요 [화면 열기]"로 바뀐다.
+        // 없으면(연결 화면에서 시작) 글 한 줄만 남기면 이어 갈 버튼이 없다: 카드를 대화에 띄운다
+        if (!cardNearEnd(card)) postConnectCard(card)
         void link
           .notify({
             title: `${card.name} 연결을 마쳐 주세요`,
@@ -628,7 +632,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           })
           .catch(() => {})
       } else {
-        if (!cardNearEnd(card)) postNote(`${card.name} 로그인이 안 됐어요. ${r.message}`)
+        if (!cardNearEnd(card)) postConnectCard(card)
         void link
           .notify({
             title: `${card.name} 로그인이 안 됐어요`,
