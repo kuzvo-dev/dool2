@@ -8,6 +8,12 @@ describe('로그인 확인', () => {
   it('로그인한 사람에게만 보이는 말이 있으면 로그인한 것', () => {
     // 로그아웃이 숨은 메뉴에만 있는 사이트(컬리): 위쪽 이름 버튼으로
     expect(
+      looksSignedIn(card, {
+        url: 'https://mail.google.com/mail/u/0/#inbox',
+        text: '[e14 버튼 "Google 계정: 쿠즈보 (a@b.com)"]\n[e18 버튼 "편지쓰기"]',
+      }),
+    ).toBe(true)
+    expect(
       looksSignedIn(card, { url: 'https://www.kurly.com/main', text: '[e1 버튼 "주*돈 님"]\n고객센터' }),
     ).toBe(true)
     expect(looksSignedIn(card, { url: 'https://demo.co.kr/', text: '[e2 링크 "홍길동님"]' })).toBe(true)
