@@ -792,6 +792,7 @@ export async function socialLogin(
   let graceInfo = 0
 
   // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
+  let blankWaits = 0
   for (let i = 0; i < (opts.tries ?? 14); i++) {
     await sleep(wait)
     const site = await snap(siteTab).catch(() => undefined)
@@ -815,6 +816,12 @@ export async function socialLogin(
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
     if (!onProvider) {
+      // 로그인 뒤 돌아온 콜백 페이지가 아직 빈 화면이면(리디렉션 중) 조금 더 기다렸다 다시 본다 (실측 알라딘)
+      // — 바로 '못 했어요'로 끝내면 로그인이 실제로는 되던 걸 놓친다
+      if (p.text.replace(/\s/g, '').length < 40 && blankWaits++ < 6) {
+        await sleep(Math.max(wait, 1_500))
+        continue
+      }
       // 공급자 인증은 끝났는데 이 계정과 연결된 사이트 회원이 없다: "이미 회원이신가요? / 회원가입" 화면
       // (실측 교보·예스24). 필수 약관만 있는 간편 가입이면 두리가 가입하고, 본인인증이 필요하면 사람에게 넘긴다
       const join = joinScreen(p.text)
