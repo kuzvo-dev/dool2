@@ -16,6 +16,18 @@ describe('두리 페르소나 지침', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('결제·주문·보내기·삭제 버튼은 승인 없이 누르지 않아요')
   })
 
+  it('찾기는 되묻지 않고 흔한 값으로 바로, 막히면 다른 길로 이어 간다', () => {
+    expect(DOOL2_SYSTEM_PROMPT).toContain('되묻지 말고 흔한 값으로 잡아 바로 찾아요')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('되돌리기 어려운 일(예약 확정·주문·결제·보내기)에서만')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('같은 도구를 다시 부르지 않아요')
+    expect(DOOL2_SYSTEM_PROMPT).not.toContain('짐작하지 말고 사용자에게 먼저 물어요')
+  })
+
+  it('넘기기 전에 다시 읽고 보이는 화면대로 말한다', () => {
+    expect(DOOL2_SYSTEM_PROMPT).toContain('넘기기 전에 페이지를 다시 읽어요')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('지금 화면에 보이는 그대로')
+  })
+
   it('사용자 이름이 있으면 님으로 부른다', () => {
     expect(buildSystemPrompt({ userName: '민지' })).toContain('"민지님"')
     expect(DOOL2_SYSTEM_PROMPT).toContain('호칭을 생략')
