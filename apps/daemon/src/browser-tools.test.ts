@@ -316,6 +316,123 @@ describe('사이트 알림창', () => {
   })
 })
 
+describe('여러 동작 한 번에', () => {
+  const FORM = `# 회원 정보\n가입하려면 아래 칸을 채워 주세요.
+[e1 입력칸 "이름"] [e2 입력칸 "휴대폰 번호"] [e3 체크박스 "약관 동의"] [e4 버튼 "다음"] [e5 버튼 "바로 구매"]`
+  function formBrowser(
+    after?: (cmd: string, args?: Record<string, unknown>) => Record<string, unknown> | undefined,
+  ) {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://shop.example/join',
+            title: '가입',
+            text: FORM,
+            truncated: false,
+            captcha: false,
+          }
+        return after?.(cmd, args) ?? { tabId: 3, url: 'https://shop.example/join', title: '가입' }
+      },
+    }
+  }
+
+  it('칸 여러 개를 채우고 누른 뒤 한 번만 읽는다', async () => {
+    const b = formBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('steps', {
+      tabId: 3,
+      steps: [
+        { do: 'type', ref: 'e1', text: '김두리' },
+        { do: 'type', ref: 'e2', text: '01012345678' },
+        { do: 'click', ref: 'e3' },
+        { do: 'click', ref: 'e4' },
+      ],
+    })
+    expect(r.isError).toBeUndefined()
+    expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'type', 'type', 'click', 'click', 'snapshot'])
+    expect(text(r)).toContain('1. "이름"에 입력했어요.')
+    expect(text(r)).toContain('4. 버튼 "다음"을(를) 눌렀어요.')
+  })
+
+  it('다른 화면으로 넘어가면 남은 동작은 하지 않는다', async () => {
+    const b = formBrowser((cmd, args) =>
+      cmd === 'click' && args?.ref === 'e4' ? { tabId: 3, url: 'https://shop.example/join/2' } : undefined,
+    )
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('steps', {
+      tabId: 3,
+      steps: [
+        { do: 'click', ref: 'e4' },
+        { do: 'type', ref: 'e1', text: '옛 화면의 칸' },
+      ],
+    })
+    expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'click', 'snapshot'])
+    expect(text(r)).toContain('다른 화면으로 넘어가서 남은 1개 동작은 하지 않았어요')
+  })
+
+  it('확인 창이 뜨면 멈추고 알린다', async () => {
+    const b = formBrowser((cmd) =>
+      cmd === 'click'
+        ? {
+            tabId: 3,
+            url: 'https://shop.example/join',
+            dialog: { type: 'confirm', message: '다음으로 갈까요?', url: '' },
+          }
+        : undefined,
+    )
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('steps', {
+      tabId: 3,
+      steps: [
+        { do: 'click', ref: 'e4' },
+        { do: 'wait', ms: 100 },
+      ],
+    })
+    expect(text(r)).toContain('사이트 확인 창이 떠서 남은 1개 동작은 하지 않았어요')
+  })
+
+  it('위험한 버튼은 하나씩 부를 때처럼 막고, 그 앞까지만 한다', async () => {
+    const b = formBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('steps', {
+      tabId: 3,
+      steps: [
+        { do: 'type', ref: 'e1', text: '김두리' },
+        { do: 'click', ref: 'e5' },
+        { do: 'click', ref: 'e4' },
+      ],
+    })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('2. 멈췄어요')
+    expect(text(r)).toContain('browser_request_approval')
+    expect(text(r)).toContain('남은 1개 동작은 하지 않았어요')
+    expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(0)
+  })
+
+  it('정해진 동작만, 먼저 읽은 화면에서만 한다', async () => {
+    const tools = new BrowserTools(formBrowser())
+    expect((await tools.run('steps', { tabId: 3, steps: [{ do: 'wait' }] })).isError).toBe(true)
+    await tools.run('read', { tabId: 3 })
+    const bad = await tools.run('steps', { tabId: 3, steps: [{ do: 'eval', code: 'alert(1)' }] })
+    expect(bad.isError).toBe(true)
+    expect(text(bad)).toContain('모르는 동작')
+    const many = await tools.run('steps', {
+      tabId: 3,
+      steps: Array.from({ length: 13 }, () => ({ do: 'wait' })),
+    })
+    expect(text(many)).toContain('12개까지')
+  })
+})
+
 describe('원격 화면 (폰)', () => {
   it('두리가 사람에게 넘긴 탭만, 30분 동안 보고 누를 수 있다', async () => {
     const b = fakeBrowser()

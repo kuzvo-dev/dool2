@@ -105,6 +105,13 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
     '<!doctype html><meta charset="utf-8"><title>여는 중 알림</title><script>alert("로그인이 필요한 서비스입니다")</script><h1>로그인이 필요해요</h1>',
   '/leave': `<!doctype html><meta charset="utf-8"><title>쓰는 중</title><h1>글쓰기</h1><label>제목 <input id="t"></label>
 <script>addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = '' })</script>`,
+  // 여러 동작 한 번에: 칸 여러 개 + 동의 체크 + 다음
+  '/join': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>가입</title></head><body>
+<h1>회원 가입</h1><p>배송받을 분의 정보를 넣어 주세요. ${'자주 묻는 질문과 안내 문구가 길게 이어져요. '.repeat(60)}</p>
+<form action="/join/done"><label>이름 <input name="name"></label><br><label>휴대폰 번호 <input name="phone"></label><br>
+<label>주소 <input name="addr"></label><br>
+<label><input type="checkbox" name="a1" required> 이용약관 동의 (필수)</label><br><label><input type="checkbox" name="a2" required> 개인정보 수집 동의 (필수)</label><br>
+<button>다음</button></form></body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -115,6 +122,13 @@ const site = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     return res.end(
       `<!doctype html><title>${ok ? '환영해요' : '실패'}</title><h1>${ok ? '로그인 성공' : '로그인 실패'}</h1>`,
+    )
+  }
+  if (url.pathname === '/join/done') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    const v = (k) => (url.searchParams.get(k) ?? '').replace(/[<>&]/g, '')
+    return res.end(
+      `<!doctype html><title>가입 확인</title><h1>가입 정보 확인</h1><p>${v('name')} / ${v('phone')} / ${v('addr')} / 동의 ${v('a1')}${v('a2')}</p>`,
     )
   }
   if (url.pathname === '/api/items') {
@@ -468,6 +482,46 @@ try {
     assert.ok(Date.now() - t < 8000, `떠나는 데 너무 오래 걸려요 (${Date.now() - t}ms)`)
     assert.match(text(moved), /\[e\d+ 링크 "가게 가"\]/)
     assert.match(text(moved), /떠날지 묻는 창이 떠서/)
+  })
+
+  await step('여러 동작 한 번에: 폼을 하나씩 채울 때보다 빠르고 돌려받는 글이 적다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    const fill = (page) => {
+      const ref = (re) => page.match(re)?.[1]
+      return [
+        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "이름"\]/), text: '김두리' },
+        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "휴대폰 번호"\]/), text: '01012345678' },
+        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "주소"\]/), text: '서울 성동구 성수동' },
+        { do: 'click', ref: ref(/\[(e\d+) 체크박스 "이용약관 동의 \(필수\)"\]/) },
+        { do: 'click', ref: ref(/\[(e\d+) 체크박스 "개인정보 수집 동의 \(필수\)"\]/) },
+        { do: 'click', ref: ref(/\[(e\d+) 버튼 "다음"\]/) },
+      ]
+    }
+    const done = /김두리 \/ 01012345678 \/ 서울 성동구 성수동 \/ 동의 onon/
+    // 하나씩: 동작마다 도구를 부르고, 도구마다 페이지를 읽어 돌려받는다
+    await call('navigate', { tabId, url: `${base}/join` })
+    let steps = fill(text(await tools.run('read', { tabId })))
+    let t = Date.now()
+    let chars = 0
+    let last = ''
+    for (const s of steps) {
+      last = text(await tools.run(s.do, { tabId, ...s }))
+      chars += last.length
+    }
+    const one = { calls: steps.length, ms: Date.now() - t, chars }
+    assert.match(last, done)
+    // 한 번에
+    await call('navigate', { tabId, url: `${base}/join` })
+    steps = fill(text(await tools.run('read', { tabId })))
+    t = Date.now()
+    const r = await tools.run('steps', { tabId, steps })
+    const all = { calls: 1, ms: Date.now() - t, chars: text(r).length }
+    assert.equal(r.isError, undefined, text(r))
+    assert.match(text(r), done)
+    console.log(`  하나씩 ${JSON.stringify(one)} → 한 번에 ${JSON.stringify(all)}`)
+    assert.ok(all.ms < one.ms, '한 번에 한 쪽이 더 느려요')
+    assert.ok(all.chars * 3 < one.chars, '돌려받는 글이 충분히 줄지 않았어요')
   })
 
   await step('탭 닫기', async () => {

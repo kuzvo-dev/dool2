@@ -110,6 +110,35 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'steps',
+    '여러 동작 한 번에',
+    '읽은 화면에서 이어지는 동작(칸 여러 개 채우기, 고르고 누르기 등)을 한 번에 차례로 하고, 끝난 뒤 페이지를 한 번만 읽어 돌려준다. 동작은 click(ref 또는 text)·type(ref, text, submit)·press(key)·scroll(direction)·wait(ms)만. 다른 화면으로 넘어가거나 새 탭·확인 창이 뜨거나 막히면 거기서 멈추고 남은 동작은 하지 않는다. 결제·주문·보내기·삭제 같은 버튼은 browser_click과 똑같이 막힌다.',
+    {
+      tabId,
+      steps: z
+        .array(
+          z.object({
+            do: z.enum(['click', 'type', 'press', 'scroll', 'wait']).describe('할 동작'),
+            ref: ref.optional().describe('click·type: 표시'),
+            text: z
+              .string()
+              .max(2000)
+              .optional()
+              .describe('type: 넣을 글 / click: ref가 없을 때 누를 화면 글자'),
+            submit: z.boolean().optional().describe('type: 넣고 Enter'),
+            key: z.string().max(20).optional().describe('press: 키 이름 (Enter, Tab, Escape …)'),
+            direction: z.enum(['up', 'down']).optional().describe('scroll: 방향'),
+            ms: z.number().int().min(100).max(5000).optional().describe('wait: 기다릴 시간(ms)'),
+          }),
+        )
+        .min(1)
+        .max(12)
+        .describe('차례로 할 동작 (최대 12개)'),
+      maxChars: z.number().int().min(1000).max(40000).optional(),
+    },
+    false,
+  )
+  tool(
     'scroll',
     '스크롤',
     '화면을 한 화면 위나 아래로 움직인다. 화면 캡처 전에 쓴다(페이지 읽기는 스크롤 없이 전체를 읽는다).',

@@ -35,6 +35,7 @@ export const BROWSER_TOOLS = [
   'request_login',
   'request_approval',
   'dialog',
+  'steps',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -127,6 +128,25 @@ interface PageInfo {
   /** 결제 단계 화면이면 그 표시 말 (예: '결제 방법 선택') */
   pay?: string
 }
+
+/** 한 번에 할 수 있는 동작 수 */
+export const MAX_STEPS = 12
+
+/** 확장 명령이 돌려주는 지금 탭 상태 */
+interface BrowserState {
+  url?: string
+  dialog?: SiteDialog
+}
+interface ActResult {
+  note: string
+  url?: string
+  dialog?: SiteDialog
+  newTabId?: number
+}
+const state = (r: BrowserState | undefined): { url?: string; dialog?: SiteDialog } => ({
+  ...(typeof r?.url === 'string' ? { url: r.url } : {}),
+  ...(r?.dialog ? { dialog: r.dialog } : {}),
+})
 
 /** 사이트 알림창 (확장이 알린 그대로) */
 export interface SiteDialog {
@@ -256,44 +276,16 @@ export class BrowserTools {
       case 'read':
         return this.read(tabId, a.maxChars)
       case 'click': {
-        // 표시가 없는 상자(가게 카드 등)는 화면 글자로 찾아 표시를 붙인 뒤 누른다. 승인 게이트는 그 글자로 똑같이 거친다
-        if (!a.ref && typeof a.text === 'string' && a.text.trim()) {
-          a.ref = (await this.markText(tabId, a.text)).ref
-        }
-        const ref = String(a.ref ?? '')
-        const page = this.pages.get(tabId)
-        const target = page?.refs.get(ref)
-        if (!page || !target)
-          throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
-        this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
-        const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as {
-          newTabId?: number
-          coveredBy?: string
-        }
-        const note = [
-          `${target.role} "${target.name}"을(를) 눌렀어요.`,
-          r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-        if (r.newTabId) return this.read(r.newTabId, undefined, `${note} 새 탭이 열려서 그 탭을 읽었어요.`)
-        return this.read(tabId, undefined, note)
+        const r = await this.act(tabId, { ...a, do: 'click' })
+        if (r.newTabId) return this.read(r.newTabId, undefined, `${r.note} 새 탭이 열려서 그 탭을 읽었어요.`)
+        return this.read(tabId, undefined, r.note)
       }
-      case 'type': {
-        const ref = String(a.ref ?? '')
-        const page = this.pages.get(tabId)
-        if (!page?.refs.has(ref)) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        if (a.submit) this.guard('', page.url, false, page.pay)
-        await this.browser.call('type', { tabId, ref, text: String(a.text ?? ''), submit: Boolean(a.submit) })
-        return this.read(tabId, undefined, a.submit ? '입력하고 Enter를 눌렀어요.' : '입력했어요.')
-      }
-      case 'press': {
-        const key = String(a.key ?? '')
-        const page = this.pages.get(tabId)
-        if (/^(enter|return|엔터)$/i.test(key) && page) this.guard('', page.url)
-        await this.browser.call('press', { tabId, key })
-        return this.read(tabId, undefined, `${key} 키를 눌렀어요.`)
-      }
+      case 'type':
+        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+      case 'press':
+        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
+      case 'steps':
+        return this.steps(tabId, a)
       case 'scroll': {
         await this.browser.call('scroll', { tabId, direction: a.direction === 'up' ? 'up' : 'down' })
         return {
@@ -453,6 +445,121 @@ export class BrowserTools {
       }
     }
     throw new Error(`모르는 브라우저 도구예요: ${tool}`)
+  }
+
+  /**
+   * 동작 하나 (누르기·입력·키·기다리기·스크롤). 페이지는 읽지 않는다 — 부른 쪽이 마지막에 한 번 읽는다.
+   * 위험한 동작을 막는 검사는 도구를 하나씩 부를 때와 똑같다
+   */
+  private async act(tabId: number, s: Record<string, unknown>): Promise<ActResult> {
+    switch (s.do) {
+      case 'click': {
+        // 표시가 없는 상자(가게 카드 등)는 화면 글자로 찾아 표시를 붙인 뒤 누른다. 승인 게이트는 그 글자로 똑같이 거친다
+        let ref = typeof s.ref === 'string' ? s.ref : ''
+        if (!ref && typeof s.text === 'string' && s.text.trim())
+          ref = (await this.markText(tabId, s.text)).ref
+        const page = this.pages.get(tabId)
+        const target = page?.refs.get(ref)
+        if (!page || !target)
+          throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
+        this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
+        const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
+          newTabId?: number
+          coveredBy?: string
+        }
+        const note = [
+          `${target.role} "${target.name}"을(를) 눌렀어요.`,
+          r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+        return { note, ...state(r), ...(r.newTabId ? { newTabId: r.newTabId } : {}) }
+      }
+      case 'type': {
+        const ref = String(s.ref ?? '')
+        const page = this.pages.get(tabId)
+        if (!page?.refs.has(ref)) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+        if (s.submit) this.guard('', page.url, false, page.pay)
+        const text = String(s.text ?? '')
+        const r = (await this.browser.call('type', {
+          tabId,
+          ref,
+          text,
+          submit: Boolean(s.submit),
+        })) as BrowserState
+        const name = page.refs.get(ref)?.name
+        const where = name ? `"${name}"에 ` : ''
+        return { note: s.submit ? `${where}입력하고 Enter를 눌렀어요.` : `${where}입력했어요.`, ...state(r) }
+      }
+      case 'press': {
+        const key = String(s.key ?? '')
+        const page = this.pages.get(tabId)
+        if (/^(enter|return|엔터)$/i.test(key) && page) this.guard('', page.url)
+        const r = (await this.browser.call('press', { tabId, key })) as BrowserState
+        return { note: `${key} 키를 눌렀어요.`, ...state(r) }
+      }
+      case 'scroll': {
+        const r = (await this.browser.call('scroll', {
+          tabId,
+          direction: s.direction === 'up' ? 'up' : 'down',
+        })) as BrowserState
+        return { note: '스크롤했어요.', ...state(r) }
+      }
+      case 'wait': {
+        const ms = Math.min(Math.max(Number(s.ms) || 1000, 100), 5000)
+        await new Promise((r) => setTimeout(r, ms))
+        return { note: `${(ms / 1000).toFixed(1)}초 기다렸어요.` }
+      }
+    }
+    throw new Error(`모르는 동작이에요: ${String(s.do)} (click·type·press·scroll·wait)`)
+  }
+
+  /**
+   * 여러 동작을 한 번에: 정해진 동작만 차례로 하고, 마지막에 페이지를 한 번만 읽는다.
+   * 동작마다 페이지 전체를 읽어 돌려주면 느리고 글이 많아서(한 번에 최대 8,000자), 폼 채우기처럼 이어지는 동작을 묶는다.
+   * 주소가 바뀌거나·새 탭이 열리거나·확인 창이 뜨거나·막히면 거기서 멈춘다 (남은 동작의 표시는 옛 화면의 것이라)
+   */
+  private async steps(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
+    const list = (Array.isArray(a.steps) ? a.steps : []).filter(
+      (x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object',
+    )
+    if (!list.length) throw new Error('steps에 할 동작을 넣어 주세요')
+    if (list.length > MAX_STEPS) throw new Error(`한 번에 ${MAX_STEPS}개까지만 할 수 있어요`)
+    if (!this.pages.get(tabId)) throw new Error('먼저 페이지를 읽어(browser_read) 주세요')
+    const lines: string[] = []
+    let at = tabId
+    let url = this.pages.get(tabId)?.url
+    for (const [i, s] of list.entries()) {
+      const left = list.length - i - 1
+      let r: ActResult
+      try {
+        r = await this.act(at, s)
+      } catch (e) {
+        lines.push(`${i + 1}. 멈췄어요: ${(e as Error).message}`)
+        if (left) lines.push(`(남은 ${left}개 동작은 하지 않았어요)`)
+        // 막힌 까닭(승인 필요 등)이 먼저 보이도록 오류로 돌려준다. 지금 화면도 함께
+        const page = await this.read(at, a.maxChars).catch(() => undefined)
+        return {
+          isError: true,
+          content: [{ type: 'text', text: lines.join('\n') }, ...(page?.content ?? [])],
+        }
+      }
+      lines.push(`${i + 1}. ${r.note}`)
+      const why = r.newTabId
+        ? '새 탭이 열려서'
+        : r.dialog
+          ? '사이트 확인 창이 떠서'
+          : r.url !== undefined && url !== undefined && r.url !== url
+            ? '다른 화면으로 넘어가서'
+            : undefined
+      if (r.newTabId) at = r.newTabId
+      if (r.url !== undefined) url = r.url
+      if (why && left) {
+        lines.push(`(${why} 남은 ${left}개 동작은 하지 않았어요. 아래 새 화면을 보고 이어서 해 주세요)`)
+        break
+      }
+    }
+    return this.read(at, a.maxChars, lines.join('\n'))
   }
 
   /**
