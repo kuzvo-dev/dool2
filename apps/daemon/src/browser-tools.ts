@@ -172,9 +172,16 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
     host = u.hostname
     path = u.pathname
   } catch {}
-  if (RISK_URL.test(path) || RISK_URL.test(host)) return { kind: 'money', reason: '결제 단계 페이지' }
+  // 결제 단계 주소에서는 버튼을 넓게 막는다. 다만 결제가 될 수 없는 이름(닫기·이전·자세히 보기 등)은 누른다
+  // (실측: 호텔스닷컴 결제 화면의 재촉 창 [close]조차 승인을 받아야 했다)
+  if ((RISK_URL.test(path) || RISK_URL.test(host)) && !HARMLESS.test(name))
+    return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
+
+// 결제가 될 수 없는 버튼 이름 (결제 단계 주소에서도 승인 없이 누른다)
+const HARMLESS =
+  /^(?:닫기|창\s*닫기|close|×|✕|x|이전|이전\s*단계|뒤로(?:\s*가기)?|돌아가기|취소|변경|수정|자세히(?:\s*보기)?|더\s*보기|접기|펼치기|전체\s*보기|약관\s*보기|보기|도움말|안내(?:\s*보기)?|알아보기)$/i
 
 // 사이트 확인 창(confirm) 글로 보는 위험: "예약하시겠습니까?", "주문을 진행할까요?", "삭제하시겠습니까?"
 const DIALOG_RISK: [RiskKind, RegExp][] = [
@@ -321,6 +328,21 @@ export function sameControl(
 // 결제 수단에 따라 이름이 바뀌는 마지막 버튼 ("네이버페이로 예약하기" ↔ "카드로 예약하기")
 const PAY_METHOD =
   /(?:네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|L\.?\s*PAY|N\s*pay|신용\s*카드|체크\s*카드|카드|휴대폰|계좌\s*이체|무통장(?:\s*입금)?|포인트|머니)\s*(?:으로|로)?\s*/gi
+
+// 결제 수단을 고르는 칸 이름 (라디오·버튼)
+const PAY_OPTION =
+  /^(?:(?:신용|체크)\s*)?카드(?:\s*결제)?$|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰\s*결제|계좌\s*이체|무통장(?:\s*입금)?|간편\s*결제|(?:지금|나중에|현장에서|숙박\s*시설에서)\s*결제/i
+
+/** 결제 화면의 결제 수단 고르기 칸들 (AI가 choices를 안 넘겨도 승인 카드에 싣는다) */
+export function payOptions(refs: Map<string, { role: string; name: string }>): string[] {
+  return [...refs]
+    .filter(
+      ([, v]) =>
+        ['라디오', '선택지'].includes(v.role) && v.name.length <= 30 && PAY_OPTION.test(v.name.trim()),
+    )
+    .map(([k]) => k)
+    .slice(0, 8)
+}
 
 /** 결제 수단 이름만 다른 같은 마지막 버튼인지 */
 export function sameFinal(a: string, b: string): boolean {
@@ -854,7 +876,11 @@ export class BrowserTools {
     if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
     // 선택지: 결제 화면에 실제로 있는 고르기 칸만. 그 자체가 결제·확정 버튼이면 안 된다
     const picks: { id: string; label: string; ref: string; role: string; name: string }[] = []
-    for (const cref of (d.choices ?? []).slice(0, 8)) {
+    // AI가 선택지를 안 넘겨도, 결제 화면에 결제 수단 고르기 칸이 둘 이상이면 본체가 승인 카드에 싣는다
+    // (실측: AI가 도구 설명을 따르지 않고 네이버페이를 스스로 골랐다)
+    const auto = !d.choices?.length && page.checkout ? payOptions(page.refs) : []
+    const asked = d.choices?.length ? d.choices : auto.length >= 2 ? auto : []
+    for (const cref of asked.slice(0, 8)) {
       const c = page.refs.get(cref)
       if (!c) throw new Error(`선택지 ${cref}가 화면에 없어요. 페이지를 다시 읽어 주세요`)
       if (!['라디오', '버튼', '선택지', '체크박스', '탭', '항목', '링크'].includes(c.role))

@@ -36,6 +36,10 @@ describe('위험한 동작 가리기', () => {
   it('결제 단계 페이지에서는 무엇이든 위험으로 본다', () => {
     expect(classifyRisk('버튼 다음', 'https://order.example.com/checkout/step2')?.kind).toBe('money')
     expect(classifyRisk('버튼 확인', 'https://pay.naver.com/x')?.kind).toBe('money')
+    // 결제 단계 주소에서도 결제가 될 수 없는 이름은 누른다 (닫기·이전·자세히 보기)
+    expect(classifyRisk('버튼 close', 'https://kr.hotels.com/checkout/s')).toBeUndefined()
+    expect(classifyRisk('버튼 자세히 보기', 'https://order.example.com/checkout/step2')).toBeUndefined()
+    expect(classifyRisk('버튼 예약 계속하기', 'https://kr.hotels.com/checkout/s')?.kind).toBe('money')
   })
 
   it('주소가 그대로인 결제 화면에서는 "다음"·"확인"도 막는다', () => {
@@ -1165,6 +1169,13 @@ describe('승인 카드에서 결제 수단 고르기', () => {
       choices: ['e1', 'e2'],
     })
     expect(tools2.approvals.list()[0]?.choice).toBe('c2')
+  })
+
+  it('AI가 선택지를 안 넘겨도 결제 화면의 결제 수단 칸을 승인 카드에 싣는다', async () => {
+    const tools = new BrowserTools(payPage())
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e9', what: 'x', where: 'y' })
+    expect(tools.approvals.list()[0]?.choices?.map((c) => c.label)).toEqual(['네이버페이', '카드'])
   })
 
   it('결제·확정 버튼은 선택지로 넣을 수 없다', async () => {
