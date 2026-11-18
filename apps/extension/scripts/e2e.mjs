@@ -122,8 +122,10 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <style>body{font:16px sans-serif;margin:40px}.menu{position:relative}.menu .sub{display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid #ccc;padding:8px}.menu:hover .sub{display:block}#buy{margin-top:220px;margin-left:300px;padding:12px 20px}</style></head><body>
 <h1>마우스 가게</h1><p>카테고리에 마우스를 올리면 코너가 펼쳐져요.</p>
 <div class="menu"><a href="/c" id="cat">과일 카테고리</a><div class="sub"><a href="/c/apple">사과 코너</a></div></div>
+<div id="jsmenu" style="position:absolute;left:600px;top:150px"><a href="/v" id="veg">채소 카테고리</a><div id="jssub" hidden><a href="/v/1">배추 코너</a></div></div>
 <button id="buy">장바구니 담기</button>
 <script>let moves = 0; document.addEventListener('mousemove', () => moves++)
+document.getElementById('jsmenu').addEventListener('mouseenter', () => { document.getElementById('jssub').hidden = false })
 document.getElementById('buy').addEventListener('click', () => { document.title = '움직임 ' + moves })</script>
 </body></html>`,
   '/captcha':
@@ -609,8 +611,13 @@ try {
     assert.doesNotMatch(page, /사과 코너/)
     const cat = page.match(/\[(e\d+) 링크 "과일 카테고리"\]/)?.[1]
     const opened = text(await tools.run('hover', { tabId, ref: cat }))
+    // 스크립트로 여는 메뉴(mouseenter)
+    const veg = text(await tools.run('hover', { tabId, ref: opened.match(/\[(e\d+) 링크 "채소 카테고리"\]/)?.[1] }))
+    console.log(`  올려 두기: CSS 메뉴 ${/사과 코너/.test(opened)} / 스크립트 메뉴 ${/배추 코너/.test(veg)}`)
+    if (!/배추 코너/.test(veg)) console.log(veg.slice(0, 400))
+    assert.match(veg, /\[e\d+ 링크 "배추 코너"\]/)
     assert.match(opened, /\[e\d+ 링크 "사과 코너"\]/)
-    const buy = opened.match(/\[(e\d+) 버튼 "장바구니 담기"\]/)?.[1]
+    const buy = veg.match(/\[(e\d+) 버튼 "장바구니 담기"\]/)?.[1]
     const t = Date.now()
     const r = await call('click', { tabId, ref: buy })
     const moves = Number(r.title.match(/움직임 (\d+)/)?.[1])
