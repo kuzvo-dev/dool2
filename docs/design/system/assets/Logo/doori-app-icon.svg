@@ -1,1 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" rx="116" fill="#4cc98f"></rect><rect x="176" y="196" width="38" height="70" rx="19" fill="#14231c"></rect><rect x="298" y="196" width="38" height="70" rx="19" fill="#14231c"></rect><rect x="238" y="318" width="36" height="40" rx="13" fill="#14231c"></rect></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img"><title>두리</title>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ee6a8"/><stop offset=".55" stop-color="#2fc48d"/><stop offset="1" stop-color="#169a64"/></linearGradient>
+ <radialGradient id="glow" cx=".5" cy=".18" r=".75"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop offset=".6" stop-color="#003a22" stop-opacity="0"/><stop offset="1" stop-color="#003a22" stop-opacity="0.22"/></linearGradient>
+ <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b2e35"/><stop offset=".45" stop-color="#0b0c0f"/><stop offset="1" stop-color="#000"/></linearGradient>
+ <linearGradient id="key" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f7d52"/><stop offset="1" stop-color="#139463"/></linearGradient>
+ <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+ <filter id="drop" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#00341f" flood-opacity="0.28"/></filter>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#glow)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect x="170" y="92" width="684" height="46" rx="23" fill="#fff" opacity="0.3"/>
+<circle cx="884" cy="190" r="22" fill="#fff" opacity="0.24"/>
+<rect x="288.0" y="362.0" width="124" height="212" rx="62.0" fill="url(#eye)" filter="url(#drop)"/>
+<circle cx="328.92" cy="414.08" r="24.8" fill="#fff"/>
+<circle cx="374.8" cy="526.88" r="8.68" fill="#fff" opacity=".55"/>
+<rect x="612.0" y="362.0" width="124" height="212" rx="62.0" fill="url(#eye)" filter="url(#drop)"/>
+<circle cx="652.92" cy="414.08" r="24.8" fill="#fff"/>
+<circle cx="698.8" cy="526.88" r="8.68" fill="#fff" opacity=".55"/>
+<g fill="url(#key)"><circle cx="512" cy="706" r="50"/><path d="M486 724 L466 834 Q512 842 558 834 L538 724 Z"/></g>
+<path d="M470 832 Q512 839 554 832" stroke="#bff7dc" stroke-opacity=".55" stroke-width="5" fill="none" stroke-linecap="round"/>
+</svg>

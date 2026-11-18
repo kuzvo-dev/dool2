@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<!--
+  앱 아이콘 다시 뽑기 (개발용). 원본은 doori/app-icon.svg(얼굴이 곧 아이콘, 바탕까지 꽉 찬 정사각)와
+  doori/app-icon-foreground.svg(안드로이드 적응형 아이콘 앞면, 얼굴을 안전 영역 안으로 줄임).
+  SVG를 고친 뒤 이 페이지를 http로 열면 PC·폰·확장·안드로이드 아이콘과 시작 화면을 모두 그려서 보여 주고,
+  window.__out 에 { 레포 경로: dataURL } 로 담는다. 그림을 눌러 하나씩 내려받을 수도 있다.
+    cd packages/ui && python3 -m http.server 8799   →   http://127.0.0.1:8799/icon-render.html
+-->
+<head>
+<meta charset="utf-8" />
+<title>앱 아이콘 뽑기</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 24px; background: #f5f6f8; }
+  .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+  figure { margin: 0; background: #fff; border-radius: 16px; padding: 12px; text-align: center; font-size: 12px; }
+  figure img { display: block; max-width: 160px; max-height: 160px; margin: 0 auto 6px; background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+</style>
+</head>
+<body>
+<h1>앱 아이콘</h1>
+<div class="grid" id="out"></div>
+<script type="module">
+const load = async (src) => {
+  const img = new Image()
+  img.src = src
+  await img.decode()
+  return img
+}
+const art = await load('./doori/app-icon.svg')
+const fgArt = await load('./doori/app-icon-foreground.svg')
+
+const canvas = (w, h = w) => {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const g = c.getContext('2d')
+  g.imageSmoothingQuality = 'high'
+  return [c, g]
+}
+
+/** 바탕까지 꽉 찬 정사각 (폰 앱·안드로이드 앞면: 모양은 OS가 씌움) */
+function square(img, size) {
+  const [c, g] = canvas(size)
+  g.drawImage(img, 0, 0, size, size)
+  return c
+}
+
+/** 둥근 판. inset 만큼 바깥을 비우고, shadow면 판 아래 그림자 (macOS 아이콘 격자: 1024 안 824 판) */
+function tile(size, { inset = 0, radius = 0.225, shadow = false, circle = false } = {}) {
+  const [c, g] = canvas(size)
+  const w = size - inset * 2
+  const path = new Path2D()
+  if (circle) path.arc(size / 2, size / 2, w / 2, 0, Math.PI * 2)
+  else path.roundRect(inset, inset, w, w, w * radius)
+  if (shadow) {
+    g.save()
+    g.shadowColor = 'rgba(10,40,25,0.28)'
+    g.shadowBlur = size * 0.03
+    g.shadowOffsetY = size * 0.012
+    g.fillStyle = '#2fc48d'
+    g.fill(path)
+    g.restore()
+  }
+  g.save()
+  g.clip(path)
+  g.drawImage(art, inset, inset, w, w)
+  g.restore()
+  return c
+}
+
+/** 안드로이드 시작 화면: 연한 바탕 가운데 둥근 아이콘 */
+function splash(w, h) {
+  const [c, g] = canvas(w, h)
+  g.fillStyle = '#f2fbf6'
+  g.fillRect(0, 0, w, h)
+  const s = Math.round(Math.min(w, h) * 0.3)
+  g.drawImage(tile(s), (w - s) / 2, (h - s) / 2, s, s)
+  return c
+}
+
+const png = (c) => c.toDataURL('image/png')
+const out = {}
+out['apps/desktop/assets/icon.png'] = png(tile(1024, { inset: 100, shadow: true }))
+out['apps/phone/static/icons/icon512.png'] = png(square(art, 512))
+out['apps/phone/static/icons/icon192.png'] = png(square(art, 192))
+// 확장: 크롬 권장대로 128은 둘레를 조금 비우고, 16은 꽉 채운다
+for (const [s, inset] of [[16, 0], [32, 1], [48, 2], [128, 8]])
+  out[`apps/extension/static/icons/icon${s}.png`] = png(tile(s, { inset }))
+
+const res = 'apps/phone/android/app/src/main/res'
+const dens = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 }
+for (const [d, k] of Object.entries(dens)) {
+  out[`${res}/mipmap-${d}/ic_launcher.png`] = png(tile(48 * k, { inset: 2 * k, radius: 0.2 }))
+  out[`${res}/mipmap-${d}/ic_launcher_round.png`] = png(tile(48 * k, { inset: 2 * k, circle: true }))
+  out[`${res}/mipmap-${d}/ic_launcher_foreground.png`] = png(square(fgArt, 108 * k))
+}
+const port = { mdpi: [320, 480], hdpi: [480, 800], xhdpi: [720, 1280], xxhdpi: [960, 1600], xxxhdpi: [1280, 1920] }
+for (const [d, [w, h]] of Object.entries(port)) {
+  out[`${res}/drawable-port-${d}/splash.png`] = png(splash(w, h))
+  out[`${res}/drawable-land-${d}/splash.png`] = png(splash(h, w))
+}
+out[`${res}/drawable/splash.png`] = png(splash(480, 320))
+
+window.__out = out
+const box = document.getElementById('out')
+for (const [name, url] of Object.entries(out)) {
+  const f = document.createElement('figure')
+  f.innerHTML = `<a download="${name.split('/').pop()}" href="${url}"><img src="${url}" alt=""></a>${name.replace(res, 'android')}`
+  box.append(f)
+}
+document.body.dataset.ready = '1'
+</script>
+</body>
+</html>
