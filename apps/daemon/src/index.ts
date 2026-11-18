@@ -83,6 +83,7 @@ import { BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
+import { FileTools, type userFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
@@ -130,6 +131,8 @@ export interface DaemonOptions {
   mcpServerScript?: string
   /** 시험용: 도구 주소(/api/tools) 토큰을 정해 둔다 (없으면 켤 때마다 새로 만든다) */
   toolToken?: string
+  /** 시험용: PC 파일 도구가 다룰 폴더 (기본: 사용자의 바탕화면·문서·다운로드) */
+  fileFolders?: ReturnType<typeof userFolders>
   /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
@@ -353,6 +356,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
   browserTools.onNote = (kind, data) => journal.write(kind, data)
+  // PC 파일 도구 (ADR 0022). 시험에서는 폴더를 바꿀 수 있다
+  const fileTools = new FileTools(opts.fileFolders)
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')
@@ -1712,6 +1717,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .run(c, args && typeof args === 'object' ? args : {})
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
+      }
+      // PC 파일 도구 (ADR 0022): 바탕화면·문서·다운로드에서 찾기·읽기, 새 파일 만들기
+      if (req.method === 'POST' && b === 'file' && c && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        const r = await fileTools.run(c, args && typeof args === 'object' ? args : {})
+        journal.write('file-tool', {
+          tool: c,
+          ok: !r.isError,
+          path: typeof args?.path === 'string' ? args.path : args?.name,
+        })
+        return json(res, 200, r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {
         const args = (await readJson(req)) as { service?: unknown }

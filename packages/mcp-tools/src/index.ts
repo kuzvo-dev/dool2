@@ -4,6 +4,7 @@
 import { arch, platform } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type BrowserClient, daemonClient, registerBrowserTools } from './browser.js'
+import { registerFileTools } from './files.js'
 import { registerLifeTools } from './life.js'
 import { registerScreenTools } from './screen.js'
 import { registerServiceTools, type ServiceTools } from './services.js'
@@ -29,6 +30,8 @@ export interface ToolContext {
   life?: BrowserClient
   /** 서비스 도구(커넥터)를 실행할 곳 */
   services?: BrowserClient
+  /** PC 파일 도구를 실행할 곳 */
+  files?: BrowserClient
   /** 서비스 도구 목록을 다시 묻는 간격 (기본 30초) */
   servicePollMs?: number
 }
@@ -71,6 +74,7 @@ export function createServer(ctx: ToolContext = {}) {
   registerBrowserTools(server, ctx.browser ?? daemonClient())
   registerScreenTools(server, ctx.screen ?? daemonClient(process.env, 'screen'))
   registerLifeTools(server, ctx.life ?? daemonClient(process.env, 'life'))
+  registerFileTools(server, ctx.files ?? daemonClient(process.env, 'file'))
   serviceTools.set(
     server,
     registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {

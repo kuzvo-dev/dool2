@@ -1,0 +1,666 @@
+// PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기.
+// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·옮기기·덮어쓰기는 없다.
+// 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(간단한 글 뽑기).
+// 민감한 파일(인증서·키·비밀번호 파일·숨은 폴더)은 읽지 않는다.
+
+import { execFile } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
+import { inflateRawSync, inflateSync } from 'node:zlib'
+
+export interface FileToolResult {
+  content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
+  isError?: boolean
+}
+/** AI에게 넘기는 그림 한 장의 한도 (모델이 받는 크기) */
+const IMAGE_MAX = 4_500_000
+const ok = (text: string): FileToolResult => ({ content: [{ type: 'text', text }] })
+const fail = (text: string): FileToolResult => ({ isError: true, content: [{ type: 'text', text }] })
+
+/** 두리가 다루는 사용자 폴더. 윈도우는 OneDrive로 옮겨진 바탕화면·문서도 */
+export function userFolders(home = homedir()): Record<'desktop' | 'documents' | 'downloads', string[]> {
+  const pick = (...names: string[]) =>
+    [...new Set(names.map((n) => join(home, n)).filter((p) => existsSync(p)))].map((p) => {
+      try {
+        return realpathSync(p)
+      } catch {
+        return p
+      }
+    })
+  return {
+    desktop: pick('Desktop', 'OneDrive/Desktop', 'OneDrive/바탕 화면', '바탕 화면'),
+    documents: pick('Documents', 'OneDrive/Documents', 'OneDrive/문서', '문서'),
+    downloads: pick('Downloads', '다운로드'),
+  }
+}
+
+const FOLDER_LABEL = { desktop: '바탕화면', documents: '문서', downloads: '다운로드' } as const
+type FolderKey = keyof typeof FOLDER_LABEL
+
+// 읽지 않는 것: 숨은 파일·폴더, 공동인증서(NPKI), 키·인증서 파일, 비밀번호·지갑 파일, 환경 설정 비밀값
+const SENSITIVE =
+  /(^|[/\\])\.|npki|gpki|signcert|signpri|\.(pem|key|p12|pfx|der|cer|crt|keychain|kdbx|ovpn|ppk)$|id_rsa|id_ed25519|wallet|비밀번호|password|passwd/i
+// 찾을 때 건너뛰는 폴더 (무겁거나 사용자 문서가 아닌 것)
+const SKIP_DIR = /^(node_modules|Library|AppData|\.git|\$RECYCLE\.BIN|System Volume Information)$/
+
+/** 파일 이름을 비교할 모양으로 (맥은 한글 이름을 자모로 나눠 저장한다: NFC로 맞춘다) */
+const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
+
+export class FileTools {
+  private readonly folders: ReturnType<typeof userFolders>
+  private readonly home: string
+  constructor(folders?: ReturnType<typeof userFolders>, home = homedir()) {
+    // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
+    const real = (p: string) => {
+      try {
+        return realpathSync(p)
+      } catch {
+        return p
+      }
+    }
+    const f = folders ?? userFolders(home)
+    this.folders = {
+      desktop: f.desktop.map(real),
+      documents: f.documents.map(real),
+      downloads: f.downloads.map(real),
+    }
+    this.home = real(home)
+  }
+
+  private roots() {
+    return Object.values(this.folders).flat()
+  }
+
+  /** 사용자 폴더 안의 실제 경로만 (../·바로가기로 밖에 나가는 것 막기) */
+  private inside(p: string): string | undefined {
+    const raw = p.startsWith('~') ? join(this.home, p.slice(1)) : resolve(this.home, p)
+    let real: string
+    try {
+      real = realpathSync(raw)
+    } catch {
+      return undefined
+    }
+    return this.roots().some((r) => real === r || real.startsWith(r + sep)) ? real : undefined
+  }
+
+  private show(p: string) {
+    return `~${sep}${relative(this.home, p)}`
+  }
+
+  async run(tool: string, args: Record<string, unknown>): Promise<FileToolResult> {
+    try {
+      if (tool === 'file_find')
+        return await this.find(String(args.query ?? ''), args.folder as FolderKey | undefined)
+      if (tool === 'file_read') return await this.read(String(args.path ?? ''), Number(args.from ?? 0) || 0)
+      if (tool === 'file_write')
+        return await this.write({
+          name: String(args.name ?? ''),
+          kind: String(args.kind ?? 'md'),
+          text: typeof args.text === 'string' ? args.text : undefined,
+          rows: Array.isArray(args.rows) ? (args.rows as unknown[][]) : undefined,
+          folder: (args.folder as FolderKey | undefined) ?? 'desktop',
+        })
+      return fail(`모르는 파일 도구예요: ${tool}`)
+    } catch (e) {
+      return fail((e as Error).message)
+    }
+  }
+
+  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개 */
+  async find(query: string, folder?: FolderKey): Promise<FileToolResult> {
+    const words = norm(query)
+      .split(/[,·]/)
+      .map((w) => w.trim())
+      .filter(Boolean)
+    const roots = folder && this.folders[folder] ? this.folders[folder] : this.roots()
+    const hits: { path: string; size: number; mtime: number; dir: boolean }[] = []
+    let seen = 0
+    const walk = async (dir: string, depth: number) => {
+      if (depth > 4 || seen > 8000) return
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      for (const e of entries) {
+        seen++
+        if (e.name.startsWith('.') || SKIP_DIR.test(e.name)) continue
+        const p = join(dir, e.name)
+        const n = norm(e.name)
+        if (!words.length || words.every((w) => n.includes(w))) {
+          const s = await stat(p).catch(() => undefined)
+          if (s) hits.push({ path: p, size: s.size, mtime: s.mtimeMs, dir: e.isDirectory() })
+        }
+        if (e.isDirectory()) await walk(p, depth + 1)
+      }
+    }
+    for (const r of roots) await walk(r, 0)
+    hits.sort((a, b) => b.mtime - a.mtime)
+    if (!hits.length) return ok(`"${query}"이(가) 들어간 파일을 바탕화면·문서·다운로드에서 찾지 못했어요.`)
+    const kb = (n: number) =>
+      n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
+    const day = (t: number) =>
+      new Date(t).toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    return ok(
+      `${hits.length > 30 ? `${hits.length}개 중 최근 30개` : `${hits.length}개`}:\n` +
+        hits
+          .slice(0, 30)
+          .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
+          .join('\n') +
+        '\n읽으려면 file_read에 이 경로를 그대로 주세요.',
+    )
+  }
+
+  /** 읽기: 글로 바꿔 3만 자씩. from으로 이어 읽는다 */
+  async read(path: string, from = 0): Promise<FileToolResult> {
+    const p = this.inside(path)
+    if (!p)
+      return fail('바탕화면·문서·다운로드 안의 파일만 읽을 수 있어요. file_find로 경로를 먼저 찾아 주세요.')
+    if (SENSITIVE.test(p)) return fail('인증서·키·비밀번호 같은 민감한 파일은 두리가 읽지 않아요.')
+    const s = await stat(p)
+    if (s.isDirectory()) return this.listDir(p)
+    if (s.size > 30 << 20) return fail('30MB보다 큰 파일은 읽지 않아요.')
+    const buf = await readFile(p)
+    const ext = extname(p).toLowerCase()
+    let text: string
+    let note = ''
+    if (['.docx', '.xlsx', '.pptx', '.hwpx'].includes(ext)) text = officeText(buf, ext)
+    else if (ext === '.pdf') {
+      text = pdfText(buf)
+      note =
+        '\n(PDF 글은 간단한 방식으로 뽑아서 표·글꼴에 따라 빠지거나 깨질 수 있어요. 깨졌으면 사용자에게 알려 주세요.)'
+      if (!text.trim()) {
+        // 스캔한 PDF: 안에 든 사진(JPEG)을 그대로 보여 준다 (사업자등록증·영수증 스캔)
+        const imgs = pdfImages(buf).slice(0, 3)
+        if (imgs.length)
+          return {
+            content: [
+              ...imgs.map((data) => ({
+                type: 'image' as const,
+                data: data.toString('base64'),
+                mimeType: 'image/jpeg',
+              })),
+              {
+                type: 'text',
+                text: `${this.show(p)}: 글이 없는 스캔 PDF라 쪽 그림 ${imgs.length}장을 보여 드려요. 그림에 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+              },
+            ],
+          }
+        return fail('이 PDF에서는 글도 그림도 뽑지 못했어요(특수 글꼴). 사용자에게 알려 주세요.')
+      }
+    } else if (ext === '.hwp')
+      return fail('한글(.hwp) 파일은 아직 못 읽어요. 한글에서 hwpx나 PDF로 저장해 주시면 읽을 수 있어요.')
+    else if (/^\.(png|jpe?g|gif|webp|heic|heif)$/.test(ext)) return this.image(p, buf, ext)
+    else if (/\.(zip|exe|dmg|mp4|mov|mp3|m4a|wav)$/i.test(ext))
+      return fail('글이 아닌 파일이라 읽을 수 없어요. (녹음은 받아쓰기한 글이 있어야 해요)')
+    else {
+      text = buf.toString('utf8').replace(/^﻿/, '')
+      // UTF-8이 아니면(옛 한국어 CSV는 EUC-KR) 깨진 글자가 많다
+      if ((text.match(/�/g)?.length ?? 0) > 20) {
+        try {
+          text = new TextDecoder('euc-kr').decode(buf)
+        } catch {}
+      }
+      if (ext === '.html' || ext === '.htm') text = stripTags(text)
+    }
+    const CHUNK = 30_000
+    const part = text.slice(from, from + CHUNK)
+    const more = from + CHUNK < text.length
+    return ok(
+      `${this.show(p)} (${text.length.toLocaleString()}자${from ? `, ${from}자부터` : ''})\n\n${part}` +
+        (more
+          ? `\n\n… 뒤에 ${(text.length - from - CHUNK).toLocaleString()}자 더 있어요. 이어 읽으려면 from: ${from + CHUNK}`
+          : '') +
+        note,
+    )
+  }
+
+  /** 사진 파일: 그림으로 넘긴다 (면허증·영수증 사진). 아이폰 HEIC는 맥에서 sips로 JPEG로 바꾼다 */
+  private async image(p: string, buf: Buffer, ext: string): Promise<FileToolResult> {
+    let data = buf
+    let mime =
+      ext === '.png'
+        ? 'image/png'
+        : ext === '.gif'
+          ? 'image/gif'
+          : ext === '.webp'
+            ? 'image/webp'
+            : 'image/jpeg'
+    if (ext === '.heic' || ext === '.heif' || buf.length > IMAGE_MAX) {
+      // 큰 사진·HEIC: 맥이면 sips로 줄여 JPEG로 (윈도우는 아직)
+      if (process.platform !== 'darwin')
+        return fail('이 사진 형식·크기는 아직 못 읽어요. JPEG로 저장해 주세요.')
+      const out = join(tmpdir(), `dool2-img-${process.pid}-${Date.now()}.jpg`)
+      try {
+        await new Promise<void>((res, rej) =>
+          execFile(
+            'sips',
+            ['-s', 'format', 'jpeg', '-Z', '2000', p, '--out', out],
+            { timeout: 20_000 },
+            (e) => (e ? rej(e) : res()),
+          ),
+        )
+        data = await readFile(out)
+        mime = 'image/jpeg'
+      } catch {
+        return fail('사진을 바꾸지 못했어요. JPEG로 저장해 주세요.')
+      } finally {
+        await rm(out, { force: true })
+      }
+    }
+    if (data.length > IMAGE_MAX) return fail('사진이 너무 커요.')
+    return {
+      content: [
+        { type: 'image', data: data.toString('base64'), mimeType: mime },
+        {
+          type: 'text',
+          text: `${this.show(p)} 사진이에요. 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+        },
+      ],
+    }
+  }
+
+  private async listDir(p: string): Promise<FileToolResult> {
+    const entries = await readdir(p, { withFileTypes: true })
+    return ok(
+      `${this.show(p)} 폴더:\n${entries
+        .filter((e) => !e.name.startsWith('.'))
+        .slice(0, 60)
+        .map((e) => `- ${e.name}${e.isDirectory() ? sep : ''}`)
+        .join('\n')}`,
+    )
+  }
+
+  /** 새 파일 만들기: 이미 있으면 이름 뒤에 (2)를 붙인다 (덮어쓰지 않는다) */
+  async write(o: {
+    name: string
+    kind: string
+    text?: string
+    rows?: unknown[][]
+    folder: FolderKey
+  }): Promise<FileToolResult> {
+    const kind = o.kind.toLowerCase()
+    if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
+      return fail('md·txt·csv·xlsx·html만 만들 수 있어요.')
+    const dir = this.folders[o.folder]?.[0]
+    if (!dir) return fail(`${FOLDER_LABEL[o.folder] ?? o.folder} 폴더를 찾지 못했어요.`)
+    const stem = basename(o.name.replace(/\.[a-z0-9]{1,5}$/i, ''))
+      .replace(/[\\/:*?"<>|]/g, ' ')
+      .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 ? ' ' : c))
+      .trim()
+      .slice(0, 80)
+    if (!stem) return fail('파일 이름을 주세요.')
+    let data: Buffer
+    if (kind === 'xlsx' || (kind === 'csv' && o.rows)) {
+      const rows = (o.rows ?? csvRows(o.text ?? '')).slice(0, 20_000).map((r) => (Array.isArray(r) ? r : [r]))
+      data = kind === 'xlsx' ? xlsx(rows) : Buffer.from(`﻿${rows.map(csvLine).join('\r\n')}\r\n`, 'utf8')
+    } else {
+      const text = o.text ?? ''
+      if (text.length > 2_000_000) return fail('2MB보다 긴 글은 만들지 않아요.')
+      // 엑셀이 한글 CSV를 깨지 않게 BOM을 붙인다
+      data = Buffer.from(kind === 'csv' ? `﻿${text}` : text, 'utf8')
+    }
+    await mkdir(dir, { recursive: true })
+    let target = join(dir, `${stem}.${kind}`)
+    for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${stem} (${i}).${kind}`)
+    await writeFile(target, data, { flag: 'wx' })
+    return ok(
+      `${FOLDER_LABEL[o.folder]}에 만들었어요: ${this.show(target)} (${data.length.toLocaleString()}바이트). 사용자에게 이 경로를 알려 주세요.`,
+    )
+  }
+}
+
+// ── 글 뽑기 ────────────────────────────────────────────
+
+const decodeXml = (s: string) =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
+    .replace(/&amp;/g, '&')
+
+function stripTags(html: string) {
+  return decodeXml(
+    html
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+      .replace(/<(br|\/p|\/div|\/li|\/tr|\/h\d)[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ''),
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n\n')
+    .trim()
+}
+
+/** zip 파일의 항목들 (이름 → 내용). 오피스·hwpx 문서는 zip 안의 XML이다 */
+export function unzip(buf: Buffer): Map<string, Buffer> {
+  const out = new Map<string, Buffer>()
+  // 끝에서 중앙 목록 끝 표시(EOCD)를 찾는다
+  let eocd = -1
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--)
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i
+      break
+    }
+  if (eocd < 0) throw new Error('문서 파일이 깨졌어요 (zip 아님)')
+  const count = buf.readUInt16LE(eocd + 10)
+  let p = buf.readUInt32LE(eocd + 16)
+  for (let n = 0; n < count && p + 46 <= buf.length; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break
+    const method = buf.readUInt16LE(p + 10)
+    const csize = buf.readUInt32LE(p + 20)
+    const nameLen = buf.readUInt16LE(p + 28)
+    const extraLen = buf.readUInt16LE(p + 30)
+    const commentLen = buf.readUInt16LE(p + 32)
+    const local = buf.readUInt32LE(p + 42)
+    const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8')
+    p += 46 + nameLen + extraLen + commentLen
+    const lNameLen = buf.readUInt16LE(local + 26)
+    const lExtra = buf.readUInt16LE(local + 28)
+    const start = local + 30 + lNameLen + lExtra
+    const raw = buf.subarray(start, start + csize)
+    try {
+      out.set(name, method === 8 ? inflateRawSync(raw) : raw)
+    } catch {}
+  }
+  return out
+}
+
+/** 워드·엑셀·파워포인트·한글(hwpx)의 글 */
+export function officeText(buf: Buffer, ext: string): string {
+  const z = unzip(buf)
+  const xml = (name: string) => z.get(name)?.toString('utf8') ?? ''
+  const texts = (s: string, tag: string) =>
+    [...s.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'g'))].map((m) =>
+      decodeXml(m[1] ?? ''),
+    )
+  if (ext === '.docx') {
+    return [...xml('word/document.xml').matchAll(/<w:p[\s>][\s\S]*?<\/w:p>/g)]
+      .map((p) => texts(p[0], 'w:t').join(''))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+  if (ext === '.pptx') {
+    const slides = [...z.keys()]
+      .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
+      .sort((a, b) => Number(/\d+/.exec(a)?.[0]) - Number(/\d+/.exec(b)?.[0]))
+    return slides.map((k, i) => `[슬라이드 ${i + 1}]\n${texts(xml(k), 'a:t').join('\n')}`).join('\n\n')
+  }
+  if (ext === '.hwpx') {
+    const sections = [...z.keys()].filter((k) => /^Contents\/section\d+\.xml$/i.test(k)).sort()
+    return sections
+      .map((k) =>
+        [...xml(k).matchAll(/<hp:p[\s>][\s\S]*?<\/hp:p>/g)]
+          .map((p) => texts(p[0], 'hp:t').join(''))
+          .join('\n'),
+      )
+      .join('\n\n')
+      .trim()
+  }
+  // 엑셀: 시트마다 줄을 탭으로
+  const shared = texts(xml('xl/sharedStrings.xml'), 'si').map((si) => si.replace(/<[^>]+>/g, ''))
+  const names = [...xml('xl/workbook.xml').matchAll(/<sheet [^>]*name="([^"]*)"/g)].map((m) =>
+    decodeXml(m[1] ?? ''),
+  )
+  const sheets = [...z.keys()]
+    .filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
+    .sort((a, b) => Number(/\d+/.exec(a)?.[0]) - Number(/\d+/.exec(b)?.[0]))
+  return sheets
+    .map((k, i) => {
+      const rows = [...xml(k).matchAll(/<row[\s>][\s\S]*?<\/row>/g)].map((r) =>
+        [...r[0].matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)]
+          .map((c) => {
+            const attrs = c[1] ?? ''
+            const body = c[2] ?? ''
+            const v = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1]
+            if (/t="s"/.test(attrs)) return shared[Number(v)] ?? ''
+            if (/t="inlineStr"/.test(attrs)) return texts(body, 't').join('')
+            return decodeXml(v ?? '')
+          })
+          .join('\t'),
+      )
+      return `[시트 ${names[i] ?? i + 1}]\n${rows.join('\n')}`
+    })
+    .join('\n\n')
+}
+
+/** PDF 글 (간단한 방식): 압축 풀기 → 글 그리기 명령(Tj·TJ)의 글자. 한글 글꼴은 ToUnicode 표로 바꾼다 */
+export function pdfText(buf: Buffer): string {
+  const src = buf.toString('latin1')
+  const streams: string[] = []
+  const re = /<<([\s\S]{0,2000}?)>>\s*stream\r?\n/g
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    const start = m.index + m[0].length
+    const end = src.indexOf('endstream', start)
+    if (end < 0) break
+    const raw = buf.subarray(start, end)
+    let data = raw
+    if (/FlateDecode/.test(m[1] ?? '')) {
+      try {
+        data = inflateSync(raw)
+      } catch {
+        try {
+          data = inflateRawSync(raw.subarray(2))
+        } catch {
+          continue
+        }
+      }
+    } else if (/Filter/.test(m[1] ?? '')) continue
+    streams.push(data.toString('latin1'))
+    re.lastIndex = end
+  }
+  // ToUnicode 표 (글꼴마다 다르지만 간단히 하나로 합친다)
+  const cmap = new Map<string, string>()
+  const hexStr = (h: string) => {
+    let s = ''
+    for (let i = 0; i + 3 < h.length + 1; i += 4)
+      s += String.fromCharCode(Number.parseInt(h.slice(i, i + 4), 16))
+    return s
+  }
+  for (const s of streams) {
+    if (!/begincmap/.test(s)) continue
+    for (const b of s.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))
+      for (const m of (b[1] ?? '').matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g))
+        cmap.set((m[1] ?? '').toLowerCase(), hexStr(m[2] ?? ''))
+    for (const b of s.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))
+      for (const m of (b[1] ?? '').matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+        const lo = Number.parseInt(m[1] ?? '0', 16)
+        const hi = Number.parseInt(m[2] ?? '0', 16)
+        const base = Number.parseInt(m[3] ?? '0', 16)
+        const w = (m[1] ?? '').length
+        for (let c = lo; c <= hi && c - lo < 5000; c++)
+          cmap.set(c.toString(16).padStart(w, '0'), String.fromCodePoint(base + (c - lo)))
+      }
+  }
+  const fromHex = (h: string) => {
+    const hex = h.replace(/\s+/g, '').toLowerCase()
+    if (cmap.size) {
+      let out = ''
+      for (let i = 0; i < hex.length; i += 4)
+        out += cmap.get(hex.slice(i, i + 4)) ?? cmap.get(hex.slice(i, i + 2)) ?? ''
+      if (out) return out
+    }
+    let out = ''
+    for (let i = 0; i < hex.length; i += 2)
+      out += String.fromCharCode(Number.parseInt(hex.slice(i, i + 2), 16))
+    return out
+  }
+  const fromLit = (s: string) =>
+    s
+      .replace(/\\([nrtbf()\\])/g, (_, c) => ({ n: '\n', r: '', t: '\t', b: '', f: '' })[c as 'n'] ?? c)
+      .replace(/\\(\d{1,3})/g, (_, o) => String.fromCharCode(Number.parseInt(o, 8)))
+  const lines: string[] = []
+  for (const s of streams) {
+    if (!/\bBT\b/.test(s)) continue
+    for (const bt of s.matchAll(/BT([\s\S]*?)ET/g)) {
+      let line = ''
+      for (const op of (bt[1] ?? '').matchAll(
+        /\[((?:\\.|[^\]])*)\]\s*TJ|(\((?:\\.|[^)])*\)|<[0-9a-fA-F\s]*>)\s*(?:Tj|'|")|(T\*|Td|TD)/g,
+      )) {
+        if (op[3]) {
+          if (line) line += ' '
+          continue
+        }
+        const parts =
+          op[1] !== undefined
+            ? [...op[1].matchAll(/\((?:\\.|[^)])*\)|<[0-9a-fA-F\s]*>/g)].map((x) => x[0])
+            : [op[2] ?? '']
+        for (const p of parts) line += p.startsWith('<') ? fromHex(p.slice(1, -1)) : fromLit(p.slice(1, -1))
+      }
+      if (line.trim()) lines.push(line.trim())
+    }
+  }
+  return lines.join('\n')
+}
+
+/** 스캔 PDF 안의 사진(JPEG, DCTDecode) */
+export function pdfImages(buf: Buffer): Buffer[] {
+  const src = buf.toString('latin1')
+  const out: Buffer[] = []
+  const re = /<<([\s\S]{0,2000}?)>>\s*stream\r?\n/g
+  for (let m = re.exec(src); m && out.length < 6; m = re.exec(src)) {
+    const dict = m[1] ?? ''
+    const start = m.index + m[0].length
+    const end = src.indexOf('endstream', start)
+    if (end < 0) break
+    re.lastIndex = end
+    if (!/\/Subtype\s*\/Image/.test(dict) || !/DCTDecode/.test(dict) || /FlateDecode/.test(dict)) continue
+    const data = buf.subarray(start, end)
+    // JPEG 시작 표시(FFD8)부터, 너무 작은 것(아이콘)은 뺀다
+    const at = data.indexOf(Buffer.from([0xff, 0xd8]))
+    if (at >= 0 && data.length > 20_000 && data.length - at <= IMAGE_MAX)
+      out.push(Buffer.from(data.subarray(at)))
+  }
+  return out
+}
+
+// ── 만들기 ─────────────────────────────────────────────
+
+function csvRows(text: string): string[][] {
+  return text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((l) => l.length)
+    .map((l) => l.split(','))
+}
+const csvLine = (r: unknown[]) =>
+  r
+    .map((v) => {
+      const s = v === null || v === undefined ? '' : String(v)
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    })
+    .join(',')
+
+const CRC = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+function crc32(b: Buffer) {
+  let c = 0xffffffff
+  for (const x of b) c = (CRC[(c ^ x) & 0xff] as number) ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/** 압축 없는 zip (엑셀 파일 만들 때) */
+export function zip(files: [string, string][]): Buffer {
+  const parts: Buffer[] = []
+  const central: Buffer[] = []
+  let offset = 0
+  for (const [name, body] of files) {
+    const data = Buffer.from(body, 'utf8')
+    const nameB = Buffer.from(name, 'utf8')
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0x0800, 6)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(nameB.length, 26)
+    parts.push(local, nameB, data)
+    const c = Buffer.alloc(46)
+    c.writeUInt32LE(0x02014b50, 0)
+    c.writeUInt16LE(20, 4)
+    c.writeUInt16LE(20, 6)
+    c.writeUInt16LE(0x0800, 8)
+    c.writeUInt32LE(crc, 16)
+    c.writeUInt32LE(data.length, 20)
+    c.writeUInt32LE(data.length, 24)
+    c.writeUInt16LE(nameB.length, 28)
+    c.writeUInt32LE(offset, 42)
+    central.push(c, nameB)
+    offset += 30 + nameB.length + data.length
+  }
+  const cd = Buffer.concat(central)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(files.length, 8)
+  end.writeUInt16LE(files.length, 10)
+  end.writeUInt32LE(cd.length, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...parts, cd, end])
+}
+
+const esc = (s: string) =>
+  s
+    .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+    // XML에 못 넣는 제어 문자는 뺀다 (탭·줄바꿈은 둔다)
+    .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 && !'\t\n\r'.includes(c) ? '' : c))
+
+/** 엑셀 파일 (시트 하나, 첫 줄은 굵게 하지 않은 그대로). 숫자처럼 생긴 칸은 숫자로 */
+export function xlsx(rows: unknown[][]): Buffer {
+  const col = (i: number) => {
+    let s = ''
+    for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s
+    return s
+  }
+  const sheet = rows
+    .map(
+      (r, ri) =>
+        `<row r="${ri + 1}">${r
+          .map((v, ci) => {
+            const ref = `${col(ci)}${ri + 1}`
+            if (typeof v === 'number' || (typeof v === 'string' && /^-?\d{1,15}(\.\d+)?$/.test(v.trim())))
+              return `<c r="${ref}"><v>${Number(v)}</v></c>`
+            const s = v === null || v === undefined ? '' : String(v)
+            return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(s)}</t></is></c>`
+          })
+          .join('')}</row>`,
+    )
+    .join('')
+  return zip([
+    [
+      '[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+    ],
+    [
+      '_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    ],
+    [
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    ],
+    [
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+    ],
+    [
+      'xl/worksheets/sheet1.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheet}</sheetData></worksheet>`,
+    ],
+  ])
+}
