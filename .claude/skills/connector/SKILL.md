@@ -80,3 +80,11 @@ pnpm connector canary <id>                        # 찾아보기 도구를 examp
 - `pnpm lint && pnpm build && pnpm typecheck && pnpm test`.
 - 사용자에게 보이는 말(`say`, `next`, 결과 칸 설명)은 두리 말투로, 다른 회사 제품 이름은 넣지 않아요.
 - `skills/README.md`의 상태 표를 고쳐요. `skills/`는 CC BY-SA 4.0이에요.
+
+## 실제 계정으로 연결 시험
+
+`node scripts/connect-test.mjs --sheet 시트.csv` (또는 서비스 id들) — 돌고 있는 본체에 묻는다(`DOOL2_TOKEN`·`DOOL2_TOOL_TOKEN`).
+서비스마다 로그인 확인 → 안 돼 있으면 금고 계정으로 다시 로그인(`POST /api/connections/<id>/relogin`, 비밀번호는 요청에 오가지 않음)
+또는 간편 로그인 → 로그인이 필요한 찾아보기 도구를 예시 입력으로 돌려 `~/.dool2-connect-test/latest.html`에 표로 남긴다.
+하루 로그인 시도는 서비스마다 2번까지. 채워 두기·돈 내기·연락하기 도구는 `--deep`일 때만(사이트에 글을 채운다), 승인으로 끝나는 도구는 돌리지 않는다.
+비밀번호를 대화·시트·파일로 받지 않는다: 사용자가 앱 연결 카드에 한 번 넣으면 금고(OS 키체인)에만 들어간다.

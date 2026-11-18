@@ -1730,6 +1730,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return json(res, 400, { error: (e as Error).message })
         }
       }
+      // 금고에 있는 계정으로 다시 로그인하기 (연결 시험·로그인 풀렸을 때). 비밀번호는 요청에 오가지 않는다
+      if (card && c === 'relogin' && !d && req.method === 'POST') {
+        const url = connectUrl(card)
+        if (!url) return json(res, 400, { error: '이 서비스는 폰에서 켜요' })
+        const origins = [url, card.loginUrl].filter(Boolean).map((u) => new URL(u as string).origin)
+        let saved: { username: string; password: string } | undefined
+        for (const o of origins) saved ??= await vault.findForOrigin(o)
+        if (!saved) return json(res, 404, { error: `금고에 ${card.name} 계정이 없어요` })
+        const creds = saved
+        return json(
+          res,
+          200,
+          await startConnect(card, () => connectLogin(card, creds.username, creds.password)),
+        )
+      }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
       if (card && c === 'verify' && !d && req.method === 'POST') {
         const ok = await connectVerify(card)
