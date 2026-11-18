@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { autoLogin, joinScreen, probeLogin, socialLogin, socialProvidersIn } from './auto-login.js'
+import {
+  autoLogin,
+  certScreen,
+  joinScreen,
+  probeLogin,
+  socialLogin,
+  socialProvidersIn,
+} from './auto-login.js'
 
 /** 확장 대신: 화면 차례대로 돌려주고 부른 것을 적는다 */
 function fakeBrowser(pages: { url: string; text: string; captcha?: boolean }[]) {
@@ -602,5 +609,18 @@ describe('간편 로그인 뒤 가입 화면', () => {
     const t = `## 회원가입을 하시겠습니까?\n[e7 링크 "회원가입"]\n휴대폰 본인인증 [e8 버튼 "인증번호 받기"]`
     expect(joinScreen(t)).toMatchObject({ kind: 'human' })
     expect(joinScreen('[e3 입력칸 "아이디"] [e9 링크 "회원가입"]')).toBeUndefined()
+  })
+})
+
+describe('본인인증 창', () => {
+  it('토스 인증 창은 무엇을 하면 되는지 알려 준다 (실측 SSG)', () => {
+    const t =
+      'SSG.COM에 로그인하려면 휴대폰 번호를 입력해주세요 [e1 입력칸 "이름 입력"] [e2 입력칸 "휴대폰번호 입력"] [e3 입력칸 "생년월일 6자리 혹은 8자리 입력"] 토스로 인증하기'
+    const r = certScreen(t)
+    expect(r).toContain('본인인증')
+    expect(r).toContain('토스')
+  })
+  it('로그인 폼은 본인인증 창이 아니다', () => {
+    expect(certScreen('[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"]')).toBeUndefined()
   })
 })

@@ -637,6 +637,24 @@ function hasPassword(text: string) {
   return /\[e\d+ 비밀번호칸/.test(text)
 }
 
+/**
+ * 본인인증 창(토스·PASS·휴대폰 인증 등: 이름·휴대폰 번호·생년월일을 넣고 인증 앱으로 승인)이면
+ * 무엇을 하면 되는지 한 문장으로. 아니면 undefined
+ */
+export function certScreen(text: string): string | undefined {
+  const t = text.replace(/\s+/g, ' ')
+  const toss = /토스로\s?인증|auth\.cert\.toss|토스\s?앱에서/.test(t)
+  const pass = /\bPASS\b|패스\s?앱|통신사\s?인증/.test(t)
+  const certFields =
+    /(이름|성명).{0,30}(휴대폰|휴대전화|전화)\s?번호.{0,30}(생년월일|주민)|본인\s?확인을?\s?위해.{0,20}(휴대폰|번호)/.test(
+      t,
+    )
+  const certWord = /본인\s?인증|본인\s?확인|휴대폰\s?인증|휴대전화\s?인증|간편\s?인증/.test(t)
+  if (!toss && !pass && !certFields && !(certWord && /인증\s?(하기|요청|받기)/.test(t))) return undefined
+  const app = toss ? '토스' : pass ? 'PASS(통신사)' : '인증'
+  return `본인인증 창이에요. 이름·휴대폰 번호·생년월일을 넣고 [인증하기]를 누른 뒤, ${app} 앱 알림에서 승인해 주시면 두리가 이어서 할게요`
+}
+
 function humanReason(text: string) {
   if (/보안\s?문자|자동\s?입력\s?방지|로봇|captcha|문제에\s?답해|지도에서/i.test(text))
     return '로봇 확인(보안 문자)이 떴어요'
@@ -867,6 +885,10 @@ export async function socialLogin(
     }
     if (CAPTCHA.test(p.text) || p.captcha || STEP2.test(p.text))
       return { status: 'human', tabId: providerTab, reason: humanReason(p.text) }
+    // 본인인증 창(토스·PASS·휴대폰 인증: 이름·휴대폰·생년월일을 넣고 앱으로 승인)은 사람이 해야 해요.
+    // 무엇을 하면 되는지 또박또박 알려 주고 넘겨요 (실측 SSG 토스 인증)
+    const cert = certScreen(p.text)
+    if (cert) return { status: 'human', tabId: providerTab, reason: cert }
     const origin = new URL(p.url).origin
     // 공급자 로그인 화면: 금고 값이 있으면 넣고, 없으면 사람 차례
     const two = twoStep(p.text)
