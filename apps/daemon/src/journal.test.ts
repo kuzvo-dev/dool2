@@ -18,12 +18,12 @@ describe('일한 기록', () => {
     expect(readdirSync(dir).filter((f) => f.endsWith('.jsonl'))).toHaveLength(1)
     expect(j.read().map((e) => e.kind)).toEqual(['connect-start', 'connect-end', 'tool'])
     expect(j.read({ kind: 'connect' })).toHaveLength(2)
+    expect(j.read({ kind: 'connect', limit: 1 })[0]).toMatchObject({ id: 'kurly', ok: false, ms: 12_300 })
     // 그림 파일 이름은 가리지 않는다 (기록에서 그림을 찾아갈 수 있게)
     const shot = j.shot('kurly', Buffer.from('x').toString('base64'))
     j.write('connect-screen', { id: 'kurly', shot })
     expect(j.read({ kind: 'connect-screen' })[0]?.shot).toBe(shot)
     expect(existsSync(join(dir, 'shots', shot as string))).toBe(true)
-    expect(j.read({ kind: 'connect', limit: 1 })[0]).toMatchObject({ id: 'kurly', ok: false, ms: 12_300 })
   })
 
   it('비밀번호·인증번호 칸은 값을 적지 않고, 글에 섞인 이메일·긴 숫자는 가린다', () => {
