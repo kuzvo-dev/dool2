@@ -931,7 +931,7 @@ type FormField = {
   captchaRect?: { x: number; y: number; w: number; h: number }
 }
 
-export function pageForm() {
+export function pageForm(inFrame = false) {
   type Store = { els: Map<string, WeakRef<Element>>; n: number }
   const g = globalThis as unknown as { __dool2form?: Store }
   const st: Store = { els: new Map(), n: 0 }
@@ -972,6 +972,54 @@ export function pageForm() {
     const cs = getComputedStyle(el)
     return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05 && !covered(el)
   }
+  /**
+   * 지금 떠 있는 창(가운데를 덮은 고정 창·대화 상자)이 있으면 그 안의 칸만 본다. 뒤에 깔린 페이지 칸(만족도 설문·검색칸)을
+   * 폰에 보여 주면 사용자는 엉뚱한 칸을 본다(정부24: 회원/비회원 창 대신 페이지 맨 아래 설문이 나왔다).
+   * 가운데를 덮은 것이 액자면 그 액자 안을 봐 달라고 알린다(간편인증 창)
+   */
+  let root: Element | Document = document
+  let frame: string | undefined
+  {
+    const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+    if (!inFrame && hit?.tagName === 'IFRAME') {
+      const r = hit.getBoundingClientRect()
+      if (r.width >= innerWidth * 0.5 && r.height >= innerHeight * 0.3) frame = (hit as HTMLIFrameElement).src
+    }
+    for (let n: Element | null = hit; !frame && n && n !== document.body; n = n.parentElement) {
+      if (
+        n.matches('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]') ||
+        getComputedStyle(n).position === 'fixed'
+      ) {
+        const r = n.getBoundingClientRect()
+        // 화면 전체를 감싼 앱 껍데기는 창이 아니다
+        if (
+          r.height < innerHeight * 0.98 ||
+          r.width < innerWidth * 0.98 ||
+          n.matches('dialog, [role$="dialog"]')
+        )
+          root = n
+        else if (n.querySelector('input, button, a[href], select, textarea')) root = n
+        break
+      }
+    }
+  }
+  if (frame) return { title: '', fields: [] as FormField[], buttons: [], url: location.href, frame }
+  const inRoot = <E extends Element>(sel: string) => [...root.querySelectorAll<E>(sel)]
+  // 페이지 끝의 만족도 조사·의견 칸은 사람이 할 일이 아니다
+  const SURVEY = /만족도|만족하|불편사항|개선이?\s*필요|의견을?\s*(남겨|입력)|평가해|설문|별점|추천하시겠/
+  const inSurvey = (el: Element) => {
+    for (let n: Element | null = el, i = 0; n && i < 8; n = n.parentElement, i++) {
+      if (
+        SURVEY.test((n as HTMLElement).innerText?.slice(0, 300) ?? '') &&
+        (n as HTMLElement).innerText.length < 1500
+      )
+        return true
+      if (/survey|satisf|feedback|evaluat|EstCheck|rating/i.test(`${n.id} ${n.className}`)) return true
+    }
+    return false
+  }
+  // 영문 변수 이름(MinfoEstCheck)은 사람에게 보일 이름이 아니다
+  const human = (t: string) => (/^[A-Za-z_$][\w$-]*$/.test(t.trim()) ? '' : t)
   const textOf = (el: Element | null | undefined) =>
     clip((el as HTMLElement | null)?.innerText ?? el?.textContent ?? '', 40)
   const labelOf = (el: HTMLElement) => {
@@ -1006,21 +1054,21 @@ export function pageForm() {
       }
       p = p.parentElement
     }
-    return clip(f.name || '', 30)
+    return clip(human(f.name || ''), 30)
   }
   const fields: FormField[] = []
   const used = new Set<Element>()
   const CODE = /인증\s*번호|인증코드|확인\s*코드|otp|verification|auth.?code|certi.?num|보안\s*코드/i
   const CAPTCHA_INPUT = /보안\s*문자|자동\s*입력|captcha|자동등록방지|문자를\s*입력/i
   // 글자 칸
-  for (const el of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
+  for (const el of inRoot<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
     if (fields.length >= 16) break
     if (
       el instanceof HTMLInputElement &&
       /^(hidden|checkbox|radio|submit|button|reset|image|file|range|color)$/.test(el.type)
     )
       continue
-    if (el.disabled || el.readOnly || !visible(el)) continue
+    if (el.disabled || el.readOnly || !visible(el) || inSurvey(el)) continue
     const label = labelOf(el)
     const t = el instanceof HTMLInputElement ? el.type : 'text'
     const kind: FormField['kind'] =
@@ -1049,8 +1097,8 @@ export function pageForm() {
     })
   }
   // 고르기: 셀렉트
-  for (const el of document.querySelectorAll<HTMLSelectElement>('select')) {
-    if (fields.length >= 20 || el.disabled || !visible(el)) continue
+  for (const el of inRoot<HTMLSelectElement>('select')) {
+    if (fields.length >= 20 || el.disabled || !visible(el) || inSurvey(el)) continue
     const options = [...el.options]
       .filter((o) => !o.disabled && o.value !== '')
       .slice(0, 30)
@@ -1064,10 +1112,10 @@ export function pageForm() {
   }
   // 고르기: 라디오 묶음
   const groups = new Map<string, HTMLInputElement[]>()
-  for (const el of document.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+  for (const el of inRoot<HTMLInputElement>('input[type="radio"]')) {
     if (el.disabled) continue
     const vis = visible(el) || (el.labels?.[0] && visible(el.labels[0]))
-    if (!vis) continue
+    if (!vis || inSurvey(el)) continue
     const k = el.name || keep(el)
     groups.set(k, [...(groups.get(k) ?? []), el])
   }
@@ -1079,7 +1127,7 @@ export function pageForm() {
     fields.push({
       id: keep(first),
       kind: 'choice',
-      label: clip(textOf(legend) || first.name, 30),
+      label: clip(textOf(legend) || human(first.name) || '고르기', 30),
       options: els.map((e) => ({
         id: keep(e),
         label: clip(e.labels?.[0] ? textOf(e.labels[0]) : e.value, 30),
@@ -1091,9 +1139,7 @@ export function pageForm() {
   const CARRIER =
     /^(SKT|KT|LG\s?U\+|LGU\+|알뜰폰|SKT\s?알뜰폰|KT\s?알뜰폰|LG\s?U\+\s?알뜰폰|SK텔레콤|LG유플러스)$/i
   const carriers: { el: HTMLElement; label: string }[] = []
-  for (const el of document.querySelectorAll<HTMLElement>(
-    'button, a, label, li, [role="tab"], [role="radio"], span',
-  )) {
+  for (const el of inRoot<HTMLElement>('button, a, label, li, [role="tab"], [role="radio"], span')) {
     const t = textOf(el)
     if (!CARRIER.test(t) || !visible(el)) continue
     if (carriers.some((c) => c.el.contains(el) || el.contains(c.el) || c.label === t)) continue
@@ -1117,10 +1163,45 @@ export function pageForm() {
       })),
     })
   }
+  // 고르기: 그림 타일 (간편인증 앱 카카오톡·네이버·토스…). 페이지 전체의 상품 목록과 헷갈리지 않게 떠 있는 창·액자 안에서만
+  const tiles = new Set<Element>()
+  if (root !== document || inFrame) {
+    for (const list of inRoot<HTMLElement>('ul, ol')) {
+      if (fields.length >= 20) break
+      const items = [...list.children].filter((li) => {
+        const t = textOf(li)
+        return (
+          li.querySelector('img, svg, [class*="logo"], [class*="icon"]') && t && t.length <= 14 && visible(li)
+        )
+      })
+      if (items.length < 3) continue
+      const options = items.slice(0, 20).map((li) => {
+        const hit = (li.querySelector('a, button, label, [role="button"]') ?? li) as HTMLElement
+        tiles.add(hit)
+        for (const x of li.querySelectorAll('a, button')) tiles.add(x)
+        return {
+          id: keep(hit),
+          label: textOf(li),
+          ...(/\b(on|active|selected|checked|current)\b/.test(`${li.className} ${hit.className}`) ||
+          hit.getAttribute('aria-selected') === 'true' ||
+          hit.getAttribute('aria-checked') === 'true'
+            ? { on: true }
+            : {}),
+        }
+      })
+      const names = options.map((o) => o.label).join(' ')
+      fields.push({
+        id: options[0]?.id ?? keep(list),
+        kind: 'choice',
+        label: /카카오|네이버|토스|PASS|인증서|페이코|뱅크/i.test(names) ? '인증 앱' : '고르기',
+        options,
+      })
+    }
+  }
   // 체크 (약관 동의 등). 진짜 칸은 숨기고 라벨만 보이는 사이트가 많아 라벨도 본다
   let checks = 0
-  for (const el of document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
-    if (checks >= 8 || el.disabled) continue
+  for (const el of inRoot<HTMLInputElement>('input[type="checkbox"]')) {
+    if (checks >= 8 || el.disabled || inSurvey(el)) continue
     const lab = el.labels?.[0] ?? el.closest('label')
     if (!visible(el) && !(lab && visible(lab))) continue
     const label = clip(lab ? textOf(lab) : labelOf(el), 50)
@@ -1129,7 +1210,7 @@ export function pageForm() {
     fields.push({ id: keep(el), kind: 'check', label, ...(el.checked ? { checked: true } : {}) })
   }
   // 보안문자 그림: 근처 글자 칸에 붙인다
-  for (const img of document.querySelectorAll<HTMLImageElement | HTMLCanvasElement>('img, canvas')) {
+  for (const img of inRoot<HTMLImageElement | HTMLCanvasElement>('img, canvas')) {
     const hay = `${img.getAttribute('alt') ?? ''} ${img.getAttribute('src') ?? ''} ${img.id} ${img.className} ${img.getAttribute('title') ?? ''}`
     if (!/captcha|kaptcha|보안|자동입력|security.?(code|img)|simplecaptcha/i.test(hay) || !visible(img))
       continue
@@ -1166,19 +1247,33 @@ export function pageForm() {
   const seen = new Set<string>()
   const MAIN =
     /^(다음|확인|로그인|인증|인증번호\s*(받기|요청|전송)|본인\s*인증|완료|동의|신청|제출|계속|조회|등록|next|ok|continue|submit|sign in|log in)/i
-  for (const el of document.querySelectorAll<HTMLElement>(
-    'button, input[type="submit"], input[type="button"], [role="button"], a[class*="btn"], a[class*="button"]',
+  // 떠 있는 창 안에서는 글자 링크도 버튼이다(정부24 '비회원 신청하기'는 꾸밈 없는 링크)
+  for (const el of inRoot<HTMLElement>(
+    root === document && !inFrame
+      ? 'button, input[type="submit"], input[type="button"], [role="button"], a[class*="btn"], a[class*="button"]'
+      : 'button, input[type="submit"], input[type="button"], [role="button"], a',
   )) {
-    if (buttons.length >= 6 || used.has(el) || !visible(el)) continue
+    if (buttons.length >= 6 || used.has(el) || !visible(el) || inSurvey(el)) continue
     if ((el as HTMLButtonElement).disabled) continue
     const label = clip(
       el instanceof HTMLInputElement ? el.value : el.innerText || el.getAttribute('aria-label') || '',
       20,
     )
-    if (!label || seen.has(label) || CARRIER.test(label)) continue
+    if (!label || seen.has(label) || CARRIER.test(label) || tiles.has(el)) continue
     seen.add(label)
     const main = (el as HTMLButtonElement).type === 'submit' || MAIN.test(label)
-    buttons.push({ id: keep(el), label, ...(main ? { main: true } : {}) })
+    // 머리말·메뉴·바닥글 버튼(정부24·전체메뉴·공유하기)은 할 일과 상관없다
+    if (
+      !main &&
+      el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"]')
+    )
+      continue
+    // '공동인증서 등록 레이어 닫기'처럼 사이트가 잘못 붙인 닫기 이름은 '닫기'로
+    buttons.push({
+      id: keep(el),
+      label: /닫기$/.test(label) ? '닫기' : label,
+      ...(main ? { main: true } : {}),
+    })
   }
   buttons.sort((a, b) => Number(Boolean(b.main)) - Number(Boolean(a.main)))
   const h = document.querySelector('h1, h2, h3')
