@@ -3345,6 +3345,29 @@ textarea.ghosting {
   box-shadow: none;
   font-weight: 600;
 }
+.approve-choices.one-line {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.approve-choices.one-line .meta {
+  color: var(--ink-1, #e8ebf0);
+  font-weight: 600;
+}
+.approve-chose {
+  margin: 10px 0 4px;
+}
+.approve-chose .meta {
+  display: block;
+  margin-bottom: 2px;
+}
+.approve-chose p {
+  margin: 0;
+  color: var(--ink-1, #e8ebf0);
+  font-weight: 600;
+  font-size: 14px;
+}
 .approve-choices .chip.chip-more {
   background: transparent;
   border: 1px dashed var(--line, #3a3f48);

@@ -973,14 +973,56 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
           : []),
       ),
     )
+  // 아직 아무것도 안 바꿨으면 한 줄로 요약 (카드 · 신한카드 · 일시불 [바꾸기]). [바꾸기]를 누르면 칩이 펼쳐진다
+  const groups: { title: string; options: { id: string; label: string }[]; now?: string; key: string }[] = [
+    ...(a.choices?.length
+      ? [
+          {
+            title: `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`,
+            options: a.choices,
+            now: chosenOf(a),
+            key: a.id,
+          },
+        ]
+      : []),
+    ...subs.map((g) => ({
+      title: g.title,
+      options: g.options,
+      now: subChosenOf(a, g),
+      key: `${a.id}:${g.key}`,
+    })),
+  ]
+  const touched = groups.some((g) => st.choice.has(g.key))
+  if (groups.length > 1 && !touched && !st.choice.has(`${a.id}:open`)) {
+    const summary = groups
+      .map((g) => g.options.find((o) => o.id === g.now)?.label ?? '')
+      .filter(Boolean)
+      .join(' · ')
+    return h(
+      'div',
+      { class: 'approve-choices one-line' },
+      h('span', { class: 'meta', text: `${a.choiceTitle ?? '결제 수단'} · ${summary}` }),
+      h('button', {
+        class: 'chip chip-more',
+        text: '바꾸기',
+        onclick: () => {
+          st.choice.set(`${a.id}:open`, '1')
+          render()
+        },
+      }),
+    )
+  }
+  return h('div', {}, ...groups.map((g) => row(g.title, g.options, g.now, g.key)))
+}
+
+/** 두리가 결제 전에 스스로 고른 것 (보험 안 함·약관 동의 등)을 따로 한 줄로 보여 준다 */
+function choseRow(a: ApprovalView): HTMLElement | undefined {
+  if (!a.chose?.length) return undefined
   return h(
     'div',
-    {},
-    ...(a.choices?.length
-      ? [row(`${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`, a.choices, chosenOf(a), a.id)]
-      : []),
-    // 결제 화면에 있는 세부 선택 (등록 카드·할부 개월). 기본은 화면에 골라져 있던 것
-    ...subs.map((g) => row(g.title, g.options, subChosenOf(a, g), `${a.id}:${g.key}`)),
+    { class: 'approve-chose' },
+    h('span', { class: 'meta', text: '두리가 고른 것' }),
+    h('p', { text: a.chose.join(' · ') }),
   )
 }
 
@@ -2750,6 +2792,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     ),
     a.amount && h('p', { class: 'approve-amount', text: a.amount }),
     h('p', { class: 'approve-what', text: a.what }),
+    choseRow(a),
     choiceRow(a),
     h(
       'div',
@@ -4256,6 +4299,8 @@ function approvalSheet(id: string) {
     ...(a.amount ? [h('p', { class: 'approve-amount', text: a.amount })] : []),
     rows,
   )
+  const chose = choseRow(a)
+  if (chose) sheet.append(chose)
   const pick = a.status === 'pending' ? choiceRow(a) : undefined
   if (pick) sheet.append(pick)
   if (a.shot) {

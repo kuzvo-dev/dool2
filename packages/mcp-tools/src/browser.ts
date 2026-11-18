@@ -275,6 +275,13 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe('승인하며 사용자가 고를 칸들의 표시 (결제 수단 라디오 등, 예: ["e31","e32"])'),
       choiceTitle: z.string().max(20).optional().describe('선택지 제목 (기본: 결제 수단)'),
+      chose: z
+        .array(z.string().max(60))
+        .max(8)
+        .optional()
+        .describe(
+          '결제 전에 두리가 화면에서 스스로 고른 것 (예: ["여행자보험 가입 안 함","약관 전체 동의","적립 안 함"]). 사용자가 승인 카드에서 보고 바꿀 수 있게 적는다. 사용자가 고를 choices와 다르다',
+        ),
     },
     false,
   )
