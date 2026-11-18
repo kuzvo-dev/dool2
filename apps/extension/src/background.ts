@@ -22,6 +22,8 @@ import {
   pageMarkFilled,
   pageMarkTaps,
   pageMarkText,
+  pageOptionPoint,
+  pageRememberShown,
   pageRemoteInfo,
   pageRevealItem,
   pageScroll,
@@ -854,25 +856,41 @@ function takePopup(opener: number) {
 async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
     case 'options': {
-      // 펼침 목록의 고를 것 (결제 화면의 등록 카드·할부). 고르는 건 하지 않는다
+      // 펼침 목록의 고를 것 (결제 화면의 등록 카드·할부, 상품 옵션). 고르는 건 하지 않는다
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
-      const r = await inFrame(tabId, frameOf(tabId, ref).frameId, pageSelectOptions, ref)
+      const fid = frameOf(tabId, ref).frameId
+      let r = await inFrame(tabId, fid, pageSelectOptions, ref, false)
+      // 스크립트 누르기로 안 열리는 목록(요즘 부품은 진짜 입력만 받는다. 실측 무신사·오늘의집): 진짜 마우스로 열고 다시 읽는다
+      if (!r?.options) {
+        await inFrame(tabId, fid, pageRememberShown)
+        const at = await locate(tabId, ref, 'point')
+        await clickAt(tabId, at.x, at.y, '옵션 목록 여는 중')
+        await sleep(700)
+        const r2 = await inFrame(tabId, fid, pageSelectOptions, ref, true)
+        r = r2?.options ? r2 : { why: `${r?.why ?? ''} / 마우스로 연 뒤: ${r2?.why ?? ''}`.slice(0, 900) }
+      }
       return { tabId, options: r?.options ?? null, ...(r?.why ? { why: r.why } : {}) }
     }
     case 'choose': {
-      // 펼침 목록에서 글자가 같은 것을 고른다 (본체가 승인받은 선택을 넣을 때)
+      // 펼침 목록에서 글자가 같은 것을 고른다
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
-      const r = await inFrame(
-        tabId,
-        frameOf(tabId, ref).frameId,
-        pageSelectChoose,
-        ref,
-        String(a.label ?? ''),
-      )
-      if (!r.ok) throw new Error(r.error)
-      return { tabId, label: r.label }
+      const label = String(a.label ?? '')
+      const f = frameOf(tabId, ref)
+      const r = await inFrame(tabId, f.frameId, pageSelectChoose, ref, label)
+      if (r.ok) return { tabId, label: r.label }
+      // 안 되면 진짜 마우스로 열고, 그 항목도 진짜 마우스로 누른다
+      await inFrame(tabId, f.frameId, pageRememberShown)
+      const at = await locate(tabId, ref, 'point')
+      await clickAt(tabId, at.x, at.y, '옵션 목록 여는 중')
+      await sleep(700)
+      const pt = await inFrame(tabId, f.frameId, pageOptionPoint, label)
+      if (!pt.ok) throw new Error(pt.error)
+      const off = f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+      await clickAt(tabId, pt.x + off.x, pt.y + off.y, `${pt.label} 고르는 중`)
+      await sleep(400)
+      return { tabId, label: pt.label }
     }
     case 'mark-text': {
       // 글자로 누를 곳에 표시를 붙인다 (그 뒤 보통 click으로 누른다)

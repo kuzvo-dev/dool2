@@ -157,6 +157,21 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'select',
+    '목록에서 고르기',
+    '펼침 목록(상품의 색상·사이즈 옵션, 선택 상자, "옵션 열기"·"선택해 주세요" 칸)을 읽거나 고른다. choose 없이 부르면 목록(품절 표시·지금 골라진 것)을 돌려주고, choose에 항목 글(예: "M", "블랙")을 넣으면 그것을 고른 뒤 바뀐 페이지를 읽어 돌려준다. 스크립트로 안 열리는 목록은 두리가 진짜 마우스로 연다. 결제 수단·할부 목록에는 쓰지 않는다(승인 카드의 choices로).',
+    {
+      tabId,
+      ref: ref.describe('목록 칸 표시 (예: e49 "옵션 열기", e51 선택 상자 "색상")'),
+      choose: z
+        .string()
+        .max(60)
+        .optional()
+        .describe('고를 항목 글 (사용자가 말한 옵션, 없으면 기억한 사이즈·색). 비우면 목록만 본다'),
+    },
+    false,
+  )
+  tool(
     'scroll',
     '스크롤',
     '화면을 한 화면 위나 아래로 움직이고, 지금 화면에 보이는 부분을 읽어 돌려준다. 페이지 읽기(browser_read)는 스크롤 없이도 전체를 읽으니, 화면에 보이는 것을 따라가며 볼 때만 쓴다.',
