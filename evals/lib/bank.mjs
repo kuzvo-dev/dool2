@@ -145,8 +145,9 @@ export function serviceIds() {
   }
 }
 
-// AI가 원래 가진 도구 (두리 MCP 밖): 웹 검색·주소 읽기·파일
-const BUILTIN = ['web_search', 'web_fetch', 'file_read', 'file_write']
+// 두리는 AI의 기본 도구(셸·파일·웹)를 모두 끄고 두리 도구만 쓴다 (agent-claude --tools '').
+// 웹 검색은 브라우저로 검색 사이트를 열어 하니 있는 것으로 보고, 파일 읽기·쓰기는 아직 없다(file_read·file_write는 빈틈)
+const BUILTIN = ['web_search', 'web_fetch']
 
 /** 지금 AI가 쓸 수 있는 도구 이름 전부: 서비스 도구(skills/<id>/tools.json) + 두리 MCP 도구(목록 시험에 적힌 이름) + 기본 도구 */
 export function toolNames() {
@@ -187,5 +188,9 @@ export function neededTools(sc, ids = serviceIds()) {
       out.push(`${id.replace(/-/g, '_')}_${rest}`)
     } else out.push(`${plain.replace(/-/g, '_')}_${rest}`)
   }
+  // 글로 적은 파일 일: "파일 쓰기(엑셀)", "파일 읽기(PDF)", "PC 파일"
+  const t = sc.tools ?? ''
+  if (/파일\s*(?:읽기|확인|찾기)|PC 파일|파일 → |다운로드 → 파일/.test(t)) out.push('file_read')
+  if (/파일\s*(?:쓰기|저장|만들기)|엑셀\s*(?:만들기|쓰기)/.test(t)) out.push('file_write')
   return { tools: [...new Set(out)], noService: [...new Set(noService)] }
 }
