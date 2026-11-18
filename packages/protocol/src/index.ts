@@ -436,8 +436,10 @@ export interface InfoRequestView {
   /** 사람에게 보일 사이트 이름·주소 */
   site: string
   host: string
-  /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 */
-  field: 'otp' | 'tel' | 'text'
+  /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 · form: 여러 칸(내 정보 카드) */
+  field: 'otp' | 'tel' | 'text' | 'form'
+  /** form일 때 받을 칸들. 답은 {key: 값} JSON 한 줄 */
+  fields?: { key: string; label: string; type: 'text' | 'tel' | 'email' | 'date'; example?: string }[]
   /** 화면의 칸 이름 ("인증번호 6자리") */
   label: string
   /** 화면의 안내 한 줄 ("카카오톡으로 보낸 번호를 넣어 주세요") */

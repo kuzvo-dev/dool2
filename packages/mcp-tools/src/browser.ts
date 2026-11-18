@@ -193,6 +193,71 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'fill_profile',
+    '내 정보로 예약자·주문자 칸 채우기',
+    '결제·예약 화면의 이름·영문 이름·이메일·휴대폰·생년월일·주소 칸을 사용자의 "내 정보"로 두리가 직접 채운다. 너는 칸과 항목만 짚고 값은 보지 않는다(결과에는 가린 값만). 사용자에게 이름·연락처를 묻지 말고 이걸 먼저 쓴다. 내 정보에 없는 항목이면 결과가 알려 주니 browser_request_profile로 카드를 띄운다. 칸 모양에 맞는 항목을 골라: 영문 성/이름이 따로면 name_en_last·name_en_first, 한 칸이면 name_en_full, 국가 번호를 따로 고르는 전화 칸이면 phone_local, 숫자만 받는 칸이면 phone_digits·birth_digits, 6자리 생년월일이면 birth6.',
+    {
+      tabId,
+      fields: z
+        .array(
+          z.object({
+            ref: ref.describe('채울 입력칸 표시 (예: e12)'),
+            key: z
+              .enum([
+                'name',
+                'name_en_last',
+                'name_en_first',
+                'name_en_full',
+                'email',
+                'phone',
+                'phone_digits',
+                'phone_local',
+                'birth',
+                'birth_digits',
+                'birth6',
+                'zip',
+                'address',
+                'address_detail',
+              ])
+              .describe('넣을 내 정보 항목'),
+          }),
+        )
+        .min(1)
+        .max(20),
+    },
+    false,
+  )
+  tool(
+    'request_profile',
+    '내 정보 카드 띄우기',
+    '예약자·주문자 칸을 채워야 하는데 내 정보에 없는 항목이 있을 때 쓴다(browser_fill_profile이 "없어요"라고 할 때). 사용자에게 한 번만 넣으면 되는 내 정보 카드를 폰에 띄운다. 넣은 값은 PC 금고에만 저장되고 너에게는 가린 값만 온다. 대화로 이름·이메일·전화번호를 묻지 않는다. 쓴 뒤에는 이번 답을 끝낸다.',
+    {
+      fields: z
+        .array(
+          z.enum([
+            'name',
+            'name_en_last',
+            'name_en_first',
+            'email',
+            'phone',
+            'birth',
+            'zip',
+            'address',
+            'address_detail',
+          ]),
+        )
+        .max(9)
+        .optional()
+        .describe('받을 항목. 비우면 없는 항목 모두'),
+      reason: z
+        .string()
+        .max(120)
+        .optional()
+        .describe('왜 필요한지 한 줄 (예: "르 도르투아 예약자 칸을 채우려고 해요")'),
+    },
+    false,
+  )
+  tool(
     'request_approval',
     '승인 요청',
     '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 쓴 뒤에는 이번 답을 끝낸다.',

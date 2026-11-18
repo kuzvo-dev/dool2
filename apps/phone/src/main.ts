@@ -4101,13 +4101,67 @@ function infoSheet(id: string) {
     h(
       'div',
       {},
-      h('strong', { class: 'title-2', text: q.field === 'otp' ? '인증번호를 넣어 주세요' : q.label }),
-      h('span', { class: 'meta', text: `${q.site} · ${q.host}` }),
+      h('strong', {
+        class: 'title-2',
+        text:
+          q.field === 'otp'
+            ? '인증번호를 넣어 주세요'
+            : q.field === 'form'
+              ? '내 정보를 한 번만 넣어 주세요'
+              : q.label,
+      }),
+      h('span', {
+        class: 'meta',
+        text: q.field === 'form' ? '예약·주문 칸을 두리가 알아서 채워요' : `${q.site} · ${q.host}`,
+      }),
     ),
   )
   const body: Node[] = []
   if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
-  if (q.field === 'otp') {
+  if (q.field === 'form' && q.fields?.length) {
+    // 내 정보 카드: 여러 칸을 한 번에 받는다. 값은 PC 금고에만, 두리(AI)는 가린 값만 본다
+    const inputs = q.fields.map((f) => {
+      const input = h('input', { class: 'field' })
+      input.name = f.key
+      input.placeholder = f.example ? `예: ${f.example}` : f.label
+      input.setAttribute('aria-label', f.label)
+      if (f.type === 'tel') {
+        input.type = 'tel'
+        input.inputMode = 'tel'
+        input.autocomplete = 'tel'
+      } else if (f.type === 'email') {
+        input.type = 'email'
+        input.inputMode = 'email'
+        input.autocomplete = 'email'
+      } else if (f.type === 'date') {
+        input.inputMode = 'numeric'
+        input.setAttribute('autocomplete', 'bday')
+      } else if (f.key === 'name') input.autocomplete = 'name'
+      else if (f.key === 'name_en_last') input.autocomplete = 'family-name'
+      else if (f.key === 'name_en_first') input.autocomplete = 'given-name'
+      else if (f.key === 'zip') input.autocomplete = 'postal-code'
+      else if (f.key === 'address') input.autocomplete = 'street-address'
+      return { f, input }
+    })
+    const go = h('button', { class: 'btn lg', text: '저장하고 이어서 하기' })
+    go.type = 'submit'
+    const form = h(
+      'form',
+      { class: 'cred-form profile-form' },
+      ...inputs.map(({ f, input }) =>
+        h('label', { class: 'field-label' }, h('span', { class: 'meta', text: f.label }), input),
+      ),
+      go,
+    )
+    form.onsubmit = (e) => {
+      e.preventDefault()
+      const value: Record<string, string> = {}
+      for (const { f, input } of inputs) if (input.value.trim()) value[f.key] = input.value.trim()
+      if (Object.keys(value).length) answer(JSON.stringify(value))
+    }
+    body.push(form)
+    queueMicrotask(() => inputs[0]?.input.focus())
+  } else if (q.field === 'otp') {
     body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
     body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
     queueMicrotask(() => document.getElementById('otp-input')?.focus())
@@ -4137,7 +4191,9 @@ function infoSheet(id: string) {
       'p',
       { class: 'lock-note' },
       icon('lock'),
-      '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
+      q.field === 'form'
+        ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
+        : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
     ),
     h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),
   )

@@ -6,6 +6,16 @@
 import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
 import { type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
+import {
+  maskValue,
+  PROFILE_FIELDS,
+  PROFILE_KEYS,
+  type ProfileField,
+  type ProfileKey,
+  type ProfileStore,
+  profileValue,
+  sourceOf,
+} from './profile.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export interface ToolResult {
@@ -33,6 +43,8 @@ export const BROWSER_TOOLS = [
   'handoff',
   'login',
   'request_login',
+  'fill_profile',
+  'request_profile',
   'request_approval',
   'dialog',
   'steps',
@@ -359,6 +371,10 @@ export class BrowserTools {
     tabId: number,
     origin: string,
   ) => Promise<{ id: string; username: string; password: string } | undefined>
+  /** 내 정보 (예약자·주문자 칸). AI는 가린 값만 본다 */
+  profile?: ProfileStore
+  /** 내 정보 카드를 띄운다 (폰). 저장되면 본체가 그 대화로 이어서 하라고 알린다 */
+  requestProfile?: (fields: ProfileField[], reason: string) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
@@ -512,6 +528,70 @@ export class BrowserTools {
           ...(a.amount ? { amount: String(a.amount) } : {}),
           ...(a.cancel ? { cancel: String(a.cancel) } : {}),
         })
+      }
+      case 'fill_profile': {
+        // 내 정보 (예약자·주문자 칸): AI는 칸과 항목만 말하고, 값은 본체가 주소를 확인해 확장에 직접 넘긴다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        if (!this.profile) throw new Error('내 정보를 쓸 수 없어요')
+        let origin: string
+        try {
+          origin = new URL(page.url).origin
+        } catch {
+          throw new Error('페이지 주소를 알 수 없어요')
+        }
+        const asks = Array.isArray(a.fields) ? (a.fields as { ref?: unknown; key?: unknown }[]) : []
+        if (!asks.length) throw new Error('채울 칸(fields: [{ref, key}])을 알려 주세요')
+        const p = await this.profile.get()
+        const done: string[] = []
+        const missing = new Set<ProfileField>()
+        for (const x of asks.slice(0, 20)) {
+          const ref = String(x.ref ?? '')
+          const key = String(x.key ?? '') as ProfileKey
+          if (!(PROFILE_KEYS as readonly string[]).includes(key))
+            throw new Error(`${key}는 내 정보 항목이 아니에요. 쓸 수 있는 것: ${PROFILE_KEYS.join(', ')}`)
+          const role = page.refs.get(ref)?.role ?? ''
+          if (!['입력칸', '검색칸'].includes(role)) throw new Error(`${ref}는 글을 넣는 칸이 아니에요`)
+          const value = profileValue(p, key)
+          if (!value) {
+            for (const f of sourceOf(key)) if (!p[f]) missing.add(f)
+            continue
+          }
+          await this.browser.call('fill', { tabId, ref, value, origin })
+          const shown = sourceOf(key)
+            .map((f) => (p[f] ? maskValue(f, p[f] as string) : ''))
+            .join(' ')
+          done.push(`${PROFILE_FIELDS[sourceOf(key)[0] as ProfileField].label}(${shown})`)
+        }
+        const lines = [
+          done.length ? `내 정보로 채웠어요: ${done.join(', ')}.` : '',
+          missing.size
+            ? `내 정보에 ${[...missing].map((f) => PROFILE_FIELDS[f].label).join('·')}이(가) 없어요. 사용자에게 묻지 말고 browser_request_profile로 내 정보 카드를 띄운 뒤 답을 끝내세요.`
+            : '',
+        ].filter(Boolean)
+        return this.read(tabId, undefined, lines.join(' '))
+      }
+      case 'request_profile': {
+        if (!this.profile || !this.requestProfile) throw new Error('내 정보 카드를 띄울 수 없어요')
+        const all = Object.keys(PROFILE_FIELDS) as ProfileField[]
+        const asked = (Array.isArray(a.fields) ? a.fields : [])
+          .map(String)
+          .filter((f): f is ProfileField => all.includes(f as ProfileField))
+        const { missing } = await this.profile.masked()
+        const fields = asked.length ? asked : missing
+        if (!fields.length) throw new Error('내 정보가 모두 있어요. browser_fill_profile로 채우세요')
+        const id = this.requestProfile(fields, String(a.reason ?? '').slice(0, 120))
+        if (!id) throw new Error('내 정보 카드를 띄우지 못했어요')
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `내 정보 카드를 띄웠어요(${fields.map((f) => PROFILE_FIELDS[f].label).join('·')}). 사용자에게 "카드에 한 번만 넣어 주시면 다음부터는 제가 알아서 채워요"처럼 한 문장으로 말하고 이번 답을 끝내세요. ` +
+                '넣은 값은 PC 금고에만 저장되고 당신에게는 가린 값만 와요. 저장되면 다음 메시지로 알려 줘요. 그때 browser_fill_profile로 채우세요.',
+            },
+          ],
+        }
       }
       case 'request_login': {
         // 로그인 카드: 사용자가 PC·폰 카드에 넣은 값은 금고에만 들어간다. AI는 값을 보지 않는다
@@ -725,6 +805,9 @@ export class BrowserTools {
       throw new Error(
         '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
       )
+    // 한 탭에서 누를 마지막 버튼은 하나다: 같은 탭에 기다리는 승인이 있으면 새 것으로 바꾼다
+    // (실측: AI가 다시 읽고 같은 버튼에 한 번 더 요청해 카드가 두 장 떴고, 앞 카드는 표시 번호가 바뀌어 누를 수 없었다)
+    this.approvals.expireTab(tabId)
     // 승인 카드에 실제 화면을 함께 보여 준다 (AI가 적은 금액이 틀려도 사용자가 알아챌 수 있게)
     const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
       | { data?: string }

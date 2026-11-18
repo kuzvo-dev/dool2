@@ -153,6 +153,8 @@ const daemon = await startDaemon({
   dataDir: join(tmp, 'data'),
   relay: relay.url,
   pcName: process.env.DOOL2_PC_NAME ?? '시험 PC',
+  // 도구 토큰을 고정하면 점검 스크립트가 도구(browser_*)를 직접 불러 화면을 띄울 수 있다
+  ...(process.env.DOOL2_TOOL_TOKEN ? { toolToken: process.env.DOOL2_TOOL_TOKEN } : {}),
   nativeHost: { defaultTargets: false, extraDirs: [join(profile, 'NativeMessagingHosts')] },
 })
 const chrome = chromeBin

@@ -32,6 +32,8 @@ describe('두리 MCP 도구', () => {
       'browser_back',
       'browser_login',
       'browser_request_login',
+      'browser_fill_profile',
+      'browser_request_profile',
       'browser_request_approval',
       'browser_dialog',
       'browser_handoff',

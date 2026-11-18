@@ -18,16 +18,16 @@ export class InfoRequests {
   ) {}
 
   /** 묻고 답을 기다린다. 취소·시간 초과면 undefined */
-  ask(n: Omit<InfoRequestView, 'id' | 'status' | 'expiresAt'>): Promise<string | undefined> {
+  ask(n: Omit<InfoRequestView, 'id' | 'status' | 'expiresAt'>, ttl = this.ttl): Promise<string | undefined> {
     const id = randomUUID()
     const view: InfoRequestView = {
       ...n,
       id,
       status: 'pending',
-      expiresAt: new Date(this.now() + this.ttl).toISOString(),
+      expiresAt: new Date(this.now() + ttl).toISOString(),
     }
     return new Promise((resolve) => {
-      const timer = setTimeout(() => this.finish(id, 'expired'), this.ttl)
+      const timer = setTimeout(() => this.finish(id, 'expired'), ttl)
       this.items.set(id, {
         view,
         done: (v) => {
@@ -41,7 +41,9 @@ export class InfoRequests {
 
   answer(id: string, value: string | undefined): boolean {
     const v = value?.trim()
-    return this.finish(id, v ? 'answered' : 'cancelled', v ? v.slice(0, 200) : undefined)
+    // 여러 칸 카드(form)는 칸들을 JSON 한 줄로 받아 더 길다
+    const max = this.items.get(id)?.view.field === 'form' ? 4000 : 200
+    return this.finish(id, v ? 'answered' : 'cancelled', v ? v.slice(0, max) : undefined)
   }
 
   pending(): InfoRequestView[] {

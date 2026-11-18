@@ -90,14 +90,17 @@ export class Approvals {
     return true
   }
 
-  /** 탭이 닫히면 그 탭에서 기다리던 요청은 더 누를 수 없다 */
+  /** 탭이 닫히면 그 탭에서 기다리던 요청은 더 누를 수 없다. 새 요청이 같은 탭의 예전 요청을 대신할 때도 쓴다 */
   expireTab(tabId: number) {
     for (const r of this.items.values())
       if (r.status === 'pending' && r.tabId === tabId) {
         r.status = 'expired'
         r.shot = undefined
+        this.onChange?.(r)
       }
   }
+  /** 기다리던 요청이 만료됐을 때 (폰 카드를 닫는다) */
+  onChange?: (rec: ApprovalRecord) => void
 
   /** 끝난 지 오래된 요청을 지우고, 끝난 요청의 화면 캡처(수백 KB)는 바로 버린다 */
   private prune(now: number) {
