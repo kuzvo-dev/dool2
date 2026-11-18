@@ -58,3 +58,17 @@ node evals/score.mjs evals/out/<날짜> --judge --html evals/out/<날짜>/card.h
 - asks: 실제 한국 사람이 폰으로 보낼 말(반말·존댓말·초성·긴 받아쓰기 섞어서). 다른 AI 제품 이름은 넣지 않아요
 - slots: 같은 순번끼리 한 묶음(서비스와 물건이 서로 맞게). tools의 `<svc>`는 그 시나리오의 svc 값으로 풀려요(쿠팡 → coupang)
 - perturb 키는 `bank/perturb.json`의 것만, gaps는 `bank/gaps.json`의 빈틈 id
+
+## 밤 고리 (매일 자동 점검)
+
+```bash
+node evals/nightly.mjs --token <화면 토큰> --n 40 --repeat 2
+```
+
+매일 다른 묶음(날짜로 섞음, 우선순위 높은 것 먼저)을 돌려 성적표를 내고 점수 추세를 쌓아요.
+
+- `evals/out/<날짜>/card.html` — 그날 성적표
+- `evals/out/trend.csv` — 날짜별 통과·일부·실패·AI 평균 한 줄씩 (점수가 오르는지 한눈에)
+- `evals/out/latest.txt` — 가장 최근 한 줄
+
+고치는 PR은 자동으로 만들지 않아요. 아침에 성적표를 보고 사람이 고쳐요. (하네스 계획 ⑥의 안전한 핵심)
