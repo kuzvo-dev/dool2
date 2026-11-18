@@ -91,7 +91,23 @@ const listFiles = () =>
   new Set(FOLDERS.flatMap((d) => (existsSync(d) ? readdirSync(d).map((n) => join(d, n)) : [])))
 const local = /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(daemon) && !flag('keep-files')
 
+/** 시나리오 상황의 "기억: …"을 뽑는다 (시험 전에 넣었다가 끝나면 지운다) */
+export function seedMemories(ctx) {
+  return [...String(ctx ?? '').matchAll(/기억:\s*([^/()]+?)\s*(?:\)|\/|$)/g)]
+    .map((m) => m[1].trim())
+    .filter((t) => t.length >= 2)
+}
+
 async function runOne(sc) {
+  // 시나리오가 가정한 기억을 먼저 넣는다 (시험 PC에 없던 기억 때문에 깎이지 않게)
+  const seeded = []
+  for (const text of seedMemories(sc.ctx)) {
+    const r = await api('/api/life/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'memory-add', text }),
+    })
+    if (r.id) seeded.push({ id: r.id, text })
+  }
   const filesBefore = local ? listFiles() : new Set()
   const before = await lifeIds()
   const started = new Date()
@@ -195,6 +211,12 @@ async function runOne(sc) {
       rec.created.files.push({ from: p, to })
     }
   }
+  for (const m of seeded)
+    await api('/api/life/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'memory-delete', id: m.id }),
+    })
+  rec.seeded = seeded.map((m) => m.text)
   const s2 = await api('/api/life')
   rec.created.feed = (s2.feed ?? []).filter((x) => !before.feed.has(x.id))
   const msgs = await api(`/api/threads/${thread.id}`)
