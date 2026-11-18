@@ -1,8 +1,6 @@
 // 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
 // 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
 import type { ConnectCard, ConnectionItem, SocialProvider, Tier } from '@dool2/protocol/connect'
-// 화면은 묶지 않고 불러온다: zod가 없는 connect-text.js(빌드 때 옆에 복사)에서 가져온다
-import { socialOrder } from './connect-text.js'
 
 /** 간편 로그인 이름 (@dool2/protocol/connect의 SOCIAL_LABEL 복사, 테스트가 같은지 본다) */
 export const SOCIAL_LABEL: Record<SocialProvider, string> = {
@@ -41,6 +39,8 @@ export interface ConnectionsOptions {
   setHeader(title: string, sub: string): void
   /** 예시 부탁을 새 대화로 보내기 */
   ask(text: string): void
+  /** 연결하기는 대화에서 (ADR 0021): 대화에 연결 카드를 띄우고 대화로 간다 */
+  connect(id: string): Promise<void>
 }
 
 const SVG = 'http://www.w3.org/2000/svg'
@@ -316,127 +316,25 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         }
         kids.push(state, tryAsk, off)
       } else {
-        // 아이디·비밀번호를 넣으면 두리 본체가 Chrome에서 대신 로그인한다 (값은 금고로만)
-        const form = el('form', 'svc-login')
-        const user = el('input', 'field')
-        user.placeholder = '아이디 또는 이메일'
-        user.autocomplete = 'username'
-        const pw = el('input', 'field')
-        pw.type = 'password'
-        pw.placeholder = '비밀번호'
-        pw.autocomplete = 'current-password'
+        // 연결하기는 대화에서: 아이디·비밀번호·간편 로그인·직접 하기는 대화의 연결 카드에서 이어 간다
         const go = el('button', 'btn', '연결하기')
-        go.type = 'submit'
-        const direct = el('button', 'btn-text', '카카오·네이버로 로그인하는 곳이면 Chrome에서 직접')
-        direct.type = 'button'
-        direct.onclick = async () => {
-          try {
-            await opts.api(`/api/connections/${c.id}/open`, { method: 'POST' })
-            drawWaiting()
-          } catch (e) {
-            drawAction((e as Error).message)
-          }
-        }
-        form.onsubmit = async (e) => {
-          e.preventDefault()
-          if (!user.value.trim() || !pw.value) return
+        go.type = 'button'
+        go.onclick = async () => {
           go.disabled = true
-          go.textContent = '두리가 로그인하는 중…'
           try {
-            // 뒤에서: 바로 돌아오고, 결과는 대화 알림으로 온다 (이 화면에서 기다리지 않아도 된다)
-            const r = await opts.api<{ ok: boolean; message: string; human?: boolean; started?: boolean }>(
-              `/api/connections/${c.id}/login`,
-              {
-                method: 'POST',
-                body: JSON.stringify({ username: user.value.trim(), password: pw.value, background: true }),
-              },
-            )
-            pw.value = ''
-            if (r.ok) {
-              it.connectedAt = new Date().toISOString()
-              drawAction(r.message)
-            } else if (r.human) drawWaiting()
-            else drawAction(r.message)
+            await opts.connect(c.id)
           } catch (e) {
+            go.disabled = false
             drawAction((e as Error).message)
           }
-        }
-        form.append(user, pw, go)
-        // 간편 로그인: 이 PC Chrome의 카카오·네이버… 로그인을 이어 쓰고, 처음이면 그 화면을 띄워 드린다
-        if (c.social?.length) {
-          const row = el('div', 'social-row')
-          // 쓰던 순서로 (이 서비스에 전에 쓴 것 → 다른 곳에 많이 쓴 것 → 카드 순서)
-          for (const { provider, hint } of socialOrder(c, items)) {
-            const b = el('button', `btn-social ${provider}`, `${SOCIAL_LABEL[provider]}로 연결`)
-            b.type = 'button'
-            if (hint) b.append(el('span', 'social-hint', hint))
-            b.onclick = async () => {
-              for (const x of row.querySelectorAll('button')) x.disabled = true
-              b.textContent = '두리가 로그인하는 중…'
-              try {
-                const r = await opts.api<{ ok: boolean; message: string; human?: boolean }>(
-                  `/api/connections/${c.id}/social`,
-                  { method: 'POST', body: JSON.stringify({ provider, background: true }) },
-                )
-                if (r.ok) it.connectedAt = new Date().toISOString()
-                if (r.human) drawWaiting()
-                else drawAction(r.message)
-              } catch (e) {
-                drawAction((e as Error).message)
-              }
-            }
-            row.append(b)
-          }
-          kids.push(row, el('p', 'cap social-or', '또는 아이디·비밀번호로'))
         }
         kids.push(
-          form,
-          el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),
-          direct,
+          go,
+          el('p', 'cap', '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 Chrome에 로그인해요.'),
         )
       }
       if (note) kids.push(el('p', 'cap svc-note', note))
       action.replaceChildren(...kids)
-    }
-    // Chrome에서 열어 둔 뒤: 사용자가 로그인을 마치면 [로그인했어요]
-    // Chrome에서 열어 둔 뒤: 로그인을 마치면 두리가 화면을 보고 알아서 연결로 표시한다. 안 되면 [로그인했어요]
-    let poll: ReturnType<typeof setInterval> | undefined
-    const stopPoll = () => {
-      if (poll) clearInterval(poll)
-      poll = undefined
-    }
-    const drawWaiting = () => {
-      const msg = el(
-        'p',
-        'sub',
-        `Chrome에서 ${c.name}을(를) 열었어요. 로그인하면 두리가 화면을 보고 알아서 확인해요.`,
-      )
-      const done = el('button', 'btn', '로그인했어요')
-      done.type = 'button'
-      done.onclick = async () => {
-        stopPoll()
-        const r = await opts.api<{ connectedAt: string }>(`/api/connections/${c.id}`, { method: 'PUT' })
-        it.connectedAt = r.connectedAt
-        drawAction()
-      }
-      const cancel = el('button', 'btn-text', '나중에')
-      cancel.type = 'button'
-      cancel.onclick = () => {
-        stopPoll()
-        drawAction()
-      }
-      action.replaceChildren(msg, done, cancel)
-      stopPoll()
-      poll = setInterval(async () => {
-        // 다른 화면으로 가면 그만 묻는다
-        if (!action.isConnected) return stopPoll()
-        const list = await opts.api<{ services: ConnectionItem[] }>('/api/connections').catch(() => undefined)
-        const at = list?.services.find((x) => x.card.id === c.id)?.connectedAt
-        if (!at) return
-        stopPoll()
-        it.connectedAt = at
-        drawAction('로그인을 확인했어요. 이제 부탁만 하면 돼요.')
-      }, 2_000)
     }
     drawAction()
 

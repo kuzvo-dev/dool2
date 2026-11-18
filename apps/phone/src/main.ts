@@ -803,7 +803,8 @@ function ask(text: string) {
  */
 function connectInChat(id: string) {
   const it = st.services?.find((s) => s.card.id === id)
-  if (!it || it.card.how !== 'browser') return openOverlay({ kind: 'connect', id })
+  // 로그인해서 쓰는 곳(브라우저·공식 연동 전)은 모두 대화에서 연결한다. 폰 권한(device)만 연결 화면에서 켠다
+  if (!it || it.card.how === 'device' || it.card.how === 'open') return openOverlay({ kind: 'connect', id })
   if (!st.online) return toast('PC와 연결되면 할 수 있어요')
   // 같은 연결 카드가 대화 끝 가까이에 이미 있으면 새로 쌓지 않고 그 카드로 간다
   const near = st.conv.slice(-6).some((m) => {
@@ -2988,7 +2989,8 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결돼 있어요`)
   if (!live) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결 카드`)
   const busy = st.connecting.has(c.id)
-  const browser = c.how === 'browser'
+  // 공식 연동(지메일 등)도 준비되기 전까지는 PC Chrome에 로그인해서 쓴다: 브라우저 연결과 같은 카드
+  const browser = c.how === 'browser' || c.how === 'official'
   // 계정·인증번호를 기다리면: 무엇이 필요한지와 [넣기] 버튼 (빙글빙글만 돌지 않게)
   const fail = busy ? undefined : st.connectFails.get(c.id)
   if (fail) return connectFailCard(c, fail, mark(true))
