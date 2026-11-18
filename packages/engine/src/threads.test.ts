@@ -147,7 +147,7 @@ describe('ThreadService', () => {
     })
   })
 
-  it('show_cards 카드는 다듬어서 답 바로 아래에 남긴다', async () => {
+  it('show_cards 카드는 다듬어서(http는 https로, 이상한 주소는 빼고) 답 바로 아래에 남긴다', async () => {
     const { store, svc } = setup([
       {
         type: 'tool',
@@ -181,7 +181,7 @@ describe('ThreadService', () => {
           image: 'https://img.example.com/a.jpg',
           url: 'https://shop.example/1',
         },
-        { title: '나쁜 주소' },
+        { title: '나쁜 주소', url: 'https://shop.example/2' },
       ],
     })
   })

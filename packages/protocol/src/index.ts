@@ -336,6 +336,8 @@ export const BrowserCommandSchema = z.enum([
   'extract',
   'find',
   'capture',
+  /** 카드 사진을 받아 줄여 data: 주소로 (브라우저가 받는다: 그 사이트가 막지 않는 길) */
+  'thumb',
   /** 확장을 새 코드로 다시 켠다 (압축해제 확장을 다시 빌드한 뒤) */
   'reload',
   /** 떠 있는 사이트 확인 창(confirm·prompt)에서 확인·취소를 고른다 */
@@ -497,6 +499,8 @@ export function cleanCards(input: unknown): ChatCard[] {
     if (!u) return undefined
     try {
       const x = new URL(u)
+      // http 주소는 https로 바꿔 본다 (사진·페이지 대부분이 둘 다 된다)
+      if (x.protocol === 'http:') x.protocol = 'https:'
       return x.protocol === 'https:' ? x.toString() : undefined
     } catch {
       return undefined

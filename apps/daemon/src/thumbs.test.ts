@@ -35,4 +35,14 @@ describe('카드 사진', () => {
     expect(await t.get('https://cdn.example.com/x.svg')).toBeUndefined()
     expect(await t.get('https://10.0.0.1/a.png')).toBeUndefined()
   })
+  it('브라우저가 줄여 주면 그걸 쓰고, 안 되면 본체가 직접 받는다', async () => {
+    const fake = (async () =>
+      new Response(new Uint8Array([9]), { headers: { 'content-type': 'image/png' } })) as typeof fetch
+    const viaBrowser = new Thumbs(fake, async () => 'data:image/jpeg;base64,AAA')
+    expect(await viaBrowser.get('https://cdn.example.com/b.png')).toBe('data:image/jpeg;base64,AAA')
+    const noBrowser = new Thumbs(fake, async () => {
+      throw new Error('예전 확장')
+    })
+    expect(await noBrowser.get('https://cdn.example.com/b.png')).toBe('data:image/png;base64,CQ==')
+  })
 })

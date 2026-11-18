@@ -23,6 +23,7 @@ import {
   pageMarkTaps,
   pageMarkText,
   pageRemoteInfo,
+  pageRevealItem,
   pageScroll,
   pageScrollBy,
   pageSnapshot,
@@ -856,13 +857,65 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (!r.ok) throw new Error(r.error)
       return r
     }
+    case 'thumb': {
+      // 카드 사진: 받아서 긴 쪽 360px JPEG로 줄인다 (폰으로 보내는 크기를 줄이고, 그림 종류를 하나로)
+      const url = String(a.url ?? '')
+      if (!/^https:\/\//.test(url)) throw new Error('https 사진만 받아요')
+      const res = await fetch(url, {
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        signal: AbortSignal.timeout(8000),
+      })
+      const type = (res.headers.get('content-type') ?? '').split(';')[0]?.trim() ?? ''
+      if (!res.ok || !/^image\/(jpeg|png|webp|gif|avif)$/.test(type)) throw new Error('사진이 아니에요')
+      const blob = await res.blob()
+      if (blob.size > 8_000_000) throw new Error('사진이 너무 커요')
+      const bmp = await createImageBitmap(blob)
+      const scale = Math.min(1, 360 / Math.max(bmp.width, bmp.height))
+      const w = Math.max(1, Math.round(bmp.width * scale))
+      const hgt = Math.max(1, Math.round(bmp.height * scale))
+      const canvas = new OffscreenCanvas(w, hgt)
+      const g = canvas.getContext('2d')
+      if (!g) throw new Error('그릴 수 없어요')
+      g.fillStyle = '#fff'
+      g.fillRect(0, 0, w, hgt)
+      g.drawImage(bmp, 0, 0, w, hgt)
+      bmp.close()
+      const out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 })
+      const bytes = new Uint8Array(await out.arrayBuffer())
+      let bin = ''
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      return { data: `data:image/jpeg;base64,${btoa(bin)}`, width: w, height: hgt }
+    }
     case 'extract': {
       // 커넥터: 화면 목록을 칸별로 뽑는다 (읽기만)
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       if (attached.has(tabId)) await paint(tabId)
-      const r = await inPage(tabId, pageExtract, a.spec as ExtractSpec)
+      const spec = a.spec as ExtractSpec
+      let r = await inPage(tabId, pageExtract, spec)
       if (!r.ok) throw new Error(r.error)
+      // 사진 칸이 비어 있으면: 늦게 그리는 사진이다. 목록을 한 번 훑어 내려 그리게 한 뒤 다시 읽는다
+      // (창이 다른 창 뒤에 가려져 있으면 Chrome이 화면 밖 사진을 불러오지 않는다 — 호텔스닷컴 0/10 → 시험 창 9/10)
+      const pics = Object.entries(spec.fields)
+        .filter(([, f]) => f.image)
+        .map(([k]) => k)
+      const missing = () => (r.ok ? r.rows.filter((row) => pics.some((k) => !row[k])).length : 0)
+      if (pics.length && r.ok && r.rows.length && missing() > r.rows.length * 0.2) {
+        const total = Math.min(r.total, spec.limit ?? 30, 40)
+        for (let i = 0; i < total; i += 2) {
+          await inPage(tabId, pageRevealItem, spec.items, i)
+          // 가려진 창도 한 장씩 그리게 한다 (그래야 화면에 들어온 사진을 불러온다)
+          await paint(tabId)
+          await sleep(90)
+        }
+        await sleep(400)
+        await paint(tabId)
+        const again = await inPage(tabId, pageExtract, spec)
+        await inPage(tabId, pageRevealItem, spec.items, -1)
+        if (again.ok) r = again
+      }
       return r
     }
     case 'find': {
@@ -903,6 +956,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           return { url: hit.url, status: hit.status, json: pickPath(data, path) ?? null }
         }
         if (Date.now() > until) throw new Error(`페이지가 그 데이터를 받지 않았어요 (${String(a.url)})`)
+        // 창이 가려져 있으면 화면을 그려야 데이터를 부르는 사이트(유니클로·다이소몰)가 멈춰 있다: 기다리는 동안 한 장씩 그린다
+        await paint(tabId)
         await sleep(200)
       }
     }

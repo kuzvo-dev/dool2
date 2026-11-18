@@ -24,10 +24,16 @@ export function thumbAllowed(raw: string): boolean {
   return true
 }
 
+/** 브라우저(두리 확장)로 받아 줄이기: 사이트가 막지 않고, 긴 쪽 360px JPEG로 작아진다 */
+export type ThumbShrinker = (url: string) => Promise<string | undefined>
+
 export class Thumbs {
   private readonly cache = new Map<string, Promise<string | undefined>>()
 
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(
+    private readonly fetcher: typeof fetch = fetch,
+    private readonly shrink?: ThumbShrinker,
+  ) {}
 
   get(url: string): Promise<string | undefined> {
     if (!thumbAllowed(url)) return Promise.resolve(undefined)
@@ -38,7 +44,10 @@ export class Thumbs {
       this.cache.set(url, hit)
       return hit
     }
-    const p = this.load(url).catch(() => undefined)
+    // 브라우저가 붙어 있으면 거기서 받아 줄이고, 안 되면 본체가 그대로 받는다
+    const p = (this.shrink ? this.shrink(url).catch(() => undefined) : Promise.resolve(undefined))
+      .then((v) => v ?? this.load(url))
+      .catch(() => undefined)
     this.cache.set(url, p)
     // 못 받은 것은 기억하지 않는다 (잠깐 끊겼다면 다음에 다시)
     void p.then((v) => {

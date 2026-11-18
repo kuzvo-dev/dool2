@@ -67,6 +67,11 @@ const ExtractFieldSchema = z
     line: z.number().int().min(-20).max(50).optional(),
     match: z.string().max(300).optional(),
     list: z.boolean().optional(),
+    /**
+     * 사진 칸: 줄(또는 css 안)에서 가장 그럴듯한 사진 주소 하나. 늦게 그리는 사진(data-src·srcset·배경 그림)도 보고,
+     * 아이콘·로고·배지·아주 작은 그림은 건너뛰고, http는 https로 바꾼다. 화면 카드(show_cards)에 쓴다
+     */
+    image: z.boolean().optional(),
   })
   .strict()
 
@@ -323,6 +328,8 @@ export function pick(scope: unknown, path: string): unknown {
   for (const [i, k] of keys.entries()) {
     if (cur === null || cur === undefined) return undefined
     if (k === '*') {
+      // 칸 묶음(색상 코드별 사진 같은)이면 그 값들을 목록으로
+      if (cur && typeof cur === 'object' && !Array.isArray(cur)) cur = Object.values(cur)
       if (!Array.isArray(cur)) return undefined
       const rest = keys.slice(i + 1).join('.')
       const out = cur.map((x) => (rest ? pick(x, rest) : x)).filter((x) => x !== undefined && x !== null)

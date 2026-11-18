@@ -1353,6 +1353,8 @@ export interface ExtractField {
   list?: boolean
   /** 글을 다듬거나 자르지 않고 그대로 (화면에 박힌 JSON 읽기) */
   raw?: boolean
+  /** 가장 그럴듯한 사진 주소 하나 (늦게 그리는 사진·배경 그림까지, 아이콘·로고는 빼고, https로) */
+  image?: boolean
 }
 export interface ExtractSpec {
   /** 목록의 줄(항목) 선택자 */
@@ -1420,6 +1422,95 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
       }
       return v === null ? null : v.slice(0, 500)
     }
+    // 사진 고르기: 사이트마다 늦게 그리는 방법이 달라서 주소가 있을 만한 곳을 다 본다
+    const NOT_PHOTO =
+      /(^|[\W_])(icon|ico|logo|badge|sprite|blank|spacer|placeholder|loading|loader|star|bul|arrow|btn|emoji|flag|rating|avatar-default)([\W_]|$)/i
+    const absolute = (u: string): string | null => {
+      const t = u.trim()
+      if (!t || t.startsWith('data:') || t.startsWith('blob:') || t.startsWith('about:')) return null
+      try {
+        const x = new URL(t, location.href)
+        if (x.protocol === 'http:') x.protocol = 'https:'
+        if (x.protocol !== 'https:' || /\.svg($|\?)/i.test(x.pathname)) return null
+        return x.href
+      } catch {
+        return null
+      }
+    }
+    // srcset: 폰 카드에 알맞은 크기(400px 언저리)를 고른다
+    const fromSrcset = (v: string | null): string | null => {
+      if (!v) return null
+      const opts = v
+        .split(/,\s+(?=\S)/)
+        .map((p) => p.trim().split(/\s+/))
+        .map(([u, d]) => ({
+          u: u ?? '',
+          w: d?.endsWith('w') ? Number.parseInt(d, 10) : d?.endsWith('x') ? Number.parseFloat(d) * 300 : 300,
+        }))
+        .filter((o) => o.u)
+      if (!opts.length) return null
+      opts.sort((a, b) => Math.abs(a.w - 400) - Math.abs(b.w - 400))
+      return opts[0]?.u ?? null
+    }
+    const imageOf = (scope: Element): string | null => {
+      type Cand = { url: string; area: number }
+      const cands: Cand[] = []
+      const push = (raw: string | null, el: Element) => {
+        const url = raw ? absolute(raw) : null
+        if (!url) return
+        const hay = `${url} ${el.getAttribute('alt') ?? ''} ${el.getAttribute('class') ?? ''}`
+        if (NOT_PHOTO.test(hay)) return
+        const r = el.getBoundingClientRect()
+        const img = el as HTMLImageElement
+        const w = r.width || img.naturalWidth || Number(el.getAttribute('width')) || 0
+        const hgt = r.height || img.naturalHeight || Number(el.getAttribute('height')) || 0
+        // 그려진 크기를 알면 아주 작은 그림(아이콘)은 뺀다. 아직 안 그려졌으면(0) 일단 받는다
+        if (w && hgt && (w < 48 || hgt < 48)) return
+        cands.push({ url, area: w * hgt || 1 })
+      }
+      const els = [
+        scope,
+        ...Array.from(
+          scope.querySelectorAll(
+            'img, picture source, [style*="background-image"], [data-src], [data-bg], [data-background]',
+          ),
+        ),
+      ]
+      for (const el of els) {
+        if (el.tagName === 'IMG') {
+          const img = el as HTMLImageElement
+          const src = img.getAttribute('src') ?? ''
+          const lazy =
+            img.getAttribute('data-src') ??
+            img.getAttribute('data-lazy-src') ??
+            img.getAttribute('data-original') ??
+            img.getAttribute('data-lazy') ??
+            fromSrcset(img.getAttribute('data-srcset'))
+          // src가 투명 그림·자리표시면 늦게 넣는 주소를 먼저
+          const placeholder = !src || src.startsWith('data:') || NOT_PHOTO.test(src)
+          push(placeholder ? (lazy ?? img.currentSrc ?? null) : img.currentSrc || src, img)
+          if (placeholder && !lazy) push(fromSrcset(img.getAttribute('srcset')), img)
+        } else if (el.tagName === 'SOURCE') {
+          push(
+            fromSrcset(el.getAttribute('srcset') ?? el.getAttribute('data-srcset')),
+            el.parentElement ?? el,
+          )
+        } else {
+          const bg = (el as HTMLElement).style?.backgroundImage ?? ''
+          const m = /url\((['"]?)(.*?)\1\)/.exec(bg)
+          push(
+            m?.[2] ??
+              el.getAttribute('data-src') ??
+              el.getAttribute('data-bg') ??
+              el.getAttribute('data-background'),
+            el,
+          )
+        }
+      }
+      if (!cands.length) return null
+      cands.sort((a, b) => b.area - a.area)
+      return cands[0]?.url ?? null
+    }
     const items = q(root, spec.items, true)
     const limit = Math.min(Math.max(spec.limit ?? 30, 1), 200)
     const rows: Record<string, ExtractValue>[] = []
@@ -1431,6 +1522,10 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
       const row: Record<string, ExtractValue> = {}
       for (const [k, f] of Object.entries(spec.fields)) {
         const targets = f.css ? q(el, f.css, Boolean(f.list)) : [el]
+        if (f.image) {
+          row[k] = targets[0] ? imageOf(targets[0]) : null
+          continue
+        }
         if (f.list) {
           row[k] = targets.map((t) => read(t, f, res[k])).filter((x): x is string => Boolean(x))
           continue
@@ -1445,6 +1540,19 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
+}
+
+/** 목록의 n번째 줄을 화면 가운데로 (늦게 그리는 사진을 불러오게). 줄 수를 돌려준다. n이 -1이면 맨 위로 */
+export function pageRevealItem(items: string, n: number): number {
+  let list: Element[] = []
+  try {
+    list = Array.from(document.querySelectorAll(items))
+  } catch {
+    return 0
+  }
+  if (n < 0) window.scrollTo({ top: 0, behavior: 'instant' })
+  else list[n]?.scrollIntoView({ block: 'center', behavior: 'instant' })
+  return list.length
 }
 
 /** 화면 글에 이 말들이 있는지 (정규식, 여러 개). 기다리기·화면 확인에 쓴다 */

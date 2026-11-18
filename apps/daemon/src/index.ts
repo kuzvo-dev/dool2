@@ -822,7 +822,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return next[id]
   }
   /** 카드 사진: 화면이 바깥 서버에 직접 붙지 않게 본체가 받아 넘긴다 */
-  const thumbs = new Thumbs()
+  const thumbs = new Thumbs(fetch, async (url) => {
+    if (!browser.status.connected) return undefined
+    const r = (await browser.call('thumb', { url }, 12_000)) as { data?: string }
+    return typeof r?.data === 'string' && r.data.startsWith('data:image/jpeg;base64,') ? r.data : undefined
+  })
   const devReset = opts.devReset ?? process.env.DOOL2_DEV_RESET === '1'
   /** 처음부터 다시 (시험용 PC): 새 사용자처럼. 금고의 비밀번호·폰 짝짓기·PC 설정(이름·AI 고르기)·일한 기록은 남긴다 */
   async function resetAll(
@@ -1654,6 +1658,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
         if (c === 'catalog') return json(res, 200, { tools: await connectors.catalog() })
         if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
+        // 시험용 PC만: 아직 설치하지 않은 도구 정의를 사용자 Chrome에서 한 번 돌린다 (pnpm connector try --pc)
+        if (c === 'try') {
+          if (!devReset) return json(res, 403, { error: '시험용 PC에서만 돼요' })
+          const input =
+            args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
+          return json(
+            res,
+            200,
+            await connectors.tryDraft(args.connector, String(args.tool ?? ''), input, {
+              close: args.close === true,
+            }),
+          )
+        }
         if (c === 'call') {
           const input =
             args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
