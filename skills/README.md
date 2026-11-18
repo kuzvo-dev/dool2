@@ -179,6 +179,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
 | 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |
 | 생활 | [에브리타임](everytime/tools.json) | 4 | — |
+| 생활 | [정부24](gov24/tools.json) | 1 | `resident_record` |
 | 생활 | [키즈노트](kidsnote/tools.json) | 4 | — |
 | 생활 | [패널나우](panelnow/tools.json) | 3 | `surveys` |
 
