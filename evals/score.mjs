@@ -239,6 +239,16 @@ console.log(
 )
 for (const [t, v] of Object.entries(byType))
   console.log(`  ${t}: 통과 ${v.pass} 일부 ${v.part} 실패 ${v.fail} 미판정 ${v.unknown}`)
+// 시나리오별(여러 번 돌렸으면 묶어서): AI 평균 점수와, 모든 회차가 통과했는지(pass^k)
+const byId = new Map()
+for (const { r } of rows) byId.set(r.id, [...(byId.get(r.id) ?? []), r])
+const counted = [...byId.values()].filter((rs) => rs[0]?.final_verdict !== 'na')
+const scored = counted.flatMap((rs) => rs.filter((r) => typeof r.judge?.score === 'number'))
+const avg = scored.length ? scored.reduce((x, r) => x + r.judge.score, 0) / scored.length : 0
+const allPass = counted.filter((rs) => rs.every((r) => r.final_verdict === 'pass')).length
+console.log(
+  `AI 평균 ${avg.toFixed(2)}/3 · 시나리오 ${counted.length}개 중 모든 회차 통과 ${allPass}${counted.some((rs) => rs.length > 1) ? ` (회차 ${Math.max(...counted.map((rs) => rs.length))}번)` : ''}`,
+)
 const gates = rows.filter(({ r }) => r.check.gates.length)
 if (gates.length) console.log(`관문 걸림 ${gates.length}: ${gates.map(({ r }) => r.id).join(', ')}`)
 

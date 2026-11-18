@@ -4,6 +4,7 @@
 // 사용:
 //   node evals/run.mjs --daemon http://127.0.0.1:8833 --token <화면 토큰> [고르기] [--out evals/out/<날짜>]
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
+// --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -205,20 +206,28 @@ async function runOne(sc) {
 const list = pick(scenarios())
 console.log(`시나리오 ${list.length}개 → ${out}`)
 let n = 0
-for (const sc of list) {
+// 같은 시나리오를 여러 번 (AI 답은 매번 달라서 한 번으로는 좋아졌는지 알기 어렵다). 두 번째부터 파일 이름 뒤에 ~2, ~3
+const repeat = Math.max(1, Number(arg('repeat', '1')))
+const jobs = list.flatMap((sc) => Array.from({ length: repeat }, (_, i) => [sc, i + 1]))
+let stop = false
+for (const [sc, round] of jobs) {
+  if (stop) break
   n++
-  const file = join(out, `${sc.id.replace(/[^\w.-]+/g, '_')}.json`)
+  const file = join(out, `${sc.id.replace(/[^\w.-]+/g, '_')}${round > 1 ? `~${round}` : ''}.json`)
   if (existsSync(file) && !flag('again')) continue
-  process.stdout.write(`[${n}/${list.length}] ${sc.id} ${sc.ask.slice(0, 40)} … `)
+  process.stdout.write(
+    `[${n}/${jobs.length}] ${sc.id}${round > 1 ? ` (${round}번째)` : ''} ${sc.ask.slice(0, 40)} … `,
+  )
   try {
     const rec = await runOne(sc)
+    rec.round = round
     writeFileSync(file, JSON.stringify(rec, null, 1))
     console.log(
       `${Math.round(rec.ms / 1000)}초 · 도구 ${rec.tools.length} · 승인 ${rec.approvals.length}${rec.errors.length ? ` · 오류 ${rec.errors.join('/')}` : ''}`,
     )
     if (rec.errors.some((e) => e.startsWith('limit'))) {
       console.log('사용 한도에 닿아 멈춰요')
-      break
+      stop = true
     }
   } catch (e) {
     console.log(`실패: ${e.message}`)
