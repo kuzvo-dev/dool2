@@ -665,6 +665,55 @@ export function pageScroll(dir: number) {
   window.scrollBy({ top: dir * Math.round(window.innerHeight * 0.8), behavior: 'instant' })
 }
 
+/**
+ * 폰 너비로 그렸더니 오른쪽 화면 밖으로 밀려나 잘린 입력칸·버튼 수.
+ * 너비가 고정된 PC용 창(정부24 간편인증 액자: 이름·생년월일·[인증 요청]이 412px 밖으로 나감)을 찾는다.
+ * 일부러 숨긴 것은 세지 않는다: 가로로 넘기는 목록(잘라 보이는 상자 안), 통째로 밖에 있는 서랍 메뉴(걸친 상자가 없음)
+ */
+export function pageCutOff() {
+  const PICK =
+    'input:not([type="hidden"]), button, select, textarea, a[href], [role="button"], [role="radio"]'
+  const count = (doc: Document, win: Window): number => {
+    const vw = win.innerWidth
+    let n = 0
+    // 가로로 밀어 볼 수 있는 넓은 페이지(PC용 쇼핑몰 첫 화면)는 지금처럼 둔다. 밀 수도 없게 잘린 것만 센다
+    const wide = doc.documentElement.scrollWidth > vw + 8
+    if (!wide)
+      for (const el of doc.querySelectorAll(PICK)) {
+        const r = el.getBoundingClientRect()
+        if (r.width < 2 || r.height < 2 || r.left < vw - 2) continue
+        const cs = win.getComputedStyle(el)
+        if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue
+        let straddle = false
+        let clipped = false
+        for (
+          let p = el.parentElement;
+          p && p !== doc.body && p !== doc.documentElement;
+          p = p.parentElement
+        ) {
+          const pr = p.getBoundingClientRect()
+          if (win.getComputedStyle(p).overflowX !== 'visible' && pr.right <= vw + 2) {
+            clipped = true
+            break
+          }
+          if (pr.left < vw - 40 && pr.right > vw + 4) straddle = true
+        }
+        if (straddle && !clipped) n++
+      }
+    // 같은 주소의 액자 안도 (간편인증 창이 액자다). 다른 주소 액자는 읽을 수 없어 넘어간다
+    for (const f of doc.querySelectorAll('iframe')) {
+      const r = f.getBoundingClientRect()
+      if (r.width < 50 || r.height < 50 || r.left >= vw) continue
+      try {
+        const d = f.contentDocument
+        if (d && f.contentWindow) n += count(d, f.contentWindow)
+      } catch {}
+    }
+    return n
+  }
+  return count(document, window)
+}
+
 export function pageViewport() {
   // 폰 너비로 그릴 때 페이지가 넓으면 폰처럼 줄여 보인다: 실제로 보이는 영역(visualViewport)도 같이
   const vv = window.visualViewport

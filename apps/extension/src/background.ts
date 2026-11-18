@@ -11,6 +11,7 @@ import {
   pageCaretEnd,
   pageClick,
   pageCursor,
+  pageCutOff,
   pageExtract,
   pageFind,
   pageForm,
@@ -393,6 +394,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return
   // 떼면 Chrome이 폰 너비 그리기도 푼다
   phoneView.delete(source.tabId)
+  phoneSize.delete(source.tabId)
   listening.delete(source.tabId)
   netLog.delete(source.tabId)
   clearTimeout(attached.get(source.tabId))
@@ -561,7 +563,55 @@ async function paint(tabId: number) {
 /** 폰 너비로 그리고 있는 탭 (원격 화면) */
 const phoneView = new Set<number>()
 
+/** 폰 너비로 그리는 탭의 폰 크기와, 잘린 창 때문에 넓혀 그리는 중인지 */
+const phoneSize = new Map<number, { w: number; h: number; wide: boolean }>()
+
+async function phoneWidth(tabId: number, w: number, h: number) {
+  await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width: w,
+    height: h,
+    deviceScaleFactor: 2,
+    mobile: true,
+  })
+  phoneView.add(tabId)
+  phoneSize.set(tabId, { w, h, wide: false })
+  await sleep(250)
+}
+
+/**
+ * 폰 너비에서 입력칸·버튼이 화면 밖으로 잘리면(너비가 고정된 PC용 창: 정부24 간편인증) 잘리지 않는 너비까지 넓혀 그린다.
+ * 폰에는 PC 화면이 줄어 보이고, 두 손가락으로 키워 볼 수 있다. 잘린 칸은 폰에서 볼 수도 누를 수도 없다
+ */
+async function widenIfCut(tabId: number) {
+  const s = phoneSize.get(tabId)
+  if (!s || s.wide) return
+  const cut = () => inPage(tabId, pageCutOff).catch(() => 0)
+  if ((await cut()) < 2) return
+  for (const width of [768, 1024, 1280]) {
+    await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+      width,
+      height: Math.round((s.h * width) / s.w),
+      deviceScaleFactor: 1,
+      mobile: false,
+    })
+    await sleep(250)
+    if ((await cut()) < 2) break
+  }
+  s.wide = true
+}
+
+async function refitAfterTap(tabId: number, before: string | undefined) {
+  const s = phoneSize.get(tabId)
+  if (!s) return
+  // 넓혀 그리던 중 다른 화면으로 넘어갔으면 다시 폰 너비로 (인증을 마치고 신청 화면으로 넘어간 때)
+  if (s.wide && (await chrome.tabs.get(tabId)).url !== before) await phoneWidth(tabId, s.w, s.h)
+  // 눌러서 뜬 창이 그려질 틈
+  else if (!s.wide) await sleep(400)
+  await widenIfCut(tabId)
+}
+
 async function leavePhoneView(tabId: number) {
+  phoneSize.delete(tabId)
   const fitted = emulated.delete(tabId)
   if (!phoneView.delete(tabId) && !fitted) return
   await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
@@ -1181,14 +1231,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         // 폰 너비로 그리기: 사이트가 폰 화면으로 보여 주어 글씨가 제 크기다
         const width = Math.round(Math.min(Math.max(Number(a.w) || 390, 320), 520))
         const height = Math.round(Math.min(Math.max(Number(a.h) || 700, 360), 1100))
-        await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
-          width,
-          height,
-          deviceScaleFactor: 2,
-          mobile: true,
-        })
-        phoneView.add(tabId)
-        await sleep(250)
+        await phoneWidth(tabId, width, height)
+        await widenIfCut(tabId)
         return pageState(tabId)
       } else if (a.action === 'leave') {
         await leavePhoneView(tabId)
@@ -1226,6 +1270,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
       } else throw new Error('모르는 원격 입력이에요')
       await settle(tabId, before)
+      // 누른 뒤 PC용 창(간편인증 등)이 떴거나 다른 화면으로 넘어갔으면 폰 너비가 맞는지 다시 잰다
+      if (a.action === 'tap') await refitAfterTap(tabId, before)
       return pageState(tabId)
     }
     case 'form': {
