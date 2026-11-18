@@ -11,6 +11,7 @@ import {
   PAY_FLOW_TTL_MS,
   parseRefs,
   payScreen,
+  promoClose,
   type SiteDialog,
   sameFinal,
   scopeLines,
@@ -923,6 +924,20 @@ describe('쿠키 동의 창', () => {
     expect(cookieReject('쿠키를 사용합니다 [e1 버튼 "동의"]')).toBeUndefined()
     // 쿠키 이야기가 없는 화면의 '모두 거부'(알림 설정 등)는 누르지 않는다
     expect(cookieReject('마케팅 알림 받기 [e7 버튼 "모두 거부"]')).toBeUndefined()
+  })
+
+  it('광고·앱 설치·재촉 팝업은 닫지만, 결제·로그인·진짜 할 일은 건드리지 않는다', () => {
+    expect(promoClose('앱으로 보면 10% 더 저렴해요 [e2 버튼 "앱에서 열기"] [e3 버튼 "나중에"]')).toBe('e3')
+    expect(promoClose('예약 완료까지 얼마 안 남았어요! 서두르세요 [e5 버튼 "닫기"]')).toBe('e5')
+    expect(promoClose('첫 구매 할인 쿠폰 받고 뉴스레터 구독 [e7 버튼 "괜찮아요"]')).toBe('e7')
+    expect(promoClose('알림을 받으시겠어요? 푸시 허용 [e9 버튼 "다음에 할게요"]')).toBe('e9')
+    // 광고 말이 없는 그냥 '닫기'는 건드리지 않는다
+    expect(promoClose('주문 내역 [e1 버튼 "닫기"]')).toBeUndefined()
+    // 결제·로그인·본인인증 같은 진짜 단계가 섞인 창은 닫지 않는다
+    expect(promoClose('서두르세요! 결제를 완료해 주세요 [e2 버튼 "닫기"]')).toBeUndefined()
+    expect(promoClose('지금 가입하고 혜택 받기, 비밀번호를 입력하세요 [e3 버튼 "나중에"]')).toBeUndefined()
+    // 쿠키 창은 promoClose가 아니라 cookieReject가 본다
+    expect(promoClose('쿠키를 사용합니다 [e4 버튼 "닫기"]')).toBeUndefined()
   })
 
   it('읽을 때 거부로 닫고 다시 읽으며, 같은 탭·사이트에서는 한 번만 한다', async () => {
