@@ -1,6 +1,9 @@
 // 폰 앱: 서비스 연결 (ADR 0014). 목록 → 서비스 상세 → 아이디·비밀번호(금고) → 두리가 PC Chrome에서 대신 로그인 → 연결 표시.
 // 화면은 연결 카드(skills/<id>/connect.json)를 그리기만 한다. 탭 개편 때 "나의 두리"에 그대로 끼운다.
 import type { ConnectCard, ConnectionItem, Tier } from '@dool2/protocol/connect'
+
+export { socialOrder } from '@dool2/protocol/connect'
+
 import {
   APPROVAL_TIERS,
   approvalLine,
@@ -288,34 +291,4 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
   }
   box.append(bar)
   return box
-}
-
-/**
- * 연결 카드의 간편 로그인 순서와 짧은 표시.
- * 1) 이 서비스에 전에 쓴 것("최근 사용") 2) 다른 서비스에 많이 쓴 것("N곳에서 사용") 3) 카드 순서.
- * 같은 계정으로 이어 쓰면 새 계정이 생기지 않고, 공급자 쪽이 PC Chrome에 이미 로그인돼 있을 가능성도 크다
- */
-export function socialOrder(
-  card: Pick<ConnectCard, 'id' | 'social'>,
-  services: readonly Pick<ConnectionItem, 'card' | 'via'>[] = [],
-): { provider: NonNullable<ConnectCard['social']>[number]; hint?: string }[] {
-  const list = card.social ?? []
-  const used = new Map<string, number>()
-  let mine: string | undefined
-  for (const s of services) {
-    const p = s.via?.startsWith('social:') ? s.via.slice(7) : undefined
-    if (!p) continue
-    if (s.card.id === card.id) mine = p
-    else used.set(p, (used.get(p) ?? 0) + 1)
-  }
-  const score = (p: string) => (p === mine ? 1000 : 0) + (used.get(p) ?? 0)
-  const sorted = [...list].sort((a, b) => score(b) - score(a))
-  const top = sorted[0]
-  return sorted.map((provider) => {
-    if (provider === mine) return { provider, hint: '최근 사용' }
-    const n = used.get(provider) ?? 0
-    // 다른 곳에서 쓴 표시는 맨 위 하나에만 (버튼마다 붙으면 안 읽힌다)
-    if (provider === top && n > 0 && !mine) return { provider, hint: `${n}곳에서 사용` }
-    return { provider }
-  })
 }

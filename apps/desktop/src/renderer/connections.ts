@@ -1,6 +1,12 @@
 // 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
 // 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
-import type { ConnectCard, ConnectionItem, SocialProvider, Tier } from '@dool2/protocol/connect'
+import {
+  type ConnectCard,
+  type ConnectionItem,
+  type SocialProvider,
+  socialOrder,
+  type Tier,
+} from '@dool2/protocol/connect'
 
 /** 간편 로그인 이름 (@dool2/protocol/connect의 SOCIAL_LABEL 복사, 테스트가 같은지 본다) */
 export const SOCIAL_LABEL: Record<SocialProvider, string> = {
@@ -363,9 +369,11 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         // 간편 로그인: 이 PC Chrome의 카카오·네이버… 로그인을 이어 쓰고, 처음이면 그 화면을 띄워 드린다
         if (c.social?.length) {
           const row = el('div', 'social-row')
-          for (const provider of c.social) {
+          // 쓰던 순서로 (이 서비스에 전에 쓴 것 → 다른 곳에 많이 쓴 것 → 카드 순서)
+          for (const { provider, hint } of socialOrder(c, items)) {
             const b = el('button', `btn-social ${provider}`, `${SOCIAL_LABEL[provider]}로 연결`)
             b.type = 'button'
+            if (hint) b.append(el('span', 'social-hint', hint))
             b.onclick = async () => {
               for (const x of row.querySelectorAll('button')) x.disabled = true
               b.textContent = '두리가 로그인하는 중…'
