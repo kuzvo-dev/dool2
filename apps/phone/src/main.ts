@@ -844,6 +844,14 @@ async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = f
   await send({ kind: 'decide', id: a.id, decision, sig, ...(choice ? { choice } : {}) })
 }
 
+/** 고른 결제 수단에 맞춘 마지막 버튼 이름 ('카드로 결제하기' → 네이버페이를 고르면 '네이버페이로 결제하기') */
+function finalLabel(a: ApprovalView): string {
+  const now = a.choices?.find((c) => c.id === chosenOf(a))
+  if (!now) return a.label
+  const from = a.choices?.find((c) => a.label.startsWith(c.label))
+  return from ? `${now.label}${a.label.slice(from.label.length)}` : a.label
+}
+
 /** 승인 카드의 '어떤 걸로 결제할까요?' 줄 (사이트가 받는 수단만, 기본은 이 사이트에서 마지막으로 쓴 것) */
 function choiceRow(a: ApprovalView): HTMLElement | undefined {
   if (!a.choices?.length) return undefined
@@ -3887,7 +3895,7 @@ function approvalSheet(id: string) {
   row('어디서', a.where)
   row('주소', hostOf(a.url), 'host')
   row('취소 조건', a.cancel)
-  if (a.kind !== 'app') row('누를 버튼', `"${a.label}"`)
+  if (a.kind !== 'app') row('누를 버튼', `"${finalLabel(a)}"`)
   sheet.append(
     close,
     h(

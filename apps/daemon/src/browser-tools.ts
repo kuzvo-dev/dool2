@@ -220,17 +220,23 @@ interface PageInfo {
   checkout?: string
   /** 예약·주문이 확정된 화면이면 그 말 */
   confirmed?: string
+  /** 지금 골라져 있는 라디오·체크박스 표시 */
+  selected?: Set<string>
 }
 
 function pageInfo(url: string, text: string): PageInfo {
   const checkout = checkoutScreen(text, url)
   const confirmed = confirmedScreen(text)
+  const selected = new Set(
+    [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
+  )
   return {
     url,
     refs: parseRefs(text),
     pay: payScreen(text),
     ...(checkout ? { checkout } : {}),
     ...(confirmed ? { confirmed } : {}),
+    ...(selected.size ? { selected } : {}),
   }
 }
 
@@ -922,7 +928,10 @@ export class BrowserTools {
       host = new URL(page.url).hostname
     } catch {}
     const last = this.lastChoice.get(host)
-    const preferred = picks.find((p) => last && (p.name === last || p.name.includes(last))) ?? picks[0]
+    const preferred =
+      picks.find((p) => last && (p.name === last || p.name.includes(last))) ??
+      picks.find((p) => page.selected?.has(p.ref)) ??
+      picks[0]
     const rec = this.approvals.create({
       tabId,
       ref,
@@ -1175,6 +1184,7 @@ export class BrowserTools {
       // 고른 결제 수단(선택지)을 먼저 누른다. 그 뒤 화면을 다시 읽어 마지막 버튼이 같은지 본다
       let base = s
       let finalRef = rec.ref
+      let finalName = rec.label
       let chosen: string | undefined
       if (choice && rec.choiceRefs) {
         const c = rec.choiceRefs[choice]
@@ -1196,6 +1206,7 @@ export class BrowserTools {
           [...refs].find(([, v]) => v.role === rec.role && sameFinal(v.name, rec.label))?.[0]
         if (!next) return fail(`"${c.name}"을(를) 고르자 마지막 버튼("${rec.label}")이 바뀌었어요.`)
         finalRef = next
+        finalName = refs.get(next)?.name ?? rec.label
         chosen = c.name
       }
       let r = (await this.browser.call('click', { tabId: rec.tabId, ref: finalRef }, 30_000)) as {
@@ -1229,7 +1240,7 @@ export class BrowserTools {
         }
       }
       if (chosen) this.rememberChoice(rec.url, chosen)
-      const msg = `${chosen ? `결제 수단 "${chosen}"을(를) 고르고 ` : ''}"${rec.label}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      const msg = `${chosen ? `결제 수단 "${chosen}"을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {

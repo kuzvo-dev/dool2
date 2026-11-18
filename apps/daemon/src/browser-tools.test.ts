@@ -1153,6 +1153,7 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     const done = await tools.approve(rec?.id as string, 'c2')
     expect(done.ok).toBe(true)
     expect(done.message).toContain('결제 수단 "카드"')
+    expect(done.message).toContain('"카드로 예약하기" 버튼을 눌렀어요')
     expect(b.calls.filter((c) => c.startsWith('click'))).toEqual(['click e2', 'click e9'])
     expect(remembered).toEqual(['kr.hotels.com 카드'])
 
@@ -1176,6 +1177,8 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     await tools.run('read', { tabId: 3 })
     await tools.run('request_approval', { tabId: 3, ref: 'e9', what: 'x', where: 'y' })
     expect(tools.approvals.list()[0]?.choices?.map((c) => c.label)).toEqual(['네이버페이', '카드'])
+    // 마지막으로 쓴 수단이 없으면 화면에서 지금 골라진 수단이 기본값
+    expect(tools.approvals.list()[0]?.choice).toBe('c1')
   })
 
   it('결제·확정 버튼은 선택지로 넣을 수 없다', async () => {
