@@ -9,64 +9,180 @@
       "status": "검증됨(2026-11-18, 사용자 Chrome에서 두부·김치 검색 20개)",
       "input": {
         "properties": {
-          "keyword": { "type": "string", "description": "찾을 상품 (예: 무선 청소기, 물티슈 캡형)", "maxLength": 60 },
+          "keyword": {
+            "type": "string",
+            "description": "찾을 상품 (예: 무선 청소기, 물티슈 캡형)",
+            "maxLength": 60
+          },
           "sort": {
             "type": "string",
-            "enum": ["scoreDesc", "salePriceAsc", "salePriceDesc", "saleCountDesc", "latestAsc"],
+            "enum": [
+              "scoreDesc",
+              "salePriceAsc",
+              "salePriceDesc",
+              "saleCountDesc",
+              "latestAsc"
+            ],
             "default": "scoreDesc",
             "description": "정렬: scoreDesc = 쿠팡 랭킹순(기본), salePriceAsc = 낮은 가격순, salePriceDesc = 높은 가격순, saleCountDesc = 판매량순, latestAsc = 최신순"
           }
         },
-        "required": ["keyword"]
+        "required": [
+          "keyword"
+        ]
       },
       "output": {
         "products": {
           "type": "list",
           "description": "상품",
           "fields": {
-            "name": { "type": "string" },
-            "product_id": { "type": "string", "description": "주문 준비에 넘길 상품 id" },
-            "item_id": { "type": "string" },
-            "vendor_item_id": { "type": "string" },
-            "price": { "type": "integer", "description": "지금 가격(원)" },
-            "original": { "type": "integer", "description": "할인 전 가격(원)" },
-            "rating": { "type": "number", "description": "평점(5점 만점)" },
-            "reviews": { "type": "integer" },
-            "badges": { "type": "strings", "description": "배송 배지 (ROCKET = 로켓배송, ROCKET_MERCHANT = 판매자로켓, TOMORROW = 내일도착, ROCKET_FRESH = 로켓프레시, COUPANG_GLOBAL = 로켓직구 등)" },
-            "arrival": { "type": "string", "description": "도착 예정 (예: 내일(수) 도착)" },
-            "shipping": { "type": "string", "description": "무료배송 또는 배송비" },
-            "ad": { "type": "string", "description": "광고면 '광고'" },
-            "link": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "product_id": {
+              "type": "string",
+              "description": "주문 준비에 넘길 상품 id"
+            },
+            "item_id": {
+              "type": "string"
+            },
+            "vendor_item_id": {
+              "type": "string"
+            },
+            "price": {
+              "type": "integer",
+              "description": "지금 가격(원)"
+            },
+            "original": {
+              "type": "integer",
+              "description": "할인 전 가격(원)"
+            },
+            "rating": {
+              "type": "number",
+              "description": "평점(5점 만점)"
+            },
+            "reviews": {
+              "type": "integer"
+            },
+            "badges": {
+              "type": "strings",
+              "description": "배송 배지 (ROCKET = 로켓배송, ROCKET_MERCHANT = 판매자로켓, TOMORROW = 내일도착, ROCKET_FRESH = 로켓프레시, COUPANG_GLOBAL = 로켓직구 등)"
+            },
+            "arrival": {
+              "type": "string",
+              "description": "도착 예정 (예: 내일(수) 도착)"
+            },
+            "shipping": {
+              "type": "string",
+              "description": "무료배송 또는 배송비"
+            },
+            "ad": {
+              "type": "string",
+              "description": "광고면 '광고'"
+            },
+            "link": {
+              "type": "string"
+            }
           }
         }
       },
-      "examples": [{ "keyword": "무선 청소기", "sort": "salePriceAsc" }, { "keyword": "물티슈 캡형" }],
+      "examples": [
+        {
+          "keyword": "무선 청소기",
+          "sort": "salePriceAsc"
+        },
+        {
+          "keyword": "물티슈 캡형"
+        }
+      ],
       "steps": [
-        { "open": "https://www.coupang.com/" },
-        { "wait": { "text": "로켓배송|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
-        { "sleep": 1200 },
-        { "open": "https://www.coupang.com/np/search?q={{keyword|url}}&sorter={{sort}}&listSize=36" },
-        { "wait": { "text": "에 대한 검색결과|검색결과가 없|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
-        { "stop_if": "검색결과가 없", "say": "쿠팡에서 '{{keyword}}' 상품을 찾지 못했어요. 더 짧은 이름이나 다른 말로 찾아볼까요?" },
+        {
+          "open": "https://www.coupang.com/"
+        },
+        {
+          "wait": {
+            "text": "로켓배송|Access Denied|사용권한이 없",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "Access Denied|사용권한이 없|사용권한이 제한",
+          "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.",
+          "blocked": true
+        },
+        {
+          "sleep": 1200
+        },
+        {
+          "open": "https://www.coupang.com/np/search?q={{keyword|url}}&sorter={{sort}}&listSize=36"
+        },
+        {
+          "wait": {
+            "text": "에 대한 검색결과|검색결과가 없|Access Denied|사용권한이 없",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "Access Denied|사용권한이 없|사용권한이 제한",
+          "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.",
+          "blocked": true
+        },
+        {
+          "stop_if": "검색결과가 없",
+          "say": "쿠팡에서 '{{keyword}}' 상품을 찾지 못했어요. 더 짧은 이름이나 다른 말로 찾아볼까요?"
+        },
         {
           "extract": {
             "items": "#product-list > li:has(a[href*='/vp/products/'])",
             "limit": 20,
             "fields": {
-              "name": { "css": "[class*='productName']" },
-              "product_id": { "css": "a[href*='/vp/products/']", "attr": "href", "match": "/vp/products/(\\d+)" },
-              "item_id": { "css": "a[href*='/vp/products/']", "attr": "href", "match": "itemId=(\\d+)" },
-              "vendor_item_id": { "css": "a[href*='/vp/products/']", "attr": "href", "match": "vendorItemId=(\\d+)" },
-              "price": { "css": "[class*='PriceArea']", "match": "(?:^|\\n)(\\d[\\d,]*)원(?![\\s\\S]*\\n\\d[\\d,]*원)" },
-              "original": { "css": "[class*='PriceArea'] del" },
-              "rating": { "css": "[class*='ProductRating'] [aria-label]", "attr": "aria-label" },
-              "reviews": { "css": "[class*='ProductRating']", "match": "\\(([\\d,]+)\\)" },
-              "badges": { "css": "img[data-badge-id]", "attr": "data-badge-id", "list": true },
-              "arrival": { "match": "([^\\n]*도착[^\\n]*)" },
-              "shipping": { "match": "(무료배송|배송비[^\\n]*)" },
-              "ad": { "match": "\\n(광고)(?:\\n|$)" }
+              "name": {
+                "css": "[class*='productName']"
+              },
+              "product_id": {
+                "css": "a[href*='/vp/products/']",
+                "attr": "href",
+                "match": "/vp/products/(\\d+)"
+              },
+              "item_id": {
+                "css": "a[href*='/vp/products/']",
+                "attr": "href",
+                "match": "itemId=(\\d+)"
+              },
+              "vendor_item_id": {
+                "css": "a[href*='/vp/products/']",
+                "attr": "href",
+                "match": "vendorItemId=(\\d+)"
+              },
+              "price": {
+                "css": "[class*='PriceArea']",
+                "match": "(?:^|\\n)(\\d[\\d,]*)원(?![\\s\\S]*\\n\\d[\\d,]*원)"
+              },
+              "original": {
+                "css": "[class*='PriceArea'] del"
+              },
+              "rating": {
+                "css": "[class*='ProductRating'] [aria-label]",
+                "attr": "aria-label"
+              },
+              "reviews": {
+                "css": "[class*='ProductRating']",
+                "match": "\\(([\\d,]+)\\)"
+              },
+              "badges": {
+                "css": "img[data-badge-id]",
+                "attr": "data-badge-id",
+                "list": true
+              },
+              "arrival": {
+                "match": "([^\\n]*도착[^\\n]*)"
+              },
+              "shipping": {
+                "match": "(무료배송|배송비[^\\n]*)"
+              },
+              "ad": {
+                "match": "\\n(광고)(?:\\n|$)"
+              }
             }
           },
           "as": "rows"
@@ -93,33 +209,158 @@
           "as": "products"
         }
       ],
-      "result": { "products": "{{products}}" },
+      "result": {
+        "products": "{{products}}"
+      },
       "next": "가격·평점·리뷰 수·로켓배송 여부·도착 예정을 견줘 2~3개를 짧은 표로 보여 주고 고르게 해요(광고는 광고라고 밝혀요). 사려면 coupang_prepare_order.",
       "minIntervalSec": 300
     },
     {
       "name": "orders",
       "title": "주문·배송 조회",
-      "description": "쿠팡 주문목록(주문일·상품·수량·결제 금액·배송 상태·도착 예정)을 연다. 로그인해야 한다. '오늘 오는 거 뭐 있어?', 지난번 산 물건 찾기(다시 주문), 반품 전 확인에 쓴다. 다시 주문은 여기서 찾은 상품 id로 coupang_prepare_order, 반품은 coupang_return.",
+      "description": "쿠팡 주문목록을 주문 하나씩 돌려준다(주문일·상품 이름·결제 금액·배송 상태·도착 메시지·다시 주문용 상품 id). 로그인해야 한다. 한 번에 5건이라, 특정 물건을 찾을 땐 꼭 item(이름 일부, 예: 에어프라이)으로 검색한다 — 쿠팡 검색이라 몇 년 치 주문에서 찾는다. 사용자가 '샀다'는데 안 나오면 다른 낱말(브랜드·종류)로 다시 찾거나 year(그 해)·page(다음 5건)로 더 본다. 배송 상태: FINAL_DELIVERY 배송완료, DELIVERING 배송중, DEPARTURE 출고, CANCELED 취소. 다시 주문은 상품 id로 coupang_prepare_order, 반품은 coupang_return.",
       "tier": "찾아보기",
       "login": true,
-      "status": "초안",
+      "status": "검증됨(2026-11-18, 사용자 Chrome에서 기본 5건·2쪽·'에어프라이' 검색)",
       "input": {
         "properties": {
-          "item": { "type": "string", "description": "특정 상품만 볼 때 그 이름 일부 (예: 물티슈). 없으면 최근 주문 전체", "maxLength": 40 }
+          "item": {
+            "type": "string",
+            "description": "찾을 물건 이름 일부 (예: 에어프라이, 쿠진아트, 물티슈). 없으면 최근 주문",
+            "maxLength": 40
+          },
+          "year": {
+            "type": "integer",
+            "description": "그 해 주문만 (예: 2025). 없으면 최근",
+            "minimum": 2010,
+            "maximum": 2030
+          },
+          "page": {
+            "type": "integer",
+            "description": "쪽 번호. 0이 가장 최근 5건, 1이 그다음 5건",
+            "minimum": 0,
+            "maximum": 30,
+            "default": 0
+          }
         },
         "required": []
       },
-      "output": {},
-      "examples": [{}, { "item": "물티슈" }],
-      "steps": [
-        { "open": "https://mc.coupang.com/ssr/desktop/order/list" },
-        { "sleep": 1500 },
-        { "stop_if": "아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지", "say": "쿠팡 주문을 보려면 먼저 쿠팡을 연결(로그인)해야 해요.", "login": true },
-        { "handoff_to_agent": "쿠팡 주문목록 화면이에요. 최근 주문을 위에서부터 읽어 주문일·상품 이름·수량·결제 금액·배송 상태(결제완료/배송중/배송완료/도착 예정일)를 짧은 표로 정리해요. '{{item}}'이 있으면 그 상품만 골라요(다시 주문용이면 상품 링크의 vp/products/숫자와 itemId·vendorItemId도 적어 둬요). '오늘 오는 것'을 물으면 오늘 도착 예정·배송중인 것만 골라요. 배송조회는 읽기만 해요. 장바구니 담기·반품·취소 버튼은 누르지 않아요. 접속이 막힌 화면이면 그대로 알려요. 로그인 화면이 나오면 연결 전이면 connect_ask('coupang'), 연결했는데 풀렸으면 browser_handoff." }
+      "output": {
+        "orders": {
+          "type": "list",
+          "description": "주문 (최근 것부터)",
+          "fields": {
+            "ordered": {
+              "type": "string",
+              "description": "주문일"
+            },
+            "items": {
+              "type": "strings",
+              "description": "상품 이름(옵션 포함)"
+            },
+            "prices": {
+              "type": "strings",
+              "description": "상품별 결제 금액(원, 1개당)"
+            },
+            "quantities": {
+              "type": "strings",
+              "description": "상품별 수량"
+            },
+            "status": {
+              "type": "strings",
+              "description": "배송 묶음별 상태 코드 (상품 수와 다를 수 있어요)"
+            },
+            "arrival": {
+              "type": "strings",
+              "description": "배송 묶음별 도착 메시지 (예: 11/13(금) 도착)"
+            },
+            "order_id": {
+              "type": "string"
+            },
+            "product_ids": {
+              "type": "strings"
+            },
+            "item_ids": {
+              "type": "strings"
+            },
+            "vendor_item_ids": {
+              "type": "strings"
+            }
+          }
+        },
+        "has_more": {
+          "type": "boolean",
+          "description": "다음 쪽이 더 있다"
+        }
+      },
+      "examples": [
+        {},
+        {
+          "item": "에어프라이"
+        },
+        {
+          "page": 1
+        }
       ],
-      "result": {},
-      "minIntervalSec": 600
+      "steps": [
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?{{#item}}isSearch=true&keyword={{item|url}}&{{/item}}{{#year}}requestYear={{year}}&{{/year}}pageIndex={{page}}"
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "stop_if": "아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지",
+          "say": "쿠팡 주문을 보려면 먼저 쿠팡을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination.hasNext"
+          },
+          "as": "more"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": 20,
+            "fields": {
+              "ordered": "{{orderedAt|date}}",
+              "items": "deliveryGroupList.*.productList.*.vendorItemName",
+              "prices": "deliveryGroupList.*.productList.*.discountedUnitPrice",
+              "quantities": "deliveryGroupList.*.productList.*.quantity",
+              "status": "deliveryGroupList.*.groupStatus.status",
+              "arrival": "deliveryGroupList.*.pddMessage.message",
+              "order_id": "orderId",
+              "product_ids": "deliveryGroupList.*.productList.*.productId",
+              "item_ids": "deliveryGroupList.*.productList.*.itemId",
+              "vendor_item_ids": "deliveryGroupList.*.productList.*.vendorItemId"
+            }
+          },
+          "as": "orders"
+        }
+      ],
+      "result": {
+        "orders": "{{orders}}",
+        "has_more": "{{more}}"
+      },
+      "next": "주문일·상품·금액·배송 상태를 짧은 표로 보여 줘요. 찾던 물건이 없으면 '없어요'로 끝내지 말고 item을 바꿔(브랜드·종류·짧은 낱말) 다시 찾거나 has_more면 page를 올려 더 봐요. 사용자가 샀다고 하면 그 말을 믿고 찾아요.",
+      "expect": {
+        "rows": 1,
+        "filled": [
+          "ordered",
+          "items"
+        ]
+      },
+      "minIntervalSec": 60
     },
     {
       "name": "prepare_order",
@@ -129,24 +370,77 @@
       "status": "초안",
       "input": {
         "properties": {
-          "product_id": { "type": "string", "pattern": "^\\d{4,14}$", "description": "coupang_search나 주문목록의 상품 id (예: 7706232248)" },
-          "item_id": { "type": "string", "pattern": "^\\d{0,14}$", "description": "옵션 id(itemId). 검색 결과에 있으면 넣는다" },
-          "vendor_item_id": { "type": "string", "pattern": "^\\d{0,14}$", "description": "판매 옵션 id(vendorItemId). 검색 결과에 있으면 넣는다" },
-          "quantity": { "type": "integer", "minimum": 1, "maximum": 50, "default": 1, "description": "수량 (기본 1)" }
+          "product_id": {
+            "type": "string",
+            "pattern": "^\\d{4,14}$",
+            "description": "coupang_search나 주문목록의 상품 id (예: 7706232248)"
+          },
+          "item_id": {
+            "type": "string",
+            "pattern": "^\\d{0,14}$",
+            "description": "옵션 id(itemId). 검색 결과에 있으면 넣는다"
+          },
+          "vendor_item_id": {
+            "type": "string",
+            "pattern": "^\\d{0,14}$",
+            "description": "판매 옵션 id(vendorItemId). 검색 결과에 있으면 넣는다"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1,
+            "description": "수량 (기본 1)"
+          }
         },
-        "required": ["product_id"]
+        "required": [
+          "product_id"
+        ]
       },
       "output": {},
-      "examples": [{ "product_id": "7706232248", "item_id": "20645329542", "vendor_item_id": "88421220703", "quantity": 1 }],
+      "examples": [
+        {
+          "product_id": "7706232248",
+          "item_id": "20645329542",
+          "vendor_item_id": "88421220703",
+          "quantity": 1
+        }
+      ],
       "steps": [
-        { "open": "https://www.coupang.com/" },
-        { "wait": { "text": "로켓배송|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
-        { "sleep": 1200 },
-        { "open": "https://www.coupang.com/vp/products/{{product_id}}?itemId={{item_id}}&vendorItemId={{vendor_item_id}}" },
-        { "wait": { "text": "바로구매|장바구니 담기|품절|일시품절|Access Denied|사용권한이 없", "timeoutMs": 12000 } },
-        { "stop_if": "Access Denied|사용권한이 없|사용권한이 제한", "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.", "blocked": true },
-        { "handoff_to_agent": "쿠팡 상품 화면이에요(상품 id {{product_id}}). 품절·일시품절이면 그렇다고 알리고 멈춰요. 옵션(색상·용량·개수)이 사용자가 원한 것과 맞는지 확인하고(다르면 물어요), 수량을 {{quantity}}개로 맞춘 뒤 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('coupang'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·옵션·수량·배송지(동네까지만)·도착 예정일·배송비·할인·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 정기배송·멤버십 가입 권유는 고르지 않아요." }
+        {
+          "open": "https://www.coupang.com/"
+        },
+        {
+          "wait": {
+            "text": "로켓배송|Access Denied|사용권한이 없",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "Access Denied|사용권한이 없|사용권한이 제한",
+          "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.",
+          "blocked": true
+        },
+        {
+          "sleep": 1200
+        },
+        {
+          "open": "https://www.coupang.com/vp/products/{{product_id}}?itemId={{item_id}}&vendorItemId={{vendor_item_id}}"
+        },
+        {
+          "wait": {
+            "text": "바로구매|장바구니 담기|품절|일시품절|Access Denied|사용권한이 없",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "Access Denied|사용권한이 없|사용권한이 제한",
+          "say": "쿠팡이 지금 이 브라우저의 접속을 막고 있어요. 잠시 뒤에 다시 하거나, 열어 둔 탭에서 직접 확인해 주세요.",
+          "blocked": true
+        },
+        {
+          "handoff_to_agent": "쿠팡 상품 화면이에요(상품 id {{product_id}}). 품절·일시품절이면 그렇다고 알리고 멈춰요. 옵션(색상·용량·개수)이 사용자가 원한 것과 맞는지 확인하고(다르면 물어요), 수량을 {{quantity}}개로 맞춘 뒤 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('coupang'), 연결했는데 풀렸으면 browser_handoff. 주문서에서 상품·옵션·수량·배송지(동네까지만)·도착 예정일·배송비·할인·최종 결제 금액·결제 수단을 정리해 browser_request_approval로 승인을 받은 뒤에만 '결제하기'를 눌러요. 정기배송·멤버십 가입 권유는 고르지 않아요."
+        }
       ],
       "result": {}
     },
@@ -159,19 +453,54 @@
       "status": "초안",
       "input": {
         "properties": {
-          "item": { "type": "string", "description": "반품할 상품 이름 일부 (예: 이어폰)", "maxLength": 40 },
-          "kind": { "type": "string", "enum": ["반품", "교환", "취소"], "default": "반품", "description": "무엇을 할지 (기본 반품)" },
-          "reason": { "type": "string", "description": "사유 (예: 단순 변심, 상품 불량, 다른 상품 배송)", "maxLength": 80 }
+          "item": {
+            "type": "string",
+            "description": "반품할 상품 이름 일부 (예: 이어폰)",
+            "maxLength": 40
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "반품",
+              "교환",
+              "취소"
+            ],
+            "default": "반품",
+            "description": "무엇을 할지 (기본 반품)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "사유 (예: 단순 변심, 상품 불량, 다른 상품 배송)",
+            "maxLength": 80
+          }
         },
-        "required": ["item"]
+        "required": [
+          "item"
+        ]
       },
       "output": {},
-      "examples": [{ "item": "이어폰", "kind": "반품", "reason": "단순 변심" }],
+      "examples": [
+        {
+          "item": "이어폰",
+          "kind": "반품",
+          "reason": "단순 변심"
+        }
+      ],
       "steps": [
-        { "open": "https://mc.coupang.com/ssr/desktop/order/list" },
-        { "sleep": 1500 },
-        { "stop_if": "아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지", "say": "쿠팡 주문을 반품하려면 먼저 쿠팡을 연결(로그인)해야 해요.", "login": true },
-        { "handoff_to_agent": "쿠팡 주문목록 화면이에요. '{{item}}' 주문을 찾아 '교환, 반품 신청'(취소면 '주문취소') 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고, 회수 방법·회수 날짜·반품 배송비(누가 내는지)·환불 예정 금액·환불 수단을 확인해요. 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·회수 방법·반품 배송비·환불 금액을 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요." }
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list"
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "stop_if": "아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지",
+          "say": "쿠팡 주문을 반품하려면 먼저 쿠팡을 연결(로그인)해야 해요.",
+          "login": true
+        },
+        {
+          "handoff_to_agent": "쿠팡 주문목록 화면이에요. '{{item}}' 주문을 찾아 '교환, 반품 신청'(취소면 '주문취소') 버튼을 눌러요. 여러 개면 사용자에게 어느 주문인지 물어요. 사유는 '{{reason}}'에 맞는 것을 고르고, 회수 방법·회수 날짜·반품 배송비(누가 내는지)·환불 예정 금액·환불 수단을 확인해요. 마지막 '신청' 버튼 전에 상품·{{kind}}·사유·회수 방법·반품 배송비·환불 금액을 정리해 browser_request_approval로 승인을 받은 뒤에만 눌러요."
+        }
       ],
       "result": {}
     }

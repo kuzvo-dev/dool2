@@ -325,7 +325,9 @@ export function pick(scope: unknown, path: string): unknown {
     if (k === '*') {
       if (!Array.isArray(cur)) return undefined
       const rest = keys.slice(i + 1).join('.')
-      return cur.map((x) => (rest ? pick(x, rest) : x)).filter((x) => x !== undefined && x !== null)
+      const out = cur.map((x) => (rest ? pick(x, rest) : x)).filter((x) => x !== undefined && x !== null)
+      // 별이 또 있으면(주문.*.묶음.*.상품) 한 목록으로 펼친다
+      return rest.split('.').includes('*') ? out.flat() : out
     }
     if (Array.isArray(cur) && /^-\d+$/.test(k)) cur = cur.at(Number(k))
     else cur = (cur as Record<string, unknown>)[k]
@@ -360,6 +362,8 @@ const FILTERS: Record<string, (v: string) => string> = {
     return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${m[2]}`
   },
   json: (v) => JSON.stringify(v),
+  /** 밀리초(1794493572000) → 한국 날짜 2026-11-12. 이미 날짜 글이면 그대로 */
+  date: (v) => (/^\d{12,13}$/.test(v.trim()) ? kstDate(Number(v)) : v),
   /** 2026-11-28 → 그날 한국 0시의 밀리초 (1795791600000) */
   ms: (v) => {
     const t = Date.parse(`${v.slice(0, 10)}T00:00:00+09:00`)
