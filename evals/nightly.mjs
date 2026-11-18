@@ -31,7 +31,10 @@ mkdirSync(out, { recursive: true })
 // 매일 다른 묶음: 날짜를 씨앗으로 가족마다 하나씩 섞고, 우선순위 높은 것(pri)을 조금 더 자주 뽑는다
 const seed = Number(day.replaceAll('-', '')) % 100000
 let r = seed
-const rand = () => (r = (r * 1103515245 + 12345) % 2 ** 31) / 2 ** 31
+const rand = () => {
+  r = (r * 1103515245 + 12345) % 2 ** 31
+  return r / 2 ** 31
+}
 const byFam = new Map()
 for (const s of scenarios()) byFam.set(s.fid, [...(byFam.get(s.fid) ?? []), s])
 const chosen = []
