@@ -112,6 +112,11 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <label>주소 <input name="addr"></label><br>
 <label><input type="checkbox" name="a1" required> 이용약관 동의 (필수)</label><br><label><input type="checkbox" name="a2" required> 개인정보 수집 동의 (필수)</label><br>
 <button>다음</button></form></body></html>`,
+  // 긴 페이지: 위쪽 메뉴가 길고 상품이 200개
+  '/long': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>긴 목록</title></head><body>
+<nav>${Array.from({ length: 300 }, (_, i) => `<a href="/c/${i}">카테고리 메뉴 ${i}</a>`).join(' ')}</nav>
+<h1>검색 결과</h1><ul>${Array.from({ length: 200 }, (_, i) => `<li style="height:40px">상품 ${i + 1} 사과 ${i + 1}kg ${(i + 1) * 1000}원 <button onclick="document.title='담음 ${i + 1}'">담기</button></li>`).join('')}</ul>
+</body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -522,6 +527,35 @@ try {
     console.log(`  하나씩 ${JSON.stringify(one)} → 한 번에 ${JSON.stringify(all)}`)
     assert.ok(all.ms < one.ms, '한 번에 한 쪽이 더 느려요')
     assert.ok(all.chars * 3 < one.chars, '돌려받는 글이 충분히 줄지 않았어요')
+  })
+
+  await step('필요한 부분만 읽기: 긴 페이지에서 찾는 줄부터, 보이는 화면만', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/long` })
+    // 처음부터 읽으면 메뉴만 보이다 잘린다
+    const top = text(await tools.run('read', { tabId }))
+    assert.doesNotMatch(top, /상품 150 /)
+    assert.match(top, /skip: \d+/)
+    // 예전 방법: 최대로 늘려 처음부터 다시 읽기
+    const big = text(await tools.run('read', { tabId, maxChars: 40000 }))
+    // 새 방법: 그 줄부터
+    const from = text(await tools.run('read', { tabId, from: '상품 150 ' }))
+    assert.match(from, /^상품 150 사과/m)
+    const buy = from.match(/상품 150 사과 150kg 150000원 \[(e\d+) 버튼 "담기"\]/)?.[1]
+    assert.ok(buy, from.slice(0, 400))
+    assert.match(text(await tools.run('click', { tabId, ref: buy })), /담음 150/)
+    console.log(
+      `  상품 150 찾기: 처음부터 크게 ${big.length.toLocaleString()}자${/상품 150 /.test(big) ? '' : '(못 찾음)'} → 그 줄부터 ${from.length.toLocaleString()}자`,
+    )
+    // 보이는 화면만: 내린 뒤에는 위쪽 메뉴가 빠지고, 위·아래에 남은 글을 알린다
+    await call('navigate', { tabId, url: `${base}/long` })
+    await tools.run('read', { tabId })
+    const scrolled = text(await tools.run('scroll', { tabId, direction: 'down' }))
+    assert.match(scrolled, /지금 화면에 보이는 부분만/)
+    assert.match(scrolled, /↓ 화면 아래에 글이/)
+    assert.ok(scrolled.length < 4000, `보이는 부분이 너무 길어요 (${scrolled.length}자)`)
+    console.log(`  스크롤 뒤 보이는 부분: ${scrolled.length.toLocaleString()}자`)
   })
 
   await step('탭 닫기', async () => {

@@ -163,6 +163,11 @@ interface Snapshot {
   text: string
   truncated: boolean
   captcha: boolean
+  /** view로 읽었을 때 화면 위·아래에 남은 글자 수 */
+  around?: { above: number; below: number }
+  /** from·skip으로 앞에서 건너뛴 글자 수 */
+  skipped?: number
+  fromMissing?: boolean
   /** 떠 있는 확인 창 (confirm·prompt). 고를 때까지 페이지가 멈춰 있다 */
   dialog?: SiteDialog
   /** 확장이 바로 닫은 알림창 (alert·떠나기 확인) */
@@ -274,7 +279,11 @@ export class BrowserTools {
         return this.read(tabId, undefined, '주소를 열었어요.')
       }
       case 'read':
-        return this.read(tabId, a.maxChars)
+        return this.read(tabId, a.maxChars, undefined, {
+          ...(a.view === true ? { view: true } : {}),
+          ...(typeof a.from === 'string' && a.from.trim() ? { from: a.from.trim() } : {}),
+          ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
+        })
       case 'click': {
         const r = await this.act(tabId, { ...a, do: 'click' })
         if (r.newTabId) return this.read(r.newTabId, undefined, `${r.note} 새 탭이 열려서 그 탭을 읽었어요.`)
@@ -288,9 +297,8 @@ export class BrowserTools {
         return this.steps(tabId, a)
       case 'scroll': {
         await this.browser.call('scroll', { tabId, direction: a.direction === 'up' ? 'up' : 'down' })
-        return {
-          content: [{ type: 'text', text: '스크롤했어요. 화면을 보려면 browser_screenshot을 써 주세요.' }],
-        }
+        // 사람이 굴린 뒤 화면을 보듯, 지금 보이는 부분만 읽어 돌려준다 (한 화면이라 짧다)
+        return this.read(tabId, undefined, '스크롤했어요.', { view: true })
       }
       case 'screenshot': {
         const r = (await this.browser.call('screenshot', { tabId })) as {
@@ -869,12 +877,18 @@ export class BrowserTools {
     return undefined
   }
 
-  private async read(tabId: number, maxChars?: unknown, note?: string): Promise<ToolResult> {
+  private async read(
+    tabId: number,
+    maxChars?: unknown,
+    note?: string,
+    scope: { view?: boolean; from?: string; skip?: number } = {},
+  ): Promise<ToolResult> {
     const max = Number(maxChars) || 8_000
-    let s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+    const partial = Boolean(scope.view || scope.from || scope.skip)
+    let s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
     const notes = [...(s.dialogNotes ?? [])]
     // 늦게 그리는 사이트는 막 연 화면이 비어 있다 (캐치테이블: 링크 4개뿐). 한 번 기다렸다 다시 읽는다
-    if (!s.dialog && nearlyEmpty(s.text)) {
+    if (!s.dialog && !partial && nearlyEmpty(s.text)) {
       await new Promise((r) => setTimeout(r, 1500))
       s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
       notes.push(...(s.dialogNotes ?? []))
@@ -909,19 +923,44 @@ export class BrowserTools {
         : []),
       ...(guide ? [guide] : []),
       ...dialogLines(notes),
-      ...(nearlyEmpty(s.text)
+      ...scopeLines(s, scope),
+      ...(!partial && nearlyEmpty(s.text)
         ? [
             '⚠ 화면에 글이 거의 없어요. 주소가 틀렸을 수 있어요(사이트에 없는 주소는 빈 화면만 나와요). 사이트 홈을 열어 검색칸으로 찾아보세요. 사람에게 넘기기 전에 다른 길을 먼저 해 보세요.',
           ]
         : []),
       '',
       s.text || '(읽을 글이 없어요. 화면이 아직 그려지는 중이면 잠시 뒤 다시 읽어 주세요)',
+      ...(s.around?.below
+        ? [
+            '',
+            `↓ 화면 아래에 글이 ${s.around.below.toLocaleString()}자쯤 더 있어요. browser_scroll로 내린 뒤 view로 다시 읽어 주세요.`,
+          ]
+        : []),
       ...(s.truncated
-        ? ['', `(글이 길어 앞부분 ${max}자만 보여 드렸어요. 더 필요하면 maxChars를 늘려 다시 읽어 주세요)`]
+        ? [
+            '',
+            `(글이 길어 여기까지 ${max}자만 보여 드렸어요. 이어서 보려면 skip: ${(s.skipped ?? 0) + s.text.length}로 다시 읽고, 찾는 부분이 있으면 from에 그 글자를 넣어 그 줄부터 읽어 주세요)`,
+          ]
         : []),
     ]
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
+}
+
+/** 어디를 읽었는지 알리는 줄 (view·from·skip) */
+export function scopeLines(
+  s: { around?: { above: number; below: number }; skipped?: number; fromMissing?: boolean },
+  scope: { view?: boolean; from?: string; skip?: number },
+): string[] {
+  const out: string[] = []
+  if (scope.view)
+    out.push(
+      `(지금 화면에 보이는 부분만 읽었어요${s.around?.above ? `. ↑ 위에 글 ${s.around.above.toLocaleString()}자쯤` : ''})`,
+    )
+  if (scope.from && s.fromMissing) out.push(`("${scope.from}"을(를) 페이지에서 찾지 못해 처음부터 읽었어요)`)
+  else if (s.skipped) out.push(`(앞 ${s.skipped.toLocaleString()}자는 건너뛰고 읽었어요)`)
+  return out
 }
 
 /** 두리가 바로 닫은 알림창을 AI에게 알리는 줄 (사이트가 알림창으로만 알려 주는 말: "비밀번호가 틀렸어요" 등) */

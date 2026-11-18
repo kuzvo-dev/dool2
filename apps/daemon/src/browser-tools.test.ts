@@ -7,6 +7,7 @@ import {
   parseRefs,
   payScreen,
   type SiteDialog,
+  scopeLines,
 } from './browser-tools.js'
 
 const PAGE = `# 두리 시험 가게
@@ -430,6 +431,68 @@ describe('여러 동작 한 번에', () => {
       steps: Array.from({ length: 13 }, () => ({ do: 'wait' })),
     })
     expect(text(many)).toContain('12개까지')
+  })
+})
+
+describe('필요한 부분만 읽기', () => {
+  it('view·from·skip을 확장에 넘기고 어디를 읽었는지 알린다', async () => {
+    const calls: Record<string, unknown>[] = []
+    const tools = new BrowserTools({
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === 'snapshot') {
+          calls.push(args ?? {})
+          return {
+            tabId: 3,
+            url: 'https://shop.example/list',
+            title: '목록',
+            text: '상품 150 사과 9,900원 [e150 버튼 "담기"]',
+            truncated: true,
+            captcha: false,
+            skipped: 41_000,
+          }
+        }
+        return { tabId: 3 }
+      },
+    })
+    const r = text(await tools.run('read', { tabId: 3, from: '상품 150' }))
+    expect(calls[0]).toEqual({ tabId: 3, maxChars: 8000, from: '상품 150' })
+    expect(r).toContain('앞 41,000자는 건너뛰고 읽었어요')
+    // 잘렸으면 이어 읽을 자리를 알려 준다
+    expect(r).toMatch(/skip: \d+/)
+    // 일부만 읽을 때는 글이 적어도 빈 화면으로 보고 다시 읽지 않는다
+    expect(calls).toHaveLength(1)
+    expect(text(await tools.run('click', { tabId: 3, ref: 'e150' }))).not.toContain('몰라요')
+  })
+
+  it('보이는 부분만 읽으면 위·아래에 남은 글을 알린다', () => {
+    expect(scopeLines({ around: { above: 1200, below: 0 } }, { view: true })).toEqual([
+      '(지금 화면에 보이는 부분만 읽었어요. ↑ 위에 글 1,200자쯤)',
+    ])
+    expect(scopeLines({ fromMissing: true }, { from: '없는 말' })[0]).toContain('찾지 못해 처음부터')
+  })
+
+  it('스크롤하면 보이는 부분을 읽어 돌려준다', async () => {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const tools = new BrowserTools({
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://x/',
+            title: 'x',
+            text: '보이는 줄',
+            truncated: false,
+            captcha: false,
+            around: { above: 900, below: 3000 },
+          }
+        return { tabId: 3 }
+      },
+    })
+    const r = text(await tools.run('scroll', { tabId: 3, direction: 'down' }))
+    expect(calls.map((c) => c[0])).toEqual(['scroll', 'snapshot'])
+    expect(calls[1]?.[1]).toMatchObject({ view: true })
+    expect(r).toContain('↓ 화면 아래에 글이 3,000자쯤 더 있어요')
   })
 })
 
