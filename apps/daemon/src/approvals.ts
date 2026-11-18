@@ -36,6 +36,7 @@ export interface NewApproval {
   shot?: string
   choices?: ApprovalView['choices']
   choiceTitle?: string
+  chose?: string[]
   choice?: string
   choiceRefs?: ApprovalRecord['choiceRefs']
   subChoices?: ApprovalView['subChoices']

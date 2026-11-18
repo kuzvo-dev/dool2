@@ -699,6 +699,12 @@ export class BrowserTools {
               typeof c === 'string' ? c : String((c as { ref?: unknown })?.ref ?? ''),
             )
           : []
+        const chose = Array.isArray(a.chose)
+          ? (a.chose as unknown[])
+              .map((c) => String(c ?? '').slice(0, 60))
+              .filter(Boolean)
+              .slice(0, 8)
+          : []
         return this.askApproval(tabId, ref, {
           what: String(a.what ?? ''),
           where: String(a.where ?? ''),
@@ -707,6 +713,7 @@ export class BrowserTools {
           ...(choices.length
             ? { choices, choiceTitle: String(a.choiceTitle ?? '결제 수단').slice(0, 20) }
             : {}),
+          ...(chose.length ? { chose } : {}),
         })
       }
       case 'fill_profile': {
@@ -1040,6 +1047,8 @@ export class BrowserTools {
       /** 승인하며 고를 칸들의 표시 (결제 수단 라디오 등) */
       choices?: string[]
       choiceTitle?: string
+      /** 결제 전에 두리가 스스로 고른 것 (보험 안 함·약관 동의 등) */
+      chose?: string[]
     },
     kind?: RiskKind,
   ): Promise<ToolResult> {
@@ -1129,6 +1138,7 @@ export class BrowserTools {
       where: d.where.slice(0, 100),
       ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
+      ...(d.chose?.length ? { chose: d.chose } : {}),
       ...(shot?.data ? { shot: shot.data } : {}),
       ...(picks.length
         ? {
