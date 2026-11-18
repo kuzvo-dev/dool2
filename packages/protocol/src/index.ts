@@ -487,6 +487,8 @@ export interface ChatCard {
 export interface CardsRecordMessage {
   kind: 'cards'
   cards: ChatCard[]
+  /** portrait: 세로 포스터·책 표지 (3:4). 없으면 정사각 */
+  shape?: 'portrait'
 }
 
 /** AI가 넘긴 카드를 믿을 수 있는 모양으로 다듬는다: 10장까지, 글 길이 자르기, https 주소만 */

@@ -1561,7 +1561,7 @@ function thumb(url: string): Promise<string | undefined> {
 function pickCards(rec: CardsRecordMessage): HTMLElement {
   return el(
     'div',
-    'pick-cards',
+    rec.shape === 'portrait' ? 'pick-cards portrait' : 'pick-cards',
     ...rec.cards.map((c) => {
       let img: HTMLImageElement | undefined
       if (c.image) {
@@ -1582,8 +1582,9 @@ function pickCards(rec: CardsRecordMessage): HTMLElement {
           'div',
           'pick-body',
           el('span', 'pick-title', c.title),
-          c.price ? el('span', 'pick-price', c.price) : undefined,
-          c.note ? el('span', 'pick-note', c.note) : undefined,
+          // 비어 있어도 자리는 둔다 (카드마다 가격·정보 줄이 같은 높이에)
+          el('span', 'pick-price', c.price ?? ''),
+          el('span', 'pick-note', c.note ?? ''),
         ),
         el(
           'div',
