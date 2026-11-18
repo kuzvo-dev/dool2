@@ -531,6 +531,7 @@ export class Connectors {
           scope,
           tier: tool.tier,
           tool: `${card.id}.${tool.name}`,
+          sites: [site, ...(card.alsoSites ?? [])],
           site,
           pollMs,
           sleep,
@@ -648,6 +649,8 @@ export class Connectors {
       tier: ConnectorTool['tier']
       /** 서비스.도구 이름 (결제 흐름 기록용) */
       tool: string
+      /** 이 서비스의 사이트들 (결제 흐름을 사이트 단위로 기억할 때) */
+      sites: string[]
       site: string
       pollMs: number
       sleep: (ms: number) => Promise<unknown>
@@ -912,7 +915,7 @@ export class Connectors {
     if ('handoff_to_agent' in s) {
       // 돈 내기 도구가 넘긴 탭은 결제 흐름: 결제 화면 전 [예약하기]는 승인 없이, 승인은 결제 화면에서만 (browser-tools)
       const pay = c.tier === '돈 내기'
-      if (pay) this.opts.tools.startPayFlow(c.need(), c.tool)
+      if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
       const page = await c.read()
       return text(
         `${f(s.handoff_to_agent)}\n${pay ? `${PAY_ORDER}\n` : ''}여기부터는 브라우저 도구로 이어서 해요.\n\n${page}`,

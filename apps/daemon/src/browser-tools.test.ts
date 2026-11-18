@@ -850,9 +850,19 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     expect(text(r)).toContain('이미 확정됐을 수 있어요')
   })
 
+  it('같은 서비스 사이트를 새 탭으로 다시 열어도 결제 흐름이다', async () => {
+    const b = payBrowser([room, checkout])
+    const tools = new BrowserTools(b)
+    tools.startPayFlow(9, 'hotels-com.prepare_booking', ['hotels.com'])
+    await tools.run('read', { tabId: 3 }) // 새 탭 3에서 kr.hotels.com을 읽었다
+    expect(tools.payFlow(3)).toBe('hotels-com.prepare_booking')
+    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
+    expect(r.isError).toBeUndefined()
+  })
+
   it('탭을 닫거나 한 시간이 지나면 결제 흐름을 잊는다', () => {
     const tools = new BrowserTools(payBrowser([room]))
-    tools.startPayFlow(3, 'x.prepare', 0)
+    tools.startPayFlow(3, 'x.prepare', [], 0)
     expect(tools.payFlow(3, 1000)).toBe('x.prepare')
     expect(tools.payFlow(3, PAY_FLOW_TTL_MS + 1)).toBeUndefined()
     tools.startPayFlow(4, 'x.prepare')

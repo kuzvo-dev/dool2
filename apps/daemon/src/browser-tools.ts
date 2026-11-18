@@ -276,6 +276,8 @@ export class BrowserTools {
   private dialogApprovals = new Map<string, string>()
   /** 결제 흐름 탭 → {돈 내기 도구 이름, 시작 시각}. 돈 내기 서비스 도구가 AI에게 넘긴 탭이다 */
   private payFlows = new Map<number, { tool: string; at: number }>()
+  /** 결제 흐름의 서비스 사이트 (AI가 같은 사이트를 새 탭으로 다시 열어도 결제 흐름이다) */
+  private paySites = new Map<string, { tool: string; at: number }>()
 
   readonly approvals: Approvals
   readonly logins: LoginRequests
@@ -954,19 +956,29 @@ export class BrowserTools {
    * 돈 내기 서비스 도구가 이 탭을 AI에게 넘겼다: 여기서부터 결제 흐름이다.
    * 이 탭에서는 결제 화면 전의 [예약하기]·[구매하기]를 승인 없이 누르고, 승인은 결제 화면에서만 받는다
    */
-  startPayFlow(tabId: number, tool: string, now = Date.now()) {
+  startPayFlow(tabId: number, tool: string, sites: string[] = [], now = Date.now()) {
     this.payFlows.set(tabId, { tool, at: now })
+    for (const site of sites) if (site) this.paySites.set(site.toLowerCase(), { tool, at: now })
   }
 
-  /** 결제 흐름 탭이면 그 도구 이름 (한 시간이 지나면 잊는다) */
+  /** 결제 흐름 탭(또는 결제 흐름 사이트를 연 탭)이면 그 도구 이름 (한 시간이 지나면 잊는다) */
   payFlow(tabId: number, now = Date.now()): string | undefined {
     const f = this.payFlows.get(tabId)
-    if (!f) return undefined
-    if (now - f.at > PAY_FLOW_TTL_MS) {
-      this.payFlows.delete(tabId)
-      return undefined
+    if (f && now - f.at <= PAY_FLOW_TTL_MS) return f.tool
+    if (f) this.payFlows.delete(tabId)
+    let host = ''
+    try {
+      host = new URL(this.pages.get(tabId)?.url ?? '').hostname.toLowerCase()
+    } catch {}
+    if (!host) return undefined
+    for (const [site, s] of this.paySites) {
+      if (now - s.at > PAY_FLOW_TTL_MS) {
+        this.paySites.delete(site)
+        continue
+      }
+      if (host === site || host.endsWith(`.${site}`)) return s.tool
     }
-    return f.tool
+    return undefined
   }
 
   /** 결제 흐름 탭에서, 아직 결제 화면이 아닌 곳의 결제 화면 들어가기 버튼인지 */
