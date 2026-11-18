@@ -258,7 +258,8 @@
         {
           "wait": {
             "text": "예약하기|예약 요청|날짜를 입력|예약할 수 없|숙소 이용규칙",
-            "timeoutMs": 20000
+            "timeoutMs": 20000,
+            "soft": true
           }
         },
         {
@@ -312,7 +313,8 @@
         {
           "wait": {
             "text": "호스트에게 메시지|호스트에게 연락|호스트 소개",
-            "timeoutMs": 20000
+            "timeoutMs": 20000,
+            "soft": true
           }
         },
         {
@@ -346,7 +348,8 @@
         {
           "wait": {
             "text": "로그인 또는 회원 가입|예정된 예약|여행|아직 예약된 여행이 없",
-            "timeoutMs": 12000
+            "timeoutMs": 15000,
+            "soft": true
           },
           "optional": true
         },

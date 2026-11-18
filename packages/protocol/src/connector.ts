@@ -91,6 +91,8 @@ export const StepSchema = z.union([
           gone: z.string().max(300).optional(),
           items: z.string().max(300).optional(),
           timeoutMs: z.number().int().min(500).max(20_000).optional(),
+          // soft면 시간이 지나도 멈추지 않고 그냥 다음 단계로 간다 (사이트 글이 바뀌어도 handoff에서 AI가 읽게)
+          soft: z.boolean().optional(),
         })
         .strict(),
       ...Optional,
