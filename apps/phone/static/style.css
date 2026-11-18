@@ -3142,6 +3142,13 @@ textarea.ghosting {
   margin-top: 2px;
   font-size: 14px;
 }
+.cred-signup {
+  justify-self: center;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--mint, #5fe0b4);
+  font-weight: 600;
+}
 
 /* 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호) */
 .info-sheet .otp {

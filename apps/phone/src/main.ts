@@ -4366,6 +4366,8 @@ interface CredTarget {
   brand?: SocialProvider
   /** 간편 로그인만 되는 곳 (아이디·비밀번호 로그인이 없다): 아이디 칸을 보여 주지 않는다 */
   socialOnly?: boolean
+  /** "처음이에요 · 가입해 주세요" 버튼 (두리에게 회원가입을 부탁한다) */
+  signup?: () => void
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -4463,6 +4465,15 @@ function credSheet(t: CredTarget) {
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
+    ...(t.signup
+      ? [
+          h('button', {
+            class: 'btn-text cred-signup',
+            text: '처음이에요 · 가입해 주세요',
+            onclick: t.signup,
+          }),
+        ]
+      : []),
     ...(t.direct
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
@@ -4751,6 +4762,13 @@ function connectSheet(id: string) {
         render()
         void send({ kind: 'connect', id, action: 'open' })
       },
+    },
+    // 계정이 없으면 두리가 가입해 줘요: 대화로 부탁을 보내고 두리가 가입 흐름을 한다
+    signup: () => {
+      void send({ kind: 'ask', text: `${it.card.name} 회원가입해서 이어서 해 줘` })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${it.card.name} 가입을 두리가 해 볼게요`)
     },
   })
 }
