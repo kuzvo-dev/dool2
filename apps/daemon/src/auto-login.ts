@@ -806,6 +806,12 @@ export async function socialLogin(
           tabId: providerTab,
           reason: `${input.card.name} 가입에 ${hum[0].replace(/\s/g, '')}이 필요해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
         }
+      if (join?.kind === 'existing')
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name}에 이미 계정${join.account ? `(${join.account})` : ''}이 있어요. 그 계정 비밀번호로 한 번 로그인하면 ${label}와 연결돼요`,
+        }
       if (join) {
         const key = `${p.url}|join`
         if (join.kind === 'auto' && !input.join)
@@ -960,7 +966,17 @@ const JOIN_HUMAN = /본인\s?인증|휴대폰\s?인증|휴대전화\s?인증|아
  */
 export function joinScreen(
   text: string,
-): { kind: 'auto'; submit: string; required: string[] } | { kind: 'human'; why: string } | undefined {
+):
+  | { kind: 'auto'; submit: string; required: string[] }
+  | { kind: 'human'; why: string }
+  | { kind: 'existing'; account?: string }
+  | undefined {
+  // 가입하려 했더니 "이미 가입된 정보가 있어요(아이디 coffeeplan)": 그 계정으로 로그인하면 연동된다 (실측 교보)
+  if (/이미\s?가입된\s?(정보|계정|회원)|기존\s?계정\s?안내|이미\s?가입하신/.test(text)) {
+    const id =
+      /\[e\d+ 라디오 "([^"]{2,40})"/.exec(text)?.[1] ?? /아이디[:\s]+([A-Za-z0-9_.@*-]{3,40})/.exec(text)?.[1]
+    return { kind: 'existing', ...(id ? { account: id } : {}) }
+  }
   if (!JOIN_PAGE.test(text)) return undefined
   const refs = [...parseRefs(text)] as RefEntry[]
   const submit = refs.find(

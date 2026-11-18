@@ -553,6 +553,11 @@ describe('간편 로그인 뒤 가입 화면', () => {
     expect(yes.clicks).toEqual(['e8', 'e5', 'e8'])
   })
 
+  it('가입하려니 이미 가입된 계정이 있으면 그 아이디를 알려 준다 (실측 교보)', () => {
+    const t = `[e6 링크 "카카오로 회원가입"]\n기존 계정 안내\n회원님께서는 이미 가입된 정보가 있습니다.\n아래 교보문고 아이디를 통해 로그인하시면 kakao 아이디와 자동으로 연동됩니다.\n[e13 라디오 "coffeeplan" 선택됨] [e14 버튼 "coffeeplan"]\n[e15 버튼 "로그인"]`
+    expect(joinScreen(t)).toEqual({ kind: 'existing', account: 'coffeeplan' })
+  })
+
   it('가입에 본인인증이 필요하면 사람 차례, 로그인 화면은 가입 화면이 아니다', () => {
     const t = `## 회원가입을 하시겠습니까?\n[e7 링크 "회원가입"]\n휴대폰 본인인증 [e8 버튼 "인증번호 받기"]`
     expect(joinScreen(t)).toMatchObject({ kind: 'human' })
