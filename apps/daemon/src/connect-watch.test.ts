@@ -6,6 +6,14 @@ const card = { id: 'demo', signedIn: undefined } as unknown as ConnectCard
 
 describe('로그인 확인', () => {
   it('로그인한 사람에게만 보이는 말이 있으면 로그인한 것', () => {
+    // 로그아웃이 숨은 메뉴에만 있는 사이트(컬리): 위쪽 이름 버튼으로
+    expect(
+      looksSignedIn(card, { url: 'https://www.kurly.com/main', text: '[e1 버튼 "주*돈 님"]\n고객센터' }),
+    ).toBe(true)
+    expect(looksSignedIn(card, { url: 'https://demo.co.kr/', text: '[e2 링크 "홍길동님"]' })).toBe(true)
+    expect(
+      looksSignedIn(card, { url: 'https://demo.co.kr/', text: '[e2 링크 "고객님"] [e3 링크 "로그인"]' }),
+    ).toBe(false)
     expect(looksSignedIn(card, { url: 'https://demo.co.kr/', text: '[e3 링크 "로그아웃"] 마이페이지' })).toBe(
       true,
     )
