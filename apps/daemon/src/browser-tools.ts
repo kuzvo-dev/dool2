@@ -945,10 +945,15 @@ export class BrowserTools {
     const selects = [...page.refs].filter(([, v]) => v.role === '선택 상자').slice(0, 6)
     for (const [ref] of selects) {
       if (out.length >= 3) break
-      const opts = (await this.selectOptions(tabId, ref))?.slice(0, 12)
+      let opts = (await this.selectOptions(tabId, ref))?.slice(0, 40)
       if (!opts) continue
       const title = subChoiceTitle(opts.map((o) => o.label))
       if (!title) continue
+      // 카드 목록에 등록 카드(번호 일부가 가려진 것)가 있으면 그것만: 뒤에 붙은 카드사 이름은 새 카드 등록이다
+      // (실측 쿠팡: 등록 카드 4장 뒤에 'KB국민카드·삼성카드…'가 이어진다)
+      const saved = opts.filter((o) => /\*{3,}/.test(o.label))
+      if (title === '카드' && saved.length) opts = saved
+      opts = opts.slice(0, 12)
       out.push({
         key: `s${out.length + 1}`,
         title,
