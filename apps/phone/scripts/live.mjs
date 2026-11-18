@@ -123,7 +123,7 @@ function combo(box, view, items) {
   box.addEventListener('keydown', (e) => { if (e.key === 'Escape') box.parentElement.querySelector('ul')?.remove() })
 }
 combo(cc, ccv, ['신한카드 / 5155****3361', '국민카드 / 9409****1234'])
-combo(mm, mmv, ['일시불', '2개월(무이자)', '3개월(무이자)'])
+combo(mm, mmv, ['일시불', '2개월 (무이자)', '3개월 (무이자)', '4개월', '5개월', '6개월', '7개월 (부분무이자)', '8개월', '9개월 (부분무이자)', '10개월', '11개월 (부분무이자)', '12개월'])
 go.onclick = () => { const how = method === '카드' ? ccv.textContent + ' · ' + mmv.textContent : method; document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2><p>' + how + '</p>') }
 </script>`)
     return

@@ -3145,6 +3145,11 @@ textarea.ghosting {
   box-shadow: none;
   font-weight: 600;
 }
+.approve-choices .chip.chip-more {
+  background: transparent;
+  border: 1px dashed var(--line, #3a3f48);
+  color: var(--ink-3, #9aa1ad);
+}
 .approve-choices .chip.on {
   background: var(--mint, #5fe0b4);
   color: #0d1110;
