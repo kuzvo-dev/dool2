@@ -72,11 +72,11 @@ if (flags.has('--pc')) {
     console.error('DOOL2_TOOL_TOKEN에 본체의 도구 토큰을 넣어 주세요')
     process.exit(2)
   }
-  const run = async (id, tool, input) => {
+  const run = async (id, tool, input, close = false) => {
     const res = await fetch(`${base}/api/tools/service/try`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ connector: toolsOf(id), tool, input }),
+      body: JSON.stringify({ connector: toolsOf(id), tool, input, close }),
       signal: AbortSignal.timeout(180_000),
     })
     if (!res.ok) throw new Error(`본체가 거절했어요 (${res.status}): ${(await res.text()).slice(0, 200)}`)
@@ -104,7 +104,7 @@ if (flags.has('--pc')) {
         if (t.tier !== '찾아보기' || (t.login && !flags.has('--connected'))) continue
         const ex = (t.examples ?? [{}])[0] ?? {}
         const t0 = Date.now()
-        const r = await run(id, t.name, ex).catch((e) => ({
+        const r = await run(id, t.name, ex, true).catch((e) => ({
           isError: true,
           content: [{ type: 'text', text: e.message }],
         }))

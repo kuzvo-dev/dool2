@@ -1663,7 +1663,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           if (!devReset) return json(res, 403, { error: '시험용 PC에서만 돼요' })
           const input =
             args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
-          return json(res, 200, await connectors.tryDraft(args.connector, String(args.tool ?? ''), input))
+          return json(
+            res,
+            200,
+            await connectors.tryDraft(args.connector, String(args.tool ?? ''), input, {
+              close: args.close === true,
+            }),
+          )
         }
         if (c === 'call') {
           const input =

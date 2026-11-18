@@ -169,7 +169,12 @@ export class Connectors {
    * 시험용 Chrome은 막는 사이트(쿠팡·29CM 등)도 사용자 Chrome에서는 열리니, 고친 정의를 여기서 확인한다.
    * 상태(초안·막힘)·쉬는 중·같은 입력 간격은 보지 않는다. 결과의 빈 칸(조용한 고장)은 함께 알려 준다
    */
-  async tryDraft(raw: unknown, toolName: string, input: Record<string, unknown>): Promise<ToolResult> {
+  async tryDraft(
+    raw: unknown,
+    toolName: string,
+    input: Record<string, unknown>,
+    o: { close?: boolean } = {},
+  ): Promise<ToolResult> {
     const r = ConnectorSchema.safeParse(raw)
     if (!r.success)
       return text(
@@ -187,6 +192,12 @@ export class Connectors {
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
     const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    // 여러 서비스를 차례로 시험할 때 사용자 Chrome에 탭이 쌓이지 않게 (8GB 맥이 멈춘 적이 있다)
+    const tab = this.tabs.get(card.id)
+    if (o.close && tab !== undefined) {
+      await this.opts.browser.call('close', { tabId: tab }).catch(() => undefined)
+      this.tabs.delete(card.id)
+    }
     const sick =
       outcome === 'ok' && result.structuredContent ? healthProblems(tool, result.structuredContent) : []
     return sick.length
