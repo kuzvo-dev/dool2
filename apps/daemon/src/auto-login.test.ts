@@ -529,6 +529,30 @@ describe('간편 로그인 뒤 가입 화면', () => {
     expect(joinScreen(t)).toEqual({ kind: 'auto', submit: 'e8', required: ['e5'] })
   })
 
+  it('이 사이트에 이미 되는 계정이 있으면(join 아님) 새로 가입하지 않고 알린다', async () => {
+    const login = {
+      url: 'https://shop.test/login',
+      text: '[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"] [e8 버튼 "카카오로 시작하기"]',
+    }
+    const join = {
+      url: 'https://shop.test/sns/join',
+      text: '이미 회원이신가요? [e2 링크 "로그인"] 아직 회원이 아니시라면 [e5 체크박스 "이용약관 동의 (필수)"] [e8 링크 "간편 회원가입"]',
+    }
+    const run = (allow: boolean) => {
+      const b = tabsBrowser({ 7: [login, join] }, () => ({}))
+      return socialLogin(
+        b,
+        { card, url: login.url, provider: 'kakao', creds: async () => undefined, join: allow },
+        { wait: 0, tries: 3 },
+      ).then((r) => ({ r, clicks: b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref) }))
+    }
+    const no = await run(false)
+    expect(no.r.status).toBe('human')
+    expect(no.clicks).toEqual(['e8'])
+    const yes = await run(true)
+    expect(yes.clicks).toEqual(['e8', 'e5', 'e8'])
+  })
+
   it('가입에 본인인증이 필요하면 사람 차례, 로그인 화면은 가입 화면이 아니다', () => {
     const t = `## 회원가입을 하시겠습니까?\n[e7 링크 "회원가입"]\n휴대폰 본인인증 [e8 버튼 "인증번호 받기"]`
     expect(joinScreen(t)).toMatchObject({ kind: 'human' })

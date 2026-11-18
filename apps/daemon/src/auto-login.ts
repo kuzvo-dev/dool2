@@ -696,6 +696,11 @@ export interface SocialLoginInput {
   ask?: LoginAsk
   step?: StepFn
   onTab?: (tabId: number) => void
+  /**
+   * 연결된 회원이 없을 때 간편 가입까지 해도 되는지. 이 사이트에 이미 되는 계정(다른 간편 로그인·금고 아이디)이 있으면
+   * 새로 가입하면 같은 사이트에 계정이 둘이 된다: 그땐 가입하지 않고 사람에게 알린다
+   */
+  join?: boolean
 }
 
 /**
@@ -803,6 +808,12 @@ export async function socialLogin(
         }
       if (join) {
         const key = `${p.url}|join`
+        if (join.kind === 'auto' && !input.join)
+          return {
+            status: 'human',
+            tabId: providerTab,
+            reason: `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없어요. 이미 쓰는 계정이 있으면 그 방법으로 연결해 주시고, 처음이면 가입할게요`,
+          }
         if (join.kind === 'human' || pressed.has(key))
           return {
             status: 'human',

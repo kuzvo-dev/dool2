@@ -475,10 +475,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const url = connectUrl(card)
     if (!url) throw new Error('이 서비스는 폰에서 켜요')
     if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
+    // 이 사이트에 이미 되는 계정이 없을 때만 간편 가입까지 (있으면 같은 사이트에 계정이 둘이 된다)
+    const known = connectVia()[card.id]
+    const join = !(known && known !== `social:${provider}`) && !(await vaultCreds(card))
     const r = await socialLogin(browser, {
       card,
       url: card.loginUrl ?? url,
       provider,
+      join,
       creds: (origin) => vault.findForOrigin(origin),
       ask: loginAsk(card),
       step: connectStep(card.id),
