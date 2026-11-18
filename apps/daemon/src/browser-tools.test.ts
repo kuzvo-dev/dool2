@@ -5,6 +5,7 @@ import {
   classifyDialogRisk,
   classifyRisk,
   confirmedScreen,
+  cookieReject,
   isCheckoutEntry,
   nearlyEmpty,
   PAY_FLOW_TTL_MS,
@@ -868,5 +869,50 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     tools.startPayFlow(4, 'x.prepare')
     tools.forgetTab(4)
     expect(tools.payFlow(4)).toBeUndefined()
+  })
+})
+
+// 실측 (2026-11-18, 사용자 Chrome의 호텔스닷컴): 쿠키 동의 창의 어두운 막이 [예약하기]를 덮고 있었다
+const COOKIE = `우리는 소셜 미디어 기능의 제공과 데이터 분석 및 본 사이트가 올바로 동작하고 개인화된 콘텐츠와 광고를 제공하기 위해 쿠키를 사용하고 있습니다.
+[e36 버튼 "모든 쿠키 허용"] [e37 버튼 "모두 거부"] [e38 버튼 "쿠키 설정, 기본 설정 센터 대화 상자를 엽니다."]`
+
+describe('쿠키 동의 창', () => {
+  it('쿠키 안내 바로 뒤의 거부 버튼만 고른다', () => {
+    expect(cookieReject(`${ROOMS}\n${COOKIE}`)).toBe('e37')
+    expect(cookieReject('This site uses cookies. [e2 버튼 "Accept all"] [e3 버튼 "Reject all"]')).toBe('e3')
+    expect(cookieReject('쿠키 안내 [e5 버튼 "필수 쿠키만 허용"] [e6 버튼 "동의"]')).toBe('e5')
+    // 동의만 있는 창은 건드리지 않는다
+    expect(cookieReject('쿠키를 사용합니다 [e1 버튼 "동의"]')).toBeUndefined()
+    // 쿠키 이야기가 없는 화면의 '모두 거부'(알림 설정 등)는 누르지 않는다
+    expect(cookieReject('마케팅 알림 받기 [e7 버튼 "모두 거부"]')).toBeUndefined()
+  })
+
+  it('읽을 때 거부로 닫고 다시 읽으며, 같은 탭·사이트에서는 한 번만 한다', async () => {
+    const calls: string[] = []
+    let closed = false
+    const b = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}`)
+        if (cmd === 'click') closed = true
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://kr.hotels.com/ho480371/',
+            title: '호텔',
+            text: closed ? ROOMS : `${ROOMS}\n${COOKIE}`,
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3 }
+      },
+    }
+    const tools = new BrowserTools(b)
+    const r = text(await tools.run('read', { tabId: 3 }))
+    expect(r).toContain('[모두 거부]로 닫았어요')
+    expect(r).not.toContain('모든 쿠키 허용')
+    expect(calls).toEqual(['snapshot', 'click e37', 'snapshot'])
+    closed = false // 사이트가 창을 다시 띄워도 되풀이하지 않는다
+    await tools.run('read', { tabId: 3 })
+    expect(calls.filter((c) => c.startsWith('click'))).toHaveLength(1)
   })
 })

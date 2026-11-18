@@ -257,6 +257,27 @@ export function parseRefs(text: string): Map<string, { role: string; name: strin
   return refs
 }
 
+// 쿠키 동의 창의 거부 버튼. 동의 창은 화면을 덮어 누르기를 가로막는다
+// (실측 2026-11-18: 호텔스닷컴 쿠키 창의 어두운 막이 [예약하기]를 가려 승인한 클릭이 먹지 않았다)
+const COOKIE_REJECT =
+  /^(?:모두\s*거부|전체\s*거부|모든\s*쿠키\s*거부|쿠키\s*거부|필수\s*쿠키만\s*(?:허용|사용|동의)?|필수(?:\s*항목)?만\s*(?:허용|사용|동의)|reject\s*all(?:\s*cookies)?|decline\s*all|only\s*necessary(?:\s*cookies)?|necessary\s*(?:cookies\s*)?only|use\s*necessary\s*cookies\s*only)$/i
+const COOKIE_WORD = /쿠키|cookie/i
+
+/**
+ * 쿠키 동의 창이 떠 있으면 그 창의 거부 버튼 표시(e12).
+ * 버튼 바로 앞(600자 안)에 '쿠키' 안내가 있을 때만 — 다른 화면의 '모두 거부'는 누르지 않는다.
+ * 거부 버튼이 없는 창(동의만 있는 창)은 건드리지 않는다
+ */
+export function cookieReject(text: string): string | undefined {
+  const re = /\[(e\d+) (?:버튼|링크) "([^"]*)"[^\]]*\]/g
+  for (const m of text.matchAll(re)) {
+    if (!COOKIE_REJECT.test((m[2] ?? '').replace(/\s+/g, ' ').trim())) continue
+    const before = text.slice(Math.max(0, (m.index ?? 0) - 600), m.index)
+    if (COOKIE_WORD.test(before)) return m[1]
+  }
+  return undefined
+}
+
 /** 금고에서 지금 사이트의 로그인 정보를 찾는다 (값은 본체 밖으로 나가지 않는다) */
 export interface VaultLookup {
   findForOrigin(origin: string): Promise<{ id: string; username: string; password: string } | undefined>
@@ -327,6 +348,8 @@ export class BrowserTools {
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
+  /** 쿠키 동의 창을 닫아 본 탭·사이트 (같은 곳에서 되풀이하지 않는다) */
+  private cookieTried = new Set<string>()
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
@@ -993,6 +1016,7 @@ export class BrowserTools {
     this.handedOff.delete(tabId)
     this.dialogs.delete(tabId)
     this.payFlows.delete(tabId)
+    for (const k of this.cookieTried) if (k.startsWith(`${tabId}|`)) this.cookieTried.delete(k)
     this.approvals.expireTab(tabId)
     if (this._lastTabId === tabId) this._lastTabId = undefined
   }
@@ -1024,6 +1048,29 @@ export class BrowserTools {
       s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
       notes.push(...(s.dialogNotes ?? []))
     }
+    // 쿠키 동의 창은 거부(없으면 필수만)로 닫고 다시 읽는다. 탭·사이트마다 한 번만, 한 일은 읽기 결과에 적는다
+    let cookieNote: string | undefined
+    const reject = !s.dialog ? cookieReject(s.text) : undefined
+    if (reject) {
+      let host = ''
+      try {
+        host = new URL(s.url).hostname
+      } catch {}
+      const key = `${tabId}|${host}`
+      if (!this.cookieTried.has(key)) {
+        this.cookieTried.add(key)
+        const name = parseRefs(s.text).get(reject)?.name ?? '거부'
+        const ok = await this.browser
+          .call('click', { tabId, ref: reject }, 15_000)
+          .then(() => true)
+          .catch(() => false)
+        if (ok) {
+          s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
+          notes.push(...(s.dialogNotes ?? []))
+          cookieNote = `🍪 쿠키 동의 창이 화면을 덮고 있어서 [${name}]로 닫았어요.`
+        }
+      }
+    }
     if (s.dialog) {
       // 확인 창이 떠 있는 동안 페이지는 멈춰 있다: 창만 알리고, 전에 읽은 표시는 그대로 둔다
       this.dialogs.set(tabId, s.dialog)
@@ -1049,6 +1096,7 @@ export class BrowserTools {
     const lines = [
       ...(note ? [note] : []),
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
+      ...(cookieNote ? [cookieNote] : []),
       ...(flow && info.confirmed
         ? [
             `⚠ 화면에 "${info.confirmed}"이(가) 보여요. 예약·주문이 이미 확정됐을 수 있어요. 사용자에게 그대로 알리고 내역 화면에서 확인해 주세요.`,
