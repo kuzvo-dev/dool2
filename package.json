@@ -16,7 +16,10 @@
     "format": "biome check --write .",
     "dev:daemon": "pnpm build && pnpm --filter @dool2/daemon dev",
     "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev",
-    "connector": "node apps/daemon/scripts/connector.mjs"
+    "connector": "node apps/daemon/scripts/connector.mjs",
+    "eval:static": "node evals/static.mjs",
+    "eval:run": "node evals/run.mjs",
+    "eval:score": "node evals/score.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

@@ -51,6 +51,9 @@ jobs:
       # 맥 러너에서 가끔 테스트가 멈춰 15분 뒤 취소되면 로그가 남지 않는다: 단계 시간 제한으로 실패시켜 로그를 남긴다
       - run: pnpm test
         timeout-minutes: 8
+      # 시나리오 은행 형식 + 시나리오마다 필요한 도구·서비스 카드가 있는지 (AI 없이)
+      - run: pnpm eval:static
+        timeout-minutes: 2
 
   e2e:
     # 확장을 진짜 Chrome(Chrome for Testing)에 올리고 진짜 본체와 붙여 시험 가게에서 열기·읽기·누르기·알림창·
