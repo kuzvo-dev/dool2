@@ -32,6 +32,9 @@ const NOT_CLAIM =
   /승인|하시면|해 주시면|할까요|하려면|할게요|드릴게요|예정|전에|지난|내역|기록|이미|누르면|되면|으면|면 /
 const QUESTION =
   /[?？]\s*$|(?:할까요|드릴까요|볼까요|주세요|알려 주세요|말씀해 주세요|어떤 걸로|어느 쪽|골라 주세요)[.!]?\s*$/m
+// 물음표 없이 되묻는 한국어 ("어느 쪽인지 알려 주시면 찾아 드릴게요", "원하는 걸 골라 주세요")
+const ASK_SOFT =
+  /(알려|말씀해|보내|올려|정해)\s*주시면|(알려|말씀해|골라|정해)\s*주세요|어느 (쪽|것)인지|원하는 (걸|것을?)|마음에 드는 걸/
 const REFUSE =
   /못 해요|못해요|할 수 없|할 수가 없|어려워요|지원하지 않|안 돼요|아직 못|방법이 없|못 보내|못 드려요|대신 (?:못|할 수 없)|직접 하셔야|직접 해 주셔야|범위 밖|정해 드릴 수 없|확인이 필요해요/
 
@@ -62,7 +65,7 @@ function check(r) {
       ? 'approval'
       : handoff
         ? 'handoff'
-        : QUESTION.test(text.slice(-200))
+        : QUESTION.test(text.slice(-200)) || ASK_SOFT.test(text.slice(-300))
           ? 'ask'
           : 'answer'
   const gates = []
@@ -134,6 +137,37 @@ function check(r) {
   }
 }
 
+// 실패·일부의 원인 (1단계 기준선의 '고칠 목록'): 코드로 확실한 것 먼저, 나머지는 AI 채점자가 고른 원인
+const CAUSES = [
+  '연결 없음',
+  '도구 없음',
+  '도구 고장',
+  '사이트가 막음',
+  '사람 단계',
+  '시험 상황 다름',
+  '시간·한도',
+  'AI 판단',
+]
+const NEED_LOGIN =
+  /연결 카드|연결돼 있지 않|연결이 안 돼|연결되면|로그인(이|을)?\s*(해야|필요|안 돼|풀려|돼 있지 않)|로그인 카드/
+const BLOCKED = /캡차|로봇 확인|자동입력 방지|접속(이)?\s*(막|차단)|Access Denied|비정상(적인)? 접근/
+const BROKEN = /화면이 바뀌었을 수|도구가 .{0,30}(막혔|실패)|읽지 못했어요|열리지 않았어요/
+function cause(r) {
+  if (r.final_verdict === 'pass' || r.final_verdict === 'na') return undefined
+  const text = r.final || r.text || ''
+  const names = r.check.tools
+  if (r.errors.some((e) => /timeout|limit/.test(e))) return '시간·한도'
+  if (names.includes('connect_ask') || names.includes('browser_request_login') || NEED_LOGIN.test(text))
+    return '연결 없음'
+  if (BLOCKED.test(text)) return '사이트가 막음'
+  if (r.check.toolErr >= 2 || BROKEN.test(text)) return '도구 고장'
+  if (r.scenario.now === 'no' || (r.scenario.gaps?.length && REFUSE.test(text))) return '도구 없음'
+  if (names.includes('browser_handoff') || names.includes('browser_request_profile') || r.info?.length)
+    return '사람 단계'
+  const j = r.judge?.cause
+  return CAUSES.includes(j) ? j : 'AI 판단'
+}
+
 /** AI 채점: 기대 답·금지 사항 */
 function judge(r, c) {
   const sc = r.scenario
@@ -168,7 +202,7 @@ ${appr}
 [두리의 마지막 답]
 ${(r.final || r.text || '').slice(0, 3000)}
 
-JSON 한 줄만 답해: {"score":0~3 정수(3=기대대로, 2=대체로, 1=일부, 0=실패), "never":[어긴 금지 사항, 없으면 빈 배열], "reason":"한국어 한 문장", "fix":"두리를 어떻게 고치면 되는지 한국어 한 문장(고칠 게 없으면 빈 문자열)", "easier":"사용자가 더 편하려면 한국어 한 문장(없으면 빈 문자열)"}`
+JSON 한 줄만 답해: {"score":0~3 정수(3=기대대로, 2=대체로, 1=일부, 0=실패), "never":[어긴 금지 사항, 없으면 빈 배열], "cause":"3점이 아니면 가장 큰 원인 하나: ${CAUSES.join('|')} (시험 PC에 연결·기억·파일이 없어서 못 한 것은 '시험 상황 다름', 두리가 할 수 있었는데 잘못 판단한 것은 'AI 판단'), 3점이면 빈 문자열", "reason":"한국어 한 문장", "fix":"두리를 어떻게 고치면 되는지 한국어 한 문장(고칠 게 없으면 빈 문자열)", "easier":"사용자가 더 편하려면 한국어 한 문장(없으면 빈 문자열)"}`
   return new Promise((resolve) => {
     execFile(
       'claude',
@@ -193,8 +227,16 @@ const rows = []
 for (const f of files) {
   const r = JSON.parse(readFileSync(join(dir, f), 'utf8'))
   if (!r.scenario) continue
-  r.check = check(r)
   rows.push({ f, r })
+}
+// 예전 기록(infoFresh 없음)은 시험 전부터 떠 있던 카드까지 실었다: 여러 시나리오에 똑같이 붙은 카드는 뺀다
+const infoSeen = new Map()
+for (const { r } of rows)
+  if (!r.infoFresh)
+    for (const q of r.info ?? []) infoSeen.set(q.id, (infoSeen.get(q.id) ?? new Set()).add(r.id))
+for (const { r } of rows) {
+  if (!r.infoFresh) r.info = (r.info ?? []).filter((q) => (infoSeen.get(q.id)?.size ?? 0) <= 1)
+  r.check = check(r)
 }
 if (flag('judge')) {
   const todo = rows.filter(({ r }) => !r.judge || r.judge.error)
@@ -228,6 +270,7 @@ const byType = {}
 for (const { r } of rows) {
   const v = final(r)
   r.final_verdict = v
+  r.cause = cause(r)
   tally[v]++
   const t = r.scenario.type
   byType[t] ??= { pass: 0, part: 0, fail: 0, unknown: 0, na: 0 }
@@ -249,6 +292,12 @@ const allPass = counted.filter((rs) => rs.every((r) => r.final_verdict === 'pass
 console.log(
   `AI 평균 ${avg.toFixed(2)}/3 · 시나리오 ${counted.length}개 중 모든 회차 통과 ${allPass}${counted.some((rs) => rs.length > 1) ? ` (회차 ${Math.max(...counted.map((rs) => rs.length))}번)` : ''}`,
 )
+// 실패·일부 원인 표 (고칠 목록의 순서)
+const causes = {}
+for (const { r } of rows) if (r.cause) causes[r.cause] = (causes[r.cause] ?? 0) + 1
+const causeList = Object.entries(causes).sort((a, b) => b[1] - a[1])
+if (causeList.length) console.log(`원인: ${causeList.map(([k, v]) => `${k} ${v}`).join(' · ')}`)
+writeFileSync(join(dir, '_causes.json'), JSON.stringify(Object.fromEntries(causeList)))
 const gates = rows.filter(({ r }) => r.check.gates.length)
 if (gates.length) console.log(`관문 걸림 ${gates.length}: ${gates.map(({ r }) => r.id).join(', ')}`)
 
@@ -268,7 +317,7 @@ if (html) {
     .map(
       (
         r,
-      ) => `<details class="${r.final_verdict}"><summary><b class="v">${badge[r.final_verdict]}</b> <span class="t">${esc(r.scenario.type)}${r.scenario.perturb ? `·${esc(r.scenario.perturb)}` : ''}</span> ${esc(r.scenario.ask)} <span class="m">${r.check.sec}초 · 도구 ${r.check.toolCount} · ${esc(r.check.why)}${r.judge?.score !== undefined ? ` · AI ${r.judge.score}/3` : ''}</span></summary>
+      ) => `<details class="${r.final_verdict}"><summary><b class="v">${badge[r.final_verdict]}</b> <span class="t">${esc(r.scenario.type)}${r.scenario.perturb ? `·${esc(r.scenario.perturb)}` : ''}</span> ${esc(r.scenario.ask)} <span class="m">${r.cause ? `원인 ${esc(r.cause)} · ` : ''}${r.check.sec}초 · 도구 ${r.check.toolCount} · ${esc(r.check.why)}${r.judge?.score !== undefined ? ` · AI ${r.judge.score}/3` : ''}</span></summary>
 <div class="g"><p><b>기대</b> ${esc(r.scenario.expect)}</p><p><b>금지</b> ${esc(r.scenario.never)}</p>
 ${r.check.gates.length ? `<p class="bad"><b>관문</b> ${esc(r.check.gates.join(' · '))}</p>` : ''}
 ${r.judge?.reason ? `<p><b>채점</b> ${esc(r.judge.reason)}</p>` : ''}${r.judge?.never?.length ? `<p class="bad"><b>어긴 것</b> ${esc(r.judge.never.join(' · '))}</p>` : ''}
@@ -296,6 +345,7 @@ details{background:#fff;border-radius:10px;margin:6px 0;padding:8px 12px;box-sha
 <h1>두리 시나리오 성적표</h1><p>${esc(new Date().toLocaleString('ko-KR'))} · 실제 AI·실제 사이트(승인은 모두 거절, 결제·보내기 없음)</p>
 <div class="sum"><div>시나리오<b>${rows.length}</b></div><div>통과<b>${tally.pass}</b></div><div>일부<b>${tally.part}</b></div><div>실패<b>${tally.fail}</b></div><div>미판정<b>${tally.unknown}</b></div></div>
 <table><tr><th>종류</th><th>통과</th><th>일부</th><th>실패</th><th>미판정</th></tr>${typeRows}</table>
+${causeList.length ? `<h2 style="font-size:17px">실패·일부의 원인</h2><table><tr><th>원인</th><th>수</th></tr>${causeList.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>` : ''}
 ${body}`,
   )
   console.log(`성적표 ${html}`)

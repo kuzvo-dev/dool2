@@ -110,6 +110,8 @@ async function runOne(sc) {
   }
   const filesBefore = local ? listFiles() : new Set()
   const before = await lifeIds()
+  // 시험 전부터 떠 있던 카드(인증번호·내 정보)는 이 시나리오 것이 아니다
+  const infoBefore = new Set(((await api('/api/info')).requests ?? []).map((q) => q.id))
   const started = new Date()
   const { thread } = await api('/api/threads', { method: 'POST', body: JSON.stringify({ side: true }) })
   if (!thread?.id) throw new Error('대화를 만들지 못했어요')
@@ -186,7 +188,8 @@ async function runOne(sc) {
       await api(`/api/approvals/${a.id}`, { method: 'POST', body: JSON.stringify({ decision: 'reject' }) })
   // 이 대화 동안 생긴 정보 요청(인증번호·내 정보 카드)
   const info = await api('/api/info')
-  rec.info = (info.requests ?? []).filter((q) => !q.createdAt || Date.parse(q.createdAt) >= started.getTime())
+  rec.info = (info.requests ?? []).filter((q) => !infoBefore.has(q.id))
+  rec.infoFresh = true
   // 시험이 만든 목표·보관함·기억: 무엇이 생겼는지 남기고 지운다 (사용자 데이터에 섞이지 않게). 피드 글은 지울 수 없어 기록만
   const after = await lifeIds()
   rec.created = { routine: [], library: [], memory: [], feed: [] }

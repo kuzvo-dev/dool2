@@ -81,9 +81,16 @@ for (const x of rows) {
   }
 }
 const avg = scoreN ? (scoreSum / scoreN).toFixed(2) : ''
+// 실패·일부의 원인 (score.mjs가 남김): "연결 없음 12; AI 판단 5"
+let causes = ''
+try {
+  causes = Object.entries(JSON.parse(readFileSync(join(out, '_causes.json'), 'utf8')))
+    .map(([k, v]) => `${k} ${v}`)
+    .join('; ')
+} catch {}
 const trend = join(outRoot, 'trend.csv')
-if (!existsSync(trend)) writeFileSync(trend, '날짜,시나리오,통과,일부,실패,미판정,AI평균\n')
-appendFileSync(trend, `${day},${rows.length},${t.pass},${t.part},${t.fail},${t.unknown},${avg}\n`)
+if (!existsSync(trend)) writeFileSync(trend, '날짜,시나리오,통과,일부,실패,미판정,AI평균,원인\n')
+appendFileSync(trend, `${day},${rows.length},${t.pass},${t.part},${t.fail},${t.unknown},${avg},"${causes}"\n`)
 writeFileSync(
   join(outRoot, 'latest.txt'),
   `${day} · 통과 ${t.pass} 일부 ${t.part} 실패 ${t.fail} · AI평균 ${avg}\n`,
