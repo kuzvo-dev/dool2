@@ -13,7 +13,8 @@
       "!apps/desktop/release",
       "!apps/desktop/build-res",
       "!docs",
-      "!skills"
+      "!skills",
+      "!evals/bank"
     ]
   },
   "formatter": {
