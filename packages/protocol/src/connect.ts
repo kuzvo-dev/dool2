@@ -159,3 +159,32 @@ export function connectUrl(card: Pick<ConnectCard, 'site'>): string | undefined 
   const local = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(card.site)
   return `${local ? 'http' : 'https'}://${card.site}/`
 }
+
+/**
+ * 간편 로그인 버튼 순서와 짧은 표시. 폰·PC 연결 화면이 같이 쓴다.
+ * 1) 이 서비스에 전에 쓴 것("최근 사용") 2) 다른 서비스에 많이 쓴 것("N곳에서 사용", 맨 위 하나만) 3) 카드 순서.
+ * 같은 계정으로 이어 쓰면 새 계정이 안 생기고, 공급자 쪽이 이미 로그인돼 있을 가능성도 크다
+ */
+export function socialOrder(
+  card: Pick<ConnectCard, 'id' | 'social'>,
+  services: readonly Pick<ConnectionItem, 'card' | 'via'>[] = [],
+): { provider: NonNullable<ConnectCard['social']>[number]; hint?: string }[] {
+  const list = card.social ?? []
+  const used = new Map<string, number>()
+  let mine: string | undefined
+  for (const s of services) {
+    const p = s.via?.startsWith('social:') ? s.via.slice(7) : undefined
+    if (!p) continue
+    if (s.card.id === card.id) mine = p
+    else used.set(p, (used.get(p) ?? 0) + 1)
+  }
+  const score = (p: string) => (p === mine ? 1000 : 0) + (used.get(p) ?? 0)
+  const sorted = [...list].sort((a, b) => score(b) - score(a))
+  const top = sorted[0]
+  return sorted.map((provider) => {
+    if (provider === mine) return { provider, hint: '최근 사용' }
+    const n = used.get(provider) ?? 0
+    if (provider === top && n > 0 && !mine) return { provider, hint: `${n}곳에서 사용` }
+    return { provider }
+  })
+}
