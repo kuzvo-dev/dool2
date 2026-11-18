@@ -34,6 +34,7 @@ export const BROWSER_TOOLS = [
   'login',
   'request_login',
   'request_approval',
+  'dialog',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -92,6 +93,28 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
   return undefined
 }
 
+// 사이트 확인 창(confirm) 글로 보는 위험: "예약하시겠습니까?", "주문을 진행할까요?", "삭제하시겠습니까?"
+const DIALOG_RISK: [RiskKind, RegExp][] = [
+  [
+    'money',
+    /(?:결제|구매|주문|예약|예매|신청|송금|이체|충전|구독|후원|기부)\s*(?:하|할|합|을|를|이|가|\?|$)|\b(?:pay|purchase|order|book)\b/i,
+  ],
+  [
+    'contact',
+    /(?:보내|전송|발송|게시|등록|올리)\s*(?:하|할|합|시|을|를|\?|$)|\b(?:send|post|publish|submit)\b/i,
+  ],
+  ['irreversible', /삭제|탈퇴|해지|취소\s*(?:하|할|합|시)|초기화|비우|\b(?:delete|remove)\b/i],
+]
+
+/** 확인 창에서 [확인]을 누르면 위험한 일이 되는지 (창 글과 페이지 주소로 본다) */
+export function classifyDialogRisk(message: string, url: string): Risk | undefined {
+  for (const [kind, re] of DIALOG_RISK) {
+    const m = re.exec(message)
+    if (m) return { kind, reason: `확인 창의 "${m[0].trim()}"` }
+  }
+  return classifyRisk('', url)
+}
+
 const RISK_TEXT: Record<RiskKind, string> = {
   money: '돈이 나가는 일',
   contact: '다른 사람에게 무언가 보내거나 올리는 일',
@@ -105,6 +128,14 @@ interface PageInfo {
   pay?: string
 }
 
+/** 사이트 알림창 (확장이 알린 그대로) */
+export interface SiteDialog {
+  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+  message: string
+  url: string
+  defaultPrompt?: string
+}
+
 interface Snapshot {
   tabId: number
   url: string
@@ -112,6 +143,10 @@ interface Snapshot {
   text: string
   truncated: boolean
   captcha: boolean
+  /** 떠 있는 확인 창 (confirm·prompt). 고를 때까지 페이지가 멈춰 있다 */
+  dialog?: SiteDialog
+  /** 확장이 바로 닫은 알림창 (alert·떠나기 확인) */
+  dialogNotes?: SiteDialog[]
 }
 
 /** 스냅샷 글에서 [e12 버튼 "검색"] 표시를 모은다 */
@@ -139,6 +174,10 @@ export class BrowserTools {
   private pages = new Map<number, PageInfo>()
   /** 사람에게 넘긴 탭 → 넘긴 시각. 이 탭만 폰 원격 화면으로 보고 누를 수 있다 */
   private handedOff = new Map<number, number>()
+  /** 탭마다 떠 있는 사이트 확인 창 (마지막으로 읽었을 때) */
+  private dialogs = new Map<number, SiteDialog>()
+  /** 확인 창 [확인]의 승인 요청 → 그 창의 글 (누르기 직전 같은 창인지 본다) */
+  private dialogApprovals = new Map<string, string>()
 
   readonly approvals: Approvals
   readonly logins: LoginRequests
@@ -316,7 +355,41 @@ export class BrowserTools {
         await this.vault?.markUsed(entry.id)
         return this.read(tabId, undefined, '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.')
       }
+      case 'dialog': {
+        // 사이트 확인 창(confirm·prompt)에서 고른다. [확인]이 결제·보내기·삭제가 되면 승인을 받는다
+        const d = this.dialogs.get(tabId)
+        if (!d)
+          throw new Error('떠 있는 사이트 확인 창이 없어요. 페이지를 다시 읽어(browser_read) 확인해 주세요')
+        const accept = a.accept !== false
+        if (accept) {
+          const risk = classifyDialogRisk(d.message, d.url)
+          if (risk) {
+            const next =
+              this.finalStep() === 'approve'
+                ? 'browser_request_approval에 dialog: true와 무엇을·어디서·얼마인지 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 [확인]을 눌러요.'
+                : '여기까지 한 내용을 사용자에게 정리해 알려 주고 browser_handoff로 사용자가 직접 고르게 넘겨 주세요.'
+            throw new Error(
+              `멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 [확인]을 누르지 않아요. ${next}`,
+            )
+          }
+        }
+        await this.browser.call('dialog', {
+          tabId,
+          accept,
+          expect: d.message,
+          ...(d.type === 'prompt' && typeof a.text === 'string' ? { text: a.text.slice(0, 500) } : {}),
+        })
+        this.dialogs.delete(tabId)
+        return this.read(tabId, undefined, `사이트 확인 창에서 [${accept ? '확인' : '취소'}]을 눌렀어요.`)
+      }
       case 'request_approval': {
+        if (a.dialog === true)
+          return this.askDialogApproval(tabId, {
+            what: String(a.what ?? ''),
+            where: String(a.where ?? ''),
+            ...(a.amount ? { amount: String(a.amount) } : {}),
+            ...(a.cancel ? { cancel: String(a.cancel) } : {}),
+          })
         const ref = String(a.ref ?? '')
         return this.askApproval(tabId, ref, {
           what: String(a.what ?? ''),
@@ -428,6 +501,45 @@ export class BrowserTools {
           text:
             `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
             '사용자가 승인하면 두리가 그 버튼을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
+        },
+      ],
+    }
+  }
+
+  /** 사이트 확인 창의 [확인]을 누를지 승인을 받는다 (창이 떠 있는 동안 페이지가 멈춰 있어 화면 캡처는 없다) */
+  private askDialogApproval(
+    tabId: number,
+    d: { what: string; where: string; amount?: string; cancel?: string },
+  ): ToolResult {
+    const dlg = this.dialogs.get(tabId)
+    if (!dlg) throw new Error('떠 있는 사이트 확인 창이 없어요. 페이지를 다시 읽어 확인해 주세요')
+    const risk = classifyDialogRisk(dlg.message, dlg.url)
+    if (!risk) throw new Error('이 확인 창은 승인 없이 골라도 돼요. browser_dialog를 쓰세요.')
+    if (this.finalStep() === 'self')
+      throw new Error(
+        '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
+      )
+    const rec = this.approvals.create({
+      tabId,
+      ref: 'dialog',
+      role: '확인 창',
+      label: `확인 — ${dlg.message.slice(0, 150)}`,
+      url: dlg.url,
+      kind: risk.kind,
+      reason: risk.reason,
+      what: d.what.slice(0, 200),
+      where: d.where.slice(0, 100),
+      ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
+      ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
+    })
+    this.dialogApprovals.set(rec.id, dlg.message)
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
+            '사용자가 승인하면 두리가 확인 창의 [확인]을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
         },
       ],
     }
@@ -568,6 +680,29 @@ export class BrowserTools {
   async approve(id: string): Promise<{ ok: boolean; message: string }> {
     const rec: ApprovalRecord | undefined = this.approvals.take(id)
     if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
+    const dialogText = this.dialogApprovals.get(id)
+    if (dialogText !== undefined) {
+      this.dialogApprovals.delete(id)
+      try {
+        // 확장이 지금 떠 있는 창이 승인한 그 창일 때만 누른다
+        const r = (await this.browser.call('dialog', {
+          tabId: rec.tabId,
+          accept: true,
+          expect: dialogText,
+        })) as {
+          url?: string
+          title?: string
+        }
+        this.dialogs.delete(rec.tabId)
+        const msg = `확인 창 "${dialogText.slice(0, 80)}"에서 [확인]을 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+        this.approvals.finish(id, true, msg)
+        return { ok: true, message: msg }
+      } catch (e) {
+        const msg = `확인 창의 [확인]을 누르지 못했어요: ${(e as Error).message}`
+        this.approvals.finish(id, false, msg)
+        return { ok: false, message: msg }
+      }
+    }
     try {
       const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
       let now = parseRefs(s.text).get(rec.ref)
@@ -584,11 +719,19 @@ export class BrowserTools {
         this.approvals.finish(id, false, msg)
         return { ok: false, message: msg }
       }
-      const r = (await this.browser.call('click', { tabId: rec.tabId, ref: rec.ref }, 30_000)) as {
+      let r = (await this.browser.call('click', { tabId: rec.tabId, ref: rec.ref }, 30_000)) as {
         url?: string
         title?: string
+        dialog?: SiteDialog
       }
-      const msg = `"${rec.label}" 버튼을 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      // 승인한 버튼을 누르자 사이트가 "정말 하시겠어요?"를 물으면, 사용자가 승인한 그 일이니 [확인]을 누른다
+      let also = ''
+      if (r.dialog?.type === 'confirm') {
+        const asked = r.dialog.message
+        r = (await this.browser.call('dialog', { tabId: rec.tabId, accept: true, expect: asked })) as typeof r
+        also = ` 사이트가 확인 창("${asked.slice(0, 80)}")을 띄워 [확인]도 눌렀어요.`
+      }
+      const msg = `"${rec.label}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
@@ -603,6 +746,7 @@ export class BrowserTools {
     this.pages.delete(tabId)
     this.guided.delete(tabId)
     this.handedOff.delete(tabId)
+    this.dialogs.delete(tabId)
     this.approvals.expireTab(tabId)
     if (this._lastTabId === tabId) this._lastTabId = undefined
   }
@@ -621,11 +765,31 @@ export class BrowserTools {
   private async read(tabId: number, maxChars?: unknown, note?: string): Promise<ToolResult> {
     const max = Number(maxChars) || 8_000
     let s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+    const notes = [...(s.dialogNotes ?? [])]
     // 늦게 그리는 사이트는 막 연 화면이 비어 있다 (캐치테이블: 링크 4개뿐). 한 번 기다렸다 다시 읽는다
-    if (nearlyEmpty(s.text)) {
+    if (!s.dialog && nearlyEmpty(s.text)) {
       await new Promise((r) => setTimeout(r, 1500))
       s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
+      notes.push(...(s.dialogNotes ?? []))
     }
+    if (s.dialog) {
+      // 확인 창이 떠 있는 동안 페이지는 멈춰 있다: 창만 알리고, 전에 읽은 표시는 그대로 둔다
+      this.dialogs.set(tabId, s.dialog)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: [
+              ...(note ? [note] : []),
+              `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
+              ...dialogLines(notes),
+              ...openDialogLines(s.dialog),
+            ].join('\n'),
+          },
+        ],
+      }
+    }
+    this.dialogs.delete(tabId)
     this.pages.set(tabId, { url: s.url, refs: parseRefs(s.text), pay: payScreen(s.text) })
     const guide = await this.guideFor(tabId, s.url)
     const lines = [
@@ -637,6 +801,7 @@ export class BrowserTools {
           ]
         : []),
       ...(guide ? [guide] : []),
+      ...dialogLines(notes),
       ...(nearlyEmpty(s.text)
         ? [
             '⚠ 화면에 글이 거의 없어요. 주소가 틀렸을 수 있어요(사이트에 없는 주소는 빈 화면만 나와요). 사이트 홈을 열어 검색칸으로 찾아보세요. 사람에게 넘기기 전에 다른 길을 먼저 해 보세요.',
@@ -650,6 +815,28 @@ export class BrowserTools {
     ]
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
+}
+
+/** 두리가 바로 닫은 알림창을 AI에게 알리는 줄 (사이트가 알림창으로만 알려 주는 말: "비밀번호가 틀렸어요" 등) */
+export function dialogLines(notes: SiteDialog[]): string[] {
+  return notes.map((d) =>
+    d.type === 'beforeunload'
+      ? '💬 페이지를 떠날지 묻는 창이 떠서 [떠나기]를 눌렀어요.'
+      : `💬 사이트 알림창: "${d.message.slice(0, 300)}" ([확인]을 눌러 닫았어요)`,
+  )
+}
+
+/** 떠 있는 확인 창을 AI에게 알리는 줄 */
+export function openDialogLines(d: SiteDialog): string[] {
+  const ask =
+    d.type === 'prompt'
+      ? `browser_dialog로 넣을 글(text)과 함께 [확인](accept: true)하거나 [취소](accept: false)해 주세요.${d.defaultPrompt ? ` (미리 적힌 글: "${d.defaultPrompt.slice(0, 100)}")` : ''}`
+      : 'browser_dialog로 [확인](accept: true)이나 [취소](accept: false)를 골라 주세요.'
+  return [
+    '',
+    `⚠ 사이트 확인 창이 떠 있어요: "${d.message.slice(0, 500)}"`,
+    `고를 때까지 페이지가 멈춰 있어서 읽거나 누를 수 없어요. ${ask} 사용자의 부탁과 맞지 않는 쪽이면 [취소]하세요.`,
+  ]
 }
 
 /** 표시(e12)를 빼고 글이 거의 없는 화면 (늦게 그리는 중이거나 없는 주소) */

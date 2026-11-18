@@ -148,14 +148,26 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이 "승인 없이는 하지 않아요"라고 할 때). 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
-      ref: ref.describe('누를 버튼 표시'),
+      ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
+      dialog: z.boolean().optional().describe('떠 있는 사이트 확인 창의 [확인]을 승인받을 때 true'),
       what: z.string().max(200).describe('무엇을 (예: "사과 1kg 바로 구매")'),
       where: z.string().max(100).describe('어디서 (예: "두리 시험 가게")'),
       amount: z.string().max(60).optional().describe('얼마 (페이지에 적힌 그대로, 예: "9,900원")'),
       cancel: z.string().max(200).optional().describe('취소·환불 조건 (모르면 "안내 없음")'),
+    },
+    false,
+  )
+  tool(
+    'dialog',
+    '사이트 확인 창 고르기',
+    '페이지를 읽었을 때 "사이트 확인 창이 떠 있어요"라고 나오면 쓴다. 사이트가 띄운 확인 창(예: "장바구니로 이동할까요?")에서 [확인](accept: true)이나 [취소](accept: false)를 누르고 바뀐 페이지를 읽어 돌려준다. 글을 넣는 창이면 text에 넣을 글. 결제·주문·보내기·삭제가 되는 [확인]은 두리가 막고 승인을 받게 한다.',
+    {
+      tabId,
+      accept: z.boolean().describe('[확인]이면 true, [취소]면 false'),
+      text: z.string().max(500).optional().describe('글을 넣는 창일 때 넣을 글'),
     },
     false,
   )

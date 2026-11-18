@@ -108,6 +108,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',
   browser_request_login: '로그인 카드 띄우는',
+  browser_dialog: '사이트 확인 창 고르는',
   screen_status: 'PC 상태 확인하는',
   screen_apps: '앱 찾는',
   screen_open: '앱 여는',
