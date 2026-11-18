@@ -527,7 +527,15 @@ button {
   left: 0;
   gap: 2px;
   padding-top: calc(20px + env(safe-area-inset-top));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  /* 따로 하는 대화가 많아도 아래 설정·연결까지 내려 볼 수 있게 서랍이 통째로 스크롤된다 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   animation: slide-in var(--dur-sheet) var(--ease) both;
+}
+.app-drawer > * {
+  flex-shrink: 0;
 }
 @keyframes slide-in {
   from {
@@ -1726,9 +1734,18 @@ select.rform-input {
   justify-content: space-between;
 }
 .side-item .side-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.side-more {
+  gap: 4px;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+.side-empty {
+  margin: 2px 12px 6px;
 }
 .side-page {
   display: flex;
@@ -3383,4 +3400,15 @@ textarea.ghosting {
 .approve-choices .chip.on {
   background: var(--mint, #5fe0b4);
   color: #0d1110;
+}
+
+/* 더 보기·접기 꺾쇠: 아래(펼치기) / 위(접기) */
+.more-chev {
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  transition: transform var(--dur) var(--ease);
+}
+.more-chev.open {
+  transform: rotate(-90deg);
 }

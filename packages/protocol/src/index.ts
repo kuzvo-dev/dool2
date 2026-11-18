@@ -109,6 +109,11 @@ export const CreateThreadRequestSchema = z.object({
 })
 export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>
 
+/** 따로 하는 대화는 이만큼까지 (피드 글을 쓰는 대화는 세지 않는다). 넘으면 안 쓰는 걸 지워 달라고 한다 */
+export const SIDE_THREAD_MAX = 50
+/** 메뉴에 처음 보여 주는 따로 하는 대화 수. 나머지는 '더 보기'로 펼친다 */
+export const SIDE_THREAD_PEEK = 8
+
 export const SendMessageRequestSchema = z.object({
   text: z.string().trim().min(1).max(20_000),
   /** 사진 (JPEG base64) */

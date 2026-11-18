@@ -174,4 +174,23 @@ describe('따로 하는 대화', () => {
     db.deleteThread(side.id)
     expect(db.getThread(side.id)).toBeUndefined()
   })
+
+  it('새로 열 때 빈 대화는 다시 쓰고, 정한 개수가 차면 더 만들지 않는다 (피드 대화는 세지 않는다)', () => {
+    const db = new Store(':memory:')
+    store = db
+    const feed = db.createThread('claude', '두리 피드', undefined, true)
+    const a = db.openSideThread('claude', 2, feed.id)
+    if (!a) throw new Error('a')
+    expect(a.side).toBe(true)
+    // 아직 말이 없으니 또 눌러도 같은 대화
+    expect(db.openSideThread('claude', 2, feed.id)?.id).toBe(a.id)
+    db.addMessage(a.id, 'user', '여행 준비')
+    const b = db.openSideThread('claude', 2, feed.id)
+    if (!b) throw new Error('b')
+    expect(b.id).not.toBe(a.id)
+    db.addMessage(b.id, 'user', '이사 준비')
+    expect(db.openSideThread('claude', 2, feed.id)).toBeUndefined()
+    db.deleteThread(a.id)
+    expect(db.openSideThread('claude', 2, feed.id)).toBeDefined()
+  })
 })

@@ -149,6 +149,30 @@ export class Store {
     return rows.map(toThread)
   }
 
+  /**
+   * 따로 하는 대화를 새로 연다. 아직 아무 말도 없는 빈 대화가 있으면 새로 만들지 않고 그걸 맨 위로 올려 다시 쓴다
+   * (새로 만들기를 여러 번 눌러도 빈 대화가 쌓이지 않게). 빈 게 없고 이미 max개면 undefined.
+   * skip: 세지 않을 대화 (피드 글을 쓰는 대화)
+   */
+  openSideThread(agent: AgentId, max: number, skip?: string): ThreadRecord | undefined {
+    const empty = this.db
+      .prepare(
+        `SELECT t.id FROM threads t WHERE t.side = 1 AND t.id != ?
+           AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id)
+         ORDER BY t.updated_at DESC LIMIT 1`,
+      )
+      .get(skip ?? '') as { id: string } | undefined
+    if (empty) {
+      this.db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(this.stamp(), empty.id)
+      return this.getThread(empty.id)
+    }
+    const { n } = this.db
+      .prepare('SELECT COUNT(*) AS n FROM threads WHERE side = 1 AND id != ?')
+      .get(skip ?? '') as { n: number }
+    if (n >= max) return undefined
+    return this.createThread(agent, '새 대화', undefined, true)
+  }
+
   // ── 대화 하나 (ADR 0015) ─────────────────────────────
 
   /** 지금 열려 있는 구간 (닫히지 않은 것 중 가장 최근) */

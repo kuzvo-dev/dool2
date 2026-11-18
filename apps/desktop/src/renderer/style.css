@@ -107,6 +107,14 @@ ol {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.thread-more {
+  gap: 4px;
+  color: var(--ink-muted);
+}
+/* 따로 하는 대화가 많아 왼쪽이 스크롤될 때 줄이 눌려 작아지지 않게 */
+.side > :not(.grow) {
+  flex-shrink: 0;
+}
 .side-foot {
   margin-top: 16px;
   padding-top: 10px;
@@ -2166,4 +2174,15 @@ button.side-row:hover {
 }
 .wd-stack .svc-mark.ws-mark:first-child {
   margin-left: 0;
+}
+
+/* 더 보기·접기 꺾쇠: 아래(펼치기) / 위(접기) */
+.more-chev {
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  transition: transform var(--dur) var(--ease);
+}
+.more-chev.open {
+  transform: rotate(-90deg);
 }
