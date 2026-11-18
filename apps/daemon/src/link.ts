@@ -433,7 +433,12 @@ export class PhoneLink {
         }
       }
       case 'side-new': {
-        await this.send(phone, await this.host.sideNew())
+        try {
+          await this.send(phone, await this.host.sideNew())
+        } catch (e) {
+          // 너무 많으면 만들지 않는다 (폰은 알림으로 보여 주고 메뉴로 돌아간다)
+          return this.send(phone, { kind: 'error', message: (e as Error).message })
+        }
         return this.send(phone, await this.stateFor(phone))
       }
       case 'side-delete': {

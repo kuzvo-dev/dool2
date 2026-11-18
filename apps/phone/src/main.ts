@@ -21,6 +21,7 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
+import { SIDE_THREAD_PEEK } from '@dool2/protocol'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import {
@@ -216,6 +217,8 @@ const st: {
   }
   /** 새 따로 하는 대화를 만들어 달라고 했다 (만들어지면 바로 연다) */
   sideWanted?: boolean
+  /** 메뉴에서 따로 하는 대화를 모두 펼쳐 보는 중 */
+  sideAll?: boolean
   librarySeg: 'made' | 'media'
   draft: string
   toast?: string
@@ -661,6 +664,7 @@ async function receive(env: Envelope) {
       return
     case 'error':
       st.opening = undefined
+      st.sideWanted = false
       toast(msg.message)
       break
     case 'thread': {
@@ -3745,16 +3749,7 @@ function drawerView() {
       h('span', { class: 'over', text: '따로 하는 대화' }),
       h('button', { class: 'fbtn small', label: '새 대화', onclick: newSide }, icon('pencil')),
     ),
-    ...sideThreads()
-      .slice(0, 12)
-      .map((t) =>
-        h(
-          'button',
-          { class: 'navi side-item', onclick: () => openSide(t.id, t.title) },
-          h('span', { class: t.busy ? 'dot work pulse' : 'dot' }),
-          h('span', { class: 'side-name', text: t.title }),
-        ),
-      ),
+    ...sideMenu(),
     h('p', { class: 'over drawer-sec', text: '설정' }),
     navi(
       'connect',
@@ -4786,6 +4781,43 @@ function connectSheet(id: string) {
 
 function sideThreads() {
   return (st.pc?.threads ?? []).filter((t) => t.side && t.title !== '두리 피드')
+}
+
+/** 메뉴의 따로 하는 대화: 최근 몇 개만 보여 주고 나머지는 '더 보기'로 펼친다 (서랍은 통째로 스크롤된다) */
+function sideMenu(): Node[] {
+  const all = sideThreads()
+  // 답하는 중인 대화는 접어 둔 쪽에 있어도 보이게 앞으로
+  const pinned = all.filter((t) => t.busy)
+  const rest = all.filter((t) => !pinned.includes(t))
+  const ordered = [...pinned, ...rest]
+  const shown = st.sideAll ? ordered : ordered.slice(0, SIDE_THREAD_PEEK)
+  const more = ordered.length - shown.length
+  const items: Node[] = shown.map((t) =>
+    h(
+      'button',
+      { class: 'navi side-item', onclick: () => openSide(t.id, t.title) },
+      h('span', { class: t.busy ? 'dot work pulse' : 'dot' }),
+      h('span', { class: 'side-name', text: t.title }),
+    ),
+  )
+  if (!all.length)
+    items.push(h('p', { class: 'meta side-empty', text: '여행·이사처럼 길게 이어질 일은 따로 이야기해요' }))
+  if (more > 0 || (st.sideAll && ordered.length > SIDE_THREAD_PEEK))
+    items.push(
+      h(
+        'button',
+        {
+          class: 'navi side-more',
+          onclick: () => {
+            st.sideAll = !st.sideAll
+            renderOverlay()
+          },
+        },
+        h('span', { text: st.sideAll ? '접기' : `${more}개 더 보기` }),
+        icon('chevron', st.sideAll ? 'i more-chev open' : 'i more-chev'),
+      ),
+    )
+  return items
 }
 
 function isSideThread(id: string) {

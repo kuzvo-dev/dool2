@@ -426,6 +426,10 @@ interface Side {
   busy: boolean
 }
 let side: Side | undefined
+/** 왼쪽 목록에 처음 보여 주는 따로 하는 대화 수 (protocol의 SIDE_THREAD_PEEK와 같게). 나머지는 '더 보기'로 */
+const SIDE_PEEK = 8
+/** 왼쪽 목록에서 따로 하는 대화를 모두 펼쳐 보는 중 */
+let sideAll = false
 
 async function loadThreads() {
   const { threads } = await api<{ threads: ThreadSummary[] }>('/api/threads')
@@ -435,7 +439,12 @@ async function loadThreads() {
 }
 
 function renderThreads() {
-  const list = state.threads.slice(0, 12)
+  const open = state.view === 'thread' ? state.threadId : undefined
+  // 답하는 중·승인 기다리는·지금 연 대화는 접어 둔 쪽에 있어도 보이게 앞으로
+  const pinned = state.threads.filter((t) => t.busy || t.approval || t.id === open)
+  const ordered = [...pinned, ...state.threads.filter((t) => !pinned.includes(t))]
+  const list = sideAll ? ordered : ordered.slice(0, SIDE_PEEK)
+  const more = ordered.length - list.length
   const pencil = button('icon-btn side-new', () => void newSide(), icon('pencil'))
   pencil.setAttribute('aria-label', '따로 하는 대화 새로 만들기')
   pencil.title = '새로 만들기'
@@ -457,6 +466,19 @@ function renderThreads() {
           return b
         })
       : [el('p', 'meta thread-empty', '여행·이사처럼 길게 이어질 일은 따로 이야기해요')]),
+    ...(more > 0 || (sideAll && ordered.length > SIDE_PEEK)
+      ? [
+          button(
+            'navi thread-item thread-more',
+            () => {
+              sideAll = !sideAll
+              renderThreads()
+            },
+            el('span', '', sideAll ? '접기' : `${more}개 더 보기`),
+            icon('chevron', sideAll ? 'i more-chev open' : 'i more-chev'),
+          ),
+        ]
+      : []),
   )
 }
 
@@ -551,7 +573,8 @@ function renderSide() {
   box.replaceChildren(
     el(
       'div',
-      'page page-narrow side-page',
+      // 메인 대화와 같은 폭 (.messages가 정한 760px 칸을 그대로 쓴다)
+      'page side-page',
       el(
         'header',
         'side-head',

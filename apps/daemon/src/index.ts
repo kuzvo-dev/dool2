@@ -56,6 +56,7 @@ import {
   type Settings,
   SettingsPatchSchema,
   SettingsSchema,
+  SIDE_THREAD_MAX,
   type StoredMessage,
   type TellRecordMessage,
   type ThreadSummary,
@@ -1071,10 +1072,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         connectMark(card.id, action === 'mark')
         return {}
       },
-      sideNew: async () => {
-        const t = store.createThread(await pickAgent(undefined), '새 대화', undefined, true)
-        return { kind: 'thread', thread: t, messages: [] }
-      },
+      sideNew: async () => ({ kind: 'thread', thread: await openSide(), messages: [] }),
       sideDelete: async (id) => {
         const t = store.getThread(id)
         if (!t?.side || threads.isRunning(id)) return false
@@ -1683,13 +1681,32 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 대화 목록 + 홈 화면용 정보: 답하는 중인지, 마지막 답 미리보기(앞의 몇 개만), 기다리는 승인.
    * PC 앱과 폰이 같은 걸 받는다
    */
+  /** 따로 하는 대화 새로 열기: 빈 대화가 있으면 그걸 다시 쓰고, SIDE_THREAD_MAX개면 지워 달라고 한다 */
+  async function openSide(agent?: AgentId) {
+    const feed = store.getSetting('feedThread')
+    const t = store.openSideThread(
+      agent ?? (await pickAgent(undefined)),
+      SIDE_THREAD_MAX,
+      typeof feed === 'string' ? feed : undefined,
+    )
+    if (!t)
+      throw new Error(
+        `따로 하는 대화는 ${SIDE_THREAD_MAX}개까지 둘 수 있어요. 다 끝낸 대화를 지우고 다시 만들어 주세요.`,
+      )
+    return t
+  }
   function threadSummaries(limit = 50, previews = 6): ThreadSummary[] {
     const waiting = new Map<string, ApprovalView>()
     for (const ap of browserTools.approvals.list()) {
       const t = ap.status === 'pending' ? approvalThread.get(ap.id) : undefined
       if (t) waiting.set(t, ap)
     }
-    return store.listThreads(limit).map((t, i) => {
+    // 메인 대화 구간이 많이 쌓여도 따로 하는 대화가 목록에서 밀려나지 않게 따로 붙인다
+    const recent = store.listThreads(limit)
+    const seen = new Set(recent.map((t) => t.id))
+    const all = [...recent, ...store.listSideThreads(SIDE_THREAD_MAX + 1).filter((t) => !seen.has(t.id))]
+    all.sort((x, y) => (x.updatedAt < y.updatedAt ? 1 : x.updatedAt > y.updatedAt ? -1 : 0))
+    return all.map((t, i) => {
       const out: ThreadSummary = {
         id: t.id,
         agent: t.agent,
@@ -2356,8 +2373,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (req.method === 'POST') {
         const body = CreateThreadRequestSchema.parse(await readJson(req))
         if (body.agent && !runtimes[body.agent]) return json(res, 400, { error: '지원하지 않는 AI예요' })
+        if (body.side) {
+          try {
+            return json(res, 201, { thread: await openSide(body.agent) })
+          } catch (e) {
+            return json(res, 409, { error: (e as Error).message })
+          }
+        }
         const agent = body.agent ?? (await pickAgent(undefined))
-        return json(res, 201, { thread: store.createThread(agent, '새 대화', undefined, body.side === true) })
+        return json(res, 201, { thread: store.createThread(agent, '새 대화') })
       }
     }
 
