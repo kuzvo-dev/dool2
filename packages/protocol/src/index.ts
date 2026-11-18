@@ -863,6 +863,11 @@ export type PhoneToPc =
   | { kind: 'reset'; at: number; services: boolean; sig: string }
   /** 카드 사진을 PC에 부탁한다 (폰은 바깥 서버에 직접 붙지 않는다) */
   | { kind: 'thumb'; url: string }
+  /** 설정 > 내 정보·결제 수단: 보기(가린 값), 고치기(빈 값 = 지우기), 모두 지우기, 사이트 결제 수단 잊기 */
+  | { kind: 'profile-get' }
+  | { kind: 'profile-set'; values: Record<string, string> }
+  | { kind: 'profile-clear' }
+  | { kind: 'pay-choice-forget'; host: string }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
@@ -979,6 +984,14 @@ export type PcToPhone =
   | { kind: 'decided'; id: string; ok: boolean; message: string }
   /** 카드 사진 (PC가 받아 data: 주소로). 못 받으면 data가 없다 */
   | { kind: 'thumb'; url: string; data?: string }
+  /** 내 정보(가린 값)와 사이트별 마지막 결제 수단. message는 방금 한 일의 결과 */
+  | {
+      kind: 'profile'
+      have: Record<string, string>
+      missing: string[]
+      payChoices: Record<string, string>
+      message?: string
+    }
   /** 처음부터 다시의 결과 */
   | { kind: 'reset-done'; ok: boolean; message: string }
   /** 대화 하나의 기록 (before에 대한 답이면 before가 같이 온다) */
