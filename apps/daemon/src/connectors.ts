@@ -530,6 +530,8 @@ export class Connectors {
         const done = await this.step(step, {
           scope,
           tier: tool.tier,
+          tool: `${card.id}.${tool.name}`,
+          sites: [site, ...(card.alsoSites ?? [])],
           site,
           pollMs,
           sleep,
@@ -645,6 +647,10 @@ export class Connectors {
     c: {
       scope: Scope
       tier: ConnectorTool['tier']
+      /** 서비스.도구 이름 (결제 흐름 기록용) */
+      tool: string
+      /** 이 서비스의 사이트들 (결제 흐름을 사이트 단위로 기억할 때) */
+      sites: string[]
       site: string
       pollMs: number
       sleep: (ms: number) => Promise<unknown>
@@ -907,12 +913,30 @@ export class Connectors {
       return r
     }
     if ('handoff_to_agent' in s) {
+      // 돈 내기 도구가 넘긴 탭은 결제 흐름: 결제 화면 전 [예약하기]는 승인 없이, 승인은 결제 화면에서만 (browser-tools)
+      const pay = c.tier === '돈 내기'
+      if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
       const page = await c.read()
-      return text(`${f(s.handoff_to_agent)}\n여기부터는 브라우저 도구로 이어서 해요.\n\n${page}`)
+      return text(
+        `${f(s.handoff_to_agent)}\n${pay ? `${PAY_ORDER}\n` : ''}여기부터는 브라우저 도구로 이어서 해요.\n\n${page}`,
+      )
     }
     return
   }
 }
+
+/**
+ * 돈 내기 흐름의 표준 순서 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
+ * 승인은 결제 화면에서 한 번, 사람에게는 사람만 할 수 있는 칸만 넘긴다
+ */
+export const PAY_ORDER = [
+  '[결제 순서] ① 무엇을 살지·예약할지 사용자와 정해요.',
+  '② [예약하기]·[구매하기]·[주문하기]처럼 결제 화면을 여는 버튼은 승인 없이 browser_click으로 눌러요.',
+  '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정·예약자 정보를 읽고, 기억에 있는 이름·연락처로 칸을 채운 뒤 마지막 버튼에 browser_request_approval을 써요. 승인은 이때 한 번이에요.',
+  '④ 카드 번호·결제 비밀번호·본인인증처럼 사람만 할 수 있는 것만 browser_handoff로 넘겨요. 나머지를 통째로 넘기지 않아요.',
+  '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
+  '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 연결 전엔 connect_ask, 로그인 화면이면 browser_request_login.',
+].join('\n')
 
 function firstText(r: ToolResult): string {
   const c = r.content.find((x) => x.type === 'text')
