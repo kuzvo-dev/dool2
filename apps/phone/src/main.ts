@@ -4123,7 +4123,7 @@ function infoSheet(id: string) {
     const inputs = q.fields.map((f) => {
       const input = h('input', { class: 'field' })
       input.name = f.key
-      input.placeholder = f.example ? `${f.label} (예: ${f.example})` : f.label
+      input.placeholder = f.example ? `예: ${f.example}` : f.label
       input.setAttribute('aria-label', f.label)
       if (f.type === 'tel') {
         input.type = 'tel'
@@ -4192,7 +4192,7 @@ function infoSheet(id: string) {
       { class: 'lock-note' },
       icon('lock'),
       q.field === 'form'
-        ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값만 보고, 설정에서 언제든 지울 수 있어요.'
+        ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
         : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
     ),
     h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),

@@ -805,6 +805,9 @@ export class BrowserTools {
       throw new Error(
         '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
       )
+    // 한 탭에서 누를 마지막 버튼은 하나다: 같은 탭에 기다리는 승인이 있으면 새 것으로 바꾼다
+    // (실측: AI가 다시 읽고 같은 버튼에 한 번 더 요청해 카드가 두 장 떴고, 앞 카드는 표시 번호가 바뀌어 누를 수 없었다)
+    this.approvals.expireTab(tabId)
     // 승인 카드에 실제 화면을 함께 보여 준다 (AI가 적은 금액이 틀려도 사용자가 알아챌 수 있게)
     const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
       | { data?: string }

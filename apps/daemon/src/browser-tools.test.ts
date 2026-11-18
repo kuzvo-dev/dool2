@@ -855,6 +855,15 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     })
     expect(ok.isError).toBeUndefined()
     expect(tools.approvals.list().filter((a) => a.status === 'pending')).toHaveLength(1)
+    // 같은 버튼에 또 요청하면 카드가 두 장이 되지 않고 새 것 하나만 남는다
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e10',
+      what: '슈피리어 더블룸 3박',
+      where: '호텔스닷컴',
+    })
+    expect(tools.approvals.list().filter((a) => a.status === 'pending')).toHaveLength(1)
+    expect(tools.approvals.list().filter((a) => a.status === 'expired')).toHaveLength(1)
   })
 
   it('들어가는 버튼이 바로 확정해 버린 화면이면 숨기지 않고 알린다', async () => {

@@ -1037,6 +1037,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       ...(opts.push ? { push: opts.push } : {}),
     },
   )
+  browserTools.approvals.onChange = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
   browserTools.approvals.onCreate = (rec) => {
     // 승인 요청은 답하는 중인 대화의 도구 호출에서 나온다. 하나뿐이면 그 대화로 본다
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
