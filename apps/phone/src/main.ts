@@ -333,6 +333,11 @@ async function receive(env: Envelope) {
       }
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
+      // PC가 보낸 기다리는 로그인이 전부다: 목록에 없으면 PC에서 끝났거나(본체를 다시 켬·시간 지남) 사라진 것
+      // (컬리 로그인 카드가 연결을 마친 뒤에도 '나를 기다려요'에 남았다)
+      for (const l of st.logins.values())
+        if (l.status === 'pending' && !(msg.logins ?? []).some((x) => x.id === l.id))
+          st.logins.set(l.id, { ...l, status: 'expired' })
       for (const q of msg.infos ?? []) st.infos.set(q.id, q)
       for (const id of st.infos.keys()) if (!(msg.infos ?? []).some((q) => q.id === id)) st.infos.delete(id)
       st.connecting = new Set(msg.connecting ?? [])
@@ -715,7 +720,14 @@ function markDecided(a: ApprovalView, decision: 'approve' | 'reject') {
 
 const pendingApprovals = () =>
   [...st.approvals.values()].filter((a) => a.status === 'pending' && !st.decided.has(a.id))
-const pendingLogins = () => [...st.logins.values()].filter((l) => l.status === 'pending')
+/** 기다리는 로그인: 시간이 지났거나 그 서비스가 이미 연결된 것은 빼고 */
+const pendingLogins = () =>
+  [...st.logins.values()].filter((l) => {
+    if (l.status !== 'pending' || Date.parse(l.expiresAt) <= Date.now()) return false
+    const cid = cardIdFor(l.origin)
+    const svc = cid ? st.services?.find((x) => x.card.id === cid) : undefined
+    return !(svc?.connectedAt && Date.parse(svc.connectedAt) >= Date.parse(l.createdAt))
+  })
 
 // ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 (다음 단계에서 실시간 화면으로 바꾼다) ──
 
