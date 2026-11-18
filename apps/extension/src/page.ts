@@ -676,6 +676,28 @@ export async function pageSelectOptions(
     for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
       t.dispatchEvent(new MouseEvent(k, { bubbles: true, cancelable: true, view: window }))
   }
+  /**
+   * 목록 열기. 상자를 눌러 보고, 안 열리면 감싼 칸(…control)을 누르고, 그래도 안 열리면 초점을 주고 ↓ 키
+   * (실측 쿠팡: react-select. 보이는 상자는 감싼 칸이고 role=combobox는 숨은 입력칸이라 그 자체를 눌러서는 안 열린다)
+   */
+  const openList = async (box: HTMLElement) => {
+    const opened = () => box.getAttribute('aria-expanded') === 'true'
+    const wait = () => new Promise((r) => setTimeout(r, 350))
+    press(box)
+    await wait()
+    if (opened()) return
+    const control = box.closest('[class*="control"],[class*="Control"]') ?? box.parentElement?.parentElement
+    if (control) {
+      press(control)
+      await wait()
+      if (opened()) return
+    }
+    box.focus()
+    box.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }),
+    )
+    await wait()
+  }
   const fromSelect = (sel: HTMLSelectElement) =>
     [...sel.options]
       .filter((o) => !o.disabled && norm(o.textContent))
@@ -696,8 +718,7 @@ export async function pageSelectOptions(
   }
   const before = new Set([...document.querySelectorAll('body *')].filter(shownEl))
   const wasOpen = el.getAttribute('aria-expanded') === 'true'
-  if (!wasOpen) press(el)
-  await new Promise((r) => setTimeout(r, 400))
+  if (!wasOpen) await openList(el)
   const ids = `${el.getAttribute('aria-controls') ?? ''} ${el.getAttribute('aria-owns') ?? ''}`
     .trim()
     .split(/\s+/)
@@ -777,8 +798,25 @@ export async function pageSelectChoose(ref: string, label: string) {
     return r.width > 0 && r.height > 0
   }
   const before = new Set([...document.querySelectorAll('body *')].filter(shown))
-  if (el.getAttribute('aria-expanded') !== 'true') press(el)
-  await new Promise((r) => setTimeout(r, 400))
+  if (el.getAttribute('aria-expanded') !== 'true') {
+    // 읽을 때와 같은 순서로 연다: 상자 → 감싼 칸 → ↓ 키
+    const opened = () => el.getAttribute('aria-expanded') === 'true'
+    const wait = () => new Promise((r) => setTimeout(r, 350))
+    press(el)
+    await wait()
+    const control = el.closest('[class*="control"],[class*="Control"]') ?? el.parentElement?.parentElement
+    if (!opened() && control) {
+      press(control)
+      await wait()
+    }
+    if (!opened()) {
+      el.focus()
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }),
+      )
+      await wait()
+    }
+  }
   // 읽을 때처럼 새로 보인 것 중 글이 같은 가장 안쪽 (늘 DOM에 있는 aria-controls 목록이면 보이는 것 전부)
   const cands = [...document.querySelectorAll('body *')].filter(
     (e) =>
