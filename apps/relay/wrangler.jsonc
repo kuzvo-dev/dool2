@@ -4,7 +4,9 @@
   "name": "dool2-relay",
   "main": "src/worker.ts",
   "compatibility_date": "2026-11-01",
-  "workers_dev": false,
+  // workers.dev 주소도 켜 둔다: 그 주소로 짝지은 폰·PC가 있다. false로 배포하면 그 기기들이 모두 끊긴다(오류 1042, 2026-11-19)
+  "workers_dev": true,
+  "preview_urls": false,
   "routes": [{ "pattern": "relay.dool2.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "ROOMS", "class_name": "RelayRoom" }]
