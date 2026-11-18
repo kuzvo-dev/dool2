@@ -956,6 +956,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           return { url: hit.url, status: hit.status, json: pickPath(data, path) ?? null }
         }
         if (Date.now() > until) throw new Error(`페이지가 그 데이터를 받지 않았어요 (${String(a.url)})`)
+        // 창이 가려져 있으면 화면을 그려야 데이터를 부르는 사이트(유니클로·다이소몰)가 멈춰 있다: 기다리는 동안 한 장씩 그린다
+        await paint(tabId)
         await sleep(200)
       }
     }
