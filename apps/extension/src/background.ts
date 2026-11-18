@@ -547,11 +547,15 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
  * 1×1로 화면을 찍으면 한 장을 그린다. 창을 앞으로 끌어오지 않으니 맥을 쓰는 사람을 방해하지 않는다
  */
 async function paint(tabId: number) {
-  await cdp(tabId, 'Page.captureScreenshot', {
-    format: 'jpeg',
-    quality: 10,
-    clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 },
-  }).catch(() => {})
+  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다
+  await Promise.race([
+    cdp(tabId, 'Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: 10,
+      clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 },
+    }).catch(() => {}),
+    sleep(1500),
+  ])
 }
 
 /** 폰 너비로 그리고 있는 탭 (원격 화면) */
