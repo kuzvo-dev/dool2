@@ -59,7 +59,9 @@ describe('중계 서버', () => {
     const k = await linkKey(phone.keys.boxPriv, pcKeys.boxPub, [phone.keys.id, pcKeys.id])
     // 원격 화면 요청은 지금 보는 사람에게만 의미가 있어서 쌓아 두지 않는다
     phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'screen', seq: 1 }, 'now'))
-    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'ask', seq: 2 }, 'later'))
+    // 흘려 쓰는 답 조각도 쌓지 않는다 (다시 붙으면 대화를 처음부터 받는다)
+    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'stream', seq: 2 }, 'now'))
+    phone.c.send(await seal(k, { v: 1, from: phone.keys.id, to: pcKeys.id, kind: 'ask', seq: 3 }, 'later'))
     await waitFor(() => relay?.queued(pcKeys.id) === 1)
 
     const got: Envelope[] = []

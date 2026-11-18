@@ -15,6 +15,7 @@ import {
   QUEUE_TTL_MS,
   RATE_LIMIT,
   route,
+  TRIM_EVERY,
 } from './core.js'
 
 export interface Env {
@@ -135,8 +136,18 @@ export class RelayRoom extends DurableObject<Env> {
     return this.ctx.getWebSockets().filter((ws) => (ws.deserializeAttachment() as Attachment).me?.id === id)
   }
 
+  /** 받는 기기마다 자르기 전에 쌓은 수 (잠들면 0부터 다시 센다: 그래도 TRIM_EVERY 안에 자른다) */
+  private readonly sinceTrim = new Map<string, number>()
+
   private async enqueue(to: string, data: string, now: number) {
     this.sql.exec('INSERT INTO queue (to_id, at, data) VALUES (?, ?, ?)', to, now, data)
+    // 자르기는 대기열을 다시 읽어서(최대 QUEUE_MAX줄) 봉투마다 하면 읽기가 크게 늘어난다: 몇 번에 한 번만
+    const n = (this.sinceTrim.get(to) ?? 0) + 1
+    this.sinceTrim.set(to, n % TRIM_EVERY)
+    if (n < TRIM_EVERY) {
+      await this.wakeAt(now + QUEUE_TTL_MS)
+      return
+    }
     this.sql.exec(
       'DELETE FROM queue WHERE to_id = ? AND n NOT IN (SELECT n FROM queue WHERE to_id = ? ORDER BY n DESC LIMIT ?)',
       to,
