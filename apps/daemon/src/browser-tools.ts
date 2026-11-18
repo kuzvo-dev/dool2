@@ -921,11 +921,21 @@ export class BrowserTools {
     return this.read(at, a.maxChars, lines.join('\n'))
   }
 
-  /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined) */
+  /** 고칠 때 볼 일한 기록 (못 읽은 결제 화면 목록의 모양 등) */
+  onNote?: (kind: string, data: Record<string, unknown>) => void
+
+  /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined, 그 이유는 일한 기록에) */
   private async selectOptions(tabId: number, ref: string) {
-    const r = (await this.browser.call('options', { tabId, ref }).catch(() => undefined)) as
-      | { options?: { label: string; selected: boolean }[] | null }
+    const r = (await this.browser.call('options', { tabId, ref }, 15_000).catch(() => undefined)) as
+      | { options?: { label: string; selected: boolean }[] | null; why?: string }
       | undefined
+    if (!r?.options && r?.why) {
+      let host = ''
+      try {
+        host = new URL(this.pages.get(tabId)?.url ?? '').hostname
+      } catch {}
+      this.onNote?.('select-unread', { host, ref, why: r.why })
+    }
     return r?.options ?? undefined
   }
 

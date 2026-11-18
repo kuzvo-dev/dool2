@@ -856,8 +856,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 펼침 목록의 고를 것 (결제 화면의 등록 카드·할부). 고르는 건 하지 않는다
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
-      const options = await inFrame(tabId, frameOf(tabId, ref).frameId, pageSelectOptions, ref)
-      return { tabId, options }
+      const r = await inFrame(tabId, frameOf(tabId, ref).frameId, pageSelectOptions, ref)
+      return { tabId, options: r?.options ?? null, ...(r?.why ? { why: r.why } : {}) }
     }
     case 'choose': {
       // 펼침 목록에서 글자가 같은 것을 고른다 (본체가 승인받은 선택을 넣을 때)
