@@ -27,6 +27,21 @@ describe('두리 금고', () => {
   })
 })
 
+describe('같은 사이트에 계정을 여러 번 넣었을 때', () => {
+  it('가장 나중에 넣은 계정을 쓴다 (아이디를 잘못 쳤다가 고쳐 넣은 경우)', async () => {
+    const v = new Vault(memorySecrets())
+    await v.add({ url: 'https://shop.example', username: 'typo-id', password: 'pw1' })
+    await v.add({ url: 'https://shop.example', username: 'right-id', password: 'pw2' })
+    expect((await v.findForOrigin('https://shop.example'))?.username).toBe('right-id')
+    // 예전 계정의 비밀번호를 다시 넣으면 그 계정이 가장 나중 것이 된다
+    await v.add({ url: 'https://shop.example', username: 'typo-id', password: 'pw3' })
+    expect(await v.findForOrigin('https://shop.example')).toMatchObject({
+      username: 'typo-id',
+      password: 'pw3',
+    })
+  })
+})
+
 const LOGIN = `# 로그인
 아이디 [e1 입력칸 "아이디"] 비밀번호 [e2 비밀번호칸 "비밀번호"] [e3 버튼 "로그인"]`
 

@@ -83,11 +83,15 @@ export class Vault {
     return true
   }
 
-  /** 본체 안에서만 쓴다: 지금 페이지 origin과 정확히 같은 항목 */
+  /**
+   * 본체 안에서만 쓴다: 지금 페이지 origin과 정확히 같은 항목.
+   * 같은 사이트에 여러 개면 가장 나중에 넣은 것 (add가 새로 넣거나 고친 항목을 맨 뒤에 둔다).
+   * 처음 것을 주면, 아이디를 잘못 쳤다가 고쳐 넣은 뒤에도 예전의 틀린 계정으로 계속 로그인을 시도한다
+   */
   async findForOrigin(
     origin: string,
   ): Promise<{ id: string; username: string; password: string } | undefined> {
-    const e = (await this.load()).find((x) => x.origin === origin)
+    const e = (await this.load()).findLast((x) => x.origin === origin)
     return e ? { id: e.id, username: e.username, password: e.password } : undefined
   }
 
