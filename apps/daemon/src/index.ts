@@ -2,7 +2,7 @@
 // M0: 로컬 API(127.0.0.1 + 토큰)로 대화를 받아 Claude Code·Codex를 돌리고 기록을 남긴다.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
@@ -78,6 +78,7 @@ import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
+import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
 import { Life, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
@@ -97,6 +98,8 @@ export { Vault, vaultOrigin } from './vault.js'
 
 export interface DaemonOptions {
   dataDir?: string
+  /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
+  journal?: false
   /** 0이면 빈 포트를 고른다 */
   port?: number
   token?: string
@@ -304,6 +307,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const browser = new BrowserBridge(paths.dataDir)
   await browser.listen()
   browser.on('status', (s) => events.emit('extension', s))
+  // 일한 기록: 연결·도구·답 한 차례가 어떻게 됐는지 이 PC에 며칠만 남긴다 (문제를 찾을 때 본다, journal.ts)
+  const journal = new Journal(opts.journal === false ? undefined : join(paths.dataDir, 'logs'))
+  let extensionSeen = ''
+  browser.on('status', (s) => {
+    const sig = `${s.connected}:${s.connected ? s.version : ''}`
+    if (sig === extensionSeen) return
+    extensionSeen = sig
+    journal.write('extension', {
+      connected: s.connected,
+      ...(s.connected ? { version: s.version, browser: s.browser } : {}),
+    })
+  })
   const vault = new Vault(secrets)
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   const skillsDir = opts.skillsDir ?? defaultSkillsDir()
@@ -315,6 +330,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connected: () => readSettings().connections ?? {},
     extensionVersion: () => (browser.status.connected ? browser.status.version : undefined),
     health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
+    journal,
   })
   const skills = new Skills(
     skillsDir,
@@ -469,6 +485,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (Date.now() - (takeoverAt.get(card.id) ?? 0) < 10 * 60_000) return false
     takeoverAt.set(card.id, Date.now())
     takeoverTabs.set(r.tabId, card.id)
+    journal.write('connect-takeover', { id: card.id })
     // 로그인되면 지켜보던 쪽(loginWatch)이 연결로 표시하고 대화에 알린다
     connectHuman.add(card.id)
     // 화면에는 앞의 두 문장만 보인다 (도구 이름이 든 문장은 AI에게만 간다)
@@ -497,6 +514,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (steps.at(-1)?.text === text && !ask) return
       steps.push({ text, at: Date.now(), ...(ask ? { ask } : {}) })
       connectSteps.set(id, steps)
+      journal.write('connect-step', { id, text, ...(ask ? { ask: ask.kind } : {}) })
       connectProgress(id)
     }
   }
@@ -645,9 +663,37 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
       .catch(() => {})
   }
-  function startConnect(card: ConnectCard, run: () => Promise<ConnectResult>): Promise<ConnectResult> {
+  /** 연결이 멈춘 순간의 화면을 기록에 남긴다: 그림 한 장, 주소(물음표 뒤 뺌), 화면 글 앞부분(칸에 든 값은 가림) */
+  const journalScreen = async (id: string, tabId: number) => {
+    const snap = (await browser
+      .call('snapshot', { tabId, maxChars: 4_000 }, 15_000)
+      .catch(() => undefined)) as { url: string; title?: string; text: string } | undefined
+    const pic = (await browser
+      .call('screenshot', { tabId, maxWidth: 780, quality: 50 }, 15_000)
+      .catch(() => undefined)) as { data?: string } | undefined
+    const shot = pic?.data ? journal.shot(id, pic.data) : undefined
+    if (!snap && !shot) return
+    journal.write('connect-screen', {
+      id,
+      ...(shot ? { shot } : {}),
+      ...(snap
+        ? {
+            url: scrubUrl(snap.url),
+            title: snap.title ?? '',
+            text: scrubText(snap.text.replace(/값="[^"]*"/g, '값="(가림)"'), 1_500),
+          }
+        : {}),
+    })
+  }
+  function startConnect(
+    card: ConnectCard,
+    run: () => Promise<ConnectResult>,
+    how = 'login',
+  ): Promise<ConnectResult> {
     const running = connecting.get(card.id)
     if (running) return running
+    const startedAt = Date.now()
+    journal.write('connect-start', { id: card.id, how })
     // 던져진 오류는 화면 표시(e2 등)가 섞인 속 이야기라 사용자에게는 쉬운 말로, 원문은 기록에만
     const p: Promise<ConnectResult> = run().catch((e: Error) => {
       console.warn(`[연결] ${card.id} 자동 로그인 오류: ${e.message}`)
@@ -668,6 +714,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connectTabs.delete(card.id)
       // 화면을 못 알아봐 멈춘 것이면 두리(AI)가 대화에서 이어받는다
       const agent = agentTakeover(card, r)
+      journal.write('connect-end', {
+        id: card.id,
+        how,
+        ok: r.ok,
+        ...(r.reason ? { reason: r.reason } : {}),
+        ...(r.human ? { human: true } : {}),
+        ...(agent ? { agent: true } : {}),
+        message: r.message,
+        ms: Date.now() - startedAt,
+      })
+      // 끝까지 못 갔으면 그 화면을 남긴다 (왜 멈췄는지 나중에 볼 수 있게)
+      if (!r.ok && r.tabId !== undefined) void journalScreen(card.id, r.tabId)
       // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)
       void link
         .broadcast({ kind: 'connect-result', id: card.id, ...r, ...(agent ? { agent } : {}) })
@@ -732,6 +790,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
   }
   const connectMark = (id: string, on: boolean): string | undefined => {
+    journal.write('connect-marked', { id, on })
     loginWatch.stop(id)
     if (on) void skills.card(id).then((card) => card && resolveLoginRequests(card))
     if (on && connectHuman.delete(id)) void skills.card(id).then((card) => card && connectDone(card))
@@ -875,7 +934,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connectSocial: async (id, provider) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
-        return startConnect(card, () => connectSocial(card, provider))
+        return startConnect(card, () => connectSocial(card, provider), `social:${provider}`)
       },
       decide: async (id, decision) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
@@ -948,6 +1007,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     let askText = ''
     let usedTool = false
     let answerText = ''
+    // 일한 기록: 이번 차례에 쓴 도구 이름과 걸린 시간 (말의 내용은 적지 않는다)
+    const turnAt = Date.now()
+    const turnTools: string[] = []
+    const turnFromPhone = fromPhone.has(threadId)
     try {
       for await (const ev of inner) {
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text))
@@ -959,6 +1022,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
           usedTool = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
+        if (ev.type === 'agent' && ev.event.type === 'tool' && turnTools.length < 60)
+          turnTools.push(ev.event.name.replace(/^(mcp__dool2__|dool2_)/, ''))
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
         const rec =
@@ -988,6 +1053,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     } finally {
       activeThreads.delete(threadId)
+      journal.write('turn', {
+        where: side ? 'side' : threadId === store.getSetting('feedThread') ? 'feed' : 'main',
+        ms: Date.now() - turnAt,
+        tools: turnTools,
+        answered: answerText.length > 0,
+        ...(asked ? { waitingForUser: true } : {}),
+        ...(turnFromPhone ? { phone: true } : {}),
+      })
       if (usedTool && askText && answerText && !routineThreads.has(threadId))
         life.feed({
           kind: 'done',
@@ -1747,6 +1820,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { ok: await link.removePhone(c) })
     }
 
+    // 일한 기록 (journal.ts): 최근 며칠의 연결·도구·답 기록과 멈춘 화면 그림. 이 PC에서만 읽는다
+    if (a === 'logs') {
+      if (!b && req.method === 'GET') {
+        const kind = url.searchParams.get('kind') ?? undefined
+        return json(res, 200, {
+          keepDays: KEEP_DAYS,
+          shotDays: SHOT_DAYS,
+          entries: journal.read({
+            days: Number(url.searchParams.get('days')) || 2,
+            limit: Math.min(Number(url.searchParams.get('limit')) || 500, 5_000),
+            ...(kind ? { kind } : {}),
+          }),
+        })
+      }
+      if (b === 'shots' && c && !d && req.method === 'GET' && /^[\w-]+\.jpg$/.test(c) && journal.shotsDir) {
+        const file = join(journal.shotsDir, c)
+        if (!existsSync(file)) return json(res, 404, { error: '그런 그림이 없어요' })
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' })
+        return void res.end(readFileSync(file))
+      }
+    }
+
     // 서비스 연결 (ADR 0014): 카드 목록, 로그인하러 Chrome에서 열기, 연결 표시
     if (a === 'connections') {
       if (!b && req.method === 'GET') return json(res, 200, { services: await skills.connections() })
@@ -1777,7 +1872,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const body = (await readJson(req)) as { provider?: unknown; background?: unknown }
         const provider = SocialProviderSchema.safeParse(body.provider)
         if (!provider.success) return json(res, 400, { error: '간편 로그인 종류를 골라 주세요' })
-        const p = startConnect(card, () => connectSocial(card, provider.data))
+        const p = startConnect(card, () => connectSocial(card, provider.data), `social:${provider.data}`)
         if (body.background === true)
           return json(res, 200, {
             ok: false,
@@ -1818,7 +1913,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(
           res,
           200,
-          await startConnect(card, () => connectLogin(card, creds.username, creds.password)),
+          await startConnect(card, () => connectLogin(card, creds.username, creds.password), 'relogin'),
         )
       }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
@@ -1963,6 +2058,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
         claudeLogin?.cancel()
+        journal.stop()
         clearInterval(lifeTimer)
         loginWatch.stopAll()
         link.stop()

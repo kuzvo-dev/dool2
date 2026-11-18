@@ -29,6 +29,7 @@ import {
 } from '@dool2/protocol/connector'
 import type { BrowserCaller, BrowserTools, RiskKind, ToolResult } from './browser-tools.js'
 import type { ConnectorHealth, Outcome } from './connector-health.js'
+import type { Journal } from './journal.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
 /** 같은 서비스를 잇달아 열 때 사이 간격. 한꺼번에 여러 번 열면 사이트가 막는다 (쿠팡, 2026-11-18) */
@@ -99,6 +100,8 @@ export class Connectors {
       pollMs?: number
       /** 건강 기록 (ADR 0020): 잇달아 깨지는 도구는 잠시 쉰다 */
       health?: ConnectorHealth
+      /** 일한 기록: 도구를 부를 때마다 결과·걸린 시간·막힌 까닭을 며칠 남긴다 */
+      journal?: Journal
       /** 연결된 확장 버전 (예전 확장에는 커넥터 엔진이 없다) */
       extensionVersion?: () => string | undefined
       /** 같은 서비스를 잇달아 열 때 사이 간격 (시험에서 줄인다) */
@@ -384,6 +387,7 @@ export class Connectors {
       }
     }
     const old = this.oldExtension()
+    if (old) this.opts.journal?.write('tool', { tool: name, outcome: 'old-extension', detail: old })
     if (old)
       return text(
         `Chrome의 두리 확장이 예전 버전(${old})이라 서비스 도구를 쓸 수 없어요. 브라우저 도구로 같은 일을 해 주세요. 확장이 ${MIN_CONNECTOR_EXTENSION} 이상으로 업데이트되면 다시 돼요.`,
@@ -395,6 +399,7 @@ export class Connectors {
         `${card.name}의 '${tool.title}' 도구는 요즘 사이트가 바뀌어 잠시 쉬고 있어요(${rest.reason}). 브라우저 도구로 같은 일을 해 주세요.`,
         true,
       )
+    const startedAt = Date.now()
     const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
     // 결과는 왔는데 꼭 채워질 칸이 비면 조용한 고장 (ADR 0020)
     let final: ToolResult = result
@@ -418,6 +423,13 @@ export class Connectors {
       }
     }
     if (seen) this.opts.health?.record(name, seen, why)
+    // 입력값(찾는 말·주소 등)은 적지 않는다: 도구 이름·결과·까닭·걸린 시간만
+    this.opts.journal?.write('tool', {
+      tool: name,
+      outcome: seen ?? (final.isError ? 'error' : 'ok'),
+      ...(why ? { detail: why } : {}),
+      ms: Date.now() - startedAt,
+    })
     if (!final.isError && seen === 'ok' && tool.minIntervalSec)
       this.recent.set(key, { at: Date.now(), result: final })
     return final
