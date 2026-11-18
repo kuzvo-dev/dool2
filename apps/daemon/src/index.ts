@@ -479,7 +479,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           `browser_read로 탭 ${r.tabId}을 읽고(멈춘 까닭: ${why}) 로그인을 이어서 해 주세요. ` +
           `아이디·비밀번호는 금고에 있으니 browser_login으로만 넣고 browser_click으로 로그인 버튼을 눌러요. ` +
           `browser_handoff는 로봇 확인·본인인증·인증번호가 나왔을 때 써요. ` +
-          `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭을 닫지 않은 채 결과만 한두 문장으로 말해요.`,
+          `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭은 닫지 말되 탭 이야기는 빼고 연결됐다는 결과만 한 문장으로 말해요.`,
       ),
     ).catch(() => {})
     return true
