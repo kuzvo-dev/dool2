@@ -62,6 +62,9 @@ describe('두리 MCP 도구', () => {
       'feed_post',
       'feed_tell',
       'conversation_search',
+      'file_find',
+      'file_read',
+      'file_write',
       'service_find',
       'service_call',
     ])

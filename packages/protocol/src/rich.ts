@@ -137,6 +137,9 @@ const TOOL_LABEL: Record<string, string> = {
   connect_ask: '연결 카드 띄우는',
   show_cards: '카드 만드는',
   conversation_search: '지난 대화 찾는',
+  file_find: '파일 찾는',
+  file_read: '파일 읽는',
+  file_write: '파일 만드는',
   service_find: '서비스 찾는',
   service_call: '서비스에서 일하는',
 }
