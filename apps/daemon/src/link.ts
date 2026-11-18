@@ -64,6 +64,8 @@ export interface LinkHost {
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
   /** 로그인 중 화면이 물은 것에 대한 폰의 답 (인증번호 등) */
   infoAnswer(id: string, value: string | undefined): void
+  /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
+  report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   /** 원격 화면 '필요한 칸만' */
@@ -490,6 +492,19 @@ export class PhoneLink {
       }
       case 'info-answer':
         return this.host.infoAnswer(String(msg.id), typeof msg.value === 'string' ? msg.value : undefined)
+      case 'report': {
+        // 폰이 보낸 것을 그대로 믿지 않는다: 개수·길이를 자른다
+        const trail = (Array.isArray(msg.trail) ? msg.trail : [])
+          .slice(-300)
+          .filter((t) => t && typeof t.at === 'number' && typeof t.what === 'string')
+          .map((t) => ({ at: t.at, what: t.what.slice(0, 200) }))
+        this.host.report?.(phone.name, {
+          trail,
+          ...(typeof msg.note === 'string' && msg.note.trim() ? { note: msg.note.trim().slice(0, 500) } : {}),
+          ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
+        })
+        return
+      }
       case 'decide': {
         const a = this.host.approval(msg.id)
         if (!a)

@@ -24,6 +24,9 @@ describe('일한 기록', () => {
     j.write('connect-screen', { id: 'kurly', shot })
     expect(j.read({ kind: 'connect-screen' })[0]?.shot).toBe(shot)
     expect(existsSync(join(dir, 'shots', shot as string))).toBe(true)
+    // 시각(t)도 그대로
+    j.write('phone-trail', { t: '2026-11-18T02:50:32.085Z', what: '탭 ideas' })
+    expect(j.read({ kind: 'phone-trail' })[0]?.t).toBe('2026-11-18T02:50:32.085Z')
   })
 
   it('비밀번호·인증번호 칸은 값을 적지 않고, 글에 섞인 이메일·긴 숫자는 가린다', () => {

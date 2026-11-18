@@ -120,6 +120,8 @@ type Overlay =
   | { kind: 'item'; id: string }
   /** 답을 길게 눌렀을 때: 보관함에 남기기·복사 */
   | { kind: 'msg'; id: string }
+  /** 문제 알리기: 방금 있었던 일을 PC의 기록에 남긴다 */
+  | { kind: 'report' }
   /** 입력칸 + : 빠른 메뉴 */
   | { kind: 'plus' }
   | undefined
@@ -242,9 +244,21 @@ let pendingSeq = 0
 // 같은 순번으로 나가거나 순서가 뒤집혀, PC가 뒤의 것을 재전송으로 보고 버린다
 let sending = Promise.resolve()
 function send(body: PhoneToPc): Promise<void> {
+  if (!QUIET_SEND.has(body.kind)) mark(`보냄 ${body.kind}${'action' in body ? `:${body.action}` : ''}`)
   sending = sending.then(() => sendNow(body)).catch(() => {})
   return sending
 }
+
+// ── 앱에서 방금 있었던 일 (문제 알리기용) ──
+// 누른 것·받은 신호의 종류와 시각만 폰 메모리에 300줄까지 둔다. 대화 내용·넣은 값은 담지 않는다.
+// [문제 알리기]를 누를 때만 PC로 보내고, PC의 일한 기록에 며칠 남는다
+const trail: { at: number; what: string }[] = []
+function mark(what: string) {
+  trail.push({ at: Date.now(), what: what.slice(0, 160) })
+  if (trail.length > 300) trail.splice(0, trail.length - 300)
+}
+/** 너무 자주 오가서 적지 않는 것 */
+const QUIET_SEND = new Set<string>(['screen', 'ping', 'remote', 'report'])
 
 async function sendNow(body: PhoneToPc) {
   const s = st.saved
@@ -287,6 +301,7 @@ function connect() {
     room: s.pcId,
     onEnvelope: (env) => void receive(env),
     onState: (state) => {
+      if (st.online !== (state === 'ready')) mark(`중계 ${state}`)
       st.online = state === 'ready'
       clearTimeout(silentTimer)
       if (state === 'ready' && st.saved?.paired) {
@@ -319,6 +334,7 @@ async function receive(env: Envelope) {
   }
   heard = true
   if (st.pcSilent) st.pcSilent = false
+  markReceived(msg)
   switch (msg.kind) {
     case 'paired':
       s.paired = true
@@ -602,6 +618,29 @@ async function receive(env: Envelope) {
     }
   }
   renderSoon()
+}
+
+/** 받은 신호를 한 줄로 (내용 말고 종류만. 흘러오는 글자·화면 그림은 적지 않는다) */
+function markReceived(msg: PcToPhone) {
+  if (msg.kind === 'screen' || msg.kind === 'form') return
+  if (msg.kind === 'stream') {
+    const ev = msg.event
+    if (ev.type === 'agent') {
+      if (ev.event.type === 'tool') mark(`받음 도구 ${ev.event.name}`)
+      return
+    }
+    return mark(`받음 stream:${ev.type}${ev.type === 'saved' ? `:${ev.message.role}` : ''}`)
+  }
+  if (msg.kind === 'connect-result')
+    return mark(
+      `받음 connect-result ${msg.id} ${msg.ok ? 'ok' : (msg.reason ?? 'fail')}${msg.agent ? ' 이어받음' : ''}`,
+    )
+  if (msg.kind === 'connect-progress') return mark(`받음 connect-progress ${msg.id} ${msg.steps.length}단계`)
+  if (msg.kind === 'connect-status') return mark(`받음 connect-status ${msg.connecting.join(',') || '없음'}`)
+  if (msg.kind === 'conversation-status')
+    return mark(`받음 conversation-status ${msg.busy ? '답하는 중' : '쉼'}`)
+  if (msg.kind === 'error') return mark(`받음 error ${msg.message}`)
+  mark(`받음 ${msg.kind}`)
 }
 
 function onStream(ev: DaemonStreamEvent) {
@@ -1169,6 +1208,7 @@ function workDone(rec: WorkRecordMessage): HTMLElement {
 /** 알림 막대 (누를 수 있으면 onTap: 예를 들어 [화면 열기]) */
 let toastTap: (() => void) | undefined
 function toast(text: string, onTap?: () => void) {
+  mark(`알림 ${text}`)
   st.toast = text
   toastTap = onTap
   render()
@@ -1569,6 +1609,7 @@ const TAB_ORDER: Tab[] = ['chat', 'feed', 'ideas', 'goals', 'library']
 function setTab(tab: Tab) {
   const from = TAB_ORDER.indexOf(st.tab)
   const to = TAB_ORDER.indexOf(tab)
+  mark(`탭 ${tab}`)
   st.tab = tab
   st.overlay = undefined
   if (tab === 'chat') stickToBottom = true
@@ -1691,6 +1732,7 @@ function shortPc(name?: string) {
 }
 
 function openOverlay(o: Overlay) {
+  mark(o ? `열기 ${o.kind}` : '닫기')
   st.overlay = o
   render()
 }
@@ -3121,7 +3163,9 @@ function renderOverlay() {
                     ? plusSheet()
                     : ov.kind === 'info'
                       ? infoSheet(ov.id)
-                      : loginSheet(ov.id)
+                      : ov.kind === 'report'
+                        ? reportSheet()
+                        : loginSheet(ov.id)
   // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
   // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
   const drawn = body.outerHTML
@@ -3384,6 +3428,9 @@ function settingsView() {
       `${(st.services ?? []).filter((x) => x.connectedAt).length}곳 · 아이디·비밀번호는 PC 금고에만`,
       icon('chevron'),
       () => setTab('connect'),
+    ),
+    row('hand', '문제 알리기', '방금 이상했던 일을 내 PC에 남겨요 · 7일 뒤 지워져요', icon('chevron'), () =>
+      openOverlay({ kind: 'report' }),
     ),
     row('close', '다른 PC와 다시 연결', '이 폰의 연결을 지우고 QR을 다시 찍어요', undefined, () => {
       if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
@@ -3854,6 +3901,56 @@ function credSheet(t: CredTarget) {
       : []),
   )
   return sheet
+}
+
+/** 문제 알리기: 한 줄 적고(안 적어도 됨) 보내면, 앱에서 방금 있었던 일이 PC의 일한 기록에 남는다 */
+function reportSheet() {
+  const note = h('textarea', { class: 'field report-note' })
+  note.id = 'report-note'
+  note.rows = 3
+  note.maxLength = 500
+  note.placeholder = '무슨 일이 있었나요? (안 적어도 돼요)'
+  const go = h('button', { class: 'btn lg', text: st.online ? '보내기' : 'PC와 연결되면 보낼 수 있어요' })
+  go.disabled = !st.online
+  go.onclick = () => {
+    void send({
+      kind: 'report',
+      trail: [...trail],
+      ...(note.value.trim() ? { note: note.value.trim() } : {}),
+      app: navigator.userAgent,
+    })
+    mark('문제 알리기 보냄')
+    st.overlay = undefined
+    toast('남겼어요. 내 PC에만 7일 보관돼요')
+  }
+  return h(
+    'section',
+    { class: 'sheet float app-sheet rise report-sheet' },
+    h(
+      'button',
+      { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+      icon('close'),
+    ),
+    h(
+      'div',
+      { class: 'approve-head' },
+      h('span', { class: 'tile sm mint' }, icon('hand', 'i')),
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: '문제 알리기' }),
+        h('span', { class: 'meta', text: `${st.saved?.pcName ?? '내 PC'}에 남겨요` }),
+      ),
+    ),
+    note,
+    go,
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '앱에서 누른 것과 받은 신호의 종류·시각만 가요. 대화 내용·비밀번호는 가지 않아요. 내 PC에만 남고 7일 뒤 지워져요.',
+    ),
+  )
 }
 
 /** 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호): 폰 입력 화면으로 받아 PC 칸에 넣는다 */
@@ -4468,6 +4565,13 @@ function pullToRefresh(page: HTMLElement) {
 async function main() {
   // 아이폰 사파리는 viewport의 확대 막기를 무시해서, 꼬집기 확대를 따로 막는다 (원격 화면은 자체로 처리)
   document.addEventListener('gesturestart', (e) => e.preventDefault())
+  // 앱 안에서 난 오류도 방금 있었던 일에 적어 둔다 (문제 알리기를 누르면 같이 간다)
+  window.addEventListener('error', (e) => mark(`오류 ${e.message}`))
+  window.addEventListener('unhandledrejection', (e) =>
+    mark(`오류 ${String((e.reason as Error | undefined)?.message ?? e.reason)}`),
+  )
+  document.addEventListener('visibilitychange', () => mark(`앱 ${document.visibilityState}`))
+  mark('앱 켬')
   document.documentElement.dataset.theme = 'auto'
   if (!globalThis.crypto?.subtle || !('indexedDB' in window)) {
     st.screen = { name: 'unsupported' }

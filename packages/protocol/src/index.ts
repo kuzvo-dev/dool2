@@ -767,6 +767,11 @@ export type PhoneToPc =
   | { kind: 'rename-pc'; name: string }
   /** 앱을 켜 두고 있어요 (1분마다). PC는 흘려 쓰는 답·실시간 화면을 켜 둔 폰에만 보낸다 */
   | { kind: 'ping' }
+  /**
+   * 문제 알리기: 폰 앱에서 방금 있었던 일(누른 것·받은 신호의 종류와 시각)을 PC의 일한 기록에 남긴다.
+   * 대화 내용·넣은 값은 싣지 않는다. PC에만 며칠 남고 밖으로 나가지 않는다
+   */
+  | { kind: 'report'; note?: string; trail: { at: number; what: string }[]; app?: string }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }

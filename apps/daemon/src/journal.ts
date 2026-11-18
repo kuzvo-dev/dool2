@@ -42,6 +42,9 @@ export interface JournalOptions {
 /** 값을 적으면 안 되는 칸 이름 */
 const SECRET_KEY = /pass|pw$|^pw|secret|token|otp|credential|비밀|암호|인증번호/i
 
+/** 가리지 않고 그대로 두는 칸 (본체가 만든 값: 그림 파일 이름, 시각) */
+const PLAIN_KEY = new Set(['shot', 't'])
+
 /** 글에 섞인 개인 정보 가리기: 이메일은 앞 한 글자만, 6자리 넘는 숫자(전화·인증번호·카드)는 별표로 */
 export function scrubText(text: string, max = 400): string {
   return text
@@ -69,8 +72,12 @@ function scrub(value: unknown, depth = 0): unknown {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) {
       if (v === undefined) continue
-      // 그림 파일 이름은 그대로 (숫자 가리기에 걸리면 그림을 못 찾는다)
-      out[k] = SECRET_KEY.test(k) ? '(가림)' : k === 'shot' && typeof v === 'string' ? v : scrub(v, depth + 1)
+      // 그림 파일 이름·시각은 그대로 (숫자 가리기에 걸리면 그림을 못 찾고 언제인지 모른다)
+      out[k] = SECRET_KEY.test(k)
+        ? '(가림)'
+        : PLAIN_KEY.has(k) && typeof v === 'string'
+          ? v.slice(0, 80)
+          : scrub(v, depth + 1)
     }
     return out
   }
