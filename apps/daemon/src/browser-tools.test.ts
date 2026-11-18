@@ -1194,6 +1194,155 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(r.isError).toBe(true)
   })
 
+  // 실측(쿠팡 결제 화면 2026-11-18): 결제 수단 버튼에 이름이 없고 다음 줄에 글이 있다. 카드·할부는 펼침 목록
+  function coupangPage(start = '쿠페이') {
+    let method = start
+    let months = '일시불'
+    const calls: string[] = []
+    const text = () =>
+      `결제수단 [e7 버튼 "구매안전 서비스"]\n[e8 버튼]\n쿠페이 머니: 0원\n[e9 버튼]\n신용/체크카드\n` +
+      (method === '카드'
+        ? `신한카드 / 515594******336*\n[e10 선택 상자]\n${months}\n[e11 선택 상자]\n`
+        : '') +
+      `[e12 버튼] 기본 결제 수단으로 사용\n총 결제 금액 12,900원\n[e21 버튼 "결제하기"]`
+    const selects: Record<string, string[]> = {
+      e10: ['신한카드 / 515594******336*', '국민카드 / 940915******123*'],
+      e11: ['일시불', '2개월(무이자)', '3개월(무이자)'],
+    }
+    return {
+      calls,
+      get months() {
+        return months
+      },
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}${args?.label ? ` ${args.label}` : ''}`)
+        if (cmd === 'click' && args?.ref === 'e9') method = '카드'
+        if (cmd === 'click' && args?.ref === 'e21') method = '완료'
+        if (cmd === 'options') {
+          const o = method === '카드' ? selects[String(args?.ref)] : undefined
+          return {
+            tabId: 3,
+            options: o?.map((label, i) => ({
+              label,
+              selected: args?.ref === 'e11' ? label === months : i === 0,
+            })),
+          }
+        }
+        if (cmd === 'choose') months = String(args?.label)
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://checkout.coupang.com/ssr/desktop/checkout/1',
+            title: '주문/결제',
+            text: method === '완료' ? '주문이 완료됐어요' : text(),
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3, url: 'https://checkout.coupang.com/ssr/desktop/checkout/1' }
+      },
+    }
+  }
+
+  it('이름 없는 결제 수단 버튼은 바로 뒤 글로 싣고, 카드·할부 펼침 목록은 아래 줄로 싣는다', async () => {
+    const b = coupangPage()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    // 처음엔 쿠페이 머니가 골라져 있어 카드 목록이 없다
+    await tools.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    expect(tools.approvals.list()[0]?.choices).toEqual([
+      { id: 'c1', label: '쿠페이 머니' },
+      { id: 'c2', label: '신용/체크카드' },
+    ])
+    expect(tools.approvals.list()[0]?.subChoices).toBeUndefined()
+  })
+
+  it('카드가 골라진 결제 화면이면 등록 카드·할부를 같이 싣고, 고른 할부로 바꾼 뒤 결제한다', async () => {
+    const b = coupangPage('카드')
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    const rec = tools.approvals.list()[0]
+    expect(rec?.subChoices).toEqual([
+      {
+        key: 's1',
+        title: '카드',
+        options: [
+          { id: 's1o1', label: '신한카드 / 515594******336*' },
+          { id: 's1o2', label: '국민카드 / 940915******123*' },
+        ],
+        choice: 's1o1',
+      },
+      {
+        key: 's2',
+        title: '할부',
+        options: [
+          { id: 's2o1', label: '일시불' },
+          { id: 's2o2', label: '2개월(무이자)' },
+          { id: 's2o3', label: '3개월(무이자)' },
+        ],
+        choice: 's2o1',
+      },
+    ])
+    const done = await tools.approve(rec?.id as string, 'c2,s1o1,s2o3')
+    expect(done.ok).toBe(true)
+    expect(b.months).toBe('3개월(무이자)')
+    expect(done.message).toContain('"3개월(무이자)"')
+    // 이미 골라진 카드는 다시 고르지 않는다
+    expect(b.calls.filter((c) => c.startsWith('choose'))).toEqual(['choose e11 3개월(무이자)'])
+    expect(b.calls.at(-2)).toBe('click e21')
+  })
+
+  it('카드에 딸린 할부 목록은 다른 결제 수단을 고르면 쓰지 않는다', async () => {
+    let method = '카드'
+    const calls: string[] = []
+    const b = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}`)
+        if (cmd === 'click' && args?.ref === 'e2') method = '네이버페이'
+        if (cmd === 'click' && args?.ref === 'e9') method = '완료'
+        if (cmd === 'options')
+          return {
+            tabId: 3,
+            options:
+              method === '카드'
+                ? ['일시불', '3개월'].map((label, i) => ({ label, selected: i === 0 }))
+                : null,
+          }
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://shop.example/checkout',
+            title: '결제',
+            text:
+              method === '완료'
+                ? '주문 완료'
+                : `[e1 라디오 "카드"${method === '카드' ? ' 선택됨' : ''}] [e2 라디오 "네이버페이"${method === '카드' ? '' : ' 선택됨'}]\n` +
+                  `${method === '카드' ? '할부 [e5 선택 상자 "일시불 3개월" 값="일시불"]\n' : ''}[e9 버튼 "결제하기"]`,
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3, url: 'https://shop.example/checkout' }
+      },
+    }
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e9', what: 'x', where: 'y' })
+    const rec = tools.approvals.list()[0]
+    expect(rec?.subChoices?.[0]).toMatchObject({ title: '할부', when: 'c1' })
+    const done = await tools.approve(rec?.id as string, 'c2,s1o2')
+    expect(done.ok).toBe(true)
+    expect(calls.some((c) => c.startsWith('choose'))).toBe(false)
+  })
+
+  it('승인 때 없던 선택은 받지 않는다', async () => {
+    const tools = new BrowserTools(coupangPage())
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e21', what: 'x', where: 'y' })
+    const id = tools.approvals.list()[0]?.id as string
+    const r = await tools.approve(id, 'c2,s9o1')
+    expect(r.ok).toBe(false)
+  })
+
   it('결제 수단 이름만 다른 같은 마지막 버튼을 알아본다', () => {
     expect(sameFinal('네이버페이로 예약하기', '카드로 예약하기')).toBe(true)
     expect(sameFinal('카카오페이로 결제하기', '토스페이로 결제하기')).toBe(true)

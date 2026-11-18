@@ -16,7 +16,9 @@ export interface ApprovalRecord extends ApprovalView {
   /** 승인 카드에 보여 줄 화면 캡처 (JPEG base64) */
   shot?: string
   /** 선택지 id → 결제 화면의 그 칸(표시와 글자). 화면에는 보내지 않는다 */
-  choiceRefs?: Record<string, { ref: string; role: string; name: string }>
+  choiceRefs?: Record<string, { ref: string; role: string; name: string; near?: string }>
+  /** 세부 선택 묶음 → 그 펼침 목록 표시와 고를 것 글자들 */
+  subRefs?: Record<string, { ref: string; options: string[] }>
 }
 
 export interface NewApproval {
@@ -36,6 +38,8 @@ export interface NewApproval {
   choiceTitle?: string
   choice?: string
   choiceRefs?: ApprovalRecord['choiceRefs']
+  subChoices?: ApprovalView['subChoices']
+  subRefs?: ApprovalRecord['subRefs']
 }
 
 export class Approvals {

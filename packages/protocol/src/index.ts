@@ -316,6 +316,9 @@ export const EXTENSION_IDS = [DEV_EXTENSION_ID, ...(STORE_EXTENSION_ID ? [STORE_
 
 /** 확장이 할 수 있는 일. 판단은 하지 않고 시킨 것만 한다 */
 export const BrowserCommandSchema = z.enum([
+  // 펼침 목록(select): 고를 것 읽기, 글자로 고르기 (결제 화면의 등록 카드·할부)
+  'options',
+  'choose',
   'open',
   'navigate',
   'snapshot',
@@ -595,11 +598,23 @@ export interface ApprovalView {
   choiceTitle?: string
   /** 기본으로 고른 것 (이 사이트에서 마지막으로 쓴 것, 없으면 화면에서 이미 골라진 것) */
   choice?: string
+  /**
+   * 결제 수단 안의 세부 선택 (등록 카드·할부 개월 등, 결제 화면의 펼침 목록).
+   * 사용자가 고른 것은 choice와 함께 쉼표로 이어 승인 서명에 묶인다 (예: "c2,s1o3")
+   */
+  subChoices?: {
+    key: string
+    title: string
+    options: { id: string; label: string }[]
+    choice?: string
+    /** 이 결제 수단(choices의 id)을 골랐을 때만 있는 선택 (카드를 골라야 보이는 등록 카드·할부) */
+    when?: string
+  }[]
 }
 
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(['approve', 'reject']),
-  choice: z.string().max(40).optional(),
+  choice: z.string().max(200).optional(),
 })
 
 /** 대화 기록에 남기는 승인 요청 (카드를 다시 그릴 때 본체에 상태를 묻는다) */

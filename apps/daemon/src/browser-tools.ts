@@ -222,6 +222,21 @@ interface PageInfo {
   confirmed?: string
   /** 지금 골라져 있는 라디오·체크박스 표시 */
   selected?: Set<string>
+  /** 이름 없는 버튼·라디오 → 바로 뒤 글 (쿠팡 결제 화면: [e8 버튼] 다음 줄 '쿠페이 머니: 0원') */
+  near?: Map<string, string>
+}
+
+/** 이름 없는 버튼·라디오에 붙은 글: 같은 줄 뒤, 없으면 다음 줄 (':' 앞까지, 다른 표시 줄은 아님) */
+export function nearLabels(text: string): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const m of text.matchAll(/\[(e\d+) (?:버튼|라디오)(?: [^"\]]*)?\]/g)) {
+    const rest = text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 200).split('\n')
+    const line = (rest[0] ?? '').trim() || (rest[1] ?? '').trim()
+    if (!line || line.startsWith('[')) continue
+    const label = (line.split(/[:：]/)[0] ?? '').trim().slice(0, 30)
+    if (label) out.set(m[1] as string, label)
+  }
+  return out
 }
 
 function pageInfo(url: string, text: string): PageInfo {
@@ -230,10 +245,12 @@ function pageInfo(url: string, text: string): PageInfo {
   const selected = new Set(
     [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
   )
+  const near = nearLabels(text)
   return {
     url,
     refs: parseRefs(text),
     pay: payScreen(text),
+    ...(near.size ? { near } : {}),
     ...(checkout ? { checkout } : {}),
     ...(confirmed ? { confirmed } : {}),
     ...(selected.size ? { selected } : {}),
@@ -339,15 +356,52 @@ const PAY_METHOD =
 const PAY_OPTION =
   /^(?:(?:신용|체크)\s*)?카드(?:\s*결제)?$|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰\s*결제|계좌\s*이체|무통장(?:\s*입금)?|간편\s*결제|(?:지금|나중에|현장에서|숙박\s*시설에서)\s*결제/i
 
+// 결제 수단을 고르는 버튼: 이름 전체가 결제 수단일 때만 ('카카오페이로 결제'처럼 결제하는 버튼은 아니다)
+const PAY_BUTTON =
+  /^(?:신용\s*\/\s*체크\s*카드|(?:신용|체크)?\s*카드|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이(?:\s*머니)?|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰|계좌\s*이체|무통장(?:\s*입금)?|간편)(?:\s*결제)?$/i
+
+/** 결제 수단 고르기 칸 이름 (이름 없는 칸은 바로 뒤 글) */
+export function optionLabel(info: Pick<PageInfo, 'refs' | 'near'>, ref: string): string {
+  const v = info.refs.get(ref)
+  return (v?.name || info.near?.get(ref) || '').trim()
+}
+
+/** 결제 수단을 고르는 칸인지: 라디오·선택지는 결제 수단 이름이 들어 있으면, 버튼은 이름 전체가 결제 수단일 때 */
+export function isPayOption(role: string, label: string): boolean {
+  if (!label || label.length > 30) return false
+  if (role === '라디오' || role === '선택지') return PAY_OPTION.test(label)
+  return role === '버튼' && PAY_BUTTON.test(label)
+}
+
 /** 결제 화면의 결제 수단 고르기 칸들 (AI가 choices를 안 넘겨도 승인 카드에 싣는다) */
-export function payOptions(refs: Map<string, { role: string; name: string }>): string[] {
-  return [...refs]
-    .filter(
-      ([, v]) =>
-        ['라디오', '선택지'].includes(v.role) && v.name.length <= 30 && PAY_OPTION.test(v.name.trim()),
-    )
+export function payOptions(info: Pick<PageInfo, 'refs' | 'near'>): string[] {
+  return [...info.refs]
+    .filter(([k, v]) => isPayOption(v.role, optionLabel(info, k)))
     .map(([k]) => k)
     .slice(0, 8)
+}
+
+// 결제 화면 펼침 목록 중 세부 결제 선택 (등록 카드·할부 개월·은행)
+const SUB_OPTION = /일시불|할부|\d+\s*개월|카드|\*{3,}|은행|뱅크/
+
+/** 펼침 목록의 고를 것들로 묶음 이름을 정한다. 결제와 상관없는 목록(배송 메모 등)이면 undefined */
+export function subChoiceTitle(options: string[]): string | undefined {
+  if (options.length < 2 || !options.some((o) => SUB_OPTION.test(o))) return undefined
+  if (options.some((o) => /일시불|할부|\d+\s*개월/.test(o))) return '할부'
+  if (options.some((o) => /카드|\*{3,}/.test(o))) return '카드'
+  return '은행'
+}
+
+/** 같은 고르기 칸 찾기: 이름 있는 칸은 sameControl, 이름 없는 칸은 바로 뒤 글이 같은 칸 */
+export function sameChoice(
+  info: Pick<PageInfo, 'refs' | 'near'>,
+  c: { ref: string; role: string; name: string; near?: string },
+): string | undefined {
+  if (c.name || !c.near) return sameControl(info.refs, c.ref, c.role, c.name)
+  const at = info.refs.get(c.ref)
+  if (at && at.role === c.role && !at.name && info.near?.get(c.ref) === c.near) return c.ref
+  const same = [...info.refs].filter(([k, v]) => v.role === c.role && !v.name && info.near?.get(k) === c.near)
+  return same.length === 1 ? same[0]?.[0] : undefined
 }
 
 /** 결제 수단 이름만 다른 같은 마지막 버튼인지 */
@@ -863,6 +917,58 @@ export class BrowserTools {
     return this.read(at, a.maxChars, lines.join('\n'))
   }
 
+  /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined) */
+  private async selectOptions(tabId: number, ref: string) {
+    const r = (await this.browser.call('options', { tabId, ref }).catch(() => undefined)) as
+      | { options?: { label: string; selected: boolean }[] | null }
+      | undefined
+    return r?.options ?? undefined
+  }
+
+  /** 결제 화면의 세부 결제 선택 묶음 (등록 카드·할부). 많아야 3묶음, 묶음마다 12개 */
+  private async subChoices(tabId: number, page: PageInfo) {
+    const out: { key: string; title: string; ref: string; options: string[]; selected: number }[] = []
+    const selects = [...page.refs].filter(([, v]) => v.role === '선택 상자').slice(0, 6)
+    for (const [ref] of selects) {
+      if (out.length >= 3) break
+      const opts = (await this.selectOptions(tabId, ref))?.slice(0, 12)
+      if (!opts) continue
+      const title = subChoiceTitle(opts.map((o) => o.label))
+      if (!title) continue
+      out.push({
+        key: `s${out.length + 1}`,
+        title,
+        ref,
+        options: opts.map((o) => o.label),
+        selected: Math.max(
+          0,
+          opts.findIndex((o) => o.selected),
+        ),
+      })
+    }
+    return out
+  }
+
+  /** 승인 때 본 펼침 목록을 지금 화면에서 찾는다 (표시가 같으면 그것, 아니면 고를 것이 같은 목록) */
+  private async findSelect(
+    tabId: number,
+    refs: Map<string, { role: string; name: string }>,
+    sr: { ref: string; options: string[] },
+  ) {
+    const same = (o?: { label: string }[]) =>
+      !!o && o.length >= sr.options.length && sr.options.every((l, i) => o[i]?.label === l)
+    const cands = [
+      sr.ref,
+      ...[...refs].filter(([k, v]) => v.role === '선택 상자' && k !== sr.ref).map(([k]) => k),
+    ]
+    for (const ref of cands.slice(0, 8)) {
+      if (!refs.has(ref)) continue
+      const o = await this.selectOptions(tabId, ref)
+      if (same(o)) return { ref, selected: o?.find((x) => x.selected)?.label }
+    }
+    return undefined
+  }
+
   /**
    * 이 버튼을 누를지 사용자 승인을 받는다 (AI의 request_approval, 커넥터의 approve 단계).
    * kind를 주면(커넥터 등급이 돈 내기·연락하기) 버튼 글자로 위험이 안 보여도 승인을 받는다
@@ -885,24 +991,30 @@ export class BrowserTools {
     const target = page?.refs.get(ref)
     if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
     // 선택지: 결제 화면에 실제로 있는 고르기 칸만. 그 자체가 결제·확정 버튼이면 안 된다
-    const picks: { id: string; label: string; ref: string; role: string; name: string }[] = []
+    const picks: { id: string; label: string; ref: string; role: string; name: string; near?: string }[] = []
     // AI가 선택지를 안 넘겨도, 결제 화면에 결제 수단 고르기 칸이 둘 이상이면 본체가 승인 카드에 싣는다
     // (실측: AI가 도구 설명을 따르지 않고 네이버페이를 스스로 골랐다)
-    const auto = !d.choices?.length && page.checkout ? payOptions(page.refs) : []
+    const auto = !d.choices?.length && page.checkout ? payOptions(page) : []
     const asked = d.choices?.length ? d.choices : auto.length >= 2 ? auto : []
     for (const cref of asked.slice(0, 8)) {
       const c = page.refs.get(cref)
       if (!c) throw new Error(`선택지 ${cref}가 화면에 없어요. 페이지를 다시 읽어 주세요`)
       if (!['라디오', '버튼', '선택지', '체크박스', '탭', '항목', '링크'].includes(c.role))
         throw new Error(`선택지 ${cref}는 고르는 칸이 아니에요`)
-      if (cref === ref || (c.role !== '라디오' && classifyRisk(`${c.role} ${c.name}`, page.url)))
-        throw new Error(`선택지 ${cref}("${c.name}")는 결제·확정 버튼이라 선택지로 쓸 수 없어요`)
+      const label = optionLabel(page, cref)
+      if (
+        cref === ref ||
+        (c.role !== '라디오' && !isPayOption(c.role, label) && classifyRisk(`${c.role} ${c.name}`, page.url))
+      )
+        throw new Error(`선택지 ${cref}("${label}")는 결제·확정 버튼이라 선택지로 쓸 수 없어요`)
+      if (!label) throw new Error(`선택지 ${cref}는 이름이 없어 무엇인지 몰라요`)
       picks.push({
         id: `c${picks.length + 1}`,
-        label: c.name.slice(0, 40),
+        label: label.slice(0, 40),
         ref: cref,
         role: c.role,
         name: c.name,
+        ...(c.name ? {} : { near: label }),
       })
     }
     // 승인은 결제 화면에서 받는다: 결제 화면을 여는 버튼에 승인을 받으면, 결제 화면의 진짜 금액·조건을 못 본 채 승인하게 된다
@@ -919,6 +1031,8 @@ export class BrowserTools {
       throw new Error(
         '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
       )
+    // 결제 화면의 펼침 목록 중 등록 카드·할부 개월은 승인 카드에 아래 줄로 싣는다 (기본은 화면에 골라져 있던 것)
+    const subs = page.checkout ? await this.subChoices(tabId, page) : []
     // 한 탭에서 누를 마지막 버튼은 하나다: 같은 탭에 기다리는 승인이 있으면 새 것으로 바꾼다
     // (실측: AI가 다시 읽고 같은 버튼에 한 번 더 요청해 카드가 두 장 떴고, 앞 카드는 표시 번호가 바뀌어 누를 수 없었다)
     this.approvals.expireTab(tabId)
@@ -936,6 +1050,7 @@ export class BrowserTools {
       picks.find((p) => last && (p.name === last || p.name.includes(last))) ??
       picks.find((p) => page.selected?.has(p.ref)) ??
       picks[0]
+    const onPage = picks.find((p) => page.selected?.has(p.ref))
     const rec = this.approvals.create({
       tabId,
       ref,
@@ -955,8 +1070,24 @@ export class BrowserTools {
             choiceTitle: d.choiceTitle ?? '결제 수단',
             ...(preferred ? { choice: preferred.id } : {}),
             choiceRefs: Object.fromEntries(
-              picks.map((p) => [p.id, { ref: p.ref, role: p.role, name: p.name }]),
+              picks.map((p) => [
+                p.id,
+                { ref: p.ref, role: p.role, name: p.name, ...(p.near ? { near: p.near } : {}) },
+              ]),
             ),
+          }
+        : {}),
+      ...(subs.length
+        ? {
+            subChoices: subs.map((g) => ({
+              key: g.key,
+              title: g.title,
+              options: g.options.map((label, i) => ({ id: `${g.key}o${i + 1}`, label: label.slice(0, 40) })),
+              choice: `${g.key}o${g.selected + 1}`,
+              // 지금 화면에 골라져 있는 결제 수단에 딸린 목록이다 (다른 수단을 고르면 이 줄은 안 쓴다)
+              ...(onPage ? { when: onPage.id } : {}),
+            })),
+            subRefs: Object.fromEntries(subs.map((g) => [g.key, { ref: g.ref, options: g.options }])),
           }
         : {}),
     })
@@ -1190,28 +1321,67 @@ export class BrowserTools {
       let finalRef = rec.ref
       let finalName = rec.label
       let chosen: string | undefined
-      if (choice && rec.choiceRefs) {
-        const c = rec.choiceRefs[choice]
-        const fail = (why: string) => {
-          const msg = `${why} 결제는 하지 않았어요. 페이지를 다시 읽고 승인을 다시 받아 주세요.`
-          this.approvals.finish(id, false, msg)
-          return { ok: false, message: msg }
+      const picked: string[] = []
+      // 고른 것: 결제 수단(c1)과 세부 선택(s1o2)을 쉼표로 이은 글 (폰이 서명한 그대로)
+      const parts = (choice ?? '').split(',').filter(Boolean)
+      const main = parts.find((p) => rec.choiceRefs?.[p])
+      // 다른 결제 수단을 골랐으면 그 수단에 딸린 카드·할부 선택은 쓰지 않는다
+      const applies = (p: string) => {
+        const when = rec.subChoices?.find((g) => g.key === p.split('o')[0])?.when
+        return !when || !main || when === main
+      }
+      const subs = parts.filter((p) => /^s\d+o\d+$/.test(p) && rec.subRefs?.[p.split('o')[0] as string])
+      const fail = (why: string) => {
+        const msg = `${why} 결제는 하지 않았어요. 페이지를 다시 읽고 승인을 다시 받아 주세요.`
+        this.approvals.finish(id, false, msg)
+        return { ok: false, message: msg }
+      }
+      if (parts.length !== subs.length + (main ? 1 : 0)) return fail('고른 결제 수단을 찾을 수 없어요.')
+      if (main || subs.length) {
+        const reread = async () => {
+          base = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
+          this.pages.set(rec.tabId, pageInfo(base.url, base.text))
+          return base.url === rec.url
         }
-        if (!c) return fail('고른 결제 수단을 찾을 수 없어요.')
-        const at = sameControl(parseRefs(s.text), c.ref, c.role, c.name)
-        if (!at) return fail(`"${c.name}" 칸이 화면에서 바뀌었어요.`)
-        await this.browser.call('click', { tabId: rec.tabId, ref: at }, 30_000)
-        base = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
-        this.pages.set(rec.tabId, pageInfo(base.url, base.text))
-        if (base.url !== rec.url) return fail(`"${c.name}"을(를) 고르자 다른 화면으로 넘어갔어요.`)
-        const refs = parseRefs(base.text)
-        const next =
-          sameControl(refs, rec.ref, rec.role, rec.label) ??
-          [...refs].find(([, v]) => v.role === rec.role && sameFinal(v.name, rec.label))?.[0]
-        if (!next) return fail(`"${c.name}"을(를) 고르자 마지막 버튼("${rec.label}")이 바뀌었어요.`)
-        finalRef = next
-        finalName = refs.get(next)?.name ?? rec.label
-        chosen = c.name
+        if (main) {
+          const c = rec.choiceRefs?.[main] as NonNullable<ApprovalRecord['choiceRefs']>[string]
+          const what = c.name || c.near || '고른 결제 수단'
+          const at = sameChoice(pageInfo(s.url, s.text), c)
+          if (!at) return fail(`"${what}" 칸이 화면에서 바뀌었어요.`)
+          await this.browser.call('click', { tabId: rec.tabId, ref: at }, 30_000)
+          if (!(await reread())) return fail(`"${what}"을(를) 고르자 다른 화면으로 넘어갔어요.`)
+          chosen = what
+        }
+        // 등록 카드·할부: 고른 것과 화면이 다르면 그 목록에서 고른다
+        let changed = false
+        for (const sid of subs.filter(applies)) {
+          const [key = '', n = ''] = sid.split('o')
+          const sr = rec.subRefs?.[key] as { ref: string; options: string[] }
+          const label = sr.options[Number(n) - 1]
+          const group = rec.subChoices?.find((g) => g.key === key)
+          if (!label) return fail('고른 카드·할부를 찾을 수 없어요.')
+          const at = await this.findSelect(rec.tabId, parseRefs(base.text), sr)
+          if (!at) {
+            // 결제 수단을 바꾸자 목록이 사라진 경우: 기본값 그대로면 넘어가고, 바꿔 달라고 한 것이면 멈춘다
+            if (group?.choice === sid) continue
+            return fail(`"${label}"을(를) 고를 ${group?.title ?? '칸'} 목록이 화면에서 사라졌어요.`)
+          }
+          if (at.selected !== label) {
+            await this.browser.call('choose', { tabId: rec.tabId, ref: at.ref, label }, 15_000)
+            changed = true
+          }
+          picked.push(label)
+        }
+        if (changed && !(await reread())) return fail('카드·할부를 고르자 다른 화면으로 넘어갔어요.')
+        if (base !== s) {
+          const refs = parseRefs(base.text)
+          const next =
+            sameControl(refs, rec.ref, rec.role, rec.label) ??
+            [...refs].find(([, v]) => v.role === rec.role && sameFinal(v.name, rec.label))?.[0]
+          if (!next) return fail(`고르고 나니 마지막 버튼("${rec.label}")이 바뀌었어요.`)
+          finalRef = next
+          finalName = refs.get(next)?.name ?? rec.label
+        }
       }
       let r = (await this.browser.call('click', { tabId: rec.tabId, ref: finalRef }, 30_000)) as {
         url?: string
@@ -1244,7 +1414,10 @@ export class BrowserTools {
         }
       }
       if (chosen) this.rememberChoice(rec.url, chosen)
-      const msg = `${chosen ? `결제 수단 "${chosen}"을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      const how = [chosen ? `결제 수단 "${chosen}"` : '', ...picked.map((p) => `"${p}"`)]
+        .filter(Boolean)
+        .join(', ')
+      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
