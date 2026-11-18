@@ -71,7 +71,14 @@ import { findCard } from '@dool2/protocol/connect-text'
 import { appNote, josa, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
-import { type AutoLoginResult, autoLogin, type LoginAsk, probeLogin, socialLogin } from './auto-login.js'
+import {
+  type AutoLoginResult,
+  autoLogin,
+  type LoginAsk,
+  probeLogin,
+  SOCIAL_PROVIDERS,
+  socialLogin,
+} from './auto-login.js'
 import { BrowserTools } from './browser-tools.js'
 import { LoginWatch, looksSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
@@ -415,7 +422,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connected: (id) => Boolean(readSettings().connections?.[id]),
     onSignedIn: (card) => {
       connectMark(card.id, true)
-      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+      // 본체가 꺼지는 중에 끝나면 저장소가 닫혀 있다: 그때는 알리지 않는다
+      void skills
+        .connections()
+        .then((services) => link.broadcast({ kind: 'connections', services }))
+        .catch(() => {})
     },
   })
   const connectOpen = async (card: ConnectCard, forPhone: boolean): Promise<number> => {
@@ -449,6 +460,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 로그인 화면이 다른 주소면(login.사이트) 거기에도 넣어 둔다 (다음에 두리가 다시 로그인할 때)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
+    if (r.status === 'ok') rememberVia(card.id, 'vault')
     return connectFinish(card, r)
   }
   /** 간편 로그인으로 연결: 공급자 쪽이 이미 로그인돼 있으면 버튼·동의만 넘기고, 아니면 금고 값 또는 사람 차례 */
@@ -465,7 +477,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       step: connectStep(card.id),
       onTab: connectTab(card.id),
     })
+    if (r.status === 'ok') rememberVia(card.id, `social:${provider}`)
     return connectFinish(card, r)
+  }
+  /**
+   * 서비스마다 연결할 때 쓴 방법 (vault: 금고 계정, social:kakao 등). 로그인이 풀리면 두리가 같은 방법으로 다시 로그인한다.
+   * 비밀값은 없고 방법 이름만
+   */
+  const connectVia = () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {}
+  const rememberVia = (id: string, via: string) =>
+    store.setSetting('connectVia', { ...connectVia(), [id]: via })
+  /** 금고에 있는 그 서비스 계정 (연결 주소·로그인 주소) */
+  const vaultCreds = async (card: ConnectCard) => {
+    const url = connectUrl(card)
+    if (!url) return undefined
+    // 연결로 넣은 계정은 연결 주소(coupang.com), 일하다 넣은 계정은 그 화면 주소(www.coupang.com)로 들어 있다
+    const www = card.site && !card.site.startsWith('www.') ? `https://www.${card.site}/` : undefined
+    let saved: { username: string; password: string } | undefined
+    for (const u of [url, card.loginUrl, www].filter(Boolean) as string[])
+      saved ??= await vault.findForOrigin(new URL(u).origin)
+    return saved
   }
   /** 자동 로그인 결과 → 연결 표시 / 사람 차례(원격 화면) / 안내 */
   const connectFinish = async (card: ConnectCard, r: AutoLoginResult): Promise<ConnectResult> => {
@@ -645,7 +676,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ok: true,
         message: `${card.name}에 로그인돼 있어요.`,
       })
-      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+      void skills
+        .connections()
+        .then((services) => link.broadcast({ kind: 'connections', services }))
+        .catch(() => {})
       return true
     }
     // 아직: 그 화면에서 마치면 알아서 연결된다 (지켜보기를 다시 켠다)
@@ -763,7 +797,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       void link
         .broadcast({ kind: 'connect-result', id: card.id, ...r, ...(agent ? { agent } : {}) })
         .then(() => connectStatus())
-      void skills.connections().then((services) => link.broadcast({ kind: 'connections', services }))
+      void skills
+        .connections()
+        .then((services) => link.broadcast({ kind: 'connections', services }))
+        .catch(() => {})
       if (r.ok) connectDone(card)
       else if (agent) {
         // 대화 끝에 그 연결 카드가 없으면 띄운다 (카드가 "두리가 이어서 해 보는 중"을 보여 준다)
@@ -1689,12 +1726,34 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             `"${q}" 연결 카드가 없어요. 목록에 없는 사이트면 browser_open으로 열고, 로그인이 필요하면 browser_request_login을 써요.`,
             true,
           )
-        if (items.find((x) => x.card.id === card.id)?.connectedAt)
-          return text(`${card.name}은 이미 연결돼 있어요. 바로 하면 돼요.`)
         if (card.how === 'device')
           return text(`${card.name}은 폰 권한이에요. 사용자에게 폰의 연결 화면에서 켜 달라고 말해요.`)
         if (connecting.has(card.id))
           return text(`지금 ${card.name}에 로그인하는 중이에요. 끝나면 대화로 알림이 와요.`)
+        // 로그인이 필요해졌는데 금고 계정이나 전에 쓴 간편 로그인이 있으면 묻지 않고 두리가 다시 로그인한다.
+        // 끝나면 connectDone이 "멈춘 일을 이어서 해 주세요"를 대화로 보낸다
+        const creds = card.how === 'browser' ? await vaultCreds(card) : undefined
+        const via = connectVia()[card.id]
+        const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
+        if (creds || (provider && provider in SOCIAL_PROVIDERS)) {
+          connectAsked.set(card.id, Date.now())
+          void startConnect(
+            card,
+            () =>
+              creds
+                ? connectLogin(card, creds.username, creds.password)
+                : connectSocial(card, provider as SocialProvider),
+            creds ? 'relogin' : `social:${provider}`,
+          )
+          const how = creds
+            ? '금고에 있는 계정'
+            : `전에 쓴 ${SOCIAL_PROVIDERS[provider as SocialProvider].label} 간편 로그인`
+          return text(
+            `${card.name}에 ${how}으로 두리 본체가 다시 로그인하고 있어요. 끝나면 대화 알림으로 이어서 하라고 알려 줘요. 사용자에게 "${card.name}에 다시 로그인하고 이어서 할게요"처럼 한 문장으로 말하고 답을 끝내요.`,
+          )
+        }
+        if (items.find((x) => x.card.id === card.id)?.connectedAt && !creds && !provider)
+          journal.write('connect-ask', { id: card.id, expired: true })
         connectAsked.set(card.id, Date.now())
         void link
           .notify({

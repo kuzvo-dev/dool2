@@ -425,6 +425,44 @@ describe('defaultDataDir', () => {
   })
 })
 
+describe('로그인이 필요해질 때 (connect_ask)', () => {
+  type State = { messages: { role: string; text: string }[]; busy: boolean }
+  const until = async (f: () => Promise<boolean>) => {
+    for (let i = 0; i < 200; i++) {
+      if (await f()) return
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    throw new Error('기다리다 지쳤어요')
+  }
+  it('금고에 계정이 있으면 카드 없이 두리가 다시 로그인하고, 없으면 연결 카드를 띄운다', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"쿠팡에서 휴지 주문해 줘"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const ask = async (service: string) =>
+      (
+        (await (
+          await fetch(`${daemon?.url}/api/tools/life/connect_ask`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ service }),
+          })
+        ).json()) as { content: { text: string }[] }
+      ).content[0]?.text ?? ''
+    // 금고에 없으면: 처음 쓰는 서비스라 연결 카드
+    expect(await ask('coupang')).toContain('연결 카드를 띄웠어요')
+    // 금고에 계정이 있으면: 묻지 않고 두리 본체가 다시 로그인한다 (끝나면 대화 알림으로 이어서)
+    await api('/api/vault', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://www.coupang.com', username: 'duri', password: 'pw-123' }),
+    })
+    const auto = await ask('coupang')
+    expect(auto).toContain('금고에 있는 계정으로 두리 본체가 다시 로그인')
+    expect(auto).not.toContain('pw-123')
+  })
+})
+
 describe('금고 API', () => {
   it('비밀번호는 넣기만 하고 돌려주지 않는다', async () => {
     const { api } = await boot()
