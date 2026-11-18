@@ -898,6 +898,8 @@ export type PcToPhone =
       tabId?: number
       /** 왜 못 했는지: 사람 차례(보안문자·본인인증) / 아이디·비밀번호 틀림 / 로그인 칸·결과를 몰라서 */
       reason?: 'human' | 'wrong' | 'unknown'
+      /** 자동 로그인이 멈춰서 두리(AI)가 대화에서 그 화면을 보며 이어서 하고 있다 */
+      agent?: boolean
     }
   /** 두리가 지금 다루는 Chrome 탭 (대화에 일하는 화면을 실시간으로 띄운다) */
   | { kind: 'work-tab'; tabId: number }

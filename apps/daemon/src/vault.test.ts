@@ -89,6 +89,30 @@ describe('금고로 로그인 칸 채우기', () => {
     expect(b.calls.map((c) => c[0])).not.toContain('fill')
   })
 
+  it('연결을 이어받은 탭이면 같은 서비스의 다른 주소(login.사이트)에서도 그 계정으로 채운다', async () => {
+    const vault = new Vault(memorySecrets())
+    await vault.add({ url: 'https://www.shop.example', username: 'duri', password: 's3cret!' })
+    const b = browserAt('https://login.shop.example/auth')
+    const tools = new BrowserTools(b, vault)
+    await tools.run('read', { tabId: 1 })
+    // 이어받은 탭이 아니면 금고 주소와 달라 채우지 않는다
+    expect((await tools.run('login', { tabId: 1, usernameRef: 'e1', passwordRef: 'e2' })).isError).toBe(true)
+    const asked: [number, string][] = []
+    tools.siteLogin = async (tabId, origin) => {
+      asked.push([tabId, origin])
+      return vault.findForOrigin('https://www.shop.example')
+    }
+    const r = await tools.run('login', { tabId: 1, usernameRef: 'e1', passwordRef: 'e2' })
+    expect(r.isError).toBeUndefined()
+    expect(asked).toEqual([[1, 'https://login.shop.example']])
+    expect(JSON.stringify(r)).not.toContain('s3cret!')
+    // 값은 지금 화면 주소로만 넘긴다 (확장이 주소를 다시 확인한다)
+    expect(b.calls.filter((c) => c[0] === 'fill').at(-1)).toEqual([
+      'fill',
+      { tabId: 1, ref: 'e2', value: 's3cret!', origin: 'https://login.shop.example', password: true },
+    ])
+  })
+
   it('비밀번호칸이 아닌 곳에는 채우지 않는다', async () => {
     const vault = new Vault(memorySecrets())
     await vault.add({ url: 'https://shop.example', username: 'duri', password: 's3cret!' })
