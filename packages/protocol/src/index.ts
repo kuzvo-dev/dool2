@@ -338,6 +338,8 @@ export const BrowserCommandSchema = z.enum([
   'reload',
   /** 떠 있는 사이트 확인 창(confirm·prompt)에서 확인·취소를 고른다 */
   'dialog',
+  /** 마우스를 그 자리로 옮기기만 한다 (올려 두어야 열리는 메뉴) */
+  'hover',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 

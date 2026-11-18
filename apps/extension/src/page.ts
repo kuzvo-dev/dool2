@@ -1317,3 +1317,31 @@ export function pageFind(patterns: Record<string, string>): {
   }
   return { url: location.href, title: document.title, found }
 }
+
+/**
+ * 두리가 누르거나 입력하는 자리를 페이지 위에 잠깐 보여 준다 (일하는 화면·Chrome에서 무엇을 하는지 보이게).
+ * 마우스 입력을 받지 않고(pointer-events: none) 읽기에도 빠진다(aria-hidden, body 밖). 2.5초 뒤 사라진다
+ */
+export function pageCursor(x: number, y: number, label: string) {
+  const TAG = 'dool2-cursor'
+  type Host = HTMLElement & { __dool2Hide?: ReturnType<typeof setTimeout>; __dool2Label?: HTMLElement }
+  let host = document.querySelector(TAG) as Host | null
+  if (!host) {
+    host = document.createElement(TAG) as Host
+    host.setAttribute('aria-hidden', 'true')
+    host.style.cssText =
+      'position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform .18s ease-out,opacity .3s;opacity:0;contain:layout'
+    const root = host.attachShadow({ mode: 'closed' })
+    root.innerHTML = `<svg width="22" height="24" viewBox="0 0 22 24" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 2 L2 19 L7 14.5 L10.5 22 L13.5 20.6 L10 13.3 L16.5 13.3 Z" fill="#4cc98f" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span style="position:absolute;left:20px;top:18px;white-space:nowrap;font:600 12px/1.2 -apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#0b2a1c;background:#4cc98f;border-radius:10px;padding:4px 8px;box-shadow:0 1px 4px rgba(0,0,0,.25)"></span>`
+    host.__dool2Label = root.querySelector('span') as HTMLElement
+    document.documentElement.append(host)
+  }
+  if (host.__dool2Label) host.__dool2Label.textContent = label
+  host.style.transform = `translate(${Math.round(x) - 2}px, ${Math.round(y) - 2}px)`
+  host.style.opacity = '1'
+  clearTimeout(host.__dool2Hide)
+  const h = host
+  host.__dool2Hide = setTimeout(() => {
+    h.style.opacity = '0'
+  }, 2500)
+}

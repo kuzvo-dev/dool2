@@ -121,16 +121,23 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'hover',
+    '마우스 올리기',
+    '표시(ref)한 곳에 마우스를 올려 두기만 하고 바뀐 페이지를 읽어 돌려준다. 마우스를 올려야 펼쳐지는 메뉴(카테고리 등)나 설명을 볼 때 쓴다.',
+    { tabId, ref },
+    true,
+  )
+  tool(
     'steps',
     '여러 동작 한 번에',
-    '읽은 화면에서 이어지는 동작(칸 여러 개 채우기, 고르고 누르기 등)을 한 번에 차례로 하고, 끝난 뒤 페이지를 한 번만 읽어 돌려준다. 동작은 click(ref 또는 text)·type(ref, text, submit)·press(key)·scroll(direction)·wait(ms)만. 다른 화면으로 넘어가거나 새 탭·확인 창이 뜨거나 막히면 거기서 멈추고 남은 동작은 하지 않는다. 결제·주문·보내기·삭제 같은 버튼은 browser_click과 똑같이 막힌다.',
+    '읽은 화면에서 이어지는 동작(칸 여러 개 채우기, 고르고 누르기 등)을 한 번에 차례로 하고, 끝난 뒤 페이지를 한 번만 읽어 돌려준다. 동작은 click(ref 또는 text)·type(ref, text, submit)·press(key)·hover(ref)·scroll(direction)·wait(ms)만. 다른 화면으로 넘어가거나 새 탭·확인 창이 뜨거나 막히면 거기서 멈추고 남은 동작은 하지 않는다. 결제·주문·보내기·삭제 같은 버튼은 browser_click과 똑같이 막힌다.',
     {
       tabId,
       steps: z
         .array(
           z.object({
-            do: z.enum(['click', 'type', 'press', 'scroll', 'wait']).describe('할 동작'),
-            ref: ref.optional().describe('click·type: 표시'),
+            do: z.enum(['click', 'type', 'press', 'hover', 'scroll', 'wait']).describe('할 동작'),
+            ref: ref.optional().describe('click·type·hover: 표시'),
             text: z
               .string()
               .max(2000)

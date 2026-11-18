@@ -117,6 +117,15 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <nav>${Array.from({ length: 300 }, (_, i) => `<a href="/c/${i}">카테고리 메뉴 ${i}</a>`).join(' ')}</nav>
 <h1>검색 결과</h1><ul>${Array.from({ length: 200 }, (_, i) => `<li style="height:40px">상품 ${i + 1} 사과 ${i + 1}kg ${(i + 1) * 1000}원 <button onclick="document.title='담음 ${i + 1}'">담기</button></li>`).join('')}</ul>
 </body></html>`,
+  // 마우스: 올려야 펼쳐지는 메뉴, 누르기 전 움직임을 세는 버튼
+  '/hover': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>마우스 가게</title>
+<style>body{font:16px sans-serif;margin:40px}.menu{position:relative}.menu .sub{display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid #ccc;padding:8px}.menu:hover .sub{display:block}#buy{margin-top:220px;margin-left:300px;padding:12px 20px}</style></head><body>
+<h1>마우스 가게</h1><p>카테고리에 마우스를 올리면 코너가 펼쳐져요.</p>
+<div class="menu"><a href="/c" id="cat">과일 카테고리</a><div class="sub"><a href="/c/apple">사과 코너</a></div></div>
+<button id="buy">장바구니 담기</button>
+<script>let moves = 0; document.addEventListener('mousemove', () => moves++)
+document.getElementById('buy').addEventListener('click', () => { document.title = '움직임 ' + moves })</script>
+</body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
 }
@@ -556,6 +565,27 @@ try {
     assert.match(scrolled, /↓ 화면 아래에 글이/)
     assert.ok(scrolled.length < 4000, `보이는 부분이 너무 길어요 (${scrolled.length}자)`)
     console.log(`  스크롤 뒤 보이는 부분: ${scrolled.length.toLocaleString()}자`)
+  })
+
+  await step('마우스: 옮겨 가서 누르고, 올려 두면 메뉴가 펼쳐지고, 하는 일을 커서로 보여 준다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/hover` })
+    const page = text(await tools.run('read', { tabId }))
+    assert.doesNotMatch(page, /사과 코너/)
+    const cat = page.match(/\[(e\d+) 링크 "과일 카테고리"\]/)?.[1]
+    const opened = text(await tools.run('hover', { tabId, ref: cat }))
+    assert.match(opened, /\[e\d+ 링크 "사과 코너"\]/)
+    const buy = opened.match(/\[(e\d+) 버튼 "장바구니 담기"\]/)?.[1]
+    const t = Date.now()
+    const r = await call('click', { tabId, ref: buy })
+    const moves = Number(r.title.match(/움직임 (\d+)/)?.[1])
+    console.log(`  누르기 전 마우스 움직임 ${moves}번, 누르기 ${Date.now() - t}ms`)
+    assert.ok(moves >= 3, `마우스가 움직이지 않고 눌렀어요 (${r.title})`)
+    const shot = await call('screenshot', { tabId })
+    writeFileSync(join(out, 'e2e-cursor.jpg'), Buffer.from(shot.data, 'base64'))
+    // 커서는 읽기에 섞이지 않는다
+    assert.doesNotMatch(text(await tools.run('read', { tabId })), /누르는 중/)
   })
 
   await step('탭 닫기', async () => {
