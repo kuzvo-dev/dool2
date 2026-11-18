@@ -339,6 +339,34 @@ export function cookieReject(text: string): string | undefined {
   return undefined
 }
 
+// 광고·앱 설치·뉴스레터·재촉 팝업을 닫는 버튼 (화면을 덮어 할 일을 가린다)
+// (실측 2026-11-18: 호텔 예약 중 '예약 완료까지 얼마 안 남았어요' 같은 재촉 창이 버튼을 가렸다)
+const PROMO_CLOSE =
+  /^(?:닫기|창\s*닫기|close|×|✕|✖|x|나중에(?:\s*(?:하기|보기|할게요))?|다음에(?:\s*할게요)?|괜찮아요|아니(?:요|오)?\s*괜찮아요|건너뛰(?:기|고)|skip|skip\s*for\s*now|maybe\s*later|no\s*thanks|나중에\s*받을게요|오늘\s*(?:하루\s*)?(?:그만|안)\s*보기|do\s*n'?t\s*show\s*again)$/i
+// 그 창이 광고·앱 설치·구독·재촉일 때만 (진짜 할 일 창은 건드리지 않는다)
+const PROMO_WORD =
+  /앱(?:에서|으로|\s*설치|\s*다운|\s*열기)|어플|app\s*(?:store|download|install)|구독|뉴스레터|newsletter|알림\s*받|푸시\s*(?:받|허용)|첫\s*(?:구매|주문)\s*할인|회원\s*가입(?:하고|하면)|지금\s*가입|쿠폰\s*(?:받|드려)|이벤트\s*응모|마감\s*임박|서두르세요|얼마\s*(?:안|남지)\s*(?:남|않)|곧\s*(?:마감|종료|품절)|놓치지\s*마|한정\s*(?:수량|특가)|리뷰\s*(?:작성|남기)|평점\s*(?:남기|부탁)|설문|의견을?\s*들려/i
+// 광고 창이라도 이런 말이 같이 있으면 건드리지 않는다 (결제·로그인·본인인증·동의 같은 진짜 단계)
+const PROMO_KEEP =
+  /결제|주문서|예약자|로그인|본인\s*인증|인증번호|비밀번호|약관\s*동의|필수\s*동의|주소\s*입력|배송지|카드\s*번호|결제\s*수단/i
+
+/**
+ * 광고·앱 설치·재촉 팝업의 닫기 버튼 표시(e12).
+ * 닫기 버튼 가까이(앞 500자) 광고·재촉 말이 있고, 결제·로그인 같은 진짜 단계 말은 없을 때만.
+ * 쿠키 창은 cookieReject가 따로 본다
+ */
+export function promoClose(text: string): string | undefined {
+  const re = /\[(e\d+) (?:버튼|링크) "([^"]*)"[^\]]*\]/g
+  for (const m of text.matchAll(re)) {
+    const name = (m[2] ?? '').replace(/\s+/g, ' ').trim()
+    if (!PROMO_CLOSE.test(name)) continue
+    const near = text.slice(Math.max(0, (m.index ?? 0) - 500), (m.index ?? 0) + 60)
+    if (PROMO_KEEP.test(near)) continue
+    if (PROMO_WORD.test(near) && !COOKIE_WORD.test(near)) return m[1]
+  }
+  return undefined
+}
+
 /** 같은 칸 찾기: 표시 번호가 그대로면 그것, 바뀌었으면 같은 역할·같은 글자인 칸이 하나뿐일 때 그것 */
 export function sameControl(
   refs: Map<string, { role: string; name: string }>,
@@ -1560,6 +1588,26 @@ export class BrowserTools {
           s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
           notes.push(...(s.dialogNotes ?? []))
           cookieNote = `🍪 쿠키 동의 창이 화면을 덮고 있어서 [${name}]로 닫았어요.`
+        }
+      }
+    }
+    // 광고·앱 설치·재촉 팝업은 닫는다 (결제·로그인 주소는 빼고, 탭·내용마다 한 번만). 쿠키 창 닫은 직후면 다음 읽기에서 본다
+    if (!s.dialog && !reject && !RISK_URL.test(s.url)) {
+      const promo = promoClose(s.text)
+      if (promo) {
+        const key = `${tabId}|${promo}|${s.text.length}`
+        if (!this.cookieTried.has(key)) {
+          this.cookieTried.add(key)
+          const name = parseRefs(s.text).get(promo)?.name ?? '닫기'
+          const ok = await this.browser
+            .call('click', { tabId, ref: promo }, 15_000)
+            .then(() => true)
+            .catch(() => false)
+          if (ok) {
+            s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
+            notes.push(...(s.dialogNotes ?? []))
+            cookieNote = `${cookieNote ? `${cookieNote} ` : ''}📢 광고·재촉 창이 화면을 덮고 있어서 [${name}]로 닫았어요.`
+          }
         }
       }
     }
