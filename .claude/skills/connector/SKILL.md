@@ -60,11 +60,14 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # 없으면: npx @pup
 
 ```bash
 pnpm connector check <id>                         # 형식·안전 규칙 (레포 테스트도 같은 검사)
+pnpm connector try <id> <도구> '<입력>' --pc        # 시험용 PC의 진짜 Chrome에서 (시험용 Chrome을 막는 쿠팡·29CM 등도 된다)
+pnpm connector canary <id> --pc                    # 찾아보기 도구 모두, 줄·사진·링크 수를 함께
 pnpm connector try <id> <도구> '<입력 JSON>'        # 실제 사이트에서 한 번. 글·구조화 결과·걸린 시간이 나와요
 pnpm connector canary <id>                        # 찾아보기 도구를 examples로 모두
 ```
 
 - 결과가 맞는지 실제 화면과 견줘 봐요 (가게 이름·시간·금액).
+- `--pc`는 돌고 있는 시험용 PC 본체(`DOOL2_DEV_RESET=1`)에 레포의 정의를 넘겨 그 PC의 Chrome에서 돌린다: `DOOL2_TOOL_TOKEN`(본체 도구 토큰), `DOOL2_PC`(기본 `http://127.0.0.1:8833`). 설치하지 않고 고친 정의를 바로 본다.
 - 돌려 본 만큼 `status`를 적어요: `검증됨(2026-11-17, 검색 → 예약금 화면까지)`. 못 돌려 본 도구는 `초안`. 안 되면 `막힘(사유)`로 두면 AI에게 보이지 않아요.
 
 ## 6. 막힘 고치기

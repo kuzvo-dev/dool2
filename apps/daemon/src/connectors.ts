@@ -164,6 +164,39 @@ export class Connectors {
     return items
   }
 
+  /**
+   * 시험용 PC: 아직 설치하지 않은 도구 정의(tools.json)를 이 PC의 진짜 Chrome에서 한 번 돌린다.
+   * 시험용 Chrome은 막는 사이트(쿠팡·29CM 등)도 사용자 Chrome에서는 열리니, 고친 정의를 여기서 확인한다.
+   * 상태(초안·막힘)·쉬는 중·같은 입력 간격은 보지 않는다. 결과의 빈 칸(조용한 고장)은 함께 알려 준다
+   */
+  async tryDraft(raw: unknown, toolName: string, input: Record<string, unknown>): Promise<ToolResult> {
+    const r = ConnectorSchema.safeParse(raw)
+    if (!r.success)
+      return text(
+        `도구 정의 형식이 틀렸어요: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`,
+        true,
+      )
+    const card = (await this.load()).get(r.data.id)?.card
+    if (!card) return text(`이 PC에 ${r.data.id} 연결 카드가 없어요`, true)
+    const tool = r.data.tools.find((t) => t.name === toolName)
+    if (!tool) return text(`${r.data.id}에 ${toolName} 도구가 없어요`, true)
+    const args: Record<string, unknown> = {}
+    for (const [k, p] of Object.entries(tool.input.properties))
+      if (p.default !== undefined) args[k] = p.default
+    for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
+    const bad = checkInput(tool.input, args)
+    if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const sick =
+      outcome === 'ok' && result.structuredContent ? healthProblems(tool, result.structuredContent) : []
+    return sick.length
+      ? {
+          ...result,
+          content: [...result.content, { type: 'text', text: `(결과 칸이 비어 있어요: ${sick.join(', ')})` }],
+        }
+      : result
+  }
+
   /** 시험·개발: 파일을 고친 뒤 바로 다시 읽게 */
   invalidate() {
     this.cache = undefined
@@ -546,6 +579,16 @@ export class Connectors {
     }
     const lines = [render(tool, out)]
     if (tool.next) lines.push('', fill(tool.next, scope))
+    // 고를 후보에 사진·주소가 있으면 카드로 보여 주라고 한 줄 (도구마다 next에 쓰지 않아도 되게)
+    const rows = Object.values(out).filter(Array.isArray).flat() as Record<string, unknown>[]
+    if (
+      rows.some((r) => r && typeof r === 'object' && (r.image || r.link)) &&
+      !/show_cards/.test(tool.next ?? '')
+    )
+      lines.push(
+        '',
+        '후보를 보여 줄 땐 show_cards로 사진(image)·가격·주소(link)를 그대로 넣은 카드를 붙이고, 글로는 고른 이유만 짧게 말해요.',
+      )
     if (tool.status === '초안')
       lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')
     if (tabId !== undefined) lines.push(`[탭 ${tabId}]`)

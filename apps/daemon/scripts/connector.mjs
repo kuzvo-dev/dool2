@@ -7,6 +7,8 @@
 //   pnpm connector try <id> <도구> '<입력 JSON>'     한 번 돌려 결과(글·구조화)를 본다
 //   pnpm connector canary [id…]                    찾아보기 도구를 예시 입력으로 모두 돌려 본다 (실제 사이트 시험)
 //   pnpm connector page <주소> [선택자]              화면 읽기 / 선택자로 목록 뽑기 시험 (커넥터 쓰기 전 화면 살피기)
+//   pnpm connector try|canary … --pc               시험용 Chrome 대신 돌고 있는 시험용 PC의 진짜 Chrome에서
+//                                                  (DOOL2_TOOL_TOKEN, DOOL2_PC; 시험용 Chrome을 막는 사이트도 확인된다)
 //
 // 로그인이 필요한 도구: DOOL2_DEV_PROFILE=<폴더>로 같은 프로필을 계속 쓰고, 그 Chrome에서 직접 로그인해 둔다
 // (try에 --connected를 붙이면 연결한 것으로 본다). 비밀번호는 이 도구가 다루지 않는다.
@@ -58,6 +60,82 @@ if (cmd === 'check' || !cmd) {
   }
   console.log(`${count}개 커넥터, 문제 ${bad}곳`)
   process.exit(bad ? 1 : 0)
+}
+
+// ── --pc: 돌고 있는 시험용 PC 본체의 진짜 Chrome에서 (시험용 Chrome을 막는 사이트도 된다) ──
+// DOOL2_PC(기본 http://127.0.0.1:8833)·DOOL2_TOOL_TOKEN. 본체는 DOOL2_DEV_RESET=1(시험용 PC)로 켜져 있어야 한다.
+// 레포의 skills/<id>/tools.json을 그대로 넘겨 돌리므로, 고친 정의를 설치하지 않고 바로 확인한다
+if (flags.has('--pc')) {
+  const base = process.env.DOOL2_PC ?? 'http://127.0.0.1:8833'
+  const token = process.env.DOOL2_TOOL_TOKEN
+  if (!token) {
+    console.error('DOOL2_TOOL_TOKEN에 본체의 도구 토큰을 넣어 주세요')
+    process.exit(2)
+  }
+  const run = async (id, tool, input) => {
+    const res = await fetch(`${base}/api/tools/service/try`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: toolsOf(id), tool, input }),
+      signal: AbortSignal.timeout(180_000),
+    })
+    if (!res.ok) throw new Error(`본체가 거절했어요 (${res.status}): ${(await res.text()).slice(0, 200)}`)
+    return res.json()
+  }
+  const show = (r) => {
+    for (const c of r.content ?? []) if (c.type === 'text') console.log(c.text)
+    if (r.structuredContent) console.log(`\n구조화된 결과:\n${JSON.stringify(r.structuredContent, null, 2)}`)
+  }
+  if (cmd === 'try') {
+    const [id, name, json] = args
+    const t0 = Date.now()
+    const r = await run(id, name, json ? JSON.parse(json) : {})
+    show(r)
+    console.log(
+      `\n${r.isError ? '✗ 실패' : '✓ 성공'} (${((Date.now() - t0) / 1000).toFixed(1)}초, 사용자 Chrome)`,
+    )
+    process.exit(r.isError ? 1 : 0)
+  }
+  if (cmd === 'canary') {
+    const results = []
+    for (const id of args.length ? args : services()) {
+      const c = toolsOf(id)
+      for (const t of c?.tools ?? []) {
+        if (t.tier !== '찾아보기' || (t.login && !flags.has('--connected'))) continue
+        const ex = (t.examples ?? [{}])[0] ?? {}
+        const t0 = Date.now()
+        const r = await run(id, t.name, ex).catch((e) => ({
+          isError: true,
+          content: [{ type: 'text', text: e.message }],
+        }))
+        const lists = Object.values(r.structuredContent ?? {}).filter(Array.isArray)
+        const rows = lists.flat().filter((x) => x && typeof x === 'object')
+        const pics = rows.filter((x) => typeof x.image === 'string' && x.image).length
+        const links = rows.filter((x) => typeof x.link === 'string' && x.link).length
+        const text = (r.content ?? []).map((x) => x.text).join(' ')
+        const ok = !r.isError && !/결과 칸이 비어/.test(text)
+        results.push({
+          id,
+          tool: t.name,
+          ok,
+          rows: rows.length,
+          pics,
+          links,
+          ms: Date.now() - t0,
+          error: ok ? undefined : text.slice(0, 300),
+        })
+        console.log(
+          `${ok ? '✓' : '✗'} ${id}_${t.name} (${((Date.now() - t0) / 1000).toFixed(1)}초, ${rows.length}줄, 사진 ${pics}, 링크 ${links})${ok ? '' : `\n  ${text.split('\n')[0].slice(0, 200)}`}`,
+        )
+      }
+    }
+    const jsonOut = rest.find((a) => a.startsWith('--json='))?.slice(7)
+    if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at: new Date().toISOString(), results }, null, 2))
+    console.log(`${results.length}개 중 실패 ${results.filter((x) => !x.ok).length} (사용자 Chrome)`)
+    process.exit(0)
+  }
+  console.error('--pc는 try·canary에만 써요')
+  process.exit(2)
 }
 
 // ── 시험용 Chrome + 두리 본체 ──
