@@ -881,6 +881,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
       infoAnswer: (id, value) => void infoRequests.answer(id, value),
+      report: (phone, r) => {
+        // 그때 PC 쪽은 어땠는지도 같이 남긴다
+        journal.write('phone-report', {
+          phone,
+          ...(r.note ? { note: r.note } : {}),
+          ...(r.app ? { app: r.app } : {}),
+          count: r.trail.length,
+          pc: {
+            extension: browser.status.connected ? browser.status.version : 'off',
+            busy: conversationBusy(),
+            connecting: [...connecting.keys()],
+            waiting: browserTools.approvals.list().filter((x) => x.status === 'pending').length,
+          },
+        })
+        for (const t of r.trail)
+          journal.write('phone-trail', { t: new Date(t.at).toISOString(), what: t.what })
+      },
       connections: () => skills.connections(),
       conversation: ({ before, limit }) => {
         const messages = conversation.history({ limit: limit ?? 60, ...(before ? { before } : {}) })

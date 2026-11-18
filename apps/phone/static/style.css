@@ -3090,3 +3090,10 @@ textarea.ghosting {
 .connect-results {
   display: contents;
 }
+
+/* 문제 알리기: 한 줄 적는 칸 */
+.report-note {
+  min-height: 84px;
+  padding-top: 12px;
+  resize: none;
+}
