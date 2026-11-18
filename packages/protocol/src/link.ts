@@ -124,3 +124,12 @@ export function approvalSignText(
       .map((k) => [k, o[k]]),
   )
 }
+
+/** 폰이 '처음부터 다시'에 서명하는 내용 (2분 안의 것만 받는다) */
+export function resetSignText(at: number, services: boolean): string {
+  return JSON.stringify([
+    ['at', at],
+    ['services', services],
+    ['t', 'dool2-reset/v1'],
+  ])
+}

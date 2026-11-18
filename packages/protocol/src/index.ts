@@ -262,6 +262,8 @@ export type ConversationLiveEvent =
   | { kind: 'busy'; busy: boolean }
   /** 목표·보관함·기억·피드가 바뀌었다 (GET /api/life로 다시 받는다) */
   | { kind: 'life' }
+  /** 처음부터 다시(시험용 PC): 대화·기억이 모두 지워졌다. 화면을 처음부터 다시 받는다 */
+  | { kind: 'reset' }
   /** 연결하기: 지금 로그인하는 서비스가 바뀌었다 */
   | { kind: 'connect'; connecting: string[] }
 
@@ -776,6 +778,11 @@ export type PhoneToPc =
    * 대화 내용·넣은 값은 싣지 않는다. PC에만 며칠 남고 밖으로 나가지 않는다
    */
   | { kind: 'report'; note?: string; trail: { at: number; what: string }[]; app?: string }
+  /**
+   * 처음부터 다시 (시험용 PC만): PC의 대화·기억·목표·보관함을 지운다. 폰 서명(resetSignText)을 PC가 확인한다.
+   * services면 연결한 서비스 표시도 지운다 (금고의 비밀번호·폰 짝짓기는 남는다)
+   */
+  | { kind: 'reset'; at: number; services: boolean; sig: string }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
@@ -867,6 +874,8 @@ export type PcToPhone =
       push?: boolean
       /** 두리 본체가 지금 로그인하고 있는 서비스 */
       connecting?: string[]
+      /** 시험용 PC: 폰 설정에 '처음부터 다시'를 보인다 */
+      dev?: boolean
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
@@ -888,6 +897,8 @@ export type PcToPhone =
   /** 원격 화면의 '필요한 칸만' (form-fill 뒤에도 새로 보낸다) */
   | { kind: 'form'; tabId: number; form?: RemoteForm; error?: string }
   | { kind: 'decided'; id: string; ok: boolean; message: string }
+  /** 처음부터 다시의 결과 */
+  | { kind: 'reset-done'; ok: boolean; message: string }
   /** 대화 하나의 기록 (before에 대한 답이면 before가 같이 온다) */
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** 대화가 답하는 중인지, 줄 선 말 (바뀔 때마다) */
