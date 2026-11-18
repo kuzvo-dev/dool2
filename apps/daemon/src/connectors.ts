@@ -707,12 +707,15 @@ export class Connectors {
           if (!r.rows.length) ok = false
         }
         if (ok) return
-        if (Date.now() > until)
+        if (Date.now() > until) {
+          // soft면 멈추지 않고 넘어간다 (다음 handoff에서 AI가 실제 화면을 읽는다)
+          if (s.wait.soft) return
           throw new StepError(
             s.wait.text || s.wait.items
               ? `기다린 것이 화면에 안 나왔어요 (${s.wait.text ?? s.wait.items})`
               : `"${s.wait.gone}"이(가) 사라지지 않았어요`,
           )
+        }
         await c.sleep(c.pollMs)
       }
     }
