@@ -104,10 +104,12 @@ const shop = createServer((req, res) => {
 <p><label><input type="radio" name="pay" value="카드" checked> 카드</label>
 <label><input type="radio" name="pay" value="네이버페이"> 네이버페이</label>
 <label><input type="radio" name="pay" value="카카오페이"> 카카오페이</label></p>
+<p id="card">등록 카드 <select id="cardno"><option>신한카드 / 5155****3361</option><option>국민카드 / 9409****1234</option></select>
+할부 <select id="months"><option>일시불</option><option>2개월(무이자)</option><option>3개월(무이자)</option></select></p>
 <h3>총 결제 금액 15,900원</h3>
 <button id="go">카드로 결제하기</button>
-<script>for (const r of document.querySelectorAll('input[name=pay]')) r.onchange = () => { go.textContent = r.value + '로 결제하기' }
-go.onclick = () => { document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2>') }</script>`)
+<script>for (const r of document.querySelectorAll('input[name=pay]')) r.onchange = () => { go.textContent = r.value + '로 결제하기'; card.hidden = r.value !== '카드' }
+go.onclick = () => { const how = card.hidden ? go.textContent : cardno.value + ' · ' + months.value; document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2><p>' + how + '</p>') }</script>`)
     return
   }
   if (req.url?.startsWith('/me')) {

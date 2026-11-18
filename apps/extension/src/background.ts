@@ -26,6 +26,8 @@ import {
   pageRevealItem,
   pageScroll,
   pageScrollBy,
+  pageSelectChoose,
+  pageSelectOptions,
   pageSnapshot,
   pageTapAt,
   pageViewport,
@@ -850,6 +852,27 @@ function takePopup(opener: number) {
 
 async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
+    case 'options': {
+      // 펼침 목록의 고를 것 (결제 화면의 등록 카드·할부). 고르는 건 하지 않는다
+      const tabId = await ownedTab(a)
+      const ref = String(a.ref ?? '')
+      const options = await inFrame(tabId, frameOf(tabId, ref).frameId, pageSelectOptions, ref)
+      return { tabId, options }
+    }
+    case 'choose': {
+      // 펼침 목록에서 글자가 같은 것을 고른다 (본체가 승인받은 선택을 넣을 때)
+      const tabId = await ownedTab(a)
+      const ref = String(a.ref ?? '')
+      const r = await inFrame(
+        tabId,
+        frameOf(tabId, ref).frameId,
+        pageSelectChoose,
+        ref,
+        String(a.label ?? ''),
+      )
+      if (!r.ok) throw new Error(r.error)
+      return { tabId, label: r.label }
+    }
     case 'mark-text': {
       // 글자로 누를 곳에 표시를 붙인다 (그 뒤 보통 click으로 누른다)
       const tabId = await ownedTab(a)

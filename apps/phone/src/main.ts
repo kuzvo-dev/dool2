@@ -840,11 +840,31 @@ function chosenOf(a: ApprovalView): string | undefined {
   return st.choice.get(a.id) ?? a.choice ?? a.choices[0]?.id
 }
 
+/** 세부 선택(등록 카드·할부)에서 고른 것. 고르지 않았으면 결제 화면에서 골라져 있던 것 */
+function subChosenOf(
+  a: ApprovalView,
+  g: NonNullable<ApprovalView['subChoices']>[number],
+): string | undefined {
+  return st.choice.get(`${a.id}:${g.key}`) ?? g.choice ?? g.options[0]?.id
+}
+
+/** 지금 고른 결제 수단에 딸린 세부 선택만 (카드를 골라야 등록 카드·할부가 있다) */
+function subsFor(a: ApprovalView) {
+  const main = chosenOf(a)
+  return (a.subChoices ?? []).filter((g) => !g.when || !main || g.when === main)
+}
+
+/** 서명·전송할 선택 전체: 결제 수단과 세부 선택을 쉼표로 ("c2,s1o3") */
+function choiceString(a: ApprovalView): string | undefined {
+  const parts = [chosenOf(a), ...subsFor(a).map((g) => subChosenOf(a, g))].filter((x): x is string => !!x)
+  return parts.length ? parts.join(',') : undefined
+}
+
 async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = false) {
   const s = st.saved
   if (!s) return
-  // 고른 결제 수단도 서명에 함께 묶는다 (중간에서 다른 수단으로 바꿀 수 없다)
-  const choice = decision === 'approve' ? chosenOf(a) : undefined
+  // 고른 결제 수단·카드·할부도 서명에 함께 묶는다 (중간에서 다른 것으로 바꿀 수 없다)
+  const choice = decision === 'approve' ? choiceString(a) : undefined
   // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
   const sig = await signText(s.keys.signPriv, approvalSignText(a, decision, choice))
   // 꾹 눌러 승인은 체크를 보여 준 뒤에 카드를 접는다 (markDecided를 나중에 부른다)
@@ -862,26 +882,41 @@ function finalLabel(a: ApprovalView): string {
 
 /** 승인 카드의 '어떤 걸로 결제할까요?' 줄 (사이트가 받는 수단만, 기본은 이 사이트에서 마지막으로 쓴 것) */
 function choiceRow(a: ApprovalView): HTMLElement | undefined {
-  if (!a.choices?.length) return undefined
-  const now = chosenOf(a)
-  return h(
-    'div',
-    { class: 'approve-choices' },
-    h('span', { class: 'meta', text: `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?` }),
+  const subs = subsFor(a)
+  if (!a.choices?.length && !subs.length) return undefined
+  const row = (
+    title: string,
+    options: { id: string; label: string }[],
+    now: string | undefined,
+    key: string,
+  ) =>
     h(
       'div',
-      { class: 'chip-row' },
-      ...a.choices.map((c) =>
-        h('button', {
-          class: `chip${c.id === now ? ' on' : ''}`,
-          text: c.label,
-          onclick: () => {
-            st.choice.set(a.id, c.id)
-            render()
-          },
-        }),
+      { class: 'approve-choices' },
+      h('span', { class: 'meta', text: title }),
+      h(
+        'div',
+        { class: 'chip-row' },
+        ...options.map((c) =>
+          h('button', {
+            class: `chip${c.id === now ? ' on' : ''}`,
+            text: c.label,
+            onclick: () => {
+              st.choice.set(key, c.id)
+              render()
+            },
+          }),
+        ),
       ),
-    ),
+    )
+  return h(
+    'div',
+    {},
+    ...(a.choices?.length
+      ? [row(`${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`, a.choices, chosenOf(a), a.id)]
+      : []),
+    // 결제 화면에 있는 세부 선택 (등록 카드·할부 개월). 기본은 화면에 골라져 있던 것
+    ...subs.map((g) => row(g.title, g.options, subChosenOf(a, g), `${a.id}:${g.key}`)),
   )
 }
 

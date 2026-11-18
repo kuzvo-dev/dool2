@@ -653,6 +653,35 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   }
 }
 
+/** 펼침 목록(select)의 고를 것들. select가 아니면 null */
+export function pageSelectOptions(ref: string) {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
+  if (!(el instanceof HTMLSelectElement)) return null
+  return [...el.options]
+    .filter((o) => !o.disabled && o.textContent?.trim())
+    .slice(0, 40)
+    .map((o) => ({
+      label: (o.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
+      selected: o.selected,
+    }))
+}
+
+/** 펼침 목록에서 글자가 같은 것을 고른다 (사이트가 듣는 input·change를 같이 보낸다) */
+export function pageSelectChoose(ref: string, label: string) {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
+  if (!(el instanceof HTMLSelectElement)) return { ok: false, error: `${ref}는 펼침 목록이 아니에요` }
+  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+  const opt = [...el.options].find((o) => !o.disabled && norm(o.textContent ?? '') === norm(label))
+  if (!opt) return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
+  el.value = opt.value
+  opt.selected = true
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  return { ok: true, label: norm(opt.textContent ?? '') }
+}
+
 /** 마지막 수단: 초점을 못 받는 요소를 페이지 안에서 누른다 */
 export function pageClick(ref: string) {
   type State = { refs: Map<string, WeakRef<Element>> }
