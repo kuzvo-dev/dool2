@@ -40,7 +40,7 @@ import {
   seal,
   verifyText,
 } from '@dool2/protocol/e2e'
-import { LinkClient } from '@dool2/protocol/link'
+import { LinkClient, resetSignText } from '@dool2/protocol/link'
 import QRCode from 'qrcode'
 import { allowedEndpoint, generateVapid, type PushMessage, sendPush, type VapidKeys } from './webpush.js'
 
@@ -66,6 +66,8 @@ export interface LinkHost {
   infoAnswer(id: string, value: string | undefined): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
+  /** 처음부터 다시 (시험용 PC만, 없으면 거절). services면 연결한 서비스 표시도 */
+  reset?(phone: string, o: { services: boolean }): Promise<{ ok: boolean; message: string }>
   /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   /** 원격 화면 '필요한 칸만' */
@@ -503,6 +505,24 @@ export class PhoneLink {
           ...(typeof msg.note === 'string' && msg.note.trim() ? { note: msg.note.trim().slice(0, 500) } : {}),
           ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
         })
+        return
+      }
+      case 'reset': {
+        const no = (message: string) => this.send(phone, { kind: 'reset-done', ok: false, message })
+        if (!this.host.reset) return no('이 PC에서는 처음부터 다시를 쓸 수 없어요')
+        const at = Number(msg.at)
+        const services = msg.services === true
+        // 폰 서명을 PC가 직접 확인한다: 중계 서버나 다른 기기가 PC 데이터를 지울 수 없게. 오래된 서명은 다시 쓰지 못한다
+        if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 120_000)
+          return no('요청이 오래됐어요. 다시 눌러 주세요')
+        if (
+          typeof msg.sig !== 'string' ||
+          !(await verifyText(phone.signPub, resetSignText(at, services), msg.sig))
+        )
+          return no('서명이 맞지 않아요')
+        const r = await this.host.reset(phone.name, { services })
+        await this.send(phone, { kind: 'reset-done', ...r })
+        if (r.ok) for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
         return
       }
       case 'decide': {

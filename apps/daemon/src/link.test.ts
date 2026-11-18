@@ -15,7 +15,7 @@ import {
   seal,
   signText,
 } from '@dool2/protocol/e2e'
-import { LinkClient } from '@dool2/protocol/link'
+import { LinkClient, resetSignText } from '@dool2/protocol/link'
 import { type Relay, startRelay } from '@dool2/relay'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
@@ -230,6 +230,94 @@ describe('폰 연결', () => {
       sig: await signText(p.keys.signPriv, approvalSignText(rec, 'reject')),
     })
     await waitFor(() => daemon?.approvals.get(rec.id)?.status === 'rejected')
+  })
+})
+
+describe('처음부터 다시 (시험용 PC)', () => {
+  async function paired(devReset: boolean) {
+    const { api } = await boot({ devReset })
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    return { api, p }
+  }
+  const done = (p: Awaited<ReturnType<typeof phone>>) =>
+    p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'reset-done' }> => m.kind === 'reset-done')
+
+  it('시험용 PC에서만, 이 폰의 새 서명일 때만 대화·기억을 지운다 (연결은 고를 때만)', async () => {
+    const { api, p } = await paired(true)
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.dev === true))
+    await api('/api/life/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'memory-add', text: '서울 성수동에 살아요' }),
+    })
+    await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text: '안녕' }) })
+    for (let i = 0; i < 100 && (await api('/api/conversation?limit=10')).messages.length < 2; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    expect((await api('/api/conversation?limit=10')).messages.length).toBeGreaterThanOrEqual(2)
+
+    // 다른 키의 서명 → 거절, 아무것도 지우지 않는다
+    const other = await generateDevice(false)
+    let at = Date.now()
+    await p.send({
+      kind: 'reset',
+      at,
+      services: false,
+      sig: await signText(other.signPriv, resetSignText(at, false)),
+    })
+    await waitFor(() => done(p).length === 1)
+    expect(done(p)[0]).toMatchObject({ ok: false, message: '서명이 맞지 않아요' })
+    // 오래된 서명(3분 전) → 거절
+    at = Date.now() - 180_000
+    await p.send({
+      kind: 'reset',
+      at,
+      services: false,
+      sig: await signText(p.keys.signPriv, resetSignText(at, false)),
+    })
+    await waitFor(() => done(p).length === 2)
+    expect(done(p)[1]?.ok).toBe(false)
+    expect((await api('/api/life')).memory.length).toBe(1)
+
+    // 이 폰의 서명 → 지운다
+    at = Date.now()
+    await p.send({
+      kind: 'reset',
+      at,
+      services: false,
+      sig: await signText(p.keys.signPriv, resetSignText(at, false)),
+    })
+    await waitFor(() => done(p).length === 3)
+    expect(done(p)[2]?.ok).toBe(true)
+    expect((await api('/api/life')).memory.length).toBe(0)
+    expect((await api('/api/conversation?limit=10')).messages.length).toBe(0)
+  })
+
+  it('보통 PC는 dev를 알리지 않고 처음부터 다시를 거절한다', async () => {
+    const { api, p } = await paired(false)
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state'))
+    expect(p.inbox.find((m) => m.kind === 'state')).not.toHaveProperty('dev')
+    await api('/api/life/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'memory-add', text: '기억 하나' }),
+    })
+    const at = Date.now()
+    await p.send({
+      kind: 'reset',
+      at,
+      services: false,
+      sig: await signText(p.keys.signPriv, resetSignText(at, false)),
+    })
+    await waitFor(() => done(p).length === 1)
+    expect(done(p)[0]?.ok).toBe(false)
+    expect((await api('/api/life')).memory.length).toBe(1)
   })
 })
 

@@ -1248,6 +1248,11 @@ function onLive(ev: ConversationLiveEvent) {
     void loadLife().catch(() => {})
     return
   }
+  if (ev.kind === 'reset') {
+    // 폰에서 '처음부터 다시'를 눌렀다: 대화·보관함·목표를 새로 받는다
+    void Promise.all([loadConversation(), loadLife(), loadServices()]).catch(() => {})
+    return
+  }
   if (ev.kind === 'connect') {
     // 연결하기가 끝났거나 시작했다: 연결 목록을 다시 받고 대화 안 연결 카드를 고친다
     state.connecting = new Set(ev.connecting)

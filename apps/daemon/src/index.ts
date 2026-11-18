@@ -96,6 +96,20 @@ export { dataPaths, defaultDataDir } from './paths.js'
 export { Skills } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
+/** 처음부터 다시에서 지우는 PC 설정: 두리가 사용자에 대해 쌓은 것 (기억·목표·보관함·먼저 챙기기·아이디어·내 정보) */
+const RESET_KEYS = [
+  'memory',
+  'routines',
+  'library',
+  'feed',
+  'feedThread',
+  'feedPrompt',
+  'ideas',
+  'ideasAt',
+  'watchAt',
+  'identity',
+] as const
+
 export interface DaemonOptions {
   dataDir?: string
   /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
@@ -130,6 +144,11 @@ export interface DaemonOptions {
     status(): { accessibility: boolean; screenRecording: boolean }
     request(): Promise<void>
   }
+  /**
+   * 시험용 PC: 폰 설정의 '처음부터 다시'를 켠다 (대화·기억·목표·보관함을 지우고 새 사용자처럼).
+   * 배포 앱은 켜지 않는다. 환경 변수 DOOL2_DEV_RESET=1로도 켤 수 있다
+   */
+  devReset?: boolean
   /** 폰 연결 중계 서버 기본 주소 (설정의 relay가 없을 때). 없으면 폰 연결을 켜지 않는다 */
   relay?: string
   /** 폰 앱 주소 (예: https://dool2.com/space/). 없으면 중계 서버의 /app/ */
@@ -801,6 +820,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     events.emit('settings', readSettings())
     return next[id]
   }
+  const devReset = opts.devReset ?? process.env.DOOL2_DEV_RESET === '1'
+  /** 처음부터 다시 (시험용 PC): 새 사용자처럼. 금고의 비밀번호·폰 짝짓기·PC 설정(이름·AI 고르기)·일한 기록은 남긴다 */
+  async function resetAll(
+    phone: string,
+    o: { services: boolean },
+  ): Promise<{ ok: boolean; message: string }> {
+    if (conversationBusy()) return { ok: false, message: '두리가 일하는 중이에요. 끝난 뒤에 다시 해 주세요' }
+    const before = store.listThreads(100_000).length
+    store.clearConversations()
+    for (const k of RESET_KEYS) store.setSetting(k, undefined)
+    if (o.services) store.setSetting('connections', undefined)
+    journal.write('reset', { phone, threads: before, services: o.services })
+    events.emit('settings', readSettings())
+    life.onChange?.()
+    live.emit('event', { kind: 'reset' })
+    return {
+      ok: true,
+      message: o.services
+        ? '대화·기억·목표·보관함과 연결한 서비스 표시를 지웠어요. 처음부터 시작해요'
+        : '대화·기억·목표·보관함을 지웠어요. 처음부터 시작해요',
+    }
+  }
   const link = new PhoneLink(
     secrets,
     {
@@ -819,6 +860,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           infos: infoRequests.pending(),
           ...(connecting.size ? { connecting: [...connecting.keys()] } : {}),
           ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
+          ...(devReset ? { dev: true } : {}),
         }
       },
       thread: async (id) => {
@@ -881,6 +923,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       login: (id, username, password) => saveLogin(id, username, password, true),
       infoAnswer: (id, value) => void infoRequests.answer(id, value),
+      ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       report: (phone, r) => {
         // 그때 PC 쪽은 어땠는지도 같이 남긴다
         journal.write('phone-report', {

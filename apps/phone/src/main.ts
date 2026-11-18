@@ -41,7 +41,7 @@ import {
   needsConnect,
   searchIdeas,
 } from '@dool2/protocol/ideas'
-import { approvalSignText, LinkClient } from '@dool2/protocol/link'
+import { approvalSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import {
   josa,
   narrationLine,
@@ -274,6 +274,26 @@ let heard = false
 let silentTimer: ReturnType<typeof setTimeout> | undefined
 
 /** 이 폰의 연결을 지우고 처음(QR 찍기)으로 */
+/** 처음부터 다시 (시험용 PC): 두 번 묻고, 이 폰의 키로 서명해 보낸다. PC가 서명을 확인한 뒤에만 지운다 */
+async function resetAll() {
+  const s = st.saved
+  if (!s) return
+  if (
+    !confirm(
+      '처음부터 다시 할까요?\n\nPC의 대화·기억·목표·보관함·아이디어·내 정보가 모두 지워져요. 되돌릴 수 없어요.',
+    )
+  )
+    return
+  const services = confirm(
+    '연결한 서비스도 처음부터 할까요?\n\n[확인] 연결 표시도 지워요\n[취소] 연결은 그대로 둬요\n\n금고의 비밀번호와 이 폰의 PC 연결은 어느 쪽이든 남아요.',
+  )
+  mark(`처음부터 다시 (서비스 ${services ? '포함' : '빼고'})`)
+  const at = Date.now()
+  const sig = await signText(s.keys.signPriv, resetSignText(at, services))
+  toast('지우는 중이에요…')
+  await send({ kind: 'reset', at, services, sig })
+}
+
 async function forgetPc() {
   st.client?.stop()
   st.client = undefined
@@ -424,6 +444,15 @@ async function receive(env: Envelope) {
       if (msg.approval.status === 'pending')
         notify('승인을 기다려요', msg.approval.what, `approval-${msg.approval.id}`)
       break
+    case 'reset-done': {
+      toast(msg.message)
+      if (!msg.ok) break
+      // 이 폰에 남긴 대화 조각·방금 기록도 지우고, 앱을 처음 연 것처럼 다시 띄운다 (PC 연결·화면 테마는 그대로)
+      await clearConv().catch(() => undefined)
+      trail.splice(0)
+      setTimeout(() => location.reload(), 1200)
+      break
+    }
     case 'decided': {
       st.decided.set(msg.id, { ok: msg.ok, message: msg.message })
       const a = st.approvals.get(msg.id)
@@ -3436,6 +3465,18 @@ function settingsView() {
       if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
     }),
   )
+  // 시험용 PC에서만: 새 사용자처럼 처음부터 다시 해 보기
+  if (st.pc?.dev)
+    box.append(
+      h('h2', { class: 'over', text: '시험용' }),
+      row(
+        'trash',
+        '처음부터 다시',
+        'PC의 대화·기억·목표·보관함을 지우고 새로 시작해요',
+        undefined,
+        () => void resetAll(),
+      ),
+    )
   box.append(h('h2', { class: 'over', text: '두리의 약속' }))
   for (const [ic, t] of [
     ['card', '돈 쓰는 일과 메시지 보내기는 꼭 먼저 물어봐요. 이건 끌 수 없어요.'],

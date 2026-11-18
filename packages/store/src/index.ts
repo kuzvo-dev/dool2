@@ -131,6 +131,11 @@ export class Store {
     this.db.prepare('DELETE FROM threads WHERE id = ?').run(id)
   }
 
+  /** 처음부터 다시(시험용): 모든 대화와 말을 지운다 */
+  clearConversations() {
+    this.db.exec('DELETE FROM messages; DELETE FROM threads;')
+  }
+
   /** 따로 하는 대화로 표시한다 (메인 대화에서 뺀다) */
   setSide(id: string, side = true) {
     this.db.prepare('UPDATE threads SET side = ? WHERE id = ?').run(side ? 1 : 0, id)
