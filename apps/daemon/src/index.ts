@@ -2120,6 +2120,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         claudeLogin?.cancel()
         journal.stop()
         clearInterval(lifeTimer)
+        clearTimeout(lifePush)
         loginWatch.stopAll()
         link.stop()
         server.closeAllConnections()
