@@ -1316,6 +1316,40 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(b.calls.at(-2)).toBe('click e21')
   })
 
+  it('고른 등록 카드·할부를 사이트별로 기억해 다음 승인 카드의 기본값으로 (설정에서 잊으면 다시 화면 기본값)', async () => {
+    const saved: Record<string, string> = {}
+    const b = coupangPage('카드')
+    const tools = new BrowserTools(b)
+    tools.onSubChoice = (k, v) => {
+      saved[k] = v
+    }
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    const rec = tools.approvals.list()[0]
+    expect((await tools.approve(rec?.id as string, 'c2,s1o2,s2o3')).ok).toBe(true)
+    expect(saved).toEqual({
+      'checkout.coupang.com|카드': '국민카드 / 940915******123*',
+      'checkout.coupang.com|할부': '3개월(무이자)',
+    })
+    // 다음 주문: 본체를 다시 켜도 설정에서 불러와 기본값이 지난번 것
+    const b2 = coupangPage('카드')
+    const next = new BrowserTools(b2)
+    next.loadSubChoices(saved)
+    await next.run('read', { tabId: 3 })
+    await next.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    const r2 = next.approvals.list()[0]
+    expect(r2?.subChoices?.map((g) => g.choice)).toEqual(['s1o2', 's2o3'])
+    // 설정에서 그 사이트를 잊으면 화면에 골라진 것으로
+    next.forgetChoice('checkout.coupang.com')
+    await next.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    expect(
+      next.approvals
+        .list()
+        .at(-1)
+        ?.subChoices?.map((g) => g.choice),
+    ).toEqual(['s1o1', 's2o1'])
+  })
+
   it('카드에 딸린 할부 목록은 다른 결제 수단을 고르면 쓰지 않는다', async () => {
     let method = '카드'
     const calls: string[] = []
