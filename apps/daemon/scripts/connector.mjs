@@ -51,7 +51,9 @@ if (cmd === 'check' || !cmd) {
     const c = toolsOf(id)
     if (c) {
       count++
-      problems.push(...checkConnector(id, c, [card.site, ...(card.alsoSites ?? [])].filter(Boolean), card.category))
+      problems.push(
+        ...checkConnector(id, c, [card.site, ...(card.alsoSites ?? [])].filter(Boolean), card.category),
+      )
     }
     if (problems.length) {
       bad++

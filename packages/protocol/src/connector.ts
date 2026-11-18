@@ -521,7 +521,13 @@ export function checkConnector(
     }
     // 사진 카드(show_cards): 이 분야의 찾아보기 목록은 사진·링크 칸이 있어야 카드로 보인다 (앞으로 만드는 도구도)
     const lists = Object.values(t.output).filter((o) => o.type === 'list')
-    if (category && CARD_CATEGORIES.includes(category) && t.tier === '찾아보기' && t.cards !== false && lists.length) {
+    if (
+      category &&
+      CARD_CATEGORIES.includes(category) &&
+      t.tier === '찾아보기' &&
+      t.cards !== false &&
+      lists.length
+    ) {
       const has = (k: string) => lists.some((o) => o.type === 'list' && k in o.fields)
       if (!has('image') || !has('link'))
         problems.push(
