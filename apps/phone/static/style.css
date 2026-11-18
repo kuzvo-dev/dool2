@@ -501,6 +501,14 @@ button {
   inset: 0;
   z-index: 20;
 }
+/* 열려 있는 동안 내용만 바뀐 것: 올라오는 움직임을 다시 돌리지 않는다 (처음 열 때 한 번만) */
+.app-overlay > .still {
+  animation: none !important;
+}
+/* 닫히는 동안에는 아래 화면을 바로 누를 수 있게 */
+.app-overlay[data-closing] {
+  pointer-events: none;
+}
 .app-overlay .scrim {
   position: absolute;
   -webkit-backdrop-filter: blur(2px);
