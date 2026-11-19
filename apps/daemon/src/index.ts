@@ -1715,6 +1715,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
   browserTools.notifyUser = (title, body) =>
     void link.notify({ title, body, tag: 'auth-wait', url: '#tab=chat' }).catch(() => {})
+  // 간편인증 승인 기다리기: 폰 카드의 [인증 완료했어요]를 누르면 두리가 사이트의 [인증 완료]를 한 번 누른다
+  browserTools.askAuthDone = (host, label, hint) => {
+    const answer = infoRequests.ask(
+      { site: host || '간편인증', host, field: 'choice', label, hint, options: ['인증 완료했어요'] },
+      200_000,
+    )
+    const id = infoRequests.pending().at(-1)?.id
+    return { answer, cancel: () => void (id && infoRequests.cancel(id)) }
+  }
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined

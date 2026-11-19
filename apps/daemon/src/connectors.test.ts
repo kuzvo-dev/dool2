@@ -7,7 +7,7 @@ import { checkConnector } from '@dool2/protocol/connector'
 import { describe, expect, it } from 'vitest'
 import { BrowserTools } from './browser-tools.js'
 import { ConnectorHealth } from './connector-health.js'
-import { Connectors } from './connectors.js'
+import { Connectors, thinPage } from './connectors.js'
 
 const REPO_SKILLS = fileURLToPath(new URL('../../../skills', import.meta.url))
 
@@ -578,5 +578,13 @@ describe('쿠팡 주문 찾기 (여러 기간을 한 번에)', () => {
     expect(opened).toHaveLength(1)
     expect((r.structuredContent as Found).searched).toBe('최근 주문(page 0)')
     expect((r.structuredContent as Found).orders[0]?.items).toEqual(['생수 2L 12개', '라면 5개'])
+  })
+})
+
+describe('넘기기 전 화면이 그려졌는지', () => {
+  it('머리줄만 있거나 누를 것이 거의 없으면 덜 그려진 화면이다', () => {
+    expect(thinPage('[탭 1] Gmail — https://mail.google.com/\n\n로딩 중')).toBe(true)
+    const full = `[탭 1] 받은편지함\n${Array.from({ length: 10 }, (_, i) => `[e${i} 링크 "메일 제목 ${i}번째 줄이에요"]`).join('\n')}`
+    expect(thinPage(full)).toBe(false)
   })
 })

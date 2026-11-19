@@ -716,6 +716,12 @@ export class BrowserTools {
   requestProfile?: (fields: ProfileField[], reason: string, options?: string[]) => string | undefined
   /** 사용자 폰에 알림을 보낸다 (인증 앱 승인 기다리기 등) */
   notifyUser?: (title: string, body: string) => void
+  /** 인증 앱 승인을 폰 카드로 기다린다: [인증 완료했어요]를 누르면 answer가 풀린다. cancel은 카드를 닫는다 */
+  askAuthDone?: (
+    host: string,
+    label: string,
+    hint: string,
+  ) => { answer: Promise<string | undefined>; cancel: () => void }
   /** 인증번호 카드를 띄운다 (폰). 받은 번호는 본체가 그 칸에 넣고, 대화로 이어서 하라고 알린다 */
   requestCode?: (
     tabId: number,
@@ -1321,69 +1327,101 @@ export class BrowserTools {
         const started = Date.now()
         const expired = () =>
           this.notifyUser?.('인증 시간이 지났어요', '다시 하려면 두리에게 "다시 해 줘"라고 해 주세요')
-        while (Date.now() - started < 180_000) {
-          await new Promise((r) => setTimeout(r, 6_000))
+        let host = ''
+        try {
+          host = new URL(this.pages.get(tabId)?.url ?? '').hostname
+        } catch {}
+        // 승인 전에 [인증 완료]를 누르면 인증 창을 닫아 버리는 사이트가 있다(실측 홈택스: 요청 6초 뒤 창이 사라졌다).
+        // 그래서 기다리는 동안은 누르지 않고 지켜보기만 하고, 사용자가 폰 카드의 [인증 완료했어요]를 누르면 그때 한 번 누른다
+        const card = (label: string) =>
+          this.askAuthDone?.(
+            host,
+            label,
+            '인증 앱(카카오톡·네이버·토스·PASS)에 온 알림에서 승인한 뒤 눌러 주세요.',
+          )
+        let waiting = card(msg)
+        let pressedByUser = false
+        if (waiting)
+          void waiting.answer.then((v) => {
+            if (v) pressedByUser = true
+          })
+        // 성공 표시: 짚어 준 탭의 주소가 바뀌었거나, 로그아웃·완료 글이 새로 보일 때
+        const succeeded = async (): Promise<Snapshot | undefined> => {
           for (const t of tabs) {
-            let now = await snap(t)
+            const now = await snap(t)
             const was = first.get(t)
-            if (!now || !was) continue
-            // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
-            if (NOT_YET.test(now.text)) {
-              const ok = buttons(now.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
-              if (ok)
-                await this.browser.call('click', { tabId: t, ref: ok.ref }, 30_000).catch(() => undefined)
-            }
-            const btn = pick(now.text)
-            if (btn) {
-              const r = (await this.browser
-                .call('click', { tabId: t, ref: btn.ref }, 30_000)
-                .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
-              if (r?.dialog) {
-                await this.browser.call('dialog', { tabId: t, accept: true }).catch(() => undefined)
-                continue
-              }
-              await new Promise((r) => setTimeout(r, 2_000))
-              now = (await snap(t)) ?? now
-            }
-            // 무엇을 보고 판단했는지 남긴다 (버튼 이름·표시만, 값은 남기지 않는다)
-            this.onNote?.('wait-auth', {
-              tab: t === tabId ? 'main' : 'other',
-              pressed: btn?.name ?? '',
-              notYet: NOT_YET.exec(now.text)?.[0] ?? '',
-              url: now.url.replace(/[?#].*$/, ''),
-              buttons: buttons(now.text)
-                .map((b) => b.name)
-                .filter((n) => /인증|완료|확인|로그인|요청/.test(n))
-                .slice(0, 8),
-            })
-            if (NOT_YET.test(now.text)) continue
-            // 분명한 성공 표시가 있을 때만 승인으로 본다: 짚어 준 탭의 주소가 바뀌었거나, 로그아웃·완료 글이 새로 보일 때
+            if (!now || !was || NOT_YET.test(now.text)) continue
             const moved = t === tabId && now.url !== was.url
             const done = DONE.test(now.text) && !DONE.test(was.text)
-            if (moved || done) {
-              const main = t === tabId ? now : ((await snap(tabId)) ?? now)
-              this.pages.set(tabId, pageInfo(main.url, main.text))
-              this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
-              return this.read(
-                tabId,
-                undefined,
-                '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
-              )
-            }
+            if (moved || done) return t === tabId ? now : ((await snap(tabId)) ?? now)
           }
-          // 팝업이 닫히고 짚어 준 탭이 로그인 상태로 바뀌었는지도 본다
-          const main = await snap(tabId)
-          const was = first.get(tabId)
-          if (main && was && DONE.test(main.text) && !DONE.test(was.text)) {
-            this.pages.set(tabId, pageInfo(main.url, main.text))
-            this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
-            return this.read(
-              tabId,
-              undefined,
-              '인증 앱 승인이 확인돼 로그인됐어요. "인증이 완료됐어요"라고 한 줄 쓰고 이어서 해요.',
-            )
+          return undefined
+        }
+        const finished = (main: Snapshot) => {
+          waiting?.cancel()
+          this.pages.set(tabId, pageInfo(main.url, main.text))
+          this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
+          return this.read(
+            tabId,
+            undefined,
+            '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
+          )
+        }
+        // [인증 완료] 한 번 누르기: 누른 버튼 이름을 돌려준다 (없으면 '')
+        const pressFinish = async (): Promise<string> => {
+          for (const t of tabs) {
+            const now = await snap(t)
+            if (!now) continue
+            const btn = pick(now.text)
+            if (!btn) continue
+            const r = (await this.browser
+              .call('click', { tabId: t, ref: btn.ref }, 30_000)
+              .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
+            if (r?.dialog)
+              await this.browser.call('dialog', { tabId: t, accept: true }).catch(() => undefined)
+            await new Promise((r) => setTimeout(r, 2_500))
+            const after = await snap(t)
+            this.onNote?.('wait-auth', {
+              tab: t === tabId ? 'main' : 'other',
+              pressed: btn.name,
+              by: waiting ? 'user' : 'auto',
+              notYet: (after && NOT_YET.exec(after.text)?.[0]) ?? (r?.dialog ? 'dialog' : ''),
+              url: (after?.url ?? now.url).replace(/[?#].*$/, ''),
+            })
+            // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
+            if (after && NOT_YET.test(after.text)) {
+              const ok = buttons(after.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
+              if (ok)
+                await this.browser.call('click', { tabId: t, ref: ok.ref }, 30_000).catch(() => undefined)
+              return `${btn.name}:아직`
+            }
+            return btn.name
+          }
+          return ''
+        }
+        let lastAuto = 0
+        while (Date.now() - started < 180_000) {
+          await new Promise((r) => setTimeout(r, 3_000))
+          const ok = await succeeded()
+          if (ok) return finished(ok)
+          // 폰 카드가 없으면(시험 등) 20초마다 한 번 눌러 본다
+          const due = !waiting && Date.now() - started > 20_000 && Date.now() - lastAuto > 20_000
+          if (!pressedByUser && !due) continue
+          pressedByUser = false
+          lastAuto = Date.now()
+          const pressed = await pressFinish()
+          const ok2 = await succeeded()
+          if (ok2) return finished(ok2)
+          if (waiting && (pressed.endsWith(':아직') || !pressed)) {
+            this.notifyUser?.('아직 승인이 확인되지 않았어요', '인증 앱에서 승인한 뒤 다시 눌러 주세요')
+            waiting = card('아직 승인이 확인되지 않았어요. 인증 앱에서 승인한 뒤 다시 눌러 주세요')
+            if (waiting)
+              void waiting.answer.then((v) => {
+                if (v) pressedByUser = true
+              })
           }
         }
+        waiting?.cancel()
         expired()
         return {
           content: [
