@@ -191,8 +191,15 @@ function update(fn: (s: Saved) => void | Promise<void>): Promise<Saved> {
 async function ownedTab(args: Record<string, unknown>, watching = true): Promise<number> {
   const tabId = Number(args.tabId)
   const s = await load()
-  if (!Number.isInteger(tabId) || !s.owned.includes(tabId))
-    throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+  if (!Number.isInteger(tabId)) throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+  if (!s.owned.includes(tabId)) {
+    // 두리 탭이 방금 연 새 탭(로그인 창 등)은 넘겨받기(adopt)가 저장되기 전에 바로 불릴 수 있다:
+    // 연 탭이 두리 탭이면 여기서 넘겨받는다 (실측: 29CM·유니클로·서울예약·에어비앤비 구글·캐치테이블 네이버에서
+    // "두리가 연 탭이 아니에요"로 멈췄다)
+    const t = await chrome.tabs.get(tabId).catch(() => undefined)
+    if (t?.openerTabId !== undefined && s.owned.includes(t.openerTabId)) await adopt(t.openerTabId, tabId)
+    else throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+  }
   let tab: chrome.tabs.Tab
   try {
     tab = await chrome.tabs.get(tabId)
