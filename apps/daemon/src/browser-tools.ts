@@ -900,7 +900,8 @@ export class BrowserTools {
         const accept = a.accept !== false
         if (accept) {
           const risk = classifyDialogRisk(d.message, d.url)
-          if (risk) {
+          // 여러 개를 한 번에 승인받았으면 각 항목의 확인 창("삭제하시겠습니까?")도 묻지 않는다 (버튼에서 이미 하나를 썼다)
+          if (risk && !this.useSeries(d.url, risk.kind, false)) {
             const next =
               this.finalStep() === 'approve'
                 ? 'browser_request_approval에 dialog: true와 무엇을·어디서·얼마인지 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 [확인]을 눌러요.'
@@ -948,6 +949,7 @@ export class BrowserTools {
             ? { choices, choiceTitle: String(a.choiceTitle ?? '결제 수단').slice(0, 20) }
             : {}),
           ...(chose.length ? { chose } : {}),
+          ...(Number(a.count) > 1 ? { count: Number(a.count) } : {}),
         })
       }
       case 'fill_profile': {
@@ -1699,6 +1701,8 @@ export class BrowserTools {
       choiceTitle?: string
       /** 결제 전에 두리가 스스로 고른 것 (보험 안 함·약관 동의 등) */
       chose?: string[]
+      /** 같은 일을 몇 개 이어서 하나 (예: 일정 6개 지우기). 2 이상이면 한 번 승인으로 나머지도 */
+      count?: number
     },
     kind?: RiskKind,
   ): Promise<ToolResult> {
@@ -1818,7 +1822,7 @@ export class BrowserTools {
       url: page.url,
       kind: risk.kind,
       reason: risk.reason,
-      what: d.what.slice(0, 200),
+      what: `${d.count && d.count > 1 ? `[${d.count}개 모두] ` : ''}${d.what}`.slice(0, 200),
       where: d.where.slice(0, 100),
       ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
@@ -1854,6 +1858,7 @@ export class BrowserTools {
           }
         : {}),
     })
+    if (d.count && d.count > 1) this.series.set(rec.id, Math.min(20, Math.floor(d.count)))
     this.hold(tabId, APPROVAL_TTL_MS)
     return {
       content: [
@@ -2040,10 +2045,42 @@ export class BrowserTools {
     return this.browser.call('input', args)
   }
 
+  /** 승인 요청 id → 몇 개를 한 번에 승인받는지 */
+  private series = new Map<string, number>()
+  /** 한 번 승인으로 이어서 누를 수 있는 남은 개수 (사이트·종류별, 10분) */
+  private grants: { host: string; kind: RiskKind; left: number; until: number }[] = []
+
+  private grantSeries(url: string, kind: RiskKind, left: number) {
+    let host = ''
+    try {
+      host = new URL(url).hostname
+    } catch {}
+    if (!host || left < 1) return
+    this.grants.push({ host, kind, left, until: Date.now() + 10 * 60_000 })
+  }
+
+  /** 남은 승인이 있으면 하나 쓴다 (돈 내기는 묶어서 승인하지 않는다) */
+  private useSeries(url: string, kind: RiskKind, consume = true): boolean {
+    if (kind === 'money') return false
+    let host = ''
+    try {
+      host = new URL(url).hostname
+    } catch {}
+    const now = Date.now()
+    this.grants = this.grants.filter((g) => g.until > now && g.left > 0)
+    const g = this.grants.find((x) => x.host === host && x.kind === kind)
+    if (!g) return false
+    if (!consume) return true
+    g.left--
+    this.onNote?.('approval-series', { host, kind, left: g.left })
+    return true
+  }
+
   /** 위험한 동작이면 멈추고 이유를 돌려준다 */
   private guard(label: string, url: string, clickable = false, pay?: string) {
     const risk = classifyRisk(label, url, pay)
     if (!risk) return
+    if (this.useSeries(url, risk.kind)) return
     const next =
       clickable && this.finalStep() === 'approve'
         ? 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
@@ -2218,7 +2255,16 @@ export class BrowserTools {
       const hint = inner
         ? ` 사용자가 등록한 ${PAY_KINDS[inner.kind]} 결제 수단은 "${inner.inner}"이에요. 결제 창에서 고를 수 있으면 그걸 고르고, 결제 비밀번호·본인 확인은 browser_handoff로 사람에게 넘기세요.`
         : ''
-      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      // 여러 개를 한 번에 승인했으면(일정 6개 지우기 등) 같은 사이트·같은 종류의 버튼은 10분 안에 남은 개수만큼 묻지 않고 누른다
+      const many = this.series.get(id)
+      this.series.delete(id)
+      let rest = ''
+      if (many && many > 1) {
+        if (rec.kind === 'contact' || rec.kind === 'irreversible')
+          this.grantSeries(rec.url, rec.kind, many - 1)
+        rest = ` 사용자가 ${many}개 모두 승인했어요: 남은 ${many - 1}개는 같은 버튼을 승인 요청 없이 browser_click으로 이어서 눌러요(10분 안).`
+      }
+      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint}${rest} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
