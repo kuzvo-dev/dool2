@@ -508,7 +508,9 @@ export class Connectors {
         }
       }
     }
-    if (seen) this.opts.health?.record(name, seen, why, toolPrint(tool))
+    // 확장이 끊겨 있던 때(앱 다시 켜기·Chrome 꺼짐)는 도구 고장이 아니다: 세면 멀쩡한 도구가 6시간 쉰다
+    const offline = /확장 프로그램과 연결돼 있지 않|확장과 연결돼 있지 않/.test(why ?? '')
+    if (seen && !offline) this.opts.health?.record(name, seen, why, toolPrint(tool))
     // 입력값(찾는 말·주소 등)은 적지 않는다: 도구 이름·결과·까닭·걸린 시간만
     this.opts.journal?.write('tool', {
       tool: name,

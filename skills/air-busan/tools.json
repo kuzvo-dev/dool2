@@ -88,13 +88,14 @@
         {
           "wait": {
             "text": "BX\\d{3,4}|운항편이 없|항공편이 없|조회된 항공편",
-            "timeoutMs": 20000
+            "timeoutMs": 20000,
+            "soft": true
           }
         },
         {
           "require": "BX\\d{3,4}",
           "timeoutMs": 3000,
-          "say": "{{date}} {{from}} → {{to}} 에어부산 항공편이 없어요. 운항하지 않는 노선·날짜일 수 있어요. 날짜나 공항을 바꿔 볼까요?"
+          "say": "{{date}} {{from}} → {{to}} 에어부산 항공편이 이 화면에 안 나왔어요. 국제선이면 air_busan_prepare_booking으로 예매 화면에서 찾고, 국내선이면 운항하지 않는 날짜·노선일 수 있어요."
         },
         {
           "extract": {
