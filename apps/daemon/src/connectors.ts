@@ -17,6 +17,7 @@ import {
   fill,
   fillValue,
   healthProblems,
+  jsonAfter,
   matches,
   type OutputField,
   onSite,
@@ -125,6 +126,12 @@ export class Connectors {
   }
 
   /** 카드·커넥터 읽기 (10초 동안은 다시 읽지 않는다) */
+  /** 서비스 도구 이름 → 제목 (일한 과정 표시용, 불러온 뒤부터) */
+  private titles = new Map<string, string>()
+  titleOf(name: string): string | undefined {
+    return this.titles.get(name)
+  }
+
   async load(): Promise<Map<string, Loaded>> {
     if (this.cache && Date.now() - this.cache.at < 10_000) return this.cache.items
     const items = new Map<string, Loaded>()
@@ -160,6 +167,13 @@ export class Connectors {
         items.set(n, loaded)
       }
     }
+    this.titles = new Map(
+      [...items.values()].flatMap(({ card, connector }) =>
+        (connector?.tools ?? []).map(
+          (t) => [connectorToolName(card.id, t.name), t.title] as [string, string],
+        ),
+      ),
+    )
     this.cache = { at: Date.now(), items }
     return items
   }
@@ -439,7 +453,7 @@ export class Connectors {
           ...last.result.content,
           {
             type: 'text',
-            text: `(${min}분 전에 본 결과예요. 사이트에 자주 묻지 않으려고 다시 보지 않았어요)`,
+            text: `(지금 ${checkedAt()}. 위 결과는 ${min}분 전(${checkedAt(last.at)})에 본 것이에요. 사이트에 자주 묻지 않으려고 다시 보지 않았어요)`,
           },
         ],
       }
@@ -605,6 +619,8 @@ export class Connectors {
       out[k] = field ? coerce(fillValue(tpl, scope), field) : fillValue(tpl, scope)
     }
     const lines = [render(tool, out)]
+    // 확인 시각: 답에 '지금'을 쓸 때 앞 대화의 시각을 끌어오지 않게 (실측: 8분 전 시각을 '지금'이라고 씀)
+    lines.push('', `확인 시각: ${checkedAt()} (${card.name}, 방금 확인)`)
     if (tool.next) lines.push('', fill(tool.next, scope))
     // 고를 후보에 사진·주소가 있으면 카드로 보여 주라고 한 줄 (도구마다 next에 쓰지 않아도 되게)
     const rows = Object.values(out).filter(Array.isArray).flat() as Record<string, unknown>[]
@@ -612,7 +628,8 @@ export class Connectors {
     if (
       rows.some((r) => r && typeof r === 'object' && (r.image || r.link)) &&
       pics &&
-      !/show_cards/.test(tool.next ?? '')
+      // 도구가 다른 결과 블록(목록 줄·경로·결과 한 장)을 쓰라고 하면 부딪히지 않게 그 말을 따른다
+      !/show_(cards|list|route|result)/.test(tool.next ?? '')
     )
       lines.push(
         '',
@@ -858,11 +875,20 @@ export class Connectors {
     if ('embedded' in s) {
       const until = Date.now() + 6000
       for (;;) {
+        const after = s.embedded.after
         const r = (await b.call('extract', {
           tabId: c.need(),
-          spec: { items: f(s.embedded.css), hidden: true, limit: 1, fields: { t: { raw: true } } },
+          // 변수 안 데이터(after)면 스크립트가 여럿이라 그 글자가 든 것을 고른다
+          spec: {
+            items: f(s.embedded.css),
+            hidden: true,
+            limit: after ? 60 : 1,
+            fields: { t: { raw: true } },
+          },
         })) as { rows: { t: string | null }[] }
-        const text = r.rows[0]?.t
+        const text = after
+          ? r.rows.map((x) => (x.t ? jsonAfter(x.t, after) : undefined)).find(Boolean)
+          : r.rows[0]?.t
         if (text) {
           let data: unknown
           try {
@@ -1025,4 +1051,12 @@ export function render(tool: ConnectorTool, out: Record<string, unknown>): strin
     }
   }
   return lines.join('\n') || '(돌려줄 내용이 없어요)'
+}
+
+/** 한국 시간 "11/19(목) 16:49" */
+function checkedAt(now = Date.now()): string {
+  const d = new Date(now + 9 * 3600_000)
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]}) ${hh}:${mm}`
 }

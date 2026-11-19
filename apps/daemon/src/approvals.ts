@@ -33,6 +33,7 @@ export interface NewApproval {
   where: string
   amount?: string
   cancel?: string
+  items?: string[]
   shot?: string
   choices?: ApprovalView['choices']
   choiceTitle?: string

@@ -41,7 +41,8 @@ export interface UsageLimit {
 export type AgentEvent =
   | { type: 'started'; resumeId?: string; model?: string; tools: string[] }
   | { type: 'text'; delta: string }
-  | { type: 'tool'; name: string; input: unknown }
+  /** title: 서비스 도구의 사람이 읽는 제목 (엔진이 붙인다, 일하는 중 표시용) */
+  | { type: 'tool'; name: string; input: unknown; title?: string }
   | { type: 'tool_result'; name?: string; ok: boolean }
   | { type: 'usage'; limits: UsageLimit[] }
   /** 종량제: 이번 단계에 쓴 돈(USD)과 토큰 */
@@ -600,14 +601,20 @@ export interface ApprovalView {
   /** 누를 버튼의 글자 (페이지에서 읽은 그대로) */
   label: string
   url: string
-  /** app: 처음 다루는 PC 앱을 두리가 조작해도 되는지 */
-  kind: 'money' | 'contact' | 'irreversible' | 'app'
+  /**
+   * app: 처음 다루는 PC 앱을 두리가 조작해도 되는지.
+   * file: PC 파일 여러 개 옮기기·휴지통에서 되살리기·실행 파일 받기, print: 종이로 출력,
+   * pc: 이 PC 화면 잠그기·잠자기 (ADR 0024. 모두 tabId -2)
+   */
+  kind: 'money' | 'contact' | 'irreversible' | 'app' | 'file' | 'print' | 'pc'
   reason: string
   /** 아래는 AI가 적은 설명. 틀릴 수 있어서 화면 캡처와 함께 보여 준다 */
   what: string
   where: string
   amount?: string
   cancel?: string
+  /** 승인할 목록 (파일 옮기기: "a.pdf → ~/Downloads/영수증/" 한 줄씩). 본체가 만든 값 */
+  items?: string[]
   status: ApprovalStatus
   createdAt: string
   expiresAt: string
@@ -681,10 +688,12 @@ export interface ScreenFit {
 /** 폰 → PC */
 // ── 두리의 생활 기록: 목표·보관함·기억·피드 (본체 저장소에만 둔다) ──
 
-/** 언제: 매일 HH:MM · 요일마다(0=일) · 한 번 · N분마다 (모두 한국 시간) */
+/** 언제: 매일 HH:MM · 요일마다(0=일, 여러 요일) · 매달 며칠(31=말일) · 한 번 · N분마다 (모두 한국 시간) */
 export type RoutineSchedule =
   | { kind: 'daily'; time: string }
   | { kind: 'weekly'; time: string; days: number[] }
+  /** 매달 day일 (1~31). 그 날이 없는 달은 그 달 마지막 날 */
+  | { kind: 'monthly'; time: string; day: number }
   | { kind: 'once'; at: string }
   | { kind: 'every'; minutes: number }
 
@@ -712,6 +721,12 @@ export interface Routine {
   nextRunAt?: string
   lastRunAt?: string
   lastResult?: string
+  /** 끝나는 때: 날짜(YYYY-MM-DD, 그날까지 돌고 꺼짐) 또는 조건(그때 두리가 이뤄졌다고 하면 꺼짐) */
+  until?: string
+  /** 알리기: 매번(기본) 또는 조건에 맞을 때만 (아니면 피드·폰 알림 없이 조용히) */
+  notify?: 'always' | 'when_found'
+  /** 끝나는 때가 지나 스스로 꺼진 시각 */
+  endedAt?: string
 }
 
 /** 보관함: 두리가 찾아 준 것·만든 것 중 남겨 둔 것 */

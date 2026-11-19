@@ -90,16 +90,16 @@ import { FileTools, type userFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
-import { Life, watchPrompt } from './life.js'
+import { Life, routineAsk, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
-import { loadPayMethods, savePayMethods } from './pay-methods.js'
+import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
-import { Vault } from './vault.js'
+import { Vault, vaultSitesText } from './vault.js'
 import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
@@ -151,6 +151,8 @@ export interface DaemonOptions {
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** 스킬 폴더 (기본: 레포의 skills/, 배포 앱은 앱 안에 넣은 것) */
   skillsDir?: string
+  /** 말과 함께 넘기는 지금 시각 줄 (기본 켬, 시험에서 끈다: () => undefined) */
+  timeLine?: () => string | undefined
   /** PC 화면 제어 도우미 실행 파일 (기본: 레포의 apps/hands-mac/dist/dool2-hands). 테스트는 흉내를 넣는다 */
   hands?: string | HandsCaller
   /**
@@ -311,6 +313,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     mcpServers: [mcp],
     // 일한 과정 기록: 탭 번호만 받은 웹 도구가 어느 사이트에서 일했는지
     tabHost: (tabId) => browserTools.tabHost(tabId),
+    // 일한 과정에 서비스 도구 제목 ("가게 찾기·영업 확인 중")
+    toolTitle: (name) => connectors.titleOf(name),
+    ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
     // 기억은 대화마다 지침 끝에 붙는다
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>
@@ -363,8 +368,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
   browserTools.onNote = (kind, data) => journal.write(kind, data)
-  // PC 파일 도구 (ADR 0022). 시험에서는 폴더를 바꿀 수 있다
-  const fileTools = new FileTools(opts.fileFolders)
+  // PC 파일 도구 (ADR 0022·0024). 시험에서는 폴더를 바꿀 수 있다. 옮기기(여러 개)·출력은 같은 승인 카드로
+  const fileTools = new FileTools(opts.fileFolders, undefined, {
+    approvals: browserTools.approvals,
+    movesLog: join(paths.dataDir, 'file-moves.json'),
+    // 잠자기 전에 두리가 하던 일을 본다 (답하는 대화·서비스 연결). 아래에서 만드는 값이라 부를 때 읽는다
+    busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
+  })
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')
@@ -419,11 +429,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     finalStep: () => readSettings().finalStep ?? 'approve',
   })
-  /** 승인: 앱(app:…)이면 화면 제어, 아니면 브라우저 */
-  const approveAny = (id: string, choice?: string) =>
-    browserTools.approvals.get(id)?.url.startsWith('app:')
-      ? screenTools.approve(id)
-      : browserTools.approve(id, choice)
+  /** 승인: 앱(app:…)이면 화면 제어, PC 파일(file:…)이면 파일 도구, 아니면 브라우저 */
+  const approveAny = (id: string, choice?: string) => {
+    const url = browserTools.approvals.get(id)?.url ?? ''
+    if (url.startsWith('app:')) return screenTools.approve(id)
+    if (url.startsWith('file:')) return fileTools.ops.approve(id)
+    return browserTools.approve(id, choice)
+  }
 
   // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
@@ -1684,15 +1696,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     store.setSetting('feedThread', t.id)
     return t.id
   }
-  async function runRoutine(r: Routine) {
+  async function runRoutine(r: Routine, tries = 0) {
     let threadId: string
     let text: string
-    if (r.target === 'feed') {
+    // 조건에 맞을 때만 알리는 일은 따로 하는 대화에서 (맞는 게 없는 날 메인 대화에 "알릴 것 없음"이 쌓이지 않게)
+    const quietly = r.target === 'feed' || r.notify === 'when_found'
+    if (quietly) {
       threadId = await feedThreadId()
-      text = r.prompt
+      text = r.target === 'feed' ? routineAsk(r) : `예약해 둔 일이에요 ("${r.title}"). ${routineAsk(r)}`
     } else {
       // 대화로: 답하는 중이면 줄을 선다
-      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${r.prompt} 인사 없이 결과부터 짧게 써 주세요.`)
+      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${routineAsk(r)} 인사 없이 결과부터 짧게 써 주세요.`)
       if (conversationBusy()) {
         queued.push(text)
         live.emit('event', { kind: 'queued', texts: [...queued] })
@@ -1700,7 +1714,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       threadId = (await conversation.prepare(await pickAgent(undefined))).session.id
     }
-    if (threads.isRunning(threadId)) return
+    if (threads.isRunning(threadId)) {
+      // 따로 하는 대화가 다른 일(먼저 챙기기·아이디어) 중이면 1분 뒤 다시 (30분까지)
+      if (quietly && tries < 30)
+        setTimeout(() => void runRoutine(r, tries + 1).catch(() => {}), 60_000).unref?.()
+      return
+    }
     routineThreads.add(threadId)
     let answer = ''
     try {
@@ -1710,11 +1729,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       routineThreads.delete(threadId)
     }
     if (!answer) return
-    life.noteRun(r.id, answer)
+    const run = life.noteRun(r.id, answer)
+    // 조건에 맞지 않았으면 피드에도 폰에도 알리지 않는다
+    if (!run || run.quiet) return
+    // 따로 한 대화의 결과는 메인 대화에도 두리 카드로 남긴다 (사용자가 이어 말할 수 있게)
+    if (r.target !== 'feed' && quietly && run.item) tellInChat(run.item)
     void link
       .notify({
         title: r.target === 'feed' ? '피드에 새 글' : r.title,
-        body: answer.replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
+        body: (run.item?.body ?? answer).replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
         tag: `routine-${r.id}`,
         url: r.target === 'feed' ? '#tab=feed' : '#tab=chat',
       })
@@ -2016,7 +2039,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
       }
-      // PC 파일 도구 (ADR 0022): 바탕화면·문서·다운로드에서 찾기·읽기, 새 파일 만들기
+      // PC 파일 도구 (ADR 0022·0024): 바탕화면·문서·다운로드에서 찾기·읽기, 새 파일 만들기, 옮기기·사진 바꾸기·출력
       if (req.method === 'POST' && b === 'file' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         const r = await fileTools.run(c, args && typeof args === 'object' ? args : {})
@@ -2024,6 +2047,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           tool: c,
           ok: !r.isError,
           path: typeof args?.path === 'string' ? args.path : args?.name,
+          ...(Array.isArray(args?.moves) ? { count: args.moves.length } : {}),
+          ...(Array.isArray(args?.paths) ? { count: args.paths.length } : {}),
         })
         return json(res, 200, r)
       }
@@ -2084,6 +2109,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? `대화에 ${card.name} 연결 카드를 띄웠어요. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 로그인하고, 결과는 대화 알림으로 와요. 비밀번호를 묻지 말고 한 문장으로 안내한 뒤 기다려요.`
             : `대화에 ${card.name} 연결 카드를 띄웠어요. 카드를 누르면 연결 화면이 열려요. 한 문장으로 안내한 뒤 기다려요.`,
         )
+      }
+      // 내 결제 수단 보기 (ADR 0023): 카드사·별칭·끝 4자리 같은 가린 값만. 바꾸기는 폰 설정에서 사람이
+      if (req.method === 'POST' && b === 'life' && c === 'pay_method_list' && !d) {
+        return json(res, 200, { content: [{ type: 'text', text: payMethodsText(loadPayMethods(store)) }] })
+      }
+      // 금고 보기 (ADR 0011): 어느 사이트 로그인이 있는지만. 비밀번호는 빼고(vault.list) 아이디는 가린다
+      if (req.method === 'POST' && b === 'life' && c === 'vault_find' && !d) {
+        const args = ((await readJson(req)) ?? {}) as { site?: unknown }
+        const via = connectVia()
+        const cards = (await skills.connections().catch(() => []))
+          .filter((x) => x.card.how !== 'device')
+          .map((x) => {
+            const v = via[x.card.id]
+            const social = v?.startsWith('social:')
+              ? SOCIAL_PROVIDERS[v.slice(7) as SocialProvider]?.label
+              : undefined
+            return {
+              id: x.card.id,
+              name: x.card.name,
+              ...(x.card.site ? { site: x.card.site } : {}),
+              ...(x.connectedAt ? { connected: true } : {}),
+              ...(social ? { social } : {}),
+            }
+          })
+        const text = vaultSitesText(await vault.list(), {
+          query: String(args.site ?? '').slice(0, 100),
+          cards,
+        })
+        return json(res, 200, { content: [{ type: 'text', text }] })
       }
       // 지난 대화 찾기: 요약에서 빠진 앞 구간의 말을 AI가 다시 찾아본다 (ADR 0015)
       if (req.method === 'POST' && b === 'life' && c === 'conversation_search' && !d) {

@@ -8,6 +8,7 @@
 // 4. electron-builder로 맥 dmg / 윈도우 설치 파일을 만든다 → release/
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
@@ -50,6 +51,15 @@ await esbuild({ ...common, entryPoints: [mcpServer], outfile: join(stage, 'dist'
 const host = fileURLToPath(import.meta.resolve('@dool2/browser/host'))
 await esbuild({ ...common, entryPoints: [host], outfile: join(stage, 'dist', 'native-host.mjs') })
 
+// PDF 읽기(pdfjs-dist)가 쓰는 한글·중국어·일본어 CID 글꼴 표(cmaps)와 그림 풀기(wasm).
+// 묶음 파일 옆 dist/pdfjs/에서 찾는다 (apps/daemon/src/pdf.ts). pdfjs 본체와 worker는 main.js 안에 묶인다
+const pdfjsDir = dirname(
+  createRequire(import.meta.resolve('@dool2/daemon')).resolve('pdfjs-dist/package.json'),
+)
+for (const d of ['cmaps', 'wasm'])
+  cpSync(join(pdfjsDir, d), join(stage, 'dist', 'pdfjs', d), { recursive: true })
+cpSync(join(pdfjsDir, 'LICENSE'), join(stage, 'dist', 'pdfjs', 'LICENSE'))
+
 cpSync(join(root, 'dist', 'preload.cjs'), join(stage, 'dist', 'preload.cjs'))
 cpSync(join(root, 'dist', 'renderer'), join(stage, 'dist', 'renderer'), { recursive: true })
 cpSync(join(root, 'assets'), join(stage, 'assets'), { recursive: true })
@@ -87,7 +97,7 @@ await build({
     directories: { app: 'stage', output: 'release' },
     // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
     files: ['**/*', '!**/node_modules/**'],
-    asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs'],
+    asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs', 'dist/pdfjs/**'],
     // 두리 Chrome 확장 (웹 스토어 전까지 사용자가 직접 올린다)
     extraResources: [
       { from: '../extension/dist', to: 'extension' },

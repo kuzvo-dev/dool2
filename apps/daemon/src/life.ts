@@ -17,9 +17,74 @@ import {
 } from '@dool2/protocol'
 import { cleanDraft, cleanResult, cleanRoute, cleanRows } from '@dool2/protocol/blocks'
 import type { ConnectionItem } from '@dool2/protocol/connect'
-import { nextRun, scheduleLabel } from '@dool2/protocol/schedule'
+import { nextRun, ruleLabel, scheduleLabel, untilEnd, untilLabel } from '@dool2/protocol/schedule'
 
-export { nextRun, scheduleLabel }
+export { nextRun, ruleLabel, scheduleLabel, untilEnd }
+
+/** 조건에 맞을 때만 알리는 일: 도는 차례의 답이 이 말로 시작하면 조용히 넘어간다 */
+export const QUIET_MARK = '알릴 것 없음'
+/** 끝나는 조건이 이뤄졌을 때 답 끝에 붙이는 표시: 붙으면 스스로 꺼진다 */
+export const END_MARK = '[끝]'
+
+/** 도는 차례의 답 읽기: 조용히 넘길지, 끝났는지, 표시를 뺀 글 */
+export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
+  const ended = !!r.until && answer.includes(END_MARK)
+  const text = answer.split(END_MARK).join('').trim()
+  const flat = text.replace(/[\s*_`#>"'“”‘’.,!~-]/g, '')
+  const quiet = r.notify === 'when_found' && flat.startsWith(QUIET_MARK.replace(/\s/g, ''))
+  return { quiet, ended, text }
+}
+
+/** 정해진 때 두리에게 보낼 말: 할 일 + 조건에 맞지 않을 때·끝나는 조건을 답에 담는 법 */
+export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until'>): string {
+  const lines = [r.prompt]
+  if (r.notify === 'when_found')
+    lines.push(
+      `조건에 맞을 때만 알리는 일이에요. 맞는 게 없으면 다른 말 없이 "${QUIET_MARK}"만 써요(사용자에게 알리지 않아요). 맞으면 확인한 것부터 짧게 써요.`,
+    )
+  if (r.until && !untilEnd(r.until))
+    lines.push(
+      `끝나는 조건: ${r.until}. 이번에 이 조건이 이뤄졌으면 답 맨 끝에 "${END_MARK}"을 붙여요(이 일이 스스로 꺼져요).`,
+    )
+  return lines.join('\n')
+}
+
+/** 한국 시간 "12월 1일(화) 오전 9:00" */
+function kstWhen(iso: string): string {
+  const d = new Date(Date.parse(iso) + 9 * 3600_000)
+  const h = d.getUTCHours()
+  const m = d.getUTCMinutes()
+  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${'일월화수목금토'[d.getUTCDay()]}) ${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+}
+
+/** 정한 것 한 줄 (AI가 사용자에게 그대로 말한다): 언제 돌고 · 언제 끝나고 · 언제 알리는지 · 처음 할 때 */
+export function ruleSentence(r: Routine): string {
+  const s = r.schedule
+  const when = s
+    ? `${scheduleLabel(s)}${s.kind === 'every' || s.kind === 'once' ? '' : '에'} 해요`
+    : '정한 때 없이 두어요(저절로 돌지 않아요)'
+  const end =
+    !s || s.kind === 'once'
+      ? ''
+      : r.until
+        ? untilEnd(r.until)
+          ? `${untilLabel(r.until)} 하고 스스로 꺼져요`
+          : `"${r.until}" 되면 꺼져요`
+        : '끝나는 때 없음(지울 때까지)'
+  const tell = !s
+    ? ''
+    : r.notify === 'when_found'
+      ? '조건에 맞을 때만 알리고 아니면 조용히 넘어가요'
+      : r.target === 'feed'
+        ? '매번 피드에 올려요'
+        : '매번 알려요'
+  const first = r.nextRunAt ? `처음은 ${kstWhen(r.nextRunAt)}` : ''
+  return [when, end, tell, first].filter(Boolean).join(' · ')
+}
+
+/** 조건이 있는 지켜보기 같은 말 ("넘으면", "나오면", "뜨면" …) */
+const CONDITIONAL =
+  /(넘으면|넘어가면|나오면|뜨면|생기면|떨어지면|내려가면|오르면|올라가면|바뀌면|열리면|풀리면|있으면|이하면|이상이면|미만이면|초과하면)/
 
 export interface Kv {
   getSetting(key: string): unknown
@@ -31,6 +96,15 @@ const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
 const LIMIT = { routines: 50, library: 500, memory: 200, feed: 300 }
+const LIBRARY_KINDS = ['note', 'link', 'product', 'place', 'file'] as const
+/** 보관함 종류 이름 (폰·PC 화면과 같은 말) */
+const LIBRARY_LABEL: Record<LibraryItem['kind'], string> = {
+  note: '정리',
+  link: '링크',
+  product: '상품',
+  place: '장소',
+  file: '파일',
+}
 export class Life {
   /** 폰에서 보낸 사진 읽기 (본체가 붙인다) */
   photo?: (name: string) => Promise<string>
@@ -76,6 +150,8 @@ export class Life {
     category?: GoalCategory
     plan?: string[]
     target?: 'chat' | 'feed'
+    until?: string
+    notify?: 'always' | 'when_found'
   }): Routine {
     const now = this.now()
     const next = input.schedule ? nextRun(input.schedule, now) : undefined
@@ -92,6 +168,8 @@ export class Life {
         ? { plan: input.plan.slice(0, 12).map((t) => ({ text: t.slice(0, 120), done: false })) }
         : {}),
       ...(next ? { nextRunAt: next.toISOString() } : {}),
+      ...(input.until?.trim() ? { until: input.until.trim().slice(0, 120) } : {}),
+      ...(input.notify === 'when_found' ? { notify: 'when_found' as const } : {}),
     }
     this.put('routines', [r, ...this.routines()])
     // 피드 지시로 만든 일은 피드에 따로 알리지 않는다
@@ -99,17 +177,48 @@ export class Life {
       this.feed({
         kind: 'goal',
         title: `${r.category ? '목표를 세웠어요' : '예약했어요'}: ${r.title}`,
-        ...(r.schedule ? { body: scheduleLabel(r.schedule) } : {}),
+        ...(r.schedule
+          ? { body: [scheduleLabel(r.schedule), ruleLabel(r)].filter(Boolean).join(' · ') }
+          : {}),
         ref: r.id,
       })
     return r
   }
-  /** 목표 고치기: 계획 단계·진행 기록 */
-  updateGoal(id: string, patch: { plan?: string[]; done?: number[]; log?: string; title?: string }) {
+  /** 목표 고치기: 계획 단계·진행 기록, 알림의 언제·끝나는 때·알리기 */
+  updateGoal(
+    id: string,
+    patch: {
+      plan?: string[]
+      done?: number[]
+      log?: string
+      title?: string
+      prompt?: string
+      schedule?: RoutineSchedule
+      /** 빈 글이면 끝나는 때를 지운다 */
+      until?: string
+      notify?: 'always' | 'when_found'
+    },
+  ) {
     const list = this.routines()
     const r = list.find((x) => x.id === id || x.id.startsWith(id))
     if (!r) return undefined
     if (patch.title) r.title = patch.title.slice(0, 60)
+    if (patch.prompt) r.prompt = patch.prompt.slice(0, 1000)
+    if (patch.schedule) {
+      r.schedule = patch.schedule
+      const next = nextRun(patch.schedule, this.now())
+      if (next) {
+        r.nextRunAt = next.toISOString()
+        r.enabled = true
+        delete r.endedAt
+      } else delete r.nextRunAt
+    }
+    if (patch.until !== undefined) {
+      if (patch.until.trim()) r.until = patch.until.trim().slice(0, 120)
+      else delete r.until
+    }
+    if (patch.notify === 'when_found') r.notify = 'when_found'
+    else if (patch.notify === 'always') delete r.notify
     if (patch.plan) r.plan = patch.plan.slice(0, 12).map((t) => ({ text: t.slice(0, 120), done: false }))
     for (const i of patch.done ?? []) if (r.plan?.[i]) r.plan[i].done = true
     if (patch.log)
@@ -122,6 +231,13 @@ export class Life {
     const r = list.find((x) => x.id === id)
     if (!r) return undefined
     Object.assign(r, patch)
+    if (patch.enabled) {
+      // 끝나서 꺼진 걸 다시 켜면: 다음 차례 전에 끝나는 날은 지운다 (켜자마자 다시 꺼지지 않게)
+      delete r.endedAt
+      const end = untilEnd(r.until)
+      const next = r.schedule ? nextRun(r.schedule, this.now()) : undefined
+      if (end && (end <= this.now() || (next && next >= end))) delete r.until
+    }
     if (patch.enabled && r.schedule) {
       const next = nextRun(r.schedule, this.now())
       if (next) r.nextRunAt = next.toISOString()
@@ -143,12 +259,22 @@ export class Life {
     if (this.watchOn() && !this.watchBusy && this.watchSources?.().length && this.watchDue()) this.watchNow()
     const now = this.now()
     const list = this.routines()
-    const due = list.filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now.getTime())
-    if (!due.length) return []
-    for (const r of due) {
+    const ripe = list.filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now.getTime())
+    if (!ripe.length) return []
+    const due: Routine[] = []
+    for (const r of ripe) {
+      const end = untilEnd(r.until)
+      // 끝나는 날이 지났으면 하지 않고 끈다 (PC가 꺼져 있다 늦게 켜진 경우)
+      if (end && end <= now) {
+        this.end(r)
+        continue
+      }
+      due.push(r)
       r.lastRunAt = now.toISOString()
       const next = r.schedule ? nextRun(r.schedule, now) : undefined
-      if (next) r.nextRunAt = next.toISOString()
+      if (next && !(end && next >= end)) r.nextRunAt = next.toISOString()
+      else if (next)
+        this.end(r) // 이번이 끝나는 날 전 마지막
       else {
         delete r.nextRunAt
         r.enabled = false
@@ -158,34 +284,48 @@ export class Life {
     for (const r of due) this.onDue?.(r)
     return due
   }
+  /** 끝나는 때가 되어 스스로 끈다 */
+  private end(r: Routine) {
+    delete r.nextRunAt
+    r.enabled = false
+    r.endedAt = this.now().toISOString()
+  }
   /** 바로 한 번 해 보기 */
   runNow(id: string) {
     const r = this.routines().find((x) => x.id === id)
     if (r) this.onDue?.(r)
     return r
   }
-  noteRun(id: string, result: string) {
+  /**
+   * 도는 차례의 결과 남기기. 조건에 맞을 때만 알리는 일인데 "알릴 것 없음"이면 피드에 올리지 않고(quiet),
+   * 끝나는 조건이 이뤄졌다는 표시가 있으면 끈다(ended). 본체는 quiet면 폰에도 알리지 않는다
+   */
+  noteRun(id: string, answer: string): { quiet: boolean; ended: boolean; item?: FeedItem } | undefined {
     const list = this.routines()
     const r = list.find((x) => x.id === id)
     if (!r) return
+    const { quiet, ended, text: result } = readRun(r, answer)
     r.lastResult = result.slice(0, 300)
-    if (r.category)
+    if (ended) this.end(r)
+    if (r.category && !quiet)
       r.log = [{ at: this.now().toISOString(), text: result.slice(0, 300) }, ...(r.log ?? [])].slice(0, 50)
     this.put('routines', list)
+    if (quiet) return { quiet, ended }
     if (r.target === 'feed') {
       // 답 첫 줄이 제목, 나머지가 글
       const lines = result.trim().split('\n')
       const head = (lines[0] ?? '').replace(/^#+\s*|\*\*/g, '').trim()
       const body = lines.slice(1).join('\n').trim()
-      this.feed({
+      const item = this.feed({
         kind: 'post',
         title: head.slice(0, 80) || '오늘의 소식',
         body: (body || result).slice(0, 2000),
         ref: r.id,
       })
-      return
+      return { quiet, ended, item }
     }
-    this.feed({ kind: 'routine', title: r.title, body: result.slice(0, 2000), ref: r.id })
+    const item = this.feed({ kind: 'routine', title: r.title, body: result.slice(0, 2000), ref: r.id })
+    return { quiet, ended, item }
   }
 
   // ── 보관함 ──
@@ -498,8 +638,19 @@ export class Life {
       switch (tool) {
         case 'goal_create': {
           const schedule = a.schedule ? parseSchedule(a) : undefined
-          if (a.schedule && !schedule)
-            return bad('언제 할지(schedule)를 알 수 없어요. daily·weekly·once·every 중 하나로 주세요.')
+          if (a.schedule && !schedule) return bad(scheduleHelp(a))
+          const rule = readRule(a)
+          if (typeof rule === 'string') return bad(rule)
+          const end = untilEnd(rule.until)
+          const first = schedule ? nextRun(schedule, this.now()) : undefined
+          if (end && end <= this.now())
+            return bad(
+              `끝나는 날(${rule.until})이 벌써 지났어요. 사용자에게 언제까지 할지 다시 물어봐 주세요.`,
+            )
+          if (end && first && first >= end)
+            return bad(
+              `처음 할 때(${kstWhen(first.toISOString())})가 끝나는 날(${rule.until})보다 늦어서 한 번도 돌지 않아요. 언제나 끝나는 날을 고쳐 주세요.`,
+            )
           const category = GOAL_CATEGORIES.includes(a.category as GoalCategory)
             ? (a.category as GoalCategory)
             : undefined
@@ -511,20 +662,44 @@ export class Life {
             ...(category ? { category } : {}),
             ...(plan ? { plan } : {}),
             ...(a.target === 'feed' ? { target: 'feed' as const } : {}),
+            ...rule,
           })
           return ok(
-            `${category ? '목표를' : '예약을'} 만들었어요: "${r.title}"${r.schedule ? ` (${scheduleLabel(r.schedule)})` : ''} [id ${r.id.slice(0, 8)}]. 사용자에게 무엇을 언제 할지 한두 문장으로 다시 확인해 주세요.`,
+            [
+              `${category ? '목표를' : '예약을'} 만들었어요: "${r.title}" [id ${r.id.slice(0, 8)}]`,
+              `정한 것: ${ruleSentence(r)}.`,
+              ...ruleGaps(r),
+              '사용자에게 "정한 것"을 그대로 한 문장으로 말해 확인해 주세요.',
+            ].join('\n'),
           )
         }
         case 'goal_update': {
+          const schedule = a.schedule ? parseSchedule(a) : undefined
+          if (a.schedule && !schedule) return bad(scheduleHelp(a))
+          const rule = readRule(a)
+          if (typeof rule === 'string') return bad(rule)
+          const end = untilEnd(rule.until)
+          if (end && end <= this.now())
+            return bad(
+              `끝나는 날(${rule.until})이 벌써 지났어요. 사용자에게 언제까지 할지 다시 물어봐 주세요.`,
+            )
           const r = this.updateGoal(String(a.id ?? ''), {
             ...(Array.isArray(a.plan) ? { plan: a.plan.map(String) } : {}),
             ...(Array.isArray(a.done) ? { done: a.done.map(Number) } : {}),
             ...(a.log ? { log: String(a.log) } : {}),
             ...(a.title ? { title: String(a.title) } : {}),
+            ...(a.prompt ? { prompt: String(a.prompt) } : {}),
+            ...(schedule ? { schedule } : {}),
+            ...(typeof a.until === 'string' ? { until: a.until } : {}),
+            ...(rule.notify ? { notify: rule.notify } : {}),
           })
           if (!r) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
-          return ok(`목표를 고쳤어요: ${r.title}`)
+          const timing = schedule || a.until !== undefined || rule.notify
+          return ok(
+            timing
+              ? [`고쳤어요: "${r.title}"`, `정한 것: ${ruleSentence(r)}.`, ...ruleGaps(r)].join('\n')
+              : `목표를 고쳤어요: ${r.title}`,
+          )
         }
         case 'idea_suggest': {
           const list = Array.isArray(a.ideas) ? (a.ideas as SuggestedIdea[]) : []
@@ -601,7 +776,7 @@ export class Life {
             list
               .map(
                 (r) =>
-                  `- [${r.id.slice(0, 8)}] ${r.category ? `(${r.category}) ` : ''}${r.title} · ${r.schedule ? scheduleLabel(r.schedule) : '정한 때 없음'}${r.enabled ? '' : ' (꺼짐)'}${r.plan ? ` · 계획 ${r.plan.filter((p) => p.done).length}/${r.plan.length}` : ''}${r.lastResult ? ` · 지난 결과: ${r.lastResult.slice(0, 80)}` : ''}`,
+                  `- [${r.id.slice(0, 8)}] ${r.category ? `(${r.category}) ` : ''}${r.title} · ${r.schedule ? scheduleLabel(r.schedule) : '정한 때 없음'}${ruleLabel(r) ? ` · ${ruleLabel(r)}` : ''}${r.enabled ? '' : r.endedAt ? ' (끝남)' : ' (꺼짐)'}${r.plan ? ` · 계획 ${r.plan.filter((p) => p.done).length}/${r.plan.length}` : ''}${r.lastResult ? ` · 지난 결과: ${r.lastResult.slice(0, 80)}` : ''}`,
               )
               .join('\n'),
           )
@@ -613,9 +788,7 @@ export class Life {
           return ok(`목표를 지웠어요: ${r.title}`)
         }
         case 'library_save': {
-          const kind = (['note', 'link', 'product', 'place', 'file'] as const).includes(a.kind as never)
-            ? (a.kind as LibraryItem['kind'])
-            : 'note'
+          const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : 'note'
           const item = this.save({
             kind,
             title: String(a.title ?? '').slice(0, 80) || '제목 없음',
@@ -624,6 +797,16 @@ export class Life {
             ...(a.price ? { price: String(a.price).slice(0, 40) } : {}),
           })
           return ok(`보관함에 남겼어요: ${item.title}`)
+        }
+        case 'library_find': {
+          const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : undefined
+          return ok(
+            findLibrary(this.library(), {
+              query: String(a.query ?? ''),
+              ...(kind ? { kind } : {}),
+              limit: typeof a.limit === 'number' ? a.limit : 10,
+            }),
+          )
         }
         case 'memory_save': {
           const m = this.remember(String(a.text ?? ''))
@@ -656,11 +839,146 @@ export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | und
       .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
     if (days.length) return { kind: 'weekly', time: hhmm, days: [...new Set(days)] }
   }
+  if (kind === 'monthly' && hhmm) {
+    const day = Math.round(Number(a.day))
+    if (day >= 1 && day <= 31) return { kind: 'monthly', time: hhmm, day }
+  }
   if (kind === 'once' && typeof a.at === 'string' && !Number.isNaN(Date.parse(a.at)))
     return { kind: 'once', at: new Date(a.at).toISOString() }
   if (kind === 'every' && Number(a.minutes) >= 15)
     return { kind: 'every', minutes: Math.round(Number(a.minutes)) }
   return undefined
+}
+
+/** 언제를 읽지 못했을 때: 무엇이 빠졌는지 */
+function scheduleHelp(a: Record<string, unknown>): string {
+  const kind = String(a.schedule ?? '')
+  const need: Record<string, string> = {
+    daily: 'time("09:00")',
+    weekly: 'time과 days(0=일 … 6=토, 여러 개 가능)',
+    monthly: 'time과 day(1~31, 말일은 31)',
+    once: 'at(ISO 시각, +09:00 포함)',
+    every: 'minutes(15 이상)',
+  }
+  return need[kind]
+    ? `${kind}에는 ${need[kind]}이 필요해요.`
+    : '언제 할지(schedule)를 알 수 없어요. daily·weekly·monthly·once·every 중 하나로 주세요.'
+}
+
+/** AI가 준 끝나는 때·알리기 (잘못이면 고칠 말) */
+function readRule(a: Record<string, unknown>): { until?: string; notify?: 'always' | 'when_found' } | string {
+  const out: { until?: string; notify?: 'always' | 'when_found' } = {}
+  if (a.notify !== undefined) {
+    if (a.notify !== 'always' && a.notify !== 'when_found')
+      return 'notify는 "always"(매번 알림)나 "when_found"(조건에 맞을 때만) 중 하나예요.'
+    out.notify = a.notify
+  }
+  if (typeof a.until === 'string' && a.until.trim()) {
+    const u = a.until.trim()
+    if (/^\d{4}-\d{2}-\d{2}/.test(u) && !untilEnd(u))
+      return `끝나는 날(${u})을 읽지 못했어요. "2026-12-31"처럼 주세요.`
+    out.until = u
+  }
+  return out
+}
+
+/** 빠뜨리기 쉬운 것: 결과에 다음 길로 담는다 */
+function ruleGaps(r: Routine): string[] {
+  const s = r.schedule
+  if (!s) return r.category ? [] : ['정한 때가 없어 저절로 돌지 않아요 — 알림이면 goal_update에 schedule']
+  if (s.kind === 'once') return []
+  const gaps: string[] = []
+  if (r.notify === 'when_found' && !r.until)
+    gaps.push(
+      '끝나는 때가 없어요 — 지켜보기는 끝이 있는 게 보통이에요. 정하려면 goal_update에 until(날짜 "2026-12-31"이나 조건 "취소표를 잡으면")',
+    )
+  if (r.notify !== 'when_found' && CONDITIONAL.test(`${r.title} ${r.prompt}`))
+    gaps.push(
+      '조건이 있는 지켜보기 같아요 — 조건에 맞을 때만 알리려면 goal_update에 notify: "when_found" (아니면 매번 알려요)',
+    )
+  return gaps
+}
+
+/** 낱말 비교용: 띄어쓰기를 없애고 소문자로 ("성수 카페" = "성수카페") */
+const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+
+/** 받침에 맞는 "으로/로" ("성수로", "귤로", "카페로", "ABC(으)로") */
+function euro(word: string): string {
+  const c = word.charCodeAt(word.length - 1)
+  if (c < 0xac00 || c > 0xd7a3) return '(으)로'
+  const jong = (c - 0xac00) % 28
+  return jong === 0 || jong === 8 ? '로' : '으로'
+}
+
+/** 저장한 날 (한국 시간 YYYY-MM-DD) */
+function savedDay(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return '날짜 모름'
+  return new Date(t + 9 * 3600_000).toISOString().slice(0, 10)
+}
+
+/**
+ * 보관함 꺼내 보기 (library_find 도구). 사용자가 앱 보관함에서 보는 칸 그대로 돌려준다.
+ * 낱말이 여럿이면 많이 맞은 것부터, 같으면 최근 것부터. 못 찾으면 이유와 저장된 것 목록을 준다
+ */
+export function findLibrary(
+  all: LibraryItem[],
+  opts: { query?: string; kind?: LibraryItem['kind']; limit?: number },
+): string {
+  const n = Math.min(Math.max(1, Math.floor(opts.limit ?? 10) || 10), 20)
+  const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
+  const words = q ? [...new Set(q.split(' ').map(squash).filter(Boolean))] : []
+  const recent = [...all].sort((x, y) => y.savedAt.localeCompare(x.savedAt))
+  const kindLabel = opts.kind ? LIBRARY_LABEL[opts.kind] : ''
+  if (!recent.length)
+    return '보관함이 비어 있어요. 아직 저장한 게 없어요. 예전 대화에서 본 것이면 conversation_search로 찾아봐요.'
+
+  const pool = opts.kind ? recent.filter((x) => x.kind === opts.kind) : recent
+  const scored = pool
+    .map((it) => {
+      const hay = squash([it.title, it.body, it.url ?? '', it.price ?? '', LIBRARY_LABEL[it.kind]].join(' '))
+      return { it, score: words.filter((w) => hay.includes(w)).length }
+    })
+    .filter((x) => !words.length || x.score > 0)
+    // sort는 안정 정렬이라 점수가 같으면 최근 순서가 그대로 남는다
+    .sort((x, y) => y.score - x.score)
+  const found = scored.slice(0, n).map((x) => x.it)
+
+  if (!found.length) {
+    const where = kindLabel ? `보관함의 ${kindLabel} 중에` : '보관함에'
+    const what = q ? ` '${q}'${euro(q)}` : ''
+    const titles = recent
+      .slice(0, 5)
+      .map((x) => `${x.title} (${LIBRARY_LABEL[x.kind]} · ${savedDay(x.savedAt)})`)
+      .join(', ')
+    return [
+      `${where}${what} 저장된 게 없어요. 저장된 것 ${recent.length}개, 최근: ${titles}.`,
+      '다음: 낱말을 바꾸거나 줄여서 다시 찾거나(예: 동네 이름만), query를 비우고 최근 것을 보거나, 대화에서 본 것이면 conversation_search로 찾아요. 없는 걸 있다고 지어내지 않아요.',
+    ].join('\n')
+  }
+
+  // 몇 개만 나오면 메모를 길게, 많으면 짧게 (전체 내용은 제목으로 다시 찾으면 길게 나온다)
+  const room = found.length <= 3 ? 2000 : 300
+  const lines = found.map((it, i) => {
+    const head = `${i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · ${savedDay(it.savedAt)} 저장`
+    const body = it.body.trim()
+    const memo = body.length > room ? `${body.slice(0, room)}… (잘림)` : body
+    return [
+      head,
+      ...(it.price ? [`   가격: ${it.price}`] : []),
+      ...(it.url ? [`   링크: ${it.url}`] : []),
+      ...(memo ? [`   메모: ${memo.replace(/\n/g, '\n   ')}`] : []),
+    ].join('\n')
+  })
+  const scope = [q ? `'${q}'` : '최근 것', kindLabel ? `${kindLabel} 종류` : ''].filter(Boolean).join(' · ')
+  const more = scored.length > found.length ? ` (맞는 것 ${scored.length}개 중 ${found.length}개)` : ''
+  return [
+    `보관함에서 ${scope} ${found.length}개를 찾았어요${more}. 보관함 전체 ${recent.length}개.`,
+    '',
+    ...lines,
+    '',
+    '다음: 사용자에게 보여 줄 땐 show_list(줄마다 링크·가격)로 붙이고, 고를 후보(상품·장소)는 show_cards도 돼요(보관함엔 사진이 없어 사진 없이). 위에 있는 값만 쓰고, 메모가 잘렸으면 제목으로 다시 찾아요.',
+  ].join('\n')
 }
 
 /**

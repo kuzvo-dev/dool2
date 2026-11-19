@@ -132,7 +132,14 @@ export const StepSchema = z.union([
    */
   z
     .object({
-      embedded: z.object({ css: Text(300), pick: z.string().max(300).optional() }).strict(),
+      embedded: z
+        .object({
+          css: Text(300),
+          pick: z.string().max(300).optional(),
+          /** 스크립트 안 자바스크립트 변수면: 이 글자 뒤 첫 JSON 덩어리를 읽는다 (예: "__APOLLO_STATE__") */
+          after: z.string().max(60).optional(),
+        })
+        .strict(),
       as: Key,
     })
     .strict(),
@@ -327,13 +334,27 @@ export type Scope = Record<string, unknown>
 
 /**
  * 점 경로로 값 꺼내기: "shops.0.name", "data.list", 뒤에서 "events.-1.status",
- * 목록의 칸 모으기 "slots.*.time" → ["12:00", "19:30"]
+ * 목록의 칸 모으기 "slots.*.time" → ["12:00", "19:30"],
+ * 목록 중 칸 값이 같은 줄만 "chargers[powerType=급속|초급속][status=충전가능]" (|는 그중 하나, 뒤에 ".length"면 그 수)
  */
 export function pick(scope: unknown, path: string): unknown {
   const keys = path.split('.').filter(Boolean)
   let cur: unknown = scope
   for (const [i, k] of keys.entries()) {
     if (cur === null || cur === undefined) return undefined
+    const where = /^([^[]*)((?:\[\w+=[^\]]*\])+)$/.exec(k)
+    if (where) {
+      if (where[1]) cur = (cur as Record<string, unknown>)[where[1]]
+      if (!Array.isArray(cur)) return undefined
+      for (const [, f = '', v] of (where[2] ?? '').matchAll(/\[(\w+)=([^\]]*)\]/g))
+        cur = (cur as unknown[]).filter(
+          (x) =>
+            x !== null &&
+            typeof x === 'object' &&
+            (v ?? '').split('|').includes(String((x as Record<string, unknown>)[f] ?? '')),
+        )
+      continue
+    }
     if (k === '*') {
       // 칸 묶음(색상 코드별 사진 같은)이면 그 값들을 목록으로
       if (cur && typeof cur === 'object' && !Array.isArray(cur)) cur = Object.values(cur)
@@ -405,6 +426,17 @@ const FILTERS: Record<string, (v: string) => string> = {
     if (v.startsWith(kstDate(now + 86_400_000))) return '내일'
     const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v)
     return m ? `${m[1]}.${m[2]}` : v
+  },
+  /** 날짜 줄 이름: 오늘이면 "오늘", 아니면 요일 (오늘을 "오늘 19"로 보이는 예매 화면) */
+  daylabel: (v) => {
+    if (v.startsWith(kstDate(Date.now()))) return '오늘'
+    return FILTERS.dow?.(v) ?? v
+  },
+  /** 날짜 줄의 '일': 두 자리, 그 달 1일이면 "M.1" (12.1) */
+  dd1: (v) => {
+    const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v)
+    if (!m) return ''
+    return m[2] === '01' ? `${Number(m[1])}.1` : (m[2] ?? '')
   },
 }
 /** 실행할 때 늘 있는 이름: today = 오늘 날짜(한국, YYYY-MM-DD) */
@@ -639,7 +671,11 @@ export function checkInput(input: ConnectorInput, args: Record<string, unknown>)
         problems.push(`${k}는 YYYY-MM-DD로 적어 주세요`)
       if (p.format === 'time' && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(v))
         problems.push(`${k}는 HH:MM으로 적어 주세요`)
-      if (p.pattern && !new RegExp(p.pattern).test(v)) problems.push(`${k}의 형식이 맞지 않아요`)
+      // 어떻게 고칠지 알게 칸 설명을 붙인다 (예: "'CGV'는 빼고 (예: 강남)")
+      if (p.pattern && !new RegExp(p.pattern).test(v))
+        problems.push(
+          `${k}의 형식이 맞지 않아요(${JSON.stringify(v)})${p.description ? `: ${p.description}` : ''}`,
+        )
       if (p.maxLength && v.length > p.maxLength) problems.push(`${k}가 너무 길어요`)
     }
     if (typeof v === 'number') {
@@ -694,4 +730,30 @@ export function healthProblems(tool: ConnectorTool, out: Record<string, unknown>
     if (v === null || v === undefined || v === '') problems.push(`${f} 칸이 비었어요`)
   }
   return problems
+}
+
+/** 글에서 marker 뒤 첫 JSON 덩어리({…} 또는 […])를 꺼낸다. 따옴표 안 괄호는 센다에서 뺀다 */
+export function jsonAfter(text: string, marker: string): string | undefined {
+  const at = text.indexOf(marker)
+  if (at < 0) return undefined
+  let i = at + marker.length
+  while (i < text.length && text[i] !== '{' && text[i] !== '[') i++
+  const start = i
+  let depth = 0
+  let quote = ''
+  for (; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === '\\') i++
+      else if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'") quote = ch
+    else if (ch === '{' || ch === '[') depth++
+    else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return undefined
 }

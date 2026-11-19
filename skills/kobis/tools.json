@@ -1,0 +1,58 @@
+{
+  "id": "kobis",
+  "tools": [
+    {
+      "name": "booking_rank",
+      "title": "실시간 예매율 순위",
+      "description": "로그인 없이 된다. 영화진흥위원회 영화관 입장권 통합전산망의 실시간 예매율 순위(CGV·메가박스·롯데시네마 등 극장 전체 합산)를 돌려준다: 순위·제목·개봉일·예매율·예매 관객 수·누적 관객 수. '예매율 1위', '요즘 뭐가 인기야', '볼 만한 영화 순위'에는 극장 한 곳의 목록(cgv_movies 등) 말고 이것을 먼저 쓴다. 상영 시간은 극장 도구(cgv_showtimes·megabox_showtimes·lotte-cinema_showtimes)로.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-19, 실시간 예매율 표 1~20위, 화면 읽기)",
+      "input": {
+        "properties": {
+          "limit": { "type": "integer", "minimum": 1, "maximum": 30, "default": 10, "description": "몇 위까지 (기본 10)" }
+        }
+      },
+      "output": {
+        "movies": {
+          "type": "list",
+          "description": "예매율 순위 (지금 기준)",
+          "fields": {
+            "rank": { "type": "integer" },
+            "title": { "type": "string" },
+            "open_date": { "type": "string", "description": "개봉일 (아직이면 개봉 전 예매)" },
+            "rate": { "type": "string", "description": "예매율 (예: 16.7%)" },
+            "booked": { "type": "string", "description": "예매 관객 수" },
+            "total": { "type": "string", "description": "누적 관객 수" }
+          }
+        }
+      },
+      "expect": { "rows": 5, "filled": ["rank", "title", "rate"] },
+      "examples": [{ "limit": 10 }],
+      "steps": [
+        { "open": "https://www.kobis.or.kr/kobis/business/stat/boxs/findRealTicketList.do" },
+        { "wait": { "items": "table tbody tr", "timeoutMs": 12000 } },
+        {
+          "extract": {
+            "items": "table tbody tr",
+            "limit": 30,
+            "fields": {
+              "rank": { "css": "td:nth-child(1)" },
+              "title": { "css": "td:nth-child(2)" },
+              "open_date": { "css": "td:nth-child(3)" },
+              "rate": { "css": "td:nth-child(4)" },
+              "booked": { "css": "td:nth-child(7)" },
+              "total": { "css": "td:nth-child(8)" }
+            }
+          },
+          "as": "all"
+        },
+        { "filter": { "from": "all", "where": "rank", "op": "lte", "value": "{{limit}}" }, "as": "movies" }
+      ],
+      "result": { "movies": "{{movies}}" },
+      "next": "1위를 물었으면 제목과 예매율을 결론으로 말하고, 이어서 극장 도구로 그 영화의 상영 시간을 찾아요.",
+      "minIntervalSec": 300,
+      "cards": false
+    }
+  ]
+}

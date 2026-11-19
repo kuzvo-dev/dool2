@@ -2,7 +2,22 @@ import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
 import type { AgentRuntime, TurnInput } from './runtime.js'
-import { ThreadService, WorkLog } from './threads.js'
+import { fileApprovalWhat, ThreadService, WorkLog } from './threads.js'
+
+describe('PC 파일·PC 승인 카드 (ADR 0024)', () => {
+  it('승인을 요청하는 입력에만 카드 글을 만든다', () => {
+    expect(fileApprovalWhat('file_trash', { restore: ['a', 'b'] })).toBe('휴지통에서 2개 되살리기')
+    expect(fileApprovalWhat('file_trash', { restore: ['a'] })).toBeUndefined()
+    expect(fileApprovalWhat('file_trash', { query: '발표' })).toBeUndefined()
+    expect(fileApprovalWhat('file_download', { url: 'https://x/a.exe', confirm: true })).toBe(
+      '실행 파일 받기',
+    )
+    expect(fileApprovalWhat('file_download', { url: 'https://x/a.pdf' })).toBeUndefined()
+    expect(fileApprovalWhat('pc_screen', { action: 'lock' })).toBe('이 PC 화면 잠그기')
+    expect(fileApprovalWhat('pc_screen', { action: 'off' })).toBeUndefined()
+    expect(fileApprovalWhat('file_move', { moves: [{}, {}] })).toBe('파일 2개 옮기기')
+  })
+})
 
 class FakeRuntime implements AgentRuntime {
   readonly id = 'claude' as const
@@ -27,6 +42,7 @@ function setup(script: AgentEvent[]) {
   const store = new Store(':memory:')
   const rt = new FakeRuntime(script)
   const svc = new ThreadService({
+    timeLine: () => undefined,
     store,
     runtimes: { claude: rt },
     workspaceDir: '/tmp/ws',
@@ -112,6 +128,7 @@ describe('ThreadService', () => {
       },
     }
     const svc = new ThreadService({
+      timeLine: () => undefined,
       store,
       runtimes: { claude: rt },
       workspaceDir: '/tmp/ws',
@@ -299,6 +316,31 @@ describe('ThreadService', () => {
       ['tool', JSON.stringify({ kind: 'handoff', tabId: 4, reason: '로그인해 주세요' })],
       ['assistant', '로그인만 해 주세요'],
     ])
+  })
+
+  it('PC 파일 승인(여러 개 옮기기·출력)은 도구가 성공했을 때만 승인 카드를 남긴다', async () => {
+    const moves = [
+      { from: '~/Downloads/a.pdf', folder: '~/Downloads/영수증' },
+      { from: '~/Downloads/b.pdf', folder: '~/Downloads/계약서' },
+    ]
+    const { store, svc } = setup([
+      { type: 'tool', name: 'mcp__dool2__file_move', input: { moves } },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__file_move' },
+      // 하나만 옮기기는 바로 해서 승인이 없다
+      { type: 'tool', name: 'mcp__dool2__file_move', input: { moves: moves.slice(0, 1) } },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__file_move' },
+      // 프린터가 없어 실패한 출력은 카드가 없다
+      { type: 'tool', name: 'mcp__dool2__file_print', input: { path: '~/Downloads/학습지.pdf' } },
+      { type: 'tool_result', ok: false, name: 'mcp__dool2__file_print' },
+      { type: 'done', text: '옮길 목록을 승인해 주세요' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '다운로드 PDF 나눠 줘'))
+    const recs = store
+      .listMessages(t.id)
+      .filter((m) => m.role === 'tool' && m.text.includes('"kind":"approval"'))
+      .map((m) => JSON.parse(m.text))
+    expect(recs).toEqual([{ kind: 'approval', tabId: -2, ref: 'file_move', what: '파일 2개 옮기기' }])
   })
 })
 

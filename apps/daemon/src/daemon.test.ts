@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -46,13 +47,18 @@ class GateRuntime extends EchoRuntime {
   }
 }
 
-async function boot(rt: EchoRuntime = new EchoRuntime()) {
+async function boot(
+  rt: EchoRuntime = new EchoRuntime(),
+  more: Partial<Parameters<typeof startDaemon>[0]> = {},
+) {
   dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
   daemon = await startDaemon({
+    timeLine: () => undefined,
     dataDir: dir,
     token: 't0ken',
     runtimes: { claude: rt },
     chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+    ...more,
   })
   const api = (path: string, init: RequestInit = {}) =>
     fetch(`${daemon?.url}${path}`, {
@@ -277,7 +283,12 @@ describe('설정', () => {
     const keep = dir
     dir = undefined // 첫 데몬을 닫아도 폴더는 남긴다
     await daemon?.close()
-    daemon = await startDaemon({ dataDir: keep, token: 't0ken', runtimes: { claude: new EchoRuntime() } })
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: keep,
+      token: 't0ken',
+      runtimes: { claude: new EchoRuntime() },
+    })
     dir = keep
     const again = await fetch(`${daemon.url}/api/settings`, { headers: { authorization: 'Bearer t0ken' } })
     expect(await again.json()).toEqual({
@@ -337,7 +348,12 @@ describe('Claude 로그인', () => {
           pollMs: 10,
         }),
     })
-    daemon = await startDaemon({ dataDir: dir, token: 't0ken', runtimes: { claude: rt } })
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: dir,
+      token: 't0ken',
+      runtimes: { claude: rt },
+    })
     const api = (path: string, init: RequestInit = {}) =>
       fetch(`${daemon?.url}${path}`, {
         ...init,
@@ -461,6 +477,36 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     expect(auto).toContain('금고에 있는 계정으로 두리 본체가 다시 로그인')
     expect(auto).not.toContain('pw-123')
   })
+
+  it('두리 도구로 금고·결제 수단을 볼 수 있다 (가린 값만, 도구 토큰으로만)', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"쿠팡 비번 저장돼 있어?"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const tool = async (name: string, args: unknown = {}, token = toolToken) => {
+      const r = await fetch(`${daemon?.url}/api/tools/life/${name}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(args),
+      })
+      if (r.status !== 200) return `HTTP ${r.status}`
+      return ((await r.json()) as { content: { text: string }[] }).content[0]?.text ?? ''
+    }
+    // 화면용 토큰으로는 부를 수 없다
+    expect(await tool('vault_find', {}, 't0ken')).toBe('HTTP 401')
+    expect(await tool('pay_method_list')).toContain('등록된 결제 수단이 없어요')
+    expect(await tool('vault_find', { site: '쿠팡' })).toContain('아니요, 쿠팡')
+    await api('/api/vault', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://www.coupang.com', username: 'duri1234', password: 'pw-123' }),
+    })
+    const yes = await tool('vault_find', { site: '쿠팡' })
+    expect(yes).toContain('네, 쿠팡')
+    expect(yes).toContain('du******')
+    expect(yes).not.toMatch(/pw-123|duri1234/)
+    expect(await tool('vault_find')).toContain('로그인이 저장된 사이트 1곳')
+  })
 })
 
 describe('금고 API', () => {
@@ -500,6 +546,45 @@ describe('승인 API', () => {
     expect(await r.json()).toMatchObject({ ok: false })
     const tool = await fetch(`${daemon?.url}/api/approvals`, { headers: { authorization: 'Bearer wrong' } })
     expect(tool.status).toBe(401)
+  })
+
+  it('PC 파일 여러 개 옮기기는 같은 승인 주소로 승인하면 본체가 옮긴다 (임시 폴더)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dool2-home-'))
+    const dl = join(home, 'Downloads')
+    mkdirSync(dl)
+    writeFileSync(join(dl, 'a.pdf'), 'a')
+    writeFileSync(join(dl, 'b.pdf'), 'b')
+    const rt = new EchoRuntime()
+    const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"PDF 나눠 줘"}' })
+    for (let i = 0; i < 200 && !rt.last; i++) await new Promise((r) => setTimeout(r, 10))
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const r = (await (
+      await fetch(`${daemon?.url}/api/tools/file/file_move`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, '영수증') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, '계약서') },
+          ],
+        }),
+      })
+    ).json()) as { content: { text: string }[] }
+    expect(r.content[0]?.text).toContain('승인을 요청했어요')
+    const { approvals } = (await (await api('/api/approvals')).json()) as {
+      approvals: { id: string; kind: string; items?: string[] }[]
+    }
+    const ap = approvals.find((a) => a.kind === 'file')
+    expect(ap?.items).toHaveLength(2)
+    const done = (await (
+      await api(`/api/approvals/${ap?.id}`, { method: 'POST', body: JSON.stringify({ decision: 'approve' }) })
+    ).json()) as { ok: boolean; message: string }
+    expect(done).toMatchObject({ ok: true })
+    expect(done.message).toContain('2개를 옮겼어요')
+    expect(existsSync(join(dl, '영수증', 'a.pdf'))).toBe(true)
+    expect(existsSync(join(dl, '계약서', 'b.pdf'))).toBe(true)
+    await rm(home, { recursive: true, force: true })
   })
 })
 

@@ -68,7 +68,7 @@
 | `extract` | 화면 목록 뽑기: 줄 선택자 + 칸마다 `css`·`attr`·`line`·`match`·`list`. **사진 칸은 `{"image": true}`** — 줄에서 가장 그럴듯한 사진 하나(늦게 그리는 사진·`data-src`·`srcset`·배경 그림까지, 아이콘·로고·작은 그림은 빼고, http는 https로). 사진이 비면 엔진이 목록을 한 번 훑어 내려 다시 읽는다 |
 | `capture` | **그 화면이 스스로 받은 응답(JSON)** 읽기. 두리는 요청을 보내지 않아요: 주소가 `url`(정규식)에 맞는 응답을 듣고 `pick`으로 필요한 부분만 꺼내요 |
 | `embedded` | 화면에 박혀 있는 데이터(JSON) 읽기 (`script#__NEXT_DATA__` 등, 서버가 결과를 화면과 함께 보내는 사이트) |
-| `map` | 목록 모양 바꾸기 (경로, `*`로 모으기, `{{…}}` 채우기 — 줄 안 값이 먼저, 없으면 입력값). 여러 묶음으로 나뉜 목록(`groups.*.items`)은 한 줄로 펼쳐요 |
+| `map` | 목록 모양 바꾸기 (경로, `*`로 모으기, `{{…}}` 채우기 — 줄 안 값이 먼저, 없으면 입력값). 여러 묶음으로 나뉜 목록(`groups.*.items`)은 한 줄로 펼쳐요. 줄 안 목록에서 조건에 맞는 것만 세려면 `chargers[powerType=급속|초급속][status=충전가능].length` (`|`는 그중 하나) |
 | `filter` | 목록 거르기: `where`(줄 안 경로) `op`(eq·ne·lt·lte·gt·gte·contains·has·not) `value`. **value가 비면(입력을 안 줬으면) 거르지 않아요** — "3만 원 이하"처럼 선택 입력에 써요 |
 | `approve` | 돈 내기·연락하기 도구의 마지막: 그 버튼을 누를지 **사용자 승인**을 받아요 |
 | `handoff_to_agent` | 정해진 순서로 하기 어려운 곳: 여기까지 데려온 탭을 AI에게 넘기며 할 일을 알려요 |
@@ -134,6 +134,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 여행·숙소 | [야놀자(NOL)](yanolja/tools.json) | 5 | `search` |
 | 여행·숙소 | [여기어때](yeogi/tools.json) | 4 | `search`, `rooms` |
 | 여행·숙소 | [캠핏](camfit/tools.json) | 3 | `search` |
+| 여행·숙소 | [코레일](korail/tools.json) | 1 | `trains` |
 | 여행·숙소 | [클룩](klook/tools.json) | 3 | `search` |
 | 여행·숙소 | [트립닷컴](trip-com/tools.json) | 3 | `hotel_search` |
 | 여행·숙소 | [호텔스닷컴](hotels-com/tools.json) | 3 | `search` |

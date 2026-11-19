@@ -10,7 +10,7 @@ import {
   type Routine,
 } from '@dool2/protocol'
 import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
-import { scheduleLabel } from '@dool2/protocol/schedule'
+import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
 import { statCard } from './motion-cards.js'
@@ -283,10 +283,11 @@ function dayLabel(iso: string) {
 // ── 목표 ──
 
 export function whenText(r: Routine) {
-  if (!r.enabled) return '꺼 둠'
+  // 끝나는 때가 지나 스스로 꺼진 건 "끝남"
+  if (!r.enabled) return r.endedAt ? '끝남' : '꺼 둠'
   if (!r.schedule) return '시간 정하지 않음'
   const next = r.nextRunAt ? ` · 다음 ${nextText(r.nextRunAt)}` : ''
-  return `${scheduleLabel(r.schedule)}${next}`
+  return `${[scheduleLabel(r.schedule), ruleLabel(r)].filter(Boolean).join(' · ')}${next}`
 }
 
 function nextText(iso: string) {

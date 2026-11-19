@@ -1,6 +1,7 @@
 // PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기.
-// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·옮기기·덮어쓰기는 없다.
-// 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(간단한 글 뽑기).
+// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·덮어쓰기는 없다.
+// 옮기기·이름 바꾸기, 사진 형식 바꾸기, 출력은 file-ops.ts (ADR 0024, 승인·되돌리기와 함께).
+// 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(pdf.ts, 쪽마다 줄·표를 살려).
 // 민감한 파일(인증서·키·비밀번호 파일·숨은 폴더)은 읽지 않는다.
 
 import { execFile } from 'node:child_process'
@@ -8,7 +9,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
-import { inflateRawSync, inflateSync } from 'node:zlib'
+import { inflateRawSync } from 'node:zlib'
+import { FileOps, type FileOpsOptions } from './file-ops.js'
+import { type PdfText, pdfScanImages, pdfText } from './pdf.js'
 
 export interface FileToolResult {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
@@ -51,7 +54,9 @@ const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 export class FileTools {
   private readonly folders: ReturnType<typeof userFolders>
   private readonly home: string
-  constructor(folders?: ReturnType<typeof userFolders>, home = homedir()) {
+  /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
+  readonly ops: FileOps
+  constructor(folders?: ReturnType<typeof userFolders>, home = homedir(), opts: FileOpsOptions = {}) {
     // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
     const real = (p: string) => {
       try {
@@ -67,10 +72,47 @@ export class FileTools {
       downloads: f.downloads.map(real),
     }
     this.home = real(home)
+    this.ops = new FileOps(
+      {
+        inside: (p) => this.inside(p),
+        insideNew: (p) => this.insideNew(p),
+        show: (p) => this.show(p),
+        roots: () => this.roots(),
+        sensitive: (p) => SENSITIVE.test(p),
+        home: this.home,
+        folder: (key) => this.folders[key]?.[0],
+        read: (p) => readLocal(p),
+      },
+      opts,
+    )
   }
 
   private roots() {
     return Object.values(this.folders).flat()
+  }
+
+  /** 아직 없을 수도 있는 폴더(옮길 곳·새 파일 둘 곳): 있는 데까지 실제 경로로 바꿔 사용자 폴더 안인지 본다 */
+  private insideNew(p: string): string | undefined {
+    const raw = p.startsWith('~') ? join(this.home, p.slice(1)) : resolve(this.home, p)
+    const rest: string[] = []
+    let at = raw
+    while (!existsSync(at)) {
+      const up = resolve(at, '..')
+      if (up === at) return undefined
+      rest.unshift(basename(at))
+      at = up
+    }
+    let real: string
+    try {
+      real = realpathSync(at)
+    } catch {
+      return undefined
+    }
+    // 새로 만들 이름에 숨은 이름(.으로 시작)·못 쓰는 글자는 받지 않는다
+    if (rest.some((n) => n.startsWith('.') || /[:*?"<>|]/.test(n) || !n.trim())) return undefined
+    const out = join(real, ...rest)
+    if (SENSITIVE.test(out)) return undefined
+    return this.roots().some((r) => out === r || out.startsWith(r + sep)) ? out : undefined
   }
 
   /** 사용자 폴더 안의 실제 경로만 (../·바로가기로 밖에 나가는 것 막기) */
@@ -92,7 +134,11 @@ export class FileTools {
   async run(tool: string, args: Record<string, unknown>): Promise<FileToolResult> {
     try {
       if (tool === 'file_find')
-        return await this.find(String(args.query ?? ''), args.folder as FolderKey | undefined)
+        return await this.find(
+          String(args.query ?? ''),
+          args.folder as FolderKey | undefined,
+          Number(args.limit ?? 0) || undefined,
+        )
       if (tool === 'file_read') return await this.read(String(args.path ?? ''), Number(args.from ?? 0) || 0)
       if (tool === 'file_write')
         return await this.write({
@@ -102,14 +148,22 @@ export class FileTools {
           rows: Array.isArray(args.rows) ? (args.rows as unknown[][]) : undefined,
           folder: (args.folder as FolderKey | undefined) ?? 'desktop',
         })
+      if (tool === 'file_move') return await this.ops.move(args)
+      if (tool === 'file_convert') return await this.ops.convert(args)
+      if (tool === 'file_print') return await this.ops.print(args)
+      if (tool === 'file_pdf') return await this.ops.pdf(args)
+      if (tool === 'file_trash') return await this.ops.trash(args)
+      if (tool === 'file_download') return await this.ops.download(args)
+      if (tool === 'pc_screen') return await this.ops.power(args)
       return fail(`모르는 파일 도구예요: ${tool}`)
     } catch (e) {
       return fail((e as Error).message)
     }
   }
 
-  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개 */
-  async find(query: string, folder?: FolderKey): Promise<FileToolResult> {
+  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개(limit으로 300개까지) */
+  async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
+    const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
       .split(/[,·]/)
       .map((w) => w.trim())
@@ -146,12 +200,13 @@ export class FileTools {
         minute: '2-digit',
       })
     return ok(
-      `${hits.length > 30 ? `${hits.length}개 중 최근 30개` : `${hits.length}개`}:\n` +
+      `${hits.length > max ? `${hits.length}개 중 최근 ${max}개` : `${hits.length}개`}:\n` +
         hits
-          .slice(0, 30)
+          .slice(0, max)
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
           .join('\n') +
-        '\n읽으려면 file_read에 이 경로를 그대로 주세요.',
+        (hits.length > max ? `\n다 보려면 limit을 늘려(300까지) 다시 찾아 주세요.` : '') +
+        '\n읽으려면 file_read, 옮기거나 이름을 바꾸려면 file_move, 사진 형식은 file_convert, 출력은 file_print에 이 경로를 그대로 주세요.',
     )
   }
 
@@ -164,33 +219,53 @@ export class FileTools {
     const s = await stat(p)
     if (s.isDirectory()) return this.listDir(p)
     if (s.size > 30 << 20) return fail('30MB보다 큰 파일은 읽지 않아요.')
-    const buf = await readFile(p)
+    const buf = await readLocal(p)
+    if (typeof buf === 'string') return fail(buf)
     const ext = extname(p).toLowerCase()
     let text: string
     let note = ''
+    let pdf: PdfText | undefined
     if (['.docx', '.xlsx', '.pptx', '.hwpx'].includes(ext)) text = officeText(buf, ext)
     else if (ext === '.pdf') {
-      text = pdfText(buf)
-      note =
-        '\n(PDF 글은 간단한 방식으로 뽑아서 표·글꼴에 따라 빠지거나 깨질 수 있어요. 깨졌으면 사용자에게 알려 주세요.)'
-      if (!text.trim()) {
-        // 스캔한 PDF: 안에 든 사진(JPEG)을 그대로 보여 준다 (사업자등록증·영수증 스캔)
-        const imgs = pdfImages(buf).slice(0, 3)
-        if (imgs.length)
+      let why = ''
+      try {
+        pdf = await pdfText(buf)
+      } catch (e) {
+        why = (e as Error).message
+      }
+      // 글이 거의 없으면(쪽마다 열 자 미만) 스캔한 PDF로 본다
+      text = pdf && pdf.letters >= pdf.pages * 10 ? pdf.text : ''
+      if (pdf?.table)
+        note =
+          "\n(표는 같은 줄의 칸을 ' | '로 나눴어요. 빈칸이 있으면 칸이 밀려 보일 수 있으니 항목과 금액을 짝지어 읽어 주세요.)"
+      if (!text) {
+        // 스캔한 PDF: 안에 든 사진을 보여 준다 (사업자등록증·납세증명서 스캔). JPEG는 그대로, 아니면 풀어서 PNG로
+        let imgs = pdfImages(buf)
+          .slice(0, 3)
+          .map((data) => ({ data, mimeType: 'image/jpeg' }))
+        if (!imgs.length && pdf)
+          imgs = (await pdfScanImages(buf).catch(() => []))
+            .filter((data) => data.length <= IMAGE_MAX)
+            .map((data) => ({ data, mimeType: 'image/png' }))
+        if (imgs.length) {
+          const of = pdf && pdf.pages > imgs.length ? `${pdf.pages}쪽 중 앞 ` : ''
           return {
             content: [
-              ...imgs.map((data) => ({
+              ...imgs.map((m) => ({
                 type: 'image' as const,
-                data: data.toString('base64'),
-                mimeType: 'image/jpeg',
+                data: m.data.toString('base64'),
+                mimeType: m.mimeType,
               })),
               {
                 type: 'text',
-                text: `${this.show(p)}: 글이 없는 스캔 PDF라 쪽 그림 ${imgs.length}장을 보여 드려요. 그림에 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+                text: `${this.show(p)}: 글이 없는 스캔 PDF라 ${of}쪽 그림 ${imgs.length}장을 보여 드려요. 그림에 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
               },
             ],
           }
-        return fail('이 PDF에서는 글도 그림도 뽑지 못했어요(특수 글꼴). 사용자에게 알려 주세요.')
+        }
+        // 그림도 없으면 몇 글자라도 나온 글을 그대로 보여 준다
+        if (pdf?.letters) text = pdf.text
+        else return fail(why || '이 PDF에서는 글도 그림도 뽑지 못했어요. 사용자에게 알려 주세요.')
       }
     } else if (ext === '.hwp')
       return fail('한글(.hwp) 파일은 아직 못 읽어요. 한글에서 hwpx나 PDF로 저장해 주시면 읽을 수 있어요.')
@@ -210,10 +285,15 @@ export class FileTools {
     const CHUNK = 30_000
     const part = text.slice(from, from + CHUNK)
     const more = from + CHUNK < text.length
+    // PDF는 전체 쪽 수와 이번에 보여 준 쪽을 알려 준다
+    const pageAt = (i: number) => (pdf ? pdf.pageStarts.findLastIndex((s) => s <= i) + 1 : 0)
+    const head = pdf
+      ? `PDF ${pdf.pages}쪽, ${text.length.toLocaleString()}자${from || more ? `, 이번에 ${pageAt(from)}~${pageAt(Math.min(text.length, from + CHUNK) - 1)}쪽` : ''}`
+      : `${text.length.toLocaleString()}자${from ? `, ${from}자부터` : ''}`
     return ok(
-      `${this.show(p)} (${text.length.toLocaleString()}자${from ? `, ${from}자부터` : ''})\n\n${part}` +
+      `${this.show(p)} (${head})\n\n${part}` +
         (more
-          ? `\n\n… 뒤에 ${(text.length - from - CHUNK).toLocaleString()}자 더 있어요. 이어 읽으려면 from: ${from + CHUNK}`
+          ? `\n\n… ${pdf ? `전체 ${pdf.pages}쪽 중 ${pageAt(from + CHUNK - 1)}쪽까지 보여 드렸어요. ` : ''}뒤에 ${(text.length - from - CHUNK).toLocaleString()}자 더 있어요. 이어 읽으려면 from: ${from + CHUNK}`
           : '') +
         note,
     )
@@ -431,93 +511,26 @@ export function officeText(buf: Buffer, ext: string): string {
     .join('\n\n')
 }
 
-/** PDF 글 (간단한 방식): 압축 풀기 → 글 그리기 명령(Tj·TJ)의 글자. 한글 글꼴은 ToUnicode 표로 바꾼다 */
-export function pdfText(buf: Buffer): string {
-  const src = buf.toString('latin1')
-  const streams: string[] = []
-  const re = /<<([\s\S]{0,2000}?)>>\s*stream\r?\n/g
-  for (let m = re.exec(src); m; m = re.exec(src)) {
-    const start = m.index + m[0].length
-    const end = src.indexOf('endstream', start)
-    if (end < 0) break
-    const raw = buf.subarray(start, end)
-    let data = raw
-    if (/FlateDecode/.test(m[1] ?? '')) {
-      try {
-        data = inflateSync(raw)
-      } catch {
-        try {
-          data = inflateRawSync(raw.subarray(2))
-        } catch {
-          continue
-        }
-      }
-    } else if (/Filter/.test(m[1] ?? '')) continue
-    streams.push(data.toString('latin1'))
-    re.lastIndex = end
+/**
+ * 파일 내용 읽기. 맥의 iCloud Drive가 공간을 아끼려고 내용을 클라우드에만 둔 파일(목록에는 보이는 '문서' 속 파일)은
+ * 읽으면 "Resource deadlock avoided"(EDEADLK, -11)로 실패한다(실측 2026-11-19, 견적 PDF). 이때 brctl로 내려받고 다시 읽는다.
+ * 못 읽으면 사용자에게 전할 이유를 글로 돌려준다
+ */
+export async function readLocal(p: string, wait = 30_000): Promise<Buffer | string> {
+  try {
+    return await readFile(p)
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException
+    if (process.platform !== 'darwin' || !(err.errno === -11 || err.code === 'EDEADLK')) throw e
   }
-  // ToUnicode 표 (글꼴마다 다르지만 간단히 하나로 합친다)
-  const cmap = new Map<string, string>()
-  const hexStr = (h: string) => {
-    let s = ''
-    for (let i = 0; i + 3 < h.length + 1; i += 4)
-      s += String.fromCharCode(Number.parseInt(h.slice(i, i + 4), 16))
-    return s
+  await new Promise<void>((res) => execFile('brctl', ['download', p], { timeout: 10_000 }, () => res()))
+  for (const end = Date.now() + wait; Date.now() < end; ) {
+    await new Promise((r) => setTimeout(r, 500))
+    try {
+      return await readFile(p)
+    } catch {}
   }
-  for (const s of streams) {
-    if (!/begincmap/.test(s)) continue
-    for (const b of s.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))
-      for (const m of (b[1] ?? '').matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g))
-        cmap.set((m[1] ?? '').toLowerCase(), hexStr(m[2] ?? ''))
-    for (const b of s.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))
-      for (const m of (b[1] ?? '').matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
-        const lo = Number.parseInt(m[1] ?? '0', 16)
-        const hi = Number.parseInt(m[2] ?? '0', 16)
-        const base = Number.parseInt(m[3] ?? '0', 16)
-        const w = (m[1] ?? '').length
-        for (let c = lo; c <= hi && c - lo < 5000; c++)
-          cmap.set(c.toString(16).padStart(w, '0'), String.fromCodePoint(base + (c - lo)))
-      }
-  }
-  const fromHex = (h: string) => {
-    const hex = h.replace(/\s+/g, '').toLowerCase()
-    if (cmap.size) {
-      let out = ''
-      for (let i = 0; i < hex.length; i += 4)
-        out += cmap.get(hex.slice(i, i + 4)) ?? cmap.get(hex.slice(i, i + 2)) ?? ''
-      if (out) return out
-    }
-    let out = ''
-    for (let i = 0; i < hex.length; i += 2)
-      out += String.fromCharCode(Number.parseInt(hex.slice(i, i + 2), 16))
-    return out
-  }
-  const fromLit = (s: string) =>
-    s
-      .replace(/\\([nrtbf()\\])/g, (_, c) => ({ n: '\n', r: '', t: '\t', b: '', f: '' })[c as 'n'] ?? c)
-      .replace(/\\(\d{1,3})/g, (_, o) => String.fromCharCode(Number.parseInt(o, 8)))
-  const lines: string[] = []
-  for (const s of streams) {
-    if (!/\bBT\b/.test(s)) continue
-    for (const bt of s.matchAll(/BT([\s\S]*?)ET/g)) {
-      let line = ''
-      for (const op of (bt[1] ?? '').matchAll(
-        /\[((?:\\.|[^\]])*)\]\s*TJ|(\((?:\\.|[^)])*\)|<[0-9a-fA-F\s]*>)\s*(?:Tj|'|")|(T\*|Td|TD)/g,
-      )) {
-        if (op[3]) {
-          if (line) line += ' '
-          continue
-        }
-        const parts =
-          op[1] !== undefined
-            ? [...op[1].matchAll(/\((?:\\.|[^)])*\)|<[0-9a-fA-F\s]*>/g)].map((x) => x[0])
-            : [op[2] ?? '']
-        for (const p of parts) line += p.startsWith('<') ? fromHex(p.slice(1, -1)) : fromLit(p.slice(1, -1))
-      }
-      if (line.trim()) lines.push(line.trim())
-    }
-  }
-  return lines.join('\n')
+  return 'iCloud Drive에만 있고 이 Mac에 내려받아지지 않은 파일이라 열지 못했어요. Finder에서 파일을 한 번 열거나 "지금 다운로드"를 누른 뒤 다시 부탁해 달라고 사용자에게 알려 주세요.'
 }
 
 /** 스캔 PDF 안의 사진(JPEG, DCTDecode) */

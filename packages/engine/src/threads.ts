@@ -32,6 +32,10 @@ export interface ThreadServiceOptions {
   systemPrompt?: string | (() => string)
   /** 탭 번호 → 그 탭의 사이트 주소 (일한 과정을 사이트별로 묶는다) */
   tabHost?: (tabId: number) => string | undefined
+  /** 서비스 도구 이름 → 사람이 읽는 제목 ("가게 찾기·영업 확인"). 일한 과정에 "일하는 중" 대신 보인다 */
+  toolTitle?: (name: string) => string | undefined
+  /** 말과 함께 넘기는 지금 시각 한 줄 (기본 nowLine, 시험에서는 끈다) */
+  timeLine?: () => string | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -119,10 +123,12 @@ export class ThreadService {
       let failed: AgentEvent | undefined
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
-      const work = new WorkLog(Date.now, this.opts.tabHost)
+      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle)
       // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft·show_route): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
       // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
+      /** PC 파일 승인(여러 개 옮기기·출력): 도구가 승인을 실제로 요청했을 때(성공한 결과)만 카드를 남긴다 */
+      let fileAsk: { name: string; record: ApprovalRecordMessage } | undefined
       const saveBlock = () => {
         if (!block) return undefined
         const m = store.addMessage(threadId, 'tool', JSON.stringify(block))
@@ -146,7 +152,8 @@ export class ThreadService {
         return out
       }
       const events = this.runtime(thread.agent).runTurn({
-        text: o.aside ? `${o.aside}\n\n${text}` : text,
+        // 지금 시각은 지침이 아니라 말과 함께 (지침이 매분 바뀌면 AI 대화 캐시가 깨진다). 없으면 AI가 시각을 알려고 status를 부른다
+        text: [(this.opts.timeLine ?? nowLine)(), o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: this.systemFor(thread),
         mcpServers: this.opts.mcpServers,
@@ -194,7 +201,13 @@ export class ThreadService {
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         // 구간의 실제 크기: 다음 말 전에 구간을 바꿀지 볼 때 쓴다 (ADR 0015)
         if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
-        yield { type: 'agent', event: ev }
+        // 서비스 도구면 제목을 실어 보낸다: 화면이 "일하는 중" 대신 "가게 찾기·영업 확인 중"을 보인다
+        // (화면은 끝에 " 중"을 붙이니 떼고 보낸다)
+        const title =
+          ev.type === 'tool'
+            ? serviceAct(ev.name, ev.input, this.opts.toolTitle)?.replace(/ 중$/, '')
+            : undefined
+        yield { type: 'agent', event: title && ev.type === 'tool' ? { ...ev, title } : ev }
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
@@ -231,6 +244,20 @@ export class ThreadService {
             }
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
           }
+        }
+        // PC 파일·PC 승인은 탭 번호 대신 -2, ref는 도구 이름 (ADR 0024).
+        // 하나만 옮기기·되살리기, 되돌리기, 프린터 목록, 실행 파일이 아닌 내려받기, 끄기 부탁은 승인이 없다
+        if (ev.type === 'tool') {
+          const ref = /(file_move|file_print|file_trash|file_download|pc_screen)$/.exec(ev.name)?.[1]
+          const what = ref ? fileApprovalWhat(ref, (ev.input ?? {}) as Record<string, unknown>) : undefined
+          if (ref)
+            fileAsk = what ? { name: ev.name, record: { kind: 'approval', tabId: -2, ref, what } } : undefined
+        }
+        if (ev.type === 'tool_result' && fileAsk && (!ev.name || ev.name === fileAsk.name)) {
+          const ask = fileAsk
+          fileAsk = undefined
+          if (ev.ok)
+            yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
         }
         // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
@@ -272,6 +299,30 @@ export const SUMMARY_REQUEST =
   '(사용자 취향, 약속, 진행 중이거나 끝낸 일, 정해진 날짜·시간·금액)을 한국어 글머리표 15줄 안으로 요약해 주세요. ' +
   '도구는 쓰지 말고 요약만 답해 주세요.'
 
+/** PC 파일·PC 도구가 승인을 요청하는 입력이면 승인 카드에 적을 말, 아니면 undefined (본체 file-ops.ts와 같은 기준) */
+export function fileApprovalWhat(ref: string, input: Record<string, unknown>): string | undefined {
+  const base = (p: unknown) => String(p).split(/[\\/]/).pop()
+  if (ref === 'file_move')
+    return input.undo !== true && Array.isArray(input.moves) && input.moves.length >= 2
+      ? `파일 ${input.moves.length}개 옮기기`
+      : undefined
+  if (ref === 'file_print')
+    return typeof input.path === 'string' && input.path.trim() ? `"${base(input.path)}" 출력` : undefined
+  if (ref === 'file_trash')
+    return Array.isArray(input.restore) && input.restore.length >= 2
+      ? `휴지통에서 ${input.restore.length}개 되살리기`
+      : undefined
+  if (ref === 'file_download')
+    return input.confirm === true && typeof input.url === 'string' ? '실행 파일 받기' : undefined
+  if (ref === 'pc_screen')
+    return input.action === 'lock'
+      ? '이 PC 화면 잠그기'
+      : input.action === 'sleep'
+        ? '이 PC 잠자기'
+        : undefined
+  return undefined
+}
+
 function titleFrom(text: string) {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length > 30 ? `${one.slice(0, 30)}…` : one
@@ -290,6 +341,7 @@ export class WorkLog {
   constructor(
     private readonly now: () => number = Date.now,
     private readonly tabHost?: (tabId: number) => string | undefined,
+    private readonly toolTitle?: (name: string) => string | undefined,
   ) {
     this.started = now()
   }
@@ -302,7 +354,8 @@ export class WorkLog {
     const here = (typeof tabId === 'number' ? this.tabHost?.(tabId) : undefined) ?? this.host
     const place = toolPlace(name, input, here)
     if (/^browser_(open|navigate)$/.test(bare) && place) this.host = place
-    const act = `${toolLabel(name)} 중`
+    // 서비스 도구는 제목으로 ("네이버 지도 · 일하기" 대신 "가게 찾기·영업 확인")
+    const act = serviceAct(name, input, this.toolTitle) ?? `${toolLabel(name)} 중`
     const text = narrationLine(before) ?? act
     const last = this.steps.at(-1)
     if (last?.text !== text || last.place !== place)
@@ -320,4 +373,29 @@ export class WorkLog {
       ...(this.host ? { host: this.host } : {}),
     }
   }
+}
+
+/**
+ * 서비스 도구(직접 부른 것이든 service_call로 부른 것이든)의 일하는 중 글: "극장 찾기 중", "상영 중인 영화 보는 중".
+ * 제목을 모르면 undefined (그때는 toolLabel)
+ */
+export function serviceAct(
+  name: string,
+  input: unknown,
+  toolTitle?: (name: string) => string | undefined,
+): string | undefined {
+  const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
+  const inner = (input as { tool?: unknown } | undefined)?.tool
+  const target = bare === 'service_call' && typeof inner === 'string' ? inner : bare
+  const title = toolTitle?.(target)
+  if (!title) return undefined
+  // 하는 일 이름(찾기·확인·조회·준비)은 "… 중", 볼 것 이름(상영 중인 영화·상영 시간)은 "… 보는 중"
+  return /(기|인|회|비|약|청|문|소|색|산)$/.test(title) ? `${title} 중` : `${title} 보는 중`
+}
+
+/** 말과 함께 넘기는 지금 시각 한 줄 (데이터) */
+export function nowLine(now = Date.now()): string {
+  const d = new Date(now + 9 * 3600_000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `(지금 ${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}(${'일월화수목금토'[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}, 한국 시각)`
 }

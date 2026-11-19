@@ -233,4 +233,24 @@ describe('경로 고르기 (pick)', () => {
     ).toEqual(['a.jpg', 'b.jpg'])
     expect(pick({ o: [{ g: [{ p: 1 }, { p: 2 }] }, { g: [{ p: 3 }] }] }, 'o.*.g.*.p')).toEqual([1, 2, 3])
   })
+
+  it('[칸=값]은 그 줄만 남기고, 뒤에 length면 그 수 (충전기 중 비어 있는 급속 수)', async () => {
+    const { pick } = await import('./connector.js')
+    const st = {
+      chargers: [
+        { powerType: '급속', power: 100, status: '충전가능' },
+        { powerType: '급속', power: 100, status: '충전중' },
+        { powerType: '완속', power: 7, status: '충전가능' },
+        { powerType: '초급속', power: 350, status: '사용중' },
+        null,
+      ],
+    }
+    expect(pick(st, 'chargers[powerType=급속].length')).toBe(2)
+    expect(pick(st, 'chargers[powerType=급속][status=충전가능].length')).toBe(1)
+    expect(pick(st, 'chargers[powerType=중속].length')).toBe(0)
+    expect(pick(st, 'chargers[powerType=급속|초급속][status=충전중|사용중].length')).toBe(2)
+    expect(pick(st, 'chargers[powerType=급속].*.power')).toEqual([100, 100])
+    expect(pick({ rows: [st] }, 'rows.0.chargers[status=충전가능].*.powerType')).toEqual(['급속', '완속'])
+    expect(pick({ chargers: null }, 'chargers[status=충전가능].length')).toBeUndefined()
+  })
 })

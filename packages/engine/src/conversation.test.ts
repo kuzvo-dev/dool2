@@ -40,6 +40,7 @@ function setup(limits = {}) {
   const claude = new EchoRuntime('claude')
   const codex = new EchoRuntime('codex')
   const threads = new ThreadService({
+    timeLine: () => undefined,
     store,
     runtimes: { claude, codex },
     workspaceDir: '/tmp/ws',
