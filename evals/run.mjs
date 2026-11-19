@@ -6,7 +6,7 @@
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
 // --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
-import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EVALS, scenarios } from './lib/bank.mjs'
@@ -17,9 +17,17 @@ const arg = (k, d) => {
 }
 const flag = (k) => process.argv.includes(`--${k}`)
 const daemon = arg('daemon', 'http://127.0.0.1:8833')
-const token = arg('token', process.env.DOOL2_TOKEN)
+// --token-file: 본체가 다시 켜지면 토큰이 바뀐다(다른 작업이 시험 PC를 다시 켤 수 있다). 그때 이 파일에서 다시 읽는다
+// (본체 로그처럼 "토큰: …" 줄이 있으면 그 값, 아니면 파일 전체)
+const tokenFile = arg('token-file')
+const readToken = () => {
+  if (!tokenFile || !existsSync(tokenFile)) return undefined
+  const t = readFileSync(tokenFile, 'utf8')
+  return (/토큰:\s*(\w+)/.exec(t)?.[1] ?? t.trim()) || undefined
+}
+let token = arg('token', process.env.DOOL2_TOKEN) ?? readToken()
 if (!token) {
-  console.error('화면 토큰이 필요해요: --token 또는 DOOL2_TOKEN')
+  console.error('화면 토큰이 필요해요: --token, --token-file 또는 DOOL2_TOKEN')
   process.exit(2)
 }
 const out = arg('out', join(EVALS, 'out', new Date().toISOString().slice(0, 10)))
@@ -35,6 +43,7 @@ const api = async (path, init = {}) => {
       ...(init.headers ?? {}),
     },
   })
+  if (r.status === 401) throw new Error('본체가 토큰을 받지 않아요(401)')
   const t = await r.text()
   try {
     return JSON.parse(t)
@@ -228,6 +237,23 @@ async function runOne(sc) {
   return rec
 }
 
+/**
+ * 본체가 꺼졌거나 다시 켜져 토큰이 바뀌었을 때: 새 토큰을 읽으며 최대 10분 기다린다.
+ * 돌아오면 true(그 시나리오를 다시 돌린다), 아니면 false(실패 기록을 쌓지 않고 멈춘다)
+ */
+async function waitDaemon() {
+  for (let i = 0; i < 60; i++) {
+    token = readToken() ?? token
+    try {
+      const r = await fetch(`${daemon}/api/life`, { headers: { authorization: `Bearer ${token}` } })
+      if (r.ok) return true
+    } catch {}
+    await new Promise((ok) => setTimeout(ok, 10_000))
+  }
+  return false
+}
+const DOWN = /fetch failed|ECONNREFUSED|401|socket|terminated/i
+
 const list = pick(scenarios())
 console.log(`시나리오 ${list.length}개 → ${out}`)
 let n = 0
@@ -235,7 +261,9 @@ let n = 0
 const repeat = Math.max(1, Number(arg('repeat', '1')))
 const jobs = list.flatMap((sc) => Array.from({ length: repeat }, (_, i) => [sc, i + 1]))
 let stop = false
-for (const [sc, round] of jobs) {
+const retried = new Set()
+for (const job of jobs) {
+  const [sc, round] = job
   if (stop) break
   n++
   const file = join(out, `${sc.id.replace(/[^\w.-]+/g, '_')}${round > 1 ? `~${round}` : ''}.json`)
@@ -256,6 +284,21 @@ for (const [sc, round] of jobs) {
     }
   } catch (e) {
     console.log(`실패: ${e.message}`)
+    // 본체가 꺼졌거나 다시 켜졌다: 기다렸다가 같은 시나리오를 다시 (기록은 남기지 않았으니 다음 실행에서도 다시 돈다)
+    if (DOWN.test(String(e.message))) {
+      console.log('본체가 응답하지 않아요. 다시 켜질 때까지 기다려요(최대 10분)')
+      if (!(await waitDaemon())) {
+        console.log('본체가 돌아오지 않아 멈춰요. 다시 부르면 남은 것부터 이어서 해요')
+        stop = true
+      } else {
+        console.log('본체가 돌아왔어요. 이어서 해요')
+        // 한 번만 다시 (그 시나리오가 본체를 넘어뜨리는 것이면 되풀이하지 않게)
+        if (!retried.has(file)) {
+          retried.add(file)
+          jobs.splice(jobs.indexOf(job) + 1, 0, [sc, round])
+        }
+      }
+    }
   }
 }
 // 다른 시험 기록과 섞지 않게 고른 목록을 남긴다
