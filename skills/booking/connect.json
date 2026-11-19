@@ -6,6 +6,7 @@
   "how": "browser",
   "loginUrl": "https://account.booking.com/sign-in",
   "social": [
+    "naver",
     "google",
     "apple"
   ],
