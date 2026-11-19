@@ -10,7 +10,13 @@ import {
   type LoginRecordMessage,
   type WorkRecordMessage,
 } from '@dool2/protocol'
-import type { QuickRecordMessage } from '@dool2/protocol/blocks'
+import {
+  type BlockRecordMessage,
+  cleanDraft,
+  cleanResult,
+  cleanRows,
+  type QuickRecordMessage,
+} from '@dool2/protocol/blocks'
 import { narrationLine, splitQuick, stripMonologue, toolLabel, toolPlace } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
@@ -113,12 +119,13 @@ export class ThreadService {
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
       const work = new WorkLog(Date.now, this.opts.tabHost)
-      // 답에 붙일 카드 (show_cards): 답을 저장한 바로 뒤에 남겨 메시지 첨부처럼 답 아래에 보인다
-      let cards: CardsRecordMessage | undefined
-      const saveCards = () => {
-        if (!cards) return undefined
-        const m = store.addMessage(threadId, 'tool', JSON.stringify(cards))
-        cards = undefined
+      // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
+      // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
+      let block: CardsRecordMessage | BlockRecordMessage | undefined
+      const saveBlock = () => {
+        if (!block) return undefined
+        const m = store.addMessage(threadId, 'tool', JSON.stringify(block))
+        block = undefined
         return m
       }
       // 답 저장: 일한 과정 → 답 글 → 결과 블록 → 빠른 답 (답 끝 [[답: a | b]] 줄은 떼어 버튼으로)
@@ -129,7 +136,7 @@ export class ThreadService {
         const full = stripMonologue(answer)
         const { text, replies } = splitQuick(full)
         out.push(store.addMessage(threadId, 'assistant', text || full))
-        const c = saveCards()
+        const c = saveBlock()
         if (c) out.push(c)
         if (replies && text) {
           const quick: QuickRecordMessage = { kind: 'quick', replies }
@@ -156,14 +163,25 @@ export class ThreadService {
           const input = ev.input as { cards?: unknown; shape?: unknown } | undefined
           const list = cleanCards(input?.cards)
           // 한 차례에 여러 번 부르면 이어 붙인다 (10장까지)
+          const prev = block?.kind === 'cards' ? block : undefined
           if (list.length)
-            cards = {
+            block = {
               kind: 'cards',
-              cards: [...(cards?.cards ?? []), ...list].slice(0, 10),
-              ...(input?.shape === 'portrait' || cards?.shape === 'portrait'
+              cards: [...(prev?.cards ?? []), ...list].slice(0, 10),
+              ...(input?.shape === 'portrait' || prev?.shape === 'portrait'
                 ? { shape: 'portrait' as const }
                 : {}),
             }
+        }
+        if (ev.type === 'tool' && /show_(list|result|draft)$/.test(ev.name)) {
+          const kind = ev.name.match(/show_(list|result|draft)$/)?.[1]
+          const rec =
+            kind === 'list'
+              ? cleanRows(ev.input)
+              : kind === 'result'
+                ? cleanResult(ev.input)
+                : cleanDraft(ev.input)
+          if (rec) block = rec
         }
         if (ev.type === 'text') answer += ev.delta
         if (ev.type === 'done') {
@@ -257,7 +275,8 @@ function titleFrom(text: string) {
 }
 
 /** 정리·기억 같은 속일만 한 차례에는 일한 과정을 남기지 않는다 (답마다 카드가 붙지 않게) */
-const QUIET_TOOL = /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search|show_cards/
+const QUIET_TOOL =
+  /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search|show_(cards|list|result|draft)/
 
 /** 한 차례 동안 한 일을 모아 '일한 과정' 기록(WorkRecordMessage)을 만든다. 폰·PC 화면의 단계 표시와 같은 이름을 쓴다 */
 export class WorkLog {

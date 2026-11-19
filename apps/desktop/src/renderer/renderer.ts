@@ -1178,8 +1178,8 @@ function renderTalk() {
       prevRole = ''
     }
     if (m.role === 'tool') {
-      // 빠른 답은 사용자가 그다음에 한 말을 알아야 흐리게 그린다
-      const used = m.text.includes('"kind":"quick"') ? saidAfter(state.messages, i) : undefined
+      // 빠른 답·여러 개 고르기는 사용자가 그다음에 한 말을 알아야 흐리게·잠가 그린다
+      const used = /"kind":"quick"|"pick":"multi"/.test(m.text) ? saidAfter(state.messages, i) : undefined
       list.append(toolCard(m.text, i > lastUser, used))
       continue
     }

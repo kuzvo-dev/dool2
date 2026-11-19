@@ -27,6 +27,9 @@ describe('두리 페르소나 지침', () => {
   it('고를 후보는 사진 카드로 붙이고 목록을 되풀이하지 않는다', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('show_cards로 답 아래에 사진 카드를 붙여요')
     expect(DOOL2_SYSTEM_PROMPT).toContain('[[답: 화요일 10시로 | 목요일 3시로 | 다른 날 볼래]]')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('show_list pick multi')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('show_result')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('show_draft')
   })
 
   it('넘기기 전에 다시 읽고 보이는 화면대로 말한다', () => {

@@ -113,7 +113,8 @@ function lead(rec: RowsRecordMessage, i: number, env: BlockEnv): HTMLElement | u
   return undefined
 }
 
-export function rowsView(rec: RowsRecordMessage, env: BlockEnv): HTMLElement {
+/** done: 사용자가 이 뒤에 이미 말을 했다 (여러 개 고르기는 잠근다) */
+export function rowsView(rec: RowsRecordMessage, env: BlockEnv, done = false): HTMLElement {
   const on = rec.rows.map((r) => !!r.on)
   const multi = rec.pick === 'multi'
   const box = el('div', `cb cb-rows${multi ? ' multi' : ''}`)
@@ -204,6 +205,13 @@ export function rowsView(rec: RowsRecordMessage, env: BlockEnv): HTMLElement {
     }
   }
   update()
+  if (multi && done) {
+    box.classList.add('sent')
+    if (go) {
+      go.textContent = '골라서 보냈어요'
+      go.disabled = true
+    }
+  }
   return box
 }
 
@@ -315,9 +323,9 @@ export function quickView(rec: QuickRecordMessage, env: BlockEnv, used?: string)
   return box
 }
 
-/** 기록의 tool 메시지가 결과 블록이면 그린다 (아니면 undefined) */
+/** 기록의 tool 메시지가 결과 블록이면 그린다 (아니면 undefined). used: 이 뒤에 사용자가 한 말 (빠른 답·여러 개 고르기) */
 export function blockView(rec: { kind?: string }, env: BlockEnv, used?: string): HTMLElement | undefined {
-  if (rec.kind === 'rows') return rowsView(rec as RowsRecordMessage, env)
+  if (rec.kind === 'rows') return rowsView(rec as RowsRecordMessage, env, used !== undefined)
   if (rec.kind === 'result') return resultView(rec as ResultRecordMessage, env)
   if (rec.kind === 'draft') return draftView(rec as DraftRecordMessage, env)
   if (rec.kind === 'quick') return quickView(rec as QuickRecordMessage, env, used)

@@ -2451,8 +2451,8 @@ function chatItems(): Item[] {
     if (m.role === 'tool') {
       // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
       const old = superseded.has(m.id)
-      // 빠른 답은 사용자가 그다음에 한 말을 알아야 흐리게 그린다
-      const used = m.text.includes('"kind":"quick"') ? saidAfter(i) : undefined
+      // 빠른 답·여러 개 고르기는 사용자가 그다음에 한 말을 알아야 흐리게·잠가 그린다
+      const used = /"kind":"quick"|"pick":"multi"/.test(m.text) ? saidAfter(i) : undefined
       items.push({
         key: m.id,
         sig: `${old ? 'old:' : ''}${toolSig(m.text)}:${st.services ? 1 : 0}:${used ?? ''}`,

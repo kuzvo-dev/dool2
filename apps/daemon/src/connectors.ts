@@ -608,13 +608,21 @@ export class Connectors {
     if (tool.next) lines.push('', fill(tool.next, scope))
     // 고를 후보에 사진·주소가 있으면 카드로 보여 주라고 한 줄 (도구마다 next에 쓰지 않아도 되게)
     const rows = Object.values(out).filter(Array.isArray).flat() as Record<string, unknown>[]
+    const pics = rows.some((r) => r && typeof r === 'object' && r.image)
     if (
       rows.some((r) => r && typeof r === 'object' && (r.image || r.link)) &&
+      pics &&
       !/show_cards/.test(tool.next ?? '')
     )
       lines.push(
         '',
         '후보를 보여 줄 땐 show_cards로 사진(image)·가격·주소(link)를 그대로 넣은 카드를 붙이고, 글로는 고른 이유만 짧게 말해요.',
+      )
+    // 사진 없는 목록(주문·내역·일정)이 3줄 넘으면 글 목록 대신 목록 줄로
+    else if (rows.length >= 3 && !/show_(cards|list)/.test(tool.next ?? ''))
+      lines.push(
+        '',
+        '3줄 넘는 목록을 보여 줄 땐 글로 늘어놓지 말고 show_list로 줄을 붙이고, 글로는 요점만 짧게 말해요.',
       )
     if (tool.status === '초안')
       lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')

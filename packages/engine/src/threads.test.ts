@@ -186,6 +186,61 @@ describe('ThreadService', () => {
     })
   })
 
+  it('결과 블록(show_list·show_result·show_draft)은 다듬어 답 바로 아래에, 답 하나에 하나만(마지막 것)', async () => {
+    const { store, svc } = setup([
+      {
+        type: 'tool',
+        name: 'mcp__dool2__show_list',
+        input: { lead: 'date', rows: [{ title: '겨울방학', date: '2027-01-07' }] },
+      },
+      {
+        type: 'tool',
+        name: 'mcp__dool2__show_result',
+        input: {
+          title: '예약 확정',
+          done: true,
+          big: '11/21(토) 19:00',
+          facts: [{ label: '예약번호', value: 'CT-1', code: true }],
+          actions: [{ label: '결제하기' }, { label: '캘린더에 넣기' }],
+        },
+      },
+      { type: 'done', resumeId: 's1', text: '예약했어요.' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '예약해 줘'))
+    const msgs = store.listMessages(t.id).filter((m) => !m.text.includes('"kind":"work"'))
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
+    expect(JSON.parse(msgs[2]?.text ?? '{}')).toEqual({
+      kind: 'result',
+      title: '예약 확정',
+      done: true,
+      big: '11/21(토) 19:00',
+      facts: [{ label: '예약번호', value: 'CT-1', code: true }],
+      actions: [{ label: '캘린더에 넣기', ask: '캘린더에 넣기' }],
+    })
+  })
+
+  it('보낼 글 블록과 빠른 답이 같이 오면 답 → 블록 → 빠른 답 순으로', async () => {
+    const said = '이렇게 보낼까요?\n[[답: 이대로 보내 줘 | 더 짧게]]'
+    const { store, svc } = setup([
+      {
+        type: 'tool',
+        name: 'mcp__dool2__show_draft',
+        input: { to: '집주인', via: 'sms', text: '보일러가 고장 났어요.' },
+      },
+      { type: 'done', resumeId: 's1', text: said },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '문자 써 줘'))
+    const msgs = store.listMessages(t.id).filter((m) => !m.text.includes('"kind":"work"'))
+    expect(msgs.map((m) => (m.role === 'tool' ? JSON.parse(m.text).kind : m.role))).toEqual([
+      'user',
+      'assistant',
+      'draft',
+      'quick',
+    ])
+  })
+
   it('답 끝 [[답: …]] 줄은 떼어 답 아래 빠른 답 기록으로 남긴다', async () => {
     const said =
       '화요일 10시·목요일 3시가 비어 있어요. 어떻게 할까요?\n[[답: 화요일 10시로 | 목요일 3시로 | 다른 날 볼래]]'
