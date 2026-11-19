@@ -71,6 +71,15 @@ export function sameAccount(a: string, b: string): boolean {
   return head(masked).length > 0 && full.startsWith(head(masked))
 }
 
+/** 로그인 화면의 '로그인 상태 유지' 칸 (아직 안 켜져 있으면 그 표시) */
+export function keepSignedIn(text: string): string | undefined {
+  const m =
+    /\[(e\d+) 체크박스 "(?:로그인\s?상태\s?유지|자동\s?로그인|Keep me (?:signed|logged) in|Stay signed in)[^"]*"([^\]]*)\]/i.exec(
+      text,
+    )
+  return m && !/선택됨/.test(m[2] ?? '') ? m[1] : undefined
+}
+
 /** 공급자 동의 화면에 보이는 "지금 로그인된 계정" (카카오: "로그인된 계정 f***@gmail.com", 구글 한 계정: 이메일) */
 export function providerAccountOn(text: string): string | undefined {
   const kakao = /로그인된\s?계정\s*([^\s[\]"]+@[^\s[\]"]+)/.exec(text)
@@ -1017,6 +1026,9 @@ export async function socialLogin(
         origin,
         password: true,
       })
+      // 사용자의 평소 PC라 '로그인 상태 유지'를 켠다: 끄면 서비스마다 카카오 로그인·카톡 확인을 또 해야 했다 (실측 11번가→올리브영)
+      const keep = keepSignedIn(p.text)
+      if (keep) await browser.call('click', { tabId: providerTab, ref: keep }, 15_000).catch(() => undefined)
       if (f.submit)
         await browser.call('click', { tabId: providerTab, ref: f.submit[0] }, 30_000).catch(() => undefined)
       else await browser.call('press', { tabId: providerTab, key: 'Enter' }).catch(() => undefined)

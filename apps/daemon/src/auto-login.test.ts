@@ -4,6 +4,7 @@ import {
   certScreen,
   dormantScreen,
   joinScreen,
+  keepSignedIn,
   probeLogin,
   said,
   sameAccount,
@@ -797,5 +798,14 @@ describe('카카오 동의의 (필수) 칸이 눌러지지 않으면 (실측 올
     )
     expect(r.status).toBe('ok')
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e3', 'e9'])
+  })
+})
+
+describe('로그인 상태 유지 (서비스마다 카카오 로그인·카톡 확인을 또 하지 않게)', () => {
+  it('안 켜져 있으면 그 칸, 켜져 있으면 없음', () => {
+    expect(keepSignedIn('[e7 체크박스 "로그인 상태 유지"] [e8 버튼 "로그인 상태 유지"]')).toBe('e7')
+    expect(keepSignedIn('[e7 체크박스 "로그인 상태 유지" 선택됨]')).toBeUndefined()
+    expect(keepSignedIn('[e3 체크박스 "Stay signed in"]')).toBe('e3')
+    expect(keepSignedIn('[e2 체크박스 "(필수) 약관"]')).toBeUndefined()
   })
 })
