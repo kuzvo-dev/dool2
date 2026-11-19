@@ -436,7 +436,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 연결하려고 연 탭을 지켜보다가 로그인한 사람에게만 보이는 말이 나오면 알아서 연결로 표시한다 (AI 없이)
   const loginWatch = new LoginWatch({
     snapshot: async (tabId) => {
-      const r = (await browser.call('snapshot', { tabId, maxChars: 6_000 }, 20_000)) as {
+      const r = (await browser.call('snapshot', { tabId, maxChars: 20_000 }, 20_000)) as {
         url: string
         text: string
       }
@@ -535,7 +535,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (r.status === 'human') {
       // 사람이 해야 하는 단계: 폰에서 그 화면을 보고 마치면 연결로 표시한다
       browserTools.allowRemote(r.tabId)
-      loginWatch.start(card, r.tabId)
+      loginWatch.start(card, r.tabId, { sawEntry: true })
       return {
         ok: false,
         human: true,
@@ -546,7 +546,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     browserTools.allowRemote(r.tabId)
     // 아이디·비밀번호가 틀렸거나 결과를 몰라도, 사용자가 그 화면에서 마치면 알아서 연결로 표시한다
-    loginWatch.start(card, r.tabId)
+    loginWatch.start(card, r.tabId, { sawEntry: true })
     return {
       ok: false,
       reason: r.status === 'wrong' ? 'wrong' : 'unknown',
@@ -692,7 +692,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const check = async (tabId: number) =>
       looksSignedIn(
         card,
-        (await browser.call('snapshot', { tabId, maxChars: 8_000 }, 20_000)) as { url: string; text: string },
+        (await browser.call('snapshot', { tabId, maxChars: 20_000 }, 20_000)) as {
+          url: string
+          text: string
+        },
+        // 사용자가 [로그인했어요]를 눌렀다: 로그인 입구가 사라졌으면 로그인된 것으로 본다
+        { sawEntry: true },
       )
     let ok = false
     const watched = loginWatch.tabOf(card.id)

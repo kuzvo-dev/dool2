@@ -15,17 +15,65 @@ const NAME_BUTTON = /\[e\d+ (?:버튼|링크) "(?!고객|회원|손님)[^"\]\n]{
 /** 계정 버튼 ("Google 계정: 이름 (메일)"): 구글 서비스는 로그아웃을 계정 메뉴 안에 숨긴다 */
 const ACCOUNT_BUTTON = /\[e\d+ (?:버튼|링크) "(?:Google 계정|Google Account): [^"]+"/
 
-/** 화면 글자·주소로 로그인했는지 */
+/** 아이디 + "내정보 보기" 링크 (네이버 위쪽 줄: "wwd 내정보 보기"): 로그아웃은 그 메뉴 안에 숨어 있다 */
+const MY_INFO = /\[e\d+ (?:버튼|링크) "[^"\]\n]{1,30}\s내\s?정보\s?보기"\]/
+
+/**
+ * 로그인 입구: 로그인·가입하라는 짧은 링크·버튼 ("로그인", "로그인/회원가입", "카카오 로그인", "Sign in"),
+ * 또는 비밀번호 칸. 로그인하면 사라진다
+ */
+const LOGIN_ENTRY =
+  /\[e\d+ (?:링크|버튼) "[^"\]\n]{0,10}(?:로그인|log\s?in|sign\s?in|회원\s?가입|가입하기)[^"\]\n]{0,10}"\]|\[e\d+ 비밀번호칸/i
+export function hasLoginEntry(text: string): boolean {
+  return LOGIN_ENTRY.test(text)
+}
+
+/** 그 서비스 사이트 주소인지 (간편 로그인 공급자 화면·중간 콜백 도메인이 아니라) */
+function onSite(site: string | undefined, url: string): boolean {
+  if (!site) return false
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '')
+    const s = site.replace(/^www\./, '').split('/')[0] ?? ''
+    return host === s || host.endsWith(`.${s}`)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 화면 글자·주소로 로그인했는지.
+ * sawEntry: 이 연결에서 로그인 입구(로그인 링크·비밀번호 칸)를 이미 봤다 → 사이트로 돌아와 입구가 사라졌으면 로그인된 것.
+ * '로그아웃'을 메뉴 속에 숨기는 사이트가 많아(84곳 중 대부분) 그 글자만 보면 사용자가 로그인을 마쳐도 못 알아봤다.
+ * 처음부터 입구가 없는 사이트(앱 같은 첫 화면)를 로그인됨으로 잘못 보지 않게, 입구를 본 뒤에만 쓴다
+ */
 export function looksSignedIn(
-  card: Pick<ConnectCard, 'signedIn'>,
+  card: Pick<ConnectCard, 'signedIn'> & { site?: string },
   page: { url: string; text: string },
+  opts: { sawEntry?: boolean } = {},
 ): boolean {
   // 로그인 화면 주소라도 비밀번호 칸이 사라지고 로그인한 사람의 말이 보이면 로그인됐다 (주소가 안 바뀌는 사이트)
   if (LOGIN_URL.test(page.url) && /비밀번호칸|type="?password/.test(page.text)) return false
-  const marks = card.signedIn?.length ? card.signedIn : DEFAULT_SIGNED_IN
-  return (
-    marks.some((m) => page.text.includes(m)) || NAME_BUTTON.test(page.text) || ACCOUNT_BUTTON.test(page.text)
+  // 카드의 말은 흔한 말(로그아웃)에 더한다: 카드에 적었다고 흔한 표시를 못 보면 안 된다
+  const marks = [...DEFAULT_SIGNED_IN, ...(card.signedIn ?? [])]
+  if (
+    marks.some((m) => page.text.includes(m)) ||
+    NAME_BUTTON.test(page.text) ||
+    ACCOUNT_BUTTON.test(page.text) ||
+    MY_INFO.test(page.text)
   )
+    return true
+  if (!opts.sawEntry || !onSite(card.site, page.url) || LOGIN_URL.test(page.url)) return false
+  // 다 그려진 화면이어야 한다 (콜백·이동 중인 빈 화면은 입구가 없어도 아직 모른다)
+  const refs = page.text.match(/\[e\d+ /g)?.length ?? 0
+  // 간편 로그인 뒤 가입·추가 정보·본인인증·약관 동의 화면은 입구가 없어도 아직이다 (링크 글자는 빼고 본다: 바닥 '이용약관' 링크)
+  const prose = page.text.replace(/\[e\d+ 링크 "[^"]*"\]/g, '')
+  if (
+    /약관|본인\s?인증|추가\s?정보|정보\s?입력|회원\s?가입|가입\s?(하기|완료|정보)|인증\s?번호|필수/.test(
+      prose,
+    )
+  )
+    return false
+  return refs >= 20 && !hasLoginEntry(page.text)
 }
 
 export interface LoginWatchDeps {
@@ -50,19 +98,22 @@ export class LoginWatch {
     private readonly forMs = 10 * 60_000,
   ) {}
 
-  start(card: ConnectCard, tabId: number) {
+  /** sawEntry: 지켜보기 전에 이미 로그인 화면을 봤다 (자동 로그인이 멈춘 탭) */
+  start(card: ConnectCard, tabId: number, opts: { sawEntry?: boolean } = {}) {
     this.stop(card.id)
     this.tabs.set(card.id, tabId)
     const until = Date.now() + this.forMs
+    let sawEntry = opts.sawEntry ?? false
     const tick = async () => {
       this.timers.delete(card.id)
       if (this.deps.connected(card.id) || Date.now() > until) return
       try {
         const page = await this.deps.snapshot(tabId)
-        if (looksSignedIn(card, page)) {
+        if (looksSignedIn(card, page, { sawEntry })) {
           this.deps.onSignedIn(card)
           return
         }
+        if (hasLoginEntry(page.text)) sawEntry = true
       } catch {
         return // 탭이 닫혔거나 확장이 끊겼다
       }
