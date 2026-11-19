@@ -1,0 +1,27 @@
+{
+  "id": "naver",
+  "name": "네이버",
+  "site": "www.naver.com",
+  "category": "account",
+  "how": "browser",
+  "loginUrl": "https://nid.naver.com/nidlogin.login",
+  "login": "네이버 아이디",
+  "summary": "네이버를 연결해 두면 네이버로 가입한 사이트에 버튼 한 번으로 로그인하고, 네이버 쇼핑·페이 주문 내역도 두리가 찾아봐요.",
+  "example": {
+    "ask": "네이버페이로 산 거 언제 와?",
+    "working": "네이버페이 주문 보는 중",
+    "reply": "운동화 한 켤레가 오늘 배송 출발했어요. 내일 오전에 도착 예정이에요."
+  },
+  "abilities": [
+    {
+      "title": "네이버로 로그인",
+      "say": "네이버로 가입한 곳 연결해 줘",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "네이버페이 주문 찾기",
+      "say": "네이버페이로 산 거 배송 어디까지 왔어?",
+      "tier": "찾아보기"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import type { ConnectCard, ConnectionItem, Tier } from './connect.js'
 
 /** 연결 화면의 분류. 순서가 곧 목록 순서다 */
 export const CATEGORY_LABEL = {
+  account: '간편 로그인 계정',
   shopping: '쇼핑',
   grocery: '장보기·배달',
   fashion: '패션·뷰티',

@@ -77,6 +77,7 @@ import {
   autoLogin,
   type LoginAsk,
   probeLogin,
+  providerAccountIn,
   SOCIAL_PROVIDERS,
   sameAccount,
   socialLogin,
@@ -491,13 +492,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return connectFinish(card, r)
   }
   /** 간편 로그인으로 연결: 공급자 쪽이 이미 로그인돼 있으면 버튼·동의만 넘기고, 아니면 금고 값 또는 사람 차례 */
-  const connectSocial = async (card: ConnectCard, provider: SocialProvider) => {
+  const connectSocial = async (card: ConnectCard, provider: SocialProvider, noJoin = false) => {
     const url = connectUrl(card)
     if (!url) throw new Error('이 서비스는 폰에서 켜요')
     if (!browser.status.connected) throw new Error('PC의 Chrome에 두리 확장이 아직 연결되지 않았어요')
     // 이 사이트에 이미 되는 계정이 없을 때만 간편 가입까지 (있으면 같은 사이트에 계정이 둘이 된다)
     const known = connectVia()[card.id]
-    const join = !(known && known !== `social:${provider}`) && !(await vaultCreds(card))
+    // noJoin: 일괄 점검처럼 가입까지는 하지 않을 때 (가입 화면이면 '가입이 필요해요'로 끝낸다)
+    const join = !noJoin && !(known && known !== `social:${provider}`) && !(await vaultCreds(card))
     const r = await socialLogin(browser, {
       card,
       url: card.loginUrl ?? url,
@@ -917,12 +919,37 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     loginWatch.stop(id)
     if (on) void skills.card(id).then((card) => card && resolveLoginRequests(card))
     if (on && connectHuman.delete(id)) void skills.card(id).then((card) => card && connectDone(card))
+    // 카카오·네이버·구글 계정 자체를 연결하면: 그 화면에 보이는 계정을 '내 계정'으로 기억한다
+    // (다른 사이트에 간편 로그인할 때 동의 화면의 계정이 이것과 같으면 묻지 않는다)
+    if (on && id in SOCIAL_PROVIDERS) void rememberProviderAccount(id as SocialProvider).catch(() => {})
     const next = { ...(readSettings().connections ?? {}) }
     if (on) next[id] = new Date().toISOString()
     else delete next[id]
     store.setSetting('connections', next)
     events.emit('settings', readSettings())
     return next[id]
+  }
+  /** 공급자 계정 화면에서 지금 로그인된 계정을 읽어 내 계정 목록(socialAccounts)에 더한다 */
+  const rememberProviderAccount = async (provider: SocialProvider) => {
+    const card = await skills.card(provider)
+    const url = card ? connectUrl(card) : undefined
+    if (!url || !browser.status.connected) return
+    const opened = (await browser.call('open', { url }, 40_000)) as { tabId: number }
+    try {
+      await new Promise((r) => setTimeout(r, 2_000))
+      const page = (await browser.call('snapshot', { tabId: opened.tabId, maxChars: 20_000 }, 20_000)) as {
+        text: string
+      }
+      const who = providerAccountIn(provider, page.text)
+      if (!who) return
+      const all = (store.getSetting('socialAccounts') as Record<string, string[]> | undefined) ?? {}
+      const mine = all[provider] ?? []
+      if (!mine.some((m) => sameAccount(m, who)))
+        store.setSetting('socialAccounts', { ...all, [provider]: [...mine, who].slice(-5) })
+      journal.write('provider-account', { provider, who: who.replace(/^(.).*@/, '$1***@') })
+    } finally {
+      await browser.call('close', { tabId: opened.tabId }).catch(() => undefined)
+    }
   }
   /** 카드 사진: 화면이 바깥 서버에 직접 붙지 않게 본체가 받아 넘긴다 */
   const thumbs = new Thumbs(fetch, async (url) => {
@@ -2259,10 +2286,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // 간편 로그인으로 연결하기 (카카오·네이버…)
       if (card && c === 'social' && !d && req.method === 'POST') {
-        const body = (await readJson(req)) as { provider?: unknown; background?: unknown }
+        const body = (await readJson(req)) as { provider?: unknown; background?: unknown; join?: unknown }
         const provider = SocialProviderSchema.safeParse(body.provider)
         if (!provider.success) return json(res, 400, { error: '간편 로그인 종류를 골라 주세요' })
-        const p = startConnect(card, () => connectSocial(card, provider.data), `social:${provider.data}`)
+        const p = startConnect(
+          card,
+          () => connectSocial(card, provider.data, body.join === false),
+          `social:${provider.data}`,
+        )
         if (body.background === true)
           return json(res, 200, {
             ok: false,

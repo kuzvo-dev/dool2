@@ -1,0 +1,27 @@
+{
+  "id": "kakao",
+  "name": "카카오 계정",
+  "site": "accounts.kakao.com",
+  "category": "account",
+  "how": "browser",
+  "loginUrl": "https://accounts.kakao.com/login/",
+  "login": "카카오 계정",
+  "summary": "카카오 계정을 연결해 두면 카카오로 가입한 쇼핑몰·예약 사이트에 두리가 버튼 한 번으로 로그인해요.",
+  "example": {
+    "ask": "카카오로 가입한 곳들 연결해 줘",
+    "working": "카카오로 로그인하는 중",
+    "reply": "컬리·11번가·올리브영을 카카오 계정 f***@gmail.com으로 연결했어요. 카톡 확인은 처음 한 번만 했어요."
+  },
+  "abilities": [
+    {
+      "title": "카카오로 로그인",
+      "say": "카카오로 가입한 곳 연결해 줘",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "풀린 로그인 다시",
+      "say": "올리브영 로그인 풀렸으면 다시 해 줘",
+      "tier": "찾아보기"
+    }
+  ]
+}

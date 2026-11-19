@@ -71,6 +71,18 @@ export function sameAccount(a: string, b: string): boolean {
   return head(masked).length > 0 && full.startsWith(head(masked))
 }
 
+/**
+ * 공급자 계정 화면에서 지금 로그인된 계정 (실측 2026-11-19):
+ * 카카오 accounts.kakao.com "felix…@gmail.com 계정 정보로 이동", 네이버 첫 화면 "wwd님", 구글 "Google 계정: 이름 (메일)"
+ */
+export function providerAccountIn(provider: SocialProvider, text: string): string | undefined {
+  if (provider === 'kakao') return /"([^"\s]+@[^"\s]+) 계정 정보로 이동"/.exec(text)?.[1]
+  if (provider === 'naver') return /\[e\d+ (?:링크|버튼) "([^"\s]{2,30})님"\]/.exec(text)?.[1]
+  if (provider === 'google')
+    return /(?:Google 계정|Google Account): [^"(]*\(([^)\s]+@[^)\s]+)\)/.exec(text)?.[1]
+  return undefined
+}
+
 /** 로그인 화면의 '로그인 상태 유지' 칸 (아직 안 켜져 있으면 그 표시) */
 export function keepSignedIn(text: string): string | undefined {
   const m =
