@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   autoLogin,
   certScreen,
+  dormantScreen,
   joinScreen,
   probeLogin,
   said,
@@ -703,5 +704,48 @@ describe('본인인증 창', () => {
   })
   it('로그인 폼은 본인인증 창이 아니다', () => {
     expect(certScreen('[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"]')).toBeUndefined()
+  })
+})
+
+describe('휴면 계정 깨우기 (실측 11번가 2026-11-19)', () => {
+  const dormant = {
+    url: 'https://member.11st.co.kr/auth/dormants/cert',
+    text: [
+      '# [e1 링크 "11번가"] 본인확인',
+      '장기 미사용 계정으로 본인확인 및 약관동의가 필요합니다.',
+      '## 약관동의',
+      '[e2 체크박스 "(필수) 개인정보 수집/이용 동의"] (필수) 개인정보 수집/이용 동의 [e3 링크 "약관보기"]',
+      '[e4 링크 "로그인 완료"]',
+    ].join('\n'),
+  }
+  it('(필수) 동의만 있으면 고르고 [로그인 완료]', () => {
+    expect(dormantScreen(dormant.text)).toEqual({ kind: 'auto', submit: 'e4', required: ['e2'] })
+  })
+  it('휴대폰 본인인증 칸이 있으면 사람 차례', () => {
+    const t = `${dormant.text}\n휴대폰 본인인증 [e5 입력칸 "휴대폰 번호"] [e6 버튼 "인증번호 받기"]`
+    expect(dormantScreen(t)?.kind).toBe('human')
+  })
+  it('휴면 말이 없으면 아니다', () => {
+    expect(dormantScreen('[e2 체크박스 "(필수) 약관"] [e4 버튼 "확인"]')).toBeUndefined()
+  })
+  it('간편 로그인 뒤 휴면 화면이 나오면 동의하고 눌러 로그인까지 간다', async () => {
+    const login = { url: 'https://shop.test/login', text: '[e8 버튼 "카카오로 시작하기"]' }
+    const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+    const d = { ...dormant, url: 'https://shop.test/auth/dormants/cert' }
+    const b = tabsBrowser({ 7: [login, d, signed] }, (_tab, ref) =>
+      ref === 'e8' ? { advance: [7] } : ref === 'e4' ? { advance: [7] } : {},
+    )
+    const r = await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider: 'kakao',
+        creds: async () => undefined,
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e4'])
   })
 })

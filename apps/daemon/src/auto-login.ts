@@ -633,6 +633,24 @@ async function watchResult(
         tabId,
         reason: `${confirmWhere(page.text)}에서 확인을 아직 기다리고 있어요. 확인을 누르시면 두리가 이어서 연결해요`,
       }
+    // 휴면 계정 깨우기 (아이디로 로그인한 뒤에도 같은 화면이 나온다)
+    const dormant = dormantScreen(page.text)
+    if (dormant?.kind === 'human')
+      return {
+        loginOrigin,
+        status: 'human',
+        tabId,
+        reason: `${input.card.name} 계정이 오래 쓰지 않아 쉬고 있어요. 다시 쓰려면 ${dormant.why}이 필요해요`,
+      }
+    if (dormant && !asked.has(`${page.url}|dormant`)) {
+      asked.add(`${page.url}|dormant`)
+      input.step?.(`오래 쉬던 ${input.card.name} 계정 깨우는 중`)
+      for (const ref of dormant.required)
+        await _browser.call('click', { tabId, ref }, 15_000).catch(() => undefined)
+      await _browser.call('click', { tabId, ref: dormant.submit }, 30_000).catch(() => undefined)
+      i = Math.max(0, i - 2)
+      continue
+    }
     if (STEP2.test(said(page.text)) && !CAPTCHA.test(said(page.text)) && !WRONG.test(said(page.text))) {
       // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
       input.step?.('인증번호를 기다리는 중')
@@ -855,6 +873,24 @@ export async function socialLogin(
       }
       // 공급자 인증은 끝났는데 이 계정과 연결된 사이트 회원이 없다: "이미 회원이신가요? / 회원가입" 화면
       // (실측 교보·예스24). 필수 약관만 있는 간편 가입이면 두리가 가입하고, 본인인증이 필요하면 사람에게 넘긴다
+      // 휴면 계정 깨우기: (필수) 동의만이면 고르고 [로그인 완료]를 누른다 (한 화면에 한 번)
+      const dormant = dormantScreen(p.text)
+      if (dormant?.kind === 'human')
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name} 계정이 오래 쓰지 않아 쉬고 있어요. 다시 쓰려면 ${dormant.why}이 필요해요`,
+        }
+      if (dormant && !pressed.has(`${p.url}|dormant`)) {
+        pressed.add(`${p.url}|dormant`)
+        step(`오래 쉬던 ${input.card.name} 계정 깨우는 중`)
+        for (const ref of dormant.required)
+          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
+        await browser
+          .call('click', { tabId: providerTab, ref: dormant.submit }, 30_000)
+          .catch(() => undefined)
+        continue
+      }
       const join = joinScreen(p.text)
       // 가입 버튼을 누른 뒤 본인인증 화면이 나오면 사람 차례 (실측 교보: 회원가입 → 휴대폰 본인인증)
       const joined = [...pressed].some((k) => k.endsWith('|join'))
@@ -1140,6 +1176,33 @@ export function joinScreen(
   const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
   const required = refs
     .filter(([ref, r]) => r.role === '체크박스' && /필수/.test(r.name) && !checked.has(ref))
+    .map(([ref]) => ref)
+  return { kind: 'auto', submit: submit[0], required }
+}
+
+/**
+ * 휴면(장기 미사용) 계정 깨우기 화면: 로그인 뒤 "장기 미사용 계정으로 약관 동의가 필요합니다" (실측 11번가 2026-11-19).
+ * (필수) 동의 칸과 [로그인 완료]·[휴면 해제]만 있으면 두리가 고르고 누른다. 휴대폰 본인인증 칸이 있으면 사람 차례(why)
+ */
+export function dormantScreen(
+  text: string,
+): { kind: 'auto'; submit: string; required: string[] } | { kind: 'human'; why: string } | undefined {
+  if (!/휴면|장기\s?미사용/.test(said(text))) return undefined
+  const refs = [...parseRefs(text)] as RefEntry[]
+  const human = JOIN_HUMAN.exec(said(text))
+  if (human || refs.some(([, r]) => r.role === '입력칸' && /휴대폰|전화|이름|생년월일|인증/.test(r.name)))
+    return { kind: 'human', why: (human?.[0] ?? '본인인증').replace(/\s/g, '') }
+  const submit = refs.find(
+    ([, r]) =>
+      (r.role === '버튼' || r.role === '링크') &&
+      /^(로그인\s?완료|휴면\s?(계정\s?)?해제(하기)?|해제하기|동의하고\s?(로그인|계속|해제)(하기)?|확인|다음|완료)$/.test(
+        r.name.trim(),
+      ),
+  )
+  if (!submit) return undefined
+  const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
+  const required = refs
+    .filter(([ref, r]) => r.role === '체크박스' && /필수|전체\s?동의/.test(r.name) && !checked.has(ref))
     .map(([ref]) => ref)
   return { kind: 'auto', submit: submit[0], required }
 }
