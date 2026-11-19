@@ -44,6 +44,22 @@ export interface LoginAsk {
     get(provider: SocialProvider): string | undefined
     set(provider: SocialProvider, label: string): void
   }
+  /**
+   * 사용자가 "내 계정"이라고 확인해 준 공급자 계정 (동의 화면에 보이는 글: 카카오 "f***@gmail.com").
+   * 처음 보는 계정이면 동의를 누르기 전에 한 번 묻는다 (엉뚱한 계정으로 가입·연동되지 않게)
+   */
+  known?: {
+    has(provider: SocialProvider, label: string): boolean
+    add(provider: SocialProvider, label: string): void
+  }
+}
+
+/** 공급자 동의 화면에 보이는 "지금 로그인된 계정" (카카오: "로그인된 계정 f***@gmail.com", 구글 한 계정: 이메일) */
+export function providerAccountOn(text: string): string | undefined {
+  const kakao = /로그인된\s?계정\s*([^\s[\]"]+@[^\s[\]"]+)/.exec(text)
+  if (kakao) return kakao[1]
+  const mail = /(?:^|[\s"(])([\w.*+-]+@[\w-]+(?:\.[\w-]+)+)/.exec(said(text))
+  return mail?.[1]
 }
 
 /** 인증번호 칸 */
@@ -801,6 +817,8 @@ export async function socialLogin(
 
   // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
   let blankWaits = 0
+  /** 공급자 화면의 로그인된 계정을 사용자가 확인했다 (또는 전에 확인한 계정이다) */
+  let accountOk = false
   for (let i = 0; i < (opts.tries ?? 14); i++) {
     await sleep(wait)
     const site = await snap(siteTab).catch(() => undefined)
@@ -987,6 +1005,43 @@ export async function socialLogin(
           reason: `${label} 계정이 여러 개라 어느 것으로 할지 골라 주셔야 해요`,
         }
       account = accounts.find(([, r]) => r.name.trim() === pick)
+    }
+    // 동의를 누르기 전에: 공급자에 지금 로그인된 계정이 사용자가 확인해 준 계정인지 본다.
+    // (실측 알라딘 2026-11-18: 이 PC Chrome의 카카오는 평소 계정이 아닌 f***@gmail.com이었는데 그대로 동의를 눌렀다)
+    // 처음 보는 계정이면 한 번 묻고, 아니라고 하면 '계정 변경'을 열어 사용자에게 넘긴다
+    const who = account ? undefined : providerAccountOn(p.text)
+    if (who && !accountOk) {
+      if (input.ask?.known?.has(input.provider, who)) accountOk = true
+      else {
+        step(`${label} 계정 확인을 기다리는 중`)
+        const yes = `${who}(으)로 할게요`
+        const a = input.ask?.info
+          ? await input.ask.info({
+              field: 'choice',
+              label: `${label} 계정 ${who}(으)로 ${input.card.name}에 로그인할까요?`,
+              hint: `이 PC에 로그인된 ${label} 계정이에요. 처음 보는 계정이라 여쭤봐요. 맞으면 기억해 두고 다음부터 묻지 않아요.`,
+              host,
+              options: [yes, '다른 계정이에요'],
+            })
+          : undefined
+        if (a?.trim() === yes) {
+          input.ask?.known?.add(input.provider, who)
+          accountOk = true
+        } else {
+          const change = refs.find(
+            ([, r]) => (r.role === '링크' || r.role === '버튼') && /계정\s?변경|다른\s?계정/.test(r.name),
+          )
+          if (a && change)
+            await browser.call('click', { tabId: providerTab, ref: change[0] }, 30_000).catch(() => undefined)
+          return {
+            status: 'human',
+            tabId: providerTab,
+            reason: a
+              ? `${label} 계정을 바꾸는 화면이에요. 쓰시는 ${label} 계정으로 로그인해 주시면 두리가 이어서 해요`
+              : `${label}에 로그인된 계정(${who})이 맞는지 확인이 필요해요`,
+          }
+        }
+      }
     }
     // 정보 제공 동의에 (필수) 칸이 있으면 그것만 고른다 (선택 항목은 건드리지 않는다). 실측 알라딘 카카오
     const required = refs.filter(

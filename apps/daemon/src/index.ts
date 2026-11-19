@@ -1417,6 +1417,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           [provider]: label.slice(0, 120),
         }),
     },
+    // 사용자가 "내 계정"이라고 확인해 준 공급자 계정들 (가린 이메일 글 그대로, 비밀값 아님).
+    // 구글 계정 고르기에서 고른 계정도 내 계정으로 본다
+    known: {
+      has: (provider, label) => {
+        const mine =
+          (store.getSetting('socialAccounts') as Record<string, string[]> | undefined)?.[provider] ?? []
+        const picked = (store.getSetting('providerAccounts') as Record<string, string> | undefined)?.[
+          provider
+        ]
+        return mine.includes(label) || Boolean(picked?.includes(label))
+      },
+      add: (provider, label) => {
+        const all = (store.getSetting('socialAccounts') as Record<string, string[]> | undefined) ?? {}
+        const mine = all[provider] ?? []
+        if (!mine.includes(label))
+          store.setSetting('socialAccounts', { ...all, [provider]: [...mine, label.slice(0, 120)].slice(-5) })
+      },
+    },
     credentials: async (origin, label, tabId) => {
       // 폰에서 "화면 보면서 직접 할게요"를 고르면 그 로그인 탭을 원격 화면으로 연다
       browserTools.allowRemote(tabId)
