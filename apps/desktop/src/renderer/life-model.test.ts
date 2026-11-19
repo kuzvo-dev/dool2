@@ -1,6 +1,6 @@
 import { type FeedItem, GOAL_CATEGORIES, type Routine } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
-import { scheduleLabel } from '@dool2/protocol/schedule'
+import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { describe, expect, it } from 'vitest'
 import {
   continueText,
@@ -59,6 +59,24 @@ describe('life-model', () => {
         now,
       ),
     ).toBe('평일 오전 7:30 · 다음 내일 오전 7:30')
+  })
+  it('목표의 언제: 매달 · 끝나는 때 · 맞을 때만 알림 · 끝남', () => {
+    expect(
+      routineWhen(
+        routine({
+          schedule: { kind: 'monthly', time: '09:00', day: 31 },
+          until: '2026-12-31',
+          notify: 'when_found',
+          nextRunAt: new Date(2026, 10, 30, 9, 0).toISOString(),
+        }),
+        scheduleLabel,
+        now,
+        ruleLabel,
+      ),
+    ).toBe('매달 말일 오전 9:00 · 12월 31일까지 · 맞을 때만 알림 · 다음 11월 30일 (월) 오전 9:00')
+    expect(routineWhen(routine({ enabled: false, endedAt: now.toISOString() }), scheduleLabel, now)).toBe(
+      '끝남',
+    )
   })
 
   it('미리보기에 마크다운 기호가 남지 않는다', () => {

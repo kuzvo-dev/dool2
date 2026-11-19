@@ -46,7 +46,7 @@ import {
   whenLabel,
 } from './life-model.js'
 import { resultLine } from './rich.js'
-import { scheduleLabel } from './schedule.js'
+import { ruleLabel, scheduleLabel, untilLabel } from './schedule.js'
 
 export interface LifeCtx {
   life(): LifeState
@@ -71,7 +71,7 @@ export interface LifeCtx {
 
 export const emptyLife = (): LifeState => ({ routines: [], library: [], memory: [], feed: [] })
 
-const when = (r: Routine, now?: Date) => routineWhen(r, scheduleLabel, now)
+const when = (r: Routine, now?: Date) => routineWhen(r, scheduleLabel, now, ruleLabel)
 
 function pageHead(title: string, sub?: string, ...extra: HTMLElement[]) {
   return el('header', 'page-head', el('h1', 'title', title), sub ? el('p', 'cap', sub) : undefined, ...extra)
@@ -583,9 +583,17 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
     if (v) facts.append(el('dt', '', k), el('dd', '', v))
   }
   fact('언제', r.schedule ? scheduleLabel(r.schedule) : '시간 정하지 않음')
-  fact('다음 체크인', r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : '꺼 둠')
+  fact(
+    '다음 체크인',
+    r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : r.endedAt ? '끝남' : '꺼 둠',
+  )
+  if (r.schedule && r.schedule.kind !== 'once')
+    fact('끝나는 때', r.until ? untilLabel(r.until) : '지울 때까지')
   fact('최근', r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
-  fact('결과는', r.target === 'feed' ? '피드에 올려요' : '대화로 알려 드려요')
+  fact(
+    '결과는',
+    `${r.notify === 'when_found' ? '조건에 맞을 때만 ' : ''}${r.target === 'feed' ? '피드에 올려요' : '대화로 알려 드려요'}`,
+  )
 
   const actions = el(
     'div',

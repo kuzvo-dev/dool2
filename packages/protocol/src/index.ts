@@ -688,10 +688,12 @@ export interface ScreenFit {
 /** 폰 → PC */
 // ── 두리의 생활 기록: 목표·보관함·기억·피드 (본체 저장소에만 둔다) ──
 
-/** 언제: 매일 HH:MM · 요일마다(0=일) · 한 번 · N분마다 (모두 한국 시간) */
+/** 언제: 매일 HH:MM · 요일마다(0=일, 여러 요일) · 매달 며칠(31=말일) · 한 번 · N분마다 (모두 한국 시간) */
 export type RoutineSchedule =
   | { kind: 'daily'; time: string }
   | { kind: 'weekly'; time: string; days: number[] }
+  /** 매달 day일 (1~31). 그 날이 없는 달은 그 달 마지막 날 */
+  | { kind: 'monthly'; time: string; day: number }
   | { kind: 'once'; at: string }
   | { kind: 'every'; minutes: number }
 
@@ -719,6 +721,12 @@ export interface Routine {
   nextRunAt?: string
   lastRunAt?: string
   lastResult?: string
+  /** 끝나는 때: 날짜(YYYY-MM-DD, 그날까지 돌고 꺼짐) 또는 조건(그때 두리가 이뤄졌다고 하면 꺼짐) */
+  until?: string
+  /** 알리기: 매번(기본) 또는 조건에 맞을 때만 (아니면 피드·폰 알림 없이 조용히) */
+  notify?: 'always' | 'when_found'
+  /** 끝나는 때가 지나 스스로 꺼진 시각 */
+  endedAt?: string
 }
 
 /** 보관함: 두리가 찾아 준 것·만든 것 중 남겨 둔 것 */

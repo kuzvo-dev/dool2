@@ -72,11 +72,20 @@ export function plain(text: string, max = 160): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
-/** 목표의 언제 한 줄 (폰과 같은 말): "꺼 둠" · "정한 때 없음" · "평일 오전 7:30 · 다음 내일 오전 7:30" */
-export function routineWhen(r: Routine, label: ScheduleLabel, now = new Date()): string {
-  if (!r.enabled) return '꺼 둠'
+/**
+ * 목표의 언제 한 줄 (폰과 같은 말): "꺼 둠" · "끝남" · "정한 때 없음" ·
+ * "평일 오전 7:30 · 12월 31일까지 · 맞을 때만 알림 · 다음 내일 오전 7:30". rule은 @dool2/protocol/schedule의 ruleLabel
+ */
+export function routineWhen(
+  r: Routine,
+  label: ScheduleLabel,
+  now = new Date(),
+  rule?: (r: Routine) => string,
+): string {
+  if (!r.enabled) return r.endedAt ? '끝남' : '꺼 둠'
   if (!r.schedule) return '시간 정하지 않음'
-  return `${label(r.schedule)}${r.nextRunAt ? ` · 다음 ${whenLabel(r.nextRunAt, now)}` : ''}`
+  const head = [label(r.schedule), rule?.(r)].filter(Boolean).join(' · ')
+  return `${head}${r.nextRunAt ? ` · 다음 ${whenLabel(r.nextRunAt, now)}` : ''}`
 }
 
 /** 피드 글을 올리는 데 쓰는 예약 (목표 목록에는 보이지 않는다) */

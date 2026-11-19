@@ -8,6 +8,46 @@ const time = z
   .regex(/^([01]?\d|2[0-3]):[0-5]\d$/)
   .describe('한국 시간 HH:MM (예: "07:30")')
 
+/** 언제 칸 (goal_create·goal_update가 같이 쓴다) */
+const whenFields = {
+  schedule: z
+    .enum(['daily', 'weekly', 'monthly', 'once', 'every'])
+    .optional()
+    .describe(
+      'daily=매일, weekly=요일마다(여러 요일), monthly=매달 며칠, once=한 번, every=N분마다. 정한 때가 없는 목표면 생략',
+    ),
+  time: time.optional().describe('daily·weekly·monthly일 때 한국 시간 HH:MM (예: "09:00")'),
+  days: z
+    .array(z.number().int().min(0).max(6))
+    .optional()
+    .describe('weekly일 때 요일 여러 개 (0=일 … 6=토, 예: 월·수·금 = [1,3,5])'),
+  day: z
+    .number()
+    .int()
+    .min(1)
+    .max(31)
+    .optional()
+    .describe('monthly일 때 날짜 1~31. 말일은 31 (그 날이 없는 달은 그 달 마지막 날)'),
+  at: z
+    .string()
+    .optional()
+    .describe('once일 때 ISO 시각 (한국 시간 +09:00 포함, 예: "2026-11-20T10:00:00+09:00")'),
+  minutes: z.number().int().min(15).optional().describe('every일 때 간격(분, 15 이상)'),
+  until: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      '끝나는 때: 날짜 "2026-12-31"(그날까지 하고 스스로 꺼짐) 또는 조건 "취소표를 잡으면"(그때 두리가 이뤄졌다고 하면 꺼짐). 지켜보기·기간 있는 일은 꼭. 비우면 지울 때까지',
+    ),
+  notify: z
+    .enum(['always', 'when_found'])
+    .optional()
+    .describe(
+      'always=매번 알림(기본, 브리핑·정기 알림) · when_found=조건에 맞을 때만 알리고 아니면 조용히(피드·폰 알림 없음): "넘으면", "나오면", "뜨면" 같은 지켜보기',
+    ),
+}
+
 export function registerLifeTools(server: McpServer, client: BrowserClient) {
   const call = (tool: string) => async (args: Record<string, unknown>) => {
     const r = await client(tool, args)
@@ -19,8 +59,14 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: '목표·알아서 할 일 만들기',
       description:
         '사용자가 정해진 때 두리가 알아서 할 일(알림, 아침 브리핑, 매주 요약, 가격·취소표 지켜보기)이나 장기 목표(운동, 저축, 공부)를 말하면 만든다. ' +
-        '알림도 이것으로 만든다("내일 10시에 치과 전화 알려 줘" → once). 목표는 category와 plan(3~6단계)을 함께 주고, 체크인 때를 schedule로 준다. ' +
-        '만든 뒤에는 무엇을 언제 할지 사용자에게 한 번 더 확인해 말한다. 지난 시각이면 만들지 말고 다른 시각을 물어본다.',
+        '알림도 이것으로 만든다. 예: "내일 10시에 치과 전화 알려 줘" → once · "매달 1일에 심장사상충 약 알려 줘" → monthly day 1 (매일 돌며 날짜를 보게 하지 않는다) · ' +
+        '"매달 말일에 카드값 확인" → monthly day 31 · "월·수·금 7시" → weekly days [1,3,5] · ' +
+        '"취소표 나오면 알려 줘" → every나 daily + notify "when_found" + until(공연·출발 날짜) · "이번 달 쇼핑 30만 원 넘으면 경고" → daily + notify "when_found" + until 그달 말일 · ' +
+        '"12월 31일까지 매일" → until "2026-12-31" · ' +
+        '"엔진오일 다음 교체 때 알려 줘" → 마지막 교체일을 prompt에 적고 monthly + when_found(갈 때가 됐으면) + until "교체했다고 하면" · ' +
+        '"날짜 미정인 공지 뜨면 알려 줘" → daily + when_found + until "공지가 떠서 알리면". ' +
+        '목표는 category와 plan(3~6단계)을 함께 주고, 체크인 때를 schedule로 준다. ' +
+        '결과의 "정한 것"(언제 하고·언제 끝나고·언제 알리는지)을 사용자에게 그대로 말해 확인한다. 빠진 게 있다고 오면 사용자에게 묻거나 goal_update로 채운다. 지난 시각이면 만들지 말고 다른 시각을 물어본다.',
       inputSchema: {
         title: z
           .string()
@@ -30,19 +76,9 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .string()
           .max(1000)
           .describe(
-            '그때 두리가 할 일을 두리에게 하는 말로 (예: "오늘 날씨와 일정, 오는 택배를 짧게 정리해 줘")',
+            '그때 두리가 할 일을 두리에게 하는 말로 (예: "오늘 날씨와 일정, 오는 택배를 짧게 정리해 줘", "쿠팡·네이버 이번 달 쇼핑 합계를 보고 30만 원 넘었으면 알려 줘"). 조건은 여기에 쓴다',
           ),
-        schedule: z
-          .enum(['daily', 'weekly', 'once', 'every'])
-          .optional()
-          .describe('daily=매일, weekly=요일마다, once=한 번, every=N분마다. 정한 때가 없는 목표면 생략'),
-        time: time.optional(),
-        days: z.array(z.number().int().min(0).max(6)).optional().describe('weekly일 때 요일 (0=일 … 6=토)'),
-        at: z
-          .string()
-          .optional()
-          .describe('once일 때 ISO 시각 (한국 시간 +09:00 포함, 예: "2026-11-20T10:00:00+09:00")'),
-        minutes: z.number().int().min(15).optional().describe('every일 때 간격(분, 15 이상)'),
+        ...whenFields,
         category: z
           .enum(['건강', '관계', '돈', '일', '관심사', '생산성', '기타'])
           .optional()
@@ -72,10 +108,14 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: '목표 고치기',
       description:
-        '목표의 계획 단계를 새로 쓰거나(plan), 끝낸 단계를 표시하거나(done: 단계 번호, 0부터), 진행 기록을 남긴다(log).',
+        '목표의 계획 단계를 새로 쓰거나(plan), 끝낸 단계를 표시하거나(done: 단계 번호, 0부터), 진행 기록을 남긴다(log). ' +
+        '알림·지켜보기의 할 일(prompt), 언제(schedule과 그 칸), 끝나는 때(until, 빈 글 ""이면 지움), 알리기(notify)도 고친다 — goal_create 결과에 빠진 게 있다고 오면 이것으로 채운다. ' +
+        '끝나는 조건이 이뤄졌다고 사용자가 말하면(예: "엔진오일 갈았어") goal_delete로 지운다.',
       inputSchema: {
         id: z.string().max(40).describe('goal_list의 id (앞 8자도 됨)'),
         title: z.string().max(60).optional(),
+        prompt: z.string().max(1000).optional().describe('그때 두리가 할 일을 새로 쓸 때'),
+        ...whenFields,
         plan: z.array(z.string().max(120)).max(12).optional(),
         done: z.array(z.number().int().min(0)).optional(),
         log: z.string().max(300).optional().describe('이번 체크인에서 알게 된 진행 상황 한두 문장'),

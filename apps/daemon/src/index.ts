@@ -90,7 +90,7 @@ import { FileTools, type userFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
-import { Life, watchPrompt } from './life.js'
+import { Life, routineAsk, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
@@ -1696,15 +1696,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     store.setSetting('feedThread', t.id)
     return t.id
   }
-  async function runRoutine(r: Routine) {
+  async function runRoutine(r: Routine, tries = 0) {
     let threadId: string
     let text: string
-    if (r.target === 'feed') {
+    // 조건에 맞을 때만 알리는 일은 따로 하는 대화에서 (맞는 게 없는 날 메인 대화에 "알릴 것 없음"이 쌓이지 않게)
+    const quietly = r.target === 'feed' || r.notify === 'when_found'
+    if (quietly) {
       threadId = await feedThreadId()
-      text = r.prompt
+      text = r.target === 'feed' ? routineAsk(r) : `예약해 둔 일이에요 ("${r.title}"). ${routineAsk(r)}`
     } else {
       // 대화로: 답하는 중이면 줄을 선다
-      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${r.prompt} 인사 없이 결과부터 짧게 써 주세요.`)
+      text = appNote(`예약해 둔 일이에요 ("${r.title}"). ${routineAsk(r)} 인사 없이 결과부터 짧게 써 주세요.`)
       if (conversationBusy()) {
         queued.push(text)
         live.emit('event', { kind: 'queued', texts: [...queued] })
@@ -1712,7 +1714,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       threadId = (await conversation.prepare(await pickAgent(undefined))).session.id
     }
-    if (threads.isRunning(threadId)) return
+    if (threads.isRunning(threadId)) {
+      // 따로 하는 대화가 다른 일(먼저 챙기기·아이디어) 중이면 1분 뒤 다시 (30분까지)
+      if (quietly && tries < 30)
+        setTimeout(() => void runRoutine(r, tries + 1).catch(() => {}), 60_000).unref?.()
+      return
+    }
     routineThreads.add(threadId)
     let answer = ''
     try {
@@ -1722,11 +1729,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       routineThreads.delete(threadId)
     }
     if (!answer) return
-    life.noteRun(r.id, answer)
+    const run = life.noteRun(r.id, answer)
+    // 조건에 맞지 않았으면 피드에도 폰에도 알리지 않는다
+    if (!run || run.quiet) return
+    // 따로 한 대화의 결과는 메인 대화에도 두리 카드로 남긴다 (사용자가 이어 말할 수 있게)
+    if (r.target !== 'feed' && quietly && run.item) tellInChat(run.item)
     void link
       .notify({
         title: r.target === 'feed' ? '피드에 새 글' : r.title,
-        body: answer.replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
+        body: (run.item?.body ?? answer).replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
         tag: `routine-${r.id}`,
         url: r.target === 'feed' ? '#tab=feed' : '#tab=chat',
       })

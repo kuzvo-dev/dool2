@@ -1,5 +1,15 @@
+import type { Routine } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { Life, nextRun, parseSchedule, scheduleLabel, watchPrompt } from './life.js'
+import {
+  Life,
+  nextRun,
+  parseSchedule,
+  readRun,
+  routineAsk,
+  ruleLabel,
+  scheduleLabel,
+  watchPrompt,
+} from './life.js'
 
 function kv() {
   const m = new Map<string, unknown>()
@@ -317,5 +327,229 @@ describe('먼저 챙기기', () => {
     expect(text).not.toContain('장바구니')
     expect(text).toContain('- 러닝화 내일 도착 [coupang-123]')
     expect(text).toContain('feed_tell')
+  })
+})
+
+describe('매달 (말일·월말 넘김)', () => {
+  const at = (iso: string) => new Date(iso)
+  it('매달 1일: 이번 달 1일이 지났으면 다음 달 1일', () => {
+    // 11/16 08:00 → 12/1 09:00 (한국) = 12/1 00:00Z
+    expect(nextRun({ kind: 'monthly', time: '09:00', day: 1 }, MON_8AM)?.toISOString()).toBe(
+      '2026-12-01T00:00:00.000Z',
+    )
+    // 11/16 08:00, 16일 09:00은 아직 → 오늘
+    expect(nextRun({ kind: 'monthly', time: '09:00', day: 16 }, MON_8AM)?.toISOString()).toBe(
+      '2026-11-16T00:00:00.000Z',
+    )
+  })
+  it('31일은 그 날이 없는 달엔 말일 (2월 28일, 윤년 29일, 4월 30일)', () => {
+    const last = { kind: 'monthly' as const, time: '09:00', day: 31 }
+    // 1/31 10:00 한국 → 2/28 09:00
+    expect(nextRun(last, at('2026-01-31T01:00:00Z'))?.toISOString()).toBe('2026-02-28T00:00:00.000Z')
+    // 2/28 10:00 → 3/31
+    expect(nextRun(last, at('2026-02-28T01:00:00Z'))?.toISOString()).toBe('2026-03-31T00:00:00.000Z')
+    // 윤년 2028년 2월은 29일
+    expect(nextRun(last, at('2028-02-01T00:00:00Z'))?.toISOString()).toBe('2028-02-29T00:00:00.000Z')
+    expect(nextRun(last, at('2026-04-01T00:00:00Z'))?.toISOString()).toBe('2026-04-30T00:00:00.000Z')
+    // 30일도 2월엔 말일
+    expect(
+      nextRun({ kind: 'monthly', time: '09:00', day: 30 }, at('2026-01-31T00:00:00Z'))?.toISOString(),
+    ).toBe('2026-02-28T00:00:00.000Z')
+  })
+  it('해를 넘긴다 (12월 → 1월)', () => {
+    // 12/15 10:00 한국 → 다음 해 1/10 09:00
+    expect(
+      nextRun({ kind: 'monthly', time: '09:00', day: 10 }, at('2026-12-15T01:00:00Z'))?.toISOString(),
+    ).toBe('2027-01-10T00:00:00.000Z')
+  })
+  it('한국 시간 자정 무렵: UTC로는 전날이어도 한국 날짜로 센다', () => {
+    // 한국 12/1 00:30 = 11/30 15:30Z → 그날 07:00
+    expect(
+      nextRun({ kind: 'monthly', time: '07:00', day: 1 }, at('2026-11-30T15:30:00Z'))?.toISOString(),
+    ).toBe('2026-11-30T22:00:00.000Z')
+  })
+  it('사람이 읽는 말과 AI 값 정리', () => {
+    expect(scheduleLabel({ kind: 'monthly', time: '09:00', day: 1 })).toBe('매달 1일 오전 9:00')
+    expect(scheduleLabel({ kind: 'monthly', time: '21:00', day: 31 })).toBe('매달 말일 오후 9:00')
+    expect(scheduleLabel({ kind: 'monthly', time: '09:00', day: 30 })).toBe(
+      '매달 30일(없는 달은 말일) 오전 9:00',
+    )
+    expect(scheduleLabel({ kind: 'weekly', time: '07:00', days: [5, 1, 3] })).toBe('월·수·금 오전 7:00')
+    expect(parseSchedule({ schedule: 'monthly', time: '9:00', day: 1 })).toEqual({
+      kind: 'monthly',
+      time: '09:00',
+      day: 1,
+    })
+    expect(parseSchedule({ schedule: 'monthly', time: '09:00', day: 32 })).toBeUndefined()
+    expect(parseSchedule({ schedule: 'monthly', time: '09:00' })).toBeUndefined()
+  })
+})
+
+describe('끝나는 때·조건에 맞을 때만 알리기', () => {
+  it('매달 1일 알림: 정한 것을 한 줄로 돌려주고 매일 돌지 않는다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const r = life.run('goal_create', {
+      title: '초코 심장사상충 약',
+      prompt: '초코 심장사상충 약 먹일 날이라고 알려 줘',
+      schedule: 'monthly',
+      day: 1,
+      time: '09:00',
+    })
+    const text = r.content[0]?.text ?? ''
+    expect(text).toContain('정한 것: 매달 1일 오전 9:00에 해요 · 끝나는 때 없음(지울 때까지) · 매번 알려요')
+    expect(text).toContain('처음은 12월 1일(화) 오전 9:00')
+    expect(life.routines()[0]?.nextRunAt).toBe('2026-12-01T00:00:00.000Z')
+  })
+  it('빠뜨리기 쉬운 것을 결과에 담는다: 지켜보기인데 끝이 없음 · 조건이 있는데 매번 알림', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const watch = life.run('goal_create', {
+      title: '취소표',
+      prompt: 'KTX 11/30 부산행 취소표 나오면 알려 줘',
+      schedule: 'every',
+      minutes: 30,
+      notify: 'when_found',
+    }).content[0]?.text
+    expect(watch).toContain('끝나는 때가 없어요')
+    expect(watch).toContain('until')
+    const shop = life.run('goal_create', {
+      title: '쇼핑 경고',
+      prompt: '이번 달 쇼핑 합계가 30만 원 넘으면 알려 줘',
+      schedule: 'daily',
+      time: '20:00',
+    }).content[0]?.text
+    expect(shop).toContain('notify: "when_found"')
+  })
+  it('지난 끝나는 날·한 번도 못 도는 끝나는 날은 만들지 않는다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const past = { title: 'x', prompt: 'x', schedule: 'daily', time: '09:00' }
+    expect(life.run('goal_create', { ...past, until: '2026-11-15' }).isError).toBe(true)
+    expect(
+      life.run('goal_create', { ...past, schedule: 'monthly', day: 1, until: '2026-11-30' }).isError,
+    ).toBe(true)
+    expect(life.run('goal_create', { ...past, notify: 'sometimes' }).isError).toBe(true)
+    expect(life.routines()).toHaveLength(0)
+  })
+  it('until 날짜: 그날까지 하고 스스로 꺼진다', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    const due: string[] = []
+    life.onDue = (r) => due.push(r.title)
+    const text = life.run('goal_create', {
+      title: '쇼핑 경고',
+      prompt: '30만 원 넘었으면 알려 줘',
+      schedule: 'daily',
+      time: '20:00',
+      notify: 'when_found',
+      until: '2026-11-17',
+    }).content[0]?.text
+    expect(text).toContain(
+      '11월 17일까지 하고 스스로 꺼져요 · 조건에 맞을 때만 알리고 아니면 조용히 넘어가요',
+    )
+    expect(text).not.toContain('끝나는 때가 없어요')
+    // 11/16 20:00 한국
+    now = new Date('2026-11-16T11:01:00Z')
+    life.tick()
+    expect(life.routines()[0]?.nextRunAt).toBe('2026-11-17T11:00:00.000Z')
+    // 11/17 20:00: 마지막 차례. 하고 나면 꺼진다
+    now = new Date('2026-11-17T11:01:00Z')
+    life.tick()
+    expect(due).toEqual(['쇼핑 경고', '쇼핑 경고'])
+    const r = life.routines()[0]
+    expect(r?.enabled).toBe(false)
+    expect(r?.endedAt).toBeTruthy()
+    expect(r?.nextRunAt).toBeUndefined()
+    // 다시 켜면 지난 끝나는 날은 지운다
+    life.act({ action: 'routine-toggle', id: r?.id ?? '', on: true })
+    expect(life.routines()[0]?.until).toBeUndefined()
+    expect(life.routines()[0]?.endedAt).toBeUndefined()
+  })
+  it('PC가 꺼져 있다 끝나는 날이 지나서 켜지면 하지 않고 끈다', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    const due: string[] = []
+    life.onDue = (r) => due.push(r.title)
+    life.run('goal_create', {
+      title: 'a',
+      prompt: 'a',
+      schedule: 'daily',
+      time: '09:00',
+      until: '2026-11-16',
+    })
+    now = new Date('2026-11-20T00:00:00Z')
+    life.tick()
+    expect(due).toEqual([])
+    expect(life.routines()[0]?.enabled).toBe(false)
+  })
+  it('when_found: "알릴 것 없음"이면 피드에 올리지 않고, 맞으면 올린다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', {
+      title: '쇼핑 경고',
+      prompt: '30만 원 넘었으면 알려 줘',
+      schedule: 'daily',
+      time: '20:00',
+      notify: 'when_found',
+      until: '2026-11-30',
+    })
+    const id = life.routines()[0]?.id ?? ''
+    const before = life.feedItems().length
+    expect(life.noteRun(id, '**알릴 것 없음**')?.quiet).toBe(true)
+    expect(life.noteRun(id, '알릴 것 없음 — 지금 12만 원이에요.')?.quiet).toBe(true)
+    expect(life.feedItems()).toHaveLength(before)
+    expect(life.routines()[0]?.lastResult).toContain('12만 원')
+    const hit = life.noteRun(id, '이번 달 쇼핑이 31만 2천 원이에요. 30만 원을 넘었어요.')
+    expect(hit?.quiet).toBe(false)
+    expect(hit?.item?.body).toContain('31만')
+    expect(life.feedItems()).toHaveLength(before + 1)
+  })
+  it('매번 알리는 일은 "알릴 것 없음"이어도 그대로 올린다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', { title: '브리핑', prompt: '날씨', schedule: 'daily', time: '07:00' })
+    const id = life.routines()[0]?.id ?? ''
+    expect(life.noteRun(id, '알릴 것 없음')?.quiet).toBe(false)
+  })
+  it('until 조건: 답 끝에 [끝]이 오면 꺼지고 표시는 지운다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', {
+      title: '공지',
+      prompt: '수강신청 공지 떴는지 봐 줘',
+      schedule: 'daily',
+      time: '10:00',
+      notify: 'when_found',
+      until: '공지가 떠서 알리면',
+    })
+    const r = life.routines()[0]
+    expect(routineAsk(r as Routine)).toContain('알릴 것 없음')
+    expect(routineAsk(r as Routine)).toContain('[끝]')
+    const run = life.noteRun(r?.id ?? '', '수강신청 공지가 떴어요: 12/2 10시부터. [끝]')
+    expect(run).toMatchObject({ quiet: false, ended: true })
+    expect(life.routines()[0]?.enabled).toBe(false)
+    expect(life.routines()[0]?.lastResult).not.toContain('[끝]')
+    expect(readRun({}, '[끝]').ended).toBe(false)
+  })
+  it('goal_update로 끝나는 때·알리기·언제를 채운다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', { title: '취소표', prompt: '취소표 나오면', schedule: 'every', minutes: 30 })
+    const id = life.routines()[0]?.id.slice(0, 8) ?? ''
+    const text = life.run('goal_update', { id, notify: 'when_found', until: '2026-11-30' }).content[0]?.text
+    expect(text).toContain('정한 것: 30분마다 해요 · 11월 30일까지 하고 스스로 꺼져요 · 조건에 맞을 때만')
+    expect(life.routines()[0]?.notify).toBe('when_found')
+    life.run('goal_update', {
+      id,
+      until: '',
+      notify: 'always',
+      schedule: 'weekly',
+      time: '09:00',
+      days: [1, 3],
+    })
+    const r = life.routines()[0]
+    expect(r?.until).toBeUndefined()
+    expect(r?.notify).toBeUndefined()
+    expect(r?.schedule).toEqual({ kind: 'weekly', time: '09:00', days: [1, 3] })
+    expect(life.run('goal_list', {}).content[0]?.text).toContain('월·수 오전 9:00')
+  })
+  it('화면에 보이는 끝나는 때 한 줄', () => {
+    expect(ruleLabel({ until: '2026-12-31', notify: 'when_found' })).toBe('12월 31일까지 · 맞을 때만 알림')
+    expect(ruleLabel({ until: '교체했다고 하면' })).toBe('끝: 교체했다고 하면')
+    expect(ruleLabel({})).toBe('')
   })
 })
