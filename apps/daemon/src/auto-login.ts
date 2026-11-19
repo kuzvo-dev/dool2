@@ -83,6 +83,16 @@ export function providerAccountIn(provider: SocialProvider, text: string): strin
   return undefined
 }
 
+/**
+ * 체크된 칸 ("[e5 체크박스 \"[필수] 개인정보 제 3자 제공 동의\" 선택됨]"). 칸 이름 안의 ']'([필수])를 건너뛰고
+ * 따옴표 뒤의 '선택됨'을 본다: 예전 식은 이름 안의 ']'에서 끊겨 체크된 칸을 안 된 것으로 보고 다시 눌러 풀었다
+ * (실측 네이버 동의: 29CM·에어비앤비·마이리얼트립·아시아나·이스타)
+ */
+const CHECKED_RE = /\[(e\d+) 체크박스 "(?:[^"\\]|\\.)*"[^\]"]*선택됨\]/g
+export function checkedRefs(text: string): Set<string> {
+  return new Set([...text.matchAll(CHECKED_RE)].map((m) => m[1] as string))
+}
+
 /** 로그인 화면의 '로그인 상태 유지' 칸 (아직 안 켜져 있으면 그 표시) */
 export function keepSignedIn(text: string): string | undefined {
   const m =
@@ -976,10 +986,7 @@ export async function socialLogin(
     // "이 브라우저에서 2단계 인증 사용 안 함"이 있으면 먼저 고른다 (사용자 PC의 평소 브라우저라 다음부터 묻지 않게)
     if (APP_CONFIRM.test(said(p.text))) {
       const remember = ([...parseRefs(p.text)] as RefEntry[]).find(
-        ([ref, r]) =>
-          r.role === '체크박스' &&
-          REMEMBER_BROWSER.test(r.name) &&
-          !new RegExp(`\\[${ref} 체크박스[^\\]]*선택됨`).test(p.text),
+        ([ref, r]) => r.role === '체크박스' && REMEMBER_BROWSER.test(r.name) && !checkedRefs(p.text).has(ref),
       )
       if (remember)
         await browser.call('click', { tabId: providerTab, ref: remember[0] }, 15_000).catch(() => undefined)
@@ -1055,7 +1062,17 @@ export async function socialLogin(
     // 계정 고르기(구글): 이메일이 적힌 줄을 누른다. 여럿이면 전에 고른 것, 없으면 사람에게 한 번 묻고 기억한다
     // (실측 알라딘: 구글 계정이 둘이라 첫째를 누르면 엉뚱한 계정으로 가입될 수 있다)
     const refs = [...parseRefs(p.text)] as RefEntry[]
-    const accounts = refs.filter(([, r]) => (r.role === '링크' || r.role === '버튼') && /@/.test(r.name))
+    // 계정 고르기 화면에서만 이메일 줄을 계정으로 본다. 고른 뒤의 확인 화면에도 "○○@gmail.com 항목이 선택되었습니다. 계정 전환"
+    // 줄이 있는데, 이걸 눌러 고르기 화면으로 되돌아가 멈췄다 (실측 부킹닷컴·G마켓·에어비앤비·오아시스·이스타)
+    const choosing = /accountchooser|계정을\s?선택|choose an account/i.test(`${p.url} ${p.text}`)
+    const accounts = choosing
+      ? refs.filter(
+          ([, r]) =>
+            (r.role === '링크' || r.role === '버튼') &&
+            /@/.test(r.name) &&
+            !/계정\s?전환|switch account|선택되었습니다/i.test(r.name),
+        )
+      : []
     let account = accounts.length === 1 ? accounts[0] : undefined
     if (accounts.length > 1) {
       const names = accounts.map(([, r]) => r.name.trim())
@@ -1136,9 +1153,7 @@ export async function socialLogin(
       ([, r]) => r.role === '체크박스' && /\(필수\)|\[필수\]|필수\s/.test(r.name) && !/선택됨/.test(r.name),
     )
     if (required.length && !account) {
-      const checked = new Set(
-        [...p.text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string),
-      )
+      const checked = checkedRefs(p.text)
       // 칸을 눌러도 체크되지 않는 화면이 있다 (실측 올리브영 카카오 동의: 칸 옆 같은 이름의 글자 줄을 눌러야 한다).
       // 처음엔 칸, 다음엔 같은 이름의 버튼, 그래도 안 되면 사람 차례 (같은 칸만 계속 누르며 시간을 쓰지 않게)
       const open = required.filter(([ref]) => !checked.has(ref))
@@ -1230,7 +1245,7 @@ export function joinScreen(
       .join('\n'),
   )
   if (human) return { kind: 'human', why: human[0].replace(/\s/g, '') }
-  const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
+  const checked = checkedRefs(text)
   const required = refs
     .filter(([ref, r]) => r.role === '체크박스' && /필수/.test(r.name) && !checked.has(ref))
     .map(([ref]) => ref)
@@ -1257,7 +1272,7 @@ export function dormantScreen(
       ),
   )
   if (!submit) return undefined
-  const checked = new Set([...text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string))
+  const checked = checkedRefs(text)
   const required = refs
     .filter(([ref, r]) => r.role === '체크박스' && /필수|전체\s?동의/.test(r.name) && !checked.has(ref))
     .map(([ref]) => ref)

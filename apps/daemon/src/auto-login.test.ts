@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   autoLogin,
   certScreen,
+  checkedRefs,
   dormantScreen,
   joinScreen,
   keepSignedIn,
@@ -819,5 +820,80 @@ describe('공급자 계정 화면에서 로그인된 계정 읽기 (실측)', ()
       'kuzvo@gmail.com',
     )
     expect(providerAccountIn('kakao', '[e1 링크 "로그인"]')).toBeUndefined()
+  })
+})
+
+describe('체크된 칸 읽기 — 이름 안의 ] (실측 네이버 동의)', () => {
+  it('"[필수] …" 칸의 선택됨을 본다', () => {
+    const t =
+      '[e4 체크박스 "전체 동의하기" 선택됨]\n[e5 체크박스 "[필수] 개인정보 제 3자 제공 동의" 선택됨] [e6 링크 "약관 보기"]\n[e7 체크박스 "[선택] 이메일"]'
+    expect([...checkedRefs(t)].sort()).toEqual(['e4', 'e5'])
+  })
+})
+
+describe('네이버 동의: (필수)를 한 번만 누르고 동의하기 (실측 29CM)', () => {
+  const login = { url: 'https://shop.test/login', text: '[e34 버튼 "네이버 로그인"]' }
+  const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+  const consent = {
+    url: 'https://nid.naver.com/oauth2.0/authorize',
+    text: '[e3 버튼 "wwd"]\n[e4 체크박스 "전체 동의하기"]\n[e5 체크박스 "[필수] 개인정보 제 3자 제공 동의"] [e6 링크 "약관 보기"]\n[e7 버튼 "취소"]\n[e8 버튼 "동의하기" 비활성]',
+  }
+  const checked = {
+    ...consent,
+    text: consent.text
+      .replace('"전체 동의하기"]', '"전체 동의하기" 선택됨]')
+      .replace('동의"] [e6', '동의" 선택됨] [e6')
+      .replace(' 비활성', ''),
+  }
+  it('체크된 칸을 다시 눌러 풀지 않는다', async () => {
+    const b = tabsBrowser({ 7: [login, signed], 8: [consent, checked] }, (tab, ref) =>
+      tab === 7 && ref === 'e34' ? { newTabId: 8, advance: [] } : ref === 'e8' ? { advance: [7] } : {},
+    )
+    const r = await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider: 'naver',
+        creds: async () => undefined,
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e34', 'e5', 'e8'])
+  })
+})
+
+describe('구글: 고른 뒤 확인 화면의 "계정 전환" 줄을 누르지 않고 [계속] (실측 부킹닷컴)', () => {
+  const login = { url: 'https://shop.test/login', text: '[e7 링크 "Sign in with Google"]' }
+  const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+  const chooser = {
+    url: 'https://accounts.google.com/v3/signin/accountchooser?x=1',
+    text: '# 계정을 선택하세요.\n[e2 링크 "쿠즈보 k***@gmail.com"]\n[e3 링크 "myeongdon joo m***@gmail.com"]\n[e4 링크 "다른 계정 사용"]',
+  }
+  const confirm = {
+    url: 'https://accounts.google.com/signin/oauth/id?authuser=1',
+    text: '# 시험 가게 서비스로 로그인\n[e1 링크 "mdjoo0810@gmail.com 항목이 선택되었습니다. 계정 전환"]\nmdjoo0810@gmail.com\n[e7 버튼 "취소"]\n[e8 버튼 "계속"]',
+  }
+  it('기억한 계정을 고르고, 확인 화면에서는 [계속]', async () => {
+    const b = tabsBrowser({ 7: [login, signed], 8: [chooser, confirm] }, (tab, ref) =>
+      tab === 7 && ref === 'e7' ? { newTabId: 8, advance: [] } : ref === 'e8' ? { advance: [7] } : {},
+    )
+    const r = await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider: 'google',
+        creds: async () => undefined,
+        ask: {
+          account: { get: () => 'mdjoo0810@gmail.com', set: () => {} },
+          known: { has: () => true, add: () => {} },
+        },
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e7', 'e3', 'e8'])
   })
 })
