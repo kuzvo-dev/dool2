@@ -207,7 +207,7 @@ describe('서비스 도구 실행기', () => {
     const n = calls.length
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(calls.length).toBe(n)
-    expect(textOf(r)).toContain('전에 본 결과')
+    expect(textOf(r)).toContain('분 전(')
   })
 
   it('입력이 틀리면 실행하지 않고 무엇을 고칠지 알려 준다', async () => {
