@@ -6,7 +6,7 @@
 
 import { randomInt } from 'node:crypto'
 import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
-import { type ApprovalRecord, Approvals } from './approvals.js'
+import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
 import {
   maskValue,
@@ -1126,7 +1126,7 @@ export class BrowserTools {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
         // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
         await this.browser.call('focus', { tabId })
-        this.handedOff.set(tabId, Date.now())
+        this.holdForPerson(tabId)
         return {
           content: [
             {
@@ -1481,6 +1481,7 @@ export class BrowserTools {
           }
         : {}),
     })
+    this.hold(tabId, APPROVAL_TTL_MS)
     return {
       content: [
         {
@@ -1520,6 +1521,7 @@ export class BrowserTools {
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
     })
     this.dialogApprovals.set(rec.id, dlg.message)
+    this.hold(tabId, APPROVAL_TTL_MS)
     return {
       content: [
         {
@@ -1550,6 +1552,22 @@ export class BrowserTools {
   /** 사람이 직접 할 탭으로 표시 (서비스 연결에서 연 탭을 폰 원격 화면으로 로그인할 때) */
   allowRemote(tabId: number) {
     this.handedOff.set(tabId, Date.now())
+  }
+
+  /** 사람이 직접 할 탭: 원격 화면을 열어 주고, 마칠 때까지 탭 정리에서 뺀다 (도구마다 부르는 allowRemote와 달리 넘길 때만) */
+  holdForPerson(tabId: number) {
+    this.allowRemote(tabId)
+    this.hold(tabId, REMOTE_TTL_MS)
+  }
+
+  /**
+   * 사람·승인을 기다리는 탭은 확장의 탭 정리(3개까지·12분이면 잠재우기)에서 뺀다.
+   * 안 그러면 기다리는 동안 다른 탭(간편 로그인 창 등)이 열리며 가장 오래 안 쓴 이 탭이 닫혀,
+   * 잡아 둔 좌석·결제 화면이 사라지고 "두리가 연 탭이 아니에요"가 났다 (실측: 롯데시네마 결제).
+   * 옛 확장은 이 명령을 몰라도 일은 그대로 한다
+   */
+  private hold(tabId: number, ms: number) {
+    void this.browser.call('hold', { tabId, ms }, 5_000).catch(() => undefined)
   }
 
   remoteAllowed(tabId: number, now = Date.now()): boolean {
@@ -1833,6 +1851,8 @@ export class BrowserTools {
    */
   startPayFlow(tabId: number, tool: string, sites: string[] = [], now = Date.now()) {
     this.payFlows.set(tabId, { tool, at: now })
+    // 좌석·장바구니를 잡아 둔 탭: 승인·결제 수단을 고르는 동안 정리에서 닫히지 않게
+    this.hold(tabId, REMOTE_TTL_MS)
     for (const site of sites) if (site) this.paySites.set(site.toLowerCase(), { tool, at: now })
   }
 

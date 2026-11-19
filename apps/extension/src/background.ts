@@ -136,6 +136,10 @@ interface Saved {
   groupId?: number
   /** 탭마다 두리가 마지막으로 쓴 때 (서비스 워커가 쉬었다 깨도 남게) */
   used?: Record<string, number>
+  /** 사람·승인을 기다리는 탭 → 이때까지 정리하지 않는다 (hold) */
+  held?: Record<string, number>
+  /** 최근에 닫힌 두리 탭 (다시 부르면 "사용자가 연 탭"이 아니라 "닫혔어요"로 알린다) */
+  closed?: number[]
 }
 async function load(): Promise<Saved> {
   const s = (await chrome.storage.session.get('dool2')).dool2 as Saved | undefined
@@ -197,6 +201,8 @@ async function ownedTab(args: Record<string, unknown>, watching = true): Promise
     // 연 탭이 두리 탭이면 여기서 넘겨받는다 (실측: 29CM·유니클로·서울예약·에어비앤비 구글·캐치테이블 네이버에서
     // "두리가 연 탭이 아니에요"로 멈췄다)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
+    // 닫힌 두리 탭은 목록에서 빠져 "사용자가 연 탭"처럼 보였다: 닫혔다고 알린다 (AI·폰이 까닭을 바로 말하게)
+    if (!t && s.closed?.includes(tabId)) throw new Error('탭이 닫혔어요')
     if (t?.openerTabId !== undefined && s.owned.includes(t.openerTabId)) await adopt(t.openerTabId, tabId)
     else throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
   }
@@ -280,7 +286,7 @@ async function tidy(fresh?: number) {
       tabs.push({
         id,
         usedAt: at,
-        keep: id === fresh || phoneView.has(id) || emulated.has(id),
+        keep: id === fresh || phoneView.has(id) || emulated.has(id) || (s.held?.[id] ?? 0) > now,
         discarded: Boolean(t.discarded),
         active: Boolean(t.active),
       })
@@ -353,6 +359,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await update((s) => {
     had = s.owned.includes(tabId)
     s.owned = s.owned.filter((t) => t !== tabId)
+    if (had) s.closed = [...(s.closed ?? []).filter((t) => t !== tabId), tabId].slice(-50)
   })
   if (!had) return
   usedAt.delete(tabId)
@@ -1523,6 +1530,22 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         await chrome.windows.update(t.windowId, { focused: true, drawAttention: true })
       await detach(tabId)
       return pageState(tabId)
+    }
+    case 'hold': {
+      // 사람·승인을 기다리는 탭: 이 시간 동안 정리(잠재우기·닫기)하지 않는다. 오래 잡지 않게 많아야 1시간
+      const tabId = await ownedTab(a, false)
+      const ms = Math.min(Math.max(Number(a.ms) || 0, 0), 60 * 60_000)
+      const now = Date.now()
+      await update((s) => {
+        const held = Object.fromEntries(
+          Object.entries(s.held ?? {}).filter(([id, until]) => until > now && s.owned.includes(Number(id))),
+        )
+        if (ms) held[tabId] = now + ms
+        else delete held[tabId]
+        s.held = held
+      })
+      touch(tabId)
+      return { tabId, until: ms ? now + ms : 0 }
     }
     case 'close': {
       const tabId = await ownedTab(a, false)

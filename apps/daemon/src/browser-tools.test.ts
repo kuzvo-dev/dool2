@@ -536,6 +536,15 @@ describe('원격 화면 (폰)', () => {
     expect(tools.remoteAllowed(3, Date.now() + 31 * 60_000)).toBe(false)
   })
 
+  it('사람에게 넘긴 탭은 30분 동안 탭 정리에서 빼 달라고 확장에 알린다 (도구를 쓸 때마다는 아니다)', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example/pay' })
+    expect(b.calls.some((c) => c[0] === 'hold')).toBe(false)
+    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요' })
+    expect(b.calls.find((c) => c[0] === 'hold')).toEqual(['hold', { tabId: 3, ms: 30 * 60_000 }])
+  })
+
   it('누른 자리(사진 비율)를 페이지 좌표로 바꾸고, 화면 밖은 거절한다', async () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)

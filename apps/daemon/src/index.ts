@@ -470,7 +470,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (!browser.status.connected) throw new Error('Chrome의 두리 확장이 아직 연결되지 않았어요')
     const r = (await browser.call('open', { url }, 40_000)) as { tabId: number }
     // 폰에서 연결하면 PC 앞에 없으니 그 탭을 원격 화면으로 넘긴다. PC면 앞으로 띄운다
-    if (forPhone) browserTools.allowRemote(r.tabId)
+    if (forPhone) browserTools.holdForPerson(r.tabId)
     else await browser.call('focus', { tabId: r.tabId }).catch(() => undefined)
     loginWatch.start(card, r.tabId)
     return r.tabId
@@ -556,7 +556,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     if (r.status === 'human') {
       // 사람이 해야 하는 단계: 폰에서 그 화면을 보고 마치면 연결로 표시한다
-      browserTools.allowRemote(r.tabId)
+      browserTools.holdForPerson(r.tabId)
       loginWatch.start(card, r.tabId)
       return {
         ok: false,
@@ -569,7 +569,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           : `${r.reason}. 화면을 열어 직접 마쳐 주세요.`,
       }
     }
-    browserTools.allowRemote(r.tabId)
+    browserTools.holdForPerson(r.tabId)
     // 아이디·비밀번호가 틀렸거나 결과를 몰라도, 사용자가 그 화면에서 마치면 알아서 연결로 표시한다
     loginWatch.start(card, r.tabId)
     return {
@@ -1482,7 +1482,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     credentials: async (origin, label, tabId) => {
       // 폰에서 "화면 보면서 직접 할게요"를 고르면 그 로그인 탭을 원격 화면으로 연다
-      browserTools.allowRemote(tabId)
+      browserTools.holdForPerson(tabId)
       const r = browserTools.logins.create({ tabId, origin, site: label, connect: true })
       // 연결 카드에 "카카오 계정이 필요해요 [넣기]"가 보이게 한다 (빙글빙글 도는 동안 무엇을 기다리는지 모르지 않게)
       connectStep(card.id)(`${josa(label, '이/가')} 필요해요`, {
