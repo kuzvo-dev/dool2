@@ -37,10 +37,25 @@ describe('로그인 확인', () => {
     expect(
       looksSignedIn(card, { url: 'https://demo.co.kr/member/login', text: '[e3 링크 "로그아웃"]' }),
     ).toBe(true)
-    // 카드에 적은 말이 있으면 그 말로 본다
-    const own = { ...card, signedIn: ['마이데모'] }
-    expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '로그아웃' })).toBe(false)
-    expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '마이데모 님' })).toBe(true)
+    // 카드에 적은 말은 흔한 말(로그아웃)에 더한다
+    const own = { ...card, signedIn: ['받은메일함'] }
+    expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '로그아웃' })).toBe(true)
+    expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '[e3 링크 "받은메일함 선택됨"]' })).toBe(
+      true,
+    )
+    expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '[e1 링크 "로그인"]' })).toBe(false)
+  })
+
+  it('네이버 위쪽 줄의 "아이디 내정보 보기"는 로그인됨 (로그아웃은 메뉴 속)', () => {
+    expect(
+      looksSignedIn(card, {
+        url: 'https://mail.naver.com/v2/folders/0/all',
+        text: '[e4 링크 "wwd 내정보 보기"]',
+      }),
+    ).toBe(true)
+    expect(looksSignedIn(card, { url: 'https://www.naver.com/', text: '[e4 링크 "내정보 보기"]' })).toBe(
+      false,
+    )
   })
 
   it('탭을 지켜보다 로그인하면 한 번 알리고 멈춘다', async () => {

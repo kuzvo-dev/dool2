@@ -15,6 +15,9 @@ const NAME_BUTTON = /\[e\d+ (?:버튼|링크) "(?!고객|회원|손님)[^"\]\n]{
 /** 계정 버튼 ("Google 계정: 이름 (메일)"): 구글 서비스는 로그아웃을 계정 메뉴 안에 숨긴다 */
 const ACCOUNT_BUTTON = /\[e\d+ (?:버튼|링크) "(?:Google 계정|Google Account): [^"]+"/
 
+/** 아이디 + "내정보 보기" 링크 (네이버 위쪽 줄: "wwd 내정보 보기"): 로그아웃은 그 메뉴 안에 숨어 있다 */
+const MY_INFO = /\[e\d+ (?:버튼|링크) "[^"\]\n]{1,30}\s내\s?정보\s?보기"\]/
+
 /** 화면 글자·주소로 로그인했는지 */
 export function looksSignedIn(
   card: Pick<ConnectCard, 'signedIn'>,
@@ -22,9 +25,13 @@ export function looksSignedIn(
 ): boolean {
   // 로그인 화면 주소라도 비밀번호 칸이 사라지고 로그인한 사람의 말이 보이면 로그인됐다 (주소가 안 바뀌는 사이트)
   if (LOGIN_URL.test(page.url) && /비밀번호칸|type="?password/.test(page.text)) return false
-  const marks = card.signedIn?.length ? card.signedIn : DEFAULT_SIGNED_IN
+  // 카드의 말은 흔한 말(로그아웃)에 더한다: 카드에 적었다고 흔한 표시를 못 보면 안 된다
+  const marks = [...DEFAULT_SIGNED_IN, ...(card.signedIn ?? [])]
   return (
-    marks.some((m) => page.text.includes(m)) || NAME_BUTTON.test(page.text) || ACCOUNT_BUTTON.test(page.text)
+    marks.some((m) => page.text.includes(m)) ||
+    NAME_BUTTON.test(page.text) ||
+    ACCOUNT_BUTTON.test(page.text) ||
+    MY_INFO.test(page.text)
   )
 }
 

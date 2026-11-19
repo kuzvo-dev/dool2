@@ -152,6 +152,14 @@ const STEP2 =
   /인증\s?번호를?\s?(입력|받|보내)|(확인|로그인|보안)\s?코드를?\s?(입력|받|보냈|보내)|새로운\s?(기기|환경|브라우저)에서|2단계\s?인증|추가\s?인증이\s?필요|본인\s?확인이\s?필요|본인인증을\s?진행|OTP\s?(번호|입력)/i
 const HUMAN = new RegExp(`${CAPTCHA.source}|${STEP2.source}`, 'i')
 /**
+ * 화면이 사람에게 하는 말만 (링크 글자 뺌). 추가 인증·틀림·로봇 확인·앱 승인은 안내 문장·칸·버튼으로 나온다.
+ * 링크는 목록의 제목일 때가 많다: 네이버 메일 받은메일함의 "새로운 환경에서 로그인 되었습니다." 메일 제목을
+ * 2단계 인증 화면으로 읽어 이미 로그인된 메일함을 실패로 끝냈다 (2026-11-19 실측)
+ */
+export function said(text: string): string {
+  return text.replace(/\[e\d+ 링크 "[^"]*"\]/g, '')
+}
+/**
  * 휴대폰 앱에서 승인을 누르라는 화면 (카카오톡 로그인 확인, 네이버 앱 2단계 인증, 구글 "휴대전화를 확인하세요", 토스 푸시).
  * 칸이 없어 넣을 것도 없다: 사용자에게 알리고 화면이 바뀔 때까지 기다린다
  */
@@ -186,7 +194,7 @@ async function waitConfirm(
   wait: number,
   limitMs = CONFIRM_WAIT_MS,
 ): Promise<'none' | 'moved' | 'timeout'> {
-  if (hasPassword(page.text) || !APP_CONFIRM.test(page.text)) return 'none'
+  if (hasPassword(page.text) || !APP_CONFIRM.test(said(page.text))) return 'none'
   const where = confirmWhere(page.text)
   step?.(`${where}에서 확인을 눌러 주세요`, {
     kind: 'confirm',
@@ -198,7 +206,7 @@ async function waitConfirm(
   while (Date.now() < until) {
     await sleep(Math.max(wait, 2_000))
     const now = await snap(tabId).catch(() => undefined)
-    if (now && !APP_CONFIRM.test(now.text)) {
+    if (now && !APP_CONFIRM.test(said(now.text))) {
       step?.('확인됐어요, 이어서 하는 중')
       return 'moved'
     }
@@ -343,12 +351,12 @@ export async function probeLogin(
   // 간편 로그인 공급자 화면에 와 버렸으면 칸이 있어도 이 서비스 로그인 칸이 아니다
   if (providerPage(page.url, input.card)) return { status: 'unknown', ...base }
   // 로그인 화면에는 눈에 안 보이는 로봇 확인이 깔린 곳이 많다 (쿠팡·11번가). 칸이 보이면 그대로 간다
-  if (CAPTCHA.test(page.text)) return { status: 'human', ...base }
+  if (CAPTCHA.test(said(page.text))) return { status: 'human', ...base }
   const two = twoStep(page.text)
   if (two)
     return { status: 'found', ...base, userField: two.user[1].name, submit: `${two.next[1].name} (두 단계)` }
   if (!hasPassword(page.text))
-    return { status: page.captcha || HUMAN.test(page.text) ? 'human' : 'unknown', ...base }
+    return { status: page.captcha || HUMAN.test(said(page.text)) ? 'human' : 'unknown', ...base }
   const f = loginFields(page.text)
   return {
     status: 'found',
@@ -519,7 +527,7 @@ export async function autoLogin(
       tabId,
       message: `${other} 간편 로그인 화면으로 넘어가서 멈췄어요. ${other}로 연결하거나 화면을 보며 직접 해 주세요.`,
     }
-  if (CAPTCHA.test(page.text)) return { status: 'human', tabId, reason: humanReason(page.text) }
+  if (CAPTCHA.test(said(page.text))) return { status: 'human', tabId, reason: humanReason(page.text) }
   // 두 단계: 아이디를 넣고 계속을 누르면 비밀번호 칸이 나온다
   const two = twoStep(page.text)
   if (two) {
@@ -547,7 +555,7 @@ export async function autoLogin(
       return watchResult(browser, input, tabId, o, wait, opts.tries ?? 8, snap)
     }
   }
-  if (!hasPassword(page.text) && (page.captcha || STEP2.test(page.text)))
+  if (!hasPassword(page.text) && (page.captcha || STEP2.test(said(page.text))))
     return { status: 'human', tabId, reason: humanReason(page.text) }
   if (!hasPassword(page.text))
     return {
@@ -604,7 +612,7 @@ async function watchResult(
     }
     if (confirm === 'timeout')
       return { loginOrigin, status: 'human', tabId, reason: '휴대폰에서 확인을 3분 동안 기다렸어요' }
-    if (STEP2.test(page.text) && !CAPTCHA.test(page.text) && !WRONG.test(page.text)) {
+    if (STEP2.test(said(page.text)) && !CAPTCHA.test(said(page.text)) && !WRONG.test(said(page.text))) {
       // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
       input.step?.('인증번호를 기다리는 중')
       const a = await answerOnScreen(_browser, tabId, page, input.ask, asked)
@@ -615,9 +623,9 @@ async function watchResult(
       }
       if (grace-- > 0) continue
     }
-    if (HUMAN.test(page.text) && !WRONG.test(page.text))
+    if (HUMAN.test(said(page.text)) && !WRONG.test(said(page.text)))
       return { loginOrigin, status: 'human', tabId, reason: humanReason(page.text) }
-    if (WRONG.test(page.text))
+    if (WRONG.test(said(page.text)))
       return {
         loginOrigin,
         status: 'wrong',
@@ -867,7 +875,7 @@ export async function socialLogin(
     }
     // 공급자 앱에서 승인(카카오톡 로그인 확인 등): 카드에 알리고 기다린다.
     // "이 브라우저에서 2단계 인증 사용 안 함"이 있으면 먼저 고른다 (사용자 PC의 평소 브라우저라 다음부터 묻지 않게)
-    if (APP_CONFIRM.test(p.text)) {
+    if (APP_CONFIRM.test(said(p.text))) {
       const remember = ([...parseRefs(p.text)] as RefEntry[]).find(
         ([ref, r]) =>
           r.role === '체크박스' &&
@@ -881,7 +889,7 @@ export async function socialLogin(
     if (confirm === 'moved') continue
     if (confirm === 'timeout')
       return { status: 'human', tabId: providerTab, reason: `${label}에서 확인을 3분 동안 기다렸어요` }
-    if (STEP2.test(p.text) && !CAPTCHA.test(p.text)) {
+    if (STEP2.test(said(p.text)) && !CAPTCHA.test(said(p.text))) {
       step('인증번호를 기다리는 중')
       const a = await answerOnScreen(browser, providerTab, p, input.ask, askedInfo)
       if (a === 'done') {
@@ -890,7 +898,7 @@ export async function socialLogin(
       }
       if (graceInfo-- > 0) continue
     }
-    if (CAPTCHA.test(p.text) || p.captcha || STEP2.test(p.text))
+    if (CAPTCHA.test(said(p.text)) || p.captcha || STEP2.test(said(p.text)))
       return { status: 'human', tabId: providerTab, reason: humanReason(p.text) }
     // 본인인증 창(토스·PASS·휴대폰 인증: 이름·휴대폰·생년월일을 넣고 앱으로 승인)은 사람이 해야 해요.
     // 무엇을 하면 되는지 또박또박 알려 주고 넘겨요 (실측 SSG 토스 인증)
@@ -932,7 +940,7 @@ export async function socialLogin(
       else await browser.call('press', { tabId: providerTab, key: 'Enter' }).catch(() => undefined)
       continue
     }
-    if (WRONG.test(p.text))
+    if (WRONG.test(said(p.text)))
       return {
         status: 'wrong',
         tabId: providerTab,

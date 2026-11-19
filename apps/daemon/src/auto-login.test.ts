@@ -4,6 +4,7 @@ import {
   certScreen,
   joinScreen,
   probeLogin,
+  said,
   socialLogin,
   socialProvidersIn,
 } from './auto-login.js'
@@ -67,6 +68,34 @@ describe('autoLogin', () => {
     )
     expect(r.status).toBe('ok')
     expect(b.calls.some(([m]) => m === 'fill')).toBe(false)
+  })
+})
+
+describe('이미 로그인된 메일함 (실측 네이버 메일 2026-11-19)', () => {
+  // 로그아웃은 메뉴 속에 숨어 있고, 받은메일함 제목에 "새로운 환경에서 로그인 되었습니다."가 있다
+  const inbox = {
+    url: 'https://mail.naver.com/v2/folders/0/all',
+    text: [
+      '[e1 링크 "본문으로 바로가기"]',
+      '# [e2 링크 "NAVER"] [e3 링크 "메일"]',
+      '[e4 링크 "wwd 내정보 보기"]',
+      '[e16 링크 "받은메일함 선택됨"]',
+      '[e40 링크 "새로운 환경에서 로그인 되었습니다."]',
+      '[e41 링크 "Google 계정 복구가 완료되었습니다"]',
+    ].join('\n'),
+  }
+  it('메일 제목을 2단계 인증으로 읽지 않고 로그인됨으로 끝낸다', async () => {
+    const b = fakeBrowser([inbox])
+    const r = await autoLogin(
+      b,
+      { card: { id: 'naver-mail', name: '네이버 메일' }, url: inbox.url, username: 'a', password: 'b' },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+  })
+  it('링크 글자를 뺀 말만 본다', () => {
+    expect(said(inbox.text)).not.toMatch(/새로운 환경/)
+    expect(said('[e3 버튼 "인증번호 받기"] 인증번호를 입력해 주세요')).toMatch(/인증번호/)
   })
 })
 
