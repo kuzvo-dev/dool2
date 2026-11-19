@@ -348,6 +348,49 @@ describe('사이트 알림창', () => {
   })
 })
 
+describe('여러 개 한 번에 승인', () => {
+  function calBrowser() {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const page = { tabId: 3, url: 'https://cal.example/day', title: '캘린더' }
+    let left = 3
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        // 지우면 화면이 바뀐다 (남은 일정 수)
+        if (cmd === 'click') left--
+        if (cmd === 'snapshot')
+          return { ...page, text: `# 일정 ${left}개\n[e4 버튼 "삭제"]\n[e6 버튼 "일정 삭제"]` }
+        return { ...page, url: `${page.url}?left=${left}` }
+      },
+    }
+  }
+
+  it('개수를 적어 한 번 승인받으면 같은 사이트의 같은 종류 버튼은 남은 개수만큼 묻지 않는다', async () => {
+    const b = calBrowser()
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBe(true)
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e4',
+      what: '일정 2개 지우기',
+      where: '캘린더',
+      count: 2,
+    })
+    const [rec] = tools.approvals.list()
+    expect(rec?.what).toBe('[2개 모두] 일정 2개 지우기')
+    const ok = await tools.approve(rec?.id as string)
+    expect(ok.ok).toBe(true)
+    expect(ok.message).toContain('남은 1개')
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('click', { tabId: 3, ref: 'e6' })).isError).toBeFalsy()
+    // 다 썼으면 다시 묻는다
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBe(true)
+  }, 30_000)
+})
+
 describe('여러 동작 한 번에', () => {
   const FORM = `# 회원 정보\n가입하려면 아래 칸을 채워 주세요.
 [e1 입력칸 "이름"] [e2 입력칸 "휴대폰 번호"] [e3 체크박스 "약관 동의"] [e4 버튼 "다음"] [e5 버튼 "바로 구매"]`

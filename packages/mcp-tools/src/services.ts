@@ -107,11 +107,21 @@ export function outputShape(output: ServiceToolSpec['output']): z.ZodRawShape {
   return shape
 }
 
-const pass = (r: ToolResult & { structuredContent?: Record<string, unknown> }) => ({
-  content: r.content,
-  ...(r.structuredContent && !r.isError ? { structuredContent: r.structuredContent } : {}),
-  ...(r.isError ? { isError: true } : {}),
-})
+/**
+ * 본체 결과를 MCP 결과로. 구조화 결과가 있으면 AI는 글 대신 그걸 본다(실측: 구글 캘린더 넘기기 도구가 "{}"만 보여
+ * AI가 "화면이 열렸는지 확인이 안 돼요"라고 했다). 그래서 출력 칸이 없는 도구는 구조화 결과를 빼고,
+ * 출력 칸이 있는데 비어 온 결과(넘기기·멈춤)는 글을 text 칸에 담는다
+ */
+export const pass = (r: ToolResult & { structuredContent?: Record<string, unknown> }, hasOutput = true) => {
+  const sc = r.structuredContent
+  const text = r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
+  const structured = !hasOutput || r.isError || !sc ? undefined : Object.keys(sc).length ? sc : { text }
+  return {
+    content: r.content,
+    ...(structured ? { structuredContent: structured } : {}),
+    ...(r.isError ? { isError: true } : {}),
+  }
+}
 
 export interface ServiceTools {
   /** 본체에 바로 보일 도구를 다시 묻고 MCP 도구 목록을 맞춘다 */
@@ -145,6 +155,7 @@ export function registerServiceTools(
       const old = registered.get(spec.name)
       if (old?.key === key) continue
       old?.tool.remove()
+      const hasOutput = Object.keys(spec.output ?? {}).length > 0
       try {
         const tool = server.registerTool(
           spec.name,
@@ -152,11 +163,13 @@ export function registerServiceTools(
             title: spec.title,
             description: spec.description,
             inputSchema: inputShape(spec.input),
-            outputSchema: outputShape(spec.output),
+            ...(hasOutput
+              ? { outputSchema: { ...outputShape(spec.output), text: z.string().optional() } }
+              : {}),
             annotations: { title: spec.title, ...spec.annotations },
           },
           async (args: Record<string, unknown>) =>
-            pass(await client('call', { tool: spec.name, input: args })),
+            pass(await client('call', { tool: spec.name, input: args }), hasOutput),
         )
         registered.set(spec.name, { key, tool })
       } catch (e) {
@@ -190,7 +203,7 @@ export function registerServiceTools(
     },
     async (args) => {
       void once()
-      return pass(await client('find', args))
+      return pass(await client('find', args), false)
     },
   )
   server.registerTool(
@@ -206,7 +219,8 @@ export function registerServiceTools(
       },
       annotations: { openWorldHint: true },
     },
-    async (args) => pass(await client('call', args)),
+    // 출력 칸이 도구마다 달라 구조화 결과는 넘기지 않는다 (글에 같은 내용이 줄로 들어 있다)
+    async (args) => pass(await client('call', args), false),
   )
 
   const timer = setInterval(() => void once(), opts.pollMs ?? 30_000)
