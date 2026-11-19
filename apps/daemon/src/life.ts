@@ -15,6 +15,7 @@ import {
   type RoutineSchedule,
   type SuggestedIdea,
 } from '@dool2/protocol'
+import { cleanDraft, cleanResult, cleanRows } from '@dool2/protocol/blocks'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import { nextRun, scheduleLabel } from '@dool2/protocol/schedule'
 
@@ -547,6 +548,30 @@ export class Life {
           const pics = cards.filter((c) => c.image).length
           return ok(
             `카드 ${cards.length}장을 답 아래에 붙여요(사진 ${pics}장). 답 글에는 같은 목록을 되풀이하지 말고 고른 이유·차이만 짧게 말해요.`,
+          )
+        }
+        // 결과 블록: 기록은 대화 엔진이 답 아래에 남긴다 (threads.ts). 여기서는 다듬은 결과만 알려 준다
+        case 'show_list': {
+          const r = cleanRows(a)
+          if (!r) return bad('붙일 줄이 없어요. rows에 title이 있는 줄을 넣어 주세요.')
+          const more = r.rows.length > 5 ? ` 5줄까지 보이고 나머지 ${r.rows.length - 5}줄은 펼쳐 봐요.` : ''
+          const picked = r.pick === 'multi' ? ` 미리 고른 것 ${r.rows.filter((x) => x.on).length}개.` : ''
+          return ok(
+            `목록 ${r.rows.length}줄을 답 아래에 붙여요.${more}${picked} 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 같은 목록을 되풀이하지 말고 이유·다음 할 일만 짧게 말해요.`,
+          )
+        }
+        case 'show_result': {
+          const r = cleanResult(a)
+          if (!r) return bad('큰 값(big)이 없어요. 언제·얼마 같은 값 하나를 big에 넣어 주세요.')
+          return ok(
+            '결과 카드를 답 아래에 붙여요. 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 같은 값을 되풀이하지 말고 한두 문장만 말해요.',
+          )
+        }
+        case 'show_draft': {
+          const r = cleanDraft(a)
+          if (!r) return bad('보낼 글(text)이 비었어요.')
+          return ok(
+            '보낼 글을 답 아래에 붙여요([복사]·[보내기]). 이 도구는 보내지 않아요. 사용자가 [보내기]를 누르면 "방금 쓴 글 그대로 보내 줘"가 오니, 그때 보내기 직전 승인을 받아요. 답 글에는 글을 되풀이하지 말고 한두 문장만 말해요.',
           )
         }
         case 'feed_tell': {

@@ -216,6 +216,135 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     },
     call('show_cards'),
   )
+  // 결과 블록 (docs/design/system/components/ChatBlocks). 답 하나에 결과 블록 하나: 여러 번 부르면 마지막 것만 붙는다
+  const blockAction = z.object({
+    label: z.string().max(16).describe('버튼 이름, 동사로 (예: "캘린더에 넣기", "담기", "예약 보기")'),
+    ask: z
+      .string()
+      .max(300)
+      .optional()
+      .describe('누르면 사용자 말로 두리에게 갈 부탁 (예: "이 일정 3개 캘린더에 넣어 줘")'),
+    url: z.string().max(800).optional().describe('ask 대신 열 주소 (https, 도구 결과 그대로)'),
+  })
+  server.registerTool(
+    'show_list',
+    {
+      title: '답에 목록 줄 붙이기',
+      description:
+        '사진이 고르는 이유가 아닌 목록(매물·주문·메일·일정·마감·서류·공고·신청 내역)을 답 아래에 줄로 붙인다. ' +
+        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 3줄 넘는 목록을 글로 늘어놓는 대신 쓴다. ' +
+        '앞머리(lead)로 모양을 고른다: date 날짜(일정·마감, date 칸 필수) · file 파일(받은 서류·만든 파일) · img 작은 사진 · logo 서비스 로고 · none. ' +
+        'pick: one이면 줄을 누르면 그걸로 고른 게 대화로 온다(하나 고르기). ' +
+        'pick: multi는 여러 개를 한 번에 고를 때(장보기 담기·선물 후보·받을 서류): 두리가 고른 건 on을 비우고(기본 체크), 애매한 건 on:false로 꺼 두고 sub에 이유. ' +
+        'amount(원)를 다 넣으면 버튼에 "3개 담기 · 25,860원"처럼 합계가 보인다. 버튼(action)은 목록 전체에 할 일 하나(예: "캘린더에 넣기"). ' +
+        '돈·연락·삭제는 버튼이 바로 하지 않는다 — 누르면 부탁이 오고, 그때 승인을 받는다. 지어낸 값은 넣지 않는다. ' +
+        '붙였으면 답 글에는 같은 목록을 되풀이하지 말고 이유·다음 할 일만 2~4문장으로.',
+      inputSchema: {
+        title: z
+          .string()
+          .max(40)
+          .optional()
+          .describe('머리 줄 (예: "공덕초 · 2026학년도", "컬리 · 내일 아침 7시 전 도착")'),
+        from: z.string().max(24).optional().describe('머리 오른쪽 작은 글: 출처·건수 (예: "46건", "홈택스")'),
+        lead: z.enum(['img', 'date', 'file', 'logo', 'none']).optional(),
+        pick: z.enum(['one', 'multi']).optional(),
+        rows: z
+          .array(
+            z.object({
+              title: z.string().max(60),
+              sub: z
+                .string()
+                .max(60)
+                .optional()
+                .describe('작은 줄 (예: "21분 전 · 직거래 마포", "2개 · 작년 1개")'),
+              value: z.string().max(20).optional().describe('오른쪽 굵은 값 (예: "3만 원", "15,960원")'),
+              valueNote: z.string().max(24).optional().describe('값 아래 작은 글 (예: "7,980원 × 2")'),
+              state: z
+                .string()
+                .max(12)
+                .optional()
+                .describe('오른쪽 상태 글자 (예: "받음", "배송 중", "1/15쯤")'),
+              tone: z
+                .enum(['done', 'wait', 'stop'])
+                .optional()
+                .describe('상태 색: done 끝남 · wait 기다림·마감 · stop 멈춤'),
+              image: z.string().max(800).optional().describe('작은 사진 (https, 도구 결과 그대로)'),
+              date: z.string().max(10).optional().describe('YYYY-MM-DD (lead가 date일 때)'),
+              file: z.string().max(5).optional().describe('파일 종류 (예: "PDF")'),
+              url: z.string().max(800).optional().describe('줄을 누르면 열 주소 (https)'),
+              on: z.boolean().optional().describe('pick multi: false면 꺼 둔다'),
+              amount: z.number().optional().describe('pick multi 합계용 금액(원, 수량 곱한 값)'),
+            }),
+          )
+          .min(1)
+          .max(30),
+        action: blockAction.optional(),
+      },
+    },
+    call('show_list'),
+  )
+  server.registerTool(
+    'show_result',
+    {
+      title: '답에 결과 한 장 붙이기',
+      description:
+        '값 하나가 답인 결과를 답 아래 카드 한 장으로 붙인다: 끝난 증거(예약·주문·신청 완료와 번호), 금액 합계(카드값·요금·환급금), ' +
+        '배송·신청·심사 단계, 마감·기한. 큰 값(big)은 언제·얼마 하나. 정보 줄(facts)은 3~6개, 번호는 code. ' +
+        '단계(steps)는 단계 이름과 지금 단계 번호(0부터). 기한(due)을 주면 D-날짜가 노랑으로 보인다. ' +
+        '끝난 일(done)은 끝난 화면을 다시 읽어 확인한 값만 넣는다 — 지어낸 번호·금액 금지. 버튼은 2개까지(마지막이 주 버튼). ' +
+        '붙였으면 답 글에는 같은 값을 되풀이하지 말고 한두 문장만.',
+      inputSchema: {
+        title: z
+          .string()
+          .max(40)
+          .optional()
+          .describe('머리 줄 (예: "예약 확정", "쿠팡 · 접이식 유모차", "신한카드 · 12월 청구")'),
+        from: z.string().max(24).optional().describe('머리 오른쪽 출처 (예: "캐치테이블", "CJ대한통운")'),
+        done: z.boolean().optional().describe('끝난 일이면 true (머리에 체크)'),
+        big: z.string().max(40).describe('큰 값 하나 (예: "11/21(토) 19:00", "1,284,300원", "오늘 14~16시")'),
+        bigNote: z.string().max(24).optional().describe('큰 값 옆 작은 글 (예: "4명 · 룸", "도착 예정")'),
+        facts: z
+          .array(
+            z.object({
+              label: z.string().max(14),
+              value: z.string().max(40),
+              code: z.boolean().optional().describe('번호면 true (고정폭 글꼴)'),
+            }),
+          )
+          .max(6)
+          .optional(),
+        steps: z
+          .object({
+            names: z.array(z.string().max(10)).min(2).max(6).describe('예: ["주문","출고","배송 중","도착"]'),
+            now: z.number().int().min(0).describe('지금 단계 번호 (0부터)'),
+          })
+          .optional(),
+        due: z.string().max(10).optional().describe('기한 YYYY-MM-DD'),
+        dueLabel: z.string().max(8).optional().describe('기한 꼬리표 말 (예: "결제", "마감")'),
+        actions: z.array(blockAction).max(2).optional(),
+      },
+    },
+    call('show_result'),
+  )
+  server.registerTool(
+    'show_draft',
+    {
+      title: '답에 보낼 글 붙이기',
+      description:
+        '글자 그대로 쓰일 글(문자·카톡·메일·민원·후기·게시글)을 답 아래에 붙인다. 사용자는 [복사]하거나 [보내기]를 누른다. ' +
+        '[보내기]를 누르면 "방금 쓴 글 그대로 보내 줘"가 대화로 오고, 그때 보내기 직전 승인을 받는다(이 도구는 보내지 않는다). ' +
+        '사용자가 말하지 않은 사실은 넣지 않고 [날짜]처럼 빈칸으로. 붙였으면 답 글에는 글을 되풀이하지 말고 한두 문장만.',
+      inputSchema: {
+        to: z.string().max(30).optional().describe('받는 사람 (예: "집주인 김OO", "OO구청 민원실")'),
+        via: z
+          .enum(['sms', 'kakao', 'mail', 'post', 'other'])
+          .describe('보낼 방법: 문자·카톡·메일·게시(민원·후기)·그 밖'),
+        subject: z.string().max(80).optional().describe('메일 제목 (via가 mail일 때)'),
+        text: z.string().max(2000).describe('보낼 글 그대로'),
+      },
+    },
+    call('show_draft'),
+  )
   server.registerTool(
     'feed_post',
     {
