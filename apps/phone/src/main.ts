@@ -1352,7 +1352,12 @@ function updateWorkPanel(card: HTMLElement) {
   } else more?.remove()
   // 줄은 곳(key)마다 하나: 있던 줄은 옮기고(다시 간 곳은 맨 아래로), 바뀐 줄만 새로 그린다
   const old = new Map<string, HTMLElement>()
-  for (const r of list.querySelectorAll<HTMLElement>('.ws:not(.more)')) old.set(r.dataset.key ?? '', r)
+  // 같은 key 줄이 둘이면 하나만 남긴다 (남은 줄은 다시 지워지지 않고 쌓인다)
+  for (const r of list.querySelectorAll<HTMLElement>('.ws:not(.more)')) {
+    const k = r.dataset.key ?? ''
+    if (old.has(k)) r.remove()
+    else old.set(k, r)
+  }
   const keep = new Set(shown.map((g) => g.key))
   for (const [k, r] of old) if (!keep.has(k)) r.remove()
   shown.forEach((g, i) => {

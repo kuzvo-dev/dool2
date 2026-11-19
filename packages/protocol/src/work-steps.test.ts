@@ -79,6 +79,22 @@ describe('일하는 카드: 서비스별 줄', () => {
     expect(doneLine(g[1] as WorkGroup)).toBe('웹페이지 열기 · 페이지 읽기')
   })
 
+  it('같은 서비스의 사이트 일과 서비스 도구 일은 한 줄 (롯데시네마가 두 줄로 번갈아 쌓이던 것)', () => {
+    const lotte = [{ id: 'lottecinema', name: '롯데시네마', site: 'lottecinema.co.kr' }]
+    const g = groupSteps(
+      [
+        { text: '준비', act: '준비하는 중', place: 'tool:lottecinema_prepare_booking', ms: 20000 },
+        { text: '여러 동작', act: '여러 동작 하는 중', place: 'www.lottecinema.co.kr', ms: 3000 },
+        { text: '준비', act: '준비하는 중', place: 'tool:lottecinema_prepare_booking', ms: 20000 },
+        { text: '화면', act: '화면 보는 중', place: 'www.lottecinema.co.kr' },
+      ],
+      lotte,
+    )
+    expect(g.map((x) => [x.key, x.title, x.act, x.count])).toEqual([
+      ['lottecinema', '롯데시네마', '화면 보는 중', 4],
+    ])
+  })
+
   it('예전 기록(act 없음)은 단계마다 한 줄', () => {
     const g = groupSteps([{ text: '웹페이지 여는 중' }, { text: '페이지 읽는 중' }])
     expect(g.map((x) => x.title)).toEqual(['웹페이지 여는 중', '페이지 읽는 중'])

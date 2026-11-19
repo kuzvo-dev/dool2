@@ -131,8 +131,10 @@ export function groupSteps(steps: WorkStepIn[], cards: PlaceCard[] = []): WorkGr
     const w = where(s.place, cards)
     // 두리 안에서 한 일(기억·서비스 찾기 등)은 혼잣말이 제목. 도구 이름뿐이면 그 이름
     const act = s.act ?? s.text
-    // 예전 기록(act 없음)은 단계마다 한 줄 그대로
-    const at = s.act === undefined ? -1 : out.findIndex((g) => g.key === w.key && g.kind === w.kind)
+    // 예전 기록(act 없음)은 단계마다 한 줄 그대로.
+    // 같은 서비스는 사이트에서 한 일(web)과 서비스 도구로 한 일(service)이 한 줄이다: 둘 다 카드 id로 묶인다.
+    // 종류까지 따지면 "롯데시네마"가 두 줄로 갈려 번갈아 쌓였고, 화면은 줄을 key로 다시 그려 옛 줄이 안 지워졌다 (실측)
+    const at = s.act === undefined ? -1 : out.findIndex((g) => g.key === w.key)
     const same = out[at]
     if (same) {
       same.acts = [...same.acts.filter((x) => x !== act), act]
