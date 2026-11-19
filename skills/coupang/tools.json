@@ -227,27 +227,31 @@
     },
     {
       "name": "orders",
-      "title": "주문·배송 조회",
-      "description": "쿠팡 주문목록을 주문 하나씩 돌려준다(주문일·상품 이름·결제 금액·배송 상태·도착 메시지·다시 주문용 상품 id). 로그인해야 한다. 한 번에 5건이라, 특정 물건을 찾을 땐 꼭 item(이름 일부, 예: 에어프라이)으로 검색한다 — 쿠팡 검색이라 몇 년 치 주문에서 찾는다. 사용자가 '샀다'는데 안 나오면 다른 낱말(브랜드·종류)로 다시 찾거나 year(그 해)·page(다음 5건)로 더 본다. 배송 상태: FINAL_DELIVERY 배송완료, DELIVERING 배송중, DEPARTURE 출고, CANCELED 취소. 다시 주문은 상품 id로 coupang_prepare_order, 반품은 coupang_return.",
+      "title": "주문 찾기·배송 조회",
+      "description": "쿠팡 주문 내역에서 산 물건을 찾거나 최근 주문을 본다. 로그인해야 한다. item(상품 이름 낱말)을 주면 쿠팡 주문 검색으로 최근 6개월 → 올해 → 지난해 … 6년 전까지 차례로 찾아 처음 나온 기간의 주문을 한 번에 돌려준다 (기간·쪽을 넘기며 다시 부르지 않는다). 해를 알면 year('작년에 산'=지난해), 합계처럼 모든 해가 필요하면 all=true. 낱말은 짧게 하나(예: '베개 커버'보다 '베개'), 이름에 그대로 있어야 찾는다. 결과: 주문일·찾은 상품·수량·1개 금액·배송 상태·도착일·반품 가능 일수·주문 번호·상품 id·링크, 찾아본 기간(searched), 더 있는 해(more_years), 못 찾았을 때 다음 길(tip). 배송 상태: FINAL_DELIVERY 배송완료, DELIVERING 배송중, DEPARTURE 출고, CANCELED 취소. 다시 주문은 상품 id로 coupang_prepare_order, 반품은 coupang_return.",
       "tier": "찾아보기",
       "login": true,
-      "status": "검증됨(2026-11-18, 사용자 Chrome에서 기본 5건·2쪽·'에어프라이' 검색)",
+      "status": "검증됨(2026-11-19, 사용자 Chrome에서 최근 6개월·연도별 검색 7곳·찾은 상품만·쪽 정보 확인, 여러 해 이어 찾기는 엔진 시험)",
       "input": {
         "properties": {
           "item": {
             "type": "string",
-            "description": "찾을 물건 이름 일부 (예: 에어프라이, 쿠진아트, 물티슈). 없으면 최근 주문",
+            "description": "찾을 상품 이름 낱말 (예: 베개, 키보드, 생수). 띄어 쓴 두 낱말은 둘 다 든 것만. 없으면 최근 주문",
             "maxLength": 40
           },
           "year": {
             "type": "integer",
-            "description": "그 해 주문만 (예: 2025). 없으면 최근",
+            "description": "그 해 주문만 (예: 2025). 없으면 item이 있을 때 최근 6개월부터 6년 전까지 차례로",
             "minimum": 2010,
             "maximum": 2030
           },
+          "all": {
+            "type": "boolean",
+            "description": "true면 찾은 기간에서 멈추지 않고 올해~6년 전을 다 모은다 (해마다 첫 5건, '산 돈 다 합쳐' 같은 때). item과 함께"
+          },
           "page": {
             "type": "integer",
-            "description": "쪽 번호. 0이 가장 최근 5건, 1이 그다음 5건",
+            "description": "쪽 번호 (0부터, 한 쪽 5건). more_years에 있는 해를 year와 함께 더 볼 때",
             "minimum": 0,
             "maximum": 30,
             "default": 0
@@ -258,7 +262,7 @@
       "output": {
         "orders": {
           "type": "list",
-          "description": "주문 (최근 것부터)",
+          "description": "찾은 주문 (최근 것부터)",
           "fields": {
             "ordered": {
               "type": "string",
@@ -266,7 +270,7 @@
             },
             "items": {
               "type": "strings",
-              "description": "상품 이름(옵션 포함)"
+              "description": "찾은 상품 이름(옵션 포함). 검색이면 검색어에 맞은 상품만"
             },
             "prices": {
               "type": "strings",
@@ -283,6 +287,14 @@
             "arrival": {
               "type": "strings",
               "description": "배송 묶음별 도착 메시지 (예: 11/13(금) 도착)"
+            },
+            "delivered": {
+              "type": "string",
+              "description": "도착한 날 (첫 배송 묶음)"
+            },
+            "return_days": {
+              "type": "number",
+              "description": "도착 뒤 반품·교환할 수 있는 날 수 (보통 30)"
             },
             "order_id": {
               "type": "string"
@@ -306,9 +318,21 @@
             }
           }
         },
+        "searched": {
+          "type": "string",
+          "description": "찾아본 기간 (예: 최근 6개월, 2026년, 2025년)"
+        },
         "has_more": {
           "type": "boolean",
-          "description": "다음 쪽이 더 있다"
+          "description": "첫 기간에 다음 쪽이 더 있다 (page를 올려 더 봐요)"
+        },
+        "more_years": {
+          "type": "string",
+          "description": "5건이 넘어 다음 쪽이 더 있는 해 (year·page로 더 봐요)"
+        },
+        "tip": {
+          "type": "string",
+          "description": "못 찾았을 때 다음에 할 일"
         }
       },
       "examples": [
@@ -317,15 +341,19 @@
           "item": "에어프라이"
         },
         {
-          "page": 1
+          "year": 2025
         }
       ],
       "steps": [
         {
-          "open": "https://mc.coupang.com/ssr/desktop/order/list?{{#item}}isSearch=true&keyword={{item|url}}&{{/item}}{{#year}}requestYear={{year}}&{{/year}}pageIndex={{page}}"
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?{{#item}}isSearch=true&keyword={{item|url}}&{{/item}}{{#year}}requestYear={{year}}&{{/year}}{{^year}}{{#all}}requestYear={{today|yyyy}}&{{/all}}{{/year}}pageIndex={{page}}"
         },
         {
-          "sleep": 1500
+          "wait": {
+            "text": "주문목록|아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지",
+            "timeoutMs": 8000,
+            "soft": true
+          }
         },
         {
           "stop_if": "아이디\\(이메일\\)|비밀번호 찾기|로그인 상태 유지",
@@ -335,33 +363,161 @@
         {
           "embedded": {
             "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p0"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
             "pick": "props.pageProps.domains.desktopOrder.orderList"
           },
           "as": "found"
         },
         {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
           "embedded": {
             "css": "script#__NEXT_DATA__",
-            "pick": "props.pageProps.domains.desktopOrder.orderPagination.hasNext"
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
           },
-          "as": "more"
+          "as": "p1",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy|dec}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p2",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy|dec|dec}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p3",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy|dec|dec|dec}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p4",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy|dec|dec|dec|dec}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p5",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "open": "https://mc.coupang.com/ssr/desktop/order/list?isSearch=true&keyword={{item|url}}&requestYear={{today|yyyy|dec|dec|dec|dec|dec}}&pageIndex=0",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderPagination"
+          },
+          "as": "p6",
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.domains.desktopOrder.orderList"
+          },
+          "as": "found",
+          "append": true,
+          "if": "{{#item}}{{^year}}{{^p0.hasPrev}}{{^all}}{{^found.0}}1{{/found.0}}{{/all}}{{#all}}1{{/all}}{{/p0.hasPrev}}{{/year}}{{/item}}"
         },
         {
           "map": {
             "from": "found",
-            "limit": 20,
+            "limit": 40,
             "fields": {
               "ordered": "{{orderedAt|date}}",
-              "items": "deliveryGroupList.*.productList.*.vendorItemName",
-              "prices": "deliveryGroupList.*.productList.*.discountedUnitPrice",
-              "quantities": "deliveryGroupList.*.productList.*.quantity",
+              "items": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.vendorItemName",
+              "prices": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.discountedUnitPrice",
+              "quantities": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.quantity",
               "status": "deliveryGroupList.*.groupStatus.status",
               "arrival": "deliveryGroupList.*.pddMessage.message",
+              "delivered": "{{deliveryGroupList.0.deliveredDate|date}}",
+              "return_days": "deliveryGroupList.0.selfService.returnableDay",
               "order_id": "orderId",
-              "product_ids": "deliveryGroupList.*.productList.*.productId",
-              "item_ids": "deliveryGroupList.*.productList.*.itemId",
-              "vendor_item_ids": "deliveryGroupList.*.productList.*.vendorItemId",
-              "image": "deliveryGroupList.*.productList.*.imagePath",
+              "product_ids": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.productId",
+              "item_ids": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.itemId",
+              "vendor_item_ids": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.vendorItemId",
+              "image": "deliveryGroupList.*.productList[searchMatchingProduct=true].*.imagePath",
               "link": "https://mc.coupang.com/ssr/desktop/order/{{orderId}}"
             }
           },
@@ -370,9 +526,12 @@
       ],
       "result": {
         "orders": "{{orders}}",
-        "has_more": "{{more}}"
+        "searched": "{{#year}}{{year}}년(page {{page}}){{/year}}{{^year}}{{#all}}{{today|yyyy}}년{{/all}}{{^all}}{{#item}}최근 6개월(page {{page}}){{/item}}{{^item}}최근 주문(page {{page}}){{/item}}{{/all}}{{/year}}{{#p1}}, {{today|yyyy}}년{{/p1}}{{#p2}}, {{today|yyyy|dec}}년{{/p2}}{{#p3}}, {{today|yyyy|dec|dec}}년{{/p3}}{{#p4}}, {{today|yyyy|dec|dec|dec}}년{{/p4}}{{#p5}}, {{today|yyyy|dec|dec|dec|dec}}년{{/p5}}{{#p6}}, {{today|yyyy|dec|dec|dec|dec|dec}}년{{/p6}}",
+        "has_more": "{{p0.hasNext}}",
+        "more_years": "{{#all}}{{#p0.hasNext}}{{today|yyyy}} {{/p0.hasNext}}{{/all}}{{#p1.hasNext}}{{today|yyyy}} {{/p1.hasNext}}{{#p2.hasNext}}{{today|yyyy|dec}} {{/p2.hasNext}}{{#p3.hasNext}}{{today|yyyy|dec|dec}} {{/p3.hasNext}}{{#p4.hasNext}}{{today|yyyy|dec|dec|dec}} {{/p4.hasNext}}{{#p5.hasNext}}{{today|yyyy|dec|dec|dec|dec}} {{/p5.hasNext}}{{#p6.hasNext}}{{today|yyyy|dec|dec|dec|dec|dec}} {{/p6.hasNext}}",
+        "tip": "{{^found.0}}{{#item}}'{{item}}'이(가) 든 주문이 찾아본 기간에 없어요. 쿠팡 주문 검색은 상품 이름에 그 낱말이 그대로 있어야 나와요: 더 짧은 한 낱말(브랜드·종류)이나 띄어쓰기를 바꿔 한 번만 더 찾고, {{#year}}다른 해면 year를 바꿔요. {{/year}}{{^year}}해·쪽을 넘기며 같은 낱말로 다시 찾지 않아요(이미 다 봤어요). {{/year}}그래도 없으면 주문 확인 메일을 찾아봐요.{{/item}}{{/found.0}}"
       },
-      "next": "주문일·상품·금액·배송 상태를 짧은 표로 보여 줘요. 찾던 물건이 없으면 '없어요'로 끝내지 말고 item을 바꿔(브랜드·종류·짧은 낱말) 다시 찾거나 has_more면 page를 올려 더 봐요. 사용자가 샀다고 하면 그 말을 믿고 찾아요.",
+      "next": "찾은 주문을 주문일·상품·수량·금액·상태로 짧게 보여 줘요. 반품·교환은 도착일(delivered)부터 return_days일 안이면 돼요. 못 찾았으면 tip대로 낱말을 바꿔 한 번만 더 찾아요. 합계는 찾은 상품의 금액×수량을 더하고, more_years가 있으면 그 해를 year·page로 더 봐요.",
       "expect": {
         "rows": 1,
         "filled": [

@@ -78,10 +78,17 @@ const ExtractFieldSchema = z
 const As = { as: Key.optional() }
 /** 이 단계가 실패해도 다음으로 (팝업 닫기처럼 있을 때만 하는 일) */
 const Optional = { optional: z.boolean().optional() }
+/**
+ * 이 단계를 할지: 채운 글이 비면 건너뛴다. 예: "{{^found.0}}1{{/found.0}}" = 앞에서 아무것도 못 찾았을 때만
+ * (앞 기간에서 찾으면 더 예전 기간은 열지 않기 같은 데 쓴다)
+ */
+const If = { if: z.string().max(400).optional() }
+/** 목록이면 앞에서 같은 이름으로 모은 목록 뒤에 붙인다 (여러 기간·여러 쪽을 한 목록으로) */
+const Append = { append: z.boolean().optional() }
 
 export const StepSchema = z.union([
   /** 주소 열기 ({{keyword|url}} 같은 채우기). 이 서비스의 사이트 주소만 */
-  z.object({ open: Text(500) }).strict(),
+  z.object({ open: Text(500), ...If }).strict(),
   /** 이 말이 보일 때까지(또는 사라질 때까지) 기다리기 */
   z
     .object({
@@ -96,20 +103,22 @@ export const StepSchema = z.union([
         })
         .strict(),
       ...Optional,
+      ...If,
     })
     .strict(),
   /** 화면 글에서 찾기 (정규식, 묶음 1). 결과는 as 이름으로 */
-  z.object({ find: z.record(Key, z.string().max(300)), ...As }).strict(),
+  z.object({ find: z.record(Key, z.string().max(300)), ...As, ...If }).strict(),
   /** 화면 글자로 누르기 (본체 위험 판단을 거친다) */
-  z.object({ click: z.object({ text: Text(200) }).strict(), ...Optional }).strict(),
+  z.object({ click: z.object({ text: Text(200) }).strict(), ...Optional, ...If }).strict(),
   /** 입력칸에 쓰기. field = 입력칸 이름·안내 글의 정규식 */
   z
     .object({
       type: z.object({ field: Text(200), text: Text(500), submit: z.boolean().optional() }).strict(),
+      ...If,
     })
     .strict(),
-  z.object({ press: z.enum(['Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown']) }).strict(),
-  z.object({ sleep: z.number().int().min(100).max(5_000) }).strict(),
+  z.object({ press: z.enum(['Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown']), ...If }).strict(),
+  z.object({ sleep: z.number().int().min(100).max(5_000), ...If }).strict(),
   /** 목록 뽑기 */
   z
     .object({
@@ -124,6 +133,7 @@ export const StepSchema = z.union([
       as: Key,
       /** 적어도 몇 줄 나와야 하나 (못 미치면 막힘으로 본다. 0이면 빈 결과도 정상) */
       min: z.number().int().min(0).max(50).optional(),
+      ...If,
     })
     .strict(),
   /**
@@ -141,6 +151,8 @@ export const StepSchema = z.union([
         })
         .strict(),
       as: Key,
+      ...Append,
+      ...If,
     })
     .strict(),
   /**
@@ -157,6 +169,8 @@ export const StepSchema = z.union([
         })
         .strict(),
       as: Key,
+      ...Append,
+      ...If,
     })
     .strict(),
   /**
@@ -174,6 +188,7 @@ export const StepSchema = z.union([
         })
         .strict(),
       as: Key,
+      ...If,
     })
     .strict(),
   /** 목록 모양 바꾸기: from(변수 경로)의 줄마다 fields(새 이름 → 줄 안 경로) */
@@ -188,6 +203,7 @@ export const StepSchema = z.union([
         })
         .strict(),
       as: Key,
+      ...If,
     })
     .strict(),
   /** 이 말이 (기다려도) 안 나오면 멈추고 알리기: "그 시간은 마감이에요" 같은 결과 (막힘이 아니다) */
@@ -196,6 +212,7 @@ export const StepSchema = z.union([
       require: Text(300),
       say: Text(300),
       timeoutMs: z.number().int().min(500).max(20_000).optional(),
+      ...If,
     })
     .strict(),
   /** 이 말이 보이면 멈추고 알리기. login이면 연결(로그인) 안내로, blocked면 사이트가 이 브라우저를 막은 것
@@ -206,6 +223,7 @@ export const StepSchema = z.union([
       say: Text(300),
       login: z.boolean().optional(),
       blocked: z.boolean().optional(),
+      ...If,
     })
     .strict(),
   /** 돈 내기·연락하기 도구의 마지막: 이 버튼을 누를지 사용자 승인을 받는다 (두리가 누르는 건 승인 뒤) */
@@ -220,10 +238,11 @@ export const StepSchema = z.union([
           cancel: z.string().max(200).optional(),
         })
         .strict(),
+      ...If,
     })
     .strict(),
   /** 정해진 순서로 하기 어려운 곳: 여기까지 데려온 탭을 AI에게 넘기고 할 일을 알려 준다 */
-  z.object({ handoff_to_agent: Text(500) }).strict(),
+  z.object({ handoff_to_agent: Text(500), ...If }).strict(),
 ])
 export type Step = z.infer<typeof StepSchema>
 
@@ -382,6 +401,8 @@ const FILTERS: Record<string, (v: string) => string> = {
   trim: (v) => v.trim(),
   /** 정규식 안에 그대로 넣기 */
   re: (v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  /** 수에서 1 빼기: 2026 → 2025 (지난해 주소: {{today|yyyy|dec}}). 수가 아니면 빈 글 */
+  dec: (v) => (/^-?\d+$/.test(v.trim()) ? String(Number(v) - 1) : ''),
   /** 2026-11-27 → 261127 */
   yymmdd: (v) => v.replace(/\D/g, '').slice(2, 8),
   /** 2026-11-27 → 11.27 */
@@ -451,10 +472,20 @@ const SECTION = /\{\{([#^])\s*([a-zA-Z_][\w.]*)\s*\}\}([\s\S]*?)\{\{\/\s*\2\s*\}
 const present = (v: unknown) =>
   v !== undefined && v !== null && v !== '' && v !== false && !(Array.isArray(v) && v.length === 0)
 
+/** 묶음 표시 (안에 든 다른 묶음까지 세려고, 검사용) */
+const SECTION_OPEN = /\{\{[#^]\s*([a-zA-Z_][\w.]*)\s*\}\}/g
+
 export function fill(template: string, scope: Scope): string {
-  const t = template.replace(SECTION, (_m, kind: string, path: string, inner: string) =>
-    present(pick(scope, path)) === (kind === '#') ? inner : '',
-  )
+  // 묶음 안의 묶음({{#item}}{{^year}}…{{/year}}{{/item}})은 바깥부터 한 겹씩 푼다.
+  // 값 채우기는 묶음을 다 푼 뒤라, 입력 글에 {{…}}가 있어도 묶음으로 읽히지 않는다
+  let t = template
+  for (let i = 0; i < 8; i++) {
+    const next = t.replace(SECTION, (_m, kind: string, path: string, inner: string) =>
+      present(pick(scope, path)) === (kind === '#') ? inner : '',
+    )
+    if (next === t) break
+    t = next
+  }
   return t.replace(EXPR, (_m, path: string, filters: string) => {
     const raw = pick(scope, path)
     let v = raw === undefined || raw === null ? '' : typeof raw === 'string' ? raw : String(raw)
@@ -481,7 +512,7 @@ export function fillValue(template: string, scope: Scope): unknown {
 export function templateNames(template: string): { names: string[]; filters: string[] } {
   const names: string[] = []
   const filters: string[] = []
-  for (const m of template.matchAll(SECTION)) names.push((m[2] ?? '').split('.')[0] ?? '')
+  for (const m of template.matchAll(SECTION_OPEN)) names.push((m[1] ?? '').split('.')[0] ?? '')
   for (const m of template.matchAll(EXPR)) {
     names.push((m[1] ?? '').split('.')[0] ?? '')
     for (const f of (m[2] ?? '')
@@ -571,6 +602,7 @@ export function checkConnector(
     const kinds = t.steps.map(stepKind)
     t.steps.forEach((s, i) => {
       const where = `${i + 1}단계`
+      if (s.if !== undefined) useAll(s.if, `${where}의 if`)
       if ('open' in s) {
         useAll(s.open, where)
         if (site && !onSites(s.open, site))
