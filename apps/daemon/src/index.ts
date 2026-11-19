@@ -890,7 +890,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .then((services) => link.broadcast({ kind: 'connections', services }))
         .catch(() => {})
       if (quiet) {
-        // 연결 표시는 connectFinish가 이미 했다. 대화 알림 줄·카드·폰 알림은 남기지 않는다
+        // 연결 표시는 connectFinish가 이미 했다. 대화 알림 줄·카드·폰 알림은 남기지 않는다.
+        // 못 갔으면 사람을 기다리는 탭으로 남기지 않고 닫는다 (일괄 점검에서 남은 탭이 쌓여 새 로그인 창이 닫혔다)
+        if (!r.ok) {
+          loginWatch.stop(card.id)
+          if (r.tabId !== undefined)
+            setTimeout(() => void browser.call('close', { tabId: r.tabId }).catch(() => undefined), 3_000)
+        }
       } else if (r.ok) connectDone(card)
       else if (agent) {
         // 대화 끝에 그 연결 카드가 없으면 띄운다 (카드가 "두리가 이어서 해 보는 중"을 보여 준다)
