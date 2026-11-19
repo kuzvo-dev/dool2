@@ -526,6 +526,42 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
     expect(life.routines()[0]?.lastResult).not.toContain('[끝]')
     expect(readRun({}, '[끝]').ended).toBe(false)
   })
+  it('지켜보기는 지난번에 알린 것을 넘겨 같은 소식을 또 알리지 않는다 (조용한 차례는 덮지 않음)', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', {
+      title: '동네',
+      prompt: '망원동 새 소식',
+      schedule: 'daily',
+      time: '08:00',
+      notify: 'when_found',
+    })
+    const id = life.routines()[0]?.id ?? ''
+    expect(routineAsk(life.routines()[0] as Routine)).not.toContain('지난번에 이미 알린 것')
+    life.noteRun(id, '- 망원시장 축제 (뉴스)')
+    life.noteRun(id, '알릴 것 없음')
+    const r = life.routines()[0] as Routine
+    expect(r.lastResult).toBe('알릴 것 없음')
+    expect(routineAsk(r)).toContain('지난번에 이미 알린 것')
+    expect(routineAsk(r)).toContain('망원시장 축제')
+  })
+  it('goal_create preview면 지금 한 번 해 보여 달라고 돌려준다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const text = (x: unknown) => JSON.stringify(x)
+    expect(
+      text(
+        life.run('goal_create', {
+          title: 'a',
+          prompt: '뉴스',
+          schedule: 'daily',
+          time: '07:30',
+          preview: true,
+        }),
+      ),
+    ).toContain('미리 보기')
+    expect(
+      text(life.run('goal_create', { title: 'b', prompt: '약', schedule: 'daily', time: '21:00' })),
+    ).not.toContain('미리 보기')
+  })
   it('goal_update로 끝나는 때·알리기·언제를 채운다', () => {
     const life = new Life(kv(), () => MON_8AM)
     life.run('goal_create', { title: '취소표', prompt: '취소표 나오면', schedule: 'every', minutes: 30 })

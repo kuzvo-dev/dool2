@@ -10,7 +10,7 @@ import {
   type Routine,
 } from '@dool2/protocol'
 import type { Pager } from '@dool2/protocol/paging'
-import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
+import { resultLine, stripLinks, withoutPhotoMark } from '@dool2/protocol/rich'
 import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
@@ -61,7 +61,7 @@ const CATEGORY: Record<GoalCategory, { icon: IconName; tone: string; hint: strin
 
 /** 답·글에서 굵게 표시를 빼고 한 줄로 */
 export function plain(text: string, max = 120) {
-  const t = text
+  const t = stripLinks(text)
     .replace(/\*\*/g, '')
     .replace(/^\s*(?:[-*•]|\d+\.)\s+/gm, '')
     .replace(/\[( |x|X)\]\s*/g, '')

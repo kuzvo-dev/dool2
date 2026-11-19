@@ -2,6 +2,9 @@
   "id": "naver",
   "name": "네이버",
   "site": "www.naver.com",
+  "alsoSites": [
+    "search.naver.com"
+  ],
   "category": "account",
   "how": "browser",
   "loginUrl": "https://nid.naver.com/nidlogin.login",
@@ -21,6 +24,11 @@
     {
       "title": "네이버페이 주문 찾기",
       "say": "네이버페이로 산 거 배송 어디까지 왔어?",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "뉴스 찾기",
+      "say": "오늘 반도체 뉴스 요약해 줘",
       "tier": "찾아보기"
     }
   ]

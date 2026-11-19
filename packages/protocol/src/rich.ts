@@ -7,6 +7,10 @@
 export interface Inline {
   text: string
   bold?: true
+  /** 누르면 열 주소 (https만) */
+  href?: string
+  /** 출처 칩: 문장 끝 "([MBC](주소), [연합뉴스](주소))" → 작은 칩으로 */
+  src?: true
 }
 
 export type RichBlock =
@@ -18,7 +22,21 @@ export type RichBlock =
   /** 마크다운 표 "| a | b |" (둘째 줄 "|---|---|"이 있으면 첫 줄이 머리) */
   | { type: 'table'; head?: Inline[][]; rows: Inline[][][] }
 
-export function inline(text: string): Inline[] {
+// 링크: [글](https://…) 또는 맨 주소. 출처 묶음: "([A](u), [B](u))"
+const MD_LINK = String.raw`\[([^\]\n]{1,80})\]\((https?:\/\/[^\s)]+)\)`
+const SRC_GROUP = new RegExp(String.raw`\s?\(\s*(${MD_LINK}(?:\s*[,·]\s*${MD_LINK})*)\s*\)`, 'g')
+const LINK_OR_URL = new RegExp(String.raw`${MD_LINK}|(https?:\/\/[^\s)<>\]]+[^\s)<>\].,!?])`, 'g')
+
+/** 맨 주소를 보여 줄 글: 사이트 이름만 (www. 뺌) */
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+function bolds(text: string): Inline[] {
   const out: Inline[] = []
   for (const part of text.split(/(\*\*[^*]+\*\*)/g)) {
     if (!part) continue
@@ -26,6 +44,40 @@ export function inline(text: string): Inline[] {
       out.push({ text: part.slice(2, -2), bold: true })
     else out.push({ text: part })
   }
+  return out
+}
+
+/** 링크·맨 주소를 조각으로 (나머지는 굵게만 본다) */
+function links(text: string, src?: true): Inline[] {
+  const out: Inline[] = []
+  let at = 0
+  for (const m of text.matchAll(LINK_OR_URL)) {
+    const i = m.index ?? 0
+    if (i > at) out.push(...bolds(text.slice(at, i)))
+    const href = m[2] ?? m[3] ?? ''
+    out.push({ text: m[1] ?? hostLabel(href), href, ...(src ? { src } : {}) })
+    at = i + m[0].length
+  }
+  if (at < text.length) out.push(...bolds(text.slice(at)))
+  return out
+}
+
+/** 한 줄 미리 보기용: 출처 묶음 "([A](주소))"는 빼고, 링크는 글만 남긴다 */
+export function stripLinks(text: string): string {
+  return text.replace(SRC_GROUP, '').replace(new RegExp(MD_LINK, 'g'), '$1')
+}
+
+export function inline(text: string): Inline[] {
+  const out: Inline[] = []
+  let at = 0
+  // 출처 묶음은 괄호·쉼표를 빼고 칩만 남긴다
+  for (const m of text.matchAll(SRC_GROUP)) {
+    const i = m.index ?? 0
+    if (i > at) out.push(...links(text.slice(at, i)))
+    out.push(...links(m[1] ?? '', true).filter((x) => x.href))
+    at = i + m[0].length
+  }
+  if (at < text.length) out.push(...links(text.slice(at)))
   return out
 }
 

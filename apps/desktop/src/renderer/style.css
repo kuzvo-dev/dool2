@@ -2199,3 +2199,28 @@ button.side-row:hover {
   display: flex;
   flex-direction: column;
 }
+
+/* 답 속 링크와 출처 칩 ("([MBC](주소))" → 작은 칩) */
+.rich-link {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.rich-src {
+  display: inline-block;
+  margin: 0 0 0 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 0.78em;
+  line-height: 1.6;
+  text-decoration: none;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.rich-src:hover {
+  color: var(--ink);
+  border-color: var(--brand);
+}

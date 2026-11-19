@@ -1,0 +1,175 @@
+{
+  "id": "naver",
+  "tools": [
+    {
+      "name": "news",
+      "title": "뉴스 찾기",
+      "description": "로그인 없이 된다. 네이버 뉴스에서 검색어로 기사를 찾아 제목·언론사·올린 때·요약 문구·원문 주소·네이버뉴스 주소를 돌려준다. '○○ 뉴스', '요즘 ○○ 소식', '○○ 났대?', 아침 브리핑, 공고·리콜·주가·정책 소식 지켜보기처럼 기사로 확인할 일에 브라우저로 검색 화면을 여는 대신 먼저 쓴다. 답에서 기사 내용을 쓸 때는 줄마다 끝에 출처를 ([언론사](link)) 마크다운 링크로 붙인다. 분야가 여럿이면 분야마다 따로 부른다(예: '반도체', '부동산'). 기본은 관련도순(주요 언론사·많이 다룬 기사 먼저), 지켜보기·속보는 sort=dd(최신순).",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-19, 반도체·자동차 리콜 무상수리, 기간 1일·1주·전체, 관련도·최신순, 화면 읽기)",
+      "input": {
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "찾을 말 1~4낱말 (예: \"반도체\", \"서울 아파트값\", \"K-패스 환급\"). 띄어 쓴 낱말이 모두 들어간 기사를 찾는다"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "all"
+            ],
+            "default": "1w",
+            "description": "기간: 1d 하루 · 1w 일주일(기본) · 1m 한 달 · all 전체. 아침 브리핑은 1d"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "r",
+              "dd"
+            ],
+            "default": "r",
+            "description": "r 관련도순(기본, 주요 기사 먼저) · dd 최신순(지켜보기·속보)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 6,
+            "description": "몇 개까지 (기본 6)"
+          }
+        }
+      },
+      "output": {
+        "articles": {
+          "type": "list",
+          "description": "찾은 기사 (위에서부터)",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "press": {
+              "type": "string",
+              "description": "언론사"
+            },
+            "when": {
+              "type": "string",
+              "description": "올린 때 (예: 3시간 전, 2026.11.12.)"
+            },
+            "summary": {
+              "type": "string",
+              "description": "검색 화면의 요약 문구 (본문 앞부분)"
+            },
+            "link": {
+              "type": "string",
+              "description": "원문 주소 — 답에 ([언론사](이 주소))로 붙인다"
+            },
+            "naver_link": {
+              "type": "string",
+              "description": "네이버뉴스 주소 (있으면 본문 읽기에 좋다)"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "title",
+          "press",
+          "link"
+        ]
+      },
+      "examples": [
+        {
+          "query": "반도체",
+          "period": "1d"
+        },
+        {
+          "query": "자동차 리콜 무상수리",
+          "period": "1w",
+          "sort": "dd"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://search.naver.com/search.naver?where=news&query={{query|url}}&nso=so:{{sort}},p:{{period}}"
+        },
+        {
+          "wait": {
+            "text": "기사|검색결과가 없습니다|검색 결과가 없습니다",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "그 기간에는 이 말로 나온 기사가 없어요. 기간을 넓히거나(period 1m·all) 낱말을 줄여 다시 찾아요."
+        },
+        {
+          "extract": {
+            "items": ".fds-news-item-list-tab > div:has(a[data-heatmap-target=\".tit\"])",
+            "limit": 10,
+            "fields": {
+              "title": {
+                "css": "a[data-heatmap-target=\".tit\"] > span:first-child"
+              },
+              "press": {
+                "css": ".sds-comps-profile-info-title"
+              },
+              "when": {
+                "css": ".sds-comps-profile-info-subtext"
+              },
+              "summary": {
+                "css": "a[data-heatmap-target=\".body\"] > span:first-child"
+              },
+              "link": {
+                "css": "a[data-heatmap-target=\".tit\"]",
+                "attr": "href"
+              },
+              "naver_link": {
+                "css": "a[href*=\"n.news.naver.com\"]",
+                "attr": "href"
+              }
+            }
+          },
+          "as": "all"
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "title",
+            "op": "has"
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "fields": {
+              "title": "title",
+              "press": "press",
+              "when": "when",
+              "summary": "summary",
+              "link": "link",
+              "naver_link": "naver_link"
+            },
+            "limit": "{{limit}}"
+          },
+          "as": "articles"
+        }
+      ],
+      "result": {
+        "articles": "{{articles}}"
+      },
+      "next": "기사 내용을 쓴 줄마다 끝에 ([언론사](link))를 붙여요. 요약 문구는 본문 앞부분일 뿐이라, 수치·결론을 확인해야 하면 naver_link(없으면 link)를 browser_open으로 열어 본문을 읽어요. 같은 일을 다룬 기사는 하나로 묶어요.",
+      "minIntervalSec": 300,
+      "cards": false
+    }
+  ]
+}

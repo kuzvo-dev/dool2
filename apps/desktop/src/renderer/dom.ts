@@ -244,7 +244,16 @@ export function toggle(on: boolean, label: string, onChange: (on: boolean) => vo
 /** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
 export function setRich(target: HTMLElement, text: string) {
   const spans = (parent: HTMLElement, parts: Inline[]) => {
-    for (const part of parts) parent.append(part.bold ? el('strong', '', part.text) : part.text)
+    for (const part of parts) {
+      if (part.href) {
+        const a = el('a', part.src ? 'rich-src' : 'rich-link', part.text) as HTMLAnchorElement
+        a.href = part.href
+        a.target = '_blank'
+        a.rel = 'noopener'
+        a.title = part.href
+        parent.append(a)
+      } else parent.append(part.bold ? el('strong', '', part.text) : part.text)
+    }
   }
   target.replaceChildren(
     ...richBlocks(text).map((block) => {

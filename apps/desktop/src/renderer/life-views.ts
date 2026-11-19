@@ -354,11 +354,16 @@ function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
       if (later && it.service) {
         ctx.toast(`${it.service.name}을(를) 연결하면 바로 맡길 수 있어요`)
         ctx.openService(it.service.id)
-      } else ctx.send(it.ask)
+      } else if (it.fill) ctx.compose(it.fill)
+      else ctx.send(it.ask)
     },
     it.service ? withLogo(el('span', 'svc-mark', it.service.mark), it.service.id) : emoTile(sec.emo),
     el('span', 'grow', el('span', 'idea-t', it.text), el('span', 'cap', it.note)),
-    later ? el('span', 'idea-tag', '연결') : icon('send', 'i idea-go'),
+    later
+      ? el('span', 'idea-tag', '연결')
+      : it.fill
+        ? el('span', 'idea-tag', '채워서')
+        : icon('send', 'i idea-go'),
   )
 }
 

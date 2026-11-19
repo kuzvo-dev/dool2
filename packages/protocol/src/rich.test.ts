@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { previewText } from './index.js'
 import {
   appNote,
+  inline,
   josa,
   narrationLine,
   readAppNote,
   richBlocks,
+  stripLinks,
   stripMonologue,
   toolPlace,
   withoutPhotoMark,
@@ -174,5 +176,37 @@ describe('toolPlace (일하는 카드를 서비스별로 묶는 기준)', () => 
     expect(toolPlace('mcp__dool2__memory_save', {})).toBeUndefined()
     expect(toolPlace('mcp__dool2__service_find', { query: '택배' })).toBeUndefined()
     expect(toolPlace('mcp__dool2__show_cards', {})).toBeUndefined()
+  })
+})
+
+describe('답 속 링크 (출처는 링크로)', () => {
+  it('문장 끝 출처 묶음은 괄호·쉼표 없이 칩으로', () => {
+    expect(
+      inline('늘었어요. ([연합뉴스](https://www.yna.co.kr/a?x=1), [한국경제](https://www.hankyung.com/b))'),
+    ).toEqual([
+      { text: '늘었어요.' },
+      { text: '연합뉴스', href: 'https://www.yna.co.kr/a?x=1', src: true },
+      { text: '한국경제', href: 'https://www.hankyung.com/b', src: true },
+    ])
+  })
+  it('글 속 링크·맨 주소·굵게가 섞여도 나눈다 (맨 주소는 사이트 이름만)', () => {
+    expect(inline('[공고](https://x.go.kr/a) 보세요 **꼭** https://www.gov.kr/portal/main.')).toEqual([
+      { text: '공고', href: 'https://x.go.kr/a' },
+      { text: ' 보세요 ' },
+      { text: '꼭', bold: true },
+      { text: ' ' },
+      { text: 'gov.kr', href: 'https://www.gov.kr/portal/main' },
+      { text: '.' },
+    ])
+  })
+  it('그냥 괄호와 http 아닌 것은 그대로', () => {
+    expect(inline('괄호 (그냥 말) [a](javascript:alert(1))')).toEqual([
+      { text: '괄호 (그냥 말) [a](javascript:alert(1))' },
+    ])
+  })
+  it('한 줄 미리 보기는 출처를 빼고 링크는 글만', () => {
+    expect(stripLinks('올랐어요. ([MBC](https://imbc.com/a)) 자세한 건 [공고](https://x.go.kr)')).toBe(
+      '올랐어요. 자세한 건 공고',
+    )
   })
 })

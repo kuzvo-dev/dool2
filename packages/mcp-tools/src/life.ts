@@ -88,6 +88,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .enum(['chat', 'feed'])
           .optional()
           .describe('결과를 대화(기본)에 말할지, 피드에 글로 올릴지'),
+        preview: z
+          .boolean()
+          .optional()
+          .describe(
+            '만들고 나서 같은 일을 지금 한 번 해 보여 줄지. 브리핑·요약·정리처럼 받을 결과의 모양이 중요한 일은 true (첫 결과를 기다리지 않고 바로 확인). 단순 알림·지켜보기는 생략',
+          ),
       },
     },
     call('goal_create'),
@@ -187,6 +193,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: '기억하기',
       description:
         '사용자에 대해 앞으로도 도움이 될 사실을 기억한다: 이름·호칭, 사는 동네, 가족, 자주 가는 곳, 좋아하는 것, 쓰는 서비스, 일정 습관. ' +
+        '"우리 동네·집·회사·애 학교"가 어디인지처럼 다음에 또 물어야 할 것을 사용자가 알려 주면, 하던 일과 함께 바로 기억한다(다음 "근처 ○○" 부탁에서 다시 묻지 않게). ' +
         '한 번에 한 문장. 비밀번호·카드 번호·주민번호 같은 민감한 값은 절대 기억하지 않는다.',
       inputSchema: {
         text: z.string().max(200).describe('예: "아이가 둘 (초3 딸, 6살 아들)", "출퇴근은 동탄역에서 SRT"'),

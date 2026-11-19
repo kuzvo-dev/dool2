@@ -178,7 +178,15 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
 export function rich(text: string): DocumentFragment {
   const f = document.createDocumentFragment()
   const spans = (parent: HTMLElement, parts: Inline[]) => {
-    for (const part of parts) parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
+    for (const part of parts) {
+      if (part.href) {
+        const a = h('a', { class: part.src ? 'rich-src' : 'rich-link', text: part.text }) as HTMLAnchorElement
+        a.href = part.href
+        a.target = '_blank'
+        a.rel = 'noopener'
+        parent.append(a)
+      } else parent.append(part.bold ? h('strong', { text: part.text }) : part.text)
+    }
   }
   for (const block of richBlocks(text)) {
     if (block.type === 'h') {
