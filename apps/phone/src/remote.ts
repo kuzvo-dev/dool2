@@ -588,8 +588,10 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     shot = s
     // 처음 화면이 오거나 주소가 바뀌면 칸을 새로 받아 온다
     if (s?.url && s.url !== formUrl) {
+      // 처음 화면이면 바로 묻는다 (기다리는 동안 화면을 가려 둔다), 넘어간 화면이면 그려지길 잠깐 기다린다
+      const first = !formUrl
       formUrl = s.url
-      setTimeout(askForm, 600)
+      setTimeout(askForm, first ? 0 : 600)
     }
     if (!viewSent) requestAnimationFrame(sendView)
     if (s?.url || s?.title) host.textContent = o.hostOf(s.url ?? '') || s.title || ''
@@ -652,6 +654,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   }
 
   const setForm = (form: RemoteForm | undefined, error?: string) => {
+    decided()
     formPane.set(form, error)
     const usable = formPane.usable()
     seg.hidden = !usable && mode !== 'form'
@@ -662,5 +665,15 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
 
   applyStage()
   setMode('screen')
+  // 처음 열 때: '필요한 칸만'을 받기 전에 웹 화면이 먼저 번쩍 보였다가 칸 화면으로 바뀌던 것 →
+  // 칸을 받을 때까지(최대 2.5초) 화면을 가려 두고, 칸이 없을 때만 화면 보기로 연다
+  el.classList.add('deciding')
+  let decidedYet = false
+  function decided() {
+    if (decidedYet) return
+    decidedYet = true
+    el.classList.remove('deciding')
+  }
+  setTimeout(decided, 2500)
   return { tabId: o.tabId, el, update, setForm }
 }

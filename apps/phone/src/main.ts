@@ -564,14 +564,19 @@ async function receive(env: Envelope) {
     }
     case 'connections': {
       st.services = msg.services
-      for (const s of msg.services) if (s.connectedAt) st.connectFails.delete(s.card.id)
       // 사람이나 두리가 화면에서 로그인을 마쳐 연결된 경우에도, 미뤄 둔 부탁(연결하면 바로 시작)을 이어서 보낸다
       if (st.afterConnect && msg.services.some((s) => s.card.id === st.afterConnect?.id && s.connectedAt))
         runAfterConnect(st.afterConnect.id)
       // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
       const v = st.screen
-      if (v.name === 'remote' && v.connectId) {
-        const done = msg.services.find((x) => x.card.id === v.connectId && x.connectedAt)
+      // 연결 카드에서 연 화면이든, 두리가 넘긴 화면(같은 로그인 탭)이든: 그 서비스가 연결되면 닫는다.
+      // 그대로 두면 로그인 뒤 사이트 첫 화면(검색칸 등)을 '필요한 칸'으로 그려 버린다 (실측 11번가)
+      const ownerOf = (tabId: number) =>
+        [...st.connectTabs.entries()].find(([, t]) => t === tabId)?.[0] ??
+        [...st.connectFails.entries()].find(([, f]) => f.tabId === tabId)?.[0]
+      const remoteFor = v.name === 'remote' ? (v.connectId ?? ownerOf(v.tabId)) : undefined
+      if (v.name === 'remote' && remoteFor) {
+        const done = msg.services.find((x) => x.card.id === remoteFor && x.connectedAt)
         if (done) {
           // 대화로 돌아간다: 연결 카드가 "연결돼 있어요"로 바뀌고 이어지는 일도 거기서 보인다
           // (연결 화면에서 시작했을 때만 그 서비스 화면으로)
@@ -579,10 +584,11 @@ async function receive(env: Envelope) {
           st.tab = remoteFrom === 'connect' ? 'connect' : 'chat'
           if (st.tab === 'connect') st.connectDetail = done.card.id
           else stickToBottom = true
-          toast(`${done.card.name} 로그인을 확인했어요`)
+          toast(`${done.card.name} 연결됐어요`)
           runAfterConnect(done.card.id)
         }
       }
+      for (const x of msg.services) if (x.connectedAt) st.connectFails.delete(x.card.id)
       break
     }
     case 'life':
@@ -3020,6 +3026,35 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       ),
     )
   }
+  if (wait?.label === '고르기') {
+    // 하나 고르기 (어느 계정으로 할지 등): 질문 그대로 보여 주고 [고르기]
+    const ask = st.connectSteps.get(c.id)?.at(-1)?.text ?? '하나 골라 주세요'
+    return h(
+      'div',
+      { class: 'card approve-card connect-card ask' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark(true),
+        h(
+          'div',
+          {},
+          h('strong', { text: ask }),
+          h('span', { class: 'meta', text: `고르시면 두리가 이어서 ${c.name}에 로그인해요` }),
+        ),
+      ),
+      connectStepList(c.id, true),
+      h(
+        'div',
+        { class: 'approve-actions' },
+        h('button', {
+          class: 'btn',
+          text: '고르기',
+          onclick: () => openOverlay({ kind: 'info', id: wait.id }),
+        }),
+      ),
+    )
+  }
   if (wait) {
     const what = wait.label.replace(/ 넣기$/, '')
     return h(
@@ -4570,8 +4605,12 @@ function infoSheet(id: string) {
       h(
         'div',
         { class: 'choice-list' },
-        ...q.options.map((o) =>
-          h('button', { class: 'btn ghost lg choice-btn', text: o, onclick: () => answer(o) }),
+        ...q.options.map((o, i) =>
+          h('button', {
+            class: `${i === 0 ? 'btn' : 'btn-ghost'} lg choice-btn`,
+            text: o,
+            onclick: () => answer(o),
+          }),
         ),
       ),
       h('button', { class: 'btn-link', text: '나중에 할게요', onclick: () => answer() }),
