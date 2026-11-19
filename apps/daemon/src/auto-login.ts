@@ -622,12 +622,23 @@ export async function autoLogin(
   }
   if (!hasPassword(page.text) && (page.captcha || STEP2.test(said(page.text))))
     return { status: 'human', tabId, reason: humanReason(page.text) }
-  if (!hasPassword(page.text))
+  if (!hasPassword(page.text)) {
+    // 로그인 칸이 없는 건 이미 로그인돼 있어서일 수 있다 (실측 스레드: Chrome에 이미 로그인된 홈 피드에서
+    // '로그인 칸을 찾지 못했어요'로 멈추고 AI가 이어받았다). 마이페이지까지 확인하고 로그인돼 있으면 그대로 끝
+    if (input.card.site) {
+      const r = await checkSignedIn(browser, {
+        id: input.card.id,
+        signedIn: input.card.signedIn,
+        site: input.card.site,
+      }).catch(() => undefined)
+      if (r?.state === 'in') return { status: 'ok', tabId }
+    }
     return {
       status: 'unknown',
       tabId,
       message: '로그인 칸을 찾지 못했어요. 화면을 보면서 직접 로그인해 주세요.',
     }
+  }
 
   // 2) 칸 채우기 (확장이 주소를 다시 확인한다)
   const fields = loginFields(page.text)
