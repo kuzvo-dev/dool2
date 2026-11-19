@@ -807,6 +807,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         : {}),
     })
   }
+  /** 일괄 점검으로 연결 중인 서비스 (대화에 카드·알림을 남기지 않는다) */
+  const quietConnect = new Set<string>()
   function startConnect(
     card: ConnectCard,
     run: () => Promise<ConnectResult>,
@@ -834,8 +836,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connecting.delete(card.id)
       connectSteps.delete(card.id)
       connectTabs.delete(card.id)
+      // 일괄 점검(조용히)은 대화·알림을 남기지 않는다: 결과는 기록(connect-end)과 응답으로만
+      const quiet = quietConnect.delete(card.id)
       // 화면을 못 알아봐 멈춘 것이면 두리(AI)가 대화에서 이어받는다
-      const agent = agentTakeover(card, r)
+      const agent = quiet ? false : agentTakeover(card, r)
       journal.write('connect-end', {
         id: card.id,
         how,
@@ -856,7 +860,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .connections()
         .then((services) => link.broadcast({ kind: 'connections', services }))
         .catch(() => {})
-      if (r.ok) connectDone(card)
+      if (quiet) {
+        // 연결 표시는 connectFinish가 이미 했다. 대화 알림 줄·카드·폰 알림은 남기지 않는다
+      } else if (r.ok) connectDone(card)
       else if (agent) {
         // 대화 끝에 그 연결 카드가 없으면 띄운다 (카드가 "두리가 이어서 해 보는 중"을 보여 준다)
         if (!cardNearEnd(card)) postConnectCard(card)
@@ -2286,9 +2292,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // 간편 로그인으로 연결하기 (카카오·네이버…)
       if (card && c === 'social' && !d && req.method === 'POST') {
-        const body = (await readJson(req)) as { provider?: unknown; background?: unknown; join?: unknown }
+        const body = (await readJson(req)) as {
+          provider?: unknown
+          background?: unknown
+          join?: unknown
+          quiet?: unknown
+        }
         const provider = SocialProviderSchema.safeParse(body.provider)
         if (!provider.success) return json(res, 400, { error: '간편 로그인 종류를 골라 주세요' })
+        if (body.quiet === true && !connecting.has(card.id)) quietConnect.add(card.id)
         const p = startConnect(
           card,
           () => connectSocial(card, provider.data, body.join === false),
