@@ -5,7 +5,8 @@
   "alsoSites": [
     "search.naver.com",
     "pay.naver.com",
-    "orders.pay.naver.com"
+    "orders.pay.naver.com",
+    "m.place.naver.com"
   ],
   "category": "account",
   "how": "browser",
@@ -26,6 +27,11 @@
     {
       "title": "네이버페이 주문 찾기",
       "say": "네이버페이로 산 거 배송 어디까지 왔어?",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "네이버 예약 내역",
+      "say": "다니던 미용실 늘 하던 선생님으로 다음 주 예약해 줘",
       "tier": "찾아보기"
     },
     {

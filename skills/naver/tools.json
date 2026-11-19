@@ -306,6 +306,191 @@
       },
       "next": "찾는 주문이 없으면 page를 넘기거나 쿠팡(coupang_orders)도 본다. 반품·교환·구매확정·배송 조회는 그 줄의 link를 browser_open으로 열어 이어서 한다(구매확정·반품 신청 버튼은 승인).",
       "cards": false
+    },
+    {
+      "name": "bookings",
+      "title": "네이버 예약 내역",
+      "description": "네이버 로그인이 필요하다. 네이버 예약(미용실·병원·식당·카페·숙소·공연 등)의 다가오는·지난 예약을 최근 것부터 읽어 날짜·가게·업종·주소·시간·몇 번째 방문과 방문 간격·담당자나 메뉴·가격을 돌려준다. '늘 가던 미용실·담당 선생님', '다니는 병원 예약 바꾸기', '지난번 그 식당', 방문 주기 챙기기에 먼저 쓴다. 가게만 보려면 keyword로 거른다. 다시 예약은 그 가게를 naver_map_places로 찾아 예약 화면으로 가거나 이 화면의 [다시 예약]을 누른다(예약 확정은 승인).",
+      "tier": "찾아보기",
+      "login": true,
+      "status": "검증됨(2026-11-20, 지난 예약 목록: 미용·카페·스튜디오·숙소, 방문 횟수·간격·담당자)",
+      "input": {
+        "required": [],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "가게·업종으로 거르기 (예: \"미용\", \"치과\", \"○○헤어\"). 없으면 전부"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 15,
+            "description": "몇 개까지 (기본 15)"
+          }
+        }
+      },
+      "output": {
+        "bookings": {
+          "type": "list",
+          "description": "예약 (최근 것부터)",
+          "fields": {
+            "date": {
+              "type": "string",
+              "description": "예약 날짜 (예: 10.23 금)"
+            },
+            "place": {
+              "type": "string",
+              "description": "가게 이름"
+            },
+            "kind": {
+              "type": "string",
+              "description": "업종 (예: 미용, 카페,디저트)"
+            },
+            "address": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string",
+              "description": "예약 시각 (예: 오후 12:00 예약)"
+            },
+            "visit": {
+              "type": "string",
+              "description": "몇 번째 방문·지난 방문과의 간격 (예: 8번째 , 35일만의 방문)"
+            },
+            "item": {
+              "type": "string",
+              "description": "담당자나 메뉴 (예: ○○ 원장)"
+            },
+            "price": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 1,
+        "filled": [
+          "date",
+          "place"
+        ]
+      },
+      "examples": [
+        {},
+        {
+          "keyword": "미용"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://m.place.naver.com/my/timeline?tab=RESERVATION"
+        },
+        {
+          "wait": {
+            "text": "번째|예약 내역이 없|로그인 상태 유지|아이디 또는 전화번호",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "로그인 상태 유지|아이디 또는 전화번호",
+          "say": "네이버에 로그인돼 있지 않아요.",
+          "login": true
+        },
+        {
+          "extract": {
+            "items": "li:has(li.tl-map-seg)",
+            "limit": 40,
+            "fields": {
+              "date": {
+                "line": 0
+              },
+              "place": {
+                "line": 1
+              },
+              "kind": {
+                "line": 2,
+                "match": "^(.*?)(?:서울|경기|인천|부산|대구|대전|광주|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)"
+              },
+              "address": {
+                "line": 2,
+                "match": "((?:서울|경기|인천|부산|대구|대전|광주|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주).*)$"
+              },
+              "time": {
+                "line": 3
+              },
+              "visit": {
+                "match": "(\\d+번째[^\\n]*방문)"
+              },
+              "item": {
+                "line": 5
+              },
+              "price": {
+                "match": "([\\d,]+원)"
+              }
+            }
+          },
+          "as": "all",
+          "min": 0
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "place",
+            "op": "has"
+          },
+          "as": "real"
+        },
+        {
+          "map": {
+            "from": "real",
+            "fields": {
+              "date": "date",
+              "place": "place",
+              "kind": "kind",
+              "address": "address",
+              "time": "time",
+              "visit": "visit",
+              "item": "item",
+              "price": "price",
+              "hay": "{{place}} {{kind}} {{item}}"
+            },
+            "limit": 40
+          },
+          "as": "rows"
+        },
+        {
+          "filter": {
+            "from": "rows",
+            "where": "hay",
+            "op": "contains",
+            "value": "{{keyword}}"
+          },
+          "as": "hit"
+        },
+        {
+          "map": {
+            "from": "hit",
+            "fields": {
+              "date": "date",
+              "place": "place",
+              "kind": "kind",
+              "address": "address",
+              "time": "time",
+              "visit": "visit",
+              "item": "item",
+              "price": "price"
+            },
+            "limit": "{{limit}}"
+          },
+          "as": "bookings"
+        }
+      ],
+      "result": {
+        "bookings": "{{bookings}}"
+      },
+      "next": "자주 간 가게·담당자·방문 간격을 짚어 답해요(예: '○○헤어 ○○ 원장님, 보통 5주마다'). 다시 예약은 그 가게 예약 화면에서 빈 시간을 찾아 승인받고 확정해요.",
+      "cards": false
     }
   ]
 }
