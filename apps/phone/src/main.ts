@@ -1843,8 +1843,6 @@ function render() {
   playFlip()
 }
 
-let lastScrollY = 0
-
 function buildShell() {
   const top = h('header', { class: 'app-top' })
   const page = h('main', { class: 'app-page' })
@@ -1852,12 +1850,8 @@ function buildShell() {
   page.addEventListener(
     'scroll',
     () => {
+      // 아래 탭은 내려도 숨기지 않는다: 숨으면 다른 탭으로 갈 길이 안 보였다 (사용자 의견)
       if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
-      // 긴 목록을 내리면 탭 막대를 숨기고, 올리면 다시 보인다 (대화는 입력칸이 있어 그대로)
-      const y = page.scrollTop
-      const away = st.tab !== 'chat' && y > 80 && y > lastScrollY + 6
-      if (away || y < lastScrollY - 6 || y <= 80) shell?.tabs.classList.toggle('away', away)
-      lastScrollY = y
     },
     { passive: true },
   )
@@ -2023,7 +2017,6 @@ function setTab(tab: Tab) {
   const page = shell?.page
   if (!page) return
   page.scrollTo({ top: tab === 'chat' ? page.scrollHeight : 0 })
-  shell?.tabs.classList.remove('away')
   if (tab === 'chat') {
     pollWork()
     pollConnect()
