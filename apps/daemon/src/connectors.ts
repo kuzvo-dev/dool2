@@ -618,11 +618,19 @@ export class Connectors {
         '',
         '후보를 보여 줄 땐 show_cards로 사진(image)·가격·주소(link)를 그대로 넣은 카드를 붙이고, 글로는 고른 이유만 짧게 말해요.',
       )
-    // 사진 없는 목록(주문·내역·일정)이 3줄 넘으면 글 목록 대신 목록 줄로
-    else if (rows.length >= 3 && !/show_(cards|list)/.test(tool.next ?? ''))
+    // 사진 없는 목록(주문·내역·일정·회차·빈자리)은 글 목록 대신 목록 줄로.
+    // 회차처럼 한 칸에 여러 줄을 담는 도구(cards: false + 목록 칸)도: 도구의 next가 "회차 2~4개를 보여 줘요"라고만 하면 글로 늘어놓는다
+    const listy =
+      tool.cards === false &&
+      Object.values(tool.output).some((f) => f.type === 'list' || f.type === 'strings')
+    if (
+      !(pics && !/show_cards/.test(tool.next ?? '')) &&
+      (rows.length >= 3 || (listy && rows.length > 0)) &&
+      !/show_(cards|list)/.test(tool.next ?? '')
+    )
       lines.push(
         '',
-        '3줄 넘는 목록을 보여 줄 땐 글로 늘어놓지 말고 show_list로 줄을 붙이고, 글로는 요점만 짧게 말해요.',
+        '후보·목록을 사용자에게 보여 줄 땐 글이나 표로 늘어놓지 말고 show_list로 줄을 붙여요. 하나를 고르게 하면 pick one(회차·시간·이름은 title, 상영관·남은 자리·조건은 sub, 가격은 value, 매진은 state). 글로는 요점만 짧게.',
       )
     if (tool.status === '초안')
       lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')
