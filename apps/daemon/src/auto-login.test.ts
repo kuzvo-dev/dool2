@@ -235,6 +235,58 @@ describe('간편 로그인', () => {
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e9'])
   })
 
+  describe('동의 전에 로그인된 카카오 계정 확인 (실측 알라딘: 평소 계정이 아닌 f***@gmail.com)', () => {
+    const consent = {
+      url: 'https://kauth.kakao.com/oauth/authorize',
+      text: '# 카카오계정으로 로그인\n로그인된 계정 f***@gmail.com [e1 링크 "계정 변경"]\n[e9 버튼 "동의하고 계속하기"]',
+    }
+    const run = (answer: string | undefined, known: string[] = []) => {
+      const b = tabsBrowser({ 7: [login, signed], 8: [consent] }, (tab, ref) =>
+        tab === 7 && ref === 'e8' ? { newTabId: 8, advance: [] } : ref === 'e9' ? { advance: [7] } : {},
+      )
+      const asked: string[] = []
+      const added: string[] = []
+      const p = socialLogin(
+        b,
+        {
+          card,
+          url: login.url,
+          provider: 'kakao',
+          creds: async () => undefined,
+          ask: {
+            info: async (q) => {
+              asked.push(q.label)
+              return answer
+            },
+            known: { has: (_p, l) => known.includes(l), add: (_p, l) => added.push(l) },
+          },
+        },
+        { wait: 0 },
+      )
+      return { b, asked, added, p }
+    }
+    it('처음 보는 계정이면 묻고, 맞다고 하면 기억하고 동의한다', async () => {
+      const { b, asked, added, p } = run('f***@gmail.com(으)로 할게요')
+      expect((await p).status).toBe('ok')
+      expect(asked[0]).toContain('f***@gmail.com')
+      expect(added).toEqual(['f***@gmail.com'])
+      expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e9')).toBe(true)
+    })
+    it('다른 계정이라고 하면 동의하지 않고 계정 변경을 열어 넘긴다', async () => {
+      const { b, p } = run('다른 계정이에요')
+      const r = await p
+      expect(r.status).toBe('human')
+      const clicks = b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)
+      expect(clicks).toContain('e1')
+      expect(clicks).not.toContain('e9')
+    })
+    it('전에 확인한 계정이면 묻지 않는다', async () => {
+      const { asked, p } = run(undefined, ['f***@gmail.com'])
+      expect((await p).status).toBe('ok')
+      expect(asked).toEqual([])
+    })
+  })
+
   it('구글 계정이 여럿이면 한 번 묻고 기억해 둔 계정을 고른다', async () => {
     const gLogin = {
       url: login.url,
