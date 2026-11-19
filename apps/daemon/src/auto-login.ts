@@ -627,7 +627,12 @@ async function watchResult(
       continue
     }
     if (confirm === 'timeout')
-      return { loginOrigin, status: 'human', tabId, reason: '휴대폰에서 확인을 3분 동안 기다렸어요' }
+      return {
+        loginOrigin,
+        status: 'human',
+        tabId,
+        reason: `${confirmWhere(page.text)}에서 확인을 아직 기다리고 있어요. 확인을 누르시면 두리가 이어서 연결해요`,
+      }
     if (STEP2.test(said(page.text)) && !CAPTCHA.test(said(page.text)) && !WRONG.test(said(page.text))) {
       // 인증번호를 묻는 화면: 폰 입력 화면으로 받아 넣고 계속 본다
       input.step?.('인증번호를 기다리는 중')
@@ -906,7 +911,11 @@ export async function socialLogin(
     const confirm = await waitConfirm(p, providerTab, snap, input.step, wait)
     if (confirm === 'moved') continue
     if (confirm === 'timeout')
-      return { status: 'human', tabId: providerTab, reason: `${label}에서 확인을 3분 동안 기다렸어요` }
+      return {
+        status: 'human',
+        tabId: providerTab,
+        reason: `${confirmWhere(p.text)}에서 확인을 아직 기다리고 있어요. 확인을 누르시면 두리가 이어서 연결해요`,
+      }
     if (STEP2.test(said(p.text)) && !CAPTCHA.test(said(p.text))) {
       step('인증번호를 기다리는 중')
       const a = await answerOnScreen(browser, providerTab, p, input.ask, askedInfo)

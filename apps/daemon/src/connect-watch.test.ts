@@ -162,3 +162,24 @@ describe('로그인 확인', () => {
     expect(reads).toBe(0)
   })
 })
+
+describe('지켜보던 탭이 닫히면', () => {
+  it('한 번만 알리고 그 탭은 더 지켜보지 않는다 (카카오 팝업이 확인 뒤 스스로 닫힘)', async () => {
+    const closed: string[] = []
+    const watch = new LoginWatch(
+      {
+        snapshot: async () => {
+          throw new Error('탭이 없어요')
+        },
+        connected: () => false,
+        onSignedIn: () => {},
+        onClosed: (c) => closed.push(c.id),
+      },
+      1,
+    )
+    watch.start({ id: 'shop' } as unknown as ConnectCard, 9)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(closed).toEqual(['shop'])
+    expect(watch.tabOf('shop')).toBeUndefined()
+  })
+})
