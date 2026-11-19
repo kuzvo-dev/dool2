@@ -1634,6 +1634,25 @@ export function pageFormTarget(id: string) {
   }
 }
 
+/**
+ * 체크·라디오를 누른 뒤에도 원하는 상태가 아니면 라벨(같은 줄의 글자)을 누른다.
+ * 칸을 투명하게 덮어 두고 옆 글자 줄로만 체크되는 화면이 있다 (실측 카카오 동의: 폰에서 체크해도 PC는 그대로였다)
+ */
+export function pageFormCheckFix(id: string, want: boolean) {
+  const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
+  const el = st?.els.get(id)?.deref()
+  if (!(el instanceof HTMLInputElement)) return { ok: false }
+  if (el.checked === want) return { ok: true, checked: el.checked }
+  const row =
+    (el.labels?.[0] as HTMLElement | undefined) ??
+    (el.closest('label') as HTMLElement | null) ??
+    (el.id ? (document.querySelector(`[for="${CSS.escape(el.id)}"]`) as HTMLElement | null) : null) ??
+    el.parentElement
+  row?.click()
+  if (el.checked !== want) el.click()
+  return { ok: true, checked: el.checked }
+}
+
 /** 글자 칸 비우고 초점 (그다음 확장이 진짜 키 입력처럼 넣는다) */
 export function pageFormFocus(id: string) {
   const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form

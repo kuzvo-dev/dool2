@@ -15,6 +15,7 @@ import {
   pageExtract,
   pageFind,
   pageForm,
+  pageFormCheckFix,
   pageFormFocus,
   pageFormTarget,
   pageFrameBox,
@@ -1473,7 +1474,13 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           if (t.ok && !t.done) await tapIn(t)
         } else if (typeof it.checked === 'boolean') {
           const t = await target(id)
-          if (t.ok && !t.done && t.checked !== it.checked) await tapIn(t)
+          if (t.ok && !t.done && t.checked !== it.checked) {
+            await tapIn(t)
+            await sleep(120)
+            // 눌렀는데 그대로면 같은 줄의 글자를 누른다 (칸을 덮어 둔 화면)
+            const w = where(id)
+            await inFrame(tabId, w.frameId, pageFormCheckFix, w.id, it.checked).catch(() => undefined)
+          }
         } else if (typeof it.value === 'string') {
           // 진짜 키 입력처럼: 칸을 비우고(전체 선택) 새 글자를 넣는다
           const w = where(id)
