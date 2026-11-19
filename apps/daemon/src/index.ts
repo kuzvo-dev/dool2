@@ -151,6 +151,8 @@ export interface DaemonOptions {
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** 스킬 폴더 (기본: 레포의 skills/, 배포 앱은 앱 안에 넣은 것) */
   skillsDir?: string
+  /** 말과 함께 넘기는 지금 시각 줄 (기본 켬, 시험에서 끈다: () => undefined) */
+  timeLine?: () => string | undefined
   /** PC 화면 제어 도우미 실행 파일 (기본: 레포의 apps/hands-mac/dist/dool2-hands). 테스트는 흉내를 넣는다 */
   hands?: string | HandsCaller
   /**
@@ -313,6 +315,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     tabHost: (tabId) => browserTools.tabHost(tabId),
     // 일한 과정에 서비스 도구 제목 ("가게 찾기·영업 확인 중")
     toolTitle: (name) => connectors.titleOf(name),
+    ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
     // 기억은 대화마다 지침 끝에 붙는다
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>

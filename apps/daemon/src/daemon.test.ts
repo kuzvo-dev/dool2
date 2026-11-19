@@ -49,6 +49,7 @@ class GateRuntime extends EchoRuntime {
 async function boot(rt: EchoRuntime = new EchoRuntime()) {
   dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
   daemon = await startDaemon({
+    timeLine: () => undefined,
     dataDir: dir,
     token: 't0ken',
     runtimes: { claude: rt },
@@ -277,7 +278,12 @@ describe('설정', () => {
     const keep = dir
     dir = undefined // 첫 데몬을 닫아도 폴더는 남긴다
     await daemon?.close()
-    daemon = await startDaemon({ dataDir: keep, token: 't0ken', runtimes: { claude: new EchoRuntime() } })
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: keep,
+      token: 't0ken',
+      runtimes: { claude: new EchoRuntime() },
+    })
     dir = keep
     const again = await fetch(`${daemon.url}/api/settings`, { headers: { authorization: 'Bearer t0ken' } })
     expect(await again.json()).toEqual({
@@ -337,7 +343,12 @@ describe('Claude 로그인', () => {
           pollMs: 10,
         }),
     })
-    daemon = await startDaemon({ dataDir: dir, token: 't0ken', runtimes: { claude: rt } })
+    daemon = await startDaemon({
+      timeLine: () => undefined,
+      dataDir: dir,
+      token: 't0ken',
+      runtimes: { claude: rt },
+    })
     const api = (path: string, init: RequestInit = {}) =>
       fetch(`${daemon?.url}${path}`, {
         ...init,

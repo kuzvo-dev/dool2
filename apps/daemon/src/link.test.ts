@@ -52,6 +52,7 @@ async function boot(extra: Partial<Parameters<typeof startDaemon>[0]> = {}) {
   relay = await startRelay()
   dir = await mkdtemp(join(tmpdir(), 'dool2-link-'))
   daemon = await startDaemon({
+    timeLine: () => undefined,
     dataDir: dir,
     token: 't',
     relay: relay.url,
