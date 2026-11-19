@@ -122,3 +122,76 @@ describe('금고로 로그인 칸 채우기', () => {
     expect(r.isError).toBe(true)
   })
 })
+
+describe('금고 보기 (vault_find 도구)', () => {
+  const cards = [
+    { id: 'coupang', name: '쿠팡', site: 'coupang.com', connected: true },
+    { id: 'yanolja', name: '야놀자', site: 'yanolja.com', connected: true, social: '카카오' },
+    { id: 'yes24', name: 'YES24', site: 'yes24.com' },
+  ]
+  const fill = async () => {
+    const secrets = memorySecrets()
+    let t = Date.parse('2026-11-14T00:00:00Z')
+    const v = new Vault(secrets, () => {
+      t += 3600_000
+      return new Date(t)
+    })
+    await v.add({ url: 'https://www.coupang.com/', username: 'duri1234', password: 'pw-secret-1' })
+    await v.add({
+      url: 'https://shop.example/login',
+      username: 'felix990810@gmail.com',
+      password: 'pw-secret-2',
+    })
+    const list = await v.list()
+    await v.markUsed(list[0]?.id ?? '')
+    return v
+  }
+
+  it('아이디는 가린다', async () => {
+    const { maskUsername } = await import('./vault.js')
+    expect(maskUsername('felix990810@gmail.com')).toBe('f***@gmail.com')
+    expect(maskUsername('duri1234')).toBe('du******')
+    expect(maskUsername('abc')).toBe('ab***')
+    expect(maskUsername('ab')).toBe('a***')
+  })
+
+  it('비어 있으면 연결 카드로 가는 길을 알려 준다', async () => {
+    const { vaultSitesText } = await import('./vault.js')
+    const t = vaultSitesText([], { cards })
+    expect(t).toContain('금고에 저장된 로그인이 없어요')
+    expect(t).toContain('connect_ask')
+    const one = vaultSitesText([], { query: '쿠팡', cards })
+    expect(one).toContain('아니요, 쿠팡(coupang.com) 로그인은 금고에 없어요')
+    expect(one).toContain('connect_ask("coupang")')
+  })
+
+  it('전부 보기: 사이트·가린 아이디·마지막 사용만, 비밀번호는 없다', async () => {
+    const { vaultSitesText } = await import('./vault.js')
+    const v = await fill()
+    const t = vaultSitesText(await v.list(), { cards })
+    expect(t).toContain('로그인이 저장된 사이트 2곳')
+    expect(t).toContain('1. 쿠팡 · coupang.com · 아이디 du****** · 마지막 사용 2026-11-14')
+    expect(t).toContain('2. shop.example · 아이디 f***@gmail.com · 아직 두리가 쓴 적 없음')
+    expect(t).not.toMatch(/pw-secret|duri1234|felix990810/)
+  })
+
+  it('이름·주소로 있는지 확인한다 (예/아니요, 간편 로그인 연결은 따로 알려 준다)', async () => {
+    const { vaultSitesText } = await import('./vault.js')
+    const v = await fill()
+    const list = await v.list()
+    expect(vaultSitesText(list, { query: '쿠팡', cards })).toContain(
+      '네, 쿠팡(coupang.com) 로그인이 금고에 저장돼 있어요',
+    )
+    expect(vaultSitesText(list, { query: 'https://login.coupang.com/login', cards })).toContain('네, 쿠팡')
+    expect(vaultSitesText(list, { query: 'shop.example', cards })).toContain("네, 'shop.example'")
+    const social = vaultSitesText(list, { query: '야놀자', cards })
+    expect(social).toContain('아니요, 야놀자(yanolja.com) 로그인은 금고에 없어요')
+    expect(social).toContain('야놀자는 카카오 간편 로그인으로 연결돼 있어')
+    expect(social).toContain('금고에 저장된 사이트 2곳: 쿠팡(coupang.com), shop.example')
+    expect(social).toContain('connect_ask("yanolja")가 카카오 간편 로그인으로 다시 로그인')
+    const unknown = vaultSitesText(list, { query: 'naver.com', cards })
+    expect(unknown).toContain('browser_request_login')
+    for (const q of ['', '쿠팡', '야놀자', 'naver.com'])
+      expect(vaultSitesText(list, { query: q, cards })).not.toMatch(/pw-secret|duri1234|felix990810/)
+  })
+})

@@ -93,13 +93,13 @@ import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js
 import { Life, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
-import { loadPayMethods, savePayMethods } from './pay-methods.js'
+import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
-import { Vault } from './vault.js'
+import { Vault, vaultSitesText } from './vault.js'
 import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
@@ -2089,6 +2089,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? `대화에 ${card.name} 연결 카드를 띄웠어요. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 로그인하고, 결과는 대화 알림으로 와요. 비밀번호를 묻지 말고 한 문장으로 안내한 뒤 기다려요.`
             : `대화에 ${card.name} 연결 카드를 띄웠어요. 카드를 누르면 연결 화면이 열려요. 한 문장으로 안내한 뒤 기다려요.`,
         )
+      }
+      // 내 결제 수단 보기 (ADR 0023): 카드사·별칭·끝 4자리 같은 가린 값만. 바꾸기는 폰 설정에서 사람이
+      if (req.method === 'POST' && b === 'life' && c === 'pay_method_list' && !d) {
+        return json(res, 200, { content: [{ type: 'text', text: payMethodsText(loadPayMethods(store)) }] })
+      }
+      // 금고 보기 (ADR 0011): 어느 사이트 로그인이 있는지만. 비밀번호는 빼고(vault.list) 아이디는 가린다
+      if (req.method === 'POST' && b === 'life' && c === 'vault_find' && !d) {
+        const args = ((await readJson(req)) ?? {}) as { site?: unknown }
+        const via = connectVia()
+        const cards = (await skills.connections().catch(() => []))
+          .filter((x) => x.card.how !== 'device')
+          .map((x) => {
+            const v = via[x.card.id]
+            const social = v?.startsWith('social:')
+              ? SOCIAL_PROVIDERS[v.slice(7) as SocialProvider]?.label
+              : undefined
+            return {
+              id: x.card.id,
+              name: x.card.name,
+              ...(x.card.site ? { site: x.card.site } : {}),
+              ...(x.connectedAt ? { connected: true } : {}),
+              ...(social ? { social } : {}),
+            }
+          })
+        const text = vaultSitesText(await vault.list(), {
+          query: String(args.site ?? '').slice(0, 100),
+          cards,
+        })
+        return json(res, 200, { content: [{ type: 'text', text }] })
       }
       // 지난 대화 찾기: 요약에서 빠진 앞 구간의 말을 AI가 다시 찾아본다 (ADR 0015)
       if (req.method === 'POST' && b === 'life' && c === 'conversation_search' && !d) {

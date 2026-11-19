@@ -207,6 +207,41 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('connect_ask'),
   )
   server.registerTool(
+    'pay_method_list',
+    {
+      title: '내 결제 수단 보기',
+      description:
+        '사용자가 폰 설정에 등록해 둔 결제 수단(카드·간편결제)을 순서대로 본다. 맨 위가 주 결제 수단. ' +
+        '"어떤 카드로 해야 이득이야?", "카드 할인까지 따져서 제일 싸게", "내 카드로 결제하면 얼마야?"처럼 쓰는 카드·결제 수단이 필요하면 ' +
+        '"쓰시는 카드를 알려 주세요"라고 묻기 전에 이것으로 먼저 본다. 카드사·별칭·끝 4자리 같은 가린 값만 온다(카드 번호·유효기간·CVC는 없다). ' +
+        '등록된 게 없으면 등록하는 길이 온다.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    call('pay_method_list'),
+  )
+  server.registerTool(
+    'vault_find',
+    {
+      title: '금고에 저장된 로그인 보기',
+      description:
+        '두리 금고에 로그인(아이디·비밀번호)이 저장된 사이트를 본다. "이 사이트 비번 저장돼 있어?", "금고에 뭐 있어?", ' +
+        '"쿠팡 로그인 저장해 뒀나?"에 짐작하지 말고 이것으로 확인한다. 사이트·가린 아이디·마지막 사용일만 온다. 비밀번호는 절대 오지 않는다. ' +
+        '없으면 연결 카드(connect_ask)나 로그인 카드로 가는 길이 온다.',
+      inputSchema: {
+        site: z
+          .string()
+          .max(100)
+          .optional()
+          .describe(
+            '확인할 서비스 이름이나 주소 (예: "쿠팡", "coupang", "www.yes24.com"). 지금 보던 사이트면 그 주소. 비우면 저장된 사이트 전부',
+          ),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('vault_find'),
+  )
+  server.registerTool(
     'show_cards',
     {
       title: '답에 카드 붙이기',
