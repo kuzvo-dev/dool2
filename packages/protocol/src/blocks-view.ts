@@ -113,10 +113,13 @@ function lead(rec: RowsRecordMessage, i: number, env: BlockEnv): HTMLElement | u
   return undefined
 }
 
-/** done: 사용자가 이 뒤에 이미 말을 했다 (여러 개 고르기는 잠근다) */
-export function rowsView(rec: RowsRecordMessage, env: BlockEnv, done = false): HTMLElement {
-  const on = rec.rows.map((r) => !!r.on)
+/**
+ * used: 이 뒤에 사용자가 한 말. 있으면 여러 개 고르기는 잠그고, 그 말이 고른 목록이면 고른 대로 체크를 되살린다
+ */
+export function rowsView(rec: RowsRecordMessage, env: BlockEnv, used?: string): HTMLElement {
   const multi = rec.pick === 'multi'
+  const done = used !== undefined
+  const on = (multi && used !== undefined && pickedFrom(rec, used)) || rec.rows.map((r) => !!r.on)
   const box = el('div', `cb cb-rows${multi ? ' multi' : ''}`)
   const count = multi ? el('span', 'cb-from') : undefined
   const h = head(rec.title, multi ? undefined : rec.from)
@@ -213,6 +216,14 @@ export function rowsView(rec: RowsRecordMessage, env: BlockEnv, done = false): H
     }
   }
   return box
+}
+
+/** 보낸 말(multiAsk)에서 고른 줄 되찾기. 고른 목록 말이 아니면 undefined */
+function pickedFrom(rec: RowsRecordMessage, said: string): boolean[] | undefined {
+  const cut = said.indexOf(' (뺀 것: ')
+  const main = cut >= 0 ? said.slice(0, cut) : said
+  const on = rec.rows.map((r) => main.includes(r.title))
+  return on.some(Boolean) ? on : undefined
 }
 
 // ── 결과 한 장 ───────────────────────────────────────
@@ -325,7 +336,7 @@ export function quickView(rec: QuickRecordMessage, env: BlockEnv, used?: string)
 
 /** 기록의 tool 메시지가 결과 블록이면 그린다 (아니면 undefined). used: 이 뒤에 사용자가 한 말 (빠른 답·여러 개 고르기) */
 export function blockView(rec: { kind?: string }, env: BlockEnv, used?: string): HTMLElement | undefined {
-  if (rec.kind === 'rows') return rowsView(rec as RowsRecordMessage, env, used !== undefined)
+  if (rec.kind === 'rows') return rowsView(rec as RowsRecordMessage, env, used)
   if (rec.kind === 'result') return resultView(rec as ResultRecordMessage, env)
   if (rec.kind === 'draft') return draftView(rec as DraftRecordMessage, env)
   if (rec.kind === 'quick') return quickView(rec as QuickRecordMessage, env, used)
