@@ -4,10 +4,10 @@
     {
       "name": "search",
       "title": "상품 찾기",
-      "description": "로그인 없이 된다. 유니클로(GU 포함)에서 검색어로 상품을 찾아 이름·성별·가격·할인가·별점·리뷰 수·색상(코드·이름)·사이즈(이름·코드)·상품 번호·링크를 돌려준다. 검색 화면을 주소로 열고 화면이 받은 결과(24개)를 읽는다. 색상 코드(color_codes, 예: 09)와 사이즈 코드(size_codes, 예: 005)는 color_names·sizes와 같은 순서다. 고른 색상·사이즈의 온라인 재고는 uniqlo_stock, 매장 재고는 uniqlo_store_stock, 주문은 uniqlo_prepare_order. 세일 알림은 goal_create로 하루 한 번 불러 sale_price가 생기거나 내려갔는지 보면 된다.",
+      "description": "로그인 없이 된다. 유니클로(GU 포함)에서 검색어로 상품을 찾아 이름·성별·사이즈 범위·가격·할인 표시·별점·상품 번호·가격 그룹·보이는 색상 코드·링크·사진을 돌려준다. 검색 화면을 열어 상품 칸을 읽는다(첫 화면 24개 안팎). 재고는 uniqlo_stock(매장은 uniqlo_store_stock)에 product_no·color_code와 사이즈 코드를 넘긴다 — 사이즈 코드: XS 002·S 003·M 004·L 005·XL 006·XXL 007·3XL 008. 다른 색상은 상품 링크를 열면 보인다. 주문은 uniqlo_prepare_order. 세일 알림은 goal_create로 하루 한 번 불러 가격·할인 표시가 바뀌었는지 보면 된다.",
       "tier": "찾아보기",
       "login": false,
-      "status": "검증됨(2026-11-18, 스웨터·히트텍 검색, 성별 거르기, 화면이 받은 응답 읽기)",
+      "status": "검증됨(2026-11-20, 히트텍·니트 검색, 성별·가격 거르기, 화면의 상품 칸 읽기 — 검색 결과가 서버 렌더링으로 바뀜)",
       "input": {
         "properties": {
           "keyword": {
@@ -55,48 +55,40 @@
               "type": "string",
               "description": "WOMEN·MEN·KIDS·BABY·UNISEX"
             },
+            "sizes": {
+              "type": "string",
+              "description": "사이즈 범위 (예: XS-3XL)"
+            },
             "product_no": {
               "type": "string",
               "description": "uniqlo_stock·prepare_order에 넘길 상품 번호 (E465734-000처럼)"
             },
+            "price_group": {
+              "type": "string",
+              "description": "가격 그룹 (보통 00, 할인 상품은 01 등)"
+            },
+            "color_code": {
+              "type": "string",
+              "description": "칸에 보이는 색상 코드 두 자리"
+            },
             "price": {
-              "type": "integer",
+              "type": "string",
               "description": "가격 (원)"
             },
-            "sale_price": {
-              "type": "integer",
-              "description": "할인가 (원, 세일·가격인하 중일 때만)"
+            "sale": {
+              "type": "string",
+              "description": "가격인하·옵션할인·기간한정 표시 (있을 때만)"
             },
             "rating": {
-              "type": "number",
+              "type": "string",
               "description": "별점 (5점 만점)"
-            },
-            "reviews": {
-              "type": "integer",
-              "description": "리뷰 수"
-            },
-            "color_codes": {
-              "type": "strings",
-              "description": "색상 코드 (예: 09)"
-            },
-            "color_names": {
-              "type": "strings",
-              "description": "색상 이름 (color_codes와 같은 순서, 예: BLACK)"
-            },
-            "sizes": {
-              "type": "strings",
-              "description": "사이즈 이름 (예: S, M, L)"
-            },
-            "size_codes": {
-              "type": "strings",
-              "description": "사이즈 코드 (sizes와 같은 순서, 예: 004)"
             },
             "link": {
               "type": "string"
             },
             "image": {
               "type": "string",
-              "description": "사진 (카드에 넣어요)"
+              "description": "사진"
             }
           }
         }
@@ -125,39 +117,74 @@
           "open": "https://www.uniqlo.com/kr/ko/search?q={{keyword|url}}"
         },
         {
-          "capture": {
-            "url": "/api/commerce/v\\d+/ko/products/search",
-            "pick": "result.items",
+          "wait": {
+            "text": "결과:|검색 결과가 없|일치하는 상품이 없",
             "timeoutMs": 15000
-          },
-          "as": "found"
+          }
         },
         {
-          "map": {
-            "from": "found",
-            "limit": 60,
+          "stop_if": "검색 결과가 없|일치하는 상품이 없",
+          "say": "유니클로에서 '{{keyword}}'로 나온 상품이 없어요. 낱말을 줄여 다시 찾아요."
+        },
+        {
+          "extract": {
+            "items": "a.product-tile__link, a[href*='/products/E']",
+            "limit": 40,
             "fields": {
-              "name": "name",
-              "gender": "genderCategory",
-              "product_no": "productId",
-              "price_group": "priceGroup",
-              "price": "prices.base.value",
-              "sale_price": "prices.promo.value",
-              "rating": "rating.average",
-              "reviews": "rating.count",
-              "color_codes": "colors.*.displayCode",
-              "color_names": "colors.*.name",
-              "sizes": "sizes.*.name",
-              "size_codes": "sizes.*.displayCode",
-              "link": "https://www.uniqlo.com/kr/ko/products/{{productId}}/{{priceGroup}}",
-              "image": "images.main.*.image"
+              "name": {
+                "line": 1
+              },
+              "gender": {
+                "line": 0,
+                "match": "^(WOMEN|MEN|KIDS|BABY|UNISEX)"
+              },
+              "sizes": {
+                "line": 0,
+                "match": ", ?(.+)$"
+              },
+              "product_no": {
+                "attr": "href",
+                "match": "/products/([A-Z]?\\d{6}-\\d{3})"
+              },
+              "price_group": {
+                "attr": "href",
+                "match": "/products/[A-Z]?\\d{6}-\\d{3}/(\\d{2})"
+              },
+              "color_code": {
+                "attr": "href",
+                "match": "colorDisplayCode=(\\d{2})"
+              },
+              "price": {
+                "match": "([\\d,]+)원"
+              },
+              "sale": {
+                "match": "(가격인하|옵션할인|기간한정[^\\n,]*)"
+              },
+              "rating": {
+                "match": "\\n(\\d\\.\\d)(?:\\n|$)"
+              },
+              "link": {
+                "attr": "href"
+              },
+              "image": {
+                "image": true
+              }
             }
           },
-          "as": "all"
+          "as": "all",
+          "min": 0
         },
         {
           "filter": {
             "from": "all",
+            "where": "product_no",
+            "op": "has"
+          },
+          "as": "real"
+        },
+        {
+          "filter": {
+            "from": "real",
             "where": "gender",
             "op": "eq",
             "value": "{{gender}}"
@@ -180,15 +207,13 @@
             "fields": {
               "name": "name",
               "gender": "gender",
-              "product_no": "product_no",
-              "price": "price",
-              "sale_price": "sale_price",
-              "rating": "rating",
-              "reviews": "reviews",
-              "color_codes": "color_codes",
-              "color_names": "color_names",
               "sizes": "sizes",
-              "size_codes": "size_codes",
+              "product_no": "product_no",
+              "price_group": "price_group",
+              "color_code": "color_code",
+              "price": "price",
+              "sale": "sale",
+              "rating": "rating",
               "link": "link",
               "image": "image"
             }

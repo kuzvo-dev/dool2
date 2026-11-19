@@ -4,10 +4,10 @@
     {
       "name": "search_jobs",
       "title": "공고 찾기",
-      "description": "로그인 없이 된다. 링크드인 공개 채용 검색으로 직무·회사 이름과 지역, 올린 때(하루·일주일·한 달), 근무 형태(원격·하이브리드·출근)로 공고를 찾아 공고 제목·회사·지역·올린 때·공고 번호·주소를 돌려준다. 자세한 내용은 linkedin_job, 지원은 linkedin_prepare_apply.",
+      "description": "로그인 없이 된다(로그인돼 있으면 로그인 화면에서 읽는다). 링크드인 채용 검색으로 직무·회사 이름과 지역, 올린 때(하루·일주일·한 달), 근무 형태(원격·하이브리드·출근)로 공고를 찾아 공고 제목·회사·지역·올린 때·공고 번호·주소를 돌려준다. 자세한 내용은 linkedin_job, 지원은 linkedin_prepare_apply.",
       "tier": "찾아보기",
       "login": false,
-      "status": "검증됨(2026-11-18, 공개 채용 검색, 화면 읽기)",
+      "status": "검증됨(2026-11-20, 비로그인 목록 + 로그인 화면 공고 칸, frontend·Seoul)",
       "input": {
         "properties": {
           "keyword": {
@@ -97,7 +97,7 @@
         },
         {
           "wait": {
-            "items": "ul.jobs-search__results-list > li",
+            "items": "ul.jobs-search__results-list > li, [role='button'][componentkey^='job-card-component-ref-']",
             "timeoutMs": 15000
           }
         },
@@ -135,7 +135,51 @@
             }
           },
           "as": "jobs",
-          "min": 1
+          "min": 0
+        },
+        {
+          "extract": {
+            "items": "[role='button'][componentkey^='job-card-component-ref-']",
+            "limit": 25,
+            "fields": {
+              "title": {
+                "line": 0,
+                "match": "^(?:Selected, )?(.+?)(?: \\(Verified job\\))?$"
+              },
+              "company": {
+                "line": 1
+              },
+              "location": {
+                "line": 2
+              },
+              "posted": {
+                "match": "((?:Posted )?\\d+ (?:minute|hour|day|week|month)s? ago)"
+              },
+              "job_id": {
+                "attr": "componentkey",
+                "match": "ref-(\\d+)$"
+              }
+            }
+          },
+          "as": "signed",
+          "min": 0,
+          "if": "{{^jobs.0}}1{{/jobs.0}}"
+        },
+        {
+          "map": {
+            "from": "signed",
+            "fields": {
+              "title": "title",
+              "company": "company",
+              "location": "location",
+              "posted": "posted",
+              "job_id": "job_id",
+              "url": "https://www.linkedin.com/jobs/view/{{job_id}}/"
+            },
+            "limit": 25
+          },
+          "as": "jobs",
+          "if": "{{^jobs.0}}1{{/jobs.0}}"
         }
       ],
       "result": {
