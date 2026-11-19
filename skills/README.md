@@ -179,6 +179,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 통신 | [LG유플러스](lguplus/tools.json) | 5 | `plans` |
 | 통신 | [SKT T월드](skt/tools.json) | 5 | `plans` |
 | 생활 | [CJ대한통운](cj-logistics/tools.json) | 1 | `track` |
+| 생활 | [네이버 뉴스](naver/tools.json) | 1 | `news` |
 | 생활 | [동행복권](dhlottery/tools.json) | 4 | `results` |
 | 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
 | 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |

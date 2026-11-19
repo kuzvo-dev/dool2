@@ -62,6 +62,7 @@ import {
   narrationLine,
   readAppNote,
   splitPhoto,
+  stripLinks,
   toolLabel,
   toolPlace,
   withoutPhotoMark,
@@ -3080,7 +3081,7 @@ function tellInline(rec: TellRecordMessage): HTMLElement {
     { class: 'card tell-card' },
     h('div', { class: 'card-label' }, doori('', 22), '먼저 챙겼어요'),
     h('strong', { class: 'tell-title', text: rec.title }),
-    rec.body ? h('p', { class: 'tell-body', text: rec.body }) : undefined,
+    rec.body ? h('div', { class: 'tell-body rich' }, rich(rec.body)) : undefined,
     rec.from ? h('p', { class: 'meta', text: rec.from }) : undefined,
     say
       ? answered
@@ -3526,7 +3527,7 @@ function lastUserText() {
 
 /** 답을 한 줄 미리 보기로: 굵게·목록 표시를 빼고 공백을 줄인다 */
 function plainPreview(text: string, max = 80) {
-  const t = text
+  const t = stripLinks(text)
     .replace(/\*\*/g, '')
     .replace(/^\s*(?:[-*•]|\d+\.)\s+/gm, '')
     .replace(/\s+/g, ' ')
@@ -3601,7 +3602,27 @@ function tapIdea(it: IdeaItem) {
     connectInChat(it.service.id)
     return
   }
+  // 채울 게 있는 부탁(이 상품·사진 보낼게…)은 보내지 않고 입력칸에 넣는다
+  if (it.fill) {
+    composeDraft(it.fill)
+    return
+  }
   ask(it.ask)
+}
+
+/** 대화 입력칸에 글을 넣고 커서를 끝에 둔다 (보내지는 않는다) */
+function composeDraft(text: string) {
+  st.draft = text
+  st.tab = 'chat'
+  render()
+  requestAnimationFrame(() => {
+    const ta = shell?.textarea
+    if (!ta) return
+    ta.value = text
+    ta.dispatchEvent(new Event('input'))
+    ta.focus()
+    ta.setSelectionRange(text.length, text.length)
+  })
 }
 
 function ideaRow(it: IdeaItem, sec: IdeaSection) {
@@ -3618,7 +3639,11 @@ function ideaRow(it: IdeaItem, sec: IdeaSection) {
       h('span', { class: 'row-t', text: it.text }),
       h('span', { class: 'row-d', text: it.note }),
     ),
-    needsConnect(it) ? h('span', { class: 'idea-tag', text: '연결' }) : undefined,
+    needsConnect(it)
+      ? h('span', { class: 'idea-tag', text: '연결' })
+      : it.fill
+        ? h('span', { class: 'idea-tag', text: '채워서' })
+        : undefined,
   )
 }
 

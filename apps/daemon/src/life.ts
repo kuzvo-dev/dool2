@@ -38,12 +38,15 @@ export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
 }
 
 /** 정해진 때 두리에게 보낼 말: 할 일 + 조건에 맞지 않을 때·끝나는 조건을 답에 담는 법 */
-export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until'>): string {
+export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until' | 'lastTold'>): string {
   const lines = [r.prompt]
-  if (r.notify === 'when_found')
+  if (r.notify === 'when_found') {
     lines.push(
       `조건에 맞을 때만 알리는 일이에요. 맞는 게 없으면 다른 말 없이 "${QUIET_MARK}"만 써요(사용자에게 알리지 않아요). 맞으면 확인한 것부터 짧게 써요.`,
     )
+    // 지켜보기는 지난번에 알린 것을 알아야 같은 소식을 또 알리지 않는다
+    if (r.lastTold) lines.push(`지난번에 이미 알린 것 (같은 건 새 소식이 아니에요):\n${r.lastTold}`)
+  }
   if (r.until && !untilEnd(r.until))
     lines.push(
       `끝나는 조건: ${r.until}. 이번에 이 조건이 이뤄졌으면 답 맨 끝에 "${END_MARK}"을 붙여요(이 일이 스스로 꺼져요).`,
@@ -361,6 +364,8 @@ export class Life {
     if (!r) return
     const { quiet, ended, text: result } = readRun(r, answer)
     r.lastResult = result.slice(0, 300)
+    // 지켜보기가 다음 차례에 같은 소식을 또 알리지 않게, 알린 것을 넉넉히 남긴다
+    if (r.notify === 'when_found' && !quiet) r.lastTold = result.slice(0, 1500)
     if (ended) this.end(r)
     if (r.category && !quiet)
       r.log = [{ at: this.now().toISOString(), text: result.slice(0, 300) }, ...(r.log ?? [])].slice(0, 50)
@@ -785,6 +790,11 @@ export class Life {
               `정한 것: ${ruleSentence(r)}.`,
               ...ruleGaps(r),
               '사용자에게 "정한 것"을 그대로 한 문장으로 말해 확인해 주세요.',
+              ...(a.preview === true
+                ? [
+                    '미리 보기: 지금 이 대화에서 prompt대로 한 번 해서, 예약한 때 받을 것과 같은 모양으로 보여 주세요. 정한 것은 그 아래 한 줄로.',
+                  ]
+                : []),
             ].join('\n'),
           )
         }

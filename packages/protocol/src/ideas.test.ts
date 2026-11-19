@@ -58,4 +58,14 @@ describe('아이디어 모음', () => {
     expect(searchIdeas(groups, '마일 리지').length).toBeGreaterThan(0)
     expect(searchIdeas(groups, '')).toEqual([])
   })
+
+  it('채울 게 있는 부탁("이 ○○", "보낼게")은 입력칸으로 (그대로 보내면 되묻게 된다)', () => {
+    const items = ideaCatalog().flatMap((g) => g.items)
+    const needs = items.filter((i) =>
+      /(^|[ ,])이 (상품|사진|조명|운동화|메일|집|캡처|카페|책|페이지|일들)|보낼게|사진 속/.test(i.text),
+    )
+    expect(needs.length).toBeGreaterThan(10)
+    expect(needs.filter((i) => !i.fill).map((i) => i.text)).toEqual([])
+    expect(items.find((i) => i.text.startsWith('이 페이지'))?.fill).toBe('이 페이지 바뀌면 알려 줘: ')
+  })
 })

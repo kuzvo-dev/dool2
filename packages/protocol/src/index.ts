@@ -721,6 +721,8 @@ export interface Routine {
   nextRunAt?: string
   lastRunAt?: string
   lastResult?: string
+  /** 지켜보기(when_found)가 마지막으로 알린 것 — 다음 차례에 같은 걸 또 알리지 않게 넘긴다 */
+  lastTold?: string
   /** 끝나는 때: 날짜(YYYY-MM-DD, 그날까지 돌고 꺼짐) 또는 조건(그때 두리가 이뤄졌다고 하면 꺼짐) */
   until?: string
   /** 알리기: 매번(기본) 또는 조건에 맞을 때만 (아니면 피드·폰 알림 없이 조용히) */

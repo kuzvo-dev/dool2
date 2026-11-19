@@ -1768,6 +1768,13 @@ function pickCards(rec: CardsRecordMessage): HTMLElement {
   )
 }
 
+/** 두리 글(마크다운 조금)을 그린 상자 */
+function richBox(cls: string, text: string): HTMLElement {
+  const box = el('div', cls)
+  setRich(box, text)
+  return box
+}
+
 /** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
 function tellCard(rec: TellRecordMessage): HTMLElement {
   const f = feedPager.items.find((x) => x.id === rec.id)
@@ -1777,7 +1784,7 @@ function tellCard(rec: TellRecordMessage): HTMLElement {
     'card tell-card',
     el('div', 'card-label', doori('', 22), '먼저 챙겼어요'),
     el('p', 'tell-title', rec.title),
-    rec.body ? el('p', 'tell-body', rec.body) : undefined,
+    rec.body ? richBox('tell-body rich', rec.body) : undefined,
     rec.from ? el('p', 'cap', rec.from) : undefined,
     ask
       ? f?.answered
