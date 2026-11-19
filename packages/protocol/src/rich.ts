@@ -143,6 +143,7 @@ const TOOL_LABEL: Record<string, string> = {
   show_cards: '카드 만드는',
   show_list: '목록 만드는',
   show_result: '결과 정리하는',
+  show_route: '길 정리하는',
   show_draft: '보낼 글 쓰는',
   conversation_search: '지난 대화 찾는',
   file_find: '파일 찾는',

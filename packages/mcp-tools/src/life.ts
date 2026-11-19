@@ -327,6 +327,48 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('show_result'),
   )
   server.registerTool(
+    'show_route',
+    {
+      title: '답에 경로 카드 붙이기',
+      description:
+        '길찾기 결과를 답 아래 경로 카드로 붙인다: 결론(big) 한 줄, 노선 색 막대(구간 분 비율), 구간 줄(노선·탈 곳 → 내릴 곳·막차). ' +
+        '대중교통 길·환승·막차 물음에 길찾기 도구(kakao_map_transit 등)로 찾은 뒤 고른 경로 하나를 넣는다. ' +
+        'big은 사용자가 바로 움직일 결론 (예: "23:25까지 강남역 출발", "1시간 16분"), bigNote는 환승·요금. ' +
+        'legs는 탈 순서대로: line(2호선·광역 M7731·도보), from·to(역·정류장), minutes(그 구간 분), last(그 구간 탈 곳 막차 HH:MM), note(방면·출구). ' +
+        'facts에 놓쳤을 때 대안·다른 길을 1~3줄 (예: 놓치면 → "합정에서 M7731, 강남 00:21까지"). 버튼은 길찾기 주소(url) 하나. ' +
+        '붙였으면 답 글에는 구간을 되풀이하지 말고 결론 한 줄과 대안만.',
+      inputSchema: {
+        title: z.string().max(40).optional().describe('머리 줄 (예: "강남역 → 대화역")'),
+        from: z.string().max(24).optional().describe('출처 (예: "카카오맵")'),
+        big: z.string().max(40).describe('결론 하나 (예: "23:25까지 강남역 출발")'),
+        bigNote: z.string().max(30).optional().describe('작은 글 (예: "1시간 16분 · 환승 1 · 2,150원")'),
+        legs: z
+          .array(
+            z.object({
+              mode: z
+                .enum(['subway', 'bus', 'train', 'walk', 'etc'])
+                .optional()
+                .describe('탈것 (빼면 노선 이름으로 짐작)'),
+              line: z.string().max(24).describe('노선 (예: "2호선", "광역 M7731", "도보")'),
+              from: z.string().max(30),
+              to: z.string().max(30),
+              minutes: z.number().int().min(1).max(600).optional(),
+              last: z.string().max(8).optional().describe('탈 곳 막차 HH:MM'),
+              note: z.string().max(30).optional().describe('방면·출구 (예: "대화 방면")'),
+            }),
+          )
+          .min(1)
+          .max(8),
+        facts: z
+          .array(z.object({ label: z.string().max(14), value: z.string().max(60) }))
+          .max(4)
+          .optional(),
+        actions: z.array(blockAction).max(2).optional(),
+      },
+    },
+    call('show_route'),
+  )
+  server.registerTool(
     'show_draft',
     {
       title: '답에 보낼 글 붙이기',

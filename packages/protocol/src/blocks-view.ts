@@ -6,10 +6,12 @@ import {
   type DraftRecordMessage,
   daysUntil,
   draftAsk,
+  lineColor,
   multiAsk,
   multiLabel,
   type QuickRecordMessage,
   type ResultRecordMessage,
+  type RouteRecordMessage,
   type RowsRecordMessage,
   shortDate,
 } from './blocks.js'
@@ -276,6 +278,67 @@ export function resultView(rec: ResultRecordMessage, env: BlockEnv, now = Date.n
   return box
 }
 
+// ── 경로 카드 ─────────────────────────────────────────
+
+/** 길찾기 결과: 결론(큰 값) → 노선 색 막대(걸리는 시간 비율) → 구간 줄(노선·탈 곳→내릴 곳·막차) */
+export function routeView(rec: RouteRecordMessage, env: BlockEnv): HTMLElement {
+  const box = el('div', 'cb cb-route')
+  const h = head(rec.title, rec.from)
+  if (h) box.append(h)
+  const body = el('div', 'cb-body')
+  body.append(
+    el(
+      'div',
+      'cb-big',
+      el('span', undefined, rec.big),
+      rec.bigNote ? el('small', undefined, rec.bigNote) : undefined,
+    ),
+  )
+  // 막대: 구간 분 비율 (분을 모르면 같은 몫). 너무 짧은 구간도 보이게 최소 몫
+  const total = rec.legs.reduce((a, g) => a + (g.minutes ?? 0), 0)
+  const bar = el('div', 'cb-route-bar')
+  for (const g of rec.legs) {
+    const seg = el('i', g.mode === 'walk' ? 'walk' : undefined)
+    const share = total && g.minutes ? g.minutes / total : 1 / rec.legs.length
+    seg.style.flexGrow = String(Math.max(share, 0.12))
+    seg.style.background = lineColor(g)
+    seg.title = `${g.line} ${g.minutes ? `${g.minutes}분` : ''}`.trim()
+    bar.append(seg)
+  }
+  body.append(bar)
+  const list = el('ol', 'cb-route-legs')
+  for (const g of rec.legs) {
+    const badge = el('span', 'cb-line', g.line)
+    // 걷기는 색 대신 회색 바탕 (ui.css)
+    if (g.mode !== 'walk') badge.style.background = lineColor(g)
+    const where = el(
+      'div',
+      'cb-route-where',
+      el('span', undefined, `${g.from} → ${g.to}`),
+      g.note || g.minutes
+        ? el('small', undefined, [g.note, g.minutes ? `${g.minutes}분` : ''].filter(Boolean).join(' · '))
+        : undefined,
+    )
+    const last = g.last ? el('span', 'cb-route-last', el('small', undefined, '막차'), g.last) : undefined
+    list.append(el('li', g.mode === 'walk' ? 'walk' : undefined, badge, where, last))
+  }
+  body.append(list)
+  if (rec.facts?.length)
+    body.append(
+      el(
+        'dl',
+        'cb-facts',
+        ...rec.facts.map((f) =>
+          el('div', undefined, el('dt', undefined, f.label), el('dd', undefined, f.value)),
+        ),
+      ),
+    )
+  box.append(body)
+  const f = foot(rec.actions ?? [], env)
+  if (f) box.append(f)
+  return box
+}
+
 // ── 보낼 글 ─────────────────────────────────────────
 
 const VIA: Record<DraftRecordMessage['via'], { name: string; send: string }> = {
@@ -339,6 +402,7 @@ export function blockView(rec: { kind?: string }, env: BlockEnv, used?: string):
   if (rec.kind === 'rows') return rowsView(rec as RowsRecordMessage, env, used)
   if (rec.kind === 'result') return resultView(rec as ResultRecordMessage, env)
   if (rec.kind === 'draft') return draftView(rec as DraftRecordMessage, env)
+  if (rec.kind === 'route') return routeView(rec as RouteRecordMessage, env)
   if (rec.kind === 'quick') return quickView(rec as QuickRecordMessage, env, used)
   return undefined
 }

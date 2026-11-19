@@ -15,7 +15,7 @@ import {
   type RoutineSchedule,
   type SuggestedIdea,
 } from '@dool2/protocol'
-import { cleanDraft, cleanResult, cleanRows } from '@dool2/protocol/blocks'
+import { cleanDraft, cleanResult, cleanRoute, cleanRows } from '@dool2/protocol/blocks'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import { nextRun, scheduleLabel } from '@dool2/protocol/schedule'
 
@@ -565,6 +565,13 @@ export class Life {
           if (!r) return bad('큰 값(big)이 없어요. 언제·얼마 같은 값 하나를 big에 넣어 주세요.')
           return ok(
             '결과 카드를 답 아래에 붙여요. 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 같은 값을 되풀이하지 말고 한두 문장만 말해요.',
+          )
+        }
+        case 'show_route': {
+          const r = cleanRoute(a)
+          if (!r) return bad('결론(big)과 구간(legs: line·from·to)이 있어야 해요.')
+          return ok(
+            `경로 카드(구간 ${r.legs.length}개)를 답 아래에 붙여요. 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 구간을 되풀이하지 말고 결론 한 줄과 놓쳤을 때 대안만 말해요.`,
           )
         }
         case 'show_draft': {

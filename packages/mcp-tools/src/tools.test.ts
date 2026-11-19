@@ -63,6 +63,7 @@ describe('두리 MCP 도구', () => {
       'show_cards',
       'show_list',
       'show_result',
+      'show_route',
       'show_draft',
       'feed_post',
       'feed_tell',

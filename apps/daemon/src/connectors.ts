@@ -626,7 +626,7 @@ export class Connectors {
     if (
       !(pics && !/show_cards/.test(tool.next ?? '')) &&
       (rows.length >= 3 || (listy && rows.length > 0)) &&
-      !/show_(cards|list)/.test(tool.next ?? '')
+      !/show_(cards|list|route|result)/.test(tool.next ?? '')
     )
       lines.push(
         '',

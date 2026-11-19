@@ -96,7 +96,44 @@ export interface QuickRecordMessage {
   replies: string[]
 }
 
-export type BlockRecordMessage = RowsRecordMessage | ResultRecordMessage | DraftRecordMessage
+/** 경로 카드 한 구간: 무엇을(노선) 어디서 어디까지 */
+export type RouteMode = 'subway' | 'bus' | 'train' | 'walk' | 'etc'
+export interface RouteLeg {
+  mode: RouteMode
+  /** 노선 이름 (2호선 · 광역 M7731 · 신분당선 · 도보) */
+  line: string
+  /** 탈 곳 → 내릴 곳 */
+  from: string
+  to: string
+  /** 이 구간 걸리는 분 (막대 길이) */
+  minutes?: number
+  /** 탈 곳 막차 (23:29) */
+  last?: string
+  /** 짧은 덧말 (대화 방면 · 3번 출구) */
+  note?: string
+}
+
+/** 대화 기록에 남기는 경로 카드 (show_route) */
+export interface RouteRecordMessage {
+  kind: 'route'
+  /** 머리 줄 (강남역 → 대화역) */
+  title?: string
+  from?: string
+  /** 큰 값: 결론 하나 (23:25까지 강남역 출발 · 1시간 16분) */
+  big: string
+  /** 큰 값 옆 작은 글 (환승 1회 · 2,150원) */
+  bigNote?: string
+  legs: RouteLeg[]
+  /** 정보 줄 (놓치면 · 다른 길 · 실시간) 4개까지 */
+  facts?: { label: string; value: string }[]
+  actions?: BlockAction[]
+}
+
+export type BlockRecordMessage =
+  | RowsRecordMessage
+  | ResultRecordMessage
+  | DraftRecordMessage
+  | RouteRecordMessage
 
 // ── 다듬기: AI가 넘긴 값을 믿을 수 있는 모양으로 ─────────────
 
@@ -247,6 +284,106 @@ export function cleanResult(input: unknown): ResultRecordMessage | undefined {
   return out
 }
 
+const MODES: RouteMode[] = ['subway', 'bus', 'train', 'walk', 'etc']
+
+/** 노선 이름으로 탈것 짐작 (AI가 mode를 빼먹었을 때) */
+function guessMode(line: string): RouteMode {
+  if (/도보|걷기/.test(line)) return 'walk'
+  if (/호선|선$|경의|공항철도|GTX|경춘|수인|신분당|우이|김포골드|서해|에버라인|의정부/.test(line))
+    return 'subway'
+  if (/KTX|SRT|ITX|무궁화|새마을|기차|열차/.test(line)) return 'train'
+  if (/버스|광역|간선|지선|마을|직행|좌석|심야|공항버스|^[MN]?\d|^[가-힣]+\d/.test(line)) return 'bus'
+  return 'etc'
+}
+
+/** 경로 카드: 구간 2~8개, 정보 줄 4개, 버튼 2개까지 */
+export function cleanRoute(input: unknown): RouteRecordMessage | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const r = input as Record<string, unknown>
+  const big = str(r.big, 40)
+  if (!big) return undefined
+  const legs: RouteLeg[] = []
+  for (const raw of Array.isArray(r.legs) ? r.legs.slice(0, 8) : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const g = raw as Record<string, unknown>
+    const line = str(g.line, 24)
+    const from = str(g.from, 30)
+    const to = str(g.to, 30)
+    if (!line || !from || !to) continue
+    const mode = MODES.includes(g.mode as RouteMode) ? (g.mode as RouteMode) : guessMode(line)
+    const leg: RouteLeg = { mode, line, from, to }
+    const min = typeof g.minutes === 'number' ? Math.round(g.minutes) : Number.NaN
+    if (min > 0 && min < 600) leg.minutes = min
+    const last = str(g.last, 8)?.match(/^(\d{1,2}):(\d{2})/)
+    if (last) leg.last = `${last[1]?.padStart(2, '0')}:${last[2]}`
+    const note = str(g.note, 30)
+    if (note) leg.note = note
+    legs.push(leg)
+  }
+  if (!legs.length) return undefined
+  const out: RouteRecordMessage = { kind: 'route', big, legs }
+  const title = str(r.title, 40)
+  const from = str(r.from, 24)
+  const bigNote = str(r.bigNote ?? r.big_note, 30)
+  if (title) out.title = title
+  if (from) out.from = from
+  if (bigNote) out.bigNote = bigNote
+  const facts: NonNullable<RouteRecordMessage['facts']> = []
+  for (const raw of Array.isArray(r.facts) ? r.facts.slice(0, 4) : []) {
+    const f = raw as Record<string, unknown> | undefined
+    const l = str(f?.label, 14)
+    const v = str(f?.value, 60)
+    if (l && v) facts.push({ label: l, value: v })
+  }
+  if (facts.length) out.facts = facts
+  const actions = (Array.isArray(r.actions) ? r.actions : [])
+    .map(action)
+    .filter((a): a is BlockAction => !!a)
+    .slice(0, 2)
+  if (actions.length) out.actions = actions
+  return out
+}
+
+/** 노선 색 (수도권 지하철 공식 색, 버스는 종류 색). 모르면 탈것 기본 색 */
+export function lineColor(leg: Pick<RouteLeg, 'mode' | 'line'>): string {
+  const l = leg.line.replace(/\s+/g, '')
+  const metro: [RegExp, string][] = [
+    [/^1호선/, '#0052A4'],
+    [/^2호선/, '#00A84D'],
+    [/^3호선/, '#EF7C1C'],
+    [/^4호선/, '#00A5DE'],
+    [/^5호선/, '#996CAC'],
+    [/^6호선/, '#CD7C2F'],
+    [/^7호선/, '#747F00'],
+    [/^8호선/, '#E6186C'],
+    [/^9호선/, '#BDB092'],
+    [/신분당/, '#D4003B'],
+    [/수인|분당/, '#F5A200'],
+    [/경의|중앙/, '#77C4A3'],
+    [/공항철도/, '#0090D2'],
+    [/경춘/, '#0C8E72'],
+    [/GTX/, '#9A6292'],
+    [/우이/, '#B0CE18'],
+    [/서해/, '#81A914'],
+    [/김포/, '#AD8605'],
+    [/에버라인|용인/, '#509F22'],
+    [/의정부/, '#FDA600'],
+    [/신림/, '#6789CA'],
+  ]
+  if (leg.mode === 'subway') for (const [re, c] of metro) if (re.test(l)) return c
+  if (leg.mode === 'bus') {
+    if (/광역|^M|직행|좌석|빨간/.test(l)) return '#E60012'
+    if (/간선/.test(l)) return '#3D5BAB'
+    if (/지선|마을/.test(l)) return '#5BB025'
+    if (/심야|^N/.test(l)) return '#2B2D72'
+    if (/순환/.test(l)) return '#F2B70A'
+    return '#3D5BAB'
+  }
+  if (leg.mode === 'train') return '#1E3A8A'
+  if (leg.mode === 'walk') return '#9AA0A6'
+  return '#6B7280'
+}
+
 const VIAS: DraftVia[] = ['sms', 'kakao', 'mail', 'post', 'other']
 
 /** 보낼 글: 2000자까지 */
@@ -273,6 +410,15 @@ export { hideQuickTail, splitQuick } from './rich.js'
 export function blockText(rec: BlockRecordMessage | QuickRecordMessage): string {
   if (rec.kind === 'quick') return rec.replies.map((r) => `· ${r}`).join('\n')
   if (rec.kind === 'draft') return `${rec.to ? `받는 사람: ${rec.to}\n` : ''}${rec.text}`
+  if (rec.kind === 'route') {
+    const lines = [`${rec.title ? `${rec.title}: ` : ''}${rec.big}${rec.bigNote ? ` (${rec.bigNote})` : ''}`]
+    for (const g of rec.legs)
+      lines.push(
+        `- ${g.line} ${g.from} → ${g.to}${g.minutes ? ` · ${g.minutes}분` : ''}${g.last ? ` · 막차 ${g.last}` : ''}`,
+      )
+    for (const f of rec.facts ?? []) lines.push(`${f.label}: ${f.value}`)
+    return lines.join('\n')
+  }
   if (rec.kind === 'result') {
     const lines = [`${rec.title ? `${rec.title}: ` : ''}${rec.big}${rec.bigNote ? ` (${rec.bigNote})` : ''}`]
     if (rec.steps) lines.push(`지금: ${rec.steps.names[rec.steps.now]}`)
