@@ -65,6 +65,14 @@ export function looksSignedIn(
   if (!opts.sawEntry || !onSite(card.site, page.url) || LOGIN_URL.test(page.url)) return false
   // 다 그려진 화면이어야 한다 (콜백·이동 중인 빈 화면은 입구가 없어도 아직 모른다)
   const refs = page.text.match(/\[e\d+ /g)?.length ?? 0
+  // 간편 로그인 뒤 가입·추가 정보·본인인증·약관 동의 화면은 입구가 없어도 아직이다 (링크 글자는 빼고 본다: 바닥 '이용약관' 링크)
+  const prose = page.text.replace(/\[e\d+ 링크 "[^"]*"\]/g, '')
+  if (
+    /약관|본인\s?인증|추가\s?정보|정보\s?입력|회원\s?가입|가입\s?(하기|완료|정보)|인증\s?번호|필수/.test(
+      prose,
+    )
+  )
+    return false
   return refs >= 20 && !hasLoginEntry(page.text)
 }
 
