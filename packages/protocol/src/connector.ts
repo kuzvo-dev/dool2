@@ -334,13 +334,27 @@ export type Scope = Record<string, unknown>
 
 /**
  * 점 경로로 값 꺼내기: "shops.0.name", "data.list", 뒤에서 "events.-1.status",
- * 목록의 칸 모으기 "slots.*.time" → ["12:00", "19:30"]
+ * 목록의 칸 모으기 "slots.*.time" → ["12:00", "19:30"],
+ * 목록 중 칸 값이 같은 줄만 "chargers[powerType=급속|초급속][status=충전가능]" (|는 그중 하나, 뒤에 ".length"면 그 수)
  */
 export function pick(scope: unknown, path: string): unknown {
   const keys = path.split('.').filter(Boolean)
   let cur: unknown = scope
   for (const [i, k] of keys.entries()) {
     if (cur === null || cur === undefined) return undefined
+    const where = /^([^[]*)((?:\[\w+=[^\]]*\])+)$/.exec(k)
+    if (where) {
+      if (where[1]) cur = (cur as Record<string, unknown>)[where[1]]
+      if (!Array.isArray(cur)) return undefined
+      for (const [, f = '', v] of (where[2] ?? '').matchAll(/\[(\w+)=([^\]]*)\]/g))
+        cur = (cur as unknown[]).filter(
+          (x) =>
+            x !== null &&
+            typeof x === 'object' &&
+            (v ?? '').split('|').includes(String((x as Record<string, unknown>)[f] ?? '')),
+        )
+      continue
+    }
     if (k === '*') {
       // 칸 묶음(색상 코드별 사진 같은)이면 그 값들을 목록으로
       if (cur && typeof cur === 'object' && !Array.isArray(cur)) cur = Object.values(cur)
