@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CLOSE_AFTER_MS, MAX_TABS, SLEEP_AFTER_MS, tidyPlan } from './tidy.js'
+import { CLOSE_AFTER_MS, MAX_TABS, RECENT_MS, SLEEP_AFTER_MS, tidyPlan } from './tidy.js'
 
 const now = 10_000_000
 const min = 60_000
@@ -26,6 +26,20 @@ describe('두리 탭 정리', () => {
     const tabs = Array.from({ length: MAX_TABS + 3 }, (_, i) => ({ id: i + 1, usedAt: now - i * min }))
     const plan = tidyPlan(tabs, now)
     expect(plan.close.sort()).toEqual([MAX_TABS + 1, MAX_TABS + 2, MAX_TABS + 3])
+  })
+
+  it('방금(1분 안) 연 탭은 너무 많아도 닫지 않는다 — 로그인 버튼이 연 카카오 창 (실측)', () => {
+    // 사람을 기다리느라 남겨 둔 탭 3개 + 사이트 탭(방금 연 것) + 카카오 창(방금 넘겨받은 것)
+    const tabs = [
+      { id: 1, usedAt: now - 5 * min, keep: true },
+      { id: 2, usedAt: now - 4 * min, keep: true },
+      { id: 3, usedAt: now - 3 * min, keep: true },
+      { id: 4, usedAt: now - 2_000, keep: true },
+      { id: 5, usedAt: now - 1_000 },
+    ]
+    expect(tidyPlan(tabs, now).close).toEqual([])
+    // 1분이 지나면 그때는 정리 대상
+    expect(tidyPlan(tabs, now + RECENT_MS + 2_000).close).toEqual([5])
   })
 
   it('폰에서 보고 있거나 방금 연 탭은 오래됐어도 건드리지 않는다', () => {

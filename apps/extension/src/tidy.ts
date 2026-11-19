@@ -7,6 +7,8 @@
 export const MAX_TABS = 3
 /** 이만큼 안 쓰면 잠재운다 (탭은 남고 메모리만 비운다. 다시 쓰면 새로 불러온다). 승인 기다림(10분)보다 길게 */
 export const SLEEP_AFTER_MS = 12 * 60_000
+/** 방금 열었거나 쓴 탭: 너무 많아도 이 동안은 닫지 않는다 */
+export const RECENT_MS = 60_000
 /** 이만큼 안 쓰면 닫는다 */
 export const CLOSE_AFTER_MS = 45 * 60_000
 
@@ -31,11 +33,14 @@ export function tidyPlan(tabs: TidyTab[], now: number, max = MAX_TABS): TidyPlan
   const close = new Set<number>()
   // 1) 오래 안 쓴 탭은 닫는다
   for (const t of tabs) if (!t.keep && now - t.usedAt >= CLOSE_AFTER_MS) close.add(t.id)
-  // 2) 그래도 많으면 가장 오래 안 쓴 것부터 닫는다
+  // 2) 그래도 많으면 가장 오래 안 쓴 것부터 닫는다. 방금(1분 안) 열었거나 쓴 탭은 닫지 않는다:
+  //    로그인 버튼이 연 카카오·네이버 창(넘겨받은 탭)이 열리자마자 닫혀 '탭이 닫혔어요'로 멈췄다 (실측 2026-11-19)
   const left = tabs.filter((t) => !close.has(t.id))
   const extra = left.length - max
   if (extra > 0) {
-    const oldest = left.filter((t) => !t.keep).sort((a, b) => a.usedAt - b.usedAt)
+    const oldest = left
+      .filter((t) => !t.keep && now - t.usedAt >= RECENT_MS)
+      .sort((a, b) => a.usedAt - b.usedAt)
     for (const t of oldest.slice(0, extra)) close.add(t.id)
   }
   // 3) 남은 것 중 한동안 안 쓴 탭은 잠재운다
