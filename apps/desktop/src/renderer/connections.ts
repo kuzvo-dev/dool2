@@ -15,6 +15,7 @@ export const SOCIAL_LABEL: Record<SocialProvider, string> = {
 
 /** @dool2/protocol/connect의 분류 이름 (화면 번들에 zod를 넣지 않으려고 복사해 둔다. 테스트가 같은지 본다) */
 export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
+  account: '간편 로그인 계정',
   shopping: '쇼핑',
   grocery: '장보기·배달',
   fashion: '패션·뷰티',

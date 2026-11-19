@@ -192,7 +192,7 @@ export const IDEA_SECTIONS: IdeaSection[] = [
     emo: 'calendar',
     icon: 'mail',
     tone: 'blue',
-    cats: ['mail', 'device'],
+    cats: ['mail', 'device', 'account'],
     asks: [
       { text: '메일함에서 이번 달 영수증만 모아 줘', note: '첨부 파일까지 한 번에' },
       { text: '안 읽은 메일 중 중요한 것만 요약해 줘', note: '광고는 빼고요' },

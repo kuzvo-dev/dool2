@@ -1,0 +1,27 @@
+{
+  "id": "google",
+  "name": "구글 계정",
+  "site": "myaccount.google.com",
+  "category": "account",
+  "how": "browser",
+  "loginUrl": "https://accounts.google.com/ServiceLogin",
+  "login": "Google 계정",
+  "summary": "구글 계정을 연결해 두면 구글로 가입한 사이트에 두리가 버튼 한 번으로 로그인해요. 계정이 여럿이면 어느 계정인지 한 번만 물어요.",
+  "example": {
+    "ask": "구글로 가입한 곳 연결해 줘",
+    "working": "구글로 로그인하는 중",
+    "reply": "알라딘과 교보문고를 구글 계정 m***@gmail.com으로 연결했어요."
+  },
+  "abilities": [
+    {
+      "title": "구글로 로그인",
+      "say": "구글로 가입한 곳 연결해 줘",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "쓸 계정 고르기",
+      "say": "구글은 회사 계정 말고 개인 계정으로 해 줘",
+      "tier": "찾아보기"
+    }
+  ]
+}

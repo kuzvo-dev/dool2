@@ -6,6 +6,7 @@ import {
   joinScreen,
   keepSignedIn,
   probeLogin,
+  providerAccountIn,
   said,
   sameAccount,
   socialLogin,
@@ -807,5 +808,16 @@ describe('로그인 상태 유지 (서비스마다 카카오 로그인·카톡 �
     expect(keepSignedIn('[e7 체크박스 "로그인 상태 유지" 선택됨]')).toBeUndefined()
     expect(keepSignedIn('[e3 체크박스 "Stay signed in"]')).toBe('e3')
     expect(keepSignedIn('[e2 체크박스 "(필수) 약관"]')).toBeUndefined()
+  })
+})
+
+describe('공급자 계정 화면에서 로그인된 계정 읽기 (실측)', () => {
+  it('카카오·네이버·구글', () => {
+    expect(providerAccountIn('kakao', '[e2 링크 "felix@gmail.com 계정 정보로 이동"]')).toBe('felix@gmail.com')
+    expect(providerAccountIn('naver', '[e5 링크 "wwd님"] [e6 버튼 "로그아웃"]')).toBe('wwd')
+    expect(providerAccountIn('google', '[e3 버튼 "Google 계정: 쿠즈보 (kuzvo@gmail.com)"]')).toBe(
+      'kuzvo@gmail.com',
+    )
+    expect(providerAccountIn('kakao', '[e1 링크 "로그인"]')).toBeUndefined()
   })
 })
