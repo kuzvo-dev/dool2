@@ -23,6 +23,10 @@ type Snap = { url: string; text: string }
 const MY_LINK =
   /\[(e\d+) (?:링크|버튼) "((?:마이\s?페이지|마이|MY|My\s?page|MYPAGE|내\s?정보|HeaderButtonMyPage)[^"\]\n]{0,10}|마이\s?\S{1,4})"\]/i
 
+/** 로그인한 사람의 마이페이지에 보이는 내용 */
+const MY_CONTENT =
+  /주문\s?(내역|목록|배송)|배송\s?(조회|현황)|구매\s?내역|예약\s?내역|쿠폰|적립금|포인트|마일리지|회원\s?정보\s?(수정|변경)|내\s?정보\s?(수정|관리)|개인\s?정보\s?(수정|변경)|비밀번호\s?변경|배송지\s?관리|찜한|위시\s?리스트|구독\s?(중|관리)|이용권|my orders|order history/i
+
 /** 로그인 화면 주소 */
 const LOGIN_AT =
   /\/(login|signin|sign-in|sign_in|auth\/|member\/login|i\/flow\/login)(\b|[/?#._])|nidlogin|accounts\.kakao\.com\/login|accounts\.google\.com/i
@@ -41,7 +45,10 @@ export function judgeMyPage(card: Pick<ConnectCard, 'signedIn'>, before: Snap, a
     return { state: 'out', why: '마이페이지가 로그인 화면으로 보냄' }
   // 화면이 바뀌지 않았으면(메뉴만 열렸거나 무반응) 알 수 없다
   if (after.url === before.url) return { state: 'unknown', why: '마이페이지를 눌러도 화면이 그대로' }
-  return { state: 'in', why: '마이페이지가 로그인 없이 열림' }
+  // 주소만 바뀐 걸로는 모른다: 한 화면짜리 사이트(요기요·왓챠)는 로그인 안 해도 #mypage로 바뀐다 (실측 2026-11-19 잘못 연결).
+  // 로그인한 사람의 마이페이지에만 있는 내용(주문·쿠폰·포인트·내 정보…)이 보여야 로그인됨
+  if (MY_CONTENT.test(after.text)) return { state: 'in', why: '마이페이지에 내 주문·쿠폰·정보가 보임' }
+  return { state: 'unknown', why: '마이페이지가 열렸지만 로그인한 내용이 안 보임' }
 }
 
 export async function checkSignedIn(
