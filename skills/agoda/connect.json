@@ -5,6 +5,11 @@
   "category": "travel",
   "how": "browser",
   "loginUrl": "https://www.agoda.com/ko-kr/account/signin.html",
+  "social": [
+    "kakao",
+    "google",
+    "facebook"
+  ],
   "login": "아이디·비밀번호",
   "summary": "여행지 숙소와 항공권을 조건에 맞게 찾아 예약하고, 예약 확인과 취소까지 두리에게 맡길 수 있어요.",
   "example": {

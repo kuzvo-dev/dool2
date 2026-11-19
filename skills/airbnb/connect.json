@@ -6,6 +6,7 @@
   "how": "browser",
   "loginUrl": "https://www.airbnb.co.kr/login",
   "social": [
+    "kakao",
     "naver",
     "google",
     "apple"

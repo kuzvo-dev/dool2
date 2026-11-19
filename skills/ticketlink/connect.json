@@ -6,7 +6,6 @@
   "how": "browser",
   "loginUrl": "https://www.ticketlink.co.kr/auth/login",
   "social": [
-    "naver",
     "payco"
   ],
   "login": "PAYCO 아이디",
