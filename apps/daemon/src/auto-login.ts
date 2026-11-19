@@ -5,7 +5,8 @@
 import type { ConnectStep } from '@dool2/protocol'
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { parseRefs } from './browser-tools.js'
-import { looksSignedIn } from './connect-watch.js'
+import { looksSignedIn, signedInHow } from './connect-watch.js'
+import { checkSignedIn } from './signin-check.js'
 
 export interface AutoLoginBrowser {
   call(method: string, args: Record<string, unknown>, timeoutMs?: number): Promise<unknown>
@@ -649,6 +650,26 @@ export async function autoLogin(
   return watchResult(browser, input, tabId, loginOrigin, wait, opts.tries ?? 8, snap)
 }
 
+/**
+ * 로그인을 거친 뒤 사이트 화면으로 로그인됐는지. 확실한 표시면 바로, 입구가 사라진 짐작이면 사이트를 새로 열어
+ * 마이페이지까지 한 번 확인한다 (짐작만으로 'ok'를 내 X·캠핏을 연결로 잘못 표시했다, 실측 2026-11-19)
+ */
+async function signedInAfter(
+  browser: AutoLoginBrowser,
+  card: AutoLoginInput['card'],
+  page: Snap,
+  state: { confirmed: number },
+): Promise<boolean> {
+  const how = signedInHow(card, page, { sawEntry: true })
+  if (how === 'strong') return true
+  if (how !== 'inverse' || state.confirmed >= 2 || !card.site) return false
+  state.confirmed++
+  const r = await checkSignedIn(browser, { id: card.id, signedIn: card.signedIn, site: card.site }).catch(
+    () => undefined,
+  )
+  return r?.state === 'in'
+}
+
 /** 로그인을 누른 뒤: 로그인됨 / 틀림 / 사람 단계 / 모름 */
 async function watchResult(
   _browser: AutoLoginBrowser,
@@ -661,13 +682,15 @@ async function watchResult(
 ): Promise<AutoLoginResult> {
   let page: Snap | undefined
   const asked = new Set<string>()
+  const confirmState = { confirmed: 0 }
   /** 인증번호를 넣고 확인을 누른 뒤 화면이 바뀌기를 기다리는 동안 (같은 화면이 잠깐 더 보인다) */
   let grace = 0
   for (let i = 0; i < tries; i++) {
     await sleep(wait)
     page = await snap(tabId).catch(() => page)
     if (!page) continue
-    if (looksSignedIn(input.card, page, { sawEntry: true })) return { loginOrigin, status: 'ok', tabId }
+    if (await signedInAfter(_browser, input.card, page, confirmState))
+      return { loginOrigin, status: 'ok', tabId }
     // 휴대폰 앱에서 승인하라는 화면: 카드에 알리고 기다린다 (넣을 칸이 없다)
     const confirm = await waitConfirm(page, tabId, snap, input.step, wait)
     if (confirm === 'moved') {
@@ -890,6 +913,7 @@ export async function socialLogin(
 
   // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
   let blankWaits = 0
+  const confirmSite = { confirmed: 0 }
   /** 공급자 화면을 한 번이라도 봤다 / 그 뒤 사이트 로그인 화면으로 돌아온 횟수 */
   let sawProvider = false
   let backToLogin = 0
@@ -900,7 +924,7 @@ export async function socialLogin(
   for (let i = 0; i < (opts.tries ?? 14); i++) {
     await sleep(wait)
     const site = await snap(siteTab).catch(() => undefined)
-    if (site && looksSignedIn(input.card, site, { sawEntry: true })) {
+    if (site && (await signedInAfter(browser, input.card, site, confirmSite))) {
       if (providerTab !== siteTab) await browser.call('close', { tabId: providerTab }).catch(() => undefined)
       return { status: 'ok', tabId: siteTab }
     }
@@ -1216,20 +1240,18 @@ export async function socialLogin(
       await browser.call('click', { tabId: providerTab, ref: next[0] }, 30_000).catch(() => undefined)
     }
   }
-  // 끝난 화면이 중간 페이지(콜백·안내)라 모르겠으면, 사이트 첫 화면을 새로 열어 한 번 더 본다
-  // (로그인은 쿠키로 남아 있다: 그 화면에 로그인 입구가 없으면 로그인된 것)
+  // 끝난 화면이 중간 페이지(콜백·안내)라 모르겠으면, 사이트를 새로 열어 마이페이지까지 한 번 더 본다
+  // (로그인은 쿠키로 남아 있다)
   if (input.card.site) {
-    const home = (await browser
-      .call('open', { url: `https://${input.card.site}/` }, 40_000)
-      .catch(() => undefined)) as { tabId: number } | undefined
-    if (home?.tabId !== undefined) {
-      const h = await settled(() => snap(home.tabId), wait).catch(() => undefined)
-      if (h && looksSignedIn(input.card, h, { sawEntry: true })) {
-        for (const t of new Set([providerTab, siteTab]))
-          await browser.call('close', { tabId: t }).catch(() => undefined)
-        return { status: 'ok', tabId: home.tabId }
-      }
-      await browser.call('close', { tabId: home.tabId }).catch(() => undefined)
+    const r = await checkSignedIn(browser, {
+      id: input.card.id,
+      signedIn: input.card.signedIn,
+      site: input.card.site,
+    }).catch(() => undefined)
+    if (r?.state === 'in') {
+      for (const t of new Set([providerTab, siteTab]))
+        await browser.call('close', { tabId: t }).catch(() => undefined)
+      return { status: 'ok', tabId: siteTab }
     }
   }
   return {

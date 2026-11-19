@@ -1,6 +1,6 @@
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { describe, expect, it } from 'vitest'
-import { LoginWatch, looksSignedIn } from './connect-watch.js'
+import { hasLoginEntry, LoginWatch, looksSignedIn } from './connect-watch.js'
 
 const card = { id: 'demo', signedIn: undefined } as unknown as ConnectCard
 
@@ -68,27 +68,50 @@ describe('로그인 확인', () => {
     expect(looksSignedIn(shop, { ...home, text: '[e1 링크 "마이페이지"]' }, { sawEntry: true })).toBe(false)
   })
 
-  it('지켜보다 로그인 화면이 사라지고 사이트 첫 화면이 되면 연결 (로그아웃 글자 없이)', async () => {
+  it('지켜보다 로그인 화면이 사라지면: 짐작이라 마이페이지 확인(confirm)이 맞을 때만 연결', async () => {
     const shop = { id: 'shop', site: 'shop.co.kr' } as unknown as ConnectCard
     const menu = Array.from({ length: 25 }, (_, i) => `[e${i + 10} 링크 "상품 ${i}"]`).join('\n')
     const pages = [
       { url: 'https://shop.co.kr/member/login', text: '[e1 입력칸 "아이디"] [e2 비밀번호칸 "비밀번호"]' },
       { url: 'https://shop.co.kr/', text: menu },
     ]
-    let i = 0
-    const done: string[] = []
-    const watch = new LoginWatch(
-      {
-        snapshot: async () => pages[Math.min(i++, pages.length - 1)] as { url: string; text: string },
-        connected: () => false,
-        onSignedIn: (c) => done.push(c.id),
-      },
-      1,
-    )
-    watch.start(shop, 7)
-    await new Promise((r) => setTimeout(r, 50))
-    watch.stopAll()
-    expect(done).toEqual(['shop'])
+    for (const [answer, want] of [
+      [true, ['shop']],
+      [false, []],
+    ] as const) {
+      let i = 0
+      const done: string[] = []
+      const watch = new LoginWatch(
+        {
+          snapshot: async () => pages[Math.min(i++, pages.length - 1)] as { url: string; text: string },
+          connected: () => false,
+          onSignedIn: (c) => done.push(c.id),
+          confirm: async () => answer,
+        },
+        1,
+      )
+      watch.start(shop, 7)
+      await new Promise((r) => setTimeout(r, 50))
+      watch.stopAll()
+      expect(done).toEqual(want)
+    }
+  })
+
+  it('"…로 계속하기"·"Google 계정으로 계속하기"도 로그인 입구 (실측 X: 로그인 안 됐는데 연결로 봤다)', () => {
+    expect(
+      hasLoginEntry('[e1 버튼 "전화번호로 계속하기"] [e2 버튼 "Google 계정으로 계속하기. 새 탭에서 열림"]'),
+    ).toBe(true)
+    expect(hasLoginEntry('[e1 링크 "계정 만들기"]')).toBe(true)
+    expect(hasLoginEntry('[e1 링크 "상품 보기"]')).toBe(false)
+  })
+
+  it('"요기요사장님" 같은 부름말은 이름 표시가 아니다', () => {
+    expect(
+      looksSignedIn(card, {
+        url: 'https://yogiyo.co.kr/',
+        text: '[e5 링크 "요기요사장님"] [e6 링크 "로그인"]',
+      }),
+    ).toBe(false)
   })
 
   it('네이버 위쪽 줄의 "아이디 내정보 보기"는 로그인됨 (로그아웃은 메뉴 속)', () => {
