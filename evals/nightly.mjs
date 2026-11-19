@@ -1,7 +1,7 @@
 // 밤 고리 (하네스 계획 ⑥의 안전한 핵심): 매일 시나리오 한 묶음을 돌려 성적표를 내고, 점수 추세를 쌓는다.
 // 고치는 PR은 자동으로 만들지 않는다(사람이 아침 보고서를 보고 고친다).
 //
-// 사용: node evals/nightly.mjs --token <화면 토큰> [--n 40] [--repeat 2] [--out evals/out]
+// 사용: node evals/nightly.mjs --token <화면 토큰>|--token-file <본체 로그> [--n 40] [--repeat 2] [--out evals/out]
 //   - 매일 다른 묶음이 돌도록 날짜로 섞는다(가족마다 하나씩, 우선순위 높은 것 먼저).
 //   - 결과: <out>/<날짜>/ 기록·성적표, <out>/trend.csv 한 줄(날짜·통과·일부·실패·AI평균), <out>/latest.html 링크.
 import { execFileSync } from 'node:child_process'
@@ -16,8 +16,10 @@ const arg = (k, d) => {
   return i > 0 ? process.argv[i + 1] : d
 }
 const token = arg('token', process.env.DOOL2_TOKEN)
-if (!token) {
-  console.error('화면 토큰이 필요해요: --token 또는 DOOL2_TOKEN')
+// --token-file: 본체가 밤사이 다시 켜져도 run.mjs가 새 토큰을 읽게 그대로 넘긴다
+const tokenFile = arg('token-file')
+if (!token && !tokenFile) {
+  console.error('화면 토큰이 필요해요: --token, --token-file 또는 DOOL2_TOKEN')
   process.exit(2)
 }
 const daemon = arg('daemon', 'http://127.0.0.1:8833')
@@ -54,8 +56,7 @@ console.log(`[밤 고리 ${day}] 시나리오 ${ids.length}개 × ${repeat}회`)
 run('run.mjs', [
   '--daemon',
   daemon,
-  '--token',
-  token,
+  ...(tokenFile ? ['--token-file', tokenFile] : ['--token', token]),
   '--ids',
   ids.join(','),
   '--repeat',
