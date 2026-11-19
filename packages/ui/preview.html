@@ -508,6 +508,87 @@
           </div>
         </div>
       </section>
+
+      <section>
+        <h2>결과 블록 · 빠른 답</h2>
+        <p class="cap">답 하나에 결과 블록 하나. 같은 틀(머리 줄 · 내용 · 버튼 2개까지), 안쪽 스크롤 없음. 규칙은 docs/design/system/components/ChatBlocks.</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; align-items: start">
+          <div style="display: grid; gap: 8px">
+            <span class="cap">빠른 답 · 고르게 할 때만</span>
+            <div class="quick cb-quick"><button type="button" class="main">화요일 10시로</button><button type="button">목요일 3시로</button><button type="button">다른 날 볼래</button></div>
+            <div class="quick cb-quick used"><button type="button" class="main">화요일 10시로</button><button type="button" class="picked">목요일 3시로</button><button type="button">다른 날 볼래</button></div>
+          </div>
+          <div class="cb cb-rows">
+            <div class="cb-head"><span class="cb-title">중고나라 · 최근 등록 순</span><span class="cb-from">46건</span></div>
+            <ul class="cb-list">
+              <li class="cb-row tap"><span class="cb-lead img"></span><span class="cb-text"><b>브라이텍스 오메가 유아용</b><span>21분 전 · 직거래 마포</span></span><span class="cb-val"><b>3만 원</b></span></li>
+              <li class="cb-row tap"><span class="cb-lead img"></span><span class="cb-text"><b>순성 듀클 핀</b><span>1시간 전 · 택배</span></span><span class="cb-val"><b>3만 원</b></span></li>
+              <li class="cb-row tap"><span class="cb-lead img"></span><span class="cb-text"><b>토드비 에어룬 360 회전형</b><span>3시간 전 · 무료배송</span></span><span class="cb-val"><b>20만 원</b></span></li>
+            </ul>
+            <button type="button" class="cb-more">43개 더 보기</button>
+          </div>
+          <div class="cb cb-rows">
+            <div class="cb-head"><span class="cb-title">공덕초 · 2026학년도</span></div>
+            <ul class="cb-list">
+              <li class="cb-row"><span class="cb-lead date"><b>6</b><small>1월 수</small></span><span class="cb-text"><b>겨울방학식·종업식</b><span>하루</span></span></li>
+              <li class="cb-row"><span class="cb-lead date"><b>7</b><small>1월 목</small></span><span class="cb-text"><b>겨울방학</b><span>2월 28일(일)까지 · 53일</span></span></li>
+            </ul>
+            <div class="cb-foot"><button type="button" class="btn sm">캘린더에 2개 넣기</button></div>
+          </div>
+          <div class="cb cb-rows">
+            <ul class="cb-list">
+              <li class="cb-row"><span class="cb-lead file">PDF</span><span class="cb-text"><b>간소화 자료 전체</b><span>12쪽 · 1.4MB</span></span><span class="cb-val"><span class="cb-state done">받음</span></span></li>
+              <li class="cb-row"><span class="cb-lead file">PDF</span><span class="cb-text"><b>기부금 영수증</b><span>단체 등록 기다림</span></span><span class="cb-val"><span class="cb-state wait">1/15쯤</span></span></li>
+            </ul>
+          </div>
+          <div class="cb cb-rows multi">
+            <div class="cb-head"><span class="cb-title">컬리 · 내일 아침 7시 전 도착</span><span class="cb-from">2/3개 고름</span></div>
+            <ul class="cb-list">
+              <li class="cb-row tap"><span class="cb-check on"></span><span class="cb-lead img sm"></span><span class="cb-text"><b>떡국떡 1kg</b><span>2개 · 작년 1개</span></span><span class="cb-val"><b>15,960원</b><small>7,980원 × 2</small></span></li>
+              <li class="cb-row tap"><span class="cb-check on"></span><span class="cb-lead img sm"></span><span class="cb-text"><b>한우 양지 국거리 300g</b><span>1개</span></span><span class="cb-val"><b>12,900원</b></span></li>
+              <li class="cb-row tap off"><span class="cb-check"></span><span class="cb-lead img sm"></span><span class="cb-text"><b>식혜 1.5L</b><span>작년엔 샀어요 · 지금 품절 임박</span></span><span class="cb-val"><b>6,900원</b></span></li>
+            </ul>
+            <div class="cb-foot"><button type="button" class="btn sm">2개 담기 · 28,860원</button></div>
+          </div>
+          <div class="cb cb-result">
+            <div class="cb-head done"><span class="cb-done"></span><span class="cb-title">예약 확정</span><span class="cb-from">캐치테이블</span></div>
+            <div class="cb-body">
+              <div class="cb-big"><span>11/21(토) 19:00</span><small>4명 · 룸</small></div>
+              <dl class="cb-facts">
+                <div><dt>가게</dt><dd>한식주점 소반 합정점</dd></div>
+                <div><dt>예약번호</dt><dd class="code">CT-2611-48213</dd></div>
+                <div><dt>무료 취소</dt><dd>11/20(금) 18:00까지</dd></div>
+              </dl>
+            </div>
+            <div class="cb-foot"><button type="button" class="btn-ghost sm">예약 보기</button><button type="button" class="btn sm">캘린더에 넣기</button></div>
+          </div>
+          <div class="cb cb-result">
+            <div class="cb-head"><span class="cb-title">쿠팡 · 접이식 휴대용 유모차</span><span class="cb-from">CJ대한통운</span></div>
+            <div class="cb-body">
+              <div class="cb-big"><span>오늘 14~16시</span><small>도착 예정</small></div>
+              <div class="cb-steps"><i class="on"></i><i class="on"></i><i class="now"></i><i></i></div>
+              <div class="cb-step-names"><span>주문</span><span>출고</span><span class="now">배송 중</span><span>도착</span></div>
+              <dl class="cb-facts"><div><dt>운송장</dt><dd class="code">6892 1047 3315</dd></div></dl>
+            </div>
+          </div>
+          <div class="cb cb-result">
+            <div class="cb-head"><span class="cb-title">신한카드 · 12월 청구</span></div>
+            <div class="cb-body">
+              <div class="cb-big"><span>1,284,300원</span><span class="cb-dday">D-6 결제</span></div>
+              <dl class="cb-facts">
+                <div><dt>여행·숙박</dt><dd>412,000원</dd></div>
+                <div><dt>식비</dt><dd>298,500원</dd></div>
+              </dl>
+            </div>
+            <div class="cb-foot"><button type="button" class="btn sm">내역 전체</button></div>
+          </div>
+          <div class="cb cb-draft">
+            <div class="cb-to">받는 사람 <b>집주인 김OO</b> · 문자</div>
+            <div class="cb-paper">안녕하세요, 302호입니다. 어제 저녁부터 보일러에 E-02 표시가 뜨면서 온수가 나오지 않습니다. 수리 기사님 방문 가능한 날 알려 주시면 맞춰 두겠습니다.</div>
+            <div class="cb-foot"><button type="button" class="btn-ghost sm">복사</button><button type="button" class="btn sm">문자 보내기</button></div>
+          </div>
+        </div>
+      </section>
     </main>
     <script>
       // 테마 바꾸기 (견본 페이지 전용)
