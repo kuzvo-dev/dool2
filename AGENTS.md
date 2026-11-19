@@ -49,4 +49,6 @@ pnpm lint && pnpm build && pnpm typecheck && pnpm test
 - 화면은 디자인 원본([docs/design](docs/design/README.md))을 기준으로 [`packages/ui`](packages/ui/README.md) 부품으로 만들어요. 새 디자인이나 부품이 나오면 먼저 `docs/design`에 넣고 `packages/ui`를 맞춰요.
 - 앱 화면·문서·README·랜딩에 **다른 회사의 제품 이름이나 그 내용을 넣지 않아요.** 비교가 필요하면 "클라우드 서버의 브라우저에서 일하는 방식"처럼 방식으로만 써요. 연동하는 도구(Claude Code, Codex, Chrome 등)의 이름은 괜찮아요.
 - 서비스 연결은 서비스 도구(커넥터, `skills/<id>/tools.json`, [ADR 0018](docs/decisions/0018-service-connectors.md))로 붙여요. 만들고 고치는 순서는 [`.claude/skills/connector`](.claude/skills/connector/SKILL.md)를 따라요.
+- **앱 기능은 AI 도구로도 만든다.** 사람이 화면에서 쓰는 기능(금고, 내 결제 수단, 서비스 연결, 예정, 설정 등)을 만들거나 고치면, 두리가 대화 중에 같은 일을 할 수 있는 두리 도구(`packages/mcp-tools`)도 같은 PR이나 바로 다음 PR로 올려요. 도구는 화면과 같은 본체 API를 쓰고, 보안 경계는 그대로예요: 비밀번호·카드 번호 같은 값은 AI에게 주지 않고 가린 값이나 이름만 돌려주며, 돈·연락·삭제처럼 되돌리기 어려운 건 승인을 거쳐요.
+- **고칠 때는 지침을 덧붙이지 말고 도구를 깎는다.** 두리가 잘못 판단하면 전역 지침(`packages/engine/src/persona.ts`)에 규칙을 더하지 않아요. "어떤 도구가 있었으면 AI가 알아서 했을까"를 먼저 따져서 도구를 만들거나 다듬어요. 도구 설명에는 언제 쓰는지를, 입력 칸에는 빠뜨리기 쉬운 것(끝나는 때, 조건 등)을 담고, 결과에는 다음 할 일·막힌 이유·못 본 곳을 담아요. 분야별 요령은 그 도구나 서비스 카드 설명에 둬요. 본체가 행동을 강제하는 코드는 최소로 하고, 전역 지침은 줄이는 쪽으로 가요. 효과는 고친 실패 묶음만 골라 고치기 전과 후를 비교해 확인해요.
 - 구조를 바꾸는 결정은 [결정 기록(ADR)](docs/decisions/README.md)을 함께 올려요. 보안 가정이 바뀌면 [위협 모델](docs/security/threat-model.md)도 고쳐요.
