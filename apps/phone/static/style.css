@@ -3403,3 +3403,97 @@ textarea.ghosting {
 .choice-btn {
   width: 100%;
 }
+
+/* ── 설정 > 결제 수단 (ADR 0023): 맨 위가 주 결제 수단 ── */
+.pay-sheet .pay-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pay-sheet .pay-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 2px;
+  border-bottom: 0.5px solid var(--line);
+}
+.pay-sheet .pay-row .row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.pay-sheet .pay-row .row-t {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pay-sheet .pay-row .btn-text {
+  flex: none;
+}
+.pay-main {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-size: 11px;
+  font-weight: 650;
+}
+.pay-empty {
+  margin: 4px 0 8px;
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.pay-sheet .over {
+  margin: 18px 0 2px;
+}
+.pay-mark {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--raise);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+.pay-mark svg.i {
+  width: 18px;
+  height: 18px;
+}
+/* 간편결제 브랜드 색 (글자 칸만) */
+.pay-naverpay {
+  background: #03c75a;
+  color: #fff;
+}
+.pay-kakaopay {
+  background: #ffeb00;
+  color: #191919;
+}
+.pay-tosspay {
+  background: #0064ff;
+  color: #fff;
+}
+.pay-payco {
+  background: #fa2828;
+  color: #fff;
+}
+.pay-samsungpay {
+  background: #1428a0;
+  color: #fff;
+}
+.pay-applepay {
+  background: #111;
+  color: #fff;
+}
+.pay-smilepay,
+.pay-ssgpay,
+.pay-lpay {
+  background: var(--ink);
+  color: var(--ink-inverse);
+}

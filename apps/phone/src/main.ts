@@ -46,6 +46,15 @@ import {
 } from '@dool2/protocol/ideas'
 import { approvalSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import {
+  CARD_ISSUERS,
+  PAY_KINDS,
+  type PayKind,
+  type PayMethod,
+  payMethodDetail,
+  payMethodLabel,
+  payMethodTitle,
+} from '@dool2/protocol/pay-methods'
+import {
   josa,
   narrationLine,
   readAppNote,
@@ -136,6 +145,9 @@ type Overlay =
   | { kind: 'report' }
   /** 설정 > 내 정보: 가린 값 보기·고치기·지우기 */
   | { kind: 'profile' }
+  /** 설정 > 결제 수단: 내 결제 수단 목록(맨 위가 주 결제 수단)·추가 (ADR 0023) */
+  | { kind: 'pay' }
+  | { kind: 'pay-add' }
   /** 입력칸 + : 빠른 메뉴 */
   | { kind: 'plus' }
   | undefined
@@ -169,7 +181,15 @@ const st: {
   /** 승인 카드에서 고른 선택지 (결제 수단): 승인 id → 선택지 id */
   choice: Map<string, string>
   /** 설정 > 내 정보(가린 값)·사이트별 마지막 결제 수단 (PC에 물어 받는다) */
-  profile?: { have: Record<string, string>; missing: string[]; payChoices: Record<string, string> }
+  profile?: {
+    have: Record<string, string>
+    missing: string[]
+    payChoices: Record<string, string>
+    /** 내 결제 수단 (예전 PC면 undefined: 등록 기능을 숨긴다) */
+    payMethods?: PayMethod[]
+  }
+  /** 결제 수단 추가 시트에 쓰는 중인 것 */
+  payDraft: { kind?: PayKind; inner: string; issuer: string; nickname: string; last4: string }
   logins: Map<string, LoginRequestView>
   infos: Map<string, InfoRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
@@ -241,6 +261,7 @@ const st: {
   approvals: new Map(),
   decided: new Map(),
   choice: new Map(),
+  payDraft: { inner: '', issuer: '', nickname: '', last4: '' },
   logins: new Map(),
   infos: new Map(),
   loginDraft: { id: '', user: '', pw: '' },
@@ -469,7 +490,12 @@ async function receive(env: Envelope) {
       gotThumb(msg.url, msg.data)
       break
     case 'profile':
-      st.profile = { have: msg.have, missing: msg.missing, payChoices: msg.payChoices }
+      st.profile = {
+        have: msg.have,
+        missing: msg.missing,
+        payChoices: msg.payChoices,
+        ...(msg.payMethods ? { payMethods: msg.payMethods } : {}),
+      }
       if (msg.message) toast(msg.message)
       break
     case 'reset-done': {
@@ -3732,9 +3758,13 @@ function renderOverlay() {
                       ? infoSheet(ov.id)
                       : ov.kind === 'profile'
                         ? profileSheet()
-                        : ov.kind === 'report'
-                          ? reportSheet()
-                          : loginSheet(ov.id)
+                        : ov.kind === 'pay'
+                          ? paySheet()
+                          : ov.kind === 'pay-add'
+                            ? payAddSheet()
+                            : ov.kind === 'report'
+                              ? reportSheet()
+                              : loginSheet(ov.id)
   // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
   // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
   const drawn = body.outerHTML
@@ -3973,8 +4003,23 @@ function settingsView() {
       () => openOverlay({ kind: 'profile' }),
     ),
   )
+  const mine = st.profile?.payMethods
   const pays = Object.entries(st.profile?.payChoices ?? {})
-  if (pays.length)
+  if (mine) {
+    // 내 결제 수단 (ADR 0023): 맨 위가 주 결제 수단. 사이트마다 기억한 것은 시트 안에
+    const first = mine[0]
+    box.append(
+      row(
+        'card',
+        '결제 수단',
+        first
+          ? `주 결제 수단 · ${payMethodLabel(first)}${mine.length > 1 ? ` 외 ${mine.length - 1}개` : ''}`
+          : '아직 없어요 · 주로 쓰는 결제 수단을 등록해 두세요',
+        icon('chevron'),
+        () => openOverlay({ kind: 'pay' }),
+      ),
+    )
+  } else if (pays.length)
     for (const [host, label] of pays)
       box.append(
         row(
@@ -4095,6 +4140,264 @@ function profileSheet() {
         openOverlay(undefined)
       },
     }),
+  )
+  return sheet
+}
+
+/** 결제 수단 표시: 간편결제는 첫 글자 색 칸, 카드는 카드 그림 */
+const PAY_LETTER: Partial<Record<PayKind, string>> = {
+  naverpay: 'N',
+  kakaopay: 'K',
+  tosspay: 'T',
+  payco: 'P',
+  samsungpay: 'S',
+  applepay: 'A',
+  smilepay: 'S',
+  ssgpay: 'S',
+  lpay: 'L',
+}
+
+function payMark(kind: PayKind): HTMLElement {
+  const letter = PAY_LETTER[kind]
+  const mark = h('span', { class: `pay-mark pay-${kind}`, text: letter ?? '' })
+  if (!letter) mark.append(icon('card', 'i'))
+  return mark
+}
+
+/** 목록을 통째로 PC에 보낸다 (PC가 검사하고 저장한 목록을 돌려준다) */
+function savePayMethods(list: PayMethod[]) {
+  if (st.profile) st.profile = { ...st.profile, payMethods: list }
+  void send({ kind: 'pay-methods-set', methods: list })
+  render()
+}
+
+/** 설정 > 결제 수단: 맨 위가 주 결제 수단. 결제 때 사이트가 받는 것 중 위에 있는 것부터 골라 둔다 */
+function paySheet() {
+  const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet pay-sheet' })
+  sheet.append(
+    h(
+      'div',
+      { class: 'approve-head' },
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: '결제 수단' }),
+        h('span', { class: 'meta', text: '결제할 때 사이트가 받는 것 중 위에 있는 것부터 골라 둬요' }),
+      ),
+    ),
+  )
+  const list = st.profile?.payMethods
+  if (!list) {
+    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    return sheet
+  }
+  if (!list.length)
+    sheet.append(
+      h('p', {
+        class: 'pay-empty',
+        text: '아직 없어요. 네이버페이·카카오페이·카드처럼 주로 쓰는 것을 등록해 두세요.',
+      }),
+    )
+  const ul = h('ul', { class: 'pay-list' })
+  list.forEach((m, i) => {
+    const detail = payMethodDetail(m)
+    ul.append(
+      h(
+        'li',
+        { class: 'pay-row' },
+        payMark(m.kind),
+        h(
+          'span',
+          { class: 'row-text' },
+          h(
+            'span',
+            { class: 'row-t' },
+            payMethodTitle(m),
+            i === 0 ? h('span', { class: 'pay-main', text: '주 결제 수단' }) : '',
+          ),
+          detail ? h('span', { class: 'row-d', text: detail }) : '',
+        ),
+        i > 0
+          ? h('button', {
+              class: 'btn-text',
+              text: '주로 쓰기',
+              onclick: () => savePayMethods([m, ...list.filter((x) => x.id !== m.id)]),
+            })
+          : '',
+        h('button', {
+          class: 'btn-text danger',
+          text: '지우기',
+          onclick: () => {
+            if (!confirm(`${payMethodLabel(m)}을(를) 지울까요?`)) return
+            savePayMethods(list.filter((x) => x.id !== m.id))
+          },
+        }),
+      ),
+    )
+  })
+  if (list.length) sheet.append(ul)
+  sheet.append(
+    h('button', {
+      class: 'btn lg',
+      text: '결제 수단 추가',
+      onclick: () => {
+        st.payDraft = { inner: '', issuer: '', nickname: '', last4: '' }
+        openOverlay({ kind: 'pay-add' })
+      },
+    }),
+  )
+  // 사이트마다 지난번에 고른 것 (내 결제 수단이 그 사이트에 없을 때 쓴다)
+  const pays = Object.entries(st.profile?.payChoices ?? {})
+  if (pays.length) {
+    sheet.append(h('h3', { class: 'over', text: '사이트마다 지난번에 고른 것' }))
+    for (const [host, label] of pays)
+      sheet.append(
+        h(
+          'div',
+          { class: 'pay-row' },
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: label }),
+            h('span', { class: 'row-d', text: host.replace(/^www\./, '') }),
+          ),
+          h('button', {
+            class: 'btn-text',
+            text: '잊기',
+            onclick: () => void send({ kind: 'pay-choice-forget', host }),
+          }),
+        ),
+      )
+  }
+  sheet.append(
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '카드 번호·결제 비밀번호는 받지 않아요. 무엇으로 낼지만 내 PC에 기억하고, 결제는 매번 승인을 받아요.',
+    ),
+  )
+  return sheet
+}
+
+/** 결제 수단 추가: 종류 고르기 → 간편결제는 그 안에서 쓰는 것(선택), 카드는 카드사·별칭·끝 4자리 */
+function payAddSheet() {
+  const d = st.payDraft
+  const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet pay-sheet' })
+  sheet.append(
+    h(
+      'div',
+      { class: 'approve-head' },
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: '결제 수단 추가' }),
+        h('span', { class: 'meta', text: '주로 쓰는 것부터 등록해 두세요' }),
+      ),
+    ),
+  )
+  const pick = (kind: PayKind) => {
+    st.payDraft = { ...d, kind }
+    render()
+  }
+  sheet.append(
+    h(
+      'div',
+      { class: 'approve-choices' },
+      h('span', { class: 'meta', text: '무엇으로 낼까요?' }),
+      h(
+        'div',
+        { class: 'chip-row' },
+        ...(Object.keys(PAY_KINDS) as PayKind[]).map((k) =>
+          h('button', {
+            class: `chip${d.kind === k ? ' on' : ''}`,
+            text: PAY_KINDS[k],
+            onclick: () => pick(k),
+          }),
+        ),
+      ),
+    ),
+  )
+  if (!d.kind) return sheet
+  const field = (id: string, label: string, key: 'inner' | 'nickname' | 'last4', placeholder: string) => {
+    const input = h('input', { class: 'field' })
+    input.id = id
+    input.value = d[key]
+    input.placeholder = placeholder
+    input.setAttribute('aria-label', label)
+    input.oninput = () => {
+      st.payDraft[key] = input.value
+    }
+    if (key === 'last4') {
+      input.inputMode = 'numeric'
+      input.maxLength = 4
+    }
+    return h('label', { class: 'field-label' }, h('span', { class: 'meta', text: label }), input)
+  }
+  const form = h('form', { class: 'cred-form profile-form' })
+  if (d.kind === 'card') {
+    form.append(
+      h(
+        'div',
+        { class: 'approve-choices' },
+        h('span', { class: 'meta', text: '카드사' }),
+        h(
+          'div',
+          { class: 'chip-row' },
+          ...CARD_ISSUERS.map((c) =>
+            h('button', {
+              class: `chip${d.issuer === c ? ' on' : ''}`,
+              text: c,
+              onclick: (e: Event) => {
+                e.preventDefault()
+                st.payDraft = { ...st.payDraft, issuer: c }
+                render()
+              },
+            }),
+          ),
+        ),
+      ),
+      field('pay-nickname', '별칭 (선택)', 'nickname', '예: 생활비, 회사 카드'),
+      field('pay-last4', '끝 4자리 (선택)', 'last4', '예: 1234'),
+    )
+  } else
+    form.append(
+      field('pay-inner', `${PAY_KINDS[d.kind]} 안에서 쓰는 것 (선택)`, 'inner', '예: 신한카드(1234), 머니'),
+    )
+  const go = h('button', { class: 'btn lg', text: '등록' })
+  go.type = 'submit'
+  form.append(go)
+  form.onsubmit = (e) => {
+    e.preventDefault()
+    const now = st.payDraft
+    if (!now.kind) return
+    if (now.kind === 'card' && !now.issuer) return toast('카드사를 골라 주세요')
+    if (now.last4 && !/^\d{4}$/.test(now.last4.trim())) return toast('끝 4자리는 숫자 4개로 적어 주세요')
+    const m: PayMethod = {
+      id: crypto.randomUUID(),
+      kind: now.kind,
+      addedAt: new Date().toISOString(),
+      ...(now.kind === 'card'
+        ? {
+            issuer: now.issuer,
+            ...(now.nickname.trim() ? { nickname: now.nickname.trim() } : {}),
+            ...(now.last4.trim() ? { last4: now.last4.trim() } : {}),
+          }
+        : now.inner.trim()
+          ? { inner: now.inner.trim() }
+          : {}),
+    }
+    savePayMethods([...(st.profile?.payMethods ?? []), m])
+    openOverlay({ kind: 'pay' })
+  }
+  sheet.append(
+    form,
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '카드 번호·유효기간·CVC·결제 비밀번호는 넣지 마세요. 두리는 받지도 저장하지도 않아요.',
+    ),
   )
   return sheet
 }
