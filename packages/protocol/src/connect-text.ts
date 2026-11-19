@@ -16,6 +16,8 @@ export const CATEGORY_LABEL = {
   work: '업무',
   mail: '메일·일정',
   telecom: '통신',
+  finance: '카드·금융',
+  gov: '공공·세금',
   life: '생활',
   device: '휴대폰',
 } as const

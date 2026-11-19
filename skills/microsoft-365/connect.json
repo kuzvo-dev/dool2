@@ -12,26 +12,26 @@
   "category": "work",
   "how": "official",
   "login": "Microsoft 계정",
-  "summary": "Outlook, Teams, OneDrive를 연결하면 메일·대화·파일 챙기기를 두리에게 맡길 수 있어요.",
+  "summary": "Outlook, Teams, OneDrive를 연결하면 답장할 메일 챙기기, 파일·대화 찾기, 답장과 회의 잡기까지 두리에게 맡길 수 있어요.",
   "example": {
-    "ask": "Outlook에 답장해야 할 거 있어?",
-    "working": "Outlook 살펴보는 중",
-    "reply": "세 건이에요. 견적 건으로 이 과장님, 모니터 교체 건으로 총무팀, 금요일 회의 초대로 정 팀장님이에요."
+    "ask": "아침에 답장할 메일 뭐 있어?",
+    "working": "Outlook 메일 보는 중",
+    "reply": "네 건이에요. 납품 일정 건으로 한 대리님, 휴가 결재 건으로 인사팀, 월요일 워크숍 초대로 서 팀장님, 그리고 보안 교육 안내예요."
   },
   "abilities": [
     {
-      "title": "챙길 일 한눈에",
-      "say": "Outlook에 급한 거 있어?",
+      "title": "급한 메일",
+      "say": "오늘 들어온 메일 중에 급한 거 뭐야?",
       "tier": "찾아보기"
     },
     {
-      "title": "파일·대화 찾기",
-      "say": "지난달 계약서 어디 있어?",
+      "title": "파일 찾기",
+      "say": "Teams에서 받은 견적서 파일 찾아 줘",
       "tier": "찾아보기"
     },
     {
-      "title": "대신 답장",
-      "say": "이 과장님한테 그 날짜 괜찮다고 답해 줘",
+      "title": "메일 답장",
+      "say": "윤 차장님 메일에 금요일 가능하다고 답해 줘",
       "tier": "연락하기"
     },
     {
