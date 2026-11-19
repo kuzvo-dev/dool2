@@ -2801,7 +2801,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, body)
     }
     if (a === 'conversation' && b === 'messages' && req.method === 'POST') {
-      const body = SendMessageRequestSchema.parse(await readJson(req))
+      const body = SendMessageRequestSchema.parse(await readJson(req, MESSAGE_MAX))
       const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text
       return json(res, 202, await talk(text))
     }
@@ -2855,9 +2855,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { ok: true })
       }
       if (req.method === 'POST' && c === 'messages') {
-        const body = SendMessageRequestSchema.parse(await readJson(req))
+        const body = SendMessageRequestSchema.parse(await readJson(req, MESSAGE_MAX))
         if (threads.isRunning(b)) return json(res, 409, { error: '이 대화는 아직 답하는 중이에요' })
-        return stream(res, tracked(b, threads.send(b, body.text)), () => threads.cancel(b))
+        // 사진: 대화·폰과 같이 두리 작업 폴더에 두고 photo_view로 보게 한다 (전에는 따로 하는 대화에서 사진이 빠졌다)
+        const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text
+        return stream(res, tracked(b, threads.send(b, text)), () => threads.cancel(b))
       }
     }
 
@@ -2940,11 +2942,14 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body))
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+/** 메시지(사진 포함)는 사진 크기까지 받는다: SendMessageRequestSchema의 image는 2,000,000자까지 */
+const MESSAGE_MAX = 2_100_000
+
+async function readJson(req: IncomingMessage, max = 100_000): Promise<unknown> {
   let raw = ''
   for await (const chunk of req) {
     raw += chunk
-    if (raw.length > 100_000) throw new Error('요청이 너무 커요')
+    if (raw.length > max) throw new Error('요청이 너무 커요')
   }
   return raw ? JSON.parse(raw) : {}
 }
