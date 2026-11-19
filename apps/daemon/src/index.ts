@@ -78,6 +78,7 @@ import {
   type LoginAsk,
   probeLogin,
   SOCIAL_PROVIDERS,
+  sameAccount,
   socialLogin,
 } from './auto-login.js'
 import { askedForAccount, BrowserTools } from './browser-tools.js'
@@ -1432,12 +1433,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const picked = (store.getSetting('providerAccounts') as Record<string, string> | undefined)?.[
           provider
         ]
-        return mine.includes(label) || Boolean(picked?.includes(label))
+        return mine.some((m) => sameAccount(m, label)) || Boolean(picked && sameAccount(picked, label))
       },
       add: (provider, label) => {
         const all = (store.getSetting('socialAccounts') as Record<string, string[]> | undefined) ?? {}
         const mine = all[provider] ?? []
-        if (!mine.includes(label))
+        if (!mine.some((m) => sameAccount(m, label)))
           store.setSetting('socialAccounts', { ...all, [provider]: [...mine, label.slice(0, 120)].slice(-5) })
       },
     },
