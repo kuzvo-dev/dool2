@@ -337,6 +337,16 @@ async function runJob(job) {
         )
       }),
     ]).finally(() => clearTimeout(watchdog))
+    // 두리가 "본체에 닿지 않아요"로 끝났으면 시험 PC가 버거웠던 것(메모리 부족 등): 두리 판단으로 셈하지 않고 다시 돌린다
+    const said = rec.final || rec.text || ''
+    const toolFails = rec.tools.filter((t) => t.ok === false).length
+    if (
+      toolFails >= 3 &&
+      /본체(에|와|가)?\s*(요청이|연결이|연결)?\s*.{0,12}(닿지|안 돼|끊|응답하지)|시간 초과로\s*(끊|끝)/.test(
+        said,
+      )
+    )
+      throw new Error('socket: 시험 판 본체가 버거워 도구가 시간 초과로 끊김(기록하지 않고 다시)')
     rec.round = round
     if (concurrency > 1) rec.concurrency = concurrency
     writeFileSync(file, JSON.stringify(rec, null, 1))
