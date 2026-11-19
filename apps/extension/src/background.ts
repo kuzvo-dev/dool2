@@ -138,6 +138,8 @@ interface Saved {
   used?: Record<string, number>
   /** 사람·승인을 기다리는 탭 → 이때까지 정리하지 않는다 (hold) */
   held?: Record<string, number>
+  /** 최근에 닫힌 두리 탭 (다시 부르면 "사용자가 연 탭"이 아니라 "닫혔어요"로 알린다) */
+  closed?: number[]
 }
 async function load(): Promise<Saved> {
   const s = (await chrome.storage.session.get('dool2')).dool2 as Saved | undefined
@@ -200,8 +202,8 @@ async function ownedTab(args: Record<string, unknown>, watching = true): Promise
     // "두리가 연 탭이 아니에요"로 멈췄다)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     // 닫힌 두리 탭은 목록에서 빠져 "사용자가 연 탭"처럼 보였다: 닫혔다고 알린다 (AI·폰이 까닭을 바로 말하게)
-    if (!t) throw new Error('탭이 닫혔어요')
-    if (t.openerTabId !== undefined && s.owned.includes(t.openerTabId)) await adopt(t.openerTabId, tabId)
+    if (!t && s.closed?.includes(tabId)) throw new Error('탭이 닫혔어요')
+    if (t?.openerTabId !== undefined && s.owned.includes(t.openerTabId)) await adopt(t.openerTabId, tabId)
     else throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
   }
   let tab: chrome.tabs.Tab
@@ -357,6 +359,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await update((s) => {
     had = s.owned.includes(tabId)
     s.owned = s.owned.filter((t) => t !== tabId)
+    if (had) s.closed = [...(s.closed ?? []).filter((t) => t !== tabId), tabId].slice(-50)
   })
   if (!had) return
   usedAt.delete(tabId)

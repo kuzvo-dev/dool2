@@ -447,6 +447,15 @@ try {
     await assert.rejects(call('snapshot', { tabId: 1 }), /두리가 연 탭이 아니에요/)
   })
 
+  await step('닫힌 두리 탭은 "닫혔어요"로 알리고, 잡아 두기(hold)를 받는다', async () => {
+    const extra = await call('open', { url: `${base}/login` })
+    const held = await call('hold', { tabId: extra.tabId, ms: 60_000 })
+    assert.ok(held.until > Date.now())
+    await call('close', { tabId: extra.tabId })
+    await new Promise((r) => setTimeout(r, 300))
+    await assert.rejects(call('snapshot', { tabId: extra.tabId }), /탭이 닫혔어요/)
+  })
+
   await step('두리 금고로 로그인 (AI에게 값이 가지 않는다)', async () => {
     const vault = new Vault(memorySecrets())
     await vault.add({ url: `${base}/login`, username: 'duri', password: 'pw-금고-123' })
