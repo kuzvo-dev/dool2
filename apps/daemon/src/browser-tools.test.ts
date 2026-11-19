@@ -1481,6 +1481,52 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(b.calls.filter((c) => c.startsWith('click'))).toEqual(['click e14', 'click e24'])
   })
 
+  // 내 결제 수단 (ADR 0023)
+  const NOW = '2026-11-19T00:00:00.000Z'
+  it('내 결제 수단 중 사이트가 받는 첫 번째를 기본으로 골라 두고, 맞는 칩에 표시한다', async () => {
+    const b = nolPage()
+    const tools = new BrowserTools(b)
+    tools.payMethods = () => [
+      { id: 'a', kind: 'naverpay', inner: '신한카드(1234)', addedAt: NOW },
+      { id: 'b', kind: 'tosspay', inner: '토스머니', addedAt: NOW },
+      { id: 'c', kind: 'kakaopay', addedAt: NOW },
+    ]
+    // 이 사이트에서 지난번에 고른 것보다 내 결제 수단이 먼저
+    tools.loadChoices({ 'platform-site.yanolja.com': 'NOL 카드 페이' })
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e24', what: 'x', where: 'y' })
+    const rec = tools.approvals.list()[0]
+    // 주 결제 수단(네이버페이)은 야놀자에 없어서 다음인 토스페이
+    expect(rec?.choice).toBe('c4')
+    expect(rec?.choices?.filter((c) => c.mine).map((c) => [c.label, c.mine])).toEqual([
+      ['카카오페이', '카카오페이'],
+      ['토스페이', '토스페이 · 토스머니'],
+    ])
+    // 승인하면 결제 창에서 그 안의 것을 고르라고 AI에게 알린다
+    const done = await tools.approve(rec?.id as string, 'c4')
+    expect(done.ok).toBe(true)
+    expect(done.message).toContain('"토스머니"')
+  })
+
+  it('내 결제 수단이 사이트에 없으면 지금처럼 지난번 것 → 화면에 골라진 것', async () => {
+    const tools = new BrowserTools(nolPage())
+    tools.payMethods = () => [{ id: 'a', kind: 'naverpay', addedAt: NOW }]
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e24', what: 'x', where: 'y' })
+    expect(tools.approvals.list()[0]?.choice).toBe('c3')
+    expect(tools.approvals.list()[0]?.choices?.some((c) => c.mine)).toBe(false)
+  })
+
+  it('등록한 카드면 카드 칸을 고르고, 카드 목록에서 그 카드사를 기본으로', async () => {
+    const tools = new BrowserTools(coupangPage('카드'))
+    tools.payMethods = () => [{ id: 'a', kind: 'card', issuer: 'KB국민카드', addedAt: NOW }]
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', { tabId: 3, ref: 'e21', what: '세제 1개', where: '쿠팡' })
+    const rec = tools.approvals.list()[0]
+    expect(rec?.choice).toBe('c2')
+    expect(rec?.subChoices?.find((g) => g.title === '카드')?.choice).toBe('s1o2')
+  })
+
   it('결제 시점처럼 결제 수단이 아닌 선택지에는 화면의 결제 수단을 섞지 않는다', async () => {
     const tools = new BrowserTools(nolPage())
     await tools.run('read', { tabId: 3 })

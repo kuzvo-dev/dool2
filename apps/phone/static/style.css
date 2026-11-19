@@ -3497,3 +3497,18 @@ textarea.ghosting {
   background: var(--ink);
   color: var(--ink-inverse);
 }
+/* 승인 카드: 내 결제 수단과 맞는 칩 */
+.approve-choices .chip.mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.approve-choices .chip .mine-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+.approve-choices .chip.on .mine-dot {
+  background: currentColor;
+}

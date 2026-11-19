@@ -369,6 +369,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   {
     const saved = store.getSetting('payChoices')
     if (saved && typeof saved === 'object') browserTools.loadChoices(saved as Record<string, string>)
+    browserTools.payMethods = () => loadPayMethods(store)
     browserTools.onChoice = (host, label) => {
       const now = (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {}
       store.setSetting('payChoices', { ...now, [host]: label.slice(0, 40) })
