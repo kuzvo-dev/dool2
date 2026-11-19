@@ -665,6 +665,13 @@ export class Connectors {
         '',
         '후보·목록을 사용자에게 보여 줄 땐 글이나 표로 늘어놓지 말고 show_list로 줄을 붙여요. 하나를 고르게 하면 pick one(회차·시간·이름은 title, 상영관·남은 자리·조건은 sub, 가격은 value, 매진은 state). 글로는 요점만 짧게.',
       )
+    // 목록이 비어 왔으면 같은 사이트를 낱말만 바꿔 거듭 두드리지 않게 (실측: 쿠팡 주문을 연달아 열다 Access Denied)
+    const lists = Object.entries(tool.output).filter(([, f]) => f.type === 'list')
+    if (lists.length && lists.every(([k]) => Array.isArray(out[k]) && !(out[k] as unknown[]).length))
+      lines.push(
+        '',
+        '결과가 비었어요. 이 도구를 낱말만 바꿔 여러 번 다시 부르지 말아요(사이트가 막을 수 있어요). 한 번만 넓혀(낱말 줄이기·기간 늘리기) 보거나, 다른 곳(다른 쇼핑·결제 내역·메일)을 봐요.',
+      )
     if (tool.status === '초안')
       lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')
     if (tabId !== undefined) lines.push(`[탭 ${tabId}]`)
