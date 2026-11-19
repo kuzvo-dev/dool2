@@ -105,8 +105,9 @@ export function matchesCard(card: ConnectCard, query: string): boolean {
  */
 export function socialOrder(
   card: Pick<ConnectCard, 'id' | 'social'>,
-  services: readonly Pick<ConnectionItem, 'card' | 'via'>[] = [],
+  services: readonly Pick<ConnectionItem, 'card' | 'via' | 'account'>[] = [],
 ): { provider: NonNullable<ConnectCard['social']>[number]; hint?: string }[] {
+  const accountOf = (p: string) => services.find((s) => s.card.id === p)?.account
   const list = card.social ?? []
   const used = new Map<string, number>()
   let mine: string | undefined
@@ -120,9 +121,10 @@ export function socialOrder(
   const sorted = [...list].sort((a, b) => score(b) - score(a))
   const top = sorted[0]
   return sorted.map((provider) => {
-    if (provider === mine) return { provider, hint: '최근 사용' }
     const n = used.get(provider) ?? 0
-    if (provider === top && n > 0 && !mine) return { provider, hint: `${n}곳에서 사용` }
-    return { provider }
+    const why = provider === mine ? '최근 사용' : provider === top && n > 0 && !mine ? `${n}곳에서 사용` : ''
+    const who = accountOf(provider) ?? ''
+    const hint = [why, who].filter(Boolean).join(' · ')
+    return hint ? { provider, hint } : { provider }
   })
 }

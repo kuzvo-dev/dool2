@@ -23,6 +23,8 @@ export class Skills {
     private readonly connector?: (id: string) => Promise<{ status?: string; tools?: ConnectionTool[] }>,
     /** 서비스 id → 마지막으로 연결한 방법 (설정 connectVia) */
     private readonly via: () => Record<string, string> = () => ({}),
+    /** 공급자(kakao·naver·google) → 내 계정으로 확인한 계정들 (설정 socialAccounts) */
+    private readonly accounts: () => Record<string, string[]> = () => ({}),
   ) {}
 
   /** 연결 카드 (형식이 틀린 카드는 건너뛴다. 레포 테스트가 미리 잡는다) */
@@ -44,6 +46,7 @@ export class Skills {
     const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => NAME.test(n)).sort()
     const connected = this.connected()
     const via = this.via()
+    const accounts = this.accounts()
     const order = Object.keys(CONNECT_CATEGORIES)
     const out: ConnectionItem[] = []
     for (const n of names) {
@@ -58,6 +61,7 @@ export class Skills {
         ...(c.tools?.length ? { tools: c.tools } : {}),
         ...(at ? { connectedAt: at } : {}),
         ...(via[n] ? { via: via[n] } : {}),
+        ...(accounts[n]?.length ? { account: maskAccount(accounts[n].at(-1) as string) } : {}),
       })
     }
     const sorted = out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
@@ -90,4 +94,10 @@ export class Skills {
       ...[...by].map(([k, lines]) => `### ${k}\n${lines.map((l) => `- ${l}`).join('\n')}`),
     ].join('\n')
   }
+}
+
+/** 화면에 보일 계정: 이메일은 앞 한 글자만 ("felix@gmail.com" → "f***@gmail.com"), 아이디는 그대로 */
+export function maskAccount(a: string): string {
+  const m = /^([^@\s])[^@\s]*@(.+)$/.exec(a.trim())
+  return m ? `${m[1]}***@${m[2]}` : a.trim().slice(0, 30)
 }
