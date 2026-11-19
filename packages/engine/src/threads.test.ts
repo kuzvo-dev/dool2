@@ -27,6 +27,7 @@ function setup(script: AgentEvent[]) {
   const store = new Store(':memory:')
   const rt = new FakeRuntime(script)
   const svc = new ThreadService({
+    timeLine: () => undefined,
     store,
     runtimes: { claude: rt },
     workspaceDir: '/tmp/ws',
@@ -112,6 +113,7 @@ describe('ThreadService', () => {
       },
     }
     const svc = new ThreadService({
+      timeLine: () => undefined,
       store,
       runtimes: { claude: rt },
       workspaceDir: '/tmp/ws',

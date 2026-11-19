@@ -34,6 +34,8 @@ export interface ThreadServiceOptions {
   tabHost?: (tabId: number) => string | undefined
   /** 서비스 도구 이름 → 사람이 읽는 제목 ("가게 찾기·영업 확인"). 일한 과정에 "일하는 중" 대신 보인다 */
   toolTitle?: (name: string) => string | undefined
+  /** 말과 함께 넘기는 지금 시각 한 줄 (기본 nowLine, 시험에서는 끈다) */
+  timeLine?: () => string | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -148,7 +150,8 @@ export class ThreadService {
         return out
       }
       const events = this.runtime(thread.agent).runTurn({
-        text: o.aside ? `${o.aside}\n\n${text}` : text,
+        // 지금 시각은 지침이 아니라 말과 함께 (지침이 매분 바뀌면 AI 대화 캐시가 깨진다). 없으면 AI가 시각을 알려고 status를 부른다
+        text: [(this.opts.timeLine ?? nowLine)(), o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: this.systemFor(thread),
         mcpServers: this.opts.mcpServers,
@@ -348,4 +351,11 @@ export function serviceAct(
   if (!title) return undefined
   // 하는 일 이름(찾기·확인·조회·준비)은 "… 중", 볼 것 이름(상영 중인 영화·상영 시간)은 "… 보는 중"
   return /(기|인|회|비|약|청|문|소|색|산)$/.test(title) ? `${title} 중` : `${title} 보는 중`
+}
+
+/** 말과 함께 넘기는 지금 시각 한 줄 (데이터) */
+export function nowLine(now = Date.now()): string {
+  const d = new Date(now + 9 * 3600_000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `(지금 ${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}(${'일월화수목금토'[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}, 한국 시각)`
 }
