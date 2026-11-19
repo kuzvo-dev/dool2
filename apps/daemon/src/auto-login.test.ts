@@ -897,3 +897,54 @@ describe('구글: 고른 뒤 확인 화면의 "계정 전환" 줄을 누르지 �
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e7', 'e3', 'e8'])
   })
 })
+
+describe('일괄 점검 실측 화면 (2026-11-19)', () => {
+  const login = { url: 'https://shop.test/login', text: '[e8 버튼 "카카오로 시작하기"]' }
+  const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+  const run = (pages: { url: string; text: string }[], provider: 'kakao' | 'naver' = 'kakao') => {
+    const b = tabsBrowser({ 7: [login, ...pages] }, () => ({}))
+    return socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider,
+        creds: async () => undefined,
+        ask: { known: { has: () => true, add: () => {} } },
+      },
+      { wait: 0, tries: 6 },
+    ).then((r) => ({ r, b }))
+  }
+  it('카카오 동의 버튼 "확인하고 계속하기" (이스타·티빙)', async () => {
+    const consent = {
+      url: 'https://kauth.kakao.com/oauth/authorize',
+      text: '# 카카오계정으로 로그인\n로그인된 계정 f***@gmail.com [e1 링크 "계정 변경"]\n[e2 버튼 "확인하고 계속하기"]',
+    }
+    const { r, b } = await run([consent, signed])
+    expect(r.status).toBe('ok')
+    expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e2')).toBe(true)
+  })
+  it('"SNS 계정 미연동 안내" → 연결된 회원 없음 (이스타)', async () => {
+    const back = {
+      url: 'https://shop.test/sign-in',
+      text: 'SNS 계정 미연동 안내\n선택하신 SNS 계정에 연동된 회원 정보를 찾을 수 없습니다.\n[e9 버튼 "확인"]',
+    }
+    const { r } = await run([back])
+    expect(r).toMatchObject({ status: 'human' })
+    expect((r as { reason: string }).reason).toMatch(/연결된 회원이 없어요/)
+  })
+  it('공급자를 거쳐 사이트 로그인 화면으로 두 번 돌아오면 회원 없음 (아시아나·진에어)', async () => {
+    const kakao = { url: 'https://kauth.kakao.com/oauth/authorize', text: '[e2 버튼 "계속하기"]' }
+    const back = {
+      url: 'https://shop.test/login/login',
+      text: '## 로그인\n[e5 입력칸 "아이디"] [e6 비밀번호칸 "비밀번호"] [e7 버튼 "로그인"] [e8 버튼 "카카오로 시작하기"]',
+    }
+    const { r } = await run([kakao, back, back, back])
+    expect((r as { reason?: string }).reason ?? '').toMatch(/연결된 회원이 없는 것 같아요/)
+  })
+  it('"가입한 아이디는 mdj****10입니다" → 기존 계정 (신세계면세점)', () => {
+    const t =
+      '# 회원정보확인\n신세계포인트 통합회원으로\n가입한 아이디는mdj****10입니다.\n[e3 버튼 "비밀번호 찾기"] [e4 버튼 "확인"]'
+    expect(joinScreen(t)).toEqual({ kind: 'existing', account: 'mdj****10' })
+  })
+})

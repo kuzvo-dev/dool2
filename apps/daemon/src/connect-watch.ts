@@ -12,6 +12,9 @@ const LOGIN_URL = /\/(login|signin|sign-in|member\/login|auth)(\b|[/?#])/i
  *  한국 사이트(컬리 등)는 위쪽에 이것만 보인다. "고객님"·"회원님" 같은 부름말은 빼고 */
 const NAME_BUTTON = /\[e\d+ (?:버튼|링크) "(?!고객|회원|손님)[^"\]\n]{1,20}?\s?님"\]/
 
+/** "○○ 님의 계정 메뉴" 같은 계정 메뉴 버튼 (실측 부킹닷컴: "지니어스 레벨 일, myeongdon joo 님의 계정 메뉴") */
+const ACCOUNT_MENU = /\[e\d+ (?:버튼|링크) "[^"\]\n]{1,60}님의\s?(계정|프로필|마이)[^"\]\n]{0,20}"\]/
+
 /** 계정 버튼 ("Google 계정: 이름 (메일)"): 구글 서비스는 로그아웃을 계정 메뉴 안에 숨긴다 */
 const ACCOUNT_BUTTON = /\[e\d+ (?:버튼|링크) "(?:Google 계정|Google Account): [^"]+"/
 
@@ -59,6 +62,7 @@ export function looksSignedIn(
     marks.some((m) => page.text.includes(m)) ||
     NAME_BUTTON.test(page.text) ||
     ACCOUNT_BUTTON.test(page.text) ||
+    ACCOUNT_MENU.test(page.text) ||
     MY_INFO.test(page.text)
   )
     return true

@@ -774,7 +774,7 @@ export type SocialProvider = keyof typeof SOCIAL_PROVIDERS
 /** 공급자 화면의 "동의하고 계속하기" 같은 버튼 (처음 한 번 묻는 정보 제공 동의) */
 // 페이스북은 "○○님으로 계속"·"Continue as ○○"처럼 사용자 이름이 들어간다 (실측 예스24)
 const CONSENT =
-  /^(동의하고\s?(계속하기|시작하기|진행)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
+  /^((동의|확인)하고\s?(계속하기|계속|시작하기|진행(하기)?)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
 
 /** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
 function findProviderButton(text: string, provider: SocialProvider): RefEntry | undefined {
@@ -786,7 +786,9 @@ function findProviderButton(text: string, provider: SocialProvider): RefEntry | 
   // 앱 내려받기·공식 계정 링크("kakao 채널", "google playstore")는 빼고, 로그인 말이 있는 것부터
   const ok = refs.filter(
     ([, r]) =>
-      !/스토어|store|채널|channel|play|플레이|앱\s?다운|블로그|blog|youtube|유튜브/i.test(r.name) &&
+      !/스토어|store|채널|channel|play|플레이|앱\s?다운|블로그|blog|youtube|유튜브|클립|clip|카페|포스트|naver\s?tv|네이버\s?tv/i.test(
+        r.name,
+      ) &&
       // 아래쪽 "facebook" 링크는 회사 페이스북 페이지다 (페이스북 로그인은 늘 "로그인·계속" 말이 붙는다)
       !(r.role === '링크' && /^(facebook|페이스북|instagram|인스타그램)$/i.test(r.name.trim())),
   )
@@ -888,6 +890,9 @@ export async function socialLogin(
 
   // 3) 결과를 보면서 공급자 화면의 단계를 넘긴다
   let blankWaits = 0
+  /** 공급자 화면을 한 번이라도 봤다 / 그 뒤 사이트 로그인 화면으로 돌아온 횟수 */
+  let sawProvider = false
+  let backToLogin = 0
   /** 공급자 화면의 로그인된 계정을 사용자가 확인했다 (또는 전에 확인한 계정이다) */
   let accountOk = false
   /** (필수) 동의 칸마다 눌러 본 횟수 */
@@ -914,6 +919,7 @@ export async function socialLogin(
       }
     })()
     const onProvider = SOCIAL_PROVIDERS[input.provider].host.test(host)
+    if (onProvider) sawProvider = true
     if (!onProvider) {
       // 로그인 뒤 돌아온 콜백 페이지가 아직 빈 화면이면(리디렉션 중) 조금 더 기다렸다 다시 본다 (실측 알라딘)
       // — 바로 '못 했어요'로 끝내면 로그인이 실제로는 되던 걸 놓친다
@@ -950,6 +956,31 @@ export async function socialLogin(
           status: 'human',
           tabId: providerTab,
           reason: `${input.card.name} 가입에 ${hum[0].replace(/\s/g, '')}이 필요해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
+        }
+      // 이 공급자 계정으로 가입된 회원이 없다는 화면 (가입 버튼이 없어 joinScreen이 못 잡는 것) — 실측 에어비앤비·이스타·캐치테이블·사람인
+      if (!join && (NOT_MEMBER.test(said(p.text)) || NOT_MEMBER_URL.test(p.url))) {
+        const cert = JOIN_HUMAN.exec(said(p.text))
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없어요.${cert ? ` 가입에 ${cert[0].replace(/\s/g, '')}이 필요해요.` : ''} 이미 쓰는 계정이 있으면 그 방법으로 연결해 주세요`,
+        }
+      }
+      // 공급자 인증을 거쳤는데 사이트 로그인 화면으로 돌아왔다: 이 계정으로 가입된 회원이 없거나 사이트가 연동을 안 받았다
+      // (실측 아시아나·진에어·숲나들e·서울예약·CGV). 두 번 연달아 보이면 그렇게 알린다
+      const at = new URL(p.url)
+      // 콜백 주소(/login/oauth/callback?code=…)는 지나가는 길이라 세지 않는다. 연달아 두 번일 때만
+      const backAtLogin =
+        sawProvider &&
+        LOGIN_PATH.test(at.pathname) &&
+        !/callback|oauth|redirect|result/i.test(at.pathname) &&
+        !/[?&](code|state)=/.test(at.search)
+      backToLogin = backAtLogin ? backToLogin + 1 : 0
+      if (backToLogin >= 2)
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name}에 이 ${label} 계정과 연결된 회원이 없는 것 같아요(로그인 화면으로 돌아왔어요). 이미 쓰는 계정이 있으면 그 방법으로 연결해 주세요`,
         }
       if (join?.kind === 'existing')
         return {
@@ -1064,7 +1095,7 @@ export async function socialLogin(
     const refs = [...parseRefs(p.text)] as RefEntry[]
     // 계정 고르기 화면에서만 이메일 줄을 계정으로 본다. 고른 뒤의 확인 화면에도 "○○@gmail.com 항목이 선택되었습니다. 계정 전환"
     // 줄이 있는데, 이걸 눌러 고르기 화면으로 되돌아가 멈췄다 (실측 부킹닷컴·G마켓·에어비앤비·오아시스·이스타)
-    const choosing = /accountchooser|계정을\s?선택|choose an account/i.test(`${p.url} ${p.text}`)
+    const choosing = /accountchooser|gsi\/select|계정을?\s?선택|choose an account/i.test(`${p.url} ${p.text}`)
     const accounts = choosing
       ? refs.filter(
           ([, r]) =>
@@ -1079,7 +1110,7 @@ export async function socialLogin(
       const remembered = input.ask?.account?.get(input.provider)
       // 기억한 것은 화면 글 그대로이거나 이메일 주소(mdjoo…@gmail.com): 가린 이메일(m***@gmail.com)과 맞춰 본다
       const sameMail = (n: string, mail: string) => {
-        const shown = /([^\s@]+)@([^\s@]+)/.exec(n)
+        const shown = /([^\s@,]+)@([^\s@,]+)/.exec(n)
         const [user = '', domain = ''] = mail.toLowerCase().split('@')
         if (!shown || !domain) return false
         const head = (shown[1] ?? '').toLowerCase().replace(/\*+.*$/, '')
@@ -1208,6 +1239,13 @@ export async function socialLogin(
   }
 }
 
+/** 이 공급자 계정으로 가입된 회원이 없다는 말 */
+const NOT_MEMBER =
+  /계정을\s?만드세요|연동된\s?회원\s?정보를\s?찾을\s?수\s?없|SNS\s?계정\s?미연동|가입된\s?(회원|정보|계정)이?\s?없|등록된\s?회원이\s?없|연결된\s?(회원|계정)이\s?없|회원\s?정보가\s?없|create (an|your) account/i
+/** 간편 가입으로 넘어간 주소 */
+const NOT_MEMBER_URL = /\/(join|signup|sign-up|register|registration)(\b|[/?#])|social-terms/i
+/** 로그인 화면 주소 */
+const LOGIN_PATH = /\/(login|signin|sign-in|sign_in)(\b|[/?#._])|viewLogin|login\.(do|aspx|jsp)/i
 const JOIN_PAGE =
   /(이미|기존)\s?.{0,12}회원이신가요|아직\s?.{0,12}회원이\s?아니|회원가입을\s?하시겠|SNS\s?(로그인\s?)?연동|계정\s?연동|간편\s?회원\s?가입/
 const JOIN_HUMAN = /본인\s?인증|휴대폰\s?인증|휴대전화\s?인증|아이핀|i-?PIN|인증번호/
@@ -1224,9 +1262,11 @@ export function joinScreen(
   | { kind: 'existing'; account?: string }
   | undefined {
   // 가입하려 했더니 "이미 가입된 정보가 있어요(아이디 coffeeplan)": 그 계정으로 로그인하면 연동된다 (실측 교보)
-  if (/이미\s?가입된\s?(정보|계정|회원)|기존\s?계정\s?안내|이미\s?가입하신/.test(text)) {
+  // "신세계포인트 통합회원으로 가입한 아이디는 mdj****10입니다" (실측 신세계면세점)
+  if (/이미\s?가입된\s?(정보|계정|회원)|기존\s?계정\s?안내|이미\s?가입하신|가입한\s?아이디는/.test(text)) {
     const id =
-      /\[e\d+ 라디오 "([^"]{2,40})"/.exec(text)?.[1] ?? /아이디[:\s]+([A-Za-z0-9_.@*-]{3,40})/.exec(text)?.[1]
+      /\[e\d+ 라디오 "([^"]{2,40})"/.exec(text)?.[1] ??
+      /아이디(?:는|[:\s])\s*([A-Za-z0-9_.@*-]{3,40}?)(?:입니다|\s|$)/.exec(text)?.[1]
     return { kind: 'existing', ...(id ? { account: id } : {}) }
   }
   if (!JOIN_PAGE.test(text)) return undefined
