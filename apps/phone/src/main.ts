@@ -203,6 +203,7 @@ const st: {
   connectLive: Map<string, { tabId: number; shot?: string }>
   services?: ConnectionItem[]
   connectQuery: string
+  connectCat: string
   /** 아이디어 탭: 고른 분류('all' = 전체)와 찾는 말 */
   ideaCat: string
   /** 두리 본체가 지금 로그인하고 있는 서비스 */
@@ -272,6 +273,7 @@ const st: {
   connectTabs: new Map(),
   connectLive: new Map(),
   connectQuery: '',
+  connectCat: 'all',
   ideaCat: 'all',
   connecting: new Set(),
   connectSteps: new Map(),
@@ -3795,6 +3797,7 @@ function connectCtx(): ConnectCtx {
   return {
     ...(st.services ? { services: st.services } : {}),
     query: st.connectQuery,
+    cat: st.connectCat,
     connecting: st.connecting,
     online: st.online,
     ...(st.opening ? { opening: st.opening } : {}),
@@ -3819,6 +3822,10 @@ function connectCtx(): ConnectCtx {
     setQuery: (q) => {
       // 목록은 연결 화면이 제자리에서 다시 그렸다: 찾는 말만 기억한다
       st.connectQuery = q
+      pageSettled()
+    },
+    setCat: (c) => {
+      st.connectCat = c
       pageSettled()
     },
     open: (id) => connectInChat(id),

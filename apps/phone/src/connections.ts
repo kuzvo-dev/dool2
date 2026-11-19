@@ -7,15 +7,18 @@ export { socialOrder } from '@dool2/protocol/connect'
 import {
   APPROVAL_TIERS,
   approvalLine,
+  CATEGORY_EMO,
   CATEGORY_LABEL,
   matchesCard,
   safetyLines,
 } from '@dool2/protocol/connect-text'
-import { withLogo } from './dom.js'
+import { emoTile, withLogo } from './dom.js'
 
 export interface ConnectCtx {
   services?: ConnectionItem[]
   query: string
+  /** 고른 분류 칩: 'all' · 'mine'(로그인해 둔 곳) · 카드 분류 */
+  cat: string
   online: boolean
   /** 연결하기를 눌러 PC 답을 기다리는 서비스 */
   opening?: string
@@ -27,6 +30,7 @@ export interface ConnectCtx {
   list(): void
   detail(id: string): void
   setQuery(q: string): void
+  setCat(cat: string): void
   open(id: string): void
   mark(id: string, on: boolean): void
   /** 예시 부탁을 부탁 칸에 넣고 홈으로 */
@@ -169,35 +173,100 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
   search.placeholder = '서비스 찾기 (쿠팡, 항공권, 택배…)'
   search.value = ctx.query
   // 찾는 글자를 칠 때는 아래 목록만 다시 그린다 (칸까지 새로 만들면 한글을 조합하는 중에 글자가 끊긴다)
+  const chips = el('div', 'chips idea-cats connect-cats')
   const results = el('div', 'connect-results')
-  const services = ctx.services
+  const services = [...ctx.services].sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
+  const cats = (Object.keys(CATEGORY_LABEL) as ConnectCard['category'][])
+    .map((id) => ({
+      id,
+      label: CATEGORY_LABEL[id],
+      emo: CATEGORY_EMO[id],
+      list: services.filter((it) => it.card.category === id),
+    }))
+    .filter((c) => c.list.length)
+  const mine = services.filter((it) => it.connectedAt)
+  let cat = ctx.cat
+  const ul = (list: ConnectionItem[]) => {
+    const u = el('ul', 'list')
+    for (const it of list) u.append(row(it, ctx))
+    return u
+  }
+  const group = (name: string, list: ConnectionItem[]) =>
+    el('section', 'connect-group', el('h2', 'over', `${name} ${list.length}`), ul(list))
+  const pick = (id: string) => {
+    cat = id
+    ctx.setCat(id)
+    if (search.value) {
+      search.value = ''
+      ctx.setQuery('')
+    }
+    draw('')
+    chips.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+    chips.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
   const draw = (query: string) => {
-    const shown = services
-      .filter((it) => matchesCard(it.card, query))
-      .sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
-    const group = (name: string, list: ConnectionItem[]) => {
-      const ul = el('ul', 'list')
-      for (const it of list) ul.append(row(it, ctx))
-      return el('section', 'connect-group', el('h2', 'over', `${name} ${list.length}`), ul)
+    const q = query.trim()
+    if (cat === 'mine' && !mine.length) cat = 'all'
+    if (cat !== 'all' && cat !== 'mine' && !cats.some((c) => c.id === cat)) cat = 'all'
+    const chip = (id: string, label: string) => {
+      const b = el('button', `chip quiet${cat === id && !q ? ' on' : ''}`, label)
+      b.type = 'button'
+      b.onclick = () => pick(id)
+      return b
     }
+    chips.replaceChildren(
+      chip('all', '전체'),
+      ...(mine.length ? [chip('mine', `로그인해 둔 곳 ${mine.length}`)] : []),
+      ...cats.map((c) => chip(c.id, c.label)),
+    )
     results.replaceChildren()
-    const connected = shown.filter((it) => it.connectedAt)
-    if (connected.length && !query.trim()) results.append(group('두리가 로그인해 둔 곳', connected))
-    for (const cat of Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]) {
-      const list = shown.filter((it) => it.card.category === cat)
-      if (list.length) results.append(group(CATEGORY_LABEL[cat], list))
+    if (q) {
+      const shown = services.filter((it) => matchesCard(it.card, q))
+      for (const c of cats) {
+        const list = shown.filter((it) => it.card.category === c.id)
+        if (list.length) results.append(group(c.label, list))
+      }
+      if (!shown.length)
+        results.append(
+          el(
+            'p',
+            'cap empty',
+            '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.',
+          ),
+        )
+      return
     }
-    if (!shown.length)
-      results.append(
-        el('p', 'cap empty', '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.'),
-      )
+    if (cat === 'mine') {
+      results.append(group('두리가 로그인해 둔 곳', mine))
+      return
+    }
+    if (cat === 'all') {
+      if (mine.length) results.append(group('두리가 로그인해 둔 곳', mine))
+      for (const c of cats) {
+        const head = el(
+          'button',
+          'idea-sec-head',
+          emoTile(c.emo, 'sm'),
+          el('strong', '', c.label),
+          el('span', 'meta', `${c.list.length}곳`),
+          svg(PATH.chevron),
+        )
+        head.lastElementChild?.setAttribute('class', 'i chev')
+        head.type = 'button'
+        head.onclick = () => pick(c.id)
+        results.append(el('section', 'connect-group', head, ul(c.list.slice(0, 3))))
+      }
+      return
+    }
+    const c = cats.find((x) => x.id === cat)
+    if (c) results.append(group(c.label, c.list))
   }
   search.oninput = () => {
     draw(search.value)
     ctx.setQuery(search.value)
   }
   draw(ctx.query)
-  box.append(search, results)
+  box.append(search, chips, results)
   return box
 }
 

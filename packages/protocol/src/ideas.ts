@@ -53,16 +53,11 @@ export const IDEA_SECTIONS: IdeaSection[] = [
     tone: 'mint',
     cats: [],
     asks: [
-      { text: '매일 아침 7시 반에 날씨랑 오늘 일정 알려 줘', note: '아침마다 피드에 올려요' },
-      { text: '매주 월요일 아침에 이번 주 할 일 정리해 줘', note: '목표 탭에서 언제든 끌 수 있어요' },
-      { text: '매일 밤 10시에 내일 챙길 것 알려 줘', note: '일정과 날씨를 보고 정리해요' },
       { text: '아침마다 반도체·부동산 뉴스 세 줄씩 요약해 줘', note: '원문 링크도 같이 붙여요' },
       { text: '매일 아침 우리 동네 새 소식 있으면 알려 줘', note: '새 가게·무료 행사·도로 통제까지' },
       { text: '자는 동안 이 일들 처리해 두고 아침에 알려 줘', note: '끝난 일과 물어볼 일을 나눠 보고해요' },
       { text: '매일 밤 11시 반에 휴대폰 내려놓으라고 알려 줘', note: '습관 목표로 만들어 매일 체크해요' },
       { text: '매달 10일에 지역화폐 충전하라고 알려 줘', note: '매달 돌아오는 날도 알림으로' },
-      { text: '석 달 동안 300만 원 모으기 목표 세워 줘', note: '매달 얼마씩 모을지 계획까지' },
-      { text: '매일 영어 단어 10개 피드에 올려 줘', note: '아침에 피드로 받아요' },
     ],
   },
   {
@@ -103,15 +98,11 @@ export const IDEA_SECTIONS: IdeaSection[] = [
     tone: 'mint',
     cats: ['grocery'],
     asks: [
-      { text: '냉장고 사진 보낼게, 있는 재료로 저녁 메뉴 추천해 줘', note: '사진은 입력칸 + 에서 보내요' },
       {
         text: '있는 재료로 일주일 저녁 식단 짜고 모자란 것만 담아 줘',
         note: '장바구니에만 담고 결제는 물어봐요',
       },
       { text: '휴지랑 세제 떨어질 때쯤 지난번 거로 다시 시켜 줘', note: '주문 전에 폰으로 승인받아요' },
-      { text: '김치찌개 재료 장보기 목록 만들어 줘', note: '목록은 보관함에 남겨요' },
-      { text: '우유랑 계란 제일 싼 곳 찾아 줘', note: '쇼핑몰 여러 곳을 비교해요' },
-      { text: '이번 주 마트 할인 상품 알려 줘', note: '할인 전단을 찾아 정리해요' },
     ],
   },
   {
@@ -151,9 +142,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
         text: '이 사진 같은 스타일로 셔츠 골라서 장바구니에 담아 줘',
         note: '사이즈를 알려 주시면 맞춰 골라요',
       },
-      { text: '겨울 패딩 10만 원대로 찾아 줘', note: '후기 많은 순으로 골라요' },
-      { text: '건성 피부에 맞는 수분크림 추천해 줘', note: '성분과 후기를 같이 봐요' },
-      { text: '이번 달 화장품 세일 모아 줘', note: '할인율 큰 것부터' },
     ],
   },
   {
@@ -176,7 +164,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '자동차보험 같은 보장으로 더 싼 데 있는지 봐 줘', note: '증권을 보내 주시면 비교해요' },
       { text: '카카오 주가 7% 넘게 움직이면 알려 줘', note: '장 시작과 마감에 정리도 해요' },
       { text: '이번 달 공모주 청약 일정이랑 환불일 정리해 줘', note: '배정 결과까지 이어서 챙겨요' },
-      { text: '영수증 사진 보낼게, 어디에 많이 썼는지 정리해 줘', note: '날짜·가게·금액을 표로' },
     ],
   },
   {
@@ -195,7 +182,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '강아지 데리고 일본 가려면 뭐부터 해야 해?', note: '검역·신고·항공 규정을 날짜 순으로' },
       { text: '초보 둘이 갈 스키장이랑 숙소·장비 렌탈 비교해 줘', note: '원하는 날로 한 번에 예약해요' },
       { text: '도쿄 식당에 창가 자리 되는지 일본어로 메일 보내 줘', note: '보내기 전에 글을 보여 드려요' },
-      { text: '여행 짐 챙길 목록 만들어 줘', note: '날씨와 일정에 맞춰' },
     ],
   },
   {
@@ -213,7 +199,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '다음 주 비행기 체크인 열리면 앞쪽 나란히 자리 잡아 줘', note: '지연·결항도 지켜봐요' },
       { text: '마일리지로 5월 방콕 보너스 좌석 남은 날 찾아 줘', note: '없으면 매일 다시 봐요' },
       { text: '지난번 결항된 비행기 보상 받을 수 있는지 계산해 줘', note: '청구 화면까지 채워 둬요' },
-      { text: '금요일 저녁 부산 가는 SRT 자리 찾아 줘', note: '결제는 폰에서 승인해요' },
       { text: '서울에서 전주 가는 고속버스 토요일 오전 표 찾아 줘', note: '남은 자리도 같이 봐요' },
       { text: '내일 10시까지 판교 도착하려면 몇 시에 나가야 해?', note: '시간대별 예상 시간을 비교해요' },
       { text: '토요일 오전부터 5시간 쏘카 빌려 줘', note: '결제 전에 한 번 확인받아요' },
@@ -281,7 +266,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '캘린더에 겹친 일정이랑 지난 일정 정리해 줘', note: '지우기 전에 목록을 보여 드려요' },
       { text: '아빠 음력 생신 앞으로 10년치 캘린더에 넣어 줘', note: '해마다 양력 날짜로 바꿔요' },
       { text: '출장 메일 보고 기차랑 숙소 챙겨 줘', note: '미팅 시간에 맞춰 골라요' },
-      { text: '메일함에서 이번 달 영수증만 모아 줘', note: '첨부 파일까지 한 번에' },
       { text: '다른 AI에 물어볼 질문 줘, 내 정보 옮기게', note: '답을 붙여 넣으면 기억해 둬요' },
     ],
   },
@@ -301,8 +285,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '지하철에서 잃어버린 우산 유실물 센터에 있는지 봐 줘', note: '유실물 포털을 찾아봐요' },
       { text: '청첩장 보낼게, 가는 길이랑 근처 숙소 찾아 줘', note: '화환 주문도 챙길 수 있어요' },
       { text: '다음 달 집들이 8명 준비 같이 하자', note: '장소·초대·장볼 것까지' },
-      { text: '내일 아침 우산 챙겨야 해?', note: '사는 동네 날씨로 봐요' },
-      { text: '우리 동네 분리수거 요일 알려 줘', note: '구청 안내를 찾아봐요' },
     ],
   },
   {
@@ -338,7 +320,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '유치원 입학 신청 일정 챙겨 줘', note: '추첨 결과와 추가모집까지' },
       { text: '강아지 접종 날짜 챙기고 사료 떨어질 때쯤 다시 시켜 줘', note: '주문은 승인받고 해요' },
       { text: '현장체험학습 가정통신문 써 줘', note: '회신서까지 갖춰 드려요' },
-      { text: '아이 생일 파티 준비 목록 만들어 줘', note: '장볼 것까지 정리해요' },
       { text: '가족 생일이랑 기념일 미리 알려 줘', note: '일주일 전에 알림으로' },
     ],
   },
@@ -354,7 +335,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '이번 주말 망원동 근처 갈 만한 전시나 팝업 찾아 줘', note: '예약이 필요한 곳은 예약까지' },
       { text: '좋아하는 가수 콘서트·굿즈 일정 챙겨 줘', note: '예매·응모 마감을 미리 알려요' },
       { text: '이번 주 로또 맞았는지 확인해 줘', note: '번호를 저장해 두면 매주 봐요' },
-      { text: '이번 달 아이랑 갈 만한 전시 찾아 줘', note: '예약 필요한 곳은 표시해요' },
     ],
   },
   {
@@ -367,7 +347,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
     asks: [
       { text: '잔잔한 영국 드라마 추천하고 어디서 볼 수 있는지 찾아 줘', note: '대여 가격까지 같이' },
       { text: '이 책 제일 싸게 파는 곳 찾아 줘', note: '중고 재고까지 비교해요' },
-      { text: '출퇴근에 들을 플레이리스트 만들어 줘', note: '좋아하는 가수를 알려 주세요' },
       { text: '안 보는 OTT 구독 정리해 줘', note: '해지는 승인받고 해요' },
     ],
   },
@@ -381,8 +360,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
     asks: [
       { text: '인스타 내보내기 파일로 맞팔 안 하는 계정 찾아 줘', note: '팔로워 변화도 정리해요' },
       { text: '이 사진이랑 메모로 블로그 글 써 줘', note: '올리기 전에 꼭 보여 드려요' },
-      { text: '이 사진으로 올릴 글 세 가지 버전으로 써 줘', note: '말투를 골라 주세요' },
-      { text: '우리 가게 홍보 글 써 줘', note: '올리기 전에 꼭 보여 드려요' },
     ],
   },
   {
@@ -402,8 +379,6 @@ export const IDEA_SECTIONS: IdeaSection[] = [
       { text: '매일 아침 내 상품 검색 순위 기록해 줘', note: '크게 떨어지면 바로 알려요' },
       { text: '밤사이 들어온 쇼핑몰 문의 답변 초안 써 줘', note: '확인해 주시면 올려요' },
       { text: '이 페이지 바뀌면 알려 줘', note: '공고·심사 결과처럼 가끔 바뀌는 곳' },
-      { text: '회의 메모 정리해서 할 일만 뽑아 줘', note: '메모를 붙여 넣어 주세요' },
-      { text: '영어 메일 정중하게 고쳐 줘', note: '고친 이유도 짧게' },
     ],
   },
 ]
@@ -440,43 +415,15 @@ export function serviceAsk(card: Pick<ConnectCard, 'name' | 'how'>, say: string)
   return `${name}에서 ${say}`
 }
 
-/** 연결 카드가 어느 분류로 가는지 */
-function sectionOf(card: ConnectCard): IdeaSection | undefined {
-  return (
-    IDEA_SECTIONS.find((s) => s.cards?.includes(card.id)) ??
-    IDEA_SECTIONS.find((s) => s.cats.includes(card.category))
-  )
-}
-
-/** 분류별 아이디어. 분류 안에서는 연결한 곳 → 일반 부탁 → 아직 연결 안 한 곳 순서 */
-export function ideaCatalog(services: readonly ConnectionItem[]): IdeaGroup[] {
-  const svc = new Map<string, { on: IdeaItem[]; off: IdeaItem[] }>()
-  const sorted = [...services].sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
-  for (const it of sorted) {
-    const sec = sectionOf(it.card)
-    if (!sec) continue
-    const bucket = svc.get(sec.id) ?? { on: [], off: [] }
-    svc.set(sec.id, bucket)
-    const connected = Boolean(it.connectedAt) || it.card.how === 'open'
-    for (const a of it.card.abilities)
-      (connected ? bucket.on : bucket.off).push({
-        text: a.say,
-        ask: serviceAsk(it.card, a.say),
-        note: `${it.card.name} · ${a.title}`,
-        service: {
-          id: it.card.id,
-          name: it.card.name,
-          mark: serviceMark(it.card.name),
-          connected,
-          how: it.card.how,
-        },
-      })
-  }
-  return IDEA_SECTIONS.map((section) => {
-    const b = svc.get(section.id)
-    const general: IdeaItem[] = section.asks.map((a) => ({ text: a.text, ask: a.text, note: a.note }))
-    return { section, items: [...(b?.on ?? []), ...general, ...(b?.off ?? [])] }
-  }).filter((g) => g.items.length)
+/**
+ * 분류별 아이디어. 직접 고른 부탁만 보여 준다 (연결 카드의 "할 수 있는 일"은 연결 화면에서 본다).
+ * services는 예전처럼 서비스 아이디어를 섞을 때를 위해 받아만 둔다
+ */
+export function ideaCatalog(_services: readonly ConnectionItem[] = []): IdeaGroup[] {
+  return IDEA_SECTIONS.map((section) => ({
+    section,
+    items: section.asks.map((a): IdeaItem => ({ text: a.text, ask: a.text, note: a.note })),
+  })).filter((g) => g.items.length)
 }
 
 /** 검색: 띄어쓰기를 무시하고 말·설명·분류 이름에서 찾는다 */
