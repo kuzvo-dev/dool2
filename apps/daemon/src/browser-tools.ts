@@ -54,6 +54,8 @@ export const BROWSER_TOOLS = [
   'request_login',
   'fill_profile',
   'request_profile',
+  'request_code',
+  'wait_auth',
   'new_password',
   'select',
   'request_approval',
@@ -78,7 +80,7 @@ const RISK_WORDS: [RiskKind, RegExp][] = [
   ],
   [
     'contact',
-    /보내기|전송|발송|게시|올리기|작성\s*완료|등록\s*하기|(?:^|\s)등록$|댓글\s*등록|리뷰\s*등록|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|\b(?:send|post|publish|submit)\b/i,
+    /보내기|전송|발송|게시|올리기|작성\s*완료|등록\s*하기|(?:^|\s)등록$|댓글\s*등록|리뷰\s*등록|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|(?:^|\s)(?:답변\s*)?제출(?:\s*하기|\s*완료)?$|응모\s*(?:하기|완료)|(?:^|\s)응모$|\b(?:send|post|publish|submit)\b/i,
   ],
   ['irreversible', /삭제|탈퇴|해지|비우기|초기화|\b(?:delete|remove\s*account|unsubscribe)\b/i],
 ]
@@ -170,11 +172,16 @@ export const PAY_FLOW_TTL_MS = 60 * 60_000
 export function classifyRisk(label: string, url: string, pay?: string): Risk | undefined {
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
   if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
+  // 지난 일을 보는 말(주문 상세·결제 내역·예약 조회)은 빼고 남은 글자로 본다 ("주문내역에서 다시 주문하기"는 그대로 막힌다)
+  const acting = label.replace(LOOKUP, ' ')
   for (const [kind, re] of RISK_WORDS) {
-    const m = re.exec(label)
+    const m = re.exec(acting)
     if (m) return { kind, reason: `"${m[0]}"` }
   }
   const name = label.replace(/^(?:버튼|링크|메뉴|항목)\s*/, '').trim()
+  // 보는 말만 있는 이름(주문 상세·결제 내역 보기)은 결제 단계 주소에서도 누른다
+  if (acting !== label && HARMLESS_REST.test(acting.replace(/^\s*(?:버튼|링크|메뉴|항목)\s*/, '').trim()))
+    return undefined
   if (pay && ADVANCE.test(name)) return { kind: 'money', reason: `'${pay}' 화면의 "${name}"` }
   let host = ''
   let path = ''
@@ -189,6 +196,13 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
     return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
+
+// 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
+const LOOKUP =
+  /(?:주문|구매|결제|예약|예매|구독|충전|송금|이체|입금|후원|기부)\s*(?:상세(?:\s*정보)?|내역|목록|조회|이력|정보|번호|일자|일시|현황|관리|상태)|(?:주문|구매|결제|예약)한\s*(?:상품|내역)/g
+
+// 보는 말을 뺀 뒤 남아도 괜찮은 글 (없음·보기·더 보기)
+const HARMLESS_REST = /^(?:|(?:상세\s*)?보기|더\s*보기|자세히(?:\s*보기)?|바로\s*가기|가기|>|›)$/
 
 // 결제가 될 수 없는 버튼 이름 (결제 단계 주소에서도 승인 없이 누른다)
 const HARMLESS =
@@ -699,7 +713,19 @@ export class BrowserTools {
   /** 내 정보 (예약자·주문자 칸). AI는 가린 값만 본다 */
   profile?: ProfileStore
   /** 내 정보 카드를 띄운다 (폰). 저장되면 본체가 그 대화로 이어서 하라고 알린다 */
-  requestProfile?: (fields: ProfileField[], reason: string) => string | undefined
+  requestProfile?: (fields: ProfileField[], reason: string, options?: string[]) => string | undefined
+  /** 사용자 폰에 알림을 보낸다 (인증 앱 승인 기다리기 등) */
+  notifyUser?: (title: string, body: string) => void
+  /** 인증번호 카드를 띄운다 (폰). 받은 번호는 본체가 그 칸에 넣고, 대화로 이어서 하라고 알린다 */
+  requestCode?: (
+    tabId: number,
+    field: string,
+    label: string,
+    hint: string,
+    host: string,
+    kind?: 'code' | 'rrn_back',
+    ref?: string,
+  ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
@@ -933,27 +959,66 @@ export class BrowserTools {
         if (!asks.length) throw new Error('채울 칸(fields: [{ref, key}])을 알려 주세요')
         const p = await this.profile.get()
         const done: string[] = []
+        const cut: string[] = []
         const missing = new Set<ProfileField>()
+        let askedSecret = ''
         for (const x of asks.slice(0, 20)) {
           const ref = String(x.ref ?? '')
+          // 주민번호 뒷자리: 내 정보에 저장하지 않는다. 폰 가린 카드로 그때만 받아 본체가 그 칸에 넣는다 (AI는 값을 안 본다)
+          if (x.key === 'rrn_back' && !p.rrn_back) {
+            const t = page.refs.get(ref)
+            if (!t || !['입력칸', '검색칸', '비밀번호칸'].includes(t.role))
+              throw new Error(`${ref}는 글을 넣는 칸이 아니에요`)
+            let host = ''
+            try {
+              host = new URL(page.url).hostname
+            } catch {}
+            const id = this.requestCode?.(tabId, t.name, '주민등록번호 뒷자리', '', host, 'rrn_back', ref)
+            if (!id) throw new Error('주민번호 뒷자리 카드를 띄우지 못했어요')
+            // 사용자가 카드에 넣을 때까지 탭을 닫지 않는다 (답을 끝내면 일하던 탭을 정리한다)
+            this.hold(tabId, 10 * 60_000)
+            askedSecret = t.name
+            continue
+          }
           const key = String(x.key ?? '') as ProfileKey
           if (!(PROFILE_KEYS as readonly string[]).includes(key))
             throw new Error(`${key}는 내 정보 항목이 아니에요. 쓸 수 있는 것: ${PROFILE_KEYS.join(', ')}`)
+          if (key === 'auth_app')
+            throw new Error(
+              '간편인증 앱은 칸에 넣는 게 아니라 그 이름의 버튼을 눌러 골라요(결과에 오는 간편인증 앱 이름)',
+            )
           const role = page.refs.get(ref)?.role ?? ''
-          if (!['입력칸', '검색칸'].includes(role)) throw new Error(`${ref}는 글을 넣는 칸이 아니에요`)
+          if (!['입력칸', '검색칸'].includes(role) && !(key === 'rrn_back' && role === '비밀번호칸'))
+            throw new Error(`${ref}는 글을 넣는 칸이 아니에요`)
           const value = profileValue(p, key)
           if (!value) {
             for (const f of sourceOf(key)) if (!p[f]) missing.add(f)
             continue
           }
-          await this.browser.call('fill', { tabId, ref, value, origin })
+          const r = (await this.browser.call('fill', { tabId, ref, value, origin })) as { length?: number }
+          // 칸이 글자 수를 막으면(maxlength) 잘려 들어간다: 다른 모양으로 다시 채우게 알린다
+          if (typeof r?.length === 'number' && r.length >= 0 && r.length !== value.length)
+            cut.push(`${ref}(${key}): ${value.length}자 중 ${r.length}자만 들어갔어요`)
           const shown = sourceOf(key)
             .map((f) => (p[f] ? maskValue(f, p[f] as string) : ''))
             .join(' ')
           done.push(`${PROFILE_FIELDS[sourceOf(key)[0] as ProfileField].label}(${shown})`)
         }
+        // 간편인증 창이면 어느 앱을 누를지: 내 정보의 간편인증 앱 (없으면 카드로 받는다)
+        const identity = asks.some((x) => /^(name|birth|phone)/.test(String(x.key ?? '')))
         const lines = [
           done.length ? `내 정보로 채웠어요: ${done.join(', ')}.` : '',
+          askedSecret
+            ? `주민번호 뒷자리가 내 정보에 없어서 폰 보안 키패드로 한 번 받는 중이에요("${askedSecret}" 칸, 받으면 금고에 저장). 사용자에게 "폰에 뜬 카드에 주민번호 뒷자리를 넣어 주세요"라고 한 문장으로 말하고 이번 답을 끝내요. 들어가면 알림이 와요.`
+            : '',
+          cut.length
+            ? `잘려 들어간 칸이 있어요 — ${cut.join('; ')}. 이대로 보내면 다른 번호·날짜로 나가요. 그 칸이 받는 모양으로 다시 채워요: 앞자리(010)를 따로 고르는 휴대폰 칸은 phone_rest(뒤 8자리), 세 칸 휴대폰은 phone_head·phone_mid·phone_last, 6자리 생년월일은 birth6, 숫자만 받으면 phone_digits·birth_digits.`
+            : '',
+          identity && p.auth_app
+            ? `간편인증 창이면 인증 앱은 내 정보의 기본 '${p.auth_app}'를 눌러 고르고 [인증 요청]까지 눌러요. 그 사이트 창에 '${p.auth_app}'가 없으면 browser_request_profile(fields: ["auth_app"], options: 그 창에 보이는 앱 이름들)로 이번에 쓸 앱을 받아요.`
+            : identity
+              ? '간편인증 창이면 쓸 인증 앱이 내 정보에 없어요. 대화로 묻지 말고 browser_request_profile(fields: ["auth_app"], options: 그 창에 보이는 앱 이름들)로 고르게 해요.'
+              : '',
           missing.size
             ? `내 정보에 ${[...missing].map((f) => PROFILE_FIELDS[f].label).join('·')}이(가) 없어요. 사용자에게 묻지 말고 browser_request_profile로 내 정보 카드를 띄운 뒤 답을 끝내세요.`
             : '',
@@ -1105,6 +1170,57 @@ export class BrowserTools {
             '비밀번호 규칙(자릿수·특수문자)에 걸리면 사용자에게 알려 주세요.',
         )
       }
+      case 'request_code': {
+        // 인증번호: 사용자가 폰 카드에 넣은 번호를 본체가 그 칸에 바로 넣는다. AI는 번호를 보지 않는다
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        if (!this.requestCode)
+          throw new Error('인증번호 카드를 띄울 수 없어요. browser_handoff로 넘겨 주세요')
+        const ref = String(a.ref ?? '')
+        const target = page.refs.get(ref)
+        if (!target || !['입력칸', '검색칸'].includes(target.role))
+          throw new Error(
+            `${ref}는 인증번호를 넣는 칸이 아니에요. 페이지를 다시 읽어 칸 표시를 확인해 주세요`,
+          )
+        // 화면의 안내 한 줄 ("휴대폰으로 보낸 6자리를 넣어 주세요")
+        const snap = (await this.browser
+          .call('snapshot', { tabId, maxChars: 12_000 })
+          .catch(() => undefined)) as { text?: string } | undefined
+        const hint =
+          (snap?.text ?? '')
+            .split('\n')
+            .map((l: string) =>
+              l
+                .replace(/\[[^\]]*\]/g, '')
+                .replace(/^\s*(#+|[-*•]|\d+\.)\s*/, '')
+                .trim(),
+            )
+            .find((l: string) => l.length >= 8 && l.length <= 80 && /인증|번호|보냈|문자|발송/.test(l)) ?? ''
+        let host = ''
+        try {
+          host = new URL(page.url).hostname
+        } catch {}
+        const id = this.requestCode(
+          tabId,
+          target.name,
+          String(a.label ?? '') || target.name || '인증번호',
+          hint,
+          host,
+          a.kind === 'rrn_back' ? 'rrn_back' : 'code',
+          ref,
+        )
+        if (!id) throw new Error('인증번호 카드를 띄우지 못했어요')
+        // 사용자가 카드에 넣을 때까지 탭을 닫지 않는다
+        this.hold(tabId, 10 * 60_000)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '폰에 인증번호 카드를 띄웠어요. 사용자에게 "폰에 온 인증번호를 카드에 넣어 주세요"처럼 한 문장으로 말하고 이번 답을 끝내세요. 번호가 칸에 들어가면 다음 메시지로 알려 줘요. 그때 [확인]을 눌러 이어 가요.',
+            },
+          ],
+        }
+      }
       case 'request_profile': {
         if (!this.profile || !this.requestProfile) throw new Error('내 정보 카드를 띄울 수 없어요')
         const all = Object.keys(PROFILE_FIELDS) as ProfileField[]
@@ -1112,9 +1228,15 @@ export class BrowserTools {
           .map(String)
           .filter((f): f is ProfileField => all.includes(f as ProfileField))
         const { missing } = await this.profile.masked()
-        const fields = asked.length ? asked : missing
+        // 주민번호 뒷자리는 본인인증 칸에서 보안 키패드로 따로 받는다 (내 정보 카드 기본 목록에는 넣지 않는다)
+        const fields = asked.length
+          ? asked.filter((f) => f !== 'rrn_back')
+          : missing.filter((f) => f !== 'rrn_back')
         if (!fields.length) throw new Error('내 정보가 모두 있어요. browser_fill_profile로 채우세요')
-        const id = this.requestProfile(fields, String(a.reason ?? '').slice(0, 120))
+        const options = (Array.isArray(a.options) ? a.options : [])
+          .map((o) => String(o).trim().slice(0, 20))
+          .filter(Boolean)
+        const id = this.requestProfile(fields, String(a.reason ?? '').slice(0, 120), options)
         if (!id) throw new Error('내 정보 카드를 띄우지 못했어요')
         return {
           content: [
@@ -1164,6 +1286,114 @@ export class BrowserTools {
           ],
         }
       }
+      case 'wait_auth': {
+        // 간편인증 승인 기다리기: 사람에게 넘기고 [다 했어요]를 기다리면 그사이 인증이 만료된다(실측).
+        // 폰에 알리고, 몇 초마다 [인증 완료]를 눌러 승인됐는지 본다. "서명되지 않았습니다" 같은 글이 보이면 아직이다.
+        // 인증 창이 팝업(새 탭)으로 뜨는 사이트(홈택스)가 있어, 두리가 최근에 연 탭들도 함께 본다
+        const msg = String(a.message ?? '').trim() || '폰의 인증 앱에서 승인해 주세요'
+        this.notifyUser?.('인증 앱에서 승인해 주세요', msg)
+        // 탭만 열어 둔다. 폰 원격 화면 준비(holdForPerson)는 하지 않는다 — 화면이 바뀌어 인증 창이 닫혔다(실측)
+        this.hold(tabId, 200_000)
+        const NOT_YET =
+          /(?:서명|인증|승인|본인확인)(?:이|을)?\s*(?:되지|하지)\s*않|완료되지\s*않|진행(?:해|하여)\s*주(?:세요|십시오)|인증을\s*완료(?:해|하여)\s*주/
+        const DONE =
+          /로그아웃|(?:인증|본인확인|로그인)(?:이|을)?\s*(?:완료|성공)(?:되었|됐|하였)|님\s*(?:환영|안녕)/
+        const FINISH = /^(?:간편\s*)?인증\s*(?:완료|확인)$|^(?:인증|로그인)\s*하기$|^완료$/
+        const buttons = (text: string) =>
+          [...text.matchAll(/\[(e\d+) (?:버튼|링크) "([^"]*)"\]/g)].map((m) => ({
+            ref: m[1] as string,
+            name: m[2] as string,
+          }))
+        const snap = (t: number) =>
+          this.browser.call('snapshot', { tabId: t, maxChars: 40_000 }).catch(() => undefined) as Promise<
+            Snapshot | undefined
+          >
+        // 볼 탭: 짚어 준 탭 + 두리가 최근에 읽은 다른 탭(팝업) 3개까지
+        const tabs = [tabId, ...[...this.pages.keys()].filter((t) => t !== tabId).slice(-3)]
+        const first = new Map<number, Snapshot>()
+        for (const t of tabs) {
+          const f = await snap(t)
+          if (f) first.set(t, f)
+        }
+        const pick = (text: string) =>
+          (typeof a.ref === 'string' ? buttons(text).find((b) => b.ref === a.ref) : undefined) ??
+          buttons(text).find((b) => FINISH.test(b.name.trim()))
+        const started = Date.now()
+        const expired = () =>
+          this.notifyUser?.('인증 시간이 지났어요', '다시 하려면 두리에게 "다시 해 줘"라고 해 주세요')
+        while (Date.now() - started < 180_000) {
+          await new Promise((r) => setTimeout(r, 6_000))
+          for (const t of tabs) {
+            let now = await snap(t)
+            const was = first.get(t)
+            if (!now || !was) continue
+            // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
+            if (NOT_YET.test(now.text)) {
+              const ok = buttons(now.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
+              if (ok)
+                await this.browser.call('click', { tabId: t, ref: ok.ref }, 30_000).catch(() => undefined)
+            }
+            const btn = pick(now.text)
+            if (btn) {
+              const r = (await this.browser
+                .call('click', { tabId: t, ref: btn.ref }, 30_000)
+                .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
+              if (r?.dialog) {
+                await this.browser.call('dialog', { tabId: t, accept: true }).catch(() => undefined)
+                continue
+              }
+              await new Promise((r) => setTimeout(r, 2_000))
+              now = (await snap(t)) ?? now
+            }
+            // 무엇을 보고 판단했는지 남긴다 (버튼 이름·표시만, 값은 남기지 않는다)
+            this.onNote?.('wait-auth', {
+              tab: t === tabId ? 'main' : 'other',
+              pressed: btn?.name ?? '',
+              notYet: NOT_YET.exec(now.text)?.[0] ?? '',
+              url: now.url.replace(/[?#].*$/, ''),
+              buttons: buttons(now.text)
+                .map((b) => b.name)
+                .filter((n) => /인증|완료|확인|로그인|요청/.test(n))
+                .slice(0, 8),
+            })
+            if (NOT_YET.test(now.text)) continue
+            // 분명한 성공 표시가 있을 때만 승인으로 본다: 짚어 준 탭의 주소가 바뀌었거나, 로그아웃·완료 글이 새로 보일 때
+            const moved = t === tabId && now.url !== was.url
+            const done = DONE.test(now.text) && !DONE.test(was.text)
+            if (moved || done) {
+              const main = t === tabId ? now : ((await snap(tabId)) ?? now)
+              this.pages.set(tabId, pageInfo(main.url, main.text))
+              this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
+              return this.read(
+                tabId,
+                undefined,
+                '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
+              )
+            }
+          }
+          // 팝업이 닫히고 짚어 준 탭이 로그인 상태로 바뀌었는지도 본다
+          const main = await snap(tabId)
+          const was = first.get(tabId)
+          if (main && was && DONE.test(main.text) && !DONE.test(was.text)) {
+            this.pages.set(tabId, pageInfo(main.url, main.text))
+            this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
+            return this.read(
+              tabId,
+              undefined,
+              '인증 앱 승인이 확인돼 로그인됐어요. "인증이 완료됐어요"라고 한 줄 쓰고 이어서 해요.',
+            )
+          }
+        }
+        expired()
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '3분 동안 승인이 확인되지 않아 기다리기를 멈췄어요(인증 요청도 곧 만료돼요). 다시 요청하지 말고, 사용자에게 "인증 시간이 지나 멈췄어요. 다시 하려면 \'다시 해 줘\'라고 해 주세요"처럼 짧게 답하고 이번 답을 끝내요.',
+            },
+          ],
+        }
+      }
       case 'handoff': {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
         // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
@@ -1201,7 +1431,19 @@ export class BrowserTools {
           throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
         // 결제 흐름에서 결제 화면 전의 [예약하기]·[구매하기]는 결제 화면을 여는 버튼이라 승인 없이 누른다
         const entry = this.entersCheckout(tabId, page, target.name)
-        if (!entry) this.guard(`${target.role} ${target.name}`, page.url, true, page.pay)
+        // '신청하기'·'등록하기' 같은 말이라도 다른 화면으로 가기만 하는 진짜 링크는 승인 없이 누른다
+        // (정부24는 조회만 하는 서비스도 들어가는 버튼이 '신청하기'). 제출 버튼·스크립트 링크·결제·삭제는 그대로 막는다
+        const label = `${target.role} ${target.name}`
+        const navOnly =
+          !entry &&
+          target.role === '링크' &&
+          classifyRisk(label, page.url, page.pay)?.kind === 'contact' &&
+          (
+            (await this.browser.call('link-navigates', { tabId, ref }).catch(() => undefined)) as
+              | { navigates?: boolean }
+              | undefined
+          )?.navigates === true
+        if (!entry && !navOnly) this.guard(label, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
           newTabId?: number
           coveredBy?: string
@@ -1210,6 +1452,9 @@ export class BrowserTools {
           `${target.role} "${target.name}"을(를) 눌렀어요.`,
           entry
             ? '(결제 화면으로 넘어가는 버튼이라 승인 없이 눌렀어요. 결제 화면에서 최종 금액·취소 규정을 읽고, 그 화면의 마지막 버튼을 누르기 전에 승인을 받아요.)'
+            : '',
+          navOnly
+            ? '(다른 화면으로 가기만 하는 링크라 승인 없이 눌렀어요. 그 화면에서 실제로 제출하는 버튼은 승인을 받아요.)'
             : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
         ]
@@ -1314,6 +1559,8 @@ export class BrowserTools {
 
   /** 고칠 때 볼 일한 기록 (못 읽은 결제 화면 목록의 모양 등) */
   onNote?: (kind: string, data: Record<string, unknown>) => void
+  /** 화면 그림 남기기 (logs/shots) */
+  onShot?: (label: string, base64: string) => void
 
   /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined, 그 이유는 일한 기록에) */
   private async selectOptions(tabId: number, ref: string) {
@@ -1454,8 +1701,18 @@ export class BrowserTools {
       )
     const risk =
       classifyRisk(`${target.role} ${target.name}`, page.url, page.pay) ??
-      (kind ? { kind, reason: '서비스 도구 등급' } : undefined)
+      (kind ? { kind, reason: '서비스 도구 등급' } : undefined) ??
+      // 개인정보 이용·제공 동의는 두리가 마음대로 누르지 않되, 사용자가 폰에서 승인하면 누른다
+      // (PC 화면에서 직접 누르라고 하면 폰만 든 사용자는 막힌다)
+      (/동의/.test(target.name)
+        ? { kind: 'contact' as const, reason: `"${target.name}" (내 정보 이용 동의)` }
+        : undefined)
     if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
+    // 내 정보 이용 동의는 사용자가 맡긴 일에 필요한 것이라 승인 카드를 띄우지 않는다 (사용자: 승인이 너무 많다)
+    if (risk.reason.endsWith('(내 정보 이용 동의)'))
+      throw new Error(
+        `"${target.name}"은(는) 맡긴 일에 필요한 내 정보 이용 동의라 승인 없이 눌러요. browser_click으로 누르고, 답에 무엇(어디에 어떤 정보)에 동의했는지 한 줄 남겨요.`,
+      )
     if (this.finalStep() === 'self')
       throw new Error(
         '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',

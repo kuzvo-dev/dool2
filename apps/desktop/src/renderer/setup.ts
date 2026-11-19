@@ -15,6 +15,7 @@ import type {
   Settings,
   VaultEntry,
 } from '@dool2/protocol'
+import { hyphenate } from './rich.js'
 import {
   AI_CHOICE_LABEL,
   CHOICES,
@@ -110,7 +111,11 @@ const PROFILE_LABELS: Record<string, string> = {
   zip: '우편번호',
   address: '주소',
   address_detail: '상세 주소',
+  rrn_back: '주민번호 뒷자리',
+  auth_app: '간편인증 앱',
 }
+/** 간편인증 앱 (@dool2/protocol AUTH_APPS와 같게: 화면은 묶지 않아 값을 옆에 둔다) */
+const AUTH_APPS = ['카카오톡', '네이버', '토스', 'PASS', 'KB국민인증서', '신한인증서', '삼성패스', '페이코']
 const PROFILE_EXAMPLES: Record<string, string> = {
   name: '홍길동',
   name_en_last: 'HONG',
@@ -980,13 +985,36 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       } else {
         const form = el('form', 'key-form')
         for (const [k, label] of Object.entries(PROFILE_LABELS)) {
+          if (k === 'auth_app') {
+            // 간편인증 앱은 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
+            const sel = el('select')
+            sel.id = `me-${k}`
+            sel.append(el('option', undefined, me.have[k] ? `${me.have[k]} (그대로)` : '고르기'))
+            ;(sel.firstChild as HTMLOptionElement).value = ''
+            for (const a of AUTH_APPS) {
+              const o = el('option', undefined, a)
+              o.value = a
+              sel.append(o)
+            }
+            sel.value = me.draft[k] ?? ''
+            sel.onchange = () => {
+              me.draft[k] = sel.value
+            }
+            const l = el('label', undefined, label)
+            l.append(sel)
+            form.append(l)
+            continue
+          }
           const i = el('input')
           i.id = `me-${k}`
           i.autocomplete = 'off'
+          if (k === 'rrn_back') i.type = 'password'
           // 지금 값은 가린 채로 자리 표시에만. 비워 두면 그대로 둔다
           i.placeholder = me.have[k] ?? (PROFILE_EXAMPLES[k] ? `예: ${PROFILE_EXAMPLES[k]}` : '')
           i.value = me.draft[k] ?? ''
           i.oninput = () => {
+            // 휴대폰·생년월일은 숫자만 쳐도 하이픈이 들어간다
+            if (k === 'phone' || k === 'birth') i.value = hyphenate(k, i.value)
             me.draft[k] = i.value
           }
           const l = el('label', undefined, label)

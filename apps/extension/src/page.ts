@@ -1045,6 +1045,28 @@ export function pageValueLength(ref: string): number {
   return -1
 }
 
+/**
+ * 링크가 다른 화면으로 가기만 하는지: 진짜 주소(http)로 가고, 누르면 도는 스크립트(onclick)가 없을 때만.
+ * javascript:·#·onclick 링크는 버튼처럼 무엇이든 할 수 있어 아니라고 본다 (승인 게이트가 쓴다)
+ */
+export function pageLinkNavigates(ref: string): boolean {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!(el instanceof HTMLAnchorElement)) return false
+  if (el.hasAttribute('onclick') || el.closest('form')) return false
+  const raw = el.getAttribute('href') ?? ''
+  if (!raw || raw.startsWith('#') || /^\s*javascript:/i.test(raw)) return false
+  try {
+    const u = new URL(raw, location.href)
+    if (!/^https?:$/.test(u.protocol)) return false
+    // 같은 페이지 안 이동(#)만 다른 건 이동이 아니다
+    return !(u.origin === location.origin && u.pathname === location.pathname && u.search === location.search)
+  } catch {
+    return false
+  }
+}
+
 export function pageMarkFilled(ref: string) {
   type State = { refs: Map<string, WeakRef<Element>>; filled?: WeakSet<Element> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2

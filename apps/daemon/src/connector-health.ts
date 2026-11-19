@@ -11,6 +11,8 @@ interface Rec {
   at: number
   outcome: Outcome
   detail?: string
+  /** 도구 정의 지문: 정의가 바뀌면(고친 도구가 들어오면) 예전 고장은 세지 않는다 */
+  v?: string
 }
 
 /** 잇달아 이만큼 깨지면 쉰다 */
@@ -37,17 +39,22 @@ export class ConnectorHealth {
     } catch {}
   }
 
-  record(tool: string, outcome: Outcome, detail?: string) {
+  record(tool: string, outcome: Outcome, detail?: string, v?: string) {
     const list = this.data[tool] ?? []
     this.data[tool] = list
-    list.push({ at: this.now(), outcome, ...(detail ? { detail: detail.slice(0, 200) } : {}) })
+    list.push({
+      at: this.now(),
+      outcome,
+      ...(detail ? { detail: detail.slice(0, 200) } : {}),
+      ...(v ? { v } : {}),
+    })
     if (list.length > 20) list.splice(0, list.length - 20)
     this.save()
   }
 
-  /** 쉬는 중이면 언제까지·왜 */
-  resting(tool: string): { until: number; reason: string } | undefined {
-    const list = this.data[tool] ?? []
+  /** 쉬는 중이면 언제까지·왜. v(지금 정의의 지문)를 주면 다른 정의 때의 기록은 넘긴다 */
+  resting(tool: string, v?: string): { until: number; reason: string } | undefined {
+    const list = (this.data[tool] ?? []).filter((r) => !v || !r.v || r.v === v)
     const last = list.slice(-REST_AFTER)
     if (last.length < REST_AFTER || !last.every((r) => bad(r.outcome))) return undefined
     const first = last[0] as Rec

@@ -129,6 +129,7 @@ export class ThreadService {
       let block: CardsRecordMessage | BlockRecordMessage | undefined
       /** PC 파일 승인(여러 개 옮기기·출력): 도구가 승인을 실제로 요청했을 때(성공한 결과)만 카드를 남긴다 */
       let fileAsk: { name: string; record: ApprovalRecordMessage } | undefined
+      let approvalAsk: { name: string; record: ApprovalRecordMessage } | undefined
       const saveBlock = () => {
         if (!block) return undefined
         const m = store.addMessage(threadId, 'tool', JSON.stringify(block))
@@ -274,7 +275,14 @@ export class ThreadService {
                 ? input.what
                 : '',
           }
-          yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+          // 도구가 실제로 승인을 요청했을 때(성공한 결과)만 카드를 남긴다 (이미 승인한 사이트의 동의 등은 실패로 돌아온다)
+          approvalAsk = { name: ev.name, record }
+        }
+        if (ev.type === 'tool_result' && approvalAsk && (!ev.name || ev.name === approvalAsk.name)) {
+          const ask = approvalAsk
+          approvalAsk = undefined
+          if (ev.ok)
+            yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
         }
       }
 

@@ -162,6 +162,8 @@ const TOOL_LABEL: Record<string, string> = {
   browser_close: '탭 닫는',
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',
+  browser_wait_auth: '인증 앱 승인 기다리는',
+  browser_request_code: '폰에서 값 받는',
   browser_request_login: '로그인 카드 띄우는',
   browser_fill_profile: '내 정보 채우는',
   browser_request_profile: '내 정보 카드 띄우는',
@@ -191,6 +193,7 @@ const TOOL_LABEL: Record<string, string> = {
   idea_suggest: '할 일 찾는',
   photo_view: '사진 보는',
   pay_method_list: '결제 수단 보는',
+  profile_view: '내 정보 보는',
   vault_find: '금고 보는',
   feed_post: '피드에 올리는',
   feed_tell: '먼저 챙긴 일 알리는',
@@ -370,4 +373,26 @@ export function hideQuickTail(text: string): string {
   const part = text.match(QUICK_PARTIAL)
   // "[" 하나만 왔을 때는 글 속 대괄호일 수도 있지만, 한 글자 잠깐 늦게 보이는 것뿐이라 감춘다
   return part && part.index !== undefined && part[0].trim() ? text.slice(0, part.index).trimEnd() : text
+}
+
+/**
+ * 입력하는 동안 하이픈 넣기: 휴대폰 010-1234-5678, 생년월일 1990-01-31.
+ * 숫자만 보고 다시 만들어서 지우거나 붙여 넣어도 맞는다. 그 밖의 글자가 섞이면 그대로 둔다
+ */
+export function hyphenate(kind: 'phone' | 'birth', value: string): string {
+  if (/[^\d\s-]/.test(value)) return value
+  const d = value.replace(/\D/g, '')
+  if (kind === 'birth') {
+    const n = d.slice(0, 8)
+    return [n.slice(0, 4), n.slice(4, 6), n.slice(6)].filter(Boolean).join('-')
+  }
+  const n = d.slice(0, 11)
+  // 02 지역번호는 2자리, 그 밖은 3자리 + 가운데 3~4자리
+  const head = n.startsWith('02') ? 2 : 3
+  if (n.length <= head) return n
+  const mid = n.length - head > 7 ? 4 : n.length - head > 6 ? (n.startsWith('02') ? 4 : 3) : 4
+  const a = n.slice(0, head)
+  const b = n.slice(head, head + mid)
+  const c = n.slice(head + mid)
+  return [a, b, c].filter(Boolean).join('-')
 }

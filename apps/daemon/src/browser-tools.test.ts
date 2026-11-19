@@ -36,7 +36,19 @@ describe('위험한 동작 가리기', () => {
     expect(classifyRisk('버튼 Place order', 'https://x')?.kind).toBe('money')
     expect(classifyRisk('버튼 보내기', 'https://x')?.kind).toBe('contact')
     expect(classifyRisk('버튼 등록', 'https://x')?.kind).toBe('contact')
+    // 신청서·응모 양식을 내는 것도 보내기 (실측: 공공기관 퀴즈 응모가 승인 없이 제출됐다, 11-20)
+    expect(classifyRisk('버튼 제출', 'https://form.naver.com/x')?.kind).toBe('contact')
+    expect(classifyRisk('버튼 응모하기', 'https://x')?.kind).toBe('contact')
+    expect(classifyRisk('링크 제출 서류 안내', 'https://x')).toBeUndefined()
     expect(classifyRisk('버튼 회원 탈퇴', 'https://x')?.kind).toBe('irreversible')
+  })
+
+  it('지난 주문·결제를 보는 링크는 막지 않고, 같이 적힌 동작 말은 그대로 본다', () => {
+    expect(classifyRisk('링크 주문상세', 'https://pay.naver.com/pc/history')).toBeUndefined()
+    expect(classifyRisk('버튼 결제 내역 보기', 'https://x')).toBeUndefined()
+    expect(classifyRisk('링크 예약 조회', 'https://x')).toBeUndefined()
+    expect(classifyRisk('버튼 주문내역에서 다시 주문하기', 'https://x')?.kind).toBe('money')
+    expect(classifyRisk('버튼 구매확정', 'https://x')?.kind).toBe('money')
   })
 
   it('결제 단계 페이지에서는 무엇이든 위험으로 본다', () => {
@@ -79,7 +91,9 @@ describe('위험한 동작 가리기', () => {
     expect(classifyRisk('링크 다음 페이지', 'https://shop.example/list?page=2')).toBeUndefined()
     expect(classifyRisk('버튼 장바구니 담기', 'https://shop.example/item/1')).toBeUndefined()
     expect(classifyRisk('링크 상품 등록일순', 'https://shop.example/list')).toBeUndefined()
-    expect(classifyRisk('링크 결제 내역', 'https://x')?.kind).toBe('money') // 의심되면 막는다
+    // 지난 결제를 보는 링크는 돈이 나가지 않는다 (승인 줄이기, 11-20). 결제 단계 주소의 다른 버튼은 그대로 막는다
+    expect(classifyRisk('링크 결제 내역', 'https://x')).toBeUndefined()
+    expect(classifyRisk('버튼 다음', 'https://pay.naver.com/pc/history')?.kind).toBe('money')
   })
 
   it('페이지 글에서 표시를 모은다', () => {

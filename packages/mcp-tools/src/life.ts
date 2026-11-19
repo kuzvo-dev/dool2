@@ -66,6 +66,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         '"엔진오일 다음 교체 때 알려 줘" → 마지막 교체일을 prompt에 적고 monthly + when_found(갈 때가 됐으면) + until "교체했다고 하면" · ' +
         '"날짜 미정인 공지 뜨면 알려 줘" → daily + when_found + until "공지가 떠서 알리면". ' +
         '목표는 category와 plan(3~6단계)을 함께 주고, 체크인 때를 schedule로 준다. ' +
+        '지켜보기를 만들기 전에 찾아본 게 있으면 답에 "지금 상황"(예: 지난 모집 때·예정 발표, 받을 수 있는 조건과 내 정보로 본 대상 여부)을 한두 줄로 먼저 말하고 줄 끝에 출처 링크를 붙인다. ' +
         '결과의 "정한 것"(언제 하고·언제 끝나고·언제 알리는지)을 사용자에게 그대로 말해 확인한다. 빠진 게 있다고 오면 사용자에게 묻거나 goal_update로 채운다. 지난 시각이면 만들지 말고 다른 시각을 물어본다.',
       inputSchema: {
         title: z
@@ -260,6 +261,18 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('connect_ask'),
   )
   server.registerTool(
+    'profile_view',
+    {
+      title: '내 정보 보기',
+      description:
+        '사용자가 넣어 둔 내 정보(이름·휴대폰·이메일·생년월일·주소·간편인증 앱 등)를 가린 값으로 본다. 생년월일은 연도까지 보여서 나이·대상 조건(청년·만 65세 이상 등)을 따질 수 있다. ' +
+        '"대상인지 봐 줘", "받을 수 있어?", "나 해당돼?"처럼 사용자 조건이 필요하면 출생연도·사는 곳을 묻기 전에 이것으로 먼저 본다. 없는 항목만 물어본다. 값을 칸에 넣을 때는 browser_fill_profile.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    call('profile_view'),
+  )
+  server.registerTool(
     'pay_method_list',
     {
       title: '내 결제 수단 보기',
@@ -301,7 +314,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         '상품·숙소·식당·공연처럼 고를 후보를 보여 줄 때 답 아래에 사진 카드로 붙인다 (옆으로 넘겨 보고, 누르면 그 페이지, [이걸로]를 누르면 고른 게 대화로 온다). ' +
         '서비스 도구 결과에 있는 사진(image)·주소(link)·가격을 그대로 넣는다. 지어낸 주소·사진은 넣지 않는다. 2~8장, 추천 순서대로. ' +
-        '카드를 붙였으면 답 글에는 같은 목록·표를 다시 늘어놓지 말고 고른 이유와 차이만 2~4문장으로 말한다.',
+        '카드를 붙였으면 답 글에는 같은 목록·표를 다시 늘어놓지 말고 고른 이유와 차이만 2~4문장으로 말한다. 카드는 답 글 아래에 보이니 글에서 가리킬 때는 "아래 카드"라고 한다.',
       inputSchema: {
         cards: z
           .array(
@@ -346,7 +359,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: '답에 목록 줄 붙이기',
       description:
         '사진이 고르는 이유가 아닌 목록(매물·주문·메일·일정·마감·서류·공고·신청 내역)을 답 아래에 줄로 붙인다. ' +
-        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 지금 영업·남은 자리처럼 줄마다 상태가 중요하면 이 목록(state·tone). 2줄 넘는 목록을 글로 늘어놓는 대신 쓴다. ' +
+        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 지금 영업·남은 자리처럼 줄마다 상태가 중요하면 이 목록(state·tone). 2줄 넘는 목록을 글로 늘어놓는 대신 쓴다. 목록은 답 글 아래에 보이니 글에서는 "아래 목록"이라고 한다. ' +
         '앞머리(lead)로 모양을 고른다: date 날짜(일정·마감, date 칸 필수) · file 파일(받은 서류·만든 파일) · img 작은 사진 · logo 서비스 로고 · none. ' +
         'pick: one이면 줄을 누르면 그걸로 고른 게 대화로 온다(하나 고르기). ' +
         'pick: multi는 여러 개를 한 번에 고를 때(장보기 담기·선물 후보·받을 서류): 두리가 고른 건 on을 비우고(기본 체크), 애매한 건 on:false로 꺼 두고 sub에 이유. ' +

@@ -1,6 +1,7 @@
 // 내 정보 (예약자·주문자 칸에 넣을 값). 금고와 같은 비밀값 보관소(PC 앱은 OS 키체인)에만 둔다.
 // AI는 값을 받지 않는다: browser_fill_profile은 "이 칸에 영문 성"처럼 칸과 항목만 말하고, 본체가 확장에 직접 넘긴다.
 // AI·대화 기록·폰 알림에는 가린 값(홍*동, 010-****-5678)만 보인다.
+import { AUTH_APPS } from '@dool2/protocol'
 import type { SecretStoreLike } from './vault.js'
 
 const KEY = 'profile.v1'
@@ -8,14 +9,60 @@ const KEY = 'profile.v1'
 /** 저장하는 항목 (사람이 넣는 원래 값) */
 export const PROFILE_FIELDS = {
   name: { label: '이름', type: 'text', example: '홍길동' },
-  name_en_last: { label: '영문 성', type: 'text', example: 'HONG' },
-  name_en_first: { label: '영문 이름', type: 'text', example: 'GILDONG' },
-  email: { label: '이메일', type: 'email', example: 'me@example.com' },
-  phone: { label: '휴대폰 번호', type: 'tel', example: '010-1234-5678' },
-  birth: { label: '생년월일', type: 'date', example: '1990-01-31' },
-  zip: { label: '우편번호', type: 'text', example: '06236' },
+  name_en_last: {
+    label: '영문 성',
+    type: 'text',
+    example: 'HONG',
+    pattern: '^[A-Za-z][A-Za-z -]*$',
+    patternHint: '영문으로 넣어 주세요',
+  },
+  name_en_first: {
+    label: '영문 이름',
+    type: 'text',
+    example: 'GILDONG',
+    pattern: '^[A-Za-z][A-Za-z -]*$',
+    patternHint: '영문으로 넣어 주세요',
+  },
+  email: {
+    label: '이메일',
+    type: 'email',
+    example: 'me@example.com',
+    pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$',
+    patternHint: 'me@example.com처럼 넣어 주세요',
+  },
+  phone: {
+    label: '휴대폰 번호',
+    type: 'tel',
+    example: '010-1234-5678',
+    pattern: '^01[016789]-?\\d{3,4}-?\\d{4}$',
+    patternHint: '010-1234-5678처럼 휴대폰 번호를 넣어 주세요',
+  },
+  birth: {
+    label: '생년월일',
+    type: 'date',
+    example: '1990-01-31',
+    pattern: '^(\\d{4}-?\\d{2}-?\\d{2}|\\d{6})$',
+    patternHint: '1990-01-31이나 900131처럼 넣어 주세요',
+  },
+  zip: {
+    label: '우편번호',
+    type: 'text',
+    example: '06236',
+    pattern: '^\\d{5}$',
+    patternHint: '숫자 5자리예요',
+  },
   address: { label: '주소', type: 'text', example: '서울 강남구 테헤란로 123' },
   address_detail: { label: '상세 주소', type: 'text', example: '4층 401호' },
+  // 간편인증 창에서 두리가 고를 앱. 비밀값이 아니라 AI도 그대로 본다
+  // 주민등록번호 뒷자리: 본인인증 칸에 쓴다. 금고에만 두고 AI에게는 가린 값(*******)만
+  rrn_back: {
+    label: '주민번호 뒷자리',
+    type: 'secret',
+    example: '1234567',
+    pattern: '^[1-4]\\d{6}$',
+    patternHint: '숫자 7자리예요 (첫 자리 1~4)',
+  },
+  auth_app: { label: '간편인증 앱', type: 'choice', example: '카카오톡', options: AUTH_APPS },
 } as const
 
 export type ProfileField = keyof typeof PROFILE_FIELDS
@@ -27,6 +74,10 @@ export const PROFILE_KEYS = [
   'name_en_full', // HONG GILDONG
   'phone_digits', // 01012345678
   'phone_local', // 1012345678 (국가 번호를 따로 고르는 칸: +82 다음)
+  'phone_rest', // 12345678 (앞자리 010을 따로 고르는 칸: 뒤 8자리)
+  'phone_head', // 010 (세 칸으로 나뉜 휴대폰: 앞)
+  'phone_mid', // 1234 (세 칸으로 나뉜 휴대폰: 가운데)
+  'phone_last', // 5678 (세 칸으로 나뉜 휴대폰: 끝)
   'birth_digits', // 19900131
   'birth6', // 900131
 ] as const
@@ -39,6 +90,10 @@ export function sourceOf(key: ProfileKey): ProfileField[] {
       return ['name_en_last', 'name_en_first']
     case 'phone_digits':
     case 'phone_local':
+    case 'phone_rest':
+    case 'phone_head':
+    case 'phone_mid':
+    case 'phone_last':
       return ['phone']
     case 'birth_digits':
     case 'birth6':
@@ -60,6 +115,14 @@ export function profileValue(p: Profile, key: ProfileKey): string | undefined {
       const d = digits(p.phone)
       return d?.replace(/^0/, '')
     }
+    case 'phone_rest':
+      return digits(p.phone)?.slice(3)
+    case 'phone_head':
+      return digits(p.phone)?.slice(0, 3)
+    case 'phone_mid':
+      return digits(p.phone)?.slice(3, -4)
+    case 'phone_last':
+      return digits(p.phone)?.slice(-4)
     case 'birth_digits':
       return digits(p.birth)
     case 'birth6':
@@ -72,6 +135,8 @@ export function profileValue(p: Profile, key: ProfileKey): string | undefined {
 /** AI·기록에 보일 가린 값 */
 export function maskValue(field: ProfileField, v: string): string {
   const s = v.trim()
+  if (field === 'auth_app') return s
+  if (field === 'rrn_back') return '*******'
   if (field === 'email') {
     const [user = '', host = ''] = s.split('@')
     return `${user.slice(0, 2)}${'*'.repeat(Math.max(1, user.length - 2))}@${host}`
@@ -106,6 +171,20 @@ export function normalize(field: ProfileField, v: string): string | undefined {
     return `${full.slice(0, 4)}-${full.slice(4, 6)}-${full.slice(6)}`
   }
   if (field === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) return undefined
+  if (field === 'rrn_back') {
+    const d = s.replace(/\D/g, '')
+    return /^[1-4]\d{6}$/.test(d) ? d : undefined
+  }
+  if (field === 'auth_app') {
+    // "카카오" → 카카오톡, "pass" → PASS처럼 앞부분만 맞아도 받는다
+    const k = s.replace(/\s/g, '').toLowerCase()
+    return (
+      AUTH_APPS.find((a) => a.toLowerCase() === k) ??
+      AUTH_APPS.find((a) => a.toLowerCase().startsWith(k.slice(0, 2))) ??
+      // 사이트마다 다른 앱(예: 하나인증서)은 화면 글 그대로
+      (s.length <= 20 ? s : undefined)
+    )
+  }
   return s
 }
 

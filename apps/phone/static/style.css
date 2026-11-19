@@ -3554,3 +3554,106 @@ textarea.ghosting {
   color: var(--ink);
   border-color: var(--brand);
 }
+
+/* 하나 고르기 칩 (내 정보의 간편인증 앱 등) */
+.choice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.choice-chips .chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.choice-chips .chip.on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  font-weight: 700;
+}
+
+/* 형식 검사 안내 */
+.field.invalid {
+  border-color: var(--rose, #e5484d);
+}
+.field-err {
+  display: block;
+  margin-top: 4px;
+  color: var(--rose, #e5484d);
+  font-size: 13px;
+}
+
+/* 보안 키패드 (주민번호 뒷자리): 은행 앱처럼 큰 숫자판, 누르면 다른 숫자 하나도 함께 반짝인다 */
+.secure-pad {
+  display: grid;
+  gap: 14px;
+}
+.pad-dots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 0 2px;
+}
+.pad-dots span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--line);
+  transition:
+    background 0.12s,
+    transform 0.12s;
+}
+.pad-dots span.on {
+  background: var(--brand);
+  transform: scale(1.1);
+}
+.pad-err {
+  text-align: center;
+  min-height: 1em;
+  margin: 0;
+}
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pad-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.16s,
+    transform 0.16s;
+}
+.pad-key.fn {
+  background: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+.pad-key.fn svg {
+  width: 24px;
+  height: 24px;
+}
+.pad-key.pressed {
+  background: color-mix(in srgb, var(--brand) 38%, transparent);
+  transform: scale(0.94);
+}
