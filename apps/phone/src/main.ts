@@ -2716,7 +2716,14 @@ function toolSig(raw: string) {
     const rec = JSON.parse(raw) as { kind?: string }
     if (rec.kind === 'approval') {
       const a = approvalFor(rec as ApprovalRecordMessage)
-      return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}`
+      // 승인 카드에서 고른 결제 수단·카드·할부도 넣는다. 빠지면 칩을 눌러도 카드를 다시 그리지 않아 고른 게 안 바뀌었다 (실측)
+      const picked = a
+        ? [...st.choice]
+            .filter(([k]) => k === a.id || k.startsWith(`${a.id}:`))
+            .map(([k, v]) => `${k}=${v}`)
+            .join(',')
+        : ''
+      return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}:${picked}`
     }
     if (rec.kind === 'login') {
       const l = loginFor(rec as LoginRecordMessage)
