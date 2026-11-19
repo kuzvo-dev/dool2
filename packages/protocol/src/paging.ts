@@ -142,4 +142,9 @@ export class Pager<T extends { id: string }> {
   patch(id: string, f: (t: T) => T) {
     this.items = this.items.map((t) => (t.id === id ? f(t) : t))
   }
+
+  /** 하나 빼기 (지웠을 때: 첫 페이지 밖의 것은 새 첫 페이지가 와도 남아 있으니 바로 뺀다) */
+  remove(id: string) {
+    this.items = this.items.filter((t) => t.id !== id)
+  }
 }

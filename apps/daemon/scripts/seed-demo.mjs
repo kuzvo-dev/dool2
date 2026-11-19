@@ -290,6 +290,35 @@ if (process.env.SEED_APPROVAL) {
   store.setSetting('connections', { coupang: at(-3 * day), gmail: at(-2 * day) })
   // 캡처하는 동안 살펴보기가 돌지 않게 (실제 AI를 부르지 않는다)
   store.setSetting('watchAt', new Date().toISOString())
+  // 긴 목록 (SEED_MANY=1): 지난 3주 동안 쌓인 피드 60개·보관함 40개 — 페이지 나눠 받기 캡처용
+  if (process.env.SEED_MANY) {
+    const jobs = [
+      ['done', '택배 도착 예정 확인했어요', '내일 오전 문 앞 배송이에요.'],
+      ['done', '치과 예약 시간 알려 드렸어요', '목요일 오후 3시예요.'],
+      ['routine', '아침 브리핑', '맑음, 최고 14도. 오늘 일정 2개, 오는 택배 1개예요.'],
+      ['done', '관리비 고지서 정리했어요', '이번 달 18만 4천 원, 지난달보다 6천 원 적어요.'],
+      ['saved', '보관함에 남겼어요: 주말 장보기 목록'],
+    ]
+    const more = Array.from({ length: 60 }, (_, i) => {
+      const [kind, title, body] = jobs[i % jobs.length]
+      return {
+        id: `f-m${i}`,
+        kind,
+        title,
+        ...(body ? { body } : {}),
+        at: at(-day - i * 8 * 60),
+      }
+    })
+    store.setSetting('feed', [...store.getSetting('feed'), ...more])
+    const notes = Array.from({ length: 40 }, (_, i) => ({
+      id: `l-m${i}`,
+      kind: i % 4 === 0 ? 'place' : 'note',
+      title: i % 4 === 0 ? `가 볼 곳 ${i + 1}` : `정리한 글 ${i + 1}`,
+      body: '두리가 찾아 정리한 내용이에요. '.repeat(i === 0 ? 40 : 3),
+      savedAt: at(-day - i * 12 * 60),
+    }))
+    store.setSetting('library', [...store.getSetting('library'), ...notes])
+  }
 }
 // 첫 실행 마법사는 끝낸 상태로 둔다
 store.setSetting('setupDone', true)

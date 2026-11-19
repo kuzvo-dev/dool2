@@ -14,6 +14,8 @@ cpSync('../../packages/protocol/dist/work-steps.js', 'dist/renderer/work-steps.j
 cpSync('../../packages/protocol/dist/schedule.js', 'dist/renderer/schedule.js')
 cpSync('../../packages/protocol/dist/ideas.js', 'dist/renderer/ideas.js')
 cpSync('../../packages/protocol/dist/connect-text.js', 'dist/renderer/connect-text.js')
+// 긴 목록 나눠 받기 (피드·보관함·활동): 폰과 같은 커서·이어 붙이기
+cpSync('../../packages/protocol/dist/paging.js', 'dist/renderer/paging.js')
 
 // 디자인 시스템(ui.css)과 Pretendard 글꼴
 copyUi('dist/renderer', { fonts: true })

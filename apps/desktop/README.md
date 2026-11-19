@@ -30,12 +30,13 @@ node apps/daemon/scripts/seed-demo.mjs /tmp/dool2-demo
 DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=goals+panel:memory pnpm --filter @dool2/desktop smoke
 ```
 
-| 환경 변수           | 설명                                                                                                                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DOOL2_DATA_DIR`    | 데이터 폴더 (기본: OS 표준 위치)                                                                                                                                                           |
-| `DOOL2_SMOKE_OUT`   | 캡처를 저장할 폴더                                                                                                                                                                         |
-| `DOOL2_SMOKE_THEME` | `dark`·`light`로 고정해서 캡처 (기본: 기기 설정)                                                                                                                                           |
-| `DOOL2_SMOKE_OPEN`  | 열어 둘 화면: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:서비스]`. 뒤에 `+panel:칸`(schedule·memory·screen·activity·approvals)이나 `+nopanel` |
+| 환경 변수            | 설명                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DOOL2_DATA_DIR`     | 데이터 폴더 (기본: OS 표준 위치)                                                                                                                                                           |
+| `DOOL2_SMOKE_OUT`    | 캡처를 저장할 폴더                                                                                                                                                                         |
+| `DOOL2_SMOKE_THEME`  | `dark`·`light`로 고정해서 캡처 (기본: 기기 설정)                                                                                                                                           |
+| `DOOL2_SMOKE_OPEN`   | 열어 둘 화면: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:서비스]`. 뒤에 `+panel:칸`(schedule·memory·screen·activity·approvals)이나 `+nopanel` |
+| `DOOL2_SMOKE_SCROLL` | 이 선택자가 보이게 굴린 뒤 찍기 (예: `.page-more` = 긴 목록 끝 줄). `DOOL2_SMOKE_SCROLL_TIMES`로 여러 번 (다음 페이지를 받으면 끝 줄이 다시 내려간다)                                      |
 
 ## 설치 파일 만들기 (서명 없음, 개발용)
 

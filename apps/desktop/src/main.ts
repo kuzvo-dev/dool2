@@ -215,13 +215,15 @@ async function smoke(w: BrowserWindow) {
   await mkdir(out, { recursive: true })
   // 화면 아래쪽을 찍을 때: 이 선택자의 요소가 보이게 굴린 뒤 찍는다 (예: .svc-fast)
   const scroll = process.env.DOOL2_SMOKE_SCROLL
-  if (scroll) {
+  // DOOL2_SMOKE_SCROLL_TIMES: 여러 번 굴린다 (긴 목록이 다음 페이지를 받으면 끝 줄이 다시 아래로 간다)
+  const times = Math.min(Number(process.env.DOOL2_SMOKE_SCROLL_TIMES) || 1, 10)
+  for (let i = 0; scroll && i < times; i++) {
     await w.webContents
       .executeJavaScript(
         `document.querySelector(${JSON.stringify(scroll)})?.scrollIntoView({ block: 'center' })`,
       )
       .catch(() => {})
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 600))
   }
   const img = await w.webContents.capturePage()
   await writeFile(join(out, 'smoke.png'), img.toPNG())
