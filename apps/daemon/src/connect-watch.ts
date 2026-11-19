@@ -10,7 +10,8 @@ const LOGIN_URL = /\/(login|signin|sign-in|member\/login|auth)(\b|[/?#])/i
 
 /** 이름 + 님이 적힌 버튼·링크 ("주*돈 님", "홍길동님"): 로그아웃을 마우스를 올려야 펼치는 메뉴에 숨긴
  *  한국 사이트(컬리 등)는 위쪽에 이것만 보인다. "고객님"·"회원님" 같은 부름말은 빼고 */
-const NAME_BUTTON = /\[e\d+ (?:버튼|링크) "(?!고객|회원|손님)[^"\]\n]{1,20}?\s?님"\]/
+const NAME_BUTTON =
+  /\[e\d+ (?:버튼|링크) "(?![^"]*(?:고객|회원|손님|사장)님)(?!고객|회원|손님)[^"\]\n]{1,20}?\s?님"\]/
 
 /** "○○ 님의 계정 메뉴" 같은 계정 메뉴 버튼 (실측 부킹닷컴: "지니어스 레벨 일, myeongdon joo 님의 계정 메뉴") */
 const ACCOUNT_MENU = /\[e\d+ (?:버튼|링크) "[^"\]\n]{1,60}님의\s?(계정|프로필|마이)[^"\]\n]{0,20}"\]/
@@ -26,7 +27,7 @@ const MY_INFO = /\[e\d+ (?:버튼|링크) "[^"\]\n]{1,30}\s내\s?정보\s?보기
  * 또는 비밀번호 칸. 로그인하면 사라진다
  */
 const LOGIN_ENTRY =
-  /\[e\d+ (?:링크|버튼) "[^"\]\n]{0,10}(?:로그인|log\s?in|sign\s?in|회원\s?가입|가입하기)[^"\]\n]{0,10}"\]|\[e\d+ 비밀번호칸/i
+  /\[e\d+ (?:링크|버튼) "[^"\]\n]{0,10}(?:로그인|log\s?in|sign\s?in|sign\s?up|회원\s?가입|가입하기|계정\s?만들기|create (?:an )?account)[^"\]\n]{0,10}"\]|\[e\d+ (?:링크|버튼) "[^"\]\n]{1,20}(?:으로|로)\s?계속하기[^"\]\n]{0,12}"\]|\[e\d+ (?:링크|버튼) "Continue with [^"\]\n]{1,20}"\]|\[e\d+ 비밀번호칸/i
 export function hasLoginEntry(text: string): boolean {
   return LOGIN_ENTRY.test(text)
 }
@@ -54,18 +55,45 @@ export function looksSignedIn(
   page: { url: string; text: string },
   opts: { sawEntry?: boolean } = {},
 ): boolean {
+  return signedInHow(card, page, opts) !== undefined
+}
+
+/** 로그인한 사람에게만 보이는 확실한 표시가 있는지 (로그아웃·이름 님·계정 버튼) */
+export function strongSignedIn(
+  card: Pick<ConnectCard, 'signedIn'>,
+  page: { url: string; text: string },
+): boolean {
   // 로그인 화면 주소라도 비밀번호 칸이 사라지고 로그인한 사람의 말이 보이면 로그인됐다 (주소가 안 바뀌는 사이트)
   if (LOGIN_URL.test(page.url) && /비밀번호칸|type="?password/.test(page.text)) return false
   // 카드의 말은 흔한 말(로그아웃)에 더한다: 카드에 적었다고 흔한 표시를 못 보면 안 된다
   const marks = [...DEFAULT_SIGNED_IN, ...(card.signedIn ?? [])]
-  if (
+  return (
     marks.some((m) => page.text.includes(m)) ||
     NAME_BUTTON.test(page.text) ||
     ACCOUNT_BUTTON.test(page.text) ||
     ACCOUNT_MENU.test(page.text) ||
     MY_INFO.test(page.text)
   )
-    return true
+}
+
+/**
+ * 'strong': 확실한 표시가 있다. 'inverse': 로그인 입구를 본 뒤 그 입구가 사라졌을 뿐이다 (짐작 — 연결로 표시하기 전에
+ * 마이페이지까지 확인해야 한다: 실측 CJ더마켓·오아시스·캠핏·X를 이것만으로 연결로 잘못 표시했다). 아니면 undefined
+ */
+export function signedInHow(
+  card: Pick<ConnectCard, 'signedIn'> & { site?: string },
+  page: { url: string; text: string },
+  opts: { sawEntry?: boolean } = {},
+): 'strong' | 'inverse' | undefined {
+  if (strongSignedIn(card, page)) return 'strong'
+  return inverseSignedIn(card, page, opts) ? 'inverse' : undefined
+}
+
+function inverseSignedIn(
+  card: Pick<ConnectCard, 'signedIn'> & { site?: string },
+  page: { url: string; text: string },
+  opts: { sawEntry?: boolean },
+): boolean {
   if (!opts.sawEntry || !onSite(card.site, page.url) || LOGIN_URL.test(page.url)) return false
   // 다 그려진 화면이어야 한다 (콜백·이동 중인 빈 화면은 입구가 없어도 아직 모른다)
   const refs = page.text.match(/\[e\d+ /g)?.length ?? 0
@@ -85,6 +113,8 @@ export interface LoginWatchDeps {
   /** 이미 연결로 표시됐으면 그만 본다 (사용자가 [로그인했어요]를 눌렀을 때) */
   connected(id: string): boolean
   onSignedIn(card: ConnectCard): void
+  /** 짐작(입구가 사라짐)만으로는 표시하지 않고 마이페이지까지 확인한다. 없으면 짐작은 쓰지 않는다 */
+  confirm?(card: ConnectCard): Promise<boolean>
   /** 지켜보던 탭이 닫혔다 (간편 로그인 팝업은 확인 뒤 스스로 닫힌다): 사이트를 새로 열어 확인해 볼 차례 */
   onClosed?(card: ConnectCard): void
 }
@@ -104,22 +134,32 @@ export class LoginWatch {
     private readonly forMs = 10 * 60_000,
   ) {}
 
-  /** sawEntry: 지켜보기 전에 이미 로그인 화면을 봤다 (자동 로그인이 멈춘 탭) */
-  start(card: ConnectCard, tabId: number, opts: { sawEntry?: boolean } = {}) {
+  start(card: ConnectCard, tabId: number) {
     this.stop(card.id)
     this.tabs.set(card.id, tabId)
     const until = Date.now() + this.forMs
-    let sawEntry = opts.sawEntry ?? false
+    // 입구를 본 주소: 그 화면에서 입구가 안 보이는 것만으로는 짐작하지 않는다 (주소가 바뀌어야 로그인 뒤로 본다)
+    let entryUrl: string | undefined
+    let confirmed = 0
     const tick = async () => {
       this.timers.delete(card.id)
       if (this.deps.connected(card.id) || Date.now() > until) return
       try {
         const page = await this.deps.snapshot(tabId)
-        if (looksSignedIn(card, page, { sawEntry })) {
+        const how = signedInHow(card, page, { sawEntry: entryUrl !== undefined && page.url !== entryUrl })
+        if (how === 'strong') {
           this.deps.onSignedIn(card)
           return
         }
-        if (hasLoginEntry(page.text)) sawEntry = true
+        // 짐작이면 확인을 한 번(많아야 두 번)만 한다 (확인은 사이트를 새로 연다)
+        if (how === 'inverse' && this.deps.confirm && confirmed < 2) {
+          confirmed++
+          if (await this.deps.confirm(card).catch(() => false)) {
+            this.deps.onSignedIn(card)
+            return
+          }
+        }
+        if (hasLoginEntry(page.text)) entryUrl = page.url
       } catch {
         // 탭이 닫혔거나 확장이 끊겼다. 닫힌 탭은 다시 지켜보지 않고, 로그인이 됐는지는 사이트로 한 번 확인한다
         this.tabs.delete(card.id)

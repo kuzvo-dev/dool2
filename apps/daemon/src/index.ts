@@ -83,7 +83,7 @@ import {
   socialLogin,
 } from './auto-login.js'
 import { askedForAccount, BrowserTools } from './browser-tools.js'
-import { LoginWatch, looksSignedIn } from './connect-watch.js'
+import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { FileTools, type userFolders } from './files.js'
@@ -95,6 +95,7 @@ import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import { ScreenTools } from './screen-tools.js'
+import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
 import { Vault } from './vault.js'
@@ -453,6 +454,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .then((services) => link.broadcast({ kind: 'connections', services }))
         .catch(() => {})
     },
+    confirm: async (card) => {
+      const r = await checkSignedIn(browser, card)
+      rememberCheck(card.id, r)
+      return r.state === 'in'
+    },
     onClosed: (card) => {
       if (!readSettings().connections?.[card.id]) void connectVerify(card).catch(() => false)
     },
@@ -517,6 +523,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 서비스마다 연결할 때 쓴 방법 (vault: 금고 계정, social:kakao 등). 로그인이 풀리면 두리가 같은 방법으로 다시 로그인한다.
    * 비밀값은 없고 방법 이름만
    */
+  /** 서비스마다 마지막 로그인 확인 (연결 화면에 '확인 ○시간 전'으로, 연결 유지가 다시 로그인할 곳을 고를 때) */
+  const rememberCheck = (id: string, r: SigninCheck) => {
+    const all = (store.getSetting('connectChecks') as Record<string, unknown> | undefined) ?? {}
+    store.setSetting('connectChecks', {
+      ...all,
+      [id]: { at: new Date().toISOString(), state: r.state, why: r.why },
+    })
+    journal.write('signin-check', { id, state: r.state, why: r.why })
+  }
   const connectVia = () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {}
   const rememberVia = (id: string, via: string) =>
     store.setSetting('connectVia', { ...connectVia(), [id]: via })
@@ -541,7 +556,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (r.status === 'human') {
       // 사람이 해야 하는 단계: 폰에서 그 화면을 보고 마치면 연결로 표시한다
       browserTools.allowRemote(r.tabId)
-      loginWatch.start(card, r.tabId, { sawEntry: true })
+      loginWatch.start(card, r.tabId)
       return {
         ok: false,
         human: true,
@@ -555,7 +570,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     browserTools.allowRemote(r.tabId)
     // 아이디·비밀번호가 틀렸거나 결과를 몰라도, 사용자가 그 화면에서 마치면 알아서 연결로 표시한다
-    loginWatch.start(card, r.tabId, { sawEntry: true })
+    loginWatch.start(card, r.tabId)
     return {
       ok: false,
       reason: r.status === 'wrong' ? 'wrong' : 'unknown',
@@ -698,29 +713,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 로그인한 사람에게만 보이는 말이 있는지 본다 (간편 로그인 창에서 마쳤어도 사이트 쿠키로 보인다)
    */
   const connectVerify = async (card: ConnectCard): Promise<boolean> => {
-    const check = async (tabId: number) =>
-      looksSignedIn(
-        card,
-        (await browser.call('snapshot', { tabId, maxChars: 20_000 }, 20_000)) as {
-          url: string
-          text: string
-        },
-        // 사용자가 [로그인했어요]를 눌렀다: 로그인 입구가 사라졌으면 로그인된 것으로 본다
-        { sawEntry: true },
-      )
     let ok = false
     const watched = loginWatch.tabOf(card.id)
-    if (watched !== undefined) ok = await check(watched).catch(() => false)
-    const url = connectUrl(card)
-    if (!ok && url && browser.status.connected) {
-      const opened = (await browser.call('open', { url }, 40_000).catch(() => undefined)) as
-        | { tabId: number }
-        | undefined
-      if (opened) {
-        await new Promise((r) => setTimeout(r, 2_500))
-        ok = await check(opened.tabId).catch(() => false)
-        await browser.call('close', { tabId: opened.tabId }).catch(() => undefined)
-      }
+    // 지켜보던 화면에 확실한 표시가 있으면 바로. 아니면 사이트를 새로 열어 마이페이지까지 본다 (짐작으로 표시하지 않는다)
+    if (watched !== undefined)
+      ok = await browser
+        .call('snapshot', { tabId: watched, maxChars: 20_000 }, 20_000)
+        .then((p) => strongSignedIn(card, p as { url: string; text: string }))
+        .catch(() => false)
+    if (!ok && card.site && browser.status.connected) {
+      const r = await checkSignedIn(browser, card).catch(() => undefined)
+      if (r) rememberCheck(card.id, r)
+      ok = r?.state === 'in'
     }
     if (ok) {
       connectMark(card.id, true)
@@ -2355,6 +2359,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return json(res, 400, { error: '이 서비스는 연결하지 않아도 돼요' })
         connectInChat(card)
         return json(res, 200, { ok: true })
+      }
+      // 지금 로그인돼 있는지 확인만 (표시는 확인 결과대로: 풀렸으면 연결 표시를 끈다)
+      if (card && c === 'check' && !d && req.method === 'POST') {
+        if (!browser.status.connected)
+          return json(res, 409, { error: 'Chrome의 두리 확장이 연결되지 않았어요' })
+        const r = await checkSignedIn(browser, card)
+        rememberCheck(card.id, r)
+        const was = Boolean(readSettings().connections?.[card.id])
+        if (r.state === 'in' && !was) connectMark(card.id, true)
+        if (r.state === 'out' && was) connectMark(card.id, false)
+        return json(res, 200, { ...r, connectedAt: readSettings().connections?.[card.id] ?? null })
       }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
       if (card && c === 'verify' && !d && req.method === 'POST') {
