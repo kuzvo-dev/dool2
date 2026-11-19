@@ -603,7 +603,7 @@ async function watchResult(
     await sleep(wait)
     page = await snap(tabId).catch(() => page)
     if (!page) continue
-    if (looksSignedIn(input.card, page)) return { loginOrigin, status: 'ok', tabId }
+    if (looksSignedIn(input.card, page, { sawEntry: true })) return { loginOrigin, status: 'ok', tabId }
     // 휴대폰 앱에서 승인하라는 화면: 카드에 알리고 기다린다 (넣을 칸이 없다)
     const confirm = await waitConfirm(page, tabId, snap, input.step, wait)
     if (confirm === 'moved') {
@@ -804,7 +804,7 @@ export async function socialLogin(
   for (let i = 0; i < (opts.tries ?? 14); i++) {
     await sleep(wait)
     const site = await snap(siteTab).catch(() => undefined)
-    if (site && looksSignedIn(input.card, site)) {
+    if (site && looksSignedIn(input.card, site, { sawEntry: true })) {
       if (providerTab !== siteTab) await browser.call('close', { tabId: providerTab }).catch(() => undefined)
       return { status: 'ok', tabId: siteTab }
     }
@@ -1011,6 +1011,22 @@ export async function socialLogin(
       pressed.add(`${p.url}|${next[1].name}`)
       step(account ? '계정 고르는 중' : '정보 제공 동의 넘기는 중')
       await browser.call('click', { tabId: providerTab, ref: next[0] }, 30_000).catch(() => undefined)
+    }
+  }
+  // 끝난 화면이 중간 페이지(콜백·안내)라 모르겠으면, 사이트 첫 화면을 새로 열어 한 번 더 본다
+  // (로그인은 쿠키로 남아 있다: 그 화면에 로그인 입구가 없으면 로그인된 것)
+  if (input.card.site) {
+    const home = (await browser
+      .call('open', { url: `https://${input.card.site}/` }, 40_000)
+      .catch(() => undefined)) as { tabId: number } | undefined
+    if (home?.tabId !== undefined) {
+      const h = await settled(() => snap(home.tabId), wait).catch(() => undefined)
+      if (h && looksSignedIn(input.card, h, { sawEntry: true })) {
+        for (const t of new Set([providerTab, siteTab]))
+          await browser.call('close', { tabId: t }).catch(() => undefined)
+        return { status: 'ok', tabId: home.tabId }
+      }
+      await browser.call('close', { tabId: home.tabId }).catch(() => undefined)
     }
   }
   return {

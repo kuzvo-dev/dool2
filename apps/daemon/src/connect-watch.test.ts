@@ -46,6 +46,51 @@ describe('로그인 확인', () => {
     expect(looksSignedIn(own, { url: 'https://demo.co.kr/', text: '[e1 링크 "로그인"]' })).toBe(false)
   })
 
+  it('로그인 화면을 거친 뒤 사이트로 돌아와 로그인 입구가 사라졌으면 로그인됨 (로그아웃이 숨은 사이트)', () => {
+    const shop = { id: 'shop', site: 'shop.co.kr' } as unknown as ConnectCard
+    const menu = Array.from({ length: 25 }, (_, i) => `[e${i + 10} 링크 "상품 ${i}"]`).join('\n')
+    const home = { url: 'https://www.shop.co.kr/', text: `[e1 링크 "마이페이지"]\n${menu}` }
+    // 로그인 화면을 보기 전(첫 화면부터 입구가 없는 사이트)은 모른다
+    expect(looksSignedIn(shop, home)).toBe(false)
+    expect(looksSignedIn(shop, home, { sawEntry: true })).toBe(true)
+    // 입구가 아직 있으면 아니다 ("로그인/회원가입", "카카오 로그인")
+    for (const entry of [
+      '[e2 링크 "로그인/회원가입"]',
+      '[e2 버튼 "카카오 로그인"]',
+      '[e2 비밀번호칸 "비밀번호"]',
+    ])
+      expect(looksSignedIn(shop, { ...home, text: `${entry}\n${home.text}` }, { sawEntry: true })).toBe(false)
+    // 다른 사이트(공급자 화면)·로그인 주소·덜 그려진 화면은 아니다
+    expect(looksSignedIn(shop, { ...home, url: 'https://kauth.kakao.com/oauth' }, { sawEntry: true })).toBe(
+      false,
+    )
+    expect(looksSignedIn(shop, { ...home, url: 'https://shop.co.kr/login' }, { sawEntry: true })).toBe(false)
+    expect(looksSignedIn(shop, { ...home, text: '[e1 링크 "마이페이지"]' }, { sawEntry: true })).toBe(false)
+  })
+
+  it('지켜보다 로그인 화면이 사라지고 사이트 첫 화면이 되면 연결 (로그아웃 글자 없이)', async () => {
+    const shop = { id: 'shop', site: 'shop.co.kr' } as unknown as ConnectCard
+    const menu = Array.from({ length: 25 }, (_, i) => `[e${i + 10} 링크 "상품 ${i}"]`).join('\n')
+    const pages = [
+      { url: 'https://shop.co.kr/member/login', text: '[e1 입력칸 "아이디"] [e2 비밀번호칸 "비밀번호"]' },
+      { url: 'https://shop.co.kr/', text: menu },
+    ]
+    let i = 0
+    const done: string[] = []
+    const watch = new LoginWatch(
+      {
+        snapshot: async () => pages[Math.min(i++, pages.length - 1)] as { url: string; text: string },
+        connected: () => false,
+        onSignedIn: (c) => done.push(c.id),
+      },
+      1,
+    )
+    watch.start(shop, 7)
+    await new Promise((r) => setTimeout(r, 50))
+    watch.stopAll()
+    expect(done).toEqual(['shop'])
+  })
+
   it('네이버 위쪽 줄의 "아이디 내정보 보기"는 로그인됨 (로그아웃은 메뉴 속)', () => {
     expect(
       looksSignedIn(card, {
