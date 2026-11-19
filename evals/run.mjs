@@ -232,8 +232,14 @@ async function runOne(sc) {
   rec.ms = Date.now() - started.getTime()
   // 이 대화 동안 생긴 승인 요청: 기록하고, 기다리는 것은 거절한다 (시험에서는 결제·보내기를 하지 않는다)
   const { approvals = [] } = await api('/api/approvals')
+  // 같이 도는 다른 시나리오의 승인은 빼고: 이 대화가 다룬 탭의 승인만
+  const myTabs = new Set(rec.tools.map((t) => t.input?.tabId).filter((x) => typeof x === 'number'))
+  const myWhats = new Set(
+    rec.tools.filter((t) => /request_approval$/.test(t.name)).map((t) => String(t.input?.what ?? '')),
+  )
   rec.approvals = approvals
     .filter((a) => Date.parse(a.createdAt) >= started.getTime())
+    .filter((a) => concurrency === 1 || myTabs.has(a.tabId) || myWhats.has(String(a.what ?? '')))
     .map(({ shot: _s, ...a }) => a)
   for (const a of rec.approvals)
     if (a.status === 'pending')
@@ -308,15 +314,17 @@ const repeat = Math.max(1, Number(arg('repeat', '1')))
 const jobs = list.flatMap((sc) => Array.from({ length: repeat }, (_, i) => [sc, i + 1]))
 let stop = false
 const retried = new Set()
-for (const job of jobs) {
+// 여러 개를 같이 돌린다 (따로 하는 대화를 동시에 N개). 기본 1
+const concurrency = Math.max(1, Number(arg('concurrency', '1')))
+const queue = [...jobs]
+async function runJob(job) {
   const [sc, round] = job
-  if (stop) break
   n++
   const file = join(out, `${sc.id.replace(/[^\w.-]+/g, '_')}${round > 1 ? `~${round}` : ''}.json`)
-  if (existsSync(file) && !flag('again')) continue
-  process.stdout.write(
-    `[${n}/${jobs.length}] ${sc.id}${round > 1 ? ` (${round}번째)` : ''} ${sc.ask.slice(0, 40)} … `,
-  )
+  if (existsSync(file) && !flag('again')) return
+  const head = `[${n}/${jobs.length}] ${sc.id}${round > 1 ? ` (${round}번째)` : ''} ${sc.ask.slice(0, 40)} … `
+  if (concurrency === 1) process.stdout.write(head)
+  const say = (t) => console.log(concurrency === 1 ? t : `${head}${t}`)
   try {
     // 시나리오 하나 전체에도 끝을 둔다 (대화 시간 + 앞뒤 정리 3분). 넘으면 본체가 멈춘 것으로 본다
     let watchdog
@@ -330,8 +338,9 @@ for (const job of jobs) {
       }),
     ]).finally(() => clearTimeout(watchdog))
     rec.round = round
+    if (concurrency > 1) rec.concurrency = concurrency
     writeFileSync(file, JSON.stringify(rec, null, 1))
-    console.log(
+    say(
       `${Math.round(rec.ms / 1000)}초 · 도구 ${rec.tools.length} · 승인 ${rec.approvals.length}${rec.errors.length ? ` · 오류 ${rec.errors.join('/')}` : ''}`,
     )
     if (rec.errors.some((e) => e.startsWith('limit'))) {
@@ -339,7 +348,7 @@ for (const job of jobs) {
       stop = true
     }
   } catch (e) {
-    console.log(`실패: ${e.message}`)
+    say(`실패: ${e.message}`)
     // 본체가 꺼졌거나 다시 켜졌다: 기다렸다가 같은 시나리오를 다시 (기록은 남기지 않았으니 다음 실행에서도 다시 돈다)
     if (DOWN.test(String(e.message))) {
       console.log('본체가 응답하지 않아요. 다시 켜질 때까지 기다려요(최대 10분)')
@@ -351,12 +360,17 @@ for (const job of jobs) {
         // 한 번만 다시 (그 시나리오가 본체를 넘어뜨리는 것이면 되풀이하지 않게)
         if (!retried.has(file)) {
           retried.add(file)
-          jobs.splice(jobs.indexOf(job) + 1, 0, [sc, round])
+          queue.unshift([sc, round])
         }
       }
     }
   }
 }
+await Promise.all(
+  Array.from({ length: concurrency }, async () => {
+    while (!stop && queue.length) await runJob(queue.shift())
+  }),
+)
 // 다른 시험 기록과 섞지 않게 고른 목록을 남긴다
 writeFileSync(join(out, '_picked.json'), JSON.stringify(list.map((s) => s.id)))
 // 권한 창에 막힌 폴더 읽기가 남아 있으면 프로세스가 끝나지 않는다: 일이 끝났으면 나간다
