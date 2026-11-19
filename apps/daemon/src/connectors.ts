@@ -1004,7 +1004,13 @@ export class Connectors {
       // 돈 내기 도구가 넘긴 탭은 결제 흐름: 결제 화면 전 [예약하기]는 승인 없이, 승인은 결제 화면에서만 (browser-tools)
       const pay = c.tier === '돈 내기'
       if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
-      const page = await c.read()
+      // 늦게 그리는 화면(Gmail·구글 캘린더 등)은 정해진 기다림 뒤에도 비어 있다: 그려질 때까지 조금 더 읽는다
+      // (실측: 빈 화면을 넘겨받은 AI가 "검색 결과가 비어 있어요·연결이 안 된 것 같아요"라고 답했다)
+      let page = await c.read()
+      for (let i = 0; i < 8 && thinPage(page); i++) {
+        await c.sleep(1000)
+        page = await c.read()
+      }
       return text(
         `${f(s.handoff_to_agent)}\n${pay ? `${PAY_ORDER}\n` : ''}여기부터는 브라우저 도구로 이어서 해요.\n\n${page}`,
       )
@@ -1025,6 +1031,13 @@ export const PAY_ORDER = [
   '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
   '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login.',
 ].join('\n')
+
+/** 아직 덜 그려진 화면: 머리줄 뒤 글이 거의 없고 누를 것도 거의 없다 */
+export function thinPage(page: string): boolean {
+  const body = page.split('\n').slice(1).join('\n')
+  const refs = body.match(/\[e\d+ /g)?.length ?? 0
+  return body.replace(/\s+/g, '').length < 150 || refs < 3
+}
 
 function firstText(r: ToolResult): string {
   const c = r.content.find((x) => x.type === 'text')

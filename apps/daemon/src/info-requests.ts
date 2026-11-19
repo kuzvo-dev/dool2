@@ -46,6 +46,11 @@ export class InfoRequests {
     return this.finish(id, v ? 'answered' : 'cancelled', v ? v.slice(0, max) : undefined)
   }
 
+  /** 더 묻지 않아도 될 때 (예: 인증이 저절로 끝났다) 카드를 닫는다 */
+  cancel(id: string): boolean {
+    return this.finish(id, 'cancelled')
+  }
+
   pending(): InfoRequestView[] {
     return [...this.items.values()].map((x) => x.view).filter((v) => v.status === 'pending')
   }

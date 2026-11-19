@@ -3,7 +3,9 @@
   "name": "네이버",
   "site": "www.naver.com",
   "alsoSites": [
-    "search.naver.com"
+    "search.naver.com",
+    "pay.naver.com",
+    "orders.pay.naver.com"
   ],
   "category": "account",
   "how": "browser",
