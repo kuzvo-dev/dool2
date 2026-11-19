@@ -444,8 +444,7 @@
       "next": "이름·연도·출연과 최근 회차 하나를 짧게 말해요. 찜해 달라고 하면 tving_wishlist.",
       "expect": {
         "filled": [
-          "name",
-          "year"
+          "name"
         ]
       },
       "minIntervalSec": 3600,
