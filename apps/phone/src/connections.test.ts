@@ -34,6 +34,15 @@ describe('간편 로그인 순서', () => {
     expect(r[1]?.hint).toBeUndefined()
   })
 
+  it('버튼에 어느 계정인지 함께 (간편 로그인 계정 카드에 확인해 둔 계정)', () => {
+    const r = socialOrder(card, [
+      { card: { id: 'kakao' } as never, account: 'f***@gmail.com' },
+      svc('shop', 'social:kakao'),
+    ])
+    expect(r[0]).toEqual({ provider: 'kakao', hint: '최근 사용 · f***@gmail.com' })
+    expect(r.find((x) => x.provider === 'naver')?.hint).toBeUndefined()
+  })
+
   it('이 서비스에 전에 쓴 것이 가장 먼저', () => {
     const r = socialOrder(card, [
       svc('a', 'social:google'),

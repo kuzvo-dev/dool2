@@ -150,6 +150,11 @@ export interface ConnectionItem {
   connectedAt?: string
   /** 마지막으로 연결한 방법 ('vault' 아이디·비밀번호, 'social:kakao' 간편 로그인). 연결 카드의 추천 순서에 쓴다 */
   via?: string
+  /**
+   * 간편 로그인 계정 카드(카카오·네이버·구글)에만: 이 PC에서 내 계정으로 확인한 계정 (가린 글, "f***@gmail.com").
+   * 다른 서비스 연결 카드의 그 공급자 버튼에 "카카오 · f***@gmail.com"으로 보여, 어느 계정으로 들어가는지 누르기 전에 안다
+   */
+  account?: string
 }
 
 /** 서비스 첫 화면 주소 (연결할 때 Chrome에서 연다) */

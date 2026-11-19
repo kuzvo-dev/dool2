@@ -112,3 +112,12 @@ describe('로그인 없이 되는 도구 알리기', () => {
     expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ — .*\(로그인 없이: catchtable_search\)$/m)
   })
 })
+
+describe('계정 가리기', () => {
+  it('이메일은 앞 한 글자만, 아이디는 그대로', async () => {
+    const { maskAccount } = await import('./skills.js')
+    expect(maskAccount('felix990810@gmail.com')).toBe('f***@gmail.com')
+    expect(maskAccount('f***@gmail.com')).toBe('f***@gmail.com')
+    expect(maskAccount('wwd')).toBe('wwd')
+  })
+})
