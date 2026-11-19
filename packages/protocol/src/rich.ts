@@ -133,6 +133,7 @@ const TOOL_LABEL: Record<string, string> = {
   goal_update: '목표 고치는',
   goal_delete: '목표 지우는',
   library_save: '보관함에 남기는',
+  library_find: '보관함 보는',
   memory_save: '기억하는',
   memory_forget: '잊는',
   idea_suggest: '할 일 찾는',

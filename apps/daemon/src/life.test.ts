@@ -97,6 +97,82 @@ describe('Life', () => {
   })
 })
 
+describe('보관함 꺼내 보기 (library_find)', () => {
+  const text = (r: { content: { text: string }[] }) => r.content.map((c) => c.text).join('\n')
+  function filled() {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    const save = (a: Record<string, unknown>) => {
+      life.run('library_save', a)
+      now = new Date(now.getTime() + 3600_000)
+    }
+    save({
+      kind: 'place',
+      title: '성수 카페 어니언',
+      body: '성동구 아차산로9길 8 · 빵이 맛있음',
+      url: 'https://map.kakao.com/1',
+    })
+    save({
+      kind: 'product',
+      title: '제주 귤 3kg',
+      body: '무료 배송',
+      price: '15,900원',
+      url: 'https://www.coupang.com/vp/1',
+    })
+    save({ kind: 'note', title: '부산 여행 일정', body: '1일차 해운대\n2일차 광안리' })
+    save({ kind: 'place', title: '서울숲 산책길', body: '성수역 4번 출구에서 걸어서 10분' })
+    return life
+  }
+
+  it('제목·메모에서 찾고, 많이 맞은 것·최근 것부터', () => {
+    const life = filled()
+    const r = life.run('library_find', { query: '성수' })
+    const t = text(r)
+    expect(r.isError).toBeUndefined()
+    expect(t).toContain("보관함에서 '성수' 2개를 찾았어요")
+    // 둘 다 한 낱말씩 맞으면 최근 저장한 서울숲이 먼저
+    expect(t.indexOf('서울숲 산책길')).toBeLessThan(t.indexOf('성수 카페 어니언'))
+    expect(t).toContain('[장소] 성수 카페 어니언 · 2026-11-16 저장')
+    expect(t).toContain('링크: https://map.kakao.com/1')
+    expect(t).toContain('메모: 성동구 아차산로9길 8')
+    expect(t).toContain('show_list')
+    expect(t).not.toContain('제주 귤')
+    // 두 낱말 다 맞은 것이 먼저
+    const t2 = text(life.run('library_find', { query: '성수 카페' }))
+    expect(t2.indexOf('성수 카페 어니언')).toBeLessThan(t2.indexOf('서울숲 산책길'))
+  })
+
+  it('비우면 최근 것, 종류만 골라 보기, 몇 개까지', () => {
+    const life = filled()
+    const all = text(life.run('library_find', {}))
+    expect(all).toContain('최근 것 4개를 찾았어요')
+    expect(all.indexOf('서울숲')).toBeLessThan(all.indexOf('부산 여행'))
+    const products = text(life.run('library_find', { kind: 'product' }))
+    expect(products).toContain('[상품] 제주 귤 3kg')
+    expect(products).toContain('가격: 15,900원')
+    expect(products).not.toContain('[장소]')
+    const one = text(life.run('library_find', { limit: 1 }))
+    expect(one).toContain('(맞는 것 4개 중 1개)')
+    expect(one).not.toContain('부산 여행')
+  })
+
+  it('못 찾으면 이유와 저장된 것 목록, 비었으면 다른 길', () => {
+    const life = filled()
+    const r = life.run('library_find', { query: '강릉' })
+    const t = text(r)
+    expect(r.isError).toBeUndefined()
+    expect(t).toContain(
+      "보관함에 '강릉'으로 저장된 게 없어요. 저장된 것 4개, 최근: 서울숲 산책길 (장소 · 2026-11-16)",
+    )
+    expect(t).toContain('conversation_search')
+    expect(text(life.run('library_find', { query: '부산', kind: 'place' }))).toContain(
+      "보관함의 장소 중에 '부산'으로 저장된 게 없어요",
+    )
+    const none = new Life(kv(), () => MON_8AM)
+    expect(text(none.run('library_find', { query: '성수' }))).toContain('보관함이 비어 있어요')
+  })
+})
+
 describe('피드 글', () => {
   it('답 첫 줄이 제목이 된다', () => {
     const life = new Life(kv(), () => MON_8AM)

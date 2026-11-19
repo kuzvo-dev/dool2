@@ -110,6 +110,32 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('library_save'),
   )
   server.registerTool(
+    'library_find',
+    {
+      title: '보관함에서 꺼내 보기',
+      description:
+        '사용자가 보관함에 남겨 둔 것을 꺼내 본다. "저장해 둔 ○○ 보여 줘", "보관함에 있는 거", "찜해 둔 거", "아까·지난번에 저장한 거"처럼 ' +
+        '저장한 것을 말하면 짐작하거나 "볼 수 없어요"라고 하지 말고 이것으로 먼저 찾는다. ' +
+        '사용자가 앱 보관함에서 보는 것과 같은 칸(종류·제목·메모·링크·가격·저장한 날)이 온다. 대화에서 본 것이면 conversation_search.',
+      inputSchema: {
+        query: z
+          .string()
+          .max(100)
+          .optional()
+          .describe(
+            '찾을 낱말 1~3개 (예: "성수", "귤", "부산 여행"). 제목·메모·링크에서 찾는다. 비우면 최근 것부터',
+          ),
+        kind: z
+          .enum(['note', 'link', 'product', 'place', 'file'])
+          .optional()
+          .describe('종류만 골라 보기: note 정리 · link 링크 · product 상품 · place 장소 · file 사진·파일'),
+        limit: z.number().int().min(1).max(20).optional().describe('최대 몇 개 (기본 10)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('library_find'),
+  )
+  server.registerTool(
     'memory_save',
     {
       title: '기억하기',

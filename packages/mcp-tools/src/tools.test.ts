@@ -55,6 +55,7 @@ describe('두리 MCP 도구', () => {
       'goal_update',
       'goal_delete',
       'library_save',
+      'library_find',
       'memory_save',
       'memory_forget',
       'idea_suggest',

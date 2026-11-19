@@ -31,6 +31,15 @@ const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
 const LIMIT = { routines: 50, library: 500, memory: 200, feed: 300 }
+const LIBRARY_KINDS = ['note', 'link', 'product', 'place', 'file'] as const
+/** 보관함 종류 이름 (폰·PC 화면과 같은 말) */
+const LIBRARY_LABEL: Record<LibraryItem['kind'], string> = {
+  note: '정리',
+  link: '링크',
+  product: '상품',
+  place: '장소',
+  file: '파일',
+}
 export class Life {
   /** 폰에서 보낸 사진 읽기 (본체가 붙인다) */
   photo?: (name: string) => Promise<string>
@@ -613,9 +622,7 @@ export class Life {
           return ok(`목표를 지웠어요: ${r.title}`)
         }
         case 'library_save': {
-          const kind = (['note', 'link', 'product', 'place', 'file'] as const).includes(a.kind as never)
-            ? (a.kind as LibraryItem['kind'])
-            : 'note'
+          const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : 'note'
           const item = this.save({
             kind,
             title: String(a.title ?? '').slice(0, 80) || '제목 없음',
@@ -624,6 +631,16 @@ export class Life {
             ...(a.price ? { price: String(a.price).slice(0, 40) } : {}),
           })
           return ok(`보관함에 남겼어요: ${item.title}`)
+        }
+        case 'library_find': {
+          const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : undefined
+          return ok(
+            findLibrary(this.library(), {
+              query: String(a.query ?? ''),
+              ...(kind ? { kind } : {}),
+              limit: typeof a.limit === 'number' ? a.limit : 10,
+            }),
+          )
         }
         case 'memory_save': {
           const m = this.remember(String(a.text ?? ''))
@@ -661,6 +678,88 @@ export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | und
   if (kind === 'every' && Number(a.minutes) >= 15)
     return { kind: 'every', minutes: Math.round(Number(a.minutes)) }
   return undefined
+}
+
+/** 낱말 비교용: 띄어쓰기를 없애고 소문자로 ("성수 카페" = "성수카페") */
+const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+
+/** 받침에 맞는 "으로/로" ("성수로", "귤로", "카페로", "ABC(으)로") */
+function euro(word: string): string {
+  const c = word.charCodeAt(word.length - 1)
+  if (c < 0xac00 || c > 0xd7a3) return '(으)로'
+  const jong = (c - 0xac00) % 28
+  return jong === 0 || jong === 8 ? '로' : '으로'
+}
+
+/** 저장한 날 (한국 시간 YYYY-MM-DD) */
+function savedDay(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return '날짜 모름'
+  return new Date(t + 9 * 3600_000).toISOString().slice(0, 10)
+}
+
+/**
+ * 보관함 꺼내 보기 (library_find 도구). 사용자가 앱 보관함에서 보는 칸 그대로 돌려준다.
+ * 낱말이 여럿이면 많이 맞은 것부터, 같으면 최근 것부터. 못 찾으면 이유와 저장된 것 목록을 준다
+ */
+export function findLibrary(
+  all: LibraryItem[],
+  opts: { query?: string; kind?: LibraryItem['kind']; limit?: number },
+): string {
+  const n = Math.min(Math.max(1, Math.floor(opts.limit ?? 10) || 10), 20)
+  const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
+  const words = q ? [...new Set(q.split(' ').map(squash).filter(Boolean))] : []
+  const recent = [...all].sort((x, y) => y.savedAt.localeCompare(x.savedAt))
+  const kindLabel = opts.kind ? LIBRARY_LABEL[opts.kind] : ''
+  if (!recent.length)
+    return '보관함이 비어 있어요. 아직 저장한 게 없어요. 예전 대화에서 본 것이면 conversation_search로 찾아봐요.'
+
+  const pool = opts.kind ? recent.filter((x) => x.kind === opts.kind) : recent
+  const scored = pool
+    .map((it) => {
+      const hay = squash([it.title, it.body, it.url ?? '', it.price ?? '', LIBRARY_LABEL[it.kind]].join(' '))
+      return { it, score: words.filter((w) => hay.includes(w)).length }
+    })
+    .filter((x) => !words.length || x.score > 0)
+    // sort는 안정 정렬이라 점수가 같으면 최근 순서가 그대로 남는다
+    .sort((x, y) => y.score - x.score)
+  const found = scored.slice(0, n).map((x) => x.it)
+
+  if (!found.length) {
+    const where = kindLabel ? `보관함의 ${kindLabel} 중에` : '보관함에'
+    const what = q ? ` '${q}'${euro(q)}` : ''
+    const titles = recent
+      .slice(0, 5)
+      .map((x) => `${x.title} (${LIBRARY_LABEL[x.kind]} · ${savedDay(x.savedAt)})`)
+      .join(', ')
+    return [
+      `${where}${what} 저장된 게 없어요. 저장된 것 ${recent.length}개, 최근: ${titles}.`,
+      '다음: 낱말을 바꾸거나 줄여서 다시 찾거나(예: 동네 이름만), query를 비우고 최근 것을 보거나, 대화에서 본 것이면 conversation_search로 찾아요. 없는 걸 있다고 지어내지 않아요.',
+    ].join('\n')
+  }
+
+  // 몇 개만 나오면 메모를 길게, 많으면 짧게 (전체 내용은 제목으로 다시 찾으면 길게 나온다)
+  const room = found.length <= 3 ? 2000 : 300
+  const lines = found.map((it, i) => {
+    const head = `${i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · ${savedDay(it.savedAt)} 저장`
+    const body = it.body.trim()
+    const memo = body.length > room ? `${body.slice(0, room)}… (잘림)` : body
+    return [
+      head,
+      ...(it.price ? [`   가격: ${it.price}`] : []),
+      ...(it.url ? [`   링크: ${it.url}`] : []),
+      ...(memo ? [`   메모: ${memo.replace(/\n/g, '\n   ')}`] : []),
+    ].join('\n')
+  })
+  const scope = [q ? `'${q}'` : '최근 것', kindLabel ? `${kindLabel} 종류` : ''].filter(Boolean).join(' · ')
+  const more = scored.length > found.length ? ` (맞는 것 ${scored.length}개 중 ${found.length}개)` : ''
+  return [
+    `보관함에서 ${scope} ${found.length}개를 찾았어요${more}. 보관함 전체 ${recent.length}개.`,
+    '',
+    ...lines,
+    '',
+    '다음: 사용자에게 보여 줄 땐 show_list(줄마다 링크·가격)로 붙이고, 고를 후보(상품·장소)는 show_cards도 돼요(보관함엔 사진이 없어 사진 없이). 위에 있는 값만 쓰고, 메모가 잘렸으면 제목으로 다시 찾아요.',
+  ].join('\n')
 }
 
 /**
