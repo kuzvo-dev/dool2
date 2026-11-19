@@ -359,6 +359,11 @@ export const BrowserCommandSchema = z.enum([
   'dialog',
   /** 마우스를 그 자리로 옮기기만 한다 (올려 두어야 열리는 메뉴) */
   'hover',
+  /**
+   * 사람·승인을 기다리는 탭을 정해진 시간 동안 탭 정리(잠재우기·닫기)에서 뺀다 (ms: 0이면 풀기).
+   * 탭은 3개까지만 두는데, 결제 승인을 기다리던 탭이 다른 탭이 열리며 닫혔다 (실측: 롯데시네마)
+   */
+  'hold',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 
