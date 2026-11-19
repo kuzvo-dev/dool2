@@ -1982,7 +1982,7 @@ function ghostFor(draft: string): string {
     draft,
     talk: recentTalk(st.conv),
     mine: (st.life?.ideas ?? []).map((i) => i.text),
-    catalog: ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.text)),
+    catalog: ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.ask)),
   })
 }
 
