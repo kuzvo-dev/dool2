@@ -78,7 +78,8 @@ export interface LinkHost {
       | { kind: 'get' }
       | { kind: 'set'; values: Record<string, string> }
       | { kind: 'clear' }
-      | { kind: 'forget-pay'; host: string },
+      | { kind: 'forget-pay'; host: string }
+      | { kind: 'pay-methods'; methods: unknown[] },
   ): Promise<Omit<Extract<PcToPhone, { kind: 'profile' }>, 'kind'>>
   /** 카드 사진을 받아 data: 주소로 (못 받으면 undefined) */
   thumb?(url: string): Promise<string | undefined>
@@ -537,7 +538,8 @@ export class PhoneLink {
       case 'profile-get':
       case 'profile-set':
       case 'profile-clear':
-      case 'pay-choice-forget': {
+      case 'pay-choice-forget':
+      case 'pay-methods-set': {
         if (!this.host.profile) return
         // 폰이 보낸 것을 그대로 믿지 않는다: 칸 수·길이를 자른다
         const values: Record<string, string> = {}
@@ -551,7 +553,12 @@ export class PhoneLink {
               ? { kind: 'clear' }
               : msg.kind === 'pay-choice-forget'
                 ? { kind: 'forget-pay', host: String(msg.host ?? '').slice(0, 200) }
-                : { kind: 'get' },
+                : msg.kind === 'pay-methods-set'
+                  ? {
+                      kind: 'pay-methods',
+                      methods: Array.isArray(msg.methods) ? msg.methods.slice(0, 20) : [],
+                    }
+                  : { kind: 'get' },
         )
         return this.send(phone, { kind: 'profile', ...r })
       }

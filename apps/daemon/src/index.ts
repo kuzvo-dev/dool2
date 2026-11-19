@@ -93,6 +93,7 @@ import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js
 import { Life, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
+import { loadPayMethods, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
@@ -1126,12 +1127,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           forgetPaySubs(action.host)
           browserTools.forgetChoice(action.host)
           message = '그 사이트의 결제 수단을 잊었어요'
+        } else if (action.kind === 'pay-methods') {
+          const r = savePayMethods(store, action.methods)
+          // 무엇을 몇 개 등록했는지만 남긴다 (가린 표시도 기록에는 넣지 않는다)
+          journal.write('pay-methods', r.ok ? { kinds: r.methods.map((m) => m.kind) } : { error: r.error })
+          message = r.ok ? '결제 수단을 저장했어요' : r.error
         }
         const { have, missing } = await profile.masked()
         return {
           have,
           missing,
           payChoices: (store.getSetting('payChoices') as Record<string, string> | undefined) ?? {},
+          payMethods: loadPayMethods(store),
           ...(message ? { message } : {}),
         }
       },
