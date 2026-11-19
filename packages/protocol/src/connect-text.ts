@@ -22,6 +22,27 @@ export const CATEGORY_LABEL = {
   device: '휴대폰',
 } as const
 
+/** 연결 화면 분류 칩·머리에 쓰는 입체 이모지 (packages/ui/emoji/<emo>.webp) */
+export const CATEGORY_EMO: Record<keyof typeof CATEGORY_LABEL, string> = {
+  account: 'lock',
+  shopping: 'shopping',
+  grocery: 'grocery',
+  fashion: 'beauty',
+  travel: 'travel',
+  flight: 'plane',
+  tickets: 'ticket',
+  media: 'media',
+  books: 'bookmark',
+  social: 'camera',
+  work: 'laptop',
+  mail: 'mail',
+  telecom: 'chat',
+  finance: 'card',
+  gov: 'document',
+  life: 'home',
+  device: 'gear',
+}
+
 /** 폰 승인이 있어야만 하는 등급 (docs/architecture.md 4.1) */
 export const APPROVAL_TIERS: readonly Tier[] = ['돈 내기', '연락하기']
 

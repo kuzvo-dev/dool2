@@ -137,6 +137,8 @@ export function safetyLines(card: ConnectCard): string[] {
 export function renderConnections(opts: ConnectionsOptions, open?: string): Promise<void> {
   let items: ConnectionItem[] = []
   let query = ''
+  /** 고른 분류 칩: 'all' · 'mine'(연결됨) · 카드 분류 */
+  let cat = 'all'
 
   const load = async () => {
     items = (await opts.api<{ services: ConnectionItem[] }>('/api/connections')).services.sort((a, b) =>
@@ -184,9 +186,36 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
     search.type = 'search'
     search.placeholder = '서비스 찾기 (예: 쿠팡, 항공권, 택배)'
     search.value = query
+    const chips = el('div', 'chips idea-cats svc-cats')
     const groups = el('div', 'svc-groups')
+    const cats = (Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]).filter((c) =>
+      items.some((it) => it.card.category === c),
+    )
     const draw = () => {
       const q = query.trim().toLowerCase()
+      const mine = items.filter((it) => it.connectedAt)
+      if (
+        (cat === 'mine' && !mine.length) ||
+        (cat !== 'all' && cat !== 'mine' && !cats.includes(cat as never))
+      )
+        cat = 'all'
+      const chip = (id: string, label: string) => {
+        const b = el('button', `chip quiet${cat === id && !q ? ' on' : ''}`, label)
+        b.type = 'button'
+        b.onclick = () => {
+          cat = id
+          query = ''
+          search.value = ''
+          draw()
+          opts.box.scrollTop = 0
+        }
+        return b
+      }
+      chips.replaceChildren(
+        chip('all', '전체'),
+        ...(mine.length ? [chip('mine', `연결됨 ${mine.length}`)] : []),
+        ...cats.map((c) => chip(c, CATEGORY_LABEL[c])),
+      )
       const shown = q
         ? items.filter((it) =>
             [it.card.name, it.card.id, it.card.site ?? '', CATEGORY_LABEL[it.card.category], it.card.summary]
@@ -197,11 +226,14 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
           )
         : items
       const sections: HTMLElement[] = []
-      const connected = shown.filter((it) => it.connectedAt)
-      if (connected.length && !q) sections.push(section('연결됨', connected))
-      for (const cat of Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]) {
-        const list = shown.filter((it) => it.card.category === cat)
-        if (list.length) sections.push(section(CATEGORY_LABEL[cat], list))
+      if (!q && cat === 'mine') sections.push(section('연결됨', mine))
+      else {
+        if (!q && cat === 'all' && mine.length) sections.push(section('연결됨', mine))
+        for (const c of cats) {
+          if (!q && cat !== 'all' && c !== cat) continue
+          const list = shown.filter((it) => it.card.category === c)
+          if (list.length) sections.push(section(CATEGORY_LABEL[c], list))
+        }
       }
       if (!sections.length)
         sections.push(
@@ -225,7 +257,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       draw()
     }
     draw()
-    view.append(intro, search, groups)
+    view.append(intro, search, chips, groups)
     opts.box.replaceChildren(view)
     opts.box.scrollTop = 0
   }

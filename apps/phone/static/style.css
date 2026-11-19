@@ -3522,3 +3522,10 @@ textarea.ghosting {
   padding: 16px 0 24px;
   text-align: center;
 }
+/* 연결: 분류 칩 아래 머리는 아이디어와 같은 모양, 첫 묶음은 조금 붙인다 */
+.connect-cats {
+  margin-top: 8px;
+}
+.connect-group .idea-sec-head {
+  margin-top: 14px;
+}
