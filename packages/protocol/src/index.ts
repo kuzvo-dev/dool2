@@ -41,7 +41,8 @@ export interface UsageLimit {
 export type AgentEvent =
   | { type: 'started'; resumeId?: string; model?: string; tools: string[] }
   | { type: 'text'; delta: string }
-  | { type: 'tool'; name: string; input: unknown }
+  /** title: 서비스 도구의 사람이 읽는 제목 (엔진이 붙인다, 일하는 중 표시용) */
+  | { type: 'tool'; name: string; input: unknown; title?: string }
   | { type: 'tool_result'; name?: string; ok: boolean }
   | { type: 'usage'; limits: UsageLimit[] }
   /** 종량제: 이번 단계에 쓴 돈(USD)과 토큰 */

@@ -132,7 +132,14 @@ export const StepSchema = z.union([
    */
   z
     .object({
-      embedded: z.object({ css: Text(300), pick: z.string().max(300).optional() }).strict(),
+      embedded: z
+        .object({
+          css: Text(300),
+          pick: z.string().max(300).optional(),
+          /** 스크립트 안 자바스크립트 변수면: 이 글자 뒤 첫 JSON 덩어리를 읽는다 (예: "__APOLLO_STATE__") */
+          after: z.string().max(60).optional(),
+        })
+        .strict(),
       as: Key,
     })
     .strict(),
@@ -694,4 +701,30 @@ export function healthProblems(tool: ConnectorTool, out: Record<string, unknown>
     if (v === null || v === undefined || v === '') problems.push(`${f} 칸이 비었어요`)
   }
   return problems
+}
+
+/** 글에서 marker 뒤 첫 JSON 덩어리({…} 또는 […])를 꺼낸다. 따옴표 안 괄호는 센다에서 뺀다 */
+export function jsonAfter(text: string, marker: string): string | undefined {
+  const at = text.indexOf(marker)
+  if (at < 0) return undefined
+  let i = at + marker.length
+  while (i < text.length && text[i] !== '{' && text[i] !== '[') i++
+  const start = i
+  let depth = 0
+  let quote = ''
+  for (; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === '\\') i++
+      else if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'") quote = ch
+    else if (ch === '{' || ch === '[') depth++
+    else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return undefined
 }

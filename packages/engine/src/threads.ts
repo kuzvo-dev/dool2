@@ -32,6 +32,8 @@ export interface ThreadServiceOptions {
   systemPrompt?: string | (() => string)
   /** 탭 번호 → 그 탭의 사이트 주소 (일한 과정을 사이트별로 묶는다) */
   tabHost?: (tabId: number) => string | undefined
+  /** 서비스 도구 이름 → 사람이 읽는 제목 ("가게 찾기·영업 확인"). 일한 과정에 "일하는 중" 대신 보인다 */
+  toolTitle?: (name: string) => string | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -119,7 +121,7 @@ export class ThreadService {
       let failed: AgentEvent | undefined
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
-      const work = new WorkLog(Date.now, this.opts.tabHost)
+      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle)
       // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft·show_route): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
       // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
@@ -194,7 +196,12 @@ export class ThreadService {
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         // 구간의 실제 크기: 다음 말 전에 구간을 바꿀지 볼 때 쓴다 (ADR 0015)
         if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
-        yield { type: 'agent', event: ev }
+        // 서비스 도구면 제목을 실어 보낸다: 화면이 "일하는 중" 대신 "가게 찾기·영업 확인 중"을 보인다
+        const title =
+          ev.type === 'tool'
+            ? this.opts.toolTitle?.(ev.name.replace(/^(mcp__dool2__|dool2_)/, ''))
+            : undefined
+        yield { type: 'agent', event: title && ev.type === 'tool' ? { ...ev, title } : ev }
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
@@ -290,6 +297,7 @@ export class WorkLog {
   constructor(
     private readonly now: () => number = Date.now,
     private readonly tabHost?: (tabId: number) => string | undefined,
+    private readonly toolTitle?: (name: string) => string | undefined,
   ) {
     this.started = now()
   }
@@ -302,7 +310,9 @@ export class WorkLog {
     const here = (typeof tabId === 'number' ? this.tabHost?.(tabId) : undefined) ?? this.host
     const place = toolPlace(name, input, here)
     if (/^browser_(open|navigate)$/.test(bare) && place) this.host = place
-    const act = `${toolLabel(name)} 중`
+    // 서비스 도구는 제목으로 ("네이버 지도 · 일하기" 대신 "가게 찾기·영업 확인")
+    const title = this.toolTitle?.(bare)
+    const act = title ? `${title} 중` : `${toolLabel(name)} 중`
     const text = narrationLine(before) ?? act
     const last = this.steps.at(-1)
     if (last?.text !== text || last.place !== place)

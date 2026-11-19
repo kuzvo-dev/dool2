@@ -232,7 +232,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: '답에 목록 줄 붙이기',
       description:
         '사진이 고르는 이유가 아닌 목록(매물·주문·메일·일정·마감·서류·공고·신청 내역)을 답 아래에 줄로 붙인다. ' +
-        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 3줄 넘는 목록을 글로 늘어놓는 대신 쓴다. ' +
+        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 지금 영업·남은 자리처럼 줄마다 상태가 중요하면 이 목록(state·tone). 2줄 넘는 목록을 글로 늘어놓는 대신 쓴다. ' +
         '앞머리(lead)로 모양을 고른다: date 날짜(일정·마감, date 칸 필수) · file 파일(받은 서류·만든 파일) · img 작은 사진 · logo 서비스 로고 · none. ' +
         'pick: one이면 줄을 누르면 그걸로 고른 게 대화로 온다(하나 고르기). ' +
         'pick: multi는 여러 개를 한 번에 고를 때(장보기 담기·선물 후보·받을 서류): 두리가 고른 건 on을 비우고(기본 체크), 애매한 건 on:false로 꺼 두고 sub에 이유. ' +

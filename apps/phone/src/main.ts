@@ -764,7 +764,7 @@ function onStream(ev: DaemonStreamEvent) {
         pollWork()
       }
       // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
-      const act = `${toolLabel(ev.event.name)} 중`
+      const act = `${ev.event.title ?? toolLabel(ev.event.name)} 중`
       const label = narrationLine(st.live) ?? act
       st.live = ''
       // 일한 곳: 연 주소, 주소 없는 웹 도구는 지금 보는 화면의 사이트
@@ -5268,7 +5268,7 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
     sd.busy = true
     if (ev.event.type === 'text') sd.live += ev.event.delta
     else if (ev.event.type === 'tool') {
-      const label = narrationLine(sd.live) ?? `${toolLabel(ev.event.name)} 중`
+      const label = narrationLine(sd.live) ?? `${ev.event.title ?? toolLabel(ev.event.name)} 중`
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps = [...sd.steps, label]
     }

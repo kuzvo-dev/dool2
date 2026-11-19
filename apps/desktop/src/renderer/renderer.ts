@@ -687,7 +687,7 @@ function onSideTurn(threadId: string, e: DaemonStreamEvent) {
     const ev = e.event
     if (ev.type === 'text') sd.live += ev.delta
     else if (ev.type === 'tool') {
-      const label = narrationLine(sd.live) ?? `${toolLabel(ev.name)} 중`
+      const label = narrationLine(sd.live) ?? `${ev.title ?? toolLabel(ev.name)} 중`
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps.push(label)
     } else return
@@ -1382,7 +1382,7 @@ function onAgent(ev: AgentEvent) {
   }
   if (ev.type === 'tool') {
     // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 흘러오던 말은 비운다
-    const act = `${toolLabel(ev.name)} 중`
+    const act = `${ev.title ?? toolLabel(ev.name)} 중`
     const label = narrationLine(t.text) ?? act
     t.text = ''
     const place = toolPlace(ev.name, ev.input, t.host)
