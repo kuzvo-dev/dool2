@@ -134,6 +134,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 여행·숙소 | [야놀자(NOL)](yanolja/tools.json) | 5 | `search` |
 | 여행·숙소 | [여기어때](yeogi/tools.json) | 4 | `search`, `rooms` |
 | 여행·숙소 | [캠핏](camfit/tools.json) | 3 | `search` |
+| 여행·숙소 | [코레일](korail/tools.json) | 1 | `trains` |
 | 여행·숙소 | [클룩](klook/tools.json) | 3 | `search` |
 | 여행·숙소 | [트립닷컴](trip-com/tools.json) | 3 | `hotel_search` |
 | 여행·숙소 | [호텔스닷컴](hotels-com/tools.json) | 3 | `search` |

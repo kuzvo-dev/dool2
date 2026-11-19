@@ -1,0 +1,232 @@
+{
+  "id": "korail",
+  "tools": [
+    {
+      "name": "trains",
+      "title": "열차 자리 찾기",
+      "description": "로그인 없이 된다. 코레일 승차권 조회 화면에서 출발역→도착역, 그 날 그 시각 뒤로 열차 10편쯤의 출발·도착 시각, 열차 종류·번호, 일반실·특실 자리(예약가능·매진임박·좌석부족·매진), 입석·자유석, 어른 1명 요금을 돌려준다. KTX·SRT(수서 출발)·ITX·무궁화 자리·시간표·요금을 물으면 먼저 쓴다. '매진이면 취소표 나오면 알려 줘'는 지금 한 번 보고, 매진이면 goal_create(every·notify when_found·until 출발 날짜)로 이 도구를 available_only=true로 다시 부르게 한다. 예약대기·예매는 연결(로그인)한 뒤 사이트에서.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-19, 서울→부산 금요일 저녁·서울→대전, 화면이 받은 응답 읽기)",
+      "input": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^(?!.*역$)[가-힣A-Za-z0-9]{2,10}$",
+            "description": "출발역 이름만, '역'은 빼고 코레일 표기로 (예: 서울, 용산, 수서, 광명, 대전, 동대구, 부산). '서울역'→서울, '부산역'→부산"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^(?!.*역$)[가-힣A-Za-z0-9]{2,10}$",
+            "description": "도착역 이름만, '역'은 빼고 (예: 부산, 대전, 오송, 천안아산, 광주송정, 강릉)"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "타는 날 YYYY-MM-DD (예: 2026-11-20). '금요일'처럼 말하면 날짜로 바꿔 넣어요. 비우면 오늘"
+          },
+          "time": {
+            "type": "string",
+            "format": "time",
+            "default": "06:00",
+            "description": "이 시각 뒤로 출발하는 열차부터 HH:MM (예: 저녁 18:00, 아침 07:00)"
+          },
+          "until": {
+            "type": "string",
+            "format": "time",
+            "description": "(선택) 이 시각까지 출발하는 열차만 HH:MM (예: '저녁 6~8시'면 time 18:00, until 20:00)"
+          },
+          "ktx_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "true면 KTX(KTX-산천·이음 포함)만"
+          },
+          "nearby": {
+            "type": "boolean",
+            "default": false,
+            "description": "true면 가까운 역 열차도 함께 (서울을 고르면 수서·용산·청량리 출발도). SRT·수서를 말하거나 서울 쪽이 매진일 때"
+          },
+          "available_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "true면 일반실이나 특실을 지금 예매할 수 있는 열차만 (취소표 지켜보기에 써요)"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "output": {
+        "trains": {
+          "type": "list",
+          "description": "열차 (출발 시각 순)",
+          "fields": {
+            "train": {
+              "type": "string",
+              "description": "열차 종류와 번호 (예: KTX 063, KTX-산천 349)"
+            },
+            "from": {
+              "type": "string",
+              "description": "출발역 (nearby면 수서·용산일 수 있어요)"
+            },
+            "to": {
+              "type": "string",
+              "description": "도착역"
+            },
+            "depart": {
+              "type": "string",
+              "description": "출발 시각 HH:MM"
+            },
+            "arrive": {
+              "type": "string",
+              "description": "도착 시각 HH:MM"
+            },
+            "general": {
+              "type": "string",
+              "description": "일반실: 좌석많음·예약가능·매진임박(남은 자리 적음)·좌석부족·매진"
+            },
+            "special": {
+              "type": "string",
+              "description": "특실: 예약가능·매진임박·매진 (- 는 특실 없음)"
+            },
+            "standing": {
+              "type": "string",
+              "description": "입석 (역발매중이면 역에서 살 수 있음, - 는 없음)"
+            },
+            "free_seat": {
+              "type": "string",
+              "description": "자유석 (역발매중이면 역에서 살 수 있음)"
+            },
+            "price": {
+              "type": "integer",
+              "description": "일반실 어른 1명 요금(원)"
+            },
+            "price_special": {
+              "type": "integer",
+              "description": "특실 어른 1명 요금(원)"
+            }
+          }
+        },
+        "more": {
+          "type": "string",
+          "description": "Y면 마지막 열차 뒤로 더 있어요 (time을 마지막 출발 시각 뒤로 다시 불러요)"
+        },
+        "link": {
+          "type": "string",
+          "description": "코레일에서 이 조회를 여는 주소 (사용자가 예매·예약대기할 때)"
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "train",
+          "depart",
+          "arrive",
+          "general"
+        ]
+      },
+      "examples": [
+        {
+          "from": "서울",
+          "to": "부산",
+          "time": "18:00"
+        },
+        {
+          "from": "서울",
+          "to": "대전",
+          "time": "07:00",
+          "ktx_only": true
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.korail.com/ticket/search/list?txtGoStart={{from|url}}&txtGoEnd={{to|url}}&txtGoAbrdDt={{#date}}{{date|digits}}{{/date}}{{^date}}{{today|digits}}{{/date}}&txtGoHour={{time|digits}}00&txtPsgFlg_1=1&txtTrnGpCd={{#ktx_only}}100{{/ktx_only}}{{^ktx_only}}109{{/ktx_only}}{{#nearby}}&adjStnScdlOfrFlg=Y&adjStnScdlOfrFlg2=Y&srtCheckYn=Y&ebizCrossCheck=Y{{/nearby}}"
+        },
+        {
+          "wait": {
+            "text": "소요시간|안내 메시지|운행하는 열차가 없|접속\\s*대기|미허가 도구",
+            "timeoutMs": 20000,
+            "soft": true
+          }
+        },
+        {
+          "stop_if": "미허가 도구|비정상적인 접근|Access Denied",
+          "blocked": true,
+          "say": "코레일이 이 브라우저의 조회를 막았어요(매크로 의심 안내). 잠시 뒤에 다시 보거나 코레일톡 앱에서 직접 확인해 주세요."
+        },
+        {
+          "stop_if": "입력값오류",
+          "say": "코레일이 역 이름을 못 알아들었어요({{from}}→{{to}}). '역'을 빼고 코레일 표기로 다시 불러요 (예: 서울, 용산, 수서, 동대구, 천안아산, 광주송정)."
+        },
+        {
+          "stop_if": "예약발매 준비 중|예약가능한 시간이 아닙니다",
+          "say": "{{#date}}{{date}}{{/date}}{{^date}}오늘{{/date}} 승차권은 아직 팔기 전이에요. 코레일은 보통 출발 한 달 전부터 팔아요. 열리는 날을 알려 드릴까요?"
+        },
+        {
+          "stop_if": "접속\\s*대기",
+          "say": "지금 코레일 접속자가 많아 대기 순번이 걸렸어요. 몇 분 뒤에 다시 볼게요."
+        },
+        {
+          "stop_if": "운행하는 열차가 없",
+          "say": "{{#date}}{{date}}{{/date}}{{^date}}오늘{{/date}} {{time}} 뒤로 {{from}}→{{to}} 열차가 없어요. 시각을 앞당기거나 다음 날로, 또는 nearby=true로 가까운 역까지 넓혀 볼 수 있어요."
+        },
+        {
+          "capture": {
+            "url": "korail\\.com/web_s/",
+            "pick": "",
+            "timeoutMs": 15000
+          },
+          "as": "raw"
+        },
+        {
+          "map": {
+            "from": "raw.trn_infos.trn_info",
+            "limit": 20,
+            "fields": {
+              "train": "{{h_trn_clsf_nm}} {{h_trn_no}}",
+              "from": "h_dpt_rs_stn_nm",
+              "to": "h_arv_rs_stn_nm",
+              "depart": "h_dpt_tm_qb",
+              "arrive": "h_arv_tm_qb",
+              "general": "h_gen_rsv_nm",
+              "special": "h_spe_rsv_nm",
+              "standing": "h_stnd_rsv_nm",
+              "free_seat": "h_free_rsv_nm",
+              "price": "h_rsv_psb_nm",
+              "price_special": "h_spe_rsv_psb_nm",
+              "codes": "/{{h_gen_rsv_cd}}/{{h_spe_rsv_cd}}/"
+            }
+          },
+          "as": "all"
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "codes",
+            "op": "contains",
+            "value": "{{#available_only}}/11/{{/available_only}}"
+          },
+          "as": "open"
+        },
+        {
+          "filter": {
+            "from": "open",
+            "where": "depart",
+            "op": "lte",
+            "value": "{{until}}"
+          },
+          "as": "trains"
+        }
+      ],
+      "result": {
+        "trains": "{{trains}}",
+        "more": "{{raw.h_next_pg_flg}}",
+        "link": "https://www.korail.com/ticket/search/list?txtGoStart={{from|url}}&txtGoEnd={{to|url}}&txtGoAbrdDt={{#date}}{{date|digits}}{{/date}}{{^date}}{{today|digits}}{{/date}}&txtGoHour={{time|digits}}00&txtPsgFlg_1=1&txtTrnGpCd={{#ktx_only}}100{{/ktx_only}}{{^ktx_only}}109{{/ktx_only}}{{#nearby}}&adjStnScdlOfrFlg=Y&adjStnScdlOfrFlg2=Y&srtCheckYn=Y&ebizCrossCheck=Y{{/nearby}}"
+      },
+      "next": "show_list로 열차마다 한 줄(출발→도착 시각·열차, value 요금, state 일반실 상태, 매진은 tone stop)을 붙이고, 글은 결론 한 줄(자리 있는 가장 이른 열차·요금)만. 다 매진이면 취소표 지켜보기(goal_create, available_only=true로 이 도구)를 권해요. 지켜보다 자리가 나오면 열차·시각·요금과 link를 알려요. 예매는 사이트에서 순식간에 다시 팔릴 수 있다고 덧붙여요.",
+      "minIntervalSec": 300,
+      "cards": false
+    }
+  ]
+}
