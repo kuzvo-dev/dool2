@@ -1,0 +1,167 @@
+{
+  "id": "kakao-map",
+  "tools": [
+    {
+      "name": "transit",
+      "title": "대중교통 길찾기",
+      "description": "로그인 없이 된다. 출발지에서 도착지까지 지하철·버스 길을 카카오맵에서 찾아, 빠른 순서대로 경로마다 걸리는 시간·요금·환승 횟수·걷는 시간과 구간(무엇을 어디서 어디까지 타는지)·구간마다 그 정류장·역의 막차 시각을 돌려준다. 길·환승·막차·첫차·'몇 시까지 나가야 해' 같은 물음에 먼저 쓴다. 막차가 궁금하면 구간 막차를 보고 '늦어도 언제 어디서 타야 하는지'를 계산해 가장 늦게까지 되는 경로를 고른다(앞 구간 막차가 늦어도 갈아탈 곳 막차가 먼저 끊길 수 있다). 결과는 show_route로 경로 카드를 붙여 보여 준다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-19, 강남역→대화역 8경로·구간 막차, 화면이 받은 응답 읽기)",
+      "input": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "출발지: 역·정류장·장소 이름 (예: 강남역, 판교역, 서울시청)"
+          },
+          "to": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "도착지: 역·정류장·장소 이름 (예: 대화역, 일산 호수공원)"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "output": {
+        "from": {
+          "type": "string",
+          "description": "카카오맵이 고른 출발지 (예: 강남역 2호선). 사용자가 말한 곳과 다르면 확인해요"
+        },
+        "to": {
+          "type": "string",
+          "description": "카카오맵이 고른 도착지"
+        },
+        "link": {
+          "type": "string",
+          "description": "카카오맵에서 이 길찾기를 여는 주소"
+        },
+        "routes": {
+          "type": "list",
+          "description": "경로 (빠른 순)",
+          "fields": {
+            "kind": {
+              "type": "string",
+              "description": "SUBWAY 지하철 · BUS 버스 · BUS_AND_SUBWAY 버스+지하철"
+            },
+            "time": {
+              "type": "string",
+              "description": "걸리는 시간 (예: 1시간 16분)"
+            },
+            "minutes": {
+              "type": "integer",
+              "description": "걸리는 시간(초)"
+            },
+            "fare": {
+              "type": "string",
+              "description": "요금 (예: 2,150원)"
+            },
+            "transfers": {
+              "type": "integer",
+              "description": "환승 횟수"
+            },
+            "walk": {
+              "type": "string",
+              "description": "걷는 시간 합 (예: 2분)"
+            },
+            "legs": {
+              "type": "strings",
+              "description": "구간 순서대로: 노선 (탈 곳 > 내릴 곳) (예: 2호선 (강남역 > 교대역))"
+            },
+            "last": {
+              "type": "strings",
+              "description": "구간 순서대로 그 구간 탈 곳의 막차 시각 (HH:MM:SS, 자정 넘으면 00:xx)"
+            },
+            "first": {
+              "type": "strings",
+              "description": "구간 순서대로 첫차 시각"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "time",
+          "fare",
+          "legs"
+        ]
+      },
+      "examples": [
+        {
+          "from": "강남역",
+          "to": "대화역"
+        },
+        {
+          "from": "판교역",
+          "to": "서울역"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://map.kakao.com/?q={{from|url}}"
+        },
+        {
+          "capture": {
+            "url": "/api/v1/mapsearch/map\\?q=",
+            "pick": "place.0",
+            "timeoutMs": 12000
+          },
+          "as": "s"
+        },
+        {
+          "open": "https://map.kakao.com/?q={{to|url}}"
+        },
+        {
+          "capture": {
+            "url": "/api/v1/mapsearch/map\\?q=",
+            "pick": "place.0",
+            "timeoutMs": 12000
+          },
+          "as": "e"
+        },
+        {
+          "open": "https://map.kakao.com/?map_type=TYPE_MAP&target=traffic&rt={{s.x}},{{s.y}},{{e.x}},{{e.y}}&rt1={{s.name|url}}&rt2={{e.name|url}}"
+        },
+        {
+          "capture": {
+            "url": "/route/pubtrans\\.json",
+            "pick": "in_local.routes",
+            "timeoutMs": 15000
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": 8,
+            "fields": {
+              "kind": "type",
+              "time": "time.text",
+              "minutes": "time.value",
+              "fare": "fare.text",
+              "transfers": "transfers",
+              "walk": "walkingTime.text",
+              "legs": "summaries.*.infomation",
+              "last": "steps.*.expectedTime.lastTime",
+              "first": "steps.*.expectedTime.firstTime"
+            }
+          },
+          "as": "routes"
+        }
+      ],
+      "result": {
+        "from": "{{s.name}}",
+        "to": "{{e.name}}",
+        "link": "https://map.kakao.com/?map_type=TYPE_MAP&target=traffic&rt={{s.x}},{{s.y}},{{e.x}},{{e.y}}&rt1={{s.name|url}}&rt2={{e.name|url}}",
+        "routes": "{{routes}}"
+      },
+      "next": "막차를 물었으면 경로마다 '늦어도 출발 시각'을 셈해 가장 늦게까지 되는 길과 가장 빠른 길을 골라요. show_route로 경로 카드를 붙이고, 답 글은 결론 한 줄(언제·어디서·무엇을)과 놓쳤을 때 대안만.",
+      "minIntervalSec": 120,
+      "cards": false
+    }
+  ]
+}
