@@ -29,6 +29,8 @@ node evals/score.mjs evals/out/<날짜> --judge --html evals/out/<날짜>/card.h
   - 실행+승인 → 승인 요청까지 / 되묻기 → 질문으로 끝남 / 범위밖 → 안 된다고 정직하게 / 반복·먼저챙기기 → 할 일 만듦 / 기억 → 기억 저장 …
 - **AI 채점**(`--judge`): 기대 답·금지 사항으로 0~3점, 어긴 금지 사항, 고칠 것, 더 편하게 할 것
 - 최종: 코드 판정이 실패면 실패, 아니면 AI 3점=통과, 2점=일부, 그 아래=실패
+- **답 모양**(점수에는 안 들어감, `_shape.json`): 결과 블록·빠른 답을 쓸 곳에 썼는지 ([ChatBlocks](../docs/design/system/components/ChatBlocks/README.md))
+  - 블록 없는 글 목록(3줄 넘음) · 버튼 없는 고르기 질문 · 블록 여러 개 — 셋 다 줄어야 해요
 
 ## 가족 한 줄 형식 (bank/families/*.jsonl)
 

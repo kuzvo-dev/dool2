@@ -271,6 +271,7 @@ for (const { r } of rows) {
   const v = final(r)
   r.final_verdict = v
   r.cause = cause(r)
+  r.shape = shapeOf(r)
   tally[v]++
   const t = r.scenario.type
   byType[t] ??= { pass: 0, part: 0, fail: 0, unknown: 0, na: 0 }
@@ -318,6 +319,37 @@ console.log(
   `환경 빼고(두리 몫): 시나리오 ${own.length}개·${ownRuns.length}번 · 통과 ${ownPass} · AI 평균 ${envSummary.avg}/3 · 'AI 판단' 원인 ${aiFault}번(${Math.round(envSummary.aiFaultRate * 100)}%)`,
 )
 writeFileSync(join(dir, '_own.json'), JSON.stringify(envSummary))
+// 답 모양 (docs/design/system/components/ChatBlocks): 결과 블록·빠른 답을 쓸 곳에 썼는지
+//  글 목록 = 블록 없이 3줄 넘는 글 목록 · 버튼 없는 고르기 = 고르게 묻고 끝났는데 빠른 답 줄이 없음 · 블록 여러 개 = 답 하나에 두 종류 이상
+function shapeOf(r) {
+  const text = (r.final || r.text || '').trim()
+  const kinds = new Set(
+    r.tools.map((t) => short(t.name)).filter((n) => /^show_(cards|list|result|draft)$/.test(n)),
+  )
+  const quick = /\[\[답\s*[:：][^\]\n]*\]\]\s*$/.test(text)
+  const body = text.replace(/\n?\s*\[\[답[^\n]*$/, '')
+  const listLines = body.split('\n').filter((l) => /^\s*(?:[-•*]|\d+[.)])\s/.test(l)).length
+  return {
+    blocks: [...kinds],
+    quick,
+    textList: !kinds.size && listLines >= 3,
+    askNoQuick: !quick && /(어느 쪽|어떤 걸로|골라 주세요|할까요\?|드릴까요\?)\s*$/.test(body),
+    many: kinds.size > 1,
+  }
+}
+const shapes = rows.filter(({ r }) => r.final_verdict !== 'na').map(({ r }) => r.shape)
+const shapeSum = {
+  answers: shapes.length,
+  block: shapes.filter((x) => x.blocks.length).length,
+  quick: shapes.filter((x) => x.quick).length,
+  textList: shapes.filter((x) => x.textList).length,
+  askNoQuick: shapes.filter((x) => x.askNoQuick).length,
+  many: shapes.filter((x) => x.many).length,
+}
+console.log(
+  `답 모양: ${shapeSum.answers}개 중 블록 ${shapeSum.block} · 빠른 답 ${shapeSum.quick} · 블록 없는 글 목록(3줄+) ${shapeSum.textList} · 버튼 없는 고르기 질문 ${shapeSum.askNoQuick} · 블록 여러 개 ${shapeSum.many}`,
+)
+writeFileSync(join(dir, '_shape.json'), JSON.stringify(shapeSum))
 const gates = rows.filter(({ r }) => r.check.gates.length)
 if (gates.length) console.log(`관문 걸림 ${gates.length}: ${gates.map(({ r }) => r.id).join(', ')}`)
 
@@ -342,7 +374,7 @@ if (html) {
 ${r.check.gates.length ? `<p class="bad"><b>관문</b> ${esc(r.check.gates.join(' · '))}</p>` : ''}
 ${r.judge?.reason ? `<p><b>채점</b> ${esc(r.judge.reason)}</p>` : ''}${r.judge?.never?.length ? `<p class="bad"><b>어긴 것</b> ${esc(r.judge.never.join(' · '))}</p>` : ''}
 ${r.judge?.fix ? `<p><b>고칠 것</b> ${esc(r.judge.fix)}</p>` : ''}${r.judge?.easier ? `<p><b>더 편하게</b> ${esc(r.judge.easier)}</p>` : ''}
-<p><b>도구</b> ${esc(r.check.tools.join(' → ') || '없음')}</p>
+<p><b>도구</b> ${esc(r.check.tools.join(' → ') || '없음')}</p>${r.shape ? `<p><b>답 모양</b> ${esc([r.shape.blocks.join('·') || '블록 없음', r.shape.quick ? '빠른 답' : '', r.shape.textList ? '글 목록' : '', r.shape.askNoQuick ? '버튼 없는 고르기' : ''].filter(Boolean).join(' · '))}</p>` : ''}
 ${(r.approvals ?? []).map((a) => `<p><b>승인 요청</b> ${esc(a.label)} · ${esc(a.what)} · ${esc(a.amount ?? '')}</p>`).join('')}
 <pre>${esc((r.final || r.text || '').slice(0, 2500))}</pre></div></details>`,
     )
