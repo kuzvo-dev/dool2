@@ -768,8 +768,33 @@ async function locate(tabId: number, ref: unknown, mode: LocateMode): Promise<Lo
 // 마우스가 들어온 적 없는 버튼을 누르는 셈이라 사이트가 사람 입력이 아니라고 볼 수 있다
 /** 탭마다 마지막 마우스 자리 */
 const pointer = new Map<number, { x: number; y: number }>()
+/** 떼기(mouseReleased) 확인이 오지 않은 탭: 다음 동작 전에 떼기를 다시 보내 '누른 채'로 남지 않게 한다 */
+const stillPressed = new Set<number>()
+
+/**
+ * 앞 클릭의 떼기가 화면이 바뀌는 사이 사라지면 페이지는 버튼을 누른 채로 안다. 그 상태로 커서가 움직이면 끌기가 된다
+ * (실측: 구글 캘린더에서 일정을 지운 뒤 다음 일정 칩을 누르자 일정이 다른 날로 옮겨지고 '실행 취소'가 떴다)
+ */
+async function releaseIfPressed(tabId: number) {
+  if (!stillPressed.has(tabId)) return
+  const at = pointer.get(tabId) ?? { x: 0, y: 0 }
+  await Promise.race([
+    cdp(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      x: at.x,
+      y: at.y,
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+      pointerType: 'mouse',
+    }).catch(() => undefined),
+    sleep(500),
+  ])
+  stillPressed.delete(tabId)
+}
 
 async function moveMouse(tabId: number, x: number, y: number) {
+  await releaseIfPressed(tabId)
   const from = pointer.get(tabId) ?? { x: Math.max(x - 140, 0), y: y + 90 }
   const dist = Math.hypot(x - from.x, y - from.y)
   const n = Math.min(12, Math.max(3, Math.round(dist / 60)))
@@ -826,10 +851,14 @@ async function clickAt(tabId: number, x: number, y: number, label?: string) {
     pointer.set(tabId, { x, y })
   }
   await paint(tabId)
+  await releaseIfPressed(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
+  stillPressed.add(tabId)
   // 클릭으로 새 탭이 앞으로 오면 이 탭은 뒤로 가서 그려지지 않고, 입력 확인 답이 몇 초씩 늦는다. 오래 기다리지 않는다
   await Promise.race([
-    cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }),
+    cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }).then(() =>
+      stillPressed.delete(tabId),
+    ),
     sleep(1000),
   ])
 }
