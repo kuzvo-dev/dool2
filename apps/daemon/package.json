@@ -28,6 +28,7 @@
     "@dool2/mcp-tools": "workspace:*",
     "@dool2/protocol": "workspace:*",
     "@dool2/store": "workspace:*",
+    "pdfjs-dist": "^6.5.438",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

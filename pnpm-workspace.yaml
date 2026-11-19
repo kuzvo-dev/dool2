@@ -7,3 +7,7 @@ onlyBuiltDependencies:
   - electron
   - esbuild
   - workerd
+
+# PDF 글 뽑기(pdfjs-dist)는 그림 그리기를 쓰지 않으니 네이티브 캔버스는 받지 않는다
+ignoredOptionalDependencies:
+  - "@napi-rs/canvas"
