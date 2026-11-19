@@ -3512,3 +3512,13 @@ textarea.ghosting {
 .approve-choices .chip.on .mine-dot {
   background: currentColor;
 }
+
+/* 긴 목록 끝 줄: 받는 중 · 더 보기 · 여기까지예요 */
+.page-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 0 24px;
+  text-align: center;
+}

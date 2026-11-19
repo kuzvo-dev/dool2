@@ -9,6 +9,7 @@ import {
   type LifeState,
   type Routine,
 } from '@dool2/protocol'
+import type { Pager } from '@dool2/protocol/paging'
 import { resultLine, withoutPhotoMark } from '@dool2/protocol/rich'
 import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
@@ -26,6 +27,11 @@ export interface LifeCtx {
   openGoal(id: string): void
   openItem(id: string): void
   close(): void
+  /** 긴 목록: 받아 둔 것과 다음 페이지 (피드, 지금 보이는 보관함 칸) */
+  feedList: Pager<FeedItem>
+  libraryList: Pager<LibraryItem>
+  /** 보관함 하나: 앞부분만 받은 글이면 전체를 부탁하고 지금 가진 것을 준다 */
+  fullItem(id: string): LibraryItem | undefined
   /** 피드 맨 위 "나를 기다려요·지금 하는 일" (승인·로그인·진행) */
   waiting: HTMLElement[]
   /** 보관함 칸: 만든 것 / 사진·파일 */
@@ -79,12 +85,27 @@ function empty(mood: string, title: string, sub: string) {
   )
 }
 
+/** 목록 끝 줄: 받는 중 · [더 보기] · 여기까지예요 (아래로 내리면 저절로 받는다) */
+export function moreRow(p: Pager<{ id: string }>): HTMLElement | undefined {
+  if (!p.items.length) return undefined
+  if (p.loading) return h('p', { class: 'wait page-more' }, h('span', { class: 'spin' }), '더 불러오는 중…')
+  if (p.next)
+    return h(
+      'div',
+      { class: 'page-more' },
+      h('button', { class: 'btn-text small', text: '더 보기', onclick: () => p.more() }),
+    )
+  return h('p', { class: 'meta page-more', text: '여기까지예요' })
+}
+
 // ── 피드 ──
 
 export function feedView(ctx: LifeCtx): HTMLElement {
   const box = h('section', { class: 'tab-page feed' }, ...header('피드'))
   // 이번 주 두리가 한 일: 한 일이 하나라도 있으면
-  if (ctx.life?.feed.length) box.append(statCard(ctx.life.feed))
+  // (PC가 60일 날마다 개수를 세어 보낸다: 받은 피드 페이지와 상관없이 정확하다)
+  const days = ctx.life?.feedDays
+  if (days?.some((n) => n > 0)) box.append(statCard(days))
   // 피드 지시: 무엇을 올릴지 말로 정한다
   const prompt = ctx.life?.feedPrompt
   const input = h('input', { class: 'field' })
@@ -125,7 +146,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   )
   if (ctx.life) box.append(watchCard(ctx))
   if (ctx.waiting.length) box.append(...ctx.waiting)
-  const items = ctx.life?.feed ?? []
+  const items = ctx.feedList.items
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
   else if (!items.length)
     box.append(
@@ -140,6 +161,8 @@ export function feedView(ctx: LifeCtx): HTMLElement {
     }
     box.append(feedCard(ctx, f))
   }
+  const more = moreRow(ctx.feedList)
+  if (more) box.append(more)
   return box
 }
 
@@ -556,8 +579,7 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
       }),
     )
   box.append(seg)
-  const all = ctx.life?.library ?? []
-  const list = all.filter((x) => (ctx.librarySeg === 'media' ? x.kind === 'file' : x.kind !== 'file'))
+  const list = ctx.libraryList.items
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
   else if (!list.length)
     box.append(
@@ -589,16 +611,19 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
       ),
     )
   }
+  const more = moreRow(ctx.libraryList)
+  if (more) box.append(more)
   return box
 }
 
 export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
   const sheet = h('section', { class: 'sheet float app-sheet rise item-sheet' })
-  const it = ctx.life?.library.find((x) => x.id === id)
+  const it = ctx.fullItem(id)
   if (!it) return sheet
   const k = ITEM[it.kind]
   const body = h('div', { class: 'item-body bubble rich' })
-  body.append(rich(it.body))
+  // 앞부분만 받은 글: 전체가 오면 시트를 다시 그린다
+  body.append(rich(it.cut ? `${it.body}…` : it.body))
   sheet.append(
     h('button', { class: 'fbtn small sheet-x', label: '닫기', onclick: ctx.close }, icon('close')),
     h(
