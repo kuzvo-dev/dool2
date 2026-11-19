@@ -14,6 +14,7 @@ import {
   type BlockRecordMessage,
   cleanDraft,
   cleanResult,
+  cleanRoute,
   cleanRows,
   type QuickRecordMessage,
 } from '@dool2/protocol/blocks'
@@ -119,7 +120,7 @@ export class ThreadService {
       // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
       let saved = false
       const work = new WorkLog(Date.now, this.opts.tabHost)
-      // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
+      // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft·show_route): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
       // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
       const saveBlock = () => {
@@ -173,14 +174,16 @@ export class ThreadService {
                 : {}),
             }
         }
-        if (ev.type === 'tool' && /show_(list|result|draft)$/.test(ev.name)) {
-          const kind = ev.name.match(/show_(list|result|draft)$/)?.[1]
+        if (ev.type === 'tool' && /show_(list|result|draft|route)$/.test(ev.name)) {
+          const kind = ev.name.match(/show_(list|result|draft|route)$/)?.[1]
           const rec =
             kind === 'list'
               ? cleanRows(ev.input)
               : kind === 'result'
                 ? cleanResult(ev.input)
-                : cleanDraft(ev.input)
+                : kind === 'route'
+                  ? cleanRoute(ev.input)
+                  : cleanDraft(ev.input)
           if (rec) block = rec
         }
         if (ev.type === 'text') answer += ev.delta

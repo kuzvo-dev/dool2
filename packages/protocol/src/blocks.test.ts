@@ -3,10 +3,12 @@ import {
   blockText,
   cleanDraft,
   cleanResult,
+  cleanRoute,
   cleanRows,
   daysUntil,
   draftAsk,
   hideQuickTail,
+  lineColor,
   multiAsk,
   multiLabel,
   shortDate,
@@ -174,5 +176,63 @@ describe('날짜', () => {
     expect(daysUntil('2026-11-18', now)).toBe(-1)
     // 한국은 벌써 20일
     expect(daysUntil('2026-11-20', Date.parse('2026-11-19T15:30:00Z'))).toBe(0)
+  })
+})
+
+describe('경로 카드', () => {
+  const ask = {
+    title: '강남역 → 대화역',
+    from: '카카오맵',
+    big: '23:25까지 강남역 출발',
+    bigNote: '1시간 16분 · 환승 1 · 2,150원',
+    legs: [
+      { line: '2호선', from: '강남역', to: '교대역', minutes: 2, last: '00:46:30' },
+      {
+        mode: 'subway',
+        line: '3호선',
+        from: '교대역',
+        to: '대화역',
+        minutes: 72,
+        last: '23:29',
+        note: '대화 방면',
+      },
+      { line: '', from: 'x', to: 'y' },
+    ],
+    facts: [{ label: '놓치면', value: '합정에서 광역 M7731 (강남 00:21까지)' }],
+    actions: [{ label: '카카오맵에서 보기', url: 'https://map.kakao.com/?target=traffic' }],
+  }
+  it('구간을 다듬고 노선 이름으로 탈것을 짐작한다', () => {
+    const r = cleanRoute(ask)
+    expect(r?.legs).toHaveLength(2)
+    expect(r?.legs[0]).toEqual({
+      mode: 'subway',
+      line: '2호선',
+      from: '강남역',
+      to: '교대역',
+      minutes: 2,
+      last: '00:46',
+    })
+    expect(r?.legs[1]?.note).toBe('대화 방면')
+    expect(
+      cleanRoute({ big: '1시간', legs: [{ line: '광역 M7731', from: '합정역', to: '대화역' }] })?.legs[0]
+        ?.mode,
+    ).toBe('bus')
+    expect(cleanRoute({ big: '', legs: ask.legs })).toBeUndefined()
+    expect(cleanRoute({ big: '1시간', legs: [] })).toBeUndefined()
+  })
+  it('노선 색: 지하철은 공식 색, 버스는 종류 색', () => {
+    expect(lineColor({ mode: 'subway', line: '2호선' })).toBe('#00A84D')
+    expect(lineColor({ mode: 'subway', line: '3호선' })).toBe('#EF7C1C')
+    expect(lineColor({ mode: 'subway', line: '신분당선' })).toBe('#D4003B')
+    expect(lineColor({ mode: 'bus', line: '광역 M7731' })).toBe('#E60012')
+    expect(lineColor({ mode: 'bus', line: '간선 440' })).toBe('#3D5BAB')
+  })
+  it('글 대체본에 결론·구간·막차가 남는다', () => {
+    const r = cleanRoute(ask)
+    if (!r) throw new Error('없음')
+    const t = blockText(r)
+    expect(t).toContain('23:25까지 강남역 출발')
+    expect(t).toContain('3호선 교대역 → 대화역 · 72분 · 막차 23:29')
+    expect(t).toContain('놓치면: 합정에서 광역 M7731')
   })
 })
