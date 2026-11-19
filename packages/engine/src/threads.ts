@@ -10,7 +10,8 @@ import {
   type LoginRecordMessage,
   type WorkRecordMessage,
 } from '@dool2/protocol'
-import { narrationLine, stripMonologue, toolLabel, toolPlace } from '@dool2/protocol/rich'
+import type { QuickRecordMessage } from '@dool2/protocol/blocks'
+import { narrationLine, splitQuick, stripMonologue, toolLabel, toolPlace } from '@dool2/protocol/rich'
 import type { Store } from '@dool2/store'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
@@ -120,6 +121,22 @@ export class ThreadService {
         cards = undefined
         return m
       }
+      // 답 저장: 일한 과정 → 답 글 → 결과 블록 → 빠른 답 (답 끝 [[답: a | b]] 줄은 떼어 버튼으로)
+      const saveAnswer = () => {
+        const out = []
+        const rec = work.record()
+        if (rec) out.push(store.addMessage(threadId, 'tool', JSON.stringify(rec)))
+        const full = stripMonologue(answer)
+        const { text, replies } = splitQuick(full)
+        out.push(store.addMessage(threadId, 'assistant', text || full))
+        const c = saveCards()
+        if (c) out.push(c)
+        if (replies && text) {
+          const quick: QuickRecordMessage = { kind: 'quick', replies }
+          out.push(store.addMessage(threadId, 'tool', JSON.stringify(quick)))
+        }
+        return out
+      }
       const events = this.runtime(thread.agent).runTurn({
         text: o.aside ? `${o.aside}\n\n${text}` : text,
         ...(resumeId ? { resumeId } : {}),
@@ -160,11 +177,7 @@ export class ThreadService {
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
-          const rec = work.record()
-          if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
-          yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
-          const c = saveCards()
-          if (c) yield { type: 'saved', message: c }
+          for (const m of saveAnswer()) yield { type: 'saved', message: m }
         }
         // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
@@ -221,11 +234,7 @@ export class ThreadService {
       if (saved) {
         // 이미 저장했다
       } else if (answer) {
-        const rec = work.record()
-        if (rec) yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(rec)) }
-        yield { type: 'saved', message: store.addMessage(threadId, 'assistant', stripMonologue(answer)) }
-        const c = saveCards()
-        if (c) yield { type: 'saved', message: c }
+        for (const m of saveAnswer()) yield { type: 'saved', message: m }
       } else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
