@@ -425,10 +425,34 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
 
   // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
-  const pickAgent = async (want?: AgentId): Promise<AgentId> => {
-    const ready = (await Promise.all(Object.values(runtimes).map((rt) => rt.detect()))).filter(
-      (a) => a.installed && a.loggedIn,
+  /**
+   * AI 상태 확인은 10초까지만 기다린다. 오래 켜 둔 본체에서 확인이 끝나지 않아 새 대화가 안 열렸다
+   * (실측: 시험 판에서 몇십 분 뒤부터 POST /api/threads·/api/agents가 응답하지 않음, 다시 켜면 풀림).
+   * 막히면 마지막으로 확인된 상태를 쓰고, 어느 AI가 막혔는지 일한 기록에 남긴다
+   */
+  const agentStatus = new Map<string, Awaited<ReturnType<AgentRuntime['detect']>>>()
+  const detectAll = () =>
+    Promise.all(
+      Object.entries(runtimes).map(async ([id, rt]) => {
+        const timeout = new Promise<undefined>((ok) => setTimeout(() => ok(undefined), 10_000))
+        const s = await Promise.race([rt.detect().catch(() => undefined), timeout])
+        if (s) {
+          agentStatus.set(id, s)
+          return s
+        }
+        journal.write('agent-detect-timeout', { id })
+        return (
+          agentStatus.get(id) ?? {
+            id: id as AgentId,
+            installed: false,
+            loggedIn: false,
+            problem: '상태 확인이 끝나지 않았어요',
+          }
+        )
+      }),
     )
+  const pickAgent = async (want?: AgentId): Promise<AgentId> => {
+    const ready = (await detectAll()).filter((a) => a.installed && a.loggedIn)
     const ids = ready.map((a) => a.id)
     const def = readSettings().defaultAgent
     if (want && ids.includes(want)) return want
@@ -994,9 +1018,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     secrets,
     {
       state: async () => {
-        const agents = (await Promise.all(Object.values(runtimes).map((rt) => rt.detect())))
-          .filter((a) => a.installed && a.loggedIn)
-          .map((a) => a.id)
+        const agents = (await detectAll()).filter((a) => a.installed && a.loggedIn).map((a) => a.id)
         const def = readSettings().defaultAgent
         return {
           agents,
@@ -2134,7 +2156,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
 
     if (req.method === 'GET' && a === 'agents' && !b) {
-      const list = await Promise.all(Object.values(runtimes).map((rt) => rt.detect()))
+      const list = await detectAll()
       return json(res, 200, { agents: list })
     }
 
