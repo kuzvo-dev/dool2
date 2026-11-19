@@ -27,23 +27,18 @@
           "theater": {
             "type": "string",
             "description": "극장 이름 그대로 (예: 건대입구, 월드타워, 김포공항, 수원). '롯데시네마'는 빼고",
-            "maxLength": 20
+            "maxLength": 20,
+            "pattern": "^(?!\\s*롯데).+"
           },
           "date": {
             "type": "string",
             "format": "date",
             "description": "상영 날짜 YYYY-MM-DD (예: 2026-11-21)"
-          },
-          "day": {
-            "type": "string",
-            "description": "date의 '일'만, 앞의 0 없이 (예: 2026-11-21이면 21, 2026-12-05면 5)",
-            "pattern": "^[1-9]\\d?$"
           }
         },
         "required": [
           "theater",
-          "date",
-          "day"
+          "date"
         ]
       },
       "output": {
@@ -85,8 +80,7 @@
         {
           "region": "서울",
           "theater": "건대입구",
-          "date": "2026-11-21",
-          "day": "21"
+          "date": "2026-11-21"
         }
       ],
       "steps": [
@@ -118,7 +112,7 @@
         },
         {
           "click": {
-            "text": "{{day}} {{date|dow}}"
+            "text": "{{date|d}} {{date|dow}}"
           },
           "optional": true
         },
@@ -186,7 +180,7 @@
     {
       "name": "movies",
       "title": "상영 중인 영화",
-      "description": "로그인 없이 된다. 지금 롯데시네마에서 상영 중인 영화를 예매순으로 돌려준다(순위·제목·상영 시간(분)·상세 주소). '요즘 볼 만한 영화'에 쓴다. 시간표는 lotte-cinema_showtimes.",
+      "description": "로그인 없이 된다. 지금 롯데시네마에서 상영 중인 영화를 예매순으로 돌려준다(순위·제목·상영 시간(분)·상세 주소). '요즘 볼 만한 영화'에 쓴다. 시간표는 lotte-cinema_showtimes. 롯데시네마 한 곳의 순위예요. 극장 전체 예매율 순위('예매율 1위')는 kobis_booking_rank로.",
       "tier": "찾아보기",
       "status": "검증됨(2026-11-17, 현재 상영작 예매순 목록)",
       "input": {
@@ -314,18 +308,14 @@
           },
           "theater": {
             "type": "string",
-            "description": "극장 이름 (lotte-cinema_showtimes와 같게, 예: 건대입구)",
-            "maxLength": 20
+            "description": "극장 이름 (lotte-cinema_showtimes와 같게, 예: 건대입구). '롯데'는 빼고 (예: 월드타워)",
+            "maxLength": 20,
+            "pattern": "^(?!\\s*롯데).+"
           },
           "date": {
             "type": "string",
             "format": "date",
             "description": "상영 날짜 YYYY-MM-DD"
-          },
-          "day": {
-            "type": "string",
-            "description": "date의 '일'만, 앞의 0 없이 (예: 21)",
-            "pattern": "^[1-9]\\d?$"
           },
           "movie": {
             "type": "string",
@@ -354,7 +344,6 @@
         "required": [
           "theater",
           "date",
-          "day",
           "movie",
           "start"
         ]
@@ -365,7 +354,6 @@
           "region": "서울",
           "theater": "건대입구",
           "date": "2026-11-21",
-          "day": "21",
           "movie": "폭설",
           "start": "20:20",
           "people": 2
@@ -400,7 +388,7 @@
         },
         {
           "click": {
-            "text": "{{day}} {{date|dow}}"
+            "text": "{{date|d}} {{date|dow}}"
           },
           "optional": true
         },

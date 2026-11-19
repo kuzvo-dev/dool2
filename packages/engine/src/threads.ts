@@ -197,9 +197,10 @@ export class ThreadService {
         // 구간의 실제 크기: 다음 말 전에 구간을 바꿀지 볼 때 쓴다 (ADR 0015)
         if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
         // 서비스 도구면 제목을 실어 보낸다: 화면이 "일하는 중" 대신 "가게 찾기·영업 확인 중"을 보인다
+        // (화면은 끝에 " 중"을 붙이니 떼고 보낸다)
         const title =
           ev.type === 'tool'
-            ? this.opts.toolTitle?.(ev.name.replace(/^(mcp__dool2__|dool2_)/, ''))
+            ? serviceAct(ev.name, ev.input, this.opts.toolTitle)?.replace(/ 중$/, '')
             : undefined
         yield { type: 'agent', event: title && ev.type === 'tool' ? { ...ev, title } : ev }
         if (ev.type === 'done' && answer && !saved) {
@@ -311,8 +312,7 @@ export class WorkLog {
     const place = toolPlace(name, input, here)
     if (/^browser_(open|navigate)$/.test(bare) && place) this.host = place
     // 서비스 도구는 제목으로 ("네이버 지도 · 일하기" 대신 "가게 찾기·영업 확인")
-    const title = this.toolTitle?.(bare)
-    const act = title ? `${title} 중` : `${toolLabel(name)} 중`
+    const act = serviceAct(name, input, this.toolTitle) ?? `${toolLabel(name)} 중`
     const text = narrationLine(before) ?? act
     const last = this.steps.at(-1)
     if (last?.text !== text || last.place !== place)
@@ -330,4 +330,22 @@ export class WorkLog {
       ...(this.host ? { host: this.host } : {}),
     }
   }
+}
+
+/**
+ * 서비스 도구(직접 부른 것이든 service_call로 부른 것이든)의 일하는 중 글: "극장 찾기 중", "상영 중인 영화 보는 중".
+ * 제목을 모르면 undefined (그때는 toolLabel)
+ */
+export function serviceAct(
+  name: string,
+  input: unknown,
+  toolTitle?: (name: string) => string | undefined,
+): string | undefined {
+  const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
+  const inner = (input as { tool?: unknown } | undefined)?.tool
+  const target = bare === 'service_call' && typeof inner === 'string' ? inner : bare
+  const title = toolTitle?.(target)
+  if (!title) return undefined
+  // 하는 일 이름(찾기·확인·조회·준비)은 "… 중", 볼 것 이름(상영 중인 영화·상영 시간)은 "… 보는 중"
+  return /(기|인|회|비|약|청|문|소|색|산)$/.test(title) ? `${title} 중` : `${title} 보는 중`
 }

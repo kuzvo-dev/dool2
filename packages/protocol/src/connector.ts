@@ -413,6 +413,17 @@ const FILTERS: Record<string, (v: string) => string> = {
     const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v)
     return m ? `${m[1]}.${m[2]}` : v
   },
+  /** 날짜 줄 이름: 오늘이면 "오늘", 아니면 요일 (오늘을 "오늘 19"로 보이는 예매 화면) */
+  daylabel: (v) => {
+    if (v.startsWith(kstDate(Date.now()))) return '오늘'
+    return FILTERS.dow?.(v) ?? v
+  },
+  /** 날짜 줄의 '일': 두 자리, 그 달 1일이면 "M.1" (12.1) */
+  dd1: (v) => {
+    const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v)
+    if (!m) return ''
+    return m[2] === '01' ? `${Number(m[1])}.1` : (m[2] ?? '')
+  },
 }
 /** 실행할 때 늘 있는 이름: today = 오늘 날짜(한국, YYYY-MM-DD) */
 export const BUILTIN_NAMES = ['today']
@@ -646,7 +657,11 @@ export function checkInput(input: ConnectorInput, args: Record<string, unknown>)
         problems.push(`${k}는 YYYY-MM-DD로 적어 주세요`)
       if (p.format === 'time' && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(v))
         problems.push(`${k}는 HH:MM으로 적어 주세요`)
-      if (p.pattern && !new RegExp(p.pattern).test(v)) problems.push(`${k}의 형식이 맞지 않아요`)
+      // 어떻게 고칠지 알게 칸 설명을 붙인다 (예: "'CGV'는 빼고 (예: 강남)")
+      if (p.pattern && !new RegExp(p.pattern).test(v))
+        problems.push(
+          `${k}의 형식이 맞지 않아요(${JSON.stringify(v)})${p.description ? `: ${p.description}` : ''}`,
+        )
       if (p.maxLength && v.length > p.maxLength) problems.push(`${k}가 너무 길어요`)
     }
     if (typeof v === 'number') {

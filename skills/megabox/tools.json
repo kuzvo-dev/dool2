@@ -98,7 +98,7 @@
     {
       "name": "movies",
       "title": "상영 중인 영화",
-      "description": "로그인 없이 된다. 지금 메가박스에서 상영 중인 영화를 예매율 순으로 돌려준다(순위·제목·영화 번호·예매율·개봉일·관람 등급). 제목 일부로 좁힐 수도 있다. 시간표는 megabox_showtimes.",
+      "description": "로그인 없이 된다. 지금 메가박스에서 상영 중인 영화를 예매율 순으로 돌려준다(순위·제목·영화 번호·예매율·개봉일·관람 등급). 제목 일부로 좁힐 수도 있다. 시간표는 megabox_showtimes. 메가박스 한 곳의 순위예요. 극장 전체 예매율 순위('예매율 1위')는 kobis_booking_rank로.",
       "tier": "찾아보기",
       "status": "검증됨(2026-11-17, 예매율 순 목록·제목 거르기, 화면 읽기)",
       "input": {
@@ -256,17 +256,11 @@
             "type": "string",
             "format": "date",
             "description": "상영 날짜 YYYY-MM-DD (예: 2026-11-21)"
-          },
-          "day": {
-            "type": "string",
-            "description": "date의 '일'만, 앞의 0 없이 (예: 2026-11-21이면 21, 12-05면 5)",
-            "pattern": "^[1-9]\\d?$"
           }
         },
         "required": [
           "theater_id",
-          "date",
-          "day"
+          "date"
         ]
       },
       "output": {
@@ -291,8 +285,7 @@
       "examples": [
         {
           "theater_id": "1372",
-          "date": "2026-11-21",
-          "day": "21"
+          "date": "2026-11-21"
         }
       ],
       "steps": [
@@ -307,7 +300,7 @@
         },
         {
           "click": {
-            "text": "{{day}} 일 {{date|dow}}"
+            "text": "{{date|d}} 일 {{date|dow}}"
           },
           "optional": true
         },

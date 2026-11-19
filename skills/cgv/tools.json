@@ -112,7 +112,7 @@
     {
       "name": "movies",
       "title": "상영 중인 영화",
-      "description": "로그인 없이 된다. CGV 무비차트(예매율 순)를 돌려준다: 순서대로 제목·관람 등급·개봉일 또는 에그지수·누적 관객 수. '요즘 볼 만한 영화'에 쓴다. 제목 일부로 좁힐 수 있다. 시간표는 cgv_showtimes.",
+      "description": "로그인 없이 된다. CGV 무비차트(예매율 순)를 돌려준다: 순서대로 제목·관람 등급·개봉일 또는 에그지수·누적 관객 수. '요즘 볼 만한 영화'에 쓴다. 제목 일부로 좁힐 수 있다. 시간표는 cgv_showtimes. CGV 한 곳의 순위예요. 극장 전체 예매율 순위('예매율 1위')는 kobis_booking_rank로.",
       "tier": "찾아보기",
       "status": "검증됨(2026-11-17, 무비차트 목록·제목 거르기, 화면 읽기)",
       "input": {
@@ -276,24 +276,19 @@
           },
           "theater": {
             "type": "string",
-            "description": "극장 이름 그대로 (cgv_theaters, 예: 왕십리, 용산아이파크몰, 강남)",
-            "maxLength": 30
+            "description": "극장 이름 그대로 (cgv_theaters, 예: 왕십리, 용산아이파크몰, 강남). 'CGV'는 빼고 (예: 강남)",
+            "maxLength": 30,
+            "pattern": "^(?!\\s*CGV).+"
           },
           "date": {
             "type": "string",
             "format": "date",
             "description": "상영 날짜 YYYY-MM-DD (예: 2026-11-21)"
-          },
-          "dd": {
-            "type": "string",
-            "description": "date의 '일' 두 자리 (예: 21, 05). 그 달 1일이면 'M.D' (예: 12.1)",
-            "pattern": "^(\\d{2}|\\d{1,2}\\.1)$"
           }
         },
         "required": [
           "theater",
-          "date",
-          "dd"
+          "date"
         ]
       },
       "output": {
@@ -315,8 +310,7 @@
         {
           "region": "서울",
           "theater": "왕십리",
-          "date": "2026-11-21",
-          "dd": "21"
+          "date": "2026-11-21"
         }
       ],
       "steps": [
@@ -356,17 +350,17 @@
         },
         {
           "wait": {
-            "text": "{{date|dow}}\\s*{{dd|re}}",
+            "text": "{{date|daylabel}}\\s*{{date|dd1|re}}",
             "timeoutMs": 8000
           }
         },
         {
-          "require": "{{date|dow}}\\s*{{dd|re}}",
+          "require": "{{date|daylabel}}\\s*{{date|dd1|re}}",
           "say": "CGV {{theater}}의 {{date}} 시간표는 예매 화면에 아직 없어요(오늘부터 약 2주까지만 열려요)."
         },
         {
           "click": {
-            "text": "{{date|dow}} {{dd}}"
+            "text": "{{date|daylabel}} {{date|dd1}}"
           }
         },
         {
@@ -424,8 +418,9 @@
           },
           "theater": {
             "type": "string",
-            "description": "극장 이름 (cgv_showtimes와 같게, 예: 왕십리)",
-            "maxLength": 30
+            "description": "극장 이름 (cgv_showtimes와 같게, 예: 왕십리). 'CGV'는 빼고 (예: 강남)",
+            "maxLength": 30,
+            "pattern": "^(?!\\s*CGV).+"
           },
           "date": {
             "type": "string",
@@ -460,17 +455,11 @@
             "description": "좌석 바람 (예: 가운데, 뒤쪽, 통로 쪽)",
             "maxLength": 60,
             "default": ""
-          },
-          "dd": {
-            "type": "string",
-            "description": "date의 '일' 두 자리 (예: 21, 05). 그 달 1일이면 'M.D'",
-            "pattern": "^(\\d{2}|\\d{1,2}\\.1)$"
           }
         },
         "required": [
           "theater",
           "date",
-          "dd",
           "movie",
           "start"
         ]
@@ -481,7 +470,6 @@
           "region": "서울",
           "theater": "왕십리",
           "date": "2026-11-21",
-          "dd": "21",
           "movie": "임영웅│아임 히어로 더 스타디움 2",
           "start": "19:40",
           "format": "IMAX관",
@@ -526,17 +514,17 @@
         },
         {
           "wait": {
-            "text": "{{date|dow}}\\s*{{dd|re}}",
+            "text": "{{date|daylabel}}\\s*{{date|dd1|re}}",
             "timeoutMs": 8000
           }
         },
         {
-          "require": "{{date|dow}}\\s*{{dd|re}}",
+          "require": "{{date|daylabel}}\\s*{{date|dd1|re}}",
           "say": "CGV {{theater}}의 {{date}} 시간표는 예매 화면에 아직 없어요(오늘부터 약 2주까지만 열려요)."
         },
         {
           "click": {
-            "text": "{{date|dow}} {{dd}}"
+            "text": "{{date|daylabel}} {{date|dd1}}"
           }
         },
         {
