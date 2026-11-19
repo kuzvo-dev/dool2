@@ -7,6 +7,9 @@ for (const f of ['index.html', 'style.css']) cpSync(`src/renderer/${f}`, `dist/r
 
 // 답 그리기(작은 마크다운)와 일정 문구는 @dool2/protocol의 것을 그대로 쓴다. 화면은 묶지 않고 불러오므로 파일을 옆에 둔다
 cpSync('../../packages/protocol/dist/rich.js', 'dist/renderer/rich.js')
+// 결과 블록 (빠른 답·목록 줄·결과 한 장·보낼 글): 모양·그리기를 폰과 같이 쓴다
+cpSync('../../packages/protocol/dist/blocks.js', 'dist/renderer/blocks.js')
+cpSync('../../packages/protocol/dist/blocks-view.js', 'dist/renderer/blocks-view.js')
 cpSync('../../packages/protocol/dist/work-steps.js', 'dist/renderer/work-steps.js')
 cpSync('../../packages/protocol/dist/schedule.js', 'dist/renderer/schedule.js')
 cpSync('../../packages/protocol/dist/ideas.js', 'dist/renderer/ideas.js')

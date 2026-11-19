@@ -44,7 +44,10 @@ const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 /** 빈 줄로 문단을 나누고, 이어진 "- "·"1. " 줄은 목록으로, "| |" 줄은 표로, "## "는 제목으로 묶는다 */
 export function richBlocks(text: string): RichBlock[] {
   const blocks: RichBlock[] = []
-  for (const chunk of text.replace(/\r\n/g, '\n').split(/\n{2,}/)) {
+  // 답 끝 빠른 답 줄([[답: …]])은 버튼으로 따로 그린다. 흘러오는 중인 덜 온 꼬리도 감춘다
+  for (const chunk of hideQuickTail(text)
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)) {
     let cur: RichBlock | undefined
     const open = <B extends RichBlock>(b: B): B => {
       blocks.push(b)
@@ -268,4 +271,36 @@ export function josa(word: string, pair: '을/를' | '은/는' | '이/가' | '�
   const code = last.charCodeAt(0) - 0xac00
   const hasFinal = code >= 0 && code <= 11171 && code % 28 !== 0
   return word + (hasFinal ? withFinal : without)
+}
+
+// ── 빠른 답: 답 글 끝 한 줄 [[답: a | b | c]] ─────────────
+
+const QUICK_LINE = /\n?[ \t]*\[\[답\s*[:：]([^\]\n]*)\]\][ \t]*$/
+/** 아직 흘러오는 중인 꼬리 ([[답: 화요… 처럼 덜 온 것) */
+const QUICK_PARTIAL = /\n?[ \t]*\[(\[(답(\s*[:：][^\]\n]*\]?)?)?)?$/
+
+/**
+ * 답 끝의 빠른 답 줄을 떼어 낸다. 2~4개, 하나에 20자까지만 버튼으로.
+ * 줄이 이상하면 버튼 없이 줄만 지운다
+ */
+export function splitQuick(text: string): { text: string; replies?: string[] } {
+  const m = text.match(QUICK_LINE)
+  if (!m) return { text }
+  const body = text.slice(0, m.index).trimEnd()
+  const seen = new Set<string>()
+  const replies = (m[1] ?? '')
+    .split(/[|｜]/)
+    .map((s) => s.trim())
+    .filter((s) => s && s.length <= 20 && !seen.has(s) && seen.add(s))
+    .slice(0, 4)
+  return replies.length >= 2 ? { text: body, replies } : { text: body }
+}
+
+/** 흘러오는 중인 답에서 빠른 답 줄(덜 온 것 포함)을 감춘다 */
+export function hideQuickTail(text: string): string {
+  const done = text.match(QUICK_LINE)
+  if (done) return text.slice(0, done.index).trimEnd()
+  const part = text.match(QUICK_PARTIAL)
+  // "[" 하나만 왔을 때는 글 속 대괄호일 수도 있지만, 한 글자 잠깐 늦게 보이는 것뿐이라 감춘다
+  return part && part.index !== undefined && part[0].trim() ? text.slice(0, part.index).trimEnd() : text
 }

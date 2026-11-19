@@ -22,6 +22,7 @@ import type {
   WorkRecordMessage,
 } from '@dool2/protocol'
 import { SIDE_THREAD_PEEK } from '@dool2/protocol'
+import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import {
@@ -2390,6 +2391,36 @@ function safeCaret(el: HTMLInputElement | HTMLTextAreaElement): number | null {
 
 // ── 대화: 바뀐 말만 ──
 
+/** i번째 기록 다음에 사용자가 한 말 (보내는 중인 말 포함). 없으면 undefined */
+function saidAfter(i: number): string | undefined {
+  for (const m of st.conv.slice(i + 1)) if (m.role === 'user') return readAppNote(m.text) ?? m.text
+  return st.pending[0]?.text
+}
+
+/** 결과 블록(빠른 답·목록 줄·결과 한 장·보낼 글)이 쓰는 것: 말 보내기, 바깥 주소 열기, 사진, 복사 */
+const blockEnv: BlockEnv = {
+  send: (text) => ask(text),
+  open: (url) => openOutside(url),
+  thumb: (url) => thumbOf(url),
+  copy: (text) =>
+    navigator.clipboard?.writeText(text).then(
+      () => true,
+      () => false,
+    ) ?? Promise.resolve(false),
+}
+
+/** 앱 밖 브라우저(또는 그 서비스 앱)로 연다 */
+function openOutside(url: string) {
+  try {
+    mark(`바깥 열기 ${new URL(url).host}`)
+  } catch {}
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  a.click()
+}
+
 /** 대화 목록에 있어야 할 것 (key, 서명, 만들기). 서명이 같으면 그대로 둔다 */
 type Item = { key: string; sig: string; make: () => HTMLElement }
 
@@ -2412,7 +2443,7 @@ function chatItems(): Item[] {
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
   let lastNote = ''
   const superseded = oldConnectCards()
-  for (const m of st.conv) {
+  for (const [i, m] of st.conv.entries()) {
     // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue
@@ -2420,10 +2451,12 @@ function chatItems(): Item[] {
     if (m.role === 'tool') {
       // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
       const old = superseded.has(m.id)
+      // 빠른 답은 사용자가 그다음에 한 말을 알아야 흐리게 그린다
+      const used = m.text.includes('"kind":"quick"') ? saidAfter(i) : undefined
       items.push({
         key: m.id,
-        sig: `${old ? 'old:' : ''}${toolSig(m.text)}:${st.services ? 1 : 0}`,
-        make: () => toolCard(m.text, !old),
+        sig: `${old ? 'old:' : ''}${toolSig(m.text)}:${st.services ? 1 : 0}:${used ?? ''}`,
+        make: () => toolCard(m.text, !old, used),
       })
     } else if (m.role === 'user') {
       // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
@@ -2730,7 +2763,7 @@ function oldConnectCards(): Set<string> {
   return out
 }
 
-function toolCard(raw: string, live = true): HTMLElement {
+function toolCard(raw: string, live = true, used?: string): HTMLElement {
   let rec:
     | HandoffRecord
     | ApprovalRecordMessage
@@ -2744,6 +2777,8 @@ function toolCard(raw: string, live = true): HTMLElement {
   } catch {
     return h('span')
   }
+  const block = blockView(rec as { kind?: string }, blockEnv, used)
+  if (block) return block
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec, live)
@@ -2871,9 +2906,21 @@ function wantThumb(url: string) {
   thumbAsked.add(url)
   void send({ kind: 'thumb', url })
 }
+/** 사진을 기다리는 블록들 (결과 블록은 Promise로 받는다) */
+const thumbWaiting = new Map<string, ((data: string | undefined) => void)[]>()
+function thumbOf(url: string): Promise<string | undefined> {
+  const have = thumbCache.get(url)
+  if (have !== undefined) return Promise.resolve(have ?? undefined)
+  return new Promise((done) => {
+    thumbWaiting.set(url, [...(thumbWaiting.get(url) ?? []), done])
+    wantThumb(url)
+  })
+}
 function gotThumb(url: string, data: string | undefined) {
   thumbAsked.delete(url)
   thumbCache.set(url, data ?? null)
+  for (const done of thumbWaiting.get(url) ?? []) done(data)
+  thumbWaiting.delete(url)
   if (!data) return
   for (const img of document.querySelectorAll<HTMLImageElement>('img[data-thumb]'))
     if (img.dataset.thumb === url) showThumb(img, data)
@@ -4927,7 +4974,10 @@ function sideView(id: string) {
       const b = h('div', { class: 'bubble rich' })
       b.append(rich(m.text))
       list.append(b)
-    } else if (m.role === 'tool') list.append(toolCard(m.text))
+    } else if (m.role === 'tool') {
+      // 빠른 답은 큰 대화로 보내지므로 따로 하는 대화에서는 그리지 않는다
+      if (!m.text.includes('"kind":"quick"')) list.append(toolCard(m.text))
+    }
   }
   if (sd?.busy) {
     const step = sd.steps.at(-1)

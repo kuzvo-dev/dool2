@@ -186,6 +186,35 @@ describe('ThreadService', () => {
     })
   })
 
+  it('답 끝 [[답: …]] 줄은 떼어 답 아래 빠른 답 기록으로 남긴다', async () => {
+    const said =
+      '화요일 10시·목요일 3시가 비어 있어요. 어떻게 할까요?\n[[답: 화요일 10시로 | 목요일 3시로 | 다른 날 볼래]]'
+    const { store, svc } = setup([
+      { type: 'text', delta: said },
+      { type: 'done', resumeId: 's1', text: said },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '치과 예약 미뤄 줘'))
+    const msgs = store.listMessages(t.id)
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
+    expect(msgs[1]?.text).toBe('화요일 10시·목요일 3시가 비어 있어요. 어떻게 할까요?')
+    expect(JSON.parse(msgs[2]?.text ?? '{}')).toEqual({
+      kind: 'quick',
+      replies: ['화요일 10시로', '목요일 3시로', '다른 날 볼래'],
+    })
+  })
+
+  it('빠른 답이 하나뿐이면 줄만 지우고 버튼은 남기지 않는다', async () => {
+    const { store, svc } = setup([{ type: 'done', resumeId: 's1', text: '이걸로 할까요?\n[[답: 좋아요]]' }])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '골라 줘'))
+    const msgs = store.listMessages(t.id)
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([
+      ['user', '골라 줘'],
+      ['assistant', '이걸로 할까요?'],
+    ])
+  })
+
   it('세로 포스터 묶음(shape: portrait)은 기록에 남긴다', async () => {
     const { store, svc } = setup([
       {

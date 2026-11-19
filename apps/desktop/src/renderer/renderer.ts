@@ -28,6 +28,7 @@ import type {
   WorkRecordMessage,
 } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
+import { type BlockEnv, blockView } from './blocks-view.js'
 import { findCard, socialOrder } from './connect-text.js'
 import { renderConnections, SOCIAL_LABEL } from './connections.js'
 import { button, doori, el, emptyState, type IconName, icon, liveDoori, setRich, withLogo } from './dom.js'
@@ -533,7 +534,8 @@ function renderSide() {
   let prev = ''
   for (const m of sd.messages) {
     if (m.role === 'tool') {
-      list.append(toolCard(m.text, false))
+      // 빠른 답은 큰 대화로 보내지므로 따로 하는 대화에서는 그리지 않는다
+      if (!m.text.includes('"kind":"quick"')) list.append(toolCard(m.text, false))
       continue
     }
     const note = m.role === 'user' ? readAppNote(m.text) : undefined
@@ -1176,7 +1178,9 @@ function renderTalk() {
       prevRole = ''
     }
     if (m.role === 'tool') {
-      list.append(toolCard(m.text, i > lastUser))
+      // 빠른 답은 사용자가 그다음에 한 말을 알아야 흐리게 그린다
+      const used = m.text.includes('"kind":"quick"') ? saidAfter(state.messages, i) : undefined
+      list.append(toolCard(m.text, i > lastUser, used))
       continue
     }
     const note = m.role === 'user' ? readAppNote(m.text) : undefined
@@ -1580,9 +1584,29 @@ function renderSend() {
 // ── 대화 안의 카드: 승인 · 로그인 · 직접 해 주세요 ─────
 
 /** 대화 기록의 tool 메시지: 넘기기(handoff), 승인 요청(approval), 로그인(login) */
-function toolCard(raw: string, active: boolean): Node {
+/** i번째 기록 다음에 사용자가 한 말. 없으면 undefined */
+function saidAfter(list: { role: string; text: string }[], i: number): string | undefined {
+  for (const m of list.slice(i + 1)) if (m.role === 'user') return readAppNote(m.text) ?? m.text
+  return undefined
+}
+
+/** 결과 블록(빠른 답·목록 줄·결과 한 장·보낼 글)이 쓰는 것 */
+const blockEnv: BlockEnv = {
+  send: (text) => void send(text),
+  open: (url) => void window.open(url, '_blank'),
+  thumb: (url) => thumb(url),
+  copy: (text) =>
+    navigator.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    ),
+}
+
+function toolCard(raw: string, active: boolean, used?: string): Node {
   try {
     const rec = JSON.parse(raw) as { kind?: string }
+    const block = blockView(rec, blockEnv, used)
+    if (block) return block
     if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
