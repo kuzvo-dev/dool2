@@ -54,6 +54,23 @@ export interface LoginAsk {
   }
 }
 
+/**
+ * 같은 계정인지: 같은 글이거나, 한쪽이 가린 이메일(f***@gmail.com)이면 앞 글자·도메인이 맞는지.
+ * 카카오 동의 화면은 같은 계정을 어떤 때는 가려서, 어떤 때는 전부 보여 준다 (실측 2026-11-19)
+ */
+export function sameAccount(a: string, b: string): boolean {
+  const x = a.trim().toLowerCase()
+  const y = b.trim().toLowerCase()
+  if (x === y) return true
+  const [xu = '', xd = ''] = x.split('@')
+  const [yu = '', yd = ''] = y.split('@')
+  if (!xd || xd !== yd || !(xu.includes('*') || yu.includes('*'))) return false
+  const head = (u: string) => u.replace(/\*.*$/, '')
+  const [masked, full] = xu.includes('*') ? [xu, yu] : [yu, xu]
+  if (full.includes('*')) return head(masked) === head(full) && head(masked).length > 0
+  return head(masked).length > 0 && full.startsWith(head(masked))
+}
+
 /** 공급자 동의 화면에 보이는 "지금 로그인된 계정" (카카오: "로그인된 계정 f***@gmail.com", 구글 한 계정: 이메일) */
 export function providerAccountOn(text: string): string | undefined {
   const kakao = /로그인된\s?계정\s*([^\s[\]"]+@[^\s[\]"]+)/.exec(text)
@@ -842,6 +859,8 @@ export async function socialLogin(
   let blankWaits = 0
   /** 공급자 화면의 로그인된 계정을 사용자가 확인했다 (또는 전에 확인한 계정이다) */
   let accountOk = false
+  /** (필수) 동의 칸마다 눌러 본 횟수 */
+  const requiredTries = new Map<string, number>()
   for (let i = 0; i < (opts.tries ?? 14); i++) {
     await sleep(wait)
     const site = await snap(siteTab).catch(() => undefined)
@@ -1096,10 +1115,24 @@ export async function socialLogin(
       const checked = new Set(
         [...p.text.matchAll(/\[(e\d+) 체크박스[^\]]*선택됨\]/g)].map((m) => m[1] as string),
       )
-      for (const [ref] of required)
-        if (!checked.has(ref))
-          await browser.call('click', { tabId: providerTab, ref }, 15_000).catch(() => undefined)
-      if (required.some(([ref]) => !checked.has(ref))) {
+      // 칸을 눌러도 체크되지 않는 화면이 있다 (실측 올리브영 카카오 동의: 칸 옆 같은 이름의 글자 줄을 눌러야 한다).
+      // 처음엔 칸, 다음엔 같은 이름의 버튼, 그래도 안 되면 사람 차례 (같은 칸만 계속 누르며 시간을 쓰지 않게)
+      const open = required.filter(([ref]) => !checked.has(ref))
+      for (const [ref, r] of open) {
+        const n = (requiredTries.get(r.name) ?? 0) + 1
+        requiredTries.set(r.name, n)
+        const twin = refs.find(([, x]) => x.role === '버튼' && x.name.trim() === r.name.trim())
+        const target = n === 1 || !twin ? ref : twin[0]
+        if (n <= 2)
+          await browser.call('click', { tabId: providerTab, ref: target }, 15_000).catch(() => undefined)
+      }
+      if (open.some(([, r]) => (requiredTries.get(r.name) ?? 0) > 2))
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${label} 동의 화면의 (필수) 칸이 눌러지지 않아요. 화면에서 (필수) 칸을 고르고 [동의하고 계속하기]를 눌러 주세요`,
+        }
+      if (open.length) {
         step('필수 정보 제공 동의 고르는 중')
         continue
       }

@@ -6,6 +6,7 @@ import {
   joinScreen,
   probeLogin,
   said,
+  sameAccount,
   socialLogin,
   socialProvidersIn,
 } from './auto-login.js'
@@ -747,5 +748,54 @@ describe('휴면 계정 깨우기 (실측 11번가 2026-11-19)', () => {
     )
     expect(r.status).toBe('ok')
     expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e4'])
+  })
+})
+
+describe('같은 계정 맞추기 (카카오는 같은 계정을 가려서도, 전부도 보여 줌)', () => {
+  it('가린 이메일과 전체 이메일', () => {
+    expect(sameAccount('f***@gmail.com', 'felix990810@gmail.com')).toBe(true)
+    expect(sameAccount('felix990810@gmail.com', 'f***@gmail.com')).toBe(true)
+    expect(sameAccount('f***@gmail.com', 'mdjoo@gmail.com')).toBe(false)
+    expect(sameAccount('f***@gmail.com', 'felix@naver.com')).toBe(false)
+    expect(sameAccount('Felix@Gmail.com', 'felix@gmail.com')).toBe(true)
+  })
+})
+
+describe('카카오 동의의 (필수) 칸이 눌러지지 않으면 (실측 올리브영 CJ ONE)', () => {
+  const login = { url: 'https://shop.test/login', text: '[e8 버튼 "카카오로 시작하기"]' }
+  const signed = { url: 'https://shop.test/', text: '[e1 링크 "로그아웃"]' }
+  const consent = {
+    url: 'https://kauth.kakao.com/oauth/authorize',
+    text: [
+      '로그인된 계정 f***@gmail.com [e1 링크 "계정 변경"]',
+      '[e2 체크박스 "(필수) 선불전자지급수단 서비스 이용약관"] [e3 버튼 "(필수) 선불전자지급수단 서비스 이용약관"]',
+      '[e9 버튼 "동의하고 계속하기"]',
+    ].join('\n'),
+  }
+  const checked = { ...consent, text: consent.text.replace('이용약관"]', '이용약관" 선택됨]') }
+  it('칸이 안 먹으면 같은 이름의 글자 줄을 누르고, 체크되면 동의한다', async () => {
+    // 칸(e2)을 눌러도 그대로, 글자 줄(e3)을 누르면 체크된다
+    const b = tabsBrowser({ 7: [login, signed], 8: [consent, checked] }, (tab, ref) =>
+      tab === 7 && ref === 'e8'
+        ? { newTabId: 8, advance: [] }
+        : ref === 'e3'
+          ? { advance: [8] }
+          : ref === 'e9'
+            ? { advance: [7] }
+            : { advance: [] },
+    )
+    const r = await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider: 'kakao',
+        creds: async () => undefined,
+        ask: { known: { has: () => true, add: () => {} } },
+      },
+      { wait: 0 },
+    )
+    expect(r.status).toBe('ok')
+    expect(b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)).toEqual(['e8', 'e2', 'e3', 'e9'])
   })
 })
