@@ -70,6 +70,7 @@ describe('두리 MCP 도구', () => {
       'show_draft',
       'feed_post',
       'feed_tell',
+      'feed_find',
       'conversation_search',
       'file_find',
       'file_read',

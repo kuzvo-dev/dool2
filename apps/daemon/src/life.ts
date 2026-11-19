@@ -8,6 +8,7 @@ import {
   type GoalCategory,
   type Identity,
   type LibraryItem,
+  type LibraryTab,
   type LifeAction,
   type LifeState,
   type MemoryItem,
@@ -17,6 +18,7 @@ import {
 } from '@dool2/protocol'
 import { cleanDraft, cleanResult, cleanRoute, cleanRows } from '@dool2/protocol/blocks'
 import type { ConnectionItem } from '@dool2/protocol/connect'
+import { PAGE_SIZE, type Page, pageOf } from '@dool2/protocol/paging'
 import { nextRun, ruleLabel, scheduleLabel, untilEnd, untilLabel } from '@dool2/protocol/schedule'
 
 export { nextRun, ruleLabel, scheduleLabel, untilEnd }
@@ -95,7 +97,40 @@ type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean
 const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
-const LIMIT = { routines: 50, library: 500, memory: 200, feed: 300 }
+/**
+ * 저장 한도. 피드는 개수가 아니라 기간으로(90일) 남기고 페이지로 나눠 보여 준다 (넘치지 않게 개수도 넉넉히 막아 둔다).
+ * 보관함은 사용자가 남긴 것이라 기간으로 지우지 않는다
+ */
+const LIMIT = { routines: 50, library: 2000, memory: 200, feed: 3000 }
+export const FEED_KEEP_DAYS = 90
+/** 목록에 보내는 보관함 글 길이 (전체는 하나 받기로) */
+const LIBRARY_PREVIEW = 400
+/** 목표 진행 기록: 저장은 50개, 화면에 보내는 건 최근 것만 (PC 상세 20줄·폰 8줄) */
+const LOG_SENT = 20
+/** 피드 종류 중 "두리가 한 일"로 세는 것 (이번 주 두리가 한 일) */
+const DONE_KINDS = new Set<FeedItem['kind']>(['done', 'routine', 'post', 'saved', 'goal', 'connected'])
+const FEED_KINDS: FeedItem['kind'][] = ['done', 'routine', 'saved', 'goal', 'connected', 'suggest', 'post']
+const FEED_LABEL: Record<FeedItem['kind'], string> = {
+  post: '소식',
+  done: '끝낸 일',
+  routine: '예약한 일',
+  saved: '보관함',
+  goal: '목표',
+  connected: '연결',
+  suggest: '먼저 챙김',
+}
+const feedAt = (f: FeedItem) => f.at
+const libraryAt = (it: LibraryItem) => it.savedAt
+const inTab = (it: LibraryItem, tab: LibraryTab) =>
+  tab === 'files' ? it.kind === 'file' : it.kind !== 'file'
+
+/** 목록용: 긴 글은 앞부분만 (글자 단위로 잘라 이모지가 깨지지 않게) */
+function preview(it: LibraryItem): LibraryItem {
+  if (it.body.length <= LIBRARY_PREVIEW) return it
+  const chars = [...it.body]
+  if (chars.length <= LIBRARY_PREVIEW) return it
+  return { ...it, body: chars.slice(0, LIBRARY_PREVIEW).join(''), cut: true }
+}
 const LIBRARY_KINDS = ['note', 'link', 'product', 'place', 'file'] as const
 /** 보관함 종류 이름 (폰·PC 화면과 같은 말) */
 const LIBRARY_LABEL: Record<LibraryItem['kind'], string> = {
@@ -130,12 +165,32 @@ export class Life {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  /**
+   * 읽어 둔 목록 (설정 표의 JSON을 부를 때마다 다시 풀지 않게). 쓰기는 모두 put을 거쳐 함께 바뀐다.
+   * 본체가 설정 표를 직접 지웠으면(처음부터 다시) reload()로 비운다
+   */
+  private cache = new Map<string, unknown[]>()
   private list<T>(key: string): T[] {
+    const hit = this.cache.get(key)
+    if (hit) return hit as T[]
     const v = this.kv.getSetting(key)
-    return Array.isArray(v) ? (v as T[]) : []
+    const list = Array.isArray(v) ? (v as T[]) : []
+    this.cache.set(key, list)
+    return list
+  }
+  /** 설정 표를 밖에서 바꿨을 때 다시 읽게 한다 */
+  reload() {
+    this.cache.clear()
   }
   private put<T>(key: keyof typeof LIMIT, items: T[]) {
-    this.kv.setSetting(key, items.slice(0, LIMIT[key]))
+    let keep = items.slice(0, LIMIT[key])
+    if (key === 'feed') {
+      // 90일이 지난 소식은 지운다 (그 안의 것은 모두 페이지로 볼 수 있다)
+      const since = new Date(this.now().getTime() - FEED_KEEP_DAYS * 86_400_000).toISOString()
+      keep = (keep as FeedItem[]).filter((f) => f.at >= since) as T[]
+    }
+    this.kv.setSetting(key, keep)
+    this.cache.set(key, keep)
     this.onChange?.()
   }
 
@@ -344,6 +399,20 @@ export class Life {
     this.put('library', next)
     return next.length !== list.length
   }
+  /** 보관함 한 페이지 (칸별, 최근 것부터). 글은 앞부분만 */
+  libraryPage(o: { tab?: LibraryTab; before?: string; limit?: number } = {}): Page<LibraryItem> {
+    const tab = o.tab ?? 'made'
+    const p = pageOf(
+      this.library().filter((it) => inTab(it, tab)),
+      libraryAt,
+      o,
+    )
+    return { ...p, items: p.items.map(preview) }
+  }
+  /** 보관함 하나 (전체 글) */
+  libraryItem(id: string): LibraryItem | undefined {
+    return this.library().find((x) => x.id === id)
+  }
 
   // ── 기억 ──
   memory(): MemoryItem[] {
@@ -374,6 +443,27 @@ export class Life {
   // ── 피드 ──
   feedItems(): FeedItem[] {
     return this.list<FeedItem>('feed')
+  }
+  /** 피드 한 페이지 (최근 것부터). kinds를 주면 그 종류만 (활동: done·routine) */
+  feedPage(o: { before?: string; limit?: number; kinds?: FeedItem['kind'][] } = {}): Page<FeedItem> {
+    const kinds = o.kinds?.length ? new Set(o.kinds) : undefined
+    const all = this.feedItems()
+    return pageOf(kinds ? all.filter((f) => kinds.has(f.kind)) : all, feedAt, o)
+  }
+  /** 이번 주 두리가 한 일: 최근 days일 날마다 한 일 개수 (마지막이 오늘, 이 PC 시간 기준) */
+  feedDays(days = 60, all = this.feedItems()): number[] {
+    const out = Array<number>(days).fill(0)
+    const start = new Date(this.now())
+    start.setHours(0, 0, 0, 0)
+    const today = start.getTime()
+    for (const f of all) {
+      if (!DONE_KINDS.has(f.kind)) continue
+      const d = new Date(f.at)
+      d.setHours(0, 0, 0, 0)
+      const ago = Math.round((today - d.getTime()) / 86_400_000)
+      if (ago >= 0 && ago < days) out[days - 1 - ago] = (out[days - 1 - ago] ?? 0) + 1
+    }
+    return out
   }
   feed(input: Omit<FeedItem, 'id' | 'at'>): FeedItem {
     const item: FeedItem = { ...input, id: randomUUID(), at: this.now().toISOString() }
@@ -482,6 +572,7 @@ export class Life {
     this.kv.setSetting('feedPrompt', t)
     const list = this.routines().filter((r) => !(r.target === 'feed' && r.title === '피드'))
     this.kv.setSetting('routines', list)
+    this.cache.set('routines', list)
     if (t)
       this.addRoutine({
         title: '피드',
@@ -527,21 +618,45 @@ export class Life {
     return v && typeof v === 'object' ? (v as Identity) : {}
   }
 
-  state(): LifeState {
+  /**
+   * 폰·PC 첫 화면에 보낼 것. 긴 목록(피드·보관함)은 첫 페이지만 보내고 나머지는 페이지로 (feedPage·libraryPage).
+   * logs: 목표마다 보낼 진행 기록 수 (폰은 8줄만 보여 준다)
+   */
+  state(o: { logs?: number } = {}): LifeState {
     const feedPrompt = this.feedPrompt()
     const identity = this.identity()
     const ideas = this.ideas()
     const ideasAt = this.kv.getSetting('ideasAt')
     const watchAt = this.kv.getSetting('watchAt')
+    const logs = o.logs ?? LOG_SENT
+    const all = this.feedItems()
+    const feed = pageOf(all, feedAt, { limit: PAGE_SIZE })
+    const lib = this.library()
+    const made = this.libraryPage({ tab: 'made' })
+    const files = this.libraryPage({ tab: 'files' })
+    const fileCount = lib.filter((it) => inTab(it, 'files')).length
     return {
       ...(ideas.length ? { ideas } : {}),
       ...(typeof ideasAt === 'string' ? { ideasAt } : {}),
       ...(this.ideasBusy ? { ideasBusy: true } : {}),
       ...(Object.keys(identity).length ? { identity } : {}),
-      routines: this.routines(),
-      library: this.library(),
+      routines: this.routines().map((r) =>
+        r.log && r.log.length > logs ? { ...r, log: r.log.slice(0, logs) } : r,
+      ),
+      library: [...made.items, ...files.items],
+      ...(made.next || files.next
+        ? {
+            libraryNext: {
+              ...(made.next ? { made: made.next } : {}),
+              ...(files.next ? { files: files.next } : {}),
+            },
+          }
+        : {}),
+      libraryCount: { made: lib.length - fileCount, files: fileCount },
       memory: this.memory(),
-      feed: this.feedItems().slice(0, 100),
+      feed: feed.items,
+      ...(feed.next ? { feedNext: feed.next } : {}),
+      feedDays: this.feedDays(60, all),
       ...(feedPrompt ? { feedPrompt } : {}),
       watch: {
         on: this.watchOn(),
@@ -805,7 +920,26 @@ export class Life {
               query: String(a.query ?? ''),
               ...(kind ? { kind } : {}),
               limit: typeof a.limit === 'number' ? a.limit : 10,
+              ...(typeof a.skip === 'number' ? { skip: a.skip } : {}),
             }),
+          )
+        }
+        case 'feed_find': {
+          const kinds = (Array.isArray(a.kinds) ? a.kinds : a.kind ? [a.kind] : []).filter(
+            (k): k is FeedItem['kind'] => FEED_KINDS.includes(k as FeedItem['kind']),
+          )
+          return ok(
+            findFeed(
+              this.feedItems(),
+              {
+                query: String(a.query ?? ''),
+                kinds,
+                ...(typeof a.days === 'number' ? { days: a.days } : {}),
+                ...(typeof a.before === 'string' ? { before: a.before } : {}),
+                limit: typeof a.limit === 'number' ? a.limit : 15,
+              },
+              this.now(),
+            ),
           )
         }
         case 'memory_save': {
@@ -923,9 +1057,10 @@ function savedDay(iso: string): string {
  */
 export function findLibrary(
   all: LibraryItem[],
-  opts: { query?: string; kind?: LibraryItem['kind']; limit?: number },
+  opts: { query?: string; kind?: LibraryItem['kind']; limit?: number; skip?: number },
 ): string {
   const n = Math.min(Math.max(1, Math.floor(opts.limit ?? 10) || 10), 20)
+  const skip = Math.max(0, Math.floor(opts.skip ?? 0) || 0)
   const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
   const words = q ? [...new Set(q.split(' ').map(squash).filter(Boolean))] : []
   const recent = [...all].sort((x, y) => y.savedAt.localeCompare(x.savedAt))
@@ -942,8 +1077,10 @@ export function findLibrary(
     .filter((x) => !words.length || x.score > 0)
     // sort는 안정 정렬이라 점수가 같으면 최근 순서가 그대로 남는다
     .sort((x, y) => y.score - x.score)
-  const found = scored.slice(0, n).map((x) => x.it)
+  const found = scored.slice(skip, skip + n).map((x) => x.it)
 
+  if (!found.length && skip && scored.length)
+    return `맞는 것은 ${scored.length}개라 ${skip}개를 건너뛰면 남는 게 없어요. 여기까지예요. skip을 줄이거나 빼고 다시 찾아요.`
   if (!found.length) {
     const where = kindLabel ? `보관함의 ${kindLabel} 중에` : '보관함에'
     const what = q ? ` '${q}'${euro(q)}` : ''
@@ -960,7 +1097,7 @@ export function findLibrary(
   // 몇 개만 나오면 메모를 길게, 많으면 짧게 (전체 내용은 제목으로 다시 찾으면 길게 나온다)
   const room = found.length <= 3 ? 2000 : 300
   const lines = found.map((it, i) => {
-    const head = `${i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · ${savedDay(it.savedAt)} 저장`
+    const head = `${skip + i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · ${savedDay(it.savedAt)} 저장`
     const body = it.body.trim()
     const memo = body.length > room ? `${body.slice(0, room)}… (잘림)` : body
     return [
@@ -971,14 +1108,88 @@ export function findLibrary(
     ].join('\n')
   })
   const scope = [q ? `'${q}'` : '최근 것', kindLabel ? `${kindLabel} 종류` : ''].filter(Boolean).join(' · ')
-  const more = scored.length > found.length ? ` (맞는 것 ${scored.length}개 중 ${found.length}개)` : ''
+  const more =
+    scored.length > found.length
+      ? skip
+        ? ` (맞는 것 ${scored.length}개 중 ${skip + 1}~${skip + found.length}번째)`
+        : ` (맞는 것 ${scored.length}개 중 ${found.length}개)`
+      : ''
+  const rest = scored.length - skip - found.length
   return [
     `보관함에서 ${scope} ${found.length}개를 찾았어요${more}. 보관함 전체 ${recent.length}개.`,
     '',
     ...lines,
     '',
     '다음: 사용자에게 보여 줄 땐 show_list(줄마다 링크·가격)로 붙이고, 고를 후보(상품·장소)는 show_cards도 돼요(보관함엔 사진이 없어 사진 없이). 위에 있는 값만 쓰고, 메모가 잘렸으면 제목으로 다시 찾아요.',
+    ...(rest > 0 ? [`더 있어요(${rest}개): 이어서 보려면 같은 낱말로 skip: ${skip + found.length}`] : []),
   ].join('\n')
+}
+
+/**
+ * 피드 찾아보기 (feed_find 도구): 두리가 한 일·예약한 일의 결과·소식·먼저 챙긴 일. 사용자가 피드에서 보는 칸 그대로.
+ * 최근 것부터 limit개, 더 있으면 다음 커서(before)를 준다. 기간 안 종류별 개수도 함께 ("이번 주 뭐 했어?")
+ */
+export function findFeed(
+  all: FeedItem[],
+  opts: { query?: string; kinds?: FeedItem['kind'][]; days?: number; before?: string; limit?: number },
+  now = new Date(),
+): string {
+  const n = Math.min(Math.max(1, Math.floor(opts.limit ?? 15) || 15), 30)
+  const days = opts.days ? Math.min(Math.max(1, Math.floor(opts.days)), FEED_KEEP_DAYS) : undefined
+  const since = days ? new Date(now.getTime() - days * 86_400_000).toISOString() : ''
+  const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
+  const words = q ? [...new Set(q.split(' ').map(squash).filter(Boolean))] : []
+  const kinds = opts.kinds?.length ? new Set(opts.kinds) : undefined
+  if (!all.length)
+    return '피드가 비어 있어요. 아직 두리가 한 일이 없어요. 대화에서 한 일이면 conversation_search로 찾아봐요.'
+  const inRange = all.filter((f) => !since || f.at >= since)
+  const pool = inRange.filter(
+    (f) =>
+      (!kinds || kinds.has(f.kind)) &&
+      (!words.length || words.every((w) => squash(`${f.title} ${f.body ?? ''} ${f.from ?? ''}`).includes(w))),
+  )
+  const page = pageOf(pool, feedAt, { limit: n, ...(opts.before ? { before: opts.before } : {}) })
+  const period = days ? `최근 ${days}일` : `저장된 ${FEED_KEEP_DAYS}일`
+  const scope = [period, q ? `'${q}'` : '', kinds ? [...kinds].map((k) => FEED_LABEL[k]).join('·') : '']
+    .filter(Boolean)
+    .join(' · ')
+  if (!page.items.length) {
+    if (opts.before) return `${scope}: 여기까지예요. 더 오래된 건 없어요.`
+    return [
+      `${scope}에 맞는 게 없어요. 피드 전체 ${all.length}개.`,
+      '다음: 낱말을 줄이거나 기간(days)을 늘리거나 종류(kinds)를 빼고 다시 찾아요. 대화에서 한 일이면 conversation_search. 없는 걸 있다고 지어내지 않아요.',
+    ].join('\n')
+  }
+  const count = new Map<FeedItem['kind'], number>()
+  for (const f of pool) count.set(f.kind, (count.get(f.kind) ?? 0) + 1)
+  const byKind = [...count].map(([k, c]) => `${FEED_LABEL[k]} ${c}`).join(' · ')
+  const lines = page.items.map((f, i) => {
+    const body = f.body ? plainLine(f.body, page.items.length <= 5 ? 600 : 140) : ''
+    return [
+      `${i + 1}. [${FEED_LABEL[f.kind]}] ${kstWhen(f.at)} · ${f.title}`,
+      ...(body ? [`   ${body}`] : []),
+      ...(f.from ? [`   어디서: ${f.from}`] : []),
+      ...(f.answered ? [`   사용자 답: ${f.answered === 'yes' ? '맡김' : '넘김'}`] : []),
+    ].join('\n')
+  })
+  return [
+    `피드에서 ${scope}: 맞는 것 ${pool.length}개 (${byKind}). ${opts.before ? '이어서 ' : '최근 것부터 '}${page.items.length}개.`,
+    '',
+    ...lines,
+    '',
+    page.next ? `더 있어요: 이어서 보려면 같은 조건에 before: "${page.next}"` : '여기까지예요(더 없음).',
+    '다음: 사용자에게 보여 줄 땐 많으면 show_list로 붙이고 답 글은 요약만. 위에 있는 것만 말해요.',
+  ].join('\n')
+}
+
+/** 한 줄 미리보기: 마크다운 기호와 줄바꿈을 뺀다 */
+function plainLine(text: string, max: number): string {
+  const t = text
+    .replace(/\*\*/g, '')
+    .replace(/^#+\s*/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return t.length > max ? `${t.slice(0, max)}…` : t
 }
 
 /**

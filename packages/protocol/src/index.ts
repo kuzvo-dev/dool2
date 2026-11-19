@@ -738,6 +738,8 @@ export interface LibraryItem {
   url?: string
   price?: string
   savedAt: string
+  /** 목록에서는 글을 앞부분만 보낸다 (전체는 하나 받기로: GET /api/life/library/<id>, 폰은 life-item) */
+  cut?: true
 }
 
 /** 기억: 사용자에 대해 알게 된 것 (사용자가 보고 지울 수 있다) */
@@ -863,6 +865,11 @@ export interface SuggestedIdea {
   why: string
 }
 
+/** 나눠 받는 긴 목록 */
+export type LifeList = 'feed' | 'library'
+/** 보관함 칸: 만든 것(정리·링크·상품·장소) / 사진·파일 */
+export type LibraryTab = 'made' | 'files'
+
 export interface LifeState {
   identity?: Identity
   ideas?: SuggestedIdea[]
@@ -871,9 +878,19 @@ export interface LifeState {
   /** 지금 아이디어를 찾는 중 */
   ideasBusy?: boolean
   routines: Routine[]
+  /** 보관함 첫 페이지: 만든 것·사진·파일 칸마다 최근 30개 (글은 앞부분만, cut). 더는 libraryNext로 */
   library: LibraryItem[]
+  /** 보관함 칸마다 다음 페이지 커서 (없으면 끝) */
+  libraryNext?: { made?: string; files?: string }
+  /** 보관함 칸마다 모두 몇 개인지 */
+  libraryCount?: { made: number; files: number }
   memory: MemoryItem[]
+  /** 피드 첫 페이지 (최근 30개). 더는 feedNext로 GET /api/life/feed?before=, 폰은 life-page */
   feed: FeedItem[]
+  /** 피드 다음 페이지 커서 (없으면 끝) */
+  feedNext?: string
+  /** 이번 주 두리가 한 일: 최근 60일 날마다 한 일 개수 (마지막이 오늘, 이 PC 시간 기준) */
+  feedDays?: number[]
   /** 피드에 무엇을 올릴지 사용자가 적은 말 */
   feedPrompt?: string
   /** 먼저 챙기기: 연결한 서비스를 하루 두 번 살펴 챙길 일만 알린다 (기본 켜짐) */
@@ -977,6 +994,20 @@ export type PhoneToPc =
   | { kind: 'side-delete'; id: string }
   /** 목표·보관함·기억·피드 받기 */
   | { kind: 'life' }
+  /**
+   * 긴 목록의 다음 페이지 (life-page로 답). before 없으면 첫 페이지.
+   * feed는 kinds로 종류를 고를 수 있고(활동: done·routine), library는 tab(만든 것·사진·파일)
+   */
+  | {
+      kind: 'life-page'
+      list: LifeList
+      before?: string
+      limit?: number
+      kinds?: FeedItem['kind'][]
+      tab?: LibraryTab
+    }
+  /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다). life-item으로 답 */
+  | { kind: 'life-item'; id: string }
   | ({ kind: 'life-action' } & LifeAction)
   /**
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
@@ -1066,6 +1097,25 @@ export type PcToPhone =
   /** 대화가 답하는 중인지, 줄 선 말 (바뀔 때마다) */
   | { kind: 'conversation-status'; busy: boolean; queued: string[] }
   | { kind: 'life'; state: LifeState }
+  /** 긴 목록의 한 페이지 (부탁한 것을 그대로 돌려준다: 화면이 어느 목록인지 안다) */
+  | {
+      kind: 'life-page'
+      list: 'feed'
+      before?: string
+      kinds?: FeedItem['kind'][]
+      items: FeedItem[]
+      next?: string
+    }
+  | {
+      kind: 'life-page'
+      list: 'library'
+      before?: string
+      tab?: LibraryTab
+      items: LibraryItem[]
+      next?: string
+    }
+  /** 보관함 하나 (전체 글). 없으면 item 없음 */
+  | { kind: 'life-item'; id: string; item?: LibraryItem }
   /** 서비스 연결 목록 (카드 + 절차 상태 + 연결 시각) */
   | { kind: 'connections'; services: ConnectionItem[] }
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */

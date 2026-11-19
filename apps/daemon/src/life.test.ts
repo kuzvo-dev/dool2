@@ -553,3 +553,152 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
     expect(ruleLabel({})).toBe('')
   })
 })
+
+describe('긴 목록 나눠 받기 (피드·보관함)', () => {
+  const text = (r: { content: { text: string }[] }) => r.content.map((c) => c.text).join('\n')
+  /** 피드 n개를 1시간 간격으로 (마지막 것이 가장 최근) */
+  function withFeed(n: number, start = MON_8AM) {
+    let now = start
+    const life = new Life(kv(), () => now)
+    for (let i = 0; i < n; i++) {
+      life.feed({ kind: i % 3 ? 'done' : 'post', title: `일 ${i}`, body: i % 2 ? '택배 도착' : '날씨 맑음' })
+      now = new Date(now.getTime() + 3600_000)
+    }
+    return { life, setNow: (d: Date) => (now = d), now: () => now }
+  }
+
+  it('첫 화면은 피드 30개와 다음 커서, 커서를 따라가면 빠짐없이 끝까지 (끝이면 다음 없음)', () => {
+    const { life } = withFeed(75)
+    const s = life.state()
+    expect(s.feed).toHaveLength(30)
+    expect(s.feed[0]?.title).toBe('일 74')
+    expect(s.feedNext).toBeTruthy()
+    const p2 = life.feedPage({ before: s.feedNext })
+    const p3 = life.feedPage({ before: p2.next })
+    expect(p3.items).toHaveLength(15)
+    expect(p3.next).toBeUndefined()
+    const ids = [...s.feed, ...p2.items, ...p3.items].map((f) => f.id)
+    expect(new Set(ids).size).toBe(75)
+    // 빈 피드
+    const empty = new Life(kv(), () => MON_8AM)
+    expect(empty.state().feed).toEqual([])
+    expect(empty.state().feedNext).toBeUndefined()
+    expect(empty.feedPage()).toEqual({ items: [] })
+  })
+
+  it('같은 시각에 여러 개 생겨도 페이지 경계에서 겹치거나 빠지지 않는다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    for (let i = 0; i < 45; i++) life.feed({ kind: 'done', title: `같은 시각 ${i}` })
+    const seen = new Set<string>()
+    let before: string | undefined
+    for (let i = 0; i < 10; i++) {
+      const p = life.feedPage({ limit: 7, ...(before ? { before } : {}) })
+      for (const f of p.items) seen.add(f.id)
+      if (!p.next) break
+      before = p.next
+    }
+    expect(seen.size).toBe(45)
+  })
+
+  it('종류만 골라 받기 (활동: 끝낸 일·예약한 일)', () => {
+    const { life } = withFeed(40)
+    const p = life.feedPage({ kinds: ['done', 'routine'], limit: 100 })
+    expect(p.items.every((f) => f.kind === 'done')).toBe(true)
+    expect(p.items).toHaveLength(26)
+  })
+
+  it('피드는 개수가 아니라 90일로 남긴다 (예전 300개 한도 없이)', () => {
+    const { life, setNow, now } = withFeed(400, new Date(MON_8AM.getTime() - 200 * 86_400_000))
+    // 400시간 ≈ 17일 동안 쌓인 400개: 모두 남는다
+    expect(life.feedItems()).toHaveLength(400)
+    // 90일 넘게 지나 새 소식이 오면 오래된 건 지운다
+    setNow(new Date(now().getTime() + 91 * 86_400_000))
+    life.feed({ kind: 'done', title: '새 일' })
+    expect(life.feedItems().map((f) => f.title)).toEqual(['새 일'])
+  })
+
+  it('이번 주 두리가 한 일: 60일 날마다 개수 (먼저 챙긴 일은 세지 않는다)', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.feed({ kind: 'done', title: '오늘 한 일' })
+    life.feed({ kind: 'suggest', title: '먼저 챙김' })
+    const days = life.state().feedDays ?? []
+    expect(days).toHaveLength(60)
+    expect(days.at(-1)).toBe(1)
+    expect(days.slice(0, -1).every((n) => n === 0)).toBe(true)
+  })
+
+  it('보관함은 칸마다 첫 30개·개수·다음 커서, 긴 글은 앞부분만 보내고 하나 받기로 전체', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    for (let i = 0; i < 35; i++) {
+      life.save({ kind: 'note', title: `정리 ${i}`, body: i === 34 ? '가'.repeat(1000) : '짧은 글' })
+      now = new Date(now.getTime() + 60_000)
+    }
+    life.save({ kind: 'file', title: '사진', body: '' })
+    const s = life.state()
+    expect(s.libraryCount).toEqual({ made: 35, files: 1 })
+    expect(s.library.filter((x) => x.kind === 'note')).toHaveLength(30)
+    expect(s.library.filter((x) => x.kind === 'file')).toHaveLength(1)
+    expect(s.libraryNext?.made).toBeTruthy()
+    expect(s.libraryNext?.files).toBeUndefined()
+    const long = s.library.find((x) => x.title === '정리 34')
+    expect(long?.cut).toBe(true)
+    expect(long?.body).toHaveLength(400)
+    expect(life.libraryItem(long?.id ?? '')?.body).toHaveLength(1000)
+    const rest = life.libraryPage({ tab: 'made', before: s.libraryNext?.made })
+    expect(rest.items.map((x) => x.title)).toEqual(['정리 4', '정리 3', '정리 2', '정리 1', '정리 0'])
+    expect(rest.next).toBeUndefined()
+  })
+
+  it('목표 진행 기록은 최근 것만 보낸다 (저장은 그대로)', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', { title: '걷기', prompt: '걸었는지', category: '건강' })
+    const id = life.routines()[0]?.id ?? ''
+    for (let i = 0; i < 30; i++) life.updateGoal(id, { log: `기록 ${i}` })
+    expect(life.routines()[0]?.log).toHaveLength(30)
+    expect(life.state().routines[0]?.log).toHaveLength(20)
+    expect(life.state({ logs: 8 }).routines[0]?.log?.[0]?.text).toBe('기록 29')
+    expect(life.state({ logs: 8 }).routines[0]?.log).toHaveLength(8)
+  })
+
+  it('feed_find: 기간·종류·낱말로 보고, 종류별 개수와 이어 보기 커서를 준다', () => {
+    const { life, now } = withFeed(50)
+    const all = text(life.run('feed_find', { days: 90, limit: 5 }))
+    expect(all).toContain('맞는 것 50개')
+    expect(all).toContain('끝낸 일 33')
+    expect(all).toContain('[끝낸 일]')
+    const cursor = /before: "([^"]+)"/.exec(all)?.[1] ?? ''
+    expect(cursor).toBeTruthy()
+    const next = text(life.run('feed_find', { days: 90, limit: 5, before: cursor }))
+    expect(next).toContain('이어서 5개')
+    expect(next).not.toContain(`일 49 `)
+    // 낱말·종류
+    const parcel = text(life.run('feed_find', { query: '택배', kinds: ['post'] }))
+    expect(parcel).toContain('[소식]')
+    expect(parcel).not.toContain('[끝낸 일]')
+    // 이번 주(최근 1일)만
+    expect(text(life.run('feed_find', { days: 1 }))).toContain('최근 1일')
+    // 없으면 다음 길
+    expect(text(life.run('feed_find', { query: '없는낱말' }))).toContain('맞는 게 없어요')
+    expect(text(new Life(kv(), now).run('feed_find', {}))).toContain('피드가 비어 있어요')
+    // 마지막 페이지 다음은 여기까지
+    const last = text(life.run('feed_find', { limit: 30, before: life.feedPage({ limit: 49 }).next }))
+    expect(last).toContain('여기까지예요')
+  })
+
+  it('library_find: skip으로 이어 보기', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    for (let i = 0; i < 12; i++) {
+      life.save({ kind: 'note', title: `메모 ${i}`, body: '' })
+      now = new Date(now.getTime() + 60_000)
+    }
+    const first = text(life.run('library_find', { limit: 5 }))
+    expect(first).toContain('이어서 보려면 같은 낱말로 skip: 5')
+    const second = text(life.run('library_find', { limit: 5, skip: 10 }))
+    expect(second).toContain('11~12번째')
+    expect(second).toContain('11. [정리] 메모 1')
+    expect(second).not.toContain('skip:')
+    expect(text(life.run('library_find', { skip: 50 }))).toContain('여기까지예요')
+  })
+})

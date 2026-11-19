@@ -142,6 +142,7 @@ const TOOL_LABEL: Record<string, string> = {
   vault_find: '금고 보는',
   feed_post: '피드에 올리는',
   feed_tell: '먼저 챙긴 일 알리는',
+  feed_find: '피드 보는',
   connect_ask: '연결 카드 띄우는',
   show_cards: '카드 만드는',
   show_list: '목록 만드는',

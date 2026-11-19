@@ -1022,6 +1022,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const before = store.listThreads(100_000).length
     store.clearConversations()
     for (const k of RESET_KEYS) store.setSetting(k, undefined)
+    life.reload()
     if (o.services) store.setSetting('connections', undefined)
     journal.write('reset', { phone, threads: before, services: o.services })
     events.emit('settings', readSettings())
@@ -1205,14 +1206,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         store.deleteThread(id)
         return true
       },
-      life: async () => life.state(),
+      // 폰은 목표 진행 기록을 8줄만 보여 준다 (중계로 오가는 양을 줄인다)
+      life: async () => life.state({ logs: 8 }),
+      feedPage: async (q) => life.feedPage(q),
+      libraryPage: async (q) => life.libraryPage(q),
+      libraryItem: async (id) => life.libraryItem(id),
       lifeAction: async (a) => {
         life.act(a)
         if (a.action === 'identity')
           conversation.rotateSoon(
             '사용자가 두리의 말투·호칭 설정을 바꿨어요. 위 대화의 말투·호칭은 따르지 말고 지침 맨 앞 설정(없으면 기본 해요체)을 따라요.',
           )
-        return life.state()
+        return life.state({ logs: 8 })
       },
       connectLogin: async (id, username, password) => {
         const card = await skills.card(id)
@@ -1903,7 +1908,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   life.onChange = () => {
     clearTimeout(lifePush)
     lifePush = setTimeout(() => {
-      void link.broadcast({ kind: 'life', state: life.state() })
+      void link.broadcast({ kind: 'life', state: life.state({ logs: 8 }) })
       live.emit('event', { kind: 'life' })
     }, 300)
   }
@@ -2557,6 +2562,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, data ? { data } : {})
     }
     if (a === 'life' && !b && req.method === 'GET') return json(res, 200, life.state())
+    // 긴 목록 나눠 받기: 피드(kinds=done,routine이면 활동), 보관함(tab=made|files). before는 앞 페이지의 next
+    if (a === 'life' && b === 'feed' && !c && req.method === 'GET')
+      return json(res, 200, life.feedPage(pageQuery(url)))
+    if (a === 'life' && b === 'library' && !c && req.method === 'GET')
+      return json(res, 200, life.libraryPage(pageQuery(url)))
+    if (a === 'life' && b === 'library' && c && !d && req.method === 'GET') {
+      const item = life.libraryItem(c)
+      return item ? json(res, 200, { item }) : json(res, 404, { error: '보관함에 없어요' })
+    }
     if (a === 'life' && b === 'action' && req.method === 'POST') {
       const action = (await readJson(req)) as LifeAction
       const id = life.act(action)
@@ -2751,6 +2765,29 @@ function authorized(req: IncomingMessage, token: string) {
   const given = Buffer.from(header.replace(/^Bearer /, ''))
   const want = Buffer.from(token)
   return given.length === want.length && timingSafeEqual(given, want)
+}
+
+const FEED_KIND_NAMES = new Set(['done', 'routine', 'saved', 'goal', 'connected', 'suggest', 'post'])
+
+/** 나눠 받기 주소의 칸: ?before=<커서>&limit=30&kinds=done,routine&tab=made */
+function pageQuery(url: URL): {
+  before?: string
+  limit?: number
+  kinds?: FeedItem['kind'][]
+  tab?: 'made' | 'files'
+} {
+  const before = url.searchParams.get('before')?.slice(0, 120)
+  const limit = Number(url.searchParams.get('limit'))
+  const kinds = (url.searchParams.get('kinds') ?? '')
+    .split(',')
+    .filter((k): k is FeedItem['kind'] => FEED_KIND_NAMES.has(k))
+  const tab = url.searchParams.get('tab')
+  return {
+    ...(before ? { before } : {}),
+    ...(limit > 0 ? { limit } : {}),
+    ...(kinds.length ? { kinds } : {}),
+    ...(tab === 'files' || tab === 'made' ? { tab } : {}),
+  }
 }
 
 function json(res: ServerResponse, status: number, body: unknown) {

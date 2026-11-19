@@ -10,6 +10,9 @@ import {
   approvalSignText,
   type ConversationState,
   type DaemonStreamEvent,
+  type FeedItem,
+  type LibraryItem,
+  type LibraryTab,
   type LifeAction,
   type LifeState,
   type LinkStatus,
@@ -41,10 +44,25 @@ import {
   verifyText,
 } from '@dool2/protocol/e2e'
 import { LinkClient, resetSignText } from '@dool2/protocol/link'
+import type { Page } from '@dool2/protocol/paging'
 import QRCode from 'qrcode'
 import { allowedEndpoint, generateVapid, type PushMessage, sendPush, type VapidKeys } from './webpush.js'
 
 export const PAIR_TTL_MS = 5 * 60_000
+/**
+ * 중계 서버가 받는 봉투 한 개의 크기 (apps/relay MAX_MESSAGE = 512KB). 넘으면 중계가 PC 연결을 끊어 버리므로
+ * 보내기 전에 막는다 (조금 여유를 둔다)
+ */
+export const SEND_MAX = 500 * 1024
+const FEED_KINDS = new Set<FeedItem['kind']>([
+  'done',
+  'routine',
+  'saved',
+  'goal',
+  'connected',
+  'suggest',
+  'post',
+])
 
 export interface SecretStoreLike {
   get(key: string): Promise<string | undefined>
@@ -104,6 +122,11 @@ export interface LinkHost {
   /** 목표·보관함·기억·피드 */
   life(): Promise<LifeState>
   lifeAction(a: LifeAction): Promise<LifeState>
+  /** 긴 목록 나눠 받기: 피드(kinds로 종류 고르기), 보관함(칸별, 글은 앞부분만) */
+  feedPage(q: { before?: string; limit?: number; kinds?: FeedItem['kind'][] }): Promise<Page<FeedItem>>
+  libraryPage(q: { before?: string; limit?: number; tab?: LibraryTab }): Promise<Page<LibraryItem>>
+  /** 보관함 하나 (전체 글) */
+  libraryItem(id: string): Promise<LibraryItem | undefined>
   /** 연결하기: 금고에 넣고 대신 로그인 */
   connectLogin(
     id: string,
@@ -448,6 +471,30 @@ export class PhoneLink {
       }
       case 'life':
         return this.send(phone, { kind: 'life', state: await this.host.life() })
+      case 'life-page': {
+        const before = typeof msg.before === 'string' ? msg.before.slice(0, 120) : undefined
+        const limit = Math.min(Math.max(Number(msg.limit) || 30, 1), 100)
+        const at = before ? { before } : {}
+        if (msg.list === 'library') {
+          const tab: LibraryTab = msg.tab === 'files' ? 'files' : 'made'
+          const p = await this.host.libraryPage({ ...at, limit, tab })
+          return this.send(phone, { kind: 'life-page', list: 'library', tab, ...at, ...p })
+        }
+        const kinds = (Array.isArray(msg.kinds) ? msg.kinds : []).filter((k) => FEED_KINDS.has(k)).slice(0, 7)
+        const p = await this.host.feedPage({ ...at, limit, ...(kinds.length ? { kinds } : {}) })
+        return this.send(phone, {
+          kind: 'life-page',
+          list: 'feed',
+          ...at,
+          ...(kinds.length ? { kinds } : {}),
+          ...p,
+        })
+      }
+      case 'life-item': {
+        const id = String(msg.id).slice(0, 80)
+        const item = await this.host.libraryItem(id)
+        return this.send(phone, { kind: 'life-item', id, ...(item ? { item } : {}) })
+      }
       case 'life-action': {
         const { kind: _k, ...a } = msg
         try {
@@ -645,15 +692,33 @@ export class PhoneLink {
 
   // ── 보내기 ──
 
-  private async sendTo(id: string, boxPub: string, body: PcToPhone) {
+  /** 폰마다 마지막으로 보낸 생활 기록 (바뀐 게 없으면 모두에게 다시 보내지 않는다) */
+  private lastLife = new Map<string, string>()
+  /** 너무 커서 못 보낸 횟수 (점검용) */
+  tooBig = 0
+
+  private async sendTo(id: string, boxPub: string, body: PcToPhone): Promise<void> {
     if (!this.keys || !this.client) return
     const k = await this.keyFor(id, boxPub)
-    this.client.send(
-      await seal(k, { v: LINK_VERSION, from: this.keys.id, to: id, kind: body.kind, seq: ++this.seq }, body),
+    const env = await seal(
+      k,
+      { v: LINK_VERSION, from: this.keys.id, to: id, kind: body.kind, seq: ++this.seq },
+      body,
     )
+    // 중계 한도를 넘으면 보내지 않는다: 보내면 중계가 연결을 끊고, 폰이 다시 부탁하면 또 끊기는 고리가 된다
+    if (JSON.stringify(env).length > SEND_MAX) {
+      this.tooBig++
+      if (body.kind === 'error') return
+      return this.sendTo(id, boxPub, {
+        kind: 'error',
+        message: '보낼 내용이 너무 커서 폰으로 못 보냈어요. PC 화면에서 확인해 주세요',
+      })
+    }
+    this.client.send(env)
   }
 
   private send(phone: PairedPhone, body: PcToPhone) {
+    if (body.kind === 'life') this.lastLife.set(phone.id, JSON.stringify(body.state))
     return this.sendTo(phone.id, phone.boxPub, body)
   }
 
@@ -667,8 +732,11 @@ export class PhoneLink {
    */
   async broadcast(body: PcToPhone, o: { live?: boolean } = {}) {
     const now = this.now()
+    // 생활 기록은 그 폰에 마지막으로 보낸 것과 같으면 다시 보내지 않는다 (방금 동작의 답으로 이미 갔다)
+    const life = body.kind === 'life' ? JSON.stringify(body.state) : undefined
     for (const p of this.phones) {
       if (o.live && now - (this.lastSeen.get(p.id) ?? 0) > 180_000) continue
+      if (life !== undefined && this.lastLife.get(p.id) === life) continue
       await this.send(p, body).catch(() => {})
     }
   }
