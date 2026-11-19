@@ -41,6 +41,14 @@
       "types": "./dist/schedule.d.ts",
       "default": "./dist/schedule.js"
     },
+    "./blocks": {
+      "types": "./dist/blocks.d.ts",
+      "default": "./dist/blocks.js"
+    },
+    "./blocks-view": {
+      "types": "./dist/blocks-view.d.ts",
+      "default": "./dist/blocks-view.js"
+    },
     "./ideas": {
       "types": "./dist/ideas.d.ts",
       "default": "./dist/ideas.js"
