@@ -141,7 +141,9 @@ export class ThreadService {
         const out = []
         const rec = work.record()
         if (rec) out.push(store.addMessage(threadId, 'tool', JSON.stringify(rec)))
-        const full = stripMonologue(answer)
+        const raw = stripMonologue(answer)
+        // 결과 블록은 답 글 아래에 보인다: AI가 "위 목록·위에 정리"라고 써도 아래로 고친다 (도구를 먼저 불러 '위'라고 쓴다)
+        const full = block ? blockBelow(raw) : raw
         const { text, replies } = splitQuick(full)
         out.push(store.addMessage(threadId, 'assistant', text || full))
         const c = saveBlock()
@@ -406,4 +408,11 @@ export function nowLine(now = Date.now()): string {
   const d = new Date(now + 9 * 3600_000)
   const p = (n: number) => String(n).padStart(2, '0')
   return `(지금 ${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}(${'일월화수목금토'[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}, 한국 시각)`
+}
+
+/** 같은 답에 붙는 결과 블록을 가리키는 '위'를 '아래'로 (블록은 답 글 아래에 보인다) */
+export function blockBelow(text: string): string {
+  return text
+    .replace(/위(?:의)? (목록|카드|사진 카드|표|초안|글|결과|줄)/g, '아래 $1')
+    .replace(/위에 (정리|붙|써|적|모아|올려|넣어|보여|골라)/g, '아래에 $1')
 }

@@ -53,3 +53,14 @@ describe('두리 설정', () => {
     expect(buildSystemPrompt()).not.toContain('사용자가 정한 설정')
   })
 })
+
+describe('결과 블록 위치 말', () => {
+  it('"위 목록·위에 정리"를 아래로 고친다', async () => {
+    const { blockBelow } = await import('./threads.js')
+    expect(blockBelow('위 목록에서 골라 주세요. 위에 정리해 뒀어요.')).toBe(
+      '아래 목록에서 골라 주세요. 아래에 정리해 뒀어요.',
+    )
+    expect(blockBelow('위 카드에 싼 순서대로')).toBe('아래 카드에 싼 순서대로')
+    expect(blockBelow('위가 아파요')).toBe('위가 아파요')
+  })
+})
