@@ -8,8 +8,10 @@ import type {
   ConnectRecordMessage,
   ConnectStep,
   DaemonStreamEvent,
+  FeedItem,
   HandoffRecord,
   InfoRequestView,
+  LibraryItem,
   LifeAction,
   LifeState,
   LoginRecordMessage,
@@ -45,6 +47,7 @@ import {
   searchIdeas,
 } from '@dool2/protocol/ideas'
 import { approvalSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
+import { Pager } from '@dool2/protocol/paging'
 import {
   CARD_ISSUERS,
   PAY_KINDS,
@@ -94,6 +97,7 @@ import {
   type LifeCtx,
   libraryView,
   memorySeg,
+  moreRow,
   plain,
   upcomingSeg,
 } from './life-views.js'
@@ -619,7 +623,15 @@ async function receive(env: Envelope) {
       break
     }
     case 'life':
-      st.life = msg.state
+      takeLife(msg.state)
+      break
+    case 'life-page':
+      // 부탁한 목록의 다음 페이지 (before 없으면 첫 페이지 다시 받기)
+      if (msg.list === 'library') libPagers[msg.tab === 'files' ? 'files' : 'made'].take(msg.before, msg)
+      else (msg.kinds?.length ? activityPager : feedPager).take(msg.before, msg)
+      break
+    case 'life-item':
+      if (msg.item) fullItems.set(msg.id, msg.item)
       break
     case 'work-tab': {
       // 두리가 이 탭에서 일하기 시작했다 (브라우저 도구든 서비스 도구든): 답하는 중이면 대화에 그 화면을 띄운다.
@@ -1896,6 +1908,8 @@ function buildShell() {
     () => {
       // 아래 탭은 내려도 숨기지 않는다: 숨으면 다른 탭으로 갈 길이 안 보였다 (사용자 의견)
       if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+      // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
+      else if (page.scrollHeight - page.scrollTop - page.clientHeight < 600) visiblePager()?.more()
     },
     { passive: true },
   )
@@ -2769,7 +2783,7 @@ function toolSig(raw: string) {
       return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${steps}`
     }
     if (rec.kind === 'tell')
-      return `tell:${st.life?.feed.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
+      return `tell:${feedPager.items.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0
@@ -3057,7 +3071,7 @@ function cardsInline(rec: CardsRecordMessage): HTMLElement {
 }
 
 function tellInline(rec: TellRecordMessage): HTMLElement {
-  const answered = st.life?.feed.find((f) => f.id === rec.id)?.answered
+  const answered = feedPager.items.find((f) => f.id === rec.id)?.answered
   const say = rec.ask
   return h(
     'div',
@@ -3401,7 +3415,64 @@ function waitingCards(): HTMLElement[] {
   return box.childNodes.length ? [box] : []
 }
 
+// ── 긴 목록: 첫 페이지는 life로 오고, 아래로 내리면 life-page로 다음 페이지를 받아 이어 붙인다 ──
+const feedPager = new Pager<FeedItem>(
+  (f) => f.at,
+  (before) => void send({ kind: 'life-page', list: 'feed', ...(before ? { before } : {}) }),
+  () => renderSoon(),
+)
+const libPager = (tab: 'made' | 'files') =>
+  new Pager<LibraryItem>(
+    (it) => it.savedAt,
+    (before) => void send({ kind: 'life-page', list: 'library', tab, ...(before ? { before } : {}) }),
+    () => renderSoon(),
+  )
+const libPagers = { made: libPager('made'), files: libPager('files') }
+/** 두리 판 활동: 끝낸 일·예약한 일만 (첫 페이지도 따로 받는다) */
+const activityPager = new Pager<FeedItem>(
+  (f) => f.at,
+  (before) =>
+    void send({ kind: 'life-page', list: 'feed', kinds: ['done', 'routine'], ...(before ? { before } : {}) }),
+  () => renderSoon(),
+)
+let activityAskedAt = 0
+/** 보관함 하나의 전체 글 (목록에는 앞부분만 온다) */
+const fullItems = new Map<string, LibraryItem>()
+
+/** 받은 첫 페이지를 목록마다 맞춘다 (더 받아 둔 건 그대로) */
+function takeLife(life: LifeState) {
+  st.life = life
+  feedPager.take(undefined, { items: life.feed, ...(life.feedNext ? { next: life.feedNext } : {}) })
+  for (const tab of ['made', 'files'] as const) {
+    const next = life.libraryNext?.[tab]
+    libPagers[tab].take(undefined, {
+      items: life.library.filter((it) => (tab === 'files' ? it.kind === 'file' : it.kind !== 'file')),
+      ...(next ? { next } : {}),
+    })
+  }
+  // 보관함 글이 바뀌었을 수 있다: 다시 열 때 새로 받는다
+  fullItems.clear()
+  if (activityPager.started) activityPager.refresh()
+}
+
+/** 지금 보이는 긴 목록 (아래로 내리면 더 받는다) */
+function visiblePager(): Pager<{ id: string }> | undefined {
+  if (st.tab === 'feed') return feedPager
+  if (st.tab === 'library') return libPagers[st.librarySeg === 'media' ? 'files' : 'made']
+  return undefined
+}
+
 function lifeAct(a: LifeAction) {
+  // 첫 페이지 밖에서 누른 것도 바로 바뀌어 보이게 (PC가 보내는 새 첫 페이지는 그 앞만 맞춘다)
+  for (const p of [feedPager, activityPager]) {
+    if (a.action === 'feed-react')
+      p.patch(a.id, (f) => {
+        const { reaction: _r, ...rest } = f
+        return a.reaction ? { ...rest, reaction: a.reaction } : rest
+      })
+    if (a.action === 'feed-answer') p.patch(a.id, (f) => (f.answered ? f : { ...f, answered: a.answer }))
+  }
+  if (a.action === 'library-delete') for (const p of Object.values(libPagers)) p.remove(a.id)
   void send({ kind: 'life-action', ...a })
 }
 
@@ -3423,6 +3494,16 @@ function lifeCtx(): LifeCtx {
     openItem: (id) => openOverlay({ kind: 'item', id }),
     close: () => openOverlay(undefined),
     waiting: waitingCards(),
+    feedList: feedPager,
+    libraryList: libPagers[st.librarySeg === 'media' ? 'files' : 'made'],
+    fullItem: (id) => {
+      const full = fullItems.get(id)
+      if (full) return full
+      const it = [...libPagers.made.items, ...libPagers.files.items].find((x) => x.id === id)
+      // 앞부분만 받은 글이면 전체를 부탁한다 (오면 시트를 다시 그린다)
+      if (it?.cut) void send({ kind: 'life-item', id })
+      return it
+    },
     librarySeg: st.librarySeg,
     setLibrarySeg: (seg) => {
       st.librarySeg = seg
@@ -4600,7 +4681,12 @@ function agentPanel() {
           lastUserText(),
         ),
       )
-    const done = (st.life?.feed ?? []).filter((f) => f.kind === 'done' || f.kind === 'routine').slice(0, 30)
+    // 처음 열 때 첫 페이지를 부탁한다 (답이 안 오면 10초 뒤 다시)
+    if (!activityPager.started && Date.now() - activityAskedAt > 10_000) {
+      activityAskedAt = Date.now()
+      activityPager.refresh()
+    }
+    const done = activityPager.items
     for (const f of done)
       body.append(
         act(
@@ -4614,8 +4700,14 @@ function agentPanel() {
           shortTime(f.at),
         ),
       )
+    const more = moreRow(activityPager)
+    if (more) body.append(more)
     if (!done.length && !st.busy)
-      body.append(h('p', { class: 'meta seg-empty', text: '아직 한 일이 없어요' }))
+      body.append(
+        activityPager.started
+          ? h('p', { class: 'meta seg-empty', text: '아직 한 일이 없어요' })
+          : h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'),
+      )
   } else {
     const approvals = pendingApprovals()
     const logins = pendingLogins()

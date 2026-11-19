@@ -525,3 +525,58 @@ describe('폰에서 대화 하나', () => {
     ])
   })
 })
+
+describe('폰에서 긴 목록 나눠 받기', () => {
+  it('첫 화면은 피드 30개, life-page로 다음 페이지·끝, 보관함은 앞부분만 → life-item으로 전체', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    // 보관함에 남기면 피드에도 하나씩 올라간다: 35개
+    for (let i = 0; i < 35; i++)
+      await api('/api/life/action', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'library-save',
+          title: `메모 ${i}`,
+          body: i === 34 ? '긴 글 '.repeat(300) : '짧은 글',
+        }),
+      })
+    p.inbox.length = 0
+    await p.send({ kind: 'life' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'life'))
+    const life = p.inbox.find((m) => m.kind === 'life')
+    if (life?.kind !== 'life') throw new Error('life')
+    expect(life.state.feed).toHaveLength(30)
+    expect(life.state.libraryCount).toEqual({ made: 35, files: 0 })
+    const before = life.state.feedNext ?? ''
+    expect(before).toBeTruthy()
+    await p.send({ kind: 'life-page', list: 'feed', before })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'life-page'))
+    const page = p.inbox.find((m) => m.kind === 'life-page')
+    if (page?.kind !== 'life-page') throw new Error('page')
+    expect(page).toMatchObject({ list: 'feed', before })
+    expect(page.items).toHaveLength(5)
+    expect(page.next).toBeUndefined()
+    // 같은 http 화면 길도 같은 페이지
+    const http = await api(`/api/life/feed?before=${encodeURIComponent(before)}`)
+    expect(http.items.map((f: { id: string }) => f.id)).toEqual(page.items.map((f) => f.id))
+
+    const cut = life.state.library.find((x) => x.cut)
+    expect(cut?.body.length).toBe(400)
+    await p.send({ kind: 'life-item', id: cut?.id ?? '' })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'life-item'))
+    const item = p.inbox.find((m) => m.kind === 'life-item')
+    if (item?.kind !== 'life-item') throw new Error('item')
+    expect(item.item?.body.length).toBe(1200)
+    expect(item.item?.cut).toBeUndefined()
+    expect((await api(`/api/life/library/${cut?.id}`)).item.body.length).toBe(1200)
+  })
+})

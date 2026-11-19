@@ -1,6 +1,5 @@
 // 움직이는 카드 셋: 숫자 굴리기(돈·퍼센트), 이번 주 두리가 한 일(통계 카드), 오늘의 추천 넘기기(카드 더미)
 // 페이지는 다시 그릴 때마다 새로 만들어지므로, 카드는 내용이 같으면 같은 요소를 다시 꽂아 움직임이 끊기지 않게 한다
-import type { FeedItem } from '@dool2/protocol'
 import { reduced, SPRING, Spring, springTo, tick } from './motion.js'
 
 // ── 숫자 굴리기: 새로 온 답의 돈·퍼센트가 자리마다 0에서 굴러 제 숫자에 선다 (참고 값: count-roll 320 24) ──
@@ -57,26 +56,18 @@ export function rollNumbers(root: HTMLElement) {
 
 // ── 이번 주 두리가 한 일: 날마다 몇 건인지 부드러운 선, 합계는 굴러 올라가고, 7일·30일을 바꾸면 점이 왼쪽부터 옮겨 간다 ──
 
-const DONE_KINDS = new Set<FeedItem['kind']>(['done', 'routine', 'post', 'saved', 'goal', 'connected'])
 let statCache: { sig: string; el: HTMLElement } | undefined
 
-function dayCounts(feed: FeedItem[], days: number, offset = 0): number[] {
-  const out = Array<number>(days).fill(0)
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const today = start.getTime()
-  for (const f of feed) {
-    if (!DONE_KINDS.has(f.kind)) continue
-    const d = new Date(f.at)
-    d.setHours(0, 0, 0, 0)
-    const ago = Math.round((today - d.getTime()) / 86_400_000) - offset
-    if (ago >= 0 && ago < days) out[days - 1 - ago] = (out[days - 1 - ago] ?? 0) + 1
-  }
-  return out
+/** 날마다 개수(마지막이 오늘) 중 offset일 전까지의 마지막 days일 */
+function dayCounts(all: number[], days: number, offset = 0): number[] {
+  const end = all.length - offset
+  const out = all.slice(Math.max(0, end - days), Math.max(0, end))
+  return [...Array<number>(days - out.length).fill(0), ...out]
 }
 
-export function statCard(feed: FeedItem[]): HTMLElement {
-  const sig = feed.map((f) => f.id).join(',')
+/** all: PC가 세어 보낸 최근 60일 날마다 한 일 개수 (LifeState.feedDays, 마지막이 오늘) */
+export function statCard(feed: number[]): HTMLElement {
+  const sig = feed.join(',')
   if (statCache?.sig === sig) return statCache.el
   const prev = statCache?.el
   const card = document.createElement('div')

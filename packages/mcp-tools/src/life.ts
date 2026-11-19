@@ -170,6 +170,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .optional()
           .describe('종류만 골라 보기: note 정리 · link 링크 · product 상품 · place 장소 · file 사진·파일'),
         limit: z.number().int().min(1).max(20).optional().describe('최대 몇 개 (기본 10)'),
+        skip: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe('앞에서 건너뛸 개수: 결과에 "더 있어요 … skip: N"이 오면 그대로 넣어 이어서 본다'),
       },
       annotations: { readOnlyHint: true },
     },
@@ -534,6 +540,44 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       },
     },
     call('feed_tell'),
+  )
+  server.registerTool(
+    'feed_find',
+    {
+      title: '피드·두리가 한 일 보기',
+      description:
+        '피드에 쌓인 것(두리가 끝낸 일, 예약한 일의 결과, 아침 소식, 보관함에 남긴 것, 먼저 챙긴 일)을 사용자가 피드에서 보는 그대로 본다. ' +
+        '"이번 주 두리가 뭐 했어?", "어제 예약한 알림 결과 뭐였지?", "지난번에 먼저 알려 준 택배" 같은 말에 짐작하지 말고 이것으로 먼저 본다. ' +
+        '기간 안 종류별 개수가 함께 온다. 90일까지 남아 있고, 많으면 페이지로 나눠 온다(before로 이어 보기). 대화에서 나눈 말이면 conversation_search.',
+      inputSchema: {
+        query: z
+          .string()
+          .max(100)
+          .optional()
+          .describe('찾을 낱말 1~3개 (예: "택배", "치과"). 제목·글·어디서에서 찾는다. 비우면 최근 것부터'),
+        kinds: z
+          .array(z.enum(['done', 'routine', 'post', 'saved', 'goal', 'connected', 'suggest']))
+          .optional()
+          .describe(
+            '종류만: done 끝낸 일 · routine 예약한 일 결과 · post 소식 · saved 보관함 · goal 목표 · connected 연결 · suggest 먼저 챙김',
+          ),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(90)
+          .optional()
+          .describe('최근 며칠만 (예: 이번 주 7, 이번 달 30). 비우면 남아 있는 90일 전부'),
+        before: z
+          .string()
+          .max(80)
+          .optional()
+          .describe('이어 보기: 앞 결과의 "before: …" 값을 그대로 (같은 조건으로)'),
+        limit: z.number().int().min(1).max(30).optional().describe('한 번에 몇 개 (기본 15)'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('feed_find'),
   )
   server.registerTool(
     'conversation_search',

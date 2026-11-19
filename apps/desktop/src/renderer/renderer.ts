@@ -15,7 +15,9 @@ import type {
   ConversationState,
   DaemonStreamEvent,
   ExtensionStatus,
+  FeedItem,
   HandoffRecord,
+  LibraryItem,
   LifeAction,
   LifeState,
   LoginRecordMessage,
@@ -46,6 +48,7 @@ import {
   memoryTab,
   scheduleTab,
 } from './life-views.js'
+import { type Page, Pager } from './paging.js'
 import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
 import { runSetup, type SetupOptions } from './setup.js'
 import {
@@ -340,8 +343,81 @@ const pendingLogins = () => state.logins.filter((l) => l.status === 'pending')
 
 // ── 목표·보관함·기억·피드 ─────────────────────────────
 
+/** 긴 목록: 첫 페이지는 /api/life로 오고, 아래로 내리면 다음 페이지를 받아 이어 붙인다 */
+const pageQuery = (before?: string, extra: Record<string, string> = {}) => {
+  const q = new URLSearchParams(extra)
+  if (before) q.set('before', before)
+  return q.toString()
+}
+const feedPager: Pager<FeedItem> = new Pager<FeedItem>(
+  (f) => f.at,
+  (before) =>
+    void api<Page<FeedItem>>(`/api/life/feed?${pageQuery(before)}`)
+      .then((p) => feedPager.take(before, p))
+      .catch(() => {}),
+  () => renderLists(),
+)
+const libPagers: Record<LibraryTab, Pager<LibraryItem>> = {
+  made: libPager('made'),
+  files: libPager('files'),
+}
+function libPager(tab: LibraryTab): Pager<LibraryItem> {
+  const p: Pager<LibraryItem> = new Pager<LibraryItem>(
+    (it) => it.savedAt,
+    (before) =>
+      void api<Page<LibraryItem>>(`/api/life/library?${pageQuery(before, { tab })}`)
+        .then((page) => p.take(before, page))
+        .catch(() => {}),
+    () => renderLists(),
+  )
+  return p
+}
+/** 두리 판 활동: 끝낸 일·예약한 일만 (첫 페이지도 따로 받는다) */
+const activityPager: Pager<FeedItem> = new Pager<FeedItem>(
+  (f) => f.at,
+  (before) =>
+    void api<Page<FeedItem>>(`/api/life/feed?${pageQuery(before, { kinds: 'done,routine' })}`)
+      .then((p) => activityPager.take(before, p))
+      .catch(() => {}),
+  () => {
+    if (state.panelTab === 'activity') renderPanel('life')
+  },
+)
+
+/** 받은 첫 페이지를 목록마다 맞춘다 (더 받아 둔 건 그대로) */
+function takeLife(life: LifeState) {
+  state.life = life
+  feedPager.take(undefined, { items: life.feed, ...(life.feedNext ? { next: life.feedNext } : {}) })
+  for (const tab of ['made', 'files'] as const) {
+    const next = life.libraryNext?.[tab]
+    libPagers[tab].take(undefined, {
+      items: life.library.filter((it) => (tab === 'files' ? it.kind === 'file' : it.kind !== 'file')),
+      ...(next ? { next } : {}),
+    })
+  }
+  if (activityPager.started || state.panelTab === 'activity') activityPager.refresh()
+}
+
+/** 다음 페이지가 오면 그 목록이 보이는 화면만 다시 그린다 (입력하는 중이면 건드리지 않는다) */
+function renderLists() {
+  const box = $('messages')
+  const typing = document.activeElement instanceof HTMLInputElement && box.contains(document.activeElement)
+  if ((state.view === 'feed' || state.view === 'library') && !typing) void show(state.view)
+}
+
+/** 아래 끝 가까이 내리면 다음 페이지 (피드·보관함·두리 판 활동) */
+function moreNearBottom(box: HTMLElement, pager: () => Pager<{ id: string }> | undefined) {
+  box.addEventListener(
+    'scroll',
+    () => {
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 600) pager()?.more()
+    },
+    { passive: true },
+  )
+}
+
 async function loadLife() {
-  state.life = await api<LifeState>('/api/life')
+  takeLife(await api<LifeState>('/api/life'))
   onLifeChanged()
 }
 
@@ -363,7 +439,17 @@ async function lifeAct(a: LifeAction) {
       method: 'POST',
       body: JSON.stringify(a),
     })
-    state.life = r.state
+    // 첫 페이지 밖에서 누른 것도 바로 바뀌어 보이게 (새 첫 페이지는 그 앞만 맞춘다)
+    for (const p of [feedPager, activityPager]) {
+      if (a.action === 'feed-react')
+        p.patch(a.id, (f) => {
+          const { reaction: _r, ...rest } = f
+          return a.reaction ? { ...rest, reaction: a.reaction } : rest
+        })
+      if (a.action === 'feed-answer') p.patch(a.id, (f) => (f.answered ? f : { ...f, answered: a.answer }))
+    }
+    if (a.action === 'library-delete') for (const p of Object.values(libPagers)) p.remove(a.id)
+    takeLife(r.state)
     onLifeChanged()
   } catch (e) {
     toast((e as Error).message)
@@ -377,6 +463,11 @@ async function loadServices() {
 
 const lifeCtx: LifeCtx = {
   life: () => state.life,
+  feedList: () => feedPager,
+  libraryList: (tab) => libPagers[tab],
+  activityList: () => activityPager,
+  libraryFull: async (id) =>
+    (await api<{ item?: LibraryItem }>(`/api/life/library/${encodeURIComponent(id)}`)).item,
   services: () => state.services,
   act: lifeAct,
   send: (text) => void send(text),
@@ -904,6 +995,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
     seg.id = 'panel-tabs'
     const body = el('div', 'panel-body')
     body.id = 'panel-body'
+    moreNearBottom(body, () => (state.panelTab === 'activity' ? activityPager : undefined))
     panel.replaceChildren(close, top, seg, body)
     reason = 'all'
   }
@@ -937,6 +1029,8 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
     body.contains(document.activeElement)
   )
     return
+  // 활동은 처음 열 때 첫 페이지를 받는다
+  if (tab === 'activity' && !activityPager.started) activityPager.refresh()
   const content =
     tab === 'schedule'
       ? scheduleTab(lifeCtx)
@@ -947,7 +1041,9 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
           : tab === 'approvals'
             ? approvalsTab()
             : screenTab()
+  const y = body.scrollTop
   body.replaceChildren(content)
+  if (reason !== 'all') body.scrollTop = y
 }
 
 /** 화면: 지금 하는 일(단계 기록) · 다음 차례 · 이 컴퓨터 */
@@ -1674,7 +1770,7 @@ function pickCards(rec: CardsRecordMessage): HTMLElement {
 
 /** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
 function tellCard(rec: TellRecordMessage): HTMLElement {
-  const f = state.life.feed.find((x) => x.id === rec.id)
+  const f = feedPager.items.find((x) => x.id === rec.id)
   const ask = rec.ask
   const card = el(
     'div',
@@ -2357,6 +2453,10 @@ async function main() {
     autosize()
     void send(text)
   })
+  // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
+  moreNearBottom($('messages'), () =>
+    state.view === 'feed' ? feedPager : state.view === 'library' ? libPagers[state.libTab] : undefined,
+  )
   $('ideas-btn').onclick = () => void show('ideas')
   $('agent').onclick = () => setPanel(!state.panelOpen)
   $('device').onclick = () => setPanel(true, 'screen')

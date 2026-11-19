@@ -56,6 +56,10 @@
     "./ideas": {
       "types": "./dist/ideas.d.ts",
       "default": "./dist/ideas.js"
+    },
+    "./paging": {
+      "types": "./dist/paging.d.ts",
+      "default": "./dist/paging.js"
     }
   },
   "scripts": {

@@ -45,11 +45,18 @@ import {
   upcoming,
   whenLabel,
 } from './life-model.js'
+import type { Pager } from './paging.js'
 import { resultLine } from './rich.js'
 import { ruleLabel, scheduleLabel, untilLabel } from './schedule.js'
 
 export interface LifeCtx {
   life(): LifeState
+  /** 긴 목록: 받아 둔 것과 다음 페이지 (피드·보관함 칸·두리 판 활동) */
+  feedList(): Pager<FeedItem>
+  libraryList(tab: LibraryTab): Pager<LibraryItem>
+  activityList(): Pager<FeedItem>
+  /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다) */
+  libraryFull(id: string): Promise<LibraryItem | undefined>
   /** 연결한 서비스 (맞춤 아이디어) */
   services(): ConnectionItem[]
   /** 동작을 본체에 보내고, 돌아온 상태로 화면을 다시 그린다 */
@@ -110,6 +117,19 @@ function confirmButton(
   return b
 }
 
+/** 목록 끝 줄: 받는 중 · [더 보기] · 여기까지예요 (아래로 내리면 저절로 받는다) */
+function moreRow(p: Pager<{ id: string }>): HTMLElement | undefined {
+  if (!p.items.length) return undefined
+  if (p.loading) return el('p', 'cap page-more', el('span', 'spin'), '더 불러오는 중…')
+  if (p.next)
+    return el(
+      'div',
+      'page-more',
+      button('btn-text sm', () => p.more(), '더 보기'),
+    )
+  return el('p', 'cap page-more', '여기까지예요')
+}
+
 /** 날짜만: "어제", "11월 14일 (금)" (오늘이면 시각) */
 const shortWhen = (iso: string) => {
   const w = whenLabel(iso)
@@ -161,15 +181,18 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   const body: HTMLElement[] = []
   const waiting = ctx.waiting()
   if (waiting.length) body.push(el('div', 'feed-waiting', ...waiting))
-  if (!life.feed.length)
+  const list = ctx.feedList()
+  if (!list.items.length)
     body.push(
       emptyState('sleeping', '아직 올라온 소식이 없어요', '두리가 끝낸 일과 매일 아침 소식이 여기 모여요.'),
     )
-  for (const g of groupByDay(life.feed)) {
+  for (const g of groupByDay(list.items)) {
     const ul = el('ul', 'feed-list')
     for (const f of g.items) ul.append(feedItem(ctx, f))
     body.push(el('section', 'feed-day', el('h2', 'over', g.day), ul))
   }
+  const more = moreRow(list)
+  if (more) body.push(more)
   return el(
     'div',
     'page page-narrow',
@@ -687,21 +710,21 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
 // ── 보관함 ───────────────────────────────────────────
 
 export function libraryView(ctx: LifeCtx, tab: LibraryTab, setTab: (t: LibraryTab) => void): HTMLElement {
-  const all = ctx.life().library
-  const made = libraryTab(all, 'made')
-  const files = libraryTab(all, 'files')
+  const count = ctx.life().libraryCount
   const seg = el('div', 'seg')
-  for (const [id, label, n] of [
-    ['made', '만든 것', made.length],
-    ['files', '사진·파일', files.length],
+  for (const [id, label] of [
+    ['made', '만든 것'],
+    ['files', '사진·파일'],
   ] as const) {
+    const n = count?.[id] ?? ctx.libraryList(id).items.length
     const b = button('', () => setTab(id), label, n ? el('span', 'seg-n', String(n)) : undefined)
     b.setAttribute('aria-pressed', String(tab === id))
     seg.append(b)
   }
-  const items = tab === 'made' ? made : files
+  const list = ctx.libraryList(tab)
+  const items = libraryTab(list.items, tab)
   const body = items.length
-    ? el('div', 'lib-grid', ...items.map((it) => libraryCard(ctx, it)))
+    ? el('div', 'lib-list', el('div', 'lib-grid', ...items.map((it) => libraryCard(ctx, it))), moreRow(list))
     : tab === 'made'
       ? emptyState(
           '',
@@ -738,9 +761,19 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
   let text: HTMLElement | undefined
   if (it.body) {
     text = el('div', 'lib-text rich clamp')
-    setRich(text, it.body)
+    setRich(text, it.cut ? `${it.body}…` : it.body)
     const t = text
-    t.onclick = () => t.classList.toggle('open')
+    // 목록에는 앞부분만 온다: 펼칠 때 전체 글을 받아 바꿔 넣는다
+    let full = !it.cut
+    t.onclick = () => {
+      t.classList.toggle('open')
+      if (full || !t.classList.contains('open')) return
+      full = true
+      void ctx
+        .libraryFull(it.id)
+        .then((x) => x && setRich(t, x.body))
+        .catch(() => (full = false))
+    }
   }
   return el(
     'article',
@@ -896,39 +929,40 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
 }
 
 export function activityTab(ctx: LifeCtx): HTMLElement {
-  const done = ctx.life().feed.filter((f) => f.kind === 'done' || f.kind === 'routine')
+  const list = ctx.activityList()
+  const done = list.items
   const working = ctx.working()
+  if (!list.started && !working) return el('p', 'cap side-empty', el('span', 'spin'), ' 받는 중…')
   if (!done.length && !working) return sideEmpty('아직 한 일이 없어요')
   return el(
     'div',
     'activity',
     working,
-    ...groupByDay(done)
-      .slice(0, 14)
-      .map((g) =>
+    ...groupByDay(done).map((g) =>
+      el(
+        'section',
+        '',
+        el('h3', 'over', g.day),
         el(
-          'section',
-          '',
-          el('h3', 'over', g.day),
-          el(
-            'div',
-            'side-list',
-            ...g.items.map((f) =>
+          'div',
+          'side-list',
+          ...g.items.map((f) =>
+            el(
+              'div',
+              'side-row',
+              tile(f.kind === 'done' ? 'check' : 'clock', f.kind === 'done' ? 'blue' : 'violet', 36),
               el(
-                'div',
-                'side-row',
-                tile(f.kind === 'done' ? 'check' : 'clock', f.kind === 'done' ? 'blue' : 'violet', 36),
-                el(
-                  'span',
-                  'grow',
-                  el('span', 'side-t', plain(f.title, 80)),
-                  f.body ? el('span', 'meta clamp-2', plain(f.body, 120)) : undefined,
-                ),
-                el('span', 'side-when meta', timeLabel(f.at)),
+                'span',
+                'grow',
+                el('span', 'side-t', plain(f.title, 80)),
+                f.body ? el('span', 'meta clamp-2', plain(f.body, 120)) : undefined,
               ),
+              el('span', 'side-when meta', timeLabel(f.at)),
             ),
           ),
         ),
       ),
+    ),
+    moreRow(list),
   )
 }

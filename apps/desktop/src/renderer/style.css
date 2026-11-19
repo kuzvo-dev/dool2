@@ -2186,3 +2186,16 @@ button.side-row:hover {
 .more-chev.open {
   transform: rotate(-90deg);
 }
+/* 긴 목록 끝 줄: 받는 중 · 더 보기 · 여기까지예요 */
+.page-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 0 28px;
+  text-align: center;
+}
+.lib-list {
+  display: flex;
+  flex-direction: column;
+}
