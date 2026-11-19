@@ -1458,10 +1458,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const answer = infoRequests.ask({ ...q, site: card.name })
       const req = infoRequests.pending().at(-1)
       if (req)
-        connectStep(card.id)(`${josa(q.label, '이/가')} 필요해요`, {
+        // 고르기 질문("카카오 계정 ○○로 할까요?")은 그 말 그대로, 넣을 값(인증번호)은 "○○이 필요해요"
+        connectStep(card.id)(q.field === 'choice' ? q.label : `${josa(q.label, '이/가')} 필요해요`, {
           kind: 'info',
           id: req.id,
-          label: `${q.label} 넣기`,
+          label: q.field === 'choice' ? '고르기' : `${q.label} 넣기`,
         })
       return answer
     },
