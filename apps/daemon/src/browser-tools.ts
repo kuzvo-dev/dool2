@@ -226,6 +226,8 @@ interface PageInfo {
   confirmed?: string
   /** 지금 골라져 있는 라디오·체크박스 표시 */
   selected?: Set<string>
+  /** 펼쳐진 버튼 표시 (야놀자: 골라진 결제 수단 줄만 '카카오페이 혜택 [펼침]'으로 혜택이 펼쳐져 있다) */
+  expanded?: Set<string>
   /** 이름 없는 버튼·라디오 → 바로 뒤 글 (쿠팡 결제 화면: [e8 버튼] 다음 줄 '쿠페이 머니: 0원') */
   near?: Map<string, string>
   /** 표시가 화면 글에서 나오는 순서 (결제 수단 아래 딸린 목록을 찾을 때) */
@@ -251,6 +253,7 @@ function pageInfo(url: string, text: string): PageInfo {
   const selected = new Set(
     [...text.matchAll(/\[(e\d+) (?:라디오|체크박스|선택지)[^\]]*선택됨\]/g)].map((m) => m[1] as string),
   )
+  const expanded = new Set([...text.matchAll(/\[(e\d+) 버튼[^\]]*펼침\]/g)].map((m) => m[1] as string))
   const near = nearLabels(text)
   const pos = new Map([...text.matchAll(/\[(e\d+) /g)].map((m) => [m[1] as string, m.index ?? 0]))
   return {
@@ -262,6 +265,7 @@ function pageInfo(url: string, text: string): PageInfo {
     ...(checkout ? { checkout } : {}),
     ...(confirmed ? { confirmed } : {}),
     ...(selected.size ? { selected } : {}),
+    ...(expanded.size ? { expanded } : {}),
   }
 }
 
@@ -390,11 +394,17 @@ const PAY_METHOD =
 
 // 결제 수단을 고르는 칸 이름 (라디오·버튼)
 const PAY_OPTION =
-  /^(?:(?:신용|체크)\s*)?카드(?:\s*결제)?$|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰\s*결제|계좌\s*이체|무통장(?:\s*입금)?|간편\s*결제|(?:지금|나중에|현장에서|숙박\s*시설에서)\s*결제/i
+  /^(?:(?:신용|체크)\s*)?카드(?:\s*결제)?$|^신용\s*\/\s*체크\s*카드|일반\s*결제|다른\s*결제\s*수단|^[A-Z]{2,}\s*(?:머니|페이|카드\s*페이)|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰\s*결제|계좌\s*이체|무통장(?:\s*입금)?|간편\s*결제|(?:지금|나중에|현장에서|숙박\s*시설에서)\s*결제/i
 
-// 결제 수단을 고르는 버튼: 이름 전체가 결제 수단일 때만 ('카카오페이로 결제'처럼 결제하는 버튼은 아니다)
+// 결제 수단을 고르는 버튼: 이름 전체가 결제 수단일 때만 ('카카오페이로 결제'처럼 결제하는 버튼은 아니다).
+// 뒤에 혜택 안내만 붙은 것도 결제 수단이다 (실측 야놀자: "카카오페이 혜택", "NOL 머니 2% 포인트 적립", "다른 결제 수단 혜택")
 const PAY_BUTTON =
-  /^(?:신용\s*\/\s*체크\s*카드|(?:신용|체크)?\s*카드|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이(?:\s*머니)?|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰|계좌\s*이체|무통장(?:\s*입금)?|간편)(?:\s*결제)?$/i
+  /^(?:신용\s*\/\s*체크\s*카드|(?:신용|체크)?\s*카드|네이버\s*페이|카카오\s*페이|토스\s*페이|페이코|PAYCO|삼성\s*페이|애플\s*페이|쿠페이(?:\s*머니)?|스마일\s*페이|SSG\s*PAY|N\s*pay|휴대폰|계좌\s*이체|무통장(?:\s*입금)?|간편|일반|다른\s*결제\s*수단|[A-Z]{2,}\s*(?:머니|페이|카드\s*페이))(?:\s*결제)?(?:\s*혜택|\s*[\d.]+\s*%\s*(?:포인트\s*)?(?:적립|할인))?$/i
+
+/** 승인 카드에 보일 결제 수단 이름: 뒤에 붙은 혜택 안내는 뗀다 ("카카오페이 혜택" → "카카오페이") */
+export function payOptionName(label: string): string {
+  return label.replace(/\s*혜택$/, '').trim() || label
+}
 
 /** 결제 수단 고르기 칸 이름 (이름 없는 칸은 바로 뒤 글) */
 export function optionLabel(info: Pick<PageInfo, 'refs' | 'near'>, ref: string): string {
@@ -415,6 +425,29 @@ export function payOptions(info: Pick<PageInfo, 'refs' | 'near'>): string[] {
     .filter(([k, v]) => isPayOption(v.role, optionLabel(info, k)))
     .map(([k]) => k)
     .slice(0, 8)
+}
+
+/**
+ * 승인 카드에 실을 결제 수단: AI가 넘긴 것 + 결제 화면에 있는 결제 수단 모두 (AI가 넘긴 순서가 먼저).
+ * AI가 몇 개만 골라 넘겨도 화면에 있는 다른 수단이 빠지지 않게 (실측 야놀자: '다른 결제 수단'이 빠져
+ * 일반 결제·다른 페이를 고를 수 없었다). 결제 시점처럼 결제 수단이 아닌 선택지면 AI가 넘긴 것만
+ */
+export function approvalChoices(
+  info: Pick<PageInfo, 'refs' | 'near' | 'checkout'>,
+  asked: string[] | undefined,
+  title: string | undefined,
+): string[] {
+  const auto = info.checkout && (!title || title === '결제 수단') ? payOptions(info) : []
+  if (!asked?.length) return auto.length >= 2 ? auto : []
+  const out = [...asked]
+  const name = (r: string) => payOptionName(optionLabel(info, r))
+  const names = new Set(out.map(name))
+  for (const r of auto)
+    if (!out.includes(r) && !names.has(name(r))) {
+      out.push(r)
+      names.add(name(r))
+    }
+  return out.slice(0, 8)
 }
 
 // 결제 화면 펼침 목록 중 세부 결제 선택 (등록 카드·할부 개월·은행)
@@ -1372,9 +1405,8 @@ export class BrowserTools {
     // 선택지: 결제 화면에 실제로 있는 고르기 칸만. 그 자체가 결제·확정 버튼이면 안 된다
     const picks: { id: string; label: string; ref: string; role: string; name: string; near?: string }[] = []
     // AI가 선택지를 안 넘겨도, 결제 화면에 결제 수단 고르기 칸이 둘 이상이면 본체가 승인 카드에 싣는다
-    // (실측: AI가 도구 설명을 따르지 않고 네이버페이를 스스로 골랐다)
-    const auto = !d.choices?.length && page.checkout ? payOptions(page) : []
-    const asked = d.choices?.length ? d.choices : auto.length >= 2 ? auto : []
+    // (실측: AI가 도구 설명을 따르지 않고 네이버페이를 스스로 골랐다). 넘겼어도 화면의 다른 결제 수단을 더한다
+    const asked = approvalChoices(page, d.choices, d.choiceTitle)
     for (const cref of asked.slice(0, 8)) {
       const c = page.refs.get(cref)
       if (!c) throw new Error(`선택지 ${cref}가 화면에 없어요. 페이지를 다시 읽어 주세요`)
@@ -1389,7 +1421,7 @@ export class BrowserTools {
       if (!label) throw new Error(`선택지 ${cref}는 이름이 없어 무엇인지 몰라요`)
       picks.push({
         id: `c${picks.length + 1}`,
-        label: label.slice(0, 40),
+        label: payOptionName(label).slice(0, 40),
         ref: cref,
         role: c.role,
         name: c.name,
@@ -1429,8 +1461,11 @@ export class BrowserTools {
     // (실측 쿠팡: 고른 수단 버튼에 표시가 없고, 고른 수단 아래에만 등록 카드·할부 목록이 보인다)
     const at = (r: string) => page.pos?.get(r) ?? -1
     const firstSub = subs.length ? Math.min(...subs.map((g) => at(g.ref))) : -1
+    const opened = picks.filter((p) => page.expanded?.has(p.ref))
     const onPage =
       picks.find((p) => page.selected?.has(p.ref)) ??
+      // 골라진 수단만 혜택이 펼쳐지는 화면 (야놀자). 여러 개가 펼쳐져 있으면 모른다
+      (opened.length === 1 ? opened[0] : undefined) ??
       (firstSub >= 0
         ? picks.filter((p) => at(p.ref) >= 0 && at(p.ref) < firstSub).sort((a, b) => at(b.ref) - at(a.ref))[0]
         : undefined)

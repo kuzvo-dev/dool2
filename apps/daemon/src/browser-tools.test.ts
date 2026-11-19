@@ -1410,6 +1410,91 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(r.ok).toBe(false)
   })
 
+  // 실측(야놀자 레저 결제 2026-11-19): 결제 수단이 '○○ 혜택' 버튼이고, 골라진 수단만 펼쳐져 있다.
+  // AI가 앞의 넷만 choices로 넘겨 '다른 결제 수단'(일반 결제·다른 페이)이 승인 카드에서 빠졌다
+  function nolPage() {
+    let method = '카카오페이'
+    const calls: string[] = []
+    const open = (m: string) => (method === m ? ' 펼침' : '')
+    const text = () =>
+      '결제 수단\nNOL 머니 결제 시\n' +
+      `[e10 버튼 "NOL 머니 2% 포인트 적립"${open('NOL 머니')}]\nNOL 머니로 결제하면, 최대 1,110P 적립\n` +
+      `[e11 버튼 "NOL 카드 페이"${open('NOL 카드 페이')}]\n` +
+      `[e12 버튼 "카카오페이 혜택"${open('카카오페이')}]\n` +
+      `[e13 버튼 "토스페이 혜택"${open('토스페이')}]\n` +
+      `[e14 버튼 "다른 결제 수단 혜택"${open('다른 결제 수단')}]\n` +
+      '[e15 버튼 "결제 수단별 혜택 전체 보기"]\n[e16 체크박스 선택됨]\n약관 동의\n' +
+      '[e7 버튼 "NOL 카드 50% 쿠폰 X 5매 받기"]\n' +
+      '[e22 버튼 "NOL 카드 페이 전용 50% 할인 쿠폰X5장(최대 14.5만원)"]\n' +
+      `결제 금액\n총 결제 금액\n결제수단${method}\n[e24 버튼 "55,500원 결제하기"]`
+    const pick: Record<string, string> = {
+      e10: 'NOL 머니',
+      e11: 'NOL 카드 페이',
+      e12: '카카오페이',
+      e13: '토스페이',
+      e14: '다른 결제 수단',
+    }
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}`)
+        if (cmd === 'click' && pick[String(args?.ref)]) method = pick[String(args?.ref)] as string
+        if (cmd === 'click' && args?.ref === 'e24') method = '완료'
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://platform-site.yanolja.com/domestic/order',
+            title: 'NOL',
+            text: method === '완료' ? '결제창을 여는 중' : text(),
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3, url: 'https://platform-site.yanolja.com/domestic/order' }
+      },
+    }
+  }
+
+  it('AI가 결제 수단 몇 개만 넘겨도 화면의 다른 결제 수단까지 싣고, 혜택 안내는 떼고, 펼쳐진 수단이 기본값', async () => {
+    const b = nolPage()
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e24',
+      what: '롯데월드 아쿠아리움 2인권',
+      where: '야놀자',
+      choices: ['e10', 'e11', 'e12', 'e13'],
+    })
+    expect(r.isError).toBeUndefined()
+    const [rec] = tools.approvals.list()
+    expect(rec?.choices?.map((c) => c.label)).toEqual([
+      'NOL 머니 2% 포인트 적립',
+      'NOL 카드 페이',
+      '카카오페이',
+      '토스페이',
+      '다른 결제 수단',
+    ])
+    // 화면에서 펼쳐져 있는(골라진) 카카오페이가 기본값
+    expect(rec?.choice).toBe('c3')
+    const done = await tools.approve(rec?.id as string, 'c5')
+    expect(done.ok).toBe(true)
+    expect(b.calls.filter((c) => c.startsWith('click'))).toEqual(['click e14', 'click e24'])
+  })
+
+  it('결제 시점처럼 결제 수단이 아닌 선택지에는 화면의 결제 수단을 섞지 않는다', async () => {
+    const tools = new BrowserTools(nolPage())
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e24',
+      what: 'x',
+      where: 'y',
+      choices: ['e10', 'e11'],
+      choiceTitle: '결제 시점',
+    })
+    expect(tools.approvals.list()[0]?.choices?.length).toBe(2)
+  })
+
   it('결제 수단 이름만 다른 같은 마지막 버튼을 알아본다', () => {
     expect(sameFinal('네이버페이로 예약하기', '카드로 예약하기')).toBe(true)
     expect(sameFinal('카카오페이로 결제하기', '토스페이로 결제하기')).toBe(true)
