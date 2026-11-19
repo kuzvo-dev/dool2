@@ -6,7 +6,8 @@
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
 // --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EVALS, scenarios } from './lib/bank.mjs'
@@ -98,8 +99,30 @@ async function lifeIds() {
 
 // 시험이 PC에 만든 파일(file_write)은 지우지 않고 따로 옮겨 둔다 (같은 PC의 본체만, --keep-files면 그대로)
 const FOLDERS = ['Desktop', 'Documents', 'Downloads'].map((d) => join(homedir(), d))
-const listFiles = () =>
-  new Set(FOLDERS.flatMap((d) => (existsSync(d) ? readdirSync(d).map((n) => join(d, n)) : [])))
+// 맥에서 바탕화면·문서·다운로드 읽기는 권한 확인 창이 뜨면 누가 누를 때까지 멈춘다(실측: 사람 없는 맥에서 1단계가 30분 넘게 멈춤).
+// 그래서 따로(비동기로) 읽고 5초 안에 안 되면 이번 실행 동안 파일 옮기기는 건너뛴다
+let filesOk = true
+const listFiles = async () => {
+  if (!filesOk) return new Set()
+  const read = Promise.all(
+    FOLDERS.map(async (d) => {
+      try {
+        return (await readdir(d)).map((n) => join(d, n))
+      } catch {
+        return []
+      }
+    }),
+  )
+  const r = await Promise.race([read, new Promise((ok) => setTimeout(() => ok(null), 5_000))])
+  if (!r) {
+    filesOk = false
+    console.log(
+      '\n(바탕화면·문서·다운로드를 5초 안에 못 읽어서(맥 권한 창?) 시험이 만든 파일 옮기기는 건너뛰어요)',
+    )
+    return new Set()
+  }
+  return new Set(r.flat())
+}
 const local = /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(daemon) && !flag('keep-files')
 
 /** 시나리오 상황의 "기억: …"을 뽑는다 (시험 전에 넣었다가 끝나면 지운다) */
@@ -119,7 +142,7 @@ async function runOne(sc) {
     })
     if (r.id) seeded.push({ id: r.id, text })
   }
-  const filesBefore = local ? listFiles() : new Set()
+  const filesBefore = local ? await listFiles() : new Set()
   const before = await lifeIds()
   // 시험 전부터 떠 있던 카드(인증번호·내 정보)는 이 시나리오 것이 아니다
   const infoBefore = new Set(((await api('/api/info')).requests ?? []).map((q) => q.id))
@@ -217,7 +240,7 @@ async function runOne(sc) {
   if (local) {
     rec.created.files = []
     const keep = join(out, '_files', sc.id.replace(/[^\w.-]+/g, '_'))
-    for (const p of listFiles()) {
+    for (const p of await listFiles()) {
       if (filesBefore.has(p)) continue
       mkdirSync(keep, { recursive: true })
       const to = join(keep, p.split('/').pop())
@@ -318,3 +341,5 @@ for (const job of jobs) {
 }
 // 다른 시험 기록과 섞지 않게 고른 목록을 남긴다
 writeFileSync(join(out, '_picked.json'), JSON.stringify(list.map((s) => s.id)))
+// 권한 창에 막힌 폴더 읽기가 남아 있으면 프로세스가 끝나지 않는다: 일이 끝났으면 나간다
+process.exit(0)
