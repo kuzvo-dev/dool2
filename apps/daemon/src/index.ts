@@ -1761,6 +1761,83 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void runRoutine(r).catch((e: Error) => life.noteRun(r.id, `하지 못했어요: ${e.message}`))
   const lifeTimer = setInterval(() => life.tick(), 30_000)
   lifeTimer.unref?.()
+
+  /**
+   * 연결 유지: 하루 두 번(마지막 뒤 11시간 넘고, 한국 시간 8~22시) 연결한 서비스마다 로그인이 살아 있는지 조용히 본다.
+   * 들어가 보는 것만으로 세션이 늘어나는 곳이 많고, 풀렸으면 연결할 때 쓴 방법(간편 로그인·금고 계정)으로 다시 로그인한다.
+   * 사람이 해야 하는 단계(카톡 확인·본인인증)나 방법을 모르는 곳만 모아 한 번 알린다.
+   * 실측(2026-11-19): 연결 몇 시간 만에 9곳이 풀렸고, 그중 4곳은 기억한 카카오로 사람 손 없이 다시 로그인됐다
+   */
+  let keeping = false
+  const keepConnections = async (
+    force = false,
+  ): Promise<{ checked: number; relogged: string[]; need: string[] }> => {
+    const result = { checked: 0, relogged: [] as string[], need: [] as string[] }
+    if (keeping || !browser.status.connected) return result
+    const last = Date.parse(String(store.getSetting('connectKeptAt') ?? '')) || 0
+    const hour = Number(
+      new Date().toLocaleString('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Seoul' }),
+    )
+    if (!force && (Date.now() - last < 11 * 3_600_000 || hour < 8 || hour >= 22)) return result
+    if (!force && (conversationBusy() || connecting.size > 0)) return result
+    keeping = true
+    store.setSetting('connectKeptAt', new Date().toISOString())
+    try {
+      const services = (await skills.connections()).filter((x) => x.connectedAt && x.card.how === 'browser')
+      // 간편 로그인 계정(카카오·네이버·구글)을 먼저: 이것이 살아 있어야 다른 곳을 버튼만으로 다시 로그인한다
+      services.sort((a, b) => Number(b.card.category === 'account') - Number(a.card.category === 'account'))
+      for (const s of services) {
+        if (conversationBusy() && !force) break
+        const card = s.card
+        const r = await checkSignedIn(browser, card).catch(() => undefined)
+        if (!r) continue
+        result.checked++
+        rememberCheck(card.id, r)
+        if (r.state !== 'out') continue
+        const via = connectVia()[card.id]
+        const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
+        const creds = via === 'vault' ? await vaultCreds(card) : undefined
+        let ok = false
+        if (provider && provider in SOCIAL_PROVIDERS) {
+          quietConnect.add(card.id)
+          ok = (
+            await startConnect(card, () => connectSocial(card, provider, true), `keep:social:${provider}`)
+          ).ok
+        } else if (creds) {
+          quietConnect.add(card.id)
+          ok = (
+            await startConnect(card, () => connectLogin(card, creds.username, creds.password), 'keep:vault')
+          ).ok
+        }
+        // 다시 로그인했다고 나와도 한 번 더 확인한다 (짐작으로 'ok'가 나온 적이 있다)
+        if (ok) ok = (await checkSignedIn(browser, card).catch(() => undefined))?.state === 'in'
+        if (ok) result.relogged.push(card.name)
+        else {
+          connectMark(card.id, false)
+          result.need.push(card.name)
+        }
+      }
+      journal.write('connect-keep', { checked: result.checked, relogged: result.relogged, need: result.need })
+      if (result.need.length)
+        void link
+          .notify({
+            title: `로그인이 풀린 곳 ${result.need.length}곳`,
+            body: `${result.need.slice(0, 4).join('·')}${result.need.length > 4 ? ' 등' : ''} — 연결 화면에서 다시 연결해 주세요`,
+            tag: 'connect-keep',
+            url: '#tab=connect',
+          })
+          .catch(() => {})
+      void skills
+        .connections()
+        .then((list) => link.broadcast({ kind: 'connections', services: list }))
+        .catch(() => {})
+      return result
+    } finally {
+      keeping = false
+    }
+  }
+  const keepTimer = setInterval(() => void keepConnections().catch(() => {}), 30 * 60_000)
+  keepTimer.unref?.()
   // 바뀌면 폰·PC에 다시 보낸다 (잠깐 모아서)
   let lifePush: ReturnType<typeof setTimeout> | undefined
   life.onChange = () => {
@@ -2272,6 +2349,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 서비스 연결 (ADR 0014): 카드 목록, 로그인하러 Chrome에서 열기, 연결 표시
     if (a === 'connections') {
       if (!b && req.method === 'GET') return json(res, 200, { services: await skills.connections() })
+      // 연결 유지를 지금 한 번 (시험·사용자가 '연결 다시 확인'을 눌렀을 때)
+      if (b === 'keep' && !c && req.method === 'POST') return json(res, 200, await keepConnections(true))
       const card = b ? await skills.card(b) : undefined
       if (b && !card) return json(res, 404, { error: '그런 서비스가 없어요' })
       if (card && c === 'open' && !d && req.method === 'POST') {
@@ -2562,6 +2641,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         claudeLogin?.cancel()
         journal.stop()
         clearInterval(lifeTimer)
+        clearInterval(keepTimer)
         clearTimeout(lifePush)
         loginWatch.stopAll()
         link.stop()
