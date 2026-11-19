@@ -366,7 +366,7 @@ export async function probeLogin(
   opts: { wait?: number } = {},
 ): Promise<ProbeResult & { tabId: number }> {
   const wait = opts.wait ?? 2_500
-  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 30_000 })) as Snap
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
   let tabId = opened.tabId
   /** 연 탭들 (로그인이 새 창으로 열리면 늘어난다) */
@@ -542,7 +542,7 @@ export async function autoLogin(
   opts: { wait?: number; tries?: number } = {},
 ): Promise<AutoLoginResult> {
   const wait = opts.wait ?? 1_500
-  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 30_000 })) as Snap
   const step = input.step ?? (() => {})
   step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
@@ -800,7 +800,7 @@ const CONSENT =
   /^((동의|확인)하고\s?(계속하기|계속|시작하기|진행(하기)?)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
 
 /** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
-function findProviderButton(text: string, provider: SocialProvider): RefEntry | undefined {
+function findProviderButton(text: string, provider: SocialProvider, loginPage = true): RefEntry | undefined {
   const p = SOCIAL_PROVIDERS[provider]
   const refs = ([...parseRefs(text)] as RefEntry[]).filter(
     ([, r]) =>
@@ -817,13 +817,26 @@ function findProviderButton(text: string, provider: SocialProvider): RefEntry | 
   )
   return (
     ok.find(([, r]) => /로그인|시작|계속|login|sign|continue/i.test(r.name)) ??
-    // 말 없이 공급자 이름만 있는 버튼("kakao", "네이버"). "SSG 페이스북"처럼 앞에 다른 말이 붙은 건 회사 계정 링크다
-    ok.find(
-      ([, r]) =>
-        r.name
-          .trim()
-          .replace(p.button, '')
-          .replace(/[\s·|-]/g, '').length <= 2,
+    // 말 없이 공급자 이름만 있는 버튼("kakao", "네이버"). "SSG 페이스북"처럼 앞에 다른 말이 붙은 건 회사 계정 링크다.
+    // 로그인 화면에서만: 첫 화면 바닥의 공식 SNS 아이콘("naver" → 네이버 포스트)을 눌렀다 (실측 오늘의집)
+    ((loginPage || undefined) &&
+      ok.find(
+        ([, r]) =>
+          r.name
+            .trim()
+            .replace(p.button, '')
+            .replace(/[\s·|-]/g, '').length <= 2,
+      ))
+  )
+}
+
+/** 로그인 화면인지: 비밀번호·아이디 칸, 로그인 주소, '로그인' 제목 */
+function isLoginPage(page: Snap): boolean {
+  return (
+    hasPassword(page.text) ||
+    /\/(login|signin|sign-in|sign_in|member\/login)(\b|[/?#._])|login\.(do|aspx|jsp)/i.test(page.url) ||
+    /^#{1,3}\s?(로그인|간편\s?로그인|SNS\s?로그인|로그인\s?(또는|및)\s?회원\s?가입|Log ?in|Sign ?in)/im.test(
+      page.text,
     )
   )
 }
@@ -855,7 +868,7 @@ export async function socialLogin(
 ): Promise<AutoLoginResult> {
   const wait = opts.wait ?? 1_500
   const label = SOCIAL_PROVIDERS[input.provider].label
-  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 12_000 })) as Snap
+  const snap = async (tabId: number) => (await browser.call('snapshot', { tabId, maxChars: 30_000 })) as Snap
   const step = input.step ?? (() => {})
   step(`${input.card.name} 여는 중`)
   const opened = (await browser.call('open', { url: input.url }, 40_000)) as { tabId: number }
@@ -868,7 +881,7 @@ export async function socialLogin(
 
   // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
   const tried = new Set<string>()
-  let btn = findProviderButton(page.text, input.provider)
+  let btn = findProviderButton(page.text, input.provider, isLoginPage(page))
   for (let i = 0, late = 0; i < 4 && !btn; i++) {
     const target = findLoginLink(page.text, tried)
     if (!target) {
@@ -876,7 +889,7 @@ export async function socialLogin(
       if (late++ >= 3) break
       await sleep(wait)
       page = await snap(siteTab)
-      btn = findProviderButton(page.text, input.provider)
+      btn = findProviderButton(page.text, input.provider, isLoginPage(page))
       i--
       continue
     }
@@ -885,7 +898,7 @@ export async function socialLogin(
     await browser.call('click', { tabId: siteTab, ref: target[0] }, 30_000).catch(() => undefined)
     await sleep(wait)
     page = await settled(() => snap(siteTab), wait)
-    btn = findProviderButton(page.text, input.provider)
+    btn = findProviderButton(page.text, input.provider, isLoginPage(page))
     // 누르는 순간 광고 팝업이 떠서 클릭을 가로챘다: 팝업을 닫고 같은 링크를 한 번 더 누른다
     if (!btn && page.url === before && hasPopup(page.text)) {
       page = await closePopups(browser, siteTab, page, snap, wait)
@@ -980,6 +993,18 @@ export async function socialLogin(
           status: 'human',
           tabId: providerTab,
           reason: `${input.card.name} 가입에 ${hum[0].replace(/\s/g, '')}이 필요해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
+        }
+      // 간편 로그인 뒤 사이트가 본인인증을 요구한다 (실측 중고나라: 이름·주민번호 앞자리·통신사·휴대폰): 사람 차례
+      if (
+        !join &&
+        /본인\s?인증을?\s?(진행|해)\s?(해\s?)?주세요|본인\s?확인을?\s?(진행|해)\s?(해\s?)?주세요/.test(
+          said(p.text),
+        )
+      )
+        return {
+          status: 'human',
+          tabId: providerTab,
+          reason: `${input.card.name}가 로그인할 때 본인인증(이름·생년월일·휴대폰)을 요구해요. 화면에서 인증해 주시면 두리가 이어서 해요`,
         }
       // 이 공급자 계정으로 가입된 회원이 없다는 화면 (가입 버튼이 없어 joinScreen이 못 잡는 것) — 실측 에어비앤비·이스타·캐치테이블·사람인
       if (!join && (NOT_MEMBER.test(said(p.text)) || NOT_MEMBER_URL.test(p.url))) {

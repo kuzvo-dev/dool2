@@ -948,3 +948,52 @@ describe('일괄 점검 실측 화면 (2026-11-19)', () => {
     expect(joinScreen(t)).toEqual({ kind: 'existing', account: 'mdj****10' })
   })
 })
+
+describe('일괄 점검 실측 2 (2026-11-19)', () => {
+  it('첫 화면 바닥의 공식 SNS 아이콘("naver")은 누르지 않고 로그인 화면으로 들어간다 (오늘의집 → 네이버 포스트)', async () => {
+    const home = {
+      url: 'https://shop.test/',
+      text: '[e1 링크 "오늘의집"] [e2 링크 "로그인"] [e3 링크 "회원가입"]\n[e90 링크 "naver"] [e91 링크 "instagram"]',
+    }
+    const login = {
+      url: 'https://shop.test/login',
+      text: '## 로그인\n[e5 입력칸 "이메일"] [e6 비밀번호칸 "비밀번호"]\n[e9 버튼 "naver"]',
+    }
+    const b = tabsBrowser({ 7: [home, login] }, (_t, ref) => (ref === 'e2' ? {} : { advance: [] }))
+    await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: home.url,
+        provider: 'naver',
+        creds: async () => undefined,
+      },
+      { wait: 0, tries: 1 },
+    )
+    const clicks = b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)
+    expect(clicks[0]).toBe('e2')
+    expect(clicks).not.toContain('e90')
+  })
+  it('사이트가 본인인증을 요구하면 사람 차례로 그 말을 (중고나라)', async () => {
+    const login = { url: 'https://shop.test/signin', text: '## 로그인\n[e8 버튼 "카카오로 시작하기"]' }
+    const kakao = { url: 'https://kauth.kakao.com/oauth/authorize', text: '[e2 버튼 "계속하기"]' }
+    const cert = {
+      url: 'https://shop.test/signin',
+      text: '본인 인증을 진행해 주세요\n이름\n[e1 입력칸 "이름"]\n주민등록번호\n[e2 입력칸 "생년월일 6자리"]\n통신사\n[e4 선택 상자 "선택해 주세요"]\n[e5 입력칸 "휴대폰번호"]\n[e6 버튼 "제출하기" 비활성]',
+    }
+    const b = tabsBrowser({ 7: [login, kakao, cert] })
+    const r = await socialLogin(
+      b,
+      {
+        card: { id: 'shop', name: '시험 가게' },
+        url: login.url,
+        provider: 'kakao',
+        creds: async () => undefined,
+        ask: { known: { has: () => true, add: () => {} } },
+      },
+      { wait: 0, tries: 6 },
+    )
+    expect(r).toMatchObject({ status: 'human' })
+    expect((r as { reason: string }).reason).toMatch(/본인인증/)
+  })
+})
