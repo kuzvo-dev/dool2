@@ -155,6 +155,10 @@ const TOOL_LABEL: Record<string, string> = {
   file_move: '파일 옮기는',
   file_convert: '사진 형식 바꾸는',
   file_print: '출력하는',
+  file_pdf: 'PDF 만드는',
+  file_trash: '휴지통 보는',
+  file_download: '파일 받는',
+  pc_screen: 'PC 화면 다루는',
   service_find: '서비스 찾는',
   service_call: '서비스에서 일하는',
 }

@@ -1,6 +1,7 @@
 // PC 파일 도구 (ADR 0022·0024): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기,
-// 옮기기·이름 바꾸기(여러 개는 승인, 되돌리기 있음), 사진 형식 바꾸기, 출력(승인). 실제 일은 두리 본체가 한다.
-// 지우기·덮어쓰기는 없다
+// 옮기기·이름 바꾸기(여러 개는 승인, 되돌리기 있음), 사진 형식 바꾸기, 출력(승인), PDF 합치기·나누기,
+// 휴지통에서 되살리기(여러 개는 승인), 내려받기(실행 파일은 승인), 화면 잠그기·잠자기(승인). 실제 일은 두리 본체가 한다.
+// 지우기·덮어쓰기·휴지통 비우기·PC 끄기는 없다
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { BrowserClient } from './browser.js'
@@ -174,5 +175,98 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       },
     },
     call('file_print'),
+  )
+  const pageSpec = z
+    .string()
+    .max(80)
+    .regex(/^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$/)
+  server.registerTool(
+    'file_pdf',
+    {
+      title: 'PDF 합치기·나누기',
+      description:
+        'PDF를 합치거나 나눠 새 PDF를 만든다(원본은 그대로). "PDF 3개 하나로 합쳐 줘", "계약서 3쪽만 따로", "쪽마다 나눠 줘", "영수증 사진 PDF 하나로"일 때 쓴다. ' +
+        '합치기: paths에 준 순서대로 잇는다(사진 jpg·png는 한 장씩 A4 쪽으로, HEIC는 file_convert로 먼저). ' +
+        '하나에서 쪽 뽑기: paths 하나 + pages. 나누기: paths 하나 + split: true(쪽마다) 또는 parts(["1-3","4-6"] 범위마다 한 파일). ' +
+        '새 파일은 첫 파일과 같은 폴더(또는 folder)에 생기고 같은 이름이면 "(1)". 결과의 경로를 사용자에게 알려 준다. 암호 걸린 PDF는 못 연다고 결과에 나온다.',
+      inputSchema: {
+        paths: z
+          .array(z.string().max(500))
+          .min(1)
+          .max(100)
+          .describe('PDF·사진 경로들 (file_find가 알려 준 그대로, 합칠 순서대로)'),
+        pages: pageSpec.optional().describe('PDF 하나에서 뽑을 쪽 (예: "1-3,5")'),
+        split: z.boolean().optional().describe('true면 PDF 하나를 쪽마다 따로'),
+        parts: z.array(pageSpec).max(200).optional().describe('나눌 범위들 (예: ["1-2","3-5"])'),
+        name: z.string().max(80).optional().describe('새 파일 이름 (확장자 없이). 비우면 알아서'),
+        folder: z
+          .string()
+          .max(500)
+          .optional()
+          .describe('새 파일을 둘 폴더 (예: "~/Desktop"). 비우면 첫 파일과 같은 폴더'),
+      },
+    },
+    call('file_pdf'),
+  )
+  server.registerTool(
+    'file_trash',
+    {
+      title: '휴지통에서 찾기·되살리기',
+      description:
+        '휴지통에서 이름으로 찾고 되살린다. "실수로 발표 자료 지웠어 살려 줘", "휴지통에 그 파일 있어?"일 때 쓴다. ' +
+        'query로 먼저 찾으면 지운 때·원래 자리·restore 값이 나온다. 되살리기는 restore에 그 값을 준다: 원래 자리(바탕화면·문서·다운로드 안일 때), 아니면 바탕화면으로, 같은 이름이 있으면 "(1)". ' +
+        '하나는 바로 하고, 2개 이상이면 사용자 승인 카드(무엇을 어디로)가 뜨니 결과대로 말하고 답을 끝낸다. 휴지통 비우기·영구 삭제는 없다. ' +
+        '맥이 휴지통을 막으면(전체 디스크 접근 권한) 결과에 이유와 Finder에서 되돌려 놓는 법이 나오니 그대로 안내한다.',
+      inputSchema: {
+        query: z
+          .string()
+          .max(100)
+          .optional()
+          .describe('찾을 이름에 든 말 (예: "발표", "기획서,11월"). 비우면 최근 지운 것'),
+        restore: z
+          .array(z.string().max(300))
+          .max(100)
+          .optional()
+          .describe('되살릴 것: 찾기 결과의 restore 값 그대로'),
+      },
+    },
+    call('file_trash'),
+  )
+  server.registerTool(
+    'file_download',
+    {
+      title: '파일 내려받기',
+      description:
+        'https 주소의 파일을 이 PC의 다운로드 폴더에 받는다. "이거 집 PC에 받아 놔", "이 PDF 저장해 줘"처럼 파일 주소가 있을 때 쓴다(같은 이름이 있으면 "(1)", 2GB까지). ' +
+        '실행 파일(.exe·.dmg·.pkg·.app·스크립트 등)이면 받기 전에 승인이 필요하다고 나오니, 공식 사이트인지 확인하고 confirm: true로 다시 불러 승인 카드를 띄우고 답을 끝낸다. ' +
+        '로그인해야 받는 파일·웹페이지 주소면 결과에 나오니 browser_open으로 그 페이지를 열어 다운로드 버튼을 누른다. 오래 걸리면 "받는 중"이 나오니 조금 뒤 file_find로 확인한다. ' +
+        '이 PC·집 안 네트워크 주소와 http 주소는 받지 않는다.',
+      inputSchema: {
+        url: z.string().max(2000).describe('받을 파일 주소 (https://…)'),
+        name: z
+          .string()
+          .max(120)
+          .optional()
+          .describe('저장할 이름 (확장자는 사이트 것을 둔다). 비우면 사이트가 준 이름'),
+        confirm: z.boolean().optional().describe('실행 파일이라 승인이 필요하다고 나왔을 때만 true'),
+      },
+    },
+    call('file_download'),
+  )
+  server.registerTool(
+    'pc_screen',
+    {
+      title: 'PC 화면 잠그기·잠자기',
+      description:
+        '이 PC 화면을 잠그거나 잠자기로 둔다. "PC 화면 잠가 줘", "자리 비울게", "다 끝나면 PC 꺼 줘"일 때 쓴다. 사용자 승인 카드가 뜨고 승인하면 바로 하니, 결과대로 말하고 답을 끝낸다. ' +
+        'lock은 잠가도 두리가 하던 일을 계속하고, sleep은 두리도 멈춘다(다른 일을 하는 중이면 끝난 뒤에 하라고 나온다). ' +
+        '끄기(off)는 하지 않는다: off로 부르면 잠자기를 권하는 다음 길이 나온다. 그 일이 끝난 뒤에 해 달라는 부탁이면 하던 일을 먼저 끝내고 부른다.',
+      inputSchema: {
+        action: z
+          .enum(['lock', 'sleep', 'off'])
+          .describe('lock=화면 잠그기, sleep=잠자기, off=끄기 부탁(하지 않고 다음 길만)'),
+      },
+    },
+    call('pc_screen'),
   )
 }

@@ -77,6 +77,10 @@ describe('두리 MCP 도구', () => {
       'file_move',
       'file_convert',
       'file_print',
+      'file_pdf',
+      'file_trash',
+      'file_download',
+      'pc_screen',
       'service_find',
       'service_call',
     ])

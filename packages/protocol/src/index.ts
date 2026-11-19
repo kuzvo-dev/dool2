@@ -603,9 +603,10 @@ export interface ApprovalView {
   url: string
   /**
    * app: 처음 다루는 PC 앱을 두리가 조작해도 되는지.
-   * file: PC 파일 여러 개 옮기기·이름 바꾸기, print: 종이로 출력 (ADR 0024. 둘 다 tabId -2)
+   * file: PC 파일 여러 개 옮기기·휴지통에서 되살리기·실행 파일 받기, print: 종이로 출력,
+   * pc: 이 PC 화면 잠그기·잠자기 (ADR 0024. 모두 tabId -2)
    */
-  kind: 'money' | 'contact' | 'irreversible' | 'app' | 'file' | 'print'
+  kind: 'money' | 'contact' | 'irreversible' | 'app' | 'file' | 'print' | 'pc'
   reason: string
   /** 아래는 AI가 적은 설명. 틀릴 수 있어서 화면 캡처와 함께 보여 준다 */
   what: string

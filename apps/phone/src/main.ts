@@ -2925,8 +2925,10 @@ function approveQuestion(a: ApprovalView) {
   if (a.kind === 'money') return '결제할까요?'
   if (a.kind === 'contact') return '보낼까요?'
   if (a.kind === 'app') return '이 PC 앱을 다뤄도 될까요?'
-  if (a.kind === 'file') return '이대로 옮길까요?'
+  if (a.kind === 'file')
+    return `이대로 ${a.label === '옮기기' ? '옮길까요' : a.label === '되살리기' ? '되살릴까요' : '받을까요'}?`
   if (a.kind === 'print') return '출력할까요?'
+  if (a.kind === 'pc') return `${a.label}를 할까요?`
   return '진행할까요?'
 }
 
@@ -4700,7 +4702,7 @@ function approvalSheet(id: string) {
   row('무엇을', a.what)
   row('어디서', a.where)
   row('주소', hostOf(a.url), 'host')
-  const pc = a.kind === 'file' || a.kind === 'print'
+  const pc = a.kind === 'file' || a.kind === 'print' || a.kind === 'pc'
   row(pc ? '알아 두기' : '취소 조건', a.cancel)
   if (a.kind !== 'app' && !pc) row('누를 버튼', `"${finalLabel(a)}"`)
   const items = itemsList(a, 100)
@@ -4757,10 +4759,12 @@ function approvalSheet(id: string) {
       class: 'meta',
       text:
         a.kind === 'file'
-          ? '목록이 맞는지 봐 주세요. 승인하면 두리가 이 목록대로만 옮기고, 덮어쓰거나 지우지 않아요.'
-          : a.kind === 'print'
-            ? '파일과 매수가 맞는지 봐 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
-            : '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+          ? '목록이 맞는지 봐 주세요. 승인하면 두리가 이 목록대로만 하고, 덮어쓰거나 지우지 않아요.'
+          : a.kind === 'pc'
+            ? '승인하면 두리가 바로 해요.'
+            : a.kind === 'print'
+              ? '파일과 매수가 맞는지 봐 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
+              : '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
     }),
     h(
       'div',

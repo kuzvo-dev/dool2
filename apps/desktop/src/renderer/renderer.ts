@@ -2042,8 +2042,9 @@ const RISK_LABEL: Record<ApprovalView['kind'], string> = {
   contact: '다른 사람에게 보내는 일',
   irreversible: '되돌릴 수 없는 일',
   app: '처음 다루는 PC 앱',
-  file: 'PC 파일 옮기기',
+  file: 'PC 파일',
   print: '종이로 출력',
+  pc: '이 PC',
 }
 
 /**
@@ -2122,7 +2123,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     }
     row('무엇을', v.what)
     row('주소', v.url.startsWith('app:') ? '' : host, 'host')
-    const pc = v.kind === 'file' || v.kind === 'print'
+    const pc = v.kind === 'file' || v.kind === 'print' || v.kind === 'pc'
     row(pc ? '알아 두기' : '취소 조건', v.cancel)
     if (v.kind !== 'app' && !pc) row('누를 버튼', `"${v.label}"`)
     row('얼마', v.amount, 'money')
@@ -2142,8 +2143,8 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
         ? '허용하기'
         : v.kind === 'print'
           ? '출력하기'
-          : v.kind === 'file'
-            ? '옮기기'
+          : v.kind === 'file' || v.kind === 'pc'
+            ? v.label
             : '승인하기',
     )
     yes.type = 'button'
@@ -2151,7 +2152,8 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       yes.disabled = true
       no.disabled = true
       if (decision === 'approve')
-        yes.textContent = v.kind === 'file' ? '옮기는 중…' : v.kind === 'print' ? '보내는 중…' : '누르는 중…'
+        yes.textContent =
+          v.kind === 'file' || v.kind === 'pc' ? '하는 중…' : v.kind === 'print' ? '보내는 중…' : '누르는 중…'
       const r = await api<{ ok: boolean; message: string }>(`/api/approvals/${encodeURIComponent(v.id)}`, {
         method: 'POST',
         body: JSON.stringify({ decision }),
@@ -2175,10 +2177,12 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
         'p',
         'approve-note',
         v.kind === 'file'
-          ? '목록이 맞는지 확인해 주세요. 승인하면 두리가 이 목록대로만 옮기고, 덮어쓰거나 지우지 않아요.'
-          : v.kind === 'print'
-            ? '파일과 매수가 맞는지 확인해 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
-            : '화면과 내용이 맞는지 확인해 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+          ? '목록이 맞는지 확인해 주세요. 승인하면 두리가 이 목록대로만 하고, 덮어쓰거나 지우지 않아요.'
+          : v.kind === 'pc'
+            ? '승인하면 두리가 바로 해요.'
+            : v.kind === 'print'
+              ? '파일과 매수가 맞는지 확인해 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
+              : '화면과 내용이 맞는지 확인해 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
       ),
     )
   }

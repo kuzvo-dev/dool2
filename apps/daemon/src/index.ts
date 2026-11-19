@@ -372,6 +372,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const fileTools = new FileTools(opts.fileFolders, undefined, {
     approvals: browserTools.approvals,
     movesLog: join(paths.dataDir, 'file-moves.json'),
+    // 잠자기 전에 두리가 하던 일을 본다 (답하는 대화·서비스 연결). 아래에서 만드는 값이라 부를 때 읽는다
+    busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
   })
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {

@@ -3,13 +3,21 @@
 // - 옮기기: 2개 이상이면 승인 카드(무엇을 어디로 — 목록)를 거치고, 옮긴 기록을 남겨 되돌릴 수 있다
 // - 사진 바꾸기: 원본은 그대로 두고 새 파일을 만든다 (맥 sips, 윈도우 WPF 이미지 부품)
 // - 출력: 종이가 나가는 일이라 늘 승인을 거친다 (맥 lp, 윈도우 파일을 여는 프로그램의 인쇄)
+// - PDF 합치기·나누기(pdf-edit.ts), 휴지통에서 되살리기(trash.ts), 내려받기(download.ts), 화면 잠그기(pc-power.ts)
 
 import { execFile } from 'node:child_process'
 import { constants, existsSync, realpathSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, sep } from 'node:path'
 import type { Approvals } from './approvals.js'
+import { download } from './download.js'
+import { cleanName, freeName } from './file-names.js'
+import { POWER_LABEL, POWER_OFF_TEXT, type PowerAction, powerCheck, powerDo } from './pc-power.js'
 import { pdfText } from './pdf.js'
+import { pdfTool } from './pdf-edit.js'
+import { type TrashItem, trashList, trashRestore } from './trash.js'
+
+export { cleanName, freeName } from './file-names.js'
 
 export interface ExecResult {
   code: number
@@ -67,6 +75,12 @@ export interface FileScope {
   roots(): string[]
   /** 손대지 않는 파일 (숨은 파일·인증서·키·비밀번호) */
   sensitive(p: string): boolean
+  /** 홈 폴더 (실제 경로) */
+  home: string
+  /** 바탕화면·문서·다운로드 중 하나의 첫 폴더 */
+  folder(key: 'desktop' | 'documents' | 'downloads'): string | undefined
+  /** 파일 읽기 (맥 iCloud에만 있는 파일은 내려받아). 못 읽으면 이유(글) */
+  read(p: string): Promise<Buffer | string>
 }
 
 export interface FileOpsOptions {
@@ -77,6 +91,19 @@ export interface FileOpsOptions {
   platform?: NodeJS.Platform
   /** 사진 바꾸기 한 번에 쓰는 시간 (넘으면 거기까지 하고 이어서 하라고 알린다) */
   convertBudgetMs?: number
+  /** 두리가 지금 하는 일: 답하는 대화 수와 연결 중인 서비스 (잠자기 전에 본다) */
+  busy?: () => { turns: number; connecting: string[] }
+  /** 내려받기 (시험에서 바꿔 끼운다) */
+  fetch?: typeof fetch
+  resolve?: typeof import('node:dns/promises').lookup
+  downloadWaitMs?: number
+}
+
+interface TrashPlan {
+  item: TrashItem
+  dest: string
+  /** 사용자에게 보일 까닭 (원래 자리 / 바탕화면에 둔 까닭) */
+  why: string
 }
 
 interface MovePlan {
@@ -99,7 +126,12 @@ interface PrintPlan {
   copies: number
   pages?: string
 }
-type Pending = { kind: 'move'; items: MovePlan[] } | ({ kind: 'print' } & PrintPlan)
+type Pending =
+  | { kind: 'move'; items: MovePlan[] }
+  | ({ kind: 'print' } & PrintPlan)
+  | { kind: 'trash'; items: TrashPlan[] }
+  | { kind: 'download'; url: string; name?: string }
+  | { kind: 'power'; action: PowerAction }
 
 /** 승인 카드가 대화의 기록과 짝을 맞추는 표시 (파일 일은 탭이 없어 -2) */
 export const FILE_TAB = -2
@@ -108,31 +140,6 @@ const IMG_EXT = /^\.(heic|heif|png|webp|jpe?g|tiff?|gif|bmp)$/i
 const PRINT_EXT = /^\.(pdf|txt|jpe?g|png|gif|tiff?)$/i
 const MAX_MOVES = 300
 const MAX_CONVERT = 1000
-
-/** 같은 이름이 있으면 "이름 (1).확장자", "(2)"… (덮어쓰지 않는다) */
-export function freeName(dir: string, name: string, taken: Set<string> = new Set()): string {
-  const key = (p: string) => p.normalize('NFC').toLowerCase()
-  const ext = extname(name)
-  const stem = ext ? name.slice(0, -ext.length) : name
-  for (let i = 0; i < 1000; i++) {
-    const p = join(dir, i ? `${stem} (${i})${ext}` : name)
-    if (!existsSync(p) && !taken.has(key(p))) {
-      taken.add(key(p))
-      return p
-    }
-  }
-  throw new Error('같은 이름이 너무 많아요')
-}
-
-/** 파일 이름으로 못 쓰는 글자를 뺀다 */
-const cleanName = (s: string) =>
-  basename(s.replace(/[\\/]+/g, ' '))
-    .replace(/[:*?"<>|]/g, ' ')
-    .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 ? ' ' : c))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^\.+/, '')
-    .slice(0, 120)
 
 export class FileOps {
   private readonly approvals?: Approvals
@@ -687,6 +694,278 @@ export class FileOps {
     )
   }
 
+  // ── PDF 합치기·나누기 ─────────────────────────────
+
+  pdf(args: Record<string, unknown>): Promise<FileToolResult> {
+    return pdfTool(this.scope, args)
+  }
+
+  // ── 휴지통에서 찾기·되살리기 ─────────────────────────
+
+  private trashCtx() {
+    return { platform: this.platform, exec: this.exec, home: this.scope.home }
+  }
+
+  async trash(args: Record<string, unknown>): Promise<FileToolResult> {
+    const list = await trashList(this.trashCtx())
+    if (typeof list === 'string') return fail(list)
+    const restore = Array.isArray(args.restore) ? (args.restore as unknown[]).map(String).filter(Boolean) : []
+    if (!restore.length) {
+      const words = norm(String(args.query ?? ''))
+        .split(/[,·]/)
+        .map((w) => w.trim())
+        .filter(Boolean)
+      const hits = list
+        .filter(
+          (x) => !words.length || words.every((w) => norm(x.name).includes(w) || norm(x.id).includes(w)),
+        )
+        .sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+      if (!list.length)
+        return ok(
+          '휴지통이 비어 있어요. 이미 비웠다면 두리는 되살릴 수 없어요. iCloud·OneDrive에 있던 파일이면 그 서비스의 "최근 삭제된 항목"을 확인해 보라고 알려 주세요.',
+        )
+      if (!hits.length)
+        return ok(
+          `휴지통(${list.length}개)에서 "${String(args.query ?? '')}"이(가) 들어간 것을 못 찾았어요. 다른 낱말로 찾아보거나, iCloud·OneDrive에 있던 파일이면 그 서비스의 "최근 삭제된 항목"을 확인해 보라고 알려 주세요.`,
+        )
+      return ok(
+        `휴지통에서 ${hits.length > 30 ? `${hits.length}개 중 최근 30개` : `${hits.length}개`}:\n` +
+          hits
+            .slice(0, 30)
+            .map(
+              (x) =>
+                `- ${x.name}${x.dir ? sep : ''}${x.at ? ` · 지운 때 ${day(x.at)}` : ''} · 원래 자리 ${x.from ? this.showAny(x.from) : '모름'} · restore: ${JSON.stringify(x.id)}`,
+            )
+            .join('\n') +
+          '\n되살리려면 file_trash에 restore: [위의 restore 값]을 주세요. 원래 자리를 모르거나 두리가 손댈 수 없는 폴더면 바탕화면에 둬요.',
+      )
+    }
+    const desk = this.scope.folder('desktop') ?? this.scope.folder('downloads')
+    if (!desk) return fail('되살린 파일을 둘 바탕화면 폴더를 찾지 못했어요.')
+    const plan: TrashPlan[] = []
+    const skipped: string[] = []
+    for (const id of restore) {
+      const item = list.find((x) => x.id === id) ?? list.find((x) => x.name === id)
+      if (!item) {
+        skipped.push(`${id}(휴지통에 없어요)`)
+        continue
+      }
+      const back = item.from ? this.scope.inside(item.from) : undefined
+      plan.push(
+        back
+          ? { item, dest: back, why: '원래 자리' }
+          : {
+              item,
+              dest: desk,
+              why: item.from
+                ? `원래 자리 ${this.showAny(item.from)}는 두리가 손대는 폴더가 아니라 바탕화면`
+                : '원래 자리를 몰라 바탕화면',
+            },
+      )
+    }
+    if (!plan.length)
+      return fail(
+        `되살릴 것이 없어요: ${skipped.join(', ')}. file_trash로 먼저 찾아 restore 값을 그대로 주세요.`,
+      )
+    const skipNote = skipped.length ? ` 못 찾은 것: ${skipped.join(', ')}.` : ''
+    if (restore.length < 2) {
+      const r = await this.doTrash(plan)
+      return { ...(r.ok ? {} : { isError: true }), content: [{ type: 'text', text: r.message + skipNote }] }
+    }
+    if (!this.approvals) return fail('승인을 받을 수 없어 여러 개는 되살리지 않았어요.')
+    const lines = plan.map((p) => `${p.item.name} → ${this.scope.show(p.dest)}${sep} (${p.why})`)
+    const rec = this.approvals.create({
+      tabId: FILE_TAB,
+      ref: 'file_trash',
+      role: '휴지통',
+      label: '되살리기',
+      url: 'file:trash',
+      kind: 'file',
+      reason: '휴지통에서 되살리기',
+      what: `휴지통에서 ${plan.length}개 되살리기`,
+      where: '휴지통',
+      items: lines,
+    })
+    this.pending.set(rec.id, { kind: 'trash', items: plan })
+    return ok(
+      `승인을 요청했어요(${rec.id.slice(0, 8)}). 되살릴 것 ${plan.length}개:\n${lines.map((l) => `- ${l}`).join('\n')}${skipNote}` +
+        '\n사용자에게 무엇을 어디로 되살릴지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. 승인하면 두리가 이 목록대로만 되살리고 다음 메시지로 결과를 알려 줘요.',
+    )
+  }
+
+  private async doTrash(plan: TrashPlan[]): Promise<{ ok: boolean; message: string }> {
+    const done: string[] = []
+    const failed: string[] = []
+    const taken = new Set<string>()
+    for (const p of plan) {
+      try {
+        let dest = p.dest
+        let name = basename(freeName(dest, p.item.name, taken))
+        // 윈도우 셸은 원래 이름으로만 꺼낸다: 같은 이름이 있으면 새 빈 폴더에 꺼낸다 (덮어쓰지 않게)
+        if (this.platform === 'win32' && name !== p.item.name) {
+          dest = freeName(dest, '휴지통에서 되살린 파일', taken)
+          name = p.item.name
+        }
+        await mkdir(dest, { recursive: true })
+        await trashRestore(this.trashCtx(), p.item, dest, name)
+        done.push(
+          `${p.item.name} → ${this.scope.show(join(dest, name))} (${p.why}${name !== p.item.name ? ', 같은 이름이 있어 번호를 붙였어요' : ''})`,
+        )
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code
+        failed.push(
+          `${p.item.name}(${code === 'EPERM' || code === 'EACCES' ? '맥이 막았어요. Finder 휴지통에서 "되돌려 놓기"를 눌러 달라고 알려 주세요' : (e as Error).message})`,
+        )
+      }
+    }
+    return {
+      ok: done.length > 0,
+      message:
+        (done.length
+          ? `${done.length}개를 되살렸어요: ${done.slice(0, 10).join(', ')}.`
+          : '하나도 되살리지 못했어요.') +
+        (failed.length ? ` 못 되살린 것: ${failed.slice(0, 10).join(', ')}.` : ''),
+    }
+  }
+
+  /** 볼 수 있는 폴더 밖 경로도 사용자에게 보일 모양으로 (~/…) */
+  private showAny(p: string) {
+    const home = this.scope.home
+    return p === home || p.startsWith(home + sep) ? `~${p.slice(home.length)}` : p
+  }
+
+  // ── 파일 내려받기 ─────────────────────────────────
+
+  private downloadDeps() {
+    return {
+      exec: this.exec,
+      platform: this.platform,
+      ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}),
+      ...(this.opts.resolve ? { resolve: this.opts.resolve } : {}),
+      ...(this.opts.downloadWaitMs !== undefined ? { waitMs: this.opts.downloadWaitMs } : {}),
+    }
+  }
+
+  async download(args: Record<string, unknown>): Promise<FileToolResult> {
+    const url = String(args.url ?? '').trim()
+    if (!url) return fail('받을 주소(url)를 주세요.')
+    const dir = this.scope.folder('downloads')
+    if (!dir) return fail('다운로드 폴더를 찾지 못했어요.')
+    const name = typeof args.name === 'string' && args.name.trim() ? args.name : undefined
+    const show = (p: string) => this.scope.show(p)
+    const r = await download(dir, url, { ...(name ? { name } : {}), show }, this.downloadDeps())
+    if (r.kind === 'fail') return fail(r.text)
+    if (r.kind === 'done') return ok(r.text)
+    // 실행 파일: 받기 전에 승인
+    if (args.confirm !== true)
+      return fail(
+        `"${r.name}"는 실행 파일(열면 프로그램이 도는 파일)이라 받기 전에 사용자 승인이 필요해요. 공식 사이트 주소인지 확인하고, 같은 url에 confirm: true를 더해 다시 불러 승인을 요청하세요.`,
+      )
+    if (!this.approvals) return fail('승인을 받을 수 없어 실행 파일은 받지 않았어요.')
+    const size = r.size ? ` · ${(r.size / (1 << 20)).toFixed(1)}MB` : ''
+    const rec = this.approvals.create({
+      tabId: FILE_TAB,
+      ref: 'file_download',
+      role: '파일',
+      label: '받기',
+      url: 'file:download',
+      kind: 'file',
+      reason: '실행 파일 받기',
+      what: `"${r.name}" 받기 (실행 파일${size})`,
+      where: r.host,
+      items: [url.slice(0, 300)],
+      cancel: '받기만 해요. 여는 건 사용자가 직접 하고, 처음 여는 프로그램은 맥·윈도우가 한 번 더 확인해요',
+    })
+    this.pending.set(rec.id, { kind: 'download', url, ...(name ? { name } : {}) })
+    return ok(
+      `승인을 요청했어요(${rec.id.slice(0, 8)}). ${r.host}의 "${r.name}"${size}. 사용자에게 어디서 무엇을 받을지 한 문장으로 말하고 이번 답은 여기서 끝내세요. 승인하면 두리가 다운로드 폴더에 받고 다음 메시지로 결과를 알려 줘요.`,
+    )
+  }
+
+  private async doDownload(url: string, name?: string): Promise<{ ok: boolean; message: string }> {
+    const dir = this.scope.folder('downloads')
+    if (!dir) return { ok: false, message: '다운로드 폴더를 찾지 못했어요.' }
+    const show = (p: string) => this.scope.show(p)
+    const r = await download(
+      dir,
+      url,
+      { ...(name ? { name } : {}), approved: true, show },
+      this.downloadDeps(),
+    )
+    if (r.kind === 'done') return { ok: true, message: r.text }
+    return { ok: false, message: r.kind === 'fail' ? r.text : '받지 못했어요.' }
+  }
+
+  // ── 화면 잠그기·잠자기 ──────────────────────────────
+
+  /** 두리가 하는 다른 일 (잠자기하면 멈춘다). min은 지금 부른 대화만큼 빼고 본다 */
+  private otherWork(min: number): string | undefined {
+    const b = this.opts.busy?.()
+    if (!b) return undefined
+    const parts = [
+      ...(b.turns > min ? [`답하는 대화 ${b.turns - min}개`] : []),
+      ...(b.connecting.length ? [`${b.connecting.slice(0, 3).join('·')} 연결`] : []),
+    ]
+    return parts.length ? parts.join(', ') : undefined
+  }
+
+  async power(args: Record<string, unknown>): Promise<FileToolResult> {
+    const action = String(args.action ?? '')
+    if (action === 'off') return ok(POWER_OFF_TEXT)
+    if (action !== 'lock' && action !== 'sleep')
+      return fail('action은 lock(화면 잠그기)·sleep(잠자기)·off(끄기 부탁) 중 하나예요.')
+    if (action === 'sleep') {
+      const other = this.otherWork(1)
+      if (other)
+        return fail(
+          `지금 두리가 다른 일(${other})을 하는 중이라 잠자기하면 그 일이 멈춰요. 끝난 뒤에 다시 부탁해 달라고 하거나, 화면 잠그기(lock)는 일을 멈추지 않으니 그걸 권해 주세요.`,
+        )
+    }
+    const check = await powerCheck(action, this.platform, this.exec)
+    if (!check.ok) return fail(check.why)
+    if (!this.approvals) return fail('승인을 받을 수 없어 하지 않았어요.')
+    const label = POWER_LABEL[action]
+    const rec = this.approvals.create({
+      tabId: FILE_TAB,
+      ref: 'pc_screen',
+      role: 'PC',
+      label,
+      url: 'file:pc',
+      kind: 'pc',
+      reason: action === 'sleep' ? '잠자기하면 두리도 멈춰요' : '화면 잠그기',
+      what: `이 PC ${label}`,
+      where: '이 PC',
+      cancel:
+        check.note ??
+        (action === 'lock'
+          ? '잠가도 두리는 하던 일을 계속해요'
+          : '다시 열면 하던 그대로예요. 잠자는 동안 두리는 폰 부탁을 받지 못해요'),
+    })
+    this.pending.set(rec.id, { kind: 'power', action })
+    return ok(
+      `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 "${label}"을 승인해 달라고 한 문장으로 말하고 이번 답은 여기서 끝내세요. 승인하면 두리가 바로 해요.` +
+        (check.note ? ` (${check.note})` : ''),
+    )
+  }
+
+  private async doPower(action: PowerAction): Promise<{ ok: boolean; message: string }> {
+    if (action === 'sleep') {
+      const other = this.otherWork(0)
+      if (other)
+        return {
+          ok: false,
+          message: `두리가 아직 다른 일(${other})을 하는 중이라 잠자기하지 않았어요. 끝난 뒤에 다시 부탁해 주세요.`,
+        }
+      // 승인 결과가 화면·폰에 닿을 틈을 두고 잠든다
+      setTimeout(() => void powerDo('sleep', this.platform, this.exec), 3000).unref()
+      return { ok: true, message: '3초 뒤 PC가 잠자기에 들어가요. 다시 열면 하던 그대로예요.' }
+    }
+    const why = await powerDo('lock', this.platform, this.exec)
+    return why
+      ? { ok: false, message: `화면을 잠그지 못했어요: ${why}` }
+      : { ok: true, message: '화면을 잠갔어요. 두리는 하던 일을 계속해요.' }
+  }
+
   // ── 승인 뒤 ──────────────────────────────────────
 
   /** 사용자가 승인한 그 일 하나만 한다 */
@@ -703,6 +982,9 @@ export class FileOps {
       return finish({ ok: false, message: '두리를 다시 켜서 승인할 내용이 사라졌어요. 다시 부탁해 주세요.' })
     try {
       if (plan.kind === 'move') return finish(await this.doMove(plan.items))
+      if (plan.kind === 'trash') return finish(await this.doTrash(plan.items))
+      if (plan.kind === 'download') return finish(await this.doDownload(plan.url, plan.name))
+      if (plan.kind === 'power') return finish(await this.doPower(plan.action))
       return finish(await this.doPrint(plan))
     } catch (e) {
       return finish({ ok: false, message: (e as Error).message })
@@ -752,6 +1034,17 @@ export class FileOps {
     }
   }
 }
+
+/** 이름 비교 모양 (맥은 한글 이름을 자모로 나눠 저장한다) */
+const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
+const day = (t: number) =>
+  new Date(t).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 const firstLine = (s: string) =>
   s

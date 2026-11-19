@@ -2,7 +2,22 @@ import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
 import type { AgentRuntime, TurnInput } from './runtime.js'
-import { ThreadService, WorkLog } from './threads.js'
+import { fileApprovalWhat, ThreadService, WorkLog } from './threads.js'
+
+describe('PC 파일·PC 승인 카드 (ADR 0024)', () => {
+  it('승인을 요청하는 입력에만 카드 글을 만든다', () => {
+    expect(fileApprovalWhat('file_trash', { restore: ['a', 'b'] })).toBe('휴지통에서 2개 되살리기')
+    expect(fileApprovalWhat('file_trash', { restore: ['a'] })).toBeUndefined()
+    expect(fileApprovalWhat('file_trash', { query: '발표' })).toBeUndefined()
+    expect(fileApprovalWhat('file_download', { url: 'https://x/a.exe', confirm: true })).toBe(
+      '실행 파일 받기',
+    )
+    expect(fileApprovalWhat('file_download', { url: 'https://x/a.pdf' })).toBeUndefined()
+    expect(fileApprovalWhat('pc_screen', { action: 'lock' })).toBe('이 PC 화면 잠그기')
+    expect(fileApprovalWhat('pc_screen', { action: 'off' })).toBeUndefined()
+    expect(fileApprovalWhat('file_move', { moves: [{}, {}] })).toBe('파일 2개 옮기기')
+  })
+})
 
 class FakeRuntime implements AgentRuntime {
   readonly id = 'claude' as const

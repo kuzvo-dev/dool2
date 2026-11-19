@@ -245,26 +245,13 @@ export class ThreadService {
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
           }
         }
-        // PC 파일 승인은 탭 번호 대신 -2, ref는 도구 이름 (ADR 0024). 하나만 옮기기·되돌리기·프린터 목록은 승인이 없다
-        if (ev.type === 'tool' && /file_(?:move|print)$/.test(ev.name)) {
-          const input = (ev.input ?? {}) as { moves?: unknown; undo?: unknown; path?: unknown }
-          const move = /file_move$/.test(ev.name)
-          const asks = move
-            ? input.undo !== true && Array.isArray(input.moves) && input.moves.length >= 2
-            : typeof input.path === 'string' && input.path.trim() !== ''
-          fileAsk = asks
-            ? {
-                name: ev.name,
-                record: {
-                  kind: 'approval',
-                  tabId: -2,
-                  ref: move ? 'file_move' : 'file_print',
-                  what: move
-                    ? `파일 ${(input.moves as unknown[]).length}개 옮기기`
-                    : `"${String(input.path).split(/[\\/]/).pop()}" 출력`,
-                },
-              }
-            : undefined
+        // PC 파일·PC 승인은 탭 번호 대신 -2, ref는 도구 이름 (ADR 0024).
+        // 하나만 옮기기·되살리기, 되돌리기, 프린터 목록, 실행 파일이 아닌 내려받기, 끄기 부탁은 승인이 없다
+        if (ev.type === 'tool') {
+          const ref = /(file_move|file_print|file_trash|file_download|pc_screen)$/.exec(ev.name)?.[1]
+          const what = ref ? fileApprovalWhat(ref, (ev.input ?? {}) as Record<string, unknown>) : undefined
+          if (ref)
+            fileAsk = what ? { name: ev.name, record: { kind: 'approval', tabId: -2, ref, what } } : undefined
         }
         if (ev.type === 'tool_result' && fileAsk && (!ev.name || ev.name === fileAsk.name)) {
           const ask = fileAsk
@@ -311,6 +298,30 @@ export const SUMMARY_REQUEST =
   '[두리 앱 알림] 대화가 길어져서 새 대화로 이어 가요. 지금까지 사용자와 나눈 이야기에서 앞으로도 기억해야 할 것' +
   '(사용자 취향, 약속, 진행 중이거나 끝낸 일, 정해진 날짜·시간·금액)을 한국어 글머리표 15줄 안으로 요약해 주세요. ' +
   '도구는 쓰지 말고 요약만 답해 주세요.'
+
+/** PC 파일·PC 도구가 승인을 요청하는 입력이면 승인 카드에 적을 말, 아니면 undefined (본체 file-ops.ts와 같은 기준) */
+export function fileApprovalWhat(ref: string, input: Record<string, unknown>): string | undefined {
+  const base = (p: unknown) => String(p).split(/[\\/]/).pop()
+  if (ref === 'file_move')
+    return input.undo !== true && Array.isArray(input.moves) && input.moves.length >= 2
+      ? `파일 ${input.moves.length}개 옮기기`
+      : undefined
+  if (ref === 'file_print')
+    return typeof input.path === 'string' && input.path.trim() ? `"${base(input.path)}" 출력` : undefined
+  if (ref === 'file_trash')
+    return Array.isArray(input.restore) && input.restore.length >= 2
+      ? `휴지통에서 ${input.restore.length}개 되살리기`
+      : undefined
+  if (ref === 'file_download')
+    return input.confirm === true && typeof input.url === 'string' ? '실행 파일 받기' : undefined
+  if (ref === 'pc_screen')
+    return input.action === 'lock'
+      ? '이 PC 화면 잠그기'
+      : input.action === 'sleep'
+        ? '이 PC 잠자기'
+        : undefined
+  return undefined
+}
 
 function titleFrom(text: string) {
   const one = text.replace(/\s+/g, ' ').trim()

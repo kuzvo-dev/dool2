@@ -79,6 +79,9 @@ export class FileTools {
         show: (p) => this.show(p),
         roots: () => this.roots(),
         sensitive: (p) => SENSITIVE.test(p),
+        home: this.home,
+        folder: (key) => this.folders[key]?.[0],
+        read: (p) => readLocal(p),
       },
       opts,
     )
@@ -148,6 +151,10 @@ export class FileTools {
       if (tool === 'file_move') return await this.ops.move(args)
       if (tool === 'file_convert') return await this.ops.convert(args)
       if (tool === 'file_print') return await this.ops.print(args)
+      if (tool === 'file_pdf') return await this.ops.pdf(args)
+      if (tool === 'file_trash') return await this.ops.trash(args)
+      if (tool === 'file_download') return await this.ops.download(args)
+      if (tool === 'pc_screen') return await this.ops.power(args)
       return fail(`모르는 파일 도구예요: ${tool}`)
     } catch (e) {
       return fail((e as Error).message)
