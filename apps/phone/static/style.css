@@ -3412,3 +3412,12 @@ textarea.ghosting {
 .more-chev.open {
   transform: rotate(-90deg);
 }
+
+/* 원격 화면을 처음 열 때 칸을 받기 전에는 웹 화면을 가린다 (번쩍이지 않게) */
+.remote-page.deciding .remote-frame,
+.remote-page.deciding .remote-seg {
+  visibility: hidden;
+}
+.choice-btn {
+  width: 100%;
+}
