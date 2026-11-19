@@ -80,7 +80,7 @@ const RISK_WORDS: [RiskKind, RegExp][] = [
   ],
   [
     'contact',
-    /보내기|전송|발송|게시|올리기|작성\s*완료|등록\s*하기|(?:^|\s)등록$|댓글\s*등록|리뷰\s*등록|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|\b(?:send|post|publish|submit)\b/i,
+    /보내기|전송|발송|게시|올리기|작성\s*완료|등록\s*하기|(?:^|\s)등록$|댓글\s*등록|리뷰\s*등록|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|(?:^|\s)(?:답변\s*)?제출(?:\s*하기|\s*완료)?$|응모\s*(?:하기|완료)|(?:^|\s)응모$|\b(?:send|post|publish|submit)\b/i,
   ],
   ['irreversible', /삭제|탈퇴|해지|비우기|초기화|\b(?:delete|remove\s*account|unsubscribe)\b/i],
 ]
@@ -172,11 +172,16 @@ export const PAY_FLOW_TTL_MS = 60 * 60_000
 export function classifyRisk(label: string, url: string, pay?: string): Risk | undefined {
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
   if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
+  // 지난 일을 보는 말(주문 상세·결제 내역·예약 조회)은 빼고 남은 글자로 본다 ("주문내역에서 다시 주문하기"는 그대로 막힌다)
+  const acting = label.replace(LOOKUP, ' ')
   for (const [kind, re] of RISK_WORDS) {
-    const m = re.exec(label)
+    const m = re.exec(acting)
     if (m) return { kind, reason: `"${m[0]}"` }
   }
   const name = label.replace(/^(?:버튼|링크|메뉴|항목)\s*/, '').trim()
+  // 보는 말만 있는 이름(주문 상세·결제 내역 보기)은 결제 단계 주소에서도 누른다
+  if (acting !== label && HARMLESS_REST.test(acting.replace(/^\s*(?:버튼|링크|메뉴|항목)\s*/, '').trim()))
+    return undefined
   if (pay && ADVANCE.test(name)) return { kind: 'money', reason: `'${pay}' 화면의 "${name}"` }
   let host = ''
   let path = ''
@@ -191,6 +196,13 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
     return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
+
+// 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
+const LOOKUP =
+  /(?:주문|구매|결제|예약|예매|구독|충전|송금|이체|입금|후원|기부)\s*(?:상세(?:\s*정보)?|내역|목록|조회|이력|정보|번호|일자|일시|현황|관리|상태)|(?:주문|구매|결제|예약)한\s*(?:상품|내역)/g
+
+// 보는 말을 뺀 뒤 남아도 괜찮은 글 (없음·보기·더 보기)
+const HARMLESS_REST = /^(?:|(?:상세\s*)?보기|더\s*보기|자세히(?:\s*보기)?|바로\s*가기|가기|>|›)$/
 
 // 결제가 될 수 없는 버튼 이름 (결제 단계 주소에서도 승인 없이 누른다)
 const HARMLESS =
@@ -1276,60 +1288,99 @@ export class BrowserTools {
       }
       case 'wait_auth': {
         // 간편인증 승인 기다리기: 사람에게 넘기고 [다 했어요]를 기다리면 그사이 인증이 만료된다(실측).
-        // 폰에 알리고, 몇 초마다 [인증 완료]를 눌러 승인됐는지 본다. "서명되지 않았습니다" 같은 글이 보이면 아직이다
-        // (실측: 그 안내가 창을 다시 그려 버튼 표시가 사라졌는데, 이를 '넘어갔다'로 잘못 봤다)
+        // 폰에 알리고, 몇 초마다 [인증 완료]를 눌러 승인됐는지 본다. "서명되지 않았습니다" 같은 글이 보이면 아직이다.
+        // 인증 창이 팝업(새 탭)으로 뜨는 사이트(홈택스)가 있어, 두리가 최근에 연 탭들도 함께 본다
         const msg = String(a.message ?? '').trim() || '폰의 인증 앱에서 승인해 주세요'
         this.notifyUser?.('인증 앱에서 승인해 주세요', msg)
-        this.holdForPerson(tabId)
+        // 탭만 열어 둔다. 폰 원격 화면 준비(holdForPerson)는 하지 않는다 — 화면이 바뀌어 인증 창이 닫혔다(실측)
+        this.hold(tabId, 200_000)
         const NOT_YET =
-          /(?:서명|인증|승인|본인확인)(?:이|을)?\s*(?:되지|하지)\s*않|완료되지\s*않|진행(?:해|하여)\s*주(?:세요|십시오)|인증을\s*완료(?:해|하여)\s*주|아직/
+          /(?:서명|인증|승인|본인확인)(?:이|을)?\s*(?:되지|하지)\s*않|완료되지\s*않|진행(?:해|하여)\s*주(?:세요|십시오)|인증을\s*완료(?:해|하여)\s*주/
+        const DONE =
+          /로그아웃|(?:인증|본인확인|로그인)(?:이|을)?\s*(?:완료|성공)(?:되었|됐|하였)|님\s*(?:환영|안녕)/
+        const FINISH = /^(?:간편\s*)?인증\s*(?:완료|확인)$|^(?:인증|로그인)\s*하기$|^완료$/
         const buttons = (text: string) =>
-          [...text.matchAll(/\[(e\d+) 버튼 "([^"]*)"\]/g)].map((m) => ({
+          [...text.matchAll(/\[(e\d+) (?:버튼|링크) "([^"]*)"\]/g)].map((m) => ({
             ref: m[1] as string,
             name: m[2] as string,
           }))
-        const first = (await this.browser.call('snapshot', { tabId, maxChars: 40_000 })) as Snapshot
-        const want =
-          typeof a.ref === 'string' ? buttons(first.text).find((b) => b.ref === a.ref)?.name : undefined
+        const snap = (t: number) =>
+          this.browser.call('snapshot', { tabId: t, maxChars: 40_000 }).catch(() => undefined) as Promise<
+            Snapshot | undefined
+          >
+        // 볼 탭: 짚어 준 탭 + 두리가 최근에 읽은 다른 탭(팝업) 3개까지
+        const tabs = [tabId, ...[...this.pages.keys()].filter((t) => t !== tabId).slice(-3)]
+        const first = new Map<number, Snapshot>()
+        for (const t of tabs) {
+          const f = await snap(t)
+          if (f) first.set(t, f)
+        }
+        const pick = (text: string) =>
+          (typeof a.ref === 'string' ? buttons(text).find((b) => b.ref === a.ref) : undefined) ??
+          buttons(text).find((b) => FINISH.test(b.name.trim()))
         const started = Date.now()
         const expired = () =>
           this.notifyUser?.('인증 시간이 지났어요', '다시 하려면 두리에게 "다시 해 줘"라고 해 주세요')
         while (Date.now() - started < 180_000) {
           await new Promise((r) => setTimeout(r, 6_000))
-          let now = (await this.browser
-            .call('snapshot', { tabId, maxChars: 40_000 })
-            .catch(() => undefined)) as Snapshot | undefined
-          if (!now) continue
-          // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
-          if (NOT_YET.test(now.text)) {
-            const ok = buttons(now.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
-            if (ok) await this.browser.call('click', { tabId, ref: ok.ref }, 30_000).catch(() => undefined)
-          }
-          // [인증 완료]는 다시 그려져도 같은 이름의 버튼을 눌러 본다
-          const btn = want ? buttons(now.text).find((b) => b.name === want) : undefined
-          if (btn) {
-            const r = (await this.browser
-              .call('click', { tabId, ref: btn.ref }, 30_000)
-              .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
-            if (r?.dialog) {
-              await this.browser.call('dialog', { tabId, accept: true }).catch(() => undefined)
-              continue
+          for (const t of tabs) {
+            let now = await snap(t)
+            const was = first.get(t)
+            if (!now || !was) continue
+            // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
+            if (NOT_YET.test(now.text)) {
+              const ok = buttons(now.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
+              if (ok)
+                await this.browser.call('click', { tabId: t, ref: ok.ref }, 30_000).catch(() => undefined)
             }
-            await new Promise((r) => setTimeout(r, 2_000))
-            now = ((await this.browser
-              .call('snapshot', { tabId, maxChars: 40_000 })
-              .catch(() => undefined)) ?? now) as Snapshot
+            const btn = pick(now.text)
+            if (btn) {
+              const r = (await this.browser
+                .call('click', { tabId: t, ref: btn.ref }, 30_000)
+                .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
+              if (r?.dialog) {
+                await this.browser.call('dialog', { tabId: t, accept: true }).catch(() => undefined)
+                continue
+              }
+              await new Promise((r) => setTimeout(r, 2_000))
+              now = (await snap(t)) ?? now
+            }
+            // 무엇을 보고 판단했는지 남긴다 (버튼 이름·표시만, 값은 남기지 않는다)
+            this.onNote?.('wait-auth', {
+              tab: t === tabId ? 'main' : 'other',
+              pressed: btn?.name ?? '',
+              notYet: NOT_YET.exec(now.text)?.[0] ?? '',
+              url: now.url.replace(/[?#].*$/, ''),
+              buttons: buttons(now.text)
+                .map((b) => b.name)
+                .filter((n) => /인증|완료|확인|로그인|요청/.test(n))
+                .slice(0, 8),
+            })
+            if (NOT_YET.test(now.text)) continue
+            // 분명한 성공 표시가 있을 때만 승인으로 본다: 짚어 준 탭의 주소가 바뀌었거나, 로그아웃·완료 글이 새로 보일 때
+            const moved = t === tabId && now.url !== was.url
+            const done = DONE.test(now.text) && !DONE.test(was.text)
+            if (moved || done) {
+              const main = t === tabId ? now : ((await snap(tabId)) ?? now)
+              this.pages.set(tabId, pageInfo(main.url, main.text))
+              this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
+              return this.read(
+                tabId,
+                undefined,
+                '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
+              )
+            }
           }
-          if (NOT_YET.test(now.text)) continue
-          const moved = now.url !== first.url
-          const gone = want ? !buttons(now.text).some((b) => b.name === want) : false
-          if (moved || gone) {
-            this.pages.set(tabId, pageInfo(now.url, now.text))
+          // 팝업이 닫히고 짚어 준 탭이 로그인 상태로 바뀌었는지도 본다
+          const main = await snap(tabId)
+          const was = first.get(tabId)
+          if (main && was && DONE.test(main.text) && !DONE.test(was.text)) {
+            this.pages.set(tabId, pageInfo(main.url, main.text))
             this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
             return this.read(
               tabId,
               undefined,
-              '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
+              '인증 앱 승인이 확인돼 로그인됐어요. "인증이 완료됐어요"라고 한 줄 쓰고 이어서 해요.',
             )
           }
         }
@@ -1508,6 +1559,8 @@ export class BrowserTools {
 
   /** 고칠 때 볼 일한 기록 (못 읽은 결제 화면 목록의 모양 등) */
   onNote?: (kind: string, data: Record<string, unknown>) => void
+  /** 화면 그림 남기기 (logs/shots) */
+  onShot?: (label: string, base64: string) => void
 
   /** 펼침 목록의 고를 것 (확장이 못 읽으면 undefined, 그 이유는 일한 기록에) */
   private async selectOptions(tabId: number, ref: string) {

@@ -31,6 +31,7 @@ import {
   AgentIdSchema,
   ApprovalDecisionSchema,
   type ApprovalView,
+  AUTH_APPS,
   type ChromeStatus,
   ClaudeLoginCodeSchema,
   type ClaudeLoginStatus,
@@ -62,7 +63,6 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
-import { AUTH_APPS } from '@dool2/protocol'
 import {
   type ConnectCard,
   connectUrl,
@@ -369,6 +369,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
   browserTools.onNote = (kind, data) => journal.write(kind, data)
+  browserTools.onShot = (label, data) => void journal.shot(label, data)
   // PC 파일 도구 (ADR 0022·0024). 시험에서는 폴더를 바꿀 수 있다. 옮기기(여러 개)·출력은 같은 승인 카드로
   const fileTools = new FileTools(opts.fileFolders, undefined, {
     approvals: browserTools.approvals,
@@ -2233,6 +2234,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? `대화에 ${card.name} 연결 카드를 띄웠어요. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 로그인하고, 결과는 대화 알림으로 와요. 비밀번호를 묻지 말고 한 문장으로 안내한 뒤 기다려요.`
             : `대화에 ${card.name} 연결 카드를 띄웠어요. 카드를 누르면 연결 화면이 열려요. 한 문장으로 안내한 뒤 기다려요.`,
         )
+      }
+      // 내 정보 보기: 가린 값만(이름 홍*동, 생년월일 1990-**-**). AI가 대상 조건을 묻기 전에 본다
+      if (req.method === 'POST' && b === 'life' && c === 'profile_view' && !d) {
+        const { have, missing } = await profile.masked()
+        const lines = Object.entries(have).map(
+          ([k, v]) => `- ${PROFILE_FIELDS[k as keyof typeof PROFILE_FIELDS].label}: ${v}`,
+        )
+        const text = [
+          lines.length ? `내 정보 (가린 값):\n${lines.join('\n')}` : '내 정보가 아직 비어 있어요.',
+          missing.length
+            ? `없는 항목: ${missing.map((k) => PROFILE_FIELDS[k].label).join('·')} — 꼭 필요하면 browser_request_profile로 받아요(대화로 묻지 않아요).`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+        return json(res, 200, { content: [{ type: 'text', text }] })
       }
       // 내 결제 수단 보기 (ADR 0023): 카드사·별칭·끝 4자리 같은 가린 값만. 바꾸기는 폰 설정에서 사람이
       if (req.method === 'POST' && b === 'life' && c === 'pay_method_list' && !d) {

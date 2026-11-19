@@ -4,6 +4,7 @@
 //   지금과 같은 위험 판단(승인 게이트)을 받는다. 찾아보기 도구는 위험한 버튼을 아예 못 누른다.
 // - AI에게는 연결한 서비스(+로그인 없는 서비스)의 도구만 바로 보이고(catalog), 나머지는 service_find → service_call.
 // - 막히면 열어 둔 탭 번호와 함께 "브라우저 도구로 이어서"를 돌려준다. 사이트가 바뀐 것일 수 있어 기록해 둔다.
+import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MIN_CONNECTOR_EXTENSION, versionAtLeast } from '@dool2/protocol'
@@ -129,7 +130,7 @@ export class Connectors {
 
   /** 쉬는 중이 아니고 막힘 표시도 없는 도구 */
   private live(card: ConnectCard, t: ConnectorTool) {
-    return this.usable(t) && !this.opts.health?.resting(connectorToolName(card.id, t.name))
+    return this.usable(t) && !this.opts.health?.resting(connectorToolName(card.id, t.name), toolPrint(t))
   }
 
   private now() {
@@ -401,7 +402,7 @@ export class Connectors {
       return lines.join('\n')
     }
     for (const t of tools) {
-      const need = this.opts.health?.resting(connectorToolName(card.id, t.name))
+      const need = this.opts.health?.resting(connectorToolName(card.id, t.name), toolPrint(t))
         ? '요즘 막혀서 쉬는 중 — 브라우저 도구로'
         : t.login && !connected
           ? '연결 필요'
@@ -478,7 +479,7 @@ export class Connectors {
         `Chrome의 두리 확장이 예전 버전(${old})이라 서비스 도구를 쓸 수 없어요. 브라우저 도구로 같은 일을 해 주세요. 확장이 ${MIN_CONNECTOR_EXTENSION} 이상으로 업데이트되면 다시 돼요.`,
         true,
       )
-    const rest = this.opts.health?.resting(name)
+    const rest = this.opts.health?.resting(name, toolPrint(tool))
     if (rest)
       return text(
         `${card.name}의 '${tool.title}' 도구는 요즘 사이트가 바뀌어 잠시 쉬고 있어요(${rest.reason}). 브라우저 도구로 같은 일을 해 주세요.`,
@@ -507,7 +508,7 @@ export class Connectors {
         }
       }
     }
-    if (seen) this.opts.health?.record(name, seen, why)
+    if (seen) this.opts.health?.record(name, seen, why, toolPrint(tool))
     // 입력값(찾는 말·주소 등)은 적지 않는다: 도구 이름·결과·까닭·걸린 시간만
     this.opts.journal?.write('tool', {
       tool: name,
@@ -851,6 +852,19 @@ export class Connectors {
       }
       return
     }
+    if ('choose' in s) {
+      // 펼침 목록(정렬·목록 개수 등): 이름이 맞는 선택 상자에서 그 항목을 고른다 (사이트가 목록을 새로 부른다)
+      await c.read()
+      const tabId = c.need()
+      const want = new RegExp(f(s.choose.field))
+      const ref = [...(this.opts.tools.refsOf(tabId) ?? [])].find(
+        ([, v]) => v.role === '선택 상자' && want.test(v.name),
+      )?.[0]
+      if (!ref) throw new StepError(`선택 상자(${s.choose.field})를 찾지 못했어요`)
+      const r = await this.opts.tools.run('select', { tabId, ref, choose: f(s.choose.option) })
+      if (r.isError) throw new StepError(firstText(r))
+      return
+    }
     if ('press' in s) {
       await c.read()
       const r = await this.opts.tools.run('press', { tabId: c.need(), key: s.press })
@@ -1074,4 +1088,15 @@ function checkedAt(now = Date.now()): string {
   const hh = String(d.getUTCHours()).padStart(2, '0')
   const mm = String(d.getUTCMinutes()).padStart(2, '0')
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]}) ${hh}:${mm}`
+}
+
+/** 도구 정의 지문 (건강 기록용): 고친 정의가 들어오면 예전 고장으로 쉬게 하지 않는다 */
+const prints = new WeakMap<object, string>()
+function toolPrint(t: ConnectorTool): string {
+  let v = prints.get(t)
+  if (!v) {
+    v = createHash('sha1').update(JSON.stringify(t)).digest('hex').slice(0, 10)
+    prints.set(t, v)
+  }
+  return v
 }

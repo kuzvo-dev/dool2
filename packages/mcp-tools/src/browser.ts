@@ -23,7 +23,8 @@ export function daemonClient(env: NodeJS.ProcessEnv = process.env, kind = 'brows
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify(args),
-        signal: AbortSignal.timeout(90_000),
+        // 인증 앱 승인 기다리기는 3분까지 기다린다 (90초에 끊겨 사용자가 승인 중인데 시간 초과로 봤다)
+        signal: AbortSignal.timeout(tool === 'wait_auth' ? 200_000 : 90_000),
       })
       if (!res.ok) return fail(`두리 본체가 거절했어요 (${res.status})`)
       return (await res.json()) as ToolResult
@@ -250,7 +251,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'wait_auth',
     '인증 앱 승인 기다리기',
-    '간편인증(카카오톡·네이버·토스·PASS 등) 요청을 보낸 뒤 쓴다. 부르기 직전에 "카카오톡(고른 앱)으로 인증 요청을 보냈어요. 3분 안에 승인해 주세요"라고 한 줄 쓴다(진행 카드에 바로 보인다). 사용자 폰에 "인증 앱에서 승인해 주세요" 알림을 보내고, 최대 3분 동안 몇 초마다 그 화면의 [인증 완료]·[확인] 버튼(ref)을 눌러 승인됐는지 확인한다. 승인되면 다음 화면을 돌려주니 그대로 이어 간다. browser_handoff로 넘기고 [다 했어요]를 기다리지 않는다(그사이 인증이 만료된다). 버튼 없이 저절로 넘어가는 화면이면 ref를 비운다.',
+    '간편인증(카카오톡·네이버·토스·PASS 등) 요청을 보낸 뒤 쓴다. 부르기 직전에 "카카오톡(고른 앱)으로 인증 요청을 보냈어요. 3분 안에 승인해 주세요"라고 한 줄 쓴다(진행 카드에 바로 보인다). 사용자 폰에 "인증 앱에서 승인해 주세요" 알림을 보내고, 최대 3분 동안 몇 초마다 그 화면의 [인증 완료]·[확인] 버튼(ref)을 눌러 승인됐는지 확인한다. 승인되면 다음 화면을 돌려주니 그대로 이어 간다. browser_handoff로 넘기고 [다 했어요]를 기다리지 않는다(그사이 인증이 만료된다). ref를 모르면 비워도 본체가 화면의 [인증 완료]류 버튼을 찾아 누른다.',
     {
       tabId,
       ref: ref.optional().describe('승인 뒤 누르는 [인증 완료]·[확인] 버튼 표시 (없으면 생략)'),

@@ -58,10 +58,10 @@ import {
   payMethodTitle,
 } from '@dool2/protocol/pay-methods'
 import {
+  hyphenate,
   josa,
   narrationLine,
   readAppNote,
-  hyphenate,
   splitPhoto,
   stripLinks,
   toolLabel,

@@ -117,6 +117,14 @@ export const StepSchema = z.union([
       ...If,
     })
     .strict(),
+  /** 펼침 목록(정렬·목록 개수·옵션)에서 고르기. field = 선택 상자 이름의 정규식, option = 고를 항목 글 그대로 */
+  z
+    .object({
+      choose: z.object({ field: Text(200), option: Text(100) }).strict(),
+      ...Optional,
+      ...If,
+    })
+    .strict(),
   z.object({ press: z.enum(['Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'PageDown']), ...If }).strict(),
   z.object({ sleep: z.number().int().min(100).max(5_000), ...If }).strict(),
   /** 목록 뽑기 */
@@ -252,6 +260,7 @@ export const STEP_KINDS = [
   'find',
   'click',
   'type',
+  'choose',
   'press',
   'sleep',
   'extract',
@@ -612,6 +621,10 @@ export function checkConnector(
       if ('type' in s) {
         useAll(s.type.text, where)
         useAll(s.type.field, where)
+      }
+      if ('choose' in s) {
+        useAll(s.choose.field, where)
+        useAll(s.choose.option, where)
       }
       if ('wait' in s) for (const v of [s.wait.text, s.wait.gone]) if (v) useAll(v, where)
       if ('find' in s) for (const v of Object.values(s.find)) useAll(v, where)

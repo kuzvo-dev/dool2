@@ -19,6 +19,7 @@ import {
   pageFormFocus,
   pageFormTarget,
   pageFrameBox,
+  pageLinkNavigates,
   pageLocate,
   pageMarkFilled,
   pageMarkTaps,
@@ -33,7 +34,6 @@ import {
   pageSelectOptions,
   pageSnapshot,
   pageTapAt,
-  pageLinkNavigates,
   pageValueLength,
   pageViewport,
   type ReadScope,
@@ -1128,11 +1128,15 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 화면 안 액자(로그인 창 등): 누를 것이 있는 액자만 아래에 붙인다
       const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
       const map = new Map<number, { frameId: number; url: string }>()
-      let text = main.text
+      // 액자(로그인·인증 창)가 잘리지 않게 먼저 모으고, 남은 자리만큼 본문을 싣는다
+      // (실측 홈택스: 본문 4만 자 뒤에 붙인 간편인증 액자가 전체 자르기에 잘려 [인증 완료]를 못 봤다)
+      const frameTexts: string[] = []
+      const frameInfo: { host: string; refs: boolean }[] = []
       let captcha = main.captcha
       let index = 0
       for (const fr of frames) {
-        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || index >= 6) continue
+        // 누를 것이 있는 액자를 6개까지 (광고·빈 액자가 앞에 많으면 로그인 창 액자가 밀려 안 읽혔다 — 홈택스 간편인증)
+        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || index >= 24) continue
         index++
         await markTaps(tabId, fr.frameId)
         const r = await inFrame(
@@ -1142,17 +1146,26 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           Math.floor(max / 2),
           index * FRAME_SPAN,
         ).catch(() => undefined)
-        if (!r) continue
+        const host = new URL(fr.url).hostname
+        if (!r) {
+          frameInfo.push({ host, refs: false })
+          continue
+        }
         captcha ||= r.captcha
+        frameInfo.push({ host, refs: /\[e\d+ /.test(r.text) })
         if (!/\[e\d+ /.test(r.text)) continue
         map.set(index, { frameId: fr.frameId, url: fr.url })
-        text += `\n## 화면 안 액자 (${new URL(fr.url).hostname})\n${r.text}`
+        frameTexts.push(`\n## 화면 안 액자 (${host})\n${r.text}`)
       }
       frameMaps.set(tabId, map)
+      const total = max + Math.floor(max / 2)
+      const framesText = frameTexts.join('').slice(0, total - 2_000)
+      const text = main.text.slice(0, Math.max(total - framesText.length, 2_000)) + framesText
       return {
         tabId,
         ...main,
-        text: text.slice(0, max + Math.floor(max / 2)),
+        text,
+        frames: frameInfo,
         captcha,
         ...takeDialogs(tabId),
       }
