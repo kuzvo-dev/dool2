@@ -34,8 +34,10 @@ const out = arg('out', join(EVALS, 'out', new Date().toISOString().slice(0, 10))
 const timeoutMs = Number(arg('timeout', '420')) * 1000
 mkdirSync(out, { recursive: true })
 
+// 본체 요청은 1분 안에 답이 와야 한다 (본체가 다른 작업 중에 다시 켜지면 열린 요청이 끝없이 매달렸다. 실측 1시간 45분)
 const api = async (path, init = {}) => {
   const r = await fetch(daemon + path, {
+    signal: AbortSignal.timeout(60_000),
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
@@ -245,14 +247,17 @@ async function waitDaemon() {
   for (let i = 0; i < 60; i++) {
     token = readToken() ?? token
     try {
-      const r = await fetch(`${daemon}/api/life`, { headers: { authorization: `Bearer ${token}` } })
+      const r = await fetch(`${daemon}/api/life`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15_000),
+      })
       if (r.ok) return true
     } catch {}
     await new Promise((ok) => setTimeout(ok, 10_000))
   }
   return false
 }
-const DOWN = /fetch failed|ECONNREFUSED|401|socket|terminated/i
+const DOWN = /fetch failed|ECONNREFUSED|401|socket|terminated|aborted|timeout/i
 
 const list = pick(scenarios())
 console.log(`시나리오 ${list.length}개 → ${out}`)
@@ -272,7 +277,17 @@ for (const job of jobs) {
     `[${n}/${jobs.length}] ${sc.id}${round > 1 ? ` (${round}번째)` : ''} ${sc.ask.slice(0, 40)} … `,
   )
   try {
-    const rec = await runOne(sc)
+    // 시나리오 하나 전체에도 끝을 둔다 (대화 시간 + 앞뒤 정리 3분). 넘으면 본체가 멈춘 것으로 본다
+    let watchdog
+    const rec = await Promise.race([
+      runOne(sc),
+      new Promise((_, no) => {
+        watchdog = setTimeout(
+          () => no(new Error('socket: 시나리오가 끝나지 않아요(본체 멈춤)')),
+          timeoutMs + 180_000,
+        )
+      }),
+    ]).finally(() => clearTimeout(watchdog))
     rec.round = round
     writeFileSync(file, JSON.stringify(rec, null, 1))
     console.log(
