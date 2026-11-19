@@ -1888,3 +1888,45 @@ describe('상품 옵션 고르기 (browser_select)', () => {
     expect(again).not.toContain('🧩')
   })
 })
+
+describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
+  it('사용자가 카드를 누르기 전에는 [인증 완료]를 누르지 않고, 누르면 한 번 눌러 넘어간 화면을 돌려준다', async () => {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    let done = false
+    const b = {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'click') done = true
+        if (cmd === 'snapshot')
+          return done
+            ? { tabId: 3, url: 'https://gov.example/home', title: '홈', text: '# 홈\n[e1 링크 "로그아웃"]' }
+            : {
+                tabId: 3,
+                url: 'https://gov.example/login',
+                title: '로그인',
+                text: '# 간편인증\n카카오톡으로 인증 요청을 보냈어요\n[e9 버튼 "인증 완료"]',
+              }
+        return { tabId: 3, url: done ? 'https://gov.example/home' : 'https://gov.example/login', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    let press: (v: string) => void = () => {}
+    const asked: string[] = []
+    tools.askAuthDone = (_host, label) => {
+      asked.push(label)
+      return { answer: new Promise<string | undefined>((r) => (press = r)), cancel: () => {} }
+    }
+    await tools.run('read', { tabId: 3 })
+    const waiting = tools.run('wait_auth', { tabId: 3, message: '카카오톡에서 승인해 주세요' })
+    await new Promise((r) => setTimeout(r, 7_000))
+    // 7초 동안 지켜보기만 했다 (미리 누르면 인증 창을 닫는 사이트가 있다)
+    expect(calls.filter((c) => c[0] === 'click')).toHaveLength(0)
+    expect(asked).toEqual(['카카오톡에서 승인해 주세요'])
+    press('인증 완료했어요')
+    const r = await waiting
+    expect(calls.filter((c) => c[0] === 'click')).toHaveLength(1)
+    expect(r.isError).toBeFalsy()
+    expect(r.content[0]?.type === 'text' ? r.content[0].text : '').toContain('인증이 완료됐어요')
+  }, 40_000)
+})
