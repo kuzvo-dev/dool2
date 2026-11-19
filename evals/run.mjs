@@ -6,8 +6,8 @@
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
 // --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
+import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EVALS, scenarios } from './lib/bank.mjs'
@@ -17,13 +17,21 @@ const arg = (k, d) => {
   return i > 0 ? process.argv[i + 1] : d
 }
 const flag = (k) => process.argv.includes(`--${k}`)
-const daemon = arg('daemon', 'http://127.0.0.1:8833')
+let daemon = arg('daemon', 'http://127.0.0.1:8833')
 // --token-file: 본체가 다시 켜지면 토큰이 바뀐다(다른 작업이 시험 PC를 다시 켤 수 있다). 그때 이 파일에서 다시 읽는다
 // (본체 로그처럼 "토큰: …" 줄이 있으면 그 값, 아니면 파일 전체)
 const tokenFile = arg('token-file')
+// 시험 판(live.mjs)의 /tmp/dool2-live.json이면 {daemon, token}: 본체를 다시 켜면 포트도 바뀌니 주소도 같이 읽는다
 const readToken = () => {
   if (!tokenFile || !existsSync(tokenFile)) return undefined
   const t = readFileSync(tokenFile, 'utf8')
+  try {
+    const j = JSON.parse(t)
+    if (j?.token) {
+      if (j.daemon && !process.argv.includes('--daemon')) daemon = j.daemon
+      return j.token
+    }
+  } catch {}
   return (/토큰:\s*(\w+)/.exec(t)?.[1] ?? t.trim()) || undefined
 }
 let token = arg('token', process.env.DOOL2_TOKEN) ?? readToken()
@@ -102,27 +110,36 @@ const FOLDERS = ['Desktop', 'Documents', 'Downloads'].map((d) => join(homedir(),
 // 맥에서 바탕화면·문서·다운로드 읽기는 권한 확인 창이 뜨면 누가 누를 때까지 멈춘다(실측: 사람 없는 맥에서 1단계가 30분 넘게 멈춤).
 // 그래서 따로(비동기로) 읽고 5초 안에 안 되면 이번 실행 동안 파일 옮기기는 건너뛴다
 let filesOk = true
+// 폴더 목록은 따로 띄운 ls로 읽는다: 권한 창에 막혀도 그 ls만 버리면 된다 (같은 프로세스에서 읽으면 막힌 읽기 때문에
+// 프로세스가 끝나지도 못했다. 실측)
+const lsDir = (d) =>
+  new Promise((ok) => {
+    const child = execFile('/bin/ls', ['-1', d], { timeout: 5_000, killSignal: 'SIGKILL' }, (err, out) =>
+      ok(
+        err
+          ? null
+          : out
+              .split('\n')
+              .filter(Boolean)
+              .map((n) => join(d, n)),
+      ),
+    )
+    child.unref()
+  })
 const listFiles = async () => {
   if (!filesOk) return new Set()
-  const read = Promise.all(
-    FOLDERS.map(async (d) => {
-      try {
-        return (await readdir(d)).map((n) => join(d, n))
-      } catch {
-        return []
-      }
-    }),
-  )
-  const r = await Promise.race([read, new Promise((ok) => setTimeout(() => ok(null), 5_000))])
-  if (!r) {
+  const r = await Promise.all(FOLDERS.map((d) => (existsSync(d) ? lsDir(d) : [])))
+  if (r.some((x) => x === null)) {
     filesOk = false
-    console.log(
-      '\n(바탕화면·문서·다운로드를 5초 안에 못 읽어서(맥 권한 창?) 시험이 만든 파일 옮기기는 건너뛰어요)',
-    )
+    console.log('\n(바탕화면·문서·다운로드를 못 읽어서(맥 권한 창?) 시험이 만든 파일 옮기기는 건너뛰어요)')
     return new Set()
   }
   return new Set(r.flat())
 }
+/** 파일을 다루는 시나리오만 폴더를 본다 (그 밖에는 권한 창을 부를 일이 없게) */
+const touchesFiles = (sc) =>
+  /PC·파일|회사·문서/.test(sc.cat ?? '') ||
+  /file_|파일|폴더|사진|PDF|엑셀/.test(`${sc.tools ?? ''} ${sc.ask}`)
 const local = /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(daemon) && !flag('keep-files')
 
 /** 시나리오 상황의 "기억: …"을 뽑는다 (시험 전에 넣었다가 끝나면 지운다) */
@@ -142,7 +159,8 @@ async function runOne(sc) {
     })
     if (r.id) seeded.push({ id: r.id, text })
   }
-  const filesBefore = local ? await listFiles() : new Set()
+  const files = local && touchesFiles(sc)
+  const filesBefore = files ? await listFiles() : new Set()
   const before = await lifeIds()
   // 시험 전부터 떠 있던 카드(인증번호·내 정보)는 이 시나리오 것이 아니다
   const infoBefore = new Set(((await api('/api/info')).requests ?? []).map((q) => q.id))
@@ -237,7 +255,7 @@ async function runOne(sc) {
       })
     }
   }
-  if (local) {
+  if (files) {
     rec.created.files = []
     const keep = join(out, '_files', sc.id.replace(/[^\w.-]+/g, '_'))
     for (const p of await listFiles()) {
