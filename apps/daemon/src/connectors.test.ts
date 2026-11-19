@@ -447,3 +447,136 @@ describe('서비스 도구 실행기', () => {
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 })
+
+describe('쿠팡 주문 찾기 (여러 기간을 한 번에)', () => {
+  // 쿠팡 주문목록 화면이 담아 보내는 데이터(__NEXT_DATA__) 흉내: 주소의 keyword·requestYear대로 고른다
+  const ORDERS = [
+    { at: '2026-11-10', names: ['생수 2L 12개', '라면 5개'] },
+    { at: '2025-03-02', names: ['베개 커버 2장', '수건'] },
+    { at: '2023-07-01', names: ['생수 2L 6개'] },
+  ]
+  async function coupang() {
+    const opened: string[] = []
+    let url = ''
+    const page = () => {
+      const u = new URL(url)
+      const kw = u.searchParams.get('keyword') ?? ''
+      const year = u.searchParams.get('requestYear')
+      const pageIndex = Number(u.searchParams.get('pageIndex') ?? 0)
+      const list = ORDERS.filter((o) => (year ? o.at.startsWith(year) : o.at >= '2026-05-19')).filter(
+        (o) => !kw || o.names.some((n) => n.includes(kw)),
+      )
+      return {
+        props: {
+          pageProps: {
+            domains: {
+              desktopOrder: {
+                orderPagination: { hasPrev: pageIndex > 0, hasNext: false },
+                orderList: list.map((o, i) => ({
+                  orderId: Number(o.at.replace(/-/g, '')) * 10 + i,
+                  orderedAt: Date.parse(`${o.at}T12:00:00+09:00`),
+                  deliveryGroupList: [
+                    {
+                      groupStatus: { status: 'FINAL_DELIVERY' },
+                      pddMessage: { message: '도착' },
+                      deliveredDate: Date.parse(`${o.at}T20:00:00+09:00`),
+                      selfService: { returnableDay: 30 },
+                      productList: o.names.map((n, j) => ({
+                        vendorItemName: n,
+                        productId: j + 1,
+                        itemId: j + 1,
+                        vendorItemId: j + 1,
+                        quantity: 1,
+                        discountedUnitPrice: 1000 * (j + 1),
+                        imagePath: `https://img.example/${j}.jpg`,
+                        searchMatchingProduct: !kw || n.includes(kw),
+                      })),
+                    },
+                  ],
+                })),
+              },
+            },
+          },
+        },
+      }
+    }
+    const browser = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === 'open' || cmd === 'navigate') {
+          url = String(args?.url)
+          opened.push(url)
+          return { tabId: 7 }
+        }
+        if (cmd === 'find') return { url, title: '', found: { text: '주문목록' } }
+        if (cmd === 'extract') return { ok: true, rows: [{ t: JSON.stringify(page()) }], total: 1, url }
+        return { tabId: 7 }
+      },
+    }
+    const connectors = new Connectors({
+      dir: REPO_SKILLS,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({ coupang: '2026-11-17T00:00:00Z' }),
+      now: () => new Date('2026-11-19T03:00:00Z'),
+      pollMs: 1,
+      gapMs: 0,
+    })
+    return { connectors, opened }
+  }
+  type Found = {
+    orders: { ordered: string; items: string[]; prices: number[]; delivered: string }[]
+    searched: string
+    tip: string | null
+  }
+
+  it('최근 6개월에 없으면 올해·지난해로 차례로 찾고, 찾은 해에서 멈춘다', async () => {
+    const { connectors, opened } = await coupang()
+    const r = await connectors.call('coupang_orders', { item: '베개' })
+    const s = r.structuredContent as Found
+    expect(opened.map((u) => new URL(u).searchParams.get('requestYear'))).toEqual([null, '2026', '2025'])
+    expect(s.orders).toHaveLength(1)
+    // 검색어에 맞은 상품만 (같은 주문의 수건은 빼고)
+    expect(s.orders[0]).toMatchObject({ ordered: '2025-03-02', items: ['베개 커버 2장'], prices: ['1000'] })
+    expect(s.orders[0]?.delivered).toBe('2025-03-02')
+    expect(s.searched).toBe('최근 6개월(page 0), 2026년, 2025년')
+    expect(s.tip ?? '').toBe('')
+  })
+
+  it('all이면 멈추지 않고 올해부터 6년 전까지 모은다', async () => {
+    const { connectors, opened } = await coupang()
+    const r = await connectors.call('coupang_orders', { item: '생수', all: true })
+    const s = r.structuredContent as Found
+    expect(opened.map((u) => new URL(u).searchParams.get('requestYear'))).toEqual([
+      '2026',
+      '2025',
+      '2024',
+      '2023',
+      '2022',
+      '2021',
+    ])
+    expect(s.orders.map((o) => o.ordered)).toEqual(['2026-11-10', '2023-07-01'])
+    expect(s.orders[0]?.items).toEqual(['생수 2L 12개'])
+    expect(s.searched).toBe('2026년, 2025년, 2024년, 2023년, 2022년, 2021년')
+  })
+
+  it('해를 주면 그 해만 한 번, 다 찾아도 없으면 다음 길을 알려 준다', async () => {
+    const { connectors, opened } = await coupang()
+    const one = await connectors.call('coupang_orders', { item: '베개', year: 2025 })
+    expect(opened).toHaveLength(1)
+    expect((one.structuredContent as Found).searched).toBe('2025년(page 0)')
+    const none = await connectors.call('coupang_orders', { item: '키보드' })
+    const s = none.structuredContent as Found
+    expect(opened).toHaveLength(1 + 7)
+    expect(s.orders).toEqual([])
+    expect(s.searched).toBe('최근 6개월(page 0), 2026년, 2025년, 2024년, 2023년, 2022년, 2021년')
+    expect(s.tip).toContain('한 번만 더')
+  })
+
+  it('낱말 없이 부르면 최근 주문 한 쪽만', async () => {
+    const { connectors, opened } = await coupang()
+    const r = await connectors.call('coupang_orders', {})
+    expect(opened).toHaveLength(1)
+    expect((r.structuredContent as Found).searched).toBe('최근 주문(page 0)')
+    expect((r.structuredContent as Found).orders[0]?.items).toEqual(['생수 2L 12개', '라면 5개'])
+  })
+})

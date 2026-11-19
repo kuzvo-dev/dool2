@@ -216,6 +216,18 @@ describe('값이 없을 때만 채우기와 여러 도메인', async () => {
     expect(fill(t, { id: 7 })).toBe('/item/7')
     expect(fill(t, { q: '가' })).toBe('/search?q=%EA%B0%80')
   })
+  it('묶음 안의 묶음은 바깥부터 풀고, 입력 글의 {{…}}는 묶음으로 읽지 않는다', () => {
+    const t = '{{#item}}{{^year}}{{^found.0}}더{{/found.0}}{{/year}}{{/item}}'
+    expect(fill(t, { item: '베개' })).toBe('더')
+    expect(fill(t, { item: '베개', year: 2025 })).toBe('')
+    expect(fill(t, { item: '베개', found: [{}] })).toBe('')
+    expect(fill(t, {})).toBe('')
+    expect(fill('{{#q}}[{{q}}]{{/q}}', { q: '{{#x}}a{{/x}}' })).toBe('[{{#x}}a{{/x}}]')
+  })
+  it('dec는 수에서 1을 뺀다 (지난해 주소)', () => {
+    expect(fill('{{today|yyyy|dec}} {{today|yyyy|dec|dec}}', { today: '2026-11-19' })).toBe('2025 2024')
+    expect(fill('{{x|dec}}', { x: '가' })).toBe('')
+  })
   it('site와 alsoSites 중 하나', () => {
     expect(onSites('https://mail.google.com/mail/u/0/', ['gmail.com', 'mail.google.com'])).toBe(true)
     expect(onSites('https://evil.com/', ['gmail.com', 'mail.google.com'])).toBe(false)

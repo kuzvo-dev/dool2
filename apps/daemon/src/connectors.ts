@@ -73,6 +73,17 @@ function today(now: Date): string {
   return new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10)
 }
 
+/** 읽은 값을 이름에 담기. append면 앞에서 모은 목록 뒤에 붙인다 (여러 기간·여러 쪽을 한 목록으로) */
+function keep(scope: Scope, name: string, value: unknown, append?: boolean) {
+  const before = scope[name]
+  if (!append || before === undefined || before === null) {
+    scope[name] = value
+    return
+  }
+  const list = (v: unknown) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v])
+  scope[name] = [...list(before), ...list(value)]
+}
+
 /** 단계 실패: 이 단계에서 막혔다 (optional이면 건너뛴다) */
 class StepError extends Error {}
 /** 위험 판단에 멈췄다 (돌려줄 말 그대로) */
@@ -553,6 +564,8 @@ export class Connectors {
       return firstText(r)
     }
     for (const [i, step] of tool.steps.entries()) {
+      // if: 채운 글이 비면 이 단계는 건너뛴다 (앞 기간에서 찾았으면 더 예전 기간은 열지 않기 등)
+      if (step.if !== undefined && !fill(step.if, scope).trim()) continue
       const kind = stepKind(step)
       try {
         const done = await this.step(step, {
@@ -896,7 +909,7 @@ export class Connectors {
           } catch {
             throw new StepError(`${s.embedded.css} 안의 글이 JSON이 아니에요`)
           }
-          c.scope[s.as] = s.embedded.pick ? pick(data, s.embedded.pick) : data
+          keep(c.scope, s.as, s.embedded.pick ? pick(data, s.embedded.pick) : data, s.append)
           return
         }
         if (Date.now() > until) throw new StepError(`화면에 ${s.embedded.css} 데이터가 없어요`)
@@ -919,7 +932,7 @@ export class Connectors {
         .catch((e: Error) => {
           throw new StepError(e.message)
         })) as { json: unknown }
-      c.scope[s.as] = r.json
+      keep(c.scope, s.as, r.json, s.append)
       return
     }
     if ('filter' in s) {
