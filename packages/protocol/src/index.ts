@@ -2,6 +2,7 @@
 // 폰↔PC 암호화 규약은 M2에서 이 패키지에 추가한다.
 import { z } from 'zod'
 import type { ConnectionItem, SocialProvider } from './connect.js'
+import type { PayMethod, PayMethodInput } from './pay-methods.js'
 
 /** 두리가 실행할 수 있는 AI. 사용자의 구독으로 돈다. */
 /** claude·codex: 구독, opencode: API 키 종량제 (ADR 0010) */
@@ -908,6 +909,8 @@ export type PhoneToPc =
   | { kind: 'profile-set'; values: Record<string, string> }
   | { kind: 'profile-clear' }
   | { kind: 'pay-choice-forget'; host: string }
+  /** 내 결제 수단 목록을 통째로 바꾼다 (추가·지우기·순서 바꾸기). 맨 위가 주 결제 수단 (ADR 0023) */
+  | { kind: 'pay-methods-set'; methods: PayMethodInput[] }
   | { kind: 'thread'; id: string }
   /** image: 폰에서 줄인 사진 (JPEG base64, 300KB 이하) */
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
@@ -1032,6 +1035,8 @@ export type PcToPhone =
       have: Record<string, string>
       missing: string[]
       payChoices: Record<string, string>
+      /** 내 결제 수단 (맨 위가 주 결제 수단). 예전 PC는 없다 */
+      payMethods?: PayMethod[]
       message?: string
     }
   /** 처음부터 다시의 결과 */
@@ -1068,6 +1073,7 @@ export type PcToPhone =
   | { kind: 'error'; message: string }
 
 export { approvalSignText } from './link.js'
+export type { PayKind, PayMethod, PayMethodInput } from './pay-methods.js'
 
 /** 페어링된 폰 (PC가 보관) */
 export interface PairedPhone {

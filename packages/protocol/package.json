@@ -21,6 +21,10 @@
       "types": "./dist/rich.d.ts",
       "default": "./dist/rich.js"
     },
+    "./pay-methods": {
+      "types": "./dist/pay-methods.d.ts",
+      "default": "./dist/pay-methods.js"
+    },
     "./work-steps": {
       "types": "./dist/work-steps.d.ts",
       "default": "./dist/work-steps.js"
