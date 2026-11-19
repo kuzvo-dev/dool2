@@ -6,6 +6,13 @@
 
 import { randomInt } from 'node:crypto'
 import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
+import {
+  PAY_KINDS,
+  type PayMethod,
+  payMethodLabel,
+  payMethodMatches,
+  pickPayMethod,
+} from '@dool2/protocol/pay-methods'
 import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals } from './approvals.js'
 import { LoginRequests } from './logins.js'
 import {
@@ -699,6 +706,8 @@ export class BrowserTools {
   private guided = new Map<number, string>()
   /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
   private lastChoice = new Map<string, string>()
+  /** 내 결제 수단 (ADR 0023, 맨 위가 주 결제 수단). 사이트가 받는 것 중 맞는 것을 승인 카드 기본값으로 */
+  payMethods?: () => PayMethod[]
   /** 마지막으로 고른 결제 수단이 바뀌면 (본체가 설정에 남긴다) */
   onChoice?: (host: string, label: string) => void
   /** 사이트·묶음(카드·할부)마다 마지막으로 고른 것 ("www.coupang.com|할부" → "일시불"). 카드 번호는 화면에 보이는 가린 글만 */
@@ -1323,7 +1332,15 @@ export class BrowserTools {
 
   /** 결제 화면의 세부 결제 선택 묶음 (등록 카드·할부). 많아야 3묶음, 묶음마다 12개 */
   private async subChoices(tabId: number, page: PageInfo) {
-    const out: { key: string; title: string; ref: string; options: string[]; selected: number }[] = []
+    const out: {
+      key: string
+      title: string
+      ref: string
+      options: string[]
+      selected: number
+      /** 이 사이트에서 지난번에 고른 것이 기본값인지 */
+      remembered: boolean
+    }[] = []
     let host = ''
     try {
       host = new URL(page.url).hostname
@@ -1347,6 +1364,7 @@ export class BrowserTools {
         title,
         ref,
         options: opts.map((o) => o.label),
+        remembered: remembered >= 0,
         selected:
           remembered >= 0
             ? remembered
@@ -1469,12 +1487,34 @@ export class BrowserTools {
       (firstSub >= 0
         ? picks.filter((p) => at(p.ref) >= 0 && at(p.ref) < firstSub).sort((a, b) => at(b.ref) - at(a.ref))[0]
         : undefined)
+    // 내 결제 수단: 순서대로 사이트가 받는 것과 맞춰 본다. 맞는 첫 번째가 기본값이고, 맞는 칩에는 표시를 붙인다
+    const mine = this.payMethods?.() ?? []
+    const minePick = pickPayMethod(
+      mine,
+      picks.map((p) => p.label),
+    )
+    const mineOf = (label: string) => mine.find((m) => payMethodMatches(m, label))
     const preferred =
+      (minePick ? picks[minePick.option] : undefined) ??
       picks.find(
         (p) => last && (p.name === last || p.near === last || (p.name || p.near || '').includes(last)),
       ) ??
       onPage ??
       picks[0]
+    // 카드를 골라 두었고 결제 화면에 카드사 목록이 있으면 등록한 카드사를 기본으로 (지난번에 고른 카드가 있으면 그게 먼저)
+    const card = preferred ? mineOf(preferred.label) : undefined
+    // 'KB국민카드' → '국민'도 (화면에는 '국민카드 / 9409…'처럼 나온다)
+    const brand = card?.issuer?.replace(/카드$/, '')
+    const brands = brand ? [...new Set([brand, brand.replace(/^[A-Z]+/, '')])].filter(Boolean) : []
+    const subDefault = (g: (typeof subs)[number]) => {
+      const screen = g.selected
+      if (!brands.length || g.title !== '카드' || g.remembered) return screen
+      const isMine = (o: string) => brands.some((b) => o.includes(b))
+      const last4 = card?.last4
+      const byLast4 = last4 ? g.options.findIndex((o) => isMine(o) && o.includes(last4)) : -1
+      const at = byLast4 >= 0 ? byLast4 : g.options.findIndex(isMine)
+      return at >= 0 ? at : screen
+    }
     const rec = this.approvals.create({
       tabId,
       ref,
@@ -1491,7 +1531,10 @@ export class BrowserTools {
       ...(shot?.data ? { shot: shot.data } : {}),
       ...(picks.length
         ? {
-            choices: picks.map(({ id, label }) => ({ id, label })),
+            choices: picks.map(({ id, label }) => {
+              const m = mineOf(label)
+              return { id, label, ...(m ? { mine: payMethodLabel(m) } : {}) }
+            }),
             choiceTitle: d.choiceTitle ?? '결제 수단',
             ...(preferred ? { choice: preferred.id } : {}),
             choiceRefs: Object.fromEntries(
@@ -1508,7 +1551,7 @@ export class BrowserTools {
               key: g.key,
               title: g.title,
               options: g.options.map((label, i) => ({ id: `${g.key}o${i + 1}`, label: label.slice(0, 40) })),
-              choice: `${g.key}o${g.selected + 1}`,
+              choice: `${g.key}o${subDefault(g) + 1}`,
               // 지금 화면에 골라져 있는 결제 수단에 딸린 목록이다 (다른 수단을 고르면 이 줄은 안 쓴다)
               ...(onPage ? { when: onPage.id } : {}),
             })),
@@ -1870,7 +1913,17 @@ export class BrowserTools {
       const how = [chosen ? `결제 수단 "${chosen}"` : '', ...picked.map((p) => `"${p}"`)]
         .filter(Boolean)
         .join(', ')
-      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      // 고른 간편결제에 사용자가 등록해 둔 "그 안에서 쓰는 것"이 있으면 결제 창에서 고르라고 알린다 (ADR 0023)
+      const mainLabel = rec.choices?.find((c) => c.id === main)?.label
+      const inner = mainLabel
+        ? (this.payMethods?.() ?? []).find(
+            (m) => m.kind !== 'card' && m.inner && payMethodMatches(m, mainLabel),
+          )
+        : undefined
+      const hint = inner
+        ? ` 사용자가 등록한 ${PAY_KINDS[inner.kind]} 결제 수단은 "${inner.inner}"이에요. 결제 창에서 고를 수 있으면 그걸 고르고, 결제 비밀번호·본인 확인은 browser_handoff로 사람에게 넘기세요.`
+        : ''
+      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {

@@ -962,7 +962,11 @@ function finalLabel(a: ApprovalView): string {
  * 고를 것이 많으면(할부 12개월 등) 자주 쓰는 것만 먼저: 지금 고른 것, 일시불·무이자, 앞에서 몇 개. 나머지는 [더 보기]
  * (실측 쿠팡 할부: 일시불~12개월 12개가 칩으로 늘어서 승인 카드가 길었다)
  */
-function shown(options: { id: string; label: string }[], now: string | undefined, key: string) {
+function shown<T extends { id: string; label: string }>(
+  options: T[],
+  now: string | undefined,
+  key: string,
+): T[] {
   if (options.length <= 6 || st.choice.get(`${key}:more`)) return options
   const keep = options.filter((o, i) => i < 3 || /일시불|무이자/.test(o.label)).slice(0, 5)
   // 지금 고른 것은 늘 보인다
@@ -976,7 +980,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
   if (!a.choices?.length && !subs.length) return undefined
   const row = (
     title: string,
-    options: { id: string; label: string }[],
+    options: { id: string; label: string; mine?: string }[],
     now: string | undefined,
     key: string,
   ) =>
@@ -987,16 +991,23 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
       h(
         'div',
         { class: 'chip-row' },
-        ...shown(options, now, key).map((c) =>
-          h('button', {
-            class: `chip${c.id === now ? ' on' : ''}`,
-            text: c.label,
-            onclick: () => {
-              st.choice.set(key, c.id)
-              render()
+        ...shown(options, now, key).map((c) => {
+          // 내 결제 수단과 맞는 칩은 점을 붙인다 (ADR 0023)
+          const chip = h(
+            'button',
+            {
+              class: `chip${c.id === now ? ' on' : ''}${c.mine ? ' mine' : ''}`,
+              onclick: () => {
+                st.choice.set(key, c.id)
+                render()
+              },
             },
-          }),
-        ),
+            c.mine ? h('span', { class: 'mine-dot' }) : '',
+            c.label,
+          )
+          if (c.mine) chip.setAttribute('aria-label', `${c.label} (내 결제 수단: ${c.mine})`)
+          return chip
+        }),
         ...(shown(options, now, key).length < options.length
           ? [
               h('button', {
@@ -1012,11 +1023,18 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
       ),
     )
   // 아직 아무것도 안 바꿨으면 한 줄로 요약 (카드 · 신한카드 · 일시불 [바꾸기]). [바꾸기]를 누르면 칩이 펼쳐진다
-  const groups: { title: string; options: { id: string; label: string }[]; now?: string; key: string }[] = [
+  const groups: {
+    title: string
+    options: { id: string; label: string; mine?: string }[]
+    now?: string
+    key: string
+  }[] = [
     ...(a.choices?.length
       ? [
           {
-            title: `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`,
+            title: a.choices.some((c) => c.mine)
+              ? `${a.choiceTitle ?? '결제 수단'} · 내 결제 수단을 먼저 골라 뒀어요`
+              : `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`,
             options: a.choices,
             now: chosenOf(a),
             key: a.id,

@@ -617,7 +617,12 @@ export interface ApprovalView {
    * 승인할 때 고르는 것 (결제 수단, '지금 결제·숙박 시설에서 결제'). 결제 화면에 실제로 있는 칸만 들어 있다.
    * 사용자가 고른 것은 승인 서명에 함께 묶인다
    */
-  choices?: { id: string; label: string }[]
+  choices?: {
+    id: string
+    label: string
+    /** 내 결제 수단과 맞으면 그 이름 (ADR 0023, 예: '네이버페이 · 신한카드(1234)') */
+    mine?: string
+  }[]
   /** 선택지 제목 (예: '결제 수단') */
   choiceTitle?: string
   /** 기본으로 고른 것 (이 사이트에서 마지막으로 쓴 것, 없으면 화면에서 이미 골라진 것) */
