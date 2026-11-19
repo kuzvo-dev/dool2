@@ -451,6 +451,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .then((services) => link.broadcast({ kind: 'connections', services }))
         .catch(() => {})
     },
+    onClosed: (card) => {
+      if (!readSettings().connections?.[card.id]) void connectVerify(card).catch(() => false)
+    },
   })
   const connectOpen = async (card: ConnectCard, forPhone: boolean): Promise<number> => {
     const url = connectUrl(card)
@@ -541,7 +544,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         human: true,
         reason: 'human',
         tabId: r.tabId,
-        message: `${r.reason}. 화면을 열어 직접 마쳐 주세요.`,
+        // 앱 확인만 남았으면(카카오톡 등) 화면을 열 필요 없이 누르기만 하면 된다: 지켜보기가 이어서 연결한다
+        message: /이어서 연결해요$/.test(r.reason)
+          ? `${r.reason}.`
+          : `${r.reason}. 화면을 열어 직접 마쳐 주세요.`,
       }
     }
     browserTools.allowRemote(r.tabId)

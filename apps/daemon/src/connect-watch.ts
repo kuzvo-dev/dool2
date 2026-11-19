@@ -81,6 +81,8 @@ export interface LoginWatchDeps {
   /** 이미 연결로 표시됐으면 그만 본다 (사용자가 [로그인했어요]를 눌렀을 때) */
   connected(id: string): boolean
   onSignedIn(card: ConnectCard): void
+  /** 지켜보던 탭이 닫혔다 (간편 로그인 팝업은 확인 뒤 스스로 닫힌다): 사이트를 새로 열어 확인해 볼 차례 */
+  onClosed?(card: ConnectCard): void
 }
 
 /** 연결하려고 연 탭을 잠깐 지켜본다. 탭이 닫히거나, 확인되거나, 시간이 지나면 멈춘다 */
@@ -115,7 +117,10 @@ export class LoginWatch {
         }
         if (hasLoginEntry(page.text)) sawEntry = true
       } catch {
-        return // 탭이 닫혔거나 확장이 끊겼다
+        // 탭이 닫혔거나 확장이 끊겼다. 닫힌 탭은 다시 지켜보지 않고, 로그인이 됐는지는 사이트로 한 번 확인한다
+        this.tabs.delete(card.id)
+        this.deps.onClosed?.(card)
+        return
       }
       this.timers.set(
         card.id,
