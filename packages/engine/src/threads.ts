@@ -127,6 +127,8 @@ export class ThreadService {
       // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft·show_route): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
       // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
+      /** PC 파일 승인(여러 개 옮기기·출력): 도구가 승인을 실제로 요청했을 때(성공한 결과)만 카드를 남긴다 */
+      let fileAsk: { name: string; record: ApprovalRecordMessage } | undefined
       const saveBlock = () => {
         if (!block) return undefined
         const m = store.addMessage(threadId, 'tool', JSON.stringify(block))
@@ -242,6 +244,33 @@ export class ThreadService {
             }
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
           }
+        }
+        // PC 파일 승인은 탭 번호 대신 -2, ref는 도구 이름 (ADR 0024). 하나만 옮기기·되돌리기·프린터 목록은 승인이 없다
+        if (ev.type === 'tool' && /file_(?:move|print)$/.test(ev.name)) {
+          const input = (ev.input ?? {}) as { moves?: unknown; undo?: unknown; path?: unknown }
+          const move = /file_move$/.test(ev.name)
+          const asks = move
+            ? input.undo !== true && Array.isArray(input.moves) && input.moves.length >= 2
+            : typeof input.path === 'string' && input.path.trim() !== ''
+          fileAsk = asks
+            ? {
+                name: ev.name,
+                record: {
+                  kind: 'approval',
+                  tabId: -2,
+                  ref: move ? 'file_move' : 'file_print',
+                  what: move
+                    ? `파일 ${(input.moves as unknown[]).length}개 옮기기`
+                    : `"${String(input.path).split(/[\\/]/).pop()}" 출력`,
+                },
+              }
+            : undefined
+        }
+        if (ev.type === 'tool_result' && fileAsk && (!ev.name || ev.name === fileAsk.name)) {
+          const ask = fileAsk
+          fileAsk = undefined
+          if (ev.ok)
+            yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
         }
         // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)

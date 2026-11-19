@@ -74,6 +74,9 @@ describe('두리 MCP 도구', () => {
       'file_find',
       'file_read',
       'file_write',
+      'file_move',
+      'file_convert',
+      'file_print',
       'service_find',
       'service_call',
     ])

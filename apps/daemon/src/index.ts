@@ -368,8 +368,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
   browserTools.onNote = (kind, data) => journal.write(kind, data)
-  // PC 파일 도구 (ADR 0022). 시험에서는 폴더를 바꿀 수 있다
-  const fileTools = new FileTools(opts.fileFolders)
+  // PC 파일 도구 (ADR 0022·0024). 시험에서는 폴더를 바꿀 수 있다. 옮기기(여러 개)·출력은 같은 승인 카드로
+  const fileTools = new FileTools(opts.fileFolders, undefined, {
+    approvals: browserTools.approvals,
+    movesLog: join(paths.dataDir, 'file-moves.json'),
+  })
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')
@@ -424,11 +427,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     finalStep: () => readSettings().finalStep ?? 'approve',
   })
-  /** 승인: 앱(app:…)이면 화면 제어, 아니면 브라우저 */
-  const approveAny = (id: string, choice?: string) =>
-    browserTools.approvals.get(id)?.url.startsWith('app:')
-      ? screenTools.approve(id)
-      : browserTools.approve(id, choice)
+  /** 승인: 앱(app:…)이면 화면 제어, PC 파일(file:…)이면 파일 도구, 아니면 브라우저 */
+  const approveAny = (id: string, choice?: string) => {
+    const url = browserTools.approvals.get(id)?.url ?? ''
+    if (url.startsWith('app:')) return screenTools.approve(id)
+    if (url.startsWith('file:')) return fileTools.ops.approve(id)
+    return browserTools.approve(id, choice)
+  }
 
   // 폰 연결 (M6): 페어링된 폰의 부탁을 받아 PC에서 처리한다
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
@@ -2021,7 +2026,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
         )
       }
-      // PC 파일 도구 (ADR 0022): 바탕화면·문서·다운로드에서 찾기·읽기, 새 파일 만들기
+      // PC 파일 도구 (ADR 0022·0024): 바탕화면·문서·다운로드에서 찾기·읽기, 새 파일 만들기, 옮기기·사진 바꾸기·출력
       if (req.method === 'POST' && b === 'file' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         const r = await fileTools.run(c, args && typeof args === 'object' ? args : {})
@@ -2029,6 +2034,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           tool: c,
           ok: !r.isError,
           path: typeof args?.path === 'string' ? args.path : args?.name,
+          ...(Array.isArray(args?.moves) ? { count: args.moves.length } : {}),
+          ...(Array.isArray(args?.paths) ? { count: args.paths.length } : {}),
         })
         return json(res, 200, r)
       }

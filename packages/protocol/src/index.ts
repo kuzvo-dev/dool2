@@ -601,14 +601,19 @@ export interface ApprovalView {
   /** 누를 버튼의 글자 (페이지에서 읽은 그대로) */
   label: string
   url: string
-  /** app: 처음 다루는 PC 앱을 두리가 조작해도 되는지 */
-  kind: 'money' | 'contact' | 'irreversible' | 'app'
+  /**
+   * app: 처음 다루는 PC 앱을 두리가 조작해도 되는지.
+   * file: PC 파일 여러 개 옮기기·이름 바꾸기, print: 종이로 출력 (ADR 0024. 둘 다 tabId -2)
+   */
+  kind: 'money' | 'contact' | 'irreversible' | 'app' | 'file' | 'print'
   reason: string
   /** 아래는 AI가 적은 설명. 틀릴 수 있어서 화면 캡처와 함께 보여 준다 */
   what: string
   where: string
   amount?: string
   cancel?: string
+  /** 승인할 목록 (파일 옮기기: "a.pdf → ~/Downloads/영수증/" 한 줄씩). 본체가 만든 값 */
+  items?: string[]
   status: ApprovalStatus
   createdAt: string
   expiresAt: string

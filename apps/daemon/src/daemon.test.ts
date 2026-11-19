@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -46,7 +47,10 @@ class GateRuntime extends EchoRuntime {
   }
 }
 
-async function boot(rt: EchoRuntime = new EchoRuntime()) {
+async function boot(
+  rt: EchoRuntime = new EchoRuntime(),
+  more: Partial<Parameters<typeof startDaemon>[0]> = {},
+) {
   dir = await mkdtemp(join(tmpdir(), 'dool2-test-'))
   daemon = await startDaemon({
     timeLine: () => undefined,
@@ -54,6 +58,7 @@ async function boot(rt: EchoRuntime = new EchoRuntime()) {
     token: 't0ken',
     runtimes: { claude: rt },
     chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+    ...more,
   })
   const api = (path: string, init: RequestInit = {}) =>
     fetch(`${daemon?.url}${path}`, {
@@ -541,6 +546,45 @@ describe('승인 API', () => {
     expect(await r.json()).toMatchObject({ ok: false })
     const tool = await fetch(`${daemon?.url}/api/approvals`, { headers: { authorization: 'Bearer wrong' } })
     expect(tool.status).toBe(401)
+  })
+
+  it('PC 파일 여러 개 옮기기는 같은 승인 주소로 승인하면 본체가 옮긴다 (임시 폴더)', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dool2-home-'))
+    const dl = join(home, 'Downloads')
+    mkdirSync(dl)
+    writeFileSync(join(dl, 'a.pdf'), 'a')
+    writeFileSync(join(dl, 'b.pdf'), 'b')
+    const rt = new EchoRuntime()
+    const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"PDF 나눠 줘"}' })
+    for (let i = 0; i < 200 && !rt.last; i++) await new Promise((r) => setTimeout(r, 10))
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const r = (await (
+      await fetch(`${daemon?.url}/api/tools/file/file_move`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, '영수증') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, '계약서') },
+          ],
+        }),
+      })
+    ).json()) as { content: { text: string }[] }
+    expect(r.content[0]?.text).toContain('승인을 요청했어요')
+    const { approvals } = (await (await api('/api/approvals')).json()) as {
+      approvals: { id: string; kind: string; items?: string[] }[]
+    }
+    const ap = approvals.find((a) => a.kind === 'file')
+    expect(ap?.items).toHaveLength(2)
+    const done = (await (
+      await api(`/api/approvals/${ap?.id}`, { method: 'POST', body: JSON.stringify({ decision: 'approve' }) })
+    ).json()) as { ok: boolean; message: string }
+    expect(done).toMatchObject({ ok: true })
+    expect(done.message).toContain('2개를 옮겼어요')
+    expect(existsSync(join(dl, '영수증', 'a.pdf'))).toBe(true)
+    expect(existsSync(join(dl, '계약서', 'b.pdf'))).toBe(true)
+    await rm(home, { recursive: true, force: true })
   })
 })
 

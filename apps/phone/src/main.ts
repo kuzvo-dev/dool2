@@ -2887,6 +2887,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     ),
     a.amount && h('p', { class: 'approve-amount', text: a.amount }),
     h('p', { class: 'approve-what', text: a.what }),
+    itemsList(a, 5),
     choseRow(a),
     choiceRow(a),
     h(
@@ -2909,10 +2910,23 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
   )
 }
 
+/** 승인할 목록 (PC 파일 옮기기·출력): 앞 max줄과 남은 개수 */
+function itemsList(a: ApprovalView, max: number): HTMLElement | undefined {
+  if (!a.items?.length) return undefined
+  return h(
+    'ul',
+    { class: 'approve-items' },
+    ...a.items.slice(0, max).map((line) => h('li', { text: line })),
+    ...(a.items.length > max ? [h('li', { class: 'meta', text: `… 외 ${a.items.length - max}개` })] : []),
+  )
+}
+
 function approveQuestion(a: ApprovalView) {
   if (a.kind === 'money') return '결제할까요?'
   if (a.kind === 'contact') return '보낼까요?'
   if (a.kind === 'app') return '이 PC 앱을 다뤄도 될까요?'
+  if (a.kind === 'file') return '이대로 옮길까요?'
+  if (a.kind === 'print') return '출력할까요?'
   return '진행할까요?'
 }
 
@@ -4686,8 +4700,15 @@ function approvalSheet(id: string) {
   row('무엇을', a.what)
   row('어디서', a.where)
   row('주소', hostOf(a.url), 'host')
-  row('취소 조건', a.cancel)
-  if (a.kind !== 'app') row('누를 버튼', `"${finalLabel(a)}"`)
+  const pc = a.kind === 'file' || a.kind === 'print'
+  row(pc ? '알아 두기' : '취소 조건', a.cancel)
+  if (a.kind !== 'app' && !pc) row('누를 버튼', `"${finalLabel(a)}"`)
+  const items = itemsList(a, 100)
+  if (items)
+    rows.append(
+      h('dt', { text: a.kind === 'print' ? '파일' : `목록 ${a.items?.length}개` }),
+      h('dd', {}, items),
+    )
   sheet.append(
     close,
     h(
@@ -4734,7 +4755,12 @@ function approvalSheet(id: string) {
   sheet.append(
     h('p', {
       class: 'meta',
-      text: '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+      text:
+        a.kind === 'file'
+          ? '목록이 맞는지 봐 주세요. 승인하면 두리가 이 목록대로만 옮기고, 덮어쓰거나 지우지 않아요.'
+          : a.kind === 'print'
+            ? '파일과 매수가 맞는지 봐 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
+            : '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
     }),
     h(
       'div',

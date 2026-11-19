@@ -2042,6 +2042,8 @@ const RISK_LABEL: Record<ApprovalView['kind'], string> = {
   contact: '다른 사람에게 보내는 일',
   irreversible: '되돌릴 수 없는 일',
   app: '처음 다루는 PC 앱',
+  file: 'PC 파일 옮기기',
+  print: '종이로 출력',
 }
 
 /**
@@ -2120,17 +2122,36 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     }
     row('무엇을', v.what)
     row('주소', v.url.startsWith('app:') ? '' : host, 'host')
-    row('취소 조건', v.cancel)
-    if (v.kind !== 'app') row('누를 버튼', `"${v.label}"`)
+    const pc = v.kind === 'file' || v.kind === 'print'
+    row(pc ? '알아 두기' : '취소 조건', v.cancel)
+    if (v.kind !== 'app' && !pc) row('누를 버튼', `"${v.label}"`)
     row('얼마', v.amount, 'money')
+    // PC 파일: 무엇을 어디로 (본체가 만든 목록). 길면 30줄까지 보이고 나머지는 개수만
+    if (v.items?.length) {
+      const list = el('ul', 'approve-items')
+      for (const line of v.items.slice(0, 30)) list.append(el('li', '', line))
+      if (v.items.length > 30) list.append(el('li', 'meta', `… 외 ${v.items.length - 30}개`))
+      rows.append(el('dt', '', v.kind === 'print' ? '파일' : `목록 ${v.items.length}개`), el('dd', '', list))
+    }
     const no = el('button', 'btn-ghost', '거절')
     no.type = 'button'
-    const yes = el('button', 'btn btn-approve', v.kind === 'app' ? '허용하기' : '승인하기')
+    const yes = el(
+      'button',
+      'btn btn-approve',
+      v.kind === 'app'
+        ? '허용하기'
+        : v.kind === 'print'
+          ? '출력하기'
+          : v.kind === 'file'
+            ? '옮기기'
+            : '승인하기',
+    )
     yes.type = 'button'
     const decide = async (decision: 'approve' | 'reject') => {
       yes.disabled = true
       no.disabled = true
-      if (decision === 'approve') yes.textContent = '누르는 중…'
+      if (decision === 'approve')
+        yes.textContent = v.kind === 'file' ? '옮기는 중…' : v.kind === 'print' ? '보내는 중…' : '누르는 중…'
       const r = await api<{ ok: boolean; message: string }>(`/api/approvals/${encodeURIComponent(v.id)}`, {
         method: 'POST',
         body: JSON.stringify({ decision }),
@@ -2150,7 +2171,15 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       top,
       el('div', 'approve-body', rows),
       el('div', 'approve-actions', no, yes),
-      el('p', 'approve-note', '화면과 내용이 맞는지 확인해 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.'),
+      el(
+        'p',
+        'approve-note',
+        v.kind === 'file'
+          ? '목록이 맞는지 확인해 주세요. 승인하면 두리가 이 목록대로만 옮기고, 덮어쓰거나 지우지 않아요.'
+          : v.kind === 'print'
+            ? '파일과 매수가 맞는지 확인해 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
+            : '화면과 내용이 맞는지 확인해 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+      ),
     )
   }
   void fill()

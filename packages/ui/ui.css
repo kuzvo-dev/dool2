@@ -1253,6 +1253,19 @@ svg.i.md {
 .approve-body {
   padding: 6px 16px 4px;
 }
+/* 승인할 목록 (PC 파일 옮기기: 한 줄에 "a.pdf → ~/Downloads/영수증/"). 길면 카드 안에서 굴린다 */
+.approve-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  font: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+.approve-items li + li {
+  margin-top: 2px;
+}
 .approve-amount {
   margin: 0;
   font: 740 28px / 34px var(--font-sans);

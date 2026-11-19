@@ -1,5 +1,6 @@
 // PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기.
-// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·옮기기·덮어쓰기는 없다.
+// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·덮어쓰기는 없다.
+// 옮기기·이름 바꾸기, 사진 형식 바꾸기, 출력은 file-ops.ts (ADR 0024, 승인·되돌리기와 함께).
 // 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(pdf.ts, 쪽마다 줄·표를 살려).
 // 민감한 파일(인증서·키·비밀번호 파일·숨은 폴더)은 읽지 않는다.
 
@@ -9,6 +10,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
+import { FileOps, type FileOpsOptions } from './file-ops.js'
 import { type PdfText, pdfScanImages, pdfText } from './pdf.js'
 
 export interface FileToolResult {
@@ -52,7 +54,9 @@ const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 export class FileTools {
   private readonly folders: ReturnType<typeof userFolders>
   private readonly home: string
-  constructor(folders?: ReturnType<typeof userFolders>, home = homedir()) {
+  /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
+  readonly ops: FileOps
+  constructor(folders?: ReturnType<typeof userFolders>, home = homedir(), opts: FileOpsOptions = {}) {
     // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
     const real = (p: string) => {
       try {
@@ -68,10 +72,44 @@ export class FileTools {
       downloads: f.downloads.map(real),
     }
     this.home = real(home)
+    this.ops = new FileOps(
+      {
+        inside: (p) => this.inside(p),
+        insideNew: (p) => this.insideNew(p),
+        show: (p) => this.show(p),
+        roots: () => this.roots(),
+        sensitive: (p) => SENSITIVE.test(p),
+      },
+      opts,
+    )
   }
 
   private roots() {
     return Object.values(this.folders).flat()
+  }
+
+  /** 아직 없을 수도 있는 폴더(옮길 곳·새 파일 둘 곳): 있는 데까지 실제 경로로 바꿔 사용자 폴더 안인지 본다 */
+  private insideNew(p: string): string | undefined {
+    const raw = p.startsWith('~') ? join(this.home, p.slice(1)) : resolve(this.home, p)
+    const rest: string[] = []
+    let at = raw
+    while (!existsSync(at)) {
+      const up = resolve(at, '..')
+      if (up === at) return undefined
+      rest.unshift(basename(at))
+      at = up
+    }
+    let real: string
+    try {
+      real = realpathSync(at)
+    } catch {
+      return undefined
+    }
+    // 새로 만들 이름에 숨은 이름(.으로 시작)·못 쓰는 글자는 받지 않는다
+    if (rest.some((n) => n.startsWith('.') || /[:*?"<>|]/.test(n) || !n.trim())) return undefined
+    const out = join(real, ...rest)
+    if (SENSITIVE.test(out)) return undefined
+    return this.roots().some((r) => out === r || out.startsWith(r + sep)) ? out : undefined
   }
 
   /** 사용자 폴더 안의 실제 경로만 (../·바로가기로 밖에 나가는 것 막기) */
@@ -93,7 +131,11 @@ export class FileTools {
   async run(tool: string, args: Record<string, unknown>): Promise<FileToolResult> {
     try {
       if (tool === 'file_find')
-        return await this.find(String(args.query ?? ''), args.folder as FolderKey | undefined)
+        return await this.find(
+          String(args.query ?? ''),
+          args.folder as FolderKey | undefined,
+          Number(args.limit ?? 0) || undefined,
+        )
       if (tool === 'file_read') return await this.read(String(args.path ?? ''), Number(args.from ?? 0) || 0)
       if (tool === 'file_write')
         return await this.write({
@@ -103,14 +145,18 @@ export class FileTools {
           rows: Array.isArray(args.rows) ? (args.rows as unknown[][]) : undefined,
           folder: (args.folder as FolderKey | undefined) ?? 'desktop',
         })
+      if (tool === 'file_move') return await this.ops.move(args)
+      if (tool === 'file_convert') return await this.ops.convert(args)
+      if (tool === 'file_print') return await this.ops.print(args)
       return fail(`모르는 파일 도구예요: ${tool}`)
     } catch (e) {
       return fail((e as Error).message)
     }
   }
 
-  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개 */
-  async find(query: string, folder?: FolderKey): Promise<FileToolResult> {
+  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개(limit으로 300개까지) */
+  async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
+    const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
       .split(/[,·]/)
       .map((w) => w.trim())
@@ -147,12 +193,13 @@ export class FileTools {
         minute: '2-digit',
       })
     return ok(
-      `${hits.length > 30 ? `${hits.length}개 중 최근 30개` : `${hits.length}개`}:\n` +
+      `${hits.length > max ? `${hits.length}개 중 최근 ${max}개` : `${hits.length}개`}:\n` +
         hits
-          .slice(0, 30)
+          .slice(0, max)
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
           .join('\n') +
-        '\n읽으려면 file_read에 이 경로를 그대로 주세요.',
+        (hits.length > max ? `\n다 보려면 limit을 늘려(300까지) 다시 찾아 주세요.` : '') +
+        '\n읽으려면 file_read, 옮기거나 이름을 바꾸려면 file_move, 사진 형식은 file_convert, 출력은 file_print에 이 경로를 그대로 주세요.',
     )
   }
 

@@ -302,6 +302,31 @@ describe('ThreadService', () => {
       ['assistant', '로그인만 해 주세요'],
     ])
   })
+
+  it('PC 파일 승인(여러 개 옮기기·출력)은 도구가 성공했을 때만 승인 카드를 남긴다', async () => {
+    const moves = [
+      { from: '~/Downloads/a.pdf', folder: '~/Downloads/영수증' },
+      { from: '~/Downloads/b.pdf', folder: '~/Downloads/계약서' },
+    ]
+    const { store, svc } = setup([
+      { type: 'tool', name: 'mcp__dool2__file_move', input: { moves } },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__file_move' },
+      // 하나만 옮기기는 바로 해서 승인이 없다
+      { type: 'tool', name: 'mcp__dool2__file_move', input: { moves: moves.slice(0, 1) } },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__file_move' },
+      // 프린터가 없어 실패한 출력은 카드가 없다
+      { type: 'tool', name: 'mcp__dool2__file_print', input: { path: '~/Downloads/학습지.pdf' } },
+      { type: 'tool_result', ok: false, name: 'mcp__dool2__file_print' },
+      { type: 'done', text: '옮길 목록을 승인해 주세요' },
+    ])
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, '다운로드 PDF 나눠 줘'))
+    const recs = store
+      .listMessages(t.id)
+      .filter((m) => m.role === 'tool' && m.text.includes('"kind":"approval"'))
+      .map((m) => JSON.parse(m.text))
+    expect(recs).toEqual([{ kind: 'approval', tabId: -2, ref: 'file_move', what: '파일 2개 옮기기' }])
+  })
 })
 
 describe('일한 과정 기록 (WorkLog)', () => {
