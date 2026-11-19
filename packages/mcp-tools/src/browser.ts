@@ -62,7 +62,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'open',
     '새 탭 열기',
-    '사용자 Chrome의 "두리" 창에 새 탭을 열고 페이지를 글로 읽어 돌려준다. 평소 로그인이 그대로 쓰인다. 웹에서 무언가 찾거나 할 때 가장 먼저 쓴다.',
+    '사용자 Chrome의 "두리" 창에 새 탭을 열고 페이지를 글로 읽어 돌려준다. 평소 로그인이 그대로 쓰인다. 웹에서 무언가 찾거나 할 때 가장 먼저 쓴다. 페이지에서 읽은 내용으로 답할 때는 그 줄이나 답 끝에 출처를 ([사이트·화면 이름](그 페이지 주소)) 링크로 붙인다.',
     { url: z.string().describe('열 주소 (예: https://www.naver.com)') },
     true,
   )
@@ -76,7 +76,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'read',
     '페이지 읽기',
-    '탭의 지금 페이지를 글로 읽는다. 누를 수 있는 것은 [e12 버튼 "검색"]처럼 표시된다. 긴 페이지는 필요한 부분만: from에 찾는 글자(예: "검색 결과")를 넣으면 그 줄부터, view: true면 지금 화면에 보이는 부분만, 잘렸으면 안내된 skip으로 이어서 읽는다.',
+    '탭의 지금 페이지를 글로 읽는다(답에 쓰면 출처로 ([화면 이름](페이지 주소)) 링크를 붙인다). 누를 수 있는 것은 [e12 버튼 "검색"]처럼 표시된다. 긴 페이지는 필요한 부분만: from에 찾는 글자(예: "검색 결과")를 넣으면 그 줄부터, view: true면 지금 화면에 보이는 부분만, 잘렸으면 안내된 skip으로 이어서 읽는다.',
     {
       tabId,
       maxChars: z.number().int().min(1000).max(40000).optional(),
@@ -200,7 +200,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_login',
     '로그인 카드 띄우기',
-    '로그인 페이지인데 두리 금고에 그 사이트가 없을 때 쓴다(browser_login이 "금고에 없어요"라고 할 때). 사용자에게 PC·폰 대화 안 로그인 카드를 띄운다. 사용자가 넣은 아이디·비밀번호는 금고에만 저장되고 너에게는 오지 않는다. 쓴 뒤에는 이번 답을 끝낸다. 로봇 확인·본인인증·문자 인증은 browser_handoff로.',
+    '로그인 페이지인데 두리 금고에 그 사이트가 없을 때 쓴다(browser_login이 "금고에 없어요"라고 할 때). 사용자에게 PC·폰 대화 안 로그인 카드를 띄운다. 사용자가 넣은 아이디·비밀번호는 금고에만 저장되고 너에게는 오지 않는다. 쓴 뒤에는 이번 답을 끝낸다. 로봇 확인·인증 앱 승인은 browser_handoff로, 문자 인증번호는 browser_request_code로.',
     {
       tabId,
       site: z.string().max(60).describe('사용자에게 보일 사이트 이름 (예: "코스트코")'),
@@ -210,7 +210,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'fill_profile',
     '내 정보로 예약자·주문자 칸 채우기',
-    '결제·예약 화면의 이름·영문 이름·이메일·휴대폰·생년월일·주소 칸을 사용자의 "내 정보"로 두리가 직접 채운다. 너는 칸과 항목만 짚고 값은 보지 않는다(결과에는 가린 값만). 사용자에게 이름·연락처를 묻지 말고 이걸 먼저 쓴다. 내 정보에 없는 항목이면 결과가 알려 주니 browser_request_profile로 카드를 띄운다. 칸 모양에 맞는 항목을 골라: 영문 성/이름이 따로면 name_en_last·name_en_first, 한 칸이면 name_en_full, 국가 번호를 따로 고르는 전화 칸이면 phone_local, 숫자만 받는 칸이면 phone_digits·birth_digits, 6자리 생년월일이면 birth6.',
+    '결제·예약 화면과 간편인증(정부24·홈택스 등 본인인증) 창의 이름·영문 이름·이메일·휴대폰·생년월일·주소 칸을 사용자의 "내 정보"로 두리가 직접 채운다. 간편인증 창이면 이걸로 이름·생년월일·휴대폰을 채우고, 결과에 오는 내 정보의 간편인증 앱을 눌러 [인증 요청]까지 누른 뒤 browser_wait_auth로 승인을 기다려 이어 간다(인증 앱을 대화로 묻지 않는다). 너는 칸과 항목만 짚고 값은 보지 않는다(결과에는 가린 값만). 사용자에게 이름·연락처를 묻지 말고 이걸 먼저 쓴다. 내 정보에 없는 항목이면 결과가 알려 주니 browser_request_profile로 카드를 띄운다. 칸 모양에 맞는 항목을 골라: 영문 성/이름이 따로면 name_en_last·name_en_first, 한 칸이면 name_en_full, 국가 번호를 따로 고르는 전화 칸이면 phone_local, 앞자리(010)를 따로 고르는 전화 칸이면 phone_rest(뒤 8자리), 세 칸(010-1234-5678)으로 나뉘면 앞 phone_head·가운데 phone_mid·끝 phone_last, 숫자만 받는 칸이면 phone_digits·birth_digits, 6자리 생년월일이면 birth6. 본인인증의 주민등록번호 뒷자리 칸은 rrn_back(내 정보에 있으면 바로 채우고, 없으면 폰 보안 키패드로 한 번 받아 금고에 저장 — 사용자에게 직접 넣으라고 넘기지 않는다).',
     {
       tabId,
       fields: z
@@ -227,6 +227,11 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
                 'phone',
                 'phone_digits',
                 'phone_local',
+                'phone_rest',
+                'phone_head',
+                'phone_mid',
+                'phone_last',
+                'rrn_back',
                 'birth',
                 'birth_digits',
                 'birth6',
@@ -239,6 +244,38 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         )
         .min(1)
         .max(20),
+    },
+    false,
+  )
+  tool(
+    'wait_auth',
+    '인증 앱 승인 기다리기',
+    '간편인증(카카오톡·네이버·토스·PASS 등) 요청을 보낸 뒤 쓴다. 부르기 직전에 "카카오톡(고른 앱)으로 인증 요청을 보냈어요. 3분 안에 승인해 주세요"라고 한 줄 쓴다(진행 카드에 바로 보인다). 사용자 폰에 "인증 앱에서 승인해 주세요" 알림을 보내고, 최대 3분 동안 몇 초마다 그 화면의 [인증 완료]·[확인] 버튼(ref)을 눌러 승인됐는지 확인한다. 승인되면 다음 화면을 돌려주니 그대로 이어 간다. browser_handoff로 넘기고 [다 했어요]를 기다리지 않는다(그사이 인증이 만료된다). 버튼 없이 저절로 넘어가는 화면이면 ref를 비운다.',
+    {
+      tabId,
+      ref: ref.optional().describe('승인 뒤 누르는 [인증 완료]·[확인] 버튼 표시 (없으면 생략)'),
+      message: z
+        .string()
+        .max(80)
+        .optional()
+        .describe('폰 알림에 보일 말 (예: "카카오톡에서 정부24 인증을 승인해 주세요")'),
+    },
+    false,
+  )
+  tool(
+    'request_code',
+    '폰에서 받아 칸에 바로 넣기 (인증번호·주민번호 뒷자리)',
+    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
+    {
+      tabId,
+      ref: ref.describe('인증번호를 넣을 입력칸 표시'),
+      label: z.string().max(40).optional().describe('카드에 보일 칸 이름 (예: "인증번호 6자리")'),
+      kind: z
+        .enum(['code', 'rrn_back'])
+        .optional()
+        .describe(
+          'code=인증번호(기본, 저장하지 않음) · rrn_back=주민등록번호 뒷자리(본인인증 칸, 금고에 저장)',
+        ),
     },
     false,
   )
@@ -259,11 +296,19 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
             'zip',
             'address',
             'address_detail',
+            'auth_app',
           ]),
         )
-        .max(9)
+        .max(10)
         .optional()
         .describe('받을 항목. 비우면 없는 항목 모두'),
+      options: z
+        .array(z.string().max(20))
+        .max(10)
+        .optional()
+        .describe(
+          'auth_app을 받을 때: 그 사이트 간편인증 창에 보이는 인증 앱 이름들 (화면 글자 그대로, 예: ["카카오톡", "네이버", "토스"]). 사용자는 고르기만 한다',
+        ),
       reason: z
         .string()
         .max(120)
@@ -334,7 +379,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'handoff',
     '사람에게 넘기기',
-    '로봇 확인(캡차), 본인인증·문자 인증, 결제·주문·보내기 같은 마지막 버튼처럼 사람이 직접 해야 할 때 쓴다(아이디·비밀번호 로그인은 browser_request_login). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '마지막 수단: 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다(번거롭다). 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 이걸로 안 되는 로봇 확인(캡차)·공동인증서 비밀번호·화면에서만 되는 조작일 때만 쓴다. 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       reason: z

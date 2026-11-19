@@ -23,7 +23,7 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
-import { SIDE_THREAD_PEEK } from '@dool2/protocol'
+import { AUTH_APPS, SIDE_THREAD_PEEK } from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -61,6 +61,7 @@ import {
   josa,
   narrationLine,
   readAppNote,
+  hyphenate,
   splitPhoto,
   stripLinks,
   toolLabel,
@@ -1875,7 +1876,7 @@ function render() {
     }
     const t = h('div', { class: 'toast float-toast', text: st.toast ?? '' })
     t.hidden = !st.toast
-    app.replaceChildren(view, t)
+    app.replaceChildren(view, t, ...(s.name === 'side' ? sideOverlay() : []))
     return
   }
   if (!shell) buildShell()
@@ -2309,6 +2310,13 @@ function renderComposer() {
   if (!shell) return
   const { composerBox, textarea, sendBtn } = shell
   composerBox.hidden = st.tab !== 'chat'
+  // 기다리는 입력 카드를 닫았으면 입력창 위에 다시 여는 줄
+  let slot = composerBox.querySelector<HTMLElement>(':scope > .info-wait-slot')
+  if (!slot) {
+    slot = h('div', { class: 'info-wait-slot' })
+    composerBox.prepend(slot)
+  }
+  slot.replaceChildren(...infoWaitBar())
   const attachBox = composerBox.querySelector('.attach-preview') as HTMLElement
   if (st.attach) {
     const img = h('img')
@@ -3919,7 +3927,8 @@ function renderOverlay() {
   overlayDrawn = drawn
   o.dataset.key = key
   o.dataset.kind = ov.kind
-  const scrim = h('div', { class: 'scrim', onclick: () => openOverlay(undefined) })
+  // 입력 카드는 바깥을 눌러도 닫히지 않는다 (실수로 내려 막혔다). [나중에 할게요]로만 닫는다
+  const scrim = h('div', { class: 'scrim', onclick: () => ov.kind !== 'info' && openOverlay(undefined) })
   // 내용만 바뀐 것이면 제자리에서 바꾼다 (올라오는 움직임은 처음 열 때 한 번만)
   if (!opening) {
     scrim.classList.add('still')
@@ -4221,6 +4230,8 @@ const PROFILE_LABEL: Record<string, string> = {
   zip: '우편번호',
   address: '주소',
   address_detail: '상세 주소',
+  rrn_back: '주민번호 뒷자리',
+  auth_app: '간편인증 앱',
 }
 
 /** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */
@@ -4246,19 +4257,32 @@ function profileSheet() {
   const inputs = Object.entries(PROFILE_LABEL).map(([key, label]) => {
     const input = h('input', { class: 'field' })
     input.name = key
+    if (key === 'auth_app') {
+      // 간편인증 앱은 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
+      input.type = 'hidden'
+      return { key, label, input, chips: choiceChips(AUTH_APPS, p.have[key] ?? '', (v) => (input.value = v)) }
+    }
     input.placeholder = p.have[key] ? `${p.have[key]} (바꿀 때만 넣기)` : '없음'
     input.setAttribute('aria-label', label)
     if (key === 'phone') input.type = 'tel'
     if (key === 'email') input.type = 'email'
-    return { key, label, input }
+    if (key === 'rrn_back') {
+      input.type = 'password'
+      input.inputMode = 'numeric'
+      input.autocomplete = 'off'
+    }
+    autoHyphen(input, key)
+    return { key, label, input, chips: undefined as HTMLElement | undefined }
   })
   const go = h('button', { class: 'btn lg', text: '저장' })
   go.type = 'submit'
   const form = h(
     'form',
     { class: 'cred-form profile-form' },
-    ...inputs.map(({ label, input }) =>
-      h('label', { class: 'field-label' }, h('span', { class: 'meta', text: label }), input),
+    ...inputs.map(({ label, input, chips }) =>
+      chips
+        ? h('div', { class: 'field-label' }, h('span', { class: 'meta', text: label }), chips, input)
+        : h('label', { class: 'field-label' }, h('span', { class: 'meta', text: label }), input),
     ),
     go,
   )
@@ -5150,6 +5174,11 @@ function infoSheet(id: string) {
     const inputs = q.fields.map((f) => {
       const input = h('input', { class: 'field' })
       input.name = f.key
+      if (f.type === 'choice' && f.options?.length) {
+        // 하나 고르기 (간편인증 앱): 칩을 누르면 숨은 칸에 그 이름이 들어간다
+        input.type = 'hidden'
+        return { f, input, chips: choiceChips(f.options, '', (v) => (input.value = v)) }
+      }
       input.placeholder = f.example ? `예: ${f.example}` : f.label
       input.setAttribute('aria-label', f.label)
       if (f.type === 'tel') {
@@ -5168,26 +5197,50 @@ function infoSheet(id: string) {
       else if (f.key === 'name_en_first') input.autocomplete = 'given-name'
       else if (f.key === 'zip') input.autocomplete = 'postal-code'
       else if (f.key === 'address') input.autocomplete = 'street-address'
-      return { f, input }
+      autoHyphen(input, f.key)
+      return { f, input, chips: undefined as HTMLElement | undefined }
     })
     const go = h('button', { class: 'btn lg', text: '저장하고 이어서 하기' })
     go.type = 'submit'
     const form = h(
       'form',
       { class: 'cred-form profile-form' },
-      ...inputs.map(({ f, input }) =>
-        h('label', { class: 'field-label' }, h('span', { class: 'meta', text: f.label }), input),
+      ...inputs.map(({ f, input, chips }) =>
+        chips
+          ? h('div', { class: 'field-label' }, h('span', { class: 'meta', text: f.label }), chips, input)
+          : h('label', { class: 'field-label' }, h('span', { class: 'meta', text: f.label }), input),
       ),
       go,
     )
     form.onsubmit = (e) => {
       e.preventDefault()
+      // 칸마다 형식 검사: 맞지 않으면 그 칸 아래에 안내를 띄우고 멈춘다 (빈 칸은 넘긴다)
+      let bad: HTMLInputElement | undefined
+      for (const { f, input } of inputs) {
+        const v = input.value.trim()
+        input.parentElement?.querySelector('.field-err')?.remove()
+        input.classList.remove('invalid')
+        if (!v || !f.pattern || new RegExp(f.pattern).test(v)) continue
+        input.classList.add('invalid')
+        input.insertAdjacentElement(
+          'afterend',
+          h('span', { class: 'field-err', text: f.patternHint || `${f.label} 형식을 확인해 주세요` }),
+        )
+        bad ??= input
+      }
+      if (bad) {
+        bad.focus()
+        return
+      }
       const value: Record<string, string> = {}
       for (const { f, input } of inputs) if (input.value.trim()) value[f.key] = input.value.trim()
       if (Object.keys(value).length) answer(JSON.stringify(value))
     }
     body.push(form)
-    queueMicrotask(() => inputs[0]?.input.focus())
+    queueMicrotask(() => inputs.find((x) => !x.chips)?.input.focus())
+  } else if (q.field === 'secret') {
+    // 주민번호 뒷자리처럼 저장하지 않는 값: 폰 키보드 대신 숫자 위치를 섞은 보안 키패드로 받는다
+    body.push(securePad(q.pattern, q.patternHint, (v) => answer(v)))
   } else if (q.field === 'otp') {
     body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
     body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
@@ -5220,11 +5273,123 @@ function infoSheet(id: string) {
       icon('lock'),
       q.field === 'form'
         ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
-        : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
+        : q.field === 'secret'
+          ? '넣은 값은 이 PC 금고에 암호화해 저장해요. 두리(AI)는 보지 않아요.'
+          : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
     ),
     h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),
   )
   return sheet
+}
+
+/** 휴대폰·생년월일 칸은 숫자만 쳐도 하이픈이 들어간다 */
+function autoHyphen(input: HTMLInputElement, key: string) {
+  if (key !== 'phone' && key !== 'birth') return
+  input.inputMode = 'numeric'
+  input.addEventListener('input', () => {
+    input.value = hyphenate(key, input.value)
+  })
+}
+
+/**
+ * 보안 키패드 (은행 앱처럼): 숫자 자리를 섞고, 누르면 누른 키와 다른 숫자 하나가 함께 반짝여
+ * 어깨너머로 봐도 어떤 숫자인지 모르게 한다. 값은 이 함수 안에만 있고 [넣기]를 누를 때만 넘긴다
+ */
+function securePad(
+  pattern: string | undefined,
+  hint: string | undefined,
+  onDone: (v: string) => void,
+): HTMLElement {
+  const max = Number(/\{(\d+)\}\$?$/.exec(pattern ?? '')?.[1] ?? '') + 1 || 7
+  let value = ''
+  const dots = h('div', { class: 'pad-dots' })
+  const err = h('p', { class: 'field-err pad-err', text: '' })
+  const go = h('button', { class: 'btn lg', text: '넣기' }) as HTMLButtonElement
+  const grid = h('div', { class: 'pad-grid' })
+  const paint = () => {
+    dots.replaceChildren(
+      ...Array.from({ length: max }, (_, i) => h('span', { class: i < value.length ? 'on' : '' })),
+    )
+    go.disabled = value.length < max
+    err.textContent = ''
+  }
+  // 누른 키와 함께 다른 숫자 키 하나도 눌린 것처럼 보인다
+  const flash = (el: HTMLElement) => {
+    const others = [...grid.querySelectorAll<HTMLElement>('.pad-key.num')].filter((k) => k !== el)
+    const decoy = others[Math.floor(Math.random() * others.length)]
+    for (const k of [el, decoy]) {
+      if (!k) continue
+      k.classList.remove('pressed')
+      void k.offsetWidth
+      k.classList.add('pressed')
+      setTimeout(() => k.classList.remove('pressed'), 160)
+    }
+    navigator.vibrate?.(8)
+  }
+  const key = (label: string | Element, on: (el: HTMLElement) => void, cls: string, aria?: string) => {
+    const b = h('button', { class: `pad-key ${cls}` })
+    b.append(label)
+    b.type = 'button'
+    if (aria) b.setAttribute('aria-label', aria)
+    b.onpointerdown = (e) => {
+      e.preventDefault()
+      on(b)
+    }
+    return b
+  }
+  const layout = () => {
+    const digits = [...'0123456789'].sort(() => Math.random() - 0.5)
+    const num = (d: string) =>
+      key(
+        d,
+        (el) => {
+          flash(el)
+          if (value.length < max) value += d
+          paint()
+        },
+        'num',
+      )
+    grid.replaceChildren(
+      ...digits.slice(0, 9).map(num),
+      key('재배열', () => layout(), 'fn', '숫자 자리 다시 섞기'),
+      num(digits[9] as string),
+      key(
+        icon('back'),
+        () => {
+          value = value.slice(0, -1)
+          paint()
+        },
+        'fn',
+        '하나 지우기',
+      ),
+    )
+  }
+  go.onclick = () => {
+    if (pattern && !new RegExp(pattern).test(value)) {
+      err.textContent = hint || '형식을 확인해 주세요'
+      return
+    }
+    onDone(value)
+    value = ''
+  }
+  layout()
+  paint()
+  return h('div', { class: 'secure-pad' }, dots, err, grid, go)
+}
+
+/** 하나 고르기 칩 (간편인증 앱 등). 누른 칩만 켜지고 onPick으로 알린다 */
+function choiceChips(options: readonly string[], current: string, onPick: (v: string) => void): HTMLElement {
+  const box = h('div', { class: 'choice-chips' })
+  for (const o of options) {
+    const b = h('button', { class: `chip${o === current ? ' on' : ''}`, text: o })
+    b.type = 'button'
+    b.onclick = () => {
+      for (const c of box.querySelectorAll('.chip')) c.classList.toggle('on', c === b)
+      onPick(o)
+    }
+    box.append(b)
+  }
+  return box
 }
 
 /** 공급자 계정 주소면 그 공급자 (accounts.kakao.com → kakao) */
@@ -5435,6 +5600,54 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
   }
 }
 
+/**
+ * 기다리는 입력 카드가 있는데 닫혀 있으면 다시 여는 줄 (실수로 내리면 다시 열 길이 없었다)
+ */
+function infoWaitBar(): HTMLElement[] {
+  const open = st.overlay?.kind === 'info' ? (st.overlay as { id: string }).id : undefined
+  const q = [...st.infos.values()].filter((x) => x.status === 'pending' && x.id !== open).at(-1)
+  if (!q) return []
+  return [
+    h(
+      'button',
+      { class: 'info-wait-bar', onclick: () => openOverlay({ kind: 'info', id: q.id }) },
+      h('span', { text: `넣을 것이 있어요 · ${q.label}` }),
+      h('strong', { text: '열기' }),
+    ),
+  ]
+}
+
+/**
+ * 따로 하는 대화 화면에서도 사람에게 묻는 카드(내 정보·보안 키패드·인증번호·승인·로그인)를 띄운다.
+ * 이 화면은 소식이 올 때마다 다시 그려서, 같은 카드면 만들어 둔 것을 그대로 쓴다 (넣던 값이 날아가지 않게)
+ */
+let sideSheet: { key: string; el: HTMLElement } | undefined
+function sideOverlay(): HTMLElement[] {
+  const ov = st.overlay
+  if (!ov || !('id' in ov) || !['info', 'approval', 'login'].includes(ov.kind)) {
+    sideSheet = undefined
+    return []
+  }
+  const key = `${ov.kind}:${ov.id}`
+  if (sideSheet?.key !== key) {
+    const body =
+      ov.kind === 'info'
+        ? infoSheet(ov.id)
+        : ov.kind === 'approval'
+          ? approvalSheet(ov.id)
+          : loginSheet(ov.id)
+    const box = h('div', { class: 'app-overlay' })
+    box.dataset.kind = ov.kind
+    // 입력 카드는 바깥을 눌러도 닫히지 않는다 (실수로 내려 막혔다). [나중에 할게요]로만 닫는다
+    box.append(
+      h('div', { class: 'scrim', onclick: () => ov.kind !== 'info' && openOverlay(undefined) }),
+      body,
+    )
+    sideSheet = { key, el: box }
+  }
+  return [sideSheet.el]
+}
+
 function sideView(id: string) {
   const sd = st.side?.id === id ? st.side : undefined
   const back = () => {
@@ -5532,6 +5745,7 @@ function sideView(id: string) {
       ),
     ),
     h('div', { class: 'side-scroll' }, list),
+    ...infoWaitBar(),
     h('div', { class: 'composer float side-composer' }, ta, go),
   )
   requestAnimationFrame(() => {

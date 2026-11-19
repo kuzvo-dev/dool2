@@ -62,6 +62,7 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
+import { AUTH_APPS } from '@dool2/protocol'
 import {
   type ConnectCard,
   connectUrl,
@@ -1465,19 +1466,122 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return 'asked'
   }
   // 내 정보 카드: 처음 한 번만 받아 금고에 두고, 저장되면 그 대화로 이어서 하라고 알린다
-  browserTools.requestProfile = (fields, reason) => {
+  browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    // 주민번호 뒷자리: 저장하지 않고 이 칸에만 넣는다
+    if (kind === 'rrn_back') {
+      label = '주민등록번호 뒷자리'
+      hint = '한 번 넣으면 이 PC 금고에 암호화해 두고 다음부터 두리가 채워요. 두리(AI)는 값을 보지 않아요.'
+    }
+    // 같은 칸을 이미 묻고 있으면 카드를 또 띄우지 않는다 (AI가 두 번 불러 카드가 두 장 떴다)
+    const same = infoRequests
+      .pending()
+      .find((q) => q.host === host && q.label === label && (q.field === 'otp' || q.field === 'secret'))
+    if (same) return same.id
     const answer = infoRequests.ask(
       {
-        site: '두리',
-        host: '내 정보',
-        field: 'form',
-        label: '내 정보',
-        hint: `${reason || '예약·주문 칸을 채우려고 해요'}. 한 번만 넣어 두면 다음부터는 두리가 알아서 채워요.`,
-        fields: fields.map((key) => ({ key, ...PROFILE_FIELDS[key] })),
+        site: host || '인증',
+        host,
+        field: kind === 'rrn_back' ? 'secret' : 'otp',
+        ...(kind === 'rrn_back'
+          ? { pattern: '^[1-4]\\d{6}$', patternHint: '숫자 7자리예요 (첫 자리 1~4)' }
+          : {}),
+        label,
+        ...(hint ? { hint } : {}),
       },
-      30 * 60_000,
+      10 * 60_000,
     )
+    const id = infoRequests.pending().at(-1)?.id
+    void answer.then(async (code) => {
+      if (!code) return
+      // 주민번호 뒷자리는 금고(내 정보)에 저장해 다음부터 묻지 않는다
+      if (kind === 'rrn_back') await profile.update({ rrn_back: code }).catch(() => undefined)
+      // 넣는 동안 화면을 다시 읽었을 수 있어 표시가 바뀐다: 같은 이름의 칸을 새로 찾아 넣는다 (번호는 기록·AI에 남기지 않는다)
+      const snap = (await browser.call('snapshot', { tabId, maxChars: 20_000 }).catch(() => undefined)) as
+        | { text: string; url?: string }
+        | undefined
+      const ref = snap
+        ? ([...snap.text.matchAll(/\[(e\d+) (입력칸|검색칸|비밀번호칸) "([^"]*)"\]/g)].find(
+            (m) => m[3] === field,
+          )?.[1] ?? '')
+        : ''
+      // 처음 짚은 칸에 먼저 넣고, 표시가 바뀌었으면 같은 이름의 칸을 찾아 넣는다
+      // 금고와 같은 길(fill)로 넣는다: 그 사이트 주소일 때만, 가린 칸(비밀번호칸)도 된다. 값은 돌려받지 않는다
+      let origin = ''
+      try {
+        origin = new URL((snap as { url?: string } | undefined)?.url ?? '').origin
+      } catch {}
+      const put = (r: string) =>
+        origin
+          ? browser
+              .call('fill', {
+                tabId,
+                ref: r,
+                value: code,
+                origin,
+              })
+              .then(
+                () => true,
+                () => false,
+              )
+          : Promise.resolve(false)
+      const ok = (firstRef ? await put(firstRef) : false) || (ref ? await put(ref) : false)
+      if (!threadId) return
+      followUp(
+        threadId,
+        appNote(
+          ok
+            ? `사용자가 폰에서 ${kind === 'rrn_back' ? '주민번호 뒷자리' : '인증번호'}를 넣어 "${field}" 칸에 들어갔어요. 페이지를 읽고 [확인]·[인증] 버튼을 눌러 하던 일을 이어서 해 주세요.`
+            : `사용자가 인증번호를 넣었는데 "${field}" 칸을 화면에서 찾지 못해 넣지 못했어요. 페이지를 읽어 칸을 확인하고 browser_request_code를 다시 써 주세요.`,
+        ),
+      )
+    })
+    return id
+  }
+  browserTools.requestProfile = (fields, reason, options) => {
+    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const names = (list: string[]) =>
+      list.map((f) => PROFILE_FIELDS[f as keyof typeof PROFILE_FIELDS].label).join('·')
+    // 간편인증 앱은 글로 받지 않고 고르기 카드로 따로 (그 사이트 간편인증 창에 보이는 앱 중에서)
+    const appOptions = (options?.length ? options : [...AUTH_APPS]).slice(0, 10)
+    // 생년월일·휴대폰을 받는 카드는 본인인증용이라, 기본 앱이 없으면 같은 카드에서 앱도 고르게 한다
+    const identity = fields.includes('birth') && fields.includes('phone')
+    const wantsApp = fields.includes('auth_app') || identity
+    const formFields = fields.filter((f) => f !== 'auth_app')
+    const askApp = async (): Promise<string> => {
+      const picked = await infoRequests.ask(
+        {
+          site: '두리',
+          host: '내 정보',
+          field: 'choice',
+          label: '간편인증 앱',
+          hint: '어느 앱으로 본인인증을 승인할지 골라 주세요. 처음 고른 앱은 내 정보에 기본으로 저장돼요.',
+          options: appOptions,
+        },
+        30 * 60_000,
+      )
+      if (!picked) return ''
+      // 기본이 없을 때만 기본으로 저장한다 (사이트마다 되는 앱이 달라 이번에만 다른 앱을 고를 수 있다)
+      if (!(await profile.get()).auth_app) await profile.update({ auth_app: picked })
+      return `간편인증 앱은 이번에 '${picked}'로 골랐어요. 그 이름의 버튼을 눌러 [인증 요청]까지 누르고 폰 승인을 부탁해요.`
+    }
+    const answer = formFields.length
+      ? infoRequests.ask(
+          {
+            site: '두리',
+            host: '내 정보',
+            field: 'form',
+            label: '내 정보',
+            hint: `${reason || '예약·주문 칸을 채우려고 해요'}. 한 번만 넣어 두면 다음부터는 두리가 알아서 채워요.`,
+            fields: [
+              ...formFields.map((key) => ({ key, ...PROFILE_FIELDS[key] })),
+              // 간편인증 앱은 같은 카드 맨 아래 칩으로 (글로 받지 않는다)
+              ...(wantsApp ? [{ key: 'auth_app', ...PROFILE_FIELDS.auth_app, options: appOptions }] : []),
+            ],
+          },
+          30 * 60_000,
+        )
+      : Promise.resolve('{}')
     const id = infoRequests.pending().at(-1)?.id
     void answer.then(async (raw) => {
       if (!raw) return
@@ -1487,19 +1591,32 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       } catch {
         return
       }
-      const { saved, bad } = await profile.update(input)
-      journal.write('profile', { saved, bad })
+      const { saved, bad } = formFields.length ? await profile.update(input) : { saved: [], bad: [] }
+      if (formFields.length) journal.write('profile', { saved, bad })
+      // 같은 카드에서 골랐으면 그걸로, 앱만 받는 경우(사이트별로 다른 앱)는 고르기 카드로
+      const pickedInForm = typeof input.auth_app === 'string' && input.auth_app ? input.auth_app : ''
+      const app = pickedInForm
+        ? `간편인증 앱은 '${pickedInForm}'로 골랐어요. 그 이름의 버튼을 눌러 [인증 요청]까지 누르고 폰 승인을 부탁해요.`
+        : wantsApp && !formFields.length
+          ? await askApp()
+          : ''
       if (!threadId) return
-      const names = (list: string[]) =>
-        list.map((f) => PROFILE_FIELDS[f as keyof typeof PROFILE_FIELDS].label).join('·')
       followUp(
         threadId,
         appNote(
-          `내 정보를 저장했어요(${names(saved) || '없음'})${bad.length ? `. 형식이 맞지 않아 빠진 것: ${names(bad)}` : ''}. browser_fill_profile로 칸을 채우고 하던 일을 이어서 해 주세요.`,
+          [
+            formFields.length
+              ? `내 정보를 저장했어요(${names(saved) || '없음'})${bad.length ? `. 형식이 맞지 않아 빠진 것: ${names(bad)}` : ''}.`
+              : '',
+            app,
+            'browser_fill_profile로 칸을 채우고 하던 일을 이어서 해 주세요.',
+          ]
+            .filter(Boolean)
+            .join(' '),
         ),
       )
     })
-    return id
+    return id ?? (wantsApp ? infoRequests.pending().at(-1)?.id : undefined)
   }
   /**
    * 연결 중 사람에게 넘기는 대신 폰에 묻는다: 공급자 계정은 로그인 카드(금고)로, 인증번호는 입력 화면으로
@@ -1595,6 +1712,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       connectors.forgetTab(n.tabId)
     }
   })
+  browserTools.notifyUser = (title, body) =>
+    void link.notify({ title, body, tag: 'auth-wait', url: '#tab=chat' }).catch(() => {})
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
     const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined

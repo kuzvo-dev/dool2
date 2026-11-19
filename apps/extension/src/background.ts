@@ -33,6 +33,7 @@ import {
   pageSelectOptions,
   pageSnapshot,
   pageTapAt,
+  pageLinkNavigates,
   pageValueLength,
   pageViewport,
   type ReadScope,
@@ -1062,6 +1063,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       ])
       await settle(tabId)
       return pageState(tabId)
+    }
+    case 'link-navigates': {
+      // 승인 게이트: 이 링크가 다른 화면으로 가기만 하는지 (값은 참·거짓만)
+      const tabId = await ownedTab(a)
+      const frameId = frameOf(tabId, String(a.ref)).frameId
+      return {
+        navigates: Boolean(
+          await inFrame(tabId, frameId, pageLinkNavigates, String(a.ref)).catch(() => false),
+        ),
+      }
     }
     case 'reload': {
       // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)

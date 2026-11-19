@@ -418,6 +418,8 @@ export class Connectors {
         `- ${connectorToolName(card.id, t.name)} [${t.tier} · ${need}] ${t.title} — 입력: ${args || '없음'}`,
       )
     }
+    // 사이트 요령은 도구가 있어도 보여 준다 (도구 밖의 일 — 예: 정부24 미환급금 조회 — 을 어디서 할지 알게)
+    lines.push(...(card.hints ?? []).map((h) => `- 요령: ${h}`))
     const locked = tools.filter((t) => t.login && !connected)
     if (locked.length)
       lines.push(

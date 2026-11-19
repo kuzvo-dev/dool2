@@ -349,6 +349,7 @@ export const BrowserCommandSchema = z.enum([
   'form',
   'form-fill',
   'mark-text',
+  'link-navigates',
   /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기 */
   'extract',
   'find',
@@ -463,11 +464,24 @@ export interface InfoRequestView {
   site: string
   host: string
   /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 · form: 여러 칸(내 정보 카드) · choice: 하나 고르기 */
-  field: 'otp' | 'tel' | 'text' | 'form' | 'choice'
+  field: 'otp' | 'tel' | 'text' | 'form' | 'choice' | 'secret'
   /** choice일 때 고를 것 (답은 고른 글 그대로) */
   options?: string[]
   /** form일 때 받을 칸들. 답은 {key: 값} JSON 한 줄 */
-  fields?: { key: string; label: string; type: 'text' | 'tel' | 'email' | 'date'; example?: string }[]
+  fields?: {
+    key: string
+    label: string
+    type: 'text' | 'tel' | 'email' | 'date' | 'choice' | 'secret'
+    example?: string
+    /** choice일 때 고를 것 (예: 간편인증 앱) */
+    options?: readonly string[]
+    /** 형식 검사 (정규식 글). 맞지 않으면 폰이 저장 전에 patternHint를 보여 준다 */
+    pattern?: string
+    patternHint?: string
+  }[]
+  /** 한 칸 받기(otp·secret 등)의 형식 검사 */
+  pattern?: string
+  patternHint?: string
   /** 화면의 칸 이름 ("인증번호 6자리") */
   label: string
   /** 화면의 안내 한 줄 ("카카오톡으로 보낸 번호를 넣어 주세요") */
@@ -1173,3 +1187,15 @@ export type PairStatus =
   | { state: 'expired' }
 
 export const PairConfirmSchema = z.object({ accept: z.boolean() })
+
+/** 간편인증 앱 (내 정보의 '간편인증 앱'): 정부24·홈택스 같은 공공 사이트 간편인증 창에 보이는 이름 그대로 */
+export const AUTH_APPS = [
+  '카카오톡',
+  '네이버',
+  '토스',
+  'PASS',
+  'KB국민인증서',
+  '신한인증서',
+  '삼성패스',
+  '페이코',
+] as const
