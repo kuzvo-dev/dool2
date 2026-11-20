@@ -4,8 +4,7 @@
 //
 // 왜: 실측 11-20 G마켓 실주문이 이 흐름에서 여섯 번 막혔다. 실계정을 건드리기 전에 여기서 끝까지 통과해야 한다
 // (개편 계획 PLAN.md 원칙 5). 단계마다 따로 통과·실패와 까닭을 적고, 끝에 표로 보여 준다.
-// 개편으로 생길 도구(tabs·wait·order_done, 누르기의 final)를 쓰는 단계는 [TODO …]로 표시한다. 아직 없으면 실패로 적고
-// 예전 방법으로 이어 가서 뒤 단계도 본다 (어디서 막히는지 한 번에 다 보이게).
+// 한 단계가 실패해도 할 수 있으면 다른 방법으로 이어 가서 뒤 단계도 본다 (어디서 막히는지 한 번에 다 보이게).
 //
 //   pnpm build
 //   DOOL2_TEST_CHROME=".../Google Chrome for Testing" node apps/extension/scripts/e2e-pay.mjs
@@ -134,9 +133,9 @@ const results = []
  * 한 단계. 실패해도 다음 단계로 간다. needs가 거짓이면(앞 단계에서 꼭 필요한 것을 못 얻음) 건너뜀으로 적는다.
  * fn이 { note }를 돌려주면 까닭 칸에 적는다 (통과했지만 예전 방법으로 이어 간 경우 등)
  */
-const step = async (flow, name, fn, { todo, needs = true } = {}) => {
+const step = async (flow, name, fn, { needs = true } = {}) => {
   // 돌려주는 값: 통과면 fn의 값(없으면 true), 실패·건너뜀이면 false
-  const row = { flow: flow.id, n: results.filter((r) => r.flow === flow.id).length + 1, name, todo }
+  const row = { flow: flow.id, n: results.filter((r) => r.flow === flow.id).length + 1, name }
   results.push(row)
   if (!needs) {
     Object.assign(row, { status: '건너뜀', ms: 0, why: '앞 단계가 실패해 할 수 없어요' })
@@ -151,7 +150,7 @@ const step = async (flow, name, fn, { todo, needs = true } = {}) => {
     return v ?? true
   } catch (e) {
     Object.assign(row, { status: '실패', ms: Date.now() - t, why: String(e.message).replace(/\s+/g, ' ') })
-    console.log(`✗ [${flow.id}${row.n}] ${name}${todo ? ` [TODO ${todo}]` : ''}: ${row.why}`)
+    console.log(`✗ [${flow.id}${row.n}] ${name}: ${row.why}`)
     return false
   }
 }
@@ -176,17 +175,12 @@ const pollRead = async (tabId, re, ms = 8000) => {
 /** 기다리기 도구로 기다리고, 없으면 실패로 적은 뒤 다시 읽기로 이어 간다. 이어 간 화면 글을 돌려준다 */
 const waitStep = async (flow, name, tabId, waitText, re) => {
   let page
-  const ok = await step(
-    flow,
-    name,
-    async () => {
-      const [tool, args] = PLANNED.wait(tabId, waitText)
-      await run(tool, args)
-      page = await read(tabId)
-      if (!re.test(page)) throw new Error(`기다린 뒤에도 ${re} 이(가) 화면에 없어요`)
-    },
-    { todo: 'browser_wait' },
-  )
+  const ok = await step(flow, name, async () => {
+    const [tool, args] = PLANNED.wait(tabId, waitText)
+    await run(tool, args)
+    page = await read(tabId)
+    if (!re.test(page)) throw new Error(`기다린 뒤에도 ${re} 이(가) 화면에 없어요`)
+  })
   if (ok) return page
   try {
     page = await pollRead(tabId, re)
@@ -495,7 +489,7 @@ async function runFlow(flow) {
         }
         throw new Error('12초 동안 탭 목록에 결제 창이 없어요')
       },
-      { todo: 'browser_tabs', needs: pressed },
+      { needs: pressed },
     )
     if (!tabsOk && pressed) {
       // 예전 방법: 승인 결과 글의 탭 번호, 없으면 확장에 늦게 뜬 창을 직접 묻는다
@@ -683,7 +677,7 @@ async function runFlow(flow) {
       await run(tool, args)
       if (tools.isPaying(tabId)) throw new Error('아직 결제 중인 탭으로 남아 있어요')
     },
-    { todo: 'browser_order_done', needs: doneOk },
+    { needs: doneOk },
   )
   await step(
     flow,
@@ -730,10 +724,7 @@ const cell = (s) =>
 const table = [
   '| 흐름 | # | 단계 | 결과 | ms | 까닭 |',
   '|---|---|---|---|---|---|',
-  ...results.map(
-    (r) =>
-      `| ${r.flow} | ${r.n} | ${cell(r.name)}${r.todo ? ` [TODO ${r.todo}]` : ''} | ${r.status} | ${r.ms} | ${cell(r.why)} |`,
-  ),
+  ...results.map((r) => `| ${r.flow} | ${r.n} | ${cell(r.name)} | ${r.status} | ${r.ms} | ${cell(r.why)} |`),
 ].join('\n')
 const count = (s) => results.filter((r) => r.status === s).length
 const summary = `통과 ${count('통과')} · 실패 ${count('실패')} · 건너뜀 ${count('건너뜀')}`
