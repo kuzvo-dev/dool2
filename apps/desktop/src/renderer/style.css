@@ -1850,6 +1850,13 @@ button.side-row:hover {
   display: grid;
   gap: 6px;
 }
+.bubble.with-photo .sent-photo {
+  display: block;
+  max-width: 240px;
+  max-height: 280px;
+  border-radius: 12px;
+  object-fit: cover;
+}
 .photo-chip {
   display: inline-flex;
   align-items: center;
