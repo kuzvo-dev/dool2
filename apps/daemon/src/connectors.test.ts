@@ -511,6 +511,59 @@ describe('서비스 도구 실행기', () => {
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 
+  it('긴 화면 끝에 붙은 창의 선택 상자는 한 번 길게 다시 읽어 찾는다', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+    const tool = CONNECTOR.tools[0]
+    await writeFile(
+      join(dir, 'demo-eats', 'tools.json'),
+      JSON.stringify({
+        ...CONNECTOR,
+        tools: [
+          {
+            ...tool,
+            steps: [
+              tool.steps[0],
+              { choose: { field: '^전국$', option: '서울' } },
+              { type: { field: '검색어를 입력', text: '강남' } },
+              ...tool.steps.slice(1),
+            ],
+          },
+        ],
+      }),
+    )
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const browser = {
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot') {
+          // 보통 길이로 읽으면 창이 잘려 안 보이고, 길게 읽어야 보인다
+          const long = Number(args?.maxChars) >= 60_000
+          const body = `${PAGE}\n데모맛집 성수점 오늘의 빈자리 안내`
+          const text = long ? `${body}\n[e20 선택 상자 "전국"] [e21 입력칸 "검색어를 입력해 주세요."]` : body
+          return { tabId: 7, url: 'https://eats.example/', title: '', text, truncated: !long, captcha: false }
+        }
+        if (cmd === 'options') return { options: [{ label: '서울특별시', selected: false }] }
+        if (cmd === 'extract') return { ok: true, rows: [{ name: '가게 가' }], total: 1, url: '' }
+        if (cmd === 'find') return { url: '', title: '', found: {} }
+        return { tabId: 7 }
+      },
+    }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+      pollMs: 1,
+      gapMs: 0,
+    })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(textOf(r)).not.toContain('찾지 못했어요')
+    expect(calls).toContainEqual(['choose', { tabId: 7, ref: 'e20', label: '서울특별시' }])
+    expect(calls.find(([c]) => c === 'type')?.[1]).toMatchObject({ ref: 'e21', text: '강남' })
+  })
+
   it('단계가 깨졌는데 화면에 로봇 확인이 떠 있으면 고장 대신 폰 카드로 풀게 한다', async () => {
     const health = new ConnectorHealth()
     const { connectors } = await setup({ rows: [], health, captcha: true })

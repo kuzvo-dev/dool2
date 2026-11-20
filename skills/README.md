@@ -99,7 +99,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 
 ## 상태
 
-서비스 92곳, 도구 326개 중 **실제 사이트에서 확인한 도구 107개**예요. 로그인 없이 되는 찾아보기 도구는 111개이고 그중 101개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
+서비스 93곳, 도구 328개 중 **실제 사이트에서 확인한 도구 109개**예요. 로그인 없이 되는 찾아보기 도구는 113개이고 그중 103개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
 
 | 분류 | 서비스 | 도구 | 검증된 도구 |
 | --- | --- | --- | --- |
@@ -121,6 +121,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 장보기·배달 | [오아시스마켓](oasis-market/tools.json) | 4 | `search` |
 | 장보기·배달 | [컬리](kurly/tools.json) | 3 | `search` |
 | 패션·뷰티 | [29CM](29cm/tools.json) | 4 | `search` |
+| 패션·뷰티 | [ABC마트](abcmart/tools.json) | 2 | `search`, `store_stock` |
 | 패션·뷰티 | [W컨셉](wconcept/tools.json) | 3 | `search` |
 | 패션·뷰티 | [무신사](musinsa/tools.json) | 4 | `search`, `product` |
 | 패션·뷰티 | [에이블리](ably/tools.json) | 4 | `search` |
