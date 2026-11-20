@@ -46,6 +46,12 @@ const whenFields = {
     .describe(
       'always=매번 알림(기본, 브리핑·정기 알림) · when_found=조건에 맞을 때만 알리고 아니면 조용히(피드·폰 알림 없음): "넘으면", "나오면", "뜨면" 같은 지켜보기',
     ),
+  tell_at: z
+    .string()
+    .optional()
+    .describe(
+      '폰 알림만 미룰 한국 시각 HH:MM. 일은 정한 때 하고 결과는 대화에 바로 남기되, 폰 알림은 이 시각에 (예: "자는 동안 해 두고 아침에 알려 줘" → once 새벽 3시 + tell_at "07:00"). goal_update에서 ""이면 지움',
+    ),
 }
 
 export function registerLifeTools(server: McpServer, client: BrowserClient) {
@@ -66,7 +72,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         '"엔진오일 다음 교체 때 알려 줘" → 마지막 교체일을 prompt에 적고 monthly + when_found(갈 때가 됐으면) + until "교체했다고 하면" · ' +
         '"날짜 미정인 공지 뜨면 알려 줘" → daily + when_found + until "공지가 떠서 알리면". ' +
         '목표는 category와 plan(3~6단계)을 함께 주고, 체크인 때를 schedule로 준다. ' +
-        '지켜보기를 만들기 전에 찾아본 게 있으면 답에 "지금 상황"(예: 지난 모집 때·예정 발표, 받을 수 있는 조건과 내 정보로 본 대상 여부)을 한두 줄로 먼저 말하고 줄 끝에 출처 링크를 붙인다. ' +
+        '지켜보기를 만들기 전에 지금 것을 먼저 찾아 답에 보여 준다: 소식·글이면 목록(show_list, 줄마다 원문 링크, 오늘 것이 적으면 이번 주로 넓혀서), 모집·조건이면 "지금 상황"(지난 모집 때·예정 발표, 내 정보로 본 대상 여부) 한두 줄과 출처 링크. "아무것도 없었어요"로만 끝내지 않는다. 사용자가 같이 봐 달라고 한 곳(예: 구청 공지)은 묻지 말고 지켜보기 prompt에도 넣는다. ' +
         '결과의 "정한 것"(언제 하고·언제 끝나고·언제 알리는지)을 사용자에게 그대로 말해 확인한다. 빠진 게 있다고 오면 사용자에게 묻거나 goal_update로 채운다. 지난 시각이면 만들지 말고 다른 시각을 물어본다.',
       inputSchema: {
         title: z
@@ -104,7 +110,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: '목표·예정 보기',
       description:
-        '만들어 둔 목표와 알아서 하는 일, 다음 시각, 지난 결과를 본다. "무슨 알림 예약했지?"에 쓴다.',
+        '만들어 둔 목표와 알아서 하는 일, 다음 시각, 지난 결과를 본다. "무슨 알림 예약했지?"에 쓴다. 전에 만든 예약이 "이미 있다"고 말하거나 거기에 기대기 전에도 이것으로 아직 있는지 본다(사용자가 화면에서 지웠을 수 있다).',
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -116,7 +122,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: '목표 고치기',
       description:
         '목표의 계획 단계를 새로 쓰거나(plan), 끝낸 단계를 표시하거나(done: 단계 번호, 0부터), 진행 기록을 남긴다(log). ' +
-        '알림·지켜보기의 할 일(prompt), 언제(schedule과 그 칸), 끝나는 때(until, 빈 글 ""이면 지움), 알리기(notify)도 고친다 — goal_create 결과에 빠진 게 있다고 오면 이것으로 채운다. ' +
+        '알림·지켜보기의 할 일(prompt), 언제(schedule과 그 칸 — 시각만 바꿀 땐 time만 줘도 나머지는 그대로), 끝나는 때(until, 빈 글 ""이면 지움), 알리기(notify)도 고친다 — goal_create 결과에 빠진 게 있다고 오면 이것으로 채운다. ' +
         '끝나는 조건이 이뤄졌다고 사용자가 말하면(예: "엔진오일 갈았어") goal_delete로 지운다.',
       inputSchema: {
         id: z.string().max(40).describe('goal_list의 id (앞 8자도 됨)'),

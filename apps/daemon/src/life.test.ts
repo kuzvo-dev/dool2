@@ -8,6 +8,7 @@ import {
   routineAsk,
   ruleLabel,
   scheduleLabel,
+  tellDelay,
   watchPrompt,
 } from './life.js'
 
@@ -582,6 +583,54 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
     expect(r?.notify).toBeUndefined()
     expect(r?.schedule).toEqual({ kind: 'weekly', time: '09:00', days: [1, 3] })
     expect(life.run('goal_list', {}).content[0]?.text).toContain('월·수 오전 9:00')
+  })
+  it('시각만 주면 매일·요일은 그대로 두고 시각만 바꾼다, 바꿀 게 없으면 고쳤다고 하지 않는다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', { title: '뉴스', prompt: '뉴스 요약', schedule: 'daily', time: '07:30' })
+    const id = life.routines()[0]?.id.slice(0, 8) ?? ''
+    const t = life.run('goal_update', { id, time: '07:00' }).content[0]?.text
+    expect(life.routines()[0]?.schedule).toEqual({ kind: 'daily', time: '07:00' })
+    expect(t).toContain('매일 오전 7:00')
+    const r = life.run('goal_update', { id })
+    expect(r.isError).toBe(true)
+  })
+  it('밤새 해 두고 아침에 알림: tell_at을 남기고 폰 알림만 그 시각까지 미룬다', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const t = life.run('goal_create', {
+      title: '밤새 처리',
+      prompt: '숙소 비교, 메일 정리',
+      schedule: 'once',
+      at: '2026-11-18T03:00:00+09:00',
+      tell_at: '7:00',
+    }).content[0]?.text
+    expect(life.routines()[0]?.tellAt).toBe('07:00')
+    expect(t).toContain('폰 알림은 오전 7:00까지 미뤄요')
+    expect(
+      life.run('goal_create', { title: 'x', prompt: 'y', schedule: 'daily', time: '09:00', tell_at: '7시' })
+        .isError,
+    ).toBe(true)
+    const id = life.routines()[0]?.id ?? ''
+    life.run('goal_update', { id, tell_at: '' })
+    expect(life.routines()[0]?.tellAt).toBeUndefined()
+    // 새벽에 해 두고 "아침에" 알려 달라는 일은 말하지 않아도 7시로, 깨워 달라는 알림은 그대로
+    life.run('goal_create', {
+      title: '밤새 정리',
+      prompt: '메일 정리해서 아침에 알려 줘',
+      schedule: 'once',
+      at: '2026-11-18T03:00:00+09:00',
+    })
+    expect(life.routines()[0]?.tellAt).toBe('07:00')
+    life.run('goal_create', {
+      title: '비행기',
+      prompt: '공항 갈 시간이라고 깨워 줘',
+      schedule: 'once',
+      at: '2026-11-18T04:30:00+09:00',
+    })
+    expect(life.routines()[0]?.tellAt).toBeUndefined()
+    // 새벽 3시(한국) 끝 → 7시까지 4시간, 아침 8시에 끝나면 바로
+    expect(tellDelay('07:00', new Date('2026-11-20T18:00:00Z'))).toBe(4 * 3600_000)
+    expect(tellDelay('07:00', new Date('2026-11-20T23:00:00Z'))).toBe(0)
+    expect(tellDelay(undefined, new Date())).toBe(0)
   })
   it('화면에 보이는 끝나는 때 한 줄', () => {
     expect(ruleLabel({ until: '2026-12-31', notify: 'when_found' })).toBe('12월 31일까지 · 맞을 때만 알림')

@@ -741,6 +741,8 @@ export interface Routine {
   until?: string
   /** 알리기: 매번(기본) 또는 조건에 맞을 때만 (아니면 피드·폰 알림 없이 조용히) */
   notify?: 'always' | 'when_found'
+  /** 결과 알림 시각 HH:MM(한국 시간): 일은 정한 때 하고 폰 알림만 이 시각까지 미룬다 (밤새 해 두고 아침에 알려 줘) */
+  tellAt?: string
   /** 끝나는 때가 지나 스스로 꺼진 시각 */
   endedAt?: string
 }

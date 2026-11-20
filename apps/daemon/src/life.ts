@@ -39,7 +39,10 @@ export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
 
 /** 정해진 때 두리에게 보낼 말: 할 일 + 조건에 맞지 않을 때·끝나는 조건을 답에 담는 법 */
 export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until' | 'lastTold'>): string {
-  const lines = [r.prompt]
+  const lines = [
+    r.prompt,
+    '맡긴 일이 여럿이면 답을 "끝냈어요"(일마다 결과 한두 줄)와 "정해 주세요"(사용자가 고르거나 확인할 것, 없으면 빼요)로 나눠 써요.',
+  ]
   if (r.notify === 'when_found') {
     lines.push(
       `조건에 맞을 때만 알리는 일이에요. 맞는 게 없으면 다른 말 없이 "${QUIET_MARK}"만 써요(사용자에게 알리지 않아요). 맞으면 확인한 것부터 짧게 써요.`,
@@ -60,6 +63,26 @@ function kstWhen(iso: string): string {
   const h = d.getUTCHours()
   const m = d.getUTCMinutes()
   return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${'일월화수목금토'[d.getUTCDay()]}) ${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+}
+
+/** "07:00" → "오전 7:00" */
+function hhmmLabel(t: string): string {
+  const [h = 0, m = 0] = t.split(':').map(Number)
+  return `${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+}
+
+/**
+ * 폰 알림을 미룰 시간(ms): 다음 tellAt(한국 시간)까지가 12시간 안이면 그만큼, 아니면 0(바로).
+ * 새벽 3시에 끝낸 일 + 아침 7시 → 4시간 뒤. 아침 8시에 끝났는데 7시면 이미 지났으니 바로
+ */
+export function tellDelay(tellAt: string | undefined, now: Date): number {
+  if (!tellAt) return 0
+  const [h = 0, m = 0] = tellAt.split(':').map(Number)
+  const k = new Date(now.getTime() + 9 * 3600_000)
+  let at = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate(), h, m) - 9 * 3600_000
+  if (at <= now.getTime()) at += 24 * 3600_000
+  const ms = at - now.getTime()
+  return ms <= 12 * 3600_000 ? ms : 0
 }
 
 /** 정한 것 한 줄 (AI가 사용자에게 그대로 말한다): 언제 돌고 · 언제 끝나고 · 언제 알리는지 · 처음 할 때 */
@@ -83,8 +106,9 @@ export function ruleSentence(r: Routine): string {
       : r.target === 'feed'
         ? '매번 피드에 올려요'
         : '매번 알려요'
+  const later = s && r.tellAt ? `폰 알림은 ${hhmmLabel(r.tellAt)}까지 미뤄요` : ''
   const first = r.nextRunAt ? `처음은 ${kstWhen(r.nextRunAt)}` : ''
-  return [when, end, tell, first].filter(Boolean).join(' · ')
+  return [when, end, tell, later, first].filter(Boolean).join(' · ')
 }
 
 /** 조건이 있는 지켜보기 같은 말 ("넘으면", "나오면", "뜨면" …) */
@@ -215,6 +239,7 @@ export class Life {
     target?: 'chat' | 'feed'
     until?: string
     notify?: 'always' | 'when_found'
+    tellAt?: string
   }): Routine {
     const now = this.now()
     const next = input.schedule ? nextRun(input.schedule, now) : undefined
@@ -233,6 +258,7 @@ export class Life {
       ...(next ? { nextRunAt: next.toISOString() } : {}),
       ...(input.until?.trim() ? { until: input.until.trim().slice(0, 120) } : {}),
       ...(input.notify === 'when_found' ? { notify: 'when_found' as const } : {}),
+      ...(input.tellAt ? { tellAt: input.tellAt } : {}),
     }
     this.put('routines', [r, ...this.routines()])
     // 피드 지시로 만든 일은 피드에 따로 알리지 않는다
@@ -260,6 +286,8 @@ export class Life {
       /** 빈 글이면 끝나는 때를 지운다 */
       until?: string
       notify?: 'always' | 'when_found'
+      /** 빈 글이면 알림 미루기를 지운다 */
+      tellAt?: string
     },
   ) {
     const list = this.routines()
@@ -282,6 +310,10 @@ export class Life {
     }
     if (patch.notify === 'when_found') r.notify = 'when_found'
     else if (patch.notify === 'always') delete r.notify
+    if (patch.tellAt !== undefined) {
+      if (patch.tellAt) r.tellAt = patch.tellAt
+      else delete r.tellAt
+    }
     if (patch.plan) r.plan = patch.plan.slice(0, 12).map((t) => ({ text: t.slice(0, 120), done: false }))
     for (const i of patch.done ?? []) if (r.plan?.[i]) r.plan[i].done = true
     if (patch.log)
@@ -788,6 +820,9 @@ export class Life {
             ...(plan ? { plan } : {}),
             ...(a.target === 'feed' ? { target: 'feed' as const } : {}),
             ...rule,
+            ...(rule.tellAt === undefined && morningTell(schedule, `${a.title ?? ''} ${a.prompt ?? ''}`)
+              ? { tellAt: '07:00' }
+              : {}),
           })
           return ok(
             [
@@ -795,17 +830,34 @@ export class Life {
               `정한 것: ${ruleSentence(r)}.`,
               ...ruleGaps(r),
               '사용자에게 "정한 것"을 그대로 한 문장으로 말해 확인해 주세요.',
+              // 대화 속 옛 예약을 믿고 "이미 있어요"라며 맡긴 일을 빼지 않게, 지금 있는 것을 같이 준다
+              otherRoutines(this.routines(), r.id),
               ...(a.preview === true
                 ? [
                     '미리 보기: 지금 이 대화에서 prompt대로 한 번 해서, 예약한 때 받을 것과 같은 모양으로 보여 주세요. 정한 것은 그 아래 한 줄로.',
                   ]
-                : []),
+                : r.notify === 'when_found'
+                  ? [
+                      // 지켜보기를 걸고 "내일부터 알려요"로만 끝내지 않게: 지금 것을 먼저 보여 준다
+                      '지금 상황: 이 답에서 지금 있는 것을 보여 주세요 — 아직 안 찾아봤으면 prompt대로 한 번 찾아서(소식·글이면 show_list로 줄마다 원문 링크, 오늘 것이 적으면 이번 주로 넓혀서. 조건 지켜보기면 지금 값·상태 한두 줄과 출처). 정한 것은 그 아래 한 줄로.',
+                    ]
+                  : []),
             ].join('\n'),
           )
         }
         case 'goal_update': {
-          const schedule = a.schedule ? parseSchedule(a) : undefined
-          if (a.schedule && !schedule) return bad(scheduleHelp(a))
+          // 시각만 주면("7시로 바꿔 줘" → time만) 지금 언제의 나머지(매일·요일·날짜)를 그대로 쓴다
+          const cur = this.routines().find((x) => x.id === a.id || x.id.startsWith(String(a.id ?? '-')))
+          const whenGiven = WHEN_KEYS.some((k) => a[k] !== undefined)
+          const merged = whenGiven
+            ? {
+                ...(cur?.schedule ?? {}),
+                ...Object.fromEntries(WHEN_KEYS.filter((k) => a[k] !== undefined).map((k) => [k, a[k]])),
+                schedule: a.schedule ?? cur?.schedule?.kind,
+              }
+            : undefined
+          const schedule = merged ? parseSchedule(merged) : undefined
+          if (merged && !schedule) return bad(scheduleHelp(merged))
           const rule = readRule(a)
           if (typeof rule === 'string') return bad(rule)
           const end = untilEnd(rule.until)
@@ -813,7 +865,7 @@ export class Life {
             return bad(
               `끝나는 날(${rule.until})이 벌써 지났어요. 사용자에게 언제까지 할지 다시 물어봐 주세요.`,
             )
-          const r = this.updateGoal(String(a.id ?? ''), {
+          const patch = {
             ...(Array.isArray(a.plan) ? { plan: a.plan.map(String) } : {}),
             ...(Array.isArray(a.done) ? { done: a.done.map(Number) } : {}),
             ...(a.log ? { log: String(a.log) } : {}),
@@ -822,9 +874,15 @@ export class Life {
             ...(schedule ? { schedule } : {}),
             ...(typeof a.until === 'string' ? { until: a.until } : {}),
             ...(rule.notify ? { notify: rule.notify } : {}),
-          })
+            ...(rule.tellAt !== undefined ? { tellAt: rule.tellAt } : {}),
+          }
+          if (!cur) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
+          // 아무것도 안 바뀌었는데 "고쳤어요"라고 하지 않게
+          if (!Object.keys(patch).length)
+            return bad('고칠 칸이 비었어요. 바꿀 것(time·schedule·prompt·until 등)을 주세요.')
+          const r = this.updateGoal(cur.id, patch)
           if (!r) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
-          const timing = schedule || a.until !== undefined || rule.notify
+          const timing = schedule || a.until !== undefined || rule.notify || rule.tellAt !== undefined
           return ok(
             timing
               ? [`고쳤어요: "${r.title}"`, `정한 것: ${ruleSentence(r)}.`, ...ruleGaps(r)].join('\n')
@@ -975,6 +1033,9 @@ export class Life {
   }
 }
 
+/** 언제를 이루는 칸 */
+const WHEN_KEYS = ['schedule', 'time', 'days', 'day', 'at', 'minutes'] as const
+
 /** AI가 준 언제를 정리한다 */
 export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | undefined {
   const kind = String(a.schedule ?? a.kind ?? '')
@@ -1015,8 +1076,16 @@ function scheduleHelp(a: Record<string, unknown>): string {
 }
 
 /** AI가 준 끝나는 때·알리기 (잘못이면 고칠 말) */
-function readRule(a: Record<string, unknown>): { until?: string; notify?: 'always' | 'when_found' } | string {
-  const out: { until?: string; notify?: 'always' | 'when_found' } = {}
+function readRule(
+  a: Record<string, unknown>,
+): { until?: string; notify?: 'always' | 'when_found'; tellAt?: string } | string {
+  const out: { until?: string; notify?: 'always' | 'when_found'; tellAt?: string } = {}
+  if (typeof a.tell_at === 'string') {
+    const t = a.tell_at.trim()
+    if (t && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
+      return `알림 시각(tell_at "${t}")을 읽지 못했어요. "07:00"처럼 주세요.`
+    out.tellAt = t ? t.padStart(5, '0') : ''
+  }
   if (a.notify !== undefined) {
     if (a.notify !== 'always' && a.notify !== 'when_found')
       return 'notify는 "always"(매번 알림)나 "when_found"(조건에 맞을 때만) 중 하나예요.'
@@ -1031,11 +1100,33 @@ function readRule(a: Record<string, unknown>): { until?: string; notify?: 'alway
   return out
 }
 
+/** 지금 켜져 있는 다른 예약 이름들 (여기에 없는 건 지워진 것) */
+function otherRoutines(list: Routine[], except: string): string {
+  const names = list.filter((x) => x.id !== except && x.enabled).map((x) => `"${x.title}"`)
+  return names.length
+    ? `지금 있는 다른 예약: ${names.slice(0, 10).join(' · ')}${names.length > 10 ? ` 외 ${names.length - 10}개` : ''} (대화에 나왔어도 여기에 없으면 사용자가 지운 거라 다시 만들지 않아요. 이번에 맡긴 일은 다른 예약에 있다며 빼지 말고 이 예약에 다 넣어요)`
+    : '지금 있는 다른 예약은 없어요 (대화에 나왔던 예약은 사용자가 지운 거라 다시 만들지 않아요).'
+}
+
+/** 새벽(0~6시)에 한 번 해 두고 "아침"에 알려 달라는 일: 폰 알림은 아침 7시로 미룬다 */
+function morningTell(s: RoutineSchedule | undefined, text: string): boolean {
+  if (s?.kind !== 'once') return false
+  return new Date(Date.parse(s.at) + 9 * 3600_000).getUTCHours() < 6 && /아침/.test(text)
+}
+
 /** 빠뜨리기 쉬운 것: 결과에 다음 길로 담는다 */
 function ruleGaps(r: Routine): string[] {
   const s = r.schedule
   if (!s) return r.category ? [] : ['정한 때가 없어 저절로 돌지 않아요 — 알림이면 goal_update에 schedule']
-  if (s.kind === 'once') return []
+  if (s.kind === 'once') {
+    // 새벽에 해 두는 일: 폰 알림이 그 시각에 울리지 않게 아침 시각을 받는다
+    const h = new Date(Date.parse(s.at) + 9 * 3600_000).getUTCHours()
+    return h < 6 && !r.tellAt
+      ? [
+          '새벽에 하는 일이에요 — "아침에 알려 줘"였으면 goal_update에 tell_at "07:00"(폰 알림만 그때). 그 시각에 깨워 달라는 알림이면 그대로 두세요',
+        ]
+      : []
+  }
   const gaps: string[] = []
   if (r.notify === 'when_found' && !r.until)
     gaps.push(
