@@ -3242,7 +3242,7 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
       'p',
       { class: 'co-lock' },
       icon('lock', 'i'),
-      ` 승인하면 두리가 이 결제 버튼 한 번만 눌러요${a.then ? ` · ${a.then}` : ''}`,
+      ` 승인하면 두리가 이 결제 버튼 한 번만 눌러요${a.after ? ` · ${a.after}` : ''}`,
     ),
     ...(inSheet
       ? []

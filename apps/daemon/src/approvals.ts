@@ -46,7 +46,7 @@ export interface NewApproval {
   shipWarn?: string
   title?: string
   goods?: ApprovalView['goods']
-  then?: string
+  after?: string
   lines?: ApprovalView['lines']
   info?: ApprovalView['info']
 }

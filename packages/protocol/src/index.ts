@@ -673,7 +673,7 @@ export interface ApprovalView {
   title?: string
   goods?: CheckoutGood[]
   /** 승인한 뒤 일어날 일 (예: "네이버페이 창에서 결제 비밀번호를 폰 키패드로 받아요"). 없으면 '이 결제 버튼 한 번만 눌러요' */
-  then?: string
+  after?: string
   lines?: { label: string; value: string; kind?: 'discount' | 'fee' | 'point' }[]
   info?: { label: string; value: string }[]
   /**

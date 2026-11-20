@@ -514,7 +514,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe('두리가 스스로 고른 것 (쿠폰 적용·보험 안 함 등)'),
       cancel: z.string().max(200).optional().describe('취소·환불·교환 규정 (화면 그대로)'),
-      then: z
+      after: z
         .string()
         .max(120)
         .optional()

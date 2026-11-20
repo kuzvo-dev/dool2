@@ -1136,7 +1136,7 @@ export class BrowserTools {
               : {}),
             checkout: {
               ...(title ? { title } : {}),
-              ...(str(a.then, 120) ? { then: str(a.then, 120) } : {}),
+              ...(str(a.after, 120) ? { after: str(a.after, 120) } : {}),
               goods,
               lines,
               info,
@@ -2153,7 +2153,7 @@ export class BrowserTools {
       /** 결제 카드의 상품·금액·정보 줄 (browser_checkout) */
       checkout?: {
         title?: string
-        then?: string
+        after?: string
         goods: CheckoutGood[]
         lines: NonNullable<ApprovalView['lines']>
         info: NonNullable<ApprovalView['info']>
@@ -2284,7 +2284,7 @@ export class BrowserTools {
       ...(d.chose?.length ? { chose: d.chose } : {}),
       ...(d.shipTo ? await this.shipChoices(d.shipTo, d.shipOptions ?? []) : {}),
       ...(d.checkout?.title ? { title: d.checkout.title } : {}),
-      ...(d.checkout?.then ? { then: d.checkout.then } : {}),
+      ...(d.checkout?.after ? { after: d.checkout.after } : {}),
       ...(d.checkout?.goods.length ? { goods: d.checkout.goods } : {}),
       ...(d.checkout?.lines.length ? { lines: d.checkout.lines } : {}),
       ...(d.checkout?.info.length ? { info: d.checkout.info } : {}),
