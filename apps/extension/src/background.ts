@@ -368,6 +368,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (!had) return
   usedAt.delete(tabId)
   frameMaps.delete(tabId)
+  frameIndexes.delete(tabId)
   attached.delete(tabId)
   dialogs.delete(tabId)
   dialogNotes.delete(tabId)
@@ -658,6 +659,12 @@ async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   await sleep(350)
   return true
 }
+/** 늘린 화면 높이를 원래대로 (남겨 두면 그 뒤 화면 찍기·누르는 자리가 어긋났다 — 실측 11-20 G마켓 배송지 추가) */
+async function restoreHeight(tabId: number) {
+  if (phoneView.has(tabId) || emulated.has(tabId)) return
+  await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
+  await sleep(150)
+}
 
 async function leavePhoneView(tabId: number) {
   phoneSize.delete(tabId)
@@ -704,6 +711,11 @@ async function markTaps(tabId: number, frameId: number) {
 const FRAME_SPAN = 10_000
 /** 탭마다: 표시 대역 번호 → 확장 frameId·주소 (마지막으로 읽은 화면 기준) */
 const frameMaps = new Map<number, Map<number, { frameId: number; url: string }>>()
+/**
+ * 탭마다 액자 → 번호를 고정한다. 읽을 때마다 보이는 순서로 매기면 광고 액자가 늘고 줄 때 번호가 밀려,
+ * 방금 읽은 표시(e30010)가 누를 때는 다른 액자를 가리켰다 (실측 11-20 G마켓 주소 찾기 결과를 못 누름)
+ */
+const frameIndexes = new Map<number, Map<number, number>>()
 
 /** 표시(e10012)가 어느 액자의 것인지 */
 function frameOf(tabId: number, ref: string): { frameId: number; url?: string; index: number } {
@@ -1201,11 +1213,18 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const frameTexts: string[] = []
       const frameInfo: { host: string; refs: boolean }[] = []
       let captcha = main.captcha
-      let index = 0
+      let looked = 0
+      const fixed = frameIndexes.get(tabId) ?? new Map<number, number>()
+      frameIndexes.set(tabId, fixed)
       for (const fr of frames) {
         // 누를 것이 있는 액자를 6개까지 (광고·빈 액자가 앞에 많으면 로그인 창 액자가 밀려 안 읽혔다 — 홈택스 간편인증)
-        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || index >= 24) continue
-        index++
+        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || looked >= 24) continue
+        looked++
+        let index = fixed.get(fr.frameId)
+        if (index === undefined) {
+          index = Math.max(0, ...fixed.values()) + 1
+          fixed.set(fr.frameId, index)
+        }
         await markTaps(tabId, fr.frameId)
         const r = await inFrame(
           tabId,
@@ -1241,8 +1260,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'click': {
       const tabId = await ownedTab(a)
       let at = await locate(tabId, a.ref, 'point')
-      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다
-      if (await tallerIfBelow(tabId, at.y + 30).catch(() => false)) at = await locate(tabId, a.ref, 'point')
+      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
+      const tall = await tallerIfBelow(tabId, at.y + 30).catch(() => false)
+      if (tall) at = await locate(tabId, a.ref, 'point')
       // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
       // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
       if (at.moved) {
@@ -1327,6 +1347,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
         await settle(tabId, before)
       }
+      if (tall) await restoreHeight(tabId)
       return {
         ...(await pageState(tabId)),
         via,
@@ -1414,6 +1435,25 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await sleep(300)
       return pageState(tabId)
     }
+    case 'allow-popups': {
+      // 결제 창은 버튼을 누른 순간이 아니라 서버에 다녀와서 새 창으로 열린다: Chrome이 팝업으로 막아 화면만 하얗게 남았다
+      // (실측 11-20 G마켓 카드 결제). 두리가 결제하는 사이트만 팝업을 허용한다 (사람은 주소창의 '팝업 허용'을 누르던 것)
+      const tabId = await ownedTab(a)
+      const u = new URL((await chrome.tabs.get(tabId)).url ?? '')
+      const labels = u.hostname.split('.')
+      const keep = /\.(?:co|or|go|ne|ac|re|pe)\.kr$/.test(u.hostname) ? 3 : 2
+      const base = labels.slice(-keep).join('.')
+      await chrome.contentSettings.popups.set({
+        primaryPattern: `${u.protocol}//*.${base}/*`,
+        setting: 'allow',
+      })
+      return { ok: true, pattern: `${u.protocol}//*.${base}/*` }
+    }
+    case 'popup': {
+      // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창이 있으면 알려 준다
+      const tabId = await ownedTab(a)
+      return takePopup(tabId)
+    }
     case 'element-shots': {
       // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게)
       const tabId = await ownedTab(a)
@@ -1431,7 +1471,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
         if (r) lowest = Math.max(lowest, r.y + off.y + r.h)
       }
-      if (lowest) await tallerIfBelow(tabId, lowest).catch(() => false)
+      const tall = lowest ? await tallerIfBelow(tabId, lowest).catch(() => false) : false
       const shots: { ref: string; data: string; rect: { x: number; y: number; w: number; h: number } }[] = []
       for (const ref of refs) {
         const f = frameOf(tabId, ref)
@@ -1479,6 +1519,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           if (shot) shots.push({ ref: `box${i + 1}`, data: shot.data, rect: r })
         }
       }
+      if (tall) await restoreHeight(tabId)
       return { shots }
     }
     case 'captcha-candidates': {

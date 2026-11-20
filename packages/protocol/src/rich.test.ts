@@ -210,3 +210,14 @@ describe('답 속 링크 (출처는 링크로)', () => {
     )
   })
 })
+
+describe('영어 속생각 줄 빼기', () => {
+  it('한글 답 사이 영어 문장 줄만 빼고, 주소·표·짧은 상품 이름은 남긴다', async () => {
+    const { dropEnglishLines } = await import('./rich.js')
+    const t =
+      'Menu may still be loading now.\n부타동 솥밥을 담았어요.\nGalaxy Buds3 FE\n| 가격 | 9,000원 |\nhttps://example.com/a b c d'
+    expect(dropEnglishLines(t)).toBe(
+      '부타동 솥밥을 담았어요.\nGalaxy Buds3 FE\n| 가격 | 9,000원 |\nhttps://example.com/a b c d',
+    )
+  })
+})

@@ -14,7 +14,8 @@
     "scripting",
     "webNavigation",
     "alarms",
-    "storage"
+    "storage",
+    "contentSettings"
   ],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js", "type": "module" },

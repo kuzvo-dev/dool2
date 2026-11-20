@@ -634,6 +634,11 @@ export class Connectors {
     const b = this.opts.browser
     const scope: Scope = { ...args, today: today(this.now()) }
     let tabId: number | undefined = this.tabs.get(card.id)
+    // 결제 중인 탭은 쓰지 않고 새 탭에서 한다 (실측 11-20: 주문 내역 도구가 결제 중인 탭을 옮겨 결제가 끊겼다)
+    if (tabId !== undefined && this.opts.tools.isPaying(tabId)) {
+      this.tabs.delete(card.id)
+      tabId = undefined
+    }
     const need = () => {
       if (tabId === undefined) throw new StepError('먼저 주소를 열어야 해요')
       return tabId

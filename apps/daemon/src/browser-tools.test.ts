@@ -1400,7 +1400,8 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(done.message).toContain('"3개월(무이자)"')
     // 이미 골라진 카드는 다시 고르지 않는다
     expect(b.calls.filter((c) => c.startsWith('choose'))).toEqual(['choose e11 3개월(무이자)'])
-    expect(b.calls.at(-2)).toBe('click e21')
+    // 결제 버튼을 누른 뒤 늦게 뜬 결제 창(popup)도 한 번 찾는다
+    expect(b.calls).toContain('click e21')
   })
 
   it('고른 등록 카드·할부를 사이트별로 기억해 다음 승인 카드의 기본값으로 (설정에서 잊으면 다시 화면 기본값)', async () => {
@@ -2663,5 +2664,19 @@ describe('PC 화면 넘기기 금지 (사용자 결정 11-20)', () => {
       expect(r.isError).toBe(true)
       expect(text(r)).toContain('browser_request_code')
     }
+  })
+})
+
+describe('결제 화면의 준비 버튼', () => {
+  it('배송지·쿠폰·수량은 승인 없이 누르고, 결제·이름 없는 버튼은 막는다', () => {
+    const u = 'https://checkout.gmarket.co.kr/ko/pc/checkout?chid=1'
+    expect(classifyRisk('버튼 배송지 추가', u)).toBeUndefined()
+    expect(classifyRisk('버튼 쿠폰 적용', u)).toBeUndefined()
+    expect(classifyRisk('버튼 수량 변경', u)).toBeUndefined()
+    expect(classifyRisk('링크 신봉1로 27 (서홍마을 우남퍼스트빌)', u)).toBeUndefined()
+    expect(classifyRisk('항목 경기 용인시 수지구 신봉동 905', u)).toBeUndefined()
+    expect(classifyRisk('버튼 결제하기', u)?.kind).toBe('money')
+    expect(classifyRisk('버튼 다음', u)?.kind).toBe('money')
+    expect(classifyRisk('버튼', u)?.kind).toBe('money')
   })
 })
