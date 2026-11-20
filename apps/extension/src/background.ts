@@ -368,6 +368,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (!had) return
   usedAt.delete(tabId)
   frameMaps.delete(tabId)
+  frameIndexes.delete(tabId)
   attached.delete(tabId)
   dialogs.delete(tabId)
   dialogNotes.delete(tabId)
@@ -710,6 +711,11 @@ async function markTaps(tabId: number, frameId: number) {
 const FRAME_SPAN = 10_000
 /** 탭마다: 표시 대역 번호 → 확장 frameId·주소 (마지막으로 읽은 화면 기준) */
 const frameMaps = new Map<number, Map<number, { frameId: number; url: string }>>()
+/**
+ * 탭마다 액자 → 번호를 고정한다. 읽을 때마다 보이는 순서로 매기면 광고 액자가 늘고 줄 때 번호가 밀려,
+ * 방금 읽은 표시(e30010)가 누를 때는 다른 액자를 가리켰다 (실측 11-20 G마켓 주소 찾기 결과를 못 누름)
+ */
+const frameIndexes = new Map<number, Map<number, number>>()
 
 /** 표시(e10012)가 어느 액자의 것인지 */
 function frameOf(tabId: number, ref: string): { frameId: number; url?: string; index: number } {
@@ -1207,11 +1213,18 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const frameTexts: string[] = []
       const frameInfo: { host: string; refs: boolean }[] = []
       let captcha = main.captcha
-      let index = 0
+      let looked = 0
+      const fixed = frameIndexes.get(tabId) ?? new Map<number, number>()
+      frameIndexes.set(tabId, fixed)
       for (const fr of frames) {
         // 누를 것이 있는 액자를 6개까지 (광고·빈 액자가 앞에 많으면 로그인 창 액자가 밀려 안 읽혔다 — 홈택스 간편인증)
-        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || index >= 24) continue
-        index++
+        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || looked >= 24) continue
+        looked++
+        let index = fixed.get(fr.frameId)
+        if (index === undefined) {
+          index = Math.max(0, ...fixed.values()) + 1
+          fixed.set(fr.frameId, index)
+        }
         await markTaps(tabId, fr.frameId)
         const r = await inFrame(
           tabId,
