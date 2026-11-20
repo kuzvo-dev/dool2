@@ -202,6 +202,30 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return t.length > 0 || el.hasAttribute('aria-label') || el.querySelector('img[alt]') !== null
   }
 
+  /** 요소 바로 뒤(또는 요소만 감싼 부모 바로 뒤)에 붙은 한 줄짜리 짧은 글자. 다른 누를 것이 들어 있으면 쓰지 않는다 */
+  const captionAfter = (el: Element): string => {
+    let cur: Element | null = el
+    for (let i = 0; i < 2 && cur; i++) {
+      let sib: ChildNode | null = cur.nextSibling
+      while (sib && sib.nodeType === Node.TEXT_NODE && !sib.textContent?.trim()) sib = sib.nextSibling
+      if (sib) {
+        const isEl = sib.nodeType === Node.ELEMENT_NODE
+        if (isEl && (sib as Element).matches('a,button,input,select,textarea,[role="button"]')) return ''
+        if (isEl && (sib as Element).querySelector('a,button,input,select,textarea,[role="button"]'))
+          return ''
+        const raw = (isEl ? (sib as HTMLElement).innerText : sib.textContent) ?? ''
+        const t = raw.trim()
+        if (t && t.length <= 20 && !t.includes('\n')) return clean(t)
+        return ''
+      }
+      // 요소가 부모의 유일한 자식이면 부모 뒤를 본다 (<li><a><img></a></li><li>…</li> 말고 <div><a><img></a></div><span>이름</span>)
+      const parent: Element | null = cur.parentElement
+      if (!parent || parent.children.length !== 1) return ''
+      cur = parent
+    }
+    return ''
+  }
+
   const nameOf = (el: Element): string => {
     const aria = el.getAttribute('aria-label')
     if (aria) return clean(aria)
@@ -219,6 +243,10 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       return clean(el.value)
     const text = clean((el as HTMLElement).innerText)
     if (text) return text
+    // 그림만 있는 버튼·링크 바로 뒤에 붙은 짧은 글자(아이콘 아래 이름)를 이름으로 본다. 그림 설명(alt)은 틀릴 때가 많다
+    // (실측 홈택스 간편인증: 앱 아이콘 alt가 모두 "페이스북 로그인"이거나 비어 있어 카카오톡 대신 카카오뱅크를 눌렀다)
+    const cap = captionAfter(el)
+    if (cap) return cap
     const img = el.querySelector('img[alt]')
     return (
       clean(
