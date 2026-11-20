@@ -29,7 +29,13 @@ import {
   stepKind,
   tierAnnotations,
 } from '@dool2/protocol/connector'
-import type { BrowserCaller, BrowserTools, RiskKind, ToolResult } from './browser-tools.js'
+import {
+  type BrowserCaller,
+  type BrowserTools,
+  GATE_STOP,
+  type RiskKind,
+  type ToolResult,
+} from './browser-tools.js'
 import type { ConnectorHealth, Outcome } from './connector-health.js'
 import type { Journal } from './journal.js'
 
@@ -920,7 +926,7 @@ export class Connectors {
       if (r.isError) {
         const msg = firstText(r)
         // 위험 판단에 걸린 것은 커넥터가 넘을 수 없다: 그대로 AI에게
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return
@@ -941,7 +947,7 @@ export class Connectors {
       })
       if (r.isError) {
         const msg = firstText(r)
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return
@@ -964,7 +970,7 @@ export class Connectors {
       const r = await this.opts.tools.run('press', { tabId: c.need(), key: s.press })
       if (r.isError) {
         const msg = firstText(r)
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return

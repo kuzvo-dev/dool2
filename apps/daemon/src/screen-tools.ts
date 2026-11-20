@@ -190,7 +190,7 @@ export class ScreenTools {
         const ref = String(a.ref ?? '')
         const el = this.screens.get(id)?.get(ref)
         if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
-        const risk = classifyRisk(el.name, '')
+        const risk = classifyRisk(el.name)
         if (risk) return this.blocked(risk.kind, risk.reason, el.name, ref)
         const res = (await this.hands.call('click', { bundleId: id, ref })) as { via: string }
         await sleep(400)
@@ -277,7 +277,7 @@ export class ScreenTools {
         if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
         const risk = isEnter
           ? { kind: 'contact' as const, reason: '메신저에서 Enter(보내기)' }
-          : classifyRisk(el.name, '')
+          : classifyRisk(el.name)
         if (!risk) return err('이 버튼은 승인 없이 눌러도 돼요. screen_click을 쓰세요.')
         if (this.settings.finalStep() === 'self')
           return err(

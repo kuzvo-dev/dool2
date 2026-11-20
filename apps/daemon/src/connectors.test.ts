@@ -256,7 +256,7 @@ describe('서비스 도구 실행기', () => {
     await expect(connectors.catalog()).resolves.toEqual([])
     const r = await connectors.call('demo_eats_peek', {})
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toMatch(/^멈췄어요: "구매"/)
+    expect(textOf(r)).toMatch(/^승인이 필요해요: .*"구매"/)
     expect(calls.some((c) => c[0] === 'click')).toBe(false)
   })
 
