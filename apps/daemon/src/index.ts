@@ -2653,6 +2653,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
         if (c === 'catalog') return json(res, 200, { tools: await connectors.catalog() })
         if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
+        if (c === 'orders_all') return json(res, 200, await connectors.ordersAll())
         // 시험용 PC만: 아직 설치하지 않은 도구 정의를 사용자 Chrome에서 한 번 돌린다 (pnpm connector try --pc)
         if (c === 'try') {
           if (!devReset) return json(res, 403, { error: '시험용 PC에서만 돼요' })

@@ -221,6 +221,7 @@ const TOOL_LABEL: Record<string, string> = {
   pc_screen: 'PC 화면 다루는',
   service_find: '서비스 찾는',
   service_call: '서비스에서 일하는',
+  orders_all: '내 주문 모아 보는',
 }
 /** 서비스 도구(catchtable_search …)는 끝말로: 찾기·조회·보기·준비 */
 const SERVICE_VERB: [RegExp, string][] = [

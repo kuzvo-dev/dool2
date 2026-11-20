@@ -201,6 +201,13 @@ describe('서비스 도구 실행기', () => {
     expect(textOf(r)).toContain('[탭 7]')
   })
 
+  it('내 주문 모아 보기: 주문 도구가 있는 연결한 쇼핑몰이 없으면 연결 카드를 권한다', async () => {
+    const { connectors, calls } = await setup({ connected: true })
+    const r = await connectors.ordersAll()
+    expect(textOf(r)).toContain('연결한 쇼핑몰이 없어요')
+    expect(calls).toEqual([])
+  })
+
   it('같은 입력은 정한 간격 안에 다시 사이트에 묻지 않는다', async () => {
     const { connectors, calls } = await setup()
     await connectors.call('demo_eats_search', { keyword: '성수' })
