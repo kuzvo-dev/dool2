@@ -1,0 +1,220 @@
+{
+  "id": "daangn",
+  "tools": [
+    {
+      "name": "search",
+      "title": "중고 매물 찾기",
+      "description": "로그인 없이 된다. 당근 중고거래에서 동네 근처 매물을 찾아 제목·가격·동네·올린 때·판매 상태·사진·링크를 돌려준다. 중고 매물·직거래 질문에 중고나라(joongna_search)·번개장터(bunjang_search)와 함께 쓴다. 동네(region)를 주면 그 동네 근처에서 찾고(예: 역삼동, 성수동1가), 없으면 이 브라우저에 지난번 정한 동네에서 찾는다(결과의 searched_region). '25만 원 아래'면 max_price. 제목에 '삽니다·구해요'(사는 글)나 칩·부품만 파는 글이 섞이니 제목을 보고 거른다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-21, 닌텐도 스위치·갤럭시 버즈4, 동네 바꾸기 역삼동·성복동, 가격 거르기)",
+      "input": {
+        "required": [
+          "keyword"
+        ],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "찾을 물건 (예: 닌텐도 스위치, 아기 의자)"
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "동네 이름 (읍·면·동, 예: 역삼동, 성수동1가, 서초4동). 같은 이름이 여럿이면 첫 동네라 헷갈리면 비워 둔다. 없으면 지난번 동네"
+          },
+          "min_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최소 가격(원). 칩·부품·사는 글을 거르려면 시세의 절반쯤으로"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최대 가격(원) (예: 25만 원 아래면 250000)"
+          },
+          "on_sale": {
+            "type": "boolean",
+            "default": true,
+            "description": "판매 중인 매물만 (기본 예). 예약중·거래완료까지 보려면 false"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "몇 개까지 (기본 20)"
+          }
+        }
+      },
+      "output": {
+        "searched_region": {
+          "type": "string",
+          "description": "찾아본 동네 (그 근처 매물이 나온다)"
+        },
+        "items": {
+          "type": "list",
+          "description": "매물 (화면 순서대로)",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "price": {
+              "type": "integer",
+              "description": "가격(원), 0이면 나눔"
+            },
+            "region": {
+              "type": "string",
+              "description": "매물 동네"
+            },
+            "posted": {
+              "type": "string",
+              "description": "올린 때 (예: 2026-10-17T17:09:44Z)"
+            },
+            "bumped": {
+              "type": "string",
+              "description": "끌어올린 때 (없으면 비어 있음)"
+            },
+            "status": {
+              "type": "string",
+              "description": "Ongoing 판매중 · Reserved 예약중 · Closed 거래완료"
+            },
+            "link": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "title",
+          "price",
+          "region",
+          "link",
+          "image"
+        ]
+      },
+      "examples": [
+        {
+          "keyword": "닌텐도 스위치",
+          "max_price": 250000
+        },
+        {
+          "keyword": "아기 의자",
+          "region": "역삼동"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://www.daangn.com/kr/search/buy-sell/?q={{keyword|url}}{{#on_sale}}&only_on_sale=true{{/on_sale}}"
+        },
+        {
+          "wait": {
+            "text": "중고거래 검색 결과|검색 결과가 없|검색결과가 없",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "embedded": {
+            "css": "script",
+            "after": "window.__remixContext =",
+            "pick": "state.loaderData.routes/_buy-sell-shell"
+          },
+          "as": "shell"
+        },
+        {
+          "click": {
+            "text": "{{shell.searchRegion.fullName}}"
+          },
+          "if": "{{#region}}1{{/region}}"
+        },
+        {
+          "type": {
+            "field": "지역 검색|지역 이름|서초4동",
+            "text": "{{region}}"
+          },
+          "if": "{{#region}}1{{/region}}"
+        },
+        {
+          "capture": {
+            "url": "/kr/api/v1/regions/keyword\\?",
+            "pick": "locations",
+            "timeoutMs": 8000
+          },
+          "as": "places",
+          "if": "{{#region}}1{{/region}}"
+        },
+        {
+          "stop_if": "검색 결과가 없|검색결과가 없|지역을 찾을 수 없",
+          "say": "당근에 '{{keyword}}' 매물이 지금 이 동네 근처에 없어요. 다른 이름이나 다른 동네로 찾아볼까요?",
+          "if": "{{^region}}1{{/region}}"
+        },
+        {
+          "open": "https://www.daangn.com/kr/search/buy-sell/?q={{keyword|url}}{{#on_sale}}&only_on_sale=true{{/on_sale}}&in={{places.0.name|url}}-{{places.0.id}}",
+          "if": "{{#places.0.id}}1{{/places.0.id}}"
+        },
+        {
+          "wait": {
+            "text": "중고거래 검색 결과|검색 결과가 없|검색결과가 없",
+            "timeoutMs": 15000
+          },
+          "if": "{{#places.0.id}}1{{/places.0.id}}"
+        },
+        {
+          "embedded": {
+            "css": "script",
+            "after": "window.__remixContext =",
+            "pick": "state.loaderData.routes/_buy-sell-shell"
+          },
+          "as": "shell",
+          "if": "{{#places.0.id}}1{{/places.0.id}}"
+        },
+        {
+          "filter": {
+            "from": "shell.buySellArticles",
+            "where": "price",
+            "op": "lte",
+            "value": "{{max_price}}"
+          },
+          "as": "cheap"
+        },
+        {
+          "filter": {
+            "from": "cheap",
+            "where": "price",
+            "op": "gte",
+            "value": "{{min_price}}"
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "price": "price",
+              "region": "region.name",
+              "posted": "createdAt",
+              "bumped": "boostedAt",
+              "status": "status",
+              "link": "https://www.daangn.com{{href}}",
+              "image": "thumbnail"
+            }
+          },
+          "as": "items"
+        }
+      ],
+      "result": {
+        "searched_region": "{{shell.searchRegion.fullName}}",
+        "items": "{{items}}"
+      },
+      "next": "찾아본 동네(searched_region)를 먼저 말하고, 사는 글·칩·부품은 빼고 조건에 맞는 매물 3~5개를 가격·동네·올린 때와 함께 보여 줘요. 중고나라(joongna_search)·번개장터(bunjang_search) 결과와 함께 대략의 시세를 말해요. 상태 설명은 그 매물의 link를 browser_open으로 열어 봐요.",
+      "minIntervalSec": 300
+    }
+  ]
+}

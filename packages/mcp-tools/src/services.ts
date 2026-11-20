@@ -207,6 +207,19 @@ export function registerServiceTools(
     },
   )
   server.registerTool(
+    'orders_all',
+    {
+      title: '내 주문 모아 보기',
+      description:
+        '연결한 쇼핑몰(쿠팡·네이버페이·G마켓·11번가 등) 모두의 최근 주문·배송 상태를 한 번에 읽는다. ' +
+        "'택배 어디쯤 왔어', '상자가 찌그러져 왔어', '지난주 산 것 반품', '그거 언제 와'처럼 어느 쇼핑몰인지 모를 때 " +
+        '쇼핑몰마다 주문 도구를 따로 부르는 대신 먼저 쓴다. 한 곳만 보고 "어디서 샀는지 알려 주세요"라고 묻지 않는다.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async () => pass(await client('orders_all', {}), false),
+  )
+  server.registerTool(
     'service_call',
     {
       title: '서비스 도구 쓰기',

@@ -517,6 +517,39 @@ export class Connectors {
     return lines.join('\n')
   }
 
+  // ── 내 주문 모아 보기 (orders_all) ──
+  // "택배 어디쯤", "찌그러져 왔어 배상", "지난주 산 것 반품"처럼 어느 쇼핑몰인지 모를 때, 연결한 쇼핑몰의 주문 찾기를 한 번에 돌린다.
+  // (실측 11-21: 쿠팡 하나만 보고 연결된 네이버페이·G마켓은 안 본 채 "어디서 샀는지 알려 달라"고 했다)
+  async ordersAll(): Promise<ToolResult> {
+    const picks: { card: ConnectCard; name: string }[] = []
+    for (const { card, connector } of (await this.load()).values()) {
+      if (!connector || !this.isConnected(card)) continue
+      const t = connector.tools.find((x) => x.name === 'orders')
+      if (t && this.live(card, t)) picks.push({ card, name: connectorToolName(card.id, t.name) })
+    }
+    if (!picks.length)
+      return text(
+        '주문 내역을 볼 수 있게 연결한 쇼핑몰이 없어요. 어디서 샀는지 물을 때 흔한 곳(쿠팡·네이버) 연결 카드를 connect_ask로 같이 띄워요.',
+      )
+    const results = await Promise.all(
+      picks.map(async (p) => {
+        const r = await this.call(p.name, {}).catch((e: Error) => text(e.message, true))
+        const body = r.content
+          .map((c) => (c.type === 'text' ? c.text : ''))
+          .join('\n')
+          .trim()
+        return `## ${p.card.name}${r.isError ? ' (못 봄)' : ''}\n${body.slice(0, 6000)}`
+      }),
+    )
+    return text(
+      [
+        `연결한 쇼핑몰 ${picks.length}곳(${picks.map((p) => p.card.name).join('·')})의 최근 주문이에요.`,
+        ...results,
+        '사용자가 하나를 골라야 하면(어느 택배·어느 주문) 여러 쇼핑몰 것을 합쳐 show_list pick one으로 보여 줘요. 줄마다 상품(title)·쇼핑몰과 주문일(sub)·배송 상태(state). 메일 속 송장(다른 쇼핑몰·선물)은 메일 검색으로 더 찾아요.',
+      ].join('\n\n'),
+    )
+  }
+
   // ── 실행 (service_call, 바로 보이는 도구) ──
 
   async call(name: string, input: Record<string, unknown>): Promise<ToolResult> {

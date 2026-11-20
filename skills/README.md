@@ -99,14 +99,16 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 
 ## 상태
 
-서비스 81곳, 도구 311개 중 **실제 사이트에서 확인한 도구 88개**예요. 로그인 없이 되는 찾아보기 도구는 97개이고 그중 87개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
+서비스 92곳, 도구 326개 중 **실제 사이트에서 확인한 도구 107개**예요. 로그인 없이 되는 찾아보기 도구는 111개이고 그중 101개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
 
 | 분류 | 서비스 | 도구 | 검증된 도구 |
 | --- | --- | --- | --- |
 | 쇼핑 | [11번가](11st/tools.json) | 4 | `search` |
 | 쇼핑 | [G마켓](gmarket/tools.json) | 4 | — |
 | 쇼핑 | [다이소몰](daiso-mall/tools.json) | 4 | `search` |
+| 쇼핑 | [당근](daangn/tools.json) | 1 | `search` |
 | 쇼핑 | [롯데ON](lotteon/tools.json) | 4 | `search` |
+| 쇼핑 | [번개장터](bunjang/tools.json) | 1 | `search` |
 | 쇼핑 | [신라면세점](shilla-dfs/tools.json) | 3 | `search` |
 | 쇼핑 | [신세계면세점](shinsegae-dfs/tools.json) | 3 | `search` |
 | 쇼핑 | [오늘의집](ohouse/tools.json) | 4 | `search` |
@@ -178,7 +180,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 통신 | [LG유플러스](lguplus/tools.json) | 5 | `plans` |
 | 통신 | [SKT T월드](skt/tools.json) | 5 | `plans` |
 | 생활 | [CJ대한통운](cj-logistics/tools.json) | 1 | `track` |
-| 생활 | [네이버 뉴스](naver/tools.json) | 1 | `news` |
+| 생활 | [네이버](naver/tools.json) | 4 | `news`, `shopping`, `orders`, `bookings` |
 | 생활 | [동행복권](dhlottery/tools.json) | 4 | `results` |
 | 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
 | 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |

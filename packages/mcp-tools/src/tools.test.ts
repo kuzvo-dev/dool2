@@ -94,6 +94,7 @@ describe('두리 MCP 도구', () => {
       'file_download',
       'pc_screen',
       'service_find',
+      'orders_all',
       'service_call',
     ])
 

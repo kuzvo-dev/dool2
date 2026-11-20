@@ -71,6 +71,17 @@ export class ThreadService {
    * 이어 할 세션이 없거나 답하는 중이면 하지 않는다. 오래 걸리면 그만둔다
    */
   async summarize(threadId: string, timeoutMs = 90_000): Promise<string | undefined> {
+    // 한글 요약이 아닌 답("No response requested." 같은 영어 한 줄)은 요약으로 쓰지 않고 한 번 더 부탁한다
+    // (실측 11-21: 그 답을 요약으로 받아 새 대화가 아침에 한 일·결제 카드를 모른 채 이어졌다)
+    for (let i = 0; i < 2; i++) {
+      const text = await this.summarizeOnce(threadId, timeoutMs)
+      if (text === undefined) return undefined
+      if (looksLikeSummary(text)) return text
+    }
+    return undefined
+  }
+
+  private async summarizeOnce(threadId: string, timeoutMs: number): Promise<string | undefined> {
     const thread = this.opts.store.getThread(threadId)
     if (!thread?.resumeId || this.running.has(threadId) || this.summarizing.has(threadId)) return undefined
     // 요약은 "답하는 중"이 아니다: 답이 끝난 뒤 미리 요약하는 동안 새 말이 줄에 서지 않게 따로 센다
@@ -343,11 +354,16 @@ export class ThreadService {
   }
 }
 
+/** 요약 부탁에 받은 답이 요약다운지: 한글이 있고, 글머리표 줄이 하나라도 있으면 */
+export function looksLikeSummary(text: string): boolean {
+  return /[가-힣]/.test(text) && /^\s*[-*•]\s+\S/m.test(text)
+}
+
 /** 구간을 닫을 때 AI에게 보내는 요약 부탁 (기록에 남지 않는다) */
 export const SUMMARY_REQUEST =
   '[두리 앱 알림] 대화가 길어져서 새 대화로 이어 가요. 지금까지 사용자와 나눈 이야기에서 앞으로도 기억해야 할 것' +
   '(사용자 취향, 약속, 진행 중이거나 끝낸 일, 정해진 날짜·시간·금액)을 한국어 글머리표 15줄 안으로 요약해 주세요. ' +
-  '도구는 쓰지 말고 요약만 답해 주세요.'
+  '도구는 쓰지 말고 요약만 답해 주세요. 답할 것이 없다는 말 대신 꼭 요약을 써 주세요.'
 
 /** PC 파일·PC 도구가 승인을 요청하는 입력이면 승인 카드에 적을 말, 아니면 undefined (본체 file-ops.ts와 같은 기준) */
 export function fileApprovalWhat(ref: string, input: Record<string, unknown>): string | undefined {

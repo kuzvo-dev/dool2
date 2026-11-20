@@ -2736,7 +2736,18 @@ function meBubble(raw: string, photo?: string, cls = 'bubble me') {
     img.src = `data:image/jpeg;base64,${photo}`
     img.alt = '보낸 사진'
     b.append(img)
-  } else if (name) b.append(h('span', { class: 'photo-chip' }, icon('image', 'i'), '사진'))
+  } else if (name) {
+    // 지난 말·다른 기기에서 보낸 사진: PC에 부탁해 받아 보여 준다 (받기 전·못 받으면 "사진" 표시)
+    const chip = h('span', { class: 'photo-chip' }, icon('image', 'i'), '사진')
+    b.append(chip)
+    void thumbOf(`photo:${name}`).then((data) => {
+      if (!data) return
+      const img = h('img', { class: 'sent-photo' })
+      img.src = data
+      img.alt = '보낸 사진'
+      chip.replaceWith(img)
+    })
+  }
   if (text) b.append(h('span', { text }))
   return b
 }

@@ -1301,7 +1301,19 @@ function messageEl(role: string, text: string, note?: string, tools = true): HTM
     if (note !== undefined) return el('p', 'msg note', note)
     // 사진을 보낸 말: "[사진: 파일]" 대신 사진 표시
     const { text: said, photo: sent } = splitPhoto(text)
-    if (sent) return el('div', 'bubble me with-photo', el('span', 'photo-chip', icon('image'), '사진'), said)
+    if (sent) {
+      // 보낸 사진을 말풍선에 보여 준다 (본체에 받아 온다. 받기 전·못 받으면 "사진" 표시)
+      const chip = el('span', 'photo-chip', icon('image'), '사진')
+      void thumb(`photo:${sent}`).then((data) => {
+        if (!data) return
+        const img = document.createElement('img')
+        img.className = 'sent-photo'
+        img.alt = '보낸 사진'
+        img.src = data
+        chip.replaceWith(img)
+      })
+      return el('div', 'bubble me with-photo', chip, said)
+    }
     return el('div', 'bubble me', text)
   }
   if (role === 'system') return el('p', 'sysline', el('i', 'dot stop'), text)

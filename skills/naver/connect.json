@@ -4,6 +4,7 @@
   "site": "www.naver.com",
   "alsoSites": [
     "search.naver.com",
+    "search.shopping.naver.com",
     "pay.naver.com",
     "orders.pay.naver.com",
     "m.place.naver.com"
@@ -37,6 +38,11 @@
     {
       "title": "뉴스 찾기",
       "say": "오늘 반도체 뉴스 요약해 줘",
+      "tier": "찾아보기"
+    },
+    {
+      "title": "쇼핑 가격비교",
+      "say": "갤럭시 버즈4 제일 싼 곳 찾아 줘",
       "tier": "찾아보기"
     }
   ]

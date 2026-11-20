@@ -9,6 +9,8 @@ class EchoRuntime implements AgentRuntime {
   inputs: TurnInput[] = []
   /** 있으면 차례 끝에 세션 크기(토큰)를 알린다 */
   contextTokens: number | undefined
+  /** 있으면 요약 부탁에 먼저 이 답들을 차례로 한다 (요약답지 않은 답 시험) */
+  summaryReplies: string[] = []
   private n = 0
   constructor(readonly id: 'claude' | 'codex') {}
   async detect(): Promise<AgentStatus> {
@@ -18,7 +20,10 @@ class EchoRuntime implements AgentRuntime {
     this.inputs.push(input)
     const resumeId = input.resumeId ?? `${this.id}-${++this.n}`
     yield { type: 'started', resumeId, tools: [] }
-    const reply = input.text === SUMMARY_REQUEST ? '- 국밥을 좋아함' : `받았어요: ${input.text}`
+    const reply =
+      input.text === SUMMARY_REQUEST
+        ? (this.summaryReplies.shift() ?? '- 국밥을 좋아함')
+        : `받았어요: ${input.text}`
     yield { type: 'text', delta: reply }
     if (this.contextTokens) yield { type: 'context', tokens: this.contextTokens }
     yield { type: 'done', resumeId, text: reply }
@@ -63,6 +68,17 @@ describe('ConversationService (대화는 하나)', () => {
       '아까 그거',
       '받았어요: 아까 그거',
     ])
+  })
+
+  it('요약 부탁에 요약이 아닌 답("No response requested.")이 오면 한 번 더 부탁해 진짜 요약을 넘긴다', async () => {
+    const { convo, claude, store } = setup({ turns: 2 })
+    claude.summaryReplies = ['No response requested.']
+    await drain(convo.send('claude', '국밥 좋아해'))
+    await drain(convo.send('claude', '둘'))
+    const first = convo.current()
+    await drain(convo.send('claude', '셋'))
+    expect(claude.inputs.filter((i) => i.text === SUMMARY_REQUEST)).toHaveLength(2)
+    expect(store.getThread(first?.id ?? '')).toMatchObject({ summary: '- 국밥을 좋아함' })
   })
 
   it('길어지면 요약을 받아 새 구간으로 넘기고, 화면에는 하나로 이어 보인다', async () => {
