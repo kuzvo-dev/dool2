@@ -317,8 +317,12 @@ export class ThreadService {
         if (ev.type === 'tool_result' && approvalAsk && (!ev.name || ev.name === approvalAsk.name)) {
           const ask = approvalAsk
           approvalAsk = undefined
-          if (ev.ok)
-            yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
+          // 승인·결제 카드도 답 글 아래에 (사용자 11-20: "메시지가 위라 잘 안 보여" — 카드가 길어 답이 위로 밀렸다)
+          if (ev.ok) {
+            if (saved)
+              yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
+            else below.push(JSON.stringify(ask.record))
+          }
         }
       }
 

@@ -62,6 +62,7 @@ export const BROWSER_TOOLS = [
   'fill_profile',
   'request_profile',
   'request_code',
+  'request_tap',
   'wait_auth',
   'new_password',
   'select',
@@ -794,6 +795,15 @@ export class BrowserTools {
     /** 보안문자 그림 (jpeg base64) */
     image?: string,
   ) => string | undefined
+  /** 그림 눌러 풀기 카드 (폰). 사용자가 그림에서 누른 곳(0~1000)을 본체가 rect 안의 같은 자리에 누른다 */
+  requestTap?: (
+    tabId: number,
+    say: string,
+    host: string,
+    image: string,
+    rect: { x: number; y: number; w: number; h: number },
+    taps: number,
+  ) => string | undefined
   /** 결제 비밀번호 키패드 카드 (폰 보안 키패드). 받은 숫자는 본체가 keys의 버튼을 차례로 누른다 */
   requestPin?: (
     tabId: number,
@@ -1124,7 +1134,13 @@ export class BrowserTools {
                     .slice(0, 5),
                 }
               : {}),
-            checkout: { ...(title ? { title } : {}), goods, lines, info },
+            checkout: {
+              ...(title ? { title } : {}),
+              ...(str(a.then, 120) ? { then: str(a.then, 120) } : {}),
+              goods,
+              lines,
+              info,
+            },
           },
           'money',
         )
@@ -1589,6 +1605,53 @@ export class BrowserTools {
           ],
         }
       }
+      case 'request_tap': {
+        // 그림 눌러 풀기: 그 상자만 잘라 폰에 보내고, 사용자가 누른 곳을 같은 자리에 누른다 (사람에게 PC 화면을 넘기지 않는다)
+        if (!this.requestTap) throw new Error('그림 카드를 띄울 수 없어요')
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        // 그림에는 표시가 없는 일이 많다: 표시(ref)가 있으면 그 자리, 없으면 화면 사진에서 짚은 상자(box, 0~1000)
+        const ref = a.ref ? String(a.ref) : ''
+        const box = a.box && typeof a.box === 'object' ? (a.box as Record<string, unknown>) : undefined
+        if (ref && !page.refs.has(ref))
+          throw new Error(
+            `${ref} 표시가 없어요. 그림에는 표시가 없는 일이 많아요. browser_screenshot으로 화면을 보고 문제 그림·지도가 다 들어가는 상자를 box(화면 기준 0~1000)로 짚어 주세요`,
+          )
+        if (!ref && !box)
+          throw new Error(
+            'browser_screenshot으로 화면을 보고 문제 글·그림·지도가 다 들어가는 상자를 box: {x, y, w, h}(화면 왼쪽 위 0, 오른쪽·아래 끝 1000)로 넉넉하게 짚어 주세요',
+          )
+        const got = (await this.browser
+          .call('element-shots', ref ? { tabId, refs: [ref] } : { tabId, refs: [], boxes: [box] }, 30_000)
+          .catch(() => undefined)) as
+          | { shots?: { ref: string; data: string; rect?: { x: number; y: number; w: number; h: number } }[] }
+          | undefined
+        const shot = got?.shots?.[0]
+        if (!shot?.rect || shot.rect.w < 40 || shot.rect.h < 40)
+          throw new Error(
+            '그 자리를 찍지 못했거나 너무 작아요. browser_screenshot으로 화면을 보고 문제 그림이 다 들어가는 상자를 box로 다시 짚어 주세요',
+          )
+        let host = ''
+        try {
+          host = new URL(page.url).hostname
+        } catch {}
+        const say =
+          String(a.say ?? '')
+            .trim()
+            .slice(0, 80) || '그림에서 맞는 곳을 눌러 주세요'
+        const taps = Math.min(9, Math.max(1, Math.round(Number(a.taps) || 1)))
+        const id = this.requestTap(tabId, say, host, shot.data, shot.rect, taps)
+        if (!id) throw new Error('그림 카드를 띄우지 못했어요')
+        this.hold(tabId, 10 * 60_000)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '폰에 그림 카드를 띄웠어요. 사용자에게 "폰 카드의 그림에서 맞는 곳을 눌러 주세요"처럼 한 문장으로 말하고 이번 답을 끝내세요. 누르면 두리가 PC 화면의 같은 자리를 누르고 다음 메시지로 알려 줘요. 그때 화면을 다시 읽어 [확인]·[제출]을 눌러 이어 가요.',
+            },
+          ],
+        }
+      }
       case 'request_profile': {
         if (!this.profile || !this.requestProfile) throw new Error('내 정보 카드를 띄울 수 없어요')
         const all = Object.keys(PROFILE_FIELDS) as ProfileField[]
@@ -1795,8 +1858,8 @@ export class BrowserTools {
             tabId,
             undefined,
             '아직 넘기지 않았어요. 사용자는 폰만 들고 있어 PC 화면을 만지기 어려워요. 화면을 다시 읽었어요(아래, 화면 안 액자와 "(화면에 보이는 칸)" 포함). ' +
-              '여기 있는 칸·버튼으로 할 수 있으면 직접 하세요: 이름·휴대폰번호·생년월일은 browser_fill_profile, 문자 인증번호·인증서 비밀번호·PIN은 browser_request_code(폰 키패드 카드), 인증 앱 승인은 browser_wait_auth, 고를 것은 browser_request_approval. ' +
-              '그래도 사람 손이 꼭 필요하면(로봇 확인 그림 등) 그때 browser_handoff를 다시 부르세요.',
+              '여기 있는 칸·버튼으로 할 수 있으면 직접 하세요: 이름·휴대폰번호·생년월일은 browser_fill_profile, 문자 인증번호·인증서 비밀번호·PIN은 browser_request_code(폰 키패드 카드), 인증 앱 승인은 browser_wait_auth, 고를 것은 browser_request_approval, 그림을 눌러 푸는 로봇 확인은 browser_request_tap(폰에 그림 카드). ' +
+              '그래도 사람 손이 꼭 필요하면 그때 browser_handoff를 다시 부르세요.',
           )
           // 실패로 돌려준다: 대화에 [PC 화면 넘기기] 카드가 남지 않게 (실제로 넘길 때만 남는다)
           return { ...again, isError: true }
@@ -2089,6 +2152,7 @@ export class BrowserTools {
       /** 결제 카드의 상품·금액·정보 줄 (browser_checkout) */
       checkout?: {
         title?: string
+        then?: string
         goods: CheckoutGood[]
         lines: NonNullable<ApprovalView['lines']>
         info: NonNullable<ApprovalView['info']>
@@ -2219,6 +2283,7 @@ export class BrowserTools {
       ...(d.chose?.length ? { chose: d.chose } : {}),
       ...(d.shipTo ? await this.shipChoices(d.shipTo, d.shipOptions ?? []) : {}),
       ...(d.checkout?.title ? { title: d.checkout.title } : {}),
+      ...(d.checkout?.then ? { then: d.checkout.then } : {}),
       ...(d.checkout?.goods.length ? { goods: d.checkout.goods } : {}),
       ...(d.checkout?.lines.length ? { lines: d.checkout.lines } : {}),
       ...(d.checkout?.info.length ? { info: d.checkout.info } : {}),
@@ -2968,7 +3033,7 @@ export class BrowserTools {
           : []),
       ...(s.captcha
         ? [
-            '⚠ 로봇 확인(캡차·자동입력 방지)이 보여요. 글자를 입력하는 보안문자면 browser_request_code(kind: "captcha")로 그림과 함께 폰 카드로 받아요(글자를 네가 읽어 넣지 않는다). 그림 고르기·체크 같은 로봇 확인이면 그때만 browser_handoff로 넘겨요.',
+            '⚠ 로봇 확인(캡차·자동입력 방지)이 보여요. 글자를 입력하는 보안문자면 browser_request_code(kind: "captcha")로 그림과 함께 폰 카드로 받아요(글자를 네가 읽어 넣지 않는다). 그림을 눌러 푸는 확인(지도에서 위치 누르기·칸 고르기)이면 browser_screenshot으로 화면을 본 뒤 browser_request_tap(box: 문제 그림 자리, say: 문제 글)으로 폰에 그림을 보내 사용자가 누르게 해요. "로봇이 아닙니다" 체크 한 번이면 직접 눌러요. PC 화면을 사람에게 넘기지 않아요.',
           ]
         : []),
       ...(guide ? [guide] : []),
