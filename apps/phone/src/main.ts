@@ -991,7 +991,7 @@ function choiceString(a: ApprovalView): string | undefined {
   const parts = [
     chosenOf(a),
     ...subsFor(a).map((g) => subChosenOf(a, g)),
-    ship && ship !== 'a0' ? ship : undefined,
+    ship && ship !== 'a0' && ship !== 'n:' ? ship : undefined,
   ].filter((x): x is string => !!x)
   return parts.length ? parts.join(',') : undefined
 }
@@ -1004,24 +1004,29 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
   const cur = opts.find((o) => o.id === now) ?? opts[0]
   const key = `${a.id}:ship`
   const open = st.choice.has(`${key}:open`)
-  if (!open || opts.length < 2)
+  if (!open)
     return h(
       'div',
       { class: 'approve-choices one-line' },
       h('span', { class: 'meta', text: `받는 곳 · ${cur?.label ?? ''}` }),
-      ...(opts.length > 1
-        ? [
-            h('button', {
-              class: 'chip chip-more',
-              text: '바꾸기',
-              onclick: () => {
-                st.choice.set(`${key}:open`, '1')
-                render()
-              },
-            }),
-          ]
-        : []),
+      h('button', {
+        class: 'chip chip-more',
+        text: '바꾸기',
+        onclick: () => {
+          st.choice.set(`${key}:open`, '1')
+          render()
+        },
+      }),
     )
+  // 새 주소: 그 사이트에 아직 없는 곳으로 받기 (두리가 사이트 배송지에 추가한 뒤 결제)
+  const isNew = now?.startsWith('n:')
+  const input = h('input', { class: 'field' }) as HTMLInputElement
+  input.placeholder = '새 주소 (도로명·동·호수)'
+  input.value = isNew ? decodeURIComponent(now?.slice(2) ?? '') : ''
+  input.onchange = () => {
+    const v = input.value.trim()
+    if (v) st.choice.set(key, `n:${encodeURIComponent(v.slice(0, 100))}`)
+  }
   return h(
     'div',
     { class: 'approve-choices' },
@@ -1039,7 +1044,16 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
           },
         }),
       ),
+      h('button', {
+        class: `chip${isNew ? ' on' : ''}`,
+        text: '+ 새 주소',
+        onclick: () => {
+          if (!isNew) st.choice.set(key, 'n:')
+          render()
+        },
+      }),
     ),
+    ...(isNew ? [input] : []),
   )
 }
 
@@ -1090,44 +1104,50 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
     now: string | undefined,
     key: string,
   ) =>
-    h(
-      'div',
-      { class: 'approve-choices' },
-      h('span', { class: 'meta', text: title }),
-      h(
-        'div',
-        { class: 'chip-row' },
-        ...shown(options, now, key).map((c) => {
-          // 내 결제 수단과 맞는 칩은 점을 붙인다 (ADR 0023)
-          const chip = h(
-            'button',
-            {
-              class: `chip${c.id === now ? ' on' : ''}${c.mine ? ' mine' : ''}`,
-              onclick: () => {
-                st.choice.set(key, c.id)
-                render()
-              },
-            },
-            c.mine ? h('span', { class: 'mine-dot' }) : '',
-            c.label,
-          )
-          if (c.mine) chip.setAttribute('aria-label', `${c.label} (내 결제 수단: ${c.mine})`)
-          return chip
-        }),
-        ...(shown(options, now, key).length < options.length
-          ? [
-              h('button', {
-                class: 'chip chip-more',
-                text: `더 보기 ${options.length - shown(options, now, key).length}`,
-                onclick: () => {
-                  st.choice.set(`${key}:more`, '1')
-                  render()
+    // 고를 게 많으면(등록 카드·할부·은행) 칩 대신 셀렉트 박스 하나로 (11-20 실사용: 칩이 늘어서 고르기 어려웠다)
+    options.length > 4
+      ? selectRow(title, options, now, (id) => {
+          st.choice.set(key, id)
+          render()
+        })
+      : h(
+          'div',
+          { class: 'approve-choices' },
+          h('span', { class: 'meta', text: title }),
+          h(
+            'div',
+            { class: 'chip-row' },
+            ...shown(options, now, key).map((c) => {
+              // 내 결제 수단과 맞는 칩은 점을 붙인다 (ADR 0023)
+              const chip = h(
+                'button',
+                {
+                  class: `chip${c.id === now ? ' on' : ''}${c.mine ? ' mine' : ''}`,
+                  onclick: () => {
+                    st.choice.set(key, c.id)
+                    render()
+                  },
                 },
-              }),
-            ]
-          : []),
-      ),
-    )
+                c.mine ? h('span', { class: 'mine-dot' }) : '',
+                c.label,
+              )
+              if (c.mine) chip.setAttribute('aria-label', `${c.label} (내 결제 수단: ${c.mine})`)
+              return chip
+            }),
+            ...(shown(options, now, key).length < options.length
+              ? [
+                  h('button', {
+                    class: 'chip chip-more',
+                    text: `더 보기 ${options.length - shown(options, now, key).length}`,
+                    onclick: () => {
+                      st.choice.set(`${key}:more`, '1')
+                      render()
+                    },
+                  }),
+                ]
+              : []),
+          ),
+        )
   // 아직 아무것도 안 바꿨으면 한 줄로 요약 (카드 · 신한카드 · 일시불 [바꾸기]). [바꾸기]를 누르면 칩이 펼쳐진다
   const groups: {
     title: string
@@ -1175,6 +1195,26 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
     )
   }
   return h('div', {}, ...groups.map((g) => row(g.title, g.options, g.now, g.key)))
+}
+
+/** 셀렉트 박스 줄: 제목과 펼쳐 고르는 목록 (폰 기본 고르기 화면이 뜬다). 내 결제 수단은 ● 표시 */
+function selectRow(
+  title: string,
+  options: { id: string; label: string; mine?: string }[],
+  now: string | undefined,
+  onPick: (id: string) => void,
+): HTMLElement {
+  const sel = h('select', { class: 'field select-field' }) as HTMLSelectElement
+  for (const o of options) {
+    const opt = document.createElement('option')
+    opt.value = o.id
+    opt.textContent = `${o.mine ? '● ' : ''}${o.label}`
+    if (o.id === now) opt.selected = true
+    sel.append(opt)
+  }
+  sel.setAttribute('aria-label', title)
+  sel.onchange = () => onPick(sel.value)
+  return h('label', { class: 'approve-choices select-row' }, h('span', { class: 'meta', text: title }), sel)
 }
 
 /** 두리가 결제 전에 스스로 고른 것 (보험 안 함·약관 동의 등)을 따로 한 줄로 보여 준다 */
@@ -5513,7 +5553,17 @@ function infoSheet(id: string) {
     queueMicrotask(() => pw1.focus())
   } else if (q.field === 'secret') {
     // 주민번호 뒷자리처럼 저장하지 않는 값: 폰 키보드 대신 숫자 위치를 섞은 보안 키패드로 받는다
-    body.push(securePad(q.pattern, q.patternHint, (v) => answer(v)))
+    // 같은 카드는 다시 그려도 같은 키패드를 쓴다: 그릴 때마다 새로 섞여 숫자가 2~3번 바뀌고,
+    // 누르는 순간 자리가 바뀌어 다른 숫자가 들어갔다(실측 결제 비밀번호 틀림, 11-20)
+    let pad = pads.get(q.id)
+    if (!pad) {
+      pad = securePad(q.pattern, q.patternHint, (v) => {
+        pads.delete(q.id)
+        answer(v)
+      })
+      pads.set(q.id, pad)
+    }
+    body.push(pad)
   } else if (q.field === 'otp') {
     body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
     body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
@@ -5577,6 +5627,9 @@ function autoHyphen(input: HTMLInputElement, key: string) {
  * 보안 키패드 (은행 앱처럼): 숫자 자리를 섞고, 누르면 누른 키와 다른 숫자 하나가 함께 반짝여
  * 어깨너머로 봐도 어떤 숫자인지 모르게 한다. 값은 이 함수 안에만 있고 [넣기]를 누를 때만 넘긴다
  */
+/** 열려 있는 보안 키패드 (카드 id별, 다시 그려도 자리·넣은 값이 그대로) */
+const pads = new Map<string, HTMLElement>()
+
 function securePad(
   pattern: string | undefined,
   hint: string | undefined,

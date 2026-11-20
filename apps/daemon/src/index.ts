@@ -758,6 +758,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (recent.some((m) => m.text === note && Date.parse(m.createdAt) >= since)) return
     postSaved(cur.id, store.addMessage(cur.id, 'user', note))
   }
+  /**
+   * 사용자가 폰에서 무언가 하면(승인·비밀번호·인증번호) AI 답을 기다리지 않고 두리 말로 바로 한 줄 남긴다:
+   * "받았어요 → 이제 이걸 할게요". 다음 화면이 한참 뒤에 움직여서 하고 있는지 모르겠다고 했다(11-20 실사용)
+   */
+  const sayNow = (text: string) => {
+    const cur = conversation.current()
+    if (!cur) return
+    postSaved(cur.id, store.addMessage(cur.id, 'assistant', text))
+  }
   /** 저장한 말을 폰·PC 화면에 바로 흘린다 */
   const postSaved = (threadId: string, message: StoredMessage) => {
     const event = { type: 'saved' as const, message }
@@ -1319,6 +1328,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
+        if (decision === 'approve' && approvalThread.get(id))
+          sayNow(`승인 받았어요. 이제 "${label}"을(를) 누를게요.`)
         const r =
           decision === 'reject'
             ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
@@ -1615,6 +1626,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const id = infoRequests.pending().at(-1)?.id
     void answer.then(async (code) => {
       if (!code) return
+      sayNow(
+        kind === 'rrn_back'
+          ? '주민번호 뒷자리 받았어요. 칸에 넣고 이어서 할게요.'
+          : kind === 'captcha'
+            ? '보안문자 받았어요. 칸에 넣고 이어서 할게요.'
+            : '인증번호 받았어요. 칸에 넣고 이어서 할게요.',
+      )
       // 주민번호 뒷자리는 금고(내 정보)에 저장해 다음부터 묻지 않는다
       if (kind === 'rrn_back') await profile.update({ rrn_back: code }).catch(() => undefined)
       // 넣는 동안 화면을 다시 읽었을 수 있어 표시가 바뀐다: 같은 이름의 칸을 새로 찾아 넣는다 (번호는 기록·AI에 남기지 않는다)
@@ -1678,6 +1696,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const id = infoRequests.pending().at(-1)?.id
     void answer.then(async (pin) => {
       if (!pin) return
+      sayNow('비밀번호 받았어요. 이제 화면 키패드를 차례로 누를게요.')
       let ok = true
       for (const d of pin) {
         const ref = keys[d]

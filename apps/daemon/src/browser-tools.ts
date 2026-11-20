@@ -2387,9 +2387,16 @@ export class BrowserTools {
       const all = (choice ?? '').split(',').filter(Boolean)
       // 받는 곳: a0(지금 곳)이 아니면 배송지를 바꾼 뒤 결제해야 한다. 화면에서 배송지 바꾸기는 사이트마다 달라 AI가 하고,
       // 이 승인으로 마지막 버튼을 한 번 누를 수 있게 한다 (다시 묻지 않는다, 10분)
-      const ship = all.find((p) => /^a\d+$/.test(p))
-      const shipTo = ship && ship !== 'a0' ? rec.shipOptions?.find((o) => o.id === ship)?.label : undefined
-      const parts = all.filter((p) => !/^a\d+$/.test(p))
+      const isShip = (p: string) => /^a\d+$/.test(p) || p.startsWith('n:')
+      const ship = all.find(isShip)
+      // n:… = 사용자가 넣은 새 주소 (그 사이트 배송지에 추가해 고른다)
+      const fresh = ship?.startsWith('n:') ? safeDecode(ship.slice(2)).trim().slice(0, 100) : ''
+      const shipTo = fresh
+        ? `새 주소 ${fresh}`
+        : ship && ship !== 'a0'
+          ? rec.shipOptions?.find((o) => o.id === ship)?.label
+          : undefined
+      const parts = all.filter((p) => !isShip(p))
       if (shipTo) {
         const pay = parts
           .map(
@@ -2401,7 +2408,7 @@ export class BrowserTools {
         this.paidPass.set(rec.tabId, { label: rec.label, until: Date.now() + APPROVAL_TTL_MS })
         const msg =
           `사용자가 승인하면서 받는 곳을 "${shipTo}"(으)로 바꿔 달라고 했어요. 아직 결제는 누르지 않았어요. ` +
-          `화면의 배송지 변경으로 그곳을 고른 뒤${pay.length ? ` 결제 수단 ${pay.map((x) => `"${x}"`).join(', ')}을(를) 고르고` : ''} [${rec.label}]을(를) browser_click으로 누르세요. 이번 결제는 이미 승인돼 다시 묻지 않아요(10분 안, 한 번).`
+          `화면의 배송지 변경으로 그곳을 고른 뒤(새 주소면 배송지 추가로 넣고, 받는 사람·연락처는 browser_fill_profile로)${pay.length ? ` 결제 수단 ${pay.map((x) => `"${x}"`).join(', ')}을(를) 고르고` : ''} [${rec.label}]을(를) browser_click으로 누르세요. 이번 결제는 이미 승인돼 다시 묻지 않아요(10분 안, 한 번).`
         this.approvals.finish(id, true, msg)
         return { ok: true, message: msg }
       }
@@ -2863,4 +2870,13 @@ export function openDialogLines(d: SiteDialog): string[] {
 export function nearlyEmpty(text: string): boolean {
   const words = text.replace(/\[e\d+ [^\]]*\]/g, '').replace(/\s+/g, '')
   return words.length < 8
+}
+
+/** 폰이 보낸 글 조각 풀기 (깨졌으면 그대로) */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
 }
