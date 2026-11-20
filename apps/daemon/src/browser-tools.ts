@@ -865,9 +865,20 @@ export class BrowserTools {
     const home = [p?.address, p?.address_detail].filter(Boolean).join(' ').trim()
     if (home) {
       const nums = (t: string) => t.match(/\d+/g) ?? []
+      // 동네 이름 (신봉1로 → 신봉, 신봉동 → 신봉): 도로명 주소와 지번 주소는 번지 숫자가 달라도 같은 곳이다
+      const towns = (t: string) =>
+        new Set(
+          (t.match(/[가-힣]+\d*(?:동|로|길|가|리)(?=\s|\d|$)/g) ?? [])
+            .map((w) => w.replace(/\d*(?:동|로|길|가|리)$/, ''))
+            .filter((w) => w.length >= 2),
+        )
+      const detail = nums(p?.address_detail ?? '')
       const has = (t: string) => {
         const got = new Set(nums(t))
-        return nums(home).every((n) => got.has(n))
+        if (nums(home).every((n) => got.has(n))) return true
+        // 동·호수가 같고 같은 동네면 같은 집 (실측 11-20: '신봉동 905 · 506동 1303호'를 '신봉1로 27'과 다르다고 경고했다)
+        const mine = towns(p?.address ?? '')
+        return detail.length > 0 && detail.every((n) => got.has(n)) && [...towns(t)].some((w) => mine.has(w))
       }
       if (!has(shipTo)) {
         shipWarn = '내 정보 주소와 달라요. 받는 곳을 확인해 주세요'

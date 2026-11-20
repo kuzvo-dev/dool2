@@ -2609,3 +2609,43 @@ describe('넘긴 화면 지켜보기', () => {
     expect(seen).toEqual(['화면이 다음 단계로 넘어갔어요'])
   })
 })
+
+describe('받는 곳이 내 정보 주소와 같은지', () => {
+  it('도로명 주소와 지번 주소로 달리 적혀도 동네·동호수가 같으면 경고하지 않는다', async () => {
+    const page = `# 주문/결제\n[e2 버튼 "17,500원 결제하기"]`
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? {
+              tabId: 3,
+              url: 'https://shop.example/checkout',
+              title: '결제',
+              text: page,
+              truncated: false,
+              captcha: false,
+            }
+          : cmd === 'screenshot'
+            ? { data: 'S', mime: 'image/jpeg', url: 'https://shop.example/checkout', title: '결제' }
+            : { tabId: 3 },
+    }
+    const tools = new BrowserTools(b as never)
+    tools.profile = {
+      get: async () => ({ address: '경기 용인시 수지구 신봉1로 27', address_detail: '506동 1303호' }),
+    } as never
+    await tools.run('read', { tabId: 3 })
+    await tools.run('checkout', {
+      tabId: 3,
+      ref: 'e2',
+      total: '17,500원',
+      ship_to: '경기도 용인시 수지구 신봉동 905 · 506동 1303호',
+    })
+    expect(tools.approvals.list().at(-1)?.shipWarn).toBeUndefined()
+    await tools.run('checkout', {
+      tabId: 3,
+      ref: 'e2',
+      total: '17,500원',
+      ship_to: '경기도 용인시 수지구 신봉동 33',
+    })
+    expect(tools.approvals.list().at(-1)?.shipWarn).toBeTruthy()
+  })
+})
