@@ -1943,6 +1943,7 @@ export class BrowserTools {
         )) as BrowserState & {
           newTabId?: number
           coveredBy?: string
+          delivered?: boolean
         }
         // 결제 중인 탭에서 새 창이 뜨면 그 창도 같은 결제 묶음이다. 승인받은 결제 버튼이면 여기서 결제 묶음을 연다
         const ses = this.paySession(tabId)
@@ -1961,6 +1962,10 @@ export class BrowserTools {
             ? '(이미 승인받은 결제 버튼이라 그대로 눌렀어요. 결제 창까지 끝내고 주문 완료 화면의 주문번호로 browser_order_done을 불러요.)'
             : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
+          // 마우스가 그 요소에 닿지 않았다는 확장의 신호: '눌렀어요'로 끝내지 말고 AI가 화면을 보고 판단하게 (11-20 시험 가게)
+          r.delivered === false
+            ? '(누른 입력이 그 요소에 닿지 않았을 수 있어요. 화면이 바뀌었는지 다시 읽어 확인하고, 그대로면 다시 눌러요.)'
+            : '',
         ]
           .filter(Boolean)
           .join(' ')
