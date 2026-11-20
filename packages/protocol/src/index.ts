@@ -776,6 +776,34 @@ export interface MemoryItem {
   at: string
 }
 
+/**
+ * 두리가 알아 둔 것 (조회 기억·한 일 장부). 로그인해서 본 내 정보의 사실(fact)과 두리가 하거나 확인한 신청·결제·예약·배송·가입(done).
+ * 지금도 쓸 수 있는지는 정해진 유효기간 없이 AI가 오늘 날짜와 기준 시점을 보고 판단한다
+ */
+export interface KnowItem {
+  id: string
+  kind: 'fact' | 'done'
+  /** 무엇 (예: "2025년 귀속 총급여", "레뷰 체험단 센티크 신청") */
+  title: string
+  /** 요약 값 (예: "약 7,750만 원", "발표 11/24") */
+  value: string
+  /** 어디서 봤는지 (사이트·서비스 이름) */
+  source?: string
+  /** 그 화면 주소 */
+  url?: string
+  /** 기준 시점 (예: "2025년 귀속", "11월 실적", "조회한 날") */
+  basis?: string
+  /** 언제 봤는지·한 날 */
+  seenAt: string
+  /** 다음에 챙길 때 (발표일·무료취소 마감·도착·만기) */
+  next?: string
+  /** 그때 할 일 (예: "당첨 발표 확인") */
+  nextWhat?: string
+  /** 한 일의 상태: 진행 중·끝남(취소·해지·완료). 지우지 않고 끝남으로 둔다 */
+  state?: 'open' | 'done'
+  updatedAt: string
+}
+
 /** 피드: 두리가 한 일·알아서 한 일·먼저 알려 주는 것 */
 /** 원격 화면의 입력칸 자리 (사진 비율 0~1). 폰은 여기를 누르면 키보드를 바로 연다 */
 export interface RemoteField {
@@ -911,6 +939,8 @@ export interface LifeState {
   /** 보관함 칸마다 모두 몇 개인지 */
   libraryCount?: { made: number; files: number }
   memory: MemoryItem[]
+  /** 두리가 알아 둔 것 (조회 기억·한 일 장부) 최근 순 */
+  know?: KnowItem[]
   /** 피드 첫 페이지 (최근 30개). 더는 feedNext로 GET /api/life/feed?before=, 폰은 life-page */
   feed: FeedItem[]
   /** 피드 다음 페이지 커서 (없으면 끝) */
@@ -919,7 +949,7 @@ export interface LifeState {
   feedDays?: number[]
   /** 피드에 무엇을 올릴지 사용자가 적은 말 */
   feedPrompt?: string
-  /** 먼저 챙기기: 연결한 서비스를 하루 두 번 살펴 챙길 일만 알린다 (기본 켜짐) */
+  /** 먼저 챙기기: 아침 6시~밤 10시 한 시간마다, 챙길 때가 된 한 일과 연결한 서비스를 살펴 챙길 일만 알린다 (기본 켜짐) */
   watch?: { on: boolean; at?: string; busy?: boolean }
 }
 
@@ -943,6 +973,7 @@ export type LifeAction =
   | { action: 'library-delete'; id: string }
   | { action: 'memory-add'; text: string }
   | { action: 'memory-delete'; id: string }
+  | { action: 'know-delete'; id: string }
   | ({ action: 'identity' } & Identity)
   | { action: 'ideas-refresh' }
   | { action: 'watch'; on: boolean }

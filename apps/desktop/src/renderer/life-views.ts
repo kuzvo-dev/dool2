@@ -203,16 +203,16 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   )
 }
 
-/** 먼저 챙기기: 연결한 서비스를 아침·저녁에 살펴 챙길 일만 알린다 (ADR 0019) */
+/** 먼저 챙기기: 아침 6시~밤 10시 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴 챙길 일만 알린다 (ADR 0019·0025) */
 function watchCard(ctx: LifeCtx): HTMLElement {
   const w = ctx.life().watch ?? { on: true }
   const linked = ctx.services().filter((c) => c.connectedAt && c.card.how !== 'device')
   const sub = !linked.length
-    ? '서비스를 연결하면 아침·저녁에 살펴보고 챙길 일만 알려 드려요.'
+    ? '서비스를 연결하면 아침 6시부터 밤 10시까지 한 시간마다 살펴, 챙길 일만 알려 드려요.'
     : w.busy
       ? `${linked.map((c) => c.card.name).join(', ')} 살펴보는 중이에요…`
       : w.on
-        ? `아침 8:30·저녁 6:30에 살펴봐요: ${linked.map((c) => c.card.name).join(', ')}`
+        ? `아침 6시~밤 10시, 한 시간마다 살펴봐요: ${linked.map((c) => c.card.name).join(', ')}`
         : '꺼 두었어요. 켜면 연결한 서비스를 살펴 먼저 알려 드려요.'
   const now = button(
     'btn-ghost sm',
@@ -940,7 +940,49 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
           }),
         )
       : sideEmpty('아직 기억한 게 없어요.'),
+    ...knowBlock(ctx),
   )
+}
+
+/** 두리가 알아 둔 것: 로그인해서 본 사실과 두리가 한 신청·예약 (본 날·기준 시점과 함께) */
+function knowBlock(ctx: LifeCtx): HTMLElement[] {
+  const know = ctx.life().know ?? []
+  if (!know.length) return []
+  return [
+    el('p', 'cap', '두리가 조회하거나 해 둔 일이에요. 다음 부탁에서 다시 묻지 않고 써요.'),
+    el(
+      'div',
+      'side-list',
+      ...know.map((k) => {
+        const forget = confirmButton('icon-btn', [icon('trash')], '지울까요?', () => {
+          void ctx.act({ action: 'know-delete', id: k.id }).then(() => ctx.toast('지웠어요'))
+        })
+        forget.setAttribute('aria-label', '지우기')
+        forget.title = '지우기'
+        const meta = [
+          k.source,
+          k.basis,
+          shortWhen(k.seenAt),
+          k.kind === 'done'
+            ? k.state === 'done'
+              ? '끝남'
+              : k.next
+                ? `${shortWhen(k.next)} 챙김`
+                : '진행 중'
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        return el(
+          'div',
+          'side-row',
+          tile(k.kind === 'done' ? 'check' : 'brain', k.kind === 'done' ? 'violet' : 'mint', 36),
+          el('span', 'grow', el('span', 'side-t', `${k.title}: ${k.value}`), el('span', 'meta', meta)),
+          forget,
+        )
+      }),
+    ),
+  ]
 }
 
 export function activityTab(ctx: LifeCtx): HTMLElement {

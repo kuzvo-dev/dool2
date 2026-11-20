@@ -251,7 +251,7 @@ function suggestActions(ctx: LifeCtx, f: FeedItem, ask: string) {
   )
 }
 
-/** 먼저 챙기기 스위치: 연결한 서비스를 아침·저녁에 살펴 챙길 일만 알린다 (ADR 0019) */
+/** 먼저 챙기기 스위치: 아침 6시~밤 10시 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴 챙길 일만 알린다 (ADR 0019·0025) */
 function watchCard(ctx: LifeCtx) {
   const w = ctx.life?.watch ?? { on: true }
   const sw = h('button', {
@@ -276,7 +276,7 @@ function watchCard(ctx: LifeCtx) {
           text: w.busy
             ? '연결한 서비스를 살펴보는 중이에요…'
             : w.on
-              ? '연결한 서비스를 아침·저녁에 살펴보고 챙길 일만 알려 드려요.'
+              ? '아침 6시부터 밤 10시까지 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴, 챙길 일만 알려 드려요.'
               : '꺼 두었어요.',
         }),
       ),
@@ -816,5 +816,58 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
         ),
       ),
     )
+  // 두리가 알아 둔 것: 로그인해서 본 사실과 두리가 한 신청·예약 (본 날·기준 시점과 함께)
+  const know = ctx.life?.know ?? []
+  if (know.length) {
+    out.push(
+      h('p', {
+        class: 'meta seg-note',
+        text: '두리가 조회하거나 해 둔 일이에요. 다음 부탁에서 다시 묻지 않고 써요.',
+      }),
+    )
+    for (const k of know)
+      out.push(
+        h(
+          'div',
+          { class: 'act-row' },
+          h(
+            'span',
+            { class: `tile sm ${k.kind === 'done' ? 'violet' : 'mint'}` },
+            icon(k.kind === 'done' ? 'check' : 'brain', 'i'),
+          ),
+          h(
+            'span',
+            { class: 'row-text' },
+            h('span', { class: 'row-t', text: `${k.title}: ${k.value}` }),
+            h('span', {
+              class: 'row-d',
+              text: [
+                k.source,
+                k.basis,
+                shortTime(k.seenAt),
+                k.kind === 'done'
+                  ? k.state === 'done'
+                    ? '끝남'
+                    : k.next
+                      ? `${shortTime(k.next)} 챙김`
+                      : '진행 중'
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            }),
+          ),
+          h(
+            'button',
+            {
+              class: 'fbtn small',
+              label: '지우기',
+              onclick: () => ctx.act({ action: 'know-delete', id: k.id }),
+            },
+            icon('trash'),
+          ),
+        ),
+      )
+  }
   return out
 }

@@ -7,6 +7,7 @@ import {
   GOAL_CATEGORIES,
   type GoalCategory,
   type Identity,
+  type KnowItem,
   type LibraryItem,
   type LibraryTab,
   type LifeAction,
@@ -128,7 +129,7 @@ const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 't
  * 저장 한도. 피드는 개수가 아니라 기간으로(90일) 남기고 페이지로 나눠 보여 준다 (넘치지 않게 개수도 넉넉히 막아 둔다).
  * 보관함은 사용자가 남긴 것이라 기간으로 지우지 않는다
  */
-const LIMIT = { routines: 50, library: 2000, memory: 200, feed: 3000 }
+const LIMIT = { routines: 50, library: 2000, memory: 200, feed: 3000, know: 500 }
 export const FEED_KEEP_DAYS = 90
 /** 목록에 보내는 보관함 글 길이 (전체는 하나 받기로) */
 const LIBRARY_PREVIEW = 400
@@ -185,7 +186,7 @@ export class Life {
   /** 먼저 챙기기: 연결한 서비스가 있는지 (본체가 붙인다. 없으면 살펴보지 않는다) */
   watchSources?: () => string[]
   /** 먼저 챙기기: 살펴볼 때 (본체가 피드 대화에서 두리에게 부탁한다) */
-  onWatch?: () => void
+  onWatch?: (lastAt?: string) => void
   /** 먼저 챙긴 일을 피드에 올렸을 때 (본체가 폰에 알린다) */
   onTell?: (f: FeedItem) => void
   watchBusy = false
@@ -351,7 +352,13 @@ export class Life {
   tick() {
     if (this.ideasDue() && !this.ideasBusy && (this.memory().length || this.routines().length))
       this.refreshIdeas()
-    if (this.watchOn() && !this.watchBusy && this.watchSources?.().length && this.watchDue()) this.watchNow()
+    if (
+      this.watchOn() &&
+      !this.watchBusy &&
+      (this.watchSources?.().length || this.knowDue().length) &&
+      this.watchDue()
+    )
+      this.watchNow()
     const now = this.now()
     const list = this.routines()
     const ripe = list.filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now.getTime())
@@ -482,6 +489,88 @@ export class Life {
     return `## 사용자에 대해 기억하는 것 (자연스럽게 활용하고, 틀리면 memory_forget)\n${list.map((m) => `- ${m.text}`).join('\n')}`
   }
 
+  // ── 알아 둔 것 (조회 기억·한 일 장부) ──
+  know(): KnowItem[] {
+    return this.list<KnowItem>('know')
+  }
+  /** 같은 것(같은 종류·같은 이름·같은 곳)이 있으면 새 값으로 바꾼다 */
+  knowSave(x: Partial<KnowItem> & { title: string; value: string; kind: KnowItem['kind'] }): KnowItem {
+    const now = this.now().toISOString()
+    const title = x.title.trim().slice(0, 80)
+    const source = x.source?.trim().slice(0, 40) || undefined
+    const list = this.know()
+    const same = list.find(
+      (k) => k.kind === x.kind && k.title === title && (k.source ?? '') === (source ?? ''),
+    )
+    const iso = (v?: string) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : undefined)
+    const item: KnowItem = {
+      id: same?.id ?? randomUUID(),
+      kind: x.kind,
+      title,
+      value: x.value.trim().slice(0, 200),
+      ...(source ? { source } : {}),
+      ...(x.url && /^https:\/\//.test(x.url) ? { url: x.url.slice(0, 500) } : {}),
+      ...(x.basis ? { basis: x.basis.trim().slice(0, 40) } : {}),
+      seenAt: iso(x.seenAt) ?? now,
+      ...(iso(x.next) ? { next: iso(x.next) } : {}),
+      ...(x.nextWhat ? { nextWhat: x.nextWhat.trim().slice(0, 80) } : {}),
+      ...(x.kind === 'done' ? { state: x.state === 'done' ? 'done' : 'open' } : {}),
+      updatedAt: now,
+    }
+    this.put('know', [item, ...list.filter((k) => k.id !== item.id)])
+    return item
+  }
+  knowUpdate(
+    q: string,
+    patch: { value?: string; state?: 'open' | 'done'; next?: string | null; nextWhat?: string },
+  ): KnowItem | undefined {
+    const list = this.know()
+    const hit = list.find((k) => k.id === q || k.id.startsWith(q)) ?? list.find((k) => k.title.includes(q))
+    if (!hit) return undefined
+    const next =
+      patch.next === null
+        ? undefined
+        : patch.next && !Number.isNaN(Date.parse(patch.next))
+          ? new Date(patch.next).toISOString()
+          : hit.next
+    const item: KnowItem = {
+      ...hit,
+      ...(patch.value ? { value: patch.value.trim().slice(0, 200) } : {}),
+      ...(patch.state ? { state: patch.state } : {}),
+      ...(patch.nextWhat ? { nextWhat: patch.nextWhat.trim().slice(0, 80) } : {}),
+      updatedAt: this.now().toISOString(),
+    }
+    if (next) item.next = next
+    else delete item.next
+    // 끝난 일은 더 챙기지 않는다
+    if (item.state === 'done') delete item.next
+    this.put('know', [item, ...list.filter((k) => k.id !== hit.id)])
+    return item
+  }
+  knowForget(id: string) {
+    const list = this.know()
+    const next = list.filter((x) => x.id !== id)
+    this.put('know', next)
+    return next.length !== list.length
+  }
+  /** 챙길 때가 된 한 일 (다음에 챙길 때가 지났고 아직 진행 중) */
+  knowDue(): KnowItem[] {
+    const now = this.now().getTime()
+    return this.know().filter((k) => k.state !== 'done' && k.next && Date.parse(k.next) <= now)
+  }
+  /** 지침에 붙일 알아 둔 것: 진행 중인 한 일과 최근 사실 (날짜와 함께, 쓸지는 AI가 판단) */
+  knowPrompt(): string {
+    const list = this.know()
+    if (!list.length) return ''
+    const open = list.filter((k) => k.kind === 'done' && k.state !== 'done').slice(0, 15)
+    const facts = list.filter((k) => k.kind === 'fact').slice(0, 20)
+    return [
+      `## 두리가 알아 둔 것 (오늘 ${knowDay(this.now().toISOString())}. 기준 시점과 본 날을 보고 지금도 쓸 수 있는지 네가 판단해요. 결정이 걸린 일은 다시 확인해요. 더 찾으려면 know_find)`,
+      ...(open.length ? ['진행 중인 일:', ...open.map(knowLine)] : []),
+      ...(facts.length ? ['알아 둔 사실:', ...facts.map(knowLine)] : []),
+    ].join('\n')
+  }
+
   // ── 피드 ──
   feedItems(): FeedItem[] {
     return this.list<FeedItem>('feed')
@@ -572,20 +661,16 @@ export class Life {
     this.onChange?.()
   }
   /**
-   * 하루 두 번(한국 시간 8:30, 18:30) 그 시각이 지나면 한 번씩 살펴본다.
-   * 밤(22시~7시)에는 하지 않는다: 자는 사이에 폰을 울리지 않게. PC를 늦게 켜도 그 낮 안이면 한다
+   * 한국 시간 아침 6시부터 밤 10시까지 매시 정각이 지나면 한 번씩 살펴본다 (사용자 결정 11-20: 한 일 장부와 합쳐 한 시간마다).
+   * 밤(22시 이후~6시 전)에는 하지 않는다: 자는 사이에 폰을 울리지 않게. PC를 늦게 켜도 그 낮 안이면 한다
    */
   private watchDue(): boolean {
     const now = this.now()
     const KST = 9 * 3600_000
     const kst = new Date(now.getTime() + KST)
     const hour = kst.getUTCHours()
-    if (hour < 7 || hour >= 22) return false
-    const at = (h: number, m: number) =>
-      Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), h, m) - KST
-    const slots = [at(8, 30), at(18, 30)].filter((t) => t <= now.getTime())
-    const last = slots.at(-1)
-    if (last === undefined) return false
+    if (hour < 6 || hour > 22) return false
+    const last = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), hour, 0) - KST
     const done = this.kv.getSetting('watchAt')
     return typeof done !== 'string' || Date.parse(done) < last
   }
@@ -594,9 +679,10 @@ export class Life {
     if (this.watchBusy) return
     this.watchBusy = true
     this.told = 0
+    const prev = this.kv.getSetting('watchAt')
     this.kv.setSetting('watchAt', this.now().toISOString())
     this.onChange?.()
-    this.onWatch?.()
+    this.onWatch?.(typeof prev === 'string' ? prev : undefined)
   }
   watchDone() {
     if (!this.watchBusy) return
@@ -696,6 +782,7 @@ export class Life {
         : {}),
       libraryCount: { made: lib.length - fileCount, files: fileCount },
       memory: this.memory(),
+      know: this.know().slice(0, 100),
       feed: feed.items,
       ...(feed.next ? { feedNext: feed.next } : {}),
       feedDays: this.feedDays(60, all),
@@ -768,6 +855,9 @@ export class Life {
       case 'memory-delete':
         this.forget(a.id)
         return
+      case 'know-delete':
+        this.knowForget(a.id)
+        return
       case 'ideas-refresh':
         this.refreshIdeas()
         return
@@ -775,7 +865,7 @@ export class Life {
         this.setWatch(a.on)
         return
       case 'watch-now':
-        if (this.watchSources?.().length) this.watchNow()
+        if (this.watchSources?.().length || this.knowDue().length) this.watchNow()
         return
       case 'identity': {
         const next: Identity = { ...this.identity() }
@@ -1018,6 +1108,59 @@ export class Life {
         case 'memory_save': {
           const m = this.remember(String(a.text ?? ''))
           return ok(`기억해 둘게요: ${m.text}`)
+        }
+        case 'know_save': {
+          const kind = a.kind === 'done' ? 'done' : 'fact'
+          const title = String(a.title ?? '').trim()
+          const value = String(a.value ?? '').trim()
+          if (!title || !value) return bad('title과 value가 필요해요')
+          const k = this.knowSave({
+            kind,
+            title,
+            value,
+            ...(typeof a.source === 'string' ? { source: a.source } : {}),
+            ...(typeof a.url === 'string' ? { url: a.url } : {}),
+            ...(typeof a.basis === 'string' ? { basis: a.basis } : {}),
+            ...(typeof a.next === 'string' ? { next: a.next } : {}),
+            ...(typeof a.next_what === 'string' ? { nextWhat: a.next_what } : {}),
+            ...(a.state === 'done' ? { state: 'done' as const } : {}),
+          })
+          return ok(`알아 둘게요: ${knowLine(k)}${k.next ? ` — ${knowDay(k.next)}에 먼저 챙길게요` : ''}`)
+        }
+        case 'know_find': {
+          const q = String(a.query ?? '').trim()
+          const kind = a.kind === 'done' || a.kind === 'fact' ? a.kind : undefined
+          const words = q.split(/\s+/).filter(Boolean)
+          const hits = this.know().filter(
+            (k) =>
+              (!kind || k.kind === kind) &&
+              (!words.length ||
+                words.some((w) => `${k.title} ${k.value} ${k.source ?? ''} ${k.basis ?? ''}`.includes(w))),
+          )
+          if (!hits.length)
+            return ok(`알아 둔 것이 없어요${q ? ` ("${q}")` : ''}. 조회해서 알게 되면 know_save로 남겨요.`)
+          return ok(
+            [
+              `오늘 ${knowDay(this.now().toISOString())}. 본 날·기준 시점을 보고 지금도 쓸 수 있는지 판단해요(낡았거나 결정이 걸리면 다시 조회):`,
+              ...hits.slice(0, 30).map((k) => `${knowLine(k)} [id ${k.id.slice(0, 8)}]`),
+            ].join('\n'),
+          )
+        }
+        case 'know_update': {
+          const q = String(a.id ?? a.title ?? '').trim()
+          if (!q) return bad('id나 title이 필요해요')
+          const k = this.knowUpdate(q, {
+            ...(typeof a.value === 'string' ? { value: a.value } : {}),
+            ...(a.state === 'done' || a.state === 'open' ? { state: a.state } : {}),
+            ...(a.next === null || a.next === ''
+              ? { next: null }
+              : typeof a.next === 'string'
+                ? { next: a.next }
+                : {}),
+            ...(typeof a.next_what === 'string' ? { nextWhat: a.next_what } : {}),
+          })
+          if (!k) return bad('그런 항목이 없어요. know_find로 id를 확인해요')
+          return ok(`고쳤어요: ${knowLine(k)}`)
         }
         case 'memory_forget': {
           const q = String(a.text ?? a.id ?? '')
@@ -1302,7 +1445,13 @@ function plainLine(text: string, max: number): string {
  * 먼저 챙기기: 피드 대화에서 두리에게 보내는 부탁.
  * 연결한 서비스만, 확인한 새 소식만, 한 번에 3개까지, 이미 알린 건 빼고, 없으면 조용히.
  */
-export function watchPrompt(services: ConnectionItem[], recent: FeedItem[], now = new Date()): string {
+export function watchPrompt(
+  services: ConnectionItem[],
+  recent: FeedItem[],
+  now = new Date(),
+  due: KnowItem[] = [],
+  lastAt?: string,
+): string {
   const kst = new Date(now.getTime() + 9 * 3600_000)
   const when = `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][kst.getUTCDay()]}요일 ${kst.getUTCHours()}시`
   const list = services
@@ -1314,20 +1463,51 @@ export function watchPrompt(services: ConnectionItem[], recent: FeedItem[], now 
   const told = recent.length
     ? recent.map((f) => `- ${f.title}${f.key ? ` [${f.key}]` : ''}`).join('\n')
     : '- (아직 없음)'
+  const ago = lastAt ? Math.round((now.getTime() - Date.parse(lastAt)) / 60_000) : undefined
   return [
     `먼저 챙기기 시간이에요 (지금 ${when}, 한국 시간). 사용자는 아무것도 부탁하지 않았어요. 비서처럼 먼저 살펴봐 주세요.`,
+    ...(ago !== undefined && ago > 0 && ago < 24 * 60
+      ? [
+          `지난번에 살핀 때: ${ago < 90 ? `${ago}분` : `${Math.round(ago / 60)}시간`} 전. 그 사이 바뀌기 어려운 곳은 건너뛰고, 자주 바뀌는 것(배송·메일·마감 임박)부터 봐요.`,
+        ]
+      : []),
+    ...(due.length
+      ? [
+          '',
+          '챙길 때가 된 일 (두리가 하거나 확인한 일 — 먼저 봐요):',
+          ...due.map(knowLine),
+          '→ 각각 지금 상태를 그 서비스에서 확인하고(발표·도착·마감·만기), 사용자가 알면 좋을 게 있으면 feed_tell로 알려요(ask에 바로 할 수 있는 일). 그다음 know_update로 상태(끝났으면 state "done")나 다음에 챙길 때(next)를 고쳐요. 더 챙길 게 없으면 next를 비워요.',
+        ]
+      : []),
     '',
     '연결한 서비스 (이것만 열어 봐요):',
-    list,
+    list || '- (없음)',
     '',
     '할 일:',
     '1. 위 서비스에서 사용자가 지금 알면 좋을 새 소식을 확인해요. 예: 배송·도착 예정, 다가오는 예약·일정, 답이 필요한 메일, 기록·결과 발표, 결제·만료·마감 예정. 기억해 둔 기념일·약속이 가까우면 그것도요.',
     '2. 직접 확인한 것만 feed_tell로 하나씩 올려요 (중요한 것부터 3개까지). title은 두리 말투 한 줄, from은 어디서 봤는지, key는 같은 일을 또 알리지 않을 열쇠.',
     '3. 두리가 이어서 해 줄 수 있으면 ask에 부탁을 적어요 (예: 선물 고르기, 답장 초안, 예약 다시 확인). 돈 내기·보내기·지우기는 지금 하지 않아요.',
     '4. 알릴 게 없으면 아무것도 올리지 않아요. 로그인이 풀렸으면 로그인하지 말고 넘어가요. 사람이 해야 하는 단계가 나와도 멈추고 넘어가요.',
-    '5. 답은 한 문장으로만 (예: "2개 알렸어요", "새 소식 없어요").',
+    '5. 새로 알게 된 신청·결제·예약·배송은 know_save(kind "done", 다음에 챙길 때 next)로 장부에 남겨요.',
+    '6. 답은 한 문장으로만 (예: "2개 알렸어요", "새 소식 없어요").',
     '',
     '최근에 이미 알린 것 (다시 올리지 않아요):',
     told,
   ].join('\n')
+}
+
+/** 알아 둔 것 날짜: 11/20(목) */
+export function knowDay(iso: string): string {
+  const d = new Date(Date.parse(iso) + 9 * 3600_000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}(${'일월화수목금토'[d.getUTCDay()]})`
+}
+
+/** 알아 둔 것 한 줄: 무엇: 값 (어디서 · 기준 · 본 날) [다음] */
+export function knowLine(k: KnowItem): string {
+  const meta = [k.source, k.basis, `${k.kind === 'done' ? '한 날' : '본 날'} ${knowDay(k.seenAt)}`]
+    .filter(Boolean)
+    .join(' · ')
+  const state = k.kind === 'done' ? (k.state === 'done' ? ' [끝남]' : ' [진행 중]') : ''
+  const next = k.next ? ` → ${knowDay(k.next)} ${k.nextWhat ?? '챙기기'}` : ''
+  return `- ${k.title}: ${k.value} (${meta})${state}${next}`
 }
