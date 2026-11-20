@@ -690,8 +690,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** 이어받은 탭 → 서비스 (그 서비스 사이트의 다른 주소에서도 연결할 때 넣은 계정을 쓰게) */
   const takeoverTabs = new Map<number, string>()
   const agentTakeover = (card: ConnectCard, r: ConnectResult): boolean => {
-    if (r.ok || r.human || r.reason !== 'unknown' || r.tabId === undefined) return false
-    if (Date.now() - (takeoverAt.get(card.id) ?? 0) < 10 * 60_000) return false
+    // 사용자 결정 11-20: 사람이 할 일은 없어야 한다. 자동 로그인이 '사람 차례'·'틀림'으로 판정해도(규칙 판정은 자주 틀린다)
+    // 두리(AI)가 화면을 보고 이어 간다. 사람 몫(로봇 확인·인증번호·본인인증·가입 동의)은 두리가 폰 카드로 받는다.
+    // 남기는 것: 인증 앱 승인만 기다리는 단계(폰에서 누르면 지켜보기가 이어서 연결한다)
+    if (r.ok || r.tabId === undefined) return false
+    if (r.human && /이어서 연결해요\.?$/.test(r.message)) return false
+    if (Date.now() - (takeoverAt.get(card.id) ?? 0) < 3 * 60_000) return false
     takeoverAt.set(card.id, Date.now())
     takeoverTabs.set(r.tabId, card.id)
     journal.write('connect-takeover', { id: card.id })
@@ -705,9 +709,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void talk(
       appNote(
         `${card.name} 자동 로그인이 중간에 멈췄어요. 두리가 화면을 보며 이어서 해 볼게요. ` +
-          `browser_read로 탭 ${r.tabId}을 읽고(멈춘 까닭: ${why}) 로그인을 이어서 해 주세요. ` +
+          `browser_read로 탭 ${r.tabId}을 읽고(자동 로그인의 판단: ${why} — 규칙 판단이라 틀릴 수 있어요. 화면을 직접 보고 정해요) 로그인을 이어서 해 주세요. ` +
           `아이디·비밀번호는 금고에 있으니 browser_login으로만 넣고 browser_click으로 로그인 버튼을 눌러요. ` +
-          `browser_handoff는 로봇 확인·본인인증·인증번호가 나왔을 때 써요. ` +
+          `이미 있는 계정에 간편 로그인을 연결하라는 화면이면 연결 버튼을 눌러요(새로 가입하는 게 아니에요). ` +
+          `사람 몫은 폰 카드로만 받아요: 로봇 확인 그림은 browser_request_tap, 글자 보안문자·인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 본인인증 칸은 browser_fill_profile, 가입처럼 사용자가 정할 일은 browser_request_approval. 화면 넘기기·직접 하라는 말은 하지 않아요. ` +
           `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭은 닫지 말되 탭 이야기는 빼고 ` +
           (resume
             ? `${card.name}이 필요해서 멈춘 일이 있었으면 로그인 뒤 그 일을 이어서 끝내요(연결됐다는 말은 한 줄로).`
@@ -850,15 +855,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .catch(() => {})
       return true
     }
-    // 아직: 그 화면에서 마치면 알아서 연결된다 (지켜보기를 다시 켠다)
+    // 아직: 두리가 그 화면을 보고 이어서 한다 (지켜보기도 다시 켠다)
     if (watched !== undefined) loginWatch.start(card, watched)
+    const left: ConnectResult = {
+      ok: false,
+      reason: 'unknown',
+      ...(watched !== undefined ? { tabId: watched } : {}),
+      message: `아직 ${card.name}에 로그인이 안 된 것 같아요.`,
+    }
+    const agent = agentTakeover(card, left)
     void link.broadcast({
       kind: 'connect-result',
       id: card.id,
-      ok: false,
-      reason: 'human',
-      ...(watched !== undefined ? { tabId: watched } : {}),
-      message: `아직 ${card.name}에 로그인이 안 된 것 같아요. 화면을 열어 직접 마쳐 주세요.`,
+      ...left,
+      ...(agent ? { agent } : {}),
+      message: agent ? `${left.message} 두리가 화면을 보고 이어서 할게요.` : left.message,
     })
     return false
   }
@@ -938,8 +949,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 던져진 오류는 화면 표시(e2 등)가 섞인 속 이야기라 사용자에게는 쉬운 말로, 원문은 기록에만
     const p: Promise<ConnectResult> = run().catch((e: Error) => {
       console.warn(`[연결] ${card.id} 자동 로그인 오류: ${e.message}`)
+      const tabId = connectTabs.get(card.id)
       return {
         ok: false,
+        reason: 'unknown' as const,
+        ...(tabId !== undefined ? { tabId } : {}),
         message: /\be\d+\b|ref|tabId/.test(e.message)
           ? '로그인 화면이 예상과 달라 멈췄어요. 다시 해 보기를 눌러 주세요.'
           : e.message,
@@ -971,7 +985,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (!r.ok && r.tabId !== undefined) void journalScreen(card.id, r.tabId)
       // 결과를 먼저 보내고 "연결 중" 끝을 보낸다 (반대면 카드가 잠깐 처음 상태로 돌아갔다 바뀐다)
       void link
-        .broadcast({ kind: 'connect-result', id: card.id, ...r, ...(agent ? { agent } : {}) })
+        .broadcast({ kind: 'connect-result', id: card.id, ...r, ...(agent ? { agent, human: false } : {}) })
         .then(() => connectStatus())
       void skills
         .connections()
@@ -2308,17 +2322,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // 다시 로그인했다고 나와도 한 번 더 확인한다 (짐작으로 'ok'가 나온 적이 있다)
         if (ok) ok = (await checkSignedIn(browser, card).catch(() => undefined))?.state === 'in'
         if (ok) result.relogged.push(card.name)
+        else if (provider || creds) result.need.push(card.name)
         else {
           connectMark(card.id, false)
           result.need.push(card.name)
         }
       }
       journal.write('connect-keep', { checked: result.checked, relogged: result.relogged, need: result.need })
-      if (result.need.length)
+      // 다시 로그인할 방법을 모르는 곳만 알린다 (방법이 있으면 쓸 때 두리가 알아서 다시 로그인한다)
+      const unknownWay = result.need.filter((n) => {
+        const c = services.find((x) => x.card.name === n)?.card
+        return c ? !connectVia()[c.id] : true
+      })
+      if (unknownWay.length)
         void link
           .notify({
-            title: `로그인이 풀린 곳 ${result.need.length}곳`,
-            body: `${result.need.slice(0, 4).join('·')}${result.need.length > 4 ? ' 등' : ''} — 연결 화면에서 다시 연결해 주세요`,
+            title: `로그인이 풀린 곳 ${unknownWay.length}곳`,
+            body: `${unknownWay.slice(0, 4).join('·')}${unknownWay.length > 4 ? ' 등' : ''} — 연결 화면에서 다시 연결해 주세요`,
             tag: 'connect-keep',
             url: '#tab=connect',
           })
