@@ -16,6 +16,37 @@ export interface SnapshotResult {
   skipped?: number
   /** from 글자를 페이지에서 찾지 못했다 (처음부터 읽었다) */
   fromMissing?: boolean
+  /** 이 문서 안의 액자(iframe) 상자들 (액자 자리 찾기·화면 순서·글 속 [액자] 자리 표시에 쓴다) */
+  kids?: KidBox[]
+  /** 이 문서(액자) 자신의 크기와, 같은 주소라 바로 재 본 바깥 상자 */
+  self?: FrameSelf
+  /** 표시 번호가 대역 끝에 가까워 처음부터 새로 매겼다 (전에 받은 표시는 다른 것을 가리킬 수 있다) */
+  renumbered?: boolean
+  /** 대역(1만 개)이 다 차서 표시를 못 붙인 누를 것 수 */
+  refsCapped?: number
+}
+
+/** 문서 안 액자 하나 (그 문서의 보이는 화면 기준, 안쪽 상자) */
+export interface KidBox {
+  /** 액자 주소 (src를 전체 주소로. 없으면 '') */
+  src: string
+  srcdoc: boolean
+  name: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** 크기가 있고 숨지 않았다 */
+  shown: boolean
+  /** 글 속 자리 표시 번호 (읽은 글에 보이지 않는 구분 문자 U+2063으로 감싼 F{n}이 들어 있다) */
+  marker?: number
+}
+
+/** 액자 문서 자신: 크기, 같은 주소면 바깥 문서에서 본 자기 상자(frameElement) */
+export interface FrameSelf {
+  w: number
+  h: number
+  owner?: { x: number; y: number; w: number; h: number }
 }
 
 /** 어디를 읽을지. view: 지금 화면에 보이는 부분만, from: 이 글자가 나오는 줄부터, skip: 앞에서 이만큼 건너뛰고 */
@@ -73,6 +104,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     refs: Map<string, WeakRef<Element>>
     ids: WeakMap<Element, string>
     seq: number
+    /** 이 문서의 표시 대역 시작 (액자 n → n*10000). 글자로 표시 붙이기(pageMarkText)도 같은 대역을 쓴다 */
+    base?: number
     /** 두리 금고가 채운 칸: 값을 글로 내보내지 않는다 */
     filled?: WeakSet<Element>
     /** 표시마다 읽을 때의 앞쪽 글 (누르기 직전에 견줘 다른 칸이 됐는지 본다) */
@@ -83,6 +116,29 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   g.__dool2 ??= { refs: new Map(), ids: new WeakMap(), seq: 0 }
   const st = g.__dool2
   st.refs = new Map()
+  st.base = base
+  // 표시 번호는 문서마다 대역 하나(1만 개) 안에서만 매긴다. 넘치면 다음 액자 대역(e10000…)으로 번져
+  // 본체가 다른 액자의 표시로 알아듣는다. 대역의 7할을 넘었으면 읽기 시작 때 처음부터 새로 매기고(알린다),
+  // 한 번 읽는 사이에 대역이 다 차면 더 붙이지 않고 몇 개를 못 붙였는지 알린다
+  const SPAN = 10_000
+  let renumbered = false
+  let capped = 0
+  if (st.seq > SPAN * 0.7) {
+    st.seq = 0
+    st.ids = new WeakMap()
+    renumbered = true
+  }
+  const refFor = (el: Element): string | undefined => {
+    const had = st.ids.get(el)
+    if (had) return had
+    if (st.seq >= SPAN - 1) {
+      capped++
+      return undefined
+    }
+    const ref = `e${base + ++st.seq}`
+    st.ids.set(el, ref)
+    return ref
+  }
   const ctx = new Map<string, string>()
   st.ctx = ctx
   // 요소 앞쪽 글 300자. 목록을 굴리면 칸을 재활용하는 사이트(캐치테이블 가게 목록)는 같은 칸에 다른 가게를
@@ -256,14 +312,43 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     const cap = captionAfter(el)
     if (cap) return cap
     const img = el.querySelector('img[alt]')
-    return (
-      clean(
-        el.getAttribute('placeholder') ??
-          el.getAttribute('title') ??
-          img?.getAttribute('alt') ??
-          el.getAttribute('name'),
-      ) || iconName(el)
+    const own = clean(
+      el.getAttribute('placeholder') ??
+        el.getAttribute('title') ??
+        img?.getAttribute('alt') ??
+        el.getAttribute('name'),
     )
+    if (own) return own
+    // 여기부터는 화면에 적힌 이름이 아니라 두리가 짐작한 이름이다: 표시에 (추정)을 달아 AI가 화면과 견줘 보게 한다
+    const quantity = stepperName(el)
+    if (quantity) return quantity
+    const icon = iconName(el)
+    if (icon) guessed = true
+    return icon
+  }
+  /** 이번 표시의 이름이 짐작(아이콘 속성)인지 */
+  let guessed = false
+
+  /**
+   * 수량 고르기: 한 상자 안에 이름 없는 버튼 둘과 숫자 하나만 있을 때만 앞은 줄이기, 뒤는 늘리기
+   * (캐치테이블 추가 상품 등). 다른 글·버튼이 섞인 상자는 짐작하지 않는다
+   */
+  const stepperName = (el: Element): string => {
+    const BTN = 'button,[role=button],a[href]'
+    let box: Element | null = el.parentElement
+    for (let i = 0; box && i < 3; i++, box = box.parentElement) {
+      const btns = Array.from(box.querySelectorAll(BTN)).filter((b) => !b.closest('[aria-hidden="true"]'))
+      if (btns.length < 2) continue
+      if (btns.length !== 2) return ''
+      const named = btns.some(
+        (b) =>
+          b.getAttribute('aria-label') || (b as HTMLElement).innerText?.trim() || b.getAttribute('title'),
+      )
+      if (named) return ''
+      if (!/^\d{1,3}$/.test((box as HTMLElement).innerText?.replace(/\s+/g, '') ?? '')) return ''
+      return btns[0] === el ? '수량 줄이기' : '수량 늘리기'
+    }
+    return ''
   }
 
   /** 글 없는 아이콘 버튼의 뜻을 속성(테스트 id·클래스·아이콘 이름·svg 제목)에서 찾는다. 못 찾으면 '' */
@@ -358,6 +443,32 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
 
   /** 이번 읽기에서 표시를 붙인 것 (빠진 입력칸을 따로 모을 때 견준다) */
   const shownNow = new Set<Element>()
+  /** 이 문서 안의 액자들: 확장이 액자마다 화면 자리를 맞춰 보고(중첩 액자 좌표), 화면 순서로 늘어놓는다 */
+  const kids: KidBox[] = []
+  const kidOf = (f: HTMLIFrameElement): KidBox => {
+    const r = f.getBoundingClientRect()
+    const cs = getComputedStyle(f)
+    const x = r.left + f.clientLeft + (Number.parseFloat(cs.paddingLeft) || 0)
+    const y = r.top + f.clientTop + (Number.parseFloat(cs.paddingTop) || 0)
+    const w =
+      f.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0)
+    const h =
+      f.clientHeight - (Number.parseFloat(cs.paddingTop) || 0) - (Number.parseFloat(cs.paddingBottom) || 0)
+    let src = ''
+    try {
+      src = f.getAttribute('src') ? new URL(f.getAttribute('src') ?? '', location.href).href : ''
+    } catch {}
+    return {
+      src,
+      srcdoc: f.hasAttribute('srcdoc'),
+      name: f.name || f.id || '',
+      x,
+      y,
+      w,
+      h,
+      shown: w > 2 && h > 2 && f.checkVisibility({ visibilityProperty: true, opacityProperty: true }),
+    }
+  }
   const walk = (node: Node) => {
     if (budget <= 0) return
     if (node.nodeType === Node.TEXT_NODE) {
@@ -368,6 +479,16 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const el = node as Element
+    // 액자 자리: 글 속 그 자리에 표시를 남긴다 (확장이 [액자 f3]으로 바꾼다. 액자 안 글은 아래에 따로 붙는다)
+    if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+      const k = kidOf(el as HTMLIFrameElement)
+      if (k.shown) {
+        k.marker = kids.length
+        cur += ` \u2063F${k.marker}\u2063 `
+      }
+      kids.push(k)
+      return
+    }
     if (SKIP.has(el.tagName)) return
     if (el.getAttribute('aria-hidden') === 'true') return
     // display: contents 상자는 자기 상자가 없어서 checkVisibility가 늘 false다. 안은 보이니 계속 읽는다
@@ -387,17 +508,18 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     const role = interactiveRole(el)
     if (role) {
       shownNow.add(el)
-      let ref = st.ids.get(el)
-      if (!ref) {
-        ref = `e${base + ++st.seq}`
-        st.ids.set(el, ref)
+      const ref = refFor(el)
+      if (ref) {
+        st.refs.set(ref, new WeakRef(el))
+        ctx.set(ref, ctxOf(el))
       }
-      st.refs.set(ref, new WeakRef(el))
-      ctx.set(ref, ctxOf(el))
       // 클릭 처리기만 붙은 긴 상자 (글 단락·카드 전체): 표시만 붙이고 안의 글은 그대로 읽는다
       const long = el.hasAttribute(TAP) && ((el as HTMLElement).innerText?.trim().length ?? 0) > LONG_TAP
+      guessed = false
       const name = long ? clean((el as HTMLElement).innerText, 30) : nameOf(el)
-      cur += ` [${ref} ${role}${name ? ` "${name}"` : ''}${extra(el)}] `
+      const label = `${role}${name ? ` "${name}"` : ''}${guessed ? ' (추정)' : ''}${extra(el)}`
+      // 대역이 다 차 표시를 못 붙인 것도 글로는 보이게 (누를 수는 없다고 알린다)
+      cur += ref ? ` [${ref} ${label}] ` : ` (${label}) `
       if (!long) return
     }
     const block = BLOCK.has(el.tagName)
@@ -454,11 +576,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
         continue
       const role = interactiveRole(el)
       if (!role) continue
-      let ref = st.ids.get(el)
-      if (!ref) {
-        ref = `e${base + ++st.seq}`
-        st.ids.set(el, ref)
-      }
+      const ref = refFor(el)
+      if (!ref) continue
       st.refs.set(ref, new WeakRef(el))
       ctx.set(ref, ctxOf(el))
       const box = el.closest('label, div, li, p, td')
@@ -471,14 +590,24 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     if (missed.length) lines.push(`(화면에 보이는 칸) ${missed.join(' ')}`)
   }
 
-  let text = lines
-    .join('\n')
-    // 이름 없는 버튼 둘 사이에 숫자 하나 (수량 고르기): 앞은 줄이기, 뒤는 늘리기 (캐치테이블 추가 상품 등)
-    .replace(
-      /\[(e\d+) 버튼(( [^\]"]*)?)\](\s+)(\d{1,3})(\s+)\[(e\d+) 버튼(( [^\]"]*)?)\]/g,
-      (_m, a: string, ax: string, _a2, s1: string, n: string, s2: string, b: string, bx: string) =>
-        `[${a} 버튼 "수량 줄이기"${ax}]${s1}${n}${s2}[${b} 버튼 "수량 늘리기"${bx}]`,
-    )
+  // 읽다가 글 한도로 멈췄거나 숨은 상자 속이라 못 지나간 액자도 자리 맞추기에는 넣는다 (글 속 표시는 없다)
+  const met = new Set(kids.map((k) => `${k.src}|${k.x}|${k.y}|${k.w}|${k.h}`))
+  for (const f of Array.from(document.querySelectorAll('iframe, frame')).slice(0, 60)) {
+    const k = kidOf(f as HTMLIFrameElement)
+    if (!met.has(`${k.src}|${k.x}|${k.y}|${k.w}|${k.h}`)) kids.push(k)
+  }
+  // 같은 주소의 액자면 바깥 문서에서 본 자기 상자를 바로 잴 수 있다 (about:blank·srcdoc 결제 액자 포함)
+  let owner: FrameSelf['owner']
+  try {
+    const fe = window.frameElement as HTMLIFrameElement | null
+    if (fe) {
+      const r = fe.getBoundingClientRect()
+      owner = { x: r.left + fe.clientLeft, y: r.top + fe.clientTop, w: fe.clientWidth, h: fe.clientHeight }
+    }
+  } catch {}
+  const self: FrameSelf = { w: window.innerWidth, h: window.innerHeight, ...(owner ? { owner } : {}) }
+
+  let text = lines.join('\n')
   let start = 0
   let fromMissing = false
   if (scope.from) {
@@ -534,6 +663,10 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     ...(scope.view ? { around } : {}),
     ...(start ? { skipped: start } : {}),
     ...(fromMissing ? { fromMissing } : {}),
+    kids,
+    self,
+    ...(renumbered ? { renumbered } : {}),
+    ...(capped ? { refsCapped: capped } : {}),
   }
 }
 
@@ -559,6 +692,14 @@ export interface LocateResult {
   frame?: boolean
   /** 화면 밖에 있어서 굴려 옮겼다 (늦게 뜨는 그림·목록으로 자리가 밀릴 수 있어 부르는 쪽이 다시 잰다) */
   moved?: boolean
+  /** 덮은 것이 다른 버튼·링크다 (force로 불렀을 때만 여기까지 온다: 마우스 대신 그 요소를 직접 누른다) */
+  coveredByControl?: boolean
+  /** force로 불렀는데 둘레 글이 읽을 때와 달랐다 (알리기만 한다) */
+  ctxChanged?: { was: string; now: string }
+  /** 굴려도 보이는 화면 밖이다 (화면 아래에 고정된 창 등). y는 실제 자리(잘리지 않은 값) */
+  outside?: boolean
+  /** 요소 상자 아래 끝 (이 문서 화면 기준) */
+  bottom?: number
 }
 
 /**
@@ -569,7 +710,12 @@ export interface LocateResult {
 export function pageMarkText(
   text: string,
 ): { ok: true; ref: string; name: string } | { ok: false; error: string } {
-  type State = { refs: Map<string, WeakRef<Element>>; ids: WeakMap<Element, string>; seq: number }
+  type State = {
+    refs: Map<string, WeakRef<Element>>
+    ids: WeakMap<Element, string>
+    seq: number
+    base?: number
+  }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   if (!st) return { ok: false, error: '먼저 페이지를 읽어 주세요' }
   const norm = (s: string) => s.replace(/\s+/g, ' ').trim()
@@ -599,7 +745,9 @@ export function pageMarkText(
   if (!best) return { ok: false, error: `화면에서 "${want}" 글자를 찾지 못했어요` }
   let ref = st.ids.get(best.el)
   if (!ref) {
-    ref = `e${++st.seq}`
+    // 표시 대역(1만 개) 안에서만 매긴다 (넘치면 다른 액자의 표시로 읽힌다)
+    if (st.seq >= 9_999) return { ok: false, error: '표시 번호가 다 찼어요. 페이지를 다시 읽어 주세요' }
+    ref = `e${(st.base ?? 0) + ++st.seq}`
     st.ids.set(best.el, ref)
   }
   st.refs.set(ref, new WeakRef(best.el))
@@ -619,7 +767,11 @@ export function ctxReplaced(was: string, now: string): boolean {
 }
 
 /** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
-export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: false; error: string } {
+export function pageLocate(
+  ref: string,
+  mode: LocateMode,
+  force = false,
+): LocateResult | { ok: false; error: string } {
   type State = {
     refs: Map<string, WeakRef<Element>>
     ctx?: Map<string, string>
@@ -665,7 +817,9 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   // 다른 칸이 그려진 것으로 본다 (무신사·카카오 로그인: 아이디를 채우자 비밀번호 칸 앞 글이 늘어 채우기가 막혔다).
   // 입력은 목록 칸 재활용과 상관없어 보지 않는다
   // (규칙은 ctxReplaced와 같다. 페이지에 넣는 함수라 따로 부를 수 없어 여기 그대로 둔다)
+  // 판단은 AI가 한다: 읽을 때·지금 글을 함께 알려 주고, 같은 것이라고 보면 force로 다시 부르게 한다
   const was = st?.ctx?.get(ref)
+  let ctxChanged: { was: string; now: string } | undefined
   if (mode !== 'type' && was !== undefined && st?.ctxOf) {
     const now = st.ctxOf(el, 900)
     if (!now.endsWith(was)) {
@@ -673,35 +827,64 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
       const words = was.split(' ').filter((x) => x.length > 1)
       const gone = words.filter((x) => !have.has(x)).length
       const goneNear = words.slice(-6).filter((x) => !have.has(x)).length
-      if ((gone >= 3 && gone >= words.length * 0.2) || goneNear >= 2)
-        return {
-          ok: false,
-          error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 다시 읽고 골라 주세요`,
-        }
+      if ((gone >= 3 && gone >= words.length * 0.2) || goneNear >= 2) {
+        ctxChanged = { was: was.slice(-80), now: now.slice(-80) }
+        if (!force)
+          return {
+            ok: false,
+            error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 읽을 때: "…${ctxChanged.was}" / 지금: "…${ctxChanged.now}". 다시 읽고 골라 주세요. 같은 것이 맞으면 force: true로 누를 수 있어요`,
+          }
+      }
     }
   }
   const r = box()
   if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref}가 화면에 보이지 않아요` }
-  const x = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1)
-  const y = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1)
-  const top = document.elementFromPoint(x, y)
+  // 굴려도 화면 밖이면(아래에 고정된 창) 실제 자리를 알려 부르는 쪽이 화면을 늘려 다시 재게 한다.
+  // 일부만 보이면 보이는 부분의 가운데를 누른다 (화면 끝으로 자른 자리는 다른 것일 수 있다)
+  const W = window.innerWidth
+  const H = window.innerHeight
+  const outside = r.bottom <= 0 || r.top >= H || r.right <= 0 || r.left >= W
+  const x = outside
+    ? r.left + r.width / 2
+    : Math.min(Math.max((Math.max(r.left, 0) + Math.min(r.right, W)) / 2, 1), W - 1)
+  const y = outside
+    ? r.top + r.height / 2
+    : Math.min(Math.max((Math.max(r.top, 0) + Math.min(r.bottom, H)) / 2, 1), H - 1)
+  // 그 자리의 맨 위 요소: 열린 shadow DOM 안까지 내려가서 본다 (문서에서 재면 그림자 주인(host)이 나와 덮인 것으로 보였다)
+  let top: Element | null = outside ? null : document.elementFromPoint(x, y)
+  for (let i = 0; top?.shadowRoot && i < 8; i++) {
+    const inner = top.shadowRoot.elementFromPoint(x, y)
+    if (!inner || inner === top) break
+    top = inner
+  }
+  /** a가 b를 품는지 (shadow DOM 경계를 넘어 위로) */
+  const holds = (a: Element, b: Node | null): boolean => {
+    for (let n: Node | null = b; n; n = n.parentNode ?? (n as ShadowRoot).host ?? null)
+      if (n === a) return true
+    return false
+  }
   let coveredBy: string | undefined
-  if (top && top !== el && !el.contains(top) && top.closest('label')?.control !== el) {
+  let coveredByControl = false
+  if (top && !holds(el, top) && !(label && holds(label, top)) && top.closest('label')?.control !== el) {
     coveredBy = ((top as HTMLElement).innerText || top.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
     // 덮은 것이 다른 버튼·링크면 누르지 않는다: 그 자리를 누르면 덮은 버튼이 눌린다
-    // (캐치테이블: 결제 방식 화면의 '다음' 위에 '이 방식으로 예약' 팝업이 떠 있었다)
+    // (캐치테이블: 결제 방식 화면의 '다음' 위에 '이 방식으로 예약' 팝업이 떠 있었다).
+    // force면 마우스 대신 그 요소를 직접(키보드·스크립트) 누르게 알린다
     const other = top.closest(
       'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=radio],[role=checkbox],[onclick],[data-dool2-tap]',
     )
-    if (other && other !== el && !other.contains(el)) {
+    if (other && other !== el && !holds(other, el)) {
       const name = ((other as HTMLElement).innerText || other.getAttribute('aria-label') || other.tagName)
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 40)
-      return {
-        ok: false,
-        error: `${ref} 자리를 다른 버튼 "${name}"이(가) 덮고 있어서 누르지 않았어요. 팝업이면 먼저 닫고(닫기·X) 다시 읽어 주세요`,
-      }
+      if (!force)
+        return {
+          ok: false,
+          error: `${ref} 자리를 다른 버튼 "${name}"이(가) 덮고 있어서 누르지 않았어요. 팝업이면 먼저 닫고(닫기·X) 다시 읽어 주세요. 덮인 채로 그 요소를 직접 누르려면 force: true`,
+        }
+      coveredByControl = true
+      coveredBy = name
     }
   }
   const h = el as HTMLElement
@@ -735,6 +918,10 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
     hidden: document.visibilityState === 'hidden',
     ...(focused !== undefined ? { focused, toggle } : {}),
     ...(coveredBy ? { coveredBy } : {}),
+    ...(coveredByControl ? { coveredByControl } : {}),
+    ...(ctxChanged ? { ctxChanged } : {}),
+    ...(outside ? { outside } : {}),
+    bottom: r.bottom,
   }
 }
 
@@ -2122,25 +2309,360 @@ export function pageCursor(x: number, y: number, label: string) {
   }, 2500)
 }
 
-/** 액자(iframe) 속 화면이 페이지의 어디에 그려지는지: 주소가 같은 액자의 안쪽 상자 왼쪽 위 (없으면 undefined).
- *  다른 주소의 액자는 Chrome이 따로 그려서 디버거의 액자 목록으로는 자리를 못 찾을 때가 있다 */
-export function pageFrameBox(url: string): { x: number; y: number } | undefined {
-  const norm = (u: string) => {
+// ── 액자(iframe) 자리 재기 ──
+// 액자 속 요소를 누르려면 그 액자가 페이지 화면의 어디에 그려지는지 알아야 한다. 액자 안에 또 액자가 있으면
+// (결제 화면 → 배송지 추가 창 → 주소 찾기 창) 단계마다 바깥 문서에서 액자 상자를 재어 더한다.
+// 예전에는 맨 바깥 문서에서 주소로만 찾고, 못 찾으면 (0,0)으로 눌러 엉뚱한 곳이 조용히 눌렸다 (실측 11-20 G마켓 주소 찾기)
+
+/**
+ * 액자 문서 안에서: 자기 크기, 그리고 같은 주소라 바깥 문서를 볼 수 있으면 자기 상자(frameElement).
+ * py(이 액자 화면 기준 누를 자리의 세로 위치)를 주면 그 자리가 바깥 화면에 보이게 바깥을 굴린 뒤 잰다
+ */
+export function pageFrameSelf(py = -1): FrameSelf {
+  const self: FrameSelf = { w: window.innerWidth, h: window.innerHeight }
+  try {
+    const fe = window.frameElement as HTMLIFrameElement | null
+    const win = fe?.ownerDocument?.defaultView
+    if (!fe || !win) return self
+    const measure = () => {
+      const r = fe.getBoundingClientRect()
+      return { x: r.left + fe.clientLeft, y: r.top + fe.clientTop, w: fe.clientWidth, h: fe.clientHeight }
+    }
+    let box = measure()
+    if (py >= 0) {
+      const at = box.y + py
+      if (at < 0 || at > win.innerHeight) {
+        let sc: Element | null = fe.parentElement
+        while (sc && sc !== fe.ownerDocument.body) {
+          const cs = win.getComputedStyle(sc)
+          if (/(auto|scroll|overlay)/.test(cs.overflowY) && sc.scrollHeight > sc.clientHeight + 1) break
+          sc = sc.parentElement
+        }
+        const dy = at - win.innerHeight / 2
+        if (sc && sc !== fe.ownerDocument.body) sc.scrollBy({ top: dy, behavior: 'instant' })
+        box = measure()
+        if (box.y + py < 0 || box.y + py > win.innerHeight)
+          win.scrollBy({ top: box.y + py - win.innerHeight / 2, behavior: 'instant' })
+        box = measure()
+      }
+    }
+    return { ...self, owner: box }
+  } catch {
+    return self
+  }
+}
+
+/**
+ * 바깥 문서에서: 주소가 url이고 안쪽 크기가 w×h인 액자 상자 (이 문서 화면 기준).
+ * 주소(전체 → 주소+경로 → 출처)와 크기로 점수를 매겨 하나로 정해지면 그 상자, 같은 점수가 여럿이면 ambiguous,
+ * 없으면 undefined. pick을 주면(본 액자가 알려 준 순번) 그 액자. py를 주면 그 자리가 보이게 굴린 뒤 잰다
+ */
+export function pageFrameBox(
+  url: string,
+  w: number,
+  h: number,
+  py = -1,
+  pick = -1,
+): { x: number; y: number; w: number; h: number } | { ambiguous: number } | undefined {
+  const frames = Array.from(document.querySelectorAll('iframe, frame')) as HTMLIFrameElement[]
+  const norm = (u: string, full: boolean) => {
     try {
       const x = new URL(u, location.href)
-      return `${x.origin}${x.pathname}`
+      return full ? `${x.origin}${x.pathname}` : x.origin
     } catch {
       return u
     }
   }
-  const want = norm(url)
-  const frames = Array.from(document.querySelectorAll('iframe, frame')) as HTMLIFrameElement[]
-  const hit = frames.find((f) => f.src === url) ?? frames.find((f) => norm(f.src) === want)
-  if (!hit) return undefined
-  const r = hit.getBoundingClientRect()
-  const cs = getComputedStyle(hit)
-  return {
-    x: r.left + hit.clientLeft + Number.parseFloat(cs.paddingLeft || '0'),
-    y: r.top + hit.clientTop + Number.parseFloat(cs.paddingTop || '0'),
+  const box = (f: HTMLIFrameElement) => {
+    const r = f.getBoundingClientRect()
+    const cs = getComputedStyle(f)
+    const pl = Number.parseFloat(cs.paddingLeft) || 0
+    const pt = Number.parseFloat(cs.paddingTop) || 0
+    return {
+      x: r.left + f.clientLeft + pl,
+      y: r.top + f.clientTop + pt,
+      w: f.clientWidth - pl - (Number.parseFloat(cs.paddingRight) || 0),
+      h: f.clientHeight - pt - (Number.parseFloat(cs.paddingBottom) || 0),
+    }
   }
+  const score = (f: HTMLIFrameElement) => {
+    const raw = f.getAttribute('src') ?? ''
+    const src = raw ? new URL(raw, location.href).href : ''
+    let s = 0
+    if (url === 'about:srcdoc') s = f.hasAttribute('srcdoc') ? 3 : 0
+    else if (url === 'about:blank' || url === '')
+      s = !f.hasAttribute('srcdoc') && (!src || src === 'about:blank') ? 2 : 0
+    else if (src === url) s = 4
+    else if (src && norm(src, true) === norm(url, true)) s = 3
+    else if (src && norm(src, false) === norm(url, false)) s = 2
+    // 액자 안에서 주소가 바뀌었으면(결제 단계 이동) src와 다르다: 크기로 맞춘다
+    const b = box(f)
+    if (w > 0 && h > 0 && Math.abs(b.w - w) <= 2 && Math.abs(b.h - h) <= 2) s += 2
+    return s
+  }
+  let hit: HTMLIFrameElement | undefined
+  if (pick >= 0) hit = frames[pick]
+  else {
+    const scored = frames.map((f) => ({ f, s: score(f) })).filter((x) => x.s >= 2)
+    const best = Math.max(0, ...scored.map((x) => x.s))
+    const top = scored.filter((x) => x.s === best)
+    if (top.length > 1) return { ambiguous: top.length }
+    hit = top[0]?.f
+  }
+  if (!hit) return undefined
+  let b = box(hit)
+  if (py >= 0 && (b.y + py < 0 || b.y + py > window.innerHeight)) {
+    let sc: Element | null = hit.parentElement
+    while (sc && sc !== document.body) {
+      const cs = getComputedStyle(sc)
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && sc.scrollHeight > sc.clientHeight + 1) break
+      sc = sc.parentElement
+    }
+    if (sc && sc !== document.body)
+      sc.scrollBy({ top: b.y + py - window.innerHeight / 2, behavior: 'instant' })
+    b = box(hit)
+    if (b.y + py < 0 || b.y + py > window.innerHeight)
+      window.scrollBy({ top: b.y + py - window.innerHeight / 2, behavior: 'instant' })
+    b = box(hit)
+  }
+  return b
+}
+
+/** 같은 모양 액자가 여럿일 때 가리기: 바깥 문서가 메시지를 기다렸다가, 보낸 창이 어느 액자인지 순번을 남긴다 */
+export function pageFrameProbeListen(token: string) {
+  const g = globalThis as unknown as { __dool2probe?: Record<string, number> }
+  g.__dool2probe ??= {}
+  const store = g.__dool2probe
+  const on = (e: MessageEvent) => {
+    const d = e.data as { __dool2probe?: string } | null
+    if (!d || typeof d !== 'object' || d.__dool2probe !== token) return
+    const frames = Array.from(document.querySelectorAll('iframe, frame')) as HTMLIFrameElement[]
+    store[token] = frames.findIndex((f) => f.contentWindow === e.source)
+    removeEventListener('message', on, true)
+  }
+  addEventListener('message', on, true)
+  setTimeout(() => removeEventListener('message', on, true), 3000)
+  return true
+}
+export function pageFrameProbeSend(token: string) {
+  parent.postMessage({ __dool2probe: token }, '*')
+  return true
+}
+export function pageFrameProbeRead(token: string): number {
+  const g = globalThis as unknown as { __dool2probe?: Record<string, number> }
+  const n = g.__dool2probe?.[token]
+  if (g.__dool2probe) delete g.__dool2probe[token]
+  return typeof n === 'number' ? n : -1
+}
+
+// ── 누름이 닿았는지 ──
+// 진짜 마우스 입력이 그 요소까지 왔는지를 페이지 안에서 직접 본다. 화면이 안 바뀌는 버튼(키패드 숫자)을
+// "안 눌렸다"고 보고 다시 눌러 두 번 들어가던 것을 막는다 (실측 쿠팡 결제 비밀번호 7자리)
+
+/** 누르기 직전에 건다: 사람 입력(isTrusted)으로 온 pointerdown·mousedown·click이 그 요소에 닿으면 남긴다 */
+export function pageHitArm(ref: string): boolean {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  type Hit = { hit: boolean; other: string; n: number; off: () => void }
+  const g = globalThis as unknown as { __dool2?: State; __dool2hit?: Hit }
+  g.__dool2hit?.off()
+  const el = g.__dool2?.refs.get(ref)?.deref()
+  if (!el) return false
+  const label = el instanceof HTMLInputElement ? Array.from(el.labels ?? []) : []
+  const box: Hit = { hit: false, other: '', n: 0, off: () => {} }
+  const on = (e: Event) => {
+    if (!e.isTrusted) return
+    box.n++
+    const path = e.composedPath()
+    if (path.includes(el) || label.some((l) => path.includes(l))) box.hit = true
+    else if (!box.other) {
+      const t = e.target as HTMLElement | null
+      box.other = ((t?.innerText || t?.tagName) ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)
+    }
+  }
+  const kinds = ['pointerdown', 'mousedown', 'click', 'touchstart']
+  for (const k of kinds) addEventListener(k, on, true)
+  box.off = () => {
+    for (const k of kinds) removeEventListener(k, on, true)
+  }
+  g.__dool2hit = box
+  return true
+}
+/** 걸어 둔 것을 읽고 뗀다. armed: 걸려 있었는지 (문서가 바뀌었으면 false) */
+export function pageHitRead(keep = false): { armed: boolean; hit: boolean; other?: string; n: number } {
+  type Hit = { hit: boolean; other: string; n: number; off: () => void }
+  const g = globalThis as unknown as { __dool2hit?: Hit }
+  const b = g.__dool2hit
+  if (!b) return { armed: false, hit: false, n: 0 }
+  if (!keep) {
+    b.off()
+    g.__dool2hit = undefined
+  }
+  return { armed: true, hit: b.hit, n: b.n, ...(b.other ? { other: b.other } : {}) }
+}
+
+// ── 무엇이 바뀌었나 (누른 뒤 다시 누를지·기다리기) ──
+
+/** 문서 바뀜 세기를 건다 (key마다 따로: 누르기와 기다리기가 서로 끄지 않게) */
+export function pageMutArm(key: string): boolean {
+  type Box = { n: number; added: number; removed: number; attrs: number; text: string; o: MutationObserver }
+  const g = globalThis as unknown as { __dool2mut?: Record<string, Box> }
+  g.__dool2mut ??= {}
+  g.__dool2mut[key]?.o.disconnect()
+  const mine = (n: Node | null) => {
+    // 두리 커서·표시 달기는 세지 않는다
+    for (let x: Node | null = n; x; x = x.parentNode)
+      if ((x as Element).tagName === 'DOOL2-CURSOR') return true
+    return false
+  }
+  const box: Box = {
+    n: 0,
+    added: 0,
+    removed: 0,
+    attrs: 0,
+    text: '',
+    o: new MutationObserver((list) => {
+      for (const m of list) {
+        if (mine(m.target) || m.attributeName === 'data-dool2-tap') continue
+        box.n++
+        if (m.type === 'attributes') box.attrs++
+        if (m.type === 'characterData' && box.text.length < 160)
+          box.text += ` ${(m.target as Text).data.replace(/\s+/g, ' ').trim().slice(0, 60)}`
+        box.removed += m.removedNodes.length
+        for (const a of Array.from(m.addedNodes)) {
+          box.added++
+          if (box.text.length < 160) {
+            const t = ((a as HTMLElement).innerText ?? a.textContent ?? '').replace(/\s+/g, ' ').trim()
+            if (t) box.text += ` ${t.slice(0, 80)}`
+          }
+        }
+      }
+    }),
+  }
+  box.o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+  g.__dool2mut[key] = box
+  return true
+}
+/** 센 것을 읽는다 (stop이면 끈다). 걸려 있지 않았으면 n: -1 */
+export function pageMutRead(
+  key: string,
+  stop = true,
+): { n: number; added: number; removed: number; attrs: number; text: string } {
+  type Box = { n: number; added: number; removed: number; attrs: number; text: string; o: MutationObserver }
+  const g = globalThis as unknown as { __dool2mut?: Record<string, Box> }
+  const b = g.__dool2mut?.[key]
+  if (!b) return { n: -1, added: 0, removed: 0, attrs: 0, text: '' }
+  if (stop) {
+    b.o.disconnect()
+    delete g.__dool2mut?.[key]
+  }
+  return { n: b.n, added: b.added, removed: b.removed, attrs: b.attrs, text: b.text.trim().slice(0, 160) }
+}
+
+// ── 스크롤 대상 ──
+
+/**
+ * 굴릴 상자: ref가 있으면 그 요소(또는 그것을 품은 굴러가는 상자), 없으면 문서.
+ * dir를 주면(가려진 창) 그 상자를 페이지 안에서 굴린다. 위치·끝까지 갔는지·휠을 굴릴 가운데 자리를 돌려준다
+ */
+export function pageScrollInfo(
+  ref: string | null,
+  dir = 0,
+): { ok: boolean; top: number; max: number; h: number; x: number; y: number; box: boolean; error?: string } {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const doc = (document.scrollingElement ?? document.documentElement) as HTMLElement
+  let sc: HTMLElement = doc
+  if (ref) {
+    const el = st?.refs.get(ref)?.deref()
+    if (!el)
+      return { ok: false, top: 0, max: 0, h: 0, x: 0, y: 0, box: false, error: `${ref}를 찾을 수 없어요` }
+    for (let e: Element | null = el; e && e !== document.body && e !== document.documentElement; ) {
+      const cs = getComputedStyle(e)
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1) {
+        sc = e as HTMLElement
+        break
+      }
+      e = e.parentElement ?? ((e.getRootNode() as ShadowRoot).host || null)
+    }
+  }
+  const isDoc = sc === doc
+  if (dir) {
+    const by = dir * Math.round((isDoc ? window.innerHeight : sc.clientHeight) * 0.8)
+    if (isDoc) window.scrollBy({ top: by, behavior: 'instant' })
+    else sc.scrollBy({ top: by, behavior: 'instant' })
+  }
+  const r = isDoc ? new DOMRect(0, 0, window.innerWidth, window.innerHeight) : sc.getBoundingClientRect()
+  const top = Math.round(isDoc ? window.scrollY : sc.scrollTop)
+  const max = Math.max(
+    0,
+    Math.round(isDoc ? doc.scrollHeight - window.innerHeight : sc.scrollHeight - sc.clientHeight),
+  )
+  const cx = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1)
+  const cy = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1)
+  return { ok: true, top, max, h: isDoc ? window.innerHeight : sc.clientHeight, x: cx, y: cy, box: !isDoc }
+}
+
+// ── 요소 사진 ──
+
+/** 찍을 요소를 보이게 굴린 뒤 상자와 상태 (missing: 없음, zeroSize: 크기 0, offscreen: 굴려도 화면 밖) */
+export function pageShotRect(ref: string): {
+  status: 'ok' | 'missing' | 'zeroSize' | 'offscreen'
+  x: number
+  y: number
+  w: number
+  h: number
+} {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!el?.isConnected) return { status: 'missing', x: 0, y: 0, w: 0, h: 0 }
+  let r = el.getBoundingClientRect()
+  if (r.width <= 2 || r.height <= 2)
+    return { status: 'zeroSize', x: r.left, y: r.top, w: r.width, h: r.height }
+  const off = () => r.top < 0 || r.left < 0 || r.bottom > window.innerHeight || r.right > window.innerWidth
+  if (off()) {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    r = el.getBoundingClientRect()
+  }
+  return { status: off() ? 'offscreen' : 'ok', x: r.left, y: r.top, w: r.width, h: r.height }
+}
+
+// ── 막힌 새 창 (팝업 차단) ──
+// 결제 창은 누른 뒤 서버에 다녀와 window.open으로 뜨는데, 그때는 사람이 누른 순간이 아니라 Chrome이 막는다
+// (실측 11-20 G마켓 카드 결제: 화면만 하얗게 남았다). 두리 탭에서만, 페이지 공간(MAIN)에서 window.open을 지켜본다.
+// 열기를 대신하거나 막지 않는다: 부른 주소·때·돌려받은 창이 없었는지만 남기고, 확장이 새 탭이 실제로 열렸는지 견준다
+
+/** 페이지 공간(MAIN)에서 돈다: window.open 부름을 남긴다 (한 문서에 한 번만) */
+export function pageHookOpen(): boolean {
+  const w = window as unknown as {
+    open: typeof window.open
+    __dool2opens?: { url: string; at: number; none: boolean }[]
+  }
+  if (w.__dool2opens) return false
+  const log: { url: string; at: number; none: boolean }[] = []
+  // 열거되지 않게 (페이지가 window를 훑어도 잘 안 보이게)
+  Object.defineProperty(w, '__dool2opens', { value: log, enumerable: false })
+  const orig = w.open
+  // 원래 함수를 감싼 Proxy: 이름·인자 수·this가 그대로다
+  w.open = new Proxy(orig, {
+    apply(target, self, args: unknown[]) {
+      const r = Reflect.apply(target, self, args) as Window | null
+      try {
+        let url = String(args[0] ?? '')
+        try {
+          url = url ? new URL(url, location.href).href : ''
+        } catch {}
+        log.push({ url: url.slice(0, 300), at: Date.now(), none: r === null })
+        if (log.length > 10) log.shift()
+      } catch {}
+      return r
+    },
+  })
+  return true
+}
+/** 페이지 공간(MAIN): 남긴 window.open 부름을 가져가고 비운다 */
+export function pageReadOpens(): { url: string; at: number; none: boolean }[] {
+  const w = window as unknown as { __dool2opens?: { url: string; at: number; none: boolean }[] }
+  const log = w.__dool2opens ?? []
+  return log.splice(0, log.length)
 }
