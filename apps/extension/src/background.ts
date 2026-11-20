@@ -720,15 +720,34 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
  * 1×1로 화면을 찍으면 한 장을 그린다. 창을 앞으로 끌어오지 않으니 맥을 쓰는 사람을 방해하지 않는다
  */
 async function paint(tabId: number) {
-  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다
+  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다.
+  // 찍는 자리는 지금 보이는 곳의 왼쪽 위 (clip은 문서 기준이라 0,0이면 굴린 페이지에서 화면 밖이다. 화면 밖을 찍으면
+  // Chrome이 화면을 잠깐 옮겨 그리고, 그 뒤 다른 사이트 액자의 누르는 자리가 굴린 만큼 어긋났다 — 주소 찾기 버튼이 안 눌림)
   await Promise.race([
-    cdp(tabId, 'Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 10,
-      clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 },
-    }).catch(() => {}),
+    (async () => {
+      const o = await scrollOffset(tabId, 'visual')
+      await cdp(tabId, 'Page.captureScreenshot', {
+        format: 'jpeg',
+        quality: 10,
+        clip: { x: o.x, y: o.y, width: 1, height: 1, scale: 1 },
+      })
+    })().catch(() => {}),
     sleep(1500),
   ])
+}
+
+/**
+ * Page.captureScreenshot의 clip은 문서 기준(굴린 만큼 더한 자리)이다. 화면 기준 자리(getBoundingClientRect)를 찍으려면
+ * 굴린 만큼을 더해야 한다. 예전에는 화면 기준 그대로 넣어, 굴린 페이지에서 엉뚱한 곳(위쪽)이 찍혔다.
+ * layout: 요소 상자(레이아웃 화면 기준), visual: 사람이 보는 화면 기준(확대해 본 폰 화면)
+ */
+async function scrollOffset(tabId: number, kind: 'layout' | 'visual'): Promise<{ x: number; y: number }> {
+  type V = { pageX: number; pageY: number }
+  const m = await cdp<{ cssLayoutViewport?: V; cssVisualViewport?: V }>(tabId, 'Page.getLayoutMetrics').catch(
+    () => undefined,
+  )
+  const v = kind === 'layout' ? m?.cssLayoutViewport : m?.cssVisualViewport
+  return { x: v?.pageX ?? 0, y: v?.pageY ?? 0 }
 }
 
 /** 원격 '필요한 칸만'을 액자 안에서 뽑은 탭: 그 액자 (채울 때 그쪽으로 보낸다) */
@@ -1109,6 +1128,10 @@ function showCursor(tabId: number, x: number, y: number, label: string) {
 /** label: 두리가 하는 일이면 커서를 보여 주고 마우스를 옮겨 간다. 없으면(사람이 원격으로 누름) 그 자리로 바로 */
 async function clickAt(tabId: number, x: number, y: number, label?: string) {
   const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
+  // 한 장 그리기는 마우스를 옮기기 전에 한다: 찍은 바로 뒤(수십 ms 안)의 누르기는 다른 사이트 액자(OOPIF)에 닿지 않고
+  // 버려졌다 (실측: 시험 가게 배송지 액자 속 [우편번호 찾기]가 마우스로는 안 눌림, 찍은 뒤 50ms만 지나도 닿음)
+  await paint(tabId)
+  await sleep(50)
   if (label) {
     await showCursor(tabId, x, y, label)
     await moveMouse(tabId, x, y)
@@ -1126,7 +1149,6 @@ async function clickAt(tabId: number, x: number, y: number, label?: string) {
     ])
     pointer.set(tabId, { x, y })
   }
-  await paint(tabId)
   await releaseIfPressed(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   stillPressed.add(tabId)
@@ -1879,10 +1901,24 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
         await settle(tabId, before)
       }
+      // 누른 뒤 창이 스스로 닫혔다 (결제 창의 마지막 비밀번호 숫자: 결제가 끝나면 결제 회사 창이 닫힌다).
+      // 눌린 것이니 오류('탭이 닫혔어요')로 돌려주지 않는다 — 예전에는 결제가 된 뒤에 '못 눌렀다'로 알렸다
+      const closed = {
+        tabId,
+        url: before ?? '',
+        title: '',
+        closed: true,
+        via,
+        delivered: true,
+        point: { x: Math.round(at.x), y: Math.round(at.y) },
+      }
+      if (!(await chrome.tabs.get(tabId).catch(() => undefined))) return closed
       if (tall) await restoreHeight(tabId)
       const blocked = await blockedPopups(tabId).catch(() => [])
+      const now = await pageState(tabId).catch(() => undefined)
+      if (!now) return closed
       return {
-        ...(await pageState(tabId)),
+        ...now,
         via,
         delivered,
         // 누른 자리 (페이지 화면 기준, 액자 안이면 겹친 액자 상자를 모두 더한 자리)
@@ -2213,30 +2249,42 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const off = p.y < 0 || p.x < 0 || p.y + r.h > v.height + 1 || p.x + r.w > v.width + 1
         return { status: off ? 'offscreen' : 'ok', x: p.x, y: p.y, w: r.w, h: r.h }
       }
+      // 먼저 모두 잰다. 화면 아래로 잘린 것이 있으면 가장 아래 것까지 보이게 한 번만 늘리고 다시 잰다
+      // (예전에는 처음 잘린 버튼 높이까지만 늘려, 그 아래 줄 키패드 버튼은 여전히 화면 밖이라 못 찍었다 — 실측 결제 창 키패드)
+      const fids = new Map<string, number>()
+      const plan = new Map<string, Shot>()
       for (const ref of refs) {
-        let fid = 0
         try {
-          fid = frameOf(tabId, ref).frameId
+          fids.set(ref, frameOf(tabId, ref).frameId)
         } catch {
-          status.push({ ref, status: 'missing' })
           continue
         }
-        let m = await measure(ref, fid)
-        if (m.status === 'offscreen' && !tall && m.y + m.h > v.height) {
-          tall = await tallerIfBelow(tabId, m.y + m.h).catch(() => false)
-          if (tall) {
-            v = await inPage(tabId, pageViewport)
-            m = await measure(ref, fid)
-          }
+        plan.set(ref, await measure(ref, fids.get(ref) ?? 0))
+      }
+      const below = [...plan.values()].filter((m) => m.status === 'offscreen' && m.y + m.h > v.height)
+      if (below.length) {
+        tall = await tallerIfBelow(tabId, Math.max(...below.map((m) => m.y + m.h))).catch(() => false)
+        if (tall) {
+          v = await inPage(tabId, pageViewport)
+          for (const ref of plan.keys()) plan.set(ref, await measure(ref, fids.get(ref) ?? 0))
+        }
+      }
+      for (const ref of refs) {
+        const m = plan.get(ref)
+        if (!m) {
+          status.push({ ref, status: 'missing' })
+          continue
         }
         if (m.status !== 'ok') {
           status.push({ ref, status: m.status })
           continue
         }
+        // clip은 문서 기준: 굴린 만큼 더한다 (scrollOffset)
+        const o = await scrollOffset(tabId, 'layout')
         const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
           format: 'jpeg',
           quality: 85,
-          clip: { x: Math.max(0, m.x), y: Math.max(0, m.y), width: m.w, height: m.h, scale: 2 },
+          clip: { x: Math.max(0, m.x) + o.x, y: Math.max(0, m.y) + o.y, width: m.w, height: m.h, scale: 2 },
         }).catch(() => undefined)
         status.push({ ref, status: shot ? 'ok' : 'offscreen' })
         // rect: 보이는 화면 기준 자리 (그림 눌러 풀기에서 폰이 누른 곳을 화면 좌표로 바꾼다)
@@ -2246,6 +2294,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const boxes = (Array.isArray(a.boxes) ? a.boxes : []).slice(0, 4) as Record<string, unknown>[]
       if (boxes.length) {
         const v = await inPage(tabId, pageViewport)
+        const o = await scrollOffset(tabId, 'layout')
         for (const [i, b] of boxes.entries()) {
           const x = Math.max(0, Math.min(1000, Number(b.x) || 0))
           const y = Math.max(0, Math.min(1000, Number(b.y) || 0))
@@ -2260,13 +2309,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
             format: 'jpeg',
             quality: 85,
-            clip: { x: r.x, y: r.y, width: r.w, height: r.h, scale: 2 },
+            clip: { x: r.x + o.x, y: r.y + o.y, width: r.w, height: r.h, scale: 2 },
           }).catch(() => undefined)
           if (shot) shots.push({ ref: `box${i + 1}`, data: shot.data, rect: r })
         }
       }
       if (tall) await restoreHeight(tabId)
-      return { shots, status }
+      // taller: 화면 아래로 잘려 높이를 잠깐 늘려 찍었다 (다시 읽을 때 자리가 원래대로라는 것을 알린다)
+      return { shots, status, ...(tall ? { taller: true } : {}) }
     }
     case 'captcha-candidates': {
       // 보안문자 칸 둘레를 몇 장 잘라 돌려준다. 어느 그림이 보안문자인지는 AI가 보고 고른다
@@ -2283,6 +2333,10 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }[]
       const off = await framePoint(tabId, f.frameId, 0, 0, false)
       await sleep(250)
+      // clip은 문서 기준: 굴린 만큼 더한다
+      const o = await scrollOffset(tabId, 'layout')
+      off.x += o.x
+      off.y += o.y
       const shots: { what: string; data: string }[] = []
       for (const r of rects) {
         const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
@@ -2334,6 +2388,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 폰 크기로 그리는 중이면(view·fit) 화면에 보이는 그대로 찍는다 (넓은 페이지는 폰처럼 줄어 보인다).
       // 그때 누르는 자리는 보이는 화면 기준이라 viewport도 그 크기로 알려 준다
       const phone = Boolean(a.remote) && (phoneView.has(tabId) || emulated.has(tabId))
+      // clip은 문서 기준: 지금 보이는 곳을 찍으려면 굴린 만큼 더한다 (예전엔 0,0이라 굴린 페이지의 위쪽이 찍혔다)
+      const o = phone ? { x: 0, y: 0 } : await scrollOffset(tabId, 'layout')
       const shot = phone
         ? await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
             format: 'jpeg',
@@ -2344,7 +2400,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             format: 'jpeg',
             quality,
             optimizeForSpeed: true,
-            clip: { x: 0, y: 0, width: v.width, height: v.height, scale },
+            clip: { x: o.x, y: o.y, width: v.width, height: v.height, scale },
           })
       const shown = phone
         ? { width: Math.round(v.vv.w * v.vv.scale), height: Math.round(v.vv.h * v.vv.scale) }

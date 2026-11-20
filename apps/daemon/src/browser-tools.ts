@@ -2489,6 +2489,25 @@ export class BrowserTools {
   isPaying(tabId: number): boolean {
     return this.paySession(tabId) !== undefined
   }
+  /**
+   * 폰 보안 키패드로 받은 비밀번호대로 짚어 둔 화면 키패드 버튼을 차례로 누른다 (값은 남기지 않는다). 다 눌렀으면 true.
+   * force: 누를 때마다 키패드 위 '●○○○○○ (1/6자리)'가 바뀌어 둘레 글 검사(목록 칸 재활용 막기)가 둘째 숫자부터
+   * 막았다 (시험 가게 결제 창). 키패드는 AI가 방금 짚은 것이고, 자리가 다시 섞였는지는 누른 뒤 AI가 화면으로 판단한다.
+   * once: 화면이 안 바뀌는 숫자 버튼을 '안 눌렸다'고 보고 다시 누르면 숫자가 두 번 들어간다
+   */
+  async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
+    for (const d of pin) {
+      const ref = keys[d]
+      if (!ref) return false
+      const ok = await this.browser.call('click', { tabId, ref, once: true, force: true }, 15_000).then(
+        () => true,
+        () => false,
+      )
+      if (!ok) return false
+      await new Promise((res) => setTimeout(res, 250))
+    }
+    return true
+  }
   /** 결제가 끝났다(주문 완료 화면을 확인했다): 그 탭의 결제 묶음을 닫는다 */
   donePaying(tabId: number) {
     const x = this.paySession(tabId)

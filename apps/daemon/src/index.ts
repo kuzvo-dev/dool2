@@ -1817,23 +1817,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void answer.then(async (pin) => {
       if (!pin) return
       sayNow('비밀번호 받았어요. 이제 화면 키패드를 차례로 누를게요.')
-      let ok = true
-      for (const d of pin) {
-        const ref = keys[d]
-        if (!ref) {
-          ok = false
-          break
-        }
-        const r = await browser.call('click', { tabId, ref, once: true }, 15_000).then(
-          () => true,
-          () => false,
-        )
-        if (!r) {
-          ok = false
-          break
-        }
-        await new Promise((res) => setTimeout(res, 250))
-      }
+      const ok = await browserTools.pressPin(tabId, keys, pin)
       journal.write('pin-typed', { host, ok })
       if (!threadId) return
       followUp(

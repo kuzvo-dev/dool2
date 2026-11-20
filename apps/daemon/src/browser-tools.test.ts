@@ -156,6 +156,18 @@ describe('브라우저 도구 실행', () => {
     expect(b.calls.map((c) => c[0])).toContain('click')
   })
 
+  it('폰 키패드로 받은 비밀번호대로 화면 키패드를 한 번씩·둘레 글 검사 없이 누른다', async () => {
+    // 누를 때마다 '●○○○○○ (1/6자리)'가 바뀌어 둘레 글 검사가 둘째 숫자부터 막았다 (시험 가게 결제 창)
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    const keys = { '1': 'e11', '2': 'e12', '3': 'e13' }
+    expect(await tools.pressPin(3, keys, '312')).toBe(true)
+    const clicks = b.calls.filter((c) => c[0] === 'click').map((c) => c[1])
+    expect(clicks).toEqual(['e13', 'e11', 'e12'].map((ref) => ({ tabId: 3, ref, once: true, force: true })))
+    // 짚지 않은 숫자가 있으면 거기서 멈춘다
+    expect(await tools.pressPin(3, keys, '19')).toBe(false)
+  })
+
   it('읽지 않은 표시는 누르지 않는다', async () => {
     const tools = new BrowserTools(fakeBrowser())
     const r = await tools.run('click', { tabId: 3, ref: 'e2' })
