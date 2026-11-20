@@ -96,6 +96,29 @@ export class Vault {
     return e ? { id: e.id, username: e.username, password: e.password } : undefined
   }
 
+  /**
+   * 사용자가 화면(폰·PC)에서 볼 때만: 비밀번호 하나 (ADR 0026). AI 도구·기록으로는 나가지 않는다.
+   * 폰은 기기 잠금 확인 뒤에 부탁하고, 본체는 일한 기록에 사이트만 남긴다
+   */
+  async reveal(id: string): Promise<{ origin: string; username: string; password: string } | undefined> {
+    const e = (await this.load()).find((x) => x.id === id)
+    return e ? { origin: e.origin, username: e.username, password: e.password } : undefined
+  }
+
+  /** 사용자가 고친다: 아이디·비밀번호 (빈 값은 그대로 둔다) */
+  async update(id: string, patch: { username?: string; password?: string }): Promise<VaultEntry | undefined> {
+    const list = await this.load()
+    const e = list.find((x) => x.id === id)
+    if (!e) return undefined
+    const username = patch.username?.trim()
+    if (username) e.username = username.slice(0, 200)
+    if (patch.password) e.password = patch.password.slice(0, 200)
+    // 고친 항목을 맨 뒤로: 같은 사이트에 여러 개면 findForOrigin이 이것을 쓴다
+    await this.save([...list.filter((x) => x !== e), e])
+    const { password: _p, ...view } = e
+    return view
+  }
+
   /** 두리가 만든 새 비밀번호를 저장한다 (가입·비번 변경). origin은 이미 origin 형태 */
   async savePassword(origin: string, username: string, password: string) {
     await this.add({ url: origin, username, password })

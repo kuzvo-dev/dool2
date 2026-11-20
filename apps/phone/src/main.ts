@@ -23,7 +23,7 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
-import { AUTH_APPS, CARRIERS, SIDE_THREAD_PEEK } from '@dool2/protocol'
+import { AUTH_APPS, CARRIERS, SIDE_THREAD_PEEK, type VaultEntry } from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -117,7 +117,15 @@ import {
   tick,
 } from './motion.js'
 import { rollNumbers, swipeDeck } from './motion-cards.js'
-import { defaultRelay, inviteFrom, isNative, launchInvite, listenNative, scanQr } from './native.js'
+import {
+  confirmDevice,
+  defaultRelay,
+  inviteFrom,
+  isNative,
+  launchInvite,
+  listenNative,
+  scanQr,
+} from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
 
@@ -151,6 +159,8 @@ type Overlay =
   | { kind: 'report' }
   /** 설정 > 내 정보: 가린 값 보기·고치기·지우기 */
   | { kind: 'profile' }
+  /** 설정 > 금고: 저장된 로그인 보기(폰 잠금 확인 뒤)·고치기·지우기 (ADR 0026) */
+  | { kind: 'vault' }
   /** 설정 > 결제 수단: 내 결제 수단 목록(맨 위가 주 결제 수단)·추가 (ADR 0023) */
   | { kind: 'pay' }
   | { kind: 'pay-add' }
@@ -194,6 +204,12 @@ const st: {
     /** 내 결제 수단 (예전 PC면 undefined: 등록 기능을 숨긴다) */
     payMethods?: PayMethod[]
   }
+  /** 설정 > 금고 목록 (비밀번호 없음) */
+  vault?: (VaultEntry & { name?: string })[]
+  /** 잠깐 보이는 비밀번호 (30초 뒤·시트를 닫으면 지운다) */
+  vaultShown?: { id: string; username: string; password: string }
+  /** 고치는 중인 항목 */
+  vaultEdit?: string
   /** 결제 수단 추가 시트에 쓰는 중인 것 */
   payDraft: { kind?: PayKind; inner: string; issuer: string; nickname: string; last4: string }
   logins: Map<string, LoginRequestView>
@@ -497,6 +513,22 @@ async function receive(env: Envelope) {
     case 'thumb':
       gotThumb(msg.url, msg.data)
       break
+    case 'vault':
+      st.vault = msg.entries
+      st.vaultEdit = undefined
+      if (msg.message) toast(msg.message)
+      break
+    case 'vault-secret': {
+      st.vaultShown = { id: msg.id, username: msg.username, password: msg.password }
+      const id = msg.id
+      setTimeout(() => {
+        if (st.vaultShown?.id === id) {
+          st.vaultShown = undefined
+          render()
+        }
+      }, 30_000)
+      break
+    }
     case 'profile':
       st.profile = {
         have: msg.have,
@@ -2193,6 +2225,8 @@ function shortPc(name?: string) {
 
 function openOverlay(o: Overlay) {
   mark(o ? `열기 ${o.kind}` : '닫기')
+  // 금고 시트를 닫으면 보여 준 비밀번호를 바로 지운다
+  if (o?.kind !== 'vault') st.vaultShown = undefined
   st.overlay = o
   render()
 }
@@ -3913,13 +3947,15 @@ function renderOverlay() {
                       ? infoSheet(ov.id)
                       : ov.kind === 'profile'
                         ? profileSheet()
-                        : ov.kind === 'pay'
-                          ? paySheet()
-                          : ov.kind === 'pay-add'
-                            ? payAddSheet()
-                            : ov.kind === 'report'
-                              ? reportSheet()
-                              : loginSheet(ov.id)
+                        : ov.kind === 'vault'
+                          ? vaultSheet()
+                          : ov.kind === 'pay'
+                            ? paySheet()
+                            : ov.kind === 'pay-add'
+                              ? payAddSheet()
+                              : ov.kind === 'report'
+                                ? reportSheet()
+                                : loginSheet(ov.id)
   // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
   // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
   const drawn = body.outerHTML
@@ -4135,6 +4171,16 @@ function settingsView() {
       icon('chevron'),
       () => setTab('connect'),
     ),
+    row(
+      'lock',
+      '금고',
+      '저장된 아이디·비밀번호 보기·고치기 · 볼 때마다 폰 잠금 확인',
+      icon('chevron'),
+      () => {
+        void send({ kind: 'vault-get' })
+        openOverlay({ kind: 'vault' })
+      },
+    ),
     row('hand', '문제 알리기', '방금 이상했던 일을 내 PC에 남겨요 · 7일 뒤 지워져요', icon('chevron'), () =>
       openOverlay({ kind: 'report' }),
     ),
@@ -4313,6 +4359,128 @@ function profileSheet() {
         openOverlay(undefined)
       },
     }),
+  )
+  return sheet
+}
+
+/**
+ * 설정 > 금고 (ADR 0026): 저장된 로그인 목록. [보기]는 폰 잠금(지문·얼굴·PIN)을 확인한 뒤 PC에 부탁하고 30초만 보여 준다.
+ * [고치기]는 아이디·비밀번호를 바꾼다(빈 칸은 그대로). 두리(AI)에게는 비밀번호가 가지 않는다
+ */
+function vaultSheet() {
+  const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
+  sheet.append(
+    h(
+      'div',
+      { class: 'approve-head' },
+      h(
+        'div',
+        {},
+        h('strong', { class: 'title-2', text: '금고' }),
+        h('span', { class: 'meta', text: '두리가 로그인할 때 쓰는 아이디·비밀번호예요' }),
+      ),
+    ),
+  )
+  const list = st.vault
+  if (!list) {
+    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    return sheet
+  }
+  if (!list.length) sheet.append(h('p', { class: 'meta', text: '아직 저장된 로그인이 없어요.' }))
+  const site = (o: string) => {
+    try {
+      return new URL(o).hostname.replace(/^www\./, '')
+    } catch {
+      return o
+    }
+  }
+  for (const e of list) {
+    const shown = st.vaultShown?.id === e.id ? st.vaultShown : undefined
+    const view = h('button', {
+      class: 'btn-ghost sm',
+      text: shown ? '숨기기' : '보기',
+      onclick: async () => {
+        if (shown) {
+          st.vaultShown = undefined
+          render()
+          return
+        }
+        const ok = await confirmDevice(
+          '비밀번호 보기',
+          `${e.name ?? site(e.origin)} 비밀번호를 보려면 확인해 주세요`,
+        )
+        if (ok === 'ok') void send({ kind: 'vault-reveal', id: e.id })
+        else if (ok === 'no-lock') toast('폰에 화면 잠금(지문·PIN)을 설정하면 볼 수 있어요')
+        else if (ok === 'web') toast('두리 앱에서만 볼 수 있어요')
+      },
+    })
+    const edit = h('button', {
+      class: 'btn-ghost sm',
+      text: '고치기',
+      onclick: () => {
+        st.vaultEdit = st.vaultEdit === e.id ? undefined : e.id
+        render()
+      },
+    })
+    const del = h('button', {
+      class: 'btn-text',
+      text: '지우기',
+      onclick: () => {
+        if (
+          !confirm(
+            `${e.name ?? site(e.origin)} 로그인을 금고에서 지울까요? 다음에 로그인할 때 다시 물어봐요.`,
+          )
+        )
+          return
+        void send({ kind: 'vault-delete', id: e.id })
+      },
+    })
+    const card = h(
+      'div',
+      { class: 'vault-row' },
+      h(
+        'div',
+        { class: 'row-text' },
+        h('strong', { class: 'row-t', text: e.name ?? site(e.origin) }),
+        h('span', { class: 'row-d', text: `${shown?.username ?? e.username} · ${site(e.origin)}` }),
+        shown
+          ? h('code', { class: 'vault-pw', text: shown.password })
+          : h('span', { class: 'row-d', text: '••••••••' }),
+      ),
+      h('div', { class: 'vault-acts' }, view, edit, del),
+    )
+    if (st.vaultEdit === e.id) {
+      const user = h('input', { class: 'field' }) as HTMLInputElement
+      user.placeholder = `아이디 (${e.username})`
+      user.autocomplete = 'off'
+      const pw = h('input', { class: 'field' }) as HTMLInputElement
+      pw.type = 'password'
+      pw.placeholder = '새 비밀번호 (바꿀 때만)'
+      pw.autocomplete = 'new-password'
+      const save = h('button', { class: 'btn sm', text: '저장' })
+      save.type = 'submit'
+      const form = h('form', { class: 'cred-form' }, user, pw, save)
+      form.onsubmit = (ev) => {
+        ev.preventDefault()
+        if (!user.value.trim() && !pw.value) return
+        void send({
+          kind: 'vault-set',
+          id: e.id,
+          ...(user.value.trim() ? { username: user.value.trim() } : {}),
+          ...(pw.value ? { password: pw.value } : {}),
+        })
+      }
+      card.append(form)
+    }
+    sheet.append(card)
+  }
+  sheet.append(
+    h(
+      'p',
+      { class: 'lock-note' },
+      icon('lock'),
+      '비밀번호는 이 PC 금고에만 있어요. 볼 때마다 폰 잠금을 확인하고 30초 뒤 가려요. 두리(AI)에게는 가지 않아요.',
+    ),
   )
   return sheet
 }

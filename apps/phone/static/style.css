@@ -3671,3 +3671,29 @@ textarea.ghosting {
   margin: 10px 0;
   background: #fff;
 }
+
+/* 설정 > 금고 (ADR 0026) */
+.vault-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+.vault-row .row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vault-acts {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.vault-pw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  word-break: break-all;
+  user-select: all;
+}

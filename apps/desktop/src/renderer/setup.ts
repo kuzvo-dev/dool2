@@ -184,6 +184,10 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     password: string
     saving: boolean
     error?: string
+    /** 잠깐 보이는 비밀번호 (30초 뒤 가린다, ADR 0026) */
+    shown?: { id: string; password: string }
+    /** 고치는 중인 항목 */
+    editing?: string
   } = { entries: [], adding: false, url: '', username: '', password: '', saving: false }
   const installs: Record<InstallKind, InstallStatus> = {
     claude: { state: 'idle' },
@@ -1112,7 +1116,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
         el(
           'p',
           'setup-hint',
-          '저장해 둔 사이트는 로그인이 풀려도 두리가 대신 채워요. AI는 비밀번호를 볼 수 없고, 두리가 주소를 확인한 뒤 직접 넣어요.',
+          '저장해 둔 사이트는 로그인이 풀려도 두리가 대신 채워요. AI는 비밀번호를 볼 수 없고, 두리가 주소를 확인한 뒤 직접 넣어요. 비밀번호는 여기와 폰(잠금 확인 뒤)에서만 볼 수 있어요.',
         ),
       )
       if (vault.entries.length) {
@@ -1128,8 +1132,36 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             ? `마지막 사용 ${new Date(e.lastUsedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
             : '아직 안 썼어요'
           text.append(el('strong', undefined, host), el('span', undefined, `${e.username} · ${used}`))
+          if (vault.shown?.id === e.id) text.append(el('code', 'vault-pw', vault.shown.password))
+          // 보기·고치기 (ADR 0026): 사용자 화면에서만. 30초 뒤 가린다
+          const shown = vault.shown?.id === e.id
           li.append(
             text,
+            button('btn-link', shown ? '숨기기' : '보기', async () => {
+              if (shown) {
+                vault.shown = undefined
+                render()
+                return
+              }
+              const r = await opts
+                .api<{ password: string }>(`/api/vault/${encodeURIComponent(e.id)}/reveal`, {
+                  method: 'POST',
+                })
+                .catch(() => undefined)
+              if (!r) return
+              vault.shown = { id: e.id, password: r.password }
+              render()
+              setTimeout(() => {
+                if (vault.shown?.id === e.id) {
+                  vault.shown = undefined
+                  render()
+                }
+              }, 30_000)
+            }),
+            button('btn-link', '고치기', () => {
+              vault.editing = vault.editing === e.id ? undefined : e.id
+              render()
+            }),
             button('btn-link', '지우기', async () => {
               await opts.api(`/api/vault/${encodeURIComponent(e.id)}`, { method: 'DELETE' }).catch(() => {})
               await loadVault()
@@ -1137,6 +1169,37 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
             }),
           )
           list.append(li)
+          if (vault.editing === e.id) {
+            const f = el('form', 'key-form')
+            const u = el('input')
+            u.placeholder = `아이디 (${e.username})`
+            u.autocomplete = 'off'
+            const pw = el('input')
+            pw.type = 'password'
+            pw.placeholder = '새 비밀번호 (바꿀 때만)'
+            pw.autocomplete = 'new-password'
+            const save = el('button', 'btn-small', '저장')
+            save.type = 'submit'
+            f.append(u, pw, save)
+            f.onsubmit = async (ev) => {
+              ev.preventDefault()
+              if (!u.value.trim() && !pw.value) return
+              await opts
+                .api(`/api/vault/${encodeURIComponent(e.id)}`, {
+                  method: 'PUT',
+                  body: JSON.stringify({
+                    ...(u.value.trim() ? { username: u.value.trim() } : {}),
+                    ...(pw.value ? { password: pw.value } : {}),
+                  }),
+                })
+                .catch(() => {})
+              vault.editing = undefined
+              vault.shown = undefined
+              await loadVault()
+              render()
+            }
+            list.append(f)
+          }
         }
         box.append(list)
       }
