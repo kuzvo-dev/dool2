@@ -35,7 +35,11 @@ describe('위험한 동작 가리기', () => {
     expect(classifyRisk('버튼 예약 확정', 'https://x')?.kind).toBe('money')
     expect(classifyRisk('버튼 Place order', 'https://x')?.kind).toBe('money')
     expect(classifyRisk('버튼 보내기', 'https://x')?.kind).toBe('contact')
-    expect(classifyRisk('버튼 등록', 'https://x')?.kind).toBe('contact')
+    // 맡긴 일인 리뷰·글 올리기·등록은 승인 없이 (11-20), 판매자 문의는 사람에게 보내는 말이라 승인
+    expect(classifyRisk('버튼 등록', 'https://x')).toBeUndefined()
+    expect(classifyRisk('버튼 리뷰 등록', 'https://x')).toBeUndefined()
+    expect(classifyRisk('버튼 올리기', 'https://x')).toBeUndefined()
+    expect(classifyRisk('버튼 문의하기', 'https://x')?.kind).toBe('contact')
     // 신청서·응모 양식을 내는 것도 보내기 (실측: 공공기관 퀴즈 응모가 승인 없이 제출됐다, 11-20)
     expect(classifyRisk('버튼 제출', 'https://form.naver.com/x')?.kind).toBe('contact')
     expect(classifyRisk('버튼 응모하기', 'https://x')?.kind).toBe('contact')
@@ -385,9 +389,9 @@ describe('여러 개 한 번에 승인', () => {
     expect(ok.message).toContain('남은 1개')
     await tools.run('read', { tabId: 3 })
     expect((await tools.run('click', { tabId: 3, ref: 'e6' })).isError).toBeFalsy()
-    // 다 썼으면 다시 묻는다
+    // 한 번 승인받은 사이트는 30분 동안 같은 종류를 다시 묻지 않는다 (사이트마다 한 번)
     await tools.run('read', { tabId: 3 })
-    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBe(true)
+    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBeFalsy()
   }, 30_000)
 })
 

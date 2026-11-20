@@ -60,7 +60,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'PC에 새 파일 만들기',
       description:
-        '사용자 PC에 새 파일을 만든다(기본 바탕화면). 정리한 글은 md·txt·html, 표는 xlsx(엑셀) 또는 csv로 rows에 줄마다 칸 배열을 준다. ' +
+        '사용자 PC에 새 파일을 만든다. 기본은 두리 폴더(문서/두리)이고 보관함의 사진·파일에도 올라가 폰에서도 보인다. 사용자가 바탕화면·다운로드를 말할 때만 folder를 준다. 그림·포스터·초대장처럼 볼 것은 html(SVG 포함)로 만든다. 정리한 글은 md·txt·html, 표는 xlsx(엑셀) 또는 csv로 rows에 줄마다 칸 배열을 준다. ' +
         '같은 이름이 있으면 "이름 (2)"로 만들고 덮어쓰지 않는다. 만든 뒤 경로를 사용자에게 알려 준다. 사용자가 원하지 않은 파일은 만들지 않는다.',
       inputSchema: {
         name: z.string().max(80).describe('파일 이름 (확장자 없이, 예: "11월 정산")'),

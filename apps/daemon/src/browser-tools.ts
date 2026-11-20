@@ -79,8 +79,9 @@ const RISK_WORDS: [RiskKind, RegExp][] = [
     /결제|구매|주문|구독|충전|송금|이체|입금|예약\s*(?:확정|완료|하기)|\S(?:으로|로)\s*예약$|바로\s*예약$|예매\s*하기|후원|기부|계좌\s*등록|\b(?:pay|checkout|purchase|buy\s*now|place\s*order)\b/i,
   ],
   [
+    // 사람에게 보내기·개인정보를 넘기는 신청·제출만 승인 (11-20 사용자: 리뷰·글 올리기처럼 맡긴 일은 승인 없이)
     'contact',
-    /보내기|전송|발송|게시|올리기|작성\s*완료|등록\s*하기|(?:^|\s)등록$|댓글\s*등록|리뷰\s*등록|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|(?:^|\s)(?:답변\s*)?제출(?:\s*하기|\s*완료)?$|응모\s*(?:하기|완료)|(?:^|\s)응모$|\b(?:send|post|publish|submit)\b/i,
+    /보내기|전송|발송|문의\s*(?:하기|등록)|신청\s*(?:하기|완료)|(?:^|\s)(?:답변\s*)?제출(?:\s*하기|\s*완료)?$|응모\s*(?:하기|완료)|(?:^|\s)응모$|\b(?:send|submit)\b/i,
   ],
   ['irreversible', /삭제|탈퇴|해지|비우기|초기화|\b(?:delete|remove\s*account|unsubscribe)\b/i],
 ]
@@ -2048,7 +2049,7 @@ export class BrowserTools {
   /** 승인 요청 id → 몇 개를 한 번에 승인받는지 */
   private series = new Map<string, number>()
   /** 한 번 승인으로 이어서 누를 수 있는 남은 개수 (사이트·종류별, 10분) */
-  private grants: { host: string; kind: RiskKind; left: number; until: number }[] = []
+  private grants: { host: string; kind: RiskKind; left: number; until: number; site?: true }[] = []
 
   private grantSeries(url: string, kind: RiskKind, left: number) {
     let host = ''
@@ -2059,17 +2060,31 @@ export class BrowserTools {
     this.grants.push({ host, kind, left, until: Date.now() + 10 * 60_000 })
   }
 
+  /** 한 번 승인받은 사이트: 30분 동안 같은 종류는 묻지 않는다 */
+  private grantSite(url: string, kind: RiskKind) {
+    let host = ''
+    try {
+      host = new URL(url).hostname
+    } catch {}
+    if (!host) return
+    this.grants = this.grants.filter((g) => !(g.site && g.host === host && g.kind === kind))
+    this.grants.push({ host, kind, left: 1_000, until: Date.now() + 30 * 60_000, site: true })
+  }
+
   /** 남은 승인이 있으면 하나 쓴다 (돈 내기는 묶어서 승인하지 않는다) */
   private useSeries(url: string, kind: RiskKind, consume = true): boolean {
-    if (kind === 'money') return false
     let host = ''
     try {
       host = new URL(url).hostname
     } catch {}
     const now = Date.now()
     this.grants = this.grants.filter((g) => g.until > now && g.left > 0)
-    const g = this.grants.find((x) => x.host === host && x.kind === kind)
+    const g =
+      this.grants.find((x) => x.host === host && x.kind === kind && !x.site) ??
+      this.grants.find((x) => x.host === host && x.kind === kind)
     if (!g) return false
+    // 돈 내기는 사이트 승인(한 번 승인받은 사이트)일 때만 묶는다
+    if (kind === 'money' && !g.site) return false
     if (!consume) return true
     g.left--
     this.onNote?.('approval-series', { host, kind, left: g.left })
@@ -2258,6 +2273,9 @@ export class BrowserTools {
       // 여러 개를 한 번에 승인했으면(일정 6개 지우기 등) 같은 사이트·같은 종류의 버튼은 10분 안에 남은 개수만큼 묻지 않고 누른다
       const many = this.series.get(id)
       this.series.delete(id)
+      // 사이트마다 한 번: 같은 사이트의 같은 종류(결제·보내기·삭제)는 30분 동안 다시 묻지 않는다 (11-20 사용자 결정)
+      if (rec.kind === 'money' || rec.kind === 'contact' || rec.kind === 'irreversible')
+        this.grantSite(rec.url, rec.kind)
       let rest = ''
       if (many && many > 1) {
         if (rec.kind === 'contact' || rec.kind === 'irreversible')

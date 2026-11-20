@@ -2224,3 +2224,12 @@ button.side-row:hover {
   color: var(--ink);
   border-color: var(--brand);
 }
+
+/* 보관함: 두리가 만든 그림 미리보기 */
+.lib-shot {
+  display: block;
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 8px 0;
+  background: #fff;
+}

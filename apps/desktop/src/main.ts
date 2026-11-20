@@ -205,6 +205,42 @@ function openInChrome(url: string) {
   else fallback()
 }
 
+/**
+ * 두리가 만든 HTML(그림·초대장·보고서)을 보이지 않는 창에서 그려 JPEG로 찍는다 (보관함·폰 미리보기).
+ * 스크립트는 끄고, 네트워크·다른 파일은 열지 않는다
+ */
+async function renderHtml(html: string): Promise<string | undefined> {
+  const w = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1200,
+    // 그림 그리기 전용 세션: 요청 막기가 앱 창에 번지지 않게
+    webPreferences: {
+      javascript: false,
+      offscreen: true,
+      sandbox: true,
+      images: true,
+      partition: 'dool2-render',
+    },
+  })
+  try {
+    w.webContents.session.webRequest.onBeforeRequest(
+      { urls: ['http://*/*', 'https://*/*', 'file://*/*'] },
+      (_d, cb) => cb({ cancel: true }),
+    )
+    await w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    await new Promise((r) => setTimeout(r, 400))
+    const img = await w.webContents.capturePage()
+    const size = img.getSize()
+    const fit = size.width > 800 ? img.resize({ width: 800 }) : img
+    return fit.toJPEG(80).toString('base64')
+  } catch {
+    return undefined
+  } finally {
+    w.destroy()
+  }
+}
+
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
@@ -243,6 +279,7 @@ app.whenReady().then(async () => {
   if (SMOKE && (theme === 'dark' || theme === 'light')) nativeTheme.themeSource = theme
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
   const d = await startDaemon({
+    renderHtml,
     // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다
     ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
     dataDir,

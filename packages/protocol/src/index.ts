@@ -756,6 +756,10 @@ export interface LibraryItem {
   savedAt: string
   /** 목록에서는 글을 앞부분만 보낸다 (전체는 하나 받기로: GET /api/life/library/<id>, 폰은 life-item) */
   cut?: true
+  /** 두리가 만든 파일: PC 경로 (~/Documents/두리/…) */
+  path?: string
+  /** 두리가 만든 HTML(그림·초대장·보고서)을 PC가 그려 찍은 미리보기 (JPEG base64). 목록에는 안 실린다 */
+  image?: string
 }
 
 /** 기억: 사용자에 대해 알게 된 것 (사용자가 보고 지울 수 있다) */

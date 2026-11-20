@@ -616,6 +616,13 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
   return box
 }
 
+function previewImg(b64: string, alt: string) {
+  const img = h('img', { class: 'item-shot' }) as HTMLImageElement
+  img.src = `data:image/jpeg;base64,${b64}`
+  img.alt = alt
+  return img
+}
+
 export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
   const sheet = h('section', { class: 'sheet float app-sheet rise item-sheet' })
   const it = ctx.fullItem(id)
@@ -640,6 +647,8 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
         }),
       ),
     ),
+    // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
+    ...(it.image ? [previewImg(it.image, it.title)] : []),
     ...(it.body ? [body] : []),
     h(
       'div',
