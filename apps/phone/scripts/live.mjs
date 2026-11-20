@@ -4,6 +4,7 @@
 //   pnpm build
 //   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     → /tmp/dool2-live.json 에 주소·토큰
 //   DOOL2_LIVE_DIR=<폴더> 를 주면 그 폴더를 계속 쓴다 (다시 켜도 폰 연결이 남는다)
+//   결제 흐름 가게: http://127.0.0.1:8791/goods/1234 (가게 8790의 /pay 로도 간다. 배송지·주소 찾기·결제 회사는 8792~8794)
 import { spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -12,6 +13,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startDaemon } from '@dool2/daemon'
 import { startRelay } from '@dool2/relay'
+// 결제 흐름 시험 가게 (주문서·배송지 액자·주소 찾기·늦은 결제 창·키패드·주문번호, 실측 11-20 G마켓 모양)
+import { start as startPayShop } from '../../extension/scripts/pay-shop.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const chromeBin = process.env.DOOL2_TEST_CHROME
@@ -165,14 +168,21 @@ if(/taken/.test(d.get('email')||'')||location.search.includes('taken')){document
 document.title='가입 완료';document.body.insertAdjacentHTML('beforeend','<h2>가입이 완료됐어요</h2><p>'+d.get('email')+' / 비번길이 '+(d.get('pw')||'').length+'</p>')}</script>`)
     return
   }
+  // 결제 흐름 가게로 (8791~8794 따로 띄움). 뒤의 고르기(?pg=layer 등)는 그대로 넘긴다
+  if (req.url?.startsWith('/pay')) {
+    res.writeHead(302, { location: `${payShop.product}${req.url.slice(4)}` })
+    res.end()
+    return
+  }
   if (req.url?.startsWith('/me')) {
     res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
     return
   }
-  res.end(`<!doctype html><title>두리 시험 가게</title><p><a href="/login">로그인</a></p><h1>두리 시험 가게</h1>
+  res.end(`<!doctype html><title>두리 시험 가게</title><p><a href="/login">로그인</a> · <a href="/pay">결제 흐름 가게</a></p><h1>두리 시험 가게</h1>
 <p>오늘의 추천: 제주 귤 3kg <b>15,900원</b> (무료 배송, 배송 전 취소 가능)</p>
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)
 })
+const payShop = await startPayShop({ ports: { shop: 8791, addr: 8792, juso: 8793, pg: 8794 } })
 await new Promise((r) => shop.listen(8790, '127.0.0.1', r))
 
 const relay = await startRelay({
@@ -249,9 +259,13 @@ writeFileSync(
     daemon: daemon.url,
     token: daemon.token,
     shop: 'http://127.0.0.1:8790/',
+    payShop: payShop.product,
   }),
 )
 console.log(`준비됐어요: 폰 앱 ${relay.url}/app/ · 본체 ${daemon.url}`)
+console.log(
+  `결제 흐름 가게: ${payShop.product} (예: "${payShop.product} 에서 귤 사 줘", 모양 바꾸기 ?pg=layer&keypad=on)`,
+)
 
 const stop = async () => {
   // 시험용 Chrome·열린 연결이 늦게 닫혀도 3초 안에는 끝낸다
@@ -260,6 +274,7 @@ const stop = async () => {
   await daemon.close()
   await relay.close()
   shop.close()
+  await payShop.close()
   if (!keep) rmSync(tmp, { recursive: true, force: true })
   process.exit(0)
 }
