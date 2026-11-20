@@ -1003,7 +1003,8 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
   const now = shipChosenOf(a)
   const cur = opts.find((o) => o.id === now) ?? opts[0]
   const key = `${a.id}:ship`
-  const open = st.choice.has(`${key}:open`)
+  // 내 정보 주소와 다르면 처음부터 펼쳐 경고와 함께 고르게 한다
+  const open = st.choice.has(`${key}:open`) || Boolean(a.shipWarn)
   if (!open)
     return h(
       'div',
@@ -1031,6 +1032,7 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
     'div',
     { class: 'approve-choices' },
     h('span', { class: 'meta', text: '받는 곳 · 어디로 받을까요?' }),
+    ...(a.shipWarn ? [h('p', { class: 'field-err ship-warn', text: `⚠ ${a.shipWarn}` })] : []),
     h(
       'div',
       { class: 'choice-list' },

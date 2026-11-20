@@ -831,6 +831,32 @@ export class BrowserTools {
   private signupOk = new Map<string, number>()
   /** 가입·변경이 끝나기를 기다리는 새 비밀번호 (끝난 걸 화면에서 보면 금고에 넣는다) */
   private pendingPw: PendingPassword[] = []
+  /**
+   * 받는 곳 고르기: 화면의 배송지와 저장된 다른 배송지, 그리고 내 정보 주소.
+   * 화면의 배송지가 내 정보 주소와 다르면(번지·동·호수 숫자가 빠졌으면) 경고를 붙이고 내 정보 주소를 바로 고르게 둔다.
+   * AI는 내 정보 주소를 가린 값으로만 봐서 다른 줄 모른다 (실측 요기요: 동네 검색 위치 '신봉동 33'이 배달 주소가 됐다)
+   */
+  private async shipChoices(shipTo: string, others: string[]) {
+    const labels = [shipTo, ...others]
+    let shipWarn: string | undefined
+    const p = this.profile ? await this.profile.get().catch(() => undefined) : undefined
+    const home = [p?.address, p?.address_detail].filter(Boolean).join(' ').trim()
+    if (home) {
+      const nums = (t: string) => t.match(/\d+/g) ?? []
+      const has = (t: string) => {
+        const got = new Set(nums(t))
+        return nums(home).every((n) => got.has(n))
+      }
+      if (!has(shipTo)) {
+        shipWarn = '내 정보 주소와 달라요. 받는 곳을 확인해 주세요'
+        if (!labels.slice(1).some(has)) labels.splice(1, 0, `내 정보 주소 · ${home}`)
+      }
+    }
+    return {
+      shipOptions: labels.map((label, i) => ({ id: `a${i}`, label: label.slice(0, 140) })),
+      ...(shipWarn ? { shipWarn } : {}),
+    }
+  }
   /** 승인받은 결제를 배송지를 바꾼 뒤 누르기: 탭마다 그 버튼 한 번 (10분) */
   private paidPass = new Map<number, { label: string; until: number }>()
   /** 승인받은 마지막 버튼이면 한 번 쓴다 */
@@ -2050,11 +2076,7 @@ export class BrowserTools {
       ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
       ...(d.chose?.length ? { chose: d.chose } : {}),
-      ...(d.shipTo
-        ? {
-            shipOptions: [d.shipTo, ...(d.shipOptions ?? [])].map((label, i) => ({ id: `a${i}`, label })),
-          }
-        : {}),
+      ...(d.shipTo ? await this.shipChoices(d.shipTo, d.shipOptions ?? []) : {}),
       ...(shot?.data ? { shot: shot.data } : {}),
       ...(picks.length
         ? {
