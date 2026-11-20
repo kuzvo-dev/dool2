@@ -356,6 +356,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return 0
   }
 
+  /** 이번 읽기에서 표시를 붙인 것 (빠진 입력칸을 따로 모을 때 견준다) */
+  const shownNow = new Set<Element>()
   const walk = (node: Node) => {
     if (budget <= 0) return
     if (node.nodeType === Node.TEXT_NODE) {
@@ -384,6 +386,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
 
     const role = interactiveRole(el)
     if (role) {
+      shownNow.add(el)
       let ref = st.ids.get(el)
       if (!ref) {
         ref = `e${base + ++st.seq}`
@@ -433,6 +436,40 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   }
   if (document.body) walk(document.body)
   flush()
+  // 화면에 보이는데 읽기에서 빠진 입력칸: 사이트가 칸을 감싼 상자에 aria-hidden을 잘못 붙이면 통째로 빠진다
+  // (실측 금융인증서 창 4user.yeskey.or.kr: "휴대폰번호를 입력해주세요" 아래 칸이 안 보여 두리가 PC 화면을 넘겼다)
+  if (budget > 0 && !scope.from) {
+    const missed: string[] = []
+    for (const el of document.querySelectorAll('input:not([type=hidden]),textarea,select')) {
+      if (shownNow.has(el) || missed.length >= 8) continue
+      const inp = el as HTMLInputElement
+      if (inp.disabled || inp.readOnly) continue
+      if (['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file'].includes(inp.type)) continue
+      const r = el.getBoundingClientRect()
+      if (
+        r.width < 20 ||
+        r.height < 10 ||
+        !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+      )
+        continue
+      const role = interactiveRole(el)
+      if (!role) continue
+      let ref = st.ids.get(el)
+      if (!ref) {
+        ref = `e${base + ++st.seq}`
+        st.ids.set(el, ref)
+      }
+      st.refs.set(ref, new WeakRef(el))
+      ctx.set(ref, ctxOf(el))
+      const box = el.closest('label, div, li, p, td')
+      const near = clean((box as HTMLElement | null)?.innerText, 30)
+      // 이름이 '예) 010-…' 같은 보기뿐이면 칸 위의 짧은 글(휴대폰번호)을 앞에 붙인다
+      const own = nameOf(el) || el.getAttribute('placeholder') || ''
+      const name = near && !own.includes(near) && near.length <= 20 ? `${near} ${own}`.trim() : own || near
+      missed.push(`[${ref} ${role}${name ? ` "${clean(name, 40)}"` : ''}${extra(el)}]`)
+    }
+    if (missed.length) lines.push(`(화면에 보이는 칸) ${missed.join(' ')}`)
+  }
 
   let text = lines
     .join('\n')
@@ -671,6 +708,7 @@ export function pageLocate(ref: string, mode: LocateMode): LocateResult | { ok: 
   let focused: boolean | undefined
   if (mode === 'type') {
     h.focus()
+    focused = document.activeElement === el
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.select()
     else if (h.isContentEditable) {
       const range = document.createRange()
@@ -1073,12 +1111,69 @@ export function pageViewport() {
 
 /** 두리 금고로 채운 칸이라고 표시한다 (그 뒤 페이지 읽기에서 값이 나가지 않게) */
 /** 칸에 실제로 들어간 글자 수 (금고 값이 잘려 들어갔는지 본다. 값은 돌려주지 않는다) */
-export function pageValueLength(ref: string): number {
+/** 지금 초점이 있는 칸에 든 글자 수 (원격 '필요한 칸만'으로 넣은 값이 들어갔는지 볼 때). 칸이 아니면 -1 */
+export function pageActiveValueLength(): number {
+  let a: Element | null = document.activeElement
+  while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement
+  if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) return a.value.length
+  return -1
+}
+
+export function pageValueLength(ref: string, alnum = false): number {
   type State = { refs: Map<string, WeakRef<Element>> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.length
+  // 글자·숫자만 센다: 칸이 스스로 붙이는 구분자(010-1234-…, 1999 / 08 / 10)는 잘림이 아니다
+  // (비밀번호는 기호가 빠졌는지 봐야 해서 그대로 센다)
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+    return alnum ? el.value.replace(/[^0-9A-Za-z\uAC00-\uD7A3]/g, '').length : el.value.length
   return -1
+}
+
+/**
+ * 보안문자 그림 후보: 칸 둘레의 그림·캔버스(가까운 순 3개)와, 칸을 품은 덩어리 상자, 칸 위쪽 띠.
+ * 어느 게 보안문자인지는 고르지 않는다 — 잘라서 AI에게 보여 주고 AI가 고른다 (화면 보기 좌표, 이 액자 기준)
+ */
+export function pageCaptchaRects(
+  ref: string,
+): { x: number; y: number; w: number; h: number; what: string }[] {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!el) return []
+  el.scrollIntoView({ block: 'center', inline: 'nearest' })
+  const q = el.getBoundingClientRect()
+  const out: { x: number; y: number; w: number; h: number; what: string }[] = []
+  const pics = [...document.querySelectorAll<HTMLElement>('img, canvas, svg, [style*="background-image"]')]
+    .map((img) => ({ img, r: img.getBoundingClientRect() }))
+    .filter(({ r }) => r.width >= 40 && r.width <= 480 && r.height >= 16 && r.height <= 200)
+    .map(({ img, r }) => {
+      const dx = Math.max(0, r.left - q.right, q.left - r.right)
+      const dy = Math.max(0, r.top - q.bottom, q.top - r.bottom)
+      return { img, r, d: Math.hypot(dx, dy) }
+    })
+    .filter((x) => x.d < 320)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 3)
+  for (const { r } of pics)
+    out.push({ x: r.left - 4, y: r.top - 4, w: r.width + 8, h: r.height + 8, what: '칸 둘레 그림' })
+  let box: Element | null = el.parentElement
+  let rect: DOMRect | undefined
+  for (let i = 0; box && i < 6; box = box.parentElement, i++) {
+    const b = box.getBoundingClientRect()
+    if (b.width > 760 || b.height > 360) break
+    if (b.height >= q.height + 30) rect = b
+  }
+  if (rect) out.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height, what: '칸을 품은 상자' })
+  const top = Math.max(0, q.top - 140)
+  out.push({
+    x: Math.max(0, q.left - 40),
+    y: top,
+    w: Math.min(q.width + 320, 680),
+    h: q.bottom - top + 8,
+    what: '칸 위쪽',
+  })
+  return out.filter((r) => r.w > 8 && r.h > 8)
 }
 
 /**
@@ -1581,26 +1676,51 @@ export function pageForm(inFrame = false) {
     checks++
     fields.push({ id: keep(el), kind: 'check', label, ...(el.checked ? { checked: true } : {}) })
   }
-  // 보안문자 그림: 근처 글자 칸에 붙인다
-  for (const img of inRoot<HTMLImageElement | HTMLCanvasElement>('img, canvas')) {
-    const hay = `${img.getAttribute('alt') ?? ''} ${img.getAttribute('src') ?? ''} ${img.id} ${img.className} ${img.getAttribute('title') ?? ''}`
-    if (!/captcha|kaptcha|보안|자동입력|security.?(code|img)|simplecaptcha/i.test(hay) || !visible(img))
-      continue
+  // 보안문자 그림: '보안문자' 칸마다 그 칸에 가장 가까운 그림을 붙인다.
+  // 이름에 '보안'이 든 첫 그림을 쓰던 때는 본인확인 창의 PASS 로고를 잘라 보냈다(실측 한국모바일인증) —
+  // 그림 이름은 참고만 하고, 칸과의 거리로 고른다
+  const CAPTCHA_HINT = /captcha|kaptcha|보안|자동입력|security.?(code|img)|simplecaptcha/i
+  const pics = inRoot<HTMLImageElement | HTMLCanvasElement>('img, canvas').filter((img) => {
+    if (!visible(img)) return false
     const r = img.getBoundingClientRect()
-    let best: { f: FormField; d: number } | undefined
-    for (const f of fields) {
-      if (f.kind !== 'text' && f.kind !== 'number') continue
-      const el = st.els.get(f.id)?.deref()
-      if (!el) continue
-      const q = el.getBoundingClientRect()
-      const d = Math.hypot(q.left - r.left, q.top - r.bottom)
-      if (!best || d < best.d) best = { f, d }
+    return r.width >= 50 && r.width <= 420 && r.height >= 18 && r.height <= 160
+  })
+  for (const f of fields) {
+    if (!f.captchaRect || (f.kind !== 'text' && f.kind !== 'number')) continue
+    const el = st.els.get(f.id)?.deref()
+    if (!el) continue
+    const q = el.getBoundingClientRect()
+    let best: { r: DOMRect; d: number } | undefined
+    for (const img of pics) {
+      const r = img.getBoundingClientRect()
+      const hay = `${img.getAttribute('alt') ?? ''} ${img.getAttribute('src') ?? ''} ${img.id} ${img.className} ${img.getAttribute('title') ?? ''}`
+      // 칸과 그림 가장자리 사이 거리 (위·왼쪽·같은 줄 어디든)
+      const dx = Math.max(0, r.left - q.right, q.left - r.right)
+      const dy = Math.max(0, r.top - q.bottom, q.top - r.bottom)
+      const d = Math.hypot(dx, dy) * (CAPTCHA_HINT.test(hay) ? 0.6 : 1)
+      if (!best || d < best.d) best = { r, d }
     }
-    if (best && best.d < 400) {
-      best.f.captchaRect = { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height }
-      best.f.code = false
+    if (best && best.d < 220) {
+      const r = best.r
+      f.captchaRect = { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height }
+      f.code = false
+      continue
     }
-    break
+    // 그림 태그를 못 찾았다(배경 그림·캔버스·액자 속 그림): 칸을 품은 덩어리 상자를 통째로 찍는다.
+    // 너무 크면(창 전체) 칸 위쪽 120px와 칸 줄만 찍는다 (실측 본인확인 창: 보안문자 그림이 아예 안 보였다)
+    let box: Element | null = el.parentElement
+    let rect: DOMRect | undefined
+    for (let i = 0; box && i < 5; box = box.parentElement, i++) {
+      const b = box.getBoundingClientRect()
+      if (b.width > 720 || b.height > 320) break
+      if (b.height >= q.height + 30) rect = b
+    }
+    const x = rect ? rect.left : Math.max(0, q.left - 20)
+    const y = rect ? rect.top : Math.max(0, q.top - 120)
+    const w = rect ? rect.width : Math.min(q.width + 240, 640)
+    const h = rect ? rect.height : q.bottom - y + 6
+    f.captchaRect = { x: x + window.scrollX, y: y + window.scrollY, w, h }
+    f.code = false
   }
   for (const f of fields) if (f.captchaRect && !f.captchaRect.w) delete f.captchaRect
   // 페이지에 나온 순서대로 (글자 칸·고르기·체크를 따로 모았으므로)

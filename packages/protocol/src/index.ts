@@ -348,6 +348,8 @@ export const BrowserCommandSchema = z.enum([
   'input',
   'form',
   'form-fill',
+  // 보안문자 칸 둘레 그림 후보 (AI가 고른다)
+  'captcha-candidates',
   'mark-text',
   'link-navigates',
   /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기 */
@@ -486,6 +488,8 @@ export interface InfoRequestView {
   label: string
   /** 화면의 안내 한 줄 ("카카오톡으로 보낸 번호를 넣어 주세요") */
   hint?: string
+  /** 보안문자 그림 (jpeg base64). 있으면 카드에 그림을 보이고 그 글자를 받는다 */
+  image?: string
   status: 'pending' | 'answered' | 'cancelled' | 'expired'
   expiresAt: string
 }
@@ -1205,3 +1209,6 @@ export const AUTH_APPS = [
   '삼성패스',
   '페이코',
 ] as const
+
+/** 휴대폰 통신사 (본인확인 창에서 고른다). 알뜰폰은 망 이름과 함께 */
+export const CARRIERS = ['SKT', 'KT', 'LG U+', 'SKT 알뜰폰', 'KT 알뜰폰', 'LG U+ 알뜰폰'] as const

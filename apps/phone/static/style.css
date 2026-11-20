@@ -1179,13 +1179,18 @@ select.rform-input {
   width: 15px;
   height: 15px;
 }
-.rform-captcha {
+.rform-captcha,
+.captcha-img {
   display: block;
   width: 100%;
   max-height: 120px;
   object-fit: contain;
   border-radius: 12px;
   background: #fff;
+}
+.captcha-img {
+  margin: 4px 0 12px;
+  max-height: 140px;
 }
 .rform-code .otp-bx {
   background: #23262d;

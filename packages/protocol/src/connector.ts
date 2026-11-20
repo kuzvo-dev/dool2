@@ -470,7 +470,8 @@ const FILTERS: Record<string, (v: string) => string> = {
   },
 }
 /** 실행할 때 늘 있는 이름: today = 오늘 날짜(한국, YYYY-MM-DD) */
-export const BUILTIN_NAMES = ['today']
+/** 본체가 채우는 이름: today(오늘 날짜), account(그 서비스에 연결한 계정 아이디, 없으면 0) */
+export const BUILTIN_NAMES = ['today', 'account']
 export const TEMPLATE_FILTERS = Object.keys(FILTERS)
 
 const EXPR = /\{\{\s*([a-zA-Z_][\w.]*)((?:\s*\|\s*[a-z0-9]+)*)\s*\}\}/g

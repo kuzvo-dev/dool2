@@ -83,7 +83,7 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
     expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) — /)
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
-    expect(map.length).toBeLessThan(12500) // 서비스가 늘면 조금씩 (11-20 고향사랑e음)
+    expect(map.length).toBeLessThan(12500) // 서비스가 늘면 조금씩 (11-20 고향사랑e음·정책브리핑)
   })
 })
 
@@ -119,5 +119,14 @@ describe('계정 가리기', () => {
     expect(maskAccount('felix990810@gmail.com')).toBe('f***@gmail.com')
     expect(maskAccount('f***@gmail.com')).toBe('f***@gmail.com')
     expect(maskAccount('wwd')).toBe('wwd')
+  })
+})
+
+describe('같은 계정으로 로그인하는 서비스', () => {
+  it('네이버가 연결돼 있으면 네이버 메일도 연결된 것으로 보이고 지도에 ✓', async () => {
+    const s = new Skills(REPO_SKILLS, () => ({ naver: '2026-11-20T00:00:00.000Z' }))
+    const list = await s.connections()
+    expect(list.find((x) => x.card.id === 'naver-mail')?.connectedAt).toBe('2026-11-20T00:00:00.000Z')
+    expect(s.serviceMap()).toMatch(/네이버 메일\(naver-mail\)✓/)
   })
 })

@@ -505,6 +505,8 @@ export function sameFinal(a: string, b: string): boolean {
 export interface VaultLookup {
   findForOrigin(origin: string): Promise<{ id: string; username: string; password: string } | undefined>
   markUsed(id: string): Promise<void>
+  /** 로그인 카드로 받은 값이 틀려 로그인이 안 됐을 때 지운다 */
+  remove?(id: string): Promise<boolean>
   /** 새 비밀번호를 금고에 저장한다 (가입·비번 변경). AI는 값을 받지 않는다 */
   savePassword?(origin: string, username: string, password: string): Promise<void>
 }
@@ -640,8 +642,35 @@ interface PendingPassword {
 /** 사람에게 넘긴 탭을 폰 원격 화면으로 다룰 수 있는 시간 */
 export const REMOTE_TTL_MS = 30 * 60_000
 
+/**
+ * 내 정보(이름·휴대폰·생년월일)를 넣어도 되는 공인 인증 창 사이트: 여러 사이트가 이 주소의 액자로 본인확인·인증서 창을 띄운다
+ * (금융인증서 = 금융결제원 yeskey, 공동인증서·휴대폰 본인확인 = 인증기관·신용평가사). 비밀번호는 넣지 않는다
+ */
+export const AUTH_FRAME_SITES = [
+  'yeskey.or.kr',
+  'yessign.or.kr',
+  'kftc.or.kr',
+  'signkorea.com',
+  'crosscert.com',
+  'tradesign.net',
+  'kica.or.kr',
+  'niceid.co.kr',
+  'nice.co.kr',
+  'kmcert.com',
+  'kcb.co.kr',
+  'okname.co.kr',
+  'sci.co.kr',
+  'siren24.com',
+]
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
+  /** 화면 넘기기를 한 번 되돌려 보낸 화면 (탭:주소) — 두 번째에만 넘긴다 */
+  private handoffChecked = new Set<string>()
+  /** 로그인 카드로 받았지만 아직 로그인에 성공한 적 없는 사이트(origin). 실패하면 금고에서 지우고 카드를 다시 받는다 */
+  private unverified = new Set<string>()
+  /** 금고 값으로 채운 로그인 시도 (탭 → 사이트·항목) — 다음 읽기에서 성공·실패를 본다 */
+  private loginTries = new Map<number, { origin: string; entryId: string }>()
   /** 사람에게 넘긴 탭 → 넘긴 시각. 이 탭만 폰 원격 화면으로 보고 누를 수 있다 */
   private handedOff = new Map<number, number>()
   /** 탭마다 떠 있는 사이트 확인 창 (마지막으로 읽었을 때) */
@@ -730,8 +759,10 @@ export class BrowserTools {
     label: string,
     hint: string,
     host: string,
-    kind?: 'code' | 'rrn_back',
+    kind?: 'code' | 'rrn_back' | 'captcha',
     ref?: string,
+    /** 보안문자 그림 (jpeg base64) */
+    image?: string,
   ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
@@ -864,6 +895,7 @@ export class BrowserTools {
       case 'login': {
         // 두리 금고 (ADR 0011): AI는 칸만 알려 주고, 값은 본체가 주소를 확인한 뒤 확장에 직접 넘긴다
         const page = this.pages.get(tabId)
+        if (a.failed === true) return this.loginFailed(tabId, String(a.reason ?? ''))
         if (!page) throw new Error('먼저 로그인 페이지를 읽어 주세요')
         const pw = page.refs.get(String(a.passwordRef ?? ''))
         if (pw?.role !== '비밀번호칸') throw new Error('passwordRef는 페이지의 비밀번호칸 표시여야 해요')
@@ -891,6 +923,7 @@ export class BrowserTools {
           password: true,
         })
         await this.vault?.markUsed(entry.id)
+        this.loginTries.set(tabId, { origin, entryId: entry.id })
         return this.read(tabId, undefined, '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.')
       }
       case 'dialog': {
@@ -992,9 +1025,9 @@ export class BrowserTools {
           const key = String(x.key ?? '') as ProfileKey
           if (!(PROFILE_KEYS as readonly string[]).includes(key))
             throw new Error(`${key}는 내 정보 항목이 아니에요. 쓸 수 있는 것: ${PROFILE_KEYS.join(', ')}`)
-          if (key === 'auth_app')
+          if (key === 'auth_app' || key === 'carrier')
             throw new Error(
-              '간편인증 앱은 칸에 넣는 게 아니라 그 이름의 버튼을 눌러 골라요(결과에 오는 간편인증 앱 이름)',
+              `${key === 'carrier' ? '통신사' : '간편인증 앱'}는 칸에 넣는 게 아니라 그 이름의 버튼·목록에서 골라요(결과에 오는 내 정보의 이름 그대로)`,
             )
           const role = page.refs.get(ref)?.role ?? ''
           if (!['입력칸', '검색칸'].includes(role) && !(key === 'rrn_back' && role === '비밀번호칸'))
@@ -1004,10 +1037,18 @@ export class BrowserTools {
             for (const f of sourceOf(key)) if (!p[f]) missing.add(f)
             continue
           }
-          const r = (await this.browser.call('fill', { tabId, ref, value, origin })) as { length?: number }
+          const r = (await this.browser.call('fill', {
+            tabId,
+            ref,
+            value,
+            origin,
+            trust: AUTH_FRAME_SITES,
+          })) as { length?: number }
           // 칸이 글자 수를 막으면(maxlength) 잘려 들어간다: 다른 모양으로 다시 채우게 알린다
-          if (typeof r?.length === 'number' && r.length >= 0 && r.length !== value.length)
-            cut.push(`${ref}(${key}): ${value.length}자 중 ${r.length}자만 들어갔어요`)
+          // 칸은 글자·숫자만 센다(구분자는 칸마다 달라서): 같은 기준으로 견준다
+          const want = value.replace(/[^0-9A-Za-z\uAC00-\uD7A3]/g, '').length
+          if (typeof r?.length === 'number' && r.length >= 0 && r.length < want)
+            cut.push(`${ref}(${key}): ${want}자 중 ${r.length}자만 들어갔어요`)
           const shown = sourceOf(key)
             .map((f) => (p[f] ? maskValue(f, p[f] as string) : ''))
             .join(' ')
@@ -1027,6 +1068,11 @@ export class BrowserTools {
             ? `간편인증 창이면 인증 앱은 내 정보의 기본 '${p.auth_app}'를 눌러 고르고 [인증 요청]까지 눌러요. 그 사이트 창에 '${p.auth_app}'가 없으면 browser_request_profile(fields: ["auth_app"], options: 그 창에 보이는 앱 이름들)로 이번에 쓸 앱을 받아요.`
             : identity
               ? '간편인증 창이면 쓸 인증 앱이 내 정보에 없어요. 대화로 묻지 말고 browser_request_profile(fields: ["auth_app"], options: 그 창에 보이는 앱 이름들)로 고르게 해요.'
+              : '',
+          identity && p.carrier
+            ? `통신사를 고르는 칸이 있으면 내 정보의 '${p.carrier}'를 골라요.`
+            : identity
+              ? '통신사를 고르는 칸이 있으면 대화로 묻지 말고 browser_request_profile(fields: ["carrier"])로 받아요(한 번 넣으면 다음부터 두리가 골라요).'
               : '',
           missing.size
             ? `내 정보에 ${[...missing].map((f) => PROFILE_FIELDS[f].label).join('·')}이(가) 없어요. 사용자에게 묻지 말고 browser_request_profile로 내 정보 카드를 띄운 뒤 답을 끝내세요.`
@@ -1191,6 +1237,34 @@ export class BrowserTools {
           throw new Error(
             `${ref}는 인증번호를 넣는 칸이 아니에요. 페이지를 다시 읽어 칸 표시를 확인해 주세요`,
           )
+        // 보안문자: 칸 둘레를 잘라 AI에게 보여 주고 AI가 고른 그림(pick)을 카드에 붙인다 (그림 고르기를 규칙으로 하지 않는다)
+        let image: string | undefined
+        if (a.kind === 'captcha') {
+          const got = (await this.browser
+            .call('captcha-candidates', { tabId, ref }, 30_000)
+            .catch(() => undefined)) as { shots?: { what: string; data: string }[] } | undefined
+          const shots = got?.shots ?? []
+          const pick = Number(a.pick)
+          if (!Number.isInteger(pick) || pick < 1 || pick > shots.length) {
+            if (!shots.length)
+              throw new Error(
+                '칸 둘레 그림을 찍지 못했어요. browser_screenshot으로 화면을 보고 칸을 다시 짚어 주세요',
+              )
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `보안문자 칸(${ref}) 둘레를 ${shots.length}장 잘랐어요. 일그러진 글자·숫자가 또렷하게 다 보이는 그림의 번호를 골라 같은 칸으로 browser_request_code를 kind: "captcha", pick: 번호로 다시 부르세요. 어느 것에도 보안문자가 없으면 browser_screenshot으로 화면을 보고 칸을 다시 짚어요. 글자는 네가 읽어 넣지 말고 사용자에게 받는다.`,
+                },
+                ...shots.flatMap((sh, i) => [
+                  { type: 'text' as const, text: `${i + 1}. ${sh.what}` },
+                  { type: 'image' as const, data: sh.data, mimeType: 'image/jpeg' },
+                ]),
+              ],
+            }
+          }
+          image = shots[pick - 1]?.data
+        }
         // 화면의 안내 한 줄 ("휴대폰으로 보낸 6자리를 넣어 주세요")
         const snap = (await this.browser
           .call('snapshot', { tabId, maxChars: 12_000 })
@@ -1215,8 +1289,9 @@ export class BrowserTools {
           String(a.label ?? '') || target.name || '인증번호',
           hint,
           host,
-          a.kind === 'rrn_back' ? 'rrn_back' : 'code',
+          a.kind === 'rrn_back' ? 'rrn_back' : a.kind === 'captcha' ? 'captcha' : 'code',
           ref,
+          image,
         )
         if (!id) throw new Error('인증번호 카드를 띄우지 못했어요')
         // 사용자가 카드에 넣을 때까지 탭을 닫지 않는다
@@ -1273,7 +1348,8 @@ export class BrowserTools {
           throw new Error(
             'https 사이트만 로그인 정보를 저장할 수 있어요. browser_handoff로 사용자에게 넘겨 주세요.',
           )
-        if (await this.vault?.findForOrigin(origin))
+        // 카드로 받았는데 로그인에 실패한 값은 이미 지웠다. 아직 확인 전인 값은 다시 받을 수 있다
+        if ((await this.vault?.findForOrigin(origin)) && !this.unverified.has(origin))
           return {
             content: [
               { type: 'text', text: '이 사이트는 이미 두리 금고에 있어요. browser_login으로 채우세요.' },
@@ -1303,16 +1379,19 @@ export class BrowserTools {
         this.notifyUser?.('인증 앱에서 승인해 주세요', msg)
         // 탭만 열어 둔다. 폰 원격 화면 준비(holdForPerson)는 하지 않는다 — 화면이 바뀌어 인증 창이 닫혔다(실측)
         this.hold(tabId, 200_000)
-        const NOT_YET =
-          /(?:서명|인증|승인|본인확인)(?:이|을)?\s*(?:되지|하지)\s*않|완료되지\s*않|진행(?:해|하여)\s*주(?:세요|십시오)|인증을\s*완료(?:해|하여)\s*주/
-        const DONE =
-          /로그아웃|(?:인증|본인확인|로그인)(?:이|을)?\s*(?:완료|성공)(?:되었|됐|하였)|님\s*(?:환영|안녕)/
-        const FINISH = /^(?:간편\s*)?인증\s*(?:완료|확인)$|^(?:인증|로그인)\s*하기$|^완료$/
+        // 됐는지·아직인지는 글자 규칙으로 가리지 않는다(안내 문구 "…진행해주세요"를 아직으로 읽어 카드만 거듭 띄웠다, 실측 K-패스).
+        // 화면에 구조 변화(주소·확인 창·인증 창 닫힘·버튼 바뀜)가 생기거나 사용자가 [인증 완료했어요]를 누르면 화면을 AI에게 넘긴다
         const buttons = (text: string) =>
           [...text.matchAll(/\[(e\d+) (?:버튼|링크) "([^"]*)"\]/g)].map((m) => ({
             ref: m[1] as string,
             name: m[2] as string,
           }))
+        const buttonSet = (text: string) =>
+          buttons(text)
+            .map((b) => b.name.trim())
+            .filter(Boolean)
+            .sort()
+            .join('|')
         const snap = (t: number) =>
           this.browser.call('snapshot', { tabId: t, maxChars: 40_000 }).catch(() => undefined) as Promise<
             Snapshot | undefined
@@ -1324,9 +1403,6 @@ export class BrowserTools {
           const f = await snap(t)
           if (f) first.set(t, f)
         }
-        const pick = (text: string) =>
-          (typeof a.ref === 'string' ? buttons(text).find((b) => b.ref === a.ref) : undefined) ??
-          buttons(text).find((b) => FINISH.test(b.name.trim()))
         const started = Date.now()
         const expired = () =>
           this.notifyUser?.('인증 시간이 지났어요', '다시 하려면 두리에게 "다시 해 줘"라고 해 주세요')
@@ -1335,94 +1411,78 @@ export class BrowserTools {
           host = new URL(this.pages.get(tabId)?.url ?? '').hostname
         } catch {}
         // 승인 전에 [인증 완료]를 누르면 인증 창을 닫아 버리는 사이트가 있다(실측 홈택스: 요청 6초 뒤 창이 사라졌다).
-        // 그래서 기다리는 동안은 누르지 않고 지켜보기만 하고, 사용자가 폰 카드의 [인증 완료했어요]를 누르면 그때 한 번 누른다
+        // 그래서 기다리는 동안은 아무것도 누르지 않고 지켜보기만 한다
         const card = (label: string) =>
           this.askAuthDone?.(
             host,
             label,
             '인증 앱(카카오톡·네이버·토스·PASS)에 온 알림에서 승인한 뒤 눌러 주세요.',
           )
-        let waiting = card(msg)
+        const waiting = card(msg)
         let pressedByUser = false
         if (waiting)
           void waiting.answer.then((v) => {
             if (v) pressedByUser = true
           })
-        // 성공 표시: 짚어 준 탭의 주소가 바뀌었거나, 로그아웃·완료 글이 새로 보일 때
-        const succeeded = async (): Promise<Snapshot | undefined> => {
+        // 화면이 바뀐 표시: 주소가 바뀌었거나, 확인 창이 새로 떴거나, 인증 창(다른 탭)이 닫혔거나, 버튼 묶음이 바뀌었을 때
+        const changed = async (): Promise<{ main: Snapshot; why: string } | undefined> => {
           for (const t of tabs) {
-            const now = await snap(t)
             const was = first.get(t)
-            if (!now || !was || NOT_YET.test(now.text)) continue
-            const moved = t === tabId && now.url !== was.url
-            const done = DONE.test(now.text) && !DONE.test(was.text)
-            if (moved || done) return t === tabId ? now : ((await snap(tabId)) ?? now)
+            if (!was) continue
+            const now = await snap(t)
+            const main = async () => (t === tabId ? now : await snap(tabId))
+            if (!now) {
+              // 인증 팝업이 닫혔다 (승인 뒤 스스로 닫는 사이트가 많다)
+              if (t === tabId) continue
+              const m = await snap(tabId)
+              if (m) return { main: m, why: '인증 창이 닫혔어요' }
+              continue
+            }
+            if (now.dialog && !was.dialog)
+              return { main: (await main()) ?? now, why: '사이트 확인 창이 떴어요' }
+            if (now.url !== was.url && (t === tabId || !/about:blank/.test(now.url)))
+              return { main: (await main()) ?? now, why: '주소가 바뀌었어요' }
+            if (buttonSet(now.text) !== buttonSet(was.text))
+              return { main: (await main()) ?? now, why: '화면 버튼이 바뀌었어요' }
           }
           return undefined
         }
-        const finished = (main: Snapshot) => {
+        const others = tabs.filter((t) => t !== tabId)
+        const judge =
+          '아래 화면을 보고 직접 판단하세요: 인증이 됐다는 글이나 다음 단계가 보이면 이어서 하고, 다음으로 가는 버튼(인증 완료·인증 확인·확인·다음 — 안 보이면 browser_scroll로 내려서)이 있으면 눌러요' +
+          `${others.length ? `. 인증 창이 다른 탭일 수 있어요(탭 ${others.join(', ')}) — browser_read로 보세요` : ''}. ` +
+          '화면이 인증이 아직 안 됐다고 하면 그때만 browser_wait_auth를 다시 불러 사용자에게 다시 물어요(카드가 다시 떠요). 이어 가기 전에 "인증이 완료됐어요. 이어서 ○○할게요"처럼 한 줄 써요(진행 카드에 바로 보여요).'
+        const handBack = (main: Snapshot, why: string) => {
           waiting?.cancel()
           this.pages.set(tabId, pageInfo(main.url, main.text))
-          this.notifyUser?.('인증이 완료됐어요', '두리가 이어서 할게요')
-          return this.read(
-            tabId,
-            undefined,
-            '인증 앱 승인이 확인돼 다음 화면으로 넘어갔어요. 다음 도구를 부르기 전에 "인증이 완료됐어요. 이어서 ○○할게요"라고 한 줄 쓰고(진행 카드에 바로 보여요) 이어서 해요.',
-          )
+          return this.read(tabId, undefined, `${why}. ${judge}`)
         }
-        // [인증 완료] 한 번 누르기: 누른 버튼 이름을 돌려준다 (없으면 '')
-        const pressFinish = async (): Promise<string> => {
-          for (const t of tabs) {
-            const now = await snap(t)
-            if (!now) continue
-            const btn = pick(now.text)
-            if (!btn) continue
-            const r = (await this.browser
-              .call('click', { tabId: t, ref: btn.ref }, 30_000)
-              .catch(() => undefined)) as { dialog?: SiteDialog } | undefined
-            if (r?.dialog)
-              await this.browser.call('dialog', { tabId: t, accept: true }).catch(() => undefined)
-            await new Promise((r) => setTimeout(r, 2_500))
-            const after = await snap(t)
-            this.onNote?.('wait-auth', {
-              tab: t === tabId ? 'main' : 'other',
-              pressed: btn.name,
-              by: waiting ? 'user' : 'auto',
-              notYet: (after && NOT_YET.exec(after.text)?.[0]) ?? (r?.dialog ? 'dialog' : ''),
-              url: (after?.url ?? now.url).replace(/[?#].*$/, ''),
-            })
-            // 아직이라는 안내 창이 떠 있으면 [확인]으로 닫는다
-            if (after && NOT_YET.test(after.text)) {
-              const ok = buttons(after.text).find((b) => /^(?:확인|닫기)$/.test(b.name.trim()))
-              if (ok)
-                await this.browser.call('click', { tabId: t, ref: ok.ref }, 30_000).catch(() => undefined)
-              return `${btn.name}:아직`
-            }
-            return btn.name
-          }
-          return ''
-        }
-        let lastAuto = 0
         while (Date.now() - started < 180_000) {
           await new Promise((r) => setTimeout(r, 3_000))
-          const ok = await succeeded()
-          if (ok) return finished(ok)
-          // 폰 카드가 없으면(시험 등) 20초마다 한 번 눌러 본다
-          const due = !waiting && Date.now() - started > 20_000 && Date.now() - lastAuto > 20_000
-          if (!pressedByUser && !due) continue
-          pressedByUser = false
-          lastAuto = Date.now()
-          const pressed = await pressFinish()
-          const ok2 = await succeeded()
-          if (ok2) return finished(ok2)
-          if (waiting && (pressed.endsWith(':아직') || !pressed)) {
-            this.notifyUser?.('아직 승인이 확인되지 않았어요', '인증 앱에서 승인한 뒤 다시 눌러 주세요')
-            waiting = card('아직 승인이 확인되지 않았어요. 인증 앱에서 승인한 뒤 다시 눌러 주세요')
-            if (waiting)
-              void waiting.answer.then((v) => {
-                if (v) pressedByUser = true
-              })
+          const c = await changed()
+          if (c) {
+            this.onNote?.('wait-auth', { by: 'screen', why: c.why, url: c.main.url.replace(/[?#].*$/, '') })
+            return handBack(c.main, `인증을 기다리는 동안 화면이 바뀌었어요(${c.why})`)
           }
+          if (!pressedByUser) continue
+          // 사용자가 승인했다고 했다. AI가 짚어 둔 버튼(ref)이 있으면 그것만 한 번 누르고, 화면을 AI에게 넘긴다
+          let pressed = ''
+          if (typeof a.ref === 'string') {
+            const now = await snap(tabId)
+            const btn = now && buttons(now.text).find((b) => b.ref === a.ref)
+            if (btn) {
+              await this.browser.call('click', { tabId, ref: btn.ref }, 30_000).catch(() => undefined)
+              await new Promise((r) => setTimeout(r, 2_500))
+              pressed = btn.name
+            }
+          }
+          this.onNote?.('wait-auth', { by: 'user', pressed })
+          const main = (await snap(tabId)) ?? first.get(tabId)
+          if (!main) break
+          return handBack(
+            main,
+            `사용자가 인증 앱에서 승인하고 [인증 완료했어요]를 눌렀어요.${pressed ? ` 두리가 짚어 둔 [${pressed}]를 한 번 눌렀어요.` : ''}`,
+          )
         }
         waiting?.cancel()
         expired()
@@ -1437,7 +1497,26 @@ export class BrowserTools {
       }
       case 'handoff': {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
-        // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다
+        // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다.
+        // 사용자는 폰만 들고 있다 — PC 화면 넘기기는 거의 늘 고칠 곳이었다(실측: 금융인증서 창 휴대폰번호 칸을 못 읽어 넘김).
+        // 그래서 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다. 두 번째에만 넘긴다
+        let where = ''
+        try {
+          where = new URL(this.pages.get(tabId)?.url ?? '').pathname
+        } catch {}
+        const key = `${tabId}:${where}`
+        if (!this.handoffChecked.has(key)) {
+          this.handoffChecked.add(key)
+          const again = await this.read(
+            tabId,
+            undefined,
+            '아직 넘기지 않았어요. 사용자는 폰만 들고 있어 PC 화면을 만지기 어려워요. 화면을 다시 읽었어요(아래, 화면 안 액자와 "(화면에 보이는 칸)" 포함). ' +
+              '여기 있는 칸·버튼으로 할 수 있으면 직접 하세요: 이름·휴대폰번호·생년월일은 browser_fill_profile, 문자 인증번호·인증서 비밀번호·PIN은 browser_request_code(폰 키패드 카드), 인증 앱 승인은 browser_wait_auth, 고를 것은 browser_request_approval. ' +
+              '그래도 사람 손이 꼭 필요하면(로봇 확인 그림 등) 그때 browser_handoff를 다시 부르세요.',
+          )
+          // 실패로 돌려준다: 대화에 [PC 화면 넘기기] 카드가 남지 않게 (실제로 넘길 때만 남는다)
+          return { ...again, isError: true }
+        }
         await this.browser.call('focus', { tabId })
         this.holdForPerson(tabId)
         return {
@@ -1445,7 +1524,7 @@ export class BrowserTools {
             {
               type: 'text',
               text:
-                'Chrome의 두리 탭을 사용자 앞에 띄웠어요. 사용자에게 무엇을 해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ' +
+                '폰에 이 화면의 필요한 칸만 담은 카드를 띄웠어요. 사용자에게 "폰에 뜬 카드에서 ○○ 칸만 직접 넣어 주세요"처럼 무엇을 넣을지 한두 문장으로 말하고(PC 화면·두리 탭을 보라고 하지 말고) 이번 답은 여기서 끝내세요. ' +
                 '사용자가 [다 했어요]를 누르면 다음 메시지로 이어서 하라는 부탁이 와요. 그때 페이지를 다시 읽어 확인하고 이어 가세요.',
             },
           ],
@@ -1474,11 +1553,14 @@ export class BrowserTools {
         const entry = this.entersCheckout(tabId, page, target.name)
         // '신청하기'·'등록하기' 같은 말이라도 다른 화면으로 가기만 하는 진짜 링크는 승인 없이 누른다
         // (정부24는 조회만 하는 서비스도 들어가는 버튼이 '신청하기'). 제출 버튼·스크립트 링크·결제·삭제는 그대로 막는다
+        // 결제 쪽 이름·주소(네이버페이 메뉴 등)라도 진짜 링크는 화면을 열 뿐이다: 돈이 나가는 건 열린 화면의 마지막 버튼이고
+        // 거기서 승인을 받는다(실측 혜택 16: '페이' 메뉴 링크가 결제로 막혀 출석 체크를 못 했다). 지우기류는 GET 링크도 있어 그대로 막는다
         const label = `${target.role} ${target.name}`
+        const navKind = classifyRisk(label, page.url, page.pay)?.kind
         const navOnly =
           !entry &&
           target.role === '링크' &&
-          classifyRisk(label, page.url, page.pay)?.kind === 'contact' &&
+          (navKind === 'contact' || navKind === 'money') &&
           (
             (await this.browser.call('link-navigates', { tabId, ref }).catch(() => undefined)) as
               | { navigates?: boolean }
@@ -2380,6 +2462,57 @@ export class BrowserTools {
       : `🔐 가입이 끝난 걸 확인하고 금고에 저장했어요(${p.username}). 다음부터 두리가 이 계정으로 로그인해요.`
   }
 
+  /** 로그인 카드로 받은 값: 금고에 넣지만 '확인 전'으로 둔다 (본체가 저장 직후 부른다) */
+  markUnverified(origin: string) {
+    this.unverified.add(origin)
+  }
+
+  /**
+   * 금고 값으로 로그인한 뒤 읽은 화면. 됐는지 안 됐는지는 규칙으로 가리지 않고 AI가 화면을 보고 판단한다:
+   * 비밀번호 칸이 없는 화면으로 넘어갔으면 성공으로 보고(확인 전 표시를 지운다), 아직 로그인 화면이면 판단을 맡긴다
+   */
+  private async settleLogin(tabId: number, s: Snapshot): Promise<string | undefined> {
+    const t = this.loginTries.get(tabId)
+    if (!t) return undefined
+    let origin = ''
+    try {
+      origin = new URL(s.url).origin
+    } catch {}
+    if (origin === t.origin && /비밀번호칸/.test(s.text))
+      return '🔑 방금 금고 값으로 로그인을 시도했어요. 이 화면이 로그인이 안 됐다고 말하면(아이디·비밀번호가 틀렸다는 안내, 같은 로그인 화면 그대로) browser_login을 failed: true와 reason(화면이 한 말)으로 불러 알려 주세요. 아직 버튼을 안 눌렀으면 로그인 버튼부터 누르세요.'
+    // 비밀번호 칸이 없는 화면으로 넘어갔다: 성공
+    this.loginTries.delete(tabId)
+    this.unverified.delete(t.origin)
+    return undefined
+  }
+
+  /** AI가 화면을 보고 "로그인이 안 됐다"고 알렸다: 카드로 막 받은 값이면 금고에서 지우고, 다시 받을 수 있게 한다 */
+  private async loginFailed(tabId: number, reason: string): Promise<ToolResult> {
+    const t = this.loginTries.get(tabId)
+    let origin = t?.origin
+    if (!origin)
+      try {
+        origin = new URL(this.pages.get(tabId)?.url ?? '').origin
+      } catch {}
+    if (!origin) throw new Error('어느 사이트 로그인인지 몰라요. 페이지를 다시 읽어(browser_read) 주세요')
+    this.loginTries.delete(tabId)
+    const fresh = this.unverified.has(origin)
+    if (fresh && t) await this.vault?.remove?.(t.entryId)
+    // 예전에 저장한 값이 바뀌었을 수도 있다: 카드를 다시 띄울 수 있게 한다(새 값이 예전 값을 덮는다)
+    this.unverified.add(origin)
+    const why = reason ? `("${reason.slice(0, 60)}")` : ''
+    return {
+      content: [
+        {
+          type: 'text',
+          text: fresh
+            ? `🔑 로그인이 안 됐어요${why}. 카드로 받은 아이디·비밀번호가 틀려서 금고에서 지웠어요. browser_request_login으로 카드를 다시 띄워 받으세요(사용자가 비밀번호를 모르면 비밀번호 찾기로).`
+            : `🔑 로그인이 안 됐어요${why}. 금고에 있던 값이 바뀐 것 같아요. browser_request_login으로 카드를 띄워 새 값을 받으세요(받으면 예전 값을 덮어요). 사용자가 비밀번호를 모르면 비밀번호 찾기로.`,
+        },
+      ],
+    }
+  }
+
   private async read(
     tabId: number,
     maxChars?: unknown,
@@ -2460,6 +2593,7 @@ export class BrowserTools {
     const info = pageInfo(s.url, s.text)
     this.pages.set(tabId, info)
     const accountNote = await this.settlePassword(s)
+    const loginNote = await this.settleLogin(tabId, s)
     // 구매 버튼을 눌렀는데 "옵션을 선택해 주세요"가 떴으면, 옵션 칸을 짚어 고르는 법을 알린다
     const optionNote =
       notes.some((d) => d.type !== 'beforeunload' && NEED_OPTION.test(d.message)) ||
@@ -2476,6 +2610,7 @@ export class BrowserTools {
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
       ...(cookieNote ? [cookieNote] : []),
       ...(accountNote ? [accountNote] : []),
+      ...(loginNote ? [loginNote] : []),
       ...(optionNote ? [optionNote] : []),
       ...(flow && info.confirmed
         ? [
@@ -2488,7 +2623,7 @@ export class BrowserTools {
           : []),
       ...(s.captcha
         ? [
-            '⚠ 로봇 확인(캡차·자동입력 방지) 화면이 보여요. 풀려고 하지 말고 사용자에게 직접 해 달라고 부탁해 주세요.',
+            '⚠ 로봇 확인(캡차·자동입력 방지)이 보여요. 글자를 입력하는 보안문자면 browser_request_code(kind: "captcha")로 그림과 함께 폰 카드로 받아요(글자를 네가 읽어 넣지 않는다). 그림 고르기·체크 같은 로봇 확인이면 그때만 browser_handoff로 넘겨요.',
           ]
         : []),
       ...(guide ? [guide] : []),

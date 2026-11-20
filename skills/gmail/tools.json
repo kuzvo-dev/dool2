@@ -73,7 +73,7 @@
       ],
       "steps": [
         {
-          "open": "https://mail.google.com/mail/u/0/#search/{{query|url}}"
+          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/{{query|url}}"
         },
         {
           "wait": {
@@ -135,7 +135,7 @@
               "snippet": "snippet",
               "date": "date",
               "unread": "unread",
-              "link": "https://mail.google.com/mail/u/0/#all/{{tid}}"
+              "link": "https://mail.google.com/mail/u/{{account|url}}/#all/{{tid}}"
             },
             "limit": "{{limit}}"
           },
@@ -175,7 +175,7 @@
       ],
       "steps": [
         {
-          "open": "https://gmail.com/#search/category%3Apromotions%20newer_than%3A90d"
+          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/category%3Apromotions%20newer_than%3A90d"
         },
         {
           "sleep": 2500
@@ -219,7 +219,7 @@
       ],
       "steps": [
         {
-          "open": "https://gmail.com/#search/from%3A{{sender|url}}"
+          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/from%3A{{sender|url}}"
         },
         {
           "sleep": 2500

@@ -304,7 +304,11 @@ describe('ThreadService', () => {
 
   it('사람에게 넘긴 일을 기록에 남긴다', async () => {
     const { store, svc } = setup([
+      // 처음 부른 건 관문에 막혀 실패 → 카드 없음, 다시 불러 넘긴 것만 남는다
+      { type: 'tool', name: 'mcp__dool2__browser_handoff', input: { tabId: 4, reason: '휴대폰번호' } },
+      { type: 'tool_result', ok: false, name: 'mcp__dool2__browser_handoff' },
       { type: 'tool', name: 'mcp__dool2__browser_handoff', input: { tabId: 4, reason: '로그인해 주세요' } },
+      { type: 'tool_result', ok: true, name: 'mcp__dool2__browser_handoff' },
       { type: 'text', delta: '로그인만 해 주세요' },
       { type: 'done', text: '로그인만 해 주세요' },
     ])
@@ -313,8 +317,9 @@ describe('ThreadService', () => {
     const rows = store.listMessages(t.id).filter((m) => !m.text.includes('"kind":"work"'))
     expect(rows.map((m) => [m.role, m.text])).toEqual([
       ['user', '주문 내역 봐 줘'],
-      ['tool', JSON.stringify({ kind: 'handoff', tabId: 4, reason: '로그인해 주세요' })],
+      // 카드는 답 글 아래에
       ['assistant', '로그인만 해 주세요'],
+      ['tool', JSON.stringify({ kind: 'handoff', tabId: 4, reason: '로그인해 주세요' })],
     ])
   })
 

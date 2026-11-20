@@ -23,7 +23,7 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
-import { AUTH_APPS, SIDE_THREAD_PEEK } from '@dool2/protocol'
+import { AUTH_APPS, CARRIERS, SIDE_THREAD_PEEK } from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -4232,6 +4232,7 @@ const PROFILE_LABEL: Record<string, string> = {
   address_detail: '상세 주소',
   rrn_back: '주민번호 뒷자리',
   auth_app: '간편인증 앱',
+  carrier: '통신사',
 }
 
 /** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */
@@ -4257,10 +4258,11 @@ function profileSheet() {
   const inputs = Object.entries(PROFILE_LABEL).map(([key, label]) => {
     const input = h('input', { class: 'field' })
     input.name = key
-    if (key === 'auth_app') {
-      // 간편인증 앱은 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
+    if (key === 'auth_app' || key === 'carrier') {
+      // 간편인증 앱·통신사는 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
       input.type = 'hidden'
-      return { key, label, input, chips: choiceChips(AUTH_APPS, p.have[key] ?? '', (v) => (input.value = v)) }
+      const opts = key === 'carrier' ? CARRIERS : AUTH_APPS
+      return { key, label, input, chips: choiceChips(opts, p.have[key] ?? '', (v) => (input.value = v)) }
     }
     input.placeholder = p.have[key] ? `${p.have[key]} (바꿀 때만 넣기)` : '없음'
     input.setAttribute('aria-label', label)
@@ -5150,6 +5152,13 @@ function infoSheet(id: string) {
   )
   const body: Node[] = []
   if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
+  // 보안문자: 두리가 고른 그림을 보여 주고 그 글자를 받는다 (PC 화면을 보지 않아도 된다)
+  if (q.image) {
+    const img = h('img', { class: 'captcha-img' }) as HTMLImageElement
+    img.src = `data:image/jpeg;base64,${q.image}`
+    img.alt = '보안문자 그림'
+    body.push(img)
+  }
   if (q.field === 'choice' && q.options?.length) {
     // 하나 고르기 (예: 구글 계정이 여럿일 때). 고른 글을 그대로 답한다
     body.push(
@@ -5253,6 +5262,13 @@ function infoSheet(id: string) {
       input.type = 'tel'
       input.inputMode = 'tel'
       input.autocomplete = 'tel'
+    }
+    if (q.image) {
+      input.autocomplete = 'off'
+      input.setAttribute('autocapitalize', 'off')
+      input.setAttribute('autocorrect', 'off')
+      input.spellcheck = false
+      input.placeholder = '그림의 글자'
     }
     const go = h('button', { class: 'btn lg', text: '넣기' })
     go.type = 'submit'

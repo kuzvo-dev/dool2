@@ -8,6 +8,8 @@ import {
   type ExtractSpec,
   type LocateMode,
   type LocateResult,
+  pageActiveValueLength,
+  pageCaptchaRects,
   pageCaretEnd,
   pageClick,
   pageCursor,
@@ -882,6 +884,23 @@ async function pressKey(tabId: number, name: string) {
   await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', ...common })
 }
 
+/**
+ * 한 글자씩 키를 눌러 넣기 (숫자·영문·기호). 한 번에 넣기(insertText)를 받지 않는 보안 입력칸용
+ * (실측 금융인증서 창 휴대폰번호 칸: 한 번에 넣으면 0자)
+ */
+async function typeKeys(tabId: number, text: string) {
+  for (const ch of text) {
+    const digit = /[0-9]/.test(ch)
+    const letter = /[a-zA-Z]/.test(ch)
+    const code = digit ? `Digit${ch}` : letter ? `Key${ch.toUpperCase()}` : ''
+    const keyCode = digit ? 48 + Number(ch) : letter ? ch.toUpperCase().charCodeAt(0) : 0
+    const common = { key: ch, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode }
+    await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', ...common, text: ch, unmodifiedText: ch })
+    await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', ...common })
+    await sleep(40)
+  }
+}
+
 async function pageState(tabId: number) {
   const t = await chrome.tabs.get(tabId)
   const open = dialogs.get(tabId)
@@ -1289,16 +1308,31 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const at = await locate(tabId, a.ref, 'type')
       // 액자 안 칸은 같은 사이트의 액자일 때만 (로그인 창을 하위 도메인 액자로 띄우는 곳)
       const inFrameRef = Boolean(at.frame)
-      const ok = at.origin === a.origin || (inFrameRef && siteOf(at.origin) === siteOf(a.origin))
+      // 내 정보(이름·휴대폰·생년월일)는 공인된 인증 창 액자에도 넣는다 (금융인증서 창은 금융결제원 주소의 액자다).
+      // 비밀번호(금고)는 a.trust를 주지 않아 지금처럼 그 사이트에만 넣는다
+      const trusted =
+        inFrameRef && Array.isArray(a.trust) && (a.trust as string[]).includes(siteOf(at.origin))
+      const ok = at.origin === a.origin || (inFrameRef && siteOf(at.origin) === siteOf(a.origin)) || trusted
       if (!ok) throw new Error('지금 페이지 주소가 저장된 사이트와 달라서 채우지 않았어요')
       if (a.password && !at.isPassword) throw new Error('비밀번호 칸이 아니라서 채우지 않았어요')
       // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있어, 칸을 한 번 눌러 초점을 준다
-      if (inFrameRef && !at.hidden) await clickAt(tabId, at.x, at.y, '두리 금고로 채우는 중')
+      // 스크립트 초점이 이미 들어갔으면 누르지 않는다: 액자 좌표가 어긋나 칸 밖을 누르면 초점이 빠지고
+      // 사이트가 "번호를 올바르게 입력해 주세요"를 띄웠다 (실측 금융인증서 창)
+      if (inFrameRef && !at.hidden && !at.focused) await clickAt(tabId, at.x, at.y, '두리 금고로 채우는 중')
       else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리 금고로 채우는 중')
       await cdp(tabId, 'Input.insertText', { text: a.value })
       const frameId = frameOf(tabId, String(a.ref)).frameId
       // 칸이 글자 수를 막으면(maxlength) 잘려 들어간다: 들어간 길이만 알린다 (값은 돌려주지 않는다)
-      const length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref)).catch(() => -1)) as number
+      let length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
+        () => -1,
+      )) as number
+      // 하나도 안 들어갔으면 키를 하나씩 눌러 다시 (비밀번호는 금고 값이 키 기록에 남지 않게 하지 않는다)
+      if (length === 0 && a.value && !a.password) {
+        await typeKeys(tabId, a.value)
+        length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
+          () => -1,
+        )) as number
+      }
       await inFrame(tabId, frameId, pageMarkFilled, String(a.ref))
       return { tabId, filled: true, ...(length >= 0 ? { length } : {}) }
     }
@@ -1330,6 +1364,39 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       await sleep(300)
       return pageState(tabId)
+    }
+    case 'captcha-candidates': {
+      // 보안문자 칸 둘레를 몇 장 잘라 돌려준다. 어느 그림이 보안문자인지는 AI가 보고 고른다
+      const tabId = await ownedTab(a)
+      await frontTab(tabId)
+      if (typeof a.ref !== 'string') throw new Error('칸 표시(ref)가 필요해요')
+      const f = frameOf(tabId, a.ref)
+      const rects = ((await inFrame(tabId, f.frameId, pageCaptchaRects, a.ref).catch(() => [])) ?? []) as {
+        x: number
+        y: number
+        w: number
+        h: number
+        what: string
+      }[]
+      const off =
+        f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+      await sleep(250)
+      const shots: { what: string; data: string }[] = []
+      for (const r of rects) {
+        const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+          format: 'jpeg',
+          quality: 85,
+          clip: {
+            x: Math.max(0, r.x + off.x),
+            y: Math.max(0, r.y + off.y),
+            width: r.w,
+            height: r.h,
+            scale: 2,
+          },
+        }).catch(() => undefined)
+        if (shot) shots.push({ what: r.what, data: shot.data })
+      }
+      return { shots }
     }
     case 'screenshot': {
       const tabId = await ownedTab(a)
@@ -1552,8 +1619,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           // 진짜 키 입력처럼: 칸을 비우고(전체 선택) 새 글자를 넣는다
           const w = where(id)
           if (!(await inFrame(tabId, w.frameId, pageFormFocus, w.id))) continue
-          if (it.value) await cdp(tabId, 'Input.insertText', { text: it.value.slice(0, 200) })
-          else await pressKey(tabId, 'Backspace')
+          if (it.value) {
+            const text = it.value.slice(0, 200)
+            await cdp(tabId, 'Input.insertText', { text })
+            // 한 번에 넣기를 받지 않는 칸(보안문자·본인확인 칸): 하나도 안 들어갔으면 키를 하나씩 누른다
+            // (실측: 폰 '필요한 칸만'에서 넣었는데 PC 칸은 비어 있었다)
+            const n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
+            if (n === 0) await typeKeys(tabId, text)
+          } else await pressKey(tabId, 'Backspace')
         }
         await sleep(60)
       }

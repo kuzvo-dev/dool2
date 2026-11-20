@@ -190,11 +190,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'login',
     '두리 금고로 로그인 칸 채우기',
-    '사용자가 두리 금고에 저장해 둔 사이트면, 아이디·비밀번호 칸을 두리가 직접 채운다. 값은 보이지 않는다. 채운 뒤 로그인 버튼은 browser_click으로 누른다. 금고에 없으면 browser_request_login으로 로그인 카드를 띄운다.',
+    '사용자가 두리 금고에 저장해 둔 사이트면, 아이디·비밀번호 칸을 두리가 직접 채운다. 값은 보이지 않는다. 채운 뒤 로그인 버튼은 browser_click으로 누른다. 누른 뒤 화면이 로그인이 안 됐다고 말하면(틀렸다는 안내 등, 네가 판단) failed: true로 다시 불러 알린다 — 그래야 카드로 새 값을 받을 수 있다. 금고에 없으면 browser_request_login으로 로그인 카드를 띄운다.',
     {
       tabId,
-      passwordRef: ref.describe('비밀번호칸 표시 (예: e7)'),
+      passwordRef: ref.optional().describe('비밀번호칸 표시 (예: e7). failed일 때는 생략'),
       usernameRef: ref.optional().describe('아이디 입력칸 표시. 아이디가 이미 채워져 있으면 생략'),
+      failed: z
+        .boolean()
+        .optional()
+        .describe('금고 값으로 로그인했는데 화면이 안 됐다고 말할 때 true (네가 화면을 보고 판단한다)'),
+      reason: z
+        .string()
+        .max(80)
+        .optional()
+        .describe('failed일 때 화면이 한 말 (예: "비밀번호가 일치하지 않습니다")'),
     },
     false,
   )
@@ -251,7 +260,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'wait_auth',
     '인증 앱 승인 기다리기',
-    '간편인증(카카오톡·네이버·토스·PASS 등) 요청을 보낸 뒤 쓴다. 부르기 직전에 "카카오톡(고른 앱)으로 인증 요청을 보냈어요. 승인하고 [인증 완료했어요]를 눌러 주세요"라고 한 줄 쓴다(진행 카드에 바로 보인다). 사용자 폰에 알림과 [인증 완료했어요] 카드를 띄우고 최대 3분 동안 기다린다. 사이트가 스스로 넘어가면 바로, 사용자가 카드를 누르면 그때 화면의 [인증 완료]·[확인] 버튼(ref)을 한 번 눌러 확인한다(승인 전에 누르면 인증 창을 닫는 사이트가 있다). 아직이면 카드를 다시 띄운다. 승인되면 다음 화면을 돌려주니 그대로 이어 간다. browser_handoff로 넘기고 [다 했어요]를 기다리지 않는다(그사이 인증이 만료된다). ref를 모르면 비워도 본체가 화면의 [인증 완료]류 버튼을 찾아 누른다.',
+    '간편인증(카카오톡·네이버·토스·PASS 등) 요청을 보낸 뒤 쓴다. 부르기 직전에 "카카오톡(고른 앱)으로 인증 요청을 보냈어요. 승인하고 [인증 완료했어요]를 눌러 주세요"라고 한 줄 쓴다(진행 카드에 바로 보인다). 사용자 폰에 알림과 [인증 완료했어요] 카드를 띄우고 최대 3분 동안 기다린다. 기다리는 동안은 아무것도 누르지 않는다(승인 전에 누르면 인증 창을 닫는 사이트가 있다). 화면이 바뀌거나(주소·확인 창·인증 창 닫힘) 사용자가 카드를 누르면 그때 화면을 돌려주니, 됐는지는 네가 화면을 보고 판단해 이어 간다: [인증 완료]·[확인] 버튼이 있으면 누르고, 화면이 아직이라고 하면 그때만 다시 부른다. ref를 주면 사용자가 카드를 누른 순간 그 버튼을 한 번 눌러 준다. browser_handoff로 넘기고 [다 했어요]를 기다리지 않는다(그사이 인증이 만료된다).',
     {
       tabId,
       ref: ref.optional().describe('승인 뒤 누르는 [인증 완료]·[확인] 버튼 표시 (없으면 생략)'),
@@ -265,18 +274,25 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   )
   tool(
     'request_code',
-    '폰에서 받아 칸에 바로 넣기 (인증번호·주민번호 뒷자리)',
-    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
+    '폰에서 받아 칸에 바로 넣기 (인증번호·주민번호 뒷자리·보안문자)',
+    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back), 보안문자·자동입력 방지 글자(kind: captcha — 먼저 pick 없이 부르면 칸 둘레를 자른 그림 몇 장이 오니, 보안문자가 또렷한 그림 번호를 pick으로 다시 부른다. 카드에 그 그림이 함께 뜬다. 글자를 네가 읽어 넣지 않는다). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
     {
       tabId,
       ref: ref.describe('인증번호를 넣을 입력칸 표시'),
       label: z.string().max(40).optional().describe('카드에 보일 칸 이름 (예: "인증번호 6자리")'),
       kind: z
-        .enum(['code', 'rrn_back'])
+        .enum(['code', 'rrn_back', 'captcha'])
         .optional()
         .describe(
-          'code=인증번호(기본, 저장하지 않음) · rrn_back=주민등록번호 뒷자리(본인인증 칸, 금고에 저장)',
+          'code=인증번호(기본, 저장하지 않음) · rrn_back=주민등록번호 뒷자리(본인인증 칸, 금고에 저장) · captcha=보안문자(그림과 함께)',
         ),
+      pick: z
+        .number()
+        .int()
+        .min(1)
+        .max(6)
+        .optional()
+        .describe('captcha일 때 앞서 받은 그림 중 보안문자가 또렷한 그림 번호'),
     },
     false,
   )
@@ -298,6 +314,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
             'address',
             'address_detail',
             'auth_app',
+            'carrier',
           ]),
         )
         .max(10)
@@ -389,7 +406,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'handoff',
     '사람에게 넘기기',
-    '마지막 수단: 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다(번거롭다). 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 이걸로 안 되는 로봇 확인(캡차)·공동인증서 비밀번호·화면에서만 되는 조작일 때만 쓴다. 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '마지막 수단: 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다(번거롭다). 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 인증서(금융·공동) 비밀번호·PIN도 칸이 있으면 browser_request_code로 받는다. 이걸로 안 되는 로봇 확인(캡차) 같은 것일 때만 쓴다. 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다(할 수 있으면 직접 하고, 정말 필요하면 다시 부른다). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       reason: z

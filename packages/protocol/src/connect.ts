@@ -80,6 +80,14 @@ export const ConnectCardSchema = z
       .optional(),
     category: ConnectCategorySchema,
     how: ConnectHowSchema,
+    /**
+     * 같은 계정으로 로그인하는 서비스 id (예: 네이버 메일 → naver). 그 서비스가 연결돼 있으면 이것도 연결된 것으로 본다
+     * (실측: 네이버를 연결했는데 네이버 메일 연결 카드를 또 띄웠다)
+     */
+    sameLoginAs: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]{0,40}$/)
+      .optional(),
     /** 로그인 화면 주소 (첫 화면에서 로그인 링크를 찾기 어려운 사이트만) */
     loginUrl: z.string().url().startsWith('https://').optional(),
     /** 로그인 화면에 있는 간편 로그인 (실제 사이트 점검으로 확인한 것만). 연결 화면에 "카카오로 연결" 버튼이 생긴다 */
