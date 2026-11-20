@@ -1270,12 +1270,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }).catch(() => -1)
       let mouseIgnored = false
       if (!at.hidden) {
-        const sig = await mark()
-        const watching = await watch()
+        // 서명 읽기와 변화 감시 걸기를 함께 (누르기마다 붙는 시간을 줄인다: 새 창 링크가 3초를 넘었다)
+        const [sig, watching] = await Promise.all([mark(), watch()])
         await clickAt(tabId, at.x, at.y, '두리가 누르는 중')
         await settle(tabId, before)
-        const moved = watching ? await mutated() : -1
-        mouseIgnored = sig !== '' && sig === (await mark()) && moved <= 0
+        // 새 탭(창)이 열렸으면 눌린 것이다 — 다시 누르면 같은 창이 또 열린다
+        const opened = (lastPopup as { opener: number } | undefined)?.opener === tabId
+        const same = !opened && sig !== '' && sig === (await mark())
+        // 서명이 같을 때만 변화 감시를 읽는다 (다르면 이미 눌린 것). 감시는 어느 쪽이든 끈다
+        const moved = same && watching ? await mutated() : (void mutated(), 1)
+        mouseIgnored = same && moved <= 0
       }
       // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 마우스가 안 먹은 것처럼 보여도 다시 누르지 않는다.
       // once: 키패드 숫자처럼 눌러도 화면 글이 안 바뀌는 버튼 — 다시 누르면 같은 숫자가 두 번 들어간다
