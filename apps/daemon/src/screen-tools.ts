@@ -190,7 +190,7 @@ export class ScreenTools {
         const ref = String(a.ref ?? '')
         const el = this.screens.get(id)?.get(ref)
         if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
-        const risk = classifyRisk(el.name, '')
+        const risk = classifyRisk(el.name)
         if (risk) return this.blocked(risk.kind, risk.reason, el.name, ref)
         const res = (await this.hands.call('click', { bundleId: id, ref })) as { via: string }
         await sleep(400)
@@ -277,11 +277,11 @@ export class ScreenTools {
         if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
         const risk = isEnter
           ? { kind: 'contact' as const, reason: '메신저에서 Enter(보내기)' }
-          : classifyRisk(el.name, '')
+          : classifyRisk(el.name)
         if (!risk) return err('이 버튼은 승인 없이 눌러도 돼요. screen_click을 쓰세요.')
         if (this.settings.finalStep() === 'self')
           return err(
-            '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 여기까지 한 내용을 알려 주고, 마지막은 직접 해 달라고 부탁하세요.',
+            '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 승인 카드는 띄우지 않아요. 마지막 버튼 바로 앞까지 준비해 둔 것(무엇을·어디서·얼마)을 한두 문장으로 정리해 "준비해 뒀어요"라고 알리고 이번 답을 끝내세요. 다른 앱으로 가라고 하지 않아요.',
           )
         const shot = await this.hands
           .call('screenshot', { bundleId: id, maxWidth: 1000 }, 30_000)

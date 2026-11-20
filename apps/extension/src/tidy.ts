@@ -16,8 +16,13 @@ export interface TidyTab {
   id: number
   /** 두리가 마지막으로 이 탭에 무언가를 시킨 때 (모르면 지금으로 본다) */
   usedAt: number
-  /** 폰에서 원격 화면으로 보고 있거나, 방금 연 탭: 건드리지 않는다 */
+  /** 폰에서 원격 화면으로 보고 있거나, 방금 연 탭, 잡아 둔(hold) 탭: 건드리지 않는다 */
   keep?: boolean
+  /**
+   * 가족 탭: 연 새 창이 아직 살아 있는 탭(결제 창을 띄운 주문서)이거나, 살아 있는 탭이 30분 안에 연 탭(결제 창).
+   * 닫지도 재우지도 않는다 — 주문서를 닫거나 재우면 결제 창이 결과를 돌려줄 곳이 없어 결제가 끊긴다 (실측 11-20 G마켓)
+   */
+  family?: boolean
   /** 이미 잠들어 있음 */
   discarded?: boolean
   /** 창에서 앞에 나와 있는 탭은 Chrome이 잠재우지 못한다 */
@@ -29,7 +34,8 @@ export interface TidyPlan {
   sleep: number[]
 }
 
-export function tidyPlan(tabs: TidyTab[], now: number, max = MAX_TABS): TidyPlan {
+export function tidyPlan(input: TidyTab[], now: number, max = MAX_TABS): TidyPlan {
+  const tabs = input.map((t) => (t.family ? { ...t, keep: true } : t))
   const close = new Set<number>()
   // 1) 오래 안 쓴 탭은 닫는다
   for (const t of tabs) if (!t.keep && now - t.usedAt >= CLOSE_AFTER_MS) close.add(t.id)

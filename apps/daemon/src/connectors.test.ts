@@ -256,7 +256,7 @@ describe('서비스 도구 실행기', () => {
     await expect(connectors.catalog()).resolves.toEqual([])
     const r = await connectors.call('demo_eats_peek', {})
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toMatch(/^멈췄어요: "구매"/)
+    expect(textOf(r)).toMatch(/^승인이 필요해요: .*"구매"/)
     expect(calls.some((c) => c[0] === 'click')).toBe(false)
   })
 
@@ -618,20 +618,23 @@ describe('도구 주소 칸은 내 정보 주소로', () => {
   })
 })
 
-describe('찾은 뒤 사용자가 고르기 전에는 주문 준비를 멈춘다', () => {
-  it('찾아보기 다음 돈 내기 도구는 사용자 말이 새로 오기 전까지 막고, "알아서"면 그대로', async () => {
+describe('찾은 뒤 바로 주문 준비로 오면 한 줄 붙인다 (판단은 AI)', () => {
+  it('찾아보기 다음 사용자 말 없이 돈 내기 도구를 부르면 막지 않고, 고를지·진행할지를 AI가 정하게 알린다', async () => {
     const { Connectors } = await import('./connectors.js')
     let user = { at: Date.now() - 10_000, text: '저녁 배달 시켜 줘' }
     const c = new Connectors({ lastUser: () => user } as never) as unknown as {
       pickGate: (id: string, t: { tier: string }) => string | undefined
     }
     expect(c.pickGate('food', { tier: '찾아보기' })).toBeUndefined()
-    expect(c.pickGate('food', { tier: '돈 내기' })).toContain('show_cards')
+    const note = c.pickGate('food', { tier: '돈 내기' })
+    expect(note).toContain('show_cards')
+    expect(note).toContain('이미 골랐으면')
     user = { at: Date.now() + 1, text: '두 번째 걸로' }
     expect(c.pickGate('food', { tier: '돈 내기' })).toBeUndefined()
+    // "알아서"는 정규식으로 가리지 않는다: 같은 안내가 붙고 AI가 대화를 보고 진행한다
     c.pickGate('food', { tier: '찾아보기' })
     user = { at: Date.now() - 5, text: '알아서 골라서 바로 시켜 줘' }
-    expect(c.pickGate('food', { tier: '돈 내기' })).toBeUndefined()
+    expect(c.pickGate('food', { tier: '돈 내기' })).toContain('알아서')
   })
 
   it('같은 동네 이름인데 내 번지가 없으면 짐작한 주소라 내 정보 주소로 바꾼다', async () => {

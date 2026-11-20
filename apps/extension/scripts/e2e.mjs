@@ -131,6 +131,30 @@ document.getElementById('buy').addEventListener('click', () => { document.title 
 </body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
+  // 빈 주소 액자(결제 회사가 about:blank 액자를 만들어 스크립트로 채운다)와 srcdoc 액자
+  '/blank-frames': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>결제 액자</title></head><body style="margin:30px">
+<h1>주문서</h1><p>결제 수단을 골라 주세요.</p>
+<iframe id="amount" style="width:360px;height:80px;border:0;margin-left:120px"></iframe>
+<iframe id="pick" style="width:360px;height:90px;border:2px solid #ccc;margin:40px 0 0 220px" srcdoc="<!doctype html><meta charset=utf-8><button style='margin:20px 0 0 60px' onclick=&quot;document.body.insertAdjacentHTML('beforeend','<p>카드 골랐어요</p>')&quot;>카드 선택</button>"></iframe>
+<script>const d = document.getElementById('amount').contentDocument; d.open(); d.write('<!doctype html><meta charset=utf-8><p>결제 금액 12,300원</p>'); d.close()</script>
+</body></html>`,
+  // 늦게 뜨는 새 창, 한 번에 두 창(두 번째는 Chrome이 막는다)
+  '/pops': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>새 창 가게</title></head><body>
+<h1>새 창 가게</h1>
+<button onclick="setTimeout(() => window.open('/popup?late'), 2000)">늦게 새 창</button>
+<button onclick="window.open('/popup?one'); window.open('/popup?two')">두 창</button>
+</body></html>`,
+  // 누르고 한참 뒤에 바뀌는 화면 (결제 완료가 늦게 뜬다)
+  '/later': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>늦은 가게</title></head><body>
+<h1>늦은 가게</h1>
+<button onclick="setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p>결제 완료 주문번호 A-123</p>'), 3500)">결제 확인</button>
+</body></html>`,
+  // 화면 아래 끝의 키패드 (굴려서 보이는 것)와 화면 아래로 잘린 고정 키패드 (굴려도 안 보이는 것)
+  '/keypad': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>키패드</title></head><body style="margin:0">
+<h1>결제 비밀번호</h1><div style="height:2200px">위쪽 안내</div>
+<div id="pad">${[1, 2, 3].map((n) => `<button style="width:80px;height:50px" onclick="document.title='누름 ${n}'">${n}</button>`).join('')}</div>
+<div style="position:fixed;left:20px;top:1150px"><button style="width:90px;height:50px" onclick="document.title='고정 9'">9</button></div>
+</body></html>`,
 }
 const site = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x')
@@ -166,6 +190,27 @@ const site = createServer((req, res) => {
   r.innerHTML = '<p>그림자 속 상품 귤 3kg</p><button>귤 담기</button>'
   r.querySelector('button').addEventListener('click', () => { document.title = '귤 담음' })
 } })</script></body></html>`)
+  }
+  // 겹친 액자: 페이지(127.0.0.1) → 배송지 창(localhost) → 주소 찾기 창(127.0.0.1). 단계마다 자리가 어긋나 있다
+  if (url.pathname === '/nested') {
+    const port = site.address().port
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>겹친 액자</title></head><body style="margin:0">
+<h1 style="margin:20px">주문서</h1><p style="margin:20px">배송지를 추가해 주세요.</p>
+<iframe src="http://localhost:${port}/nest1" style="position:absolute;left:300px;top:180px;width:620px;height:460px;border:6px solid #999;padding:10px"></iframe>
+</body></html>`)
+  }
+  if (url.pathname === '/nest1') {
+    const port = site.address().port
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(`<!doctype html><meta charset="utf-8"><body style="margin:0;background:#f6f6f6"><p style="margin:12px">배송지 추가 창</p>
+<iframe src="http://127.0.0.1:${port}/nest2" style="margin:60px 0 0 150px;width:380px;height:220px;border:3px solid #333"></iframe></body>`)
+  }
+  if (url.pathname === '/nest2') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(
+      '<!doctype html><meta charset="utf-8"><body style="margin:0"><p style="margin:10px">주소 찾기 결과</p><button style="margin:50px 0 0 90px;width:140px;height:40px" onclick="document.body.insertAdjacentHTML(\'beforeend\', \'<p>주소 골랐어요: 서울 성동구</p>\')">서울 성동구</button></body>',
+    )
   }
   if (url.pathname === '/frame') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -390,7 +435,8 @@ try {
     await call('navigate', { tabId, url: `${base}/app` })
     const s = await call('snapshot', { tabId })
     assert.match(s.text, /버튼 "수량 줄이기" 비활성\]\s+0\s+\[e\d+ 버튼 "수량 늘리기"\]/, s.text)
-    assert.match(s.text, /\[e\d+ 버튼 "닫기"\]/)
+    // 아이콘 속성으로 짐작한 이름은 (추정)으로 알린다 (화면에 적힌 이름이 아니다)
+    assert.match(s.text, /\[e\d+ 버튼 "닫기" \(추정\)\]/)
     assert.match(s.text, /안내는 그림이라 글로 읽을 수 없어요/)
   })
 
@@ -520,7 +566,8 @@ try {
     assert.match(r, /주문하시겠습니까/)
     const blocked = await tools.run('dialog', { tabId, accept: true })
     assert.equal(blocked.isError, true)
-    assert.match(text(blocked), /승인 없이는 \[확인\]을 누르지 않아요/)
+    // 개편 뒤 문구: 막는 대신 승인 카드 길(browser_request_approval dialog)을 알려 준다. 누르지 않은 것은 같다
+    assert.match(text(blocked), /승인이 필요해요[\s\S]*browser_request_approval\(dialog: true/)
     const asked = await tools.run('request_approval', {
       tabId,
       dialog: true,
@@ -683,6 +730,133 @@ try {
     t = Date.now()
     const moved = text(await tools.run('click', { tabId, ref: btn('늦게 넘어가기') }))
     assert.match(moved, /"late" 검색 결과/, moved.slice(0, 300))
+  })
+
+  await step(
+    '겹친 액자: 안쪽 액자 버튼을 진짜 마우스로 정확히 누르고, 액자 나무를 알린다 (실측 11-20 G마켓)',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/nested` })
+      // 액자가 늦게 뜬다: 안쪽 버튼이 보일 때까지 읽는다
+      let s
+      for (let i = 0; i < 10; i++) {
+        s = await call('snapshot', { tabId })
+        if (/버튼 "서울 성동구"/.test(s.text)) break
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      writeFileSync(join(out, 'e2e-nested.txt'), s.text)
+      assert.match(s.text, /## 화면 안 액자 목록/, s.text.slice(-800))
+      // 본문 글 속 그 자리에 액자 표시, 목록에는 바깥 액자
+      assert.match(s.text, /\[액자 f\d+\]/)
+      assert.match(s.text, /- f\d+ 127\.0\.0\.1\/nest2 · 바깥: f\d+ · 보임/, s.text.slice(-800))
+      const btn = s.text.match(/\[(e\d+) 버튼 "서울 성동구"\]/)?.[1]
+      assert.ok(btn && /^e\d{5,}$/.test(btn), `안쪽 액자 버튼 표시가 없어요:\n${s.text.slice(-800)}`)
+      const r = await call('click', { tabId, ref: btn })
+      // 누른 자리 = 바깥 액자 안쪽(300+6+10) + 안쪽 액자 안쪽(150+3) + 버튼 가운데(90+70) = 629.
+      // 예전에는 바깥 문서에서만 찾고 못 찾으면 (0,0)으로 잡아 160 근처를 눌렀다
+      assert.ok(Math.abs(r.point.x - 629) <= 2, JSON.stringify(r))
+      assert.ok(r.point.y > 300 && r.point.y < 560, JSON.stringify(r))
+      assert.equal(r.delivered, true, JSON.stringify(r))
+      // 그려지는 창(CI 가상 화면)이면 진짜 마우스가 닿는다. 가려진 창은 다른 주소 액자에 마우스가 안 가서 키보드로 누른다
+      console.log(`  누른 자리 ${JSON.stringify(r.point)} · ${r.via}`)
+      const after = await call('snapshot', { tabId })
+      assert.match(after.text, /주소 골랐어요: 서울 성동구/)
+    },
+  )
+
+  await step('빈 주소(about:blank) 액자의 글과 srcdoc 액자의 버튼도 읽고 누른다', async () => {
+    await call('navigate', { tabId, url: `${base}/blank-frames` })
+    const s = await call('snapshot', { tabId })
+    writeFileSync(join(out, 'e2e-blank-frames.txt'), s.text)
+    assert.match(s.text, /결제 금액 12,300원/, s.text.slice(-800))
+    assert.match(s.text, /about:blank · 바깥: 본문 · 보임 · 글만/, s.text.slice(-800))
+    const card = s.text.match(/\[(e\d+) 버튼 "카드 선택"\]/)?.[1]
+    assert.ok(card, `srcdoc 액자 버튼이 없어요:\n${s.text.slice(-800)}`)
+    const r = await call('click', { tabId, ref: card })
+    assert.equal(r.delivered, true, JSON.stringify(r))
+    assert.match((await call('snapshot', { tabId })).text, /카드 골랐어요/)
+  })
+
+  await step('늦게 뜬 새 창은 탭 목록에 남고, 한 번에 두 창 중 막힌 창을 알린다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/pops` })
+    const s = await call('snapshot', { tabId })
+    const late = s.text.match(/\[(e\d+) 버튼 "늦게 새 창"\]/)?.[1]
+    const r = await call('click', { tabId, ref: late })
+    assert.equal(r.newTabId, undefined, '2초 뒤에 뜨는 창이 누르기 결과에 벌써 있어요')
+    // 기다리기: 새 탭이 생기면 바로 돌아온다
+    const w = await call('wait', { tabId, ms: 6000 })
+    assert.equal(w.changed, true, JSON.stringify(w))
+    assert.ok(
+      w.what.some((x) => /새 탭 \d+/.test(x)),
+      JSON.stringify(w.what),
+    )
+    const list = await call('tabs', {})
+    const child = list.tabs.find((t) => t.opener === tabId && /\/popup\?late/.test(t.url))
+    assert.ok(child, `늦게 뜬 창이 목록에 없어요: ${JSON.stringify(list.tabs)}`)
+    // popup 명령도 그 창을 알려 준다 (한 번만)
+    assert.equal((await call('popup', { tabId })).newTabId, child.tabId)
+    assert.equal((await call('popup', { tabId })).newTabId, undefined)
+    await call('close', { tabId: child.tabId })
+    // 한 번에 두 창: 둘째는 Chrome이 막는다
+    const two = s.text.match(/\[(e\d+) 버튼 "두 창"\]/)?.[1]
+    const r2 = await call('click', { tabId, ref: two })
+    assert.ok(r2.newTabId, JSON.stringify(r2))
+    await new Promise((res) => setTimeout(res, 1800))
+    const t = text(await tools.run('tabs', {}))
+    console.log(`  ${t.split('\n').join('\n  ')}`)
+    assert.match(t, /막은 새 창[\s\S]*\/popup\?two/)
+    assert.doesNotMatch(t, /막은 새 창[\s\S]*\/popup\?one/)
+    assert.match(t, new RegExp(`탭 ${tabId}이\\(가\\) 연 창`))
+    await call('close', { tabId: r2.newTabId })
+  })
+
+  await step('기다리기: 늦게 바뀌는 화면은 바뀌는 대로 돌아오고 무엇이 바뀌었는지 알린다', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+    await call('navigate', { tabId, url: `${base}/later` })
+    const s = await call('snapshot', { tabId })
+    await call('click', { tabId, ref: s.text.match(/\[(e\d+) 버튼 "결제 확인"\]/)?.[1] })
+    const t = Date.now()
+    const w = text(await tools.run('wait', { tabId, ms: 8000 }))
+    const took = Date.now() - t
+    assert.match(w, /바뀐 것/, w)
+    assert.match(w, /주문번호 A-123/, w)
+    assert.ok(took < 6000, `바뀐 뒤에도 끝까지 기다렸어요 (${took}ms)`)
+    const still = await call('wait', { tabId, ms: 700 })
+    assert.equal(still.changed, false, JSON.stringify(still))
+  })
+
+  await step(
+    '요소 사진: 화면 아래 버튼은 굴려서, 화면 아래로 잘린 고정 버튼은 잠깐 늘려 찍고 표시마다 상태를 알린다',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/keypad` })
+      const s = await call('snapshot', { tabId })
+      const keys = ['1', '2', '3'].map((n) => s.text.match(new RegExp(`\\[(e\\d+) 버튼 "${n}"\\]`))?.[1])
+      const fixed = s.text.match(/\[(e\d+) 버튼 "9"\]/)?.[1]
+      assert.ok(keys.every(Boolean) && fixed, s.text)
+      const r = await call('element-shots', { tabId, refs: [...keys, fixed, 'e9999'] })
+      console.log(`  ${JSON.stringify(r.status)}`)
+      assert.deepEqual(
+        r.status.map((x) => x.status),
+        ['ok', 'ok', 'ok', 'ok', 'missing'],
+      )
+      assert.equal(r.shots.length, 4)
+      for (const sh of r.shots) assert.ok(sh.data.length > 500, `${sh.ref} 사진이 비었어요`)
+      writeFileSync(join(out, 'e2e-key-9.jpg'), Buffer.from(r.shots[3].data, 'base64'))
+      // 화면 아래로 잘린 고정 버튼도 누른다 (그때만 화면을 늘렸다가 되돌린다)
+      const c = await call('click', { tabId, ref: fixed })
+      assert.equal(c.title, '고정 9', JSON.stringify(c))
+      const k = await call('click', { tabId, ref: keys[1] })
+      assert.equal(k.title, '누름 2')
+    },
+  )
+
+  await step('스크롤: 얼마나 굴렀는지·끝인지 알린다', async () => {
+    await call('navigate', { tabId, url: `${base}/long` })
+    const r = await call('scroll', { tabId, direction: 'down' })
+    assert.ok(r.scroll && r.scroll.after > r.scroll.before, JSON.stringify(r.scroll))
+    assert.equal(r.scroll.atEnd, false)
   })
 
   await step('탭 닫기', async () => {

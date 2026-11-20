@@ -1,8 +1,12 @@
 // 두리 브라우저 도구의 본체 쪽 실행기. AI(MCP 도구 서버)는 여기로 부탁만 하고, 해도 되는지는 여기서 정한다.
 // 확장은 판단하지 않는 손이라서, 위험한 클릭을 막는 것도 여기서 한다 (docs/architecture.md 4.2, 위협 모델 T2·T3).
 //
-// 돈이 나가거나·연락이 가거나·되돌릴 수 없는 버튼은 AI가 누를 수 없다. AI는 승인을 요청하고(request_approval),
-// 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
+// 판단은 AI가 하고, 여기 규칙은 안전장치만 둔다 (11-20 사용자 결정):
+// ① 실제로 돈이 나가는(보내는·지우는) 마지막 버튼은 매번 한 번 승인 — AI가 마지막이라고 선언한 버튼(browser_checkout·
+//    request_approval·click의 final)과 버튼 글자에 돈·보내기·지우기 말이 있는 버튼만 막고, 결제 카드·승인 카드로 돌린다.
+//    사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). 승인 한 번 = 버튼 한 번.
+// ② 한 사이트 계정을 다른 사이트에 넣지 않는다 ③ 금고 값은 AI에게 가지 않는다.
+// 결제 버튼을 누른 뒤에는 결제 묶음(결제 회사 창·새 탭)으로 주문 완료(browser_order_done)까지 이어 간다.
 
 import { randomInt } from 'node:crypto'
 import type {
@@ -20,7 +24,7 @@ import {
   payMethodMatches,
   pickPayMethod,
 } from '@dool2/protocol/pay-methods'
-import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals } from './approvals.js'
+import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals, MONEY_APPROVAL_TTL_MS } from './approvals.js'
 import { LoginRequests } from './logins.js'
 import {
   maskValue,
@@ -71,6 +75,9 @@ export const BROWSER_TOOLS = [
   'dialog',
   'steps',
   'hover',
+  'order_done',
+  'wait',
+  'tabs',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -95,39 +102,14 @@ const RISK_WORDS: [RiskKind, RegExp][] = [
   ['irreversible', /삭제|탈퇴|해지|비우기|초기화|\b(?:delete|remove\s*account|unsubscribe)\b/i],
 ]
 
-// 결제 단계 페이지 (주소로 보는 위험)
-const RISK_URL =
+// 결제 단계 주소 (판단 힌트로만 쓴다: 결제 카드에 결제 수단을 싣거나 안내 한 줄을 붙일 때. 버튼을 막지 않는다)
+// (실측 11-20 G마켓: 주소로 버튼을 넓게 막자 주문서의 배송지 추가·주소 찾기 Enter·결제 회사 창의 [다음]까지 막혀 여섯 번 멈췄다)
+const PAY_URL =
   /\/(?:checkout|payment|payments|pay|order\/?(?:sheet|form|confirm)|orderform|ordersheet)(?:[/?#.]|$)|(?:^|\.)(?:pay\.naver\.com|kakaopay\.com|tosspayments\.com|toss\.im|inicis\.com|nicepay\.co\.kr|kcp\.co\.kr|danal\.co\.kr|payco\.com|paypal\.com)/i
 
-// 결제 화면 (주소는 그대로인 창 안 단계: 캐치테이블은 검색 지도 주소 위에서 결제 방법 고르기까지 간다)
-// (실측: 제목이 '결제 방법 선택'일 때도, '결제 방식 선택'일 때도 있다)
-const PAY_SCREEN = /결제\s*(?:방법|방식|수단)|최종\s*결제|총\s*결제\s*금액|결제\s*금액|결제\s*동의/
-// 그런 화면에서 다음 단계로 넘기는 버튼은 결제·확정일 수 있다
-const ADVANCE = /(?:^|\s)(?:다음|확인|완료|진행|계속|예약|신청|제출|동의하고\s*\S+|next|continue|confirm)$/i
-
-/** 화면 글에 결제 단계 표시가 있으면 그 말 (없으면 undefined) */
-export function payScreen(text: string): string | undefined {
-  return screenMark(text, PAY_SCREEN)
-}
-
-/**
- * 화면의 제목·칸 이름에 그 표시가 있으면 그 말. 안내 문장 속 말은 세지 않는다
- * (실측: 호텔 상세 화면의 "이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다." 때문에
- * 객실 목록을 결제 화면으로 잘못 봤다)
- */
-function screenMark(text: string, re: RegExp): string | undefined {
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/^[#\s>*-]+/, '').trim()
-    if (!line || line.length > 60) continue
-    if (/[.。!?]$|(?:니다|어요|아요|해요|세요|예요|이에요)$/.test(line)) continue
-    const m = re.exec(line)
-    if (m) return m[0]
-  }
-  return undefined
-}
-
 // 결제 화면 표시 묶음. 상품·상세 화면에도 '결제 방법' 안내나 '결제 정보' 접힘 버튼은 흔해서(실측: 11번가·지마켓·
-// 무신사·제주항공·트립닷컴), 서로 다른 묶음이 두 가지 이상 함께 보여야 결제 화면으로 본다. 버튼 이름 속 글은 세지 않는다
+// 무신사·제주항공·트립닷컴), 서로 다른 묶음이 두 가지 이상 함께 보여야 결제 화면으로 본다. 버튼 이름 속 글은 세지 않는다.
+// 이것도 힌트일 뿐이다: 결제 카드를 띄울지·버튼을 누를지는 AI가 화면을 보고 정한다
 const CHECKOUT_MARKS: [string, RegExp][] = [
   ['결제 수단', /결제\s*(?:수단|방법|방식)|카드\s*번호|간편\s*결제\s*(?:선택|수단)/],
   [
@@ -138,11 +120,11 @@ const CHECKOUT_MARKS: [string, RegExp][] = [
   ['약관 동의', /(?:약관|결제\s*진행|구매\s*조건|개인정보\s*(?:제3자\s*)?제공)[^\n]{0,12}동의/],
 ]
 
-/** 결제 화면(결제 수단·예약자 정보를 넣는 화면)이면 그 표시 말. 주소가 결제 단계여도 결제 화면이다 */
+/** 결제 화면(결제 수단·예약자 정보를 넣는 화면)으로 보이면 그 표시 말 (힌트). 주소가 결제 단계여도 결제 화면이다 */
 export function checkoutScreen(text: string, url: string): string | undefined {
   try {
     const u = new URL(url)
-    if (RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)) return '결제 단계 주소'
+    if (PAY_URL.test(u.pathname) || PAY_URL.test(u.hostname)) return '결제 단계 주소'
   } catch {}
   const seen = new Set<string>()
   for (const raw of text.split('\n')) {
@@ -155,37 +137,7 @@ export function checkoutScreen(text: string, url: string): string | undefined {
   return seen.size >= 2 ? [...seen].join('·') : undefined
 }
 
-// 결제 화면으로 '들어가는' 버튼: 상품·객실·좌석 화면의 [예약하기]·[구매하기]·[주문하기]는 결제 화면을 열 뿐이다.
-// 돈이 나가는 건 결제 화면의 마지막 버튼이라, 승인은 거기서 받는다. (버튼 이름 뒤 짧은 덧말은 허용: "예약하기 예약")
-// 앞에 붙는 짧은 말도 허용: 화면 읽기가 이름을 겹쳐 읽거나("예약 예약하기", 호텔스닷컴) 대상이 붙는다("상품 예약하기").
-// '바로·지금·즉시'처럼 그 자리에서 확정될 수 있는 말은 앞말로 받지 않는다
-const CHECKOUT_ENTRY =
-  /^(?:(?:예약|구매|주문|예매|상품|객실|숙소|티켓|좌석)\s+)?(?:예약\s*하기|구매\s*하기|주문\s*하기|예매\s*하기|바로\s*구매(?:\s*하기)?|구매\s*진행|주문\s*진행)(?:\s+\S{1,6})?$/
-
-/** 결제 화면으로 들어가는 버튼 이름인지 (역할 이름은 뺀 버튼 글) */
-export function isCheckoutEntry(name: string): boolean {
-  return CHECKOUT_ENTRY.test(name.replace(/\s+/g, ' ').trim())
-}
-
-/**
- * 장바구니 화면: 여기의 [구매하기]·[주문하기]는 결제 화면(주문서)을 열 뿐 돈이 나가지 않는다.
- * 이름 앞에 개수·범위가 붙어도("총 5개 상품 구매하기", "선택 상품 주문하기") 들어가는 버튼이다 (실측 쿠팡: 여기서 한 번, 결제 화면에서 또 승인받았다)
- */
-export function cartPage(url: string): boolean {
-  try {
-    const u = new URL(url)
-    // 결제 단계 주소(checkout.coupang.com/cart/checkout/…)는 장바구니가 아니다
-    if (RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname) || /^checkout\./i.test(u.hostname))
-      return false
-    return /^cart\./i.test(u.hostname) || /\/(?:cart|basket|cartview)(?:[/.?#]|$)/i.test(u.pathname)
-  } catch {
-    return false
-  }
-}
-const CART_ENTRY =
-  /(?:구매|주문|결제)\s*하기|주문\s*하러\s*가기|결제\s*하러\s*가기|주문서\s*작성|구매\s*진행|주문\s*진행|checkout|place order|proceed/i
-
-// 들어가는 버튼이라 믿고 눌렀는데 바로 확정된 화면 (결제 화면 없이 확정하는 사이트를 놓치지 않게)
+// 예약·주문이 확정된 화면으로 보이는 말 (힌트: 결제 중이면 주문번호를 읽어 browser_order_done으로 끝내라고 알린다)
 const CONFIRMED =
   /(?:예약|주문|결제|구매|예매|신청)(?:이|가)?\s*(?:완료|확정)\s*(?:되었|됐|했|하였)|(?:예약|주문|예매)\s*번호\s*[:：]?\s*[A-Z0-9-]{5,}/
 
@@ -197,7 +149,17 @@ export function confirmedScreen(text: string): string | undefined {
 /** 결제 흐름(돈 내기 서비스 도구가 AI에게 넘긴 탭)을 기억하는 시간 */
 export const PAY_FLOW_TTL_MS = 60 * 60_000
 
-export function classifyRisk(label: string, url: string, pay?: string): Risk | undefined {
+/**
+ * 결제 묶음(승인한 결제 버튼을 누른 뒤 주문 완료까지)을 기억하는 시간: 결제 승인 카드와 같게 1시간.
+ * 탭 잡아 두기·배송지 바꾼 뒤 한 번 누르기도 같은 시간 (예전엔 승인 60분·결제 중 15분·탭 10분으로 제각각이라 중간에 풀렸다)
+ */
+export const PAY_SESSION_TTL_MS = MONEY_APPROVAL_TTL_MS
+
+/**
+ * 버튼 글자로 보는 위험 (돈·연락·되돌릴 수 없음). 규칙은 이것 하나뿐이다: 주소·화면으로 넓게 막지 않는다.
+ * 그 밖의 마지막 버튼은 AI가 선언한다(browser_checkout·browser_request_approval·click의 final)
+ */
+export function classifyRisk(label: string): Risk | undefined {
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
   if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
   // 지난 일을 보는 말(주문 상세·결제 내역·예약 조회)은 빼고 남은 글자로 본다 ("주문내역에서 다시 주문하기"는 그대로 막힌다)
@@ -206,37 +168,17 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
     const m = re.exec(acting)
     if (m) return { kind, reason: `"${m[0]}"` }
   }
-  const name = label.replace(/^(?:버튼|링크|메뉴|항목)\s*/, '').trim()
-  // 보는 말만 있는 이름(주문 상세·결제 내역 보기)은 결제 단계 주소에서도 누른다
-  if (acting !== label && HARMLESS_REST.test(acting.replace(/^\s*(?:버튼|링크|메뉴|항목)\s*/, '').trim()))
-    return undefined
-  if (pay && ADVANCE.test(name)) return { kind: 'money', reason: `'${pay}' 화면의 "${name}"` }
-  let host = ''
-  let path = ''
-  try {
-    const u = new URL(url)
-    host = u.hostname
-    path = u.pathname
-  } catch {}
-  // 결제 단계 주소에서는 버튼을 넓게 막는다. 다만 결제가 될 수 없는 이름(닫기·이전·자세히 보기 등)은 누른다
-  // (실측: 호텔스닷컴 결제 화면의 재촉 창 [close]조차 승인을 받아야 했다)
-  if (
-    (RISK_URL.test(path) || RISK_URL.test(host)) &&
-    !HARMLESS.test(name) &&
-    !CHECKOUT_SETUP.test(name) &&
-    !ADDRESS_LIKE.test(name)
-  )
-    return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
 
-// 주소처럼 생긴 이름(주소 찾기 결과 줄: "신봉1로 27 (서홍마을 우남퍼스트빌)", "신봉동 905"): 고르기일 뿐 결제가 아니다
-const ADDRESS_LIKE = /[가-힣0-9]+(?:로|길)\s*\d+(?:-\d+)?|[가-힣]+(?:동|리|가)\s*\d+(?:-\d+)?(?:\s|$|\()/
+// 그 자체로 지금 돈이 나가는 버튼 이름: 결제 화면으로 '넘어가기만' 하는 버튼(opens_checkout)일 수 없다 (안전장치)
+const PAY_NOW =
+  /결제\s*하기|(?:^|\s)결제$|(?:바로|간편|최종)\s*결제|\S(?:으로|로)\s*결제|결제\s*(?:완료|진행|요청)|구매\s*확정|주문\s*(?:완료|확정)|예약\s*(?:확정|완료)|송금|이체|\b(?:pay\s*now|place\s*(?:my\s*)?order|complete\s*(?:purchase|order|booking)|confirm\s*(?:and\s*)?pay)\b/i
 
-// 결제 화면에서 결제 전에 고르고 채우는 버튼 (돈 말이 없는 이름): 배송지·주소·쿠폰·수량·요청사항 등은 승인 없이 누른다
-// (실측 11-20 G마켓: 주문서의 '배송지 추가'가 결제로 막혀 두리가 배송지를 못 넣고 사용자에게 넘겼다)
-const CHECKOUT_SETUP =
-  /배송지|배송\s*(?:정보|요청|메모)|주소|우편\s*번호|쿠폰|할인|포인트|적립|캐시|요청\s*사항|메모|연락처|휴대폰|전화|이름|받는\s*(?:분|사람)|수령인|수량|옵션|현금\s*영수증|영수증|약관|동의\s*(?:보기|내용)|입력|검색/
+/** 지금 돈이 나가는 이름인지 (opens_checkout으로 넘길 수 없는 버튼) */
+export function payNow(name: string): boolean {
+  return PAY_NOW.test(name.replace(/\s+/g, ' ').trim())
+}
 
 // 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
 const LOOKUP =
@@ -246,12 +188,10 @@ const LOOKUP =
 const CART_ADD =
   /(?:주문표|장바구니|카트|쇼핑백|담은\s*목록)\s*(?:에|으로)?\s*(?:추가|담기|넣기|담아)|(?:^|\s)담기(?:\s|$)/g
 
-// 보는 말을 뺀 뒤 남아도 괜찮은 글 (없음·보기·더 보기)
-const HARMLESS_REST = /^(?:|(?:상세\s*)?보기|더\s*보기|자세히(?:\s*보기)?|바로\s*가기|가기|>|›)$/
-
-// 결제가 될 수 없는 버튼 이름 (결제 단계 주소에서도 승인 없이 누른다)
-const HARMLESS =
-  /^(?:닫기|창\s*닫기|close|×|✕|x|이전|이전\s*단계|뒤로(?:\s*가기)?|돌아가기|취소|변경|수정|자세히(?:\s*보기)?|더\s*보기|접기|펼치기|전체\s*보기|약관\s*보기|보기|도움말|안내(?:\s*보기)?|알아보기)$/i
+/** 화면 안 액자(결제 회사 창 등)의 표시인지: 확장이 액자 속 칸에 큰 번호(e10001~)나 액자 id(f3:e12)를 붙인다 */
+export function frameRef(ref: string): boolean {
+  return /^e\d{5,}$/.test(ref) || /^f\d+:/.test(ref)
+}
 
 // 사이트 확인 창(confirm) 글로 보는 위험: "예약하시겠습니까?", "주문을 진행할까요?", "삭제하시겠습니까?"
 const DIALOG_RISK: [RiskKind, RegExp][] = [
@@ -266,14 +206,17 @@ const DIALOG_RISK: [RiskKind, RegExp][] = [
   ['irreversible', /삭제|탈퇴|해지|취소\s*(?:하|할|합|시)|초기화|비우|\b(?:delete|remove)\b/i],
 ]
 
-/** 확인 창에서 [확인]을 누르면 위험한 일이 되는지 (창 글과 페이지 주소로 본다) */
-export function classifyDialogRisk(message: string, url: string): Risk | undefined {
+/** 확인 창에서 [확인]을 누르면 위험한 일이 되는지 (창 글로만 본다. 주소로 넓게 막지 않는다) */
+export function classifyDialogRisk(message: string): Risk | undefined {
   for (const [kind, re] of DIALOG_RISK) {
     const m = re.exec(message)
     if (m) return { kind, reason: `확인 창의 "${m[0].trim()}"` }
   }
-  return classifyRisk('', url)
+  return undefined
 }
+
+/** 승인 게이트에 걸린 결과의 첫말 (서비스 도구가 이 말로 "커넥터가 넘을 수 없는 멈춤"을 알아본다) */
+export const GATE_STOP = '승인이 필요해요'
 
 const RISK_TEXT: Record<RiskKind, string> = {
   money: '돈이 나가는 일',
@@ -284,8 +227,6 @@ const RISK_TEXT: Record<RiskKind, string> = {
 interface PageInfo {
   url: string
   refs: Map<string, { role: string; name: string }>
-  /** 결제 단계 화면이면 그 표시 말 (예: '결제 방법 선택') */
-  pay?: string
   /** 결제 화면(결제 수단·예약자 정보를 넣는 화면)이면 그 표시 말 */
   checkout?: string
   /** 예약·주문이 확정된 화면이면 그 말 */
@@ -299,6 +240,24 @@ interface PageInfo {
   /** 표시가 화면 글에서 나오는 순서 (결제 수단 아래 딸린 목록을 찾을 때) */
   pos?: Map<string, number>
 }
+
+/** 결제 묶음: 승인한 결제 버튼을 누른 뒤 주문 완료(browser_order_done)까지 한 결제로 보는 탭들 */
+export interface PaySession {
+  /** 이 결제의 승인 id (주문 완료 때 주문번호와 함께 끝낸다) */
+  approvalId: string
+  /** 결제 버튼을 누른 탭 (가게 주문서) */
+  tabId: number
+  /** 이 결제의 탭들: 누른 탭 + 그 탭이 연 결제 창·새 탭 */
+  tabs: Set<number>
+  /** 가게 사이트 묶음 (siteKey). 누른 탭이 다른 사이트(결제 회사)로 넘어가면 결제 회사 창으로 본다 */
+  site: string
+  /** 누른 버튼 글자 */
+  label: string
+  startedAt: number
+}
+
+/** 확장의 탭 목록 명령 (탭마다 여는 탭·주소). 확장에 따로 들어온다: 모르는 확장이면 오류 → 빈 목록 */
+const TABS_CMD = 'tabs' as BrowserCommand
 
 /** 이름 없는 버튼·라디오에 붙은 글: 같은 줄 뒤, 없으면 다음 줄 (':' 앞까지, 다른 표시 줄은 아님) */
 export function nearLabels(text: string): Map<string, string> {
@@ -326,7 +285,6 @@ function pageInfo(url: string, text: string): PageInfo {
     ...(pos.size ? { pos } : {}),
     url,
     refs: parseRefs(text),
-    pay: payScreen(text),
     ...(near.size ? { near } : {}),
     ...(checkout ? { checkout } : {}),
     ...(confirmed ? { confirmed } : {}),
@@ -374,6 +332,8 @@ interface Snapshot {
   /** from·skip으로 앞에서 건너뛴 글자 수 */
   skipped?: number
   fromMissing?: boolean
+  /** 본문 글 길이 (text에는 액자 글·두리 알림도 붙어 있다. 이어 읽기 skip은 이것만큼) */
+  mainLength?: number
   /** 떠 있는 확인 창 (confirm·prompt). 고를 때까지 페이지가 멈춰 있다 */
   dialog?: SiteDialog
   /** 확장이 바로 닫은 알림창 (alert·떠나기 확인) */
@@ -393,7 +353,8 @@ export function parseRefs(text: string): Map<string, { role: string; name: strin
 }
 
 // 쿠키 동의 창의 거부 버튼. 동의 창은 화면을 덮어 누르기를 가로막는다
-// (실측 2026-11-18: 호텔스닷컴 쿠키 창의 어두운 막이 [예약하기]를 가려 승인한 클릭이 먹지 않았다)
+// (실측 2026-11-18: 호텔스닷컴 쿠키 창의 어두운 막이 [예약하기]를 가려 승인한 클릭이 먹지 않았다).
+// 누르지는 않는다: 읽기 결과에 '덮은 창' 한 줄로 알려 AI가 닫는다 (coverLine)
 const COOKIE_REJECT =
   /^(?:모두\s*거부|전체\s*거부|모든\s*쿠키\s*거부|쿠키\s*거부|필수\s*쿠키만\s*(?:허용|사용|동의)?|필수(?:\s*항목)?만\s*(?:허용|사용|동의)|reject\s*all(?:\s*cookies)?|decline\s*all|only\s*necessary(?:\s*cookies)?|necessary\s*(?:cookies\s*)?only|use\s*necessary\s*cookies\s*only)$/i
 const COOKIE_WORD = /쿠키|cookie/i
@@ -425,7 +386,7 @@ const PROMO_KEEP =
   /결제|주문서|예약자|로그인|본인\s*인증|인증번호|비밀번호|약관\s*동의|필수\s*동의|주소\s*입력|배송지|카드\s*번호|결제\s*수단/i
 
 /**
- * 광고·앱 설치·재촉 팝업의 닫기 버튼 표시(e12).
+ * 광고·앱 설치·재촉 팝업의 닫기 버튼 표시(e12). 이것도 누르지 않고 알리기만 한다 (coverLine).
  * 닫기 버튼 가까이(앞 500자) 광고·재촉 말이 있고, 결제·로그인 같은 진짜 단계 말은 없을 때만.
  * 쿠키 창은 cookieReject가 따로 본다
  */
@@ -860,8 +821,6 @@ export class BrowserTools {
     this.lastChoice.set(host, label)
     this.onChoice?.(host, label)
   }
-  /** 쿠키 동의 창을 닫아 본 탭·사이트 (같은 곳에서 되풀이하지 않는다) */
-  private cookieTried = new Set<string>()
   /** 사용자가 가입·비번 변경을 고른 사이트 (siteKey → 만료 시각). 이게 없으면 새 비밀번호를 만들지 않고 먼저 묻는다 */
   private signupOk = new Map<string, number>()
   /** 가입·변경이 끝나기를 기다리는 새 비밀번호 (끝난 걸 화면에서 보면 금고에 넣는다) */
@@ -903,19 +862,19 @@ export class BrowserTools {
       ...(shipWarn ? { shipWarn } : {}),
     }
   }
-  /** 승인받은 결제를 배송지를 바꾼 뒤 누르기: 탭마다 그 버튼 한 번 (10분) */
-  private paidPass = new Map<number, { label: string; until: number }>()
-  /** 승인받은 마지막 버튼이면 한 번 쓴다 */
-  private usePass(tabId: number, name: string): boolean {
+  /** 승인받은 결제를 배송지를 바꾼 뒤 누르기: 탭마다 그 버튼 한 번 (결제 승인과 같은 1시간) */
+  private paidPass = new Map<number, { label: string; until: number; approvalId: string }>()
+  /** 승인받은 마지막 버튼이면 한 번 쓴다 (그 승인 id, 아니면 undefined) */
+  private usePass(tabId: number, name: string): string | undefined {
     const p = this.paidPass.get(tabId)
-    if (!p) return false
+    if (!p) return undefined
     if (p.until < Date.now()) {
       this.paidPass.delete(tabId)
-      return false
+      return undefined
     }
-    if (name !== p.label && !sameFinal(name, p.label)) return false
+    if (name !== p.label && !sameFinal(name, p.label)) return undefined
     this.paidPass.delete(tabId)
-    return true
+    return p.approvalId
   }
   /** 사용자가 이 사이트의 가입·비번 변경을 골랐다 (폰 카드·대화) */
   allowSignup(hostOrUrl: string, ms = 60 * 60_000) {
@@ -943,6 +902,8 @@ export class BrowserTools {
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
     try {
+      // 처음 보는 탭이 결제 중인 탭이 연 창(결제 창)이면 그 결제 묶음에 넣는다 (늦게 뜬 결제 창도 같은 결제)
+      if (typeof args.tabId === 'number' && !this.pages.has(args.tabId)) await this.adoptTab(args.tabId)
       const r = await this.dispatch(tool, args)
       // 잘 다룬 탭만 "지금 두리가 보는 탭"으로 (틀린 번호로 부른 도구는 빼야 실시간 화면이 엉뚱한 탭을 찍지 않는다)
       if (!r.isError && typeof args.tabId === 'number') this.lastTabId = args.tabId
@@ -979,10 +940,10 @@ export class BrowserTools {
       case 'click': {
         // 화면 안 액자(다른 주소의 작은 창) 속 버튼: 액자는 늦게 바뀐다. 누른 직후 그대로면 잠깐 기다려 다시 읽는다
         // (실측 11-20 G마켓 배송지 추가: 양식이 떴는데 바로 읽어 '입력 창이 안 떠요'로 판단하고 사람에게 넘겼다)
-        const inFrame = /^e\d{5,}$/.test(String(a.ref ?? ''))
+        const inFrame = frameRef(String(a.ref ?? ''))
         const frameSig = () =>
           [...(this.pages.get(tabId)?.refs ?? new Map()).entries()]
-            .filter(([k]) => /^e\d{5,}$/.test(k))
+            .filter(([k]) => frameRef(k))
             .map(([k, v]) => `${k}:${v.role}:${v.name}`)
             .join('|')
         const before = inFrame ? frameSig() : ''
@@ -1002,10 +963,22 @@ export class BrowserTools {
       case 'steps':
         return this.steps(tabId, a)
       case 'scroll': {
-        await this.browser.call('scroll', { tabId, direction: a.direction === 'up' ? 'up' : 'down' })
+        const r = (await this.browser.call('scroll', {
+          tabId,
+          direction: a.direction === 'up' ? 'up' : 'down',
+          ...(typeof a.ref === 'string' ? { ref: a.ref } : {}),
+        })) as { scroll?: { target: string; before: number; after: number; max: number; atEnd: boolean } }
+        const sc = r?.scroll
+        const where = sc
+          ? ` (${sc.target === 'box' ? '그 상자' : '페이지'} ${sc.before}→${sc.after}px / 끝 ${sc.max}px${sc.atEnd ? ', 끝까지 왔어요' : ''}${sc.before === sc.after ? ', 움직이지 않았어요' : ''})`
+          : ''
         // 사람이 굴린 뒤 화면을 보듯, 지금 보이는 부분만 읽어 돌려준다 (한 화면이라 짧다)
-        return this.read(tabId, undefined, '스크롤했어요.', { view: true })
+        return this.read(tabId, undefined, `스크롤했어요.${where}`, { view: true })
       }
+      case 'wait':
+        return this.waitChange(tabId, a)
+      case 'tabs':
+        return this.tabList(a)
       case 'screenshot': {
         const r = (await this.browser.call('screenshot', { tabId })) as {
           data: string
@@ -1074,17 +1047,15 @@ export class BrowserTools {
           throw new Error('떠 있는 사이트 확인 창이 없어요. 페이지를 다시 읽어(browser_read) 확인해 주세요')
         const accept = a.accept !== false
         if (accept) {
-          const risk = classifyDialogRisk(d.message, d.url)
-          // 여러 개를 한 번에 승인받았으면 각 항목의 확인 창("삭제하시겠습니까?")도 묻지 않는다 (버튼에서 이미 하나를 썼다)
-          if (risk && !this.useSeries(d.url, risk.kind, false)) {
-            const next =
-              this.finalStep() === 'approve'
-                ? 'browser_request_approval에 dialog: true와 무엇을·어디서·얼마인지 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 [확인]을 눌러요.'
-                : '여기까지 한 내용을 사용자에게 정리해 알려 주고 browser_handoff로 사용자가 직접 고르게 넘겨 주세요.'
+          const risk = classifyDialogRisk(d.message)
+          // 결제 묶음 안의 결제 회사 창이 묻는 확인은 같은 결제다. 여러 개를 한 번에 승인받았으면
+          // 각 항목의 확인 창("삭제하시겠습니까?")도 묻지 않는다 (버튼에서 이미 하나를 썼다)
+          if (risk && !this.inProvider(tabId, d.url) && !this.useSeries(d.url, risk.kind, false))
             throw new Error(
-              `멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 [확인]을 누르지 않아요. ${next}`,
+              this.finalStep() === 'self'
+                ? `${GATE_STOP}: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 두리가 [확인]을 누르지 않아요. 사용자가 "마지막 버튼은 직접 누르기"로 정해 두었어요. 여기까지 준비한 내용(무엇을·어디서·얼마)을 정리해 알리고 이번 답을 끝내요.`
+                : `${GATE_STOP}: ${risk.reason} — ${RISK_TEXT[risk.kind]}이에요. browser_request_approval(dialog: true, 무엇을·어디서·얼마)로 승인 카드를 띄워요. 승인되면 두리가 [확인]을 눌러요.`,
             )
-          }
         }
         await this.browser.call('dialog', {
           tabId,
@@ -1102,16 +1073,8 @@ export class BrowserTools {
         const ref = String(a.ref ?? '')
         if (!page.refs.has(ref))
           throw new Error(`${ref} 표시가 없어요. 결제 화면을 다시 읽어 마지막 버튼을 짚어 주세요`)
-        // 결제 화면에서만: 그 전 단계의 [주문하기]는 opens_checkout으로 넘어간다 (승인이 두 번 나오지 않게)
-        let onPay = Boolean(page.checkout)
-        try {
-          const u = new URL(page.url)
-          onPay ||= RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)
-        } catch {}
-        if (!onPay && a.final_here !== true)
-          throw new Error(
-            '여기는 결제 화면(결제 수단·최종 금액을 고르는 화면)이 아니에요. 결제 화면으로 넘어가는 버튼은 browser_click(opens_checkout: true)으로 눌러 결제 화면까지 간 뒤 그곳에서 browser_checkout을 불러요. 이 화면의 버튼에서 바로 돈이 나가면 final_here: true로 다시 불러요.',
-          )
+        // 결제 화면인지는 AI가 화면을 보고 정한다: 카드를 띄워 달라면 띄운다 (묻는 건 늘 안전하다).
+        // (예전엔 결제 화면 표시를 정규식으로 찾아 못 찾으면 거절했다 — 실측 11-20 G마켓 주문서에서 카드가 안 떴다)
         const str = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
         const list = <T>(v: unknown, n: number, f: (x: Record<string, unknown>) => T | undefined): T[] =>
           (Array.isArray(v) ? v : [])
@@ -1202,27 +1165,7 @@ export class BrowserTools {
             ...(a.cancel ? { cancel: String(a.cancel) } : {}),
           })
         const ref = String(a.ref ?? '')
-        // 결제는 결제 카드(browser_checkout)로 한 번만: 결제 화면이 아닌 곳의 돈 버튼에는 승인 카드를 띄우지 않는다
-        {
-          const pg = this.pages.get(tabId)
-          const t = pg?.refs.get(ref)
-          if (
-            pg &&
-            t &&
-            a.final_here !== true &&
-            classifyRisk(`${t.role} ${t.name}`, pg.url, pg.pay)?.kind === 'money'
-          ) {
-            let onPay = Boolean(pg.checkout)
-            try {
-              const u = new URL(pg.url)
-              onPay ||= RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)
-            } catch {}
-            if (!onPay)
-              throw new Error(
-                `"${t.name}"은(는) 결제 화면 전 단계예요. 결제 화면으로 넘어가는 버튼이면 browser_click(opens_checkout: true)으로 누르고, 결제 화면에서 browser_checkout으로 한 번만 승인받아요. 이 버튼에서 바로 돈이 나가면 browser_checkout(final_here: true)으로 결제 카드를 띄워요.`,
-              )
-          }
-        }
+        // 승인 요청은 거절하지 않는다: 사용자에게 묻는 건 늘 안전하다 (어느 단계의 버튼인지는 AI가 판단한다)
         const choices = Array.isArray(a.choices)
           ? (a.choices as unknown[]).map((c) =>
               typeof c === 'string' ? c : String((c as { ref?: unknown })?.ref ?? ''),
@@ -1365,14 +1308,7 @@ export class BrowserTools {
             `${ref} 목록을 읽지 못했어요. browser_click으로 그 칸을 눌러 연 뒤 페이지를 읽고, 보이는 항목을 browser_click으로 눌러 주세요.`,
           )
         const labels = list.map((o) => o.label)
-        // 결제 수단·할부는 사용자가 승인 카드에서 고른다 (AI가 고르지 않는다)
-        if (
-          labels.filter((l) => /카드|페이|할부|일시불|계좌이체|무통장|간편결제|휴대폰 결제/.test(l)).length >=
-          2
-        )
-          throw new Error(
-            '결제 수단·할부 목록은 직접 고르지 않아요. 결제 버튼의 browser_request_approval에 이 칸을 choices로 넣으면 사용자가 승인 카드에서 골라요.',
-          )
+        // 결제 수단·할부 목록도 거절하지 않는다: 사용자가 이미 골랐으면 그대로 고르고, 아직이면 결제 카드에서 고르게 하는 건 AI가 정한다
         const want = typeof a.choose === 'string' ? a.choose.trim() : ''
         if (!want) {
           const lines = list.map(
@@ -1477,23 +1413,25 @@ export class BrowserTools {
             `사용자가 정한 비밀번호가 이 칸에 다 들어가지 않았어요(${got}자만 들어감). 화면의 비밀번호 규칙(자릿수·특수문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 부르세요(폰에서 다시 골라요).`,
           )
         }
+        // 칸이 만든 비밀번호를 그대로 받지 않으면 사람에게 넘기지 않고 폰에서 다시 묻는다 (사용자가 규칙에 맞게 직접 정할 수 있다)
+        const askAgain = (why: string) => {
+          this.disallowSignup(key)
+          return new Error(
+            `${why} 화면의 비밀번호 규칙(자릿수·허용 문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 불러요. 다시 부르면 폰에 물어 사용자가 규칙에 맞는 비밀번호를 정할 수 있어요.`,
+          )
+        }
         if (got !== undefined && got !== pw.length) {
-          if (got < 8)
-            throw new Error(
-              '이 칸은 넣은 비밀번호를 그대로 받지 않아요(글자가 빠짐). 비밀번호 규칙을 읽어 사용자에게 알리고, 이 칸은 browser_handoff로 넘겨 주세요.',
-            )
+          if (got < 8) throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(글자가 빠짐).')
           pw = makePassword(got)
           got = await fill(pwRef, pw)
           if (got !== undefined && got !== pw.length)
-            throw new Error(
-              '이 칸은 넣은 비밀번호를 그대로 받지 않아요(특수문자를 빼는 칸일 수 있어요). 비밀번호 규칙을 읽어 사용자에게 알리고, 이 칸은 browser_handoff로 넘겨 주세요.',
-            )
+            throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(특수문자를 빼는 칸일 수 있어요).')
         }
         if (confirmRef) {
           const c = await fill(confirmRef, pw)
           if (c !== undefined && c !== pw.length)
             throw new Error(
-              '비밀번호 확인 칸에 같은 값이 다 들어가지 않았어요. 이 칸은 browser_handoff로 넘겨 주세요.',
+              '비밀번호 확인 칸에 같은 값이 다 들어가지 않았어요. 페이지를 다시 읽어 확인 칸(confirm) 표시가 맞는지 보고 browser_new_password를 다시 불러요.',
             )
         }
         // 금고에는 아직 넣지 않는다: 가입이 끝난 걸 화면에서 보면 넣는다 (실패·"이미 가입" 때 틀린 값이 남지 않게)
@@ -1560,7 +1498,10 @@ export class BrowserTools {
             throw new Error(
               '같은 버튼을 두 숫자로 짚었어요. 잘라 본 그림을 다시 보고 0~9를 서로 다른 버튼으로 짚어 주세요.',
             )
-          if (!this.requestPin) throw new Error('키패드 카드를 띄울 수 없어요. browser_handoff로 넘겨 주세요')
+          if (!this.requestPin)
+            throw new Error(
+              '지금은 폰 키패드 카드를 띄울 수 없어요(폰 연결이 없어요). 사용자에게 폰에서 두리 앱 연결을 확인해 달라고 한 줄로 말하고 이번 답을 끝내요.',
+            )
           let host = ''
           try {
             host = new URL(page.url).hostname
@@ -1573,13 +1514,15 @@ export class BrowserTools {
             content: [
               {
                 type: 'text',
-                text: `폰에 ${len}자리 보안 키패드 카드를 띄웠어요. 사용자에게 "폰에 뜬 키패드에 결제 비밀번호를 넣어 주세요"처럼 한 문장으로 말하고 이번 답을 끝내세요. 넣으면 두리가 짚어 둔 버튼을 차례로 누르고 알려 줘요. 그때 화면을 읽어 결제가 끝났는지 확인해요.`,
+                text: `폰에 ${len}자리 보안 키패드 카드를 띄웠어요. 사용자에게 "폰에 뜬 키패드에 결제 비밀번호를 넣어 주세요"처럼 한 문장으로 말하고 이번 답을 끝내세요. 넣으면 두리가 짚어 둔 버튼을 차례로 누르고 알려 줘요. 그때 화면을 읽어 이어 가고, 주문 완료 화면과 주문번호가 보이면 browser_order_done으로 끝내요.`,
               },
             ],
           }
         }
         if (!this.requestCode)
-          throw new Error('인증번호 카드를 띄울 수 없어요. browser_handoff로 넘겨 주세요')
+          throw new Error(
+            '지금은 폰 인증번호 카드를 띄울 수 없어요(폰 연결이 없어요). 사용자에게 폰에서 두리 앱 연결을 확인해 달라고 한 줄로 말하고 이번 답을 끝내요.',
+          )
         const target = page.refs.get(ref)
         if (!target || !['입력칸', '검색칸'].includes(target.role))
           throw new Error(
@@ -1741,7 +1684,7 @@ export class BrowserTools {
         const local = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(origin)
         if (!origin.startsWith('https://') && !local)
           throw new Error(
-            'https 사이트만 로그인 정보를 저장할 수 있어요. browser_handoff로 사용자에게 넘겨 주세요.',
+            '암호화(https)되지 않은 주소라 로그인 정보를 금고에 받지 않아요. 같은 서비스의 https 주소로 다시 열어 해 보고, 그런 주소가 없으면 사용자에게 이 사이트는 암호화되지 않아 로그인을 맡을 수 없다고 한 줄로 알려요.',
           )
         // 카드로 받았는데 로그인에 실패한 값은 이미 지웠다. 아직 확인 전인 값은 다시 받을 수 있다
         if ((await this.vault?.findForOrigin(origin)) && !this.unverified.has(origin))
@@ -1890,6 +1833,8 @@ export class BrowserTools {
           ],
         }
       }
+      case 'order_done':
+        return this.orderDone(tabId, a)
       case 'handoff': {
         // 사람이 해야 하는 일(로그인·캡차·본인인증·마지막 버튼): 두리 탭을 앞으로 띄우고 이번 답을 끝내게 한다.
         // 화면은 이 도구 호출을 보고 [Chrome에서 보기] [다 했어요]를 띄운다.
@@ -1954,50 +1899,73 @@ export class BrowserTools {
         const target = page?.refs.get(ref)
         if (!page || !target)
           throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어(browser_read) 표시를 확인해 주세요`)
-        // 결제 흐름에서 결제 화면 전의 [예약하기]·[구매하기]는 결제 화면을 여는 버튼이라 승인 없이 누른다
-        const entry = this.entersCheckout(tabId, page, target.name)
-        // '신청하기'·'등록하기' 같은 말이라도 다른 화면으로 가기만 하는 진짜 링크는 승인 없이 누른다
-        // (정부24는 조회만 하는 서비스도 들어가는 버튼이 '신청하기'). 제출 버튼·스크립트 링크·결제·삭제는 그대로 막는다
-        // 결제 쪽 이름·주소(네이버페이 메뉴 등)라도 진짜 링크는 화면을 열 뿐이다: 돈이 나가는 건 열린 화면의 마지막 버튼이고
-        // 거기서 승인을 받는다(실측 혜택 16: '페이' 메뉴 링크가 결제로 막혀 출석 체크를 못 했다). 지우기류는 GET 링크도 있어 그대로 막는다
         const label = `${target.role} ${target.name}`
-        const navKind = classifyRisk(label, page.url, page.pay)?.kind
+        const risk = classifyRisk(label)
+        // AI가 화면을 보고 "이게 돈이 나가는(보내는·지우는) 마지막 버튼"이라고 선언했다
+        const declared = s.final === true
+        // 결제 묶음 안: 결제 회사 창(새 탭·화면 안 액자·결제 회사로 넘어간 주문서 탭)의 [카드 선택]·[다음]·[동의]·[결제하기]는
+        // 사용자가 이미 승인한 같은 결제다. 다시 묻지 않는다 (실측 11-20 G마켓: 결제 창 안 [다음]이 또 승인을 요구해 멈췄다)
+        const provider = this.inProvider(tabId, page.url, ref)
+        // '신청하기'·'등록하기' 같은 말이라도 다른 화면으로 가기만 하는 진짜 링크는 승인 없이 누른다
+        // (정부24는 조회만 하는 서비스도 들어가는 버튼이 '신청하기'). 결제 쪽 이름이라도 진짜 링크는 화면을 열 뿐이다
+        // (실측 혜택 16: '페이' 메뉴 링크가 결제로 막혀 출석 체크를 못 했다). 지우기류는 GET 링크도 있어 그대로 막는다
         const navOnly =
-          !entry &&
+          !declared &&
+          !provider &&
           target.role === '링크' &&
-          (navKind === 'contact' || navKind === 'money') &&
+          (risk?.kind === 'contact' || risk?.kind === 'money') &&
           (
             (await this.browser.call('link-navigates', { tabId, ref }).catch(() => undefined)) as
               | { navigates?: boolean }
               | undefined
           )?.navigates === true
-        const passed = !entry && !navOnly && this.usePass(tabId, target.name)
-        // AI가 화면을 보고 "결제 화면으로 넘어가는 버튼"이라고 판단했다(opens_checkout). 결제 화면이 아닌 곳의 돈 버튼만.
-        // 누른 뒤 주문이 바로 확정된 화면이면 크게 알린다 (안전장치)
+        // 배송지를 바꾼 뒤 누르는, 이미 승인받은 그 결제 버튼 (한 번)
+        const passed = !provider && !navOnly ? this.usePass(tabId, target.name) : undefined
+        // AI가 화면을 보고 "결제 화면으로 넘어가기만 하는 버튼"이라고 판단했다(opens_checkout). 돈 말이 있는 버튼만 해당.
+        // 누른 뒤 주문이 바로 확정된 화면이면 읽기 결과에서 크게 알린다 (안전장치)
+        // 안전장치: 그 자체로 돈이 나가는 이름([결제하기]·[Place order]·[예약 확정])은 opens_checkout으로도 넘기지 않는다
         const opens =
-          !entry &&
+          !declared &&
+          !provider &&
           !navOnly &&
           !passed &&
           s.opens_checkout === true &&
-          !page.checkout &&
-          classifyRisk(label, page.url, page.pay)?.kind === 'money'
-        if (!entry && !navOnly && !passed && !opens) this.guard(label, page.url, true, page.pay)
-        const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
+          risk?.kind === 'money' &&
+          !payNow(target.name)
+        const gated = !provider && !navOnly && !passed && !opens && (declared || risk !== undefined)
+        // 여러 개를 한 번에 승인받은 보내기·지우기는 남은 개수만큼 그대로 누른다 (결제는 묶지 않는다)
+        if (gated && !(risk && !declared && this.useSeries(page.url, risk.kind)))
+          throw new Error(this.gateText(ref, target.name, risk, declared))
+        const r = (await this.browser.call(
+          'click',
+          { tabId, ref, ...(s.force === true ? { force: true } : {}) },
+          30_000,
+        )) as BrowserState & {
           newTabId?: number
           coveredBy?: string
+          delivered?: boolean
         }
+        // 결제 중인 탭에서 새 창이 뜨면 그 창도 같은 결제 묶음이다. 승인받은 결제 버튼이면 여기서 결제 묶음을 연다
+        const ses = this.paySession(tabId)
+        if (ses && r.newTabId) this.joinSession(ses, r.newTabId)
+        if (passed) this.startSession(passed, tabId, page.url, target.name, r.newTabId ? [r.newTabId] : [])
         const note = [
           `${target.role} "${target.name}"을(를) 눌렀어요.`,
-          entry
-            ? '(결제 화면으로 넘어가는 버튼이라 승인 없이 눌렀어요. 결제 화면에서 최종 금액·취소 규정을 읽고, 그 화면의 마지막 버튼을 누르기 전에 승인을 받아요.)'
-            : '',
+          provider && (risk || declared) ? '(결제 중인 묶음 안의 단계라 다시 승인받지 않고 눌렀어요.)' : '',
           navOnly
             ? '(다른 화면으로 가기만 하는 링크라 승인 없이 눌렀어요. 그 화면에서 실제로 제출하는 버튼은 승인을 받아요.)'
             : '',
           opens
-            ? '(결제 화면으로 넘어가는 버튼이라고 보고 승인 없이 눌렀어요. 결제 화면에서 받는 곳·결제 수단과 함께 마지막 버튼을 한 번 승인받아요. 혹시 주문이 바로 확정됐으면 사용자에게 바로 알려요.)'
+            ? '(결제 화면으로 넘어가는 버튼이라고 보고 승인 없이 눌렀어요. 결제 화면의 마지막 버튼은 browser_checkout으로 한 번 승인받아요. 혹시 주문이 바로 확정됐으면 사용자에게 바로 알려요.)'
+            : '',
+          passed
+            ? '(이미 승인받은 결제 버튼이라 그대로 눌렀어요. 결제 창까지 끝내고 주문 완료 화면의 주문번호로 browser_order_done을 불러요.)'
             : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
+          // 마우스가 그 요소에 닿지 않았다는 확장의 신호: '눌렀어요'로 끝내지 말고 AI가 화면을 보고 판단하게 (11-20 시험 가게)
+          r.delivered === false
+            ? '(누른 입력이 그 요소에 닿지 않았을 수 있어요. 화면이 바뀌었는지 다시 읽어 확인하고, 그대로면 다시 눌러요.)'
+            : '',
         ]
           .filter(Boolean)
           .join(' ')
@@ -2007,10 +1975,8 @@ export class BrowserTools {
         const ref = String(s.ref ?? '')
         const page = this.pages.get(tabId)
         if (!page?.refs.has(ref)) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        // 검색칸·주소·쿠폰 칸에서 Enter는 찾기일 뿐 결제가 아니다 (실측 11-20 G마켓 주소 찾기 Enter가 결제로 막혀 빈 결과)
-        const field = page.refs.get(ref)
-        const searchOnly = field?.role === '검색칸' || CHECKOUT_SETUP.test(field?.name ?? '')
-        if (s.submit && !searchOnly) this.guard('', page.url, false, page.pay)
+        // Enter는 마지막 버튼이 아니다: 막지 않는다 (실측 11-20 G마켓 주소 찾기 Enter가 결제로 막혀 빈 결과).
+        // 돈이 나가는 건 AI가 browser_checkout으로 올린 버튼뿐이다
         const text = String(s.text ?? '')
         const r = (await this.browser.call('type', {
           tabId,
@@ -2024,8 +1990,7 @@ export class BrowserTools {
       }
       case 'press': {
         const key = String(s.key ?? '')
-        const page = this.pages.get(tabId)
-        if (/^(enter|return|엔터)$/i.test(key) && page) this.guard('', page.url)
+        // Enter도 그대로 누른다 (마지막 버튼이 아니다. 위 type과 같은 까닭)
         const r = (await this.browser.call('press', { tabId, key })) as BrowserState
         return { note: `${key} 키를 눌렀어요.`, ...state(r) }
       }
@@ -2221,9 +2186,11 @@ export class BrowserTools {
     },
     kind?: RiskKind,
   ): Promise<ToolResult> {
-    const page = this.pages.get(tabId)
-    const target = page?.refs.get(ref)
-    if (!page || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    const read = this.pages.get(tabId)
+    const target = read?.refs.get(ref)
+    if (!read || !target) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    // 결제 카드(browser_checkout)면 결제 화면으로 본다: 화면의 결제 수단·등록 카드·할부를 카드에 싣는다
+    const page: PageInfo = d.checkout && !read.checkout ? { ...read, checkout: '결제 카드' } : read
     // 선택지: 결제 화면에 실제로 있는 고르기 칸만. 그 자체가 결제·확정 버튼이면 안 된다
     const picks: { id: string; label: string; ref: string; role: string; name: string; near?: string }[] = []
     // AI가 선택지를 안 넘겨도, 결제 화면에 결제 수단 고르기 칸이 둘 이상이면 본체가 승인 카드에 싣는다
@@ -2237,7 +2204,7 @@ export class BrowserTools {
       const label = optionLabel(page, cref)
       if (
         cref === ref ||
-        (c.role !== '라디오' && !isPayOption(c.role, label) && classifyRisk(`${c.role} ${c.name}`, page.url))
+        (c.role !== '라디오' && !isPayOption(c.role, label) && classifyRisk(`${c.role} ${c.name}`))
       )
         throw new Error(`선택지 ${cref}("${label}")는 결제·확정 버튼이라 선택지로 쓸 수 없어요`)
       if (!label) throw new Error(`선택지 ${cref}는 이름이 없어 무엇인지 몰라요`)
@@ -2250,29 +2217,18 @@ export class BrowserTools {
         ...(c.name ? {} : { near: label }),
       })
     }
-    // 승인은 결제 화면에서 받는다: 결제 화면을 여는 버튼에 승인을 받으면, 결제 화면의 진짜 금액·조건을 못 본 채 승인하게 된다
-    if (this.entersCheckout(tabId, page, target.name))
-      throw new Error(
-        `"${target.name}"은(는) 결제 화면으로 넘어가는 버튼이라 승인이 필요 없어요. browser_click으로 눌러 결제 화면까지 간 뒤, ` +
-          '그 화면에서 상품·금액·받는 곳·결제 수단을 읽고 마지막 버튼(결제하기·예약 완료 등)에 browser_checkout을 쓰세요.',
-      )
-    const risk =
-      classifyRisk(`${target.role} ${target.name}`, page.url, page.pay) ??
+    // 승인 요청은 거절하지 않는다 (어느 단계의 버튼이든 사용자에게 묻는 건 안전하다). 종류만 정한다:
+    // 결제 카드는 늘 돈, 그 밖엔 버튼 글자 → 서비스 도구 등급 → 동의 버튼 → AI가 승인을 요청한 버튼
+    const risk: Risk =
+      (d.checkout ? { kind: 'money' as const, reason: '결제 카드' } : undefined) ??
+      classifyRisk(`${target.role} ${target.name}`) ??
       (kind ? { kind, reason: '서비스 도구 등급' } : undefined) ??
-      // 개인정보 이용·제공 동의는 두리가 마음대로 누르지 않되, 사용자가 폰에서 승인하면 누른다
-      // (PC 화면에서 직접 누르라고 하면 폰만 든 사용자는 막힌다)
       (/동의/.test(target.name)
         ? { kind: 'contact' as const, reason: `"${target.name}" (내 정보 이용 동의)` }
-        : undefined)
-    if (!risk) throw new Error('이 버튼은 승인 없이 눌러도 돼요. browser_click을 쓰세요.')
-    // 내 정보 이용 동의는 사용자가 맡긴 일에 필요한 것이라 승인 카드를 띄우지 않는다 (사용자: 승인이 너무 많다)
-    if (risk.reason.endsWith('(내 정보 이용 동의)'))
-      throw new Error(
-        `"${target.name}"은(는) 맡긴 일에 필요한 내 정보 이용 동의라 승인 없이 눌러요. browser_click으로 누르고, 답에 무엇(어디에 어떤 정보)에 동의했는지 한 줄 남겨요.`,
-      )
+        : { kind: 'irreversible' as const, reason: 'AI가 승인을 요청한 버튼' })
     if (this.finalStep() === 'self')
       throw new Error(
-        '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
+        '사용자가 "마지막 버튼은 직접 누르기"로 정해 두어 두리는 이 버튼을 누르지 않아요. 여기까지 준비한 내용(무엇을·어디서·얼마·취소 조건)을 정리해 알리고 이번 답을 끝내요.',
       )
     // 결제 화면의 펼침 목록 중 등록 카드·할부 개월은 승인 카드에 아래 줄로 싣는다 (기본은 화면에 골라져 있던 것)
     const subs = page.checkout ? await this.subChoices(tabId, page) : []
@@ -2380,7 +2336,8 @@ export class BrowserTools {
         : {}),
     })
     if (d.count && d.count > 1) this.series.set(rec.id, Math.min(20, Math.floor(d.count)))
-    this.hold(tabId, APPROVAL_TTL_MS)
+    // 결제 카드는 1시간 기다린다: 그동안 탭 정리에서 닫히지 않게 같은 시간 잡아 둔다
+    this.hold(tabId, risk.kind === 'money' ? PAY_SESSION_TTL_MS : APPROVAL_TTL_MS)
     return {
       content: [
         {
@@ -2400,11 +2357,14 @@ export class BrowserTools {
   ): ToolResult {
     const dlg = this.dialogs.get(tabId)
     if (!dlg) throw new Error('떠 있는 사이트 확인 창이 없어요. 페이지를 다시 읽어 확인해 주세요')
-    const risk = classifyDialogRisk(dlg.message, dlg.url)
-    if (!risk) throw new Error('이 확인 창은 승인 없이 골라도 돼요. browser_dialog를 쓰세요.')
+    // 거절하지 않는다: AI가 묻겠다면 카드를 띄운다
+    const risk = classifyDialogRisk(dlg.message) ?? {
+      kind: 'irreversible' as const,
+      reason: 'AI가 승인을 요청한 확인 창',
+    }
     if (this.finalStep() === 'self')
       throw new Error(
-        '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 내용을 정리해 알려 주고 browser_handoff로 넘겨 주세요.',
+        '사용자가 "마지막 버튼은 직접 누르기"로 정해 두어 두리는 이 확인 창을 누르지 않아요. 여기까지 준비한 내용(무엇을·어디서·얼마)을 정리해 알리고 이번 답을 끝내요.',
       )
     const rec = this.approvals.create({
       tabId,
@@ -2420,7 +2380,7 @@ export class BrowserTools {
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
     })
     this.dialogApprovals.set(rec.id, dlg.message)
-    this.hold(tabId, APPROVAL_TTL_MS)
+    this.hold(tabId, risk.kind === 'money' ? PAY_SESSION_TTL_MS : APPROVAL_TTL_MS)
     return {
       content: [
         {
@@ -2428,6 +2388,67 @@ export class BrowserTools {
           text:
             `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. ` +
             '사용자가 승인하면 두리가 확인 창의 [확인]을 직접 누르고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 확인하세요.',
+        },
+      ],
+    }
+  }
+
+  /** 결제가 시작됐을 때 AI에게: 할 일은 주문 완료까지, 묶음의 탭, 끝내는 법 */
+  private payingText(x: PaySession): string {
+    const extra = [...x.tabs].filter((t) => t !== x.tabId)
+    return (
+      `결제가 시작됐어요. 이제 할 일은 주문 완료 화면까지 결제를 마치는 거예요. 결제 묶음: 탭 ${x.tabId}(주문서)` +
+      `${extra.map((t) => `·탭 ${t}(결제 창)`).join('')}. ` +
+      '결제 회사 창의 카드 선택·[다음]·[동의]·[결제하기]는 다시 승인받지 않고 눌러요(결제 비밀번호는 browser_request_code kind "pin", 인증 앱 승인은 browser_wait_auth). ' +
+      '결제 창이 안 보이면 browser_read로 화면 안 액자나 새 탭을 찾아요(늦게 뜬 창도 두리가 묶음에 넣어요). 이 탭들은 결제가 끝날 때까지 다른 주소로 옮기지 않아요. ' +
+      '주문 완료 화면에서 주문번호를 읽으면 browser_order_done(tabId, order_no)을 불러요. 결제가 안 되면 browser_order_done(failed: true, reason)으로 알리고 다른 길을 찾아요.'
+    )
+  }
+
+  /**
+   * 주문 완료(또는 결제 실패)를 AI가 화면을 보고 알린다: 결제 묶음을 닫고(탭 잡아 두기·결제 중 표시 풀기),
+   * 결제 승인을 주문번호와 함께 끝낸다. 끝은 "주문 완료 화면 + 주문번호"다 (11-20 사용자 결정)
+   */
+  private async orderDone(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
+    const failed = a.failed === true
+    const cut = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+    const orderNo = cut(a.order_no, 60)
+    const summary = cut(a.summary, 200)
+    const reason = cut(a.reason, 200)
+    if (!failed && !orderNo)
+      throw new Error(
+        '주문번호(order_no)를 넣어 주세요(주문 완료 화면에 적힌 그대로). 화면에 안 보이면 주문 내역을 새 탭으로 열어 찾아요. 결제가 안 됐으면 failed: true와 reason으로 불러요.',
+      )
+    // 주문번호를 다른 탭(주문 내역)에서 찾았어도: 결제 묶음이 하나뿐이면 그 결제다
+    const live = this.liveSessions()
+    const x = this.paySession(tabId) ?? (live.length === 1 ? live[0] : undefined)
+    if (x) this.endSession(x)
+    this.onNote?.('order-done', { site: x?.site ?? '', ok: !failed, ...(failed && reason ? { reason } : {}) })
+    if (failed) {
+      if (x)
+        this.approvals.settle(x.approvalId, false, `결제를 마치지 못했어요${reason ? `: ${reason}` : ''}`)
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `결제를 마치지 못한 것으로 기록하고 결제 묶음을 닫았어요${reason ? `(${reason})` : ''}. 먼저 돈이 나갔는지 확인해요(주문 내역을 새 탭으로 열어 보기). 안 나갔으면 다른 결제 수단이나 다른 길로 다시 해 보고, 결제 버튼은 다시 browser_checkout으로 한 번 승인받아요. 사용자에게 PC나 다른 앱에서 직접 하라고 하지 않아요.`,
+          },
+        ],
+      }
+    }
+    if (x)
+      this.approvals.settle(
+        x.approvalId,
+        true,
+        `주문 완료 · 주문번호 ${orderNo}${summary ? ` · ${summary}` : ''}`,
+      )
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `주문 완료를 기록했어요(주문번호 ${orderNo})${x ? '. 결제 승인을 완료로 바꾸고 결제 중이던 탭을 풀었어요' : ''}. ` +
+            '이제 show_result로 결과 한 장(무엇을·얼마·주문번호·도착이나 이용 예정)을 보여 주고, know_save로 이 주문(사이트·주문번호·금액·날짜)을 남겨요.',
         },
       ],
     }
@@ -2453,19 +2474,139 @@ export class BrowserTools {
     this.handedOff.set(tabId, Date.now())
   }
 
-  /** 사람이 직접 할 탭: 원격 화면을 열어 주고, 마칠 때까지 탭 정리에서 뺀다 (도구마다 부르는 allowRemote와 달리 넘길 때만) */
-  /** 결제를 승인해 마지막 버튼을 누른 탭 → 언제까지 결제 중으로 볼지 (그동안 다른 주소로 옮기지 않는다) */
-  private paying = new Map<number, number>()
-  isPaying(tabId: number): boolean {
-    const until = this.paying.get(tabId)
-    if (until === undefined) return false
-    if (until > Date.now()) return true
-    this.paying.delete(tabId)
-    return false
+  /**
+   * 결제 묶음 (승인 id → 묶음). 승인한 결제 버튼을 누른 순간부터 주문 완료(browser_order_done)까지.
+   * 누른 탭과 그 탭이 연 결제 창·새 탭이 한 묶음이고, 묶음 안 결제 회사 창의 버튼은 다시 승인받지 않는다.
+   * 묶음의 탭은 다른 주소로 옮기거나 서비스 도구가 가져다 쓰지 않는다 (실측 11-20 G마켓: 승인 뒤 카드 결제창이 뜬
+   * 탭을 주문 내역으로 옮겨 결제가 끊겼다)
+   */
+  private sessions = new Map<string, PaySession>()
+  /** 늦게 뜨는 결제 창을 찾아볼 때 (누른 뒤 ms). 첫 번째는 승인 결과를 돌려주기 전에 기다려 본다 (시험은 짧게) */
+  payPopupWaits = [2_500, 5_000, 10_000]
+  private liveSessions(now = Date.now()): PaySession[] {
+    for (const [id, x] of this.sessions) if (now - x.startedAt > PAY_SESSION_TTL_MS) this.sessions.delete(id)
+    return [...this.sessions.values()]
   }
-  /** 결제가 끝났다(주문 완료 화면을 확인했다) */
+  /** 이 탭이 든 결제 묶음 (없으면 undefined) */
+  paySession(tabId: number): PaySession | undefined {
+    return this.liveSessions().find((x) => x.tabs.has(tabId))
+  }
+  isPaying(tabId: number): boolean {
+    return this.paySession(tabId) !== undefined
+  }
+  /**
+   * 폰 보안 키패드로 받은 비밀번호대로 짚어 둔 화면 키패드 버튼을 차례로 누른다 (값은 남기지 않는다). 다 눌렀으면 true.
+   * force: 누를 때마다 키패드 위 '●○○○○○ (1/6자리)'가 바뀌어 둘레 글 검사(목록 칸 재활용 막기)가 둘째 숫자부터
+   * 막았다 (시험 가게 결제 창). 키패드는 AI가 방금 짚은 것이고, 자리가 다시 섞였는지는 누른 뒤 AI가 화면으로 판단한다.
+   * once: 화면이 안 바뀌는 숫자 버튼을 '안 눌렸다'고 보고 다시 누르면 숫자가 두 번 들어간다
+   */
+  async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
+    for (const [i, d] of [...pin].entries()) {
+      const ref = keys[d]
+      if (!ref) return false
+      // 화면 아래 키패드를 누르려고 늘린 화면 높이는 마지막 숫자까지 그대로 둔다 (숫자마다 늘렸다 줄이면 0.5초씩 더 든다)
+      const keepTall = i < pin.length - 1
+      const ok = await this.browser
+        .call('click', { tabId, ref, once: true, force: true, quick: true, keepTall }, 15_000)
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!ok) return false
+      await new Promise((res) => setTimeout(res, 120))
+    }
+    return true
+  }
+  /** 결제가 끝났다(주문 완료 화면을 확인했다): 그 탭의 결제 묶음을 닫는다 */
   donePaying(tabId: number) {
-    this.paying.delete(tabId)
+    const x = this.paySession(tabId)
+    if (x) this.endSession(x)
+  }
+  /**
+   * 결제 회사 창 안인지: 결제 묶음의 다른 탭(결제 창), 누른 탭의 화면 안 액자, 결제 회사 주소로 넘어간 누른 탭.
+   * 가게 주문서 화면 자체의 돈 버튼은 여기 들지 않는다 (같은 가게에서 또 사는 건 다시 승인)
+   */
+  private inProvider(tabId: number, url: string, ref = ''): boolean {
+    const x = this.paySession(tabId)
+    if (!x) return false
+    if (tabId !== x.tabId || frameRef(ref)) return true
+    return url !== '' && siteKey(url) !== x.site
+  }
+  /** 승인한 결제 버튼을 눌렀다: 결제 묶음을 연다 */
+  private startSession(approvalId: string, tabId: number, url: string, label: string, extra: number[] = []) {
+    // 한 탭에 결제는 하나: 같은 탭의 예전 묶음은 닫는다
+    for (const x of this.liveSessions()) if (x.tabs.has(tabId)) this.sessions.delete(x.approvalId)
+    const x: PaySession = {
+      approvalId,
+      tabId,
+      tabs: new Set([tabId]),
+      site: siteKey(url),
+      label,
+      startedAt: Date.now(),
+    }
+    this.sessions.set(approvalId, x)
+    this.hold(tabId, PAY_SESSION_TTL_MS)
+    for (const t of extra) this.joinSession(x, t)
+    this.onNote?.('pay-session', { site: x.site, tabs: [...x.tabs] })
+    // 결제 창은 서버에 다녀와서 늦게 뜬다: 몇 번 더 찾아본다 (첫 번째는 approve가 기다려 본다)
+    for (const ms of this.payPopupWaits.slice(1)) {
+      const t = setTimeout(() => void this.findPayTabs(x), ms)
+      t.unref?.()
+    }
+    return x
+  }
+  private joinSession(x: PaySession, tabId: number) {
+    if (x.tabs.has(tabId)) return
+    x.tabs.add(tabId)
+    this.hold(tabId, PAY_SESSION_TTL_MS)
+    this.onNote?.('pay-session-tab', { site: x.site, tabId })
+  }
+  private endSession(x: PaySession) {
+    this.sessions.delete(x.approvalId)
+    for (const t of x.tabs) {
+      this.hold(t, 0)
+      this.paidPass.delete(t)
+    }
+  }
+  /** 결제 묶음의 탭들이 연 창을 찾아 묶음에 넣는다 (확장의 늦은 새 창 알림 + 탭 목록의 여는 탭) */
+  private async findPayTabs(x: PaySession) {
+    if (this.sessions.get(x.approvalId) !== x) return
+    for (const t of [...x.tabs]) {
+      const p = (await this.browser.call('popup', { tabId: t }, 5_000).catch(() => undefined)) as
+        | { newTabId?: number }
+        | undefined
+      if (typeof p?.newTabId === 'number') this.joinSession(x, p.newTabId)
+    }
+    for (const t of await this.openerTabs())
+      if (t.opener !== undefined && x.tabs.has(t.opener)) this.joinSession(x, t.tabId)
+  }
+  /**
+   * 확장의 탭 목록 (탭·그 탭을 연 탭). 탭 목록 명령을 모르는 확장이면 빈 목록 — 늦은 새 창 알림(popup)만으로 한다.
+   * (확장 쪽 탭 목록 명령은 따로 들어온다: 이름·모양이 달라도 깨지지 않게 넓게 읽는다)
+   */
+  private async openerTabs(): Promise<{ tabId: number; opener?: number }[]> {
+    const r = (await this.browser.call(TABS_CMD, {}, 5_000).catch(() => undefined)) as unknown
+    const list: unknown[] = Array.isArray(r)
+      ? r
+      : Array.isArray((r as { tabs?: unknown } | undefined)?.tabs)
+        ? (r as { tabs: unknown[] }).tabs
+        : []
+    const out: { tabId: number; opener?: number }[] = []
+    for (const v of list) {
+      const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+      const id = Number(o.tabId ?? o.id)
+      const opener = Number(o.openerTabId ?? o.opener)
+      if (Number.isInteger(id)) out.push({ tabId: id, ...(Number.isInteger(opener) ? { opener } : {}) })
+    }
+    return out
+  }
+  /** 처음 보는 탭이 결제 묶음의 탭이 연 창이면 묶음에 넣는다 (결제 중일 때만 묻는다) */
+  private async adoptTab(tabId: number) {
+    const live = this.liveSessions()
+    if (!live.length || live.some((x) => x.tabs.has(tabId))) return
+    const me = (await this.openerTabs()).find((t) => t.tabId === tabId)
+    const x = me?.opener !== undefined ? live.find((y) => y.tabs.has(me.opener as number)) : undefined
+    if (x) this.joinSession(x, tabId)
   }
   /** 넘긴 화면이 바뀌면(사람이 마친 듯) 본체에 알린다: 사용자가 '다 했어요'를 말하지 않아도 이어 가게 */
   onHandoffChanged?: (tabId: number, why: string) => void
@@ -2516,6 +2657,7 @@ export class BrowserTools {
     this.handoffWatches.set(tabId, t)
   }
 
+  /** 사람이 직접 할 탭: 원격 화면을 열어 주고, 마칠 때까지 탭 정리에서 뺀다 (도구마다 부르는 allowRemote와 달리 넘길 때만) */
   holdForPerson(tabId: number) {
     this.allowRemote(tabId)
     this.hold(tabId, REMOTE_TTL_MS)
@@ -2630,61 +2772,48 @@ export class BrowserTools {
 
   /** 승인 요청 id → 몇 개를 한 번에 승인받는지 */
   private series = new Map<string, number>()
-  /** 한 번 승인으로 이어서 누를 수 있는 남은 개수 (사이트·종류별, 10분) */
-  private grants: { host: string; kind: RiskKind; left: number; until: number; site?: true }[] = []
+  /** 한 번 승인으로 이어서 누를 수 있는 남은 개수 (사이트·종류별, 10분). 보내기·지우기만 — 결제는 승인 한 번에 버튼 한 번 */
+  private grants: { host: string; kind: RiskKind; left: number; until: number }[] = []
 
   private grantSeries(url: string, kind: RiskKind, left: number) {
     let host = ''
     try {
       host = new URL(url).hostname
     } catch {}
-    if (!host || left < 1) return
+    if (!host || left < 1 || kind === 'money') return
     this.grants.push({ host, kind, left, until: Date.now() + 10 * 60_000 })
   }
 
-  /** 한 번 승인받은 사이트: 30분 동안 같은 종류는 묻지 않는다 */
-  private grantSite(url: string, kind: RiskKind) {
-    let host = ''
-    try {
-      host = new URL(url).hostname
-    } catch {}
-    if (!host) return
-    this.grants = this.grants.filter((g) => !(g.site && g.host === host && g.kind === kind))
-    this.grants.push({ host, kind, left: 1_000, until: Date.now() + 30 * 60_000, site: true })
-  }
-
-  /** 남은 승인이 있으면 하나 쓴다 (돈 내기는 묶어서 승인하지 않는다) */
+  /**
+   * 남은 승인이 있으면 하나 쓴다. 결제는 묶지 않는다: 예전엔 결제 한 번 승인하면 그 사이트의 돈 버튼이
+   * 30분 동안 승인 없이 눌렸다 (안전 구멍, 11-20 전수조사)
+   */
   private useSeries(url: string, kind: RiskKind, consume = true): boolean {
+    if (kind === 'money') return false
     let host = ''
     try {
       host = new URL(url).hostname
     } catch {}
     const now = Date.now()
     this.grants = this.grants.filter((g) => g.until > now && g.left > 0)
-    const g =
-      this.grants.find((x) => x.host === host && x.kind === kind && !x.site) ??
-      this.grants.find((x) => x.host === host && x.kind === kind)
+    const g = this.grants.find((x) => x.host === host && x.kind === kind)
     if (!g) return false
-    // 돈 내기는 사이트 승인(한 번 승인받은 사이트)일 때만 묶는다
-    if (kind === 'money' && !g.site) return false
     if (!consume) return true
     g.left--
     this.onNote?.('approval-series', { host, kind, left: g.left })
     return true
   }
 
-  /** 위험한 동작이면 멈추고 이유를 돌려준다 */
-  private guard(label: string, url: string, clickable = false, pay?: string) {
-    const risk = classifyRisk(label, url, pay)
-    if (!risk) return
-    if (this.useSeries(url, risk.kind)) return
-    const next =
-      clickable && this.finalStep() === 'approve'
-        ? risk.kind === 'money'
-          ? '이 버튼이 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이면 browser_click을 opens_checkout: true로 다시 불러 누르세요. 결제 화면의 마지막 버튼이면 browser_checkout으로 결제 카드를 띄워 한 번만 승인받아요(상품·금액·받는 곳·결제 수단을 한 장에).'
-          : 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
-        : '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.'
-    throw new Error(`멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 하지 않아요. ${next}`)
+  /** 막은 버튼: 절차 설명 말고 짧게, 어느 카드로 올리면 되는지만 */
+  private gateText(ref: string, name: string, risk: Risk | undefined, declared: boolean): string {
+    const what = `[${ref} "${name}"]`
+    if (this.finalStep() === 'self')
+      return `${GATE_STOP}: ${what}은(는) ${risk ? RISK_TEXT[risk.kind] : '마지막 버튼'}이라 두리가 누르지 않아요. 사용자가 "마지막 버튼은 직접 누르기"로 정해 두었어요. 여기까지 준비한 내용(무엇을·어디서·얼마)을 정리해 알리고 이번 답을 끝내요.`
+    if (!risk)
+      return `${GATE_STOP}: ${what}을(를) 마지막 버튼이라고 했어요(final). 결제면 browser_checkout, 보내기·지우기면 browser_request_approval에 이 ref를 올려 승인 카드를 띄워요.`
+    if (risk.kind === 'money')
+      return `${GATE_STOP}: ${what}은(는) 돈이 나가는 버튼이에요(${risk.reason}). browser_checkout(ref: "${ref}")으로 결제 카드를 띄워 한 번 승인받아요.${declared ? '' : ' 결제 화면으로 넘어가기만 하는 버튼이면 opens_checkout: true로 다시 눌러요.'}`
+    return `${GATE_STOP}: ${what}은(는) ${RISK_TEXT[risk.kind]}이에요(${risk.reason}). browser_request_approval(ref: "${ref}")로 승인 카드를 띄워요.`
   }
 
   /**
@@ -2708,7 +2837,15 @@ export class BrowserTools {
           title?: string
         }
         this.dialogs.delete(rec.tabId)
-        const msg = `확인 창 "${dialogText.slice(0, 80)}"에서 [확인]을 눌렀어요. 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+        const pressed = `확인 창 "${dialogText.slice(0, 80)}"에서 [확인]을 눌렀어요.`
+        // 결제 확인 창이면 버튼과 똑같이 결제 묶음을 열고 주문 완료까지 이어 간다
+        if (rec.kind === 'money') {
+          const x = this.startSession(id, rec.tabId, rec.url, rec.label)
+          const msg = `${pressed} ${this.payingText(x)} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+          this.approvals.progress(id, msg)
+          return { ok: true, message: msg }
+        }
+        const msg = `${pressed} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
         this.approvals.finish(id, true, msg)
         return { ok: true, message: msg }
       } catch (e) {
@@ -2743,7 +2880,7 @@ export class BrowserTools {
       // 고른 것: 결제 수단(c1)과 세부 선택(s1o2)을 쉼표로 이은 글 (폰이 서명한 그대로)
       const all = (choice ?? '').split(',').filter(Boolean)
       // 받는 곳: a0(지금 곳)이 아니면 배송지를 바꾼 뒤 결제해야 한다. 화면에서 배송지 바꾸기는 사이트마다 달라 AI가 하고,
-      // 이 승인으로 마지막 버튼을 한 번 누를 수 있게 한다 (다시 묻지 않는다, 10분)
+      // 이 승인으로 마지막 버튼을 한 번 누를 수 있게 한다 (다시 묻지 않는다, 결제 승인과 같은 1시간)
       const isShip = (p: string) => /^a\d+$/.test(p) || p.startsWith('n:')
       const ship = all.find(isShip)
       // n:… = 사용자가 넣은 새 주소 (그 사이트 배송지에 추가해 고른다)
@@ -2762,11 +2899,16 @@ export class BrowserTools {
               rec.subChoices?.flatMap((g) => g.options).find((o) => o.id === p)?.label,
           )
           .filter(Boolean)
-        this.paidPass.set(rec.tabId, { label: rec.label, until: Date.now() + APPROVAL_TTL_MS })
+        this.paidPass.set(rec.tabId, {
+          label: rec.label,
+          until: Date.now() + PAY_SESSION_TTL_MS,
+          approvalId: id,
+        })
         const msg =
           `사용자가 승인하면서 받는 곳을 "${shipTo}"(으)로 바꿔 달라고 했어요. 아직 결제는 누르지 않았어요. ` +
-          `화면의 배송지 변경으로 그곳을 고른 뒤(새 주소면 배송지 추가로 넣고, 받는 사람·연락처는 browser_fill_profile로)${pay.length ? ` 결제 수단 ${pay.map((x) => `"${x}"`).join(', ')}을(를) 고르고` : ''} [${rec.label}]을(를) browser_click으로 누르세요. 이번 결제는 이미 승인돼 다시 묻지 않아요(10분 안, 한 번).`
-        this.approvals.finish(id, true, msg)
+          `화면의 배송지 변경으로 그곳을 고른 뒤(새 주소면 배송지 추가로 넣고, 받는 사람·연락처는 browser_fill_profile로)${pay.length ? ` 결제 수단 ${pay.map((x) => `"${x}"`).join(', ')}을(를) 고르고` : ''} [${rec.label}]을(를) browser_click으로 누르세요. 이번 결제는 이미 승인돼 다시 묻지 않아요(1시간 안, 한 번). 누른 뒤에는 결제 창까지 끝내고 주문 완료 화면의 주문번호로 browser_order_done을 불러요.`
+        // 승인은 아직 끝나지 않았다: 주문 완료(browser_order_done)에서 끝낸다
+        this.approvals.progress(id, msg)
         return { ok: true, message: msg }
       }
       const main = parts.find((p) => rec.choiceRefs?.[p])
@@ -2882,39 +3024,36 @@ export class BrowserTools {
           )
         : undefined
       const hint = inner
-        ? ` 사용자가 등록한 ${PAY_KINDS[inner.kind]} 결제 수단은 "${inner.inner}"이에요. 결제 창에서 고를 수 있으면 그걸 고르고, 결제 비밀번호·본인 확인은 browser_handoff로 사람에게 넘기세요.`
+        ? ` 사용자가 등록한 ${PAY_KINDS[inner.kind]} 결제 수단은 "${inner.inner}"이에요. 결제 창에서 고를 수 있으면 그걸 고르고, 결제 비밀번호는 browser_request_code(kind: "pin")로 폰 키패드, 본인 확인은 browser_wait_auth로 받아요.`
         : ''
-      // 여러 개를 한 번에 승인했으면(일정 6개 지우기 등) 같은 사이트·같은 종류의 버튼은 10분 안에 남은 개수만큼 묻지 않고 누른다
+      // 여러 개를 한 번에 승인했으면(일정 6개 지우기 등) 같은 사이트·같은 종류의 버튼은 10분 안에 남은 개수만큼 묻지 않고 누른다.
+      // 사이트 통째로 30분 통과는 없다: 승인 한 번 = 버튼 한 번 (결제는 묶지 않는다)
       const many = this.series.get(id)
       this.series.delete(id)
-      // 사이트마다 한 번: 같은 사이트의 같은 종류(결제·보내기·삭제)는 30분 동안 다시 묻지 않는다 (11-20 사용자 결정)
-      if (rec.kind === 'money' || rec.kind === 'contact' || rec.kind === 'irreversible')
-        this.grantSite(rec.url, rec.kind)
       let rest = ''
-      if (many && many > 1) {
-        if (rec.kind === 'contact' || rec.kind === 'irreversible')
-          this.grantSeries(rec.url, rec.kind, many - 1)
+      if (many && many > 1 && rec.kind !== 'money') {
+        this.grantSeries(rec.url, rec.kind as RiskKind, many - 1)
         rest = ` 사용자가 ${many}개 모두 승인했어요: 남은 ${many - 1}개는 같은 버튼을 승인 요청 없이 browser_click으로 이어서 눌러요(10분 안).`
       }
-      // 결제를 눌렀으면 결제가 끝날 때까지 이 탭(과 새로 뜬 결제 창)은 다른 주소로 옮기지 않는다
-      let paying = ''
-      if (rec.kind === 'money' && !r.newTabId) {
-        // 결제 창은 늦게 새 창으로 뜰 때가 많다: 잠깐 기다려 한 번 더 본다
-        await new Promise((res) => setTimeout(res, 2_500))
+      const pressed = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}`
+      if (rec.kind !== 'money') {
+        const msg = `${pressed}${rest} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+        this.approvals.finish(id, true, msg)
+        return { ok: true, message: msg }
+      }
+      // 결제: 여기서 끝이 아니다. 누른 탭과 결제 창을 결제 묶음으로 묶고, 주문 완료(browser_order_done)까지 이어 간다.
+      // 결제 창은 늦게 새 창으로 뜰 때가 많다: 잠깐 기다려 한 번 더 보고, 그 뒤에도 몇 번 더 찾는다(startSession)
+      if (!r.newTabId) {
+        await new Promise((res) => setTimeout(res, this.payPopupWaits[0] ?? 0))
         const late = (await this.browser.call('popup', { tabId: rec.tabId }).catch(() => ({}))) as {
           newTabId?: number
         }
         if (late.newTabId) r = { ...r, newTabId: late.newTabId }
       }
-      if (rec.kind === 'money') {
-        this.paying.set(rec.tabId, Date.now() + 15 * 60_000)
-        if (r.newTabId) this.paying.set(r.newTabId, Date.now() + 15 * 60_000)
-        paying = r.newTabId
-          ? ` 결제 창이 새 탭(탭 ${r.newTabId})으로 열렸어요. 그 탭을 읽어 결제를 끝까지 마쳐요(결제 비밀번호·인증은 폰 카드로).`
-          : ' 결제가 끝날 때까지(주문 완료 화면) 이 탭에서 이어 가요. 화면이 비었으면 결제 창이 새 창이나 화면 안 액자로 떴을 수 있으니 찾아서 마쳐요. 주문 내역 같은 다른 곳으로 옮기지 않아요.'
-      }
-      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint}${rest}${paying} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
-      this.approvals.finish(id, true, msg)
+      const x = this.startSession(id, rec.tabId, rec.url, finalName, r.newTabId ? [r.newTabId] : [])
+      const msg = `${pressed}${hint} ${this.payingText(x)} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      // 승인 기록은 '승인됨(결제 중)'으로 두고, 주문 완료를 확인하면(browser_order_done) 주문번호와 함께 끝낸다
+      this.approvals.progress(id, msg)
       return { ok: true, message: msg }
     } catch (e) {
       const msg = `"${rec.label}" 버튼을 누르지 못했어요: ${(e as Error).message}`
@@ -2924,8 +3063,8 @@ export class BrowserTools {
   }
 
   /**
-   * 돈 내기 서비스 도구가 이 탭을 AI에게 넘겼다: 여기서부터 결제 흐름이다.
-   * 이 탭에서는 결제 화면 전의 [예약하기]·[구매하기]를 승인 없이 누르고, 승인은 결제 화면에서만 받는다
+   * 돈 내기 서비스 도구가 이 탭을 AI에게 넘겼다: 여기서부터 결제 흐름이다 (탭을 잡아 두고, 결제 화면·확정 화면 안내를 붙인다).
+   * 버튼을 승인 없이 누르게 하는 우회는 없다: 결제 화면으로 넘어가기만 하는 버튼은 AI가 opens_checkout으로 판단한다
    */
   startPayFlow(tabId: number, tool: string, sites: string[] = [], now = Date.now()) {
     this.payFlows.set(tabId, { tool, at: now })
@@ -2956,15 +3095,6 @@ export class BrowserTools {
     return undefined
   }
 
-  /** 결제 흐름 탭에서, 아직 결제 화면이 아닌 곳의 결제 화면 들어가기 버튼인지 */
-  private entersCheckout(tabId: number, page: PageInfo, name: string): boolean {
-    // 장바구니의 구매·주문 버튼은 결제 흐름이 아니어도 들어가는 버튼이다 (돈은 결제 화면의 마지막 버튼에서 나간다).
-    // 장바구니에도 '결제 예정 금액'·'배송지'가 보여 결제 화면처럼 읽힐 수 있어 주소로 먼저 본다
-    if (cartPage(page.url) && CART_ENTRY.test(name)) return true
-    if (page.checkout) return false
-    return this.payFlow(tabId) !== undefined && isCheckoutEntry(name)
-  }
-
   /** 탭이 닫혔다 (사용자·탭 정리): 그 탭의 기록을 지우고, 기다리던 승인은 만료시킨다 */
   forgetTab(tabId: number) {
     this.pages.delete(tabId)
@@ -2972,7 +3102,9 @@ export class BrowserTools {
     this.handedOff.delete(tabId)
     this.dialogs.delete(tabId)
     this.payFlows.delete(tabId)
-    for (const k of this.cookieTried) if (k.startsWith(`${tabId}|`)) this.cookieTried.delete(k)
+    // 결제 창이 닫혔다(결제를 마치면 스스로 닫는 창이 많다): 묶음에서 빼고, 다 닫혔으면 묶음도 닫는다
+    for (const x of this.liveSessions())
+      if (x.tabs.delete(tabId) && !x.tabs.size) this.sessions.delete(x.approvalId)
     this.approvals.expireTab(tabId)
     if (this._lastTabId === tabId) this._lastTabId = undefined
   }
@@ -3066,6 +3198,103 @@ export class BrowserTools {
     }
   }
 
+  /** 기다리기: 화면이 바뀔 때까지(많아야 ms) 기다리고 무엇이 바뀌었는지 알린다. 됐는지는 AI가 화면을 읽어 판단한다 */
+  private async waitChange(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
+    const ms = Math.min(Math.max(Number(a.ms) || 3_000, 100), 10_000)
+    const r = (await this.browser.call(
+      'wait',
+      { tabId, ms, until: a.until === 'time' ? 'time' : 'change' },
+      ms + 20_000,
+    )) as BrowserState & {
+      title?: string
+      waitedMs?: number
+      changed?: boolean
+      what?: string[]
+      dialogNotes?: SiteDialog[]
+    }
+    const sec = ((r.waitedMs ?? ms) / 1000).toFixed(1)
+    if (r.dialog) this.dialogs.set(tabId, r.dialog)
+    const lines = [
+      `[탭 ${tabId}] ${r.title || '(제목 없음)'} — ${r.url ?? ''}`,
+      r.changed ? `${sec}초 기다렸어요. 바뀐 것:` : `${sec}초 기다렸는데 화면이 그대로예요.`,
+      ...(r.what ?? []).map((w) => `- ${w}`),
+      ...dialogLines(r.dialogNotes ?? []),
+      ...(r.dialog ? openDialogLines(r.dialog) : []),
+      ...(r.changed && !r.dialog ? ['무엇이 됐는지는 browser_read로 화면을 읽어 확인해요.'] : []),
+    ]
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
+  /** 두리 탭 목록: 새 창·결제 창이 어디 열렸는지, 막힌 새 창, 정리로 닫힌 탭 */
+  private async tabList(a: Record<string, unknown>): Promise<ToolResult> {
+    const tabId = Number(a.tabId)
+    const r = (await this.browser.call('tabs', Number.isInteger(tabId) ? { tabId } : {})) as {
+      tabs?: {
+        tabId: number
+        url: string
+        title: string
+        opener?: number
+        createdAt?: number
+        windowType?: string
+        active?: boolean
+        loading?: boolean
+        held?: boolean
+        sleeping?: boolean
+      }[]
+      closed?: { tabId: number; opener?: number; url: string; title: string; closedAt?: number }[]
+      tidied?: { tabId: number; url: string; title: string; why: string; at: number }[]
+      blockedPopups?: { tabId: number; url: string; at: number }[]
+    }
+    const ago = (t?: number) => {
+      if (!t) return ''
+      const m = Math.round((Date.now() - t) / 60_000)
+      return m < 1 ? '방금' : `${m}분 전`
+    }
+    const tabs = r.tabs ?? []
+    const lines = [
+      `두리 탭 ${tabs.length}개:`,
+      ...tabs.map((t) => {
+        const bits = [
+          t.opener !== undefined ? `탭 ${t.opener}이(가) 연 창` : '',
+          t.windowType && t.windowType !== 'normal'
+            ? `${t.windowType === 'popup' ? '팝업' : t.windowType} 창`
+            : '',
+          t.active ? '앞 탭' : '',
+          t.loading ? '불러오는 중' : '',
+          t.held ? '잡아 둠' : '',
+          t.sleeping ? '잠듦' : '',
+          t.createdAt ? `${ago(t.createdAt)} 열림` : '',
+        ].filter(Boolean)
+        return `- [탭 ${t.tabId}] ${t.title || '(제목 없음)'} — ${t.url}${bits.length ? ` (${bits.join(' · ')})` : ''}`
+      }),
+      ...((r.closed ?? []).length
+        ? [
+            '최근 닫힌 새 창:',
+            ...(r.closed ?? []).map(
+              (c) =>
+                `- 탭 ${c.tabId}${c.opener !== undefined ? ` (탭 ${c.opener}이(가) 연 창)` : ''} ${c.title || ''} — ${c.url || '(주소 모름)'}, ${ago(c.closedAt)} 닫힘`,
+            ),
+          ]
+        : []),
+      ...((r.blockedPopups ?? []).length
+        ? [
+            'Chrome이 막은 새 창(팝업 차단):',
+            ...(r.blockedPopups ?? []).map(
+              (b) =>
+                `- 탭 ${b.tabId}에서 ${ago(b.at)}: ${b.url || '(주소 없는 빈 창: 결제 양식을 보내는 창일 수 있어요)'}`,
+            ),
+          ]
+        : []),
+      ...((r.tidied ?? []).length
+        ? [
+            '두리가 정리하며 닫은 탭:',
+            ...(r.tidied ?? []).map((t) => `- 탭 ${t.tabId} ${t.title || t.url} — ${t.why}, ${ago(t.at)}`),
+          ]
+        : []),
+    ]
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
   private async read(
     tabId: number,
     maxChars?: unknown,
@@ -3082,49 +3311,9 @@ export class BrowserTools {
       s = (await this.browser.call('snapshot', { tabId, maxChars: max })) as Snapshot
       notes.push(...(s.dialogNotes ?? []))
     }
-    // 쿠키 동의 창은 거부(없으면 필수만)로 닫고 다시 읽는다. 탭·사이트마다 한 번만, 한 일은 읽기 결과에 적는다
-    let cookieNote: string | undefined
-    const reject = !s.dialog ? cookieReject(s.text) : undefined
-    if (reject) {
-      let host = ''
-      try {
-        host = new URL(s.url).hostname
-      } catch {}
-      const key = `${tabId}|${host}`
-      if (!this.cookieTried.has(key)) {
-        this.cookieTried.add(key)
-        const name = parseRefs(s.text).get(reject)?.name ?? '거부'
-        const ok = await this.browser
-          .call('click', { tabId, ref: reject }, 15_000)
-          .then(() => true)
-          .catch(() => false)
-        if (ok) {
-          s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
-          notes.push(...(s.dialogNotes ?? []))
-          cookieNote = `🍪 쿠키 동의 창이 화면을 덮고 있어서 [${name}]로 닫았어요.`
-        }
-      }
-    }
-    // 광고·앱 설치·재촉 팝업은 닫는다 (결제·로그인 주소는 빼고, 탭·내용마다 한 번만). 쿠키 창 닫은 직후면 다음 읽기에서 본다
-    if (!s.dialog && !reject && !RISK_URL.test(s.url)) {
-      const promo = promoClose(s.text)
-      if (promo) {
-        const key = `${tabId}|${promo}|${s.text.length}`
-        if (!this.cookieTried.has(key)) {
-          this.cookieTried.add(key)
-          const name = parseRefs(s.text).get(promo)?.name ?? '닫기'
-          const ok = await this.browser
-            .call('click', { tabId, ref: promo }, 15_000)
-            .then(() => true)
-            .catch(() => false)
-          if (ok) {
-            s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
-            notes.push(...(s.dialogNotes ?? []))
-            cookieNote = `${cookieNote ? `${cookieNote} ` : ''}📢 광고·재촉 창이 화면을 덮고 있어서 [${name}]로 닫았어요.`
-          }
-        }
-      }
-    }
+    // 화면을 덮은 창(쿠키 동의·광고·재촉 팝업)은 몰래 닫지 않는다: 닫기 버튼 표시만 알려 AI가 정하게 한다
+    // (예전엔 읽을 때마다 두리가 몰래 눌렀다. 실측 2026-11-18 호텔스닷컴: 쿠키 창 막이 [예약하기]를 가렸던 일 때문)
+    const cover = !s.dialog ? coverLine(s.text) : undefined
     if (s.dialog) {
       // 확인 창이 떠 있는 동안 페이지는 멈춰 있다: 창만 알리고, 전에 읽은 표시는 그대로 둔다
       this.dialogs.set(tabId, s.dialog)
@@ -3157,21 +3346,32 @@ export class BrowserTools {
           })()
         : undefined
     const guide = await this.guideFor(tabId, s.url)
-    const flow = this.payFlow(tabId)
+    const ses = this.paySession(tabId)
+    const flow = ses ? undefined : this.payFlow(tabId)
     const lines = [
       ...(note ? [note] : []),
       `[탭 ${tabId}] ${s.title || '(제목 없음)'} — ${s.url}`,
-      ...(cookieNote ? [cookieNote] : []),
+      ...(cover ? [cover] : []),
       ...(accountNote ? [accountNote] : []),
       ...(loginNote ? [loginNote] : []),
       ...(optionNote ? [optionNote] : []),
+      ...(ses
+        ? [
+            `💳 결제 중이에요(묶음: ${[...ses.tabs].map((t) => `탭 ${t}`).join('·')}). 결제 회사 창 안의 버튼은 다시 승인받지 않아요. 주문 완료 화면과 주문번호가 보이면 browser_order_done으로 끝내요.`,
+            ...(info.confirmed
+              ? [
+                  `✅ 화면에 "${info.confirmed}"이(가) 보여요. 주문 완료면 주문번호를 읽어 browser_order_done(order_no)을 불러요.`,
+                ]
+              : []),
+          ]
+        : []),
       ...(flow && info.confirmed
         ? [
             `⚠ 화면에 "${info.confirmed}"이(가) 보여요. 예약·주문이 이미 확정됐을 수 있어요. 사용자에게 그대로 알리고 내역 화면에서 확인해 주세요.`,
           ]
         : flow && info.checkout
           ? [
-              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_checkout(결제 카드)으로 한 번만 승인받아요. 그 전에 이 화면의 배송지 바꾸기(사이트마다 이름이 달라요)를 열어 저장된 다른 배송지를 읽고 닫은 뒤, 상품(goods)·금액 줄(lines)·최종 금액(total)·받는 곳(ship_to·ship_options)·결제 수단(choices)·정보 줄(info: 도착·요청사항·예약자)을 한 카드에 넣어요. 결제 비밀번호 키패드가 뜨면 browser_request_code(kind: "pin", key_refs: 키패드 버튼 표시들)로 버튼마다 잘린 그림을 받아 숫자를 짚고(keys) 다시 불러 폰 보안 키패드로 받아요. 새 카드 번호처럼 그걸로 안 되는 칸만 browser_handoff로 넘겨요.`,
+              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_checkout(결제 카드)으로 한 번만 승인받아요. 그 전에 이 화면의 배송지 바꾸기(사이트마다 이름이 달라요)를 열어 저장된 다른 배송지를 읽고 닫은 뒤, 상품(goods)·금액 줄(lines)·최종 금액(total)·받는 곳(ship_to·ship_options)·결제 수단(choices)·정보 줄(info: 도착·요청사항·예약자)을 한 카드에 넣어요. 결제 비밀번호 키패드가 뜨면 browser_request_code(kind: "pin", key_refs: 키패드 버튼 표시들)로 버튼마다 잘린 그림을 받아 숫자를 짚고(keys) 다시 불러 폰 보안 키패드로 받아요. 처음 쓰는 새 카드 번호처럼 사람만 넣을 수 있는 칸일 때만 비상(browser_handoff, emergency)이에요.`,
             ]
           : []),
       ...(s.captcha
@@ -3198,7 +3398,7 @@ export class BrowserTools {
       ...(s.truncated
         ? [
             '',
-            `(글이 길어 여기까지 ${max}자만 보여 드렸어요. 이어서 보려면 skip: ${(s.skipped ?? 0) + s.text.length}로 다시 읽고, 찾는 부분이 있으면 from에 그 글자를 넣어 그 줄부터 읽어 주세요)`,
+            `(글이 길어 여기까지 ${max}자만 보여 드렸어요. 이어서 보려면 skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}로 다시 읽고, 찾는 부분이 있으면 from에 그 글자를 넣어 그 줄부터 읽어 주세요)`,
           ]
         : []),
     ]
@@ -3247,6 +3447,22 @@ export function openDialogLines(d: SiteDialog): string[] {
 export function nearlyEmpty(text: string): boolean {
   const words = text.replace(/\[e\d+ [^\]]*\]/g, '').replace(/\s+/g, '')
   return words.length < 8
+}
+
+/**
+ * 화면을 덮은 창 한 줄: 쿠키 동의 창의 거부 버튼, 광고·재촉 팝업의 닫기 버튼. 누르지는 않는다 (AI가 닫을지 정한다).
+ * 없으면 undefined
+ */
+export function coverLine(text: string): string | undefined {
+  const refs = parseRefs(text)
+  const show = (ref: string, what: string) => {
+    const c = refs.get(ref)
+    return `🪟 덮은 창: [${ref} ${c?.role ?? '버튼'} "${c?.name ?? ''}"] (${what}). 할 일을 가리면 browser_click으로 닫아요.`
+  }
+  const cookie = cookieReject(text)
+  if (cookie) return show(cookie, '쿠키 동의 창의 거부')
+  const promo = promoClose(text)
+  return promo ? show(promo, '광고·재촉 창의 닫기') : undefined
 }
 
 /** 폰이 보낸 글 조각 풀기 (깨졌으면 그대로) */

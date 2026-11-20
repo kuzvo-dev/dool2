@@ -29,7 +29,13 @@ import {
   stepKind,
   tierAnnotations,
 } from '@dool2/protocol/connector'
-import type { BrowserCaller, BrowserTools, RiskKind, ToolResult } from './browser-tools.js'
+import {
+  type BrowserCaller,
+  type BrowserTools,
+  GATE_STOP,
+  type RiskKind,
+  type ToolResult,
+} from './browser-tools.js'
 import type { ConnectorHealth, Outcome } from './connector-health.js'
 import type { Journal } from './journal.js'
 
@@ -233,12 +239,12 @@ export class Connectors {
     await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
-    const wait = this.pickGate(card.id, tool)
-    if (wait) return text(wait, true)
+    const pick = this.pickGate(card.id, tool)
     // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
-    const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const { outcome, detail, ...ran } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const result = withNote(ran, pick)
     // 여러 서비스를 차례로 시험할 때 사용자 Chrome에 탭이 쌓이지 않게 (8GB 맥이 멈춘 적이 있다)
     const tab = this.tabs.get(card.id)
     if (o.close && tab !== undefined) {
@@ -293,7 +299,11 @@ export class Connectors {
     }
   }
 
-  /** 찾은 뒤 사용자가 고르기 전이면 주문 준비를 멈춘다 (사용자가 "알아서"라고 했으면 그대로) */
+  /**
+   * 찾아본 뒤 사용자 말 없이 바로 주문 준비(돈 내기)를 부르면 결과에 한 줄 붙인다. 막지 않는다:
+   * 사용자가 이미 골랐는지("알아서 시켜 줘" 등)는 대화를 본 AI가 판단한다 (예전엔 말을 정규식으로 보고 멈췄다).
+   * 돈은 여기서 나가지 않는다: 마지막 결제 버튼은 결제 카드로 따로 승인받는다
+   */
   private findAt = new Map<string, number>()
   private pickGate(cardId: string, tool: ConnectorTool): string | undefined {
     if (tool.tier === '찾아보기') {
@@ -304,8 +314,7 @@ export class Connectors {
     const found = this.findAt.get(cardId)
     const user = this.opts.lastUser?.()
     if (!found || !user || user.at > found) return undefined
-    if (/알아서|아무거나|네가\s*골라|바로\s*(주문|시켜)/.test(user.text)) return undefined
-    return '사용자가 아직 고르지 않았어요. 찾은 후보 2~3개를 show_cards로 보여 주고(첫 카드 badge "추천", 사진·가격·도착 시간) 고른 이유를 한두 줄 쓴 뒤 이번 답을 끝내요. 사용자가 고르면 그걸로 이어서 해요.'
+    return '(찾아본 뒤 사용자 말 없이 주문 준비로 왔어요. 사용자가 아직 안 골랐으면 찾은 후보 2~3개를 show_cards로 보여 고르게 하고 이번 답을 끝내요. 이미 골랐으면(알아서 해 달라고 했으면 포함) 그대로 진행해요.)'
   }
 
   private usable(t: ConnectorTool) {
@@ -527,8 +536,7 @@ export class Connectors {
     await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
-    const wait = this.pickGate(card.id, tool)
-    if (wait) return text(wait, true)
+    const pick = this.pickGate(card.id, tool)
     // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
@@ -566,7 +574,8 @@ export class Connectors {
         true,
       )
     const startedAt = Date.now()
-    const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const { outcome, detail, ...ran } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const result = withNote(ran, pick)
     // 결과는 왔는데 꼭 채워질 칸이 비면 조용한 고장 (ADR 0020)
     let final: ToolResult = result
     let seen = outcome
@@ -886,7 +895,7 @@ export class Connectors {
           content: [
             {
               type: 'text',
-              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고 사용자에게 알려 주세요)`,
+              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고, 같은 답 안에서 같은 일을 하는 다른 서비스나 다른 길(브라우저 웹 검색 등)로 이어서 결과를 가져와요)`,
             },
           ],
           structuredContent: { stopped: say, blocked: true },
@@ -920,7 +929,7 @@ export class Connectors {
       if (r.isError) {
         const msg = firstText(r)
         // 위험 판단에 걸린 것은 커넥터가 넘을 수 없다: 그대로 AI에게
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return
@@ -941,7 +950,7 @@ export class Connectors {
       })
       if (r.isError) {
         const msg = firstText(r)
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return
@@ -964,7 +973,7 @@ export class Connectors {
       const r = await this.opts.tools.run('press', { tabId: c.need(), key: s.press })
       if (r.isError) {
         const msg = firstText(r)
-        if (msg.startsWith('멈췄어요')) throw new GuardStop(msg)
+        if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
       return
@@ -1036,6 +1045,8 @@ export class Connectors {
             url: f(s.capture.url),
             pick: s.capture.pick ?? '',
             timeoutMs: s.capture.timeoutMs ?? 10_000,
+            // 읽기만 하는 목록 화면이라 못 들었으면 한 번 새로 고쳐도 된다 (확장은 시킬 때만 새로 고친다)
+            reloadIfSilent: true,
           },
           40_000,
         )
@@ -1095,7 +1106,7 @@ export class Connectors {
       return r
     }
     if ('handoff_to_agent' in s) {
-      // 돈 내기 도구가 넘긴 탭은 결제 흐름: 결제 화면 전 [예약하기]는 승인 없이, 승인은 결제 화면에서만 (browser-tools)
+      // 돈 내기 도구가 넘긴 탭은 결제 흐름: 탭을 잡아 두고 결제 화면 안내를 붙인다. 승인은 마지막 결제 버튼에서 한 번 (browser-tools)
       const pay = c.tier === '돈 내기'
       if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
       // 늦게 그리는 화면(Gmail·구글 캘린더 등)은 정해진 기다림 뒤에도 비어 있다: 그려질 때까지 조금 더 읽는다
@@ -1114,17 +1125,26 @@ export class Connectors {
 }
 
 /**
- * 돈 내기 흐름의 표준 순서 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
- * 승인은 결제 화면에서 한 번, 사람에게는 사람만 할 수 있는 칸만 넘긴다
+ * 돈 내기 흐름의 목표와 도구 지도 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
+ * 순서는 AI가 화면을 보고 정한다. 사람 몫은 폰 카드로만
  */
 export const PAY_ORDER = [
-  '[결제 순서] ① 무엇을 살지·예약할지 사용자와 정해요.',
-  '② [예약하기]·[구매하기]·[주문하기]처럼 결제 화면을 여는 버튼은 승인 없이 browser_click으로 눌러요.',
-  '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정을 읽고, 예약자·주문자 칸은 browser_fill_profile로 채운 뒤(없는 항목은 browser_request_profile) 마지막 버튼에 browser_checkout(결제 카드)을 써요. 결제 수단·결제 시점처럼 고를 칸은 직접 고르지 말고 choices로 넘겨 결제 카드에서 사용자가 고르게 해요. 승인은 이때 한 번이에요.',
-  '④ 카드 번호·결제 비밀번호·본인인증처럼 사람만 할 수 있는 것만 browser_handoff로 넘겨요. 나머지를 통째로 넘기지 않아요.',
-  '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
-  '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login.',
+  '[결제] 목표: 완료 화면과 주문(예약)번호까지. 순서는 화면을 보고 정해요.',
+  '- 결제 화면으로 넘어가기만 하는 [주문하기]·[구매하기]·[예약하기]: browser_click(opens_checkout: true)',
+  '- 예약자·주문자·배송지 칸: browser_fill_profile (없는 항목만 browser_request_profile)',
+  '- 결제 승인: 마지막 결제 버튼에서 browser_checkout(결제 카드) 한 번. 결제 수단 고르기는 choices로. 결제 화면에서 멈추고 묻지 않아요',
+  '- 승인 뒤 결제 창: 같은 결제라 끝까지 마쳐요. 결제 비밀번호 키패드는 browser_request_code(kind: pin), 인증번호는 browser_request_code, 앱 승인은 browser_wait_auth, 로봇 확인은 browser_request_tap',
+  '- 끝: 완료 화면에서 주문(예약)번호를 읽어 browser_order_done',
+  '- 돈이 나가지 않는 신청(취소·반품·요금제 변경·해지): 마지막 버튼에서 browser_request_approval',
+  '- 로그인 요구: 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login',
+  '- 저장된 카드가 없어 새 카드 번호를 처음 넣어야 할 때만 browser_handoff(emergency: true)',
+  '눌렀는데 화면이 그대로면 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·빈 필수 칸) 보고 그것부터 처리해요. 막히면 다른 결제 수단·다른 화면으로 다시 해 봐요.',
 ].join('\n')
+
+/** 도구 결과 끝에 안내 한 줄을 붙인다 (없으면 그대로) */
+function withNote<T extends ToolResult>(r: T, note: string | undefined): T {
+  return note ? { ...r, content: [...r.content, { type: 'text', text: note }] } : r
+}
 
 /** 아직 덜 그려진 화면: 머리줄 뒤 글이 거의 없고 누를 것도 거의 없다 */
 export function thinPage(page: string): boolean {

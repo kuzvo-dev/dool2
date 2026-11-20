@@ -115,7 +115,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). '{{from}}'이 보낸 '{{subject}}' 메일을 찾아 열고 '회신'을 눌러 '{{body}}'를 그대로 넣어요. '보내기'는 누르지 말고 받는 사람·제목·본문을 보여 주며 browser_request_approval로 승인받아야만 눌러요. 모두 회신·전달은 사용자가 말할 때만. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
+          "handoff_to_agent": "목표: '{{from}}'이 보낸 '{{subject}}' 메일에 '{{body}}'로 회신하기. Outlook은 회사·학교 계정이면 https://outlook.office.com, 개인 계정이면 https://outlook.live.com 이에요(사용자가 쓰는 쪽, 모르면 회사 먼저). 본문은 그대로 넣고, 모두 회신·전달은 사용자가 말할 때만. 받는 사람·제목·본문을 보여 주며 browser_request_approval로 승인받은 뒤에 보내요. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}

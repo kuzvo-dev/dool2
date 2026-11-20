@@ -343,7 +343,7 @@
     {
       "name": "prepare_booking",
       "title": "예매 준비",
-      "description": "고른 극장·날짜·영화·시작 시각 회차를 골라 인원/좌석 화면 직전까지 간다. 인원·좌석 고르기와 결제는 열어 둔 탭에서 브라우저 도구로 이어서 하고, 결제는 사용자 승인(browser_request_approval)을 받아야만 한다. 좌석 단계부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('megabox').",
+      "description": "고른 극장·날짜·영화·시작 시각 회차를 골라 인원/좌석 화면으로 가서 예매까지 마친다. 좌석 단계부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('megabox'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
       "tier": "돈 내기",
       "status": "초안",
       "input": {
@@ -413,7 +413,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "메가박스 빠른예매 화면이에요(안쪽 프레임일 수 있음). 날짜 줄에서 {{date|mmdd}}({{date|dow}})을 고르고, 영화에서 '{{movie}}', 극장에서 '{{theater}}'을(를) 고른 뒤 시간 목록에서 {{start}} 시작 회차({{screen}})를 눌러요. 인원/좌석 화면이 나오면 {{people}}명, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 영화·극장·관·시각·좌석·금액을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인 창이 나오면 connect_ask('megabox')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
+          "handoff_to_agent": "메가박스 빠른예매 화면이에요(안쪽 프레임일 수 있음). 날짜 줄에서 {{date|mmdd}}({{date|dow}})을 고르고, 영화에서 '{{movie}}', 극장에서 '{{theater}}'을(를) 고른 뒤 시간 목록에서 {{start}} 시작 회차({{screen}})를 눌러요. 인원/좌석 화면이 나오면 {{people}}명, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 영화·극장·관·시각·좌석·금액을 정리해 두고, 결제 화면의 마지막 결제 버튼에서 결제 카드(browser_checkout)로 승인받아요. 로그인 창이 나오면 connect_ask('megabox')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 승인 뒤 결제 창까지 마치고 완료 화면의 예약번호로 browser_order_done."
         }
       ],
       "result": {},

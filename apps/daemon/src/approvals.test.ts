@@ -136,19 +136,21 @@ describe('승인 게이트', () => {
     expect(r.isError).toBe(true) // 기록이 지워져서 다시 읽어야 한다
   })
 
-  it('위험하지 않은 버튼은 승인 요청을 받지 않는다', async () => {
+  it('돈 말이 없는 버튼도 AI가 승인을 요청하면 받는다 (묻는 건 늘 안전하다)', async () => {
     const tools = new BrowserTools(shop())
     await tools.run('read', { tabId: 1 })
     const r = await tools.run('request_approval', { ...ask, ref: 'e1' })
-    expect(r.isError).toBe(true)
-    expect(tools.approvals.list()).toHaveLength(0)
+    expect(r.isError).toBeUndefined()
+    expect(tools.approvals.list()).toHaveLength(1)
   })
 
-  it('"항상 직접 누르기"면 승인 요청 대신 사람에게 넘기라고 한다', async () => {
+  it('"항상 직접 누르기"면 두리가 누르지 않고 준비한 내용만 알린다 (PC 화면 넘기기는 하지 않는다)', async () => {
     const tools = new BrowserTools(shop(), undefined, () => 'self')
     await tools.run('read', { tabId: 1 })
     const click = await tools.run('click', { tabId: 1, ref: 'e2' })
-    expect(JSON.stringify(click)).toContain('browser_handoff')
+    expect(click.isError).toBe(true)
+    expect(JSON.stringify(click)).not.toContain('browser_handoff')
+    expect(JSON.stringify(click)).toContain('직접 누르기')
     const r = await tools.run('request_approval', ask)
     expect(r.isError).toBe(true)
     expect(tools.approvals.list()).toHaveLength(0)

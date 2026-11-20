@@ -3,6 +3,7 @@
 // - 두리가 연 탭만 다룬다. 사용자가 연 탭은 건드리지 않는다
 // - 클릭·입력은 chrome.debugger(CDP Input)로 실제 입력과 같게 넣는다
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
+import { type FrameNode, layoutFrames, screenOrder } from './frames.js'
 import { keyDef, pickPath, safeUrl } from './keys.js'
 import {
   type ExtractSpec,
@@ -21,27 +22,39 @@ import {
   pageFormFocus,
   pageFormTarget,
   pageFrameBox,
+  pageFrameProbeListen,
+  pageFrameProbeRead,
+  pageFrameProbeSend,
+  pageFrameSelf,
+  pageHitArm,
+  pageHitRead,
+  pageHookOpen,
   pageLinkNavigates,
   pageLocate,
   pageMarkFilled,
   pageMarkTaps,
   pageMarkText,
+  pageMutArm,
+  pageMutRead,
   pageOptionPoint,
-  pageRect,
+  pageReadOpens,
   pageRememberShown,
   pageRemoteInfo,
   pageRevealItem,
   pageScroll,
   pageScrollBy,
+  pageScrollInfo,
   pageSelectChoose,
   pageSelectOptions,
+  pageShotRect,
   pageSnapshot,
   pageTapAt,
   pageValueLength,
   pageViewport,
   type ReadScope,
+  type SnapshotResult,
 } from './page.js'
-import { tidyPlan } from './tidy.js'
+import { CLOSE_AFTER_MS, tidyPlan } from './tidy.js'
 
 /** @dool2/protocol의 BROWSER_HOST_NAME과 같아야 한다 (테스트로 확인) */
 export const HOST_NAME = 'com.dool2.host'
@@ -144,6 +157,35 @@ interface Saved {
   held?: Record<string, number>
   /** 최근에 닫힌 두리 탭 (다시 부르면 "사용자가 연 탭"이 아니라 "닫혔어요"로 알린다) */
   closed?: number[]
+  /** 두리 탭마다 언제·어느 탭이 열었는지 (새 창·결제 창 목록, 정리에서 빼기). 최근 50개 */
+  recs?: TabRec[]
+  /** 정리(tidy)가 닫은 탭: 다음 읽기·탭 목록에서 알린다 */
+  tidied?: Tidied[]
+}
+interface TabRec {
+  tabId: number
+  /** 이 탭을 연 두리 탭 (두리가 직접 연 탭은 없음) */
+  opener?: number
+  at: number
+  url?: string
+  title?: string
+  /** popup 명령으로 이미 알린 새 창 */
+  seen?: boolean
+  closedAt?: number
+}
+interface Tidied {
+  tabId: number
+  url: string
+  title: string
+  at: number
+  why: string
+  told?: boolean
+}
+/** 기록 하나 더하기 (같은 탭이면 고친다) */
+function putRec(s: Saved, r: TabRec) {
+  const list = (s.recs ?? []).filter((x) => x.tabId !== r.tabId)
+  list.push(r)
+  s.recs = list.slice(-50)
 }
 async function load(): Promise<Saved> {
   const s = (await chrome.storage.session.get('dool2')).dool2 as Saved | undefined
@@ -248,6 +290,7 @@ async function openTab(url: string): Promise<chrome.tabs.Tab> {
   await update((x) => {
     x.owned = [...new Set([...x.owned, id])]
     if (s.windowId !== undefined) x.windowId = s.windowId
+    putRec(x, { tabId: id, at: Date.now() })
   })
   touch(id)
   // 두리 탭은 소리 없이 (쇼핑몰 영상 등). 사용자가 듣고 싶으면 탭에서 켜면 된다
@@ -265,6 +308,7 @@ const usedAt = new Map<number, number>()
 let usedSavedAt = 0
 function touch(tabId: number) {
   usedAt.set(tabId, Date.now())
+  tracked.add(tabId)
   // 저장은 가끔만 (명령마다 저장하면 느려진다)
   if (Date.now() - usedSavedAt < 30_000) return
   usedSavedAt = Date.now()
@@ -281,25 +325,51 @@ async function tidy(fresh?: number) {
     const s = await load()
     const now = Date.now()
     const tabs = []
+    const info = new Map<number, chrome.tabs.Tab>()
+    const live = new Set<number>()
+    for (const id of s.owned) if (await chrome.tabs.get(id).catch(() => undefined)) live.add(id)
     for (const id of s.owned) {
       const t = await chrome.tabs.get(id).catch(() => undefined)
       if (!t) continue
+      info.set(id, t)
       // 서비스 워커가 다시 깨어나 기록이 없으면 지금 쓴 것으로 본다 (깨자마자 몽땅 닫지 않게)
       const at = usedAt.get(id) ?? s.used?.[id] ?? now
       usedAt.set(id, at)
+      // 가족 탭은 닫지도 재우지도 않는다: 연 탭이 살아 있는 탭(결제 창을 띄운 주문서), 살아 있는 탭이 30분 안에 연 탭(결제 창).
+      // 주문서를 닫거나 재우면 결제 창이 결과를 돌려줄 곳이 없어 결제가 끊긴다 (실측 11-20 G마켓)
+      const rec = s.recs?.find((r) => r.tabId === id)
+      const family =
+        (s.recs ?? []).some((r) => r.opener === id && live.has(r.tabId)) ||
+        (rec?.opener !== undefined && live.has(rec.opener) && now - rec.at < 30 * 60_000)
       tabs.push({
         id,
         usedAt: at,
         keep: id === fresh || phoneView.has(id) || emulated.has(id) || (s.held?.[id] ?? 0) > now,
+        family,
         discarded: Boolean(t.discarded),
         active: Boolean(t.active),
       })
     }
     const plan = tidyPlan(tabs, now)
+    const gone: Tidied[] = []
     for (const id of plan.close) {
+      const t = info.get(id)
+      const old = now - (usedAt.get(id) ?? now) >= CLOSE_AFTER_MS
+      gone.push({
+        tabId: id,
+        url: t?.url ?? '',
+        title: t?.title ?? '',
+        at: now,
+        why: old ? '45분 넘게 안 써서' : '두리 탭이 많아서(3개까지 둬요)',
+      })
       await detach(id)
       await chrome.tabs.remove(id).catch(() => undefined)
     }
+    // 닫은 것은 남겨 두고 다음 읽기·탭 목록에서 알린다 (말없이 닫으면 AI는 탭이 왜 사라졌는지 모른다)
+    if (gone.length)
+      await update((x) => {
+        x.tidied = [...(x.tidied ?? []), ...gone].slice(-20)
+      })
     for (const id of plan.sleep) {
       await detach(id)
       await chrome.tabs.discard(id).catch(() => undefined)
@@ -331,17 +401,22 @@ async function groupTab(tabId: number) {
   }
 }
 
-// 두리 탭에서 새 탭이 열리면(새 창 링크) 그것도 두리 탭으로 본다
-let lastPopup: { opener: number; tabId: number } | undefined
+// 두리 탭에서 새 탭이 열리면(새 창 링크) 그것도 두리 탭으로 본다.
+// 연 탭마다 목록으로 남긴다: 예전에는 마지막 새 창 하나만 기억해서, 다른 탭이 새 창을 열거나 누르기가 시작되면
+// 늦게 뜬 결제 창을 잊었다
+/** 탭마다 마지막으로 새 탭을 연 때 (누른 뒤 기다리기를 일찍 끝내게) */
+const lastOpened = new Map<number, number>()
 async function adopt(opener: number, tabId: number) {
   let took = false
   await update((s) => {
     if (!s.owned.includes(opener) || s.owned.includes(tabId)) return
     s.owned.push(tabId)
+    putRec(s, { tabId, opener, at: Date.now() })
     took = true
   })
   if (!took) return
-  lastPopup = { opener, tabId }
+  lastOpened.set(opener, Date.now())
+  tracked.add(tabId)
   void watch(tabId)
   void chrome.tabs.update(tabId, { muted: true }).catch(() => undefined)
   await groupTab(tabId)
@@ -364,7 +439,19 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     had = s.owned.includes(tabId)
     s.owned = s.owned.filter((t) => t !== tabId)
     if (had) s.closed = [...(s.closed ?? []).filter((t) => t !== tabId), tabId].slice(-50)
+    const rec = s.recs?.find((r) => r.tabId === tabId)
+    if (rec) {
+      rec.closedAt = Date.now()
+      const last = lastSeen.get(tabId)
+      if (last) Object.assign(rec, last)
+    }
   })
+  frameNav.delete(tabId)
+  listedFrames.delete(tabId)
+  navLog.delete(tabId)
+  openAttempts.delete(tabId)
+  lastSeen.delete(tabId)
+  tracked.delete(tabId)
   if (!had) return
   usedAt.delete(tabId)
   frameMaps.delete(tabId)
@@ -389,12 +476,22 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
   return chrome.tabs.get(tabId)
 }
 
-/** 입력 뒤 화면이 바뀌기를 잠깐(최대 1.2초) 기다린다. 이동이 시작됐으면 끝날 때까지 */
-async function settle(tabId: number, before?: string) {
-  for (let i = 0; i < 12; i++) {
+/** 입력 뒤 화면이 바뀌기를 잠깐(최대 1.2초) 기다린다. 이동이 시작됐으면 끝날 때까지 (액자 안 이동도) */
+/** quick: 키패드 숫자처럼 화면이 거의 안 바뀌는 누르기 (0.3초만 본다. 이동이 시작되면 그대로 끝까지 기다린다) */
+async function settle(tabId: number, before?: string, quick = false) {
+  const since = Date.now()
+  await settleTop(tabId, before, quick ? 3 : 12)
+  await framesSettle(tabId, since)
+}
+async function settleTop(tabId: number, before?: string, rounds = 12) {
+  const since = Date.now()
+  for (let i = 0; i < rounds; i++) {
     await sleep(100)
     // 확인 창이 뜨면 화면은 더 바뀌지 않는다 (고를 때까지 멈춰 있다)
     if (dialogs.has(tabId)) return
+    // 누른 결과로 새 탭이 열렸으면 이 탭은 더 바뀌지 않는다: 기다리지 않는다
+    // (새 탭이 앞으로 오면 이 탭은 뒤로 가서 그리기가 느려져, 1.2초를 다 채우던 것 — CI에서 4초)
+    if ((lastOpened.get(tabId) ?? 0) >= since) return
     // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게. 한 장 그리기가 40ms쯤 들어서(실측) 4번에 1번만
     if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
@@ -407,6 +504,53 @@ async function settle(tabId: number, before?: string) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// ── 액자마다 불러오는 중인지 (webNavigation) ──
+// 탭 상태·맨 위 주소만 보면 액자 안 이동(결제 단계·주소 찾기 결과)이 끝났는지 몰라, 반쯤 그려진 액자를 읽었다
+/** 두리가 다루는 탭 (사용자 탭의 이동은 남기지 않는다) */
+const tracked = new Set<number>()
+/** 탭마다 마지막 주소·제목 (닫힌 뒤에도 탭 목록에서 무엇이었는지 알리게) */
+const lastSeen = new Map<number, { url?: string; title?: string }>()
+chrome.tabs.onUpdated.addListener((id, _change, t) => {
+  if (tracked.has(id)) lastSeen.set(id, { url: t.url, title: t.title })
+})
+type NavKind = 'start' | 'commit' | 'done' | 'error'
+const frameNav = new Map<number, Map<number, { url: string; loading: boolean; at: number }>>()
+const navLog = new Map<number, { at: number; frameId: number; url: string; kind: NavKind }[]>()
+function noteNav(d: { tabId: number; frameId: number; url: string }, kind: NavKind) {
+  if (!tracked.has(d.tabId)) return
+  const m = frameNav.get(d.tabId) ?? new Map()
+  m.set(d.frameId, { url: d.url, loading: kind === 'start' || kind === 'commit', at: Date.now() })
+  frameNav.set(d.tabId, m)
+  const log = navLog.get(d.tabId) ?? []
+  log.push({ at: Date.now(), frameId: d.frameId, url: d.url, kind })
+  navLog.set(d.tabId, log.slice(-40))
+}
+chrome.webNavigation.onBeforeNavigate.addListener((d) => noteNav(d, 'start'))
+chrome.webNavigation.onCommitted.addListener((d) => noteNav(d, 'commit'))
+chrome.webNavigation.onCompleted.addListener((d) => noteNav(d, 'done'))
+chrome.webNavigation.onErrorOccurred.addListener((d) => noteNav(d, 'error'))
+
+/** 탭마다 마지막 읽기에서 글·누를 것이 있어 실은 액자 (광고 액자가 늘 새로 고쳐져도 누르기마다 기다리지 않게) */
+const listedFrames = new Map<number, Set<number>>()
+
+/**
+ * since 뒤에 이동을 시작한 액자가 아직 불러오는 중이면 끝날 때까지 (많아야 maxMs).
+ * 지난 읽기에 실은 액자와 새로 생긴 액자(눌러서 뜬 창)만 본다
+ */
+async function framesSettle(tabId: number, since: number, maxMs = 2_500) {
+  const until = Date.now() + maxMs
+  const listed = listedFrames.get(tabId)
+  const known = frameIndexes.get(tabId)
+  const busy = () =>
+    [...(frameNav.get(tabId) ?? new Map()).entries()].some(
+      ([fid, f]) => fid !== 0 && f.loading && f.at >= since && (listed?.has(fid) || !known?.has(fid)),
+    )
+  while (busy() && Date.now() < until) {
+    if (dialogs.has(tabId)) return
+    await sleep(150)
+  }
+}
 
 // ── chrome.debugger: 실제 입력·화면 캡처 ─────────────────────
 
@@ -481,6 +625,8 @@ interface SiteDialog {
   message: string
   url: string
   defaultPrompt?: string
+  /** 두리가 바로 [확인]·[떠나기]를 눌렀다 (알림창·떠나기 확인. 결과에 그대로 알린다) */
+  autoAccepted?: boolean
 }
 /** 탭마다 떠 있는 확인 창 (confirm·prompt) */
 const dialogs = new Map<number, SiteDialog>()
@@ -498,6 +644,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     dialogs.delete(tabId)
     return
   }
+  // 새 창 열기 시도 (막혔는지는 새 탭이 생겼는지로 본다)
+  if (method === 'Page.windowOpen') {
+    noteOpen(tabId, String((params as { url?: string }).url ?? ''))
+    return
+  }
   if (method !== 'Page.javascriptDialogOpening') return
   const p = params as { type?: string; message?: string; url?: string; defaultPrompt?: string }
   const d: SiteDialog = {
@@ -511,7 +662,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     return
   }
   const notes = dialogNotes.get(tabId) ?? []
-  // 같은 알림창이 한 번에 여러 번 알려질 때가 있다 (실측): 한 번만 남긴다
+  // 같은 알림창이 한 번에 여러 번 알려질 때가 있다 (실측): 한 번만 남긴다.
+  // 떠나기 확인은 두리가 이동을 시킨 때만 뜨므로 그대로 떠나되, 몰래 하지 않고 다음 결과에 알린다
+  d.autoAccepted = true
   const last = notes.at(-1)
   if (!last || last.type !== d.type || last.message !== d.message) notes.push(d)
   dialogNotes.set(tabId, notes.slice(-5))
@@ -575,15 +728,34 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
  * 1×1로 화면을 찍으면 한 장을 그린다. 창을 앞으로 끌어오지 않으니 맥을 쓰는 사람을 방해하지 않는다
  */
 async function paint(tabId: number) {
-  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다
+  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다.
+  // 찍는 자리는 지금 보이는 곳의 왼쪽 위 (clip은 문서 기준이라 0,0이면 굴린 페이지에서 화면 밖이다. 화면 밖을 찍으면
+  // Chrome이 화면을 잠깐 옮겨 그리고, 그 뒤 다른 사이트 액자의 누르는 자리가 굴린 만큼 어긋났다 — 주소 찾기 버튼이 안 눌림)
   await Promise.race([
-    cdp(tabId, 'Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 10,
-      clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 },
-    }).catch(() => {}),
+    (async () => {
+      const o = await scrollOffset(tabId, 'visual')
+      await cdp(tabId, 'Page.captureScreenshot', {
+        format: 'jpeg',
+        quality: 10,
+        clip: { x: o.x, y: o.y, width: 1, height: 1, scale: 1 },
+      })
+    })().catch(() => {}),
     sleep(1500),
   ])
+}
+
+/**
+ * Page.captureScreenshot의 clip은 문서 기준(굴린 만큼 더한 자리)이다. 화면 기준 자리(getBoundingClientRect)를 찍으려면
+ * 굴린 만큼을 더해야 한다. 예전에는 화면 기준 그대로 넣어, 굴린 페이지에서 엉뚱한 곳(위쪽)이 찍혔다.
+ * layout: 요소 상자(레이아웃 화면 기준), visual: 사람이 보는 화면 기준(확대해 본 폰 화면)
+ */
+async function scrollOffset(tabId: number, kind: 'layout' | 'visual'): Promise<{ x: number; y: number }> {
+  type V = { pageX: number; pageY: number }
+  const m = await cdp<{ cssLayoutViewport?: V; cssVisualViewport?: V }>(tabId, 'Page.getLayoutMetrics').catch(
+    () => undefined,
+  )
+  const v = kind === 'layout' ? m?.cssLayoutViewport : m?.cssVisualViewport
+  return { x: v?.pageX ?? 0, y: v?.pageY ?? 0 }
 }
 
 /** 원격 '필요한 칸만'을 액자 안에서 뽑은 탭: 그 액자 (채울 때 그쪽으로 보낸다) */
@@ -659,8 +831,22 @@ async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   await sleep(350)
   return true
 }
+/** keepTall로 늘린 채 둔 탭 → 그래도 늦게라도 되돌리는 시계 (비밀번호를 다 못 누르고 멈춰도 남지 않게) */
+const keptTall = new Map<number, ReturnType<typeof setTimeout>>()
+function keepTallFor(tabId: number) {
+  clearTimeout(keptTall.get(tabId))
+  keptTall.set(
+    tabId,
+    setTimeout(() => {
+      keptTall.delete(tabId)
+      void restoreHeight(tabId)
+    }, 3_000),
+  )
+}
 /** 늘린 화면 높이를 원래대로 (남겨 두면 그 뒤 화면 찍기·누르는 자리가 어긋났다 — 실측 11-20 G마켓 배송지 추가) */
 async function restoreHeight(tabId: number) {
+  clearTimeout(keptTall.get(tabId))
+  keptTall.delete(tabId)
   if (phoneView.has(tabId) || emulated.has(tabId)) return
   await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
   await sleep(150)
@@ -700,16 +886,20 @@ async function inFrame<A extends unknown[], R>(
   return res?.result as R
 }
 
-/** React·Vue 클릭 처리기만 붙은 상자에 표시 달기 (페이지 스크립트 공간에서만 보인다). 실패해도 화면 읽기는 계속한다 */
+/** React·Vue 클릭 처리기만 붙은 상자에 표시 달기 (페이지 스크립트 공간에서만 보인다). 실패해도 화면 읽기는 계속한다.
+ *  window.open 지켜보기(막힌 새 창 알기)도 함께 건다 */
 async function markTaps(tabId: number, frameId: number) {
   const target = frameId ? { tabId, frameIds: [frameId] } : { tabId }
-  await chrome.scripting.executeScript({ target, world: 'MAIN', func: pageMarkTaps }).catch(() => {})
+  await Promise.all([
+    chrome.scripting.executeScript({ target, world: 'MAIN', func: pageMarkTaps }).catch(() => {}),
+    chrome.scripting.executeScript({ target, world: 'MAIN', func: pageHookOpen }).catch(() => {}),
+  ])
 }
 
 // ── 화면 안 액자 (iframe): 로그인 칸을 액자 안에 두는 사이트 (아고다 등) ──
 /** 액자 하나의 표시 번호 대역 (액자 n → e{n*10000+1}…) */
 const FRAME_SPAN = 10_000
-/** 탭마다: 표시 대역 번호 → 확장 frameId·주소 (마지막으로 읽은 화면 기준) */
+/** 탭마다: 표시 대역 번호 → 확장 frameId·주소 (읽은 액자 모두. 사라진 액자는 읽을 때 뺀다) */
 const frameMaps = new Map<number, Map<number, { frameId: number; url: string }>>()
 /**
  * 탭마다 액자 → 번호를 고정한다. 읽을 때마다 보이는 순서로 매기면 광고 액자가 늘고 줄 때 번호가 밀려,
@@ -727,15 +917,94 @@ function frameOf(tabId: number, ref: string): { frameId: number; url?: string; i
   return { frameId: f.frameId, url: f.url, index }
 }
 
-/** 액자가 페이지 화면의 어디에 있는지. 먼저 페이지에서 그 주소의 액자 상자를 재고, 못 찾으면 CDP로 */
-async function frameOffset(tabId: number, url: string): Promise<{ x: number; y: number }> {
-  const box = await inPage(tabId, pageFrameBox, url).catch(() => undefined)
-  if (box) return box
-  return frameOffsetCdp(tabId, url)
+function hostOf(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.hostname || url
+  } catch {
+    return url
+  }
 }
 
-/** CDP: 액자 주인 요소의 상자 (같은 주소의 액자) */
-async function frameOffsetCdp(tabId: number, url: string): Promise<{ x: number; y: number }> {
+/**
+ * 액자 안의 자리(px, py: 그 액자 화면 기준)가 페이지 화면의 어디인지.
+ * 액자 → 바깥 액자 → … → 페이지로 올라가며 단계마다 바깥 문서에서 액자 상자를 재어 더한다 (중첩 액자).
+ * 단계마다: ① 같은 주소면 액자가 자기 상자(frameElement)를 잰다 ② 바깥 문서에서 주소·크기로 찾는다
+ * ③ 같은 모양이 여럿이면 메시지로 어느 액자인지 가린다 ④ 그래도 모르면 디버거(CDP)로 액자 주인을 잰다.
+ * 다 안 되면 오류를 낸다: 예전에는 (0,0)으로 잡아 엉뚱한 곳을 눌렀다.
+ * scroll: 그 자리가 바깥 화면 밖이면 바깥을 굴려 보이게 한다 (누르기·사진)
+ */
+async function framePoint(
+  tabId: number,
+  frameId: number,
+  px: number,
+  py: number,
+  scroll = true,
+): Promise<{ x: number; y: number }> {
+  if (!frameId) return { x: px, y: py }
+  const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
+  const byId = new Map(frames.map((f) => [f.frameId, f]))
+  let cur = frameId
+  let x = px
+  let y = py
+  for (let depth = 0; cur !== 0; depth++) {
+    const f = byId.get(cur)
+    if (!f || depth > 10) throw new Error('화면 안 액자가 사라졌어요. 화면을 다시 읽어 주세요')
+    const parent = Math.max(f.parentFrameId, 0)
+    const self = await inFrame(tabId, cur, pageFrameSelf, scroll ? y : -1).catch(() => undefined)
+    let box = self?.owner
+    if (!box) {
+      let r = await inFrame(
+        tabId,
+        parent,
+        pageFrameBox,
+        f.url,
+        self?.w ?? 0,
+        self?.h ?? 0,
+        scroll ? y : -1,
+        -1,
+      ).catch(() => undefined)
+      if (r && 'ambiguous' in r) {
+        const pick = await probeFrame(tabId, parent, cur)
+        r =
+          pick >= 0
+            ? await inFrame(tabId, parent, pageFrameBox, f.url, 0, 0, scroll ? y : -1, pick).catch(
+                () => undefined,
+              )
+            : undefined
+      }
+      if (r && !('ambiguous' in r)) box = r
+    }
+    if (!box) {
+      // 디버거는 페이지 화면 기준 자리를 바로 준다 (바깥 단계는 더하지 않는다)
+      const abs = await frameOwnerCdp(tabId, f.url).catch(() => undefined)
+      if (abs) return { x: abs.x + x, y: abs.y + y }
+      throw new Error(
+        `화면 안 액자(${hostOf(f.url)})가 페이지의 어디에 있는지 찾지 못해서 누르지 않았어요. 화면을 다시 읽거나 browser_screenshot으로 확인해 주세요`,
+      )
+    }
+    x += box.x
+    y += box.y
+    cur = parent
+  }
+  return { x, y }
+}
+
+/** 같은 모양 액자가 여럿일 때: 안쪽 액자가 바깥으로 메시지를 보내 어느 액자인지 가린다 (순번, 모르면 -1) */
+async function probeFrame(tabId: number, parent: number, child: number): Promise<number> {
+  const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  if (!(await inFrame(tabId, parent, pageFrameProbeListen, token).catch(() => false))) return -1
+  await inFrame(tabId, child, pageFrameProbeSend, token).catch(() => false)
+  for (let i = 0; i < 6; i++) {
+    await sleep(60)
+    const n = await inFrame(tabId, parent, pageFrameProbeRead, token).catch(() => -1)
+    if (n >= 0) return n
+  }
+  return -1
+}
+
+/** CDP: 그 주소의 액자가 하나뿐일 때 액자 주인 요소의 안쪽 상자 (페이지 화면 기준). 여럿·없음이면 undefined */
+async function frameOwnerCdp(tabId: number, url: string): Promise<{ x: number; y: number } | undefined> {
   type Tree = { frame: { id: string; url: string }; childFrames?: Tree[] }
   const tree = (await cdp(tabId, 'Page.getFrameTree', {})) as { frameTree: Tree }
   const all: Tree[] = []
@@ -744,30 +1013,34 @@ async function frameOffsetCdp(tabId: number, url: string): Promise<{ x: number; 
     for (const c of t.childFrames ?? []) walk(c)
   }
   walk(tree.frameTree)
-  const hit =
-    all.find((t) => t !== tree.frameTree && t.frame.url === url) ??
-    all.find((t) => t !== tree.frameTree && url.startsWith(t.frame.url))
-  if (!hit) return { x: 0, y: 0 }
+  const subs = all.filter((t) => t !== tree.frameTree)
+  let hits = subs.filter((t) => t.frame.url === url)
+  if (!hits.length) hits = subs.filter((t) => url.startsWith(t.frame.url) && t.frame.url.length > 8)
+  const hit = hits.length === 1 ? hits[0] : undefined
+  if (!hit) return undefined
   const owner = (await cdp(tabId, 'DOM.getFrameOwner', { frameId: hit.frame.id })) as {
     backendNodeId: number
   }
   const box = (await cdp(tabId, 'DOM.getBoxModel', { backendNodeId: owner.backendNodeId })) as {
     model: { content: number[] }
   }
-  return { x: box.model.content[0] ?? 0, y: box.model.content[1] ?? 0 }
+  const [x, y] = box.model.content
+  if (x === undefined || y === undefined) return undefined
+  return { x, y }
 }
 
-/** 같은 사이트인지 (www.agoda.com ↔ accounts.agoda.com, shop.co.kr ↔ login.shop.co.kr) */
+/**
+ * 같은 사이트인지 (www.agoda.com ↔ accounts.agoda.com, shop.co.kr ↔ login.shop.co.kr, shop.com.au).
+ * 이름이 셋 이상이고 둘째 칸이 짧은 공용 이름(co·or·go·ne·ac·re·pe·com·net·org)이면 세 칸까지가 사이트다.
+ * IP·localhost는 그 주소 그대로
+ */
 function siteOf(origin: string): string {
   try {
-    const parts = new URL(origin).hostname.split('.')
+    const host = new URL(origin).hostname
+    if (/^[\d.]+$/.test(host) || host.includes(':') || !host.includes('.')) return host
+    const parts = host.split('.')
     const sld = parts.at(-2) ?? ''
-    const keep =
-      parts.length > 2 &&
-      /^(co|or|go|ac|ne|re|pe|com|net|org)$/.test(sld) &&
-      (parts.at(-1)?.length ?? 0) === 2
-        ? 3
-        : 2
+    const keep = parts.length >= 3 && /^(co|or|go|ne|ac|re|pe|com|net|org)$/.test(sld) ? 3 : 2
     return parts.slice(-keep).join('.')
   } catch {
     return origin
@@ -785,16 +1058,26 @@ async function frontTab(tabId: number) {
   await sleep(150)
 }
 
-async function locate(tabId: number, ref: unknown, mode: LocateMode): Promise<LocateResult> {
+/** force: 둘레 글이 바뀌었거나 다른 버튼이 덮고 있어도 멈추지 않는다 (AI가 화면을 보고 그래도 누르기로 한 때) */
+async function locate(tabId: number, ref: unknown, mode: LocateMode, force = false): Promise<LocateResult> {
   if (typeof ref !== 'string' || !/^e\d+$/.test(ref)) throw new Error('ref는 e12 같은 표시여야 해요')
   await frontTab(tabId)
   const f = frameOf(tabId, ref)
-  const r = await inFrame(tabId, f.frameId, pageLocate, ref, mode)
+  const r = await inFrame(tabId, f.frameId, pageLocate, ref, mode, force)
   if (!r?.ok) throw new Error(r?.error ?? '요소를 찾지 못했어요')
-  if (!f.frameId || !f.url) return r
-  // 액자 안 좌표 → 페이지 화면 좌표
-  const off = await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 }))
-  return { ...r, x: r.x + off.x, y: r.y + off.y, frame: true }
+  if (!f.frameId) return r
+  // 액자 안 좌표 → 페이지 화면 좌표 (겹친 액자는 단계마다 더한다. 못 재면 오류)
+  const p = await framePoint(tabId, f.frameId, r.x, r.y)
+  const v = await inPage(tabId, pageViewport)
+  const outside = Boolean(r.outside) || p.x < 0 || p.y < 0 || p.x > v.width || p.y > v.height
+  return {
+    ...r,
+    x: p.x,
+    y: p.y,
+    frame: true,
+    ...(outside ? { outside } : {}),
+    ...(r.bottom !== undefined ? { bottom: p.y + (r.bottom - r.y) } : {}),
+  }
 }
 
 // ── 마우스 움직임 ──
@@ -867,6 +1150,10 @@ function showCursor(tabId: number, x: number, y: number, label: string) {
 /** label: 두리가 하는 일이면 커서를 보여 주고 마우스를 옮겨 간다. 없으면(사람이 원격으로 누름) 그 자리로 바로 */
 async function clickAt(tabId: number, x: number, y: number, label?: string) {
   const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
+  // 한 장 그리기는 마우스를 옮기기 전에 한다: 찍은 바로 뒤(수십 ms 안)의 누르기는 다른 사이트 액자(OOPIF)에 닿지 않고
+  // 버려졌다 (실측: 시험 가게 배송지 액자 속 [우편번호 찾기]가 마우스로는 안 눌림, 찍은 뒤 50ms만 지나도 닿음)
+  await paint(tabId)
+  await sleep(50)
   if (label) {
     await showCursor(tabId, x, y, label)
     await moveMouse(tabId, x, y)
@@ -884,7 +1171,6 @@ async function clickAt(tabId: number, x: number, y: number, label?: string) {
     ])
     pointer.set(tabId, { x, y })
   }
-  await paint(tabId)
   await releaseIfPressed(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   stillPressed.add(tabId)
@@ -939,12 +1225,316 @@ async function pageState(tabId: number) {
   return { tabId, url: t.url ?? '', title: t.title ?? '', ...(open ? { dialog: open } : {}) }
 }
 
-/** 클릭 동안 새 탭이 열렸으면 알려 준다 */
-function takePopup(opener: number) {
-  if (lastPopup?.opener !== opener) return {}
-  const tabId = lastPopup.tabId
-  lastPopup = undefined
-  return { newTabId: tabId }
+/**
+ * 이 탭이 연 새 탭 중 아직 알리지 않은 가장 새것 (since: 이때 뒤에 열린 것만). 알리면 알린 것으로 남긴다.
+ * 이미 닫힌 탭은 알리지 않는다
+ */
+async function takePopup(opener: number, since = 0): Promise<{ newTabId?: number }> {
+  let found: number | undefined
+  await update(async (s) => {
+    const fresh = (s.recs ?? [])
+      .filter(
+        (r) => r.opener === opener && !r.seen && !r.closedAt && r.at >= since && s.owned.includes(r.tabId),
+      )
+      .sort((a, b) => b.at - a.at)
+    for (const r of fresh) {
+      if (!(await chrome.tabs.get(r.tabId).catch(() => undefined))) continue
+      r.seen = true
+      found = r.tabId
+      break
+    }
+  })
+  return found !== undefined ? { newTabId: found } : {}
+}
+/** 이 탭이 since 뒤에 연 새 탭이 있는지 (알린 것으로 남기지 않는다) */
+async function openedSince(opener: number, since: number): Promise<boolean> {
+  const s = await load()
+  return (s.recs ?? []).some((r) => r.opener === opener && r.at >= since)
+}
+
+// ── 막힌 새 창 ──
+// 페이지가 window.open을 불렀는데(pageHookOpen이 남김, 디버거의 Page.windowOpen도) 새 탭이 생기지 않았으면
+// Chrome이 팝업으로 막은 것이다. 늦게 뜨는 결제 창이 막히면 화면만 하얗게 남는다 (실측 11-20 G마켓)
+interface OpenAttempt {
+  url: string
+  at: number
+  told?: boolean
+}
+const openAttempts = new Map<number, OpenAttempt[]>()
+function noteOpen(tabId: number, url: string, at = Date.now()) {
+  const list = (openAttempts.get(tabId) ?? []).filter((x) => Date.now() - x.at < 10 * 60_000)
+  // 같은 부름이 두 길(페이지·디버거)로 들어오면 하나만
+  if (!list.some((x) => x.url === url && Math.abs(x.at - at) < 1_500)) list.push({ url, at })
+  openAttempts.set(tabId, list.slice(-10))
+}
+/** 페이지가 남긴 window.open 부름을 모으고, 새 탭이 안 생긴 것(막힌 새 창)을 돌려준다. tell: 알린 것으로 남긴다 */
+async function blockedPopups(tabId: number, tell = true): Promise<{ url: string; at: number }[]> {
+  // 확인 창이 떠 있으면 페이지 스크립트가 멈춰 있어 답이 오지 않는다: 이미 모은 것만 본다
+  const got = dialogs.has(tabId)
+    ? []
+    : await Promise.race([
+        chrome.scripting
+          .executeScript({ target: { tabId, allFrames: true }, world: 'MAIN', func: pageReadOpens })
+          .catch(() => []),
+        sleep(1_500).then(() => []),
+      ])
+  for (const g of got)
+    for (const o of (g.result ?? []) as { url: string; at: number }[]) noteOpen(tabId, o.url, o.at)
+  const list = openAttempts.get(tabId) ?? []
+  if (!list.length) return []
+  const s = await load()
+  const now = Date.now()
+  // 부름 하나에 새 탭 하나씩 짝짓는다 (한 번에 두 창을 열면 둘째만 막힌다: 첫 창이 둘 다의 짝이 되면 안 된다)
+  const recs = (s.recs ?? []).filter((r) => r.opener === tabId)
+  const urls = new Map<number, string>()
+  for (const r of recs) {
+    const t = await chrome.tabs.get(r.tabId).catch(() => undefined)
+    urls.set(r.tabId, t?.pendingUrl || t?.url || r.url || '')
+  }
+  const used = new Set<number>()
+  const out: { url: string; at: number }[] = []
+  for (const a of [...list].sort((x, y) => x.at - y.at)) {
+    const near = recs.filter((r) => !used.has(r.tabId) && r.at >= a.at - 500 && r.at - a.at < 5_000)
+    const blank = (u?: string) => !u || u === 'about:blank'
+    const hit =
+      near.find((r) => a.url && urls.get(r.tabId) === a.url) ??
+      near.find((r) => blank(urls.get(r.tabId)) || !a.url)
+    if (hit) {
+      used.add(hit.tabId)
+      a.told = true
+      continue
+    }
+    // 막 부른 것은 아직 열리는 중일 수 있다
+    if (now - a.at < 1_500 || (tell && a.told)) continue
+    out.push({ url: a.url, at: a.at })
+    if (tell) a.told = true
+  }
+  return out
+}
+
+// ── 액자 읽기 ──
+// 읽는 액자: http(s)와 about:blank·about:srcdoc (결제 회사가 빈 액자를 만들어 스크립트로 채우는 곳이 많다).
+// 누를 것이 없어도 글이 있으면(금액·오류 안내) 짧게 싣는다. 화면 순서(위→아래)로 늘어놓고, 맨 앞에 액자 목록을 단다
+const READ_FRAME = /^(?:https?:|about:(?:blank|srcdoc)$)/
+const LOOK_FRAMES = 40
+/** 글만 있는 액자는 이만큼만 */
+const TEXT_ONLY_MAX = 400
+
+interface FrameItem {
+  index: number
+  frameId: number
+  url: string
+  /** 바깥 액자 번호 (0 = 본문) */
+  parent: number
+  shown: boolean
+  loading: boolean
+  refs: boolean
+  truncated: boolean
+  /** 자리를 주소·크기가 같은 액자들 사이에서 순서로 짐작했다 */
+  guess?: boolean
+}
+interface FramesRead {
+  text: string
+  list: FrameItem[]
+  captcha: boolean
+  /** 액자 frameId → 읽기 결과 (글 속 [액자] 자리 표시를 바꿀 때) */
+  marks: Map<number, Map<number, number>>
+  blocked: { url: string; at: number }[]
+}
+
+/** 작업을 n개씩 나눠 돌린다 (액자가 많은 화면에서 스크립트 넣기가 한꺼번에 몰리지 않게) */
+async function inBatches<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
+  for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn))
+}
+
+async function readFrames(
+  tabId: number,
+  max: number,
+  root: Pick<SnapshotResult, 'self' | 'kids'>,
+): Promise<FramesRead> {
+  const all = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
+  const fixed = frameIndexes.get(tabId) ?? new Map<number, number>()
+  frameIndexes.set(tabId, fixed)
+  const map = frameMaps.get(tabId) ?? new Map<number, { frameId: number; url: string }>()
+  // 사라진 액자는 지도에서 뺀다 (번호는 그대로 둔다: 다시 생긴 같은 액자가 다른 번호를 받아도 옛 표시와 섞이지 않게)
+  const alive = new Set(all.map((f) => f.frameId))
+  for (const [i, f] of map) if (!alive.has(f.frameId)) map.delete(i)
+  frameMaps.set(tabId, map)
+  const indexOf = (frameId: number) => {
+    let index = fixed.get(frameId)
+    if (index === undefined) {
+      index = Math.max(0, ...fixed.values()) + 1
+      fixed.set(frameId, index)
+    }
+    return index
+  }
+  const cands = all.filter((f) => f.frameId !== 0 && READ_FRAME.test(f.url)).slice(0, LOOK_FRAMES)
+  const per = Math.floor(max / 2)
+  const reads = new Map<number, SnapshotResult>()
+  await inBatches(cands, 8, async (fr) => {
+    const index = indexOf(fr.frameId)
+    await markTaps(tabId, fr.frameId)
+    const r = await inFrame(tabId, fr.frameId, pageSnapshot, per, index * FRAME_SPAN).catch(() => undefined)
+    if (!r) return
+    reads.set(fr.frameId, r)
+    map.set(index, { frameId: fr.frameId, url: fr.url })
+  })
+  const mainRead = { self: root.self ?? { w: 0, h: 0 }, kids: root.kids ?? [] }
+  const nodes: FrameNode[] = cands.map((fr) => {
+    const r = reads.get(fr.frameId)
+    return {
+      frameId: fr.frameId,
+      parentFrameId: Math.max(fr.parentFrameId, 0),
+      url: fr.url,
+      ...(r?.self ? { self: r.self } : {}),
+      ...(r?.kids ? { kids: r.kids } : {}),
+    }
+  })
+  const places = layoutFrames(nodes, mainRead)
+  // 글 속 자리 표시: 바깥 문서 frameId → (자리 표시 번호 → 액자 번호)
+  const marks = new Map<number, Map<number, number>>()
+  for (const n of nodes) {
+    const p = places.get(n.frameId)
+    const kids =
+      n.parentFrameId === 0 ? mainRead.kids : nodes.find((x) => x.frameId === n.parentFrameId)?.kids
+    const marker = p?.kid !== undefined ? kids?.[p.kid]?.marker : undefined
+    if (marker === undefined) continue
+    const m = marks.get(n.parentFrameId) ?? new Map<number, number>()
+    m.set(marker, indexOf(n.frameId))
+    marks.set(n.parentFrameId, m)
+  }
+  const nav = frameNav.get(tabId)
+  let captcha = false
+  type Part = { item: FrameItem; text: string; prio: number }
+  const parts: Part[] = []
+  let skipped = 0
+  for (const n of nodes) {
+    const r = reads.get(n.frameId)
+    const p = places.get(n.frameId)
+    if (!r) {
+      skipped++
+      continue
+    }
+    captcha ||= r.captcha
+    const refs = /\[e\d+ /.test(r.text)
+    const body = r.text.replace(/\u2063F\d+\u2063/g, '').trim()
+    const shown = p?.shown ?? false
+    // 빈 액자·안 보이는 글 액자(광고·추적용)는 뺀다. 누를 것이 있으면 안 보여도 싣는다 (곧 뜨는 로그인 창)
+    if (!refs && (!body || !shown)) {
+      skipped++
+      continue
+    }
+    const index = indexOf(n.frameId)
+    parts.push({
+      item: {
+        index,
+        frameId: n.frameId,
+        url: n.url,
+        parent: n.parentFrameId ? indexOf(n.parentFrameId) : 0,
+        shown,
+        loading: nav?.get(n.frameId)?.loading ?? false,
+        refs,
+        truncated: r.truncated,
+        ...(p?.guess ? { guess: true } : {}),
+      },
+      text: withFrameMarks(r.text, n.frameId, { marks }),
+      prio: refs ? (shown ? 0 : 1) : 2,
+    })
+  }
+  // 자리 나누기: 보이는 누를 것 있는 액자 → 안 보이는 것 → 글만 있는 것 순으로, 남은 자리만큼
+  const total = max + Math.floor(max / 2)
+  let room = total - 2_000
+  const kept = new Map<number, string>()
+  for (const part of [...parts].sort((x, y) => x.prio - y.prio)) {
+    const want = part.prio === 2 ? Math.min(part.text.length, TEXT_ONLY_MAX) : part.text.length
+    const give = Math.min(want, Math.max(room, 0))
+    if (give < 120 && want > 120) {
+      part.item.truncated = true
+      kept.set(part.item.frameId, '')
+      continue
+    }
+    if (give < part.text.length) part.item.truncated = true
+    kept.set(part.item.frameId, part.text.slice(0, give))
+    room -= give + 80
+  }
+  const order = screenOrder(
+    parts.map((x) => x.item.frameId),
+    places,
+  )
+  const byId = new Map(parts.map((x) => [x.item.frameId, x]))
+  const list = order.map((id) => byId.get(id)?.item).filter((x): x is FrameItem => Boolean(x))
+  listedFrames.set(tabId, new Set(list.map((x) => x.frameId)))
+  if (!list.length) return { text: '', list, captcha, marks, blocked: [] }
+  const where = (u: string) => {
+    if (!/^https?:/.test(u)) return u
+    try {
+      const x = new URL(u)
+      return `${x.hostname}${x.pathname}`.slice(0, 60)
+    } catch {
+      return u.slice(0, 60)
+    }
+  }
+  const head = [
+    '\n## 화면 안 액자 목록 (화면 위→아래. 액자 fN 안의 표시는 eN0001부터: f3 → e30001…)',
+    ...list.map(
+      (f) =>
+        `- f${f.index} ${where(f.url)} · 바깥: ${f.parent ? `f${f.parent}` : '본문'} · ${f.shown ? '보임' : '안 보임'}${f.loading ? ' · 불러오는 중' : ''}${f.truncated ? ' · 글 잘림' : ''}${f.refs ? '' : ' · 글만'}${f.guess ? ' · 자리 짐작' : ''}`,
+    ),
+    ...(skipped ? [`(빈 액자·광고처럼 글이 없거나 안 보이는 액자 ${skipped}개는 뺐어요)`] : []),
+  ].join('\n')
+  const bodies = list
+    .map((f) => {
+      const t = kept.get(f.frameId) ?? ''
+      const host = /^https?:/.test(f.url) ? hostOf(f.url) : f.url
+      const tag = `f${f.index}${f.parent ? `, f${f.parent} 안` : ''}${f.truncated ? ', 글 잘림' : ''}`
+      return t
+        ? `\n## 화면 안 액자 (${host}) — ${tag}\n${t}`
+        : `\n## 화면 안 액자 (${host}) — ${tag}\n(자리가 모자라 글을 싣지 못했어요. 필요하면 이 액자만 보이게 다시 읽어 주세요)`
+    })
+    .join('')
+  return { text: `${head}${bodies}`, list, captcha, marks, blocked: [] }
+}
+
+/** 글 속 액자 자리 표시(U+2063 F{n} U+2063)를 [액자 f3]으로 (모르는 것은 [액자]) */
+function withFrameMarks(text: string, frameId: number, read: Pick<FramesRead, 'marks'>): string {
+  const m = read.marks.get(frameId)
+  return text
+    .replace(/\u2063F(\d+)\u2063/g, (_x, n: string) => {
+      const index = m?.get(Number(n))
+      return index !== undefined ? `[액자 f${index}]` : '[액자]'
+    })
+    .replace(/\u2063F?\d*$/, '')
+}
+
+/** 읽기 결과 끝에 붙이는 두리 알림: 막힌 새 창, 정리로 닫은 탭, 표시 번호 다시 매김 (한 번 알리면 지운다) */
+async function snapshotNotes(tabId: number, main: SnapshotResult, read: FramesRead): Promise<string> {
+  const out: string[] = []
+  const blocked = await blockedPopups(tabId).catch(() => [])
+  read.blocked = blocked
+  for (const b of blocked)
+    out.push(
+      `- 이 탭이 새 창을 열려고 했는데 Chrome이 팝업으로 막았어요: ${b.url || '(주소 없는 빈 창: 결제 양식을 보내는 창일 수 있어요)'}. 결제 창이면 승인받은 결제 버튼을 누를 때 두리가 이 사이트 팝업을 허용해 두니 그 버튼을 다시 눌러요. 주소가 있는 보통 창이면 그 주소를 열어도 돼요`,
+    )
+  const told: number[] = []
+  const s = await load()
+  for (const t of s.tidied ?? []) {
+    if (t.told) continue
+    told.push(t.tabId)
+    out.push(`- 두리가 탭 ${t.tabId}(${t.title || t.url || '제목 없음'})을 닫았어요: ${t.why}`)
+  }
+  if (told.length)
+    await update((x) => {
+      for (const t of x.tidied ?? []) if (told.includes(t.tabId)) t.told = true
+    })
+  if (main.renumbered)
+    out.push(
+      '- 이 화면의 표시 번호를 처음부터 새로 매겼어요. 전에 읽은 표시(e…)는 쓰지 말고 이 화면의 표시를 쓰세요',
+    )
+  if (main.refsCapped)
+    out.push(
+      `- 누를 것이 너무 많아 ${main.refsCapped}개에는 표시를 못 붙였어요(괄호로만 보여요). from·view로 필요한 부분만 다시 읽어 주세요`,
+    )
+  return out.length ? `\n## 두리 알림\n${out.join('\n')}` : ''
 }
 
 // ── 명령 ─────────────────────────────────────────────────────
@@ -983,8 +1573,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await sleep(700)
       const pt = await inFrame(tabId, f.frameId, pageOptionPoint, label)
       if (!pt.ok) throw new Error(pt.error)
-      const off = f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
-      await clickAt(tabId, pt.x + off.x, pt.y + off.y, `${pt.label} 고르는 중`)
+      const p = await framePoint(tabId, f.frameId, pt.x, pt.y)
+      await clickAt(tabId, p.x, p.y, `${pt.label} 고르는 중`)
       await sleep(400)
       return { tabId, label: pt.label }
     }
@@ -1077,9 +1667,11 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const wait = Math.min(Math.max(Number(a.timeoutMs) || 10_000, 500), 30_000)
       const until = Date.now() + wait
       // 새 탭이 열리자마자 데이터를 부르면 듣기가 붙기 전에 지나간다(사용자 Chrome에서 유니클로·다이소몰이 들쭉날쭉).
-      // 반쯤 기다려도 그 주소를 하나도 못 들었으면 한 번만 새로 고쳐 다시 부르게 한다
+      // 반쯤 기다려도 그 주소를 하나도 못 들었으면 한 번만 새로 고쳐 다시 부르게 한다. 몰래 새로 고치지 않는다:
+      // 부르는 쪽이 reloadIfSilent로 시킨 때만(읽기만 하는 커넥터 목록 화면), 그리고 결과에 알린다.
+      // 시키지 않았으면 못 들었다고만 알린다 (쓰던 칸·결제 화면을 새로 고치면 넣은 것이 사라진다)
       const halfway = Date.now() + wait / 2
-      let reloaded = false
+      let reloaded = a.reloadIfSilent !== true
       for (;;) {
         const hit = (netLog.get(tabId) ?? []).filter((e) => e.done && re.test(e.url)).at(-1)
         if (
@@ -1106,9 +1698,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             throw new Error(`페이지가 받은 응답이 JSON이 아니에요 (${hit.url.slice(0, 80)})`)
           }
           const path = typeof a.pick === 'string' ? a.pick : ''
-          return { url: hit.url, status: hit.status, json: pickPath(data, path) ?? null }
+          return {
+            url: hit.url,
+            status: hit.status,
+            json: pickPath(data, path) ?? null,
+            ...(a.reloadIfSilent === true && reloaded ? { reloaded: true } : {}),
+          }
         }
-        if (Date.now() > until) throw new Error(`페이지가 그 데이터를 받지 않았어요 (${String(a.url)})`)
+        if (Date.now() > until)
+          throw new Error(
+            `페이지가 그 데이터를 받지 않았어요 (${String(a.url)})${a.reloadIfSilent === true ? '' : '. 듣기를 붙이기 전에 지나갔을 수 있어요(새로 고치면 다시 부를 수 있어요)'}`,
+          )
         await sleep(200)
       }
     }
@@ -1205,82 +1805,66 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
       }
       const main = await inPage(tabId, pageSnapshot, max, 0, scope)
-      // 화면 안 액자(로그인 창 등): 누를 것이 있는 액자만 아래에 붙인다
-      const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
-      const map = new Map<number, { frameId: number; url: string }>()
-      // 액자(로그인·인증 창)가 잘리지 않게 먼저 모으고, 남은 자리만큼 본문을 싣는다
-      // (실측 홈택스: 본문 4만 자 뒤에 붙인 간편인증 액자가 전체 자르기에 잘려 [인증 완료]를 못 봤다)
-      const frameTexts: string[] = []
-      const frameInfo: { host: string; refs: boolean }[] = []
-      let captcha = main.captcha
-      let looked = 0
-      const fixed = frameIndexes.get(tabId) ?? new Map<number, number>()
-      frameIndexes.set(tabId, fixed)
-      for (const fr of frames) {
-        // 누를 것이 있는 액자를 6개까지 (광고·빈 액자가 앞에 많으면 로그인 창 액자가 밀려 안 읽혔다 — 홈택스 간편인증)
-        if (fr.frameId === 0 || !/^https?:/.test(fr.url) || map.size >= 6 || looked >= 24) continue
-        looked++
-        let index = fixed.get(fr.frameId)
-        if (index === undefined) {
-          index = Math.max(0, ...fixed.values()) + 1
-          fixed.set(fr.frameId, index)
-        }
-        await markTaps(tabId, fr.frameId)
-        const r = await inFrame(
-          tabId,
-          fr.frameId,
-          pageSnapshot,
-          Math.floor(max / 2),
-          index * FRAME_SPAN,
-        ).catch(() => undefined)
-        const host = new URL(fr.url).hostname
-        if (!r) {
-          frameInfo.push({ host, refs: false })
-          continue
-        }
-        captcha ||= r.captcha
-        frameInfo.push({ host, refs: /\[e\d+ /.test(r.text) })
-        if (!/\[e\d+ /.test(r.text)) continue
-        map.set(index, { frameId: fr.frameId, url: fr.url })
-        frameTexts.push(`\n## 화면 안 액자 (${host})\n${r.text}`)
-      }
-      frameMaps.set(tabId, map)
+      const read = await readFrames(tabId, max, main)
       const total = max + Math.floor(max / 2)
-      const framesText = frameTexts.join('').slice(0, total - 2_000)
-      const text = main.text.slice(0, Math.max(total - framesText.length, 2_000)) + framesText
+      // 액자(로그인·인증·결제 창)가 잘리지 않게 액자 글을 먼저 싣고, 남은 자리만큼 본문을 싣는다
+      // (실측 홈택스: 본문 4만 자 뒤에 붙인 간편인증 액자가 전체 자르기에 잘려 [인증 완료]를 못 봤다)
+      const room = Math.max(total - read.text.length, 2_000)
+      const mainText = withFrameMarks(main.text, 0, read)
+      const cut = mainText.length > room
+      const body = cut ? mainText.slice(0, room) : mainText
+      const notes = await snapshotNotes(tabId, main, read)
+      const text = `${body}${read.text}${notes}`
+      const { kids: _k, self: _s, ...rest } = main
       return {
         tabId,
-        ...main,
+        ...rest,
         text,
-        frames: frameInfo,
-        captcha,
+        // 본문 글의 길이 (이어 읽기 skip은 이것만큼. 액자 글·알림은 본문이 아니다)
+        mainLength: body.length,
+        truncated: main.truncated || cut,
+        frames: read.list,
+        captcha: main.captcha || read.captcha,
+        ...(read.blocked.length ? { blockedPopups: read.blocked } : {}),
         ...takeDialogs(tabId),
       }
     }
     case 'click': {
       const tabId = await ownedTab(a)
-      let at = await locate(tabId, a.ref, 'point')
-      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
-      const tall = await tallerIfBelow(tabId, at.y + 30).catch(() => false)
-      if (tall) at = await locate(tabId, a.ref, 'point')
+      const ref = String(a.ref ?? '')
+      const force = a.force === true
+      // 결제 비밀번호 키패드처럼 같은 자리를 잇달아 누를 때: 커서 움직임을 보여 주지 않고 짧게만 기다린다 (숫자 하나 2.3초 → 실측)
+      const quick = a.quick === true
+      // keepTall: 이어서 또 누를 테니 늘린 화면 높이를 아직 되돌리지 않는다 (마지막 숫자에서 되돌린다)
+      const keepTall = quick && a.keepTall === true
+      let at = await locate(tabId, ref, 'point', force)
+      // 굴려도 화면 밖인 것(화면 아래에 고정된 결제 키패드 등)만 화면 높이를 잠깐 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
+      const tall = at.outside
+        ? await tallerIfBelow(tabId, (at.bottom ?? at.y) + 30).catch(() => false)
+        : false
+      if (tall) at = await locate(tabId, ref, 'point', force)
       // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
       // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
       if (at.moved) {
         await sleep(300)
         await paint(tabId)
-        at = await locate(tabId, a.ref, 'point')
+        at = await locate(tabId, ref, 'point', force)
       }
-      lastPopup = undefined
+      const t0 = Date.now()
       const before = (await chrome.tabs.get(tabId)).url
+      const fid = frameOf(tabId, ref).frameId
+      // 막힌 새 창을 알아채게 window.open 지켜보기를 건다 (읽기 뒤 화면이 바뀌었을 수 있어 다시. 이미 걸려 있으면 그대로)
+      await chrome.scripting
+        .executeScript({
+          target: fid ? { tabId, frameIds: [fid] } : { tabId },
+          world: 'MAIN',
+          func: pageHookOpen,
+        })
+        .catch(() => undefined)
       let via: 'mouse' | 'key' | 'script' = 'mouse'
-      // 창이 일부 가려져 있으면 '보인다'고 나와도 Chrome이 마우스 입력을 버릴 때가 있다 (실측: 인증번호 확인 버튼).
-      // 눌러도 화면이 하나도 안 바뀌었으면 아래 키보드 방식으로 한 번 더 누른다
-      // 화면 변화: 주소·초점·체크된 칸 수·문서 크기 (마우스가 먹으면 적어도 초점이 버튼으로 간다).
-      // 액자 속 요소는 그 액자 안에서 본다: 다른 주소 액자는 가려진 창에서 마우스를 못 받는데, 바깥 페이지 초점만
-      // 액자로 옮겨 가서 눌린 것처럼 보였다 (실측)
-      const markFrame = frameOf(tabId, String(a.ref)).frameId
+      // 화면 서명: 주소·초점·체크된 칸 수·문서 크기 (그 액자 안에서 본다)
       const mark = () =>
-        inFrame(tabId, markFrame, () => {
+        inFrame(tabId, fid, () => {
           const f = document.activeElement
           return [
             location.href,
@@ -1290,78 +1874,119 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             document.body?.innerText.length ?? 0,
           ].join('|')
         }).catch(() => '')
-      // 무엇이든 바뀌었는지(글·속성·요소)는 그 액자의 변화 감시로 본다: 글 길이만 보면 키패드 점·수량 1→2처럼
-      // 바뀐 걸 못 알아채 한 번 더 눌렀다
-      const watch = () =>
-        inFrame(tabId, markFrame, () => {
-          const w = window as unknown as { __dool2Mut?: { n: number; o: MutationObserver } }
-          w.__dool2Mut?.o.disconnect()
-          const box = { n: 0, o: new MutationObserver((list) => (box.n += list.length)) }
-          box.o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
-          w.__dool2Mut = box
-          return true
-        }).catch(() => false)
-      const mutated = () =>
-        inFrame(tabId, markFrame, () => {
-          const w = window as unknown as { __dool2Mut?: { n: number; o: MutationObserver } }
-          const n = w.__dool2Mut?.n ?? -1
-          w.__dool2Mut?.o.disconnect()
-          w.__dool2Mut = undefined
-          return n
-        }).catch(() => -1)
-      let mouseIgnored = false
-      if (!at.hidden) {
-        // 서명 읽기와 변화 감시 걸기를 함께 (누르기마다 붙는 시간을 줄인다: 새 창 링크가 3초를 넘었다)
-        const [sig, watching] = await Promise.all([mark(), watch()])
-        await clickAt(tabId, at.x, at.y, '두리가 누르는 중')
-        await settle(tabId, before)
-        // 새 탭(창)이 열렸으면 눌린 것이다 — 다시 누르면 같은 창이 또 열린다
-        const opened = (lastPopup as { opener: number } | undefined)?.opener === tabId
-        const same = !opened && sig !== '' && sig === (await mark())
-        // 서명이 같을 때만 변화 감시를 읽는다 (다르면 이미 눌린 것). 감시는 어느 쪽이든 끈다
-        const moved = same && watching ? await mutated() : (void mutated(), 1)
-        mouseIgnored = same && moved <= 0
+      const noHit = { armed: false, hit: false, n: 0 } as ReturnType<typeof pageHitRead>
+      // 닿았는지: 진짜 입력(isTrusted)이 그 요소에 닿았으면 눌린 것이다. 다시 누르지 않는다
+      // (화면 글이 안 바뀌는 버튼을 "안 눌렸다"고 보고 다시 눌러 키패드 숫자가 두 번 들어갔다 — 실측 쿠팡 결제 비밀번호)
+      let delivered = false
+      let hitOther: string | undefined
+      const mouse = !at.hidden && !at.outside && !at.coveredByControl
+      let retry = false
+      if (mouse) {
+        const [sig] = await Promise.all([
+          mark(),
+          inFrame(tabId, fid, pageMutArm, 'click').catch(() => false),
+          inFrame(tabId, fid, pageHitArm, ref).catch(() => false),
+        ])
+        await clickAt(tabId, at.x, at.y, quick ? undefined : '두리가 누르는 중')
+        await settle(tabId, before, quick)
+        const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
+        const opened = await openedSince(tabId, t0)
+        // 문서가 바뀌었으면(이동) 걸어 둔 것이 사라진다: 눌려서 넘어간 것이다
+        delivered = hit.hit || opened || !hit.armed
+        if (!hit.hit && hit.other) hitOther = hit.other
+        if (!delivered) {
+          // 닿은 기록이 없어도 화면이 바뀌었으면 다시 누르지 않는다 (사이트가 입력을 먼저 가로챘을 수 있다)
+          const mut = await inFrame(tabId, fid, pageMutRead, 'click', true).catch(() => ({ n: -1 }))
+          const same = sig !== '' && sig === (await mark())
+          // 창이 일부 가려져 있으면 '보인다'고 나와도 Chrome이 마우스 입력을 버릴 때가 있다 (실측: 인증번호 확인 버튼).
+          // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 다시 누르지 않는다. once: 그래도 한 번만
+          retry = same && mut.n <= 0 && !a.once && !(await locate(tabId, ref, 'activate', true)).toggle
+        } else void inFrame(tabId, fid, pageMutRead, 'click', true).catch(() => undefined)
       }
-      // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 마우스가 안 먹은 것처럼 보여도 다시 누르지 않는다.
-      // once: 키패드 숫자처럼 눌러도 화면 글이 안 바뀌는 버튼 — 다시 누르면 같은 숫자가 두 번 들어간다
-      // (실측 쿠팡 결제 비밀번호: 6번 눌렀는데 7자리가 들어가 '틀렸습니다')
-      const retry = mouseIgnored && !a.once && !(await locate(tabId, a.ref, 'activate')).toggle
-      if (at.hidden || retry) {
+      if (!mouse || retry) {
         // 두리 창이 가려져 있거나 화면이 꺼져 있으면 Chrome이 마우스 입력을 버린다 (키보드는 받는다, 실측).
-        // 그래서 요소에 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다
-        const act = await locate(tabId, a.ref, 'activate')
+        // 다른 버튼이 덮고 있는데 force로 부른 때도 마우스로 누르면 덮은 버튼이 눌리니 그 요소를 직접 누른다.
+        // 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다
+        const act = await locate(tabId, ref, 'activate', true)
+        await inFrame(tabId, fid, pageHitArm, ref).catch(() => false)
         if (!act.focused) {
           // 키보드로 누를 수 없는 요소(초점을 못 받는 div 등)는 마지막 수단으로 페이지 안에서 누른다
           via = 'script'
-          await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageClick, String(a.ref))
+          delivered = Boolean(await inFrame(tabId, fid, pageClick, ref).catch(() => false))
         } else {
           via = 'key'
-          const sig = await mark()
           await pressKey(tabId, act.toggle ? 'Space' : 'Enter')
-          await settle(tabId, before)
-          // 뒤에 가려진 창은 키도 안 먹을 때가 있다 (실측): 그래도 그대로면 페이지 안에서 누른다
-          if (!act.toggle && sig !== '' && sig === (await mark())) {
+          await settle(tabId, before, quick)
+          const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
+          delivered = hit.hit || !hit.armed || (await openedSince(tabId, t0))
+          // 뒤에 가려진 창은 키도 안 먹을 때가 있다 (실측): 그 요소에 닿지 않았을 때만 페이지 안에서 누른다
+          if (!delivered && !act.toggle) {
             via = 'script'
-            await inFrame(tabId, frameOf(tabId, String(a.ref)).frameId, pageClick, String(a.ref))
+            delivered = Boolean(await inFrame(tabId, fid, pageClick, ref).catch(() => false))
           }
         }
-        await settle(tabId, before)
+        await settle(tabId, before, quick)
       }
-      if (tall) await restoreHeight(tabId)
-      return {
-        ...(await pageState(tabId)),
+      // 누른 뒤 창이 스스로 닫혔다 (결제 창의 마지막 비밀번호 숫자: 결제가 끝나면 결제 회사 창이 닫힌다).
+      // 눌린 것이니 오류('탭이 닫혔어요')로 돌려주지 않는다 — 예전에는 결제가 된 뒤에 '못 눌렀다'로 알렸다
+      const closed = {
+        tabId,
+        url: before ?? '',
+        title: '',
+        closed: true,
         via,
-        ...takePopup(tabId),
+        delivered: true,
+        point: { x: Math.round(at.x), y: Math.round(at.y) },
+      }
+      if (!(await chrome.tabs.get(tabId).catch(() => undefined))) return closed
+      if (tall || keptTall.has(tabId)) {
+        if (keepTall) keepTallFor(tabId)
+        else await restoreHeight(tabId)
+      }
+      const blocked = await blockedPopups(tabId).catch(() => [])
+      const now = await pageState(tabId).catch(() => undefined)
+      if (!now) return closed
+      return {
+        ...now,
+        via,
+        delivered,
+        // 누른 자리 (페이지 화면 기준, 액자 안이면 겹친 액자 상자를 모두 더한 자리)
+        point: { x: Math.round(at.x), y: Math.round(at.y) },
+        ...(await takePopup(tabId, t0)),
         ...(at.coveredBy && !at.hidden ? { coveredBy: at.coveredBy } : {}),
+        ...(hitOther ? { hitOther } : {}),
+        ...(at.ctxChanged ? { ctxChanged: at.ctxChanged } : {}),
+        ...(blocked.length ? { blockedPopups: blocked } : {}),
       }
     }
     case 'type': {
       const tabId = await ownedTab(a)
       if (typeof a.text !== 'string') throw new Error('넣을 글자가 없어요')
-      const at = await locate(tabId, a.ref, 'type')
+      const ref = String(a.ref ?? '')
+      let at = await locate(tabId, ref, 'type')
       if (at.isPassword) throw new Error('비밀번호 칸에는 두리 금고로만 채워요')
-      if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리가 입력하는 중')
+      // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있다: 초점이 안 들어갔으면 칸을 한 번 눌러 진짜 초점을 준 뒤
+      // 다시 골라(원래 글 전체 선택) 넣는다. 초점 없이 넣으면 글이 바깥 페이지로 가거나 사라졌다 (fill과 같은 까닭)
+      if (at.frame && !at.hidden && !at.focused) {
+        await clickAt(tabId, at.x, at.y, '두리가 입력하는 중')
+        at = await locate(tabId, ref, 'type')
+      } else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리가 입력하는 중')
       await cdp(tabId, 'Input.insertText', { text: a.text })
+      // 한 번에 넣기를 받지 않는 칸: 하나도 안 들어갔으면 잠깐 뒤 다시 보고, 그래도 비었을 때만 다시 골라 키를 하나씩
+      // (글을 늦게 반영하는 칸에서 바로 키를 또 누르면 두 번 들어간다)
+      if (a.text && /^[\x20-\x7e]+$/.test(a.text)) {
+        const fid = frameOf(tabId, ref).frameId
+        const len = () => inFrame(tabId, fid, pageValueLength, ref, false).catch(() => -1) as Promise<number>
+        let n = await len()
+        if (n === 0) {
+          await sleep(150)
+          n = await len()
+        }
+        if (n === 0) {
+          await locate(tabId, ref, 'type')
+          await typeKeys(tabId, a.text)
+        }
+      }
       if (a.submit) {
         const before = (await chrome.tabs.get(tabId)).url
         // 입력을 조금 늦게 상태에 반영하는 칸이 있다: 잠깐 기다린 뒤 Enter (pressKey가 한 장 그리기도 한다)
@@ -1396,8 +2021,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       let length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
         () => -1,
       )) as number
-      // 하나도 안 들어갔으면 키를 하나씩 눌러 다시 (비밀번호는 금고 값이 키 기록에 남지 않게 하지 않는다)
+      // 글을 늦게 반영하는 칸이 있다: 0이면 잠깐 뒤 다시 본다 (바로 키를 또 누르면 두 번 들어간다)
       if (length === 0 && a.value && !a.password) {
+        await sleep(150)
+        length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), true).catch(
+          () => -1,
+        )) as number
+      }
+      // 그래도 하나도 안 들어갔으면 다시 골라(전체 선택) 키를 하나씩 (비밀번호는 금고 값이 키 기록에 남지 않게 하지 않는다)
+      if (length === 0 && a.value && !a.password) {
+        await locate(tabId, a.ref, 'type')
         await typeKeys(tabId, a.value)
         length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
           () => -1,
@@ -1415,91 +2048,282 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'scroll': {
+      // ref를 주면 그 요소(또는 그것을 품은 굴러가는 상자: 목록 창·모달·액자 안)를 굴린다. 없으면 페이지.
+      // 얼마나 굴렀는지·끝인지를 돌려준다 (AI가 더 굴릴지 정한다)
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const v = await inPage(tabId, pageViewport)
       const dir = a.direction === 'up' ? -1 : 1
+      const ref = typeof a.ref === 'string' && /^e\d+$/.test(a.ref) ? a.ref : null
+      const fid = ref ? frameOf(tabId, ref).frameId : 0
+      const info0 = await inFrame(tabId, fid, pageScrollInfo, ref, 0)
+      if (!info0.ok) throw new Error(info0.error ?? '굴릴 곳을 찾지 못했어요')
       if (v.hidden) {
         // 가려진 창은 마우스 휠을 받지 않는다. 스크롤은 사이트에 의미 있는 입력이 아니라서 페이지 안에서 옮긴다
-        await inPage(tabId, pageScroll, dir)
+        if (ref) await inFrame(tabId, fid, pageScrollInfo, ref, dir)
+        else await inPage(tabId, pageScroll, dir)
       } else {
+        const p = ref ? await framePoint(tabId, fid, info0.x, info0.y) : { x: v.width / 2, y: v.height / 2 }
         const wheel = cdp(tabId, 'Input.dispatchMouseEvent', {
           type: 'mouseWheel',
-          x: v.width / 2,
-          y: v.height / 2,
+          x: p.x,
+          y: p.y,
           deltaX: 0,
-          deltaY: dir * Math.round(v.height * 0.8),
+          deltaY: dir * Math.round((ref ? info0.h : v.height) * 0.8),
         })
         await Promise.race([wheel, sleep(1000)])
       }
       await sleep(300)
-      return pageState(tabId)
+      let info1 = await inFrame(tabId, fid, pageScrollInfo, ref, 0)
+      // 휠이 가운데의 다른 상자를 굴려 정한 곳이 그대로면 그곳을 페이지 안에서 굴린다 (굴린 곳은 결과에 그대로 알린다)
+      const room = dir > 0 ? info0.top < info0.max - 1 : info0.top > 0
+      if (!v.hidden && info1.ok && info1.top === info0.top && room) {
+        await inFrame(tabId, fid, pageScrollInfo, ref, dir)
+        await sleep(150)
+        info1 = await inFrame(tabId, fid, pageScrollInfo, ref, 0)
+      }
+      return {
+        ...(await pageState(tabId)),
+        scroll: {
+          target: info0.box ? 'box' : 'page',
+          before: info0.top,
+          after: info1.top,
+          max: info1.max,
+          atEnd: dir > 0 ? info1.top >= info1.max - 1 : info1.top <= 0,
+        },
+      }
     }
     case 'allow-popups': {
       // 결제 창은 버튼을 누른 순간이 아니라 서버에 다녀와서 새 창으로 열린다: Chrome이 팝업으로 막아 화면만 하얗게 남았다
-      // (실측 11-20 G마켓 카드 결제). 두리가 결제하는 사이트만 팝업을 허용한다 (사람은 주소창의 '팝업 허용'을 누르던 것)
+      // (실측 11-20 G마켓 카드 결제). 두리가 결제하는 사이트만 팝업을 허용한다 (사람은 주소창의 '팝업 허용'을 누르던 것).
+      // 사이트 범위는 같은 사이트 판단(siteOf)과 같다: shop.co.kr·shop.com.au는 세 칸, IP·localhost는 그 주소만
       const tabId = await ownedTab(a)
       const u = new URL((await chrome.tabs.get(tabId)).url ?? '')
-      const labels = u.hostname.split('.')
-      const keep = /\.(?:co|or|go|ne|ac|re|pe)\.kr$/.test(u.hostname) ? 3 : 2
-      const base = labels.slice(-keep).join('.')
-      await chrome.contentSettings.popups.set({
-        primaryPattern: `${u.protocol}//*.${base}/*`,
-        setting: 'allow',
-      })
-      return { ok: true, pattern: `${u.protocol}//*.${base}/*` }
+      const base = siteOf(u.origin)
+      const single = base === u.hostname && !u.hostname.includes('.')
+      const ip = /^[\d.]+$/.test(u.hostname) || u.hostname.includes(':') || single
+      const pattern = ip ? `${u.protocol}//${u.host}/*` : `${u.protocol}//*.${base}/*`
+      await chrome.contentSettings.popups.set({ primaryPattern: pattern, setting: 'allow' })
+      return { ok: true, pattern }
     }
     case 'popup': {
-      // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창이 있으면 알려 준다
+      // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창 중 아직 알리지 않은 가장 새것. 막힌 새 창도 함께 알린다
       const tabId = await ownedTab(a)
-      return takePopup(tabId)
+      const blocked = await blockedPopups(tabId).catch(() => [])
+      return { ...(await takePopup(tabId)), ...(blocked.length ? { blockedPopups: blocked } : {}) }
+    }
+    case 'tabs': {
+      // 두리 탭 목록: 누가 열었는지·언제·주소·제목·창 종류·앞 탭인지, 최근에 닫힌 새 창, 정리로 닫은 탭, 막힌 새 창.
+      // 늦게 뜬 결제 창·로그인 창이 어디 있는지 AI가 직접 본다
+      const s = await load()
+      const now = Date.now()
+      const tabs: Record<string, unknown>[] = []
+      for (const id of s.owned) {
+        const t = await chrome.tabs.get(id).catch(() => undefined)
+        if (!t) continue
+        const w = await chrome.windows.get(t.windowId).catch(() => undefined)
+        const rec = s.recs?.find((r) => r.tabId === id)
+        tabs.push({
+          tabId: id,
+          url: t.url ?? '',
+          title: t.title ?? '',
+          ...(rec?.opener !== undefined ? { opener: rec.opener } : {}),
+          ...(rec ? { createdAt: rec.at } : {}),
+          windowType: w?.type ?? 'normal',
+          active: Boolean(t.active),
+          loading: t.status === 'loading',
+          ...((s.held?.[id] ?? 0) > now ? { held: true } : {}),
+          ...(t.discarded ? { sleeping: true } : {}),
+        })
+      }
+      const closed = (s.recs ?? [])
+        .filter((r) => r.closedAt && now - r.closedAt < 30 * 60_000)
+        .map((r) => ({
+          tabId: r.tabId,
+          ...(r.opener !== undefined ? { opener: r.opener } : {}),
+          url: r.url ?? '',
+          title: r.title ?? '',
+          createdAt: r.at,
+          closedAt: r.closedAt,
+        }))
+      const want = a.tabId !== undefined && Number.isInteger(Number(a.tabId)) ? [Number(a.tabId)] : s.owned
+      const blocked: { tabId: number; url: string; at: number }[] = []
+      for (const id of want.filter((x) => s.owned.includes(x)))
+        for (const b of await blockedPopups(id, false).catch(() => [])) blocked.push({ tabId: id, ...b })
+      return { tabs, closed, tidied: (s.tidied ?? []).slice(-10), blockedPopups: blocked }
+    }
+    case 'wait': {
+      // 기다리기: 화면이 바뀔 때까지(또는 ms 동안) 기다리고, 무엇이 바뀌었는지 돌려준다.
+      // 바뀜: 문서 글·요소(본문·액자), 액자 이동, 주소 이동, 새 탭, 사이트 알림창·확인 창. 됐는지는 AI가 본다
+      const tabId = await ownedTab(a)
+      const ms = Math.min(Math.max(Number(a.ms) || 3_000, 100), 10_000)
+      const untilChange = a.until !== 'time'
+      const t0 = Date.now()
+      const before = (await chrome.tabs.get(tabId)).url ?? ''
+      const notesBefore = dialogNotes.get(tabId)?.length ?? 0
+      const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
+      // 지켜볼 문서: 본문 + 마지막으로 읽은 액자들 (많아야 8개)
+      const known = new Set([...(frameMaps.get(tabId)?.values() ?? [])].map((f) => f.frameId))
+      const watchIds = [0, ...frames.filter((f) => known.has(f.frameId)).map((f) => f.frameId)].slice(0, 9)
+      const armed: number[] = []
+      if (!dialogs.has(tabId))
+        await Promise.all(
+          watchIds.map(async (fid) => {
+            if (await inFrame(tabId, fid, pageMutArm, 'wait').catch(() => false)) armed.push(fid)
+          }),
+        )
+      const label = (fid: number) => (fid ? `f${frameIndexes.get(tabId)?.get(fid) ?? '?'}` : '본문')
+      let changed = false
+      for (let i = 0; Date.now() - t0 < ms; i++) {
+        await sleep(200)
+        if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
+        const t = await chrome.tabs.get(tabId).catch(() => undefined)
+        if (!t) break
+        const nav = (navLog.get(tabId) ?? []).some((n) => n.at >= t0)
+        const quick =
+          dialogs.has(tabId) ||
+          (dialogNotes.get(tabId)?.length ?? 0) > notesBefore ||
+          t.url !== before ||
+          nav ||
+          (await openedSince(tabId, t0))
+        let dom = false
+        if (!quick && i % 2 === 1 && !dialogs.has(tabId))
+          for (const fid of armed) {
+            const m = await inFrame(tabId, fid, pageMutRead, 'wait', false).catch(() => ({ n: 0 }))
+            if (m.n > 0) {
+              dom = true
+              break
+            }
+          }
+        if (quick || dom) {
+          changed = true
+          if (untilChange) {
+            // 바뀌기 시작했으면 조금 더 기다려 마저 그리게 한다 (이동이면 끝날 때까지)
+            await settle(tabId, before)
+            break
+          }
+        }
+      }
+      const dom: { frame: string; added: number; removed: number; attrs: number; text?: string }[] = []
+      if (!dialogs.has(tabId))
+        for (const fid of armed) {
+          const m = await inFrame(tabId, fid, pageMutRead, 'wait', true).catch(() => undefined)
+          if (m && m.n > 0)
+            dom.push({
+              frame: label(fid),
+              added: m.added,
+              removed: m.removed,
+              attrs: m.attrs,
+              ...(m.text ? { text: m.text } : {}),
+            })
+        }
+      const navs = (navLog.get(tabId) ?? [])
+        .filter((n) => n.at >= t0 && (n.kind === 'commit' || n.kind === 'error'))
+        .map((n) => ({
+          frame: label(n.frameId),
+          url: n.url.slice(0, 200),
+          ...(n.kind === 'error' ? { error: true } : {}),
+        }))
+      const s = await load()
+      const newTabs = (s.recs ?? [])
+        .filter((r) => r.opener === tabId && r.at >= t0)
+        .map((r) => ({ tabId: r.tabId, ...(r.closedAt ? { closed: true } : {}) }))
+      const blocked = await blockedPopups(tabId).catch(() => [])
+      const state = await pageState(tabId)
+      const what = [
+        ...(state.url !== before ? [`주소 이동: ${state.url.slice(0, 120)}`] : []),
+        ...navs.filter((n) => n.frame !== '본문').map((n) => `액자 ${n.frame} 이동: ${n.url.slice(0, 100)}`),
+        ...dom.map(
+          (d) =>
+            `${d.frame} 글·요소 바뀜 (더함 ${d.added}·뺌 ${d.removed}·속성 ${d.attrs})${d.text ? `: ${d.text}` : ''}`,
+        ),
+        ...newTabs.map((n) => `새 탭 ${n.tabId}${n.closed ? ' (이미 닫힘)' : ''}`),
+        ...blocked.map((b) => `막힌 새 창: ${b.url || '(주소 없음)'}`),
+        ...(state.dialog ? [`사이트 확인 창: "${state.dialog.message.slice(0, 120)}"`] : []),
+        ...((dialogNotes.get(tabId)?.length ?? 0) > notesBefore ? ['사이트 알림창이 떴다 닫혔어요'] : []),
+      ]
+      return {
+        ...state,
+        waitedMs: Date.now() - t0,
+        changed: changed || what.length > 0,
+        what,
+        details: {
+          dom,
+          navigations: navs,
+          newTabs,
+          ...(blocked.length ? { blockedPopups: blocked } : {}),
+        },
+        ...(dialogNotes.get(tabId)?.length ? takeDialogs(tabId) : {}),
+      }
     }
     case 'element-shots': {
-      // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게)
+      // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게).
+      // 표시마다 보이게 굴린 뒤 찍고, 표시마다 됐는지(status) 알린다. 굴려도 화면 밖(아래에 고정된 키패드)일 때만
+      // 화면 높이를 잠깐 늘린다 (실측 11-20 쿠팡 키패드가 창 아래로 잘려 회색 그림만 찍혔다)
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const refs = (Array.isArray(a.refs) ? a.refs : []).map(String).slice(0, 16)
-      // 찍기 전에 보이게: 굴려서 보이면 굴리고, 그래도 화면 아래로 잘리면 화면 높이를 늘린다
-      if (refs[0]) await locate(tabId, refs[0], 'point').catch(() => undefined)
-      let lowest = 0
-      for (const ref of refs) {
-        const f = frameOf(tabId, ref)
-        const r = (await inFrame(tabId, f.frameId, pageRect, ref).catch(() => undefined)) as
-          | { y: number; h: number }
-          | undefined
-        const off =
-          f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
-        if (r) lowest = Math.max(lowest, r.y + off.y + r.h)
-      }
-      const tall = lowest ? await tallerIfBelow(tabId, lowest).catch(() => false) : false
       const shots: { ref: string; data: string; rect: { x: number; y: number; w: number; h: number } }[] = []
+      const status: { ref: string; status: 'ok' | 'missing' | 'zeroSize' | 'offscreen' | 'frame' }[] = []
+      let v = await inPage(tabId, pageViewport)
+      let tall = false
+      type Shot = { status: (typeof status)[number]['status']; x: number; y: number; w: number; h: number }
+      const measure = async (ref: string, fid: number): Promise<Shot> => {
+        const none = { x: 0, y: 0, w: 0, h: 0 }
+        const r = await inFrame(tabId, fid, pageShotRect, ref).catch(() => undefined)
+        if (!r || r.status === 'missing' || r.status === 'zeroSize')
+          return { status: r?.status ?? 'missing', ...none }
+        const p = fid ? await framePoint(tabId, fid, r.x, r.y).catch(() => undefined) : { x: r.x, y: r.y }
+        if (!p) return { status: 'frame', ...none }
+        const off = p.y < 0 || p.x < 0 || p.y + r.h > v.height + 1 || p.x + r.w > v.width + 1
+        return { status: off ? 'offscreen' : 'ok', x: p.x, y: p.y, w: r.w, h: r.h }
+      }
+      // 먼저 모두 잰다. 화면 아래로 잘린 것이 있으면 가장 아래 것까지 보이게 한 번만 늘리고 다시 잰다
+      // (예전에는 처음 잘린 버튼 높이까지만 늘려, 그 아래 줄 키패드 버튼은 여전히 화면 밖이라 못 찍었다 — 실측 결제 창 키패드)
+      const fids = new Map<string, number>()
+      const plan = new Map<string, Shot>()
       for (const ref of refs) {
-        const f = frameOf(tabId, ref)
-        const r = (await inFrame(tabId, f.frameId, pageRect, ref).catch(() => undefined)) as
-          | { x: number; y: number; w: number; h: number }
-          | undefined
-        if (!r) continue
-        const off =
-          f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+        try {
+          fids.set(ref, frameOf(tabId, ref).frameId)
+        } catch {
+          continue
+        }
+        plan.set(ref, await measure(ref, fids.get(ref) ?? 0))
+      }
+      const below = [...plan.values()].filter((m) => m.status === 'offscreen' && m.y + m.h > v.height)
+      if (below.length) {
+        tall = await tallerIfBelow(tabId, Math.max(...below.map((m) => m.y + m.h))).catch(() => false)
+        if (tall) {
+          v = await inPage(tabId, pageViewport)
+          for (const ref of plan.keys()) plan.set(ref, await measure(ref, fids.get(ref) ?? 0))
+        }
+      }
+      for (const ref of refs) {
+        const m = plan.get(ref)
+        if (!m) {
+          status.push({ ref, status: 'missing' })
+          continue
+        }
+        if (m.status !== 'ok') {
+          status.push({ ref, status: m.status })
+          continue
+        }
+        // clip은 문서 기준: 굴린 만큼 더한다 (scrollOffset)
+        const o = await scrollOffset(tabId, 'layout')
         const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
           format: 'jpeg',
           quality: 85,
-          clip: {
-            x: Math.max(0, r.x + off.x),
-            y: Math.max(0, r.y + off.y),
-            width: r.w,
-            height: r.h,
-            scale: 2,
-          },
+          clip: { x: Math.max(0, m.x) + o.x, y: Math.max(0, m.y) + o.y, width: m.w, height: m.h, scale: 2 },
         }).catch(() => undefined)
+        status.push({ ref, status: shot ? 'ok' : 'offscreen' })
         // rect: 보이는 화면 기준 자리 (그림 눌러 풀기에서 폰이 누른 곳을 화면 좌표로 바꾼다)
-        if (shot)
-          shots.push({ ref, data: shot.data, rect: { x: r.x + off.x, y: r.y + off.y, w: r.w, h: r.h } })
+        if (shot) shots.push({ ref, data: shot.data, rect: { x: m.x, y: m.y, w: m.w, h: m.h } })
       }
       // 표시가 없는 그림(로봇 확인 그림·캔버스): AI가 화면 사진에서 짚은 상자 (보이는 화면 기준 0~1000)
       const boxes = (Array.isArray(a.boxes) ? a.boxes : []).slice(0, 4) as Record<string, unknown>[]
       if (boxes.length) {
         const v = await inPage(tabId, pageViewport)
+        const o = await scrollOffset(tabId, 'layout')
         for (const [i, b] of boxes.entries()) {
           const x = Math.max(0, Math.min(1000, Number(b.x) || 0))
           const y = Math.max(0, Math.min(1000, Number(b.y) || 0))
@@ -1514,13 +2338,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
             format: 'jpeg',
             quality: 85,
-            clip: { x: r.x, y: r.y, width: r.w, height: r.h, scale: 2 },
+            clip: { x: r.x + o.x, y: r.y + o.y, width: r.w, height: r.h, scale: 2 },
           }).catch(() => undefined)
           if (shot) shots.push({ ref: `box${i + 1}`, data: shot.data, rect: r })
         }
       }
       if (tall) await restoreHeight(tabId)
-      return { shots }
+      // taller: 화면 아래로 잘려 높이를 잠깐 늘려 찍었다 (다시 읽을 때 자리가 원래대로라는 것을 알린다)
+      return { shots, status, ...(tall ? { taller: true } : {}) }
     }
     case 'captcha-candidates': {
       // 보안문자 칸 둘레를 몇 장 잘라 돌려준다. 어느 그림이 보안문자인지는 AI가 보고 고른다
@@ -1535,9 +2360,12 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         h: number
         what: string
       }[]
-      const off =
-        f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+      const off = await framePoint(tabId, f.frameId, 0, 0, false)
       await sleep(250)
+      // clip은 문서 기준: 굴린 만큼 더한다
+      const o = await scrollOffset(tabId, 'layout')
+      off.x += o.x
+      off.y += o.y
       const shots: { what: string; data: string }[] = []
       for (const r of rects) {
         const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
@@ -1589,6 +2417,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // 폰 크기로 그리는 중이면(view·fit) 화면에 보이는 그대로 찍는다 (넓은 페이지는 폰처럼 줄어 보인다).
       // 그때 누르는 자리는 보이는 화면 기준이라 viewport도 그 크기로 알려 준다
       const phone = Boolean(a.remote) && (phoneView.has(tabId) || emulated.has(tabId))
+      // clip은 문서 기준: 지금 보이는 곳을 찍으려면 굴린 만큼 더한다 (예전엔 0,0이라 굴린 페이지의 위쪽이 찍혔다)
+      const o = phone ? { x: 0, y: 0 } : await scrollOffset(tabId, 'layout')
       const shot = phone
         ? await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
             format: 'jpeg',
@@ -1599,7 +2429,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             format: 'jpeg',
             quality,
             optimizeForSpeed: true,
-            clip: { x: 0, y: 0, width: v.width, height: v.height, scale },
+            clip: { x: o.x, y: o.y, width: v.width, height: v.height, scale },
           })
       const shown = phone
         ? { width: Math.round(v.vv.w * v.vv.scale), height: Math.round(v.vv.h * v.vv.scale) }
@@ -1739,7 +2569,10 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const v = await inPage(tabId, pageViewport)
       // 액자 안 칸(표시 앞에 액자 번호)이면 그 액자에서 찾고, 자리는 액자 상자만큼 옮긴다
       const fr = formFrames.get(tabId)
-      const off = fr ? await frameOffset(tabId, fr.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+      // 자리를 못 재면 액자 안에서 그 자리를 누른다 (엉뚱한 곳을 진짜 마우스로 누르지 않게)
+      const off = fr
+        ? await framePoint(tabId, fr.frameId, 0, 0, false).catch(() => undefined)
+        : { x: 0, y: 0 }
       const where = (id: string) => {
         const m = id.match(FORM_FRAME_ID)
         return m ? { frameId: Number(m[1]), id: m[2] as string } : { frameId: 0, id }
@@ -1749,6 +2582,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const t = await inFrame(tabId, w.frameId, pageFormTarget, w.id)
         if (!w.frameId || !t.ok || t.done) return t
         // 가려진 창이면 액자 안에서 그 자리를 누른다(lx·ly는 액자 기준 그대로)
+        if (!off) return { ...t, x: undefined, y: undefined, frameId: w.frameId }
         return { ...t, x: (t.x ?? 0) + off.x, y: (t.y ?? 0) + off.y, frameId: w.frameId }
       }
       const tapIn = async (t: { x?: number; y?: number; lx?: number; ly?: number; frameId?: number }) => {
@@ -1781,8 +2615,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             await cdp(tabId, 'Input.insertText', { text })
             // 한 번에 넣기를 받지 않는 칸(보안문자·본인확인 칸): 하나도 안 들어갔으면 키를 하나씩 누른다
             // (실측: 폰 '필요한 칸만'에서 넣었는데 PC 칸은 비어 있었다)
-            const n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
-            if (n === 0) await typeKeys(tabId, text)
+            let n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
+            // 늦게 반영하는 칸: 잠깐 뒤 다시 보고, 그래도 비었을 때만 다시 골라 키를 하나씩 (두 번 들어가지 않게)
+            if (n === 0) {
+              await sleep(150)
+              n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
+            }
+            if (n === 0) {
+              await inFrame(tabId, w.frameId, pageFormFocus, w.id)
+              await typeKeys(tabId, text)
+            }
           } else await pressKey(tabId, 'Backspace')
         }
         await sleep(60)

@@ -7,14 +7,14 @@ import {
   classifyRisk,
   confirmedScreen,
   cookieReject,
-  isCheckoutEntry,
+  coverLine,
   makePassword,
   matchOption,
   nearlyEmpty,
   optionFields,
   PAY_FLOW_TTL_MS,
   parseRefs,
-  payScreen,
+  payNow,
   promoClose,
   type SiteDialog,
   sameFinal,
@@ -30,74 +30,72 @@ const PAGE = `# 두리 시험 가게
 
 describe('위험한 동작 가리기', () => {
   it('돈·연락·되돌릴 수 없는 버튼을 알아본다', () => {
-    expect(classifyRisk('버튼 바로 구매', 'https://shop.example/item/1')?.kind).toBe('money')
-    expect(classifyRisk('버튼 결제하기', 'https://x')?.kind).toBe('money')
-    expect(classifyRisk('버튼 예약 확정', 'https://x')?.kind).toBe('money')
-    expect(classifyRisk('버튼 Place order', 'https://x')?.kind).toBe('money')
-    expect(classifyRisk('버튼 보내기', 'https://x')?.kind).toBe('contact')
+    expect(classifyRisk('버튼 바로 구매')?.kind).toBe('money')
+    expect(classifyRisk('버튼 결제하기')?.kind).toBe('money')
+    expect(classifyRisk('버튼 예약 확정')?.kind).toBe('money')
+    expect(classifyRisk('버튼 Place order')?.kind).toBe('money')
+    expect(classifyRisk('버튼 보내기')?.kind).toBe('contact')
     // 맡긴 일인 리뷰·글 올리기·등록은 승인 없이 (11-20), 판매자 문의는 사람에게 보내는 말이라 승인
-    expect(classifyRisk('버튼 등록', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 리뷰 등록', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 올리기', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 문의하기', 'https://x')?.kind).toBe('contact')
+    expect(classifyRisk('버튼 등록')).toBeUndefined()
+    expect(classifyRisk('버튼 리뷰 등록')).toBeUndefined()
+    expect(classifyRisk('버튼 올리기')).toBeUndefined()
+    expect(classifyRisk('버튼 문의하기')?.kind).toBe('contact')
     // 신청서·응모 양식을 내는 것도 보내기 (실측: 공공기관 퀴즈 응모가 승인 없이 제출됐다, 11-20)
-    expect(classifyRisk('버튼 제출', 'https://form.naver.com/x')?.kind).toBe('contact')
-    expect(classifyRisk('버튼 응모하기', 'https://x')?.kind).toBe('contact')
-    expect(classifyRisk('링크 제출 서류 안내', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 회원 탈퇴', 'https://x')?.kind).toBe('irreversible')
+    expect(classifyRisk('버튼 제출')?.kind).toBe('contact')
+    expect(classifyRisk('버튼 응모하기')?.kind).toBe('contact')
+    expect(classifyRisk('링크 제출 서류 안내')).toBeUndefined()
+    expect(classifyRisk('버튼 회원 탈퇴')?.kind).toBe('irreversible')
   })
 
   it('지난 주문·결제를 보는 링크는 막지 않고, 같이 적힌 동작 말은 그대로 본다', () => {
-    expect(classifyRisk('링크 주문상세', 'https://pay.naver.com/pc/history')).toBeUndefined()
-    expect(classifyRisk('버튼 결제 내역 보기', 'https://x')).toBeUndefined()
-    expect(classifyRisk('링크 예약 조회', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 주문내역에서 다시 주문하기', 'https://x')?.kind).toBe('money')
-    expect(classifyRisk('버튼 구매확정', 'https://x')?.kind).toBe('money')
+    expect(classifyRisk('링크 주문상세')).toBeUndefined()
+    expect(classifyRisk('버튼 결제 내역 보기')).toBeUndefined()
+    expect(classifyRisk('링크 예약 조회')).toBeUndefined()
+    expect(classifyRisk('버튼 주문내역에서 다시 주문하기')?.kind).toBe('money')
+    expect(classifyRisk('버튼 구매확정')?.kind).toBe('money')
   })
 
-  it('결제 단계 페이지에서는 무엇이든 위험으로 본다', () => {
-    expect(classifyRisk('버튼 다음', 'https://order.example.com/checkout/step2')?.kind).toBe('money')
-    expect(classifyRisk('버튼 확인', 'https://pay.naver.com/x')?.kind).toBe('money')
-    // 결제 단계 주소에서도 결제가 될 수 없는 이름은 누른다 (닫기·이전·자세히 보기)
-    expect(classifyRisk('버튼 close', 'https://kr.hotels.com/checkout/s')).toBeUndefined()
-    expect(classifyRisk('버튼 자세히 보기', 'https://order.example.com/checkout/step2')).toBeUndefined()
-    expect(classifyRisk('버튼 예약 계속하기', 'https://kr.hotels.com/checkout/s')?.kind).toBe('money')
+  it('주소로는 막지 않는다: 결제 단계 주소의 [다음]·[확인]·[닫기]는 버튼 글자로만 본다 (실측 11-20 G마켓)', () => {
+    expect(classifyRisk('버튼 다음')).toBeUndefined()
+    expect(classifyRisk('버튼 확인')).toBeUndefined()
+    expect(classifyRisk('버튼 close')).toBeUndefined()
+    expect(classifyRisk('버튼 배송지 추가')).toBeUndefined()
+    expect(classifyRisk('버튼')).toBeUndefined()
+    expect(classifyRisk('버튼 예약 계속하기')).toBeUndefined()
+    expect(classifyRisk('버튼 결제하기')?.kind).toBe('money')
   })
 
-  it('주소가 그대로인 결제 화면에서는 "다음"·"확인"도 막는다', () => {
-    const map = 'https://app.catchtable.co.kr/ct/map/search-map?keyword=성수'
-    const pay = payScreen(
-      '## 예약금 결제 방법 선택\n[e454 라디오 "예약금 0원 결제" 선택됨]\n[e456 버튼 "이전"] [e457 버튼 "다음"]',
-    )
-    expect(pay).toBe('결제 방법')
-    expect(classifyRisk('버튼 다음', map, pay)?.kind).toBe('money')
-    expect(classifyRisk('버튼 확인', map, pay)?.kind).toBe('money')
-    expect(classifyRisk('버튼 이전', map, pay)).toBeUndefined()
+  it('결제 방식 화면의 [다음]도 글자로만 본다. 그 자체로 확정되는 이름은 그대로 막는다', () => {
+    expect(classifyRisk('버튼 다음')).toBeUndefined()
     // 방식 고르기 라디오는 확정이 아니라서 막지 않는다 (마지막 버튼에서 승인)
-    expect(classifyRisk('라디오 예약금 결제예약금 40,000원', map, pay)).toBeUndefined()
-    expect(classifyRisk('체크박스 결제 진행 필수 동의', map, pay)).toBeUndefined()
-    // 예약금 안내(결제 방법 고르기 전)의 "다음"은 막지 않는다
-    expect(payScreen('## 예약금 안내\n1인당 예약금 10,000원\n총 예약금 40,000원')).toBeUndefined()
-    expect(classifyRisk('버튼 다음', map, undefined)).toBeUndefined()
-    // 실제 캐치테이블 화면: "결제 방식 선택"과 팝업의 "이 방식으로 예약"
-    const pay2 = payScreen(
-      '## 결제 방식 선택\n[e206 라디오 "예약금 0원 + 자동결제" 선택됨]\n[e210 버튼 "다음"]',
-    )
-    expect(classifyRisk('버튼 다음', map, pay2)?.kind).toBe('money')
-    expect(classifyRisk('버튼 최대 혜택 이 방식으로 예약', map)?.kind).toBe('money')
-    expect(classifyRisk('버튼 바로 예약', map)?.kind).toBe('money')
-    expect(classifyRisk('버튼 예약', map)).toBeUndefined() // 검색 화면의 '예약' 탭
-    expect(classifyRisk('버튼 11.27 (금) 예약 가능', map)).toBeUndefined()
+    expect(classifyRisk('라디오 예약금 결제예약금 40,000원')).toBeUndefined()
+    expect(classifyRisk('체크박스 결제 진행 필수 동의')).toBeUndefined()
+    // 실제 캐치테이블 화면: 팝업의 "이 방식으로 예약"
+    expect(classifyRisk('버튼 최대 혜택 이 방식으로 예약')?.kind).toBe('money')
+    expect(classifyRisk('버튼 바로 예약')?.kind).toBe('money')
+    expect(classifyRisk('버튼 예약')).toBeUndefined() // 검색 화면의 '예약' 탭
+    expect(classifyRisk('버튼 11.27 (금) 예약 가능')).toBeUndefined()
+  })
+
+  it('지금 돈이 나가는 이름은 opens_checkout으로도 넘기지 않는다 (안전장치)', () => {
+    expect(payNow('결제하기')).toBe(true)
+    expect(payNow('16,500원 결제하기')).toBe(true)
+    expect(payNow('카카오페이로 결제')).toBe(true)
+    expect(payNow('Place order')).toBe(true)
+    expect(payNow('예약 확정')).toBe(true)
+    expect(payNow('주문하기')).toBe(false)
+    expect(payNow('총 5개 상품 구매하기')).toBe(false)
+    expect(payNow('예약하기 예약')).toBe(false)
   })
 
   it('보통 조회는 막지 않는다', () => {
-    expect(classifyRisk('버튼 검색', 'https://www.naver.com/')).toBeUndefined()
-    expect(classifyRisk('링크 다음 페이지', 'https://shop.example/list?page=2')).toBeUndefined()
-    expect(classifyRisk('버튼 장바구니 담기', 'https://shop.example/item/1')).toBeUndefined()
-    expect(classifyRisk('링크 상품 등록일순', 'https://shop.example/list')).toBeUndefined()
+    expect(classifyRisk('버튼 검색')).toBeUndefined()
+    expect(classifyRisk('링크 다음 페이지')).toBeUndefined()
+    expect(classifyRisk('버튼 장바구니 담기')).toBeUndefined()
+    expect(classifyRisk('링크 상품 등록일순')).toBeUndefined()
     // 지난 결제를 보는 링크는 돈이 나가지 않는다 (승인 줄이기, 11-20). 결제 단계 주소의 다른 버튼은 그대로 막는다
-    expect(classifyRisk('링크 결제 내역', 'https://x')).toBeUndefined()
-    expect(classifyRisk('버튼 다음', 'https://pay.naver.com/pc/history')?.kind).toBe('money')
+    expect(classifyRisk('링크 결제 내역')).toBeUndefined()
+    expect(classifyRisk('버튼 다음')).toBeUndefined()
   })
 
   it('페이지 글에서 표시를 모은다', () => {
@@ -158,6 +156,28 @@ describe('브라우저 도구 실행', () => {
     expect(b.calls.map((c) => c[0])).toContain('click')
   })
 
+  it('폰 키패드로 받은 비밀번호대로 화면 키패드를 한 번씩·둘레 글 검사 없이 누른다', async () => {
+    // 누를 때마다 '●○○○○○ (1/6자리)'가 바뀌어 둘레 글 검사가 둘째 숫자부터 막았다 (시험 가게 결제 창)
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    const keys = { '1': 'e11', '2': 'e12', '3': 'e13' }
+    expect(await tools.pressPin(3, keys, '312')).toBe(true)
+    const clicks = b.calls.filter((c) => c[0] === 'click').map((c) => c[1])
+    // 빠르게(quick) 누르고, 화면 아래 키패드로 늘린 화면 높이는 마지막 숫자에서만 되돌린다(keepTall)
+    expect(clicks).toEqual(
+      ['e13', 'e11', 'e12'].map((ref, i) => ({
+        tabId: 3,
+        ref,
+        once: true,
+        force: true,
+        quick: true,
+        keepTall: i < 2,
+      })),
+    )
+    // 짚지 않은 숫자가 있으면 거기서 멈춘다
+    expect(await tools.pressPin(3, keys, '19')).toBe(false)
+  })
+
   it('읽지 않은 표시는 누르지 않는다', async () => {
     const tools = new BrowserTools(fakeBrowser())
     const r = await tools.run('click', { tabId: 3, ref: 'e2' })
@@ -198,19 +218,18 @@ describe('브라우저 도구 실행', () => {
 
 describe('사이트 알림창', () => {
   it('확인 창 글로 결제·보내기·삭제가 되는 [확인]을 알아본다', () => {
-    const at = 'https://shop.example/item/1'
-    expect(classifyDialogRisk('사과 1kg을 주문하시겠습니까?', at)?.kind).toBe('money')
-    expect(classifyDialogRisk('예약하시겠습니까?', at)?.kind).toBe('money')
-    expect(classifyDialogRisk('결제를 진행할까요?', at)?.kind).toBe('money')
-    expect(classifyDialogRisk('메시지를 보내시겠습니까?', at)?.kind).toBe('contact')
-    expect(classifyDialogRisk('선택한 상품을 삭제할까요?', at)?.kind).toBe('irreversible')
-    expect(classifyDialogRisk('예약을 취소하시겠습니까?', at)).toBeDefined()
-    // 결제 단계 페이지의 확인 창은 무엇이든
-    expect(classifyDialogRisk('쿠폰을 적용할까요?', 'https://shop.example/checkout')?.kind).toBe('money')
+    expect(classifyDialogRisk('사과 1kg을 주문하시겠습니까?')?.kind).toBe('money')
+    expect(classifyDialogRisk('예약하시겠습니까?')?.kind).toBe('money')
+    expect(classifyDialogRisk('결제를 진행할까요?')?.kind).toBe('money')
+    expect(classifyDialogRisk('메시지를 보내시겠습니까?')?.kind).toBe('contact')
+    expect(classifyDialogRisk('선택한 상품을 삭제할까요?')?.kind).toBe('irreversible')
+    expect(classifyDialogRisk('예약을 취소하시겠습니까?')).toBeDefined()
+    // 결제 단계 주소라도 창 글로만 본다
+    expect(classifyDialogRisk('쿠폰을 적용할까요?')).toBeUndefined()
     // 보통 확인은 막지 않는다
-    expect(classifyDialogRisk('장바구니로 이동할까요?', at)).toBeUndefined()
-    expect(classifyDialogRisk('로그인이 필요합니다. 로그인 페이지로 이동할까요?', at)).toBeUndefined()
-    expect(classifyDialogRisk('예약 내역을 보시겠어요?', at)).toBeUndefined()
+    expect(classifyDialogRisk('장바구니로 이동할까요?')).toBeUndefined()
+    expect(classifyDialogRisk('로그인이 필요합니다. 로그인 페이지로 이동할까요?')).toBeUndefined()
+    expect(classifyDialogRisk('예약 내역을 보시겠어요?')).toBeUndefined()
   })
 
   function dialogBrowser(dialog?: SiteDialog, notes?: SiteDialog[]) {
@@ -395,9 +414,9 @@ describe('여러 개 한 번에 승인', () => {
     expect(ok.message).toContain('남은 1개')
     await tools.run('read', { tabId: 3 })
     expect((await tools.run('click', { tabId: 3, ref: 'e6' })).isError).toBeFalsy()
-    // 한 번 승인받은 사이트는 30분 동안 같은 종류를 다시 묻지 않는다 (사이트마다 한 번)
+    // 남은 개수를 다 쓰면 다시 묻는다 (사이트 통째로 30분 통과는 없다)
     await tools.run('read', { tabId: 3 })
-    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBeFalsy()
+    expect((await tools.run('click', { tabId: 3, ref: 'e4' })).isError).toBe(true)
   }, 30_000)
 })
 
@@ -831,7 +850,8 @@ describe('글자로 누르기', () => {
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('click', { tabId: 3, text: '결제' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('멈췄어요')
+    expect(text(r)).toContain('승인이 필요해요')
+    expect(text(r)).toContain('browser_checkout')
     expect(b.calls.map((c) => c[0])).not.toContain('click')
   })
 })
@@ -873,71 +893,44 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
   const room = { url: 'https://kr.hotels.com/ho480371/?chkin=2027-04-10', text: ROOMS }
   const checkout = { url: 'https://kr.hotels.com/checkout/session/abc', text: CHECKOUT }
 
-  it('결제 화면을 여는 버튼과 결제 화면을 알아본다', () => {
-    expect(isCheckoutEntry('예약하기 예약')).toBe(true)
-    expect(isCheckoutEntry('구매하기')).toBe(true)
-    // 실측 이름 변형: 화면 읽기가 겹쳐 읽은 이름, 대상이 붙은 이름
-    expect(isCheckoutEntry('예약 예약하기')).toBe(true)
-    expect(isCheckoutEntry('상품 예약하기')).toBe(true)
-    expect(isCheckoutEntry('바로 예약하기')).toBe(false)
-    expect(isCheckoutEntry('지금 예약하기')).toBe(false)
-    expect(isCheckoutEntry('바로 구매')).toBe(true)
-    expect(isCheckoutEntry('예약 완료하기')).toBe(false)
-    expect(isCheckoutEntry('0원 결제로 예약')).toBe(false)
-    expect(isCheckoutEntry('결제하기')).toBe(false)
+  it('결제 화면 표시(힌트)와 확정 화면을 알아본다', () => {
     expect(checkoutScreen(ROOMS, room.url)).toBeUndefined()
     // 상세 화면의 안내 문장 속 '결제 수단'은 결제 화면 표시가 아니다 (실측 문장)
     const notice = `${ROOMS}\n이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다.\n결제 가능한 신용카드: Visa, Mastercard`
     expect(checkoutScreen(notice, room.url)).toBeUndefined()
-    expect(payScreen(notice)).toBeUndefined()
     expect(checkoutScreen('## 결제 수단\n[e1 라디오 "신용카드"]\n## 배송지 정보', room.url)).toBe(
       '결제 수단·예약자 정보',
     )
-    // 상품·상세 화면의 '결제' 한 줄이나 버튼 이름으로는 결제 화면이 아니다 (실측: 11번가·지마켓·무신사·트립닷컴)
     expect(checkoutScreen('여부 및 배송비 결제 방법 선택\n총 상품금액 12,900원', room.url)).toBeUndefined()
-    expect(
-      checkoutScreen(
-        '46,200원결제할인가 [e39 버튼 "결제수단 즉시 할인 안내창 열기"]\n[e40 버튼 "결제 정보"]',
-        room.url,
-      ),
-    ).toBeUndefined()
     expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('결제 금액·예약자 정보')
     expect(checkoutScreen('주문 상품', 'https://shop.example/order/sheet')).toBe('결제 단계 주소')
     expect(confirmedScreen('예약이 완료되었습니다. 예약 번호: HC12345678')).toBeTruthy()
     expect(confirmedScreen('예약 완료하기')).toBeUndefined()
   })
 
-  it('결제 흐름이 아니면 [예약하기]는 지금처럼 승인을 요구한다', async () => {
-    const b = payBrowser([room, checkout])
-    const tools = new BrowserTools(b)
-    await tools.run('read', { tabId: 3 })
-    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
-    expect(r.isError).toBe(true)
-    expect(b.calls.map((c) => c[0])).not.toContain('click')
-  })
-
-  it('결제 흐름에서는 [예약하기]를 승인 없이 눌러 결제 화면까지 가고, 승인은 결제 화면에서 받는다', async () => {
+  it('결제 흐름이어도 [예약하기]를 몰래 통과시키지 않는다: AI가 opens_checkout으로 판단해야 누른다', async () => {
     const b = payBrowser([room, checkout])
     const tools = new BrowserTools(b)
     tools.startPayFlow(3, 'hotels-com.prepare_booking')
     await tools.run('read', { tabId: 3 })
-
-    // 결제 화면을 여는 버튼에 승인을 받으려 하면 막는다 (이번 실패: 객실 목록에서 승인을 받았다)
-    const early = await tools.run('request_approval', { tabId: 3, ref: 'e58', what: '예약', where: '호텔' })
-    expect(early.isError).toBe(true)
-    expect(text(early)).toContain('browser_click')
-
-    // '바로 예약'은 그 자리에서 확정될 수 있어 그대로 승인을 요구한다
-    expect((await tools.run('click', { tabId: 3, ref: 'e60' })).isError).toBe(true)
-
     const r = await tools.run('click', { tabId: 3, ref: 'e58' })
-    expect(r.isError).toBeUndefined()
-    expect(text(r)).toContain('승인 없이 눌렀어요')
-    expect(text(r)).toContain('결제 화면이에요')
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('opens_checkout')
+    expect(b.calls.map((c) => c[0])).not.toContain('click')
+    const ok = await tools.run('click', { tabId: 3, ref: 'e58', opens_checkout: true })
+    expect(ok.isError).toBeUndefined()
+    expect(text(ok)).toContain('결제 화면이에요')
+  })
 
-    // 결제 화면에서는 같은 [예약하기]도 마지막 버튼일 수 있어 승인을 받는다
-    const again = await tools.run('click', { tabId: 3, ref: 'e9' })
-    expect(again.isError).toBe(true)
+  it('승인 요청은 어느 단계의 버튼이든 받는다. 같은 버튼에 또 요청하면 새 카드 하나만 남는다', async () => {
+    const b = payBrowser([room, checkout])
+    const tools = new BrowserTools(b)
+    tools.startPayFlow(3, 'hotels-com.prepare_booking')
+    await tools.run('read', { tabId: 3 })
+    // 결제 화면을 여는 버튼에 승인을 받겠다고 해도 거절하지 않는다 (묻는 건 안전하다)
+    const early = await tools.run('request_approval', { tabId: 3, ref: 'e58', what: '예약', where: '호텔' })
+    expect(early.isError).toBeUndefined()
+    await tools.run('click', { tabId: 3, ref: 'e58', opens_checkout: true })
     const ok = await tools.run('request_approval', {
       tabId: 3,
       ref: 'e10',
@@ -947,7 +940,6 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     })
     expect(ok.isError).toBeUndefined()
     expect(tools.approvals.list().filter((a) => a.status === 'pending')).toHaveLength(1)
-    // 같은 버튼에 또 요청하면 카드가 두 장이 되지 않고 새 것 하나만 남는다
     await tools.run('request_approval', {
       tabId: 3,
       ref: 'e10',
@@ -955,7 +947,6 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
       where: '호텔스닷컴',
     })
     expect(tools.approvals.list().filter((a) => a.status === 'pending')).toHaveLength(1)
-    expect(tools.approvals.list().filter((a) => a.status === 'expired')).toHaveLength(1)
   })
 
   it('들어가는 버튼이 바로 확정해 버린 화면이면 숨기지 않고 알린다', async () => {
@@ -964,7 +955,7 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     const tools = new BrowserTools(b)
     tools.startPayFlow(3, 'hotels-com.prepare_booking')
     await tools.run('read', { tabId: 3 })
-    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
+    const r = await tools.run('click', { tabId: 3, ref: 'e58', opens_checkout: true })
     expect(text(r)).toContain('이미 확정됐을 수 있어요')
   })
 
@@ -974,8 +965,6 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     tools.startPayFlow(9, 'hotels-com.prepare_booking', ['hotels.com'])
     await tools.run('read', { tabId: 3 }) // 새 탭 3에서 kr.hotels.com을 읽었다
     expect(tools.payFlow(3)).toBe('hotels-com.prepare_booking')
-    const r = await tools.run('click', { tabId: 3, ref: 'e58' })
-    expect(r.isError).toBeUndefined()
   })
 
   it('돈 내기 도구가 있는 서비스 사이트면 도구를 거치지 않고 연 탭도 결제 흐름이다', async () => {
@@ -983,7 +972,6 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     tools.setPayServiceSites(['hotels.com'])
     await tools.run('read', { tabId: 3 })
     expect(tools.payFlow(3)).toBe('site:hotels.com')
-    expect((await tools.run('click', { tabId: 3, ref: 'e58' })).isError).toBeUndefined()
   })
 
   it('탭을 닫거나 한 시간이 지나면 결제 흐름을 잊는다', () => {
@@ -1026,19 +1014,17 @@ describe('쿠키 동의 창', () => {
     expect(promoClose('쿠키를 사용합니다 [e4 버튼 "닫기"]')).toBeUndefined()
   })
 
-  it('읽을 때 거부로 닫고 다시 읽으며, 같은 탭·사이트에서는 한 번만 한다', async () => {
+  it('읽을 때 몰래 닫지 않고, 덮은 창의 닫기 버튼만 한 줄로 알린다', async () => {
     const calls: string[] = []
-    let closed = false
     const b = {
       call: async (cmd: string, args?: Record<string, unknown>) => {
         calls.push(`${cmd}${args?.ref ? ` ${args.ref}` : ''}`)
-        if (cmd === 'click') closed = true
         if (cmd === 'snapshot')
           return {
             tabId: 3,
             url: 'https://kr.hotels.com/ho480371/',
             title: '호텔',
-            text: closed ? ROOMS : `${ROOMS}\n${COOKIE}`,
+            text: `${ROOMS}\n${COOKIE}`,
             truncated: false,
             captcha: false,
           }
@@ -1047,12 +1033,12 @@ describe('쿠키 동의 창', () => {
     }
     const tools = new BrowserTools(b)
     const r = text(await tools.run('read', { tabId: 3 }))
-    expect(r).toContain('[모두 거부]로 닫았어요')
-    expect(r).not.toContain('모든 쿠키 허용')
-    expect(calls).toEqual(['snapshot', 'click e37', 'snapshot'])
-    closed = false // 사이트가 창을 다시 띄워도 되풀이하지 않는다
-    await tools.run('read', { tabId: 3 })
-    expect(calls.filter((c) => c.startsWith('click'))).toHaveLength(1)
+    expect(r).toContain('🪟 덮은 창: [e37 버튼 "모두 거부"]')
+    expect(calls).toEqual(['snapshot'])
+    expect(coverLine('앱으로 보면 10% 더 저렴해요 [e2 버튼 "앱에서 열기"] [e3 버튼 "나중에"]')).toContain(
+      '[e3 버튼 "나중에"]',
+    )
+    expect(coverLine(PAGE)).toBeUndefined()
   })
 })
 
@@ -1765,13 +1751,14 @@ describe('새 비밀번호 만들기', () => {
     expect(t.saved[0]?.password).toBe(last)
   })
 
-  it('칸이 8자보다 적게 받으면 넣었다고 하지 않고 사람에게 넘기게 한다', async () => {
+  it('칸이 8자보다 적게 받으면 넣었다고 하지 않고, 사람에게 넘기지 않고 폰에서 다시 묻게 한다', async () => {
     const t = signupBench({ maxLen: 6 })
     t.tools.allowSignup('shop.example')
     await t.tools.run('read', { tabId: 3 })
     const r = await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
     expect(r.isError).toBe(true)
-    expect(t.text(r)).toContain('browser_handoff')
+    expect(t.text(r)).not.toContain('browser_handoff')
+    expect(t.text(r)).toContain('browser_new_password를 다시')
   })
 
   it('"이미 가입된 이메일"이 새로 뜨면 만든 비밀번호를 버리고 로그인으로 바꾸라고 한다', async () => {
@@ -1926,13 +1913,12 @@ describe('상품 옵션 고르기 (browser_select)', () => {
     expect(t.chosen).toEqual(['L'])
   })
 
-  it('결제 수단·할부 목록은 고르지 않고 승인 카드로 돌린다', async () => {
+  it('결제 수단·할부 목록도 거절하지 않는다 (사용자가 이미 골랐는지는 AI가 판단)', async () => {
     const t = shop(['신용카드', '네이버페이', '카카오페이'])
     await t.tools.run('read', { tabId: 3 })
     const r = await t.tools.run('select', { tabId: 3, ref: 'e1', choose: '네이버페이' })
-    expect(r.isError).toBe(true)
-    expect(t.text(r)).toContain('choices')
-    expect(t.chosen).toHaveLength(0)
+    expect(r.isError).toBeUndefined()
+    expect(t.chosen).toEqual(['네이버페이'])
   })
 
   it('"옵션을 선택해 주세요" 알림이 뜨면 옵션 칸을 짚어 알린다', async () => {
@@ -2232,7 +2218,7 @@ describe('승인 게이트는 화면을 열기만 하는 링크를 막지 않는
 })
 
 describe('승인은 돈이 나가는 마지막 한 번만', () => {
-  it('장바구니의 "총 5개 상품 구매하기"는 결제 화면을 여는 버튼이라 승인 없이 누르고, 결제 화면의 결제하기는 막는다', async () => {
+  it('장바구니의 "총 5개 상품 구매하기"는 AI가 opens_checkout으로 판단하면 누르고, 결제 화면의 결제하기는 opens_checkout이어도 막는다', async () => {
     const clicks: string[] = []
     let page = {
       url: 'https://cart.coupang.com/cartView.pg',
@@ -2248,10 +2234,11 @@ describe('승인은 돈이 나가는 마지막 한 번만', () => {
     }
     const tools = new BrowserTools(b as never)
     await tools.run('read', { tabId: 3 })
-    const r = await tools.run('click', { tabId: 3, ref: 'e9' })
+    // 장바구니 주소라고 몰래 통과시키지 않는다 (판단은 AI가 opens_checkout으로)
+    expect((await tools.run('click', { tabId: 3, ref: 'e9' })).isError).toBe(true)
+    const r = await tools.run('click', { tabId: 3, ref: 'e9', opens_checkout: true })
     expect(r.isError).toBeFalsy()
     expect(clicks).toEqual(['e9'])
-    // 결제 단계 주소 (checkout.coupang.com/cart/checkout/…)는 장바구니가 아니다
     page = {
       url: 'https://checkout.coupang.com/cart/checkout/1795156558444',
       title: '주문/결제',
@@ -2259,9 +2246,9 @@ describe('승인은 돈이 나가는 마지막 한 번만', () => {
     }
     await tools.run('read', { tabId: 3 })
     const pay = await tools
-      .run('click', { tabId: 3, ref: 'e54' })
+      .run('click', { tabId: 3, ref: 'e54', opens_checkout: true })
       .catch((e: Error) => ({ isError: true, err: e.message }))
-    expect(JSON.stringify(pay)).toMatch(/승인|request_approval/)
+    expect(JSON.stringify(pay)).toMatch(/승인|browser_checkout/)
     expect(clicks).toEqual(['e9'])
   })
 })
@@ -2400,9 +2387,9 @@ describe('받는 곳이 내 정보 주소와 다르면 승인 카드에서 알�
 describe('장바구니·주문표에 담기는 결제가 아니다', () => {
   it('"주문표에 추가"·"장바구니 담기"는 승인 없이, "주문하기"는 그대로 막는다', async () => {
     const { classifyRisk } = await import('./browser-tools.js')
-    expect(classifyRisk('버튼 주문표에 추가', 'https://www.food.example/menu')).toBeUndefined()
-    expect(classifyRisk('버튼 장바구니 담기', 'https://shop.example/item/1')).toBeUndefined()
-    expect(classifyRisk('버튼 주문하기', 'https://shop.example/item/1')?.kind).toBe('money')
+    expect(classifyRisk('버튼 주문표에 추가')).toBeUndefined()
+    expect(classifyRisk('버튼 장바구니 담기')).toBeUndefined()
+    expect(classifyRisk('버튼 주문하기')?.kind).toBe('money')
   })
 })
 
@@ -2501,26 +2488,27 @@ describe('결제 카드 (browser_checkout)', () => {
     expect(rec?.lines?.[2]).not.toHaveProperty('kind')
   })
 
-  it('결제 화면이 아니면 카드를 띄우지 않고 opens_checkout으로 넘어가라고 한다 (승인 한 번)', async () => {
+  it('결제 화면 표시가 없어도 카드를 띄운다 (결제 화면인지는 AI가 판단, final_here 없어도)', async () => {
     const tools = new BrowserTools(payBrowser('https://shop.example/item/1') as never)
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('checkout', { tabId: 3, ref: 'e2', total: '16,500원' })
-    expect(r.isError).toBe(true)
-    expect(text(r)).toContain('opens_checkout')
-    expect(tools.approvals.list()).toHaveLength(0)
-    // 그 버튼에서 바로 돈이 나가는 사이트면 final_here로 띄운다
-    const ok = await tools.run('checkout', { tabId: 3, ref: 'e2', total: '16,500원', final_here: true })
-    expect(ok.isError).toBeUndefined()
+    expect(r.isError).toBeUndefined()
     expect(tools.approvals.list()).toHaveLength(1)
+    expect(tools.approvals.list()[0]?.kind).toBe('money')
   })
 
-  it('결제 화면 전 단계의 돈 버튼에는 일반 승인 카드도 띄우지 않는다', async () => {
+  it('승인 요청은 거절하지 않는다: 결제 화면 전 단계의 돈 버튼·돈 말이 없는 버튼·동의 버튼 모두 카드로', async () => {
     const tools = new BrowserTools(payBrowser('https://shop.example/item/1') as never)
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('request_approval', { tabId: 3, ref: 'e2', what: '솥밥', where: '가게' })
-    expect(r.isError).toBe(true)
-    expect(text(r)).toContain('browser_checkout')
-    expect(tools.approvals.list()).toHaveLength(0)
+    expect(r.isError).toBeUndefined()
+    const plain = await tools.run('request_approval', { tabId: 3, ref: 'e1', what: '배송지', where: '가게' })
+    expect(plain.isError).toBeUndefined()
+    const kinds = tools.approvals.list().map((a) => [a.label, a.kind, a.status])
+    expect(kinds).toEqual([
+      ['16,500원 결제하기', 'money', 'expired'],
+      ['배송지 변경', 'irreversible', 'pending'],
+    ])
   })
 })
 
@@ -2668,15 +2656,228 @@ describe('PC 화면 넘기기 금지 (사용자 결정 11-20)', () => {
 })
 
 describe('결제 화면의 준비 버튼', () => {
-  it('배송지·쿠폰·수량은 승인 없이 누르고, 결제·이름 없는 버튼은 막는다', () => {
-    const u = 'https://checkout.gmarket.co.kr/ko/pc/checkout?chid=1'
-    expect(classifyRisk('버튼 배송지 추가', u)).toBeUndefined()
-    expect(classifyRisk('버튼 쿠폰 적용', u)).toBeUndefined()
-    expect(classifyRisk('버튼 수량 변경', u)).toBeUndefined()
-    expect(classifyRisk('링크 신봉1로 27 (서홍마을 우남퍼스트빌)', u)).toBeUndefined()
-    expect(classifyRisk('항목 경기 용인시 수지구 신봉동 905', u)).toBeUndefined()
-    expect(classifyRisk('버튼 결제하기', u)?.kind).toBe('money')
-    expect(classifyRisk('버튼 다음', u)?.kind).toBe('money')
-    expect(classifyRisk('버튼', u)?.kind).toBe('money')
+  it('배송지·쿠폰·수량·주소 줄·이름 없는 버튼은 승인 없이, 결제 말이 있는 버튼만 막는다', () => {
+    expect(classifyRisk('버튼 배송지 추가')).toBeUndefined()
+    expect(classifyRisk('버튼 쿠폰 적용')).toBeUndefined()
+    expect(classifyRisk('버튼 수량 변경')).toBeUndefined()
+    expect(classifyRisk('링크 신봉1로 27 (서홍마을 우남퍼스트빌)')).toBeUndefined()
+    expect(classifyRisk('항목 경기 용인시 수지구 신봉동 905')).toBeUndefined()
+    expect(classifyRisk('버튼 결제하기')?.kind).toBe('money')
+    expect(classifyRisk('버튼 다음')).toBeUndefined()
+    expect(classifyRisk('버튼')).toBeUndefined()
+  })
+})
+
+// 실측 11-20 G마켓: 주문서 → 배송지 추가(액자) → 주소 찾기 Enter → 결제하기 → 늦게 뜬 카드 결제 창 → 카드사 [다음]·[결제하기]
+const ORDER = `# 주문/결제
+배송지 집 [e1 버튼 "배송지 추가"] [e2 검색칸 "도로명, 지번 검색"] [e3 입력칸 "쿠폰 번호"]
+최종 결제 금액 9,900원 [e4 버튼 "결제하기"] [e5 버튼 "다음"] [e100001 버튼 "카드 결제하기"]`
+const PG = `# 카드 결제 (KG이니시스)
+결제 금액 9,900원 · 카드사를 고른 뒤 다음을 눌러 주세요
+[e1 버튼 "카드사 선택"] [e2 버튼 "다음"] [e3 버튼 "9,900원 결제하기"]`
+const DONE = '# 주문 완료\n주문이 완료되었습니다. 주문번호 4012345678'
+
+function payTabs(opts: { popup?: number; tabs?: unknown } = {}) {
+  const calls: [string, Record<string, unknown> | undefined][] = []
+  const pages: Record<number, { url: string; text: string }> = {
+    3: { url: 'https://checkout.gmarket.co.kr/ko/pc/checkout?chid=1', text: ORDER },
+    9: { url: 'https://pg.inicis.com/pay/card', text: PG },
+    12: { url: 'https://pg.inicis.com/pay/card2', text: PG },
+  }
+  let clicked = false
+  return {
+    calls,
+    pages,
+    call: async (cmd: string, args?: Record<string, unknown>) => {
+      calls.push([cmd, args])
+      const tab = Number(args?.tabId ?? 3)
+      const p = pages[tab] ?? pages[3]
+      if (cmd === 'snapshot')
+        return {
+          tabId: tab,
+          url: p?.url,
+          title: '결제',
+          text: tab === 3 && clicked ? `${ORDER}\n결제 창을 여는 중이에요` : p?.text,
+          truncated: false,
+          captcha: false,
+        }
+      if (cmd === 'click') {
+        if (tab === 3 && args?.ref === 'e4') clicked = true
+        return {
+          tabId: tab,
+          url: p?.url,
+          ...(tab === 3 && args?.ref === 'e4' && opts.popup ? { newTabId: opts.popup } : {}),
+        }
+      }
+      if (cmd === 'tabs') return opts.tabs ?? { tabs: [] }
+      if (cmd === 'screenshot') return { data: 'SHOT', mime: 'image/jpeg', url: p?.url, title: '결제' }
+      return { tabId: tab, url: p?.url }
+    },
+  }
+}
+
+async function paid(opts: { popup?: number; tabs?: unknown } = {}) {
+  const b = payTabs(opts)
+  const tools = new BrowserTools(b as never)
+  tools.payPopupWaits = [0]
+  await tools.run('read', { tabId: 3 })
+  await tools.run('checkout', { tabId: 3, ref: 'e4', title: '사과', where: 'G마켓', total: '9,900원' })
+  const [rec] = tools.approvals.list()
+  const r = await tools.approve(rec?.id as string)
+  return { b, tools, rec, r }
+}
+
+describe('돈 게이트: 마지막 버튼만 막고 카드로 돌린다 (11-20 개편)', () => {
+  it('돈 말이 있는 버튼은 짧게 결제 카드를 쓰라고 한다', async () => {
+    const b = payTabs()
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, ref: 'e4' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('승인이 필요해요')
+    expect(text(r)).toContain('browser_checkout(ref: "e4")')
+    expect(text(r)).not.toContain('browser_handoff')
+    expect(b.calls.map((c) => c[0])).not.toContain('click')
+  })
+
+  it('결제 주소에서도 준비 버튼·Enter는 막지 않는다', async () => {
+    const b = payTabs()
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('click', { tabId: 3, ref: 'e1' })).isError).toBeUndefined()
+    expect((await tools.run('click', { tabId: 3, ref: 'e5' })).isError).toBeUndefined()
+    expect(
+      (await tools.run('type', { tabId: 3, ref: 'e2', text: '신봉1로 27', submit: true })).isError,
+    ).toBeUndefined()
+    expect(
+      (await tools.run('type', { tabId: 3, ref: 'e3', text: 'A1', submit: true })).isError,
+    ).toBeUndefined()
+    expect((await tools.run('press', { tabId: 3, key: 'Enter' })).isError).toBeUndefined()
+    expect(b.calls.filter((c) => c[0] === 'click').map((c) => c[1]?.ref)).toEqual(['e1', 'e5'])
+  })
+
+  it('AI가 final로 선언한 버튼은 돈 말이 없어도 막는다', async () => {
+    const tools = new BrowserTools(payTabs() as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, ref: 'e5', final: true })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('final')
+    expect(text(r)).toContain('browser_checkout')
+  })
+
+  it('확인 창 승인 요청도 거절하지 않는다', async () => {
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? {
+              tabId: 3,
+              url: 'https://shop.example/',
+              title: '',
+              text: '',
+              dialog: { type: 'confirm', message: '다음 단계로 갈까요?', url: 'https://shop.example/' },
+            }
+          : { tabId: 3 },
+    }
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_approval', {
+      tabId: 3,
+      dialog: true,
+      what: '다음 단계',
+      where: '가게',
+    })
+    expect(r.isError).toBeUndefined()
+    expect(tools.approvals.list()).toHaveLength(1)
+  })
+})
+
+describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
+  it('승인 한 번 = 버튼 한 번: 결제한 뒤 같은 가게의 결제 버튼은 다시 승인받는다 (사이트 30분 통과 없음)', async () => {
+    const { b, tools, r } = await paid()
+    expect(r.ok).toBe(true)
+    expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(1)
+    await tools.run('read', { tabId: 3 })
+    const again = await tools.run('click', { tabId: 3, ref: 'e4' })
+    expect(again.isError).toBe(true)
+    expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(1)
+  })
+
+  it('승인 결과는 주문 완료까지가 할 일이라고 알리고, 승인은 결제 중(approved)으로 둔다', async () => {
+    const { tools, rec, r } = await paid({ popup: 9 })
+    expect(r.message).toContain('주문 완료 화면까지')
+    expect(r.message).toContain('browser_order_done')
+    expect(r.message).toContain('탭 9(결제 창)')
+    expect(r.message).not.toContain('browser_handoff')
+    expect(tools.approvals.get(rec?.id as string)?.status).toBe('approved')
+    expect(tools.isPaying(3)).toBe(true)
+    expect(tools.isPaying(9)).toBe(true)
+  })
+
+  it('결제 창(새 탭)·화면 안 액자의 [다음]·[결제하기]는 다시 막지 않고, 결제 중인 탭은 옮기지 않는다', async () => {
+    const { b, tools } = await paid({ popup: 9 })
+    await tools.run('read', { tabId: 9 })
+    expect(text(await tools.run('read', { tabId: 9 }))).toContain('💳 결제 중이에요')
+    const next = await tools.run('click', { tabId: 9, ref: 'e2' })
+    expect(next.isError).toBeUndefined()
+    const pay = await tools.run('click', { tabId: 9, ref: 'e3' })
+    expect(pay.isError).toBeUndefined()
+    expect(text(pay)).toContain('다시 승인받지 않고')
+    await tools.run('read', { tabId: 3 })
+    expect((await tools.run('click', { tabId: 3, ref: 'e100001' })).isError).toBeUndefined()
+    expect((await tools.run('navigate', { tabId: 9, url: 'https://x' })).isError).toBe(true)
+    expect((await tools.run('back', { tabId: 3 })).isError).toBe(true)
+    expect(b.calls.filter((c) => c[0] === 'click').map((c) => `${c[1]?.tabId}:${c[1]?.ref}`)).toEqual([
+      '3:e4',
+      '9:e2',
+      '9:e3',
+      '3:e100001',
+    ])
+  })
+
+  it('결제 중인 탭이 연 창은 탭 목록으로 알아보고 같은 묶음에 넣는다', async () => {
+    const { tools } = await paid({
+      tabs: { tabs: [{ id: 12, openerTabId: 3, url: 'https://pg.inicis.com' }] },
+    })
+    expect(tools.isPaying(12)).toBe(false)
+    await tools.run('read', { tabId: 12 })
+    expect(tools.isPaying(12)).toBe(true)
+    expect((await tools.run('click', { tabId: 12, ref: 'e3' })).isError).toBeUndefined()
+  })
+
+  it('browser_order_done: 묶음을 닫고, 승인을 주문번호와 함께 끝내고, 결과 보여 주기·저장하기를 알린다', async () => {
+    const { b, tools, rec } = await paid({ popup: 9 })
+    const changed: string[] = []
+    tools.approvals.onChange = (x) => changed.push(x.status)
+    b.pages[9] = { url: 'https://www.gmarket.co.kr/order/complete', text: DONE }
+    const seen = text(await tools.run('read', { tabId: 9 }))
+    expect(seen).toContain('browser_order_done')
+    const need = await tools.run('order_done', { tabId: 9 })
+    expect(need.isError).toBe(true)
+    const r = await tools.run('order_done', { tabId: 9, order_no: '4012345678', summary: '사과 9,900원' })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toContain('show_result')
+    expect(text(r)).toContain('know_save')
+    const done = tools.approvals.get(rec?.id as string)
+    expect(done?.status).toBe('done')
+    expect(done?.result).toContain('4012345678')
+    expect(changed).toEqual(['done'])
+    expect(tools.isPaying(3)).toBe(false)
+    expect(tools.isPaying(9)).toBe(false)
+    // 잡아 둔 탭을 푼다
+    expect(b.calls.filter((c) => c[0] === 'hold' && c[1]?.ms === 0).map((c) => c[1]?.tabId)).toEqual([3, 9])
+    // 이제 결제 탭도 옮길 수 있다
+    expect(
+      (await tools.run('navigate', { tabId: 3, url: 'https://www.gmarket.co.kr/' })).isError,
+    ).toBeUndefined()
+  })
+
+  it('결제가 안 되면 failed로 묶음을 닫고 다른 길을 찾게 한다 (사람에게 넘기지 않는다)', async () => {
+    const { tools, rec } = await paid()
+    const r = await tools.run('order_done', { tabId: 3, failed: true, reason: '카드 한도 초과' })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toContain('다른 결제 수단')
+    expect(text(r)).not.toContain('browser_handoff')
+    expect(tools.approvals.get(rec?.id as string)?.status).toBe('failed')
+    expect(tools.isPaying(3)).toBe(false)
   })
 })

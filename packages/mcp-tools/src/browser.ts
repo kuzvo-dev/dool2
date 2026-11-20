@@ -95,7 +95,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'click',
     '누르기',
-    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 표시가 없는 상자(검색 결과의 가게·상품 카드 등)는 ref 대신 text에 화면에 보이는 글자(가게 이름 등)를 그대로 넣으면 그 글자를 누른다. 결제·주문·보내기·삭제 같은 버튼은 두리가 막고 사용자에게 넘긴다.',
+    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 표시가 없는 상자(검색 결과의 가게·상품 카드 등)는 ref 대신 text에 화면에 보이는 글자(가게 이름 등)를 그대로 넣으면 그 글자를 누른다. 결제·주문·보내기·삭제 말이 있는 버튼은 두리가 막고 승인 카드(결제면 browser_checkout, 보내기·삭제면 browser_request_approval)로 돌린다. 결제를 승인받은 뒤 결제 회사 창 안의 버튼은 다시 막지 않는다.',
     {
       tabId,
       ref: ref.optional(),
@@ -109,6 +109,18 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe(
           '장바구니·주문표의 [주문하기]처럼 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이라고 화면을 보고 판단했으면 true. 승인 없이 누르고, 승인은 결제 화면의 마지막 버튼에서 한 번만 받는다',
+        ),
+      final: z
+        .boolean()
+        .optional()
+        .describe(
+          '화면을 보고 이 버튼에서 실제로 돈이 나가거나(보내지거나·지워지거나) 확정된다고 판단했으면 true. 버튼 이름에 그런 말이 없어도 두리가 누르지 않고 승인 카드로 돌린다',
+        ),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          '"둘레 글이 읽을 때와 달라졌어요"·"다른 버튼이 덮고 있어서"로 멈췄는데, 알려 준 글을 보고 그래도 그 요소가 맞다고 판단했으면 true (덮였으면 마우스 대신 그 요소를 직접 누른다)',
         ),
     },
     false,
@@ -182,7 +194,11 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     'scroll',
     '스크롤',
     '화면을 한 화면 위나 아래로 움직이고, 지금 화면에 보이는 부분을 읽어 돌려준다. 페이지 읽기(browser_read)는 스크롤 없이도 전체를 읽으니, 화면에 보이는 것을 따라가며 볼 때만 쓴다.',
-    { tabId, direction: z.enum(['up', 'down']) },
+    {
+      tabId,
+      direction: z.enum(['up', 'down']),
+      ref: ref.optional().describe('이 요소(또는 그것을 품은 목록 창·모달)를 굴린다. 없으면 페이지'),
+    },
     true,
   )
   tool(
@@ -193,6 +209,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     true,
   )
   tool('back', '뒤로', '탭에서 뒤로 가기를 누르고 페이지를 읽어 돌려준다.', { tabId }, true)
+  tool(
+    'wait',
+    '바뀔 때까지 기다리기',
+    '화면이 바뀔 때까지(많아야 ms, 기본 3초·최대 10초) 기다리고 무엇이 바뀌었는지(글·요소, 화면 안 액자 이동, 주소 이동, 새 탭, 막힌 새 창, 사이트 알림창) 알려 준다. 누른 뒤 결제 창·인증 결과가 늦게 뜰 때 쓴다. 됐는지는 browser_read로 읽어 판단한다.',
+    { tabId, ms: z.number().int().min(100).max(10_000).optional() },
+    true,
+  )
+  tool(
+    'tabs',
+    '두리 탭 목록',
+    '두리 탭을 모두 보여 준다: 탭 번호·제목·주소, 어느 탭이 연 새 창인지, 팝업 창인지, 최근 닫힌 새 창, Chrome이 막은 새 창(팝업 차단), 정리하며 닫은 탭. 결제·로그인 창이 늦게 떴거나 탭이 사라졌을 때 쓴다.',
+    { tabId: tabId.optional().describe('이 탭에서 막힌 새 창만 볼 때') },
+    true,
+  )
   tool(
     'login',
     '두리 금고로 로그인 칸 채우기',
@@ -216,7 +246,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_login',
     '로그인 카드 띄우기',
-    '로그인 페이지인데 두리 금고에 그 사이트가 없을 때 쓴다(browser_login이 "금고에 없어요"라고 할 때). 사용자에게 PC·폰 대화 안 로그인 카드를 띄운다. 사용자가 넣은 아이디·비밀번호는 금고에만 저장되고 너에게는 오지 않는다. 쓴 뒤에는 이번 답을 끝낸다. 로봇 확인·인증 앱 승인은 browser_handoff로, 문자 인증번호는 browser_request_code로.',
+    '로그인 페이지인데 두리 금고에 그 사이트가 없을 때 쓴다(browser_login이 "금고에 없어요"라고 할 때). 사용자 폰에 로그인 카드를 띄운다. 사용자가 넣은 아이디·비밀번호는 금고에만 저장되고 너에게는 오지 않는다. 쓴 뒤에는 이번 답을 끝낸다. 로봇 확인은 그림이면 browser_request_tap, 글자면 browser_request_code(kind: captcha), 인증 앱 승인은 browser_wait_auth, 문자 인증번호는 browser_request_code로.',
     {
       tabId,
       site: z.string().max(60).describe('사용자에게 보일 사이트 이름 (예: "코스트코")'),
@@ -405,7 +435,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '보내기·삭제·신청처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 이것 말고 browser_checkout(결제 카드)을 쓴다. 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '돈이 나가지 않는 승인 카드: 보내기·삭제·신청(취소·반품·요금제 변경·해지 포함)·개인정보 동의처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제(돈이 나가는 마지막 버튼)에는 쓰지 않는다 — 결제는 browser_checkout(결제 카드) 하나뿐이다. 사용자가 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 고를 칸(보낼 곳·신청 유형·수거 방법 등)이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣어 카드에서 고르게 한다. 쓴 뒤에는 이번 답을 끝내고, 승인 알림이 오면 화면을 다시 읽어 끝난 것을 확인한다.',
     {
       tabId,
       ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
@@ -418,28 +448,30 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .array(ref)
         .max(8)
         .optional()
-        .describe('승인하며 사용자가 고를 칸들의 표시 (결제 수단 라디오 등, 예: ["e31","e32"])'),
-      choiceTitle: z.string().max(20).optional().describe('선택지 제목 (기본: 결제 수단)'),
+        .describe(
+          '승인하며 사용자가 고를 칸들의 표시 (수거 방법·신청 유형 라디오 등, 예: ["e31","e32"]). 결제 수단은 browser_checkout의 choices로',
+        ),
+      choiceTitle: z.string().max(20).optional().describe('선택지 제목 (예: 수거 방법)'),
       chose: z
         .array(z.string().max(60))
         .max(8)
         .optional()
         .describe(
-          '결제 전에 두리가 화면에서 스스로 고른 것 (예: ["여행자보험 가입 안 함","약관 전체 동의","적립 안 함"]). 사용자가 승인 카드에서 보고 바꿀 수 있게 적는다. 사용자가 고를 choices와 다르다',
+          '두리가 화면에서 스스로 고른 것 (예: ["사유: 단순 변심","약관 전체 동의","문 앞 수거"]). 사용자가 승인 카드에서 보고 바꿀 수 있게 적는다. 사용자가 고를 choices와 다르다',
         ),
       ship_to: z
         .string()
         .max(120)
         .optional()
         .describe(
-          '결제면 받는 곳: 결제 화면에 지금 골라진 배송지 (예: "집 · 용인시 수지구 신봉동 …, 문 앞")',
+          '반품 수거지·교환품 받는 곳처럼 신청에 들어가는 주소 (예: "집 · 용인시 수지구 신봉동 …, 문 앞"). 결제의 배송지는 browser_checkout의 ship_to로',
         ),
       ship_options: z
         .array(z.string().max(120))
         .max(5)
         .optional()
         .describe(
-          '사이트에 저장된 다른 배송지들 ([배송지 변경]에 보이는 것). 사용자가 승인 카드에서 고르면 두리가 바꾼 뒤 결제한다',
+          '사이트에 저장된 다른 주소들 ([주소 변경]에 보이는 것). 사용자가 승인 카드에서 고르면 두리가 바꾼 뒤 누른다. 결제에는 browser_checkout의 ship_options로',
         ),
       count: z
         .number()
@@ -456,7 +488,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'checkout',
     '결제 카드',
-    '결제 화면(결제 수단·최종 금액을 고르는 화면)의 마지막 버튼을 누르기 전에 쓴다. 어느 결제든(쇼핑·장보기·배달·숙소·항공·티켓) 결제 화면을 읽고 아래 칸을 채우면 폰에 결제 카드 한 장이 뜨고, 사용자가 받는 곳·결제 수단을 그 카드에서 고르고 한 번 승인한다(승인은 이것 한 번뿐). 결제 화면 전 단계의 [주문하기]·[구매하기]는 browser_click(opens_checkout: true)으로 넘어가고 여기서 쓰지 않는다. 화면에 적힌 값 그대로 넣고 지어내지 않는다. 쓴 뒤에는 카드에 있는 내용을 글로 되풀이하지 말고 한두 줄(무엇을 얼마에, 확인할 점)만 말하고 답을 끝낸다.',
+    '결제를 승인받는 단 하나의 길. 결제 화면(결제 수단·최종 금액을 고르는 화면)의 마지막 결제 버튼을 누르기 전에 쓴다. 결제 화면에서 멈추고 묻지 말고, 배송지·결제 수단·쿠폰을 맞춰 마지막 버튼까지 간 뒤 이걸 부른다. 어느 결제든(쇼핑·장보기·배달·숙소·항공·티켓) 결제 화면을 읽고 아래 칸을 채우면 폰에 결제 카드 한 장이 뜨고, 사용자가 받는 곳·결제 수단을 그 카드에서 고르고 한 번 승인한다(승인은 이것 한 번뿐). 결제 화면 전 단계의 [주문하기]·[구매하기]는 browser_click(opens_checkout: true)으로 넘어가고 여기서 쓰지 않는다. 화면에 적힌 값 그대로 넣고 지어내지 않는다. 쓴 뒤에는 카드에 있는 내용을 글로 되풀이하지 말고 한두 줄(무엇을 얼마에, 확인할 점)만 말하고 답을 끝낸다. 승인 알림이 오면 두리가 누른 뒤 뜨는 결제 창(카드 고르기·다음·결제 비밀번호 키패드는 browser_request_code kind: pin)까지 같은 결제로 끝까지 마치고, 완료 화면에서 주문(예약)번호를 읽어 browser_order_done을 부른다.',
     {
       tabId,
       ref: ref.describe('마지막 버튼 표시 (결제하기·예약 완료 등)'),
@@ -524,7 +556,28 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
       final_here: z
         .boolean()
         .optional()
-        .describe('결제 화면이 따로 없고 이 화면의 버튼에서 바로 돈이 나갈 때만 true'),
+        .describe('결제 화면이 따로 없고 이 화면의 버튼에서 바로 돈이 나갈 때 true (없어도 카드는 뜬다)'),
+    },
+    false,
+  )
+  tool(
+    'order_done',
+    '주문 완료 알리기',
+    '승인한 결제가 끝났을 때 쓴다: 주문(예약) 완료 화면에서 주문번호를 읽었으면 order_no와 함께 부른다. 두리가 결제 묶음(결제 중인 탭·결제 창)을 풀고 결제 승인을 주문번호와 함께 완료로 바꾼다. 그 뒤 show_result로 결과를 보여 주고 know_save로 남긴다. 결제가 안 됐으면(거절·시간 초과·오류) failed: true와 reason으로 부르고, 돈이 나갔는지 확인한 뒤 다른 길로 다시 한다.',
+    {
+      tabId,
+      order_no: z
+        .string()
+        .max(60)
+        .optional()
+        .describe('주문·예약 번호 (완료 화면에 적힌 그대로). failed가 아니면 꼭 넣는다'),
+      summary: z
+        .string()
+        .max(200)
+        .optional()
+        .describe('무엇을 얼마에 (예: "사과 1kg 9,900원 · 11/22 도착 예정")'),
+      failed: z.boolean().optional().describe('결제를 마치지 못했으면 true'),
+      reason: z.string().max(200).optional().describe('failed일 때 화면이 말한 까닭'),
     },
     false,
   )
@@ -542,13 +595,15 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'handoff',
     '사람에게 넘기기',
-    '금지에 가까운 비상 수단(emergency: true일 때만): 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다. 사용자는 PC 화면 넘기기를 원하지 않는다. 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 인증서(금융·공동) 비밀번호·PIN도 칸이 있으면 browser_request_code로 받는다. 이걸로 안 되는 로봇 확인(캡차) 같은 것일 때만 쓴다. 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다(할 수 있으면 직접 하고, 정말 필요하면 다시 부른다). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '비상 전용(emergency: true일 때만): 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다. 사용자는 PC 화면 넘기기를 원하지 않는다. 사람 몫은 모두 폰 카드로 받는다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 인증번호·결제 비밀번호 키패드·인증서 비밀번호는 browser_request_code, 로봇 확인은 browser_request_tap(그림)·browser_request_code(kind: captcha, 글자), 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 결제는 browser_checkout, 보내기·삭제·동의는 browser_request_approval. 이걸로 안 되는, 사람만 넣을 수 있는 칸(예: 저장된 카드가 없어 새 카드 번호를 처음 넣는 칸)일 때만 쓴다. 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다(할 수 있으면 직접 하고, 정말 필요하면 다시 부른다). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       reason: z
         .string()
         .max(200)
-        .describe('사용자에게 보일 부탁 (예: "네이버 로그인이 풀려 있어요. 로그인해 주세요")'),
+        .describe(
+          '사용자에게 보일 부탁 (예: "저장된 카드가 없어요. 새 카드 번호만 넣어 주시면 나머지는 두리가 할게요")',
+        ),
       emergency: z
         .boolean()
         .optional()
