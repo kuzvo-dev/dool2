@@ -105,7 +105,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "네이버 메일이에요. reply_to('{{reply_to}}')가 있으면 그 제목의 메일을 찾아 '답장'을, 없으면 '메일 쓰기'를 눌러요. 받는 사람 {{to}}, 제목 '{{subject}}', 내용 '{{body}}'를 그대로 채워요(답장이면 받는 사람·제목은 그대로 둬요). '보내기'는 누르지 말고 채운 내용을 보여 주며 browser_request_approval로 승인받은 뒤 '임시저장'만 눌러요. 로그인 화면이 나오면 connect_ask('naver-mail')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
+          "handoff_to_agent": "목표: 보낼 메일을 임시보관함에 저장해 두기. 입력: 받는 사람 {{to}}, 제목 '{{subject}}', 내용 '{{body}}'(그대로), 답장이면 reply_to '{{reply_to}}' 메일에 답장으로(받는 사람·제목은 그대로 둬요). 보내지는 않아요. 채운 내용을 보여 주며 browser_request_approval로 승인받은 뒤 임시저장해요. 로그인 화면이 나오면 connect_ask('naver-mail')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}

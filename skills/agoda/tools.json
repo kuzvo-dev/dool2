@@ -265,7 +265,7 @@
     {
       "name": "prepare_booking",
       "title": "숙소 예약 준비",
-      "description": "agoda_search로 고른 숙소 화면을 그 날짜·인원·객실 수로 열어, 객실별 요금·무료 취소 기한·조식 포함·남은 객실을 읽고 사용자가 고른 객실의 '예약하기'까지 데려간다. 결제·예약 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 예약 단계에서 로그인을 권하면 연결 전엔 connect_ask('agoda').",
+      "description": "agoda_search로 고른 숙소 화면을 그 날짜·인원·객실 수로 열어, 객실별 요금·무료 취소 기한·조식 포함·남은 객실을 읽고 사용자가 고른 객실의 '예약하기'를 거쳐 예약까지 마친다. 예약 단계에서 로그인을 권하면 연결 전엔 connect_ask('agoda'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
       "tier": "돈 내기",
       "login": false,
       "status": "초안",
@@ -340,7 +340,7 @@
           }
         },
         {
-          "handoff_to_agent": "아고다 {{hotel}} {{checkin}}~{{checkout}} 성인 {{adults}}명 객실 {{rooms}}개 화면이에요. 객실 목록에서 객실마다 이름·1박 요금(세금 포함 총액도)·무료 취소 기한·조식 포함·'N개 남음'을 읽어 사용자 바람({{room_wish}})에 맞는 2~3개를 보여 주고 고르게 해요. 고르면 그 줄의 '예약하기'를 누르고, 투숙객 정보 화면에서 숙소·객실·날짜·인원·총 결제 금액(세금·수수료 포함, 통화)·취소 규정을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 투숙객 이름·연락처는 사용자에게 물어 채우고, 결제 정보는 사람이 직접 넣게 browser_handoff. 로그인을 권하면 연결 전엔 connect_ask('agoda')."
+          "handoff_to_agent": "아고다 {{hotel}} {{checkin}}~{{checkout}} 성인 {{adults}}명 객실 {{rooms}}개 화면이에요. 객실 목록에서 객실마다 이름·1박 요금(세금 포함 총액도)·무료 취소 기한·조식 포함·'N개 남음'을 읽어 사용자 바람({{room_wish}})에 맞는 2~3개를 보여 주고 고르게 해요. 고르면 그 줄의 '예약하기'를 누르고, 투숙객 정보 화면에서 숙소·객실·날짜·인원·총 결제 금액(세금·수수료 포함, 통화)·취소 규정을 정리해 두고, 결제 화면의 마지막 결제 버튼에서 결제 카드(browser_checkout)로 승인받아요. 투숙객 이름·연락처는 browser_fill_profile로 채워요. 새 카드 번호를 처음 넣어야 할 때만 browser_handoff(emergency: true). 로그인을 권하면 연결 전엔 connect_ask('agoda'). 승인 뒤 결제 창까지 마치고 완료 화면의 예약번호로 browser_order_done."
         }
       ],
       "result": {}

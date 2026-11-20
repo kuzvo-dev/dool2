@@ -80,7 +80,7 @@
     {
       "name": "prepare_booking",
       "title": "예매 준비",
-      "description": "고른 아시아나항공 편(편명)과 운임으로 예매를 결제 직전까지 준비한다. 운임 고르기까지는 로그인 없이 되고, 탑승객 정보·결제는 로그인(또는 비회원 예매)이 필요하다. 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. asiana_search로 편명과 운임을 먼저 확인한다.",
+      "description": "고른 아시아나항공 편(편명)과 운임으로 예매를 결제까지 마친다. 운임 고르기까지는 로그인 없이 되고, 탑승객 정보·결제는 로그인(또는 비회원 예매)이 필요하다. asiana_search로 편명과 운임을 먼저 확인한다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
       "tier": "돈 내기",
       "status": "초안",
       "input": {
@@ -158,7 +158,7 @@
           }
         },
         {
-          "handoff_to_agent": "아시아나항공 예약 화면이에요. 출발 {{from}}·도착 {{to}}·{{date}}(오는 날 {{return_date}})·어른 {{adults}}명 어린이 {{children}}명으로 조회해 {{flight_no}}의 '{{fare}}' 운임을 골라요(없거나 매진이면 물어요). 다음으로 가요. 로그인 화면이면 connect_ask('asiana')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 탑승객 정보는 회원 정보에 없으면 물어요. 결제 화면에서 편명·날짜·시각·운임·인원·총액(세금 포함)·환불 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요. 좌석·수하물·보험 권유는 원할 때만."
+          "handoff_to_agent": "아시아나항공 예약 화면이에요. 출발 {{from}}·도착 {{to}}·{{date}}(오는 날 {{return_date}})·어른 {{adults}}명 어린이 {{children}}명으로 조회해 {{flight_no}}의 '{{fare}}' 운임을 골라요(없거나 매진이면 다른 편·운임을 show_list pick one으로). 다음으로 가요. 로그인 화면이면 connect_ask('asiana')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 탑승객 정보는 browser_fill_profile로 채워요(동행인만 대화로). 결제 화면에서 편명·날짜·시각·운임·인원·총액(세금 포함)·환불 규정을 정리해 마지막 결제 버튼에서 결제 카드(browser_checkout)로 승인받아요. 좌석·수하물·보험 권유는 원할 때만. 승인 뒤 결제 창까지 마치고 완료 화면의 예약번호로 browser_order_done."
         }
       ],
       "result": {}

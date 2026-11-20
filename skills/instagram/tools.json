@@ -44,7 +44,7 @@
         { "open": "https://www.instagram.com/direct/inbox/" },
         { "sleep": 3000 },
         { "stop_if": "Instagram으로 로그인|휴대폰 번호, 사용자 이름 또는 이메일", "say": "인스타그램 로그인이 필요해요. 연결하면 DM 답장을 써 둘 수 있어요.", "login": true },
-        { "handoff_to_agent": "인스타그램 DM 받은 편지함이에요. 목록에서 '{{to}}' 대화를 열어요(없으면 검색, 비슷한 이름이 여럿이면 사용자에게 물어요). 메시지 칸에 다음 글을 그대로 써요: {{message}}. 보내기(Enter·'보내기')는 받는 사람과 보낼 글을 정리해 browser_request_approval로 승인받아야만 해요. 승인이 없으면 써 둔 채로 멈춰요." }
+        { "handoff_to_agent": "인스타그램 DM 받은 편지함이에요. 목록에서 '{{to}}' 대화를 열어요(없으면 검색, 비슷한 이름이 여럿이면 show_list pick one으로 골라 달라고 해요). 메시지 칸에 다음 글을 그대로 써요: {{message}}. 보내기(Enter·'보내기')는 받는 사람과 보낼 글을 정리해 browser_request_approval로 승인받아야만 해요. 승인이 없으면 써 둔 채로 멈춰요." }
       ],
       "result": {}
     },
@@ -68,7 +68,7 @@
         { "open": "https://www.instagram.com/" },
         { "sleep": 3000 },
         { "stop_if": "Instagram으로 로그인|휴대폰 번호, 사용자 이름 또는 이메일", "say": "인스타그램 로그인이 필요해요. 연결하면 게시물을 올릴 준비를 해 둘 수 있어요.", "login": true },
-        { "handoff_to_agent": "인스타그램 홈이에요. 왼쪽 '만들기'(+) > '게시물'을 눌러 사진({{photos}})을 올리고, 자르기·필터는 기본값으로 '다음'을 눌러요. 문구 칸에 다음을 그대로 써요: {{caption}}. '공유하기'는 사진 수·문구·위치·공개 범위를 정리해 browser_request_approval로 승인받아야만 눌러요." }
+        { "handoff_to_agent": "목표: 사진({{photos}})과 문구로 새 게시물 올리기. 문구는 그대로: {{caption}}. 자르기·필터는 기본값으로 둬요. 사진 수·문구·위치·공개 범위를 정리해 browser_request_approval로 승인받은 뒤에 공유해요." }
       ],
       "result": {}
     },
