@@ -124,6 +124,16 @@ export class Connectors {
        * 크롬에 다른 구글 계정이 먼저 로그인돼 있으면 /mail/u/0이 엉뚱한 메일함을 열었다(실측)
        */
       accountFor?: (card: ConnectCard) => Promise<string | undefined>
+      /**
+       * 내 정보 주소(가리지 않은 값). 도구의 주소 칸이 비었거나 "내 주소"면 본체가 채운다 —
+       * AI는 가린 주소만 봐서 동네 이름만 넣었고, 그 위치가 배달 주소가 됐다(실측 요기요 '신봉동 33')
+       */
+      homeAddress?: () => Promise<string | undefined>
+      /**
+       * 사용자의 마지막 말 (시각·글). 찾은 뒤 사용자가 아직 고르지 않았으면 돈 내기 도구(주문 준비)를 멈춘다 —
+       * 지침으로는 "2~3개 카드로 고르게"를 따르지 않고 혼자 골랐다(실측 장보기 3)
+       */
+      lastUser?: () => { at: number; text: string } | undefined
     },
   ) {}
 
@@ -220,8 +230,11 @@ export class Connectors {
     for (const [k, p] of Object.entries(tool.input.properties))
       if (p.default !== undefined) args[k] = p.default
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
+    await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    const wait = this.pickGate(card.id, tool)
+    if (wait) return text(wait, true)
     // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
@@ -245,6 +258,54 @@ export class Connectors {
   /** 시험·개발: 파일을 고친 뒤 바로 다시 읽게 */
   invalidate() {
     this.cache = undefined
+  }
+
+  /**
+   * 주소 칸(address)이 비었거나 "내 주소"면 내 정보 주소로 채운다. 같은 동네 이름인데 내 번지가 없으면(AI가 동네만 짐작한 것)
+   * 내 정보 주소로 바꾼다 — 다른 곳으로 보낼 때는 동네부터 다르다
+   */
+  private async fillHome(tool: ConnectorTool, args: Record<string, unknown>) {
+    const keys = Object.keys(tool.input.properties).filter((k) => /address|addr/i.test(k))
+    if (!keys.length || !this.opts.homeAddress) return
+    const home = await this.opts.homeAddress().catch(() => undefined)
+    if (!home) return
+    for (const k of keys) {
+      const v = args[k]
+      const ask =
+        v === undefined ||
+        v === '' ||
+        (typeof v === 'string' && /^\s*(내\s*(정보\s*)?주소|우리\s*집|집|home)\s*$/i.test(v))
+      if (ask) {
+        args[k] = home
+        continue
+      }
+      if (typeof v !== 'string') continue
+      // 같은 동네(동·로 이름 앞부분)인데 내 정보 주소의 번지 숫자가 하나도 없으면 짐작한 주소다
+      const stems = home
+        .split(/\s+/)
+        .filter((w) => /(동|읍|면|로|길)$/.test(w))
+        .map((w) => w.replace(/\d*(동|읍|면|로|길)$/, ''))
+        .filter((w) => w.length >= 2)
+      const nums = (t: string): string[] => t.match(/\d+/g) ?? []
+      const sameArea = stems.some((st) => v.includes(st))
+      const hasNum = nums(home).some((n) => nums(v).includes(n))
+      if (sameArea && !hasNum) args[k] = home
+    }
+  }
+
+  /** 찾은 뒤 사용자가 고르기 전이면 주문 준비를 멈춘다 (사용자가 "알아서"라고 했으면 그대로) */
+  private findAt = new Map<string, number>()
+  private pickGate(cardId: string, tool: ConnectorTool): string | undefined {
+    if (tool.tier === '찾아보기') {
+      this.findAt.set(cardId, Date.now())
+      return undefined
+    }
+    if (tool.tier !== '돈 내기') return undefined
+    const found = this.findAt.get(cardId)
+    const user = this.opts.lastUser?.()
+    if (!found || !user || user.at > found) return undefined
+    if (/알아서|아무거나|네가\s*골라|바로\s*(주문|시켜)/.test(user.text)) return undefined
+    return '사용자가 아직 고르지 않았어요. 찾은 후보 2~3개를 show_cards로 보여 주고(첫 카드 badge "추천", 사진·가격·도착 시간) 고른 이유를 한두 줄 쓴 뒤 이번 답을 끝내요. 사용자가 고르면 그걸로 이어서 해요.'
   }
 
   private usable(t: ConnectorTool) {
@@ -425,7 +486,7 @@ export class Connectors {
       const args = Object.entries(t.input.properties)
         .map(
           ([k, p]) =>
-            `${k}${t.input.required.includes(k) ? '*' : ''}(${p.description.split(/[.(]/)[0]?.trim()})`,
+            `${k}${t.input.required.includes(k) && !/address|addr/i.test(k) ? '*' : ''}(${p.description.split(/[.(]/)[0]?.trim()}${/address|addr/i.test(k) ? ' — 비우거나 "내 주소"면 내 정보 주소로 채워요' : ''})`,
         )
         .join(', ')
       lines.push(
@@ -463,8 +524,11 @@ export class Connectors {
     for (const [k, p] of Object.entries(tool.input.properties))
       if (p.default !== undefined) args[k] = p.default
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
+    await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    const wait = this.pickGate(card.id, tool)
+    if (wait) return text(wait, true)
     // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'

@@ -192,7 +192,7 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
   if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
   // 지난 일을 보는 말(주문 상세·결제 내역·예약 조회)은 빼고 남은 글자로 본다 ("주문내역에서 다시 주문하기"는 그대로 막힌다)
-  const acting = label.replace(LOOKUP, ' ')
+  const acting = label.replace(LOOKUP, ' ').replace(CART_ADD, ' ')
   for (const [kind, re] of RISK_WORDS) {
     const m = re.exec(acting)
     if (m) return { kind, reason: `"${m[0]}"` }
@@ -219,6 +219,10 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
 // 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
 const LOOKUP =
   /(?:주문|구매|결제|예약|예매|구독|충전|송금|이체|입금|후원|기부)\s*(?:상세(?:\s*정보)?|내역|목록|조회|이력|정보|번호|일자|일시|현황|관리|상태)|(?:주문|구매|결제|예약)한\s*(?:상품|내역)/g
+
+// 장바구니·주문표에 담기: 돈이 나가지 않는다 (실측 요기요 '주문표에 추가'를 결제로 보고 승인을 받았다)
+const CART_ADD =
+  /(?:주문표|장바구니|카트|쇼핑백|담은\s*목록)\s*(?:에|으로)?\s*(?:추가|담기|넣기|담아)|(?:^|\s)담기(?:\s|$)/g
 
 // 보는 말을 뺀 뒤 남아도 괜찮은 글 (없음·보기·더 보기)
 const HARMLESS_REST = /^(?:|(?:상세\s*)?보기|더\s*보기|자세히(?:\s*보기)?|바로\s*가기|가기|>|›)$/
@@ -1729,7 +1733,16 @@ export class BrowserTools {
               | undefined
           )?.navigates === true
         const passed = !entry && !navOnly && this.usePass(tabId, target.name)
-        if (!entry && !navOnly && !passed) this.guard(label, page.url, true, page.pay)
+        // AI가 화면을 보고 "결제 화면으로 넘어가는 버튼"이라고 판단했다(opens_checkout). 결제 화면이 아닌 곳의 돈 버튼만.
+        // 누른 뒤 주문이 바로 확정된 화면이면 크게 알린다 (안전장치)
+        const opens =
+          !entry &&
+          !navOnly &&
+          !passed &&
+          s.opens_checkout === true &&
+          !page.checkout &&
+          classifyRisk(label, page.url, page.pay)?.kind === 'money'
+        if (!entry && !navOnly && !passed && !opens) this.guard(label, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
           newTabId?: number
           coveredBy?: string
@@ -1741,6 +1754,9 @@ export class BrowserTools {
             : '',
           navOnly
             ? '(다른 화면으로 가기만 하는 링크라 승인 없이 눌렀어요. 그 화면에서 실제로 제출하는 버튼은 승인을 받아요.)'
+            : '',
+          opens
+            ? '(결제 화면으로 넘어가는 버튼이라고 보고 승인 없이 눌렀어요. 결제 화면에서 받는 곳·결제 수단과 함께 마지막 버튼을 한 번 승인받아요. 혹시 주문이 바로 확정됐으면 사용자에게 바로 알려요.)'
             : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
         ]
@@ -2347,7 +2363,10 @@ export class BrowserTools {
     if (this.useSeries(url, risk.kind)) return
     const next =
       clickable && this.finalStep() === 'approve'
-        ? 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
+        ? (risk.kind === 'money'
+            ? '이 버튼이 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이면 browser_click을 opens_checkout: true로 다시 불러 누르세요(승인은 결제 화면의 마지막 버튼에서 한 번만). 이 버튼에서 바로 돈이 나가면 '
+            : '') +
+          'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
         : '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.'
     throw new Error(`멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 하지 않아요. ${next}`)
   }
