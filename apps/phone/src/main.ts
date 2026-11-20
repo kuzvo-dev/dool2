@@ -6620,7 +6620,11 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
           st.connecting.add(v.connectId)
           void send({ kind: 'connect', id: v.connectId, action: 'verify' })
           toast('로그인됐는지 확인할게요')
-        } else ask('다 했어요. 이어서 해 주세요.')
+        } else {
+          // 대화에 '다 했어요'를 쓰지 않고 PC에 알린다: 두리가 화면을 확인하고 알아서 이어 간다
+          void send({ kind: 'remote', tabId: v.tabId, action: 'done' })
+          toast('확인하고 이어서 할게요')
+        }
         back()
       },
       hostOf,

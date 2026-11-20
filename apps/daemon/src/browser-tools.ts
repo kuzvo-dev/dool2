@@ -1866,13 +1866,14 @@ export class BrowserTools {
         }
         await this.browser.call('focus', { tabId })
         this.holdForPerson(tabId)
+        this.watchHandoff(tabId)
         return {
           content: [
             {
               type: 'text',
               text:
                 '폰에 이 화면의 필요한 칸만 담은 카드를 띄웠어요. 사용자에게 "폰에 뜬 카드에서 ○○ 칸만 직접 넣어 주세요"처럼 무엇을 넣을지 한두 문장으로 말하고(PC 화면·두리 탭을 보라고 하지 말고) 이번 답은 여기서 끝내세요. ' +
-                '사용자가 [다 했어요]를 누르면 다음 메시지로 이어서 하라는 부탁이 와요. 그때 페이지를 다시 읽어 확인하고 이어 가세요.',
+                '사용자가 마치면(화면이 바뀌거나 [다 했어요]) 두리 본체가 알아채 다음 메시지로 이어서 하라는 알림이 와요. 그때 페이지를 다시 읽어 확인하고 이어 가세요. 사용자에게 "다 하면 말해 달라"고 하지 않아요.',
             },
           ],
         }
@@ -2393,6 +2394,55 @@ export class BrowserTools {
   }
 
   /** 사람이 직접 할 탭: 원격 화면을 열어 주고, 마칠 때까지 탭 정리에서 뺀다 (도구마다 부르는 allowRemote와 달리 넘길 때만) */
+  /** 넘긴 화면이 바뀌면(사람이 마친 듯) 본체에 알린다: 사용자가 '다 했어요'를 말하지 않아도 이어 가게 */
+  onHandoffChanged?: (tabId: number, why: string) => void
+  private handoffWatches = new Map<number, ReturnType<typeof setInterval>>()
+  stopHandoffWatch(tabId: number) {
+    const t = this.handoffWatches.get(tabId)
+    if (t) clearInterval(t)
+    this.handoffWatches.delete(tabId)
+  }
+  /**
+   * 3초마다 그 탭의 주소·로봇 확인·칸과 버튼 이름을 보고, 넘긴 때와 달라지면(로그인·인증을 마쳐 다음 화면) 알린다.
+   * 칸에 글을 넣는 것만으로는 바뀌지 않는다(값은 보지 않는다). 탭이 닫히면(로그인 팝업이 끝나 닫힘) 그것도 마친 것으로 본다. 10분까지
+   */
+  /** 넘긴 화면을 볼 간격 (시험은 짧게) */
+  handoffEveryMs = 3_000
+  private watchHandoff(tabId: number, everyMs = this.handoffEveryMs) {
+    this.stopHandoffWatch(tabId)
+    const sig = (s: { url?: string; text?: string; captcha?: boolean }) =>
+      `${s.url ?? ''}|${s.captcha ? 1 : 0}|${[...parseRefs(s.text ?? '').values()]
+        .map((r) => `${r.role}:${r.name}`)
+        .sort()
+        .join(',')}`
+    let base: string | undefined
+    let fails = 0
+    let n = 0
+    const t = setInterval(() => {
+      if (++n > (10 * 60_000) / everyMs) return this.stopHandoffWatch(tabId)
+      void this.browser
+        .call('snapshot', { tabId, maxChars: 20_000 }, 10_000)
+        .then((s) => {
+          fails = 0
+          const cur = sig(s as { url?: string; text?: string; captcha?: boolean })
+          if (base === undefined) base = cur
+          else if (cur !== base && this.handoffWatches.has(tabId)) {
+            this.stopHandoffWatch(tabId)
+            this.onHandoffChanged?.(tabId, '화면이 다음 단계로 넘어갔어요')
+          }
+        })
+        .catch(() => {
+          // 두 번 이어 못 읽으면 탭이 닫힌 것 (간편 로그인 팝업은 마치면 저절로 닫힌다)
+          if (++fails >= 2 && this.handoffWatches.has(tabId)) {
+            this.stopHandoffWatch(tabId)
+            this.onHandoffChanged?.(tabId, '넘긴 창이 닫혔어요')
+          }
+        })
+    }, everyMs)
+    t.unref?.()
+    this.handoffWatches.set(tabId, t)
+  }
+
   holdForPerson(tabId: number) {
     this.allowRemote(tabId)
     this.hold(tabId, REMOTE_TTL_MS)

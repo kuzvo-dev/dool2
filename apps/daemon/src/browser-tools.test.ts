@@ -2573,3 +2573,33 @@ describe('그림 눌러 풀기 (browser_request_tap)', () => {
     expect((await tools.run('request_tap', { tabId: 3, ref: 'e7', say: 'x' })).isError).toBe(true)
   })
 })
+
+describe('넘긴 화면 지켜보기', () => {
+  it('사람이 마쳐 화면이 바뀌면 "다 했어요" 없이 본체에 알린다 (칸에 글만 넣는 건 바뀐 게 아니다)', async () => {
+    let page = '# 로그인\n[e1 입력칸 "아이디"] [e2 버튼 "로그인"]'
+    let url = 'https://x.example/login'
+    const b = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? { tabId: 3, url, title: '로그인', text: page, truncated: false, captcha: false }
+          : { tabId: 3 },
+    }
+    const tools = new BrowserTools(b as never)
+    tools.handoffEveryMs = 20
+    const seen: string[] = []
+    tools.onHandoffChanged = (_tab, why) => seen.push(why)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('handoff', { tabId: 3, reason: '로봇 확인' })
+    const r = await tools.run('handoff', { tabId: 3, reason: '로봇 확인' })
+    expect(text(r)).toContain('알아채')
+    await new Promise((res) => setTimeout(res, 80))
+    // 값만 바뀐 화면 (칸 이름 그대로)
+    page = '# 로그인\n[e1 입력칸 "아이디" 값="duri"] [e2 버튼 "로그인"]'
+    await new Promise((res) => setTimeout(res, 80))
+    expect(seen).toEqual([])
+    url = 'https://x.example/home'
+    page = '# 홈\n[e5 버튼 "로그아웃"]'
+    await new Promise((res) => setTimeout(res, 120))
+    expect(seen).toEqual(['화면이 다음 단계로 넘어갔어요'])
+  })
+})

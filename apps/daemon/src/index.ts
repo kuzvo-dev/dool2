@@ -1180,6 +1180,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         await browserTools.remoteFill(tabId, values, press)
       },
       remote: async ({ tabId, action, x, y, text, key, dy, w, h }) => {
+        if (action === 'done') return handoffDone(tabId, '사용자가 폰에서 [다 했어요]를 눌렀어요')
         const viewport = remoteViewport.get(tabId) ?? (await browserTools.remoteScreen(tabId)).viewport
         await browserTools.remoteInput(
           tabId,
@@ -1704,6 +1705,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
     return id
   }
+  // 사람에게 넘긴 화면: 사용자가 [다 했어요]를 누르거나 화면이 바뀌면(마친 듯) 대화에 말을 쓰게 하지 않고 두리가 이어 간다
+  // (사용자 11-20: "다 했어 이런 거 말 안 하고 알아서 잘 인지하고 했으면")
+  const handoffDoneAt = new Map<number, number>()
+  const handoffDone = (tabId: number, why: string) => {
+    browserTools.stopHandoffWatch(tabId)
+    if (Date.now() - (handoffDoneAt.get(tabId) ?? 0) < 20_000) return
+    handoffDoneAt.set(tabId, Date.now())
+    const threadId = conversation.current()?.id
+    if (!threadId) return
+    sayNow('화면이 바뀐 걸 봤어요. 확인하고 이어서 할게요.')
+    followUp(
+      threadId,
+      appNote(
+        `넘긴 화면이 바뀌었어요(${why}). 사용자가 마친 것 같아요. 탭 ${tabId}(닫혔으면 원래 탭)을 다시 읽어 확인하고 하던 일을 이어서 끝내요. 아직 남은 일이 있으면 그것만 한 문장으로 말해요. 사용자에게 "다 했다고 말해 달라"고 하지 않아요.`,
+      ),
+    )
+  }
+  browserTools.onHandoffChanged = handoffDone
   // 그림 눌러 풀기(로봇 확인): 폰 카드에서 누른 곳(그림 기준 0~1000)을 PC 화면의 같은 자리에 차례로 누른다
   browserTools.requestTap = (tabId, say, host, image, rect, taps) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined

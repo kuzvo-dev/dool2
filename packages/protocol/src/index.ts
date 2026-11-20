@@ -1064,7 +1064,8 @@ export type PhoneToPc =
   | {
       kind: 'remote'
       tabId: number
-      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave'
+      /** done: 사람이 넘겨받은 일을 마쳤다 (대화에 '다 했어요'를 쓰지 않고 두리에게 알린다) */
+      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave' | 'done'
       x?: number
       y?: number
       text?: string
