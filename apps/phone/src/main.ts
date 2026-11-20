@@ -4397,7 +4397,6 @@ function vaultSheet() {
   for (const e of list) {
     const shown = st.vaultShown?.id === e.id ? st.vaultShown : undefined
     const view = h('button', {
-      class: 'btn-ghost sm',
       text: shown ? '숨기기' : '보기',
       onclick: async () => {
         if (shown) {
@@ -4415,7 +4414,6 @@ function vaultSheet() {
       },
     })
     const edit = h('button', {
-      class: 'btn-ghost sm',
       text: '고치기',
       onclick: () => {
         st.vaultEdit = st.vaultEdit === e.id ? undefined : e.id
@@ -4423,7 +4421,7 @@ function vaultSheet() {
       },
     })
     const del = h('button', {
-      class: 'btn-text',
+      class: 'danger',
       text: '지우기',
       onclick: () => {
         if (
@@ -4443,9 +4441,7 @@ function vaultSheet() {
         { class: 'row-text' },
         h('strong', { class: 'row-t', text: e.name ?? site(e.origin) }),
         h('span', { class: 'row-d', text: `${shown?.username ?? e.username} · ${site(e.origin)}` }),
-        shown
-          ? h('code', { class: 'vault-pw', text: shown.password })
-          : h('span', { class: 'row-d', text: '••••••••' }),
+        ...(shown ? [h('code', { class: 'vault-pw', text: shown.password })] : []),
       ),
       h('div', { class: 'vault-acts' }, view, edit, del),
     )

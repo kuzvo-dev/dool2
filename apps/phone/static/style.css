@@ -625,8 +625,10 @@ button {
   left: 8px;
   right: 8px;
   bottom: calc(8px + env(safe-area-inset-bottom));
-  max-height: calc(100% - 60px);
+  /* 화면을 다 덮지 않게: 위쪽 빈 곳을 눌러 닫을 수 있고, 긴 내용은 시트 안에서 스크롤 (11-20 실사용) */
+  max-height: min(78%, calc(100% - 60px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -3672,28 +3674,54 @@ textarea.ghosting {
   background: #fff;
 }
 
-/* 설정 > 금고 (ADR 0026) */
+/* 설정 > 금고 (ADR 0026): 한 줄에 이름·아이디, 오른쪽에 작은 글자 버튼 */
 .vault-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--line);
 }
 .vault-row .row-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  min-width: 0;
+}
+.vault-row .row-t {
+  font-size: 15px;
+}
+.vault-row .row-d {
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .vault-acts {
   display: flex;
-  gap: 8px;
+  gap: 2px;
   align-items: center;
+}
+.vault-acts button {
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 13.5px;
+  background: none;
+  border: 0;
+  color: var(--ink);
+}
+.vault-acts button.danger {
+  color: var(--ink-muted);
+}
+.vault-row .cred-form {
+  grid-column: 1 / -1;
+  margin-top: 8px;
 }
 .vault-pw {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 15px;
-  letter-spacing: 0.5px;
+  font-size: 14px;
   word-break: break-all;
   user-select: all;
 }
