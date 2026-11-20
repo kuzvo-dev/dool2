@@ -658,6 +658,12 @@ async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   await sleep(350)
   return true
 }
+/** 늘린 화면 높이를 원래대로 (남겨 두면 그 뒤 화면 찍기·누르는 자리가 어긋났다 — 실측 11-20 G마켓 배송지 추가) */
+async function restoreHeight(tabId: number) {
+  if (phoneView.has(tabId) || emulated.has(tabId)) return
+  await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
+  await sleep(150)
+}
 
 async function leavePhoneView(tabId: number) {
   phoneSize.delete(tabId)
@@ -1241,8 +1247,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'click': {
       const tabId = await ownedTab(a)
       let at = await locate(tabId, a.ref, 'point')
-      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다
-      if (await tallerIfBelow(tabId, at.y + 30).catch(() => false)) at = await locate(tabId, a.ref, 'point')
+      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
+      const tall = await tallerIfBelow(tabId, at.y + 30).catch(() => false)
+      if (tall) at = await locate(tabId, a.ref, 'point')
       // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
       // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
       if (at.moved) {
@@ -1327,6 +1334,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
         await settle(tabId, before)
       }
+      if (tall) await restoreHeight(tabId)
       return {
         ...(await pageState(tabId)),
         via,
@@ -1431,7 +1439,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
         if (r) lowest = Math.max(lowest, r.y + off.y + r.h)
       }
-      if (lowest) await tallerIfBelow(tabId, lowest).catch(() => false)
+      const tall = lowest ? await tallerIfBelow(tabId, lowest).catch(() => false) : false
       const shots: { ref: string; data: string; rect: { x: number; y: number; w: number; h: number } }[] = []
       for (const ref of refs) {
         const f = frameOf(tabId, ref)
@@ -1479,6 +1487,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           if (shot) shots.push({ ref: `box${i + 1}`, data: shot.data, rect: r })
         }
       }
+      if (tall) await restoreHeight(tabId)
       return { shots }
     }
     case 'captcha-candidates': {

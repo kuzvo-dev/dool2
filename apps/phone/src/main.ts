@@ -58,6 +58,7 @@ import {
   payMethodTitle,
 } from '@dool2/protocol/pay-methods'
 import {
+  dropEnglishLines,
   hyphenate,
   josa,
   narrationLine,
@@ -2778,7 +2779,7 @@ function thinkingDots() {
 
 function liveBubble() {
   const b = h('div', { class: 'bubble rich streaming' })
-  b.append(rich(st.live))
+  b.append(rich(dropEnglishLines(st.live)))
   riseWords(b)
   return b
 }
@@ -2828,7 +2829,7 @@ function syncChat() {
     let el = have.get(it.key)
     if (el && it.key === 'live') {
       // 흘러오는 답은 글자만 바꾼다
-      el.replaceChildren(rich(st.live))
+      el.replaceChildren(rich(dropEnglishLines(st.live)))
       riseWords(el)
     } else if (el && it.key === 'work') {
       // 일하는 카드는 새 단계만 붙인다 (지금 화면 그림은 그대로 두고)

@@ -308,12 +308,29 @@ export function resultLine(text: string): string {
 export function stripMonologue(text: string): string {
   const THINK =
     /\b(I'll|I will|I'm going to|Let me|Let's|Now I|Now let|First,|Next,|Then I|skill|tool|tab \d|ref|click|scroll|navigate|snapshot)\b/i
-  const kept = text
+  const kept = dropEnglishLines(text)
     .split(/\n{2,}/)
     .filter((para) => /[가-힣]/.test(para) || !THINK.test(para))
     .join('\n\n')
     .trim()
   return kept || text
+}
+
+/**
+ * 한글 답 사이에 섞인 영어 속생각 줄("Menu may still be loading.")을 뺀다: 한글이 없고 영어 단어가 4개 이상 이어진 줄.
+ * 주소(http)·표 줄(|)·상품 이름처럼 짧은 영어는 남긴다 (사용자 11-20: 진행 중에 영어 생각이 보인다)
+ */
+export function dropEnglishLines(text: string): string {
+  return text
+    .split('\n')
+    .filter(
+      (line) =>
+        /[가-힣]/.test(line) ||
+        /https?:\/\/|\|/.test(line) ||
+        !/[A-Za-z]{2,}[,.]?(?:\s+[A-Za-z'’]+[,.!?]?){3,}/.test(line),
+    )
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
 }
 
 /**

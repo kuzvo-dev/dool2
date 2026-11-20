@@ -959,9 +959,21 @@ export class BrowserTools {
           ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
         })
       case 'click': {
+        // 화면 안 액자(다른 주소의 작은 창) 속 버튼: 액자는 늦게 바뀐다. 누른 직후 그대로면 잠깐 기다려 다시 읽는다
+        // (실측 11-20 G마켓 배송지 추가: 양식이 떴는데 바로 읽어 '입력 창이 안 떠요'로 판단하고 사람에게 넘겼다)
+        const inFrame = /^e\d{5,}$/.test(String(a.ref ?? ''))
+        const frameSig = () =>
+          [...(this.pages.get(tabId)?.refs ?? new Map()).entries()]
+            .filter(([k]) => /^e\d{5,}$/.test(k))
+            .map(([k, v]) => `${k}:${v.role}:${v.name}`)
+            .join('|')
+        const before = inFrame ? frameSig() : ''
         const r = await this.act(tabId, { ...a, do: 'click' })
         if (r.newTabId) return this.read(r.newTabId, undefined, `${r.note} 새 탭이 열려서 그 탭을 읽었어요.`)
-        return this.read(tabId, undefined, r.note)
+        const out = await this.read(tabId, undefined, r.note)
+        if (!inFrame || frameSig() !== before) return out
+        await new Promise((res) => setTimeout(res, 1_500))
+        return this.read(tabId, undefined, `${r.note} (화면 안 액자가 바뀌기를 잠깐 기다려 다시 읽었어요)`)
       }
       case 'type':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
