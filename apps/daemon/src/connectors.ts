@@ -119,6 +119,11 @@ export class Connectors {
       extensionVersion?: () => string | undefined
       /** 같은 서비스를 잇달아 열 때 사이 간격 (시험에서 줄인다) */
       gapMs?: number
+      /**
+       * 이 서비스에 연결한 계정 아이디(금고). 도구 주소의 {{account}}에 들어간다 —
+       * 크롬에 다른 구글 계정이 먼저 로그인돼 있으면 /mail/u/0이 엉뚱한 메일함을 열었다(실측)
+       */
+      accountFor?: (card: ConnectCard) => Promise<string | undefined>
     },
   ) {}
 
@@ -217,6 +222,9 @@ export class Connectors {
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
+    if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
+      args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
     const { outcome, detail, ...result } = await this.inLane(card.id, () => this.execute(card, tool, args))
     // 여러 서비스를 차례로 시험할 때 사용자 Chrome에 탭이 쌓이지 않게 (8GB 맥이 멈춘 적이 있다)
     const tab = this.tabs.get(card.id)
@@ -244,7 +252,13 @@ export class Connectors {
   }
 
   private isConnected(card: ConnectCard) {
-    return card.how === 'open' || card.how === 'device' || Boolean(this.opts.connected()[card.id])
+    const on = this.opts.connected()
+    return (
+      card.how === 'open' ||
+      card.how === 'device' ||
+      Boolean(on[card.id]) ||
+      Boolean(card.sameLoginAs && on[card.sameLoginAs])
+    )
   }
 
   /** 바로 보이는 도구: 연결한 서비스와 로그인 없는 서비스(open)의 도구 */
@@ -366,7 +380,7 @@ export class Connectors {
         .join(' ')
         .toLowerCase()
       const n = words.reduce((sum, w) => sum + (head.includes(w) ? 3 : body.includes(w) ? 1 : 0), 0)
-      return n > 0 ? n + (connector ? 2 : 0) + (this.opts.connected()[card.id] ? 3 : 0) : 0
+      return n > 0 ? n + (connector ? 2 : 0) + (this.isConnected(card) && card.how !== 'open' ? 3 : 0) : 0
     }
     const hit = (
       words.length
@@ -387,8 +401,7 @@ export class Connectors {
   /** 서비스 하나를 AI가 읽을 글로: 연결 상태, 도구(등급·입력), 연동 안내 */
   private describe({ card, connector }: Loaded): string {
     const connected = this.isConnected(card)
-    const state =
-      card.how === 'open' ? '로그인 없이 씀' : this.opts.connected()[card.id] ? '연결됨' : '연결 전'
+    const state = card.how === 'open' ? '로그인 없이 씀' : connected ? '연결됨' : '연결 전'
     const lines = [`## ${card.name} (${card.id}) — ${state}`, card.summary]
     const tools = connector?.tools.filter((t) => this.usable(t)) ?? []
     if (!tools.length) {
@@ -452,6 +465,9 @@ export class Connectors {
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
+    if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
+      args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
     if (tool.login && !this.isConnected(card))
       return text(
         `${card.name} 연결이 필요해요('${tool.title}'은 로그인해야 해요). connect_ask('${card.id}')로 연결 카드를 띄우고 "카드에서 연결해 주세요"라고 짧게 말한 뒤 답을 끝내세요. 연결되면 앱 알림이 와요. 그때 이 도구를 다시 불러요.`,

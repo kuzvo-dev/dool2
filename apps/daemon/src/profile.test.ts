@@ -76,3 +76,14 @@ describe('내 정보', () => {
     expect(mem.m.size).toBe(0)
   })
 })
+
+describe('통신사', () => {
+  it('말한 대로 받아 목록 이름으로 맞추고, 가리지 않는다', async () => {
+    const { normalize, maskValue } = await import('./profile.js')
+    expect(normalize('carrier', 'lg 유플러스')).toBe('LG U+')
+    expect(normalize('carrier', 'kt 알뜰폰')).toBe('KT 알뜰폰')
+    expect(normalize('carrier', 'SKT')).toBe('SKT')
+    expect(normalize('carrier', '모름')).toBeUndefined()
+    expect(maskValue('carrier', 'SKT')).toBe('SKT')
+  })
+})

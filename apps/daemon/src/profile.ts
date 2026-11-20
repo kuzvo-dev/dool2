@@ -1,7 +1,7 @@
 // 내 정보 (예약자·주문자 칸에 넣을 값). 금고와 같은 비밀값 보관소(PC 앱은 OS 키체인)에만 둔다.
 // AI는 값을 받지 않는다: browser_fill_profile은 "이 칸에 영문 성"처럼 칸과 항목만 말하고, 본체가 확장에 직접 넘긴다.
 // AI·대화 기록·폰 알림에는 가린 값(홍*동, 010-****-5678)만 보인다.
-import { AUTH_APPS } from '@dool2/protocol'
+import { AUTH_APPS, CARRIERS } from '@dool2/protocol'
 import type { SecretStoreLike } from './vault.js'
 
 const KEY = 'profile.v1'
@@ -63,6 +63,8 @@ export const PROFILE_FIELDS = {
     patternHint: '숫자 7자리예요 (첫 자리 1~4)',
   },
   auth_app: { label: '간편인증 앱', type: 'choice', example: '카카오톡', options: AUTH_APPS },
+  // 휴대폰 통신사: 본인확인(PASS·문자 인증) 창에서 고른다. 비밀값이 아니라 AI도 그대로 본다
+  carrier: { label: '통신사', type: 'choice', example: 'SKT', options: CARRIERS },
 } as const
 
 export type ProfileField = keyof typeof PROFILE_FIELDS
@@ -135,7 +137,7 @@ export function profileValue(p: Profile, key: ProfileKey): string | undefined {
 /** AI·기록에 보일 가린 값 */
 export function maskValue(field: ProfileField, v: string): string {
   const s = v.trim()
-  if (field === 'auth_app') return s
+  if (field === 'auth_app' || field === 'carrier') return s
   if (field === 'rrn_back') return '*******'
   if (field === 'email') {
     const [user = '', host = ''] = s.split('@')
@@ -174,6 +176,20 @@ export function normalize(field: ProfileField, v: string): string | undefined {
   if (field === 'rrn_back') {
     const d = s.replace(/\D/g, '')
     return /^[1-4]\d{6}$/.test(d) ? d : undefined
+  }
+  if (field === 'carrier') {
+    // "lg", "유플러스", "skt 알뜰" → 목록 이름으로
+    const k = s.replace(/\s/g, '').toLowerCase()
+    const mvno = /알뜰|mvno/.test(k)
+    const net = /lg|유플|u\+/.test(k)
+      ? 'LG U+'
+      : /kt|케이티/.test(k) && !/skt/.test(k)
+        ? 'KT'
+        : /sk|에스케이/.test(k)
+          ? 'SKT'
+          : ''
+    if (!net) return undefined
+    return mvno ? `${net} 알뜰폰` : net
   }
   if (field === 'auth_app') {
     // "카카오" → 카카오톡, "pass" → PASS처럼 앞부분만 맞아도 받는다

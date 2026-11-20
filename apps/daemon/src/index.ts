@@ -437,6 +437,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     extensionVersion: () => (browser.status.connected ? browser.status.version : undefined),
     health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
     journal,
+    // 그 서비스에 연결한 계정(금고의 아이디): 메일함처럼 계정마다 주소가 다른 곳을 그 계정으로 연다
+    accountFor: async (card) => {
+      for (const site of [card.site, ...(card.alsoSites ?? [])].filter(Boolean)) {
+        const e = await vault.findForOrigin(`https://${String(site).replace(/^https?:\/\//, '')}`)
+        // 구글은 주소 전체여야 그 메일함이 열린다 (아이디만 저장돼 있으면 /mail/u/아이디/가 '일시적 오류')
+        if (e?.username)
+          return /google\.com|gmail\.com/.test(String(site)) && !e.username.includes('@')
+            ? `${e.username}@gmail.com`
+            : e.username
+      }
+      return undefined
+    },
   })
   const skills = new Skills(
     skillsDir,
@@ -671,6 +683,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     journal.write('connect-takeover', { id: card.id })
     // 로그인되면 지켜보던 쪽(loginWatch)이 연결로 표시하고 대화에 알린다
     connectHuman.add(card.id)
+    // 이어받은 AI가 로그인 뒤 멈춘 일까지 이어 간다: 연결이 끝났을 때 "이어서 해 주세요"를 또 보내지 않는다
+    // (실측 혜택 20: 선물함까지 다 본 뒤 같은 알림으로 한 턴이 더 돌았다)
+    const resume = connectAsked.has(card.id)
+    connectAsked.delete(card.id)
     // 화면에는 앞의 두 문장만 보인다 (도구 이름이 든 문장은 AI에게만 간다)
     const why = (r.message.split(/[.!?]/)[0] ?? '').replace(/요\s+/g, '요·').trim()
     void talk(
@@ -679,7 +695,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           `browser_read로 탭 ${r.tabId}을 읽고(멈춘 까닭: ${why}) 로그인을 이어서 해 주세요. ` +
           `아이디·비밀번호는 금고에 있으니 browser_login으로만 넣고 browser_click으로 로그인 버튼을 눌러요. ` +
           `browser_handoff는 로봇 확인·본인인증·인증번호가 나왔을 때 써요. ` +
-          `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭은 닫지 말되 탭 이야기는 빼고 연결됐다는 결과만 한 문장으로 말해요.`,
+          `사용자에게 비밀번호를 다시 묻지 않고, 로그인됐으면 탭은 닫지 말되 탭 이야기는 빼고 ` +
+          (resume
+            ? `${card.name}이 필요해서 멈춘 일이 있었으면 로그인 뒤 그 일을 이어서 끝내요(연결됐다는 말은 한 줄로).`
+            : `연결됐다는 결과만 한 문장으로 말해요.`),
       ),
     ).catch(() => {})
     return true
@@ -1494,23 +1513,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return 'asked'
   }
   // 내 정보 카드: 처음 한 번만 받아 금고에 두고, 저장되면 그 대화로 이어서 하라고 알린다
-  browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef) => {
+  browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef, image) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
     // 주민번호 뒷자리: 저장하지 않고 이 칸에만 넣는다
     if (kind === 'rrn_back') {
       label = '주민등록번호 뒷자리'
       hint = '한 번 넣으면 이 PC 금고에 암호화해 두고 다음부터 두리가 채워요. 두리(AI)는 값을 보지 않아요.'
     }
+    if (kind === 'captcha') {
+      label = '그림의 글자를 넣어 주세요'
+      hint = '자동입력 방지 글자예요. 그림에 보이는 글자·숫자를 그대로 넣어 주세요.'
+    }
     // 같은 칸을 이미 묻고 있으면 카드를 또 띄우지 않는다 (AI가 두 번 불러 카드가 두 장 떴다)
     const same = infoRequests
       .pending()
-      .find((q) => q.host === host && q.label === label && (q.field === 'otp' || q.field === 'secret'))
-    if (same) return same.id
+      .find(
+        (q) =>
+          q.host === host &&
+          q.label === label &&
+          (q.field === 'otp' || q.field === 'secret' || q.field === 'text'),
+      )
+    // 보안문자는 그림이 바뀌었을 수 있어 앞 카드를 닫고 새로 띄운다
+    if (same && kind === 'captcha') infoRequests.cancel(same.id)
+    else if (same) return same.id
     const answer = infoRequests.ask(
       {
         site: host || '인증',
         host,
-        field: kind === 'rrn_back' ? 'secret' : 'otp',
+        field: kind === 'rrn_back' ? 'secret' : kind === 'captcha' ? 'text' : 'otp',
+        ...(kind === 'captcha' && image ? { image } : {}),
         ...(kind === 'rrn_back'
           ? { pattern: '^[1-4]\\d{6}$', patternHint: '숫자 7자리예요 (첫 자리 1~4)' }
           : {}),
@@ -1559,7 +1590,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         threadId,
         appNote(
           ok
-            ? `사용자가 폰에서 ${kind === 'rrn_back' ? '주민번호 뒷자리' : '인증번호'}를 넣어 "${field}" 칸에 들어갔어요. 페이지를 읽고 [확인]·[인증] 버튼을 눌러 하던 일을 이어서 해 주세요.`
+            ? `사용자가 폰에서 ${kind === 'rrn_back' ? '주민번호 뒷자리' : kind === 'captcha' ? '보안문자' : '인증번호'}를 넣어 "${field}" 칸에 들어갔어요. 페이지를 읽고 [확인]·[인증] 버튼을 눌러 하던 일을 이어서 해 주세요.`
             : `사용자가 인증번호를 넣었는데 "${field}" 칸을 화면에서 찾지 못해 넣지 못했어요. 페이지를 읽어 칸을 확인하고 browser_request_code를 다시 써 주세요.`,
         ),
       )
@@ -1778,6 +1809,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     } catch (e) {
       return { ok: false, message: (e as Error).message }
     }
+    // 로그인에 성공하기 전까지는 '확인 전': 사이트가 틀렸다고 하면 금고에서 지우고 카드를 다시 받는다
+    browserTools.markUnverified(r.origin)
     browserTools.logins.finish(id, 'saved', username)
     const message = `${r.site} 로그인 정보를 두리 금고에 저장했어요.`
     void link.broadcast({ kind: 'login-done', id, ok: true, message })
@@ -2237,6 +2270,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return text(`${card.name}은 폰 권한이에요. 사용자에게 폰의 연결 화면에서 켜 달라고 말해요.`)
         if (connecting.has(card.id))
           return text(`지금 ${card.name}에 로그인하는 중이에요. 끝나면 대화로 알림이 와요.`)
+        // 같은 계정(네이버 메일 → 네이버)이 연결돼 있으면 카드를 띄우지 않는다
+        const parent = card.sameLoginAs ? items.find((x) => x.card.id === card.sameLoginAs) : undefined
+        if (parent?.connectedAt)
+          return text(
+            `${card.name}은 ${parent.card.name} 계정으로 로그인해요. ${parent.card.name}이 이미 연결돼 있으니 연결 카드 없이 ${card.name} 도구를 바로 써요. 도구가 로그인 화면을 만나면 그때 connect_ask('${parent.card.id}')로 다시 연결해요.`,
+          )
         // 로그인이 필요해졌는데 금고 계정이나 전에 쓴 간편 로그인이 있으면 묻지 않고 두리가 다시 로그인한다.
         // 끝나면 connectDone이 "멈춘 일을 이어서 해 주세요"를 대화로 보낸다
         const creds = card.how === 'browser' ? await vaultCreds(card) : undefined

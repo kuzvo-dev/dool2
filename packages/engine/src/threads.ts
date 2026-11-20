@@ -130,6 +130,7 @@ export class ThreadService {
       /** PC 파일 승인(여러 개 옮기기·출력): 도구가 승인을 실제로 요청했을 때(성공한 결과)만 카드를 남긴다 */
       let fileAsk: { name: string; record: ApprovalRecordMessage } | undefined
       let approvalAsk: { name: string; record: ApprovalRecordMessage } | undefined
+      let handoffAsk: { name: string; record: HandoffRecord } | undefined
       const saveBlock = () => {
         if (!block) return undefined
         const m = store.addMessage(threadId, 'tool', JSON.stringify(block))
@@ -137,6 +138,8 @@ export class ThreadService {
         return m
       }
       // 답 저장: 일한 과정 → 답 글 → 결과 블록 → 빠른 답 (답 끝 [[답: a | b]] 줄은 떼어 버튼으로)
+      /** 답 글 아래에 둘 카드 (넘기기·로그인·승인): 답이 저장되기 전에 오면 모아 뒀다가 답 다음에 남긴다 */
+      const below: string[] = []
       const saveAnswer = () => {
         const out = []
         const rec = work.record()
@@ -148,6 +151,7 @@ export class ThreadService {
         out.push(store.addMessage(threadId, 'assistant', text || full))
         const c = saveBlock()
         if (c) out.push(c)
+        for (const r of below.splice(0)) out.push(store.addMessage(threadId, 'tool', r))
         if (replies && text) {
           const quick: QuickRecordMessage = { kind: 'quick', replies }
           out.push(store.addMessage(threadId, 'tool', JSON.stringify(quick)))
@@ -216,15 +220,28 @@ export class ThreadService {
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
           for (const m of saveAnswer()) yield { type: 'saved', message: m }
         }
-        // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게)
+        // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게).
+        // 실제로 넘겼을 때(성공한 결과)만: 처음 부르면 넘기지 않고 화면을 다시 읽어 실패로 돌려준다
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
           const input = (ev.input ?? {}) as { tabId?: unknown; reason?: unknown }
-          const record: HandoffRecord = {
-            kind: 'handoff',
-            ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
-            reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
+          handoffAsk = {
+            name: ev.name,
+            record: {
+              kind: 'handoff',
+              ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
+              reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
+            },
           }
-          yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
+        }
+        if (ev.type === 'tool_result' && handoffAsk && (!ev.name || ev.name === handoffAsk.name)) {
+          const ask = handoffAsk
+          handoffAsk = undefined
+          // 답 글보다 위에 뜨지 않게: 답이 아직이면 답 다음에 남긴다 (사용자: "버튼이 메시지보다 위에 있어 별로")
+          if (ev.ok) {
+            if (saved)
+              yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
+            else below.push(JSON.stringify(ask.record))
+          }
         }
         // 승인 요청도 남긴다. 카드는 본체에 상태(기다림·승인·거절·만료)를 물어 그린다
         // 로그인 카드 요청도 남긴다 (값은 남기지 않는다. 카드가 본체에 상태를 묻는다)
@@ -296,6 +313,8 @@ export class ThreadService {
       } else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
+      // 답 없이 끝났어도 넘기기 카드는 남긴다
+      for (const r of below.splice(0)) yield { type: 'saved', message: store.addMessage(threadId, 'tool', r) }
     } finally {
       this.running.delete(threadId)
       yield { type: 'end' }

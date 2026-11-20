@@ -54,7 +54,8 @@ export class Skills {
       if (!card) continue
       const c = (await this.connector?.(n).catch(() => undefined)) ?? {}
       const skill = c.status
-      const at = connected[n]
+      // 같은 계정으로 로그인하는 서비스(네이버 메일 → 네이버)는 그 계정이 연결돼 있으면 연결된 것이다
+      const at = connected[n] ?? (card.sameLoginAs ? connected[card.sameLoginAs] : undefined)
       out.push({
         card,
         ...(skill ? { skill } : {}),
@@ -74,16 +75,16 @@ export class Skills {
    * 분류마다 "이름(id)✓: 할 수 있는 일" 한 줄. ✓ = 연결됨 (로그인돼 있어 예약·주문까지 된다)
    */
   serviceMap(): string {
-    const connected = this.connected()
     const by = new Map<string, string[]>()
     for (const it of this.last) {
       if (it.card.how === 'device') continue
       const c = it.card
+      const on = Boolean(it.connectedAt)
       const can = c.abilities.map((a) => a.title).join('·')
       // 무엇을 하는 곳인지(소개)와 할 수 있는 일: AI가 부탁에 맞는 서비스를 스스로 고른다
       // 연결 전이어도 로그인 없이 되는 도구는 알려 둔다 (연결을 먼저 묻지 않게)
-      const free = !connected[c.id] ? (it.tools ?? []).filter((t) => !t.login).map((t) => t.name) : []
-      const line = `${c.name}(${c.id})${connected[c.id] ? '✓' : ''}${it.tools?.length ? '⚡' : ''} — ${c.summary} [${can}]${free.length ? ` (로그인 없이: ${free.join(', ')})` : ''}`
+      const free = !on ? (it.tools ?? []).filter((t) => !t.login).map((t) => t.name) : []
+      const line = `${c.name}(${c.id})${on ? '✓' : ''}${it.tools?.length ? '⚡' : ''} — ${c.summary} [${can}]${free.length ? ` (로그인 없이: ${free.join(', ')})` : ''}`
       const k = CONNECT_CATEGORIES[c.category]
       by.set(k, [...(by.get(k) ?? []), line])
     }

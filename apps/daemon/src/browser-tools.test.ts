@@ -592,6 +592,7 @@ describe('원격 화면 (폰)', () => {
     await expect(tools.remoteScreen(3)).rejects.toThrow('원격 화면으로 볼 수 없어요')
     await tools.run('open', { url: 'https://shop.example/login' })
     await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
     expect(tools.remoteAllowed(3)).toBe(true)
     expect(tools.remoteAllowed(4)).toBe(false)
     expect(tools.remoteAllowed(3, Date.now() + 31 * 60_000)).toBe(false)
@@ -603,6 +604,7 @@ describe('원격 화면 (폰)', () => {
     await tools.run('open', { url: 'https://shop.example/pay' })
     expect(b.calls.some((c) => c[0] === 'hold')).toBe(false)
     await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요' })
     expect(b.calls.find((c) => c[0] === 'hold')).toEqual(['hold', { tabId: 3, ms: 30 * 60_000 }])
   })
 
@@ -610,6 +612,7 @@ describe('원격 화면 (폰)', () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
     await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
     await tools.remoteInput(3, { action: 'tap', x: 0.5, y: 0.25 }, { width: 1200, height: 800 })
     expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'tap', x: 600, y: 200 }])
@@ -624,6 +627,7 @@ describe('원격 화면 (폰)', () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
     await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
     await tools.remoteInput(3, { action: 'view', w: 370, h: 640 }, { width: 1200, height: 800 })
     expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'view', w: 370, h: 640 }])
@@ -647,6 +651,7 @@ describe('원격 화면 필요한 칸만', () => {
     await tools.run('open', { url: 'https://card.example/verify' })
     // 두리가 다룬 적 없는 탭은 안 된다
     await expect(tools.remoteForm(99)).rejects.toThrow('두리가 넘긴 탭만')
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
     await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
     await tools.remoteForm(3)
     expect(b.calls.at(-1)).toEqual(['form', { tabId: 3 }])
@@ -1147,7 +1152,13 @@ describe('내 정보로 예약자 칸 채우기', () => {
       ],
     })
     expect(r.isError).toBeUndefined()
-    const fills = b.calls.filter((c) => c[0] === 'fill').map((c) => c[1])
+    const fills = b.calls
+      .filter((c) => c[0] === 'fill')
+      .map((c) => {
+        const { trust, ...rest } = c[1] as Record<string, unknown>
+        expect(trust).toContain('yeskey.or.kr')
+        return rest
+      })
     expect(fills).toEqual([
       { tabId: 3, ref: 'e3', value: 'HONG', origin: 'https://kr.hotels.com' },
       { tabId: 3, ref: 'e4', value: 'GILDONG', origin: 'https://kr.hotels.com' },
@@ -1922,7 +1933,7 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
       return { answer: new Promise<string | undefined>((r) => (press = r)), cancel: () => {} }
     }
     await tools.run('read', { tabId: 3 })
-    const waiting = tools.run('wait_auth', { tabId: 3, message: '카카오톡에서 승인해 주세요' })
+    const waiting = tools.run('wait_auth', { tabId: 3, ref: 'e9', message: '카카오톡에서 승인해 주세요' })
     await new Promise((r) => setTimeout(r, 7_000))
     // 7초 동안 지켜보기만 했다 (미리 누르면 인증 창을 닫는 사이트가 있다)
     expect(calls.filter((c) => c[0] === 'click')).toHaveLength(0)
@@ -1931,6 +1942,246 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
     const r = await waiting
     expect(calls.filter((c) => c[0] === 'click')).toHaveLength(1)
     expect(r.isError).toBeFalsy()
-    expect(r.content[0]?.type === 'text' ? r.content[0].text : '').toContain('인증이 완료됐어요')
+    // 됐는지는 AI가 넘어간 화면을 보고 판단한다
+    const t = r.content[0]?.type === 'text' ? r.content[0].text : ''
+    expect(t).toContain('직접 판단하세요')
+    expect(t).toContain('로그아웃')
   }, 40_000)
+
+  it('누르지 않아도 화면이 바뀌면(확인 창·인증 창 닫힘) 바로 AI에게 넘기고, 아무 변화가 없어도 카드를 누르면 3분 기다리지 않는다', async () => {
+    // ① 승인 뒤 사이트가 확인 창을 띄운다 (내보험찾아줌: "최근 접수건이 있어요. 재신청할까요?") ② 인증 팝업이 닫힌다 ③ 그대로
+    for (const kind of ['dialog', 'popup', 'same'] as const) {
+      let t0 = Date.now()
+      const late = () => Date.now() - t0 > 3_500
+      const b = {
+        call: async (cmd: string, args?: { tabId?: number }) => {
+          if (cmd === 'snapshot') {
+            if (args?.tabId === 5) {
+              if (kind === 'popup' && late()) throw new Error('탭이 없어요')
+              return {
+                tabId: 5,
+                url: 'https://cert.example/popup',
+                title: '인증',
+                text: '[e1 버튼 "인증 요청"]',
+              }
+            }
+            return {
+              tabId: 3,
+              url: 'https://ins.example/raon/loadModule.do',
+              title: '인증',
+              text: '# 간편인증\n[e9 버튼 "인증 완료"]',
+              ...(kind === 'dialog' && late()
+                ? { dialog: { type: 'confirm', message: '최근 접수건이 있으며, 재신청도 가능합니다.' } }
+                : {}),
+            }
+          }
+          return { tabId: args?.tabId ?? 3, url: 'https://ins.example/raon/loadModule.do', title: '' }
+        },
+      }
+      const tools = new BrowserTools(b as never)
+      let press: (v: string) => void = () => {}
+      tools.askAuthDone = () => ({
+        answer: new Promise<string | undefined>((r) => (press = r)),
+        cancel: () => {},
+      })
+      await tools.run('read', { tabId: 5 })
+      await tools.run('read', { tabId: 3 })
+      t0 = Date.now()
+      const started = Date.now()
+      const waiting = tools.run('wait_auth', { tabId: 3 })
+      if (kind === 'same') {
+        await new Promise((r) => setTimeout(r, 4_000))
+        press('인증 완료했어요')
+      }
+      const out = await waiting
+      const text = out.content[0]?.type === 'text' ? out.content[0].text : ''
+      expect(Date.now() - started).toBeLessThan(30_000)
+      expect(text).toContain('직접 판단하세요')
+      if (kind === 'dialog') expect(text).toContain('확인 창')
+      if (kind === 'popup') expect(text).toContain('인증 창이 닫혔어요')
+    }
+  }, 80_000)
+})
+
+describe('PC 화면 넘기기 관문', () => {
+  it('같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려주고, 두 번째에만 넘긴다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://bank.example/login' })
+    const first = await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요' })
+    const t = first.content[0]?.type === 'text' ? first.content[0].text : ''
+    expect(t).toContain('아직 넘기지 않았어요')
+    expect(b.calls.some((c) => c[0] === 'focus' || c[0] === 'hold')).toBe(false)
+    await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요' })
+    expect(b.calls.some((c) => c[0] === 'focus')).toBe(true)
+  })
+})
+
+describe('로그인 카드 값은 로그인에 성공해야 금고에 남는다', () => {
+  it('됐는지는 AI가 화면을 보고 알린다: 안 됐다고 하면 카드 값은 지우고, 예전 값은 두되 카드를 다시 띄울 수 있게', async () => {
+    let page = {
+      url: 'https://pass.example/login',
+      title: '로그인',
+      text: '[e1 입력칸 "아이디"] [e2 비밀번호칸 "비밀번호"] [e3 버튼 "로그인"]',
+    }
+    const entries = [{ id: 'v1', username: 'me', password: 'wrong' }]
+    const removed: string[] = []
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot') return { tabId: 3, ...page, truncated: false, captcha: false }
+        return { tabId: 3, url: page.url }
+      },
+    }
+    const tools = new BrowserTools(b as never, {
+      findForOrigin: async () => entries.find((e) => !removed.includes(e.id)),
+      markUsed: async () => {},
+      remove: async (id: string) => {
+        removed.push(id)
+        return true
+      },
+    })
+    const text = (r: { content: { type: string; text?: string }[] }) =>
+      r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
+    tools.markUnverified('https://pass.example')
+    await tools.run('read', { tabId: 3 })
+    await tools.run('login', { tabId: 3, usernameRef: 'e1', passwordRef: 'e2' })
+    // 어떤 문구든 규칙으로 가리지 않는다: 로그인 화면 그대로면 AI에게 판단을 맡긴다
+    page = { ...page, text: `회원님의 입력 정보를 찾을 수 없어요. ${page.text}` }
+    const seen = text(await tools.run('read', { tabId: 3 }))
+    expect(seen).toContain('failed: true')
+    expect(removed).toEqual([])
+    const out = text(
+      await tools.run('login', { tabId: 3, failed: true, reason: '입력 정보를 찾을 수 없어요' }),
+    )
+    expect(out).toContain('금고에서 지웠어요')
+    expect(removed).toEqual(['v1'])
+    expect(text(await tools.run('request_login', { tabId: 3, site: '패스' }))).toContain(
+      '로그인 카드를 띄웠어요',
+    )
+    // 성공해서 확인된 값은 지우지 않지만, 바뀐 것 같다고 하면 카드를 다시 띄울 수 있다
+    entries.splice(0, 1, { id: 'v2', username: 'me', password: 'right' })
+    removed.length = 0
+    page = { ...page, text: '[e1 입력칸 "아이디"] [e2 비밀번호칸 "비밀번호"] [e3 버튼 "로그인"]' }
+    await tools.run('read', { tabId: 3 })
+    await tools.run('login', { tabId: 3, usernameRef: 'e1', passwordRef: 'e2' })
+    page = { url: 'https://pass.example/my', title: '내 정보', text: '[e9 버튼 "로그아웃"]' }
+    expect(text(await tools.run('read', { tabId: 3 }))).not.toContain('failed: true')
+    page = { url: 'https://pass.example/login', title: '로그인', text: '[e2 비밀번호칸 "비밀번호"]' }
+    await tools.run('read', { tabId: 3 })
+    await tools.run('login', { tabId: 3, passwordRef: 'e2' })
+    const stale = text(await tools.run('login', { tabId: 3, failed: true }))
+    expect(stale).toContain('바뀐 것 같아요')
+    expect(removed).toEqual([])
+    expect(text(await tools.run('request_login', { tabId: 3, site: '패스' }))).toContain(
+      '로그인 카드를 띄웠어요',
+    )
+  }, 30_000)
+})
+
+describe('인증 완료 판단은 AI가', () => {
+  it('사용자가 [인증 완료했어요]를 누르면 화면 안내 문구("…진행해주세요")를 아직으로 보지 않고 화면을 AI에게 넘긴다', async () => {
+    let clicked = 0
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'click') clicked++
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://pass.example/cert/member_check.html',
+            title: '본인확인',
+            text: '# 본인확인\n카카오톡에서 인증을 진행해주세요\n인증이 완료되었습니다\n[e9 버튼 "인증 완료하기"]',
+          }
+        return { tabId: 3, url: 'https://pass.example/cert/member_check.html', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    let press: (v: string) => void = () => {}
+    let cards = 0
+    tools.askAuthDone = () => {
+      cards++
+      return { answer: new Promise<string | undefined>((r) => (press = r)), cancel: () => {} }
+    }
+    await tools.run('read', { tabId: 3 })
+    const waiting = tools.run('wait_auth', { tabId: 3 })
+    await new Promise((r) => setTimeout(r, 4_000))
+    press('인증 완료했어요')
+    const out = await waiting
+    const text = out.content[0]?.type === 'text' ? out.content[0].text : ''
+    expect(text).toContain('직접 판단하세요')
+    expect(text).toContain('인증이 완료되었습니다')
+    // 짚어 준 버튼이 없으면 본체는 아무것도 누르지 않는다 (버튼 이름 규칙으로 고르지 않는다)
+    expect(clicked).toBe(0)
+    // 카드를 다시 띄우지 않았다
+    expect(cards).toBe(1)
+  }, 40_000)
+})
+
+describe('보안문자는 AI가 그림을 골라 폰 카드로', () => {
+  it('pick 없이 부르면 칸 둘레 그림 후보를 보여 주고, pick으로 고른 그림을 카드에 붙인다', async () => {
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://cert.example/check',
+            title: '본인확인',
+            text: '보안문자를 입력해 주세요 [e4 입력칸 "보안문자"] [e5 버튼 "확인"]',
+          }
+        if (cmd === 'captcha-candidates')
+          return {
+            shots: [
+              { what: '칸 둘레 그림', data: 'LOGO' },
+              { what: '칸을 품은 상자', data: 'CAPTCHA' },
+            ],
+          }
+        return { tabId: 3, url: 'https://cert.example/check' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    const got: { kind?: string; image?: string }[] = []
+    tools.requestCode = (_t, _f, _l, _h, _host, kind, _ref, image) => {
+      got.push({ kind, image })
+      return 'q1'
+    }
+    await tools.run('read', { tabId: 3 })
+    const first = await tools.run('request_code', { tabId: 3, ref: 'e4', kind: 'captcha' })
+    expect(first.content.filter((c) => c.type === 'image')).toHaveLength(2)
+    expect(got).toHaveLength(0)
+    await tools.run('request_code', { tabId: 3, ref: 'e4', kind: 'captcha', pick: 2 })
+    expect(got).toEqual([{ kind: 'captcha', image: 'CAPTCHA' }])
+  })
+})
+
+describe('승인 게이트는 화면을 열기만 하는 링크를 막지 않는다', () => {
+  it('결제 쪽 주소의 진짜 링크는 누르고, 같은 이름의 버튼·지우기 링크는 막는다', async () => {
+    const clicks: string[] = []
+    const b = {
+      call: async (cmd: string, args?: { ref?: string }) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://new-m.pay.naver.com/home',
+            title: '네이버페이',
+            text: '[e1 링크 "포인트 받기"] [e2 버튼 "결제하기"] [e3 링크 "카드 삭제"]',
+          }
+        if (cmd === 'link-navigates') return { navigates: args?.ref !== 'e2' }
+        if (cmd === 'click') clicks.push(String(args?.ref))
+        return { tabId: 3, url: 'https://new-m.pay.naver.com/home', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    const ok = await tools.run('click', { tabId: 3, ref: 'e1' })
+    expect(ok.isError).toBeFalsy()
+    expect(clicks).toEqual(['e1'])
+    const pay = await tools
+      .run('click', { tabId: 3, ref: 'e2' })
+      .catch((e: Error) => ({ isError: true, err: e.message }))
+    expect(JSON.stringify(pay)).toMatch(/승인|request_approval/)
+    const del = await tools
+      .run('click', { tabId: 3, ref: 'e3' })
+      .catch((e: Error) => ({ isError: true, err: e.message }))
+    expect(JSON.stringify(del)).toMatch(/승인|request_approval/)
+    expect(clicks).toEqual(['e1'])
+  })
 })
