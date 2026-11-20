@@ -513,7 +513,7 @@
           "timeoutMs": 10000
         },
         {
-          "handoff_to_agent": "{{product}} 상품 화면이에요. 옵션이 있으면 '{{option}}'을 고르고(품절이면 사용자에게 알리고 다른 옵션을 물어요), 개수를 {{quantity}}개로 맞춰 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('oliveyoung'), 연결했는데 풀렸으면 browser_handoff. 로봇 확인이 나오면 풀지 말고 browser_handoff. 주문서에서 배송 방법을 '{{delivery}}'로 고르고 결제 전에 멈춰, 상품·옵션·개수·상품 금액·쿠폰·CJ ONE 포인트·배송비·최종 결제 금액·도착 예정·배송지 이름만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+          "handoff_to_agent": "{{product}} 상품 화면이에요. 옵션이 있으면 '{{option}}'을 고르고(품절이면 사용자에게 알리고 다른 옵션을 물어요), 개수를 {{quantity}}개로 맞춰 '바로구매'를 눌러요. 로그인 화면이 나오면 connect_ask('oliveyoung')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 로봇 확인이 나오면 풀지 말고 browser_handoff. 주문서에서 배송 방법을 '{{delivery}}'로 고르고 결제 전에 멈춰, 상품·옵션·개수·상품 금액·쿠폰·CJ ONE 포인트·배송비·최종 결제 금액·도착 예정·배송지 이름만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
         }
       ],
       "result": {}

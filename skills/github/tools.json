@@ -153,7 +153,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "GitHub '리뷰 요청된 PR' 목록이에요. 열린 PR을 저장소·제목·작성자·올린 지 얼마나 됐는지로 정리해요. 이어서 https://github.com/pulls (내가 만든 PR)를 열어 각 PR의 검사 상태(통과·실패·진행 중)와 리뷰 상태(승인·변경 요청)를 읽고, 실패한 검사가 있으면 그 검사 이름을 짚어요. 승인·머지·댓글 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "GitHub '리뷰 요청된 PR' 목록이에요. 열린 PR을 저장소·제목·작성자·올린 지 얼마나 됐는지로 정리해요. 이어서 https://github.com/pulls (내가 만든 PR)를 열어 각 PR의 검사 상태(통과·실패·진행 중)와 리뷰 상태(승인·변경 요청)를 읽고, 실패한 검사가 있으면 그 검사 이름을 짚어요. 승인·머지·댓글 버튼은 누르지 않아요. 로그인 화면이 나오면 connect_ask('github')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {},
@@ -211,7 +211,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "GitHub {{repo}} #{{number}} 화면이에요(PR이면 같은 번호로 열려요). 본문과 최근 댓글을 읽어 맥락을 확인하고, 맨 아래 댓글 칸에 '{{body}}'를 그대로 넣어요. 'Comment' 버튼은 누르지 말고 어디에·무슨 글을 올리는지 보여 주며 browser_request_approval로 승인받아야만 눌러요. 'Close' 같은 다른 버튼은 누르지 않아요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "GitHub {{repo}} #{{number}} 화면이에요(PR이면 같은 번호로 열려요). 본문과 최근 댓글을 읽어 맥락을 확인하고, 맨 아래 댓글 칸에 '{{body}}'를 그대로 넣어요. 'Comment' 버튼은 누르지 말고 어디에·무슨 글을 올리는지 보여 주며 browser_request_approval로 승인받아야만 눌러요. 'Close' 같은 다른 버튼은 누르지 않아요. 로그인 화면이 나오면 connect_ask('github')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}
@@ -288,7 +288,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "GitHub 웹 편집기({{repo}} {{path}})예요. 쓰기 권한이 없으면 GitHub가 포크를 만들자고 해요: 그건 승인 뒤에만 눌러요. '{{find}}'를 찾아 '{{replace}}'로만 바꾸고 다른 줄은 건드리지 않아요. 'Commit changes'를 누르면 나오는 창에서 메시지를 '{{message}}'로 하고 새 브랜치+PR을 고른 뒤, 확정 버튼은 누르지 말고 바뀐 줄·메시지를 보여 주며 browser_request_approval로 승인받아야만 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('github'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "GitHub 웹 편집기({{repo}} {{path}})예요. 쓰기 권한이 없으면 GitHub가 포크를 만들자고 해요: 그건 승인 뒤에만 눌러요. '{{find}}'를 찾아 '{{replace}}'로만 바꾸고 다른 줄은 건드리지 않아요. 'Commit changes'를 누르면 나오는 창에서 메시지를 '{{message}}'로 하고 새 브랜치+PR을 고른 뒤, 확정 버튼은 누르지 말고 바뀐 줄·메시지를 보여 주며 browser_request_approval로 승인받아야만 눌러요. 로그인 화면이 나오면 connect_ask('github')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}

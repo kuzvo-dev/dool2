@@ -343,7 +343,7 @@
           "say": "{{product}}은(는) 지금 품절이에요. 비슷한 상품을 shilla_dfs_search로 찾아볼 수 있어요."
         },
         {
-          "handoff_to_agent": "{{product}} 상품 화면이에요. 개수를 {{quantity}}개로 맞춰 '바로구매'를 눌러요. 로그인 화면이 나오면 연결 전이면 connect_ask('shilla-dfs'), 연결했는데 풀렸으면 browser_handoff. 출국 정보는 출국일 {{departure}}, 출국 공항 {{airport}}, 항공편 {{flight}}로 맞춰요(항공편이 비어 있으면 사용자에게 물어요). 여권 정보가 없다고 나오면 사용자에게 직접 등록해 달라고 browser_handoff. 결제 화면에서 멈추고 상품·개수·면세가(달러·원)·할인·적립금·최종 결제 금액·출국일·공항·인도장 안내만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
+          "handoff_to_agent": "{{product}} 상품 화면이에요. 개수를 {{quantity}}개로 맞춰 '바로구매'를 눌러요. 로그인 화면이 나오면 connect_ask('shilla-dfs')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 출국 정보는 출국일 {{departure}}, 출국 공항 {{airport}}, 항공편 {{flight}}로 맞춰요(항공편이 비어 있으면 사용자에게 물어요). 여권 정보가 없다고 나오면 사용자에게 직접 등록해 달라고 browser_handoff. 결제 화면에서 멈추고 상품·개수·면세가(달러·원)·할인·적립금·최종 결제 금액·출국일·공항·인도장 안내만 정리해 browser_request_approval로 승인을 받아요. 승인 전에는 결제 버튼을 누르지 않아요."
         }
       ],
       "result": {}
