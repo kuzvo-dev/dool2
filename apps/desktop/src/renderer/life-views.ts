@@ -776,7 +776,17 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
       full = true
       void ctx
         .libraryFull(it.id)
-        .then((x) => x && setRich(t, x.body))
+        .then((x) => {
+          if (!x) return
+          setRich(t, x.body)
+          // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
+          if (x.image) {
+            const img = el('img', 'lib-shot') as HTMLImageElement
+            img.src = `data:image/jpeg;base64,${x.image}`
+            img.alt = x.title
+            t.prepend(img)
+          }
+        })
         .catch(() => (full = false))
     }
   }

@@ -129,6 +129,11 @@ const inTab = (it: LibraryItem, tab: LibraryTab) =>
 
 /** 목록용: 긴 글은 앞부분만 (글자 단위로 잘라 이모지가 깨지지 않게) */
 function preview(it: LibraryItem): LibraryItem {
+  // 미리보기 사진은 목록에 싣지 않는다 (열 때 하나 받기로)
+  if (it.image) {
+    const { image: _i, ...rest } = it
+    return { ...rest, body: [...it.body].slice(0, LIBRARY_PREVIEW).join(''), cut: true }
+  }
   if (it.body.length <= LIBRARY_PREVIEW) return it
   const chars = [...it.body]
   if (chars.length <= LIBRARY_PREVIEW) return it

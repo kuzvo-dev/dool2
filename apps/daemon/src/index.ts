@@ -87,7 +87,7 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
-import { FileTools, type userFolders } from './files.js'
+import { FileTools, htmlText, type userFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
@@ -127,6 +127,8 @@ const RESET_KEYS = [
 ] as const
 
 export interface DaemonOptions {
+  /** HTML을 그려 JPEG(base64)로 (PC 앱이 준다). 두리가 만든 그림·초대장을 보관함·폰에서 보이게 */
+  renderHtml?: (html: string) => Promise<string | undefined>
   dataDir?: string
   /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
   journal?: false
@@ -377,6 +379,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 잠자기 전에 두리가 하던 일을 본다 (답하는 대화·서비스 연결). 아래에서 만드는 값이라 부를 때 읽는다
     busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
   })
+  // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
+  fileTools.onWritten = (f) => {
+    const md = (rows: unknown[][]) =>
+      rows
+        .slice(0, 30)
+        .map((r, i) => {
+          const line = `| ${(Array.isArray(r) ? r : [r]).map((c) => String(c ?? '').replace(/\|/g, '/')).join(' | ')} |`
+          return i === 0 ? `${line}\n|${(Array.isArray(r) ? r : [r]).map(() => '---').join('|')}|` : line
+        })
+        .join('\n')
+    const text = f.text ?? ''
+    const body = f.kind === 'html' ? htmlText(text).slice(0, 1500) : f.rows ? md(f.rows) : text.slice(0, 3800)
+    void (async () => {
+      // HTML(그림·초대장)은 PC 앱이 그려 찍은 사진을 함께 둔다: 폰은 HTML을 그리지 못한다
+      const shot =
+        f.kind === 'html' && opts.renderHtml ? await opts.renderHtml(text).catch(() => undefined) : undefined
+      life.save({
+        kind: 'file',
+        title: f.name,
+        body: `${body}\n\nPC: ${f.path}`.trim(),
+        path: f.path,
+        ...(shot ? { image: shot } : {}),
+      })
+    })()
+  }
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')

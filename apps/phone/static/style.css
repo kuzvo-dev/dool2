@@ -3657,3 +3657,12 @@ textarea.ghosting {
   background: color-mix(in srgb, var(--brand) 38%, transparent);
   transform: scale(0.94);
 }
+
+/* 보관함: 두리가 만든 그림 미리보기 */
+.item-shot {
+  display: block;
+  width: 100%;
+  border-radius: 14px;
+  margin: 10px 0;
+  background: #fff;
+}

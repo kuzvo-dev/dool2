@@ -23,6 +23,9 @@ const ok = (text: string): FileToolResult => ({ content: [{ type: 'text', text }
 const fail = (text: string): FileToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
 /** 두리가 다루는 사용자 폴더. 윈도우는 OneDrive로 옮겨진 바탕화면·문서도 */
+/** 두리가 만든 파일을 모으는 폴더 (문서 아래) */
+export const DOORI_FOLDER = '두리'
+
 export function userFolders(home = homedir()): Record<'desktop' | 'documents' | 'downloads', string[]> {
   const pick = (...names: string[]) =>
     [...new Set(names.map((n) => join(home, n)).filter((p) => existsSync(p)))].map((p) => {
@@ -56,6 +59,8 @@ export class FileTools {
   private readonly home: string
   /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
   readonly ops: FileOps
+  /** 새 파일을 만들었을 때 (보관함에 올린다) */
+  onWritten?: (f: { name: string; kind: string; path: string; text?: string; rows?: unknown[][] }) => void
   constructor(folders?: ReturnType<typeof userFolders>, home = homedir(), opts: FileOpsOptions = {}) {
     // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
     const real = (p: string) => {
@@ -146,7 +151,7 @@ export class FileTools {
           kind: String(args.kind ?? 'md'),
           text: typeof args.text === 'string' ? args.text : undefined,
           rows: Array.isArray(args.rows) ? (args.rows as unknown[][]) : undefined,
-          folder: (args.folder as FolderKey | undefined) ?? 'desktop',
+          ...(args.folder ? { folder: args.folder as FolderKey } : {}),
         })
       if (tool === 'file_move') return await this.ops.move(args)
       if (tool === 'file_convert') return await this.ops.convert(args)
@@ -361,13 +366,17 @@ export class FileTools {
     kind: string
     text?: string
     rows?: unknown[][]
-    folder: FolderKey
+    /** 비우면 두리 폴더(문서/두리) */
+    folder?: FolderKey
   }): Promise<FileToolResult> {
     const kind = o.kind.toLowerCase()
     if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
       return fail('md·txt·csv·xlsx·html만 만들 수 있어요.')
-    const dir = this.folders[o.folder]?.[0]
-    if (!dir) return fail(`${FOLDER_LABEL[o.folder] ?? o.folder} 폴더를 찾지 못했어요.`)
+    // 두리가 만든 것은 두리 폴더에 모은다 (바탕화면을 어지르지 않게). 사용자가 고른 폴더가 있으면 그곳
+    const docs = this.folders.documents?.[0]
+    const dir = o.folder ? this.folders[o.folder]?.[0] : docs ? join(docs, DOORI_FOLDER) : undefined
+    const where = o.folder ? FOLDER_LABEL[o.folder] : `문서/${DOORI_FOLDER} 폴더`
+    if (!dir) return fail(`${o.folder ? (FOLDER_LABEL[o.folder] ?? o.folder) : '문서'} 폴더를 찾지 못했어요.`)
     const stem = basename(o.name.replace(/\.[a-z0-9]{1,5}$/i, ''))
       .replace(/[\\/:*?"<>|]/g, ' ')
       .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 ? ' ' : c))
@@ -388,8 +397,10 @@ export class FileTools {
     let target = join(dir, `${stem}.${kind}`)
     for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${stem} (${i}).${kind}`)
     await writeFile(target, data, { flag: 'wx' })
+    const shown = this.show(target)
+    this.onWritten?.({ name: basename(target), kind, path: shown, text: o.text, rows: o.rows })
     return ok(
-      `${FOLDER_LABEL[o.folder]}에 만들었어요: ${this.show(target)} (${data.length.toLocaleString()}바이트). 사용자에게 이 경로를 알려 주세요.`,
+      `${where}에 만들었어요: ${shown} (${data.length.toLocaleString()}바이트). 보관함의 '사진·파일'에도 올려서 폰에서도 볼 수 있어요. 사용자에게 "두리 폴더에 두고 보관함에 올렸어요"처럼 알려 주세요.`,
     )
   }
 }
@@ -405,6 +416,11 @@ const decodeXml = (s: string) =>
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
     .replace(/&amp;/g, '&')
+
+/** HTML에서 글만 (보관함 미리보기 글) */
+export function htmlText(html: string) {
+  return stripTags(html)
+}
 
 function stripTags(html: string) {
   return decodeXml(

@@ -50,7 +50,8 @@ describe('PC 파일 도구', () => {
     const b = text(await tools.run('file_write', { name: '기억 정리', kind: 'md', text: '두 번째' }))
     expect(a).toContain('기억 정리.md')
     expect(b).toContain('기억 정리 (2).md')
-    expect(readFileSync(join(home, 'Desktop', '기억 정리.md'), 'utf8')).toBe('# 기억\n- 성복역')
+    // 기본은 두리 폴더 (문서/두리)
+    expect(readFileSync(join(home, 'Documents', '두리', '기억 정리.md'), 'utf8')).toBe('# 기억\n- 성복역')
     await tools.run('file_write', {
       name: '여행 정산',
       kind: 'xlsx',
@@ -60,18 +61,18 @@ describe('PC 파일 도구', () => {
         ['지영 "A"', '8000'],
       ],
     })
-    const read = text(await tools.run('file_read', { path: '~/Desktop/여행 정산.xlsx' }))
+    const read = text(await tools.run('file_read', { path: '~/Documents/두리/여행 정산.xlsx' }))
     expect(read).toContain('이름\t금액')
     expect(read).toContain('민수\t12000')
     expect(read).toContain('지영 "A"\t8000')
     // CSV는 엑셀이 한글을 깨지 않게 BOM
     await tools.run('file_write', { name: '표', kind: 'csv', rows: [['가', 'b,c']] })
-    expect(readFileSync(join(home, 'Desktop', '표.csv')).subarray(0, 3)).toEqual(
+    expect(readFileSync(join(home, 'Documents', '두리', '표.csv')).subarray(0, 3)).toEqual(
       Buffer.from([0xef, 0xbb, 0xbf]),
     )
-    expect(readFileSync(join(home, 'Desktop', '표.csv'), 'utf8')).toContain('가,"b,c"')
+    expect(readFileSync(join(home, 'Documents', '두리', '표.csv'), 'utf8')).toContain('가,"b,c"')
     expect((await tools.run('file_write', { name: '../밖', kind: 'md', text: 'x' })).isError).toBeFalsy()
-    expect(readFileSync(join(home, 'Desktop', '밖.md'), 'utf8')).toBe('x')
+    expect(readFileSync(join(home, 'Documents', '두리', '밖.md'), 'utf8')).toBe('x')
   })
 
   it('워드·파워포인트·한글(hwpx) 글을 뽑는다', () => {
