@@ -1095,9 +1095,12 @@ export class BrowserTools {
               }
             : undefined,
         )
+        // 휴대폰 번호는 가운데를 가린다 (카드·기록에 전체 번호를 남기지 않는다)
+        const maskTel = (v: string) =>
+          v.replace(/\b(01[016789])[-\s.]?(\d{3,4})[-\s.]?(\d{4})\b/g, (_m, a1, _b, c) => `${a1}-****-${c}`)
         const info = list(a.info, 8, (l) =>
           str(l.label, 16) && str(l.value, 160)
-            ? { label: str(l.label, 16), value: str(l.value, 160) }
+            ? { label: str(l.label, 16), value: maskTel(str(l.value, 160)) }
             : undefined,
         )
         const choices = Array.isArray(a.choices) ? (a.choices as unknown[]).map(String) : []

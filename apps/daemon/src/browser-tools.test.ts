@@ -2473,7 +2473,10 @@ describe('결제 카드 (browser_checkout)', () => {
         { label: '배달료', value: '3,000원', kind: 'fee' },
         { label: '쿠폰', value: '-0원', kind: 'weird' },
       ],
-      info: [{ label: '도착', value: '26~41분' }],
+      info: [
+        { label: '도착', value: '26~41분' },
+        { label: '연락처', value: '01012345678' },
+      ],
     })
     expect(r.isError).toBeUndefined()
     const [rec] = tools.approvals.list()
@@ -2482,7 +2485,10 @@ describe('결제 카드 (browser_checkout)', () => {
       title: '호호솥밥',
       amount: '16,500원',
       goods: [{ name: '전복솥밥', qty: '1개', price: '13,500원' }],
-      info: [{ label: '도착', value: '26~41분' }],
+      info: [
+        { label: '도착', value: '26~41분' },
+        { label: '연락처', value: '010-****-5678' },
+      ],
     })
     // 이상한 그림 주소·이름 없는 상품·모르는 줄 종류는 거른다
     expect(rec?.goods?.[0]).not.toHaveProperty('image')
