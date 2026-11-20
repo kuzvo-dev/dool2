@@ -44,6 +44,10 @@ export interface NewApproval {
   subRefs?: ApprovalRecord['subRefs']
   shipOptions?: ApprovalView['shipOptions']
   shipWarn?: string
+  title?: string
+  goods?: ApprovalView['goods']
+  lines?: ApprovalView['lines']
+  info?: ApprovalView['info']
 }
 
 export class Approvals {

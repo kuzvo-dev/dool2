@@ -281,8 +281,25 @@ export class ThreadService {
         }
         // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
-        if (ev.type === 'tool' && (screen || /browser_request_approval$/.test(ev.name))) {
-          const input = (ev.input ?? {}) as { tabId?: unknown; ref?: unknown; what?: unknown; why?: unknown }
+        // 결제 카드(browser_checkout)도 같은 승인 카드다 (what이 없으면 제목·상품 이름으로)
+        if (ev.type === 'tool' && (screen || /browser_(?:request_approval|checkout)$/.test(ev.name))) {
+          const input = (ev.input ?? {}) as {
+            tabId?: unknown
+            ref?: unknown
+            what?: unknown
+            why?: unknown
+            title?: unknown
+            goods?: unknown
+          }
+          if (/browser_checkout$/.test(ev.name) && typeof input.what !== 'string') {
+            const names = Array.isArray(input.goods)
+              ? input.goods.map((g) => String((g as { name?: unknown })?.name ?? '')).filter(Boolean)
+              : []
+            input.what =
+              [typeof input.title === 'string' ? input.title : '', names.join('·')]
+                .filter(Boolean)
+                .join(' · ') || '결제'
+          }
           const appRequest = /screen_request_app$/.test(ev.name)
           const record: ApprovalRecordMessage = {
             kind: 'approval',

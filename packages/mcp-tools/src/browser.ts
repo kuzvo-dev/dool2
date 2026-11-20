@@ -376,7 +376,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '보내기·삭제·신청처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 이것 말고 browser_checkout(결제 카드)을 쓴다. 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
@@ -421,6 +421,74 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .describe(
           '같은 일을 여러 개 이어서 할 때 그 개수 (예: 일정 6개 지우기·메일 5통 보내기). what에 모두 적고 첫 번째 버튼으로 한 번만 승인받는다. 승인되면 남은 것은 같은 사이트에서 승인 요청 없이 이어서 누른다(10분 안). 결제에는 쓰지 않는다',
         ),
+    },
+    false,
+  )
+  tool(
+    'checkout',
+    '결제 카드',
+    '결제 화면(결제 수단·최종 금액을 고르는 화면)의 마지막 버튼을 누르기 전에 쓴다. 어느 결제든(쇼핑·장보기·배달·숙소·항공·티켓) 결제 화면을 읽고 아래 칸을 채우면 폰에 결제 카드 한 장이 뜨고, 사용자가 받는 곳·결제 수단을 그 카드에서 고르고 한 번 승인한다(승인은 이것 한 번뿐). 결제 화면 전 단계의 [주문하기]·[구매하기]는 browser_click(opens_checkout: true)으로 넘어가고 여기서 쓰지 않는다. 화면에 적힌 값 그대로 넣고 지어내지 않는다. 쓴 뒤에는 카드에 있는 내용을 글로 되풀이하지 말고 한두 줄(무엇을 얼마에, 확인할 점)만 말하고 답을 끝낸다.',
+    {
+      tabId,
+      ref: ref.describe('마지막 버튼 표시 (결제하기·예약 완료 등)'),
+      title: z
+        .string()
+        .max(60)
+        .describe('가게·상품 묶음 이름 (예: "호호솥밥-수지점", "그랜드 하얏트 제주 · 디럭스 킹")'),
+      where: z.string().max(60).describe('사이트·서비스 이름 (예: "요기요", "쿠팡")'),
+      total: z.string().max(60).describe('최종 결제 금액 (화면 그대로, 예: "17,500원")'),
+      goods: z
+        .array(
+          z.object({
+            name: z.string().max(80),
+            option: z.string().max(80).optional().describe('옵션·사이즈·색·객실·좌석'),
+            qty: z.string().max(20).optional().describe('수량 (예: "1개", "2박", "성인 2")'),
+            price: z.string().max(30).optional(),
+            image: z.string().max(800).optional().describe('상품 사진 주소 (https, 화면·도구 결과 그대로)'),
+          }),
+        )
+        .max(20)
+        .describe('상품 줄'),
+      lines: z
+        .array(
+          z.object({
+            label: z.string().max(24),
+            value: z.string().max(30),
+            kind: z.enum(['discount', 'fee', 'point']).optional(),
+          }),
+        )
+        .max(10)
+        .optional()
+        .describe('금액 줄 (상품 금액·배송비/배달료·할인·적립). 최종 금액은 total'),
+      info: z
+        .array(z.object({ label: z.string().max(16), value: z.string().max(160) }))
+        .max(8)
+        .optional()
+        .describe('정보 줄 (도착 예정·이용 일시·예약자/탑승객·요청사항·좌석 등)'),
+      ship_to: z.string().max(120).optional().describe('배송·배달이면 지금 골라진 받는 곳'),
+      ship_options: z
+        .array(z.string().max(120))
+        .max(5)
+        .optional()
+        .describe('사이트에 저장된 다른 배송지 (배송지 바꾸기를 열어 읽은 것)'),
+      choices: z
+        .array(ref)
+        .max(8)
+        .optional()
+        .describe(
+          '결제 수단(또는 지금 결제·현장 결제 같은 결제 방식) 고르기 칸 표시들. 펼쳐야 보이는 수단은 미리 펼쳐 넣는다',
+        ),
+      choiceTitle: z.string().max(20).optional(),
+      chose: z
+        .array(z.string().max(60))
+        .max(8)
+        .optional()
+        .describe('두리가 스스로 고른 것 (쿠폰 적용·보험 안 함 등)'),
+      cancel: z.string().max(200).optional().describe('취소·환불·교환 규정 (화면 그대로)'),
+      final_here: z
+        .boolean()
+        .optional()
+        .describe('결제 화면이 따로 없고 이 화면의 버튼에서 바로 돈이 나갈 때만 true'),
     },
     false,
   )

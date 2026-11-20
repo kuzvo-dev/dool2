@@ -150,7 +150,7 @@ describe('브라우저 도구 실행', () => {
     const r = await tools.run('click', { tabId: 3, ref: 'e4' })
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('"구매"')
-    expect(text(r)).toContain('browser_request_approval')
+    expect(text(r)).toContain('browser_checkout')
     expect(b.calls.map((c) => c[0])).not.toContain('click')
 
     const ok = await tools.run('click', { tabId: 3, ref: 'e3' })
@@ -328,7 +328,13 @@ describe('사이트 알림창', () => {
     const b = dialogBrowser()
     const tools = new BrowserTools(b)
     await tools.run('read', { tabId: 3 })
-    await tools.run('request_approval', { tabId: 3, ref: 'e4', what: '사과', where: '가게' })
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e4',
+      what: '사과',
+      where: '가게',
+      final_here: true,
+    })
     const [rec] = tools.approvals.list()
     b.state.dialog = { type: 'confirm', message: '구매하시겠습니까?', url: 'https://shop.example/' }
     const real = b.call
@@ -492,7 +498,7 @@ describe('여러 동작 한 번에', () => {
     })
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('2. 멈췄어요')
-    expect(text(r)).toContain('browser_request_approval')
+    expect(text(r)).toContain('browser_checkout')
     expect(text(r)).toContain('남은 1개 동작은 하지 않았어요')
     expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(0)
   })
@@ -2428,5 +2434,81 @@ describe('결제 화면으로 넘어가는 버튼은 AI 판단으로 승인 없�
       .catch((e: Error) => ({ isError: true, err: e.message }))
     expect(JSON.stringify(pay)).toMatch(/승인|request_approval/)
     expect(clicks).toEqual(['e5'])
+  })
+})
+
+describe('결제 카드 (browser_checkout)', () => {
+  const PAY = `# 주문/결제
+전복솥밥 1개 13,500원 배달료 3,000원 총 결제 금액 16,500원
+[e1 버튼 "배송지 변경"] [e2 버튼 "16,500원 결제하기"]`
+  function payBrowser(url: string) {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    return {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return { tabId: 3, url, title: '주문', text: PAY, truncated: false, captcha: false }
+        if (cmd === 'screenshot') return { data: 'SHOT', mime: 'image/jpeg', url, title: '주문' }
+        return { tabId: 3, url, title: '주문' }
+      },
+    }
+  }
+
+  it('결제 화면의 마지막 버튼에 상품·금액·정보를 담은 카드 하나로 승인받는다', async () => {
+    const tools = new BrowserTools(payBrowser('https://shop.example/order/checkout') as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('checkout', {
+      tabId: 3,
+      ref: 'e2',
+      title: '호호솥밥',
+      where: '요기요',
+      total: '16,500원',
+      goods: [
+        { name: '전복솥밥', qty: '1개', price: '13,500원', image: 'javascript:alert(1)' },
+        { name: '' },
+      ],
+      lines: [
+        { label: '상품', value: '13,500원' },
+        { label: '배달료', value: '3,000원', kind: 'fee' },
+        { label: '쿠폰', value: '-0원', kind: 'weird' },
+      ],
+      info: [{ label: '도착', value: '26~41분' }],
+    })
+    expect(r.isError).toBeUndefined()
+    const [rec] = tools.approvals.list()
+    expect(rec).toMatchObject({
+      kind: 'money',
+      title: '호호솥밥',
+      amount: '16,500원',
+      goods: [{ name: '전복솥밥', qty: '1개', price: '13,500원' }],
+      info: [{ label: '도착', value: '26~41분' }],
+    })
+    // 이상한 그림 주소·이름 없는 상품·모르는 줄 종류는 거른다
+    expect(rec?.goods?.[0]).not.toHaveProperty('image')
+    expect(rec?.lines?.[1]).toEqual({ label: '배달료', value: '3,000원', kind: 'fee' })
+    expect(rec?.lines?.[2]).not.toHaveProperty('kind')
+  })
+
+  it('결제 화면이 아니면 카드를 띄우지 않고 opens_checkout으로 넘어가라고 한다 (승인 한 번)', async () => {
+    const tools = new BrowserTools(payBrowser('https://shop.example/item/1') as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('checkout', { tabId: 3, ref: 'e2', total: '16,500원' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('opens_checkout')
+    expect(tools.approvals.list()).toHaveLength(0)
+    // 그 버튼에서 바로 돈이 나가는 사이트면 final_here로 띄운다
+    const ok = await tools.run('checkout', { tabId: 3, ref: 'e2', total: '16,500원', final_here: true })
+    expect(ok.isError).toBeUndefined()
+    expect(tools.approvals.list()).toHaveLength(1)
+  })
+
+  it('결제 화면 전 단계의 돈 버튼에는 일반 승인 카드도 띄우지 않는다', async () => {
+    const tools = new BrowserTools(payBrowser('https://shop.example/item/1') as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('request_approval', { tabId: 3, ref: 'e2', what: '솥밥', where: '가게' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('browser_checkout')
+    expect(tools.approvals.list()).toHaveLength(0)
   })
 })

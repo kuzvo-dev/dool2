@@ -664,6 +664,15 @@ export interface ApprovalView {
   /** 받는 곳이 내 정보 주소와 다르면 그 경고 (본체가 비교한다. 화면은 받는 곳 고르기를 펼쳐 보여 준다) */
   shipWarn?: string
   /**
+   * 결제 카드 (browser_checkout, 11-20 사용자 시안): 어느 결제든 같은 틀에 AI가 결제 화면을 보고 채운다.
+   * title 가게·상품 묶음 이름, goods 상품 줄, lines 금액 줄(상품·배송비·할인·적립), info 정보 줄(도착·예약자·요청사항·규정).
+   * 최종 금액은 amount
+   */
+  title?: string
+  goods?: CheckoutGood[]
+  lines?: { label: string; value: string; kind?: 'discount' | 'fee' | 'point' }[]
+  info?: { label: string; value: string }[]
+  /**
    * 결제 수단 안의 세부 선택 (등록 카드·할부 개월 등, 결제 화면의 펼침 목록).
    * 사용자가 고른 것은 choice와 함께 쉼표로 이어 승인 서명에 묶인다 (예: "c2,s1o3")
    */
@@ -675,6 +684,19 @@ export interface ApprovalView {
     /** 이 결제 수단(choices의 id)을 골랐을 때만 있는 선택 (카드를 골라야 보이는 등록 카드·할부) */
     when?: string
   }[]
+}
+
+/** 결제 카드의 상품 한 줄 */
+export interface CheckoutGood {
+  name: string
+  /** 옵션·사이즈·색·객실·좌석 */
+  option?: string
+  /** 수량 (예: "1개", "2박", "성인 2") */
+  qty?: string
+  /** 가격 (화면 그대로) */
+  price?: string
+  /** 사진 주소 (https, PC가 받아 넘긴다) */
+  image?: string
 }
 
 export const ApprovalDecisionSchema = z.object({

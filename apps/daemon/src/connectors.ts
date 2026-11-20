@@ -1115,7 +1115,7 @@ export class Connectors {
 export const PAY_ORDER = [
   '[결제 순서] ① 무엇을 살지·예약할지 사용자와 정해요.',
   '② [예약하기]·[구매하기]·[주문하기]처럼 결제 화면을 여는 버튼은 승인 없이 browser_click으로 눌러요.',
-  '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정을 읽고, 예약자·주문자 칸은 browser_fill_profile로 채운 뒤(없는 항목은 browser_request_profile) 마지막 버튼에 browser_request_approval을 써요. 결제 수단·결제 시점처럼 고를 칸은 직접 고르지 말고 choices로 넘겨 승인 카드에서 사용자가 고르게 해요. 승인은 이때 한 번이에요.',
+  '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정을 읽고, 예약자·주문자 칸은 browser_fill_profile로 채운 뒤(없는 항목은 browser_request_profile) 마지막 버튼에 browser_checkout(결제 카드)을 써요. 결제 수단·결제 시점처럼 고를 칸은 직접 고르지 말고 choices로 넘겨 결제 카드에서 사용자가 고르게 해요. 승인은 이때 한 번이에요.',
   '④ 카드 번호·결제 비밀번호·본인인증처럼 사람만 할 수 있는 것만 browser_handoff로 넘겨요. 나머지를 통째로 넘기지 않아요.',
   '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
   '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login.',
