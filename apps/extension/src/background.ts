@@ -1249,15 +1249,38 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             document.body?.innerText.length ?? 0,
           ].join('|')
         }).catch(() => '')
+      // 무엇이든 바뀌었는지(글·속성·요소)는 그 액자의 변화 감시로 본다: 글 길이만 보면 키패드 점·수량 1→2처럼
+      // 바뀐 걸 못 알아채 한 번 더 눌렀다
+      const watch = () =>
+        inFrame(tabId, markFrame, () => {
+          const w = window as unknown as { __dool2Mut?: { n: number; o: MutationObserver } }
+          w.__dool2Mut?.o.disconnect()
+          const box = { n: 0, o: new MutationObserver((list) => (box.n += list.length)) }
+          box.o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+          w.__dool2Mut = box
+          return true
+        }).catch(() => false)
+      const mutated = () =>
+        inFrame(tabId, markFrame, () => {
+          const w = window as unknown as { __dool2Mut?: { n: number; o: MutationObserver } }
+          const n = w.__dool2Mut?.n ?? -1
+          w.__dool2Mut?.o.disconnect()
+          w.__dool2Mut = undefined
+          return n
+        }).catch(() => -1)
       let mouseIgnored = false
       if (!at.hidden) {
         const sig = await mark()
+        const watching = await watch()
         await clickAt(tabId, at.x, at.y, '두리가 누르는 중')
         await settle(tabId, before)
-        mouseIgnored = sig !== '' && sig === (await mark())
+        const moved = watching ? await mutated() : -1
+        mouseIgnored = sig !== '' && sig === (await mark()) && moved <= 0
       }
-      // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 마우스가 안 먹은 것처럼 보여도 다시 누르지 않는다
-      const retry = mouseIgnored && !(await locate(tabId, a.ref, 'activate')).toggle
+      // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 마우스가 안 먹은 것처럼 보여도 다시 누르지 않는다.
+      // once: 키패드 숫자처럼 눌러도 화면 글이 안 바뀌는 버튼 — 다시 누르면 같은 숫자가 두 번 들어간다
+      // (실측 쿠팡 결제 비밀번호: 6번 눌렀는데 7자리가 들어가 '틀렸습니다')
+      const retry = mouseIgnored && !a.once && !(await locate(tabId, a.ref, 'activate')).toggle
       if (at.hidden || retry) {
         // 두리 창이 가려져 있거나 화면이 꺼져 있으면 Chrome이 마우스 입력을 버린다 (키보드는 받는다, 실측).
         // 그래서 요소에 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다

@@ -1704,7 +1704,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ok = false
           break
         }
-        const r = await browser.call('click', { tabId, ref }, 15_000).then(
+        const r = await browser.call('click', { tabId, ref, once: true }, 15_000).then(
           () => true,
           () => false,
         )

@@ -56,6 +56,7 @@ const PAGES = {
 <div style="position:relative;height:60px"><button id="under" onclick="document.title='아래 버튼'">아래 버튼</button>
 <div id="pop" style="position:absolute;inset:0;background:#fff"><button onclick="document.title='팝업 예약'" style="width:100%;height:100%">팝업 예약</button></div></div>
 <div id="plain"><span>골목 식당 카드</span> <small>4.6 (394)</small></div>
+<a href="#" id="pinkey" onclick="event.preventDefault();window.__pin=(window.__pin||0)+1;document.title='비밀번호 '+window.__pin+'자리'">7</a>
 <div class="stepper"><div><button disabled><svg width="12" height="12"><path d="M0 6h12"/></svg></button></div><div>0</div><div><button><svg width="12" height="12"><path d="M0 6h12M6 0v12"/></svg></button></div></div>
 <button class="IconClose" style="width:24px;height:24px"><svg width="12" height="12"><path d="M0 0l12 12"/></svg></button>
 <div role="dialog" style="width:320px;height:220px"><img alt="" width="300" height="160" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><button>닫기</button></div>
@@ -391,6 +392,17 @@ try {
     assert.match(s.text, /버튼 "수량 줄이기" 비활성\]\s+0\s+\[e\d+ 버튼 "수량 늘리기"\]/, s.text)
     assert.match(s.text, /\[e\d+ 버튼 "닫기"\]/)
     assert.match(s.text, /안내는 그림이라 글로 읽을 수 없어요/)
+  })
+
+  await step('눌러도 글이 안 바뀌는 버튼(키패드 숫자)은 한 번만 누른다', async () => {
+    await call('navigate', { tabId, url: `${base}/app` })
+    const s = await call('snapshot', { tabId })
+    const key = s.text.match(/\[(e\d+) 링크 "7"\]/)?.[1]
+    assert.ok(key, `키패드 버튼이 없어요:\n${s.text}`)
+    await call('click', { tabId, ref: key })
+    const t = await call('snapshot', { tabId })
+    // 화면 글은 그대로라 예전에는 '마우스가 안 먹었다'고 보고 한 번 더 눌러 2자리가 됐다 (실측 쿠팡 결제 비밀번호)
+    assert.equal(t.title, '비밀번호 1자리')
   })
 
   await step('커넥터 엔진: 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기', async () => {
