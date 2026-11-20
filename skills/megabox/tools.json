@@ -244,7 +244,7 @@
       "title": "상영 시간 찾기",
       "description": "로그인 없이 된다. 메가박스 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화·관람 정보·상영관별(관 이름·총 좌석·상영 형식) 회차 시각·남은 좌석. 극장 번호를 모르면 megabox_theaters 먼저. 극장 화면이 보여 주는 날짜(오늘부터 약 2주)만 된다. 사용자가 말한 영화·시간대만 골라 보여 준다. 예매하려면 megabox_prepare_booking.",
       "tier": "lookup",
-      "status": "검증됨(2026-11-17, 강남 내일·토요일 시간표와 남은 좌석, 화면 읽기)",
+      "status": "검증됨(2026-11-21, 강남 새벽에 고른 당일·다음 날 시간표와 남은 좌석, 화면 읽기)",
       "input": {
         "properties": {
           "theater_id": {
@@ -300,7 +300,7 @@
         },
         {
           "click": {
-            "text": "{{date|d}} 일 {{date|dow}}"
+            "text": "{{date|yyyy}}년 {{date|m}}월 {{date|d}} 일"
           },
           "optional": true
         },
