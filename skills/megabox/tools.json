@@ -413,7 +413,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "메가박스 빠른예매 화면이에요(안쪽 프레임일 수 있음). 날짜 줄에서 {{date|mmdd}}({{date|dow}})을 고르고, 영화에서 '{{movie}}', 극장에서 '{{theater}}'을(를) 고른 뒤 시간 목록에서 {{start}} 시작 회차({{screen}})를 눌러요. 인원/좌석 화면이 나오면 {{people}}명, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 영화·극장·관·시각·좌석·금액을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인 창이 나오면 연결 전엔 connect_ask('megabox'), 풀렸으면 browser_handoff."
+          "handoff_to_agent": "메가박스 빠른예매 화면이에요(안쪽 프레임일 수 있음). 날짜 줄에서 {{date|mmdd}}({{date|dow}})을 고르고, 영화에서 '{{movie}}', 극장에서 '{{theater}}'을(를) 고른 뒤 시간 목록에서 {{start}} 시작 회차({{screen}})를 눌러요. 인원/좌석 화면이 나오면 {{people}}명, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 영화·극장·관·시각·좌석·금액을 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인 창이 나오면 connect_ask('megabox')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {},

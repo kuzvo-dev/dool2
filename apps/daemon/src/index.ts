@@ -627,6 +627,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectVia = () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {}
   const rememberVia = (id: string, via: string) =>
     store.setSetting('connectVia', { ...connectVia(), [id]: via })
+  /** 서비스마다 마지막으로 해 본 연결 방법: 자동 로그인이 확인을 못 하고 두리(AI)가 이어받아 끝낸 경우에도 방법을 기억하려고 */
+  const connectTried = new Map<string, string>()
   /** 금고에 있는 그 서비스 계정 (연결 주소·로그인 주소) */
   const vaultCreds = async (card: ConnectCard) => {
     const url = connectUrl(card)
@@ -931,6 +933,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const running = connecting.get(card.id)
     if (running) return running
     const startedAt = Date.now()
+    connectTried.set(card.id, how)
     journal.write('connect-start', { id: card.id, how })
     // 던져진 오류는 화면 표시(e2 등)가 섞인 속 이야기라 사용자에게는 쉬운 말로, 원문은 기록에만
     const p: Promise<ConnectResult> = run().catch((e: Error) => {
@@ -1045,6 +1048,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     loginWatch.stop(id)
     if (on) void skills.card(id).then((card) => card && resolveLoginRequests(card))
     if (on && connectHuman.delete(id)) void skills.card(id).then((card) => card && connectDone(card))
+    // 연결로 표시되면 그때 해 본 방법(간편 로그인·금고 계정)을 기억한다: 로그인이 풀리면 같은 방법으로 두리가 다시 로그인
+    // (실측 11-20: 요기요 카카오 로그인을 두리가 이어받아 끝냈는데 방법이 안 남아, 풀리자 연결 카드부터 다시 떴다)
+    const tried = connectTried.get(id)?.replace(/^keep:/, '')
+    if (
+      on &&
+      tried &&
+      !connectVia()[id] &&
+      (tried.startsWith('social:') || /^(?:login|relogin|vault)$/.test(tried))
+    )
+      rememberVia(id, tried.startsWith('social:') ? tried : 'vault')
     // 카카오·네이버·구글 계정 자체를 연결하면: 그 화면에 보이는 계정을 '내 계정'으로 기억한다
     // (다른 사이트에 간편 로그인할 때 동의 화면의 계정이 이것과 같으면 묻지 않는다)
     if (on && id in SOCIAL_PROVIDERS) void rememberProviderAccount(id as SocialProvider).catch(() => {})
@@ -2449,7 +2462,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return text(
             `${card.name}은 방금 연결됐어요. 연결 카드는 띄우지 않았어요. 하던 일을 이어서 해요(페이지를 새로 열거나 다시 읽으면 로그인된 화면이 보여요).`,
           )
-        if (at && !creds && !provider) journal.write('connect-ask', { id: card.id, expired: true })
+        // 연결돼 있다고 기억하는데 다시 로그인할 방법이 없으면: 연결 표시를 풀어 폰에 진짜 연결 카드가 뜨게 한다
+        // (안 풀면 폰은 '연결돼 있어요' 한 줄만 보여 카드가 안 뜬 것처럼 보였다)
+        if (at && !creds && !provider) {
+          journal.write('connect-ask', { id: card.id, expired: true })
+          connectMark(card.id, false)
+        }
         connectAsked.set(card.id, Date.now())
         void link
           .notify({

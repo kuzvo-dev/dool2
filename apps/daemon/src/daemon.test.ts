@@ -478,6 +478,34 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     expect(auto).not.toContain('pw-123')
   })
 
+  it('연결돼 있다고 기억하는데 다시 로그인할 방법이 없으면 연결 표시를 풀어 진짜 연결 카드가 뜨게 한다', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"요기요로 저녁 시켜 줘"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    // 11분 전에 연결됐다고 표시만 남은 상태 (방금 연결된 10분 안이면 카드를 띄우지 않으므로)
+    await api('/api/connections/coupang', { method: 'PUT' })
+    const realNow = Date.now
+    Date.now = () => realNow() + 11 * 60_000
+    try {
+      const r = (await (
+        await fetch(`${daemon?.url}/api/tools/life/connect_ask`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ service: 'coupang' }),
+        })
+      ).json()) as { content: { text: string }[] }
+      expect(r.content[0]?.text).toContain('연결 카드를 띄웠어요')
+    } finally {
+      Date.now = realNow
+    }
+    const list = (await (await api('/api/connections')).json()) as {
+      services: { card: { id: string }; connectedAt?: string | null }[]
+    }
+    expect(list.services.find((x) => x.card.id === 'coupang')?.connectedAt ?? undefined).toBeUndefined()
+  })
+
   it('두리 도구로 금고·결제 수단을 볼 수 있다 (가린 값만, 도구 토큰으로만)', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State

@@ -158,7 +158,7 @@
           }
         },
         {
-          "handoff_to_agent": "이스타항공 예약 화면이에요. 출발 {{from}}·도착 {{to}}·{{date}}(오는 날 {{return_date}})·어른 {{adults}}명 어린이 {{children}}명으로 조회해 {{flight_no}}의 '{{fare}}' 운임을 골라요(없거나 매진이면 물어요). 다음으로 가요. 로그인 화면이면 연결 전엔 connect_ask('eastar-jet'), 풀렸으면 browser_handoff. 탑승객 정보는 회원 정보에 없으면 물어요. 결제 화면에서 편명·날짜·시각·운임·인원·총액(세금 포함)·환불 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요. 좌석·수하물·보험 권유는 원할 때만."
+          "handoff_to_agent": "이스타항공 예약 화면이에요. 출발 {{from}}·도착 {{to}}·{{date}}(오는 날 {{return_date}})·어른 {{adults}}명 어린이 {{children}}명으로 조회해 {{flight_no}}의 '{{fare}}' 운임을 골라요(없거나 매진이면 물어요). 다음으로 가요. 로그인 화면이면 connect_ask('eastar-jet')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요). 탑승객 정보는 회원 정보에 없으면 물어요. 결제 화면에서 편명·날짜·시각·운임·인원·총액(세금 포함)·환불 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요. 좌석·수하물·보험 권유는 원할 때만."
         }
       ],
       "result": {}

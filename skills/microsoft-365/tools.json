@@ -24,7 +24,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 받은편지함에서 최근 2일 안 읽은 메일·중요 표시·플래그 메일을 보낸 사람·제목·요청 내용·기한으로 정리하고, 일정 화면에서 오늘 회의를 시간·제목·장소로 덧붙여요. 메일을 읽음 처리 외에 지우거나 옮기지 않아요. Microsoft 로그인 화면이 나오면 연결 전이면 connect_ask('microsoft-365'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 받은편지함에서 최근 2일 안 읽은 메일·중요 표시·플래그 메일을 보낸 사람·제목·요청 내용·기한으로 정리하고, 일정 화면에서 오늘 회의를 시간·제목·장소로 덧붙여요. 메일을 읽음 처리 외에 지우거나 옮기지 않아요. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {},
@@ -63,7 +63,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 위 검색칸에 '{{query}}'를 넣어 메일과 파일 결과를 보고, 필요하면 https://www.office.com 의 검색(파일)과 Teams 검색도 해요. 맞는 것을 이름·위치(폴더·채널)·날짜·보낸/고친 사람과 링크로 정리해요. 파일을 지우거나 공유 설정을 바꾸지 않아요. Microsoft 로그인 화면이 나오면 연결 전이면 connect_ask('microsoft-365'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 위 검색칸에 '{{query}}'를 넣어 메일과 파일 결과를 보고, 필요하면 https://www.office.com 의 검색(파일)과 Teams 검색도 해요. 맞는 것을 이름·위치(폴더·채널)·날짜·보낸/고친 사람과 링크로 정리해요. 파일을 지우거나 공유 설정을 바꾸지 않아요. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {},
@@ -115,7 +115,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). '{{from}}'이 보낸 '{{subject}}' 메일을 찾아 열고 '회신'을 눌러 '{{body}}'를 그대로 넣어요. '보내기'는 누르지 말고 받는 사람·제목·본문을 보여 주며 browser_request_approval로 승인받아야만 눌러요. 모두 회신·전달은 사용자가 말할 때만. Microsoft 로그인 화면이 나오면 연결 전이면 connect_ask('microsoft-365'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). '{{from}}'이 보낸 '{{subject}}' 메일을 찾아 열고 '회신'을 눌러 '{{body}}'를 그대로 넣어요. '보내기'는 누르지 말고 받는 사람·제목·본문을 보여 주며 browser_request_approval로 승인받아야만 눌러요. 모두 회신·전달은 사용자가 말할 때만. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}
@@ -186,7 +186,7 @@
           "sleep": 2500
         },
         {
-          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 일정에서 '새 이벤트'를 열어 제목 '{{title}}', {{date}} {{start}}~{{end}}, 참석자 {{attendees}}를 넣고 Teams 회의는 teams={{teams}}면 켜요. 예약 도우미에 참석자 바쁨이 보이면 알려요. '보내기'는 누르지 말고 내용을 보여 주며 browser_request_approval로 승인받아야만 눌러요. Microsoft 로그인 화면이 나오면 연결 전이면 connect_ask('microsoft-365'), 연결했는데 풀렸으면 browser_handoff."
+          "handoff_to_agent": "Microsoft 계정 화면이에요. 회사·학교 계정이면 https://outlook.office.com 을, 개인 계정이면 https://outlook.live.com 을 열어요(사용자가 쓰는 쪽, 모르면 회사 먼저). 일정에서 '새 이벤트'를 열어 제목 '{{title}}', {{date}} {{start}}~{{end}}, 참석자 {{attendees}}를 넣고 Teams 회의는 teams={{teams}}면 켜요. 예약 도우미에 참석자 바쁨이 보이면 알려요. '보내기'는 누르지 말고 내용을 보여 주며 browser_request_approval로 승인받아야만 눌러요. Microsoft 로그인 화면이 나오면 connect_ask('microsoft-365')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}
