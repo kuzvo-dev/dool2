@@ -210,14 +210,13 @@
                 "match": "\\n(\\d{1,2}(?:\\.\\d)?)\\n[^\\n]{1,10}\\n[\\d,]+ 이용후기"
               },
               "reviews": {
-                "match": "([\\d,]+) 이용후기"
+                "match": "(\\d[\\d,]*\\d|\\d) 이용후기"
               },
               "price": {
-                "css": "[data-selenium='display-price']"
+                "match": "₩\\s?([\\d,]+)\\s*\\n\\s*1박당 총 금액"
               },
               "price_with_tax": {
-                "css": "[data-selenium='total-price-per-night']",
-                "match": "₩\\s?([\\d,]+)"
+                "match": "1박당 총 금액\\s*₩\\s?([\\d,]+)"
               },
               "rooms_left": {
                 "match": "(단 \\d+개 남음)"

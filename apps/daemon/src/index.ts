@@ -91,7 +91,7 @@ import { FileTools, htmlText, type userFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
-import { Life, routineAsk, watchPrompt } from './life.js'
+import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
@@ -1895,14 +1895,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (!run || run.quiet) return
     // 따로 한 대화의 결과는 메인 대화에도 두리 카드로 남긴다 (사용자가 이어 말할 수 있게)
     if (r.target !== 'feed' && quietly && run.item) tellInChat(run.item)
-    void link
-      .notify({
-        title: r.target === 'feed' ? '피드에 새 글' : r.title,
-        body: (run.item?.body ?? answer).replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
-        tag: `routine-${r.id}`,
-        url: r.target === 'feed' ? '#tab=feed' : '#tab=chat',
-      })
-      .catch(() => {})
+    const push = () =>
+      void link
+        .notify({
+          title: r.target === 'feed' ? '피드에 새 글' : r.title,
+          body: (run.item?.body ?? answer).replace(/\*\*/g, '').replace(/\s+/g, ' ').slice(0, 120),
+          tag: `routine-${r.id}`,
+          url: r.target === 'feed' ? '#tab=feed' : '#tab=chat',
+        })
+        .catch(() => {})
+    // "밤새 해 두고 아침에 알려 줘": 결과는 대화에 바로 남기고 폰 알림만 정한 시각까지 미룬다
+    const wait = tellDelay(r.tellAt, new Date())
+    if (wait > 0) setTimeout(push, wait).unref?.()
+    else push()
   }
   // 예전에 만든 피드 대화도 따로 하는 대화로 (메인 대화에 섞이지 않게)
   {
