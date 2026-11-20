@@ -15,6 +15,7 @@ import {
   PAY_FLOW_TTL_MS,
   parseRefs,
   payNow,
+  payOptions,
   promoClose,
   type SiteDialog,
   sameFinal,
@@ -2879,5 +2880,25 @@ describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
     expect(text(r)).not.toContain('browser_handoff')
     expect(tools.approvals.get(rec?.id as string)?.status).toBe('failed')
     expect(tools.isPaying(3)).toBe(false)
+  })
+
+  it('같은 결제 수단이 라디오·버튼으로 두 번 나오면 승인 카드에는 하나만 (고르는 라디오를 남긴다)', () => {
+    // 실측 11-20 G마켓 주문서: "일반 결제 혜택"이 라디오와 버튼으로 둘 다 있어 카드에 "일반 결제"가 두 번 떴다
+    const refs = parseRefs(
+      [
+        '[e78 라디오 "스마일페이간편결제"]',
+        '[e79 버튼 "스마일페이 간편결제"]',
+        '[e80 버튼 "스마일페이 간편결제 설정"]',
+        '[e103 라디오 "일반 결제 혜택" 선택됨]',
+        '[e104 버튼 "일반 결제 혜택"]',
+        '[e174 라디오 "신용/체크카드" 선택됨]',
+      ].join('\n'),
+    )
+    expect(payOptions({ refs })).toEqual(['e78', 'e103', 'e174'])
+    // 버튼이 먼저 나와도 라디오를 남긴다
+    const flipped = parseRefs(
+      ['[e1 버튼 "카카오페이"]', '[e2 라디오 "카카오페이"]', '[e3 라디오 "신용카드"]'].join('\n'),
+    )
+    expect(payOptions({ refs: flipped })).toEqual(['e2', 'e3'])
   })
 })

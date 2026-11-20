@@ -446,12 +446,27 @@ export function isPayOption(role: string, label: string): boolean {
   return role === '버튼' && PAY_BUTTON.test(label)
 }
 
-/** 결제 화면의 결제 수단 고르기 칸들 (AI가 choices를 안 넘겨도 승인 카드에 싣는다) */
+/** 같은 결제 수단인지 볼 때 쓰는 이름 (띄어쓰기·뒤 혜택 안내 무시: "스마일페이간편결제" = "스마일페이 간편결제") */
+function payKey(label: string): string {
+  return payOptionName(label).replace(/\s+/g, '')
+}
+
+/**
+ * 결제 화면의 결제 수단 고르기 칸들 (AI가 choices를 안 넘겨도 승인 카드에 싣는다).
+ * 같은 결제 수단이 라디오와 그 옆 버튼으로 두 번 나오면 하나만 싣는다 — 고르는 칸(라디오)을 남긴다
+ * (실측 11-20 G마켓: "일반 결제 혜택" 라디오·버튼이 카드에 "일반 결제"로 두 번 떠 헷갈렸다)
+ */
 export function payOptions(info: Pick<PageInfo, 'refs' | 'near'>): string[] {
-  return [...info.refs]
-    .filter(([k, v]) => isPayOption(v.role, optionLabel(info, k)))
-    .map(([k]) => k)
-    .slice(0, 8)
+  const byName = new Map<string, string>()
+  for (const [k, v] of info.refs) {
+    const label = optionLabel(info, k)
+    if (!isPayOption(v.role, label)) continue
+    const key = payKey(label)
+    const had = byName.get(key)
+    if (had === undefined) byName.set(key, k)
+    else if (info.refs.get(had)?.role !== '라디오' && v.role === '라디오') byName.set(key, k)
+  }
+  return [...byName.values()].slice(0, 8)
 }
 
 /**
@@ -467,7 +482,7 @@ export function approvalChoices(
   const auto = info.checkout && (!title || title === '결제 수단') ? payOptions(info) : []
   if (!asked?.length) return auto.length >= 2 ? auto : []
   const out = [...asked]
-  const name = (r: string) => payOptionName(optionLabel(info, r))
+  const name = (r: string) => payKey(optionLabel(info, r))
   const names = new Set(out.map(name))
   for (const r of auto)
     if (!out.includes(r) && !names.has(name(r))) {
