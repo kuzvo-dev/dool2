@@ -209,6 +209,74 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('memory_save'),
   )
   server.registerTool(
+    'know_save',
+    {
+      title: '알아 둔 것 남기기',
+      description:
+        '로그인해서 본 내 정보 화면의 사실(fact)과, 두리가 하거나 확인한 일(done: 신청·응모·결제·주문·예약·배송·가입·구독)을 한 줄로 남긴다. ' +
+        '다음 부탁에서 같은 인증을 다시 받거나 이미 아는 걸 묻지 않게: 예) 홈택스 2025년 귀속 총급여·근무처, 혜택알리미 대상 목록, 보험 만기, K-패스 가입, 체험단 신청(발표일), 숙소 예약(무료취소 마감). ' +
+        '어디서(source)·기준 시점(basis)을 꼭 붙이고, 한 일·만기는 다음에 챙길 때(next: 발표·도착·마감·만기)를 넣으면 먼저 챙기기가 그때 상태를 확인해 알린다 — 같은 때 알림 목표(goal_create)를 따로 만들지 않는다(두 번 울린다). ' +
+        '같은 이름이면 새 값으로 바뀐다. 주민번호·계좌번호·카드번호·비밀번호는 넣지 않는다(금고·내 정보가 맡는다). 다른 사람 정보는 넣지 않는다.',
+      inputSchema: {
+        kind: z.enum(['fact', 'done']).describe('fact=본 사실 · done=두리가 하거나 확인한 일'),
+        title: z.string().max(80).describe('무엇 (예: "2025년 귀속 총급여", "레뷰 센티크 체험단 신청")'),
+        value: z.string().max(200).describe('요약 값 (예: "약 7,750만 원(근무처 ○○)", "신청함, 발표 11/24")'),
+        source: z.string().max(40).optional().describe('어디서 봤는지 (예: "홈택스", "레뷰")'),
+        url: z.string().max(500).optional().describe('그 화면 주소 (https)'),
+        basis: z
+          .string()
+          .max(40)
+          .optional()
+          .describe('기준 시점 (예: "2025년 귀속", "11월 실적", "조회한 날")'),
+        next: z.string().max(30).optional().describe('다음에 챙길 때 (YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM)'),
+        next_what: z
+          .string()
+          .max(80)
+          .optional()
+          .describe('그때 할 일 (예: "당첨 발표 확인", "무료취소 마감 알리기")'),
+        state: z.enum(['open', 'done']).optional().describe('한 일: 진행 중(기본)·끝남'),
+      },
+    },
+    call('know_save'),
+  )
+  server.registerTool(
+    'know_find',
+    {
+      title: '알아 둔 것 찾기',
+      description:
+        '전에 조회해서 알아 둔 사실과 한 일 장부를 찾는다. 공공·금융 조회(소득·세금·혜택·보험)나 신청 여부를 다시 인증받기 전에 먼저 본다. ' +
+        '결과의 본 날·기준 시점을 오늘과 견줘 지금도 쓸 수 있는지 네가 판단한다: 연도 자료는 다음 해 자료가 나오면 낡고, 잔액·목록은 며칠, 이번 달 실적은 하루면 낡는다. ' +
+        '쓸 만하면 인증 없이 "11/20 홈택스 기준"처럼 날짜와 출처를 밝혀 답하고, 신청·결제처럼 결정이 걸리면 다시 조회한다.',
+      inputSchema: {
+        query: z
+          .string()
+          .max(60)
+          .optional()
+          .describe('찾을 말 (예: "총급여", "레뷰", "보험"). 비우면 최근 것'),
+        kind: z.enum(['fact', 'done']).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    call('know_find'),
+  )
+  server.registerTool(
+    'know_update',
+    {
+      title: '한 일 장부 고치기',
+      description:
+        '한 일의 상태가 바뀌면 고친다: 취소·해지·환불·배송 완료·발표가 나왔으면 state "done"(지우지 않고 끝남으로), 새로 챙길 때가 생기면 next. 값이 바뀐 사실도 value로 고친다.',
+      inputSchema: {
+        id: z.string().max(40).optional().describe('know_find 결과의 id'),
+        title: z.string().max(80).optional().describe('id를 모르면 이름 일부'),
+        value: z.string().max(200).optional(),
+        state: z.enum(['open', 'done']).optional(),
+        next: z.string().max(30).optional().describe('다음에 챙길 때. 비우면("") 더 챙기지 않음'),
+        next_what: z.string().max(80).optional(),
+      },
+    },
+    call('know_update'),
+  )
+  server.registerTool(
     'memory_forget',
     {
       title: '잊기',

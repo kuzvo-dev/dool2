@@ -218,25 +218,29 @@ describe('먼저 챙기기', () => {
     }
   }
 
-  it('하루 두 번(8:30, 18:30)이 지나면 한 번씩 살펴본다', () => {
-    const t = setup(kst(8, 0))
+  it('아침 6시부터 밤 10시까지 매시 정각이 지나면 한 번씩 살펴본다', () => {
+    const t = setup(kst(5, 50))
     t.life.tick()
     expect(t.runs()).toBe(0)
-    t.at(kst(8, 31))
+    t.at(kst(6, 1))
     t.life.tick()
     expect(t.runs()).toBe(1)
-    // 살펴보는 동안·끝난 뒤 같은 칸에서는 다시 하지 않는다
+    // 살펴보는 동안·끝난 뒤 같은 시간 안에서는 다시 하지 않는다
     t.life.tick()
     t.life.watchDone()
-    t.at(kst(12, 0))
+    t.at(kst(6, 59))
     t.life.tick()
     expect(t.runs()).toBe(1)
-    t.at(kst(18, 45))
+    t.at(kst(7, 2))
     t.life.tick()
     expect(t.runs()).toBe(2)
     t.life.watchDone()
-    // 다음 날 아침
-    t.at(kst(9, 10, 1))
+    // 밤 10시대까지는 하고, 11시부터는 쉰다
+    t.at(kst(22, 5))
+    t.life.tick()
+    expect(t.runs()).toBe(3)
+    t.life.watchDone()
+    t.at(kst(23, 5))
     t.life.tick()
     expect(t.runs()).toBe(3)
   })
@@ -328,6 +332,79 @@ describe('먼저 챙기기', () => {
     expect(text).not.toContain('장바구니')
     expect(text).toContain('- 러닝화 내일 도착 [coupang-123]')
     expect(text).toContain('feed_tell')
+  })
+
+  it('챙길 때가 된 한 일이 있으면 연결한 서비스가 없어도 살펴보고, 부탁 맨 앞에 담는다', () => {
+    const t = setup(kst(9, 0), [])
+    t.life.run('know_save', {
+      kind: 'done',
+      title: '레뷰 센티크 체험단 신청',
+      value: '신청함',
+      source: '레뷰',
+      next: '2026-11-16T09:00:00+09:00',
+      next_what: '당첨 발표 확인',
+    })
+    t.life.tick()
+    expect(t.runs()).toBe(1)
+    const text = watchPrompt([], [], kst(9, 0), t.life.knowDue(), kst(8, 0).toISOString())
+    expect(text).toContain('챙길 때가 된 일')
+    expect(text).toContain('레뷰 센티크 체험단 신청: 신청함 (레뷰')
+    expect(text).toContain('당첨 발표 확인')
+    expect(text).toContain('지난번에 살핀 때: 60분 전')
+    expect(text).toContain('know_update')
+  })
+})
+
+describe('두리가 알아 둔 것 (조회 기억·한 일 장부)', () => {
+  it('같은 이름은 새 값으로 바꾸고, 날짜·기준 시점과 함께 지침에 붙는다 (쓸지는 AI가 판단)', () => {
+    let now = new Date('2026-11-20T03:00:00Z')
+    const life = new Life(kv(), () => now)
+    life.run('know_save', {
+      kind: 'fact',
+      title: '2025년 귀속 총급여',
+      value: '약 7,700만 원',
+      source: '홈택스',
+      basis: '2025년 귀속',
+    })
+    life.run('know_save', {
+      kind: 'fact',
+      title: '2025년 귀속 총급여',
+      value: '약 7,750만 원',
+      source: '홈택스',
+      basis: '2025년 귀속',
+    })
+    expect(life.know()).toHaveLength(1)
+    expect(life.know()[0]?.value).toBe('약 7,750만 원')
+    now = new Date('2027-03-02T03:00:00Z')
+    const prompt = life.knowPrompt()
+    expect(prompt).toContain('오늘 2027-03-02')
+    expect(prompt).toContain('2025년 귀속 총급여: 약 7,750만 원 (홈택스 · 2025년 귀속 · 본 날 2026-11-20')
+    expect(prompt).toContain('네가 판단')
+    const found = life.run('know_find', { query: '총급여' }).content[0]?.text ?? ''
+    expect(found).toContain('약 7,750만 원')
+    expect(life.run('know_find', { query: '보험' }).content[0]?.text).toContain('알아 둔 것이 없어요')
+  })
+
+  it('한 일은 취소·완료되면 지우지 않고 끝남으로, 끝나면 더 챙기지 않는다', () => {
+    const now = new Date('2026-11-20T03:00:00Z')
+    const life = new Life(kv(), () => now)
+    life.run('know_save', {
+      kind: 'done',
+      title: '제주 숙소 예약',
+      value: '12/12~14 2박',
+      source: '여기어때',
+      next: '2026-11-20',
+      next_what: '무료취소 마감 알리기',
+    })
+    expect(life.knowDue()).toHaveLength(1)
+    const id = life.know()[0]?.id ?? ''
+    life.run('know_update', { id: id.slice(0, 8), state: 'done', value: '예약 취소함' })
+    expect(life.know()[0]).toMatchObject({ state: 'done', value: '예약 취소함' })
+    expect(life.know()[0]?.next).toBeUndefined()
+    expect(life.knowDue()).toHaveLength(0)
+    expect(life.knowPrompt()).not.toContain('진행 중인 일')
+    life.act({ action: 'know-delete', id })
+    expect(life.know()).toHaveLength(0)
   })
 })
 

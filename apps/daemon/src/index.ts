@@ -322,7 +322,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // 기억은 대화마다 지침 끝에 붙는다
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
     systemPrompt: () =>
-      [buildSystemPrompt(life.identity()), skills.serviceMap(), life.memoryPrompt()]
+      [buildSystemPrompt(life.identity()), skills.serviceMap(), life.memoryPrompt(), life.knowPrompt()]
         .filter(Boolean)
         .join('\n\n'),
   })
@@ -1968,19 +1968,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })().catch(() => {
       life.ideasBusy = false
     })
-  // 먼저 챙기기: 하루 두 번, 연결한 서비스만 살펴 챙길 일이 있으면 feed_tell로 올린다 (없으면 조용히)
+  // 먼저 챙기기: 아침 6시~밤 10시 한 시간마다, 챙길 때가 된 한 일과 연결한 서비스를 살펴 챙길 일이 있으면 feed_tell로 올린다 (없으면 조용히)
   life.watchSources = () => Object.keys(readSettings().connections ?? {})
-  life.onWatch = () =>
+  life.onWatch = (lastWatch) =>
     void (async () => {
       const threadId = await feedThreadId()
       if (threads.isRunning(threadId)) return
       const services = (await skills.connections()).filter((c) => c.connectedAt && c.card.how !== 'device')
-      if (!services.length) return
+      const due = life.knowDue()
+      if (!services.length && !due.length) return
       routineThreads.add(threadId)
       try {
         for await (const _ of tracked(
           threadId,
-          threads.send(threadId, watchPrompt(services, life.recentTells())),
+          threads.send(threadId, watchPrompt(services, life.recentTells(), new Date(), due, lastWatch)),
         )) {
         }
       } finally {
