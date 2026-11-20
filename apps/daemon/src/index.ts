@@ -1180,6 +1180,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         await browserTools.remoteFill(tabId, values, press)
       },
       remote: async ({ tabId, action, x, y, text, key, dy, w, h }) => {
+        if (action === 'done') return handoffDone(tabId, '사용자가 폰에서 [다 했어요]를 눌렀어요')
         const viewport = remoteViewport.get(tabId) ?? (await browserTools.remoteScreen(tabId)).viewport
         await browserTools.remoteInput(
           tabId,
@@ -1533,7 +1534,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         title:
           request.field === 'form'
             ? '내 정보를 한 번만 넣어 주세요'
-            : `${request.site}: ${request.field === 'otp' ? '인증번호가 필요해요' : '입력이 필요해요'}`,
+            : `${request.site}: ${request.field === 'otp' ? '인증번호가 필요해요' : request.field === 'tap' ? '로봇 확인을 풀어 주세요' : '입력이 필요해요'}`,
         body: request.hint ?? request.label,
         tag: `info-${request.id}`,
         url: '',
@@ -1699,6 +1700,84 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ok
             ? `사용자가 폰에서 ${kind === 'rrn_back' ? '주민번호 뒷자리' : kind === 'captcha' ? '보안문자' : '인증번호'}를 넣어 "${field}" 칸에 들어갔어요. 페이지를 읽고 [확인]·[인증] 버튼을 눌러 하던 일을 이어서 해 주세요.`
             : `사용자가 인증번호를 넣었는데 "${field}" 칸을 화면에서 찾지 못해 넣지 못했어요. 페이지를 읽어 칸을 확인하고 browser_request_code를 다시 써 주세요.`,
+        ),
+      )
+    })
+    return id
+  }
+  // 사람에게 넘긴 화면: 사용자가 [다 했어요]를 누르거나 화면이 바뀌면(마친 듯) 대화에 말을 쓰게 하지 않고 두리가 이어 간다
+  // (사용자 11-20: "다 했어 이런 거 말 안 하고 알아서 잘 인지하고 했으면")
+  const handoffDoneAt = new Map<number, number>()
+  const handoffDone = (tabId: number, why: string) => {
+    browserTools.stopHandoffWatch(tabId)
+    if (Date.now() - (handoffDoneAt.get(tabId) ?? 0) < 20_000) return
+    handoffDoneAt.set(tabId, Date.now())
+    const threadId = conversation.current()?.id
+    if (!threadId) return
+    sayNow('화면이 바뀐 걸 봤어요. 확인하고 이어서 할게요.')
+    followUp(
+      threadId,
+      appNote(
+        `넘긴 화면이 바뀌었어요(${why}). 사용자가 마친 것 같아요. 탭 ${tabId}(닫혔으면 원래 탭)을 다시 읽어 확인하고 하던 일을 이어서 끝내요. 아직 남은 일이 있으면 그것만 한 문장으로 말해요. 사용자에게 "다 했다고 말해 달라"고 하지 않아요.`,
+      ),
+    )
+  }
+  browserTools.onHandoffChanged = handoffDone
+  // 그림 눌러 풀기(로봇 확인): 폰 카드에서 누른 곳(그림 기준 0~1000)을 PC 화면의 같은 자리에 차례로 누른다
+  browserTools.requestTap = (tabId, say, host, image, rect, taps) => {
+    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    // 같은 사이트의 앞 그림 카드는 닫는다 (문제 그림이 바뀌었다)
+    for (const q of infoRequests.pending())
+      if (q.field === 'tap' && q.host === host) infoRequests.cancel(q.id)
+    const answer = infoRequests.ask(
+      {
+        site: host || '로봇 확인',
+        host,
+        field: 'tap',
+        label: say,
+        hint:
+          taps > 1
+            ? `맞는 곳을 모두 누르고(최대 ${taps}곳) [다 눌렀어요]를 눌러 주세요`
+            : '그림에서 맞는 곳을 한 번 눌러 주세요',
+        image,
+        maxTaps: taps,
+      },
+      10 * 60_000,
+    )
+    const id = infoRequests.pending().at(-1)?.id
+    void answer.then(async (value) => {
+      if (!value) return
+      const points = value
+        .split(';')
+        .map((p) => p.split(',').map(Number))
+        .filter(
+          (p): p is [number, number] =>
+            p.length === 2 && p.every((n) => Number.isFinite(n) && n >= 0 && n <= 1000),
+        )
+        .slice(0, taps)
+      sayNow(`눌러 주신 ${points.length}곳 받았어요. PC 화면에서 같은 자리를 누를게요.`)
+      let ok = points.length > 0
+      for (const [px, py] of points) {
+        const x = Math.round(rect.x + (px / 1000) * rect.w)
+        const y = Math.round(rect.y + (py / 1000) * rect.h)
+        const r = await browser.call('input', { tabId, action: 'tap', x, y }, 15_000).then(
+          () => true,
+          () => false,
+        )
+        if (!r) {
+          ok = false
+          break
+        }
+        await new Promise((res) => setTimeout(res, 350))
+      }
+      journal.write('tap-solved', { host, taps: points.length, ok })
+      if (!threadId) return
+      followUp(
+        threadId,
+        appNote(
+          ok
+            ? `사용자가 폰 그림 카드에서 ${points.length}곳을 눌러 PC 화면의 같은 자리를 눌렀어요. 페이지를 다시 읽어 [확인]·[제출]이 있으면 누르고, 로봇 확인이 또 나오면 browser_request_tap을 다시 써서 하던 일을 이어서 해 주세요.`
+            : '사용자가 그림 카드에서 누른 곳을 PC 화면에 누르지 못했어요. 화면을 다시 읽고 browser_request_tap을 다시 써 주세요.',
         ),
       )
     })

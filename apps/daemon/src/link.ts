@@ -395,6 +395,7 @@ export class PhoneLink {
         const tabId = Number(msg.tabId)
         try {
           if (msg.kind === 'remote') await this.host.remote({ ...msg, tabId })
+          if (msg.kind === 'remote' && msg.action === 'done') return
           const f = msg.fit
           const fit =
             f && Number(f.width) >= 200 && Number(f.height) >= 200

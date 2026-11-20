@@ -3992,3 +3992,42 @@ textarea.ghosting {
   gap: 4px;
   margin-top: 4px;
 }
+
+/* 그림 눌러 풀기 (로봇 확인) */
+.tap-box {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tap-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tap-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tap-dot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--ink-inverse);
+  font-size: 13px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85);
+}
+.tap-actions {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+}

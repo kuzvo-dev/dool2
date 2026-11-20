@@ -3179,7 +3179,7 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
       ? 'chat'
       : /도착|일시|시간|체크/.test(x.label)
         ? 'clock'
-        : /예약자|탑승객|투숙객|받는/.test(x.label)
+        : /예약자|탑승객|투숙객|받는|휴대폰|전화|연락처/.test(x.label)
           ? 'users'
           : /좌석|티켓/.test(x.label)
             ? 'ticket'
@@ -3238,7 +3238,12 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
         after: () => markDecided(a, 'approve'),
       }),
     ),
-    h('p', { class: 'co-lock' }, icon('lock', 'i'), ' 승인하면 두리가 이 결제 버튼 한 번만 눌러요'),
+    h(
+      'p',
+      { class: 'co-lock' },
+      icon('lock', 'i'),
+      ` 승인하면 두리가 이 결제 버튼 한 번만 눌러요${a.after ? ` · ${a.after}` : ''}`,
+    ),
     ...(inSheet
       ? []
       : [
@@ -5738,9 +5743,11 @@ function infoSheet(id: string) {
         text:
           q.field === 'otp'
             ? '인증번호를 넣어 주세요'
-            : q.field === 'form'
-              ? '내 정보를 한 번만 넣어 주세요'
-              : q.label,
+            : q.field === 'tap'
+              ? '로봇 확인을 풀어 주세요'
+              : q.field === 'form'
+                ? '내 정보를 한 번만 넣어 주세요'
+                : q.label,
       }),
       h('span', {
         class: 'meta',
@@ -5750,6 +5757,57 @@ function infoSheet(id: string) {
   )
   const body: Node[] = []
   if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
+  // 그림 눌러 풀기(로봇 확인): 그림에서 누른 곳을 0~1000 비율로 보내면 두리가 PC 화면의 같은 자리를 누른다
+  if (q.field === 'tap' && q.image) {
+    const max = Math.max(1, q.maxTaps ?? 1)
+    const points: [number, number][] = []
+    const img = h('img', { class: 'tap-img' }) as HTMLImageElement
+    img.src = `data:image/jpeg;base64,${q.image}`
+    img.alt = '로봇 확인 그림'
+    img.draggable = false
+    const dots = h('div', { class: 'tap-dots' })
+    const done = h('button', { class: 'btn lg', text: '다 눌렀어요' }) as HTMLButtonElement
+    const redo = h('button', { class: 'btn-ghost lg', text: '다시' }) as HTMLButtonElement
+    const draw = () => {
+      dots.replaceChildren(
+        ...points.map(([x, y], i) => {
+          const d = h('span', { class: 'tap-dot', text: String(i + 1) })
+          d.style.left = `${x / 10}%`
+          d.style.top = `${y / 10}%`
+          return d
+        }),
+      )
+      done.disabled = points.length === 0
+      done.textContent = max > 1 ? `다 눌렀어요 (${points.length}/${max})` : '이곳으로 할게요'
+    }
+    const box = h('div', { class: 'tap-box' }, img, dots)
+    box.onclick = (e) => {
+      const r = img.getBoundingClientRect()
+      const x = Math.round(((e.clientX - r.left) / r.width) * 1000)
+      const y = Math.round(((e.clientY - r.top) / r.height) * 1000)
+      if (x < 0 || y < 0 || x > 1000 || y > 1000) return
+      // 한 곳만 누르는 문제는 다시 누르면 옮긴다
+      if (max === 1) points.splice(0, points.length, [x, y])
+      else if (points.length < max) points.push([x, y])
+      draw()
+    }
+    redo.onclick = () => {
+      points.splice(0)
+      draw()
+    }
+    done.onclick = () => {
+      if (points.length) answer(points.map(([x, y]) => `${x},${y}`).join(';'))
+    }
+    draw()
+    sheet.append(
+      head,
+      ...body,
+      box,
+      h('div', { class: 'tap-actions' }, redo, done),
+      h('button', { class: 'btn-link', text: '나중에 할게요', onclick: () => answer() }),
+    )
+    return sheet
+  }
   // 보안문자: 두리가 고른 그림을 보여 주고 그 글자를 받는다 (PC 화면을 보지 않아도 된다)
   if (q.image) {
     const img = h('img', { class: 'captcha-img' }) as HTMLImageElement
@@ -6562,7 +6620,11 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
           st.connecting.add(v.connectId)
           void send({ kind: 'connect', id: v.connectId, action: 'verify' })
           toast('로그인됐는지 확인할게요')
-        } else ask('다 했어요. 이어서 해 주세요.')
+        } else {
+          // 대화에 '다 했어요'를 쓰지 않고 PC에 알린다: 두리가 화면을 확인하고 알아서 이어 간다
+          void send({ kind: 'remote', tabId: v.tabId, action: 'done' })
+          toast('확인하고 이어서 할게요')
+        }
         back()
       },
       hostOf,

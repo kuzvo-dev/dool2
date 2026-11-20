@@ -315,6 +315,35 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'request_tap',
+    '그림 눌러 풀기 (로봇 확인)',
+    '그림을 눌러 푸는 로봇 확인(지도에서 그림 위치 누르기, 신호등이 있는 칸 모두 고르기 등)을 사용자 폰 카드로 푼다. 로봇 확인 그림 자리(표시 ref, 그림에 표시가 없으면 browser_screenshot 화면에서 짚은 box)를 주면 그 자리만 잘라 폰에 그림과 안내(say)를 띄우고, 사용자가 그림에서 누른 곳을 두리가 PC 화면의 같은 자리에 차례로 누른다. 문제 글(예: "지도에서 이 그림의 위치를 눌러 주세요")은 화면에 적힌 대로 say에 넣는다. 문제 그림이 상자 밖에 따로 있으면 그것까지 들어가게 짚는다. 정답을 네가 짐작해 누르지 않는다. browser_handoff 대신 이걸 쓴다. 쓴 뒤에는 이번 답을 끝내고, 눌렀다는 알림이 오면 화면을 다시 읽어 [확인]·[제출]을 눌러 이어 간다(또 문제가 나오면 다시 부른다).',
+    {
+      tabId,
+      ref: ref.optional().describe('로봇 확인 그림 상자 표시가 페이지에 있으면 (없으면 box)'),
+      box: z
+        .object({
+          x: z.number().min(0).max(1000),
+          y: z.number().min(0).max(1000),
+          w: z.number().min(10).max(1000),
+          h: z.number().min(10).max(1000),
+        })
+        .optional()
+        .describe(
+          'browser_screenshot 화면에서 문제 글·그림·지도가 다 들어가는 상자 (화면 왼쪽 위 0, 오른쪽·아래 끝 1000). 넉넉하게 짚는다',
+        ),
+      say: z.string().max(80).describe('카드에 보일 문제 글 (화면에 적힌 대로)'),
+      taps: z
+        .number()
+        .int()
+        .min(1)
+        .max(9)
+        .optional()
+        .describe('누를 수 있는 곳 수 (기본 1, 칸 여러 개 고르기면 그 수까지)'),
+    },
+    false,
+  )
+  tool(
     'request_profile',
     '내 정보 카드 띄우기',
     '예약자·주문자 칸을 채워야 하는데 내 정보에 없는 항목이 있을 때 쓴다(browser_fill_profile이 "없어요"라고 할 때). 근처 찾기·출발 시간·구청·주민센터처럼 사는 곳이 필요한데 내 정보에 주소가 없을 때도 address로 이 카드를 띄운다(대화로 동네를 묻지 않는다. 한 번 넣으면 다음부터 묻지 않는다; 다른 곳이 출발지면 그때만 묻는다). 주소 없이도 되는 부분(받은 사진·서류 읽기와 평가, 일반 정보, 서울 기준 후보)은 먼저 해서 답에 넣고 카드는 그 뒤에 띄운다. 사용자에게 한 번만 넣으면 되는 내 정보 카드를 폰에 띄운다. 넣은 값은 PC 금고에만 저장되고 너에게는 가린 값만 온다. 대화로 이름·이메일·전화번호를 묻지 않는다. 카드를 띄운 뒤에도 그 정보 없이 되는 조사는 마저 하고, 결과를 답에 담아 끝낸다.',
@@ -485,6 +514,13 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe('두리가 스스로 고른 것 (쿠폰 적용·보험 안 함 등)'),
       cancel: z.string().max(200).optional().describe('취소·환불·교환 규정 (화면 그대로)'),
+      after: z
+        .string()
+        .max(120)
+        .optional()
+        .describe(
+          '승인한 뒤 일어날 일을 화면에서 읽은 대로 (예: 고른 결제 수단이 네이버페이·카카오페이·토스처럼 결제 창으로 넘어가면 "네이버페이 창에서 결제 비밀번호를 폰 키패드로 받아요", 만나서 결제면 "누르면 바로 주문이 들어가요"). 사용자가 누르면 무슨 일이 생기는지 알게',
+        ),
       final_here: z
         .boolean()
         .optional()

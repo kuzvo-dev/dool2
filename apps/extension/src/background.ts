@@ -1398,7 +1398,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const refs = (Array.isArray(a.refs) ? a.refs : []).map(String).slice(0, 16)
-      const shots: { ref: string; data: string }[] = []
+      const shots: { ref: string; data: string; rect: { x: number; y: number; w: number; h: number } }[] = []
       for (const ref of refs) {
         const f = frameOf(tabId, ref)
         const r = (await inFrame(tabId, f.frameId, pageRect, ref).catch(() => undefined)) as
@@ -1418,7 +1418,32 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             scale: 2,
           },
         }).catch(() => undefined)
-        if (shot) shots.push({ ref, data: shot.data })
+        // rect: 보이는 화면 기준 자리 (그림 눌러 풀기에서 폰이 누른 곳을 화면 좌표로 바꾼다)
+        if (shot)
+          shots.push({ ref, data: shot.data, rect: { x: r.x + off.x, y: r.y + off.y, w: r.w, h: r.h } })
+      }
+      // 표시가 없는 그림(로봇 확인 그림·캔버스): AI가 화면 사진에서 짚은 상자 (보이는 화면 기준 0~1000)
+      const boxes = (Array.isArray(a.boxes) ? a.boxes : []).slice(0, 4) as Record<string, unknown>[]
+      if (boxes.length) {
+        const v = await inPage(tabId, pageViewport)
+        for (const [i, b] of boxes.entries()) {
+          const x = Math.max(0, Math.min(1000, Number(b.x) || 0))
+          const y = Math.max(0, Math.min(1000, Number(b.y) || 0))
+          const w = Math.max(1, Math.min(1000 - x, Number(b.w) || 0))
+          const h = Math.max(1, Math.min(1000 - y, Number(b.h) || 0))
+          const r = {
+            x: (x / 1000) * v.width,
+            y: (y / 1000) * v.height,
+            w: (w / 1000) * v.width,
+            h: (h / 1000) * v.height,
+          }
+          const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 85,
+            clip: { x: r.x, y: r.y, width: r.w, height: r.h, scale: 2 },
+          }).catch(() => undefined)
+          if (shot) shots.push({ ref: `box${i + 1}`, data: shot.data, rect: r })
+        }
       }
       return { shots }
     }

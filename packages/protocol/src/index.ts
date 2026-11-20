@@ -467,8 +467,10 @@ export interface InfoRequestView {
   /** 사람에게 보일 사이트 이름·주소 */
   site: string
   host: string
-  /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 · form: 여러 칸(내 정보 카드) · choice: 하나 고르기 · password: 사용자가 정하는 새 비밀번호(두 번 넣기, PC 금고로만) */
-  field: 'otp' | 'tel' | 'text' | 'form' | 'choice' | 'secret' | 'password'
+  /** otp: 숫자 인증번호(문자 자동 채우기) · tel: 휴대폰 번호 · text: 그 밖의 글 · form: 여러 칸(내 정보 카드) · choice: 하나 고르기 · password: 사용자가 정하는 새 비밀번호(두 번 넣기, PC 금고로만) · tap: 그림을 눌러 푸는 로봇 확인 */
+  field: 'otp' | 'tel' | 'text' | 'form' | 'choice' | 'secret' | 'password' | 'tap'
+  /** tap(그림 눌러 풀기)일 때 누를 수 있는 곳 수. 답은 "x,y;x,y" (그림 기준 0~1000) */
+  maxTaps?: number
   /** choice일 때 고를 것 (답은 고른 글 그대로) */
   options?: string[]
   /** form일 때 받을 칸들. 답은 {key: 값} JSON 한 줄 */
@@ -670,6 +672,8 @@ export interface ApprovalView {
    */
   title?: string
   goods?: CheckoutGood[]
+  /** 승인한 뒤 일어날 일 (예: "네이버페이 창에서 결제 비밀번호를 폰 키패드로 받아요"). 없으면 '이 결제 버튼 한 번만 눌러요' */
+  after?: string
   lines?: { label: string; value: string; kind?: 'discount' | 'fee' | 'point' }[]
   info?: { label: string; value: string }[]
   /**
@@ -1060,7 +1064,8 @@ export type PhoneToPc =
   | {
       kind: 'remote'
       tabId: number
-      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave'
+      /** done: 사람이 넘겨받은 일을 마쳤다 (대화에 '다 했어요'를 쓰지 않고 두리에게 알린다) */
+      action: 'tap' | 'text' | 'key' | 'scroll' | 'view' | 'leave' | 'done'
       x?: number
       y?: number
       text?: string
