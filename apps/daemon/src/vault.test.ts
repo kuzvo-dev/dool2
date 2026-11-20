@@ -195,3 +195,29 @@ describe('금고 보기 (vault_find 도구)', () => {
       expect(vaultSitesText(list, { query: q, cards })).not.toMatch(/pw-secret|duri1234|felix990810/)
   })
 })
+
+describe('사용자가 금고를 보고 고치기 (ADR 0026)', () => {
+  it('하나만 꺼내 보고, 아이디·비밀번호를 고치면 그 값으로 로그인한다 (빈 칸은 그대로)', async () => {
+    const v = new Vault(memorySecrets(), () => new Date('2026-11-20T00:00:00Z'))
+    const e = await v.add({ url: 'https://shop.example/login', username: 'duri', password: 'old-pw' })
+    expect(await v.reveal(e.id)).toEqual({
+      origin: 'https://shop.example',
+      username: 'duri',
+      password: 'old-pw',
+    })
+    expect(await v.reveal('없는 것')).toBeUndefined()
+    await v.update(e.id, { password: 'new-pw' })
+    expect(await v.findForOrigin('https://shop.example')).toMatchObject({
+      username: 'duri',
+      password: 'new-pw',
+    })
+    await v.update(e.id, { username: 'duri2' })
+    expect(await v.findForOrigin('https://shop.example')).toMatchObject({
+      username: 'duri2',
+      password: 'new-pw',
+    })
+    expect(await v.update('없는 것', { password: 'x' })).toBeUndefined()
+    // 목록에는 여전히 비밀번호가 없다
+    expect(JSON.stringify(await v.list())).not.toContain('new-pw')
+  })
+})

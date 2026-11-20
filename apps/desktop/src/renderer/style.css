@@ -2233,3 +2233,12 @@ button.side-row:hover {
   margin: 8px 0;
   background: #fff;
 }
+
+/* 금고 비밀번호 보기 (ADR 0026) */
+.vault-pw {
+  display: block;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: all;
+  word-break: break-all;
+}

@@ -99,6 +99,17 @@ export interface LinkHost {
       | { kind: 'forget-pay'; host: string }
       | { kind: 'pay-methods'; methods: unknown[] },
   ): Promise<Omit<Extract<PcToPhone, { kind: 'profile' }>, 'kind'>>
+  /** 설정 > 금고 (ADR 0026): 목록·하나 보기·고치기·지우기. 보기는 사용자가 폰 잠금을 확인한 뒤에만 온다 */
+  vault?(
+    action:
+      | { kind: 'get' }
+      | { kind: 'reveal'; id: string }
+      | { kind: 'set'; id: string; username?: string; password?: string }
+      | { kind: 'delete'; id: string },
+  ): Promise<
+    | Omit<Extract<PcToPhone, { kind: 'vault' }>, 'kind'>
+    | Omit<Extract<PcToPhone, { kind: 'vault-secret' }>, 'kind'>
+  >
   /** 카드 사진을 받아 data: 주소로 (못 받으면 undefined) */
   thumb?(url: string): Promise<string | undefined>
   /** 처음부터 다시 (시험용 PC만, 없으면 거절). services면 연결한 서비스 표시도 */
@@ -581,6 +592,31 @@ export class PhoneLink {
           ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
         })
         return
+      }
+      case 'vault-get':
+      case 'vault-reveal':
+      case 'vault-set':
+      case 'vault-delete': {
+        if (!this.host.vault) return
+        const id = String((msg as { id?: unknown }).id ?? '').slice(0, 60)
+        const str = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 200) : undefined)
+        const r = await this.host.vault(
+          msg.kind === 'vault-reveal'
+            ? { kind: 'reveal', id }
+            : msg.kind === 'vault-set'
+              ? {
+                  kind: 'set',
+                  id,
+                  ...(str(msg.username) ? { username: str(msg.username) } : {}),
+                  ...(str(msg.password) ? { password: str(msg.password) } : {}),
+                }
+              : msg.kind === 'vault-delete'
+                ? { kind: 'delete', id }
+                : { kind: 'get' },
+        )
+        return 'password' in r
+          ? this.send(phone, { kind: 'vault-secret', ...r })
+          : this.send(phone, { kind: 'vault', ...r })
       }
       case 'profile-get':
       case 'profile-set':

@@ -2,7 +2,7 @@
 // 브라우저에서 열면 모두 꺼진다. 앱 코드는 앱 안에 담겨 있어서 서버가 바꿔치기할 수 없다 (ADR 0012 보완).
 
 import { App } from '@capacitor/app'
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { OFFICIAL_RELAY } from '@dool2/protocol/link'
 
@@ -69,4 +69,24 @@ export function listenNative(on: { open(url: string): void; back(): boolean }) {
   void App.addListener('backButton', () => {
     if (!on.back()) void App.minimizeApp()
   })
+}
+
+/** 폰 잠금 확인 (지문·얼굴·PIN). 금고 비밀번호를 보기 전에 (ADR 0026) */
+const DeviceAuth = registerPlugin<{
+  confirm(o: { title: string; subtitle?: string }): Promise<{ ok: boolean; reason?: string }>
+}>('DeviceAuth')
+
+/** ok · no-lock(화면 잠금이 없는 폰) · cancel · web(앱이 아니라 확인할 수 없음 → 보여 주지 않는다) */
+export async function confirmDevice(
+  title: string,
+  subtitle?: string,
+): Promise<'ok' | 'no-lock' | 'cancel' | 'web'> {
+  if (!isNative()) return 'web'
+  try {
+    const r = await DeviceAuth.confirm({ title, ...(subtitle ? { subtitle } : {}) })
+    return r.ok ? 'ok' : r.reason === 'no-lock' ? 'no-lock' : 'cancel'
+  } catch {
+    // 예전 앱(플러그인 없음)
+    return 'web'
+  }
 }

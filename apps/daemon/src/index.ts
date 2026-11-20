@@ -1170,6 +1170,46 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       thumb: (url) => thumbs.get(url),
+      // 설정 > 금고 (ADR 0026): 사용자가 폰에서 보기·고치기. 보기는 폰이 기기 잠금을 확인한 뒤에만 부탁한다.
+      // 비밀번호는 그 폰에만 가고, 일한 기록에는 어느 사이트를 봤는지만 남긴다
+      vault: async (action) => {
+        const named = async (message?: string) => {
+          const cards = (await skills.connections()).map((x) => x.card)
+          const hostOf = (o: string) => {
+            try {
+              return new URL(o).hostname.replace(/^www\./, '')
+            } catch {
+              return o
+            }
+          }
+          const entries = (await vault.list()).map((e) => {
+            const h = hostOf(e.origin)
+            const card = cards.find((c) =>
+              [c.site, ...(c.alsoSites ?? [])].some(
+                (x) => x && (h === x.replace(/^www\./, '') || h.endsWith(`.${x.replace(/^www\./, '')}`)),
+              ),
+            )
+            return { ...e, ...(card ? { name: card.name } : {}) }
+          })
+          return { entries, ...(message ? { message } : {}) }
+        }
+        if (action.kind === 'reveal') {
+          const r = await vault.reveal(action.id)
+          if (!r) return named('그 항목이 없어요')
+          journal.write('vault-reveal', { origin: r.origin })
+          return { id: action.id, username: r.username, password: r.password }
+        }
+        if (action.kind === 'set') {
+          const r = await vault.update(action.id, { username: action.username, password: action.password })
+          if (r) journal.write('vault-update', { origin: r.origin, password: Boolean(action.password) })
+          return named(r ? '고쳤어요' : '그 항목이 없어요')
+        }
+        if (action.kind === 'delete') {
+          const ok = await vault.remove(action.id)
+          return named(ok ? '지웠어요' : '그 항목이 없어요')
+        }
+        return named()
+      },
       profile: async (action) => {
         let message: string | undefined
         if (action.kind === 'set') {
@@ -2820,7 +2860,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, { ok: true, ...(id ? { id } : {}), state: life.state() })
     }
 
-    // 두리 금고: 화면용 토큰으로만. 비밀번호는 넣기만 하고 꺼낼 수 없다 (ADR 0011)
+    // 두리 금고: 화면용 토큰으로만. AI에게는 비밀번호가 나가지 않고, 사용자가 화면에서만 보고 고친다 (ADR 0011·0026)
     if (a === 'vault') {
       if (!b && req.method === 'GET') return json(res, 200, { entries: await vault.list() })
       if (!b && req.method === 'POST') {
@@ -2832,6 +2872,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
       }
       if (b && !c && req.method === 'DELETE') return json(res, 200, { ok: await vault.remove(b) })
+      // PC 화면에서 보기·고치기 (화면용 토큰으로만, ADR 0026)
+      if (b && c === 'reveal' && req.method === 'POST') {
+        const r = await vault.reveal(b)
+        if (!r) return json(res, 404, { error: '그 항목이 없어요' })
+        journal.write('vault-reveal', { origin: r.origin, from: 'pc' })
+        return json(res, 200, r)
+      }
+      if (b && !c && req.method === 'PUT') {
+        const body = (await readJson(req)) as { username?: unknown; password?: unknown }
+        const r = await vault.update(b, {
+          ...(typeof body?.username === 'string' ? { username: body.username } : {}),
+          ...(typeof body?.password === 'string' ? { password: body.password } : {}),
+        })
+        if (!r) return json(res, 404, { error: '그 항목이 없어요' })
+        journal.write('vault-update', { origin: r.origin, from: 'pc' })
+        return json(res, 200, { entry: r })
+      }
     }
 
     // 내 정보 (예약자·주문자 칸): 화면은 가린 값만 받는다. 고칠 땐 넣은 칸만 바뀐다 (빈 값 = 지우기)

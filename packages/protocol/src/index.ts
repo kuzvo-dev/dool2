@@ -999,6 +999,11 @@ export type PhoneToPc =
   /** 카드 사진을 PC에 부탁한다 (폰은 바깥 서버에 직접 붙지 않는다) */
   | { kind: 'thumb'; url: string }
   /** 설정 > 내 정보·결제 수단: 보기(가린 값), 고치기(빈 값 = 지우기), 모두 지우기, 사이트 결제 수단 잊기 */
+  /** 설정 > 금고: 목록 보기, 비밀번호 하나 보기(폰 잠금 확인 뒤), 아이디·비밀번호 고치기, 지우기 (ADR 0026) */
+  | { kind: 'vault-get' }
+  | { kind: 'vault-reveal'; id: string }
+  | { kind: 'vault-set'; id: string; username?: string; password?: string }
+  | { kind: 'vault-delete'; id: string }
   | { kind: 'profile-get' }
   | { kind: 'profile-set'; values: Record<string, string> }
   | { kind: 'profile-clear' }
@@ -1137,6 +1142,10 @@ export type PcToPhone =
   | { kind: 'decided'; id: string; ok: boolean; message: string }
   /** 카드 사진 (PC가 받아 data: 주소로). 못 받으면 data가 없다 */
   | { kind: 'thumb'; url: string; data?: string }
+  /** 금고 목록 (비밀번호 없음). message는 방금 한 일의 결과 */
+  | { kind: 'vault'; entries: (VaultEntry & { name?: string })[]; message?: string }
+  /** 비밀번호 하나 (사용자가 폰 잠금 확인 뒤 부탁했을 때만). 화면은 잠깐 보여 주고 지운다 */
+  | { kind: 'vault-secret'; id: string; username: string; password: string }
   /** 내 정보(가린 값)와 사이트별 마지막 결제 수단. message는 방금 한 일의 결과 */
   | {
       kind: 'profile'
