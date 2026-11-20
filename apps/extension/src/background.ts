@@ -404,6 +404,8 @@ async function groupTab(tabId: number) {
 // 두리 탭에서 새 탭이 열리면(새 창 링크) 그것도 두리 탭으로 본다.
 // 연 탭마다 목록으로 남긴다: 예전에는 마지막 새 창 하나만 기억해서, 다른 탭이 새 창을 열거나 누르기가 시작되면
 // 늦게 뜬 결제 창을 잊었다
+/** 탭마다 마지막으로 새 탭을 연 때 (누른 뒤 기다리기를 일찍 끝내게) */
+const lastOpened = new Map<number, number>()
 async function adopt(opener: number, tabId: number) {
   let took = false
   await update((s) => {
@@ -413,6 +415,7 @@ async function adopt(opener: number, tabId: number) {
     took = true
   })
   if (!took) return
+  lastOpened.set(opener, Date.now())
   tracked.add(tabId)
   void watch(tabId)
   void chrome.tabs.update(tabId, { muted: true }).catch(() => undefined)
@@ -480,10 +483,14 @@ async function settle(tabId: number, before?: string) {
   await framesSettle(tabId, since)
 }
 async function settleTop(tabId: number, before?: string) {
+  const since = Date.now()
   for (let i = 0; i < 12; i++) {
     await sleep(100)
     // 확인 창이 뜨면 화면은 더 바뀌지 않는다 (고를 때까지 멈춰 있다)
     if (dialogs.has(tabId)) return
+    // 누른 결과로 새 탭이 열렸으면 이 탭은 더 바뀌지 않는다: 기다리지 않는다
+    // (새 탭이 앞으로 오면 이 탭은 뒤로 가서 그리기가 느려져, 1.2초를 다 채우던 것 — CI에서 4초)
+    if ((lastOpened.get(tabId) ?? 0) >= since) return
     // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게. 한 장 그리기가 40ms쯤 들어서(실측) 4번에 1번만
     if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
