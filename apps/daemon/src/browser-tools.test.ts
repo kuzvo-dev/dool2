@@ -2385,3 +2385,12 @@ describe('받는 곳이 내 정보 주소와 다르면 승인 카드에서 알�
     expect(t2.approvals.list()[0]?.shipWarn).toBeUndefined()
   })
 })
+
+describe('장바구니·주문표에 담기는 결제가 아니다', () => {
+  it('"주문표에 추가"·"장바구니 담기"는 승인 없이, "주문하기"는 그대로 막는다', async () => {
+    const { classifyRisk } = await import('./browser-tools.js')
+    expect(classifyRisk('버튼 주문표에 추가', 'https://www.food.example/menu')).toBeUndefined()
+    expect(classifyRisk('버튼 장바구니 담기', 'https://shop.example/item/1')).toBeUndefined()
+    expect(classifyRisk('버튼 주문하기', 'https://shop.example/item/1')?.kind).toBe('money')
+  })
+})

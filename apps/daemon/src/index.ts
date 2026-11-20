@@ -437,6 +437,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     extensionVersion: () => (browser.status.connected ? browser.status.version : undefined),
     health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
     journal,
+    // 내 정보 주소 (도구 주소 칸이 비었거나 "내 주소"일 때). AI에게는 가지 않고 그 사이트에만 들어간다
+    homeAddress: async () => (await profile.get()).address?.trim() || undefined,
+    // 메인 대화에서 사용자가 마지막으로 한 말 (앱 알림 줄은 빼고)
+    lastUser: () => {
+      const cur = conversation.current()
+      if (!cur) return undefined
+      const m = store
+        .listMessages(cur.id)
+        .filter((x) => x.role === 'user' && !x.text.startsWith('[두리 앱 알림]'))
+        .at(-1)
+      return m ? { at: Date.parse(m.createdAt), text: m.text } : undefined
+    },
     // 그 서비스에 연결한 계정(금고의 아이디): 메일함처럼 계정마다 주소가 다른 곳을 그 계정으로 연다
     accountFor: async (card) => {
       for (const site of [card.site, ...(card.alsoSites ?? [])].filter(Boolean)) {

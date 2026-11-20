@@ -192,7 +192,7 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
   // 라디오·체크박스는 고르기만 하고 확정하지 않는다 ('예약금 결제' 방식 라디오에 승인을 따로 받던 것)
   if (/^(?:라디오|체크박스|스위치|선택지)\s/.test(label)) return undefined
   // 지난 일을 보는 말(주문 상세·결제 내역·예약 조회)은 빼고 남은 글자로 본다 ("주문내역에서 다시 주문하기"는 그대로 막힌다)
-  const acting = label.replace(LOOKUP, ' ')
+  const acting = label.replace(LOOKUP, ' ').replace(CART_ADD, ' ')
   for (const [kind, re] of RISK_WORDS) {
     const m = re.exec(acting)
     if (m) return { kind, reason: `"${m[0]}"` }
@@ -219,6 +219,10 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
 // 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
 const LOOKUP =
   /(?:주문|구매|결제|예약|예매|구독|충전|송금|이체|입금|후원|기부)\s*(?:상세(?:\s*정보)?|내역|목록|조회|이력|정보|번호|일자|일시|현황|관리|상태)|(?:주문|구매|결제|예약)한\s*(?:상품|내역)/g
+
+// 장바구니·주문표에 담기: 돈이 나가지 않는다 (실측 요기요 '주문표에 추가'를 결제로 보고 승인을 받았다)
+const CART_ADD =
+  /(?:주문표|장바구니|카트|쇼핑백|담은\s*목록)\s*(?:에|으로)?\s*(?:추가|담기|넣기|담아)|(?:^|\s)담기(?:\s|$)/g
 
 // 보는 말을 뺀 뒤 남아도 괜찮은 글 (없음·보기·더 보기)
 const HARMLESS_REST = /^(?:|(?:상세\s*)?보기|더\s*보기|자세히(?:\s*보기)?|바로\s*가기|가기|>|›)$/

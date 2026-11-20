@@ -588,3 +588,67 @@ describe('넘기기 전 화면이 그려졌는지', () => {
     expect(thinPage(full)).toBe(false)
   })
 })
+
+describe('도구 주소 칸은 내 정보 주소로', () => {
+  it('비었거나 "내 주소"면 본체가 채우고, 직접 넣은 주소는 그대로 둔다', async () => {
+    const { Connectors } = await import('./connectors.js')
+    const c = new Connectors({
+      homeAddress: async () => '경기 용인시 수지구 신봉동 905',
+    } as never) as unknown as {
+      fillHome: (t: unknown, a: Record<string, unknown>) => Promise<void>
+    }
+    const tool = {
+      input: {
+        properties: {
+          address: { type: 'string', description: '주소' },
+          shop: { type: 'string', description: '가게' },
+        },
+        required: ['address'],
+      },
+    }
+    const a: Record<string, unknown> = {}
+    await c.fillHome(tool, a)
+    expect(a.address).toBe('경기 용인시 수지구 신봉동 905')
+    const b: Record<string, unknown> = { address: '내 주소' }
+    await c.fillHome(tool, b)
+    expect(b.address).toBe('경기 용인시 수지구 신봉동 905')
+    const d: Record<string, unknown> = { address: '성수동1가 656' }
+    await c.fillHome(tool, d)
+    expect(d.address).toBe('성수동1가 656')
+  })
+})
+
+describe('찾은 뒤 사용자가 고르기 전에는 주문 준비를 멈춘다', () => {
+  it('찾아보기 다음 돈 내기 도구는 사용자 말이 새로 오기 전까지 막고, "알아서"면 그대로', async () => {
+    const { Connectors } = await import('./connectors.js')
+    let user = { at: Date.now() - 10_000, text: '저녁 배달 시켜 줘' }
+    const c = new Connectors({ lastUser: () => user } as never) as unknown as {
+      pickGate: (id: string, t: { tier: string }) => string | undefined
+    }
+    expect(c.pickGate('food', { tier: '찾아보기' })).toBeUndefined()
+    expect(c.pickGate('food', { tier: '돈 내기' })).toContain('show_cards')
+    user = { at: Date.now() + 1, text: '두 번째 걸로' }
+    expect(c.pickGate('food', { tier: '돈 내기' })).toBeUndefined()
+    c.pickGate('food', { tier: '찾아보기' })
+    user = { at: Date.now() - 5, text: '알아서 골라서 바로 시켜 줘' }
+    expect(c.pickGate('food', { tier: '돈 내기' })).toBeUndefined()
+  })
+
+  it('같은 동네 이름인데 내 번지가 없으면 짐작한 주소라 내 정보 주소로 바꾼다', async () => {
+    const { Connectors } = await import('./connectors.js')
+    const c = new Connectors({
+      homeAddress: async () => '경기 용인시 수지구 신봉1로 27',
+    } as never) as unknown as {
+      fillHome: (t: unknown, a: Record<string, unknown>) => Promise<void>
+    }
+    const tool = {
+      input: { properties: { address: { type: 'string', description: '주소' } }, required: ['address'] },
+    }
+    const a: Record<string, unknown> = { address: '신봉동 33' }
+    await c.fillHome(tool, a)
+    expect(a.address).toBe('경기 용인시 수지구 신봉1로 27')
+    const b: Record<string, unknown> = { address: '서울 성동구 성수동1가 656' }
+    await c.fillHome(tool, b)
+    expect(b.address).toBe('서울 성동구 성수동1가 656')
+  })
+})
