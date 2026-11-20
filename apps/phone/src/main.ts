@@ -4724,6 +4724,11 @@ const PROFILE_LABEL: Record<string, string> = {
   rrn_back: '주민번호 뒷자리',
   auth_app: '간편인증 앱',
   carrier: '통신사',
+  passport_no: '여권 번호',
+  passport_issued: '여권 발급일',
+  passport_expiry: '여권 만료일',
+  sex: '성별',
+  birth_city: '태어난 도시',
 }
 
 /** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */

@@ -113,6 +113,11 @@ const PROFILE_LABELS: Record<string, string> = {
   address_detail: '상세 주소',
   rrn_back: '주민번호 뒷자리',
   auth_app: '간편인증 앱',
+  passport_no: '여권 번호',
+  passport_issued: '여권 발급일',
+  passport_expiry: '여권 만료일',
+  sex: '성별',
+  birth_city: '태어난 도시',
 }
 /** 간편인증 앱 (@dool2/protocol AUTH_APPS와 같게: 화면은 묶지 않아 값을 옆에 둔다) */
 const AUTH_APPS = ['카카오톡', '네이버', '토스', 'PASS', 'KB국민인증서', '신한인증서', '삼성패스', '페이코']

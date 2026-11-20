@@ -256,7 +256,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'fill_profile',
     '내 정보로 예약자·주문자 칸 채우기',
-    '결제·예약 화면과 간편인증(정부24·홈택스 등 본인인증) 창의 이름·영문 이름·이메일·휴대폰·생년월일·주소 칸을 사용자의 "내 정보"로 두리가 직접 채운다. 간편인증 창이면 이걸로 이름·생년월일·휴대폰을 채우고, 결과에 오는 내 정보의 간편인증 앱을 눌러 [인증 요청]까지 누른 뒤 browser_wait_auth로 승인을 기다려 이어 간다(인증 앱을 대화로 묻지 않는다). 너는 칸과 항목만 짚고 값은 보지 않는다(결과에는 가린 값만). 사용자에게 이름·연락처를 묻지 말고 이걸 먼저 쓴다. 내 정보에 없는 항목이면 결과가 알려 주니 browser_request_profile로 카드를 띄운다. 칸 모양에 맞는 항목을 골라: 영문 성/이름이 따로면 name_en_last·name_en_first, 한 칸이면 name_en_full, 국가 번호를 따로 고르는 전화 칸이면 phone_local, 앞자리(010)를 따로 고르는 전화 칸이면 phone_rest(뒤 8자리), 세 칸(010-1234-5678)으로 나뉘면 앞 phone_head·가운데 phone_mid·끝 phone_last, 숫자만 받는 칸이면 phone_digits·birth_digits, 6자리 생년월일이면 birth6. 본인인증의 주민등록번호 뒷자리 칸은 rrn_back(내 정보에 있으면 바로 채우고, 없으면 폰 보안 키패드로 한 번 받아 금고에 저장 — 사용자에게 직접 넣으라고 넘기지 않는다).',
+    '결제·예약 화면과 간편인증(정부24·홈택스 등 본인인증) 창의 이름·영문 이름·이메일·휴대폰·생년월일·주소 칸을 사용자의 "내 정보"로 두리가 직접 채운다. 간편인증 창이면 이걸로 이름·생년월일·휴대폰을 채우고, 결과에 오는 내 정보의 간편인증 앱을 눌러 [인증 요청]까지 누른 뒤 browser_wait_auth로 승인을 기다려 이어 간다(인증 앱을 대화로 묻지 않는다). 너는 칸과 항목만 짚고 값은 보지 않는다(결과에는 가린 값만). 사용자에게 이름·연락처를 묻지 말고 이걸 먼저 쓴다. 내 정보에 없는 항목이면 결과가 알려 주니 browser_request_profile로 카드를 띄운다. 칸 모양에 맞는 항목을 골라: 영문 성/이름이 따로면 name_en_last·name_en_first, 한 칸이면 name_en_full, 국가 번호를 따로 고르는 전화 칸이면 phone_local, 앞자리(010)를 따로 고르는 전화 칸이면 phone_rest(뒤 8자리), 세 칸(010-1234-5678)으로 나뉘면 앞 phone_head·가운데 phone_mid·끝 phone_last, 숫자만 받는 칸이면 phone_digits·birth_digits, 6자리 생년월일이면 birth6. 여권 칸(ESTA 등 전자여행허가·항공권·해외 숙소)은 passport_no·passport_issued·passport_expiry·sex·birth_city — 내 정보에 없으면 browser_request_profile로 폰 카드를 띄운다(여권 사진을 PC 폴더에 넣어 달라고 하지 않는다). 본인인증의 주민등록번호 뒷자리 칸은 rrn_back(내 정보에 있으면 바로 채우고, 없으면 폰 보안 키패드로 한 번 받아 금고에 저장 — 사용자에게 직접 넣으라고 넘기지 않는다).',
     {
       tabId,
       fields: z
@@ -284,6 +284,11 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
                 'zip',
                 'address',
                 'address_detail',
+                'passport_no',
+                'passport_issued',
+                'passport_expiry',
+                'sex',
+                'birth_city',
               ])
               .describe('넣을 내 정보 항목'),
           }),
@@ -392,6 +397,11 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
             'address_detail',
             'auth_app',
             'carrier',
+            'passport_no',
+            'passport_issued',
+            'passport_expiry',
+            'sex',
+            'birth_city',
           ]),
         )
         .max(10)
