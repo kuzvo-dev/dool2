@@ -464,7 +464,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .string()
         .max(60)
         .describe('가게·상품 묶음 이름 (예: "호호솥밥-수지점", "그랜드 하얏트 제주 · 디럭스 킹")'),
-      where: z.string().max(60).describe('사이트·서비스 이름 (예: "요기요", "쿠팡")'),
+      where: z.string().max(60).describe('사이트·서비스 이름 (예: "쿠팡", "컬리")'),
       total: z.string().max(60).describe('최종 결제 금액 (화면 그대로, 예: "17,500원")'),
       goods: z
         .array(
@@ -505,7 +505,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(8)
         .optional()
         .describe(
-          '결제 수단(또는 지금 결제·현장 결제 같은 결제 방식) 고르기 칸 표시들. 펼쳐야 보이는 수단은 미리 펼쳐 넣는다',
+          '결제 수단(또는 지금 결제·현장 결제 같은 결제 방식) 고르기 칸 표시들. 펼쳐야 보이는 수단은 미리 펼쳐 넣는다. 화면이 지금은 안 된다고 적은 수단(예: "Internet Explorer에서 가능", "앱에서만", "점검 중")은 넣지 않는다 — 사용자가 골라도 결제가 안 된다',
         ),
       choiceTitle: z.string().max(20).optional(),
       chose: z

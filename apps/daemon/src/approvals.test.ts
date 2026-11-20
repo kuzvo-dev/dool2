@@ -1,6 +1,6 @@
 // 승인 게이트 회귀 테스트: 이 테스트가 깨지면 위험한 버튼이 승인 없이 눌릴 수 있다는 뜻이다
 import { describe, expect, it } from 'vitest'
-import { APPROVAL_KEEP_MS, APPROVAL_TTL_MS, Approvals } from './approvals.js'
+import { APPROVAL_KEEP_MS, APPROVAL_TTL_MS, Approvals, MONEY_APPROVAL_TTL_MS } from './approvals.js'
 import { BrowserTools } from './browser-tools.js'
 
 const PAGE = `# 주문서
@@ -97,7 +97,10 @@ describe('승인 게이트', () => {
 
     await tools.run('request_approval', ask)
     const id2 = approvals.list().find((x) => x.status === 'pending')?.id ?? ''
+    // 결제는 1시간 기다린다 (카드를 열어 고르고 생각할 시간)
     now += APPROVAL_TTL_MS + 1
+    expect(approvals.get(id2)?.status).toBe('pending')
+    now += MONEY_APPROVAL_TTL_MS
     expect(approvals.get(id2)?.status).toBe('expired')
     expect((await tools.approve(id2)).ok).toBe(false)
     expect(b.calls).not.toContain('click:e2')

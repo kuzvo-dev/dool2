@@ -117,7 +117,6 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 장보기·배달 | [CJ더마켓](cj-the-market/tools.json) | 4 | `search`, `deals` |
 | 장보기·배달 | [SSG닷컴](ssg/tools.json) | 3 | — |
 | 장보기·배달 | [오아시스마켓](oasis-market/tools.json) | 4 | `search` |
-| 장보기·배달 | [요기요](yogiyo/tools.json) | 3 | `search` |
 | 장보기·배달 | [컬리](kurly/tools.json) | 3 | `search` |
 | 패션·뷰티 | [29CM](29cm/tools.json) | 4 | `search` |
 | 패션·뷰티 | [W컨셉](wconcept/tools.json) | 3 | `search` |

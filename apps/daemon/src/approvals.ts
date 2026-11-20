@@ -9,6 +9,12 @@ import { randomUUID } from 'node:crypto'
 import type { ApprovalView } from '@dool2/protocol'
 
 export const APPROVAL_TTL_MS = 10 * 60_000
+/**
+ * 결제 카드는 1시간: 승인은 결제 때 한 번이라 사용자가 카드를 열어 고르고 생각할 시간이 필요하다.
+ * 누르기 직전에 화면(주소·버튼 글자)을 다시 확인하므로 오래 기다려도 엉뚱한 곳을 누르지 않는다
+ * (실측 11-20: 23분 뒤 승인하자 '시간이 지난 승인'이 되어 카드를 다시 받아야 했다)
+ */
+export const MONEY_APPROVAL_TTL_MS = 60 * 60_000
 /** 끝난 요청을 남겨 두는 시간 (폰 기록용). 지나면 지운다 — 본체가 하루 내내 켜져 있어도 쌓이지 않게 */
 export const APPROVAL_KEEP_MS = 60 * 60_000
 
@@ -70,10 +76,16 @@ export class Approvals {
       id: randomUUID(),
       status: 'pending',
       createdAt: new Date(t).toISOString(),
-      expiresAt: new Date(t + APPROVAL_TTL_MS).toISOString(),
+      expiresAt: new Date(t + (n.kind === 'money' ? MONEY_APPROVAL_TTL_MS : APPROVAL_TTL_MS)).toISOString(),
     }
     this.items.set(rec.id, rec)
     this.onCreate?.(rec)
+    // 시간이 지나면 폰 카드도 닫는다 (안 닫으면 만료된 카드를 눌러 '시간이 지난 승인'만 받는다)
+    const ttl = Date.parse(rec.expiresAt) - t
+    const timer = setTimeout(() => {
+      if (this.get(rec.id)?.status === 'expired') this.onChange?.(rec)
+    }, ttl + 500)
+    timer.unref?.()
     return rec
   }
 
