@@ -2394,3 +2394,39 @@ describe('장바구니·주문표에 담기는 결제가 아니다', () => {
     expect(classifyRisk('버튼 주문하기', 'https://shop.example/item/1')?.kind).toBe('money')
   })
 })
+
+describe('결제 화면으로 넘어가는 버튼은 AI 판단으로 승인 없이', () => {
+  it('opens_checkout이면 결제 화면이 아닌 곳의 [주문하기]를 누르고, 결제 화면의 마지막 버튼은 그대로 막는다', async () => {
+    const clicks: string[] = []
+    let page = {
+      url: 'https://www.food.example/shop/1',
+      title: '가게',
+      text: '주문표 우동 세트 11,500원 [e5 버튼 "주문하기"]',
+    }
+    const b = {
+      call: async (cmd: string, args?: { ref?: string }) => {
+        if (cmd === 'snapshot') return { tabId: 3, ...page }
+        if (cmd === 'click') clicks.push(String(args?.ref))
+        return { tabId: 3, url: page.url, title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    const blocked = await tools.run('click', { tabId: 3, ref: 'e5' }).catch((e: Error) => e.message)
+    expect(String(JSON.stringify(blocked))).toContain('opens_checkout')
+    const ok = await tools.run('click', { tabId: 3, ref: 'e5', opens_checkout: true })
+    expect(ok.isError).toBeFalsy()
+    expect(clicks).toEqual(['e5'])
+    page = {
+      url: 'https://www.food.example/checkout/',
+      title: '결제',
+      text: '결제수단 신용카드 최종 결제 금액 15,500원 [e9 버튼 "결제하기"]',
+    }
+    await tools.run('read', { tabId: 3 })
+    const pay = await tools
+      .run('click', { tabId: 3, ref: 'e9', opens_checkout: true })
+      .catch((e: Error) => ({ isError: true, err: e.message }))
+    expect(JSON.stringify(pay)).toMatch(/승인|request_approval/)
+    expect(clicks).toEqual(['e5'])
+  })
+})

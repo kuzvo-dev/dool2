@@ -1733,7 +1733,16 @@ export class BrowserTools {
               | undefined
           )?.navigates === true
         const passed = !entry && !navOnly && this.usePass(tabId, target.name)
-        if (!entry && !navOnly && !passed) this.guard(label, page.url, true, page.pay)
+        // AI가 화면을 보고 "결제 화면으로 넘어가는 버튼"이라고 판단했다(opens_checkout). 결제 화면이 아닌 곳의 돈 버튼만.
+        // 누른 뒤 주문이 바로 확정된 화면이면 크게 알린다 (안전장치)
+        const opens =
+          !entry &&
+          !navOnly &&
+          !passed &&
+          s.opens_checkout === true &&
+          !page.checkout &&
+          classifyRisk(label, page.url, page.pay)?.kind === 'money'
+        if (!entry && !navOnly && !passed && !opens) this.guard(label, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
           newTabId?: number
           coveredBy?: string
@@ -1745,6 +1754,9 @@ export class BrowserTools {
             : '',
           navOnly
             ? '(다른 화면으로 가기만 하는 링크라 승인 없이 눌렀어요. 그 화면에서 실제로 제출하는 버튼은 승인을 받아요.)'
+            : '',
+          opens
+            ? '(결제 화면으로 넘어가는 버튼이라고 보고 승인 없이 눌렀어요. 결제 화면에서 받는 곳·결제 수단과 함께 마지막 버튼을 한 번 승인받아요. 혹시 주문이 바로 확정됐으면 사용자에게 바로 알려요.)'
             : '',
           r.coveredBy ? `(그 자리를 "${r.coveredBy}"이(가) 덮고 있었어요. 팝업이면 먼저 닫아 주세요.)` : '',
         ]
@@ -2351,7 +2363,10 @@ export class BrowserTools {
     if (this.useSeries(url, risk.kind)) return
     const next =
       clickable && this.finalStep() === 'approve'
-        ? 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
+        ? (risk.kind === 'money'
+            ? '이 버튼이 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이면 browser_click을 opens_checkout: true로 다시 불러 누르세요(승인은 결제 화면의 마지막 버튼에서 한 번만). 이 버튼에서 바로 돈이 나가면 '
+            : '') +
+          'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
         : '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.'
     throw new Error(`멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 하지 않아요. ${next}`)
   }

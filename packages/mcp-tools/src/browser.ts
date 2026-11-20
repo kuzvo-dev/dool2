@@ -104,6 +104,12 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(80)
         .optional()
         .describe('ref가 없을 때: 누를 곳의 화면 글자 그대로 (예: 가게 이름 "ACENO 아세누")'),
+      opens_checkout: z
+        .boolean()
+        .optional()
+        .describe(
+          '장바구니·주문표의 [주문하기]처럼 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이라고 화면을 보고 판단했으면 true. 승인 없이 누르고, 승인은 결제 화면의 마지막 버튼에서 한 번만 받는다',
+        ),
     },
     false,
   )
