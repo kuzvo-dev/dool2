@@ -1474,8 +1474,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           .at(-1)?.text ?? '')
       : ''
     if (askedForAccount(lastAsk, purpose)) return 'ok'
+    // 비밀번호는 두리가 만들지, 사용자가 정할지 고른다 (사용자가 모르게 바뀌어 당황했다, 11-20)
+    const OWN = '비밀번호는 제가 정할게요'
     const options =
-      purpose === 'reset' ? ['새로 바꿔 주세요', '그만둘게요'] : ['가입해 주세요', '이미 계정 있어요']
+      purpose === 'reset'
+        ? ['두리가 만들어 주세요', OWN, '그만둘게요']
+        : ['가입해 주세요', OWN, '이미 계정 있어요']
     const answer = infoRequests.ask(
       {
         site,
@@ -1487,15 +1491,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             : `${josa(site, '은/는')} 어떻게 로그인할까요?`,
         hint:
           purpose === 'reset'
-            ? '비밀번호 찾기로 새 비밀번호를 만들어 금고에 넣어요. 예전 비밀번호는 더 못 써요.'
-            : '처음이면 두리가 가입해 드려요(아이디는 내 정보 이메일, 비밀번호는 두리가 만들어 금고에). 이미 계정이 있으면 로그인 카드를 띄울게요.',
+            ? '비밀번호 찾기로 새 비밀번호를 정해 금고에 넣어요. 두리가 만들면 강한 비밀번호를 만들고, 직접 정하면 폰에서 한 번 넣어 주세요. 예전 비밀번호는 더 못 써요.'
+            : '처음이면 두리가 가입해 드려요(아이디는 내 정보 이메일). 비밀번호는 두리가 만들거나 직접 정할 수 있어요. 이미 계정이 있으면 로그인 카드를 띄울게요.',
         options,
       },
       30 * 60_000,
     )
-    void answer.then((v) => {
+    void answer.then(async (v) => {
       if (!v || !threadId) return
-      const yes = v.trim() === options[0]
+      let yes = v.trim() === options[0]
+      if (v.trim() === OWN) {
+        // 새 비밀번호를 폰에서 두 번 받는다. 값은 이 본체에만, AI·기록에는 남지 않는다
+        const pw = await infoRequests.ask(
+          {
+            site,
+            host: key,
+            field: 'password',
+            label: `${site} 새 비밀번호`,
+            hint: '두 번 넣어 주세요. 보통 8자 이상, 영문·숫자·특수문자를 섞어요. PC 금고에만 저장돼요.',
+            pattern: '^.{8,64}$',
+            patternHint: '8자 이상으로 넣어 주세요',
+          },
+          30 * 60_000,
+        )
+        if (!pw) return
+        browserTools.setOwnPassword(key, pw)
+        yes = true
+      }
       if (yes) browserTools.allowSignup(key)
       followUp(
         threadId,
