@@ -1,0 +1,207 @@
+{
+  "id": "bunjang",
+  "tools": [
+    {
+      "name": "search",
+      "title": "매물 찾기",
+      "description": "로그인 없이 된다. 번개장터에서 중고 매물을 찾아 제목·가격·판매 상태·올린 때·찜·채팅 수·사진·링크를 돌려준다. 판매 중인 매물만 나온다. 중고 매물·시세 질문에 중고나라(joongna_search)·당근(daangn_search)과 함께 쓴다. '25만 원 아래'면 max_price, 싼 것부터면 sort price_asc, 새것 같은 것만이면 condition. 제목에 '삽니다·매입·구함'(사는 글)이나 칩·케이스·부품만 파는 글이 섞이니 제목을 보고 거른다. 광고(ad) 줄은 가격이 터무니없는 매입 글이 많다. 거래 지역은 목록에 없어 매물 화면(link)에서 본다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-21, 닌텐도 스위치 25만 원 아래·갤럭시 버즈4 낮은 가격순·상품 상태, 사진·링크)",
+      "input": {
+        "required": [
+          "keyword"
+        ],
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "찾을 물건 (예: 닌텐도 스위치 OLED, 아이폰 15 128GB)"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "score",
+              "latest",
+              "price_asc",
+              "price_desc"
+            ],
+            "default": "score",
+            "description": "score 정확도순(기본) · latest 최신순 · price_asc 낮은 가격순 · price_desc 높은 가격순"
+          },
+          "min_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최소 가격(원). 칩·부품·사는 글을 거르려면 시세의 절반쯤으로"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최대 가격(원) (예: 25만 원 아래면 250000)"
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "LIKE_NEW",
+              "LIGHTLY_USED",
+              "HEAVILY_USED"
+            ],
+            "description": "상품 상태: NEW 새상품 · LIKE_NEW 사용감 없음 · LIGHTLY_USED 사용감 적음 · HEAVILY_USED 사용감 많음. 없으면 전부"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 20,
+            "description": "몇 개까지 (기본 20)"
+          }
+        }
+      },
+      "output": {
+        "total": {
+          "type": "integer",
+          "description": "검색된 매물 수"
+        },
+        "items": {
+          "type": "list",
+          "description": "매물 (화면 순서대로)",
+          "fields": {
+            "title": {
+              "type": "string"
+            },
+            "price": {
+              "type": "integer",
+              "description": "가격(원)"
+            },
+            "status": {
+              "type": "string",
+              "description": "SELLING 판매중 · RESERVED 예약중"
+            },
+            "posted": {
+              "type": "string",
+              "description": "올린 때 (예: 24분 전, 없으면 고친 때 2026-11-20T21:59:18Z)"
+            },
+            "likes": {
+              "type": "integer",
+              "description": "찜 수"
+            },
+            "chats": {
+              "type": "integer",
+              "description": "채팅 수"
+            },
+            "ad": {
+              "type": "string",
+              "description": "광고면 '광고'"
+            },
+            "product_id": {
+              "type": "string"
+            },
+            "link": {
+              "type": "string"
+            },
+            "image": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "title",
+          "price",
+          "link",
+          "image"
+        ]
+      },
+      "examples": [
+        {
+          "keyword": "닌텐도 스위치",
+          "max_price": 250000
+        },
+        {
+          "keyword": "갤럭시 버즈4",
+          "sort": "price_asc",
+          "min_price": 100000
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://m.bunjang.co.kr/search/products?q={{keyword|url}}&sort=%5B%22{{sort}}%22%5D{{#min_price}}&minPrice=%5B%22{{min_price}}%22%5D{{/min_price}}{{#max_price}}&maxPrice=%5B%22{{max_price}}%22%5D{{/max_price}}{{#condition}}&condition=%5B%22{{condition}}%22%5D{{/condition}}"
+        },
+        {
+          "capture": {
+            "url": "/api/search/v8/pw/product/specs/keyword\\?",
+            "pick": "data.searchSpec.uiBlockList",
+            "timeoutMs": 12000
+          },
+          "as": "blocks"
+        },
+        {
+          "filter": {
+            "from": "blocks",
+            "where": "id",
+            "op": "eq",
+            "value": "mainGrid"
+          },
+          "as": "grid"
+        },
+        {
+          "map": {
+            "from": "grid.*.searchResponse.data",
+            "limit": 100,
+            "fields": {
+              "type": "type",
+              "title": "name",
+              "price": "price",
+              "status": "status",
+              "posted": "{{#updatedBefore}}{{updatedBefore}}{{/updatedBefore}}{{^updatedBefore}}{{updatedAt}}{{/updatedBefore}}",
+              "likes": "favoriteCount",
+              "chats": "buntalkCount",
+              "ad": "{{#ad}}광고{{/ad}}",
+              "product_id": "pid",
+              "link": "https://m.bunjang.co.kr/products/{{pid}}",
+              "image": "https://media.bunjang.co.kr/product/{{pid}}_1_w360.jpg"
+            }
+          },
+          "as": "all"
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "type",
+            "op": "eq",
+            "value": "PRODUCT"
+          },
+          "as": "found"
+        },
+        {
+          "map": {
+            "from": "found",
+            "limit": "{{limit}}",
+            "fields": {
+              "title": "title",
+              "price": "price",
+              "status": "status",
+              "posted": "posted",
+              "likes": "likes",
+              "chats": "chats",
+              "ad": "ad",
+              "product_id": "product_id",
+              "link": "link",
+              "image": "image"
+            }
+          },
+          "as": "items"
+        }
+      ],
+      "result": {
+        "total": "{{grid.0.searchResponse.totalCount}}",
+        "items": "{{items}}"
+      },
+      "next": "사는 글·칩·부품·광고 매입 글은 빼고, 조건에 맞는 매물 3~5개를 가격·올린 때와 함께 보여 줘요. 중고나라(joongna_search)·당근(daangn_search) 결과와 함께 대략의 시세를 말해요. 거래 지역·상태 설명은 그 매물의 link를 browser_open으로 열어 봐요.",
+      "minIntervalSec": 300
+    }
+  ]
+}

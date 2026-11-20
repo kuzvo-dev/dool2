@@ -172,6 +172,186 @@
       "cards": false
     },
     {
+      "name": "shopping",
+      "title": "가격비교",
+      "description": "로그인 없이 된다. 네이버 가격비교에서 상품을 찾아 여러 쇼핑몰(쿠팡·G마켓·11번가·옥션·스마트스토어 등)의 가격을 한 번에 돌려준다: 상품명·가격·배송비·판매처, 가격비교 상품이면 판매처 수와 최저가 판매처 5곳(이름·가격). '제일 싼 곳', '다른 데서 더 싸게 파는지', '최저가' 질문에 쇼핑몰을 하나씩 찾기 전에 먼저 쓴다. 모델명(예: SM-R540N)까지 넣으면 정확하다. 싼 순(price_asc)이면 한쪽 단품·부품·중고가 앞에 섞이니 제목을 보고 거른다. 광고(ad) 줄은 순위가 아니다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-21, 갤럭시 버즈4 SM-R540N 가격비교·판매처별 최저가·배송비; 몇 분 안에 여러 번 부르면 네이버가 보안 확인을 띄움)",
+      "input": {
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "찾을 상품 (예: \"갤럭시 버즈4 SM-R540N\", \"에어팟 프로 3\"). 모델명이 있으면 넣는다"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "rel",
+              "price_asc",
+              "price_dsc",
+              "review",
+              "date"
+            ],
+            "default": "rel",
+            "description": "rel 네이버 랭킹순(기본) · price_asc 낮은 가격순 · price_dsc 높은 가격순 · review 리뷰 많은순 · date 등록일순"
+          },
+          "min_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최소 가격(원). 한쪽 단품·부품을 거르려면 정가의 절반쯤으로"
+          },
+          "max_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "최대 가격(원) (예: 30만 원 안쪽이면 300000)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 40,
+            "default": 15,
+            "description": "몇 개까지 (기본 15)"
+          }
+        }
+      },
+      "output": {
+        "total": {
+          "type": "integer",
+          "description": "검색된 상품 수"
+        },
+        "products": {
+          "type": "list",
+          "description": "상품 (화면 순서대로)",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "price": {
+              "type": "integer",
+              "description": "가격(원). 가격비교 상품이면 최저가"
+            },
+            "shipping": {
+              "type": "integer",
+              "description": "배송비(원), 0이면 무료배송"
+            },
+            "mall": {
+              "type": "string",
+              "description": "판매처 (가격비교 상품이면 비어 있고 offer_malls를 본다)"
+            },
+            "mall_count": {
+              "type": "integer",
+              "description": "가격비교 판매처 수 (0이면 한 판매처 상품)"
+            },
+            "offer_malls": {
+              "type": "strings",
+              "description": "가격비교 최저가 판매처 (싼 순, offer_prices와 같은 차례)"
+            },
+            "offer_prices": {
+              "type": "strings",
+              "description": "그 판매처 가격(원)"
+            },
+            "rating": {
+              "type": "number",
+              "description": "별점"
+            },
+            "reviews": {
+              "type": "integer",
+              "description": "리뷰 수"
+            },
+            "ad": {
+              "type": "string",
+              "description": "광고면 '광고'"
+            },
+            "link": {
+              "type": "string",
+              "description": "상품 주소 (가격비교 상품이면 판매처 목록 화면)"
+            },
+            "image": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 3,
+        "filled": [
+          "name",
+          "price",
+          "link",
+          "image"
+        ]
+      },
+      "examples": [
+        {
+          "query": "갤럭시 버즈4 SM-R540N"
+        },
+        {
+          "query": "닌텐도 스위치 2",
+          "sort": "price_asc",
+          "min_price": 300000
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://search.shopping.naver.com/search/all?query={{query|url}}&sort={{sort}}{{#min_price}}&minPrice={{min_price}}{{/min_price}}{{#max_price}}&maxPrice={{max_price}}{{/max_price}}"
+        },
+        {
+          "wait": {
+            "text": "검색 결과|검색결과가 없|보안 확인을 완료",
+            "timeoutMs": 15000
+          }
+        },
+        {
+          "stop_if": "보안 확인을 완료해 주세요",
+          "say": "네이버 쇼핑이 지금 보안 확인(로봇 확인)을 하고 있어요. 쿠팡·11번가·G마켓에서 하나씩 찾아 이어 갈게요.",
+          "blocked": true
+        },
+        {
+          "stop_if": "검색결과가 없습니다|검색 결과가 없습니다",
+          "say": "네이버 가격비교에 '{{query}}' 상품이 없어요. 더 짧은 이름이나 모델명으로 다시 찾아볼까요?"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.compositeList"
+          },
+          "as": "res"
+        },
+        {
+          "map": {
+            "from": "res.list",
+            "limit": "{{limit}}",
+            "fields": {
+              "name": "item.productTitle",
+              "price": "item.price",
+              "shipping": "item.dlvryFee",
+              "mall": "item.mallName",
+              "mall_count": "item.mallCount",
+              "offer_malls": "item.lowMallList.*.name",
+              "offer_prices": "item.lowMallList.*.price",
+              "rating": "item.scoreInfo",
+              "reviews": "item.reviewCount",
+              "ad": "{{#item.adId}}광고{{/item.adId}}",
+              "link": "{{#item.lowMallList}}https://search.shopping.naver.com/catalog/{{item.id}}{{/item.lowMallList}}{{^item.lowMallList}}{{item.mallProductUrl}}{{/item.lowMallList}}",
+              "image": "item.imageUrl"
+            }
+          },
+          "as": "products"
+        }
+      ],
+      "result": {
+        "total": "{{res.total}}",
+        "products": "{{products}}"
+      },
+      "next": "가격비교 상품(mall_count가 있는 줄)은 offer_malls·offer_prices로 판매처별 최저가를 비교해 말해요. 배송비(shipping)를 더한 값으로 '제일 싼 곳'을 정하고, 단품·부품·중고·병행수입은 따로 짚어요. 더 자세한 판매처 목록은 link를 browser_open으로 열어 봐요.",
+      "minIntervalSec": 300
+    },
+    {
       "name": "orders",
       "title": "네이버페이 주문 찾기",
       "description": "네이버 로그인이 필요하다. 네이버페이 결제 내역(스마트스토어·브랜드스토어·예약·구독 등)을 최근 것부터 한 쪽(15건 안팎)씩 읽어 상품명·상태(결제완료·배송중·구매확정완료·취소완료 등)·금액·결제 때·적립·사진·주문 상세 주소를 돌려준다. 지난 주문 찾기(반품·교환·배송 조회·구매확정·후기·재주문·지출 정리)에서 쿠팡과 함께 먼저 본다. 찾는 물건이 있으면 keyword로 거르고, 첫 쪽에 없으면 page를 2·3으로 넘긴다.",
