@@ -110,6 +110,12 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .describe(
           '장바구니·주문표의 [주문하기]처럼 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이라고 화면을 보고 판단했으면 true. 승인 없이 누르고, 승인은 결제 화면의 마지막 버튼에서 한 번만 받는다',
         ),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          '"둘레 글이 읽을 때와 달라졌어요"·"다른 버튼이 덮고 있어서"로 멈췄는데, 알려 준 글을 보고 그래도 그 요소가 맞다고 판단했으면 true (덮였으면 마우스 대신 그 요소를 직접 누른다)',
+        ),
     },
     false,
   )
@@ -182,7 +188,11 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     'scroll',
     '스크롤',
     '화면을 한 화면 위나 아래로 움직이고, 지금 화면에 보이는 부분을 읽어 돌려준다. 페이지 읽기(browser_read)는 스크롤 없이도 전체를 읽으니, 화면에 보이는 것을 따라가며 볼 때만 쓴다.',
-    { tabId, direction: z.enum(['up', 'down']) },
+    {
+      tabId,
+      direction: z.enum(['up', 'down']),
+      ref: ref.optional().describe('이 요소(또는 그것을 품은 목록 창·모달)를 굴린다. 없으면 페이지'),
+    },
     true,
   )
   tool(
@@ -193,6 +203,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     true,
   )
   tool('back', '뒤로', '탭에서 뒤로 가기를 누르고 페이지를 읽어 돌려준다.', { tabId }, true)
+  tool(
+    'wait',
+    '바뀔 때까지 기다리기',
+    '화면이 바뀔 때까지(많아야 ms, 기본 3초·최대 10초) 기다리고 무엇이 바뀌었는지(글·요소, 화면 안 액자 이동, 주소 이동, 새 탭, 막힌 새 창, 사이트 알림창) 알려 준다. 누른 뒤 결제 창·인증 결과가 늦게 뜰 때 쓴다. 됐는지는 browser_read로 읽어 판단한다.',
+    { tabId, ms: z.number().int().min(100).max(10_000).optional() },
+    true,
+  )
+  tool(
+    'tabs',
+    '두리 탭 목록',
+    '두리 탭을 모두 보여 준다: 탭 번호·제목·주소, 어느 탭이 연 새 창인지, 팝업 창인지, 최근 닫힌 새 창, Chrome이 막은 새 창(팝업 차단), 정리하며 닫은 탭. 결제·로그인 창이 늦게 떴거나 탭이 사라졌을 때 쓴다.',
+    { tabId: tabId.optional().describe('이 탭에서 막힌 새 창만 볼 때') },
+    true,
+  )
   tool(
     'login',
     '두리 금고로 로그인 칸 채우기',

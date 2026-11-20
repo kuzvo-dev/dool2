@@ -159,6 +159,8 @@ const TOOL_LABEL: Record<string, string> = {
   browser_scroll: '스크롤하는',
   browser_screenshot: '화면 보는',
   browser_back: '뒤로 가는',
+  browser_wait: '화면 바뀌기 기다리는',
+  browser_tabs: '탭 목록 보는',
   browser_close: '탭 닫는',
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',

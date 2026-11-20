@@ -1036,6 +1036,8 @@ export class Connectors {
             url: f(s.capture.url),
             pick: s.capture.pick ?? '',
             timeoutMs: s.capture.timeoutMs ?? 10_000,
+            // 읽기만 하는 목록 화면이라 못 들었으면 한 번 새로 고쳐도 된다 (확장은 시킬 때만 새로 고친다)
+            reloadIfSilent: true,
           },
           40_000,
         )
