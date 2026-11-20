@@ -42,6 +42,7 @@ export interface NewApproval {
   choiceRefs?: ApprovalRecord['choiceRefs']
   subChoices?: ApprovalView['subChoices']
   subRefs?: ApprovalRecord['subRefs']
+  shipOptions?: ApprovalView['shipOptions']
 }
 
 export class Approvals {

@@ -3769,3 +3769,15 @@ textarea.ghosting {
 .goal-fold[open] > summary::after {
   content: " ▴";
 }
+
+/* 승인 카드 셀렉트 박스: 고를 게 많을 때 (등록 카드·할부·은행) */
+.select-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.select-field {
+  appearance: auto;
+  width: 100%;
+  min-height: 44px;
+}

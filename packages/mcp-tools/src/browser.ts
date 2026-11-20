@@ -275,17 +275,29 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_code',
     '폰에서 받아 칸에 바로 넣기 (인증번호·주민번호 뒷자리·보안문자)',
-    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back), 보안문자·자동입력 방지 글자(kind: captcha — 먼저 pick 없이 부르면 칸 둘레를 자른 그림 몇 장이 오니, 보안문자가 또렷한 그림 번호를 pick으로 다시 부른다. 카드에 그 그림이 함께 뜬다. 글자를 네가 읽어 넣지 않는다). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
+    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back), 결제 비밀번호 키패드(kind: pin — 먼저 key_refs로 키패드 버튼들을 주면 버튼마다 잘라 보여 준다. 그 그림을 보고 숫자마다 버튼 표시를 keys로 짚어 다시 부른다. 비밀번호는 사용자가 폰 보안 키패드로 넣고 두리가 그 버튼을 누른다. 사람에게 넘기지 않는다), 보안문자·자동입력 방지 글자(kind: captcha — 먼저 pick 없이 부르면 칸 둘레를 자른 그림 몇 장이 오니, 보안문자가 또렷한 그림 번호를 pick으로 다시 부른다. 카드에 그 그림이 함께 뜬다. 글자를 네가 읽어 넣지 않는다). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
     {
       tabId,
       ref: ref.describe('인증번호를 넣을 입력칸 표시'),
       label: z.string().max(40).optional().describe('카드에 보일 칸 이름 (예: "인증번호 6자리")'),
       kind: z
-        .enum(['code', 'rrn_back', 'captcha'])
+        .enum(['code', 'rrn_back', 'captcha', 'pin'])
         .optional()
         .describe(
-          'code=인증번호(기본, 저장하지 않음) · rrn_back=주민등록번호 뒷자리(본인인증 칸, 금고에 저장) · captcha=보안문자(그림과 함께)',
+          'code=인증번호(기본, 저장하지 않음) · rrn_back=주민등록번호 뒷자리(본인인증 칸, 금고에 저장) · captcha=보안문자(그림과 함께) · pin=결제 비밀번호 키패드(keys 필요)',
         ),
+      keys: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('pin일 때: 잘라 본 버튼 그림을 보고 숫자마다 그 버튼 표시 ({"0":"e20005","1":"e20003",…})'),
+      key_refs: z
+        .array(ref)
+        .max(16)
+        .optional()
+        .describe(
+          'pin일 때 먼저: 키패드 버튼 표시들 전부. 버튼마다 잘라 보여 주면 그걸 보고 keys를 짚어 다시 부른다',
+        ),
+      length: z.number().int().min(4).max(8).optional().describe('pin 자릿수 (기본 6)'),
       pick: z
         .number()
         .int()
@@ -358,7 +370,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '결제·주문·예약 확정·보내기·삭제처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
@@ -379,6 +391,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe(
           '결제 전에 두리가 화면에서 스스로 고른 것 (예: ["여행자보험 가입 안 함","약관 전체 동의","적립 안 함"]). 사용자가 승인 카드에서 보고 바꿀 수 있게 적는다. 사용자가 고를 choices와 다르다',
+        ),
+      ship_to: z
+        .string()
+        .max(120)
+        .optional()
+        .describe(
+          '결제면 받는 곳: 결제 화면에 지금 골라진 배송지 (예: "집 · 용인시 수지구 신봉동 …, 문 앞")',
+        ),
+      ship_options: z
+        .array(z.string().max(120))
+        .max(5)
+        .optional()
+        .describe(
+          '사이트에 저장된 다른 배송지들 ([배송지 변경]에 보이는 것). 사용자가 승인 카드에서 고르면 두리가 바꾼 뒤 결제한다',
         ),
       count: z
         .number()

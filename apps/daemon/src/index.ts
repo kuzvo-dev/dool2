@@ -758,6 +758,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (recent.some((m) => m.text === note && Date.parse(m.createdAt) >= since)) return
     postSaved(cur.id, store.addMessage(cur.id, 'user', note))
   }
+  /**
+   * 사용자가 폰에서 무언가 하면(승인·비밀번호·인증번호) AI 답을 기다리지 않고 두리 말로 바로 한 줄 남긴다:
+   * "받았어요 → 이제 이걸 할게요". 다음 화면이 한참 뒤에 움직여서 하고 있는지 모르겠다고 했다(11-20 실사용)
+   */
+  const sayNow = (text: string) => {
+    const cur = conversation.current()
+    if (!cur) return
+    postSaved(cur.id, store.addMessage(cur.id, 'assistant', text))
+  }
   /** 저장한 말을 폰·PC 화면에 바로 흘린다 */
   const postSaved = (threadId: string, message: StoredMessage) => {
     const event = { type: 'saved' as const, message }
@@ -1319,6 +1328,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
+        if (decision === 'approve' && approvalThread.get(id))
+          sayNow(`승인 받았어요. 이제 "${label}"을(를) 누를게요.`)
         const r =
           decision === 'reject'
             ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
@@ -1615,6 +1626,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const id = infoRequests.pending().at(-1)?.id
     void answer.then(async (code) => {
       if (!code) return
+      sayNow(
+        kind === 'rrn_back'
+          ? '주민번호 뒷자리 받았어요. 칸에 넣고 이어서 할게요.'
+          : kind === 'captcha'
+            ? '보안문자 받았어요. 칸에 넣고 이어서 할게요.'
+            : '인증번호 받았어요. 칸에 넣고 이어서 할게요.',
+      )
       // 주민번호 뒷자리는 금고(내 정보)에 저장해 다음부터 묻지 않는다
       if (kind === 'rrn_back') await profile.update({ rrn_back: code }).catch(() => undefined)
       // 넣는 동안 화면을 다시 읽었을 수 있어 표시가 바뀐다: 같은 이름의 칸을 새로 찾아 넣는다 (번호는 기록·AI에 남기지 않는다)
@@ -1654,6 +1672,56 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ok
             ? `사용자가 폰에서 ${kind === 'rrn_back' ? '주민번호 뒷자리' : kind === 'captcha' ? '보안문자' : '인증번호'}를 넣어 "${field}" 칸에 들어갔어요. 페이지를 읽고 [확인]·[인증] 버튼을 눌러 하던 일을 이어서 해 주세요.`
             : `사용자가 인증번호를 넣었는데 "${field}" 칸을 화면에서 찾지 못해 넣지 못했어요. 페이지를 읽어 칸을 확인하고 browser_request_code를 다시 써 주세요.`,
+        ),
+      )
+    })
+    return id
+  }
+  // 결제 비밀번호: 폰 보안 키패드로 받아 짚어 둔 키패드 버튼을 차례로 누른다. 값은 기록·AI에 남기지 않는다
+  browserTools.requestPin = (tabId, label, host, keys, length) => {
+    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const answer = infoRequests.ask(
+      {
+        site: host || '결제',
+        host,
+        field: 'secret',
+        label,
+        hint: `${length}자리를 넣으면 두리가 화면 키패드를 대신 눌러요. 두리(AI)는 값을 보지 않고, 저장하지 않아요.`,
+        // 폰 보안 키패드는 마지막 {n}+1을 자릿수로 읽는다 (주민번호 '^[1-4]\\d{6}$' = 7자리)
+        pattern: `^\\d\\d{${length - 1}}$`,
+        patternHint: `숫자 ${length}자리예요`,
+      },
+      5 * 60_000,
+    )
+    const id = infoRequests.pending().at(-1)?.id
+    void answer.then(async (pin) => {
+      if (!pin) return
+      sayNow('비밀번호 받았어요. 이제 화면 키패드를 차례로 누를게요.')
+      let ok = true
+      for (const d of pin) {
+        const ref = keys[d]
+        if (!ref) {
+          ok = false
+          break
+        }
+        const r = await browser.call('click', { tabId, ref }, 15_000).then(
+          () => true,
+          () => false,
+        )
+        if (!r) {
+          ok = false
+          break
+        }
+        await new Promise((res) => setTimeout(res, 250))
+      }
+      journal.write('pin-typed', { host, ok })
+      if (!threadId) return
+      followUp(
+        threadId,
+        appNote(
+          ok
+            ? '사용자가 폰 키패드로 결제 비밀번호를 넣어 두리가 화면 키패드를 눌렀어요. 페이지를 읽어 결제가 끝났는지(주문 완료·번호) 확인하고 알려 주세요. 키패드가 그대로면 자리가 바뀐 것이니 다시 짚어 browser_request_code(kind: "pin")를 불러요.'
+            : '결제 비밀번호를 누르다 키패드 버튼을 찾지 못했어요. 페이지를 다시 읽고 키패드를 다시 짚어 browser_request_code(kind: "pin")를 불러 주세요.',
         ),
       )
     })

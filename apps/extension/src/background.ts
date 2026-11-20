@@ -27,6 +27,7 @@ import {
   pageMarkTaps,
   pageMarkText,
   pageOptionPoint,
+  pageRect,
   pageRememberShown,
   pageRemoteInfo,
   pageRevealItem,
@@ -1364,6 +1365,35 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       await sleep(300)
       return pageState(tabId)
+    }
+    case 'element-shots': {
+      // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게)
+      const tabId = await ownedTab(a)
+      await frontTab(tabId)
+      const refs = (Array.isArray(a.refs) ? a.refs : []).map(String).slice(0, 16)
+      const shots: { ref: string; data: string }[] = []
+      for (const ref of refs) {
+        const f = frameOf(tabId, ref)
+        const r = (await inFrame(tabId, f.frameId, pageRect, ref).catch(() => undefined)) as
+          | { x: number; y: number; w: number; h: number }
+          | undefined
+        if (!r) continue
+        const off =
+          f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+        const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
+          format: 'jpeg',
+          quality: 85,
+          clip: {
+            x: Math.max(0, r.x + off.x),
+            y: Math.max(0, r.y + off.y),
+            width: r.w,
+            height: r.h,
+            scale: 2,
+          },
+        }).catch(() => undefined)
+        if (shot) shots.push({ ref, data: shot.data })
+      }
+      return { shots }
     }
     case 'captcha-candidates': {
       // 보안문자 칸 둘레를 몇 장 잘라 돌려준다. 어느 그림이 보안문자인지는 AI가 보고 고른다

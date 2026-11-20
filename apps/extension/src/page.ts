@@ -1130,6 +1130,16 @@ export function pageValueLength(ref: string, alnum = false): number {
   return -1
 }
 
+/** 표시 하나의 화면 자리 (이 액자 기준). 키패드 버튼처럼 그림만 있는 것을 하나씩 잘라 볼 때 */
+export function pageRect(ref: string): { x: number; y: number; w: number; h: number } | undefined {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!el) return undefined
+  const r = el.getBoundingClientRect()
+  return r.width > 2 && r.height > 2 ? { x: r.left, y: r.top, w: r.width, h: r.height } : undefined
+}
+
 /**
  * 보안문자 그림 후보: 칸 둘레의 그림·캔버스(가까운 순 3개)와, 칸을 품은 덩어리 상자, 칸 위쪽 띠.
  * 어느 게 보안문자인지는 고르지 않는다 — 잘라서 AI에게 보여 주고 AI가 고른다 (화면 보기 좌표, 이 액자 기준)

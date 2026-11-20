@@ -158,6 +158,24 @@ export function isCheckoutEntry(name: string): boolean {
   return CHECKOUT_ENTRY.test(name.replace(/\s+/g, ' ').trim())
 }
 
+/**
+ * 장바구니 화면: 여기의 [구매하기]·[주문하기]는 결제 화면(주문서)을 열 뿐 돈이 나가지 않는다.
+ * 이름 앞에 개수·범위가 붙어도("총 5개 상품 구매하기", "선택 상품 주문하기") 들어가는 버튼이다 (실측 쿠팡: 여기서 한 번, 결제 화면에서 또 승인받았다)
+ */
+export function cartPage(url: string): boolean {
+  try {
+    const u = new URL(url)
+    // 결제 단계 주소(checkout.coupang.com/cart/checkout/…)는 장바구니가 아니다
+    if (RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname) || /^checkout\./i.test(u.hostname))
+      return false
+    return /^cart\./i.test(u.hostname) || /\/(?:cart|basket|cartview)(?:[/.?#]|$)/i.test(u.pathname)
+  } catch {
+    return false
+  }
+}
+const CART_ENTRY =
+  /(?:구매|주문|결제)\s*하기|주문\s*하러\s*가기|결제\s*하러\s*가기|주문서\s*작성|구매\s*진행|주문\s*진행|checkout|place order|proceed/i
+
 // 들어가는 버튼이라 믿고 눌렀는데 바로 확정된 화면 (결제 화면 없이 확정하는 사이트를 놓치지 않게)
 const CONFIRMED =
   /(?:예약|주문|결제|구매|예매|신청)(?:이|가)?\s*(?:완료|확정)\s*(?:되었|됐|했|하였)|(?:예약|주문|예매)\s*번호\s*[:：]?\s*[A-Z0-9-]{5,}/
@@ -764,6 +782,14 @@ export class BrowserTools {
     /** 보안문자 그림 (jpeg base64) */
     image?: string,
   ) => string | undefined
+  /** 결제 비밀번호 키패드 카드 (폰 보안 키패드). 받은 숫자는 본체가 keys의 버튼을 차례로 누른다 */
+  requestPin?: (
+    tabId: number,
+    label: string,
+    host: string,
+    keys: Record<string, string>,
+    length: number,
+  ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
@@ -805,6 +831,20 @@ export class BrowserTools {
   private signupOk = new Map<string, number>()
   /** 가입·변경이 끝나기를 기다리는 새 비밀번호 (끝난 걸 화면에서 보면 금고에 넣는다) */
   private pendingPw: PendingPassword[] = []
+  /** 승인받은 결제를 배송지를 바꾼 뒤 누르기: 탭마다 그 버튼 한 번 (10분) */
+  private paidPass = new Map<number, { label: string; until: number }>()
+  /** 승인받은 마지막 버튼이면 한 번 쓴다 */
+  private usePass(tabId: number, name: string): boolean {
+    const p = this.paidPass.get(tabId)
+    if (!p) return false
+    if (p.until < Date.now()) {
+      this.paidPass.delete(tabId)
+      return false
+    }
+    if (name !== p.label && !sameFinal(name, p.label)) return false
+    this.paidPass.delete(tabId)
+    return true
+  }
   /** 사용자가 이 사이트의 가입·비번 변경을 골랐다 (폰 카드·대화) */
   allowSignup(hostOrUrl: string, ms = 60 * 60_000) {
     const key = siteKey(hostOrUrl)
@@ -992,6 +1032,19 @@ export class BrowserTools {
             : {}),
           ...(chose.length ? { chose } : {}),
           ...(Number(a.count) > 1 ? { count: Number(a.count) } : {}),
+          ...(typeof a.ship_to === 'string' && a.ship_to.trim()
+            ? {
+                shipTo: a.ship_to.trim().slice(0, 120),
+                shipOptions: (Array.isArray(a.ship_options) ? a.ship_options : [])
+                  .map((x) =>
+                    String(x ?? '')
+                      .trim()
+                      .slice(0, 120),
+                  )
+                  .filter((x) => x && x !== String(a.ship_to).trim())
+                  .slice(0, 5),
+              }
+            : {}),
         })
       }
       case 'fill_profile': {
@@ -1247,9 +1300,74 @@ export class BrowserTools {
         // 인증번호: 사용자가 폰 카드에 넣은 번호를 본체가 그 칸에 바로 넣는다. AI는 번호를 보지 않는다
         const page = this.pages.get(tabId)
         if (!page) throw new Error('먼저 페이지를 읽어 주세요')
+        const ref = String(a.ref ?? '')
+        // 결제 비밀번호 키패드(숫자가 그림이고 자리가 섞인 버튼들): AI가 화면을 보고 숫자 → 버튼 표시를 짚고,
+        // 사용자는 폰 보안 키패드로 넣는다. 본체가 그 순서대로 누른다 — AI는 비밀번호를 보지 않는다
+        if (a.kind === 'pin') {
+          const keys = (a.keys && typeof a.keys === 'object' ? a.keys : {}) as Record<string, unknown>
+          // 짚기 전: 키패드 버튼들(key_refs)을 하나씩 잘라 보여 주고 AI가 버튼마다 숫자를 읽게 한다.
+          // 화면 한 장에서 자리로 맞추면 틀리기 쉽다 (실측 쿠팡: 비밀번호가 틀렸다고 나왔다)
+          if (!Object.keys(keys).length) {
+            const list = (Array.isArray(a.key_refs) ? a.key_refs : [])
+              .map(String)
+              .filter((r) => page.refs.has(r))
+            if (list.length < 10)
+              throw new Error(
+                '키패드 버튼 표시들을 key_refs에 모두 넣어(숫자 버튼 10개, 지우기 등 포함 가능) 다시 불러 주세요. 버튼마다 잘라 보여 드릴게요.',
+              )
+            const got = (await this.browser
+              .call('element-shots', { tabId, refs: list }, 30_000)
+              .catch(() => undefined)) as { shots?: { ref: string; data: string }[] } | undefined
+            const shots = got?.shots ?? []
+            if (shots.length < 10)
+              throw new Error('키패드 버튼을 찍지 못했어요. 페이지를 다시 읽고 다시 불러 주세요')
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '키패드 버튼을 하나씩 잘랐어요. 그림마다 보이는 숫자를 읽어 keys({"0":"e…","1":"e…",…})에 넣고 같은 칸으로 다시 불러요. 숫자가 아닌 버튼(지우기·재배열)은 넣지 않아요. 0~9가 한 번씩 다 있어야 해요.',
+                },
+                ...shots.flatMap((sh) => [
+                  { type: 'text' as const, text: sh.ref },
+                  { type: 'image' as const, data: sh.data, mimeType: 'image/jpeg' },
+                ]),
+              ],
+            }
+          }
+          const map: Record<string, string> = {}
+          for (const d of '0123456789') {
+            const r = String(keys[d] ?? '')
+            if (!page.refs.has(r))
+              throw new Error(
+                `숫자 ${d}의 버튼 표시가 없어요. 잘라 본 그림에서 0~9를 모두 짚어 keys에 넣어 주세요.`,
+              )
+            map[d] = r
+          }
+          // 한 버튼을 두 숫자로 짚었으면 잘못 읽은 것이다 (누르면 비밀번호가 틀려 잠길 수 있다)
+          if (new Set(Object.values(map)).size !== 10)
+            throw new Error(
+              '같은 버튼을 두 숫자로 짚었어요. 잘라 본 그림을 다시 보고 0~9를 서로 다른 버튼으로 짚어 주세요.',
+            )
+          if (!this.requestPin) throw new Error('키패드 카드를 띄울 수 없어요. browser_handoff로 넘겨 주세요')
+          let host = ''
+          try {
+            host = new URL(page.url).hostname
+          } catch {}
+          const len = Math.min(Math.max(Number(a.length) || 6, 4), 8)
+          const id = this.requestPin(tabId, String(a.label ?? '') || '결제 비밀번호', host, map, len)
+          if (!id) throw new Error('키패드 카드를 띄우지 못했어요')
+          this.hold(tabId, 10 * 60_000)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `폰에 ${len}자리 보안 키패드 카드를 띄웠어요. 사용자에게 "폰에 뜬 키패드에 결제 비밀번호를 넣어 주세요"처럼 한 문장으로 말하고 이번 답을 끝내세요. 넣으면 두리가 짚어 둔 버튼을 차례로 누르고 알려 줘요. 그때 화면을 읽어 결제가 끝났는지 확인해요.`,
+              },
+            ],
+          }
+        }
         if (!this.requestCode)
           throw new Error('인증번호 카드를 띄울 수 없어요. browser_handoff로 넘겨 주세요')
-        const ref = String(a.ref ?? '')
         const target = page.refs.get(ref)
         if (!target || !['입력칸', '검색칸'].includes(target.role))
           throw new Error(
@@ -1584,7 +1702,8 @@ export class BrowserTools {
               | { navigates?: boolean }
               | undefined
           )?.navigates === true
-        if (!entry && !navOnly) this.guard(label, page.url, true, page.pay)
+        const passed = !entry && !navOnly && this.usePass(tabId, target.name)
+        if (!entry && !navOnly && !passed) this.guard(label, page.url, true, page.pay)
         const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
           newTabId?: number
           coveredBy?: string
@@ -1804,6 +1923,9 @@ export class BrowserTools {
       chose?: string[]
       /** 같은 일을 몇 개 이어서 하나 (예: 일정 6개 지우기). 2 이상이면 한 번 승인으로 나머지도 */
       count?: number
+      /** 받는 곳: 지금 골라진 배송지와 저장된 다른 배송지 */
+      shipTo?: string
+      shipOptions?: string[]
     },
     kind?: RiskKind,
   ): Promise<ToolResult> {
@@ -1928,6 +2050,11 @@ export class BrowserTools {
       ...(d.amount ? { amount: d.amount.slice(0, 60) } : {}),
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
       ...(d.chose?.length ? { chose: d.chose } : {}),
+      ...(d.shipTo
+        ? {
+            shipOptions: [d.shipTo, ...(d.shipOptions ?? [])].map((label, i) => ({ id: `a${i}`, label })),
+          }
+        : {}),
       ...(shot?.data ? { shot: shot.data } : {}),
       ...(picks.length
         ? {
@@ -2257,7 +2384,34 @@ export class BrowserTools {
       const picked: string[] = []
       const pickedSubs: [string, string][] = []
       // 고른 것: 결제 수단(c1)과 세부 선택(s1o2)을 쉼표로 이은 글 (폰이 서명한 그대로)
-      const parts = (choice ?? '').split(',').filter(Boolean)
+      const all = (choice ?? '').split(',').filter(Boolean)
+      // 받는 곳: a0(지금 곳)이 아니면 배송지를 바꾼 뒤 결제해야 한다. 화면에서 배송지 바꾸기는 사이트마다 달라 AI가 하고,
+      // 이 승인으로 마지막 버튼을 한 번 누를 수 있게 한다 (다시 묻지 않는다, 10분)
+      const isShip = (p: string) => /^a\d+$/.test(p) || p.startsWith('n:')
+      const ship = all.find(isShip)
+      // n:… = 사용자가 넣은 새 주소 (그 사이트 배송지에 추가해 고른다)
+      const fresh = ship?.startsWith('n:') ? safeDecode(ship.slice(2)).trim().slice(0, 100) : ''
+      const shipTo = fresh
+        ? `새 주소 ${fresh}`
+        : ship && ship !== 'a0'
+          ? rec.shipOptions?.find((o) => o.id === ship)?.label
+          : undefined
+      const parts = all.filter((p) => !isShip(p))
+      if (shipTo) {
+        const pay = parts
+          .map(
+            (p) =>
+              rec.choices?.find((c) => c.id === p)?.label ??
+              rec.subChoices?.flatMap((g) => g.options).find((o) => o.id === p)?.label,
+          )
+          .filter(Boolean)
+        this.paidPass.set(rec.tabId, { label: rec.label, until: Date.now() + APPROVAL_TTL_MS })
+        const msg =
+          `사용자가 승인하면서 받는 곳을 "${shipTo}"(으)로 바꿔 달라고 했어요. 아직 결제는 누르지 않았어요. ` +
+          `화면의 배송지 변경으로 그곳을 고른 뒤(새 주소면 배송지 추가로 넣고, 받는 사람·연락처는 browser_fill_profile로)${pay.length ? ` 결제 수단 ${pay.map((x) => `"${x}"`).join(', ')}을(를) 고르고` : ''} [${rec.label}]을(를) browser_click으로 누르세요. 이번 결제는 이미 승인돼 다시 묻지 않아요(10분 안, 한 번).`
+        this.approvals.finish(id, true, msg)
+        return { ok: true, message: msg }
+      }
       const main = parts.find((p) => rec.choiceRefs?.[p])
       // 다른 결제 수단을 골랐으면 그 수단에 딸린 카드·할부 선택은 쓰지 않는다
       const applies = (p: string) => {
@@ -2427,7 +2581,11 @@ export class BrowserTools {
 
   /** 결제 흐름 탭에서, 아직 결제 화면이 아닌 곳의 결제 화면 들어가기 버튼인지 */
   private entersCheckout(tabId: number, page: PageInfo, name: string): boolean {
-    return this.payFlow(tabId) !== undefined && !page.checkout && isCheckoutEntry(name)
+    // 장바구니의 구매·주문 버튼은 결제 흐름이 아니어도 들어가는 버튼이다 (돈은 결제 화면의 마지막 버튼에서 나간다).
+    // 장바구니에도 '결제 예정 금액'·'배송지'가 보여 결제 화면처럼 읽힐 수 있어 주소로 먼저 본다
+    if (cartPage(page.url) && CART_ENTRY.test(name)) return true
+    if (page.checkout) return false
+    return this.payFlow(tabId) !== undefined && isCheckoutEntry(name)
   }
 
   /** 탭이 닫혔다 (사용자·탭 정리): 그 탭의 기록을 지우고, 기다리던 승인은 만료시킨다 */
@@ -2636,7 +2794,7 @@ export class BrowserTools {
           ]
         : flow && info.checkout
           ? [
-              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_request_approval로 승인받아요. 카드 번호·결제 비밀번호처럼 사람만 넣을 수 있는 칸만 browser_handoff로 넘겨요.`,
+              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_request_approval로 한 번만 승인받아요. 그 전에 이 화면의 배송지 바꾸기(사이트마다 이름이 달라요)를 열어 저장된 다른 배송지를 읽고 닫은 뒤, 받는 곳 ship_to·다른 배송지 ship_options·결제 수단 choices를 같은 카드에 넣어요. 결제 비밀번호 키패드가 뜨면 browser_request_code(kind: "pin", key_refs: 키패드 버튼 표시들)로 버튼마다 잘린 그림을 받아 숫자를 짚고(keys) 다시 불러 폰 보안 키패드로 받아요. 새 카드 번호처럼 그걸로 안 되는 칸만 browser_handoff로 넘겨요.`,
             ]
           : []),
       ...(s.captcha
@@ -2712,4 +2870,13 @@ export function openDialogLines(d: SiteDialog): string[] {
 export function nearlyEmpty(text: string): boolean {
   const words = text.replace(/\[e\d+ [^\]]*\]/g, '').replace(/\s+/g, '')
   return words.length < 8
+}
+
+/** 폰이 보낸 글 조각 풀기 (깨졌으면 그대로) */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
 }

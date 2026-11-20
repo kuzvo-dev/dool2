@@ -2219,3 +2219,124 @@ describe('승인 게이트는 화면을 열기만 하는 링크를 막지 않는
     expect(clicks).toEqual(['e1'])
   })
 })
+
+describe('승인은 돈이 나가는 마지막 한 번만', () => {
+  it('장바구니의 "총 5개 상품 구매하기"는 결제 화면을 여는 버튼이라 승인 없이 누르고, 결제 화면의 결제하기는 막는다', async () => {
+    const clicks: string[] = []
+    let page = {
+      url: 'https://cart.coupang.com/cartView.pg',
+      title: '장바구니',
+      text: '장바구니 총 결제 예정 금액 17,270원 배송지 [e9 버튼 "총 5개 상품 구매하기"]',
+    }
+    const b = {
+      call: async (cmd: string, args?: { ref?: string }) => {
+        if (cmd === 'snapshot') return { tabId: 3, ...page }
+        if (cmd === 'click') clicks.push(String(args?.ref))
+        return { tabId: 3, url: page.url, title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    const r = await tools.run('click', { tabId: 3, ref: 'e9' })
+    expect(r.isError).toBeFalsy()
+    expect(clicks).toEqual(['e9'])
+    // 결제 단계 주소 (checkout.coupang.com/cart/checkout/…)는 장바구니가 아니다
+    page = {
+      url: 'https://checkout.coupang.com/cart/checkout/1795156558444',
+      title: '주문/결제',
+      text: '결제수단 신용/체크카드 최종 결제 금액 17,270원 [e54 버튼 "결제하기"]',
+    }
+    await tools.run('read', { tabId: 3 })
+    const pay = await tools
+      .run('click', { tabId: 3, ref: 'e54' })
+      .catch((e: Error) => ({ isError: true, err: e.message }))
+    expect(JSON.stringify(pay)).toMatch(/승인|request_approval/)
+    expect(clicks).toEqual(['e9'])
+  })
+})
+
+describe('결제 승인 한 장에서 받는 곳도 고른다', () => {
+  it('다른 배송지를 고르고 승인하면 결제는 누르지 않고 바꾸라고 알리며, 바꾼 뒤 그 결제 버튼은 다시 묻지 않고 한 번 누른다', async () => {
+    const clicks: string[] = []
+    const b = {
+      call: async (cmd: string, args?: { ref?: string }) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://checkout.coupang.com/cart/checkout/1',
+            title: '주문/결제',
+            text: '배송지 집 [e39 버튼 "배송지 변경"] 최종 결제 금액 17,270원 [e54 버튼 "결제하기"]',
+          }
+        if (cmd === 'click') clicks.push(String(args?.ref))
+        return { tabId: 3, url: 'https://checkout.coupang.com/cart/checkout/1', title: '' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e54',
+      what: '장보기 5개',
+      where: '쿠팡',
+      amount: '17,270원',
+      ship_to: '집 · 용인시 수지구',
+      ship_options: ['회사 · 서울 강남구'],
+    })
+    const [rec] = tools.approvals.list()
+    expect(rec?.shipOptions).toEqual([
+      { id: 'a0', label: '집 · 용인시 수지구' },
+      { id: 'a1', label: '회사 · 서울 강남구' },
+    ])
+    const r = await tools.approve(rec?.id as string, 'a1')
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('회사 · 서울 강남구')
+    expect(clicks).toEqual([])
+    // 배송지를 바꾼 뒤 결제하기: 다시 묻지 않고 한 번만
+    const ok = await tools.run('click', { tabId: 3, ref: 'e54' })
+    expect(ok.isError).toBeFalsy()
+    expect(clicks).toEqual(['e54'])
+    const again = await tools
+      .run('click', { tabId: 3, ref: 'e54' })
+      .catch((e: Error) => ({ isError: true, err: e.message }))
+    expect(JSON.stringify(again)).toMatch(/승인|request_approval/)
+  })
+})
+
+describe('결제 비밀번호 키패드는 폰 보안 키패드로', () => {
+  it('AI가 숫자마다 버튼을 짚어야 카드를 띄우고, 비밀번호는 AI에게 가지 않는다', async () => {
+    const keys = Array.from({ length: 12 }, (_, i) => `[e2000${i < 9 ? `0${i + 1}` : i + 1} 링크]`).join(' ')
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://checkout.coupang.com/cart/checkout/1',
+            title: '결제',
+            text: `결제 비밀번호 6자리를 입력해주세요 ${keys}`,
+          }
+        return { tabId: 3, url: 'https://checkout.coupang.com/cart/checkout/1' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    const asked: { keys: Record<string, string>; length: number }[] = []
+    tools.requestPin = (_t, _l, _h, k, length) => {
+      asked.push({ keys: k, length })
+      return 'p1'
+    }
+    await tools.run('read', { tabId: 3 })
+    const bad = await tools
+      .run('request_code', { tabId: 3, ref: 'e20001', kind: 'pin' })
+      .catch((e: Error) => e.message)
+    expect(String(JSON.stringify(bad))).toContain('key_refs')
+    const map = Object.fromEntries(
+      '1234567890'.split('').map((d, i) => [d, `e2000${i < 9 ? `0${i + 1}` : i + 1}`]),
+    )
+    const dup = await tools
+      .run('request_code', { tabId: 3, ref: 'e20001', kind: 'pin', keys: { ...map, '0': map['1'] } })
+      .catch((e: Error) => e.message)
+    expect(String(JSON.stringify(dup))).toContain('같은 버튼')
+    const ok = await tools.run('request_code', { tabId: 3, ref: 'e20001', kind: 'pin', keys: map })
+    expect(ok.isError).toBeFalsy()
+    expect(asked).toEqual([{ keys: map, length: 6 }])
+  })
+})
