@@ -640,6 +640,25 @@ async function refitAfterTap(tabId: number, before: string | undefined) {
   await widenIfCut(tabId)
 }
 
+/**
+ * 화면 아래로 잘린 창(결제 비밀번호 키패드 등): 그 아래까지 보이게 화면 높이를 늘려 그린다.
+ * 굴려도 안 보이는(고정 위치) 창은 화면 밖이면 찍으면 빈 그림이고 마우스도 닿지 않는다
+ * (실측 11-20: 쿠팡 키패드가 창 아래로 잘려 버튼 그림이 회색뿐이었다 → 두리가 숫자를 못 읽었다)
+ */
+async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
+  if (phoneView.has(tabId) || emulated.has(tabId)) return false
+  const v = await inPage(tabId, pageViewport)
+  if (bottom <= v.height - 2) return false
+  await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width: Math.round(v.width),
+    height: Math.min(4000, Math.ceil(bottom + 80)),
+    deviceScaleFactor: 0,
+    mobile: false,
+  })
+  await sleep(350)
+  return true
+}
+
 async function leavePhoneView(tabId: number) {
   phoneSize.delete(tabId)
   const fitted = emulated.delete(tabId)
@@ -1222,6 +1241,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'click': {
       const tabId = await ownedTab(a)
       let at = await locate(tabId, a.ref, 'point')
+      // 화면 아래로 잘린 창의 버튼이면 화면 높이를 늘려 마우스가 닿게 한다
+      if (await tallerIfBelow(tabId, at.y + 30).catch(() => false)) at = await locate(tabId, a.ref, 'point')
       // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
       // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
       if (at.moved) {
@@ -1398,6 +1419,19 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const refs = (Array.isArray(a.refs) ? a.refs : []).map(String).slice(0, 16)
+      // 찍기 전에 보이게: 굴려서 보이면 굴리고, 그래도 화면 아래로 잘리면 화면 높이를 늘린다
+      if (refs[0]) await locate(tabId, refs[0], 'point').catch(() => undefined)
+      let lowest = 0
+      for (const ref of refs) {
+        const f = frameOf(tabId, ref)
+        const r = (await inFrame(tabId, f.frameId, pageRect, ref).catch(() => undefined)) as
+          | { y: number; h: number }
+          | undefined
+        const off =
+          f.frameId && f.url ? await frameOffset(tabId, f.url).catch(() => ({ x: 0, y: 0 })) : { x: 0, y: 0 }
+        if (r) lowest = Math.max(lowest, r.y + off.y + r.h)
+      }
+      if (lowest) await tallerIfBelow(tabId, lowest).catch(() => false)
       const shots: { ref: string; data: string; rect: { x: number; y: number; w: number; h: number } }[] = []
       for (const ref of refs) {
         const f = frameOf(tabId, ref)
