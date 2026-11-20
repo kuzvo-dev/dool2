@@ -1671,6 +1671,40 @@ describe('새 비밀번호 만들기', () => {
     return { tools, saved, fills, page, form, asked, text }
   }
 
+  it('사용자가 폰에서 직접 정한 비밀번호가 있으면 그걸 넣고, 칸에 다 안 들어가면 다시 묻게 한다', async () => {
+    const t = signupBench()
+    t.tools.allowSignup('shop.example')
+    t.tools.setOwnPassword('shop.example', 'MyOwn!pass2026')
+    await t.tools.run('read', { tabId: 3 })
+    const r = await t.tools.run('new_password', {
+      tabId: 3,
+      password: 'e2',
+      confirm: 'e3',
+      username: 'me@example.com',
+    })
+    expect(r.isError).toBeUndefined()
+    expect(t.fills.map((f) => f.value)).toEqual(['MyOwn!pass2026', 'MyOwn!pass2026'])
+    expect(t.text(r)).toContain('사용자가 정한')
+    expect(t.text(r)).not.toContain('MyOwn!pass2026')
+    // 한 번 쓰면 지운다: 다음엔 두리가 만든다
+    await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+    expect(t.fills.at(-1)?.value).toHaveLength(16)
+    // 칸이 글자 수를 막으면 사용자 값은 바꾸지 않고 다시 묻는다
+    const short = signupBench({ maxLen: 10, ask: 'asked' })
+    short.tools.allowSignup('shop.example')
+    short.tools.setOwnPassword('shop.example', 'MyOwn!pass2026')
+    await short.tools.run('read', { tabId: 3 })
+    const bad = await short.tools
+      .run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
+      .catch((e: Error) => ({ isError: true, content: [{ type: 'text' as const, text: e.message }] }))
+    expect(short.text(bad as never)).toContain('다시 부르세요')
+    const again = short.text(
+      await short.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' }),
+    )
+    expect(again).toContain('폰에')
+    expect(short.asked).toHaveLength(1)
+  })
+
   it('가입 화면에서 만들어 넣되, 금고에는 완료 화면을 본 뒤에 넣고 값은 돌려주지 않는다', async () => {
     const t = signupBench()
     t.tools.allowSignup('shop.example')

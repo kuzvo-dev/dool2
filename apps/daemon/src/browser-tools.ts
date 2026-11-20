@@ -810,6 +810,9 @@ export class BrowserTools {
     const key = siteKey(hostOrUrl)
     if (key) this.signupOk.set(key, Date.now() + ms)
   }
+  private disallowSignup(key: string) {
+    this.signupOk.delete(key)
+  }
   private signupAllowed(key: string) {
     const t = this.signupOk.get(key)
     return t !== undefined && t > Date.now()
@@ -819,6 +822,11 @@ export class BrowserTools {
    * 고르면 본체가 그 대화로 이어서 하라고 알린다
    */
   askSignup?: (site: string, key: string, purpose: 'signup' | 'reset') => 'ok' | 'asked' | undefined
+  /** 사용자가 직접 정한 새 비밀번호 (사이트마다, 한 번 쓰면 지운다). AI는 값을 받지 않는다 */
+  private ownPw = new Map<string, string>()
+  setOwnPassword(key: string, pw: string) {
+    this.ownPw.set(key, pw)
+  }
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
@@ -1193,8 +1201,17 @@ export class BrowserTools {
             | undefined
           return typeof r?.length === 'number' ? r.length : undefined
         }
-        let pw = makePassword()
+        // 사용자가 폰에서 직접 정했으면 그 값으로 (안 맞으면 다시 묻는다)
+        const own = this.ownPw.get(key)
+        let pw = own ?? makePassword()
         let got = await fill(pwRef, pw)
+        if (own && got !== undefined && got !== pw.length) {
+          this.ownPw.delete(key)
+          this.disallowSignup(key)
+          throw new Error(
+            `사용자가 정한 비밀번호가 이 칸에 다 들어가지 않았어요(${got}자만 들어감). 화면의 비밀번호 규칙(자릿수·특수문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 부르세요(폰에서 다시 골라요).`,
+          )
+        }
         if (got !== undefined && got !== pw.length) {
           if (got < 8)
             throw new Error(
@@ -1215,12 +1232,13 @@ export class BrowserTools {
             )
         }
         // 금고에는 아직 넣지 않는다: 가입이 끝난 걸 화면에서 보면 넣는다 (실패·"이미 가입" 때 틀린 값이 남지 않게)
+        this.ownPw.delete(key)
         this.pendingPw = this.pendingPw.filter((p) => p.key !== key)
         this.pendingPw.push({ key, origin, username, password: pw, purpose, at: Date.now() })
         return this.read(
           tabId,
           undefined,
-          `새 비밀번호(${pw.length}자)를 만들어 "${pwRef}"${confirmRef ? `·"${confirmRef}"` : ''} 칸에 넣었어요(${username}). ` +
+          `${own ? '사용자가 정한' : '새'} 비밀번호(${pw.length}자)를 ${own ? '' : '만들어 '}"${pwRef}"${confirmRef ? `·"${confirmRef}"` : ''} 칸에 넣었어요(${username}). ` +
             '당신에게는 비밀번호가 오지 않아요. 나머지 칸을 채우고 가입·변경 버튼을 눌러 주세요. 완료 화면이 보이면 두리가 금고에 저장하고 알려 드려요. ' +
             '비밀번호 규칙(자릿수·특수문자)에 걸리면 사용자에게 알려 주세요.',
         )

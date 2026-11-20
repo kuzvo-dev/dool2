@@ -5247,6 +5247,45 @@ function infoSheet(id: string) {
     }
     body.push(form)
     queueMicrotask(() => inputs.find((x) => !x.chips)?.input.focus())
+  } else if (q.field === 'password') {
+    // 사용자가 정하는 새 비밀번호: 두 번 넣어 맞는지 보고 PC 금고로만 보낸다 (두리·기록에는 남지 않는다)
+    const mk = (ph: string) => {
+      const i = h('input', { class: 'field' }) as HTMLInputElement
+      i.type = 'password'
+      i.autocomplete = 'new-password'
+      i.placeholder = ph
+      i.setAttribute('aria-label', ph)
+      return i
+    }
+    const pw1 = mk('새 비밀번호')
+    const pw2 = mk('한 번 더')
+    const err = h('p', { class: 'field-err', text: '' })
+    const show = h('button', { class: 'btn-text', text: '보기' })
+    show.type = 'button'
+    show.onclick = () => {
+      const t = pw1.type === 'password' ? 'text' : 'password'
+      pw1.type = t
+      pw2.type = t
+      show.textContent = t === 'password' ? '보기' : '숨기기'
+    }
+    const go = h('button', { class: 'btn lg', text: '정하기' })
+    go.type = 'submit'
+    const form = h('form', { class: 'cred-form' }, pw1, pw2, show, err, go)
+    form.onsubmit = (e) => {
+      e.preventDefault()
+      const v = pw1.value
+      if (q.pattern && !new RegExp(q.pattern).test(v)) {
+        err.textContent = q.patternHint || '형식을 확인해 주세요'
+        return
+      }
+      if (v !== pw2.value) {
+        err.textContent = '두 칸이 달라요. 같게 넣어 주세요'
+        return
+      }
+      answer(v)
+    }
+    body.push(form)
+    queueMicrotask(() => pw1.focus())
   } else if (q.field === 'secret') {
     // 주민번호 뒷자리처럼 저장하지 않는 값: 폰 키보드 대신 숫자 위치를 섞은 보안 키패드로 받는다
     body.push(securePad(q.pattern, q.patternHint, (v) => answer(v)))
@@ -5289,7 +5328,7 @@ function infoSheet(id: string) {
       icon('lock'),
       q.field === 'form'
         ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
-        : q.field === 'secret'
+        : q.field === 'secret' || q.field === 'password'
           ? '넣은 값은 이 PC 금고에 암호화해 저장해요. 두리(AI)는 보지 않아요.'
           : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
     ),
