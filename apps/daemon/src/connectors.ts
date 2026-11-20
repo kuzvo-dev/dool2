@@ -886,7 +886,7 @@ export class Connectors {
           content: [
             {
               type: 'text',
-              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고 사용자에게 알려 주세요)`,
+              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고, 같은 답 안에서 같은 일을 하는 다른 서비스나 다른 길(브라우저 웹 검색 등)로 이어서 결과를 가져와요)`,
             },
           ],
           structuredContent: { stopped: say, blocked: true },
@@ -1114,16 +1114,20 @@ export class Connectors {
 }
 
 /**
- * 돈 내기 흐름의 표준 순서 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
- * 승인은 결제 화면에서 한 번, 사람에게는 사람만 할 수 있는 칸만 넘긴다
+ * 돈 내기 흐름의 목표와 도구 지도 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
+ * 순서는 AI가 화면을 보고 정한다. 사람 몫은 폰 카드로만
  */
 export const PAY_ORDER = [
-  '[결제 순서] ① 무엇을 살지·예약할지 사용자와 정해요.',
-  '② [예약하기]·[구매하기]·[주문하기]처럼 결제 화면을 여는 버튼은 승인 없이 browser_click으로 눌러요.',
-  '③ 결제 화면에서 최종 금액(세금·수수료 포함)·취소 규정을 읽고, 예약자·주문자 칸은 browser_fill_profile로 채운 뒤(없는 항목은 browser_request_profile) 마지막 버튼에 browser_checkout(결제 카드)을 써요. 결제 수단·결제 시점처럼 고를 칸은 직접 고르지 말고 choices로 넘겨 결제 카드에서 사용자가 고르게 해요. 승인은 이때 한 번이에요.',
-  '④ 카드 번호·결제 비밀번호·본인인증처럼 사람만 할 수 있는 것만 browser_handoff로 넘겨요. 나머지를 통째로 넘기지 않아요.',
-  '⑤ 끝나면 예약·주문 내역 화면에서 번호와 금액을 확인해 알려요.',
-  '눌렀는데 화면이 그대로면 짐작하지 말고 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·로그인 요구·빈 필수 칸) 보고 그것부터 처리해요. 로그인을 요구하면 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login.',
+  '[결제] 목표: 완료 화면과 주문(예약)번호까지. 순서는 화면을 보고 정해요.',
+  '- 결제 화면으로 넘어가기만 하는 [주문하기]·[구매하기]·[예약하기]: browser_click(opens_checkout: true)',
+  '- 예약자·주문자·배송지 칸: browser_fill_profile (없는 항목만 browser_request_profile)',
+  '- 결제 승인: 마지막 결제 버튼에서 browser_checkout(결제 카드) 한 번. 결제 수단 고르기는 choices로. 결제 화면에서 멈추고 묻지 않아요',
+  '- 승인 뒤 결제 창: 같은 결제라 끝까지 마쳐요. 결제 비밀번호 키패드는 browser_request_code(kind: pin), 인증번호는 browser_request_code, 앱 승인은 browser_wait_auth, 로봇 확인은 browser_request_tap',
+  '- 끝: 완료 화면에서 주문(예약)번호를 읽어 browser_order_done',
+  '- 돈이 나가지 않는 신청(취소·반품·요금제 변경·해지): 마지막 버튼에서 browser_request_approval',
+  '- 로그인 요구: 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login',
+  '- 저장된 카드가 없어 새 카드 번호를 처음 넣어야 할 때만 browser_handoff(emergency: true)',
+  '눌렀는데 화면이 그대로면 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·빈 필수 칸) 보고 그것부터 처리해요. 막히면 다른 결제 수단·다른 화면으로 다시 해 봐요.',
 ].join('\n')
 
 /** 아직 덜 그려진 화면: 머리줄 뒤 글이 거의 없고 누를 것도 거의 없다 */
