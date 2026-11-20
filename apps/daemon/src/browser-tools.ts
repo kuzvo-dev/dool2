@@ -1990,7 +1990,10 @@ export class BrowserTools {
         const ref = String(s.ref ?? '')
         const page = this.pages.get(tabId)
         if (!page?.refs.has(ref)) throw new Error(`${ref}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
-        if (s.submit) this.guard('', page.url, false, page.pay)
+        // 검색칸·주소·쿠폰 칸에서 Enter는 찾기일 뿐 결제가 아니다 (실측 11-20 G마켓 주소 찾기 Enter가 결제로 막혀 빈 결과)
+        const field = page.refs.get(ref)
+        const searchOnly = field?.role === '검색칸' || CHECKOUT_SETUP.test(field?.name ?? '')
+        if (s.submit && !searchOnly) this.guard('', page.url, false, page.pay)
         const text = String(s.text ?? '')
         const r = (await this.browser.call('type', {
           tabId,
