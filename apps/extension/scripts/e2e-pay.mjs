@@ -116,17 +116,16 @@ const run = async (tool, args) => {
 }
 const read = async (tabId) => text(await run('read', { tabId }))
 
-// 폰 키패드 카드 흉내: 본체(index.ts)처럼 짚어 둔 버튼을 차례로 누른다. 시험에서는 '사용자가 폰에 넣은 값'을 시험이 준다
+// 폰 키패드 카드 흉내: 본체(index.ts)처럼 짚어 둔 버튼을 차례로 누른다 (본체와 같은 BrowserTools.pressPin).
+// 시험에서는 '사용자가 폰에 넣은 값'을 시험이 준다
 let pinCard
 tools.requestPin = (tabId, _label, _host, keys, length) => {
   pinCard = { tabId, keys, length }
   return 'pin-card'
 }
 const typeOnPhone = async (pin) => {
-  for (const d of pin) {
-    await call('click', { tabId: pinCard.tabId, ref: pinCard.keys[d], once: true }, 15_000)
-    await sleep(250)
-  }
+  if (!(await tools.pressPin(pinCard.tabId, pinCard.keys, pin)))
+    throw new Error('화면 키패드를 다 누르지 못했어요')
 }
 
 // ── 단계 기록 ──
@@ -404,29 +403,35 @@ async function runFlow(flow) {
   // 안전장치: 돈이 나가는 마지막 버튼은 매번 승인 한 번 (PLAN.md 원칙 1). 승인 없이 가게에 결제 준비 요청이 가면 실패다.
   // 흐름들은 한 본체(한 BrowserTools)에서 이어 돈다: 앞 흐름의 승인이 같은 사이트의 돈 버튼을 열어 두면(사이트 30분 통과) 여기서 잡힌다
   let leaked = false
-  const asked = await step(
+  // 합의한 설계: AI가 final로 선언한 누르기는 누르지 않고, browser_checkout으로 결제 카드를 띄우라는 오류로 돌려준다
+  // (결제 카드 내용 — 상품·금액·배송지 — 은 checkout만 받으니 click이 카드를 대신 만들지 않는다).
+  // 그래서 이 단계의 통과 = 안 눌렸고(가게에 결제 준비 요청 없음) + browser_checkout을 가리킨다. 카드는 다음에 checkout으로 띄운다
+  await step(
     flow,
-    '[결제하기]를 마지막 버튼으로 누르기(final) → 결제 카드 (승인 없이 눌리지 않음)',
+    '[결제하기]를 마지막 버튼으로 누르기(final) → 누르지 않고 browser_checkout(결제 카드)으로 안내',
     async () => {
       page = await read(tabId)
       total = totalOf(page)
       const p0 = shop.state.prepares
-      await run('click', { tabId, ref: payRef(page), ...PLANNED.finalClick })
-      approval = tools.approvals.list().find((x) => x.status === 'pending')
+      const r = await tools.run('click', { tabId, ref: payRef(page), ...PLANNED.finalClick })
       if (shop.state.prepares > p0) {
         leaked = true
         throw new Error('승인 없이 [결제하기]가 눌려 결제가 시작됐어요 (앞 승인의 사이트 통과 등)')
       }
-      if (!approval) throw new Error('결제 카드(승인 요청)가 뜨지 않았어요')
+      approval = tools.approvals.list().find((x) => x.status === 'pending')
+      if (approval) return { note: '결제 카드가 바로 떴어요' }
+      if (!r.isError || !/browser_checkout/.test(text(r)))
+        throw new Error(`안 눌렸지만 browser_checkout 안내가 없어요: ${text(r).slice(0, 160)}`)
     },
-    { todo: 'browser_click final', needs: haveAddr },
+    { needs: haveAddr },
   )
   if (leaked) note('이미 눌렸으니 그 결제 창으로 뒤 단계를 이어 감')
-  if (!asked && haveAddr && !leaked) {
-    // 예전 방법: browser_checkout (결제 화면의 마지막 버튼에 결제 카드)
-    try {
+  if (!approval && haveAddr && !leaked) {
+    // 안내대로 browser_checkout (결제 화면의 마지막 버튼에 결제 카드). final 단계가 실패했어도 같은 길로 이어 간다
+    await step(flow, 'browser_checkout → 결제 카드 (아직 누르지 않음)', async () => {
       page = await read(tabId)
       total = totalOf(page)
+      const p0 = shop.state.prepares
       await run('checkout', {
         tabId,
         ref: payRef(page),
@@ -435,11 +440,10 @@ async function runFlow(flow) {
         total,
         ship_to: `${SAVED_ADDR.name} · ${SAVED_ADDR.road} ${SAVED_ADDR.detail}`,
       })
+      if (shop.state.prepares > p0) throw new Error('승인 전에 [결제하기]가 눌렸어요')
       approval = tools.approvals.list().find((x) => x.status === 'pending')
-      note(approval ? 'browser_checkout으로 결제 카드를 띄워 이어 감' : 'browser_checkout도 카드를 못 띄움')
-    } catch (e) {
-      note(`browser_checkout도 실패: ${e.message}`)
-    }
+      if (!approval) throw new Error('결제 카드(승인 요청)가 뜨지 않았어요')
+    })
   }
   if (approval)
     await step(flow, `결제 카드 내용: 돈 승인·${total}`, async () => {
@@ -472,8 +476,17 @@ async function runFlow(flow) {
         while (Date.now() < until) {
           const [tool, args] = PLANNED.tabs()
           const r = text(await run(tool, args))
-          const line = r.split('\n').find((l) => l.includes('/payment/card'))
-          const id = Number(line?.match(/(?:탭\s*|tabId[:=]\s*|\[)(\d+)/)?.[1])
+          // 열린 탭 줄(- [탭 N] …)에서 이 주문서가 연 결제 창만. '최근 닫힌 새 창' 줄에는 앞 흐름의 닫힌 결제 창도 있다
+          // (예전에는 그 줄을 집어 '탭이 닫혔어요'로 실패했다 — 흐름 C)
+          const line = r
+            .split('\n')
+            .find(
+              (l) =>
+                l.startsWith('- [탭 ') &&
+                l.includes('/payment/card') &&
+                l.includes(`탭 ${tabId}이(가) 연 창`),
+            )
+          const id = Number(line?.match(/^- \[탭 (\d+)\]/)?.[1])
           if (id) {
             pgTab = id
             return

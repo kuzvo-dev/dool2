@@ -566,7 +566,8 @@ try {
     assert.match(r, /주문하시겠습니까/)
     const blocked = await tools.run('dialog', { tabId, accept: true })
     assert.equal(blocked.isError, true)
-    assert.match(text(blocked), /승인 없이는 \[확인\]을 누르지 않아요/)
+    // 개편 뒤 문구: 막는 대신 승인 카드 길(browser_request_approval dialog)을 알려 준다. 누르지 않은 것은 같다
+    assert.match(text(blocked), /승인이 필요해요[\s\S]*browser_request_approval\(dialog: true/)
     const asked = await tools.run('request_approval', {
       tabId,
       dialog: true,
