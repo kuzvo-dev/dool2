@@ -10,7 +10,7 @@ import {
   type Routine,
 } from '@dool2/protocol'
 import type { Pager } from '@dool2/protocol/paging'
-import { resultLine, stripLinks, withoutPhotoMark } from '@dool2/protocol/rich'
+import { stripLinks, withoutPhotoMark } from '@dool2/protocol/rich'
 import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
 import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
@@ -325,6 +325,23 @@ function nextText(iso: string) {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 ${t}`
 }
 
+/** 목표 화면에서 펼쳐 둔 칸 (다시 그려도 그대로) */
+const goalsOpen = { off: false, add: false }
+
+/** 펼침 칸: 다시 그려도 열린 채로 둔다 */
+function fold(key: keyof typeof goalsOpen, summary: string, ...body: (Node | undefined)[]) {
+  const d = h('details', { class: 'goal-fold' }, h('summary', { class: 'over', text: summary }), ...body)
+  d.open = goalsOpen[key]
+  d.addEventListener('toggle', () => {
+    goalsOpen[key] = d.open
+  })
+  return d
+}
+
+/**
+ * 목표: 진행 중인 목표는 카드, 예약한 일은 한 줄씩(다음 할 때 가까운 순).
+ * 꺼 둔 것·끝난 것과 새 목표 세우기는 접어 둔다 (목표가 많아지면 보기 불편했다, 11-20 실사용)
+ */
 export function goalsView(ctx: LifeCtx): HTMLElement {
   const box = h(
     'section',
@@ -332,17 +349,31 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
     ...header('목표', '정해 둔 때가 되면 두리가 먼저 해요'),
   )
   const list = (ctx.life?.routines ?? []).filter((r) => !(r.target === 'feed' && r.title === '피드'))
-  const goals = list.filter((r) => r.category)
-  const routines = list.filter((r) => !r.category)
+  const on = list.filter((r) => r.enabled)
+  const off = list.filter((r) => !r.enabled)
+  const soon = (a: Routine, b: Routine) =>
+    (a.nextRunAt ?? '9999').localeCompare(b.nextRunAt ?? '9999') || a.title.localeCompare(b.title)
+  const goals = on.filter((r) => r.category).sort(soon)
+  const routines = on.filter((r) => !r.category).sort(soon)
   if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
   if (goals.length) {
-    box.append(h('h2', { class: 'over', text: '진행 중' }))
+    box.append(h('h2', { class: 'over', text: `진행 중 ${goals.length}` }))
     for (const g of goals) box.append(goalCard(ctx, g))
   }
   if (routines.length) {
-    box.append(h('h2', { class: 'over', text: '예약한 일' }))
-    for (const r of routines) box.append(goalCard(ctx, r))
+    box.append(
+      h('h2', { class: 'over', text: `예약한 일 ${routines.length}` }),
+      h('div', { class: 'card goal-rows' }, ...routines.map((r) => goalRow(ctx, r))),
+    )
   }
+  if (off.length)
+    box.append(
+      fold(
+        'off',
+        `꺼 둔 것·끝난 것 ${off.length}`,
+        h('div', { class: 'card goal-rows' }, ...off.map((r) => goalRow(ctx, r))),
+      ),
+    )
   if (ctx.life && !list.length)
     box.append(
       h(
@@ -355,7 +386,6 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
         }),
       ),
     )
-  box.append(h('h2', { class: 'over', text: '새 목표 세우기' }))
   const grid = h('div', { class: 'goal-grid' })
   for (const c of GOAL_CATEGORIES) {
     const k = CATEGORY[c]
@@ -374,40 +404,62 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       ),
     )
   }
-  box.append(grid)
-  box.append(h('h2', { class: 'over', text: '이렇게 많이 예약해요' }))
-  for (const [t, note] of [
-    ['매일 아침 7시 반에 날씨·일정·오는 택배 알려 줘', '아침 브리핑'],
-    ['매주 월요일 아침에 지난주 카드 쓴 돈 정리해 줘', '주간 가계부'],
-    ['매달 25일에 이번 달 휴대폰 요금 확인해 줘', '요금 확인'],
-    ['KTX 금요일 저녁 부산 가는 표, 취소표 나오면 알려 줘', '취소표 지켜보기'],
-  ] as const)
-    box.append(
+  const examples = (
+    [
+      ['매일 아침 7시 반에 날씨·일정·오는 택배 알려 줘', '아침 브리핑'],
+      ['매주 월요일 아침에 지난주 카드 쓴 돈 정리해 줘', '주간 가계부'],
+      ['매달 25일에 이번 달 휴대폰 요금 확인해 줘', '요금 확인'],
+      ['KTX 금요일 저녁 부산 가는 표, 취소표 나오면 알려 줘', '취소표 지켜보기'],
+    ] as const
+  ).map(([t, note]) =>
+    h(
+      'button',
+      { class: 'idea', onclick: () => ctx.ask(t) },
+      emoTile('routine'),
       h(
-        'button',
-        { class: 'idea', onclick: () => ctx.ask(t) },
-        emoTile('routine'),
-        h(
-          'span',
-          { class: 'row-text' },
-          h('span', { class: 'row-t', text: t }),
-          h('span', { class: 'row-d', text: note }),
-        ),
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: t }),
+        h('span', { class: 'row-d', text: note }),
+      ),
+    ),
+  )
+  // 목표가 적으면 펼쳐 두고, 많아지면 접어 둔다
+  if (list.length < 3) {
+    box.append(h('h2', { class: 'over', text: '새 목표 세우기' }), grid)
+    box.append(h('h2', { class: 'over', text: '이렇게 많이 예약해요' }), ...examples)
+  } else
+    box.append(
+      fold(
+        'add',
+        '새 목표 세우기',
+        grid,
+        h('h2', { class: 'over', text: '이렇게 많이 예약해요' }),
+        ...examples,
       ),
     )
   return box
 }
 
-function bar(ratio: number) {
-  const i = h('i')
-  i.style.width = `${Math.round(ratio * 100)}%`
-  return h('span', { class: 'bar' }, i)
+/** 예약한 일 한 줄: 이름 · 언제(다음 할 때), 오른쪽 스위치 */
+function goalRow(ctx: LifeCtx, r: Routine) {
+  const k = r.category ? CATEGORY[r.category] : undefined
+  return h(
+    'div',
+    { class: r.enabled ? 'goal-row' : 'goal-row off', onclick: () => ctx.openGoal(r.id) },
+    emoTile(k?.emo ?? 'routine'),
+    h(
+      'span',
+      { class: 'row-text' },
+      h('span', { class: 'row-t', text: r.title }),
+      h('span', { class: 'row-d', text: [r.category, whenText(r)].filter(Boolean).join(' · ') }),
+    ),
+    toggle(ctx, r),
+  )
 }
 
-function goalCard(ctx: LifeCtx, r: Routine) {
-  const k = r.category ? CATEGORY[r.category] : undefined
-  const done = r.plan?.filter((p) => p.done).length ?? 0
-  const total = r.plan?.length ?? 0
+/** 켜고 끄기 스위치 */
+function toggle(ctx: LifeCtx, r: Routine) {
   const sw = h('button', {
     class: r.enabled ? 'switch on' : 'switch',
     label: r.enabled ? '끄기' : '켜기',
@@ -420,6 +472,20 @@ function goalCard(ctx: LifeCtx, r: Routine) {
   sw.dataset.id = r.id
   sw.setAttribute('role', 'switch')
   sw.setAttribute('aria-checked', String(r.enabled))
+  return sw
+}
+
+function bar(ratio: number) {
+  const i = h('i')
+  i.style.width = `${Math.round(ratio * 100)}%`
+  return h('span', { class: 'bar' }, i)
+}
+
+function goalCard(ctx: LifeCtx, r: Routine) {
+  const k = r.category ? CATEGORY[r.category] : undefined
+  const done = r.plan?.filter((p) => p.done).length ?? 0
+  const total = r.plan?.length ?? 0
+  // 최근 결과는 목록에서 빼고 상세에서 본다 (목록이 길어졌다)
   return h(
     'div',
     { class: r.enabled ? 'card goal-card' : 'card goal-card off', onclick: () => ctx.openGoal(r.id) },
@@ -433,7 +499,7 @@ function goalCard(ctx: LifeCtx, r: Routine) {
         h('span', { class: 'row-t', text: r.title }),
         h('span', { class: 'row-d', text: [r.category, whenText(r)].filter(Boolean).join(' · ') }),
       ),
-      sw,
+      toggle(ctx, r),
     ),
     total
       ? h(
@@ -442,9 +508,6 @@ function goalCard(ctx: LifeCtx, r: Routine) {
           bar(total ? done / total : 0),
           h('span', { class: 'meta', text: `계획 ${done}/${total}` }),
         )
-      : undefined,
-    r.lastResult
-      ? h('p', { class: 'meta goal-last', text: `최근 결과 · ${plain(resultLine(r.lastResult), 90)}` })
       : undefined,
   )
 }

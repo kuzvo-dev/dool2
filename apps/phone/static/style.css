@@ -3725,3 +3725,47 @@ textarea.ghosting {
   word-break: break-all;
   user-select: all;
 }
+
+/* 목표: 예약한 일은 한 줄씩, 꺼 둔 것·새 목표는 접어 둔다 (11-20 실사용) */
+.goal-rows {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 14px;
+  margin-bottom: 10px;
+}
+.goal-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--line);
+  cursor: pointer;
+}
+.goal-row:last-child {
+  border-bottom: 0;
+}
+.goal-row.off {
+  opacity: 0.6;
+}
+.goal-row .row-text {
+  flex: 1;
+  min-width: 0;
+}
+.goal-row .row-d {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goal-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.goal-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.goal-fold > summary::after {
+  content: " ▾";
+}
+.goal-fold[open] > summary::after {
+  content: " ▴";
+}
