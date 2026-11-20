@@ -373,6 +373,16 @@ export const BrowserCommandSchema = z.enum([
    * 탭은 3개까지만 두는데, 결제 승인을 기다리던 탭이 다른 탭이 열리며 닫혔다 (실측: 롯데시네마)
    */
   'hold',
+  /**
+   * 기다리기 {tabId, ms?(기본 3000, 많아야 10000), until?: 'change'|'time'}: 화면이 바뀔 때까지(문서 글·요소, 액자 이동,
+   * 주소 이동, 새 탭, 알림창·확인 창) 기다리고 무엇이 바뀌었는지(what·details) 돌려준다. 됐는지는 AI가 본다
+   */
+  'wait',
+  /**
+   * 두리 탭 목록 {tabId?}: 탭마다 연 탭(opener)·주소·제목·연 때·창 종류·앞 탭인지, 최근 닫힌 새 창,
+   * 정리로 닫은 탭, 막힌 새 창(팝업 차단). 늦게 뜬 결제 창·로그인 창을 AI가 직접 찾는다
+   */
+  'tabs',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 

@@ -76,6 +76,8 @@ export const BROWSER_TOOLS = [
   'steps',
   'hover',
   'order_done',
+  'wait',
+  'tabs',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -330,6 +332,8 @@ interface Snapshot {
   /** from·skip으로 앞에서 건너뛴 글자 수 */
   skipped?: number
   fromMissing?: boolean
+  /** 본문 글 길이 (text에는 액자 글·두리 알림도 붙어 있다. 이어 읽기 skip은 이것만큼) */
+  mainLength?: number
   /** 떠 있는 확인 창 (confirm·prompt). 고를 때까지 페이지가 멈춰 있다 */
   dialog?: SiteDialog
   /** 확장이 바로 닫은 알림창 (alert·떠나기 확인) */
@@ -959,10 +963,22 @@ export class BrowserTools {
       case 'steps':
         return this.steps(tabId, a)
       case 'scroll': {
-        await this.browser.call('scroll', { tabId, direction: a.direction === 'up' ? 'up' : 'down' })
+        const r = (await this.browser.call('scroll', {
+          tabId,
+          direction: a.direction === 'up' ? 'up' : 'down',
+          ...(typeof a.ref === 'string' ? { ref: a.ref } : {}),
+        })) as { scroll?: { target: string; before: number; after: number; max: number; atEnd: boolean } }
+        const sc = r?.scroll
+        const where = sc
+          ? ` (${sc.target === 'box' ? '그 상자' : '페이지'} ${sc.before}→${sc.after}px / 끝 ${sc.max}px${sc.atEnd ? ', 끝까지 왔어요' : ''}${sc.before === sc.after ? ', 움직이지 않았어요' : ''})`
+          : ''
         // 사람이 굴린 뒤 화면을 보듯, 지금 보이는 부분만 읽어 돌려준다 (한 화면이라 짧다)
-        return this.read(tabId, undefined, '스크롤했어요.', { view: true })
+        return this.read(tabId, undefined, `스크롤했어요.${where}`, { view: true })
       }
+      case 'wait':
+        return this.waitChange(tabId, a)
+      case 'tabs':
+        return this.tabList(a)
       case 'screenshot': {
         const r = (await this.browser.call('screenshot', { tabId })) as {
           data: string
@@ -1920,7 +1936,11 @@ export class BrowserTools {
         // 여러 개를 한 번에 승인받은 보내기·지우기는 남은 개수만큼 그대로 누른다 (결제는 묶지 않는다)
         if (gated && !(risk && !declared && this.useSeries(page.url, risk.kind)))
           throw new Error(this.gateText(ref, target.name, risk, declared))
-        const r = (await this.browser.call('click', { tabId, ref }, 30_000)) as BrowserState & {
+        const r = (await this.browser.call(
+          'click',
+          { tabId, ref, ...(s.force === true ? { force: true } : {}) },
+          30_000,
+        )) as BrowserState & {
           newTabId?: number
           coveredBy?: string
         }
@@ -3150,6 +3170,103 @@ export class BrowserTools {
     }
   }
 
+  /** 기다리기: 화면이 바뀔 때까지(많아야 ms) 기다리고 무엇이 바뀌었는지 알린다. 됐는지는 AI가 화면을 읽어 판단한다 */
+  private async waitChange(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
+    const ms = Math.min(Math.max(Number(a.ms) || 3_000, 100), 10_000)
+    const r = (await this.browser.call(
+      'wait',
+      { tabId, ms, until: a.until === 'time' ? 'time' : 'change' },
+      ms + 20_000,
+    )) as BrowserState & {
+      title?: string
+      waitedMs?: number
+      changed?: boolean
+      what?: string[]
+      dialogNotes?: SiteDialog[]
+    }
+    const sec = ((r.waitedMs ?? ms) / 1000).toFixed(1)
+    if (r.dialog) this.dialogs.set(tabId, r.dialog)
+    const lines = [
+      `[탭 ${tabId}] ${r.title || '(제목 없음)'} — ${r.url ?? ''}`,
+      r.changed ? `${sec}초 기다렸어요. 바뀐 것:` : `${sec}초 기다렸는데 화면이 그대로예요.`,
+      ...(r.what ?? []).map((w) => `- ${w}`),
+      ...dialogLines(r.dialogNotes ?? []),
+      ...(r.dialog ? openDialogLines(r.dialog) : []),
+      ...(r.changed && !r.dialog ? ['무엇이 됐는지는 browser_read로 화면을 읽어 확인해요.'] : []),
+    ]
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
+  /** 두리 탭 목록: 새 창·결제 창이 어디 열렸는지, 막힌 새 창, 정리로 닫힌 탭 */
+  private async tabList(a: Record<string, unknown>): Promise<ToolResult> {
+    const tabId = Number(a.tabId)
+    const r = (await this.browser.call('tabs', Number.isInteger(tabId) ? { tabId } : {})) as {
+      tabs?: {
+        tabId: number
+        url: string
+        title: string
+        opener?: number
+        createdAt?: number
+        windowType?: string
+        active?: boolean
+        loading?: boolean
+        held?: boolean
+        sleeping?: boolean
+      }[]
+      closed?: { tabId: number; opener?: number; url: string; title: string; closedAt?: number }[]
+      tidied?: { tabId: number; url: string; title: string; why: string; at: number }[]
+      blockedPopups?: { tabId: number; url: string; at: number }[]
+    }
+    const ago = (t?: number) => {
+      if (!t) return ''
+      const m = Math.round((Date.now() - t) / 60_000)
+      return m < 1 ? '방금' : `${m}분 전`
+    }
+    const tabs = r.tabs ?? []
+    const lines = [
+      `두리 탭 ${tabs.length}개:`,
+      ...tabs.map((t) => {
+        const bits = [
+          t.opener !== undefined ? `탭 ${t.opener}이(가) 연 창` : '',
+          t.windowType && t.windowType !== 'normal'
+            ? `${t.windowType === 'popup' ? '팝업' : t.windowType} 창`
+            : '',
+          t.active ? '앞 탭' : '',
+          t.loading ? '불러오는 중' : '',
+          t.held ? '잡아 둠' : '',
+          t.sleeping ? '잠듦' : '',
+          t.createdAt ? `${ago(t.createdAt)} 열림` : '',
+        ].filter(Boolean)
+        return `- [탭 ${t.tabId}] ${t.title || '(제목 없음)'} — ${t.url}${bits.length ? ` (${bits.join(' · ')})` : ''}`
+      }),
+      ...((r.closed ?? []).length
+        ? [
+            '최근 닫힌 새 창:',
+            ...(r.closed ?? []).map(
+              (c) =>
+                `- 탭 ${c.tabId}${c.opener !== undefined ? ` (탭 ${c.opener}이(가) 연 창)` : ''} ${c.title || ''} — ${c.url || '(주소 모름)'}, ${ago(c.closedAt)} 닫힘`,
+            ),
+          ]
+        : []),
+      ...((r.blockedPopups ?? []).length
+        ? [
+            'Chrome이 막은 새 창(팝업 차단):',
+            ...(r.blockedPopups ?? []).map(
+              (b) =>
+                `- 탭 ${b.tabId}에서 ${ago(b.at)}: ${b.url || '(주소 없는 빈 창: 결제 양식을 보내는 창일 수 있어요)'}`,
+            ),
+          ]
+        : []),
+      ...((r.tidied ?? []).length
+        ? [
+            '두리가 정리하며 닫은 탭:',
+            ...(r.tidied ?? []).map((t) => `- 탭 ${t.tabId} ${t.title || t.url} — ${t.why}, ${ago(t.at)}`),
+          ]
+        : []),
+    ]
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
   private async read(
     tabId: number,
     maxChars?: unknown,
@@ -3253,7 +3370,7 @@ export class BrowserTools {
       ...(s.truncated
         ? [
             '',
-            `(글이 길어 여기까지 ${max}자만 보여 드렸어요. 이어서 보려면 skip: ${(s.skipped ?? 0) + s.text.length}로 다시 읽고, 찾는 부분이 있으면 from에 그 글자를 넣어 그 줄부터 읽어 주세요)`,
+            `(글이 길어 여기까지 ${max}자만 보여 드렸어요. 이어서 보려면 skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}로 다시 읽고, 찾는 부분이 있으면 from에 그 글자를 넣어 그 줄부터 읽어 주세요)`,
           ]
         : []),
     ]

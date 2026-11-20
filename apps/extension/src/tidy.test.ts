@@ -63,4 +63,18 @@ describe('두리 탭 정리', () => {
     )
     expect(plan.sleep).toEqual([])
   })
+
+  it('결제 창을 띄운 주문서와 그 결제 창(가족 탭)은 오래되거나 많아도 닫거나 재우지 않는다 (실측 11-20 G마켓)', () => {
+    const tabs = [
+      { id: 1, usedAt: now - CLOSE_AFTER_MS, family: true },
+      { id: 2, usedAt: now - SLEEP_AFTER_MS, family: true },
+      ...Array.from({ length: MAX_TABS }, (_, i) => ({ id: 10 + i, usedAt: now - 2 * min - i })),
+    ]
+    const plan = tidyPlan(tabs, now)
+    expect(plan.close).not.toContain(1)
+    expect(plan.close).not.toContain(2)
+    expect(plan.sleep).not.toContain(2)
+    // 가족이 아닌 탭으로 개수를 맞춘다
+    expect(plan.close.length).toBe(2)
+  })
 })
