@@ -138,6 +138,8 @@ async function setup(
     gapMs?: number
     /** find가 찾았다고 할 패턴 이름 (막힘 화면 등) */
     found?: Record<string, string>
+    /** 화면에 로봇 확인이 떠 있다고 할지 */
+    captcha?: boolean
   } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
@@ -154,7 +156,7 @@ async function setup(
         return { tabId: 7 }
       }
       if (cmd === 'snapshot')
-        return { tabId: 7, url, title: '데모', text: PAGE, truncated: false, captcha: false }
+        return { tabId: 7, url, title: '데모', text: PAGE, truncated: false, captcha: Boolean(opts.captcha) }
       if (cmd === 'extract')
         return {
           ok: true,
@@ -451,6 +453,71 @@ describe('서비스 도구 실행기', () => {
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(r.structuredContent).toEqual({ stopped: '데모맛집이 이 브라우저를 막았어요.', blocked: true })
     expect(textOf(r)).toContain('바로 다시 부르지 말고')
+    expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
+  })
+
+  it('막은 화면이 로봇 확인이면 막다른 길 대신 탭을 열어 두고 폰 카드로 풀어 다시 부르게 한다', async () => {
+    const health = new ConnectorHealth()
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+    const tool = CONNECTOR.tools[0]
+    const blocked = {
+      ...CONNECTOR,
+      tools: [
+        {
+          ...tool,
+          steps: [
+            tool.steps[0],
+            {
+              stop_if: '보안 확인을 완료해 주세요',
+              say: '데모맛집이 보안 확인을 하고 있어요. 다른 곳에서 찾을게요.',
+              blocked: true,
+            },
+            ...tool.steps.slice(1),
+          ],
+        },
+      ],
+    }
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(blocked))
+    const calls: string[] = []
+    const browser = {
+      call: async (cmd: string) => {
+        calls.push(cmd)
+        return cmd === 'find'
+          ? { url: '', title: '', found: { hit: '보안 확인을 완료해 주세요' } }
+          : { tabId: 7 }
+      },
+    }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+      pollMs: 1,
+      gapMs: 0,
+      health,
+    })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.structuredContent).toMatchObject({ blocked: true, captcha: true, tabId: 7 })
+    const t = textOf(r)
+    expect(t).toContain('[탭 7]')
+    expect(t).toContain('browser_request_code(kind: "captcha")')
+    expect(t).toContain('browser_request_tap')
+    expect(t).toContain('demo_eats_search을 같은 입력으로 다시 불러요')
+    expect(t).not.toContain('다른 곳에서 찾을게요')
+    expect(calls).not.toContain('close')
+    // 로봇 확인은 고장이 아니다: 쉬게 하지 않는다
+    expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
+  })
+
+  it('단계가 깨졌는데 화면에 로봇 확인이 떠 있으면 고장 대신 폰 카드로 풀게 한다', async () => {
+    const health = new ConnectorHealth()
+    const { connectors } = await setup({ rows: [], health, captcha: true })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.isError).toBeUndefined()
+    expect(r.structuredContent).toMatchObject({ captcha: true, tabId: 7 })
+    expect(connectors.breakages).toEqual([])
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 })
