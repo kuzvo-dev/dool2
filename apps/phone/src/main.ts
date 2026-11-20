@@ -5952,6 +5952,9 @@ function infoSheet(id: string) {
         pads.delete(q.id)
         answer(v)
       })
+      // 옮겨 쓰는 부품으로 표시: 다시 그린 시트를 버릴 때(모양이 같아 그대로 둘 때) 원래 시트로 돌려놓는다.
+      // 안 하면 버린 새 시트로 옮겨 간 채 사라져, 보이는 카드에 키패드가 없었다 (실측 11-20 쿠팡 결제 비밀번호)
+      pad.dataset.liveSlot = 'pad'
       pads.set(q.id, pad)
     }
     body.push(pad)

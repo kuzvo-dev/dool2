@@ -1866,6 +1866,15 @@ export class BrowserTools {
           where = new URL(this.pages.get(tabId)?.url ?? '').pathname
         } catch {}
         const key = `${tabId}:${where}`
+        // 사용자 결정 11-20: PC 화면 넘기기 금지 — 폰 카드로 안 되는 비상(emergency)일 때만
+        if (a.emergency !== true) {
+          const again = await this.read(
+            tabId,
+            undefined,
+            '넘기지 않았어요. PC 화면 넘기기는 금지예요(사용자 결정). 사람 몫은 폰 카드로 받아요: 결제 비밀번호 키패드·인증번호·인증서 비밀번호는 browser_request_code, 로봇 확인 그림은 browser_request_tap, 고를 것·결제는 browser_checkout·browser_request_approval, 내 정보는 browser_fill_profile. 화면이 잘려 안 보이면 browser_scroll·browser_read로 보이게 하고 다시 해요. 같은 길이 막히면 다른 길을 찾아요. 사용자에게 PC·다른 앱에서 직접 하라고 말하지 않아요. 정말 폰 카드로 안 되는 비상일 때만 emergency: true로 다시 불러요.',
+          )
+          return { ...again, isError: true }
+        }
         if (!this.handoffChecked.has(key)) {
           this.handoffChecked.add(key)
           const again = await this.read(

@@ -542,13 +542,19 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'handoff',
     '사람에게 넘기기',
-    '마지막 수단: 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다(번거롭다). 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 인증서(금융·공동) 비밀번호·PIN도 칸이 있으면 browser_request_code로 받는다. 이걸로 안 되는 로봇 확인(캡차) 같은 것일 때만 쓴다. 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다(할 수 있으면 직접 하고, 정말 필요하면 다시 부른다). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '금지에 가까운 비상 수단(emergency: true일 때만): 사용자가 폰에서 PC 화면을 직접 열어 만지게 한다. 사용자는 PC 화면 넘기기를 원하지 않는다. 먼저 폰 카드로 끝낼 수 있는지 본다 — 이름·연락처·생년월일·주민번호 뒷자리는 browser_fill_profile, 문자 인증번호는 browser_request_code, 인증 앱 승인은 browser_wait_auth, 아이디·비밀번호는 browser_request_login, 고를 것·결제·보내기·삭제는 browser_request_approval, 맡긴 일에 필요한 개인정보 동의는 browser_click. 인증서(금융·공동) 비밀번호·PIN도 칸이 있으면 browser_request_code로 받는다. 이걸로 안 되는 로봇 확인(캡차) 같은 것일 때만 쓴다. 같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려준다(할 수 있으면 직접 하고, 정말 필요하면 다시 부른다). 두리 탭을 사용자 앞에 띄우고 무엇을 해 달라는지 알린다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       reason: z
         .string()
         .max(200)
         .describe('사용자에게 보일 부탁 (예: "네이버 로그인이 풀려 있어요. 로그인해 주세요")'),
+      emergency: z
+        .boolean()
+        .optional()
+        .describe(
+          '폰 카드(request_code·request_tap·checkout·fill_profile)로는 정말 안 되는 비상일 때만 true. 없으면 넘기지 않는다',
+        ),
     },
     false,
   )

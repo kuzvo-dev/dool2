@@ -597,8 +597,8 @@ describe('원격 화면 (폰)', () => {
     // 넘기기 전에는 안 된다
     await expect(tools.remoteScreen(3)).rejects.toThrow('원격 화면으로 볼 수 없어요')
     await tools.run('open', { url: 'https://shop.example/login' })
-    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
-    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요', emergency: true })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요', emergency: true })
     expect(tools.remoteAllowed(3)).toBe(true)
     expect(tools.remoteAllowed(4)).toBe(false)
     expect(tools.remoteAllowed(3, Date.now() + 31 * 60_000)).toBe(false)
@@ -609,8 +609,8 @@ describe('원격 화면 (폰)', () => {
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://shop.example/pay' })
     expect(b.calls.some((c) => c[0] === 'hold')).toBe(false)
-    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요' })
-    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요', emergency: true })
+    await tools.run('handoff', { tabId: 3, reason: '결제 버튼을 눌러 주세요', emergency: true })
     expect(b.calls.find((c) => c[0] === 'hold')).toEqual(['hold', { tabId: 3, ms: 30 * 60_000 }])
   })
 
@@ -618,8 +618,8 @@ describe('원격 화면 (폰)', () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://shop.example/login' })
-    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
-    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요', emergency: true })
+    await tools.run('handoff', { tabId: 3, reason: '로그인해 주세요', emergency: true })
     await tools.remoteInput(3, { action: 'tap', x: 0.5, y: 0.25 }, { width: 1200, height: 800 })
     expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'tap', x: 600, y: 200 }])
     await expect(
@@ -633,8 +633,8 @@ describe('원격 화면 (폰)', () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://shop.example/login' })
-    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
-    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요', emergency: true })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요', emergency: true })
     await tools.remoteInput(3, { action: 'view', w: 370, h: 640 }, { width: 1200, height: 800 })
     expect(b.calls.at(-1)).toEqual(['input', { tabId: 3, action: 'view', w: 370, h: 640 }])
     await tools.remoteInput(3, { action: 'scroll', dy: 240, x: 0.5, y: 0.5 }, { width: 370, height: 640 })
@@ -657,8 +657,8 @@ describe('원격 화면 필요한 칸만', () => {
     await tools.run('open', { url: 'https://card.example/verify' })
     // 두리가 다룬 적 없는 탭은 안 된다
     await expect(tools.remoteForm(99)).rejects.toThrow('두리가 넘긴 탭만')
-    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
-    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요', emergency: true })
+    await tools.run('handoff', { tabId: 3, reason: '본인인증해 주세요', emergency: true })
     await tools.remoteForm(3)
     expect(b.calls.at(-1)).toEqual(['form', { tabId: 3 }])
     await tools.remoteFill(
@@ -2048,11 +2048,15 @@ describe('PC 화면 넘기기 관문', () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)
     await tools.run('open', { url: 'https://bank.example/login' })
-    const first = await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요' })
+    const first = await tools.run('handoff', {
+      tabId: 3,
+      reason: '휴대폰번호를 넣어 주세요',
+      emergency: true,
+    })
     const t = first.content[0]?.type === 'text' ? first.content[0].text : ''
     expect(t).toContain('아직 넘기지 않았어요')
     expect(b.calls.some((c) => c[0] === 'focus' || c[0] === 'hold')).toBe(false)
-    await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요' })
+    await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요', emergency: true })
     expect(b.calls.some((c) => c[0] === 'focus')).toBe(true)
   })
 })
@@ -2595,8 +2599,8 @@ describe('넘긴 화면 지켜보기', () => {
     const seen: string[] = []
     tools.onHandoffChanged = (_tab, why) => seen.push(why)
     await tools.run('read', { tabId: 3 })
-    await tools.run('handoff', { tabId: 3, reason: '로봇 확인' })
-    const r = await tools.run('handoff', { tabId: 3, reason: '로봇 확인' })
+    await tools.run('handoff', { tabId: 3, reason: '로봇 확인', emergency: true })
+    const r = await tools.run('handoff', { tabId: 3, reason: '로봇 확인', emergency: true })
     expect(text(r)).toContain('알아채')
     await new Promise((res) => setTimeout(res, 80))
     // 값만 바뀐 화면 (칸 이름 그대로)
@@ -2647,5 +2651,17 @@ describe('받는 곳이 내 정보 주소와 같은지', () => {
       ship_to: '경기도 용인시 수지구 신봉동 33',
     })
     expect(tools.approvals.list().at(-1)?.shipWarn).toBeTruthy()
+  })
+})
+
+describe('PC 화면 넘기기 금지 (사용자 결정 11-20)', () => {
+  it('비상(emergency)이 아니면 몇 번을 불러도 넘기지 않고 폰 카드 길을 알려 준다', async () => {
+    const tools = new BrowserTools(fakeBrowser())
+    await tools.run('read', { tabId: 3 })
+    for (let i = 0; i < 3; i++) {
+      const r = await tools.run('handoff', { tabId: 3, reason: '비밀번호를 넣어 주세요' })
+      expect(r.isError).toBe(true)
+      expect(text(r)).toContain('browser_request_code')
+    }
   })
 })
