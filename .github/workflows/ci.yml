@@ -82,6 +82,12 @@ jobs:
       - name: 시험 돌리기
         timeout-minutes: 8
         run: xvfb-run -a node apps/extension/scripts/e2e.mjs
+      # 결제 시험 가게(pay-shop.mjs)에서 주문서 → 배송지 액자 → 주소 찾기 액자 속 액자 → 결제 카드 → 늦게 뜨는 결제 창
+      # → 키패드 → 주문 완료 + 주문번호까지 두리 도구로 끝까지 (실측 11-20 G마켓). 단계별 표는 out/e2e-pay-result.txt
+      - name: 결제 흐름 시험
+        if: ${{ !cancelled() }}
+        timeout-minutes: 8
+        run: xvfb-run -a node apps/extension/scripts/e2e-pay.mjs
       - name: 실패하면 읽은 화면·캡처 남기기
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
