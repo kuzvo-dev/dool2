@@ -2672,6 +2672,8 @@ describe('결제 화면의 준비 버튼', () => {
     expect(classifyRisk('버튼 배송지 추가', u)).toBeUndefined()
     expect(classifyRisk('버튼 쿠폰 적용', u)).toBeUndefined()
     expect(classifyRisk('버튼 수량 변경', u)).toBeUndefined()
+    expect(classifyRisk('링크 신봉1로 27 (서홍마을 우남퍼스트빌)', u)).toBeUndefined()
+    expect(classifyRisk('항목 경기 용인시 수지구 신봉동 905', u)).toBeUndefined()
     expect(classifyRisk('버튼 결제하기', u)?.kind).toBe('money')
     expect(classifyRisk('버튼 다음', u)?.kind).toBe('money')
     expect(classifyRisk('버튼', u)?.kind).toBe('money')
