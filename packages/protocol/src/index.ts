@@ -350,6 +350,8 @@ export const BrowserCommandSchema = z.enum([
   'form-fill',
   // 보안문자 칸 둘레 그림 후보 (AI가 고른다)
   'captcha-candidates',
+  // 표시마다 그 자리만 잘라 찍기 (그림 키패드)
+  'element-shots',
   'mark-text',
   'link-navigates',
   /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기 */
@@ -654,6 +656,11 @@ export interface ApprovalView {
   choice?: string
   /** 결제 전에 두리가 화면에서 스스로 고른 것 (보험 가입 안 함·약관 동의 등). 사용자가 보고 바꾸게 보여 준다 */
   chose?: string[]
+  /**
+   * 받는 곳 (결제 화면의 배송지). a0이 지금 골라진 곳, a1부터는 사이트에 저장된 다른 배송지.
+   * 다른 곳을 고르고 승인하면 두리가 배송지를 바꾼 뒤 결제한다 (다시 묻지 않는다)
+   */
+  shipOptions?: { id: string; label: string }[]
   /**
    * 결제 수단 안의 세부 선택 (등록 카드·할부 개월 등, 결제 화면의 펼침 목록).
    * 사용자가 고른 것은 choice와 함께 쉼표로 이어 승인 서명에 묶인다 (예: "c2,s1o3")

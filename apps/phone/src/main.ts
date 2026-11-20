@@ -979,10 +979,68 @@ function subsFor(a: ApprovalView) {
   return (a.subChoices ?? []).filter((g) => !g.when || !main || g.when === main)
 }
 
-/** 서명·전송할 선택 전체: 결제 수단과 세부 선택을 쉼표로 ("c2,s1o3") */
+/** 받는 곳에서 고른 것 (기본: 지금 골라진 배송지 a0) */
+function shipChosenOf(a: ApprovalView): string | undefined {
+  if (!a.shipOptions?.length) return undefined
+  return st.choice.get(`${a.id}:ship`) ?? 'a0'
+}
+
+/** 서명·전송할 선택 전체: 결제 수단과 세부 선택, 바꾼 받는 곳을 쉼표로 ("c2,s1o3,a1") */
 function choiceString(a: ApprovalView): string | undefined {
-  const parts = [chosenOf(a), ...subsFor(a).map((g) => subChosenOf(a, g))].filter((x): x is string => !!x)
+  const ship = shipChosenOf(a)
+  const parts = [
+    chosenOf(a),
+    ...subsFor(a).map((g) => subChosenOf(a, g)),
+    ship && ship !== 'a0' ? ship : undefined,
+  ].filter((x): x is string => !!x)
   return parts.length ? parts.join(',') : undefined
+}
+
+/** 받는 곳: 지금 배송지 한 줄과 [바꾸기] — 펼치면 저장된 다른 배송지에서 고른다 (결제 승인 한 장에서 다 정한다) */
+function shipRow(a: ApprovalView): HTMLElement | undefined {
+  const opts = a.shipOptions
+  if (!opts?.length) return undefined
+  const now = shipChosenOf(a)
+  const cur = opts.find((o) => o.id === now) ?? opts[0]
+  const key = `${a.id}:ship`
+  const open = st.choice.has(`${key}:open`)
+  if (!open || opts.length < 2)
+    return h(
+      'div',
+      { class: 'approve-choices one-line' },
+      h('span', { class: 'meta', text: `받는 곳 · ${cur?.label ?? ''}` }),
+      ...(opts.length > 1
+        ? [
+            h('button', {
+              class: 'chip chip-more',
+              text: '바꾸기',
+              onclick: () => {
+                st.choice.set(`${key}:open`, '1')
+                render()
+              },
+            }),
+          ]
+        : []),
+    )
+  return h(
+    'div',
+    { class: 'approve-choices' },
+    h('span', { class: 'meta', text: '받는 곳 · 어디로 받을까요?' }),
+    h(
+      'div',
+      { class: 'choice-list' },
+      ...opts.map((o) =>
+        h('button', {
+          class: `chip${o.id === now ? ' on' : ''}`,
+          text: o.label,
+          onclick: () => {
+            st.choice.set(key, o.id)
+            render()
+          },
+        }),
+      ),
+    ),
+  )
 }
 
 async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = false) {
@@ -2948,6 +3006,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     h('p', { class: 'approve-what', text: a.what }),
     itemsList(a, 5),
     choseRow(a),
+    shipRow(a),
     choiceRow(a),
     h(
       'div',
@@ -5043,6 +5102,8 @@ function approvalSheet(id: string) {
   )
   const chose = choseRow(a)
   if (chose) sheet.append(chose)
+  const ship = a.status === 'pending' ? shipRow(a) : undefined
+  if (ship) sheet.append(ship)
   const pick = a.status === 'pending' ? choiceRow(a) : undefined
   if (pick) sheet.append(pick)
   if (a.shot) {
@@ -5492,9 +5553,11 @@ function infoSheet(id: string) {
       icon('lock'),
       q.field === 'form'
         ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
-        : q.field === 'secret' || q.field === 'password'
-          ? '넣은 값은 이 PC 금고에 암호화해 저장해요. 두리(AI)는 보지 않아요.'
-          : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
+        : q.field === 'secret' && /결제|비밀번호/.test(q.label)
+          ? '넣은 숫자는 그 화면 키패드에만 눌러지고 저장하지 않아요. 두리(AI)는 보지 않아요.'
+          : q.field === 'secret' || q.field === 'password'
+            ? '넣은 값은 이 PC 금고에 암호화해 저장해요. 두리(AI)는 보지 않아요.'
+            : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
     ),
     h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),
   )
