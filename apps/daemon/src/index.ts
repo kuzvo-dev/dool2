@@ -683,10 +683,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     journal.write('connect-takeover', { id: card.id })
     // 로그인되면 지켜보던 쪽(loginWatch)이 연결로 표시하고 대화에 알린다
     connectHuman.add(card.id)
-    // 이어받은 AI가 로그인 뒤 멈춘 일까지 이어 간다: 연결이 끝났을 때 "이어서 해 주세요"를 또 보내지 않는다
-    // (실측 혜택 20: 선물함까지 다 본 뒤 같은 알림으로 한 턴이 더 돌았다)
+    // 멈춘 일이 있었는지 (이어받은 AI에게도 알리고, 연결이 끝나면 따로 또 알린다 — 이어받은 AI가 로그인 전에
+    // 끝나 버리면 이어 갈 길이 없었다(실측 장보기 3: 요기요 연결이 끝났는데 아무도 이어 하지 않았다))
     const resume = connectAsked.has(card.id)
-    connectAsked.delete(card.id)
     // 화면에는 앞의 두 문장만 보인다 (도구 이름이 든 문장은 AI에게만 간다)
     const why = (r.message.split(/[.!?]/)[0] ?? '').replace(/요\s+/g, '요·').trim()
     void talk(
@@ -868,12 +867,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectDone = (card: ConnectCard) => {
     const asked = connectAsked.get(card.id)
     connectAsked.delete(card.id)
-    if (asked && Date.now() - asked < 30 * 60_000)
+    if (asked && Date.now() - asked < 30 * 60_000) {
+      // 먼저 보고하고("연결됐어요 → 이어서 할게요"), 그다음 AI가 이어서 한다 (기다리는 동안 무슨 일인지 모르겠다고 했다)
+      sayNow(`${card.name} 연결됐어요. 이제 하던 일을 이어서 할게요.`)
       void talk(
         appNote(
-          `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. ${card.name}이 필요해서 멈춘 일이 있었으면 이어서 해 주세요. 없었으면 연결됐다고 한 문장으로만 말해 주세요.`,
+          `${card.name} 연결을 마쳤어요. 두리가 로그인까지 확인했어요. ${card.name}이 필요해서 멈춘 일을 이어서 끝내 주세요(연결 카드·로그인은 다시 띄우지 않아요). 이미 끝낸 일이면 한 문장으로만 말해 주세요.`,
         ),
       ).catch(() => {})
+    }
     // 대화 끝 가까이에 이 서비스 연결 카드가 있으면 그 카드가 "연결돼 있어요"로 바뀐다. 같은 말을 알림 줄로 또 남기지 않는다
     else if (!cardNearEnd(card)) postNote(`${card.name} 연결됐어요. 이제 부탁만 하면 돼요.`)
     void link
@@ -2429,8 +2431,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             `${card.name}에 ${how}으로 두리 본체가 다시 로그인하고 있어요. 끝나면 대화 알림으로 이어서 하라고 알려 줘요. 사용자에게 "${card.name}에 다시 로그인하고 이어서 할게요"처럼 한 문장으로 말하고 답을 끝내요.`,
           )
         }
-        if (items.find((x) => x.card.id === card.id)?.connectedAt && !creds && !provider)
-          journal.write('connect-ask', { id: card.id, expired: true })
+        // 방금(10분 안) 연결된 서비스면 카드를 또 띄우지 않는다 (실측: 연결이 막 끝났는데 이어받은 AI가 카드를 다시 띄웠다)
+        const at = items.find((x) => x.card.id === card.id)?.connectedAt
+        if (at && Date.now() - Date.parse(at) < 10 * 60_000)
+          return text(
+            `${card.name}은 방금 연결됐어요. 연결 카드는 띄우지 않았어요. 하던 일을 이어서 해요(페이지를 새로 열거나 다시 읽으면 로그인된 화면이 보여요).`,
+          )
+        if (at && !creds && !provider) journal.write('connect-ask', { id: card.id, expired: true })
         connectAsked.set(card.id, Date.now())
         void link
           .notify({

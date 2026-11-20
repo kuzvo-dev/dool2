@@ -2340,3 +2340,48 @@ describe('결제 비밀번호 키패드는 폰 보안 키패드로', () => {
     expect(asked).toEqual([{ keys: map, length: 6 }])
   })
 })
+
+describe('받는 곳이 내 정보 주소와 다르면 승인 카드에서 알린다', () => {
+  it('번지·동·호수가 다르면 경고와 함께 내 정보 주소를 고를 수 있게 넣는다', async () => {
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://www.food.example/checkout/',
+            title: '결제',
+            text: '배달 주소 신봉동 33 최종 결제 금액 18,000원 [e9 버튼 "결제하기"]',
+          }
+        return { tabId: 3, url: 'https://www.food.example/checkout/' }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    tools.profile = {
+      get: async () => ({ address: '경기 용인시 수지구 신봉동 905', address_detail: '506동 1303호' }),
+    } as never
+    await tools.run('read', { tabId: 3 })
+    await tools.run('request_approval', {
+      tabId: 3,
+      ref: 'e9',
+      what: '등심카츠 정식',
+      where: '배달 앱',
+      amount: '18,000원',
+      ship_to: '경기도 용인시 수지구 신봉동 33',
+    })
+    const [rec] = tools.approvals.list()
+    expect(rec?.shipWarn).toContain('내 정보 주소와 달라요')
+    expect(rec?.shipOptions?.[1]?.label).toContain('신봉동 905 506동 1303호')
+    // 같은 주소면 경고가 없다
+    const t2 = new BrowserTools(b as never)
+    t2.profile = tools.profile
+    await t2.run('read', { tabId: 3 })
+    await t2.run('request_approval', {
+      tabId: 3,
+      ref: 'e9',
+      what: '등심카츠 정식',
+      where: '배달 앱',
+      ship_to: '경기도 용인시 수지구 신봉동 905 506동 1303호',
+    })
+    expect(t2.approvals.list()[0]?.shipWarn).toBeUndefined()
+  })
+})
