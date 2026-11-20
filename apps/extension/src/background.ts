@@ -477,14 +477,15 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
 }
 
 /** 입력 뒤 화면이 바뀌기를 잠깐(최대 1.2초) 기다린다. 이동이 시작됐으면 끝날 때까지 (액자 안 이동도) */
-async function settle(tabId: number, before?: string) {
+/** quick: 키패드 숫자처럼 화면이 거의 안 바뀌는 누르기 (0.3초만 본다. 이동이 시작되면 그대로 끝까지 기다린다) */
+async function settle(tabId: number, before?: string, quick = false) {
   const since = Date.now()
-  await settleTop(tabId, before)
+  await settleTop(tabId, before, quick ? 3 : 12)
   await framesSettle(tabId, since)
 }
-async function settleTop(tabId: number, before?: string) {
+async function settleTop(tabId: number, before?: string, rounds = 12) {
   const since = Date.now()
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < rounds; i++) {
     await sleep(100)
     // 확인 창이 뜨면 화면은 더 바뀌지 않는다 (고를 때까지 멈춰 있다)
     if (dialogs.has(tabId)) return
@@ -830,8 +831,22 @@ async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   await sleep(350)
   return true
 }
+/** keepTall로 늘린 채 둔 탭 → 그래도 늦게라도 되돌리는 시계 (비밀번호를 다 못 누르고 멈춰도 남지 않게) */
+const keptTall = new Map<number, ReturnType<typeof setTimeout>>()
+function keepTallFor(tabId: number) {
+  clearTimeout(keptTall.get(tabId))
+  keptTall.set(
+    tabId,
+    setTimeout(() => {
+      keptTall.delete(tabId)
+      void restoreHeight(tabId)
+    }, 3_000),
+  )
+}
 /** 늘린 화면 높이를 원래대로 (남겨 두면 그 뒤 화면 찍기·누르는 자리가 어긋났다 — 실측 11-20 G마켓 배송지 추가) */
 async function restoreHeight(tabId: number) {
+  clearTimeout(keptTall.get(tabId))
+  keptTall.delete(tabId)
   if (phoneView.has(tabId) || emulated.has(tabId)) return
   await cdp(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
   await sleep(150)
@@ -1818,6 +1833,10 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
       const force = a.force === true
+      // 결제 비밀번호 키패드처럼 같은 자리를 잇달아 누를 때: 커서 움직임을 보여 주지 않고 짧게만 기다린다 (숫자 하나 2.3초 → 실측)
+      const quick = a.quick === true
+      // keepTall: 이어서 또 누를 테니 늘린 화면 높이를 아직 되돌리지 않는다 (마지막 숫자에서 되돌린다)
+      const keepTall = quick && a.keepTall === true
       let at = await locate(tabId, ref, 'point', force)
       // 굴려도 화면 밖인 것(화면 아래에 고정된 결제 키패드 등)만 화면 높이를 잠깐 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
       const tall = at.outside
@@ -1868,8 +1887,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           inFrame(tabId, fid, pageMutArm, 'click').catch(() => false),
           inFrame(tabId, fid, pageHitArm, ref).catch(() => false),
         ])
-        await clickAt(tabId, at.x, at.y, '두리가 누르는 중')
-        await settle(tabId, before)
+        await clickAt(tabId, at.x, at.y, quick ? undefined : '두리가 누르는 중')
+        await settle(tabId, before, quick)
         const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
         const opened = await openedSince(tabId, t0)
         // 문서가 바뀌었으면(이동) 걸어 둔 것이 사라진다: 눌려서 넘어간 것이다
@@ -1897,7 +1916,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         } else {
           via = 'key'
           await pressKey(tabId, act.toggle ? 'Space' : 'Enter')
-          await settle(tabId, before)
+          await settle(tabId, before, quick)
           const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
           delivered = hit.hit || !hit.armed || (await openedSince(tabId, t0))
           // 뒤에 가려진 창은 키도 안 먹을 때가 있다 (실측): 그 요소에 닿지 않았을 때만 페이지 안에서 누른다
@@ -1906,7 +1925,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             delivered = Boolean(await inFrame(tabId, fid, pageClick, ref).catch(() => false))
           }
         }
-        await settle(tabId, before)
+        await settle(tabId, before, quick)
       }
       // 누른 뒤 창이 스스로 닫혔다 (결제 창의 마지막 비밀번호 숫자: 결제가 끝나면 결제 회사 창이 닫힌다).
       // 눌린 것이니 오류('탭이 닫혔어요')로 돌려주지 않는다 — 예전에는 결제가 된 뒤에 '못 눌렀다'로 알렸다
@@ -1920,7 +1939,10 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         point: { x: Math.round(at.x), y: Math.round(at.y) },
       }
       if (!(await chrome.tabs.get(tabId).catch(() => undefined))) return closed
-      if (tall) await restoreHeight(tabId)
+      if (tall || keptTall.has(tabId)) {
+        if (keepTall) keepTallFor(tabId)
+        else await restoreHeight(tabId)
+      }
       const blocked = await blockedPopups(tabId).catch(() => [])
       const now = await pageState(tabId).catch(() => undefined)
       if (!now) return closed

@@ -163,7 +163,17 @@ describe('브라우저 도구 실행', () => {
     const keys = { '1': 'e11', '2': 'e12', '3': 'e13' }
     expect(await tools.pressPin(3, keys, '312')).toBe(true)
     const clicks = b.calls.filter((c) => c[0] === 'click').map((c) => c[1])
-    expect(clicks).toEqual(['e13', 'e11', 'e12'].map((ref) => ({ tabId: 3, ref, once: true, force: true })))
+    // 빠르게(quick) 누르고, 화면 아래 키패드로 늘린 화면 높이는 마지막 숫자에서만 되돌린다(keepTall)
+    expect(clicks).toEqual(
+      ['e13', 'e11', 'e12'].map((ref, i) => ({
+        tabId: 3,
+        ref,
+        once: true,
+        force: true,
+        quick: true,
+        keepTall: i < 2,
+      })),
+    )
     // 짚지 않은 숫자가 있으면 거기서 멈춘다
     expect(await tools.pressPin(3, keys, '19')).toBe(false)
   })

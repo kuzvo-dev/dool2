@@ -2501,15 +2501,19 @@ export class BrowserTools {
    * once: 화면이 안 바뀌는 숫자 버튼을 '안 눌렸다'고 보고 다시 누르면 숫자가 두 번 들어간다
    */
   async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
-    for (const d of pin) {
+    for (const [i, d] of [...pin].entries()) {
       const ref = keys[d]
       if (!ref) return false
-      const ok = await this.browser.call('click', { tabId, ref, once: true, force: true }, 15_000).then(
-        () => true,
-        () => false,
-      )
+      // 화면 아래 키패드를 누르려고 늘린 화면 높이는 마지막 숫자까지 그대로 둔다 (숫자마다 늘렸다 줄이면 0.5초씩 더 든다)
+      const keepTall = i < pin.length - 1
+      const ok = await this.browser
+        .call('click', { tabId, ref, once: true, force: true, quick: true, keepTall }, 15_000)
+        .then(
+          () => true,
+          () => false,
+        )
       if (!ok) return false
-      await new Promise((res) => setTimeout(res, 250))
+      await new Promise((res) => setTimeout(res, 120))
     }
     return true
   }
