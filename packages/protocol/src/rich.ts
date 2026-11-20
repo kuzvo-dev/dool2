@@ -163,6 +163,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_handoff: '도움 부탁하는',
   browser_request_approval: '승인 요청하는',
   browser_checkout: '결제 카드 띄우는',
+  browser_order_done: '주문 완료 확인하는',
   browser_wait_auth: '인증 앱 승인 기다리는',
   browser_request_code: '폰에서 값 받는',
   browser_request_login: '로그인 카드 띄우는',

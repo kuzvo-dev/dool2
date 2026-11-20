@@ -95,7 +95,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'click',
     '누르기',
-    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 표시가 없는 상자(검색 결과의 가게·상품 카드 등)는 ref 대신 text에 화면에 보이는 글자(가게 이름 등)를 그대로 넣으면 그 글자를 누른다. 결제·주문·보내기·삭제 같은 버튼은 두리가 막고 사용자에게 넘긴다.',
+    '표시(ref)한 버튼·링크를 실제 마우스로 누르고 바뀐 페이지를 읽어 돌려준다. 표시가 없는 상자(검색 결과의 가게·상품 카드 등)는 ref 대신 text에 화면에 보이는 글자(가게 이름 등)를 그대로 넣으면 그 글자를 누른다. 결제·주문·보내기·삭제 말이 있는 버튼은 두리가 막고 승인 카드(결제면 browser_checkout, 보내기·삭제면 browser_request_approval)로 돌린다. 결제를 승인받은 뒤 결제 회사 창 안의 버튼은 다시 막지 않는다.',
     {
       tabId,
       ref: ref.optional(),
@@ -109,6 +109,12 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe(
           '장바구니·주문표의 [주문하기]처럼 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이라고 화면을 보고 판단했으면 true. 승인 없이 누르고, 승인은 결제 화면의 마지막 버튼에서 한 번만 받는다',
+        ),
+      final: z
+        .boolean()
+        .optional()
+        .describe(
+          '화면을 보고 이 버튼에서 실제로 돈이 나가거나(보내지거나·지워지거나) 확정된다고 판단했으면 true. 버튼 이름에 그런 말이 없어도 두리가 누르지 않고 승인 카드로 돌린다',
         ),
     },
     false,
@@ -405,7 +411,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     '승인 요청',
-    '보내기·삭제·신청처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인 없이는 하지 않아요"라고 할 때). 결제는 이것 말고 browser_checkout(결제 카드)을 쓴다. 결제 화면(최종 금액·결제 수단·예약자 정보가 보이는 화면)의 마지막 버튼에 쓰고, 결제 화면을 여는 [예약하기]·[구매하기]에는 쓰지 않는다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
+    '보내기·삭제·신청처럼 승인이 필요한 버튼이면 쓴다(browser_click이나 browser_dialog가 "승인이 필요해요"라고 할 때, 또는 화면을 보고 되돌릴 수 없는 일이라고 판단했을 때). 요청은 거절되지 않는다. 결제는 이것 말고 browser_checkout(결제 카드)을 쓴다. 사용자가 PC나 폰에서 화면 캡처와 내용을 보고 승인하면 두리가 그 버튼만 직접 누른다. 사이트 확인 창의 [확인]이면 ref 대신 dialog: true. 결제 화면에 결제 수단(네이버페이·카드 등)이나 "지금 결제·숙박 시설에서 결제" 같은 고를 칸이 있으면 직접 고르지 말고 그 칸들의 표시를 choices에 넣는다. 사용자가 승인 카드에서 고르면 두리가 그걸 고른 뒤 마지막 버튼을 누른다. 배송하는 결제면 받는 곳(ship_to)과 저장된 다른 배송지(ship_options, 배송지 바꾸기를 열어 읽은 것)도 넣어 한 카드에서 고르게 한다(사용자는 새 주소도 넣을 수 있다). 「다른 결제 수단」처럼 펼쳐야 보이는 수단은 미리 펼쳐 그 안의 수단까지 choices에 넣는다. 승인은 이 마지막 버튼 한 번만 받는다. 쓴 뒤에는 이번 답을 끝낸다.',
     {
       tabId,
       ref: ref.optional().describe('누를 버튼 표시 (확인 창이면 생략)'),
@@ -456,7 +462,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'checkout',
     '결제 카드',
-    '결제 화면(결제 수단·최종 금액을 고르는 화면)의 마지막 버튼을 누르기 전에 쓴다. 어느 결제든(쇼핑·장보기·배달·숙소·항공·티켓) 결제 화면을 읽고 아래 칸을 채우면 폰에 결제 카드 한 장이 뜨고, 사용자가 받는 곳·결제 수단을 그 카드에서 고르고 한 번 승인한다(승인은 이것 한 번뿐). 결제 화면 전 단계의 [주문하기]·[구매하기]는 browser_click(opens_checkout: true)으로 넘어가고 여기서 쓰지 않는다. 화면에 적힌 값 그대로 넣고 지어내지 않는다. 쓴 뒤에는 카드에 있는 내용을 글로 되풀이하지 말고 한두 줄(무엇을 얼마에, 확인할 점)만 말하고 답을 끝낸다.',
+    '돈이 나가는 마지막 버튼(결제하기·예약 완료 등)을 누르기 전에 쓴다. 어느 결제든(쇼핑·장보기·배달·숙소·항공·티켓) 결제 화면을 읽고 아래 칸을 채우면 폰에 결제 카드 한 장이 뜨고, 사용자가 받는 곳·결제 수단을 그 카드에서 고르고 한 번 승인한다(승인은 이것 한 번뿐). 결제 화면 전 단계의 [주문하기]·[구매하기]는 browser_click(opens_checkout: true)으로 넘어가고 여기서 쓰지 않는다. 화면에 적힌 값 그대로 넣고 지어내지 않는다. 쓴 뒤에는 카드에 있는 내용을 글로 되풀이하지 말고 한두 줄(무엇을 얼마에, 확인할 점)만 말하고 답을 끝낸다. 승인되면 두리가 그 버튼을 누르고 결제 묶음(결제 창 포함)을 알려 준다: 주문 완료 화면까지 마치고 browser_order_done으로 끝낸다.',
     {
       tabId,
       ref: ref.describe('마지막 버튼 표시 (결제하기·예약 완료 등)'),
@@ -524,7 +530,28 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
       final_here: z
         .boolean()
         .optional()
-        .describe('결제 화면이 따로 없고 이 화면의 버튼에서 바로 돈이 나갈 때만 true'),
+        .describe('결제 화면이 따로 없고 이 화면의 버튼에서 바로 돈이 나갈 때 true (없어도 카드는 뜬다)'),
+    },
+    false,
+  )
+  tool(
+    'order_done',
+    '주문 완료 알리기',
+    '승인한 결제가 끝났을 때 쓴다: 주문(예약) 완료 화면에서 주문번호를 읽었으면 order_no와 함께 부른다. 두리가 결제 묶음(결제 중인 탭·결제 창)을 풀고 결제 승인을 주문번호와 함께 완료로 바꾼다. 그 뒤 show_result로 결과를 보여 주고 know_save로 남긴다. 결제가 안 됐으면(거절·시간 초과·오류) failed: true와 reason으로 부르고, 돈이 나갔는지 확인한 뒤 다른 길로 다시 한다.',
+    {
+      tabId,
+      order_no: z
+        .string()
+        .max(60)
+        .optional()
+        .describe('주문·예약 번호 (완료 화면에 적힌 그대로). failed가 아니면 꼭 넣는다'),
+      summary: z
+        .string()
+        .max(200)
+        .optional()
+        .describe('무엇을 얼마에 (예: "사과 1kg 9,900원 · 11/22 도착 예정")'),
+      failed: z.boolean().optional().describe('결제를 마치지 못했으면 true'),
+      reason: z.string().max(200).optional().describe('failed일 때 화면이 말한 까닭'),
     },
     false,
   )
