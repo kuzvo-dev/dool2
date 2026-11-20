@@ -1400,7 +1400,8 @@ describe('승인 카드에서 결제 수단 고르기', () => {
     expect(done.message).toContain('"3개월(무이자)"')
     // 이미 골라진 카드는 다시 고르지 않는다
     expect(b.calls.filter((c) => c.startsWith('choose'))).toEqual(['choose e11 3개월(무이자)'])
-    expect(b.calls.at(-2)).toBe('click e21')
+    // 결제 버튼을 누른 뒤 늦게 뜬 결제 창(popup)도 한 번 찾는다
+    expect(b.calls).toContain('click e21')
   })
 
   it('고른 등록 카드·할부를 사이트별로 기억해 다음 승인 카드의 기본값으로 (설정에서 잊으면 다시 화면 기본값)', async () => {

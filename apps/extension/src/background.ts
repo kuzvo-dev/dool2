@@ -1435,6 +1435,11 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await sleep(300)
       return pageState(tabId)
     }
+    case 'popup': {
+      // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창이 있으면 알려 준다
+      const tabId = await ownedTab(a)
+      return takePopup(tabId)
+    }
     case 'element-shots': {
       // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게)
       const tabId = await ownedTab(a)

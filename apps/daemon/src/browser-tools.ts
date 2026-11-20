@@ -962,6 +962,11 @@ export class BrowserTools {
         return this.read(r.tabId, undefined, '새 탭을 열었어요.')
       }
       case 'navigate': {
+        // 결제 중인 탭은 옮기지 않는다 (실측 11-20 G마켓: 승인 뒤 카드 결제창이 뜬 탭을 주문 내역으로 옮겨 결제가 끊겼다)
+        if (this.isPaying(tabId))
+          throw new Error(
+            '결제 중인 탭이에요. 결제가 끝날 때까지(주문 완료 화면) 이 탭을 다른 주소로 옮기지 않아요. 화면이 비었으면 결제 창이 새 창이나 화면 안 액자로 떴을 수 있어요: browser_read·browser_screenshot으로 찾아 결제를 끝까지 마쳐요(결제 비밀번호·인증은 폰 카드로). 다른 일은 browser_open으로 새 탭에서 해요.',
+          )
         await this.browser.call('navigate', { tabId, url: a.url }, 40_000)
         return this.read(tabId, undefined, '주소를 열었어요.')
       }
@@ -1016,6 +1021,10 @@ export class BrowserTools {
         }
       }
       case 'back': {
+        if (this.isPaying(tabId))
+          throw new Error(
+            '결제 중인 탭이에요. 결제가 끝날 때까지(주문 완료 화면) 이 탭을 다른 주소로 옮기지 않아요. 화면이 비었으면 결제 창이 새 창이나 화면 안 액자로 떴을 수 있어요: browser_read·browser_screenshot으로 찾아 결제를 끝까지 마쳐요(결제 비밀번호·인증은 폰 카드로). 다른 일은 browser_open으로 새 탭에서 해요.',
+          )
         await this.browser.call('back', { tabId })
         return this.read(tabId, undefined, '뒤로 갔어요.')
       }
@@ -2445,6 +2454,19 @@ export class BrowserTools {
   }
 
   /** 사람이 직접 할 탭: 원격 화면을 열어 주고, 마칠 때까지 탭 정리에서 뺀다 (도구마다 부르는 allowRemote와 달리 넘길 때만) */
+  /** 결제를 승인해 마지막 버튼을 누른 탭 → 언제까지 결제 중으로 볼지 (그동안 다른 주소로 옮기지 않는다) */
+  private paying = new Map<number, number>()
+  isPaying(tabId: number): boolean {
+    const until = this.paying.get(tabId)
+    if (until === undefined) return false
+    if (until > Date.now()) return true
+    this.paying.delete(tabId)
+    return false
+  }
+  /** 결제가 끝났다(주문 완료 화면을 확인했다) */
+  donePaying(tabId: number) {
+    this.paying.delete(tabId)
+  }
   /** 넘긴 화면이 바뀌면(사람이 마친 듯) 본체에 알린다: 사용자가 '다 했어요'를 말하지 않아도 이어 가게 */
   onHandoffChanged?: (tabId: number, why: string) => void
   private handoffWatches = new Map<number, ReturnType<typeof setInterval>>()
@@ -2871,7 +2893,24 @@ export class BrowserTools {
           this.grantSeries(rec.url, rec.kind, many - 1)
         rest = ` 사용자가 ${many}개 모두 승인했어요: 남은 ${many - 1}개는 같은 버튼을 승인 요청 없이 browser_click으로 이어서 눌러요(10분 안).`
       }
-      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint}${rest} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
+      // 결제를 눌렀으면 결제가 끝날 때까지 이 탭(과 새로 뜬 결제 창)은 다른 주소로 옮기지 않는다
+      let paying = ''
+      if (rec.kind === 'money' && !r.newTabId) {
+        // 결제 창은 늦게 새 창으로 뜰 때가 많다: 잠깐 기다려 한 번 더 본다
+        await new Promise((res) => setTimeout(res, 2_500))
+        const late = (await this.browser.call('popup', { tabId: rec.tabId }).catch(() => ({}))) as {
+          newTabId?: number
+        }
+        if (late.newTabId) r = { ...r, newTabId: late.newTabId }
+      }
+      if (rec.kind === 'money') {
+        this.paying.set(rec.tabId, Date.now() + 15 * 60_000)
+        if (r.newTabId) this.paying.set(r.newTabId, Date.now() + 15 * 60_000)
+        paying = r.newTabId
+          ? ` 결제 창이 새 탭(탭 ${r.newTabId})으로 열렸어요. 그 탭을 읽어 결제를 끝까지 마쳐요(결제 비밀번호·인증은 폰 카드로).`
+          : ' 결제가 끝날 때까지(주문 완료 화면) 이 탭에서 이어 가요. 화면이 비었으면 결제 창이 새 창이나 화면 안 액자로 떴을 수 있으니 찾아서 마쳐요. 주문 내역 같은 다른 곳으로 옮기지 않아요.'
+      }
+      const msg = `${how ? `${how}을(를) 고르고 ` : ''}"${finalName}" 버튼을 눌렀어요.${also}${hint}${rest}${paying} 지금 화면: ${r.title ?? ''} (${r.url ?? ''})`
       this.approvals.finish(id, true, msg)
       return { ok: true, message: msg }
     } catch (e) {
