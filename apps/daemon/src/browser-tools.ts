@@ -220,10 +220,15 @@ export function classifyRisk(label: string, url: string, pay?: string): Risk | u
   } catch {}
   // 결제 단계 주소에서는 버튼을 넓게 막는다. 다만 결제가 될 수 없는 이름(닫기·이전·자세히 보기 등)은 누른다
   // (실측: 호텔스닷컴 결제 화면의 재촉 창 [close]조차 승인을 받아야 했다)
-  if ((RISK_URL.test(path) || RISK_URL.test(host)) && !HARMLESS.test(name))
+  if ((RISK_URL.test(path) || RISK_URL.test(host)) && !HARMLESS.test(name) && !CHECKOUT_SETUP.test(name))
     return { kind: 'money', reason: '결제 단계 페이지' }
   return undefined
 }
+
+// 결제 화면에서 결제 전에 고르고 채우는 버튼 (돈 말이 없는 이름): 배송지·주소·쿠폰·수량·요청사항 등은 승인 없이 누른다
+// (실측 11-20 G마켓: 주문서의 '배송지 추가'가 결제로 막혀 두리가 배송지를 못 넣고 사용자에게 넘겼다)
+const CHECKOUT_SETUP =
+  /배송지|배송\s*(?:정보|요청|메모)|주소|우편\s*번호|쿠폰|할인|포인트|적립|캐시|요청\s*사항|메모|연락처|휴대폰|전화|이름|받는\s*(?:분|사람)|수령인|수량|옵션|현금\s*영수증|영수증|약관|동의\s*(?:보기|내용)|입력|검색/
 
 // 지난 주문·결제·예약을 보는 말: 돈이 나가거나 보내지 않는다
 const LOOKUP =

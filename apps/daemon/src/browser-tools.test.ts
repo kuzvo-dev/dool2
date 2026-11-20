@@ -2665,3 +2665,15 @@ describe('PC 화면 넘기기 금지 (사용자 결정 11-20)', () => {
     }
   })
 })
+
+describe('결제 화면의 준비 버튼', () => {
+  it('배송지·쿠폰·수량은 승인 없이 누르고, 결제·이름 없는 버튼은 막는다', () => {
+    const u = 'https://checkout.gmarket.co.kr/ko/pc/checkout?chid=1'
+    expect(classifyRisk('버튼 배송지 추가', u)).toBeUndefined()
+    expect(classifyRisk('버튼 쿠폰 적용', u)).toBeUndefined()
+    expect(classifyRisk('버튼 수량 변경', u)).toBeUndefined()
+    expect(classifyRisk('버튼 결제하기', u)?.kind).toBe('money')
+    expect(classifyRisk('버튼 다음', u)?.kind).toBe('money')
+    expect(classifyRisk('버튼', u)?.kind).toBe('money')
+  })
+})
