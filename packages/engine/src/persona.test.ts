@@ -33,9 +33,18 @@ describe('두리 페르소나 지침', () => {
     expect(DOOL2_SYSTEM_PROMPT).toContain('show_draft')
   })
 
-  it('넘기기 전에 다시 읽고 보이는 화면대로 말한다', () => {
-    expect(DOOL2_SYSTEM_PROMPT).toContain('넘기기 전에 페이지를 다시 읽어요')
+  it('폰 카드 전에 다시 읽고 보이는 화면대로 말한다', () => {
+    expect(DOOL2_SYSTEM_PROMPT).toContain('폰 카드를 띄우기 전에 페이지를 다시 읽어요')
     expect(DOOL2_SYSTEM_PROMPT).toContain('지금 화면에 보이는 그대로')
+  })
+
+  it('사람 몫은 폰 카드로, 결제는 완료 화면과 주문번호까지', () => {
+    expect(DOOL2_SYSTEM_PROMPT).toContain('browser_request_tap')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('browser_order_done')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('결제 화면에서 멈추고 묻지 않아요')
+    expect(DOOL2_SYSTEM_PROMPT).not.toContain('사람에게 넘겨요')
+    expect(DOOL2_SYSTEM_PROMPT).not.toContain('사용자가 직접 하도록')
+    expect(DOOL2_SYSTEM_PROMPT).not.toContain('먼저 사용자에게 물어봐요')
   })
 
   it('사용자 이름이 있으면 님으로 부른다', () => {
