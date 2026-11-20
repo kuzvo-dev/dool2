@@ -215,7 +215,15 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
           return ''
         const raw = (isEl ? (sib as HTMLElement).innerText : sib.textContent) ?? ''
         const t = raw.trim()
-        if (t && t.length <= 20 && !t.includes('\n')) return clean(t)
+        // 이름다운 글자만 (수량 칸 "0"·가격·기호는 이름이 아니다)
+        if (
+          t &&
+          t.length <= 20 &&
+          !t.includes('\n') &&
+          /[가-힣A-Za-z]{2,}/.test(t) &&
+          !/\d{2,}|[₩원]$/.test(t)
+        )
+          return clean(t)
         return ''
       }
       // 요소가 부모의 유일한 자식이면 부모 뒤를 본다 (<li><a><img></a></li><li>…</li> 말고 <div><a><img></a></div><span>이름</span>)
