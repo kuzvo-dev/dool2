@@ -2829,6 +2829,9 @@ export class BrowserTools {
           finalName = refs.get(next)?.name ?? rec.label
         }
       }
+      // 결제 창이 새 창으로 뜨는 사이트: Chrome 팝업 차단에 막히지 않게 이 사이트의 팝업을 허용해 둔다
+      if (rec.kind === 'money')
+        await this.browser.call('allow-popups', { tabId: rec.tabId }).catch(() => undefined)
       let r = (await this.browser.call('click', { tabId: rec.tabId, ref: finalRef }, 30_000)) as {
         url?: string
         title?: string

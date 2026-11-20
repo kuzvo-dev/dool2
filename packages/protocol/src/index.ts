@@ -353,6 +353,7 @@ export const BrowserCommandSchema = z.enum([
   // 표시마다 그 자리만 잘라 찍기 (그림 키패드)
   'element-shots',
   'popup',
+  'allow-popups',
   'mark-text',
   'link-navigates',
   /** 커넥터 엔진 (ADR 0018): 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기 */

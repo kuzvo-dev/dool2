@@ -1435,6 +1435,20 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await sleep(300)
       return pageState(tabId)
     }
+    case 'allow-popups': {
+      // 결제 창은 버튼을 누른 순간이 아니라 서버에 다녀와서 새 창으로 열린다: Chrome이 팝업으로 막아 화면만 하얗게 남았다
+      // (실측 11-20 G마켓 카드 결제). 두리가 결제하는 사이트만 팝업을 허용한다 (사람은 주소창의 '팝업 허용'을 누르던 것)
+      const tabId = await ownedTab(a)
+      const u = new URL((await chrome.tabs.get(tabId)).url ?? '')
+      const labels = u.hostname.split('.')
+      const keep = /\.(?:co|or|go|ne|ac|re|pe)\.kr$/.test(u.hostname) ? 3 : 2
+      const base = labels.slice(-keep).join('.')
+      await chrome.contentSettings.popups.set({
+        primaryPattern: `${u.protocol}//*.${base}/*`,
+        setting: 'allow',
+      })
+      return { ok: true, pattern: `${u.protocol}//*.${base}/*` }
+    }
     case 'popup': {
       // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창이 있으면 알려 준다
       const tabId = await ownedTab(a)
