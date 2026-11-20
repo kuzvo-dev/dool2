@@ -82,7 +82,7 @@
     {
       "name": "prepare_booking",
       "title": "예약 준비",
-      "description": "고른 휴양림 객실을 결제 직전까지 예약 준비한다. 로그인해야 한다(숲나들e 회원). 결제 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 국립 휴양림 주말·성수기는 추첨제라 바로 예약이 안 될 수 있다: 그때는 foresttrip_lottery.",
+      "description": "고른 휴양림 객실 예약을 결제까지 마친다. 로그인해야 한다(숲나들e 회원). 국립 휴양림 주말·성수기는 추첨제라 바로 예약이 안 될 수 있다: 그때는 foresttrip_lottery. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
       "tier": "돈 내기",
       "login": true,
       "status": "초안",
@@ -148,7 +148,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "숲나들e 첫 화면이에요(로그인됨). '{{forest}}'를 검색해 고르고 {{check_in}}~{{check_out}}, {{people}}명으로 조회해 '{{room}}' 객실의 예약 버튼을 눌러요(없으면 비슷한 객실을 사용자에게 물어요). 대기 화면이 나오면 기다려요. 이용자 정보·차량 번호 등은 회원 정보에 없으면 물어요. 결제 화면에서 휴양림·객실·날짜·인원·요금·취소 수수료 규정을 정리해 browser_request_approval로 승인을 받은 뒤에만 결제 버튼을 눌러요."
+          "handoff_to_agent": "숲나들e 첫 화면이에요(로그인됨). '{{forest}}'를 검색해 고르고 {{check_in}}~{{check_out}}, {{people}}명으로 조회해 '{{room}}' 객실의 예약 버튼을 눌러요(없으면 비슷한 객실을 show_list pick one으로 보여 줘요). 대기 화면이 나오면 기다려요. 이용자 정보는 browser_fill_profile로 채우고, 차량 번호는 기억(know_find)에서 찾아 넣어요. 그래도 없을 때만 물어요. 결제 화면에서 휴양림·객실·날짜·인원·요금·취소 수수료 규정을 정리해 마지막 결제 버튼에서 결제 카드(browser_checkout)로 승인받아요. 승인 뒤 결제 창까지 마치고 완료 화면의 예약번호로 browser_order_done."
         }
       ],
       "result": {}

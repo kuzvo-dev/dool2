@@ -203,7 +203,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "키즈노트 서비스 화면이에요. 아이가 여럿이면 '{{child}}'를 고르고 '투약의뢰서'에서 새로 쓰기로 가요. 날짜 {{date}}, 증상 '{{symptom}}', 약 '{{medicine}}', 투약 시간 '{{time}}', 보관 '{{storage}}'를 칸에 맞게 넣어요(빈 칸은 비워 둬요). 보내기(등록) 버튼은 누르지 말고 넣은 내용을 그대로 보여 주며 browser_request_approval로 승인받아야만 눌러요. 서명 칸이 있으면 browser_handoff로 사용자에게 넘겨요. 로그인 화면이 나오면 connect_ask('kidsnote')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
+          "handoff_to_agent": "목표: '{{child}}'의 투약의뢰서를 써서 보내기. 입력: 날짜 {{date}}, 증상 '{{symptom}}', 약 '{{medicine}}', 투약 시간 '{{time}}', 보관 '{{storage}}'(빈 칸은 비워 둬요). 넣은 내용을 그대로 보여 주며 browser_request_approval로 승인받은 뒤에 등록해요. 서명 칸이 있으면 저장해 둔 서명(불러오기)을 쓰고, 없으면 승인 카드에 \"서명 칸이 있어요\"라고 적어 승인받은 뒤 서명만 browser_handoff(emergency: true)로 받아요(사람만 그릴 수 있는 칸이라서요). 로그인 화면이 나오면 connect_ask('kidsnote')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {}

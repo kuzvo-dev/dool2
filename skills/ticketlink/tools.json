@@ -343,7 +343,7 @@
     {
       "name": "prepare_booking",
       "title": "예매 준비",
-      "description": "티켓링크 공연의 날짜·회차를 골라 '예매하기'로 좌석 고르기 화면 직전까지 간다. 좌석·가격 할인 고르기와 결제는 열어 둔 탭(또는 새 예매 창)에서 브라우저 도구로 이어서 하고, 결제는 사용자 승인(browser_request_approval)을 받아야만 한다. 예매하기부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('ticketlink'). 대기열·보안문자가 나오면 사용자에게 넘긴다.",
+      "description": "티켓링크 공연의 날짜·회차를 골라 '예매하기'로 좌석 고르기 화면으로 가서 예매까지 마친다. 예매하기부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('ticketlink'). 대기열은 기다리고, 보안문자는 browser_request_code(kind: \"captcha\")로 폰에서 받는다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
       "tier": "돈 내기",
       "status": "초안",
       "input": {
@@ -412,7 +412,7 @@
           "sleep": 1500
         },
         {
-          "handoff_to_agent": "티켓링크 공연 화면이에요. 달력에서 {{day_label}}이 선택됐는지 보고(아니면 '다음 달로 이동' 후 고르기), 회차에서 {{time}}을 골라 예매가능좌석을 확인해요. '예매하기'를 누르면 새 예매 창이 열릴 수 있어요. 좌석 화면에서 {{people}}매, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 공연·날짜·회차·좌석·금액·취소 수수료 안내를 정리해 browser_request_approval로 승인받은 뒤에만 결제로 넘어가요. 로그인이면 연결 전엔 connect_ask('ticketlink'), 대기열·보안문자는 browser_handoff로 사용자에게."
+          "handoff_to_agent": "티켓링크 공연 화면이에요. 달력에서 {{day_label}}이 선택됐는지 보고(아니면 '다음 달로 이동' 후 고르기), 회차에서 {{time}}을 골라 예매가능좌석을 확인해요. '예매하기'를 누르면 새 예매 창이 열릴 수 있어요. 좌석 화면에서 {{people}}매, 좌석 바람({{seat_wish}})에 맞는 자리를 골라 두고 공연·날짜·회차·좌석·금액·취소 수수료 안내를 정리해 두고, 결제 화면의 마지막 결제 버튼에서 결제 카드(browser_checkout)로 승인받아요. 로그인이면 연결 전엔 connect_ask('ticketlink'), 대기열은 차례가 올 때까지 기다렸다 화면을 다시 읽고, 보안문자는 browser_request_code(kind: \"captcha\")로 폰에서 받아요. 승인 뒤 결제 창까지 마치고 완료 화면의 예약번호로 browser_order_done."
         }
       ],
       "result": {},
