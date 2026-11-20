@@ -6,7 +6,7 @@ import { BrowserTools } from './browser-tools.js'
 const PAGE = `# 주문서
 사과 1kg 9,900원 [e1 버튼 "장바구니 담기"] [e2 버튼 "결제하기"] [e3 버튼 "리뷰 보내기"]`
 
-function shop(url = 'https://shop.example/item/1', text = PAGE) {
+function shop(url = 'https://shop.example/checkout', text = PAGE) {
   const calls: string[] = []
   const state = { url, text }
   return {
@@ -40,7 +40,7 @@ describe('승인 게이트', () => {
     await tools.run('read', { tabId: 1 })
     const r = await tools.run('click', { tabId: 1, ref: 'e2' })
     expect(r.isError).toBe(true)
-    expect(JSON.stringify(r)).toContain('browser_request_approval')
+    expect(JSON.stringify(r)).toContain('browser_checkout')
     expect(b.calls).not.toContain('click:e2')
   })
 

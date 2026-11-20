@@ -146,6 +146,9 @@ type Overlay =
   | { kind: 'drawer' }
   | { kind: 'agent' }
   | { kind: 'approval'; id: string }
+  /** 결제 카드의 받는 곳·결제 수단 고르기 시트 */
+  | { kind: 'pick-ship'; id: string; back?: boolean }
+  | { kind: 'pick-pay'; id: string; back?: boolean }
   | { kind: 'login'; id: string }
   /** 로그인 중 화면이 묻는 것 (인증번호 등) */
   | { kind: 'info'; id: string }
@@ -3029,7 +3032,8 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
       [head, a?.amount, failed ? (decided?.message ?? what) : what].filter(Boolean).join(' · '),
     )
   }
-  const tone: IconName = a.kind === 'money' ? 'cart' : a.kind === 'contact' ? 'mail' : 'hand'
+  if (a.kind === 'money') return checkoutCard(a)
+  const tone: IconName = a.kind === 'contact' ? 'mail' : 'hand'
   return h(
     'div',
     { class: 'card approve-card' },
@@ -3068,6 +3072,325 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
       onclick: () => openOverlay({ kind: 'approval', id: a.id }),
     }),
   )
+}
+
+/**
+ * 결제 카드 (11-20 사용자 시안): 어느 결제든 같은 틀. 가게·상품·금액·받는 곳·결제 수단·정보 줄, 맨 아래 큰 결제 버튼.
+ * 받는 곳·결제 수단은 줄 전체를 누르면 고르기 시트가 열린다. 승인은 이 카드에서 한 번뿐
+ */
+function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTMLElement {
+  const host = hostOf(a.url)
+  const name = a.where || host
+  // 도착·이용 시각 하나는 머리 줄에 (줄 목록에는 다시 안 씀)
+  const when = (a.info ?? []).find((x) => /도착|이용|일시|체크인|출발/.test(x.label))
+  const head = h(
+    'div',
+    { class: 'co-head' },
+    withLogo(h('span', { class: 'svc-mark lg', text: [...name][0] ?? '' }), cardIdFor(a.url)),
+    h(
+      'div',
+      { class: 'co-head-t' },
+      h('strong', { text: a.title || name }),
+      h('span', {
+        class: 'meta',
+        text: [a.title ? name : host, when?.value].filter(Boolean).join(' · '),
+      }),
+    ),
+  )
+  const goods = (a.goods ?? []).length
+    ? h(
+        'div',
+        { class: 'co-goods' },
+        ...(a.goods ?? []).map((g) => {
+          const th = h('span', { class: 'co-th' }, icon('box', 'i'))
+          if (g.image)
+            void thumbOf(g.image).then((data) => {
+              if (!data) return
+              const img = h('img', { class: 'co-th' }) as HTMLImageElement
+              img.src = data
+              img.alt = ''
+              th.replaceWith(img)
+            })
+          return h(
+            'div',
+            { class: 'co-good' },
+            th,
+            h(
+              'div',
+              { class: 'co-good-t' },
+              h('span', { class: 'co-nm', text: g.name }),
+              ...(g.option || g.qty
+                ? [h('span', { class: 'meta', text: [g.option, g.qty].filter(Boolean).join(' · ') })]
+                : []),
+            ),
+            ...(g.price ? [h('span', { class: 'co-pr', text: g.price })] : []),
+          )
+        }),
+      )
+    : h('p', { class: 'co-what', text: a.what })
+  const amount = h(
+    'div',
+    { class: 'co-amt' },
+    ...(a.lines ?? []).map((l) =>
+      h(
+        'div',
+        { class: `co-ln${l.kind === 'discount' ? ' minus' : ''}` },
+        h('span', { text: l.label }),
+        h('span', { text: l.value }),
+      ),
+    ),
+    ...(a.amount
+      ? [h('div', { class: 'co-tot' }, h('span', { text: '총 결제 금액' }), h('b', { text: a.amount }))]
+      : []),
+  )
+  const row = (ic: IconName, k: string, v: string, onclick?: () => void, warn = false) =>
+    h(
+      onclick ? 'button' : 'div',
+      { class: `co-row${warn ? ' warn' : ''}${onclick ? ' tap' : ''}`, ...(onclick ? { onclick } : {}) },
+      icon(ic, 'i co-ic'),
+      h(
+        'span',
+        { class: 'co-row-t' },
+        h('span', { class: 'co-k', text: k }),
+        h('span', { class: 'co-v', text: v }),
+      ),
+      ...(onclick ? [icon('chevron', 'i co-chev')] : []),
+    )
+  const rows: HTMLElement[] = []
+  const ship = shipChosenOf(a)
+  if (a.shipOptions?.length) {
+    const cur = ship?.startsWith('n:')
+      ? `새 주소 ${decodeURIComponent(ship.slice(2))}`
+      : (a.shipOptions.find((o) => o.id === ship) ?? a.shipOptions[0])?.label.replace(/^내 정보 주소 · /, '')
+    const warn = Boolean(a.shipWarn) && (ship ?? 'a0') === 'a0'
+    rows.push(
+      row(
+        'place',
+        warn ? '받는 곳 · 내 정보 주소와 달라요' : '받는 곳',
+        cur ?? '',
+        () => openOverlay({ kind: 'pick-ship', id: a.id, back: inSheet }),
+        warn,
+      ),
+    )
+  }
+  for (const x of a.info ?? []) {
+    if (x === when) continue
+    const ic: IconName = /요청/.test(x.label)
+      ? 'chat'
+      : /도착|일시|시간|체크/.test(x.label)
+        ? 'clock'
+        : /예약자|탑승객|투숙객|받는/.test(x.label)
+          ? 'users'
+          : /좌석|티켓/.test(x.label)
+            ? 'ticket'
+            : 'note'
+    rows.push(row(ic, x.label, x.value))
+  }
+  if (a.choices?.length || subsFor(a).length) {
+    const main = a.choices?.find((c) => c.id === chosenOf(a))
+    const subs = subsFor(a)
+      .map((g) => g.options.find((o) => o.id === subChosenOf(a, g))?.label ?? '')
+      .filter(Boolean)
+    rows.push(
+      row(
+        'card',
+        a.choiceTitle ?? '결제 수단',
+        [main?.label, ...subs].filter(Boolean).join(' · ') || '고르기',
+        () => openOverlay({ kind: 'pick-pay', id: a.id, back: inSheet }),
+      ),
+    )
+  }
+  const fine = [a.cancel, a.chose?.length ? `두리가 고른 것: ${a.chose.join(' · ')}` : '']
+    .filter(Boolean)
+    .join(' · ')
+  const shot =
+    inSheet && a.shot
+      ? (() => {
+          const img = h('img', { class: 'sheet-shot' }) as HTMLImageElement
+          img.alt = 'PC 화면'
+          img.src = `data:image/jpeg;base64,${a.shot}`
+          return h(
+            'details',
+            { class: 'co-shot' },
+            h('summary', { class: 'meta', text: 'PC 결제 화면 보기' }),
+            img,
+          )
+        })()
+      : undefined
+  return h(
+    'div',
+    { class: `card co-card${inSheet ? ' in-sheet' : ''}` },
+    head,
+    goods,
+    amount,
+    ...(rows.length ? [h('div', { class: 'co-rows' }, ...rows)] : []),
+    ...(fine ? [h('p', { class: 'co-fine', text: fine })] : []),
+    ...(shot ? [shot] : []),
+    h(
+      'div',
+      { class: 'co-actions' },
+      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      holdButton({
+        label: `꾹 눌러 ${a.amount ? `${a.amount} ` : ''}결제`,
+        done: '승인했어요',
+        cls: 'btn btn-approve',
+        onDone: () => decide(a, 'approve', true),
+        after: () => markDecided(a, 'approve'),
+      }),
+    ),
+    h('p', { class: 'co-lock' }, icon('lock', 'i'), ' 승인하면 두리가 이 결제 버튼 한 번만 눌러요'),
+    ...(inSheet
+      ? []
+      : [
+          h('button', {
+            class: 'btn-link',
+            text: 'PC 결제 화면 보기',
+            onclick: () => openOverlay({ kind: 'approval', id: a.id }),
+          }),
+        ]),
+  )
+}
+
+/** 받는 곳 고르기 시트: 지금 화면 주소·저장된 주소·내 정보 주소·새 주소 */
+function shipPicker(id: string, back = false): HTMLElement {
+  const a = st.approvals.get(id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise pick-sheet' })
+  if (!a?.shipOptions?.length) return sheet
+  const key = `${a.id}:ship`
+  const now = shipChosenOf(a) ?? 'a0'
+  const isNew = now.startsWith('n:')
+  const input = h('input', { class: 'field' }) as HTMLInputElement
+  input.placeholder = '도로명·건물·동호수'
+  input.value = isNew ? decodeURIComponent(now.slice(2)) : ''
+  const opt = (
+    on: boolean,
+    title: string,
+    sub: string | undefined,
+    tag: string | undefined,
+    pick: () => void,
+    extra?: HTMLElement,
+  ) =>
+    h(
+      'button',
+      { class: `pick-opt${on ? ' on' : ''}`, onclick: pick },
+      h('span', { class: 'pick-radio' }),
+      h(
+        'span',
+        { class: 'pick-t' },
+        h(
+          'span',
+          { class: 'pick-name' },
+          title,
+          ...(tag ? [h('span', { class: 'pick-tag', text: tag })] : []),
+        ),
+        ...(sub ? [h('span', { class: 'meta', text: sub })] : []),
+        ...(extra ? [extra] : []),
+      ),
+    )
+  sheet.append(
+    h('h3', { class: 'title-2', text: '어디로 받을까요?' }),
+    ...(a.shipWarn ? [h('p', { class: 'field-err', text: `⚠ ${a.shipWarn}` })] : []),
+    ...a.shipOptions.map((o, i) => {
+      const mine = o.label.startsWith('내 정보 주소 · ')
+      return opt(
+        now === o.id,
+        mine ? '우리 집' : i === 0 ? '지금 화면 주소' : '저장된 주소',
+        o.label.replace(/^내 정보 주소 · /, ''),
+        mine ? '내 정보' : undefined,
+        () => {
+          st.choice.set(key, o.id)
+          render()
+        },
+      )
+    }),
+    opt(
+      isNew,
+      '+ 새 주소',
+      undefined,
+      undefined,
+      () => {
+        if (!isNew) st.choice.set(key, 'n:')
+        render()
+        queueMicrotask(() => document.querySelector<HTMLInputElement>('.pick-sheet .field')?.focus())
+      },
+      isNew ? input : undefined,
+    ),
+    h('button', {
+      class: 'btn lg',
+      text: '이 주소로 받기',
+      onclick: () => {
+        if (isNew) {
+          const v = input.value.trim()
+          if (!v) return toast('새 주소를 넣어 주세요')
+          st.choice.set(key, `n:${encodeURIComponent(v.slice(0, 100))}`)
+        }
+        // 결제 카드 시트에서 열었으면 그 카드로 돌아간다
+        openOverlay(back ? { kind: 'approval', id } : undefined)
+      },
+    }),
+  )
+  return sheet
+}
+
+/** 결제 수단 고르기 시트: 수단마다 한 줄, 고른 수단 안의 카드·할부는 셀렉트 박스 */
+function payPicker(id: string, back = false): HTMLElement {
+  const a = st.approvals.get(id)
+  const sheet = h('section', { class: 'sheet float app-sheet rise pick-sheet' })
+  if (!a) return sheet
+  const main = chosenOf(a)
+  const groups = (forMain: string | undefined) =>
+    (a.subChoices ?? []).filter((g) => !g.when || !forMain || g.when === forMain)
+  const subsOf = (forMain: string | undefined) =>
+    groups(forMain).map((g) => {
+      const sel = h('select', { class: 'field select-field' }) as HTMLSelectElement
+      for (const o of g.options) {
+        const el = document.createElement('option')
+        el.value = o.id
+        el.textContent = o.label
+        if (o.id === subChosenOf(a, g)) el.selected = true
+        sel.append(el)
+      }
+      sel.onclick = (e) => e.stopPropagation()
+      sel.onchange = () => {
+        st.choice.set(`${a.id}:${g.key}`, sel.value)
+        render()
+      }
+      return h('label', { class: 'pick-sub' }, h('span', { class: 'meta', text: g.title }), sel)
+    })
+  const list = a.choices?.length ? a.choices : [{ id: '', label: '지금 결제 수단' }]
+  sheet.append(
+    h('h3', { class: 'title-2', text: '어떻게 결제할까요?' }),
+    ...list.map((c) =>
+      h(
+        'button',
+        {
+          class: `pick-opt${c.id === (main ?? '') ? ' on' : ''}`,
+          onclick: () => {
+            if (c.id) st.choice.set(a.id, c.id)
+            render()
+          },
+        },
+        h('span', { class: 'pick-radio' }),
+        h(
+          'span',
+          { class: 'pick-t' },
+          h(
+            'span',
+            { class: 'pick-name' },
+            c.label,
+            ...(c.mine ? [h('span', { class: 'pick-tag', text: '내 결제 수단' })] : []),
+          ),
+          ...(c.id === (main ?? '') ? subsOf(c.id || undefined) : []),
+        ),
+      ),
+    ),
+    h('button', {
+      class: 'btn lg',
+      text: '이걸로 할게요',
+      onclick: () => openOverlay(back ? { kind: 'approval', id } : undefined),
+    }),
+  )
+  return sheet
 }
 
 /** 승인할 목록 (PC 파일 옮기기·출력): 앞 max줄과 남은 개수 */
@@ -4034,29 +4357,33 @@ function renderOverlay() {
         ? agentPanel()
         : ov.kind === 'approval'
           ? approvalSheet(ov.id)
-          : ov.kind === 'connect'
-            ? connectSheet(ov.id)
-            : ov.kind === 'goal'
-              ? goalSheet(lifeCtx(), ov.id)
-              : ov.kind === 'item'
-                ? itemSheet(lifeCtx(), ov.id)
-                : ov.kind === 'msg'
-                  ? msgSheet(ov.id)
-                  : ov.kind === 'plus'
-                    ? plusSheet()
-                    : ov.kind === 'info'
-                      ? infoSheet(ov.id)
-                      : ov.kind === 'profile'
-                        ? profileSheet()
-                        : ov.kind === 'vault'
-                          ? vaultSheet()
-                          : ov.kind === 'pay'
-                            ? paySheet()
-                            : ov.kind === 'pay-add'
-                              ? payAddSheet()
-                              : ov.kind === 'report'
-                                ? reportSheet()
-                                : loginSheet(ov.id)
+          : ov.kind === 'pick-ship'
+            ? shipPicker(ov.id, ov.back)
+            : ov.kind === 'pick-pay'
+              ? payPicker(ov.id, ov.back)
+              : ov.kind === 'connect'
+                ? connectSheet(ov.id)
+                : ov.kind === 'goal'
+                  ? goalSheet(lifeCtx(), ov.id)
+                  : ov.kind === 'item'
+                    ? itemSheet(lifeCtx(), ov.id)
+                    : ov.kind === 'msg'
+                      ? msgSheet(ov.id)
+                      : ov.kind === 'plus'
+                        ? plusSheet()
+                        : ov.kind === 'info'
+                          ? infoSheet(ov.id)
+                          : ov.kind === 'profile'
+                            ? profileSheet()
+                            : ov.kind === 'vault'
+                              ? vaultSheet()
+                              : ov.kind === 'pay'
+                                ? paySheet()
+                                : ov.kind === 'pay-add'
+                                  ? payAddSheet()
+                                  : ov.kind === 'report'
+                                    ? reportSheet()
+                                    : loginSheet(ov.id)
   // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
   // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
   const drawn = body.outerHTML
@@ -5111,6 +5438,10 @@ function approvalSheet(id: string) {
     return sheet
   }
   if (!a.shot && a.status === 'pending') void send({ kind: 'approval', id })
+  if (a.kind === 'money' && a.status === 'pending' && !st.decided.get(id)) {
+    sheet.append(close, checkoutCard(a, true))
+    return sheet
+  }
   const rows = h('dl', { class: 'kv' })
   const row = (k: string, v?: string, cls?: string) =>
     v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))

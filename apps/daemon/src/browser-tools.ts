@@ -5,7 +5,14 @@
 // 사용자가 승인하면 본체가 그 버튼 하나만 누른다(approvals.ts). "항상 직접 누르기"면 사람에게 넘긴다.
 
 import { randomInt } from 'node:crypto'
-import type { BrowserCommand, RemoteForm, RemoteFormValue, RemoteInfo } from '@dool2/protocol'
+import type {
+  ApprovalView,
+  BrowserCommand,
+  CheckoutGood,
+  RemoteForm,
+  RemoteFormValue,
+  RemoteInfo,
+} from '@dool2/protocol'
 import {
   PAY_KINDS,
   type PayMethod,
@@ -59,6 +66,7 @@ export const BROWSER_TOOLS = [
   'new_password',
   'select',
   'request_approval',
+  'checkout',
   'dialog',
   'steps',
   'hover',
@@ -1032,6 +1040,95 @@ export class BrowserTools {
         this.dialogs.delete(tabId)
         return this.read(tabId, undefined, `사이트 확인 창에서 [${accept ? '확인' : '취소'}]을 눌렀어요.`)
       }
+      case 'checkout': {
+        // 결제 카드 (11-20 사용자 시안): 결제 화면의 마지막 버튼 하나에 승인 한 번. 상품·금액·받는 곳·결제 수단·정보를 한 장에
+        const page = this.pages.get(tabId)
+        if (!page) throw new Error('먼저 결제 화면을 읽어 주세요')
+        const ref = String(a.ref ?? '')
+        if (!page.refs.has(ref))
+          throw new Error(`${ref} 표시가 없어요. 결제 화면을 다시 읽어 마지막 버튼을 짚어 주세요`)
+        // 결제 화면에서만: 그 전 단계의 [주문하기]는 opens_checkout으로 넘어간다 (승인이 두 번 나오지 않게)
+        let onPay = Boolean(page.checkout)
+        try {
+          const u = new URL(page.url)
+          onPay ||= RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)
+        } catch {}
+        if (!onPay && a.final_here !== true)
+          throw new Error(
+            '여기는 결제 화면(결제 수단·최종 금액을 고르는 화면)이 아니에요. 결제 화면으로 넘어가는 버튼은 browser_click(opens_checkout: true)으로 눌러 결제 화면까지 간 뒤 그곳에서 browser_checkout을 불러요. 이 화면의 버튼에서 바로 돈이 나가면 final_here: true로 다시 불러요.',
+          )
+        const str = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+        const list = <T>(v: unknown, n: number, f: (x: Record<string, unknown>) => T | undefined): T[] =>
+          (Array.isArray(v) ? v : [])
+            .slice(0, n)
+            .map((x) => (x && typeof x === 'object' ? f(x as Record<string, unknown>) : undefined))
+            .filter((x): x is T => x !== undefined)
+        const goods = list(a.goods, 20, (g) =>
+          str(g.name, 80)
+            ? {
+                name: str(g.name, 80),
+                ...(str(g.option, 80) ? { option: str(g.option, 80) } : {}),
+                ...(str(g.qty, 20) ? { qty: str(g.qty, 20) } : {}),
+                ...(str(g.price, 30) ? { price: str(g.price, 30) } : {}),
+                ...(/^https:\/\//.test(str(g.image, 800)) ? { image: str(g.image, 800) } : {}),
+              }
+            : undefined,
+        )
+        const lines = list(a.lines, 10, (l) =>
+          str(l.label, 24) && str(l.value, 30)
+            ? {
+                label: str(l.label, 24),
+                value: str(l.value, 30),
+                ...(l.kind === 'discount' || l.kind === 'fee' || l.kind === 'point'
+                  ? { kind: l.kind as 'discount' | 'fee' | 'point' }
+                  : {}),
+              }
+            : undefined,
+        )
+        const info = list(a.info, 8, (l) =>
+          str(l.label, 16) && str(l.value, 160)
+            ? { label: str(l.label, 16), value: str(l.value, 160) }
+            : undefined,
+        )
+        const choices = Array.isArray(a.choices) ? (a.choices as unknown[]).map(String) : []
+        const chose = Array.isArray(a.chose)
+          ? (a.chose as unknown[])
+              .map((c) => String(c ?? '').slice(0, 60))
+              .filter(Boolean)
+              .slice(0, 8)
+          : []
+        const title = str(a.title, 60)
+        return this.askApproval(
+          tabId,
+          ref,
+          {
+            what:
+              str(a.what, 200) ||
+              [title, goods.map((g) => g.name).join('·')].filter(Boolean).join(' · ') ||
+              '결제',
+            where: str(a.where, 100) || title,
+            ...(str(a.total, 60) ? { amount: str(a.total, 60) } : {}),
+            ...(str(a.cancel, 200) ? { cancel: str(a.cancel, 200) } : {}),
+            ...(choices.length ? { choices, choiceTitle: str(a.choiceTitle, 20) || '결제 수단' } : {}),
+            ...(chose.length ? { chose } : {}),
+            ...(str(a.ship_to, 120)
+              ? {
+                  shipTo: str(a.ship_to, 120),
+                  shipOptions: (Array.isArray(a.ship_options) ? a.ship_options : [])
+                    .map((x) =>
+                      String(x ?? '')
+                        .trim()
+                        .slice(0, 120),
+                    )
+                    .filter((x) => x && x !== str(a.ship_to, 120))
+                    .slice(0, 5),
+                }
+              : {}),
+            checkout: { ...(title ? { title } : {}), goods, lines, info },
+          },
+          'money',
+        )
+      }
       case 'request_approval': {
         if (a.dialog === true)
           return this.askDialogApproval(tabId, {
@@ -1041,6 +1138,27 @@ export class BrowserTools {
             ...(a.cancel ? { cancel: String(a.cancel) } : {}),
           })
         const ref = String(a.ref ?? '')
+        // 결제는 결제 카드(browser_checkout)로 한 번만: 결제 화면이 아닌 곳의 돈 버튼에는 승인 카드를 띄우지 않는다
+        {
+          const pg = this.pages.get(tabId)
+          const t = pg?.refs.get(ref)
+          if (
+            pg &&
+            t &&
+            a.final_here !== true &&
+            classifyRisk(`${t.role} ${t.name}`, pg.url, pg.pay)?.kind === 'money'
+          ) {
+            let onPay = Boolean(pg.checkout)
+            try {
+              const u = new URL(pg.url)
+              onPay ||= RISK_URL.test(u.pathname) || RISK_URL.test(u.hostname)
+            } catch {}
+            if (!onPay)
+              throw new Error(
+                `"${t.name}"은(는) 결제 화면 전 단계예요. 결제 화면으로 넘어가는 버튼이면 browser_click(opens_checkout: true)으로 누르고, 결제 화면에서 browser_checkout으로 한 번만 승인받아요. 이 버튼에서 바로 돈이 나가면 browser_checkout(final_here: true)으로 결제 카드를 띄워요.`,
+              )
+          }
+        }
         const choices = Array.isArray(a.choices)
           ? (a.choices as unknown[]).map((c) =>
               typeof c === 'string' ? c : String((c as { ref?: unknown })?.ref ?? ''),
@@ -1968,6 +2086,13 @@ export class BrowserTools {
       /** 받는 곳: 지금 골라진 배송지와 저장된 다른 배송지 */
       shipTo?: string
       shipOptions?: string[]
+      /** 결제 카드의 상품·금액·정보 줄 (browser_checkout) */
+      checkout?: {
+        title?: string
+        goods: CheckoutGood[]
+        lines: NonNullable<ApprovalView['lines']>
+        info: NonNullable<ApprovalView['info']>
+      }
     },
     kind?: RiskKind,
   ): Promise<ToolResult> {
@@ -2004,7 +2129,7 @@ export class BrowserTools {
     if (this.entersCheckout(tabId, page, target.name))
       throw new Error(
         `"${target.name}"은(는) 결제 화면으로 넘어가는 버튼이라 승인이 필요 없어요. browser_click으로 눌러 결제 화면까지 간 뒤, ` +
-          '그 화면에서 최종 금액·취소 규정을 읽고 마지막 버튼(결제하기·예약 완료 등)에 browser_request_approval을 쓰세요.',
+          '그 화면에서 상품·금액·받는 곳·결제 수단을 읽고 마지막 버튼(결제하기·예약 완료 등)에 browser_checkout을 쓰세요.',
       )
     const risk =
       classifyRisk(`${target.role} ${target.name}`, page.url, page.pay) ??
@@ -2093,6 +2218,10 @@ export class BrowserTools {
       ...(d.cancel ? { cancel: d.cancel.slice(0, 200) } : {}),
       ...(d.chose?.length ? { chose: d.chose } : {}),
       ...(d.shipTo ? await this.shipChoices(d.shipTo, d.shipOptions ?? []) : {}),
+      ...(d.checkout?.title ? { title: d.checkout.title } : {}),
+      ...(d.checkout?.goods.length ? { goods: d.checkout.goods } : {}),
+      ...(d.checkout?.lines.length ? { lines: d.checkout.lines } : {}),
+      ...(d.checkout?.info.length ? { info: d.checkout.info } : {}),
       ...(shot?.data ? { shot: shot.data } : {}),
       ...(picks.length
         ? {
@@ -2363,10 +2492,9 @@ export class BrowserTools {
     if (this.useSeries(url, risk.kind)) return
     const next =
       clickable && this.finalStep() === 'approve'
-        ? (risk.kind === 'money'
-            ? '이 버튼이 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이면 browser_click을 opens_checkout: true로 다시 불러 누르세요(승인은 결제 화면의 마지막 버튼에서 한 번만). 이 버튼에서 바로 돈이 나가면 '
-            : '') +
-          'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
+        ? risk.kind === 'money'
+          ? '이 버튼이 결제 화면(결제 수단·최종 금액을 고르는 화면)으로 넘어가기만 하는 버튼이면 browser_click을 opens_checkout: true로 다시 불러 누르세요. 결제 화면의 마지막 버튼이면 browser_checkout으로 결제 카드를 띄워 한 번만 승인받아요(상품·금액·받는 곳·결제 수단을 한 장에).'
+          : 'browser_request_approval로 무엇을·어디서·얼마인지·취소 조건을 적어 사용자 승인을 요청해 주세요. 승인되면 두리가 직접 눌러요.'
         : '여기까지 한 내용(무엇을, 어디서, 얼마인지)을 사용자에게 정리해 알려 주고, browser_handoff로 마지막 버튼은 사용자가 직접 누르게 넘겨 주세요.'
     throw new Error(`멈췄어요: ${risk.reason} — ${RISK_TEXT[risk.kind]}이라 승인 없이는 하지 않아요. ${next}`)
   }
@@ -2835,7 +2963,7 @@ export class BrowserTools {
           ]
         : flow && info.checkout
           ? [
-              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_request_approval로 한 번만 승인받아요. 그 전에 이 화면의 배송지 바꾸기(사이트마다 이름이 달라요)를 열어 저장된 다른 배송지를 읽고 닫은 뒤, 받는 곳 ship_to·다른 배송지 ship_options·결제 수단 choices를 같은 카드에 넣어요. 결제 비밀번호 키패드가 뜨면 browser_request_code(kind: "pin", key_refs: 키패드 버튼 표시들)로 버튼마다 잘린 그림을 받아 숫자를 짚고(keys) 다시 불러 폰 보안 키패드로 받아요. 새 카드 번호처럼 그걸로 안 되는 칸만 browser_handoff로 넘겨요.`,
+              `💳 결제 화면이에요('${info.checkout}'). 최종 금액·취소 규정·예약자 정보를 읽고, 마지막 버튼은 browser_checkout(결제 카드)으로 한 번만 승인받아요. 그 전에 이 화면의 배송지 바꾸기(사이트마다 이름이 달라요)를 열어 저장된 다른 배송지를 읽고 닫은 뒤, 상품(goods)·금액 줄(lines)·최종 금액(total)·받는 곳(ship_to·ship_options)·결제 수단(choices)·정보 줄(info: 도착·요청사항·예약자)을 한 카드에 넣어요. 결제 비밀번호 키패드가 뜨면 browser_request_code(kind: "pin", key_refs: 키패드 버튼 표시들)로 버튼마다 잘린 그림을 받아 숫자를 짚고(keys) 다시 불러 폰 보안 키패드로 받아요. 새 카드 번호처럼 그걸로 안 되는 칸만 browser_handoff로 넘겨요.`,
             ]
           : []),
       ...(s.captcha
