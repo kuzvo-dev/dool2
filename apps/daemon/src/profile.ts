@@ -65,6 +65,45 @@ export const PROFILE_FIELDS = {
   auth_app: { label: '간편인증 앱', type: 'choice', example: '카카오톡', options: AUTH_APPS },
   // 휴대폰 통신사: 본인확인(PASS·문자 인증) 창에서 고른다. 비밀값이 아니라 AI도 그대로 본다
   carrier: { label: '통신사', type: 'choice', example: 'SKT', options: CARRIERS },
+  // 여권: 해외 전자여행허가(ESTA 등)·항공권·해외 숙소 예약 칸 (실측 11-21: ESTA에서 여권을 몰라 'PC 폴더에 사진 넣어 달라'고 함)
+  passport_no: {
+    label: '여권 번호',
+    type: 'secret',
+    example: 'M12345678',
+    pattern: '^[A-Za-z]{1,2}\\d{7,8}$',
+    patternHint: '영문 1~2자와 숫자 7~8자리예요 (예: M12345678)',
+  },
+  passport_issued: {
+    label: '여권 발급일',
+    type: 'date',
+    example: '2022-03-15',
+    pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
+    patternHint: '2022-03-15처럼 넣어 주세요',
+  },
+  passport_expiry: {
+    label: '여권 만료일',
+    type: 'date',
+    example: '2032-03-15',
+    pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
+    patternHint: '2032-03-15처럼 넣어 주세요',
+  },
+  sex: { label: '성별', type: 'choice', example: '남', options: ['남', '여'] },
+  // 차량번호: 정기검사·리콜·자동차세 연납·보험 견적 조회에 쓴다. 조회 칸에 넣어야 해서 AI도 그대로 본다
+  // (실측 11-21: 검사·연납·리콜·보험 네 부탁이 차량번호를 대화로 따로 물었다)
+  car_no: {
+    label: '차량번호',
+    type: 'text',
+    example: '12가 3456',
+    pattern: '^(\\d{2,3})\\s?[가-힣]\\s?\\d{4}$',
+    patternHint: '12가 3456처럼 넣어 주세요',
+  },
+  birth_city: {
+    label: '태어난 도시',
+    type: 'text',
+    example: 'SEOUL',
+    pattern: '^[A-Za-z][A-Za-z .-]*$',
+    patternHint: '영문으로 넣어 주세요 (예: SEOUL)',
+  },
 } as const
 
 export type ProfileField = keyof typeof PROFILE_FIELDS
@@ -139,6 +178,9 @@ export function maskValue(field: ProfileField, v: string): string {
   const s = v.trim()
   if (field === 'auth_app' || field === 'carrier') return s
   if (field === 'rrn_back') return '*******'
+  if (field === 'passport_no') return `${s.slice(0, 1)}********`
+  if (field === 'sex' || field === 'birth_city' || field === 'car_no') return s
+  if (field === 'passport_issued' || field === 'passport_expiry') return `${s.slice(0, 4)}-**-**`
   if (field === 'email') {
     const [user = '', host = ''] = s.split('@')
     return `${user.slice(0, 2)}${'*'.repeat(Math.max(1, user.length - 2))}@${host}`
@@ -160,7 +202,20 @@ export function maskValue(field: ProfileField, v: string): string {
 export function normalize(field: ProfileField, v: string): string | undefined {
   const s = v.replace(/\s+/g, ' ').trim().slice(0, 120)
   if (!s) return undefined
-  if (field === 'name_en_last' || field === 'name_en_first') return s.toUpperCase()
+  if (field === 'name_en_last' || field === 'name_en_first' || field === 'birth_city') return s.toUpperCase()
+  if (field === 'passport_no') {
+    const k = s.replace(/\s/g, '').toUpperCase()
+    return /^[A-Z]{1,2}\d{7,8}$/.test(k) ? k : undefined
+  }
+  if (field === 'passport_issued' || field === 'passport_expiry') {
+    const d = s.replace(/\D/g, '')
+    return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : undefined
+  }
+  if (field === 'car_no') {
+    const m = /^(\d{2,3})\s?([가-힣])\s?(\d{4})$/.exec(s)
+    return m ? `${m[1]}${m[2]} ${m[3]}` : undefined
+  }
+  if (field === 'sex') return /^(남|m)/i.test(s) ? '남' : /^(여|f|w)/i.test(s) ? '여' : undefined
   if (field === 'phone') {
     const d = s.replace(/\D/g, '')
     if (d.length < 9) return undefined

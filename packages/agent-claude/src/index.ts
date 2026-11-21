@@ -129,6 +129,22 @@ export class ClaudeRuntime implements AgentRuntime {
       yield { type: 'error', code: 'not_installed', message: 'Claude Code가 설치돼 있지 않아요' }
       return
     }
+    // 두리 도구 서버(MCP)가 시작 때 안 붙으면(PC가 바쁠 때 늦게 뜸) 도구 없이 답하게 된다:
+    // "No such tool"을 받고 "도구가 안 불러져요"라고 끝냈다 (실측 11-21, 차례 몇 번에 한 번).
+    // 시작 알림에 두리 도구가 하나도 없으면 그 실행은 버리고 잠깐 뒤 한 번 더 띄운다
+    for (let attempt = 0; ; attempt++) {
+      const retry = yield* this.runOnce(path, input, attempt < 2)
+      if (!retry) return
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+    }
+  }
+
+  /** 한 번 실행. 두리 도구 없이 시작했고 다시 해도 되면 아무것도 내보내지 않고 true */
+  private async *runOnce(
+    path: string,
+    input: TurnInput,
+    canRetry: boolean,
+  ): AsyncGenerator<AgentEvent, boolean> {
     const proc = spawnLines(path, buildClaudeArgs(input), {
       cwd: input.cwd,
       stdin: input.text,
@@ -138,10 +154,20 @@ export class ClaudeRuntime implements AgentRuntime {
     let finished = false
     for await (const line of proc.lines) {
       for (const ev of parser.push(line)) {
+        if (
+          ev.type === 'started' &&
+          canRetry &&
+          input.mcpServers.length > 0 &&
+          !ev.tools.some((t) => t.startsWith(DOOL2_TOOL_PREFIX))
+        ) {
+          proc.kill()
+          await proc.exit.catch(() => undefined)
+          return true
+        }
         yield ev
         if (ev.type === 'error' && ev.code === 'tools_unsafe') {
           proc.kill()
-          return
+          return false
         }
         if (ev.type === 'done' || ev.type === 'error') finished = true
       }
@@ -149,7 +175,7 @@ export class ClaudeRuntime implements AgentRuntime {
     const { code, stderrTail } = await proc.exit
     if (input.signal?.aborted) {
       yield { type: 'error', code: 'aborted', message: '멈췄어요' }
-      return
+      return false
     }
     if (!finished) {
       yield {
@@ -158,5 +184,6 @@ export class ClaudeRuntime implements AgentRuntime {
         message: `Claude Code가 중간에 멈췄어요 (종료 코드 ${code})${stderrTail ? `: ${stderrTail.trim().slice(-200)}` : ''}`,
       }
     }
+    return false
   }
 }

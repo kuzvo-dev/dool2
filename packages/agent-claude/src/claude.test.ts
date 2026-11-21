@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AgentEvent } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { buildClaudeArgs, ClaudeStreamParser } from './index.js'
+import { buildClaudeArgs, ClaudeRuntime, ClaudeStreamParser } from './index.js'
 
 const fixture = (name: string) =>
   readFileSync(fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url)), 'utf8')
@@ -175,4 +177,43 @@ describe('모델', () => {
     const b = buildClaudeArgs({ ...base, model: 'opus' })
     expect(b[b.indexOf('--model') + 1]).toBe('opus')
   })
+})
+
+describe('두리 도구가 안 붙은 채 시작하면', () => {
+  it('그 실행은 버리고 한 번 더 띄운다 (이벤트는 두 번째 것만)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dool2-claude-'))
+    const bin = join(dir, 'claude')
+    // 첫 실행: 두리 도구 없이 시작 / 둘째 실행: 두리 도구와 함께 시작해 끝까지
+    writeFileSync(
+      bin,
+      [
+        '#!/bin/sh',
+        `N=$(cat "${dir}/n" 2>/dev/null || echo 0)`,
+        `echo $((N+1)) > "${dir}/n"`,
+        'cat > /dev/null',
+        'if [ "$N" -eq 0 ]; then',
+        `  echo '{"type":"system","subtype":"init","tools":[],"session_id":"s1"}'`,
+        '  sleep 5',
+        'else',
+        `  echo '{"type":"system","subtype":"init","tools":["mcp__dool2__status"],"session_id":"s1"}'`,
+        `  echo '{"type":"result","subtype":"success","result":"됐어요","session_id":"s1"}'`,
+        'fi',
+      ].join('\n'),
+    )
+    chmodSync(bin, 0o755)
+    const rt = new ClaudeRuntime({ binPath: bin })
+    const events: AgentEvent[] = []
+    for await (const ev of rt.runTurn({
+      text: '안녕',
+      cwd: dir,
+      systemPrompt: '두리',
+      mcpServers: [{ name: 'dool2', command: 'node', args: [] }],
+    })) {
+      events.push(ev)
+    }
+    expect(readFileSync(join(dir, 'n'), 'utf8').trim()).toBe('2')
+    const started = events.filter((e) => e.type === 'started')
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({ tools: ['mcp__dool2__status'] })
+  }, 15_000)
 })

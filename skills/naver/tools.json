@@ -4,7 +4,7 @@
     {
       "name": "news",
       "title": "뉴스 찾기",
-      "description": "로그인 없이 된다. 네이버 뉴스에서 검색어로 기사를 찾아 제목·언론사·올린 때·요약 문구·원문 주소·네이버뉴스 주소를 돌려준다. '○○ 뉴스', '요즘 ○○ 소식', '○○ 났대?', 아침 브리핑, 공고·리콜·주가·정책 소식 지켜보기처럼 기사로 확인할 일에 브라우저로 검색 화면을 여는 대신 먼저 쓴다. 답에서 기사 내용을 쓸 때는 줄마다 끝에 출처를 ([언론사](link)) 마크다운 링크로 붙인다. 분야가 여럿이면 분야마다 따로 부른다(예: '반도체', '부동산'). 기본은 관련도순(주요 언론사·많이 다룬 기사 먼저), 지켜보기·속보는 sort=dd(최신순).",
+      "description": "로그인 없이 된다. 네이버 뉴스에서 검색어로 기사를 찾아 제목·언론사·올린 때·요약 문구·원문 주소·네이버뉴스 주소를 돌려준다. '○○ 뉴스', '요즘 ○○ 소식', '○○ 났대?', 아침 브리핑, 공고·리콜·정책 소식 지켜보기처럼 기사로 확인할 일에 브라우저로 검색 화면을 여는 대신 먼저 쓴다. 주가·등락률 숫자는 기사 말고 naver_stock으로 읽는다. 답에서 기사 내용을 쓸 때는 줄마다 끝에 출처를 ([언론사](link)) 마크다운 링크로 붙인다. 분야가 여럿이면 분야마다 따로 부른다(예: '반도체', '부동산'). 기본은 관련도순(주요 언론사·많이 다룬 기사 먼저), 지켜보기·속보는 sort=dd(최신순).",
       "tier": "찾아보기",
       "login": false,
       "status": "검증됨(2026-11-19, 반도체·자동차 리콜 무상수리, 기간 1일·1주·전체, 관련도·최신순, 화면 읽기)",
@@ -350,6 +350,394 @@
       },
       "next": "가격비교 상품(mall_count가 있는 줄)은 offer_malls·offer_prices로 판매처별 최저가를 비교해 말해요. 배송비(shipping)를 더한 값으로 '제일 싼 곳'을 정하고, 단품·부품·중고·병행수입은 따로 짚어요. 더 자세한 판매처 목록은 link를 browser_open으로 열어 봐요.",
       "minIntervalSec": 300
+    },
+    {
+      "name": "stock",
+      "title": "주가 보기",
+      "description": "로그인 없이 된다. 네이버페이 증권에서 종목 이름(또는 6자리 종목 코드)으로 지금 주가를 읽어 이름·코드·시장(코스피·코스닥)·현재가·전일 대비·등락률·전일 종가·시가·고가·저가·거래량·장 상태·시세 시각·링크를 돌려준다. '○○ 주가', '얼마야', '몇 % 올랐어', 'N% 넘게 움직이면 알려 줘'(지켜보기 기준가) 같은 질문에 뉴스(naver_news)로 짐작하지 말고 먼저 쓴다. 코스피·코스닥 같은 지수, 애플·AAPL 같은 해외 주식도 된다. 장이 닫혀 있으면 마지막 종가다. 이름이 비슷한 종목이 여럿이면 이름이 똑같은 것, 없으면 첫 번째를 읽고 나머지는 matches로 돌려준다.",
+      "tier": "찾아보기",
+      "login": false,
+      "status": "검증됨(2026-11-21, 카카오·005930·에코프로비엠·코스피·AAPL·없는 이름, 장마감 종가·전일 종가·시가·고가·저가·거래량)",
+      "input": {
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "종목 이름이나 종목 코드 하나 (예: \"카카오\", \"005930\", \"에코프로비엠\", \"코스피\", \"AAPL\"). '주가' 같은 말은 빼고 이름만"
+          }
+        }
+      },
+      "output": {
+        "name": {
+          "type": "string",
+          "description": "종목 이름"
+        },
+        "code": {
+          "type": "string",
+          "description": "종목 코드 (예: 035720, 해외는 AAPL)"
+        },
+        "market": {
+          "type": "string",
+          "description": "시장 (코스피·코스닥·국내지수·나스닥 증권거래소 등)"
+        },
+        "price": {
+          "type": "string",
+          "description": "현재가 (장이 닫혔으면 마지막 종가, 예: 30,650)"
+        },
+        "change": {
+          "type": "string",
+          "description": "전일 대비 (예: -1,250)"
+        },
+        "change_pct": {
+          "type": "string",
+          "description": "등락률 % (예: -3.92)"
+        },
+        "direction": {
+          "type": "string",
+          "description": "상승 · 하락 · 보합"
+        },
+        "prev_close": {
+          "type": "string",
+          "description": "전일 종가 (지켜보기 기준가로 쓰기 좋다)"
+        },
+        "open": {
+          "type": "string",
+          "description": "시가"
+        },
+        "high": {
+          "type": "string",
+          "description": "고가"
+        },
+        "low": {
+          "type": "string",
+          "description": "저가"
+        },
+        "volume": {
+          "type": "string",
+          "description": "거래량"
+        },
+        "status": {
+          "type": "string",
+          "description": "장 상태: OPEN 장중 · CLOSE 장마감 · PREOPEN 장 시작 전"
+        },
+        "traded_at": {
+          "type": "string",
+          "description": "시세 시각 (그 시장 시간, 예: 2026-11-20T20:20:23+09:00)"
+        },
+        "currency": {
+          "type": "string",
+          "description": "통화 (해외 주식만, 예: USD). 비면 원"
+        },
+        "link": {
+          "type": "string",
+          "description": "네이버페이 증권 종목 화면"
+        },
+        "matches": {
+          "type": "list",
+          "description": "이름으로 찾은 종목 (읽은 종목이 맨 앞이 아닐 수도 있다)",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "market": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "expect": {
+        "rows": 1,
+        "filled": [
+          "name",
+          "code",
+          "price",
+          "change_pct",
+          "prev_close",
+          "link"
+        ]
+      },
+      "examples": [
+        {
+          "query": "카카오"
+        },
+        {
+          "query": "005930"
+        },
+        {
+          "query": "코스피"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://m.stock.naver.com/search"
+        },
+        {
+          "wait": {
+            "text": "종목",
+            "timeoutMs": 12000
+          }
+        },
+        {
+          "type": {
+            "field": "종목",
+            "text": "{{query}}"
+          }
+        },
+        {
+          "sleep": 1500
+        },
+        {
+          "capture": {
+            "url": "stock\\.naver\\.com/ac\\?q=",
+            "pick": "items",
+            "timeoutMs": 10000
+          },
+          "as": "all"
+        },
+        {
+          "map": {
+            "from": "all[category=stock|index]",
+            "limit": 8,
+            "fields": {
+              "name": "name",
+              "code": "code",
+              "market": "typeName",
+              "nation": "nationCode",
+              "category": "category",
+              "reuters": "reutersCode"
+            }
+          },
+          "as": "cands"
+        },
+        {
+          "stop_if": "종목",
+          "say": "'{{query}}'(으)로 찾은 종목이 없어요. 회사 이름을 정확히(예: 삼성전자) 쓰거나 6자리 종목 코드로 다시 찾아요.",
+          "if": "{{^cands.0}}1{{/cands.0}}"
+        },
+        {
+          "filter": {
+            "from": "cands",
+            "where": "name",
+            "op": "eq",
+            "value": "{{query}}"
+          },
+          "as": "exact"
+        },
+        {
+          "map": {
+            "from": "exact",
+            "limit": 1,
+            "fields": {
+              "name": "name",
+              "code": "code",
+              "market": "market",
+              "nation": "nation",
+              "category": "category",
+              "reuters": "reuters"
+            }
+          },
+          "as": "pick",
+          "if": "{{#exact.0}}1{{/exact.0}}"
+        },
+        {
+          "map": {
+            "from": "cands",
+            "limit": 1,
+            "fields": {
+              "name": "name",
+              "code": "code",
+              "market": "market",
+              "nation": "nation",
+              "category": "category",
+              "reuters": "reuters"
+            }
+          },
+          "as": "pick",
+          "if": "{{^exact.0}}1{{/exact.0}}"
+        },
+        {
+          "filter": {
+            "from": "pick",
+            "where": "category",
+            "op": "eq",
+            "value": "index"
+          },
+          "as": "idx"
+        },
+        {
+          "filter": {
+            "from": "pick[category=stock]",
+            "where": "nation",
+            "op": "eq",
+            "value": "KOR"
+          },
+          "as": "kr"
+        },
+        {
+          "filter": {
+            "from": "pick[category=stock]",
+            "where": "nation",
+            "op": "ne",
+            "value": "KOR"
+          },
+          "as": "world"
+        },
+        {
+          "open": "https://m.stock.naver.com/domestic/stock/{{pick.0.code}}/total",
+          "if": "{{#kr.0}}1{{/kr.0}}"
+        },
+        {
+          "open": "https://m.stock.naver.com/domestic/index/{{pick.0.code}}/total",
+          "if": "{{#idx.0}}1{{/idx.0}}"
+        },
+        {
+          "open": "https://m.stock.naver.com/worldstock/stock/{{pick.0.reuters}}/total",
+          "if": "{{#world.0}}1{{/world.0}}"
+        },
+        {
+          "embedded": {
+            "css": "script#__NEXT_DATA__",
+            "pick": "props.pageProps.dehydratedState.queries"
+          },
+          "as": "qs",
+          "if": "{{^world.0}}1{{/world.0}}"
+        },
+        {
+          "filter": {
+            "from": "qs",
+            "where": "queryKey.0.url",
+            "op": "eq",
+            "value": "/stock/domestic/basic"
+          },
+          "as": "kb",
+          "if": "{{^world.0}}1{{/world.0}}"
+        },
+        {
+          "filter": {
+            "from": "qs",
+            "where": "queryKey.0.url",
+            "op": "eq",
+            "value": "/stock/domestic/integration"
+          },
+          "as": "ki",
+          "if": "{{^world.0}}1{{/world.0}}"
+        },
+        {
+          "map": {
+            "from": "ki.0.state.data.result.totalInfos",
+            "fields": {
+              "key": "key",
+              "value": "value"
+            }
+          },
+          "as": "infos",
+          "if": "{{^world.0}}1{{/world.0}}"
+        },
+        {
+          "capture": {
+            "url": "/front-api/stock/foreign/basic\\?code={{pick.0.reuters|url|re}}",
+            "pick": "result",
+            "timeoutMs": 12000
+          },
+          "as": "wb",
+          "if": "{{#world.0}}1{{/world.0}}"
+        },
+        {
+          "map": {
+            "from": "wb.stockItemTotalInfos",
+            "fields": {
+              "key": "key",
+              "value": "value"
+            }
+          },
+          "as": "infos",
+          "if": "{{#world.0}}1{{/world.0}}"
+        },
+        {
+          "filter": {
+            "from": "infos",
+            "where": "key",
+            "op": "eq",
+            "value": "전일"
+          },
+          "as": "prev"
+        },
+        {
+          "filter": {
+            "from": "infos",
+            "where": "key",
+            "op": "eq",
+            "value": "시가"
+          },
+          "as": "open"
+        },
+        {
+          "filter": {
+            "from": "infos",
+            "where": "key",
+            "op": "eq",
+            "value": "고가"
+          },
+          "as": "high"
+        },
+        {
+          "filter": {
+            "from": "infos",
+            "where": "key",
+            "op": "eq",
+            "value": "저가"
+          },
+          "as": "low"
+        },
+        {
+          "filter": {
+            "from": "infos",
+            "where": "key",
+            "op": "eq",
+            "value": "거래량"
+          },
+          "as": "vol"
+        },
+        {
+          "map": {
+            "from": "cands",
+            "fields": {
+              "name": "name",
+              "code": "code",
+              "market": "market"
+            }
+          },
+          "as": "matches"
+        }
+      ],
+      "result": {
+        "name": "{{kb.0.state.data.result.stockName}}{{wb.stockName}}",
+        "code": "{{pick.0.code}}",
+        "market": "{{pick.0.market}}",
+        "price": "{{kb.0.state.data.result.closePrice}}{{wb.closePrice}}",
+        "change": "{{kb.0.state.data.result.compareToPreviousClosePrice}}{{wb.compareToPreviousClosePrice}}",
+        "change_pct": "{{kb.0.state.data.result.fluctuationsRatio}}{{wb.fluctuationsRatio}}",
+        "direction": "{{kb.0.state.data.result.compareToPreviousPrice.text}}{{wb.compareToPreviousPrice.text}}",
+        "prev_close": "{{prev.0.value}}",
+        "open": "{{open.0.value}}",
+        "high": "{{high.0.value}}",
+        "low": "{{low.0.value}}",
+        "volume": "{{vol.0.value}}",
+        "status": "{{kb.0.state.data.result.marketStatus}}{{wb.marketStatus}}",
+        "traded_at": "{{kb.0.state.data.result.localTradedAt}}{{wb.localTradedAt}}",
+        "currency": "{{wb.currencyType.code}}",
+        "link": "{{kb.0.state.data.result.endUrl}}{{wb.endUrl}}",
+        "matches": "{{matches}}"
+      },
+      "next": "현재가·전일 대비·등락률을 시세 시각과 함께 show_result 한 장으로 보여 줘요. 장마감(CLOSE)이면 마지막 종가라고 짚어요. 등락률(change_pct)은 전일 종가(prev_close) 대비예요. 'N% 넘게 움직이면 알려 줘'면 지금 price와 prev_close를 기준가로 적어 두고, 살펴볼 때마다 이 도구로 다시 읽어 견줘요. 다른 종목을 말한 것 같으면 matches에서 골라 code로 다시 불러요.",
+      "minIntervalSec": 60,
+      "cards": false
     },
     {
       "name": "orders",

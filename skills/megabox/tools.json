@@ -335,7 +335,7 @@
       "result": {
         "movies": "{{movies}}"
       },
-      "next": "목록이 비면 그날 시간표가 아직 없거나 극장 화면 날짜(약 2주) 밖이에요. 사용자가 말한 영화·시간대에 맞는 회차를 show_list(pick one)로 붙여요: title은 시각(15:40~18:28), sub는 상영관·남은 좌석, 매진은 state \"매진\"·tone stop. 글로는 추천 회차와 이유만 짧게. 예매하려면 megabox_prepare_booking.",
+      "next": "목록이 비면 그날 시간표가 아직 없거나 극장 화면 날짜(약 2주) 밖이에요. 사용자가 말한 영화·시간대에 맞는 회차를 show_list(pick one)로 붙여요: title은 시각(15:40~18:28), sub는 상영관·남은 좌석, 매진은 state \"매진\"·tone stop. 글로는 추천 회차와 이유만 짧게. 예매하려면 megabox_prepare_booking. 비었으면 같은 날 다른 극장에서 바로 찾아요: 가까운 다른 메가박스 지점, cgv_showtimes, lotte_cinema_showtimes. 같은 극장을 다시 찾거나 \"어느 쪽이 편하세요?\"로 묻고 끝내지 않아요.",
       "minIntervalSec": 300,
       "login": false,
       "cards": false

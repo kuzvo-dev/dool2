@@ -42,6 +42,10 @@ import type { Journal } from './journal.js'
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
 /** 같은 서비스를 잇달아 열 때 사이 간격. 한꺼번에 여러 번 열면 사이트가 막는다 (쿠팡, 2026-11-18) */
 const SITE_GAP_MS = 1500
+/** 표시를 못 찾았을 때 다시 읽는 길이 (보통 읽기는 8천 자) */
+const LONG_READ = 60_000
+/** 막은 화면 글이 이런 말이면 사람이 풀 수 있는 로봇 확인이다 (그냥 접속 차단과 다르다) */
+const HUMAN_CHECK = /보안\s*확인|로봇|캡차|captcha|자동\s*입력|보안\s*문자/i
 
 /** AI에게 내보이는 도구 하나 (MCP 서버가 그대로 등록한다) */
 export interface ServiceToolSpec {
@@ -690,8 +694,9 @@ export class Connectors {
     const capture = tool.steps.some((x) => 'capture' in x)
     const pollMs = this.opts.pollMs ?? 300
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-    const read = async () => {
-      const r = await this.opts.tools.run('read', { tabId: need() })
+    // long: 긴 화면 끝에 붙는 창(매장 재고 창 등)까지 표시를 받으려고 길게 읽기
+    const read = async (long = false) => {
+      const r = await this.opts.tools.run('read', { tabId: need(), ...(long ? { maxChars: LONG_READ } : {}) })
       if (r.isError) throw new StepError(firstText(r))
       return firstText(r)
     }
@@ -710,6 +715,7 @@ export class Connectors {
           sleep,
           read,
           need,
+          captcha: (t) => this.captchaStop(card, tool, t),
           open: async (url) => {
             if (!onSites(url, [site, ...(card.alsoSites ?? [])]))
               throw new StepError(`${site} 밖의 주소는 열지 않아요: ${url}`)
@@ -750,6 +756,11 @@ export class Connectors {
             outcome: 'stopped',
           }
         if (optional && e instanceof StepError) continue
+        // 단계가 깨진 까닭이 로봇 확인이면 사이트가 바뀐 게 아니다: 폰 카드로 풀고 다시 부르게 (고장으로 세지 않는다)
+        if (tabId !== undefined && (await this.captchaOn(tabId))) {
+          this.opts.tools.lastTabId = tabId
+          return { ...this.captchaStop(card, tool, tabId), outcome: 'blocked' }
+        }
         return {
           ...this.broke(card, tool, i, kind, (e as Error).message, tabId),
           outcome: 'broke',
@@ -814,6 +825,56 @@ export class Connectors {
     return done.isError ? done : { ...done, structuredContent: done.structuredContent ?? {} }
   }
 
+  /**
+   * 방금 읽은 화면에서 조건에 맞는 표시를 찾는다. 없으면 한 번 길게 다시 읽어 찾는다:
+   * 긴 화면 맨 끝에 붙는 창(매장별 재고 창 등)은 보통 읽기 길이 밖이라 표시가 안 잡힌다 (ABC마트, 2026-11-21)
+   */
+  private async refOn(
+    tabId: number,
+    read: (long?: boolean) => Promise<string>,
+    ok: (v: { role: string; name: string }) => boolean,
+  ): Promise<string | undefined> {
+    const look = () => [...(this.opts.tools.refsOf(tabId) ?? [])].find(([, v]) => ok(v))?.[0]
+    const ref = look()
+    if (ref) return ref
+    await read(true)
+    return look()
+  }
+
+  /** 탭에 사람이 풀 로봇 확인(캡차·보안 확인)이 떠 있나 (확장이 화면에서 본 것) */
+  private async captchaOn(tabId: number): Promise<boolean> {
+    const s = (await this.opts.browser
+      .call('snapshot', { tabId, maxChars: 2000 }, 10_000)
+      .catch(() => undefined)) as { captcha?: unknown } | undefined
+    return Boolean(s?.captcha)
+  }
+
+  /**
+   * 로봇 확인에 막혔을 때: 막다른 길로 끝내지 않고, 열어 둔 탭에서 폰 카드로 풀게 한 뒤 같은 도구를 다시 부르게 한다.
+   * 어떤 확인인지(글자 입력·그림 누르기·체크 한 번)는 AI가 화면을 보고 고른다
+   */
+  private captchaStop(card: ConnectCard, tool: ConnectorTool, tabId: number): ToolResult {
+    const name = connectorToolName(card.id, tool.name)
+    const say = `${card.name} 화면에 로봇 확인(보안 확인)이 떴어요. 사용자가 폰에서 풀면 이어서 볼 수 있어요.`
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            `${say} [탭 ${tabId}]을 열어 두었어요.`,
+            `1) browser_read(tabId: ${tabId})로 화면을 읽어 어떤 확인인지 봐요.`,
+            '2) 글자·숫자를 넣거나 질문에 답을 적는 확인(보안문자·영수증 질문 등)이면 그 입력칸으로 browser_request_code(kind: "captcha")를 불러요(먼저 pick 없이 부르면 그림 후보가 와요. 답을 네가 읽어 넣지 않아요).',
+            '   그림을 눌러 푸는 확인(칸 고르기·지도 누르기)이면 browser_screenshot으로 본 뒤 browser_request_tap(box: 문제 그림 자리, say: 화면의 문제 글)으로 폰에 그림 카드를 보내요. "로봇이 아닙니다" 체크 한 번이면 직접 눌러요.',
+            '3) 카드를 보냈으면 같은 답 안에서 다른 서비스로 찾을 수 있는 건 먼저 찾아 보여 주고, "폰에서 로봇 확인을 풀어 주시면 이어서 볼게요"처럼 한 문장으로 알린 뒤 답을 끝내요.',
+            `4) 풀었다는 알림이 오면 화면에서 [확인]·[제출]을 눌러 넘긴 뒤 ${name}을 같은 입력으로 다시 불러요.`,
+            '"막혀서 못 봤어요"로 끝내거나 PC에서 직접 하라고 하지 않아요.',
+          ].join('\n'),
+        },
+      ],
+      structuredContent: { stopped: say, blocked: true, captcha: true, tabId },
+    }
+  }
+
   private broke(
     card: ConnectCard,
     tool: ConnectorTool,
@@ -853,8 +914,10 @@ export class Connectors {
       site: string
       pollMs: number
       sleep: (ms: number) => Promise<unknown>
-      read: () => Promise<string>
+      read: (long?: boolean) => Promise<string>
       need: () => number
+      /** 로봇 확인에 막혔을 때 돌려줄 결과 (폰 카드로 풀고 다시 부르기) */
+      captcha: (tabId: number) => ToolResult
       open: (url: string) => Promise<void>
     },
   ): Promise<ToolResult | undefined> {
@@ -923,6 +986,9 @@ export class Connectors {
           `${say} 로그인이 필요한 화면이에요. connect_ask를 부르세요. 연결한 적이 있으면(금고 계정·간편 로그인) 두리 본체가 알아서 다시 로그인하고, 처음이면 연결 카드가 떠요. [탭 ${c.need()}]`,
           true,
         )
+      // 막은 화면이 사람이 풀 수 있는 로봇 확인이면 막다른 길이 아니다: 폰 카드로 풀고 같은 도구를 다시 부른다
+      if (s.blocked && (HUMAN_CHECK.test(r.found.hit) || (await this.captchaOn(c.need()))))
+        return c.captcha(c.need())
       if (s.blocked)
         return {
           content: [
@@ -943,6 +1009,8 @@ export class Connectors {
         }
         if (r.found.hit) return
         if (Date.now() > until) {
+          // 기다린 글 대신 로봇 확인이 떠 있으면 "없어요"가 아니다: 폰 카드로 풀고 다시 부르게
+          if (await this.captchaOn(c.need())) return c.captcha(c.need())
           const say = f(s.say)
           return { content: [{ type: 'text', text: say }], structuredContent: { stopped: say } }
         }
@@ -955,9 +1023,7 @@ export class Connectors {
       const want = f(s.click.text)
       // 화면 읽기에 같은 이름의 버튼·라디오·링크가 있으면 그 표시로 (뒤에 깔린 화면의 같은 글자를 누르지 않게)
       const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
-      const ref = [...(this.opts.tools.refsOf(tabId) ?? [])].find(
-        ([, v]) => v.role !== '글' && norm(v.name) === norm(want),
-      )?.[0]
+      const ref = await this.refOn(tabId, c.read, (v) => v.role !== '글' && norm(v.name) === norm(want))
       const r = await this.opts.tools.run('click', ref ? { tabId, ref } : { tabId, text: want })
       if (r.isError) {
         const msg = firstText(r)
@@ -971,9 +1037,11 @@ export class Connectors {
       await c.read()
       const tabId = c.need()
       const want = new RegExp(f(s.type.field))
-      const ref = [...(this.opts.tools.refsOf(tabId) ?? [])].find(
-        ([, v]) => (v.role === '입력칸' || v.role === '검색칸') && want.test(v.name),
-      )?.[0]
+      const ref = await this.refOn(
+        tabId,
+        c.read,
+        (v) => (v.role === '입력칸' || v.role === '검색칸') && want.test(v.name),
+      )
       if (!ref) throw new StepError(`입력칸(${s.type.field})을 찾지 못했어요`)
       const r = await this.opts.tools.run('type', {
         tabId,
@@ -993,9 +1061,7 @@ export class Connectors {
       await c.read()
       const tabId = c.need()
       const want = new RegExp(f(s.choose.field))
-      const ref = [...(this.opts.tools.refsOf(tabId) ?? [])].find(
-        ([, v]) => v.role === '선택 상자' && want.test(v.name),
-      )?.[0]
+      const ref = await this.refOn(tabId, c.read, (v) => v.role === '선택 상자' && want.test(v.name))
       if (!ref) throw new StepError(`선택 상자(${s.choose.field})를 찾지 못했어요`)
       const r = await this.opts.tools.run('select', { tabId, ref, choose: f(s.choose.option) })
       if (r.isError) throw new StepError(firstText(r))

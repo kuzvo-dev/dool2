@@ -60,7 +60,7 @@
 | `open` | 주소 열기. 그 서비스 `site`의 https 주소만 |
 | `wait` | 글(`text`)·목록(`items`)이 나올 때까지, 또는 글이 사라질 때까지(`gone`) |
 | `require` + `say` | 그 글이 끝내 안 나오면 이유를 말하고 멈춤 ("그 시간은 마감이에요") |
-| `stop_if` + `say` | 그 글이 보이면 멈춤. `login: true`면 연결 안내로. 한 번만 보니, 화면이 넘어가길 기다릴 땐 앞에 `wait`(예: `"로그인|주문 내역"`). 사이트가 이 브라우저를 막은 화면(Access Denied·비정상 접근 차단)이면 `blocked: true` — 점검에서 고장이 아니라 '사이트가 막음'으로 따로 센다 |
+| `stop_if` + `say` | 그 글이 보이면 멈춤. `login: true`면 연결 안내로. 한 번만 보니, 화면이 넘어가길 기다릴 땐 앞에 `wait`(예: `"로그인|주문 내역"`). 사이트가 이 브라우저를 막은 화면(Access Denied·비정상 접근 차단)이면 `blocked: true` — 점검에서 고장이 아니라 '사이트가 막음'으로 따로 센다. 막은 화면이 로봇 확인(보안 확인·캡차)이면 본체가 탭을 열어 두고 AI에게 폰 카드(`browser_request_code` captcha·`browser_request_tap`)로 풀고 같은 도구를 다시 부르라고 알려요(다른 단계에서 로봇 확인이 떠도 같아요) |
 | `find` | 화면 글에서 정규식으로 찾기 |
 | `click` | 화면 글자로 누르기. **두리 승인 게이트를 그대로 거쳐요** (찾아보기 도구는 '구매' 같은 버튼에서 멈춰요) |
 | `type` | 입력칸(이름·안내 글 정규식)에 쓰기 |
@@ -99,7 +99,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 
 ## 상태
 
-서비스 92곳, 도구 326개 중 **실제 사이트에서 확인한 도구 107개**예요. 로그인 없이 되는 찾아보기 도구는 111개이고 그중 101개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
+서비스 93곳, 도구 329개 중 **실제 사이트에서 확인한 도구 110개**예요. 로그인 없이 되는 찾아보기 도구는 114개이고 그중 104개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
 
 | 분류 | 서비스 | 도구 | 검증된 도구 |
 | --- | --- | --- | --- |
@@ -121,6 +121,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 장보기·배달 | [오아시스마켓](oasis-market/tools.json) | 4 | `search` |
 | 장보기·배달 | [컬리](kurly/tools.json) | 3 | `search` |
 | 패션·뷰티 | [29CM](29cm/tools.json) | 4 | `search` |
+| 패션·뷰티 | [ABC마트](abcmart/tools.json) | 2 | `search`, `store_stock` |
 | 패션·뷰티 | [W컨셉](wconcept/tools.json) | 3 | `search` |
 | 패션·뷰티 | [무신사](musinsa/tools.json) | 4 | `search`, `product` |
 | 패션·뷰티 | [에이블리](ably/tools.json) | 4 | `search` |
@@ -180,7 +181,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 통신 | [LG유플러스](lguplus/tools.json) | 5 | `plans` |
 | 통신 | [SKT T월드](skt/tools.json) | 5 | `plans` |
 | 생활 | [CJ대한통운](cj-logistics/tools.json) | 1 | `track` |
-| 생활 | [네이버](naver/tools.json) | 4 | `news`, `shopping`, `orders`, `bookings` |
+| 생활 | [네이버](naver/tools.json) | 5 | `news`, `shopping`, `stock`, `orders`, `bookings` |
 | 생활 | [동행복권](dhlottery/tools.json) | 4 | `results` |
 | 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
 | 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |

@@ -87,3 +87,24 @@ describe('통신사', () => {
     expect(maskValue('carrier', 'SKT')).toBe('SKT')
   })
 })
+
+describe('여권 (ESTA·항공권·해외 숙소)', () => {
+  it('여권 번호·날짜·성별·태어난 도시를 다듬고, AI에게는 가린 값만', () => {
+    expect(normalize('passport_no', 'm 1234 5678')).toBe('M12345678')
+    expect(normalize('passport_no', '12345678')).toBeUndefined()
+    expect(normalize('passport_expiry', '2032.03.15')).toBe('2032-03-15')
+    expect(normalize('sex', 'female')).toBe('여')
+    expect(normalize('birth_city', 'seoul')).toBe('SEOUL')
+    expect(maskValue('passport_no', 'M12345678')).toBe('M********')
+    expect(maskValue('passport_expiry', '2032-03-15')).toBe('2032-**-**')
+  })
+})
+
+describe('차량번호', () => {
+  it('띄어쓰기를 맞추고 그대로 보인다 (조회 칸에 넣어야 해서)', () => {
+    expect(normalize('car_no', '12가3456')).toBe('12가 3456')
+    expect(normalize('car_no', '123 나 4567')).toBe('123나 4567')
+    expect(normalize('car_no', '가1234')).toBeUndefined()
+    expect(maskValue('car_no', '12가 3456')).toBe('12가 3456')
+  })
+})
