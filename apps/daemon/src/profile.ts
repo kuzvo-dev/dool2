@@ -88,6 +88,15 @@ export const PROFILE_FIELDS = {
     patternHint: '2032-03-15처럼 넣어 주세요',
   },
   sex: { label: '성별', type: 'choice', example: '남', options: ['남', '여'] },
+  // 차량번호: 정기검사·리콜·자동차세 연납·보험 견적 조회에 쓴다. 조회 칸에 넣어야 해서 AI도 그대로 본다
+  // (실측 11-21: 검사·연납·리콜·보험 네 부탁이 차량번호를 대화로 따로 물었다)
+  car_no: {
+    label: '차량번호',
+    type: 'text',
+    example: '12가 3456',
+    pattern: '^(\\d{2,3})\\s?[가-힣]\\s?\\d{4}$',
+    patternHint: '12가 3456처럼 넣어 주세요',
+  },
   birth_city: {
     label: '태어난 도시',
     type: 'text',
@@ -170,7 +179,7 @@ export function maskValue(field: ProfileField, v: string): string {
   if (field === 'auth_app' || field === 'carrier') return s
   if (field === 'rrn_back') return '*******'
   if (field === 'passport_no') return `${s.slice(0, 1)}********`
-  if (field === 'sex' || field === 'birth_city') return s
+  if (field === 'sex' || field === 'birth_city' || field === 'car_no') return s
   if (field === 'passport_issued' || field === 'passport_expiry') return `${s.slice(0, 4)}-**-**`
   if (field === 'email') {
     const [user = '', host = ''] = s.split('@')
@@ -201,6 +210,10 @@ export function normalize(field: ProfileField, v: string): string | undefined {
   if (field === 'passport_issued' || field === 'passport_expiry') {
     const d = s.replace(/\D/g, '')
     return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : undefined
+  }
+  if (field === 'car_no') {
+    const m = /^(\d{2,3})\s?([가-힣])\s?(\d{4})$/.exec(s)
+    return m ? `${m[1]}${m[2]} ${m[3]}` : undefined
   }
   if (field === 'sex') return /^(남|m)/i.test(s) ? '남' : /^(여|f|w)/i.test(s) ? '여' : undefined
   if (field === 'phone') {

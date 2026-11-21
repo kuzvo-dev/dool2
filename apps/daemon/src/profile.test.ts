@@ -99,3 +99,12 @@ describe('여권 (ESTA·항공권·해외 숙소)', () => {
     expect(maskValue('passport_expiry', '2032-03-15')).toBe('2032-**-**')
   })
 })
+
+describe('차량번호', () => {
+  it('띄어쓰기를 맞추고 그대로 보인다 (조회 칸에 넣어야 해서)', () => {
+    expect(normalize('car_no', '12가3456')).toBe('12가 3456')
+    expect(normalize('car_no', '123 나 4567')).toBe('123나 4567')
+    expect(normalize('car_no', '가1234')).toBeUndefined()
+    expect(maskValue('car_no', '12가 3456')).toBe('12가 3456')
+  })
+})

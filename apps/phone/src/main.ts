@@ -4729,6 +4729,7 @@ const PROFILE_LABEL: Record<string, string> = {
   passport_expiry: '여권 만료일',
   sex: '성별',
   birth_city: '태어난 도시',
+  car_no: '차량번호',
 }
 
 /** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */

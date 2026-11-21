@@ -118,6 +118,7 @@ const PROFILE_LABELS: Record<string, string> = {
   passport_expiry: '여권 만료일',
   sex: '성별',
   birth_city: '태어난 도시',
+  car_no: '차량번호',
 }
 /** 간편인증 앱 (@dool2/protocol AUTH_APPS와 같게: 화면은 묶지 않아 값을 옆에 둔다) */
 const AUTH_APPS = ['카카오톡', '네이버', '토스', 'PASS', 'KB국민인증서', '신한인증서', '삼성패스', '페이코']
