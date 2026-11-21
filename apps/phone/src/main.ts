@@ -2043,11 +2043,22 @@ function buildShell() {
   const top = h('header', { class: 'app-top' })
   const page = h('main', { class: 'app-page' })
   const chat = h('div', { class: 'chat-list' })
+  // 스크롤하는 동안 위에 떠서 지금 보는 말이 언제인지 알려 주는 날짜 (멈추면 사라진다)
+  const dayPill = h('div', { class: 'day-pill' })
+  dayPill.setAttribute('aria-hidden', 'true')
+  let dayPillTimer: ReturnType<typeof setTimeout> | undefined
   page.addEventListener(
     'scroll',
     () => {
       // 아래 탭은 내려도 숨기지 않는다: 숨으면 다른 탭으로 갈 길이 안 보였다 (사용자 의견)
-      if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+      if (st.tab === 'chat') {
+        stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+        const label = dayAtTop(page, chat)
+        dayPill.textContent = label
+        dayPill.classList.toggle('on', !!label)
+        clearTimeout(dayPillTimer)
+        dayPillTimer = setTimeout(() => dayPill.classList.remove('on'), 1400)
+      }
       // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
       else if (page.scrollHeight - page.scrollTop - page.clientHeight < 600) visiblePager()?.more()
     },
@@ -2103,7 +2114,7 @@ function buildShell() {
   const overlay = h('div', { class: 'app-overlay' })
   const toast = h('div', { class: 'toast float-toast' })
   toast.setAttribute('role', 'status')
-  app.replaceChildren(h('div', { class: 'app-shell' }, top, page, composerBox, tabs, overlay, toast))
+  app.replaceChildren(h('div', { class: 'app-shell' }, top, page, dayPill, composerBox, tabs, overlay, toast))
   shell = { top, page, chat, composerBox, textarea, sendBtn, tabs, overlay, toast }
   ghostEl = ghost
   pullToRefresh(page)
@@ -2626,6 +2637,62 @@ function openOutside(url: string) {
   a.click()
 }
 
+/** 화면 위쪽에 보이는 말의 날짜. 그날의 날짜 줄이 아직 화면에 보이면 겹치지 않게 비운다 */
+function dayAtTop(page: HTMLElement, chat: HTMLElement): string {
+  const top = page.getBoundingClientRect().top + 96
+  let label = ''
+  for (const sep of chat.querySelectorAll<HTMLElement>(':scope > .day-sep')) {
+    const y = sep.getBoundingClientRect().top
+    if (y > top) {
+      // 다음 날짜 줄이 떠 있는 날짜 바로 아래까지 올라왔으면 떠 있는 쪽은 숨긴다
+      if (y < top + 36) return ''
+      break
+    }
+    label = sep.textContent ?? ''
+  }
+  return label
+}
+
+/** 날짜 열쇠 (내 폰 시간대 기준 YYYY-M-D) */
+function dayKey(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
+/** 날짜 줄 글: 오늘 · 어제 · 11월 20일 목요일 (올해가 아니면 연도까지) */
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const key = dayKey(iso)
+  if (key === dayKey(now.toISOString())) return '오늘'
+  if (key === dayKey(new Date(now.getTime() - 86_400_000).toISOString())) return '어제'
+  return d.toLocaleDateString('ko-KR', {
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  })
+}
+
+/** 말풍선 옆 시간 (오후 6:14). 같은 사람이 같은 분에 이어 말했으면 마지막 말풍선에만 */
+function bubbleTime(i: number): string {
+  const m = st.conv[i]
+  if (!m) return ''
+  const minute = (iso: string) => iso.slice(0, 16)
+  const next = st.conv[i + 1]
+  if (
+    next &&
+    next.role === m.role &&
+    minute(next.createdAt) === minute(m.createdAt) &&
+    (m.role !== 'user' || readAppNote(next.text) === undefined)
+  )
+    return ''
+  const d = new Date(m.createdAt)
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+}
+
 /** 대화 목록에 있어야 할 것 (key, 서명, 만들기). 서명이 같으면 그대로 둔다 */
 type Item = { key: string; sig: string; make: () => HTMLElement }
 
@@ -2647,12 +2714,20 @@ function chatItems(): Item[] {
   if (st.convLoaded && !st.conv.length && !st.pending.length)
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
   let lastNote = ''
+  let lastDay = ''
   const superseded = oldConnectCards()
   for (const [i, m] of st.conv.entries()) {
     // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue
     lastNote = noteText ?? ''
+    // 날이 바뀌면 가운데에 날짜 한 줄 (스크롤할 때는 위에 떠 있는 날짜가 따라온다)
+    const day = dayKey(m.createdAt)
+    if (day && day !== lastDay) {
+      lastDay = day
+      const label = dayLabel(m.createdAt)
+      items.push({ key: `day:${day}`, sig: label, make: () => h('p', { class: 'day-sep', text: label }) })
+    }
     if (m.role === 'tool') {
       // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
       const old = superseded.has(m.id)
@@ -2666,25 +2741,33 @@ function chatItems(): Item[] {
     } else if (m.role === 'user') {
       // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
       const note = readAppNote(m.text)
+      const time = note === undefined ? bubbleTime(i) : ''
       items.push({
         key: m.id,
-        sig: '',
-        make: () => (note !== undefined ? h('p', { class: 'msg note' }, note) : meBubble(m.text)),
+        sig: time,
+        make: () => {
+          if (note !== undefined) return h('p', { class: 'msg note' }, note)
+          const b = meBubble(m.text)
+          if (time) b.dataset.time = time
+          return b
+        },
       })
-    } else if (m.role === 'assistant')
+    } else if (m.role === 'assistant') {
+      const time = bubbleTime(i)
       items.push({
         key: m.id,
-        sig: '',
+        sig: time,
         make: () => {
           const b = h('div', { class: 'bubble rich' })
           b.append(rich(m.text))
+          if (time) b.dataset.time = time
           onLongPress(b, () => openOverlay({ kind: 'msg', id: m.id }))
           // 방금 온 답이면 돈·퍼센트가 굴러서 선다 (지난 대화를 불러올 때는 그대로)
           if (Date.now() - Date.parse(m.createdAt) < 60_000) rollNumbers(b)
           return b
         },
       })
-    else {
+    } else {
       const note = readAppNote(m.text)
       items.push({
         key: m.id,
@@ -5667,30 +5750,26 @@ function credSheet(t: CredTarget) {
         ]
       : []),
     ...(t.socialOnly && t.social?.length ? [] : [form]),
+    // 계정 찾기 | 가입하기: 로그인 화면에서 흔히 보는 한 줄 링크로 (크게 두 줄이면 산만했다 — 사용자 의견)
+    ...(t.forgot || t.signup
+      ? [
+          h(
+            'div',
+            { class: 'cred-links' },
+            ...(t.forgot ? [h('button', { class: 'btn-text', text: '계정 찾기', onclick: t.forgot })] : []),
+            ...(t.forgot && t.signup ? [h('span', { class: 'cred-sep' })] : []),
+            ...(t.signup
+              ? [h('button', { class: 'btn-text', text: '처음이면 가입하기', onclick: t.signup })]
+              : []),
+          ),
+        ]
+      : []),
     h(
       'p',
       { class: 'lock-note' },
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
-    ...(t.forgot
-      ? [
-          h('button', {
-            class: 'btn-text cred-signup',
-            text: '계정을 몰라요 · 찾아 주세요',
-            onclick: t.forgot,
-          }),
-        ]
-      : []),
-    ...(t.signup
-      ? [
-          h('button', {
-            class: 'btn-text cred-signup',
-            text: '처음이에요 · 가입해 주세요',
-            onclick: t.signup,
-          }),
-        ]
-      : []),
     ...(t.direct
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
