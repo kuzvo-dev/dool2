@@ -1950,8 +1950,15 @@ export class BrowserTools {
               return { main: (await main()) ?? now, why: '사이트 확인 창이 떴어요' }
             if (now.url !== was.url && (t === tabId || !/about:blank/.test(now.url)))
               return { main: (await main()) ?? now, why: '주소가 바뀌었어요' }
-            if (buttonSet(now.text) !== buttonSet(was.text))
+            if (buttonSet(now.text) !== buttonSet(was.text)) {
+              // 요청을 보낸 직후엔 사이트 버튼이 '재요청'·남은 시간 등으로 곧바로 바뀐다. 사람이 인증 앱에서 승인하기엔
+              // 너무 이르니 기준만 새로 잡고 계속 기다린다 (실측 11-22 삼성화재: 10초 안에 두 번 끝내 폰 카드가 사라졌다)
+              if (Date.now() - started < 20_000) {
+                first.set(t, now)
+                continue
+              }
               return { main: (await main()) ?? now, why: '화면 버튼이 바뀌었어요' }
+            }
           }
           return undefined
         }
