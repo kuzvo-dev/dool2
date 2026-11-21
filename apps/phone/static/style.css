@@ -255,7 +255,8 @@ button {
 /* 스크롤하는 동안 위에 떠 있는 날짜 */
 .day-pill {
   position: absolute;
-  top: calc(70px + env(safe-area-inset-top));
+  /* 가운데 위 두리 얼굴·상태 말풍선 아래로 (겹쳐 보였다 — 사용자 의견) */
+  top: calc(96px + env(safe-area-inset-top));
   left: 50%;
   z-index: 6;
   padding: 3px 12px;

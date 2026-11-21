@@ -2666,7 +2666,7 @@ function openOutside(url: string) {
 
 /** 화면 위쪽에 보이는 말의 날짜. 그날의 날짜 줄이 아직 화면에 보이면 겹치지 않게 비운다 */
 function dayAtTop(page: HTMLElement, chat: HTMLElement): string {
-  const top = page.getBoundingClientRect().top + 96
+  const top = page.getBoundingClientRect().top + 120
   let label = ''
   for (const sep of chat.querySelectorAll<HTMLElement>(':scope > .day-sep')) {
     const y = sep.getBoundingClientRect().top
