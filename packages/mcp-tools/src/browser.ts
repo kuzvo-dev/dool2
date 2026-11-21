@@ -128,8 +128,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'type',
     '입력하기',
-    '표시(ref)한 입력칸에 글자를 넣는다(원래 글자는 바뀐다). submit이 true면 Enter도 누른다. 비밀번호 칸에는 넣을 수 없다.',
-    { tabId, ref, text: z.string().max(2000), submit: z.boolean().optional() },
+    '표시(ref)한 입력칸에 글자를 넣는다(원래 글자는 바뀐다). submit이 true면 Enter도 누른다. 비밀번호 칸에는 넣을 수 없다. ' +
+      '블로그·카페 글쓰기 편집기의 제목·본문 자리([입력칸 "제목"]·[입력칸 "본문을 입력하세요"] 같은 안내 글)도 ref로 주면 두리가 그 자리를 눌러 넣는다(줄바꿈은 새 문단, 긴 본문은 한 번에). ' +
+      '넣을 수 없다며 사용자에게 복사해 붙여 넣게 하지 않는다: 결과가 "화면에 보이지 않아요"면 화면을 보고 다시 한다.',
+    { tabId, ref, text: z.string().max(20000), submit: z.boolean().optional() },
     false,
   )
   tool(
@@ -159,7 +161,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
             ref: ref.optional().describe('click·type·hover: 표시'),
             text: z
               .string()
-              .max(2000)
+              .max(20000)
               .optional()
               .describe('type: 넣을 글 / click: ref가 없을 때 누를 화면 글자'),
             submit: z.boolean().optional().describe('type: 넣고 Enter'),

@@ -47,6 +47,7 @@ import {
   pageSelectChoose,
   pageSelectOptions,
   pageShotRect,
+  pageShowsText,
   pageSnapshot,
   pageTapAt,
   pageUploadChunk,
@@ -1223,6 +1224,42 @@ async function typeKeys(tabId: number, text: string) {
   }
 }
 
+/**
+ * 편집기가 그린 자리(글 칸이 아닌 제목·본문 상자)에 넣기. 이런 편집기(네이버 블로그 SmartEditor ONE 등)는 글을 직접 받지 않고,
+ * 누르면 숨은 칸(액자 속 contenteditable)에 초점을 준 뒤 거기 들어온 글을 옮겨 그린다. 그래서 스크립트 초점이 아니라
+ * 진짜 마우스로 그 자리를 누르고, 초점이 간 곳에 넣는다 (Input.insertText는 초점 있는 액자로 간다).
+ * 줄바꿈은 Enter로 (편집기가 새 문단을 만든다). 넣은 뒤 마지막 줄이 화면 글에 보이는지 확인해 알린다
+ */
+async function typeDrawn(tabId: number, ref: string, at: LocateResult, text: string, submit: boolean) {
+  const fid = frameOf(tabId, ref).frameId
+  await clickAt(tabId, at.x, at.y, '두리가 입력하는 중')
+  await sleep(150)
+  // 글이 있는 자리면 누른 곳(가운데)이 아니라 끝에 이어 쓴다
+  if (at.filled) await pressKey(tabId, 'End')
+  const lines = text.split(/\r?\n/)
+  for (const [i, line] of lines.entries()) {
+    if (i) await pressKey(tabId, 'Enter')
+    if (line) await cdp(tabId, 'Input.insertText', { text: line })
+  }
+  const probe = (lines.filter((l) => l.trim()).at(-1) ?? '').trim().slice(-40)
+  const shows = async () =>
+    (await inFrame(tabId, fid, pageShowsText, probe).catch(() => false)) ||
+    (fid !== 0 && (await inPage(tabId, pageShowsText, probe).catch(() => false)))
+  let seen = await shows()
+  if (!seen) {
+    // 늦게 옮겨 그리는 편집기: 잠깐 뒤 다시 본다
+    await sleep(400)
+    seen = await shows()
+  }
+  if (submit) {
+    const before = (await chrome.tabs.get(tabId)).url
+    await sleep(300)
+    await pressKey(tabId, 'Enter')
+    await settle(tabId, before)
+  }
+  return { ...(await pageState(tabId)), drawn: true, seen }
+}
+
 async function pageState(tabId: number) {
   const t = await chrome.tabs.get(tabId)
   const open = dialogs.get(tabId)
@@ -1585,9 +1622,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'mark-text': {
       // 글자로 누를 곳에 표시를 붙인다 (그 뒤 보통 click으로 누른다)
       const tabId = await ownedTab(a)
-      const r = await inPage(tabId, pageMarkText, String(a.text ?? ''))
-      if (!r.ok) throw new Error(r.error)
-      return r
+      const text = String(a.text ?? '')
+      const r = await inPage(tabId, pageMarkText, text)
+      if (r.ok) return r
+      // 페이지에 없으면 읽어 둔 화면 안 액자에서 찾는다 (네이버 블로그 글쓰기는 편집기 전체가 액자 안이다).
+      // 표시는 그 액자의 대역(e10001…)으로 붙어 누르기가 그 액자로 간다
+      for (const f of frameMaps.get(tabId)?.values() ?? []) {
+        const x = await inFrame(tabId, f.frameId, pageMarkText, text).catch(() => undefined)
+        if (x?.ok) return x
+      }
+      throw new Error(r.error)
     }
     case 'thumb': {
       // 카드 사진: 받아서 긴 쪽 360px JPEG로 줄인다 (폰으로 보내는 크기를 줄이고, 그림 종류를 하나로)
@@ -1969,6 +2013,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const ref = String(a.ref ?? '')
       let at = await locate(tabId, ref, 'type')
       if (at.isPassword) throw new Error('비밀번호 칸에는 두리 금고로만 채워요')
+      if (at.drawn) return typeDrawn(tabId, ref, at, a.text, Boolean(a.submit))
       // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있다: 초점이 안 들어갔으면 칸을 한 번 눌러 진짜 초점을 준 뒤
       // 다시 골라(원래 글 전체 선택) 넣는다. 초점 없이 넣으면 글이 바깥 페이지로 가거나 사라졌다 (fill과 같은 까닭)
       if (at.frame && !at.hidden && !at.focused) {

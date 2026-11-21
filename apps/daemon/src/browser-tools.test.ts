@@ -465,6 +465,22 @@ describe('여러 동작 한 번에', () => {
     expect(text(r)).toContain('4. 버튼 "다음"을(를) 눌렀어요.')
   })
 
+  it('편집기가 그린 자리에 넣으면 눌러 넣었다고, 글이 안 보이면 다시 하라고 알린다 (사람에게 넘기지 않는다)', async () => {
+    let seen = true
+    const b = formBrowser((cmd) =>
+      cmd === 'type' ? { tabId: 3, url: 'https://shop.example/join', drawn: true, seen } : undefined,
+    )
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 })
+    const ok = await tools.run('type', { tabId: 3, ref: 'e1', text: '제주 바다 여행' })
+    expect(text(ok)).toContain('"이름" 자리를 눌러 입력했어요 (넣은 글이 화면에 보여요).')
+    seen = false
+    const miss = await tools.run('type', { tabId: 3, ref: 'e1', text: '제주 바다 여행' })
+    expect(text(miss)).toContain('넣은 글이 화면에 보이지 않아요')
+    expect(text(miss)).toContain('browser_click')
+    expect(text(miss)).not.toMatch(/복사|붙여/)
+  })
+
   it('다른 화면으로 넘어가면 남은 동작은 하지 않는다', async () => {
     const b = formBrowser((cmd, args) =>
       cmd === 'click' && args?.ref === 'e4' ? { tabId: 3, url: 'https://shop.example/join/2' } : undefined,

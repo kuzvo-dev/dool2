@@ -176,6 +176,45 @@ document.getElementById('doc').addEventListener('click', () => {
 <div id="pad">${[1, 2, 3].map((n) => `<button style="width:80px;height:50px" onclick="document.title='누름 ${n}'">${n}</button>`).join('')}</div>
 <div style="position:fixed;left:20px;top:1150px"><button style="width:90px;height:50px" onclick="document.title='고정 9'">9</button></div>
 </body></html>`,
+  // 네이버 블로그 글쓰기(SmartEditor ONE) 흉내: 편집기 전체가 같은 사이트 액자 안이고, 제목·본문은 글 칸이 아니라 그려 둔 상자다.
+  // 누르면(mousedown) 숨은 about:blank 액자 속 contenteditable(입력 버퍼)에 초점을 주고, 거기 들어온 글을 옮겨 그린 뒤 버퍼를 비운다.
+  // 스크립트로 초점만 주거나 버퍼 밖에 넣은 글은 받지 않는다. Enter는 제목이면 본문으로, 본문이면 새 문단으로
+  '/se-write': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>블로그 글쓰기</title></head><body style="margin:0">
+<iframe id="mainFrame" src="/se-form" style="width:1000px;height:700px;border:0"></iframe></body></html>`,
+  '/se-form': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>글쓰기</title>
+<style>body{font:15px sans-serif;margin:30px}.comp{position:relative;min-height:40px;margin:20px 0;cursor:text}
+.se-placeholder{position:absolute;left:0;top:0;color:#999;pointer-events:none}.title p{font-size:30px;margin:0;min-height:40px}
+.body p{margin:0 0 8px;min-height:22px}#buf{position:absolute;left:-9999px;top:0;width:1px;height:1px;border:0;opacity:0}</style></head><body>
+<div class="toolbar"><button>사진 추가</button> <button onclick="document.title='발행됨'">발행</button>
+<span class="find"><span class="placeholder">글감 찾기</span><input aria-label="글감 검색"></span></div>
+<div class="comp title" data-c="title"><div class="se-module"><p class="se-text-paragraph"></p><span class="se-placeholder __se_placeholder se-fs32">제목</span></div></div>
+<div class="comp body" data-c="body"><div class="se-module"><p class="se-text-paragraph"></p><span class="se-placeholder __se_placeholder se-fs15">글감과 함께 나의 일상을 기록해보세요!</span></div></div>
+<iframe id="buf"></iframe>
+<script>
+const buf = document.getElementById('buf')
+const bd = buf.contentDocument
+bd.open(); bd.write('<!doctype html><body contenteditable="true"></body>'); bd.close()
+let active = null
+const paras = (c) => [...c.querySelectorAll('p')]
+const sync = (c) => { c.querySelector('.se-placeholder').style.display = paras(c).some((p) => p.textContent) ? 'none' : '' }
+for (const c of document.querySelectorAll('.comp'))
+  c.addEventListener('mousedown', (e) => { e.preventDefault(); active = c; buf.contentWindow.focus(); bd.body.focus() })
+bd.body.addEventListener('input', () => {
+  const t = bd.body.textContent
+  bd.body.textContent = ''
+  if (!active || !t) return
+  const p = paras(active).at(-1)
+  p.textContent += t
+  sync(active)
+})
+bd.body.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !active) return
+  e.preventDefault()
+  if (active.dataset.c === 'title') { active = document.querySelector('.body'); return }
+  const p = document.createElement('p'); p.className = 'se-text-paragraph'
+  active.querySelector('.se-module').insertBefore(p, active.querySelector('.se-placeholder'))
+})
+</script></body></html>`,
 }
 const site = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x')
@@ -799,6 +838,52 @@ try {
     assert.equal(r.delivered, true, JSON.stringify(r))
     assert.match((await call('snapshot', { tabId })).text, /카드 골랐어요/)
   })
+
+  await step(
+    '블로그 편집기(액자 속 그려 둔 제목·본문, 숨은 입력 액자)에 제목·여러 문단을 넣는다 (실측 11-21 네이버 블로그)',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/se-write` })
+      let page = ''
+      for (let i = 0; i < 10; i++) {
+        page = text(await tools.run('read', { tabId }))
+        if (/입력칸 "제목"/.test(page)) break
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      writeFileSync(join(out, 'e2e-se-editor.txt'), page)
+      // 그려 둔 빈 자리 안내 글이 넣을 곳(입력칸)으로 읽힌다 (예전에는 그냥 글이라 AI가 넣을 곳을 몰랐다)
+      const title = page.match(/\[(e\d+) 입력칸 "제목"\]/)?.[1]
+      const body = page.match(/\[(e\d+) 입력칸 "글감과 함께 나의 일상을 기록해보세요!"\]/)?.[1]
+      assert.ok(title && body, page.slice(-900))
+      // 진짜 칸 곁에 겹쳐 둔 안내 글은 칸을 하나 더 만들지 않는다
+      assert.match(page, /입력칸 "글감 검색"/)
+      assert.doesNotMatch(page, /입력칸 "글감 찾기"/)
+      const form = async () => {
+        const s = await call('snapshot', { tabId })
+        return s.text
+      }
+      // 제목: 자리를 진짜 마우스로 눌러 편집기가 숨은 칸에 초점을 주게 하고 넣는다
+      const t = text(await tools.run('type', { tabId, ref: title, text: '제주 바다 여행' }))
+      assert.match(t, /넣은 글이 화면에 보여요/, t.slice(0, 300))
+      // 본문: 줄바꿈은 새 문단 (Enter), 빈 줄도 그대로
+      const b = text(
+        await tools.run('steps', {
+          tabId,
+          steps: [{ do: 'type', ref: body, text: '첫째 날 바다를 봤어요.\n\n둘째 날은 오름에 올랐어요.' }],
+        }),
+      )
+      assert.match(b, /넣은 글이 화면에 보여요/, b.slice(0, 300))
+      const after = await form()
+      writeFileSync(join(out, 'e2e-se-editor-after.txt'), after)
+      assert.match(after, /제주 바다 여행/)
+      assert.match(after, /첫째 날 바다를 봤어요\.\s*\n\s*둘째 날은 오름에 올랐어요\./, after.slice(-600))
+      assert.doesNotMatch(after, /제주 바다 여행.*첫째 날/, '제목과 본문이 섞였어요')
+      // 이어 쓰기: 글이 든 본문 문단을 화면 글자로 눌러(액자 속도 찾는다) 그 끝에 붙인다
+      const more = text(await tools.run('click', { tabId, text: '둘째 날은 오름에 올랐어요.' }))
+      assert.doesNotMatch(more, /찾지 못했어요/)
+    },
+  )
 
   await step('늦게 뜬 새 창은 탭 목록에 남고, 한 번에 두 창 중 막힌 창을 알린다', async () => {
     const tools = new BrowserTools(daemon.browser)
