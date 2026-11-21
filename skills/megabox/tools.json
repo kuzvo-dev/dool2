@@ -305,6 +305,18 @@
           "optional": true
         },
         {
+          "click": {
+            "text": "{{date|d}} 일 내일"
+          },
+          "optional": true
+        },
+        {
+          "click": {
+            "text": "{{date|d}} 일 오늘"
+          },
+          "optional": true
+        },
+        {
           "wait": {
             "items": "td[play-de='{{date|digits}}']",
             "timeoutMs": 8000
