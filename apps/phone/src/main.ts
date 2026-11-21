@@ -6078,7 +6078,16 @@ function infoSheet(id: string) {
     }
     body.push(pad)
   } else if (q.field === 'otp') {
-    body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
+    // 자릿수: 화면 안내('4자리')나 형식에서 알면 그만큼, 모르면 4~8자리를 받아 [넣기]로
+    const said =
+      `${q.label} ${q.hint ?? ''}`.match(/(\d)\s*자리/)?.[1] ?? q.pattern?.match(/\\d\{(\d)\}/)?.[1]
+    const len = said ? Number(said) : undefined
+    body.push(
+      otpBoxes({
+        ...(len && len >= 4 && len <= 8 ? { length: len } : { flex: true }),
+        onDone: (code) => setTimeout(() => answer(code), 500),
+      }),
+    )
     body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
     queueMicrotask(() => document.getElementById('otp-input')?.focus())
   } else {

@@ -2741,6 +2741,10 @@ textarea.ghosting {
   place-items: center;
   height: 56px;
 }
+.otp-go {
+  width: 100%;
+  margin-top: 14px;
+}
 .otp-row {
   display: flex;
   gap: 8px;
