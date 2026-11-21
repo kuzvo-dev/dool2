@@ -4,5 +4,5 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/main.ts", "src/preload.cts", "src/secrets.ts", "src/power.ts"]
+  "include": ["src/main.ts", "src/preload.cts", "src/secrets.ts", "src/power.ts", "src/render-file.ts"]
 }

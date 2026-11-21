@@ -83,7 +83,7 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
     expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) — /)
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
-    expect(map.length).toBeLessThan(12500) // 서비스가 늘면 조금씩 (11-20 고향사랑e음·정책브리핑)
+    expect(map.length).toBeLessThan(12800) // 서비스가 늘면 조금씩 (11-20 고향사랑e음·정책브리핑, 11-21 비급여 진료비·유실물)
   })
 })
 

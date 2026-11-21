@@ -99,7 +99,7 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 
 ## 상태
 
-서비스 93곳, 도구 329개 중 **실제 사이트에서 확인한 도구 110개**예요. 로그인 없이 되는 찾아보기 도구는 114개이고 그중 104개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
+서비스 95곳, 도구 332개 중 **실제 사이트에서 확인한 도구 113개**예요. 로그인 없이 되는 찾아보기 도구는 117개이고 그중 107개가 검증됐어요(매일 밤 점검 대상). 나머지(로그인·돈 내기·연락하기)는 정확한 화면까지 데려가 AI에게 넘기는 `초안`이에요. 실제 계정으로 돌려 보고 `검증됨`으로 올리는 일이 좋은 기여예요.
 
 | 분류 | 서비스 | 도구 | 검증된 도구 |
 | --- | --- | --- | --- |
@@ -184,8 +184,10 @@ pnpm connector canary [--json 결과.json] [--report 보고서.html] [--issues] 
 | 생활 | [네이버](naver/tools.json) | 5 | `news`, `shopping`, `stock`, `orders`, `bookings` |
 | 생활 | [동행복권](dhlottery/tools.json) | 4 | `results` |
 | 생활 | [레뷰](revu/tools.json) | 4 | `trending` |
+| 생활 | [비급여 진료비(심평원)](hira/tools.json) | 1 | `nonpay` |
 | 생활 | [숨고](soomgo/tools.json) | 4 | `search_pros` |
 | 생활 | [에브리타임](everytime/tools.json) | 4 | — |
+| 생활 | [유실물 찾기(경찰민원24)](lost112/tools.json) | 2 | `search`, `detail` |
 | 생활 | [정부24](gov24/tools.json) | 1 | `resident_record` |
 | 생활 | [키즈노트](kidsnote/tools.json) | 4 | — |
 | 생활 | [패널나우](panelnow/tools.json) | 3 | `surveys` |

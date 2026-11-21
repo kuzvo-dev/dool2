@@ -1,9 +1,9 @@
 // PC 파일 도구 둘째 묶음 (ADR 0024): 옮기기·이름 바꾸기, 사진 형식 바꾸기, 종이로 출력.
-// 볼 수 있는 폴더(바탕화면·문서·다운로드) 안에서만 하고(ADR 0022), 덮어쓰기·지우기는 없다.
+// 볼 수 있는 폴더(바탕화면·문서·다운로드·사진·동영상) 안에서만 하고(ADR 0022), 덮어쓰기·지우기는 없다.
 // - 옮기기: 2개 이상이면 승인 카드(무엇을 어디로 — 목록)를 거치고, 옮긴 기록을 남겨 되돌릴 수 있다
 // - 사진 바꾸기: 원본은 그대로 두고 새 파일을 만든다 (맥 sips, 윈도우 WPF 이미지 부품)
 // - 출력: 종이가 나가는 일이라 늘 승인을 거친다 (맥 lp, 윈도우 파일을 여는 프로그램의 인쇄)
-// - PDF 합치기·나누기(pdf-edit.ts), 휴지통에서 되살리기(trash.ts), 내려받기(download.ts), 화면 잠그기(pc-power.ts)
+// - PDF 합치기·나누기(pdf-edit.ts), HTML을 PDF·PNG로(render.ts), 휴지통에서 되살리기(trash.ts), 내려받기(download.ts), 화면 잠그기(pc-power.ts)
 
 import { execFile } from 'node:child_process'
 import { constants, existsSync, realpathSync } from 'node:fs'
@@ -15,6 +15,7 @@ import { cleanName, freeName } from './file-names.js'
 import { POWER_LABEL, POWER_OFF_TEXT, type PowerAction, powerCheck, powerDo } from './pc-power.js'
 import { pdfText } from './pdf.js'
 import { pdfTool } from './pdf-edit.js'
+import { type HtmlRenderer, type RenderedFile, renderTool } from './render.js'
 import { type TrashItem, trashList, trashRestore } from './trash.js'
 
 export { cleanName, freeName } from './file-names.js'
@@ -71,13 +72,13 @@ export interface FileScope {
   insideNew(p: string): string | undefined
   /** 사용자에게 보여 줄 모양 (~/Downloads/a.pdf) */
   show(p: string): string
-  /** 바탕화면·문서·다운로드 폴더 자체 */
+  /** 바탕화면·문서·다운로드·사진·동영상 폴더 자체 */
   roots(): string[]
   /** 손대지 않는 파일 (숨은 파일·인증서·키·비밀번호) */
   sensitive(p: string): boolean
   /** 홈 폴더 (실제 경로) */
   home: string
-  /** 바탕화면·문서·다운로드 중 하나의 첫 폴더 */
+  /** 바탕화면·문서·다운로드·사진·동영상 중 하나의 첫 폴더 */
   folder(key: 'desktop' | 'documents' | 'downloads'): string | undefined
   /** 파일 읽기 (맥 iCloud에만 있는 파일은 내려받아). 못 읽으면 이유(글) */
   read(p: string): Promise<Buffer | string>
@@ -97,6 +98,10 @@ export interface FileOpsOptions {
   fetch?: typeof fetch
   resolve?: typeof import('node:dns/promises').lookup
   downloadWaitMs?: number
+  /** HTML을 PDF·PNG로 그리는 부품 (PC 앱이 준다). 없으면 file_render가 못 한다고 알린다 */
+  renderFile?: HtmlRenderer
+  /** 그리기 한 번에 기다리는 시간 (시험에서 줄인다) */
+  renderTimeoutMs?: number
 }
 
 interface TrashPlan {
@@ -176,7 +181,7 @@ export class FileOps {
         continue
       }
       if (roots.includes(src)) {
-        skipped.push(`${label}(바탕화면·문서·다운로드 폴더 자체는 옮기지 않아요)`)
+        skipped.push(`${label}(바탕화면·문서·다운로드·사진·동영상 폴더 자체는 옮기지 않아요)`)
         continue
       }
       if (this.scope.sensitive(src)) {
@@ -186,7 +191,7 @@ export class FileOps {
       const folder = typeof m.folder === 'string' && m.folder.trim() ? m.folder.trim() : undefined
       const dir = folder ? this.scope.insideNew(folder) : dirname(src)
       if (!dir) {
-        skipped.push(`${label}(옮길 곳 "${folder}"이 바탕화면·문서·다운로드 밖이에요)`)
+        skipped.push(`${label}(옮길 곳 "${folder}"이 바탕화면·문서·다운로드·사진·동영상 밖이에요)`)
         continue
       }
       if (dir === src || dir.startsWith(src + sep)) {
@@ -404,7 +409,7 @@ export class FileOps {
         ? this.scope.insideNew(args.folder.trim())
         : undefined
     if (typeof args.folder === 'string' && args.folder.trim() && !outDir)
-      return fail('새 파일을 둘 폴더는 바탕화면·문서·다운로드 안이어야 해요.')
+      return fail('새 파일을 둘 폴더는 바탕화면·문서·다운로드·사진·동영상 안이어야 해요.')
     const skipped: string[] = []
     const sources: string[] = []
     const isTarget = (ext: string) => (to === 'jpg' ? /^\.jpe?g$/i.test(ext) : ext.toLowerCase() === '.png')
@@ -567,7 +572,9 @@ export class FileOps {
 
     const p = this.scope.inside(args.path)
     if (!p)
-      return fail('바탕화면·문서·다운로드 안의 파일만 출력할 수 있어요. file_find로 경로를 먼저 찾아 주세요.')
+      return fail(
+        '바탕화면·문서·다운로드·사진·동영상 안의 파일만 출력할 수 있어요. file_find로 경로를 먼저 찾아 주세요.',
+      )
     if (this.scope.sensitive(p)) return fail('인증서·키·비밀번호 같은 민감한 파일은 출력하지 않아요.')
     const s = await stat(p)
     if (s.isDirectory()) return fail('폴더는 출력할 수 없어요. 그 안의 파일을 골라 주세요.')
@@ -698,6 +705,14 @@ export class FileOps {
 
   pdf(args: Record<string, unknown>): Promise<FileToolResult> {
     return pdfTool(this.scope, args)
+  }
+
+  // ── HTML을 PDF·PNG로 (render.ts) ───────────────────
+
+  /** 그려 만든 파일 (보관함에 올린다) */
+  onRendered?: (f: RenderedFile) => void
+  render(args: Record<string, unknown>): Promise<FileToolResult> {
+    return renderTool(this.scope, args, this.opts.renderFile, this.onRendered, this.opts.renderTimeoutMs)
   }
 
   // ── 휴지통에서 찾기·되살리기 ─────────────────────────

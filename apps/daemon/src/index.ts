@@ -87,7 +87,7 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
-import { FileTools, htmlText, type userFolders } from './files.js'
+import { FileTools, htmlText, type UserFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
@@ -96,6 +96,7 @@ import { PhoneLink } from './link.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
+import type { HtmlRenderer } from './render.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
@@ -107,8 +108,10 @@ export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { ConnectorHealth } from './connector-health.js'
 export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
+export { FileTools } from './files.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
+export type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from './render.js'
 export { Skills } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
@@ -129,6 +132,11 @@ const RESET_KEYS = [
 export interface DaemonOptions {
   /** HTML을 그려 JPEG(base64)로 (PC 앱이 준다). 두리가 만든 그림·초대장을 보관함·폰에서 보이게 */
   renderHtml?: (html: string) => Promise<string | undefined>
+  /**
+   * HTML 파일을 PDF(A4, 여러 쪽)·PNG로 그린다 (PC 앱이 보이지 않는 창으로 준다, file_render).
+   * 없으면(앱 없이 본체만) file_render가 못 한다고 알린다
+   */
+  renderFile?: HtmlRenderer
   dataDir?: string
   /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
   journal?: false
@@ -140,7 +148,7 @@ export interface DaemonOptions {
   /** 시험용: 도구 주소(/api/tools) 토큰을 정해 둔다 (없으면 켤 때마다 새로 만든다) */
   toolToken?: string
   /** 시험용: PC 파일 도구가 다룰 폴더 (기본: 사용자의 바탕화면·문서·다운로드) */
-  fileFolders?: ReturnType<typeof userFolders>
+  fileFolders?: UserFolders
   /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
@@ -378,7 +386,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     movesLog: join(paths.dataDir, 'file-moves.json'),
     // 잠자기 전에 두리가 하던 일을 본다 (답하는 대화·서비스 연결). 아래에서 만드는 값이라 부를 때 읽는다
     busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
+    ...(opts.renderFile ? { renderFile: opts.renderFile } : {}),
   })
+  // 웹사이트에 PC 파일 올리기(browser_upload)도 파일 도구와 같은 폴더 울타리 안에서만 (+ 대화로 받은 사진)
+  fileTools.sentPhotos = photoDir
+  browserTools.uploadFiles = (p) => fileTools.uploadable(p)
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
   fileTools.onWritten = (f) => {
     const md = (rows: unknown[][]) =>
@@ -393,8 +405,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const body = f.kind === 'html' ? htmlText(text).slice(0, 1500) : f.rows ? md(f.rows) : text.slice(0, 3800)
     void (async () => {
       // HTML(그림·초대장)은 PC 앱이 그려 찍은 사진을 함께 둔다: 폰은 HTML을 그리지 못한다
+      // HTML을 PNG로 그린 파일은 그릴 때 만든 미리보기를 쓴다
       const shot =
-        f.kind === 'html' && opts.renderHtml ? await opts.renderHtml(text).catch(() => undefined) : undefined
+        f.image ??
+        (f.kind === 'html' && opts.renderHtml
+          ? await opts.renderHtml(text).catch(() => undefined)
+          : undefined)
       life.save({
         kind: 'file',
         title: f.name,

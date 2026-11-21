@@ -8,12 +8,12 @@
 //  npx @puppeteer/browsers install chrome@stable)
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BrowserTools, memorySecrets, startDaemon, Vault } from '@dool2/daemon'
+import { BrowserTools, FileTools, memorySecrets, startDaemon, Vault } from '@dool2/daemon'
 
 const chromeBin = process.env.DOOL2_TEST_CHROME
 if (!chromeBin) {
@@ -129,6 +129,27 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 document.getElementById('jsmenu').addEventListener('mouseenter', () => { document.getElementById('jssub').hidden = false })
 document.getElementById('buy').addEventListener('click', () => { document.title = '움직임 ' + moves })</script>
 </body></html>`,
+  // PC 파일 올리기: 숨은 파일 칸을 여는 버튼, 보이는 파일 칸, 누를 때 칸을 만드는 버튼(문서에 붙이지 않는 칸)
+  '/upload': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>블로그 글쓰기</title></head><body>
+<h1>블로그 글쓰기</h1><p>사진과 서류를 올려 주세요.</p>
+<div class="toolbar"><input type="file" id="pic" accept="image/*" multiple style="display:none">
+<button id="add" onclick="document.getElementById('pic').click()">사진 추가</button></div>
+<p><label>영수증 <input type="file" id="rcpt" accept=".pdf,image/*"></label></p>
+<div><button id="doc">서류 첨부</button></div>
+<script>
+const read = async (fs) => (await Promise.all([...fs].map(async (f) => f.name + ':' + f.size + ':' + (await f.text()) + ':' + f.type))).join(',')
+const pic = document.getElementById('pic')
+let ev = []
+pic.addEventListener('input', () => ev.push('input'))
+pic.addEventListener('change', async () => { ev.push('change'); document.title = '사진 ' + (await read(pic.files)) + ' ' + ev.join('+'); ev = [] })
+const rcpt = document.getElementById('rcpt')
+rcpt.addEventListener('change', async () => { document.title = '영수증 ' + (await read(rcpt.files)) })
+document.getElementById('doc').addEventListener('click', () => {
+  const i = document.createElement('input'); i.type = 'file'
+  i.onchange = async () => { document.title = '서류 ' + (await read(i.files)) }
+  i.click()
+})
+</script></body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
   // 빈 주소 액자(결제 회사가 about:blank 액자를 만들어 스크립트로 채운다)와 srcdoc 액자
@@ -268,7 +289,10 @@ const chrome = spawn(
 )
 
 // 한 단계가 실패해도 나머지 단계는 이어서 돌려 전체 결과를 본다 (앞 단계가 꼭 필요한 단계만 멈춘다)
+// DOOL2_E2E_ONLY="올리기" 처럼 주면 이름에 그 말이 든 단계(와 꼭 필요한 단계)만 돈다
+const only = process.env.DOOL2_E2E_ONLY
 const step = async (name, fn, { must = false } = {}) => {
+  if (only && !must && !name.includes(only)) return undefined
   const t = Date.now()
   try {
     const r = await fn()
@@ -858,6 +882,94 @@ try {
     assert.ok(r.scroll && r.scroll.after > r.scroll.before, JSON.stringify(r.scroll))
     assert.equal(r.scroll.atEnd, false)
   })
+
+  await step(
+    'PC 파일 올리기: 숨은 칸을 여는 버튼·보이는 파일 칸·누를 때 만드는 칸(고르기 창 가로채기)·조각으로 넣기',
+    async () => {
+      const up = join(tmp, 'up')
+      for (const d of ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies'])
+        mkdirSync(join(up, d), { recursive: true })
+      const jpg = join(up, 'Pictures', '제주 바다.jpg')
+      const pdf = join(up, 'Documents', '진단서.pdf')
+      writeFileSync(jpg, 'JPG바다')
+      writeFileSync(pdf, 'PDF서류')
+      await call('navigate', { tabId, url: `${base}/upload` })
+      const s = await call('snapshot', { tabId })
+      const r = (re) => {
+        const m = s.text.match(re)
+        assert.ok(m, `${re} 가 없어요:\n${s.text}`)
+        return m[1]
+      }
+      const add = r(/\[(e\d+) 버튼 "사진 추가"\]/)
+      const rcpt = r(/\[(e\d+) 입력칸 "영수증" 파일 칸\]/)
+      const doc = r(/\[(e\d+) 버튼 "서류 첨부"\]/)
+      const title = async () => (await call('tabs', { tabId })).tabs?.find((t) => t.tabId === tabId)?.title
+      const waitTitle = async (re) => {
+        for (let i = 0; i < 30; i++) {
+          const t = await title()
+          if (re.test(t ?? '')) return t
+          await new Promise((res) => setTimeout(res, 100))
+        }
+        return title()
+      }
+      // ① 경로를 그대로 (확장에 파일 접근이 꺼져 있으면 Chrome이 막고 조각으로 받겠다고 한다)
+      const a = await call('upload', { tabId, ref: add, paths: [jpg] })
+      console.log(
+        `  사진 추가: ${JSON.stringify({ how: a.how, found: a.found, needBytes: a.needBytes, why: a.why })}`,
+      )
+      const send = async (res, path, name, type) => {
+        if (!res.needBytes) return res
+        await call('upload', { tabId, token: res.token, part: readFileSync(path).toString('base64') })
+        return call('upload', {
+          tabId,
+          token: res.token,
+          finish: [{ name, type, lastModified: 0, parts: 1 }],
+        })
+      }
+      const a2 = await send(a, jpg, '제주 바다.jpg', 'image/jpeg')
+      assert.deepEqual(a2.names, ['제주 바다.jpg'])
+      assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다:image\/jpeg input\+change$/)
+      // ③ 조각으로 받아 페이지 안에서 (보이는 파일 칸)
+      const b = await call('upload', { tabId, ref: rcpt, paths: [pdf], viaPage: true })
+      assert.equal(b.needBytes, true)
+      assert.equal(b.found, 'self')
+      const b2 = await send(b, pdf, '진단서.pdf', 'application/pdf')
+      assert.equal(b2.how, 'page')
+      assert.match(await waitTitle(/^영수증 /), /^영수증 진단서\.pdf:\d+:PDF서류:application\/pdf$/)
+      // ② 누를 때 칸을 만드는 버튼: 고르기 창을 가로채 넣는다 (PC에 창이 뜨지 않는다), 조각으로도
+      const c = await call('upload', { tabId, ref: doc, paths: [pdf] })
+      assert.equal(c.found, 'chooser')
+      await send(c, pdf, '진단서.pdf', 'application/pdf')
+      assert.match(await waitTitle(/^서류 /), /^서류 진단서\.pdf:\d+:PDF서류/)
+      const c2 = await call('upload', { tabId, ref: doc, paths: [jpg], viaPage: true })
+      assert.equal(c2.found, 'chooser')
+      assert.equal(c2.needBytes, true)
+      await send(c2, jpg, '제주 바다.jpg', 'image/jpeg')
+      assert.match(await waitTitle(/^서류 제주/), /^서류 제주 바다\.jpg:\d+:JPG바다:image\/jpeg$/)
+      // 본체 도구: 승인 카드 → 승인하면 두리가 넣는다
+      const files = new FileTools(
+        Object.fromEntries(
+          ['desktop', 'documents', 'downloads', 'pictures', 'movies'].map((k, i) => [
+            k,
+            [join(up, ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies'][i])],
+          ]),
+        ),
+        up,
+      )
+      const tools = new BrowserTools(daemon.browser)
+      tools.uploadFiles = (p) => files.uploadable(p)
+      await call('navigate', { tabId, url: `${base}/upload` })
+      await tools.run('read', { tabId })
+      const asked = await tools.run('upload', { tabId, ref: add, paths: ['~/Pictures/제주 바다.jpg'] })
+      assert.match(asked.content[0].text, /승인을 요청했어요/)
+      const [rec] = tools.approvals.list()
+      assert.equal(rec.kind, 'contact')
+      const done = await tools.approve(rec.id)
+      console.log(`  승인 뒤: ${done.message}`)
+      assert.equal(done.ok, true)
+      assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다/)
+    },
+  )
 
   await step('탭 닫기', async () => {
     await call('close', { tabId })
