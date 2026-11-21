@@ -909,6 +909,8 @@ export class BrowserTools {
   ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
+  /** 금고 값으로 로그인 칸을 채웠다 (연결 카드 없이 일하다 로그인한 것도 연결로 남기게) */
+  onVaultLogin?: (tabId: number, url: string) => void
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
   /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
@@ -1182,6 +1184,7 @@ export class BrowserTools {
           keypad = await this.keypadType(tabId, String(a.passwordRef), entry.password)
         await this.vault?.markUsed(entry.id)
         this.loginTries.set(tabId, { origin, entryId: entry.id })
+        this.onVaultLogin?.(tabId, page.url)
         return this.read(
           tabId,
           undefined,
