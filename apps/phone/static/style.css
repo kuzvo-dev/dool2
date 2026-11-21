@@ -2796,6 +2796,19 @@ textarea.ghosting {
   background: var(--approve);
   color: transparent;
 }
+/* 쓰지 않는 칸은 숨긴다 (.otp-bx의 display가 hidden 속성을 이겨 빈 칸이 남았다) */
+.otp-bx[hidden] {
+  display: none;
+}
+/* 다 넣으면 칸 대신 초록 한 줄 '넣었어요' (칸을 이어 붙이던 모양이 자릿수마다 어긋났다 — 실측 11-22) */
+.otp.ok .otp-row {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.otp.ok .otp-ok {
+  border-radius: 14px;
+  background: var(--approve);
+}
 .otp-ok {
   position: absolute;
   inset: 0;
