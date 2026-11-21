@@ -2096,6 +2096,15 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           () => -1,
         )) as number
       }
+      // 비밀번호인데 한 번에 넣은 글이 잘리거나 빠졌으면(보안 입력 칸: 키 입력만 받는 곳) 다시 골라 키를 하나씩 한 번 더
+      // (실측 11-21 신한카드 가입: 만든 비밀번호가 '글자가 빠짐'으로 계속 거절됐다). 값은 키 이벤트로만 가고 어디에도 남지 않는다
+      if (a.password && a.value && length >= 0 && length !== a.value.length) {
+        await locate(tabId, a.ref, 'type')
+        await typeKeys(tabId, a.value)
+        length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), false).catch(
+          () => -1,
+        )) as number
+      }
       await inFrame(tabId, frameId, pageMarkFilled, String(a.ref))
       return { tabId, filled: true, ...(length >= 0 ? { length } : {}) }
     }

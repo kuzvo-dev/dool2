@@ -910,7 +910,15 @@ export class BrowserTools {
    * 가입·비번 변경 전에 사용자에게 묻는다. 'ok' = 이미 그렇게 부탁했다(대화), 'asked' = 폰에 고르기 카드를 띄웠다.
    * 고르면 본체가 그 대화로 이어서 하라고 알린다
    */
-  askSignup?: (site: string, key: string, purpose: 'signup' | 'reset') => 'ok' | 'asked' | undefined
+  askSignup?: (
+    site: string,
+    key: string,
+    purpose: 'signup' | 'reset',
+    /** 두리가 만든 비밀번호를 그 칸이 받지 않았다: 사용자에게 직접 정해 달라고 꼭 묻는다 */
+    needOwn?: boolean,
+  ) => 'ok' | 'asked' | undefined
+  /** 만든 비밀번호를 받지 않은 사이트 (다음엔 폰에서 직접 정하게) */
+  private pwNeedOwn = new Set<string>()
   /**
    * 웹사이트에 올릴 PC 파일 확인 (browser_upload). 파일 도구와 같은 울타리(바탕화면·문서·다운로드·사진·동영상,
    * 숨은 폴더·인증서·키 제외)를 본체가 넣어 준다. 없으면 올리기를 하지 않는다
@@ -1398,7 +1406,7 @@ export class BrowserTools {
         if (!this.signupAllowed(key)) {
           // 카드에는 서비스 이름으로 (커넥터가 있으면 "알라딘", 없으면 주소)
           const name = (await this.siteConnector?.(page.url).catch(() => undefined))?.name ?? key
-          const said = this.askSignup?.(name, key, purpose)
+          const said = this.askSignup?.(name, key, purpose, this.pwNeedOwn.has(key))
           if (said === 'ok') this.allowSignup(key)
           else if (said === 'asked')
             return {
@@ -1446,6 +1454,8 @@ export class BrowserTools {
         // 칸이 만든 비밀번호를 그대로 받지 않으면 사람에게 넘기지 않고 폰에서 다시 묻는다 (사용자가 규칙에 맞게 직접 정할 수 있다)
         const askAgain = (why: string) => {
           this.disallowSignup(key)
+          // 다시 부르면 같은 걸 또 넣지 않고 폰에서 직접 정하게 한다 (예전엔 '가입해 줘'를 허락으로 보고 같은 실패를 되풀이)
+          this.pwNeedOwn.add(key)
           return new Error(
             `${why} 화면의 비밀번호 규칙(자릿수·허용 문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 불러요. 다시 부르면 폰에 물어 사용자가 규칙에 맞는 비밀번호를 정할 수 있어요.`,
           )
@@ -1466,6 +1476,7 @@ export class BrowserTools {
         }
         // 금고에는 아직 넣지 않는다: 가입이 끝난 걸 화면에서 보면 넣는다 (실패·"이미 가입" 때 틀린 값이 남지 않게)
         this.ownPw.delete(key)
+        this.pwNeedOwn.delete(key)
         this.pendingPw = this.pendingPw.filter((p) => p.key !== key)
         this.pendingPw.push({ key, origin, username, password: pw, purpose, at: Date.now() })
         return this.read(

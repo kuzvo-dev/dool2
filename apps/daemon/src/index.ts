@@ -1591,7 +1591,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   infoRequests.onDone = (id) => void link.broadcast({ kind: 'info-done', id })
   // 가입·비번 변경 전 묻기: 사용자가 대화에서 그렇게 부탁했으면 그대로, 아니면 폰에 고르기 카드를 띄운다.
   // 지침만으로는 AI가 묻지 않고 가입할 수 있어서, 새 비밀번호를 만들기 전에 본체가 확인한다
-  browserTools.askSignup = (site, key, purpose) => {
+  browserTools.askSignup = (site, key, purpose, needOwn) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
     const lastAsk = threadId
       ? (store
@@ -1599,11 +1599,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           .filter((m) => m.role === 'user')
           .at(-1)?.text ?? '')
       : ''
-    if (askedForAccount(lastAsk, purpose)) return 'ok'
+    if (!needOwn && askedForAccount(lastAsk, purpose)) return 'ok'
     // 비밀번호는 두리가 만들지, 사용자가 정할지 고른다 (사용자가 모르게 바뀌어 당황했다, 11-20)
     const OWN = '비밀번호는 제가 정할게요'
-    const options =
-      purpose === 'reset'
+    // 두리가 만든 비밀번호를 그 사이트 칸이 받지 않았으면 직접 정하는 것부터
+    const options = needOwn
+      ? [OWN, '그만둘게요']
+      : purpose === 'reset'
         ? ['두리가 만들어 주세요', OWN, '그만둘게요']
         : ['가입해 주세요', OWN, '이미 계정 있어요']
     const answer = infoRequests.ask(
@@ -1611,12 +1613,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         site,
         host: key,
         field: 'choice',
-        label:
-          purpose === 'reset'
+        label: needOwn
+          ? `${site} 비밀번호는 직접 정해 주세요`
+          : purpose === 'reset'
             ? `${site} 비밀번호를 새로 바꿀까요?`
             : `${josa(site, '은/는')} 어떻게 로그인할까요?`,
-        hint:
-          purpose === 'reset'
+        hint: needOwn
+          ? '두리가 만든 비밀번호를 이 사이트 칸이 받지 않았어요(보안 입력 칸). 규칙에 맞게 한 번만 정해 주시면 두리가 넣고 금고에 저장해요.'
+          : purpose === 'reset'
             ? '비밀번호 찾기로 새 비밀번호를 정해 금고에 넣어요. 두리가 만들면 강한 비밀번호를 만들고, 직접 정하면 폰에서 한 번 넣어 주세요. 예전 비밀번호는 더 못 써요.'
             : '처음이면 두리가 가입해 드려요(아이디는 내 정보 이메일). 비밀번호는 두리가 만들거나 직접 정할 수 있어요. 이미 계정이 있으면 로그인 카드를 띄울게요.',
         options,
