@@ -6,6 +6,7 @@ import { basename, dirname, extname } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import { freeName } from './file-names.js'
 import type { FileScope, FileToolResult } from './file-ops.js'
+import { ensureLocal } from './files.js'
 
 export type RenderTarget = 'pdf' | 'png'
 
@@ -90,6 +91,9 @@ export async function renderTool(
   const s = await stat(p)
   if (s.isDirectory()) return fail(`${basename(p)}: 폴더 말고 파일을 주세요.`)
   if (s.size > MAX_SOURCE) return fail(`${basename(p)}: 20MB보다 큰 HTML은 그리지 않아요.`)
+  // iCloud Drive가 클라우드에만 둔 파일은 먼저 내려받는다 (그대로 열면 빈 화면·실패)
+  const away = await ensureLocal(p)
+  if (away) return fail(away)
   if (!renderer) return fail(NO_RENDERER)
 
   const width =

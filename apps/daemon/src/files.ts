@@ -6,7 +6,7 @@
 
 import { execFile } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
@@ -197,6 +197,8 @@ export class FileTools {
       const s = await stat(p).catch(() => undefined)
       if (!s?.isFile()) return { error: `${basename(p)}: 파일이 아니에요(폴더는 올릴 수 없어요).` }
       if (s.size > UPLOAD_MAX_BYTES) return { error: `${basename(p)}: 4GB보다 큰 파일은 올리지 않아요.` }
+      const away = await ensureLocal(p)
+      if (away) return { error: away }
       if (!files.some((f) => f.path === p))
         files.push({ path: p, name: basename(p), size: s.size, mtime: s.mtimeMs, show: this.show(p) })
     }
@@ -614,6 +616,38 @@ export async function readLocal(p: string, wait = 30_000): Promise<Buffer | stri
     } catch {}
   }
   return 'iCloud Drive에만 있고 이 Mac에 내려받아지지 않은 파일이라 열지 못했어요. Finder에서 파일을 한 번 열거나 "지금 다운로드"를 누른 뒤 다시 부탁해 달라고 사용자에게 알려 주세요.'
+}
+
+/**
+ * 내용을 다 읽지 않고 이 Mac에 내려받아져 있게만 한다 (큰 영상도 올리기·그리기 전에). 첫 바이트를 읽어 보고,
+ * iCloud에만 있으면(EDEADLK) brctl로 내려받고 기다린다. 됐으면 undefined, 못 했으면 사용자에게 전할 이유
+ * (실측 11-21: '문서'의 보고서 html이 클라우드에만 있어 PDF 만들기가 실패해 두리가 이름을 바꿔 가며 우회했다)
+ */
+export async function ensureLocal(p: string, wait = 60_000): Promise<string | undefined> {
+  const peek = async () => {
+    const fh = await open(p, 'r')
+    try {
+      await fh.read(Buffer.alloc(1), 0, 1, 0)
+    } finally {
+      await fh.close()
+    }
+  }
+  try {
+    await peek()
+    return undefined
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException
+    if (process.platform !== 'darwin' || !(err.errno === -11 || err.code === 'EDEADLK')) return undefined
+  }
+  await new Promise<void>((res) => execFile('brctl', ['download', p], { timeout: 10_000 }, () => res()))
+  for (const end = Date.now() + wait; Date.now() < end; ) {
+    await new Promise((r) => setTimeout(r, 500))
+    try {
+      await peek()
+      return undefined
+    } catch {}
+  }
+  return `${basename(p)}: iCloud Drive에만 있고 이 Mac에 아직 내려받아지지 않았어요. 조금 뒤 다시 해 볼게요.`
 }
 
 /** 스캔 PDF 안의 사진(JPEG, DCTDecode) */
