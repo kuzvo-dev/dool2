@@ -60,7 +60,15 @@ export class FileTools {
   /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
   readonly ops: FileOps
   /** 새 파일을 만들었을 때 (보관함에 올린다) */
-  onWritten?: (f: { name: string; kind: string; path: string; text?: string; rows?: unknown[][] }) => void
+  onWritten?: (f: {
+    name: string
+    kind: string
+    path: string
+    text?: string
+    rows?: unknown[][]
+    /** 미리보기 그림 (JPEG base64, HTML을 PNG로 그린 것) */
+    image?: string
+  }) => void
   constructor(folders?: ReturnType<typeof userFolders>, home = homedir(), opts: FileOpsOptions = {}) {
     // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
     const real = (p: string) => {
@@ -90,6 +98,8 @@ export class FileTools {
       },
       opts,
     )
+    // HTML을 PDF·PNG로 그린 파일도 새로 만든 파일이라 보관함에 올린다
+    this.ops.onRendered = (f) => this.onWritten?.(f)
   }
 
   private roots() {
@@ -157,6 +167,7 @@ export class FileTools {
       if (tool === 'file_convert') return await this.ops.convert(args)
       if (tool === 'file_print') return await this.ops.print(args)
       if (tool === 'file_pdf') return await this.ops.pdf(args)
+      if (tool === 'file_render') return await this.ops.render(args)
       if (tool === 'file_trash') return await this.ops.trash(args)
       if (tool === 'file_download') return await this.ops.download(args)
       if (tool === 'pc_screen') return await this.ops.power(args)

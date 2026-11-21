@@ -3,7 +3,7 @@
 // - 옮기기: 2개 이상이면 승인 카드(무엇을 어디로 — 목록)를 거치고, 옮긴 기록을 남겨 되돌릴 수 있다
 // - 사진 바꾸기: 원본은 그대로 두고 새 파일을 만든다 (맥 sips, 윈도우 WPF 이미지 부품)
 // - 출력: 종이가 나가는 일이라 늘 승인을 거친다 (맥 lp, 윈도우 파일을 여는 프로그램의 인쇄)
-// - PDF 합치기·나누기(pdf-edit.ts), 휴지통에서 되살리기(trash.ts), 내려받기(download.ts), 화면 잠그기(pc-power.ts)
+// - PDF 합치기·나누기(pdf-edit.ts), HTML을 PDF·PNG로(render.ts), 휴지통에서 되살리기(trash.ts), 내려받기(download.ts), 화면 잠그기(pc-power.ts)
 
 import { execFile } from 'node:child_process'
 import { constants, existsSync, realpathSync } from 'node:fs'
@@ -15,6 +15,7 @@ import { cleanName, freeName } from './file-names.js'
 import { POWER_LABEL, POWER_OFF_TEXT, type PowerAction, powerCheck, powerDo } from './pc-power.js'
 import { pdfText } from './pdf.js'
 import { pdfTool } from './pdf-edit.js'
+import { type HtmlRenderer, type RenderedFile, renderTool } from './render.js'
 import { type TrashItem, trashList, trashRestore } from './trash.js'
 
 export { cleanName, freeName } from './file-names.js'
@@ -97,6 +98,10 @@ export interface FileOpsOptions {
   fetch?: typeof fetch
   resolve?: typeof import('node:dns/promises').lookup
   downloadWaitMs?: number
+  /** HTML을 PDF·PNG로 그리는 부품 (PC 앱이 준다). 없으면 file_render가 못 한다고 알린다 */
+  renderFile?: HtmlRenderer
+  /** 그리기 한 번에 기다리는 시간 (시험에서 줄인다) */
+  renderTimeoutMs?: number
 }
 
 interface TrashPlan {
@@ -698,6 +703,14 @@ export class FileOps {
 
   pdf(args: Record<string, unknown>): Promise<FileToolResult> {
     return pdfTool(this.scope, args)
+  }
+
+  // ── HTML을 PDF·PNG로 (render.ts) ───────────────────
+
+  /** 그려 만든 파일 (보관함에 올린다) */
+  onRendered?: (f: RenderedFile) => void
+  render(args: Record<string, unknown>): Promise<FileToolResult> {
+    return renderTool(this.scope, args, this.opts.renderFile, this.onRendered, this.opts.renderTimeoutMs)
   }
 
   // ── 휴지통에서 찾기·되살리기 ─────────────────────────

@@ -1,5 +1,5 @@
 // PC 파일 도구 (ADR 0022·0024): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기,
-// 옮기기·이름 바꾸기(여러 개는 승인, 되돌리기 있음), 사진 형식 바꾸기, 출력(승인), PDF 합치기·나누기,
+// 옮기기·이름 바꾸기(여러 개는 승인, 되돌리기 있음), 사진 형식 바꾸기, 출력(승인), PDF 합치기·나누기, HTML을 PDF·PNG로,
 // 휴지통에서 되살리기(여러 개는 승인), 내려받기(실행 파일은 승인), 화면 잠그기·잠자기(승인). 실제 일은 두리 본체가 한다.
 // 지우기·덮어쓰기·휴지통 비우기·PC 끄기는 없다
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -60,7 +60,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'PC에 새 파일 만들기',
       description:
-        '사용자 PC에 새 파일을 만든다. 기본은 두리 폴더(문서/두리)이고 보관함의 사진·파일에도 올라가 폰에서도 보인다. 사용자가 바탕화면·다운로드를 말할 때만 folder를 준다. 그림·포스터·초대장처럼 볼 것은 html(SVG 포함)로 만든다. 정리한 글은 md·txt·html, 표는 xlsx(엑셀) 또는 csv로 rows에 줄마다 칸 배열을 준다. ' +
+        '사용자 PC에 새 파일을 만든다. 기본은 두리 폴더(문서/두리)이고 보관함의 사진·파일에도 올라가 폰에서도 보인다. 사용자가 바탕화면·다운로드를 말할 때만 folder를 준다. 그림·포스터·초대장처럼 볼 것은 html(SVG 포함)로 만든다. PDF·PNG·이미지 파일을 원하면 html을 만든 뒤 file_render로 바꾼다(못 만든다고 하지 않는다). 정리한 글은 md·txt·html, 표는 xlsx(엑셀) 또는 csv로 rows에 줄마다 칸 배열을 준다. ' +
         '같은 이름이 있으면 "이름 (2)"로 만들고 덮어쓰지 않는다. 만든 뒤 경로를 사용자에게 알려 준다. 사용자가 원하지 않은 파일은 만들지 않는다.',
       inputSchema: {
         name: z.string().max(80).describe('파일 이름 (확장자 없이, 예: "11월 정산")'),
@@ -151,7 +151,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       title: '종이로 출력',
       description:
         '사용자 PC에 연결된 프린터로 파일을 출력한다. "학습지 출력해 줘", "계약서 두 부 뽑아 줘"일 때 file_find로 파일을 찾고 부른다. ' +
-        'PDF·사진(jpg·png)·글(txt)만 된다: 워드·엑셀·한글은 같은 이름의 PDF를 찾아보고, 없으면 PDF로 저장해 달라고 한다. HEIC 사진은 file_convert로 JPG를 만든 뒤 출력한다. ' +
+        'PDF·사진(jpg·png)·글(txt)만 된다: 워드·엑셀·한글은 같은 이름의 PDF를 찾아보고, 없으면 PDF로 저장해 달라고 한다. HTML은 file_render로 PDF를 만든 뒤 출력한다. HEIC 사진은 file_convert로 JPG를 만든 뒤 출력한다. ' +
         '종이가 나가는 일이라 사용자 승인 카드(파일·매수·프린터)가 뜨니 결과대로 한 문장으로 말하고 답을 끝낸다. ' +
         '프린터가 없거나 꺼져 있으면 결과에 이유와 할 일이 오니 그대로 알려 준다. path 없이 부르면 프린터 목록과 상태만 본다.',
       inputSchema: {
@@ -207,6 +207,30 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       },
     },
     call('file_pdf'),
+  )
+  server.registerTool(
+    'file_render',
+    {
+      title: 'HTML을 PDF·PNG로',
+      description:
+        'HTML(html·htm, SVG도) 파일을 그대로 그려 PDF나 PNG 그림 파일로 만든다. 보고서·문서·안내문·이력서를 PDF로("PDF로 줘", "워드나 PDF로", "출력할 수 있게"), 그림·초대장·포스터·카드를 PNG로("이미지로", "사진으로 저장", "카톡으로 보낼 그림") 달라고 할 때 쓴다. ' +
+        'file_write로 html을 먼저 만들고(PDF용은 A4 너비에 맞춰, 쪽 나눔은 CSS page-break-before) 그 경로를 path에 준다. 사용자 폴더에 있던 HTML도 된다. ' +
+        'PDF는 A4(여러 쪽, 배경색 포함, landscape: true면 가로), PNG는 width(디자인한 가로 px, 기본 800) 너비로 내용 길이만큼 선명하게(2배) 찍는다. ' +
+        '원본 옆에 같은 이름.pdf/.png로 생기고 같은 이름이 있으면 "(1)". 결과의 경로를 사용자에게 알려 준다. 브라우저에서 인쇄하거나 화면을 캡처해 달라고 하지 않는다.',
+      inputSchema: {
+        path: z.string().max(500).describe('그릴 HTML 파일 (file_write·file_find가 알려 준 경로 그대로)'),
+        to: z.enum(['pdf', 'png']).describe('pdf=보고서·문서(A4 쪽), png=그림·초대장(한 장)'),
+        landscape: z.boolean().optional().describe('PDF를 가로 A4로 (표가 넓을 때)'),
+        width: z
+          .number()
+          .int()
+          .min(200)
+          .max(3000)
+          .optional()
+          .describe('PNG 가로 크기 (CSS px, HTML을 디자인한 너비. 기본 800)'),
+      },
+    },
+    call('file_render'),
   )
   server.registerTool(
     'file_trash',

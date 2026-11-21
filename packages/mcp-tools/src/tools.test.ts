@@ -90,6 +90,7 @@ describe('두리 MCP 도구', () => {
       'file_convert',
       'file_print',
       'file_pdf',
+      'file_render',
       'file_trash',
       'file_download',
       'pc_screen',

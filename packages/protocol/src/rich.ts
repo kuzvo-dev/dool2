@@ -216,6 +216,7 @@ const TOOL_LABEL: Record<string, string> = {
   file_convert: '사진 형식 바꾸는',
   file_print: '출력하는',
   file_pdf: 'PDF 만드는',
+  file_render: 'PDF·그림으로 만드는',
   file_trash: '휴지통 보는',
   file_download: '파일 받는',
   pc_screen: 'PC 화면 다루는',
