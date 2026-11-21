@@ -1647,8 +1647,20 @@ function connectFailCard(
           )
         : undefined,
     )
-  const view =
-    fail.reason === 'wrong'
+  // 두리가 이어받아 아이디·비밀번호 카드를 띄웠으면: '못 했어요' 대신 그 카드로 바로 (실측 11-21 아시아나: 두 카드가 서로 다른 말을 했다)
+  const waiting = [...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === c.id)
+  const view = waiting
+    ? {
+        title: `${c.name} 아이디·비밀번호가 필요해요`,
+        meta: '간편 로그인으로는 들어가지 못했어요. 넣어 주시면 두리가 이어서 해요',
+        main: h('button', {
+          class: 'btn',
+          text: '넣기',
+          onclick: () => openOverlay({ kind: 'login', id: waiting.id }),
+        }),
+        sub: undefined,
+      }
+    : fail.reason === 'wrong'
       ? {
           title: '아이디나 비밀번호가 맞지 않아요',
           meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
@@ -3034,7 +3046,12 @@ function toolSig(raw: string) {
       const f = it ? st.connectFails.get(it.card.id) : undefined
       const fail = f ? `${f.reason}${agentOn(f) ? ':agent' : ''}` : ''
       const peek = it && st.connectLive.get(it.card.id)?.shot ? 1 : 0
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}`
+      // 그 서비스 아이디·비밀번호 카드가 떠 있는지 (연결 카드가 그 카드를 가리킨다)
+      const login = it
+        ? ([...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === it.card.id)
+            ?.id ?? '')
+        : ''
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}:${login}`
     }
   } catch {}
   return ''

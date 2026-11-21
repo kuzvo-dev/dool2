@@ -291,12 +291,14 @@ export function appNote(text: string): string {
 /** 알림이면 화면에 보여 줄 글 (AI에게만 필요한 꼬리말은 뺀다), 아니면 undefined */
 export function readAppNote(text: string): string | undefined {
   if (!text.startsWith(APP_NOTE)) return undefined
-  return text
-    .slice(APP_NOTE.length)
-    .split(/(?<=[.!?요])\s+/)
-    .filter((sentence) => !AI_ONLY.test(sentence))
-    .join(' ')
-    .trim()
+  // 사람에게 하는 말이 앞에 오고 AI 지시가 뒤에 붙는다: 지시가 처음 나오는 문장에서 끊는다
+  // (문장마다 거르면 괄호 속 "규칙 판단이라 틀릴 수 있어요" 같은 AI용 말이 새어 나왔다 — 실측 11-21)
+  const shown: string[] = []
+  for (const sentence of text.slice(APP_NOTE.length).split(/(?<=[.!?요])\s+/)) {
+    if (AI_ONLY.test(sentence) || /[(（]/.test(sentence)) break
+    shown.push(sentence)
+  }
+  return shown.join(' ').trim()
 }
 
 /**
