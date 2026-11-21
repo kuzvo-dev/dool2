@@ -235,3 +235,22 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     expect(b.calls.map((c) => c[0])).not.toContain('upload')
   })
 })
+
+describe('대화로 보낸 사진 올리기', () => {
+  it('[사진: 이름.jpg]·이름만 줘도 받은 사진 폴더에서 찾는다', async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { FileTools } = await import('./files.js')
+    const home = mkdtempSync(join(tmpdir(), 'dool2-sent-'))
+    const photos = join(home, 'ws', 'photos')
+    mkdirSync(photos, { recursive: true })
+    writeFileSync(join(photos, '2026-11-21T01-00-00-000Z.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+    const ft = new FileTools(undefined, home)
+    ft.sentPhotos = photos
+    const r = await ft.uploadable(['[사진: 2026-11-21T01-00-00-000Z.jpg]'])
+    expect('files' in r && r.files[0]?.show).toBe('대화로 보낸 사진')
+    const bad = await ft.uploadable(['../secret.jpg'])
+    expect('error' in bad).toBe(true)
+  })
+})

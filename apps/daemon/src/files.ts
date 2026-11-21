@@ -88,6 +88,8 @@ export class FileTools {
   private readonly home: string
   /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
   readonly ops: FileOps
+  /** 사용자가 대화로 보낸 사진을 두는 곳 ("[사진: 이름.jpg]") — 웹사이트에 올릴 수 있다 */
+  sentPhotos?: string
   /** 새 파일을 만들었을 때 (보관함에 올린다) */
   onWritten?: (f: {
     name: string
@@ -187,6 +189,23 @@ export class FileTools {
     if (list.length > UPLOAD_MAX_FILES) return { error: `한 번에 ${UPLOAD_MAX_FILES}개까지만 올려요.` }
     const files: UploadFile[] = []
     for (const raw of list) {
+      // 대화로 받은 사진은 이름만으로 (실측 11-21: 보낸 사진이 PC 폴더에 없다며 블로그에 못 붙임)
+      const sent = /^(?:\[사진:\s*)?([\w-]+\.jpg)\]?$/.exec(raw)
+      if (sent && this.sentPhotos) {
+        const sp = join(this.sentPhotos, sent[1] as string)
+        const st = await stat(sp).catch(() => undefined)
+        if (st?.isFile()) {
+          if (!files.some((f) => f.path === sp))
+            files.push({
+              path: sp,
+              name: basename(sp),
+              size: st.size,
+              mtime: st.mtimeMs,
+              show: '대화로 보낸 사진',
+            })
+          continue
+        }
+      }
       const p = this.inside(raw)
       if (!p)
         return {

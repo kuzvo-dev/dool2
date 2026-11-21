@@ -388,7 +388,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
     ...(opts.renderFile ? { renderFile: opts.renderFile } : {}),
   })
-  // 웹사이트에 PC 파일 올리기(browser_upload)도 파일 도구와 같은 폴더 울타리 안에서만
+  // 웹사이트에 PC 파일 올리기(browser_upload)도 파일 도구와 같은 폴더 울타리 안에서만 (+ 대화로 받은 사진)
+  fileTools.sentPhotos = photoDir
   browserTools.uploadFiles = (p) => fileTools.uploadable(p)
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
   fileTools.onWritten = (f) => {
