@@ -1619,6 +1619,33 @@ function connectFailCard(
   const tab = fail.tabId
   const openScreen = () => tab !== undefined && openRemote(tab, c.id)
   const retry = () => openOverlay({ kind: 'connect', id: c.id })
+  // 두리가 아이디·비밀번호 카드를 띄웠으면 그게 먼저다: 사용자 차례 (실측 11-21 아시아나: '이어서 하고 있어요'에 가려 카드가 안 보였다)
+  const waiting = [...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === c.id)
+  if (waiting)
+    return h(
+      'div',
+      { class: 'card approve-card connect-card ask' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark,
+        h(
+          'div',
+          {},
+          h('strong', { text: `${c.name} 아이디·비밀번호를 넣어 주세요` }),
+          h('span', { class: 'meta', text: '넣어 주시면 두리가 로그인해서 연결해요' }),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'approve-actions' },
+        h('button', {
+          class: 'btn',
+          text: '넣기',
+          onclick: () => openOverlay({ kind: 'login', id: waiting.id }),
+        }),
+      ),
+    )
   // 자동 로그인이 멈춰 두리가 대화에서 이어받은 동안: 실패가 아니라 하는 중이다 (진행은 바로 아래 일하는 카드에 보인다)
   if (agentOn(fail))
     return h(
@@ -1647,20 +1674,8 @@ function connectFailCard(
           )
         : undefined,
     )
-  // 두리가 이어받아 아이디·비밀번호 카드를 띄웠으면: '못 했어요' 대신 그 카드로 바로 (실측 11-21 아시아나: 두 카드가 서로 다른 말을 했다)
-  const waiting = [...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === c.id)
-  const view = waiting
-    ? {
-        title: `${c.name} 아이디·비밀번호가 필요해요`,
-        meta: '간편 로그인으로는 들어가지 못했어요. 넣어 주시면 두리가 이어서 해요',
-        main: h('button', {
-          class: 'btn',
-          text: '넣기',
-          onclick: () => openOverlay({ kind: 'login', id: waiting.id }),
-        }),
-        sub: undefined,
-      }
-    : fail.reason === 'wrong'
+  const view =
+    fail.reason === 'wrong'
       ? {
           title: '아이디나 비밀번호가 맞지 않아요',
           meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
@@ -3035,7 +3050,8 @@ function toolSig(raw: string) {
       const l = loginFor(rec as LoginRecordMessage)
       const link = l ? loginLink(l.origin) : undefined
       const steps = link ? (st.connectSteps.get(link.cid)?.length ?? 0) : 0
-      return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${steps}`
+      const agent = link?.fail && agentOn(link.fail) ? 'agent' : ''
+      return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${agent}:${steps}`
     }
     if (rec.kind === 'tell')
       return `tell:${feedPager.items.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
