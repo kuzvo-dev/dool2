@@ -555,6 +555,41 @@ export function makePassword(length = 16): string {
   return chars.join('')
 }
 
+/** 보안 키패드 특수문자 이름 (스크린리더용 이름표: 신한카드 등) */
+export const KEYPAD_SPECIAL: Record<string, string[]> = {
+  '!': ['느낌표'],
+  '@': ['골뱅이'],
+  '#': ['우물표시', '샵'],
+  $: ['달러표시'],
+  '%': ['퍼센트'],
+  '^': ['윗꺽쇠'],
+  '&': ['앰퍼센드'],
+  '*': ['별표'],
+}
+
+/** 보안 키패드로 넣을 비밀번호: 소문자·숫자 + 특수문자 하나 (대문자는 쉬프트가 필요해 뺀다) */
+export function makeKeypadPassword(length = 12): string {
+  const L = 'abcdefghijkmnpqrstuvwxyz'
+  const D = '23456789'
+  const S = '!@'
+  const pick = (set: string) => set[randomInt(set.length)] as string
+  const chars = [pick(L), pick(L), pick(D), pick(D), pick(S)]
+  while (chars.length < Math.max(8, length)) chars.push(pick(L + D))
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1)
+    ;[chars[i], chars[j]] = [chars[j] as string, chars[i] as string]
+  }
+  return chars.join('')
+}
+
+/** 키패드에서 그 글자의 버튼 이름 후보 */
+export function keypadLabels(ch: string): string[] {
+  if (/^\d$/.test(ch)) return [ch]
+  if (/^[a-z]$/.test(ch)) return [`소문자 ${ch}`, ch]
+  if (/^[A-Z]$/.test(ch)) return [`대문자 ${ch}`, ch]
+  return [...(KEYPAD_SPECIAL[ch] ?? []), ch]
+}
+
 /** 목록에서 사용자가 말한 옵션 찾기: 글이 같은 것, 없으면 그 글로 시작·그 글을 담은 것이 하나뿐일 때 */
 export function matchOption(options: string[], want: string): string | undefined {
   const n = (x: string) => x.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -1460,6 +1495,18 @@ export class BrowserTools {
             `${why} 화면의 비밀번호 규칙(자릿수·허용 문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 불러요. 다시 부르면 폰에 물어 사용자가 규칙에 맞는 비밀번호를 정할 수 있어요.`,
           )
         }
+        // 한 번에·키로 넣기를 다 막는 보안 키패드 칸: 화면 키패드 버튼을 이름표대로 눌러 넣는다 (값은 AI에게 안 감)
+        let viaKeypad = false
+        if (got !== undefined && got !== pw.length && !own) {
+          const kp = makeKeypadPassword()
+          if (await this.keypadType(tabId, pwRef, kp)) {
+            pw = kp
+            got = kp.length
+            viaKeypad = true
+            if (confirmRef && !(await this.keypadType(tabId, confirmRef, kp)))
+              throw askAgain('비밀번호 확인 칸의 보안 키패드를 누르지 못했어요.')
+          }
+        }
         if (got !== undefined && got !== pw.length) {
           if (got < 8) throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(글자가 빠짐).')
           pw = makePassword(got)
@@ -1467,7 +1514,7 @@ export class BrowserTools {
           if (got !== undefined && got !== pw.length)
             throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(특수문자를 빼는 칸일 수 있어요).')
         }
-        if (confirmRef) {
+        if (confirmRef && !viaKeypad) {
           const c = await fill(confirmRef, pw)
           if (c !== undefined && c !== pw.length)
             throw new Error(
@@ -2664,6 +2711,61 @@ export class BrowserTools {
    * 막았다 (시험 가게 결제 창). 키패드는 AI가 방금 짚은 것이고, 자리가 다시 섞였는지는 누른 뒤 AI가 화면으로 판단한다.
    * once: 화면이 안 바뀌는 숫자 버튼을 '안 눌렸다'고 보고 다시 누르면 숫자가 두 번 들어간다
    */
+  /**
+   * 화면 보안 키패드(키마다 이름표가 붙은 것: "3"·"소문자 q"·"느낌표")로 비밀번호를 누른다. 값은 AI에게 가지 않는다.
+   * 키보드 입력을 막는 칸용 (실측 11-21 신한카드 가입: 키 입력·한 번에 넣기 모두 '보안 키패드가 막음').
+   * 키패드가 없거나 글자 버튼을 못 찾으면 false
+   */
+  async keypadType(tabId: number, fieldRef: string, pw: string): Promise<boolean> {
+    const snap = async () => {
+      const r = (await this.browser.call('snapshot', { tabId, maxChars: 60_000 }, 20_000)) as {
+        text?: string
+      }
+      return [...parseRefs(r?.text ?? '')].filter(([, v]) => v.role === '버튼')
+    }
+    const press = (ref: string) =>
+      this.browser.call('click', { tabId, ref, once: true, force: true, quick: true }, 15_000).then(
+        () => true,
+        () => false,
+      )
+    // 칸을 눌러 키패드를 연다
+    await press(fieldRef)
+    await new Promise((r) => setTimeout(r, 400))
+    let keys = await snap()
+    const find = (names: string[]) => keys.find(([, v]) => names.includes(v.name))?.[0]
+    const isKeypad = () =>
+      keys.filter(([, v]) => /^\d$/.test(v.name)).length >= 10 &&
+      keys.some(([, v]) => /^(소|대)문자 [a-zA-Z]$/.test(v.name))
+    // 특수문자 줄이 열려 있으면 글자 줄로 돌려놓고 시작한다
+    if (!isKeypad()) {
+      const back = find(['소문자', '영문', '알파벳'])
+      if (!back || !(await press(back))) return false
+      await new Promise((r) => setTimeout(r, 250))
+      keys = await snap()
+      if (!isKeypad()) return false
+    }
+    let layer: 'letters' | 'special' = 'letters'
+    for (const ch of pw) {
+      const need = /[a-z0-9]/i.test(ch) ? 'letters' : 'special'
+      if (need !== layer) {
+        const toggle =
+          need === 'special'
+            ? find(['알파벳/특수문자', '특수문자', '특수키'])
+            : find(['소문자', '알파벳/특수문자', '영문'])
+        if (!toggle || !(await press(toggle))) return false
+        await new Promise((r) => setTimeout(r, 250))
+        keys = await snap()
+        layer = need
+      }
+      const ref = find(keypadLabels(ch))
+      if (!ref || !(await press(ref))) return false
+      await new Promise((r) => setTimeout(r, 120))
+    }
+    const done = find(['확인', '입력완료', '완료'])
+    if (done) await press(done)
+    return true
+  }
+
   async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
     for (const [i, d] of [...pin].entries()) {
       const ref = keys[d]
