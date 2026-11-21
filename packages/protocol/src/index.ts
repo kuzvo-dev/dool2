@@ -1139,6 +1139,8 @@ export type PhoneToPc =
   | { kind: 'info-answer'; id: string; value?: string }
   /** 카드의 "처음이에요 · 가입해 주세요": 그 사이트(주소) 가입을 사용자가 골랐다. loginId면 그 로그인 카드는 닫는다 */
   | { kind: 'signup'; site: string; loginId?: string }
+  /** 계정을 몰라요: 기다리던 로그인 카드를 거두고, 두리가 아이디 찾기·비밀번호 재설정으로 이어 간다 */
+  | { kind: 'forgot'; site: string; loginId?: string }
   /** 간편 로그인으로 연결 (카카오·네이버…). 공급자 쪽 로그인이 필요하면 원격 화면으로 넘긴다 */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 

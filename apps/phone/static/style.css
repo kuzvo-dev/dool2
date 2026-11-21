@@ -210,6 +210,75 @@ button {
 .bubble.me.sending {
   opacity: 0.72;
 }
+/* 말풍선 옆 시간: 두리 말은 오른쪽, 내 말은 왼쪽 아래 */
+.chat-list > .bubble[data-time] {
+  position: relative;
+  max-width: min(86%, calc(100% - 60px));
+}
+.chat-list > .bubble.me[data-time] {
+  max-width: min(80%, calc(100% - 60px));
+}
+.chat-list > .bubble[data-time]::after {
+  content: attr(data-time);
+  position: absolute;
+  bottom: 1px;
+  left: calc(100% + 6px);
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+}
+.chat-list > .bubble.me[data-time]::after {
+  left: auto;
+  right: calc(100% + 6px);
+}
+/* 화면 폭을 다 쓰는 표 답은 시간을 말풍선 안 오른쪽 아래로 */
+.chat-list > .bubble.rich[data-time]:has(.rich-table-wrap)::after {
+  position: static;
+  display: block;
+  margin-top: 6px;
+  text-align: right;
+}
+/* 날이 바뀌는 곳의 날짜 줄 */
+.chat-list > .day-sep {
+  align-self: center;
+  margin: 10px 0 2px;
+  padding: 3px 12px;
+  border-radius: var(--radius-full);
+  background: var(--raise);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+/* 스크롤하는 동안 위에 떠 있는 날짜 */
+.day-pill {
+  position: absolute;
+  /* 가운데 위 두리 얼굴·상태 말풍선 아래로 (겹쳐 보였다 — 사용자 의견) */
+  top: calc(96px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 6;
+  padding: 3px 12px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+  pointer-events: none;
+}
+.day-pill.on:not(:empty) {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 .queued {
   display: flex;
   flex-direction: column;
@@ -2672,6 +2741,9 @@ textarea.ghosting {
   place-items: center;
   height: 56px;
 }
+.otp-go {
+  width: 100%;
+}
 .otp-row {
   display: flex;
   gap: 8px;
@@ -2723,6 +2795,19 @@ textarea.ghosting {
 .otp.ok .otp-bx {
   background: var(--approve);
   color: transparent;
+}
+/* 쓰지 않는 칸은 숨긴다 (.otp-bx의 display가 hidden 속성을 이겨 빈 칸이 남았다) */
+.otp-bx[hidden] {
+  display: none;
+}
+/* 다 넣으면 칸 대신 초록 한 줄 '넣었어요' (칸을 이어 붙이던 모양이 자릿수마다 어긋났다 — 실측 11-22) */
+.otp.ok .otp-row {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.otp.ok .otp-ok {
+  border-radius: 14px;
+  background: var(--approve);
 }
 .otp-ok {
   position: absolute;
@@ -3148,12 +3233,23 @@ textarea.ghosting {
   margin-top: 2px;
   font-size: 14px;
 }
-.cred-signup {
-  justify-self: center;
-  margin-top: 2px;
+/* 계정 찾기 | 처음이면 가입하기 — 한 줄 링크 */
+.cred-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: -2px;
+}
+.cred-links .btn-text {
+  padding: 8px 12px;
   font-size: 14px;
-  color: var(--mint, #5fe0b4);
   font-weight: 600;
+  color: var(--mint, #5fe0b4);
+}
+.cred-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--line, rgba(127, 127, 127, 0.3));
 }
 
 /* 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호) */

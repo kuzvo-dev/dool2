@@ -525,10 +525,14 @@ export function drawCheck(box: Element, delay = 0) {
 export function otpBoxes(o: {
   value?: string
   length?: number
+  /** 자릿수를 모를 때: 4~8자리를 받고 [넣기]로 보낸다 (사이트마다 4·6·7자리로 달랐다 — 실측 11-22 키즈노트 4자리) */
+  flex?: boolean
   onInput?(v: string): void
   onDone(code: string): void
-}): HTMLElement {
-  const N = o.length ?? 6
+}): HTMLElement & { go?: HTMLButtonElement } {
+  const flex = Boolean(o.flex) && !o.length
+  const N = flex ? 8 : (o.length ?? 6)
+  const shown = (len: number) => (flex ? Math.min(N, Math.max(6, len + 1)) : N)
   const box = document.createElement('div')
   box.className = 'otp'
   const row = document.createElement('div')
@@ -552,11 +556,20 @@ export function otpBoxes(o: {
   ok.className = 'otp-ok'
   ok.innerHTML = `${CHECK_SVG}<span>넣었어요</span>`
   box.append(row, ok, inp)
+  // 자릿수를 모르면 [넣기]: 4자리부터 눌러 보낸다
+  const go = document.createElement('button')
+  go.type = 'button'
+  go.className = 'btn lg otp-go'
+  go.textContent = '넣기'
+  go.disabled = true
+  // 버튼은 상자 밖에 둔다 (상자는 높이가 고정이라 안에 넣으면 아래 글 위로 넘쳤다 — 실측 11-22)
   let val = ''
   let done = false
   const set = (raw: string, quiet = false) => {
     const v = raw.replace(/\D/g, '').slice(0, N)
+    const n = shown(v.length)
     cells.forEach((c, i) => {
+      c.el.hidden = i >= n
       const ch = v[i] ?? ''
       if (ch && c.d.textContent !== ch && !quiet)
         springTo(
@@ -568,11 +581,12 @@ export function otpBoxes(o: {
           'squash',
         )
       c.d.textContent = ch
-      c.el.classList.toggle('on', !done && i === Math.min(v.length, N - 1))
+      c.el.classList.toggle('on', !done && i === Math.min(v.length, n - 1))
     })
     val = v
     inp.value = v
-    if (v.length === N && !done) {
+    go.disabled = done || v.length < 4
+    if (!flex && v.length === N && !done) {
       // 다시 그려져 다 찬 채로 시작하면 이미 보낸 것: 초록으로만 보이고 다시 보내지 않는다
       if (quiet) {
         done = true
@@ -586,7 +600,11 @@ export function otpBoxes(o: {
   }
   const finish = () => {
     done = true
-    for (const c of cells) c.el.classList.remove('on')
+    go.hidden = true
+    cells.forEach((c, i) => {
+      c.el.classList.remove('on')
+      if (i >= val.length) c.el.hidden = true
+    })
     // 칸 사이가 닫히며 하나로 붙고, 초록이 되며 '넣었어요'
     springTo(row, [{ gap: '8px' }, { gap: '0px' }], 'soft', { delay: 200, fill: 'forwards' })
     setTimeout(() => box.classList.add('joined'), 200)
@@ -613,9 +631,16 @@ export function otpBoxes(o: {
     set(inp.value)
     o.onInput?.(val)
   })
+  go.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (!done && val.length >= 4) finish()
+  })
+  inp.addEventListener('keydown', (e) => {
+    if (flex && e.key === 'Enter' && !done && val.length >= 4) finish()
+  })
   box.addEventListener('click', () => inp.focus())
   set(o.value ?? '', true)
-  return box
+  return flex ? Object.assign(box, { go }) : box
 }
 
 // ── 이어 쓰기 제안: 쓰는 말 뒤에 흐린 글씨로 나머지를 보여 주고, 받으면 글자가 하나씩 밝아지며 톡 ──

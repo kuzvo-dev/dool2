@@ -1619,6 +1619,33 @@ function connectFailCard(
   const tab = fail.tabId
   const openScreen = () => tab !== undefined && openRemote(tab, c.id)
   const retry = () => openOverlay({ kind: 'connect', id: c.id })
+  // 두리가 아이디·비밀번호 카드를 띄웠으면 그게 먼저다: 사용자 차례 (실측 11-21 아시아나: '이어서 하고 있어요'에 가려 카드가 안 보였다)
+  const waiting = [...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === c.id)
+  if (waiting)
+    return h(
+      'div',
+      { class: 'card approve-card connect-card ask' },
+      h(
+        'div',
+        { class: 'approve-head' },
+        mark,
+        h(
+          'div',
+          {},
+          h('strong', { text: `${c.name} 아이디·비밀번호를 넣어 주세요` }),
+          h('span', { class: 'meta', text: '넣어 주시면 두리가 로그인해서 연결해요' }),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'approve-actions' },
+        h('button', {
+          class: 'btn',
+          text: '넣기',
+          onclick: () => openOverlay({ kind: 'login', id: waiting.id }),
+        }),
+      ),
+    )
   // 자동 로그인이 멈춰 두리가 대화에서 이어받은 동안: 실패가 아니라 하는 중이다 (진행은 바로 아래 일하는 카드에 보인다)
   if (agentOn(fail))
     return h(
@@ -1639,13 +1666,6 @@ function connectFailCard(
         ),
         h('span', { class: 'spin' }),
       ),
-      tab !== undefined
-        ? h(
-            'div',
-            { class: 'approve-actions' },
-            h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen }),
-          )
-        : undefined,
     )
   const view =
     fail.reason === 'wrong'
@@ -1653,10 +1673,7 @@ function connectFailCard(
           title: '아이디나 비밀번호가 맞지 않아요',
           meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
           main: h('button', { class: 'btn', text: '다시 넣기', onclick: retry }),
-          sub:
-            tab !== undefined
-              ? h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen })
-              : undefined,
+          sub: undefined,
         }
       : fail.reason === 'human'
         ? {
@@ -1670,13 +1687,10 @@ function connectFailCard(
           }
         : {
             title: `${c.name} 로그인을 끝까지 못 했어요`,
-            meta:
-              tab !== undefined ? `${fail.message} 화면에서 마치시면 두리가 알아서 연결해요` : fail.message,
-            main:
-              tab !== undefined
-                ? h('button', { class: 'btn', text: '화면 보며 직접', onclick: openScreen })
-                : undefined,
-            sub: h('button', { class: 'btn-ghost', text: '다시 해 보기', onclick: retry }),
+            meta: fail.message,
+            // 화면 직접 보기는 카드에서 빼고, 다시 해 보기 안(로그인 화면)에서 안 될 때만 보인다 — 안 누르는 게 제일 좋다 (사용자 의견)
+            main: h('button', { class: 'btn', text: '다시 해 보기', onclick: retry }),
+            sub: undefined,
           }
   return h(
     'div',
@@ -2043,11 +2057,22 @@ function buildShell() {
   const top = h('header', { class: 'app-top' })
   const page = h('main', { class: 'app-page' })
   const chat = h('div', { class: 'chat-list' })
+  // 스크롤하는 동안 위에 떠서 지금 보는 말이 언제인지 알려 주는 날짜 (멈추면 사라진다)
+  const dayPill = h('div', { class: 'day-pill' })
+  dayPill.setAttribute('aria-hidden', 'true')
+  let dayPillTimer: ReturnType<typeof setTimeout> | undefined
   page.addEventListener(
     'scroll',
     () => {
       // 아래 탭은 내려도 숨기지 않는다: 숨으면 다른 탭으로 갈 길이 안 보였다 (사용자 의견)
-      if (st.tab === 'chat') stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+      if (st.tab === 'chat') {
+        stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
+        const label = dayAtTop(page, chat)
+        dayPill.textContent = label
+        dayPill.classList.toggle('on', !!label)
+        clearTimeout(dayPillTimer)
+        dayPillTimer = setTimeout(() => dayPill.classList.remove('on'), 1400)
+      }
       // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
       else if (page.scrollHeight - page.scrollTop - page.clientHeight < 600) visiblePager()?.more()
     },
@@ -2103,7 +2128,7 @@ function buildShell() {
   const overlay = h('div', { class: 'app-overlay' })
   const toast = h('div', { class: 'toast float-toast' })
   toast.setAttribute('role', 'status')
-  app.replaceChildren(h('div', { class: 'app-shell' }, top, page, composerBox, tabs, overlay, toast))
+  app.replaceChildren(h('div', { class: 'app-shell' }, top, page, dayPill, composerBox, tabs, overlay, toast))
   shell = { top, page, chat, composerBox, textarea, sendBtn, tabs, overlay, toast }
   ghostEl = ghost
   pullToRefresh(page)
@@ -2626,6 +2651,62 @@ function openOutside(url: string) {
   a.click()
 }
 
+/** 화면 위쪽에 보이는 말의 날짜. 그날의 날짜 줄이 아직 화면에 보이면 겹치지 않게 비운다 */
+function dayAtTop(page: HTMLElement, chat: HTMLElement): string {
+  const top = page.getBoundingClientRect().top + 120
+  let label = ''
+  for (const sep of chat.querySelectorAll<HTMLElement>(':scope > .day-sep')) {
+    const y = sep.getBoundingClientRect().top
+    if (y > top) {
+      // 다음 날짜 줄이 떠 있는 날짜 바로 아래까지 올라왔으면 떠 있는 쪽은 숨긴다
+      if (y < top + 36) return ''
+      break
+    }
+    label = sep.textContent ?? ''
+  }
+  return label
+}
+
+/** 날짜 열쇠 (내 폰 시간대 기준 YYYY-M-D) */
+function dayKey(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
+/** 날짜 줄 글: 오늘 · 어제 · 11월 20일 목요일 (올해가 아니면 연도까지) */
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const key = dayKey(iso)
+  if (key === dayKey(now.toISOString())) return '오늘'
+  if (key === dayKey(new Date(now.getTime() - 86_400_000).toISOString())) return '어제'
+  return d.toLocaleDateString('ko-KR', {
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  })
+}
+
+/** 말풍선 옆 시간 (오후 6:14). 같은 사람이 같은 분에 이어 말했으면 마지막 말풍선에만 */
+function bubbleTime(i: number): string {
+  const m = st.conv[i]
+  if (!m) return ''
+  const minute = (iso: string) => iso.slice(0, 16)
+  const next = st.conv[i + 1]
+  if (
+    next &&
+    next.role === m.role &&
+    minute(next.createdAt) === minute(m.createdAt) &&
+    (m.role !== 'user' || readAppNote(next.text) === undefined)
+  )
+    return ''
+  const d = new Date(m.createdAt)
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+}
+
 /** 대화 목록에 있어야 할 것 (key, 서명, 만들기). 서명이 같으면 그대로 둔다 */
 type Item = { key: string; sig: string; make: () => HTMLElement }
 
@@ -2647,12 +2728,20 @@ function chatItems(): Item[] {
   if (st.convLoaded && !st.conv.length && !st.pending.length)
     items.push({ key: 'hello', sig: st.saved?.pcName ?? '', make: helloCard })
   let lastNote = ''
+  let lastDay = ''
   const superseded = oldConnectCards()
   for (const [i, m] of st.conv.entries()) {
     // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue
     lastNote = noteText ?? ''
+    // 날이 바뀌면 가운데에 날짜 한 줄 (스크롤할 때는 위에 떠 있는 날짜가 따라온다)
+    const day = dayKey(m.createdAt)
+    if (day && day !== lastDay) {
+      lastDay = day
+      const label = dayLabel(m.createdAt)
+      items.push({ key: `day:${day}`, sig: label, make: () => h('p', { class: 'day-sep', text: label }) })
+    }
     if (m.role === 'tool') {
       // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
       const old = superseded.has(m.id)
@@ -2666,25 +2755,33 @@ function chatItems(): Item[] {
     } else if (m.role === 'user') {
       // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
       const note = readAppNote(m.text)
+      const time = note === undefined ? bubbleTime(i) : ''
       items.push({
         key: m.id,
-        sig: '',
-        make: () => (note !== undefined ? h('p', { class: 'msg note' }, note) : meBubble(m.text)),
+        sig: time,
+        make: () => {
+          if (note !== undefined) return h('p', { class: 'msg note' }, note)
+          const b = meBubble(m.text)
+          if (time) b.dataset.time = time
+          return b
+        },
       })
-    } else if (m.role === 'assistant')
+    } else if (m.role === 'assistant') {
+      const time = bubbleTime(i)
       items.push({
         key: m.id,
-        sig: '',
+        sig: time,
         make: () => {
           const b = h('div', { class: 'bubble rich' })
           b.append(rich(m.text))
+          if (time) b.dataset.time = time
           onLongPress(b, () => openOverlay({ kind: 'msg', id: m.id }))
           // 방금 온 답이면 돈·퍼센트가 굴러서 선다 (지난 대화를 불러올 때는 그대로)
           if (Date.now() - Date.parse(m.createdAt) < 60_000) rollNumbers(b)
           return b
         },
       })
-    else {
+    } else {
       const note = readAppNote(m.text)
       items.push({
         key: m.id,
@@ -2940,7 +3037,8 @@ function toolSig(raw: string) {
       const l = loginFor(rec as LoginRecordMessage)
       const link = l ? loginLink(l.origin) : undefined
       const steps = link ? (st.connectSteps.get(link.cid)?.length ?? 0) : 0
-      return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${steps}`
+      const agent = link?.fail && agentOn(link.fail) ? 'agent' : ''
+      return `${l?.id}:${l?.status}:${link?.busy ?? ''}:${link?.fail?.reason ?? ''}:${agent}:${steps}`
     }
     if (rec.kind === 'tell')
       return `tell:${feedPager.items.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
@@ -2951,7 +3049,12 @@ function toolSig(raw: string) {
       const f = it ? st.connectFails.get(it.card.id) : undefined
       const fail = f ? `${f.reason}${agentOn(f) ? ':agent' : ''}` : ''
       const peek = it && st.connectLive.get(it.card.id)?.shot ? 1 : 0
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}`
+      // 그 서비스 아이디·비밀번호 카드가 떠 있는지 (연결 카드가 그 카드를 가리킨다)
+      const login = it
+        ? ([...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === it.card.id)
+            ?.id ?? '')
+        : ''
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}:${login}`
     }
   } catch {}
   return ''
@@ -3723,17 +3826,6 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       : h(
           'div',
           { class: 'approve-actions' },
-          browser
-            ? h('button', {
-                class: 'btn-ghost',
-                text: '화면 보며 직접',
-                onclick: () => {
-                  st.opening = c.id
-                  render()
-                  void send({ kind: 'connect', id: c.id, action: 'open' })
-                },
-              })
-            : undefined,
           h('button', {
             class: 'btn',
             text: '연결하기',
@@ -3800,7 +3892,6 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: () => openRemote(r.tabId) }),
       h('button', {
         class: 'btn',
         text: '로그인하기',
@@ -5555,6 +5646,8 @@ function approvalSheet(id: string) {
 
 /** 로그인 시트: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
 interface CredTarget {
+  /** 앞서 자동 로그인이 멈췄는지: 그때만 '화면 보면서 직접'을 보인다 */
+  stuck?: boolean
   key: string
   site: string
   host: string
@@ -5574,6 +5667,8 @@ interface CredTarget {
   socialOnly?: boolean
   /** "처음이에요 · 가입해 주세요" 버튼 (두리에게 회원가입을 부탁한다) */
   signup?: () => void
+  /** "계정을 몰라요 · 찾아 주세요" 버튼 (두리가 아이디 찾기·비밀번호 재설정) */
+  forgot?: () => void
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -5665,22 +5760,28 @@ function credSheet(t: CredTarget) {
         ]
       : []),
     ...(t.socialOnly && t.social?.length ? [] : [form]),
+    // 계정 찾기 | 가입하기: 로그인 화면에서 흔히 보는 한 줄 링크로 (크게 두 줄이면 산만했다 — 사용자 의견)
+    ...(t.forgot || t.signup
+      ? [
+          h(
+            'div',
+            { class: 'cred-links' },
+            ...(t.forgot ? [h('button', { class: 'btn-text', text: '계정 찾기', onclick: t.forgot })] : []),
+            ...(t.forgot && t.signup ? [h('span', { class: 'cred-sep' })] : []),
+            ...(t.signup
+              ? [h('button', { class: 'btn-text', text: '처음이면 가입하기', onclick: t.signup })]
+              : []),
+          ),
+        ]
+      : []),
     h(
       'p',
       { class: 'lock-note' },
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
-    ...(t.signup
-      ? [
-          h('button', {
-            class: 'btn-text cred-signup',
-            text: '처음이에요 · 가입해 주세요',
-            onclick: t.signup,
-          }),
-        ]
-      : []),
-    ...(t.direct
+    // 화면 직접 보기는 안 될 때만 (로그인이 실패했거나 연결이 멈췄을 때)
+    ...(t.direct && (d.error || t.stuck)
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
   )
@@ -5977,8 +6078,24 @@ function infoSheet(id: string) {
     }
     body.push(pad)
   } else if (q.field === 'otp') {
-    body.push(otpBoxes({ onDone: (code) => setTimeout(() => answer(code), 500) }))
-    body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
+    // 자릿수: 화면 안내('4자리')나 형식에서 알면 그만큼, 모르면 4~8자리를 받아 [넣기]로
+    const said =
+      `${q.label} ${q.hint ?? ''}`.match(/(\d)\s*자리/)?.[1] ?? q.pattern?.match(/\\d\{(\d)\}/)?.[1]
+    const len = said ? Number(said) : undefined
+    const otp = otpBoxes({
+      ...(len && len >= 4 && len <= 8 ? { length: len } : { flex: true }),
+      onDone: (code) => setTimeout(() => answer(code), 500),
+    })
+    body.push(otp)
+    body.push(
+      h('p', {
+        class: 'meta',
+        text: otp.go
+          ? '문자로 왔으면 키보드 위에 번호가 떠요. 다 넣고 [넣기]를 눌러 주세요.'
+          : '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.',
+      }),
+    )
+    if (otp.go) body.push(otp.go)
     queueMicrotask(() => document.getElementById('otp-input')?.focus())
   } else {
     const input = h('input', { class: 'field' })
@@ -6164,6 +6281,18 @@ function loginSheet(id: string) {
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
     direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    stuck: Boolean(loginLink(r.origin)?.fail),
+    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    forgot: () => {
+      void send({ kind: 'forgot', site: r.origin, loginId: r.id })
+      void send({
+        kind: 'ask',
+        text: `${r.site} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
+      })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${r.site} 계정 찾기를 두리가 해 볼게요`)
+    },
     // 계정이 없으면 두리가 가입해 줘요: 이 사이트 가입을 고른 것으로 알리고, 대화로 부탁을 보낸다
     signup: () => {
       void send({ kind: 'signup', site: r.origin, loginId: r.id })
@@ -6235,6 +6364,7 @@ function connectSheet(id: string) {
           toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
       },
     })),
+    stuck: st.connectFails.has(id),
     direct: {
       text: st.connectTabs.has(id) ? 'PC 화면 보면서 마저 하기' : '화면 보면서 직접 로그인할게요',
       onclick: () => {
@@ -6245,6 +6375,17 @@ function connectSheet(id: string) {
         render()
         void send({ kind: 'connect', id, action: 'open' })
       },
+    },
+    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    forgot: () => {
+      void send({ kind: 'forgot', site: it.card.site ?? it.card.id })
+      void send({
+        kind: 'ask',
+        text: `${it.card.name} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
+      })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${it.card.name} 계정 찾기를 두리가 해 볼게요`)
     },
     // 계정이 없으면 두리가 가입해 줘요: 대화로 부탁을 보내고 두리가 가입 흐름을 한다
     signup: () => {

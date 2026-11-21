@@ -1244,6 +1244,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
           void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: '가입으로 바꿨어요' })
       },
+      // 계정을 몰라요: 로그인 카드를 거두고 대화의 부탁(아이디 찾기·비밀번호 재설정)으로 이어 간다.
+      // 새 비밀번호는 두리가 정해 금고에 저장한다(browser_login의 비밀번호 만들기와 같은 길)
+      forgot: (site, loginId) => {
+        // 사용자가 고른 것: 그 사이트의 비밀번호 재설정(새 비밀번호 만들기)을 묻지 않고 하게 한다
+        browserTools.allowSignup(site)
+        if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
+          void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: '계정 찾기로 바꿨어요' })
+      },
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       thumb: (url) => thumbOrPhoto(url),
       // 설정 > 금고 (ADR 0026): 사용자가 폰에서 보기·고치기. 보기는 폰이 기기 잠금을 확인한 뒤에만 부탁한다.
@@ -1583,7 +1591,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   infoRequests.onDone = (id) => void link.broadcast({ kind: 'info-done', id })
   // 가입·비번 변경 전 묻기: 사용자가 대화에서 그렇게 부탁했으면 그대로, 아니면 폰에 고르기 카드를 띄운다.
   // 지침만으로는 AI가 묻지 않고 가입할 수 있어서, 새 비밀번호를 만들기 전에 본체가 확인한다
-  browserTools.askSignup = (site, key, purpose) => {
+  browserTools.askSignup = (site, key, purpose, needOwn) => {
     const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
     const lastAsk = threadId
       ? (store
@@ -1591,11 +1599,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           .filter((m) => m.role === 'user')
           .at(-1)?.text ?? '')
       : ''
-    if (askedForAccount(lastAsk, purpose)) return 'ok'
+    if (!needOwn && askedForAccount(lastAsk, purpose)) return 'ok'
     // 비밀번호는 두리가 만들지, 사용자가 정할지 고른다 (사용자가 모르게 바뀌어 당황했다, 11-20)
     const OWN = '비밀번호는 제가 정할게요'
-    const options =
-      purpose === 'reset'
+    // 두리가 만든 비밀번호를 그 사이트 칸이 받지 않았으면 직접 정하는 것부터
+    const options = needOwn
+      ? [OWN, '그만둘게요']
+      : purpose === 'reset'
         ? ['두리가 만들어 주세요', OWN, '그만둘게요']
         : ['가입해 주세요', OWN, '이미 계정 있어요']
     const answer = infoRequests.ask(
@@ -1603,12 +1613,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         site,
         host: key,
         field: 'choice',
-        label:
-          purpose === 'reset'
+        label: needOwn
+          ? `${site} 비밀번호는 직접 정해 주세요`
+          : purpose === 'reset'
             ? `${site} 비밀번호를 새로 바꿀까요?`
             : `${josa(site, '은/는')} 어떻게 로그인할까요?`,
-        hint:
-          purpose === 'reset'
+        hint: needOwn
+          ? '두리가 만든 비밀번호를 이 사이트 칸이 받지 않았어요(보안 입력 칸). 규칙에 맞게 한 번만 정해 주시면 두리가 넣고 금고에 저장해요.'
+          : purpose === 'reset'
             ? '비밀번호 찾기로 새 비밀번호를 정해 금고에 넣어요. 두리가 만들면 강한 비밀번호를 만들고, 직접 정하면 폰에서 한 번 넣어 주세요. 예전 비밀번호는 더 못 써요.'
             : '처음이면 두리가 가입해 드려요(아이디는 내 정보 이메일). 비밀번호는 두리가 만들거나 직접 정할 수 있어요. 이미 계정이 있으면 로그인 카드를 띄울게요.',
         options,
@@ -2001,6 +2013,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   browserTools.siteConnector = (url) => connectors.forUrl(url)
+  // 일하다가 금고로 로그인한 탭도 지켜본다: 로그인되면 그 서비스를 연결로 표시한다
+  // (실측 11-21 신한카드: 대화에서 가입·로그인해 카드 정보까지 읽었는데 연결 목록에는 '연결 안 됨'으로 남았다)
+  browserTools.onVaultLogin = (tabId, url) => {
+    void connectors
+      .forUrl(url)
+      .then(async (c) => {
+        if (!c || readSettings().connections?.[c.id]) return
+        const card = await skills.card(c.id)
+        if (!card) return
+        // 금고로 로그인했으니 풀리면 금고로 다시 로그인하게 방법을 남긴다 (connectMark가 기억)
+        connectTried.set(card.id, 'vault')
+        loginWatch.start(card, tabId)
+      })
+      .catch(() => undefined)
+  }
   void connectors
     .paySites()
     .then((sites) => browserTools.setPayServiceSites(sites))
@@ -2315,7 +2342,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (r.state !== 'out') continue
         const via = connectVia()[card.id]
         const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
-        const creds = via === 'vault' ? await vaultCreds(card) : undefined
+        // 방법이 안 남았어도 금고에 그 서비스 계정이 있으면 금고로 다시 로그인한다
+        // (실측 11-21: 두리가 일하다 금고로 로그인한 신한카드가 세션이 풀리자 연결 표시가 꺼졌다)
+        const creds = via === 'vault' || !provider ? await vaultCreds(card) : undefined
         let ok = false
         if (provider && provider in SOCIAL_PROVIDERS) {
           quietConnect.add(card.id)
@@ -3036,7 +3065,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         rememberCheck(card.id, r)
         const was = Boolean(readSettings().connections?.[card.id])
         if (r.state === 'in' && !was) connectMark(card.id, true)
-        if (r.state === 'out' && was) connectMark(card.id, false)
+        // 세션만 풀린 것(금고 계정·간편 로그인으로 두리가 다시 로그인할 수 있음)은 연결이 끊긴 게 아니다
+        const via = connectVia()[card.id]
+        const canRelogin = via?.startsWith('social:') || Boolean(await vaultCreds(card))
+        if (r.state === 'out' && was && !canRelogin) connectMark(card.id, false)
         return json(res, 200, { ...r, connectedAt: readSettings().connections?.[card.id] ?? null })
       }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null

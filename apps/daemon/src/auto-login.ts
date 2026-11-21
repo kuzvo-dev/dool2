@@ -4,7 +4,7 @@
 // 3) 화면 글자로 결과를 본다: 로그인됨 / 로봇 확인·본인인증(사람이 해야 함) / 아이디·비밀번호 틀림 / 모름
 import type { ConnectStep } from '@dool2/protocol'
 import type { ConnectCard } from '@dool2/protocol/connect'
-import { parseRefs } from './browser-tools.js'
+import { fillPassword, parseRefs } from './browser-tools.js'
 import { looksSignedIn, signedInHow } from './connect-watch.js'
 import { checkSignedIn } from './signin-check.js'
 
@@ -607,13 +607,7 @@ export async function autoLogin(
       const f = loginFields(page.text)
       const o = new URL(page.url).origin
       step('비밀번호 넣고 로그인 누르는 중')
-      await browser.call('fill', {
-        tabId,
-        ref: f.password[0],
-        value: input.password,
-        origin: o,
-        password: true,
-      })
+      await fillPassword(browser, { tabId, ref: f.password[0] as string, value: input.password, origin: o })
       if (f.submit) await browser.call('click', { tabId, ref: f.submit[0] }, 30_000).catch(() => undefined)
       else await browser.call('press', { tabId, key: 'Enter' }).catch(() => undefined)
       step('로그인됐는지 확인하는 중')
@@ -648,7 +642,8 @@ export async function autoLogin(
   const loginOrigin = origin
   step('아이디·비밀번호 넣는 중')
   if (userRef) await browser.call('fill', { tabId, ref: userRef, value: input.username, origin })
-  await browser.call('fill', { tabId, ref: pwRef, value: input.password, origin, password: true })
+  // 보안 키패드 칸이면 화면 키패드 버튼으로 (실측 11-21 신한카드)
+  await fillPassword(browser, { tabId, ref: pwRef as string, value: input.password, origin })
 
   // 3) 로그인 누르기: 비밀번호 칸 뒤의 "로그인" 버튼, 없으면 Enter
   step('로그인 누르는 중')
@@ -1129,12 +1124,11 @@ export async function socialLogin(
       const f = loginFields(p.text)
       if (f.user)
         await browser.call('fill', { tabId: providerTab, ref: f.user[0], value: creds.username, origin })
-      await browser.call('fill', {
+      await fillPassword(browser, {
         tabId: providerTab,
-        ref: f.password[0],
+        ref: f.password[0] as string,
         value: creds.password,
         origin,
-        password: true,
       })
       // 사용자의 평소 PC라 '로그인 상태 유지'를 켠다: 끄면 서비스마다 카카오 로그인·카톡 확인을 또 해야 했다 (실측 11번가→올리브영)
       const keep = keepSignedIn(p.text)

@@ -8,6 +8,8 @@ import {
   confirmedScreen,
   cookieReject,
   coverLine,
+  keypadLabels,
+  makeKeypadPassword,
   makePassword,
   matchOption,
   nearlyEmpty,
@@ -2916,5 +2918,41 @@ describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
       ['[e1 버튼 "카카오페이"]', '[e2 라디오 "카카오페이"]', '[e3 라디오 "신용카드"]'].join('\n'),
     )
     expect(payOptions({ refs: flipped })).toEqual(['e2', 'e3'])
+  })
+
+  it('보안 키패드(이름표 붙은 버튼)로 비밀번호를 누른다: 특수문자 줄로 바꿨다가 돌아온다', async () => {
+    // 신한카드 가입 키패드 모양: 숫자·"소문자 x"·"알파벳/특수문자" ↔ 특수 줄("느낌표"·"소문자")
+    let layer = 'letters'
+    const letters = () =>
+      [
+        ...'0123456789'.split('').map((d, i) => `[e${10 + i} 버튼 "${d}"]`),
+        ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c, i) => `[e${30 + i} 버튼 "소문자 ${c}"]`),
+        '[e70 버튼 "알파벳/특수문자"]',
+        '[e73 버튼 "확인"]',
+      ].join(' ')
+    const special = () => '[e106 버튼 "느낌표"] [e107 버튼 "골뱅이"] [e136 버튼 "소문자"] [e139 버튼 "확인"]'
+    const clicks: string[] = []
+    const browser = {
+      async call(cmd: string, args?: Record<string, unknown>) {
+        if (cmd === 'snapshot') return { text: layer === 'letters' ? letters() : special() }
+        if (cmd === 'click') {
+          const ref = String(args?.ref)
+          clicks.push(ref)
+          if (ref === 'e70') layer = 'special'
+          if (ref === 'e136') layer = 'letters'
+        }
+        return {}
+      },
+    }
+    const tools = new BrowserTools(browser as never)
+    expect(await tools.keypadType(3, 'e27', 'a1!b')).toBe(true)
+    // 칸 열기 → a → 1 → 특수 줄 → ! → 글자 줄 → b → 확인
+    expect(clicks).toEqual(['e27', 'e30', 'e11', 'e70', 'e106', 'e136', 'e31', 'e73'])
+    expect(keypadLabels('q')).toContain('소문자 q')
+    expect(keypadLabels('@')).toContain('골뱅이')
+    const kp = makeKeypadPassword()
+    expect(kp).toMatch(/^[a-z0-9!@]{12}$/)
+    expect(kp).toMatch(/[!@]/)
+    expect(kp).toMatch(/\d/)
   })
 })

@@ -88,6 +88,8 @@ export interface LinkHost {
   infoAnswer(id: string, value: string | undefined): void
   /** 카드에서 "처음이에요 · 가입해 주세요"를 눌렀다 (site: 사이트 주소, loginId: 닫을 로그인 카드) */
   signup?(site: string, loginId: string | undefined): void
+  /** 계정을 몰라요 (아이디 찾기·비밀번호 재설정을 두리가) */
+  forgot?(site: string, loginId: string | undefined): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
   /** 설정 > 내 정보·결제 수단 (값은 가려서만 돌려준다) */
@@ -576,6 +578,12 @@ export class PhoneLink {
       case 'signup':
         if (typeof msg.site !== 'string' || !msg.site) return
         return this.host.signup?.(
+          msg.site.slice(0, 200),
+          typeof msg.loginId === 'string' ? msg.loginId : undefined,
+        )
+      case 'forgot':
+        if (typeof msg.site !== 'string' || !msg.site) return
+        return this.host.forgot?.(
           msg.site.slice(0, 200),
           typeof msg.loginId === 'string' ? msg.loginId : undefined,
         )

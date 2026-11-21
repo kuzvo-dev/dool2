@@ -555,6 +555,109 @@ export function makePassword(length = 16): string {
   return chars.join('')
 }
 
+/** 보안 키패드 특수문자 이름 (스크린리더용 이름표: 신한카드 등) */
+export const KEYPAD_SPECIAL: Record<string, string[]> = {
+  '!': ['느낌표'],
+  '@': ['골뱅이'],
+  '#': ['우물표시', '샵'],
+  $: ['달러표시'],
+  '%': ['퍼센트'],
+  '^': ['윗꺽쇠'],
+  '&': ['앰퍼센드'],
+  '*': ['별표'],
+}
+
+/** 보안 키패드로 넣을 비밀번호: 소문자·숫자 + 특수문자 하나 (대문자는 쉬프트가 필요해 뺀다) */
+export function makeKeypadPassword(length = 12): string {
+  const L = 'abcdefghijkmnpqrstuvwxyz'
+  const D = '23456789'
+  const S = '!@'
+  const pick = (set: string) => set[randomInt(set.length)] as string
+  const chars = [pick(L), pick(L), pick(D), pick(D), pick(S)]
+  while (chars.length < Math.max(8, length)) chars.push(pick(L + D))
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1)
+    ;[chars[i], chars[j]] = [chars[j] as string, chars[i] as string]
+  }
+  return chars.join('')
+}
+
+/** 키패드에서 그 글자의 버튼 이름 후보 */
+export function keypadLabels(ch: string): string[] {
+  if (/^\d$/.test(ch)) return [ch]
+  if (/^[a-z]$/.test(ch)) return [`소문자 ${ch}`, ch]
+  if (/^[A-Z]$/.test(ch)) return [`대문자 ${ch}`, ch]
+  return [...(KEYPAD_SPECIAL[ch] ?? []), ch]
+}
+
+export async function keypadType(
+  browser: BrowserCaller,
+  tabId: number,
+  fieldRef: string,
+  pw: string,
+): Promise<boolean> {
+  const snap = async () => {
+    const r = (await browser.call('snapshot', { tabId, maxChars: 60_000 }, 20_000)) as {
+      text?: string
+    }
+    return [...parseRefs(r?.text ?? '')].filter(([, v]) => v.role === '버튼')
+  }
+  const press = (ref: string) =>
+    browser.call('click', { tabId, ref, once: true, force: true, quick: true }, 15_000).then(
+      () => true,
+      () => false,
+    )
+  // 칸을 눌러 키패드를 연다
+  await press(fieldRef)
+  await new Promise((r) => setTimeout(r, 400))
+  let keys = await snap()
+  const find = (names: string[]) => keys.find(([, v]) => names.includes(v.name))?.[0]
+  const isKeypad = () =>
+    keys.filter(([, v]) => /^\d$/.test(v.name)).length >= 10 &&
+    keys.some(([, v]) => /^(소|대)문자 [a-zA-Z]$/.test(v.name))
+  // 특수문자 줄이 열려 있으면 글자 줄로 돌려놓고 시작한다
+  if (!isKeypad()) {
+    const back = find(['소문자', '영문', '알파벳'])
+    if (!back || !(await press(back))) return false
+    await new Promise((r) => setTimeout(r, 250))
+    keys = await snap()
+    if (!isKeypad()) return false
+  }
+  let layer: 'letters' | 'special' = 'letters'
+  for (const ch of pw) {
+    const need = /[a-z0-9]/i.test(ch) ? 'letters' : 'special'
+    if (need !== layer) {
+      const toggle =
+        need === 'special'
+          ? find(['알파벳/특수문자', '특수문자', '특수키'])
+          : find(['소문자', '알파벳/특수문자', '영문'])
+      if (!toggle || !(await press(toggle))) return false
+      await new Promise((r) => setTimeout(r, 250))
+      keys = await snap()
+      layer = need
+    }
+    const ref = find(keypadLabels(ch))
+    if (!ref || !(await press(ref))) return false
+    await new Promise((r) => setTimeout(r, 120))
+  }
+  const done = find(['확인', '입력완료', '완료'])
+  if (done) await press(done)
+  return true
+}
+
+/**
+ * 비밀번호 칸에 금고 값을 넣는다. 한 번에 넣은 글이 잘리면(보안 키패드 칸) 화면 키패드 버튼을 눌러 넣는다.
+ * 넣은 방법을 돌려준다 ('fill' | 'keypad' | 'short': 둘 다 안 됨)
+ */
+export async function fillPassword(
+  browser: BrowserCaller,
+  a: { tabId: number; ref: string; value: string; origin: string },
+): Promise<'fill' | 'keypad' | 'short'> {
+  const put = (await browser.call('fill', { ...a, password: true })) as { length?: number } | undefined
+  if (typeof put?.length !== 'number' || put.length === a.value.length) return 'fill'
+  return (await keypadType(browser, a.tabId, a.ref, a.value)) ? 'keypad' : 'short'
+}
+
 /** 목록에서 사용자가 말한 옵션 찾기: 글이 같은 것, 없으면 그 글로 시작·그 글을 담은 것이 하나뿐일 때 */
 export function matchOption(options: string[], want: string): string | undefined {
   const n = (x: string) => x.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -806,6 +909,8 @@ export class BrowserTools {
   ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
+  /** 금고 값으로 로그인 칸을 채웠다 (연결 카드 없이 일하다 로그인한 것도 연결로 남기게) */
+  onVaultLogin?: (tabId: number, url: string) => void
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
   /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
@@ -910,7 +1015,15 @@ export class BrowserTools {
    * 가입·비번 변경 전에 사용자에게 묻는다. 'ok' = 이미 그렇게 부탁했다(대화), 'asked' = 폰에 고르기 카드를 띄웠다.
    * 고르면 본체가 그 대화로 이어서 하라고 알린다
    */
-  askSignup?: (site: string, key: string, purpose: 'signup' | 'reset') => 'ok' | 'asked' | undefined
+  askSignup?: (
+    site: string,
+    key: string,
+    purpose: 'signup' | 'reset',
+    /** 두리가 만든 비밀번호를 그 칸이 받지 않았다: 사용자에게 직접 정해 달라고 꼭 묻는다 */
+    needOwn?: boolean,
+  ) => 'ok' | 'asked' | undefined
+  /** 만든 비밀번호를 받지 않은 사이트 (다음엔 폰에서 직접 정하게) */
+  private pwNeedOwn = new Set<string>()
   /**
    * 웹사이트에 올릴 PC 파일 확인 (browser_upload). 파일 도구와 같은 울타리(바탕화면·문서·다운로드·사진·동영상,
    * 숨은 폴더·인증서·키 제외)를 본체가 넣어 준다. 없으면 올리기를 하지 않는다
@@ -1057,16 +1170,28 @@ export class BrowserTools {
           )
         // 확장도 주소를 다시 확인한다 (그 사이 다른 페이지로 넘어갔으면 채우지 않는다)
         if (userRef) await this.browser.call('fill', { tabId, ref: userRef, value: entry.username, origin })
-        await this.browser.call('fill', {
+        const put = (await this.browser.call('fill', {
           tabId,
           ref: String(a.passwordRef),
           value: entry.password,
           origin,
           password: true,
-        })
+        })) as { length?: number } | undefined
+        // 키 입력을 막는 보안 키패드 칸이면 화면 키패드 버튼을 눌러 넣는다 (값은 AI에게 안 감)
+        // (실측 11-21 신한카드: 가입은 키패드로 됐는데 로그인 화면이 금고 비밀번호를 받지 않아 로그인이 막혔다)
+        let keypad = false
+        if (typeof put?.length === 'number' && put.length !== entry.password.length)
+          keypad = await this.keypadType(tabId, String(a.passwordRef), entry.password)
         await this.vault?.markUsed(entry.id)
         this.loginTries.set(tabId, { origin, entryId: entry.id })
-        return this.read(tabId, undefined, '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.')
+        this.onVaultLogin?.(tabId, page.url)
+        return this.read(
+          tabId,
+          undefined,
+          keypad
+            ? '두리 금고에서 로그인 정보를 채웠어요(비밀번호는 화면 보안 키패드로 눌러 넣었어요). 로그인 버튼을 눌러 주세요.'
+            : '두리 금고에서 로그인 정보를 채웠어요. 로그인 버튼을 눌러 주세요.',
+        )
       }
       case 'dialog': {
         // 사이트 확인 창(confirm·prompt)에서 고른다. [확인]이 결제·보내기·삭제가 되면 승인을 받는다
@@ -1398,7 +1523,7 @@ export class BrowserTools {
         if (!this.signupAllowed(key)) {
           // 카드에는 서비스 이름으로 (커넥터가 있으면 "알라딘", 없으면 주소)
           const name = (await this.siteConnector?.(page.url).catch(() => undefined))?.name ?? key
-          const said = this.askSignup?.(name, key, purpose)
+          const said = this.askSignup?.(name, key, purpose, this.pwNeedOwn.has(key))
           if (said === 'ok') this.allowSignup(key)
           else if (said === 'asked')
             return {
@@ -1446,9 +1571,23 @@ export class BrowserTools {
         // 칸이 만든 비밀번호를 그대로 받지 않으면 사람에게 넘기지 않고 폰에서 다시 묻는다 (사용자가 규칙에 맞게 직접 정할 수 있다)
         const askAgain = (why: string) => {
           this.disallowSignup(key)
+          // 다시 부르면 같은 걸 또 넣지 않고 폰에서 직접 정하게 한다 (예전엔 '가입해 줘'를 허락으로 보고 같은 실패를 되풀이)
+          this.pwNeedOwn.add(key)
           return new Error(
             `${why} 화면의 비밀번호 규칙(자릿수·허용 문자)을 읽어 사용자에게 한 줄로 알리고 browser_new_password를 다시 불러요. 다시 부르면 폰에 물어 사용자가 규칙에 맞는 비밀번호를 정할 수 있어요.`,
           )
+        }
+        // 한 번에·키로 넣기를 다 막는 보안 키패드 칸: 화면 키패드 버튼을 이름표대로 눌러 넣는다 (값은 AI에게 안 감)
+        let viaKeypad = false
+        if (got !== undefined && got !== pw.length && !own) {
+          const kp = makeKeypadPassword()
+          if (await this.keypadType(tabId, pwRef, kp)) {
+            pw = kp
+            got = kp.length
+            viaKeypad = true
+            if (confirmRef && !(await this.keypadType(tabId, confirmRef, kp)))
+              throw askAgain('비밀번호 확인 칸의 보안 키패드를 누르지 못했어요.')
+          }
         }
         if (got !== undefined && got !== pw.length) {
           if (got < 8) throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(글자가 빠짐).')
@@ -1457,7 +1596,7 @@ export class BrowserTools {
           if (got !== undefined && got !== pw.length)
             throw askAgain('이 칸은 넣은 비밀번호를 그대로 받지 않아요(특수문자를 빼는 칸일 수 있어요).')
         }
-        if (confirmRef) {
+        if (confirmRef && !viaKeypad) {
           const c = await fill(confirmRef, pw)
           if (c !== undefined && c !== pw.length)
             throw new Error(
@@ -1466,6 +1605,7 @@ export class BrowserTools {
         }
         // 금고에는 아직 넣지 않는다: 가입이 끝난 걸 화면에서 보면 넣는다 (실패·"이미 가입" 때 틀린 값이 남지 않게)
         this.ownPw.delete(key)
+        this.pwNeedOwn.delete(key)
         this.pendingPw = this.pendingPw.filter((p) => p.key !== key)
         this.pendingPw.push({ key, origin, username, password: pw, purpose, at: Date.now() })
         return this.read(
@@ -2653,6 +2793,15 @@ export class BrowserTools {
    * 막았다 (시험 가게 결제 창). 키패드는 AI가 방금 짚은 것이고, 자리가 다시 섞였는지는 누른 뒤 AI가 화면으로 판단한다.
    * once: 화면이 안 바뀌는 숫자 버튼을 '안 눌렸다'고 보고 다시 누르면 숫자가 두 번 들어간다
    */
+  /**
+   * 화면 보안 키패드(키마다 이름표가 붙은 것: "3"·"소문자 q"·"느낌표")로 비밀번호를 누른다. 값은 AI에게 가지 않는다.
+   * 키보드 입력을 막는 칸용 (실측 11-21 신한카드 가입: 키 입력·한 번에 넣기 모두 '보안 키패드가 막음').
+   * 키패드가 없거나 글자 버튼을 못 찾으면 false
+   */
+  async keypadType(tabId: number, fieldRef: string, pw: string): Promise<boolean> {
+    return keypadType(this.browser, tabId, fieldRef, pw)
+  }
+
   async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
     for (const [i, d] of [...pin].entries()) {
       const ref = keys[d]

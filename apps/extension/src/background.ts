@@ -2054,9 +2054,20 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const inFrameRef = Boolean(at.frame)
       // 내 정보(이름·휴대폰·생년월일)는 공인된 인증 창 액자에도 넣는다 (금융인증서 창은 금융결제원 주소의 액자다).
       // 비밀번호(금고)는 a.trust를 주지 않아 지금처럼 그 사이트에만 넣는다
+      // 빈 주소(about:blank·srcdoc) 액자는 그 페이지가 직접 그린 것이라 바깥 페이지 주소로 본다
+      // (실측 11-21 신한카드 아이디 찾기: 휴대폰 인증 칸이 about:blank 액자라 '주소가 달라서' 채우지 않았다)
+      const opaque = !at.origin || at.origin === 'null' || /^about:|^data:/.test(at.origin)
+      const frameOrigin =
+        inFrameRef && opaque
+          ? await chrome.tabs
+              .get(tabId)
+              .then((t) => new URL(t.url ?? '').origin)
+              .catch(() => at.origin)
+          : at.origin
       const trusted =
-        inFrameRef && Array.isArray(a.trust) && (a.trust as string[]).includes(siteOf(at.origin))
-      const ok = at.origin === a.origin || (inFrameRef && siteOf(at.origin) === siteOf(a.origin)) || trusted
+        inFrameRef && Array.isArray(a.trust) && (a.trust as string[]).includes(siteOf(frameOrigin))
+      const ok =
+        frameOrigin === a.origin || (inFrameRef && siteOf(frameOrigin) === siteOf(a.origin)) || trusted
       if (!ok) throw new Error('지금 페이지 주소가 저장된 사이트와 달라서 채우지 않았어요')
       if (a.password && !at.isPassword) throw new Error('비밀번호 칸이 아니라서 채우지 않았어요')
       // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있어, 칸을 한 번 눌러 초점을 준다
@@ -2082,6 +2093,15 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         await locate(tabId, a.ref, 'type')
         await typeKeys(tabId, a.value)
         length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
+          () => -1,
+        )) as number
+      }
+      // 비밀번호인데 한 번에 넣은 글이 잘리거나 빠졌으면(보안 입력 칸: 키 입력만 받는 곳) 다시 골라 키를 하나씩 한 번 더
+      // (실측 11-21 신한카드 가입: 만든 비밀번호가 '글자가 빠짐'으로 계속 거절됐다). 값은 키 이벤트로만 가고 어디에도 남지 않는다
+      if (a.password && a.value && length >= 0 && length !== a.value.length) {
+        await locate(tabId, a.ref, 'type')
+        await typeKeys(tabId, a.value)
+        length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), false).catch(
           () => -1,
         )) as number
       }
