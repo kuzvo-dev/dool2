@@ -176,6 +176,7 @@ const TOOL_LABEL: Record<string, string> = {
   browser_dialog: '사이트 확인 창 고르는',
   browser_steps: '여러 동작 하는',
   browser_hover: '마우스 올려 보는',
+  browser_upload: '파일 올리는',
   screen_status: 'PC 상태 확인하는',
   screen_apps: '앱 찾는',
   screen_open: '앱 여는',

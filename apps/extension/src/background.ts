@@ -49,6 +49,10 @@ import {
   pageShotRect,
   pageSnapshot,
   pageTapAt,
+  pageUploadChunk,
+  pageUploadFinish,
+  pageUploadState,
+  pageUploadTarget,
   pageValueLength,
   pageViewport,
   type ReadScope,
@@ -2678,6 +2682,213 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await chrome.tabs.remove(tabId)
       return { tabId, closed: true }
     }
+    case 'upload':
+      return upload(a)
   }
   throw new Error(`모르는 명령이에요: ${String(cmd)}`)
+}
+
+// ── PC 파일 올리기 (browser_upload) ──
+// 해도 되는지는 본체가 정한다(승인). 손은 넣기만 한다:
+// ① 파일 칸을 찾으면 Chrome DevTools(DOM.setFileInputFiles)로 경로를 그대로 넣는다 (큰 영상도 빠르다. 다른 주소 액자는 ③)
+// ② 칸이 없으면(누를 때 칸을 만드는 사이트) 파일 고르기 창을 가로채고(Page.setInterceptFileChooserDialog) 버튼을 누른다.
+//    PC에 파일 고르기 창이 뜨지 않는다
+// ③ 확장에 파일 접근이 꺼져 있으면 Chrome이 ①을 막는다("Not allowed"): 본체가 보낸 조각을 페이지 안에서 파일로 만들어 넣는다
+
+/** 조각을 기다리는 올리기: 표시 → 넣을 곳 (액자 안 칸이면 frameId, 고르기 창으로 잡은 칸이면 페이지 공간 objectId) */
+const uploads = new Map<string, { tabId: number; frameId: number; objectId?: string; at: number }>()
+/** 탭마다 가로챈 파일 고르기 창을 기다리는 쪽 */
+const choosers = new Map<number, (p: { backendNodeId: number; mode: string }) => void>()
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method !== 'Page.fileChooserOpened' || source.tabId === undefined) return
+  choosers.get(source.tabId)?.(params as { backendNodeId: number; mode: string })
+})
+
+/** 페이지 공간에서 그 요소를 this로 함수 부르기 (값으로 돌려받는다) */
+async function callOn<R>(tabId: number, objectId: string, fn: (...args: never[]) => R, ...args: unknown[]) {
+  const r = await cdp<{
+    result?: { value?: R }
+    exceptionDetails?: { exception?: { description?: string } }
+  }>(tabId, 'Runtime.callFunctionOn', {
+    objectId,
+    functionDeclaration: fn.toString(),
+    arguments: args.map((value) => ({ value })),
+    returnByValue: true,
+    awaitPromise: true,
+  })
+  if (r.exceptionDetails)
+    throw new Error(r.exceptionDetails.exception?.description?.split('\n')[0] ?? '페이지에서 오류가 났어요')
+  return r.result?.value as R
+}
+
+/** 표시(data-dool2-up)를 단 칸의 DevTools 번호. 같은 프로세스의 액자까지 찾는다 (다른 주소 액자는 못 찾는다) */
+async function markedNode(tabId: number, token: string): Promise<number | undefined> {
+  await cdp(tabId, 'DOM.getDocument', { depth: 0 })
+  const s = await cdp<{ searchId: string; resultCount: number }>(tabId, 'DOM.performSearch', {
+    query: `input[data-dool2-up="${token}"]`,
+  })
+  try {
+    if (!s.resultCount) return undefined
+    const r = await cdp<{ nodeIds: number[] }>(tabId, 'DOM.getSearchResults', {
+      searchId: s.searchId,
+      fromIndex: 0,
+      toIndex: s.resultCount,
+    })
+    return r.nodeIds.find((n) => n > 0)
+  } finally {
+    await cdp(tabId, 'DOM.discardSearchResults', { searchId: s.searchId }).catch(() => {})
+  }
+}
+
+async function upload(a: Record<string, unknown>): Promise<unknown> {
+  const tabId = await ownedTab(a)
+  // 조각 받기·끝내기 (③)
+  if (typeof a.token === 'string') {
+    const u = uploads.get(a.token)
+    if (!u || u.tabId !== tabId) throw new Error('올리던 파일 칸을 잊었어요. 다시 올려 주세요')
+    const token = a.token
+    const sink = <R>(fn: (...args: never[]) => R, ...args: unknown[]): Promise<R> =>
+      u.objectId
+        ? callOn(tabId, u.objectId, fn, ...args)
+        : (inFrame(tabId, u.frameId, fn as (...x: unknown[]) => R, ...args) as Promise<R>)
+    if (a.cancel) {
+      uploads.delete(token)
+      await sink(pageUploadState, token).catch(() => undefined)
+      return { token, cancelled: true }
+    }
+    if (typeof a.part === 'string') return { token, parts: await sink(pageUploadChunk, token, a.part) }
+    if (Array.isArray(a.finish)) {
+      uploads.delete(token)
+      return { ...(await sink(pageUploadFinish, token, a.finish)), how: 'page' }
+    }
+    throw new Error('조각(part)이나 끝내기(finish)가 없어요')
+  }
+  const ref = String(a.ref ?? '')
+  if (!/^e\d+$/.test(ref)) throw new Error('ref는 e12 같은 표시여야 해요')
+  const paths = (Array.isArray(a.paths) ? a.paths : []).map(String).filter(Boolean)
+  if (!paths.length) throw new Error('올릴 파일이 없어요')
+  for (const [k, v] of uploads) if (Date.now() - v.at > 10 * 60_000) uploads.delete(k)
+  const f = frameOf(tabId, ref)
+  const token = crypto.randomUUID()
+  // 그 칸·라벨이 가리키는 칸·안에 든 칸 하나: 틀릴 일이 없어 바로 넣는다
+  const t = await inFrame(tabId, f.frameId, pageUploadTarget, ref, token, false)
+  if (!t?.ok) throw new Error(t?.error ?? '파일 칸을 찾지 못했어요')
+  // viaPage: 시험용 — 경로 넣기(①)를 건너뛰고 조각 받기(③)로 (파일 접근이 꺼진 확장과 같은 길)
+  const viaPage = a.viaPage === true
+  if (t.how !== 'none') return uploadInto(tabId, f.frameId, token, t, paths, viaPage)
+  // 버튼: 눌러서 사이트가 여는 파일 고르기 창을 가로챈다 (그 사이트가 고른 칸이 맞는 칸이다)
+  let clickError = ''
+  const chosen = await uploadByChooser(tabId, ref, token, paths, viaPage, (e) => {
+    clickError = e
+  })
+  if (chosen) return chosen
+  // 창이 안 떴으면 버튼 가까이(몇 단계 위 상자)에 하나뿐인 파일 칸
+  const near = await inFrame(tabId, f.frameId, pageUploadTarget, ref, token, true)
+  if (near?.ok && near.how !== 'none') return uploadInto(tabId, f.frameId, token, near, paths, viaPage)
+  throw new Error(
+    `${clickError ? `${clickError} — ` : ''}눌러도 파일 고르기 창이 뜨지 않았어요. 화면을 다시 읽어 [사진 추가]·[파일 선택]·[내 PC]·[업로드] 같은 버튼이나 파일 칸을 찾아 그것으로 다시 올려 주세요(먼저 메뉴·창을 열어야 할 수도 있어요)`,
+  )
+}
+
+/** 찾은 파일 칸에 넣는다: ① 경로를 그대로, 안 되면 ③ 조각으로 받겠다고 알린다 */
+async function uploadInto(
+  tabId: number,
+  frameId: number,
+  token: string,
+  t: { how: string; accept: string; multiple: boolean; disabled: boolean },
+  paths: string[],
+  viaPage = false,
+): Promise<unknown> {
+  if (t.disabled)
+    throw new Error('파일 칸이 꺼져(비활성) 있어요. 화면에서 먼저 할 일(종류 고르기 등)이 있는지 읽어 보세요')
+  if (!t.multiple && paths.length > 1)
+    throw new Error('이 칸은 파일을 하나만 받아요. 한 개씩 나눠 올려 주세요')
+  let why = viaPage ? '조각으로 (시험)' : ''
+  const node = viaPage
+    ? undefined
+    : await markedNode(tabId, token).catch((e: Error) => {
+        why = e.message
+        return undefined
+      })
+  if (node) {
+    const set = await cdp(tabId, 'DOM.setFileInputFiles', { files: paths, nodeId: node }).then(
+      () => true,
+      (e: Error) => {
+        why = e.message
+        return false
+      },
+    )
+    if (set) return { ...(await inFrame(tabId, frameId, pageUploadState, token)), how: 'cdp', found: t.how }
+  } else if (!why) why = '다른 주소 액자 속 칸'
+  uploads.set(token, { tabId, frameId, at: Date.now() })
+  return { needBytes: true, token, found: t.how, accept: t.accept, multiple: t.multiple, why }
+}
+
+/**
+ * 버튼을 눌러 뜨는 파일 고르기 창을 가로채 넣는다 (PC에는 창이 뜨지 않는다). 창이 안 뜨면 undefined.
+ * 누르기가 실패하면 그 까닭을 onClickError로 알리고 undefined (부르는 쪽이 둘레 칸을 찾아본다)
+ */
+async function uploadByChooser(
+  tabId: number,
+  ref: string,
+  token: string,
+  paths: string[],
+  viaPage: boolean,
+  onClickError: (why: string) => void,
+): Promise<unknown> {
+  await cdp(tabId, 'Page.setInterceptFileChooserDialog', { enabled: true })
+  try {
+    // 콜백이 채우는 칸 (변수로 두면 타입 좁히기가 콜백에서 채운 것을 모른다)
+    const box: { got?: { backendNodeId: number; mode: string } } = {}
+    const opened = new Promise<void>((done) =>
+      choosers.set(tabId, (p) => {
+        box.got ??= p
+        done()
+      }),
+    )
+    try {
+      await run('click', { tabId, ref, once: true })
+    } catch (e) {
+      onClickError((e as Error).message)
+      return undefined
+    }
+    if (!box.got) await Promise.race([opened, sleep(4000)])
+    choosers.delete(tabId)
+    const got = box.got
+    if (!got) return undefined
+    if (got.mode === 'selectSingle' && paths.length > 1)
+      throw new Error('이 칸은 파일을 하나만 받아요. 한 개씩 나눠 올려 주세요')
+    let why = viaPage ? '조각으로 (시험)' : ''
+    const set = viaPage
+      ? false
+      : await cdp(tabId, 'DOM.setFileInputFiles', {
+          files: paths,
+          backendNodeId: got.backendNodeId,
+        }).then(
+          () => true,
+          (e: Error) => {
+            why = e.message
+            return false
+          },
+        )
+    const { object } = await cdp<{ object: { objectId?: string } }>(tabId, 'DOM.resolveNode', {
+      backendNodeId: got.backendNodeId,
+    })
+    if (!object.objectId) throw new Error('파일 칸을 찾지 못했어요. 다시 읽어 주세요')
+    const info = await callOn(tabId, object.objectId, pageUploadState, token)
+    if (set) return { ...info, how: 'cdp', found: 'chooser' }
+    uploads.set(token, { tabId, frameId: 0, objectId: object.objectId, at: Date.now() })
+    return {
+      needBytes: true,
+      token,
+      found: 'chooser',
+      accept: info?.accept ?? '',
+      multiple: got.mode === 'selectMultiple',
+      why,
+    }
+  } finally {
+    choosers.delete(tabId)
+    await cdp(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {})
+  }
 }

@@ -402,6 +402,11 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     if (el instanceof HTMLInputElement) {
       if (el.type === 'checkbox' || el.type === 'radio') return el.checked ? ' 선택됨' : ''
       if (el.type === 'password') return el.value ? ' 채워짐' : ''
+      // 파일 칸: 글자를 넣는 칸이 아니라 browser_upload로 파일을 넣는다
+      if (el.type === 'file') {
+        const names = Array.from(el.files ?? [], (f) => f.name).join(', ')
+        return ` 파일 칸${names ? ` 고른 파일="${clean(names, 80)}"` : ''}`
+      }
       if (el.value && !['button', 'submit', 'reset', 'image'].includes(el.type))
         return ` 값="${clean(el.value, 60)}"`
       return ''
@@ -781,6 +786,8 @@ export function pageLocate(
   const el = st?.refs.get(ref)?.deref()
   if (!el || !el.isConnected)
     return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
+  if (mode === 'type' && el instanceof HTMLInputElement && el.type === 'file')
+    return { ok: false, error: `${ref}는 파일 칸이에요. 글자 대신 browser_upload로 PC 파일을 넣어요` }
   // 상자가 없는 요소(display: contents 버튼 등)는 크기가 0으로 재진다: 안에 그려진 자식들의 영역을 쓴다
   // (캐치테이블 날짜·인원 창의 시간 버튼: 화면엔 보이는데 "보이지 않아요"로 못 눌렀다)
   const drawn = (e: Element) => {
@@ -2665,4 +2672,160 @@ export function pageReadOpens(): { url: string; at: number; none: boolean }[] {
   const w = window as unknown as { __dool2opens?: { url: string; at: number; none: boolean }[] }
   const log = w.__dool2opens ?? []
   return log.splice(0, log.length)
+}
+
+// ── PC 파일 올리기 (browser_upload) ──
+// 표시(ref)가 파일 칸이면 그 칸, 버튼·라벨이면 딸린 파일 칸을 찾는다. 확장이 경로로 넣을 수 있으면(CDP) 표시만 달아 두고,
+// 못 넣으면 본체가 보낸 조각을 모아 페이지 안에서 파일로 만든다. 아래 셋은 확장 공간(executeScript)과
+// 페이지 공간(Runtime.callFunctionOn, this = 파일 칸) 어디서든 돌도록 바깥 것을 쓰지 않는다
+
+export type UploadTarget =
+  | { ok: false; error: string }
+  | { ok: true; how: 'none' }
+  | {
+      ok: true
+      how: 'self' | 'label' | 'inside' | 'near'
+      accept: string
+      multiple: boolean
+      disabled: boolean
+    }
+
+/**
+ * 올릴 칸 찾기: 그 칸 → 라벨이 가리키는 칸 → 안에 든 칸 하나. near면 가까운 상자(4단계 위까지)에 하나뿐인 칸도
+ * (버튼을 눌러도 고르기 창이 안 뜰 때만: 멀리 있는 다른 칸을 잘못 고르지 않게)
+ */
+export function pageUploadTarget(ref: string, token: string, near: boolean): UploadTarget {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const el = st?.refs.get(ref)?.deref()
+  if (!el?.isConnected)
+    return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
+  const isFile = (e: unknown): e is HTMLInputElement => e instanceof HTMLInputElement && e.type === 'file'
+  /** 열린 shadow DOM 안까지 파일 칸 모으기 */
+  const filesIn = (root: Element | ShadowRoot): HTMLInputElement[] => {
+    const out: HTMLInputElement[] = []
+    const walk = (r: Element | ShadowRoot) => {
+      for (const x of Array.from(r.querySelectorAll('*'))) {
+        if (isFile(x)) out.push(x)
+        if (x.shadowRoot) walk(x.shadowRoot)
+      }
+    }
+    walk(root)
+    return out
+  }
+  let input: HTMLInputElement | undefined
+  let how: 'self' | 'label' | 'inside' | 'near' = 'self'
+  if (isFile(el)) input = el
+  if (!input) {
+    const lab = el instanceof HTMLLabelElement ? el : el.closest('label')
+    if (isFile(lab?.control)) {
+      input = lab.control as HTMLInputElement
+      how = 'label'
+    }
+  }
+  if (!input) {
+    const inner = filesIn(el)
+    if (inner.length === 1) {
+      input = inner[0]
+      how = 'inside'
+    }
+  }
+  if (!input && near) {
+    let box: Node | null = el.parentNode
+    for (let i = 0; box && i < 4; i++) {
+      if (box instanceof ShadowRoot) box = box.host
+      const list = filesIn(box as Element)
+      if (list.length === 1) {
+        input = list[0]
+        how = 'near'
+        break
+      }
+      // 칸이 여럿이면 어느 것인지 모른다: 눌러서 뜨는 고르기 창으로
+      if (list.length > 1) break
+      box = (box as Element).parentNode
+    }
+  }
+  if (!input) return { ok: true, how: 'none' }
+  const g = globalThis as unknown as { __dool2up?: Record<string, { input: HTMLInputElement }> }
+  g.__dool2up ??= {}
+  g.__dool2up[token] = { input }
+  input.setAttribute('data-dool2-up', token)
+  return { ok: true, how, accept: input.accept, multiple: input.multiple, disabled: input.disabled }
+}
+
+/** 파일 조각 하나 받기 (base64). 받은 조각 수를 돌려준다 */
+export function pageUploadChunk(token: string, b64: string): number {
+  const g = globalThis as unknown as { __dool2parts?: Record<string, Uint8Array[]> }
+  g.__dool2parts ??= {}
+  g.__dool2parts[token] ??= []
+  const parts = g.__dool2parts[token]
+  const U = Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array }
+  let bytes: Uint8Array
+  if (U.fromBase64) bytes = U.fromBase64(b64)
+  else {
+    const bin = atob(b64)
+    bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  }
+  parts.push(bytes)
+  return parts.length
+}
+
+/**
+ * 모은 조각으로 파일을 만들어 칸에 넣고 input·change를 알린다 (사람이 파일을 고른 것과 같게).
+ * this가 파일 칸이면(페이지 공간) 그것에, 아니면 pageUploadTarget이 찾아 둔 칸에
+ */
+export function pageUploadFinish(
+  this: unknown,
+  token: string,
+  files: { name: string; type: string; lastModified: number; parts: number }[],
+): { names: string[]; accept: string; multiple: boolean } {
+  const g = globalThis as unknown as {
+    __dool2parts?: Record<string, Uint8Array[]>
+    __dool2up?: Record<string, { input: HTMLInputElement }>
+  }
+  const input =
+    this instanceof HTMLInputElement ? this : (g.__dool2up?.[token]?.input as HTMLInputElement | undefined)
+  const parts = g.__dool2parts?.[token] ?? []
+  if (g.__dool2parts) delete g.__dool2parts[token]
+  if (g.__dool2up) delete g.__dool2up[token]
+  if (!input) throw new Error('파일 칸이 사라졌어요. 페이지를 다시 읽어 주세요')
+  input.removeAttribute('data-dool2-up')
+  const dt = new DataTransfer()
+  let at = 0
+  for (const f of files) {
+    const mine = parts.slice(at, at + f.parts)
+    at += f.parts
+    dt.items.add(new File(mine as BlobPart[], f.name, { type: f.type, lastModified: f.lastModified }))
+  }
+  input.files = dt.files
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  return {
+    names: Array.from(input.files ?? [], (f) => f.name),
+    accept: input.accept,
+    multiple: input.multiple,
+  }
+}
+
+/** 넣은 뒤 칸에 든 파일 이름 (경로로 넣었을 때). 표시도 지운다 */
+export function pageUploadState(
+  this: unknown,
+  token: string,
+): { names: string[]; accept: string; multiple: boolean } | undefined {
+  const g = globalThis as unknown as {
+    __dool2parts?: Record<string, Uint8Array[]>
+    __dool2up?: Record<string, { input: HTMLInputElement }>
+  }
+  const input =
+    this instanceof HTMLInputElement ? this : (g.__dool2up?.[token]?.input as HTMLInputElement | undefined)
+  if (g.__dool2up) delete g.__dool2up[token]
+  if (g.__dool2parts) delete g.__dool2parts[token]
+  if (!input) return undefined
+  input.removeAttribute('data-dool2-up')
+  return {
+    names: Array.from(input.files ?? [], (f) => f.name),
+    accept: input.accept,
+    multiple: input.multiple,
+  }
 }

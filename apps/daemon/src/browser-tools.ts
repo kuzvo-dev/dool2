@@ -25,6 +25,7 @@ import {
   pickPayMethod,
 } from '@dool2/protocol/pay-methods'
 import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals, MONEY_APPROVAL_TTL_MS } from './approvals.js'
+import type { UploadFile } from './files.js'
 import { LoginRequests } from './logins.js'
 import {
   maskValue,
@@ -36,6 +37,7 @@ import {
   profileValue,
   sourceOf,
 } from './profile.js'
+import { notAccepted, sendFiles, sizeText, type UploadReply } from './upload.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export interface ToolResult {
@@ -78,6 +80,7 @@ export const BROWSER_TOOLS = [
   'order_done',
   'wait',
   'tabs',
+  'upload',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -908,6 +911,16 @@ export class BrowserTools {
    * 고르면 본체가 그 대화로 이어서 하라고 알린다
    */
   askSignup?: (site: string, key: string, purpose: 'signup' | 'reset') => 'ok' | 'asked' | undefined
+  /**
+   * 웹사이트에 올릴 PC 파일 확인 (browser_upload). 파일 도구와 같은 울타리(바탕화면·문서·다운로드·사진·동영상,
+   * 숨은 폴더·인증서·키 제외)를 본체가 넣어 준다. 없으면 올리기를 하지 않는다
+   */
+  uploadFiles?: (paths: string[]) => Promise<{ files: UploadFile[] } | { error: string }>
+  /** 올리기 승인 요청 → 올릴 파일들 (승인되면 본체가 그 칸에 넣는다) */
+  private uploadAsks = new Map<string, UploadFile[]>()
+  /** 승인받아 올린 파일: "사이트|실제 경로" → 이때까지 다시 묻지 않는다 (다시 시도·같은 사진 다른 칸) */
+  private uploadPass = new Map<string, number>()
+
   /** 사용자가 직접 정한 새 비밀번호 (사이트마다, 한 번 쓰면 지운다). AI는 값을 받지 않는다 */
   private ownPw = new Map<string, string>()
   setOwnPassword(key: string, pw: string) {
@@ -1217,6 +1230,8 @@ export class BrowserTools {
             : {}),
         })
       }
+      case 'upload':
+        return this.upload(tabId, a)
       case 'fill_profile': {
         // 내 정보 (예약자·주문자 칸): AI는 칸과 항목만 말하고, 값은 본체가 주소를 확인해 확장에 직접 넘긴다
         const page = this.pages.get(tabId)
@@ -2365,6 +2380,120 @@ export class BrowserTools {
     }
   }
 
+  /**
+   * PC 파일을 페이지의 파일 칸에 넣는다 (블로그 사진·영상·서류 첨부). 내 파일이 그 사이트로 나가는 일이라
+   * 처음 한 번은 승인 카드(무슨 파일을·어느 사이트에)를 받는다. 승인한 같은 파일·같은 사이트는 30분 동안 다시 묻지 않는다.
+   * 넣기만 한다: 글 올리기·제출 버튼은 AI가 이어서 누른다(보내기·제출은 그 버튼에서 따로 승인)
+   */
+  private async upload(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
+    const page = this.pages.get(tabId)
+    const ref = String(a.ref ?? '')
+    const target = page?.refs.get(ref)
+    if (!page || !target) throw new Error(`${ref || 'ref'}가 무엇인지 몰라요. 먼저 페이지를 읽어 주세요`)
+    if (!this.uploadFiles) throw new Error('이 PC에서는 파일 올리기를 쓸 수 없어요')
+    const paths = (Array.isArray(a.paths) ? a.paths : typeof a.path === 'string' ? [a.path] : []).map(String)
+    const v = await this.uploadFiles(paths)
+    if ('error' in v) throw new Error(v.error)
+    const files = v.files
+    let host = ''
+    try {
+      host = new URL(page.url).host
+    } catch {}
+    if (!host) throw new Error('페이지 주소를 알 수 없어요')
+    const now = Date.now()
+    if (files.every((f) => (this.uploadPass.get(`${host}|${f.path}`) ?? 0) > now)) {
+      const r = await sendFiles(this.browser, tabId, ref, files)
+      return this.read(tabId, undefined, this.uploadedText(files, r, host, target.name))
+    }
+    if (this.finalStep() === 'self')
+      throw new Error(
+        '사용자가 "마지막 버튼은 직접 누르기"로 정해 두어 두리는 내 파일을 사이트에 올리지 않아요. 어떤 파일을 어디에 올리면 되는지 정리해 알리고 이번 답을 끝내요.',
+      )
+    const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
+      | { data?: string }
+      | undefined
+    const names = files.map((f) => f.name)
+    const what = String(a.what ?? '')
+      .trim()
+      .slice(0, 120)
+    const rec = this.approvals.create({
+      tabId,
+      ref,
+      role: target.role,
+      label: target.name,
+      url: page.url,
+      kind: 'contact',
+      reason: '내 PC 파일을 웹사이트에 올리는 일',
+      what: (what || `파일 ${files.length}개 올리기 · ${names.join(', ')}`).slice(0, 200),
+      where: host,
+      items: files.map((f) => `${f.show} (${sizeText(f.size)})`),
+      ...(shot?.data ? { shot: shot.data } : {}),
+    })
+    this.uploadAsks.set(rec.id, files)
+    this.hold(tabId, APPROVAL_TTL_MS)
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `승인을 요청했어요(${rec.id.slice(0, 8)}). ${host}에 ${names.join(', ')}을(를) 올려도 되는지 사용자에게 한두 문장으로 묻고 이번 답은 여기서 끝내세요. ` +
+            '승인되면 두리가 그 파일 칸에 직접 넣고, 다음 메시지로 결과를 알려 줘요. 그때 페이지를 다시 읽어 파일이 올라갔는지 보고 이어서 해요.',
+        },
+      ],
+    }
+  }
+
+  /** 넣은 뒤 AI에게: 무엇이 들어갔고, 아직 올리기·제출은 안 했다 */
+  private uploadedText(files: UploadFile[], r: UploadReply, host: string, label: string): string {
+    const names = files.map((f) => f.name)
+    const off = notAccepted(r.accept ?? '', names)
+    return (
+      `${host}의 ${label ? `"${label}" ` : ''}파일 칸에 ${names.join(', ')}을(를) 넣었어요` +
+      `${r.found === 'chooser' ? ' (눌러서 뜬 파일 고르기 창으로)' : ''}.` +
+      (off.length
+        ? ` 이 칸은 "${r.accept}"만 받는다고 적혀 있어요: ${off.join(', ')}은(는) 거절될 수 있어요.`
+        : '') +
+      ' 아직 글 올리기·제출은 하지 않았어요. 사이트가 파일을 받는 데 시간이 걸릴 수 있으니 화면에서 올라간 것(미리보기·파일 이름·진행률)을 확인하고 이어서 해요.'
+    )
+  }
+
+  /** 승인된 올리기: 그 칸이 그대로인지 보고 넣는다 */
+  private async approveUpload(
+    id: string,
+    rec: ApprovalRecord,
+    files: UploadFile[],
+  ): Promise<{ ok: boolean; message: string }> {
+    let host = ''
+    try {
+      host = new URL(rec.url).host
+    } catch {}
+    try {
+      const s = (await this.browser.call('snapshot', { tabId: rec.tabId, maxChars: 40_000 })) as Snapshot
+      this.pages.set(rec.tabId, pageInfo(s.url, s.text))
+      const now = parseRefs(s.text).get(rec.ref)
+      if (s.url !== rec.url || !now || now.name !== rec.label || now.role !== rec.role) {
+        const msg = `승인한 뒤 화면이 바뀌어서 파일을 넣지 않았어요("${rec.label || rec.ref}"). 페이지를 다시 읽고 다시 올려 주세요.`
+        this.approvals.finish(id, false, msg)
+        return { ok: false, message: msg }
+      }
+      // 파일이 그사이 옮겨지거나 지워졌을 수 있다: 다시 확인한다
+      const v = this.uploadFiles
+        ? await this.uploadFiles(files.map((f) => f.path))
+        : { error: '파일을 볼 수 없어요' }
+      if ('error' in v) throw new Error(v.error)
+      const r = await sendFiles(this.browser, rec.tabId, rec.ref, v.files)
+      const until = Date.now() + 30 * 60_000
+      for (const f of v.files) this.uploadPass.set(`${host}|${f.path}`, until)
+      const msg = this.uploadedText(v.files, r, host, rec.label)
+      this.approvals.finish(id, true, msg)
+      return { ok: true, message: msg }
+    } catch (e) {
+      const msg = `파일을 올리지 못했어요: ${(e as Error).message}`
+      this.approvals.finish(id, false, msg)
+      return { ok: false, message: msg }
+    }
+  }
+
   /** 사이트 확인 창의 [확인]을 누를지 승인을 받는다 (창이 떠 있는 동안 페이지가 멈춰 있어 화면 캡처는 없다) */
   private askDialogApproval(
     tabId: number,
@@ -2838,6 +2967,11 @@ export class BrowserTools {
   async approve(id: string, choice?: string): Promise<{ ok: boolean; message: string }> {
     const rec: ApprovalRecord | undefined = this.approvals.take(id)
     if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
+    const upFiles = this.uploadAsks.get(id)
+    if (upFiles) {
+      this.uploadAsks.delete(id)
+      return this.approveUpload(id, rec, upFiles)
+    }
     const dialogText = this.dialogApprovals.get(id)
     if (dialogText !== undefined) {
       this.dialogApprovals.delete(id)

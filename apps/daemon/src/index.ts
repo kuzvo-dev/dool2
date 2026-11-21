@@ -87,7 +87,7 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
-import { FileTools, htmlText, type userFolders } from './files.js'
+import { FileTools, htmlText, type UserFolders } from './files.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
@@ -108,6 +108,7 @@ export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
 export { BROWSER_TOOLS, BrowserTools, classifyRisk, type ToolResult } from './browser-tools.js'
 export { ConnectorHealth } from './connector-health.js'
 export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
+export { FileTools } from './files.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from './render.js'
@@ -147,7 +148,7 @@ export interface DaemonOptions {
   /** 시험용: 도구 주소(/api/tools) 토큰을 정해 둔다 (없으면 켤 때마다 새로 만든다) */
   toolToken?: string
   /** 시험용: PC 파일 도구가 다룰 폴더 (기본: 사용자의 바탕화면·문서·다운로드) */
-  fileFolders?: ReturnType<typeof userFolders>
+  fileFolders?: UserFolders
   /** Codex 실행 파일을 직접 지정 (기본: 처음 쓸 때 내려받은 것) */
   codexBin?: string
   /** API 키 같은 비밀값 보관소 (기본: 메모리) */
@@ -387,6 +388,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     busy: () => ({ turns: activeThreads.size, connecting: [...connecting.keys()] }),
     ...(opts.renderFile ? { renderFile: opts.renderFile } : {}),
   })
+  // 웹사이트에 PC 파일 올리기(browser_upload)도 파일 도구와 같은 폴더 울타리 안에서만
+  browserTools.uploadFiles = (p) => fileTools.uploadable(p)
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
   fileTools.onWritten = (f) => {
     const md = (rows: unknown[][]) =>

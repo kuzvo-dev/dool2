@@ -51,7 +51,7 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
     const p = scope.inside(raw)
     if (!p)
       return fail(
-        `${basename(raw)}: 없거나 바탕화면·문서·다운로드 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
+        `${basename(raw)}: 없거나 바탕화면·문서·다운로드·사진·동영상 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
       )
     if (scope.sensitive(p)) return fail(`${basename(p)}: 민감한 파일이라 손대지 않아요.`)
     const ext = extname(p).toLowerCase()
@@ -77,7 +77,7 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
     typeof args.folder === 'string' && args.folder.trim()
       ? scope.insideNew(args.folder.trim())
       : dirname(first.path)
-  if (!outDir) return fail('새 파일을 둘 폴더는 바탕화면·문서·다운로드 안이어야 해요.')
+  if (!outDir) return fail('새 파일을 둘 폴더는 바탕화면·문서·다운로드·사진·동영상 안이어야 해요.')
   const stem = basename(first.path, extname(first.path))
   const wanted =
     typeof args.name === 'string' && args.name.trim() ? cleanName(args.name).replace(/\.pdf$/i, '') : ''

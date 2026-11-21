@@ -1,4 +1,4 @@
-// PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드)에서 찾기·읽기, 새 파일 만들기.
+// PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드·사진·동영상)에서 찾기·읽기, 새 파일 만들기.
 // AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·덮어쓰기는 없다.
 // 옮기기·이름 바꾸기, 사진 형식 바꾸기, 출력은 file-ops.ts (ADR 0024, 승인·되돌리기와 함께).
 // 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(pdf.ts, 쪽마다 줄·표를 살려).
@@ -26,7 +26,14 @@ const fail = (text: string): FileToolResult => ({ isError: true, content: [{ typ
 /** 두리가 만든 파일을 모으는 폴더 (문서 아래) */
 export const DOORI_FOLDER = '두리'
 
-export function userFolders(home = homedir()): Record<'desktop' | 'documents' | 'downloads', string[]> {
+export type FolderKey = 'desktop' | 'documents' | 'downloads' | 'pictures' | 'movies'
+/** 두리가 다루는 폴더들. 사진·동영상은 블로그 사진·영상 올리기(browser_upload) 때문에 더했다 (없으면 빈 목록) */
+export type UserFolders = Record<'desktop' | 'documents' | 'downloads', string[]> &
+  Partial<Record<'pictures' | 'movies', string[]>>
+/** 사용자에게 알리는 폴더 이름들 */
+export const FOLDERS_TEXT = '바탕화면·문서·다운로드·사진·동영상'
+
+export function userFolders(home = homedir()): Record<FolderKey, string[]> {
   const pick = (...names: string[]) =>
     [...new Set(names.map((n) => join(home, n)).filter((p) => existsSync(p)))].map((p) => {
       try {
@@ -39,23 +46,45 @@ export function userFolders(home = homedir()): Record<'desktop' | 'documents' | 
     desktop: pick('Desktop', 'OneDrive/Desktop', 'OneDrive/바탕 화면', '바탕 화면'),
     documents: pick('Documents', 'OneDrive/Documents', 'OneDrive/문서', '문서'),
     downloads: pick('Downloads', '다운로드'),
+    pictures: pick('Pictures', 'OneDrive/Pictures', 'OneDrive/사진', '사진'),
+    // 맥은 Movies, 윈도우는 Videos
+    movies: pick('Movies', 'Videos', 'OneDrive/Videos', 'OneDrive/동영상', '동영상'),
   }
 }
 
-const FOLDER_LABEL = { desktop: '바탕화면', documents: '문서', downloads: '다운로드' } as const
-type FolderKey = keyof typeof FOLDER_LABEL
+const FOLDER_LABEL: Record<FolderKey, string> = {
+  desktop: '바탕화면',
+  documents: '문서',
+  downloads: '다운로드',
+  pictures: '사진',
+  movies: '동영상',
+}
 
 // 읽지 않는 것: 숨은 파일·폴더, 공동인증서(NPKI), 키·인증서 파일, 비밀번호·지갑 파일, 환경 설정 비밀값
 const SENSITIVE =
   /(^|[/\\])\.|npki|gpki|signcert|signpri|\.(pem|key|p12|pfx|der|cer|crt|keychain|kdbx|ovpn|ppk)$|id_rsa|id_ed25519|wallet|비밀번호|password|passwd/i
 // 찾을 때 건너뛰는 폴더 (무겁거나 사용자 문서가 아닌 것)
-const SKIP_DIR = /^(node_modules|Library|AppData|\.git|\$RECYCLE\.BIN|System Volume Information)$/
+const SKIP_DIR =
+  /^(node_modules|Library|AppData|\.git|\$RECYCLE\.BIN|System Volume Information|Photo Booth Library)$|\.(photoslibrary|photolibrary|migratedphotolibrary|aplibrary|imovielibrary|fcpbundle|tvlibrary)$/i
+
+/** 웹사이트에 올릴 파일 (browser_upload) */
+export interface UploadFile {
+  /** 실제 경로 (바로가기를 푼 것) */
+  path: string
+  name: string
+  size: number
+  mtime: number
+  /** 사용자에게 보이는 경로 (~/Pictures/a.jpg) */
+  show: string
+}
+export const UPLOAD_MAX_FILES = 20
+export const UPLOAD_MAX_BYTES = 4 * 1024 ** 3
 
 /** 파일 이름을 비교할 모양으로 (맥은 한글 이름을 자모로 나눠 저장한다: NFC로 맞춘다) */
 const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 
 export class FileTools {
-  private readonly folders: ReturnType<typeof userFolders>
+  private readonly folders: Record<FolderKey, string[]>
   private readonly home: string
   /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
   readonly ops: FileOps
@@ -69,7 +98,7 @@ export class FileTools {
     /** 미리보기 그림 (JPEG base64, HTML을 PNG로 그린 것) */
     image?: string
   }) => void
-  constructor(folders?: ReturnType<typeof userFolders>, home = homedir(), opts: FileOpsOptions = {}) {
+  constructor(folders?: UserFolders, home = homedir(), opts: FileOpsOptions = {}) {
     // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
     const real = (p: string) => {
       try {
@@ -83,6 +112,8 @@ export class FileTools {
       desktop: f.desktop.map(real),
       documents: f.documents.map(real),
       downloads: f.downloads.map(real),
+      pictures: (f.pictures ?? []).map(real),
+      movies: (f.movies ?? []).map(real),
     }
     this.home = real(home)
     this.ops = new FileOps(
@@ -146,6 +177,32 @@ export class FileTools {
     return `~${sep}${relative(this.home, p)}`
   }
 
+  /**
+   * 웹사이트에 올릴 파일 확인 (browser_upload). 읽기와 같은 울타리: 사용자 폴더 안의 보통 파일만,
+   * 숨은 폴더·인증서·키·비밀번호 파일은 안 된다. 실제 경로(바로가기를 푼 것)·이름·크기를 돌려준다
+   */
+  async uploadable(paths: string[]): Promise<{ files: UploadFile[] } | { error: string }> {
+    const list = paths.map((p) => String(p ?? '').trim()).filter(Boolean)
+    if (!list.length) return { error: '올릴 파일 경로를 주세요. file_find로 먼저 찾아요.' }
+    if (list.length > UPLOAD_MAX_FILES) return { error: `한 번에 ${UPLOAD_MAX_FILES}개까지만 올려요.` }
+    const files: UploadFile[] = []
+    for (const raw of list) {
+      const p = this.inside(raw)
+      if (!p)
+        return {
+          error: `${basename(raw)}: 없거나 ${FOLDERS_TEXT} 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
+        }
+      if (SENSITIVE.test(p))
+        return { error: `${basename(p)}: 인증서·키·비밀번호 같은 민감한 파일은 웹사이트에 올리지 않아요.` }
+      const s = await stat(p).catch(() => undefined)
+      if (!s?.isFile()) return { error: `${basename(p)}: 파일이 아니에요(폴더는 올릴 수 없어요).` }
+      if (s.size > UPLOAD_MAX_BYTES) return { error: `${basename(p)}: 4GB보다 큰 파일은 올리지 않아요.` }
+      if (!files.some((f) => f.path === p))
+        files.push({ path: p, name: basename(p), size: s.size, mtime: s.mtimeMs, show: this.show(p) })
+    }
+    return { files }
+  }
+
   async run(tool: string, args: Record<string, unknown>): Promise<FileToolResult> {
     try {
       if (tool === 'file_find')
@@ -177,7 +234,7 @@ export class FileTools {
     }
   }
 
-  /** 이름으로 찾기: 바탕화면·문서·다운로드(4단계 아래까지), 최근에 바뀐 것 먼저 30개(limit으로 300개까지) */
+  /** 이름으로 찾기: 바탕화면·문서·다운로드·사진·동영상(4단계 아래까지), 최근에 바뀐 것 먼저 30개(limit으로 300개까지) */
   async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
     const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
@@ -204,7 +261,7 @@ export class FileTools {
     }
     for (const r of roots) await walk(r, 0)
     hits.sort((a, b) => b.mtime - a.mtime)
-    if (!hits.length) return ok(`"${query}"이(가) 들어간 파일을 바탕화면·문서·다운로드에서 찾지 못했어요.`)
+    if (!hits.length) return ok(`"${query}"이(가) 들어간 파일을 ${FOLDERS_TEXT}에서 찾지 못했어요.`)
     const kb = (n: number) =>
       n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
     const day = (t: number) =>
@@ -222,15 +279,14 @@ export class FileTools {
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
           .join('\n') +
         (hits.length > max ? `\n다 보려면 limit을 늘려(300까지) 다시 찾아 주세요.` : '') +
-        '\n읽으려면 file_read, 옮기거나 이름을 바꾸려면 file_move, 사진 형식은 file_convert, 출력은 file_print에 이 경로를 그대로 주세요.',
+        '\n읽으려면 file_read, 옮기거나 이름을 바꾸려면 file_move, 사진 형식은 file_convert, 출력은 file_print, 웹사이트(블로그·영상·서류 첨부)에 올리려면 browser_upload에 이 경로를 그대로 주세요.',
     )
   }
 
   /** 읽기: 글로 바꿔 3만 자씩. from으로 이어 읽는다 */
   async read(path: string, from = 0): Promise<FileToolResult> {
     const p = this.inside(path)
-    if (!p)
-      return fail('바탕화면·문서·다운로드 안의 파일만 읽을 수 있어요. file_find로 경로를 먼저 찾아 주세요.')
+    if (!p) return fail(`${FOLDERS_TEXT} 안의 파일만 읽을 수 있어요. file_find로 경로를 먼저 찾아 주세요.`)
     if (SENSITIVE.test(p)) return fail('인증서·키·비밀번호 같은 민감한 파일은 두리가 읽지 않아요.')
     const s = await stat(p)
     if (s.isDirectory()) return this.listDir(p)

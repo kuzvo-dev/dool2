@@ -383,6 +383,13 @@ export const BrowserCommandSchema = z.enum([
    * 정리로 닫은 탭, 막힌 새 창(팝업 차단). 늦게 뜬 결제 창·로그인 창을 AI가 직접 찾는다
    */
   'tabs',
+  /**
+   * PC 파일을 페이지의 파일 칸(input type=file)에 넣는다 {tabId, ref, paths} (블로그 사진·영상·서류 첨부).
+   * ref가 버튼·라벨이면 딸린 파일 칸을 찾고, 없으면 눌러서 뜨는 파일 고르기 창을 가로채 넣는다.
+   * 확장이 파일을 직접 못 읽으면(파일 접근 꺼짐) {needBytes, token}을 돌려주고, 본체가 조각({token, part})으로
+   * 보낸 뒤 끝내기({token, finish})로 넣는다. 해도 되는지(승인)는 본체가 정한다
+   */
+  'upload',
 ])
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>
 
