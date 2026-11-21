@@ -4,10 +4,10 @@
     {
       "name": "nonpay",
       "title": "병원 비급여 진료비 비교",
-      "description": "로그인 없이 된다. 건강보험심사평가원 '비급여 진료비용 정보'에서 한 지역(시·도, 시·군·구) 병원들이 신고한 비급여 가격을 병원별로 돌려준다: 병원 이름·종류·도로명 주소·전화·항목 이름·최저~최고 가격·특이사항·신고 기준월·적용 시작일. 최저 가격 싼 순 40곳까지. '○○ 근처 도수치료·MRI·초음파 가격 비교', '체외충격파 싼 데'에 쓴다. 사용자에게 병원마다 전화해 보라고 하지 말고 이걸로 먼저 찾는다. 동(洞)으로는 못 고르니 시·군·구로 찾고, 동네는 near(병원·역 이름이나 도로명 낱말, 예: 정자)로 좁히거나 결과 주소를 보고 고른다. 도수치료는 2026-07-01부터 관리급여로 바뀌었지만 병원 신고 가격은 그대로 나온다.",
+      "description": "로그인 없이 된다. 건강보험심사평가원 '비급여 진료비용 정보'에서 한 지역(시·도, 시·군·구) 병원들이 신고한 비급여 가격을 병원별로 돌려준다: 병원 이름·종류·도로명 주소·전화·항목 이름·최저~최고 가격·특이사항·신고 기준월·적용 시작일. 사이트 검색 결과 첫 쪽(10곳 안팎)이라 싼 순이 아니니 값을 견줘 골라 말한다. '○○ 근처 도수치료·MRI·초음파 가격 비교', '체외충격파 싼 데'에 쓴다. 사용자에게 병원마다 전화해 보라고 하지 말고 이걸로 먼저 찾는다. 동(洞)으로는 못 고르니 시·군·구로 찾고, 동네는 near(병원·역 이름이나 도로명 낱말, 예: 정자)로 좁히거나 결과 주소를 보고 고른다. 도수치료는 2026-07-01부터 관리급여로 바뀌었지만 병원 신고 가격은 그대로 나온다.",
       "tier": "lookup",
       "login": false,
-      "status": "검증됨(2026-11-21, 도수치료 분당구 72곳·강남구 141곳, 체외충격파 화성시 동탄구, MRI 강남구 — 싼 순 40곳·정자 좁히기)",
+      "status": "검증됨(2026-11-22, MRI 강남구 무릎→슬관절로 찾아 6곳, 도수치료 분당구 72건 중 첫 쪽 10곳)",
       "cards": false,
       "input": {
         "required": [
@@ -50,7 +50,7 @@
           "detail": {
             "type": "string",
             "maxLength": 30,
-            "description": "찾은 것 가운데 항목 이름에 이 말이 든 것만 (예: MRI면 척추·뇌혈관·근골격, 초음파면 갑상선·유방). 비우면 전부"
+            "description": "부위·종류 낱말 하나 (예: MRI면 무릎·어깨·척추·뇌, 초음파면 갑상선·유방). 주면 사이트에서 이 낱말로 찾고 그중 item 항목만 보여 준다. 사이트는 의학 용어로 적으니 무릎·어깨·손목은 슬관절·견관절·수관절로 바꿔 찾고, 그 밖은 사이트 표기로 (팔꿈치=주관절, 엉덩이 관절=고관절, 목=경추, 허리=요추). 비우면 전부"
           },
           "near": {
             "type": "string",
@@ -66,7 +66,7 @@
         },
         "prices": {
           "type": "list",
-          "description": "병원별 가격 (최저 가격 싼 순, 40곳까지)",
+          "description": "병원별 가격 (사이트 검색 결과 첫 쪽)",
           "fields": {
             "hospital": {
               "type": "string"
@@ -277,26 +277,6 @@
           }
         },
         {
-          "click": {
-            "text": "정렬기준, 정렬기준"
-          }
-        },
-        {
-          "click": {
-            "text": "최소금액[오름]"
-          }
-        },
-        {
-          "click": {
-            "text": "목록수 설정, 10개씩 보기"
-          }
-        },
-        {
-          "click": {
-            "text": "20개씩 보기"
-          }
-        },
-        {
           "type": {
             "field": "결과 내 재검색",
             "text": "{{item}}",
@@ -312,15 +292,57 @@
           "as": "list"
         },
         {
-          "click": {
-            "text": "2페이지"
+          "map": {
+            "from": "list",
+            "limit": 1,
+            "fields": {
+              "d": "{{detail}}"
+            }
           },
-          "optional": true,
-          "if": "{{#list.19.yadmNm}}1{{/list.19.yadmNm}}"
+          "as": "ask",
+          "if": "{{detail}}"
+        },
+        {
+          "filter": {
+            "from": "ask",
+            "where": "d",
+            "op": "contains",
+            "value": "무릎"
+          },
+          "as": "knee",
+          "if": "{{detail}}"
+        },
+        {
+          "filter": {
+            "from": "ask",
+            "where": "d",
+            "op": "contains",
+            "value": "어깨"
+          },
+          "as": "shoulder",
+          "if": "{{detail}}"
+        },
+        {
+          "filter": {
+            "from": "ask",
+            "where": "d",
+            "op": "contains",
+            "value": "손목"
+          },
+          "as": "wrist",
+          "if": "{{detail}}"
+        },
+        {
+          "type": {
+            "field": "결과 내 재검색",
+            "text": "{{#knee.0}}슬관절{{/knee.0}}{{#shoulder.0}}견관절{{/shoulder.0}}{{#wrist.0}}수관절{{/wrist.0}}{{^knee.0}}{{^shoulder.0}}{{^wrist.0}}{{detail}}{{/wrist.0}}{{/shoulder.0}}{{/knee.0}}",
+            "submit": true
+          },
+          "if": "{{detail}}"
         },
         {
           "sleep": 2500,
-          "if": "{{#list.19.yadmNm}}1{{/list.19.yadmNm}}"
+          "if": "{{detail}}"
         },
         {
           "capture": {
@@ -329,8 +351,7 @@
             "timeoutMs": 15000
           },
           "as": "list",
-          "append": true,
-          "if": "{{#list.19.yadmNm}}1{{/list.19.yadmNm}}"
+          "if": "{{detail}}"
         },
         {
           "find": {
@@ -340,14 +361,14 @@
         },
         {
           "stop_if": "검색결과 총0건",
-          "say": "심평원에 {{sido}}{{#sggu}} {{sggu}}{{/sggu}} '{{item}}' 가격을 신고한 병원이 없어요. 낱말을 줄이거나(예: 'MRI 무릎' 대신 'MRI') 옆 시·군·구로 다시 찾아볼게요."
+          "say": "심평원에 {{sido}}{{#sggu}} {{sggu}}{{/sggu}} '{{item}}'{{#detail}} '{{detail}}'{{/detail}} 가격을 신고한 병원이 없어요. 낱말을 줄이거나(예: 'MRI 무릎' 대신 'MRI') 옆 시·군·구로 다시 찾아볼게요."
         },
         {
           "filter": {
             "from": "list",
             "where": "npayCdNm",
             "op": "contains",
-            "value": "{{detail}}"
+            "value": "{{#detail}}{{item}}{{/detail}}"
           },
           "as": "part"
         },
@@ -382,7 +403,7 @@
         }
       ],
       "result": {
-        "searched": "{{sido}}{{#sggu}} {{sggu}}{{/sggu}} '{{item}}' 병원 {{count.total}}곳",
+        "searched": "{{sido}}{{#sggu}} {{sggu}}{{/sggu}} '{{item}}'{{#detail}} '{{detail}}'{{/detail}} 검색 결과 {{count.total}}건{{#detail}}(이 부위 모든 항목 수, 그중 '{{item}}'만 보여 줌){{/detail}}",
         "prices": "{{prices}}",
         "link": "https://www.hira.or.kr/npay/index.do?pgmid=HIRAA030009000000"
       },
