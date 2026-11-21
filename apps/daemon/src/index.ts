@@ -2021,7 +2021,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .then(async (c) => {
         if (!c || readSettings().connections?.[c.id]) return
         const card = await skills.card(c.id)
-        if (card) loginWatch.start(card, tabId)
+        if (!card) return
+        // 금고로 로그인했으니 풀리면 금고로 다시 로그인하게 방법을 남긴다 (connectMark가 기억)
+        connectTried.set(card.id, 'vault')
+        loginWatch.start(card, tabId)
       })
       .catch(() => undefined)
   }
@@ -2339,7 +2342,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (r.state !== 'out') continue
         const via = connectVia()[card.id]
         const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
-        const creds = via === 'vault' ? await vaultCreds(card) : undefined
+        // 방법이 안 남았어도 금고에 그 서비스 계정이 있으면 금고로 다시 로그인한다
+        // (실측 11-21: 두리가 일하다 금고로 로그인한 신한카드가 세션이 풀리자 연결 표시가 꺼졌다)
+        const creds = via === 'vault' || !provider ? await vaultCreds(card) : undefined
         let ok = false
         if (provider && provider in SOCIAL_PROVIDERS) {
           quietConnect.add(card.id)
@@ -3060,7 +3065,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         rememberCheck(card.id, r)
         const was = Boolean(readSettings().connections?.[card.id])
         if (r.state === 'in' && !was) connectMark(card.id, true)
-        if (r.state === 'out' && was) connectMark(card.id, false)
+        // 세션만 풀린 것(금고 계정·간편 로그인으로 두리가 다시 로그인할 수 있음)은 연결이 끊긴 게 아니다
+        const via = connectVia()[card.id]
+        const canRelogin = via?.startsWith('social:') || Boolean(await vaultCreds(card))
+        if (r.state === 'out' && was && !canRelogin) connectMark(card.id, false)
         return json(res, 200, { ...r, connectedAt: readSettings().connections?.[card.id] ?? null })
       }
       // 정말 로그인됐는지 확인하고 표시하기 ([로그인했어요]와 같은 길). 결과: 표시된 시각 또는 null
