@@ -1666,13 +1666,6 @@ function connectFailCard(
         ),
         h('span', { class: 'spin' }),
       ),
-      tab !== undefined
-        ? h(
-            'div',
-            { class: 'approve-actions' },
-            h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen }),
-          )
-        : undefined,
     )
   const view =
     fail.reason === 'wrong'
@@ -1680,10 +1673,7 @@ function connectFailCard(
           title: '아이디나 비밀번호가 맞지 않아요',
           meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
           main: h('button', { class: 'btn', text: '다시 넣기', onclick: retry }),
-          sub:
-            tab !== undefined
-              ? h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: openScreen })
-              : undefined,
+          sub: undefined,
         }
       : fail.reason === 'human'
         ? {
@@ -1697,13 +1687,10 @@ function connectFailCard(
           }
         : {
             title: `${c.name} 로그인을 끝까지 못 했어요`,
-            meta:
-              tab !== undefined ? `${fail.message} 화면에서 마치시면 두리가 알아서 연결해요` : fail.message,
-            main:
-              tab !== undefined
-                ? h('button', { class: 'btn', text: '화면 보며 직접', onclick: openScreen })
-                : undefined,
-            sub: h('button', { class: 'btn-ghost', text: '다시 해 보기', onclick: retry }),
+            meta: fail.message,
+            // 화면 직접 보기는 카드에서 빼고, 다시 해 보기 안(로그인 화면)에서 안 될 때만 보인다 — 안 누르는 게 제일 좋다 (사용자 의견)
+            main: h('button', { class: 'btn', text: '다시 해 보기', onclick: retry }),
+            sub: undefined,
           }
   return h(
     'div',
@@ -3839,17 +3826,6 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       : h(
           'div',
           { class: 'approve-actions' },
-          browser
-            ? h('button', {
-                class: 'btn-ghost',
-                text: '화면 보며 직접',
-                onclick: () => {
-                  st.opening = c.id
-                  render()
-                  void send({ kind: 'connect', id: c.id, action: 'open' })
-                },
-              })
-            : undefined,
           h('button', {
             class: 'btn',
             text: '연결하기',
@@ -3916,7 +3892,6 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost', text: '화면 보며 직접', onclick: () => openRemote(r.tabId) }),
       h('button', {
         class: 'btn',
         text: '로그인하기',
@@ -5671,6 +5646,8 @@ function approvalSheet(id: string) {
 
 /** 로그인 시트: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
 interface CredTarget {
+  /** 앞서 자동 로그인이 멈췄는지: 그때만 '화면 보면서 직접'을 보인다 */
+  stuck?: boolean
   key: string
   site: string
   host: string
@@ -5803,7 +5780,8 @@ function credSheet(t: CredTarget) {
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
-    ...(t.direct
+    // 화면 직접 보기는 안 될 때만 (로그인이 실패했거나 연결이 멈췄을 때)
+    ...(t.direct && (d.error || t.stuck)
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
   )
@@ -6287,6 +6265,7 @@ function loginSheet(id: string) {
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
     direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    stuck: Boolean(loginLink(r.origin)?.fail),
     // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
     forgot: () => {
       void send({ kind: 'forgot', site: r.origin, loginId: r.id })
@@ -6369,6 +6348,7 @@ function connectSheet(id: string) {
           toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
       },
     })),
+    stuck: st.connectFails.has(id),
     direct: {
       text: st.connectTabs.has(id) ? 'PC 화면 보면서 마저 하기' : '화면 보면서 직접 로그인할게요',
       onclick: () => {
