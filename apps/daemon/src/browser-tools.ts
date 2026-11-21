@@ -2013,10 +2013,19 @@ export class BrowserTools {
           ref,
           text,
           submit: Boolean(s.submit),
-        })) as BrowserState
+        })) as BrowserState & { drawn?: boolean; seen?: boolean }
         const name = page.refs.get(ref)?.name
         const where = name ? `"${name}"에 ` : ''
-        return { note: s.submit ? `${where}입력하고 Enter를 눌렀어요.` : `${where}입력했어요.`, ...state(r) }
+        const done = s.submit ? `${where}입력하고 Enter를 눌렀어요.` : `${where}입력했어요.`
+        // 편집기가 그린 자리(글 칸이 아닌 제목·본문 상자)는 눌러서 넣는다. 넣은 글이 화면에 안 보이면 그대로 알린다
+        // (복사해 붙여 넣으라고 사람에게 넘기지 않고 AI가 화면을 보고 다시 하게)
+        const spot = name ? `"${name}" 자리를` : '그 자리를'
+        const note = !r.drawn
+          ? done
+          : r.seen === false
+            ? `${spot} 눌러 글을 넣었지만 넣은 글이 화면에 보이지 않아요. browser_screenshot으로 확인하고, 안 들어갔으면 그 자리를 browser_click으로 누른 뒤 다시 넣어요.`
+            : `${spot} 눌러 ${s.submit ? '입력하고 Enter를 눌렀어요' : '입력했어요'} (넣은 글이 화면에 보여요).`
+        return { note, ...state(r) }
       }
       case 'press': {
         const key = String(s.key ?? '')

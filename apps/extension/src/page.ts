@@ -233,6 +233,10 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       }
     }
     if ((el as HTMLElement).isContentEditable && !el.parentElement?.isContentEditable) return '입력칸'
+    // 편집기가 그려 둔 빈 자리 안내 글("제목"·"본문을 입력하세요"): 글 칸(input·contenteditable)이 아니어도 눌러서 쓰는 자리다.
+    // 네이버 블로그(SmartEditor ONE)는 제목·본문을 그림처럼 그려 두고, 누르면 숨은 액자 속 칸으로 글을 받는다.
+    // 표시가 없으면 AI가 넣을 곳을 몰라 글을 못 넣었다 (실측 11-21). 칸 옆에 겹쳐 둔 안내 글(진짜 칸이 곁에 있음)은 뺀다
+    if (editorPlaceholder(el)) return '입력칸'
     if ((el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') && !wrapsControls(el))
       return '버튼'
     // React·Vue가 클릭 처리기만 붙인 상자 (휴대폰용 사이트의 목록 줄·가게 카드): pageMarkTaps가 표시해 둔다
@@ -240,6 +244,18 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     // 손가락 커서만 준 글자 상자 ("카카오로 로그인" div 등): 짧은 글이면 버튼으로 본다
     if (pointerBox(el)) return '버튼'
     return undefined
+  }
+
+  /** 편집기의 빈 자리 안내 글: 이름(class)에 placeholder가 든 짧은 글 상자. 곁(부모 안)에 진짜 칸·버튼이 있으면 아니다 */
+  const editorPlaceholder = (el: Element): boolean => {
+    if (!['SPAN', 'DIV', 'P'].includes(el.tagName)) return false
+    const cls = el.getAttribute('class') ?? ''
+    if (!/(^|[\s_-])placeholder/i.test(cls)) return false
+    if (el.parentElement?.isContentEditable || el.children.length > 2) return false
+    const t = (el as HTMLElement).innerText?.trim() ?? ''
+    if (!t || t.length > 80) return false
+    const parent = el.parentElement
+    return !wrapsControls(el) && !(parent && wrapsControls(parent))
   }
 
   /** 커서가 손가락인 짧은 상자 (부모부터 손가락이면 가장 바깥 하나만) */
@@ -703,6 +719,10 @@ export interface LocateResult {
   ctxChanged?: { was: string; now: string }
   /** 굴려도 보이는 화면 밖이다 (화면 아래에 고정된 창 등). y는 실제 자리(잘리지 않은 값) */
   outside?: boolean
+  /** type: 글 칸(input·textarea·contenteditable)이 아니다 — 편집기가 그린 자리라 눌러서 초점을 줘야 한다 */
+  drawn?: boolean
+  /** type(drawn): 안내 글이 아닌 글이 이미 들어 있다 (끝에 이어 쓴다) */
+  filled?: boolean
   /** 요소 상자 아래 끝 (이 문서 화면 기준) */
   bottom?: number
 }
@@ -896,8 +916,26 @@ export function pageLocate(
   }
   const h = el as HTMLElement
   let focused: boolean | undefined
+  let drawnBox = false
+  let filled = false
   if (mode === 'type') {
-    h.focus()
+    // 버튼·링크는 아니다: 입력하려다 눌러 버리면 안 된다 (발행·보내기 버튼은 승인 카드로만 누른다)
+    drawnBox =
+      !(
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement ||
+        h.isContentEditable
+      ) &&
+      !el.closest(
+        'a[href],button,summary,label,[role=button],[role=link],[role=menuitem],[role=tab],[role=option],[onclick]',
+      )
+    if (drawnBox) {
+      // 편집기가 그린 자리: 스크립트 초점은 주지 않는다 (누를 때 편집기가 자기 칸에 초점을 준다)
+      filled =
+        !/(^|[\s_-])placeholder/i.test(el.getAttribute('class') ?? '') &&
+        (h.innerText ?? '').replace(/[\u200b\ufeff]/g, '').trim() !== ''
+    } else h.focus()
     focused = document.activeElement === el
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.select()
     else if (h.isContentEditable) {
@@ -928,8 +966,21 @@ export function pageLocate(
     ...(coveredByControl ? { coveredByControl } : {}),
     ...(ctxChanged ? { ctxChanged } : {}),
     ...(outside ? { outside } : {}),
+    ...(drawnBox ? { drawn: true, filled } : {}),
     bottom: r.bottom,
   }
+}
+
+/** 넣은 글이 이 문서 화면 글에 보이나 (편집기가 그린 자리에 넣은 뒤 확인). 빈칸·폭 없는 글자는 무시한다 */
+export function pageShowsText(probe: string): boolean {
+  const norm = (s: string) =>
+    s
+      .replace(/[\u200b\ufeff]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const want = norm(probe)
+  if (!want) return true
+  return norm(document.body?.innerText ?? '').includes(want)
 }
 
 /**
