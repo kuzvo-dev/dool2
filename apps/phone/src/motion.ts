@@ -529,7 +529,7 @@ export function otpBoxes(o: {
   flex?: boolean
   onInput?(v: string): void
   onDone(code: string): void
-}): HTMLElement {
+}): HTMLElement & { go?: HTMLButtonElement } {
   const flex = Boolean(o.flex) && !o.length
   const N = flex ? 8 : (o.length ?? 6)
   const shown = (len: number) => (flex ? Math.min(N, Math.max(6, len + 1)) : N)
@@ -562,7 +562,7 @@ export function otpBoxes(o: {
   go.className = 'btn lg otp-go'
   go.textContent = '넣기'
   go.disabled = true
-  if (flex) box.append(go)
+  // 버튼은 상자 밖에 둔다 (상자는 높이가 고정이라 안에 넣으면 아래 글 위로 넘쳤다 — 실측 11-22)
   let val = ''
   let done = false
   const set = (raw: string, quiet = false) => {
@@ -640,7 +640,7 @@ export function otpBoxes(o: {
   })
   box.addEventListener('click', () => inp.focus())
   set(o.value ?? '', true)
-  return box
+  return flex ? Object.assign(box, { go }) : box
 }
 
 // ── 이어 쓰기 제안: 쓰는 말 뒤에 흐린 글씨로 나머지를 보여 주고, 받으면 글자가 하나씩 밝아지며 톡 ──

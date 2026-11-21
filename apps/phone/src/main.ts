@@ -6082,13 +6082,20 @@ function infoSheet(id: string) {
     const said =
       `${q.label} ${q.hint ?? ''}`.match(/(\d)\s*자리/)?.[1] ?? q.pattern?.match(/\\d\{(\d)\}/)?.[1]
     const len = said ? Number(said) : undefined
+    const otp = otpBoxes({
+      ...(len && len >= 4 && len <= 8 ? { length: len } : { flex: true }),
+      onDone: (code) => setTimeout(() => answer(code), 500),
+    })
+    body.push(otp)
     body.push(
-      otpBoxes({
-        ...(len && len >= 4 && len <= 8 ? { length: len } : { flex: true }),
-        onDone: (code) => setTimeout(() => answer(code), 500),
+      h('p', {
+        class: 'meta',
+        text: otp.go
+          ? '문자로 왔으면 키보드 위에 번호가 떠요. 다 넣고 [넣기]를 눌러 주세요.'
+          : '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.',
       }),
     )
-    body.push(h('p', { class: 'meta', text: '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.' }))
+    if (otp.go) body.push(otp.go)
     queueMicrotask(() => document.getElementById('otp-input')?.focus())
   } else {
     const input = h('input', { class: 'field' })
