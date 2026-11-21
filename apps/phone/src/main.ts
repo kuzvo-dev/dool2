@@ -5574,6 +5574,8 @@ interface CredTarget {
   socialOnly?: boolean
   /** "처음이에요 · 가입해 주세요" 버튼 (두리에게 회원가입을 부탁한다) */
   signup?: () => void
+  /** "계정을 몰라요 · 찾아 주세요" 버튼 (두리가 아이디 찾기·비밀번호 재설정) */
+  forgot?: () => void
 }
 
 /** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
@@ -5671,6 +5673,15 @@ function credSheet(t: CredTarget) {
       icon('lock'),
       'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
     ),
+    ...(t.forgot
+      ? [
+          h('button', {
+            class: 'btn-text cred-signup',
+            text: '계정을 몰라요 · 찾아 주세요',
+            onclick: t.forgot,
+          }),
+        ]
+      : []),
     ...(t.signup
       ? [
           h('button', {
@@ -6164,6 +6175,17 @@ function loginSheet(id: string) {
     submitText: '로그인하기',
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
     direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    forgot: () => {
+      void send({ kind: 'forgot', site: r.origin, loginId: r.id })
+      void send({
+        kind: 'ask',
+        text: `${r.site} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
+      })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${r.site} 계정 찾기를 두리가 해 볼게요`)
+    },
     // 계정이 없으면 두리가 가입해 줘요: 이 사이트 가입을 고른 것으로 알리고, 대화로 부탁을 보낸다
     signup: () => {
       void send({ kind: 'signup', site: r.origin, loginId: r.id })
@@ -6245,6 +6267,17 @@ function connectSheet(id: string) {
         render()
         void send({ kind: 'connect', id, action: 'open' })
       },
+    },
+    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    forgot: () => {
+      void send({ kind: 'forgot', site: it.card.site ?? it.card.id })
+      void send({
+        kind: 'ask',
+        text: `${it.card.name} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
+      })
+      st.overlay = undefined
+      st.tab = 'chat'
+      toast(`${it.card.name} 계정 찾기를 두리가 해 볼게요`)
     },
     // 계정이 없으면 두리가 가입해 줘요: 대화로 부탁을 보내고 두리가 가입 흐름을 한다
     signup: () => {

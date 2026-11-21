@@ -1244,6 +1244,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
           void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: '가입으로 바꿨어요' })
       },
+      // 계정을 몰라요: 로그인 카드를 거두고 대화의 부탁(아이디 찾기·비밀번호 재설정)으로 이어 간다.
+      // 새 비밀번호는 두리가 정해 금고에 저장한다(browser_login의 비밀번호 만들기와 같은 길)
+      forgot: (site, loginId) => {
+        // 사용자가 고른 것: 그 사이트의 비밀번호 재설정(새 비밀번호 만들기)을 묻지 않고 하게 한다
+        browserTools.allowSignup(site)
+        if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
+          void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: '계정 찾기로 바꿨어요' })
+      },
       ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
       thumb: (url) => thumbOrPhoto(url),
       // 설정 > 금고 (ADR 0026): 사용자가 폰에서 보기·고치기. 보기는 폰이 기기 잠금을 확인한 뒤에만 부탁한다.
