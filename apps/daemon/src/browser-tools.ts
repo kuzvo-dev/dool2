@@ -911,6 +911,10 @@ export class BrowserTools {
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 금고 값으로 로그인 칸을 채웠다 (연결 카드 없이 일하다 로그인한 것도 연결로 남기게) */
   onVaultLogin?: (tabId: number, url: string) => void
+  /** 가입·비밀번호 변경이 끝나 금고에 계정을 넣었을 때 (본체가 그 서비스를 연결로 표시한다) */
+  onAccountSaved?: (url: string) => void
+  /** 이 사이트에 두리가 카드 없이 다시 로그인할 길(금고 계정·전에 쓴 간편 로그인)이 있으면 그 서비스 id */
+  reloginFor?: (origin: string) => Promise<string | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
   /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
@@ -1861,6 +1865,18 @@ export class BrowserTools {
           return {
             content: [
               { type: 'text', text: '이 사이트는 이미 두리 금고에 있어요. browser_login으로 채우세요.' },
+            ],
+          }
+        // 연결해 둔 서비스면(금고 계정·간편 로그인) 사람에게 묻지 않고 본체가 다시 로그인한다
+        // (실측 11-22 대한항공: 세션이 풀리자 네이버로 연결해 둔 곳인데도 로그인 카드부터 띄웠다)
+        const relogin = await this.reloginFor?.(origin).catch(() => undefined)
+        if (relogin)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `이 사이트는 연결해 둔 방법(금고 계정 또는 전에 쓴 간편 로그인)이 있어 로그인 카드를 띄우지 않았어요. connect_ask("${relogin}")를 부르면 두리 본체가 카드 없이 다시 로그인하고, 끝나면 알려 줘요. 사용자에게는 "다시 로그인하고 이어서 할게요"처럼 한 문장만 말해요.`,
+              },
             ],
           }
         const site =
@@ -3456,6 +3472,7 @@ export class BrowserTools {
     if (r === 'exists')
       return `🔐 "${p.username}"은(는) 이미 가입된 계정이래요. 만든 비밀번호는 버렸어요(금고에 넣지 않음). 가입을 멈추고 로그인으로 바꿔요: 비밀번호를 모르면 비밀번호 찾기(사용자 확인 뒤 purpose: "reset").`
     await this.vault?.savePassword?.(p.origin, p.username, p.password)
+    this.onAccountSaved?.(s.url)
     return p.purpose === 'reset'
       ? `🔐 비밀번호 변경이 끝난 걸 확인하고 금고에 새 비밀번호를 저장했어요(${p.username}). 다음부터 두리가 이걸로 로그인해요.`
       : `🔐 가입이 끝난 걸 확인하고 금고에 저장했어요(${p.username}). 다음부터 두리가 이 계정으로 로그인해요.`

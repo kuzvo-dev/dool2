@@ -752,6 +752,17 @@ describe('로그인 카드', () => {
     expect(text(await tools.run('request_login', { tabId: 3, site: '시험 가게' }))).toContain('browser_login')
   })
 
+  it('연결해 둔 서비스(금고 계정·간편 로그인)면 카드를 띄우지 않고 connect_ask로 다시 로그인하게 한다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b, { findForOrigin: async () => undefined, markUsed: async () => {} })
+    tools.reloginFor = async (origin) => (origin === 'https://shop.example' ? 'korean-air' : undefined)
+    await tools.run('open', { url: 'https://shop.example/login' })
+    await tools.run('read', { tabId: 3 })
+    const r = text(await tools.run('request_login', { tabId: 3, site: '대한항공' }))
+    expect(r).toContain('connect_ask("korean-air")')
+    expect(tools.logins.list()).toHaveLength(0)
+  })
+
   it('https가 아닌 사이트는 로그인 정보를 받지 않는다', async () => {
     const b = fakeBrowser()
     b.call = (async (cmd: string) =>
