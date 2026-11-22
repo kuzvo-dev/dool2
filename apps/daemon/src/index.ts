@@ -88,6 +88,7 @@ import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { FileTools, htmlText, type UserFolders } from './files.js'
+import { FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
@@ -189,6 +190,8 @@ export interface DaemonOptions {
   push?: typeof sendPush
   /** 테스트용: 에이전트를 바꿔 끼운다 */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
+  /** 끝내기 전 검사(ADR 0027)의 판정 AI. 기본은 Claude 새 세션, runtimes를 바꿔 끼운 테스트에서는 꺼진다 */
+  finishJudge?: ((prompt: string) => Promise<string | undefined>) | false
 }
 
 /** 비밀값 보관소. PC 앱은 OS 키체인(safeStorage)으로 암호화해 둔다 */
@@ -298,6 +301,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
   }
+  // 끝내기 전 검사 (ADR 0027): 도구 없는 새 세션에 판정만 묻는다
+  const judgeAsk =
+    opts.finishJudge === false
+      ? undefined
+      : (opts.finishJudge ??
+        (opts.runtimes
+          ? undefined
+          : async (prompt: string) => {
+              const rt = runtimes.claude
+              if (!rt) return undefined
+              let text = ''
+              try {
+                for await (const ev of rt.runTurn({
+                  text: prompt,
+                  systemPrompt: JUDGE_SYSTEM,
+                  mcpServers: [],
+                  cwd: paths.workspace,
+                  model: 'sonnet',
+                  signal: AbortSignal.timeout(90_000),
+                })) {
+                  if (ev.type === 'text') text += ev.delta
+                  if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
+                  if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
+                }
+              } catch {
+                return undefined
+              }
+              return text
+            }))
+  const finishCheck = judgeAsk ? new FinishCheck({ ask: judgeAsk }) : undefined
   // 두리 도구 서버(MCP)는 에이전트가 띄우는 자식이라 화면용 토큰과 다른 토큰을 준다. 이 토큰은 도구 주소만 부를 수 있다 (T5)
   const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
   const mcp = dool2McpServer(opts.mcpServerScript)
@@ -1200,7 +1233,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         })().catch(() => {})
         return id
       },
-      cancel: (id) => threads.cancel(id),
+      cancel: (id) => {
+        finishCheck?.drop(id)
+        threads.cancel(id)
+      },
       approval: (id) => browserTools.approvals.get(id),
       screen: async (tabId, fit) => {
         const s = await browserTools.remoteScreen(tabId, fit)
@@ -1355,7 +1391,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           hasMore: messages.length === (limit ?? 60),
         }
       },
-      cancelConversation: () => conversation.cancel(),
+      cancelConversation: () => {
+        const cur = conversation.current()?.id
+        if (cur) finishCheck?.drop(cur)
+        conversation.cancel()
+      },
       connect: async (id, action) => {
         const card = await skills.card(id)
         if (!card) throw new Error('그런 서비스가 없어요')
@@ -1456,6 +1496,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     )
   }
   let running = 0
+  /** 끝내기 전 검사로 판정하는 중인 대화 (그동안 온 말은 줄을 세운다) */
+  const judging = new Set<string>()
+  /** 사람을 기다리는 대화 기록 */
+  const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
+  /** 끝내기 전 검사로 이어서 하는 중인 대화의 처음 부탁 (판정이 끝나면 검사 쪽 기록은 지워진다) */
+  const lastAsk = new Map<string, string>()
   /** 대화 한 턴을 감싸서 "일하는 중" 상태를 알린다 */
   async function* tracked(
     threadId: string,
@@ -1479,10 +1525,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const turnAt = Date.now()
     const turnTools: string[] = []
     const turnFromPhone = fromPhone.has(threadId)
+    // 끝내기 전 검사는 사용자와 하는 대화에서만 (피드 글·정해진 일은 빼고)
+    const checkable = threadId !== store.getSetting('feedThread') && !routineThreads.has(threadId)
+    let failed = false
     try {
       for await (const ev of inner) {
-        if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text))
+        if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text)) {
           askText = withoutPhotoMark(ev.message.text)
+          if (checkable) finishCheck?.begin(threadId, askText)
+        }
+        if (ev.type === 'agent' && (ev.event.type === 'error' || ev.event.type === 'limit_reached'))
+          failed = true
         if (
           ev.type === 'agent' &&
           ev.event.type === 'tool' &&
@@ -1504,13 +1557,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
                 }
               })()
             : undefined
-        // 일한 과정 기록은 화면용일 뿐: 사람을 기다리는 게 아니다 ("끝났어요" 알림은 그대로 간다)
-        if (rec && rec.kind !== 'work') {
+        // 사람을 기다리는 기록은 승인·로그인·연결·넘기기뿐이다. 일한 과정·빠른 답·목록·카드는 화면용이라
+        // "끝났어요" 알림이 그대로 가고, 끝내기 전 검사도 한다 (빠른 답으로 되물은 게 정말 필요한 물음인지 본다)
+        if (rec?.kind && WAITING_KINDS.has(rec.kind)) {
           asked = true
           if (rec.kind !== 'approval')
             void link
               .notify({
-                title: 'PC에서 직접 해 주세요',
+                title: rec.kind === 'handoff' ? 'PC에서 직접 해 주세요' : '로그인이 필요해요',
                 body: rec.reason ?? '두리가 도움을 기다려요',
                 tag: `handoff-${threadId}`,
                 url: `#t=${threadId}`,
@@ -1529,18 +1583,63 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ...(asked ? { waitingForUser: true } : {}),
         ...(turnFromPhone ? { phone: true } : {}),
       })
-      if (usedTool && askText && answerText && !routineThreads.has(threadId))
+      // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
+      const next = pendingFollowUps.get(threadId)?.shift()
+      // 끝내기 전 검사: 사람을 기다리지 않고, 다음 말도 없고, 도구로 일한 차례면 끝났는지 따로 판정한다
+      let again: string | undefined
+      if (
+        finishCheck &&
+        checkable &&
+        !asked &&
+        !failed &&
+        !next &&
+        !(queued.length && conversation.current()?.id === threadId) &&
+        answerText
+      ) {
+        const gen = finishCheck.current(threadId)
+        judging.add(threadId)
+        const r = await finishCheck
+          .check(threadId, { answer: answerText, tools: turnTools })
+          .catch(() => undefined)
+          .finally(() => judging.delete(threadId))
+        if (r && r.kind !== 'skip')
+          journal.write('finish-check', {
+            result: r.kind,
+            cycles: r.cycles,
+            why: r.why,
+            ...(r.kind === 'stop' ? { reason: r.reason } : {}),
+          })
+        // 판정하는 사이 새 부탁·멈춤이 있었으면 되돌려 보내지 않는다
+        // (판정하는 사이 사용자가 보낸 말이 줄에 섰으면 그 말이 먼저다)
+        const spoke = queued.length > 0 && conversation.current()?.id === threadId
+        if (
+          r?.kind === 'again' &&
+          finishCheck.current(threadId) === gen &&
+          !threads.isRunning(threadId) &&
+          !spoke
+        )
+          again = r.note
+      }
+      // 피드 "끝낸 일"은 이어서 할 게 없을 때 한 번만 (이어서 한 차례면 처음 부탁으로)
+      const feedAsk = askText || finishCheck?.askOf(threadId) || lastAsk.get(threadId)
+      if (usedTool && feedAsk && answerText && !again && !routineThreads.has(threadId)) {
+        lastAsk.delete(threadId)
         life.feed({
           kind: 'done',
-          title: askText.slice(0, 60),
+          title: feedAsk.slice(0, 60),
           body: answerText.slice(0, 300),
           ref: threadId,
         })
+      } else if (again && feedAsk) lastAsk.set(threadId, feedAsk)
       // 다음 말에서 구간을 바꿀 참이면 요약을 미리 해 둔다 (다음 말이 바로 저장되고 바로 답하게)
-      if (conversation.current()?.id === threadId) conversation.prewarm()
-      // 답하는 동안 들어온 폰 승인·로그인 결과가 있으면 이어서 보낸다
-      const next = pendingFollowUps.get(threadId)?.shift()
+      if (!again && conversation.current()?.id === threadId) conversation.prewarm()
       if (next) setTimeout(() => followUp(threadId, next), 0)
+      else if (again) {
+        const note = again
+        // 이어서 하는 차례도 폰에서 맡긴 일로 본다: "끝났어요" 알림은 마지막 차례에서 한 번만
+        if (turnFromPhone) fromPhone.add(threadId)
+        setTimeout(() => followUp(threadId, appNote(note)), 0)
+      }
       // 대화: 답하는 동안 줄 선 말을 한 차례로 모아 이어서 보낸다
       else if (queued.length && conversation.current()?.id === threadId) {
         const text = queued.splice(0).join('\n\n')
@@ -1550,7 +1649,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (--running === 0) events.emit('busy', false)
       live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 })
       // 폰에서 맡긴 일이 끝나면 폰에 알린다 (앱을 닫아 둔 사이에 끝나도)
-      if (fromPhone.delete(threadId) && !asked) {
+      if (!again && fromPhone.delete(threadId) && !asked) {
         const t = store.getThread(threadId)
         const last = store
           .listMessages(threadId)
@@ -2151,7 +2250,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const queued: string[] = []
   /** 구간을 고르는 중 (요약 부탁이 오래 걸릴 수 있어서, 그동안 온 말도 줄을 세운다) */
   let preparing = false
-  const conversationBusy = () => preparing || conversation.isRunning()
+  const conversationBusy = () =>
+    preparing || conversation.isRunning() || judging.has(conversation.current()?.id ?? '')
   /**
    * 대화에 말 하나를 보낸다. 답하는 중이면 줄을 세웠다가 그 차례가 끝나면 이어서 보낸다 (ADR 0015).
    * 진행은 GET /api/conversation/live와 폰 스트림으로 간다

@@ -1069,7 +1069,10 @@ export class BrowserTools {
         const r = (await this.browser.call('open', { url: a.url }, 40_000)) as { tabId: number }
         this.lastTabId = r.tabId
         this.allowRemote(r.tabId)
-        return this.read(r.tabId, undefined, '새 탭을 열었어요.')
+        return this.notFoundHint(
+          String(a.url ?? ''),
+          await this.read(r.tabId, undefined, '새 탭을 열었어요.'),
+        )
       }
       case 'navigate': {
         // 결제 중인 탭은 옮기지 않는다 (실측 11-20 G마켓: 승인 뒤 카드 결제창이 뜬 탭을 주문 내역으로 옮겨 결제가 끊겼다)
@@ -1078,7 +1081,7 @@ export class BrowserTools {
             '결제 중인 탭이에요. 결제가 끝날 때까지(주문 완료 화면) 이 탭을 다른 주소로 옮기지 않아요. 화면이 비었으면 결제 창이 새 창이나 화면 안 액자로 떴을 수 있어요: browser_read·browser_screenshot으로 찾아 결제를 끝까지 마쳐요(결제 비밀번호·인증은 폰 카드로). 다른 일은 browser_open으로 새 탭에서 해요.',
           )
         await this.browser.call('navigate', { tabId, url: a.url }, 40_000)
-        return this.read(tabId, undefined, '주소를 열었어요.')
+        return this.notFoundHint(String(a.url ?? ''), await this.read(tabId, undefined, '주소를 열었어요.'))
       }
       case 'read':
         return this.read(tabId, a.maxChars, undefined, {
@@ -3721,6 +3724,36 @@ export class BrowserTools {
         : []),
     ]
     return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
+  /** 짐작해서 연 깊은 주소가 '없는 페이지'면 첫 화면부터 찾아가게 알린다 (실측 11-22 네이버페이·쿠팡 출석 주소 짐작) */
+  private notFoundHint(url: string, out: ToolResult): ToolResult {
+    const head = out.content
+      .map((c) => (c.type === 'text' ? c.text : ''))
+      .join('\n')
+      .slice(0, 1500)
+    if (
+      !/404|페이지를 찾을 수 없|존재하지 않는 페이지|없는 페이지|요청하신 페이지|Page Not Found|not found/i.test(
+        head,
+      )
+    )
+      return out
+    let home = ''
+    try {
+      const u = new URL(url)
+      if (u.pathname.length > 1) home = `${u.origin}/`
+    } catch {}
+    if (!home) return out
+    return {
+      ...out,
+      content: [
+        ...out.content,
+        {
+          type: 'text',
+          text: `⚠️ 없는 페이지예요. 주소를 짐작해서 다시 열지 말고 첫 화면(${home})을 열어 메뉴·검색으로 찾아가요.`,
+        },
+      ],
+    }
   }
 
   private async read(

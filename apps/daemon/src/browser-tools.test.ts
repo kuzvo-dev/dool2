@@ -2542,6 +2542,29 @@ describe('결제 카드 (browser_checkout)', () => {
   })
 })
 
+describe('없는 페이지 안내', () => {
+  it('짐작한 깊은 주소가 404면 첫 화면부터 찾아가게 알린다', async () => {
+    const b = {
+      call: async (cmd: string) => {
+        if (cmd === 'open') return { tabId: 3 }
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://pay.example/attend/daily',
+            title: '404',
+            text: '# 요청하신 페이지를 찾을 수 없습니다',
+            truncated: false,
+            captcha: false,
+          }
+        return { tabId: 3 }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    const r = text(await tools.run('open', { url: 'https://pay.example/attend/daily' }))
+    expect(r).toContain('첫 화면(https://pay.example/)')
+  })
+})
+
 describe('그림 키패드 결제 비밀번호 (request_code pin + box)', () => {
   it('키패드 상자를 잘라 보여 주고, 짚은 숫자 자리를 폰 키패드로 받아 화면 자리를 누른다', async () => {
     const calls: [string, Record<string, unknown> | undefined][] = []
