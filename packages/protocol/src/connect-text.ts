@@ -20,6 +20,7 @@ export const CATEGORY_LABEL = {
   gov: '공공·세금',
   life: '생활',
   device: '휴대폰',
+  ai: 'AI 도구',
 } as const
 
 /** 연결 화면 분류 칩·머리에 쓰는 입체 이모지 (packages/ui/emoji/<emo>.webp) */
@@ -41,6 +42,7 @@ export const CATEGORY_EMO: Record<keyof typeof CATEGORY_LABEL, string> = {
   gov: 'document',
   life: 'home',
   device: 'gear',
+  ai: 'sparkles',
 }
 
 /** 폰 승인이 있어야만 하는 등급 (docs/architecture.md 4.1) */
