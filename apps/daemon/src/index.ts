@@ -513,12 +513,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   async function addThumb(id: string, image: string) {
     if (!opts.shrinkImage) return
     const t = await opts.shrinkImage(Buffer.from(image, 'base64'), 112).catch(() => undefined)
-    if (t) life.setThumb(id, t)
+    if (t && !closing) life.setThumb(id, t)
   }
-  // 예전에 만든 파일에도 목록 미리보기를 채운다 (켤 때 한 번)
-  setTimeout(() => {
+  // 예전에 만든 파일에도 목록 미리보기를 채운다 (켤 때 한 번). 닫히면 멈춘다 (닫은 뒤 저장소에 쓰지 않게)
+  const thumbFill = setTimeout(() => {
     void (async () => {
-      for (const it of life.library()) if (it.image && !it.thumb) await addThumb(it.id, it.image)
+      for (const it of life.library()) {
+        if (closing) return
+        if (it.image && !it.thumb) await addThumb(it.id, it.image)
+      }
     })()
   }, 5000)
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
@@ -3509,6 +3512,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         clearInterval(lifeTimer)
         clearInterval(keepTimer)
         clearTimeout(lifePush)
+        clearTimeout(thumbFill)
         loginWatch.stopAll()
         link.stop()
         server.closeAllConnections()
