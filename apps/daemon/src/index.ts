@@ -1496,6 +1496,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     )
   }
   let running = 0
+  /** 끝내기 전 검사로 판정하는 중인 대화 (그동안 온 말은 줄을 세운다) */
+  const judging = new Set<string>()
   /** 사람을 기다리는 대화 기록 */
   const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
   /** 끝내기 전 검사로 이어서 하는 중인 대화의 처음 부탁 (판정이 끝나면 검사 쪽 기록은 지워진다) */
@@ -1595,9 +1597,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         answerText
       ) {
         const gen = finishCheck.current(threadId)
+        judging.add(threadId)
         const r = await finishCheck
           .check(threadId, { answer: answerText, tools: turnTools })
           .catch(() => undefined)
+          .finally(() => judging.delete(threadId))
         if (r && r.kind !== 'skip')
           journal.write('finish-check', {
             result: r.kind,
@@ -1606,7 +1610,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ...(r.kind === 'stop' ? { reason: r.reason } : {}),
           })
         // 판정하는 사이 새 부탁·멈춤이 있었으면 되돌려 보내지 않는다
-        if (r?.kind === 'again' && finishCheck.current(threadId) === gen && !threads.isRunning(threadId))
+        // (판정하는 사이 사용자가 보낸 말이 줄에 섰으면 그 말이 먼저다)
+        const spoke = queued.length > 0 && conversation.current()?.id === threadId
+        if (
+          r?.kind === 'again' &&
+          finishCheck.current(threadId) === gen &&
+          !threads.isRunning(threadId) &&
+          !spoke
+        )
           again = r.note
       }
       // 피드 "끝낸 일"은 이어서 할 게 없을 때 한 번만 (이어서 한 차례면 처음 부탁으로)
@@ -2239,7 +2250,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const queued: string[] = []
   /** 구간을 고르는 중 (요약 부탁이 오래 걸릴 수 있어서, 그동안 온 말도 줄을 세운다) */
   let preparing = false
-  const conversationBusy = () => preparing || conversation.isRunning()
+  const conversationBusy = () =>
+    preparing || conversation.isRunning() || judging.has(conversation.current()?.id ?? '')
   /**
    * 대화에 말 하나를 보낸다. 답하는 중이면 줄을 세웠다가 그 차례가 끝나면 이어서 보낸다 (ADR 0015).
    * 진행은 GET /api/conversation/live와 폰 스트림으로 간다
