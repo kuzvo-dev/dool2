@@ -469,7 +469,13 @@ export class Connectors {
       return text(
         `맞는 서비스가 없어요. 일반 검색이나 브라우저 도구로 해 보세요. (서비스: ${items.map((x) => x.card.id).join(', ')})`,
       )
-    return text(hit.map((it) => this.describe(it)).join('\n\n'))
+    // 연결 전 서비스는 사용자가 쓰는 곳인지 모른다: '내 ○○'를 다루는 일이면 정하기 전에 묻게 (실측 11-22: 카탈로그에
+    // 통신사가 하나뿐이라 사용자가 그 통신사를 쓴다고 넘겨짚고 남의 요금제와 연결 카드를 띄웠다)
+    const unsure = hit.some((it) => !this.isConnected(it.card) && it.card.how !== 'open')
+    const caution = unsure
+      ? '\n\n⚠️ "연결 전"인 서비스는 사용자가 실제로 쓰는 곳인지 몰라요(같은 종류의 다른 업체일 수 있어요). 내 요금제·내 보장·내 내역처럼 사용자 계정이 필요한 일이면, 이 서비스로 정하거나 연결 카드를 띄우기 전에 어느 곳을 쓰는지 빠른 답 버튼으로 먼저 물어요. 들은 답은 know_save로 기억해요.'
+      : ''
+    return text(hit.map((it) => this.describe(it)).join('\n\n') + caution)
   }
 
   /** 서비스 하나를 AI가 읽을 글로: 연결 상태, 도구(등급·입력), 연동 안내 */
