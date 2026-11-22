@@ -442,6 +442,14 @@ export class Life {
     this.feed({ kind: 'saved', title: `보관함에 남겼어요: ${item.title}`, ref: item.id })
     return item
   }
+  /** 목록용 작은 미리보기를 붙인다 (PC 앱이 줄여 준 뒤) */
+  setThumb(id: string, thumb: string) {
+    const list = this.library()
+    const it = list.find((x) => x.id === id)
+    if (!it) return
+    it.thumb = thumb
+    this.put('library', list)
+  }
   unsave(id: string) {
     const list = this.library()
     const next = list.filter((x) => x.id !== id)
@@ -456,7 +464,16 @@ export class Life {
       libraryAt,
       o,
     )
-    return { ...p, items: p.items.map(preview) }
+    // 목록 미리보기는 합쳐 250KB까지만 싣는다 (폰으로 가는 봉투 한도 500KB, 암호화로 커지는 것까지)
+    let room = 250_000
+    const items = p.items.map(preview).map((it) => {
+      if (!it.thumb) return it
+      room -= it.thumb.length
+      if (room >= 0) return it
+      const { thumb: _t, ...rest } = it
+      return rest
+    })
+    return { ...p, items }
   }
   /** 보관함 하나 (전체 글) */
   libraryItem(id: string): LibraryItem | undefined {

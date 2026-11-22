@@ -812,6 +812,21 @@ describe('긴 목록 나눠 받기 (피드·보관함)', () => {
     expect(rest.next).toBeUndefined()
   })
 
+  it('보관함 목록에 작은 미리보기를 싣되 큰 그림은 빼고, 합쳐 250KB까지만', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    for (let i = 0; i < 30; i++) {
+      const it = life.save({ kind: 'file', title: `그림 ${i}`, body: '', image: 'I'.repeat(1000) })
+      life.setThumb(it.id, 'T'.repeat(10_000))
+      now = new Date(now.getTime() + 60_000)
+    }
+    const page = life.libraryPage({ tab: 'files' })
+    expect(page.items.every((x) => x.image === undefined)).toBe(true)
+    // 10KB × 25 = 250KB까지
+    expect(page.items.filter((x) => x.thumb).length).toBe(25)
+    expect(life.libraryItem(page.items[29]?.id ?? '')?.thumb).toHaveLength(10_000)
+  })
+
   it('목표 진행 기록은 최근 것만 보낸다 (저장은 그대로)', () => {
     const life = new Life(kv(), () => MON_8AM)
     life.run('goal_create', { title: '걷기', prompt: '걸었는지', category: '건강' })

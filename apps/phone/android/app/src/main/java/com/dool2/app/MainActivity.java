@@ -8,6 +8,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 폰 잠금 확인 (금고 비밀번호 보기, ADR 0026)
         registerPlugin(DeviceAuthPlugin.class);
+        // 보관함 파일을 폰에 저장·다른 앱으로 보내기
+        registerPlugin(FileSavePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

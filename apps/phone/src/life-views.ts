@@ -34,6 +34,10 @@ export interface LifeCtx {
   fullItem(id: string): LibraryItem | undefined
   /** 피드 맨 위 "나를 기다려요·지금 하는 일" (승인·로그인·진행) */
   waiting: HTMLElement[]
+  /** 보관함 파일 원본을 PC에서 받아 폰에 저장하거나 다른 앱으로 보내기 */
+  fileAction?(it: LibraryItem, how: 'save' | 'share'): void
+  /** 그림 크게 보기 */
+  view?(src: string, title: string, path?: string): void
   /** 보관함 칸: 만든 것 / 사진·파일 */
   librarySeg: 'made' | 'media'
   setLibrarySeg(seg: 'made' | 'media'): void
@@ -660,7 +664,8 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
       h(
         'button',
         { class: 'card lib-card', onclick: () => ctx.openItem(it.id) },
-        emoTile(k.emo),
+        // 그림이 있는 파일은 작은 미리보기로 (없으면 종류 그림)
+        it.thumb ? thumbTile(it.thumb, it.title) : emoTile(k.emo),
         h(
           'span',
           { class: 'row-text' },
@@ -679,8 +684,20 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
   return box
 }
 
-function previewImg(b64: string, alt: string) {
+function previewImg(b64: string, alt: string, onOpen?: (src: string) => void) {
   const img = h('img', { class: 'item-shot' }) as HTMLImageElement
+  img.src = `data:image/jpeg;base64,${b64}`
+  img.alt = alt
+  if (onOpen) {
+    img.classList.add('zoomable')
+    img.addEventListener('click', () => onOpen(img.src))
+  }
+  return img
+}
+
+/** 목록 줄의 작은 미리보기 */
+function thumbTile(b64: string, alt: string) {
+  const img = h('img', { class: 'lib-thumb' }) as HTMLImageElement
   img.src = `data:image/jpeg;base64,${b64}`
   img.alt = alt
   return img
@@ -699,7 +716,7 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
     h(
       'div',
       { class: 'approve-head' },
-      emoTile(k.emo),
+      it.thumb ? thumbTile(it.thumb, it.title) : emoTile(k.emo),
       h(
         'div',
         {},
@@ -711,8 +728,29 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
       ),
     ),
     // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
-    ...(it.image ? [previewImg(it.image, it.title)] : []),
+    ...(it.image ? [previewImg(it.image, it.title, (src) => ctx.view?.(src, it.title, it.path))] : []),
     ...(it.body ? [body] : []),
+    // PC에 있는 원본 파일: 폰에 저장하거나 카톡·메일로 보내기
+    ...(it.path && ctx.fileAction
+      ? [
+          h(
+            'div',
+            { class: 'sheet-actions file-actions' },
+            h(
+              'button',
+              { class: 'btn', onclick: () => ctx.fileAction?.(it, 'save') },
+              icon('download'),
+              '폰에 저장',
+            ),
+            h(
+              'button',
+              { class: 'btn-ghost', onclick: () => ctx.fileAction?.(it, 'share') },
+              icon('share'),
+              '보내기',
+            ),
+          ),
+        ]
+      : []),
     h(
       'div',
       { class: 'sheet-actions' },

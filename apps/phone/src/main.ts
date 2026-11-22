@@ -24,7 +24,7 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
-import { AUTH_APPS, CARRIERS, SIDE_THREAD_PEEK, type VaultEntry } from '@dool2/protocol'
+import { AUTH_APPS, CARRIERS, FILE_CHUNK, SIDE_THREAD_PEEK, type VaultEntry } from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -126,7 +126,9 @@ import {
   isNative,
   launchInvite,
   listenNative,
+  saveFile,
   scanQr,
+  shareFile,
 } from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
@@ -673,6 +675,9 @@ async function receive(env: Envelope) {
       break
     case 'life-item':
       if (msg.item) fullItems.set(msg.id, msg.item)
+      break
+    case 'file-chunk':
+      fileChunkWaits.get(`${msg.id}:${msg.offset}`)?.(msg)
       break
     case 'work-tab': {
       // 두리가 이 탭에서 일하기 시작했다 (브라우저 도구든 서비스 도구든): 답하는 중이면 대화에 그 화면을 띄운다.
@@ -4125,11 +4130,62 @@ function lifeCtx(): LifeCtx {
       if (it?.cut) void send({ kind: 'life-item', id })
       return it
     },
+    fileAction: (it, how) => void fileAction(it, how),
+    view: (src, title, path) => openViewer(src, title, path),
     librarySeg: st.librarySeg,
     setLibrarySeg: (seg) => {
       st.librarySeg = seg
       render()
     },
+  }
+}
+
+/** 보관함 파일 원본 조각 기다리기 ("id:offset" → 받으면 부를 것) */
+const fileChunkWaits = new Map<string, (m: Extract<PcToPhone, { kind: 'file-chunk' }>) => void>()
+let fileBusy = false
+
+/** PC에 있는 원본을 조각으로 받아 폰에 저장하거나 보낸다 (중계 봉투 한도 때문에 192KB씩) */
+async function fileAction(it: LibraryItem, how: 'save' | 'share') {
+  if (fileBusy) return toast('다른 파일을 받는 중이에요')
+  if (!st.online) return toast('PC가 꺼져 있어서 받을 수 없어요')
+  fileBusy = true
+  mark(how === 'save' ? '보관함 파일 저장' : '보관함 파일 보내기')
+  toast('PC에서 파일을 받는 중이에요')
+  try {
+    const parts: string[] = []
+    let offset = 0
+    let size = 0
+    let name = it.title
+    let mime = 'application/octet-stream'
+    do {
+      const at = offset
+      const m = await new Promise<Extract<PcToPhone, { kind: 'file-chunk' }>>((done, fail) => {
+        const key = `${it.id}:${at}`
+        const timer = setTimeout(() => {
+          fileChunkWaits.delete(key)
+          fail(new Error('PC가 답하지 않아요'))
+        }, 30_000)
+        fileChunkWaits.set(key, (x) => {
+          clearTimeout(timer)
+          fileChunkWaits.delete(key)
+          done(x)
+        })
+        void send({ kind: 'file-chunk', id: it.id, offset: at })
+      })
+      if (m.error || !m.data) throw new Error(m.error ?? '파일을 받지 못했어요')
+      size = m.size ?? 0
+      name = m.name ?? name
+      mime = m.mime ?? mime
+      parts.push(m.data)
+      offset += FILE_CHUNK
+    } while (offset < size)
+    const data = parts.join('')
+    const said = how === 'save' ? await saveFile(name, mime, data) : await shareFile(name, mime, data)
+    if (said) toast(said)
+  } catch (e) {
+    toast((e as Error).message)
+  } finally {
+    fileBusy = false
   }
 }
 
