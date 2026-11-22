@@ -30,6 +30,7 @@ import {
 } from 'electron'
 import { KeepAwake, loginItemSettings } from './power.js'
 import { renderFile } from './render-file.js'
+import { renderMotion } from './render-motion.js'
 import { fileSecrets } from './secrets.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -292,6 +293,8 @@ app.whenReady().then(async () => {
     shrinkImage,
     // 두리가 만든 HTML(보고서·초대장)을 PDF·PNG 파일로 (file_render)
     renderFile,
+    // 모션그래픽 영상 장면을 한 장씩 찍기 (video_motion)
+    renderMotion,
     // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다
     ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
     dataDir,

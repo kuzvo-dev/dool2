@@ -270,7 +270,7 @@ type Result = {
 }
 const fail = (text: string): Result => ({ isError: true, content: [{ type: 'text', text }] })
 
-function runFfmpeg(bin: string, args: string[], timeoutMs: number): Promise<void> {
+export function runFfmpeg(bin: string, args: string[], timeoutMs: number): Promise<void> {
   return new Promise((done, failed) => {
     execFile(bin, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, _out, errText) => {
       if (err)

@@ -99,6 +99,7 @@ import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
+import { MotionMaker, type MotionRenderer } from './motion.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
@@ -118,6 +119,7 @@ export { ConnectorHealth } from './connector-health.js'
 export { Connectors, coerce, render, type ServiceToolSpec } from './connectors.js'
 export { FileTools } from './files.js'
 export { PAIR_TTL_MS, PhoneLink } from './link.js'
+export type { MotionRenderer, MotionRenderRequest, MotionRenderResult } from './motion.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from './render.js'
 export { Skills } from './skills.js'
@@ -147,6 +149,8 @@ export interface DaemonOptions {
    * 없으면(앱 없이 본체만) file_render가 못 한다고 알린다
    */
   renderFile?: HtmlRenderer
+  /** 움직이는 HTML을 영상 장면으로 한 장씩 찍는다 (PC 앱이 준다, video_motion) */
+  renderMotion?: MotionRenderer
   dataDir?: string
   /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
   journal?: false
@@ -440,6 +444,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.uploadFiles = (p) => fileTools.uploadable(p)
   /** 방금 그림 AI로 만든 그림 (대화가 image_make 결과를 받으면 한 번 꺼내 답 아래에 붙인다) */
   let madeImage: MadeImageRecordMessage | undefined
+  // 모션그래픽 영상 (video_motion): PC 앱이 장면을 찍고 영상 부품이 묶는다
+  fileTools.motionMaker = new MotionMaker({
+    binDir: join(paths.dataDir, 'bin'),
+    ...(opts.renderMotion ? { render: opts.renderMotion } : {}),
+    readable: (p) => fileTools.readable(p),
+    resolveAll: async (list) => {
+      const r = await fileTools.uploadable(list)
+      return 'error' in r ? r : r.files.map((f) => f.path)
+    },
+    saveDir: () => {
+      const docs = fileTools.dir('documents')
+      return docs ? join(docs, DOORI_FOLDER) : undefined
+    },
+    show: (p) => fileTools.shown(p),
+    onMade: (f) => fileTools.onWritten?.(f),
+    ...(opts.shrinkImage
+      ? { preview: (jpeg: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(jpeg, 720) }
+      : {}),
+  })
   // 사진으로 영상 만들기 (video_make): 영상 부품은 처음 쓸 때 받아 둔다
   fileTools.videoMaker = new VideoMaker({
     binDir: join(paths.dataDir, 'bin'),

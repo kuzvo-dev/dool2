@@ -92,6 +92,8 @@ describe('두리 MCP 도구', () => {
       'file_print',
       'file_pdf',
       'file_render',
+      'video_style',
+      'video_motion',
       'video_make',
       'image_make',
       'file_trash',
