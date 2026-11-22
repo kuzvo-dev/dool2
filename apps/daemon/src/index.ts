@@ -1496,6 +1496,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     )
   }
   let running = 0
+  /** 사람을 기다리는 대화 기록 */
+  const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
   /** 끝내기 전 검사로 이어서 하는 중인 대화의 처음 부탁 (판정이 끝나면 검사 쪽 기록은 지워진다) */
   const lastAsk = new Map<string, string>()
   /** 대화 한 턴을 감싸서 "일하는 중" 상태를 알린다 */
@@ -1553,13 +1555,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
                 }
               })()
             : undefined
-        // 일한 과정 기록은 화면용일 뿐: 사람을 기다리는 게 아니다 ("끝났어요" 알림은 그대로 간다)
-        if (rec && rec.kind !== 'work') {
+        // 사람을 기다리는 기록은 승인·로그인·연결·넘기기뿐이다. 일한 과정·빠른 답·목록·카드는 화면용이라
+        // "끝났어요" 알림이 그대로 가고, 끝내기 전 검사도 한다 (빠른 답으로 되물은 게 정말 필요한 물음인지 본다)
+        if (rec?.kind && WAITING_KINDS.has(rec.kind)) {
           asked = true
           if (rec.kind !== 'approval')
             void link
               .notify({
-                title: 'PC에서 직접 해 주세요',
+                title: rec.kind === 'handoff' ? 'PC에서 직접 해 주세요' : '로그인이 필요해요',
                 body: rec.reason ?? '두리가 도움을 기다려요',
                 tag: `handoff-${threadId}`,
                 url: `#t=${threadId}`,
