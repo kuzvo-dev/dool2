@@ -120,7 +120,9 @@ export class MotionMaker {
           .slice(0, 60) || '두리 모션 영상'
       await mkdir(dir, { recursive: true })
       let out = join(dir, `${stem}.mp4`)
-      for (let i = 2; existsSync(out) && i < 100; i++) out = join(dir, `${stem} (${i}).mp4`)
+      // 고쳐 다시 만들기(replace): 같은 이름을 바꿔 쓴다 ("(2)~(7)" 판이 쌓이던 것 — 11-23 실측)
+      if (args.replace !== true)
+        for (let i = 2; existsSync(out) && i < 100; i++) out = join(dir, `${stem} (${i}).mp4`)
       const run = this.d.run ?? runFfmpeg
       const len = r.frames / FPS
       await run(
@@ -206,7 +208,7 @@ export class MotionMaker {
             type: 'text',
             text:
               `모션 영상을 만들었어요: ${shown} (${Math.round(len)}초, ${width}×${height}, ${(size / 1024 / 1024).toFixed(1)}MB). 보관함에도 올렸어요. ` +
-              `아래는 장면마다 한 컷(${mids.length}장면)이에요. 글자가 잘리거나 겹치고, 장면이 비거나, 부탁한 분위기(레퍼런스)와 다르면 html을 고쳐 다시 만들어요(두 번까지). 확인용 영상을 따로 만들지 않아요.`,
+              `아래는 장면마다 한 컷(${mids.length}장면)이에요. 글자가 잘리거나 겹치고, 장면이 비거나, 고른 스타일·레퍼런스와 다르면 html을 고쳐 replace: true로 같은 이름에 다시 만들어요(두 번까지). 확인용 영상을 따로 만들지 않아요.`,
           },
           ...(shot ? [{ type: 'image' as const, data: shot, mimeType: 'image/jpeg' }] : []),
         ],

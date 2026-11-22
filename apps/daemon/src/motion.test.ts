@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MotionMaker, sceneMiddles } from './motion.js'
-import { motionDocument, motionLength } from './motion-kit.js'
+import { motionDocument, motionLength, styleGuide } from './motion-kit.js'
 
 let dir: string | undefined
 afterEach(async () => {
@@ -26,6 +26,16 @@ describe('모션 키트', () => {
     expect(doc).not.toContain('alert(1)')
     expect(doc).toContain('@keyframes k-pop')
     expect(motionDocument(HTML, 'landscape')).toContain('--w:1920px;--h:1080px')
+  })
+})
+
+describe('스타일북', () => {
+  it('목록과 스타일별 규칙·예시 장면', () => {
+    expect(styleGuide()).toContain('reels')
+    expect(styleGuide()).toContain('레퍼런스')
+    const b = styleGuide('birthday')
+    expect(b).toContain('polaroid')
+    expect(b).toContain('class="scene')
   })
 })
 

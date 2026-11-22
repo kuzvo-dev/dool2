@@ -186,3 +186,105 @@ export const MOTION_GUIDE =
   '배경: 장면에 class="grad"(style="--c1:#…;--c2:#…;--c3:#…" 움직이는 그라데이션)·"paper"(종이 질감)·"grain"(필름 입자)·"letterbox"(영화 띠)·style="background:#…". ' +
   '장식: <div class="particles" data-kind="confetti|snow|hearts|stars|bubbles" data-count="80"></div>(위에서 떨어짐, class="particles up"이면 올라감), <div class="burst" data-kind="confetti" style="--at:.2s"></div>(터짐), ' +
   '<svg class="line" viewBox="0 0 1080 1920"><path d="M…"/></svg>(선 그리기), <div class="progress"></div>. 스크립트는 쓰지 않는다(키트가 시간을 맞춘다).'
+
+/**
+ * 스타일북 (video_style): 레퍼런스(2026 쇼츠·릴스 흐름 — 키네틱 타이포·빠른 컷·질감·콜라주·레이어 깊이,
+ * 생일 템플릿 — 색종이·폴라로이드·통통 튀는 제목)를 상황별로 정리했다. 두리는 먼저 맞는 스타일을 고르고 콘티를 짠다
+ */
+export const MOTION_STYLES = [
+  {
+    id: 'reels',
+    name: '릴스·쇼츠 (빠르고 강렬)',
+    when: '인스타 릴스·유튜브 쇼츠 느낌, "요즘 스타일", 친구에게 보낼 짧은 영상',
+    rules: [
+      '장면 1.2~1.8초, 6~10장면. 첫 1초 안에 제일 센 장면(큰 글자 slam + burst)으로 시선을 잡는다',
+      '배경은 선명한 단색(#ff2e63·#08d9d6·#252a34·#ffd23f)을 장면마다 번갈아, 전환은 flash·zoom·slide',
+      '글자는 huge·words로 한 화면에 3~6자, 자막은 bottom의 pill. 이모지 스티커에 wiggle',
+      '마지막 장면에 progress 막대와 한 줄 마무리',
+    ],
+    example:
+      '<section class="scene" data-dur="1.4" data-in="flash" style="background:#ff2e63"><div class="burst" data-kind="confetti" data-count="90"></div><h1 class="huge slam shadow">D-DAY!</h1></section>' +
+      '<section class="scene" data-dur="1.6" data-in="zoom" style="background:#252a34"><h1 class="words huge" style="--at:.1s">오늘 주인공은</h1><p class="big pill pop bottom" style="--at:.7s;--accent:#08d9d6">하늘이 🎉</p></section>',
+  },
+  {
+    id: 'birthday',
+    name: '생일 파티 (밝고 통통)',
+    when: '아이·가족·친구 생일, 돌잔치, 축하 메시지',
+    rules: [
+      '장면 2.5~3.5초, 5~7장면. 파스텔 grad(분홍·보라·하늘) 배경과 흰 글자 shadow',
+      '시작과 끝에 burst 색종이, 사이 장면엔 particles stars·bubbles up(풍선 느낌)',
+      '사진은 polaroid로 drop(기울기 --r을 장면마다 다르게), 두세 장은 collage',
+      '제목은 words로 낱말마다 통통, 끝은 stamp로 HAPPY BIRTHDAY',
+    ],
+    example:
+      '<section class="scene grad" data-dur="3" data-in="zoom" style="--c1:#ff8fb1;--c2:#a78bfa;--c3:#7cc8ff"><div class="burst" data-kind="confetti" data-count="90" style="--at:.15s"></div><p class="pill small rise" style="--at:.2s">12.05 SAT</p><h1 class="words huge shadow" style="--at:.4s">하늘이 생일 축하해</h1></section>' +
+      '<section class="scene paper" data-dur="3" data-in="wipe"><div class="collage"><div class="polaroid" style="left:6%;top:4%;--r:-8deg"><img src="file:///사진1">첫 생일</div><div class="polaroid" style="left:30%;top:30%;--r:6deg;--at:.5s"><img src="file:///사진2">다섯 살</div></div></section>',
+  },
+  {
+    id: 'vlog',
+    name: '여행·일상 브이로그 (영화처럼)',
+    when: '여행·주말·일상 기록, 하이라이트, "감성 브이로그"',
+    rules: [
+      '장면 3~4초, letterbox + grain로 필름 느낌, 사진·영상은 kenburns·pan',
+      '첫 장면에 날짜·장소를 small로 왼쪽 아래(blur로 등장), 제목은 big reveal',
+      '전환은 fade 위주, 가끔 wipe. 글자는 적게(장면당 한 줄)',
+      '이동 경로가 있으면 svg line으로 선 그리기',
+    ],
+    example:
+      '<section class="scene letterbox grain dim" data-dur="3.5" data-in="fade"><img class="bg kenburns" src="file:///사진"><h1 class="big reveal shadow" style="--at:.4s">제주, 겨울</h1><p class="small blur bottom" style="--at:1s">2026.12.20 · 성산</p></section>',
+  },
+  {
+    id: 'memory',
+    name: '추억·감성 (따뜻하고 느리게)',
+    when: '가족 추억, 기념일, 부모님 선물 영상, 성장 기록',
+    rules: [
+      '장면 3.5~4.5초, paper 배경과 따뜻한 색(#f6efe3·#b5835a), 글자는 진한 갈색',
+      '사진은 polaroid와 photo zoom, 천천히. 말은 손편지처럼 짧게, 중요한 낱말에 marker',
+      '전환은 fade만. 장식은 particles hearts 조금(30개 이하)',
+    ],
+    example:
+      '<section class="scene paper" data-dur="4" data-in="fade" style="color:#3b2f27"><div class="polaroid drop" style="--r:-4deg"><img src="file:///사진">2019년 봄</div><p class="mid rise" style="--at:1s">처음 걸음마를 뗀 날, <span class="marker" style="--at:1.6s;--accent:#f4c7a1">기억나요?</span></p></section>',
+  },
+  {
+    id: 'promo',
+    name: '가게·제품 홍보 (굵고 선명)',
+    when: '가게 이벤트·할인·신메뉴·제품 소개, 당근·인스타 홍보',
+    rules: [
+      '장면 1.5~2.5초, 검정이나 브랜드 색 배경에 흰 huge 글자 slam',
+      '가격·혜택은 pill pop, 강조는 marker. 제품 사진은 photo zoom + pulse',
+      '마지막에 가게 이름·위치·기간을 정리하고 pulse로 시선, progress 막대',
+    ],
+    example:
+      '<section class="scene" data-dur="1.8" data-in="flash" style="background:#111"><h1 class="huge slam">겨울 한정</h1><p class="big pill pop" style="--at:.6s;--accent:#ff3b3b">30% OFF</p></section>' +
+      '<section class="scene" data-dur="2.2" data-in="zoom" style="background:#fff4e6;color:#111"><img class="photo zoom" src="file:///제품사진"><p class="mid rise" style="--at:.5s">따끈한 <span class="marker">호떡 세트</span></p></section>',
+  },
+  {
+    id: 'cardnews',
+    name: '공지·카드뉴스 (깔끔하게 정보)',
+    when: '모임 공지, 안내, 정보 정리, 순서·방법 설명',
+    rules: [
+      '장면 2.5~3초, 흰 배경(#fafafa)과 진한 글자 또는 남색(#14213d)과 흰 글자',
+      '장면마다 번호(pill)와 big 제목 rise, 설명은 small 두세 줄 type이나 rise',
+      '핵심 숫자·날짜는 huge pop, 전환은 slide·wipe로 일정하게',
+    ],
+    example:
+      '<section class="scene" data-dur="2.8" data-in="slide" style="background:#14213d"><p class="pill small pop" style="--accent:#fca311">01</p><h2 class="big rise" style="--at:.3s">모이는 곳</h2><p class="mid rise" style="--at:.7s">강남역 11번 출구</p></section>',
+  },
+] as const
+
+/** 스타일북 글 (한 스타일 또는 전체 목록) */
+export function styleGuide(id?: string): string {
+  const pick = MOTION_STYLES.find((s) => s.id === id)
+  if (pick)
+    return [
+      `## ${pick.name} (${pick.id})`,
+      `언제: ${pick.when}`,
+      ...pick.rules.map((r) => `- ${r}`),
+      `예시 장면:\n${pick.example}`,
+    ].join('\n')
+  return [
+    '영상 스타일 (style로 하나를 골라 다시 부르면 규칙·예시 장면이 와요):',
+    ...MOTION_STYLES.map((s) => `- ${s.id}: ${s.name} — ${s.when}`),
+    '사용자가 레퍼런스(링크·"○○처럼")를 주면 웹에서 그 영상·비슷한 영상을 찾아 색·속도·글자·전환 특징을 3줄로 적고, 가장 가까운 스타일에 덧붙여 콘티를 짜요.',
+  ].join('\n')
+}

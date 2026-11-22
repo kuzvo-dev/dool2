@@ -221,6 +221,7 @@ const TOOL_LABEL: Record<string, string> = {
   image_make: '그림 AI로 그리는',
   video_make: '영상 만드는',
   video_motion: '모션 영상 만드는',
+  video_style: '영상 스타일 고르는',
   file_trash: '휴지통 보는',
   file_download: '파일 받는',
   pc_screen: 'PC 화면 다루는',
@@ -259,7 +260,14 @@ export function toolPlace(name: string, input?: unknown, here?: string): string 
     return here
   }
   if (n.startsWith('screen_')) return 'app'
-  if (n.startsWith('file_') || n === 'image_make' || n === 'video_make' || n === 'video_motion') return 'file'
+  if (
+    n.startsWith('file_') ||
+    n === 'image_make' ||
+    n === 'video_make' ||
+    n === 'video_motion' ||
+    n === 'video_style'
+  )
+    return 'file'
   if (n === 'service_call') return typeof arg.tool === 'string' ? `tool:${arg.tool}` : undefined
   if (!(n in TOOL_LABEL) && /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(n)) return `tool:${n}`
   return undefined

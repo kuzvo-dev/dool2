@@ -253,12 +253,28 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('file_render'),
   )
   server.registerTool(
+    'video_style',
+    {
+      title: '영상 스타일북 보기',
+      description:
+        'video_motion으로 영상을 만들기 전에 먼저 부른다: 상황별 스타일(reels 릴스·쇼츠, birthday 생일 파티, vlog 여행·일상 브이로그, memory 추억·감성, promo 가게·제품 홍보, cardnews 공지·카드뉴스)의 장면 속도·색·글자·움직임 규칙과 예시 장면. ' +
+        'style 없이 부르면 목록, style을 주면 그 스타일의 규칙과 예시 장면이 온다. 사용자가 레퍼런스를 주면 웹 검색으로 특징을 찾아 덧붙인다.',
+      inputSchema: {
+        style: z
+          .enum(['reels', 'birthday', 'vlog', 'memory', 'promo', 'cardnews'])
+          .optional()
+          .describe('볼 스타일 (비우면 목록)'),
+      },
+    },
+    call('video_style'),
+  )
+  server.registerTool(
     'video_motion',
     {
       title: '모션그래픽 영상 만들기',
       description:
         '움직이는 글자·색종이·사진 콜라주·장면 전환이 들어간 모션그래픽 영상(mp4)을 만든다. 생일·기념일 축하 영상, 가게·제품 홍보 쇼츠, 여행 하이라이트, 공지·카드뉴스 영상처럼 "멋있게" 만들 때 쓴다(사진만 이어 붙이면 되는 단순한 것은 video_make). ' +
-        '먼저 계획한다: ① 용도와 분위기를 정하고, 사용자가 레퍼런스(예: "요즘 릴스처럼", "브이로그 느낌", 링크)를 주거나 분위기가 애매하면 웹 검색으로 비슷한 영상 2~3개를 찾아 특징(색·글꼴 느낌·속도·전환·장식)을 3줄로 정리한다 ② 장면 5~10개 콘티(장면마다 글·사진·움직임·길이)를 짠다 ③ html을 쓴다. 쇼츠·홍보는 장면 1.2~2초로 빠르게·큰 글자, 감성·추억은 3~4초로 느리게. ' +
+        '먼저 계획한다: ⓪ video_style로 맞는 스타일 규칙·예시를 본다 ① 용도와 분위기를 정하고, 사용자가 레퍼런스(예: "요즘 릴스처럼", "브이로그 느낌", 링크)를 주거나 분위기가 애매하면 웹 검색으로 비슷한 영상 2~3개를 찾아 특징(색·글꼴 느낌·속도·전환·장식)을 3줄로 정리한다 ② 장면 5~10개 콘티(장면마다 글·사진·움직임·길이)를 짠다 ③ html을 쓴다. 쇼츠·홍보는 장면 1.2~2초로 빠르게·큰 글자, 감성·추억은 3~4초로 느리게. ' +
         '모션 키트 사용법: ' +
         '장면은 <section class="scene" data-dur="3" data-in="fade|zoom|slide|wipe|circle|flash">…</section>를 차례로. 장면 안 요소는 style="--at:.4s"로 나오는 때를 주고 움직임 이름표: pop·rise·drop·slam·zoom·left·right·spin·stamp·reveal·blur·type(style="--n:글자수")·polaroid(style="--r:-6deg")·words(낱말마다 차례로, 키네틱 타이포)·marker(형광펜). ' +
         '계속 움직임: float·pulse·wiggle. 글자: huge·big·mid·small, 꾸밈: shadow·outline·pill·box, 자리: top·bottom. ' +
@@ -275,6 +291,10 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
           .describe('portrait=세로 9:16(기본, 쇼츠·릴스), landscape=가로 16:9, square=1:1'),
         music: z.string().max(500).optional().describe('배경음악 파일 경로 (사용자 폴더의 mp3·m4a)'),
         name: z.string().max(80).optional().describe('파일 이름'),
+        replace: z
+          .boolean()
+          .optional()
+          .describe('방금 만든 영상을 고쳐 다시 만들 때 true: 같은 이름 파일을 바꿔 쓴다'),
       },
     },
     call('video_motion'),

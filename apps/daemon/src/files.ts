@@ -25,6 +25,7 @@ const fail = (text: string): FileToolResult => ({ isError: true, content: [{ typ
 /** 두리가 다루는 사용자 폴더. 윈도우는 OneDrive로 옮겨진 바탕화면·문서도 */
 /** 두리가 만든 파일을 모으는 폴더 (문서 아래) */
 import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
+import { styleGuide } from './motion-kit.js'
 
 export const DOORI_FOLDER = '두리'
 
@@ -272,6 +273,12 @@ export class FileTools {
       if (tool === 'file_print') return await this.ops.print(args)
       if (tool === 'file_pdf') return await this.ops.pdf(args)
       if (tool === 'file_render') return await this.ops.render(args)
+      if (tool === 'video_style')
+        return {
+          content: [
+            { type: 'text', text: styleGuide(typeof args.style === 'string' ? args.style : undefined) },
+          ],
+        }
       if (tool === 'video_motion')
         return this.motionMaker
           ? await this.motionMaker.make(args)
