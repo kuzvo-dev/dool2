@@ -53,6 +53,48 @@ const LIMIT = /한도에 도달|한도를 초과|사용량 한도|내일 다시|
 const DRAWING = /만들고 있습니다|생성하고 있|생성 중|그리는 중|Creating|Generating/i
 const ANSWERED = /\[(e\d+) 버튼 "대답이 마음에 들어요"\]/g
 
+/** 그림 AI 사이트: 제미나이가 먼저, 한도·로그인으로 막히면 ChatGPT (둘 다 사용자 계정의 무료 웹) */
+export interface ImageSite {
+  name: string
+  url: string
+  host: string
+  input: RegExp
+  download: RegExp
+  signedOut: RegExp
+  answered: RegExp
+  /** 답 글을 잘라 볼 머리말 */
+  split: string
+  /** 입력칸이 있어도 로그인해야 그림이 된다 (로그아웃 상태로도 대화는 되는 사이트) */
+  mustLogin?: boolean
+}
+export const IMAGE_SITES: ImageSite[] = [
+  {
+    name: '제미나이',
+    url: GEMINI,
+    host: 'gemini.google.com',
+    input: INPUT,
+    download: DOWNLOAD,
+    signedOut: SIGNED_OUT,
+    answered: ANSWERED,
+    split: 'Gemini의 응답',
+  },
+  {
+    // 실측 전 (시험 PC에 ChatGPT 로그인이 없다): 표시 이름은 한국어·영어 화면 둘 다
+    name: 'ChatGPT',
+    url: 'https://chatgpt.com/',
+    host: 'chatgpt.com',
+    input: /\[(e\d+) 입력칸 "[^"]*(?:ChatGPT|무엇이든|메시지|Message|Ask)[^"]*"\]/i,
+    download: /\[(e\d+) 버튼 "[^"]*(?:이미지 다운로드|다운로드|Download)[^"]*"\]/gi,
+    signedOut: /\[(e\d+) 버튼 "(?:무료로 회원가입|회원가입|Sign up for free|Sign up)"\]/i,
+    answered: /\[(e\d+) 버튼 "(?:좋은 응답|Good response)"\]/gi,
+    split: 'ChatGPT의 말',
+    mustLogin: true,
+  },
+]
+
+/** 이 사이트로는 안 되니 다음 사이트로 (로그인·한도) */
+class NextSite extends Error {}
+
 interface Snap {
   text: string
   url?: string
@@ -79,8 +121,9 @@ export function imageName(raw: unknown, prompt: string): string {
 }
 
 export class ImageMaker {
-  /** 고치기를 이어 할 제미나이 탭 (마지막에 만든 곳) */
+  /** 고치기를 이어 할 탭과 사이트 (마지막에 만든 곳) */
   private lastTab?: number
+  private lastSite?: ImageSite
   private busy = false
 
   constructor(private readonly d: ImageMakeDeps) {}
@@ -108,52 +151,66 @@ export class ImageMaker {
     if (!downloads || !dir) return fail('다운로드·문서 폴더를 찾지 못해서 그림을 받을 수 없어요.')
     this.busy = true
     try {
-      return await this.run(prompt, args, downloads, dir)
+      // 고치기는 방금 만든 사이트에서, 새 그림은 제미나이부터
+      const sites = args.edit === true && this.lastSite ? [this.lastSite] : IMAGE_SITES
+      const why: string[] = []
+      for (const site of sites) {
+        try {
+          return await this.run(site, prompt, args, downloads, dir)
+        } catch (e) {
+          if (!(e instanceof NextSite)) throw e
+          why.push(e.message)
+        }
+      }
+      return fail(`${why.join(' ')} 이번에는 HTML로 그려 file_render로 PNG를 만들어요.`)
     } finally {
       this.busy = false
     }
   }
 
   private async run(
+    site: ImageSite,
     prompt: string,
     args: Record<string, unknown>,
     downloads: string,
     dir: string,
   ): Promise<Result> {
-    const edit = args.edit === true && this.lastTab !== undefined
+    const edit = args.edit === true && this.lastTab !== undefined && this.lastSite === site
     let tabId = edit ? this.lastTab : undefined
     if (tabId !== undefined) {
       const alive = await this.snap(tabId).catch(() => undefined)
-      if (!alive || !alive.url?.includes('gemini.google.com')) tabId = undefined
+      if (!alive || !alive.url?.includes(site.host)) tabId = undefined
     }
     if (tabId === undefined) {
-      const opened = (await this.d.browser.call('open', { url: GEMINI }, 40_000)) as { tabId: number }
+      const opened = (await this.d.browser.call('open', { url: site.url }, 40_000)) as { tabId: number }
       tabId = opened.tabId
       await this.sleep(2500)
     }
     // 첫 사용 안내를 넘기고 입력칸을 찾는다
     let page = await this.snap(tabId)
-    for (let i = 0; i < 5 && !INPUT.test(page.text); i++) {
-      if (SIGNED_OUT.test(page.text) && !ONBOARD.test(page.text))
-        return fail(
-          '제미나이에 구글 로그인이 안 돼 있어요. 사용자 크롬에서 gemini.google.com에 구글 계정으로 로그인돼 있어야 그림을 만들 수 있어요. 로그인 카드(구글)를 띄우거나, 이번에는 HTML로 그려 file_render로 PNG를 만들어요.',
-        )
+    for (let i = 0; i < 5 && !site.input.test(page.text); i++) {
+      if (site.signedOut.test(page.text) && !ONBOARD.test(page.text)) break
       const btn = page.text.match(ONBOARD)?.[1]
       if (btn) await this.d.browser.call('click', { tabId, ref: btn }, 20_000).catch(() => undefined)
       await this.sleep(btn ? 1500 : 2000)
       page = await this.snap(tabId)
     }
-    const input = page.text.match(INPUT)?.[1]
+    if (site.signedOut.test(page.text) && (site.mustLogin || !site.input.test(page.text))) {
+      await this.d.browser.call('close', { tabId }, 10_000).catch(() => undefined)
+      throw new NextSite(`${site.name}에 로그인이 안 돼 있어요.`)
+    }
+    const input = page.text.match(site.input)?.[1]
     if (!input)
       return fail(
-        '제미나이 입력칸을 찾지 못했어요. 화면이 바뀌었을 수 있어요. 이번에는 HTML로 그려 file_render로 PNG를 만들어요.',
+        `${site.name} 입력칸을 찾지 못했어요. 화면이 바뀌었을 수 있어요. 이번에는 HTML로 그려 file_render로 PNG를 만들어요.`,
       )
-    const before = count(page.text, DOWNLOAD)
-    const answersBefore = count(page.text, ANSWERED)
+    const before = count(page.text, site.download)
+    const answersBefore = count(page.text, site.answered)
     // 그림을 꼭 만들게 앞에 붙인다 (그냥 말로 답하지 않게)
     const ask = edit ? prompt : `이미지를 생성해 줘. ${prompt}`
     await this.d.browser.call('type', { tabId, ref: input, text: ask, submit: true }, 30_000)
     this.lastTab = tabId
+    this.lastSite = site
 
     // 그림이 나올 때까지 기다린다: 다운로드 버튼이 하나 늘고, 두 번 연속 그대로면 다 그린 것
     const until = this.now() + (this.d.waitMs ?? 150_000)
@@ -163,25 +220,23 @@ export class ImageMaker {
     while (this.now() < until) {
       await this.sleep(4000)
       page = await this.snap(tabId)
-      if (LIMIT.test(page.text) && count(page.text, DOWNLOAD) <= before)
-        return fail(
-          '제미나이 무료 그림 횟수를 다 쓴 것 같아요(화면에 한도 안내). 이번에는 HTML로 그려 file_render로 PNG를 만들고, 내일 다시 그림 AI로 만들 수 있다고 알려 줘요.',
-        )
-      const n = count(page.text, DOWNLOAD)
+      if (LIMIT.test(page.text) && count(page.text, site.download) <= before)
+        throw new NextSite(`${site.name} 무료 그림 횟수를 다 쓴 것 같아요(화면에 한도 안내, 내일 다시 돼요).`)
+      const n = count(page.text, site.download)
       if (n > before) {
         seen++
-        ref = last(page.text, DOWNLOAD)
+        ref = last(page.text, site.download)
         if (seen >= 2) break
         continue
       }
       // 그림 없이 말로만 답하고 끝났다 (거절·되물음). 그림보다 말이 먼저 뜨기도 해서,
       // 그리는 중 표시가 없고 그림 없는 답이 여섯 번(약 24초) 이어질 때만 말로 답했다고 본다 (실측 11-22: 바로 판정해 놓쳤다)
-      if (count(page.text, ANSWERED) > answersBefore && !DRAWING.test(page.text)) textOnly++
+      if (count(page.text, site.answered) > answersBefore && !DRAWING.test(page.text)) textOnly++
       else textOnly = 0
       if (textOnly >= 6) {
-        const said = page.text.split('Gemini의 응답').at(-1)?.slice(0, 600).trim() ?? ''
+        const said = page.text.split(site.split).at(-1)?.slice(0, 600).trim() ?? ''
         return fail(
-          `제미나이가 그림 대신 말로 답했어요: "${said}". 부탁을 더 구체적으로 바꿔 다시 불러요(실제 사람·상표가 들어가면 거절될 수 있어요).`,
+          `${site.name}가 그림 대신 말로 답했어요: "${said}". 부탁을 더 구체적으로 바꿔 다시 불러요(실제 사람·상표가 들어가면 거절될 수 있어요).`,
         )
       }
     }
@@ -220,7 +275,7 @@ export class ImageMaker {
     this.d.onMade?.({ name: basename(target), kind: 'png', path: shown, ...(small ? { image: small } : {}) })
     if (small) await this.d.keepPhoto?.(small, stem, shown).catch(() => undefined)
     return ok(
-      `그림 AI(제미나이)로 만들어 ${shown}에 두고 보관함에도 올렸어요. 아래 그림을 직접 보고 부탁과 맞는지(넣은 글자가 정확한지, 빠진 것·이상한 곳이 없는지) 확인해요. ` +
+      `그림 AI(${site.name})로 만들어 ${shown}에 두고 보관함에도 올렸어요. 아래 그림을 직접 보고 부탁과 맞는지(넣은 글자가 정확한지, 빠진 것·이상한 곳이 없는지) 확인해요. ` +
         '고칠 곳이 있으면 image_make(edit: true, prompt: "고칠 점만")로 같은 그림을 고쳐요. 맞으면 사용자에게 그림을 보여 주며 알려요.',
       small,
     )
