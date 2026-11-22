@@ -454,7 +454,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     // 미리보기: PC 앱이 줄여 준다 (원본을 HTML에 넣어 그리면 큰 그림은 data: 주소 한도에 걸린다 — 실측 11-22)
     ...(opts.shrinkImage
-      ? { preview: (png: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(png, 900) }
+      ? { preview: (png: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(png, 720) }
       : {}),
   })
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
