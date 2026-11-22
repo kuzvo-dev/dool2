@@ -562,6 +562,16 @@ export interface CardsRecordMessage {
   shape?: 'portrait'
 }
 
+/** 그림 AI로 만든 그림 (image_make): 답 아래에 큰 그림으로 보인다. photo는 PC가 넘겨주는 "photo:이름" 그림 */
+export interface MadeImageRecordMessage {
+  kind: 'made'
+  title: string
+  /** PC 작업 폴더 photos/의 파일 이름 (made-….jpg) */
+  photo: string
+  /** PC에 둔 원본 경로 (~/Documents/두리/….png) */
+  path?: string
+}
+
 /** AI가 넘긴 카드를 믿을 수 있는 모양으로 다듬는다: 10장까지, 글 길이 자르기, https 주소만 */
 export function cleanCards(input: unknown): ChatCard[] {
   const list = Array.isArray(input) ? input : []

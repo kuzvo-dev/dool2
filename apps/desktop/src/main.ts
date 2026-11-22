@@ -210,6 +210,14 @@ function openInChrome(url: string) {
  * 두리가 만든 HTML(그림·초대장·보고서)을 보이지 않는 창에서 그려 JPEG로 찍는다 (보관함·폰 미리보기).
  * 스크립트는 끄고, 네트워크·다른 파일은 열지 않는다
  */
+/** 그림 파일을 가로 width로 줄인 JPEG(base64)로 (그림 AI로 만든 그림의 보관함·대화 미리보기) */
+async function shrinkImage(data: Buffer, width: number): Promise<string | undefined> {
+  const img = nativeImage.createFromBuffer(data)
+  if (img.isEmpty()) return undefined
+  const fit = img.getSize().width > width ? img.resize({ width, quality: 'good' }) : img
+  return fit.toJPEG(85).toString('base64')
+}
+
 async function renderHtml(html: string): Promise<string | undefined> {
   const w = new BrowserWindow({
     show: false,
@@ -281,6 +289,7 @@ app.whenReady().then(async () => {
   const dataDir = process.env.DOOL2_DATA_DIR ?? join(app.getPath('appData'), 'dool2')
   const d = await startDaemon({
     renderHtml,
+    shrinkImage,
     // 두리가 만든 HTML(보고서·초대장)을 PDF·PNG 파일로 (file_render)
     renderFile,
     // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다

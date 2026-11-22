@@ -4127,3 +4127,57 @@ textarea.ghosting {
   grid-template-columns: 96px 1fr;
   gap: 8px;
 }
+
+/* 그림 AI로 만든 그림: 답 아래에 크게 (누르면 화면 가득) */
+.made {
+  margin: 4px 0 2px;
+}
+.made-photo {
+  display: grid;
+  place-items: center;
+  width: min(72vw, 300px);
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface-2, rgba(255, 255, 255, 0.05));
+  color: var(--text-3, rgba(255, 255, 255, 0.4));
+  cursor: zoom-in;
+}
+.made-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 12px);
+  background: rgba(0, 0, 0, 0.92);
+}
+.viewer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: #fff;
+  font-weight: 600;
+}
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.viewer-note {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}

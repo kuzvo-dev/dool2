@@ -233,6 +233,26 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('file_render'),
   )
   server.registerTool(
+    'image_make',
+    {
+      title: '그림 AI로 그림 만들기',
+      description:
+        '사용자 크롬에 로그인된 그림 AI(제미나이)로 진짜 그림을 만들어 문서/두리 폴더와 보관함에 넣는다. 초대장·포스터·카드·일러스트·프로필 그림·아이 그림처럼 "그림"이 중심인 것은 SVG·HTML로 직접 그리지 말고 이걸 쓴다(직접 그리면 도형 클립아트 수준이 된다). ' +
+        '넣을 글자(이름·날짜·장소)도 prompt에 따옴표로 정확히 적으면 그림 안에 한글로 넣어 준다. prompt에는 장면·분위기·그림체(예: 파스텔 수채화 그림책, 3D 캐릭터, 사진처럼)·색·비율(세로 3:4, 정사각형)·넣을 글자를 자세히 쓴다. ' +
+        '결과 그림이 같이 오니 직접 보고 글자가 틀렸거나 부탁과 다르면 edit: true로 고칠 점만 다시 부탁한다(같은 그림을 고친다). 표·글이 많은 보고서·서류는 file_write(html)+file_render를 쓴다. ' +
+        '무료 횟수를 다 썼거나 로그인이 안 돼 있으면 실패로 알려 주니, 그때는 HTML로 그려 file_render로 PNG를 만든다.',
+      inputSchema: {
+        prompt: z
+          .string()
+          .max(3000)
+          .describe('만들 그림 설명 (장면·그림체·색·비율·넣을 글자). edit일 때는 고칠 점만'),
+        name: z.string().max(80).optional().describe('파일 이름 (예: "김공룡 생일 초대장")'),
+        edit: z.boolean().optional().describe('방금 만든 그림을 이어서 고칠 때 true'),
+      },
+    },
+    call('image_make'),
+  )
+  server.registerTool(
     'file_trash',
     {
       title: '휴지통에서 찾기·되살리기',

@@ -1721,6 +1721,20 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
     if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
     if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
     if (rec.kind === 'cards') return pickCards(rec as CardsRecordMessage)
+    if (rec.kind === 'made') {
+      // 그림 AI로 만든 그림: 답 아래에 크게 (누르면 새 창에서 원본 크기)
+      const made = rec as { title?: string; photo?: string }
+      const box = el('div', 'made-photo', icon('image'))
+      void thumb(`photo:${made.photo ?? ''}`).then((data) => {
+        if (!data) return
+        const img = document.createElement('img')
+        img.alt = made.title ?? '만든 그림'
+        img.src = data
+        img.addEventListener('click', () => window.open(data, '_blank'))
+        box.replaceChildren(img)
+      })
+      return el('div', 'made', box)
+    }
   } catch {
     return document.createTextNode('')
   }
