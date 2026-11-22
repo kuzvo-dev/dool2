@@ -109,6 +109,7 @@ import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
 import { mimeOf } from './upload.js'
 import { Vault, vaultSitesText } from './vault.js'
+import { VideoMaker } from './video-make.js'
 import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
@@ -439,6 +440,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.uploadFiles = (p) => fileTools.uploadable(p)
   /** 방금 그림 AI로 만든 그림 (대화가 image_make 결과를 받으면 한 번 꺼내 답 아래에 붙인다) */
   let madeImage: MadeImageRecordMessage | undefined
+  // 사진으로 영상 만들기 (video_make): 영상 부품은 처음 쓸 때 받아 둔다
+  fileTools.videoMaker = new VideoMaker({
+    binDir: join(paths.dataDir, 'bin'),
+    resolveAll: async (list) => {
+      const r = await fileTools.uploadable(list)
+      return 'error' in r ? r : r.files.map((f) => f.path)
+    },
+    saveDir: () => {
+      const docs = fileTools.dir('documents')
+      return docs ? join(docs, DOORI_FOLDER) : undefined
+    },
+    show: (p) => fileTools.shown(p),
+    onMade: (f) => fileTools.onWritten?.(f),
+    ...(opts.shrinkImage
+      ? { preview: (jpeg: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(jpeg, 720) }
+      : {}),
+  })
   // 그림 AI로 그림 만들기 (image_make): 사용자 크롬의 제미나이 웹에서 만들어 두리 폴더·보관함으로
   fileTools.imageMaker = new ImageMaker({
     browser,
@@ -1483,7 +1501,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (away) return { error: away }
         const st = await stat(full).catch(() => undefined)
         if (!st?.isFile()) return { error: 'PC에서 파일을 찾지 못했어요 (옮기거나 지웠을 수 있어요)' }
-        if (st.size > FILE_MAX) return { error: '30MB보다 큰 파일은 폰으로 받을 수 없어요' }
+        if (st.size > FILE_MAX) return { error: '60MB보다 큰 파일은 폰으로 받을 수 없어요' }
         const fh = await open(full, 'r')
         try {
           const buf = Buffer.alloc(Math.min(FILE_CHUNK, Math.max(0, st.size - offset)))

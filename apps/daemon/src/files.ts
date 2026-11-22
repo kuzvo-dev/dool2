@@ -93,6 +93,8 @@ export class FileTools {
   /** 사용자가 대화로 보낸 사진을 두는 곳 ("[사진: 이름.jpg]") — 웹사이트에 올릴 수 있다 */
   sentPhotos?: string
   /** 새 파일을 만들었을 때 (보관함에 올린다) */
+  /** 사진으로 영상 만들기 (video_make, 본체가 넣어 준다) */
+  videoMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   /** 그림 AI로 그림 만들기 (image_make, 본체가 브라우저와 함께 넣어 준다) */
   imageMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   onWritten?: (f: {
@@ -262,6 +264,8 @@ export class FileTools {
       if (tool === 'file_print') return await this.ops.print(args)
       if (tool === 'file_pdf') return await this.ops.pdf(args)
       if (tool === 'file_render') return await this.ops.render(args)
+      if (tool === 'video_make')
+        return this.videoMaker ? await this.videoMaker.make(args) : fail('이 PC에서는 영상을 만들 수 없어요.')
       if (tool === 'image_make')
         return this.imageMaker
           ? await this.imageMaker.make(args)
