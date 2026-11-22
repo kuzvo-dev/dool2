@@ -253,6 +253,38 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('file_render'),
   )
   server.registerTool(
+    'video_make',
+    {
+      title: '사진으로 영상 만들기',
+      description:
+        '사진 여러 장(2~40장)을 천천히 확대·부드러운 장면 전환·자막·첫 제목·배경음악으로 이은 mp4 영상을 문서/두리 폴더와 보관함에 만든다. "아이 사진으로 생일 영상", "여행 사진 영상으로", "추억 영상" 같은 부탁에 쓴다. ' +
+        '사진은 file_find(사진 폴더)로 찾은 경로나 대화로 받은 사진 이름("photo:이름.jpg"), image_make로 만든 그림 경로. 고른 순서대로 이어진다(찍은 날 순으로 골라 넣는다). ' +
+        '세로(portrait, 폰·인스타 스토리)가 기본, 유튜브·TV면 landscape. 사진이 잘리지 않고 남는 곳은 흐리게 채운다. 자막은 사진마다 짧게(20자 안팎), 없어도 된다. ' +
+        '배경음악은 사용자 폴더의 mp3·m4a만(사용자가 준 것). 처음 쓰면 영상 부품을 한 번 받아(30초쯤) 걸릴 수 있다. 결과 첫 장면이 같이 오니 보고 이상하면 고쳐 다시 만든다.',
+      inputSchema: {
+        photos: z.array(z.string().max(500)).min(2).max(40).describe('사진 경로들 (순서대로)'),
+        captions: z
+          .array(z.string().max(80))
+          .max(40)
+          .optional()
+          .describe('사진마다 자막 (photos와 같은 순서, 빈 글이면 그 장은 자막 없음)'),
+        title: z
+          .string()
+          .max(60)
+          .optional()
+          .describe('첫 장면 위에 뜨는 큰 제목 (예: "하늘이의 다섯 번째 생일")'),
+        seconds: z.number().min(1.5).max(8).optional().describe('사진 한 장을 보여 줄 초 (기본 3)'),
+        shape: z
+          .enum(['portrait', 'landscape', 'square'])
+          .optional()
+          .describe('portrait=세로 9:16(기본), landscape=가로 16:9, square=1:1'),
+        music: z.string().max(500).optional().describe('배경음악 파일 경로 (사용자 폴더의 mp3·m4a)'),
+        name: z.string().max(80).optional().describe('파일 이름'),
+      },
+    },
+    call('video_make'),
+  )
+  server.registerTool(
     'image_make',
     {
       title: '그림 AI로 그림 만들기',

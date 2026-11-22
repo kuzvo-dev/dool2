@@ -837,7 +837,7 @@ export interface LibraryItem {
 /** 보관함 파일 원본을 폰으로 받을 때 한 번에 오는 조각 (중계 봉투 500KB 안에 들게, 암호화로 커지는 것까지 생각) */
 export const FILE_CHUNK = 192 * 1024
 /** 폰으로 받는 파일 원본의 최대 크기 */
-export const FILE_MAX = 30 * 1024 * 1024
+export const FILE_MAX = 60 * 1024 * 1024
 
 /** 기억: 사용자에 대해 알게 된 것 (사용자가 보고 지울 수 있다) */
 export interface MemoryItem {
