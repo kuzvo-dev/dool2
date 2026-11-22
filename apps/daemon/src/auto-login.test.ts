@@ -4,6 +4,7 @@ import {
   certScreen,
   checkedRefs,
   dormantScreen,
+  findProviderButton,
   joinScreen,
   keepSignedIn,
   probeLogin,
@@ -995,5 +996,20 @@ describe('일괄 점검 실측 2 (2026-11-19)', () => {
     )
     expect(r).toMatchObject({ status: 'human' })
     expect((r as { reason: string }).reason).toMatch(/본인인증/)
+  })
+})
+
+describe('간편 로그인 버튼 찾기', () => {
+  it('"네이버 새 창 열림"처럼 화면 읽기 꼬리말이 붙어도 공급자 버튼으로 본다 (대한항공)', () => {
+    const text =
+      '# 로그인\n[e4 비밀번호칸 "비밀번호"]\n다른 계정으로 로그인\n[e21 링크 "네이버 새 창 열림"] [e22 링크 "카카오 새 창 열림"]'
+    expect(findProviderButton(text, 'naver')?.[0]).toBe('e21')
+    expect(findProviderButton(text, 'kakao')?.[0]).toBe('e22')
+  })
+  it('이름 없는 아이콘 버튼 뒤 공급자 글자', () => {
+    expect(findProviderButton('# 로그인\n[e9 버튼] 네이버\n[e10 버튼] 카카오', 'kakao')?.[0]).toBe('e10')
+  })
+  it('첫 화면 바닥의 "네이버 블로그"는 고르지 않는다', () => {
+    expect(findProviderButton('[e3 링크 "네이버 블로그 새 창 열림"]', 'naver', false)).toBeUndefined()
   })
 })

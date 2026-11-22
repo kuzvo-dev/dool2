@@ -806,7 +806,11 @@ const CONSENT =
   /^((동의|확인)하고\s?(계속하기|계속|시작하기|진행(하기)?)|전체\s?동의하고\s?계속하기|계속하기|계속|확인|허용|허용하기|동의|동의하기|로그인|Continue|Allow|Agree|Agree and continue|Confirm|.{1,30}(?:님)?(?:으로|로)\s?계속(?:하기)?|Continue as .{1,30})$/i
 
 /** 사이트 로그인 화면에서 그 공급자 버튼 ("카카오로 시작하기", "네이버 로그인", 아이콘만 있는 "kakao") */
-function findProviderButton(text: string, provider: SocialProvider, loginPage = true): RefEntry | undefined {
+export function findProviderButton(
+  text: string,
+  provider: SocialProvider,
+  loginPage = true,
+): RefEntry | undefined {
   const p = SOCIAL_PROVIDERS[provider]
   const refs = ([...parseRefs(text)] as RefEntry[]).filter(
     ([, r]) =>
@@ -830,10 +834,27 @@ function findProviderButton(text: string, provider: SocialProvider, loginPage = 
         ([, r]) =>
           r.name
             .trim()
+            // 화면 읽기용 꼬리말("네이버 새 창 열림" — 실측 11-22 대한항공)은 빼고 본다
+            .replace(NEW_WINDOW, '')
             .replace(p.button, '')
             .replace(/[\s·|-]/g, '').length <= 2,
-      ))
+      )) ??
+    // 이름 없는 아이콘 버튼 바로 뒤에 공급자 이름 글자만 있는 화면 ("[e25 버튼] 네이버") — 로그인 화면에서만
+    // (실측 11-22 대한항공: 동그란 N 아이콘 아래 '네이버' 글자라 버튼에 이름이 없었다)
+    ((loginPage || undefined) && bareIconButton(text, p.button))
   )
+}
+
+const NEW_WINDOW =
+  /\(?\s*(새\s?창(으로)?\s?(열림|열기)?|새\s?탭|new\s?window|opens?\s?in\s?(a\s?)?new\s?(window|tab))\s*\)?/gi
+
+function bareIconButton(text: string, provider: RegExp): RefEntry | undefined {
+  for (const m of text.matchAll(/\[(e\d+) (버튼|링크)\]\s*([^[\n]{1,14})/g)) {
+    const label = (m[3] ?? '').trim()
+    if (provider.test(label) && label.replace(provider, '').replace(/[\s·|-]/g, '').length <= 2)
+      return [m[1] as string, { role: m[2] as string, name: label }] as RefEntry
+  }
+  return undefined
 }
 
 /** 로그인 화면인지: 비밀번호·아이디 칸, 로그인 주소, '로그인' 제목 */
