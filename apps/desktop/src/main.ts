@@ -215,7 +215,7 @@ async function shrinkImage(data: Buffer, width: number): Promise<string | undefi
   const img = nativeImage.createFromBuffer(data)
   if (img.isEmpty()) return undefined
   const fit = img.getSize().width > width ? img.resize({ width, quality: 'good' }) : img
-  return fit.toJPEG(85).toString('base64')
+  return fit.toJPEG(80).toString('base64')
 }
 
 async function renderHtml(html: string): Promise<string | undefined> {
