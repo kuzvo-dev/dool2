@@ -460,6 +460,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 그림 AI로 그림 만들기 (image_make): 사용자 크롬의 제미나이 웹에서 만들어 두리 폴더·보관함으로
   fileTools.imageMaker = new ImageMaker({
     browser,
+    // 연결된 그림 AI부터 (AI 도구 칸의 제미나이·ChatGPT 카드)
+    connected: async () =>
+      new Set((await skills.connections()).filter((c) => c.connectedAt).map((c) => c.card.id)),
+    // 그림이 나왔으면 그 사이트에 로그인돼 있다: 연결로 표시 (연결 화면·먼저 쓰기)
+    onWorked: (id) => {
+      void skills.connections().then((list) => {
+        if (!list.find((c) => c.card.id === id)?.connectedAt) connectMark(id, true)
+      })
+    },
     downloadsDir: () => fileTools.dir('downloads'),
     saveDir: () => {
       const docs = fileTools.dir('documents')

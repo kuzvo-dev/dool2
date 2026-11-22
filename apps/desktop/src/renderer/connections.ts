@@ -32,6 +32,7 @@ export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
   gov: '공공·세금',
   life: '생활',
   device: '휴대폰',
+  ai: 'AI 도구',
 }
 const APPROVAL: readonly Tier[] = ['돈 내기', '연락하기']
 

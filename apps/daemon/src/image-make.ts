@@ -25,6 +25,10 @@ export interface ImageMakeDeps {
   keepPhoto?: (jpeg: string, title: string, path: string) => Promise<void>
   /** PNG를 작은 JPEG(base64)로: 보관함 미리보기와 두리가 직접 보고 확인할 그림 */
   preview?: (png: Buffer, mime: string) => Promise<string | undefined>
+  /** 연결된 서비스 id (연결된 그림 AI부터 쓴다) */
+  connected?: () => Promise<Set<string>>
+  /** 그 사이트로 그림을 만들었다 (연결 표시) */
+  onWorked?: (id: string) => void
   sleep?: (ms: number) => Promise<void>
   now?: () => number
   /** 다 그려질 때까지 기다리는 시간 */
@@ -55,6 +59,8 @@ const ANSWERED = /\[(e\d+) 버튼 "대답이 마음에 들어요"\]/g
 
 /** 그림 AI 사이트: 제미나이가 먼저, 한도·로그인으로 막히면 ChatGPT (둘 다 사용자 계정의 무료 웹) */
 export interface ImageSite {
+  /** 연결 카드 id (skills/<id>) */
+  id: string
   name: string
   url: string
   host: string
@@ -69,6 +75,7 @@ export interface ImageSite {
 }
 export const IMAGE_SITES: ImageSite[] = [
   {
+    id: 'gemini',
     name: '제미나이',
     url: GEMINI,
     host: 'gemini.google.com',
@@ -80,6 +87,7 @@ export const IMAGE_SITES: ImageSite[] = [
   },
   {
     // 실측 전 (시험 PC에 ChatGPT 로그인이 없다): 표시 이름은 한국어·영어 화면 둘 다
+    id: 'chatgpt',
     name: 'ChatGPT',
     url: 'https://chatgpt.com/',
     host: 'chatgpt.com',
@@ -152,7 +160,11 @@ export class ImageMaker {
     this.busy = true
     try {
       // 고치기는 방금 만든 사이트에서, 새 그림은 제미나이부터
-      const sites = args.edit === true && this.lastSite ? [this.lastSite] : IMAGE_SITES
+      const on = (await this.d.connected?.().catch(() => undefined)) ?? new Set<string>()
+      const sites =
+        args.edit === true && this.lastSite
+          ? [this.lastSite]
+          : [...IMAGE_SITES.filter((x) => on.has(x.id)), ...IMAGE_SITES.filter((x) => !on.has(x.id))]
       const why: string[] = []
       for (const site of sites) {
         try {
@@ -162,7 +174,11 @@ export class ImageMaker {
           why.push(e.message)
         }
       }
-      return fail(`${why.join(' ')} 이번에는 HTML로 그려 file_render로 PNG를 만들어요.`)
+      // 조용히 직접 그리지 않는다: 그림 AI를 연결하게 카드를 띄우고, 이번 것은 직접 그려 둔다 (11-23 결정)
+      return fail(
+        `${why.join(' ')} connect_ask("gemini")로 그림 AI 연결 카드를 띄워 한 번 연결하게 하고(구글 계정이면 버튼 한 번), ` +
+          '이번 그림은 HTML로 그려 file_render로 PNG를 만들어 둬요. 연결되면 그림 AI로 훨씬 예쁘게 다시 만들 수 있다고 알려요.',
+      )
     } finally {
       this.busy = false
     }
@@ -273,6 +289,7 @@ export class ImageMaker {
     const small = await this.d.preview?.(data, mime).catch(() => undefined)
     const shown = this.d.show(target)
     this.d.onMade?.({ name: basename(target), kind: 'png', path: shown, ...(small ? { image: small } : {}) })
+    this.d.onWorked?.(site.id)
     if (small) await this.d.keepPhoto?.(small, stem, shown).catch(() => undefined)
     return ok(
       `그림 AI(${site.name})로 만들어 ${shown}에 두고 보관함에도 올렸어요. 아래 그림을 직접 보고 부탁과 맞는지(넣은 글자가 정확한지, 빠진 것·이상한 곳이 없는지) 확인해요. ` +

@@ -85,6 +85,8 @@ describe('그림 만들기 (제미나이 웹)', () => {
     const r = await maker.make({ prompt: '공룡' })
     expect(r.isError).toBe(true)
     expect(JSON.stringify(r.content)).toContain('로그인')
+    // 조용히 직접 그리지 않고 연결 카드를 띄우게 한다
+    expect(JSON.stringify(r.content)).toContain('connect_ask')
   })
 
   it('제미나이에 로그인이 안 돼 있으면 ChatGPT로 만든다', async () => {
@@ -101,6 +103,7 @@ describe('그림 만들기 (제미나이 웹)', () => {
       ],
     }
     let next = 7
+    const worked: string[] = []
     const calls: { command: string; args: Record<string, unknown> }[] = []
     const maker = new ImageMaker({
       browser: {
@@ -126,11 +129,38 @@ describe('그림 만들기 (제미나이 웹)', () => {
       saveDir: () => join(dir as string, 'docs'),
       show: (p) => p,
       sleep: async () => {},
+      onWorked: (id) => worked.push(id),
     })
     const r = await maker.make({ prompt: '공룡', name: '공룡' })
     expect(r.isError).toBeUndefined()
     expect(JSON.stringify(r.content)).toContain('ChatGPT')
+    expect(worked).toEqual(['chatgpt'])
     expect(calls.find((c) => c.command === 'type')?.args.ref).toBe('e14')
+  })
+
+  it('연결된 그림 AI부터 연다', async () => {
+    const opened: string[] = []
+    const maker = new ImageMaker({
+      browser: {
+        async call(command: string, args: Record<string, unknown>) {
+          if (command === 'open') {
+            opened.push(String(args.url))
+            return { tabId: 1 }
+          }
+          if (command === 'snapshot')
+            return { text: '[e1 버튼 "무료로 회원가입"] [e2 링크 "로그인"]', url: String(opened.at(-1)) }
+          return {}
+        },
+      },
+      downloadsDir: () => tmpdir(),
+      saveDir: () => tmpdir(),
+      show: (p) => p,
+      sleep: async () => {},
+      connected: async () => new Set(['chatgpt']),
+    })
+    await maker.make({ prompt: '공룡' })
+    expect(opened[0]).toContain('chatgpt.com')
+    expect(opened[1]).toContain('gemini.google.com')
   })
 
   it('파일 이름은 이름을 쓰고, 없으면 부탁 앞부분', () => {
