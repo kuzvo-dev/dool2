@@ -81,10 +81,56 @@ describe('그림 만들기 (제미나이 웹)', () => {
   })
 
   it('로그인이 안 돼 있으면 알린다', async () => {
-    const { maker } = await setup(['[e1 링크 "로그인"]\nGemini'])
+    const { maker } = await setup(['[e1 링크 "로그인"] [e2 버튼 "무료로 회원가입"]\nGemini'])
     const r = await maker.make({ prompt: '공룡' })
     expect(r.isError).toBe(true)
     expect(JSON.stringify(r.content)).toContain('로그인')
+  })
+
+  it('제미나이에 로그인이 안 돼 있으면 ChatGPT로 만든다', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dool2-img-'))
+    const downloads = join(dir, 'dl')
+    await (await import('node:fs/promises')).mkdir(downloads)
+    const seen: Record<number, number> = {}
+    const screens: Record<number, string[]> = {
+      7: ['[e1 링크 "로그인"]\nGemini'],
+      8: [
+        '[e14 입력칸 "ChatGPT와 채팅"]',
+        '[e14 입력칸 "ChatGPT와 채팅"]\n이미지 생성 중',
+        '[e14 입력칸 "ChatGPT와 채팅"]\n[e40 버튼 "이 이미지 다운로드"]',
+      ],
+    }
+    let next = 7
+    const calls: { command: string; args: Record<string, unknown> }[] = []
+    const maker = new ImageMaker({
+      browser: {
+        async call(command: string, args: Record<string, unknown>) {
+          calls.push({ command, args })
+          if (command === 'open') return { tabId: next++ }
+          if (command === 'snapshot') {
+            const t = Number(args.tabId)
+            const list = screens[t] ?? ['']
+            const i = seen[t] ?? 0
+            seen[t] = i + 1
+            return {
+              text: list[Math.min(i, list.length - 1)],
+              url: t === 7 ? 'https://gemini.google.com/app' : 'https://chatgpt.com/',
+            }
+          }
+          if (command === 'click' && args.ref === 'e40')
+            await writeFile(join(downloads, 'ChatGPT Image.png'), 'png')
+          return {}
+        },
+      },
+      downloadsDir: () => downloads,
+      saveDir: () => join(dir as string, 'docs'),
+      show: (p) => p,
+      sleep: async () => {},
+    })
+    const r = await maker.make({ prompt: '공룡', name: '공룡' })
+    expect(r.isError).toBeUndefined()
+    expect(JSON.stringify(r.content)).toContain('ChatGPT')
+    expect(calls.find((c) => c.command === 'type')?.args.ref).toBe('e14')
   })
 
   it('파일 이름은 이름을 쓰고, 없으면 부탁 앞부분', () => {
