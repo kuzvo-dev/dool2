@@ -4,6 +4,7 @@
 // - 클릭·입력은 chrome.debugger(CDP Input)로 실제 입력과 같게 넣는다
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
 import { type FrameNode, layoutFrames, screenOrder } from './frames.js'
+import { staleBuild } from './fresh.js'
 import { keyDef, pickPath, safeUrl } from './keys.js'
 import {
   type ExtractSpec,
@@ -64,6 +65,20 @@ import { CLOSE_AFTER_MS, tidyPlan } from './tidy.js'
 /** @dool2/protocol의 BROWSER_HOST_NAME과 같아야 한다 (테스트로 확인) */
 export const HOST_NAME = 'com.dool2.host'
 const VERSION = chrome.runtime.getManifest().version
+/** 빌드 지문 (scripts/build.mjs가 넣는다. 테스트·개발에서는 'dev') */
+declare const __DOOL2_BUILD__: string | undefined
+const BUILD = typeof __DOOL2_BUILD__ === 'string' ? __DOOL2_BUILD__ : 'dev'
+
+/** 디스크에 새 코드가 깔렸으면 스스로 다시 켠다 (fresh.ts) */
+async function reloadIfStale() {
+  const onDisk = await fetch(chrome.runtime.getURL('build.json'), { cache: 'no-store' })
+    .then((r) => (r.ok ? (r.json() as Promise<{ build?: string }>) : {}))
+    .then((j) => (j as { build?: string }).build)
+    .catch(() => undefined)
+  if (staleBuild(BUILD, onDisk)) chrome.runtime.reload()
+}
+setTimeout(() => void reloadIfStale(), 3000)
+setInterval(() => void reloadIfStale(), 10 * 60_000)
 const DEBUGGER_IDLE_MS = 2 * 60_000
 
 type Status = { state: 'connecting' | 'on' | 'off'; detail?: string }
@@ -98,7 +113,8 @@ function connect() {
       detail: why?.includes('not found') ? '두리 앱이 설치돼 있지 않아요' : '두리 앱이 꺼져 있어요',
     })
   })
-  p.postMessage({ event: 'hello', version: VERSION, browser: browserName() })
+  p.postMessage({ event: 'hello', version: VERSION, build: BUILD, browser: browserName() })
+  void reloadIfStale()
 }
 
 function browserName() {
