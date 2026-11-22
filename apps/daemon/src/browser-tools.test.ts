@@ -2542,6 +2542,70 @@ describe('결제 카드 (browser_checkout)', () => {
   })
 })
 
+describe('그림 키패드 결제 비밀번호 (request_code pin + box)', () => {
+  it('키패드 상자를 잘라 보여 주고, 짚은 숫자 자리를 폰 키패드로 받아 화면 자리를 누른다', async () => {
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const rect = { x: 100, y: 400, w: 300, h: 400 }
+    const b = {
+      calls,
+      call: async (cmd: string, args?: Record<string, unknown>) => {
+        calls.push([cmd, args])
+        if (cmd === 'snapshot')
+          return {
+            tabId: 3,
+            url: 'https://pay.example/charge',
+            title: '간편충전',
+            text: '# 비밀번호를 입력해 주세요',
+            truncated: false,
+            captcha: false,
+          }
+        if (cmd === 'element-shots') return { shots: [{ data: 'PAD', rect }] }
+        return { tabId: 3 }
+      },
+    }
+    const tools = new BrowserTools(b as never)
+    let pinArgs: unknown[] = []
+    tools.requestPin = (...args) => {
+      pinArgs = args
+      return 'pin-1'
+    }
+    await tools.run('read', { tabId: 3 })
+    const box = { x: 100, y: 500, w: 800, h: 400 }
+    const first = await tools.run('request_code', { tabId: 3, kind: 'pin', box })
+    expect(first.content.some((c) => c.type === 'image')).toBe(true)
+    expect(text(first)).toContain('keys_at')
+    // 0~9 자리 (3열 그리드 + 0)
+    const keys_at: Record<string, number[]> = {}
+    for (const d of '123456789') {
+      const i = Number(d) - 1
+      keys_at[d] = [150 + (i % 3) * 350, 125 + Math.floor(i / 3) * 250]
+    }
+    keys_at['0'] = [500, 875]
+    // 같은 자리 두 번은 거절
+    expect(
+      (
+        await tools.run('request_code', {
+          tabId: 3,
+          kind: 'pin',
+          box,
+          keys_at: { ...keys_at, '0': keys_at['1'] },
+        })
+      ).isError,
+    ).toBe(true)
+    const ok = await tools.run('request_code', { tabId: 3, kind: 'pin', box, keys_at })
+    expect(text(ok)).toContain('보안 키패드 카드')
+    const points = pinArgs[3] as Record<string, { x: number; y: number }>
+    expect(points['1']).toEqual({ x: 100 + Math.round(0.15 * 300), y: 400 + Math.round(0.125 * 400) })
+    // 사용자가 넣은 번호대로 그 자리를 누른다
+    expect(await tools.pressPin(3, points, '10')).toBe(true)
+    const taps = calls.filter((c) => c[0] === 'input').map((c) => c[1])
+    expect(taps).toEqual([
+      { tabId: 3, action: 'tap', ...points['1'] },
+      { tabId: 3, action: 'tap', ...points['0'] },
+    ])
+  })
+})
+
 describe('그림 눌러 풀기 (browser_request_tap)', () => {
   it('로봇 확인 상자를 잘라 폰 카드로 보내고, 너무 작거나 없는 표시는 거절한다', async () => {
     const calls: [string, Record<string, unknown> | undefined][] = []

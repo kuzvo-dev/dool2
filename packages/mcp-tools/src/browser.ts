@@ -345,10 +345,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_code',
     '폰에서 받아 칸에 바로 넣기 (인증번호·주민번호 뒷자리·보안문자)',
-    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back), 결제 비밀번호 키패드(kind: pin — 먼저 key_refs로 키패드 버튼들을 주면 버튼마다 잘라 보여 준다. 그 그림을 보고 숫자마다 버튼 표시를 keys로 짚어 다시 부른다. 비밀번호는 사용자가 폰 보안 키패드로 넣고 두리가 그 버튼을 누른다. 사람에게 넘기지 않는다), 보안문자·자동입력 방지 글자(kind: captcha — 먼저 pick 없이 부르면 칸 둘레를 자른 그림 몇 장이 오니, 보안문자가 또렷한 그림 번호를 pick으로 다시 부른다. 카드에 그 그림이 함께 뜬다. 글자를 네가 읽어 넣지 않는다). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
+    '본인인증 화면에서 두리가 모르는 값을 사용자 폰 카드로 받아 그 칸(ref)에 바로 넣는다: 문자·카카오톡 인증번호(kind: code), 주민등록번호 뒷자리(kind: rrn_back), 결제 비밀번호 키패드(kind: pin — 먼저 key_refs로 키패드 버튼들을 주면 버튼마다 잘라 보여 준다. 그 그림을 보고 숫자마다 버튼 표시를 keys로 짚어 다시 부른다. 키패드가 버튼 표시로 안 잡히는 그림이면 key_refs 대신 box로 키패드 상자를 주고, 잘라 온 그림에서 숫자 자리를 keys_at으로 짚는다. 비밀번호는 사용자가 폰 보안 키패드로 넣고 두리가 그 버튼을 누른다. 사람에게 넘기지 않는다), 보안문자·자동입력 방지 글자(kind: captcha — 먼저 pick 없이 부르면 칸 둘레를 자른 그림 몇 장이 오니, 보안문자가 또렷한 그림 번호를 pick으로 다시 부른다. 카드에 그 그림이 함께 뜬다. 글자를 네가 읽어 넣지 않는다). 값은 너도 보지 않으며(주민번호 뒷자리는 금고에 저장돼 다음부터 browser_fill_profile의 rrn_back으로 채운다), 대화로 묻지 않는다. 사용자에게 PC에서 직접 넣으라고 넘기지 말고 이걸 쓴다. 인증번호는 이름·생년월일·휴대폰 칸을 browser_fill_profile로 채우고 [인증번호 받기]를 누른 뒤에 쓴다. 쓴 뒤에는 이번 답을 끝내고, 값이 들어가면 오는 알림을 받고 [확인]·[인증]을 눌러 이어 간다.',
     {
       tabId,
-      ref: ref.describe('인증번호를 넣을 입력칸 표시'),
+      ref: ref.optional().describe('인증번호를 넣을 입력칸 표시 (그림 키패드 pin은 없어도 됨)'),
       label: z.string().max(40).optional().describe('카드에 보일 칸 이름 (예: "인증번호 6자리")'),
       kind: z
         .enum(['code', 'rrn_back', 'captcha', 'pin'])
@@ -367,6 +367,16 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .describe(
           'pin일 때 먼저: 키패드 버튼 표시들 전부. 버튼마다 잘라 보여 주면 그걸 보고 keys를 짚어 다시 부른다',
         ),
+      box: z
+        .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
+        .optional()
+        .describe(
+          'pin인데 키패드가 버튼 표시로 안 잡히는 그림일 때: browser_screenshot 화면에서 숫자 키패드 전체 상자(0~1000). 먼저 box만 주면 잘라 보여 주고, 그 그림에서 숫자 자리를 keys_at으로 짚어 같은 box로 다시 부른다',
+        ),
+      keys_at: z
+        .record(z.string(), z.array(z.number()).length(2))
+        .optional()
+        .describe('box로 잘라 본 키패드 그림에서 숫자 0~9 버튼 가운데 ({"0":[x,y],…}, 그림 기준 0~1000)'),
       length: z.number().int().min(4).max(8).optional().describe('pin 자릿수 (기본 6)'),
       pick: z
         .number()
