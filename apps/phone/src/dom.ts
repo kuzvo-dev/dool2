@@ -105,6 +105,8 @@ export const ICON = {
     'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
     'M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   ],
+  download: ['M12 4v11M7 10l5 5 5-5', 'M5 19h14'],
+  share: ['M12 15V4M8 8l4-4 4 4', 'M6 12v7h12v-7'],
 } as const
 export type IconName = keyof typeof ICON
 

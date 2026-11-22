@@ -140,6 +140,11 @@ export interface LinkHost {
   libraryPage(q: { before?: string; limit?: number; tab?: LibraryTab }): Promise<Page<LibraryItem>>
   /** 보관함 하나 (전체 글) */
   libraryItem(id: string): Promise<LibraryItem | undefined>
+  /** 보관함 파일 원본 한 조각 (폰에 저장·공유) */
+  fileChunk?(
+    id: string,
+    offset: number,
+  ): Promise<{ size: number; name: string; mime: string; data: string } | { error: string }>
   /** 연결하기: 금고에 넣고 대신 로그인 */
   connectLogin(
     id: string,
@@ -508,6 +513,14 @@ export class PhoneLink {
         const id = String(msg.id).slice(0, 80)
         const item = await this.host.libraryItem(id)
         return this.send(phone, { kind: 'life-item', id, ...(item ? { item } : {}) })
+      }
+      case 'file-chunk': {
+        const id = String(msg.id).slice(0, 80)
+        const offset = Math.max(0, Math.floor(Number(msg.offset) || 0))
+        const r = this.host.fileChunk
+          ? await this.host.fileChunk(id, offset).catch((e: Error) => ({ error: e.message }))
+          : { error: '이 PC에서는 파일을 보낼 수 없어요' }
+        return this.send(phone, { kind: 'file-chunk', id, offset, ...r })
       }
       case 'life-action': {
         const { kind: _k, ...a } = msg

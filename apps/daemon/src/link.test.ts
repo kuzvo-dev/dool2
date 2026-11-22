@@ -1,9 +1,9 @@
 // 폰 연결 끝-끝: 진짜 중계 서버 + 진짜 본체 + 폰 흉내(브라우저와 같은 WebCrypto)
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentEvent, AgentStatus, PairInvite, PcToPhone, PhoneToPc } from '@dool2/protocol'
-import { approvalSignText } from '@dool2/protocol'
+import { approvalSignText, FILE_CHUNK } from '@dool2/protocol'
 import {
   type DeviceKeys,
   type Envelope,
@@ -523,6 +523,77 @@ describe('폰에서 대화 하나', () => {
       'user',
       'assistant',
     ])
+  })
+})
+
+describe('보관함 파일을 폰으로 받기', () => {
+  it('두리가 만든 파일 원본을 조각(file-chunk)으로 나눠 보내고, 이어 붙이면 원본과 같다', async () => {
+    const docs = await mkdtemp(join(tmpdir(), 'dool2-docs-'))
+    const { api } = await boot({
+      fileFolders: { desktop: [], documents: [docs], downloads: [] },
+      toolToken: 'tt',
+    })
+    const text = '가나다라마바사 '.repeat(10_000)
+    const made = await (
+      await fetch(`${daemon?.url}/api/tools/file/file_write`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer tt', 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '긴 글', kind: 'txt', text }),
+      })
+    ).json()
+    expect(made.isError).toBeUndefined()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    let item: { id: string } | undefined
+    for (let i = 0; i < 100 && !item; i++) {
+      item = (await api('/api/life/library?tab=files')).items?.[0]
+      if (!item) await new Promise((r) => setTimeout(r, 30))
+    }
+    if (!item) throw new Error('보관함에 안 올라왔어요')
+    const parts: string[] = []
+    let size = 0
+    for (let offset = 0; offset === 0 || offset < size; offset += FILE_CHUNK) {
+      p.inbox.length = 0
+      await p.send({ kind: 'file-chunk', id: item.id, offset })
+      await waitFor(() => p.inbox.some((m) => m.kind === 'file-chunk'))
+      const m = p.inbox.find((x) => x.kind === 'file-chunk')
+      if (m?.kind !== 'file-chunk' || !m.data) throw new Error(`조각 없음 ${JSON.stringify(m)}`)
+      size = m.size ?? 0
+      expect(m.name).toBe('긴 글.txt')
+      parts.push(m.data)
+    }
+    expect(parts.length).toBeGreaterThan(1)
+    // PC에 있는 파일과 바이트까지 같다
+    const onPc = await readFile(join(docs, '두리', '긴 글.txt'))
+    expect(Buffer.from(parts.join(''), 'base64').equals(onPc)).toBe(true)
+    expect(size).toBe(onPc.length)
+    await rm(docs, { recursive: true, force: true })
+  }, 30_000)
+
+  it('PC 파일이 없는 보관함 항목은 이유를 돌려준다', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    await p.send({ kind: 'file-chunk', id: 'nope', offset: 0 })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'file-chunk'))
+    const m = p.inbox.find((x) => x.kind === 'file-chunk')
+    expect(m?.kind === 'file-chunk' && m.error).toBeTruthy()
   })
 })
 

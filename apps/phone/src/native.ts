@@ -90,3 +90,54 @@ export async function confirmDevice(
     return 'web'
   }
 }
+
+/** 보관함 파일을 폰에 저장하거나 다른 앱으로 보내기 (FileSavePlugin.java) */
+const FileSave = registerPlugin<{
+  save(o: {
+    name: string
+    mime: string
+    data: string
+  }): Promise<{ ok: boolean; where?: string; reason?: string }>
+  share(o: { name: string; mime: string; data: string }): Promise<{ ok: boolean }>
+}>('FileSave')
+
+/** 저장: 앱이면 사진첩·다운로드에, 웹이면 브라우저 내려받기. 결과 한 줄을 돌려준다 */
+export async function saveFile(name: string, mime: string, data: string): Promise<string> {
+  if (!isNative()) {
+    const a = document.createElement('a')
+    a.href = `data:${mime};base64,${data}`
+    a.download = name
+    a.click()
+    return '내려받았어요'
+  }
+  try {
+    const r = await FileSave.save({ name, mime, data })
+    if (r.ok) return `${r.where ?? '폰'}에 저장했어요`
+    if (r.reason === 'old-android') {
+      await FileSave.share({ name, mime, data })
+      return '이 폰에서는 바로 저장이 안 돼서 보내기 창을 띄웠어요'
+    }
+    return '저장하지 못했어요'
+  } catch (e) {
+    // 예전 앱(부품 없음)
+    return `저장하지 못했어요: ${(e as Error).message || '새 앱으로 바꿔 주세요'}`
+  }
+}
+
+/** 보내기: 공유 창 (카톡·메일·드라이브) */
+export async function shareFile(name: string, mime: string, data: string): Promise<string | undefined> {
+  if (!isNative()) {
+    const blob = await (await fetch(`data:${mime};base64,${data}`)).blob()
+    const file = new File([blob], name, { type: mime })
+    if (navigator.canShare?.({ files: [file] }))
+      await navigator.share({ files: [file] }).catch(() => undefined)
+    else return saveFile(name, mime, data)
+    return undefined
+  }
+  try {
+    await FileSave.share({ name, mime, data })
+    return undefined
+  } catch (e) {
+    return `보내지 못했어요: ${(e as Error).message || '새 앱으로 바꿔 주세요'}`
+  }
+}

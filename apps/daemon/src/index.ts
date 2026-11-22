@@ -3,11 +3,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
@@ -44,6 +45,8 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionStatus,
   type FeedItem,
+  FILE_CHUNK,
+  FILE_MAX,
   FocusTabSchema,
   type LifeAction,
   LoginSubmitSchema,
@@ -88,7 +91,7 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
-import { DOORI_FOLDER, FileTools, htmlText, type UserFolders } from './files.js'
+import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
@@ -104,6 +107,7 @@ import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
+import { mimeOf } from './upload.js'
 import { Vault, vaultSitesText } from './vault.js'
 import type { sendPush } from './webpush.js'
 
@@ -477,15 +481,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         (f.kind === 'html' && opts.renderHtml
           ? await opts.renderHtml(text).catch(() => undefined)
           : undefined)
-      life.save({
+      const saved = life.save({
         kind: 'file',
         title: f.name,
         body: `${body}\n\nPC: ${f.path}`.trim(),
         path: f.path,
         ...(shot ? { image: shot } : {}),
       })
+      if (shot) await addThumb(saved.id, shot)
     })()
   }
+  /** 보관함 목록에 보일 작은 미리보기 (PC 앱이 줄인다) */
+  async function addThumb(id: string, image: string) {
+    if (!opts.shrinkImage) return
+    const t = await opts.shrinkImage(Buffer.from(image, 'base64'), 112).catch(() => undefined)
+    if (t) life.setThumb(id, t)
+  }
+  // 예전에 만든 파일에도 목록 미리보기를 채운다 (켤 때 한 번)
+  setTimeout(() => {
+    void (async () => {
+      for (const it of life.library()) if (it.image && !it.thumb) await addThumb(it.id, it.image)
+    })()
+  }, 5000)
   // 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값). 카드 번호 같은 비밀은 없고 수단 이름만
   {
     const saved = store.getSetting('payChoices')
@@ -1456,6 +1473,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       feedPage: async (q) => life.feedPage(q),
       libraryPage: async (q) => life.libraryPage(q),
       libraryItem: async (id) => life.libraryItem(id),
+      // 보관함 파일 원본을 폰으로 (조각으로 나눠, 두리가 만든 파일 경로만)
+      fileChunk: async (id, offset) => {
+        const it = life.libraryItem(id)
+        if (!it?.path) return { error: '보관함에 PC 파일이 없는 항목이에요' }
+        const full = it.path.startsWith('~') ? join(homedir(), it.path.slice(1)) : it.path
+        // iCloud에만 있으면 내려받는다 (문서 폴더 동기화)
+        const away = await ensureLocal(full).catch(() => undefined)
+        if (away) return { error: away }
+        const st = await stat(full).catch(() => undefined)
+        if (!st?.isFile()) return { error: 'PC에서 파일을 찾지 못했어요 (옮기거나 지웠을 수 있어요)' }
+        if (st.size > FILE_MAX) return { error: '30MB보다 큰 파일은 폰으로 받을 수 없어요' }
+        const fh = await open(full, 'r')
+        try {
+          const buf = Buffer.alloc(Math.min(FILE_CHUNK, Math.max(0, st.size - offset)))
+          await fh.read(buf, 0, buf.length, offset)
+          return { size: st.size, name: basename(full), mime: mimeOf(full), data: buf.toString('base64') }
+        } finally {
+          await fh.close()
+        }
+      },
       lifeAction: async (a) => {
         life.act(a)
         if (a.action === 'identity')

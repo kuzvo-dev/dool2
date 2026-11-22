@@ -830,7 +830,14 @@ export interface LibraryItem {
   path?: string
   /** 두리가 만든 HTML(그림·초대장·보고서)을 PC가 그려 찍은 미리보기 (JPEG base64). 목록에는 안 실린다 */
   image?: string
+  /** 목록에 보일 작은 미리보기 (JPEG base64, 가로 128px쯤) */
+  thumb?: string
 }
+
+/** 보관함 파일 원본을 폰으로 받을 때 한 번에 오는 조각 (중계 봉투 500KB 안에 들게, 암호화로 커지는 것까지 생각) */
+export const FILE_CHUNK = 192 * 1024
+/** 폰으로 받는 파일 원본의 최대 크기 */
+export const FILE_MAX = 30 * 1024 * 1024
 
 /** 기억: 사용자에 대해 알게 된 것 (사용자가 보고 지울 수 있다) */
 export interface MemoryItem {
@@ -1135,6 +1142,8 @@ export type PhoneToPc =
     }
   /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다). life-item으로 답 */
   | { kind: 'life-item'; id: string }
+  /** 보관함 파일 원본 한 조각 (폰에 저장·공유) */
+  | { kind: 'file-chunk'; id: string; offset: number }
   | ({ kind: 'life-action' } & LifeAction)
   /**
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),
@@ -1249,6 +1258,18 @@ export type PcToPhone =
     }
   /** 보관함 하나 (전체 글). 없으면 item 없음 */
   | { kind: 'life-item'; id: string; item?: LibraryItem }
+  | {
+      kind: 'file-chunk'
+      id: string
+      offset: number
+      /** 원본 전체 크기 (바이트) */
+      size?: number
+      name?: string
+      mime?: string
+      /** 이 조각 (base64) */
+      data?: string
+      error?: string
+    }
   /** 서비스 연결 목록 (카드 + 절차 상태 + 연결 시각) */
   | { kind: 'connections'; services: ConnectionItem[] }
   /** 연결하려고 PC Chrome에 연 탭. 폰은 이 탭을 원격 화면으로 연다 */
