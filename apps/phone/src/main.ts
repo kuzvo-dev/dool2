@@ -16,6 +16,7 @@ import type {
   LifeState,
   LoginRecordMessage,
   LoginRequestView,
+  MadeImageRecordMessage,
   PairInvite,
   PcToPhone,
   PhoneToPc,
@@ -2813,8 +2814,9 @@ function chatItems(): Item[] {
     const shot = st.work.web && st.busy && st.work.tabId !== undefined && st.work.shot
     // 일하는 과정은 카드 하나로: 지금 보는 화면 + 단계 (랜딩의 "○○을 살펴보는 중")
     if (st.busy && (st.steps.length || shot)) items.push({ key: 'work', sig: '', make: workPanel })
+    // 답 글이 흘러나오기 전까지는 일하는 카드 아래에도 "•••"를 둔다: 지금 쓰고 있구나 느껴지게 (11-22 사용자 요청)
     if (st.live) items.push({ key: 'live', sig: '', make: liveBubble })
-    else if (!st.steps.length)
+    else
       items.push({
         key: 'typing',
         sig: '',
@@ -3111,6 +3113,7 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'work') return workDone(rec)
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)
+  if ((rec as { kind?: string }).kind === 'made') return madeInline(rec as unknown as MadeImageRecordMessage)
   // 직접 해 주세요
   const tabId = rec.tabId
   return h(
@@ -3596,6 +3599,47 @@ function gotThumb(url: string, data: string | undefined) {
 function showThumb(img: HTMLImageElement, data: string) {
   img.onload = () => img.classList.add('on')
   img.src = data
+}
+
+/** 그림 AI로 만든 그림: 답 아래에 크게, 누르면 화면 가득 */
+function madeInline(rec: MadeImageRecordMessage): HTMLElement {
+  const box = h('button', { class: 'made-photo', label: `${rec.title} 크게 보기` }, icon('image', 'i'))
+  let src = ''
+  void thumbOf(`photo:${rec.photo}`).then((data) => {
+    if (!data) return
+    src = data
+    const img = h('img', {}) as HTMLImageElement
+    img.src = data
+    img.alt = rec.title
+    box.replaceChildren(img)
+  })
+  box.addEventListener('click', () => {
+    if (!src) return
+    mark('만든 그림 크게 보기')
+    openViewer(src, rec.title, rec.path)
+  })
+  return h('div', { class: 'made' }, box)
+}
+
+/** 그림 크게 보기: 화면 가득, 아무 데나 누르면 닫힌다 */
+function openViewer(src: string, title: string, path?: string) {
+  const img = h('img', {}) as HTMLImageElement
+  img.src = src
+  img.alt = title
+  const close = () => view.remove()
+  const view = h(
+    'div',
+    { class: 'viewer', onclick: close },
+    h(
+      'div',
+      { class: 'viewer-top' },
+      h('span', { text: title }),
+      h('button', { class: 'icon-btn', label: '닫기', onclick: close }, icon('close', 'i')),
+    ),
+    img,
+    path ? h('p', { class: 'viewer-note', text: `원본은 PC ${path}에 있어요` }) : undefined,
+  )
+  document.body.append(view)
 }
 
 function cardsInline(rec: CardsRecordMessage): HTMLElement {

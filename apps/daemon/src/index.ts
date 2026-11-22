@@ -47,6 +47,7 @@ import {
   FocusTabSchema,
   type LifeAction,
   LoginSubmitSchema,
+  type MadeImageRecordMessage,
   PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
@@ -87,9 +88,10 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
-import { FileTools, htmlText, type UserFolders } from './files.js'
+import { DOORI_FOLDER, FileTools, htmlText, type UserFolders } from './files.js'
 import { FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
+import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
 import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
@@ -133,6 +135,8 @@ const RESET_KEYS = [
 export interface DaemonOptions {
   /** HTML을 그려 JPEG(base64)로 (PC 앱이 준다). 두리가 만든 그림·초대장을 보관함·폰에서 보이게 */
   renderHtml?: (html: string) => Promise<string | undefined>
+  /** 그림 파일을 가로 width로 줄인 JPEG(base64)로 (PC 앱이 준다). 그림 AI로 만든 그림의 미리보기 */
+  shrinkImage?: (data: Buffer, width: number) => Promise<string | undefined>
   /**
    * HTML 파일을 PDF(A4, 여러 쪽)·PNG로 그린다 (PC 앱이 보이지 않는 창으로 준다, file_render).
    * 없으면(앱 없이 본체만) file_render가 못 한다고 알린다
@@ -359,6 +363,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     tabHost: (tabId) => browserTools.tabHost(tabId),
     // 일한 과정에 서비스 도구 제목 ("가게 찾기·영업 확인 중")
     toolTitle: (name) => connectors.titleOf(name),
+    takeMadeImage: () => {
+      const m = madeImage
+      madeImage = undefined
+      return m
+    },
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
     // 기억은 대화마다 지침 끝에 붙는다
     // 서비스 지도: 서비스 이름이 없는 부탁에도 맞는 서비스(연결된 곳 먼저)를 고르게
@@ -424,6 +433,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // 웹사이트에 PC 파일 올리기(browser_upload)도 파일 도구와 같은 폴더 울타리 안에서만 (+ 대화로 받은 사진)
   fileTools.sentPhotos = photoDir
   browserTools.uploadFiles = (p) => fileTools.uploadable(p)
+  /** 방금 그림 AI로 만든 그림 (대화가 image_make 결과를 받으면 한 번 꺼내 답 아래에 붙인다) */
+  let madeImage: MadeImageRecordMessage | undefined
+  // 그림 AI로 그림 만들기 (image_make): 사용자 크롬의 제미나이 웹에서 만들어 두리 폴더·보관함으로
+  fileTools.imageMaker = new ImageMaker({
+    browser,
+    downloadsDir: () => fileTools.dir('downloads'),
+    saveDir: () => {
+      const docs = fileTools.dir('documents')
+      return docs ? join(docs, DOORI_FOLDER) : undefined
+    },
+    show: (p) => fileTools.shown(p),
+    onMade: (f) => fileTools.onWritten?.(f),
+    // 대화 말풍선에 보일 그림: 보낸 사진과 같은 곳(photos/)에 두고 "photo:이름"으로 폰·PC가 받아 간다
+    keepPhoto: async (jpeg, title, path) => {
+      await mkdir(photoDir, { recursive: true })
+      const name = `made-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`
+      await writeFile(join(photoDir, name), Buffer.from(jpeg, 'base64'))
+      madeImage = { kind: 'made', title, photo: name, path }
+    },
+    // 미리보기: PC 앱이 줄여 준다 (원본을 HTML에 넣어 그리면 큰 그림은 data: 주소 한도에 걸린다 — 실측 11-22)
+    ...(opts.shrinkImage
+      ? { preview: (png: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(png, 900) }
+      : {}),
+  })
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
   fileTools.onWritten = (f) => {
     const md = (rows: unknown[][]) =>
@@ -2663,6 +2696,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           path: typeof args?.path === 'string' ? args.path : args?.name,
           ...(Array.isArray(args?.moves) ? { count: args.moves.length } : {}),
           ...(Array.isArray(args?.paths) ? { count: args.paths.length } : {}),
+          // 실패 까닭 (파일 내용·경로는 남기지 않고 두리에게 돌려준 안내 첫 줄만)
+          ...(r.isError
+            ? {
+                why: (r.content.find((x) => x.type === 'text') as { text?: string } | undefined)?.text?.slice(
+                  0,
+                  160,
+                ),
+              }
+            : {}),
         })
         return json(res, 200, r)
       }

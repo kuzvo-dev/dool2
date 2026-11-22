@@ -8,6 +8,7 @@ import {
   type DaemonStreamEvent,
   type HandoffRecord,
   type LoginRecordMessage,
+  type MadeImageRecordMessage,
   type WorkRecordMessage,
 } from '@dool2/protocol'
 import {
@@ -36,6 +37,8 @@ export interface ThreadServiceOptions {
   toolTitle?: (name: string) => string | undefined
   /** 말과 함께 넘기는 지금 시각 한 줄 (기본 nowLine, 시험에서는 끈다) */
   timeLine?: () => string | undefined
+  /** 그림 AI로 방금 만든 그림 (image_make가 성공하면 한 번 꺼내 답 아래에 붙인다) */
+  takeMadeImage?: () => MadeImageRecordMessage | undefined
 }
 
 /** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
@@ -243,6 +246,11 @@ export class ThreadService {
               reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
             },
           }
+        }
+        // 그림 AI로 만든 그림: 답 글 아래에 큰 그림으로 남긴다 (두리가 따로 카드를 붙이지 않아도)
+        if (ev.type === 'tool_result' && ev.ok && /image_make$/.test(ev.name ?? '')) {
+          const made = this.opts.takeMadeImage?.()
+          if (made) below.push(JSON.stringify(made))
         }
         if (ev.type === 'tool_result' && handoffAsk && (!ev.name || ev.name === handoffAsk.name)) {
           const ask = handoffAsk
