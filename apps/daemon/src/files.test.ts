@@ -44,6 +44,37 @@ describe('PC 파일 도구', () => {
     expect((await tools.run('file_read', { path: '~/Documents/NPKI/signPri.key' })).isError).toBe(true)
   })
 
+  it('replace: 두리 폴더의 같은 이름 파일은 고쳐 쓰고, 사용자가 고른 폴더는 그래도 덮어쓰지 않는다', async () => {
+    const { home, tools } = setup()
+    await tools.run('file_write', { name: '보고서', kind: 'html', text: '<p>처음</p>', look: 'report' })
+    const b = text(
+      await tools.run('file_write', {
+        name: '보고서',
+        kind: 'html',
+        text: '<p>고친 판</p>',
+        look: 'report',
+        replace: true,
+      }),
+    )
+    expect(b).toContain('보고서.html')
+    expect(b).not.toContain('(2)')
+    const html = readFileSync(join(home, 'Documents', '두리', '보고서.html'), 'utf8')
+    expect(html).toContain('고친 판')
+    // 디자인 틀이 들어간다
+    expect(html).toContain('data-dool2-look="report"')
+    await tools.run('file_write', { name: '메모', kind: 'txt', text: 'a', folder: 'desktop' })
+    const d = text(
+      await tools.run('file_write', {
+        name: '메모',
+        kind: 'txt',
+        text: 'b',
+        folder: 'desktop',
+        replace: true,
+      }),
+    )
+    expect(d).toContain('메모 (2).txt')
+  })
+
   it('새 파일은 덮어쓰지 않고 (2)를 붙인다. 엑셀은 다시 읽으면 같은 표', async () => {
     const { home, tools } = setup()
     const a = text(await tools.run('file_write', { name: '기억 정리', kind: 'md', text: '# 기억\n- 성복역' }))

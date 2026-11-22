@@ -24,6 +24,8 @@ const fail = (text: string): FileToolResult => ({ isError: true, content: [{ typ
 
 /** 두리가 다루는 사용자 폴더. 윈도우는 OneDrive로 옮겨진 바탕화면·문서도 */
 /** 두리가 만든 파일을 모으는 폴더 (문서 아래) */
+import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
+
 export const DOORI_FOLDER = '두리'
 
 export type FolderKey = 'desktop' | 'documents' | 'downloads' | 'pictures' | 'movies'
@@ -252,6 +254,8 @@ export class FileTools {
           text: typeof args.text === 'string' ? args.text : undefined,
           rows: Array.isArray(args.rows) ? (args.rows as unknown[][]) : undefined,
           ...(args.folder ? { folder: args.folder as FolderKey } : {}),
+          ...(DOC_LOOKS.includes(args.look as DocLook) ? { look: args.look as DocLook } : {}),
+          ...(args.replace === true ? { replace: true } : {}),
         })
       if (tool === 'file_move') return await this.ops.move(args)
       if (tool === 'file_convert') return await this.ops.convert(args)
@@ -472,6 +476,10 @@ export class FileTools {
     rows?: unknown[][]
     /** 비우면 두리 폴더(문서/두리) */
     folder?: FolderKey
+    /** html 문서 디자인 틀 (doc-kit.ts) */
+    look?: DocLook
+    /** 두리 폴더의 같은 이름 파일을 고쳐 쓴다 (고친 판이 "(2)"로 쌓이지 않게) */
+    replace?: boolean
   }): Promise<FileToolResult> {
     const kind = o.kind.toLowerCase()
     if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
@@ -488,21 +496,27 @@ export class FileTools {
       .slice(0, 80)
     if (!stem) return fail('파일 이름을 주세요.')
     let data: Buffer
+    // 보관함 미리보기도 디자인 틀을 넣은 글로 그린다
+    let written = o.text
     if (kind === 'xlsx' || (kind === 'csv' && o.rows)) {
       const rows = (o.rows ?? csvRows(o.text ?? '')).slice(0, 20_000).map((r) => (Array.isArray(r) ? r : [r]))
       data = kind === 'xlsx' ? xlsx(rows) : Buffer.from(`﻿${rows.map(csvLine).join('\r\n')}\r\n`, 'utf8')
     } else {
-      const text = o.text ?? ''
+      const text = kind === 'html' && o.look ? applyLook(o.text ?? '', o.look) : (o.text ?? '')
+      written = text
       if (text.length > 2_000_000) return fail('2MB보다 긴 글은 만들지 않아요.')
       // 엑셀이 한글 CSV를 깨지 않게 BOM을 붙인다
       data = Buffer.from(kind === 'csv' ? `﻿${text}` : text, 'utf8')
     }
     await mkdir(dir, { recursive: true })
     let target = join(dir, `${stem}.${kind}`)
-    for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${stem} (${i}).${kind}`)
-    await writeFile(target, data, { flag: 'wx' })
+    // 고쳐 쓰기는 두리 폴더에서만 (사용자가 고른 바탕화면·다운로드의 파일은 덮어쓰지 않는다)
+    const overwrite = o.replace === true && !o.folder && existsSync(target)
+    if (!overwrite)
+      for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${stem} (${i}).${kind}`)
+    await writeFile(target, data, overwrite ? {} : { flag: 'wx' })
     const shown = this.show(target)
-    this.onWritten?.({ name: basename(target), kind, path: shown, text: o.text, rows: o.rows })
+    this.onWritten?.({ name: basename(target), kind, path: shown, text: written, rows: o.rows })
     return ok(
       `${where}에 만들었어요: ${shown} (${data.length.toLocaleString()}바이트). 보관함의 '사진·파일'에도 올려서 폰에서도 볼 수 있어요. 사용자에게 "두리 폴더에 두고 보관함에 올렸어요"처럼 알려 주세요.`,
     )

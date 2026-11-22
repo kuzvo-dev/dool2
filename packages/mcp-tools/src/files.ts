@@ -61,7 +61,11 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       title: 'PC에 새 파일 만들기',
       description:
         '사용자 PC에 새 파일을 만든다. 기본은 두리 폴더(문서/두리)이고 보관함의 사진·파일에도 올라가 폰에서도 보인다. 사용자가 바탕화면·다운로드를 말할 때만 folder를 준다. 그림·포스터·초대장처럼 볼 것은 html(SVG 포함)로 만든다. PDF·PNG·이미지 파일을 원하면 html을 만든 뒤 file_render로 바꾼다(못 만든다고 하지 않는다). 정리한 글은 md·txt·html, 표는 xlsx(엑셀) 또는 csv로 rows에 줄마다 칸 배열을 준다. ' +
-        '같은 이름이 있으면 "이름 (2)"로 만들고 덮어쓰지 않는다. 만든 뒤 경로를 사용자에게 알려 준다. 사용자가 원하지 않은 파일은 만들지 않는다.',
+        '같은 이름이 있으면 "이름 (2)"로 만들고 덮어쓰지 않는다. 만든 뒤 경로를 사용자에게 알려 준다. 사용자가 원하지 않은 파일은 만들지 않는다. ' +
+        '문서(보고서·안내문·편지·표)를 html로 만들 때는 look을 꼭 준다: 본체가 다듬은 디자인 틀을 넣으니 <style>을 직접 쓰지 말고 내용과 이름표만 쓴다. ' +
+        '이름표: .cover(맨 위 제목 띠: .eyebrow·h1·.lead·.meta), .kpis>.kpi(b 숫자+span 설명, up·down), .callout(warn), .bars>.bar(span 이름·i style="--v:62%"·em 값), ' +
+        '표 숫자 칸 td.num, 합계 tr.total, .tag(good·bad·warn), ol.steps, .two(두 칸), .sources(출처), .pagebreak(쪽 나눔). notice: .box>dl>dt·dd, p.sign. letter: p.to·p.from·p.date. ' +
+        '첫 쪽은 표지 띠+핵심 숫자+요약으로 꽉 채우고, 숫자는 막대(.bars)나 표로 보여 준다. 그림이 중심인 초대장·포스터는 이것 말고 image_make.',
       inputSchema: {
         name: z.string().max(80).describe('파일 이름 (확장자 없이, 예: "11월 정산")'),
         kind: z.enum(['md', 'txt', 'csv', 'xlsx', 'html']),
@@ -72,6 +76,18 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
           .optional()
           .describe('xlsx·csv 표: 첫 줄은 머리글 (예: [["날짜","금액"],["11/3",12000]])'),
         folder: folder.optional(),
+        look: z
+          .enum(['report', 'notice', 'letter', 'sheet'])
+          .optional()
+          .describe(
+            'html 문서 디자인 틀: report=보고서·조사·비교, notice=안내문·공지·신청서, letter=편지·사과문, sheet=넓은 표',
+          ),
+        replace: z
+          .boolean()
+          .optional()
+          .describe(
+            '방금 만든 파일을 고쳐 다시 쓸 때 true: 두리 폴더의 같은 이름 파일을 바꿔 쓴다("(최종)"·"(2)" 판을 만들지 않는다)',
+          ),
       },
     },
     call('file_write'),
@@ -228,6 +244,10 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
           .max(3000)
           .optional()
           .describe('PNG 가로 크기 (CSS px, HTML을 디자인한 너비. 기본 800)'),
+        replace: z
+          .boolean()
+          .optional()
+          .describe('고친 html을 다시 그릴 때 true: 두리 폴더의 같은 이름 PDF·PNG를 바꿔 쓴다'),
       },
     },
     call('file_render'),

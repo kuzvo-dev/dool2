@@ -103,6 +103,27 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
     ).catch(() => undefined)
 
     if (req.to === 'pdf') {
+      // 쪽 미리보기: 두리가 그린 모습을 보고 고친다(빈 쪽·넘친 표). 첫 쪽은 보관함·폰에도 보인다.
+      // 화면을 A4 높이만큼씩 내려 찍는다 (인쇄 쪽 나눔과 대략 같다)
+      const pages: string[] = []
+      const total = Number(
+        await wc.executeJavaScript('document.documentElement.scrollHeight').catch(() => A4_HEIGHT),
+      )
+      const count = Math.min(6, Math.max(1, Math.ceil(total / A4_HEIGHT)))
+      for (let i = 0; i < count; i++) {
+        await wc.executeJavaScript(`window.scrollTo(0, ${i * A4_HEIGHT})`).catch(() => undefined)
+        await new Promise((r) => setTimeout(r, 120))
+        const shot = await wc.capturePage().catch(() => undefined)
+        if (!shot || shot.isEmpty()) break
+        const w = i === 0 ? 800 : 560
+        pages.push(
+          (shot.getSize().width > w ? shot.resize({ width: w }) : shot)
+            .toJPEG(i === 0 ? 80 : 70)
+            .toString('base64'),
+        )
+      }
+      await wc.executeJavaScript('window.scrollTo(0, 0)').catch(() => undefined)
+      const preview = pages[0]
       const data = await withTimeout(
         wc.printToPDF({
           pageSize: 'A4',
@@ -114,7 +135,11 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
         60_000,
         'PDF 만들기',
       )
-      return { data: Buffer.from(data) }
+      return {
+        data: Buffer.from(data),
+        ...(preview ? { preview } : {}),
+        ...(pages.length > 1 ? { pages } : {}),
+      }
     }
 
     // PNG: 내용 전체 크기로 화면을 늘려 2배로 찍는다 (CDP)
