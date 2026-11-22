@@ -2015,6 +2015,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.siteConnector = (url) => connectors.forUrl(url)
   // 일하다가 금고로 로그인한 탭도 지켜본다: 로그인되면 그 서비스를 연결로 표시한다
   // (실측 11-21 신한카드: 대화에서 가입·로그인해 카드 정보까지 읽었는데 연결 목록에는 '연결 안 됨'으로 남았다)
+  browserTools.reloginFor = async (origin) => {
+    const c = await connectors.forUrl(origin)
+    if (!c) return undefined
+    const card = await skills.card(c.id)
+    if (!card || card.how !== 'browser') return undefined
+    const via = connectVia()[card.id]
+    if (via?.startsWith('social:') || (await vaultCreds(card))) return card.id
+    return undefined
+  }
+  // 가입이 끝나 금고에 계정이 들어가면 그 서비스를 연결로 표시한다 (실측 11-22 키즈노트: 가입하고도 '연결 전'으로 남았다)
+  browserTools.onAccountSaved = (url) => {
+    void connectors
+      .forUrl(url)
+      .then((c) => {
+        if (!c || readSettings().connections?.[c.id]) return
+        connectTried.set(c.id, 'vault')
+        connectMark(c.id, true)
+      })
+      .catch(() => undefined)
+  }
   browserTools.onVaultLogin = (tabId, url) => {
     void connectors
       .forUrl(url)

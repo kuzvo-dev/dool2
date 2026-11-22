@@ -6837,6 +6837,14 @@ function startResync() {
     // 보던 화면(일하는 화면·연결 중 화면)을 다시 받아 오기 시작한다
     pollWork()
     pollConnect()
+    // 인증 앱(카톡·PASS)에서 승인하고 돌아왔으면 [인증 완료했어요]를 바로 앞에 (실측 11-22 국가검진: 카드를 못 찾아 3분이 지났다)
+    const auth = [...st.infos.values()].find(
+      (q) => q.status === 'pending' && q.options?.includes('인증 완료했어요'),
+    )
+    if (auth && st.overlay?.kind !== 'info') {
+      openOverlay({ kind: 'info', id: auth.id })
+      navigator.vibrate?.(20)
+    }
   })
   // 앱을 켜 두고 있다고 1분마다 알린다 (PC는 켜 둔 폰에만 흘려 쓰는 답을 보낸다)
   setInterval(() => {

@@ -40,6 +40,8 @@ import {
 import { notAccepted, sendFiles, sizeText, type UploadReply } from './upload.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+/** 결제 키패드 숫자 하나: 누를 버튼 표시(ref) 또는 화면 자리(그림 키패드) */
+export type PinKey = string | { x: number; y: number }
 export interface ToolResult {
   content: ToolContent[]
   isError?: boolean
@@ -904,13 +906,19 @@ export class BrowserTools {
     tabId: number,
     label: string,
     host: string,
-    keys: Record<string, string>,
+    keys: Record<string, PinKey>,
     length: number,
   ) => string | undefined
   /** 주소의 사이트에 서비스 도구(커넥터)가 있으면 그 서비스와 도구 이름 (ADR 0018) */
   siteConnector?: (url: string) => Promise<{ id: string; name: string; tools: string[] } | undefined>
   /** 금고 값으로 로그인 칸을 채웠다 (연결 카드 없이 일하다 로그인한 것도 연결로 남기게) */
   onVaultLogin?: (tabId: number, url: string) => void
+  /** 그림 키패드를 잘라 보여 준 자리 (AI가 숫자 자리를 짚어 다시 부를 때까지) */
+  private pinShots = new Map<number, { rect: { x: number; y: number; w: number; h: number }; at: number }>()
+  /** 가입·비밀번호 변경이 끝나 금고에 계정을 넣었을 때 (본체가 그 서비스를 연결로 표시한다) */
+  onAccountSaved?: (url: string) => void
+  /** 이 사이트에 두리가 카드 없이 다시 로그인할 길(금고 계정·전에 쓴 간편 로그인)이 있으면 그 서비스 id */
+  reloginFor?: (origin: string) => Promise<string | undefined>
   /** 탭마다 요령을 알린 사이트 (같은 사이트 안에서 옮길 때는 다시 알리지 않는다) */
   private guided = new Map<number, string>()
   /** 사이트마다 마지막으로 고른 결제 수단 (다음 승인 카드의 기본값) */
@@ -1623,6 +1631,87 @@ export class BrowserTools {
         const ref = String(a.ref ?? '')
         // 결제 비밀번호 키패드(숫자가 그림이고 자리가 섞인 버튼들): AI가 화면을 보고 숫자 → 버튼 표시를 짚고,
         // 사용자는 폰 보안 키패드로 넣는다. 본체가 그 순서대로 누른다 — AI는 비밀번호를 보지 않는다
+        if (a.kind === 'pin' && a.box && typeof a.box === 'object') {
+          // 버튼으로 안 잡히는 그림 키패드(실측 11-22 동행복권 케이뱅크 간편충전): 키패드 상자를 잘라 보여 주고
+          // AI가 그림에서 숫자 0~9 자리를 짚게 한다. 사용자는 폰 보안 키패드로 넣고, 본체가 그 자리를 누른다
+          const at = (a.keys_at && typeof a.keys_at === 'object' ? a.keys_at : {}) as Record<string, unknown>
+          const kept = this.pinShots.get(tabId)
+          if (!Object.keys(at).length || !kept) {
+            const got = (await this.browser
+              .call('element-shots', { tabId, refs: [], boxes: [a.box] }, 30_000)
+              .catch(() => undefined)) as
+              | { shots?: { data: string; rect?: { x: number; y: number; w: number; h: number } }[] }
+              | undefined
+            const shot = got?.shots?.[0]
+            if (!shot?.rect || shot.rect.w < 60 || shot.rect.h < 60)
+              throw new Error(
+                '키패드를 찍지 못했거나 너무 작아요. browser_screenshot으로 화면을 보고 숫자 키패드 전체가 들어가는 상자를 box(화면 기준 0~1000)로 다시 짚어 주세요',
+              )
+            this.pinShots.set(tabId, { rect: shot.rect, at: Date.now() })
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '키패드를 잘라 왔어요. 그림에서 숫자 0~9 버튼의 가운데를 keys_at({"0":[x,y],"1":[x,y],…}, 이 그림 기준 0~1000)으로 짚어 같은 box로 다시 불러요. 0~9가 한 번씩 다 있어야 해요. 지우기·재배열은 넣지 않아요. 화면을 사용자에게 넘기지 않아요.',
+                },
+                { type: 'image', data: shot.data, mimeType: 'image/jpeg' },
+              ],
+            }
+          }
+          const points: Record<string, PinKey> = {}
+          for (const d of '0123456789') {
+            const v = at[d]
+            const xy = Array.isArray(v) ? v.map(Number) : []
+            const [px, py] = xy
+            if (
+              px === undefined ||
+              py === undefined ||
+              !Number.isFinite(px) ||
+              !Number.isFinite(py) ||
+              px < 0 ||
+              px > 1000 ||
+              py < 0 ||
+              py > 1000
+            )
+              throw new Error(
+                `숫자 ${d}의 자리가 없어요. 잘라 본 그림에서 0~9 버튼 가운데를 모두 [x, y](0~1000)로 짚어 keys_at에 넣어 주세요.`,
+              )
+            points[d] = {
+              x: Math.round(kept.rect.x + (px / 1000) * kept.rect.w),
+              y: Math.round(kept.rect.y + (py / 1000) * kept.rect.h),
+            }
+          }
+          const spots = new Set(
+            Object.values(points).map((p) =>
+              typeof p === 'object' ? `${Math.round(p.x / 8)},${Math.round(p.y / 8)}` : p,
+            ),
+          )
+          if (spots.size !== 10)
+            throw new Error(
+              '두 숫자를 같은 자리로 짚었어요. 그림을 다시 보고 0~9를 서로 다른 버튼으로 짚어 주세요.',
+            )
+          if (!this.requestPin)
+            throw new Error(
+              '지금은 폰 키패드 카드를 띄울 수 없어요(폰 연결이 없어요). 사용자에게 폰에서 두리 앱 연결을 확인해 달라고 한 줄로 말하고 이번 답을 끝내요.',
+            )
+          let host = ''
+          try {
+            host = new URL(page.url).hostname
+          } catch {}
+          const len = Math.min(Math.max(Number(a.length) || 6, 4), 8)
+          const id = this.requestPin(tabId, String(a.label ?? '') || '결제 비밀번호', host, points, len)
+          if (!id) throw new Error('키패드 카드를 띄우지 못했어요')
+          this.pinShots.delete(tabId)
+          this.hold(tabId, 10 * 60_000)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `폰에 보안 키패드 카드를 띄웠어요(${len}자리). 사용자에게 "폰에 뜬 키패드에 비밀번호를 넣어 주세요"처럼 한 문장으로 말하고 이번 답을 끝내요. 넣으면 본체가 화면 키패드를 대신 누르고 다음 메시지로 알려 줘요.`,
+              },
+            ],
+          }
+        }
         if (a.kind === 'pin') {
           const keys = (a.keys && typeof a.keys === 'object' ? a.keys : {}) as Record<string, unknown>
           // 짚기 전: 키패드 버튼들(key_refs)을 하나씩 잘라 보여 주고 AI가 버튼마다 숫자를 읽게 한다.
@@ -1633,7 +1722,7 @@ export class BrowserTools {
               .filter((r) => page.refs.has(r))
             if (list.length < 10)
               throw new Error(
-                '키패드 버튼 표시들을 key_refs에 모두 넣어(숫자 버튼 10개, 지우기 등 포함 가능) 다시 불러 주세요. 버튼마다 잘라 보여 드릴게요.',
+                '키패드 버튼 표시들을 key_refs에 모두 넣어(숫자 버튼 10개, 지우기 등 포함 가능) 다시 불러 주세요. 버튼마다 잘라 보여 드릴게요. 키패드가 버튼으로 안 잡히는 그림이면 browser_screenshot으로 보고 키패드 전체 상자를 box(화면 기준 0~1000)로 짚어 kind: "pin"으로 불러요 — 화면을 사용자에게 넘기거나 그림 눌러 풀기 카드를 쓰지 않아요.',
               )
             const got = (await this.browser
               .call('element-shots', { tabId, refs: list }, 30_000)
@@ -1863,6 +1952,18 @@ export class BrowserTools {
               { type: 'text', text: '이 사이트는 이미 두리 금고에 있어요. browser_login으로 채우세요.' },
             ],
           }
+        // 연결해 둔 서비스면(금고 계정·간편 로그인) 사람에게 묻지 않고 본체가 다시 로그인한다
+        // (실측 11-22 대한항공: 세션이 풀리자 네이버로 연결해 둔 곳인데도 로그인 카드부터 띄웠다)
+        const relogin = await this.reloginFor?.(origin).catch(() => undefined)
+        if (relogin)
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `이 사이트는 연결해 둔 방법(금고 계정 또는 전에 쓴 간편 로그인)이 있어 로그인 카드를 띄우지 않았어요. connect_ask("${relogin}")를 부르면 두리 본체가 카드 없이 다시 로그인하고, 끝나면 알려 줘요. 사용자에게는 "다시 로그인하고 이어서 할게요"처럼 한 문장만 말해요.`,
+              },
+            ],
+          }
         const site =
           String(a.site ?? '')
             .trim()
@@ -1950,8 +2051,15 @@ export class BrowserTools {
               return { main: (await main()) ?? now, why: '사이트 확인 창이 떴어요' }
             if (now.url !== was.url && (t === tabId || !/about:blank/.test(now.url)))
               return { main: (await main()) ?? now, why: '주소가 바뀌었어요' }
-            if (buttonSet(now.text) !== buttonSet(was.text))
+            if (buttonSet(now.text) !== buttonSet(was.text)) {
+              // 요청을 보낸 직후엔 사이트 버튼이 '재요청'·남은 시간 등으로 곧바로 바뀐다. 사람이 인증 앱에서 승인하기엔
+              // 너무 이르니 기준만 새로 잡고 계속 기다린다 (실측 11-22 삼성화재: 10초 안에 두 번 끝내 폰 카드가 사라졌다)
+              if (Date.now() - started < 20_000) {
+                first.set(t, now)
+                continue
+              }
               return { main: (await main()) ?? now, why: '화면 버튼이 바뀌었어요' }
+            }
           }
           return undefined
         }
@@ -2802,10 +2910,22 @@ export class BrowserTools {
     return keypadType(this.browser, tabId, fieldRef, pw)
   }
 
-  async pressPin(tabId: number, keys: Record<string, string>, pin: string): Promise<boolean> {
+  async pressPin(tabId: number, keys: Record<string, PinKey>, pin: string): Promise<boolean> {
     for (const [i, d] of [...pin].entries()) {
       const ref = keys[d]
       if (!ref) return false
+      // 버튼으로 안 잡히는 그림 키패드: 짚어 둔 화면 자리를 누른다
+      if (typeof ref === 'object') {
+        const ok = await this.browser
+          .call('input', { tabId, action: 'tap', x: ref.x, y: ref.y }, 15_000)
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!ok) return false
+        await new Promise((res) => setTimeout(res, 150))
+        continue
+      }
       // 화면 아래 키패드를 누르려고 늘린 화면 높이는 마지막 숫자까지 그대로 둔다 (숫자마다 늘렸다 줄이면 0.5초씩 더 든다)
       const keepTall = i < pin.length - 1
       const ok = await this.browser
@@ -3449,6 +3569,7 @@ export class BrowserTools {
     if (r === 'exists')
       return `🔐 "${p.username}"은(는) 이미 가입된 계정이래요. 만든 비밀번호는 버렸어요(금고에 넣지 않음). 가입을 멈추고 로그인으로 바꿔요: 비밀번호를 모르면 비밀번호 찾기(사용자 확인 뒤 purpose: "reset").`
     await this.vault?.savePassword?.(p.origin, p.username, p.password)
+    this.onAccountSaved?.(s.url)
     return p.purpose === 'reset'
       ? `🔐 비밀번호 변경이 끝난 걸 확인하고 금고에 새 비밀번호를 저장했어요(${p.username}). 다음부터 두리가 이걸로 로그인해요.`
       : `🔐 가입이 끝난 걸 확인하고 금고에 저장했어요(${p.username}). 다음부터 두리가 이 계정으로 로그인해요.`
