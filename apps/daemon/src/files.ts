@@ -93,6 +93,8 @@ export class FileTools {
   /** 사용자가 대화로 보낸 사진을 두는 곳 ("[사진: 이름.jpg]") — 웹사이트에 올릴 수 있다 */
   sentPhotos?: string
   /** 새 파일을 만들었을 때 (보관함에 올린다) */
+  /** 모션그래픽 영상 (video_motion, 본체가 넣어 준다) */
+  motionMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   /** 사진으로 영상 만들기 (video_make, 본체가 넣어 준다) */
   videoMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   /** 그림 AI로 그림 만들기 (image_make, 본체가 브라우저와 함께 넣어 준다) */
@@ -186,6 +188,12 @@ export class FileTools {
     return this.folders[key]?.[0]
   }
 
+  /** 사용자 폴더 안·민감하지 않은 파일인지 (모션 영상 장면에 넣는 사진) */
+  readable(p: string): boolean {
+    const r = this.inside(p)
+    return Boolean(r) && !SENSITIVE.test(r as string)
+  }
+
   /** 사용자에게 보여 줄 경로 모양 */
   shown(p: string): string {
     return this.show(p)
@@ -264,6 +272,10 @@ export class FileTools {
       if (tool === 'file_print') return await this.ops.print(args)
       if (tool === 'file_pdf') return await this.ops.pdf(args)
       if (tool === 'file_render') return await this.ops.render(args)
+      if (tool === 'video_motion')
+        return this.motionMaker
+          ? await this.motionMaker.make(args)
+          : fail('이 PC에서는 모션 영상을 만들 수 없어요.')
       if (tool === 'video_make')
         return this.videoMaker ? await this.videoMaker.make(args) : fail('이 PC에서는 영상을 만들 수 없어요.')
       if (tool === 'image_make')

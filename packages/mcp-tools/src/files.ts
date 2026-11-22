@@ -253,6 +253,33 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('file_render'),
   )
   server.registerTool(
+    'video_motion',
+    {
+      title: '모션그래픽 영상 만들기',
+      description:
+        '움직이는 글자·색종이·사진 콜라주·장면 전환이 들어간 모션그래픽 영상(mp4)을 만든다. 생일·기념일 축하 영상, 가게·제품 홍보 쇼츠, 여행 하이라이트, 공지·카드뉴스 영상처럼 "멋있게" 만들 때 쓴다(사진만 이어 붙이면 되는 단순한 것은 video_make). ' +
+        '먼저 계획한다: ① 용도와 분위기를 정하고, 사용자가 레퍼런스(예: "요즘 릴스처럼", "브이로그 느낌", 링크)를 주거나 분위기가 애매하면 웹 검색으로 비슷한 영상 2~3개를 찾아 특징(색·글꼴 느낌·속도·전환·장식)을 3줄로 정리한다 ② 장면 5~10개 콘티(장면마다 글·사진·움직임·길이)를 짠다 ③ html을 쓴다. 쇼츠·홍보는 장면 1.2~2초로 빠르게·큰 글자, 감성·추억은 3~4초로 느리게. ' +
+        '모션 키트 사용법: ' +
+        '장면은 <section class="scene" data-dur="3" data-in="fade|zoom|slide|wipe|circle|flash">…</section>를 차례로. 장면 안 요소는 style="--at:.4s"로 나오는 때를 주고 움직임 이름표: pop·rise·drop·slam·zoom·left·right·spin·stamp·reveal·blur·type(style="--n:글자수")·polaroid(style="--r:-6deg")·words(낱말마다 차례로, 키네틱 타이포)·marker(형광펜). ' +
+        '계속 움직임: float·pulse·wiggle. 글자: huge·big·mid·small, 꾸밈: shadow·outline·pill·box, 자리: top·bottom. ' +
+        '사용자가 찍은 영상도 재료로: <video class="bg" src="file:///경로" data-from="12.5">(그 영상의 12.5초부터 장면 길이만큼, 소리는 빠진다 — 원래 소리가 꼭 필요하면 말해 준다). 영상을 고르고·자르고·자막·제목·음악을 얹는 "편집해 줘"도 이걸로 장면을 나눠 만든다. ' +
+        '사진: <img class="bg kenburns|pan" src="file:///경로">(장면 배경, 장면에 class="dim"이면 글자가 잘 보임), <img class="photo zoom">, <div class="polaroid"><img src=…>글</div>, 여러 장은 <div class="collage">에 polaroid를 style="left:…;top:…;--r:…"로. ' +
+        '배경: 장면 class="grad"(style="--c1:#…;--c2:#…;--c3:#…")·"paper"·"grain"·"letterbox" 또는 style="background:#…". ' +
+        '장식: <div class="particles" data-kind="confetti|snow|hearts|stars|bubbles" data-count="80"></div>(class="particles up"이면 올라감), <div class="burst" data-kind="confetti" style="--at:.2s"></div>, <svg class="line" viewBox="0 0 1080 1920"><path d="M…"/></svg>(선 그리기), <div class="progress"></div>. ' +
+        '<style>로 색·글꼴 크기·자리를 더 다듬어도 되지만 스크립트는 쓰지 않는다(키트가 시간을 맞춘다). 결과에 장면마다 한 컷이 오니 보고 고친다. 처음 쓰면 영상 부품을 한 번 받는다.',
+      inputSchema: {
+        html: z.string().max(400_000).describe('장면 HTML (<section class="scene">…들, 모션 키트 이름표)'),
+        shape: z
+          .enum(['portrait', 'landscape', 'square'])
+          .optional()
+          .describe('portrait=세로 9:16(기본, 쇼츠·릴스), landscape=가로 16:9, square=1:1'),
+        music: z.string().max(500).optional().describe('배경음악 파일 경로 (사용자 폴더의 mp3·m4a)'),
+        name: z.string().max(80).optional().describe('파일 이름'),
+      },
+    },
+    call('video_motion'),
+  )
+  server.registerTool(
     'video_make',
     {
       title: '사진으로 영상 만들기',
