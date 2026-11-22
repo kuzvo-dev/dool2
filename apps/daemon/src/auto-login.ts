@@ -888,6 +888,13 @@ export async function socialLogin(
   // 1) 공급자 버튼 찾기: 없으면 로그인 화면으로 들어간다
   const tried = new Set<string>()
   let btn = findProviderButton(page.text, input.provider, isLoginPage(page))
+  // 이미 로그인 화면인데 간편 로그인 버튼이 아직 안 그려졌다: 위쪽 메뉴를 누르기 전에 조금 기다린다
+  // (실측 11-22 대한항공: 아이디·비밀번호 칸까지만 읽혀 네이버 버튼을 못 찾았다)
+  for (let k = 0; k < 3 && !btn && isLoginPage(page); k++) {
+    await sleep(wait)
+    page = await snap(siteTab)
+    btn = findProviderButton(page.text, input.provider, true)
+  }
   for (let i = 0, late = 0; i < 4 && !btn; i++) {
     const target = findLoginLink(page.text, tried)
     if (!target) {

@@ -252,6 +252,38 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(rt.last?.resumeId).toBe('r1')
   })
 
+  it('끝내기 전 검사: 남은 게 있으면 같은 대화에 이어서 하게 하고, 끝나면 멈춘다 (ADR 0027)', async () => {
+    class ToolRuntime extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'tool', name: 'mcp__dool2__browser_open', input: {} }
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new ToolRuntime()
+    const verdicts = [
+      '{"done":false,"why":"보험 1곳만 봤어요","next":"다른 보험사"}',
+      '{"done":true,"why":"다 했어요"}',
+    ]
+    const prompts: string[] = []
+    const { api } = await boot(rt, {
+      finishJudge: async (p) => {
+        prompts.push(p)
+        return verdicts.shift()
+      },
+    })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"차 보험 3곳 비교해 줘"}' })
+    await until(async () => prompts.length === 2 && !(await state()).busy)
+    expect(rt.inputs).toHaveLength(2)
+    expect(rt.inputs[1]).toContain('보험 1곳만 봤어요')
+    // 두 번째 판정도 처음 부탁을 기준으로 한다
+    expect(prompts[1]).toContain('차 보험 3곳 비교해 줘')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(rt.inputs).toHaveLength(2)
+  })
+
   it('멈추기는 지금 차례를 그만두게 한다', async () => {
     const rt = new GateRuntime()
     const { api } = await boot(rt)
