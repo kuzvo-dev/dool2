@@ -19,6 +19,7 @@ import type {
   MadeImageRecordMessage,
   PairInvite,
   PcToPhone,
+  PhoneCap,
   PhoneToPc,
   StoredMessage,
   TellRecordMessage,
@@ -127,9 +128,14 @@ import {
   isNative,
   launchInvite,
   listenNative,
+  type SmsPerson,
   saveFile,
   scanQr,
   shareFile,
+  smsAvailable,
+  smsFind,
+  smsPermissions,
+  smsSend,
 } from './native.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
@@ -406,7 +412,7 @@ function connect() {
           st.pcSilent = true
           render()
         }, 7000)
-        void send({ kind: 'hello' })
+        hello()
         void send({ kind: 'conversation' })
         void send({ kind: 'connections' })
         void send({ kind: 'life' })
@@ -858,7 +864,7 @@ function onStream(ev: DaemonStreamEvent) {
     openedHost = undefined
     tabHosts.clear()
     st.work = { ...st.work, web: false, shot: undefined }
-    void send({ kind: 'hello' })
+    hello()
   }
 }
 
@@ -3039,7 +3045,10 @@ function toolSig(raw: string) {
             .map(([k, v]) => `${k}=${v}`)
             .join(',')
         : ''
-      return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}:${picked}`
+      // 문자 카드: 받는 사람 찾기 결과·고른 사람·오류도 (넣는 중인 번호는 빼야 칸이 다시 그려지며 글자가 끊기지 않는다)
+      const sms = a && isSms(a) ? smsStates.get(a.id) : undefined
+      const smsSig = sms ? `${sms.state}:${sms.people.length}:${sms.pick}:${sms.error ?? ''}` : ''
+      return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}:${picked}:${smsSig}`
     }
     if (rec.kind === 'login') {
       const l = loginFor(rec as LoginRecordMessage)
@@ -3133,6 +3142,203 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
 }
 
 /** 대화 안의 승인 카드: 무엇을 · 얼마 · [거절][승인하기] */
+// ── 문자 보내기 (내 번호로) ─────────────────────────────
+// PC(두리)는 받는 사람 이름과 글만 보낸다. 번호는 이 폰이 연락처에서 찾고 밖으로 보내지 않는다.
+// 사용자가 꾹 눌러 승인하면 이 폰이 바로 보내고(다른 앱을 열지 않는다), 결과 → 승인 서명 순서로 PC에 알린다
+
+/** 이 앱이 할 수 있는 것 (PC가 문자 보내기를 맡겨도 되는지 안다) */
+const capsReady: Promise<PhoneCap[]> = smsAvailable().then((ok) => (ok ? ['sms'] : []))
+function hello() {
+  void capsReady.then((caps) => send({ kind: 'hello', caps }))
+}
+
+interface SmsState {
+  state: 'finding' | 'found' | 'none' | 'denied'
+  people: SmsPerson[]
+  pick: number
+  manual: string
+  error?: string
+}
+const smsStates = new Map<string, SmsState>()
+const isSms = (a: ApprovalView) => a.url.startsWith('sms:')
+const smsTo = (a: ApprovalView) => a.url.slice(4)
+/** 번호처럼 보이면 (숫자 8자 이상) 연락처를 찾지 않고 그대로 */
+const phoneLike = (v: string) => v.replace(/[^0-9]/g, '').length >= 8 && /^[0-9+\-\s().]+$/.test(v)
+const maskNumber = (n: string) => {
+  const d = n.replace(/[^0-9]/g, '')
+  return d.length >= 8 ? `${d.slice(0, 3)}-****-${d.slice(-4)}` : n
+}
+const showNumber = (n: string) => {
+  const d = n.replace(/[^0-9]/g, '')
+  return d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` : n
+}
+
+function smsState(a: ApprovalView): SmsState {
+  let s = smsStates.get(a.id)
+  if (s) return s
+  const to = smsTo(a)
+  if (phoneLike(to)) {
+    s = { state: 'found', people: [{ name: '', number: to, label: '' }], pick: 0, manual: '' }
+    smsStates.set(a.id, s)
+    return s
+  }
+  s = { state: 'finding', people: [], pick: 0, manual: '' }
+  smsStates.set(a.id, s)
+  const mine = s
+  // 카드가 처음 뜰 때 연락처·문자 권한을 한 번에 묻고, 그다음 찾는다
+  void smsPermissions()
+    // 호칭 "님"은 빼고 찾는다 (김 팀장님 → 김 팀장)
+    .then(() => smsFind(to.replace(/님$/, '').trim()))
+    .then((r) => {
+      mine.people = r.people
+      mine.state = r.denied ? 'denied' : r.people.length ? 'found' : 'none'
+      render()
+    })
+  return s
+}
+
+/** 보낼 번호와 받는 사람 이름 (못 정했으면 undefined) */
+function smsTarget(s: SmsState): { name: string; number: string } | undefined {
+  if (s.manual.replace(/[^0-9]/g, '').length >= 8) return { name: '', number: s.manual }
+  const p = s.state === 'found' ? s.people[s.pick] : undefined
+  return p ? { name: p.name, number: p.number } : undefined
+}
+
+/** 문자 플러그인의 실패 코드 → 사용자에게 보일 말 */
+function smsWhy(reason?: string, detail?: string): string {
+  switch (reason) {
+    case 'denied':
+      return '문자 보내기 권한이 없어요. 권한을 허용한 뒤 다시 눌러 주세요'
+    case 'bad':
+      return '받는 번호나 글이 비어 있어요'
+    case 'no-phone':
+      return '이 기기는 문자를 보낼 수 없어요 (전화 기능이 없어요)'
+    case 'no-service':
+      return '신호가 없어요'
+    case 'radio-off':
+      return '비행기 모드예요'
+    case 'carrier':
+      return `통신사가 받지 않았어요 (${detail ?? ''})`
+    case 'timeout':
+      return '보냈는지 30초 안에 확인하지 못했어요. 폰 문자 앱의 보낸 문자를 봐 주세요'
+    default:
+      return detail ? `보내지 못했어요 (${detail})` : '까닭을 모르겠어요'
+  }
+}
+
+async function sendSms(a: ApprovalView) {
+  const s = smsState(a)
+  const t = smsTarget(s)
+  if (!t) {
+    s.error = '받는 사람 번호를 골라 주세요'
+    render()
+    throw new Error(s.error)
+  }
+  if (Date.parse(a.expiresAt) <= Date.now()) {
+    s.error = '승인 시간이 지나 보내지 않았어요. 두리에게 다시 부탁해 주세요'
+    render()
+    throw new Error(s.error)
+  }
+  s.error = undefined
+  if (!(await smsPermissions()).sms) {
+    s.error = '문자 보내기 권한을 허용해야 보낼 수 있어요'
+    render()
+    throw new Error(s.error)
+  }
+  const r = await smsSend(t.number, a.what)
+  const who = t.name ? `${t.name}(${maskNumber(t.number)})` : maskNumber(t.number)
+  const message = r.ok
+    ? `${who}에게 문자를 보냈어요`
+    : `${who}에게 못 보냈어요: ${smsWhy(r.reason, r.message)}`
+  // 결과를 먼저, 그다음 승인 서명 (PC는 서명이 맞을 때만 이 결과를 끝으로 적는다)
+  await send({ kind: 'sms-result', id: a.id, ok: r.ok, message })
+  await decide(a, 'approve', true)
+  if (!r.ok) toast(message)
+}
+
+function smsCard(a: ApprovalView, big = false): HTMLElement {
+  const s = smsState(a)
+  const to = smsTo(a)
+  const who = h('div', { class: 'approve-choices sms-to' })
+  const label = (t: string) => h('span', { class: 'meta', text: t })
+  if (s.state === 'finding') who.append(label(`받는 사람 · 연락처에서 '${to}' 찾는 중…`))
+  else if (s.state === 'found' && s.people.length === 1) {
+    const p = s.people[0] as SmsPerson
+    who.append(
+      label('받는 사람'),
+      h('strong', { text: [p.name, showNumber(p.number)].filter(Boolean).join(' · ') }),
+      ...(p.label ? [h('span', { class: 'meta', text: p.label })] : []),
+    )
+  } else if (s.state === 'found') {
+    who.append(
+      label(`'${to}'이(가) 여러 명이에요. 누구에게 보낼까요?`),
+      h(
+        'div',
+        { class: 'choice-list' },
+        ...s.people.map((p, i) =>
+          h('button', {
+            class: `chip${i === s.pick && !s.manual ? ' on' : ''}`,
+            text: `${p.name} · ${p.number.replace(/[^0-9]/g, '').slice(-4)}`,
+            onclick: () => {
+              s.pick = i
+              s.manual = ''
+              render()
+            },
+          }),
+        ),
+      ),
+    )
+  }
+  if (s.state === 'none' || s.state === 'denied') {
+    who.append(
+      label(
+        s.state === 'denied'
+          ? `연락처를 볼 수 없어서 '${to}'의 번호를 몰라요. 번호를 넣어 주세요`
+          : `연락처에서 '${to}'을(를) 못 찾았어요. 번호를 넣어 주세요`,
+      ),
+    )
+    const input = h('input', { class: 'field' }) as HTMLInputElement
+    input.type = 'tel'
+    input.inputMode = 'tel'
+    input.placeholder = '010-0000-0000'
+    input.value = s.manual
+    input.oninput = () => {
+      s.manual = input.value.trim().slice(0, 20)
+    }
+    who.append(input)
+  }
+  return h(
+    'div',
+    { class: `card approve-card sms-card${big ? ' big' : ''}` },
+    h(
+      'div',
+      { class: 'approve-head' },
+      h('span', { class: 'tile amber' }, icon('mail', 'i md')),
+      h(
+        'div',
+        {},
+        h('strong', { text: '문자 보낼까요?' }),
+        h('span', { class: 'meta', text: '내 번호로 · 이 폰에서 바로 보내요' }),
+      ),
+    ),
+    who,
+    h('p', { class: 'approve-what sms-text', text: a.what }),
+    s.error ? h('p', { class: 'field-err', text: s.error }) : undefined,
+    h(
+      'div',
+      { class: 'approve-actions' },
+      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      holdButton({
+        label: '꾹 눌러 보내기',
+        done: '보냈어요',
+        cls: 'btn btn-approve',
+        onDone: () => sendSms(a),
+        after: () => markDecided(a, 'approve'),
+      }),
+    ),
+  )
+}
+
 function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
   const a = approvalFor(rec)
   const decided = a ? st.decided.get(a.id) : undefined
@@ -3140,14 +3346,19 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     // 정한 뒤에는 한 줄로: 승인했어요 · 15,900원 · 제주 귤 3kg 바로 구매
     const what = a?.what || rec.what || '승인 요청'
     const failed = (decided && !decided.ok) || a?.status === 'failed'
+    const sms = a ? isSms(a) : rec.ref === 'sms'
     const head = failed
-      ? '못 눌렀어요'
+      ? sms
+        ? '못 보냈어요'
+        : '못 눌렀어요'
       : a?.status === 'rejected'
         ? '거절했어요'
         : a?.status === 'expired'
           ? '시간이 지나 취소됐어요'
           : a || decided
-            ? '승인했어요'
+            ? sms
+              ? '보냈어요'
+              : '승인했어요'
             : ''
     return h(
       'p',
@@ -3157,6 +3368,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     )
   }
   if (a.kind === 'money') return checkoutCard(a)
+  if (isSms(a)) return smsCard(a)
   const tone: IconName = a.kind === 'contact' ? 'mail' : 'hand'
   return h(
     'div',
@@ -3535,7 +3747,7 @@ function itemsList(a: ApprovalView, max: number): HTMLElement | undefined {
 
 function approveQuestion(a: ApprovalView) {
   if (a.kind === 'money') return '결제할까요?'
-  if (a.kind === 'contact') return '보낼까요?'
+  if (a.kind === 'contact') return isSms(a) ? '문자 보낼까요?' : '보낼까요?'
   if (a.kind === 'app') return '이 PC 앱을 다뤄도 될까요?'
   if (a.kind === 'file')
     return `이대로 ${a.label === '옮기기' ? '옮길까요' : a.label === '되살리기' ? '되살릴까요' : '받을까요'}?`
@@ -5670,6 +5882,10 @@ function approvalSheet(id: string) {
     sheet.append(close, checkoutCard(a, true))
     return sheet
   }
+  if (isSms(a) && a.status === 'pending' && !st.decided.get(id)) {
+    sheet.append(close, smsCard(a, true))
+    return sheet
+  }
   const rows = h('dl', { class: 'kv' })
   const row = (k: string, v?: string, cls?: string) =>
     v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
@@ -6598,7 +6814,7 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
     sd.live = ''
     sd.steps = []
     void send({ kind: 'thread', id: sd.id })
-    void send({ kind: 'hello' })
+    hello()
   }
 }
 
@@ -6935,7 +7151,7 @@ let lastStreamAt = Date.now()
 /** PC에서 대화·상태·생활·연결을 다시 받아 온다 */
 function resync() {
   if (!st.online || !st.saved?.paired) return
-  void send({ kind: 'hello' })
+  hello()
   void send({ kind: 'conversation' })
   void send({ kind: 'life' })
   void send({ kind: 'connections' })

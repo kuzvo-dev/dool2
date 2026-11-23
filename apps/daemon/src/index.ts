@@ -103,6 +103,7 @@ import { PhoneLink } from './link.js'
 import { MotionMaker, type MotionRenderer } from './motion.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
+import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import type { HtmlRenderer } from './render.js'
 import { buildReport, sendReport } from './report.js'
@@ -711,10 +712,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       events.emit('settings', readSettings())
     },
     finalStep: () => readSettings().finalStep ?? 'approve',
+    vaultList: () => vault.list(),
+    vaultReveal: (id) => vault.reveal(id),
   })
-  /** 승인: 앱(app:…)이면 화면 제어, PC 파일(file:…)이면 파일 도구, 아니면 브라우저 */
-  const approveAny = (id: string, choice?: string) => {
+  /** 폰이 인사(hello)하며 알린 할 수 있는 것 (폰 id → caps). 켜진 뒤 인사한 폰만 안다 */
+  const phoneCaps = new Map<string, string[]>()
+  // 문자 보내기 (내 폰 번호로): 승인하면 폰 앱이 직접 보낸다
+  const phoneSms = new PhoneSms(browserTools.approvals, () => {
+    const phones = link.status().phones
+    const known = phones.map((p) => phoneCaps.get(p.id)).filter((c): c is string[] => !!c)
+    return {
+      paired: phones.length,
+      sms: known.filter((c) => c.includes('sms')).length,
+      old: known.filter((c) => !c.includes('sms')).length,
+    }
+  })
+  /**
+   * 승인: 앱(app:…)이면 화면 제어, PC 파일(file:…)이면 파일 도구, 문자(sms:…)면 폰이 보낸 결과, 아니면 브라우저.
+   * fromPhone: 폰 서명이 확인된 승인 (문자는 폰에서만 승인된다)
+   */
+  const approveAny = (id: string, choice?: string, fromPhone = false) => {
     const url = browserTools.approvals.get(id)?.url ?? ''
+    if (isSmsApproval(url)) return phoneSms.approve(id, fromPhone)
     if (url.startsWith('app:')) return screenTools.approve(id)
     if (url.startsWith('file:')) return fileTools.ops.approve(id)
     return browserTools.approve(id, choice)
@@ -1567,6 +1586,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(message ? { message } : {}),
         }
       },
+      caps: (phone, caps) => {
+        phoneCaps.set(phone, caps)
+        journal.write('phone-caps', { caps })
+      },
+      smsResult: (id, r) => {
+        journal.write('phone-sms', { ok: r.ok })
+        phoneSms.result(id, r)
+      },
       report: (phone, r) => {
         // 그때 PC 쪽은 어땠는지도 같이 남긴다
         journal.write('phone-report', {
@@ -1675,12 +1702,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
-        if (decision === 'approve' && approvalThread.get(id))
+        // 문자는 폰이 이미 보냈다 (결과가 바로 이어서 온다): 누르겠다는 말을 하지 않는다
+        if (
+          decision === 'approve' &&
+          approvalThread.get(id) &&
+          !isSmsApproval(browserTools.approvals.get(id)?.url)
+        )
           sayNow(`승인 받았어요. 이제 "${label}"을(를) 누를게요.`)
         const r =
           decision === 'reject'
             ? { ok: browserTools.approvals.reject(id), message: '거절했어요' }
-            : await approveAny(id, choice)
+            : await approveAny(id, choice, true)
         // 폰에서 정했으면 그 결과를 AI에게 알려 이어서 하게 한다 (PC 화면은 화면이 직접 알린다)
         const threadId = approvalThread.get(id)
         if (threadId)
@@ -2905,6 +2937,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
               }
             : {}),
         })
+        return json(res, 200, r)
+      }
+      if (req.method === 'POST' && b === 'life' && c === 'phone_sms' && !d) {
+        const args = (await readJson(req)) as Record<string, unknown>
+        const r = phoneSms.request(args && typeof args === 'object' ? args : {})
+        journal.write('phone-sms-ask', { ok: !r.isError })
         return json(res, 200, r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {

@@ -292,6 +292,13 @@ export class ThreadService {
           if (ref)
             fileAsk = what ? { name: ev.name, record: { kind: 'approval', tabId: -2, ref, what } } : undefined
         }
+        // 문자 보내기(내 폰 번호로): 탭 번호 대신 -3, ref "sms". 폰 카드가 받는 사람을 찾아 보여 준다
+        if (ev.type === 'tool' && /phone_sms$/.test(ev.name)) {
+          const text = String(((ev.input ?? {}) as { text?: unknown }).text ?? '').slice(0, 300)
+          fileAsk = text
+            ? { name: ev.name, record: { kind: 'approval', tabId: -3, ref: 'sms', what: text } }
+            : undefined
+        }
         if (ev.type === 'tool_result' && fileAsk && (!ev.name || ev.name === fileAsk.name)) {
           const ask = fileAsk
           fileAsk = undefined

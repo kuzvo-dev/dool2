@@ -2388,6 +2388,17 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       if (!val) return
       rows.append(el('dt', '', k), el('dd', cls ?? '', val))
     }
+    // 문자(내 폰 번호로): 보내는 건 폰이고 받는 번호도 폰만 안다. PC에서는 보여 주기만 한다
+    if (v.url.startsWith('sms:')) {
+      row('받는 사람', v.label)
+      row('보낼 글', v.what)
+      card.replaceChildren(
+        top,
+        el('div', 'approve-body', rows),
+        el('p', 'approve-note', '문자는 폰에서 받는 사람을 확인하고 승인하면 폰이 바로 보내요.'),
+      )
+      return
+    }
     row('무엇을', v.what)
     row('주소', v.url.startsWith('app:') ? '' : host, 'host')
     const pc = v.kind === 'file' || v.kind === 'print' || v.kind === 'pc'

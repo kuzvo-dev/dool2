@@ -49,4 +49,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 문자 보내기: 사용자가 두리 승인 카드에서 승인한 문자만 내 번호로 보낸다 (SmsPlugin) -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- 받는 사람 이름으로 번호 찾기 (번호는 폰 밖으로 보내지 않는다) -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- 전화 기능이 없는 태블릿에도 깔리게 -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 </manifest>
