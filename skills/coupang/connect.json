@@ -32,5 +32,38 @@
       "say": "이 이어폰 반품해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Coupang",
+      "login": "ID and password",
+      "summary": "Sign in to Coupang once and you can leave reordering, delivery checks and returns to Dool2 with a few words.",
+      "example": {
+        "ask": "I am out of detergent, order the same as last time",
+        "working": "Finding your last order",
+        "reply": "Two 3 L liquid detergents from last month, ₩19,800. Arrives tomorrow morning. Shall I order?"
+      },
+      "abilities": [
+        {
+          "title": "Reorder",
+          "say": "Order the same wet wipes again"
+        },
+        {
+          "title": "Find products",
+          "say": "Find a cordless vacuum under ₩30,000"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Anything arriving today?"
+        },
+        {
+          "title": "Return",
+          "say": "Return these earbuds"
+        }
+      ]
+    }
+  }
 }

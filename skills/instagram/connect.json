@@ -35,5 +35,38 @@
       "say": "저장한 맛집 게시물만 모아 줘",
       "tier": "fill"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Instagram",
+      "login": "ID and password",
+      "summary": "Dool2 can check unread DMs and reply, post photos and gather your saved posts. Anything it sends or posts goes out only after you approve.",
+      "example": {
+        "ask": "Show me the DMs I haven't answered",
+        "working": "Checking DMs",
+        "reply": "Three. Minji asked if you can go to the exhibit on Sunday, and a studio replied about a class booking. Shall I draft replies?"
+      },
+      "abilities": [
+        {
+          "title": "DMs at a glance",
+          "say": "Any urgent DMs today?"
+        },
+        {
+          "title": "Reply to a DM",
+          "say": "Reply to Sujin that Saturday works"
+        },
+        {
+          "title": "Post photos",
+          "say": "Post yesterday's 3 photos to my feed"
+        },
+        {
+          "title": "Sort saved posts",
+          "say": "Gather my saved food spots"
+        }
+      ]
+    }
+  }
 }

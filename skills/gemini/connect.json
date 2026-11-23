@@ -31,5 +31,34 @@
   ],
   "signedIn": [
     "Google 계정:"
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Gemini",
+      "login": "Google account",
+      "summary": "Connect Gemini and Dool2 makes invitations, posters and cards as real-looking pictures, with names and dates written into the image.",
+      "example": {
+        "ask": "Make a birthday invitation with a dinosaur picture",
+        "working": "Drawing with an image AI",
+        "reply": "I made a watercolor invitation of a dinosaur holding a cake. The name, date and place are in the picture."
+      },
+      "abilities": [
+        {
+          "title": "Invitations and posters",
+          "say": "Make a first birthday invitation"
+        },
+        {
+          "title": "Cards and illustrations",
+          "say": "Draw a birthday card for Mom"
+        },
+        {
+          "title": "Fix a picture",
+          "say": "Make the text in that picture bigger"
+        }
+      ]
+    }
+  }
 }

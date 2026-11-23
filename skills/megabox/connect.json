@@ -36,5 +36,38 @@
       "say": "주말에 잡은 메가박스 표 환불해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Megabox",
+      "login": "ID and password",
+      "summary": "Dool2 can find showtimes, book good seats, show your tickets and cancel bookings. Payment and cancellation happen only after you approve.",
+      "example": {
+        "ask": "Seongsu Megabox around 9 PM, back row for two",
+        "working": "Checking showtimes",
+        "reply": "Seongsu has two seats side by side in row L at the 9:05 PM show. ₩30,000 for 2. Shall I book?"
+      },
+      "abilities": [
+        {
+          "title": "Pick seats and book",
+          "say": "A movie around 8, 3 seats in the back center"
+        },
+        {
+          "title": "Movies worth seeing",
+          "say": "What's good to watch with elementary school kids?"
+        },
+        {
+          "title": "View tickets",
+          "say": "What screen is today's booking?"
+        },
+        {
+          "title": "Cancel booking",
+          "say": "Refund my Megabox ticket for the weekend"
+        }
+      ]
+    }
+  }
 }

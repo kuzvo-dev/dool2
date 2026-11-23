@@ -37,5 +37,38 @@
       "say": "세부 호핑 투어 무료로 취소돼?",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "MyRealTrip",
+      "login": "ID and password",
+      "summary": "Dool2 picks tours, tickets, stays and flights that fit your terms and books them, and checks and cancels bookings.",
+      "example": {
+        "ask": "Find a Ba Na Hills tour in Da Nang next Saturday for 2",
+        "working": "Finding tours",
+        "reply": "A Korean-guide day tour of Ba Na Hills is ₩59,000 per person. It cancels free up to 3 days before. Shall I book 2?"
+      },
+      "abilities": [
+        {
+          "title": "Find tours and tickets",
+          "say": "How much are 2 Tokyo DisneySea tickets?"
+        },
+        {
+          "title": "Book",
+          "say": "Book the tour that leaves at 8:30 AM"
+        },
+        {
+          "title": "Flights and stays",
+          "say": "Round trip to Nha Trang the first week next month, plus a stay"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "Can I cancel the Cebu hopping tour for free?"
+        }
+      ]
+    }
+  }
 }

@@ -38,5 +38,38 @@
       "say": "쓸 수 있는 적립금 얼마야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Shilla Duty Free",
+      "login": "ID and password",
+      "summary": "Before you fly, Dool2 finds duty-free items at Shilla, places orders and checks your order history and points.",
+      "example": {
+        "ask": "I fly from Gimpo Saturday, find a lip balm set",
+        "working": "Finding items",
+        "reply": "Your trip is Saturday afternoon from Gimpo. A 4-piece lip balm set is $28, picked up at Gimpo. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find items",
+          "say": "Perfume under $50"
+        },
+        {
+          "title": "Order before you fly",
+          "say": "Buy this cream for pickup on this trip"
+        },
+        {
+          "title": "Order history",
+          "say": "Which Gimpo counter do I pick up at?"
+        },
+        {
+          "title": "Check points",
+          "say": "How many points can I use?"
+        }
+      ]
+    }
+  }
 }

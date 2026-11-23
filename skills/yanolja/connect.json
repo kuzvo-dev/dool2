@@ -44,5 +44,42 @@
       "say": "다음 주 경주 숙소 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Yanolja (NOL)",
+      "login": "ID and password",
+      "summary": "Connect Yanolja and Dool2 finds stays, leisure, shows and exhibitions, books them, and checks, changes or cancels bookings.",
+      "example": {
+        "ask": "Ocean-view stay in Yeosu next weekend, 2 people, under ₩200,000",
+        "working": "Finding stays",
+        "reply": "An ocean-view hotel in Dolsan has a room for ₩172,000 a night. Free cancellation until 3 days before. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find stays",
+          "say": "Yangyang ocean-view pension, 3 people, under ₩250,000"
+        },
+        {
+          "title": "Book a stay",
+          "say": "Book that room with breakfast"
+        },
+        {
+          "title": "Leisure and tickets",
+          "say": "3 all-day waterpark passes for Sunday"
+        },
+        {
+          "title": "My bookings",
+          "say": "What time is check-in this month?"
+        },
+        {
+          "title": "Change or cancel",
+          "say": "Cancel my Gyeongju stay next week"
+        }
+      ]
+    }
+  }
 }

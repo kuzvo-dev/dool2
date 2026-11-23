@@ -49,5 +49,46 @@
     "kakao",
     "google",
     "apple"
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Aladin",
+      "login": "ID and password",
+      "summary": "Compare new and used book prices on Aladin, add to cart and order, then track delivery and handle returns through Dool2.",
+      "example": {
+        "ask": "Buy the cheapest used copy of The Vegetarian",
+        "working": "Checking used prices",
+        "reply": "A top-grade used copy is ₩5,300 and a new one is ₩13,500. The used copy arrives the day after tomorrow. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find books",
+          "say": "Popular economics books these days"
+        },
+        {
+          "title": "Used prices",
+          "say": "How much is this book used?"
+        },
+        {
+          "title": "Add to cart",
+          "say": "Put this book in my cart"
+        },
+        {
+          "title": "Order",
+          "say": "Order everything in my cart"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Does my Aladin order arrive today?"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "It is damaged, return it"
+        }
+      ]
+    }
+  }
 }

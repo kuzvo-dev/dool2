@@ -41,5 +41,42 @@
       "say": "토요일 전시 예약 없애 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "MMCA",
+      "login": "ID and password",
+      "summary": "Dool2 can find exhibitions at the Seoul, Gwacheon, Deoksugung and Cheongju museums, book visits, and check or cancel reservations.",
+      "example": {
+        "ask": "What should I see at Gwacheon with my kid on Sunday?",
+        "working": "Checking exhibitions",
+        "reply": "Gwacheon has four exhibitions now. The free sculpture show suits kids, and the 1 PM Sunday slot has room. Shall I book?"
+      },
+      "abilities": [
+        {
+          "title": "Exhibitions to see",
+          "say": "Anything closing soon?"
+        },
+        {
+          "title": "Visit info",
+          "say": "When does Deoksugung close?"
+        },
+        {
+          "title": "Book a visit",
+          "say": "Book 3 for Sunday morning at Seoul"
+        },
+        {
+          "title": "View reservation",
+          "say": "What time was my exhibition?"
+        },
+        {
+          "title": "Cancel reservation",
+          "say": "Cancel my Saturday exhibition booking"
+        }
+      ]
+    }
+  }
 }

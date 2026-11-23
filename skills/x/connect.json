@@ -36,5 +36,38 @@
       "say": "출시 소식 짧게 써서 올려 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "X (Twitter)",
+      "login": "ID and password",
+      "summary": "Dool2 skims missed mentions and DMs, finds posts you wrote or saw, and writes new posts. Posting needs your approval.",
+      "example": {
+        "ask": "How did yesterday's post do?",
+        "working": "Reading mentions",
+        "reply": "Mostly good. 4 mentions ask how to use it, and 1 asks about price. Want the full list?"
+      },
+      "abilities": [
+        {
+          "title": "Missed alerts",
+          "say": "Did anyone mention me today?"
+        },
+        {
+          "title": "Find my posts",
+          "say": "Find my job change post from last summer"
+        },
+        {
+          "title": "Find saw posts",
+          "say": "Find that restaurant map post from days ago"
+        },
+        {
+          "title": "Post",
+          "say": "Write a short launch post and send it"
+        }
+      ]
+    }
+  }
 }

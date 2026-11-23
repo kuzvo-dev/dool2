@@ -47,5 +47,46 @@
       "say": "오늘 행사에서 만난 사람한테 1촌 요청 보내 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "LinkedIn",
+      "login": "ID and password",
+      "summary": "Dool2 can sort and answer messages, send connection requests, and find matching jobs and Easy Apply. Everything is sent only after you approve.",
+      "example": {
+        "ask": "Is anyone looking for me on LinkedIn?",
+        "working": "Reading messages",
+        "reply": "Two. A data team recruiter asked for a portfolio link, and a university senior asked if you are coming to next month's meetup. Shall I draft the portfolio reply first?"
+      },
+      "abilities": [
+        {
+          "title": "Check messages",
+          "say": "Sort the LinkedIn messages I haven't answered"
+        },
+        {
+          "title": "Find jobs",
+          "say": "Find experienced frontend jobs near Pangyo"
+        },
+        {
+          "title": "Job details",
+          "say": "Sum up only the requirements for this job"
+        },
+        {
+          "title": "Easy Apply",
+          "say": "Apply to this job with my resume"
+        },
+        {
+          "title": "Reply to a message",
+          "say": "Write a reply with when I can talk"
+        },
+        {
+          "title": "Connection request",
+          "say": "Send a connection request to the person I met today"
+        }
+      ]
+    }
+  }
 }

@@ -41,5 +41,42 @@
       "say": "비 와서 못 가니까 야구 표 환불해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Ticketlink",
+      "login": "PAYCO ID",
+      "summary": "Connect Ticketlink and leave finding shows and games, checking seats, booking, tickets and cancellations to Dool2.",
+      "example": {
+        "ask": "2 R seats for a musical next Friday",
+        "working": "Checking open seats",
+        "reply": "Two R seats together are open for Friday 7:30 PM. ₩286,000 total. Shall I book them?"
+      },
+      "abilities": [
+        {
+          "title": "Book seats",
+          "say": "Get 2 seats together for the concert"
+        },
+        {
+          "title": "Find shows",
+          "say": "What exhibitions are in Seoul next month?"
+        },
+        {
+          "title": "Open seats",
+          "say": "Any seats left for Saturday matinee?"
+        },
+        {
+          "title": "See tickets",
+          "say": "What time is my booking this week?"
+        },
+        {
+          "title": "Cancel booking",
+          "say": "It is raining, refund my baseball ticket"
+        }
+      ]
+    }
+  }
 }

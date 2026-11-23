@@ -40,5 +40,42 @@
       "say": "이 바지 가격 내려가면 알려 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Uniqlo",
+      "login": "ID and password",
+      "summary": "Dool2 checks stock in your size, orders, tracks delivery and alerts you when saved items go on sale.",
+      "example": {
+        "ask": "Is HEATTECH crew neck men L black in stock?",
+        "working": "Checking stock",
+        "reply": "It is in stock online at ₩19,900. Shall I add it to your cart?"
+      },
+      "abilities": [
+        {
+          "title": "Size stock",
+          "say": "Is the fleece jacket gray M left?"
+        },
+        {
+          "title": "Store stock",
+          "say": "Does Gangnam have this down jacket in L?"
+        },
+        {
+          "title": "Order",
+          "say": "Pay for the two HEATTECH tops in my cart"
+        },
+        {
+          "title": "Check delivery",
+          "say": "Has my Uniqlo package shipped?"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me if this pants price drops"
+        }
+      ]
+    }
+  }
 }

@@ -49,5 +49,46 @@
       "say": "잘못 산 문제집 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Kyobo Book Centre",
+      "login": "ID and password",
+      "summary": "Dool2 can find books, check store stock, order for home or store pickup, and track or cancel orders.",
+      "example": {
+        "ask": "Is the Korean History exam book at the Jamsil store today?",
+        "working": "Checking store stock",
+        "reply": "Jamsil has 2 copies at ₩22,000. Order with Baro Dream pickup and you can collect it from about 7 PM. Shall I order?"
+      },
+      "abilities": [
+        {
+          "title": "Find books",
+          "say": "Which Python beginner book is good?"
+        },
+        {
+          "title": "Store stock",
+          "say": "Does the Gangnam store have this book?"
+        },
+        {
+          "title": "Pickup order",
+          "say": "Have it ready at the Jamsil store after work"
+        },
+        {
+          "title": "Home delivery",
+          "say": "Order this book to arrive tomorrow"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Where is the book I ordered from Kyobo?"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "Cancel the workbook I bought by mistake"
+        }
+      ]
+    }
+  }
 }

@@ -39,5 +39,38 @@
       "say": "지금 쓸 수 있는 쿠폰이랑 적립금 얼마야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "W Concept",
+      "login": "ID and password",
+      "summary": "Dool2 orders the clothes on your wishlist in your size, tracks delivery, sets sale alerts and gathers coupons.",
+      "example": {
+        "ask": "Order the trench coat on my wishlist in size 55",
+        "working": "Checking sizes",
+        "reply": "1 left in size 55, ₩219,000 with a coupon. Arrives Thursday. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Order by size",
+          "say": "Order this knit in M"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me if the dress I saved drops in price"
+        },
+        {
+          "title": "Check delivery",
+          "say": "Where is the muffler I bought last week?"
+        },
+        {
+          "title": "Coupons and points",
+          "say": "How many coupons and points can I use?"
+        }
+      ]
+    }
+  }
 }

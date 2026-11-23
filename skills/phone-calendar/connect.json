@@ -30,5 +30,37 @@
       "say": "이번 주에 두 시간 비는 때 언제야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Calendar",
+      "summary": "Give Dool2 your phone calendar and it knows your day and free time first, and keeps your plans from overlapping.",
+      "example": {
+        "ask": "Sum up my schedule for next week",
+        "working": "Reading your calendar",
+        "reply": "Meetings are packed on Monday and Thursday. Wednesday after 2 PM is free, and two plans overlap on Friday evening."
+      },
+      "abilities": [
+        {
+          "title": "Today",
+          "say": "What do I have this afternoon?"
+        },
+        {
+          "title": "Add or change events",
+          "say": "Move Friday dinner to Saturday lunch"
+        },
+        {
+          "title": "Find a date",
+          "say": "What day was the family birthday dinner?"
+        },
+        {
+          "title": "Find free time",
+          "say": "When do I have two free hours this week?"
+        }
+      ]
+    }
+  }
 }

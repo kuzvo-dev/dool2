@@ -47,5 +47,46 @@
       "say": "보너스 항공권으로 12월 제주 왕복 자리 찾아 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Asiana Airlines",
+      "login": "Asiana Club ID and password",
+      "summary": "Find Asiana flights, book tickets and pick seats. Dool2 also checks your bookings and Asiana Club miles.",
+      "example": {
+        "ask": "Asiana from Incheon to Hanoi next Friday evening",
+        "working": "Checking flights",
+        "reply": "The Friday 7:10 pm flight from Incheon is ₩310,000 one way in economy. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find flights",
+          "say": "Saturday afternoon Asiana to Osaka"
+        },
+        {
+          "title": "Book",
+          "say": "Book that flight for 2 adults"
+        },
+        {
+          "title": "Pick seats",
+          "say": "Switch me to an exit-row aisle seat"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "What is the fee to cancel the Hanoi ticket now?"
+        },
+        {
+          "title": "Check miles",
+          "say": "How many Asiana miles do I have?"
+        },
+        {
+          "title": "Award seats",
+          "say": "Find award seats to Jeju in December"
+        }
+      ]
+    }
+  }
 }

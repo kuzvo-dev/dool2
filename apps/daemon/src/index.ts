@@ -27,6 +27,7 @@ import {
   type McpServerSpec,
   ThreadService,
 } from '@dool2/engine'
+import { deviceRegion } from '@dool2/i18n'
 import {
   type AgentId,
   AgentIdSchema,
@@ -729,6 +730,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     (id) => connectors.summary(id),
     () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {},
     () => (store.getSetting('socialAccounts') as Record<string, string[]> | undefined) ?? {},
+    () => {
+      const st = readSettings()
+      const locale = [Intl.DateTimeFormat().resolvedOptions().locale]
+      const region = st.region ?? deviceRegion(locale)
+      return { lang: lang(), ...(region ? { region } : {}) }
+    },
   )
   // The service map in the instructions uses the list read last: read it once at the start
   void skills.connections().catch(() => undefined)

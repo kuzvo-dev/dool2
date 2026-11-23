@@ -41,5 +41,42 @@
       "say": "휴양림 예약한 거 돈 나갔어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Foresttrip",
+      "login": "ID and password",
+      "summary": "Find open rooms at national forest lodges and book them. Dool2 also handles weekend lottery entries, results and payment records.",
+      "example": {
+        "ask": "Any 4-person forest lodge in Chungcheong on the second Friday of December?",
+        "working": "Finding open rooms",
+        "reply": "Only one is open that day, a 4-person forest house at Seosan Yonghyeon lodge, ₩67,000 a night. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find open rooms",
+          "say": "Open rooms in the south this weekend"
+        },
+        {
+          "title": "Book a room",
+          "say": "Book Saturday night there"
+        },
+        {
+          "title": "Enter the lottery",
+          "say": "Enter me in the January weekend lottery"
+        },
+        {
+          "title": "Check the result",
+          "say": "Did my last lottery entry win?"
+        },
+        {
+          "title": "Check payment",
+          "say": "Was I charged for the lodge booking?"
+        }
+      ]
+    }
+  }
 }

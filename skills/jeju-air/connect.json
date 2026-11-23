@@ -32,5 +32,38 @@
       "say": "J 포인트 얼마 있어? 다음 표에 써도 돼?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Jeju Air",
+      "login": "ID and password",
+      "summary": "Dool2 can find the cheapest Jeju Air fares and book them, and check your bookings and J Points.",
+      "example": {
+        "ask": "Cheapest Jeju Air from Jeju to Gimpo next Friday evening",
+        "working": "Checking fares",
+        "reply": "The cheapest is the 20:40 flight from Jeju, ₩45,900 one way. The 19:35 flight is ₩6,000 more at ₩51,900. Which one?"
+      },
+      "abilities": [
+        {
+          "title": "Find cheap fares",
+          "say": "Cheapest time from Busan to Jeju next weekend"
+        },
+        {
+          "title": "Book",
+          "say": "Book two seats for me and Mom"
+        },
+        {
+          "title": "Booking history",
+          "say": "What time was my Fukuoka flight?"
+        },
+        {
+          "title": "Check points",
+          "say": "How many J Points do I have? Can I use them?"
+        }
+      ]
+    }
+  }
 }

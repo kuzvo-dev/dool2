@@ -21,5 +21,29 @@
       "say": "그 지갑 어디 가면 찾을 수 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Lost Property (Minwon24)",
+      "summary": "No sign-in needed. Dool2 searches the police lost-property system (formerly LOST112) for items found in the subway, buses and police stations, with where they are kept and who to call.",
+      "example": {
+        "ask": "Find the black umbrella I left on Line 2 yesterday",
+        "working": "Searching found items",
+        "reply": "18 umbrellas turned up on the subway since yesterday. On Line 2, they are at Euljiro 1-ga and Yangcheon-gu Office stations. Bring your ID to collect."
+      },
+      "abilities": [
+        {
+          "title": "Find lost items",
+          "say": "Find the umbrella I left on the subway"
+        },
+        {
+          "title": "Storage place and contact",
+          "say": "Where can I pick up that wallet?"
+        }
+      ]
+    }
+  }
 }

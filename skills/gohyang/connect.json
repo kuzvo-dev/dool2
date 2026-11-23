@@ -31,5 +31,34 @@
   "hints": [
     "답례품은 기부액의 30%만큼 포인트로 받는다(10만 원 → 3만 P). 사는 시·군·구(광역 포함, 내 정보의 주소)에는 기부할 수 없다. 10만 원까지는 전액 세액공제(넘는 금액의 공제율은 해마다 바뀌니 뉴스·누리집으로 확인하고 출처 링크).",
     "답례품을 고를 때는 gohyang_gifts로 지역·포인트를 넣어 실제 목록을 본다. 기부·답례품 신청은 로그인 뒤 결제라 승인을 받는다."
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Gohyang Sarang e-Eum",
+      "login": "ID and password",
+      "summary": "Dool2 picks where to donate and which thank-you gifts to get under the hometown donation program. It can also donate and check your donation history.",
+      "example": {
+        "ask": "Pick a place for a ₩100,000 hometown donation and a gift",
+        "working": "Finding gifts",
+        "reply": "A ₩100,000 donation is fully tax-deductible and gets a ₩30,000 point gift. The Wanju sesame and perilla oil set (30,000 P) is well reviewed. Shall I donate for it?"
+      },
+      "abilities": [
+        {
+          "title": "Find gifts",
+          "say": "Pick a gift for 30,000 points"
+        },
+        {
+          "title": "Donate",
+          "say": "Donate ₩100,000 to Jeju and get tangerines"
+        },
+        {
+          "title": "Donation history",
+          "say": "How much did I donate this year?"
+        }
+      ]
+    }
+  }
 }

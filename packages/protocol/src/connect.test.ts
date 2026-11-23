@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { approvalLine, type ConnectCard, checkConnectCard, TierSchema } from './connect.js'
+import {
+  approvalLine,
+  type ConnectCard,
+  ConnectCardSchema,
+  checkConnectCard,
+  localizeCard,
+  TierSchema,
+} from './connect.js'
 
 const card: ConnectCard = {
   id: 'demo',
@@ -59,5 +66,49 @@ describe('TierSchema (ADR 0029)', () => {
   })
   it('rejects anything else', () => {
     expect(() => TierSchema.parse('buy')).toThrow()
+  })
+})
+
+describe('localizeCard (ADR 0029)', () => {
+  const base = ConnectCardSchema.parse({
+    id: 'demo',
+    name: '데모몰',
+    site: 'demo.example.com',
+    category: 'shopping',
+    how: 'browser',
+    login: '아이디·비밀번호',
+    summary: '데모몰을 연결하면 주문부터 배송 조회까지 맡길 수 있어요.',
+    example: { ask: '주문한 거 언제 와?', working: '배송 조회 중', reply: '내일 도착해요.' },
+    abilities: [
+      { title: '배송 조회', say: '언제 와?', tier: 'lookup' },
+      { title: '주문', say: '시켜 줘', tier: 'pay' },
+    ],
+    regions: ['global'],
+    i18n: {
+      en: {
+        name: 'Demo Mall',
+        summary: 'Connect Demo Mall to leave orders and delivery tracking to Dool2.',
+        abilities: [
+          { title: 'Track delivery', say: 'When does it arrive?' },
+          { title: 'Order', say: 'Order it' },
+        ],
+      },
+    },
+  })
+  it('replaces translated fields and keeps tiers', () => {
+    const en = localizeCard(base, 'en')
+    expect(en.name).toBe('Demo Mall')
+    expect(en.abilities.map((a) => [a.title, a.tier])).toEqual([
+      ['Track delivery', 'lookup'],
+      ['Order', 'pay'],
+    ])
+    expect(en.login).toBe('아이디·비밀번호')
+  })
+  it('returns Korean as is', () => {
+    expect(localizeCard(base, 'ko')).toBe(base)
+  })
+  it('rejects translations with a different number of abilities', () => {
+    const bad = { ...base, i18n: { en: { abilities: [{ title: 'Only one', say: 'one' }] } } }
+    expect(ConnectCardSchema.safeParse(bad).success).toBe(false)
   })
 })

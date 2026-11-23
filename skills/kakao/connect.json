@@ -23,5 +23,30 @@
       "say": "올리브영 로그인 풀렸으면 다시 해 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Kakao Account",
+      "login": "Kakao account",
+      "summary": "Connect your Kakao account once and Dool2 signs in to shops and booking sites you joined with Kakao in one click.",
+      "example": {
+        "ask": "Connect the places I joined with Kakao",
+        "working": "Signing in with Kakao",
+        "reply": "I connected Kurly, 11st and Olive Young with the Kakao account f***@gmail.com. I only needed the KakaoTalk check the first time."
+      },
+      "abilities": [
+        {
+          "title": "Sign in with Kakao",
+          "say": "Connect the places I joined with Kakao"
+        },
+        {
+          "title": "Sign in again",
+          "say": "Sign in to Olive Young again if it logged out"
+        }
+      ]
+    }
+  }
 }

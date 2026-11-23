@@ -42,5 +42,42 @@
       "say": "내일 롯데시네마 예매 환불 처리해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Lotte Cinema",
+      "login": "ID and password",
+      "summary": "Dool2 can find showtimes, book the seats you want, check tickets and cancel.",
+      "example": {
+        "ask": "2 tickets for a movie in Suwon Friday after work",
+        "working": "Checking showtimes",
+        "reply": "Lotte Cinema Suwon has a 7:50 PM show. Two center seats in row F, ₩28,000. Shall I book?"
+      },
+      "abilities": [
+        {
+          "title": "Pick seats and book",
+          "say": "Around 7 PM, two seats centered on the screen"
+        },
+        {
+          "title": "Showtimes",
+          "say": "Anything after 10 PM?"
+        },
+        {
+          "title": "Browse movies",
+          "say": "What's the top movie in advance sales?"
+        },
+        {
+          "title": "View tickets",
+          "say": "What screen and row is my movie today?"
+        },
+        {
+          "title": "Cancel booking",
+          "say": "Refund my Lotte Cinema booking for tomorrow"
+        }
+      ]
+    }
+  }
 }

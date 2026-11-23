@@ -37,5 +37,38 @@
       "say": "받은 바지 한 치수 큰 걸로 바꿔 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Zigzag",
+      "login": "ID and password",
+      "summary": "Dool2 orders clothes in your size, tracks delivery, sets sale alerts and handles exchanges and returns. Orders need your approval.",
+      "example": {
+        "ask": "Order the long skirt I saved in black, size S",
+        "working": "Checking sizes",
+        "reply": "The black long skirt in S is ₩29,800 with a coupon. It is express delivery, so you get it tomorrow. Shall I order it as is?"
+      },
+      "abilities": [
+        {
+          "title": "Order in my size",
+          "say": "Order this shirt in L"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me if the coat in my cart goes on sale"
+        },
+        {
+          "title": "Check delivery",
+          "say": "When does the knit I ordered yesterday come?"
+        },
+        {
+          "title": "Exchange or return",
+          "say": "Swap the pants for one size up"
+        }
+      ]
+    }
+  }
 }

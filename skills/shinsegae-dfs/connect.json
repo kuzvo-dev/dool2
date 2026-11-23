@@ -44,5 +44,42 @@
       "say": "면세 적립금 얼마 남았어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Shinsegae Duty Free",
+      "login": "ID and password",
+      "summary": "Before you fly, Dool2 searches duty-free items, orders for your departure date, checks pickup spots and tracks points and coupons.",
+      "example": {
+        "ask": "Any lipstick set I can pick up when I fly?",
+        "working": "Finding items",
+        "reply": "A 3-piece lipstick set is $38, or $34 with your coupon. Shall I order it for your departure day?"
+      },
+      "abilities": [
+        {
+          "title": "Search items",
+          "say": "Hand cream set under $30"
+        },
+        {
+          "title": "Order for your date",
+          "say": "I fly next Tuesday, order for pickup then"
+        },
+        {
+          "title": "Order history",
+          "say": "Where do I pick up my cosmetics at the airport?"
+        },
+        {
+          "title": "Gather coupons",
+          "say": "Show duty-free coupons I can use"
+        },
+        {
+          "title": "Check points",
+          "say": "How many points do I have left?"
+        }
+      ]
+    }
+  }
 }

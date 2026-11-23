@@ -38,5 +38,38 @@
   ],
   "signedIn": [
     "로그아웃"
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Korail",
+      "login": "Member number, email or phone number, and password",
+      "summary": "No sign-in needed to find open seats on KTX, ITX and Mugunghwa trains, including trains from Suseo (SRT line). If sold out, Dool2 watches for cancellations. Connect to book too.",
+      "example": {
+        "ask": "Any KTX seats from Seoul to Busan Friday evening?",
+        "working": "Checking train seats",
+        "reply": "KTX between 18:00 and 20:00 is almost sold out in standard class. Only the 19:44 KTX 181 (arrives 22:50) has a ₩48,600 seat left. Shall I tell you when others open up?"
+      },
+      "abilities": [
+        {
+          "title": "Find seats",
+          "say": "Any KTX seats from Seoul to Daejeon tomorrow morning?"
+        },
+        {
+          "title": "Watch for cancellations",
+          "say": "Friday evening KTX to Busan is sold out, tell me if one opens"
+        },
+        {
+          "title": "Suseo trains too (SRT line)",
+          "say": "Check seats from Suseo to Dongdaegu"
+        },
+        {
+          "title": "Book a ticket",
+          "say": "Book the first KTX Saturday morning, window seat"
+        }
+      ]
+    }
+  }
 }

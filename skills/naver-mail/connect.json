@@ -29,5 +29,34 @@
       "tier": "contact"
     }
   ],
-  "loginUrl": "https://nid.naver.com/nidlogin.login"
+  "loginUrl": "https://nid.naver.com/nidlogin.login",
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Naver Mail",
+      "login": "Naver ID",
+      "summary": "Dool2 finds messages and attachments in Naver Mail and drafts emails. Sending happens only after you approve.",
+      "example": {
+        "ask": "Find the quote email I got last week",
+        "working": "Searching mail",
+        "reply": "I found 2 quote emails with PDF attachments. The lower one came on Tuesday."
+      },
+      "abilities": [
+        {
+          "title": "Find mail",
+          "say": "Find last month's maintenance fee notice"
+        },
+        {
+          "title": "Draft an email",
+          "say": "Draft a reply with this"
+        },
+        {
+          "title": "Send an email",
+          "say": "Send the email I checked"
+        }
+      ]
+    }
+  }
 }

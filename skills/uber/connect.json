@@ -42,5 +42,42 @@
       "say": "출장 때 탄 영수증 회사 메일로 보내 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Uber",
+      "login": "ID and password",
+      "summary": "Dool2 can call a ride now, book a pickup, preview fares and gather past receipts. Rides are called only after you approve.",
+      "example": {
+        "ask": "How much is a ride from Gangnam Station home now?",
+        "working": "Checking the fare",
+        "reply": "About ₩23,000 for a standard taxi, arriving in 8 minutes. Shall I call it now?"
+      },
+      "abilities": [
+        {
+          "title": "Call a ride",
+          "say": "Call a car to my office"
+        },
+        {
+          "title": "Book ahead",
+          "say": "Book a ride to Seoul Station Saturday 7 AM"
+        },
+        {
+          "title": "Preview fare",
+          "say": "How much from here to Hongdae?"
+        },
+        {
+          "title": "Ride history",
+          "say": "What is my total rides this month?"
+        },
+        {
+          "title": "Expenses",
+          "say": "Email my business trip receipts to work"
+        }
+      ]
+    }
+  }
 }

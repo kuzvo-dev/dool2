@@ -36,5 +36,38 @@
       "say": "산 지 일주일 된 전기그릴 반품해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Costco Korea",
+      "login": "ID and password",
+      "summary": "Find products on the Costco online mall, order, track delivery and handle cancellations and returns. Orders go through only after you approve.",
+      "example": {
+        "ask": "Does Costco online have big bags of nuts?",
+        "working": "Searching the online mall",
+        "reply": "A 100-pack daily nuts set is ₩34,900 with shipping. Shall I add it to your cart?"
+      },
+      "abilities": [
+        {
+          "title": "Find products",
+          "say": "How much are bulk frozen blueberries?"
+        },
+        {
+          "title": "Order",
+          "say": "Order another pack of the tissue I bought last time"
+        },
+        {
+          "title": "Track orders",
+          "say": "Where is my mattress delivery?"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "Return the electric grill from last week"
+        }
+      ]
+    }
+  }
 }

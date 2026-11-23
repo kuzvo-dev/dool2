@@ -32,5 +32,38 @@
       "say": "다음 주 준비물 공지 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Kidsnote",
+      "login": "ID and password",
+      "summary": "Dool2 reads your teacher's notes, photos and notices for you and writes medication request forms. Anything sent to the school goes out only after you approve.",
+      "example": {
+        "ask": "What did the teacher write today?",
+        "working": "Reading the daily note",
+        "reply": "A note was posted at 4:10 PM. Snack was mostly eaten and a nap lasted 50 minutes. There are 7 outdoor play photos too."
+      },
+      "abilities": [
+        {
+          "title": "Daily notes",
+          "say": "Did they eat well today?"
+        },
+        {
+          "title": "Album photos",
+          "say": "Are yesterday's field trip photos up?"
+        },
+        {
+          "title": "Medication request",
+          "say": "Write a request for a fever reducer after lunch tomorrow"
+        },
+        {
+          "title": "Notices",
+          "say": "Is there a notice about what to bring next week?"
+        }
+      ]
+    }
+  }
 }

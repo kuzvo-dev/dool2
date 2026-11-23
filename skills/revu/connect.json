@@ -43,5 +43,42 @@
       "say": "리뷰 써야 하는 거 언제까지야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Revu",
+      "login": "ID and password",
+      "summary": "Dool2 finds local and category campaigns on Revu, applies, checks results and tracks review deadlines. Applying needs your approval.",
+      "example": {
+        "ask": "Any pet campaigns closing this week?",
+        "working": "Finding campaigns",
+        "reply": "5 pet campaigns close this week. One gives 2 kg of food, picks 10 of 64 applicants and closes tomorrow. Shall I draft the application?"
+      },
+      "abilities": [
+        {
+          "title": "Popular campaigns",
+          "say": "Which campaigns are hot now?"
+        },
+        {
+          "title": "Find campaigns",
+          "say": "Find a hair campaign near Gangnam Station"
+        },
+        {
+          "title": "Apply",
+          "say": "Write this application, show me before sending"
+        },
+        {
+          "title": "Results",
+          "say": "Any results for my campaigns?"
+        },
+        {
+          "title": "Review deadlines",
+          "say": "When are my reviews due?"
+        }
+      ]
+    }
+  }
 }

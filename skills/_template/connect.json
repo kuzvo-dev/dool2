@@ -35,5 +35,38 @@
   ],
   "signedIn": [
     "로그인한 사람에게만 보이는 말 (예: 로그아웃, 마이페이지 이름). 흔한 말이면 이 칸은 지워도 돼요"
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Service name in English (official brand spelling)",
+      "login": "ID and password",
+      "summary": "Sign in to X once and you can leave Y through Z to Dool2.",
+      "example": {
+        "ask": "What a user would type",
+        "working": "Checking orders",
+        "reply": "Dool2's answer with real numbers and names. For anything that costs money, end with \"Shall I order it?\""
+      },
+      "abilities": [
+        {
+          "title": "Search",
+          "say": "What a user would say"
+        },
+        {
+          "title": "Add to cart",
+          "say": "Put it in my cart"
+        },
+        {
+          "title": "Order",
+          "say": "Order the same detergent as last time"
+        },
+        {
+          "title": "Ask the seller",
+          "say": "Ask the seller when it ships"
+        }
+      ]
+    }
+  }
 }

@@ -37,5 +37,38 @@
       "say": "저번 장본 거 그대로 또 시켜 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Kurly",
+      "login": "ID and password",
+      "summary": "Leave grocery shopping to Dool2. Order at night with one sentence and get it at your door the next morning. It also tracks delivery and refills past orders.",
+      "example": {
+        "ask": "Order bread and soy milk for tomorrow morning",
+        "working": "Checking morning delivery",
+        "reply": "Whole wheat bread and a 24-pack of soy milk, ₩18,600. Order before 11 PM and it arrives before 7 AM. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Morning groceries",
+          "say": "Order milk and a bunch of bananas for early delivery"
+        },
+        {
+          "title": "Check delivery",
+          "say": "When does last night's order arrive?"
+        },
+        {
+          "title": "Find products",
+          "say": "Unsweetened yogurt for my kid's snack"
+        },
+        {
+          "title": "Reorder",
+          "say": "Order the same groceries as last time"
+        }
+      ]
+    }
+  }
 }

@@ -41,5 +41,42 @@
       "say": "이번 주에 끝나는 쿠폰 있어? 포인트는?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Ably",
+      "login": "Kakao or Apple sign-in",
+      "summary": "Connect Ably to find clothes, order in the right options, track delivery, get sale alerts on wishlisted items and check coupons and points.",
+      "example": {
+        "ask": "Order the beige corduroy wide pants in L",
+        "working": "Checking options",
+        "reply": "Beige L is in stock. With a coupon it is ₩27,400 and arrives Friday. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find clothes",
+          "say": "Show long puffer coats under ₩50,000"
+        },
+        {
+          "title": "Order with options",
+          "say": "One more of that sweatshirt in gray"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me when the wishlisted boots drop in price"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Where is the knit I bought last week?"
+        },
+        {
+          "title": "Coupons and points",
+          "say": "Any coupons expiring this week? My points?"
+        }
+      ]
+    }
+  }
 }

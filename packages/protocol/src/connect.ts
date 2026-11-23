@@ -146,9 +146,48 @@ export const ConnectCardSchema = z
      * Delete it once the connector exists
      */
     hints: z.array(z.string().trim().min(5).max(200)).min(1).max(3).optional(),
+    /**
+     * Where the service is for (ADR 0029): "KR", "JP", "TW", or "global" for services that work anywhere.
+     * Omitted = Korea. The connect screen lists the user's region and global services first
+     */
+    regions: z
+      .array(z.enum(['KR', 'JP', 'TW', 'global']))
+      .min(1)
+      .max(4)
+      .optional(),
+    /**
+     * Translations of the people-facing text (the card itself is written in Korean). Each field is optional; a missing
+     * field falls back to the card's own text. abilities are matched by position and keep their tier
+     */
+    i18n: z
+      .object({
+        en: z
+          .object({
+            name: line(32),
+            login: line(60),
+            summary: z.string().trim().min(10).max(200),
+            example: z
+              .object({ ask: line(80), working: line(40), reply: z.string().trim().min(5).max(200) })
+              .strict(),
+            abilities: z
+              .array(z.object({ title: line(32), say: line(70) }).strict())
+              .min(1)
+              .max(6),
+          })
+          .partial()
+          .strict(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
+    if (c.i18n?.en?.abilities && c.i18n.en.abilities.length !== c.abilities.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['i18n', 'en', 'abilities'],
+        message: `Translate every ability in the same order (${c.abilities.length})`,
+      })
     if (c.how !== 'device' && !c.site)
       ctx.addIssue({ code: 'custom', path: ['site'], message: 'A domain (site) is required' })
     if (c.how === 'browser' && !c.login)
@@ -196,6 +235,8 @@ export interface ConnectionItem {
    * Other services' connect cards show it on that provider button as "Kakao · f***@gmail.com", so you know which account it signs in with before pressing
    */
   account?: string
+  /** The service is for the user's region or works anywhere (ADR 0029). Others go under "Other regions" */
+  local?: boolean
 }
 
 /** The address of the service's first page (opened in Chrome when connecting) */
@@ -207,4 +248,4 @@ export function connectUrl(card: Pick<ConnectCard, 'site'>): string | undefined 
 }
 
 // socialOrder는 zod 없이 쓰게 connect-text.ts에 있다 (PC 앱 화면은 묶지 않고 그 파일을 옆에 두고 불러온다)
-export { socialOrder } from './connect-text.js'
+export { localizeCard, socialOrder } from './connect-text.js'

@@ -42,5 +42,42 @@
       "say": "출고 전이면 이 주문 없애 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "LOTTE ON",
+      "login": "ID and password",
+      "summary": "Dool2 can find department store products, order, track delivery and cancel.",
+      "example": {
+        "ask": "Where is the sneaker I bought on LOTTE ON?",
+        "working": "Tracking delivery",
+        "reply": "The sneakers left the warehouse this morning. You can get them tomorrow afternoon."
+      },
+      "abilities": [
+        {
+          "title": "Track delivery",
+          "say": "When will I get what I bought?"
+        },
+        {
+          "title": "Find products",
+          "say": "Men's winter coat under ₩150,000"
+        },
+        {
+          "title": "Order",
+          "say": "Buy this coat in size 95"
+        },
+        {
+          "title": "Check L.POINT",
+          "say": "Check my L.POINT balance for this payment"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "Cancel this order if it hasn't shipped"
+        }
+      ]
+    }
+  }
 }

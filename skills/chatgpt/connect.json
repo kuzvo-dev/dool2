@@ -33,5 +33,30 @@
     "Open profile menu",
     "플랜 업그레이드",
     "Upgrade plan"
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "ChatGPT",
+      "login": "Email, or Google or Apple account",
+      "summary": "Connect ChatGPT and Dool2 keeps making images after your free Gemini image quota runs out. Invitations, posters and cards never stall.",
+      "example": {
+        "ask": "Make a Christmas poster for my shop",
+        "working": "Drawing with an image AI",
+        "reply": "I made a poster of your snowy storefront. Your opening hours are on it too."
+      },
+      "abilities": [
+        {
+          "title": "Posters and flyers",
+          "say": "Make a sale poster for my shop"
+        },
+        {
+          "title": "Invitations and cards",
+          "say": "Make an anniversary card image"
+        }
+      ]
+    }
+  }
 }

@@ -2,12 +2,14 @@
 // The tools that actually work in a service are tools.json in the same folder (connectors, ADR 0018), run by connectors.ts.
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { type Lang, type Region, servesRegion } from '@dool2/i18n'
 import {
   CONNECT_CATEGORIES,
   type ConnectCard,
   ConnectCardSchema,
   type ConnectionItem,
   type ConnectionTool,
+  localizeCard,
 } from '@dool2/protocol/connect'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
@@ -25,6 +27,8 @@ export class Skills {
     private readonly via: () => Record<string, string> = () => ({}),
     /** Provider (kakao, naver, google) -> accounts confirmed as mine (setting socialAccounts) */
     private readonly accounts: () => Record<string, string[]> = () => ({}),
+    /** The user's language (card text people read) and region (which services come first), ADR 0029 */
+    private readonly locale: () => { lang: Lang; region?: Region } = () => ({ lang: 'ko', region: 'KR' }),
   ) {}
 
   /** Connection card (malformed cards are skipped; repo tests catch them beforehand) */
@@ -34,7 +38,7 @@ export class Skills {
     if (!raw) return undefined
     try {
       const r = ConnectCardSchema.safeParse(JSON.parse(raw))
-      return r.success && r.data.id === name ? r.data : undefined
+      return r.success && r.data.id === name ? localizeCard(r.data, this.locale().lang) : undefined
     } catch {
       return undefined
     }
@@ -48,6 +52,7 @@ export class Skills {
     const via = this.via()
     const accounts = this.accounts()
     const order = Object.keys(CONNECT_CATEGORIES)
+    const { region } = this.locale()
     const out: ConnectionItem[] = []
     for (const n of names) {
       const card = await this.card(n)
@@ -63,6 +68,7 @@ export class Skills {
         ...(at ? { connectedAt: at } : {}),
         ...(via[n] ? { via: via[n] } : {}),
         ...(accounts[n]?.length ? { account: maskAccount(accounts[n].at(-1) as string) } : {}),
+        local: servesRegion(card.regions, region),
       })
     }
     const sorted = out.sort((x, y) => order.indexOf(x.card.category) - order.indexOf(y.card.category))
