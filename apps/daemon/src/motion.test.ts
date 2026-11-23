@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MotionMaker, sceneMiddles } from './motion.js'
+import { fileRefs, MotionMaker, sceneMiddles } from './motion.js'
 import { motionDocument, motionLength, styleGuide } from './motion-kit.js'
 
 let dir: string | undefined
@@ -27,6 +27,23 @@ describe('모션 키트', () => {
     expect(doc).toContain('@keyframes k-pop')
     expect(motionDocument(HTML, 'landscape')).toContain('--w:1920px;--h:1080px')
   })
+
+  it('디자인 글꼴·카메라·빛 번짐·글자마다 떠오름·3D 카드·큰 글자 맞춤이 들어 있다', () => {
+    const doc = motionDocument(HTML, 'portrait')
+    expect(doc).toContain('fonts.googleapis.com')
+    for (const k of ['.cam{', '.fx-leak', '.fx-vig', '.chars .ch', '.card3d{', '.sheen::after', '__dool2Fit'])
+      expect(doc).toContain(k)
+  })
+
+  it('장면이 부르는 로컬 파일을 찾는다', () => {
+    const html = `<img class="bg" src="file:///Users/a/%EC%82%AC%EC%A7%84.png"><div style="background:url('file:///Users/a/b.jpg')"></div><img src="https://x.com/c.png"><img src="file:///Users/a/초대장 (2).png"><i style="background:url(file:///Users/a/d.png)"></i>`
+    expect(fileRefs(html)).toEqual([
+      '/Users/a/사진.png',
+      '/Users/a/b.jpg',
+      '/Users/a/초대장 (2).png',
+      '/Users/a/d.png',
+    ])
+  })
 })
 
 describe('스타일북', () => {
@@ -34,7 +51,9 @@ describe('스타일북', () => {
     expect(styleGuide()).toContain('reels')
     expect(styleGuide()).toContain('레퍼런스')
     const b = styleGuide('birthday')
-    expect(b).toContain('polaroid')
+    expect(b).toContain('card3d')
+    expect(b).toContain('품질 기본')
+    expect(b).toContain('image_make')
     expect(b).toContain('class="scene')
   })
 })
@@ -72,6 +91,29 @@ describe('모션 영상 만들기', () => {
     expect(asked[0]).toMatchObject({ width: 1080, duration: 5.5 })
     expect(made[0]?.name).toBe('생일 모션.mp4')
     expect(r.content.some((c) => c.type === 'image')).toBe(true)
+  })
+
+  it('장면 사진이 없거나 쓸 수 없는 곳이면 그리기 전에 알린다', async () => {
+    let drew = false
+    const maker = new MotionMaker({
+      binDir: tmpdir(),
+      render: async () => {
+        drew = true
+        return { frames: 10 }
+      },
+      readable: (p) => !p.includes('secret'),
+      resolveAll: async (l) => l,
+      saveDir: () => tmpdir(),
+      show: (p) => p,
+    })
+    const r = await maker.make({
+      html: '<section class="scene"><img class="bg" src="file:///tmp/없는사진-dool2.png"><img src="file:///Users/a/secret/x.png"></section>',
+    })
+    expect(r.isError).toBe(true)
+    const t = (r.content[0] as { text: string }).text
+    expect(t).toContain('없는사진-dool2.png(파일 없음)')
+    expect(t).toContain('x.png(두리가 쓸 수 없는 곳)')
+    expect(drew).toBe(false)
   })
 
   it('장면이 없거나 너무 길면 거절한다', async () => {

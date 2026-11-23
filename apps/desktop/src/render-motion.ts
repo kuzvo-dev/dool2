@@ -62,9 +62,9 @@ async function renderOnce(req: MotionRenderRequest): Promise<MotionRenderResult>
     wc.setFrameRate(60)
     w.setContentSize(req.width, req.height)
     await w.loadFile(req.path)
-    // 글꼴·그림이 다 그려질 때까지
+    // 글꼴(디자인 글꼴은 https)·그림이 다 그려지고 큰 글자 맞춤(__dool2Fit)이 끝날 때까지
     await wc.executeJavaScript(
-      'Promise.all([document.fonts ? document.fonts.ready : 0, ...Array.from(document.images, (i) => i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r })), ...Array.from(document.querySelectorAll("video"), (v) => v.readyState >= 2 ? 0 : new Promise((r) => { v.onloadeddata = v.onerror = r; setTimeout(r, 8000) }))]).then(() => new Promise((r) => setTimeout(r, 300)))',
+      'Promise.all([document.fonts ? document.fonts.ready : 0, window.__dool2Fit, ...Array.from(document.images, (i) => i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r })), ...Array.from(document.querySelectorAll("video"), (v) => v.readyState >= 2 ? 0 : new Promise((r) => { v.onloadeddata = v.onerror = r; setTimeout(r, 8000) }))]).then(() => new Promise((r) => setTimeout(r, 300)))',
       true,
     )
     await wc.executeJavaScript(

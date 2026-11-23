@@ -449,6 +449,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     binDir: join(paths.dataDir, 'bin'),
     ...(opts.renderMotion ? { render: opts.renderMotion } : {}),
     readable: (p) => fileTools.readable(p),
+    local: (p) => ensureLocal(p),
     resolveAll: async (list) => {
       const r = await fileTools.uploadable(list)
       return 'error' in r ? r : r.files.map((f) => f.path)

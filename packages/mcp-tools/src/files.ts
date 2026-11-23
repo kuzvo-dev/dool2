@@ -277,7 +277,10 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
         '먼저 계획한다: ⓪ video_style로 맞는 스타일 규칙·예시를 본다 ① 용도와 분위기를 정하고, 사용자가 레퍼런스(예: "요즘 릴스처럼", "브이로그 느낌", 링크)를 주거나 분위기가 애매하면 웹 검색으로 비슷한 영상 2~3개를 찾아 특징(색·글꼴 느낌·속도·전환·장식)을 3줄로 정리한다 ② 장면 5~10개 콘티(장면마다 글·사진·움직임·길이)를 짠다 ③ html을 쓴다. 쇼츠·홍보는 장면 1.2~2초로 빠르게·큰 글자, 감성·추억은 3~4초로 느리게. ' +
         '모션 키트 사용법: ' +
         '장면은 <section class="scene" data-dur="3" data-in="fade|zoom|slide|wipe|circle|flash">…</section>를 차례로. 장면 안 요소는 style="--at:.4s"로 나오는 때를 주고 움직임 이름표: pop·rise·drop·slam·zoom·left·right·spin·stamp·reveal·blur·type(style="--n:글자수")·polaroid(style="--r:-6deg")·words(낱말마다 차례로, 키네틱 타이포)·marker(형광펜). ' +
-        '계속 움직임: float·pulse·wiggle. 글자: huge·big·mid·small, 꾸밈: shadow·outline·pill·box, 자리: top·bottom. ' +
+        '계속 움직임: float·pulse·wiggle. 글자: huge·big·mid·small(넘치면 키트가 한 줄에 맞게 줄인다), 꾸밈: shadow·outline·pill·box·glass·glow·gold, 자리: top·bottom. ' +
+        '고급(기본으로 쓴다): 제목 h1·h2는 디자인 글꼴, 글꼴 이름표 f-title·f-round(귀여움)·f-hand(손글씨)·f-serif(명조)·f-soft(본문). chars(글자마다 입체로 떠오름), eyebrow(작은 머리말), rule(강조선). ' +
+        '배경을 <div class="cam">…</div>(장면 내내 카메라가 밀고 들어감, class="cam pull"은 빠짐)에 넣고, <img class="blurbg" src=…>(흐린 사진 배경), 장면 class="leak"(빛 번짐, --leak1·--leak2 색)·"vig"(가장자리 어둡게). ' +
+        '사진은 <div class="card3d sheen" style="width:58%;--ry:-25deg;--rz:-6deg"><img src=…></div>(3D로 기울어진 사진 카드, 반짝 훑는 빛). 장면마다 배경·가운데·글자·효과 세 겹 이상, 단색 배경에 글자만 있는 장면은 한 개까지. 사진이 없으면 image_make로 글자 없는 배경 그림을 먼저 만든다. ' +
         '사용자가 찍은 영상도 재료로: <video class="bg" src="file:///경로" data-from="12.5">(그 영상의 12.5초부터 장면 길이만큼, 소리는 빠진다 — 원래 소리가 꼭 필요하면 말해 준다). 영상을 고르고·자르고·자막·제목·음악을 얹는 "편집해 줘"도 이걸로 장면을 나눠 만든다. ' +
         '사진: <img class="bg kenburns|pan" src="file:///경로">(장면 배경, 장면에 class="dim"이면 글자가 잘 보임), <img class="photo zoom">, <div class="polaroid"><img src=…>글</div>, 여러 장은 <div class="collage">에 polaroid를 style="left:…;top:…;--r:…"로. ' +
         '배경: 장면 class="grad"(style="--c1:#…;--c2:#…;--c3:#…")·"paper"·"grain"·"letterbox" 또는 style="background:#…". ' +

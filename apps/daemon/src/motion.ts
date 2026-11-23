@@ -1,9 +1,10 @@
 // 모션그래픽 영상 (video_motion): 두리가 장면 HTML(모션 키트 이름표)을 쓰면 PC 앱이 한 장씩 찍고(renderMotion)
 // 영상 부품(ffmpeg)이 mp4로 묶는다. 사진을 잇기만 하는 video_make보다 움직임이 풍부하다(키네틱 타이포·색종이·콜라주·전환).
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { MOTION_SHAPES, type MotionShape, motionDocument, motionLength } from './motion-kit.js'
 import { findFfmpeg, hasFilters, installFfmpeg, runFfmpeg } from './video-make.js'
 
@@ -30,6 +31,8 @@ export interface MotionDeps {
   render?: MotionRenderer
   /** 사용자 폴더 안·민감하지 않은 파일인지 (장면에 넣는 사진) */
   readable: (p: string) => boolean
+  /** iCloud에만 있는 사진을 내려받는다 (못 하면 이유) — files.ensureLocal */
+  local?: (p: string) => Promise<string | undefined>
   /** 배경음악 확인 */
   resolveAll: (paths: string[]) => Promise<string[] | { error: string }>
   saveDir: () => string | undefined
@@ -48,6 +51,24 @@ type Result = {
 const fail = (text: string): Result => ({ isError: true, content: [{ type: 'text', text }] })
 const FPS = 30
 const MAX_SECONDS = 90
+
+/** html이 부르는 로컬 파일 (file:///…) */
+export function fileRefs(html: string): string[] {
+  const out = new Set<string>()
+  // 따옴표 안(src="…", url('…'))은 끝 따옴표까지 — 이름에 괄호가 있어도("초대장 (2).png") 자르지 않는다
+  const found = [
+    ...[...html.matchAll(/(["'])(file:\/\/\/[^"'<>]+?)\1/g)].map((m) => m[2] as string),
+    ...[...html.matchAll(/url\(\s*(file:\/\/\/[^"'\s<>]+?)\s*\)/g)].map((m) => m[1] as string),
+  ]
+  for (const ref of found) {
+    try {
+      out.add(fileURLToPath(ref))
+    } catch {
+      /* 잘못된 주소는 그리는 창이 막는다 */
+    }
+  }
+  return [...out]
+}
 
 /** 장면마다 가운데 시각 (초) — 두리가 장면을 하나씩 확인하는 모음 그림 */
 export function sceneMiddles(html: string): number[] {
@@ -92,6 +113,21 @@ export class MotionMaker {
       music = m[0]
     }
     if (this.busy) return fail('다른 영상을 만드는 중이에요. 끝난 뒤에 다시 불러 주세요.')
+    // 장면 사진·영상: 못 쓰는 곳이거나 없으면 빈 장면이 된다 → 미리 알린다. iCloud에만 있으면 내려받는다
+    // (11-23 실측: iCloud에만 있던 사진이 3D 카드에서 흰 테두리만 남았다)
+    const missing: string[] = []
+    for (const f of fileRefs(html).slice(0, 60)) {
+      const why = !this.d.readable(f)
+        ? '두리가 쓸 수 없는 곳'
+        : !existsSync(f)
+          ? '파일 없음'
+          : await this.d.local?.(f).catch((e: Error) => e.message)
+      if (why) missing.push(why.includes(basename(f)) ? why : `${basename(f)}(${why})`)
+    }
+    if (missing.length)
+      return fail(
+        `장면에 넣은 파일을 불러올 수 없어요: ${missing.join(', ')}. file_find로 찾은 경로나 image_make로 만든 그림 경로로 바꿔 다시 불러 주세요.`,
+      )
     this.busy = true
     const work = await mkdtemp(join(tmpdir(), 'dool2-motion-'))
     try {
@@ -125,6 +161,7 @@ export class MotionMaker {
         for (let i = 2; existsSync(out) && i < 100; i++) out = join(dir, `${stem} (${i}).mp4`)
       const run = this.d.run ?? runFfmpeg
       const len = r.frames / FPS
+      const encoded = join(work, 'out.mp4')
       await run(
         bin,
         [
@@ -163,10 +200,13 @@ export class MotionMaker {
           'yuv420p',
           '-movflags',
           '+faststart',
-          out,
+          encoded,
         ],
         10 * 60_000,
       )
+      // 임시 폴더에서 만든 뒤 바꿔 넣는다 — 예전 판이 iCloud에만 남아 있으면(EDEADLK) 그 자리에 바로 쓰지 못한다(11-23 실측)
+      await rm(out, { force: true }).catch(() => undefined)
+      await rename(encoded, out).catch(() => copyFile(encoded, out))
       // 장면마다 한 컷 모음 (앞 6장면) + 첫 장면 미리보기
       const pick = (sec: number) =>
         join(
