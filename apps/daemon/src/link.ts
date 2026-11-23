@@ -394,7 +394,9 @@ export class PhoneLink {
       case 'hello':
         this.host.caps?.(
           phone.id,
-          (Array.isArray(msg.caps) ? (msg.caps as unknown[]) : []).filter((c): c is string => typeof c === 'string').slice(0, 20),
+          (Array.isArray(msg.caps) ? (msg.caps as unknown[]) : [])
+            .filter((c): c is string => typeof c === 'string')
+            .slice(0, 20),
         )
         return this.send(phone, await this.stateFor(phone))
       case 'sms-result':

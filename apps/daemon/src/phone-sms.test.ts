@@ -16,7 +16,7 @@ describe('문자 보내기 (내 폰 번호로)', () => {
     const { approvals, sms } = setup()
     const r = sms.request({ to: '엄마', text: '10분 늦어요' })
     expect(r.isError).toBeFalsy()
-    expect(text(r)).toContain('답은 여기서 끝내세요')
+    expect(text(r)).toContain('end this answer')
     const rec = approvals.list().find((a) => a.url === 'sms:엄마')
     expect(rec).toMatchObject({ kind: 'contact', label: '엄마', what: '10분 늦어요', status: 'pending' })
     // 폰은 보낸 뒤 결과를 승인 서명보다 먼저 보낸다
@@ -56,9 +56,11 @@ describe('문자 보내기 (내 폰 번호로)', () => {
 
   it('폰이 없거나 예전 앱이면 카드를 만들지 않고 보낼 글을 붙여 두게 한다', () => {
     expect(text(setup({ paired: 0, sms: 0, old: 0 }).sms.request({ to: '엄마', text: 'a' }))).toContain(
-      '연결돼 있지 않아요',
+      'no phone app is paired',
     )
-    expect(text(setup({ paired: 1, sms: 0, old: 1 }).sms.request({ to: '엄마', text: 'a' }))).toContain('예전 판')
+    expect(text(setup({ paired: 1, sms: 0, old: 1 }).sms.request({ to: '엄마', text: 'a' }))).toContain(
+      'older version',
+    )
     // 폰 둘 중 하나만 예전 앱이면 막지 않는다
     expect(setup({ paired: 2, sms: 0, old: 1 }).sms.request({ to: '엄마', text: 'a' }).isError).toBeFalsy()
     // 아직 인사한 폰이 없으면(앱을 안 열었으면) 일단 카드를 띄운다

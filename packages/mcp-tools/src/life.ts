@@ -602,7 +602,9 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         to: z
           .string()
           .max(40)
-          .describe('받는 사람: 연락처 이름(엄마, 김민수, 김 팀장님) 또는 전화번호(010-1234-5678). 여러 명이면 한 명씩 부른다'),
+          .describe(
+            '받는 사람: 연락처 이름(엄마, 김민수, 김 팀장님) 또는 전화번호(010-1234-5678). 여러 명이면 한 명씩 부른다',
+          ),
         text: z.string().max(1000).describe('보낼 글 그대로 (사용자가 말하지 않은 사실은 넣지 않는다)'),
       },
     },

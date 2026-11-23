@@ -185,7 +185,8 @@ describe('앱 로그인 (금고 계정)', () => {
         { id: 'v1', origin: 'https://accounts.kakao.com', username: 'me@example.com' },
         { id: 'v2', origin: 'https://nid.naver.com', username: 'naver' },
       ],
-      vaultReveal: async (id) => (id === 'v1' ? { username: 'me@example.com', password: 'S3cret!' } : undefined),
+      vaultReveal: async (id) =>
+        id === 'v1' ? { username: 'me@example.com', password: 'S3cret!' } : undefined,
     })
     const r = await tools.run('login', { bundleId: KAKAO })
     expect(r.isError).toBeFalsy()

@@ -64,7 +64,23 @@ export interface ScreenSettings {
 }
 
 /** 주소에서 이름 부분 (accounts.kakao.com → kakao). 흔한 앞뒤 말은 뺀다 */
-const HOST_NOISE = new Set(['www', 'accounts', 'account', 'login', 'nid', 'auth', 'id', 'm', 'com', 'co', 'kr', 'net', 'org', 'io', 'app'])
+const HOST_NOISE = new Set([
+  'www',
+  'accounts',
+  'account',
+  'login',
+  'nid',
+  'auth',
+  'id',
+  'm',
+  'com',
+  'co',
+  'kr',
+  'net',
+  'org',
+  'io',
+  'app',
+])
 export function hostWords(origin: string): string[] {
   let host = ''
   try {
@@ -82,9 +98,16 @@ export function hostWords(origin: string): string[] {
  * 이 앱에 넣어도 되는 금고 계정: 사이트 이름(kakao)이 앱 번들 id(com.kakao.KakaoTalkMac)에 들어 있을 때만.
  * AI가 다른 사이트 비밀번호를 엉뚱한 앱에 넣지 못하게 본체가 정한다
  */
-export function vaultForApp<T extends { origin: string }>(bundleId: string, entries: T[], site?: string): T[] {
+export function vaultForApp<T extends { origin: string }>(
+  bundleId: string,
+  entries: T[],
+  site?: string,
+): T[] {
   const id = bundleId.toLowerCase()
-  const want = site?.toLowerCase().replace(/^https?:\/\//, '').trim()
+  const want = site
+    ?.toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .trim()
   return entries.filter((e) => {
     const words = hostWords(e.origin)
     if (!words.some((w) => id.includes(w))) return false
@@ -154,7 +177,9 @@ export class ScreenTools {
       | undefined
     if (!f?.role) return true
     if (f.subrole === 'AXSearchField') return false
-    return ['AXTextArea', 'AXTextField', 'AXComboBox', 'AXWebArea', 'AXGroup', 'AXScrollArea'].includes(f.role)
+    return ['AXTextArea', 'AXTextField', 'AXComboBox', 'AXWebArea', 'AXGroup', 'AXScrollArea'].includes(
+      f.role,
+    )
   }
 
   private async status(): Promise<Status> {
@@ -266,7 +291,9 @@ export class ScreenTools {
           const el = this.screens.get(id)?.get(ref)
           if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
           if (el.role === '비밀번호칸')
-            return err('비밀번호 칸에는 screen_type으로 넣지 않아요. 로그인 화면이면 screen_login으로 금고 계정을 넣어요.')
+            return err(
+              '비밀번호 칸에는 screen_type으로 넣지 않아요. 로그인 화면이면 screen_login으로 금고 계정을 넣어요.',
+            )
         }
         await this.hands.call('type', { bundleId: id, text: a.text, ...(ref ? { ref } : {}) })
         return text(`글자를 넣었어요. 아직 보내지는 않았어요. 확인하려면 screen_read로 다시 읽으세요.`)
@@ -276,7 +303,8 @@ export class ScreenTools {
         if (typeof id !== 'string') return id
         const r = await this.ready()
         if (r) return r
-        if (!this.settings.vaultList || !this.settings.vaultReveal) return err('이 PC에서는 금고를 쓸 수 없어요.')
+        if (!this.settings.vaultList || !this.settings.vaultReveal)
+          return err('이 PC에서는 금고를 쓸 수 없어요.')
         const all = await this.settings.vaultList()
         const fit = vaultForApp(id, all, typeof a.site === 'string' ? a.site : undefined)
         const name = this.names.get(id) ?? id
@@ -290,8 +318,13 @@ export class ScreenTools {
           )
         const entry = fit[0] as (typeof fit)[number]
         const cred = await this.settings.vaultReveal(entry.id)
-        if (!cred?.password) return err('금고에서 비밀번호를 꺼내지 못했어요. 로그인 카드로 다시 받아 주세요.')
-        await this.hands.call('fill_login', { bundleId: id, username: cred.username, password: cred.password }, 30_000)
+        if (!cred?.password)
+          return err('금고에서 비밀번호를 꺼내지 못했어요. 로그인 카드로 다시 받아 주세요.')
+        await this.hands.call(
+          'fill_login',
+          { bundleId: id, username: cred.username, password: cred.password },
+          30_000,
+        )
         await sleep(300)
         return this.read(
           id,

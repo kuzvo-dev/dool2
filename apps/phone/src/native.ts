@@ -201,10 +201,14 @@ export async function smsFind(query: string): Promise<{ people: SmsPerson[]; den
   }
 }
 
-export async function smsSend(to: string, text: string): Promise<{ ok: boolean; message?: string }> {
+/** 실패하면 reason(denied·no-service·timeout…)과 자세한 말(message)이 온다. 사용자에게 보일 말은 화면이 만든다 */
+export async function smsSend(
+  to: string,
+  text: string,
+): Promise<{ ok: boolean; reason?: string; message?: string }> {
   try {
     return await Sms.send({ to, text })
   } catch (e) {
-    return { ok: false, message: `보내지 못했어요: ${(e as Error).message}` }
+    return { ok: false, reason: 'error', message: (e as Error).message }
   }
 }

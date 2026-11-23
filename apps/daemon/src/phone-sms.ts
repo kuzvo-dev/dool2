@@ -1,17 +1,21 @@
-// 문자 보내기 (내 폰 번호로). AI는 받는 사람(이름이나 번호)과 글만 정한다.
-// 사용자가 폰의 승인 카드에서 받는 사람·글을 보고 승인하면 폰 앱이 직접 보낸다 (다른 앱으로 넘기지 않는다).
-// 이름이면 폰이 자기 연락처에서 번호를 찾는다: 번호는 PC·AI로 오지 않는다.
-// 폰은 보낸 결과(sms-result)를 승인 서명(decide)보다 먼저 보낸다. PC는 서명이 맞을 때만 그 결과를 끝으로 적는다.
+// Sending a text (SMS) from the user's own number. The AI only picks the recipient (a contact name or a number) and
+// the text. The user checks both on the phone's approval card and approves; the phone app then sends it itself (no
+// other app opens). A contact name is looked up in the phone's own contacts, so the number never reaches the PC or
+// the AI. The phone reports the result (sms-result) before its signed approval (decide), and the PC records the
+// result only once the signature checks out.
 import type { Approvals } from './approvals.js'
 import type { ToolResult } from './browser-tools.js'
+import { PHONE_SMS_TEXT } from './locales/phone-sms.js'
 
-/** 문자 승인의 탭 자리 (화면 제어 -1, PC 파일 -2) */
+/** Tab slot for text approvals (screen control uses -1, PC files -2) */
 export const PHONE_TAB = -3
 
+const T = PHONE_SMS_TEXT.ko
+
 export interface PhoneSupport {
-  /** 짝지은 폰 수 */
+  /** Paired phones */
   paired: number
-  /** 켜진 뒤 인사한 폰 중 문자 보내기가 되는 폰 수 / 안 되는 폰 수 (예전 앱). 아직 아무도 인사 안 했으면 둘 다 0 */
+  /** Phones that said hello since start and can send texts / cannot (older app). Both 0 if none said hello yet */
   sms: number
   old: number
 }
@@ -33,45 +37,48 @@ export class PhoneSms {
     private readonly waitMs = 15_000,
   ) {}
 
-  /** phone_sms: 승인 카드를 만든다 (보내기는 폰이) */
+  /** phone_sms: creates the approval card (the phone does the sending) */
   request(args: Record<string, unknown>): ToolResult {
     const to = String(args.to ?? '')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 40)
     const body = String(args.text ?? '').trim()
-    if (!to) return err('to가 필요해요: 받는 사람의 연락처 이름(예: 엄마, 김민수 팀장님) 또는 전화번호.')
-    if (!body) return err('text가 필요해요: 보낼 글 그대로.')
-    if (body.length > 1000) return err('문자는 1000자까지만 보낼 수 있어요. 줄여서 다시 불러 주세요.')
+    if (!to)
+      return err(
+        '`to` is required: the contact name as the user said it (e.g. mom, a name) or a phone number.',
+      )
+    if (!body) return err('`text` is required: the exact message to send.')
+    if (body.length > 1000) return err('A text can be at most 1000 characters. Shorten it and call again.')
     const s = this.support()
     if (!s.paired)
       return err(
-        '문자는 사용자 폰의 두리 앱이 보내요. 아직 폰 앱이 연결돼 있지 않아요. 보낼 글은 show_draft(via: sms)로 붙여 두고, 폰 앱을 연결하면 바로 보낼 수 있다고 한 문장으로 알려 주세요.',
+        "Texts are sent by the user's phone app, and no phone app is paired yet. Attach the message with show_draft (via: sms) and tell the user in one sentence that pairing the phone app lets Dool2 send it.",
       )
-    // 모든 폰이 예전 앱일 때만 막는다 (새 앱 폰이 하나라도 있거나, 아직 인사하지 않은 폰이 있으면 카드를 띄운다)
+    // Block only when every phone is an older app (a newer phone, or one that has not said hello yet, gets the card)
     if (!s.sms && s.old >= s.paired)
       return err(
-        '연결된 폰 앱이 예전 판이라 문자를 보낼 수 없어요. 보낼 글은 show_draft(via: sms)로 붙여 두고, 폰 앱을 새 판으로 업데이트하면 보낼 수 있다고 한 문장으로 알려 주세요.',
+        'The paired phone app is an older version that cannot send texts. Attach the message with show_draft (via: sms) and tell the user in one sentence that updating the phone app lets Dool2 send it.',
       )
     const rec = this.approvals.create({
       tabId: PHONE_TAB,
       ref: 'sms',
-      role: '문자',
+      role: T.role,
       label: to,
       url: `sms:${to}`,
       kind: 'contact',
-      reason: '다른 사람에게 문자를 보내요',
+      reason: T.reason,
       what: body,
-      where: '내 폰 문자',
-      cancel: '보낸 문자는 되돌릴 수 없어요',
+      where: T.where,
+      cancel: T.cancel,
     })
     return text(
-      `문자 승인 카드를 폰에 띄웠어요(${rec.id.slice(0, 8)}). 받는 사람 번호는 폰이 연락처에서 찾아 카드에 보여 주고, 여러 명이면 사용자가 골라요. ` +
-        '사용자에게 "폰에서 받는 사람과 글을 확인하고 승인해 주세요"라고 한 문장으로 말하고 이번 답은 여기서 끝내세요. 승인하면 폰이 바로 보내고 결과가 이어서 와요.',
+      `The text approval card is on the phone (${rec.id.slice(0, 8)}). The phone finds the number in its contacts and shows it on the card; if several people match, the user picks one. ` +
+        'Tell the user in one sentence to check the recipient and the text on the phone and approve, then end this answer. Once approved, the phone sends it and the result follows.',
     )
   }
 
-  /** 폰이 보낸 결과. 아직 승인 서명이 오기 전이라 적어 두기만 한다 */
+  /** Result from the phone. The signed approval has not arrived yet, so only keep it */
   result(id: string, r: { ok: boolean; message: string }) {
     const rec = this.approvals.get(id)
     if (!rec || !isSmsApproval(rec.url) || rec.status !== 'pending') return
@@ -80,18 +87,13 @@ export class PhoneSms {
   }
 
   /**
-   * 승인 처리. fromPhone: 폰 서명이 확인된 승인 (그 폰이 이미 보냈거나 보내는 중).
-   * PC 화면의 승인으로는 보내지 않는다: 보내는 건 폰이고, 받는 사람 번호도 폰만 안다
+   * Handles an approval. fromPhone: the phone's signature was verified (that phone has sent, or is sending).
+   * Approvals from the PC screen do not send: the phone sends, and only the phone knows the number
    */
   async approve(id: string, fromPhone: boolean): Promise<{ ok: boolean; message: string }> {
     const rec = this.approvals.get(id)
-    if (!rec || rec.status !== 'pending')
-      return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
-    if (!fromPhone)
-      return {
-        ok: false,
-        message: '문자는 폰에서 승인해야 보낼 수 있어요. 폰의 승인 카드에서 받는 사람을 확인하고 승인해 주세요.',
-      }
+    if (!rec || rec.status !== 'pending') return { ok: false, message: T.gone }
+    if (!fromPhone) return { ok: false, message: T.phoneOnly }
     const r =
       this.results.get(id) ??
       (await new Promise<{ ok: boolean; message: string } | undefined>((done) => {
@@ -104,10 +106,7 @@ export class PhoneSms {
       }))
     this.waiters.delete(id)
     this.results.delete(id)
-    const out = r ?? {
-      ok: false,
-      message: '폰에서 승인은 받았지만 보낸 결과가 오지 않았어요. 폰 앱을 새 판으로 업데이트했는지 확인해 주세요.',
-    }
+    const out = r ?? { ok: false, message: T.noResult }
     this.approvals.take(id)
     this.approvals.finish(id, out.ok, out.message)
     return out

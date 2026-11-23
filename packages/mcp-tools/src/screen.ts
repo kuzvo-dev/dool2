@@ -76,7 +76,11 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
       '금고에 계정이 없으면 그 사이트 주소로 로그인 카드를 띄워 폰에서 받는다. 비밀번호 칸에 screen_type을 쓰지 않는다.',
     {
       bundleId,
-      site: z.string().max(80).optional().describe('계정이 여러 개일 때 고를 사이트 주소 (예: accounts.kakao.com)'),
+      site: z
+        .string()
+        .max(80)
+        .optional()
+        .describe('계정이 여러 개일 때 고를 사이트 주소 (예: accounts.kakao.com)'),
     },
     false,
   )

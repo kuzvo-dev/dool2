@@ -28,16 +28,18 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 문자 보내기 (내 번호로). 사용자가 두리 승인 카드에서 승인한 문자만 보낸다 (main.ts smsCard).
- * - find: 연락처에서 이름으로 번호를 찾는다. 번호는 폰 밖(PC·AI)으로 보내지 않는다
- * - send: SmsManager로 바로 보낸다 (다른 앱을 열지 않는다). 긴 글은 나눠 보내고 모두 나갔는지 확인한다
+ * Sends a text from the user's own number. Only texts the user approved on a Dool2 approval card (main.ts smsCard).
+ * - find: looks up numbers by name in the contacts. Numbers never leave the phone (not to the PC or the AI)
+ * - send: sends right away with SmsManager (no other app opens). Long texts are split and every part is confirmed
+ * Failures come back as a reason code (denied, bad, no-phone, no-service, radio-off, carrier, timeout, error);
+ * the screen turns the code into words.
  */
 @CapacitorPlugin(name = "Sms")
 public class SmsPlugin extends Plugin {
     private static final String SENT = "com.dool2.app.SMS_SENT";
     private static final long TIMEOUT_MS = 30_000;
 
-    /** 이 폰이 문자를 보낼 수 있는지 (유심·전화 기능이 없는 태블릿은 false) */
+    /** Whether this device can send texts (false on tablets without telephony) */
     @PluginMethod
     public void available(PluginCall call) {
         JSObject r = new JSObject();
@@ -49,7 +51,10 @@ public class SmsPlugin extends Plugin {
         return ContextCompat.checkSelfPermission(getContext(), perm) == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** 연락처·문자 권한이 있는지 (묻는 창의 결과는 콜백 대신 이걸 다시 불러 확인한다: 창이 떠 있는 동안 앱이 얼려져 콜백이 사라졌다) */
+    /**
+     * Whether contacts and SMS permissions are granted. The screen polls this after ask() instead of using a
+     * permission callback: the app was frozen while the system dialog was up and the callback was lost (11-23)
+     */
     @PluginMethod
     public void permissions(PluginCall call) {
         JSObject r = new JSObject();
@@ -58,7 +63,7 @@ public class SmsPlugin extends Plugin {
         call.resolve(r);
     }
 
-    /** 연락처·문자 권한을 한 번에 묻는다 (기다리지 않고 바로 돌아온다) */
+    /** Asks for contacts and SMS permissions together (returns right away) */
     @PluginMethod
     public void ask(PluginCall call) {
         ActivityCompat.requestPermissions(
@@ -82,7 +87,7 @@ public class SmsPlugin extends Plugin {
     }
 
     private void doFind(PluginCall call) {
-        String query = call.getString("query", "").trim().replaceAll("님$", "").trim();
+        String query = call.getString("query", "").trim();
         JSObject r = new JSObject();
         JSArray people = new JSArray();
         if (query.isEmpty()) {
@@ -90,7 +95,7 @@ public class SmsPlugin extends Plugin {
             call.resolve(r);
             return;
         }
-        // 이름 전체로 먼저, 없으면 띄어 쓴 낱말을 모두 담은 이름 ("김 팀장" → "김민수 팀장")
+        // The whole name first, then names that contain every word (a spaced query matches a longer name)
         String[] words = query.split("\\s+");
         Map<String, JSObject> found = new LinkedHashMap<>();
         collect(query, null, found);
@@ -150,7 +155,7 @@ public class SmsPlugin extends Plugin {
     @PluginMethod
     public void send(PluginCall call) {
         if (!granted(Manifest.permission.SEND_SMS)) {
-            fail(call, "denied", "문자 보내기 권한이 없어 보내지 않았어요. 권한을 허용한 뒤 다시 눌러 주세요");
+            fail(call, "denied", "SMS permission is not granted");
             return;
         }
         doSend(call);
@@ -160,11 +165,11 @@ public class SmsPlugin extends Plugin {
         String to = call.getString("to", "").replaceAll("[^0-9+]", "");
         String text = call.getString("text", "");
         if (to.length() < 3 || text.isEmpty()) {
-            fail(call, "bad", "받는 번호나 글이 비어 있어요");
+            fail(call, "bad", "number or text is empty");
             return;
         }
         if (!getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY_MESSAGING)) {
-            fail(call, "no-phone", "이 기기는 문자를 보낼 수 없어요 (전화 기능이 없어요)");
+            fail(call, "no-phone", "this device has no telephony");
             return;
         }
         Context ctx = getContext();
@@ -182,7 +187,7 @@ public class SmsPlugin extends Plugin {
             @Override
             public void onReceive(Context c, Intent intent) {
                 int code = getResultCode();
-                if (code != Activity.RESULT_OK && error[0] == null) error[0] = reason(code);
+                if (code != Activity.RESULT_OK && error[0] == null) error[0] = reason(code) + ":" + code;
                 left[0]--;
                 if (left[0] <= 0) finish(this);
             }
@@ -198,7 +203,10 @@ public class SmsPlugin extends Plugin {
                     r.put("ok", true);
                     r.put("parts", total);
                     call.resolve(r);
-                } else fail(call, "send", error[0]);
+                } else {
+                    String[] parts = error[0].split(":", 2);
+                    fail(call, parts[0], "result code " + parts[1]);
+                }
             }
         };
         ContextCompat.registerReceiver(ctx, receiver, new IntentFilter(action), ContextCompat.RECEIVER_NOT_EXPORTED);
@@ -215,10 +223,10 @@ public class SmsPlugin extends Plugin {
             try {
                 ctx.unregisterReceiver(receiver);
             } catch (Exception ignored) {}
-            fail(call, "send", "보내지 못했어요: " + e.getMessage());
+            fail(call, "error", String.valueOf(e.getMessage()));
             return;
         }
-        // 통신사 응답이 오래 없으면 (보냈을 수도 있다) 그대로 알린다
+        // No answer from the carrier for a while (it may still have gone out): say so
         main.postDelayed(
             () -> {
                 if (done[0]) return;
@@ -226,7 +234,7 @@ public class SmsPlugin extends Plugin {
                 try {
                     ctx.unregisterReceiver(receiver);
                 } catch (Exception ignored) {}
-                fail(call, "timeout", "보냈는지 30초 안에 확인하지 못했어요. 폰 문자 앱의 보낸 문자를 봐 주세요");
+                fail(call, "timeout", "no send confirmation within 30 seconds");
             },
             TIMEOUT_MS
         );
@@ -235,13 +243,11 @@ public class SmsPlugin extends Plugin {
     private static String reason(int code) {
         switch (code) {
             case SmsManager.RESULT_ERROR_NO_SERVICE:
-                return "신호가 없어 못 보냈어요";
+                return "no-service";
             case SmsManager.RESULT_ERROR_RADIO_OFF:
-                return "비행기 모드라 못 보냈어요";
-            case SmsManager.RESULT_ERROR_NULL_PDU:
-                return "글을 만들지 못해 못 보냈어요";
+                return "radio-off";
             default:
-                return "통신사가 받지 않아 못 보냈어요 (코드 " + code + ")";
+                return "carrier";
         }
     }
 

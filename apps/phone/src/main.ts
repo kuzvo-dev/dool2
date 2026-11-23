@@ -3187,7 +3187,8 @@ function smsState(a: ApprovalView): SmsState {
   const mine = s
   // 카드가 처음 뜰 때 연락처·문자 권한을 한 번에 묻고, 그다음 찾는다
   void smsPermissions()
-    .then(() => smsFind(to))
+    // 호칭 "님"은 빼고 찾는다 (김 팀장님 → 김 팀장)
+    .then(() => smsFind(to.replace(/님$/, '').trim()))
     .then((r) => {
       mine.people = r.people
       mine.state = r.denied ? 'denied' : r.people.length ? 'found' : 'none'
@@ -3201,6 +3202,28 @@ function smsTarget(s: SmsState): { name: string; number: string } | undefined {
   if (s.manual.replace(/[^0-9]/g, '').length >= 8) return { name: '', number: s.manual }
   const p = s.state === 'found' ? s.people[s.pick] : undefined
   return p ? { name: p.name, number: p.number } : undefined
+}
+
+/** 문자 플러그인의 실패 코드 → 사용자에게 보일 말 */
+function smsWhy(reason?: string, detail?: string): string {
+  switch (reason) {
+    case 'denied':
+      return '문자 보내기 권한이 없어요. 권한을 허용한 뒤 다시 눌러 주세요'
+    case 'bad':
+      return '받는 번호나 글이 비어 있어요'
+    case 'no-phone':
+      return '이 기기는 문자를 보낼 수 없어요 (전화 기능이 없어요)'
+    case 'no-service':
+      return '신호가 없어요'
+    case 'radio-off':
+      return '비행기 모드예요'
+    case 'carrier':
+      return `통신사가 받지 않았어요 (${detail ?? ''})`
+    case 'timeout':
+      return '보냈는지 30초 안에 확인하지 못했어요. 폰 문자 앱의 보낸 문자를 봐 주세요'
+    default:
+      return detail ? `보내지 못했어요 (${detail})` : '까닭을 모르겠어요'
+  }
 }
 
 async function sendSms(a: ApprovalView) {
@@ -3226,7 +3249,7 @@ async function sendSms(a: ApprovalView) {
   const who = t.name ? `${t.name}(${maskNumber(t.number)})` : maskNumber(t.number)
   const message = r.ok
     ? `${who}에게 문자를 보냈어요`
-    : `${who}에게 못 보냈어요: ${r.message ?? '까닭을 모르겠어요'}`
+    : `${who}에게 못 보냈어요: ${smsWhy(r.reason, r.message)}`
   // 결과를 먼저, 그다음 승인 서명 (PC는 서명이 맞을 때만 이 결과를 끝으로 적는다)
   await send({ kind: 'sms-result', id: a.id, ok: r.ok, message })
   await decide(a, 'approve', true)

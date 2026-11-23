@@ -103,11 +103,11 @@ import { PhoneLink } from './link.js'
 import { MotionMaker, type MotionRenderer } from './motion.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
+import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import type { HtmlRenderer } from './render.js'
 import { buildReport, sendReport } from './report.js'
 import { ScreenTools } from './screen-tools.js'
-import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
@@ -1703,7 +1703,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
         // 문자는 폰이 이미 보냈다 (결과가 바로 이어서 온다): 누르겠다는 말을 하지 않는다
-        if (decision === 'approve' && approvalThread.get(id) && !isSmsApproval(browserTools.approvals.get(id)?.url))
+        if (
+          decision === 'approve' &&
+          approvalThread.get(id) &&
+          !isSmsApproval(browserTools.approvals.get(id)?.url)
+        )
           sayNow(`승인 받았어요. 이제 "${label}"을(를) 누를게요.`)
         const r =
           decision === 'reject'
