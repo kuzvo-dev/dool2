@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "두리 Chrome 확장: 판단 없는 얇은 손 (chrome.debugger + native messaging)",
+  "description": "Dool2 Chrome extension: a thin hand with no judgment (chrome.debugger + native messaging)",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",

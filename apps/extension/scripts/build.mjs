@@ -1,4 +1,4 @@
-// 두리 확장 빌드 → dist/ (이 폴더를 Chrome에 올리거나 웹 스토어용으로 압축한다)
+// Build the Dool2 extension -> dist/ (load this folder in Chrome or zip it for the web store)
 import { createHash } from 'node:crypto'
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -10,8 +10,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-// 빌드 지문: 소스·버전이 바뀌면 달라진다. 확장이 돌고 있는 코드의 지문과 디스크에 깔린 build.json을 견줘
-// 다르면 스스로 다시 켠다 (버전 번호가 같으면 Chrome이 새로 깐 파일을 읽지 않고 예전 코드를 계속 돌린다 — 11-22 탭 72개 쌓임)
+// Build fingerprint: it changes when the source or version changes. Compare the fingerprint of the running extension code with the build.json installed on disk,
+// and if they differ, restart itself (with the same version number Chrome does not read newly installed files and keeps running old code - 11-22: 72 tabs piled up)
 const hash = createHash('sha256').update(pkg.version)
 const walk = (d) => {
   for (const f of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -32,14 +32,14 @@ await build({
   bundle: true,
   format: 'esm',
   target: 'chrome121',
-  // 스토어 심사와 사용자가 읽을 수 있게 줄이지 않는다
+  // Not minified, so the store review and users can read it
   minify: false,
   legalComments: 'none',
   logLevel: 'warning',
   define: { __DOOL2_BUILD__: JSON.stringify(buildId) },
 })
 cpSync(join(root, 'static'), dist, { recursive: true })
-// 디자인 시스템과 Pretendard 글꼴 (작은 창도 PC 앱과 같은 글꼴로)
+// Design system and the Pretendard font (so the small window uses the same font as the desktop app)
 copyUi(dist, { fonts: true })
 const manifest = JSON.parse(readFileSync(join(dist, 'manifest.json'), 'utf8'))
 manifest.version = pkg.version

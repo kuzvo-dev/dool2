@@ -1,11 +1,13 @@
-// 두리 확장 서비스 워커. 판단 없는 얇은 손이다 (ADR 0006, docs/architecture.md 5.1).
-// - 두리 본체가 시킨 일만 한다. 무엇이 위험한지, 해도 되는지는 본체(승인 게이트)가 정한다
-// - 두리가 연 탭만 다룬다. 사용자가 연 탭은 건드리지 않는다
-// - 클릭·입력은 chrome.debugger(CDP Input)로 실제 입력과 같게 넣는다
+// Dool2 extension service worker. A thin hand with no judgment (ADR 0006, docs/architecture.md 5.1).
+// - It only does what the Dool2 daemon asks. What is risky and what may be done is decided by the daemon (approval gate)
+// - It only touches tabs Dool2 opened. Tabs the user opened are left alone
+// - Clicks and typing go through chrome.debugger (CDP Input), the same as real input
 import type { BridgeRequest, BrowserCommand } from '@dool2/protocol'
 import { type FrameNode, layoutFrames, screenOrder } from './frames.js'
 import { staleBuild } from './fresh.js'
 import { keyDef, pickPath, safeUrl } from './keys.js'
+import { lang } from './lang.js'
+import { ui } from './locales/ui.js'
 import {
   type ExtractSpec,
   type LocateMode,
@@ -60,16 +62,19 @@ import {
   type ReadScope,
   type SnapshotResult,
 } from './page.js'
+import { FRAME_HEADING } from './region/kr/snapshot.js'
 import { CLOSE_AFTER_MS, tidyPlan } from './tidy.js'
 
-/** @dool2/protocol의 BROWSER_HOST_NAME과 같아야 한다 (테스트로 확인) */
+const txt = ui(lang)
+
+/** Must equal BROWSER_HOST_NAME in @dool2/protocol (checked by a test) */
 export const HOST_NAME = 'com.dool2.host'
 const VERSION = chrome.runtime.getManifest().version
-/** 빌드 지문 (scripts/build.mjs가 넣는다. 테스트·개발에서는 'dev') */
+/** Build fingerprint (injected by scripts/build.mjs; 'dev' in tests and development) */
 declare const __DOOL2_BUILD__: string | undefined
 const BUILD = typeof __DOOL2_BUILD__ === 'string' ? __DOOL2_BUILD__ : 'dev'
 
-/** 디스크에 새 코드가 깔렸으면 스스로 다시 켠다 (fresh.ts) */
+/** Restart itself when new code has been installed on disk (fresh.ts) */
 async function reloadIfStale() {
   const onDisk = await fetch(chrome.runtime.getURL('build.json'), { cache: 'no-store' })
     .then((r) => (r.ok ? (r.json() as Promise<{ build?: string }>) : {}))
@@ -85,7 +90,7 @@ type Status = { state: 'connecting' | 'on' | 'off'; detail?: string }
 let port: chrome.runtime.Port | undefined
 let status: Status = { state: 'off' }
 
-// ── 본체와 연결 ──────────────────────────────────────────────
+// ── Connection to the daemon ─────────────────────────────────
 
 function setStatus(next: Status) {
   status = next
@@ -110,7 +115,7 @@ function connect() {
     if (port === p) port = undefined
     setStatus({
       state: 'off',
-      detail: why?.includes('not found') ? '두리 앱이 설치돼 있지 않아요' : '두리 앱이 꺼져 있어요',
+      detail: why?.includes('not found') ? txt.appNotInstalled : txt.appOff,
     })
   })
   p.postMessage({ event: 'hello', version: VERSION, build: BUILD, browser: browserName() })
@@ -130,7 +135,7 @@ function onMessage(p: chrome.runtime.Port, msg: unknown) {
   if ((msg as { event?: string }).event === 'daemon-offline') {
     p.disconnect()
     if (port === p) port = undefined
-    setStatus({ state: 'off', detail: '두리 앱이 꺼져 있어요' })
+    setStatus({ state: 'off', detail: txt.appOff })
     return
   }
   const req = msg as BridgeRequest
@@ -144,7 +149,7 @@ function onMessage(p: chrome.runtime.Port, msg: unknown) {
   )
 }
 
-// 서비스 워커는 쉬면 꺼진다. 연결이 살아 있으면 Chrome이 깨워 두고, 끊기면 30초마다 다시 붙는다
+// The service worker stops when idle. While the connection is alive Chrome keeps it awake; if it drops we reconnect every 30 seconds
 chrome.alarms.create('dool2-reconnect', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name !== 'dool2-reconnect') return
@@ -154,43 +159,43 @@ chrome.alarms.onAlarm.addListener((a) => {
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
 connect()
-// 서비스 워커가 새로 떴는데 두리 탭 목록이 비어 있으면(확장 다시 켜기·Chrome 다시 켜기) 그룹에서 되찾는다
+// When the service worker restarts with an empty Dool2 tab list (extension reload, Chrome restart), recover the tabs from the group
 void load().then((s) => (s.owned.length ? undefined : reclaim()))
 
-// 팝업: 연결 상태 보기, 다시 연결
+// Popup: show connection status, reconnect
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (sender.id !== chrome.runtime.id) return
   if (msg?.type === 'retry') connect()
   reply({ ...status, connected: Boolean(port) && status.state !== 'off' })
 })
 
-// ── 두리 탭 ──────────────────────────────────────────────────
+// ── Dool2 tabs ───────────────────────────────────────────────
 
-const GROUP_TITLE = '두리'
+const GROUP_TITLE = txt.groupTitle
 
 interface Saved {
   windowId?: number
   owned: number[]
   groupId?: number
-  /** 탭마다 두리가 마지막으로 쓴 때 (서비스 워커가 쉬었다 깨도 남게) */
+  /** When Dool2 last used each tab (kept even if the service worker sleeps and wakes) */
   used?: Record<string, number>
-  /** 사람·승인을 기다리는 탭 → 이때까지 정리하지 않는다 (hold) */
+  /** Tabs waiting for a person or an approval: not tidied until this time (hold) */
   held?: Record<string, number>
-  /** 최근에 닫힌 두리 탭 (다시 부르면 "사용자가 연 탭"이 아니라 "닫혔어요"로 알린다) */
+  /** Recently closed Dool2 tabs (when called again, report "closed" instead of "a tab the user opened") */
   closed?: number[]
-  /** 두리 탭마다 언제·어느 탭이 열었는지 (새 창·결제 창 목록, 정리에서 빼기). 최근 50개 */
+  /** Which tab opened which Dool2 tab and when (new windows, payment windows; excluded from tidying). Last 50 */
   recs?: TabRec[]
-  /** 정리(tidy)가 닫은 탭: 다음 읽기·탭 목록에서 알린다 */
+  /** Tabs closed by tidying: reported on the next read or tab list */
   tidied?: Tidied[]
 }
 interface TabRec {
   tabId: number
-  /** 이 탭을 연 두리 탭 (두리가 직접 연 탭은 없음) */
+  /** The Dool2 tab that opened this tab (Dool2 itself opens no such tabs) */
   opener?: number
   at: number
   url?: string
   title?: string
-  /** popup 명령으로 이미 알린 새 창 */
+  /** New windows already reported by the popup command */
   seen?: boolean
   closedAt?: number
 }
@@ -202,7 +207,7 @@ interface Tidied {
   why: string
   told?: boolean
 }
-/** 기록 하나 더하기 (같은 탭이면 고친다) */
+/** Add one record (updates it if the tab is already there) */
 function putRec(s: Saved, r: TabRec) {
   const list = (s.recs ?? []).filter((x) => x.tabId !== r.tabId)
   list.push(r)
@@ -214,11 +219,11 @@ async function load(): Promise<Saved> {
 }
 
 /**
- * 두리 탭 목록 되찾기. 목록은 session 저장소라 확장을 다시 켜거나(자동 업데이트 포함) Chrome을 다시 켜면 비워진다.
- * 그러면 열려 있던 두리 탭이 주인 없는 탭이 되어 정리(tidy)에서 빠지고, 새 "두리" 그룹이 또 생겨 탭이 쌓였다
- * (실측: 하루 시험 뒤 두리 탭 20여 개·Chrome 10GB, 8GB 맥이 멈춤).
- * 탭 번호는 Chrome을 다시 켜면 새로 매겨져 옛 번호를 믿으면 사용자 탭과 겹칠 수 있다. 그래서 번호 대신
- * "두리" 그룹(두리 탭은 열 때 늘 이 그룹에 넣는다)에 든 탭을 두리 탭으로 거둬들이고, 그룹이 여럿이면 하나로 합친다.
+ * Recover the Dool2 tab list. The list lives in session storage, so reloading the extension (including auto-update) or restarting Chrome empties it.
+ * Then open Dool2 tabs become ownerless and escape tidying, and a new Dool2 group is created, so tabs piled up
+ * (measured: after a day of testing, 20+ Dool2 tabs and 10GB of Chrome, which froze an 8GB Mac).
+ * Tab ids are renumbered when Chrome restarts, so trusting old ids could collide with user tabs. Instead of ids,
+ * we adopt the tabs in the Dool2 group (Dool2 tabs are always opened into that group) and merge several groups into one.
  */
 async function reclaim() {
   const groups = await chrome.tabGroups.query({ title: GROUP_TITLE }).catch(() => [])
@@ -227,7 +232,7 @@ async function reclaim() {
   const ids = tabs.map((t) => t.id).filter((id): id is number => id !== undefined)
   const [main, ...rest] = groups
   if (!main) return
-  // 여러 "두리" 그룹은 첫 그룹으로 합친다 (같은 창의 것만. 다른 창 그룹은 그대로 두고 탭만 거둔다)
+  // Several Dool2 groups are merged into the first one (same window only; groups in other windows stay and only their tabs are adopted)
   for (const g of rest) {
     if (g.windowId !== main.windowId) continue
     const inG = tabs.filter((t) => t.groupId === g.id && t.id !== undefined).map((t) => t.id as number)
@@ -246,7 +251,7 @@ async function reclaim() {
 async function save(s: Saved) {
   await chrome.storage.session.set({ dool2: s })
 }
-/** 두리 탭 목록 바꾸기는 한 번에 하나씩: 탭 두 개가 동시에 열리면 서로의 저장을 덮어써 "두리가 연 탭이 아니에요"가 났다 */
+/** Changes to the Dool2 tab list run one at a time: when two tabs opened at once they overwrote each other's save and "not a Dool2 tab" errors came up */
 let stateQueue: Promise<unknown> = Promise.resolve()
 function update(fn: (s: Saved) => void | Promise<void>): Promise<Saved> {
   const run = stateQueue.then(async () => {
@@ -262,34 +267,35 @@ function update(fn: (s: Saved) => void | Promise<void>): Promise<Saved> {
 async function ownedTab(args: Record<string, unknown>, watching = true): Promise<number> {
   const tabId = Number(args.tabId)
   const s = await load()
-  if (!Number.isInteger(tabId)) throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+  if (!Number.isInteger(tabId))
+    throw new Error('Not a tab Dool2 opened. Tabs the user opened are not touched')
   if (!s.owned.includes(tabId)) {
-    // 두리 탭이 방금 연 새 탭(로그인 창 등)은 넘겨받기(adopt)가 저장되기 전에 바로 불릴 수 있다:
-    // 연 탭이 두리 탭이면 여기서 넘겨받는다 (실측: 29CM·유니클로·서울예약·에어비앤비 구글·캐치테이블 네이버에서
-    // "두리가 연 탭이 아니에요"로 멈췄다)
+    // A new tab just opened by a Dool2 tab (a login window, etc.) can be used before adopt has been saved:
+    // if the opener is a Dool2 tab, adopt it here (measured: it stopped with "not a tab Dool2 opened" on
+    // 29CM, Uniqlo, Seoul reservations, Airbnb Google login, and Catch Table Naver login)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
-    // 닫힌 두리 탭은 목록에서 빠져 "사용자가 연 탭"처럼 보였다: 닫혔다고 알린다 (AI·폰이 까닭을 바로 말하게)
-    if (!t && s.closed?.includes(tabId)) throw new Error('탭이 닫혔어요')
+    // A closed Dool2 tab drops out of the list and looked like "a tab the user opened": say it was closed (so the AI and phone can explain right away)
+    if (!t && s.closed?.includes(tabId)) throw new Error('The tab was closed')
     if (t?.openerTabId !== undefined && s.owned.includes(t.openerTabId)) await adopt(t.openerTabId, tabId)
-    else throw new Error('두리가 연 탭이 아니에요. 사용자가 연 탭은 다루지 않아요')
+    else throw new Error('Not a tab Dool2 opened. Tabs the user opened are not touched')
   }
   let tab: chrome.tabs.Tab
   try {
     tab = await chrome.tabs.get(tabId)
   } catch {
-    throw new Error('탭이 닫혔어요')
+    throw new Error('The tab was closed')
   }
-  // 오래 안 써서 잠재운 탭이면 다시 불러온다
+  // If the tab was put to sleep for being idle, load it again
   if (tab.discarded) {
     await chrome.tabs.reload(tabId)
     await waitLoad(tabId)
   }
-  // 다루는 동안 뜨는 사이트 알림창을 받는다 (사람에게 넘길 때·닫을 때는 붙이지 않는다)
+  // Catch site dialogs that open while handling the tab (not when handing off to a person or closing)
   if (watching) await watch(tabId)
   return tabId
 }
 
-/** 두리 탭은 "두리" 창 하나에 모으고 초록 탭 그룹으로 묶는다 */
+/** Dool2 tabs are gathered in one Dool2 window and grouped in a green tab group */
 async function openTab(url: string): Promise<chrome.tabs.Tab> {
   const s = await load()
   let tab: chrome.tabs.Tab | undefined
@@ -306,7 +312,7 @@ async function openTab(url: string): Promise<chrome.tabs.Tab> {
     s.windowId = w?.id
     tab = w?.tabs?.[0]
   }
-  if (tab?.id === undefined) throw new Error('탭을 열지 못했어요')
+  if (tab?.id === undefined) throw new Error('Could not open the tab')
   const id = tab.id
   await update((x) => {
     x.owned = [...new Set([...x.owned, id])]
@@ -314,23 +320,23 @@ async function openTab(url: string): Promise<chrome.tabs.Tab> {
     putRec(x, { tabId: id, at: Date.now() })
   })
   touch(id)
-  // 두리 탭은 소리 없이 (쇼핑몰 영상 등). 사용자가 듣고 싶으면 탭에서 켜면 된다
+  // Dool2 tabs are silent (shop videos, etc.). The user can turn sound on from the tab
   void chrome.tabs.update(id, { muted: true }).catch(() => undefined)
   await groupTab(id)
   void tidy(id)
   return tab
 }
 
-// ── 다 쓴 두리 탭 정리 (메모리) ─────────────────────────────
-// AI가 일 끝에 탭 닫기를 잊으면 탭이 쌓여 Chrome이 몇 GB씩 먹는다.
-// 오래 안 쓴 탭은 잠재우고(discard), 더 오래되거나 너무 많으면 닫는다 (tidy.ts)
+// ── Tidying finished Dool2 tabs (memory) ─────────────────────
+// If the AI forgets to close tabs at the end of a task they pile up and Chrome eats several GB.
+// Idle tabs are put to sleep (discard); older ones, or any beyond the limit, are closed (tidy.ts)
 
 const usedAt = new Map<number, number>()
 let usedSavedAt = 0
 function touch(tabId: number) {
   usedAt.set(tabId, Date.now())
   tracked.add(tabId)
-  // 저장은 가끔만 (명령마다 저장하면 느려진다)
+  // Save only now and then (saving on every command would be slow)
   if (Date.now() - usedSavedAt < 30_000) return
   usedSavedAt = Date.now()
   void update((s) => {
@@ -353,11 +359,11 @@ async function tidy(fresh?: number) {
       const t = await chrome.tabs.get(id).catch(() => undefined)
       if (!t) continue
       info.set(id, t)
-      // 서비스 워커가 다시 깨어나 기록이 없으면 지금 쓴 것으로 본다 (깨자마자 몽땅 닫지 않게)
+      // If the service worker woke up with no record, treat the tab as just used (so a wake-up does not close everything)
       const at = usedAt.get(id) ?? s.used?.[id] ?? now
       usedAt.set(id, at)
-      // 가족 탭은 닫지도 재우지도 않는다: 연 탭이 살아 있는 탭(결제 창을 띄운 주문서), 살아 있는 탭이 30분 안에 연 탭(결제 창).
-      // 주문서를 닫거나 재우면 결제 창이 결과를 돌려줄 곳이 없어 결제가 끊긴다 (실측 11-20 G마켓)
+      // Family tabs are neither closed nor put to sleep: a tab whose opener is alive (an order page that opened a payment window), and a tab opened within 30 minutes by a live tab (the payment window).
+      // Closing or sleeping the order page leaves the payment window nowhere to return its result, and payment breaks (measured 11-20 Gmarket)
       const rec = s.recs?.find((r) => r.tabId === id)
       const family =
         (s.recs ?? []).some((r) => r.opener === id && live.has(r.tabId)) ||
@@ -381,12 +387,12 @@ async function tidy(fresh?: number) {
         url: t?.url ?? '',
         title: t?.title ?? '',
         at: now,
-        why: old ? '45분 넘게 안 써서' : '두리 탭이 많아서(3개까지 둬요)',
+        why: old ? 'unused for over 45 minutes' : 'too many Dool2 tabs (up to 3 are kept)',
       })
       await detach(id)
       await chrome.tabs.remove(id).catch(() => undefined)
     }
-    // 닫은 것은 남겨 두고 다음 읽기·탭 목록에서 알린다 (말없이 닫으면 AI는 탭이 왜 사라졌는지 모른다)
+    // Keep what was closed and report it on the next read or tab list (closing silently leaves the AI unaware why a tab vanished)
     if (gone.length)
       await update((x) => {
         x.tidied = [...(x.tidied ?? []), ...gone].slice(-20)
@@ -418,14 +424,14 @@ async function groupTab(tabId: number) {
       x.groupId = gid
     })
   } catch {
-    // 그룹은 보기 좋으라고 하는 것. 실패해도 일은 계속한다
+    // Grouping is cosmetic. If it fails, the work goes on
   }
 }
 
-// 두리 탭에서 새 탭이 열리면(새 창 링크) 그것도 두리 탭으로 본다.
-// 연 탭마다 목록으로 남긴다: 예전에는 마지막 새 창 하나만 기억해서, 다른 탭이 새 창을 열거나 누르기가 시작되면
-// 늦게 뜬 결제 창을 잊었다
-/** 탭마다 마지막으로 새 탭을 연 때 (누른 뒤 기다리기를 일찍 끝내게) */
+// A new tab opened from a Dool2 tab (a new-window link) is also treated as a Dool2 tab.
+// Each opened tab is kept in a list: it used to remember only the last new window, so when another tab opened a window or a click started,
+// a late payment window was forgotten
+/** When each tab last opened a new tab (so waiting after a click can end early) */
 const lastOpened = new Map<number, number>()
 async function adopt(opener: number, tabId: number) {
   let took = false
@@ -442,7 +448,7 @@ async function adopt(opener: number, tabId: number) {
   void chrome.tabs.update(tabId, { muted: true }).catch(() => undefined)
   await groupTab(tabId)
 }
-// 미리 그려 둔 페이지로 바뀌면(prerender) 탭 번호가 바뀐다: 두리 탭이면 새 번호도 두리 탭
+// If the page is replaced by a prerendered one the tab id changes: if it was a Dool2 tab, the new id is one too
 chrome.tabs.onReplaced.addListener((added, removed) => {
   void update((s) => {
     if (s.owned.includes(removed)) s.owned = [...s.owned.filter((t) => t !== removed), added]
@@ -488,17 +494,17 @@ async function waitLoad(tabId: number, timeoutMs = 20_000) {
   const until = Date.now() + timeoutMs
   while (Date.now() < until) {
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
-    if (!t) throw new Error('탭이 닫혔어요')
+    if (!t) throw new Error('The tab was closed')
     if (t.status === 'complete') return t
-    // 여는 중에 확인 창이 뜨면 고를 때까지 다 열리지 않는다: 기다리지 않고 알린다
+    // If a confirm dialog appears while opening, the load cannot finish until it is answered: report instead of waiting
     if (dialogs.has(tabId)) return t
     await sleep(200)
   }
   return chrome.tabs.get(tabId)
 }
 
-/** 입력 뒤 화면이 바뀌기를 잠깐(최대 1.2초) 기다린다. 이동이 시작됐으면 끝날 때까지 (액자 안 이동도) */
-/** quick: 키패드 숫자처럼 화면이 거의 안 바뀌는 누르기 (0.3초만 본다. 이동이 시작되면 그대로 끝까지 기다린다) */
+/** Wait briefly (up to 1.2s) for the page to change after input. If a navigation started, wait until it ends (including navigation inside frames) */
+/** quick: a click that barely changes the page, like a keypad digit (watch only 0.3s. If a navigation starts, still wait until it ends) */
 async function settle(tabId: number, before?: string, quick = false) {
   const since = Date.now()
   await settleTop(tabId, before, quick ? 3 : 12)
@@ -508,12 +514,12 @@ async function settleTop(tabId: number, before?: string, rounds = 12) {
   const since = Date.now()
   for (let i = 0; i < rounds; i++) {
     await sleep(100)
-    // 확인 창이 뜨면 화면은 더 바뀌지 않는다 (고를 때까지 멈춰 있다)
+    // With a confirm dialog open the page cannot change further (it is frozen until answered)
     if (dialogs.has(tabId)) return
-    // 누른 결과로 새 탭이 열렸으면 이 탭은 더 바뀌지 않는다: 기다리지 않는다
-    // (새 탭이 앞으로 오면 이 탭은 뒤로 가서 그리기가 느려져, 1.2초를 다 채우던 것 — CI에서 4초)
+    // If the click opened a new tab, this tab changes no more: do not wait
+    // (when the new tab comes to the front this tab goes behind and paints slowly, which used up the full 1.2s - 4s in CI)
     if ((lastOpened.get(tabId) ?? 0) >= since) return
-    // 가려진 창에서도 누른 뒤의 화면 바뀜·애니메이션이 이어지게. 한 장 그리기가 40ms쯤 들어서(실측) 4번에 1번만
+    // Keep page changes and animations going after a click even in an occluded window. One paint takes about 40ms (measured), so only every 4th time
     if (i % 4 === 3 && attached.has(tabId)) await paint(tabId)
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!t) return
@@ -526,11 +532,11 @@ async function settleTop(tabId: number, before?: string, rounds = 12) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// ── 액자마다 불러오는 중인지 (webNavigation) ──
-// 탭 상태·맨 위 주소만 보면 액자 안 이동(결제 단계·주소 찾기 결과)이 끝났는지 몰라, 반쯤 그려진 액자를 읽었다
-/** 두리가 다루는 탭 (사용자 탭의 이동은 남기지 않는다) */
+// ── Whether each frame is loading (webNavigation) ──
+// Looking only at the tab state and top URL cannot tell whether navigation inside a frame (payment step, address search result) has finished, so half-drawn frames were read
+/** Tabs Dool2 handles (navigation of user tabs is not recorded) */
 const tracked = new Set<number>()
-/** 탭마다 마지막 주소·제목 (닫힌 뒤에도 탭 목록에서 무엇이었는지 알리게) */
+/** Last URL and title per tab (so the tab list can say what it was even after it closed) */
 const lastSeen = new Map<number, { url?: string; title?: string }>()
 chrome.tabs.onUpdated.addListener((id, _change, t) => {
   if (tracked.has(id)) lastSeen.set(id, { url: t.url, title: t.title })
@@ -552,12 +558,12 @@ chrome.webNavigation.onCommitted.addListener((d) => noteNav(d, 'commit'))
 chrome.webNavigation.onCompleted.addListener((d) => noteNav(d, 'done'))
 chrome.webNavigation.onErrorOccurred.addListener((d) => noteNav(d, 'error'))
 
-/** 탭마다 마지막 읽기에서 글·누를 것이 있어 실은 액자 (광고 액자가 늘 새로 고쳐져도 누르기마다 기다리지 않게) */
+/** Frames that had text or clickable items in the last read of each tab (so ad frames that keep reloading do not make every click wait) */
 const listedFrames = new Map<number, Set<number>>()
 
 /**
- * since 뒤에 이동을 시작한 액자가 아직 불러오는 중이면 끝날 때까지 (많아야 maxMs).
- * 지난 읽기에 실은 액자와 새로 생긴 액자(눌러서 뜬 창)만 본다
+ * If a frame that started navigating after `since` is still loading, wait until it finishes (at most maxMs).
+ * Only frames included in the last read and newly created frames (windows opened by a click) are watched
  */
 async function framesSettle(tabId: number, since: number, maxMs = 2_500) {
   const until = Date.now() + maxMs
@@ -573,17 +579,17 @@ async function framesSettle(tabId: number, since: number, maxMs = 2_500) {
   }
 }
 
-// ── chrome.debugger: 실제 입력·화면 캡처 ─────────────────────
+// ── chrome.debugger: real input and screen capture ───────────
 
 const attached = new Map<number, ReturnType<typeof setTimeout>>()
 const stoppedByUser = new Set<number>()
 
-/** 원격 화면으로 폰 크기를 흉내 내는 탭 (디버거가 떨어지면 Chrome이 원래 크기로 되돌린다) */
+/** Tabs whose size is mimicked to a phone for the remote screen (Chrome restores the original size when the debugger detaches) */
 const emulated = new Map<number, string>()
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return
-  // 떼면 Chrome이 폰 너비 그리기도 푼다
+  // Once detached, Chrome also releases the phone-width rendering
   phoneView.delete(source.tabId)
   phoneSize.delete(source.tabId)
   listening.delete(source.tabId)
@@ -591,30 +597,30 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   clearTimeout(attached.get(source.tabId))
   attached.delete(source.tabId)
   emulated.delete(source.tabId)
-  // 떼면 알림창은 Chrome이 다시 직접 띄운다 (두리가 고를 수 없다)
+  // Once detached, Chrome shows dialogs by itself again (Dool2 can no longer answer them)
   dialogs.delete(source.tabId)
-  // 사용자가 "취소"를 눌렀다면 그 탭은 더 이상 다루지 않는다
+  // If the user pressed "Cancel", that tab is no longer handled
   if (reason === 'canceled_by_user') stoppedByUser.add(source.tabId)
 })
 
-/** 확인 창이 떠 있어도 할 수 있는 명령 (나머지는 페이지가 멈춰 있어 답이 오지 않는다) */
+/** Commands that work even while a confirm dialog is open (the rest get no answer because the page is frozen) */
 const DIALOG_SAFE = /^(?:Page\.(?:enable|handleJavaScriptDialog)|Network\.|Emulation\.clear)/
 
 async function cdp<T = unknown>(tabId: number, method: string, params?: Record<string, unknown>): Promise<T> {
-  if (stoppedByUser.has(tabId)) throw new Error('사용자가 이 탭의 두리 제어를 멈췄어요')
+  if (stoppedByUser.has(tabId)) throw new Error('The user stopped Dool2 from controlling this tab')
   if (!attached.has(tabId)) {
     await chrome.debugger.attach({ tabId }, '1.3')
     attached.set(
       tabId,
       setTimeout(() => {}, 0),
     )
-    // 붙이자마자 사이트 알림창을 받는다. 이걸 안 하면 디버거가 붙은 탭에서 뜬 알림창이 아무도 닫지 못한 채
-    // 페이지를 영원히 멈춰 세운다 (실측: 클릭 뒤 읽기가 계속 시간 초과). 알림창이 이미 떠 있으면 답이 안 오니 오래 기다리지 않는다
+    // Catch site dialogs right after attaching. Without it a dialog opened in a debugger-attached tab stays unclosed
+    // and freezes the page forever (measured: reads kept timing out after a click). If a dialog is already open there is no answer, so do not wait long
     await Promise.race([chrome.debugger.sendCommand({ tabId }, 'Page.enable').catch(() => {}), sleep(2000)])
   }
   const open = dialogs.get(tabId)
   if (open && !DIALOG_SAFE.test(method)) throw new Error(dialogBlocked(open))
-  // 한동안 안 쓰면 뗀다 (브라우저 위 "제어 중" 막대가 계속 떠 있지 않게)
+  // Detach after a while of no use (so the "controlled" bar above the browser does not stay forever)
   clearTimeout(attached.get(tabId))
   attached.set(
     tabId,
@@ -624,7 +630,7 @@ async function cdp<T = unknown>(tabId: number, method: string, params?: Record<s
 }
 
 function idleDetach(tabId: number) {
-  // 확인 창이 떠 있는 동안 떼면 아무도 닫을 수 없어 페이지가 멈춘 채 남는다: 붙여 둔다
+  // While a confirm dialog is open, detaching leaves nobody able to close it and the page frozen: stay attached
   if (dialogs.has(tabId)) {
     attached.set(
       tabId,
@@ -636,26 +642,26 @@ function idleDetach(tabId: number) {
   chrome.debugger.detach({ tabId }).catch(() => {})
 }
 
-// ── 사이트 알림창 (alert·confirm·prompt·떠나기 확인) ──
-// 알림(alert)은 [확인] 하나뿐이라 바로 닫고 글만 남긴다 ("아이디 또는 비밀번호가 틀렸어요" 같은 말을 AI가 봐야 한다).
-// 떠나기 확인은 두리가 그 페이지를 떠나려 할 때만 뜨니 떠난다.
-// 확인(confirm)·입력(prompt)은 고르는 일이라 손이 정하지 않는다: 떠 있는 채로 두고 본체가 고르게 한다 (dialog 명령)
+// ── Site dialogs (alert, confirm, prompt, leave-page confirmation) ──
+// alert has only [OK], so close it at once and keep only the text (the AI must see things like "Wrong ID or password").
+// A leave-page confirmation only appears when Dool2 tries to leave that page, so leave.
+// confirm and prompt are choices, so the hand does not decide: leave them open and let the daemon choose (dialog command)
 
 interface SiteDialog {
   type: 'alert' | 'confirm' | 'prompt' | 'beforeunload'
   message: string
   url: string
   defaultPrompt?: string
-  /** 두리가 바로 [확인]·[떠나기]를 눌렀다 (알림창·떠나기 확인. 결과에 그대로 알린다) */
+  /** Dool2 pressed [OK]/[Leave] right away (alert, leave-page confirmation; reported as is in the result) */
   autoAccepted?: boolean
 }
-/** 탭마다 떠 있는 확인 창 (confirm·prompt) */
+/** Confirm dialogs (confirm, prompt) open per tab */
 const dialogs = new Map<number, SiteDialog>()
-/** 탭마다 두리가 바로 닫은 알림창 (다음에 페이지를 읽을 때 함께 알린다) */
+/** Alerts Dool2 closed right away per tab (reported with the next page read) */
 const dialogNotes = new Map<number, SiteDialog[]>()
 
 function dialogBlocked(d: SiteDialog) {
-  return `사이트 확인 창이 떠 있어서 페이지가 멈춰 있어요: "${d.message.slice(0, 200)}" — 먼저 확인이나 취소를 골라 주세요`
+  return `A site confirm dialog is open and the page is frozen: "${d.message.slice(0, 200)}" - choose OK or Cancel first`
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
@@ -665,7 +671,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     dialogs.delete(tabId)
     return
   }
-  // 새 창 열기 시도 (막혔는지는 새 탭이 생겼는지로 본다)
+  // Attempt to open a new window (whether it was blocked is judged by whether a new tab appeared)
   if (method === 'Page.windowOpen') {
     noteOpen(tabId, String((params as { url?: string }).url ?? ''))
     return
@@ -683,8 +689,8 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     return
   }
   const notes = dialogNotes.get(tabId) ?? []
-  // 같은 알림창이 한 번에 여러 번 알려질 때가 있다 (실측): 한 번만 남긴다.
-  // 떠나기 확인은 두리가 이동을 시킨 때만 뜨므로 그대로 떠나되, 몰래 하지 않고 다음 결과에 알린다
+  // The same alert is sometimes reported several times at once (measured): keep only one.
+  // A leave-page confirmation only appears when Dool2 ordered the navigation, so leave anyway, but report it in the next result instead of doing it quietly
   d.autoAccepted = true
   const last = notes.at(-1)
   if (!last || last.type !== d.type || last.message !== d.message) notes.push(d)
@@ -692,7 +698,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   chrome.debugger.sendCommand({ tabId }, 'Page.handleJavaScriptDialog', { accept: true }).catch(() => {})
 })
 
-/** 읽을 때 함께 알릴 알림창: 떠 있는 확인 창, 그리고 그동안 바로 닫은 알림창 (한 번 알리면 지운다) */
+/** Dialogs to report with a read: open confirm dialogs and the alerts closed meanwhile (cleared once reported) */
 function takeDialogs(tabId: number): { dialog?: SiteDialog; dialogNotes?: SiteDialog[] } {
   const notes = dialogNotes.get(tabId)
   dialogNotes.delete(tabId)
@@ -700,14 +706,14 @@ function takeDialogs(tabId: number): { dialog?: SiteDialog; dialogNotes?: SiteDi
   return { ...(open ? { dialog: open } : {}), ...(notes?.length ? { dialogNotes: notes } : {}) }
 }
 
-/** 이 탭의 알림창을 받기 시작한다 (디버거를 붙이고 Page.enable). 이미 붙어 있으면 그대로 */
+/** Start catching dialogs of this tab (attach the debugger and Page.enable). Does nothing if already attached */
 async function watch(tabId: number) {
   if (attached.has(tabId) || stoppedByUser.has(tabId)) return
   await Promise.race([cdp(tabId, 'Page.enable').catch(() => {}), sleep(2500)])
 }
 
-// ── 페이지가 받은 응답 듣기 (커넥터 capture) ──
-// 두리가 요청을 보내지 않는다. 사람이 그 화면을 열 때 사이트가 스스로 받는 응답 중 필요한 것을 읽을 뿐이다.
+// ── Listening to responses the page receives (connector capture) ──
+// Dool2 sends no requests. It only reads, among the responses the site fetches itself when a person opens that screen, the ones it needs.
 interface NetEntry {
   id: string
   url: string
@@ -743,15 +749,15 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 })
 
 /**
- * 탭을 한 장 그리게 한다. 창이 다른 창 뒤에 가려져 있으면 Chrome이 그 탭을 그리지 않아서,
- * 다음 그리기에 맞춰 상태를 바꾸는 사이트는 입력·Enter·팝업 닫기가 반쯤 멈춘 채 남는다
- * (실측: 사람이 없는 맥의 평소 Chrome에서 캐치테이블 검색 Enter가 안 먹고, 닫은 팝업 버튼이 계속 읽혔다).
- * 1×1로 화면을 찍으면 한 장을 그린다. 창을 앞으로 끌어오지 않으니 맥을 쓰는 사람을 방해하지 않는다
+ * Make a tab paint one frame. If the window is hidden behind another, Chrome does not paint that tab,
+ * so on sites that update state on the next paint, typing, Enter and closing popups stay half stuck
+ * (measured: on an unattended Mac's usual Chrome, Enter in Catch Table search did nothing and a closed popup button kept being read).
+ * A 1x1 screenshot paints one frame. It does not bring the window forward, so it does not disturb someone using the Mac
  */
 async function paint(tabId: number) {
-  // 그리지 못하는 화면(가상 화면·잠든 창)에서는 답이 오지 않을 수 있다: 오래 기다리지 않는다.
-  // 찍는 자리는 지금 보이는 곳의 왼쪽 위 (clip은 문서 기준이라 0,0이면 굴린 페이지에서 화면 밖이다. 화면 밖을 찍으면
-  // Chrome이 화면을 잠깐 옮겨 그리고, 그 뒤 다른 사이트 액자의 누르는 자리가 굴린 만큼 어긋났다 — 주소 찾기 버튼이 안 눌림)
+  // On screens that cannot paint (virtual screens, sleeping windows) no answer may come: do not wait long.
+  // Capture at the top-left of what is visible now (clip is document-based, so 0,0 on a scrolled page is off-screen. Capturing off-screen
+  // makes Chrome shift the paint for a moment, after which click positions in other sites' frames were off by the scroll amount - the address search button could not be clicked)
   await Promise.race([
     (async () => {
       const o = await scrollOffset(tabId, 'visual')
@@ -766,9 +772,9 @@ async function paint(tabId: number) {
 }
 
 /**
- * Page.captureScreenshot의 clip은 문서 기준(굴린 만큼 더한 자리)이다. 화면 기준 자리(getBoundingClientRect)를 찍으려면
- * 굴린 만큼을 더해야 한다. 예전에는 화면 기준 그대로 넣어, 굴린 페이지에서 엉뚱한 곳(위쪽)이 찍혔다.
- * layout: 요소 상자(레이아웃 화면 기준), visual: 사람이 보는 화면 기준(확대해 본 폰 화면)
+ * Page.captureScreenshot's clip is document-based (position plus the scroll amount). To capture a viewport-based position
+ * (getBoundingClientRect), add the scroll amount. It used to pass viewport coordinates as is, so a scrolled page captured the wrong place (the top).
+ * layout: element box (layout viewport based), visual: what the person sees (the zoomed phone view)
  */
 async function scrollOffset(tabId: number, kind: 'layout' | 'visual'): Promise<{ x: number; y: number }> {
   type V = { pageX: number; pageY: number }
@@ -779,15 +785,15 @@ async function scrollOffset(tabId: number, kind: 'layout' | 'visual'): Promise<{
   return { x: v?.pageX ?? 0, y: v?.pageY ?? 0 }
 }
 
-/** 원격 '필요한 칸만'을 액자 안에서 뽑은 탭: 그 액자 (채울 때 그쪽으로 보낸다) */
+/** Tabs where the remote "only the needed fields" were taken from inside a frame: that frame (fills are sent there) */
 const formFrames = new Map<number, { frameId: number; url: string }>()
 const FORM_FRAME = 'fr'
 const FORM_FRAME_ID = /^fr(\d+)~(.+)$/
 
-/** 폰 너비로 그리고 있는 탭 (원격 화면) */
+/** Tabs drawn at phone width (remote screen) */
 const phoneView = new Set<number>()
 
-/** 폰 너비로 그리는 탭의 폰 크기와, 잘린 창 때문에 넓혀 그리는 중인지 */
+/** For tabs drawn at phone size: the phone size, and whether drawn wider because of a clipped window */
 const phoneSize = new Map<number, { w: number; h: number; wide: boolean }>()
 
 async function phoneWidth(tabId: number, w: number, h: number) {
@@ -803,8 +809,8 @@ async function phoneWidth(tabId: number, w: number, h: number) {
 }
 
 /**
- * 폰 너비에서 입력칸·버튼이 화면 밖으로 잘리면(너비가 고정된 PC용 창: 정부24 간편인증) 잘리지 않는 너비까지 넓혀 그린다.
- * 폰에는 PC 화면이 줄어 보이고, 두 손가락으로 키워 볼 수 있다. 잘린 칸은 폰에서 볼 수도 누를 수도 없다
+ * If inputs or buttons are clipped off-screen at phone width (PC windows with a fixed width: Gov24 simple authentication), draw wider up to an unclipped width.
+ * The phone sees the PC screen shrunk and can pinch to zoom. Clipped fields can be neither seen nor tapped on the phone
  */
 async function widenIfCut(tabId: number) {
   const s = phoneSize.get(tabId)
@@ -827,17 +833,17 @@ async function widenIfCut(tabId: number) {
 async function refitAfterTap(tabId: number, before: string | undefined) {
   const s = phoneSize.get(tabId)
   if (!s) return
-  // 넓혀 그리던 중 다른 화면으로 넘어갔으면 다시 폰 너비로 (인증을 마치고 신청 화면으로 넘어간 때)
+  // If it moved to another screen while drawn wider, go back to phone width (when authentication ended and it went on to the application screen)
   if (s.wide && (await chrome.tabs.get(tabId)).url !== before) await phoneWidth(tabId, s.w, s.h)
-  // 눌러서 뜬 창이 그려질 틈
+  // Time for the window opened by the click to paint
   else if (!s.wide) await sleep(400)
   await widenIfCut(tabId)
 }
 
 /**
- * 화면 아래로 잘린 창(결제 비밀번호 키패드 등): 그 아래까지 보이게 화면 높이를 늘려 그린다.
- * 굴려도 안 보이는(고정 위치) 창은 화면 밖이면 찍으면 빈 그림이고 마우스도 닿지 않는다
- * (실측 11-20: 쿠팡 키패드가 창 아래로 잘려 버튼 그림이 회색뿐이었다 → 두리가 숫자를 못 읽었다)
+ * For windows clipped below the screen (payment PIN keypads, etc.): draw with a taller viewport so the part below is visible.
+ * A window that stays off-screen even when scrolled (fixed position) gives an empty capture, and the mouse cannot reach it either
+ * (measured 11-20: a Coupang keypad was cut off below the window and the button images were all gray, so Dool2 could not read the digits)
  */
 async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   if (phoneView.has(tabId) || emulated.has(tabId)) return false
@@ -852,7 +858,7 @@ async function tallerIfBelow(tabId: number, bottom: number): Promise<boolean> {
   await sleep(350)
   return true
 }
-/** keepTall로 늘린 채 둔 탭 → 그래도 늦게라도 되돌리는 시계 (비밀번호를 다 못 누르고 멈춰도 남지 않게) */
+/** A tab left tall by keepTall: a timer that restores it later anyway (so it does not stay if the PIN could not be finished) */
 const keptTall = new Map<number, ReturnType<typeof setTimeout>>()
 function keepTallFor(tabId: number) {
   clearTimeout(keptTall.get(tabId))
@@ -864,7 +870,7 @@ function keepTallFor(tabId: number) {
     }, 3_000),
   )
 }
-/** 늘린 화면 높이를 원래대로 (남겨 두면 그 뒤 화면 찍기·누르는 자리가 어긋났다 — 실측 11-20 G마켓 배송지 추가) */
+/** Restore the stretched viewport height (if left, later captures and click positions were off - measured 11-20 Gmarket adding a delivery address) */
 async function restoreHeight(tabId: number) {
   clearTimeout(keptTall.get(tabId))
   keptTall.delete(tabId)
@@ -899,7 +905,7 @@ async function inFrame<A extends unknown[], R>(
   func: (...args: A) => R,
   ...args: A
 ): Promise<R> {
-  // 확인 창이 떠 있으면 페이지 스크립트가 멈춰 있어 답이 오지 않는다 (기다리지 않고 알린다)
+  // With a confirm dialog open the page script is frozen and no answer comes (report instead of waiting)
   const open = dialogs.get(tabId)
   if (open) throw new Error(dialogBlocked(open))
   const target = frameId ? { tabId, frameIds: [frameId] } : { tabId }
@@ -907,8 +913,8 @@ async function inFrame<A extends unknown[], R>(
   return res?.result as R
 }
 
-/** React·Vue 클릭 처리기만 붙은 상자에 표시 달기 (페이지 스크립트 공간에서만 보인다). 실패해도 화면 읽기는 계속한다.
- *  window.open 지켜보기(막힌 새 창 알기)도 함께 건다 */
+/** Mark boxes that only have React/Vue click handlers (visible only in the page script world). Reading continues even if it fails.
+ *  Also hooks window.open watching (to notice blocked new windows) */
 async function markTaps(tabId: number, frameId: number) {
   const target = frameId ? { tabId, frameIds: [frameId] } : { tabId }
   await Promise.all([
@@ -917,24 +923,24 @@ async function markTaps(tabId: number, frameId: number) {
   ])
 }
 
-// ── 화면 안 액자 (iframe): 로그인 칸을 액자 안에 두는 사이트 (아고다 등) ──
-/** 액자 하나의 표시 번호 대역 (액자 n → e{n*10000+1}…) */
+// ── Frames in the page (iframe): sites that put the login fields inside a frame (Agoda, etc.) ──
+/** The mark number range of one frame (frame n -> e{n*10000+1}...) */
 const FRAME_SPAN = 10_000
-/** 탭마다: 표시 대역 번호 → 확장 frameId·주소 (읽은 액자 모두. 사라진 액자는 읽을 때 뺀다) */
+/** Per tab: mark range number -> extension frameId and URL (all frames read; vanished frames are dropped when reading) */
 const frameMaps = new Map<number, Map<number, { frameId: number; url: string }>>()
 /**
- * 탭마다 액자 → 번호를 고정한다. 읽을 때마다 보이는 순서로 매기면 광고 액자가 늘고 줄 때 번호가 밀려,
- * 방금 읽은 표시(e30010)가 누를 때는 다른 액자를 가리켰다 (실측 11-20 G마켓 주소 찾기 결과를 못 누름)
+ * Pin frame -> number per tab. Numbering by visible order on each read shifted numbers when ad frames came and went,
+ * so a mark just read (e30010) pointed at another frame when clicked (measured 11-20 Gmarket: could not click the address search result)
  */
 const frameIndexes = new Map<number, Map<number, number>>()
 
-/** 표시(e10012)가 어느 액자의 것인지 */
+/** Which frame a mark (e10012) belongs to */
 function frameOf(tabId: number, ref: string): { frameId: number; url?: string; index: number } {
   const n = Number(ref.slice(1))
   const index = Math.floor(n / FRAME_SPAN)
   if (!index) return { frameId: 0, index: 0 }
   const f = frameMaps.get(tabId)?.get(index)
-  if (!f) throw new Error(`${ref}를 찾을 수 없어요. 화면을 다시 읽어 주세요`)
+  if (!f) throw new Error(`${ref} was not found. Read the page again`)
   return { frameId: f.frameId, url: f.url, index }
 }
 
@@ -948,12 +954,12 @@ function hostOf(url: string): string {
 }
 
 /**
- * 액자 안의 자리(px, py: 그 액자 화면 기준)가 페이지 화면의 어디인지.
- * 액자 → 바깥 액자 → … → 페이지로 올라가며 단계마다 바깥 문서에서 액자 상자를 재어 더한다 (중첩 액자).
- * 단계마다: ① 같은 주소면 액자가 자기 상자(frameElement)를 잰다 ② 바깥 문서에서 주소·크기로 찾는다
- * ③ 같은 모양이 여럿이면 메시지로 어느 액자인지 가린다 ④ 그래도 모르면 디버거(CDP)로 액자 주인을 잰다.
- * 다 안 되면 오류를 낸다: 예전에는 (0,0)으로 잡아 엉뚱한 곳을 눌렀다.
- * scroll: 그 자리가 바깥 화면 밖이면 바깥을 굴려 보이게 한다 (누르기·사진)
+ * Where a position inside a frame (px, py: relative to that frame's viewport) is on the page viewport.
+ * Go up frame -> outer frame -> ... -> page, at each step measuring the frame box in the outer document and adding it (nested frames).
+ * At each step: (1) if same-origin the frame measures its own box (frameElement) (2) find it in the outer document by URL and size
+ * (3) if several look alike, ask by message which frame it is (4) if still unknown, measure the frame owner with the debugger (CDP).
+ * If none works, throw: it used to assume (0,0) and clicked the wrong place.
+ * scroll: if the position is outside the outer viewport, scroll the outer one so it shows (clicks and photos)
  */
 async function framePoint(
   tabId: number,
@@ -970,7 +976,7 @@ async function framePoint(
   let y = py
   for (let depth = 0; cur !== 0; depth++) {
     const f = byId.get(cur)
-    if (!f || depth > 10) throw new Error('화면 안 액자가 사라졌어요. 화면을 다시 읽어 주세요')
+    if (!f || depth > 10) throw new Error('The frame on the page is gone. Read the page again')
     const parent = Math.max(f.parentFrameId, 0)
     const self = await inFrame(tabId, cur, pageFrameSelf, scroll ? y : -1).catch(() => undefined)
     let box = self?.owner
@@ -997,11 +1003,11 @@ async function framePoint(
       if (r && !('ambiguous' in r)) box = r
     }
     if (!box) {
-      // 디버거는 페이지 화면 기준 자리를 바로 준다 (바깥 단계는 더하지 않는다)
+      // The debugger gives the position relative to the page viewport directly (outer steps are not added)
       const abs = await frameOwnerCdp(tabId, f.url).catch(() => undefined)
       if (abs) return { x: abs.x + x, y: abs.y + y }
       throw new Error(
-        `화면 안 액자(${hostOf(f.url)})가 페이지의 어디에 있는지 찾지 못해서 누르지 않았어요. 화면을 다시 읽거나 browser_screenshot으로 확인해 주세요`,
+        `Could not locate the frame (${hostOf(f.url)}) on the page, so nothing was clicked. Read the page again or check with browser_screenshot`,
       )
     }
     x += box.x
@@ -1011,7 +1017,7 @@ async function framePoint(
   return { x, y }
 }
 
-/** 같은 모양 액자가 여럿일 때: 안쪽 액자가 바깥으로 메시지를 보내 어느 액자인지 가린다 (순번, 모르면 -1) */
+/** When several frames look alike: the inner frame sends a message to the outer one to tell which frame it is (index, -1 if unknown) */
 async function probeFrame(tabId: number, parent: number, child: number): Promise<number> {
   const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
   if (!(await inFrame(tabId, parent, pageFrameProbeListen, token).catch(() => false))) return -1
@@ -1024,7 +1030,7 @@ async function probeFrame(tabId: number, parent: number, child: number): Promise
   return -1
 }
 
-/** CDP: 그 주소의 액자가 하나뿐일 때 액자 주인 요소의 안쪽 상자 (페이지 화면 기준). 여럿·없음이면 undefined */
+/** CDP: when only one frame has that URL, the inner box of the frame's owner element (page viewport based). undefined if several or none */
 async function frameOwnerCdp(tabId: number, url: string): Promise<{ x: number; y: number } | undefined> {
   type Tree = { frame: { id: string; url: string }; childFrames?: Tree[] }
   const tree = (await cdp(tabId, 'Page.getFrameTree', {})) as { frameTree: Tree }
@@ -1051,9 +1057,9 @@ async function frameOwnerCdp(tabId: number, url: string): Promise<{ x: number; y
 }
 
 /**
- * 같은 사이트인지 (www.agoda.com ↔ accounts.agoda.com, shop.co.kr ↔ login.shop.co.kr, shop.com.au).
- * 이름이 셋 이상이고 둘째 칸이 짧은 공용 이름(co·or·go·ne·ac·re·pe·com·net·org)이면 세 칸까지가 사이트다.
- * IP·localhost는 그 주소 그대로
+ * Whether it is the same site (www.agoda.com <-> accounts.agoda.com, shop.co.kr <-> login.shop.co.kr, shop.com.au).
+ * With three or more labels and a short shared second label (co, or, go, ne, ac, re, pe, com, net, org), the site is the first three labels.
+ * IPs and localhost are taken as they are
  */
 function siteOf(origin: string): string {
   try {
@@ -1069,8 +1075,8 @@ function siteOf(origin: string): string {
 }
 
 /**
- * 두리 창 안에서 이 탭을 앞 탭으로 둔다. 뒤에 있는 탭은 Chrome이 그리지 않아 입력을 받지 않는다.
- * 두리 창은 두리 탭만 있으므로 사용자 탭에는 영향이 없다 (창 자체를 앞으로 가져오지는 않는다)
+ * Put this tab in front inside the Dool2 window. Chrome does not paint background tabs, so they take no input.
+ * The Dool2 window holds only Dool2 tabs, so user tabs are unaffected (the window itself is not brought forward)
  */
 async function frontTab(tabId: number) {
   const t = await chrome.tabs.get(tabId)
@@ -1079,15 +1085,15 @@ async function frontTab(tabId: number) {
   await sleep(150)
 }
 
-/** force: 둘레 글이 바뀌었거나 다른 버튼이 덮고 있어도 멈추지 않는다 (AI가 화면을 보고 그래도 누르기로 한 때) */
+/** force: do not stop even if the surrounding text changed or another button covers it (when the AI looked at the screen and decided to click anyway) */
 async function locate(tabId: number, ref: unknown, mode: LocateMode, force = false): Promise<LocateResult> {
-  if (typeof ref !== 'string' || !/^e\d+$/.test(ref)) throw new Error('ref는 e12 같은 표시여야 해요')
+  if (typeof ref !== 'string' || !/^e\d+$/.test(ref)) throw new Error('ref must be a mark like e12')
   await frontTab(tabId)
   const f = frameOf(tabId, ref)
   const r = await inFrame(tabId, f.frameId, pageLocate, ref, mode, force)
-  if (!r?.ok) throw new Error(r?.error ?? '요소를 찾지 못했어요')
+  if (!r?.ok) throw new Error(r?.error ?? 'Element not found')
   if (!f.frameId) return r
-  // 액자 안 좌표 → 페이지 화면 좌표 (겹친 액자는 단계마다 더한다. 못 재면 오류)
+  // Coordinates in a frame -> page viewport coordinates (nested frames add up step by step. Throw if it cannot be measured)
   const p = await framePoint(tabId, f.frameId, r.x, r.y)
   const v = await inPage(tabId, pageViewport)
   const outside = Boolean(r.outside) || p.x < 0 || p.y < 0 || p.x > v.width || p.y > v.height
@@ -1101,17 +1107,17 @@ async function locate(tabId: number, ref: unknown, mode: LocateMode, force = fal
   }
 }
 
-// ── 마우스 움직임 ──
-// 사람처럼 마우스를 목표까지 옮긴 뒤 누른다. 움직임 없이 바로 누르면 올려 두어야 열리는 메뉴가 안 열리고,
-// 마우스가 들어온 적 없는 버튼을 누르는 셈이라 사이트가 사람 입력이 아니라고 볼 수 있다
-/** 탭마다 마지막 마우스 자리 */
+// ── Mouse movement ──
+// Move the mouse to the target like a person, then click. Clicking without movement does not open hover menus,
+// and clicks a button the mouse never entered, so the site may judge it was not human input
+/** Last mouse position per tab */
 const pointer = new Map<number, { x: number; y: number }>()
-/** 떼기(mouseReleased) 확인이 오지 않은 탭: 다음 동작 전에 떼기를 다시 보내 '누른 채'로 남지 않게 한다 */
+/** Tabs where the release (mouseReleased) was not confirmed: resend the release before the next action so the button does not stay "held" */
 const stillPressed = new Set<number>()
 
 /**
- * 앞 클릭의 떼기가 화면이 바뀌는 사이 사라지면 페이지는 버튼을 누른 채로 안다. 그 상태로 커서가 움직이면 끌기가 된다
- * (실측: 구글 캘린더에서 일정을 지운 뒤 다음 일정 칩을 누르자 일정이 다른 날로 옮겨지고 '실행 취소'가 떴다)
+ * If the release of the previous click is lost while the page changes, the page thinks the button is still held. Moving the cursor then becomes a drag
+ * (measured: in Google Calendar, after deleting an event, clicking the next event chip moved the event to another day and "Undo" appeared)
  */
 async function releaseIfPressed(tabId: number) {
   if (!stillPressed.has(tabId)) return
@@ -1136,14 +1142,14 @@ async function moveMouse(tabId: number, x: number, y: number) {
   const from = pointer.get(tabId) ?? { x: Math.max(x - 140, 0), y: y + 90 }
   const dist = Math.hypot(x - from.x, y - from.y)
   const n = Math.min(12, Math.max(3, Math.round(dist / 60)))
-  // 끝으로 갈수록 느려지고, 살짝 휘어 간다 (곧은 등속 직선은 사람 손이 아니다)
+  // Slows toward the end and curves slightly (a straight constant-speed line is not a human hand)
   const bend = Math.min(dist * 0.08, 18) * (from.x < x ? 1 : -1)
   for (let i = 1; i <= n; i++) {
     const t = i / n
     const e = 1 - (1 - t) ** 3
     const px = from.x + (x - from.x) * e
     const py = from.y + (y - from.y) * e + Math.sin(Math.PI * t) * bend
-    // 가려진 탭은 입력 확인 답이 늦다: 오래 기다리지 않는다
+    // Occluded tabs answer input confirmation slowly: do not wait long
     await Promise.race([
       cdp(tabId, 'Input.dispatchMouseEvent', {
         type: 'mouseMoved',
@@ -1159,7 +1165,7 @@ async function moveMouse(tabId: number, x: number, y: number) {
   pointer.set(tabId, { x, y })
 }
 
-/** 두리가 하는 일을 페이지 위 커서로 보여 준다 (실패해도 일은 계속한다) */
+/** Show what Dool2 is doing as a cursor on the page (work goes on even if it fails) */
 function showCursor(tabId: number, x: number, y: number, label: string) {
   if (dialogs.has(tabId)) return Promise.resolve()
   return chrome.scripting
@@ -1168,11 +1174,11 @@ function showCursor(tabId: number, x: number, y: number, label: string) {
     .catch(() => undefined)
 }
 
-/** label: 두리가 하는 일이면 커서를 보여 주고 마우스를 옮겨 간다. 없으면(사람이 원격으로 누름) 그 자리로 바로 */
+/** label: if Dool2 is acting, show the cursor and move the mouse there. Without it (a person tapping remotely) go straight to the spot */
 async function clickAt(tabId: number, x: number, y: number, label?: string) {
   const base = { x, y, button: 'left', clickCount: 1, pointerType: 'mouse' }
-  // 한 장 그리기는 마우스를 옮기기 전에 한다: 찍은 바로 뒤(수십 ms 안)의 누르기는 다른 사이트 액자(OOPIF)에 닿지 않고
-  // 버려졌다 (실측: 시험 가게 배송지 액자 속 [우편번호 찾기]가 마우스로는 안 눌림, 찍은 뒤 50ms만 지나도 닿음)
+  // Paint one frame before moving the mouse: a click right after a capture (within tens of ms) did not reach other sites' frames (OOPIF) and was
+  // dropped (measured: the [Find postal code] button in a test shop's address frame could not be clicked with the mouse; after 50ms it reached)
   await paint(tabId)
   await sleep(50)
   if (label) {
@@ -1195,7 +1201,7 @@ async function clickAt(tabId: number, x: number, y: number, label?: string) {
   await releaseIfPressed(tabId)
   await cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base, buttons: 1 })
   stillPressed.add(tabId)
-  // 클릭으로 새 탭이 앞으로 오면 이 탭은 뒤로 가서 그려지지 않고, 입력 확인 답이 몇 초씩 늦는다. 오래 기다리지 않는다
+  // If the click brings a new tab to the front this tab goes behind and is not painted, so input confirmation is seconds late. Do not wait long
   await Promise.race([
     cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }).then(() =>
       stillPressed.delete(tabId),
@@ -1206,8 +1212,8 @@ async function clickAt(tabId: number, x: number, y: number, label?: string) {
 
 async function pressKey(tabId: number, name: string) {
   const k = keyDef(name)
-  if (!k) throw new Error(`모르는 키예요: ${name}`)
-  // 넣은 글이 사이트 상태에 반영되게 먼저 한 장 그린다 (가려진 창에서 Enter가 빈 검색이 되던 것)
+  if (!k) throw new Error(`Unknown key: ${name}`)
+  // Paint one frame first so typed text is reflected in the site state (Enter on an occluded window became an empty search)
   await paint(tabId)
   const common = {
     key: k.key,
@@ -1224,8 +1230,8 @@ async function pressKey(tabId: number, name: string) {
 }
 
 /**
- * 한 글자씩 키를 눌러 넣기 (숫자·영문·기호). 한 번에 넣기(insertText)를 받지 않는 보안 입력칸용
- * (실측 금융인증서 창 휴대폰번호 칸: 한 번에 넣으면 0자)
+ * Type one key at a time (digits, letters, symbols). For secure input fields that do not accept inserting all at once (insertText)
+ * (measured: the phone number field of a financial certificate window got 0 characters when inserted at once)
  */
 async function typeKeys(tabId: number, text: string) {
   for (const ch of text) {
@@ -1241,16 +1247,16 @@ async function typeKeys(tabId: number, text: string) {
 }
 
 /**
- * 편집기가 그린 자리(글 칸이 아닌 제목·본문 상자)에 넣기. 이런 편집기(네이버 블로그 SmartEditor ONE 등)는 글을 직접 받지 않고,
- * 누르면 숨은 칸(액자 속 contenteditable)에 초점을 준 뒤 거기 들어온 글을 옮겨 그린다. 그래서 스크립트 초점이 아니라
- * 진짜 마우스로 그 자리를 누르고, 초점이 간 곳에 넣는다 (Input.insertText는 초점 있는 액자로 간다).
- * 줄바꿈은 Enter로 (편집기가 새 문단을 만든다). 넣은 뒤 마지막 줄이 화면 글에 보이는지 확인해 알린다
+ * Type into a spot drawn by an editor (a title or body box that is not a text field). Such editors (Naver Blog SmartEditor ONE, etc.) do not take text directly:
+ * clicking gives focus to a hidden field (a contenteditable inside a frame), and text that arrives there is redrawn. So instead of script focus,
+ * click the spot with the real mouse and type where focus went (Input.insertText goes to the focused frame).
+ * Newlines are Enter (the editor makes a new paragraph). After typing, check that the last line is visible in the page text and report it
  */
 async function typeDrawn(tabId: number, ref: string, at: LocateResult, text: string, submit: boolean) {
   const fid = frameOf(tabId, ref).frameId
-  await clickAt(tabId, at.x, at.y, '두리가 입력하는 중')
+  await clickAt(tabId, at.x, at.y, txt.cursorTyping)
   await sleep(150)
-  // 글이 있는 자리면 누른 곳(가운데)이 아니라 끝에 이어 쓴다
+  // If there is text already, continue at the end rather than where it was clicked (the middle)
   if (at.filled) await pressKey(tabId, 'End')
   const lines = text.split(/\r?\n/)
   for (const [i, line] of lines.entries()) {
@@ -1263,7 +1269,7 @@ async function typeDrawn(tabId: number, ref: string, at: LocateResult, text: str
     (fid !== 0 && (await inPage(tabId, pageShowsText, probe).catch(() => false)))
   let seen = await shows()
   if (!seen) {
-    // 늦게 옮겨 그리는 편집기: 잠깐 뒤 다시 본다
+    // Editors that redraw late: look again after a moment
     await sleep(400)
     seen = await shows()
   }
@@ -1283,8 +1289,8 @@ async function pageState(tabId: number) {
 }
 
 /**
- * 이 탭이 연 새 탭 중 아직 알리지 않은 가장 새것 (since: 이때 뒤에 열린 것만). 알리면 알린 것으로 남긴다.
- * 이미 닫힌 탭은 알리지 않는다
+ * The newest not-yet-reported new tab opened by this tab (since: only ones opened after this time). Reporting marks it as reported.
+ * Tabs already closed are not reported
  */
 async function takePopup(opener: number, since = 0): Promise<{ newTabId?: number }> {
   let found: number | undefined
@@ -1303,15 +1309,15 @@ async function takePopup(opener: number, since = 0): Promise<{ newTabId?: number
   })
   return found !== undefined ? { newTabId: found } : {}
 }
-/** 이 탭이 since 뒤에 연 새 탭이 있는지 (알린 것으로 남기지 않는다) */
+/** Whether this tab opened a new tab after `since` (does not mark it as reported) */
 async function openedSince(opener: number, since: number): Promise<boolean> {
   const s = await load()
   return (s.recs ?? []).some((r) => r.opener === opener && r.at >= since)
 }
 
-// ── 막힌 새 창 ──
-// 페이지가 window.open을 불렀는데(pageHookOpen이 남김, 디버거의 Page.windowOpen도) 새 탭이 생기지 않았으면
-// Chrome이 팝업으로 막은 것이다. 늦게 뜨는 결제 창이 막히면 화면만 하얗게 남는다 (실측 11-20 G마켓)
+// ── Blocked new windows ──
+// If the page called window.open (left by pageHookOpen, and the debugger's Page.windowOpen) but no new tab appeared,
+// Chrome blocked it as a popup. If a late payment window is blocked the screen stays white (measured 11-20 Gmarket)
 interface OpenAttempt {
   url: string
   at: number
@@ -1320,13 +1326,13 @@ interface OpenAttempt {
 const openAttempts = new Map<number, OpenAttempt[]>()
 function noteOpen(tabId: number, url: string, at = Date.now()) {
   const list = (openAttempts.get(tabId) ?? []).filter((x) => Date.now() - x.at < 10 * 60_000)
-  // 같은 부름이 두 길(페이지·디버거)로 들어오면 하나만
+  // If the same call arrives by both routes (page and debugger), keep one
   if (!list.some((x) => x.url === url && Math.abs(x.at - at) < 1_500)) list.push({ url, at })
   openAttempts.set(tabId, list.slice(-10))
 }
-/** 페이지가 남긴 window.open 부름을 모으고, 새 탭이 안 생긴 것(막힌 새 창)을 돌려준다. tell: 알린 것으로 남긴다 */
+/** Collect window.open calls the page left and return the ones with no new tab (blocked new windows). tell: mark as reported */
 async function blockedPopups(tabId: number, tell = true): Promise<{ url: string; at: number }[]> {
-  // 확인 창이 떠 있으면 페이지 스크립트가 멈춰 있어 답이 오지 않는다: 이미 모은 것만 본다
+  // With a confirm dialog open the page script is frozen and gives no answer: look only at what was already collected
   const got = dialogs.has(tabId)
     ? []
     : await Promise.race([
@@ -1341,7 +1347,7 @@ async function blockedPopups(tabId: number, tell = true): Promise<{ url: string;
   if (!list.length) return []
   const s = await load()
   const now = Date.now()
-  // 부름 하나에 새 탭 하나씩 짝짓는다 (한 번에 두 창을 열면 둘째만 막힌다: 첫 창이 둘 다의 짝이 되면 안 된다)
+  // Pair one new tab with each call (if two windows open at once only the second is blocked: the first window must not pair with both)
   const recs = (s.recs ?? []).filter((r) => r.opener === tabId)
   const urls = new Map<number, string>()
   for (const r of recs) {
@@ -1361,7 +1367,7 @@ async function blockedPopups(tabId: number, tell = true): Promise<{ url: string;
       a.told = true
       continue
     }
-    // 막 부른 것은 아직 열리는 중일 수 있다
+    // One that was just called may still be opening
     if (now - a.at < 1_500 || (tell && a.told)) continue
     out.push({ url: a.url, at: a.at })
     if (tell) a.told = true
@@ -1369,37 +1375,37 @@ async function blockedPopups(tabId: number, tell = true): Promise<{ url: string;
   return out
 }
 
-// ── 액자 읽기 ──
-// 읽는 액자: http(s)와 about:blank·about:srcdoc (결제 회사가 빈 액자를 만들어 스크립트로 채우는 곳이 많다).
-// 누를 것이 없어도 글이 있으면(금액·오류 안내) 짧게 싣는다. 화면 순서(위→아래)로 늘어놓고, 맨 앞에 액자 목록을 단다
+// ── Reading frames ──
+// Frames read: http(s) and about:blank / about:srcdoc (many payment companies create an empty frame and fill it with script).
+// Even without clickable items, frames with text (amounts, error messages) are included briefly. They are listed in screen order (top to bottom), with a frame list at the front
 const READ_FRAME = /^(?:https?:|about:(?:blank|srcdoc)$)/
 const LOOK_FRAMES = 40
-/** 글만 있는 액자는 이만큼만 */
+/** Frames with text only get at most this much */
 const TEXT_ONLY_MAX = 400
 
 interface FrameItem {
   index: number
   frameId: number
   url: string
-  /** 바깥 액자 번호 (0 = 본문) */
+  /** Outer frame number (0 = main page) */
   parent: number
   shown: boolean
   loading: boolean
   refs: boolean
   truncated: boolean
-  /** 자리를 주소·크기가 같은 액자들 사이에서 순서로 짐작했다 */
+  /** The position was guessed by order among frames with the same URL and size */
   guess?: boolean
 }
 interface FramesRead {
   text: string
   list: FrameItem[]
   captcha: boolean
-  /** 액자 frameId → 읽기 결과 (글 속 [액자] 자리 표시를 바꿀 때) */
+  /** frame frameId -> read result (when replacing frame placeholders in the text) */
   marks: Map<number, Map<number, number>>
   blocked: { url: string; at: number }[]
 }
 
-/** 작업을 n개씩 나눠 돌린다 (액자가 많은 화면에서 스크립트 넣기가 한꺼번에 몰리지 않게) */
+/** Run jobs n at a time (so script injection does not bunch up on screens with many frames) */
 async function inBatches<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
   for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn))
 }
@@ -1413,7 +1419,7 @@ async function readFrames(
   const fixed = frameIndexes.get(tabId) ?? new Map<number, number>()
   frameIndexes.set(tabId, fixed)
   const map = frameMaps.get(tabId) ?? new Map<number, { frameId: number; url: string }>()
-  // 사라진 액자는 지도에서 뺀다 (번호는 그대로 둔다: 다시 생긴 같은 액자가 다른 번호를 받아도 옛 표시와 섞이지 않게)
+  // Vanished frames are dropped from the map (numbers are kept: so a same frame that reappears with a different number is not mixed with old marks)
   const alive = new Set(all.map((f) => f.frameId))
   for (const [i, f] of map) if (!alive.has(f.frameId)) map.delete(i)
   frameMaps.set(tabId, map)
@@ -1448,7 +1454,7 @@ async function readFrames(
     }
   })
   const places = layoutFrames(nodes, mainRead)
-  // 글 속 자리 표시: 바깥 문서 frameId → (자리 표시 번호 → 액자 번호)
+  // Placeholders in the text: outer document frameId -> (placeholder number -> frame number)
   const marks = new Map<number, Map<number, number>>()
   for (const n of nodes) {
     const p = places.get(n.frameId)
@@ -1476,7 +1482,7 @@ async function readFrames(
     const refs = /\[e\d+ /.test(r.text)
     const body = r.text.replace(/\u2063F\d+\u2063/g, '').trim()
     const shown = p?.shown ?? false
-    // 빈 액자·안 보이는 글 액자(광고·추적용)는 뺀다. 누를 것이 있으면 안 보여도 싣는다 (곧 뜨는 로그인 창)
+    // Empty frames and frames with invisible text (ads, tracking) are dropped. Frames with clickable items are included even if invisible (a login window that appears soon)
     if (!refs && (!body || !shown)) {
       skipped++
       continue
@@ -1498,7 +1504,7 @@ async function readFrames(
       prio: refs ? (shown ? 0 : 1) : 2,
     })
   }
-  // 자리 나누기: 보이는 누를 것 있는 액자 → 안 보이는 것 → 글만 있는 것 순으로, 남은 자리만큼
+  // Space split: visible frames with clickable items, then invisible ones, then text-only ones, within the remaining space
   const total = max + Math.floor(max / 2)
   let room = total - 2_000
   const kept = new Map<number, string>()
@@ -1532,52 +1538,54 @@ async function readFrames(
     }
   }
   const head = [
-    '\n## 화면 안 액자 목록 (화면 위→아래. 액자 fN 안의 표시는 eN0001부터: f3 → e30001…)',
+    `\n## ${FRAME_HEADING} list (top to bottom of the screen. Marks inside frame fN start at eN0001: f3 -> e30001...)`,
     ...list.map(
       (f) =>
-        `- f${f.index} ${where(f.url)} · 바깥: ${f.parent ? `f${f.parent}` : '본문'} · ${f.shown ? '보임' : '안 보임'}${f.loading ? ' · 불러오는 중' : ''}${f.truncated ? ' · 글 잘림' : ''}${f.refs ? '' : ' · 글만'}${f.guess ? ' · 자리 짐작' : ''}`,
+        `- f${f.index} ${where(f.url)} · outer: ${f.parent ? `f${f.parent}` : 'main'} · ${f.shown ? 'visible' : 'hidden'}${f.loading ? ' · loading' : ''}${f.truncated ? ' · text cut' : ''}${f.refs ? '' : ' · text only'}${f.guess ? ' · position guessed' : ''}`,
     ),
-    ...(skipped ? [`(빈 액자·광고처럼 글이 없거나 안 보이는 액자 ${skipped}개는 뺐어요)`] : []),
+    ...(skipped
+      ? [`(${skipped} frames with no text or not visible, like empty frames and ads, were left out)`]
+      : []),
   ].join('\n')
   const bodies = list
     .map((f) => {
       const t = kept.get(f.frameId) ?? ''
       const host = /^https?:/.test(f.url) ? hostOf(f.url) : f.url
-      const tag = `f${f.index}${f.parent ? `, f${f.parent} 안` : ''}${f.truncated ? ', 글 잘림' : ''}`
+      const tag = `f${f.index}${f.parent ? `, inside f${f.parent}` : ''}${f.truncated ? ', text cut' : ''}`
       return t
-        ? `\n## 화면 안 액자 (${host}) — ${tag}\n${t}`
-        : `\n## 화면 안 액자 (${host}) — ${tag}\n(자리가 모자라 글을 싣지 못했어요. 필요하면 이 액자만 보이게 다시 읽어 주세요)`
+        ? `\n## ${FRAME_HEADING} (${host}) — ${tag}\n${t}`
+        : `\n## ${FRAME_HEADING} (${host}) — ${tag}\n(There was no room to include the text. If needed, read again so that only this frame is shown)`
     })
     .join('')
   return { text: `${head}${bodies}`, list, captcha, marks, blocked: [] }
 }
 
-/** 글 속 액자 자리 표시(U+2063 F{n} U+2063)를 [액자 f3]으로 (모르는 것은 [액자]) */
+/** Turn frame placeholders in the text (U+2063 F{n} U+2063) into [frame f3] (unknown ones become [frame]) */
 function withFrameMarks(text: string, frameId: number, read: Pick<FramesRead, 'marks'>): string {
   const m = read.marks.get(frameId)
   return text
     .replace(/\u2063F(\d+)\u2063/g, (_x, n: string) => {
       const index = m?.get(Number(n))
-      return index !== undefined ? `[액자 f${index}]` : '[액자]'
+      return index !== undefined ? `[frame f${index}]` : '[frame]'
     })
     .replace(/\u2063F?\d*$/, '')
 }
 
-/** 읽기 결과 끝에 붙이는 두리 알림: 막힌 새 창, 정리로 닫은 탭, 표시 번호 다시 매김 (한 번 알리면 지운다) */
+/** Dool2 notices appended to the end of a read result: blocked new windows, tabs closed by tidying, mark renumbering (cleared once reported) */
 async function snapshotNotes(tabId: number, main: SnapshotResult, read: FramesRead): Promise<string> {
   const out: string[] = []
   const blocked = await blockedPopups(tabId).catch(() => [])
   read.blocked = blocked
   for (const b of blocked)
     out.push(
-      `- 이 탭이 새 창을 열려고 했는데 Chrome이 팝업으로 막았어요: ${b.url || '(주소 없는 빈 창: 결제 양식을 보내는 창일 수 있어요)'}. 결제 창이면 승인받은 결제 버튼을 누를 때 두리가 이 사이트 팝업을 허용해 두니 그 버튼을 다시 눌러요. 주소가 있는 보통 창이면 그 주소를 열어도 돼요`,
+      `- This tab tried to open a new window and Chrome blocked it as a popup: ${b.url || '(empty window with no address: it may be the window that submits a payment form)'}. If it is a payment window, Dool2 allows popups for this site when the approved payment button is pressed, so press that button again. If it is a normal window with an address, you may open that address`,
     )
   const told: number[] = []
   const s = await load()
   for (const t of s.tidied ?? []) {
     if (t.told) continue
     told.push(t.tabId)
-    out.push(`- 두리가 탭 ${t.tabId}(${t.title || t.url || '제목 없음'})을 닫았어요: ${t.why}`)
+    out.push(`- Dool2 closed tab ${t.tabId} (${t.title || t.url || 'untitled'}): ${t.why}`)
   }
   if (told.length)
     await update((x) => {
@@ -1585,64 +1593,66 @@ async function snapshotNotes(tabId: number, main: SnapshotResult, read: FramesRe
     })
   if (main.renumbered)
     out.push(
-      '- 이 화면의 표시 번호를 처음부터 새로 매겼어요. 전에 읽은 표시(e…)는 쓰지 말고 이 화면의 표시를 쓰세요',
+      '- The marks on this screen were renumbered from the start. Do not use marks (e...) read before; use the ones on this screen',
     )
   if (main.refsCapped)
     out.push(
-      `- 누를 것이 너무 많아 ${main.refsCapped}개에는 표시를 못 붙였어요(괄호로만 보여요). from·view로 필요한 부분만 다시 읽어 주세요`,
+      `- There were too many clickable items, so ${main.refsCapped} got no mark (shown only in brackets). Read again with from or view for the part you need`,
     )
-  return out.length ? `\n## 두리 알림\n${out.join('\n')}` : ''
+  return out.length ? `\n## Dool2 notices\n${out.join('\n')}` : ''
 }
 
-// ── 명령 ─────────────────────────────────────────────────────
+// ── Commands ─────────────────────────────────────────────────
 
 async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unknown> {
   switch (cmd) {
     case 'options': {
-      // 펼침 목록의 고를 것 (결제 화면의 등록 카드·할부, 상품 옵션). 고르는 건 하지 않는다
+      // Items to choose in a dropdown (registered card and installments on a payment screen, product options). Choosing is not done here
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
       const fid = frameOf(tabId, ref).frameId
       let r = await inFrame(tabId, fid, pageSelectOptions, ref, false)
-      // 스크립트 누르기로 안 열리는 목록(요즘 부품은 진짜 입력만 받는다. 실측 무신사·오늘의집): 진짜 마우스로 열고 다시 읽는다
+      // Dropdowns that script clicks do not open (modern components take only real input; measured Musinsa, Today's House): open with the real mouse and read again
       if (!r?.options) {
         await inFrame(tabId, fid, pageRememberShown)
         const at = await locate(tabId, ref, 'point')
-        await clickAt(tabId, at.x, at.y, '옵션 목록 여는 중')
+        await clickAt(tabId, at.x, at.y, txt.cursorOpeningOptions)
         await sleep(700)
         const r2 = await inFrame(tabId, fid, pageSelectOptions, ref, true)
-        r = r2?.options ? r2 : { why: `${r?.why ?? ''} / 마우스로 연 뒤: ${r2?.why ?? ''}`.slice(0, 900) }
+        r = r2?.options
+          ? r2
+          : { why: `${r?.why ?? ''} / after opening with the mouse: ${r2?.why ?? ''}`.slice(0, 900) }
       }
       return { tabId, options: r?.options ?? null, ...(r?.why ? { why: r.why } : {}) }
     }
     case 'choose': {
-      // 펼침 목록에서 글자가 같은 것을 고른다
+      // Choose the one with the same text in the dropdown
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
       const label = String(a.label ?? '')
       const f = frameOf(tabId, ref)
       const r = await inFrame(tabId, f.frameId, pageSelectChoose, ref, label)
       if (r.ok) return { tabId, label: r.label }
-      // 안 되면 진짜 마우스로 열고, 그 항목도 진짜 마우스로 누른다
+      // If that fails, open with the real mouse and click that item with the real mouse too
       await inFrame(tabId, f.frameId, pageRememberShown)
       const at = await locate(tabId, ref, 'point')
-      await clickAt(tabId, at.x, at.y, '옵션 목록 여는 중')
+      await clickAt(tabId, at.x, at.y, txt.cursorOpeningOptions)
       await sleep(700)
       const pt = await inFrame(tabId, f.frameId, pageOptionPoint, label)
       if (!pt.ok) throw new Error(pt.error)
       const p = await framePoint(tabId, f.frameId, pt.x, pt.y)
-      await clickAt(tabId, p.x, p.y, `${pt.label} 고르는 중`)
+      await clickAt(tabId, p.x, p.y, txt.cursorChoosing(pt.label))
       await sleep(400)
       return { tabId, label: pt.label }
     }
     case 'mark-text': {
-      // 글자로 누를 곳에 표시를 붙인다 (그 뒤 보통 click으로 누른다)
+      // Mark the place to click by text (then click it normally with click)
       const tabId = await ownedTab(a)
       const text = String(a.text ?? '')
       const r = await inPage(tabId, pageMarkText, text)
       if (r.ok) return r
-      // 페이지에 없으면 읽어 둔 화면 안 액자에서 찾는다 (네이버 블로그 글쓰기는 편집기 전체가 액자 안이다).
-      // 표시는 그 액자의 대역(e10001…)으로 붙어 누르기가 그 액자로 간다
+      // If it is not on the page, look in the frames already read (Naver Blog's editor is entirely inside a frame).
+      // The mark is given in that frame's range (e10001...) so the click goes to that frame
       for (const f of frameMaps.get(tabId)?.values() ?? []) {
         const x = await inFrame(tabId, f.frameId, pageMarkText, text).catch(() => undefined)
         if (x?.ok) return x
@@ -1650,25 +1660,25 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       throw new Error(r.error)
     }
     case 'thumb': {
-      // 카드 사진: 받아서 긴 쪽 360px JPEG로 줄인다 (폰으로 보내는 크기를 줄이고, 그림 종류를 하나로)
+      // Card photo: download and shrink to a 360px long side JPEG (smaller to send to the phone, and one image type)
       const url = String(a.url ?? '')
-      if (!/^https:\/\//.test(url)) throw new Error('https 사진만 받아요')
+      if (!/^https:\/\//.test(url)) throw new Error('Only https photos are accepted')
       const res = await fetch(url, {
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
         signal: AbortSignal.timeout(8000),
       })
       const type = (res.headers.get('content-type') ?? '').split(';')[0]?.trim() ?? ''
-      if (!res.ok || !/^image\/(jpeg|png|webp|gif|avif)$/.test(type)) throw new Error('사진이 아니에요')
+      if (!res.ok || !/^image\/(jpeg|png|webp|gif|avif)$/.test(type)) throw new Error('Not an image')
       const blob = await res.blob()
-      if (blob.size > 8_000_000) throw new Error('사진이 너무 커요')
+      if (blob.size > 8_000_000) throw new Error('The photo is too large')
       const bmp = await createImageBitmap(blob)
       const scale = Math.min(1, 360 / Math.max(bmp.width, bmp.height))
       const w = Math.max(1, Math.round(bmp.width * scale))
       const hgt = Math.max(1, Math.round(bmp.height * scale))
       const canvas = new OffscreenCanvas(w, hgt)
       const g = canvas.getContext('2d')
-      if (!g) throw new Error('그릴 수 없어요')
+      if (!g) throw new Error('Cannot draw it')
       g.fillStyle = '#fff'
       g.fillRect(0, 0, w, hgt)
       g.drawImage(bmp, 0, 0, w, hgt)
@@ -1681,15 +1691,15 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return { data: `data:image/jpeg;base64,${btoa(bin)}`, width: w, height: hgt }
     }
     case 'extract': {
-      // 커넥터: 화면 목록을 칸별로 뽑는다 (읽기만)
+      // Connector: pull the list on the screen item by item (read only)
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       if (attached.has(tabId)) await paint(tabId)
       const spec = a.spec as ExtractSpec
       let r = await inPage(tabId, pageExtract, spec)
       if (!r.ok) throw new Error(r.error)
-      // 사진 칸이 비어 있으면: 늦게 그리는 사진이다. 목록을 한 번 훑어 내려 그리게 한 뒤 다시 읽는다
-      // (창이 다른 창 뒤에 가려져 있으면 Chrome이 화면 밖 사진을 불러오지 않는다 — 호텔스닷컴 0/10 → 시험 창 9/10)
+      // If a photo slot is empty: it is a late-loading photo. Scroll through the list once so it draws, then read again
+      // (if the window is hidden behind another, Chrome does not load off-screen photos - Hotels.com 0/10 -> test window 9/10)
       const pics = Object.entries(spec.fields)
         .filter(([, f]) => f.image)
         .map(([k]) => k)
@@ -1698,7 +1708,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const total = Math.min(r.total, spec.limit ?? 30, 40)
         for (let i = 0; i < total; i += 2) {
           await inPage(tabId, pageRevealItem, spec.items, i)
-          // 가려진 창도 한 장씩 그리게 한다 (그래야 화면에 들어온 사진을 불러온다)
+          // Paint hidden windows one frame at a time too (so photos that came into view load)
           await paint(tabId)
           await sleep(90)
         }
@@ -1711,29 +1721,29 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return r
     }
     case 'find': {
-      // 커넥터: 화면 글에 이 말들이 있는지 (기다리기·화면 확인)
+      // Connector: whether these words are in the page text (waiting and screen checks)
       const tabId = await ownedTab(a)
       if (attached.has(tabId)) await paint(tabId)
       const patterns = (a.patterns ?? {}) as Record<string, string>
       return inPage(tabId, pageFind, patterns)
     }
     case 'capture': {
-      // 커넥터: 이 탭의 페이지가 스스로 받은 응답(JSON)을 읽는다. 두리가 따로 요청하지 않는다 (ADR 0018)
+      // Connector: read the responses (JSON) this tab's page received by itself. Dool2 makes no separate request (ADR 0018)
       const tabId = await ownedTab(a)
       if (!listening.has(tabId))
-        throw new Error('이 탭은 응답을 듣고 있지 않아요 (주소를 열 때 capture를 켜야 해요)')
+        throw new Error('This tab is not listening for responses (turn capture on when opening the address)')
       let re: RegExp
       try {
         re = new RegExp(String(a.url ?? ''))
       } catch {
-        throw new Error(`주소 패턴이 틀렸어요: ${String(a.url)}`)
+        throw new Error(`Bad address pattern: ${String(a.url)}`)
       }
       const wait = Math.min(Math.max(Number(a.timeoutMs) || 10_000, 500), 30_000)
       const until = Date.now() + wait
-      // 새 탭이 열리자마자 데이터를 부르면 듣기가 붙기 전에 지나간다(사용자 Chrome에서 유니클로·다이소몰이 들쭉날쭉).
-      // 반쯤 기다려도 그 주소를 하나도 못 들었으면 한 번만 새로 고쳐 다시 부르게 한다. 몰래 새로 고치지 않는다:
-      // 부르는 쪽이 reloadIfSilent로 시킨 때만(읽기만 하는 커넥터 목록 화면), 그리고 결과에 알린다.
-      // 시키지 않았으면 못 들었다고만 알린다 (쓰던 칸·결제 화면을 새로 고치면 넣은 것이 사라진다)
+      // If data is requested right after a new tab opens, it passes before listening starts (Uniqlo and Daiso Mall were inconsistent in the user's Chrome).
+      // If nothing from that address was heard after waiting half the time, reload once and call again. No quiet reloads:
+      // only when the caller asked with reloadIfSilent (connector list screens that only read), and it is reported in the result.
+      // If not asked, only say it was not heard (reloading a form being filled or a payment screen would lose what was entered)
       const halfway = Date.now() + wait / 2
       let reloaded = a.reloadIfSilent !== true
       for (;;) {
@@ -1759,7 +1769,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           try {
             data = JSON.parse(text)
           } catch {
-            throw new Error(`페이지가 받은 응답이 JSON이 아니에요 (${hit.url.slice(0, 80)})`)
+            throw new Error(`The response the page received is not JSON (${hit.url.slice(0, 80)})`)
           }
           const path = typeof a.pick === 'string' ? a.pick : ''
           return {
@@ -1771,18 +1781,18 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
         if (Date.now() > until)
           throw new Error(
-            `페이지가 그 데이터를 받지 않았어요 (${String(a.url)})${a.reloadIfSilent === true ? '' : '. 듣기를 붙이기 전에 지나갔을 수 있어요(새로 고치면 다시 부를 수 있어요)'}`,
+            `The page did not receive that data (${String(a.url)})${a.reloadIfSilent === true ? '' : '. It may have passed before listening was attached (a reload can call it again)'}`,
           )
         await sleep(200)
       }
     }
     case 'dialog': {
-      // 떠 있는 확인 창에서 고른다 (고르는 판단은 본체가 한다). expect: 본체가 본 창과 같은 창일 때만
+      // Choose in the open confirm dialog (the daemon decides what to choose). expect: only if it is the same dialog the daemon saw
       const tabId = await ownedTab(a)
       const d = dialogs.get(tabId)
-      if (!d) throw new Error('떠 있는 사이트 확인 창이 없어요')
+      if (!d) throw new Error('No site confirm dialog is open')
       if (typeof a.expect === 'string' && a.expect.slice(0, 200) !== d.message.slice(0, 200))
-        throw new Error('확인 창 내용이 바뀌어서 고르지 않았어요')
+        throw new Error('The dialog content changed, so nothing was chosen')
       const before = (await chrome.tabs.get(tabId)).url
       await cdp(tabId, 'Page.handleJavaScriptDialog', {
         accept: a.accept !== false,
@@ -1793,13 +1803,13 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'hover': {
-      // 올려 두기: 마우스를 그 자리로 옮기기만 한다 (올려 두어야 열리는 메뉴·설명)
+      // Hover: only move the mouse to the spot (menus and tooltips that open on hover)
       const tabId = await ownedTab(a)
       const at = await locate(tabId, a.ref, 'point')
-      if (at.hidden) throw new Error('두리 창이 가려져 있어서 마우스를 올릴 수 없어요')
-      await showCursor(tabId, at.x, at.y, '두리가 올려 보는 중')
+      if (at.hidden) throw new Error('The Dool2 window is hidden, so the mouse cannot hover')
+      await showCursor(tabId, at.x, at.y, txt.cursorHovering)
       await moveMouse(tabId, at.x, at.y)
-      // 그려지지 않던 창은 올려 둔 상태(:hover)를 다음 그리기·움직임에서야 반영한다: 한 장 그리고 제자리에서 한 번 더
+      // A window that was not painting reflects the hover state (:hover) only on the next paint or movement: paint one frame and move once more in place
       await paint(tabId)
       await Promise.race([
         cdp(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, button: 'none' }),
@@ -1809,7 +1819,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'link-navigates': {
-      // 승인 게이트: 이 링크가 다른 화면으로 가기만 하는지 (값은 참·거짓만)
+      // Approval gate: whether this link only goes to another screen (the value is only true or false)
       const tabId = await ownedTab(a)
       const frameId = frameOf(tabId, String(a.ref)).frameId
       return {
@@ -1819,17 +1829,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
     }
     case 'reload': {
-      // 답을 먼저 보낸 뒤 다시 켠다 (다시 켜지면 본체에 새로 인사한다)
+      // Send the answer first, then reload (after reloading it greets the daemon again)
       setTimeout(() => chrome.runtime.reload(), 200)
       return { ok: true }
     }
     case 'open': {
       const url = safeUrl(a.url)
-      if (!url) throw new Error('http·https 주소만 열 수 있어요')
-      // 빈 탭을 먼저 열고 알림창 받기를 켠 뒤 주소로 간다 (여는 중에 뜨는 알림창도 받게).
-      // capture면 페이지가 받는 응답도 처음부터 듣는다
+      if (!url) throw new Error('Only http and https addresses can be opened')
+      // Open a blank tab first, turn on dialog catching, then go to the address (so dialogs that appear while opening are caught).
+      // With capture, also listen to the responses the page receives from the start
       const tab = await openTab('about:blank')
-      if (tab.id === undefined) throw new Error('탭을 열지 못했어요')
+      if (tab.id === undefined) throw new Error('Could not open the tab')
       await watch(tab.id)
       if (a.capture) await listen(tab.id)
       await chrome.tabs.update(tab.id, { url })
@@ -1840,7 +1850,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'navigate': {
       const tabId = await ownedTab(a)
       const url = safeUrl(a.url)
-      if (!url) throw new Error('http·https 주소만 열 수 있어요')
+      if (!url) throw new Error('Only http and https addresses can be opened')
       if (a.capture) await listen(tabId)
       await chrome.tabs.update(tabId, { url })
       await sleep(200)
@@ -1851,7 +1861,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       await waitLoad(tabId, 10_000)
       const max = Math.min(Math.max(Number(a.maxChars) || 12_000, 1_000), 40_000)
-      // 확인 창이 떠 있으면 페이지가 멈춰 있어 읽을 수 없다: 창 내용만 알린다
+      // With a confirm dialog open the page is frozen and cannot be read: report only the dialog content
       if (dialogs.has(tabId))
         return {
           ...(await pageState(tabId)),
@@ -1860,7 +1870,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           captcha: false,
           ...takeDialogs(tabId),
         }
-      // 닫힌 팝업이 사라지는 등 멈춰 있던 화면 바뀜을 마저 끝내고 읽는다
+      // Finish pending page changes that were frozen, like a closed popup disappearing, then read
       if (attached.has(tabId)) await paint(tabId)
       await markTaps(tabId, 0)
       const scope: ReadScope = {
@@ -1871,8 +1881,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const main = await inPage(tabId, pageSnapshot, max, 0, scope)
       const read = await readFrames(tabId, max, main)
       const total = max + Math.floor(max / 2)
-      // 액자(로그인·인증·결제 창)가 잘리지 않게 액자 글을 먼저 싣고, 남은 자리만큼 본문을 싣는다
-      // (실측 홈택스: 본문 4만 자 뒤에 붙인 간편인증 액자가 전체 자르기에 잘려 [인증 완료]를 못 봤다)
+      // Put frame text first so frames (login, authentication, payment windows) are not cut off, and the body takes the remaining space
+      // (measured Hometax: a simple-auth frame appended after 40,000 characters of body was cut by the overall cut and [Authentication done] could not be seen)
       const room = Math.max(total - read.text.length, 2_000)
       const mainText = withFrameMarks(main.text, 0, read)
       const cut = mainText.length > room
@@ -1884,7 +1894,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         tabId,
         ...rest,
         text,
-        // 본문 글의 길이 (이어 읽기 skip은 이것만큼. 액자 글·알림은 본문이 아니다)
+        // Length of the body text (read-continuation skip is this much. Frame text and notices are not body)
         mainLength: body.length,
         truncated: main.truncated || cut,
         frames: read.list,
@@ -1897,18 +1907,18 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const tabId = await ownedTab(a)
       const ref = String(a.ref ?? '')
       const force = a.force === true
-      // 결제 비밀번호 키패드처럼 같은 자리를 잇달아 누를 때: 커서 움직임을 보여 주지 않고 짧게만 기다린다 (숫자 하나 2.3초 → 실측)
+      // When pressing the same spot repeatedly like a payment PIN keypad: do not show cursor movement, wait only briefly (one digit took 2.3s - measured)
       const quick = a.quick === true
-      // keepTall: 이어서 또 누를 테니 늘린 화면 높이를 아직 되돌리지 않는다 (마지막 숫자에서 되돌린다)
+      // keepTall: another click follows, so do not yet restore the stretched viewport height (restore at the last digit)
       const keepTall = quick && a.keepTall === true
       let at = await locate(tabId, ref, 'point', force)
-      // 굴려도 화면 밖인 것(화면 아래에 고정된 결제 키패드 등)만 화면 높이를 잠깐 늘려 마우스가 닿게 한다 (누른 뒤 원래대로)
+      // Only for items off-screen even when scrolled (a payment keypad fixed at the bottom), stretch the viewport height briefly so the mouse can reach (restored after the click)
       const tall = at.outside
         ? await tallerIfBelow(tabId, (at.bottom ?? at.y) + 30).catch(() => false)
         : false
       if (tall) at = await locate(tabId, ref, 'point', force)
-      // 굴려 옮겼으면 늦게 뜨는 그림·목록으로 자리가 밀리거나, 목록이 칸을 재활용해 다른 것을 그린다.
-      // 잠깐 그리게 한 뒤 다시 잰다 (다른 것이 그려졌으면 locate가 "다시 읽어 주세요"로 멈춘다)
+      // After scrolling, late-loading images and lists can shift positions, or a list recycles slots and draws something else.
+      // Let it paint briefly, then measure again (if something else was drawn, locate stops with "read the page again")
       if (at.moved) {
         await sleep(300)
         await paint(tabId)
@@ -1917,7 +1927,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const t0 = Date.now()
       const before = (await chrome.tabs.get(tabId)).url
       const fid = frameOf(tabId, ref).frameId
-      // 막힌 새 창을 알아채게 window.open 지켜보기를 건다 (읽기 뒤 화면이 바뀌었을 수 있어 다시. 이미 걸려 있으면 그대로)
+      // Hook window.open watching to notice blocked new windows (the page may have changed since the read, so again. If already hooked, left as is)
       await chrome.scripting
         .executeScript({
           target: fid ? { tabId, frameIds: [fid] } : { tabId },
@@ -1926,7 +1936,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         })
         .catch(() => undefined)
       let via: 'mouse' | 'key' | 'script' = 'mouse'
-      // 화면 서명: 주소·초점·체크된 칸 수·문서 크기 (그 액자 안에서 본다)
+      // Screen signature: URL, focus, number of checked boxes, document size (looked at inside that frame)
       const mark = () =>
         inFrame(tabId, fid, () => {
           const f = document.activeElement
@@ -1939,8 +1949,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           ].join('|')
         }).catch(() => '')
       const noHit = { armed: false, hit: false, n: 0 } as ReturnType<typeof pageHitRead>
-      // 닿았는지: 진짜 입력(isTrusted)이 그 요소에 닿았으면 눌린 것이다. 다시 누르지 않는다
-      // (화면 글이 안 바뀌는 버튼을 "안 눌렸다"고 보고 다시 눌러 키패드 숫자가 두 번 들어갔다 — 실측 쿠팡 결제 비밀번호)
+      // Whether it landed: if real input (isTrusted) reached the element, it was clicked. Do not click again
+      // (a button whose page text does not change was judged "not clicked" and clicked again, so a keypad digit went in twice - measured Coupang payment PIN)
       let delivered = false
       let hitOther: string | undefined
       const mouse = !at.hidden && !at.outside && !at.coveredByControl
@@ -1951,30 +1961,30 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           inFrame(tabId, fid, pageMutArm, 'click').catch(() => false),
           inFrame(tabId, fid, pageHitArm, ref).catch(() => false),
         ])
-        await clickAt(tabId, at.x, at.y, quick ? undefined : '두리가 누르는 중')
+        await clickAt(tabId, at.x, at.y, quick ? undefined : txt.cursorClicking)
         await settle(tabId, before, quick)
         const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
         const opened = await openedSince(tabId, t0)
-        // 문서가 바뀌었으면(이동) 걸어 둔 것이 사라진다: 눌려서 넘어간 것이다
+        // If the document changed (navigation), what was hooked is gone: the click went through and it navigated
         delivered = hit.hit || opened || !hit.armed
         if (!hit.hit && hit.other) hitOther = hit.other
         if (!delivered) {
-          // 닿은 기록이 없어도 화면이 바뀌었으면 다시 누르지 않는다 (사이트가 입력을 먼저 가로챘을 수 있다)
+          // Even without a landing record, if the page changed do not click again (the site may have intercepted the input first)
           const mut = await inFrame(tabId, fid, pageMutRead, 'click', true).catch(() => ({ n: -1 }))
           const same = sig !== '' && sig === (await mark())
-          // 창이 일부 가려져 있으면 '보인다'고 나와도 Chrome이 마우스 입력을 버릴 때가 있다 (실측: 인증번호 확인 버튼).
-          // 켜고 끄는 칸(체크박스 등)은 다시 누르면 되돌아가니 다시 누르지 않는다. once: 그래도 한 번만
+          // If the window is partly occluded, Chrome sometimes drops mouse input even when it says "visible" (measured: authentication code confirm button).
+          // Toggles (checkboxes, etc.) flip back if clicked again, so do not click again. once: still only one time
           retry = same && mut.n <= 0 && !a.once && !(await locate(tabId, ref, 'activate', true)).toggle
         } else void inFrame(tabId, fid, pageMutRead, 'click', true).catch(() => undefined)
       }
       if (!mouse || retry) {
-        // 두리 창이 가려져 있거나 화면이 꺼져 있으면 Chrome이 마우스 입력을 버린다 (키보드는 받는다, 실측).
-        // 다른 버튼이 덮고 있는데 force로 부른 때도 마우스로 누르면 덮은 버튼이 눌리니 그 요소를 직접 누른다.
-        // 초점을 주고 Enter·Space로 누른다. 브라우저가 만드는 진짜 클릭이라 사이트가 보기에도 같다
+        // If the Dool2 window is occluded or the screen is off, Chrome drops mouse input (it accepts the keyboard, measured).
+        // Even when another button covers it and this was called with force, a mouse click would press the covering button, so click the element directly.
+        // Give focus and press with Enter or Space. It is a real click made by the browser, so it looks the same to the site
         const act = await locate(tabId, ref, 'activate', true)
         await inFrame(tabId, fid, pageHitArm, ref).catch(() => false)
         if (!act.focused) {
-          // 키보드로 누를 수 없는 요소(초점을 못 받는 div 등)는 마지막 수단으로 페이지 안에서 누른다
+          // For elements that cannot be pressed by keyboard (a div that cannot take focus), click inside the page as a last resort
           via = 'script'
           delivered = Boolean(await inFrame(tabId, fid, pageClick, ref).catch(() => false))
         } else {
@@ -1983,7 +1993,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           await settle(tabId, before, quick)
           const hit = await inFrame(tabId, fid, pageHitRead, false).catch(() => noHit)
           delivered = hit.hit || !hit.armed || (await openedSince(tabId, t0))
-          // 뒤에 가려진 창은 키도 안 먹을 때가 있다 (실측): 그 요소에 닿지 않았을 때만 페이지 안에서 누른다
+          // Occluded windows sometimes do not take keys either (measured): click inside the page only if it did not reach that element
           if (!delivered && !act.toggle) {
             via = 'script'
             delivered = Boolean(await inFrame(tabId, fid, pageClick, ref).catch(() => false))
@@ -1991,8 +2001,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
         await settle(tabId, before, quick)
       }
-      // 누른 뒤 창이 스스로 닫혔다 (결제 창의 마지막 비밀번호 숫자: 결제가 끝나면 결제 회사 창이 닫힌다).
-      // 눌린 것이니 오류('탭이 닫혔어요')로 돌려주지 않는다 — 예전에는 결제가 된 뒤에 '못 눌렀다'로 알렸다
+      // The window closed itself after the click (the last PIN digit in a payment window: when payment ends the payment company window closes).
+      // It was clicked, so do not return it as an error ('The tab was closed') - it used to report "could not click" after the payment went through
       const closed = {
         tabId,
         url: before ?? '',
@@ -2014,7 +2024,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         ...now,
         via,
         delivered,
-        // 누른 자리 (페이지 화면 기준, 액자 안이면 겹친 액자 상자를 모두 더한 자리)
+        // Where it was clicked (page viewport based; inside a frame, the sum of all nested frame boxes)
         point: { x: Math.round(at.x), y: Math.round(at.y) },
         ...(await takePopup(tabId, t0)),
         ...(at.coveredBy && !at.hidden ? { coveredBy: at.coveredBy } : {}),
@@ -2025,20 +2035,20 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     }
     case 'type': {
       const tabId = await ownedTab(a)
-      if (typeof a.text !== 'string') throw new Error('넣을 글자가 없어요')
+      if (typeof a.text !== 'string') throw new Error('No text to enter')
       const ref = String(a.ref ?? '')
       let at = await locate(tabId, ref, 'type')
-      if (at.isPassword) throw new Error('비밀번호 칸에는 두리 금고로만 채워요')
+      if (at.isPassword) throw new Error('Password fields are filled only from the Dool2 vault')
       if (at.drawn) return typeDrawn(tabId, ref, at, a.text, Boolean(a.submit))
-      // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있다: 초점이 안 들어갔으면 칸을 한 번 눌러 진짜 초점을 준 뒤
-      // 다시 골라(원래 글 전체 선택) 넣는다. 초점 없이 넣으면 글이 바깥 페이지로 가거나 사라졌다 (fill과 같은 까닭)
+      // Frames at another address sometimes block script focus: if focus did not go in, click the field once to give real focus,
+      // then select again (select all the original text) and type. Typing without focus sent text to the outer page or lost it (same reason as fill)
       if (at.frame && !at.hidden && !at.focused) {
-        await clickAt(tabId, at.x, at.y, '두리가 입력하는 중')
+        await clickAt(tabId, at.x, at.y, txt.cursorTyping)
         at = await locate(tabId, ref, 'type')
-      } else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리가 입력하는 중')
+      } else if (!at.hidden) await showCursor(tabId, at.x, at.y, txt.cursorTyping)
       await cdp(tabId, 'Input.insertText', { text: a.text })
-      // 한 번에 넣기를 받지 않는 칸: 하나도 안 들어갔으면 잠깐 뒤 다시 보고, 그래도 비었을 때만 다시 골라 키를 하나씩
-      // (글을 늦게 반영하는 칸에서 바로 키를 또 누르면 두 번 들어간다)
+      // Fields that do not accept inserting all at once: if nothing went in, look again after a moment, and only if still empty select again and type key by key
+      // (pressing keys right away in a field that reflects text late puts it in twice)
       if (a.text && /^[\x20-\x7e]+$/.test(a.text)) {
         const fid = frameOf(tabId, ref).frameId
         const len = () => inFrame(tabId, fid, pageValueLength, ref, false).catch(() => -1) as Promise<number>
@@ -2054,7 +2064,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       if (a.submit) {
         const before = (await chrome.tabs.get(tabId)).url
-        // 입력을 조금 늦게 상태에 반영하는 칸이 있다: 잠깐 기다린 뒤 Enter (pressKey가 한 장 그리기도 한다)
+        // Some fields reflect input into state a little late: wait a moment, then Enter (pressKey also paints one frame)
         await sleep(300)
         await pressKey(tabId, 'Enter')
         await settle(tabId, before)
@@ -2062,16 +2072,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'fill': {
-      // 두리 금고 (ADR 0011): 값은 본체가 준다. 주소가 맞을 때만 넣고, 값은 어디에도 돌려주지 않는다
+      // Dool2 vault (ADR 0011): the daemon gives the value. Enter it only if the address matches, and never return the value anywhere
       const tabId = await ownedTab(a)
-      if (typeof a.value !== 'string' || typeof a.origin !== 'string') throw new Error('채울 값이 없어요')
+      if (typeof a.value !== 'string' || typeof a.origin !== 'string') throw new Error('No value to fill')
       const at = await locate(tabId, a.ref, 'type')
-      // 액자 안 칸은 같은 사이트의 액자일 때만 (로그인 창을 하위 도메인 액자로 띄우는 곳)
+      // A field inside a frame only if it is a frame of the same site (places that show the login window as a subdomain frame)
       const inFrameRef = Boolean(at.frame)
-      // 내 정보(이름·휴대폰·생년월일)는 공인된 인증 창 액자에도 넣는다 (금융인증서 창은 금융결제원 주소의 액자다).
-      // 비밀번호(금고)는 a.trust를 주지 않아 지금처럼 그 사이트에만 넣는다
-      // 빈 주소(about:blank·srcdoc) 액자는 그 페이지가 직접 그린 것이라 바깥 페이지 주소로 본다
-      // (실측 11-21 신한카드 아이디 찾기: 휴대폰 인증 칸이 about:blank 액자라 '주소가 달라서' 채우지 않았다)
+      // Personal info (name, phone, birth date) is also entered into official authentication window frames (the financial certificate window is a frame at a Korea Financial Telecommunications and Clearings Institute address).
+      // A password (vault) gets no a.trust, so as now it goes only to that site
+      // Frames with an empty address (about:blank, srcdoc) were drawn by that page itself, so treat them as the outer page address
+      // (measured 11-21 Shinhan Card ID search: the phone authentication field was an about:blank frame, so it was not filled for "different address")
       const opaque = !at.origin || at.origin === 'null' || /^about:|^data:/.test(at.origin)
       const frameOrigin =
         inFrameRef && opaque
@@ -2084,27 +2094,27 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         inFrameRef && Array.isArray(a.trust) && (a.trust as string[]).includes(siteOf(frameOrigin))
       const ok =
         frameOrigin === a.origin || (inFrameRef && siteOf(frameOrigin) === siteOf(a.origin)) || trusted
-      if (!ok) throw new Error('지금 페이지 주소가 저장된 사이트와 달라서 채우지 않았어요')
-      if (a.password && !at.isPassword) throw new Error('비밀번호 칸이 아니라서 채우지 않았어요')
-      // 다른 주소의 액자는 스크립트 초점을 막는 경우가 있어, 칸을 한 번 눌러 초점을 준다
-      // 스크립트 초점이 이미 들어갔으면 누르지 않는다: 액자 좌표가 어긋나 칸 밖을 누르면 초점이 빠지고
-      // 사이트가 "번호를 올바르게 입력해 주세요"를 띄웠다 (실측 금융인증서 창)
-      if (inFrameRef && !at.hidden && !at.focused) await clickAt(tabId, at.x, at.y, '두리 금고로 채우는 중')
-      else if (!at.hidden) await showCursor(tabId, at.x, at.y, '두리 금고로 채우는 중')
+      if (!ok) throw new Error('The current page address differs from the saved site, so nothing was filled')
+      if (a.password && !at.isPassword) throw new Error('It is not a password field, so nothing was filled')
+      // Frames at another address sometimes block script focus, so click the field once to give focus
+      // If script focus already went in, do not click: if frame coordinates are off and the click lands outside the field, focus is lost
+      // and the site showed "Enter the number correctly" (measured: financial certificate window)
+      if (inFrameRef && !at.hidden && !at.focused) await clickAt(tabId, at.x, at.y, txt.cursorFillingVault)
+      else if (!at.hidden) await showCursor(tabId, at.x, at.y, txt.cursorFillingVault)
       await cdp(tabId, 'Input.insertText', { text: a.value })
       const frameId = frameOf(tabId, String(a.ref)).frameId
-      // 칸이 글자 수를 막으면(maxlength) 잘려 들어간다: 들어간 길이만 알린다 (값은 돌려주지 않는다)
+      // If the field limits characters (maxlength) the text is cut: report only the length that went in (the value is not returned)
       let length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), !a.password).catch(
         () => -1,
       )) as number
-      // 글을 늦게 반영하는 칸이 있다: 0이면 잠깐 뒤 다시 본다 (바로 키를 또 누르면 두 번 들어간다)
+      // Some fields reflect text late: if 0, look again after a moment (pressing keys right away puts it in twice)
       if (length === 0 && a.value && !a.password) {
         await sleep(150)
         length = (await inFrame(tabId, frameId, pageValueLength, String(a.ref), true).catch(
           () => -1,
         )) as number
       }
-      // 그래도 하나도 안 들어갔으면 다시 골라(전체 선택) 키를 하나씩 (비밀번호는 금고 값이 키 기록에 남지 않게 하지 않는다)
+      // If still nothing went in, select again (select all) and type key by key (not done for passwords, so the vault value does not stay in key records)
       if (length === 0 && a.value && !a.password) {
         await locate(tabId, a.ref, 'type')
         await typeKeys(tabId, a.value)
@@ -2112,8 +2122,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           () => -1,
         )) as number
       }
-      // 비밀번호인데 한 번에 넣은 글이 잘리거나 빠졌으면(보안 입력 칸: 키 입력만 받는 곳) 다시 골라 키를 하나씩 한 번 더
-      // (실측 11-21 신한카드 가입: 만든 비밀번호가 '글자가 빠짐'으로 계속 거절됐다). 값은 키 이벤트로만 가고 어디에도 남지 않는다
+      // If a password inserted at once was cut or dropped (secure input fields that take only key input), select again and type key by key once more
+      // (measured 11-21 Shinhan Card signup: the created password kept being rejected as "characters missing"). The value goes only as key events and is kept nowhere
       if (a.password && a.value && length >= 0 && length !== a.value.length) {
         await locate(tabId, a.ref, 'type')
         await typeKeys(tabId, a.value)
@@ -2133,8 +2143,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'scroll': {
-      // ref를 주면 그 요소(또는 그것을 품은 굴러가는 상자: 목록 창·모달·액자 안)를 굴린다. 없으면 페이지.
-      // 얼마나 굴렀는지·끝인지를 돌려준다 (AI가 더 굴릴지 정한다)
+      // With ref, scroll that element (or the scrolling box containing it: list window, modal, inside a frame). Without it, the page.
+      // Return how far it scrolled and whether it reached the end (the AI decides whether to scroll more)
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const v = await inPage(tabId, pageViewport)
@@ -2142,9 +2152,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const ref = typeof a.ref === 'string' && /^e\d+$/.test(a.ref) ? a.ref : null
       const fid = ref ? frameOf(tabId, ref).frameId : 0
       const info0 = await inFrame(tabId, fid, pageScrollInfo, ref, 0)
-      if (!info0.ok) throw new Error(info0.error ?? '굴릴 곳을 찾지 못했어요')
+      if (!info0.ok) throw new Error(info0.error ?? 'Could not find a place to scroll')
       if (v.hidden) {
-        // 가려진 창은 마우스 휠을 받지 않는다. 스크롤은 사이트에 의미 있는 입력이 아니라서 페이지 안에서 옮긴다
+        // Occluded windows do not take the mouse wheel. Scrolling is not input that matters to sites, so move it inside the page
         if (ref) await inFrame(tabId, fid, pageScrollInfo, ref, dir)
         else await inPage(tabId, pageScroll, dir)
       } else {
@@ -2160,7 +2170,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       await sleep(300)
       let info1 = await inFrame(tabId, fid, pageScrollInfo, ref, 0)
-      // 휠이 가운데의 다른 상자를 굴려 정한 곳이 그대로면 그곳을 페이지 안에서 굴린다 (굴린 곳은 결과에 그대로 알린다)
+      // If the wheel scrolled a different box in the middle and the spot stayed the same, scroll that spot inside the page (the scrolled spot is reported in the result as is)
       const room = dir > 0 ? info0.top < info0.max - 1 : info0.top > 0
       if (!v.hidden && info1.ok && info1.top === info0.top && room) {
         await inFrame(tabId, fid, pageScrollInfo, ref, dir)
@@ -2179,9 +2189,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
     }
     case 'allow-popups': {
-      // 결제 창은 버튼을 누른 순간이 아니라 서버에 다녀와서 새 창으로 열린다: Chrome이 팝업으로 막아 화면만 하얗게 남았다
-      // (실측 11-20 G마켓 카드 결제). 두리가 결제하는 사이트만 팝업을 허용한다 (사람은 주소창의 '팝업 허용'을 누르던 것).
-      // 사이트 범위는 같은 사이트 판단(siteOf)과 같다: shop.co.kr·shop.com.au는 세 칸, IP·localhost는 그 주소만
+      // A payment window opens as a new window after a round trip to the server, not at the moment of the button press: Chrome blocked it as a popup and the screen stayed white
+      // (measured 11-20 Gmarket card payment). Popups are allowed only for the site Dool2 pays on (a person used to press "Allow popups" in the address bar).
+      // The site range equals the same-site judgment (siteOf): three labels for shop.co.kr and shop.com.au, only that address for IPs and localhost
       const tabId = await ownedTab(a)
       const u = new URL((await chrome.tabs.get(tabId)).url ?? '')
       const base = siteOf(u.origin)
@@ -2192,14 +2202,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return { ok: true, pattern }
     }
     case 'popup': {
-      // 누른 뒤 늦게 뜬 새 창(결제 창 등): 그 탭이 연 창 중 아직 알리지 않은 가장 새것. 막힌 새 창도 함께 알린다
+      // A new window that opened late after the click (payment window, etc.): the newest not-yet-reported window opened by that tab. Blocked new windows are reported too
       const tabId = await ownedTab(a)
       const blocked = await blockedPopups(tabId).catch(() => [])
       return { ...(await takePopup(tabId)), ...(blocked.length ? { blockedPopups: blocked } : {}) }
     }
     case 'tabs': {
-      // 두리 탭 목록: 누가 열었는지·언제·주소·제목·창 종류·앞 탭인지, 최근에 닫힌 새 창, 정리로 닫은 탭, 막힌 새 창.
-      // 늦게 뜬 결제 창·로그인 창이 어디 있는지 AI가 직접 본다
+      // Dool2 tab list: who opened it, when, address, title, window type, whether it is the front tab, recently closed new windows, tabs closed by tidying, blocked new windows.
+      // So the AI can see for itself where a late payment window or login window is
       const s = await load()
       const now = Date.now()
       const tabs: Record<string, unknown>[] = []
@@ -2238,8 +2248,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return { tabs, closed, tidied: (s.tidied ?? []).slice(-10), blockedPopups: blocked }
     }
     case 'wait': {
-      // 기다리기: 화면이 바뀔 때까지(또는 ms 동안) 기다리고, 무엇이 바뀌었는지 돌려준다.
-      // 바뀜: 문서 글·요소(본문·액자), 액자 이동, 주소 이동, 새 탭, 사이트 알림창·확인 창. 됐는지는 AI가 본다
+      // Wait: wait until the page changes (or for ms) and return what changed.
+      // Changes: document text and elements (main page and frames), frame navigation, address change, new tabs, site alerts and confirm dialogs. The AI judges whether it worked
       const tabId = await ownedTab(a)
       const ms = Math.min(Math.max(Number(a.ms) || 3_000, 100), 10_000)
       const untilChange = a.until !== 'time'
@@ -2247,7 +2257,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const before = (await chrome.tabs.get(tabId)).url ?? ''
       const notesBefore = dialogNotes.get(tabId)?.length ?? 0
       const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
-      // 지켜볼 문서: 본문 + 마지막으로 읽은 액자들 (많아야 8개)
+      // Documents to watch: the main page + the frames read last (at most 8)
       const known = new Set([...(frameMaps.get(tabId)?.values() ?? [])].map((f) => f.frameId))
       const watchIds = [0, ...frames.filter((f) => known.has(f.frameId)).map((f) => f.frameId)].slice(0, 9)
       const armed: number[] = []
@@ -2257,7 +2267,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             if (await inFrame(tabId, fid, pageMutArm, 'wait').catch(() => false)) armed.push(fid)
           }),
         )
-      const label = (fid: number) => (fid ? `f${frameIndexes.get(tabId)?.get(fid) ?? '?'}` : '본문')
+      const label = (fid: number) => (fid ? `f${frameIndexes.get(tabId)?.get(fid) ?? '?'}` : 'main')
       let changed = false
       for (let i = 0; Date.now() - t0 < ms; i++) {
         await sleep(200)
@@ -2283,7 +2293,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         if (quick || dom) {
           changed = true
           if (untilChange) {
-            // 바뀌기 시작했으면 조금 더 기다려 마저 그리게 한다 (이동이면 끝날 때까지)
+            // If it started changing, wait a bit longer for it to finish painting (if it is a navigation, until it ends)
             await settle(tabId, before)
             break
           }
@@ -2316,16 +2326,20 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       const blocked = await blockedPopups(tabId).catch(() => [])
       const state = await pageState(tabId)
       const what = [
-        ...(state.url !== before ? [`주소 이동: ${state.url.slice(0, 120)}`] : []),
-        ...navs.filter((n) => n.frame !== '본문').map((n) => `액자 ${n.frame} 이동: ${n.url.slice(0, 100)}`),
+        ...(state.url !== before ? [`address changed: ${state.url.slice(0, 120)}`] : []),
+        ...navs
+          .filter((n) => n.frame !== 'main')
+          .map((n) => `frame ${n.frame} navigated: ${n.url.slice(0, 100)}`),
         ...dom.map(
           (d) =>
-            `${d.frame} 글·요소 바뀜 (더함 ${d.added}·뺌 ${d.removed}·속성 ${d.attrs})${d.text ? `: ${d.text}` : ''}`,
+            `${d.frame} text/elements changed (added ${d.added}, removed ${d.removed}, attributes ${d.attrs})${d.text ? `: ${d.text}` : ''}`,
         ),
-        ...newTabs.map((n) => `새 탭 ${n.tabId}${n.closed ? ' (이미 닫힘)' : ''}`),
-        ...blocked.map((b) => `막힌 새 창: ${b.url || '(주소 없음)'}`),
-        ...(state.dialog ? [`사이트 확인 창: "${state.dialog.message.slice(0, 120)}"`] : []),
-        ...((dialogNotes.get(tabId)?.length ?? 0) > notesBefore ? ['사이트 알림창이 떴다 닫혔어요'] : []),
+        ...newTabs.map((n) => `new tab ${n.tabId}${n.closed ? ' (already closed)' : ''}`),
+        ...blocked.map((b) => `blocked new window: ${b.url || '(no address)'}`),
+        ...(state.dialog ? [`site confirm dialog: "${state.dialog.message.slice(0, 120)}"`] : []),
+        ...((dialogNotes.get(tabId)?.length ?? 0) > notesBefore
+          ? ['a site alert appeared and was closed']
+          : []),
       ]
       return {
         ...state,
@@ -2342,9 +2356,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
     }
     case 'element-shots': {
-      // 표시마다 그 자리만 잘라 찍는다 (그림 숫자 키패드: 버튼마다 따로 보여 AI가 숫자를 읽게).
-      // 표시마다 보이게 굴린 뒤 찍고, 표시마다 됐는지(status) 알린다. 굴려도 화면 밖(아래에 고정된 키패드)일 때만
-      // 화면 높이를 잠깐 늘린다 (실측 11-20 쿠팡 키패드가 창 아래로 잘려 회색 그림만 찍혔다)
+      // Capture only that spot for each mark (picture digit keypads: each button shown separately so the AI reads the digit).
+      // Scroll each into view, capture, and report the status of each. Only when still off-screen after scrolling (a keypad fixed at the bottom)
+      // stretch the viewport height briefly (measured 11-20 Coupang keypad was cut off below the window and only gray images were captured)
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const refs = (Array.isArray(a.refs) ? a.refs : []).map(String).slice(0, 16)
@@ -2363,8 +2377,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const off = p.y < 0 || p.x < 0 || p.y + r.h > v.height + 1 || p.x + r.w > v.width + 1
         return { status: off ? 'offscreen' : 'ok', x: p.x, y: p.y, w: r.w, h: r.h }
       }
-      // 먼저 모두 잰다. 화면 아래로 잘린 것이 있으면 가장 아래 것까지 보이게 한 번만 늘리고 다시 잰다
-      // (예전에는 처음 잘린 버튼 높이까지만 늘려, 그 아래 줄 키패드 버튼은 여전히 화면 밖이라 못 찍었다 — 실측 결제 창 키패드)
+      // Measure everything first. If something is cut off below the screen, stretch once so the lowest one is visible and measure again
+      // (it used to stretch only to the height of the first cut button, so keypad buttons on the lower row were still off-screen and could not be captured - measured payment window keypad)
       const fids = new Map<string, number>()
       const plan = new Map<string, Shot>()
       for (const ref of refs) {
@@ -2393,7 +2407,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           status.push({ ref, status: m.status })
           continue
         }
-        // clip은 문서 기준: 굴린 만큼 더한다 (scrollOffset)
+        // clip is document-based: add the scroll amount (scrollOffset)
         const o = await scrollOffset(tabId, 'layout')
         const shot = await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
           format: 'jpeg',
@@ -2401,10 +2415,10 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           clip: { x: Math.max(0, m.x) + o.x, y: Math.max(0, m.y) + o.y, width: m.w, height: m.h, scale: 2 },
         }).catch(() => undefined)
         status.push({ ref, status: shot ? 'ok' : 'offscreen' })
-        // rect: 보이는 화면 기준 자리 (그림 눌러 풀기에서 폰이 누른 곳을 화면 좌표로 바꾼다)
+        // rect: position relative to the visible viewport (to convert where the phone tapped to screen coordinates when solving a picture by tapping)
         if (shot) shots.push({ ref, data: shot.data, rect: { x: m.x, y: m.y, w: m.w, h: m.h } })
       }
-      // 표시가 없는 그림(로봇 확인 그림·캔버스): AI가 화면 사진에서 짚은 상자 (보이는 화면 기준 0~1000)
+      // Pictures without a mark (robot-check pictures, canvases): a box the AI pointed at in a screenshot (0-1000 of the visible viewport)
       const boxes = (Array.isArray(a.boxes) ? a.boxes : []).slice(0, 4) as Record<string, unknown>[]
       if (boxes.length) {
         const v = await inPage(tabId, pageViewport)
@@ -2429,14 +2443,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         }
       }
       if (tall) await restoreHeight(tabId)
-      // taller: 화면 아래로 잘려 높이를 잠깐 늘려 찍었다 (다시 읽을 때 자리가 원래대로라는 것을 알린다)
+      // taller: it was cut off below the screen, so the viewport height was stretched briefly to capture (tells that positions are back to normal when read again)
       return { shots, status, ...(tall ? { taller: true } : {}) }
     }
     case 'captcha-candidates': {
-      // 보안문자 칸 둘레를 몇 장 잘라 돌려준다. 어느 그림이 보안문자인지는 AI가 보고 고른다
+      // Return several crops around the captcha field. The AI looks and chooses which picture is the captcha
       const tabId = await ownedTab(a)
       await frontTab(tabId)
-      if (typeof a.ref !== 'string') throw new Error('칸 표시(ref)가 필요해요')
+      if (typeof a.ref !== 'string') throw new Error('A field mark (ref) is required')
       const f = frameOf(tabId, a.ref)
       const rects = ((await inFrame(tabId, f.frameId, pageCaptchaRects, a.ref).catch(() => [])) ?? []) as {
         x: number
@@ -2447,7 +2461,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }[]
       const off = await framePoint(tabId, f.frameId, 0, 0, false)
       await sleep(250)
-      // clip은 문서 기준: 굴린 만큼 더한다
+      // clip is document-based: add the scroll amount
       const o = await scrollOffset(tabId, 'layout')
       off.x += o.x
       off.y += o.y
@@ -2471,8 +2485,8 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'screenshot': {
       const tabId = await ownedTab(a)
       await frontTab(tabId)
-      // 원격 화면: 폰 화면 크기로 그리게 한다 (모바일 화면으로 다시 그려져 폰에 꽉 차고, 누른 자리가 그대로 맞는다).
-      // 폰이 화면을 그만 부탁하면 디버거가 떨어지면서 원래 크기로 돌아온다
+      // Remote screen: draw at the phone's screen size (redrawn as a mobile page that fills the phone, and tap positions match).
+      // When the phone stops asking for the screen, the debugger detaches and the original size comes back
       const fit = a.fit as { width?: unknown; height?: unknown } | undefined
       if (fit) {
         const width = Math.round(Math.min(Math.max(Number(fit.width) || 0, 320), 1024))
@@ -2492,17 +2506,17 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         await cdp(tabId, 'Emulation.clearDeviceMetricsOverride', {})
         emulated.delete(tabId)
       }
-      // 레티나 화면이면 2배로 찍혀 AI가 읽기에 너무 크다. 보이는 영역만, 가로 1280px(원격 화면은 더 작게) 이하로 줄인다
+      // A Retina screen captures at 2x, too big for the AI to read. Only the visible area, shrunk to at most 1280px wide (smaller for the remote screen)
       const v = await inPage(tabId, pageViewport)
       const maxWidth = Math.min(Math.max(Number(a.maxWidth) || 1280, 320), 1280)
       const quality = Math.min(Math.max(Number(a.quality) || 60, 30), 80)
-      // 원격 화면은 폰에서 또렷하게 2배까지 찍는다
+      // The remote screen captures up to 2x so it is sharp on the phone
       const scale =
         (fit ? Math.min(v.dpr, maxWidth / v.width) : Math.min(a.remote ? 2 : 1, maxWidth / v.width)) / v.dpr
-      // 폰 크기로 그리는 중이면(view·fit) 화면에 보이는 그대로 찍는다 (넓은 페이지는 폰처럼 줄어 보인다).
-      // 그때 누르는 자리는 보이는 화면 기준이라 viewport도 그 크기로 알려 준다
+      // When drawing at phone size (view, fit), capture exactly what is visible (wide pages look shrunk like on a phone).
+      // The click positions are viewport based then, so report the viewport at that size too
       const phone = Boolean(a.remote) && (phoneView.has(tabId) || emulated.has(tabId))
-      // clip은 문서 기준: 지금 보이는 곳을 찍으려면 굴린 만큼 더한다 (예전엔 0,0이라 굴린 페이지의 위쪽이 찍혔다)
+      // clip is document-based: to capture what is visible now, add the scroll amount (it used to be 0,0 so the top of a scrolled page was captured)
       const o = phone ? { x: 0, y: 0 } : await scrollOffset(tabId, 'layout')
       const shot = phone
         ? await cdp<{ data: string }>(tabId, 'Page.captureScreenshot', {
@@ -2528,7 +2542,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
     }
     case 'input': {
-      // 원격 화면(폰)에서 사람이 하는 입력. 좌표는 CSS 픽셀 (본체가 사진 비율을 바꿔 준다)
+      // Input a person makes on the remote screen (phone). Coordinates are CSS pixels (the daemon rescales the image ratio)
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       const before = (await chrome.tabs.get(tabId)).url
@@ -2544,16 +2558,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             y <= Math.max(v.height, v.vv.h * v.vv.scale)
           )
         )
-          throw new Error('화면 밖을 눌렀어요')
-        // 창이 보이면 진짜 마우스로(보이는 화면 기준 자리), 가려져 있으면 그 자리의 요소를 누른다 (가려진 창은 마우스 입력을 버린다)
+          throw new Error('Clicked outside the screen')
+        // If the window is visible, use the real mouse (visible viewport position); if occluded, click the element at that spot (occluded windows drop mouse input)
         if (!v.hidden) await clickAt(tabId, x, y)
         else if (phoneView.has(tabId))
           await inPage(tabId, pageTapAt, v.vv.x + x / v.vv.scale, v.vv.y + y / v.vv.scale)
         else await inPage(tabId, pageTapAt, x, y)
-        // 입력칸을 눌렀으면 커서를 끝으로 (폰에서 이어 쓰고 지우기 좋게)
+        // If an input field was clicked, put the caret at the end (easy to continue writing and erasing from the phone)
         await inPage(tabId, pageCaretEnd).catch(() => {})
       } else if (a.action === 'view') {
-        // 폰 너비로 그리기: 사이트가 폰 화면으로 보여 주어 글씨가 제 크기다
+        // Draw at phone width: the site shows its phone layout so text is at its proper size
         const width = Math.round(Math.min(Math.max(Number(a.w) || 390, 320), 520))
         const height = Math.round(Math.min(Math.max(Number(a.h) || 700, 360), 1100))
         await phoneWidth(tabId, width, height)
@@ -2563,18 +2577,18 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         await leavePhoneView(tabId)
         return pageState(tabId)
       } else if (a.action === 'text') {
-        if (typeof a.text !== 'string' || !a.text) throw new Error('넣을 글자가 없어요')
+        if (typeof a.text !== 'string' || !a.text) throw new Error('No text to enter')
         await cdp(tabId, 'Input.insertText', { text: a.text.slice(0, 500) })
       } else if (a.action === 'key') {
         const key = String(a.key ?? '')
         if (!['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowDown', 'ArrowUp'].includes(key))
-          throw new Error(`이 키는 원격으로 누를 수 없어요: ${key}`)
+          throw new Error(`This key cannot be pressed remotely: ${key}`)
         await pressKey(tabId, key)
       } else if (a.action === 'scroll') {
         const dy = Number(a.dy) || 0
         if (Math.abs(dy) <= 1) await inPage(tabId, pageScroll, dy < 0 ? -1 : 1)
         else {
-          // 손가락으로 끈 만큼: 그 자리에서 휠을 굴려 안쪽 상자도 같이 내려간다
+          // As far as the finger dragged: scroll the wheel at that spot so inner boxes go down together
           const x = Math.max(Math.round(Number(a.x) || v.width / 2), 0)
           const y = Math.max(Math.round(Number(a.y) || v.height / 2), 0)
           const d = Math.max(-3000, Math.min(3000, Math.round(dy)))
@@ -2593,14 +2607,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
             ])
           return pageState(tabId)
         }
-      } else throw new Error('모르는 원격 입력이에요')
+      } else throw new Error('Unknown remote input')
       await settle(tabId, before)
-      // 누른 뒤 PC용 창(간편인증 등)이 떴거나 다른 화면으로 넘어갔으면 폰 너비가 맞는지 다시 잰다
+      // If a PC-style window (simple authentication, etc.) appeared after the click or it moved to another screen, measure again whether the phone width fits
       if (a.action === 'tap') await refitAfterTap(tabId, before)
       return pageState(tabId)
     }
     case 'form': {
-      // 원격 화면 '필요한 칸만': 칸·고를 것·버튼을 뽑고, 보안문자 그림은 잘라 붙인다
+      // Remote screen "only the needed fields": pull fields, choices and buttons, and attach cropped captcha images
       const tabId = await ownedTab(a)
       await frontTab(tabId)
       let form: Awaited<ReturnType<typeof pageForm>> & { frame?: string } = await inPage(
@@ -2609,7 +2623,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         false,
       )
       formFrames.delete(tabId)
-      // 가운데를 덮은 창이 액자면(정부24 간편인증) 그 액자 안의 칸을 뽑는다. 표시에 액자 번호를 붙여 채울 때 그 액자로 보낸다
+      // If the window covering the center is a frame (Gov24 simple authentication), pull the fields inside that frame. Add the frame number to marks so fills go to that frame
       if (form.frame) {
         const want = form.frame
         const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => null)) ?? []
@@ -2652,9 +2666,9 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       await frontTab(tabId)
       const before = (await chrome.tabs.get(tabId)).url
       const v = await inPage(tabId, pageViewport)
-      // 액자 안 칸(표시 앞에 액자 번호)이면 그 액자에서 찾고, 자리는 액자 상자만큼 옮긴다
+      // If it is a field in a frame (frame number before the mark), look in that frame and shift the position by the frame box
       const fr = formFrames.get(tabId)
-      // 자리를 못 재면 액자 안에서 그 자리를 누른다 (엉뚱한 곳을 진짜 마우스로 누르지 않게)
+      // If the position cannot be measured, click that spot inside the frame (so the real mouse does not click somewhere wrong)
       const off = fr
         ? await framePoint(tabId, fr.frameId, 0, 0, false).catch(() => undefined)
         : { x: 0, y: 0 }
@@ -2666,7 +2680,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
         const w = where(raw)
         const t = await inFrame(tabId, w.frameId, pageFormTarget, w.id)
         if (!w.frameId || !t.ok || t.done) return t
-        // 가려진 창이면 액자 안에서 그 자리를 누른다(lx·ly는 액자 기준 그대로)
+        // For an occluded window, click that spot inside the frame (lx and ly stay relative to the frame)
         if (!off) return { ...t, x: undefined, y: undefined, frameId: w.frameId }
         return { ...t, x: (t.x ?? 0) + off.x, y: (t.y ?? 0) + off.y, frameId: w.frameId }
       }
@@ -2687,21 +2701,21 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
           if (t.ok && !t.done && t.checked !== it.checked) {
             await tapIn(t)
             await sleep(120)
-            // 눌렀는데 그대로면 같은 줄의 글자를 누른다 (칸을 덮어 둔 화면)
+            // If nothing changed after the click, click the text on the same line (a screen that covers the field)
             const w = where(id)
             await inFrame(tabId, w.frameId, pageFormCheckFix, w.id, it.checked).catch(() => undefined)
           }
         } else if (typeof it.value === 'string') {
-          // 진짜 키 입력처럼: 칸을 비우고(전체 선택) 새 글자를 넣는다
+          // Like real key input: clear the field (select all) and type the new text
           const w = where(id)
           if (!(await inFrame(tabId, w.frameId, pageFormFocus, w.id))) continue
           if (it.value) {
             const text = it.value.slice(0, 200)
             await cdp(tabId, 'Input.insertText', { text })
-            // 한 번에 넣기를 받지 않는 칸(보안문자·본인확인 칸): 하나도 안 들어갔으면 키를 하나씩 누른다
-            // (실측: 폰 '필요한 칸만'에서 넣었는데 PC 칸은 비어 있었다)
+            // Fields that do not accept inserting all at once (captcha and identity check fields): if nothing went in, press keys one by one
+            // (measured: text entered from the phone's "only needed fields" but the PC field stayed empty)
             let n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
-            // 늦게 반영하는 칸: 잠깐 뒤 다시 보고, 그래도 비었을 때만 다시 골라 키를 하나씩 (두 번 들어가지 않게)
+            // Fields that reflect late: look again after a moment, and only if still empty select again and type key by key (so it does not go in twice)
             if (n === 0) {
               await sleep(150)
               n = (await inFrame(tabId, w.frameId, pageActiveValueLength).catch(() => -1)) as number
@@ -2716,7 +2730,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       if (typeof a.press === 'string' && a.press) {
         const t = await target(a.press)
-        if (!t.ok) throw new Error('누를 버튼을 찾지 못했어요. 화면이 바뀌었을 수 있어요')
+        if (!t.ok) throw new Error('Could not find the button to click. The screen may have changed')
         await tapIn(t)
       }
       await settle(tabId, before)
@@ -2725,14 +2739,14 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'back': {
       const tabId = await ownedTab(a)
       await chrome.tabs.goBack(tabId).catch(() => {
-        throw new Error('뒤로 갈 페이지가 없어요')
+        throw new Error('There is no page to go back to')
       })
       await sleep(200)
       await waitLoad(tabId)
       return pageState(tabId)
     }
     case 'focus': {
-      // 사람에게 넘길 때: 두리 창과 탭을 앞으로
+      // When handing off to a person: bring the Dool2 window and tab to the front
       const tabId = await ownedTab(a, false)
       await leavePhoneView(tabId)
       const t = await chrome.tabs.update(tabId, { active: true })
@@ -2742,7 +2756,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       return pageState(tabId)
     }
     case 'hold': {
-      // 사람·승인을 기다리는 탭: 이 시간 동안 정리(잠재우기·닫기)하지 않는다. 오래 잡지 않게 많아야 1시간
+      // Tabs waiting for a person or an approval: no tidying (sleeping or closing) for this time. At most 1 hour so it is not held too long
       const tabId = await ownedTab(a, false)
       const ms = Math.min(Math.max(Number(a.ms) || 0, 0), 60 * 60_000)
       const now = Date.now()
@@ -2766,19 +2780,19 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'upload':
       return upload(a)
   }
-  throw new Error(`모르는 명령이에요: ${String(cmd)}`)
+  throw new Error(`Unknown command: ${String(cmd)}`)
 }
 
-// ── PC 파일 올리기 (browser_upload) ──
-// 해도 되는지는 본체가 정한다(승인). 손은 넣기만 한다:
-// ① 파일 칸을 찾으면 Chrome DevTools(DOM.setFileInputFiles)로 경로를 그대로 넣는다 (큰 영상도 빠르다. 다른 주소 액자는 ③)
-// ② 칸이 없으면(누를 때 칸을 만드는 사이트) 파일 고르기 창을 가로채고(Page.setInterceptFileChooserDialog) 버튼을 누른다.
-//    PC에 파일 고르기 창이 뜨지 않는다
-// ③ 확장에 파일 접근이 꺼져 있으면 Chrome이 ①을 막는다("Not allowed"): 본체가 보낸 조각을 페이지 안에서 파일로 만들어 넣는다
+// ── Uploading PC files (browser_upload) ──
+// Whether it is allowed is decided by the daemon (approval). The hand only inserts:
+// (1) If the file field is found, insert the path as is through Chrome DevTools (DOM.setFileInputFiles) (fast even for big videos. Frames at another address use (3))
+// (2) If there is no field (sites that create the field on click), intercept the file chooser (Page.setInterceptFileChooserDialog) and click the button.
+//    No file chooser opens on the PC
+// (3) If file access is off for the extension, Chrome blocks (1) ("Not allowed"): build the file inside the page from the chunks the daemon sends and insert it
 
-/** 조각을 기다리는 올리기: 표시 → 넣을 곳 (액자 안 칸이면 frameId, 고르기 창으로 잡은 칸이면 페이지 공간 objectId) */
+/** Uploads waiting for chunks: mark -> where to insert (frameId for a field in a frame, objectId in the page world for a field caught via the chooser) */
 const uploads = new Map<string, { tabId: number; frameId: number; objectId?: string; at: number }>()
-/** 탭마다 가로챈 파일 고르기 창을 기다리는 쪽 */
+/** Per tab, the side waiting for an intercepted file chooser */
 const choosers = new Map<number, (p: { backendNodeId: number; mode: string }) => void>()
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
@@ -2786,7 +2800,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   choosers.get(source.tabId)?.(params as { backendNodeId: number; mode: string })
 })
 
-/** 페이지 공간에서 그 요소를 this로 함수 부르기 (값으로 돌려받는다) */
+/** Call a function with that element as this in the page world (the value comes back) */
 async function callOn<R>(tabId: number, objectId: string, fn: (...args: never[]) => R, ...args: unknown[]) {
   const r = await cdp<{
     result?: { value?: R }
@@ -2799,11 +2813,13 @@ async function callOn<R>(tabId: number, objectId: string, fn: (...args: never[])
     awaitPromise: true,
   })
   if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description?.split('\n')[0] ?? '페이지에서 오류가 났어요')
+    throw new Error(
+      r.exceptionDetails.exception?.description?.split('\n')[0] ?? 'An error occurred in the page',
+    )
   return r.result?.value as R
 }
 
-/** 표시(data-dool2-up)를 단 칸의 DevTools 번호. 같은 프로세스의 액자까지 찾는다 (다른 주소 액자는 못 찾는다) */
+/** DevTools node id of the field carrying the mark (data-dool2-up). Also finds frames in the same process (frames at another address are not found) */
 async function markedNode(tabId: number, token: string): Promise<number | undefined> {
   await cdp(tabId, 'DOM.getDocument', { depth: 0 })
   const s = await cdp<{ searchId: string; resultCount: number }>(tabId, 'DOM.performSearch', {
@@ -2824,10 +2840,10 @@ async function markedNode(tabId: number, token: string): Promise<number | undefi
 
 async function upload(a: Record<string, unknown>): Promise<unknown> {
   const tabId = await ownedTab(a)
-  // 조각 받기·끝내기 (③)
+  // Receive chunks and finish (3)
   if (typeof a.token === 'string') {
     const u = uploads.get(a.token)
-    if (!u || u.tabId !== tabId) throw new Error('올리던 파일 칸을 잊었어요. 다시 올려 주세요')
+    if (!u || u.tabId !== tabId) throw new Error('Forgot the file field being uploaded. Upload again')
     const token = a.token
     const sink = <R>(fn: (...args: never[]) => R, ...args: unknown[]): Promise<R> =>
       u.objectId
@@ -2843,36 +2859,36 @@ async function upload(a: Record<string, unknown>): Promise<unknown> {
       uploads.delete(token)
       return { ...(await sink(pageUploadFinish, token, a.finish)), how: 'page' }
     }
-    throw new Error('조각(part)이나 끝내기(finish)가 없어요')
+    throw new Error('Neither part nor finish was given')
   }
   const ref = String(a.ref ?? '')
-  if (!/^e\d+$/.test(ref)) throw new Error('ref는 e12 같은 표시여야 해요')
+  if (!/^e\d+$/.test(ref)) throw new Error('ref must be a mark like e12')
   const paths = (Array.isArray(a.paths) ? a.paths : []).map(String).filter(Boolean)
-  if (!paths.length) throw new Error('올릴 파일이 없어요')
+  if (!paths.length) throw new Error('No files to upload')
   for (const [k, v] of uploads) if (Date.now() - v.at > 10 * 60_000) uploads.delete(k)
   const f = frameOf(tabId, ref)
   const token = crypto.randomUUID()
-  // 그 칸·라벨이 가리키는 칸·안에 든 칸 하나: 틀릴 일이 없어 바로 넣는다
+  // The field, the field a label points to, or the one field inside: it cannot be wrong, so insert right away
   const t = await inFrame(tabId, f.frameId, pageUploadTarget, ref, token, false)
-  if (!t?.ok) throw new Error(t?.error ?? '파일 칸을 찾지 못했어요')
-  // viaPage: 시험용 — 경로 넣기(①)를 건너뛰고 조각 받기(③)로 (파일 접근이 꺼진 확장과 같은 길)
+  if (!t?.ok) throw new Error(t?.error ?? 'Could not find the file field')
+  // viaPage: for testing - skip path insertion (1) and use chunk receiving (3) (the same path as an extension without file access)
   const viaPage = a.viaPage === true
   if (t.how !== 'none') return uploadInto(tabId, f.frameId, token, t, paths, viaPage)
-  // 버튼: 눌러서 사이트가 여는 파일 고르기 창을 가로챈다 (그 사이트가 고른 칸이 맞는 칸이다)
+  // Button: click it and intercept the file chooser the site opens (the field that site chose is the right one)
   let clickError = ''
   const chosen = await uploadByChooser(tabId, ref, token, paths, viaPage, (e) => {
     clickError = e
   })
   if (chosen) return chosen
-  // 창이 안 떴으면 버튼 가까이(몇 단계 위 상자)에 하나뿐인 파일 칸
+  // If no window appeared, the only file field near the button (a few levels up)
   const near = await inFrame(tabId, f.frameId, pageUploadTarget, ref, token, true)
   if (near?.ok && near.how !== 'none') return uploadInto(tabId, f.frameId, token, near, paths, viaPage)
   throw new Error(
-    `${clickError ? `${clickError} — ` : ''}눌러도 파일 고르기 창이 뜨지 않았어요. 화면을 다시 읽어 [사진 추가]·[파일 선택]·[내 PC]·[업로드] 같은 버튼이나 파일 칸을 찾아 그것으로 다시 올려 주세요(먼저 메뉴·창을 열어야 할 수도 있어요)`,
+    `${clickError ? `${clickError} - ` : ''}Clicking did not open a file chooser. Read the page again, find a button like [Add photo], [Choose file], [My PC] or [Upload], or a file field, and upload with that (a menu or window may need to be opened first)`,
   )
 }
 
-/** 찾은 파일 칸에 넣는다: ① 경로를 그대로, 안 되면 ③ 조각으로 받겠다고 알린다 */
+/** Put into the file field found: (1) the path as is; if that fails, say (3) it will be received in chunks */
 async function uploadInto(
   tabId: number,
   frameId: number,
@@ -2882,10 +2898,12 @@ async function uploadInto(
   viaPage = false,
 ): Promise<unknown> {
   if (t.disabled)
-    throw new Error('파일 칸이 꺼져(비활성) 있어요. 화면에서 먼저 할 일(종류 고르기 등)이 있는지 읽어 보세요')
+    throw new Error(
+      'The file field is disabled. Read the page to see whether something must be done first (choosing a type, etc.)',
+    )
   if (!t.multiple && paths.length > 1)
-    throw new Error('이 칸은 파일을 하나만 받아요. 한 개씩 나눠 올려 주세요')
-  let why = viaPage ? '조각으로 (시험)' : ''
+    throw new Error('This field accepts only one file. Upload one at a time')
+  let why = viaPage ? 'in chunks (test)' : ''
   const node = viaPage
     ? undefined
     : await markedNode(tabId, token).catch((e: Error) => {
@@ -2901,14 +2919,14 @@ async function uploadInto(
       },
     )
     if (set) return { ...(await inFrame(tabId, frameId, pageUploadState, token)), how: 'cdp', found: t.how }
-  } else if (!why) why = '다른 주소 액자 속 칸'
+  } else if (!why) why = 'field in a frame at another address'
   uploads.set(token, { tabId, frameId, at: Date.now() })
   return { needBytes: true, token, found: t.how, accept: t.accept, multiple: t.multiple, why }
 }
 
 /**
- * 버튼을 눌러 뜨는 파일 고르기 창을 가로채 넣는다 (PC에는 창이 뜨지 않는다). 창이 안 뜨면 undefined.
- * 누르기가 실패하면 그 까닭을 onClickError로 알리고 undefined (부르는 쪽이 둘레 칸을 찾아본다)
+ * Click a button and intercept the file chooser it opens, then insert (no chooser opens on the PC). undefined if no chooser opened.
+ * If the click fails, report why through onClickError and return undefined (the caller looks for a field nearby)
  */
 async function uploadByChooser(
   tabId: number,
@@ -2920,7 +2938,7 @@ async function uploadByChooser(
 ): Promise<unknown> {
   await cdp(tabId, 'Page.setInterceptFileChooserDialog', { enabled: true })
   try {
-    // 콜백이 채우는 칸 (변수로 두면 타입 좁히기가 콜백에서 채운 것을 모른다)
+    // The field the callback fills (kept in a variable because type narrowing does not know what the callback fills)
     const box: { got?: { backendNodeId: number; mode: string } } = {}
     const opened = new Promise<void>((done) =>
       choosers.set(tabId, (p) => {
@@ -2939,8 +2957,8 @@ async function uploadByChooser(
     const got = box.got
     if (!got) return undefined
     if (got.mode === 'selectSingle' && paths.length > 1)
-      throw new Error('이 칸은 파일을 하나만 받아요. 한 개씩 나눠 올려 주세요')
-    let why = viaPage ? '조각으로 (시험)' : ''
+      throw new Error('This field accepts only one file. Upload one at a time')
+    let why = viaPage ? 'in chunks (test)' : ''
     const set = viaPage
       ? false
       : await cdp(tabId, 'DOM.setFileInputFiles', {
@@ -2956,7 +2974,7 @@ async function uploadByChooser(
     const { object } = await cdp<{ object: { objectId?: string } }>(tabId, 'DOM.resolveNode', {
       backendNodeId: got.backendNodeId,
     })
-    if (!object.objectId) throw new Error('파일 칸을 찾지 못했어요. 다시 읽어 주세요')
+    if (!object.objectId) throw new Error('Could not find the file field. Read the page again')
     const info = await callOn(tabId, object.objectId, pageUploadState, token)
     if (set) return { ...info, how: 'cdp', found: 'chooser' }
     uploads.set(token, { tabId, frameId: 0, objectId: object.objectId, at: Date.now() })
