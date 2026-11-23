@@ -140,12 +140,12 @@ describe('보관함 꺼내 보기 (library_find)', () => {
     const r = life.run('library_find', { query: '성수' })
     const t = text(r)
     expect(r.isError).toBeUndefined()
-    expect(t).toContain("보관함에서 '성수' 2개를 찾았어요")
+    expect(t).toContain("Found 2 in the library for '성수'")
     // 둘 다 한 낱말씩 맞으면 최근 저장한 서울숲이 먼저
     expect(t.indexOf('서울숲 산책길')).toBeLessThan(t.indexOf('성수 카페 어니언'))
-    expect(t).toContain('[장소] 성수 카페 어니언 · 2026-11-16 저장')
-    expect(t).toContain('링크: https://map.kakao.com/1')
-    expect(t).toContain('메모: 성동구 아차산로9길 8')
+    expect(t).toContain('[Place] 성수 카페 어니언 · saved 2026-11-16')
+    expect(t).toContain('Link: https://map.kakao.com/1')
+    expect(t).toContain('Memo: 성동구 아차산로9길 8')
     expect(t).toContain('show_list')
     expect(t).not.toContain('제주 귤')
     // 두 낱말 다 맞은 것이 먼저
@@ -156,14 +156,14 @@ describe('보관함 꺼내 보기 (library_find)', () => {
   it('비우면 최근 것, 종류만 골라 보기, 몇 개까지', () => {
     const life = filled()
     const all = text(life.run('library_find', {}))
-    expect(all).toContain('최근 것 4개를 찾았어요')
+    expect(all).toContain('Found 4 in the library for latest')
     expect(all.indexOf('서울숲')).toBeLessThan(all.indexOf('부산 여행'))
     const products = text(life.run('library_find', { kind: 'product' }))
-    expect(products).toContain('[상품] 제주 귤 3kg')
-    expect(products).toContain('가격: 15,900원')
-    expect(products).not.toContain('[장소]')
+    expect(products).toContain('[Product] 제주 귤 3kg')
+    expect(products).toContain('Price: 15,900원')
+    expect(products).not.toContain('[Place]')
     const one = text(life.run('library_find', { limit: 1 }))
-    expect(one).toContain('(맞는 것 4개 중 1개)')
+    expect(one).toContain('(1 of 4 matches)')
     expect(one).not.toContain('부산 여행')
   })
 
@@ -173,14 +173,14 @@ describe('보관함 꺼내 보기 (library_find)', () => {
     const t = text(r)
     expect(r.isError).toBeUndefined()
     expect(t).toContain(
-      "보관함에 '강릉'으로 저장된 게 없어요. 저장된 것 4개, 최근: 서울숲 산책길 (장소 · 2026-11-16)",
+      "In the library, '강릉' nothing is saved. 4 saved, latest: 서울숲 산책길 (Place · 2026-11-16)",
     )
     expect(t).toContain('conversation_search')
     expect(text(life.run('library_find', { query: '부산', kind: 'place' }))).toContain(
-      "보관함의 장소 중에 '부산'으로 저장된 게 없어요",
+      "Among Place items in the library, '부산' nothing is saved",
     )
     const none = new Life(kv(), () => MON_8AM)
-    expect(text(none.run('library_find', { query: '성수' }))).toContain('보관함이 비어 있어요')
+    expect(text(none.run('library_find', { query: '성수' }))).toContain('The library is empty')
   })
 })
 
@@ -281,7 +281,7 @@ describe('먼저 챙기기', () => {
     })
     expect(
       t.life.run('feed_tell', { title: '러닝화가 내일 와요', key: 'coupang-123-도착' }).content[0]?.text,
-    ).toContain('이미 알린')
+    ).toContain('Already announced')
     t.life.run('feed_tell', {
       title: '토요일이 엄마 생신이에요',
       key: 'memory-엄마생신-2026',
@@ -327,7 +327,7 @@ describe('먼저 챙기기', () => {
       [{ id: '1', kind: 'suggest', title: '러닝화 내일 도착', key: 'coupang-123', at: '' }],
       kst(8, 30),
     )
-    expect(text).toContain('11월 16일 월요일 8시')
+    expect(text).toContain('Nov 16, Mon, 8:00 AM')
     expect(text).toContain('- 쿠팡(coupang): 배송 조회')
     expect(text).not.toContain('장바구니')
     expect(text).toContain('- 러닝화 내일 도착 [coupang-123]')
@@ -347,10 +347,10 @@ describe('먼저 챙기기', () => {
     t.life.tick()
     expect(t.runs()).toBe(1)
     const text = watchPrompt([], [], kst(9, 0), t.life.knowDue(), kst(8, 0).toISOString())
-    expect(text).toContain('챙길 때가 된 일')
+    expect(text).toContain('Tasks due for a follow-up')
     expect(text).toContain('레뷰 센티크 체험단 신청: 신청함 (레뷰')
     expect(text).toContain('당첨 발표 확인')
-    expect(text).toContain('지난번에 살핀 때: 60분 전')
+    expect(text).toContain('Last looked: 60 min ago')
     expect(text).toContain('know_update')
   })
 })
@@ -377,12 +377,12 @@ describe('두리가 알아 둔 것 (조회 기억·한 일 장부)', () => {
     expect(life.know()[0]?.value).toBe('약 7,750만 원')
     now = new Date('2027-03-02T03:00:00Z')
     const prompt = life.knowPrompt()
-    expect(prompt).toContain('오늘 2027-03-02')
-    expect(prompt).toContain('2025년 귀속 총급여: 약 7,750만 원 (홈택스 · 2025년 귀속 · 본 날 2026-11-20')
-    expect(prompt).toContain('네가 판단')
+    expect(prompt).toContain('today 2027-03-02')
+    expect(prompt).toContain('2025년 귀속 총급여: 약 7,750만 원 (홈택스 · 2025년 귀속 · seen 2026-11-20')
+    expect(prompt).toContain('judge for yourself')
     const found = life.run('know_find', { query: '총급여' }).content[0]?.text ?? ''
     expect(found).toContain('약 7,750만 원')
-    expect(life.run('know_find', { query: '보험' }).content[0]?.text).toContain('알아 둔 것이 없어요')
+    expect(life.run('know_find', { query: '보험' }).content[0]?.text).toContain('Nothing known')
   })
 
   it('한 일은 취소·완료되면 지우지 않고 끝남으로, 끝나면 더 챙기지 않는다', () => {
@@ -402,7 +402,7 @@ describe('두리가 알아 둔 것 (조회 기억·한 일 장부)', () => {
     expect(life.know()[0]).toMatchObject({ state: 'done', value: '예약 취소함' })
     expect(life.know()[0]?.next).toBeUndefined()
     expect(life.knowDue()).toHaveLength(0)
-    expect(life.knowPrompt()).not.toContain('진행 중인 일')
+    expect(life.knowPrompt()).not.toContain('In progress:')
     life.act({ action: 'know-delete', id })
     expect(life.know()).toHaveLength(0)
   })
@@ -474,8 +474,8 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
       time: '09:00',
     })
     const text = r.content[0]?.text ?? ''
-    expect(text).toContain('정한 것: 매달 1일 오전 9:00에 해요 · 끝나는 때 없음(지울 때까지) · 매번 알려요')
-    expect(text).toContain('처음은 12월 1일(화) 오전 9:00')
+    expect(text).toContain('What was set: 매달 1일 오전 9:00 · No end (until deleted) · notifies every time')
+    expect(text).toContain('first run Dec 1 (Tue) 9:00 AM')
     expect(life.routines()[0]?.nextRunAt).toBe('2026-12-01T00:00:00.000Z')
   })
   it('빠뜨리기 쉬운 것을 결과에 담는다: 지켜보기인데 끝이 없음 · 조건이 있는데 매번 알림', () => {
@@ -487,7 +487,7 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
       minutes: 30,
       notify: 'when_found',
     }).content[0]?.text
-    expect(watch).toContain('끝나는 때가 없어요')
+    expect(watch).toContain('No end')
     expect(watch).toContain('until')
     const shop = life.run('goal_create', {
       title: '쇼핑 경고',
@@ -521,9 +521,9 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
       until: '2026-11-17',
     }).content[0]?.text
     expect(text).toContain(
-      '11월 17일까지 하고 스스로 꺼져요 · 조건에 맞을 때만 알리고 아니면 조용히 넘어가요',
+      '11월 17일까지, then turns itself off · notifies only when the condition holds, otherwise stays quiet',
     )
-    expect(text).not.toContain('끝나는 때가 없어요')
+    expect(text).not.toContain('No end')
     // 11/16 20:00 한국
     now = new Date('2026-11-16T11:01:00Z')
     life.tick()
@@ -614,12 +614,12 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
       notify: 'when_found',
     })
     const id = life.routines()[0]?.id ?? ''
-    expect(routineAsk(life.routines()[0] as Routine)).not.toContain('지난번에 이미 알린 것')
+    expect(routineAsk(life.routines()[0] as Routine)).not.toContain('Already reported last time')
     life.noteRun(id, '- 망원시장 축제 (뉴스)')
     life.noteRun(id, '알릴 것 없음')
     const r = life.routines()[0] as Routine
     expect(r.lastResult).toBe('알릴 것 없음')
-    expect(routineAsk(r)).toContain('지난번에 이미 알린 것')
+    expect(routineAsk(r)).toContain('Already reported last time')
     expect(routineAsk(r)).toContain('망원시장 축제')
   })
   it('goal_create preview면 지금 한 번 해 보여 달라고 돌려준다', () => {
@@ -635,17 +635,19 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
           preview: true,
         }),
       ),
-    ).toContain('미리 보기')
+    ).toContain('Preview')
     expect(
       text(life.run('goal_create', { title: 'b', prompt: '약', schedule: 'daily', time: '21:00' })),
-    ).not.toContain('미리 보기')
+    ).not.toContain('Preview')
   })
   it('goal_update로 끝나는 때·알리기·언제를 채운다', () => {
     const life = new Life(kv(), () => MON_8AM)
     life.run('goal_create', { title: '취소표', prompt: '취소표 나오면', schedule: 'every', minutes: 30 })
     const id = life.routines()[0]?.id.slice(0, 8) ?? ''
     const text = life.run('goal_update', { id, notify: 'when_found', until: '2026-11-30' }).content[0]?.text
-    expect(text).toContain('정한 것: 30분마다 해요 · 11월 30일까지 하고 스스로 꺼져요 · 조건에 맞을 때만')
+    expect(text).toContain(
+      'What was set: 30분마다 · 11월 30일까지, then turns itself off · notifies only when',
+    )
     expect(life.routines()[0]?.notify).toBe('when_found')
     life.run('goal_update', {
       id,
@@ -681,7 +683,7 @@ describe('끝나는 때·조건에 맞을 때만 알리기', () => {
       tell_at: '7:00',
     }).content[0]?.text
     expect(life.routines()[0]?.tellAt).toBe('07:00')
-    expect(t).toContain('폰 알림은 오전 7:00까지 미뤄요')
+    expect(t).toContain('phone notice is held until 7:00 AM')
     expect(
       life.run('goal_create', { title: 'x', prompt: 'y', schedule: 'daily', time: '09:00', tell_at: '7시' })
         .isError,
@@ -868,26 +870,26 @@ describe('긴 목록 나눠 받기 (피드·보관함)', () => {
   it('feed_find: 기간·종류·낱말로 보고, 종류별 개수와 이어 보기 커서를 준다', () => {
     const { life, now } = withFeed(50)
     const all = text(life.run('feed_find', { days: 90, limit: 5 }))
-    expect(all).toContain('맞는 것 50개')
-    expect(all).toContain('끝낸 일 33')
-    expect(all).toContain('[끝낸 일]')
+    expect(all).toContain('50 matches')
+    expect(all).toContain('Done 33')
+    expect(all).toContain('[Done]')
     const cursor = /before: "([^"]+)"/.exec(all)?.[1] ?? ''
     expect(cursor).toBeTruthy()
     const next = text(life.run('feed_find', { days: 90, limit: 5, before: cursor }))
-    expect(next).toContain('이어서 5개')
+    expect(next).toContain('Continuing, 5 shown')
     expect(next).not.toContain(`일 49 `)
     // 낱말·종류
     const parcel = text(life.run('feed_find', { query: '택배', kinds: ['post'] }))
-    expect(parcel).toContain('[소식]')
-    expect(parcel).not.toContain('[끝낸 일]')
+    expect(parcel).toContain('[News]')
+    expect(parcel).not.toContain('[Done]')
     // 이번 주(최근 1일)만
-    expect(text(life.run('feed_find', { days: 1 }))).toContain('최근 1일')
+    expect(text(life.run('feed_find', { days: 1 }))).toContain('last 1 days')
     // 없으면 다음 길
-    expect(text(life.run('feed_find', { query: '없는낱말' }))).toContain('맞는 게 없어요')
-    expect(text(new Life(kv(), now).run('feed_find', {}))).toContain('피드가 비어 있어요')
+    expect(text(life.run('feed_find', { query: '없는낱말' }))).toContain('Nothing matches')
+    expect(text(new Life(kv(), now).run('feed_find', {}))).toContain('The feed is empty')
     // 마지막 페이지 다음은 여기까지
     const last = text(life.run('feed_find', { limit: 30, before: life.feedPage({ limit: 49 }).next }))
-    expect(last).toContain('여기까지예요')
+    expect(last).toContain('hat is all')
   })
 
   it('library_find: skip으로 이어 보기', () => {
@@ -898,11 +900,11 @@ describe('긴 목록 나눠 받기 (피드·보관함)', () => {
       now = new Date(now.getTime() + 60_000)
     }
     const first = text(life.run('library_find', { limit: 5 }))
-    expect(first).toContain('이어서 보려면 같은 낱말로 skip: 5')
+    expect(first).toContain('use the same words with skip: 5')
     const second = text(life.run('library_find', { limit: 5, skip: 10 }))
-    expect(second).toContain('11~12번째')
-    expect(second).toContain('11. [정리] 메모 1')
+    expect(second).toContain('matches 11-12 of 12')
+    expect(second).toContain('11. [Note] 메모 1')
     expect(second).not.toContain('skip:')
-    expect(text(life.run('library_find', { skip: 50 }))).toContain('여기까지예요')
+    expect(text(life.run('library_find', { skip: 50 }))).toContain('hat is all')
   })
 })

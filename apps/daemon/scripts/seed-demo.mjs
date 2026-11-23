@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// 캡처용 데모 데이터를 만든다. 실제 AI를 부르지 않고, 개인정보 없는 대화를 기록에 넣는다.
-// 사용법: node apps/daemon/scripts/seed-demo.mjs <데이터 폴더>
-//   DOOL2_DATA_DIR=<데이터 폴더> DOOL2_SMOKE_OPEN=latest pnpm --filter @dool2/desktop smoke
+// Builds demo data for screenshots. Does not call a real AI: puts conversations without personal data into the records.
+// Usage: node apps/daemon/scripts/seed-demo.mjs <data folder>
+//   DOOL2_DATA_DIR=<data folder> DOOL2_SMOKE_OPEN=latest pnpm --filter @dool2/desktop smoke
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Store } from '@dool2/store'
 
 const dir = process.argv[2]
 if (!dir) {
-  console.error('데이터 폴더를 알려 주세요: node seed-demo.mjs /tmp/dool2-demo')
+  console.error('Pass a data folder: node seed-demo.mjs /tmp/dool2-demo')
   process.exit(1)
 }
 mkdirSync(dir, { recursive: true })
@@ -37,7 +37,7 @@ store.addMessage(
   'assistant',
   '저는 두리예요. 이 컴퓨터 안에 살면서 부탁하신 일을 대신 해요.\n\n돈이 드는 일이나 누군가에게 연락하는 일은 꼭 먼저 여쭤볼게요. 오늘은 뭐부터 할까요?',
 )
-// 사람에게 넘긴 대화 (로그인이 풀린 경우). 가장 최근 대화라 DOOL2_SMOKE_OPEN=latest로 열린다
+// A conversation handed to the person (login expired). It is the most recent, so DOOL2_SMOKE_OPEN=latest opens it
 const shop = store.createThread('claude', '장바구니에 담아 둔 귤 가격 봐 줘')
 store.addMessage(shop.id, 'user', '장바구니에 담아 둔 귤 가격 봐 줘')
 store.addMessage(
@@ -54,7 +54,7 @@ store.addMessage(
   'assistant',
   '장바구니를 보려고 했는데 로그인이 풀려 있어서 멈췄어요. Chrome에 띄워 둔 두리 탭에서 로그인만 해 주시면 바로 이어서 볼게요.',
 )
-// 먼저 챙긴 일 카드 (SEED_TELL=1): 아래 피드의 f-w1·f-w2와 같은 글
+// Proactive cards (SEED_TELL=1): same text as f-w1 and f-w2 in the feed below
 if (process.env.SEED_TELL) {
   store.addMessage(
     shop.id,
@@ -81,8 +81,8 @@ if (process.env.SEED_TELL) {
     }),
   )
 }
-// 승인 요청 대화 (DOOL2_SMOKE_APPROVAL=<캡처 이미지>와 함께 쓰면 승인 카드가 보인다)
-// 따로 하는 대화 (메인 대화에 섞이지 않는다)
+// Approval request conversation (with DOOL2_SMOKE_APPROVAL=<capture image> the approval card shows)
+// Separate conversations (not mixed into the main one)
 store.createThread('claude', '이사 준비', undefined, true)
 const trip = store.createThread('claude', '제주 2박 3일 여행 계획', undefined, true)
 store.addMessage(trip.id, 'user', '다음 달 제주 2박 3일 일정 짜 줘. 아이랑 같이 가요')
@@ -105,17 +105,17 @@ if (process.env.SEED_APPROVAL) {
     '사과 1kg(9,900원) **바로 구매** 버튼 앞까지 왔어요. 화면을 확인하고 승인해 주시면 제가 그 버튼만 누를게요.',
   )
 }
-// 목표·알아서 하는 일·보관함·기억·피드 (PC·폰의 피드·목표·보관함 탭과 두리 판 캡처용). 시각은 지금 기준
+// Goals, automatic routines, library, memory, feed (for capturing the PC and phone feed, goals and library tabs). Times are relative to now
 {
   const day = 24 * 60
-  /** 오늘(0)·내일(1)·그제(-2)의 그 시각 */
+  /** That time of day today (0), tomorrow (1), the day before yesterday (-2) */
   const on = (offset, h, m = 0) => {
     const d = new Date()
     d.setDate(d.getDate() + offset)
     d.setHours(h, m, 0, 0)
     return d.toISOString()
   }
-  // 몇 분 전·뒤 (보통은 오늘 낮 시각으로 맞춘다)
+  // Minutes before or after (usually set to midday today)
   const at = (min) => new Date(Date.parse(on(0, 13, 20)) + min * 60_000).toISOString()
   const tomorrow730 = on(1, 7, 30)
   store.setSetting('routines', [
@@ -213,7 +213,7 @@ if (process.env.SEED_APPROVAL) {
     { id: 'm-3', text: '배달은 주로 저녁에 시켜요', source: 'doori', at: at(-day) },
   ])
   store.setSetting('feed', [
-    // 먼저 챙긴 일 (ADR 0019): 부탁 없이 연결한 서비스를 살펴 올린 것
+    // Proactive items (ADR 0019): posted after checking connected services without being asked
     {
       id: 'f-w1',
       kind: 'suggest',
@@ -288,9 +288,9 @@ if (process.env.SEED_APPROVAL) {
   ])
   store.setSetting('feedPrompt', '매일 아침 날씨·일정·오는 택배')
   store.setSetting('connections', { coupang: at(-3 * day), gmail: at(-2 * day) })
-  // 캡처하는 동안 살펴보기가 돌지 않게 (실제 AI를 부르지 않는다)
+  // Keep the proactive check from running during capture (no real AI is called)
   store.setSetting('watchAt', new Date().toISOString())
-  // 긴 목록 (SEED_MANY=1): 지난 3주 동안 쌓인 피드 60개·보관함 40개 — 페이지 나눠 받기 캡처용
+  // Long lists (SEED_MANY=1): 60 feed items and 40 library items from the past 3 weeks, for capturing paged loading
   if (process.env.SEED_MANY) {
     const jobs = [
       ['done', '택배 도착 예정 확인했어요', '내일 오전 문 앞 배송이에요.'],
@@ -320,9 +320,9 @@ if (process.env.SEED_APPROVAL) {
     store.setSetting('library', [...store.getSetting('library'), ...notes])
   }
 }
-// 첫 실행 마법사는 끝낸 상태로 둔다
+// Leave the first-run wizard finished
 store.setSetting('setupDone', true)
 store.setSetting('aiChoice', 'both')
 store.setSetting('defaultAgent', 'claude')
 store.close()
-console.log(`데모 데이터를 만들었어요: ${dir}`)
+console.log(`Demo data created: ${dir}`)

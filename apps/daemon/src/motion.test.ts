@@ -49,10 +49,10 @@ describe('모션 키트', () => {
 describe('스타일북', () => {
   it('목록과 스타일별 규칙·예시 장면', () => {
     expect(styleGuide()).toContain('reels')
-    expect(styleGuide()).toContain('레퍼런스')
+    expect(styleGuide()).toContain('reference')
     const b = styleGuide('birthday')
     expect(b).toContain('card3d')
-    expect(b).toContain('품질 기본')
+    expect(b).toContain('Quality basics')
     expect(b).toContain('image_make')
     expect(b).toContain('class="scene')
   })
@@ -111,8 +111,8 @@ describe('모션 영상 만들기', () => {
     })
     expect(r.isError).toBe(true)
     const t = (r.content[0] as { text: string }).text
-    expect(t).toContain('없는사진-dool2.png(파일 없음)')
-    expect(t).toContain('x.png(두리가 쓸 수 없는 곳)')
+    expect(t).toContain('없는사진-dool2.png(file missing)')
+    expect(t).toContain('x.png(a place Dool2 cannot use)')
     expect(drew).toBe(false)
   })
 

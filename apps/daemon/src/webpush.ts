@@ -1,7 +1,7 @@
-// 웹 푸시 (RFC 8030 보내기, RFC 8291 내용 암호화, RFC 8292 VAPID). 라이브러리 없이 node:crypto만 쓴다.
+// Web Push (RFC 8030 sending, RFC 8291 content encryption, RFC 8292 VAPID). Uses only node:crypto, no library.
 //
-// PC가 폰의 푸시 서비스(애플·구글 등)로 직접 보낸다. 중계 서버는 거치지 않는다.
-// 내용은 폰 브라우저만 풀 수 있게 암호화되므로 푸시 서비스도 읽을 수 없다.
+// The PC sends straight to the phone's push service (Apple, Google, etc.), not through the relay server.
+// The content is encrypted so only the phone browser can open it, so the push service cannot read it either.
 import {
   createCipheriv,
   createECDH,
@@ -13,23 +13,23 @@ import {
   sign,
 } from 'node:crypto'
 
-/** 폰 브라우저의 PushSubscription.toJSON() 중 필요한 것 */
+/** The needed parts of the phone browser's PushSubscription.toJSON() */
 export interface PushSubscriptionLike {
   endpoint: string
   keys: { p256dh: string; auth: string }
 }
 
-/** 알림에 실을 내용 (폰의 서비스 워커가 그대로 띄운다) */
+/** Content of the notification (the phone's service worker shows it as is) */
 export interface PushMessage {
   title: string
   body: string
-  /** 같은 tag의 알림은 새 것으로 바뀐다 */
+  /** A notification with the same tag is replaced by the new one */
   tag: string
-  /** 알림을 누르면 열 앱 주소 뒤쪽 (#a=승인 id, #t=대화 id) */
+  /** Tail of the app address to open when tapped (#a=approval id, #t=conversation id) */
   url?: string
 }
 
-/** 이 주소들로만 보낸다 (폰이 엉뚱한 주소를 알려 PC가 아무 데나 요청하지 않게) */
+/** Send only to these addresses (so a phone cannot make the PC call arbitrary addresses) */
 const PUSH_HOSTS = [
   /^fcm\.googleapis\.com$/,
   /^android\.googleapis\.com$/,
@@ -53,9 +53,9 @@ const unb64u = (s: string) => Buffer.from(s, 'base64url')
 // ── VAPID ──
 
 export interface VapidKeys {
-  /** 공개키 (압축 안 한 65바이트, base64url). 폰의 applicationServerKey */
+  /** Public key (uncompressed 65 bytes, base64url). The phone's applicationServerKey */
   publicKey: string
-  /** 개인키 (PKCS#8 DER, base64url) */
+  /** Private key (PKCS#8 DER, base64url) */
   privateKey: string
 }
 
@@ -74,7 +74,7 @@ export function generateVapid(): VapidKeys {
   return { publicKey: b64u(pub), privateKey: b64u(priv.export({ format: 'der', type: 'pkcs8' })) }
 }
 
-/** VAPID 서명(JWT). aud는 푸시 서비스 주소의 origin */
+/** VAPID signature (JWT). aud is the origin of the push service address */
 export function vapidHeader(
   endpoint: string,
   keys: VapidKeys,
@@ -95,7 +95,7 @@ export function vapidHeader(
   return `vapid t=${head}.${claims}.${b64u(sig)}, k=${keys.publicKey}`
 }
 
-/** 테스트용: VAPID 공개키를 KeyObject로 */
+/** For tests: the VAPID public key as a KeyObject */
 export function vapidPublicKeyObject(publicKey: string): KeyObject {
   const pub = unb64u(publicKey)
   return createPublicKey({
@@ -104,7 +104,7 @@ export function vapidPublicKeyObject(publicKey: string): KeyObject {
   })
 }
 
-// ── 내용 암호화 (aes128gcm, 레코드 하나) ──
+// -- Content encryption (aes128gcm, a single record) --
 
 const hkdf = (ikm: Buffer, salt: Buffer, info: Buffer, len: number) =>
   Buffer.from(hkdfSync('sha256', ikm, salt, info, len))
@@ -112,12 +112,12 @@ const hkdf = (ikm: Buffer, salt: Buffer, info: Buffer, len: number) =>
 export function encryptPayload(
   plaintext: Buffer,
   sub: PushSubscriptionLike,
-  /** 테스트용: 고정 salt와 PC 쪽 임시 개인키 (RFC 8291 부록 A 예시와 맞춰 보려고) */
+  /** For tests: fixed salt and the PC-side ephemeral private key (to match the RFC 8291 Appendix A example) */
   opts: { salt?: Buffer; asPrivate?: Buffer } = {},
 ): Buffer {
   const uaPublic = unb64u(sub.keys.p256dh)
   const authSecret = unb64u(sub.keys.auth)
-  if (uaPublic.length !== 65 || authSecret.length < 16) throw new Error('푸시 구독 키가 올바르지 않아요')
+  if (uaPublic.length !== 65 || authSecret.length < 16) throw new Error('Invalid push subscription keys')
   const as = createECDH('prime256v1')
   if (opts.asPrivate) as.setPrivateKey(opts.asPrivate)
   else as.generateKeys()
@@ -130,7 +130,7 @@ export function encryptPayload(
   const cek = hkdf(ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16)
   const nonce = hkdf(ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12)
   const cipher = createCipheriv('aes-128-gcm', cek, nonce)
-  // 마지막(이자 하나뿐인) 레코드 표시 0x02
+  // Marker 0x02 for the last (and only) record
   const body = Buffer.concat([cipher.update(Buffer.concat([plaintext, Buffer.from([2])])), cipher.final()])
   const header = Buffer.alloc(21)
   salt.copy(header, 0)
@@ -139,7 +139,7 @@ export function encryptPayload(
   return Buffer.concat([header, asPublic, body, cipher.getAuthTag()])
 }
 
-// ── 보내기 ──
+// -- Sending --
 
 export type PushResult = 'sent' | 'gone' | 'failed'
 
@@ -164,7 +164,7 @@ export async function sendPush(
       body,
       signal: AbortSignal.timeout(10_000),
     })
-    // 404·410: 폰에서 알림을 끄거나 앱을 지웠다
+    // 404/410: the phone turned notifications off or removed the app
     if (res.status === 404 || res.status === 410) return 'gone'
     return res.ok ? 'sent' : 'failed'
   } catch {

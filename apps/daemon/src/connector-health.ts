@@ -1,25 +1,25 @@
-// 서비스 도구 건강 기록 (ADR 0020): 실행할 때마다 결과를 남기고, 잇달아 깨지는 도구는 잠시 쉬게 한다.
-// 사이트가 바뀌어 막힌 도구를 같은 사용자가 계속 만나지 않게. 쉬는 동안 두리는 범용 브라우저로 일을 끝낸다.
-// 기록은 이 PC에만 남는다.
+// Service tool health record (ADR 0020): records the result of every run and rests tools that keep breaking.
+// So the same user does not keep meeting a tool broken by a site change. While it rests, Doori finishes the job with the general browser.
+// The record stays on this PC only.
 import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 
-/** ok 잘 됨 · broke 막힘(시끄러운 고장) · empty 칸이 빔(조용한 고장) · stopped 정상 멈춤(마감·로그인 필요 등) */
+/** ok worked · broke blocked (loud failure) · empty fields came back blank (silent failure) · stopped normal stop (sold out, login needed, etc.) */
 export type Outcome = 'ok' | 'broke' | 'empty' | 'stopped' | 'blocked'
 
 interface Rec {
   at: number
   outcome: Outcome
   detail?: string
-  /** 도구 정의 지문: 정의가 바뀌면(고친 도구가 들어오면) 예전 고장은 세지 않는다 */
+  /** Tool definition fingerprint: when the definition changes (a fixed tool arrives), old failures are not counted */
   v?: string
 }
 
-/** 잇달아 이만큼 깨지면 쉰다 */
+/** Rest after this many failures in a row */
 export const REST_AFTER = 3
-/** 깨진 기록을 이 안에서만 센다 */
+/** Count failures only within this window */
 export const REST_WINDOW_MS = 24 * 3600_000
-/** 쉬는 시간 (지나면 다음 부탁에서 한 번 다시 해 본다) */
+/** Rest time (afterwards it is tried once again on the next request) */
 export const REST_MS = 6 * 3600_000
 
 const bad = (o: Outcome) => o === 'broke' || o === 'empty'
@@ -52,7 +52,7 @@ export class ConnectorHealth {
     this.save()
   }
 
-  /** 쉬는 중이면 언제까지·왜. v(지금 정의의 지문)를 주면 다른 정의 때의 기록은 넘긴다 */
+  /** If resting: until when and why. Given v (fingerprint of the current definition), records from other definitions are skipped */
   resting(tool: string, v?: string): { until: number; reason: string } | undefined {
     const list = (this.data[tool] ?? []).filter((r) => !v || !r.v || r.v === v)
     const last = list.slice(-REST_AFTER)
@@ -62,10 +62,13 @@ export class ConnectorHealth {
     if (this.now() - first.at > REST_WINDOW_MS) return undefined
     const until = end.at + REST_MS
     if (this.now() >= until) return undefined
-    return { until, reason: end.detail ?? (end.outcome === 'empty' ? '결과 칸이 비어 와요' : '막혀요') }
+    return {
+      until,
+      reason: end.detail ?? (end.outcome === 'empty' ? 'result fields come back empty' : 'blocked'),
+    }
   }
 
-  /** 도구마다 마지막 결과와 하루 안 고장 수 (화면·점검용) */
+  /** Per tool: last result and failures within a day (for screens and checks) */
   summary(): Record<string, { last: Outcome; at: number; failures24h: number; resting: boolean }> {
     const out: Record<string, { last: Outcome; at: number; failures24h: number; resting: boolean }> = {}
     for (const [tool, list] of Object.entries(this.data)) {
@@ -84,7 +87,7 @@ export class ConnectorHealth {
   private save() {
     if (!this.file || this.saving) return
     const file = this.file
-    // 잇단 실행을 한 번에 쓰기
+    // Write consecutive runs at once
     this.saving = new Promise<void>((r) => setTimeout(r, 500))
       .then(() => writeFile(file, JSON.stringify(this.data)))
       .catch(() => {})

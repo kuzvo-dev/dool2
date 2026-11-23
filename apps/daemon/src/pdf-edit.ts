@@ -1,10 +1,12 @@
-// PDF 합치기·쪽 나누기·쪽 뽑기 (ADR 0024 추가). pdfjs-dist는 읽기 전용이라 만들기는 pdf-lib(MIT)로 한다.
-// 원본은 그대로 두고 새 파일만 만든다(같은 이름이면 "(1)"). 사진(jpg·png)은 한 장씩 A4 쪽으로 넣는다
+// Merge PDFs, split into pages, extract pages (ADR 0024 addendum). pdfjs-dist is read-only, so creating uses pdf-lib (MIT).
+// The original stays as is and only new files are made ("(1)" if the name exists). Photos (jpg, png) go in one per A4 page
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname } from 'node:path'
+import type { Lang } from '@dool2/i18n'
 import { PDFDocument } from 'pdf-lib'
 import { cleanName, freeName } from './file-names.js'
 import type { FileScope, FileToolResult } from './file-ops.js'
+import { PDF_EDIT_NAMES } from './locales/pdf-edit.js'
 
 const ok = (text: string): FileToolResult => ({ content: [{ type: 'text', text }] })
 const fail = (text: string): FileToolResult => ({ isError: true, content: [{ type: 'text', text }] })
@@ -14,60 +16,67 @@ const MAX_TOTAL = 300 << 20
 const MAX_PARTS = 200
 const A4: [number, number] = [595.28, 841.89]
 
-/** "1-3,5" → 0부터 센 쪽 번호들. 쪽 수를 넘거나 모양이 틀리면 이유(글) */
+/** "1-3,5" -> zero-based page numbers. If past the page count or malformed, the reason (text) */
 export function pageList(spec: string, count: number): number[] | string {
   const out: number[] = []
   for (const part of spec.replace(/\s+/g, '').split(',').filter(Boolean)) {
     const m = /^(\d+)(?:-(\d+))?$/.exec(part)
-    if (!m) return `쪽은 "1-3,5"처럼 주세요 (받은 것: "${spec}")`
+    if (!m) return `Give pages like "1-3,5" (got: "${spec}")`
     const a = Number(m[1])
     const b = m[2] ? Number(m[2]) : a
-    if (a < 1 || b < a) return `"${part}"는 쪽 범위가 맞지 않아요`
-    if (b > count) return `이 PDF는 ${count}쪽까지 있어요 ("${part}")`
+    if (a < 1 || b < a) return `"${part}" is not a valid page range`
+    if (b > count) return `This PDF has only ${count} pages ("${part}")`
     for (let i = a; i <= b; i++) out.push(i - 1)
   }
-  return out.length ? out : `쪽을 주세요 (예: "1-3,5")`
+  return out.length ? out : `Give pages (e.g. "1-3,5")`
 }
 
 const kb = (n: number) =>
   n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
 
-export async function pdfTool(scope: FileScope, args: Record<string, unknown>): Promise<FileToolResult> {
+export async function pdfTool(
+  scope: FileScope,
+  args: Record<string, unknown>,
+  lang: Lang = 'ko',
+): Promise<FileToolResult> {
+  const names = PDF_EDIT_NAMES[lang]
   const paths = Array.isArray(args.paths) ? (args.paths as unknown[]).map(String) : []
-  if (!paths.length) return fail('합치거나 나눌 PDF를 paths에 주세요.')
-  if (paths.length > 100) return fail('한 번에 100개까지만 합쳐요.')
+  if (!paths.length) return fail('Give the PDFs to merge or split in paths.')
+  if (paths.length > 100) return fail('At most 100 files can be merged at once.')
   const parts = Array.isArray(args.parts)
     ? (args.parts as unknown[]).map(String).slice(0, MAX_PARTS)
     : undefined
   const split = args.split === true
   const pages = typeof args.pages === 'string' && args.pages.trim() ? args.pages : undefined
   if ((parts || split || pages) && paths.length > 1)
-    return fail('쪽 나누기·뽑기(parts·split·pages)는 PDF 하나에만 돼요. 합칠 때는 쪽을 빼고 주세요.')
+    return fail(
+      'Splitting and extracting pages (parts, split, pages) work on a single PDF only. When merging, leave pages out.',
+    )
 
-  // 읽기: 볼 수 있는 폴더 안의 PDF·사진만
+  // Reading: only PDFs and photos inside folders we may see
   const inputs: { path: string; buf: Buffer; ext: string }[] = []
   let total = 0
   for (const raw of paths) {
     const p = scope.inside(raw)
     if (!p)
       return fail(
-        `${basename(raw)}: 없거나 바탕화면·문서·다운로드·사진·동영상 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
+        `${basename(raw)}: missing or outside Desktop, Documents, Downloads, Pictures and Movies. Find the path with file_find first.`,
       )
-    if (scope.sensitive(p)) return fail(`${basename(p)}: 민감한 파일이라 손대지 않아요.`)
+    if (scope.sensitive(p)) return fail(`${basename(p)}: sensitive file, not touched.`)
     const ext = extname(p).toLowerCase()
     if (/^\.(heic|heif|webp)$/.test(ext))
       return fail(
-        `${basename(p)}: 이 사진 형식은 PDF에 못 넣어요. file_convert로 JPG로 바꾼 뒤 그 파일을 주세요.`,
+        `${basename(p)}: this photo format cannot go into a PDF. Convert it to JPG with file_convert, then give that file.`,
       )
     if (!/^\.(pdf|jpe?g|png)$/.test(ext))
       return fail(
-        `${basename(p)}: PDF와 사진(jpg·png)만 합칠 수 있어요. 워드·한글 문서는 PDF로 저장한 것을 주세요.`,
+        `${basename(p)}: only PDFs and photos (jpg, png) can be merged. For Word or Hangul documents, give the version saved as PDF.`,
       )
     const s = await stat(p)
-    if (s.isDirectory()) return fail(`${basename(p)}: 폴더 말고 파일을 주세요.`)
-    if (s.size > MAX_FILE) return fail(`${basename(p)}: 100MB보다 큰 파일은 다루지 않아요.`)
+    if (s.isDirectory()) return fail(`${basename(p)}: give a file, not a folder.`)
+    if (s.size > MAX_FILE) return fail(`${basename(p)}: files over 100MB are not handled.`)
     total += s.size
-    if (total > MAX_TOTAL) return fail('합쳐서 300MB보다 크면 다루지 않아요. 나눠서 부탁해 주세요.')
+    if (total > MAX_TOTAL) return fail('More than 300MB combined is not handled. Ask in smaller batches.')
     const buf = await scope.read(p)
     if (typeof buf === 'string') return fail(`${basename(p)}: ${buf}`)
     inputs.push({ path: p, buf, ext })
@@ -77,7 +86,8 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
     typeof args.folder === 'string' && args.folder.trim()
       ? scope.insideNew(args.folder.trim())
       : dirname(first.path)
-  if (!outDir) return fail('새 파일을 둘 폴더는 바탕화면·문서·다운로드·사진·동영상 안이어야 해요.')
+  if (!outDir)
+    return fail('The folder for new files must be inside Desktop, Documents, Downloads, Pictures or Movies.')
   const stem = basename(first.path, extname(first.path))
   const wanted =
     typeof args.name === 'string' && args.name.trim() ? cleanName(args.name).replace(/\.pdf$/i, '') : ''
@@ -87,8 +97,8 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
       return await PDFDocument.load(i.buf, { updateMetadata: false })
     } catch (e) {
       const why = /encrypt/i.test((e as Error).message)
-        ? '암호가 걸린 PDF라 열지 못해요. 암호를 푼 PDF로 저장해 달라고 알려 주세요'
-        : '깨졌거나 PDF가 아니라 열지 못해요'
+        ? 'password-protected PDF, cannot open. Tell the user to save a copy without the password'
+        : 'corrupted or not a PDF, cannot open'
       throw new Error(`${basename(i.path)}: ${why}`)
     }
   }
@@ -102,9 +112,9 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
   }
 
   try {
-    // 나누기: 쪽마다 또는 parts 범위마다 새 파일
+    // Split: one new file per page or per parts range
     if (split || parts) {
-      if (first.ext !== '.pdf') return fail('나누기는 PDF만 돼요.')
+      if (first.ext !== '.pdf') return fail('Splitting works on PDFs only.')
       const src = await open(first)
       const count = src.getPageCount()
       const groups: { label: string; idx: number[] }[] = []
@@ -116,26 +126,26 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
         }
       } else {
         if (count > MAX_PARTS)
-          return fail(`쪽이 ${count}개라 한 쪽씩 나누기엔 많아요. parts로 범위를 나눠 주세요.`)
+          return fail(`${count} pages is too many to split one by one. Split by ranges with parts.`)
         for (let i = 0; i < count; i++) groups.push({ label: String(i + 1), idx: [i] })
       }
       const made: { at: string; size: number; pages: number }[] = []
       for (const g of groups) {
         const doc = await PDFDocument.create()
         for (const pg of await doc.copyPages(src, g.idx)) doc.addPage(pg)
-        made.push(await save(doc, `${wanted || stem} ${g.label}쪽`))
+        made.push(await save(doc, `${wanted || stem} ${names.pagesSuffix(g.label)}`))
       }
       return ok(
-        `${count}쪽짜리 ${basename(first.path)}를 ${made.length}개로 나눴어요(원본은 그대로): ` +
+        `Split ${basename(first.path)} (${count} pages) into ${made.length} files (original untouched): ` +
           made
             .slice(0, 10)
-            .map((m) => `${basename(m.at)}(${m.pages}쪽)`)
+            .map((m) => `${basename(m.at)} (${m.pages} pages)`)
             .join(', ') +
-          `${made.length > 10 ? ` 외 ${made.length - 10}개` : ''} → ${scope.show(outDir)}. 사용자에게 이 위치를 알려 주세요.`,
+          `${made.length > 10 ? ` and ${made.length - 10} more` : ''} -> ${scope.show(outDir)}. Tell the user this location.`,
       )
     }
 
-    // 합치기(또는 PDF 하나에서 쪽 뽑기): 준 순서대로
+    // Merge (or extract pages from one PDF): in the given order
     const doc = await PDFDocument.create()
     const summary: string[] = []
     for (const i of inputs) {
@@ -144,7 +154,7 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
         const idx = pages ? pageList(pages, src.getPageCount()) : src.getPageIndices()
         if (typeof idx === 'string') return fail(idx)
         for (const pg of await doc.copyPages(src, idx)) doc.addPage(pg)
-        summary.push(`${basename(i.path)} ${idx.length}쪽`)
+        summary.push(`${basename(i.path)} ${idx.length} pages`)
       } else {
         const img = i.ext === '.png' ? await doc.embedPng(i.buf) : await doc.embedJpg(i.buf)
         const [w, h] = img.width > img.height ? [A4[1], A4[0]] : A4
@@ -156,20 +166,20 @@ export async function pdfTool(scope: FileScope, args: Record<string, unknown>): 
           width: img.width * k,
           height: img.height * k,
         })
-        summary.push(`${basename(i.path)} 사진 1쪽`)
+        summary.push(`${basename(i.path)} photo, 1 page`)
       }
     }
     const name =
       wanted ||
       (inputs.length > 1
-        ? `${stem} 외 ${inputs.length - 1}개 합침`
+        ? names.merged(stem, inputs.length - 1)
         : pages
-          ? `${stem} ${pages.replace(/\s+/g, '')}쪽`
-          : `${stem} 사본`)
+          ? names.extracted(stem, pages.replace(/\s+/g, ''))
+          : names.copy(stem))
     const m = await save(doc, name)
     return ok(
-      `${inputs.length > 1 ? `${inputs.length}개를 하나로 합쳤어요` : '쪽을 뽑아 새 PDF를 만들었어요'}(원본은 그대로): ` +
-        `${scope.show(m.at)} (${m.pages}쪽, ${kb(m.size)}). 순서: ${summary.slice(0, 20).join(' → ')}. 사용자에게 이 경로를 알려 주세요.`,
+      `${inputs.length > 1 ? `Merged ${inputs.length} files into one` : 'Extracted pages into a new PDF'} (originals untouched): ` +
+        `${scope.show(m.at)} (${m.pages} pages, ${kb(m.size)}). Order: ${summary.slice(0, 20).join(' -> ')}. Tell the user this path.`,
     )
   } catch (e) {
     return fail((e as Error).message)

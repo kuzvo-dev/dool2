@@ -67,8 +67,8 @@ describe('HTML을 PDF·PNG로 (file_render)', () => {
     expect(existsSync(out)).toBe(true)
     expect((await PDFDocument.load(readFileSync(out))).getPageCount()).toBe(3)
     expect(text(r)).toContain('11월 보고서.pdf')
-    expect(text(r)).toContain('A4 3쪽')
-    expect(text(r)).toContain('경로를 그대로 알려')
+    expect(text(r)).toContain('A4, 3 page')
+    expect(text(r)).toContain('Tell the user this path')
     // 원본은 그대로, 그리기 부품에는 실제 경로와 PDF가 간다
     expect(existsSync(join(doori, '11월 보고서.html'))).toBe(true)
     expect(fake.calls[0]).toMatchObject({ path: join(doori, '11월 보고서.html'), to: 'pdf' })
@@ -110,7 +110,9 @@ describe('HTML을 PDF·PNG로 (file_render)', () => {
     const fake = fakeRenderer()
     const { tools, home, doori } = setup({ renderFile: fake.renderFile })
     writeFileSync(join(home, 'Secret', 'a.html'), '<p>비밀</p>')
-    expect(text(await tools.run('file_render', { path: '~/Secret/a.html', to: 'pdf' }))).toContain('밖이에요')
+    expect(text(await tools.run('file_render', { path: '~/Secret/a.html', to: 'pdf' }))).toContain(
+      'outside Desktop',
+    )
     // 바로가기로 밖에 나가는 것도
     symlinkSync(join(home, 'Secret', 'a.html'), join(doori, '바로가기.html'))
     expect(
@@ -121,16 +123,16 @@ describe('HTML을 PDF·PNG로 (file_render)', () => {
     )
     writeFileSync(join(doori, 'password.html'), '<p>x</p>')
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/password.html' }))).toContain(
-      '민감한',
+      'sensitive file',
     )
     writeFileSync(join(doori, '메모.md'), '# 메모')
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/메모.md' }))).toContain(
-      'file_write로 html',
+      'html with file_write',
     )
     writeFileSync(join(doori, '계약서.pdf'), await pdfOf(1))
     expect(
       text(await tools.run('file_render', { path: '~/Documents/두리/계약서.pdf', to: 'png' })),
-    ).toContain('이미 PDF')
+    ).toContain('already a PDF')
     expect(text(await tools.run('file_render', { to: 'pdf' }))).toContain('path')
     expect(fake.calls).toHaveLength(0)
   })
@@ -170,16 +172,16 @@ describe('HTML을 PDF·PNG로 (file_render)', () => {
     })
     for (const n of ['느림', '오류', '깨짐']) writeFileSync(join(doori, `${n}.html`), '<p>x</p>')
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/느림.html', to: 'pdf' }))).toContain(
-      '오래 걸려',
+      'took too long',
     )
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/오류.html', to: 'pdf' }))).toContain(
       '창을 못 열었어요',
     )
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/깨짐.html', to: 'pdf' }))).toContain(
-      '깨졌어요',
+      'is corrupt',
     )
     expect(text(await tools.run('file_render', { path: '~/Documents/두리/깨짐.html', to: 'png' }))).toContain(
-      '깨졌어요',
+      'is corrupt',
     )
     for (const n of ['느림', '오류', '깨짐'])
       for (const e of ['pdf', 'png']) expect(existsSync(join(doori, `${n}.${e}`))).toBe(false)

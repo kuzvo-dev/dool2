@@ -1,20 +1,20 @@
-// 휴지통에서 찾기·되살리기 (ADR 0024 추가). 휴지통 비우기·영구 삭제는 만들지 않는다.
-// - 맥: ~/.Trash. 원래 자리는 휴지통의 .DS_Store에 Finder가 적어 둔 ptbL(폴더)·ptbN(이름)으로 안다.
-//   두리에게 전체 디스크 접근 권한이 없으면 맥이 휴지통 읽기를 막는다(EPERM) → 이유와 다음 길
-// - 윈도우: 셸의 휴지통(Shell.Application Namespace 10). 원래 자리는 System.Recycle.DeletedFrom
+// Find and restore from the trash (ADR 0024 addendum). Emptying the trash and permanent delete are not built.
+// - macOS: ~/.Trash. The original place comes from ptbL (folder) and ptbN (name), which Finder writes in the trash's .DS_Store.
+//   Without Full Disk Access for Doori, macOS blocks reading the trash (EPERM) -> the reason and the next step
+// - Windows: the shell's recycle bin (Shell.Application Namespace 10). The original place is System.Recycle.DeletedFrom
 import { existsSync } from 'node:fs'
 import { readdir, readFile, rename, stat } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import type { Exec } from './file-ops.js'
 
 export interface TrashItem {
-  /** 휴지통 안의 이름 (맥: ~/.Trash의 파일 이름, 윈도우: $R… 이름). 되살릴 때 이걸로 고른다 */
+  /** Name inside the trash (macOS: file name in ~/.Trash, Windows: $R... name). Used to pick it when restoring */
   id: string
-  /** 원래 이름 */
+  /** Original name */
   name: string
-  /** 원래 있던 폴더 (모르면 없음) */
+  /** Original folder (absent if unknown) */
   from?: string
-  /** 지운 때(ms, 대강) */
+  /** When it was deleted (ms, roughly) */
   at?: number
   size?: number
   dir?: boolean
@@ -26,17 +26,17 @@ export interface TrashContext {
   home: string
 }
 
-/** 휴지통을 못 읽을 때 사용자에게 전할 말 */
+/** What to tell the user when the trash cannot be read */
 export const MAC_TRASH_BLOCKED =
-  '맥이 휴지통 읽기를 막고 있어요(두리에게 "전체 디스크 접근 권한"이 없어요). 지금은 Dock 끝의 휴지통을 열어 파일을 오른쪽 클릭 > "되돌려 놓기"를 눌러 달라고 안내해 주세요. ' +
-  '두리가 직접 찾고 되살리게 하려면 시스템 설정 > 개인정보 보호 및 보안 > 전체 디스크 접근 권한에서 두리를 켜면 돼요.'
+  'macOS is blocking access to the trash (Doori does not have "Full Disk Access"). For now, tell the user to open the Trash at the end of the Dock, right-click the file and choose "Put Back". ' +
+  'To let Doori find and restore it directly, turn Doori on in System Settings > Privacy & Security > Full Disk Access.'
 
-/** UTF-16BE 글 */
+/** UTF-16BE text */
 const utf16be = (b: Buffer) => Buffer.from(b).swap16().toString('utf16le')
 
 /**
- * 맥 휴지통 .DS_Store에서 "지운 자리" 기록을 찾는다: 휴지통 안 이름 → { dir: 'Users/me/Documents/', name? }.
- * 기록 모양: [이름 길이 u32][이름 UTF-16BE][코드 4바이트 'ptbL'|'ptbN']['ustr'][값 길이 u32][값 UTF-16BE]
+ * Finds the "deleted from" records in the macOS trash .DS_Store: name in the trash -> { dir: 'Users/me/Documents/', name? }.
+ * Record layout: [name length u32][name UTF-16BE][4-byte code 'ptbL'|'ptbN']['ustr'][value length u32][value UTF-16BE]
  */
 export function putBackInfo(ds: Buffer): Map<string, { dir?: string; name?: string }> {
   const out = new Map<string, { dir?: string; name?: string }>()
@@ -47,7 +47,7 @@ export function putBackInfo(ds: Buffer): Map<string, { dir?: string; name?: stri
       const vlen = ds.readUInt32BE(i + 8)
       if (vlen > 2048 || i + 12 + vlen * 2 > ds.length) continue
       const value = utf16be(ds.subarray(i + 12, i + 12 + vlen * 2))
-      // 앞쪽 이름: 길이 k를 1부터 늘려 가며 [k][이름 2k바이트]가 맞는 자리를 찾는다
+      // Leading name: grow the length k from 1 until [k][name, 2k bytes] fits
       let name: string | undefined
       for (let k = 1; k <= 1024; k++) {
         const at = i - 2 * k - 4
@@ -70,7 +70,7 @@ export function putBackInfo(ds: Buffer): Map<string, { dir?: string; name?: stri
   return out
 }
 
-/** 휴지통 목록. 못 읽으면 이유(글) */
+/** Trash list. If unreadable, the reason (text) */
 export async function trashList(ctx: TrashContext): Promise<TrashItem[] | string> {
   if (ctx.platform === 'darwin') {
     const dir = join(ctx.home, '.Trash')
@@ -95,7 +95,7 @@ export async function trashList(ctx: TrashContext): Promise<TrashItem[] | string
         id,
         name: pb?.name ?? id,
         ...(pb?.dir ? { from: `/${pb.dir.replace(/^\/+/, '').replace(/\/+$/, '')}` } : {}),
-        // 휴지통으로 옮기면 바뀌는 때(ctime)가 지운 때에 가깝다
+        // Moving to the trash changes ctime, which is close to the deletion time
         ...(s ? { at: s.ctimeMs, size: s.size, dir: s.isDirectory() } : {}),
       })
     }
@@ -110,18 +110,18 @@ export async function trashList(ctx: TrashContext): Promise<TrashItem[] | string
       },
     )
     if (r.code !== 0 && !r.stdout.trim())
-      return `휴지통을 읽지 못했어요: ${r.stderr.split('\n')[0]?.slice(0, 160)}`
+      return `Could not read the trash: ${r.stderr.split('\n')[0]?.slice(0, 160)}`
     let rows: { id?: string; name?: string; from?: string; at?: string; size?: number; dir?: boolean }[] = []
     try {
       const v = JSON.parse(r.stdout.trim() || '[]')
       rows = Array.isArray(v) ? v : [v]
     } catch {
-      return '휴지통 목록을 읽지 못했어요.'
+      return 'Could not read the trash list.'
     }
     return rows
       .filter((x) => x.id)
       .map((x) => {
-        // 탐색기가 확장자를 숨기면 이름에 확장자가 없다: $R 이름의 확장자를 붙인다
+        // If Explorer hides extensions the name has none: add the extension of the $R name
         const ext = /\.[^.\\]+$/.exec(String(x.id))?.[0] ?? ''
         const name = String(x.name ?? x.id)
         return {
@@ -134,10 +134,10 @@ export async function trashList(ctx: TrashContext): Promise<TrashItem[] | string
         }
       })
   }
-  return '이 PC에서는 아직 휴지통을 못 봐요(맥·윈도우만).'
+  return 'The trash cannot be viewed on this PC yet (macOS and Windows only).'
 }
 
-/** 되살리기: 휴지통의 그 항목을 dest 폴더에 name으로 (같은 이름이 없는 것은 부르는 쪽이 정한다) */
+/** Restore: that trash item into the dest folder as name (the caller makes sure the name is free) */
 export async function trashRestore(
   ctx: TrashContext,
   item: TrashItem,
@@ -146,11 +146,11 @@ export async function trashRestore(
 ): Promise<void> {
   if (ctx.platform === 'darwin') {
     if (item.id.includes('/') || item.id.includes('\\') || item.id === '..')
-      throw new Error('휴지통 이름이 이상해요')
+      throw new Error('Invalid trash item name')
     await rename(join(ctx.home, '.Trash', item.id), join(dest, name))
     return
   }
-  // 윈도우: 셸로 옮겨야 휴지통 기록도 같이 정리된다. 옮기면 원래 이름으로 나온다(같은 이름이 없는 폴더를 고른다)
+  // Windows: move through the shell so the recycle bin record is cleaned up too. It comes out under its original name (pick a folder without that name)
   const r = await ctx.exec(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-Command', WIN_TRASH_RESTORE],
@@ -160,14 +160,14 @@ export async function trashRestore(
     },
   )
   if (!r.stdout.includes('ok'))
-    throw new Error(r.stdout.includes('missing') ? '휴지통에 없어요' : '되살리지 못했어요')
+    throw new Error(r.stdout.includes('missing') ? 'Not in the trash' : 'Could not restore')
   for (let i = 0; i < 40 && !existsSync(join(dest, item.name)); i++)
     await new Promise((res) => setTimeout(res, 250))
-  if (!existsSync(join(dest, item.name))) throw new Error('되살렸는지 확인하지 못했어요')
+  if (!existsSync(join(dest, item.name))) throw new Error('Could not confirm the restore')
   if (item.name !== name) await rename(join(dest, item.name), join(dest, name))
 }
 
-/** 경로가 폴더 안인지 (윈도우는 대소문자를 가리지 않는다) */
+/** Whether the path is inside the folder (Windows ignores case) */
 export function under(p: string, root: string, win: boolean) {
   const a = win ? p.toLowerCase() : p
   const b = win ? root.toLowerCase() : root
@@ -189,6 +189,6 @@ const WIN_TRASH_RESTORE = `
 $sh = New-Object -ComObject Shell.Application
 $it = $sh.Namespace(10).Items() | Where-Object { (Split-Path $_.Path -Leaf) -eq $env:DOOL2_ID } | Select-Object -First 1
 if (-not $it) { Write-Output 'missing'; exit }
-# 4: 진행 창 없이, 16: 묻지 않기(같은 이름이 없는 폴더로만 옮긴다), 1024: 오류 창 없이
+# 4: no progress window, 16: do not ask (only move into a folder without that name), 1024: no error window
 $sh.Namespace($env:DOOL2_DEST).MoveHere($it, 1044)
 Write-Output 'ok'`

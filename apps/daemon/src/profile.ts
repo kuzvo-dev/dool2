@@ -1,130 +1,151 @@
-// 내 정보 (예약자·주문자 칸에 넣을 값). 금고와 같은 비밀값 보관소(PC 앱은 OS 키체인)에만 둔다.
-// AI는 값을 받지 않는다: browser_fill_profile은 "이 칸에 영문 성"처럼 칸과 항목만 말하고, 본체가 확장에 직접 넘긴다.
-// AI·대화 기록·폰 알림에는 가린 값(홍*동, 010-****-5678)만 보인다.
+// My info (values for booker/orderer form fields). Kept only in the secret store shared with the vault (the PC app uses the OS keychain).
+// The AI never receives values: browser_fill_profile only names the field and item ("English last name for this box"), and the daemon hands the value straight to the extension.
+// The AI, chat history and phone notifications only see masked values (like H*G, 010-****-5678).
+import type { Lang } from '@dool2/i18n'
 import { AUTH_APPS, CARRIERS } from '@dool2/protocol'
+import { PROFILE_TEXT } from './locales/profile.js'
+import {
+  AUTH_APP_EXAMPLE,
+  CAR_NO_EXAMPLE,
+  CAR_NO_PATTERN,
+  CAR_NO_RE,
+  normalizeCarrier,
+  normalizeSex,
+  SEX_EXAMPLE,
+  SEX_OPTIONS,
+} from './region/kr/profile.js'
 import type { SecretStoreLike } from './vault.js'
 
 const KEY = 'profile.v1'
 
-/** 저장하는 항목 (사람이 넣는 원래 값) */
-export const PROFILE_FIELDS = {
-  name: { label: '이름', type: 'text', example: '홍길동' },
-  name_en_last: {
-    label: '영문 성',
-    type: 'text',
-    example: 'HONG',
+/** Fields we store (the raw values people type). Labels, hints and examples come from the catalog for `lang` */
+export function profileFields(lang: Lang = 'ko') {
+  const t = PROFILE_TEXT[lang]
+  const en = (k: 'name_en_last' | 'name_en_first') => ({
+    label: t[k].label as string,
+    type: 'text' as const,
     pattern: '^[A-Za-z][A-Za-z -]*$',
-    patternHint: '영문으로 넣어 주세요',
-  },
-  name_en_first: {
-    label: '영문 이름',
-    type: 'text',
-    example: 'GILDONG',
-    pattern: '^[A-Za-z][A-Za-z -]*$',
-    patternHint: '영문으로 넣어 주세요',
-  },
-  email: {
-    label: '이메일',
-    type: 'email',
-    example: 'me@example.com',
-    pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$',
-    patternHint: 'me@example.com처럼 넣어 주세요',
-  },
-  phone: {
-    label: '휴대폰 번호',
-    type: 'tel',
-    example: '010-1234-5678',
-    pattern: '^01[016789]-?\\d{3,4}-?\\d{4}$',
-    patternHint: '010-1234-5678처럼 휴대폰 번호를 넣어 주세요',
-  },
-  birth: {
-    label: '생년월일',
-    type: 'date',
-    example: '1990-01-31',
-    pattern: '^(\\d{4}-?\\d{2}-?\\d{2}|\\d{6})$',
-    patternHint: '1990-01-31이나 900131처럼 넣어 주세요',
-  },
-  zip: {
-    label: '우편번호',
-    type: 'text',
-    example: '06236',
-    pattern: '^\\d{5}$',
-    patternHint: '숫자 5자리예요',
-  },
-  address: { label: '주소', type: 'text', example: '서울 강남구 테헤란로 123' },
-  address_detail: { label: '상세 주소', type: 'text', example: '4층 401호' },
-  // 간편인증 창에서 두리가 고를 앱. 비밀값이 아니라 AI도 그대로 본다
-  // 주민등록번호 뒷자리: 본인인증 칸에 쓴다. 금고에만 두고 AI에게는 가린 값(*******)만
-  rrn_back: {
-    label: '주민번호 뒷자리',
-    type: 'secret',
-    example: '1234567',
-    pattern: '^[1-4]\\d{6}$',
-    patternHint: '숫자 7자리예요 (첫 자리 1~4)',
-  },
-  auth_app: { label: '간편인증 앱', type: 'choice', example: '카카오톡', options: AUTH_APPS },
-  // 휴대폰 통신사: 본인확인(PASS·문자 인증) 창에서 고른다. 비밀값이 아니라 AI도 그대로 본다
-  carrier: { label: '통신사', type: 'choice', example: 'SKT', options: CARRIERS },
-  // 여권: 해외 전자여행허가(ESTA 등)·항공권·해외 숙소 예약 칸 (실측 11-21: ESTA에서 여권을 몰라 'PC 폴더에 사진 넣어 달라'고 함)
-  passport_no: {
-    label: '여권 번호',
-    type: 'secret',
-    example: 'M12345678',
-    pattern: '^[A-Za-z]{1,2}\\d{7,8}$',
-    patternHint: '영문 1~2자와 숫자 7~8자리예요 (예: M12345678)',
-  },
-  passport_issued: {
-    label: '여권 발급일',
-    type: 'date',
-    example: '2022-03-15',
-    pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
-    patternHint: '2022-03-15처럼 넣어 주세요',
-  },
-  passport_expiry: {
-    label: '여권 만료일',
-    type: 'date',
-    example: '2032-03-15',
-    pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
-    patternHint: '2032-03-15처럼 넣어 주세요',
-  },
-  sex: { label: '성별', type: 'choice', example: '남', options: ['남', '여'] },
-  // 차량번호: 정기검사·리콜·자동차세 연납·보험 견적 조회에 쓴다. 조회 칸에 넣어야 해서 AI도 그대로 본다
-  // (실측 11-21: 검사·연납·리콜·보험 네 부탁이 차량번호를 대화로 따로 물었다)
-  car_no: {
-    label: '차량번호',
-    type: 'text',
-    example: '12가 3456',
-    pattern: '^(\\d{2,3})\\s?[가-힣]\\s?\\d{4}$',
-    patternHint: '12가 3456처럼 넣어 주세요',
-  },
-  birth_city: {
-    label: '태어난 도시',
-    type: 'text',
-    example: 'SEOUL',
-    pattern: '^[A-Za-z][A-Za-z .-]*$',
-    patternHint: '영문으로 넣어 주세요 (예: SEOUL)',
-  },
-} as const
+    patternHint: t[k].hint as string,
+  })
+  return {
+    name: { label: t.name.label as string, type: 'text', example: t.name.example as string },
+    name_en_last: { ...en('name_en_last'), example: 'HONG' },
+    name_en_first: { ...en('name_en_first'), example: 'GILDONG' },
+    email: {
+      label: t.email.label as string,
+      type: 'email',
+      example: 'me@example.com',
+      pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$',
+      patternHint: t.email.hint as string,
+    },
+    phone: {
+      label: t.phone.label as string,
+      type: 'tel',
+      example: '010-1234-5678',
+      pattern: '^01[016789]-?\\d{3,4}-?\\d{4}$',
+      patternHint: t.phone.hint as string,
+    },
+    birth: {
+      label: t.birth.label as string,
+      type: 'date',
+      example: '1990-01-31',
+      pattern: '^(\\d{4}-?\\d{2}-?\\d{2}|\\d{6})$',
+      patternHint: t.birth.hint as string,
+    },
+    zip: {
+      label: t.zip.label as string,
+      type: 'text',
+      example: '06236',
+      pattern: '^\\d{5}$',
+      patternHint: t.zip.hint as string,
+    },
+    address: { label: t.address.label as string, type: 'text', example: t.address.example as string },
+    address_detail: {
+      label: t.address_detail.label as string,
+      type: 'text',
+      example: t.address_detail.example as string,
+    },
+    // Back digits of the resident ID: used in identity checks. Kept in the vault; the AI only sees a masked value (*******)
+    rrn_back: {
+      label: t.rrn_back.label as string,
+      type: 'secret',
+      example: '1234567',
+      pattern: '^[1-4]\\d{6}$',
+      patternHint: t.rrn_back.hint as string,
+    },
+    // The app Dool picks in the simple-auth window. Not a secret, so the AI sees it as is
+    auth_app: {
+      label: t.auth_app.label as string,
+      type: 'choice',
+      example: AUTH_APP_EXAMPLE,
+      options: AUTH_APPS,
+    },
+    // Mobile carrier: picked in identity-check windows (PASS, SMS). Not a secret, so the AI sees it as is
+    carrier: { label: t.carrier.label as string, type: 'choice', example: 'SKT', options: CARRIERS },
+    // Passport: for overseas travel authorization (ESTA etc.), flights and overseas lodging forms
+    // (measured 11-21: at ESTA it did not know the passport and asked the user to put a photo in a PC folder)
+    passport_no: {
+      label: t.passport_no.label as string,
+      type: 'secret',
+      example: 'M12345678',
+      pattern: '^[A-Za-z]{1,2}\\d{7,8}$',
+      patternHint: t.passport_no.hint as string,
+    },
+    passport_issued: {
+      label: t.passport_issued.label as string,
+      type: 'date',
+      example: '2022-03-15',
+      pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
+      patternHint: t.passport_issued.hint as string,
+    },
+    passport_expiry: {
+      label: t.passport_expiry.label as string,
+      type: 'date',
+      example: '2032-03-15',
+      pattern: '^\\d{4}-?\\d{2}-?\\d{2}$',
+      patternHint: t.passport_expiry.hint as string,
+    },
+    sex: { label: t.sex.label as string, type: 'choice', example: SEX_EXAMPLE, options: SEX_OPTIONS },
+    // Vehicle number: for inspection, recall, annual car tax prepay and insurance quotes. It goes into lookup boxes, so the AI sees it as is
+    // (measured 11-21: four requests (inspection, prepay, recall, insurance) each asked for the number in chat)
+    car_no: {
+      label: t.car_no.label as string,
+      type: 'text',
+      example: CAR_NO_EXAMPLE,
+      pattern: CAR_NO_PATTERN,
+      patternHint: t.car_no.hint as string,
+    },
+    birth_city: {
+      label: t.birth_city.label as string,
+      type: 'text',
+      example: 'SEOUL',
+      pattern: '^[A-Za-z][A-Za-z .-]*$',
+      patternHint: t.birth_city.hint as string,
+    },
+  } as const
+}
+
+export const PROFILE_FIELDS = profileFields('ko')
 
 export type ProfileField = keyof typeof PROFILE_FIELDS
 export type Profile = Partial<Record<ProfileField, string>>
 
-/** 칸에 넣을 때 고를 수 있는 모양 (사이트마다 받는 모양이 다르다) */
+/** Shapes a value can take when filled into a box (each site accepts a different shape) */
 export const PROFILE_KEYS = [
   ...(Object.keys(PROFILE_FIELDS) as ProfileField[]),
   'name_en_full', // HONG GILDONG
   'phone_digits', // 01012345678
-  'phone_local', // 1012345678 (국가 번호를 따로 고르는 칸: +82 다음)
-  'phone_rest', // 12345678 (앞자리 010을 따로 고르는 칸: 뒤 8자리)
-  'phone_head', // 010 (세 칸으로 나뉜 휴대폰: 앞)
-  'phone_mid', // 1234 (세 칸으로 나뉜 휴대폰: 가운데)
-  'phone_last', // 5678 (세 칸으로 나뉜 휴대폰: 끝)
+  'phone_local', // 1012345678 (boxes where the country code is picked separately: after +82)
+  'phone_rest', // 12345678 (boxes where the leading 010 is picked separately: last 8 digits)
+  'phone_head', // 010 (mobile number split in three boxes: first)
+  'phone_mid', // 1234 (mobile number split in three boxes: middle)
+  'phone_last', // 5678 (mobile number split in three boxes: last)
   'birth_digits', // 19900131
   'birth6', // 900131
 ] as const
 export type ProfileKey = (typeof PROFILE_KEYS)[number]
 
-/** 이 모양을 만들려면 있어야 하는 항목 */
+/** Items needed to build this shape */
 export function sourceOf(key: ProfileKey): ProfileField[] {
   switch (key) {
     case 'name_en_full':
@@ -144,7 +165,7 @@ export function sourceOf(key: ProfileKey): ProfileField[] {
   }
 }
 
-/** 저장된 값에서 칸에 넣을 모양을 만든다. 없으면 undefined */
+/** Builds the shape to fill from the stored values; undefined if missing */
 export function profileValue(p: Profile, key: ProfileKey): string | undefined {
   const digits = (s?: string) => s?.replace(/\D/g, '') || undefined
   switch (key) {
@@ -173,7 +194,7 @@ export function profileValue(p: Profile, key: ProfileKey): string | undefined {
   }
 }
 
-/** AI·기록에 보일 가린 값 */
+/** Masked value shown to the AI and in logs */
 export function maskValue(field: ProfileField, v: string): string {
   const s = v.trim()
   if (field === 'auth_app' || field === 'carrier') return s
@@ -192,13 +213,13 @@ export function maskValue(field: ProfileField, v: string): string {
   if (field === 'birth') return `${s.slice(0, 4)}-**-**`
   if (field === 'address' || field === 'address_detail') return `${s.split(/\s+/).slice(0, 2).join(' ')} ***`
   if (field === 'zip') return `${s.slice(0, 2)}***`
-  // 이름: 가운데를 가린다 (홍*동, H**G)
+  // Name: mask the middle (H**G)
   if (s.length <= 1) return '*'
   if (s.length === 2) return `${s[0]}*`
   return `${s[0]}${'*'.repeat(s.length - 2)}${s.at(-1)}`
 }
 
-/** 넣은 값 다듬기: 영문 이름은 대문자, 전화는 숫자·하이픈만, 생년월일은 YYYY-MM-DD */
+/** Tidies a typed value: English names upper case, phone digits and hyphens only, birth date as YYYY-MM-DD */
 export function normalize(field: ProfileField, v: string): string | undefined {
   const s = v.replace(/\s+/g, ' ').trim().slice(0, 120)
   if (!s) return undefined
@@ -212,10 +233,10 @@ export function normalize(field: ProfileField, v: string): string | undefined {
     return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : undefined
   }
   if (field === 'car_no') {
-    const m = /^(\d{2,3})\s?([가-힣])\s?(\d{4})$/.exec(s)
+    const m = CAR_NO_RE.exec(s)
     return m ? `${m[1]}${m[2]} ${m[3]}` : undefined
   }
-  if (field === 'sex') return /^(남|m)/i.test(s) ? '남' : /^(여|f|w)/i.test(s) ? '여' : undefined
+  if (field === 'sex') return normalizeSex(s)
   if (field === 'phone') {
     const d = s.replace(/\D/g, '')
     if (d.length < 9) return undefined
@@ -232,27 +253,14 @@ export function normalize(field: ProfileField, v: string): string | undefined {
     const d = s.replace(/\D/g, '')
     return /^[1-4]\d{6}$/.test(d) ? d : undefined
   }
-  if (field === 'carrier') {
-    // "lg", "유플러스", "skt 알뜰" → 목록 이름으로
-    const k = s.replace(/\s/g, '').toLowerCase()
-    const mvno = /알뜰|mvno/.test(k)
-    const net = /lg|유플|u\+/.test(k)
-      ? 'LG U+'
-      : /kt|케이티/.test(k) && !/skt/.test(k)
-        ? 'KT'
-        : /sk|에스케이/.test(k)
-          ? 'SKT'
-          : ''
-    if (!net) return undefined
-    return mvno ? `${net} 알뜰폰` : net
-  }
+  if (field === 'carrier') return normalizeCarrier(s)
   if (field === 'auth_app') {
-    // "카카오" → 카카오톡, "pass" → PASS처럼 앞부분만 맞아도 받는다
+    // A prefix is enough: "pass" matches PASS, "kakao" matches the KakaoTalk entry
     const k = s.replace(/\s/g, '').toLowerCase()
     return (
       AUTH_APPS.find((a) => a.toLowerCase() === k) ??
       AUTH_APPS.find((a) => a.toLowerCase().startsWith(k.slice(0, 2))) ??
-      // 사이트마다 다른 앱(예: 하나인증서)은 화면 글 그대로
+      // Apps that differ by site (e.g. Hana certificate) are kept as the screen text
       (s.length <= 20 ? s : undefined)
     )
   }
@@ -273,7 +281,7 @@ export class ProfileStore {
     }
   }
 
-  /** 넣은 칸만 바꾼다. 빈 값은 지운다. 형식이 틀린 칸은 넘기고 그 이름을 돌려준다 */
+  /** Changes only the fields given. Empty values are deleted. Fields with a wrong format are skipped and returned by name */
   async update(input: Record<string, unknown>): Promise<{ saved: ProfileField[]; bad: ProfileField[] }> {
     const p = await this.get()
     const saved: ProfileField[] = []
@@ -300,7 +308,7 @@ export class ProfileStore {
     await this.secrets.set(KEY, undefined)
   }
 
-  /** AI에게 보일 모양: 있는 항목은 가린 값, 없는 항목은 이름만 */
+  /** Shape shown to the AI: masked values for items that exist, just the name for the missing ones */
   async masked(): Promise<{ have: Partial<Record<ProfileField, string>>; missing: ProfileField[] }> {
     const p = await this.get()
     const have: Partial<Record<ProfileField, string>> = {}

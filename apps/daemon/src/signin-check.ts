@@ -1,10 +1,11 @@
-// 서비스에 지금 로그인돼 있는지 확인한다 (연결 확인·연결 유지가 같이 쓴다).
-// 첫 화면에 확실한 표시(로그아웃·이름 님·계정 버튼)가 있으면 로그인됨, 로그인 입구가 있으면 풀림.
-// 둘 다 없으면 '마이페이지'를 눌러 로그인 화면으로 가는지 본다. 그래도 모르면 'unknown' (연결로 표시하지 않는다).
-// 실측(2026-11-19): 첫 화면만 보면 30곳 중 12곳은 표시도 입구도 없었고, 입구가 사라진 것만으로 판단해
-// CJ더마켓·오아시스·캠핏·X를 연결로 잘못 표시했다
+// Checks whether we are signed in to a service right now (used by connection check and keep-alive).
+// A clear sign on the first page (log out, a name, an account button) means signed in; a login entry means signed out.
+// With neither, click "my page" and see whether it leads to a login screen. If still unsure, 'unknown' (not shown as connected).
+// Measured (2026-11-19): on the first page alone, 12 of 30 sites had neither sign nor entry, and judging only by
+// a missing entry marked CJ The Market, Oasis, Campit and X as connected by mistake
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { hasLoginEntry, strongSignedIn } from './connect-watch.js'
+import { MY_CONTENT, MY_LINK, PASSWORD_FIELD } from './region/kr/signin-check.js'
 
 export interface CheckBrowser {
   call(method: string, args: Record<string, unknown>, timeoutMs?: number): Promise<unknown>
@@ -13,42 +14,36 @@ export interface CheckBrowser {
 export type SigninState = 'in' | 'out' | 'unknown'
 export interface SigninCheck {
   state: SigninState
-  /** 어떻게 알았는지 한 줄 (기록용) */
+  /** One line on how we knew (for the log) */
   why: string
 }
 
 type Snap = { url: string; text: string }
 
-/** 마이페이지로 가는 링크·버튼 ("마이페이지", "MY", "마이 페이지ㆍ구매 내역", "마이리디", "HeaderButtonMyPage") */
-const MY_LINK =
-  /\[(e\d+) (?:링크|버튼) "((?:마이\s?페이지|마이|MY|My\s?page|MYPAGE|내\s?정보|HeaderButtonMyPage)[^"\]\n]{0,10}|마이\s?\S{1,4})"\]/i
-
-/** 로그인한 사람의 마이페이지에 보이는 내용 */
-const MY_CONTENT =
-  /주문\s?(내역|목록|배송)|배송\s?(조회|현황)|구매\s?내역|예약\s?내역|쿠폰|적립금|포인트|마일리지|회원\s?정보\s?(수정|변경)|내\s?정보\s?(수정|관리)|개인\s?정보\s?(수정|변경)|비밀번호\s?변경|배송지\s?관리|찜한|위시\s?리스트|구독\s?(중|관리)|이용권|my orders|order history/i
-
-/** 로그인 화면 주소 */
+/** Login screen addresses */
 const LOGIN_AT =
   /\/(login|signin|sign-in|sign_in|auth\/|member\/login|i\/flow\/login)(\b|[/?#._])|nidlogin|accounts\.kakao\.com\/login|accounts\.google\.com/i
 
 export function judgeHome(card: Pick<ConnectCard, 'signedIn'>, page: Snap): SigninCheck | undefined {
-  if (strongSignedIn(card, page)) return { state: 'in', why: '첫 화면에 로그인 표시' }
+  if (strongSignedIn(card, page)) return { state: 'in', why: 'sign of login on the first page' }
   if (hasLoginEntry(page.text) || LOGIN_AT.test(page.url))
-    return { state: 'out', why: '첫 화면에 로그인 입구' }
+    return { state: 'out', why: 'login entry on the first page' }
   return undefined
 }
 
-/** 마이페이지를 누른 뒤 화면으로 판단 */
+/** Judge from the screen after clicking "my page" */
 export function judgeMyPage(card: Pick<ConnectCard, 'signedIn'>, before: Snap, after: Snap): SigninCheck {
-  if (strongSignedIn(card, after)) return { state: 'in', why: '마이페이지에 로그인 표시' }
-  if (LOGIN_AT.test(after.url) || /\[e\d+ 비밀번호칸/.test(after.text) || hasLoginEntry(after.text))
-    return { state: 'out', why: '마이페이지가 로그인 화면으로 보냄' }
-  // 화면이 바뀌지 않았으면(메뉴만 열렸거나 무반응) 알 수 없다
-  if (after.url === before.url) return { state: 'unknown', why: '마이페이지를 눌러도 화면이 그대로' }
-  // 주소만 바뀐 걸로는 모른다: 한 화면짜리 사이트(요기요·왓챠)는 로그인 안 해도 #mypage로 바뀐다 (실측 2026-11-19 잘못 연결).
-  // 로그인한 사람의 마이페이지에만 있는 내용(주문·쿠폰·포인트·내 정보…)이 보여야 로그인됨
-  if (MY_CONTENT.test(after.text)) return { state: 'in', why: '마이페이지에 내 주문·쿠폰·정보가 보임' }
-  return { state: 'unknown', why: '마이페이지가 열렸지만 로그인한 내용이 안 보임' }
+  if (strongSignedIn(card, after)) return { state: 'in', why: 'sign of login on the my page' }
+  if (LOGIN_AT.test(after.url) || PASSWORD_FIELD.test(after.text) || hasLoginEntry(after.text))
+    return { state: 'out', why: 'my page led to a login screen' }
+  // If the screen did not change (only a menu opened, or nothing happened), we cannot tell
+  if (after.url === before.url)
+    return { state: 'unknown', why: 'the screen stayed the same after clicking my page' }
+  // A changed address alone tells nothing: one-page sites (Yogiyo, Watcha) change to #mypage even when signed out (measured 2026-11-19, wrongly connected).
+  // Signed in only if content that appears only on a signed-in person's my page (orders, coupons, points, my info ...) is visible
+  if (MY_CONTENT.test(after.text))
+    return { state: 'in', why: 'my orders, coupons and info are visible on my page' }
+  return { state: 'unknown', why: 'my page opened but no signed-in content is visible' }
 }
 
 export async function checkSignedIn(
@@ -56,7 +51,7 @@ export async function checkSignedIn(
   card: Pick<ConnectCard, 'id' | 'signedIn' | 'site'>,
   opts: { wait?: number } = {},
 ): Promise<SigninCheck> {
-  if (!card.site) return { state: 'unknown', why: '사이트 주소 없음' }
+  if (!card.site) return { state: 'unknown', why: 'no site address' }
   const wait = opts.wait ?? 2_500
   const snap = async (tabId: number) =>
     (await browser.call('snapshot', { tabId, maxChars: 30_000 }, 20_000)) as Snap
@@ -68,7 +63,7 @@ export async function checkSignedIn(
     const first = judgeHome(card, home)
     if (first) return first
     const my = MY_LINK.exec(home.text)
-    if (!my) return { state: 'unknown', why: '첫 화면에 표시·입구·마이페이지 링크가 없음' }
+    if (!my) return { state: 'unknown', why: 'no sign, entry or my page link on the first page' }
     const clicked = (await browser
       .call('click', { tabId: opened.tabId, ref: my[1] }, 30_000)
       .catch(() => undefined)) as { newTabId?: number } | undefined

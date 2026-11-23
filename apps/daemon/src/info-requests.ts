@@ -1,5 +1,5 @@
-// 로그인 중 화면이 묻는 것(인증번호·휴대폰 번호 등)을 폰 입력 화면으로 받는다.
-// 원격 화면으로 PC 칸을 찾아 치는 것보다 빠르고 편하다. 값은 AI·대화 기록에 남기지 않고 그 칸에만 넣는다.
+// Takes what a screen asks for during login (verification code, phone number, etc.) through the phone's input screen.
+// Faster and easier than finding the PC field over a remote screen. The value is not kept in the AI or the conversation log; it goes only into that field.
 import { randomUUID } from 'node:crypto'
 import type { InfoRequestView } from '@dool2/protocol'
 
@@ -7,9 +7,9 @@ export const INFO_TTL_MS = 5 * 60_000
 
 export class InfoRequests {
   private items = new Map<string, { view: InfoRequestView; done: (v: string | undefined) => void }>()
-  /** 새 요청 (폰에 보내기) */
+  /** New request (send to the phone) */
   onCreate?: (r: InfoRequestView) => void
-  /** 끝남 (폰의 입력 화면 닫기) */
+  /** Finished (close the phone's input screen) */
   onDone?: (id: string) => void
 
   constructor(
@@ -17,7 +17,7 @@ export class InfoRequests {
     private readonly ttl = INFO_TTL_MS,
   ) {}
 
-  /** 묻고 답을 기다린다. 취소·시간 초과면 undefined */
+  /** Asks and waits for the answer. undefined on cancel or timeout */
   ask(n: Omit<InfoRequestView, 'id' | 'status' | 'expiresAt'>, ttl = this.ttl): Promise<string | undefined> {
     const id = randomUUID()
     const view: InfoRequestView = {
@@ -41,12 +41,12 @@ export class InfoRequests {
 
   answer(id: string, value: string | undefined): boolean {
     const v = value?.trim()
-    // 여러 칸 카드(form)는 칸들을 JSON 한 줄로 받아 더 길다
+    // A multi-field card (form) arrives as one line of JSON, so it is longer
     const max = this.items.get(id)?.view.field === 'form' ? 4000 : 200
     return this.finish(id, v ? 'answered' : 'cancelled', v ? v.slice(0, max) : undefined)
   }
 
-  /** 더 묻지 않아도 될 때 (예: 인증이 저절로 끝났다) 카드를 닫는다 */
+  /** Closes the card when no more asking is needed (e.g. verification finished by itself) */
   cancel(id: string): boolean {
     return this.finish(id, 'cancelled')
   }
