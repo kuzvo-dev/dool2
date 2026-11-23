@@ -2,6 +2,8 @@ name: 릴리스
 
 # 두리 PC 앱 설치 파일을 만들어 GitHub Releases에 올린다 (ADR 0028).
 # Actions 탭 → 릴리스 → Run workflow. apps/desktop/package.json의 version과 같은 버전을 넣는다.
+# 공개(publish) 전에 메인테이너가 v<버전> 태그를 먼저 만든다: 저장소의 '태그 보호' 규칙이 관리자만 태그를 만들게 한다
+# (11-23: 빌드 토큰이 태그를 못 만들어 0.3.0 올리기가 실패했다). git tag -a v0.3.0 <커밋> && git push origin v0.3.0
 # publish를 끄면 올리지 않고 파일만 만든다 (점검용: 각 OS에서 앱을 켜 찍은 화면도 함께 받는다).
 on:
   workflow_dispatch:
@@ -179,10 +181,16 @@ jobs:
           node apps/desktop/scripts/release-manifest.mjs --dir out --version "$VERSION" --notes "$NOTES" \
             ${MIN:+--min "$MIN"}
           ls -la out
+      - name: 태그 확인
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null \
+            || { echo "::error::v$VERSION 태그가 없어요. 태그 보호 규칙 때문에 메인테이너가 먼저 만들어 올려야 해요"; exit 1; }
       - name: GitHub Releases에 올리기
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
           NOTES: ${{ inputs.notes }}
         run: |
-          gh release create "v$VERSION" out/* --target "$GITHUB_SHA" --title "두리 $VERSION" --notes "$NOTES"
+          gh release create "v$VERSION" out/* --verify-tag --title "두리 $VERSION" --notes "$NOTES"
