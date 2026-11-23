@@ -1532,6 +1532,8 @@ select.rform-input {
 /* ── Goals ── */
 .goal-card {
   display: grid;
+  /* minmax(0, 1fr): a long schedule line must not widen the card past the screen */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-bottom: 10px;
   cursor: pointer;
