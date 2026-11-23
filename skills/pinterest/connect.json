@@ -27,5 +27,34 @@
       "say": "여행 보드 나라별로 나눠 줘",
       "tier": "fill"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Pinterest",
+      "login": "ID and password",
+      "summary": "Dool2 finds photos and ideas you like, saves them as pins and tidies your boards. It always asks before deleting anything.",
+      "example": {
+        "ask": "Find home cafe ideas for a small balcony",
+        "working": "Finding ideas",
+        "reply": "I found 30 ideas. Most use a folding table and shelf. Shall I save the best 10 to a new Home cafe board?"
+      },
+      "abilities": [
+        {
+          "title": "Find ideas",
+          "say": "Storage ideas for a studio"
+        },
+        {
+          "title": "Save pins",
+          "say": "Save my favorites to the interior board"
+        },
+        {
+          "title": "Tidy boards",
+          "say": "Split my travel board by country"
+        }
+      ]
+    }
+  }
 }

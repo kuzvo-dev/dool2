@@ -32,5 +32,38 @@
       "say": "매달 나가는 부가서비스 보고 정리해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "SKT T world",
+      "login": "T ID",
+      "summary": "Dool2 checks your remaining data and this month's bill on T world, changes plans and tidies add-on services.",
+      "example": {
+        "ask": "Check my remaining data on T world",
+        "working": "Checking remaining data",
+        "reply": "You used 68.8 GB of 100 GB, so 31.2 GB is left. It refills on the 1st."
+      },
+      "abilities": [
+        {
+          "title": "Remaining data",
+          "say": "Is my data enough until month end?"
+        },
+        {
+          "title": "Check the bill",
+          "say": "Find items higher than usual on last bill"
+        },
+        {
+          "title": "Change plan",
+          "say": "10 GB a month is enough, switch to a cheaper plan"
+        },
+        {
+          "title": "Tidy add-ons",
+          "say": "Review my monthly add-ons and clean up"
+        }
+      ]
+    }
+  }
 }

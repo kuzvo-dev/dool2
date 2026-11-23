@@ -40,5 +40,38 @@
       "say": "아이 간식으로 유기농 고구마 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Oasis Market",
+      "login": "ID and password",
+      "summary": "Connect Oasis Market and leave dawn-delivery grocery shopping, organic picks, re-ordering usual items and delivery checks to Dool2.",
+      "example": {
+        "ask": "Order eggs and bagels for weekend brunch, dawn delivery",
+        "working": "Finding products",
+        "reply": "Antibiotic-free eggs (10) and 4 plain bagels come to ₩12,700. Add ₩17,300 more for free delivery. Want to see more?"
+      },
+      "abilities": [
+        {
+          "title": "Dawn grocery run",
+          "say": "Greek yogurt and blueberries for tomorrow morning"
+        },
+        {
+          "title": "Check delivery",
+          "say": "What time does my dawn delivery arrive?"
+        },
+        {
+          "title": "Usual items",
+          "say": "Re-add my weekly milk and tofu"
+        },
+        {
+          "title": "Find organic",
+          "say": "Do you have organic sweet potatoes for kids?"
+        }
+      ]
+    }
+  }
 }

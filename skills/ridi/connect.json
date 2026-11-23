@@ -39,5 +39,38 @@
       "say": "지난달에 산 전자책 목록 보여 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Ridi",
+      "login": "ID and password",
+      "summary": "Dool2 finds e-books, webtoons and web novels, checks new episodes, tidies your library and buys for you.",
+      "example": {
+        "ask": "Buy me that hit sci-fi novel as an e-book",
+        "working": "Finding the book",
+        "reply": "The top sci-fi novel this month is ₩13,500 as an e-book. It goes straight to your library. Pay with Ridi Cash?"
+      },
+      "abilities": [
+        {
+          "title": "Find titles",
+          "say": "Recommend a finished martial arts web novel"
+        },
+        {
+          "title": "Buy books",
+          "say": "Buy volumes 1 to 3 of that novel"
+        },
+        {
+          "title": "New episodes",
+          "say": "Is this week's webtoon up?"
+        },
+        {
+          "title": "My library",
+          "say": "Show e-books I bought last month"
+        }
+      ]
+    }
+  }
 }

@@ -41,5 +41,42 @@
   "hints": [
     "PC 화면은 pc.wooricard.com 이에요. 카드이용내역은 /dcpc/yh1/mcd/mcd04/usehis/H1MCD204S00.do, 결제예상금액은 /dcpc/yh1/mcd/mcd02/H1MCD202S00.do, 이용대금명세서는 /dcpc/yh1/mcd/mcd03/H1MCD203S00.do 에서 봐요.",
     "전월실적은 혜택 메뉴의 전월실적 충족 조회(/dcpc/yh1/bnf/bnf03/svcrstsufsts/H1BNF203S00.do), 포인트는 포인트 조회(/dcpc/yh1/bnf/bnf05/pntinq/H1BNF205S01.do)에서 봐요."
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Woori Card",
+      "login": "ID and password",
+      "summary": "Connect Woori Card and leave this month's bill, spending history, spending target, points and card perks to Dool2.",
+      "example": {
+        "ask": "How much did I spend on delivery with Woori Card this week?",
+        "working": "Reading card history",
+        "reply": "4 delivery app payments this week, ₩61,700 in total. The biggest was ₩23,900 on Friday evening."
+      },
+      "abilities": [
+        {
+          "title": "Amount due",
+          "say": "What is my Woori Card bill this cycle?"
+        },
+        {
+          "title": "Spending history",
+          "say": "What did I buy with Woori Card this week?"
+        },
+        {
+          "title": "Check target",
+          "say": "How much more to hit my target?"
+        },
+        {
+          "title": "Check points",
+          "say": "What can I do with my Woori points?"
+        },
+        {
+          "title": "Card perks",
+          "say": "Does this card give gas discounts?"
+        }
+      ]
+    }
+  }
 }

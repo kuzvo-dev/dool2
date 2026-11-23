@@ -38,5 +38,38 @@
       "say": "커튼 길이가 짧아, 반품해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Ohouse",
+      "login": "ID and password",
+      "summary": "Dool2 picks sofas, shoe racks and bedding by size and price, and checks when your ordered furniture will arrive.",
+      "example": {
+        "ask": "Find a shoe rack 80 cm wide for my entryway",
+        "working": "Comparing furniture",
+        "reply": "A white 78 cm shoe rack is ₩89,000, rated 4.6. It arrives next Monday. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find furniture",
+          "say": "2-seater sofa under ₩500,000"
+        },
+        {
+          "title": "Order",
+          "say": "Buy the queen duvet I was viewing"
+        },
+        {
+          "title": "Track delivery",
+          "say": "When does my desk arrive?"
+        },
+        {
+          "title": "Exchange or return",
+          "say": "The curtain is too short, return it"
+        }
+      ]
+    }
+  }
 }

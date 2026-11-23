@@ -44,5 +44,42 @@
       "say": "강릉 숙소 날짜 하루 미뤄 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Yeogi Eottae",
+      "login": "ID and password",
+      "summary": "Dool2 finds stays for tonight or your trip, compares rooms and cancellation rules, books them and changes or cancels.",
+      "example": {
+        "ask": "A guesthouse near Jeonju Hanok Village tomorrow?",
+        "working": "Finding stays",
+        "reply": "A guesthouse 7 minutes walk from the village has a twin room for ₩62,000. Free cancellation until the day before. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find stays",
+          "say": "A stay near Suwon Station I can enter now"
+        },
+        {
+          "title": "Rooms and cancellation",
+          "say": "Until when can I cancel this room free?"
+        },
+        {
+          "title": "Book",
+          "say": "Book the cheapest room"
+        },
+        {
+          "title": "My bookings",
+          "say": "What time is check-in next week?"
+        },
+        {
+          "title": "Change booking",
+          "say": "Push my Gangneung stay back a day"
+        }
+      ]
+    }
+  }
 }

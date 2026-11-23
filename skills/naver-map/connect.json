@@ -29,5 +29,33 @@
       "say": "횡성휴게소에 급속 충전기 비어 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Naver Map",
+      "summary": "Find local places without signing in. Dool2 checks if a place is open, when it closes, break times and days off, and finds free fast EV chargers.",
+      "example": {
+        "ask": "Is that kalguksu place in Mangwon open now?",
+        "working": "Finding the place on Naver Map",
+        "reply": "Hongdukkae Kalguksu is open now, last order at 8 PM. Gohyangjip is open until 9 PM."
+      },
+      "abilities": [
+        {
+          "title": "Check opening hours",
+          "say": "Is any kalguksu place open now?"
+        },
+        {
+          "title": "Find places nearby",
+          "say": "Find a brunch cafe in Seongsu"
+        },
+        {
+          "title": "Find EV chargers",
+          "say": "Is a fast charger free at Hoengseong rest stop?"
+        }
+      ]
+    }
+  }
 }

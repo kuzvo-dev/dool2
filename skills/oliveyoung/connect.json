@@ -41,5 +41,42 @@
   "loginUrl": "https://www.oliveyoung.co.kr/store/login/loginForm.do",
   "social": [
     "kakao"
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Olive Young",
+      "login": "ID and password",
+      "summary": "Dool2 finds products for your skin, re-orders what you use, checks rankings and sales, and tracks deliveries.",
+      "example": {
+        "ask": "Order my usual shampoo to arrive today",
+        "working": "Checking past orders",
+        "reply": "Your last shampoo (500 ml) is ₩14,900 now. With Today Dream delivery it arrives before evening. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Re-order",
+          "say": "Order two of my usual lip balms"
+        },
+        {
+          "title": "Product tips",
+          "say": "Find a hydrating cream for dry skin"
+        },
+        {
+          "title": "See rankings",
+          "say": "What is the top sunscreen right now?"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me when the sale starts"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Where is my Today Dream order?"
+        }
+      ]
+    }
+  }
 }

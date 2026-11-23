@@ -42,5 +42,42 @@
       "say": "내일 잡아 둔 쏘카 없애 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Socar",
+      "login": "ID and password",
+      "summary": "Dool2 finds free cars at nearby Socar zones or near your trip and books them. Ask for ride history and cancellations too.",
+      "example": {
+        "ask": "A car at Hapjeong Station Sunday from lunch, 5 hours",
+        "working": "Checking Socar zones",
+        "reply": "At Hapjeong Station from 1 PM for 5 hours: Casper ₩28,300, K5 ₩34,900. Shall I book the Casper?"
+      },
+      "abilities": [
+        {
+          "title": "Find a nearby car",
+          "say": "A car I can take in an hour near home"
+        },
+        {
+          "title": "Book",
+          "say": "Book an SUV Saturday from 2 PM"
+        },
+        {
+          "title": "Rent on a trip",
+          "say": "Find a day rental at Busan Station"
+        },
+        {
+          "title": "Ride history",
+          "say": "How many times did I use Socar last month?"
+        },
+        {
+          "title": "Cancel booking",
+          "say": "Cancel tomorrow's Socar"
+        }
+      ]
+    }
+  }
 }

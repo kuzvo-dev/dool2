@@ -39,5 +39,38 @@
       "say": "배송 출발하면 알려 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "SSG.COM",
+      "login": "ID and password",
+      "summary": "Dool2 re-orders your usual groceries, picks delivery times, finds discounts and sends arrival alerts.",
+      "example": {
+        "ask": "Order last week's grocery list for Sunday evening",
+        "working": "Finding last order",
+        "reply": "Same 9 items as last order, ₩47,200. Delivery Sunday 6 to 9 PM. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Grocery run",
+          "say": "Re-order my usual yogurt and bananas"
+        },
+        {
+          "title": "Pick delivery time",
+          "say": "Deliver after 7 PM tomorrow"
+        },
+        {
+          "title": "Find deals",
+          "say": "What meat is on sale now?"
+        },
+        {
+          "title": "Arrival alerts",
+          "say": "Tell me when delivery leaves"
+        }
+      ]
+    }
+  }
 }
