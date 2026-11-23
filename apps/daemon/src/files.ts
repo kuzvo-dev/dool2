@@ -100,6 +100,8 @@ export class FileTools {
   videoMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   /** 그림 AI로 그림 만들기 (image_make, 본체가 브라우저와 함께 넣어 준다) */
   imageMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
+  /** AI 영상 클립 (video_clip, 구글 Flow) */
+  clipMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
   onWritten?: (f: {
     name: string
     kind: string
@@ -283,6 +285,10 @@ export class FileTools {
         return this.motionMaker
           ? await this.motionMaker.make(args)
           : fail('이 PC에서는 모션 영상을 만들 수 없어요.')
+      if (tool === 'video_clip')
+        return this.clipMaker
+          ? await this.clipMaker.make(args)
+          : fail('AI 영상을 쓸 브라우저가 연결돼 있지 않아요. video_motion만으로 만들어요.')
       if (tool === 'video_make')
         return this.videoMaker ? await this.videoMaker.make(args) : fail('이 PC에서는 영상을 만들 수 없어요.')
       if (tool === 'image_make')

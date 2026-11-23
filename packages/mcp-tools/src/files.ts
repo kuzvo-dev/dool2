@@ -269,6 +269,39 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     call('video_style'),
   )
   server.registerTool(
+    'video_clip',
+    {
+      title: 'AI 영상 클립 만들기',
+      description:
+        '영상 AI(사용자 구글 계정의 구글 Flow, 하루 무료 크레딧)로 5~8초짜리 실사·3D 애니메이션 같은 클립(mp4)을 만들어 두리 폴더·보관함에 둔다. ' +
+        '움직이는 주인공·풍경·분위기 장면처럼 모션그래픽으로는 못 내는 장면이 필요할 때 쓴다: 생일 영상의 춤추는 공룡, 가게 홍보의 김 나는 빵, 여행 영상 첫 장면의 바다 드론 샷. ' +
+        '클립은 재료다 — 한글 제목·날짜·실제 사진·전환은 결과에 온 file:/// 주소를 video_motion 장면의 <video class="bg">로 깔고 얹어 완성한다. 영상 하나에 클립 1~2개(무료 하루 50크레딧, 720p 한 개에 24쯤). ' +
+        'prompt는 영어로 자세히: 주인공·동작·배경·조명·카메라 움직임·화풍, 끝에 "no text". 실제 사람(가족·아이·유명인) 얼굴이나 이름, 상표는 넣지 않는다(사진도 올리지 않는다). ' +
+        '처음 쓰는 계정이면 구글 안내 동의가 필요하다는 답이 온다 — browser_request_approval로 사용자 승인을 받은 뒤 agree: true로 다시 부른다. 만드는 데 1~3분. 안 되면(연결·크레딧·거절) video_motion만으로 만든다.',
+      inputSchema: {
+        prompt: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe('장면 설명 (영어 권장, 글자 없이). resume이면 없어도 된다'),
+        shape: z
+          .enum(['portrait', 'landscape', 'square'])
+          .optional()
+          .describe('portrait=세로 9:16(기본), landscape=가로 16:9, square=1:1 — video_motion과 같게'),
+        name: z.string().max(80).optional().describe('파일 이름'),
+        draft: z.boolean().optional().describe('true면 360p로 싸게(크레딧 8쯤) — 배경을 흐리게 깔 때'),
+        agree: z.boolean().optional().describe('사용자가 구글 Flow 첫 사용 안내에 승인했을 때만 true'),
+        resume: z
+          .boolean()
+          .optional()
+          .describe(
+            '기다리다 시간이 다 됐다는 답을 받았을 때 true: 크레딧을 다시 쓰지 않고 방금 만들던 클립을 받아 온다',
+          ),
+      },
+    },
+    call('video_clip'),
+  )
+  server.registerTool(
     'video_motion',
     {
       title: '모션그래픽 영상 만들기',

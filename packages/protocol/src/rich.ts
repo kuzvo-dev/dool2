@@ -221,6 +221,7 @@ const TOOL_LABEL: Record<string, string> = {
   image_make: '그림 AI로 그리는',
   video_make: '영상 만드는',
   video_motion: '모션 영상 만드는',
+  video_clip: 'AI 영상 클립 만드는',
   video_style: '영상 스타일 고르는',
   file_trash: '휴지통 보는',
   file_download: '파일 받는',
@@ -265,6 +266,7 @@ export function toolPlace(name: string, input?: unknown, here?: string): string 
     n === 'image_make' ||
     n === 'video_make' ||
     n === 'video_motion' ||
+    n === 'video_clip' ||
     n === 'video_style'
   )
     return 'file'

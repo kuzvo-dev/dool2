@@ -2109,7 +2109,7 @@ export function pageScrollToDoc(x: number, y: number) {
 export interface ExtractField {
   /** 줄(항목) 안에서 찾을 선택자. 없으면 줄 자체 */
   css?: string
-  /** 읽을 속성 (href·src는 전체 주소로). 없으면 보이는 글 */
+  /** 읽을 속성 (href·src는 전체 주소로, '@center'는 화면 안 가운데 자리 "x,y"). 없으면 보이는 글 */
   attr?: string
   /** 글을 줄로 나눠 n번째(0부터, 음수는 뒤에서) */
   line?: number
@@ -2170,7 +2170,11 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
     }
     const read = (el: Element, f: ExtractField, re: RegExp | undefined): string | null => {
       let v: string | null
-      if (f.attr) {
+      if (f.attr === '@center') {
+        // 화면 안 가운데 자리 "x,y" (CSS 픽셀): 버튼 표시가 없는 그림 타일을 누를 때 (Flow 영상 목록)
+        const r = el.getBoundingClientRect()
+        v = r.width && r.height ? `${Math.round(r.x + r.width / 2)},${Math.round(r.y + r.height / 2)}` : null
+      } else if (f.attr) {
         v = el.getAttribute(f.attr)
         if (v !== null && (f.attr === 'href' || f.attr === 'src')) {
           try {

@@ -3,11 +3,11 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, open, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
@@ -110,7 +110,8 @@ import { Skills } from './skills.js'
 import { Thumbs } from './thumbs.js'
 import { mimeOf } from './upload.js'
 import { Vault, vaultSitesText } from './vault.js'
-import { VideoMaker } from './video-make.js'
+import { VideoClipMaker } from './video-clip.js'
+import { findFfmpeg, runFfmpeg, VideoMaker } from './video-make.js'
 import type { sendPush } from './webpush.js'
 
 export { APPROVAL_TTL_MS, Approvals } from './approvals.js'
@@ -511,6 +512,71 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     ...(opts.shrinkImage
       ? { preview: (png: Buffer) => (opts.shrinkImage as NonNullable<typeof opts.shrinkImage>)(png, 720) }
       : {}),
+  })
+  // AI 영상 클립 (video_clip): 사용자 크롬의 구글 Flow로 짧은 클립 → 두리 폴더·보관함 (video_motion의 재료)
+  fileTools.clipMaker = new VideoClipMaker({
+    browser,
+    onWorked: (id) => {
+      void skills.connections().then((list) => {
+        if (!list.find((c) => c.card.id === id)?.connectedAt) connectMark(id, true)
+      })
+    },
+    downloadsDir: () => fileTools.dir('downloads'),
+    saveDir: () => {
+      const docs = fileTools.dir('documents')
+      return docs ? join(docs, DOORI_FOLDER) : undefined
+    },
+    show: (p) => fileTools.shown(p),
+    onMade: (f) => fileTools.onWritten?.(f),
+    // 1초마다 한 컷 모음(두리가 보고 확인)·첫 컷 미리보기 — 영상 부품이 있을 때만
+    frames: async (mp4) => {
+      const bin = findFfmpeg(join(paths.dataDir, 'bin'))
+      if (!bin) return {}
+      const tmp = await mkdtemp(join(tmpdir(), 'dool2-clip-'))
+      try {
+        await runFfmpeg(
+          bin,
+          [
+            '-y',
+            '-loglevel',
+            'error',
+            '-i',
+            mp4,
+            '-vf',
+            'fps=1,scale=150:-2,tile=8x1',
+            '-frames:v',
+            '1',
+            join(tmp, 's.jpg'),
+          ],
+          60_000,
+        )
+        await runFfmpeg(
+          bin,
+          [
+            '-y',
+            '-loglevel',
+            'error',
+            '-ss',
+            '1',
+            '-i',
+            mp4,
+            '-vf',
+            'scale=480:-2',
+            '-frames:v',
+            '1',
+            '-q:v',
+            '5',
+            join(tmp, 'p.jpg'),
+          ],
+          60_000,
+        )
+        const read = async (f: string) =>
+          (await readFile(join(tmp, f)).catch(() => undefined))?.toString('base64')
+        return { sheet: await read('s.jpg'), poster: await read('p.jpg') }
+      } finally {
+        await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
+      }
+    },
   })
   // 두리가 만든 파일은 보관함 '사진·파일'에도 올려 폰에서 본다 (글·표는 내용, HTML은 미리보기)
   fileTools.onWritten = (f) => {
