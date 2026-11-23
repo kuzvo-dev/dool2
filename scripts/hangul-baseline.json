@@ -65,7 +65,7 @@
   "apps/desktop/src/renderer/life-model.ts": 75,
   "apps/desktop/src/renderer/life-views.ts": 168,
   "apps/desktop/src/renderer/paging.d.ts": 1,
-  "apps/desktop/src/renderer/renderer.ts": 349,
+  "apps/desktop/src/renderer/renderer.ts": 345,
   "apps/desktop/src/renderer/rich.d.ts": 1,
   "apps/desktop/src/renderer/schedule.d.ts": 1,
   "apps/desktop/src/renderer/setup-model.ts": 62,

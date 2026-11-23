@@ -68,6 +68,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dool2/i18n": "workspace:*",
     "zod": "^4.6.7"
   }
 }

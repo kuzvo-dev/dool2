@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@dool2/daemon": "workspace:*",
+    "@dool2/i18n": "workspace:*",
     "@dool2/protocol": "workspace:*",
     "@dool2/ui": "workspace:*",
     "@types/chrome": "^0.1.0",

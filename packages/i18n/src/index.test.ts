@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, guessRegion, list, messages, plural, resolveLang, servesRegion } from './index.js'
+import {
+  formatMoney,
+  guessRegion,
+  initialLang,
+  list,
+  messages,
+  plural,
+  resolveLang,
+  servesRegion,
+} from './index.js'
 
 describe('resolveLang', () => {
   it('takes the first shipped language in order', () => {
@@ -74,5 +83,15 @@ describe('formatMoney', () => {
     expect(formatMoney('ko', 12000)).toBe('12,000원')
     expect(formatMoney('en', 12000)).toBe('₩12,000')
     expect(formatMoney('en', 1200, 'JPY')).toBe('¥1,200')
+  })
+})
+
+describe('initialLang', () => {
+  it('keeps a saved choice', () => {
+    expect(initialLang('en', ['ko-KR'])).toBe('en')
+  })
+  it('stays Korean until UI_FOLLOWS_DEVICE is on', () => {
+    expect(initialLang(undefined, ['en-US'])).toBe('ko')
+    expect(initialLang('fr', ['en-US'])).toBe('ko')
   })
 })
