@@ -226,7 +226,9 @@ async function load(): Promise<Saved> {
  * we adopt the tabs in the Dool2 group (Dool2 tabs are always opened into that group) and merge several groups into one.
  */
 async function reclaim() {
-  const groups = await chrome.tabGroups.query({ title: GROUP_TITLE }).catch(() => [])
+  // Match the title in every language, so switching the language keeps the existing group
+  const titles = new Set([ui('ko').groupTitle, ui('en').groupTitle])
+  const groups = (await chrome.tabGroups.query({}).catch(() => [])).filter((g) => titles.has(g.title ?? ''))
   if (!groups.length) return
   const tabs = (await chrome.tabs.query({})).filter((t) => groups.some((g) => g.id === t.groupId))
   const ids = tabs.map((t) => t.id).filter((id): id is number => id !== undefined)

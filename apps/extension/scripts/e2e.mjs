@@ -616,13 +616,13 @@ try {
       let t = Date.now()
       let r = text(await tools.run('click', { tabId, ref: btn('로그인') }))
       assert.ok(Date.now() - t < 5000, `The alert click is too slow (${Date.now() - t}ms)`)
-      assert.match(r, /💬 사이트 알림창: "아이디 또는 비밀번호가 틀렸어요"/)
+      assert.match(r, /💬 Site alert: "아이디 또는 비밀번호가 틀렸어요"/)
       assert.match(r, /알림 뒤/)
       // confirm: stays open and is reported to the AI; choosing [Cancel] makes the page receive false
       t = Date.now()
       r = text(await tools.run('click', { tabId, ref: btn('담기') }))
       assert.ok(Date.now() - t < 5000, `The confirm click is too slow (${Date.now() - t}ms)`)
-      assert.match(r, /⚠ 사이트 확인 창이 떠 있어요: "장바구니로 이동할까요\?"/)
+      assert.match(r, /⚠ A site confirm dialog is open: "장바구니로 이동할까요\?"/)
       // While it is open, other commands do not wait and report right away
       t = Date.now()
       await assert.rejects(call('click', { tabId, ref: btn('수량') }), /A site confirm dialog is open/)
@@ -631,7 +631,7 @@ try {
       assert.match(r, /머무름/)
       // prompt: type text and press [OK]
       r = text(await tools.run('click', { tabId, ref: btn('수량') }))
-      assert.match(r, /사이트 확인 창이 떠 있어요: "수량을 넣어 주세요"/)
+      assert.match(r, /site confirm dialog is open: "수량을 넣어 주세요"/)
       r = text(await tools.run('dialog', { tabId, accept: true, text: '3' }))
       assert.match(r, /수량 3/)
       // Even if the button ('다음') does not look risky, [OK] on a confirm that places an order is not pressed without approval -> once approved, Dool2 presses it
@@ -663,7 +663,7 @@ try {
     let t = Date.now()
     const opened = await tools.run('open', { url: `${base}/hello-alert` })
     assert.ok(Date.now() - t < 8000, `Opening took too long (${Date.now() - t}ms)`)
-    assert.match(text(opened), /💬 사이트 알림창: "로그인이 필요한 서비스입니다"/)
+    assert.match(text(opened), /💬 Site alert: "로그인이 필요한 서비스입니다"/)
     assert.match(text(opened), /로그인이 필요해요/)
     const other = Number(text(opened).match(/\[탭 (\d+)\]/)?.[1])
     await call('close', { tabId: other })

@@ -488,7 +488,7 @@ async function runFlow(flow) {
               (l) =>
                 l.startsWith('- [탭 ') &&
                 l.includes('/payment/card') &&
-                l.includes(`탭 ${tabId}이(가) 연 창`),
+                l.includes(`window opened by tab ${tabId}`),
             )
           const id = Number(line?.match(/^- \[탭 (\d+)\]/)?.[1])
           if (id) {

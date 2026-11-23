@@ -331,14 +331,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const apiKey = await secrets.get(PAYG_KEY)
     return payg && apiKey ? { ...payg, apiKey } : undefined
   }
+  // Language for text people read (ADR 0029). Korean until the app follows the device language
+  const lang = () => userLang(readSettings())
   const runtimes: Partial<Record<AgentId, AgentRuntime>> = opts.runtimes ?? {
-    claude: new ClaudeRuntime(),
+    claude: new ClaudeRuntime({ lang }),
     codex: new CodexRuntime({
+      lang,
       codexHome: paths.codexHome,
       installDir: paths.codex,
       ...(opts.codexBin ? { binPath: opts.codexBin } : {}),
     }),
-    opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount }),
+    opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount, lang }),
   }
   // Before-finishing check (ADR 0027): ask a fresh session without tools for a verdict only
   const judgeAsk =
@@ -394,6 +397,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return (await readFile(join(photoDir, name))).toString('base64')
   }
   const threads = new ThreadService({
+    lang,
     store,
     runtimes,
     workspaceDir: paths.workspace,
@@ -411,7 +415,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Memories are attached to the end of the instructions for each chat
     // Service map: lets requests without a service name still pick a fitting service (connected ones first)
     systemPrompt: () =>
-      [buildSystemPrompt(life.identity()), skills.serviceMap(), life.memoryPrompt(), life.knowPrompt()]
+      [buildSystemPrompt({ ...life.identity(), lang: lang() }), skills.serviceMap(), life.memoryPrompt(), life.knowPrompt()]
         .filter(Boolean)
         .join('\n\n'),
   })
@@ -455,7 +459,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
   })
   const vault = new Vault(secrets)
+  vault.userLang = lang
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
+  browserTools.userLang = lang
   // My info (booker and orderer fields): in the same store as the vault, and the AI only sees masked values (browser_fill_profile)
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
@@ -463,6 +469,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.onShot = (label, data) => void journal.shot(label, data)
   // PC file tools (ADR 0022·0024). Tests can change the folders. Moving (several files) and printing use the same approval card
   const fileTools = new FileTools(opts.fileFolders, undefined, {
+    lang,
     approvals: browserTools.approvals,
     movesLog: join(paths.dataDir, 'file-moves.json'),
     // Looks at what Doori was doing before sleep (answering chats, service connections). It is built below, so it is read when called
@@ -723,6 +730,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const hands: HandsCaller =
     typeof opts.hands === 'object' ? opts.hands : new HandsProcess(opts.hands ?? defaultHandsBin())
   const screenTools = new ScreenTools(hands, browserTools.approvals, {
+    lang,
     allowed: () => readSettings().allowedApps ?? [],
     setAllowed: (list) => {
       store.setSetting('allowedApps', list)
@@ -864,6 +872,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (!browser.status.connected) throw new Error(m().extNotConnectedPc)
     await vault.add({ url, username, password })
     const r = await autoLogin(browser, {
+      lang: lang(),
       card,
       url: start,
       username,
@@ -888,6 +897,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // noJoin: when not signing up, like a batch check (on a sign-up screen it ends with "sign-up needed")
     const join = !noJoin && !(known && known !== `social:${provider}`) && !(await vaultCreds(card))
     const r = await socialLogin(browser, {
+      lang: lang(),
       card,
       url: card.loginUrl ?? url,
       provider,
@@ -1751,6 +1761,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         events.emit('settings', readSettings())
       },
       ...(opts.push ? { push: opts.push } : {}),
+      lang,
     },
   )
   browserTools.approvals.onChange = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
@@ -3437,7 +3448,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? body.url
             : (card.loginUrl ?? connectUrl(card))
         if (!url) return json(res, 400, { error: m().noSiteUrl })
-        const r = await probeLogin(browser, { card, url })
+        const r = await probeLogin(browser, { card, url, lang: lang() })
         for (const t of r.tabs ?? [r.tabId]) await browser.call('close', { tabId: t }).catch(() => undefined)
         return json(res, 200, r)
       }
