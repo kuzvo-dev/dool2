@@ -302,9 +302,9 @@ export const STORE_EXTENSION_ID: string | undefined = 'ogpbnlgnijmebpeiaceeepemc
 /**
  * 웹 스토어 심사를 통과해 게시됐는가. true일 때만 PC 앱이 [Chrome에서 추가]와 외부 확장 등록을 쓴다
  * (게시 전에 켜면 아직 없는 스토어 페이지가 열린다). 연결 통로는 게시 전에도 스토어 id를 허용해 둔다.
- * 2026-11-17 제출 (미등록·검토 통과 후 자동 게시).
+ * 2026-11-17 제출 (미등록·검토 통과 후 자동 게시). 2026-11-23 게시 확인(스토어 페이지 0.2.0).
  */
-export const STORE_EXTENSION_PUBLISHED = false
+export const STORE_EXTENSION_PUBLISHED = true
 
 /** 확장 업데이트를 받는 Chrome 웹 스토어 주소 (외부 확장 등록에 쓴다) */
 export const CHROME_STORE_UPDATE_URL = 'https://clients2.google.com/service/update2/crx'
