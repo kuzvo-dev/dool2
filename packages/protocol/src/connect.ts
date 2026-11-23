@@ -1,6 +1,7 @@
-// 서비스 연결 카드 (skills/<id>/connect.json, ADR 0014).
-// 연결 화면(목록·상세)에 보일 내용과 두리가 그 서비스에서 할 수 있는 일을 적은 템플릿이다.
-// 서비스를 하나 더하려면 폴더 하나에 이 파일 하나를 넣으면 된다. 코드는 바꾸지 않는다.
+// Service connect card (skills/<id>/connect.json, ADR 0014).
+// A template describing what shows on the connect screen (list and detail) and what Dool2 can do in that service.
+// To add a service, put this one file in one folder. No code changes.
+import type { Lang } from '@dool2/i18n'
 import { z } from 'zod'
 import { APPROVAL_TIERS, approvalLine, CATEGORY_LABEL } from './connect-text.js'
 
@@ -26,7 +27,7 @@ export const TierSchema = z.preprocess(
   z.enum(TIERS),
 )
 
-/** 연결 화면의 분류 (connect-text.ts의 CATEGORY_LABEL). 순서가 곧 목록 순서다 */
+/** Categories on the connect screen (CATEGORY_LABEL in connect-text.ts). The order is the list order */
 export const CONNECT_CATEGORIES = CATEGORY_LABEL
 export const ConnectCategorySchema = z.enum(
   Object.keys(CONNECT_CATEGORIES) as [
@@ -37,16 +38,16 @@ export const ConnectCategorySchema = z.enum(
 export type ConnectCategory = z.infer<typeof ConnectCategorySchema>
 
 /**
- * 연결 방식 (docs/architecture.md 5.0 "가장 정확한 방법부터")
- * - browser: 사용자의 Chrome에서 한 번 로그인해 두면 두리가 그 화면으로 일한다 (대부분)
- * - official: 공식 연동(메일 IMAP·캘린더 API 등)이 있는 곳. 준비되기 전에는 browser처럼 쓴다
- * - open: 로그인 없이 쓰는 곳 (택배 조회 등)
- * - device: 폰 권한 (연락처·위치·캘린더). 폰 앱에서 켠다
+ * Connection method (docs/architecture.md 5.0 "start with the most accurate method")
+ * - browser: sign in once in the user's Chrome and Dool2 works on that screen (most services)
+ * - official: where an official integration exists (mail IMAP, calendar API, etc.). Used like browser until it is ready
+ * - open: used without signing in (parcel tracking etc.)
+ * - device: phone permission (contacts, location, calendar). Turned on in the phone app
  */
 export const ConnectHowSchema = z.enum(['browser', 'official', 'open', 'device'])
 export type ConnectHow = z.infer<typeof ConnectHowSchema>
 
-/** 간편 로그인 공급자 */
+/** One-tap sign-in providers */
 export const SocialProviderSchema = z.enum(['kakao', 'naver', 'google', 'apple', 'facebook', 'payco', 'toss'])
 export type SocialProvider = z.infer<typeof SocialProviderSchema>
 export const SOCIAL_LABEL: Record<SocialProvider, string> = {
@@ -58,6 +59,19 @@ export const SOCIAL_LABEL: Record<SocialProvider, string> = {
   payco: '페이코',
   toss: '토스',
 }
+const SOCIAL_LABEL_EN: Record<SocialProvider, string> = {
+  kakao: 'Kakao',
+  naver: 'Naver',
+  google: 'Google',
+  apple: 'Apple',
+  facebook: 'Facebook',
+  payco: 'PAYCO',
+  toss: 'Toss',
+}
+/** The display name of a sign-in provider */
+export function socialLabel(p: SocialProvider, lang: Lang = 'ko'): string {
+  return lang === 'en' ? SOCIAL_LABEL_EN[p] : SOCIAL_LABEL[p]
+}
 
 const line = (max: number) =>
   z
@@ -65,14 +79,14 @@ const line = (max: number) =>
     .trim()
     .min(1)
     .max(max)
-    .refine((s) => !s.includes('\n'), '한 줄로 적어 주세요')
+    .refine((s) => !s.includes('\n'), 'Write it on one line')
 
 export const ConnectAbilitySchema = z
   .object({
-    /** 짧은 이름: "배송 조회" */
+    /** Short name: "배송 조회" ("Track delivery") */
     title: line(20),
-    /** 사용자가 할 법한 말, 따옴표 없이: "주문한 거 언제 와?" */
-    say: line(40).refine((s) => !/^["“'‘]|["”'’]$/.test(s), '따옴표는 빼고 적어 주세요 (화면이 붙여요)'),
+    /** What a user would say, without quotes: "주문한 거 언제 와?" ("When does my order arrive?") */
+    say: line(40).refine((s) => !/^["“'‘]|["”'’]$/.test(s), 'Leave out the quotes (the screen adds them)'),
     tier: TierSchema,
   })
   .strict()
@@ -80,111 +94,114 @@ export type ConnectAbility = z.infer<typeof ConnectAbilitySchema>
 
 export const ConnectCardSchema = z
   .object({
-    /** 폴더 이름과 같게. 영어 소문자·숫자·- */
+    /** Same as the folder name. Lowercase English letters, digits and - */
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/),
     name: line(24),
-    /** 주소창의 도메인 (https:// 없이): "coupang.com". 아이콘·로그인 확인에 쓴다. 폰 권한이면 생략 */
+    /** Domain in the address bar (without https://): "coupang.com". Used for the icon and sign-in check. Omit for phone permissions */
     site: z
       .string()
-      .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{2,5})?$/, 'https:// 없이 도메인만 적어 주세요')
+      .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{2,5})?$/, 'Write only the domain, without https://')
       .optional(),
-    /** 같은 서비스가 쓰는 다른 도메인 (메일 화면이 mail.google.com처럼 다른 주소일 때). 서비스 도구가 열 수 있다 */
+    /** Other domains the same service uses (when the mail screen is at another address like mail.google.com). Service tools can open them */
     alsoSites: z
-      .array(z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'https:// 없이 도메인만 적어 주세요'))
+      .array(z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'Write only the domain, without https://'))
       .min(1)
       .max(6)
       .optional(),
     category: ConnectCategorySchema,
     how: ConnectHowSchema,
     /**
-     * 같은 계정으로 로그인하는 서비스 id (예: 네이버 메일 → naver). 그 서비스가 연결돼 있으면 이것도 연결된 것으로 본다
-     * (실측: 네이버를 연결했는데 네이버 메일 연결 카드를 또 띄웠다)
+     * The id of the service that signs in with the same account (e.g. Naver Mail -> naver). If that service is connected, this one counts as connected too
+     * (measured: Naver was connected but the Naver Mail connect card was shown again)
      */
     sameLoginAs: z
       .string()
       .regex(/^[a-z0-9][a-z0-9-]{0,40}$/)
       .optional(),
-    /** 로그인 화면 주소 (첫 화면에서 로그인 링크를 찾기 어려운 사이트만) */
+    /** Sign-in page address (only for sites where the sign-in link is hard to find on the first page) */
     loginUrl: z.string().url().startsWith('https://').optional(),
-    /** 로그인 화면에 있는 간편 로그인 (실제 사이트 점검으로 확인한 것만). 연결 화면에 "카카오로 연결" 버튼이 생긴다 */
+    /** One-tap sign-ins on the sign-in page (only ones confirmed by checking the real site). The connect screen gets a "Connect with Kakao" button */
     social: z.array(SocialProviderSchema).min(1).max(7).optional(),
-    /** 연결할 때 사용자가 하는 로그인: "아이디·비밀번호", "카카오·네이버 간편 로그인" */
+    /** The sign-in the user does when connecting: "아이디·비밀번호" (ID and password), "카카오·네이버 간편 로그인" (Kakao or Naver sign-in) */
     login: line(40).optional(),
-    /** 상세 화면 첫 문단. "~하면 ~까지 두리에게 맡길 수 있어요." 한두 문장 */
+    /** First paragraph of the detail screen. "If you do X, you can leave Y to Dool2." One or two sentences */
     summary: z.string().trim().min(10).max(140),
-    /** 상세 화면의 대화 예시 */
+    /** Example conversation on the detail screen */
     example: z
       .object({
         ask: line(50),
-        /** 일하는 동안 보이는 말: "배송 조회 중" */
+        /** Text shown while working: "배송 조회 중" ("Tracking delivery") */
         working: line(20),
         reply: z.string().trim().min(5).max(120),
       })
       .strict(),
     abilities: z.array(ConnectAbilitySchema).min(2).max(6),
     /**
-     * 로그인한 사람에게만 보이는 말 (예: "로그아웃", "마이쿠팡"). 연결할 때 두리가 이 말이 보이면 로그인을 마친 걸로 본다.
-     * 없으면 "로그아웃"·"Logout" 같은 흔한 말로 확인한다
+     * Text only a signed-in person sees (e.g. "로그아웃", "마이쿠팡"). When connecting, Dool2 treats seeing this text as having finished signing in.
+     * If absent, common text like "로그아웃" and "Logout" is used to check
      */
     signedIn: z.array(line(30)).min(1).max(5).optional(),
     /**
-     * 커넥터(tools.json)가 아직 없을 때 범용 브라우저로 일하는 짧은 요령 1~3줄 (검색 주소 등, ADR 0018).
-     * 커넥터가 생기면 지운다
+     * 1-3 short tips for working with the general browser while the connector (tools.json) does not exist yet (search URL etc., ADR 0018).
+     * Delete it once the connector exists
      */
     hints: z.array(z.string().trim().min(5).max(200)).min(1).max(3).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
     if (c.how !== 'device' && !c.site)
-      ctx.addIssue({ code: 'custom', path: ['site'], message: '도메인(site)이 필요해요' })
+      ctx.addIssue({ code: 'custom', path: ['site'], message: 'A domain (site) is required' })
     if (c.how === 'browser' && !c.login)
-      ctx.addIssue({ code: 'custom', path: ['login'], message: '어떻게 로그인하는지(login) 적어 주세요' })
+      ctx.addIssue({ code: 'custom', path: ['login'], message: 'Describe how to sign in (login)' })
   })
 export type ConnectCard = z.infer<typeof ConnectCardSchema>
 
-/** 카드 문제를 사람이 읽을 수 있는 목록으로 (스킬 검사 테스트·기여 안내에서 쓴다) */
+/** Card problems as a list people can read (used by the skill check test and the contributor guide) */
 export function checkConnectCard(dir: string, raw: unknown): string[] {
   const r = ConnectCardSchema.safeParse(raw)
-  const problems = r.success ? [] : r.error.issues.map((i) => `${i.path.join('.') || '(전체)'}: ${i.message}`)
-  if (r.success && r.data.id !== dir) problems.push(`id(${r.data.id})가 폴더 이름(${dir})과 달라요`)
+  const problems = r.success
+    ? []
+    : r.error.issues.map((i) => `${i.path.join('.') || '(whole card)'}: ${i.message}`)
+  if (r.success && r.data.id !== dir)
+    problems.push(`id (${r.data.id}) does not match the folder name (${dir})`)
   return problems
 }
 
-/** 서비스 도구 하나의 요약 (tools.json, ADR 0018) */
+/** Summary of one service tool (tools.json, ADR 0018) */
 export interface ConnectionTool {
   /** catchtable_search */
   name: string
-  /** 식당 빈자리 찾기 */
+  /** Finding open tables at a restaurant */
   title: string
   tier: Tier
-  /** 연결(로그인)해야 쓰는 도구 */
+  /** A tool that needs a connection (sign-in) */
   login: boolean
-  /** 실제로 돌려 본 도구 */
+  /** A tool that has been run for real */
   verified: boolean
 }
 
-/** 연결 화면 한 줄: 카드 + 서비스 도구 상태 + 연결 상태 (GET /api/connections) */
+/** One row on the connect screen: card + service tool status + connection status (GET /api/connections) */
 export interface ConnectionItem {
   card: ConnectCard
-  /** 커넥터(tools.json)가 있으면 그 상태 요약 (검증됨(날짜) / 초안 / 막힘(사유)) */
+  /** If a connector (tools.json) exists, its status summary (verified (date) / draft / blocked (reason)) */
   skill?: string
-  /** 서비스 도구(커넥터) — 연결 화면의 "빠르게 바로 하는 일"과 AI 서비스 지도에 쓴다 */
+  /** Service tools (connector) - used for "quick things to do right away" on the connect screen and the AI service map */
   tools?: ConnectionTool[]
-  /** 사용자가 연결을 마친 시각. open·device는 연결 없이 쓰거나 폰에서 켠다 */
+  /** When the user finished connecting. open and device are used without connecting or turned on in the phone */
   connectedAt?: string
-  /** 마지막으로 연결한 방법 ('vault' 아이디·비밀번호, 'social:kakao' 간편 로그인). 연결 카드의 추천 순서에 쓴다 */
+  /** The method last used to connect ('vault' ID and password, 'social:kakao' one-tap sign-in). Used for the order of recommendations on the connect card */
   via?: string
   /**
-   * 간편 로그인 계정 카드(카카오·네이버·구글)에만: 이 PC에서 내 계정으로 확인한 계정 (가린 글, "f***@gmail.com").
-   * 다른 서비스 연결 카드의 그 공급자 버튼에 "카카오 · f***@gmail.com"으로 보여, 어느 계정으로 들어가는지 누르기 전에 안다
+   * Only for sign-in account cards (Kakao, Naver, Google): the account confirmed with my account on this PC (masked text, "f***@gmail.com").
+   * Other services' connect cards show it on that provider button as "Kakao · f***@gmail.com", so you know which account it signs in with before pressing
    */
   account?: string
 }
 
-/** 서비스 첫 화면 주소 (연결할 때 Chrome에서 연다) */
+/** The address of the service's first page (opened in Chrome when connecting) */
 export function connectUrl(card: Pick<ConnectCard, 'site'>): string | undefined {
   if (!card.site) return undefined
-  // 이 PC 안의 시험 사이트(127.0.0.1·localhost)만 http
+  // Only test sites on this PC (127.0.0.1, localhost) use http
   const local = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(card.site)
   return `${local ? 'http' : 'https'}://${card.site}/`
 }

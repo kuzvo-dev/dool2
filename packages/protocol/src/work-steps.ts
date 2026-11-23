@@ -1,8 +1,9 @@
-// 일하는 카드의 단계를 서비스별 줄로 묶는다 (폰 앱·PC 앱이 같이 쓴다. 의존성 없이: PC 앱 화면에 파일 그대로 복사해 쓴다).
-// 같은 곳(사이트·서비스 도구·PC 앱·파일)에서 연달아 한 일은 한 줄: 제목은 서비스 이름, 아래 작은 글씨는 하는 일.
-// "웹페이지 여는 중"·"누르는 중" 같은 도구 이름만 있는 단계는 따로 줄을 만들지 않는다.
+// Groups the steps of the working card into one line per service (shared by the phone app and PC app. No runtime dependencies: the PC app copies this file as-is next to its window).
+// Things done in a row in the same place (site, service tool, PC app, file) are one line: the title is the service name, the small text below is what was done.
+// Steps that only have a tool name like "웹페이지 여는 중" or "누르는 중" do not get a line of their own.
+import type { Lang } from '@dool2/i18n'
 
-/** 연결 카드에서 필요한 것만 */
+/** Only what is needed from a connect card */
 export interface PlaceCard {
   id: string
   name: string
@@ -10,41 +11,41 @@ export interface PlaceCard {
 }
 
 export interface WorkStepIn {
-  /** 혼잣말 한 줄이나 도구 이름 */
+  /** One line of self-talk or a tool name */
   text: string
-  /** 도구가 한 일 ("웹페이지 여는 중"). 예전 기록에는 없다 */
+  /** What the tool did ("웹페이지 여는 중"). Older records do not have it */
   act?: string
-  /** toolPlace: 사이트 주소·"tool:…"·"app"·"file" */
+  /** toolPlace: site address, "tool:…", "app" or "file" */
   place?: string
   ms?: number
 }
 
 export interface WorkGroup {
-  /** 묶는 기준: 카드 id, 사이트 도메인, "app", "file", 없으면 두리 안에서 한 일 */
+  /** What it is grouped by: card id, site domain, "app", "file", or none for work done inside Dool2 */
   key: string
   kind: 'web' | 'service' | 'app' | 'file' | 'doori'
-  /** 서비스 이름 ("네이버", "sparkplus.co.kr", "PC 앱") */
+  /** Service name ("네이버", "sparkplus.co.kr", "PC 앱") */
   title: string
-  /** 로고를 얹을 연결 카드 */
+  /** The connect card to put the logo on */
   cardId?: string
-  /** 아이콘 칸 글자 (로고가 없을 때) */
+  /** Letter for the icon box (when there is no logo) */
   letter: string
-  /** 이 곳에서 한 일들 (순서대로, 같은 건 한 번) */
+  /** What was done in this place (in order, the same thing once) */
   acts: string[]
-  /** 마지막으로 한 일 */
+  /** What was done last */
   act: string
-  /** 걸린 시간 합 (모르면 undefined) */
+  /** Total time taken (undefined if unknown) */
   ms?: number
-  /** 묶인 단계 수 */
+  /** Number of steps grouped */
   count: number
 }
 
-/** 시작 시각 없이 "더 짧은" 이름: 앞의 www.·m.·app.을 뗀다 */
+/** The shorter name: drops the leading www., m. and app. */
 export function bareHost(host: string): string {
   return host.replace(/:\d+$/, '').replace(/^(www|m|app|mobile)\./, '')
 }
 
-/** 같은 사이트로 묶을 도메인: search.naver.com·m.naver.com → naver.com, shop.co.kr 계열은 셋째까지 */
+/** The domain to group a site under: search.naver.com and m.naver.com -> naver.com, and shop.co.kr style names keep three parts */
 export function baseDomain(host: string): string {
   const parts = bareHost(host).split('.')
   const n = /^(co|or|go|ne|ac|re|pe|com|net|org)$/.test(parts.at(-2) ?? '') && parts.length > 2 ? 3 : 2
@@ -52,8 +53,8 @@ export function baseDomain(host: string): string {
 }
 
 /**
- * 사이트 주소 → 연결 카드. 카드 도메인과 같거나 그 아래 주소만 (가장 길게 맞는 것).
- * google.com을 calendar.google.com 카드로 보지 않는다
+ * Site address -> connect card. Only the card's domain or addresses under it (the longest match).
+ * google.com is not treated as the calendar.google.com card
  */
 export function cardForHost(host: string, cards: PlaceCard[]): PlaceCard | undefined {
   const bare = bareHost(host)
@@ -66,18 +67,29 @@ export function cardForHost(host: string, cards: PlaceCard[]): PlaceCard | undef
   return best
 }
 
-/** 연결 카드가 없어도 자주 들르는 곳은 한글 이름으로 */
-const KNOWN_SITES: Record<string, string> = {
-  'naver.com': '네이버',
-  'google.com': '구글',
-  'daum.net': '다음',
-  'kakao.com': '카카오',
-  'youtube.com': '유튜브',
-  'wikipedia.org': '위키백과',
-  'namu.wiki': '나무위키',
+/** Frequent places get a readable name even without a connect card (Korean names are the reference copy) */
+const KNOWN_SITES: Record<Lang, Record<string, string>> = {
+  ko: {
+    'naver.com': '네이버',
+    'google.com': '구글',
+    'daum.net': '다음',
+    'kakao.com': '카카오',
+    'youtube.com': '유튜브',
+    'wikipedia.org': '위키백과',
+    'namu.wiki': '나무위키',
+  },
+  en: {
+    'naver.com': 'Naver',
+    'google.com': 'Google',
+    'daum.net': 'Daum',
+    'kakao.com': 'Kakao',
+    'youtube.com': 'YouTube',
+    'wikipedia.org': 'Wikipedia',
+    'namu.wiki': 'Namuwiki',
+  },
 }
 
-/** 서비스 도구 이름(cj_logistics_track) → 연결 카드 (가장 길게 맞는 id) */
+/** Service tool name (cj_logistics_track) -> connect card (the longest matching id) */
 export function cardForTool(tool: string, cards: PlaceCard[]): PlaceCard | undefined {
   let best: PlaceCard | undefined
   for (const c of cards) {
@@ -91,14 +103,17 @@ function firstLetter(name: string): string {
   return (/^\d+/.exec(name)?.[0] ?? [...name][0] ?? '').toUpperCase()
 }
 
-/** 한 단계가 어느 줄에 들어가는지 */
+/** Which line a step goes into */
 function where(
   place: string | undefined,
   cards: PlaceCard[],
+  lang: Lang,
 ): Omit<WorkGroup, 'acts' | 'act' | 'ms' | 'count'> {
   if (!place) return { key: '', kind: 'doori', title: '', letter: '' }
-  if (place === 'app') return { key: 'app', kind: 'app', title: 'PC 앱', letter: '' }
-  if (place === 'file') return { key: 'file', kind: 'file', title: '파일', letter: '' }
+  if (place === 'app')
+    return { key: 'app', kind: 'app', title: lang === 'en' ? 'PC app' : 'PC 앱', letter: '' }
+  if (place === 'file')
+    return { key: 'file', kind: 'file', title: lang === 'en' ? 'Files' : '파일', letter: '' }
   if (place.startsWith('tool:')) {
     const tool = place.slice(5)
     const card = cardForTool(tool, cards)
@@ -117,23 +132,23 @@ function where(
   if (card)
     return { key: card.id, kind: 'web', title: card.name, cardId: card.id, letter: firstLetter(card.name) }
   const base = baseDomain(place)
-  const title = KNOWN_SITES[base] ?? base
+  const title = KNOWN_SITES[lang][base] ?? base
   return { key: base, kind: 'web', title, letter: firstLetter(title) }
 }
 
 /**
- * 단계들을 줄로 묶는다: 곳마다 한 줄. 두리가 탭 여러 개를 오가도 같은 사이트는 한 줄이고,
- * 다시 그 곳에서 일하면 그 줄이 맨 아래(지금 하는 줄)로 내려온다
+ * Groups the steps into lines: one line per place. Even when Dool2 moves between several tabs, the same site is one line,
+ * and working there again moves that line to the bottom (the line being worked on now)
  */
-export function groupSteps(steps: WorkStepIn[], cards: PlaceCard[] = []): WorkGroup[] {
+export function groupSteps(steps: WorkStepIn[], cards: PlaceCard[] = [], lang: Lang = 'ko'): WorkGroup[] {
   const out: WorkGroup[] = []
   for (const s of steps) {
-    const w = where(s.place, cards)
-    // 두리 안에서 한 일(기억·서비스 찾기 등)은 혼잣말이 제목. 도구 이름뿐이면 그 이름
+    const w = where(s.place, cards, lang)
+    // Work done inside Dool2 (memory, finding a service, etc.) is titled by the self-talk; if it is only a tool name, that name
     const act = s.act ?? s.text
-    // 예전 기록(act 없음)은 단계마다 한 줄 그대로.
-    // 같은 서비스는 사이트에서 한 일(web)과 서비스 도구로 한 일(service)이 한 줄이다: 둘 다 카드 id로 묶인다.
-    // 종류까지 따지면 "롯데시네마"가 두 줄로 갈려 번갈아 쌓였고, 화면은 줄을 key로 다시 그려 옛 줄이 안 지워졌다 (실측)
+    // Older records (no act) stay one line per step.
+    // For the same service, what was done on the site (web) and with service tools (service) is one line: both group by card id.
+    // Counting the kind too split "롯데시네마" into two lines that stacked alternately, and the screen redraws lines by key so the old line was never removed (measured)
     const at = s.act === undefined ? -1 : out.findIndex((g) => g.key === w.key)
     const same = out[at]
     if (same) {
@@ -158,8 +173,9 @@ export function groupSteps(steps: WorkStepIn[], cards: PlaceCard[] = []): WorkGr
   return out
 }
 
-/** "웹페이지 여는 중" → "웹페이지 열기" (끝난 줄의 작은 글씨) */
-export function actDone(act: string): string {
+/** "웹페이지 여는 중" -> "웹페이지 열기" (the small text of a finished line). English acts are already full phrases and stay as they are */
+export function actDone(act: string, lang: Lang = 'ko'): string {
+  if (lang === 'en') return act.trim()
   const stem = act.replace(/\s*중$/, '').trim()
   const m = /^(.*?)(\S+)는$/.exec(stem)
   if (!m) return stem
@@ -169,9 +185,13 @@ export function actDone(act: string): string {
   return `${head}${v}기`
 }
 
-/** 끝난 줄의 작은 글씨: 한 일을 이름꼴로 셋까지 ("웹페이지 열기 · 페이지 읽기 · 누르기") */
-export function doneLine(g: WorkGroup): string {
-  // 탭 닫기 같은 뒷정리는 한 일로 치지 않는다
-  const names = [...new Set(g.acts.filter((a) => !/^탭 닫는/.test(a)).map(actDone))]
-  return names.length > 3 ? `${names.slice(0, 3).join(' · ')} 외 ${names.length - 3}개` : names.join(' · ')
+/** The small text of a finished line: up to three things done, in noun form ("웹페이지 열기 · 페이지 읽기 · 누르기") */
+export function doneLine(g: WorkGroup, lang: Lang = 'ko'): string {
+  // Cleanup like closing a tab does not count as something done
+  const names = [
+    ...new Set(g.acts.filter((a) => !/^(?:탭 닫는|Closing a tab)/.test(a)).map((a) => actDone(a, lang))),
+  ]
+  if (names.length <= 3) return names.join(' · ')
+  const rest = names.length - 3
+  return `${names.slice(0, 3).join(' · ')}${lang === 'en' ? ` + ${rest} more` : ` 외 ${rest}개`}`
 }

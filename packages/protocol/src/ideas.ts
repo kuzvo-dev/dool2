@@ -1,8 +1,11 @@
-// 아이디어 탭의 분류별 부탁 모음. 폰과 PC가 같은 목록을 쓴다.
-// 각 분류 = 두리에게 바로 맡길 수 있는 일반 부탁 + 그 분류에 속한 연결 카드의 "할 수 있는 일"(skills/*/connect.json).
+// Example requests per section for the Ideas tab. The phone and PC use the same list.
+// Each section = general requests you can hand to Dool2 right away + the "things it can do" of the connect cards in that section (skills/*/connect.json).
+// The Korean list is the reference copy. English versions (IDEAS_EN) are written for non-Korean users and run parallel to it.
+// This file is copied as-is next to the desktop window, so it takes only type imports.
+import type { Lang } from '@dool2/i18n'
 import type { ConnectCard, ConnectionItem } from './connect.js'
 
-/** 두 앱 모두에 있는 아이콘 이름 */
+/** Icon names that both apps have */
 export type IdeaIcon =
   | 'goal'
   | 'cart'
@@ -24,15 +27,15 @@ export type IdeaIcon =
 export type IdeaTone = 'mint' | 'blue' | 'rose' | 'violet' | 'amber'
 
 export interface IdeaAsk {
-  /** 두리가 약속하는 제목 ("매달 새는 구독료, 찾아서 끊어 드릴게요."). 화면에 크게 보인다 */
+  /** The title Dool2 promises ("매달 새는 구독료, 찾아서 끊어 드릴게요." / "I'll find the subscriptions leaking money every month and cancel them."). Shown big on screen */
   title?: string
-  /** 누르면 그대로 보내는 말 (사용자 말투) */
+  /** What is sent as is when pressed (in the user's voice) */
   text: string
-  /** 아래 설명: 어디서·무엇을·어떻게 (1~2문장) */
+  /** Description below: where, what and how (1-2 sentences) */
   note: string
   /**
-   * 사용자가 채울 게 있는 부탁("이 상품", "사진 보낼게", "이 일들"): 누르면 보내지 않고 입력칸에 넣는다.
-   * true면 text 그대로, 글이면 그 글(끝에 채울 자리, 예: "이 페이지 바뀌면 알려 줘: ")
+   * For requests where the user has something to fill in ("this product", "I'll send a photo", "these jobs"): pressing does not send but puts the text in the input field.
+   * true means the text as is; a string means that text (with a spot to fill at the end, e.g. "이 페이지 바뀌면 알려 줘: ")
    */
   fill?: true | string
 }
@@ -42,15 +45,16 @@ export interface IdeaSection {
   label: string
   icon: IdeaIcon
   tone: IdeaTone
-  /** 입체 이모지 (packages/ui/emoji/<emo>.webp) */
+  /** 3D emoji (packages/ui/emoji/<emo>.webp) */
   emo: string
-  /** 이 분류에 넣을 연결 카드 분류 */
+  /** Connect card categories to put in this section */
   cats: ConnectCard['category'][]
-  /** 분류와 상관없이 이 분류로 옮길 카드 */
+  /** Cards to move into this section regardless of category */
   cards?: string[]
   asks: IdeaAsk[]
 }
 
+/** Korean sections (the reference copy) */
 export const IDEA_SECTIONS: IdeaSection[] = [
   {
     id: 'routine',
@@ -1060,15 +1064,960 @@ export const IDEA_SECTIONS: IdeaSection[] = [
   },
 ]
 
+/**
+ * English versions of the example requests, written for people outside Korea and kept parallel to IDEA_SECTIONS:
+ * the same section ids and the same order of asks. The Korean list above is the reference copy and stays exact.
+ */
+const IDEAS_EN: Record<string, { label: string; asks: IdeaAsk[] }> = {
+  routine: {
+    label: 'Daily check-ins',
+    asks: [
+      {
+        title: "I'll send a three-line summary of the news you care about, ready for your commute.",
+        text: 'Summarize chip and real estate news in three lines every morning',
+        note: "Tell me which topics you follow and I'll pick only the important articles at a set time each day and send a three-line summary with the source links to your phone.",
+      },
+      {
+        title: "I'll tell you every morning what's new in your neighborhood.",
+        text: "Every morning, tell me if there's anything new in my neighborhood",
+        note: "Tell me where you live and I'll pick only what's new among openings, events, construction and road closures, and send it with source links.",
+      },
+      {
+        title: "I'll finish the jobs you put off while you sleep, and tell you the results in the morning.",
+        text: 'Take care of these things while I sleep and tell me in the morning',
+        note: "Send me the research and tidying you've been putting off. I'll do them overnight, then split what's done from what needs your decision and tell you in the morning.",
+        fill: 'Take care of these things while I sleep and tell me in the morning\\n1. ',
+      },
+      {
+        title: "I'll remind you at the time you choose until the new habit sticks.",
+        text: 'Remind me to put my phone down every night at 11:30',
+        note: "Tell me the habit you want to keep and when, like putting your phone down or taking supplements, and I'll nudge you with a phone notification every day at that time.",
+      },
+      {
+        title: "I'll remind you on the days you can't afford to forget.",
+        text: 'On the 25th of every month in the morning, remind me to pay the maintenance fee',
+        note: "A one-time deadline or a monthly due or renewal date, I'll turn it into a reminder and notify your phone at that time.",
+      },
+    ],
+  },
+  benefit: {
+    label: 'Benefits & refunds',
+    asks: [
+      {
+        title: "I'll find the government support you're eligible for but have been missing.",
+        text: "Check if there's government support I'm missing",
+        note: "I'll look up support that fits your age, region and household on your government benefits portal, and show it with the ones whose application window is still open first, in order of deadline.",
+      },
+      {
+        title: "I'll find the unclaimed refunds sitting at different agencies in one go.",
+        text: 'Check the government portal for any unclaimed refunds for me',
+        note: "I'll gather money left over with the tax office, local government, health insurance, pension and phone carriers, and ask you before I file any claim.",
+      },
+      {
+        title: "I'll help you get back what you overpaid on medical bills and health insurance.",
+        text: 'Check if I can get money back from health insurance',
+        note: "I'll check for amounts over the out-of-pocket cap and overpaid premiums in one go. For sign-in you only approve in your phone's authentication app.",
+      },
+      {
+        title: "I'll find the forgotten insurance payouts and the money asleep in dormant accounts.",
+        text: 'Find all my forgotten insurance money and dormant accounts',
+        note: "I'll search the official lookup services for hidden insurance money and dormant accounts. For what I find, I'll lay out how to receive it and check with you before claiming.",
+      },
+      {
+        title: "I'll check if you qualify for earned-income or child tax credits, and file for you.",
+        text: 'Check if I qualify for the earned income credit and the child tax credit',
+        note: "I'll check on your tax portal whether last year's income qualifies you, and if so, fill in the application and submit it after you confirm.",
+      },
+      {
+        title: "I'll apply for culture, energy and youth benefits for you if you qualify.",
+        text: 'Check if I qualify for culture vouchers, energy vouchers or youth arts passes',
+        note: "I'll check whether you qualify for culture and energy vouchers and youth arts passes, and if so, fill in the application after confirming with you.",
+      },
+      {
+        title: "I'll estimate your year-end tax refund early and tell you what to do before December ends.",
+        text: 'Estimate my year-end tax refund now',
+        note: "Using the tax portal's preview, I'll show your expected refund or what you'd owe, and list by item the deductions worth filling before the end of December.",
+      },
+      {
+        title: "I'll pick where to donate and which gifts to choose to get the most back.",
+        text: 'Pick where to donate 100,000 won for the hometown donation and a gift for me',
+        note: "I'll compare the gifts by region and work out how much comes back as a tax credit, up to the limit. I always check with you before paying.",
+      },
+      {
+        title: "I'll get a share of your bus and subway fares back every month.",
+        text: 'Register my transit card for the transit refund program so I get fares back',
+        note: "I'll register the transit card you use now on the transit refund site. Ride more than 15 times a month and part of what you spent comes back each month.",
+      },
+      {
+        title:
+          "I'll tell you the first day a government-backed savings plan for young people opens and help you sign up.",
+        text: 'Tell me when the next sign-up period for the youth savings plan opens',
+        note: "I'll check ahead whether you qualify, send a notification the morning the next sign-up period opens, and go with you through to the application screen.",
+      },
+      {
+        title: "I'll make sure you claim the income tax cut for young people at small companies.",
+        text: 'Fill in the income tax cut application for young workers at small companies',
+        note: "I'll fill in the application you hand to your company and save it as a file on your PC, and check on the tax portal whether you can recover past amounts you missed.",
+      },
+      {
+        title: "I'll gather your scattered points before they expire so you can use them.",
+        text: 'Gather how many scattered points and miles I have',
+        note: "I'll gather your card, carrier and shopping points and mileage balances in one view, and pick where to convert or spend the ones that expire soonest.",
+      },
+      {
+        title: "I'll claim the flight miles that were missed on past trips, even late.",
+        text: 'Find the miles missing from flights I took and request them',
+        note: "I'll find your tickets and boarding records in your mail and request only the missing legs from the airline site as late credit. I'll also check the deadline.",
+      },
+      {
+        title: "I'll press all the put-off purchase confirmations at once to collect your rewards.",
+        text: 'Confirm the items I received and collect the reward points',
+        note: "I'll find orders that have been delivered but not confirmed on your shopping sites, confirm them, and sort out the reward points and coupons that come in.",
+      },
+      {
+        title: "I'll write the reviews you skipped so you can earn the reward points.",
+        text: "Find the purchase reviews I haven't written and write them",
+        note: "I'll find orders you never reviewed and write the review with photos attached. Before posting I'll show you the text and check with you.",
+      },
+      {
+        title: "I'll take care of the daily check-ins and giveaway entries for you.",
+        text: 'Do my daily check-ins and giveaway entries for me',
+        note: "At the time you set, I'll go into your shopping and portal sites in Chrome on your PC and do the daily check-ins and daily giveaway entries.",
+      },
+      {
+        title: "I'll grab sale coupons at the exact time they open.",
+        text: 'Grab the sale coupon a shopping site opens at midnight tonight',
+        note: "Tell me the coupon and when it opens and I'll connect at that moment, claim the coupon, and tell you the result.",
+      },
+      {
+        title: "I'll pick the product-trial campaigns that suit you and apply for you.",
+        text: 'Find product-trial campaigns that fit me and apply',
+        note: "I'll pick trial campaigns from shops and brands that match your conditions and interests, and apply. I'll check the list with you before applying.",
+      },
+      {
+        title: "I'll enter the public-agency quiz giveaways where answering right wins you a gift card.",
+        text: 'Enter the public agency quiz with the gift card prize for me',
+        note: "I'll find the quiz events open on public agency sites, research the answers and fill in the entry. I'll check with you before entering any personal details.",
+      },
+      {
+        title: "I'll extend or refund the gift vouchers that expired or are about to.",
+        text: 'Extend or get refunds for the gift vouchers that expired or are about to',
+        note: "I'll find the vouchers in your gift box that expired or are about to, extend the ones that can be extended, and request a refund for those you can't use.",
+      },
+    ],
+  },
+  grocery: {
+    label: 'Groceries & delivery',
+    asks: [
+      {
+        title: "I'll plan a week of dinners that use up what you have at home.",
+        text: "Plan this week's dinners from what's left at home and order what's missing",
+        note: "Tell me what's in your fridge and I'll plan meals that use it first, then put only the missing ingredients in your grocery site's cart. I check with you before paying.",
+      },
+      {
+        title: "I'll reorder your usual items before the toilet paper and detergent run out.",
+        text: "Reorder the same toilet paper and detergent as last time when they're about to run out",
+        note: "I'll find the same product in your purchase history and set up a subscription, or reorder around when it runs out. I ask for your approval on your phone before ordering.",
+      },
+      {
+        title: "I'll pick what to eat today and place the delivery order.",
+        text: 'Pick a delivery dinner under 20,000 won and order it',
+        note: "I'll read your taste from your order history and suggest a few options for today. Pick one and I'll add it with your usual options and requests, and check with you before paying.",
+      },
+    ],
+  },
+  shopping: {
+    label: 'Shopping',
+    asks: [
+      {
+        title:
+          "When you can't decide between two or three, I'll put the pros and cons in a table and recommend one.",
+        text: 'Make a comparison table of 3 cordless vacuums under 300,000 won',
+        note: "I'll gather the price, weight, performance and real-use reviews of the candidates in a table, and write why I'd pick one.",
+      },
+      {
+        title: "I'll find the cheapest place for the same item and finish the order.",
+        text: 'Find the cheapest place for the Galaxy Buds and order it',
+        note: "I'll go through shopping sites and price comparison sites and show the lowest price including shipping. When you choose, I ask for approval right before payment and order.",
+      },
+      {
+        title: "I'll look for a cheaper place to buy this item.",
+        text: 'Find out if this product is cheaper somewhere else',
+        note: "Send me a link or the product name and I'll compare prices on other shops including shipping and coupons, and tell you where it's cheaper.",
+        fill: 'Find out if this product is cheaper somewhere else: ',
+      },
+      {
+        title: "I'll tell you right away when a sold-out item is back or the price drops.",
+        text: 'Tell me when this product is back in stock or drops below 30,000 won',
+        note: "Send me the product link and the price you want and I'll turn it into a watch, check it daily, and notify your phone when the condition is met.",
+        fill: 'Tell me when this product is back in stock or drops below 30,000 won: ',
+      },
+      {
+        title: "I'll search several places for used listings at the price you want and compare them.",
+        text: 'Find used Nintendo Switch listings under 250,000 won',
+        note: "I'll gather listings from used-goods marketplaces and compare condition and price. Before I send a price inquiry to a seller, I check with you.",
+      },
+      {
+        title: "I'll find where to buy the item in your photo.",
+        text: 'Find where to buy this lamp in the photo',
+        note: "From one photo I'll work out which brand and model it is. If it's sold out, I'll email the brand and ask if any are left.",
+        fill: true,
+      },
+      {
+        title: "For overseas shops, I'll order and watch customs and delivery too.",
+        text: 'Order two bottles of magnesium from iHerb',
+        note: "I'll put your customs ID on iHerb, Amazon or AliExpress orders and watch customs and delivery until it arrives. I check with you before paying.",
+      },
+      {
+        title: "I'll handle your return from filing it to the refund arriving.",
+        text: 'File a return for the Bluetooth speaker I bought last week',
+        note: "I'll go into the shop you ordered from, file the return or exchange and set the pickup day. Then I watch until the refund arrives and tell you.",
+      },
+      {
+        title: "For damaged or lost parcels, I'll follow it from the report to the compensation.",
+        text: 'My parcel box arrived crushed, file a compensation claim',
+        note: "Send me the damage photos and tracking number and I'll request compensation through the seller or the courier's incident report, and keep checking the result.",
+      },
+      {
+        title: "I'll keep checking where your order is until it arrives.",
+        text: 'Check where my parcel is',
+        note: "I'll find the tracking number in your mail and order history, tell you where it is now, and if you like, notify you at customs, departure and arrival.",
+      },
+      {
+        title: "I'll pick a gift that suits them and order it.",
+        text: 'Pick a gift for my parents around 50,000 won',
+        note: "Tell me who it's for and the budget and I'll show 3 well-reviewed candidates with reasons. When you choose, I check with you before paying and send it.",
+      },
+      {
+        title: "I'll check whether the item you want is in a nearby store before you go.",
+        text: 'Check if a nearby store has these sneakers in size 260',
+        note: "I'll look up the model and size in the brand's store stock lookup and tell you only the stores that have it now, with their locations.",
+        fill: 'Check if a nearby store has these sneakers in size 260: ',
+      },
+      {
+        title: "I'll follow up on the money you're owed, from the refund request until you get it.",
+        text: 'Request a refund for the remaining period of the online course I cancelled',
+        note: "I'll request the refund through the shop's or service's support by site inquiry or mail, and if it's refused, sort out the reason and request again. I check with you before sending.",
+      },
+    ],
+  },
+  fashion: {
+    label: 'Fashion & beauty',
+    asks: [
+      {
+        title: "I'll find clothes that suit your usual style and put them in your cart.",
+        text: 'Pick shirts in this style and put them in my cart',
+        note: "Send me a photo of clothes you like and your size and I'll find similar clothes on fashion shops and keep them in your cart. I check with you before paying.",
+        fill: true,
+      },
+    ],
+  },
+  money: {
+    label: 'Money',
+    asks: [
+      {
+        title: "I'll find the subscriptions leaking money every month and cancel them.",
+        text: "Pick the services I don't use that charge me automatically every month and cancel them",
+        note: "I'll gather recurring payments from your card history and payment emails, and cancel only the ones you choose through the site or by mail. I check each cancellation with you.",
+      },
+      {
+        title: "I'll tell you how much more to spend this month to get your card benefits.",
+        text: 'Tell me how much more to spend on each card to reach its monthly spending target',
+        note: "I'll look at this month's spending on each card company's site and compare it with the target. I'll also point out which card is best for the next payment.",
+      },
+      {
+        title: "I'll click the entry button for card cashback you only get by applying.",
+        text: 'Enter the cashback events for the cards I use',
+        note: "I'll look at this month's cashback events on the card companies' sites, enter only those that fit my payment plans, and tell you the results.",
+      },
+      {
+        title: "Set what you'll spend this month and I'll warn you before you go over.",
+        text: 'Set a monthly living budget of 800,000 won and sort out my spending',
+        note: "I'll read your card payment emails, total them by food, transport, shopping and so on, and warn you first when the remaining budget gets tight.",
+      },
+      {
+        title: "I'll check whether there's a cheaper mobile plan than yours.",
+        text: "Check if there's a cheaper mobile plan than mine",
+        note: "I'll look at the data and calls you really use on your carrier's site and compare plans from the same carrier and budget carriers. I always check with you before switching.",
+      },
+      {
+        title: "I'll clean up the paid extras you don't use on your phone bill.",
+        text: 'Find the phone add-on services that are charged every month',
+        note: "I'll go into your carrier's site and list the add-on services and small payments that are added every month. I cancel only what you choose.",
+      },
+      {
+        title: "I'll check whether your phone plan discount lapsed and put it back.",
+        text: 'Check if my plan discount period has ended',
+        note: "I'll check on your carrier's site whether the plan discount has ended, and if so, apply again. When the contract ends, you have to apply again for the discount to continue.",
+      },
+      {
+        title: "I'll make sure you get every loyal customer perk from your long-time carrier.",
+        text: 'Check if there are loyal customer coupons I can get from my carrier',
+        note: "I'll find the data coupons and membership perks you can get on your carrier's site, register them, and tell you before they disappear.",
+      },
+      {
+        title: "From one photo of a bill, I'll pay it before the deadline.",
+        text: "I'll send a photo of the maintenance bill, pay it on time",
+        note: "I'll sort out the amount and deadline of maintenance, fine and tax bills and make a reminder, and pay after you approve on your phone.",
+        fill: true,
+      },
+      {
+        title: "Before your car insurance renews, I'll find a lower premium with the same coverage.",
+        text: 'Check if I can lower my car insurance premium with the same coverage',
+        note: "Send me your policy and I'll compare direct insurers' quotes under the same conditions, and line up the dates so there's no gap in coverage when you switch.",
+      },
+      {
+        title: "I'll tell you right away if a stock on your watchlist jumps or drops.",
+        text: "Tell me if Kakao's share price moves more than 7%",
+        note: "Tell me the stock and the threshold and I'll watch the price during market hours and tell you when it's met, and sum up the day's trend at the open and close.",
+      },
+      {
+        title:
+          "I'll tell you the IPO subscription dates, the shares you got and the day your money comes back.",
+        text: "Sort out this month's IPO subscription schedule and refund dates",
+        note: "I'll sort out the schedule, the lead broker and the minimum deposit of this month's subscriptions, and tell you at the allotment result, refund date and listing date.",
+      },
+      {
+        title: "When your internet and TV contract ends, I'll lower the bill with a renewal.",
+        text: 'Check if my home internet and TV contract has ended and compare renewal deals',
+        note: "I'll check the contract end date on your carrier's site, compare renewal offers and bundle discounts with your phone, and pick the cheapest. I check with you before switching.",
+      },
+    ],
+  },
+  travel: {
+    label: 'Travel & stays',
+    asks: [
+      {
+        title: "Give me the dates and budget and I'll plan your trip day by day.",
+        text: 'Plan 4 days and 3 nights in Fukuoka in February for 1.5 million won',
+        note: "I'll put flights, stays, restaurants and places to visit into a day-by-day route and sort out the estimated cost. Once it's settled I continue to booking, and check with you before paying.",
+      },
+      {
+        title: "I'll book the cheapest stay in the area you want.",
+        text: 'Book the cheapest ocean-view place in Sokcho for Christmas',
+        note: "I'll compare prices across booking apps and the coupons you can use, and find the cheapest. I always check with you before paying, then book.",
+      },
+      {
+        title: "I'll gather the places you've only saved into lists by area in your maps app.",
+        text: 'Gather the cafes and restaurants in Seongsu I saved on Instagram onto my map',
+        note: "I'll find the places in your saved Instagram list, screenshots or links and save them as lists by area in your maps app.",
+      },
+      {
+        title: "I'll ask your booked stay what you want to know and sort out the answers.",
+        text: 'Ask my booked Busan hotel if early check-in and luggage storage are possible',
+        note: "I'll send what you need to confirm, like early check-in, luggage storage and parking, to the stay by email or booking app message, and sort out what works and what doesn't.",
+      },
+      {
+        title: "I'll file your ESTA on the official US government site, with no agency markup.",
+        text: 'Fill in the US ESTA application on the official site',
+        note: "Not an agency site: on the official US government site I'll fill in the application with your passport details, and check with you right before payment.",
+      },
+      {
+        title: "When you travel abroad with a pet, I'll sort out the entry papers and airline conditions.",
+        text: 'What do I need to do first to take my dog to Japan?',
+        note: "I'll sort out in date order what to do before departure, like vaccines, tests and advance notice, the airline's rules for pets, and quarantine on return.",
+      },
+      {
+        title: "I'll handle everything from picking a ski resort to booking the stay, rentals and lessons.",
+        text: 'Compare ski resorts, stays, gear rental and lessons for two beginners',
+        note: "I'll pick a few resorts after hearing your skill, travel time and budget. I'll put lift tickets, stays, gear rental and lessons side by side, and check with you before paying.",
+      },
+      {
+        title:
+          "I'll write to overseas places in their language, so you can send the question you were putting off.",
+        text: "Email a restaurant in Osaka in Japanese saying I'm allergic to shrimp and asking if they can change the menu",
+        note: "I'll write what you want to send to an overseas restaurant, hotel or customer service in that country's language, send it by mail, and translate the reply for you. I check with you before sending.",
+      },
+    ],
+  },
+  transport: {
+    label: 'Transport & flights',
+    asks: [
+      {
+        title: "I'll catch a flight when the price drops below what you want.",
+        text: "Catch a round trip from Gimpo to Jeju in January if it's under 70,000 won",
+        note: "I'll check airline and agency prices daily and tell you when one drops below your price. I include baggage and seat and check with you before paying.",
+      },
+      {
+        title: "At the moment check-in opens, I'll pick seats together for your group.",
+        text: "When check-in opens for next week's flight, pick seats together near the front",
+        note: "I'll find the flight number in your ticket email, choose seats as soon as check-in opens, and watch for delays, cancellations and gate changes from the day before.",
+      },
+      {
+        title: "I'll find the days you can fly with the miles you've saved, route by route.",
+        text: 'Find the days in May with bonus seats to Bangkok on miles',
+        note: "Tell me the route and the period and I'll check bonus seats for each date on the airline's site, and keep checking daily if there are none.",
+      },
+      {
+        title: "For late or cancelled flights, I'll work out the compensation and claim it.",
+        text: 'Work out if I can get compensation for the flight that was cancelled last time',
+        note: "I'll work out what you can get from the ticket in your mail and the flight records, fill in the claim on the airline's site, and submit it after you confirm.",
+      },
+      {
+        title: "I'll book express and intercity bus tickets for the day and seat you want.",
+        text: 'Find a Saturday morning express bus ticket from Seoul to Jeonju',
+        note: "I'll check the seats left by time of day on the booking site, and book the one you pick after checking with you before paying.",
+      },
+      {
+        title: "I'll work out what time to leave so you're not late.",
+        text: 'What time do I have to leave to be in Pangyo by 10 tomorrow?',
+        note: "Tell me the destination and the arrival time and I'll compare travel times from your maps app by departure time and tell you when traffic is lighter. I'll also set a reminder for when to leave.",
+      },
+      {
+        title: "When you need a car, I'll book a car share or a rental for the time you need.",
+        text: 'Rent a car share for 5 hours from Saturday morning',
+        note: "Tell me the day and place and I'll compare car share and rental company rates and book the one you choose. I check with you before paying, and tell you as the return time gets close.",
+      },
+      {
+        title: "For busy holidays, I'll book airport parking the moment reservations open.",
+        text: 'Book airport parking for the holiday when reservations open',
+        note: "Tell me your departure date and the time you'll reach the airport and I'll apply the moment the reserved lot opens, and tell you the result.",
+      },
+      {
+        title: "I'll compare the repair bill from your garage with prices elsewhere.",
+        text: "This is a quote for replacing brake pads, check if it's fair and get quotes elsewhere",
+        note: "From the photo of the quote I'll compare the parts and labor with going rates, and ask a few nearby garages online for the same repair to compare.",
+        fill: true,
+      },
+      {
+        title: "I'll tell you before your stop so you don't miss it.",
+        text: "I'm on Line 2 at Gangnam Station now, tell me 3 minutes before Jamsil",
+        note: "Tell me the station you boarded at and the departure time, and I'll work out your arrival from your maps app's estimate and send a phone notification a few minutes before your stop.",
+      },
+      {
+        title: "I'll book the cheapest shop to swap and store your winter tires.",
+        text: 'Book the cheapest nearby place to change and store winter tires for an Avante',
+        note: "Just tell me your car and tire size. I'll collect the change and storage prices and available days of nearby shops on booking sites, and book the one you pick.",
+      },
+    ],
+  },
+  tickets: {
+    label: 'Tickets & bookings',
+    asks: [
+      {
+        title: "Tell me the date and number of people and I'll get you a restaurant table.",
+        text: 'Book a Korean restaurant in Yeonnam-dong for 4 at 7 on Saturday evening',
+        note: "I'll find an open table on the booking app and always check with you right before confirming. If you haven't picked a place, just tell me the area and mood and I'll pick.",
+      },
+      {
+        title:
+          "For fully booked restaurants or salons, I'll grab the spot the moment a cancellation appears.",
+        text: 'If a table opens up at a pasta place in Seongsu tonight, grab it',
+        note: "I'll watch the booking app and grab the spot the moment a same-day cancellation frees one, and tell you. If there's a deposit, I check with you before paying.",
+      },
+      {
+        title: "I'll book the movie you want with good seats.",
+        text: 'Book 2 center seats at the Sunday afternoon showing',
+        note: "I'll pick center seats at the time you want on the cinema's site and book them, with payment approved on your phone. I'll also suggest what to watch.",
+      },
+      {
+        title: "I'll book your usual hair salon with the same stylist.",
+        text: 'Book my usual stylist at the salon next week',
+        note: "I'll find a free time on the day you want on the booking service and book it. For a new place, I'll also pick nearby salons and styles that suit you.",
+      },
+      {
+        title:
+          "For forest lodges, gardens and palace night tours that sell out quickly, I'll book the instant it opens.",
+        text: 'Book a forest lodge or palace night tour the day booking opens',
+        note: "Tell me where, when and for how many. The moment booking opens I'll submit right away and tell you at once if it worked.",
+      },
+      {
+        title: "For sold-out national park campsites, I'll take the spot when someone cancels.",
+        text: 'Book a national park campsite if a spot opens up',
+        note: "I'll enter the lottery first, and if that fails, keep watching the dates you want and apply right away when a cancelled spot is released.",
+      },
+      {
+        title: "I'll book entry for the pop-up you want to see, right when reservations open.",
+        text: "Sign me up for next week's character pop-up in Seongsu when advance booking opens",
+        note: "Tell me the name of the pop-up and I'll apply when reservations open, and if it's walk-in only, I'll tell you the current queue.",
+      },
+      {
+        title: "On race registration day, I'll wait out the long queue and sign you up.",
+        text: 'Register me for the half marathon when spring registration opens',
+        note: "I'll join at the start of registration, hold on until it's my turn, and fill in the event like 10km or half and the shirt size. I check with you before paying the fee.",
+      },
+      {
+        title: "Field or screen, I'll book golf for the day you want to play.",
+        text: 'Find a Saturday morning tee time for 4 at a course near the capital area',
+        note: "I'll book the remaining times to match when, where and how many. If it's full, I set a watch and wait for an opening.",
+      },
+      {
+        title:
+          "On registration day for swimming and gym classes, I'll grab you a spot at the local public sports center.",
+        text: 'Sign me up for the morning swim class on the day registration opens at the district sports center',
+        note: "I'll check the class price and registration day on the sports center's site, and apply the moment registration opens.",
+      },
+      {
+        title: "I'll tell you the day booking opens for the show you want to see so you don't miss it.",
+        text: 'Tell me the day booking opens for the show I want to see',
+        note: "Tell me the name of the show and I'll find the ticket on-sale schedule on the booking site, make a reminder, and tell you again the morning it opens.",
+      },
+      {
+        title: "When you need a room to study, I'll book a library study room the moment booking opens.",
+        text: 'Book a study room for 4 at the local library next Wednesday afternoon',
+        note: "Tell me the library or school booking page you use and the day and time you want, and I'll submit the moment applications open and tell you if it was booked.",
+      },
+    ],
+  },
+  admin: {
+    label: 'Documents & errands',
+    asks: [
+      {
+        title: "When you need residence documents, I'll handle issuing them and saving as PDF.",
+        text: 'Get my residence certificate and family relation certificate as PDFs',
+        note: "I'll go to the government services site, issue the documents you need and save them as PDFs on your PC. For identity verification you just approve it yourself on your phone.",
+      },
+      {
+        title:
+          "When you move, I'll handle the address registration and the bank and card address changes one by one.",
+        text: 'I moved, take care of registering my new address and the other places to update',
+        note: "I'll file the move-in registration, then do the postal forwarding and the bank and card address changes in order. I always check with you before applying.",
+      },
+      {
+        title: "I'll check whether a phone line was opened in your name without you knowing.",
+        text: 'Check if any phone lines were secretly opened under my name',
+        note: "With the identity-theft prevention service I'll check the phone lines opened in your name. If you want to block unknown openings, I'll also apply for a sign-up restriction.",
+      },
+      {
+        title: "I'll tell you before your car inspection is due, and book a nearby inspection center.",
+        text: "Check when my car's regular inspection is due and book an inspection center",
+        note: "I'll check your car's inspection deadline and set an early reminder, and book an inspection center for the date you want. I check with you before booking.",
+      },
+      {
+        title: "I'll prepare your passport and driver's license renewals before they expire.",
+        text: "Tell me when to renew my passport and driver's license and what to bring",
+        note: "Just tell me when they expire. When it's time to renew, I'll tell you, and sort out in advance the checkup booking, the documents to bring and the photo size.",
+      },
+      {
+        title: "I'll get you the discount for paying your car tax in advance for the year.",
+        text: 'Apply to prepay my car tax for the year in January',
+        note: "I'll go to your local tax site, apply for the annual prepayment of your car tax and work out how much you save. I always check with you before paying.",
+      },
+      {
+        title: "I'll find out whether your car is covered by a recall or free repair.",
+        text: 'Check if my car has a recall or free repair',
+        note: "I'll look up your plate number for recalls or free repairs, and if there is one, book a date at a nearby service center.",
+      },
+      {
+        title:
+          "I'll pull out the cash receipts and expense proofs piled up on your tax portal for the period you need.",
+        text: 'Download my cash receipt history from the tax portal as a PDF',
+        note: "I'll go to the tax portal, look up your cash receipt usage and expense proofs, and save them as a PDF on your PC.",
+      },
+      {
+        title:
+          "From your client's email, I'll fill in every field of the e-invoice and leave only issuing for you.",
+        text: 'Look at this email and fill in the e-invoice issuing screen',
+        note: "From the email I'll pull the other business's details, the amount and the items and move them into the fields on the tax portal. The final authentication and issuing you do yourself.",
+        fill: 'Look at this email and fill in the e-invoice issuing screen: ',
+      },
+      {
+        title: "I'll continue through your online shop startup paperwork in order.",
+        text: 'Go through the online shop startup paperwork in order',
+        note: "I'll do the business registration, the buyer protection service certificate and the mail-order business report you need to open an online shop, in order. I check with you before submitting.",
+      },
+      {
+        title: "I'll apply for bulky waste pickup for the furniture and appliances you're throwing out.",
+        text: "Apply for pickup of my sofa and the fridge I don't use",
+        note: "Send me photos and I'll pick the items and apply for bulky waste disposal at your local office, and book free pickup for big appliances. I check with you before paying.",
+      },
+      {
+        title: "Before you sign a lease, I'll check the hidden risks in that home's documents.",
+        text: "Get this home's registry and building records and point out what's risky",
+        note: "I'll pull the property registry from the online registry and the building record from the government site, and explain mortgages, seizures and violation notices in plain words.",
+        fill: "Get this home's registry and building records and point out what's risky. Address: ",
+      },
+      {
+        title:
+          "I'll make sure you don't miss the first national scholarship application, including family consent.",
+        text: 'Tell me when the first national scholarship application is and take care of it',
+        note: "I'll set a reminder for the scholarship foundation's application period, file the application, then check that the family information consent is done.",
+      },
+      {
+        title:
+          "When an agency tells you to take care of something, I'll file the application or report for you.",
+        text: 'Handle the notice I got from the government assistant',
+        note: "I'll look at the notice from the government assistant or the tax portal, fill in the application on that site and get you a receipt number. I always check with you before submitting.",
+      },
+    ],
+  },
+  mail: {
+    label: 'Mail & calendar',
+    asks: [
+      {
+        title: "Every morning I'll skim your inbox and calendar and pull out only what you must do today.",
+        text: "Pull out only what I need to do from today's schedule and emails",
+        note: "I'll put emails waiting for your reply, today's appointments and deadlines coming up on one screen, most urgent first, and finish the quick ones myself.",
+      },
+      {
+        title: "I'll write the replies piled up in your inbox, and send them after you confirm.",
+        text: 'Find the emails I need to reply to and write drafts',
+        note: "I'll find the emails that need a reply, write drafts, and after you confirm send them in the same thread. I always show you before sending.",
+      },
+      {
+        title: "I'll clear the ad mail and empty your overflowing inbox.",
+        text: 'Clean up ad mail and big attachments to free up my mailbox',
+        note: "I'll pick out and clean up promotional mail and big attachments, and keep receipts and notices. I show you the list before deleting.",
+      },
+      {
+        title: "I'll save the mail attachments that are about to expire before the deadline.",
+        text: 'Download the attachments from mails that have a download deadline',
+        note: "I'll find mails with a download deadline, like large attachments, and save all the files on your PC before the deadline passes.",
+      },
+      {
+        title: "Give me a booking text or one screenshot and I'll read the date and put it on your calendar.",
+        text: 'Put the events in this screenshot on my calendar',
+        note: "I'll pick the date and time written in a show booking screen or a clinic text message and add them to your calendar. For events abroad I'll adjust for the time difference too.",
+        fill: true,
+      },
+      {
+        title: "I'll sort out the overlapping and past events to keep your calendar clean.",
+        text: 'Clean up overlapping and past events on my calendar',
+        note: "I'll sort out overlapping events, finished events and events to move to another calendar. I show you the list before deleting or moving.",
+      },
+      {
+        title:
+          "Even birthdays on the lunar calendar that change dates every year, I'll put them in your calendar exactly.",
+        text: "Put my dad's lunar birthday on my calendar for the next 10 years",
+        note: "I'll convert the lunar date to the solar calendar each year, add it as a repeating event, and set a reminder a few days ahead.",
+      },
+      {
+        title: "From a business trip email, I'll book your tickets and a nearby stay.",
+        text: 'Look at my business trip email and take care of the train and hotel',
+        note: "I'll read the trip dates and places from your mail and calendar, and book a train and a stay nearby that fit the meeting time. I always check with you before paying.",
+      },
+      {
+        title: 'What other AIs know about you, you can bring over to Dool2.',
+        text: 'Give me questions to ask another AI so I can move my info over',
+        note: "I'll make the questions for you to ask another AI. Paste in the reply and I'll pick only what's needed and remember it.",
+      },
+      {
+        title: "I'll go through the sites you signed up for and forgot, and close those accounts one by one.",
+        text: "Find the sites I signed up for but don't use and close the accounts",
+        note: "I'll collect the places you signed up from the welcome mails in your inbox, and close accounts starting with those you haven't used in a long time or that have had a leak. I always check with you before closing.",
+      },
+    ],
+  },
+  life: {
+    label: 'Home & daily life',
+    asks: [
+      {
+        title: "I'll pick out only the housing applications you can submit and tell you the deadlines.",
+        text: 'Tell me when a housing application that fits me comes out',
+        note: "Tell me your region, whether you own a home and your income and I'll check the housing announcements daily. I always check with you before applying.",
+      },
+      {
+        title: "I'll find rental homes that meet your conditions and check for deposit fraud risks.",
+        text: 'Find rentals under 250 million won in Seongdong and check the deposit-to-price ratio',
+        note: "I'll find listings on property sites and look at the deposit ratio and mortgages together, and watch for new listings and tell you.",
+      },
+      {
+        title: "I'll get quotes from a few moving and cleaning companies and compare them at a glance.",
+        text: 'Get three quotes each for moving and move-in cleaning and compare them',
+        note: "Tell me the date and the size of the home and I'll ask several companies through quote sites and mail, and sort out prices and conditions in a table.",
+      },
+      {
+        title: "On the day the boiler stops, I'll file the service request and book the technician's visit.",
+        text: 'My boiler broke, file a repair request',
+        note: "Just tell me the brand and what the problem is. I'll file the service request on the maker's site and pick the earliest visit.",
+      },
+      {
+        title: "Before you go, I'll check parking, whether dogs are allowed and whether it's open.",
+        text: 'Check whether this cafe allows dogs and has parking',
+        note: "I'll look at the place info in your maps app, recent reviews and notices on the official account, and tell you the conditions so you don't make a wasted trip.",
+        fill: 'Check whether this cafe allows dogs and has parking: ',
+      },
+      {
+        title: "I'll find where your lost item is being kept.",
+        text: 'Check if the umbrella I lost on the subway is at the lost-and-found',
+        note: "I'll look through the police lost-property portal and the subway lost-and-found centers, and if a similar item is there, tell you how to pick it up.",
+      },
+      {
+        title:
+          "When a wedding invitation or a funeral notice comes, I'll sort out the route, a stay and flowers.",
+        text: "I'll send the wedding invitation, find the way there and a stay nearby",
+        note: "Send me the invitation or notice text and I'll plan how to get there. If you need a stay or flowers, I'll pick them, and check with you before paying.",
+        fill: true,
+      },
+      {
+        title:
+          "From the venue to the invitations, I'll prepare your housewarming or birthday party with you.",
+        text: "Let's prepare next month's housewarming for 8 together",
+        note: "Tell me the date, number of people and budget and I'll pick the place or the food, write the invitation and order what to buy. I check with you before ordering.",
+      },
+      {
+        title: "From finding the venue to booking the honeymoon, I'll prepare your wedding with you.",
+        text: "I'm getting married next May, help me with everything from the venue",
+        note: "I'll help in order with comparing venue and package quotes, the invitation wording and ceremony order, guest gatherings and honeymoon bookings. I always check with you before contracts and payments.",
+      },
+    ],
+  },
+  health: {
+    label: 'Health',
+    asks: [
+      {
+        title:
+          "Whether it's weight loss or strength, I'll make a workout schedule for your goal and put it on your calendar.",
+        text: 'Make a plan for 30 minutes of exercise 3 times a week and put it on my calendar',
+        note: "Tell me the days and times you can use and your goal and I'll make a weekly workout plan, put it on your calendar and remind you before you start.",
+      },
+      {
+        title: "One photo per meal and I'll keep your calorie log.",
+        text: "I'll send a photo of my meal, log the calories",
+        note: "From the food or the menu name in the photo I'll estimate and record the calories and nutrients. At night I'll tell you the day's total and the nutrients you're short on.",
+        fill: true,
+      },
+      {
+        title: "I'll remind you daily when to take your medicine, and the refill day before it runs out.",
+        text: 'Remind me to take my medicine every night at 9',
+        note: "I'll send a reminder at the time you set, and around when your medicine runs out, sort out a clinic booking or a reorder in advance. I check with you before ordering.",
+      },
+      {
+        title: "For the national health checkup, if it's your turn this year, I'll book the clinic.",
+        text: "If it's my turn for the national checkup this year, book a clinic",
+        note: "I'll check on the health insurance site whether you're eligible, and book a free day on a nearby checkup center's page. Identity verification is on your phone.",
+      },
+      {
+        title:
+          "Insurance-covered dental scaling resets with the new year, so I'll book the dentist before year-end.",
+        text: 'Book the dentist so I get my scaling before the end of the year',
+        note: "Insured scaling is once a year, so it's best to get it before year-end. I'll set a date through a booking service or the dentist's site.",
+      },
+      {
+        title: "I'll check whether you're eligible for a free flu shot and tell you a nearby clinic.",
+        text: "Check if I'm eligible for a free flu shot and find a clinic nearby",
+        note: "It's free for children, pregnant women and people 65 and over. I'll check your eligibility and designated clinics nearby on the vaccination site, and book where booking is possible.",
+      },
+      {
+        title:
+          "Prices for manual therapy and MRIs differ by hospital, so I'll gather nearby ones and compare them.",
+        text: 'Compare manual therapy and MRI prices at hospitals near Jeongja-dong in Bundang',
+        note: "I'll find each hospital's price from the public non-covered fee data and make a table. Just tell me the neighborhood.",
+      },
+      {
+        title: "If your child runs a fever late at night or on a weekend, I'll find a pediatrician open now.",
+        text: "Find a pediatric clinic that's open now",
+        note: "I'll find pediatric clinics and late-night children's hospitals that are open now, check their hours, and tell you which can be queued for in a booking app.",
+      },
+      {
+        title:
+          "For a university hospital booking that's weeks away, I'll move it earlier if a sooner date opens.",
+        text: 'Move my university hospital appointment earlier if an earlier day opens',
+        note: "Tell me which hospital and department and I'll check available dates daily. When an earlier date opens, I'll ask you first and then change it.",
+      },
+      {
+        title: "I'll file the insurance claim you've been putting off, just give me the receipts.",
+        text: 'File a health insurance claim with this receipt',
+        note: "I'll file the claim on the insurer's site with your hospital or pharmacy receipts. Medical costs from the past 3 years can still be claimed. I check with you before filing.",
+        fill: true,
+      },
+      {
+        title: "Hospital or dentist, I'll handle new bookings and date changes.",
+        text: 'Move my dermatology appointment to next Saturday morning',
+        note: "I'll make and change clinic appointments on the booking service or the hospital's site or app. I go in right when booking opens, and set the next visit ahead of time.",
+      },
+    ],
+  },
+  family: {
+    label: 'Kids & family',
+    asks: [
+      {
+        title: "I'll pick an activity to do with your child on the weekend and book the spot.",
+        text: 'Book a hands-on activity for my 7-year-old to do this week',
+        note: "Tell me your child's age and your area and I'll find science museum, museum and library activities and book with the spots left. I check with you before paying.",
+      },
+      {
+        title: "Every morning I'll send what your child eats for lunch at school and the allergy info.",
+        text: "Tell me my kid's school lunch and allergy info every morning",
+        note: "At the time you set I'll check the school lunch menu and send today's meal, and mark separately the days with ingredients your child must avoid.",
+      },
+      {
+        title:
+          "I'll help you apply during the kindergarten and daycare application period so you don't miss it.",
+        text: 'Keep track of the kindergarten and daycare admission application schedule',
+        note: "I'll file applications to match the schedule on the admission portal, and on lottery day check the results and any extra openings. I always check with you before applying.",
+      },
+      {
+        title: "I'll remember your dog or cat's vaccination dates and food orders for you.",
+        text: "Keep track of my dog's vaccination dates and reorder food when it's running out",
+        note: "Tell me the name and age and the food they eat at the start. I'll set reminders for vaccine days and medicine days, and when the food is about to run out, order it after you approve.",
+      },
+      {
+        title: "Just tell me what you need to say and I'll write the school notice.",
+        text: 'Write a field trip notice for parents',
+        note: "Tell me the event date, what to bring and the reply deadline and I'll make a notice with a reply slip and a short note for the school diary, and save it on your PC.",
+      },
+      {
+        title: "I'll remind you of family birthdays and anniversaries a week ahead.",
+        text: 'Remind me of family birthdays and anniversaries ahead of time',
+        note: "I'll put family birthdays and anniversaries on your calendar and send a reminder a week before, so you can sort out a gift or a restaurant booking.",
+      },
+      {
+        title: "Every morning I'll read the daycare news and tell you what goes in your child's bag.",
+        text: 'Check the daycare notes every morning and tell me what to prepare today',
+        note: "I'll look at what's posted in the daycare app and the menu, and pull out today's events and what to prepare. If something new needs buying, I'll put it in the cart.",
+      },
+      {
+        title: "I'll save all the daycare photos and videos into date folders at once.",
+        text: 'Download all the daycare photos and videos to my PC',
+        note: "I'll save the photos and videos from the notes and albums on your PC by date. You may not be able to see them after graduating or leaving, so it's good to download them early.",
+      },
+      {
+        title: "I'll write a natural message to a friend about making plans.",
+        text: "Write a message to Minji asking if she's free this Saturday evening",
+        note: "I'll write the message with the date and day, and if there's an email address, send it after you confirm. For chat apps and texts, just [Copy] and send.",
+      },
+      {
+        title: "For a show or trip with your parents, I'll sort out the booking info and pass it on.",
+        text: "Sort out next month's musical booking with Mom as a message to send her, and remind me the day before",
+        note: "I'll find the date, time, seat and venue in the booking email or history, sort it into a message for your parents, and tell you the morning before.",
+      },
+    ],
+  },
+  fun: {
+    label: 'Fun',
+    asks: [
+      {
+        title: "I'll read today's horoscope and a tarot card, just for fun.",
+        text: 'Read my horoscope and one tarot card for today',
+        note: "Ask what you're curious about and I'll draw a tarot card and explain it, and if you tell me your birth date and time I'll read your birth chart too. I also bring a new personality quiz every day.",
+      },
+      {
+        title: "If your weekend is open, I'll find an exhibition or a pop-up and book it.",
+        text: 'Find an exhibition or pop-up to visit near Mangwon this weekend',
+        note: "Tell me who you're going with and which neighborhood and I'll pick exhibitions, pop-ups and shows, and book a spot where reservations are needed.",
+      },
+      {
+        title: "I'll keep up with news from your favorite singer, down to ticketing and entry deadlines.",
+        text: "Keep track of my favorite singer's concert and merch schedule",
+        note: "I'll gather concert ticketing, fan event entries and merch pre-order dates onto your calendar and tell you before the deadlines.",
+      },
+      {
+        title: "I'll check whether your lottery ticket won once the draw is done.",
+        text: "Check if I won this week's lottery",
+        note: "Save your numbers and after every weekly draw I'll match them with the winning numbers and tell you the result.",
+      },
+    ],
+  },
+  media: {
+    label: 'Video, music & books',
+    asks: [
+      {
+        title: "I'll pick a show you'll like and find where you can watch it.",
+        text: 'Recommend a calm British drama and find where I can watch it',
+        note: "Tell me a show you enjoyed or the mood you like and I'll recommend similar ones, and tell you which streaming services have them and the rental prices.",
+      },
+      {
+        title:
+          "For a single book, I'll show the cheapest bookstore and the library you can borrow it from, side by side.",
+        text: 'Find the cheapest place to buy this book or a library where I can borrow it',
+        note: "I'll compare new and used prices at online bookstores, and if your local library has it, reserve the loan. I check with you before buying.",
+        fill: 'Find the cheapest place to buy this book or a library where I can borrow it: ',
+      },
+      {
+        title: "I'll find the streaming subscriptions you don't watch and cancel them.",
+        text: "Clean up the streaming subscriptions I don't watch",
+        note: "I'll gather the streaming services you subscribe to from your card history and email receipts, and cancel the ones you haven't been watching. I always check with you before cancelling.",
+      },
+      {
+        title: "I'll renew the books that are due and reserve the ones you want to read.",
+        text: 'Keep track of the return dates for my library books and renew what can be renewed',
+        note: "I'll sign in to each library you use and gather your loans and due dates in one place. I renew what can be delayed, and request books from other branches through inter-library loan.",
+      },
+    ],
+  },
+  social: {
+    label: 'Social',
+    asks: [
+      {
+        title: "I'll find the accounts that follow you on Instagram but you don't follow back.",
+        text: "Find the accounts that don't follow me back from my Instagram export file",
+        note: "From the data file downloaded from Instagram, I'll pull out the accounts that don't follow you and the change in your follower count.",
+      },
+      {
+        title: "Give me photos and notes and I'll write the blog post and publish it.",
+        text: 'Write a blog post from these photos and notes and publish it',
+        note: "I'll polish it into a blog post and publish it right away or schedule it for a time you choose. I always show you before posting.",
+        fill: true,
+      },
+      {
+        title: "I'll upload your video as a short at the time you set.",
+        text: 'Schedule this video to go up as a short on Friday at 7 pm',
+        note: "From the video file on your PC I'll write the title, description and tags and schedule the short upload. I always show you before uploading.",
+        fill: true,
+      },
+      {
+        title: "Just describe it and I'll make the image you need.",
+        text: "Make a dinosaur picture for my kid's birthday invitation",
+        note: "Describe what you want, like an invitation, a thumbnail or a profile picture, and I'll draw it and save it on your PC. If you give me a photo, I'll change the background or style too.",
+      },
+    ],
+  },
+  work: {
+    label: 'Work & study',
+    asks: [
+      {
+        title: "Set your pay, region and role and I'll tell you the day a matching job post appears.",
+        text: 'Check experienced front-end job postings in Seoul every day and tell me',
+        note: "Tell me the role, region and experience and I'll check job sites daily, sort only matching posts with their deadlines, and help prepare the application.",
+      },
+      {
+        title: "Just pick the topic and I'll find the evidence and make a draft report or presentation.",
+        text: 'Make a 5-page report on the domestic EV charging market, with the research',
+        note: "Tell me the topic and length and I'll find sources, organize them into a document or slides and save them on your PC. Just tell me what to fix.",
+      },
+      {
+        title: "I'll tell you assignment due dates and exam schedules for the semester well ahead.",
+        text: "I'll send the syllabus, put the assignment deadlines and exam dates on my calendar",
+        note: "From the syllabus and department notices I'll pull submission and exam dates, add them to your schedule and remind you days ahead. I'll also help organize assignment materials.",
+        fill: true,
+      },
+      {
+        title: "I'll gather only the useful discounts you get with student verification.",
+        text: 'Sort out the discounts I can get with student verification',
+        note: "I'll find and sort student discounts on laptops, software and subscriptions, and even apply for verification with your school email or student ID. I check with you before paying.",
+      },
+      {
+        title:
+          "I'll gather contests you can enter, closest deadline first, and help you prepare the submission.",
+        text: 'Gather student video contests in order of deadline',
+        note: "I'll pick only the contests you're eligible for, make a list by date, and note the documents to submit and where to apply so you can check them one by one.",
+      },
+      {
+        title: "I'll pick out only the startup support programs that fit your business.",
+        text: 'Sort out cafe startup support program announcements every week',
+        note: "Tell me what kind of business you run, where and for how many years. I'll pick only the matching government and local support program announcements and send them with the deadlines.",
+      },
+      {
+        title: "I'll record your product's search ranking every morning and tell you when it drops.",
+        text: "Record my product's search ranking every morning",
+        note: "I'll check the ranking daily for the search terms your product appears for and record it. On a day it drops sharply, I'll show you the other products that passed it.",
+      },
+      {
+        title:
+          "For customer inquiries that come in while you sleep, I'll prepare a reply draft that follows your shop's rules.",
+        text: 'Write draft replies to the shop inquiries that came in overnight',
+        note: "I'll gather the questions from product Q&A and chat and write answers following your shipping, exchange and return rules. If they look right, I'll post them.",
+      },
+      {
+        title: "I'll watch a page that changes now and then and tell you when it does.",
+        text: 'Tell me when this page changes',
+        note: "I'll check pages or an inbox that change only now and then, like announcements, review results and application status, at set times, and tell you what changed.",
+        fill: 'Tell me when this page changes: ',
+      },
+    ],
+  },
+}
+
 export interface IdeaItem {
-  /** 화면에 보이는 말 */
+  /** The text shown on screen */
   text: string
-  /** 누르면 보내는 말 (서비스 아이디어는 "쿠팡에서 …") */
+  /** What is sent when pressed (service ideas are "쿠팡에서 …" / "On Coupang, …") */
   ask: string
   note: string
-  /** 있으면 누를 때 보내지 않고 이 글을 입력칸에 넣는다 (사용자가 링크·사진·할 일을 채운다) */
+  /** If present, pressing does not send but puts this text in the input field (the user fills in a link, photo or job) */
   fill?: string
-  /** 연결 카드에서 온 아이디어면 그 카드 */
+  /** The card, if the idea came from a connect card */
   service?: { id: string; name: string; mark: string; connected: boolean; how: ConnectCard['how'] }
 }
 
@@ -1077,42 +2026,64 @@ export interface IdeaGroup {
   items: IdeaItem[]
 }
 
-/** 서비스 이름 표시 글자: 숫자로 시작하면 숫자 묶음(11번가 → 11), 아니면 첫 글자 */
+/** Letter shown for a service name: leading digits if it starts with a number (11번가 -> 11), otherwise the first character */
 export function serviceMark(name: string): string {
   return /^\d+/.exec(name)?.[0] ?? [...name][0] ?? ''
 }
 
-/** "야놀자(NOL)" → "야놀자" */
+/** "야놀자(NOL)" -> "야놀자" */
 function shortName(name: string): string {
   return name.replace(/\s*\(.*?\)\s*/g, '').trim() || name
 }
 
-/** 서비스 아이디어를 보낼 말: 서비스 이름이 없으면 앞에 붙인다 */
-export function serviceAsk(card: Pick<ConnectCard, 'name' | 'how'>, say: string): string {
+/** What to send for a service idea: puts the service name in front if it is missing */
+export function serviceAsk(card: Pick<ConnectCard, 'name' | 'how'>, say: string, lang: Lang = 'ko'): string {
   const name = shortName(card.name)
   if (card.how === 'device' || say.includes(name)) return say
-  return `${name}에서 ${say}`
+  return lang === 'en' ? `On ${name}: ${say}` : `${name}에서 ${say}`
+}
+
+const sectionCache = new Map<Lang, IdeaSection[]>()
+
+/** The sections in a language. English keeps the same ids, icons and order, and swaps the text */
+export function ideaSections(lang: Lang = 'ko'): IdeaSection[] {
+  if (lang !== 'en') return IDEA_SECTIONS
+  const hit = sectionCache.get(lang)
+  if (hit) return hit
+  const out = IDEA_SECTIONS.map((section): IdeaSection => {
+    const en = IDEAS_EN[section.id]
+    if (!en) return section
+    return {
+      ...section,
+      label: en.label,
+      asks: section.asks.map((ask, i) => en.asks[i] ?? ask),
+    }
+  })
+  sectionCache.set(lang, out)
+  return out
 }
 
 /**
- * 분류별 아이디어. 직접 고른 부탁만 보여 준다 (연결 카드의 "할 수 있는 일"은 연결 화면에서 본다).
- * services는 예전처럼 서비스 아이디어를 섞을 때를 위해 받아만 둔다
+ * Ideas per section. Shows only the hand-picked requests (the "things it can do" of connect cards are seen on the connect screen).
+ * services is only accepted for when service ideas are mixed in again, as before
  */
-export function ideaCatalog(_services: readonly ConnectionItem[] = []): IdeaGroup[] {
-  return IDEA_SECTIONS.map((section) => ({
-    section,
-    items: section.asks.map(
-      (a): IdeaItem => ({
-        text: a.title ?? a.text,
-        ask: a.text,
-        note: a.note,
-        ...(a.fill ? { fill: a.fill === true ? `${a.text} ` : a.fill } : {}),
-      }),
-    ),
-  })).filter((g) => g.items.length)
+export function ideaCatalog(_services: readonly ConnectionItem[] = [], lang: Lang = 'ko'): IdeaGroup[] {
+  return ideaSections(lang)
+    .map((section) => ({
+      section,
+      items: section.asks.map(
+        (a): IdeaItem => ({
+          text: a.title ?? a.text,
+          ask: a.text,
+          note: a.note,
+          ...(a.fill ? { fill: a.fill === true ? `${a.text} ` : a.fill } : {}),
+        }),
+      ),
+    }))
+    .filter((g) => g.items.length)
 }
 
-/** 검색: 띄어쓰기를 무시하고 말·설명·분류 이름에서 찾는다 */
+/** Search: ignores spaces and looks in the text, description and section name */
 export function searchIdeas(
   groups: readonly IdeaGroup[],
   query: string,
@@ -1130,12 +2101,12 @@ export function searchIdeas(
   return out
 }
 
-/** 연결해야 할 수 있는 아이디어인지 (아이디·비밀번호로 연결하는 곳인데 아직 안 했다) */
+/** Whether the idea needs a connection first (a service connected with ID and password that is not connected yet) */
 export function needsConnect(it: IdeaItem): boolean {
   return Boolean(it.service && !it.service.connected && it.service.how === 'browser')
 }
 
-/** 전부 몇 개인지 */
+/** How many there are in total */
 export function ideaCount(groups: readonly IdeaGroup[]): number {
   return groups.reduce((n, g) => n + g.items.length, 0)
 }

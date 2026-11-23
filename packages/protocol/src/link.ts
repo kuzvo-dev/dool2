@@ -1,20 +1,20 @@
-// 중계 서버 접속기. PC(Node의 기본 WebSocket)와 폰(브라우저)이 같이 쓴다.
-// 끊기면 점점 늘어나는 간격(최대 30초)으로 다시 붙는다.
+// Relay server connector. Shared by the PC (Node's built-in WebSocket) and the phone (browser).
+// When the connection drops it reconnects with a growing delay (up to 30 seconds).
 import { type DeviceKeys, type Envelope, signText } from './e2e.js'
 
-/** 두리 공식 중계 서버 (Cloudflare Workers + Durable Objects, apps/relay/src/worker.ts). 내용은 볼 수 없다 */
+/** The official Dool2 relay server (Cloudflare Workers + Durable Objects, apps/relay/src/worker.ts). It cannot read the content */
 export const OFFICIAL_RELAY = 'https://relay.dool2.com'
 
 export interface LinkOptions {
-  /** 중계 서버 주소 (http(s)://…) */
+  /** Relay server address (http(s)://…) */
   relay: string
   role: 'pc' | 'phone'
   keys: DeviceKeys
-  /** 폰: 연결할 PC id */
+  /** Phone: the PC id to connect to */
   room?: string
   onEnvelope(env: Envelope): void
   onState?(state: 'connecting' | 'ready' | 'closed'): void
-  /** 테스트용 */
+  /** For tests */
   WebSocketImpl?: typeof WebSocket
 }
 
@@ -22,7 +22,7 @@ export function helloText(h: { role: string; id: string; room?: string; ts: numb
   return `dool2-relay/v1/${h.role}/${h.id}/${h.room ?? ''}/${h.ts}`
 }
 
-/** 접속 주소. 방(PC id)을 주소에 실어서, 공식 서버가 접속을 그 방으로 바로 보낼 수 있게 한다 */
+/** Connection URL. The room (PC id) goes in the URL so the official server can route the connection straight to that room */
 export function linkUrl(relay: string, room?: string): string {
   const u = new URL('/link', relay)
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -52,7 +52,7 @@ export class LinkClient {
     this.ready = false
   }
 
-  /** 연결이 없으면 모아 두었다가 붙으면 보낸다 */
+  /** Queued while there is no connection, and sent once it connects */
   send(env: Envelope) {
     const data = JSON.stringify(env)
     if (this.ready && this.ws?.readyState === 1) this.ws.send(data)
@@ -103,11 +103,11 @@ export class LinkClient {
   }
 }
 
-/** 폰이 승인에 서명하는 내용. PC가 같은 방법으로 만들어 서명을 확인한다 */
+/** What the phone signs when approving. The PC builds the same text and verifies the signature */
 export function approvalSignText(
   a: { id: string; label: string; url: string; what: string; amount?: string; expiresAt: string },
   decision: 'approve' | 'reject',
-  /** 고른 결제 수단 등 (있을 때만 서명에 넣는다: 고르지 않는 승인은 예전 폰과 같은 글) */
+  /** The chosen payment method, etc. (only included in the signature when present: an approval without a choice is the same text as with older phones) */
   choice?: string,
 ): string {
   const o: Record<string, unknown> = {
@@ -128,7 +128,7 @@ export function approvalSignText(
   )
 }
 
-/** 폰이 '처음부터 다시'에 서명하는 내용 (2분 안의 것만 받는다) */
+/** What the phone signs for "start over" (only accepted within 2 minutes) */
 export function resetSignText(at: number, services: boolean): string {
   return JSON.stringify([
     ['at', at],

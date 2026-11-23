@@ -1,7 +1,9 @@
-// 연결 화면 문구 (zod 없이). 폰 앱처럼 번들을 작게 해야 하는 화면이 쓴다. ADR 0014
+// Connect screen copy (no zod). Used by screens that must keep their bundle small, like the phone app. ADR 0014
+// This file is copied as-is next to the desktop window, so it takes only type imports and keeps its catalogs as plain objects.
+import type { Lang } from '@dool2/i18n'
 import type { ConnectCard, ConnectionItem, Tier } from './connect.js'
 
-/** 연결 화면의 분류. 순서가 곧 목록 순서다 */
+/** Connect screen categories (Korean, the reference copy). The order is the list order */
 export const CATEGORY_LABEL = {
   account: '간편 로그인 계정',
   shopping: '쇼핑',
@@ -23,7 +25,34 @@ export const CATEGORY_LABEL = {
   ai: 'AI 도구',
 } as const
 
-/** 연결 화면 분류 칩·머리에 쓰는 입체 이모지 (packages/ui/emoji/<emo>.webp) */
+/** English category names, same keys as CATEGORY_LABEL */
+const CATEGORY_LABEL_EN: Record<keyof typeof CATEGORY_LABEL, string> = {
+  account: 'Sign-in accounts',
+  shopping: 'Shopping',
+  grocery: 'Groceries & delivery',
+  fashion: 'Fashion & beauty',
+  travel: 'Travel & stays',
+  flight: 'Flights',
+  tickets: 'Tickets & bookings',
+  media: 'Video & music',
+  books: 'Books',
+  social: 'Social',
+  work: 'Work',
+  mail: 'Mail & calendar',
+  telecom: 'Mobile & internet',
+  finance: 'Cards & banking',
+  gov: 'Government & tax',
+  life: 'Everyday life',
+  device: 'Phone',
+  ai: 'AI tools',
+}
+
+/** A category's name in the given language */
+export function categoryLabel(category: keyof typeof CATEGORY_LABEL, lang: Lang = 'ko'): string {
+  return lang === 'en' ? CATEGORY_LABEL_EN[category] : CATEGORY_LABEL[category]
+}
+
+/** Emoji (3D) for the category chips and headers on the connect screen (packages/ui/emoji/<emo>.webp) */
 export const CATEGORY_EMO: Record<keyof typeof CATEGORY_LABEL, string> = {
   account: 'lock',
   shopping: 'shopping',
@@ -45,46 +74,78 @@ export const CATEGORY_EMO: Record<keyof typeof CATEGORY_LABEL, string> = {
   ai: 'sparkles',
 }
 
-/** 폰 승인이 있어야만 하는 등급 (docs/architecture.md 4.1) */
+/** Tiers that only run after approval on the phone (docs/architecture.md 4.1) */
 export const APPROVAL_TIERS: readonly Tier[] = ['pay', 'contact']
 
+/** Copy for the detail screen's safety lines and the connect-button hints, as plain catalogs (Korean is the reference copy) */
+const TEXT = {
+  ko: {
+    approval: (titles: string) => `${titles} 같은 일은 폰에서 승인한 뒤에만 해요.`,
+    approvalButtons: '결제·주문·보내기 같은 마지막 버튼은 폰에서 승인해야만 눌러요.',
+    browserVault:
+      '아이디·비밀번호는 PC의 두리 금고에만 암호화해 저장하고, 로그인은 두리 본체가 해요. 두리(AI)는 비밀번호를 보지 않아요.',
+    browserHuman: (login: string) =>
+      `${login ? `${login}처럼 ` : ''}로봇 확인·본인인증이 필요하면 그 화면만 폰에 띄워 직접 하게 해요.`,
+    officialChrome: '공식 연동이 준비되기 전까지는 PC Chrome에 로그인해 둔 화면으로 일해요.',
+    noPassword: '두리(AI)는 비밀번호를 보지 않아요.',
+    open: '로그인 없이 쓰는 서비스예요. 연결하지 않아도 바로 부탁하면 돼요.',
+    device: '폰 권한으로 켜는 기능이에요. 켠 뒤에도 폰 설정에서 언제든 끌 수 있어요.',
+    recent: '최근 사용',
+    usedIn: (n: number) => `${n}곳에서 사용`,
+  },
+  en: {
+    approval: (titles: string) => `Things like ${titles} only happen after you approve them on your phone.`,
+    approvalButtons:
+      'The last button, like paying, ordering or sending, is only pressed after you approve it on your phone.',
+    browserVault:
+      "Your ID and password are stored encrypted in Dool2's vault on your PC, and Dool2 itself signs in. The AI never sees your password.",
+    browserHuman: (login: string) =>
+      `If a robot check or identity verification${login ? ` (like ${login})` : ''} is needed, only that screen is shown on your phone for you to do yourself.`,
+    officialChrome:
+      'Until the official connection is ready, Dool2 works in the page you are signed in to in Chrome on your PC.',
+    noPassword: 'The AI never sees your password.',
+    open: 'This service needs no sign-in. You can ask right away without connecting.',
+    device:
+      'This feature is turned on with a phone permission. You can turn it off any time in your phone settings.',
+    recent: 'Recently used',
+    usedIn: (n: number) => `Used in ${n} places`,
+  },
+} as const
+
 /**
- * 상세 화면의 안전 문장. 카드에 따로 적지 않고 등급에서 만든다 (적은 말과 실제 동작이 어긋나지 않게)
- * 예: "주문, 반품 같은 일은 폰에서 승인한 뒤에만 해요."
+ * The safety sentence on the detail screen. It is built from the tiers instead of being written on each card (so the text never drifts from what really happens)
+ * Example: "Things like ordering, returning only happen after you approve them on your phone."
  */
-export function approvalLine(card: Pick<ConnectCard, 'abilities'>): string | undefined {
+export function approvalLine(card: Pick<ConnectCard, 'abilities'>, lang: Lang = 'ko'): string | undefined {
   const risky = card.abilities.filter((a) => APPROVAL_TIERS.includes(a.tier)).map((a) => a.title)
   if (!risky.length) return undefined
-  return `${risky.slice(0, 3).join(', ')} 같은 일은 폰에서 승인한 뒤에만 해요.`
+  return TEXT[lang].approval(risky.slice(0, 3).join(', '))
 }
 
-/** 상세 화면의 "안전하게 지키는 방법" (연결 방식마다) */
-export function safetyLines(card: Pick<ConnectCard, 'how' | 'login' | 'abilities'>): string[] {
-  const approval = card.abilities.some((a) => APPROVAL_TIERS.includes(a.tier))
-    ? ['결제·주문·보내기 같은 마지막 버튼은 폰에서 승인해야만 눌러요.']
-    : []
+/** "How we keep it safe" on the detail screen (per connection method) */
+export function safetyLines(
+  card: Pick<ConnectCard, 'how' | 'login' | 'abilities'>,
+  lang: Lang = 'ko',
+): string[] {
+  const t = TEXT[lang]
+  const approval = card.abilities.some((a) => APPROVAL_TIERS.includes(a.tier)) ? [t.approvalButtons] : []
   switch (card.how) {
     case 'browser':
       return [
-        '아이디·비밀번호는 PC의 두리 금고에만 암호화해 저장하고, 로그인은 두리 본체가 해요. 두리(AI)는 비밀번호를 보지 않아요.',
-        `${card.login && card.login !== '아이디·비밀번호' ? `${card.login}처럼 ` : ''}로봇 확인·본인인증이 필요하면 그 화면만 폰에 띄워 직접 하게 해요.`,
+        t.browserVault,
+        t.browserHuman(card.login && card.login !== '아이디·비밀번호' ? card.login : ''),
         ...approval,
       ]
     case 'official':
-      return [
-        '공식 연동이 준비되기 전까지는 PC Chrome에 로그인해 둔 화면으로 일해요.',
-        '두리(AI)는 비밀번호를 보지 않아요.',
-        ...approval,
-      ]
+      return [t.officialChrome, t.noPassword, ...approval]
     case 'open':
-      return ['로그인 없이 쓰는 서비스예요. 연결하지 않아도 바로 부탁하면 돼요.', ...approval]
+      return [t.open, ...approval]
     case 'device':
-      return ['폰 권한으로 켜는 기능이에요. 켠 뒤에도 폰 설정에서 언제든 끌 수 있어요.', ...approval]
+      return [t.device, ...approval]
   }
 }
 
-/** 찾기 칸: 이름·도메인·분류·소개·할 수 있는 일 중 하나에 들어 있으면 */
-/** 카드 id나 서비스 이름으로 카드를 찾는다 ("쿠팡", "coupang", "야놀자", "KT M모바일") */
+/** Find a card by card id or service name ("쿠팡", "coupang", "야놀자", "KT M모바일") */
 export function findCard<T extends Pick<ConnectCard, 'id' | 'name'>>(
   cards: readonly T[],
   query: string,
@@ -107,6 +168,7 @@ export function findCard<T extends Pick<ConnectCard, 'id' | 'name'>>(
   )
 }
 
+/** Search box: matches if the name, domain, category, summary or any ability contains the query (category in both languages) */
 export function matchesCard(card: ConnectCard, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
@@ -115,6 +177,7 @@ export function matchesCard(card: ConnectCard, query: string): boolean {
     card.id,
     card.site ?? '',
     CATEGORY_LABEL[card.category],
+    CATEGORY_LABEL_EN[card.category],
     card.summary,
     ...card.abilities.map((a) => a.title),
   ]
@@ -124,13 +187,14 @@ export function matchesCard(card: ConnectCard, query: string): boolean {
 }
 
 /**
- * 간편 로그인 버튼 순서와 짧은 표시. 폰·PC 연결 화면이 같이 쓴다.
- * 1) 이 서비스에 전에 쓴 것("최근 사용") 2) 다른 서비스에 많이 쓴 것("N곳에서 사용", 맨 위 하나만) 3) 카드 순서.
- * 같은 계정으로 이어 쓰면 새 계정이 안 생기고, 공급자 쪽이 이미 로그인돼 있을 가능성도 크다
+ * Order and short hints for the one-tap sign-in buttons. Shared by the phone and PC connect screens.
+ * 1) the one used before on this service ("Recently used") 2) the one used most on other services ("Used in N places", top one only) 3) card order.
+ * Reusing the same account avoids creating a new one, and the provider is likely already signed in
  */
 export function socialOrder(
   card: Pick<ConnectCard, 'id' | 'social'>,
   services: readonly Pick<ConnectionItem, 'card' | 'via' | 'account'>[] = [],
+  lang: Lang = 'ko',
 ): { provider: NonNullable<ConnectCard['social']>[number]; hint?: string }[] {
   const accountOf = (p: string) => services.find((s) => s.card.id === p)?.account
   const list = card.social ?? []
@@ -147,7 +211,8 @@ export function socialOrder(
   const top = sorted[0]
   return sorted.map((provider) => {
     const n = used.get(provider) ?? 0
-    const why = provider === mine ? '최근 사용' : provider === top && n > 0 && !mine ? `${n}곳에서 사용` : ''
+    const t = TEXT[lang]
+    const why = provider === mine ? t.recent : provider === top && n > 0 && !mine ? t.usedIn(n) : ''
     const who = accountOf(provider) ?? ''
     const hint = [why, who].filter(Boolean).join(' · ')
     return hint ? { provider, hint } : { provider }
