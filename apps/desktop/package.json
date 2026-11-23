@@ -18,6 +18,7 @@
     "@dool2/agent-codex": "workspace:*",
     "@dool2/browser": "workspace:*",
     "@dool2/daemon": "workspace:*",
+    "@dool2/i18n": "workspace:*",
     "@dool2/mcp-tools": "workspace:*",
     "@dool2/protocol": "workspace:*"
   },

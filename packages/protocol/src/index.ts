@@ -1,5 +1,6 @@
 // 두리 공통 타입: 에이전트 이벤트, 대화, 데몬 API.
 // 폰↔PC 암호화 규약은 M2에서 이 패키지에 추가한다.
+import { LANGS, REGIONS } from '@dool2/i18n'
 import { z } from 'zod'
 import type { ConnectionItem, SocialProvider } from './connect.js'
 import type { PayMethod, PayMethodInput } from './pay-methods.js'
@@ -162,6 +163,10 @@ export const SettingsSchema = z.object({
     .optional(),
   /** 사용 통계 보내기 (숫자만, apps/daemon/src/stats.ts). 비어 있으면 아직 안 물어봤다 */
   usageStats: z.boolean().optional(),
+  /** UI language of the desktop app and the language Dool2 answers in by default (ADR 0029). Empty: follow the device */
+  language: z.enum(LANGS).optional(),
+  /** Region for services and local features (ADR 0029). Empty: guessed from the device */
+  region: z.enum(REGIONS).optional(),
   /** 연결을 마친 서비스 (skills/<id>/connect.json의 id → 연결한 시각) ADR 0014 */
   connections: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/), z.string().max(40)).optional(),
 })

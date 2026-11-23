@@ -45,6 +45,7 @@ import {
   setRich,
   withLogo,
 } from './dom.js'
+import { lang, syncLang } from './lang.js'
 import type { LibraryTab } from './life-model.js'
 import { dayLabel, isFeedRoutine, plain, titleFrom } from './life-model.js'
 import {
@@ -59,6 +60,7 @@ import {
   memoryTab,
   scheduleTab,
 } from './life-views.js'
+import { statsAsk } from './locales/stats-ask.js'
 import { type Page, Pager } from './paging.js'
 import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
 import { runSetup, type SettingsTab, type SetupOptions } from './setup.js'
@@ -113,20 +115,10 @@ function renderStatsAsk(settings: Settings) {
     box.remove()
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ usageStats: v }) }).catch(() => {})
   }
+  const m = statsAsk(lang)
   const actions = el('div', 'ask-actions')
-  actions.append(
-    button('btn-small', answer(true), '보낼게요'),
-    button('btn-ghost', answer(false), '괜찮아요'),
-  )
-  box.append(
-    el('strong', 'ask-title', '사용 통계를 보내도 될까요?'),
-    el(
-      'span',
-      'notice-text',
-      '숫자만 보내요(부탁 몇 개를 끝냈는지 등). 대화·사이트 이름은 안 보내고, 설정에서 언제든 꺼요.',
-    ),
-    actions,
-  )
+  actions.append(button('btn-small', answer(true), m.yes), button('btn-ghost', answer(false), m.no))
+  box.append(el('strong', 'ask-title', m.title), el('span', 'notice-text', m.body), actions)
   $('notice').after(box)
 }
 
@@ -2651,8 +2643,10 @@ async function main() {
   state.panelOpen = saved ? saved === 'open' : window.innerWidth >= 1180
   $('app').classList.toggle('panel-open', state.panelOpen)
 
-  const [{ settings }] = await Promise.all([
-    api<{ settings: Settings }>('/api/settings'),
+  // Language first (ADR 0029): every load below may render text
+  const { settings } = await api<{ settings: Settings }>('/api/settings')
+  syncLang(settings.language)
+  await Promise.all([
     loadAgents(),
     loadConversation(),
     loadWaiting().catch(() => {}),

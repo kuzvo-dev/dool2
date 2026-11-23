@@ -34,6 +34,21 @@ export function resolveLang(preferred: string | readonly (string | undefined)[] 
   return FALLBACK_LANG
 }
 
+/**
+ * Whether apps start in the device language. Off while screens are being moved to locale files, so nobody sees
+ * a half-English app; turned on when every screen has English copy (ADR 0029).
+ */
+export const UI_FOLLOWS_DEVICE = false
+
+/** First UI language for an app: the saved choice, else the device language (once enabled), else Korean. */
+export function initialLang(
+  saved: unknown,
+  preferred: string | readonly (string | undefined)[] | undefined,
+): Lang {
+  if (isLang(saved)) return saved
+  return UI_FOLLOWS_DEVICE ? resolveLang(preferred) : 'ko'
+}
+
 const ZONE_REGION: Record<string, Region> = {
   'Asia/Seoul': 'KR',
   'Asia/Tokyo': 'JP',
