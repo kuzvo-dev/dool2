@@ -1,8 +1,9 @@
 import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol'
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
+import { buildCarry } from './conversation.js'
 import type { AgentRuntime, TurnInput } from './runtime.js'
-import { fileApprovalWhat, ThreadService, WorkLog } from './threads.js'
+import { fileApprovalWhat, looksLikeSummary, serviceAct, ThreadService, WorkLog } from './threads.js'
 
 describe('PC 파일·PC 승인 카드 (ADR 0024)', () => {
   it('승인을 요청하는 입력에만 카드 글을 만든다', () => {
@@ -16,6 +17,36 @@ describe('PC 파일·PC 승인 카드 (ADR 0024)', () => {
     expect(fileApprovalWhat('pc_screen', { action: 'lock' })).toBe('이 PC 화면 잠그기')
     expect(fileApprovalWhat('pc_screen', { action: 'off' })).toBeUndefined()
     expect(fileApprovalWhat('file_move', { moves: [{}, {}] })).toBe('파일 2개 옮기기')
+  })
+
+  it('영어로도 카드 글을 만든다', () => {
+    expect(fileApprovalWhat('file_move', { moves: [{}, {}] }, 'en')).toBe('Move 2 files')
+    expect(fileApprovalWhat('pc_screen', { action: 'sleep' }, 'en')).toBe('Put this PC to sleep')
+  })
+})
+
+describe('언어', () => {
+  it('서비스 도구 일하는 중 글은 언어마다', () => {
+    const title = () => '극장 찾기'
+    expect(serviceAct('cgv_theaters', {}, title)).toBe('극장 찾기 중')
+    expect(serviceAct('cgv_movies', {}, () => '상영 중인 영화')).toBe('상영 중인 영화 보는 중')
+    expect(serviceAct('x_find', {}, () => 'Find theaters', 'en')).toBe('Find theaters…')
+  })
+
+  it('요약은 글머리표가 있으면 어느 말이든 받는다', () => {
+    expect(looksLikeSummary('- 국밥을 좋아함')).toBe(true)
+    expect(looksLikeSummary('- Likes gukbap')).toBe(true)
+    expect(looksLikeSummary('No response requested.')).toBe(false)
+  })
+
+  it('예전 한국어 머리말로 저장된 넘겨받은 내용도 떼고 잇는다', () => {
+    const carry = buildCarry(
+      { carry: '[앞 대화에서 이어져요] 예전 안내\n요약:\n- 국밥' } as never,
+      undefined,
+      [],
+    )
+    expect(carry).toContain('Earlier conversation:\n요약:\n- 국밥')
+    expect(carry).not.toContain('예전 안내')
   })
 })
 

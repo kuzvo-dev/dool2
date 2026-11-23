@@ -16,6 +16,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dool2/i18n": "workspace:*",
     "@dool2/protocol": "workspace:*",
     "@dool2/store": "workspace:*"
   }

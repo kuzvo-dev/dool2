@@ -1,56 +1,57 @@
-// 두리의 생활 도구: 목표·알아서 하는 일, 보관함, 기억, 피드. 실제 저장은 두리 본체가 한다.
+// Dool2 life tools: goals and scheduled runs, Library, memory, feed. The Dool2 daemon does the actual storing.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { BrowserClient } from './browser.js'
+import { GOAL_CATEGORIES } from './region/kr/goals.js'
 
 const time = z
   .string()
   .regex(/^([01]?\d|2[0-3]):[0-5]\d$/)
-  .describe('한국 시간 HH:MM (예: "07:30")')
+  .describe('Korea time HH:MM (e.g. "07:30")')
 
-/** 언제 칸 (goal_create·goal_update가 같이 쓴다) */
+/** "When" fields (shared by goal_create and goal_update) */
 const whenFields = {
   schedule: z
     .enum(['daily', 'weekly', 'monthly', 'once', 'every'])
     .optional()
     .describe(
-      'daily=매일, weekly=요일마다(여러 요일), monthly=매달 며칠, once=한 번, every=N분마다. 정한 때가 없는 목표면 생략',
+      'daily = every day, weekly = on weekdays (several allowed), monthly = on a day of the month, once = one time, every = every N minutes. Omit for goals without a set time',
     ),
-  time: time.optional().describe('daily·weekly·monthly일 때 한국 시간 HH:MM (예: "09:00")'),
+  time: time.optional().describe('For daily, weekly, monthly: Korea time HH:MM (e.g. "09:00")'),
   days: z
     .array(z.number().int().min(0).max(6))
     .optional()
-    .describe('weekly일 때 요일 여러 개 (0=일 … 6=토, 예: 월·수·금 = [1,3,5])'),
+    .describe('For weekly: weekdays (0 = Sun … 6 = Sat, e.g. Mon, Wed, Fri = [1,3,5])'),
   day: z
     .number()
     .int()
     .min(1)
     .max(31)
     .optional()
-    .describe('monthly일 때 날짜 1~31. 말일은 31 (그 날이 없는 달은 그 달 마지막 날)'),
+    .describe('For monthly: day 1-31. Use 31 for the last day (months without that day use their last day)'),
   at: z
     .string()
     .optional()
-    .describe('once일 때 ISO 시각 (한국 시간 +09:00 포함, 예: "2026-11-20T10:00:00+09:00")'),
-  minutes: z.number().int().min(15).optional().describe('every일 때 간격(분, 15 이상)'),
+    .describe('For once: ISO time (with Korea time +09:00, e.g. "2026-11-20T10:00:00+09:00")'),
+  minutes: z.number().int().min(15).optional().describe('For every: interval in minutes (15 or more)'),
   until: z
     .string()
     .max(120)
     .optional()
     .describe(
-      '끝나는 때: 날짜 "2026-12-31"(그날까지 하고 스스로 꺼짐) 또는 조건 "취소표를 잡으면"(그때 두리가 이뤄졌다고 하면 꺼짐). 지켜보기·기간 있는 일은 꼭. 비우면 지울 때까지',
+      'When it ends: a date "2026-12-31" (runs through that day, then turns itself off) or a condition, written in the user\'s language, like "once a cancelled ticket is grabbed" (turns off when Dool2 reports it was met). Required for watches and time-limited tasks. Empty = until deleted',
     ),
   notify: z
     .enum(['always', 'when_found'])
     .optional()
     .describe(
-      'always=매번 알림(기본, 브리핑·정기 알림) · when_found=조건에 맞을 때만 알리고 아니면 조용히(피드·폰 알림 없음): "넘으면", "나오면", "뜨면" 같은 지켜보기',
+      'always = notify every time (default; briefings, regular reminders) · when_found = notify only when the condition is met, otherwise stay quiet (no feed or phone notification): watches like "if it goes over", "when it shows up", "when it is posted"',
     ),
   tell_at: z
     .string()
     .optional()
     .describe(
-      '폰 알림만 미룰 한국 시각 HH:MM. 일은 정한 때 하고 결과는 대화에 바로 남기되, 폰 알림은 이 시각에 (예: "자는 동안 해 두고 아침에 알려 줘" → once 새벽 3시 + tell_at "07:00"). goal_update에서 ""이면 지움',
+      'Korea time HH:MM to delay only the phone notification to. The task runs at its set time and the result goes into the chat right away, but the phone notification comes at this time (e.g. "do it while I sleep and tell me in the morning" → once at 3 AM + tell_at "07:00"). In goal_update, "" clears it',
     ),
 }
 
@@ -62,44 +63,49 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'goal_create',
     {
-      title: '목표·알아서 할 일 만들기',
+      title: 'Create a goal or scheduled task',
       description:
-        '사용자가 정해진 때 두리가 알아서 할 일(알림, 아침 브리핑, 매주 요약, 가격·취소표 지켜보기)이나 장기 목표(운동, 저축, 공부)를 말하면 만든다. ' +
-        '알림도 이것으로 만든다. 예: "내일 10시에 치과 전화 알려 줘" → once · "매달 1일에 심장사상충 약 알려 줘" → monthly day 1 (매일 돌며 날짜를 보게 하지 않는다) · ' +
-        '"매달 말일에 카드값 확인" → monthly day 31 · "월·수·금 7시" → weekly days [1,3,5] · ' +
-        '"취소표 나오면 알려 줘" → every나 daily + notify "when_found" + until(공연·출발 날짜) · "이번 달 쇼핑 30만 원 넘으면 경고" → daily + notify "when_found" + until 그달 말일 · ' +
-        '"12월 31일까지 매일" → until "2026-12-31" · ' +
-        '"엔진오일 다음 교체 때 알려 줘" → 마지막 교체일을 prompt에 적고 monthly + when_found(갈 때가 됐으면) + until "교체했다고 하면" · ' +
-        '"날짜 미정인 공지 뜨면 알려 줘" → daily + when_found + until "공지가 떠서 알리면". ' +
-        '목표는 category와 plan(3~6단계)을 함께 주고, 체크인 때를 schedule로 준다. ' +
-        '지켜보기를 만들기 전에 지금 것을 먼저 찾아 답에 보여 준다: 소식·글이면 목록(show_list, 줄마다 원문 링크, 오늘 것이 적으면 이번 주로 넓혀서), 모집·조건이면 "지금 상황"(지난 모집 때·예정 발표, 내 정보로 본 대상 여부) 한두 줄과 출처 링크. "아무것도 없었어요"로만 끝내지 않는다. 사용자가 같이 봐 달라고 한 곳(예: 구청 공지)은 묻지 말고 지켜보기 prompt에도 넣는다. ' +
-        '결과의 "정한 것"(언제 하고·언제 끝나고·언제 알리는지)을 사용자에게 그대로 말해 확인한다. 빠진 게 있다고 오면 사용자에게 묻거나 goal_update로 채운다. 지난 시각이면 만들지 말고 다른 시각을 물어본다.',
+        'Creates one when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
+        'Reminders are made with this too. Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
+        '"check my card bill on the last day of each month" → monthly day 31 · "Mon, Wed, Fri at 7" → weekly days [1,3,5] · ' +
+        '"tell me when a cancelled ticket shows up" → every or daily + notify "when_found" + until (show or departure date) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
+        '"every day until December 31" → until "2026-12-31" · ' +
+        '"tell me when the engine oil is due next" → write the last change date in prompt, monthly + when_found (when it is due) + until "when the user says it was changed" · ' +
+        '"tell me when the notice with no date yet is posted" → daily + when_found + until "when the notice is posted and reported". ' +
+        'For goals give category and plan (3-6 steps) together, and the check-in time as schedule. ' +
+        'Before creating a watch, look up what is there now and show it in the answer: for news or posts a list (show_list, with the original link on each row; if there is little from today, widen to this week); for recruitments or conditions one or two lines on the current situation (when the last round was, expected announcements, whether the user qualifies based on my info) with source links. Never end with just "there was nothing". Places the user asked to watch as well (e.g. district office notices) go into the watch prompt without asking. ' +
+        'Tell the user the schedule the result reports (when it runs, when it ends, when it notifies) as is, to confirm. If the result says something is missing, ask the user or fill it with goal_update. If the time is already past, do not create it; ask for another time. ' +
+        "Write title, prompt, plan and until conditions in the user's language.",
       inputSchema: {
         title: z
           .string()
           .max(60)
-          .describe('짧은 이름 (예: "아침 브리핑", "매달 휴대폰 요금 확인", "주 3회 운동")'),
+          .describe(
+            'Short name (e.g. "Morning briefing", "Monthly phone bill check", "Exercise 3 times a week")',
+          ),
         prompt: z
           .string()
           .max(1000)
           .describe(
-            '그때 두리가 할 일을 두리에게 하는 말로 (예: "오늘 날씨와 일정, 오는 택배를 짧게 정리해 줘", "쿠팡·네이버 이번 달 쇼핑 합계를 보고 30만 원 넘었으면 알려 줘"). 조건은 여기에 쓴다',
+            'What Dool2 should do at that time, written as a request to Dool2 (e.g. "Briefly sum up today\'s weather, my schedule and incoming parcels", "Check this month\'s shopping total on Coupang and Naver and tell me if it is over 300,000 won"). Conditions go here',
           ),
         ...whenFields,
         category: z
-          .enum(['건강', '관계', '돈', '일', '관심사', '생산성', '기타'])
+          .enum(GOAL_CATEGORIES)
           .optional()
-          .describe('장기 목표일 때만'),
-        plan: z.array(z.string().max(120)).max(12).optional().describe('목표의 계획 단계'),
+          .describe(
+            'Only for long-term goals. Values in order mean: health, relationships, money, work, interests, productivity, other',
+          ),
+        plan: z.array(z.string().max(120)).max(12).optional().describe('Plan steps for the goal'),
         target: z
           .enum(['chat', 'feed'])
           .optional()
-          .describe('결과를 대화(기본)에 말할지, 피드에 글로 올릴지'),
+          .describe('Whether to say the result in the chat (default) or post it to the feed'),
         preview: z
           .boolean()
           .optional()
           .describe(
-            '만들고 나서 같은 일을 지금 한 번 해 보여 줄지. 브리핑·요약·정리처럼 받을 결과의 모양이 중요한 일은 true (첫 결과를 기다리지 않고 바로 확인). 단순 알림·지켜보기는 생략',
+            'Whether to run it once right now after creating it. true for tasks where the shape of the result matters, like briefings, summaries and digests (the user checks it right away instead of waiting for the first run). Omit for simple reminders and watches',
           ),
       },
     },
@@ -108,9 +114,9 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'goal_list',
     {
-      title: '목표·예정 보기',
+      title: 'View goals and schedules',
       description:
-        '만들어 둔 목표와 알아서 하는 일, 다음 시각, 지난 결과를 본다. "무슨 알림 예약했지?"에 쓴다. 전에 만든 예약이 "이미 있다"고 말하거나 거기에 기대기 전에도 이것으로 아직 있는지 본다(사용자가 화면에서 지웠을 수 있다).',
+        'Shows the goals and scheduled tasks, their next run times and past results. Use for "what reminders did I set?". Also check with this that a schedule still exists before saying it "already exists" or relying on it (the user may have deleted it on screen).',
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -119,19 +125,23 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'goal_update',
     {
-      title: '목표 고치기',
+      title: 'Update a goal',
       description:
-        '목표의 계획 단계를 새로 쓰거나(plan), 끝낸 단계를 표시하거나(done: 단계 번호, 0부터), 진행 기록을 남긴다(log). ' +
-        '알림·지켜보기의 할 일(prompt), 언제(schedule과 그 칸 — 시각만 바꿀 땐 time만 줘도 나머지는 그대로), 끝나는 때(until, 빈 글 ""이면 지움), 알리기(notify)도 고친다 — goal_create 결과에 빠진 게 있다고 오면 이것으로 채운다. ' +
-        '끝나는 조건이 이뤄졌다고 사용자가 말하면(예: "엔진오일 갈았어") goal_delete로 지운다.',
+        "Rewrites a goal's plan steps (plan), marks finished steps (done: step numbers, from 0), or records progress (log). " +
+        'Also changes a reminder\'s or watch\'s task (prompt), when (schedule and its fields; to change only the time, give just time and the rest stays), end (until; empty string "" clears it) and notifying (notify). When the goal_create result says something is missing, fill it with this. ' +
+        'When the user says the end condition was met (e.g. "I changed the engine oil"), delete it with goal_delete.',
       inputSchema: {
-        id: z.string().max(40).describe('goal_list의 id (앞 8자도 됨)'),
+        id: z.string().max(40).describe('id from goal_list (the first 8 characters work too)'),
         title: z.string().max(60).optional(),
-        prompt: z.string().max(1000).optional().describe('그때 두리가 할 일을 새로 쓸 때'),
+        prompt: z.string().max(1000).optional().describe('When rewriting what Dool2 should do at that time'),
         ...whenFields,
         plan: z.array(z.string().max(120)).max(12).optional(),
         done: z.array(z.number().int().min(0)).optional(),
-        log: z.string().max(300).optional().describe('이번 체크인에서 알게 된 진행 상황 한두 문장'),
+        log: z
+          .string()
+          .max(300)
+          .optional()
+          .describe("One or two sentences on progress learned in this check-in, in the user's language"),
       },
     },
     call('goal_update'),
@@ -139,25 +149,25 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'goal_delete',
     {
-      title: '목표·예정 지우기',
-      description: '사용자가 그만하라고 한 목표나 알림을 지운다.',
-      inputSchema: { id: z.string().max(40).describe('goal_list의 id (앞 8자도 됨)') },
+      title: 'Delete a goal or schedule',
+      description: 'Deletes a goal or reminder the user wants to stop.',
+      inputSchema: { id: z.string().max(40).describe('id from goal_list (the first 8 characters work too)') },
     },
     call('goal_delete'),
   )
   server.registerTool(
     'library_save',
     {
-      title: '보관함에 남기기',
+      title: 'Save to the Library',
       description:
-        '사용자에게 다시 쓸 만한 결과를 보관함에 남긴다: 정리한 글·비교표(note), 찾은 링크(link), 상품(product, 가격 포함), 장소(place). ' +
-        '여러 상품을 비교했거나, 일정·목록을 만들었거나, 사용자가 "저장해 둬"라고 하면 쓴다.',
+        'Saves results the user may reuse to the Library: organized notes and comparison tables (note), links found (link), products (product, with price), places (place). ' +
+        'Use after comparing several products, making a schedule or list, or when the user says "save this". Write title and body in the user\'s language.',
       inputSchema: {
         kind: z.enum(['note', 'link', 'product', 'place', 'file']),
         title: z.string().max(80),
-        body: z.string().max(4000).describe('내용 (마크다운 목록·굵게 가능)'),
+        body: z.string().max(4000).describe('Content (Markdown lists and bold allowed)'),
         url: z.string().max(500).optional(),
-        price: z.string().max(40).optional().describe('상품 가격 (예: "15,900원")'),
+        price: z.string().max(40).optional().describe('Product price (e.g. "₩15,900")'),
       },
     },
     call('library_save'),
@@ -165,30 +175,34 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'library_find',
     {
-      title: '보관함에서 꺼내 보기',
+      title: 'Look in the Library',
       description:
-        '사용자가 보관함에 남겨 둔 것을 꺼내 본다. "저장해 둔 ○○ 보여 줘", "보관함에 있는 거", "찜해 둔 거", "아까·지난번에 저장한 거"처럼 ' +
-        '저장한 것을 말하면 짐작하거나 "볼 수 없어요"라고 하지 말고 이것으로 먼저 찾는다. ' +
-        '사용자가 앱 보관함에서 보는 것과 같은 칸(종류·제목·메모·링크·가격·저장한 날)이 온다. 대화에서 본 것이면 conversation_search.',
+        'Looks up what the user saved in the Library. When the user mentions saved things ("show me the ○○ I saved", "what\'s in my Library", "the ones I bookmarked", "what I saved earlier or last time"), ' +
+        'search with this first instead of guessing or saying you cannot see it. ' +
+        "Returns the same fields the user sees in the app's Library (kind, title, note, link, price, date saved). For things seen in chat, use conversation_search.",
       inputSchema: {
         query: z
           .string()
           .max(100)
           .optional()
           .describe(
-            '찾을 낱말 1~3개 (예: "성수", "귤", "부산 여행"). 제목·메모·링크에서 찾는다. 비우면 최근 것부터',
+            '1-3 words to search, in the language the items were saved in (e.g. "Seongsu", "tangerines", "Busan trip"). Searches titles, notes and links. Empty = most recent first',
           ),
         kind: z
           .enum(['note', 'link', 'product', 'place', 'file'])
           .optional()
-          .describe('종류만 골라 보기: note 정리 · link 링크 · product 상품 · place 장소 · file 사진·파일'),
-        limit: z.number().int().min(1).max(20).optional().describe('최대 몇 개 (기본 10)'),
+          .describe(
+            'Only this kind: note = notes · link = links · product = products · place = places · file = photos and files',
+          ),
+        limit: z.number().int().min(1).max(20).optional().describe('At most how many (default 10)'),
         skip: z
           .number()
           .int()
           .min(0)
           .optional()
-          .describe('앞에서 건너뛸 개수: 결과에 "더 있어요 … skip: N"이 오면 그대로 넣어 이어서 본다'),
+          .describe(
+            'How many to skip from the start: when the result says there are more with "skip: N", pass that value to continue',
+          ),
       },
       annotations: { readOnlyHint: true },
     },
@@ -197,13 +211,18 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'memory_save',
     {
-      title: '기억하기',
+      title: 'Remember',
       description:
-        '사용자에 대해 앞으로도 도움이 될 사실을 기억한다: 이름·호칭, 사는 동네, 가족, 자주 가는 곳, 좋아하는 것, 쓰는 서비스, 일정 습관. ' +
-        '"우리 동네·집·회사·애 학교"가 어디인지처럼 다음에 또 물어야 할 것을 사용자가 알려 주면, 하던 일과 함께 바로 기억한다(다음 "근처 ○○" 부탁에서 다시 묻지 않게). ' +
-        '한 번에 한 문장. 비밀번호·카드 번호·주민번호 같은 민감한 값은 절대 기억하지 않는다.',
+        'Remembers facts about the user that will help later: name and how to address them, neighborhood, family, frequent places, likes, services used, schedule habits. ' +
+        'When the user tells you something you would otherwise have to ask again, like where "my neighborhood, home, office, kid\'s school" is, remember it right away along with the current task (so the next "near me" request does not ask again). ' +
+        "One sentence at a time, in the user's language. Never remember sensitive values like passwords, card numbers or resident registration numbers.",
       inputSchema: {
-        text: z.string().max(200).describe('예: "아이가 둘 (초3 딸, 6살 아들)", "출퇴근은 동탄역에서 SRT"'),
+        text: z
+          .string()
+          .max(200)
+          .describe(
+            'E.g. "Two kids (daughter in 3rd grade, 6-year-old son)", "Commutes by SRT from Dongtan Station"',
+          ),
       },
     },
     call('memory_save'),
@@ -211,30 +230,49 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'know_save',
     {
-      title: '알아 둔 것 남기기',
+      title: 'Record what you learned',
       description:
-        '로그인해서 본 내 정보 화면의 사실(fact)과, 두리가 하거나 확인한 일(done: 신청·응모·결제·주문·예약·배송·가입·구독)을 한 줄로 남긴다. ' +
-        '다음 부탁에서 같은 인증을 다시 받거나 이미 아는 걸 묻지 않게: 예) 홈택스 2025년 귀속 총급여·근무처, 혜택알리미 대상 목록, 보험 만기, K-패스 가입, 체험단 신청(발표일), 숙소 예약(무료취소 마감). ' +
-        '어디서(source)·기준 시점(basis)을 꼭 붙이고, 한 일·만기는 다음에 챙길 때(next: 발표·도착·마감·만기)를 넣으면 먼저 챙기기가 그때 상태를 확인해 알린다 — 같은 때 알림 목표(goal_create)를 따로 만들지 않는다(두 번 울린다). ' +
-        '같은 이름이면 새 값으로 바뀐다. 주민번호·계좌번호·카드번호·비밀번호는 넣지 않는다(금고·내 정보가 맡는다). 다른 사람 정보는 넣지 않는다.',
+        "Records in one line facts seen on the user's own pages after logging in (fact), and things Dool2 did or confirmed (done: applications, entries, payments, orders, bookings, deliveries, sign-ups, subscriptions). " +
+        'So the next request does not need the same verification again or ask what is already known. E.g. total salary and employer for tax year 2025 on Hometax, the list of benefits the user qualifies for, insurance expiry, K-Pass sign-up, a product-review campaign application (announcement date), a lodging booking (free cancellation deadline). ' +
+        'Always add where (source) and as-of point (basis). For things done and expiries, add when to follow up (next: announcement, arrival, deadline, expiry) and the proactive check will look at the status then and notify; do not also create a reminder goal (goal_create) for the same time (it would ring twice). ' +
+        "The same title gets replaced with the new value. Never include resident registration, bank account or card numbers or passwords (the vault and my info handle those). Never include other people's information. Write title and value in the user's language.",
       inputSchema: {
-        kind: z.enum(['fact', 'done']).describe('fact=본 사실 · done=두리가 하거나 확인한 일'),
-        title: z.string().max(80).describe('무엇 (예: "2025년 귀속 총급여", "레뷰 센티크 체험단 신청")'),
-        value: z.string().max(200).describe('요약 값 (예: "약 7,750만 원(근무처 ○○)", "신청함, 발표 11/24")'),
-        source: z.string().max(40).optional().describe('어디서 봤는지 (예: "홈택스", "레뷰")'),
-        url: z.string().max(500).optional().describe('그 화면 주소 (https)'),
+        kind: z
+          .enum(['fact', 'done'])
+          .describe('fact = a fact seen · done = something Dool2 did or confirmed'),
+        title: z
+          .string()
+          .max(80)
+          .describe('What (e.g. "Total salary, tax year 2025", "Revu Centique review campaign application")'),
+        value: z
+          .string()
+          .max(200)
+          .describe(
+            'Summary value (e.g. "about 77.5 million won (employer ○○)", "Applied, announced 11/24")',
+          ),
+        source: z.string().max(40).optional().describe('Where it was seen (e.g. "Hometax", "Revu")'),
+        url: z.string().max(500).optional().describe('Address of that page (https)'),
         basis: z
           .string()
           .max(40)
           .optional()
-          .describe('기준 시점 (예: "2025년 귀속", "11월 실적", "조회한 날")'),
-        next: z.string().max(30).optional().describe('다음에 챙길 때 (YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM)'),
+          .describe('As-of point (e.g. "tax year 2025", "November spending", "day looked up")'),
+        next: z
+          .string()
+          .max(30)
+          .optional()
+          .describe('When to follow up next (YYYY-MM-DD or YYYY-MM-DDTHH:MM)'),
         next_what: z
           .string()
           .max(80)
           .optional()
-          .describe('그때 할 일 (예: "당첨 발표 확인", "무료취소 마감 알리기")'),
-        state: z.enum(['open', 'done']).optional().describe('한 일: 진행 중(기본)·끝남'),
+          .describe(
+            'What to do then (e.g. "Check the winner announcement", "Remind about the free cancellation deadline")',
+          ),
+        state: z
+          .enum(['open', 'done'])
+          .optional()
+          .describe('For things done: open = in progress (default), done = finished'),
       },
     },
     call('know_save'),
@@ -242,17 +280,19 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'know_find',
     {
-      title: '알아 둔 것 찾기',
+      title: 'Find what you learned',
       description:
-        '전에 조회해서 알아 둔 사실과 한 일 장부를 찾는다. 공공·금융 조회(소득·세금·혜택·보험)나 신청 여부를 다시 인증받기 전에 먼저 본다. ' +
-        '결과의 본 날·기준 시점을 오늘과 견줘 지금도 쓸 수 있는지 네가 판단한다: 연도 자료는 다음 해 자료가 나오면 낡고, 잔액·목록은 며칠, 이번 달 실적은 하루면 낡는다. ' +
-        '쓸 만하면 인증 없이 "11/20 홈택스 기준"처럼 날짜와 출처를 밝혀 답하고, 신청·결제처럼 결정이 걸리면 다시 조회한다.',
+        'Searches facts learned from earlier lookups and the log of things done. Check this before verifying again for public or financial lookups (income, taxes, benefits, insurance) or whether something was applied for. ' +
+        "Compare the date seen and as-of point in the result with today and judge whether it is still usable: yearly data goes stale when the next year's data is out, balances and lists in a few days, this month's spending in a day. " +
+        'If usable, answer without verification, stating the date and source (like "as of 11/20 on Hometax"); when a decision depends on it, like applying or paying, look it up again.',
       inputSchema: {
         query: z
           .string()
           .max(60)
           .optional()
-          .describe('찾을 말 (예: "총급여", "레뷰", "보험"). 비우면 최근 것'),
+          .describe(
+            'Words to search, in the language they were saved in (e.g. "total salary", "Revu", "insurance"). Empty = most recent',
+          ),
         kind: z.enum(['fact', 'done']).optional(),
       },
       annotations: { readOnlyHint: true },
@@ -262,15 +302,19 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'know_update',
     {
-      title: '한 일 장부 고치기',
+      title: 'Update the log of things done',
       description:
-        '한 일의 상태가 바뀌면 고친다: 취소·해지·환불·배송 완료·발표가 나왔으면 state "done"(지우지 않고 끝남으로), 새로 챙길 때가 생기면 next. 값이 바뀐 사실도 value로 고친다.',
+        'Updates an entry when its status changes: after a cancellation, termination, refund, completed delivery or announcement, set state "done" (marked finished, not deleted); when there is a new time to follow up, set next. Facts whose value changed are updated with value.',
       inputSchema: {
-        id: z.string().max(40).optional().describe('know_find 결과의 id'),
-        title: z.string().max(80).optional().describe('id를 모르면 이름 일부'),
+        id: z.string().max(40).optional().describe('id from the know_find result'),
+        title: z.string().max(80).optional().describe('Part of the title, if the id is unknown'),
         value: z.string().max(200).optional(),
         state: z.enum(['open', 'done']).optional(),
-        next: z.string().max(30).optional().describe('다음에 챙길 때. 비우면("") 더 챙기지 않음'),
+        next: z
+          .string()
+          .max(30)
+          .optional()
+          .describe('When to follow up next. Empty ("") = no more follow-ups'),
         next_what: z.string().max(80).optional(),
       },
     },
@@ -279,18 +323,18 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'memory_forget',
     {
-      title: '잊기',
-      description: '사용자가 잊어 달라고 하거나 틀린 기억을 지운다.',
-      inputSchema: { text: z.string().max(200).describe('지울 기억의 내용 일부나 id') },
+      title: 'Forget',
+      description: 'Deletes a memory the user asks you to forget, or one that is wrong.',
+      inputSchema: { text: z.string().max(200).describe('Part of the memory to delete, or its id') },
     },
     call('memory_forget'),
   )
   server.registerTool(
     'idea_suggest',
     {
-      title: '맞춤 아이디어 올리기',
+      title: 'Post personalized ideas',
       description:
-        '사용자에게 지금 해 주면 좋을 일 3~6개를 아이디어 탭 맨 위에 올린다. 기억·목표·연결한 서비스·최근 대화를 보고, 실제로 두리가 할 수 있는 구체적인 일만 고른다.',
+        "Puts 3-6 things worth doing for the user now at the top of the Ideas tab. Based on memory, goals, connected services and recent chats, pick only concrete tasks Dool2 can actually do. Write them in the user's language.",
       inputSchema: {
         ideas: z
           .array(
@@ -298,8 +342,15 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
               text: z
                 .string()
                 .max(120)
-                .describe('누르면 그대로 보낼 부탁 (예: "이번 주 금요일 저녁 부산 가는 SRT 자리 찾아 줘")'),
-              why: z.string().max(120).describe('왜 지금 이게 좋은지 한 줄 (예: "주말마다 부산에 가셨어요")'),
+                .describe(
+                  'Request sent as is when tapped (e.g. "Find SRT seats to Busan for this Friday evening")',
+                ),
+              why: z
+                .string()
+                .max(120)
+                .describe(
+                  'One line on why this is good now (e.g. "You have been going to Busan every weekend")',
+                ),
             }),
           )
           .min(1)
@@ -311,10 +362,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'photo_view',
     {
-      title: '보낸 사진 보기',
+      title: 'View a sent photo',
       description:
-        '사용자 말 끝에 "[사진: 파일이름.jpg]"가 있으면 그 사진을 본다. 영수증·캡처·상품 사진을 읽고 정리할 때 쓴다.',
-      inputSchema: { name: z.string().max(80).describe('사진 파일 이름 (예: 2026-11-16T01-30-00-000Z.jpg)') },
+        "When the user's message ends with a photo marker in brackets with a file name (like [photo: filename.jpg], with the label in the user's language), view that photo. Use to read and organize receipts, screenshots and product photos.",
+      inputSchema: {
+        name: z.string().max(80).describe('Photo file name (e.g. 2026-11-16T01-30-00-000Z.jpg)'),
+      },
       annotations: { readOnlyHint: true },
     },
     call('photo_view'),
@@ -322,14 +375,17 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'connect_ask',
     {
-      title: '서비스 연결 카드 띄우기',
+      title: 'Show a service connect card',
       description:
-        '사용자가 "쿠팡 연결해 줘"라고 하거나, 하려는 일의 다음 단계에 로그인이 꼭 필요할 때(예약·주문·내 내역 보기) 쓴다. ' +
-        '찾기·비교·빈자리 보기처럼 로그인 없이 되는 일은 먼저 그 서비스에서 해서 후보를 보여 준 뒤, 고르면 그때 띄운다. ' +
-        '대화에 그 서비스의 [연결하기] 카드를 띄운다. 사용자가 카드에 아이디·비밀번호를 넣으면 두리 본체가 PC Chrome에서 대신 로그인하고, ' +
-        '끝나면 대화로 알림이 온다. 아이디·비밀번호를 대화로 묻거나 받지 않는다. 카드를 띄웠다고 짧게 말하고 기다린다.',
+        'Use when the user says something like "connect Coupang", or when the next step of the task really needs a login (booking, ordering, viewing their own history). ' +
+        'For things that work without login, like searching, comparing or checking availability, do them on that service first and show candidates; show the card once the user picks. ' +
+        "Shows that service's connect card in the chat. When the user enters the ID and password on the card, the Dool2 daemon logs in for them in Chrome on the PC, " +
+        'and a notification arrives in the chat when done. Never ask for or accept IDs or passwords in chat. Briefly say you showed the card, and wait.',
       inputSchema: {
-        service: z.string().max(60).describe('연결 카드 id나 서비스 이름 (예: "coupang", "쿠팡", "KT")'),
+        service: z
+          .string()
+          .max(60)
+          .describe('Connect card id or service name (e.g. "coupang", "Coupang", "KT")'),
       },
     },
     call('connect_ask'),
@@ -337,10 +393,10 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'profile_view',
     {
-      title: '내 정보 보기',
+      title: 'View my info',
       description:
-        '사용자가 넣어 둔 내 정보(이름·휴대폰·이메일·생년월일·주소·간편인증 앱 등)를 가린 값으로 본다. 생년월일은 연도까지 보여서 나이·대상 조건(청년·만 65세 이상 등)을 따질 수 있다. ' +
-        '"대상인지 봐 줘", "받을 수 있어?", "나 해당돼?"처럼 사용자 조건이 필요하면 출생연도·사는 곳을 묻기 전에 이것으로 먼저 본다. 없는 항목만 물어본다. 값을 칸에 넣을 때는 browser_fill_profile.',
+        'Views the my info the user entered (name, mobile, email, date of birth, address, simple authentication app, etc.) as masked values. The date of birth shows the year, so you can check age and eligibility (youth, 65 or older, etc.). ' +
+        'When the user\'s conditions matter ("am I eligible?", "can I get this?", "does this apply to me?"), check this first before asking for birth year or where they live. Ask only for missing items. To put values into fields, use browser_fill_profile.',
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -349,12 +405,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'pay_method_list',
     {
-      title: '내 결제 수단 보기',
+      title: 'View my payment methods',
       description:
-        '사용자가 폰 설정에 등록해 둔 결제 수단(카드·간편결제)을 순서대로 본다. 맨 위가 주 결제 수단. ' +
-        '"어떤 카드로 해야 이득이야?", "카드 할인까지 따져서 제일 싸게", "내 카드로 결제하면 얼마야?"처럼 쓰는 카드·결제 수단이 필요하면 ' +
-        '"쓰시는 카드를 알려 주세요"라고 묻기 전에 이것으로 먼저 본다. 카드사·별칭·끝 4자리 같은 가린 값만 온다(카드 번호·유효기간·CVC는 없다). ' +
-        '등록된 게 없으면 등록하는 길이 온다.',
+        'Views the payment methods (cards, mobile payment) the user registered in the phone settings, in order. The top one is the main payment method. ' +
+        'When the cards or payment methods the user has matter ("which card gets the best deal?", "cheapest including card discounts", "how much with my card?"), ' +
+        'check this first before asking which card they use. Only masked values come back, like card company, nickname and last 4 digits (no card number, expiry or CVC). ' +
+        'If none is registered, it returns how to register one.',
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
@@ -363,18 +419,18 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'vault_find',
     {
-      title: '금고에 저장된 로그인 보기',
+      title: 'View logins saved in the vault',
       description:
-        '두리 금고에 로그인(아이디·비밀번호)이 저장된 사이트를 본다. "이 사이트 비번 저장돼 있어?", "금고에 뭐 있어?", ' +
-        '"쿠팡 로그인 저장해 뒀나?"에 짐작하지 말고 이것으로 확인한다. 사이트·가린 아이디·마지막 사용일만 온다. 비밀번호는 절대 오지 않는다. ' +
-        '없으면 연결 카드(connect_ask)나 로그인 카드로 가는 길이 온다.',
+        'Shows the sites with a login (ID and password) saved in the Dool2 vault. For "is the password for this site saved?", "what\'s in the vault?", ' +
+        '"did I save my Coupang login?", check with this instead of guessing. Only the site, masked ID and last used date come back. Passwords never come back. ' +
+        'If there is none, it returns the way to a connect card (connect_ask) or a login card.',
       inputSchema: {
         site: z
           .string()
           .max(100)
           .optional()
           .describe(
-            '확인할 서비스 이름이나 주소 (예: "쿠팡", "coupang", "www.yes24.com"). 지금 보던 사이트면 그 주소. 비우면 저장된 사이트 전부',
+            'Service name or address to check (e.g. "Coupang", "coupang", "www.yes24.com"). For the site you were just on, its address. Empty = all saved sites',
           ),
       },
       annotations: { readOnlyHint: true },
@@ -384,25 +440,41 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'show_cards',
     {
-      title: '답에 카드 붙이기',
+      title: 'Attach cards to the answer',
       description:
-        '상품·숙소·식당·공연처럼 고를 후보를 보여 줄 때 답 아래에 사진 카드로 붙인다 (옆으로 넘겨 보고, 누르면 그 페이지, [이걸로]를 누르면 고른 게 대화로 온다). ' +
-        '서비스 도구 결과에 있는 사진(image)·주소(link)·가격을 그대로 넣는다. 지어낸 주소·사진은 넣지 않는다. 2~8장, 추천 순서대로. ' +
-        '카드를 붙였으면 답 글에는 같은 목록·표를 다시 늘어놓지 말고 고른 이유와 차이만 2~4문장으로 말한다. 카드는 답 글 아래에 보이니 글에서 가리킬 때는 "아래 카드"라고 한다.',
+        'When showing candidates to choose from, like products, lodging, restaurants or shows, attaches them below the answer as photo cards (swipe sideways; tapping opens the page; tapping the pick button sends the choice to the chat). ' +
+        'Use the photo (image), address (link) and price from the service tool result as is. Never include made-up addresses or photos. 2-8 cards, in recommended order. ' +
+        'Once attached, do not list the same items or table again in the answer text; say only why you picked them and how they differ, in 2-4 sentences. The cards show below the answer text, so refer to them as "the cards below". Write card text in the user\'s language.',
       inputSchema: {
         cards: z
           .array(
             z.object({
-              title: z.string().max(80).describe('이름 (예: "쿠진아트 스팀 에어프라이어 오븐 CSO-500KR")'),
-              image: z.string().max(800).optional().describe('사진 주소 (https, 도구 결과의 image 그대로)'),
-              price: z.string().max(40).optional().describe('가격 한 줄 (예: "350,100원", "1박 112,260원")'),
-              note: z.string().max(60).optional().describe('짧은 정보 (예: "★4.8 (1,203) · 내일 도착")'),
+              title: z.string().max(80).describe('Name (e.g. "Cuisinart Steam Air Fryer Oven CSO-500KR")'),
+              image: z
+                .string()
+                .max(800)
+                .optional()
+                .describe('Photo address (https, the image from the tool result as is)'),
+              price: z
+                .string()
+                .max(40)
+                .optional()
+                .describe('Price line (e.g. "₩350,100", "₩112,260 per night")'),
+              note: z
+                .string()
+                .max(60)
+                .optional()
+                .describe('Short info (e.g. "★4.8 (1,203) · arrives tomorrow")'),
               url: z
                 .string()
                 .max(800)
                 .optional()
-                .describe('눌렀을 때 열 주소 (https, 도구 결과의 link 그대로)'),
-              badge: z.string().max(12).optional().describe('눈에 띌 말 (예: "최저가", "추천")'),
+                .describe('Address to open on tap (https, the link from the tool result as is)'),
+              badge: z
+                .string()
+                .max(12)
+                .optional()
+                .describe('Eye-catching label (e.g. "Lowest price", "Recommended")'),
             }),
           )
           .min(1)
@@ -411,42 +483,60 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .enum(['square', 'portrait'])
           .optional()
           .describe(
-            '사진 모양: 영화 포스터·책 표지·공연 포스터는 portrait(세로), 그 밖(상품·숙소·식당)은 square',
+            'Photo shape: portrait for movie posters, book covers and show posters; square for everything else (products, lodging, restaurants)',
           ),
       },
     },
     call('show_cards'),
   )
-  // 결과 블록 (docs/design/system/components/ChatBlocks). 답 하나에 결과 블록 하나: 여러 번 부르면 마지막 것만 붙는다
+  // Result blocks (docs/design/system/components/ChatBlocks). One result block per answer: if called several times,
+  // only the last one is attached
   const blockAction = z.object({
-    label: z.string().max(16).describe('버튼 이름, 동사로 (예: "캘린더에 넣기", "담기", "예약 보기")'),
+    label: z
+      .string()
+      .max(16)
+      .describe(
+        'Button label, as a verb, in the user\'s language (e.g. "Add to calendar", "Add to cart", "View booking")',
+      ),
     ask: z
       .string()
       .max(300)
       .optional()
-      .describe('누르면 사용자 말로 두리에게 갈 부탁 (예: "이 일정 3개 캘린더에 넣어 줘")'),
-    url: z.string().max(800).optional().describe('ask 대신 열 주소 (https, 도구 결과 그대로)'),
+      .describe(
+        'Request sent to Dool2 in the user\'s words when tapped (e.g. "Add these 3 events to my calendar")',
+      ),
+    url: z
+      .string()
+      .max(800)
+      .optional()
+      .describe('Address to open instead of ask (https, as in the tool result)'),
   })
   server.registerTool(
     'show_list',
     {
-      title: '답에 목록 줄 붙이기',
+      title: 'Attach list rows to the answer',
       description:
-        '사진이 고르는 이유가 아닌 목록(매물·주문·메일·일정·마감·서류·공고·신청 내역)을 답 아래에 줄로 붙인다. ' +
-        '사진이 고르는 이유면(상품·숙소·식당·포스터) show_cards를 쓴다. 지금 영업·남은 자리처럼 줄마다 상태가 중요하면 이 목록(state·tone). 2줄 넘는 목록을 글로 늘어놓는 대신 쓴다. 목록은 답 글 아래에 보이니 글에서는 "아래 목록"이라고 한다. ' +
-        '앞머리(lead)로 모양을 고른다: date 날짜(일정·마감, date 칸 필수) · file 파일(받은 서류·만든 파일) · img 작은 사진 · logo 서비스 로고 · none. ' +
-        'pick: one이면 줄을 누르면 그걸로 고른 게 대화로 온다(하나 고르기). ' +
-        'pick: multi는 여러 개를 한 번에 고를 때(장보기 담기·선물 후보·받을 서류): 두리가 고른 건 on을 비우고(기본 체크), 애매한 건 on:false로 꺼 두고 sub에 이유. ' +
-        'amount(원)를 다 넣으면 버튼에 "3개 담기 · 25,860원"처럼 합계가 보인다. 버튼(action)은 목록 전체에 할 일 하나(예: "캘린더에 넣기"). ' +
-        '돈·연락·삭제는 버튼이 바로 하지 않는다 — 누르면 부탁이 오고, 그때 승인을 받는다. 지어낸 값은 넣지 않는다. ' +
-        '붙였으면 답 글에는 같은 목록을 되풀이하지 말고 이유·다음 할 일만 2~4문장으로.',
+        'Attaches a list as rows below the answer when photos are not the reason to choose (listings, orders, emails, events, deadlines, documents, announcements, application history). ' +
+        'When photos are the reason to choose (products, lodging, restaurants, posters), use show_cards. When each row\'s status matters, like open now or seats left, use this list (state, tone). Use it instead of writing out lists longer than 2 lines. The list shows below the answer text, so refer to it as "the list below". ' +
+        'Choose the look with the leading item (lead): date = date (events, deadlines; date field required) · file = file (received documents, created files) · img = small photo · logo = service logo · none. ' +
+        'With pick: one, tapping a row sends that choice to the chat (pick one). ' +
+        'pick: multi is for choosing several at once (adding groceries to a cart, gift candidates, documents to get): leave on empty for items Dool2 picked (checked by default), set on: false for uncertain ones and give the reason in sub. ' +
+        'If every row has amount (won), the button shows the total, like "Add 3 · ₩25,860". The button (action) is one action for the whole list (e.g. "Add to calendar"). ' +
+        'Money, contacting people and deleting are never done directly by the button: tapping sends a request, and approval is asked then. Never include made-up values. ' +
+        "Once attached, do not repeat the same list in the answer text; give only the reasons and next steps in 2-4 sentences. Write all row text in the user's language.",
       inputSchema: {
         title: z
           .string()
           .max(40)
           .optional()
-          .describe('머리 줄 (예: "공덕초 · 2026학년도", "컬리 · 내일 아침 7시 전 도착")'),
-        from: z.string().max(24).optional().describe('머리 오른쪽 작은 글: 출처·건수 (예: "46건", "홈택스")'),
+          .describe(
+            'Header line (e.g. "Gongdeok Elementary · 2026 school year", "Kurly · arrives before 7 AM tomorrow")',
+          ),
+        from: z
+          .string()
+          .max(24)
+          .optional()
+          .describe('Small text at the right of the header: source or count (e.g. "46 items", "Hometax")'),
         lead: z.enum(['img', 'date', 'file', 'logo', 'none']).optional(),
         pick: z.enum(['one', 'multi']).optional(),
         rows: z
@@ -457,24 +547,35 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
                 .string()
                 .max(60)
                 .optional()
-                .describe('작은 줄 (예: "21분 전 · 직거래 마포", "2개 · 작년 1개")'),
-              value: z.string().max(20).optional().describe('오른쪽 굵은 값 (예: "3만 원", "15,960원")'),
-              valueNote: z.string().max(24).optional().describe('값 아래 작은 글 (예: "7,980원 × 2")'),
+                .describe('Small line (e.g. "21 min ago · in-person deal in Mapo", "2 items · 1 last year")'),
+              value: z
+                .string()
+                .max(20)
+                .optional()
+                .describe('Bold value on the right (e.g. "₩30,000", "₩15,960")'),
+              valueNote: z
+                .string()
+                .max(24)
+                .optional()
+                .describe('Small text under the value (e.g. "₩7,980 × 2")'),
               state: z
                 .string()
                 .max(12)
                 .optional()
-                .describe('오른쪽 상태 글자 (예: "받음", "배송 중", "1/15쯤")'),
+                .describe('Status text on the right (e.g. "Received", "Shipping", "around 1/15")'),
               tone: z
                 .enum(['done', 'wait', 'stop'])
                 .optional()
-                .describe('상태 색: done 끝남 · wait 기다림·마감 · stop 멈춤'),
-              image: z.string().max(800).optional().describe('작은 사진 (https, 도구 결과 그대로)'),
-              date: z.string().max(10).optional().describe('YYYY-MM-DD (lead가 date일 때)'),
-              file: z.string().max(5).optional().describe('파일 종류 (예: "PDF")'),
-              url: z.string().max(800).optional().describe('줄을 누르면 열 주소 (https)'),
-              on: z.boolean().optional().describe('pick multi: false면 꺼 둔다'),
-              amount: z.number().optional().describe('pick multi 합계용 금액(원, 수량 곱한 값)'),
+                .describe('Status color: done = finished · wait = waiting or deadline · stop = stopped'),
+              image: z.string().max(800).optional().describe('Small photo (https, as in the tool result)'),
+              date: z.string().max(10).optional().describe('YYYY-MM-DD (when lead is date)'),
+              file: z.string().max(5).optional().describe('File type (e.g. "PDF")'),
+              url: z.string().max(800).optional().describe('Address to open when the row is tapped (https)'),
+              on: z.boolean().optional().describe('pick multi: false leaves it unchecked'),
+              amount: z
+                .number()
+                .optional()
+                .describe('pick multi: amount for the total (won, quantity already multiplied)'),
             }),
           )
           .min(1)
@@ -487,41 +588,58 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'show_result',
     {
-      title: '답에 결과 한 장 붙이기',
+      title: 'Attach one result card to the answer',
       description:
-        '값 하나가 답인 결과를 답 아래 카드 한 장으로 붙인다: 끝난 증거(예약·주문·신청 완료와 번호), 금액 합계(카드값·요금·환급금), ' +
-        '배송·신청·심사 단계, 마감·기한. 큰 값(big)은 언제·얼마 하나. 정보 줄(facts)은 3~6개, 번호는 code. ' +
-        '단계(steps)는 단계 이름과 지금 단계 번호(0부터). 기한(due)을 주면 D-날짜가 노랑으로 보인다. ' +
-        '끝난 일(done)은 끝난 화면을 다시 읽어 확인한 값만 넣는다 — 지어낸 번호·금액 금지. 버튼은 2개까지(마지막이 주 버튼). ' +
-        '붙였으면 답 글에는 같은 값을 되풀이하지 말고 한두 문장만.',
+        'Attaches a result whose answer is a single value as one card below the answer: proof of completion (booking, order or application done, with its number), totals (card bill, charges, refund), ' +
+        'delivery, application or review stages, deadlines. The big value (big) is one when or how much. Info lines (facts) 3-6; numbers use code. ' +
+        'Stages (steps) are stage names and the current stage number (from 0). With a deadline (due), a D-day countdown shows in yellow. ' +
+        'For completed tasks (done), include only values confirmed by reading the completion screen again; never make up numbers or amounts. Up to 2 buttons (the last is the main one). ' +
+        "Once attached, do not repeat the same values in the answer text; just one or two sentences. Write card text in the user's language.",
       inputSchema: {
         title: z
           .string()
           .max(40)
           .optional()
-          .describe('머리 줄 (예: "예약 확정", "쿠팡 · 접이식 유모차", "신한카드 · 12월 청구")'),
-        from: z.string().max(24).optional().describe('머리 오른쪽 출처 (예: "캐치테이블", "CJ대한통운")'),
-        done: z.boolean().optional().describe('끝난 일이면 true (머리에 체크)'),
-        big: z.string().max(40).describe('큰 값 하나 (예: "11/21(토) 19:00", "1,284,300원", "오늘 14~16시")'),
-        bigNote: z.string().max(24).optional().describe('큰 값 옆 작은 글 (예: "4명 · 룸", "도착 예정")'),
+          .describe(
+            'Header line (e.g. "Booking confirmed", "Coupang · folding stroller", "Shinhan Card · December bill")',
+          ),
+        from: z
+          .string()
+          .max(24)
+          .optional()
+          .describe('Source at the right of the header (e.g. "CatchTable", "CJ Logistics")'),
+        done: z.boolean().optional().describe('true for a completed task (check mark in the header)'),
+        big: z
+          .string()
+          .max(40)
+          .describe('One big value (e.g. "11/21 (Sat) 19:00", "₩1,284,300", "today 14:00-16:00")'),
+        bigNote: z
+          .string()
+          .max(24)
+          .optional()
+          .describe('Small text next to the big value (e.g. "4 people · private room", "expected arrival")'),
         facts: z
           .array(
             z.object({
               label: z.string().max(14),
               value: z.string().max(40),
-              code: z.boolean().optional().describe('번호면 true (고정폭 글꼴)'),
+              code: z.boolean().optional().describe('true for numbers (monospace font)'),
             }),
           )
           .max(6)
           .optional(),
         steps: z
           .object({
-            names: z.array(z.string().max(10)).min(2).max(6).describe('예: ["주문","출고","배송 중","도착"]'),
-            now: z.number().int().min(0).describe('지금 단계 번호 (0부터)'),
+            names: z
+              .array(z.string().max(10))
+              .min(2)
+              .max(6)
+              .describe('E.g. ["Ordered","Shipped","In transit","Delivered"]'),
+            now: z.number().int().min(0).describe('Current stage number (from 0)'),
           })
           .optional(),
-        due: z.string().max(10).optional().describe('기한 YYYY-MM-DD'),
-        dueLabel: z.string().max(8).optional().describe('기한 꼬리표 말 (예: "결제", "마감")'),
+        due: z.string().max(10).optional().describe('Deadline YYYY-MM-DD'),
+        dueLabel: z.string().max(8).optional().describe('Deadline tag word (e.g. "Payment", "Deadline")'),
         actions: z.array(blockAction).max(2).optional(),
       },
     },
@@ -530,32 +648,40 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'show_route',
     {
-      title: '답에 경로 카드 붙이기',
+      title: 'Attach a route card to the answer',
       description:
-        '길찾기 결과를 답 아래 경로 카드로 붙인다: 결론(big) 한 줄, 노선 색 막대(구간 분 비율), 구간 줄(노선·탈 곳 → 내릴 곳·막차). ' +
-        '대중교통 길·환승·막차 물음에 길찾기 도구(kakao_map_transit 등)로 찾은 뒤 고른 경로 하나를 넣는다. ' +
-        'big은 사용자가 바로 움직일 결론 (예: "23:25까지 강남역 출발", "1시간 16분"), bigNote는 환승·요금. ' +
-        'legs는 탈 순서대로: line(2호선·광역 M7731·도보), from·to(역·정류장), minutes(그 구간 분), last(그 구간 탈 곳 막차 HH:MM), note(방면·출구). ' +
-        'facts에 놓쳤을 때 대안·다른 길을 1~3줄 (예: 놓치면 → "합정에서 M7731, 강남 00:21까지"). 버튼은 길찾기 주소(url) 하나. ' +
-        '붙였으면 답 글에는 구간을 되풀이하지 말고 결론 한 줄과 대안만.',
+        'Attaches a directions result as a route card below the answer: one conclusion line (big), a line-colored bar (share of minutes per leg), and leg rows (line, boarding stop → getting-off stop, last train or bus). ' +
+        'For questions about public transit routes, transfers or last trains, find routes with a directions tool (kakao_map_transit, etc.) and put in the one route you chose. ' +
+        'big is the conclusion the user acts on right away (e.g. "Leave Gangnam Station by 23:25", "1 h 16 min"); bigNote is transfers and fare. ' +
+        "legs in boarding order: line (Line 2, Express M7731, walk), from and to (stations, stops), minutes (minutes for that leg), last (last departure at that leg's boarding stop, HH:MM), note (direction, exit). " +
+        'In facts, 1-3 lines of fallbacks or other routes if this one is missed (e.g. if missed → "M7731 from Hapjeong, until 00:21 at Gangnam"). One button: the directions address (url). ' +
+        "Once attached, do not repeat the legs in the answer text; give only the one-line conclusion and the fallbacks. Write card text in the user's language; keep station and line names as the user knows them.",
       inputSchema: {
-        title: z.string().max(40).optional().describe('머리 줄 (예: "강남역 → 대화역")'),
-        from: z.string().max(24).optional().describe('출처 (예: "카카오맵")'),
-        big: z.string().max(40).describe('결론 하나 (예: "23:25까지 강남역 출발")'),
-        bigNote: z.string().max(30).optional().describe('작은 글 (예: "1시간 16분 · 환승 1 · 2,150원")'),
+        title: z
+          .string()
+          .max(40)
+          .optional()
+          .describe('Header line (e.g. "Gangnam Station → Daehwa Station")'),
+        from: z.string().max(24).optional().describe('Source (e.g. "Kakao Map")'),
+        big: z.string().max(40).describe('One conclusion (e.g. "Leave Gangnam Station by 23:25")'),
+        bigNote: z
+          .string()
+          .max(30)
+          .optional()
+          .describe('Small text (e.g. "1 h 16 min · 1 transfer · ₩2,150")'),
         legs: z
           .array(
             z.object({
               mode: z
                 .enum(['subway', 'bus', 'train', 'walk', 'etc'])
                 .optional()
-                .describe('탈것 (빼면 노선 이름으로 짐작)'),
-              line: z.string().max(24).describe('노선 (예: "2호선", "광역 M7731", "도보")'),
+                .describe('Mode (if omitted, guessed from the line name)'),
+              line: z.string().max(24).describe('Line (e.g. "Line 2", "Express M7731", "Walk")'),
               from: z.string().max(30),
               to: z.string().max(30),
               minutes: z.number().int().min(1).max(600).optional(),
-              last: z.string().max(8).optional().describe('탈 곳 막차 HH:MM'),
-              note: z.string().max(30).optional().describe('방면·출구 (예: "대화 방면")'),
+              last: z.string().max(8).optional().describe('Last departure at the boarding stop, HH:MM'),
+              note: z.string().max(30).optional().describe('Direction or exit (e.g. "toward Daehwa")'),
             }),
           )
           .min(1)
@@ -572,18 +698,22 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'show_draft',
     {
-      title: '답에 보낼 글 붙이기',
+      title: 'Attach a draft to send',
       description:
-        '글자 그대로 쓰일 글(문자·카톡·메일·민원·후기·게시글)을 답 아래에 붙인다. 사용자는 [복사]하거나 [보내기]를 누른다. ' +
-        '[보내기]를 누르면 "방금 쓴 글 그대로 보내 줘"가 대화로 오고, 그때 보내기 직전 승인을 받는다(이 도구는 보내지 않는다). ' +
-        '사용자가 말하지 않은 사실은 넣지 않고 [날짜]처럼 빈칸으로. 붙였으면 답 글에는 글을 되풀이하지 말고 한두 문장만.',
+        'Attaches text that will be used word for word (text message, KakaoTalk, email, civil petition, review, post) below the answer. The user taps copy or send. ' +
+        'Tapping send puts a request to send the draft exactly as written into the chat, and approval is asked right before sending then (this tool does not send). ' +
+        'Do not include facts the user did not say; leave blanks like [date]. Once attached, do not repeat the text in the answer; just one or two sentences.',
       inputSchema: {
-        to: z.string().max(30).optional().describe('받는 사람 (예: "집주인 김OO", "OO구청 민원실")'),
+        to: z
+          .string()
+          .max(30)
+          .optional()
+          .describe('Recipient (e.g. "Landlord Mr. Kim", "OO district office petition desk")'),
         via: z
           .enum(['sms', 'kakao', 'mail', 'post', 'other'])
-          .describe('보낼 방법: 문자·카톡·메일·게시(민원·후기)·그 밖'),
-        subject: z.string().max(80).optional().describe('메일 제목 (via가 mail일 때)'),
-        text: z.string().max(2000).describe('보낼 글 그대로'),
+          .describe('How it is sent: text message, KakaoTalk, email, posting (petition, review), other'),
+        subject: z.string().max(80).optional().describe('Email subject (when via is mail)'),
+        text: z.string().max(2000).describe('The text to send, exactly as it will be sent'),
       },
     },
     call('show_draft'),
@@ -591,21 +721,24 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'phone_sms',
     {
-      title: '문자 보내기 (내 폰 번호로)',
+      title: 'Send a text (from my phone number)',
       description:
-        '사용자 폰 번호로 문자(SMS)를 보낸다. "엄마한테 늦는다고 문자 보내 줘", show_draft(via: sms)의 [보내기]를 눌렀을 때 쓴다. ' +
-        '폰에 승인 카드가 뜨고, 사용자가 받는 사람과 글을 보고 승인하면 폰 앱이 직접 보낸다(다른 앱을 열지 않는다). ' +
-        '받는 사람은 연락처 이름 그대로 넘기면 폰이 연락처에서 번호를 찾는다: 번호를 몰라도 묻지 말고 이름으로 부른다. ' +
-        '부른 뒤에는 폰에서 확인해 달라고 한 문장으로 말하고 답을 끝낸다. 결과(보냈어요·못 보낸 까닭)는 이어서 온다. ' +
-        '카카오톡은 이 도구가 아니라 PC 카카오톡 화면 제어(screen_*)로 보낸다.',
+        'Sends a text message (SMS) from the user\'s phone number. Use for "text Mom that I\'ll be late", or when send was tapped on show_draft (via: sms). ' +
+        'An approval card appears on the phone; when the user approves after seeing the recipient and text, the phone app sends it itself (no other app is opened). ' +
+        'Pass the recipient as the contact name as is and the phone finds the number in contacts: even if you do not know the number, do not ask; call with the name. ' +
+        'After calling, say in one sentence to check the phone and end the reply. The result (sent, or why it failed) arrives afterwards. ' +
+        'KakaoTalk messages are sent with PC KakaoTalk screen control (screen_*), not this tool.',
       inputSchema: {
         to: z
           .string()
           .max(40)
           .describe(
-            '받는 사람: 연락처 이름(엄마, 김민수, 김 팀장님) 또는 전화번호(010-1234-5678). 여러 명이면 한 명씩 부른다',
+            "Recipient: contact name exactly as saved (e.g. Mom, Minsu Kim, Team Lead Kim, in the user's language) or phone number (010-1234-5678). For several people, call once per person",
           ),
-        text: z.string().max(1000).describe('보낼 글 그대로 (사용자가 말하지 않은 사실은 넣지 않는다)'),
+        text: z
+          .string()
+          .max(1000)
+          .describe('The text to send, exactly (never include facts the user did not say)'),
       },
     },
     call('phone_sms'),
@@ -613,12 +746,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'feed_post',
     {
-      title: '피드에 올리기',
+      title: 'Post to the feed',
       description:
-        '대화로 말할 정도는 아니지만 알아 두면 좋은 소식을 피드에 짧은 글로 올린다 (피드 지시·목표 체크인 결과 등).',
+        "Posts news worth knowing but not worth saying in chat as a short post in the feed (feed instructions, goal check-in results, etc.). Write it in the user's language.",
       inputSchema: {
         title: z.string().max(80),
-        body: z.string().max(1500).describe('핵심 3~5줄. 확인한 것만'),
+        body: z.string().max(1500).describe('The key points in 3-5 lines. Only confirmed facts'),
       },
     },
     call('feed_post'),
@@ -626,33 +759,45 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'feed_tell',
     {
-      title: '먼저 챙긴 일 알리기',
+      title: 'Share a proactive heads-up',
       description:
-        '사용자가 묻지 않았지만 지금 알면 좋을 일을 비서처럼 먼저 알린다. 피드 맨 위에 올라가고 폰에도 알림이 간다. ' +
-        '연결한 서비스에서 직접 확인한 새 소식만 (배송·도착 예정, 다가오는 예약·일정, 답이 필요한 메일, 기록·결과 발표, 결제·만료 예정, 기억해 둔 기념일 등). ' +
-        '짐작이나 광고·일반 상식은 올리지 않는다. 같은 일은 key가 같으면 다시 올라가지 않는다. 살펴보기 한 번에 3개까지. ' +
-        '두리가 이어서 해 줄 수 있는 일이 있으면 ask에 사용자가 [해 줘]를 눌렀을 때 보낼 부탁을 적는다 (돈 내기·보내기는 여기서 하지 않고 ask로 제안만).',
+        'Like a secretary, tells the user something worth knowing now that they did not ask about. It goes to the top of the feed and a phone notification is sent too. ' +
+        'Only new things confirmed directly on connected services (deliveries and expected arrivals, upcoming bookings and events, emails needing a reply, records or result announcements, upcoming payments or expiries, remembered anniversaries, etc.). ' +
+        'Never post guesses, ads or general knowledge. The same item is not posted again if key is the same. Up to 3 per check. ' +
+        "If Dool2 can follow up with something, put in ask the request sent when the user taps the do-it button (paying and sending are never done here; only suggested via ask). Write it in the user's language.",
       inputSchema: {
         title: z
           .string()
           .min(1)
           .max(80)
-          .describe('알림 한 줄, 두리 말투 (예: "어제 주문한 러닝화, 내일 오전에 도착해요")'),
-        body: z.string().max(600).optional().describe('덧붙일 한두 문장 (예: "문 앞에 두고 간대요")'),
-        from: z.string().max(60).optional().describe('어디서 알았는지 (예: "쿠팡 주문 내역을 보고")'),
+          .describe(
+            'One-line notice in Dool2\'s voice (e.g. "The running shoes you ordered yesterday arrive tomorrow morning")',
+          ),
+        body: z
+          .string()
+          .max(600)
+          .optional()
+          .describe('One or two more sentences (e.g. "They will leave it at the door")'),
+        from: z
+          .string()
+          .max(60)
+          .optional()
+          .describe('Where you learned it (e.g. "From your Coupang order history")'),
         key: z
           .string()
           .min(1)
           .max(120)
-          .describe('같은 일을 또 알리지 않을 열쇠: 서비스-대상-상태 (예: "coupang-주문12345-도착예정")'),
+          .describe(
+            'Key so the same item is not announced again: service-target-status (e.g. "coupang-order12345-arriving")',
+          ),
         ask: z
           .string()
           .max(300)
           .optional()
           .describe(
-            '[해 줘]를 누르면 두리에게 보낼 부탁 (예: "엄마 생신 선물 3만 원대로 골라 줘"). 알리기만 하면 비운다',
+            'Request sent to Dool2 when the do-it button is tapped (e.g. "Pick a birthday gift for Mom around 30,000 won"). Empty if it is only a notice',
           ),
-        ask_label: z.string().max(12).optional().describe('[해 줘] 버튼 글자 (예: "골라 줘")'),
+        ask_label: z.string().max(12).optional().describe('Label of the do-it button (e.g. "Pick one")'),
       },
     },
     call('feed_tell'),
@@ -660,22 +805,24 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'feed_find',
     {
-      title: '피드·두리가 한 일 보기',
+      title: 'View the feed and what Dool2 did',
       description:
-        '피드에 쌓인 것(두리가 끝낸 일, 예약한 일의 결과, 아침 소식, 보관함에 남긴 것, 먼저 챙긴 일)을 사용자가 피드에서 보는 그대로 본다. ' +
-        '"이번 주 두리가 뭐 했어?", "어제 예약한 알림 결과 뭐였지?", "지난번에 먼저 알려 준 택배" 같은 말에 짐작하지 말고 이것으로 먼저 본다. ' +
-        '기간 안 종류별 개수가 함께 온다. 90일까지 남아 있고, 많으면 페이지로 나눠 온다(before로 이어 보기). 대화에서 나눈 말이면 conversation_search.',
+        'Views what is in the feed (tasks Dool2 finished, results of scheduled runs, morning news, things saved to the Library, proactive heads-ups) exactly as the user sees it in the feed. ' +
+        'For things like "what did Dool2 do this week?", "what was the result of the reminder I set yesterday?", "the parcel you told me about last time", check with this first instead of guessing. ' +
+        'Counts per kind within the period come with it. Items are kept up to 90 days; many items come in pages (continue with before). For things said in chat, use conversation_search.',
       inputSchema: {
         query: z
           .string()
           .max(100)
           .optional()
-          .describe('찾을 낱말 1~3개 (예: "택배", "치과"). 제목·글·어디서에서 찾는다. 비우면 최근 것부터'),
+          .describe(
+            '1-3 words to search, in the language the items are written in (e.g. "parcel", "dentist"). Searches title, text and source. Empty = most recent first',
+          ),
         kinds: z
           .array(z.enum(['done', 'routine', 'post', 'saved', 'goal', 'connected', 'suggest']))
           .optional()
           .describe(
-            '종류만: done 끝낸 일 · routine 예약한 일 결과 · post 소식 · saved 보관함 · goal 목표 · connected 연결 · suggest 먼저 챙김',
+            'Only these kinds: done = finished tasks · routine = scheduled run results · post = news · saved = Library · goal = goals · connected = connections · suggest = proactive heads-ups',
           ),
         days: z
           .number()
@@ -683,13 +830,15 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .min(1)
           .max(90)
           .optional()
-          .describe('최근 며칠만 (예: 이번 주 7, 이번 달 30). 비우면 남아 있는 90일 전부'),
+          .describe('Only the last N days (e.g. this week 7, this month 30). Empty = all 90 days kept'),
         before: z
           .string()
           .max(80)
           .optional()
-          .describe('이어 보기: 앞 결과의 "before: …" 값을 그대로 (같은 조건으로)'),
-        limit: z.number().int().min(1).max(30).optional().describe('한 번에 몇 개 (기본 15)'),
+          .describe(
+            'Continue: the "before: …" value from the previous result, as is (with the same filters)',
+          ),
+        limit: z.number().int().min(1).max(30).optional().describe('How many per call (default 15)'),
       },
       annotations: { readOnlyHint: true },
     },
@@ -698,18 +847,20 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
   server.registerTool(
     'conversation_search',
     {
-      title: '지난 대화 찾기',
+      title: 'Search past conversations',
       description:
-        '사용자와 예전에 나눈 대화를 찾는다. 사용자가 앞에서 한 이야기("지난주에 본 청소기 뭐였지?", "그때 말한 식당")를 꺼냈는데 ' +
-        '지금 기억(앞 대화 요약·최근 대화)에 없으면 짐작하지 말고 이것으로 먼저 찾아본다. ' +
-        '날짜(한국 시간)·누가 한 말인지와 함께 짧은 글이 온다. 맞는 게 없으면 낱말을 바꿔 한 번 더 찾는다.',
+        'Searches earlier conversations with the user. When the user brings up something said before ("what was that vacuum we looked at last week?", "the restaurant you mentioned then") ' +
+        'and it is not in your current memory (summary of earlier chat, recent messages), search with this first instead of guessing. ' +
+        'Short excerpts come back with the date (Korea time) and who said it. If nothing matches, try once more with different words.',
       inputSchema: {
         query: z
           .string()
           .min(1)
           .max(100)
-          .describe('찾을 낱말 1~3개 (예: "청소기", "부산 SRT", "국밥집"). 문장 대신 핵심 낱말로'),
-        limit: z.number().int().min(1).max(20).optional().describe('최대 몇 개 (기본 10)'),
+          .describe(
+            '1-3 key words, in the language the conversation was in (e.g. "vacuum", "Busan SRT", "gukbap place"). Key words, not sentences',
+          ),
+        limit: z.number().int().min(1).max(20).optional().describe('At most how many (default 10)'),
       },
       annotations: { readOnlyHint: true },
     },

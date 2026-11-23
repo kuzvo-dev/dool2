@@ -1,18 +1,20 @@
-// Chrome 확인·설치 (ADR 0006: 브라우저는 Chrome 하나로 통일, 없으면 두리가 설치).
-// 설치 파일은 Google 공식 주소에서 받고, Google 코드 서명을 확인한 뒤에만 설치한다.
+// Checking and installing Chrome (ADR 0006: Chrome is the one browser, and Dool2 installs it if missing).
+// The installer comes from Google's official URL and is installed only after Google's code signature is verified.
 import { createWriteStream } from 'node:fs'
 import { access, constants, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, posix, win32 } from 'node:path'
 import { runOnce } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
 import type { ChromeStatus, InstallPhase, InstallStatus } from '@dool2/protocol'
+import { CHROME_TEXT, type ChromeText } from './locales/chrome.js'
 
-/** Google의 애플 개발자 팀 ID (codesign으로 확인) */
+/** Google's Apple developer team ID (checked with codesign) */
 export const GOOGLE_TEAM_ID = 'EQHXZ8M8AV'
 export const CHROME_MAC_DMG = 'https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg'
 export const CHROME_WIN_INSTALLER = 'https://dl.google.com/chrome/install/latest/chrome_installer.exe'
 
-/** 외부 명령 실행. 테스트에서 바꿔 끼운다 */
+/** Runs external commands. Swapped in tests */
 export type Exec = (
   cmd: string,
   args: string[],
@@ -47,9 +49,9 @@ export function chromeEnv(): ChromeEnv {
 
 const MAC_APP = 'Google Chrome.app'
 
-/** Chrome이 설치돼 있는지, 어디에 있는지, 버전은 무엇인지 */
+/** Whether Chrome is installed, where, and which version */
 export async function detectChrome(e: ChromeEnv = chromeEnv()): Promise<ChromeStatus> {
-  // 실행 중인 컴퓨터가 아니라 확인 대상 OS의 경로 규칙을 쓴다 (테스트가 모든 OS에서 같게 돈다)
+  // Use the path rules of the OS being checked, not the running computer (so tests behave the same on every OS)
   const pj = e.platform === 'win32' ? win32.join : posix.join
   if (e.platform === 'darwin') {
     for (const dir of ['/Applications', pj(e.home, 'Applications')]) {
@@ -77,7 +79,7 @@ export async function detectChrome(e: ChromeEnv = chromeEnv()): Promise<ChromeSt
       const dir = pj(root, 'Google', 'Chrome', 'Application')
       const path = pj(dir, 'chrome.exe')
       if (!(await e.exists(path))) continue
-      // 설치 폴더 안의 버전 폴더(예: 157.0.8103.51) 중 가장 높은 것
+      // The highest version folder (e.g. 157.0.8103.51) in the install folder
       const versions = (await e.list(dir)).filter((n) => /^\d+\.\d+\.\d+\.\d+$/.test(n)).sort(compareVersions)
       const version = versions.at(-1)
       return { installed: true, path, ...(version ? { version } : {}) }
@@ -103,18 +105,20 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** 사용자에게 보여 줄 수 있는 설치 실패 */
+/** An install failure whose message can be shown to people */
 export class ChromeInstallError extends Error {}
 
 export interface InstallChromeOptions {
-  /** 설치 파일을 잠깐 둘 폴더 */
+  /** Folder for the installer while installing */
   downloadDir: string
   env?: ChromeEnv
   fetch?: typeof fetch
-  /** 맥: Chrome을 넣을 폴더. 기본은 /Applications, 권한이 없으면 ~/Applications */
+  /** macOS: folders to put Chrome in. /Applications by default, ~/Applications without access */
   macTargets?: string[]
   onProgress?: (phase: InstallPhase, percent?: number) => void
   signal?: AbortSignal
+  /** Language of the error messages people see. Korean when not given */
+  lang?: Lang
 }
 
 async function download(
@@ -123,12 +127,13 @@ async function download(
   doFetch: typeof fetch,
   signal: AbortSignal,
   progress: (pct: number) => void,
+  t: ChromeText,
 ) {
   const res = await doFetch(url, { signal }).catch((err: Error) => {
     if (signal.aborted) throw err
-    throw new ChromeInstallError('인터넷 연결을 확인해 주세요. Google 서버에 닿지 않았어요')
+    throw new ChromeInstallError(t.offline)
   })
-  if (!res.ok || !res.body) throw new ChromeInstallError(`Google 서버가 응답하지 않았어요 (${res.status})`)
+  if (!res.ok || !res.body) throw new ChromeInstallError(t.serverDown(res.status))
   const total = Number(res.headers.get('content-length') ?? 0)
   const out = createWriteStream(file)
   let got = 0
@@ -145,12 +150,12 @@ async function download(
   await new Promise<void>((resolve, reject) =>
     out.end((err?: Error | null) => (err ? reject(err) : resolve())),
   )
-  if (total > 0 && got !== total)
-    throw new ChromeInstallError('설치 파일이 다 받아지지 않았어요. 다시 해 주세요')
+  if (total > 0 && got !== total) throw new ChromeInstallError(t.partial)
 }
 
-/** Google 공식 설치 파일로 Chrome을 설치한다 */
+/** Installs Chrome with Google's official installer */
 export async function installChrome(opts: InstallChromeOptions): Promise<void> {
+  const t = CHROME_TEXT[opts.lang ?? 'ko']
   const e = opts.env ?? chromeEnv()
   const doFetch = opts.fetch ?? fetch
   const signal = opts.signal ?? new AbortController().signal
@@ -164,7 +169,7 @@ export async function installChrome(opts: InstallChromeOptions): Promise<void> {
     let attached = false
     try {
       progress('download', 0)
-      await download(CHROME_MAC_DMG, dmg, doFetch, signal, (p) => progress('download', p))
+      await download(CHROME_MAC_DMG, dmg, doFetch, signal, (p) => progress('download', p), t)
       progress('verify')
       const at = await e.exec('/usr/bin/hdiutil', [
         'attach',
@@ -175,10 +180,10 @@ export async function installChrome(opts: InstallChromeOptions): Promise<void> {
         '-mountpoint',
         mount,
       ])
-      if (at.code !== 0) throw new ChromeInstallError('설치 파일을 열지 못했어요')
+      if (at.code !== 0) throw new ChromeInstallError(t.cantOpen)
       attached = true
       const app = join(mount, MAC_APP)
-      await assertGoogleSignedMac(e, app)
+      await assertGoogleSignedMac(e, app, t)
       progress('setup')
       const targets = opts.macTargets ?? ['/Applications', join(e.home, 'Applications')]
       let done = false
@@ -189,7 +194,7 @@ export async function installChrome(opts: InstallChromeOptions): Promise<void> {
           break
         }
       }
-      if (!done) throw new ChromeInstallError('Chrome을 응용 프로그램 폴더에 넣지 못했어요')
+      if (!done) throw new ChromeInstallError(t.cantCopy)
     } finally {
       if (attached) await e.exec('/usr/bin/hdiutil', ['detach', mount, '-force']).catch(() => {})
       await rm(mount, { recursive: true, force: true })
@@ -202,26 +207,26 @@ export async function installChrome(opts: InstallChromeOptions): Promise<void> {
     const exe = join(opts.downloadDir, 'chrome_installer.exe')
     try {
       progress('download', 0)
-      await download(CHROME_WIN_INSTALLER, exe, doFetch, signal, (p) => progress('download', p))
+      await download(CHROME_WIN_INSTALLER, exe, doFetch, signal, (p) => progress('download', p), t)
       progress('verify')
-      await assertGoogleSignedWindows(e, exe)
+      await assertGoogleSignedWindows(e, exe, t)
       progress('setup')
-      // 관리자 권한이 없으면 Google 설치 프로그램이 사용자 폴더에 설치한다
+      // Without admin rights, Google's installer installs into the user folder
       const r = await e.exec(exe, ['/silent', '/install'])
-      if (r.code !== 0) throw new ChromeInstallError(`Chrome 설치를 마치지 못했어요 (종료 코드 ${r.code})`)
+      if (r.code !== 0) throw new ChromeInstallError(t.finishFailed(r.code))
     } finally {
       await rm(exe, { force: true })
     }
     return
   }
-  throw new ChromeInstallError('이 운영체제에서는 Chrome을 직접 설치해 주세요')
+  throw new ChromeInstallError(t.unsupported)
 }
 
 /**
- * 맥: Google 개발자 서명이 온전하고, 애플 공증(Gatekeeper)을 통과한 Google LLC 앱인지 확인한다.
- * `codesign --strict`는 Google 공식 dmg의 도우미 파일 하나에서 늘 실패해서 쓰지 않는다 (실측 2026-11-14).
+ * macOS: checks that it is a Google LLC app with an intact developer signature that passed Apple notarization (Gatekeeper).
+ * `codesign --strict` always fails on one helper file in Google's official dmg, so it isn't used (measured 2026-11-14).
  */
-async function assertGoogleSignedMac(e: ChromeEnv, app: string) {
+async function assertGoogleSignedMac(e: ChromeEnv, app: string, t: ChromeText) {
   const verify = await e.exec('/usr/bin/codesign', ['--verify', '--deep', app])
   const info = await e.exec('/usr/bin/codesign', ['-dv', '--verbose=2', app])
   const team = `${info.stdout}\n${info.stderr}`.match(/TeamIdentifier=(\S+)/)?.[1]
@@ -231,22 +236,20 @@ async function assertGoogleSignedMac(e: ChromeEnv, app: string) {
     gk.code === 0 &&
     /source=Notarized Developer ID/.test(gkText) &&
     gkText.includes(`Google LLC (${GOOGLE_TEAM_ID})`)
-  if (verify.code !== 0 || team !== GOOGLE_TEAM_ID || !notarized)
-    throw new ChromeInstallError('받은 파일이 Google 공식 Chrome이 아니에요. 안전을 위해 설치를 멈췄어요')
+  if (verify.code !== 0 || team !== GOOGLE_TEAM_ID || !notarized) throw new ChromeInstallError(t.notGoogle)
 }
 
-/** 윈도우: Google LLC의 유효한 Authenticode 서명인지 확인한다 */
-async function assertGoogleSignedWindows(e: ChromeEnv, exe: string) {
+/** Windows: checks for a valid Authenticode signature from Google LLC */
+async function assertGoogleSignedWindows(e: ChromeEnv, exe: string, t: ChromeText) {
   const script =
     `$s = Get-AuthenticodeSignature -LiteralPath '${exe.replace(/'/g, "''")}'; ` +
     `"$($s.Status)|$($s.SignerCertificate.Subject)"`
   const r = await e.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script])
   const [status, subject = ''] = r.stdout.trim().split('|')
-  if (status !== 'Valid' || !/O=Google LLC/.test(subject))
-    throw new ChromeInstallError('받은 파일이 Google 공식 Chrome이 아니에요. 안전을 위해 설치를 멈췄어요')
+  if (status !== 'Valid' || !/O=Google LLC/.test(subject)) throw new ChromeInstallError(t.notGoogle)
 }
 
-/** 설치 버튼 상태를 들고 있는 세션 */
+/** Session holding the install button's state */
 export class ChromeInstall {
   private snapshot: InstallStatus = { state: 'idle' }
   private abort: AbortController | undefined
@@ -257,13 +260,15 @@ export class ChromeInstall {
     return this.snapshot
   }
 
-  start(): InstallStatus {
+  start(lang: Lang = this.opts.lang ?? 'ko'): InstallStatus {
     if (this.snapshot.state === 'running') return this.snapshot
+    const t = CHROME_TEXT[lang]
     const abort = new AbortController()
     this.abort = abort
     this.snapshot = { state: 'running', phase: 'prepare' }
     void installChrome({
       ...this.opts,
+      lang,
       signal: abort.signal,
       onProgress: (phase, percent) => {
         if (this.abort === abort)
@@ -275,14 +280,13 @@ export class ChromeInstall {
         const now = await detectChrome(this.opts.env)
         this.snapshot = now.installed
           ? { state: 'done', ...(now.version ? { version: now.version } : {}) }
-          : { state: 'failed', message: '설치했는데 Chrome을 찾지 못했어요. 다시 확인해 주세요' }
+          : { state: 'failed', message: t.notFoundAfter }
       })
       .catch((err: Error) => {
         if (this.abort !== abort) return
         this.snapshot = {
           state: 'failed',
-          message:
-            err instanceof ChromeInstallError ? err.message : `Chrome을 설치하지 못했어요: ${err.message}`,
+          message: err instanceof ChromeInstallError ? err.message : t.installFailed(err.message),
         }
       })
     return this.snapshot

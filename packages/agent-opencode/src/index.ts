@@ -1,22 +1,24 @@
-// 종량제 실행기 (ADR 0010): OpenCode v2를 사용자의 API 키로, 두리 도구만 쓰게 묶어 실행한다.
-// 한 턴마다 `opencode serve --stdio`를 두리 전용 폴더에서 띄우고(무작위 비밀번호, 127.0.0.1),
-// 사건 흐름(SSE)을 공통 AgentEvent로 바꾼다. 표준 입력을 닫으면 서버도 꺼진다.
-// Claude Pro/Max 구독 로그인은 여기서 쓰지 않는다 (Anthropic 정책). 구독은 공식 Claude Code로만.
+// Pay-as-you-go runner (ADR 0010): runs OpenCode v2 with the user's API key, limited to Dool2 tools.
+// Each turn starts `opencode serve --stdio` in a Dool2-only folder (random password, 127.0.0.1)
+// and turns its event stream (SSE) into the common AgentEvent. Closing stdin also stops the server.
+// Claude Pro/Max subscription sign-in is never used here (Anthropic policy). Subscriptions go only through the official Claude Code.
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { type AgentRuntime, runOnce, type TurnInput } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { buildOpenCodeConfig, buildOpenCodeEnv, DOOL2_AGENT, PROVIDER_ENV } from './config.js'
 import { OPENCODE_VERSION, openCodeBin } from './install.js'
+import { OPENCODE_TEXT } from './locales/opencode.js'
 import { type OpenCodeEvent, OpenCodeEventMapper } from './map.js'
 
 export * from './config.js'
 export * from './install.js'
 export * from './map.js'
 
-/** 사용자가 고른 제공자·모델과 API 키 */
+/** The provider and model the user picked, and the API key */
 export interface OpenCodeAccount {
   provider: string
   model: string
@@ -24,17 +26,23 @@ export interface OpenCodeAccount {
 }
 
 export interface OpenCodeRuntimeOptions {
-  /** 두리의 OpenCode 폴더 (설치 파일과 OpenCode 자체 데이터) */
+  /** Dool2's OpenCode folder (the install and OpenCode's own data) */
   dir: string
-  /** 키는 OS 키체인에 있다. 실행할 때만 꺼내 환경 변수로 넘긴다 */
+  /** The key lives in the OS keychain. Taken out only when running, and passed as an environment variable */
   account(): Promise<OpenCodeAccount | undefined>
   binPath?: string
+  /** Language of the status and error messages people see, read each time. Korean when not given */
+  lang?: () => Lang
 }
 
 export class OpenCodeRuntime implements AgentRuntime {
   readonly id = 'opencode' as const
 
   constructor(private readonly opts: OpenCodeRuntimeOptions) {}
+
+  private lang(): Lang {
+    return this.opts.lang?.() ?? 'ko'
+  }
 
   private bin() {
     const p = this.opts.binPath ?? openCodeBin(this.opts.dir)
@@ -43,13 +51,8 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   async detect(): Promise<AgentStatus> {
     const bin = this.bin()
-    if (!bin)
-      return {
-        id: 'opencode',
-        installed: false,
-        loggedIn: false,
-        problem: '종량제 모드를 아직 준비하지 않았어요',
-      }
+    const t = OPENCODE_TEXT[this.lang()]
+    if (!bin) return { id: 'opencode', installed: false, loggedIn: false, problem: t.notReady }
     const status: AgentStatus = {
       id: 'opencode',
       installed: true,
@@ -64,19 +67,20 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (account?.apiKey && PROVIDER_ENV[account.provider]) {
       status.loggedIn = true
       status.plan = `${account.provider} · ${account.model}`
-    } else status.problem = 'API 키를 넣어 주세요'
+    } else status.problem = t.needKey
     return status
   }
 
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
     const bin = this.bin()
+    const t = OPENCODE_TEXT[this.lang()]
     if (!bin) {
-      yield { type: 'error', code: 'not_installed', message: '종량제 모드를 아직 준비하지 않았어요' }
+      yield { type: 'error', code: 'not_installed', message: t.notReady }
       return
     }
     const account = await this.opts.account().catch(() => undefined)
     if (!account?.apiKey) {
-      yield { type: 'error', code: 'not_logged_in', message: 'API 키를 넣어 주세요' }
+      yield { type: 'error', code: 'not_logged_in', message: t.needKey }
       return
     }
 
@@ -109,7 +113,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       const url = await new Promise<string>((resolve, reject) => {
         let buf = ''
         const timer = setTimeout(
-          () => reject(new Error(`OpenCode가 시작되지 않았어요 ${stderr.slice(-200)}`)),
+          () => reject(new Error(`OpenCode didn't start ${stderr.slice(-200)}`)),
           30_000,
         )
         child.stdout.on('data', (d: Buffer) => {
@@ -121,7 +125,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           }
         })
         child.once('exit', (code) =>
-          reject(new Error(`OpenCode가 꺼졌어요 (종료 코드 ${code}) ${stderr.slice(-200)}`)),
+          reject(new Error(`OpenCode exited (exit code ${code}) ${stderr.slice(-200)}`)),
         )
       })
       const auth = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`
@@ -131,17 +135,18 @@ export class OpenCodeRuntime implements AgentRuntime {
           headers: { authorization: auth, 'content-type': 'application/json' },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         })
-        if (!res.ok) throw new Error(`OpenCode 요청 실패 ${res.status} ${path}`)
+        if (!res.ok) throw new Error(`OpenCode request failed ${res.status} ${path}`)
         return (await res.json()) as T
       }
 
-      // 사건 흐름을 먼저 열어 두고 부탁을 보낸다 (앞부분을 놓치지 않게)
+      // Open the event stream before sending the request (so the start isn't missed)
       const abort = new AbortController()
       const stream = await fetch(`${url}/api/event`, {
         headers: { authorization: auth },
         signal: abort.signal,
       })
-      if (!stream.ok || !stream.body) throw new Error(`OpenCode 사건 흐름을 열지 못했어요 (${stream.status})`)
+      if (!stream.ok || !stream.body)
+        throw new Error(`Couldn't open the OpenCode event stream (${stream.status})`)
 
       let sessionId = input.resumeId
       if (!sessionId) {
@@ -151,7 +156,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         })
         sessionId = created.data.id
       }
-      const mapper = new OpenCodeEventMapper(sessionId)
+      const mapper = new OpenCodeEventMapper(sessionId, this.lang())
       const onAbort = () => void call(`/api/session/${sessionId}/interrupt`, {}).catch(() => {})
       input.signal?.addEventListener('abort', onAbort, { once: true })
       await call(`/api/session/${sessionId}/prompt`, { text: input.text })
@@ -168,7 +173,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         abort.abort()
       }
     } catch (err) {
-      if (input.signal?.aborted) yield { type: 'error', code: 'aborted', message: '멈췄어요' }
+      if (input.signal?.aborted) yield { type: 'error', code: 'aborted', message: t.stopped }
       else yield { type: 'error', code: 'process_failed', message: (err as Error).message }
     } finally {
       stop()
@@ -176,7 +181,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 }
 
-/** SSE 본문을 사건 객체로 하나씩 꺼낸다 */
+/** Takes event objects one by one out of an SSE body */
 export async function* readSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<OpenCodeEvent> {
   const dec = new TextDecoder()
   let buf = ''
@@ -198,7 +203,7 @@ export async function* readSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<
       }
     }
   } catch (err) {
-    // 우리가 흐름을 닫으면 여기로 온다
+    // Ends up here when we close the stream
     if ((err as Error).name !== 'AbortError') throw err
   }
 }

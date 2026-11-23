@@ -1,5 +1,6 @@
-// PC 화면 제어 도구 (M4, docs/architecture.md 5.2). 카카오톡 PC·메모 같은 앱을 접근성 트리로 읽고 누른다.
-// 이 서버는 판단하지 않는다: 두리 본체(/api/tools/screen)에 넘기고, 허용한 앱·위험한 버튼은 본체가 막는다.
+// PC screen control tools (M4, docs/architecture.md 5.2). Reads and clicks apps such as KakaoTalk for PC or Notes through
+// the accessibility tree. This server makes no decisions: it forwards to the Dool2 daemon (/api/tools/screen), and the
+// daemon enforces allowed apps and blocks risky buttons.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { BrowserClient } from './browser.js'
@@ -8,18 +9,18 @@ const bundleId = z
   .string()
   .regex(/^[\w.-]+$/)
   .max(200)
-  .describe('앱의 번들 id (screen_apps가 알려 준 것, 예: com.kakao.KakaoTalkMac)')
+  .describe('App bundle id (as reported by screen_apps, e.g. com.kakao.KakaoTalkMac)')
 const ref = z
   .string()
   .regex(/^e\d+$/)
-  .describe('화면을 읽었을 때 나온 표시 (예: e12)')
+  .describe('Element ref shown when the screen was read (e.g. e12)')
 
 export function registerScreenTools(server: McpServer, client: BrowserClient) {
   const tool = (
     name: string,
     title: string,
     description: string,
-    // biome-ignore lint/suspicious/noExplicitAny: MCP SDK의 zod 입력 형식
+    // biome-ignore lint/suspicious/noExplicitAny: zod input shape of the MCP SDK
     inputSchema: Record<string, any>,
     readOnly: boolean,
   ) =>
@@ -34,60 +35,72 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
 
   tool(
     'status',
-    'PC 화면 제어 상태',
-    'PC 앱 조작(카카오톡 PC 등)을 쓸 수 있는지: 권한, 화면 잠김, 허용한 앱. 웹사이트 일은 화면 제어가 아니라 browser_* 도구로 한다.',
+    'PC screen control status',
+    'Whether PC app control (KakaoTalk for PC, etc.) is available: OS permissions, screen lock, allowed apps. Website work is done with the browser_* tools, not screen control.',
     {},
     true,
   )
   tool(
     'apps',
-    '앱 목록',
-    '켜져 있는 앱과 번들 id를 본다. query를 주면 설치된 앱 중 이름이 맞는 것도 찾는다.',
-    { query: z.string().max(60).optional().describe('찾을 앱 이름 (예: 카카오톡, KakaoTalk)') },
+    'App list',
+    'Lists running apps and their bundle ids. With query it also finds installed apps whose name matches.',
+    {
+      query: z
+        .string()
+        .max(60)
+        .optional()
+        .describe('App name to find (e.g. KakaoTalk; the Korean app name also works)'),
+    },
     true,
   )
-  tool('open', '앱 열기', '허용한 앱을 열고 앞으로 가져온 뒤 화면을 읽어 준다.', { bundleId }, false)
+  tool(
+    'open',
+    'Open app',
+    'Opens an allowed app, brings it to the front and reads its screen.',
+    { bundleId },
+    false,
+  )
   tool(
     'read',
-    '앱 화면 읽기',
-    '앱 창의 접근성 정보를 글로 읽는다. 누를 수 있는 것에는 [e12 버튼 "보내기"] 같은 표시가 붙는다. 비밀번호 칸 값은 나오지 않는다.',
+    'Read app screen',
+    'Reads the accessibility info of the app window as text. Clickable things are marked like [e12 button "Send"]. Password field values are never shown.',
     { bundleId, maxChars: z.number().int().min(1000).max(40000).optional() },
     true,
   )
   tool(
     'click',
-    '앱에서 누르기',
-    '읽은 화면의 요소를 누른다. 보내기·결제·삭제 같은 버튼은 승인 없이 누르지 않는다(그때는 screen_request_approval).',
+    'Click in app',
+    'Clicks an element from the screen that was read. Never click buttons like send, pay or delete without approval (use screen_request_approval for those).',
     { bundleId, ref },
     false,
   )
   tool(
     'type',
-    '앱에 글자 넣기',
-    '글자를 넣는다(한글도 됨). ref를 주면 그 칸에 초점을 준 뒤 넣는다. 넣기만 하고 보내지는 않는다.',
+    'Type in app',
+    'Types text (Korean works too). With ref it focuses that field first. It only types; it does not send.',
     { bundleId, ref: ref.optional(), text: z.string().min(1).max(4000) },
     false,
   )
   tool(
     'login',
-    '앱에 로그인 칸 채우기',
-    'PC 앱(카카오톡 PC 등)의 로그인 화면에서 금고의 아이디·비밀번호를 넣는다. 값은 두리 본체가 직접 넣고 AI에게는 보이지 않는다. ' +
-      '앱 이름과 맞는 사이트 계정만 쓴다(카카오톡 ↔ accounts.kakao.com). 넣은 뒤 로그인 버튼은 screen_click으로 누른다. ' +
-      '금고에 계정이 없으면 그 사이트 주소로 로그인 카드를 띄워 폰에서 받는다. 비밀번호 칸에 screen_type을 쓰지 않는다.',
+    'Fill app login from the vault',
+    'On the login screen of a PC app (KakaoTalk for PC, etc.) fills in the ID and password from the vault. The Dool2 daemon types the values itself; the AI never sees them. ' +
+      'Only uses the site account that matches the app name (KakaoTalk ↔ accounts.kakao.com). After filling, click the login button with screen_click. ' +
+      'If the vault has no account, it shows a login card for that site address and receives it on the phone. Never use screen_type on a password field.',
     {
       bundleId,
       site: z
         .string()
         .max(80)
         .optional()
-        .describe('계정이 여러 개일 때 고를 사이트 주소 (예: accounts.kakao.com)'),
+        .describe('Site address to pick when there are several accounts (e.g. accounts.kakao.com)'),
     },
     false,
   )
   tool(
     'key',
-    '앱에서 키 누르기',
-    'Tab, Escape, 화살표, Backspace 같은 키를 누른다. modifiers로 cmd·shift·option·ctrl. 메신저에서 Enter는 보내기라서 승인을 받는다.',
+    'Press key in app',
+    'Presses keys like Tab, Escape, arrows and Backspace. modifiers: cmd, shift, option, ctrl. In a messenger Enter means send, so it needs approval.',
     {
       bundleId,
       key: z
@@ -113,7 +126,7 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
           'l',
           'n',
         ])
-        .describe('누를 키'),
+        .describe('Key to press'),
       modifiers: z
         .array(z.enum(['cmd', 'shift', 'option', 'ctrl']))
         .max(3)
@@ -123,30 +136,41 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
   )
   tool(
     'screenshot',
-    '앱 화면 보기',
-    '앱 창을 이미지로 본다. 접근성 정보로 읽히지 않는 화면에만 쓴다.',
+    'App screenshot',
+    'Views the app window as an image. Use only for screens that cannot be read through accessibility info.',
     { bundleId },
     true,
   )
   tool(
     'request_app',
-    '앱 조작 허용 요청',
-    '사용자가 아직 허용하지 않은 앱을 다뤄야 할 때 쓴다. 사용자가 PC나 폰에서 허용하면 다음 메시지로 알려 준다. 쓴 뒤에는 이번 답을 끝낸다.',
-    { bundleId, why: z.string().max(200).describe('이 앱으로 하려는 일 (사용자에게 보인다)') },
+    'Ask to allow app control',
+    'Use when you need an app the user has not allowed yet. When the user allows it on the PC or phone, you are told in the next message. After calling, end this reply.',
+    {
+      bundleId,
+      why: z
+        .string()
+        .max(200)
+        .describe("What you want to do with this app (shown to the user, write it in the user's language)"),
+    },
     false,
   )
   tool(
     'request_approval',
-    '앱 승인 요청',
-    '보내기·결제·삭제처럼 승인이 필요한 버튼(또는 메신저의 Enter, ref "key:Enter")일 때 쓴다. 사용자가 화면 캡처와 내용을 보고 승인하면 두리가 그것 하나만 한다. 쓴 뒤에는 이번 답을 끝낸다.',
+    'Request approval in app',
+    'Use for buttons that need approval, like send, pay or delete (or Enter in a messenger, ref "key:Enter"). When the user approves after seeing the screenshot and details, Dool2 does exactly that one action. After calling, end this reply.',
     {
       bundleId,
       ref: z
         .string()
         .regex(/^(?:e\d+|key:Enter)$/)
-        .describe('누를 요소 표시, 메신저 보내기면 "key:Enter"'),
-      what: z.string().max(200).describe('무엇을 하는지 한 문장 (예: "엄마에게 \'7시에 도착해\' 보내기")'),
-      amount: z.string().max(60).optional().describe('돈이 드는 일이면 금액'),
+        .describe('Ref of the element to click, or "key:Enter" for sending in a messenger'),
+      what: z
+        .string()
+        .max(200)
+        .describe(
+          "One sentence on what it does, in the user's language (e.g. \"Send 'I'll arrive at 7' to Mom\")",
+        ),
+      amount: z.string().max(60).optional().describe('Amount, if it costs money'),
     },
     false,
   )

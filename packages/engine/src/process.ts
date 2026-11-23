@@ -6,8 +6,8 @@ import { delimiter, join } from 'node:path'
 const IS_WIN = process.platform === 'win32'
 
 /**
- * 실행 파일을 찾는다. GUI 앱은 셸의 PATH를 물려받지 못할 때가 많아서(특히 맥),
- * PATH 말고도 공식 설치 위치를 함께 본다.
+ * Finds an executable. GUI apps often don't inherit the shell's PATH (especially on macOS),
+ * so the official install locations are checked as well as PATH.
  */
 export async function findExecutable(name: string, extraDirs: string[] = []): Promise<string | undefined> {
   const exts = IS_WIN ? ['.exe', '.cmd', '.bat', ''] : ['']
@@ -35,7 +35,7 @@ export interface RunResult {
   stderr: string
 }
 
-/** 짧게 끝나는 명령 실행 (버전 확인, 로그인 상태 확인 등) */
+/** Runs a short command (version check, login status check and so on) */
 export function runOnce(
   cmd: string,
   args: string[],
@@ -70,14 +70,14 @@ export function runOnce(
 
 export interface LineProcess {
   lines: AsyncIterable<string>
-  /** 프로세스가 끝나면 종료 코드와 stderr 마지막 부분 */
+  /** When the process ends: the exit code and the tail of stderr */
   exit: Promise<{ code: number | null; stderrTail: string }>
   kill(): void
 }
 
 /**
- * 오래 도는 프로세스를 띄우고 stdout을 줄 단위로 읽는다 (NDJSON 스트림용).
- * stdin에 넣을 글이 있으면 써 주고 닫는다.
+ * Starts a long-running process and reads stdout line by line (for NDJSON streams).
+ * Writes the stdin text, if any, and closes stdin.
  */
 export function spawnLines(
   cmd: string,

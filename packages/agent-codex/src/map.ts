@@ -1,9 +1,11 @@
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, UsageLimit } from '@dool2/protocol'
+import { CODEX_TEXT, type CodexText } from './locales/codex.js'
 
 type Json = Record<string, unknown>
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 
-/** 두리 도구만 허용한다. 이 밖의 일(셸·파일 수정·웹 검색)이 보이면 멈춘다. */
+/** Only Dool2 tools are allowed. Anything else (shell, file changes, web search) stops the turn. */
 const UNSAFE_ITEMS = new Set([
   'commandExecution',
   'fileChange',
@@ -14,19 +16,26 @@ const UNSAFE_ITEMS = new Set([
 
 export interface MapResult {
   events: AgentEvent[]
-  /** 턴이 끝났는지 */
+  /** Whether the turn is over */
   finished?: boolean
-  /** 즉시 멈춰야 하는지 (안전 문제) */
+  /** Whether to stop right away (a safety problem) */
   abort?: boolean
 }
 
-/** app-server 알림을 두리 공통 이벤트로 바꾼다. 한 턴에 하나씩 만든다. */
+/** Turns app-server notifications into Dool2's common events. One per turn. */
 export class CodexEventMapper {
   private finalText = ''
   private streamed = ''
   private contextTokens = 0
 
-  constructor(private readonly threadId: string) {}
+  private readonly t: CodexText
+  /** lang: language of the error messages people see */
+  constructor(
+    private readonly threadId: string,
+    lang: Lang = 'ko',
+  ) {
+    this.t = CODEX_TEXT[lang]
+  }
 
   map(method: string, params: Json): MapResult {
     if (typeof params.threadId === 'string' && params.threadId !== this.threadId) return { events: [] }
@@ -44,8 +53,8 @@ export class CodexEventMapper {
       case 'account/rateLimits/updated':
         return { events: rateLimitEvents(params.rateLimits) }
       case 'thread/tokenUsage/updated': {
-        // last = 마지막 AI 호출의 사용량. 입력 토큰(캐시된 것 포함)이 지금 세션의 크기다.
-        // total은 차례 동안 더한 값이라 크기로 쓰지 않는다. 차례가 끝날 때 한 번 알린다
+        // last = usage of the last AI call. Its input tokens (cached ones included) are the session's current size.
+        // total is summed over the turn, so it isn't used as the size. Reported once when the turn ends
         const usage = isObj(params.tokenUsage) ? params.tokenUsage : {}
         const last = isObj(usage.last) ? usage.last : {}
         if (typeof last.inputTokens === 'number' && last.inputTokens > 0)
@@ -70,7 +79,7 @@ export class CodexEventMapper {
           {
             type: 'error',
             code: 'tools_unsafe',
-            message: `두리 도구가 아닌 기능(${item.type})을 쓰려고 해서 멈췄어요`,
+            message: this.t.unsafeItem(String(item.type)),
           },
         ],
       }
@@ -84,7 +93,7 @@ export class CodexEventMapper {
             {
               type: 'error',
               code: 'tools_unsafe',
-              message: `두리 도구가 아닌 도구(${name})를 쓰려고 해서 멈췄어요`,
+              message: this.t.unsafeTool(String(name)),
             },
           ],
         }
@@ -94,7 +103,7 @@ export class CodexEventMapper {
     }
     if (item.type === 'agentMessage' && phase === 'completed' && typeof item.text === 'string') {
       this.finalText = this.finalText ? `${this.finalText}\n\n${item.text}` : item.text
-      // 델타 없이 완성본만 온 경우
+      // Only the finished text came, without deltas
       if (!this.streamed) return { events: [{ type: 'text', delta: item.text }] }
     }
     return { events: [] }
@@ -107,9 +116,7 @@ export class CodexEventMapper {
     const msg = typeof err.message === 'string' ? err.message : ''
     if (info === 'usageLimitExceeded' || info === 'rateLimitExceeded') {
       return {
-        events: [
-          { type: 'limit_reached', message: 'ChatGPT 사용량이 다 찼어요. 한도가 풀리면 다시 할게요.' },
-        ],
+        events: [{ type: 'limit_reached', message: this.t.limit }],
       }
     }
     const httpStatus = isObj(info)
@@ -122,7 +129,7 @@ export class CodexEventMapper {
           {
             type: 'error',
             code: 'not_logged_in',
-            message: 'ChatGPT 로그인이 필요해요. PC에서 다시 로그인해 주세요.',
+            message: this.t.loginAgain,
           },
         ],
       }
@@ -132,7 +139,7 @@ export class CodexEventMapper {
         {
           type: 'error',
           code: 'process_failed',
-          message: `Codex가 일을 끝내지 못했어요${msg ? `: ${msg.slice(0, 200)}` : ''}`,
+          message: this.t.unfinished(msg ? msg.slice(0, 200) : ''),
         },
       ],
     }
@@ -152,7 +159,7 @@ export class CodexEventMapper {
       }
     }
     if (turn.status === 'interrupted') {
-      return { finished: true, events: [{ type: 'error', code: 'aborted', message: '멈췄어요' }] }
+      return { finished: true, events: [{ type: 'error', code: 'aborted', message: this.t.stopped }] }
     }
     return { finished: true, events: [] }
   }

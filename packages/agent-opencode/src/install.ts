@@ -1,17 +1,19 @@
-// OpenCode 설치 (ADR 0010). 설치 파일에 넣지 않고, 처음 쓸 때 공식 GitHub 릴리스에서 받는다.
-// 고정 버전의 SHA256SUMS로 확인하고, 압축은 OS에 들어 있는 tar(맥 bsdtar, 윈도우 10+ tar.exe)로 푼다.
+// OpenCode install (ADR 0010). Not bundled in the installer; downloaded from the official GitHub release on first use.
+// Verified against the pinned version's SHA256SUMS, and unpacked with the tar that ships with the OS (macOS bsdtar, Windows 10+ tar.exe).
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync } from 'node:fs'
 import { chmod, mkdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { Lang } from '@dool2/i18n'
 import type { InstallPhase, InstallStatus } from '@dool2/protocol'
+import { OPENCODE_TEXT } from './locales/opencode.js'
 
-/** 두리와 함께 시험한 OpenCode 버전. v2는 자주 바뀌어서 고정한다 */
+/** OpenCode version tested with Dool2. Pinned because v2 changes often */
 export const OPENCODE_VERSION = '2.3.0'
 export const OPENCODE_RELEASE = `https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}`
 
-/** 이 컴퓨터용 릴리스 파일 이름. 지원하지 않으면 undefined */
+/** Release file name for this computer. Undefined when unsupported */
 export function openCodeAsset(platform: NodeJS.Platform = process.platform, arch: string = process.arch) {
   const a = arch === 'arm64' ? 'arm64' : arch === 'x64' ? 'x64' : undefined
   if (!a) return undefined
@@ -21,7 +23,7 @@ export function openCodeAsset(platform: NodeJS.Platform = process.platform, arch
   return undefined
 }
 
-/** 설치 폴더 안의 실행 파일 위치 */
+/** Location of the executable in the install folder */
 export function openCodeBin(dir: string, platform: NodeJS.Platform = process.platform) {
   return join(dir, `v${OPENCODE_VERSION}`, platform === 'win32' ? 'opencode.exe' : 'opencode')
 }
@@ -29,37 +31,38 @@ export function openCodeBin(dir: string, platform: NodeJS.Platform = process.pla
 export class OpenCodeInstallError extends Error {}
 
 export interface InstallOpenCodeOptions {
-  /** 두리의 OpenCode 설치 폴더 */
+  /** Dool2's OpenCode install folder */
   dir: string
   asset?: string
   fetch?: typeof fetch
-  /** 압축 풀기 (테스트에서 바꿔 끼운다) */
+  /** Unpacking (swapped in tests) */
   extract?: (archive: string, into: string) => Promise<void>
   onProgress?: (phase: InstallPhase, percent?: number) => void
   signal?: AbortSignal
+  /** Language of the error messages people see. Korean when not given */
+  lang?: Lang
 }
 
-const defaultExtract = (archive: string, into: string) =>
+const defaultExtract = (archive: string, into: string, failed: string) =>
   new Promise<void>((resolve, reject) => {
     const p = spawn('tar', ['-xf', archive, '-C', into], { windowsHide: true, stdio: 'ignore' })
     p.on('error', reject)
-    p.on('exit', (code) =>
-      code === 0 ? resolve() : reject(new OpenCodeInstallError('압축을 풀지 못했어요')),
-    )
+    p.on('exit', (code) => (code === 0 ? resolve() : reject(new OpenCodeInstallError(failed))))
   })
 
 export async function installOpenCode(opts: InstallOpenCodeOptions): Promise<string> {
+  const t = OPENCODE_TEXT[opts.lang ?? 'ko']
   const doFetch = opts.fetch ?? fetch
   const signal = opts.signal ?? new AbortController().signal
   const progress = opts.onProgress ?? (() => {})
   const asset = opts.asset ?? openCodeAsset()
-  if (!asset) throw new OpenCodeInstallError('이 컴퓨터에서는 종량제 모드를 쓸 수 없어요')
+  if (!asset) throw new OpenCodeInstallError(t.noPlatform)
   const get = async (url: string) => {
     const res = await doFetch(url, { signal }).catch((err: Error) => {
       if (signal.aborted) throw err
-      throw new OpenCodeInstallError('인터넷 연결을 확인해 주세요')
+      throw new OpenCodeInstallError(t.offline)
     })
-    if (!res.ok) throw new OpenCodeInstallError(`내려받지 못했어요 (${res.status})`)
+    if (!res.ok) throw new OpenCodeInstallError(t.downloadFailed(res.status))
     return res
   }
 
@@ -69,8 +72,7 @@ export async function installOpenCode(opts: InstallOpenCodeOptions): Promise<str
     .split('\n')
     .map((l) => l.trim().split(/\s+/))
     .find(([, name]) => name === asset)?.[0]
-  if (!want || !/^[a-f0-9]{64}$/.test(want))
-    throw new OpenCodeInstallError('설치 파일의 확인값을 찾지 못했어요')
+  if (!want || !/^[a-f0-9]{64}$/.test(want)) throw new OpenCodeInstallError(t.noChecksum)
 
   await mkdir(opts.dir, { recursive: true })
   const archive = join(opts.dir, asset)
@@ -84,7 +86,7 @@ export async function installOpenCode(opts: InstallOpenCodeOptions): Promise<str
     const out = createWriteStream(archive)
     let got = 0
     let shown = -1
-    if (!res.body) throw new OpenCodeInstallError('내려받지 못했어요')
+    if (!res.body) throw new OpenCodeInstallError(t.downloadFailed())
     for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
       hash.update(chunk)
       got += chunk.length
@@ -100,17 +102,16 @@ export async function installOpenCode(opts: InstallOpenCodeOptions): Promise<str
     )
 
     progress('verify')
-    if (hash.digest('hex') !== want)
-      throw new OpenCodeInstallError('받은 파일이 공식 파일과 달라요. 안전을 위해 설치를 멈췄어요')
+    if (hash.digest('hex') !== want) throw new OpenCodeInstallError(t.checksum)
 
     progress('setup')
     await rm(staging, { recursive: true, force: true })
     await mkdir(staging, { recursive: true })
-    await (opts.extract ?? defaultExtract)(archive, staging)
+    await (opts.extract ?? ((a, i) => defaultExtract(a, i, t.extractFailed)))(archive, staging)
     await rm(target, { recursive: true, force: true })
     await rename(staging, target)
     const bin = openCodeBin(opts.dir)
-    if (!existsSync(bin)) throw new OpenCodeInstallError('설치했는데 실행 파일을 찾지 못했어요')
+    if (!existsSync(bin)) throw new OpenCodeInstallError(t.notFoundAfter)
     if (process.platform !== 'win32') await chmod(bin, 0o755)
     return bin
   } finally {
@@ -119,7 +120,7 @@ export async function installOpenCode(opts: InstallOpenCodeOptions): Promise<str
   }
 }
 
-/** 설치 버튼 상태를 들고 있는 세션 */
+/** Session holding the install button's state */
 export class OpenCodeInstall {
   private snapshot: InstallStatus = { state: 'idle' }
   private abort: AbortController | undefined
@@ -130,13 +131,15 @@ export class OpenCodeInstall {
     return this.snapshot
   }
 
-  start(): InstallStatus {
+  start(lang: Lang = this.opts.lang ?? 'ko'): InstallStatus {
     if (this.snapshot.state === 'running') return this.snapshot
+    const t = OPENCODE_TEXT[lang]
     const abort = new AbortController()
     this.abort = abort
     this.snapshot = { state: 'running', phase: 'prepare' }
     void installOpenCode({
       ...this.opts,
+      lang,
       signal: abort.signal,
       onProgress: (phase, percent) => {
         if (this.abort === abort)
@@ -150,7 +153,7 @@ export class OpenCodeInstall {
         if (this.abort !== abort) return
         this.snapshot = {
           state: 'failed',
-          message: err instanceof OpenCodeInstallError ? err.message : `설치하지 못했어요: ${err.message}`,
+          message: err instanceof OpenCodeInstallError ? err.message : t.installFailed(err.message),
         }
       })
     return this.snapshot

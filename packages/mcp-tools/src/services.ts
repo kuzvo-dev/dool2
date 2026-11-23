@@ -1,13 +1,14 @@
-// 서비스 도구 (ADR 0018): 서비스마다 타입 있는 도구 (catchtable_search, cj_logistics_track …).
-// 두리 본체가 skills/<id>/tools.json을 읽어 실행한다. 이 서버는 본체가 알려 준 도구를 MCP 도구로 내보일 뿐이다.
+// Service tools (ADR 0018): typed tools per service (catchtable_search, cj_logistics_track …).
+// The Dool2 daemon reads skills/<id>/tools.json and runs them. This server only exposes the tools the daemon reports as MCP tools.
 //
-// - 연결한 서비스(+로그인 없는 서비스)의 도구는 바로 보인다. 연결이 바뀌면 목록을 새로 알린다(tools/list_changed).
-// - 나머지 서비스는 service_find로 찾고 service_call로 부른다 (도구 300개를 한꺼번에 내밀지 않는다).
+// - Tools of connected services (plus services without login) are visible right away. When connections change, the list
+//   is announced again (tools/list_changed).
+// - Other services are found with service_find and called with service_call (we do not push 300 tools at once).
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { BrowserClient, ToolResult } from './browser.js'
 
-/** 본체가 알려 주는 도구 모양 (apps/daemon connectors.ts의 ServiceToolSpec) */
+/** Tool shape reported by the daemon (ServiceToolSpec in apps/daemon connectors.ts) */
 export interface ServiceToolSpec {
   name: string
   title: string
@@ -51,7 +52,7 @@ export interface ServiceToolSpec {
 
 type Prop = ServiceToolSpec['input']['properties'][string]
 
-/** 입력 칸 → zod (MCP SDK가 JSON 스키마로 바꿔 AI에게 보인다) */
+/** Input fields → zod (the MCP SDK turns it into JSON Schema for the AI) */
 export function inputShape(input: ServiceToolSpec['input']): z.ZodRawShape {
   const shape: Record<string, z.ZodType> = {}
   for (const [k, p] of Object.entries(input.properties)) {
@@ -79,7 +80,7 @@ function prop(p: Prop): z.ZodType {
   return s
 }
 
-/** 출력 칸 → zod. 사이트에 따라 비는 칸이 있어 모두 비어도 되게 둔다 */
+/** Output fields → zod. Some sites leave fields empty, so every field may be empty */
 export function outputShape(output: ServiceToolSpec['output']): z.ZodRawShape {
   const scalar = (type: string) =>
     (type === 'strings'
@@ -108,9 +109,10 @@ export function outputShape(output: ServiceToolSpec['output']): z.ZodRawShape {
 }
 
 /**
- * 본체 결과를 MCP 결과로. 구조화 결과가 있으면 AI는 글 대신 그걸 본다(실측: 구글 캘린더 넘기기 도구가 "{}"만 보여
- * AI가 "화면이 열렸는지 확인이 안 돼요"라고 했다). 그래서 출력 칸이 없는 도구는 구조화 결과를 빼고,
- * 출력 칸이 있는데 비어 온 결과(넘기기·멈춤)는 글을 text 칸에 담는다
+ * Daemon result → MCP result. When there is a structured result the AI reads it instead of the text (measured: the
+ * Google Calendar hand-off tool showed only "{}" and the AI said it could not tell whether the screen opened). So tools
+ * without output fields drop the structured result, and an empty result from a tool with output fields (hand-off, stop)
+ * carries the text in a `text` field.
  */
 export const pass = (r: ToolResult & { structuredContent?: Record<string, unknown> }, hasOutput = true) => {
   const sc = r.structuredContent
@@ -124,9 +126,9 @@ export const pass = (r: ToolResult & { structuredContent?: Record<string, unknow
 }
 
 export interface ServiceTools {
-  /** 본체에 바로 보일 도구를 다시 묻고 MCP 도구 목록을 맞춘다 */
+  /** Asks the daemon again for the directly visible tools and syncs the MCP tool list */
   sync(): Promise<void>
-  /** 지금 내보인 서비스 도구 이름 */
+  /** Names of the service tools exposed now */
   names(): string[]
   stop(): void
 }
@@ -173,8 +175,8 @@ export function registerServiceTools(
         )
         registered.set(spec.name, { key, tool })
       } catch (e) {
-        // 형식이 틀린 도구 하나 때문에 나머지를 못 쓰면 안 된다
-        console.error(`[두리] 서비스 도구 ${spec.name}을(를) 올리지 못했어요: ${(e as Error).message}`)
+        // One malformed tool must not make the rest unusable
+        console.error(`[dool2] Could not register service tool ${spec.name}: ${(e as Error).message}`)
       }
     }
   }
@@ -188,16 +190,18 @@ export function registerServiceTools(
   server.registerTool(
     'service_find',
     {
-      title: '서비스 찾기',
+      title: 'Find a service',
       description:
-        '부탁을 처리할 서비스(식당 예약, 택배 조회, 장보기, 기차 예매 등)와 그 서비스의 두리 도구를 찾는다. ' +
-        '서비스마다 연결 여부, 도구 이름·등급·입력 칸, 연결하면 할 수 있는 일을 알려 준다. ' +
-        '바로 보이는 도구 목록에 맞는 도구가 없을 때 먼저 쓴다. 도구가 없는 서비스면 브라우저 도구로 하는 요령을 준다.',
+        'Finds services that can handle the request (restaurant booking, parcel tracking, grocery shopping, train tickets, etc.) and their Dool2 tools. ' +
+        'For each service it tells whether it is connected, the tool names, tiers and input fields, and what becomes possible once connected. ' +
+        'Use this first when no tool in the directly visible list fits. For a service without tools it gives tips for doing the job with the browser tools.',
       inputSchema: {
         query: z
           .string()
           .max(100)
-          .describe('서비스 이름이나 할 일 (예: "캐치테이블", "택배 조회", "성수 저녁 예약")'),
+          .describe(
+            'Service name or task, in the user\'s words (e.g. "CatchTable", "parcel tracking", "dinner booking in Seongsu")',
+          ),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
@@ -209,11 +213,11 @@ export function registerServiceTools(
   server.registerTool(
     'orders_all',
     {
-      title: '내 주문 모아 보기',
+      title: 'All my orders',
       description:
-        '연결한 쇼핑몰(쿠팡·네이버페이·G마켓·11번가 등) 모두의 최근 주문·배송 상태를 한 번에 읽는다. ' +
-        "'택배 어디쯤 왔어', '상자가 찌그러져 왔어', '지난주 산 것 반품', '그거 언제 와'처럼 어느 쇼핑몰인지 모를 때 " +
-        '쇼핑몰마다 주문 도구를 따로 부르는 대신 먼저 쓴다. 한 곳만 보고 "어디서 샀는지 알려 주세요"라고 묻지 않는다.',
+        'Reads recent orders and delivery status from all connected shopping sites (Coupang, Naver Pay, Gmarket, 11st, etc.) at once. ' +
+        "When it is unclear which shop is meant ('where is my parcel', 'the box arrived crushed', 'return what I bought last week', 'when does it arrive'), " +
+        'use this first instead of calling each shop\'s order tool separately. Do not check just one shop and then ask "where did you buy it?".',
       inputSchema: {},
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     },
@@ -222,17 +226,19 @@ export function registerServiceTools(
   server.registerTool(
     'service_call',
     {
-      title: '서비스 도구 쓰기',
+      title: 'Use a service tool',
       description:
-        'service_find로 찾은 서비스 도구를 부른다 (바로 보이는 도구 목록에 그 도구가 없을 때). ' +
-        '결제·예약 확정·보내기는 이 도구로도 사용자 승인 없이는 하지 않는다.',
+        'Calls a service tool found with service_find (when that tool is not in the directly visible list). ' +
+        "Payments, booking confirmations and sending are never done without the user's approval, through this tool either.",
       inputSchema: {
-        tool: z.string().max(60).describe('도구 이름 (예: "catchtable_search")'),
-        input: z.record(z.string(), z.unknown()).describe('그 도구의 입력 (service_find가 알려 준 칸)'),
+        tool: z.string().max(60).describe('Tool name (e.g. "catchtable_search")'),
+        input: z
+          .record(z.string(), z.unknown())
+          .describe('Input for that tool (the fields service_find reported)'),
       },
       annotations: { openWorldHint: true },
     },
-    // 출력 칸이 도구마다 달라 구조화 결과는 넘기지 않는다 (글에 같은 내용이 줄로 들어 있다)
+    // Output fields differ per tool, so no structured result is passed (the text has the same content line by line)
     async (args) => pass(await client('call', args), false),
   )
 

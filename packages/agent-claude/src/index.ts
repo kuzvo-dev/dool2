@@ -1,11 +1,13 @@
-// Claude Code 어댑터.
-// 원칙 (ADR 0002): 사용자가 설치한 공식 `claude`를 수정 없이 실행만 한다.
-// 로그인도 공식 `claude auth login`이 하고, 두리는 토큰을 읽거나 저장하지 않는다 (login.ts).
-// 내장 도구는 모두 끄고 두리 MCP 도구만 쓰게 한다 (ADR 0003).
+// Claude Code adapter.
+// Principle (ADR 0002): only run the official `claude` the user installed, unmodified.
+// Sign-in is done by the official `claude auth login` too, and Dool2 never reads or stores tokens (login.ts).
+// All built-in tools are turned off so only Dool2's MCP tools are used (ADR 0003).
 
 import { type AgentRuntime, findExecutable, runOnce, spawnLines, type TurnInput } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { ClaudeInstall } from './install.js'
+import { CLAUDE_TEXT } from './locales/claude.js'
 import { ClaudeLogin, type ClaudeLoginOptions } from './login.js'
 
 export {
@@ -22,10 +24,10 @@ import { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 export { ClaudeLogin, type ClaudeLoginOptions, type LoginChild, loginEnv, type SpawnLogin } from './login.js'
 export { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
-/** 두리가 Claude Code에 쓰는 기본 모델 */
+/** Default model Dool2 uses with Claude Code */
 export const CLAUDE_DEFAULT_MODEL = 'sonnet'
 
-/** `claude -p` 인자. 순수 함수라 테스트로 고정한다. */
+/** Arguments for `claude -p`. A pure function, pinned by tests. */
 export function buildClaudeArgs(
   input: Pick<TurnInput, 'resumeId' | 'systemPrompt' | 'mcpServers' | 'model'>,
 ): string[] {
@@ -45,7 +47,7 @@ export function buildClaudeArgs(
     'stream-json',
     '--verbose',
     '--include-partial-messages',
-    // 셸·파일·웹 등 내장 도구를 전부 끈다. 두리 도구(MCP)만 남는다.
+    // Turn off every built-in tool (shell, files, web...). Only Dool2 tools (MCP) remain.
     '--tools',
     '',
     '--strict-mcp-config',
@@ -53,12 +55,12 @@ export function buildClaudeArgs(
     JSON.stringify(mcpConfig),
     '--allowedTools',
     `${DOOL2_TOOL_PREFIX}*`,
-    // 사용자·프로젝트 설정(훅, 다른 MCP 등)을 읽지 않는다
+    // Don't read user or project settings (hooks, other MCP servers...)
     '--setting-sources',
     '',
     '--append-system-prompt',
     input.systemPrompt,
-    // 기본은 Sonnet: 빠르고 충분히 똑똑하다 (사용자가 설정에서 바꿀 수 있다)
+    // Sonnet by default: fast and smart enough (the user can change it in settings)
     '--model',
     input.model || CLAUDE_DEFAULT_MODEL,
   ]
@@ -76,8 +78,15 @@ export class ClaudeRuntime implements AgentRuntime {
   readonly id = 'claude' as const
   private resolvedPath: string | undefined
 
-  /** binPath를 주면 그 실행 파일을 쓴다 (테스트·고급 설정용) */
-  constructor(private readonly opts: { binPath?: string } = {}) {}
+  /**
+   * binPath: use that executable (tests, advanced settings).
+   * lang: language of the status and error messages people see, read each time. Korean when not given
+   */
+  constructor(private readonly opts: { binPath?: string; lang?: () => Lang } = {}) {}
+
+  private lang(): Lang {
+    return this.opts.lang?.() ?? 'ko'
+  }
 
   private async bin() {
     this.resolvedPath ??= this.opts.binPath ?? (await findExecutable('claude'))
@@ -86,8 +95,9 @@ export class ClaudeRuntime implements AgentRuntime {
 
   async detect(): Promise<AgentStatus> {
     const path = await this.bin()
+    const t = CLAUDE_TEXT[this.lang()]
     if (!path) {
-      return { id: 'claude', installed: false, loggedIn: false, problem: 'Claude Code가 설치돼 있지 않아요' }
+      return { id: 'claude', installed: false, loggedIn: false, problem: t.notInstalled }
     }
     const status: AgentStatus = { id: 'claude', installed: true, path, loggedIn: false }
     try {
@@ -98,24 +108,30 @@ export class ClaudeRuntime implements AgentRuntime {
       const auth = JSON.parse(a.stdout || '{}') as AuthStatus
       status.loggedIn = auth.loggedIn === true && auth.authMethod !== 'none'
       if (auth.subscriptionType) status.plan = auth.subscriptionType
-      if (!status.loggedIn) status.problem = 'Claude 로그인이 필요해요'
+      if (!status.loggedIn) status.problem = t.needLogin
     } catch (err) {
-      status.problem = `Claude Code 상태를 확인하지 못했어요: ${(err as Error).message}`
+      status.problem = t.statusFailed((err as Error).message)
     }
     return status
   }
 
-  /** 로그인 버튼용 세션을 만든다. 설치돼 있지 않으면 undefined */
+  /** Makes a session for the sign-in button. Undefined when not installed */
   async createLogin(opts: Partial<ClaudeLoginOptions> = {}): Promise<ClaudeLogin | undefined> {
     const bin = await this.bin()
     if (!bin) return undefined
-    return new ClaudeLogin({ bin, isLoggedIn: async () => (await this.detect()).loggedIn, ...opts })
+    return new ClaudeLogin({
+      bin,
+      isLoggedIn: async () => (await this.detect()).loggedIn,
+      lang: this.lang(),
+      ...opts,
+    })
   }
 
-  /** 설치 버튼용 세션을 만든다. 설치가 끝나면 실행 파일을 다시 찾는다 */
+  /** Makes a session for the install button. Looks for the executable again after installing */
   createInstall(downloadDir: string): ClaudeInstall {
     return new ClaudeInstall({
       downloadDir,
+      lang: this.lang(),
       verify: async () => {
         this.resolvedPath = this.opts.binPath ?? (await findExecutable('claude'))
         return Boolean(this.resolvedPath)
@@ -126,12 +142,12 @@ export class ClaudeRuntime implements AgentRuntime {
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
     const path = await this.bin()
     if (!path) {
-      yield { type: 'error', code: 'not_installed', message: 'Claude Code가 설치돼 있지 않아요' }
+      yield { type: 'error', code: 'not_installed', message: CLAUDE_TEXT[this.lang()].notInstalled }
       return
     }
-    // 두리 도구 서버(MCP)가 시작 때 안 붙으면(PC가 바쁠 때 늦게 뜸) 도구 없이 답하게 된다:
-    // "No such tool"을 받고 "도구가 안 불러져요"라고 끝냈다 (실측 11-21, 차례 몇 번에 한 번).
-    // 시작 알림에 두리 도구가 하나도 없으면 그 실행은 버리고 잠깐 뒤 한 번 더 띄운다
+    // If the Dool2 tool server (MCP) isn't attached at start (it comes up late when the PC is busy), the reply has no tools:
+    // it got "No such tool" and ended with "the tools won't load" (seen 11-21, once every few turns).
+    // If the start event lists no Dool2 tool, drop that run and start once more after a short wait
     for (let attempt = 0; ; attempt++) {
       const retry = yield* this.runOnce(path, input, attempt < 2)
       if (!retry) return
@@ -139,7 +155,7 @@ export class ClaudeRuntime implements AgentRuntime {
     }
   }
 
-  /** 한 번 실행. 두리 도구 없이 시작했고 다시 해도 되면 아무것도 내보내지 않고 true */
+  /** One run. Returns true without emitting anything if it started without Dool2 tools and may retry */
   private async *runOnce(
     path: string,
     input: TurnInput,
@@ -150,7 +166,8 @@ export class ClaudeRuntime implements AgentRuntime {
       stdin: input.text,
       ...(input.signal ? { signal: input.signal } : {}),
     })
-    const parser = new ClaudeStreamParser()
+    const t = CLAUDE_TEXT[this.lang()]
+    const parser = new ClaudeStreamParser(this.lang())
     let finished = false
     for await (const line of proc.lines) {
       for (const ev of parser.push(line)) {
@@ -174,14 +191,14 @@ export class ClaudeRuntime implements AgentRuntime {
     }
     const { code, stderrTail } = await proc.exit
     if (input.signal?.aborted) {
-      yield { type: 'error', code: 'aborted', message: '멈췄어요' }
+      yield { type: 'error', code: 'aborted', message: t.stopped }
       return false
     }
     if (!finished) {
       yield {
         type: 'error',
         code: 'process_failed',
-        message: `Claude Code가 중간에 멈췄어요 (종료 코드 ${code})${stderrTail ? `: ${stderrTail.trim().slice(-200)}` : ''}`,
+        message: t.crashed(code, stderrTail ? stderrTail.trim().slice(-200) : ''),
       }
     }
     return false

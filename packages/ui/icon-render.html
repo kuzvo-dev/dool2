@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="ko">
 <!--
-  앱 아이콘 다시 뽑기 (개발용). 원본은 doori/app-icon.svg(얼굴이 곧 아이콘, 바탕까지 꽉 찬 정사각)와
-  doori/app-icon-foreground.svg(안드로이드 적응형 아이콘 앞면, 얼굴을 안전 영역 안으로 줄임).
-  SVG를 고친 뒤 이 페이지를 http로 열면 PC·폰·확장·안드로이드 아이콘과 시작 화면을 모두 그려서 보여 주고,
-  window.__out 에 { 레포 경로: dataURL } 로 담는다. 그림을 눌러 하나씩 내려받을 수도 있다.
+  Re-render the app icons (dev only). Sources are doori/app-icon.svg (the face is the icon, a full-bleed square) and
+  doori/app-icon-foreground.svg (Android adaptive icon foreground, face shrunk into the safe zone).
+  After editing the SVGs, open this page over http: it draws every desktop, phone, extension and Android icon plus
+  the splash screen, and puts them in window.__out as { repo path: dataURL }. Click an image to download it.
     cd packages/ui && python3 -m http.server 8799   →   http://127.0.0.1:8799/icon-render.html
 -->
 <head>
 <meta charset="utf-8" />
-<title>앱 아이콘 뽑기</title>
+<title>Render app icons</title>
 <style>
   body { font: 14px system-ui, sans-serif; margin: 24px; background: #f5f6f8; }
   .grid { display: flex; flex-wrap: wrap; gap: 16px; }
@@ -18,7 +18,7 @@
 </style>
 </head>
 <body>
-<h1>앱 아이콘</h1>
+<h1>App icons</h1>
 <div class="grid" id="out"></div>
 <script type="module">
 const load = async (src) => {
@@ -39,14 +39,14 @@ const canvas = (w, h = w) => {
   return [c, g]
 }
 
-/** 바탕까지 꽉 찬 정사각 (폰 앱·안드로이드 앞면: 모양은 OS가 씌움) */
+/** Full-bleed square (phone app, Android foreground: the OS applies the shape) */
 function square(img, size) {
   const [c, g] = canvas(size)
   g.drawImage(img, 0, 0, size, size)
   return c
 }
 
-/** 둥근 판. inset 만큼 바깥을 비우고, shadow면 판 아래 그림자 (macOS 아이콘 격자: 1024 안 824 판) */
+/** Rounded plate. Leaves `inset` empty around it, and with `shadow` draws a shadow under it (macOS icon grid: 824 plate in 1024) */
 function tile(size, { inset = 0, radius = 0.225, shadow = false, circle = false } = {}) {
   const [c, g] = canvas(size)
   const w = size - inset * 2
@@ -69,7 +69,7 @@ function tile(size, { inset = 0, radius = 0.225, shadow = false, circle = false 
   return c
 }
 
-/** 안드로이드 시작 화면: 연한 바탕 가운데 둥근 아이콘 */
+/** Android splash screen: rounded icon centered on a light background */
 function splash(w, h) {
   const [c, g] = canvas(w, h)
   g.fillStyle = '#f2fbf6'
@@ -84,7 +84,7 @@ const out = {}
 out['apps/desktop/assets/icon.png'] = png(tile(1024, { inset: 100, shadow: true }))
 out['apps/phone/static/icons/icon512.png'] = png(square(art, 512))
 out['apps/phone/static/icons/icon192.png'] = png(square(art, 192))
-// 확장: 크롬 권장대로 128은 둘레를 조금 비우고, 16은 꽉 채운다
+// Extension: per Chrome guidance, 128 keeps a small margin and 16 fills the whole square
 for (const [s, inset] of [[16, 0], [32, 1], [48, 2], [128, 8]])
   out[`apps/extension/static/icons/icon${s}.png`] = png(tile(s, { inset }))
 

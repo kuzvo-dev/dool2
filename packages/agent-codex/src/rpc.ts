@@ -1,4 +1,4 @@
-// `codex app-server` stdio JSON-RPC (한 줄에 메시지 하나).
+// `codex app-server` stdio JSON-RPC (one message per line).
 type Json = Record<string, unknown>
 
 export interface RpcTransport {
@@ -7,7 +7,7 @@ export interface RpcTransport {
 }
 
 export type NotificationHandler = (method: string, params: Json) => void
-/** 서버가 앱에 묻는 요청(승인 등). 응답 result를 돌려준다. */
+/** Requests the server sends to the app (approvals and so on). Returns the response result. */
 export type ServerRequestHandler = (method: string, params: Json) => Promise<unknown> | unknown
 
 export class RpcError extends Error {
@@ -30,7 +30,7 @@ export class JsonRpcClient {
     private readonly onServerRequest: ServerRequestHandler,
   ) {}
 
-  /** 메시지 읽기를 시작한다. 연결이 끊기면 끝난다. */
+  /** Starts reading messages. Ends when the connection drops. */
   async pump(): Promise<void> {
     for await (const line of this.transport.lines) {
       let msg: Json
@@ -42,7 +42,7 @@ export class JsonRpcClient {
       void this.dispatch(msg)
     }
     this.closed = true
-    for (const p of this.pending.values()) p.reject(new RpcError('Codex 연결이 끊겼어요'))
+    for (const p of this.pending.values()) p.reject(new RpcError('Codex connection closed'))
     this.pending.clear()
   }
 
@@ -65,13 +65,13 @@ export class JsonRpcClient {
       this.pending.delete(msg.id)
       if (msg.error && typeof msg.error === 'object') {
         const e = msg.error as { message?: string; code?: number }
-        p.reject(new RpcError(e.message ?? 'Codex 요청 실패', e.code))
+        p.reject(new RpcError(e.message ?? 'Codex request failed', e.code))
       } else p.resolve(msg.result)
     }
   }
 
   request<T = unknown>(method: string, params: unknown): Promise<T> {
-    if (this.closed) return Promise.reject(new RpcError('Codex 연결이 끊겼어요'))
+    if (this.closed) return Promise.reject(new RpcError('Codex connection closed'))
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })

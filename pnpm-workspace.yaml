@@ -2,12 +2,12 @@ packages:
   - apps/*
   - packages/*
 
-# 설치 스크립트를 돌려도 되는 패키지만 허용한다 (나머지는 막힘)
+# Only these packages may run install scripts (all others are blocked)
 onlyBuiltDependencies:
   - electron
   - esbuild
   - workerd
 
-# PDF 글 뽑기(pdfjs-dist)는 그림 그리기를 쓰지 않으니 네이티브 캔버스는 받지 않는다
+# PDF text extraction (pdfjs-dist) does not render, so skip the native canvas
 ignoredOptionalDependencies:
   - "@napi-rs/canvas"

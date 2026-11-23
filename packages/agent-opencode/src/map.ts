@@ -1,7 +1,9 @@
-// OpenCode v2 서버 사건(`GET /api/event`, SSE)을 두리 공통 AgentEvent로 바꾼다.
-// 사건 모양은 OpenCode v2.3.0 schema/session-event.ts와 실제 출력으로 확인했다.
+// Turns OpenCode v2 server events (`GET /api/event`, SSE) into Dool2's common AgentEvent.
+// Event shapes were checked against OpenCode v2.3.0 schema/session-event.ts and real output.
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent } from '@dool2/protocol'
 import { DOOL2_TOOL_PREFIX } from './config.js'
+import { OPENCODE_TEXT, type OpenCodeText } from './locales/opencode.js'
 
 export interface OpenCodeEvent {
   type: string
@@ -17,41 +19,42 @@ interface StructuredError {
 
 export interface MapResult {
   events: AgentEvent[]
-  /** 이 턴이 끝났다 */
+  /** The turn is over */
   finished?: boolean
-  /** 두리 도구가 아닌 도구를 쓰려 해서 바로 멈춰야 한다 */
+  /** It tried to use a tool other than Dool2's, so stop right away */
   abort?: boolean
 }
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-/** 오류를 사람 말과 공통 오류 코드로 바꾼다 */
-export function mapError(err: StructuredError | undefined): AgentEvent {
+/** Turns an error into plain words and a common error code */
+export function mapError(err: StructuredError | undefined, lang: Lang = 'ko'): AgentEvent {
+  const t = OPENCODE_TEXT[lang]
   const type = err?.type ?? ''
   const status = err?.status ?? 0
   if (status === 401 || status === 403 || /auth/.test(type))
     return {
       type: 'error',
       code: 'not_logged_in',
-      message: 'API 키가 맞지 않아요. 설정에서 키를 다시 넣어 주세요',
+      message: t.badKey,
     }
   if (status === 402 || /credit|billing|quota|insufficient/i.test(`${type} ${err?.message ?? ''}`))
     return {
       type: 'limit_reached',
-      message: 'AI 제공자 계정의 잔액이나 한도가 부족해요. 제공자 사이트에서 확인해 주세요',
+      message: t.noCredit,
     }
   if (status === 429 || /rate|limit/.test(type)) {
     const resetsAt = err?.retryAfterMs ? new Date(Date.now() + err.retryAfterMs).toISOString() : undefined
     return {
       type: 'limit_reached',
-      message: '요청이 너무 많아 잠시 쉬어야 해요',
+      message: t.tooMany,
       ...(resetsAt ? { resetsAt } : {}),
     }
   }
   return {
     type: 'error',
     code: 'process_failed',
-    message: `AI가 답하지 못했어요${err?.message ? `: ${err.message.slice(0, 200)}` : ''}`,
+    message: t.noAnswer(err?.message ? err.message.slice(0, 200) : ''),
   }
 }
 
@@ -61,7 +64,14 @@ export class OpenCodeEventMapper {
   private reported = false
   private contextTokens = 0
 
-  constructor(private readonly sessionId: string) {}
+  private readonly t: OpenCodeText
+  /** lang: language of the error messages people see */
+  constructor(
+    private readonly sessionId: string,
+    private readonly lang: Lang = 'ko',
+  ) {
+    this.t = OPENCODE_TEXT[lang]
+  }
 
   map(ev: OpenCodeEvent): MapResult {
     const d = ev.data ?? {}
@@ -84,7 +94,7 @@ export class OpenCodeEventMapper {
               {
                 type: 'error',
                 code: 'tools_unsafe',
-                message: `두리 도구가 아닌 도구를 쓰려 해서 멈췄어요: ${name}`,
+                message: this.t.unsafeTool(name),
               },
             ],
             abort: true,
@@ -111,8 +121,8 @@ export class OpenCodeEventMapper {
           output?: number
           cache?: { read?: number; write?: number }
         }
-        // 단계(AI 호출 한 번)의 입력은 캐시를 뺀 값이라 캐시 읽기·쓰기를 더해야 세션 크기가 된다.
-        // 마지막 단계의 값을 차례 끝에 한 번 알린다
+        // A step's (one AI call's) input excludes the cache, so cache reads and writes are added to get the session size.
+        // The last step's value is reported once at the end of the turn
         const size = num(tokens.input) + num(tokens.cache?.read) + num(tokens.cache?.write)
         if (size > 0) this.contextTokens = size
         return {
@@ -135,16 +145,16 @@ export class OpenCodeEventMapper {
       }
       case 'session.execution.failed':
       case 'session.step.failed': {
-        // 단계 실패 다음에 실행 실패가 한 번 더 온다. 한 번만 알린다
+        // A step failure is followed by an execution failure. Report only once
         if (this.reported) return { events: [], finished: ev.type === 'session.execution.failed' }
         this.reported = true
         return {
-          events: [mapError(d.error as StructuredError)],
+          events: [mapError(d.error as StructuredError, this.lang)],
           finished: ev.type === 'session.execution.failed',
         }
       }
       case 'session.execution.interrupted':
-        return { events: [{ type: 'error', code: 'aborted', message: '멈췄어요' }], finished: true }
+        return { events: [{ type: 'error', code: 'aborted', message: this.t.stopped }], finished: true }
       default:
         return { events: [] }
     }
