@@ -77,6 +77,7 @@ import { findCard } from '@dool2/protocol/connect-text'
 import { APP_NOTE, appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
+import { AutoApprover, autoCovers } from './auto-approve.js'
 import {
   type AutoLoginResult,
   autoLogin,
@@ -87,7 +88,7 @@ import {
   sameAccount,
   socialLogin,
 } from './auto-login.js'
-import { askedForAccount, BrowserTools } from './browser-tools.js'
+import { askedForAccount, BrowserTools, type ToolResult } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -768,6 +769,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (url.startsWith('file:')) return fileTools.ops.approve(id)
     return browserTools.approve(id, choice)
   }
+  // Auto-approve (ADR 0030): everything except payments runs without a card when the user turned it on.
+  // When it changes on the PC, the phones' switches follow
+  let autoOn = readSettings().autoApprove === true
+  events.on('settings', (st: Settings) => {
+    if ((st.autoApprove === true) === autoOn) return
+    autoOn = st.autoApprove === true
+    journal.write('auto-approve-set', { on: autoOn })
+    // link is created further down; a settings change before that has no phones to tell
+    try {
+      void link.resync()
+    } catch {}
+  })
+  browserTools.approvals.autoDecide = (n) => autoCovers(readSettings().autoApprove === true, n)
+  const autoApprover = new AutoApprover(
+    browserTools.approvals,
+    (id) => approveAny(id),
+    (e) => journal.write('auto-approve', e),
+  )
 
   // Phone link (M6): takes requests from paired phones and handles them on the PC
   const relayUrl = () => process.env.DOOL2_RELAY || readSettings().relay || opts.relay
@@ -1466,6 +1485,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(connecting.size ? { connecting: [...connecting.keys()] } : {}),
           ...(browserTools.lastTabId !== undefined ? { activeTab: browserTools.lastTabId } : {}),
           ...(devReset ? { dev: true } : {}),
+          ...(readSettings().autoApprove ? { autoApprove: true } : {}),
         }
       },
       thread: async (id) => {
@@ -1622,6 +1642,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(message ? { message } : {}),
         }
       },
+      setAutoApprove: (on, phone) => {
+        store.setSetting('autoApprove', on)
+        events.emit('settings', readSettings())
+        journal.write('auto-approve-set', { on, from: 'phone', phone })
+      },
       caps: (phone, caps) => {
         phoneCaps.set(phone, caps)
         journal.write('phone-caps', { caps })
@@ -1734,6 +1759,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
+        // A text the phone sent on its own under auto-approve (ADR 0030): say so instead of "approved on the phone"
+        const auto = browserTools.approvals.get(id)?.auto === true
         // The phone already sent the text (the result follows right away): do not say it will press
         if (
           decision === 'approve' &&
@@ -1752,7 +1779,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             threadId,
             decision === 'reject'
               ? appNote(forAI('', `The user declined on the phone ("${label}"). Do not press it.`))
-              : appNote(forAI(m().approvedOnPhone(r.message), 'Check the result and continue the task.')),
+              : appNote(
+                  forAI(
+                    auto ? m().doneAutomatically(r.message) : m().approvedOnPhone(r.message),
+                    'Check the result and continue the task.',
+                  ),
+                ),
           )
         return r
       },
@@ -2934,18 +2966,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Address only for the Doori tool server: can be called only with the tool token
     if (parts[0] === 'api' && a === 'tools') {
       if (!authorized(req, toolToken)) return json(res, 401, { error: m().needAuth })
+      // Requests this call creates that auto-approve takes are approved before the AI gets the answer (ADR 0030)
+      const pendingBefore = autoApprover.before()
+      const reply = async (r: ToolResult) => json(res, 200, await autoApprover.after(pendingBefore, r))
       if (req.method === 'POST' && b === 'browser' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
-        return json(res, 200, await browserTools.run(c, args && typeof args === 'object' ? args : {}))
+        return reply(await browserTools.run(c, args && typeof args === 'object' ? args : {}))
       }
       if (req.method === 'POST' && b === 'screen' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
-        return json(
-          res,
-          200,
+        return reply(
           await screenTools
             .run(c, args && typeof args === 'object' ? args : {})
-            .catch((e: Error) => ({ isError: true, content: [{ type: 'text', text: e.message }] })),
+            .catch(
+              (e: Error): ToolResult => ({ isError: true, content: [{ type: 'text', text: e.message }] }),
+            ),
         )
       }
       // PC file tools (ADR 0022·0024): find and read in Desktop, Documents and Downloads, create new files, move, change photos, print
@@ -2968,13 +3003,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
               }
             : {}),
         })
-        return json(res, 200, r)
+        return reply(r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'phone_sms' && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
         const r = phoneSms.request(args && typeof args === 'object' ? args : {})
         journal.write('phone-sms-ask', { ok: !r.isError })
-        return json(res, 200, r)
+        return reply(r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {
         const args = (await readJson(req)) as { service?: unknown }

@@ -15,7 +15,7 @@ import {
   seal,
   signText,
 } from '@dool2/protocol/e2e'
-import { LinkClient, resetSignText } from '@dool2/protocol/link'
+import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import { type Relay, startRelay } from '@dool2/relay'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
@@ -299,6 +299,44 @@ describe('처음부터 다시 (시험용 PC)', () => {
     expect(done(p)[2]?.ok).toBe(true)
     expect((await api('/api/life')).memory.length).toBe(0)
     expect((await api('/api/conversation?limit=10')).messages.length).toBe(0)
+  })
+
+  it('자동 승인은 이 폰의 새 서명일 때만 켜지고, 폰들에 상태가 간다 (ADR 0030)', async () => {
+    const { api, p } = await paired(false)
+    const autoState = () =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'state' }> => m.kind === 'state').at(-1)
+        ?.autoApprove
+    const other = await generateDevice(false)
+    let at = Date.now()
+    // 다른 키의 서명 → 그대로
+    await p.send({
+      kind: 'auto-approve',
+      on: true,
+      at,
+      sig: await signText(other.signPriv, autoApproveSignText(true, at)),
+    })
+    await new Promise((r) => setTimeout(r, 200))
+    expect((await api('/api/settings')).settings.autoApprove).not.toBe(true)
+    // 오래된 서명 → 그대로
+    at = Date.now() - 180_000
+    await p.send({
+      kind: 'auto-approve',
+      on: true,
+      at,
+      sig: await signText(p.keys.signPriv, autoApproveSignText(true, at)),
+    })
+    await new Promise((r) => setTimeout(r, 200))
+    expect((await api('/api/settings')).settings.autoApprove).not.toBe(true)
+    // 이 폰의 서명 → 켜지고 폰 상태에 실린다
+    at = Date.now()
+    await p.send({
+      kind: 'auto-approve',
+      on: true,
+      at,
+      sig: await signText(p.keys.signPriv, autoApproveSignText(true, at)),
+    })
+    await waitFor(() => autoState() === true)
+    expect((await api('/api/settings')).settings.autoApprove).toBe(true)
   })
 
   it('보통 PC는 dev를 알리지 않고 처음부터 다시를 거절한다', async () => {

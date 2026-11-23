@@ -44,7 +44,7 @@ import {
   seal,
   verifyText,
 } from '@dool2/protocol/e2e'
-import { LinkClient, resetSignText } from '@dool2/protocol/link'
+import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import type { Page } from '@dool2/protocol/paging'
 import QRCode from 'qrcode'
 import { linkCopy } from './locales/link.js'
@@ -122,6 +122,8 @@ export interface LinkHost {
   thumb?(url: string): Promise<string | undefined>
   /** Start over (test PCs only, refused otherwise). With services, also clears connected service marks */
   reset?(phone: string, o: { services: boolean }): Promise<{ ok: boolean; message: string }>
+  /** Auto-approve on or off, from a phone whose signature checked out (ADR 0030) */
+  setAutoApprove?(on: boolean, phone: string): void
   /** Remote screen: one frame of the tab Dool2 handed off, and the person's input on that tab */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
   /** Remote screen 'needed fields only' */
@@ -718,6 +720,23 @@ export class PhoneLink {
         if (r.ok) for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
         return
       }
+      case 'auto-approve': {
+        // Signed by the phone key and checked here, so the relay or another device cannot turn the gate off.
+        // An old signature cannot be replayed (2 minutes)
+        const at = Number(msg.at)
+        const on = msg.on === true
+        if (
+          this.host.setAutoApprove &&
+          Number.isFinite(at) &&
+          Math.abs(Date.now() - at) <= 120_000 &&
+          typeof msg.sig === 'string' &&
+          (await verifyText(phone.signPub, autoApproveSignText(on, at), msg.sig))
+        )
+          this.host.setAutoApprove(on, phone.name)
+        // Every phone gets the current state (the switch shows what the PC really has)
+        for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
+        return
+      }
       case 'decide': {
         const a = this.host.approval(msg.id)
         if (!a)
@@ -736,6 +755,11 @@ export class PhoneLink {
         return this.broadcast({ kind: 'decided', id: msg.id, ...r })
       }
     }
+  }
+
+  /** Sends the current state to every paired phone (a setting the phones show changed on the PC) */
+  async resync() {
+    for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
   }
 
   private async stateFor(phone: PairedPhone): Promise<PcToPhone> {

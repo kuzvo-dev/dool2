@@ -56,12 +56,19 @@ export interface NewApproval {
   after?: string
   lines?: ApprovalView['lines']
   info?: ApprovalView['info']
+  /** Set by the caller when auto-approve already decided (a text the phone sends on its own) */
+  auto?: boolean
 }
 
 export class Approvals {
   private items = new Map<string, ApprovalRecord>()
   /** When a new approval request is created (notify the phone) */
   onCreate?: (rec: ApprovalRecord) => void
+  /**
+   * Auto-approve (ADR 0030): true when this request will be approved right away without the user. Such requests
+   * are not sent to the phone as cards (no push), and the tool route approves them before answering the AI
+   */
+  autoDecide?: (n: NewApproval) => boolean
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -79,8 +86,11 @@ export class Approvals {
       createdAt: new Date(t).toISOString(),
       expiresAt: new Date(t + (n.kind === 'money' ? MONEY_APPROVAL_TTL_MS : APPROVAL_TTL_MS)).toISOString(),
     }
+    if (!rec.auto && this.autoDecide?.(n)) rec.auto = true
     this.items.set(rec.id, rec)
-    this.onCreate?.(rec)
+    // A request auto-approve handles on the PC is not shown as a card. A text the phone sends on its own still goes
+    // to the phone (it does the sending)
+    if (!rec.auto || rec.url.startsWith('sms:')) this.onCreate?.(rec)
     // Close the phone card when time runs out (otherwise tapping an expired card only gets 'approval expired')
     const ttl = Date.parse(rec.expiresAt) - t
     const timer = setTimeout(() => {
