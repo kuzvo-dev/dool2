@@ -217,3 +217,44 @@ export function costLabel(usd: number): string {
   const dollars = usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)
   return `$${dollars} · ${won}`
 }
+
+/** 새 버전 상태 (apps/desktop/src/update.ts의 UpdateState와 같은 모양) */
+export interface UpdateInfo {
+  status: 'idle' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
+  current: string
+  latest?: string
+  notes?: string
+  required?: boolean
+  progress?: number
+  error?: string
+  checkedAt?: number
+}
+
+/** 설정의 '두리 버전' 칸 한 줄: 지금 상태를 사용자 말로 */
+export function updateLine(u: UpdateInfo | null, now = Date.now()): string {
+  if (!u) return '개발용으로 켠 앱이라 새 버전을 확인하지 않아요'
+  const ago = u.checkedAt ? ` · ${agoLabel(now - u.checkedAt)} 확인` : ''
+  switch (u.status) {
+    case 'none':
+      return `최신 버전이에요${ago}`
+    case 'available':
+      return `새 버전이 나왔어요 (${u.latest})`
+    case 'downloading':
+      return `새 버전 받는 중 ${Math.round((u.progress ?? 0) * 100)}%`
+    case 'ready':
+    case 'installing':
+      return '새 버전으로 바꾸는 중… 곧 다시 켜져요'
+    case 'error':
+      return `확인하지 못했어요: ${u.error ?? '인터넷 연결을 확인해 주세요'}`
+    default:
+      return '아직 확인하지 않았어요'
+  }
+}
+
+function agoLabel(ms: number): string {
+  const min = Math.floor(ms / 60_000)
+  if (min < 1) return '방금'
+  if (min < 60) return `${min}분 전`
+  const h = Math.floor(min / 60)
+  return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`
+}

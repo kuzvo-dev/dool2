@@ -25,6 +25,8 @@ import {
   pickDefault,
   SETUP_STEPS,
   type SetupStep,
+  type UpdateInfo,
+  updateLine,
 } from './setup-model.js'
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>
@@ -49,6 +51,13 @@ export interface SetupOptions {
   openStore?(): void
   /** 지금 저장된 설정 (설정 화면에서 보여 주고 바꾼다) */
   settings?: Settings
+  /** 새 버전 (ADR 0028). 배포 앱이 아니면 state·check가 null */
+  update?: {
+    state(): Promise<UpdateInfo | null>
+    check(): Promise<UpdateInfo | null>
+    install(): Promise<UpdateInfo | null>
+    version(): Promise<string>
+  }
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
 }
@@ -393,7 +402,8 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           opts.loadChrome(),
           opts.loadExtension(),
         ])
-        if (step === 'settings') await Promise.all([loadVault(), loadLink(), loadScreen(), loadMe()])
+        if (step === 'settings')
+          await Promise.all([loadVault(), loadLink(), loadScreen(), loadMe(), loadVersion()])
       }
       render()
     }
@@ -625,6 +635,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
           card.append(el('h2', 'over', '두리 금고'), vaultBlock())
           card.append(el('h2', 'over', '내 정보 · 결제'), meBlock())
           if (screen?.available) card.append(el('h2', 'over', 'PC 앱 조작'), screenBlock())
+          card.append(el('h2', 'over', '두리 버전'), versionBlock())
           const ai = el('p', 'setup-hint')
           ai.append(
             `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
@@ -836,6 +847,58 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
       screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
     }
+    // ── 두리 버전: 지금 버전, 새 버전 확인·업데이트 (ADR 0028) ──
+    const ver: { version?: string; info: UpdateInfo | null; checking: boolean } = {
+      info: null,
+      checking: false,
+    }
+    const loadVersion = async () => {
+      if (!opts.update) return
+      ;[ver.version, ver.info] = await Promise.all([
+        opts.update.version().catch(() => undefined),
+        opts.update.state().catch(() => null),
+      ])
+    }
+    const versionBlock = () => {
+      const box = el('ul', 'checks')
+      const u = ver.info
+      const fresh = u?.status === 'available'
+      const busy = u?.status === 'downloading' || u?.status === 'ready' || u?.status === 'installing'
+      const li = el('li', fresh ? 'todo' : u?.status === 'error' ? 'todo' : 'ok')
+      const text = el('div', 'text')
+      text.append(
+        el('strong', undefined, `지금 버전 ${ver.version ?? u?.current ?? '알 수 없음'}`),
+        el('span', undefined, ver.checking ? '새 버전이 있는지 보는 중이에요…' : updateLine(u)),
+      )
+      if (fresh && u?.notes) text.append(el('span', 'ver-notes', `바뀐 점: ${u.notes}`))
+      li.append(el('span', 'mark'), text)
+      if (opts.update && u && !busy && !ver.checking)
+        li.append(
+          fresh
+            ? button('btn-small', `${u.latest}로 업데이트`, async () => {
+                ver.info = { ...u, status: 'downloading', progress: 0 }
+                render()
+                ver.info = (await opts.update?.install().catch(() => null)) ?? ver.info
+                render()
+              })
+            : button('btn-ghost', '업데이트 확인', async () => {
+                ver.checking = true
+                render()
+                ver.info = (await opts.update?.check().catch(() => null)) ?? ver.info
+                ver.checking = false
+                render()
+              }),
+        )
+      box.append(li)
+      const hint = el('p', 'setup-hint')
+      hint.append(
+        '새 버전은 앱이 켜져 있으면 6시간마다 알아서 확인해요. 업데이트해도 대화·연결·금고는 그대로예요.',
+      )
+      const wrap = el('div', 'ver-block')
+      wrap.append(box, hint)
+      return wrap
+    }
+
     const screenBlock = () => {
       const box = el('div', 'vault')
       box.append(

@@ -91,6 +91,8 @@ declare global {
       update: {
         state(): Promise<UpdateView | null>
         install(): Promise<UpdateView | null>
+        check(): Promise<UpdateView | null>
+        version(): Promise<string>
         onChange(cb: (s: UpdateView) => void): void
       }
     }
@@ -2672,6 +2674,21 @@ async function main() {
       revealExtension: () => window.dool2.revealExtension(),
       storeExtension: () => window.dool2.storeExtension(),
       openStore: () => window.dool2.openStore(),
+      update: {
+        state: () => window.dool2.update.state(),
+        check: async () => {
+          const u = await window.dool2.update.check()
+          // 왼쪽 위 띠도 같이 맞춘다 (새 버전이 있으면 띠가 뜬다)
+          renderUpdate(u)
+          return u
+        },
+        install: async () => {
+          const u = await window.dool2.update.install()
+          renderUpdate(u)
+          return u
+        },
+        version: () => window.dool2.update.version(),
+      },
       ...(from ? { start: from } : {}),
     })
     void wizard.done.then((r) => {

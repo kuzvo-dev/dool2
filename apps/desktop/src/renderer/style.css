@@ -1406,6 +1406,11 @@ button.side-row:hover {
   font-size: 13px;
   line-height: 1.5;
 }
+/* 설정 '두리 버전': 새 버전의 바뀐 점 */
+.checks .text .ver-notes {
+  margin-top: 2px;
+  color: var(--ink);
+}
 .toggles li {
   padding: 0;
 }

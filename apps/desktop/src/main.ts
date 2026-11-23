@@ -262,7 +262,8 @@ function smokeUpdate(): UpdateState | undefined {
   return {
     status: 'available',
     current: app.getVersion(),
-    latest: '0.3.0',
+    // 점검 캡처용: 지금 버전보다 하나 높은 버전
+    latest: app.getVersion().replace(/(\d+)$/, (n) => String(Number(n) + 1)),
     notes: 'AI 영상 클립, 더 멋있는 모션 영상, 새 버전 알림',
     required: k === 'required',
   }
@@ -386,6 +387,9 @@ app.whenReady().then(async () => {
   // 새 버전 알림·설치 (ADR 0028): 배포 앱에서만 (시험은 DOOL2_UPDATE_FEED로 다른 안내를 줄 수 있다)
   ipcMain.handle('dool2:update-state', () => updater?.state() ?? smokeUpdate() ?? null)
   ipcMain.handle('dool2:update-install', () => updater?.install() ?? null)
+  // 설정의 '두리 버전' 칸: [업데이트 확인]을 누르면 바로 본다. 배포 앱이 아니면 null (개발용)
+  ipcMain.handle('dool2:update-check', () => updater?.check() ?? smokeUpdate() ?? null)
+  ipcMain.handle('dool2:version', () => app.getVersion())
   if (!SMOKE && (app.isPackaged || process.env.DOOL2_UPDATE_FEED)) {
     updater = new Updater({
       current: app.getVersion(),

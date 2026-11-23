@@ -1,6 +1,6 @@
 import type { AgentStatus } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { checkHeadline, checklist, costLabel, neededAgents, pickDefault } from './setup-model.js'
+import { checkHeadline, checklist, costLabel, neededAgents, pickDefault, updateLine } from './setup-model.js'
 
 const claudeReady: AgentStatus = { id: 'claude', installed: true, loggedIn: true, plan: 'max' }
 const claudeMissing: AgentStatus = { id: 'claude', installed: false, loggedIn: false }
@@ -82,5 +82,27 @@ describe('첫 실행 마법사', () => {
     expect(costLabel(0.0034)).toBe('$0.0034 · 약 5원')
     expect(costLabel(0.0003)).toBe('$0.0003 · 1원 미만')
     expect(costLabel(1.2)).toBe('$1.20 · 약 1,740원')
+  })
+})
+
+describe('설정의 두리 버전 한 줄', () => {
+  const now = Date.parse('2026-11-23T05:00:00Z')
+  it('최신·새 버전·받는 중·실패·개발용', () => {
+    expect(updateLine({ status: 'none', current: '0.3.1', checkedAt: now - 5 * 60_000 }, now)).toBe(
+      '최신 버전이에요 · 5분 전 확인',
+    )
+    expect(updateLine({ status: 'none', current: '0.3.1', checkedAt: now - 3 * 3_600_000 }, now)).toBe(
+      '최신 버전이에요 · 3시간 전 확인',
+    )
+    expect(updateLine({ status: 'available', current: '0.3.1', latest: '0.3.2' }, now)).toBe(
+      '새 버전이 나왔어요 (0.3.2)',
+    )
+    expect(updateLine({ status: 'downloading', current: '0.3.1', progress: 0.42 }, now)).toBe(
+      '새 버전 받는 중 42%',
+    )
+    expect(
+      updateLine({ status: 'error', current: '0.3.1', error: '버전 안내를 받지 못했어요 (503)' }, now),
+    ).toBe('확인하지 못했어요: 버전 안내를 받지 못했어요 (503)')
+    expect(updateLine(null, now)).toBe('개발용으로 켠 앱이라 새 버전을 확인하지 않아요')
   })
 })
