@@ -128,6 +128,15 @@ export function approvalSignText(
   )
 }
 
+/** What the phone signs to turn auto-approve on or off (ADR 0030). `at` keeps an old signature from being replayed */
+export function autoApproveSignText(on: boolean, at: number): string {
+  return JSON.stringify([
+    ['at', at],
+    ['on', on],
+    ['t', 'dool2-auto-approve/v1'],
+  ])
+}
+
 /** What the phone signs for "start over" (only accepted within 2 minutes) */
 export function resetSignText(at: number, services: boolean): string {
   return JSON.stringify([

@@ -166,6 +166,11 @@ export const SettingsSchema = z.object({
     )
     .max(100)
     .optional(),
+  /**
+   * Auto-approve: everything except payments runs without an approval card (ADR 0030). Off by default.
+   * Turned on from the PC settings or the phone (phone changes are signed, see autoApproveSignText)
+   */
+  autoApprove: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
   /** UI language of the desktop app and the language Dool2 answers in by default (ADR 0029). Empty: follow the device */
@@ -681,6 +686,8 @@ export interface ApprovalView {
   status: ApprovalStatus
   createdAt: string
   expiresAt: string
+  /** Approved by auto-approve, not by the user (ADR 0030). A text with this set is sent by the phone on its own */
+  auto?: boolean
   /** The outcome (pressed / could not press because the screen changed) */
   result?: string
   /**
@@ -1088,6 +1095,8 @@ export type PhoneToPc =
    * With services, it also erases the connected-service marks (vault passwords and phone pairing stay)
    */
   | { kind: 'reset'; at: number; services: boolean; sig: string }
+  /** Turns auto-approve on or off from the phone. Signed with the phone key (autoApproveSignText), checked by the PC */
+  | { kind: 'auto-approve'; on: boolean; at: number; sig: string }
   /** Ask the PC for a card photo (the phone does not connect to outside servers directly) */
   | { kind: 'thumb'; url: string }
   /** Settings > my info and payment methods: view (masked values), edit (empty value = delete), delete all, forget a site's payment method */
@@ -1216,6 +1225,8 @@ export type PcToPhone =
       connecting?: string[]
       /** Test PC: show 'Start over' in the phone settings */
       dev?: boolean
+      /** Auto-approve is on (ADR 0030): the phone shows it in settings and sends texts without a card */
+      autoApprove?: boolean
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
