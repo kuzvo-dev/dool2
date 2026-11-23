@@ -569,8 +569,8 @@ try {
   })
 
   await step('Does not open dangerous addresses', async () => {
-    await assert.rejects(call('navigate', { tabId, url: 'javascript:alert(1)' }), /http·https/)
-    await assert.rejects(call('open', { url: 'file:///etc/passwd' }), /http·https/)
+    await assert.rejects(call('navigate', { tabId, url: 'javascript:alert(1)' }), /http and https/)
+    await assert.rejects(call('open', { url: 'file:///etc/passwd' }), /http and https/)
   })
 
   await step('Does not touch tabs Dool2 did not open', async () => {
@@ -674,7 +674,7 @@ try {
     const moved = await tools.run('navigate', { tabId, url: `${base}/list` })
     assert.ok(Date.now() - t < 8000, `Leaving took too long (${Date.now() - t}ms)`)
     assert.match(text(moved), /\[e\d+ 링크 "가게 가"\]/)
-    assert.match(text(moved), /떠날지 묻는 창이 떠서/)
+    assert.match(text(moved), /asked whether to leave the page/)
   })
 
   await step(
@@ -745,8 +745,8 @@ try {
       await call('navigate', { tabId, url: `${base}/long` })
       await tools.run('read', { tabId })
       const scrolled = text(await tools.run('scroll', { tabId, direction: 'down' }))
-      assert.match(scrolled, /지금 화면에 보이는 부분만/)
-      assert.match(scrolled, /↓ 화면 아래에 글이/)
+      assert.match(scrolled, /Read only the part visible on screen/)
+      assert.match(scrolled, /↓ About [\d,]+ more characters are below the screen/)
       assert.ok(scrolled.length < 4000, `The visible part is too long (${scrolled.length} chars)`)
       console.log(`  Visible part after scrolling: ${scrolled.length.toLocaleString()} chars`)
     },
@@ -831,7 +831,7 @@ try {
         await new Promise((r) => setTimeout(r, 300))
       }
       writeFileSync(join(out, 'e2e-nested.txt'), s.text)
-      assert.match(s.text, /## 화면 안 액자 목록/, s.text.slice(-800))
+      assert.match(s.text, /## 화면 안 액자 list/, s.text.slice(-800))
       // A frame placeholder at that spot in the body text, and the outer frame in the list
       assert.match(s.text, /\[frame f\d+\]/)
       assert.match(s.text, /- f\d+ 127\.0\.0\.1\/nest2 · outer: f\d+ · visible/, s.text.slice(-800))
@@ -892,7 +892,7 @@ try {
       }
       // Title: click the spot with the real mouse so the editor gives focus to the hidden field, then type
       const t = text(await tools.run('type', { tabId, ref: title, text: '제주 바다 여행' }))
-      assert.match(t, /넣은 글이 화면에 보여요/, t.slice(0, 300))
+      assert.match(t, /the typed text shows on screen/, t.slice(0, 300))
       // Body: newlines become new paragraphs (Enter), empty lines stay as they are
       const b = text(
         await tools.run('steps', {
@@ -900,7 +900,7 @@ try {
           steps: [{ do: 'type', ref: body, text: '첫째 날 바다를 봤어요.\n\n둘째 날은 오름에 올랐어요.' }],
         }),
       )
-      assert.match(b, /넣은 글이 화면에 보여요/, b.slice(0, 300))
+      assert.match(b, /the typed text shows on screen/, b.slice(0, 300))
       const after = await form()
       writeFileSync(join(out, 'e2e-se-editor-after.txt'), after)
       assert.match(after, /제주 바다 여행/)
@@ -947,9 +947,9 @@ try {
       await new Promise((res) => setTimeout(res, 1800))
       const t = text(await tools.run('tabs', {}))
       console.log(`  ${t.split('\n').join('\n  ')}`)
-      assert.match(t, /막은 새 창[\s\S]*\/popup\?two/)
-      assert.doesNotMatch(t, /막은 새 창[\s\S]*\/popup\?one/)
-      assert.match(t, new RegExp(`탭 ${tabId}이\\(가\\) 연 창`))
+      assert.match(t, /blocked new window[\s\S]*\/popup\?two/)
+      assert.doesNotMatch(t, /blocked new window[\s\S]*\/popup\?one/)
+      assert.match(t, new RegExp(`window opened by tab ${tabId}`))
       await call('close', { tabId: r2.newTabId })
     },
   )
@@ -963,7 +963,7 @@ try {
     const t = Date.now()
     const w = text(await tools.run('wait', { tabId, ms: 8000 }))
     const took = Date.now() - t
-    assert.match(w, /바뀐 것/, w)
+    assert.match(w, /What changed/, w)
     assert.match(w, /주문번호 A-123/, w)
     assert.ok(took < 6000, `Kept waiting to the end after the change (${took}ms)`)
     const still = await call('wait', { tabId, ms: 700 })
@@ -1080,7 +1080,7 @@ try {
       await call('navigate', { tabId, url: `${base}/upload` })
       await tools.run('read', { tabId })
       const asked = await tools.run('upload', { tabId, ref: add, paths: ['~/Pictures/제주 바다.jpg'] })
-      assert.match(asked.content[0].text, /승인을 요청했어요/)
+      assert.match(asked.content[0].text, /Asked for approval/)
       const [rec] = tools.approvals.list()
       assert.equal(rec.kind, 'contact')
       const done = await tools.approve(rec.id)
