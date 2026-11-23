@@ -30,5 +30,37 @@
       "say": "회사 도착하면 택배 반품 보내라고 알려 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Location",
+      "summary": "Share your location and Dool2 can find places nearby, give directions, plan when to leave for an appointment and tell you when you arrive somewhere, without you stating an address.",
+      "example": {
+        "ask": "Is there a vet open nearby?",
+        "working": "Looking around you",
+        "reply": "One is a 10-minute walk away and open until 11 PM. There is also a 24-hour clinic a 5-minute drive away."
+      },
+      "abilities": [
+        {
+          "title": "Find nearby",
+          "say": "Is there a quiet cafe nearby?"
+        },
+        {
+          "title": "Directions",
+          "say": "Fastest way from here to Seoul Station"
+        },
+        {
+          "title": "When to leave",
+          "say": "When should I leave for my 7 PM in Gangnam?"
+        },
+        {
+          "title": "Arrival alert",
+          "say": "Remind me to ship the return when I reach the office"
+        }
+      ]
+    }
+  }
 }

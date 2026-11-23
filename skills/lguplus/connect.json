@@ -45,5 +45,42 @@
       "say": "매달 나가는 부가서비스 뭐 있어? 안 쓰는 건 빼 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "LG U+",
+      "login": "U+ ID",
+      "summary": "Dool2 explains why your bill is what it is and how much data you used. It also changes plans and clears add-on services.",
+      "example": {
+        "ask": "How much will my phone bill be this month?",
+        "working": "Checking this month's bill",
+        "reply": "This month's bill is ₩68,900. It includes a ₩15,400 device installment and auto-pays from your card on the 25th."
+      },
+      "abilities": [
+        {
+          "title": "Check charges",
+          "say": "Why did my bill go up from last month?"
+        },
+        {
+          "title": "Usage",
+          "say": "How many GB did I use this month?"
+        },
+        {
+          "title": "Find plans",
+          "say": "Any unlimited plan under ₩50,000?"
+        },
+        {
+          "title": "Change plan",
+          "say": "I use little data, switch me to a cheaper plan"
+        },
+        {
+          "title": "Clear add-ons",
+          "say": "What add-ons am I paying monthly? Remove unused ones"
+        }
+      ]
+    }
+  }
 }

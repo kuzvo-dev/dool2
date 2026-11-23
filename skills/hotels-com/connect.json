@@ -39,5 +39,38 @@
       "say": "싱가포르 호텔 하루 줄여 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Hotels.com",
+      "login": "ID and password",
+      "summary": "Compare hotels by what matters to you, like distance to the station, breakfast and price. Dool2 can book free-cancellation rooms and handle changes and cancellations.",
+      "example": {
+        "ask": "3 nights in Singapore, hotel near the subway",
+        "working": "Comparing hotels",
+        "reply": "A hotel 3 minutes on foot from the MRT is ₩210,000 a night, with free cancellation until 2 days before check-in. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Compare by your terms",
+          "say": "Near the station, breakfast, under ₩200,000"
+        },
+        {
+          "title": "Book",
+          "say": "Book a refundable room"
+        },
+        {
+          "title": "Check bookings",
+          "say": "What time is check-in next month?"
+        },
+        {
+          "title": "Change or cancel",
+          "say": "Shorten the Singapore hotel by one night"
+        }
+      ]
+    }
+  }
 }

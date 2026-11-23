@@ -42,5 +42,42 @@
       "say": "신발이 작아, 한 치수 위로 바꿔 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Musinsa",
+      "login": "ID and password",
+      "summary": "Dool2 reorders clothes in your size, tracks parcels and watches for sales on items you saved.",
+      "example": {
+        "ask": "Check out the gray XL sweatshirt in my cart",
+        "working": "Checking size",
+        "reply": "Gray XL is in stock and ₩38,400 using your points. It arrives the day after tomorrow. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find products",
+          "say": "Find wide slacks under ₩50,000"
+        },
+        {
+          "title": "Order my size",
+          "say": "One more of the jeans in 31 I got last time"
+        },
+        {
+          "title": "Sale alerts",
+          "say": "Tell me if the black padded jacket falls below ₩100,000"
+        },
+        {
+          "title": "Check delivery",
+          "say": "Where is my Musinsa parcel now?"
+        },
+        {
+          "title": "Exchange or return",
+          "say": "The shoes are small, swap for one size up"
+        }
+      ]
+    }
+  }
 }

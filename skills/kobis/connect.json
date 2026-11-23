@@ -21,5 +21,29 @@
       "say": "요즘 극장에서 뭐가 제일 인기야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "KOBIS",
+      "summary": "No sign-in needed. Dool2 shows live advance-ticket rates and the box office across all cinemas, not just one theater chain.",
+      "example": {
+        "ask": "Which movie has the top advance ticket sales?",
+        "working": "Checking advance ticket rates",
+        "reply": "Right now it's \"Heavy Snow\" at 16.7%, which opened yesterday. Second is \"Lim Young-woong: I'm Hero The Stadium 2\" at 12.3%."
+      },
+      "abilities": [
+        {
+          "title": "Live advance ticket rank",
+          "say": "Which movie leads advance ticket sales?"
+        },
+        {
+          "title": "Popular movies",
+          "say": "What's most popular in theaters now?"
+        }
+      ]
+    }
+  }
 }

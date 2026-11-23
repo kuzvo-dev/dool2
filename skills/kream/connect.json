@@ -43,5 +43,42 @@
       "say": "보낸 신발 검수 통과했어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "KREAM",
+      "login": "ID and password",
+      "summary": "Dool2 can check limited-edition prices on KREAM, buy now or bid to buy, place sell bids and follow inspection and shipping.",
+      "example": {
+        "ask": "How much is Dunk Low size 250 now?",
+        "working": "Checking prices",
+        "reply": "Recent trades are around ₩130,000. Buying now is ₩128,000, or you can bid lower to buy."
+      },
+      "abilities": [
+        {
+          "title": "Find products",
+          "say": "Find New Balance 530 white"
+        },
+        {
+          "title": "Recent prices",
+          "say": "Show recent trades for these shoes"
+        },
+        {
+          "title": "Buy or bid to buy",
+          "say": "Bid ₩120,000 to buy"
+        },
+        {
+          "title": "Sell bid",
+          "say": "Sell my unworn sneakers for ₩180,000"
+        },
+        {
+          "title": "Track the trade",
+          "say": "Did the shoes I sent pass inspection?"
+        }
+      ]
+    }
+  }
 }

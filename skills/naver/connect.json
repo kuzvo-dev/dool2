@@ -51,5 +51,46 @@
       "say": "카카오 주가 7% 넘게 움직이면 알려 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Naver",
+      "login": "Naver ID",
+      "summary": "Connect Naver and Dool2 signs in to sites you joined with Naver in one click and can look up your Naver Shopping and Pay orders.",
+      "example": {
+        "ask": "When does my Naver Pay order arrive?",
+        "working": "Checking Naver Pay orders",
+        "reply": "A pair of sneakers shipped today. They should arrive tomorrow morning."
+      },
+      "abilities": [
+        {
+          "title": "Sign in with Naver",
+          "say": "Connect the places I joined with Naver"
+        },
+        {
+          "title": "Find Naver Pay orders",
+          "say": "Where are the things I bought with Naver Pay?"
+        },
+        {
+          "title": "Naver bookings",
+          "say": "Book my usual stylist at the salon next week"
+        },
+        {
+          "title": "Find news",
+          "say": "Sum up today's chip news"
+        },
+        {
+          "title": "Compare prices",
+          "say": "Find the cheapest Galaxy Buds4"
+        },
+        {
+          "title": "Watch stocks",
+          "say": "Tell me if Kakao moves more than 7%"
+        }
+      ]
+    }
+  }
 }

@@ -44,5 +44,42 @@
       "say": "밀리 구독료 언제 또 빠져나가?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Millie's Library",
+      "login": "ID and password",
+      "summary": "Dool2 can pick popular and quick reads, add books to your library and check when your subscription is billed.",
+      "example": {
+        "ask": "Any mystery I can finish this weekend?",
+        "working": "Finding books",
+        "reply": "Four mysteries take about 3 hours to finish and are rated above 4.3. Shall I show the shortest first?"
+      },
+      "abilities": [
+        {
+          "title": "Pick books",
+          "say": "Pick an audiobook to hear while driving"
+        },
+        {
+          "title": "Add to library",
+          "say": "Put that book in my library"
+        },
+        {
+          "title": "Short reads",
+          "say": "A self-help book I can finish in an hour"
+        },
+        {
+          "title": "Popular books",
+          "say": "What's number one in novels today?"
+        },
+        {
+          "title": "Check subscription",
+          "say": "When is my Millie fee charged again?"
+        }
+      ]
+    }
+  }
 }
