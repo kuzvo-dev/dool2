@@ -28,6 +28,7 @@
 | [0022](0022-pc-file-tools.md) | PC 파일은 두리 도구로 찾기·읽기·새로 만들기만 한다 | 채택 |
 | [0023](0023-my-pay-methods.md) | 내 결제 수단: 무엇으로 낼지만 기억하고, 카드 번호·결제 비밀번호는 두지 않는다 | 채택 |
 | [0024](0024-pc-file-move-convert-print.md) | PC 파일 옮기기·사진 형식 바꾸기·출력은 승인과 되돌리기를 붙여 두리 도구로 한다 | 채택 |
+| [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
 
 ## 새 결정을 쓰는 법
 
