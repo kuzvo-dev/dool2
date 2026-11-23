@@ -2464,3 +2464,51 @@ button.lib-thumb:hover .lib-thumb-img {
   object-fit: cover;
   cursor: zoom-in;
 }
+
+/* 문제 알리기 (설정) */
+.report-block {
+  display: grid;
+  gap: 10px;
+}
+.report-text,
+.report-mail {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.report-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.report-actions > button {
+  height: 40px;
+}
+.report-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+.report-preview {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}

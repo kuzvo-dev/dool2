@@ -726,7 +726,6 @@ export function runSetup(opts: SetupOptions): {
           for (const [label, url] of [
             ['두리 사이트', 'https://dool2.com'],
             ['소스 코드 (오픈소스)', 'https://github.com/kuzvo-dev/dool2'],
-            ['문제 알리기', 'https://github.com/kuzvo-dev/dool2/issues'],
           ] as const) {
             const a = el('a', 'btn-ghost', label)
             a.href = url
@@ -737,6 +736,11 @@ export function runSetup(opts: SetupOptions): {
           body.append(
             head('두리 정보', '지금 버전과 새 버전, 두리를 더 알아보는 곳이에요.'),
             sec('두리 버전', undefined, versionBlock()),
+            sec(
+              '문제 알리기',
+              '막히거나 이상한 점을 두리 팀에 바로 알려요. 직접 읽고 고쳐요.',
+              reportBlock(),
+            ),
             sec('더 알아보기', undefined, links),
           )
         }
@@ -949,6 +953,102 @@ export function runSetup(opts: SetupOptions): {
       accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
       screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
     }
+    // ── 문제 알리기: 한 줄 + (고르면) 최근 이틀 기록. 기록은 대화·파일 이름을 뺀 성공·실패만 (apps/daemon/src/report.ts) ──
+    const report: {
+      text: string
+      contact: string
+      logs: boolean
+      preview?: string
+      busy: boolean
+      sentId?: string
+      error?: string
+    } = { text: '', contact: '', logs: true, busy: false }
+    const reportBlock = () => {
+      const wrap = el('div', 'report-block')
+      if (report.sentId !== undefined) {
+        wrap.append(
+          el(
+            'p',
+            'setup-hint',
+            `보냈어요. 고마워요! ${report.sentId ? `(번호 ${report.sentId}) ` : ''}두리 팀이 직접 읽고 고칠게요.${report.contact ? ' 적어 주신 메일로 답장드릴게요.' : ''}`,
+          ),
+          button('btn-ghost', '하나 더 알리기', () => {
+            Object.assign(report, { text: '', preview: undefined, sentId: undefined, error: undefined })
+            render()
+          }),
+        )
+        return wrap
+      }
+      const ta = el('textarea', 'report-text')
+      ta.rows = 3
+      ta.maxLength = 2000
+      ta.placeholder = '무슨 일이 있었나요? 예: 택배 조회를 부탁했는데 계속 로그인하라고 해요'
+      ta.value = report.text
+      ta.oninput = () => {
+        report.text = ta.value
+      }
+      const mail = el('input', 'report-mail')
+      mail.type = 'email'
+      mail.placeholder = '답장 받을 메일 (안 적어도 돼요)'
+      mail.value = report.contact
+      mail.oninput = () => {
+        report.contact = mail.value
+      }
+      const check = el('label', 'report-check')
+      const cb = el('input')
+      cb.type = 'checkbox'
+      cb.checked = report.logs
+      cb.onchange = () => {
+        report.logs = cb.checked
+        report.preview = undefined
+        render()
+      }
+      check.append(cb, ' 최근 이틀 기록도 같이 보내기 (대화 내용·파일 이름은 빼고 성공·실패만)')
+      const body = () =>
+        JSON.stringify({ text: report.text, contact: report.contact, includeLogs: report.logs })
+      const row = el('div', 'report-actions')
+      row.append(
+        button('btn-ghost', report.preview ? '보낼 내용 접기' : '보낼 내용 보기', async () => {
+          if (report.preview) report.preview = undefined
+          else {
+            const r = await opts
+              .api<{ payload: unknown }>('/api/report/preview', { method: 'POST', body: body() })
+              .catch(() => undefined)
+            report.preview = r ? JSON.stringify(r.payload, null, 2) : '내용을 만들지 못했어요'
+          }
+          render()
+        }),
+        button('btn-small', report.busy ? '보내는 중…' : '보내기', async () => {
+          if (report.busy) return
+          if (!report.text.trim()) {
+            report.error = '무슨 일이 있었는지 한 줄 적어 주세요'
+            render()
+            return
+          }
+          report.busy = true
+          report.error = undefined
+          render()
+          const r = await opts
+            .api<{ ok: boolean; id?: string; error?: string }>('/api/report', {
+              method: 'POST',
+              body: body(),
+            })
+            .catch(
+              (e: Error) => ({ ok: false, error: e.message }) as { ok: boolean; id?: string; error?: string },
+            )
+          report.busy = false
+          if (r.ok) report.sentId = r.id ?? ''
+          else report.error = r.error ?? '보내지 못했어요. 인터넷 연결을 확인해 주세요'
+          render()
+        }),
+      )
+      wrap.append(ta, mail, check, row)
+      if (report.error) wrap.append(el('p', 'report-error', report.error))
+      if (report.preview) wrap.append(el('pre', 'report-preview', report.preview))
+      wrap.append(el('p', 'setup-hint', '보낸 내용은 두리 팀만 보고, 문제를 고치는 데만 써요.'))
+      return wrap
+    }
+
     // ── 두리 버전: 지금 버전, 새 버전 확인·업데이트 (ADR 0028) ──
     const ver: { version?: string; info: UpdateInfo | null; checking: boolean } = {
       info: null,
