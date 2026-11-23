@@ -45,5 +45,42 @@
       "say": "방콕 숙소 예약 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Trip.com",
+      "login": "ID and password",
+      "summary": "Dool2 finds cheap flights, overseas hotels and foreign train tickets like Eurostar, books them and cancels too.",
+      "example": {
+        "ask": "Cheapest round trip Incheon to Da Nang in January",
+        "working": "Searching flights",
+        "reply": "The cheapest is ₩248,000 round trip: out on Wednesday of week 3, back Sunday, 20 kg checked bag included. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find cheap dates",
+          "say": "Cheapest day to Singapore in February"
+        },
+        {
+          "title": "Overseas hotels",
+          "say": "Osaka hotel near Namba under ₩100,000"
+        },
+        {
+          "title": "Flight and hotel",
+          "say": "Fukuoka flight plus hotel near Hakata Station"
+        },
+        {
+          "title": "Foreign trains",
+          "say": "Eurostar from London to Paris"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "Cancel my Bangkok stay"
+        }
+      ]
+    }
+  }
 }

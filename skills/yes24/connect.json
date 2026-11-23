@@ -38,5 +38,38 @@
       "say": "같은 책 두 번 샀어, 하나 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "YES24",
+      "login": "ID and password",
+      "summary": "Dool2 recommends and searches books, orders the next volume of a series, tracks delivery and handles cancellations and returns.",
+      "example": {
+        "ask": "Is the next volume of my manga out?",
+        "working": "Finding new releases",
+        "reply": "Volume 12 came out last week for ₩5,400. Order today and get it tomorrow. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Order",
+          "say": "Order a picture book as a gift"
+        },
+        {
+          "title": "Book picks",
+          "say": "A science book for a third grader"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Has yesterday's book shipped?"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "I bought it twice, cancel one"
+        }
+      ]
+    }
+  }
 }

@@ -40,5 +40,38 @@
       "say": "지원한 곳 중에 서류 결과 나온 데 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Saramin",
+      "login": "ID and password",
+      "summary": "Dool2 browses job posts that fit you, polishes your resume, applies and checks your applications. Applications go out only after you approve.",
+      "example": {
+        "ask": "Find entry-level QA engineer jobs near Seongnam",
+        "working": "Searching job posts",
+        "reply": "9 posts match. 3 close this Friday. Shall I start with the ones closing soonest?"
+      },
+      "abilities": [
+        {
+          "title": "Find jobs",
+          "say": "Any 4-day-week data analyst jobs in Gangnam?"
+        },
+        {
+          "title": "Review and apply",
+          "say": "Apply here, show me before sending"
+        },
+        {
+          "title": "Manage resume",
+          "say": "Add this year's certificate to my resume"
+        },
+        {
+          "title": "Application status",
+          "say": "Any resume results back?"
+        }
+      ]
+    }
+  }
 }

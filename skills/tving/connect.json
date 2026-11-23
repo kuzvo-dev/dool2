@@ -48,5 +48,46 @@
       "say": "요즘 사람들 많이 보는 예능 뭐야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "TVING",
+      "login": "ID and password",
+      "summary": "Connect TVING and Dool2 picks shows, saves them to your list, checks where you stopped and when your pass renews.",
+      "example": {
+        "ask": "Pick a thriller drama for the weekend",
+        "working": "Finding shows",
+        "reply": "3 new thrillers. One has 8 episodes, so two days to finish. Shall I save them?"
+      },
+      "abilities": [
+        {
+          "title": "Find shows",
+          "say": "A calm movie for a rainy day"
+        },
+        {
+          "title": "Save to list",
+          "say": "Add that drama to my list"
+        },
+        {
+          "title": "Keep watching",
+          "say": "Find where I stopped in the medical drama"
+        },
+        {
+          "title": "Check my pass",
+          "say": "When does my pass renew?"
+        },
+        {
+          "title": "Show info",
+          "say": "How many episodes and who stars?"
+        },
+        {
+          "title": "Popular now",
+          "say": "What variety show is trending?"
+        }
+      ]
+    }
+  }
 }

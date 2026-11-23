@@ -35,5 +35,38 @@
   ],
   "signedIn": [
     "새 게시물을 작성"
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Threads",
+      "login": "Instagram account",
+      "summary": "Dool2 checks new Threads alerts and reactions, and drafts posts and replies. It shows you before posting, and posts only after you approve.",
+      "example": {
+        "ask": "Anything new on Threads?",
+        "working": "Checking alerts",
+        "reply": "4 replies, and one asks where the campsite is. You also got 18 likes and 3 new followers. Shall I reply?"
+      },
+      "abilities": [
+        {
+          "title": "Check alerts",
+          "say": "How did Threads react since yesterday?"
+        },
+        {
+          "title": "Post",
+          "say": "Post this photo with one line"
+        },
+        {
+          "title": "Reply",
+          "say": "Answer the person who asked about the place"
+        },
+        {
+          "title": "Find my posts",
+          "say": "Find the travel post I wrote last month"
+        }
+      ]
+    }
+  }
 }

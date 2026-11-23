@@ -37,5 +37,38 @@
       "say": "방문 시간 오전으로 되는지 물어봐 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Soomgo",
+      "login": "ID and password",
+      "summary": "Dool2 finds pros for moving, cleaning, repairs and lessons on Soomgo, sends quote requests, compares quotes and chats with pros. Sending needs your approval.",
+      "example": {
+        "ask": "Get quotes for cleaning two air conditioners",
+        "working": "Writing the request",
+        "reply": "I filled in a request for 1 wall unit and 1 stand unit, visit this weekend. Pros will send quotes once it goes out. Shall I send it?"
+      },
+      "abilities": [
+        {
+          "title": "Find pros",
+          "say": "Find a top-rated piano teacher"
+        },
+        {
+          "title": "Request quotes",
+          "say": "Get quotes for bathroom grout work"
+        },
+        {
+          "title": "Compare quotes",
+          "say": "Compare the quotes by price and reviews"
+        },
+        {
+          "title": "Chat with pros",
+          "say": "Ask if a morning visit works"
+        }
+      ]
+    }
+  }
 }

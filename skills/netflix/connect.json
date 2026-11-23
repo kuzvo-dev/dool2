@@ -33,5 +33,38 @@
       "say": "넷플릭스 이번 달 언제 빠져나가?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Netflix",
+      "login": "ID and password",
+      "summary": "Leave picking what to watch, tidying your list, and checking your plan and billing date to Dool2. Plan changes happen only after you approve.",
+      "example": {
+        "ask": "Find a short comedy series to binge this weekend",
+        "working": "Finding shows",
+        "reply": "Two fit: an 8-episode Korean sitcom and a 6-episode British comedy, about 30 minutes each. Shall I add them to your list?"
+      },
+      "abilities": [
+        {
+          "title": "Pick something to watch",
+          "say": "Pick a thriller for a rainy night"
+        },
+        {
+          "title": "Tidy my list",
+          "say": "Remove finished shows from my list"
+        },
+        {
+          "title": "Change plan",
+          "say": "Switch me from Premium to Standard"
+        },
+        {
+          "title": "Billing date",
+          "say": "When does Netflix charge me this month?"
+        }
+      ]
+    }
+  }
 }

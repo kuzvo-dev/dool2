@@ -48,5 +48,46 @@
       "say": "다음 달부터 해지해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Watcha",
+      "login": "ID and password",
+      "summary": "Dool2 picks what to watch, adds to Want to watch, finds where you left off, and checks your billing date or cancels.",
+      "example": {
+        "ask": "A 90-minute comedy for before bed?",
+        "working": "Picking titles",
+        "reply": "5 comedies of about 90 minutes are included in your plan, and 2 are rated above 4. Shall I add both to Want to watch?"
+      },
+      "abilities": [
+        {
+          "title": "Find titles",
+          "say": "Pick a calm movie for a rainy day"
+        },
+        {
+          "title": "Title info",
+          "say": "Rating and runtime of this movie?"
+        },
+        {
+          "title": "Add to Want to watch",
+          "say": "Add that drama to Want to watch"
+        },
+        {
+          "title": "Watch history",
+          "say": "What drama did I stop watching?"
+        },
+        {
+          "title": "Billing date",
+          "say": "When and how much does Watcha charge?"
+        },
+        {
+          "title": "Cancel plan",
+          "say": "Cancel from next month"
+        }
+      ]
+    }
+  }
 }

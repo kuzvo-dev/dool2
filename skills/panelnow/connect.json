@@ -32,5 +32,38 @@
       "say": "모은 포인트 계좌로 받게 해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Panelnow",
+      "login": "ID and password",
+      "summary": "Dool2 picks new surveys for you, checks your points and cashes them out. It never answers surveys for you, and cashing out needs your approval.",
+      "example": {
+        "ask": "Which survey I can take now pays the most?",
+        "working": "Checking surveys",
+        "reply": "3 surveys are open. A 15-minute spending survey pays the most at 700P. Answers are your own opinion, so I will not answer for you."
+      },
+      "abilities": [
+        {
+          "title": "Surveys for me",
+          "say": "Any survey that takes under 10 minutes?"
+        },
+        {
+          "title": "Watch for surveys",
+          "say": "Tell me when a new survey arrives"
+        },
+        {
+          "title": "Points history",
+          "say": "How many points do I have?"
+        },
+        {
+          "title": "Cash out points",
+          "say": "Send my points to my bank account"
+        }
+      ]
+    }
+  }
 }

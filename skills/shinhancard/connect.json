@@ -41,5 +41,42 @@
   "hints": [
     "카드이용내역은 shinhancard.com/mob/MOBFM045N/MOBFM045R01.shc, 이용대금명세서는 /mob/MOBFM043N/MOBFM043R01.shc 에서 봐요. 로그인한 뒤 열어요.",
     "실적·포인트는 마이페이지에서, 이벤트는 첫 화면의 이벤트 메뉴에서 찾고 응모 전에 대상 카드와 기간을 확인해요."
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Shinhan Card",
+      "login": "ID and password",
+      "summary": "Dool2 checks this month's statement, where you spent, your spending target and My Shinhan Points, and enters you in easy events.",
+      "example": {
+        "ask": "How much more to spend for this month's Shinhan discount?",
+        "working": "Checking your spending",
+        "reply": "You spent ₩412,000 this month. Hit ₩500,000 to keep next month's phone bill discount, so ₩88,000 to go."
+      },
+      "abilities": [
+        {
+          "title": "Check the bill",
+          "say": "What leaves on my next Shinhan due date?"
+        },
+        {
+          "title": "Spending history",
+          "say": "Show what I charged yesterday"
+        },
+        {
+          "title": "Check target",
+          "say": "How much more to keep the phone bill discount?"
+        },
+        {
+          "title": "Check points",
+          "say": "Are my points enough to use like cash?"
+        },
+        {
+          "title": "Enter events",
+          "say": "Enter me in the easy events"
+        }
+      ]
+    }
+  }
 }

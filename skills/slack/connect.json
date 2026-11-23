@@ -32,5 +32,38 @@
       "say": "#marketing에 시안 3시까지 올린다고 써 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Slack",
+      "login": "Slack workspace account",
+      "summary": "Connect Slack and Dool2 sorts your mentions, summarizes missed channels, finds who owns what and posts replies for you.",
+      "example": {
+        "ask": "Anything on Slack I need to answer?",
+        "working": "Gathering mentions",
+        "reply": "3 items. Minho asked you to check the meeting notes today, and #ops has an open poll on deploy time. One is already settled."
+      },
+      "abilities": [
+        {
+          "title": "Sort mentions",
+          "say": "Did anyone look for me today?"
+        },
+        {
+          "title": "Summarize channels",
+          "say": "Summarize #dev while I was on leave"
+        },
+        {
+          "title": "Find owners",
+          "say": "Who owns the payment system?"
+        },
+        {
+          "title": "Reply for me",
+          "say": "Tell #marketing the draft is up by 3"
+        }
+      ]
+    }
+  }
 }
