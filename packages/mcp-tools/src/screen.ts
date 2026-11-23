@@ -97,6 +97,52 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
     },
     false,
   )
+  // KakaoTalk in one call: finding the chat, opening it and typing happen in Dool2, not in many screen_* steps
+  const kakao = (
+    name: 'send' | 'read',
+    title: string,
+    description: string,
+    inputSchema: Record<string, z.ZodTypeAny>,
+  ) =>
+    server.registerTool(
+      `kakao_${name}`,
+      {
+        title,
+        description,
+        inputSchema,
+        annotations: { readOnlyHint: name === 'read', openWorldHint: false },
+      },
+      async (args: Record<string, unknown>) => {
+        const r = await client(`kakao_${name}`, args)
+        return { content: r.content, ...(r.isError ? { isError: true } : {}) }
+      },
+    )
+  kakao(
+    'send',
+    'Send a KakaoTalk message',
+    'Sends a KakaoTalk message from KakaoTalk for PC in one call: finds the chat, opens it, checks it is in front, types, and asks approval for the final send (auto-approve may send right away). ' +
+      'Use this first for any KakaoTalk message; fall back to screen_* only if it fails. `to` is the chat name as shown in KakaoTalk. ' +
+      'If the user said a nickname ("wife", "mom") and the tool lists chats on screen, pick the clearly matching one and call again. It never types into a different chat.',
+    {
+      to: z.string().min(1).max(60).describe('Chat name as shown in KakaoTalk (person or group)'),
+      text: z.string().min(1).max(4000).describe('The exact message'),
+    },
+  )
+  kakao(
+    'read',
+    'Read a KakaoTalk chat',
+    'Opens a KakaoTalk chat on the PC and returns its latest messages (left = the other person, right = the user). Opening a chat marks its messages as read in KakaoTalk.',
+    {
+      to: z.string().min(1).max(60).describe('Chat name as shown in KakaoTalk'),
+      lines: z
+        .number()
+        .int()
+        .min(20)
+        .max(300)
+        .optional()
+        .describe('How many screen lines to return (default 80)'),
+    },
+  )
   tool(
     'key',
     'Press key in app',

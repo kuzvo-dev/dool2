@@ -55,6 +55,8 @@ describe('두리 MCP 도구', () => {
       'screen_click',
       'screen_type',
       'screen_login',
+      'kakao_send',
+      'kakao_read',
       'screen_key',
       'screen_screenshot',
       'screen_request_app',

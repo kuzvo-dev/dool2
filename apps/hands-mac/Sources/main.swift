@@ -176,7 +176,7 @@ func roleName(_ role: String, _ subrole: String?) -> String? {
 var refs: [String: AXUIElement] = [:]
 var refsApp = ""
 
-func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
+func snapshot(_ bundleId: String, maxChars: Int, frontOnly: Bool = false) async throws -> [String: Any] {
   try checkAllowed(bundleId)
   guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
   guard let app = runningApp(bundleId) else { throw fail("이 앱이 켜져 있지 않아요. 먼저 app_open으로 여세요") }
@@ -249,12 +249,12 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
   walk(win, 0)
   // Also read popups (popovers such as the + menu), other windows and open menus: reading only the front window made their items unclickable (11-23 KakaoTalk new chat menu)
   let appEl = AXUIElementCreateApplication(app.processIdentifier)
-  for w in (attr(appEl, kAXWindowsAttribute) as? [AXUIElement]) ?? [] where !CFEqual(w, win) {
+  for w in (attr(appEl, kAXWindowsAttribute) as? [AXUIElement]) ?? [] where !frontOnly && !CFEqual(w, win) {
     if truncated { break }
     add("## (다른 창) \(text(w, kAXTitleAttribute) ?? "")")
     walk(w, 0)
   }
-  for c in kids(appEl) where text(c, kAXRoleAttribute) == "AXMenu" {
+  for c in kids(appEl) where !frontOnly && text(c, kAXRoleAttribute) == "AXMenu" {
     if truncated { break }
     add("## (열린 메뉴)")
     walk(c, 0)
@@ -290,7 +290,7 @@ let keyCodes: [String: CGKeyCode] = [
   "Enter": 36, "Return": 36, "Tab": 48, "Space": 49, "Backspace": 51, "Delete": 117, "Escape": 53,
   "ArrowLeft": 123, "ArrowRight": 124, "ArrowDown": 125, "ArrowUp": 126, "Home": 115, "End": 119,
   "PageUp": 116, "PageDown": 121,
-  "a": 0, "c": 8, "v": 9, "x": 7, "z": 6, "f": 3, "n": 45, "w": 13, "s": 1, "k": 40, "l": 37,
+  "1": 18, "2": 19, "a": 0, "c": 8, "v": 9, "x": 7, "z": 6, "f": 3, "n": 45, "w": 13, "s": 1, "k": 40, "l": 37,
 ]
 
 func postKey(_ key: String, _ mods: [String]) throws {
@@ -334,6 +334,226 @@ func paste(_ s: String) async throws {
     return it
   }
   if !items.isEmpty { pb.writeObjects(items) }
+}
+
+// ── Messenger helpers (kakao_send / kakao_read): one call instead of many read-and-press round trips (11-23) ──
+
+func appWindows(_ bundleId: String) throws -> (NSRunningApplication, [AXUIElement]) {
+  try checkAllowed(bundleId)
+  guard AXIsProcessTrusted() else { throw fail("Accessibility permission is needed") }
+  guard let app = runningApp(bundleId) else { throw fail("The app is not running") }
+  let wins = (attr(AXUIElementCreateApplication(app.processIdentifier), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+  return (app, wins)
+}
+
+/** Open windows with their titles, and which one is in front */
+func windowsList(_ args: [String: Any]) throws -> [[String: Any]] {
+  let (app, wins) = try appWindows(args["bundleId"] as? String ?? "")
+  let front = focusedWindow(app.processIdentifier)
+  return wins.map { w in
+    ["title": text(w, kAXTitleAttribute) ?? "", "front": front.map { CFEqual($0, w) } ?? false]
+  }
+}
+
+/** Brings the window with this exact title to the front */
+func raiseWindow(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  let title = args["title"] as? String ?? ""
+  let (app, wins) = try appWindows(bundleId)
+  guard let w = wins.first(where: { text($0, kAXTitleAttribute) == title }) else { throw fail("No window titled \(title)") }
+  app.activate()
+  AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+  AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+  try await Task.sleep(nanoseconds: 250_000_000)
+  return ["raised": title]
+}
+
+func findAll(_ el: AXUIElement, _ depth: Int = 0, _ match: (AXUIElement) -> Bool) -> [AXUIElement] {
+  if depth > 30 { return [] }
+  var out: [AXUIElement] = match(el) ? [el] : []
+  for c in kids(el) { out += findAll(c, depth + 1, match) }
+  return out
+}
+
+/** All static texts under an element, in order (a list row: name, preview, time...) */
+func rowTexts(_ el: AXUIElement, _ depth: Int = 0) -> [String] {
+  if depth > 8 { return [] }
+  var out: [String] = []
+  let role = text(el, kAXRoleAttribute) ?? ""
+  if role == "AXStaticText", let v = text(el, kAXValueAttribute) { out.append(v) }
+  for c in kids(el) { out += rowTexts(c, depth + 1) }
+  return out
+}
+
+/** A list window's search field and list, found in one walk that does not go into the list's rows */
+struct ListParts {
+  let window: AXUIElement
+  let search: AXUIElement
+  let tables: [AXUIElement]
+}
+var listCache: ListParts?
+
+func listParts(_ w: AXUIElement) -> ListParts? {
+  var search: AXUIElement?
+  var tables: [AXUIElement] = []
+  func walk(_ el: AXUIElement, _ depth: Int) {
+    if depth > 30 { return }
+    let role = text(el, kAXRoleAttribute) ?? ""
+    if role == "AXTable" || role == "AXOutline" {
+      tables.append(el)
+      return
+    }
+    if search == nil, text(el, kAXSubroleAttribute) == "AXSearchField" { search = el }
+    for c in kids(el) { walk(c, depth + 1) }
+  }
+  walk(w, 0)
+  guard let s = search else { return nil }
+  return ListParts(window: w, search: s, tables: tables)
+}
+
+/** The window that holds the list with a search field (KakaoTalk's main window). Remembered while it stays open */
+func listWindow(_ wins: [AXUIElement]) -> ListParts? {
+  if let c = listCache, wins.contains(where: { CFEqual($0, c.window) }), text(c.search, kAXRoleAttribute) != nil {
+    return c
+  }
+  // The list window is the narrow one; check it before big chat windows
+  let sorted = wins.filter { text($0, kAXSubroleAttribute) == "AXStandardWindow" }
+    .sorted { (frame($0)?.width ?? 0) < (frame($1)?.width ?? 0) }
+  for w in sorted {
+    if let parts = listParts(w) {
+      listCache = parts
+      return parts
+    }
+  }
+  return nil
+}
+
+/**
+ * The chat list window, brought back if the user closed it: reopening the app shows the main window (like clicking the
+ * Dock icon), and Cmd+2 switches it to the chat list
+ */
+func ensureListWindow(_ bundleId: String) async throws -> (NSRunningApplication, ListParts) {
+  var (app, wins) = try appWindows(bundleId)
+  if listWindow(wins) == nil {
+    // KakaoTalk brings its closed main window back on Cmd+2 (chats), even when a chat window is open (11-23)
+    app.activate()
+    try await Task.sleep(nanoseconds: 250_000_000)
+    try postKey("2", ["cmd"])
+    for _ in 0..<10 {
+      try await Task.sleep(nanoseconds: 200_000_000)
+      (app, wins) = try appWindows(bundleId)
+      if listWindow(wins) != nil { break }
+    }
+  }
+  if listWindow(wins) == nil, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+    let cfg = NSWorkspace.OpenConfiguration()
+    cfg.activates = true
+    _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: cfg)
+    for _ in 0..<15 {
+      try await Task.sleep(nanoseconds: 200_000_000)
+      (app, wins) = try appWindows(bundleId)
+      if listWindow(wins) != nil { break }
+    }
+  }
+  guard let first = listWindow(wins) else { throw fail("The chat list window is not open") }
+  app.activate()
+  AXUIElementPerformAction(first.window, kAXRaiseAction as CFString)
+  try await Task.sleep(nanoseconds: 150_000_000)
+  // Switch to the chat list, then find its parts: switching redraws the list and old row handles stop working
+  try postKey("2", ["cmd"])
+  try await Task.sleep(nanoseconds: 300_000_000)
+  listCache = nil
+  (app, wins) = try appWindows(bundleId)
+  guard let list = listWindow(wins) else { throw fail("The chat list window is not open") }
+  return (app, list)
+}
+
+/**
+ * Opens the list row whose name matches: an exact name first, otherwise the only row containing the text.
+ * Several matches are not opened; their names come back so the user can pick
+ */
+func openRow(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  let want = (args["text"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+  guard !want.isEmpty else { throw fail("Nothing to look for") }
+  let (app, list) = try await ensureListWindow(bundleId)
+  // Only the rows on screen: walking every chat in the list took 10+ seconds. A chat further down is found with the
+  // search field first (kakao_send does that when this finds nothing)
+  var rows = list.tables.flatMap { (attr($0, kAXVisibleRowsAttribute) as? [AXUIElement]) ?? [] }
+  if rows.isEmpty { rows = list.tables.flatMap { (attr($0, kAXRowsAttribute) as? [AXUIElement]) ?? [] } }
+  let named = rows.compactMap { r -> (AXUIElement, String)? in
+    guard let name = rowTexts(r).first(where: { !$0.isEmpty }) else { return nil }
+    return (r, name)
+  }
+  let exact = named.filter { $0.1 == want }
+  let partial = named.filter { $0.1.localizedCaseInsensitiveContains(want) }
+  let pick = exact.count == 1 ? exact : partial
+  if pick.count != 1 {
+    return [
+      "opened": "", "names": Array(Set(pick.map { $0.1 })).sorted().prefix(8).map { $0 },
+      // What is on screen, so Dool2 can match a nickname ("wife") to the chat's real name
+      "visible": named.map { $0.1 }.prefix(20).map { $0 },
+    ]
+  }
+  var (row, name) = pick[0]
+  app.activate()
+  AXUIElementPerformAction(list.window, kAXRaiseAction as CFString)
+  try await Task.sleep(nanoseconds: 200_000_000)
+  // Bringing the window up redraws the list and old row handles stop working: find the same row again
+  let fresh = list.tables.flatMap { (attr($0, kAXVisibleRowsAttribute) as? [AXUIElement]) ?? [] }
+  if let again = fresh.first(where: { rowTexts($0).first(where: { !$0.isEmpty }) == name }) { row = again }
+  // Select the row: on the row itself, or through its table (rows taken from the visible-rows list refuse it)
+  let e1 = AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue)
+  var selected = e1 == .success
+  var e2 = AXError.success
+  if !selected {
+    for t in list.tables {
+      e2 = AXUIElementSetAttributeValue(t, kAXSelectedRowsAttribute as CFString, [row] as CFArray)
+      if e2 == .success {
+        selected = true
+        break
+      }
+    }
+  }
+  guard selected else { throw fail("Could not select the row \(name) (\(e1.rawValue), \(e2.rawValue))") }
+  try await Task.sleep(nanoseconds: 200_000_000)
+  try postKey("Enter", [])
+  try await Task.sleep(nanoseconds: 900_000_000)
+  return ["opened": name, "names": [name]]
+}
+
+/** Types into the list window's search field (so a chat that is not loaded in the list shows up) */
+func searchType(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  let (app, list) = try await ensureListWindow(bundleId)
+  app.activate()
+  AXUIElementPerformAction(list.window, kAXRaiseAction as CFString)
+  try await focusAndClear(list.search)
+  try await paste(args["text"] as? String ?? "")
+  try await Task.sleep(nanoseconds: 800_000_000)
+  return ["typed": true]
+}
+
+/** Writes into the front window's message box (the lowest editable text area). Does not send */
+func inputText(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  let (app, _) = try appWindows(bundleId)
+  app.activate()
+  guard let win = focusedWindow(app.processIdentifier) else { throw fail("No window in front") }
+  let boxes = findAll(win) { el in
+    guard text(el, kAXRoleAttribute) == "AXTextArea" || text(el, kAXRoleAttribute) == "AXTextField" else { return false }
+    if text(el, kAXSubroleAttribute) == "AXSearchField" || text(el, kAXSubroleAttribute) == "AXSecureTextField" { return false }
+    var settable: DarwinBoolean = false
+    AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable)
+    return settable.boolValue
+  }
+  guard let box = boxes.max(by: { (frame($0)?.maxY ?? 0) < (frame($1)?.maxY ?? 0) }) else {
+    throw fail("No message box in the front window")
+  }
+  try await focusAndClear(box)
+  try await paste(String((args["text"] as? String ?? "").prefix(4000)))
+  try await Task.sleep(nanoseconds: 200_000_000)
+  return ["window": text(win, kAXTitleAttribute) ?? ""]
 }
 
 /** The list row this element is (or sits in), if any */
@@ -548,11 +768,18 @@ func run(_ cmd: String, _ args: [String: Any]) async throws -> Any {
   case "installed": return installedApps()
   case "open": return try await openApp(args["bundleId"] as? String ?? "")
   case "snapshot":
-    return try await snapshot(args["bundleId"] as? String ?? "", maxChars: args["maxChars"] as? Int ?? 12000)
+    return try await snapshot(
+      args["bundleId"] as? String ?? "", maxChars: args["maxChars"] as? Int ?? 12000,
+      frontOnly: args["frontOnly"] as? Bool ?? false)
   case "click": return try await click(args)
   case "type": return try await typeText(args)
   case "fill_login": return try await fillLogin(args)
   case "focused": return try await focusedInfo(args)
+  case "windows": return try windowsList(args)
+  case "raise": return try await raiseWindow(args)
+  case "open_row": return try await openRow(args)
+  case "search_type": return try await searchType(args)
+  case "input_text": return try await inputText(args)
   case "key": return try await pressKey(args)
   case "screenshot": return try await screenshot(args)
   default: throw fail("모르는 명령이에요: \(cmd)")
