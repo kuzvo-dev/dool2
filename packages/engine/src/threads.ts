@@ -320,7 +320,7 @@ export class ThreadService {
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
         }
         // PC app (screen control) approvals use -1 instead of a tab number, and app access requests use ref "app"
-        const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
+        const screen = ev.type === 'tool' && /(?:screen_request_(?:approval|app)|kakao_send)$/.test(ev.name)
         // The payment card (browser_checkout) is the same approval card (title and product names when there is no what)
         if (ev.type === 'tool' && (screen || /browser_(?:request_approval|checkout)$/.test(ev.name))) {
           const input = (ev.input ?? {}) as {
@@ -339,6 +339,12 @@ export class ThreadService {
               [typeof input.title === 'string' ? input.title : '', names.join('·')]
                 .filter(Boolean)
                 .join(' · ') || t.payment
+          }
+          // kakao_send: the card is the Enter press in that chat, described by who and what
+          if (/kakao_send$/.test(ev.name)) {
+            const k = (ev.input ?? {}) as { to?: unknown; text?: unknown }
+            input.ref = 'key:Enter'
+            input.what = `KakaoTalk ${String(k.to ?? '')}: "${String(k.text ?? '').slice(0, 160)}"`
           }
           const appRequest = /screen_request_app$/.test(ev.name)
           const record: ApprovalRecordMessage = {

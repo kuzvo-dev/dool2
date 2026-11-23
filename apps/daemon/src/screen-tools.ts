@@ -12,6 +12,7 @@ import type { Lang } from '@dool2/i18n'
 import type { ApprovalRecord, Approvals } from './approvals.js'
 import { classifyRisk, parseRefs, type RiskKind, type ToolResult } from './browser-tools.js'
 import type { HandsCaller } from './hands.js'
+import { KakaoChat } from './kakao.js'
 import { screenCopy } from './locales/screen.js'
 import { PASSWORD_ROLE } from './region/kr/screen.js'
 
@@ -27,6 +28,8 @@ export const SCREEN_TOOLS = [
   'screenshot',
   'request_app',
   'request_approval',
+  'kakao_send',
+  'kakao_read',
 ] as const
 
 /** Apps not controlled until the user turns them on (the AI must not freely handle the shell, settings or files) */
@@ -143,6 +146,41 @@ export class ScreenTools {
   /** Elements of the last screen read per app (to check button labels against the screen, not the AI's words) */
   private screens = new Map<string, Map<string, { role: string; name: string }>>()
   private names = new Map<string, string>()
+  /** Enter approvals that must be pressed in one window (a KakaoTalk chat): approval id -> window title */
+  private enterWindow = new Map<string, string>()
+  /** KakaoTalk in one call (kakao.ts). Made on first use (the constructor's fields are not set yet here) */
+  private kakaoChat?: KakaoChat
+  private get kakao(): KakaoChat {
+    this.kakaoChat ??= this.makeKakao()
+    return this.kakaoChat
+  }
+  private makeKakao = (): KakaoChat =>
+    new KakaoChat({
+      hands: this.hands,
+      check: async (bundleId) => {
+        const g = this.gate(bundleId)
+        if (typeof g !== 'string') return g
+        return this.ready()
+      },
+      requestEnter: async (bundleId, window, what) => {
+        const rec = this.approvals.create({
+          tabId: -1,
+          ref: 'key:Enter',
+          role: this.m.keyRole,
+          label: 'Enter',
+          url: `app:${bundleId}`,
+          kind: 'contact',
+          reason: this.m.enterSends,
+          what: what.slice(0, 200),
+          where: window,
+        })
+        this.enterWindow.set(rec.id, window)
+        return text(
+          `The message is typed in the "${window}" chat and waits for approval (${rec.id.slice(0, 8)}). Tell the user in one sentence what will be sent to whom, and end this reply. Once approved, Dool2 presses send in that chat only.`,
+        )
+      },
+      selfFinal: () => this.settings.finalStep() === 'self',
+    })
 
   constructor(
     private readonly hands: HandsCaller,
@@ -225,6 +263,10 @@ export class ScreenTools {
 
   async run(tool: string, a: Record<string, unknown>): Promise<ToolResult> {
     switch (tool) {
+      case 'kakao_send':
+        return this.kakao.send(a)
+      case 'kakao_read':
+        return this.kakao.read(a)
       case 'status': {
         if (!this.hands.available()) return text(UNAVAILABLE)
         const s = await this.status()
@@ -506,6 +548,14 @@ export class ScreenTools {
           p === 'unavailable' ? m.unavailable : p === 'locked' ? m.locked : m.permissionOff(p === 'screen'),
         )
       if (rec.ref === 'key:Enter') {
+        // A chat approval presses Enter only in that chat's window: bring it up and check it is in front
+        const window = this.enterWindow.get(id)
+        this.enterWindow.delete(id)
+        if (window) {
+          await this.hands.call('raise', { bundleId, title: window }).catch(() => undefined)
+          const wins = (await this.hands.call('windows', { bundleId })) as { title: string; front: boolean }[]
+          if (wins.find((w) => w.front)?.title !== window) return finish(false, m.changed('Enter'))
+        }
         await this.hands.call('key', { bundleId, key: 'Enter', modifiers: [] })
         return finish(true, m.pressedEnter(rec.where))
       }
