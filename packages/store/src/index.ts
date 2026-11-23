@@ -1,7 +1,10 @@
-// 두리 기록 저장소. 사용자 PC에만 남는다 (Node 내장 SQLite, 네이티브 모듈 빌드 없음).
+// Dool2's record store. It stays on the user's PC only (Node's built-in SQLite, no native module build).
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type { AgentId, MessageRole, StoredMessage, ThreadSummary } from '@dool2/protocol'
+import { NEW_THREAD_TITLE } from './locales/thread.js'
+
+export { isNewThreadTitle, NEW_THREAD_TITLE } from './locales/thread.js'
 
 const MIGRATIONS: string[] = [
   `CREATE TABLE threads (
@@ -24,15 +27,15 @@ const MIGRATIONS: string[] = [
      key TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );`,
-  // 대화는 하나 (ADR 0015): threads는 대화의 구간. 구간을 닫을 때 요약을 남기고,
-  // 새 구간은 앞 구간에서 넘겨받은 내용(carry)을 지침에 붙여 이어 간다
+  // One conversation (ADR 0015): threads are segments of it. Closing a segment leaves a summary,
+  // and the next segment continues with what it carried over (carry) appended to the instructions
   `ALTER TABLE threads ADD COLUMN carry TEXT;
    ALTER TABLE threads ADD COLUMN summary TEXT;
    ALTER TABLE threads ADD COLUMN closed_at TEXT;
    CREATE INDEX messages_time ON messages(created_at);`,
-  // 따로 하는 대화(주제별·피드 글): 메인 대화의 구간이 아니다. 메인 대화 기록과 "지금 구간"에서 뺀다
+  // Side conversations (by topic, feed posts) are not segments of the main conversation. They are left out of the main history and the "current segment"
   `ALTER TABLE threads ADD COLUMN side INTEGER NOT NULL DEFAULT 0;`,
-  // 구간의 실제 크기: AI가 마지막 차례에 읽은 토큰 수 (브라우저 페이지 같은 도구 결과 포함)
+  // Real size of a segment: tokens the AI read on its last turn (including tool results such as browser pages)
   `ALTER TABLE threads ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0;`,
 ]
 
@@ -59,15 +62,15 @@ interface MessageRow {
 
 export interface ThreadRecord extends ThreadSummary {
   resumeId?: string
-  /** 앞 구간에서 넘겨받은 내용 (요약·최근 대화). 이 구간의 매 차례 지침에 붙는다 */
+  /** What was carried over from the previous segment (summary, recent messages). Appended to the instructions on every turn of this segment */
   carry?: string
-  /** 구간을 닫을 때 남긴 요약 */
+  /** Summary left when the segment was closed */
   summary?: string
-  /** 닫힌 구간이면 닫은 시각 */
+  /** When the segment was closed, if it is closed */
   closedAt?: string
 }
 
-/** 같은 밀리초에 여러 번 저장해도 순서가 유지되게 단조 증가 시각을 쓴다. */
+/** Uses monotonically increasing timestamps so order holds even with several saves in the same millisecond. */
 function makeClock(now: () => Date) {
   let last = 0
   return () => {
@@ -81,7 +84,7 @@ export class Store {
   private readonly db: DatabaseSync
   private readonly stamp: () => string
 
-  /** path에 ':memory:'를 주면 테스트용 메모리 DB */
+  /** Pass ':memory:' as path for an in-memory test DB */
   constructor(path: string, opts: { now?: () => Date } = {}) {
     this.db = new DatabaseSync(path)
     this.stamp = makeClock(opts.now ?? (() => new Date()))
@@ -106,7 +109,12 @@ export class Store {
     }
   }
 
-  createThread(agent: AgentId, title = '새 대화', carry?: string, side = false): ThreadRecord {
+  createThread(
+    agent: AgentId,
+    title: string = NEW_THREAD_TITLE.ko,
+    carry?: string,
+    side = false,
+  ): ThreadRecord {
     const id = randomUUID()
     const at = this.stamp()
     this.db
@@ -125,23 +133,23 @@ export class Store {
     }
   }
 
-  /** 따로 하는 대화를 지운다 (말도 함께) */
+  /** Deletes a side conversation (with its messages) */
   deleteThread(id: string) {
     this.db.prepare('DELETE FROM messages WHERE thread_id = ?').run(id)
     this.db.prepare('DELETE FROM threads WHERE id = ?').run(id)
   }
 
-  /** 처음부터 다시(시험용): 모든 대화와 말을 지운다 */
+  /** Start over (for testing): deletes every conversation and message */
   clearConversations() {
     this.db.exec('DELETE FROM messages; DELETE FROM threads;')
   }
 
-  /** 따로 하는 대화로 표시한다 (메인 대화에서 뺀다) */
+  /** Marks a thread as a side conversation (takes it out of the main conversation) */
   setSide(id: string, side = true) {
     this.db.prepare('UPDATE threads SET side = ? WHERE id = ?').run(side ? 1 : 0, id)
   }
 
-  /** 따로 하는 대화 목록 (최근 것부터) */
+  /** Side conversations, most recent first */
   listSideThreads(limit = 50): ThreadRecord[] {
     const rows = this.db
       .prepare('SELECT * FROM threads WHERE side = 1 ORDER BY updated_at DESC LIMIT ?')
@@ -150,9 +158,9 @@ export class Store {
   }
 
   /**
-   * 따로 하는 대화를 새로 연다. 아직 아무 말도 없는 빈 대화가 있으면 새로 만들지 않고 그걸 맨 위로 올려 다시 쓴다
-   * (새로 만들기를 여러 번 눌러도 빈 대화가 쌓이지 않게). 빈 게 없고 이미 max개면 undefined.
-   * skip: 세지 않을 대화 (피드 글을 쓰는 대화)
+   * Opens a new side conversation. If an empty one with no messages exists, it is moved to the top and reused
+   * instead (so pressing New several times does not pile up empty ones). Undefined when none is empty and there are
+   * already max. skip: a thread not to count (the one writing feed posts)
    */
   openSideThread(agent: AgentId, max: number, skip?: string): ThreadRecord | undefined {
     const empty = this.db
@@ -170,12 +178,12 @@ export class Store {
       .prepare('SELECT COUNT(*) AS n FROM threads WHERE side = 1 AND id != ?')
       .get(skip ?? '') as { n: number }
     if (n >= max) return undefined
-    return this.createThread(agent, '새 대화', undefined, true)
+    return this.createThread(agent, NEW_THREAD_TITLE.ko, undefined, true)
   }
 
-  // ── 대화 하나 (ADR 0015) ─────────────────────────────
+  // ── One conversation (ADR 0015) ─────────────────────────────
 
-  /** 지금 열려 있는 구간 (닫히지 않은 것 중 가장 최근) */
+  /** The segment open now (the most recent one not closed) */
   currentSession(): ThreadRecord | undefined {
     const row = this.db
       .prepare('SELECT * FROM threads WHERE closed_at IS NULL AND side = 0 ORDER BY updated_at DESC LIMIT 1')
@@ -183,21 +191,21 @@ export class Store {
     return row ? toThread(row) : undefined
   }
 
-  /** 구간을 닫는다. 요약이 있으면 남긴다 */
+  /** Closes a segment, keeping the summary if there is one */
   closeSession(id: string, summary?: string) {
     this.db
       .prepare('UPDATE threads SET closed_at = ?, summary = COALESCE(?, summary) WHERE id = ?')
       .run(this.stamp(), summary ?? null, id)
   }
 
-  /** 열려 있는 다른 구간을 모두 닫는다 (예전 여러 방 → 대화 하나로 넘어올 때) */
+  /** Closes every other open segment (when moving from the old many-rooms model to one conversation) */
   closeOtherSessions(keepId: string) {
     this.db
       .prepare('UPDATE threads SET closed_at = ? WHERE closed_at IS NULL AND side = 0 AND id != ?')
       .run(this.stamp(), keepId)
   }
 
-  /** 구간의 길이: 사용자 차례 수, 저장된 글자 수, AI가 마지막 차례에 읽은 토큰 수 */
+  /** Length of a segment: user turns, stored characters, and tokens the AI read on its last turn */
   sessionSize(id: string): { turns: number; chars: number; contextTokens: number } {
     const row = this.db
       .prepare(
@@ -210,7 +218,7 @@ export class Store {
     return { turns: row.turns ?? 0, chars: row.chars, contextTokens: t?.context_tokens ?? 0 }
   }
 
-  /** 구간의 실제 크기(토큰)를 남긴다. 쉰 시간 계산이 흔들리지 않게 updated_at은 건드리지 않는다 */
+  /** Records the real size (tokens) of a segment. Leaves updated_at alone so idle-time math is not thrown off */
   setContextTokens(id: string, tokens: number) {
     this.db
       .prepare('UPDATE threads SET context_tokens = ? WHERE id = ?')
@@ -218,15 +226,15 @@ export class Store {
   }
 
   /**
-   * 대화 기록 찾기: 메인 대화(모든 구간)의 사용자·두리 말에서 찾는다. 따로 하는 대화는 뺀다.
-   * 띄어쓰기는 무시하고("로봇청소기" = "로봇 청소기"), 낱말이 여럿이면 많이 맞은 것부터, 같으면 최근 것부터.
+   * Searches the history: user and Dool2 messages in the main conversation (all segments), without side conversations.
+   * Spaces are ignored ("robotvacuum" = "robot vacuum"), and with several words the most matches come first, then the most recent.
    */
   searchConversation(
     query: string,
     opts: { limit?: number; excludeThreadId?: string } = {},
   ): StoredMessage[] {
     const words = [...new Set(query.split(/\s+/).filter(Boolean))]
-    // 낱말이 여럿이면 한 글자 낱말("본", "거")은 뺀다. 거의 모든 말에 걸린다
+    // With several words, drop one-character words (common Korean particles match almost every message)
     const long = words.filter((w) => w.length > 1)
     const terms = (words.length > 1 && long.length ? long : words)
       .slice(0, 6)
@@ -248,7 +256,7 @@ export class Store {
   }
 
   /**
-   * 대화 하나: 모든 구간의 메시지를 시간순으로. before(시각)보다 앞의 것 중 마지막 limit개.
+   * The one conversation: messages of every segment in time order. The last `limit` ones before `before` (a time).
    */
   listConversation(opts: { before?: string; limit?: number } = {}): StoredMessage[] {
     const limit = opts.limit ?? 100
@@ -280,7 +288,7 @@ export class Store {
 
   updateThread(id: string, patch: { title?: string; resumeId?: string }) {
     const t = this.getThread(id)
-    if (!t) throw new Error(`대화를 찾을 수 없어요: ${id}`)
+    if (!t) throw new Error(`Thread not found: ${id}`)
     this.db
       .prepare('UPDATE threads SET title = ?, resume_id = ?, updated_at = ? WHERE id = ?')
       .run(patch.title ?? t.title, patch.resumeId ?? t.resumeId ?? null, this.stamp(), id)
@@ -303,7 +311,7 @@ export class Store {
     return rows.map(toMessage)
   }
 
-  /** 설정 값 하나를 읽는다. 없으면 undefined */
+  /** Reads one setting. Undefined when missing */
   getSetting(key: string): unknown {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
       | { value: string }
@@ -311,7 +319,7 @@ export class Store {
     return row ? JSON.parse(row.value) : undefined
   }
 
-  /** 모든 설정을 객체로 읽는다 */
+  /** Reads every setting as an object */
   getSettings(): Record<string, unknown> {
     const rows = this.db.prepare('SELECT key, value FROM settings').all() as unknown as {
       key: string
@@ -320,7 +328,7 @@ export class Store {
     return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value)]))
   }
 
-  /** 설정 값을 JSON으로 저장한다. undefined면 지운다 */
+  /** Saves a setting as JSON. Undefined deletes it */
   setSetting(key: string, value: unknown) {
     if (value === undefined) {
       this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)

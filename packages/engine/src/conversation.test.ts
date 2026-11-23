@@ -98,7 +98,7 @@ describe('ConversationService (대화는 하나)', () => {
     expect(last?.resumeId).toBeUndefined()
     expect(last?.systemPrompt).toContain('두리 지침')
     expect(last?.systemPrompt).toContain('- 국밥을 좋아함')
-    expect(last?.systemPrompt).toContain('사용자: 둘')
+    expect(last?.systemPrompt).toContain('User: 둘')
     expect(convo.history()).toHaveLength(6)
   })
 
@@ -123,7 +123,7 @@ describe('ConversationService (대화는 하나)', () => {
     tick(13 * 60 * 60 * 1000)
     await drain(convo.send('claude', '좋은 아침'))
     expect(claude.inputs.some((i) => i.text === SUMMARY_REQUEST)).toBe(false)
-    expect(claude.inputs.at(-1)?.systemPrompt).toContain('사용자: 점심 뭐 먹지')
+    expect(claude.inputs.at(-1)?.systemPrompt).toContain('User: 점심 뭐 먹지')
   })
 
   it('AI를 바꾸면 그 AI로 새 구간을 연다', async () => {
@@ -131,7 +131,7 @@ describe('ConversationService (대화는 하나)', () => {
     await drain(convo.send('claude', '안녕'))
     await drain(convo.send('codex', '이어서'))
     expect(convo.current()?.agent).toBe('codex')
-    expect(codex.inputs[0]?.systemPrompt).toContain('사용자: 안녕')
+    expect(codex.inputs[0]?.systemPrompt).toContain('User: 안녕')
   })
 
   it('예전에 여러 방이 열려 있었으면 새 구간을 열 때 모두 닫는다', async () => {
@@ -185,13 +185,13 @@ describe('ConversationService (대화는 하나)', () => {
     tick(13 * 60 * 60 * 1000)
     await drain(convo.send('claude', '지난번 청소기 뭐였지?'))
     const out = convo.search('청소기')
-    expect(out).toContain('지난 대화 2개')
+    expect(out).toContain('Found 2 past messages')
     // 2026-11-15T00:00Z = 한국 시간 11월 15일(일) 오전 9시
-    expect(out).toContain('2026년 11월 15일 일 오전 9:00 · 사용자: 로봇 청소기 30만 원 아래로 찾아 줘')
-    expect(out).toContain('· 두리: 받았어요: 로봇 청소기 30만 원 아래로 찾아 줘')
+    expect(out).toContain('Sun, Nov 15, 2026, 9:00 AM · User: 로봇 청소기 30만 원 아래로 찾아 줘')
+    expect(out).toContain('· Dool2: 받았어요: 로봇 청소기 30만 원 아래로 찾아 줘')
     expect(out).not.toContain('지난번 청소기 뭐였지?')
-    expect(convo.search('냉장고')).toContain('찾지 못했어요')
-    expect(convo.search('  ')).toBe('찾을 낱말을 주세요.')
+    expect(convo.search('냉장고')).toContain('No past conversation found')
+    expect(convo.search('  ')).toBe('Give me words to search for.')
   })
 
   it('찾은 말이 길면 낱말 둘레만 잘라 보여 준다', () => {
@@ -202,7 +202,7 @@ describe('ConversationService (대화는 하나)', () => {
       new Date('2026-11-16T00:00:00Z'),
     )
     const line = out.split('\n')[1] ?? ''
-    expect(line).toContain('2026년 11월 9일 월 오후 3:20 · 두리: …')
+    expect(line).toContain('Mon, Nov 9, 2026, 3:20 PM · Dool2: …')
     expect(line).toContain('로보락 Q7')
     expect(line.length).toBeLessThan(220)
   })

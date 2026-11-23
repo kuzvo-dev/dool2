@@ -35,7 +35,7 @@ describe('Store', () => {
 
   it('없는 대화를 갱신하면 알려 준다', () => {
     store = new Store(':memory:')
-    expect(() => store?.updateThread('nope', { title: 'x' })).toThrow('대화를 찾을 수 없어요')
+    expect(() => store?.updateThread('nope', { title: 'x' })).toThrow('Thread not found')
   })
 
   it('설정을 JSON으로 저장하고, undefined면 지운다', () => {

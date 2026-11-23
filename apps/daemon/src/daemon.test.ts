@@ -261,7 +261,7 @@ describe('대화 하나 (ADR 0015)', () => {
     expect((await search('t0ken')).status).toBe(401)
     // 지금 구간의 말은 AI가 이미 알고 있어서 빼고 찾는다
     const r = (await (await search(toolToken ?? '')).json()) as { content: { text: string }[] }
-    expect(r.content[0]?.text).toContain('찾지 못했어요')
+    expect(r.content[0]?.text).toContain('No past conversation found')
   })
 
   it('답하는 동안 보낸 말은 줄을 섰다가 한 차례로 이어서 간다', async () => {
