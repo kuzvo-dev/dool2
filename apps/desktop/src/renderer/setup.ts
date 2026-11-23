@@ -614,6 +614,13 @@ export function runSetup(opts: SetupOptions): {
               approve,
               () => void save({ finalStep: approve ? 'self' : 'approve' }),
             ),
+            // Auto-approve (ADR 0030): everything except payments without a card
+            toggleRow(
+              m.autoApprove,
+              current.autoApprove === true ? m.autoApproveOn : m.autoApproveOff,
+              current.autoApprove === true,
+              () => void save({ autoApprove: current.autoApprove !== true }),
+            ),
           )
           body.append(
             head(m.tabGeneral, m.generalSub),

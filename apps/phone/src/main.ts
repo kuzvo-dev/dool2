@@ -48,7 +48,7 @@ import {
   needsConnect,
   searchIdeas,
 } from '@dool2/protocol/ideas'
-import { approvalSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
+import { approvalSignText, autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
 import { Pager } from '@dool2/protocol/paging'
 import {
   CARD_ISSUERS,
@@ -404,6 +404,20 @@ async function resetAll() {
   const sig = await signText(s.keys.signPriv, resetSignText(at, services))
   toast(mainCore(lang).resetting)
   await send({ kind: 'reset', at, services, sig })
+}
+
+/** Auto-approve on or off (ADR 0030). Turning it on asks twice (a dialog and the phone lock); the request is signed */
+async function setAutoApprove(on: boolean) {
+  const s = st.saved
+  if (!s) return
+  if (on) {
+    if (!confirm(mSet.autoApproveAsk)) return
+    if ((await confirmDevice(mSet.autoApproveDevice)) === 'cancel') return
+  }
+  mark(`auto-approve ${on ? 'on' : 'off'}`)
+  const at = Date.now()
+  const sig = await signText(s.keys.signPriv, autoApproveSignText(on, at))
+  await send({ kind: 'auto-approve', on, at, sig })
 }
 
 async function forgetPc() {
@@ -3247,6 +3261,7 @@ function smsState(a: ApprovalView): SmsState {
   if (phoneLike(to)) {
     s = { state: 'found', people: [{ name: '', number: to, label: '' }], pick: 0, manual: '' }
     smsStates.set(a.id, s)
+    autoSendSms(a, s)
     return s
   }
   s = { state: 'finding', people: [], pick: 0, manual: '' }
@@ -3259,9 +3274,25 @@ function smsState(a: ApprovalView): SmsState {
     .then((r) => {
       mine.people = r.people
       mine.state = r.denied ? 'denied' : r.people.length ? 'found' : 'none'
+      autoSendSms(a, mine)
       render()
     })
   return s
+}
+
+/**
+ * Auto-approve (ADR 0030): a text flagged auto is sent without the long press once the recipient is clear (one
+ * match or a number). Several matches or none still wait for the user on the card
+ */
+const autoSent = new Set<string>()
+function autoSendSms(a: ApprovalView, s: SmsState) {
+  if (!a.auto || a.status !== 'pending' || autoSent.has(a.id)) return
+  if (s.state !== 'found' || s.people.length !== 1) return
+  autoSent.add(a.id)
+  mark('sms auto-send')
+  void sendSms(a)
+    .then(() => markDecided(a, 'approve'))
+    .catch(() => render())
 }
 
 /** Number to send to and the recipient's name (undefined if not decided) */
@@ -3409,11 +3440,13 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
         ? tAppr.rejected
         : a?.status === 'expired'
           ? tAppr.expired
-          : a || decided
-            ? sms
-              ? tAppr.sent
-              : tAppr.approved
-            : ''
+          : a?.auto && !sms
+            ? tAppr.autoDone
+            : a || decided
+              ? sms
+                ? tAppr.sent
+                : tAppr.approved
+              : ''
     return h(
       'p',
       { class: `done-line${failed ? ' warn' : ''}` },
@@ -5134,6 +5167,18 @@ function settingsView() {
         ),
       )
   else box.append(row('card', mSet.payMethods, mSet.payRememberNote))
+  // Auto-approve (ADR 0030): everything except payments without a card. Turned on with the phone lock and a signed request
+  const auto = st.pc?.autoApprove === true
+  box.append(
+    h('h2', { class: 'over', text: mSet.approvals }),
+    row(
+      'hand',
+      mSet.autoApprove,
+      auto ? mSet.autoApproveOnSub : mSet.autoApproveOffSub,
+      h('span', { class: auto ? 'meta' : 'btn small', text: auto ? mSet.turnOff : mSet.turnOn }),
+      () => void setAutoApprove(!auto),
+    ),
+  )
   // Test PCs only: start over like a new user
   if (st.pc?.dev)
     box.append(

@@ -1759,6 +1759,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       },
       decide: async (id, decision, choice) => {
         const label = browserTools.approvals.get(id)?.label ?? ''
+        // A text the phone sent on its own under auto-approve (ADR 0030): say so instead of "approved on the phone"
+        const auto = browserTools.approvals.get(id)?.auto === true
         // The phone already sent the text (the result follows right away): do not say it will press
         if (
           decision === 'approve' &&
@@ -1777,7 +1779,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             threadId,
             decision === 'reject'
               ? appNote(forAI('', `The user declined on the phone ("${label}"). Do not press it.`))
-              : appNote(forAI(m().approvedOnPhone(r.message), 'Check the result and continue the task.')),
+              : appNote(
+                  forAI(
+                    auto ? m().doneAutomatically(r.message) : m().approvedOnPhone(r.message),
+                    'Check the result and continue the task.',
+                  ),
+                ),
           )
         return r
       },
