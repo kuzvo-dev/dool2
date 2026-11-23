@@ -1,6 +1,7 @@
-// 움직이는 HTML을 영상 장면으로 한 장씩 찍는다 (두리 video_motion, apps/daemon/src/motion.ts).
-// 보이지 않는 창에서 열고, 모든 CSS 애니메이션을 멈춘 뒤 시각(currentTime)을 한 장씩 옮겨 찍는다
-// — 실제 시간과 상관없이 매번 같은 결과(결정적). 불러오는 것은 render-file과 같은 울타리(사용자 폴더 안 파일·https 그림)
+// Captures animated HTML as video frames, one at a time (Dool2 video_motion, apps/daemon/src/motion.ts).
+// Opens it in a hidden window, pauses every CSS animation and steps currentTime frame by frame
+// — the same result every time regardless of real time (deterministic). Loads only what render-file allows (files in
+// the user's folders, https images)
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { MotionRenderRequest, MotionRenderResult } from '@dool2/daemon'
@@ -26,7 +27,7 @@ function prepareSession() {
 
 let queue: Promise<unknown> = Promise.resolve()
 
-/** 한 번에 하나씩 (창 하나로 무겁다) */
+/** One at a time (a single window, and it is heavy) */
 export function renderMotion(req: MotionRenderRequest): Promise<MotionRenderResult> {
   const run = queue.then(() => renderOnce(req))
   queue = run.catch(() => undefined)
@@ -62,7 +63,7 @@ async function renderOnce(req: MotionRenderRequest): Promise<MotionRenderResult>
     wc.setFrameRate(60)
     w.setContentSize(req.width, req.height)
     await w.loadFile(req.path)
-    // 글꼴(디자인 글꼴은 https)·그림이 다 그려지고 큰 글자 맞춤(__dool2Fit)이 끝날 때까지
+    // Until fonts (design fonts are https) and images are drawn and big-text fitting (__dool2Fit) is done
     await wc.executeJavaScript(
       'Promise.all([document.fonts ? document.fonts.ready : 0, window.__dool2Fit, ...Array.from(document.images, (i) => i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r })), ...Array.from(document.querySelectorAll("video"), (v) => v.readyState >= 2 ? 0 : new Promise((r) => { v.onloadeddata = v.onerror = r; setTimeout(r, 8000) }))]).then(() => new Promise((r) => setTimeout(r, 300)))',
       true,
@@ -70,7 +71,7 @@ async function renderOnce(req: MotionRenderRequest): Promise<MotionRenderResult>
     await wc.executeJavaScript(
       `window.__seek = async (t) => {
         for (const a of document.getAnimations()) { a.pause(); a.currentTime = t }
-        // 장면 속 영상 클립: 장면 시작부터 흐른 만큼 (data-from 초부터)
+        // Video clips in the scene: as much as has passed since the scene started (from data-from seconds)
         await Promise.all(Array.from(document.querySelectorAll('video'), (v) => {
           v.pause()
           const want = Math.max(0, t / 1000 - Number(v.dataset.sceneStart || 0)) + Number(v.dataset.from || 0)

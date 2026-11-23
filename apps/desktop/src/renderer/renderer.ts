@@ -1,6 +1,7 @@
-// 두리 PC 앱 화면. dool2d 로컬 API(127.0.0.1 + 토큰)만 쓴다.
-// 폰과 같은 구조 (docs/design/screens/soft/pc.png): 왼쪽 탭 5개(대화·피드·아이디어·목표·보관함) · 따로 하는 대화 · 연결 · 설정,
-// 가운데 지금 탭(머리에 떠 있는 두리), 오른쪽 두리 판(예정·기억·화면·활동·승인). 대화는 하나 (ADR 0015).
+// Dool2 desktop window. Talks only to the dool2d local API (127.0.0.1 + token).
+// Same layout as the phone (docs/design/screens/soft/pc.png): five tabs on the left (Chat · Feed · Ideas · Goals ·
+// Library) · side chats · Connections · Settings, the current tab in the middle (Dool2 floating at the top), and the
+// assistant panel on the right (Upcoming · Memory · Screen · Activity · Approvals). One conversation (ADR 0015).
 import type {
   AgentEvent,
   AgentId,
@@ -60,8 +61,11 @@ import {
   memoryTab,
   scheduleTab,
 } from './life-views.js'
+import { appText } from './locales/app.js'
 import { statsAsk } from './locales/stats-ask.js'
+import { talkText } from './locales/talk.js'
 import { type Page, Pager } from './paging.js'
+import { FEED_THREAD_TITLE, LOGIN_BUSY_RE } from './region/kr/talk.js'
 import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
 import { runSetup, type SettingsTab, type SetupOptions } from './setup.js'
 import {
@@ -73,6 +77,10 @@ import {
   type SetupStep,
 } from './setup-model.js'
 import { doneLine, groupSteps, type PlaceCard, type WorkGroup, type WorkStepIn } from './work-steps.js'
+
+/** Copy in the current language (read on every call, so a language switch shows up on the next render) */
+const A = () => appText(lang)
+const T = () => talkText(lang)
 
 declare global {
   interface Window {
@@ -101,7 +109,7 @@ declare global {
   }
 }
 
-/** 처음 설정을 이미 마친 분께 한 번만: 사용 통계(숫자만)를 보내도 될지 (설정 → 일반에서 언제든 바꾼다) */
+/** Asked once of people who already finished setup: may we send usage stats (numbers only)? (Settings → General changes it anytime) */
 function renderStatsAsk(settings: Settings) {
   const old = document.getElementById('stats-ask')
   if (!settings.setupDone || settings.usageStats !== undefined) {
@@ -122,7 +130,26 @@ function renderStatsAsk(settings: Settings) {
   $('notice').after(box)
 }
 
-/** 새 버전 (apps/desktop/src/update.ts의 UpdateState) */
+/**
+ * Static text in index.html in the current language: `data-t` sets the text, `data-t-aria` the aria-label and
+ * `data-t-title` the tooltip, all with keys from locales/app.ts
+ */
+function renderStatic() {
+  const m = A()
+  const text = (key: string | undefined) => {
+    const v = key ? (m as Record<string, unknown>)[key] : undefined
+    return typeof v === 'string' ? v : ''
+  }
+  document.documentElement.lang = lang
+  document.title = m.docTitle
+  for (const n of document.querySelectorAll<HTMLElement>('[data-t]')) n.textContent = text(n.dataset.t)
+  for (const n of document.querySelectorAll<HTMLElement>('[data-t-aria]'))
+    n.setAttribute('aria-label', text(n.dataset.tAria))
+  for (const n of document.querySelectorAll<HTMLElement>('[data-t-title]')) n.title = text(n.dataset.tTitle)
+  renderSend()
+}
+
+/** New version (UpdateState in apps/desktop/src/update.ts) */
 interface UpdateView {
   status: 'idle' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
   current: string
@@ -133,7 +160,7 @@ interface UpdateView {
   error?: string
 }
 
-/** 새 버전 띠 (왼쪽 위) + 꼭 업데이트해야 하면 화면 전체를 막는 안내 (ADR 0028) */
+/** New-version strip (top left) + a full-window notice when the update is required (ADR 0028) */
 function renderUpdate(u: UpdateView | null) {
   const box = $('update')
   const wall = $('update-wall')
@@ -144,11 +171,11 @@ function renderUpdate(u: UpdateView | null) {
     ? ''
     : busy
       ? u.status === 'downloading'
-        ? `새 버전 받는 중 ${Math.round((u.progress ?? 0) * 100)}%`
-        : '새 버전으로 바꾸는 중… 곧 다시 켜져요'
+        ? A().updDownloading(Math.round((u.progress ?? 0) * 100))
+        : A().updInstalling
       : u.status === 'error' && u.latest
-        ? `업데이트하지 못했어요: ${u.error ?? ''}`
-        : `새 버전이 나왔어요 (${u.latest})`
+        ? A().updFailed(u.error ?? '')
+        : A().updAvailable(u.latest ?? '')
   const go = () => {
     void window.dool2.update.install().then((s) => renderUpdate(s))
     renderUpdate(u ? { ...u, status: 'downloading', progress: u.progress ?? 0 } : null)
@@ -157,7 +184,7 @@ function renderUpdate(u: UpdateView | null) {
   if (!box.hidden && u) {
     const act = busy
       ? el('span', 'muted', '')
-      : button('btn-small', go, u.status === 'error' ? '다시 해 보기' : '업데이트')
+      : button('btn-small', go, u.status === 'error' ? A().retry : A().update)
     box.replaceChildren(el('span', 'notice-text', line), act)
     box.title = u.notes ?? ''
   }
@@ -165,59 +192,57 @@ function renderUpdate(u: UpdateView | null) {
   if (!wall.hidden && u) {
     const card = el('div', 'update-card')
     card.append(
-      el('h2', '', '새 버전으로 업데이트해 주세요'),
-      el('p', '', `지금 쓰는 ${u.current}은 더 이상 쓸 수 없어요. 업데이트하면 대화·연결·금고는 그대로예요.`),
-      ...(u.notes ? [el('p', 'muted', `바뀐 점: ${u.notes}`)] : []),
+      el('h2', '', A().updWallTitle),
+      el('p', '', A().updWallBody(u.current)),
+      ...(u.notes ? [el('p', 'muted', A().updNotes(u.notes))] : []),
       el('p', 'update-line', busy || u.status === 'error' ? line : ''),
       busy
         ? el('span', '', '')
-        : button('btn', go, u.status === 'error' ? '다시 해 보기' : `${u.latest}로 업데이트`),
+        : button('btn', go, u.status === 'error' ? A().retry : A().updTo(u.latest ?? '')),
     )
     wall.replaceChildren(card)
   }
 }
 
-const AGENT_LABEL: Record<AgentId, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  opencode: 'API 키 (종량제)',
-}
-const LIMIT_LABEL: Record<string, string> = { five_hour: '5시간', seven_day: '이번 주' }
-const EXAMPLES = ['내일 아침 우산 챙겨야 해?', '이번 주 택배 어디쯤 왔어?', '뭘 할 수 있어?']
+const agentLabel = (id: AgentId): string =>
+  id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : A().apiKey
+const limitLabel = (kind: string): string =>
+  kind === 'five_hour' ? A().limit5h : kind === 'seven_day' ? A().limitWeek : kind
+const examples = () => [T().ex1, T().ex2, T().ex3]
 
-/** 왼쪽 탭 5개 + 연결 + 따로 하는 대화 + 목표 상세 */
+/** Five tabs on the left + Connections + side chats + goal detail */
 type View = 'talk' | 'feed' | 'ideas' | 'goals' | 'goal' | 'library' | 'connect' | 'thread'
 type Tab = 'talk' | 'feed' | 'ideas' | 'goals' | 'library'
-const TABS: [Tab, IconName, string][] = [
-  ['talk', 'chat', '대화'],
-  ['feed', 'feed', '피드'],
-  ['ideas', 'idea', '아이디어'],
-  ['goals', 'goal', '목표'],
-  ['library', 'library', '보관함'],
+const TABS: [Tab, IconName, () => string][] = [
+  ['talk', 'chat', () => A().tabTalk],
+  ['feed', 'feed', () => A().tabFeed],
+  ['ideas', 'idea', () => A().tabIdeas],
+  ['goals', 'goal', () => A().tabGoals],
+  ['library', 'library', () => A().tabLibrary],
 ]
-/** 두리 판의 칸 */
+/** Sections of the assistant panel */
 type PanelTab = 'schedule' | 'memory' | 'screen' | 'activity' | 'approvals'
-const PANEL_TABS: [PanelTab, IconName, string][] = [
-  ['schedule', 'clock', '예정'],
-  ['memory', 'brain', '기억'],
-  ['screen', 'pc', '화면'],
-  ['activity', 'list', '활동'],
-  ['approvals', 'hand', '승인'],
+const PANEL_TABS: [PanelTab, IconName, () => string][] = [
+  ['schedule', 'clock', () => A().pSchedule],
+  ['memory', 'brain', () => A().pMemory],
+  ['screen', 'pc', () => A().pScreen],
+  ['activity', 'list', () => A().pActivity],
+  ['approvals', 'hand', () => A().pApprovals],
 ]
 
-/** 지금 돌고 있는 차례 (두리 판의 화면과 대화 아래 "일하는 중"에 보인다) */
+/** The turn running now (shown on the panel's Screen and as "working" under the chat) */
 interface Turn {
   ask: string
   started: number
   steps: string[]
-  /** 단계마다 도구가 한 일·일한 곳 (steps와 같은 순서, 서비스별 줄로 묶는다) */
+  /** What the tool did and where, per step (same order as steps; grouped into one row per service) */
   info: { act: string; place?: string; at: number }[]
-  /** 마지막으로 연 사이트 */
+  /** Last site opened */
   host?: string
   activity: string
   text: string
   usd: number
-  /** 이번 차례에 나온 넘기기·승인·로그인 기록 (답 아래에 카드로) */
+  /** Hand-off, approval and login records from this turn (shown as cards under the answer) */
   records: string[]
 }
 
@@ -226,10 +251,10 @@ const state: {
   token: string
   agents: AgentStatus[]
   extension?: ExtensionStatus
-  /** 첫 설정에서 고른 AI 구독 */
+  /** AI subscription picked in first setup */
   choice?: AiChoice
   view: View
-  /** 목표 상세·따로 하는 대화의 id */
+  /** Id of the open goal detail or side chat */
   goalId?: string
   threadId?: string
   libTab: LibraryTab
@@ -240,13 +265,13 @@ const state: {
   busy: boolean
   queued: string[]
   turn?: Turn
-  /** 마지막으로 끝난 차례 (쉬는 동안 두리 판에 남겨 둔다) */
+  /** Last finished turn (kept on the panel while resting) */
   lastTurn?: { ask: string; steps: string[]; info: Turn['info']; seconds: number }
   approvals: ApprovalView[]
   logins: LoginRequestView[]
   life: LifeState
   services: ConnectionItem[]
-  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  /** Services the daemon is logging in to right now */
   connecting: Set<string>
   threads: ThreadSummary[]
 } = {
@@ -278,39 +303,45 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   })
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `요청 실패 (${res.status})`)
+    throw new Error(body.error ?? A().requestFailed(res.status))
   }
   return (await res.json()) as T
 }
 
-// ── 시각 ─────────────────────────────────────────────
+// ── Time ─────────────────────────────────────────────
 
 const hhmm = (iso: string) =>
-  new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  new Date(iso).toLocaleTimeString(lang === 'ko' ? 'ko-KR' : lang, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 
 const elapsed = (sec: number) =>
-  sec < 60 ? `${sec}초` : `${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, '0')}초`
+  sec < 60
+    ? A().seconds(sec)
+    : `${A().minutes(Math.floor(sec / 60))} ${A().seconds(String(sec % 60).padStart(2, '0'))}`
 
 const cut = (text: string, max: number) => {
   const t = text.replace(/\s+/g, ' ').trim()
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
-/** PC 파일 열기 (답 속 파일 링크·보관함). reveal이면 파인더·탐색기에서 그 파일을 보여 준다 */
+/** Opens a PC file (file links in answers, Library). With reveal, shows it in Finder or Explorer */
 async function openPcFile(path: string, reveal = false) {
   try {
     const r = await api<{ how: 'open' | 'reveal' }>('/api/files/open', {
       method: 'POST',
       body: JSON.stringify({ path, ...(reveal ? { reveal } : {}) }),
     })
-    if (r.how === 'reveal' && !reveal) toast('실행 파일이라 바로 열지 않고 폴더에서 보여 드려요')
+    if (r.how === 'reveal' && !reveal) toast(T().openedInFolder)
   } catch (e) {
     toast((e as Error).message)
   }
 }
 setFileOpener((path) => void openPcFile(path))
 
-// ── 잠깐 뜨는 알림 ────────────────────────────────────
+// ── Toast ────────────────────────────────────
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 function toast(text: string) {
@@ -326,20 +357,20 @@ function toast(text: string) {
   }, 2600)
 }
 
-// ── 연결 상태 (이 컴퓨터) ─────────────────────────────
+// ── Connection status (this computer) ─────────────────────────────
 
 function agentState(a: AgentStatus): { cls: string; text: string } {
-  if (!a.installed) return { cls: 'stop', text: '설치 필요' }
-  if (!a.loggedIn) return { cls: 'ask', text: '로그인 필요' }
-  return { cls: 'work', text: a.plan ? planLabel(a.plan) : '준비됨' }
+  if (!a.installed) return { cls: 'stop', text: A().needInstall }
+  if (!a.loggedIn) return { cls: 'ask', text: A().needLogin }
+  return { cls: 'work', text: a.plan ? planLabel(a.plan) : A().ready }
 }
 const readyAgents = () => state.agents.filter((a) => a.installed && a.loggedIn)
 
-/** 첫 실행 마법사를 연다 (main에서 채운다) */
+/** Opens the first-run wizard (set in main) */
 let openSetup: (start?: SetupOptions['start']) => Promise<void> = async () => {}
-/** 열려 있는 설정 (앱 안 페이지). 왼쪽 메뉴로 다른 화면에 가면 닫는다 */
+/** Settings, if open (an in-app page). Closed when the left menu goes to another screen */
 let settingsOpen: { close(): void } | undefined
-// 설정이 열린 채 왼쪽 메뉴(탭·연결·따로 하는 대화·지금)를 누르면 설정을 닫고 그리로 간다
+// Pressing the left menu (tabs, Connections, side chats, Now) while Settings is open closes Settings and goes there
 document.addEventListener(
   'click',
   (e) => {
@@ -350,7 +381,7 @@ document.addEventListener(
   true,
 )
 
-/** 연결 상태 한 줄. 할 일이 있으면 줄 전체가 버튼이 된다 */
+/** One status row. If something needs doing, the whole row is a button */
 function statRow(name: string, cls: string, meta: string, title: string, onClick?: () => void) {
   const row = onClick ? button('stat', () => onClick()) : el('div', 'stat')
   row.title = title
@@ -373,8 +404,9 @@ function agentRows() {
     .map((a) => {
       const s = agentState(a)
       const title =
-        [a.version && `v${a.version}`, a.plan && `${planLabel(a.plan)} 구독`].filter(Boolean).join(' · ') ||
-        s.text
+        [a.version && `v${a.version}`, a.plan && A().planSub(planLabel(a.plan))]
+          .filter(Boolean)
+          .join(' · ') || s.text
       let onClick: (() => void) | undefined
       if (!a.installed && (a.id === 'claude' || a.id === 'codex')) {
         const which = a.id
@@ -388,7 +420,7 @@ function agentRows() {
               }
             : () => void openSetup({ step: 'check', choice: 'claude', action: 'claude-login' })
       }
-      return statRow(AGENT_LABEL[a.id], s.cls, s.text, title, onClick)
+      return statRow(agentLabel(a.id), s.cls, s.text, title, onClick)
     })
 }
 
@@ -396,38 +428,34 @@ function extensionRow() {
   const ext = state.extension
   return ext?.connected
     ? statRow(
-        'Chrome 확장',
+        A().chromeExt,
         'work',
-        '연결됨',
-        [ext.browser, ext.version && `확장 v${ext.version}`].filter(Boolean).join(' · '),
+        A().connected,
+        [ext.browser, ext.version && A().extVersion(ext.version)].filter(Boolean).join(' · '),
       )
     : statRow(
-        'Chrome 확장',
+        A().chromeExt,
         'ask',
-        '연결하기',
-        '웹 일을 하려면 연결해 주세요',
+        A().connect,
+        A().extNeedForWeb,
         () => void openSetup({ step: 'check', action: 'extension-install' }),
       )
 }
 
-/** 머리 오른쪽 "이 PC" + 왼쪽 위 자가 점검 알림 */
+/** "This PC" at the top right + the self-check notice at the top left */
 function renderDevice(settings?: Settings) {
   const ready = readyAgents().length > 0
   const pill = $('device')
   pill.querySelector('.dot')?.setAttribute('class', `dot ${ready ? 'work' : ''}`)
-  $('device-text').textContent = ready ? '이 PC' : '이 PC · 준비 필요'
-  pill.title = ready
-    ? state.extension?.connected
-      ? '이 컴퓨터에서 일할 수 있어요'
-      : '웹 일을 하려면 Chrome 확장을 연결해 주세요'
-    : '두리가 일할 AI가 연결돼 있지 않아요'
+  $('device-text').textContent = ready ? A().deviceText : A().deviceNeedsSetup
+  pill.title = ready ? (state.extension?.connected ? A().deviceCanWork : A().deviceNeedExt) : A().noAi
   if (state.panelOpen && state.panelTab === 'screen') renderPanel('live')
   if (!settings) return
   const box = $('notice')
   box.hidden = !settings.setupDone || ready
   if (box.hidden) return
-  const fix = button('btn-small', () => void openSetup({ step: 'settings', tab: 'ai' }), '고치기')
-  box.replaceChildren(el('span', 'notice-text', '두리가 일할 AI가 연결돼 있지 않아요'), fix)
+  const fix = button('btn-small', () => void openSetup({ step: 'settings', tab: 'ai' }), A().fix)
+  box.replaceChildren(el('span', 'notice-text', A().noAi), fix)
 }
 
 async function loadAgents() {
@@ -445,7 +473,7 @@ async function loadExtension() {
   return extension
 }
 
-/** 기다리는 승인·로그인 (왼쪽 "지금", 두리 판의 승인) */
+/** Waiting approvals and logins ("Now" on the left, Approvals on the panel) */
 async function loadWaiting() {
   const [{ approvals }, { logins }] = await Promise.all([
     api<{ approvals: ApprovalView[] }>('/api/approvals'),
@@ -463,9 +491,9 @@ async function loadWaiting() {
 const pendingApprovals = () => state.approvals.filter((a) => a.status === 'pending')
 const pendingLogins = () => state.logins.filter((l) => l.status === 'pending')
 
-// ── 목표·보관함·기억·피드 ─────────────────────────────
+// ── Goals · Library · Memory · Feed ─────────────────────────────
 
-/** 긴 목록: 첫 페이지는 /api/life로 오고, 아래로 내리면 다음 페이지를 받아 이어 붙인다 */
+/** Long lists: the first page comes with /api/life, scrolling down fetches and appends the next page */
 const pageQuery = (before?: string, extra: Record<string, string> = {}) => {
   const q = new URLSearchParams(extra)
   if (before) q.set('before', before)
@@ -494,7 +522,7 @@ function libPager(tab: LibraryTab): Pager<LibraryItem> {
   )
   return p
 }
-/** 두리 판 활동: 끝낸 일·예약한 일만 (첫 페이지도 따로 받는다) */
+/** Panel activity: finished and scheduled tasks only (fetches its own first page too) */
 const activityPager: Pager<FeedItem> = new Pager<FeedItem>(
   (f) => f.at,
   (before) =>
@@ -506,7 +534,7 @@ const activityPager: Pager<FeedItem> = new Pager<FeedItem>(
   },
 )
 
-/** 받은 첫 페이지를 목록마다 맞춘다 (더 받아 둔 건 그대로) */
+/** Applies the fetched first page to each list (pages fetched beyond it stay) */
 function takeLife(life: LifeState) {
   state.life = life
   feedPager.take(undefined, { items: life.feed, ...(life.feedNext ? { next: life.feedNext } : {}) })
@@ -520,14 +548,14 @@ function takeLife(life: LifeState) {
   if (activityPager.started || state.panelTab === 'activity') activityPager.refresh()
 }
 
-/** 다음 페이지가 오면 그 목록이 보이는 화면만 다시 그린다 (입력하는 중이면 건드리지 않는다) */
+/** When a next page arrives, redraws only the screen showing that list (not while typing) */
 function renderLists() {
   const box = $('messages')
   const typing = document.activeElement instanceof HTMLInputElement && box.contains(document.activeElement)
   if ((state.view === 'feed' || state.view === 'library') && !typing) void show(state.view)
 }
 
-/** 아래 끝 가까이 내리면 다음 페이지 (피드·보관함·두리 판 활동) */
+/** Next page when scrolled near the bottom (Feed, Library, panel Activity) */
 function moreNearBottom(box: HTMLElement, pager: () => Pager<{ id: string }> | undefined) {
   box.addEventListener(
     'scroll',
@@ -543,10 +571,10 @@ async function loadLife() {
   onLifeChanged()
 }
 
-/** 생활 기록이 바뀌면 그 화면만 다시 그린다 (입력하는 중이면 건드리지 않는다) */
+/** When life records change, redraws only that screen (not while typing) */
 function onLifeChanged() {
   renderPanel('life')
-  // 대화 안 먼저 챙긴 일 카드: 폰·피드에서 답했으면 같이 바꾼다
+  // Proactive-check cards in the chat: update them too if answered on the phone or in the Feed
   for (const c of document.querySelectorAll<HTMLElement>('.tell-card[data-rec]'))
     c.replaceWith(tellCard(JSON.parse(c.dataset.rec ?? '{}') as TellRecordMessage))
   const box = $('messages')
@@ -561,7 +589,7 @@ async function lifeAct(a: LifeAction) {
       method: 'POST',
       body: JSON.stringify(a),
     })
-    // 첫 페이지 밖에서 누른 것도 바로 바뀌어 보이게 (새 첫 페이지는 그 앞만 맞춘다)
+    // Show changes to items beyond the first page right away (the new first page only covers the top)
     for (const p of [feedPager, activityPager]) {
       if (a.action === 'feed-react')
         p.patch(a.id, (f) => {
@@ -609,15 +637,15 @@ const lifeCtx: LifeCtx = {
           el(
             'span',
             'grow',
-            el('span', 'side-t', state.turn?.steps.length ? state.turn.activity : '대답하는 중'),
+            el('span', 'side-t', state.turn?.steps.length ? state.turn.activity : A().answering),
             state.turn?.ask ? el('span', 'meta', cut(state.turn.ask, 40)) : undefined,
           ),
-          el('span', 'side-when meta', '지금'),
+          el('span', 'side-when meta', A().now),
         )
       : undefined,
 }
 
-/** 대화 입력칸에 넣고 대화로 간다 (목표 만들기, 이어서 말하기) */
+/** Puts text in the chat input and goes to Chat (making a goal, following up) */
 function compose(text: string) {
   void show('talk').then(() => {
     const input = $<HTMLTextAreaElement>('input')
@@ -628,9 +656,9 @@ function compose(text: string) {
   })
 }
 
-// ── 따로 하는 대화 (메인 대화에 섞지 않는 주제별 대화) ─────
+// ── Side chats (topic chats kept out of the main chat) ─────
 
-/** 지금 연 따로 하는 대화 */
+/** The side chat open now */
 interface Side {
   id: string
   title: string
@@ -641,29 +669,29 @@ interface Side {
   busy: boolean
 }
 let side: Side | undefined
-/** 왼쪽 목록에 처음 보여 주는 따로 하는 대화 수 (protocol의 SIDE_THREAD_PEEK와 같게). 나머지는 '더 보기'로 */
+/** Side chats shown at first in the left list (same as SIDE_THREAD_PEEK in protocol). The rest are under "show more" */
 const SIDE_PEEK = 8
-/** 왼쪽 목록에서 따로 하는 대화를 모두 펼쳐 보는 중 */
+/** Whether the left list shows every side chat */
 let sideAll = false
 
 async function loadThreads() {
   const { threads } = await api<{ threads: ThreadSummary[] }>('/api/threads')
-  // 피드 글을 쓰는 대화는 목록에 두지 않는다 (결과는 피드로 간다)
-  state.threads = threads.filter((t) => t.side && t.title !== '두리 피드')
+  // The thread that writes feed posts is not listed (its results go to the Feed)
+  state.threads = threads.filter((t) => t.side && t.title !== FEED_THREAD_TITLE)
   renderThreads()
 }
 
 function renderThreads() {
   const open = state.view === 'thread' ? state.threadId : undefined
-  // 답하는 중·승인 기다리는·지금 연 대화는 접어 둔 쪽에 있어도 보이게 앞으로
+  // Chats that are answering, waiting for approval or open now move to the front so they show even when collapsed
   const pinned = state.threads.filter((t) => t.busy || t.approval || t.id === open)
   const ordered = [...pinned, ...state.threads.filter((t) => !pinned.includes(t))]
   const list = sideAll ? ordered : ordered.slice(0, SIDE_PEEK)
   const more = ordered.length - list.length
   const pencil = button('icon-btn side-new', () => void newSide(), icon('pencil'))
-  pencil.setAttribute('aria-label', '따로 하는 대화 새로 만들기')
-  pencil.title = '새로 만들기'
-  $('threads-head').replaceChildren(el('span', 'grow', '따로 하는 대화'), pencil)
+  pencil.setAttribute('aria-label', A().newSide)
+  pencil.title = A().newShort
+  $('threads-head').replaceChildren(el('span', 'grow', A().threadsHead), pencil)
   $('thread-list').replaceChildren(
     ...(list.length
       ? list.map((t) => {
@@ -680,7 +708,7 @@ function renderThreads() {
           b.title = t.title
           return b
         })
-      : [el('p', 'meta thread-empty', '여행·이사처럼 길게 이어질 일은 따로 이야기해요')]),
+      : [el('p', 'meta thread-empty', A().sideEmpty)]),
     ...(more > 0 || (sideAll && ordered.length > SIDE_PEEK)
       ? [
           button(
@@ -689,7 +717,7 @@ function renderThreads() {
               sideAll = !sideAll
               renderThreads()
             },
-            el('span', '', sideAll ? '접기' : `${more}개 더 보기`),
+            el('span', '', sideAll ? A().collapse : A().more(more)),
             icon('chevron', sideAll ? 'i more-chev open' : 'i more-chev'),
           ),
         ]
@@ -731,15 +759,13 @@ async function openSide(id: string) {
           }
   } catch {
     side = undefined
-    box.replaceChildren(
-      el('div', 'page', emptyState('', '이 대화를 찾을 수 없어요', '목록에서 다른 대화를 골라 주세요.')),
-    )
+    box.replaceChildren(el('div', 'page', emptyState('', A().threadNotFound, A().threadNotFoundBody)))
     return
   }
   renderSide()
 }
 
-/** 따로 하는 대화 화면: 제목 · 지우기 / 말 / 아래 입력칸(메인과 같은 자리) */
+/** Side chat screen: title · delete / messages / input at the bottom (same place as the main chat) */
 function renderSide() {
   const sd = side
   if (!sd || state.view !== 'thread' || state.threadId !== sd.id) return
@@ -748,7 +774,7 @@ function renderSide() {
   let prev = ''
   for (const m of sd.messages) {
     if (m.role === 'tool') {
-      // 빠른 답은 큰 대화로 보내지므로 따로 하는 대화에서는 그리지 않는다
+      // Quick replies go to the main chat, so they are not drawn in side chats
       if (!m.text.includes('"kind":"quick"')) list.append(toolCard(m.text, false))
       continue
     }
@@ -762,34 +788,34 @@ function renderSide() {
   const del = button(
     'btn-text sm',
     () => {
-      if (sd.busy) return toast('답하는 중에는 지울 수 없어요')
+      if (sd.busy) return toast(A().cantDeleteBusy)
       if (del.dataset.armed !== '1') {
         del.dataset.armed = '1'
         del.classList.add('armed')
-        del.replaceChildren('한 번 더 누르면 지워요')
+        del.replaceChildren(A().pressAgain)
         setTimeout(() => {
           del.dataset.armed = ''
           del.classList.remove('armed')
-          del.replaceChildren(icon('trash'), '지우기')
+          del.replaceChildren(icon('trash'), A().delete)
         }, 3000)
         return
       }
       void api(`/api/threads/${encodeURIComponent(sd.id)}`, { method: 'DELETE' })
         .then(async () => {
           side = undefined
-          toast('대화를 지웠어요')
+          toast(A().deleted)
           await loadThreads().catch(() => {})
           await show('talk')
         })
         .catch((e: Error) => toast(e.message))
     },
     icon('trash'),
-    '지우기',
+    A().delete,
   )
   box.replaceChildren(
     el(
       'div',
-      // 메인 대화와 같은 폭 (.messages가 정한 760px 칸을 그대로 쓴다)
+      // Same width as the main chat (uses the 760px column set by .messages)
       'page side-page',
       el(
         'header',
@@ -798,7 +824,7 @@ function renderSide() {
           'div',
           'grow',
           el('h1', 'title-2', sd.title),
-          el('p', 'cap', `따로 하는 대화 · ${dayLabel(sd.createdAt)}에 시작했어요`),
+          el('p', 'cap', A().sideStarted(dayLabel(sd.createdAt))),
         ),
         del,
       ),
@@ -807,12 +833,8 @@ function renderSide() {
         : el(
             'div',
             'card side-hint',
-            el('div', 'card-label', doori('', 22), '주제 하나를 따로 이야기해요'),
-            el(
-              'p',
-              '',
-              '여행 계획, 이사 준비처럼 길게 이어질 일을 여기서 하면 메인 대화가 어지럽지 않아요. 두리는 메인 대화에서 알게 된 것도 기억해요.',
-            ),
+            el('div', 'card-label', doori('', 22), A().sideHintTitle),
+            el('p', '', A().sideHintBody),
           ),
       live,
     ),
@@ -836,7 +858,7 @@ function renderSideLive() {
         'div',
         'working',
         el('span', 'spin'),
-        el('span', 'shimmer', side.steps.length ? `${side.steps.at(-1)}…` : '생각하는 중…'),
+        el('span', 'shimmer', side.steps.length ? `${side.steps.at(-1)}…` : A().thinkingDots),
       ),
     )
   }
@@ -844,11 +866,11 @@ function renderSideLive() {
   renderSend()
 }
 
-/** 따로 하는 대화로 보낸다. 진행은 실시간 연결(side 표시)로 그린다 */
+/** Sends to the side chat. Progress is drawn from the live stream (marked side) */
 async function sendSide(text: string) {
   const sd = side
   if (!sd || !text.trim()) return
-  if (sd.busy) return toast('이 대화는 아직 답하는 중이에요. 끝나면 이어서 말해 주세요')
+  if (sd.busy) return toast(A().sideStillAnswering)
   sd.busy = true
   renderSideLive()
   try {
@@ -859,9 +881,9 @@ async function sendSide(text: string) {
     })
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string }
-      throw new Error(body.error ?? `보내지 못했어요 (${res.status})`)
+      throw new Error(body.error ?? A().sendFailed(res.status))
     }
-    // 응답을 끝까지 읽어야 차례가 끊기지 않는다 (닫으면 본체가 멈춘다)
+    // Read the response to the end so the turn is not cut (closing it stops the daemon's turn)
     const reader = res.body?.getReader()
     if (reader) for (;;) if ((await reader.read()).done) break
   } catch (e) {
@@ -874,7 +896,7 @@ async function sendSide(text: string) {
   }
 }
 
-/** 실시간 연결에서 온 따로 하는 대화의 차례 */
+/** A side chat turn from the live stream */
 function onSideTurn(threadId: string, e: DaemonStreamEvent) {
   const known = state.threads.find((t) => t.id === threadId)
   if (e.type === 'saved' && e.message.role === 'user') {
@@ -901,7 +923,7 @@ function onSideTurn(threadId: string, e: DaemonStreamEvent) {
     const ev = e.event
     if (ev.type === 'text') sd.live += ev.delta
     else if (ev.type === 'tool') {
-      const label = narrationLine(sd.live) ?? `${ev.title ?? toolLabel(ev.name)} 중`
+      const label = narrationLine(sd.live) ?? A().doing(ev.title ?? toolLabel(ev.name))
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps.push(label)
     } else return
@@ -916,25 +938,25 @@ function onSideTurn(threadId: string, e: DaemonStreamEvent) {
   }
 }
 
-// ── 머리: 떠 있는 두리 + 상태 한 줄 ─────────────────────
+// ── Head: floating Dool2 + one status line ─────────────────────
 
 function moodNow(): { mood: string; line: string; cls: string } {
   const waiting = pendingApprovals().length + pendingLogins().length
   if (state.busy)
     return {
       mood: 'working',
-      line: state.turn?.activity && state.turn.steps.length ? state.turn.activity : '이 컴퓨터에서 일하는 중',
+      line: state.turn?.activity && state.turn.steps.length ? state.turn.activity : A().workingHere,
       cls: '',
     }
   if (waiting)
     return {
       mood: 'asking',
-      line: pendingApprovals().length ? '승인을 기다려요' : '로그인을 기다려요',
+      line: pendingApprovals().length ? A().waitApproval : A().waitLogin,
       cls: 'ask',
     }
   if (!readyAgents().length && state.agents.length)
-    return { mood: 'sleeping', line: '일할 AI가 연결돼 있지 않아요', cls: 'off' }
-  return { mood: '', line: '쉬는 중', cls: 'off' }
+    return { mood: 'sleeping', line: A().noAiShort, cls: 'off' }
+  return { mood: '', line: A().resting, cls: 'off' }
 }
 
 function renderHead() {
@@ -943,7 +965,7 @@ function renderHead() {
   const d = liveDoori('head', m.mood, 52)
   if (d.parentElement !== av) av.replaceChildren(d)
   d.classList.toggle('bob', state.busy)
-  $('head-tag').replaceChildren('두리', el('span', m.cls, cut(m.line, 22)))
+  $('head-tag').replaceChildren(A().doori, el('span', m.cls, cut(m.line, 22)))
   $('agent').setAttribute('aria-expanded', String(state.panelOpen))
   if (state.panelOpen) renderPanelTop()
 }
@@ -955,17 +977,12 @@ function renderUsage(limits: UsageLimit[]) {
     ...limits.map((l) => {
       const fill = el('i', l.percent >= 80 ? 'hi' : '')
       fill.style.width = `${Math.min(100, l.percent)}%`
-      return el(
-        'div',
-        'u',
-        el('span', '', `${LIMIT_LABEL[l.kind] ?? l.kind} 사용량 ${l.percent}%`),
-        el('div', 'bar', fill),
-      )
+      return el('div', 'u', el('span', '', A().usage(limitLabel(l.kind), l.percent)), el('div', 'bar', fill))
     }),
   )
 }
 
-// ── 왼쪽: 탭 · 지금 · 연결 · 설정 ──────────────────────
+// ── Left: tabs · Now · Connections · Settings ──────────────────────
 
 function renderTabs() {
   const waiting = pendingApprovals().length + pendingLogins().length
@@ -978,7 +995,7 @@ function renderTabs() {
         : undefined
   $('tabs').replaceChildren(
     ...TABS.map(([id, ic, label]) => {
-      const b = button('navi', () => void show(id), icon(ic, 'i md'), el('span', 'grow', label))
+      const b = button('navi', () => void show(id), icon(ic, 'i md'), el('span', 'grow', label()))
       if (id === 'talk' && waiting) b.append(el('span', 'count', String(waiting)))
       if (id === 'goals') {
         const on = state.life.routines.filter((r) => r.enabled && !isFeedRoutine(r)).length
@@ -991,7 +1008,12 @@ function renderTabs() {
       return b
     }),
   )
-  const connect = button('navi', () => void show('connect'), icon('apps', 'i md'), el('span', 'grow', '연결'))
+  const connect = button(
+    'navi',
+    () => void show('connect'),
+    icon('apps', 'i md'),
+    el('span', 'grow', A().tabConnect),
+  )
   if (state.view === 'connect' && !settingsOpen) {
     connect.classList.add('on')
     connect.setAttribute('aria-current', 'page')
@@ -1002,7 +1024,7 @@ function renderTabs() {
     'navi',
     () => void (settingsOpen ? undefined : openSetup({ step: 'settings' })),
     icon('gear', 'i md'),
-    el('span', 'grow', '설정'),
+    el('span', 'grow', A().tabSettings),
   )
   if (settingsOpen) {
     gear.classList.add('on')
@@ -1012,7 +1034,7 @@ function renderTabs() {
   renderThreads()
 }
 
-/** 지금 하는 일 · 나를 기다리는 승인·로그인 막대 (왼쪽 "지금", 피드 맨 위) */
+/** Current task · bars for approvals and logins waiting on me ("Now" on the left, top of the Feed) */
 function waitingBars(withBusy: boolean): HTMLElement[] {
   const items: HTMLElement[] = []
   if (withBusy && state.busy && state.turn)
@@ -1024,9 +1046,9 @@ function waitingBars(withBusy: boolean): HTMLElement[] {
         el(
           'span',
           'grow',
-          el('b', '', cut(state.turn.ask || '두리가 일하는 중', 24)),
+          el('b', '', cut(state.turn.ask || A().dooriWorking, 24)),
           el('br'),
-          el('span', 'meta', state.turn.steps.length ? state.turn.activity : '생각하는 중'),
+          el('span', 'meta', state.turn.steps.length ? state.turn.activity : A().thinking),
         ),
       ),
     )
@@ -1042,7 +1064,7 @@ function waitingBars(withBusy: boolean): HTMLElement[] {
         el(
           'span',
           'grow',
-          el('b', '', cut(a.what || '승인', 24)),
+          el('b', '', cut(a.what || A().approval, 24)),
           el('br'),
           el('span', 'meta mono', a.amount ?? a.label),
         ),
@@ -1055,13 +1077,7 @@ function waitingBars(withBusy: boolean): HTMLElement[] {
         'livebar ask',
         () => void show('talk'),
         el('i', 'dot ask'),
-        el(
-          'span',
-          'grow',
-          el('b', '', `${l.site} 로그인`),
-          el('br'),
-          el('span', 'meta', '아이디·비밀번호가 필요해요'),
-        ),
+        el('span', 'grow', el('b', '', A().siteLogin(l.site)), el('br'), el('span', 'meta', A().needIdPw)),
         icon('chevron'),
       ),
     )
@@ -1074,7 +1090,7 @@ function renderNow() {
   $('now-list').replaceChildren(...items)
 }
 
-// ── 오른쪽: 두리 판 ───────────────────────────────────
+// ── Right: assistant panel ───────────────────────────────────
 
 function setPanel(open: boolean, tab?: PanelTab) {
   state.panelOpen = open
@@ -1092,14 +1108,10 @@ function renderPanelTop() {
   if (!top) return
   const m = moodNow()
   const d = liveDoori('panel', m.mood, 96)
-  const status = state.busy
-    ? '두리가 일하는 중'
-    : m.mood === 'asking'
-      ? '두리가 기다리는 중'
-      : '두리가 쉬는 중'
+  const status = state.busy ? A().statusWorking : m.mood === 'asking' ? A().statusWaiting : A().statusResting
   top.replaceChildren(
     el('span', 'panel-av', d),
-    el('h2', 'title-2', '두리'),
+    el('h2', 'title-2', A().doori),
     el(
       'p',
       'meta panel-status',
@@ -1109,7 +1121,7 @@ function renderPanelTop() {
   )
 }
 
-/** 두리 판을 그린다. live = 일하는 중 바뀐 것(화면·승인), life = 생활 기록(예정·기억·활동) */
+/** Draws the assistant panel. live = changes while working (Screen, Approvals), life = life records (Upcoming, Memory, Activity) */
 function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
   const panel = $('panel')
   if (!state.panelOpen) {
@@ -1118,7 +1130,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
   }
   if (!document.getElementById('panel-top')) {
     const close = button('fbtn panel-close', () => setPanel(false), icon('close'))
-    close.setAttribute('aria-label', '두리 판 닫기')
+    close.setAttribute('aria-label', A().closePanel)
     const top = el('div', 'panel-top')
     top.id = 'panel-top'
     const seg = el('div', 'seg panel-tabs')
@@ -1140,7 +1152,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
           renderPanel('all')
         },
         icon(ic),
-        label,
+        label(),
       )
       b.setAttribute('aria-pressed', String(state.panelTab === id))
       if (id === 'approvals' && waiting) b.append(el('i', 'dot ask'))
@@ -1151,7 +1163,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
   const tab = state.panelTab
   const liveTab = tab === 'screen' || tab === 'approvals'
   if (reason !== 'all' && (reason === 'live') !== liveTab) return
-  // 기억 칸에서 입력하는 중이면 다시 그리지 않는다
+  // Do not redraw while typing in Memory
   const body = $('panel-body')
   if (
     reason !== 'all' &&
@@ -1159,7 +1171,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
     body.contains(document.activeElement)
   )
     return
-  // 활동은 처음 열 때 첫 페이지를 받는다
+  // Activity fetches its first page when first opened
   if (tab === 'activity' && !activityPager.started) activityPager.refresh()
   const content =
     tab === 'schedule'
@@ -1176,7 +1188,7 @@ function renderPanel(reason: 'live' | 'life' | 'all' = 'live') {
   if (reason !== 'all') body.scrollTop = y
 }
 
-/** 화면: 지금 하는 일(단계 기록) · 다음 차례 · 이 컴퓨터 */
+/** Screen: current task (step log) · up next · this computer */
 function screenTab(): HTMLElement {
   const box = el('div', 'screen-tab')
   const t = state.turn
@@ -1186,15 +1198,15 @@ function screenTab(): HTMLElement {
     groups.forEach((g, i) => {
       log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done'))
     })
-    if (!t.steps.length) log.append(el('li', 'now', '무엇부터 할지 정하는 중'))
-    log.append(el('li', 'next', '돈 드는 일은 먼저 물어볼게요'))
+    if (!t.steps.length) log.append(el('li', 'now', A().deciding))
+    log.append(el('li', 'next', A().askFirstMoney))
     const clock = el('span', 'meta', elapsed(Math.floor((Date.now() - t.started) / 1000)))
     clock.id = 'work-clock'
     const stop = button(
       'btn-danger sm',
       () => void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {}),
       icon('stop'),
-      '멈추기',
+      A().stop,
     )
     box.append(
       el(
@@ -1203,8 +1215,8 @@ function screenTab(): HTMLElement {
         el(
           'div',
           'workcard-head',
-          el('b', '', cut(t.ask || '부탁하신 일', 28)),
-          el('span', '', t.steps.length ? t.activity : '생각하는 중'),
+          el('b', '', cut(t.ask || A().yourRequest, 28)),
+          el('span', '', t.steps.length ? t.activity : A().thinking),
         ),
         el('div', 'panel-log', log),
         el('div', 'workcard-foot', clock, el('span', 'grow'), stop),
@@ -1219,41 +1231,26 @@ function screenTab(): HTMLElement {
       el(
         'article',
         'workcard quiet',
-        el('div', 'workcard-head', el('b', '', cut(lt.ask, 28)), el('span', 'done-label', '끝났어요')),
+        el('div', 'workcard-head', el('b', '', cut(lt.ask, 28)), el('span', 'done-label', A().finished)),
         el('div', 'panel-log', log),
-        el(
-          'div',
-          'workcard-foot',
-          el('span', 'meta', `한 일 ${lt.steps.length}가지 · ${elapsed(lt.seconds)}`),
-        ),
+        el('div', 'workcard-foot', el('span', 'meta', A().didSteps(lt.steps.length, elapsed(lt.seconds)))),
       ),
     )
   } else {
-    box.append(
-      emptyState(
-        'sleeping',
-        '지금은 쉬고 있어요',
-        '부탁하면 두리가 이 컴퓨터의 Chrome에서 하는 일을 여기서 한 단계씩 보여 드릴게요.',
-      ),
-    )
+    box.append(emptyState('sleeping', A().restingTitle, A().restingBody))
   }
   if (state.queued.length)
     box.append(
       el(
         'section',
         'panel-sec',
-        el('h3', 'over', '다음 차례'),
+        el('h3', 'over', A().nextUp),
         ...state.queued.map((q) =>
           el(
             'div',
             'side-row',
             icon('chat', 'i md'),
-            el(
-              'span',
-              'grow',
-              el('span', 'side-t', cut(q, 40)),
-              el('span', 'meta', '지금 일이 끝나면 이어서 볼게요'),
-            ),
+            el('span', 'grow', el('span', 'side-t', cut(q, 40)), el('span', 'meta', A().nextUpNote)),
           ),
         ),
       ),
@@ -1262,24 +1259,28 @@ function screenTab(): HTMLElement {
     el(
       'section',
       'panel-sec',
-      el('h3', 'over', '이 컴퓨터'),
+      el('h3', 'over', A().thisComputer),
       el('div', 'stats', ...agentRows(), extensionRow()),
     ),
-    el('p', 'panel-foot meta', icon('lock'), '두리는 이 컴퓨터에서 일하고, 대화도 이 컴퓨터에만 남아요.'),
+    el('p', 'panel-foot meta', icon('lock'), A().localOnly),
   )
   return box
 }
 
-const STATUS_LABEL: Record<ApprovalView['status'], string> = {
-  pending: '승인할까요?',
-  approved: '누르는 중이에요',
-  done: '승인해서 눌렀어요',
-  rejected: '거절했어요',
-  expired: '승인 시간이 지났어요',
-  failed: '누르지 못했어요',
+function statusLabel(status: ApprovalView['status']): string {
+  const m = A()
+  const labels: Record<ApprovalView['status'], string> = {
+    pending: m.stPending,
+    approved: m.stApproved,
+    done: m.stDone,
+    rejected: m.stRejected,
+    expired: m.stExpired,
+    failed: m.stFailed,
+  }
+  return labels[status]
 }
 
-/** 승인: 기다리는 것 · 지난 승인 */
+/** Approvals: waiting · past approvals */
 function approvalsTab(): HTMLElement {
   const box = el('div', 'approvals-tab')
   const waiting: HTMLElement[] = []
@@ -1298,7 +1299,7 @@ function approvalsTab(): HTMLElement {
           el('span', 'side-t', a.what || a.label),
           el('span', 'meta', [a.where, a.amount].filter(Boolean).join(' · ')),
         ),
-        el('span', 'pill ask', '승인 대기'),
+        el('span', 'pill ask', A().awaitingApproval),
       ),
     )
   for (const l of pendingLogins())
@@ -1307,21 +1308,16 @@ function approvalsTab(): HTMLElement {
         'side-row',
         () => void show('talk'),
         el('i', 'dot ask'),
-        el(
-          'span',
-          'grow',
-          el('span', 'side-t', `${l.site} 로그인`),
-          el('span', 'meta', '아이디·비밀번호가 필요해요'),
-        ),
-        el('span', 'pill ask', '입력 대기'),
+        el('span', 'grow', el('span', 'side-t', A().siteLogin(l.site)), el('span', 'meta', A().needIdPw)),
+        el('span', 'pill ask', A().awaitingInput),
       ),
     )
   box.append(
     el(
       'section',
       'panel-sec',
-      el('h3', 'over', '기다리는 것'),
-      ...(waiting.length ? waiting : [el('p', 'cap', '지금은 승인을 기다리는 일이 없어요.')]),
+      el('h3', 'over', A().waitingHead),
+      ...(waiting.length ? waiting : [el('p', 'cap', A().noneWaiting)]),
     ),
   )
   const done = state.approvals.filter((a) => a.status !== 'pending').slice(0, 20)
@@ -1329,7 +1325,7 @@ function approvalsTab(): HTMLElement {
     el(
       'section',
       'panel-sec',
-      el('h3', 'over', '지난 승인'),
+      el('h3', 'over', A().pastApprovals),
       ...(done.length
         ? done.map((a) =>
             el(
@@ -1342,26 +1338,21 @@ function approvalsTab(): HTMLElement {
                 'span',
                 'grow',
                 el('span', 'side-t', a.what || a.label),
-                el('span', 'meta', `${STATUS_LABEL[a.status]} · ${dayLabel(a.createdAt)}`),
+                el('span', 'meta', `${statusLabel(a.status)} · ${dayLabel(a.createdAt)}`),
               ),
               el('span', 'meta mono', a.amount ?? ''),
             ),
           )
-        : [el('p', 'cap', '돈 드는 일이나 보내기를 맡기면 여기에 남아요.')]),
+        : [el('p', 'cap', A().pastEmpty)]),
     ),
-    el(
-      'p',
-      'panel-foot meta',
-      icon('shield'),
-      '돈 쓰는 일과 누군가에게 보내는 일은 늘 먼저 물어봐요. 이건 끌 수 없어요.',
-    ),
+    el('p', 'panel-foot meta', icon('shield'), A().alwaysAsk),
   )
   return box
 }
 
-// ── 대화 ─────────────────────────────────────────────
+// ── Chat ─────────────────────────────────────────────
 
-/** 대화 기록을 받아 다시 그린다 */
+/** Fetches the chat history and redraws */
 async function loadConversation() {
   const s = await api<ConversationState>('/api/conversation?limit=150')
   state.messages = s.messages
@@ -1380,14 +1371,14 @@ function renderTalk() {
     return
   }
   const list = el('div', 'thread')
-  // 사람에게 넘긴 뒤 아직 사용자가 답하지 않았으면 [다 했어요]를 살려 둔다
+  // After a hand-off, keep [Done] active until the user says something
   const lastUser = state.messages.map((m) => m.role).lastIndexOf('user')
-  // 넘기기·승인 기록은 답보다 먼저 저장되지만, 화면에서는 그 답 아래에 둔다
+  // Hand-off and approval records are saved before the answer, but shown below it
   const order = state.messages.map((m, i) => ({ m, i }))
   for (let k = 0; k + 1 < order.length; k++) {
     const a = order[k]
     const b = order[k + 1]
-    // 일한 과정은 답 위 그대로 둔다
+    // The work log stays above the answer
     if (a && b && a.m.role === 'tool' && b.m.role === 'assistant' && !a.m.text.includes('"kind":"work"')) {
       order[k] = b
       order[k + 1] = a
@@ -1404,7 +1395,7 @@ function renderTalk() {
       prevRole = ''
     }
     if (m.role === 'tool') {
-      // 빠른 답·여러 개 고르기는 사용자가 그다음에 한 말을 알아야 흐리게·잠가 그린다
+      // Quick replies and multi-picks need the user's next message to draw themselves dimmed or locked
       const used = /"kind":"quick"|"pick":"multi"/.test(m.text) ? saidAfter(state.messages, i) : undefined
       list.append(toolCard(m.text, i > lastUser, used))
       continue
@@ -1422,23 +1413,23 @@ function renderTalk() {
 }
 
 function who(iso: string) {
-  return el('div', 'who', doori(''), '두리', el('span', 'meta', hhmm(iso)))
+  return el('div', 'who', doori(''), T().doori, el('span', 'meta', hhmm(iso)))
 }
 
-/** 말 하나. 두리 답은 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
+/** One message. Dool2's answers draw only paragraphs, lists and **bold** (never parsed as HTML) */
 function messageEl(role: string, text: string, note?: string, tools = true): HTMLElement {
   if (role === 'user') {
     if (note !== undefined) return el('p', 'msg note', note)
-    // 사진을 보낸 말: "[사진: 파일]" 대신 사진 표시
+    // A message with a photo: show the photo instead of the photo marker
     const { text: said, photo: sent } = splitPhoto(text)
     if (sent) {
-      // 보낸 사진을 말풍선에 보여 준다 (본체에 받아 온다. 받기 전·못 받으면 "사진" 표시)
-      const chip = el('span', 'photo-chip', icon('image'), '사진')
+      // Show the sent photo in the bubble (fetched from the daemon; shows "Photo" until then or if it fails)
+      const chip = el('span', 'photo-chip', icon('image'), T().photo)
       void thumb(`photo:${sent}`).then((data) => {
         if (!data) return
         const img = document.createElement('img')
         img.className = 'sent-photo'
-        img.alt = '보낸 사진'
+        img.alt = T().sentPhoto
         img.src = data
         chip.replaceWith(img)
       })
@@ -1453,7 +1444,7 @@ function messageEl(role: string, text: string, note?: string, tools = true): HTM
   return el('div', 'answer', b, answerTools(text))
 }
 
-/** 답 아래 작은 동작: 보관함에 남기기 */
+/** Small action under an answer: save to Library */
 function answerTools(text: string) {
   const save = button(
     'btn-text sm',
@@ -1461,18 +1452,18 @@ function answerTools(text: string) {
       save.disabled = true
       void lifeAct({ action: 'library-save', title: titleFrom(text), body: text, itemKind: 'note' }).then(
         () => {
-          save.replaceChildren(icon('check'), '보관함에 남겼어요')
-          toast('보관함에 남겼어요')
+          save.replaceChildren(icon('check'), T().savedToLibrary)
+          toast(T().savedToLibrary)
         },
       )
     },
     icon('bookmark'),
-    '보관함에 남기기',
+    T().saveToLibrary,
   )
   return el('div', 'answer-tools', save)
 }
 
-/** 대화 아래: 지금 답하는 중인 말 + "일하는 중" 한 줄 + 줄 선 말 */
+/** Below the chat: the answer being written + one "working" line + queued messages */
 function renderLive() {
   const live = document.getElementById('live')
   if (!live) return
@@ -1489,32 +1480,32 @@ function renderLive() {
         'div',
         'working',
         el('span', 'spin'),
-        el('span', 'shimmer', t.steps.length ? `${t.activity}…` : '생각하는 중…'),
+        el('span', 'shimmer', t.steps.length ? `${t.activity}…` : A().thinkingDots),
       ),
     )
   } else if (state.busy) {
-    parts.push(el('div', 'working', el('span', 'spin'), el('span', 'shimmer', '두리가 일하는 중…')))
+    parts.push(el('div', 'working', el('span', 'spin'), el('span', 'shimmer', T().dooriWorkingDots)))
   }
   for (const q of state.queued)
-    parts.push(el('div', 'bubble me queued', q), el('p', 'queued-note meta', '이어서 말할게요'))
+    parts.push(el('div', 'bubble me queued', q), el('p', 'queued-note meta', T().queuedNote))
   live.replaceChildren(...parts)
   renderSend()
 }
 
 function emptyView() {
   const chips = el('div', 'chips')
-  for (const ex of EXAMPLES) chips.append(button('chip', () => void send(ex), ex))
+  for (const ex of examples()) chips.append(button('chip', () => void send(ex), ex))
   return el(
     'div',
     'empty-view',
     liveDoori('home', '', 120),
-    el('p', 'title-2', '오늘은 뭘 대신 해 드릴까요?'),
-    el('p', 'cap', '돈 쓰는 일은 꼭 먼저 물어볼게요 · 폰에서 한 말도 여기 이어져요'),
+    el('p', 'title-2', T().emptyTitle),
+    el('p', 'cap', T().emptyCap),
     chips,
   )
 }
 
-// ── 실시간: 어디서 시작한 차례든 (GET /api/conversation/live) ──
+// ── Live: turns started anywhere (GET /api/conversation/live) ──
 
 function onLive(ev: ConversationLiveEvent) {
   if (ev.kind === 'life') {
@@ -1522,12 +1513,12 @@ function onLive(ev: ConversationLiveEvent) {
     return
   }
   if (ev.kind === 'reset') {
-    // 폰에서 '처음부터 다시'를 눌렀다: 대화·보관함·목표를 새로 받는다
+    // "Start over" was pressed on the phone: refetch the chat, Library and goals
     void Promise.all([loadConversation(), loadLife(), loadServices()]).catch(() => {})
     return
   }
   if (ev.kind === 'connect') {
-    // 연결하기가 끝났거나 시작했다: 연결 목록을 다시 받고 대화 안 연결 카드를 고친다
+    // A connection started or finished: refetch connections and update connect cards in the chat
     state.connecting = new Set(ev.connecting)
     void loadServices()
       .then(() => {
@@ -1538,7 +1529,7 @@ function onLive(ev: ConversationLiveEvent) {
     return
   }
   if (ev.kind === 'busy') {
-    // 본체의 busy는 따로 하는 대화·피드 글까지 센다. 메인 대화가 일하는지는 대화 상태로 확인한다
+    // The daemon's busy also counts side chats and feed posts. Check the chat state to see if the main chat is working
     if (!ev.busy) setMainBusy(false)
     else
       void api<ConversationState>('/api/conversation?limit=1')
@@ -1557,7 +1548,7 @@ function onLive(ev: ConversationLiveEvent) {
     onSideTurn(ev.threadId, e)
     return
   }
-  // 본체가 바로 남긴 말·카드(연결 카드 등): 답하는 차례가 아니니 일하는 중으로 바꾸지 않고 대화에 그대로 그린다
+  // Messages and cards the daemon posted directly (connect cards etc.): not a turn, so draw them without switching to working
   if (ev.posted && e.type === 'saved') {
     if (state.messages.some((m) => m.id === e.message.id)) return
     state.messages.push(e.message)
@@ -1567,7 +1558,7 @@ function onLive(ev: ConversationLiveEvent) {
     }
     return
   }
-  // 메인 대화의 차례가 흐르고 있으면 일하는 중
+  // Working while a main chat turn is streaming
   if (e.type !== 'end' && !state.busy) setMainBusy(true)
   if (e.type === 'saved') {
     const m = e.message
@@ -1576,7 +1567,7 @@ function onLive(ev: ConversationLiveEvent) {
       return
     }
     if (m.role === 'user') {
-      // 새 차례의 시작: 두리 판에 무엇을 부탁했는지 보인다
+      // A new turn starts: the panel shows what was asked
       const note = readAppNote(m.text)
       state.turn = { ...(state.turn ?? newTurn('')), ask: note ?? m.text }
     }
@@ -1591,13 +1582,13 @@ function onLive(ev: ConversationLiveEvent) {
   if (e.type === 'end') void finishTurn()
 }
 
-/** 메인 대화가 일하는 중인지 바뀌었을 때 */
+/** When the main chat starts or stops working */
 function setMainBusy(busy: boolean) {
   const was = state.busy
   if (was === busy) return
   state.busy = busy
   if (busy && !state.turn) state.turn = newTurn('')
-  // 일을 시작하면 두리 판을 화면 칸으로 (기억을 고치는 중이 아니면)
+  // When work starts, switch the panel to Screen (unless Memory is being edited)
   if (busy && state.panelOpen && state.panelTab !== 'memory') state.panelTab = 'screen'
   renderHead()
   renderNow()
@@ -1619,8 +1610,8 @@ function onAgent(ev: AgentEvent) {
     return
   }
   if (ev.type === 'tool') {
-    // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 흘러오던 말은 비운다
-    const act = `${ev.title ?? toolLabel(ev.name)} 중`
+    // Text before a tool call is what Dool2 is doing, not the answer. Keep one line as the step and clear the stream
+    const act = A().doing(ev.title ?? toolLabel(ev.name))
     const label = narrationLine(t.text) ?? act
     t.text = ''
     const place = toolPlace(ev.name, ev.input, t.host)
@@ -1630,7 +1621,7 @@ function onAgent(ev: AgentEvent) {
       t.info.push({ act, ...(place ? { place } : {}), at: Date.now() })
     }
     t.activity = label
-  } else if (ev.type === 'tool_result') t.activity = '정리하는 중'
+  } else if (ev.type === 'tool_result') t.activity = T().tidying
   else if (ev.type === 'usage') renderUsage(ev.limits)
   else if (ev.type === 'cost') t.usd += ev.usd
   else return
@@ -1640,7 +1631,7 @@ function onAgent(ev: AgentEvent) {
   if (state.view === 'talk') renderLive()
 }
 
-/** 저장된 말 하나를 대화 끝에 붙인다 (다시 그리지 않고) */
+/** Appends one saved message to the end of the chat (without redrawing) */
 function appendSaved(m: StoredMessage) {
   const list = document.querySelector('#messages .thread')
   if (!list) {
@@ -1650,7 +1641,7 @@ function appendSaved(m: StoredMessage) {
   const prev = state.messages.at(-2)
   if (!prev || dayLabel(prev.createdAt) !== dayLabel(m.createdAt))
     list.append(el('div', 'sep', dayLabel(m.createdAt)))
-  // 새로 부탁하면 이전 "직접 해 주세요" 카드의 버튼은 거둔다
+  // A new request removes the buttons from earlier "please do this yourself" cards
   if (m.role === 'user') for (const x of list.querySelectorAll('.handoff-actions')) x.remove()
   const note = m.role === 'user' ? readAppNote(m.text) : undefined
   if (m.role === 'assistant' && prev?.role !== 'assistant') list.append(who(m.createdAt))
@@ -1675,7 +1666,9 @@ async function finishTurn() {
   await loadWaiting().catch(() => {})
   void loadThreads().catch(() => {})
   if (t && t.usd > 0 && state.view === 'talk')
-    document.querySelector('#messages .thread')?.append(el('p', 'cost meta', `이번 답 ${costLabel(t.usd)}`))
+    document
+      .querySelector('#messages .thread')
+      ?.append(el('p', 'cost meta', T().thisAnswer(costLabel(t.usd))))
   renderHead()
   renderNow()
   renderPanel('live')
@@ -1686,22 +1679,22 @@ function scrollDown() {
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 240) box.scrollTop = box.scrollHeight
 }
 
-/** 창이 뒤에 있으면 알림으로도 알린다 */
+/** Also sends a notification when the window is in the background */
 function notifyRecord(raw: string) {
   if (document.hasFocus()) return
   try {
     const rec = JSON.parse(raw) as HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
     const body =
       rec.kind === 'approval'
-        ? `승인을 기다려요: ${rec.what}`
+        ? T().notifyApproval(rec.what)
         : rec.kind === 'login'
-          ? `${rec.site} 로그인 정보를 넣어 주세요`
+          ? T().notifyLogin(rec.site)
           : rec.reason
-    new Notification('두리가 도움을 기다려요', { body })
+    new Notification(T().notifyTitle, { body })
   } catch {}
 }
 
-/** 실시간 연결. 끊기면 다시 잇는다 */
+/** Live stream. Reconnects when it drops */
 async function connectLive() {
   for (;;) {
     try {
@@ -1730,8 +1723,7 @@ async function connectLive() {
   }
 }
 
-/** 말 하나를 보낸다. 두리가 답하는 중이면 본체가 줄을 세웠다가 이어서 전한다 */
-/** 보낼 사진 (줄인 JPEG base64): 입력칸에 붙여 넣거나 끌어 놓는다 */
+/** Photo to send (shrunk JPEG, base64): pasted or dropped on the input */
 let photo: string | undefined
 
 async function shrinkPhoto(file: File): Promise<string> {
@@ -1754,10 +1746,10 @@ function renderPhoto() {
   }
   const img = document.createElement('img')
   img.src = `data:image/jpeg;base64,${photo}`
-  img.alt = '보낼 사진'
+  img.alt = T().photoToSend
   const x = el('button', 'icon-btn', icon('close'))
   x.type = 'button'
-  x.setAttribute('aria-label', '사진 빼기')
+  x.setAttribute('aria-label', T().removePhoto)
   x.onclick = () => {
     photo = undefined
     renderPhoto()
@@ -1774,10 +1766,11 @@ async function attachPhoto(file: File | undefined | null) {
     renderPhoto()
     renderSend()
   } catch {
-    // 읽을 수 없는 그림이면 그냥 둔다
+    // Ignore images that cannot be read
   }
 }
 
+/** Sends one message. If Dool2 is answering, the daemon queues it and passes it on next */
 async function send(text: string) {
   if (!text.trim() && !photo) return
   if (state.view !== 'talk') await show('talk')
@@ -1787,7 +1780,7 @@ async function send(text: string) {
   try {
     await api<{ queued: boolean }>('/api/conversation/messages', {
       method: 'POST',
-      body: JSON.stringify({ text: text.trim() || '이 사진 봐 줘', ...(image ? { image } : {}) }),
+      body: JSON.stringify({ text: text.trim() || T().lookAtPhoto, ...(image ? { image } : {}) }),
     })
   } catch (err) {
     document
@@ -1796,39 +1789,34 @@ async function send(text: string) {
   }
 }
 
-/** 보내기 단추: 글이 있으면 보내기, 비었고 일하는 중이면 멈추기 */
+/** Send button: sends if there is text, stops if empty while working */
 function renderSend() {
   const input = $<HTMLTextAreaElement>('input')
   const btn = $<HTMLButtonElement>('send')
   const hasText = input.value.trim().length > 0 || photo !== undefined
-  // 따로 하는 대화는 줄 서기 없이 한 번에 하나 (답하는 중엔 멈추기만)
+  // Side chats take one message at a time, no queue (only stop while answering)
   const inSide = state.view === 'thread'
   const busy = inSide ? side?.busy === true : state.busy
   const stop = busy && (!hasText || inSide)
   btn.className = `send-btn${stop ? ' stop' : hasText ? ' ready' : ''}`
   btn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
-  const label = stop ? '멈추기' : busy ? '이어서 말하기' : '보내기'
+  const m = T()
+  const label = stop ? m.stop : busy ? m.continueTalk : m.send
   btn.setAttribute('aria-label', label)
-  btn.title = stop ? '지금 하는 일 멈추기' : `${label} (Enter)`
-  input.placeholder = inSide
-    ? busy
-      ? '답이 끝나면 이어서 말할 수 있어요'
-      : '이 주제로 두리에게 부탁하기'
-    : busy
-      ? '두리가 일하는 중에도 말할 수 있어요'
-      : '두리에게 부탁하기'
+  btn.title = stop ? m.stopTitle : m.withEnter(label)
+  input.placeholder = inSide ? (busy ? m.phSideBusy : m.phSide) : busy ? m.phBusy : m.ph
+  input.setAttribute('aria-label', m.ph)
 }
 
-// ── 대화 안의 카드: 승인 · 로그인 · 직접 해 주세요 ─────
+// ── Cards in the chat: approval · login · please do this yourself ─────
 
-/** 대화 기록의 tool 메시지: 넘기기(handoff), 승인 요청(approval), 로그인(login) */
-/** i번째 기록 다음에 사용자가 한 말. 없으면 undefined */
+/** What the user said after the i-th record, or undefined */
 function saidAfter(list: { role: string; text: string }[], i: number): string | undefined {
   for (const m of list.slice(i + 1)) if (m.role === 'user') return readAppNote(m.text) ?? m.text
   return undefined
 }
 
-/** 결과 블록(빠른 답·목록 줄·결과 한 장·보낼 글)이 쓰는 것 */
+/** What result blocks (quick replies, list rows, result sheet, text to send) use */
 const blockEnv: BlockEnv = {
   send: (text) => void send(text),
   open: (url) => void window.open(url, '_blank'),
@@ -1840,6 +1828,7 @@ const blockEnv: BlockEnv = {
     ),
 }
 
+/** A tool message in the chat history: result blocks, hand-off, approval request, login and other cards */
 function toolCard(raw: string, active: boolean, used?: string): Node {
   try {
     const rec = JSON.parse(raw) as { kind?: string }
@@ -1852,13 +1841,13 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
     if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
     if (rec.kind === 'cards') return pickCards(rec as CardsRecordMessage)
     if (rec.kind === 'made') {
-      // 그림 AI로 만든 그림: 답 아래에 크게 (누르면 새 창에서 원본 크기)
+      // Image made with an image AI: large under the answer (click for full size in a new window)
       const made = rec as { title?: string; photo?: string }
       const box = el('div', 'made-photo', icon('image'))
       void thumb(`photo:${made.photo ?? ''}`).then((data) => {
         if (!data) return
         const img = document.createElement('img')
-        img.alt = made.title ?? '만든 그림'
+        img.alt = made.title ?? T().madePicture
         img.src = data
         img.addEventListener('click', () => window.open(data, '_blank'))
         box.replaceChildren(img)
@@ -1871,7 +1860,7 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
   return handoffCard(raw, active)
 }
 
-/** 카드 사진: 화면은 바깥 서버에 직접 붙지 않고 본체(/api/thumb)에 받아 온다. 받은 건 기억해 둔다 */
+/** Card photos: the window never connects to outside servers; it gets them from the daemon (/api/thumb) and caches them */
 const thumbCache = new Map<string, Promise<string | undefined>>()
 function thumb(url: string): Promise<string | undefined> {
   let p = thumbCache.get(url)
@@ -1884,7 +1873,7 @@ function thumb(url: string): Promise<string | undefined> {
   return p
 }
 
-/** 답에 붙는 카드 (상품·숙소·식당): 옆으로 넘겨 보고, [보기]는 기본 브라우저, [이걸로]는 고른 걸 대화로 */
+/** Cards under an answer (products, stays, restaurants): swipe sideways, [View] opens the default browser, [This one] sends the pick to the chat */
 function pickCards(rec: CardsRecordMessage): HTMLElement {
   return el(
     'div',
@@ -1909,54 +1898,54 @@ function pickCards(rec: CardsRecordMessage): HTMLElement {
           'div',
           'pick-body',
           el('span', 'pick-title', c.title),
-          // 비어 있어도 자리는 둔다 (카드마다 가격·정보 줄이 같은 높이에)
+          // Keep the space even when empty (price and note rows line up across cards)
           el('span', 'pick-price', c.price ?? ''),
           el('span', 'pick-note', c.note ?? ''),
         ),
         el(
           'div',
           'pick-actions',
-          c.url ? button('', () => window.open(c.url, '_blank'), '보기') : undefined,
-          button('go', () => void send(`이걸로 할게: ${c.title}${c.price ? ` (${c.price})` : ''}`), '이걸로'),
+          c.url ? button('', () => window.open(c.url, '_blank'), T().view) : undefined,
+          button('go', () => void send(T().pickSay(c.title, c.price)), T().pickThis),
         ),
       )
     }),
   )
 }
 
-/** 두리 글(마크다운 조금)을 그린 상자 */
+/** A box with Dool2's text (a little markdown) */
 function richBox(cls: string, text: string): HTMLElement {
   const box = el('div', cls)
   setRich(box, text)
   return box
 }
 
-/** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
+/** Proactive check (ADR 0019): same content and answers as the Feed card. [Do it] sends that request to the chat */
 function tellCard(rec: TellRecordMessage): HTMLElement {
   const f = feedPager.items.find((x) => x.id === rec.id)
   const ask = rec.ask
   const card = el(
     'div',
     'card tell-card',
-    el('div', 'card-label', doori('', 22), '먼저 챙겼어요'),
+    el('div', 'card-label', doori('', 22), T().tellLabel),
     el('p', 'tell-title', rec.title),
     rec.body ? richBox('tell-body rich', rec.body) : undefined,
     rec.from ? el('p', 'cap', rec.from) : undefined,
     ask
       ? f?.answered
-        ? el('p', 'cap tell-done', f.answered === 'yes' ? '맡겼어요' : '넘겼어요')
+        ? el('p', 'cap tell-done', f.answered === 'yes' ? T().handed : T().passed)
         : el(
             'div',
             'tell-actions',
             button(
               'btn sm',
               () => void lifeAct({ action: 'feed-answer', id: rec.id, answer: 'yes' }).then(() => send(ask)),
-              rec.askLabel || '해 줘',
+              rec.askLabel || T().doIt,
             ),
             button(
               'btn-ghost sm',
               () => void lifeAct({ action: 'feed-answer', id: rec.id, answer: 'no' }),
-              '괜찮아요',
+              T().noThanks,
             ),
           )
       : undefined,
@@ -1965,10 +1954,11 @@ function tellCard(rec: TellRecordMessage): HTMLElement {
   return card
 }
 
-/** 걸린 시간: "5초", "1분 20초" */
+/** Time taken: "5s", "1m 20s" */
 function secs(ms: number) {
   const s = Math.max(1, Math.round(ms / 1000))
-  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
+  const m = A()
+  return s < 60 ? m.seconds(s) : `${m.minutes(Math.floor(s / 60))}${s % 60 ? ` ${m.seconds(s % 60)}` : ''}`
 }
 
 function placeCards(): PlaceCard[] {
@@ -1979,7 +1969,7 @@ function placeCards(): PlaceCard[] {
   }))
 }
 
-/** 지금 차례의 단계 → 묶기 입력 (걸린 시간은 다음 단계까지) */
+/** Steps of the current turn → grouping input (time runs until the next step) */
 function turnSteps(steps: string[], info: Turn['info'], end?: number): WorkStepIn[] {
   return steps.map((text, i) => {
     const it = info[i]
@@ -1993,7 +1983,7 @@ function turnSteps(steps: string[], info: Turn['info'], end?: number): WorkStepI
   })
 }
 
-/** 서비스 아이콘: 로고(없으면 첫 글자), PC 앱·파일·두리 일은 선 아이콘 */
+/** Service icon: logo (or first letter), line icons for PC apps, files and Dool2's own work */
 function groupMark(g: WorkGroup): HTMLElement {
   const glyph: IconName | undefined =
     g.kind === 'app' ? 'pc' : g.kind === 'file' ? 'file' : g.kind === 'doori' ? 'brain' : undefined
@@ -2003,7 +1993,7 @@ function groupMark(g: WorkGroup): HTMLElement {
   return mark
 }
 
-/** 서비스 한 줄: 아이콘(모서리에 빙글빙글/체크) · 이름 / 하는 일 · 걸린 시간 */
+/** One service row: icon (spinner or check in the corner) · name / what it does · time taken */
 function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
   const sub = state === 'now' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
   return el(
@@ -2020,7 +2010,7 @@ function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
   )
 }
 
-/** 일한 과정: 답 위에 접힌 한 줄 "로고 묶음 · 4곳 살펴봤어요 · 37초", 누르면 서비스별 줄 */
+/** Work log: one folded line above the answer ("logos · Looked at 4 places · 37s"), opens into one row per service */
 function workDoneCard(rec: WorkRecordMessage): HTMLElement {
   const groups = groupSteps(rec.steps, placeCards())
   const places = [
@@ -2031,11 +2021,11 @@ function workDoneCard(rec: WorkRecordMessage): HTMLElement {
   const box = el('details', 'work-done')
   const title = places.length
     ? places.length === 1
-      ? `${places[0]?.title}에서 일했어요`
-      : `${places.length}곳 살펴봤어요`
+      ? T().workedAt(places[0]?.title ?? '')
+      : T().lookedAt(places.length)
     : rec.host
-      ? `${rec.host.replace(/^(www|m|app)\./, '')}에서 일했어요`
-      : '일한 과정'
+      ? T().workedAt(rec.host.replace(/^(www|m|app)\./, ''))
+      : T().workLog
   const lead = places.length
     ? el('span', 'wd-stack', ...places.slice(0, 4).map((g) => groupMark(g)))
     : icon('check')
@@ -2045,7 +2035,7 @@ function workDoneCard(rec: WorkRecordMessage): HTMLElement {
       '',
       lead,
       el('b', '', title),
-      el('span', 'meta', places.length ? secs(rec.ms) : `${rec.count}단계 · ${secs(rec.ms)}`),
+      el('span', 'meta', places.length ? secs(rec.ms) : T().stepsTime(rec.count, secs(rec.ms))),
     ),
     el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
   )
@@ -2053,8 +2043,8 @@ function workDoneCard(rec: WorkRecordMessage): HTMLElement {
 }
 
 /**
- * 연결 카드 (connect_ask): 아이디·비밀번호를 넣으면 두리 본체가 뒤에서 로그인한다.
- * 기다리지 않아도 된다. 끝나면 대화 알림이 오고 이 카드는 "연결돼 있어요"로 바뀐다
+ * Connect card (connect_ask): enter an ID and password and the daemon logs in in the background.
+ * No need to wait. When it finishes, a chat note arrives and this card changes to "connected"
  */
 function connectCard(rec: ConnectRecordMessage): HTMLElement {
   const card = el('div', 'card connect-card')
@@ -2066,14 +2056,14 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
   const it = found ? state.services.find((s) => s.card.id === found.id) : undefined
   if (!it) {
     card.className = 'card quiet connect-card'
-    card.append(el('div', 'card-label', icon('link'), `${rec.service} 연결 카드를 찾지 못했어요`))
+    card.append(el('div', 'card-label', icon('link'), T().cardNotFound(rec.service)))
     return card
   }
   const c = it.card
   const mark = withLogo(el('span', 'svc-mark', /^\d+/.exec(c.name)?.[0] ?? [...c.name][0] ?? ''), c.id)
   if (it.connectedAt) {
     card.className = 'card quiet connect-card'
-    card.append(el('div', 'card-label', mark, `${c.name} 연결돼 있어요`))
+    card.append(el('div', 'card-label', mark, T().isConnected(c.name)))
     return card
   }
   const busy = state.connecting.has(c.id)
@@ -2085,26 +2075,20 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
     el(
       'div',
       '',
-      el('strong', '', busy ? `${c.name}에 로그인하는 중이에요` : `${c.name} 연결`),
-      el(
-        'span',
-        'cap',
-        busy
-          ? '두리가 Chrome에서 하고 있어요. 다른 일을 하셔도 돼요'
-          : '아이디·비밀번호를 넣으면 두리가 Chrome에서 대신 로그인해요',
-      ),
+      el('strong', '', busy ? T().loggingIn(c.name) : T().connectTitle(c.name)),
+      el('span', 'cap', busy ? T().busyNote : T().loginNote),
     ),
     busy ? el('span', 'spin') : undefined,
   )
-  // 공식 연동(지메일 등)도 준비되기 전까지는 Chrome에 로그인해서 쓴다: 브라우저 연결과 같은 카드
+  // Official integrations (Gmail etc.) also log in through Chrome until they are ready: same card as browser connections
   if (busy || (c.how !== 'browser' && c.how !== 'official')) {
     card.append(head)
-    if (!busy) card.append(button('btn', () => void show('connect', c.id), '연결 화면 열기'))
+    if (!busy) card.append(button('btn', () => void show('connect', c.id), T().openConnect))
     return card
   }
   const err = el('p', 'login-error')
   const redraw = () => card.replaceWith(connectCard(rec))
-  // 간편 로그인: 이 PC Chrome의 카카오·네이버… 로그인을 이어 쓴다 (쓰던 순서로)
+  // Social login: reuses the Kakao, Naver… login in this PC's Chrome (in the order used before)
   const social = el('div', 'social-row')
   for (const { provider, hint } of c.social?.length ? socialOrder(c, state.services) : []) {
     const b = button(
@@ -2118,33 +2102,33 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
             body: JSON.stringify({ provider, background: true }),
           },
         ).catch((x: Error) => ({ ok: false, message: x.message }))
-        if (r.ok || /하고 있어요|하는 중/.test(r.message)) {
+        if (r.ok || LOGIN_BUSY_RE.test(r.message)) {
           state.connecting.add(c.id)
           return redraw()
         }
         for (const x of social.querySelectorAll('button')) x.disabled = false
         err.textContent = r.message
       },
-      `${SOCIAL_LABEL[provider]}로 연결`,
+      T().socialConnect(SOCIAL_LABEL[provider]),
     )
     if (hint) b.append(el('span', 'social-hint', hint))
     social.append(b)
   }
   const form = el('form', 'login-form')
   const user = el('input', 'field')
-  user.placeholder = '아이디 또는 이메일'
+  user.placeholder = T().idOrEmail
   user.autocomplete = 'username'
   const pw = el('input', 'field')
   pw.type = 'password'
-  pw.placeholder = '비밀번호'
+  pw.placeholder = T().password
   pw.autocomplete = 'current-password'
-  const go = el('button', 'btn', '연결하기')
+  const go = el('button', 'btn', T().connectBtn)
   go.type = 'submit'
   form.append(user, pw, err, go)
   form.onsubmit = async (e) => {
     e.preventDefault()
     if (!user.value.trim() || !pw.value) {
-      err.textContent = '아이디와 비밀번호를 모두 넣어 주세요'
+      err.textContent = T().fillBoth
       return
     }
     go.disabled = true
@@ -2161,7 +2145,7 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
     state.connecting.add(c.id)
     redraw()
   }
-  // 직접 하기: Chrome에 로그인 화면을 열어 두고, 마치면 두리가 화면을 보고 확인한다
+  // Do it yourself: open the login page in Chrome, and when done, Dool2 looks at the page to check
   const direct = button(
     'btn-text sm',
     async () => {
@@ -2185,28 +2169,28 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
             return redraw()
           }
           done.disabled = false
-          wait.textContent = `아직 ${c.name}에 로그인하지 않은 화면이에요. Chrome에서 마치고 다시 눌러 주세요.`
+          wait.textContent = T().notLoggedYet(c.name)
         },
-        '로그인했어요',
+        T().loggedIn,
       )
-      const wait = el('p', 'cap', `Chrome에 ${c.name} 로그인 화면을 열었어요. 마치면 두리가 알아서 확인해요.`)
-      card.replaceChildren(head, wait, done, button('btn-text sm', redraw, '돌아가기'))
+      const wait = el('p', 'cap', T().openedLogin(c.name))
+      card.replaceChildren(head, wait, done, button('btn-text sm', redraw, T().back))
     },
-    'Chrome에서 직접 할게요',
+    T().doMyself,
   )
   card.append(
     head,
-    ...(social.childElementCount ? [social, el('p', 'cap social-or', '또는 아이디·비밀번호로')] : []),
+    ...(social.childElementCount ? [social, el('p', 'cap social-or', T().orIdPw)] : []),
     form,
-    el('p', 'cap', 'PC의 두리 금고에만 암호화해 저장돼요. 두리(AI)는 비밀번호를 보지 않아요.'),
+    el('p', 'cap', T().vaultNote),
     direct,
   )
   return card
 }
 
 /**
- * 로그인 카드: 금고에 없는 사이트에서 두리가 아이디·비밀번호를 부탁할 때.
- * 넣은 값은 본체 금고(OS 키체인)로만 간다. AI·대화 기록에는 남지 않는다
+ * Login card: when Dool2 asks for an ID and password for a site not in the vault.
+ * Values go only to the daemon's vault (OS keychain). Never to the AI or the chat history
  */
 function loginCard(rec: LoginRecordMessage): HTMLElement {
   const card = el('div', 'card login-card')
@@ -2218,9 +2202,7 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
           'div',
           'card-label',
           icon('lock'),
-          r?.status === 'saved'
-            ? `${r.site} 로그인 정보를 금고에 저장했어요${r.username ? ` · ${r.username}` : ''}`
-            : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+          r?.status === 'saved' ? T().loginSaved(r.site, r.username) : T().loginEnded(rec.site || T().site),
         ),
       )
       return
@@ -2230,18 +2212,18 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
       'div',
       'login-head',
       el('span', 'tile', icon('globe', 'i md')),
-      el('div', '', el('strong', '', `${r.site} 로그인`), el('span', 'mono', new URL(r.origin).host)),
+      el('div', '', el('strong', '', T().siteLogin(r.site)), el('span', 'mono', new URL(r.origin).host)),
     )
     const form = el('form', 'login-form')
     const user = el('input', 'field')
-    user.placeholder = '아이디 또는 이메일'
+    user.placeholder = T().idOrEmail
     user.autocomplete = 'username'
-    user.setAttribute('aria-label', '아이디 또는 이메일')
+    user.setAttribute('aria-label', T().idOrEmail)
     const pw = el('input', 'field')
     pw.type = 'password'
-    pw.placeholder = '비밀번호'
+    pw.placeholder = T().password
     pw.autocomplete = 'current-password'
-    pw.setAttribute('aria-label', '비밀번호')
+    pw.setAttribute('aria-label', T().password)
     const eye = button(
       'icon-btn',
       () => {
@@ -2249,19 +2231,19 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
       },
       icon('eye'),
     )
-    eye.setAttribute('aria-label', '비밀번호 보기')
+    eye.setAttribute('aria-label', T().showPw)
     const err = el('p', 'login-error')
-    const go = el('button', 'btn', '로그인')
+    const go = el('button', 'btn', T().login)
     go.type = 'submit'
     form.append(user, el('div', 'pw-row', pw, eye), err, go)
     form.onsubmit = async (e) => {
       e.preventDefault()
       if (!user.value.trim() || !pw.value) {
-        err.textContent = '아이디와 비밀번호를 모두 넣어 주세요'
+        err.textContent = T().fillBoth
         return
       }
       go.disabled = true
-      go.textContent = '저장하는 중…'
+      go.textContent = T().saving
       const res = await api<{ ok: boolean; message: string }>(`/api/logins/${encodeURIComponent(r.id)}`, {
         method: 'POST',
         body: JSON.stringify({ username: user.value.trim(), password: pw.value }),
@@ -2269,20 +2251,15 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
       pw.value = ''
       if (!res.ok) {
         go.disabled = false
-        go.textContent = '로그인'
+        go.textContent = T().login
         err.textContent = res.message
         return
       }
       render({ ...r, status: 'saved', username: user.value.trim() })
-      // AI에게는 "저장됐어요"만 알린다. 값은 보내지 않는다
-      void send(appNote(`${res.message} browser_login으로 채우고 로그인한 뒤 하던 일을 이어서 해 주세요.`))
+      // Tell the AI only that it was saved. The values are never sent
+      void send(appNote(T().loginSavedNote(res.message)))
     }
-    const foot = el(
-      'p',
-      'login-foot meta',
-      icon('lock'),
-      '이 PC의 두리 금고에만 암호화해서 저장돼요. 두리(AI)는 볼 수 없어요.',
-    )
+    const foot = el('p', 'login-foot meta', icon('lock'), T().vaultFoot)
     card.replaceChildren(head, form, foot)
     setTimeout(() => user.focus(), 50)
   }
@@ -2296,19 +2273,23 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
   return card
 }
 
-const RISK_LABEL: Record<ApprovalView['kind'], string> = {
-  money: '돈이 나가는 일',
-  contact: '다른 사람에게 보내는 일',
-  irreversible: '되돌릴 수 없는 일',
-  app: '처음 다루는 PC 앱',
-  file: 'PC 파일',
-  print: '종이로 출력',
-  pc: '이 PC',
+function riskLabel(kind: ApprovalView['kind']): string {
+  const m = T()
+  const labels: Record<ApprovalView['kind'], string> = {
+    money: m.riskMoney,
+    contact: m.riskContact,
+    irreversible: m.riskIrreversible,
+    app: m.riskApp,
+    file: m.riskFile,
+    print: m.riskPrint,
+    pc: m.riskPc,
+  }
+  return labels[kind]
 }
 
 /**
- * 승인 카드 (M3). 누를 버튼·주소는 본체가 페이지에서 읽은 값, 무엇을·얼마는 AI가 적은 값이라
- * 실제 화면 캡처를 함께 보여 준다. 승인하면 본체가 그 버튼 하나만 누른다.
+ * Approval card (M3). The button and address are read from the page by the daemon, while what and how much are
+ * written by the AI, so a real screenshot is shown alongside. Once approved, the daemon presses only that button.
  */
 function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
   const card = el('div', 'approve')
@@ -2326,7 +2307,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       ).catch(() => ({ approval: undefined }))
       if (approval?.shot) {
         const img = el('img', 'approval-shot')
-        img.alt = '승인할 화면'
+        img.alt = T().shotAlt
         img.src = `data:image/jpeg;base64,${approval.shot}`
         img.onload = () => card.scrollIntoView({ block: 'nearest' })
         card.querySelector('.approve-body')?.append(img)
@@ -2337,7 +2318,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
   const render = (v: ApprovalView | undefined) => {
     if (!v || v.status !== 'pending') {
       card.className = 'card quiet approve-done'
-      const label = v ? STATUS_LABEL[v.status] : '승인 요청이 끝났어요'
+      const label = v ? statusLabel(v.status) : T().approvalEnded
       const mark =
         v?.status === 'done' ? icon('check') : el('i', `dot ${v?.status === 'rejected' ? 'stop' : ''}`)
       card.replaceChildren(
@@ -2349,7 +2330,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
         ),
       )
       if (v?.result) card.append(el('p', 'cap', v.result))
-      if (!v) card.append(el('p', 'cap', '두리를 다시 켜서 요청이 사라졌어요. 필요하면 다시 부탁해 주세요.'))
+      if (!v) card.append(el('p', 'cap', T().approvalLost))
       return
     }
     card.className = 'approve'
@@ -2367,12 +2348,8 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       el(
         'div',
         '',
-        el(
-          'p',
-          'approve-q',
-          v.amount ? `${v.amount} ${v.kind === 'money' ? '결제할까요?' : '승인할까요?'}` : '승인할까요?',
-        ),
-        el('span', 'meta', [RISK_LABEL[v.kind], v.where].filter(Boolean).join(' · ')),
+        el('p', 'approve-q', v.amount ? T().amountQ(v.amount, v.kind === 'money') : T().approveQ),
+        el('span', 'meta', [riskLabel(v.kind), v.where].filter(Boolean).join(' · ')),
       ),
     )
     const rows = el('dl', 'kv')
@@ -2380,42 +2357,38 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       if (!val) return
       rows.append(el('dt', '', k), el('dd', cls ?? '', val))
     }
-    // 문자(내 폰 번호로): 보내는 건 폰이고 받는 번호도 폰만 안다. PC에서는 보여 주기만 한다
+    // Texts (from my phone number): the phone sends it and only the phone knows the number. The PC only shows it
     if (v.url.startsWith('sms:')) {
-      row('받는 사람', v.label)
-      row('보낼 글', v.what)
-      card.replaceChildren(
-        top,
-        el('div', 'approve-body', rows),
-        el('p', 'approve-note', '문자는 폰에서 받는 사람을 확인하고 승인하면 폰이 바로 보내요.'),
-      )
+      row(T().recipient, v.label)
+      row(T().textToSend, v.what)
+      card.replaceChildren(top, el('div', 'approve-body', rows), el('p', 'approve-note', T().smsNote))
       return
     }
-    row('무엇을', v.what)
-    row('주소', v.url.startsWith('app:') ? '' : host, 'host')
+    row(T().what, v.what)
+    row(T().address, v.url.startsWith('app:') ? '' : host, 'host')
     const pc = v.kind === 'file' || v.kind === 'print' || v.kind === 'pc'
-    row(pc ? '알아 두기' : '취소 조건', v.cancel)
-    if (v.kind !== 'app' && !pc) row('누를 버튼', `"${v.label}"`)
-    row('얼마', v.amount, 'money')
-    // PC 파일: 무엇을 어디로 (본체가 만든 목록). 길면 30줄까지 보이고 나머지는 개수만
+    row(pc ? T().goodToKnow : T().cancelTerms, v.cancel)
+    if (v.kind !== 'app' && !pc) row(T().buttonToPress, `"${v.label}"`)
+    row(T().howMuch, v.amount, 'money')
+    // PC files: what goes where (list made by the daemon). Shows up to 30 lines, then only the count
     if (v.items?.length) {
       const list = el('ul', 'approve-items')
       for (const line of v.items.slice(0, 30)) list.append(el('li', '', line))
-      if (v.items.length > 30) list.append(el('li', 'meta', `… 외 ${v.items.length - 30}개`))
-      rows.append(el('dt', '', v.kind === 'print' ? '파일' : `목록 ${v.items.length}개`), el('dd', '', list))
+      if (v.items.length > 30) list.append(el('li', 'meta', T().moreItems(v.items.length - 30)))
+      rows.append(el('dt', '', v.kind === 'print' ? T().file : T().listN(v.items.length)), el('dd', '', list))
     }
-    const no = el('button', 'btn-ghost', '거절')
+    const no = el('button', 'btn-ghost', T().reject)
     no.type = 'button'
     const yes = el(
       'button',
       'btn btn-approve',
       v.kind === 'app'
-        ? '허용하기'
+        ? T().allow
         : v.kind === 'print'
-          ? '출력하기'
+          ? T().print
           : v.kind === 'file' || v.kind === 'pc'
             ? v.label
-            : '승인하기',
+            : T().approve,
     )
     yes.type = 'button'
     const decide = async (decision: 'approve' | 'reject') => {
@@ -2423,19 +2396,15 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       no.disabled = true
       if (decision === 'approve')
         yes.textContent =
-          v.kind === 'file' || v.kind === 'pc' ? '하는 중…' : v.kind === 'print' ? '보내는 중…' : '누르는 중…'
+          v.kind === 'file' || v.kind === 'pc' ? T().working : v.kind === 'print' ? T().sending : T().pressing
       const r = await api<{ ok: boolean; message: string }>(`/api/approvals/${encodeURIComponent(v.id)}`, {
         method: 'POST',
         body: JSON.stringify({ decision }),
       }).catch((e: Error) => ({ ok: false, message: e.message }))
       await fill()
       void loadWaiting()
-      // AI에게 결과를 알려 이어서 하게 한다
-      void send(
-        decision === 'reject'
-          ? appNote(`"${v.label}"은(는) 거절했어요. 누르지 말아 주세요.`)
-          : appNote(`${r.message} 결과를 확인하고 이어서 해 주세요.`),
-      )
+      // Tell the AI the result so it continues
+      void send(appNote(decision === 'reject' ? T().rejectedNote(v.label) : T().approvedNote(r.message)))
     }
     no.onclick = () => void decide('reject')
     yes.onclick = () => void decide('approve')
@@ -2447,12 +2416,12 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
         'p',
         'approve-note',
         v.kind === 'file'
-          ? '목록이 맞는지 확인해 주세요. 승인하면 두리가 이 목록대로만 하고, 덮어쓰거나 지우지 않아요.'
+          ? T().noteFile
           : v.kind === 'pc'
-            ? '승인하면 두리가 바로 해요.'
+            ? T().notePc
             : v.kind === 'print'
-              ? '파일과 매수가 맞는지 확인해 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
-              : '화면과 내용이 맞는지 확인해 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+              ? T().notePrint
+              : T().noteDefault,
       ),
     )
   }
@@ -2460,7 +2429,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
   return card
 }
 
-/** 두리가 "직접 해 주세요"라고 넘긴 일. active면 [Chrome에서 보기] [다 했어요] */
+/** A task Dool2 handed to the person ("please do this yourself"). When active: [Show in Chrome] [Done] */
 function handoffCard(raw: string, active: boolean) {
   let rec: HandoffRecord
   try {
@@ -2470,12 +2439,7 @@ function handoffCard(raw: string, active: boolean) {
   }
   const card = el('div', active ? 'card ask handoff' : 'card quiet handoff')
   card.append(
-    el(
-      'div',
-      'card-label',
-      doori(active ? 'asking' : '', 24),
-      active ? 'Chrome에서 직접 해 주세요' : '직접 해 주신 일',
-    ),
+    el('div', 'card-label', doori(active ? 'asking' : '', 24), active ? T().handoffActive : T().handoffDone),
     el('p', 'handoff-reason', rec.reason),
   )
   if (active) {
@@ -2485,16 +2449,16 @@ function handoffCard(raw: string, active: boolean) {
         void api('/api/browser/focus', { method: 'POST', body: JSON.stringify({ tabId: rec.tabId }) }).catch(
           () => {},
         ),
-      'Chrome에서 보기',
+      T().viewInChrome,
     )
-    const doneBtn = button('btn sm', () => void send('다 했어요. 이어서 해 주세요.'), '다 했어요')
+    const doneBtn = button('btn sm', () => void send(T().doneSay), T().doneBtn)
     if (rec.tabId === undefined) look.hidden = true
     card.append(el('div', 'handoff-actions', look, doneBtn))
   }
   return card
 }
 
-// ── 화면 바꾸기 ───────────────────────────────────────
+// ── Switching screens ───────────────────────────────────────
 
 async function show(view: View, id?: string) {
   const changed =
@@ -2522,7 +2486,7 @@ async function show(view: View, id?: string) {
         box,
         setHeader: () => {},
         ask: (text) => void send(text),
-        // 연결하기는 대화에서: 대화에 연결 카드를 띄우고 대화로 간다
+        // Connecting happens in the chat: post a connect card there and go to Chat
         connect: async (cid) => {
           await api(`/api/connections/${encodeURIComponent(cid)}/chat`, { method: 'POST' })
           await show('talk')
@@ -2533,7 +2497,7 @@ async function show(view: View, id?: string) {
       },
       id,
     )
-    // 연결 표시가 바뀌었을 수 있다 (맞춤 아이디어)
+    // Connection marks may have changed (tailored ideas)
     void loadServices()
       .then(renderTabs)
       .catch(() => {})
@@ -2562,12 +2526,14 @@ async function show(view: View, id?: string) {
   box.scrollTop = keep
 }
 
-// ── 시작 ─────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────
 
 async function main() {
   const cfg = await window.dool2.config()
   state.url = cfg.url
   state.token = cfg.token
+  // Last-used language first (localStorage), settled from settings below
+  renderStatic()
 
   const input = $<HTMLTextAreaElement>('input')
   const autosize = () => {
@@ -2576,7 +2542,7 @@ async function main() {
     renderSend()
   }
   input.addEventListener('input', autosize)
-  // 사진: 붙여 넣기 · 끌어 놓기
+  // Photos: paste · drag and drop
   input.addEventListener('paste', (e) => {
     const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith('image/'))
     if (f) {
@@ -2598,7 +2564,7 @@ async function main() {
     void attachPhoto(e.dataTransfer?.files?.[0])
   })
   input.addEventListener('keydown', (e) => {
-    // 한글 조합 중 Enter는 무시한다
+    // Ignore Enter while an IME is composing (Hangul input)
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault()
       $<HTMLFormElement>('composer').requestSubmit()
@@ -2608,7 +2574,7 @@ async function main() {
     e.preventDefault()
     const text = input.value
     if (state.view === 'thread' && side) {
-      // 따로 하는 대화: 답하는 중이면 멈추기, 아니면 그 대화로 보내기
+      // Side chat: stop if answering, otherwise send to that chat
       if (side.busy) {
         void api(`/api/threads/${encodeURIComponent(side.id)}/cancel`, { method: 'POST' }).catch(() => {})
         return
@@ -2627,7 +2593,7 @@ async function main() {
     autosize()
     void send(text)
   })
-  // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
+  // Feed and Library: next page when scrolled near the bottom
   moreNearBottom($('messages'), () =>
     state.view === 'feed' ? feedPager : state.view === 'library' ? libPagers[state.libTab] : undefined,
   )
@@ -2635,7 +2601,7 @@ async function main() {
   $('agent').onclick = () => setPanel(!state.panelOpen)
   $('device').onclick = () => setPanel(true, 'screen')
 
-  // 두리 판: 넓은 창에서는 열어 둔 채로 쓴다 (사용자가 닫았으면 기억한다)
+  // Assistant panel: stays open on wide windows (remembers if the user closed it)
   let saved: string | null = null
   try {
     saved = localStorage.getItem('dool2.panel')
@@ -2646,6 +2612,7 @@ async function main() {
   // Language first (ADR 0029): every load below may render text
   const { settings } = await api<{ settings: Settings }>('/api/settings')
   syncLang(settings.language)
+  renderStatic()
   await Promise.all([
     loadAgents(),
     loadConversation(),
@@ -2665,7 +2632,7 @@ async function main() {
     .then(renderUpdate)
     .catch(() => {})
   window.dool2.update.onChange(renderUpdate)
-  // 확장·승인·로그인 요청을 새로 본다 (폰에서 한 일도 보이게). 창이 앞에 있을 때만 3초마다, 뒤에 있으면 15초마다
+  // Re-check the extension, approvals and login requests (so phone actions show up). Every 3s in front, 15s behind
   let polledAt = 0
   setInterval(() => {
     const clock = document.getElementById('work-clock')
@@ -2675,15 +2642,15 @@ async function main() {
     void loadExtension().catch(() => {})
     void loadWaiting().catch(() => {})
   }, 3_000)
-  // 창으로 돌아오면 바로 새로 본다
+  // Re-check right away when the window comes back to front
   window.addEventListener('focus', () => {
     polledAt = Date.now()
     void loadExtension().catch(() => {})
     void loadWaiting().catch(() => {})
   })
 
-  // 점검 모드: "화면[:id][+panel:칸|+nopanel]"으로 그 화면을 열어 캡처한다
-  // 예: feed, ideas, goals, goal(첫 목표), library:files, connections:coupang, thread(최근), talk+panel:memory
+  // Smoke mode: "view[:id][+panel:section|+nopanel]" opens that screen for the capture
+  // e.g. feed, ideas, goals, goal (first goal), library:files, connections:coupang, thread (latest), talk+panel:memory
   const [smoke = '', ...opts] = (cfg.smokeOpen ?? '').split('+')
   const [smokeView, smokeId] = smoke.split(':')
   for (const o of opts) {
@@ -2706,12 +2673,12 @@ async function main() {
   } else await show('talk')
   renderPanel('all')
 
-  // 첫 실행이면 마법사를 띄운다. 점검 모드에서는 "단계:선택"(예: check:both)으로 바로 연다
+  // Open the wizard on first run. Smoke mode opens it directly with "step:choice" (e.g. check:both)
   const [smokeStep, smokeChoice, smokeAction] = (cfg.smokeSetup ?? '').split(':')
   const start = [...SETUP_STEPS, 'settings'].includes(smokeStep as SetupStep)
     ? {
         step: smokeStep as SetupStep,
-        // 설정은 둘째 값이 칸 (settings:about)
+        // For settings the second value is the section (settings:about)
         ...(smokeStep === 'settings' && smokeChoice ? { tab: smokeChoice as SettingsTab } : {}),
         choice: (smokeStep === 'settings' ? undefined : smokeChoice || undefined) as AiChoice | undefined,
         action: (smokeAction || undefined) as CheckAction | undefined,
@@ -2736,7 +2703,7 @@ async function main() {
         state: () => window.dool2.update.state(),
         check: async () => {
           const u = await window.dool2.update.check()
-          // 왼쪽 위 띠도 같이 맞춘다 (새 버전이 있으면 띠가 뜬다)
+          // Update the top-left strip too (it shows when there is a new version)
           renderUpdate(u)
           return u
         },
@@ -2773,7 +2740,7 @@ async function main() {
       await new Promise((r) => setTimeout(r, 500))
   }
   const ready = readyAgents().map((a) => a.id)
-  // 화면이 실제로 그려진 뒤에 알린다 (3D 두리가 뜰 틈을 조금 준다)
+  // Report after the screen has actually drawn (give the 3D Dool2 a moment to appear)
   await new Promise((r) => setTimeout(r, 600))
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   window.dool2.ready(
@@ -2782,6 +2749,6 @@ async function main() {
 }
 
 main().catch((err: Error) => {
-  document.body.textContent = `두리를 시작하지 못했어요: ${err.message}`
+  document.body.textContent = A().startFailed(err.message)
   window.dool2?.ready(`error=${err.message}`)
 })

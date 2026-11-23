@@ -1,4 +1,4 @@
-// 첫 실행 마법사 화면: 인사 → 어떤 AI 구독을 쓰세요? → 준비 상태 확인
+// First-run wizard: welcome → which AI subscription? → readiness check
 import type {
   AgentId,
   AgentStatus,
@@ -16,13 +16,17 @@ import type {
   VaultEntry,
 } from '@dool2/protocol'
 import { type IconName, icon } from './dom.js'
+import type { Lang } from './i18n.js'
+import { lang, switchLang } from './lang.js'
+import { authAppText, LANG_NAMES, profileExamples, profileLabels, setupText } from './locales/setup.js'
+import { AUTH_APPS } from './region/kr/auth-apps.js'
 import { hyphenate } from './rich.js'
 import {
-  AI_CHOICE_LABEL,
-  CHOICES,
+  aiChoiceLabel,
   type CheckAction,
   checkHeadline,
   checklist,
+  choices,
   pickDefault,
   SETUP_STEPS,
   type SetupStep,
@@ -32,69 +36,48 @@ import {
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>
 
-/** 화면에는 런타임 import 없이 이름만 보여 준다 (공식 주소는 @dool2/protocol/link의 OFFICIAL_RELAY) */
+/** Shows only a name, without a runtime import (the official address is OFFICIAL_RELAY in @dool2/protocol/link) */
 const relayName = (relay?: string) =>
   !relay || new URL(relay).host === 'relay.dool2.com'
-    ? '두리 중계 서버'
-    : `직접 운영하는 중계 서버(${new URL(relay).host})`
+    ? setupText(lang).relayOfficial
+    : setupText(lang).relaySelf(new URL(relay).host)
 
 export interface SetupOptions {
   api: Api
   loadAgents(): Promise<AgentStatus[]>
   loadChrome(): Promise<ChromeStatus>
   loadExtension(): Promise<ExtensionStatus>
-  /** Chrome에 올릴 두리 확장 폴더를 보여 준다 */
+  /** Shows the Dool2 extension folder to load into Chrome */
   revealExtension(): void
   extensionDir(): Promise<string>
-  /** 웹 스토어 확장 id (없으면 null). 있으면 [Chrome에서 추가] 한 번으로 안내한다 */
+  /** Web Store extension id (null if none). With one, setup is a single [Add to Chrome] */
   storeExtension?(): Promise<string | null>
-  /** Chrome에서 웹 스토어의 두리 확장 페이지를 연다 */
+  /** Opens the Dool2 extension's Web Store page in Chrome */
   openStore?(): void
-  /** 지금 저장된 설정 (설정 화면에서 보여 주고 바꾼다) */
+  /** Saved settings (shown and changed on the Settings screen) */
   settings?: Settings
-  /** 새 버전 (ADR 0028). 배포 앱이 아니면 state·check가 null */
+  /** New versions (ADR 0028). state and check return null outside a release build */
   update?: {
     state(): Promise<UpdateInfo | null>
     check(): Promise<UpdateInfo | null>
     install(): Promise<UpdateInfo | null>
     version(): Promise<string>
   }
-  /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
+  /** Opens straight at this step and choice. In smoke mode, action presses that button */
   start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction; tab?: SettingsTab }
 }
 
-/** 설정 화면의 칸 */
+/** Sections of the Settings screen */
 export type SettingsTab = 'general' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
 
 type InstallKind = 'claude' | 'chrome' | 'opencode' | 'codex'
 
-/** 부품별 설치 주소와 안내 문구 */
-// obj: 조사까지 붙인 이름 (Claude Code를 / Chrome을)
-const INSTALLS: Record<InstallKind, { url: string; obj: string; source: string; help: string }> = {
-  claude: {
-    url: '/api/agents/claude/install',
-    obj: 'Claude Code를',
-    source: 'Anthropic 공식 배포 서버에서 받아요. 1~2분 걸려요.',
-    help: 'https://code.claude.com/docs/en/setup',
-  },
-  codex: {
-    url: '/api/agents/codex/install',
-    obj: 'Codex를',
-    source: 'OpenAI 공식 배포(npm)에서 받아요. 두리에 적어 둔 확인값과 맞을 때만 설치해요.',
-    help: 'https://developers.openai.com/codex',
-  },
-  opencode: {
-    url: '/api/agents/opencode/install',
-    obj: '종량제 실행기를',
-    source: '오픈소스 OpenCode 공식 릴리스에서 받아요. 확인값을 맞춰 본 뒤 설치해요.',
-    help: 'https://opencode.ai',
-  },
-  chrome: {
-    url: '/api/browser/install',
-    obj: 'Chrome을',
-    source: 'Google 공식 서버에서 받아요. Google 서명을 확인한 뒤 설치해요.',
-    help: 'https://www.google.com/chrome/',
-  },
+/** Install endpoint and help page per component (copy is in locales/setup.ts) */
+const INSTALLS: Record<InstallKind, { url: string; help: string }> = {
+  claude: { url: '/api/agents/claude/install', help: 'https://code.claude.com/docs/en/setup' },
+  codex: { url: '/api/agents/codex/install', help: 'https://developers.openai.com/codex' },
+  opencode: { url: '/api/agents/opencode/install', help: 'https://opencode.ai' },
+  chrome: { url: '/api/browser/install', help: 'https://www.google.com/chrome/' },
 }
 
 export interface SetupResult {
@@ -113,38 +96,13 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
-/** 내 정보 항목 (본체 profile.ts PROFILE_FIELDS와 같은 순서) */
-const PROFILE_LABELS: Record<string, string> = {
-  name: '이름',
-  name_en_last: '영문 성',
-  name_en_first: '영문 이름',
-  email: '이메일',
-  phone: '휴대폰 번호',
-  birth: '생년월일',
-  zip: '우편번호',
-  address: '주소',
-  address_detail: '상세 주소',
-  rrn_back: '주민번호 뒷자리',
-  auth_app: '간편인증 앱',
-  passport_no: '여권 번호',
-  passport_issued: '여권 발급일',
-  passport_expiry: '여권 만료일',
-  sex: '성별',
-  birth_city: '태어난 도시',
-  car_no: '차량번호',
-}
-/** 간편인증 앱 (@dool2/protocol AUTH_APPS와 같게: 화면은 묶지 않아 값을 옆에 둔다) */
-const AUTH_APPS = ['카카오톡', '네이버', '토스', 'PASS', 'KB국민인증서', '신한인증서', '삼성패스', '페이코']
-const PROFILE_EXAMPLES: Record<string, string> = {
-  name: '홍길동',
-  name_en_last: 'HONG',
-  name_en_first: 'GILDONG',
-  email: 'me@example.com',
-  phone: '010-1234-5678',
-  birth: '1990-01-31',
-  zip: '06236',
-  address: '서울 강남구 테헤란로 123',
-  address_detail: '4층 401호',
+/** Developer mode (`localStorage['dool2.dev'] === '1'`): shows settings that are not ready for everyone */
+function devMode(): boolean {
+  try {
+    return localStorage.getItem('dool2.dev') === '1'
+  } catch {
+    return false
+  }
 }
 
 function button(cls: string, text: string, onClick: () => void) {
@@ -154,11 +112,11 @@ function button(cls: string, text: string, onClick: () => void) {
   return b
 }
 
-/** 마법사를 띄운다. shown은 첫 화면이 다 그려졌을 때, done은 마법사를 끝냈을 때 풀린다 */
+/** Shows the wizard. shown resolves when the first screen is drawn, done when the wizard is finished */
 export function runSetup(opts: SetupOptions): {
   shown: Promise<void>
   done: Promise<SetupResult>
-  /** 설정을 닫는다 (왼쪽 메뉴로 다른 화면에 갈 때) */
+  /** Closes Settings (when going to another screen from the left menu) */
   close(): void
 } {
   let closeNow: () => void = () => {}
@@ -166,6 +124,9 @@ export function runSetup(opts: SetupOptions): {
   const shown = new Promise<void>((r) => {
     markShown = r
   })
+  const m = setupText(lang)
+  const PROFILE_LABELS: Record<string, string> = profileLabels(lang)
+  const PROFILE_EXAMPLES: Record<string, string> = profileExamples(lang)
   const root = document.getElementById('setup') as HTMLElement
   root.hidden = false
   let step: SetupStep = opts.start?.step ?? 'welcome'
@@ -176,22 +137,22 @@ export function runSetup(opts: SetupOptions): {
   let login: ClaudeLoginStatus = { state: 'idle' }
   let chrome: ChromeStatus | undefined
   let extension: ExtensionStatus | undefined
-  // 두리 확장 추가 안내 (웹 스토어 전까지는 폴더를 직접 올린다)
+  // Guide for adding the Dool2 extension (until the Web Store, the folder is loaded by hand)
   const ext: { open: boolean; dir: string; copied: boolean; store?: string | null } = {
     open: false,
     dir: '',
     copied: false,
   }
   let extTimer: ReturnType<typeof setTimeout> | undefined
-  // 폰 연결 (설정 화면)
+  // Phone pairing (Settings screen)
   const phone: { link?: LinkStatus; pair: PairStatus; relayDraft: string; error?: string } = {
     pair: { state: 'idle' },
     relayDraft: '',
   }
   let pairTimer: ReturnType<typeof setTimeout> | undefined
-  /** QR·확인 코드가 새로 나오면 그 자리로 화면을 내린다 (설정 화면이 길어서) */
+  /** Scroll to the QR or confirmation code when it appears (the Settings screen is long) */
   let scrollToPair = false
-  // 내 정보 · 결제 (설정 화면): 가린 값만 받는다. 고칠 땐 넣은 칸만 바뀐다
+  // My info and payment (Settings screen): only masked values come in. Editing changes only the filled fields
   const me: {
     have: Record<string, string>
     payChoices: Record<string, string>
@@ -200,7 +161,7 @@ export function runSetup(opts: SetupOptions): {
     saving: boolean
     note?: string
   } = { have: {}, payChoices: {}, editing: false, draft: {}, saving: false }
-  // 두리 금고 (설정 화면)
+  // Dool2 vault (Settings screen)
   const vault: {
     entries: VaultEntry[]
     adding: boolean
@@ -209,9 +170,9 @@ export function runSetup(opts: SetupOptions): {
     password: string
     saving: boolean
     error?: string
-    /** 잠깐 보이는 비밀번호 (30초 뒤 가린다, ADR 0026) */
+    /** Password shown briefly (hidden again after 30 seconds, ADR 0026) */
     shown?: { id: string; password: string }
-    /** 고치는 중인 항목 */
+    /** Entry being edited */
     editing?: string
   } = { entries: [], adding: false, url: '', username: '', password: '', saving: false }
   const installs: Record<InstallKind, InstallStatus> = {
@@ -222,7 +183,7 @@ export function runSetup(opts: SetupOptions): {
   }
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
-  // 종량제 API 키 입력
+  // Pay-as-you-go API key input
   const payg: {
     open: boolean
     providers: PaygProvider[]
@@ -233,20 +194,20 @@ export function runSetup(opts: SetupOptions): {
     error?: string
     account?: PaygAccount | null
   } = { open: false, providers: [], provider: 'anthropic', model: '', key: '', saving: false }
-  // "두리가 쉬지 않게" 단계의 선택 (기본은 둘 다 켬, 사용자가 끌 수 있다)
+  // Choices on the "keep Dool2 running" step (both on by default, the user can turn them off)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
   let autoStart = current.launchAtLogin ?? true
-  // 사용 통계 (숫자만): 처음 설정 마지막 화면에서 묻는다. 끄면 보내지 않는다 (apps/daemon/src/stats.ts)
+  // Usage stats (numbers only): asked on the last setup screen. Off means nothing is sent (apps/daemon/src/stats.ts)
   let shareStats = current.usageStats ?? true
   let statsPreview: string | undefined
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
-  // 설정 화면에서 지금 보는 칸 (폰 연결 버튼으로 열면 폰 칸)
+  // Section shown on the Settings screen (the phone section when opened from the pair button)
   let settingsTab: SettingsTab =
     opts.start?.tab ?? (opts.start?.action === 'phone-pair' ? 'phone' : 'general')
-  // 단계가 바뀔 때만 나타나는 효과를 준다 (입력 중에 다시 그려도 깜빡이지 않게)
+  // Animate only when the step changes (so redraws while typing do not flicker)
   let enter = true
-  // 점검 모드에서 버튼을 대신 누르면, 그 결과까지 그린 뒤에 캡처한다
+  // When smoke mode presses a button, capture only after its result is drawn
   let holdShown = Boolean(opts.start?.action)
 
   const done = new Promise<SetupResult>((resolve) => {
@@ -271,7 +232,7 @@ export function runSetup(opts: SetupOptions): {
       if (changed) render()
     }
 
-    // 브라우저에서 로그인이 끝났는지 주기적으로 본다
+    // Poll whether sign-in finished in the browser
     const pollLogin = () => {
       if (pollTimer) clearTimeout(pollTimer)
       if (login.state !== 'waiting') return
@@ -284,14 +245,14 @@ export function runSetup(opts: SetupOptions): {
       }, 1_500)
     }
 
-    // 설치가 끝나면 그 부품의 상태를 다시 확인한다
+    // After an install, check that component again
     const refresh = async (kind: InstallKind) => {
       if (kind === 'chrome')
         [chrome, extension] = await Promise.all([opts.loadChrome(), opts.loadExtension()])
       else agents = await opts.loadAgents()
     }
 
-    // 설치 진행률을 주기적으로 받아 온다
+    // Poll install progress
     const pollInstall = (kind: InstallKind) => {
       clearTimeout(installTimers[kind])
       if (installs[kind].state !== 'running') return
@@ -316,7 +277,7 @@ export function runSetup(opts: SetupOptions): {
       installs[kind] = r.install
       render()
       pollInstall(kind)
-      // 내려받기가 조금 진행될 때까지만 기다린다 (점검 캡처가 진행 중인 화면을 찍게)
+      // Wait only until the download is a little along (so the smoke capture shows progress)
       const early = () => {
         const s = installs[kind]
         return (
@@ -327,7 +288,7 @@ export function runSetup(opts: SetupOptions): {
       for (let i = 0; i < 80 && early(); i++) await new Promise((res) => setTimeout(res, 250))
     }
 
-    // 확장이 붙었는지 주기적으로 본다. 붙으면 안내를 닫고 초록불
+    // Poll whether the extension connected. When it does, close the guide and show green
     const pollExtension = () => {
       if (extTimer) clearTimeout(extTimer)
       if (!ext.open) return
@@ -389,7 +350,7 @@ export function runSetup(opts: SetupOptions): {
       resolve({ settings, defaultAgent })
     }
 
-    /** 설정 화면을 그냥 닫는다 (마법사 완료 표시는 바꾸지 않는다) */
+    /** Just closes Settings (does not change the wizard-done flag) */
     const close = () => {
       stopLogin()
       for (const t of Object.values(installTimers)) clearTimeout(t)
@@ -399,7 +360,7 @@ export function runSetup(opts: SetupOptions): {
     }
     closeNow = close
 
-    /** 설정 화면의 스위치는 누르는 즉시 저장한다 */
+    /** Settings switches save as soon as they are pressed */
     const save = async (patch: Partial<Settings>) => {
       const r = await opts
         .api<{ settings: Settings }>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) })
@@ -427,7 +388,7 @@ export function runSetup(opts: SetupOptions): {
 
     const act = async (action: CheckAction) => {
       if (action === 'codex-login') {
-        note = '브라우저에서 ChatGPT 로그인을 마치면 여기로 돌아와 주세요.'
+        note = m.codexLoginNote
         render()
         await opts.api('/api/agents/codex/login', { method: 'POST' }).catch(() => {})
         agents = await opts.loadAgents()
@@ -450,7 +411,7 @@ export function runSetup(opts: SetupOptions): {
       } else if (action === 'extension-install') {
         ext.open = true
         ext.store = (await opts.storeExtension?.().catch(() => null)) ?? null
-        // 웹 스토어에 있으면 바로 Chrome에서 그 페이지를 연다 (사용자는 [Chrome에 추가]만 누르면 된다)
+        // On the Web Store, open that page in Chrome right away (the user only presses [Add to Chrome])
         if (ext.store) opts.openStore?.()
         else ext.dir = await opts.extensionDir()
         render()
@@ -485,38 +446,22 @@ export function runSetup(opts: SetupOptions): {
       if (step === 'welcome') {
         card.append(
           el('div', 'doori setup-mark'),
-          el('h1', 'setup-title', '안녕하세요, 저는 두리예요'),
-          el(
-            'p',
-            'setup-sub',
-            '이 컴퓨터에 살면서 부탁하신 일을 대신 해요. 시작하기 전에 같이 준비할 게 조금 있어요. 1분이면 돼요.',
-          ),
+          el('h1', 'setup-title', m.welcomeTitle),
+          el('p', 'setup-sub', m.welcomeSub),
         )
         const promise = el('ul', 'promise')
-        for (const t of [
-          '쓰고 계신 AI 구독으로 일해요. 두리 이용료는 없어요.',
-          '돈 쓰는 일과 누군가에게 연락하는 일은 꼭 먼저 물어봐요.',
-          '대화는 이 컴퓨터에만 남아요.',
-        ])
-          promise.append(el('li', undefined, t))
+        for (const t of [m.promise1, m.promise2, m.promise3]) promise.append(el('li', undefined, t))
         card.append(promise)
         const foot = el('div', 'setup-foot')
-        foot.append(button('btn', '시작하기', () => void go('choice')))
+        foot.append(button('btn', m.start, () => void go('choice')))
         card.append(foot)
       }
 
       if (step === 'choice') {
-        card.append(
-          el('h1', 'setup-title', '어떤 AI로 일할까요?'),
-          el(
-            'p',
-            'setup-sub',
-            '쓰고 계신 AI 구독으로 일해요. 구독이 없으면 쓴 만큼만 내는 방법도 있어요. 나중에 바꿀 수 있어요.',
-          ),
-        )
+        card.append(el('h1', 'setup-title', m.choiceTitle), el('p', 'setup-sub', m.choiceSub))
         const list = el('div', 'choices')
         list.setAttribute('role', 'radiogroup')
-        for (const c of CHOICES) {
+        for (const c of choices()) {
           const b = button(c.id === 'payg' ? 'choice wide' : 'choice', '', () => {
             choice = c.id
             render()
@@ -528,10 +473,10 @@ export function runSetup(opts: SetupOptions): {
         }
         card.append(list)
         const foot = el('div', 'setup-foot')
-        const next = button('btn', '다음', () => void go('check'))
+        const next = button('btn', m.next, () => void go('check'))
         next.disabled = !choice
         foot.append(
-          button('btn-text', '이전', () => void go('welcome')),
+          button('btn-text', m.back, () => void go('welcome')),
           next,
         )
         card.append(foot)
@@ -539,10 +484,7 @@ export function runSetup(opts: SetupOptions): {
 
       if (step === 'check' && choice) {
         if (loading) {
-          card.append(
-            el('h1', 'setup-title', '이 컴퓨터를 살펴보는 중이에요'),
-            el('p', 'setup-sub', '잠깐이면 돼요.'),
-          )
+          card.append(el('h1', 'setup-title', m.scanning), el('p', 'setup-sub', m.scanningSub))
         } else {
           const head = checkHeadline(choice, agents, chrome, extension)
           card.append(el('h1', 'setup-title', head.title), el('p', 'setup-sub', head.sub))
@@ -550,11 +492,11 @@ export function runSetup(opts: SetupOptions): {
           if (note) card.append(el('p', 'setup-note', note))
           const foot = el('div', 'setup-foot')
           const canStart = Boolean(pickDefault(choice, agents))
-          const startBtn = button('btn', canStart ? '다음' : '나중에 할게요', () => void go('awake'))
+          const startBtn = button('btn', canStart ? m.next : m.doLater, () => void go('awake'))
           if (!canStart) startBtn.className = 'btn-text'
           foot.append(
-            button('btn-text', '이전', () => void go('choice')),
-            button('btn-text', '다시 확인', () => void go('check')),
+            button('btn-text', m.back, () => void go('choice')),
+            button('btn-text', m.recheck, () => void go('check')),
             startBtn,
           )
           card.append(foot)
@@ -562,14 +504,7 @@ export function runSetup(opts: SetupOptions): {
       }
 
       if (step === 'awake') {
-        card.append(
-          el('h1', 'setup-title', '두리가 쉬지 않게 할까요?'),
-          el(
-            'p',
-            'setup-sub',
-            'PC가 잠들면 두리도 잠시 쉬어요. 맡긴 일은 PC가 깨어나면 이어서 할게요. 허락해 주신 것만 바꾸고, 언제든 되돌릴 수 있어요.',
-          ),
-        )
+        card.append(el('h1', 'setup-title', m.awakeTitle), el('p', 'setup-sub', m.awakeSub))
         const list = el('ul', 'checks toggles')
         const toggle = (label: string, detail: string, on: boolean, set: (v: boolean) => void) =>
           toggleRow(label, detail, on, () => {
@@ -577,46 +512,27 @@ export function runSetup(opts: SetupOptions): {
             render()
           })
         list.append(
-          toggle(
-            '두리가 일하는 동안 PC가 잠들지 않게 할게요',
-            '화면은 꺼져도 돼요. 일이 끝나면 평소처럼 잠들어요.',
-            awakeWorking,
-            (v) => {
-              awakeWorking = v
-            },
-          ),
-          toggle('PC를 켜면 두리도 자동으로 켜지게 할게요', '창 없이 조용히 켜져요.', autoStart, (v) => {
+          toggle(m.awakeWorkingWizard, m.awakeDetail, awakeWorking, (v) => {
+            awakeWorking = v
+          }),
+          toggle(m.autoStartWizard, m.autoStartDetail, autoStart, (v) => {
             autoStart = v
           }),
         )
         const statsList = el('ul', 'checks toggles')
         statsList.append(
-          toggle(
-            '사용 통계 보내기 (숫자만)',
-            '두리를 더 낫게 만드는 데 써요. 하루 한 번, 부탁 몇 개를 끝냈는지 같은 숫자만 보내요. 대화·사이트·파일 이름은 보내지 않아요.',
-            shareStats,
-            (v) => {
-              shareStats = v
-            },
-          ),
+          toggle(m.statsLabel, m.statsWizardDetail, shareStats, (v) => {
+            shareStats = v
+          }),
         )
-        card.append(
-          list,
-          el(
-            'p',
-            'setup-hint',
-            '화면 잠금이나 보안 설정은 건드리지 않아요. 그래서 컴퓨터를 다시 켜면, 로그인한 뒤에 두리가 돌아와요.',
-          ),
-          statsList,
-          statsPeek(),
-        )
+        card.append(list, el('p', 'setup-hint', m.awakeHint), statsList, statsPeek())
         const foot = el('div', 'setup-foot')
         foot.append(
-          button('btn-text', '이전', () => void go('check')),
-          button('btn-text', '나중에', () => void finish()),
+          button('btn-text', m.back, () => void go('check')),
+          button('btn-text', m.later, () => void finish()),
           button(
             'btn',
-            '이렇게 할게요',
+            m.confirmPower,
             () =>
               void finish({
                 keepAwake: awakeWorking ? 'working' : 'off',
@@ -629,21 +545,21 @@ export function runSetup(opts: SetupOptions): {
       }
 
       if (step === 'settings') {
-        // 설정은 앱 안 페이지: 왼쪽 메뉴는 그대로 두고, 설정 안의 칸 목록으로 한 칸씩 본다
+        // Settings is a page inside the app: the left menu stays, and its own section list shows one section at a time
         card.className = 'settings-page'
         const todo = checklist(choice ?? 'both', agents, chrome, extension).filter((x) => !x.ok).length
         const tabs: [SettingsTab, IconName, string, string?][] = [
-          ['general', 'gear', '일반'],
-          ['ai', 'brain', 'AI · 브라우저', !loading && todo ? String(todo) : undefined],
-          ['phone', 'phone', '폰 연결'],
-          ['vault', 'lock', '두리 금고'],
-          ['me', 'card', '내 정보 · 결제'],
-          ...(screen?.available ? ([['apps', 'pc', 'PC 앱 조작']] as [SettingsTab, IconName, string][]) : []),
-          ['about', 'info', '두리 정보', ver.info?.status === 'available' ? 'N' : undefined],
+          ['general', 'gear', m.tabGeneral],
+          ['ai', 'brain', m.tabAi, !loading && todo ? String(todo) : undefined],
+          ['phone', 'phone', m.tabPhone],
+          ['vault', 'lock', m.tabVault],
+          ['me', 'card', m.tabMe],
+          ...(screen?.available ? ([['apps', 'pc', m.tabApps]] as [SettingsTab, IconName, string][]) : []),
+          ['about', 'info', m.tabAbout, ver.info?.status === 'available' ? 'N' : undefined],
         ]
         if (!tabs.some(([id]) => id === settingsTab)) settingsTab = 'general'
         const nav = el('nav', 'settings-nav')
-        nav.setAttribute('aria-label', '설정 칸')
+        nav.setAttribute('aria-label', m.settingsNav)
         for (const [id, ic, label, badge] of tabs) {
           const b = button('settings-tab', '', () => {
             settingsTab = id
@@ -671,20 +587,20 @@ export function runSetup(opts: SetupOptions): {
           h.append(el('h1', 'title', title), el('p', 'cap', sub))
           return h
         }
-        if (loading) body.append(el('p', 'setup-sub', '이 컴퓨터를 살펴보는 중이에요…'))
+        if (loading) body.append(el('p', 'setup-sub', m.scanningDots))
         else if (settingsTab === 'general') {
           const awake = current.keepAwake === 'working' || current.keepAwake === 'always'
           const list = el('ul', 'checks toggles')
           list.append(
             toggleRow(
-              '두리가 일하는 동안 PC가 잠들지 않게',
-              '화면은 꺼져도 돼요. 일이 끝나면 평소처럼 잠들어요.',
+              m.awakeWorking,
+              m.awakeDetail,
               awake,
               () => void save({ keepAwake: awake ? 'off' : 'working' }),
             ),
             toggleRow(
-              'PC를 켜면 두리도 자동으로 켜기',
-              '창 없이 조용히 켜져요.',
+              m.autoStart,
+              m.autoStartDetail,
               current.launchAtLogin === true,
               () => void save({ launchAtLogin: current.launchAtLogin !== true }),
             ),
@@ -693,29 +609,25 @@ export function runSetup(opts: SetupOptions): {
           const gate = el('ul', 'checks toggles')
           gate.append(
             toggleRow(
-              '결제·보내기는 승인하면 두리가 누르기',
-              approve
-                ? '두리가 화면 캡처와 내용을 보여 드리고, 승인하시면 그 버튼 하나만 눌러요.'
-                : '꺼져 있어요. 마지막 버튼은 항상 직접 누르세요. 두리는 바로 앞까지만 준비해요.',
+              m.finalStep,
+              approve ? m.finalStepOn : m.finalStepOff,
               approve,
               () => void save({ finalStep: approve ? 'self' : 'approve' }),
             ),
           )
           body.append(
-            head('일반', '두리가 언제 일하고, 마지막 버튼을 누가 누를지 정해요.'),
-            sec('두리가 쉬지 않게', undefined, list),
-            sec('마지막 확인', undefined, gate),
+            head(m.tabGeneral, m.generalSub),
+            sec(m.secAwake, undefined, list),
+            sec(m.secFinal, undefined, gate),
             sec(
-              '사용 통계',
+              m.secStats,
               undefined,
               (() => {
                 const ul = el('ul', 'checks toggles')
                 ul.append(
                   toggleRow(
-                    '사용 통계 보내기 (숫자만)',
-                    current.usageStats
-                      ? '하루 한 번 숫자만 보내요. 대화·사이트·파일 이름은 보내지 않아요.'
-                      : '꺼져 있어요. 아무것도 보내지 않아요.',
+                    m.statsLabel,
+                    current.usageStats ? m.statsOn : m.statsOff,
                     current.usageStats === true,
                     () => void save({ usageStats: current.usageStats !== true }),
                   ),
@@ -725,47 +637,30 @@ export function runSetup(opts: SetupOptions): {
               statsPeek(),
             ),
           )
+          if (devMode()) body.append(sec(m.secLanguage, undefined, languageRow()))
         } else if (settingsTab === 'ai') {
           const ai = el('p', 'setup-hint')
           ai.append(
-            `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
-            button('btn-link', '처음 설정 다시 하기', () => void go('welcome')),
+            m.chosenAi(choice ? aiChoiceLabel(choice) : m.notChosen),
+            button('btn-link', m.redoSetup, () => void go('welcome')),
           )
           body.append(
-            head(
-              'AI · 브라우저',
-              todo
-                ? `할 일이 ${todo}개 남았어요. 아래 버튼으로 마저 준비해요.`
-                : '두리가 일할 준비가 다 됐어요.',
-            ),
-            sec('준비 상태', undefined, ...checksBlock(choice ?? 'both')),
+            head(m.tabAi, todo ? m.todoLeft(todo) : m.aiReady),
+            sec(m.secReady, undefined, ...checksBlock(choice ?? 'both')),
             ai,
           )
         } else if (settingsTab === 'phone')
-          body.append(
-            head('폰 연결', '밖에서도 폰으로 부탁하고, 결제·보내기는 폰에서 승인해요.'),
-            sec('이 PC와 폰', undefined, phoneBlock()),
-          )
+          body.append(head(m.tabPhone, m.phoneSub), sec(m.secPhone, undefined, phoneBlock()))
         else if (settingsTab === 'vault')
-          body.append(
-            head('두리 금고', '로그인이 풀려도 두리가 대신 채울 아이디·비밀번호를 이 PC에만 둬요.'),
-            sec('저장한 사이트', undefined, vaultBlock()),
-          )
-        else if (settingsTab === 'me')
-          body.append(
-            head('내 정보 · 결제', '예약·주문할 때 두리가 채우는 내 정보와 결제 수단이에요.'),
-            sec('내 정보', undefined, meBlock()),
-          )
+          body.append(head(m.tabVault, m.vaultSub), sec(m.secVault, undefined, vaultBlock()))
+        else if (settingsTab === 'me') body.append(head(m.tabMe, m.meSub), sec(m.secMe, undefined, meBlock()))
         else if (settingsTab === 'apps')
-          body.append(
-            head('PC 앱 조작', '앱만 있는 일(카카오톡 PC 등)을 두리가 대신 할 때 필요한 권한이에요.'),
-            sec('권한과 허용한 앱', undefined, screenBlock()),
-          )
+          body.append(head(m.tabApps, m.appsSub), sec(m.secApps, undefined, screenBlock()))
         else {
           const links = el('div', 'about-links')
           for (const [label, url] of [
-            ['두리 사이트', 'https://dool2.com'],
-            ['소스 코드 (오픈소스)', 'https://github.com/kuzvo-dev/dool2'],
+            [m.siteLink, 'https://dool2.com'],
+            [m.sourceLink, 'https://github.com/kuzvo-dev/dool2'],
           ] as const) {
             const a = el('a', 'btn-ghost', label)
             a.href = url
@@ -774,30 +669,26 @@ export function runSetup(opts: SetupOptions): {
             links.append(a)
           }
           body.append(
-            head('두리 정보', '지금 버전과 새 버전, 두리를 더 알아보는 곳이에요.'),
-            sec('두리 버전', undefined, versionBlock()),
-            sec(
-              '문제 알리기',
-              '막히거나 이상한 점을 두리 팀에 바로 알려요. 직접 읽고 고쳐요.',
-              reportBlock(),
-            ),
-            sec('더 알아보기', undefined, links),
+            head(m.tabAbout, m.aboutSub),
+            sec(m.secVersion, undefined, versionBlock()),
+            sec(m.secReport, m.reportSub, reportBlock()),
+            sec(m.secMore, undefined, links),
           )
         }
         const layout = el('div', 'settings-layout')
         const side = el('div', 'settings-side')
-        side.append(el('h1', 'settings-title', '설정'), nav)
+        side.append(el('h1', 'settings-title', m.settingsTitle), nav)
         layout.append(side, body)
         card.append(layout)
       }
 
-      // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
+      // Keep the cursor in the field being typed in after a redraw
       const typing = ['claude-code', 'payg-key', 'vault-url', 'vault-user', 'vault-pw', 'relay-url'].find(
         (id) => document.activeElement?.id === id,
       )
-      // 설정은 앱 안에 (왼쪽 메뉴가 보이게), 마법사는 화면 전체에
+      // Settings sits inside the app (left menu visible); the wizard covers the whole window
       root.classList.toggle('in-app', step === 'settings')
-      root.setAttribute('aria-label', step === 'settings' ? '설정' : '첫 설정')
+      root.setAttribute('aria-label', step === 'settings' ? m.settingsTitle : m.firstSetup)
       root.replaceChildren(card)
       if (typing) document.getElementById(typing)?.focus()
       if (scrollToPair) {
@@ -807,7 +698,7 @@ export function runSetup(opts: SetupOptions): {
           panel.scrollIntoView({ block: 'center' })
         }
       }
-      // 나타나는 효과가 끝난 뒤에 "다 그려졌다"고 알린다 (점검 캡처가 흐리지 않게)
+      // Report "drawn" only after the enter animation ends (so smoke captures are not blurry)
       if (!loading && !holdShown)
         requestAnimationFrame(() => {
           void Promise.all(card.getAnimations().map((a) => a.finished)).then(markShown, markShown)
@@ -820,7 +711,7 @@ export function runSetup(opts: SetupOptions): {
       phone.relayDraft = phone.relayDraft || r?.link.relay || ''
     }
 
-    // 폰이 QR을 찍고 확인 코드가 나올 때까지 본다
+    // Poll until the phone scans the QR and a confirmation code appears
     const pollPair = () => {
       if (pairTimer) clearTimeout(pairTimer)
       pairTimer = setTimeout(async () => {
@@ -836,29 +727,23 @@ export function runSetup(opts: SetupOptions): {
       }, 1_200)
     }
 
-    /** 폰 연결: QR → 폰과 같은 확인 코드인지 보고 [연결] (ADR 0012) */
+    /** Phone pairing: QR → check the code matches the phone → [Connect] (ADR 0012) */
     const phoneBlock = () => {
       const box = el('div', 'vault')
       const link = phone.link
       if (!link?.relay) {
-        box.append(
-          el(
-            'p',
-            'setup-hint',
-            '폰에서 부탁하려면 중계 서버 주소가 필요해요. 공식 주소는 출시 때 자동으로 들어가요.',
-          ),
-        )
+        box.append(el('p', 'setup-hint', m.relayNeeded))
         const form = el('form', 'key-form')
         const i = el('input')
         i.id = 'relay-url'
-        i.placeholder = 'https://… (직접 운영하는 중계 서버)'
+        i.placeholder = m.relayPlaceholder
         i.value = phone.relayDraft
         i.oninput = () => {
           phone.relayDraft = i.value
         }
-        const l = el('label', undefined, '중계 서버 주소')
+        const l = el('label', undefined, m.relayLabel)
         l.append(i)
-        const save = el('button', 'btn-small', '저장')
+        const save = el('button', 'btn-small', m.save)
         save.type = 'submit'
         form.append(l, save)
         form.onsubmit = (ev) => {
@@ -882,13 +767,7 @@ export function runSetup(opts: SetupOptions): {
         if (phone.error) box.append(el('p', 'login-error', phone.error))
         return box
       }
-      box.append(
-        el(
-          'p',
-          'setup-hint',
-          `${relayName(link.relay)}${link.connected ? '와 연결돼 있어요.' : '에 연결하는 중이에요.'} 폰에서 부탁하고, 결제·보내기는 폰에서 승인해요. 주고받는 내용은 PC와 폰만 열 수 있게 암호화돼요.`,
-        ),
-      )
+      box.append(el('p', 'setup-hint', m.relayStatus(relayName(link.relay), link.connected)))
       if (link.phones.length) {
         const list = el('ul', 'vault-list')
         for (const p of link.phones) {
@@ -899,12 +778,12 @@ export function runSetup(opts: SetupOptions): {
             el(
               'span',
               undefined,
-              `연결한 날 ${new Date(p.pairedAt).toLocaleDateString('ko-KR')} · ${p.push ? '알림 받음' : '알림 꺼짐 (폰 앱에서 [알림 켜기])'}`,
+              m.pairedOn(new Date(p.pairedAt).toLocaleDateString(m.dateLocale), Boolean(p.push)),
             ),
           )
           li.append(
             text,
-            button('btn-link', '연결 끊기', async () => {
+            button('btn-link', m.unpair, async () => {
               await opts
                 .api(`/api/link/phones/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
                 .catch(() => {})
@@ -920,20 +799,20 @@ export function runSetup(opts: SetupOptions): {
       if (st.state === 'waiting' || st.state === 'confirm') {
         const panel = el('div', 'login-panel pair-panel')
         if (st.state === 'waiting') {
-          panel.append(el('strong', undefined, '폰 카메라로 QR을 찍어 주세요'))
+          panel.append(el('strong', undefined, m.scanQr))
           const img = el('img', 'pair-qr')
-          img.alt = '폰 연결 QR'
+          img.alt = m.qrAlt
           img.src = `data:image/svg+xml;base64,${btoa(st.qr)}`
-          panel.append(img, el('p', 'cap', '5분 안에 찍어 주세요. 이 QR은 한 번만 쓸 수 있어요.'))
+          panel.append(img, el('p', 'cap', m.qrHint))
         } else {
           panel.append(
-            el('strong', undefined, `"${st.name}"을(를) 연결할까요?`),
-            el('p', undefined, '폰 화면에 같은 숫자가 보이는지 확인해 주세요.'),
+            el('strong', undefined, m.pairAsk(st.name)),
+            el('p', undefined, m.pairCheck),
             el('div', 'pair-code', st.code.replace(/(\d{3})(\d{3})/, '$1 $2')),
           )
           const row = el('div', 'login-actions')
           row.append(
-            button('btn-small', '같아요, 연결', async () => {
+            button('btn-small', m.pairYes, async () => {
               const r = await opts
                 .api<{ pair: PairStatus }>('/api/link/pair/confirm', {
                   method: 'POST',
@@ -944,7 +823,7 @@ export function runSetup(opts: SetupOptions): {
               await loadLink()
               render()
             }),
-            button('btn-link', '다른 숫자예요', async () => {
+            button('btn-link', m.pairNo, async () => {
               await opts
                 .api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: false }) })
                 .catch(() => {})
@@ -955,7 +834,7 @@ export function runSetup(opts: SetupOptions): {
           panel.append(row)
         }
         panel.append(
-          button('btn-link', '닫기', () => {
+          button('btn-link', m.close, () => {
             void opts.api('/api/link/pair', { method: 'DELETE' }).catch(() => {})
             phone.pair = { state: 'idle' }
             render()
@@ -964,10 +843,10 @@ export function runSetup(opts: SetupOptions): {
         box.append(panel)
         return box
       }
-      if (st.state === 'done') box.append(el('p', 'setup-hint', `"${st.name}"을(를) 연결했어요.`))
-      if (st.state === 'expired') box.append(el('p', 'setup-hint', 'QR 시간이 지났어요. 다시 해 주세요.'))
+      if (st.state === 'done') box.append(el('p', 'setup-hint', m.paired(st.name)))
+      if (st.state === 'expired') box.append(el('p', 'setup-hint', m.qrExpired))
       box.append(
-        button('btn-small', link.phones.length ? '폰 더 연결하기' : '폰 연결하기', async () => {
+        button('btn-small', link.phones.length ? m.pairMore : m.pair, async () => {
           const r = await opts
             .api<{ pair: PairStatus }>('/api/link/pair', { method: 'POST' })
             .catch((e: Error) => {
@@ -983,17 +862,17 @@ export function runSetup(opts: SetupOptions): {
       return box
     }
 
-    // ── PC 앱 조작 (M4): 맥 권한과 허용한 앱 ──
+    // ── PC app control (M4): macOS permissions and allowed apps ──
     let screen: ScreenControlStatus | undefined
     const loadScreen = async () => {
       screen = (await opts.api<{ screen: ScreenControlStatus }>('/api/screen').catch(() => undefined))?.screen
     }
-    /** 맥 시스템 설정의 해당 화면 (사용자가 직접 켜야 한다) */
+    /** The matching macOS System Settings pane (the user turns it on there) */
     const PANES = {
       accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
       screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
     }
-    // ── 문제 알리기: 한 줄 + (고르면) 최근 이틀 기록. 기록은 대화·파일 이름을 뺀 성공·실패만 (apps/daemon/src/report.ts) ──
+    // ── Report a problem: one line plus, if chosen, the last two days of logs. Logs hold only successes and failures, no conversations or file names (apps/daemon/src/report.ts) ──
     const report: {
       text: string
       contact: string
@@ -1007,12 +886,8 @@ export function runSetup(opts: SetupOptions): {
       const wrap = el('div', 'report-block')
       if (report.sentId !== undefined) {
         wrap.append(
-          el(
-            'p',
-            'setup-hint',
-            `보냈어요. 고마워요! ${report.sentId ? `(번호 ${report.sentId}) ` : ''}두리 팀이 직접 읽고 고칠게요.${report.contact ? ' 적어 주신 메일로 답장드릴게요.' : ''}`,
-          ),
-          button('btn-ghost', '하나 더 알리기', () => {
+          el('p', 'setup-hint', m.reportSent(report.sentId, Boolean(report.contact))),
+          button('btn-ghost', m.reportAnother, () => {
             Object.assign(report, { text: '', preview: undefined, sentId: undefined, error: undefined })
             render()
           }),
@@ -1022,14 +897,14 @@ export function runSetup(opts: SetupOptions): {
       const ta = el('textarea', 'report-text')
       ta.rows = 3
       ta.maxLength = 2000
-      ta.placeholder = '무슨 일이 있었나요? 예: 택배 조회를 부탁했는데 계속 로그인하라고 해요'
+      ta.placeholder = m.reportPlaceholder
       ta.value = report.text
       ta.oninput = () => {
         report.text = ta.value
       }
       const mail = el('input', 'report-mail')
       mail.type = 'email'
-      mail.placeholder = '답장 받을 메일 (안 적어도 돼요)'
+      mail.placeholder = m.reportMail
       mail.value = report.contact
       mail.oninput = () => {
         report.contact = mail.value
@@ -1043,25 +918,25 @@ export function runSetup(opts: SetupOptions): {
         report.preview = undefined
         render()
       }
-      check.append(cb, ' 최근 이틀 기록도 같이 보내기 (대화 내용·파일 이름은 빼고 성공·실패만)')
+      check.append(cb, m.reportLogs)
       const body = () =>
         JSON.stringify({ text: report.text, contact: report.contact, includeLogs: report.logs })
       const row = el('div', 'report-actions')
       row.append(
-        button('btn-ghost', report.preview ? '보낼 내용 접기' : '보낼 내용 보기', async () => {
+        button('btn-ghost', report.preview ? m.previewHide : m.previewShow, async () => {
           if (report.preview) report.preview = undefined
           else {
             const r = await opts
               .api<{ payload: unknown }>('/api/report/preview', { method: 'POST', body: body() })
               .catch(() => undefined)
-            report.preview = r ? JSON.stringify(r.payload, null, 2) : '내용을 만들지 못했어요'
+            report.preview = r ? JSON.stringify(r.payload, null, 2) : m.previewFailed
           }
           render()
         }),
-        button('btn-small', report.busy ? '보내는 중…' : '보내기', async () => {
+        button('btn-small', report.busy ? m.sending : m.send, async () => {
           if (report.busy) return
           if (!report.text.trim()) {
-            report.error = '무슨 일이 있었는지 한 줄 적어 주세요'
+            report.error = m.reportEmpty
             render()
             return
           }
@@ -1078,18 +953,18 @@ export function runSetup(opts: SetupOptions): {
             )
           report.busy = false
           if (r.ok) report.sentId = r.id ?? ''
-          else report.error = r.error ?? '보내지 못했어요. 인터넷 연결을 확인해 주세요'
+          else report.error = r.error ?? m.reportFailed
           render()
         }),
       )
       wrap.append(ta, mail, check, row)
       if (report.error) wrap.append(el('p', 'report-error', report.error))
       if (report.preview) wrap.append(el('pre', 'report-preview', report.preview))
-      wrap.append(el('p', 'setup-hint', '보낸 내용은 두리 팀만 보고, 문제를 고치는 데만 써요.'))
+      wrap.append(el('p', 'setup-hint', m.reportPrivacy))
       return wrap
     }
 
-    // ── 두리 버전: 지금 버전, 새 버전 확인·업데이트 (ADR 0028) ──
+    // ── Dool2 version: current version, check and install updates (ADR 0028) ──
     const ver: { version?: string; info: UpdateInfo | null; checking: boolean } = {
       info: null,
       checking: false,
@@ -1109,21 +984,21 @@ export function runSetup(opts: SetupOptions): {
       const li = el('li', fresh ? 'todo' : u?.status === 'error' ? 'todo' : 'ok')
       const text = el('div', 'text')
       text.append(
-        el('strong', undefined, `지금 버전 ${ver.version ?? u?.current ?? '알 수 없음'}`),
-        el('span', undefined, ver.checking ? '새 버전이 있는지 보는 중이에요…' : updateLine(u)),
+        el('strong', undefined, m.currentVersion(ver.version ?? u?.current ?? m.unknown)),
+        el('span', undefined, ver.checking ? m.checkingUpdate : updateLine(u)),
       )
-      if (fresh && u?.notes) text.append(el('span', 'ver-notes', `바뀐 점: ${u.notes}`))
+      if (fresh && u?.notes) text.append(el('span', 'ver-notes', m.whatsNew(u.notes)))
       li.append(el('span', 'mark'), text)
       if (opts.update && u && !busy && !ver.checking)
         li.append(
           fresh
-            ? button('btn-small', `${u.latest}로 업데이트`, async () => {
+            ? button('btn-small', m.updateTo(String(u.latest)), async () => {
                 ver.info = { ...u, status: 'downloading', progress: 0 }
                 render()
                 ver.info = (await opts.update?.install().catch(() => null)) ?? ver.info
                 render()
               })
-            : button('btn-ghost', '업데이트 확인', async () => {
+            : button('btn-ghost', m.checkUpdate, async () => {
                 ver.checking = true
                 render()
                 ver.info = (await opts.update?.check().catch(() => null)) ?? ver.info
@@ -1133,9 +1008,7 @@ export function runSetup(opts: SetupOptions): {
         )
       box.append(li)
       const hint = el('p', 'setup-hint')
-      hint.append(
-        '새 버전은 앱이 켜져 있으면 6시간마다 알아서 확인해요. 업데이트해도 대화·연결·금고는 그대로예요.',
-      )
+      hint.append(m.updateHint)
       const wrap = el('div', 'ver-block')
       wrap.append(box, hint)
       return wrap
@@ -1143,13 +1016,7 @@ export function runSetup(opts: SetupOptions): {
 
     const screenBlock = () => {
       const box = el('div', 'vault')
-      box.append(
-        el(
-          'p',
-          'setup-hint',
-          '카카오톡 PC처럼 앱만 있는 일을 두리가 대신 해요. 허용한 앱만 다루고, 메시지 보내기·결제·삭제는 꼭 승인을 받아요. 화면이 잠겨 있으면 하지 않아요.',
-        ),
-      )
+      box.append(el('p', 'setup-hint', m.screenIntro))
       const s = screen
       if (!s) return box
       const perms = el('ul', 'checks')
@@ -1160,8 +1027,8 @@ export function runSetup(opts: SetupOptions): {
         li.append(el('span', 'mark'), text)
         if (!on)
           li.append(
-            button('btn-small', '권한 켜기', async () => {
-              // 시스템 권한 창을 띄우고, 설정 화면도 연다. 켠 뒤에는 두리를 다시 켜야 할 수 있다
+            button('btn-small', m.permOn, async () => {
+              // Show the system permission prompt and open System Settings. Dool2 may need a restart after
               await opts.api('/api/screen/permissions', { method: 'POST' }).catch(() => {})
               window.open(pane)
               setTimeout(() => void loadScreen().then(() => render()), 4000)
@@ -1171,14 +1038,14 @@ export function runSetup(opts: SetupOptions): {
       }
       perms.append(
         permRow(
-          '손쉬운 사용',
-          s.accessibility ? '켜져 있어요' : '앱 화면을 읽고 누르는 데 필요해요. 설정에서 "두리"를 켜 주세요',
+          m.accessibility,
+          s.accessibility ? m.isOn : m.accessibilityTodo,
           s.accessibility,
           PANES.accessibility,
         ),
         permRow(
-          '화면 기록',
-          s.screenRecording ? '켜져 있어요' : '앱 화면을 그림으로 볼 때(승인 카드 캡처) 필요해요',
+          m.screenRecording,
+          s.screenRecording ? m.isOn : m.screenRecordingTodo,
           s.screenRecording,
           PANES.screen,
         ),
@@ -1189,10 +1056,10 @@ export function runSetup(opts: SetupOptions): {
         for (const id of s.allowed) {
           const li = el('li')
           const text = el('div', 'text')
-          text.append(el('strong', undefined, id), el('span', undefined, '두리가 조작할 수 있어요'))
+          text.append(el('strong', undefined, id), el('span', undefined, m.appAllowed))
           li.append(
             text,
-            button('btn-link', '허용 끄기', async () => {
+            button('btn-link', m.allowOff, async () => {
               current = await opts
                 .api<{ settings: Settings }>('/api/settings', {
                   method: 'PATCH',
@@ -1207,8 +1074,7 @@ export function runSetup(opts: SetupOptions): {
           list.append(li)
         }
         box.append(list)
-      } else
-        box.append(el('p', 'setup-hint', '아직 허용한 앱이 없어요. 두리가 처음 다루는 앱은 그때 물어볼게요.'))
+      } else box.append(el('p', 'setup-hint', m.noApps))
       return box
     }
 
@@ -1234,7 +1100,7 @@ export function runSetup(opts: SetupOptions): {
         .api<{ bad?: string[] }>('/api/profile', { method: 'PUT', body: JSON.stringify(body) })
         .catch(() => ({ bad: Object.keys(body) }))
       const bad = (r.bad ?? []).map((k) => PROFILE_LABELS[k] ?? k)
-      me.note = bad.length ? `형식이 맞지 않아 빼고 저장했어요: ${bad.join('·')}` : '저장했어요'
+      me.note = bad.length ? m.badFormat(bad.join('·')) : m.saved
       me.saving = false
       me.editing = false
       me.draft = {}
@@ -1242,18 +1108,12 @@ export function runSetup(opts: SetupOptions): {
       render()
     }
 
-    /** 내 정보: 예약·주문 칸에 두리가 채우는 값. 화면에도 가린 값만 보인다 (값은 이 PC 키체인에만) */
+    /** My info: values Dool2 fills into booking and order forms. Only masked values show on screen (values live only in this PC's keychain) */
     const meBlock = () => {
       const box = el('div', 'vault')
-      box.append(
-        el(
-          'p',
-          'setup-hint',
-          '예약자·주문자 칸은 두리가 여기 값으로 직접 채워요. AI에게는 가린 값만 보여요. 처음 필요할 때 폰 카드로 받기도 해요.',
-        ),
-      )
+      box.append(el('p', 'setup-hint', m.meIntro))
       if (!me.editing) {
-        // 있는 항목만 줄로, 없는 항목은 한 줄로 모은다 (아홉 줄이 다 '아직 없어요'면 읽기 힘들다)
+        // One row per filled field, missing ones gathered in one line (nine "not yet" rows are hard to read)
         const list = el('ul', 'vault-list')
         const missing: string[] = []
         for (const [k, label] of Object.entries(PROFILE_LABELS)) {
@@ -1270,18 +1130,10 @@ export function runSetup(opts: SetupOptions): {
         }
         if (list.childElementCount) box.append(list)
         if (missing.length)
-          box.append(
-            el(
-              'p',
-              'cap',
-              list.childElementCount
-                ? `아직 없어요: ${missing.join('·')}`
-                : '아직 넣은 정보가 없어요. 처음 예약·주문할 때 폰 카드로 받거나 [고치기]로 넣어요.',
-            ),
-          )
+          box.append(el('p', 'cap', list.childElementCount ? m.missing(missing.join('·')) : m.meEmpty))
         const row = el('div', 'login-actions')
         row.append(
-          button('btn-small', '고치기', () => {
+          button('btn-small', m.edit, () => {
             me.editing = true
             me.note = undefined
             render()
@@ -1289,9 +1141,9 @@ export function runSetup(opts: SetupOptions): {
         )
         if (Object.keys(me.have).length)
           row.append(
-            button('btn-link', '모두 지우기', async () => {
+            button('btn-link', m.clearAll, async () => {
               await opts.api('/api/profile', { method: 'DELETE' }).catch(() => {})
-              me.note = '내 정보를 모두 지웠어요'
+              me.note = m.meCleared
               await loadMe()
               render()
             }),
@@ -1301,13 +1153,13 @@ export function runSetup(opts: SetupOptions): {
         const form = el('form', 'key-form')
         for (const [k, label] of Object.entries(PROFILE_LABELS)) {
           if (k === 'auth_app') {
-            // 간편인증 앱은 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
+            // The verification app is a choice (not a secret, so the current pick shows as is)
             const sel = el('select')
             sel.id = `me-${k}`
-            sel.append(el('option', undefined, me.have[k] ? `${me.have[k]} (그대로)` : '고르기'))
+            sel.append(el('option', undefined, me.have[k] ? m.keepAsIs(me.have[k]) : m.pick))
             ;(sel.firstChild as HTMLOptionElement).value = ''
             for (const a of AUTH_APPS) {
-              const o = el('option', undefined, a)
+              const o = el('option', undefined, authAppText(lang).name(a))
               o.value = a
               sel.append(o)
             }
@@ -1324,11 +1176,11 @@ export function runSetup(opts: SetupOptions): {
           i.id = `me-${k}`
           i.autocomplete = 'off'
           if (k === 'rrn_back') i.type = 'password'
-          // 지금 값은 가린 채로 자리 표시에만. 비워 두면 그대로 둔다
-          i.placeholder = me.have[k] ?? (PROFILE_EXAMPLES[k] ? `예: ${PROFILE_EXAMPLES[k]}` : '')
+          // The current value shows masked, only as a placeholder. Leaving it empty keeps it
+          i.placeholder = me.have[k] ?? (PROFILE_EXAMPLES[k] ? m.example(PROFILE_EXAMPLES[k]) : '')
           i.value = me.draft[k] ?? ''
           i.oninput = () => {
-            // 휴대폰·생년월일은 숫자만 쳐도 하이픈이 들어간다
+            // Phone and birth date get hyphens even when only digits are typed
             if (k === 'phone' || k === 'birth') i.value = hyphenate(k, i.value)
             me.draft[k] = i.value
           }
@@ -1341,31 +1193,25 @@ export function runSetup(opts: SetupOptions): {
           void saveMe()
         }
         const row = el('div', 'login-actions')
-        const save = el('button', 'btn-small', me.saving ? '저장하는 중…' : '저장')
+        const save = el('button', 'btn-small', me.saving ? m.saving : m.save)
         save.type = 'submit'
         save.disabled = me.saving
         row.append(
           save,
-          button('btn-link', '닫기', () => {
+          button('btn-link', m.close, () => {
             me.editing = false
             me.draft = {}
             render()
           }),
         )
-        form.append(row, el('p', 'cap', '바꿀 칸만 넣으세요. 비워 둔 칸은 그대로예요.'))
+        form.append(row, el('p', 'cap', m.meFormHint))
         box.append(form)
       }
       if (me.note) box.append(el('p', 'cap', me.note))
-      // 사이트별로 기억한 결제 수단 (승인 카드의 기본값)
+      // Payment method remembered per site (the approval card's default)
       const pays = Object.entries(me.payChoices)
       if (pays.length) {
-        box.append(
-          el(
-            'p',
-            'setup-hint',
-            '사이트별로 마지막에 고른 결제 수단이에요. 다음 승인 카드에서 먼저 골라 둬요.',
-          ),
-        )
+        box.append(el('p', 'setup-hint', m.payChoicesHint))
         const list = el('ul', 'vault-list')
         for (const [host, label] of pays) {
           const li = el('li')
@@ -1373,7 +1219,7 @@ export function runSetup(opts: SetupOptions): {
           text.append(el('strong', undefined, host), el('span', undefined, label))
           li.append(
             text,
-            button('btn-link', '잊기', async () => {
+            button('btn-link', m.forget, async () => {
               await opts
                 .api(`/api/profile/pay/${encodeURIComponent(host)}`, { method: 'DELETE' })
                 .catch(() => {})
@@ -1396,7 +1242,7 @@ export function runSetup(opts: SetupOptions): {
     const saveVault = async () => {
       if (vault.saving) return
       if (!vault.url.trim() || !vault.username || !vault.password) {
-        vault.error = '사이트 주소, 아이디, 비밀번호를 모두 넣어 주세요'
+        vault.error = m.vaultMissing
         render()
         return
       }
@@ -1420,16 +1266,10 @@ export function runSetup(opts: SetupOptions): {
       render()
     }
 
-    /** 두리 금고: 사이트별 로그인 정보. 비밀번호는 넣기만 하고 다시 보여 주지 않는다 (ADR 0011) */
+    /** Dool2 vault: sign-in details per site. Passwords go in and are not shown back (ADR 0011) */
     const vaultBlock = () => {
       const box = el('div', 'vault')
-      box.append(
-        el(
-          'p',
-          'setup-hint',
-          '저장해 둔 사이트는 로그인이 풀려도 두리가 대신 채워요. AI는 비밀번호를 볼 수 없고, 두리가 주소를 확인한 뒤 직접 넣어요. 비밀번호는 여기와 폰(잠금 확인 뒤)에서만 볼 수 있어요.',
-        ),
-      )
+      box.append(el('p', 'setup-hint', m.vaultIntro))
       if (vault.entries.length) {
         const list = el('ul', 'vault-list')
         for (const e of vault.entries) {
@@ -1440,15 +1280,22 @@ export function runSetup(opts: SetupOptions): {
             host = new URL(e.origin).host
           } catch {}
           const used = e.lastUsedAt
-            ? `마지막 사용 ${new Date(e.lastUsedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-            : '아직 안 썼어요'
+            ? m.lastUsed(
+                new Date(e.lastUsedAt).toLocaleString(m.dateLocale, {
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              )
+            : m.notUsed
           text.append(el('strong', undefined, host), el('span', undefined, `${e.username} · ${used}`))
           if (vault.shown?.id === e.id) text.append(el('code', 'vault-pw', vault.shown.password))
-          // 보기·고치기 (ADR 0026): 사용자 화면에서만. 30초 뒤 가린다
+          // Show and edit (ADR 0026): only on the user's screen. Hidden again after 30 seconds
           const shown = vault.shown?.id === e.id
           li.append(
             text,
-            button('btn-link', shown ? '숨기기' : '보기', async () => {
+            button('btn-link', shown ? m.hide : m.show, async () => {
               if (shown) {
                 vault.shown = undefined
                 render()
@@ -1469,11 +1316,11 @@ export function runSetup(opts: SetupOptions): {
                 }
               }, 30_000)
             }),
-            button('btn-link', '고치기', () => {
+            button('btn-link', m.edit, () => {
               vault.editing = vault.editing === e.id ? undefined : e.id
               render()
             }),
-            button('btn-link', '지우기', async () => {
+            button('btn-link', m.remove, async () => {
               await opts.api(`/api/vault/${encodeURIComponent(e.id)}`, { method: 'DELETE' }).catch(() => {})
               await loadVault()
               render()
@@ -1483,13 +1330,13 @@ export function runSetup(opts: SetupOptions): {
           if (vault.editing === e.id) {
             const f = el('form', 'key-form')
             const u = el('input')
-            u.placeholder = `아이디 (${e.username})`
+            u.placeholder = m.idWith(e.username)
             u.autocomplete = 'off'
             const pw = el('input')
             pw.type = 'password'
-            pw.placeholder = '새 비밀번호 (바꿀 때만)'
+            pw.placeholder = m.newPw
             pw.autocomplete = 'new-password'
-            const save = el('button', 'btn-small', '저장')
+            const save = el('button', 'btn-small', m.save)
             save.type = 'submit'
             f.append(u, pw, save)
             f.onsubmit = async (ev) => {
@@ -1516,7 +1363,7 @@ export function runSetup(opts: SetupOptions): {
       }
       if (!vault.adding) {
         box.append(
-          button('btn-small', '사이트 추가', () => {
+          button('btn-small', m.addSite, () => {
             vault.adding = true
             render()
           }),
@@ -1544,28 +1391,21 @@ export function runSetup(opts: SetupOptions): {
         return l
       }
       form.append(
-        input(
-          'vault-url',
-          '사이트 주소',
-          'text',
-          vault.url,
-          (v) => (vault.url = v),
-          '로그인하는 페이지 주소 (https://…)',
-        ),
-        input('vault-user', '아이디', 'text', vault.username, (v) => (vault.username = v), ''),
-        input('vault-pw', '비밀번호', 'password', vault.password, (v) => (vault.password = v), ''),
+        input('vault-url', m.siteUrl, 'text', vault.url, (v) => (vault.url = v), m.siteUrlPh),
+        input('vault-user', m.id, 'text', vault.username, (v) => (vault.username = v), ''),
+        input('vault-pw', m.password, 'password', vault.password, (v) => (vault.password = v), ''),
       )
       form.onsubmit = (ev) => {
         ev.preventDefault()
         void saveVault()
       }
       const row = el('div', 'login-actions')
-      const save = el('button', 'btn-small', vault.saving ? '저장하는 중…' : '저장')
+      const save = el('button', 'btn-small', vault.saving ? m.saving : m.save)
       save.type = 'submit'
       save.disabled = vault.saving
       row.append(
         save,
-        button('btn-link', '닫기', () => {
+        button('btn-link', m.close, () => {
           vault.adding = false
           vault.password = ''
           vault.error = undefined
@@ -1575,13 +1415,7 @@ export function runSetup(opts: SetupOptions): {
       form.append(row)
       box.append(form)
       if (vault.error) box.append(el('p', 'login-error', vault.error))
-      box.append(
-        el(
-          'p',
-          'cap',
-          '이 PC의 키체인에 암호화해 둬요. 결제 비밀번호·카드 번호·공동인증서 비밀번호는 넣지 마세요. 그런 건 늘 직접 넣어요.',
-        ),
-      )
+      box.append(el('p', 'cap', m.vaultCap))
       return box
     }
 
@@ -1608,7 +1442,7 @@ export function runSetup(opts: SetupOptions): {
     const savePayg = async () => {
       if (payg.saving) return
       if (!payg.key.trim() && !payg.account?.hasKey) {
-        payg.error = 'API 키를 넣어 주세요'
+        payg.error = m.apiKeyNeeded
         render()
         return
       }
@@ -1634,15 +1468,12 @@ export function runSetup(opts: SetupOptions): {
       render()
     }
 
-    /** 종량제: 제공자·모델을 고르고 API 키를 넣는다. 키는 이 PC의 키체인에만 저장된다 */
+    /** Pay as you go: pick a provider and model and enter an API key. The key is stored only in this PC's keychain */
     const paygPanel = () => {
       const panel = el('div', 'login-panel')
-      panel.append(
-        el('strong', undefined, 'API 키로 쓴 만큼만 내요'),
-        el('p', undefined, '키는 이 컴퓨터의 키체인에 암호화해서 두고, 두리 화면에는 끝 네 자리만 보여요.'),
-      )
+      panel.append(el('strong', undefined, m.paygTitle), el('p', undefined, m.paygKeyInfo))
       if (payg.providers.length === 0) {
-        panel.append(el('p', undefined, '불러오는 중이에요…'))
+        panel.append(el('p', undefined, m.loading))
         return panel
       }
       const form = el('form', 'key-form')
@@ -1675,8 +1506,8 @@ export function runSetup(opts: SetupOptions): {
       key.autocomplete = 'off'
       key.placeholder =
         payg.account?.hasKey && payg.account.provider === payg.provider
-          ? `저장된 키 ····${payg.account.keyHint ?? ''} (바꿀 때만 넣어 주세요)`
-          : 'API 키 붙여 넣기'
+          ? m.savedKey(payg.account.keyHint ?? '')
+          : m.pasteKey
       key.value = payg.key
       key.oninput = () => {
         payg.key = key.value
@@ -1686,19 +1517,19 @@ export function runSetup(opts: SetupOptions): {
         l.append(input)
         return l
       }
-      form.append(label('AI 회사', provSel), label('모델', modelSel), label('API 키', key))
+      form.append(label(m.aiCompany, provSel), label(m.model, modelSel), label(m.apiKey, key))
       form.onsubmit = (e) => {
         e.preventDefault()
         void savePayg()
       }
       const row = el('div', 'login-actions')
-      const save = el('button', 'btn-small', payg.saving ? '저장하는 중…' : '저장')
+      const save = el('button', 'btn-small', payg.saving ? m.saving : m.save)
       save.type = 'submit'
       save.disabled = payg.saving
       row.append(save)
-      if (prov) row.append(button('btn-link', '키 받는 곳', () => window.open(prov.keyUrl)))
+      if (prov) row.append(button('btn-link', m.getKey, () => window.open(prov.keyUrl)))
       row.append(
-        button('btn-link', '닫기', () => {
+        button('btn-link', m.close, () => {
           payg.open = false
           render()
         }),
@@ -1706,20 +1537,40 @@ export function runSetup(opts: SetupOptions): {
       form.append(row)
       panel.append(form)
       if (payg.error) panel.append(el('p', 'login-error', payg.error))
-      panel.append(el('p', 'cap', '쓴 금액은 답마다 두리 화면에 보여 드려요. 요금은 AI 회사에 직접 내요.'))
+      panel.append(el('p', 'cap', m.paygCap))
       return panel
     }
 
-    /** 켜고 끄는 줄 하나 */
-    /** 사용 통계로 보내는 숫자를 그대로 보여 주기 */
+    /** Language row (Settings → General). Hidden outside dev mode until every screen has English copy */
+    const languageRow = () => {
+      const sel = el('select')
+      sel.id = 'ui-language'
+      for (const [code, name] of Object.entries(LANG_NAMES)) {
+        const o = el('option', undefined, name)
+        o.value = code
+        sel.append(o)
+      }
+      sel.value = lang
+      sel.onchange = () => {
+        const next = sel.value as Lang
+        void save({ language: next }).then(() => switchLang(next))
+      }
+      const l = el('label', undefined, m.languageLabel)
+      l.append(sel)
+      const form = el('form', 'key-form')
+      form.append(l)
+      return form
+    }
+
+    /** Shows the exact numbers sent as usage stats */
     const statsPeek = () => {
       const box = el('div', 'report-block')
       box.append(
-        button('btn-link', statsPreview ? '보내는 숫자 접기' : '무엇을 보내나요?', async () => {
+        button('btn-link', statsPreview ? m.statsHide : m.statsShow, async () => {
           if (statsPreview) statsPreview = undefined
           else {
             const r = await opts.api<{ stats: unknown }>('/api/stats/preview').catch(() => undefined)
-            statsPreview = r ? JSON.stringify(r.stats, null, 2) : '내용을 만들지 못했어요'
+            statsPreview = r ? JSON.stringify(r.stats, null, 2) : m.previewFailed
           }
           render()
         }),
@@ -1728,6 +1579,7 @@ export function runSetup(opts: SetupOptions): {
       return box
     }
 
+    /** One on/off row */
     const toggleRow = (label: string, detail: string, on: boolean, onClick: () => void) => {
       const li = el('li', on ? 'ok' : 'todo')
       const b = button('toggle-row', '', onClick)
@@ -1740,7 +1592,7 @@ export function runSetup(opts: SetupOptions): {
       return li
     }
 
-    /** 준비 목록과 진행 중인 설치·로그인 패널 */
+    /** Readiness list plus any install or sign-in panels in progress */
     const checksBlock = (choice: AiChoice): HTMLElement[] => {
       const parts: HTMLElement[] = []
       const list = el('ul', 'checks')
@@ -1756,18 +1608,18 @@ export function runSetup(opts: SetupOptions): {
             item.action === 'chrome-install' ||
             item.action === 'opencode-install' ||
             item.action === 'codex-install'
-              ? '설치하기'
+              ? m.install
               : item.action === 'payg-key'
-                ? '키 넣기'
+                ? m.addKey
                 : item.action === 'extension-install'
-                  ? '추가 방법'
+                  ? m.howToAdd
                   : item.action === 'codex-login'
-                    ? 'ChatGPT로 로그인'
-                    : '로그인하기'
+                    ? m.chatgptSignIn
+                    : m.signIn
           const action = item.action
           const b = button('btn-small', label, () => void act(action))
           if (action === 'claude-login' && login.state === 'waiting') {
-            b.textContent = '로그인 중…'
+            b.textContent = m.signingIn
             b.disabled = true
           }
           const kind: InstallKind | undefined =
@@ -1781,7 +1633,7 @@ export function runSetup(opts: SetupOptions): {
                     ? 'codex'
                     : undefined
           if (kind && installs[kind].state === 'running') {
-            b.textContent = '설치 중…'
+            b.textContent = m.installingBtn
             b.disabled = true
           }
           li.append(b)
@@ -1799,17 +1651,17 @@ export function runSetup(opts: SetupOptions): {
       return parts
     }
 
-    /** 두리 확장 추가 안내: 웹 스토어에 있으면 [Chrome에 추가] 한 번, 아니면 폴더를 직접 올린다 */
+    /** Adding the Dool2 extension: one [Add to Chrome] when it's on the Web Store, otherwise load the folder by hand */
     const extensionPanel = () => (ext.store ? storePanel() : folderPanel())
 
-    /** 웹 스토어에 있을 때: Chrome에 열린 페이지에서 [Chrome에 추가] → [확장 프로그램 추가] */
+    /** On the Web Store: [Add to Chrome] → [Add extension] on the page opened in Chrome */
     const storePanel = () => {
       const panel = el('div', 'login-panel')
-      panel.append(el('strong', undefined, 'Chrome에 두리 확장 추가하기'))
+      panel.append(el('strong', undefined, m.extAddTitle))
       const steps = el('ol', 'ext-steps')
       for (const parts of [
-        ['Chrome에 열린 두리 확장 페이지에서 ', el('b', undefined, 'Chrome에 추가'), '를 눌러요'],
-        ['물어보면 ', el('b', undefined, '확장 프로그램 추가'), '를 눌러요'],
+        [m.storeStep1a, el('b', undefined, m.storeStep1b), m.storeStep1c],
+        [m.storeStep2a, el('b', undefined, m.storeStep2b), m.storeStep2c],
       ] as (string | HTMLElement)[][]) {
         const item = el('li')
         item.append(...parts)
@@ -1817,19 +1669,12 @@ export function runSetup(opts: SetupOptions): {
       }
       panel.append(steps)
       const wait = el('p', 'ext-wait')
-      wait.append(el('span', 'spin'), document.createTextNode('추가되면 여기서 바로 알아채요'))
-      panel.append(
-        wait,
-        el(
-          'p',
-          'cap',
-          '두리는 두리가 연 탭만 다루고, 결제·보내기 같은 마지막 버튼은 누르지 않아요. 지금 건너뛰어도 Chrome을 다음에 켤 때 [사용 설정]을 물어봐요.',
-        ),
-      )
+      wait.append(el('span', 'spin'), document.createTextNode(m.extWait))
+      panel.append(wait, el('p', 'cap', m.storeCap))
       const row = el('div', 'login-actions')
       row.append(
-        button('btn-small', 'Chrome에서 다시 열기', () => opts.openStore?.()),
-        button('btn-link', '닫기', () => {
+        button('btn-small', m.reopenChrome, () => opts.openStore?.()),
+        button('btn-link', m.close, () => {
           ext.open = false
           if (extTimer) clearTimeout(extTimer)
           render()
@@ -1839,43 +1684,36 @@ export function runSetup(opts: SetupOptions): {
       return panel
     }
 
-    /** 웹 스토어에 올리기 전: 확장 폴더를 개발자 모드로 직접 올린다 */
+    /** Before the Web Store: load the extension folder by hand in developer mode */
     const folderPanel = () => {
       const panel = el('div', 'login-panel')
-      panel.append(el('strong', undefined, 'Chrome에 두리 확장 추가하기'))
+      panel.append(el('strong', undefined, m.extAddTitle))
       const steps = el('ol', 'ext-steps')
       const li = (...parts: (string | HTMLElement)[]) => {
         const item = el('li')
         item.append(...parts)
         steps.append(item)
       }
-      const copy = button('btn-link', ext.copied ? '복사했어요' : '주소 복사', async () => {
+      const copy = button('btn-link', ext.copied ? m.copied : m.copyAddr, async () => {
         await navigator.clipboard.writeText('chrome://extensions').catch(() => {})
         ext.copied = true
         render()
       })
-      li('Chrome 주소창에 ', el('code', undefined, 'chrome://extensions'), '를 열어요 ', copy)
-      li('오른쪽 위 ', el('b', undefined, '개발자 모드'), '를 켜요')
+      li(m.folderStep1a, el('code', undefined, 'chrome://extensions'), m.folderStep1b, copy)
+      li(m.folderStep2a, el('b', undefined, m.folderStep2b), m.folderStep2c)
       li(
-        button('btn-small', '확장 폴더 열기', () => opts.revealExtension()),
-        ' 를 눌러 나온 ',
+        button('btn-small', m.openExtFolder, () => opts.revealExtension()),
+        m.folderStep3a,
         el('b', undefined, 'chrome-extension'),
-        ' 폴더를 그 화면으로 끌어다 놓아요',
+        m.folderStep3b,
       )
       panel.append(steps)
       const wait = el('p', 'ext-wait')
-      wait.append(el('span', 'spin'), document.createTextNode('추가되면 여기서 바로 알아채요'))
-      panel.append(
-        wait,
-        el(
-          'p',
-          'cap',
-          '두리는 두리가 연 탭만 다루고, 결제·보내기 같은 마지막 버튼은 누르지 않아요. 곧 웹 스토어에서 한 번에 추가할 수 있게 바뀌어요.',
-        ),
-      )
+      wait.append(el('span', 'spin'), document.createTextNode(m.extWait))
+      panel.append(wait, el('p', 'cap', m.folderCap))
       const row = el('div', 'login-actions')
       row.append(
-        button('btn-link', '닫기', () => {
+        button('btn-link', m.close, () => {
           ext.open = false
           if (extTimer) clearTimeout(extTimer)
           render()
@@ -1885,53 +1723,47 @@ export function runSetup(opts: SetupOptions): {
       return panel
     }
 
-    /** 부품(Claude Code, Chrome) 설치 진행 */
+    /** Install progress for a component (Claude Code, Chrome) */
     const installPanel = (kind: InstallKind) => {
       const info = INSTALLS[kind]
       const st = installs[kind]
       const panel = el('div', 'login-panel')
       if (st.state === 'failed') {
-        panel.append(el('strong', undefined, `${info.obj} 설치하지 못했어요`), el('p', undefined, st.message))
+        panel.append(el('strong', undefined, m.installFailed(kind)), el('p', undefined, st.message))
         const row = el('div', 'login-actions')
         row.append(
-          button('btn-small', '다시 시도', () => void startInstall(kind)),
-          button('btn-link', '직접 설치하는 방법', () => window.open(info.help)),
+          button('btn-small', m.retry, () => void startInstall(kind)),
+          button('btn-link', m.manualInstall, () => window.open(info.help)),
         )
         panel.append(row)
         return panel
       }
       if (st.state !== 'running') return panel
       const label: Record<string, string> = {
-        prepare: '설치를 준비하는 중이에요',
-        download: `내려받는 중이에요${st.percent !== undefined ? ` · ${st.percent}%` : ''}`,
-        verify: '공식 파일이 맞는지 확인하는 중이에요',
-        setup: '설치를 마무리하는 중이에요',
+        prepare: m.phasePrepare,
+        download: m.phaseDownload(st.percent),
+        verify: m.phaseVerify,
+        setup: m.phaseSetup,
       }
-      panel.append(
-        el('strong', undefined, `${info.obj} 설치하고 있어요`),
-        el('p', undefined, label[st.phase] ?? ''),
-      )
+      panel.append(el('strong', undefined, m.installing(kind)), el('p', undefined, label[st.phase] ?? ''))
       const bar = el('div', 'progress')
       const fill = el('span', 'progress-fill')
       const pct = st.phase === 'download' ? (st.percent ?? 0) : st.phase === 'prepare' ? 0 : 100
       fill.style.width = `${Math.max(3, pct)}%`
       bar.append(fill)
-      panel.append(bar, el('p', 'cap', info.source))
+      panel.append(bar, el('p', 'cap', m.installSource(kind)))
       return panel
     }
 
-    /** Claude 로그인 안내: 브라우저에서 로그인하거나, 나온 코드를 붙여 넣는다 */
+    /** Claude sign-in: sign in in the browser, or paste the code it shows */
     const loginPanel = () => {
       const panel = el('div', 'login-panel')
       if (login.state === 'failed') {
-        panel.append(
-          el('strong', undefined, 'Claude 로그인을 마치지 못했어요'),
-          el('p', undefined, login.message),
-        )
+        panel.append(el('strong', undefined, m.claudeLoginFailed), el('p', undefined, login.message))
         const row = el('div', 'login-actions')
         row.append(
-          button('btn-small', '다시 시도', () => void startClaudeLogin()),
-          button('btn-link', '닫기', () => {
+          button('btn-small', m.retry, () => void startClaudeLogin()),
+          button('btn-link', m.close, () => {
             login = { state: 'idle' }
             render()
           }),
@@ -1940,25 +1772,18 @@ export function runSetup(opts: SetupOptions): {
         return panel
       }
       if (login.state !== 'waiting') return panel
-      panel.append(
-        el('strong', undefined, '브라우저에서 Claude에 로그인해 주세요'),
-        el(
-          'p',
-          undefined,
-          '로그인이 끝나면 자동으로 넘어가요. 화면에 코드가 나오면 아래에 붙여 넣어 주세요.',
-        ),
-      )
+      panel.append(el('strong', undefined, m.claudeLoginTitle), el('p', undefined, m.claudeLoginBody))
       const form = el('form', 'code-row')
       const input = el('input')
       input.id = 'claude-code'
-      input.placeholder = '코드 붙여 넣기'
+      input.placeholder = m.pasteCode
       input.autocomplete = 'off'
       input.spellcheck = false
       input.value = codeDraft
       input.oninput = () => {
         codeDraft = input.value
       }
-      const ok = el('button', 'btn-small', sending ? '확인하는 중…' : '확인')
+      const ok = el('button', 'btn-small', sending ? m.checking : m.confirm)
       ok.type = 'submit'
       ok.disabled = sending
       form.onsubmit = (e) => {
@@ -1967,13 +1792,12 @@ export function runSetup(opts: SetupOptions): {
       }
       form.append(input, ok)
       panel.append(form)
-      if (login.codeRejected && !sending)
-        panel.append(el('p', 'login-error', '코드가 맞지 않아요. 전부 복사했는지 확인하고 다시 넣어 주세요.'))
+      if (login.codeRejected && !sending) panel.append(el('p', 'login-error', m.codeRejected))
       const row = el('div', 'login-actions')
       const url = login.url
-      if (url) row.append(button('btn-link', '로그인 창 다시 열기', () => window.open(url)))
+      if (url) row.append(button('btn-link', m.reopenLogin, () => window.open(url)))
       row.append(
-        button('btn-link', '그만두기', () => {
+        button('btn-link', m.giveUp, () => {
           stopLogin()
           render()
         }),

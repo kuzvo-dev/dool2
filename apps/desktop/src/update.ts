@@ -1,7 +1,8 @@
-// 새 버전 알림·설치 (ADR 0028). 앱스토어 없이 웹에서 받는 두리가 스스로 새 버전을 찾는다.
-// 버전 안내(version.json)는 우리 서명키(ed25519)로 서명한다: 안내를 올려 둔 곳(GitHub Releases)이 바뀌거나
-// 파일이 바꿔치기돼도 서명·확인값(sha256)이 맞지 않으면 깔지 않는다 (폰에서 PWA를 접은 것과 같은 이유).
-// 최소 버전(min)보다 낮으면 "업데이트해야 계속 쓸 수 있어요"로 막는다.
+// New version alerts and install (ADR 0028). Dool2 is downloaded from the web, not an app store, so it finds new
+// versions itself. The version info (version.json) is signed with our key (ed25519): if the host (GitHub Releases)
+// changes or a file is swapped, nothing is installed unless the signature and checksum (sha256) match (the same
+// reason the phone PWA was dropped).
+// Below the minimum version (min), the app blocks with "update to keep using it".
 import { createHash, sign, verify } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rm, stat } from 'node:fs/promises'
@@ -9,13 +10,15 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
+import type { Lang } from '@dool2/i18n'
+import { updateText } from './locales/update.js'
 
-/** 버전 안내를 확인하는 공개키 (비밀키는 릴리스 CI의 비밀 값에만 있다) */
+/** Public key that checks the version info (the private key lives only in the release CI secrets) */
 export const UPDATE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAgSoqNvsFEjOwUjDiqwM2sGv7kLLKPoOXjiekL4ROyhE=
 -----END PUBLIC KEY-----`
 
-/** 최신 릴리스의 버전 안내 (GitHub가 가장 최근 릴리스 파일로 넘겨 준다) */
+/** Version info of the latest release (GitHub redirects to the newest release file) */
 export const UPDATE_FEED = 'https://github.com/kuzvo-dev/dool2/releases/latest/download/version.json'
 
 export interface ReleaseFile {
@@ -25,15 +28,15 @@ export interface ReleaseFile {
 }
 export interface Release {
   version: string
-  /** 이보다 낮은 버전은 업데이트해야 쓸 수 있다 */
+  /** Versions below this must update to keep working */
   min?: string
-  /** 바뀐 점 (사용자에게 보이는 말) */
+  /** What changed (shown to users) */
   notes?: string
   date?: string
-  /** 'darwin-arm64'·'darwin-x64'·'win32-x64' → 업데이트 파일 (맥은 zip, 윈도우는 설치 exe) */
+  /** 'darwin-arm64', 'darwin-x64', 'win32-x64' → update file (zip on Mac, installer exe on Windows) */
   files: Record<string, ReleaseFile>
 }
-/** version.json: payload(Release JSON을 base64로)와 그 서명 */
+/** version.json: payload (Release JSON in base64) and its signature */
 export interface SignedRelease {
   payload: string
   signature: string
@@ -45,15 +48,15 @@ export interface UpdateState {
   current: string
   latest?: string
   notes?: string
-  /** 최소 버전보다 낮아서 업데이트해야 계속 쓸 수 있다 */
+  /** Below the minimum version, so an update is needed to keep using the app */
   required?: boolean
-  /** 받는 중 0~1 */
+  /** Download progress, 0 to 1 */
   progress?: number
   error?: string
   checkedAt?: number
 }
 
-/** "0.10.1" > "0.2.0" (앞 세 자리 숫자만, 그 뒤 꼬리표는 무시) */
+/** "0.10.1" > "0.2.0" (first three numbers only, any suffix is ignored) */
 export function newer(a: string, b: string): boolean {
   const p = (v: string) =>
     v
@@ -65,13 +68,13 @@ export function newer(a: string, b: string): boolean {
   return false
 }
 
-/** 릴리스 CI가 버전 안내에 서명한다 (scripts/release-manifest.mjs) */
+/** The release CI signs the version info (scripts/release-manifest.mjs) */
 export function signRelease(r: Release, privateKeyPem: string): SignedRelease {
   const data = Buffer.from(JSON.stringify(r), 'utf8')
   return { payload: data.toString('base64'), signature: sign(null, data, privateKeyPem).toString('base64') }
 }
 
-/** 서명을 확인하고 안내를 꺼낸다. 틀리면 undefined */
+/** Checks the signature and returns the release. undefined when it does not match */
 export function openRelease(signed: unknown, publicKey: string): Release | undefined {
   if (!signed || typeof signed !== 'object') return undefined
   const { payload, signature } = signed as Partial<SignedRelease>
@@ -95,17 +98,19 @@ export function openRelease(signed: unknown, publicKey: string): Release | undef
 
 export interface UpdaterOptions {
   current: string
-  /** 'darwin-arm64' 같은 이 PC 종류 */
+  /** This PC's kind, like 'darwin-arm64' */
   platform: string
   feed?: string
   publicKey?: string
-  /** 받은 파일을 둘 폴더 */
+  /** Folder for downloaded files */
   dir: string
   fetch?: typeof fetch
-  /** 받은 파일을 깔고 다시 켠다 (플랫폼마다 다름) */
+  /** Installs the downloaded file and restarts (per platform) */
   install: (file: string, release: Release) => Promise<void>
   onChange?: (s: UpdateState) => void
   now?: () => number
+  /** Language of the error shown in the update notice (default Korean) */
+  lang?: () => Lang
 }
 
 export class Updater {
@@ -120,25 +125,30 @@ export class Updater {
     return { ...this.s }
   }
 
+  private text() {
+    return updateText(this.o.lang?.() ?? 'ko')
+  }
+
   private set(next: Partial<UpdateState>) {
     this.s = { ...this.s, ...next }
     this.o.onChange?.(this.state())
   }
 
-  /** 새 버전이 있는지 본다 (받는 중·다 받은 뒤에는 그대로) */
+  /** Checks for a new version (no change while downloading or once downloaded) */
   async check(): Promise<UpdateState> {
     if (this.s.status === 'downloading' || this.s.status === 'ready' || this.s.status === 'installing')
       return this.state()
     const now = (this.o.now ?? Date.now)()
+    const m = this.text()
     try {
       const res = await (this.o.fetch ?? fetch)(this.o.feed ?? UPDATE_FEED, {
         redirect: 'follow',
         signal: AbortSignal.timeout(20_000),
         headers: { 'cache-control': 'no-cache' },
       })
-      if (!res.ok) throw new Error(`버전 안내를 받지 못했어요 (${res.status})`)
+      if (!res.ok) throw new Error(m.feedFailed(res.status))
       const r = openRelease(await res.json(), this.o.publicKey ?? UPDATE_PUBLIC_KEY)
-      if (!r) throw new Error('버전 안내의 서명이 맞지 않아요')
+      if (!r) throw new Error(m.badSignature)
       const file = r.files[this.o.platform]
       if (!newer(r.version, this.o.current) || !file) {
         this.release = undefined
@@ -155,22 +165,23 @@ export class Updater {
         checkedAt: now,
       })
     } catch (e) {
-      // 확인 실패는 조용히 (인터넷이 없을 수 있다). 이미 알던 새 버전은 그대로 둔다
+      // Check failures stay quiet (maybe no internet). A new version already found stays as is
       if (this.s.status !== 'available')
         this.set({ status: 'error', error: (e as Error).message, checkedAt: now })
     }
     return this.state()
   }
 
-  /** 받고 확인값을 맞춘 뒤 깐다 */
+  /** Downloads, checks the checksum, then installs */
   async install(): Promise<UpdateState> {
     const r = this.release
     const f = r?.files[this.o.platform]
     if (!r || !f) return this.state()
     if (this.s.status === 'downloading' || this.s.status === 'installing') return this.state()
+    const m = this.text()
     try {
       if (!this.file) {
-        if (!/^https:\/\//.test(f.url)) throw new Error('업데이트 주소가 https가 아니에요')
+        if (!/^https:\/\//.test(f.url)) throw new Error(m.notHttps)
         this.set({ status: 'downloading', progress: 0, error: undefined })
         await mkdir(this.o.dir, { recursive: true })
         const name = decodeURIComponent(new URL(f.url).pathname.split('/').pop() || 'update.bin').replace(
@@ -179,7 +190,7 @@ export class Updater {
         )
         const out = join(this.o.dir, name)
         const res = await (this.o.fetch ?? fetch)(f.url, { redirect: 'follow' })
-        if (!res.ok || !res.body) throw new Error(`업데이트 파일을 받지 못했어요 (${res.status})`)
+        if (!res.ok || !res.body) throw new Error(m.downloadFailed(res.status))
         const hash = createHash('sha256')
         let got = 0
         const body = Readable.fromWeb(res.body as unknown as WebReadableStream<Uint8Array>)
@@ -192,7 +203,7 @@ export class Updater {
         const size = (await stat(out)).size
         if (hash.digest('hex') !== f.sha256.toLowerCase() || (f.size && size !== f.size)) {
           await rm(out, { force: true })
-          throw new Error('받은 업데이트 파일의 확인값이 맞지 않아요')
+          throw new Error(m.badChecksum)
         }
         this.file = out
         this.set({ status: 'ready', progress: 1 })
