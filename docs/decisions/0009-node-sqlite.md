@@ -1,22 +1,22 @@
-# 0009. 기록은 Node 내장 SQLite에 저장한다
+# 0009. Store records in Node's built-in SQLite
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-대화, 한 일, 허락 내역을 사용자 PC에만 저장해야 해요. Electron 앱에서 `better-sqlite3` 같은 네이티브 모듈을 쓰면 Electron 버전마다 다시 빌드해야 하고, 윈도우·맥 설치 실패의 흔한 원인이 돼요.
+Conversations, completed tasks and approval history must be stored only on the user's PC. Using a native module such as `better-sqlite3` in an Electron app means rebuilding for each Electron version, and it is a common cause of install failures on Windows and Mac.
 
-## 결정
+## Decision
 
-Node 24에 들어 있는 `node:sqlite`(`DatabaseSync`)를 써요. WAL 모드와 외래 키를 켜고, 마이그레이션은 `user_version`으로 관리해요.
+We use `node:sqlite` (`DatabaseSync`), which ships with Node 24. We turn on WAL mode and foreign keys, and manage migrations with `user_version`.
 
-## 이유
+## Why
 
-- 네이티브 모듈 빌드가 필요 없어서 설치와 CI가 단순해요.
-- 데이터가 파일 하나라서 백업과 삭제가 쉬워요. "내 기록은 내 PC에만"을 사용자가 직접 확인할 수 있어요.
+- No native module build is needed, so installation and CI are simpler.
+- The data is a single file, which makes backup and deletion easy. Users can check "my records stay only on my PC" themselves.
 
-## 결과
+## Consequences
 
-- `node:sqlite`는 아직 실험 단계 API라서 Node 버전 업데이트 때 확인이 필요해요.
-- 저장소 접근은 `packages/store`로만 하게 해서, 나중에 엔진을 바꿔도 영향을 줄여요.
+- `node:sqlite` is still an experimental API, so we need to check it when updating Node versions.
+- Storage is accessed only through `packages/store`, which limits the impact if we change engines later.

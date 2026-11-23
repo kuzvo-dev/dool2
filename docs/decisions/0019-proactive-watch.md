@@ -1,42 +1,42 @@
-# 0019. 먼저 챙기기: 연결한 서비스를 하루 두 번 살펴, 챙길 일만 먼저 알린다
+# 0019. Proactive check: look at connected services twice a day and tell the user only what needs attention
 
-> 2026-11-20: 살피는 주기와 차례는 [0025](0025-know-ledger.md)로 바뀌었어요(아침 6시~밤 10시 한 시간마다, 챙길 때가 된 한 일부터).
+> 2026-11-20: the interval and order of checking were changed by [0025](0025-know-ledger.md) (every hour from 6 a.m. to 10 p.m., starting with the item that is due).
 
-- 상태: 채택
-- 날짜: 2026-11-17
+- Status: Accepted
+- Date: 2026-11-17
 
-## 배경
+## Context
 
-[0016](0016-five-tabs-life.md)의 피드는 "두리가 한 일"과 사용자가 시킨 피드 글만 담았어요. 비서라면 묻기 전에 챙겨야 해요.
-"어제 주문한 러닝화 내일 도착해요", "완주 축하해요, 1시간 52분에 312등이에요", "토요일이 엄마 생신이에요, 선물 골라 둘까요?"
-같은 말을 부탁 없이 먼저 해 주는 것이요. 랜딩(dool2.com)에도 '먼저 챙겨요'로 약속했어요.
+The Feed in [0016](0016-five-tabs-life.md) only held "what Dool2 did" and the Feed posts the user asked for. An assistant should look after things before being asked:
+"The running shoes you ordered yesterday arrive tomorrow", "Congratulations on finishing, 1h52m, 312th place", "Saturday is Mom's birthday, shall I pick out a gift?"
+Saying such things first, without a request. We also promised "it looks after you first" on the landing page (dool2.com).
 
-사용자는 무엇을 켜야 하는지 모를 거예요. 그래서 "살펴볼 항목을 골라 켜기"는 두지 않아요.
+Users will not know what to turn on. So we do not offer "pick the items to watch and turn them on".
 
-## 결정
+## Decision
 
-1. **기준은 연결한 서비스.** 연결 화면에서 연결을 마친 서비스(`settings.connections`)만 열어 본다. 연결이 하나도 없으면 아예 하지 않는다.
-2. **하루 두 번.** 한국 시간 8:30, 18:30이 지나면 한 번씩. 밤(22시~7시)에는 하지 않는다. PC가 그 사이 꺼져 있었으면 켜졌을 때(낮이면) 한다.
-3. **피드 전용 대화에서.** 아이디어 찾기처럼 따로 하는 대화(피드 전용)에서 두리에게 부탁한다. 메인 대화는 어지럽히지 않는다.
-4. **알릴 게 있을 때만.** 두리는 직접 확인한 새 소식만 `feed_tell`로 올린다. 올라간 것만 피드 맨 위와 폰 알림으로 간다.
-   살펴보기 결과 답(“새 소식 없어요”)은 알리지 않는다.
-5. **같은 일은 한 번만.** `key`(서비스-대상-상태)가 같으면 30일 안에는 다시 올리지 않는다. 최근 14일에 알린 것은 부탁에 함께 넣어 보여 준다.
-   살펴보기 한 번에 3개까지.
-6. **제안은 버튼으로.** 이어서 해 줄 수 있는 일은 `ask`(누르면 보낼 부탁)로 붙인다. 화면의 [해 줘]는 그 부탁을 메인 대화로 보낼 뿐이고,
-   돈 내기·보내기는 늘 그렇듯 승인을 거친다. 살펴보는 동안에는 돈 내기·보내기·지우기를 하지 않는다.
-7. **대화에도 남긴다.** 올린 일은 메인 대화에 두리 카드(`tool` 기록 `{kind:'tell'}`)로도 남는다. AI를 부르지 않고, 답하는 중이면 끝난 뒤에(5분까지) 남긴다.
-   카드의 답(맡겼어요·넘겼어요)은 피드 글에서 읽어 피드 카드와 같이 바뀐다. AI는 이 카드를 모르니, 사용자의 다음 말에 "먼저 알린 것" 배경을
-   이번 차례에만 덧붙여 보낸다(`ThreadService.send`의 `aside`, 기록·화면에는 남지 않음). 폰 알림을 누르면 대화로 간다.
-8. **끄기.** 기본은 켜짐. 생활 기록의 `watchOff`로 끈다 (`watch` 동작). `watch-now`로 지금 한 번 살펴본다.
+1. **The basis is connected services.** Only services whose connection was completed on the connect screen (`settings.connections`) are opened and looked at. If nothing is connected, nothing is done.
+2. **Twice a day.** Once after 8:30 and once after 18:30, Korea time. Not at night (22:00 to 7:00). If the PC was off in between, it runs once it is on again (if it is daytime).
+3. **In the Feed-only conversation.** Dool2 is asked in a separate conversation (Feed only), like the idea search. The main conversation is not cluttered.
+4. **Only when there is something to tell.** Dool2 posts only news it has confirmed itself, with `feed_tell`. Only what is posted goes to the top of the Feed and to a phone notification.
+   The answer to the check itself ("No news") is not announced.
+5. **Each item only once.** If the `key` (service-target-state) is the same, it is not posted again within 30 days. Items announced in the last 14 days are included in the request so Dool2 can see them.
+   At most 3 per check.
+6. **Suggestions are buttons.** What Dool2 can do next is attached as `ask` (the request that is sent when tapped). The [Do it] button on screen only sends that request to the main conversation,
+   and paying and sending still go through approval as always. While checking, Dool2 does not pay, send or delete.
+7. **It is also left in the conversation.** What was posted is also left in the main conversation as a Dool2 card (a `tool` record `{kind:'tell'}`). The AI is not called, and if Dool2 is answering, the card is left after it finishes (within 5 minutes).
+   The card's answer (asked / handed over) is read from the Feed post and changes together with the Feed card. The AI does not know about this card, so for the user's next message, "what was announced first" is added as background
+   for that turn only (`aside` in `ThreadService.send`, not kept in the history or on screen). Tapping a phone notification opens the conversation.
+8. **Turning it off.** On by default. Turn it off with `watchOff` in the life records (the `watch` action). `watch-now` runs a check right now.
 
-## 이유
+## Why
 
-- 항목을 고르게 하면 대부분 아무것도 켜지 않는다. 연결은 이미 사용자가 "이 서비스는 두리가 봐도 된다"고 한 것이라 기준으로 삼기 알맞다.
-- 몇 분마다 보면 구독 사용량을 많이 쓰고 사이트에도 부담이다. 아침·저녁 두 번이면 배송·일정·메일 대부분을 놓치지 않는다.
-- 알림이 쓸데없으면 바로 꺼 버린다. 그래서 "새로 확인한 것만, 한 번만, 적게"를 도구 단에서 막는다 (AI 말에만 맡기지 않는다).
+- If users had to pick items, most would turn nothing on. A connection is already the user saying "Dool2 may look at this service", so it is a fitting basis.
+- Checking every few minutes uses a lot of subscription quota and is a burden on the sites. Morning and evening catch most deliveries, schedules and mail.
+- If notifications are useless, people switch them off right away. So "only newly confirmed things, only once, only a few" is enforced at the tool level (not left to what the AI says).
 
-## 결과
+## Consequences
 
-- 서비스별 커넥터([ADR 0018 제안](https://github.com/kuzvo-dev/dool2/pull/154))가 생기면 살펴보기가 빨라지고 정확해진다. 그 전에는 브라우저로 본다.
-- 로그인이 풀린 서비스는 건너뛴다(살펴보기 중에 로그인 창을 띄우지 않는다). 나중에 "다시 연결해 주세요" 알림을 검토한다.
-- 폰 네이티브 앱의 푸시가 붙기 전에는 폰 알림이 웹 푸시로만 간다.
+- Once per-service connectors ([ADR 0018 proposal](https://github.com/kuzvo-dev/dool2/pull/154)) exist, checking gets faster and more accurate. Until then it looks with the browser.
+- Services whose login has expired are skipped (no login window is opened during a check). We will consider a "Please reconnect" notification later.
+- Until push notifications arrive in the native phone app, phone notifications go only through web push.

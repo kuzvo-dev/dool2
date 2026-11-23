@@ -1,9 +1,9 @@
-# 서비스 로고
+# Service logos
 
-연결 카드(`skills/<id>/connect.json`)의 서비스를 알아보기 쉽게 보여 주는 아이콘이에요. 파일 이름이 카드 `id`예요 (128×128 PNG).
+Icons that make the services in connect cards (`skills/<id>/connect.json`) easy to recognize. The file name is the card `id` (128×128 PNG).
 
-- 각 로고는 **그 회사의 상표**예요. 이 저장소의 라이선스(Apache-2.0, CC BY-SA 4.0)에 들어가지 않아요.
-- 서비스를 가리키는 용도로만 써요. 두리와 제휴했거나 보증받았다는 뜻이 아니에요.
-- 출처: 각 서비스의 공개 앱 아이콘(App Store) 또는 사이트 아이콘. 행사 문구가 붙은 아이콘은 사이트 아이콘으로 바꿨어요.
-- 폰 기능 카드(연락처 `contacts`·위치 `location`·캘린더 `phone-calendar`)는 회사 로고가 아니라 Fluent Emoji 3D(Microsoft, MIT — `../emoji/LICENSE`) 그림이에요.
-- 로고가 없는 카드는 이름 첫 글자를 보여 줘요. 상표권자가 빼 달라고 하면 바로 지워요.
+- Each logo is **that company's trademark**. It is not covered by this repository's licenses (Apache-2.0, CC BY-SA 4.0).
+- Use them only to refer to the service. They do not mean the company is affiliated with or endorses Dool2.
+- Sources: each service's public app icon (App Store) or site icon. Icons carrying event text were replaced with site icons.
+- The phone feature cards (contacts `contacts`, location `location`, calendar `phone-calendar`) are Fluent Emoji 3D artwork (Microsoft, MIT — `../emoji/LICENSE`), not company logos.
+- Cards without a logo show the first letter of the name. If a trademark holder asks for removal, we remove it right away.

@@ -1,33 +1,33 @@
-# 0002. 공식 Claude Code·Codex를 수정 없이 실행한다
+# 0002. Run the official Claude Code and Codex unmodified
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리는 사용자가 이미 결제한 AI 구독(Claude, ChatGPT)으로 동작해야 해요. 방법은 여러 가지가 있어요.
+Dool2 has to work with the AI subscriptions users already pay for (Claude, ChatGPT). There are several ways to do this.
 
-- 구독 로그인 토큰을 받아 API를 직접 부르기
-- Agent SDK 같은 라이브러리로 감싸기
-- 공식 CLI를 그대로 실행하기
+- Take the subscription login token and call the API directly
+- Wrap it with a library such as an Agent SDK
+- Run the official CLI as it is
 
-Anthropic은 제3자 앱이 claude.ai 로그인을 대신 처리하거나 구독 자격 증명을 다루는 것을 허용하지 않아요. 다만 사용자가 직접 로그인한 **수정하지 않은 Claude Code**를 쓰는 것은 허용해요. OpenAI는 오픈소스 로컬 앱이 "Sign in with ChatGPT"로 Codex app-server를 쓰는 길을 공식으로 열어 두었어요.
+Anthropic does not allow third-party apps to handle claude.ai login on a user's behalf or to handle subscription credentials. It does allow using **unmodified Claude Code** that the user has logged in to themselves. OpenAI has officially opened a path for open-source local apps to use the Codex app-server through "Sign in with ChatGPT".
 
-## 결정
+## Decision
 
-- **Claude**: 사용자가 설치하고 로그인한 공식 `claude` 바이너리를 `claude -p`(헤드리스)로 실행해요. 두리는 Claude 로그인 정보나 토큰을 읽거나 저장하지 않아요. `--bare`처럼 구독 로그인을 무시하는 옵션은 쓰지 않아요.
-  - **로그인 버튼**: 두리는 공식 `claude auth login`을 띄우고, 브라우저에서 받은 코드를 사용자가 붙여 넣으면 그 프로그램에 그대로 전달만 해요. 코드와 토큰은 저장·기록하지 않고, 로그인 성공 여부는 `claude auth status`로만 확인해요.
-- **Codex**: 고정 버전(`@openai/codex`, Apache-2.0)을 앱에 동봉하고 `codex app-server`(JSON-RPC)로 실행해요. 사용자 본인의 Codex와 섞이지 않게 두리 전용 `CODEX_HOME`을 써요.
-- 두 에이전트는 `packages/engine`의 공통 인터페이스(`AgentRuntime`) 뒤에 둬요.
+- **Claude**: run the official `claude` binary, which the user installed and logged in to, headlessly with `claude -p`. Dool2 never reads or stores Claude login information or tokens. We do not use options such as `--bare` that ignore the subscription login.
+  - **Login button**: Dool2 launches the official `claude auth login`. The user pastes the code from the browser, and Dool2 only passes it on to that program unchanged. The code and tokens are not stored or logged, and login success is checked only with `claude auth status`.
+- **Codex**: bundle a pinned version (`@openai/codex`, Apache-2.0) with the app and run it with `codex app-server` (JSON-RPC). It uses a Dool2-specific `CODEX_HOME` so it does not mix with the user's own Codex.
+- Both agents sit behind a common interface (`AgentRuntime`) in `packages/engine`.
 
-## 이유
+## Why
 
-- 각 회사의 정책 안에서 사용자 구독을 쓰는 가장 안전한 방법이에요.
-- 공식 바이너리의 업데이트(모델, 보안 수정)를 그대로 받아요.
-- 공통 인터페이스 덕분에 한쪽 정책이 바뀌어도 다른 쪽으로 계속 쓸 수 있어요.
+- It is the safest way to use the user's subscription within each company's policy.
+- We get the official binary's updates (models, security fixes) as they are.
+- Because of the common interface, if one side's policy changes we can keep working with the other.
 
-## 결과
+## Consequences
 
-- CLI 출력 형식이 바뀌면 어댑터가 깨질 수 있어요. 실제 출력을 `fixtures/`에 고정하고, Codex는 버전을 고정해서 업데이트 전에 호환 테스트를 해요.
-- Claude Code가 없으면 두리가 공식 설치 경로로 설치를 도와야 해요(M1).
-- 정책이 바뀌면 API 키 모드를 대안으로 둬요.
+- The adapters can break when a CLI's output format changes. We pin real output in `fixtures/`, pin the Codex version, and run compatibility tests before updating.
+- If Claude Code is missing, Dool2 has to help install it through the official install path (M1).
+- If a policy changes, API-key mode is the fallback.

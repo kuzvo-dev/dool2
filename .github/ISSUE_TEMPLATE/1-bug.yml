@@ -1,57 +1,58 @@
-name: 버그 신고
-description: 두리가 이상하게 동작하거나 멈췄어요
+name: Bug report
+description: Dool2 behaved strangely or stopped working
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        신고해 주셔서 고마워요. **계정, 전화번호, 주소, 실제 대화 내용 같은 개인정보는 지우고** 올려 주세요.
-        보안 문제라면 이 양식 대신 [비공개 신고](https://github.com/kuzvo-dev/dool2/security/advisories/new)를 써 주세요.
+        Thanks for reporting. **Please remove personal data such as accounts, phone numbers, addresses, and real conversations** before posting.
+        If this is a security issue, use [private reporting](https://github.com/kuzvo-dev/dool2/security/advisories/new) instead of this form.
+        Please write in English if you can. Korean is welcome too.
   - type: textarea
     id: what
     attributes:
-      label: 무슨 일이 있었나요?
-      description: 무엇을 하려고 했고, 실제로 어떻게 됐는지 적어 주세요.
+      label: What happened?
+      description: Describe what you were trying to do and what actually happened.
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: 다시 겪으려면
-      description: 같은 문제를 다시 보려면 어떻게 해야 하나요?
+      label: Steps to reproduce
+      description: How can we see the same problem again?
       placeholder: |
-        1. 두리를 켜요
-        2. "…"라고 부탁해요
-        3. …
+        1. Start Dool2
+        2. Ask "..."
+        3. ...
   - type: textarea
     id: expected
     attributes:
-      label: 원래 기대한 동작
+      label: Expected behavior
   - type: dropdown
     id: os
     attributes:
-      label: 운영체제
+      label: Operating system
       options:
         - macOS
         - Windows
-        - 기타
+        - Other
     validations:
       required: true
   - type: dropdown
     id: agent
     attributes:
-      label: 사용한 AI
+      label: AI used
       options:
         - Claude Code
         - Codex
-        - 상관없음 / 모름
+        - Doesn't matter / not sure
   - type: input
     id: version
     attributes:
-      label: 두리 버전 또는 커밋
-      placeholder: 예) v0.1.0, 또는 main의 커밋 해시
+      label: Dool2 version or commit
+      placeholder: "e.g. v0.1.0, or a commit hash on main"
   - type: textarea
     id: logs
     attributes:
-      label: 로그나 화면 캡처
-      description: 있으면 붙여 주세요. 개인정보는 가려 주세요.
+      label: Logs or screenshots
+      description: Attach them if you have any. Please hide personal data.

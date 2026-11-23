@@ -1,39 +1,41 @@
-# 두리 문서
+# Dool2 docs
 
-두리 개발과 운영에 관한 문서 목록이에요. 사용 설명서는 첫 릴리스(M5)와 함께 따로 만들어요.
+An index of the docs on building and running Dool2. The user guide will be written separately with the first release (M5).
 
-## 설계
+Korean originals of these docs, frozen as of 2026-11-23, not kept in sync, are in [ko/](ko/README.md). Shared translation terms are in the [glossary](i18n/glossary.md).
 
-| 문서 | 내용 |
+## Design
+
+| Doc | Contents |
 |---|---|
-| [아키텍처](architecture.md) | 전체 구조, 에이전트 연동, 승인 게이트, 브라우저·PC 제어, 폰 연결, 설치, 로드맵, 위험 |
-| [페르소나](persona.md) | 두리의 성격과 말투. 사용자에게 보이는 모든 문구의 기준 |
-| [디자인 원본](design/README.md) | 디자인 시스템(색·글자·캐릭터·부품)과 화면 예시 14장. 모든 화면의 기준 |
-| [결정 기록 (ADR)](decisions/README.md) | 구조에 관한 결정과 그 이유 |
-| [위협 모델](security/threat-model.md) | 무엇을 지키고, 무엇을 막고, 무엇은 못 막는지 |
+| [Architecture](architecture.md) | Overall structure, agent integration, approval gate, browser and PC control, phone connection, install, roadmap, risks |
+| [Persona](persona.md) | Dool2's personality and voice. The standard for every piece of user-facing copy |
+| [Design source](design/README.md) | The design system (colors, type, character, components) and 14 example screens. The standard for every screen |
+| [Decision records (ADR)](decisions/README.md) | Structural decisions and why they were made |
+| [Threat model](security/threat-model.md) | What we protect, what we block, and what we cannot block |
 
-## 운영
+## Operations
 
-| 문서 | 내용 |
+| Doc | Contents |
 |---|---|
-| [오픈소스 운영](open-source.md) | 공개 범위, 라이선스, 수익 구조, 거버넌스, 스킬 기여 |
-| [상표 정책](../TRADEMARKS.md) | "두리" 이름과 로고를 쓸 수 있는 경우 |
-| [보안 신고](../SECURITY.md) | 취약점 비공개 신고 방법 |
+| [Open-source operations](open-source.md) | What is public, license, revenue model, governance, skill contributions |
+| [Trademark policy](../TRADEMARKS.md) | When you may use the "Dool2" name and logo |
+| [Security reports](../SECURITY.md) | How to report a vulnerability privately |
 
-## 패키지
+## Packages
 
-각 패키지 폴더의 README에 역할과 주요 API가 있어요: [desktop](../apps/desktop/README.md) · [daemon](../apps/daemon/README.md) · [protocol](../packages/protocol/README.md) · [engine](../packages/engine/README.md) · [agent-claude](../packages/agent-claude/README.md) · [agent-codex](../packages/agent-codex/README.md) · [agent-opencode](../packages/agent-opencode/README.md) · [mcp-tools](../packages/mcp-tools/README.md) · [browser](../packages/browser/README.md) · [store](../packages/store/README.md) · [ui (디자인 시스템)](../packages/ui/README.md)
+Each package folder has a README with its role and main APIs: [desktop](../apps/desktop/README.md) · [daemon](../apps/daemon/README.md) · [protocol](../packages/protocol/README.md) · [engine](../packages/engine/README.md) · [agent-claude](../packages/agent-claude/README.md) · [agent-codex](../packages/agent-codex/README.md) · [agent-opencode](../packages/agent-opencode/README.md) · [mcp-tools](../packages/mcp-tools/README.md) · [browser](../packages/browser/README.md) · [store](../packages/store/README.md) · [ui (design system)](../packages/ui/README.md)
 
-## 기여
+## Contributing
 
-| 문서 | 내용 |
+| Doc | Contents |
 |---|---|
-| [기여 안내](../CONTRIBUTING.md) | 개발 환경, PR 절차, 커밋 서명 |
-| [작업 규칙](../AGENTS.md) | 사람과 코딩 에이전트가 함께 따르는 규칙 |
-| [행동 강령](../CODE_OF_CONDUCT.md) | 커뮤니티 기준 |
+| [Contributing guide](../CONTRIBUTING.md) | Dev environment, PR process, commit signing |
+| [Working rules](../AGENTS.md) | Rules that people and coding agents follow together |
+| [Code of conduct](../CODE_OF_CONDUCT.md) | Community standards |
 
-## 문서 쓰는 법
+## How to write docs
 
-- 기본 언어는 한국어예요. 해외 기여자를 위해 [README.en.md](../README.en.md)를 함께 관리해요.
-- 짧은 문장으로 쓰고, 결정에는 이유를 함께 적어요.
-- 화면이 나오는 문서에는 개인정보가 없는 캡처를 써요. 데모 데이터는 `node apps/daemon/scripts/seed-demo.mjs <폴더>`로 만들 수 있어요.
+- The default language is English ([README.md](../README.md)); a Korean version is kept as [README.ko.md](../README.ko.md). Language and region are separate settings (ADR 0029).
+- Write short sentences, and give the reason with each decision.
+- Docs that show screens use captures without personal data. You can create demo data with `node apps/daemon/scripts/seed-demo.mjs <folder>`.

@@ -1,54 +1,85 @@
-# 두리 작업 규칙 (사람·AI 공통)
+# Working rules for Dool2 (people and AI)
 
-이 레포에서 일하는 사람과 코딩 에이전트(Claude Code, Codex 등)가 모두 따르는 규칙이에요.
+These rules apply to everyone working in this repo, both people and coding agents (Claude Code, Codex and others).
 
-## 1. 작은 단위로 PR을 계속 올린다
+## 1. Ship small PRs, continuously
 
-- **PR 하나 = 한 가지 일.** 기능 하나, 고침 하나, 문서 하나. 큰 덩어리를 한 번에 올리지 않아요.
-- 하나가 끝나면 바로 브랜치 → 커밋 → push → PR을 해요. 다음 일은 새 브랜치에서 시작해요.
-- 앞 PR이 아직 머지 전이면 그 브랜치 위에 쌓아서(stacked) 올리고, PR 본문 첫 줄에 "#N 위에 쌓은 PR"이라고 적어요.
-- 브랜치 이름: `feat/…`, `fix/…`, `docs/…`, `chore/…`, `test/…`
-- 머지는 squash로 해요. `main`에 직접 push하지 않아요.
-- **CI(맥·윈도우·리눅스 검사 + DCO)가 모두 통과하면 머지해요.** 메인테이너 계정으로 일하는 코딩 에이전트도 통과를 확인한 뒤 직접 머지해요. 실패하면 머지하지 않고 고쳐요.
-- 쌓은 PR을 머지할 때 순서:
-  1. 위 PR의 기준 브랜치를 먼저 `main`으로 바꿔요. (아래 브랜치가 지워지면 위 PR이 자동으로 닫혀요)
-  2. 아래 PR을 머지해요.
-  3. 위 브랜치를 `git rebase --onto origin/main <옛 아래 브랜치 끝> <위 브랜치>`로 옮기고 force-push해요. (squash 머지라 그대로 두면 충돌해요)
-  4. CI 통과를 확인하고 머지해요.
+- **One PR = one thing.** One feature, one fix or one doc. Do not ship big bundles.
+- When one thing is done, branch → commit → push → PR right away. Start the next thing on a new branch.
+- If the previous PR is not merged yet, stack the new one on its branch and write "Stacked on #N" on the first line of the PR body.
+- Branch names: `feat/…`, `fix/…`, `docs/…`, `chore/…`, `test/…`
+- Merge with squash. Never push to `main` directly.
+- **Merge when CI (macOS, Windows and Linux checks plus DCO) passes.** Coding agents working with the maintainer account also merge themselves, but only after checks pass. If a check fails, fix it instead of merging.
+- To merge stacked PRs, follow these steps in order:
+  1. Change the upper PR's base branch to `main` first. If the lower branch is deleted while it is still the base, the upper PR closes automatically.
+  2. Merge the lower PR.
+  3. Move the upper branch with `git rebase --onto origin/main <old lower branch tip> <upper branch>` and force-push. Squash merges make it conflict otherwise.
+  4. Wait for CI to pass, then merge.
 
-## 2. PR마다 눈으로 볼 수 있는 결과를 붙인다
+## 2. Show a visible result in every PR
 
-- 화면이 바뀌는 PR은 **결과 화면 캡처**를 함께 보여 줘요.
-  - PC 앱: `DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke` → `apps/desktop/out/smoke.png`
-  - 다른 화면(폰 앱, 확장 프로그램)도 같은 방식의 점검 모드를 만들어 캡처해요.
-- 화면이 없는 변경(내부 로직, 문서)은 캡처 대신 테스트 결과나 실제 실행 로그 요약을 적어요.
-- 캡처에 개인정보(이메일, 계정, 실제 대화 내용)가 보이면 가리거나 테스트 데이터로 다시 찍어요.
+- PRs that change a screen include a **screenshot of the result**.
+  - Desktop app: `DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke` → `apps/desktop/out/smoke.png`
+  - Other screens (phone app, extension) get a similar check mode for screenshots.
+- Changes without a screen (internal logic, docs) include test results or a summary of a real run log instead.
+- If a screenshot shows personal data (email, accounts, real conversations), blur it or retake it with test data.
 
-## 3. 커밋
+## 3. Language
 
-- 모든 커밋은 `git commit -s`로 서명해요(DCO). CI가 확인해요.
-- 커밋 메시지는 한국어로, 무엇을 왜 바꿨는지 적어요.
+- **The repo is English** (ADR 0029). Code, comments, identifiers, developer logs, docs, commit messages, PR
+  titles and bodies are written in English. Terms follow the [glossary](docs/i18n/glossary.md).
+- **User-facing copy never goes inline.** Put it in the locale files of `@dool2/i18n` and write it in at least
+  Korean (the reference copy) and English. CI fails on missing keys and on Hangul outside the allowed places.
+- Korean is fine where it is data: Korean locale files, Korean service cards (`skills/*`), fixtures of Korean
+  pages, Korean eval scenarios and the frozen archive in `docs/ko/`.
+- Enum values and keys shared between packages are English (for example tiers `lookup`, `fill`, `pay`, `contact`).
 
-## 4. 올리기 전에 확인
+## 4. Commits
+
+- Sign every commit with `git commit -s` (DCO). CI checks it.
+- Write commit messages in English. Say what changed and why.
+
+## 5. Check before you push
 
 ```bash
 pnpm lint && pnpm build && pnpm typecheck && pnpm test
 ```
 
-- 실제 Claude·Codex를 부르는 확인은 사용자 구독 사용량을 써요. 꼭 필요할 때만 하고, 반복 확인은 `fixtures/`의 실제 출력으로 테스트에 고정해요.
+- Checks that call the real Claude or Codex use the user's subscription quota. Run them only when needed, and
+  pin repeated checks in tests with real output saved under `fixtures/`.
 
-## 5. 지켜야 할 제품 원칙 (요약)
+## 6. Product principles (summary)
 
-자세한 건 [docs/architecture.md](docs/architecture.md), [docs/open-source.md](docs/open-source.md).
+Details are in [docs/architecture.md](docs/architecture.md) and [docs/open-source.md](docs/open-source.md).
 
-- **사용자가 쉽게 쓸 수 있어야 한다.** 터미널, 관리자 권한, 개발 용어가 사용자에게 보이면 다시 설계해요.
-- **브라우저에서 막히면 안 된다.** 진짜 Chrome, 사람 속도, 캡차·본인인증은 사람에게 넘기기. 우회는 하지 않아요.
-- **AI는 두리 도구만 쓴다.** 에이전트의 셸·파일·웹 기능은 끄고, 돈 내기·연락하기는 폰 서명이 있어야만 실행해요.
-- **공식 프로그램은 수정하지 않고 실행만 한다.** Claude Code 로그인·토큰은 두리가 다루지 않아요.
-- 사용자에게 보이는 문구는 두리 페르소나([docs/persona.md](docs/persona.md))에 맞춰요.
-- 화면은 디자인 원본([docs/design](docs/design/README.md))을 기준으로 [`packages/ui`](packages/ui/README.md) 부품으로 만들어요. 새 디자인이나 부품이 나오면 먼저 `docs/design`에 넣고 `packages/ui`를 맞춰요.
-- 앱 화면·문서·README·랜딩에 **다른 회사의 제품 이름이나 그 내용을 넣지 않아요.** 비교가 필요하면 "클라우드 서버의 브라우저에서 일하는 방식"처럼 방식으로만 써요. 연동하는 도구(Claude Code, Codex, Chrome 등)의 이름은 괜찮아요.
-- 서비스 연결은 서비스 도구(커넥터, `skills/<id>/tools.json`, [ADR 0018](docs/decisions/0018-service-connectors.md))로 붙여요. 만들고 고치는 순서는 [`.claude/skills/connector`](.claude/skills/connector/SKILL.md)를 따라요.
-- **앱 기능은 AI 도구로도 만든다.** 사람이 화면에서 쓰는 기능(금고, 내 결제 수단, 서비스 연결, 예정, 설정 등)을 만들거나 고치면, 두리가 대화 중에 같은 일을 할 수 있는 두리 도구(`packages/mcp-tools`)도 같은 PR이나 바로 다음 PR로 올려요. 도구는 화면과 같은 본체 API를 쓰고, 보안 경계는 그대로예요: 비밀번호·카드 번호 같은 값은 AI에게 주지 않고 가린 값이나 이름만 돌려주며, 돈·연락·삭제처럼 되돌리기 어려운 건 승인을 거쳐요.
-- **고칠 때는 지침을 덧붙이지 말고 도구를 깎는다.** 두리가 잘못 판단하면 전역 지침(`packages/engine/src/persona.ts`)에 규칙을 더하지 않아요. "어떤 도구가 있었으면 AI가 알아서 했을까"를 먼저 따져서 도구를 만들거나 다듬어요. 도구 설명에는 언제 쓰는지를, 입력 칸에는 빠뜨리기 쉬운 것(끝나는 때, 조건 등)을 담고, 결과에는 다음 할 일·막힌 이유·못 본 곳을 담아요. 분야별 요령은 그 도구나 서비스 카드 설명에 둬요. 본체가 행동을 강제하는 코드는 최소로 하고, 전역 지침은 줄이는 쪽으로 가요. 효과는 고친 실패 묶음만 골라 고치기 전과 후를 비교해 확인해요.
-- 구조를 바꾸는 결정은 [결정 기록(ADR)](docs/decisions/README.md)을 함께 올려요. 보안 가정이 바뀌면 [위협 모델](docs/security/threat-model.md)도 고쳐요.
+- **It must be easy for users.** If a terminal, admin rights or developer jargon reaches the user, redesign it.
+- **Never get blocked in the browser.** Use the real Chrome at human speed, and hand CAPTCHAs and identity
+  checks to the person. Never try to get around them.
+- **The AI uses only Dool2 tools.** The agent's shell, file and web features are off, and `pay` and `contact`
+  run only with a signature from the phone.
+- **Run official programs unmodified.** Dool2 does not handle Claude Code sign-in or tokens.
+- User-facing copy follows the Dool2 persona ([docs/persona.md](docs/persona.md)) in every language, in plain
+  words people already use.
+- Screens are built from [`packages/ui`](packages/ui/README.md) parts, based on the design source
+  ([docs/design](docs/design/README.md)). New designs or parts go into `docs/design` first, then `packages/ui`.
+- **No other companies' product names or content** in app screens, docs, READMEs or the landing page. If a
+  comparison is needed, describe the approach, for example "an approach that works in a browser on a cloud
+  server". Names of tools we integrate with (Claude Code, Codex, Chrome and so on) are fine.
+- Services are connected through service tools (connectors, `skills/<id>/tools.json`,
+  [ADR 0018](docs/decisions/0018-service-connectors.md)). Follow [`.claude/skills/connector`](.claude/skills/connector/SKILL.md)
+  to build and fix them. Each connect card declares its `regions` (ADR 0029).
+- **Every app feature is also an AI tool.** When you build or change a feature people use on screen (vault,
+  payment methods, connections, schedule, settings and so on), ship a Dool2 tool (`packages/mcp-tools`) that
+  does the same thing in conversation, in the same PR or the next one. The tool uses the same daemon API as the
+  screen, and the security boundaries stay the same. Secrets such as passwords and card numbers are never given
+  to the AI, only masked values or names. Things that are hard to undo (money, contacting people, deleting)
+  go through approval.
+- **Fix by sharpening tools, not by adding instructions.** When Dool2 gets something wrong, do not add a rule
+  to the global prompt (`packages/engine/src/persona.ts`). First ask: "Which tool would have let the AI get this
+  right on its own?" Then build or improve that tool. Tool descriptions say when to use the tool. Input fields
+  hold what is easy to forget (deadlines, conditions). Results say what to do next, why something got blocked
+  and what was not seen. Domain tips live in that tool's or service card's description. Keep code that forces
+  behavior minimal, and shrink the global prompt over time. Confirm the effect by rerunning only the failures
+  you fixed, before and after.
+- Changes to the architecture come with an [architecture decision record (ADR)](docs/decisions/README.md). If a security
+  assumption changes, update the [threat model](docs/security/threat-model.md) too.

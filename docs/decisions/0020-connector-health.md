@@ -1,72 +1,72 @@
-# 0020. 서비스 도구가 깨진 것을 빨리 알고 고치는 파이프라인
+# 0020. A pipeline to notice and fix broken service tools quickly
 
-- 상태: 채택
-- 날짜: 2026-11-17
-- 관련: [0018 서비스 도구(커넥터)](0018-service-connectors.md)
+- Status: Accepted
+- Date: 2026-11-17
+- Related: [0018 service tools (connectors)](0018-service-connectors.md)
 
-## 배경
+## Context
 
-커넥터는 사이트 API를 직접 부르지 않고 사람처럼 화면을 열어 읽어요(0018 고친 내용). 그래서 사이트가 화면을 바꾸면 커넥터가 깨져요. 깨지는 방식은 두 가지예요.
+Connectors do not call a site's API directly. They open the page and read the screen like a person (the amendment to 0018). So when a site changes its screen, the connector breaks. It breaks in two ways.
 
-- **시끄러운 고장**: 기다리던 목록이 안 나오거나 누를 버튼이 없어요. 실행기가 "○단계에서 막혔어요"라고 알려요.
-- **조용한 고장**: 결과는 나오는데 칸이 비어 있어요. 가격이 전부 비거나, 목록이 0줄이에요. 아무도 모르고 틀린 답을 줘요.
+- **Loud failure**: the expected list never appears or the button to click is missing. The runner reports "stuck at step N".
+- **Silent failure**: a result comes back but its fields are empty. Every price is blank, or the list has 0 rows. Nobody notices and a wrong answer is given.
 
-사용자가 먼저 겪고 나서야 아는 일은 없어야 해요. 80개가 넘는 서비스를 사람이 매일 열어 볼 수도 없어요.
+A user should never be the first to find out. And no person can open 80+ services every day to check.
 
-## 결정
+## Decision
 
-세 단계로 잡고 고쳐요.
+Catch and fix it in three stages.
 
-### 1. 실사용에서 바로 피하기 (사용자 PC, 자동)
+### 1. Avoid it right away in real use (user's PC, automatic)
 
-- 두리 본체가 도구를 실행할 때마다 결과를 기록해요: 잘 됨 / 막힘(시끄러운 고장) / 비어 있음(조용한 고장) / 멈춤(로그인 필요·마감 같은 정상 결과).
-  - "비어 있음"은 도구의 `expect.filled`(꼭 채워져야 하는 칸)가 결과 줄의 80%에 못 미칠 때예요.
-- 같은 도구가 하루 안에 **3번 잇달아** 막히거나 비면 그 도구를 **6시간 쉬게** 해요.
-  - 쉬는 동안 AI에게 보이지 않아요. 부르면 "요즘 사이트가 바뀌어 쉬고 있어요, 브라우저 도구로 해 주세요"를 돌려줘요.
-  - 6시간이 지나면 다음 부탁에서 한 번 다시 해 보고, 되면 바로 돌아와요.
-  - 사용자는 막힌 도구를 계속 만나지 않고, 두리는 범용 브라우저로 일을 끝내요.
-- 기록은 사용자 PC에만 남아요. 밖으로 보내는 일(익명 고장 신고)은 사용자가 설정에서 켰을 때만, 도구 이름·단계·이유만 보내도록 나중에 따로 만들어요.
+- Every time the daemon runs a tool it records the outcome: worked / blocked (loud failure) / empty (silent failure) / stopped (a normal outcome such as login required or sold out).
+  - "Empty" means the tool's `expect.filled` (fields that must be filled) is below 80% of the result rows.
+- If the same tool is blocked or empty **3 times in a row** within a day, that tool **rests for 6 hours**.
+  - While resting it is hidden from the AI. If it is called anyway, it returns "The site has changed recently and this tool is resting, please use the browser tools".
+  - After 6 hours it is tried once again on the next request, and if it works it comes right back.
+  - The user does not keep running into a blocked tool, and Dool2 finishes the job with the generic browser.
+- The records stay only on the user's PC. Sending anything out (an anonymous breakage report) will be built separately later, only when the user turns it on in Settings, and it sends only the tool name, step and reason.
 
-### 2. 매일 밤 실제 사이트 점검 (메인테이너 PC, 자동)
+### 2. A real-site check every night (maintainer's PC, automatic)
 
-- `pnpm connector canary --json 보고.json --issues`로 모든 찾아보기 도구를 `examples` 입력으로 돌려요. 집 인터넷의 진짜 Chrome에서 돌려요(데이터센터 IP는 사이트가 막아요).
-- 시끄러운 고장과 함께 조용한 고장도 잡아요.
-  - 목록이 `expect.rows`보다 적은지 봐요(기본 1줄).
-  - `expect.filled` 칸이 80% 넘게 채워졌는지 봐요.
-- 깨진 도구마다 GitHub 이슈를 하나 열거나 갱신해요(`[커넥터] 도구 이름`, 라벨 `connector-broken`). 다시 되면 댓글을 남기고 닫아요.
-- 결과는 HTML 보고서로도 남겨요.
+- `pnpm connector canary --json report.json --issues` runs every `lookup` tool with its `examples` inputs. It runs in a real Chrome on a home connection (sites block data-center IPs).
+- It catches silent failures as well as loud ones.
+  - It checks whether a list has fewer rows than `expect.rows` (1 by default).
+  - It checks whether the `expect.filled` fields are more than 80% filled.
+- For each broken tool it opens or updates one GitHub issue (`[connector] tool name`, label `connector-broken`). When it works again it leaves a comment and closes the issue.
+- Results are also kept as an HTML report.
 
-### 3. 수리 초안 (메인테이너 PC, 자동 → 사람이 머지)
+### 3. Draft repair (maintainer's PC, automatic, then a person merges)
 
-- 점검에서 깨진 도구 몇 개(기본 3개)는 코딩 에이전트(Claude Code, 레포 스킬 `.claude/skills/connector`)가 고쳐요.
-  - 따로 만든 작업 폴더에서 재현하고, 화면을 살펴 `tools.json`만 고쳐요.
-  - `pnpm connector try`·`check`로 확인한 뒤 PR(초안)을 올려요.
-- 머지는 사람이 CI 통과를 보고 해요. 에이전트는 `skills/<id>/tools.json` 말고는 고치지 않아요.
+- For a few of the tools found broken by the check (3 by default), a coding agent (Claude Code, repo skill `.claude/skills/connector`) does the fix.
+  - It reproduces the problem in a separate working folder, looks at the screen, and edits only `tools.json`.
+  - After checking with `pnpm connector try` and `check`, it opens a draft PR.
+- A person merges, after seeing CI pass. The agent edits nothing except `skills/<id>/tools.json`.
 
-## 이유
+## Why
 
-- 사용자 쪽 자동 쉬기는 고장 난 도구가 같은 사용자를 계속 괴롭히는 것을 바로 막아요. 범용 브라우저라는 바닥이 있으니 쉬어도 일은 끝나요.
-- 매일 밤 점검은 사용자가 겪기 전에 찾고, 조용한 고장까지 잡아요. 사이트는 대개 밤사이 배포하지 않으니 아침에 고칠 시간이 있어요.
-- 고치는 일 대부분(선택자·주소 패턴 바꾸기)은 커넥터 스킬에 정리된 반복 작업이라 에이전트가 초안을 만들 수 있어요. 사람은 확인만 해요.
+- The automatic rest on the user's side immediately stops a broken tool from bothering the same user over and over. Because the generic browser is the floor underneath, the job still gets done while the tool rests.
+- The nightly check finds problems before users do, and catches silent failures. Sites usually do not deploy overnight, so there is time to fix it in the morning.
+- Most fixes (changing a selector or an address pattern) are repetitive work already written down in the connector skill, so an agent can make the draft. The person only reviews.
 
-검토한 다른 안: CI(GitHub Actions)에서 점검 — 데이터센터 IP와 시험 Chrome을 막는 사이트가 많아 결과를 믿을 수 없어요. 사용자 PC에서 모은 고장을 바로 서버로 — 개인정보 동의와 서버가 필요해서 다음 단계로 미뤘어요.
+Alternatives considered: running the check in CI (GitHub Actions), because many sites block data-center IPs and test Chrome, so the results cannot be trusted. Sending breakages collected on users' PCs straight to a server, because it needs privacy consent and a server, so it is postponed to a later stage.
 
-## 결과
+## Consequences
 
-- 메인테이너 PC가 밤마다 켜져 있어야 해요(맥은 잠자기 중 놓친 일을 깰 때 돌려요). 끄거나 다른 기기로 옮기려면 `scripts/connector-nightly.sh`와 설치 스크립트만 옮기면 돼요.
-- 수리 초안은 메인테이너의 AI 구독 사용량을 써요. 하룻밤 수리 개수를 정해 둬요(`DOOL2_FIX_MAX`).
-- 도구마다 `expect`(꼭 채워질 칸·최소 줄 수)를 적을수록 조용한 고장을 잘 잡아요. 커넥터 작성 스킬에 적게 해요.
+- The maintainer's PC has to be on every night (a Mac runs what it missed during sleep when it wakes up). To switch it off or move to another machine, only `scripts/connector-nightly.sh` and the install script have to be moved.
+- Draft repair uses the maintainer's AI subscription quota. The number of repairs per night is capped (`DOOL2_FIX_MAX`).
+- The more each tool states its `expect` (fields that must be filled, minimum row count), the better silent failures are caught. The connector authoring skill asks for it.
 
-## 첫 실행에서 고친 것 (2026-11-18)
+## Fixes from the first run (2026-11-18)
 
-- 첫날 밤 88개 중 5개가 고장으로 나왔는데 3개는 아직 확인 못 한 초안 도구, 1개는 브라우저 지연이었어요. 그래서 **한 번 실패하면 30초 뒤 다시 해 보고**, **이슈·수리는 `검증됨` 도구가 깨졌을 때만** 해요. 초안 도구 결과는 보고서에만 남겨요.
-- 수리 단계가 첫 도구만 하고 끝나던 문제(에이전트가 남은 목록을 입력으로 읽음)를 고쳤어요.
-- 무인 실행은 AI 로그인이 몇 주마다 끝나요. 메인테이너 PC에서 `claude setup-token`으로 무인용 토큰을 걸어 두세요.
+- On the first night, 5 of 88 tools showed up as broken, but 3 were draft tools not yet verified and 1 was a browser delay. So **a failure is retried once after 30 seconds**, and **issues and repairs are created only when a `verified` tool breaks**. Results for draft tools go only into the report.
+- Fixed the problem where the repair stage did only the first tool and stopped (the agent read the remaining list as input).
+- Unattended runs lose the AI login every few weeks. On the maintainer's PC, set up an unattended token with `claude setup-token`.
 
-## 사이트가 막을 때 (2026-11-18)
+## When a site blocks (2026-11-18)
 
-- 실제 사용에서 AI가 쿠팡 검색을 네 번 한꺼번에 불렀고, 네 부름이 서비스마다 하나인 탭을 동시에 옮기다가 쿠팡의 차단 화면("요청하신 페이지의 사용권한이 없습니다")을 받았다. 차단은 그 탭에서 한동안 이어졌다.
-- 고침: 본체가 **같은 서비스 부름은 한 번에 하나씩**, 앞 부름이 끝나고 1.5초 뒤에 돌린다(다른 서비스는 그대로 동시에). 같은 탭을 두고 결과가 섞이던 문제도 같이 없어진다.
-- 차단 화면을 잡는 `stop_if`에는 `blocked: true`를 붙인다. 결과는 `structuredContent.blocked`, 건강 기록은 `blocked`(쉬게 하는 고장으로 세지 않음), 밤 점검은 '사이트가 막음'으로 따로 세고 이슈·수리를 만들지 않는다. 그전에는 점검이 차단을 '정상 멈춤'으로 보아 시험 브라우저에서 막혀도 ✓로 나왔다.
-- 차단을 피해 가는 우회는 하지 않는다. AI에게는 "곧바로 다시 부르지 말고 사용자에게 알려 주세요"라고 돌려준다.
-- 그래도 한 시간쯤 지나면 쿠팡이 검색 주소로 **바로** 들어오는 것을 다시 막았다(새 탭도). 사람처럼 첫 화면을 먼저 열고 검색 주소로 가면 열린다. 그래서 쿠팡 상품 찾기·주문 준비는 첫 화면 → (1.2초) → 검색·상품 주소 순서로 연다. 사람이 쓰는 길 그대로이고, 막힌 화면을 다시 두드리는 재시도는 하지 않는다.
+- In real use the AI called the Coupang search four times at once. The four calls moved the same tab (one per service) at the same time and got Coupang's block page ("요청하신 페이지의 사용권한이 없습니다", "you do not have permission for the requested page"). The block lasted for a while in that tab.
+- Fix: the daemon runs **calls to the same service one at a time**, starting 1.5 seconds after the previous call ends (different services still run concurrently). This also removes the problem of results getting mixed up over the same tab.
+- `stop_if`, which catches block pages, gets `blocked: true`. The result carries `structuredContent.blocked`, the health record counts it as `blocked` (not as a failure that triggers a rest), and the nightly check counts it separately as "blocked by the site" and creates no issue or repair. Before this, the check treated a block as a "normal stop", so it showed a check mark even when the test browser was blocked.
+- We do not work around blocks. The AI gets "do not call again right away; tell the user".
+- Even so, about an hour later Coupang again blocked going **straight** to the search address (in a new tab too). It opens when you first open the home page like a person and then go to the search address. So Coupang product search and order preparation open in this order: home page, (1.2 s), then the search or product address. That is the same route a person takes, and we do not retry by knocking on a blocked page again.

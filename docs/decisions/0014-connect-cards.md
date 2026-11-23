@@ -1,33 +1,33 @@
-# 0014. 서비스 연결은 템플릿(연결 카드)으로 하나씩 더한다
+# 0014. Add each service connection from a template (connect card)
 
-- 상태: 채택
-- 날짜: 2026-11-15
+- Status: Accepted
+- Date: 2026-11-15
 
-## 배경
+## Context
 
-두리가 쇼핑·장보기·여행·예매·통신사처럼 사용자가 쓰는 서비스를 대신 처리하려면, 사용자가 "어떤 서비스를 두리에게 맡길 수 있는지" 보고 연결할 화면이 필요해요. 서비스는 80개가 넘고 계속 늘어나요. 서비스마다 화면 코드를 따로 만들면 기여하기 어렵고, 화면에 적힌 말("결제는 승인받고 해요")과 실제 동작이 어긋나기 쉬워요.
+For Dool2 to handle the services users rely on, such as shopping, groceries, travel, ticketing and mobile carriers, users need a screen where they can see "which services I can hand to Dool2" and connect them. There are more than 80 services and the number keeps growing. Building separate screen code for each service makes contributing hard, and the text on screen ("payments are done after approval") can easily drift from what actually happens.
 
-## 결정
+## Decision
 
-- 서비스 하나 = `skills/<id>/` 폴더 하나. 이 폴더에 **연결 카드 `connect.json`** 을 둬요.
-  - 이름, 도메인, 분류, 연결 방식, 로그인 방식, 소개 문장, 대화 예시 하나, 할 수 있는 일 2~6개(제목·사용자가 할 법한 말·권한 등급)
-  - 형식은 `@dool2/protocol/connect`의 스키마로 검사하고, 레포 테스트가 모든 카드를 검사해요.
-- 절차 문서 `SKILL.md` 는 실제로 돌려 본 서비스부터 붙여요. 카드만 있는 서비스도 연결 목록에는 보여요.
-- 연결 방식은 네 가지예요: `browser`(사용자 Chrome에서 한 번 로그인), `official`(메일·캘린더처럼 공식 연동), `open`(로그인 없이), `device`(폰 권한).
-- 상세 화면의 승인 안내 문장은 카드에 적지 않고 **할 수 있는 일의 등급에서 만들어요.** 돈 내기·연락하기 등급이 있으면 "…같은 일은 폰에서 승인한 뒤에만 해요"가 자동으로 붙어요.
-- 서비스 로고 파일은 레포에 넣지 않아요. 아이콘은 연결 화면이 그 서비스 사이트의 아이콘을 사용자 PC에서 받아 쓰고, 못 받으면 이름 첫 글자로 그려요.
+- One service = one `skills/<id>/` folder. This folder holds the **connect card `connect.json`**.
+  - Name, domain, category, connection method, login method, a short introduction, one chat example, and 2 to 6 things it can do (title, what users would say, permission tier)
+  - The format is validated against the schema in `@dool2/protocol/connect`, and a repo test validates every card.
+- The procedure doc `SKILL.md` is added starting with services that have actually been run. Services with only a card still show in the connection list.
+- There are four connection methods: `browser` (log in once in the user's Chrome), `official` (official integrations such as mail and calendar), `open` (no login), `device` (phone permission).
+- The approval notice on the detail screen is not written in the card but **generated from the tier of the things it can do.** If there is a `pay` or `contact` tier, "things like ... are done only after you approve on the phone" is added automatically.
+- Service logo files are not put in the repo. For icons, the connection screen fetches the service site's icon on the user's PC, and if it cannot, it draws the first letter of the name.
 
-## 이유
+## Why
 
-- 기여자가 JSON 하나만 채우면 연결 목록에 서비스가 생겨요. 화면 코드는 그대로예요.
-- 화면에 보이는 "할 수 있는 일"과 AI가 `skill_find`로 보는 내용이 같은 파일에서 나와요.
-- 승인 문장을 등급에서 만들면, 카드에 "확인받고 해요"라고 써 놓고 등급은 찾아보기로 두는 식의 어긋남이 생기지 않아요. 실제 승인은 지금처럼 두리 본체가 막아요(카드는 읽을거리일 뿐).
-- 다른 회사 로고를 오픈소스 레포에 넣으면 상표 문제가 생겨요. 이름과 도메인으로 식별하는 건 괜찮아요.
+- A contributor only has to fill in one JSON file and the service appears in the connection list. The screen code stays the same.
+- The "things it can do" shown on screen and what the AI sees through `skill_find` come from the same file.
+- Generating the approval text from the tier prevents mismatches such as a card saying "done after confirmation" while its tier is `lookup`. Actual approval is still enforced by the Dool2 daemon as now (the card is only reading material).
+- Putting other companies' logos in an open-source repo raises trademark issues. Identifying by name and domain is fine.
 
-검토한 다른 안: `SKILL.md` 머리말(YAML)에 넣기 — 필드가 많아지면 사람이 틀리기 쉽고 검사가 어려워요. 화면용 데이터를 코드(TypeScript)에 두기 — 기여 문턱이 높아요.
+Other options considered: putting it in the `SKILL.md` front matter (YAML) — with many fields people make mistakes easily and validation is hard. Keeping screen data in code (TypeScript) — the barrier to contribute is high.
 
-## 결과
+## Consequences
 
-- 연결 화면(PC 앱·폰 앱)은 카드 목록을 그리기만 해요. 서비스별 코드는 없어요.
-- 카드의 할 수 있는 일은 약속이 아니라 안내예요. 실제로 돌려 본 일만 `SKILL.md`에 절차로 적고 상태를 `검증됨`으로 올려요.
-- 연결 방식 `official`은 공식 연동이 생기기 전까지 `browser`처럼 동작해요.
+- The connection screens (desktop app and phone app) only draw the card list. There is no per-service code.
+- A card's list of things it can do is guidance, not a promise. Only things that have actually been run are written as procedures in `SKILL.md`, with the status raised to `verified`.
+- Until an official integration exists, the `official` connection method behaves like `browser`.

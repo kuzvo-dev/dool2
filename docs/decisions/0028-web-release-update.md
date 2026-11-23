@@ -1,45 +1,39 @@
-# 0028. PC 앱은 웹에서 받고, 새 버전은 서명한 안내로 앱이 직접 받는다
+# 0028. The desktop app is downloaded from the web, and new versions are fetched by the app itself from a signed notice
 
-- 상태: 채택
-- 날짜: 2026-11-23
+- Status: Accepted
+- Date: 2026-11-23
 
-## 배경
+## Context
 
-PC 앱(맥·윈도우) 베타를 앱스토어 없이 웹에서 배포한다. 애플 개발자 인증서(개인 등록이면 실명이 서명에 보인다)와
-윈도우 코드 서명 인증서는 이번 베타에서는 쓰지 않는다. 그래도 아래는 지켜야 한다.
+The desktop app (Mac and Windows) beta is distributed from the web, without an app store. We do not use an Apple developer certificate (with an individual registration, the real name shows in the signature) or a Windows code-signing certificate in this beta. Even so, the following must hold.
 
-- 베타는 자주 고친다: 사용자가 새 버전을 쉽게 받아야 하고, 오래된 버전은 막을 수 있어야 한다
-- 설치 파일을 올려 둔 곳이 바뀌거나 파일이 바꿔치기돼도 깔리면 안 된다 (폰 PWA를 접은 것과 같은 이유)
-- 맥: 업데이트해도 손쉬운 사용·화면 기록 권한과 비밀번호 금고(키체인)가 이어져야 한다
+- The beta is fixed often: users must get new versions easily, and we must be able to block old versions
+- Even if the place where the installer is hosted changes or the file is swapped, it must not get installed (the same reason we retired the phone PWA)
+- Mac: after an update, the Accessibility and Screen Recording permissions and the password vault (Keychain) must carry over
 
-## 결정
+## Decision
 
-- **배포**: GitHub Releases(공개 저장소)에 맥 dmg(처음 설치)·zip(앱 안 업데이트)과 윈도우 설치 exe를 올린다.
-  `.github/workflows/release.yml`을 손으로 돌려(버전·바뀐 점·최소 버전) 맥 arm64·x64, 윈도우 x64를 만들고, 각 OS에서
-  앱을 켜 첫 화면을 찍어 본 뒤 올린다.
-- **버전 안내**: `version.json` = `{ payload: base64(Release JSON), signature }`. Release에는 버전·최소 버전·바뀐 점과
-  플랫폼별 파일 주소·sha256·크기가 있다. **ed25519 비밀키**로 서명하고(릴리스 CI 비밀 값 `DOOL2_UPDATE_KEY`),
-  앱에는 공개키만 있다(`apps/desktop/src/update.ts`). 안내 주소는 `releases/latest/download/version.json`.
-- **앱**: 켜고 20초 뒤·6시간마다 안내를 본다. 새 버전이면 왼쪽 위 띠 [업데이트], 최소 버전보다 낮으면 화면 전체를 막고
-  업데이트만 하게 한다. 누르면 받아서 sha256·크기를 맞춘 뒤 깐다.
-  - 맥: zip을 지금 앱 옆에 풀고, 서명을 확인한 뒤 앱 묶음을 바꿔 끼우고 다시 켠다. 앱이 직접 받은 파일에는 '인터넷에서 받음'
-    표시가 붙지 않아 처음 설치 때의 '그래도 열기'가 다시 뜨지 않는다.
-  - 윈도우: 받은 설치 파일을 `/S --force-run`으로 조용히 돌리고 앱을 끝낸다 (설치가 끝나면 다시 켜진다).
-- **맥 서명**: 우리 **고정 자체 인증서**("Dool2 Release", 10년)로 앱 전체를 서명한다. 맥은 앱을 "이 인증서로 서명한 이
-  이름의 앱"으로 기억해(designated requirement = identifier + certificate root) 판이 바뀌어도 권한·키체인이 이어진다.
-  ad-hoc 서명은 판마다 지문이 바뀌어 업데이트할 때마다 권한이 풀렸다(M4 실측).
+- **Distribution**: put the Mac dmg (first install) and zip (in-app update) and the Windows installer exe on GitHub Releases (public repository).
+  Run `.github/workflows/release.yml` by hand (version, what changed, minimum version) to build Mac arm64 and x64 and Windows x64, and on each OS
+  start the app and take a first-screen capture before uploading.
+- **Version notice**: `version.json` = `{ payload: base64(Release JSON), signature }`. The Release has the version, minimum version, what changed, and per platform the file address, sha256 and size. It is signed with an
+  **ed25519 private key** (release CI secret `DOOL2_UPDATE_KEY`), and the app holds only the public key (`apps/desktop/src/update.ts`). The notice address is `releases/latest/download/version.json`.
+- **App**: it reads the notice 20 seconds after start and every 6 hours. If there is a new version, the upper-left banner shows [Update]; if the version is below the minimum version, the whole screen is blocked and only updating is allowed. When pressed, it downloads, checks sha256 and size, then installs.
+  - Mac: unpack the zip next to the current app, verify the signature, swap in the app bundle and relaunch. A file the app downloads itself does not get the "downloaded from the internet" mark, so the "Open anyway" of the first install does not appear again.
+  - Windows: run the downloaded installer silently with `/S --force-run` and quit the app (it starts again when the install finishes).
+- **Mac signing**: sign the whole app with our **fixed self-made certificate** ("Dool2 Release", 10 years). The Mac remembers the app as "the app of this name signed with this certificate"
+  (designated requirement = identifier + certificate root), so permissions and the Keychain carry over even when the build changes.
+  An ad-hoc signature changes its fingerprint with every build, so permissions were reset on every update (measured on M4).
 
-## 이유
+## Why
 
-- 애플·윈도우 인증서 없이도 베타를 바로 낼 수 있다. 사용자가 겪는 건 처음 설치 때 한 번(맥 '그래도 열기',
-  윈도우 SmartScreen '추가 정보 → 실행')뿐이고 다운로드 페이지에 그림으로 안내한다.
-- 서명한 안내 + 확인값이라 배포 장소를 믿지 않아도 된다. 비밀키가 없으면 가짜 업데이트를 만들 수 없다.
-- electron-updater(Squirrel.Mac)는 애플 개발자 서명이 있어야 맥에서 돈다. 직접 바꿔 끼우는 쪽이 작고 우리 서명키를 쓴다.
+- A beta can ship right away without Apple or Windows certificates. What users go through is only once at the first install (Mac "Open anyway", Windows SmartScreen "More info, Run anyway"), and the download page explains it with pictures.
+- With a signed notice plus checksums, we do not have to trust where it is hosted. Without the private key, nobody can make a fake update.
+- electron-updater (Squirrel.Mac) needs an Apple developer signature to run on Mac. Swapping in the bundle ourselves is smaller and uses our own signing key.
 
-## 결과
+## Consequences
 
-- 비밀키(업데이트 서명키·인증서)는 메인테이너 PC의 `~/.config/dool2-release/`와 GitHub 비밀 값에만 있다. 잃으면 기존
-  사용자에게 업데이트를 보낼 수 없으니(앱의 공개키와 안 맞는다) 따로 백업한다.
-- 맥에서 /Applications에 쓸 수 없는 사용자(표준 계정)는 앱 안 업데이트가 실패한다 → 다운로드 페이지로 안내.
-- 나중에 애플 개발자 서명·공증을 붙이면 첫 설치 경고가 없어진다. 그때 인증서가 바뀌므로 권한을 한 번 다시 받는다.
-- 크롬 확장은 웹 스토어로 따로 업데이트된다 (스토어 심사). 앱이 기대하는 확장 버전은 `MIN_CONNECTOR_EXTENSION`.
+- The private keys (update signing key, certificate) exist only in `~/.config/dool2-release/` on the maintainer's PC and in GitHub secrets. If lost, we cannot send updates to existing users (they would not match the app's public key), so back them up separately.
+- On a Mac, a user who cannot write to /Applications (standard account) will fail the in-app update, so we point them to the download page.
+- When Apple developer signing and notarization are added later, the first-install warning goes away. The certificate changes then, so permissions have to be granted once again.
+- The Chrome extension is updated separately through the Web Store (store review). The extension version the app expects is `MIN_CONNECTOR_EXTENSION`.

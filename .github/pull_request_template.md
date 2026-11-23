@@ -1,17 +1,18 @@
-## 무엇을 왜
+## What and why
 
-<!-- 무엇을 바꿨고 왜 바꿨는지 짧게 적어 주세요. 관련 이슈가 있으면 "Closes #번호" -->
+<!-- Briefly describe what you changed and why. If there is a related issue, add "Closes #number". -->
 
-## 화면
+## Screens
 
-<!-- 화면이 바뀌면 캡처를 붙여 주세요 (PC 앱: DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke).
-     화면이 없는 변경이면 테스트 결과나 실행 로그 요약을 적어 주세요. 개인정보는 가려 주세요. -->
+<!-- If the UI changes, attach a screenshot (desktop app: DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke).
+     If there is no UI change, summarize test results or run logs instead. Please hide personal data. -->
 
-## 확인
+## Checklist
 
-- [ ] `pnpm lint && pnpm build && pnpm typecheck && pnpm test` 통과
-- [ ] 모든 커밋에 서명(`git commit -s`)
-- [ ] 사용자에게 보이는 문구는 [페르소나](https://github.com/kuzvo-dev/dool2/blob/main/docs/persona.md) 말투에 맞춤
-- [ ] 승인 게이트·에이전트 도구 제한·암호화를 건드렸다면 본문에 따로 적음
-- [ ] 사람이 쓰는 기능을 더했다면 두리가 쓸 도구도 있음 (없으면 본문에 다음 PR 계획을 적음)
-- [ ] 두리 판단을 고쳤다면 전역 지침이 아니라 도구(설명·입력 칸·결과)를 고침
+- [ ] `pnpm lint && pnpm build && pnpm typecheck && pnpm test` pass
+- [ ] Every commit is signed off (`git commit -s`)
+- [ ] Commit messages, PR title and body are in English
+- [ ] User-facing copy matches the [persona](https://github.com/kuzvo-dev/dool2/blob/main/docs/persona.md) voice
+- [ ] If this touches the approval gate, agent tool limits, or encryption, it is called out in the description
+- [ ] If this adds a feature for people, Dool2 has a tool for it too (if not, the description says when the next PR will add it)
+- [ ] If this changes how Dool2 decides things, the fix is in the tools (descriptions, input fields, results), not in global instructions

@@ -1,69 +1,69 @@
 # ChatBlocks
-두리 답 바로 아래에 붙는 **결과 블록**과 **빠른 답**. 글로 쓰면 손해 보는 순간에만 정해진 모양 몇 개를 쓴다.
-코드: 모양·다듬기 `@dool2/protocol/blocks`, 그리기 `@dool2/protocol/blocks-view`(폰·PC 같이), 스타일 `packages/ui/ui.css`의 `.cb-*`.
+**Result blocks** and **quick replies** attached right under Dool2's reply. Only a few fixed shapes are used, only at moments when plain text would lose out.
+Code: shapes and cleanup in `@dool2/protocol/blocks`, drawing in `@dool2/protocol/blocks-view` (shared by phone and PC), styles in `.cb-*` of `packages/ui/ui.css`.
 
-대화 안 카드는 둘로 나뉜다.
-- **일하는 과정**: 일한 기록 · 승인 · 로그인 · 연결 · 먼저 챙김 (따로 있음)
-- **일의 결과**: 아래 블록 + 사진 카드(PickCards) + 표. 답 하나에 **하나만**.
+Cards in the conversation are split in two.
+- **Work in progress**: work log · approval · login · connection · proactive check (separate)
+- **Result of the work**: the blocks below + photo cards (PickCards) + tables. **Only one** per reply.
 
-## 종류
+## Kinds
 
-| 종류 | 도구 | 언제 |
+| Kind | Tool | When |
 | --- | --- | --- |
-| 빠른 답 | 답 끝 한 줄 `[[답: a \| b \| c]]` | 두리가 고르게 할 때만. 2~4개, 하나 14자 안(20자 넘으면 버리기). 첫 것이 두리 추천(ink) |
-| 목록 줄 | `show_list` | 사진이 고르는 이유가 아닌 목록: 매물·주문·메일·일정·서류·공고 |
-| 목록 줄 · 여러 개 고르기 | `show_list` `pick: multi` | 장보기·선물·서류처럼 여러 개를 한 번에. 두리가 미리 체크, 사용자는 빼고 싶은 것만 끈다 |
-| 결과 한 장 | `show_result` | 끝난 증거(예약·주문 번호), 금액 합계, 배송·신청 단계, 마감 |
-| 보낼 글 | `show_draft` | 문자·카톡·메일·민원·후기처럼 글자 그대로 쓰일 글 |
-| 사진 카드 | `show_cards` | 사진이 고르는 이유인 것 (PickCards) |
+| Quick reply | One line at the end of the reply `[[답: a \| b \| c]]` (`답` = "reply") | Only when Dool2 asks the user to choose. 2 to 4 items, each within 14 characters (drop it if over 20). The first is Dool2's recommendation (ink) |
+| List rows | `show_list` | Lists where a photo is not the reason for choosing: listings, orders, mail, schedules, documents, job postings |
+| List rows · pick several | `show_list` `pick: multi` | Several at once, like groceries, gifts or documents. Dool2 pre-checks them, and the user only unchecks what they want to leave out |
+| Single result | `show_result` | Proof something is done (booking or order number), amount totals, delivery or application steps, deadlines |
+| Draft to send | `show_draft` | Text used word for word: text messages, chat messages, mail, complaints, reviews |
+| Photo cards | `show_cards` | Things where the photo is the reason for choosing (PickCards) |
 
-## 같은 틀
-- 흰 `surface` 면 + 0.5px `line`, 모서리 `radius-lg`(20). 그림자 없음. 최대 폭 420px.
-- **머리 줄**(12.5px `ink-muted`): 제목 · 오른쪽에 출처·건수(`ink-faint`). 끝난 결과는 ink 체크 동그라미 + 민트 글자.
-- **버튼**: 아래 줄에 2개까지. 마지막이 주 버튼(ink), 앞이 보조(선). 이름은 동사. 돈·연락·삭제는 블록에서 바로 하지 않는다 — 버튼은 두리에게 부탁하는 말을 보내고, 두리가 승인 카드로 묻는다. "결제·송금·삭제" 같은 이름은 다듬을 때 버린다.
-- 안쪽 스크롤 없음. 목록은 **5줄**까지 보이고 `N개 더 보기`로 그 자리에서 펼친다. 가로 넘김은 사진 카드만.
-- 블록 안 구분은 선과 `surface-sunken` 판으로만. 카드 안 카드 금지.
-- 색은 상태 약속 그대로: 민트=진행 중(단계의 지금 칸), 노랑=기다림·마감(`D-4`), 빨강=멈춤. 장식 색 없음.
+## Shared frame
+- White `surface` + 0.5px `line`, corner `radius-lg` (20). No shadow. Max width 420px.
+- **Header line** (12.5px `ink-muted`): title · on the right, source and count (`ink-faint`). A finished result gets an ink check circle + mint text.
+- **Buttons**: up to 2 in the bottom row. The last is the primary (ink), the one before is secondary (outline). Names are verbs. Money, contact and delete are not done directly from a block: the button sends Dool2 a request in words, and Dool2 asks through an approval card. Names like "pay", "transfer" and "delete" (결제·송금·삭제) are dropped during cleanup.
+- No inner scroll. A list shows up to **5 rows** and expands in place with `N개 더 보기` ("show N more"). Horizontal swipe is only for photo cards.
+- Inside a block, divide only with lines and `surface-sunken` panels. No cards inside cards.
+- Colors keep the state promise: mint = in progress (the current slot of a step), yellow = waiting or deadline (`D-4`), red = stopped. No decorative color.
 
-## 목록 줄
-- 줄: 앞머리 40px · 제목(14.5 굵게, 한 줄) · 작은 줄(12.5 `ink-muted`) · 오른쪽 값(굵게, 숫자 폭 고정)이나 상태 글자.
-- 앞머리 하나만 바꿔 쓴다: `img` 작은 사진(PC 본체가 받아 넘김) · `date` 날짜 칸(일·월 요일) · `file` 파일 종류(PDF) · `logo` 동그라미 · `check` 체크 · `none`.
-- 누르면: `pick: one`이면 "이걸로 할게: …"를 보내고, 없으면 그 줄의 주소를 연다.
-- 아래 버튼 하나: "캘린더에 3개 넣기"처럼 목록 전체에 하는 일.
+## List rows
+- Row: 40px lead · title (14.5 bold, one line) · small line (12.5 `ink-muted`) · value on the right (bold, fixed-width digits) or a status text.
+- Use just one lead: `img` small photo (fetched and passed on by the PC daemon) · `date` date tile (day, month, weekday) · `file` file type (PDF) · `logo` circle · `check` check · `none`.
+- On tap: with `pick: one`, send "이걸로 할게: …" ("I'll go with this: …"); otherwise open that row's address.
+- One button below: something done for the whole list, like "캘린더에 3개 넣기" ("Add 3 to the calendar").
 
-### 여러 개 고르기
-- 체크(20px, 켜지면 ink) + (쇼핑·장보기만) 32px 작은 사진 + 제목·수량 + 금액.
-- 두리가 고른 건 미리 켠다. 애매한 것(품절 임박·작년엔 샀음)은 꺼 두고 이유를 작은 줄에.
-- 끈 줄은 흐리게(45%). 머리 오른쪽에 `3/5개 고름`.
-- 버튼 글자가 고를 때마다 바뀐다: `3개 담기 · 25,860원`(금액이 다 있을 때만 합계). 누르면 "고른 것: …(뺀 것: …)"를 보낸다. 담기는 돈이 안 나가서 바로, 결제는 승인 카드.
-- 보낸 뒤(또는 사용자가 그다음 다른 말을 한 뒤)에는 잠긴다: 줄은 못 누르고 버튼은 `골라서 보냈어요`.
+### Picking several
+- Checkbox (20px, ink when on) + (shopping and groceries only) a 32px small photo + title and quantity + amount.
+- Items Dool2 picked are pre-checked. Doubtful ones (almost out of stock, bought last year) are left off, with the reason on the small line.
+- Unchecked rows are dimmed (45%). On the right of the header: `3/5개 고름` ("3 of 5 selected").
+- The button text changes with each selection: `3개 담기 · 25,860원` ("Add 3 · 25,860 won"; the total only when every amount is known). On tap it sends "고른 것: …(뺀 것: …)" ("Chosen: … (left out: …)"). Adding to a cart does not spend money, so it goes immediately; payment goes through an approval card.
+- After sending (or after the user then says something else) it locks: rows cannot be tapped and the button reads `골라서 보냈어요` ("Sent my picks").
 
-## 결과 한 장
-- 큰 값 하나(24px 760, 언제·얼마) + 옆 작은 글(4명 · 룸) + 기한이 있으면 노랑 `D-6 결제`.
-- 정보 줄 3~6개(이름 `ink-muted` · 값 굵게 오른쪽). 번호는 `code` → JetBrains Mono.
-- 진행 단계 2~6칸: 지난 칸 ink, 지금 칸 민트, 남은 칸 `raise`. 아래 단계 이름, 지금 것만 ink.
-- 두리가 끝난 화면을 다시 읽어 채운다(지어낸 번호 금지).
+## Single result
+- One big value (24px 760, when or how much) + small text beside it (4명 · 룸, "4 people · private room") + a yellow `D-6 결제` ("D-6 payment") if there is a deadline.
+- 3 to 6 info rows (name `ink-muted` · value bold on the right). Numbers use `code` → JetBrains Mono.
+- 2 to 6 progress steps: past steps ink, current step mint, remaining steps `raise`. Step names below, only the current one in ink.
+- Dool2 re-reads the finished screen to fill it in (no invented numbers).
 
-## 보낼 글
-- `받는 사람 집주인 김OO · 문자` 한 줄 → `surface-sunken` 판에 글 그대로(줄바꿈 유지, 선택·복사 가능).
-- 버튼: `복사`(선) · `문자 보내기`/`카톡 보내기`/`메일 보내기`/`올리기`(ink). 보내기는 두리에게 부탁 → 보내기 직전 승인.
-- 고칠 말은 그냥 대화로.
+## Draft to send
+- One line `받는 사람 집주인 김OO · 문자` ("Recipient: landlord Kim OO · text message") → the text word for word on a `surface-sunken` panel (line breaks kept, selectable and copyable).
+- Buttons: `복사` (Copy; outline) · `문자 보내기` / `카톡 보내기` / `메일 보내기` / `올리기` (Send text / Send via KakaoTalk / Send mail / Post; ink). Sending asks Dool2 → approval right before sending.
+- Edits are just asked in conversation.
 
-## 빠른 답
-- 두리 말풍선 아래 알약 버튼(34px). 첫 버튼이 추천(ink), 나머지는 흰 면.
-- 누르면 그 글이 내 말로 가고, 나머지는 흐려진다(38%). 다음에 사용자가 다른 말을 했어도 흐려진다. 그냥 글로 답해도 된다.
-- 안부·설명 답에는 붙이지 않는다. "다음에 할 만한 것"도 붙이지 않는다 — **고르게 할 때만**.
+## Quick replies
+- Pill buttons (34px) under Dool2's bubble. The first button is the recommendation (ink), the others are white surfaces.
+- On tap, that text goes as my words and the others dim (38%). They also dim if the user then says something else. Replying in plain text is fine too.
+- Not attached to greetings or explanations. Not attached for "what to do next" either: **only when asking the user to choose**.
 
-## 규칙 9개
-1. 글이 기본. UI는 고르기·확인·나중에 다시 찾기가 글보다 확실히 쉬워질 때만.
-2. 답 하나에 결과 블록 하나(과정 카드는 따로 침). 엔진도 마지막 하나만 남긴다.
-3. 블록은 답 말풍선 바로 아래. 말풍선은 2~4문장으로 이유·다음 할 일만, 블록 내용을 글로 되풀이하지 않는다.
-4. 버튼 2개까지, 동사로. 돈·연락·삭제는 승인 카드로 잇는다.
-5. 안쪽 스크롤 금지. 5줄 + 그 자리 펼침. 가로 넘김은 사진 카드만.
-6. 카드 안 카드 금지. 선과 회색 판으로만.
-7. 색은 상태 약속 그대로.
-8. AI는 데이터만, 모양은 앱이. 모르는 종류는 글로.
-9. 튀지 않게: 답이 다 흐른 뒤 한 번에, 4px 올라오며(160ms). 포커스를 뺏지 않고, 동작 줄이기면 움직임 없이.
+## 9 rules
+1. Text is the default. Use UI only when choosing, confirming or finding something later is clearly easier than text.
+2. One result block per reply (progress cards are counted separately). The engine also keeps only the last one.
+3. The block sits right under the reply bubble. The bubble is 2 to 4 sentences with only the reason and next step, and does not repeat the block's content in text.
+4. At most 2 buttons, as verbs. Money, contact and delete lead to an approval card.
+5. No inner scroll. 5 rows + expand in place. Horizontal swipe only for photo cards.
+6. No cards inside cards. Only lines and gray panels.
+7. Colors keep the state promise.
+8. The AI supplies only data; the app decides the shape. Unknown kinds fall back to text.
+9. Do not stand out: appear once after the reply has fully streamed, rising 4px (160ms). Do not steal focus, and with reduce-motion, no movement.
 
-## 표
-- 두세 가지를 조건별로 비교할 때만. 첫 열은 조건(`ink-muted`), 폰에서 **열 3개·줄 6개**까지. 넘으면 사진 카드나 목록 줄로.
+## Tables
+- Only when comparing two or three options by condition. The first column is the condition (`ink-muted`), and on the phone at most **3 columns and 6 rows**. Beyond that, use photo cards or list rows.

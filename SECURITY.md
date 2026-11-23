@@ -1,45 +1,45 @@
-# 보안 정책
+# Security Policy
 
-두리는 사용자 컴퓨터에서 결제·연락 같은 일을 대신 하는 프로그램이라서, 보안을 가장 중요하게 다뤄요.
+Dool2 is a program that pays and contacts people on your behalf from your own computer, so we treat security as the top priority.
 
-## 취약점 신고
+## Reporting a vulnerability
 
-**공개 이슈, Discussions, PR에 올리지 말아 주세요.** GitHub의 비공개 신고 기능을 써 주세요.
+**Please don't post in public issues, Discussions, or PRs.** Use GitHub's private reporting instead.
 
-👉 [취약점 비공개 신고하기](https://github.com/kuzvo-dev/dool2/security/advisories/new)
+👉 [Report a vulnerability privately](https://github.com/kuzvo-dev/dool2/security/advisories/new)
 
-신고에 담아 주시면 좋은 것:
+It helps if your report includes:
 
-- 어떤 문제인지, 어떤 영향이 있는지
-- 다시 재현하는 방법 (가능하면 최소한의 예시)
-- 두리 버전 또는 커밋, 운영체제, 사용한 AI(Claude Code·Codex)
+- What the problem is and what impact it has
+- How to reproduce it (a minimal example if possible)
+- The Dool2 version or commit, your operating system, and the AI you used (Claude Code or Codex)
 
-## 처리 절차
+## How we handle reports
 
-| 단계                        | 목표                                   |
-| --------------------------- | -------------------------------------- |
-| 접수 확인 답장              | 3영업일 안                             |
-| 1차 판단 (영향도·재현 여부) | 7영업일 안                             |
-| 고친 버전 배포              | 심각도에 따라 최대한 빨리              |
-| 공개                        | 고친 버전이 나온 뒤, 신고자와 협의해서 |
+| Step                                | Target                                      |
+| ----------------------------------- | ------------------------------------------- |
+| Reply confirming receipt            | Within 3 business days                      |
+| First assessment (impact, repro)    | Within 7 business days                      |
+| Release of a fixed version          | As soon as possible, depending on severity  |
+| Disclosure                          | After the fix ships, agreed with the reporter |
 
-신고자가 원하면 보안 공지에 이름을 올려 감사를 전해요. 아직 금전 보상(버그 바운티)은 없어요.
+If you want, we credit you in the security advisory. We don't offer monetary rewards (a bug bounty) yet.
 
-## 특히 중요하게 보는 문제
+## What we care about most
 
-- **승인 게이트 우회**: 사용자 허락 없이 결제·예약 확정·메시지 보내기가 실행되는 경우
-- **에이전트 탈출**: AI가 두리 도구 밖의 셸·파일·네트워크 기능을 쓰게 되는 경우 (프롬프트 주입 포함)
-- **로컬 API 노출**: 다른 프로그램이나 웹페이지가 두리 본체(127.0.0.1)에 토큰 없이 접근하는 경우
-- **기록 유출**: 대화·계정 정보가 사용자 PC 밖으로 나가는 경우
-- **업데이트·배포 변조**: 서명되지 않은 코드가 설치되거나 실행되는 경우
-- (M6 이후) 폰↔PC 암호화, 페어링, 서명 검증 문제
+- **Approval gate bypass**: payments, booking confirmations, or messages going out without the user's approval
+- **Agent escape**: the AI getting to use shell, file, or network features outside Dool2's tools (including prompt injection)
+- **Local API exposure**: another program or web page reaching the Dool2 daemon (127.0.0.1) without a token
+- **Data leaks**: conversations or account details leaving the user's PC
+- **Update or distribution tampering**: unsigned code being installed or run
+- (After M6) problems with phone-to-PC encryption, pairing, or signature verification
 
-## 범위 밖
+## Out of scope
 
-- 사용자 PC가 이미 악성코드에 감염된 경우 (두리가 막을 수 없는 범위예요)
-- Claude Code, Codex, Chrome 자체의 취약점 → 각 회사에 신고해 주세요
-- 사용자가 직접 허락한 동작의 결과
+- A user's PC that is already infected with malware (Dool2 can't defend against that)
+- Vulnerabilities in Claude Code, Codex, or Chrome themselves: please report those to the respective companies
+- The results of actions the user explicitly approved
 
-## 지원 버전
+## Supported versions
 
-`v1.0` 전에는 **가장 최신 릴리스만** 보안 수정을 받아요.
+Before `v1.0`, **only the latest release** receives security fixes.

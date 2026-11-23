@@ -1,96 +1,97 @@
 ---
 
 name: connector
-description: 두리 서비스 도구(커넥터, skills/<id>/tools.json)를 새로 만들거나 고칠 때 쓴다. "○○ 커넥터 만들어 줘", "캐치테이블 도구 고쳐 줘", "쿠팡 주문 조회 도구 추가", "커넥터가 막혔대" 같은 부탁.
+description: Use when creating or fixing a Dool2 service tool (connector, skills/<id>/tools.json). For requests like "make a connector for X", "fix the CatchTable tool", "add a Coupang order lookup tool", "the connector is blocked".
 ---
 
-# 서비스 도구(커넥터) 만들기·고치기
+# Creating and fixing service tools (connectors)
 
-두리는 서비스마다 타입 있는 도구(`catchtable_search` …)로 일해요 ([ADR 0018](../../../docs/decisions/0018-service-connectors.md)). 커넥터는 코드가 아니라 데이터(`skills/<id>/tools.json`)예요. 두리 본체가 정해진 엔진 동작으로 실행하고, 승인 게이트는 그대로 지켜요. 형식과 동작 목록은 [skills/README.md](../../../skills/README.md)에 있어요.
+Dool2 works with typed per-service tools (`catchtable_search` …) ([ADR 0018](../../../docs/decisions/0018-service-connectors.md)). A connector is data, not code (`skills/<id>/tools.json`). The Dool2 daemon runs it with fixed engine actions and keeps the approval gate intact. The format and the list of actions are in [skills/README.md](../../../skills/README.md).
 
-## 0. 준비
+Note: the JSON examples here keep Korean values because they are service text. The `tier` values will become the English keys `lookup` | `fill` | `pay` | `contact` (ADR 0029); in prose this document uses those keys.
+
+## 0. Preparation
 
 ```bash
 pnpm install && pnpm build
-export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # 없으면: npx @puppeteer/browsers install chrome@stable
+export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # if you don't have it: npx @puppeteer/browsers install chrome@stable
 ```
 
-- 로그인이 필요한 도구를 시험할 때는 `DOOL2_DEV_PROFILE=<폴더>`로 같은 프로필을 계속 쓰고, 그 Chrome 창에서 **사람이 직접** 로그인해 둬요. `try`에 `--connected`를 붙여요. 비밀번호를 대화나 파일에 적지 않아요.
-- 결제·예약 확정·주문·보내기는 시험에서도 하지 않아요. 승인 요청(approve)이 뜨는 데까지만 확인해요.
+- When testing tools that need login, keep using the same profile with `DOOL2_DEV_PROFILE=<folder>`, and have a **person log in themselves** in that Chrome window. Add `--connected` to `try`. Never write passwords in the conversation or in files.
+- Do not do payments, booking confirmations, orders, or sending, even in tests. Check only up to the point where an approval request (approve) appears.
 
-## 1. 무엇을 도구로 만들지 정하기
+## 1. Decide what to make into tools
 
-- `skills/<id>/connect.json`의 `abilities`(할 수 있는 일)가 출발점이에요. 카드가 없으면 먼저 카드를 만들어요(`pnpm connector check <id>`로 검사).
-- **사용자 의도 하나 = 도구 하나.** "식당 빈자리 찾기", "예약 준비", "주문 내역 보기"처럼. 화면 한 장 = 도구 하나가 아니에요.
-- 처음에는 **로그인 없이 되는 찾아보기 도구**부터. 연결 전 사용자도 바로 쓸 수 있고 시험하기 쉬워요.
+- The `abilities` (what it can do) in `skills/<id>/connect.json` is the starting point. If there is no card, make the card first (check with `pnpm connector check <id>`).
+- **One user intent = one tool.** Like "find open tables at a restaurant", "prepare a reservation", "view order history". One screen is not one tool.
+- Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test.
 
-## 2. 사이트 살피기 (튼튼한 순서)
+## 2. Inspect the site (most robust first)
 
-1. **주소로 상태 만들기**: 검색어·날짜·인원을 주소에 넣으면 그 화면이 바로 뜨는지 봐요 (예: `?keyword=성수`, `?date=261127&personCount=4`, `?gnbInvcNo=…`). 누르는 단계가 줄어요.
-2. **사이트 API를 직접 부르지 않아요.** 사람처럼 주소를 열고 화면을 읽어요(아래 3·4). 다만 화면 선택자가 해시 클래스뿐이라 불안하면, **그 화면이 스스로 받은 응답**을 `capture`로 읽거나(주소 패턴은 개발자 도구 Network에서 확인, 날짜·인원 같은 조건이 페이지 주소로 넘어가는지 먼저 봐요), 서버가 화면에 담아 보낸 데이터(`script#__NEXT_DATA__` 등)를 `embedded`로 읽어요. 두리가 요청을 만들어 보내는 일은 없어요.
-3. **화면 목록 뽑기(`extract`)**: JSON이 없을 때. 선택자는 `id`, `href*=`, 표 구조(`td:nth-child(2)`), `:has()`처럼 잘 안 바뀌는 것으로. `_1h61z1e9` 같은 해시 클래스는 개편 때마다 바뀌니 피해요.
-4. **누르기(`click`)**: 화면 글자 그대로. 같은 글자가 뒤에 깔린 화면에도 있으면 엉뚱한 곳을 누를 수 있어요. 가능하면 주소로 상태를 만들어 누르는 단계를 줄여요.
-5. 정해진 순서로 하기 어려운 곳(달력·복잡한 선택·사이트마다 다른 단계)은 `handoff_to_agent`로 탭을 AI에게 넘기며 할 일을 구체적으로 적어요.
+1. **Build state from the address**: Put the search term, date, and party size in the address and see whether that screen comes up directly (for example `?keyword=성수` (Seongsu), `?date=261127&personCount=4`, `?gnbInvcNo=…`). This reduces clicking steps.
+2. **Do not call the site's API directly.** Open addresses and read the screen like a person (3 and 4 below). But if you are worried because the screen selectors are only hashed classes, read **the response the page itself received** with `capture` (check the address pattern in the developer tools Network tab, and first see whether conditions like date and party size are passed through the page address), or read the data the server embedded in the page (`script#__NEXT_DATA__` and so on) with `embedded`. Dool2 never builds and sends requests itself.
+3. **Extract a list from the screen (`extract`)**: When there is no JSON. Use selectors that rarely change, such as `id`, `href*=`, table structure (`td:nth-child(2)`), and `:has()`. Avoid hashed classes like `_1h61z1e9`, which change with every redesign.
+4. **Clicking (`click`)**: By the text exactly as shown on screen. If the same text also appears on a screen behind it, you may click the wrong place. Where possible, build state from the address to cut clicking steps.
+5. For places that are hard to do in a fixed order (calendars, complex selection, steps that differ per site), use `handoff_to_agent` to give the tab to the AI and write the task specifically.
 
-`pnpm connector page "<주소>"`로 두리 엔진이 읽는 화면 글을, `pnpm connector page "<주소>" "<선택자>"`로 목록 선택자가 무엇을 잡는지 볼 수 있어요.
+`pnpm connector page "<address>"` shows the screen text that the Dool2 engine reads, and `pnpm connector page "<address>" "<selector>"` shows what a list selector captures.
 
-## 3. 도구 설계 (AI가 헷갈리지 않게)
+## 3. Tool design (so the AI does not get confused)
 
-- **이름**: `search`, `track`, `prepare_booking`, `orders`처럼 동사·명사 하나. 실제 이름은 `<서비스>_<이름>`.
-- **description**: ① 언제 쓰는지 ② 무엇을 돌려주는지 ③ 다음에 무엇을 하면 되는지(다음 도구 이름). 사이트 요령도 여기에. 600자 안.
-- **input**: 꼭 필요한 칸만 `required`. 날짜는 `format: date`, 시간은 `format: time`, 고르기는 `enum`, 번호는 `pattern`. 칸 설명에 형식과 예를 적어요("날짜 YYYY-MM-DD (예: 2026-11-27)"). 기본값이 자연스러우면 `default`.
-- **output**: 사용자에게 말할 칸만, 10개 안팎. 다음 도구에 넘길 id(`shop_id`)는 꼭 넣어요. 목록은 `list` + `fields`.
-- **사진 카드**: 고를 후보 목록(상품·숙소·식당·영화·책)은 `image`·`link` 칸을 꼭 넣어요 — 답 아래 사진 카드가 돼요. 화면 목록은 `"image": {"image": true}`, 데이터는 사진 경로를 map에. 카드가 안 맞는 목록(극장·시간표·가사)은 `"cards": false`. 검사(`check`)가 쇼핑·장보기·패션·여행·예매·영상·책 분야에서 이걸 확인해요. 자세한 건 skills/README의 '사진 카드'.
-- **선택 입력**(최대 가격, 지역 등)은 주소에 `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`로 넣거나, 사이트가 못 거르면 `filter` 단계(value가 비면 그대로)로 걸러요.
-- **결과가 없을 때도 결과예요**: "등록 전 운송장", "그 시간은 마감"은 `require`/`stop_if` + `say`로 사용자에게 할 말을 돌려줘요. 막힘(사이트가 바뀜)과 구분돼요.
-- **사이트가 막은 화면은 `blocked: true`**: "Access Denied"·"비정상 접근" 같은 차단 화면을 `stop_if`로 잡을 땐 `blocked: true`를 붙여요. 고칠 커넥터 문제가 아니라서 밤 점검은 이슈·수리를 만들지 않고 '사이트가 막음'으로 보여 줘요. 차단을 피해 가는 우회(다른 주소로 돌아가기 등)는 넣지 않아요. 로봇 확인(보안 확인·캡차) 화면도 `blocked: true`로 잡아요: 본체가 막다른 길 대신 탭을 열어 두고, AI가 사용자 폰 카드(글자면 `browser_request_code` captcha, 그림이면 `browser_request_tap`)로 풀게 한 뒤 같은 도구를 다시 부르게 해요. `say`에 "다른 곳에서 찾을게요"만 쓰지 않아도 돼요. 같은 서비스 부름은 본체가 한 번에 하나씩, 1.5초 사이를 두고 돌려요.
-- **바로 가기 주소를 막는 사이트는 첫 화면부터**: 검색·상품 주소로 바로 들어오면 막고 첫 화면을 거치면 여는 사이트(쿠팡)는 `open` 첫 화면 → `wait` → `sleep` → 원래 주소 순서로 써요. 사람이 쓰는 길이에요.
-- **기간·쪽을 넘겨야 찾는 목록은 도구 안에서 이어 찾기**: AI가 해·쪽을 바꿔 가며 여러 번 부르면 부를 때마다 기다려서 아주 느려요(쿠팡 주문 찾기 실측 80초). 단계에 `if`(앞에서 못 찾았을 때만)와 `append`(앞 목록 뒤에 붙이기)를 써서 한 번 부름에 최근 → 올해 → 지난해 … 차례로 찾고 찾은 데서 멈춰요. 결과에 찾아본 기간(`searched`)과 못 찾았을 때 다음 길(`tip`)을 넣어 AI가 같은 낱말로 다시 찾지 않게 해요.
-- **next**: 결과 뒤에 AI가 할 일 (예: "2~3곳을 보여 주고 고르게 해요. 예약하려면 catchtable_prepare_booking").
-- **tier**: 읽기만 = 찾아보기, 장바구니·임시 저장처럼 되돌릴 수 있는 것 = 채워 두기, 돈이 나가거나 예약이 확정되는 것 = 돈 내기, 남에게 보내는 것 = 연락하기.
-- **login**: 로그인해야만 되는 도구만 `true`. 연결 전이면 두리가 실행 대신 연동 안내를 돌려줘요.
-- **minIntervalSec**: 같은 입력을 자주 묻지 않게 (택배 1800, 빈자리 300 등).
-- **expect**: 조용한 고장을 잡는 기준. `filled`에 꼭 채워져야 하는 칸(이름·가격·id), `rows`에 예시 입력이면 늘 나오는 최소 줄 수(보통 3). 매일 점검과 실사용 모두 이걸로 "칸이 비어 오는" 고장을 알아채요.
-- **examples**: 실제로 돌려 볼 수 있는 입력. 매일 도는 실제 사이트 시험(카나리)이 이걸 써요.
+- **Name**: a single verb or noun, like `search`, `track`, `prepare_booking`, `orders`. The real name is `<service>_<name>`.
+- **description**: (1) when to use it, (2) what it returns, (3) what to do next (the next tool's name). Put site tips here too. Within 600 characters.
+- **input**: only truly needed fields are `required`. Use `format: date` for dates, `format: time` for times, `enum` for choices, and `pattern` for numbers. In the field description, give the format and an example ("Date YYYY-MM-DD (e.g. 2026-11-27)"). Use `default` when a default is natural.
+- **output**: only the fields you will tell the user about, around 10. Always include the id to pass to the next tool (`shop_id`). Lists use `list` + `fields`.
+- **Photo cards**: candidate lists to choose from (products, lodging, restaurants, movies, books) must have `image` and `link` fields — they become photo cards under the answer. For screen lists use `"image": {"image": true}`; for data, put the photo path in the map. For lists that cards do not suit (theaters, timetables, lyrics) use `"cards": false`. `check` verifies this in shopping, groceries, fashion, travel, ticketing, video, and books. For details see "Photo cards" in skills/README.
+- **Optional inputs** (maximum price, region, and so on) go into the address like `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, or if the site cannot filter them, filter with a `filter` step (if value is empty it passes through unchanged).
+- **No result is also a result**: "tracking number not yet registered" and "that time is full" return what to tell the user with `require`/`stop_if` + `say`. This is distinguished from being blocked (the site changed).
+- **Screens the site blocked get `blocked: true`**: When you catch a block screen like "Access Denied" or "abnormal access" with `stop_if`, add `blocked: true`. It is not a connector problem to fix, so the nightly check does not open an issue or repair and shows it as "site blocked". Do not add workarounds that evade the block (such as going back through another address). Robot-check screens (security checks, CAPTCHAs) are also caught with `blocked: true`: instead of a dead end, the daemon keeps the tab open, has the AI solve it with a card on the user's phone (`browser_request_code` captcha for text, `browser_request_tap` for images), and then has it call the same tool again. You do not need to write only "I'll look elsewhere" in `say`. Calls to the same service are run by the daemon one at a time, 1.5 seconds apart.
+- **Sites that block shortcut addresses: start from the front page**: Sites that block when you enter a search or product address directly but open it after passing through the front page (Coupang) are written in the order `open` front page → `wait` → `sleep` → the original address. That is the path people use.
+- **Lists where you must go through periods or pages: keep searching inside the tool**: If the AI calls repeatedly while changing the year or page, it waits on each call and becomes very slow (measured 80 seconds for Coupang order search). Use `if` (only when nothing was found before) and `append` (attach after the earlier list) in the steps so that one call searches recent → this year → last year … in order and stops where it finds it. Put the searched period (`searched`) and the next path if not found (`tip`) in the result so the AI does not search again with the same word.
+- **next**: what the AI does after the result (for example "Show 2–3 places and let them choose. To book, use catchtable_prepare_booking").
+- **tier**: read-only = `lookup`; reversible things like a cart or temporary save = `fill`; things that spend money or confirm a booking = `pay`; things sent to other people = `contact`.
+- **login**: `true` only for tools that work only when logged in. If not yet connected, Dool2 returns connection guidance instead of running.
+- **minIntervalSec**: so the same input is not asked too often (parcel 1800, open tables 300, and so on).
+- **expect**: the standard that catches silent breakage. `filled` lists the fields that must be filled (name, price, id), and `rows` the minimum number of rows that always appear for the example input (usually 3). Both the daily check and real use notice "fields come back empty" breakage with this.
+- **examples**: inputs that can actually be run. The daily live-site test (canary) uses these.
 
-## 4. 돈 내기·연락하기 도구
+## 4. `pay` and `contact` tools
 
-- 마지막 버튼은 절대 그냥 누르지 않아요. 끝을 `approve`(그 버튼을 누를지 사용자 승인)나 `handoff_to_agent`(AI가 화면을 정리해 `browser_request_approval`)로 해요. 검사가 이 규칙을 강제해요.
-- 승인 카드에 들어갈 무엇을·어디서·얼마인지·취소 조건을 화면에 적힌 그대로 담게 해요.
+- Never just press the last button. End with `approve` (the user approves whether to press that button) or `handoff_to_agent` (the AI organizes the screen and calls `browser_request_approval`). The check enforces this rule.
+- Make the approval card contain what, where, how much, and the cancellation terms exactly as written on the screen.
 
-## 5. 시험하고 상태 올리기
+## 5. Test and raise the status
 
 ```bash
-pnpm connector check <id>                         # 형식·안전 규칙 (레포 테스트도 같은 검사)
-pnpm connector try <id> <도구> '<입력>' --pc        # 시험용 PC의 진짜 Chrome에서 (시험용 Chrome을 막는 쿠팡·29CM 등도 된다)
-pnpm connector canary <id> --pc                    # 찾아보기 도구 모두, 줄·사진·링크 수를 함께
-pnpm connector try <id> <도구> '<입력 JSON>'        # 실제 사이트에서 한 번. 글·구조화 결과·걸린 시간이 나와요
-pnpm connector canary <id>                        # 찾아보기 도구를 examples로 모두
+pnpm connector check <id>                         # format and safety rules (the repo tests run the same check)
+pnpm connector try <id> <tool> '<input>' --pc      # in the real Chrome of the test PC (works for Coupang, 29CM and others that block the test Chrome)
+pnpm connector canary <id> --pc                    # all lookup tools, with the counts of rows, photos, and links
+pnpm connector try <id> <tool> '<input JSON>'      # once on the real site. Shows the text, structured result, and time taken
+pnpm connector canary <id>                        # all lookup tools with examples
 ```
 
-- 결과가 맞는지 실제 화면과 견줘 봐요 (가게 이름·시간·금액).
-- `--pc`는 돌고 있는 시험용 PC 본체(`DOOL2_DEV_RESET=1`)에 레포의 정의를 넘겨 그 PC의 Chrome에서 돌린다: `DOOL2_TOOL_TOKEN`(본체 도구 토큰), `DOOL2_PC`(기본 `http://127.0.0.1:8833`). 설치하지 않고 고친 정의를 바로 본다.
-- 돌려 본 만큼 `status`를 적어요: `검증됨(2026-11-17, 검색 → 예약금 화면까지)`. 못 돌려 본 도구는 `초안`. 안 되면 `막힘(사유)`로 두면 AI에게 보이지 않아요.
+- Compare the result with the real screen to see if it is right (shop names, times, amounts).
+- `--pc` passes the repo's definition to the running test PC daemon (`DOOL2_DEV_RESET=1`) and runs it in that PC's Chrome. It uses `DOOL2_TOOL_TOKEN` (the daemon's tool token) and `DOOL2_PC` (default `http://127.0.0.1:8833`). You see the fixed definition right away without installing.
+- Write `status` according to how much you ran: `검증됨(2026-11-17, 검색 → 예약금 화면까지)` (verified: 2026-11-17, from search to the deposit screen). Tools you could not run stay `초안` (draft). If it does not work, leave `막힘(reason)` (blocked), and it is not shown to the AI.
 
-## 6. 막힘 고치기
+## 6. Fixing blocks
 
-- 매일 밤 점검이 깨진 도구를 GitHub 이슈(`[커넥터] 도구 이름`, 라벨 `connector-broken`)로 올려요. 이슈의 재현 명령부터 돌려요.
+- The nightly check files broken tools as GitHub issues (`[커넥터] tool name` ("[connector] tool name"), label `connector-broken`). Start by running the reproduction command in the issue.
 
-- 두리가 "○단계(extract)에서 막혔어요"라고 하면 그 단계부터 봐요. `try`로 재현 → `page`로 지금 화면 확인 → 주소·선택자·요청 몸통을 고쳐요.
-- 사이트가 막는 것(캡차·로봇 확인)은 우회하지 않아요. 본체가 사용자 폰 카드로 풀게 하니 도구를 `막힘`으로 두지 말고, 그 화면을 `stop_if` + `blocked: true`로 잡아 두면 돼요.
-- 긴 화면 맨 끝에 붙는 창(매장별 재고 창 등)의 칸·선택 상자는 본체가 못 찾으면 한 번 길게 다시 읽어 찾아요. 고르는 칸이 사이트 고유 위젯이라 `choose`로 값만 바뀌고 다음 칸(시/군/구 등)이 안 채워지면, 그 칸은 빼고 다른 길(이름 낱말 검색)로 좁혀요.
+- When Dool2 says "blocked at step N (extract)", look at that step first. Reproduce with `try` → check the current screen with `page` → fix the address, selector, or request body.
+- Do not work around what the site blocks (CAPTCHAs, robot checks). The daemon has the user solve them with a phone card, so do not leave the tool as `막힘` (blocked); catch that screen with `stop_if` + `blocked: true` instead.
+- For fields and select boxes in a window attached at the very end of a long screen (such as a per-store stock window), the daemon rereads once at length if it cannot find them. If the choosing field is a site-specific widget so that `choose` changes only the value and the next field (city, county, district, and so on) is not filled, drop that field and narrow down another way (searching by a word in the name).
 
-## 7. 올리기
+## 7. Submitting
 
-- PR 하나 = 서비스 하나(또는 도구 하나). `pnpm connector try` 결과(개인정보는 가리고)를 PR 본문에 붙여요.
+- One PR = one service (or one tool). Paste the `pnpm connector try` result (with personal information masked) in the PR body.
 - `pnpm lint && pnpm build && pnpm typecheck && pnpm test`.
-- 사용자에게 보이는 말(`say`, `next`, 결과 칸 설명)은 두리 말투로, 다른 회사 제품 이름은 넣지 않아요.
-- `skills/README.md`의 상태 표를 고쳐요. `skills/`는 CC BY-SA 4.0이에요.
+- Words the user sees (`say`, `next`, result field descriptions) are written in Dool2's voice and do not include other companies' product names.
+- Update the status table in `skills/README.md`. `skills/` is CC BY-SA 4.0.
 
-## 실제 계정으로 연결 시험
+## Connection test with real accounts
 
-`node scripts/connect-test.mjs --sheet 시트.csv` (또는 서비스 id들) — 돌고 있는 본체에 묻는다(`DOOL2_TOKEN`·`DOOL2_TOOL_TOKEN`).
-서비스마다 로그인 확인 → 안 돼 있으면 금고 계정으로 다시 로그인(`POST /api/connections/<id>/relogin`, 비밀번호는 요청에 오가지 않음)
-또는 간편 로그인 → 로그인이 필요한 찾아보기 도구를 예시 입력으로 돌려 `~/.dool2-connect-test/latest.html`에 표로 남긴다.
-하루 로그인 시도는 서비스마다 2번까지. 채워 두기·돈 내기·연락하기 도구는 `--deep`일 때만(사이트에 글을 채운다), 승인으로 끝나는 도구는 돌리지 않는다.
-비밀번호를 대화·시트·파일로 받지 않는다: 사용자가 앱 연결 카드에 한 번 넣으면 금고(OS 키체인)에만 들어간다.
+`node scripts/connect-test.mjs --sheet sheet.csv` (or service ids) — asks the running daemon (`DOOL2_TOKEN`, `DOOL2_TOOL_TOKEN`).
+For each service it checks login → if not logged in, logs in again with the vault account (`POST /api/connections/<id>/relogin`, the password does not travel in the request) or with easy login → runs the lookup tools that need login with the example inputs and leaves a table in `~/.dool2-connect-test/latest.html`.
+Login attempts are limited to 2 per service per day. `fill`, `pay`, and `contact` tools run only with `--deep` (it fills text into the site), and tools that end in approval are not run.
+Passwords are never received through the conversation, the sheet, or files: once the user enters it in the app's connect card, it goes only into the vault (OS keychain).

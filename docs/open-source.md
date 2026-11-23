@@ -1,146 +1,146 @@
-# 두리 오픈소스 운영 원칙
+# Dool2 open-source principles
 
-> 상태: 운영하면서 계속 고치는 문서예요. 마지막 갱신 2026-11-14.
+> Status: a living doc, revised as we operate. Last updated 2026-11-14.
 
-[dool2.com](https://dool2.com)에서 한 약속을 오픈소스 운영 방식으로 어떻게 지키는지 정리해요.
+This explains how our open-source operations keep the promises made on [dool2.com](https://dool2.com).
 
-| 랜딩의 약속 | 운영에서 지키는 방법 |
+| Promise on the landing page | How operations keep it |
 |---|---|
-| "두리 프로그램은 오픈소스예요" | 사용자 데이터에 닿는 코드는 전부 이 레포에 공개한다 (1장) |
-| "내 대화는 저희도 못 봐요" | 중계 서버 코드도 공개하고, 직접 띄울 수도 있게 한다 (1장, 4장) |
-| "돈 쓰기 전엔 꼭 물어봐요" | 승인 게이트를 코드로 강제하고 보안 테스트로 고정한다. 이 부분은 외부 기여도 더 엄격하게 리뷰한다 (3장) |
-| "두리는 0원이에요" | 공개 코드에는 유료 기능 잠금을 넣지 않는다. 운영비는 두리 박스 판매로 충당한다 (2장) |
+| "The Dool2 program is open source" | All code that touches user data is public in this repo (chapter 1) |
+| "We can't see your conversations either" | The relay server code is public too, and anyone can run their own (chapters 1 and 4) |
+| "It always asks before spending money" | The approval gate is enforced in code and pinned by security tests. External contributions to this part get stricter review (chapter 3) |
+| "Dool2 costs 0 won" | No paid-feature locks in the public code. Running costs are covered by selling the Dool2 Box (chapter 2) |
 
-## 1. 무엇을 공개하나
+## 1. What is public
 
-**원칙: 사용자의 대화, 계정, 허락에 닿는 코드는 하나도 빼놓지 않고 공개한다.** 공개하지 않은 부분이 있으면 "저희도 못 봐요"를 증명할 수 없다.
+**Principle: all code that touches users' conversations, accounts and approvals is public, with nothing left out.** If any part were not public, we could not prove "we can't see them either."
 
-| 구성 | 공개 | 비고 |
+| Component | Public | Notes |
 |---|---|---|
-| PC 앱 (두리 본체, 맥·윈도우) | 공개 | 에이전트 실행, 승인 게이트, 브라우저, 기록 |
-| 폰 앱 | 공개 | 부탁 보내기, 허락 서명 |
-| 브라우저 확장 프로그램 | 공개 | 스토어 빌드가 공개 코드와 같은지 확인할 수 있게 한다 |
-| 중계 서버 | 공개 | 암호문만 전달한다. 누구나 직접 띄울 수 있다 |
-| 통신 규약 문서 | 공개 | 다른 사람이 호환 앱을 만들 수 있을 만큼 자세히 쓴다 |
-| 스킬 (서비스별 사용법) | 공개 | 커뮤니티 기여를 가장 많이 받을 곳이다 |
-| 랜딩·대기 신청 사이트 | 나중에 | 비밀 키를 정리한 뒤 `apps/site`로 옮긴다. 급하지 않다 |
-| 운영 비밀 (서명 키, 서버 키, 푸시 키) | 비공개 | GitHub Secrets와 하드웨어 키에만 둔다 |
-| 두리 박스 공장 설정 | 공개 | 박스 안의 소프트웨어는 일반 PC용과 같은 코드다 |
+| Desktop app (Dool2 daemon, Mac and Windows) | Public | Agent execution, approval gate, browser, logs |
+| Phone app | Public | Sending requests, signing approvals |
+| Browser extension | Public | Anyone can check that the store build matches the public code |
+| Relay server | Public | Forwards ciphertext only. Anyone can run their own |
+| Protocol docs | Public | Detailed enough for others to build a compatible app |
+| Skills (per-service usage) | Public | Where we expect the most community contributions |
+| Landing and waitlist site | Later | Move to `apps/site` after the secret keys are sorted out. Not urgent |
+| Operational secrets (signing keys, server keys, push keys) | Private | Kept only in GitHub Secrets and hardware keys |
+| Dool2 Box factory setup | Public | The software in the box is the same code as for a regular PC |
 
-### 라이선스와 상표
-- 코드: **Apache-2.0**. 특허 보호 조항이 있어 회사가 운영하는 오픈소스에 적합하다.
-- 스킬(`skills/`): **CC BY-SA 4.0**. 가져다 쓰면 고친 내용도 같은 조건으로 공개해야 한다(3.5).
-- 이름 "두리"와 로고는 **상표로 따로 보호한다**. 포크는 자유지만 이름과 로고를 바꿔야 한다. [`TRADEMARKS.md`](../TRADEMARKS.md)에 적었다. 남이 "두리"라는 이름으로 악성 버전을 배포하는 걸 막으려는 장치다.
-- 기여 방식: **DCO**를 쓴다. 커밋에 `Signed-off-by` 한 줄을 붙이는 방식이다.
-  - CLA(기여자 저작권 계약)는 쓰지 않는다. 처음 기여하는 사람에게 부담이 크다.
-  - 라이선스를 나중에 바꿀 일이 생기면 CLA가 필요하다. 지금은 바꿀 계획이 없으니 DCO로 충분하다.
+### License and trademark
+- Code: **Apache-2.0**. It has a patent protection clause, which suits a company-run open-source project.
+- Skills (`skills/`): **CC BY-SA 4.0**. Anyone who reuses them must publish their changes under the same terms (see 3.5).
+- The name "Dool2" and the logo are **protected separately as trademarks**. Forks are free, but must change the name and logo. This is written in [`TRADEMARKS.md`](../TRADEMARKS.md). It exists to stop others from distributing a malicious version under the Dool2 name.
+- Contribution method: we use the **DCO**, which means adding one `Signed-off-by` line to each commit.
+  - We do not use a CLA (contributor license agreement). It is a heavy burden for first-time contributors.
+  - If we ever need to change the license later, a CLA would be required. We have no plan to change it now, so the DCO is enough.
 
-## 2. 돈은 어떻게 버나
+## 2. How we earn money
 
-이용료 0원 약속을 지키면서 운영비를 내는 구조다.
+A structure that pays the running costs while keeping the promise of zero fees.
 
-1. **두리 박스 판매**(주 수입): 두리가 미리 깔린 소형 PC다. 켜 둘 컴퓨터가 없는 사람을 위한 제품이다. 소프트웨어는 공개 버전과 같고, 하드웨어와 설정해 주는 수고에 값을 받는다.
-2. **공식 중계 서버**: 무료로 운영한다.
-   - 암호문만 전달하므로 비용이 작다. Cloudflare 기준으로 사용자당 월 몇 원 수준으로 예상한다(실측 필요).
-   - 직접 중계 서버를 띄우는 것도 공식적으로 지원한다.
-3. (나중에, 선택) 후원은 GitHub Sponsors로 받는다. 기업 도입 지원 같은 것은 수요가 보이면 검토한다.
+1. **Dool2 Box sales** (main income): a small PC with Dool2 preinstalled, for people with no computer to leave on. The software is the same as the public version; the price pays for the hardware and the effort of setting it up.
+2. **Official relay server**: run for free.
+   - It only forwards ciphertext, so costs are small. On Cloudflare we estimate a few won per user per month (to be measured).
+   - Running your own relay server is officially supported too.
+3. (Later, optional) Donations via GitHub Sponsors. Things like enterprise adoption support will be considered if demand appears.
 
-**하지 않을 것**
-- 공개 코드 안에 유료 기능 잠금을 넣는 오픈코어 방식은 쓰지 않는다. 랜딩의 "0원" 약속과 부딪힌다.
-- 사용자 데이터로 수익을 내지 않는다.
+**What we will not do**
+- No open-core model with paid-feature locks inside the public code. It conflicts with the landing page's "0 won" promise.
+- No making money from user data.
 
-## 3. 누가 무엇을 결정하나
+## 3. Who decides what
 
-- **메인테이너**: 지금은 kuzvo-dev 한 명이다. 레포 보호 규칙상 `main`에 머지할 수 있는 사람도 메인테이너뿐이다.
-- **결정 기록**: 구조를 바꾸는 결정은 [`docs/decisions/`](decisions/README.md)에 ADR로 남긴다. 왜 그렇게 정했는지가 공개돼야 외부 기여자가 같은 논의를 반복하지 않는다.
-- **로드맵**: GitHub Projects 보드 하나로 공개한다. 랜딩의 "개발 중"이 실제로 어디까지 왔는지 누구나 볼 수 있다.
+- **Maintainer**: currently one person, kuzvo-dev. Under the repo protection rules, only maintainers can merge to `main`.
+- **Decision records**: decisions that change the structure are recorded as ADRs in [`docs/decisions/`](decisions/README.md). Publishing why we decided something keeps outside contributors from repeating the same debate.
+- **Roadmap**: published as one GitHub Projects board. Anyone can see how far the landing page's "in development" has really come.
 
-### 영역별 리뷰 강도
+### Review strictness by area
 
-| 영역 | 예시 경로 | 리뷰 |
+| Area | Example paths | Review |
 |---|---|---|
-| 보안 핵심 | 승인 게이트, 암호화, 서명 검증, 업데이트 | 메인테이너 필수, 보안 테스트 통과 필수. 외부 PR은 설계 이슈부터 연다 |
-| 일반 코드 | UI, 도구, 에이전트 연동 | 메인테이너 리뷰 |
-| 스킬 | `skills/<서비스>/` | 형식 검사와 권한 등급 표기 검사(CI) 후 메인테이너 리뷰 |
-| 문서 | `docs/` | 가볍게 리뷰 |
+| Security core | Approval gate, encryption, signature verification, updates | Maintainer required, security tests must pass. External PRs start with a design issue |
+| General code | UI, tools, agent integration | Maintainer review |
+| Skills | `skills/<service>/` | Format check and tier-label check (CI), then maintainer review |
+| Docs | `docs/` | Light review |
 
-CODEOWNERS에 보안 핵심 경로를 따로 적어 둔다. 기여자가 늘면 그 경로만 별도 리뷰어를 지정한다.
+The security-core paths are listed separately in CODEOWNERS. As contributors grow, we will assign dedicated reviewers to those paths only.
 
-## 3.5 해자: 한국향 하네스
+## 3.5 The moat: the Korea-focused harness
 
-**두리의 해자는 한국향 하네스 하나다.** 하네스는 한국 서비스를 막히지 않고 끝까지 처리하는 스킬, 막힘 지도, 승인 규칙을 합친 것이다.
-- PC 원격 조작 자체는 AI 회사들도 직접 내놓고 있다.
-- 종단 간 암호화와 서명 게이트는 신뢰를 주지만, 남이 따라 할 수 있다.
-- 남이 쉽게 못 따라 하는 건 "SRT 좌석 선택에서 안 막히는 법", "쿠팡 로그인이 며칠 가는지", "홈택스 인증서 창 다루는 법" 같은 **현장 지식이 계속 갱신되는 것**이다.
+**Dool2's moat is one thing: the Korea-focused harness.** The harness combines skills that handle Korean services all the way through without getting blocked, a map of blockers, and approval rules.
+- Remote PC control itself is being shipped directly by AI companies too.
+- End-to-end encryption and the signature gate give trust, but others can copy them.
+- What others cannot easily copy is **field knowledge that keeps being updated**: "how to avoid getting blocked at SRT seat selection", "how many days a Coupang login lasts", "how to handle the Hometax certificate window".
 
-**그런데 스킬은 공개다. 그래도 해자가 되나?**
-- 스킬 문서 자체는 복사할 수 있다. 하지만 **살아 있는 상태로 유지하는 운영**은 복사할 수 없다.
-  - 사용자 PC 수천 대에서 오는 익명 성공·막힘 통계
-  - 사이트가 바뀐 날 바로 고치는 속도
-  - 서명된 스킬 업데이트 채널
-  - 한국 사용자·기여자 커뮤니티
-- 오래된 스킬은 몇 주면 고장 난다. 그래서 문서보다 고치는 체계가 해자다.
-- 공개해야 하는 이유도 있다. 내 계정으로 AI가 무엇을 하는지 사용자가 확인할 수 있어야 믿고 맡긴다.
+**But skills are public. Is that still a moat?**
+- The skill docs themselves can be copied. But **the operation that keeps them alive** cannot be copied.
+  - Anonymous success and blocked statistics from thousands of user PCs
+  - Speed of fixing things the day a site changes
+  - A signed skill update channel
+  - A community of Korean users and contributors
+- A stale skill breaks within weeks. So the moat is the system of fixing, more than the docs.
+- There is also a reason to keep them public: users can trust Dool2 with their accounts only if they can verify what the AI does with them.
 
-**스킬 라이선스는 결정이 필요하다**
+**The skill license needed a decision**
 
-| 안 | 내용 | 장점 | 단점 |
+| Option | Terms | Pros | Cons |
 |---|---|---|---|
-| A. Apache-2.0 (코드와 같음) | 누구나 자유롭게 쓴다 | 가장 단순하고 기여자가 편하다 | 경쟁 제품이 그대로 가져가도 막을 방법이 없다 |
-| B. CC BY-SA 4.0 | 가져가도 되지만, 고친 내용은 같은 조건으로 공개해야 한다 | 오픈소스다운 조건을 유지하면서 "가져가기만 하는" 경쟁자를 견제한다 | 코드와 라이선스가 달라 조금 복잡하다 |
+| A. Apache-2.0 (same as code) | Anyone may use freely | Simplest, easy for contributors | A competing product can take it as is, and we cannot stop them |
+| B. CC BY-SA 4.0 | Reuse is allowed, but changes must be published under the same terms | Keeps open-source terms while discouraging competitors who only take | Differs from the code license, so slightly more complex |
 
-**결정: B (CC BY-SA 4.0, 2026-11-14).** 스킬은 문서라서 CC 계열이 자연스럽다. 경쟁사가 가져가면 개선분을 다시 공개해야 하므로, 결국 두리 하네스가 가장 최신으로 남는다.
+**Decision: B (CC BY-SA 4.0, 2026-11-14).** Skills are documents, so a CC license is a natural fit. If a competitor takes them, they must publish their improvements back, so the Dool2 harness stays the most up to date.
 
-## 4. 커뮤니티가 기여하기 쉬운 곳: 스킬
+## 4. Where the community can contribute easily: skills
 
-두리의 쓸모는 결국 "어떤 서비스를 얼마나 잘 쓰느냐"에 달려 있다. 메인테이너 혼자서는 한국 서비스 수십 개를 감당할 수 없다. 그래서 **스킬을 가장 문턱이 낮은 기여 경로로 설계한다.**
+Dool2's usefulness comes down to how well it handles each service. A single maintainer cannot cover dozens of Korean services. So **we design skills as the lowest-barrier contribution path.**
 
-- 서비스는 코드가 아니라 데이터(`tools.json`, 서비스 도구, ADR 0018)로 붙인다. 정해진 동작(열기·누르기·목록 뽑기·승인 요청)을 이어 붙이면 되고, 레포 스킬(`.claude/skills/connector`)이 순서를 안내한다.
-- 기존 레포에 초안 40여 개가 있다. 이걸 옮겨 와서 `초안 → 검증됨` 으로 올리는 일을 첫 기여 과제(good first issue)로 연다.
-- 스킬마다 상태를 표시한다: `초안` / `검증됨(날짜)` / `막힘(사유)`. 누가 언제 실제로 돌려 봤는지가 남는다.
-- **스킬 안전 규칙**(CI로 검사):
-  - 도구마다 권한 등급(찾아보기 / 채워 두기 / 돈 내기 / 연락하기)을 반드시 적는다. 승인 요청은 돈 내기·연락하기 도구의 마지막에만.
-  - 캡차 우회, 본인인증 우회, 비밀번호 입력 같은 지시는 넣을 수 없다. 결제·주문을 데이터 요청으로 하지 않는다.
-  - 커넥터는 승인 게이트를 끌 수 없다. 게이트는 커넥터 밖의 코드(두리 본체)가 강제한다.
-- 사이트가 바뀌어 스킬이 고장 나면, 사용자의 두리가 "이 스킬이 실패했어요" 보고 초안을 만들어 준다. 사용자가 허락했을 때만 이슈로 올리고, 개인정보는 빼서 올린다(나중에).
+- Services are added as data, not code (`tools.json`, service tools, ADR 0018). You chain together fixed actions (open, click, extract a list, request approval), and the repo skill (`.claude/skills/connector`) walks you through the steps.
+- The old repo has about 40 drafts. Moving them over and promoting them from `draft` to `verified` will be opened as the first contribution task (good first issue).
+- Each skill shows a status: `draft` / `verified (date)` / `blocked (reason)`. It records who actually ran it and when.
+- **Skill safety rules** (checked by CI):
+  - Every tool must state its approval tier (`lookup` / `fill` / `pay` / `contact`). The approval request goes only at the end of `pay` and `contact` tools.
+  - Instructions such as bypassing CAPTCHAs, bypassing identity verification or typing passwords cannot be included. Payments and orders must not be made as data requests.
+  - A connector cannot turn off the approval gate. The gate is enforced by code outside the connector (the Dool2 daemon).
+- When a skill breaks because a site changed, the user's Dool2 reports "this skill failed" and drafts an issue. It is filed only with the user's approval, with personal information removed (later).
 
-## 5. 배포와 신뢰
+## 5. Distribution and trust
 
-"내 컴퓨터에서 돌아가는 프로그램"이라서, 사용자는 **받은 프로그램이 공개된 코드와 같은지** 믿을 수 있어야 한다.
+Because this is a "program that runs on my computer", users must be able to trust that **the program they downloaded matches the public code**.
 
-- **빌드는 GitHub Actions에서만 한다.** 메인테이너 노트북에서 빌드한 파일은 배포하지 않는다.
-- **코드 서명**: 맥은 Apple 공증(notarization), 윈도우는 코드 서명 인증서로 서명한다. 서명이 없으면 OS가 설치를 막거나 경고한다.
-- **빌드 출처 증명**: 릴리스 파일에 GitHub의 artifact attestation을 붙인다. "이 파일은 이 커밋에서 이 워크플로가 만들었다"를 누구나 확인할 수 있다.
-- **자동 업데이트**: 서명된 업데이트만 받는다. 앱이 업데이트 서명을 확인한 뒤에만 설치한다.
-- **스킬 업데이트**는 앱 업데이트와 따로 받는다. 서명된 묶음만 받고, 폰에서 허락한 뒤 반영한다. 이전 버전으로 되돌릴 수 있다.
-- **버전**: `v0.x` 동안은 호환성을 약속하지 않는다고 README에 밝힌다. 릴리스 노트는 한국어로 쓴다.
+- **Builds happen only in GitHub Actions.** Files built on a maintainer's laptop are never distributed.
+- **Code signing**: Apple notarization on Mac, a code-signing certificate on Windows. Without signing, the OS blocks or warns on install.
+- **Build provenance**: release files carry GitHub artifact attestations, so anyone can verify "this file was built from this commit by this workflow."
+- **Auto-update**: only signed updates are accepted. The app installs only after verifying the update signature.
+- **Skill updates** are delivered separately from app updates. Only signed bundles are accepted, and they take effect after approval on the phone. You can roll back to the previous version.
+- **Versions**: the README states that we make no compatibility promises during `v0.x`. Release notes are written in English, with a Korean summary.
 
-## 6. 보안 운영
+## 6. Security operations
 
-- 취약점 신고는 비공개로 받는다(`SECURITY.md`, GitHub private vulnerability reporting 켜 둠).
-- **위협 모델 문서를 공개한다**([`docs/security/threat-model.md`](security/threat-model.md)). 무엇을 막고 무엇은 못 막는지 솔직하게 적는다. 예: "PC가 악성코드에 감염되면 두리도 지킬 수 없다."
-- 승인 게이트는 **"서명 없이 돈 내기 도구가 실행되면 실패"하는 테스트**로 고정한다. 이 테스트를 지우거나 약하게 만드는 PR은 받지 않는다.
-- 의존성 취약점 알림과 비밀값 push 차단은 이미 켜 두었다.
-- 사용자가 늘면 버그 바운티를 검토한다.
+- Vulnerability reports are received privately (`SECURITY.md`, GitHub private vulnerability reporting is on).
+- **We publish the threat model** ([`docs/security/threat-model.md`](security/threat-model.md)). It honestly states what we block and what we cannot. For example: "If the PC is infected with malware, Dool2 cannot protect you either."
+- The approval gate is pinned by a **test that fails if a pay tool runs without a signature**. We do not accept PRs that delete or weaken this test.
+- Dependency vulnerability alerts and secret push blocking are already on.
+- We will consider a bug bounty as users grow.
 
-## 7. 소통
+## 7. Communication
 
-- **언어**: 한국어를 먼저 쓴다. 주 사용자가 한국 사람이고 한국 서비스를 다룬다. README 위쪽에 짧은 영어 소개를 두어 해외 개발자도 기여할 수 있게 한다.
-- **질문과 아이디어**: GitHub Discussions를 쓴다. 이슈는 버그와 할 일만 받는다.
-- **이슈 양식**: 버그 / 스킬 요청 / 스킬 고장 신고 / 기능 제안 네 가지를 만든다.
-- **랜딩 연결**:
-  - 랜딩 FAQ의 "GitHub 공개 준비 중"을 레포 링크로 바꾼다.
-  - 랜딩 "뭐가 달라요" 표의 "코드 공개" 칸도 레포 링크로 연결한다.
-- **개발 과정을 공개하며 진행**: 레포는 이미 공개 상태다. 진행 상황을 스레드에 올릴 때 커밋과 PR 링크를 같이 단다.
+- **Language**: English is the default for the repo and docs; Korean originals are archived in `docs/ko/` (ADR 0029). The main users are Korean and the services are Korean, so Korean copy remains first-class in the product.
+- **Questions and ideas**: use GitHub Discussions. Issues are only for bugs and to-dos.
+- **Issue templates**: four kinds: bug / skill request / skill breakage report / feature proposal.
+- **Landing connection**:
+  - Replace the landing FAQ's "GitHub release in preparation" with the repo link.
+  - Link the "open code" cell in the landing's comparison table to the repo too.
+- **Building in public**: the repo is already public. When posting progress in threads, attach commit and PR links.
 
-## 8. 진행 상황
+## 8. Progress
 
-1. [x] 공개 레포, Apache-2.0, 레포 보호 규칙, [`SECURITY.md`](../SECURITY.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-2. [x] [아키텍처 문서](architecture.md)와 [결정 기록(ADR)](decisions/README.md)
-3. [x] 모노레포 뼈대와 CI(린트, 빌드, 타입 검사, 테스트, DCO 확인 — 맥·윈도우·리눅스)
-4. [x] [`TRADEMARKS.md`](../TRADEMARKS.md), [행동 강령](../CODE_OF_CONDUCT.md), 이슈·PR 양식, Discussions
-5. [x] [위협 모델](security/threat-model.md) 첫 판
-6. [ ] 기존 스킬 초안 옮기기, 스킬 형식 검사 CI (M4)
-7. [ ] 첫 릴리스 전에 서명·공증·attestation 파이프라인 구성 (M5)
-8. [ ] 공개 로드맵 보드(GitHub Projects)
-9. [ ] 랜딩의 "GitHub 공개 준비 중" 문구를 레포 링크로 바꾸기
+1. [x] Public repo, Apache-2.0, repo protection rules, [`SECURITY.md`](../SECURITY.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+2. [x] [Architecture doc](architecture.md) and [decision records (ADR)](decisions/README.md)
+3. [x] Monorepo skeleton and CI (lint, build, type check, tests, DCO check; Mac, Windows and Linux)
+4. [x] [`TRADEMARKS.md`](../TRADEMARKS.md), [code of conduct](../CODE_OF_CONDUCT.md), issue and PR templates, Discussions
+5. [x] First version of the [threat model](security/threat-model.md)
+6. [ ] Move over the existing skill drafts, skill format-check CI (M4)
+7. [ ] Set up the signing, notarization and attestation pipeline before the first release (M5)
+8. [ ] Public roadmap board (GitHub Projects)
+9. [ ] Replace the landing's "GitHub release in preparation" text with the repo link

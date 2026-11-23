@@ -1,100 +1,100 @@
-# 두리 아키텍처
+# Dool2 Architecture
 
-> 상태: **살아 있는 설계 문서** — 구현이 진행되면서 계속 고쳐요. 개별 결정과 그 이유는 [결정 기록(ADR)](decisions/README.md)에, 보안 가정은 [위협 모델](security/threat-model.md)에 있어요.
-> 근거 자료는 2026-11-14 기준 공식 문서예요(12장).
+> Status: **living design document**. It keeps changing as the implementation moves on. Individual decisions and their reasons are in the [decision records (ADR)](decisions/README.md). Security assumptions are in the [threat model](security/threat-model.md).
+> Sources are the official docs as of 2026-11-14 (chapter 12).
 
-랜딩(https://dool2.com)의 약속을 기준으로 한다. 부탁은 폰으로 하고, 일은 내 컴퓨터에서 한다. 돈 쓰는 일은 꼭 먼저 묻고, 대화는 내 컴퓨터에 남긴다.
+The baseline is the promise on the landing page (https://dool2.com). You make requests from your phone, and the work happens on your own computer. Anything that spends money is always asked first, and conversations stay on your computer.
 
-## 0. 한눈에 보기
+## 0. Overview
 
 ```
- ┌──────────── 폰 (PWA → 나중에 네이티브) ────────────┐
- │ 부탁 보내기 · 결과 보기 · 허락 서명(Face ID/지문)     │
+ ┌──────────── Phone (PWA → native later) ────────────┐
+ │ Send requests · see results · sign approvals (Face ID/fingerprint) │
  └───────────────▲──────────────────────────────────────┘
-                 │ 종단 간 암호화(페어링 때 교환한 키)
+                 │ end-to-end encryption (keys exchanged at pairing)
        ┌─────────┴──────────┐
-       │  중계 서버 (relay)   │  암호문만 전달 · 꺼진 PC용 우편함 · 내용 없는 푸시
-       │  Cloudflare / 자체   │
+       │  Relay              │  forwards ciphertext only · mailbox for an off PC · content-free push
+       │  Cloudflare / self  │
        └─────────▲──────────┘
-                 │ PC가 바깥으로만 연결 (열린 포트 없음)
- ┌───────────────┴───────────── 내 PC (맥·윈도우) ─────────────────────────────┐
- │  두리 앱 (Electron 셸: 트레이 · 설정 · 업데이트)                              │
- │   └─ dool2d (두리 본체, Node)                                                 │
- │        ├─ 엔진: 대화·작업 진행, 에이전트 공통 인터페이스                       │
- │        │    ├─ Claude 어댑터 ──▶ 사용자가 설치한 공식 `claude -p` (사용자 구독) │
- │        │    └─ Codex 어댑터  ──▶ `codex app-server` (ChatGPT 로그인)          │
- │        │             └─ 두 에이전트 모두 "두리 도구(MCP)"만 쓸 수 있음          │
- │        ├─ 승인 게이트: 위험도 분류 → 폰 서명 확인 → 실행                       │
- │        ├─ 손 ① 내 브라우저 + 두리 확장: 평소 로그인 그대로 · AI 커서 · 원격 화면 │
- │        ├─ 손 ② PC 화면 제어: 카카오톡 PC·한글·인증서 창 등 (허용한 앱만)         │
- │        ├─ 기록: SQLite (대화, 한 일, 단계별 화면, 허락 내역)                    │
- │        └─ 지켜보기·예약 작업 스케줄러                                          │
+                 │ the PC only connects outward (no open ports)
+ ┌───────────────┴───────────── My PC (Mac · Windows) ─────────────────────────┐
+ │  Dool2 app (Electron shell: tray · settings · updates)                       │
+ │   └─ dool2d (Dool2 daemon, Node)                                             │
+ │        ├─ Engine: runs chats and tasks, common agent interface               │
+ │        │    ├─ Claude adapter ──▶ the official `claude -p` the user installed (user's subscription) │
+ │        │    └─ Codex adapter  ──▶ `codex app-server` (ChatGPT login)         │
+ │        │             └─ both agents can use only the "Dool2 tools (MCP)"      │
+ │        ├─ Approval gate: classify risk → check phone signature → run         │
+ │        ├─ Hand 1: my browser + Dool2 extension: usual logins · AI cursor · remote view │
+ │        ├─ Hand 2: PC screen control: KakaoTalk PC, Hangul, certificate windows, etc. (allowed apps only) │
+ │        ├─ Records: SQLite (chats, what was done, per-step screens, approval history) │
+ │        └─ Watch and scheduled-run scheduler                                  │
  └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**핵심 결정 다섯 가지**
-1. **AI는 사용자 PC에서 사용자 구독으로 돈다.** 두리는 공식 프로그램을 실행만 한다. 로그인을 대신하거나 토큰을 빼 가지 않는다(Claude). OpenAI가 공식으로 허용한 로그인 흐름만 쓴다(Codex).
-2. **에이전트의 기본 손발(셸, 파일, 웹)은 끈다.** 에이전트는 두리 도구만 쓸 수 있다. 그래야 승인 게이트를 우회할 길이 없다.
-3. **승인 게이트는 프롬프트가 아니라 코드다.** 돈 내기·연락하기 동작은 폰이 서명한 허락이 있어야만 실행된다.
-4. **중계 서버는 암호문만 본다.** 공식 서버를 무료로 운영하고, 직접 띄울 수도 있다.
-5. **본체(dool2d)는 화면 없이도 돈다.** 맥·윈도우에서는 Electron 앱 안에서 돌고, 두리 박스(리눅스 소형 PC)에서는 단독으로 돈다.
+**Five core decisions**
+1. **The AI runs on the user's PC with the user's own subscription.** Dool2 only runs the official program. It does not log in on the user's behalf or take tokens (Claude). It uses only the login flow that OpenAI officially allows (Codex).
+2. **The agent's default hands (shell, files, web) are turned off.** The agent can use only Dool2 tools. This leaves no way around the approval gate.
+3. **The approval gate is code, not a prompt.** `pay` and `contact` actions run only with an approval signed on the phone.
+4. **The relay sees only ciphertext.** The official server runs for free, and you can also run your own.
+5. **The daemon (dool2d) runs without a screen.** On Mac and Windows it runs inside the Electron app. On the Dool2 Box (a small Linux PC) it runs standalone.
 
 ---
 
-## 1. 모노레포 구성
+## 1. Monorepo layout
 
-pnpm workspaces와 Turborepo를 쓰고, 언어는 TypeScript 하나로 통일한다(Node 24 LTS). Playwright, MCP SDK, Electron이 모두 Node 생태계라 언어를 나눌 이유가 없다.
+We use pnpm workspaces and Turborepo, with TypeScript as the single language (Node 24 LTS). Playwright, the MCP SDK and Electron are all in the Node ecosystem, so there is no reason to split languages.
 
 ```
 dool2/
   apps/
-    desktop/        Electron 셸: 트레이, 첫 설정 마법사, 설정 화면, 자동 업데이트, PC 쪽 대화 창
-    daemon/         dool2d 실행 파일. desktop이 띄우고, 두리 박스에서는 단독 서비스로 돈다
-    mobile/         폰 앱. 1단계는 PWA(Vite + React, 기존 프로토타입 UI 이식)
-    extension/      두리 확장 프로그램 (Chrome·Edge·웨일 등, Manifest V3). 판단 없는 얇은 손: chrome.debugger + native messaging
-    relay/          중계 서버. Cloudflare Workers + Durable Objects, 자체 호스팅용 Node 버전
-    site/           (나중) 랜딩·대기 신청. 지금은 기존 레포에 둔다
+    desktop/        Electron shell: tray, first-run setup wizard, settings, auto-update, the PC-side chat window
+    daemon/         dool2d executable. desktop launches it; on the Dool2 Box it runs as a standalone service
+    mobile/         Phone app. Stage 1 is a PWA (Vite + React, porting the UI of the earlier prototype)
+    extension/      Dool2 extension (Chrome, Edge, Whale, etc., Manifest V3). A thin hand with no judgment: chrome.debugger + native messaging
+    relay/          Relay. Cloudflare Workers + Durable Objects, plus a Node version for self-hosting
+    site/           (later) landing page and waitlist. For now it stays in the old repo
   packages/
-    protocol/       폰↔PC 메시지 스키마(zod), 종단 간 암호화, 페어링, 버전 협상
-    engine/         대화·작업 상태 머신, AgentRuntime 공통 인터페이스, 스케줄러
-    agent-claude/   Claude Code 어댑터
-    agent-codex/    Codex 어댑터 (SIWC 로그인, app-server JSON-RPC)
-    mcp-tools/      두리 MCP 서버. 에이전트가 자식 프로세스로 띄우고, dool2d에 로컬 IPC로 붙는다
-    gate/           승인 게이트: 위험도 분류, 허락 요청 정규화, 서명 검증  ← 보안 핵심
-    browser/        브라우저 제어: 확장 프로그램과의 규약, 스냅샷, 동작, 네트워크 가드, 원격 화면, (예외) 전용 브라우저 모드
-    hands/          PC 화면 제어 도우미(Rust, 맥·윈도우): 화면 캡처, 접근성 트리, 마우스·키보드, 앱 허용 목록
-    store/          SQLite 스키마·마이그레이션, 화면 캡처 보관
-    skills-runtime/ 스킬 읽기·검사·서명 확인
-    ui/             공통 디자인 토큰·컴포넌트 (desktop, mobile 공용)
-  skills/           서비스별 사용법 (기존 레포 초안 40여 개 이식)
-  docs/             설계, ADR(decisions/), 위협 모델(security/)
+    protocol/       Phone↔PC message schemas (zod), end-to-end encryption, pairing, version negotiation
+    engine/         Chat and task state machine, common AgentRuntime interface, scheduler
+    agent-claude/   Claude Code adapter
+    agent-codex/    Codex adapter (SIWC login, app-server JSON-RPC)
+    mcp-tools/      Dool2 MCP server. The agent starts it as a child process; it connects to dool2d over local IPC
+    gate/           Approval gate: risk classification, approval request normalization, signature verification  ← security core
+    browser/        Browser control: protocol with the extension, snapshots, actions, network guard, remote view, (exception) dedicated-browser mode
+    hands/          PC screen control helper (Rust, Mac and Windows): screen capture, accessibility tree, mouse and keyboard, app allow list
+    store/          SQLite schema and migrations, screen capture storage
+    skills-runtime/ Reading, checking and signature verification of skills
+    ui/             Shared design tokens and components (shared by desktop and mobile)
+  skills/           Per-service usage (porting the 40 or so drafts from the old repo)
+  docs/             Design, ADRs (decisions/), threat model (security/)
 ```
 
-- `gate/`, `protocol/`의 암호화 부분, 업데이트 검증 코드는 CODEOWNERS에서 **보안 핵심**으로 따로 묶는다.
-- 테스트는 Vitest(단위)와 Playwright(브라우저 도구, 로컬 테스트 사이트)로 한다. 승인 게이트에는 "서명 없이 돈 내기 실행 시 실패"하는 회귀 테스트를 고정해 둔다.
+- `gate/`, the encryption part of `protocol/`, and the update verification code are grouped separately in CODEOWNERS as the **security core**.
+- Tests use Vitest (unit) and Playwright (browser tools, local test site). The approval gate has a fixed regression test that fails if a `pay` action runs without a signature.
 
-## 2. 프로세스 구조
+## 2. Process structure
 
 ```
-Electron main ──spawn──▶ dool2d (Node, utilityProcess 또는 자식 프로세스)
+Electron main ──spawn──▶ dool2d (Node, utilityProcess or child process)
                            │
-                           ├─spawn──▶ claude -p … (대화 하나를 구간 세션으로, --resume로 이어감: ADR 0015)
+                           ├─spawn──▶ claude -p … (one chat as segmented sessions, continued with --resume: ADR 0015)
                            │             └─spawn──▶ dool2-mcp (stdio)  ─┐
-                           ├─spawn──▶ codex app-server (상주, JSON-RPC)   │ 로컬 IPC
-                           │             └─spawn──▶ dool2-mcp (stdio)  ─┤ (유닉스 소켓 / 윈도우 named pipe,
-                           │                                            │  세션별 일회용 토큰)
+                           ├─spawn──▶ codex app-server (resident, JSON-RPC)   │ local IPC
+                           │             └─spawn──▶ dool2-mcp (stdio)  ─┤ (Unix socket / Windows named pipe,
+                           │                                            │  one-time token per session)
                            ◀────────────────────────────────────────────┘
-                           ├─ Playwright ──▶ Chrome (두리 전용 프로필)
-                           └─ WebSocket ──▶ 중계 서버
+                           ├─ Playwright ──▶ Chrome (Dool2-only profile)
+                           └─ WebSocket ──▶ relay
 ```
 
-- **`dool2-mcp`는 얇은 중계자다.** 도구 목록만 알리고, 실제 실행은 IPC로 dool2d에 넘긴다. 브라우저 상태와 승인 게이트는 dool2d 한 곳에만 있다. 그래서 에이전트를 무엇으로 바꾸든 게이트는 똑같다.
-- IPC 토큰은 에이전트를 띄울 때 환경 변수로 넘긴다. 같은 PC의 다른 프로그램이 두리 도구를 호출하지 못하게 하기 위해서다.
-- Electron 창을 닫아도 dool2d는 트레이에서 계속 돈다. 로그인할 때 자동으로 시작한다.
+- **`dool2-mcp` is a thin forwarder.** It only announces the tool list and passes the real execution to dool2d over IPC. Browser state and the approval gate live in dool2d only. So the gate is the same whichever agent you swap in.
+- The IPC token is passed to the agent as an environment variable when it is launched. This keeps other programs on the same PC from calling Dool2 tools.
+- Closing the Electron window does not stop dool2d. It keeps running in the tray and starts automatically at login.
 
-## 3. AI 에이전트 연동
+## 3. AI agent integration
 
-### 3.1 공통 인터페이스 (`engine`)
+### 3.1 Common interface (`engine`)
 
 ```ts
 interface AgentRuntime {
@@ -116,534 +116,534 @@ interface ThreadHandle {
 }
 ```
 
-- 사용자는 설정에서 "Claude Code로 실행"과 "Codex로 실행" 중 하나를 고른다. 둘 다 연결해 두면 한쪽 한도가 차면 다른 쪽으로 넘길 수 있다(사용자가 켰을 때만).
-- 서비스별 요령은 각 CLI의 스킬 기능을 쓰지 않는다. 대신 두리 서비스 도구(커넥터, `skills/<id>/tools.json`, ADR 0018)로 제공한다: 연결한 서비스의 도구(`catchtable_search` …)는 바로 보이고, 나머지는 `service_find` → `service_call`. 그러면 두 에이전트가 같은 도구를 쓰고, 승인 게이트와 서명 확인도 한곳에서 한다.
+- In settings, the user picks either "Run with Claude Code" or "Run with Codex". If both are connected, Dool2 can switch to the other when one hits its limit (only when the user turns this on).
+- Per-service know-how does not use each CLI's skill feature. Instead, Dool2 provides it as Dool2 service tools (connectors, `skills/<id>/tools.json`, ADR 0018). The tools of connected services (`catchtable_search` …) are visible right away, and the rest go through `service_find` → `service_call`. This way both agents use the same tools, and the approval gate and signature check also sit in one place.
 
 ### 3.2 Claude Code
 
-**정책 판단** (자세한 근거는 ADR-0002로 남긴다)
-- Anthropic은 제3자 앱이 claude.ai 로그인을 직접 넣거나, 구독 자격을 중계·수집·저장하는 것을 금지한다. Agent SDK 기반 제3자 앱도 원칙적으로 API 키를 쓰라고 한다.
-- 예외가 있다. 사용자가 **수정하지 않은 공식 Claude Code 바이너리**에 자기 구독으로 로그인하는 것은 막지 않는다고 명시한다. 조건은 네 가지다.
-  - 바이너리를 수정하지 않는다
-  - 내장 인증을 막지 않는다
-  - 사용량을 재판매하거나 중계하지 않는다
-  - 사용자마다 자기 자격으로 로그인한다
-- 2026년에 이 정책은 차단 → 재허용 발표 → 보류로 몇 번 바뀌었다. **바뀔 수 있다는 걸 전제로** 설계한다.
+**Policy assessment** (the detailed reasons will be recorded in ADR-0002)
+- Anthropic prohibits third-party apps from building in claude.ai login directly, or from relaying, collecting or storing subscription credentials. It also says apps built on the Agent SDK should in principle use an API key.
+- There is an exception. It states that it does not stop a user from logging in to an **unmodified official Claude Code binary** with their own subscription. There are four conditions.
+  - Do not modify the binary
+  - Do not block the built-in authentication
+  - Do not resell or relay usage
+  - Each user logs in with their own credentials
+- In 2026 this policy changed several times: block → announced re-allow → on hold. We design **assuming it can change.**
 
-**그래서 이렇게 한다**
-- 사용자가 설치하고 로그인한 `claude`를 찾아 그대로 실행한다. Agent SDK에 번들된 바이너리는 쓰지 않는다.
-- 두리는 로그인 화면, 토큰, `setup-token`을 다루지 않는다.
-  - 로그인이 안 돼 있으면 터미널을 열어 `claude auth login`을 실행하게 안내한다.
-  - 로그인 여부는 `claude auth status` 출력(JSON)으로 확인한다.
-- `--bare`는 쓰지 않는다. 구독 로그인을 읽지 않는 모드이기 때문이다.
-- 실행 형태(초안, 버전별로 플래그를 다시 확인할 것):
+**What we do**
+- Find the `claude` the user installed and logged in to, and run it as is. We do not use the binary bundled with the Agent SDK.
+- Dool2 does not handle the login screen, tokens or `setup-token`.
+  - If the user is not logged in, we guide them to open a terminal and run `claude auth login`.
+  - We check login state from the output (JSON) of `claude auth status`.
+- We do not use `--bare`, because that mode does not read the subscription login.
+- Launch form (draft; re-check the flags for each version):
   ```
   claude -p
     --input-format stream-json --output-format stream-json --verbose
-    --tools ""                                 # 내장 도구 전부 끔 (셸·파일·웹)
-    --strict-mcp-config --mcp-config <두리 MCP 설정>
-    --allowedTools "mcp__dool2__*"              # 두리 도구만 자동 승인
+    --tools ""                                 # turn off all built-in tools (shell, files, web)
+    --strict-mcp-config --mcp-config <Dool2 MCP config>
+    --allowedTools "mcp__dool2__*"              # auto-approve Dool2 tools only
     --permission-prompt-tool mcp__dool2__permission
-    --append-system-prompt-file <두리 지침>
-    --resume <세션 id>                          # 이어서 대화할 때
+    --append-system-prompt-file <Dool2 instructions>
+    --resume <session id>                       # when continuing a chat
   ```
-  작업 폴더는 두리 전용 빈 폴더(`<앱 데이터>/workspace`)로 둔다. `-p`는 작업 폴더의 `.claude/` 설정과 `.mcp.json`도 실행하기 때문이다.
-- 사용량은 스트림의 `rate_limit_event`로 받아 폰에 "이번 주 사용량 62%"처럼 보여 준다.
-- 한도가 차거나 정책이 바뀌어 막히는 경우를 대비해 **API 키 모드**(`claude-api`)도 둔다. 사용자가 자기 키를 넣는 방식이다.
-- 이름 표기는 "Claude Code로 실행"처럼 평문으로만 쓴다. 제품명이나 로고에는 쓰지 않는다.
-- 해야 할 일: Anthropic에 두리 같은 사용 형태를 미리 알리고 승인을 문의한다. 문서에 "previously approved" 경로가 있다.
+  The working folder is an empty Dool2-only folder (`<app data>/workspace`), because `-p` also runs the `.claude/` settings and `.mcp.json` in the working folder.
+- We receive usage from the stream's `rate_limit_event` and show it on the phone, for example "62% used this week".
+- In case the limit is reached or a policy change blocks us, we also keep an **API key mode** (`claude-api`), where the user enters their own key.
+- The name is written only as plain text, as in "Run with Claude Code". It is not used in the product name or logo.
+- To do: tell Anthropic in advance about a usage pattern like Dool2's and ask for approval. The docs mention a "previously approved" path.
 
 ### 3.3 Codex
 
-**정책 판단**
-- OpenAI는 "Sign in with ChatGPT"(SIWC)의 구독 사용 흐름을 **오픈소스·로컬 앱에는 신청 없이** 열어 두었다. 공식 파트너 목록에 OpenCode, T3 같은 오픈소스도 있다. 두리는 이 경로를 쓴다.
-- 유료 앱이나 원격 호스팅 앱은 따로 신청해야 한다. 두리 박스 판매가 여기에 해당하는지는 출시 전에 OpenAI에 확인한다.
+**Policy assessment**
+- OpenAI has opened the subscription usage flow of "Sign in with ChatGPT" (SIWC) to **open-source, local apps without an application**. Open-source projects such as OpenCode and T3 are on the official partner list. Dool2 uses this path.
+- Paid apps and remotely hosted apps must apply separately. Before launch, we check with OpenAI whether selling the Dool2 Box falls under this.
 
-**그래서 이렇게 한다**
-- 로그인: 두리가 SIWC OAuth를 직접 띄운다. 버튼 문구는 "ChatGPT로 계속하기"이고, 콜백은 `127.0.0.1` 루프백이다. 받은 토큰은 OS 키체인(Electron `safeStorage`)에 둔다.
-- UI 규칙을 지킨다.
-  - 첫 로그인 때 "ChatGPT 요금제를 사용해요" 안내
-  - 사용 중에는 "ChatGPT 요금제 사용 중" 표시
-  - chatgpt.com 사용량 관리 화면으로 가는 링크
-- 실행: 검증한 버전의 Codex 바이너리를 두리와 함께 배포한다(Apache-2.0). `codex app-server`를 stdio JSON-RPC로 상주시킨다.
-  - `CODEX_HOME`은 두리 전용 폴더로 분리한다. 사용자의 개인 Codex 설정과 섞지 않기 위해서다.
-  - `-c` 설정 고정:
-    - `features.shell_tool=false`: 셸 끔
+**What we do**
+- Login: Dool2 starts the SIWC OAuth flow itself. The button text is "Continue with ChatGPT", and the callback is a `127.0.0.1` loopback. The received token is stored in the OS keychain (Electron `safeStorage`).
+- We follow the UI rules.
+  - On first login, show "This uses your ChatGPT plan"
+  - While in use, show "Using ChatGPT plan"
+  - A link to the usage management page on chatgpt.com
+- Run: we ship a verified version of the Codex binary with Dool2 (Apache-2.0). We keep `codex app-server` resident over stdio JSON-RPC.
+  - `CODEX_HOME` is split into a Dool2-only folder, so it does not mix with the user's personal Codex settings.
+  - `-c` settings are pinned:
+    - `features.shell_tool=false`: shell off
     - `web_search="disabled"`
     - `sandbox_mode="read-only"`
-    - `mcp_servers.dool2`: `required=true`, 두리 도구가 없으면 시작 자체를 실패시킴
-  - 파일 편집 도구가 같이 꺼지는지는 실제로 확인해야 한다(미확인).
-  - 프로토콜 타입은 고정 버전에서 `codex app-server generate-ts`로 만들어 커밋한다. app-server는 공식적으로 "experimental"이라 버전마다 바뀐다.
-- 대화는 `thread/start`, `thread/resume`, `turn/start`, `turn/interrupt`로 다룬다. 토큰을 갱신하면 app-server를 재시작한 뒤 `thread/resume`으로 이어 간다.
-- 한도: 429 `subscription_sharing_usage_limit_exceeded`를 받으면 멈추고, 폰에 "ChatGPT 사용량이 다 찼어요"를 띄운다.
-- 윈도우: 네이티브로 돈다(WSL 불필요). 셸을 끄므로 윈도우 샌드박스 영향은 작다.
+    - `mcp_servers.dool2`: `required=true`, so startup fails if the Dool2 tools are missing
+  - We must check in practice whether the file-editing tool is turned off along with these (unconfirmed).
+  - Protocol types are generated with `codex app-server generate-ts` at a pinned version and committed. The app-server is officially "experimental" and changes between versions.
+- Conversations use `thread/start`, `thread/resume`, `turn/start` and `turn/interrupt`. When the token is refreshed, we restart the app-server and continue with `thread/resume`.
+- Limit: on a 429 `subscription_sharing_usage_limit_exceeded`, we stop and show "ChatGPT usage is used up" on the phone.
+- Windows: runs natively (no WSL needed). Because the shell is off, the Windows sandbox has little effect.
 
-## 4. 승인 게이트 (보안 핵심)
+## 4. Approval gate (security core)
 
-### 4.1 등급
+### 4.1 Tiers
 
-| 등급 | 예 | 처리 |
+| Tier | Examples | Handling |
 |---|---|---|
-| 찾아보기 | 검색, 조회, 스크린샷 | 바로 실행 |
-| 채워 두기 | 장바구니 담기, 폼 입력, 초안 저장 | 바로 실행, 기록 |
-| 돈 내기 | 결제, 예약 확정, 취소 수수료가 생기는 취소 | **폰 서명 필수** |
-| 연락하기 | 메시지·메일·리뷰·글 등록, 전화 | **폰 서명 필수** |
+| `lookup` | search, look up, screenshot | runs immediately |
+| `fill` | add to cart, fill a form, save a draft | runs immediately, recorded |
+| `pay` | payment, confirming a booking, a cancellation that incurs a fee | **phone signature required** |
+| `contact` | sending a message or email, posting a review or post, phone calls | **phone signature required** |
 
-### 4.2 겹겹이 막기
-1. **우회로 없애기**: 에이전트의 셸·파일·웹 도구를 끈다(3장). 에이전트가 할 수 있는 일은 두리 도구 호출뿐이다.
-2. **도구 단위 등급**: `send_message`처럼 등급이 분명한 도구는 코드에 등급을 박아 둔다.
-3. **범용 브라우저 동작 분류**: `browser_click`처럼 등급이 동작마다 달라지는 도구는 dool2d가 실행 직전에 따로 판단한다.
-   - 누를 요소의 역할과 글자: 결제, 구매, 주문하기, 예약 확정, 보내기, 등록 등
-   - 스킬에 적힌 위험 단계
-   - 현재 URL 패턴: 주문서, 결제 페이지
-   - 에이전트가 스스로 밝힌 의도
+### 4.2 Layers of blocking
+1. **Remove the detours**: turn off the agent's shell, file and web tools (chapter 3). The only thing the agent can do is call Dool2 tools.
+2. **Tier per tool**: a tool with a clear tier, like `send_message`, has its tier hard-coded.
+3. **Classifying general browser actions**: for tools like `browser_click`, where the tier varies with the action, dool2d judges separately right before execution.
+   - The role and text of the element to click: payment, purchase, place order (주문하기), confirm booking, send, post, etc.
+   - Risky steps written in the skill
+   - Current URL pattern: order form, payment page
+   - The intent the agent states itself
 
-   이 중 **하나라도 위험하면 위험으로 본다.** 에이전트가 "그냥 조회예요"라고 해도 결과는 바뀌지 않는다.
-4. **네트워크 가드**: 결제대행사·간편결제 도메인으로 나가는 요청이나 위험 페이지의 폼 전송은 Playwright 요청 가로채기로 막는다. 유효한 허락이 있을 때만 통과시킨다.
-5. **마지막 안전장치**: 실제 결제는 대부분 네이버페이·카카오페이 같은 결제 앱 승인을 한 번 더 거친다. 두리는 결제 비밀번호와 카드 번호를 다루지 않는다.
+   If **any one of these is risky, the action is treated as risky.** It does not change if the agent says "this is just a lookup".
+4. **Network guard**: requests going out to payment gateway or easy-pay domains, and form submissions on risky pages, are blocked with Playwright request interception. They pass only with a valid approval.
+5. **Last safety net**: most real payments go through one more approval in a payment app such as Naver Pay or Kakao Pay. Dool2 does not handle payment passwords or card numbers.
 
-분류는 완벽할 수 없다. 무엇이 빠질 수 있는지는 위협 모델 문서에 솔직하게 적는다.
+Classification cannot be perfect. The threat model document states honestly what can slip through.
 
-### 4.3 허락 서명
-- dool2d가 허락 요청을 정규화한다: `{무엇을, 어디서, 얼마, 취소 조건, 페이지 URL, 화면 캡처 해시, nonce, 만료 시각}`. 그 해시가 서명할 대상(challenge)이 된다.
-- 폰은 요청 내용과 화면 캡처를 보여 주고, 사용자가 생체인증으로 서명한다.
-- **dool2d가 페어링 때 등록한 공개키로 서명을 직접 확인한다.** 확인되면 그 동작 하나에만 쓰는 일회용 허락 토큰을 만든다. 서버는 이 과정에 끼지 않는다.
-- 서명 방식은 단계별로 간다.
-  - **1단계 PWA + 패스키(WebAuthn)**: PC가 `clientDataJSON`(challenge·origin)과 `authenticatorData`(RP ID 해시, 사용자 확인 플래그)와 서명을 검증한다. RP ID는 공식 앱 도메인이고, 직접 호스팅하면 그 사람의 도메인이 된다.
-  - **2단계 네이티브 앱**: iOS Secure Enclave, Android StrongBox에서 만든, 꺼낼 수 없는 키로 서명한다. 생체인증이 있어야만 키를 쓸 수 있다.
-- **랜딩 문구와의 차이**: 1단계 패스키는 iCloud·Google 계정으로 동기화되는 키다. 엄밀히 말해 "폰 보안칩의 열쇠"는 2단계부터 맞는 표현이다. 랜딩 문구를 고치거나, 돈 내기 서명은 처음부터 네이티브 앱으로 하는 방안을 검토한다(9장 결정 3).
+### 4.3 Approval signature
+- dool2d normalizes the approval request: `{what, where, how much, cancellation terms, page URL, screen capture hash, nonce, expiry time}`. Its hash becomes the thing to be signed (the challenge).
+- The phone shows the request and the screen capture, and the user signs with biometrics.
+- **dool2d verifies the signature itself, using the public key registered at pairing.** Once verified, it creates a one-time approval token used for that one action only. No server takes part in this process.
+- The signing method goes in stages.
+  - **Stage 1: PWA + passkey (WebAuthn)**: the PC verifies `clientDataJSON` (challenge, origin), `authenticatorData` (RP ID hash, user verification flag) and the signature. The RP ID is the official app domain, or the person's own domain when self-hosting.
+  - **Stage 2: native app**: signs with a non-exportable key created in the iOS Secure Enclave or Android StrongBox. The key can be used only with biometrics.
+- **Difference from the landing page wording**: a stage 1 passkey is a key synced through an iCloud or Google account. Strictly speaking, "a key in the phone's security chip" is accurate only from stage 2. We will either fix the landing wording or consider using the native app for `pay` signatures from the start (chapter 9, decision 3).
 
-## 5. 두리의 손: 브라우저와 PC 제어
+## 5. Dool2's hands: browser and PC control
 
-두리는 사용자 PC를 원격으로 대신 조작한다. 같은 일을 **서비스 회사 서버의 클라우드 브라우저**에서 하는 방식도 있지만, 그러면 해외·데이터센터 IP 로그인 경고가 뜨고 브라우저 밖의 일은 못 한다. 두리는 **사용자의 진짜 PC**에서 한다. 집 IP, 이미 깔린 프로그램(카카오톡 PC, 한글, 엑셀, 공동인증서·은행 보안 프로그램)까지 다룰 수 있다.
+Dool2 operates the user's PC remotely on their behalf. Some services do the same work in a **cloud browser on the service company's server**, but that triggers foreign or data-center IP login warnings and cannot do anything outside the browser. Dool2 works on the **user's real PC**. It can handle the home IP and programs that are already installed (KakaoTalk PC, Hangul, Excel, certificate and bank security programs).
 
-### 5.0 가장 정확한 방법부터 쓴다
+### 5.0 Use the most precise method first
 
-| 순서 | 방법 | 쓰는 곳 | 화면이 잠겨 있어도 되나 |
+| Order | Method | Used for | Works with the screen locked? |
 |---|---|---|---|
-| 1 | 공식 연동 (IMAP, 캘린더 API 등) | 메일, 일정 | 된다 |
-| 2 | 브라우저 제어 (CDP, 5.1) | 웹 서비스 대부분 | 된다 (화면 밖 창) |
-| 3 | PC 화면 제어 (5.2) | 앱만 있는 일: 카카오톡 PC, 한글·엑셀, 인증서·보안 프로그램 창, 파일 정리 | **안 된다**: 화면이 켜져 있고 잠금이 풀려 있어야 한다 |
+| 1 | Official integration (IMAP, calendar API, etc.) | mail, calendar | Yes |
+| 2 | Browser control (CDP, 5.1) | most web services | Yes (an off-screen window) |
+| 3 | PC screen control (5.2) | things that exist only as apps: KakaoTalk PC, Hangul and Excel, certificate and security program windows, file organizing | **No**: the screen must be on and unlocked |
 
-에이전트 지침에 이 순서를 박아 둔다. 화면 제어는 가장 느리고 실수가 잦아서, 다른 방법이 없을 때만 쓴다. Claude Code가 자기 computer use에 적용하는 원칙과 같다.
+We write this order into the agent instructions. Screen control is the slowest and makes the most mistakes, so it is used only when there is no other way. This is the same principle that Claude Code applies to its own computer use.
 
-### 5.0.1 에이전트 내장 기능은 쓸 수 없다 → 두리가 직접 만든다
+### 5.0.1 The agents' built-in features cannot be used → Dool2 builds its own
 
-- Claude Code의 내장 computer use는 **`-p`(헤드리스)에서 쓸 수 없고**, CLI에서는 맥 전용이다. 또 브라우저는 "보기만 가능" 등급이다.
-- Codex의 computer use는 Codex 데스크톱 앱의 플러그인이고, 윈도우에서는 전면 실행만 된다.
-- 그래서 두리는 **브라우저 도구와 화면 제어 도구를 직접 만들어 MCP로 제공한다.** 그러면 Claude와 Codex 어느 쪽이든, 맥이든 윈도우든 똑같이 동작하고, 승인 게이트도 한곳에서 건다.
+- Claude Code's built-in computer use **cannot be used in `-p` (headless)** and on the CLI it is Mac-only. Its browser access is also at a "view only" tier.
+- Codex's computer use is a plugin of the Codex desktop app, and on Windows it runs only in the foreground.
+- So Dool2 **builds its own browser tools and screen control tools and provides them over MCP.** This way it behaves the same with Claude or Codex, on Mac or Windows, and the approval gate is applied in one place.
 
-## 5.1 브라우저
+## 5.1 Browser
 
-**최우선 원칙: 브라우저에서 막히면 안 된다.** 두리는 상업용 크롤러가 아니라 **사용자 본인의 계정으로, 본인 PC에서, 본인 대신 일하는 개인 비서**다. 그러니 사이트가 보기에도 "그 사람이 평소 쓰는 브라우저"여야 한다. 가장 확실한 방법은 **정말로 그 사람이 평소 쓰는 브라우저를 쓰는 것**이다.
+**Top principle: we must not get blocked in the browser.** Dool2 is not a commercial crawler. It is a **personal assistant that works for the user, with the user's own account, on the user's own PC.** So the site should also see "the browser that person normally uses". The surest way is **to really use the browser that person normally uses.**
 
-### 방식: 사용자 브라우저 + 두리 확장 프로그램
+### Approach: the user's browser + the Dool2 extension
 
 ```
-사용자의 Chrome / Edge / 웨일 / Brave …  (평소 프로필, 평소 로그인 그대로)
-   └─ 두리 확장 프로그램 (웹 스토어에서 설치, 한 번 클릭)
-        └─ native messaging ──▶ dool2d (승인 게이트·스킬·기록)
+User's Chrome / Edge / Whale / Brave …  (usual profile, usual logins as they are)
+   └─ Dool2 extension (installed from the web store, one click)
+        └─ native messaging ──▶ dool2d (approval gate · skills · records)
 ```
 
-- 사용자가 평소 쓰는 브라우저에 **두리 확장 프로그램**을 설치한다. 확장 프로그램은 native messaging으로 dool2d와 이야기한다.
-  - 원격 디버깅 포트를 열지 않는다. 그래서 Chrome 136의 "기본 프로필 원격 디버깅 금지"에 걸리지 않는다.
-  - Anthropic의 Claude in Chrome도 같은 방식이다. 확장 프로그램과 native messaging으로 Chrome·Edge·Brave·Arc·Vivaldi·Opera를 지원한다.
-- **평소 로그인 그대로 쓴다.** 네이버, 쿠팡에 이미 로그인돼 있으면 다시 로그인할 필요가 없다. 랜딩의 "평소 로그인해 둔 그대로 써요"가 그대로 사실이 된다.
-- **가장 덜 막힌다.** 사이트가 보는 건 그 사람의 진짜 브라우저다. 진짜 쿠키, 방문 기록, 확장 프로그램, 집 IP가 그대로 있다.
-- **입력은 진짜 입력으로 넣는다.** 클릭·타이핑은 `chrome.debugger`(CDP `Input.dispatch*`)로 넣는다. 그래야 브라우저가 진짜 사용자 입력으로 처리한다. 페이지 스크립트로 흉내 낸 클릭은 사이트가 구분할 수 있어서 쓰지 않는다.
-  - `chrome.debugger`가 붙어 있는 동안 브라우저 위쪽에 "두리가 이 브라우저를 제어하는 중" 막대가 뜬다. 이 막대는 사용자에게만 보이고 사이트에는 보이지 않는다. 작업할 때만 붙이고 끝나면 뗀다.
-- **AI 작업은 따로 묶는다.** 두리가 여는 탭은 "두리" 탭 그룹(색상 표시)이나 별도 창에 모은다. 사용자의 탭은 허락 없이 건드리지 않는다.
-- **원격 화면**(6.4): `chrome.debugger`의 `Page.startScreencast`로 그 탭 화면만 폰에 보낸다.
-- AI 커서와 "지금 하는 일" 표시는 두 곳에 띄운다.
-  - 확장 프로그램 사이드 패널, 툴바 배지
-  - 탭 위에 겹치는 두리 앱의 투명 창. 페이지 코드는 건드리지 않는다.
+- We install the **Dool2 extension** in the browser the user normally uses. The extension talks to dool2d through native messaging.
+  - It does not open a remote debugging port. So it is not affected by Chrome 136's "remote debugging is disabled on the default profile".
+  - Other products from AI companies use the same approach: an extension plus native messaging, supporting Chrome, Edge, Brave, Arc, Vivaldi and Opera.
+- **It uses the usual logins as they are.** If the user is already logged in to Naver or Coupang, there is no need to log in again. The landing page's "uses your usual logins as they are" becomes simply true.
+- **It gets blocked least.** What the site sees is the person's real browser. The real cookies, history, extensions and home IP are all there.
+- **Input goes in as real input.** Clicks and typing are sent with `chrome.debugger` (CDP `Input.dispatch*`), so the browser treats them as real user input. Clicks faked by page scripts can be told apart by sites, so we do not use them.
+  - While `chrome.debugger` is attached, a "Dool2 is controlling this browser" bar shows at the top of the browser. The bar is visible only to the user, not to the site. We attach it only while working and detach it when done.
+- **AI work is grouped separately.** Tabs that Dool2 opens are gathered in a "Dool2" tab group (color-marked) or a separate window. The user's own tabs are not touched without approval.
+- **Remote view** (6.4): `chrome.debugger`'s `Page.startScreencast` sends only that tab's screen to the phone.
+- The AI cursor and the "what I'm doing now" indicator show in two places.
+  - The extension side panel and the toolbar badge
+  - A transparent window of the Dool2 app laid over the tab. It does not touch the page's code.
 
-**쓰지 않는 것**: Chromium 포크(보안 패치를 혼자 따라갈 수 없음), 외부 AI 전용 브라우저(본체가 비공개이거나 특정 OS 전용이고, 사용자가 브라우저를 바꿔야 함).
+**What we do not use**: a Chromium fork (we cannot keep up with security patches alone), and dedicated AI browsers from others (the core is closed or tied to one OS, and the user would have to switch browsers).
 
-### 브라우저: Chrome 하나로 통일 (없으면 두리가 깔아 준다)
+### Browser: unified on Chrome (Dool2 installs it if missing)
 
-**결정(2026-11-14): 공식 지원 브라우저는 Chrome 하나다.** 없으면 두리가 설치한다.
-- 스킬 검증, 막힘 지도, 스토어 심사, 고객 지원을 브라우저 하나에만 집중할 수 있다. 한국 PC 사용자 대부분이 이미 Chrome을 쓴다.
-- Edge·웨일·Brave도 같은 확장으로 동작할 가능성이 높지만 "베타"로만 표시하고, 따로 보장하지 않는다.
+**Decision (2026-11-14): the officially supported browser is Chrome only.** If it is missing, Dool2 installs it.
+- Skill verification, the block map, store review and customer support can focus on one browser. Most Korean PC users already use Chrome.
+- Edge, Whale and Brave will probably work with the same extension, but we label them "beta" only and do not guarantee them separately.
 
-| 상황 | 처리 |
+| Situation | Handling |
 |---|---|
-| Chrome이 있다 | 그 Chrome에 확장을 연결한다 |
-| Chrome이 없다 (맥·윈도우) | "두리는 Chrome에서 일해요. 지금 설치할게요"라고 안내하고 **Google 공식 설치 파일을 받아 대신 설치**한다. 서명을 확인한 뒤 설치하고, 관리자 권한 없이 사용자 위치에 깐다. 기본 브라우저는 바꾸지 않는다 |
-| 회사 정책으로 Chrome·확장 설치가 막혔다 | 전용 브라우저 모드(아래)로 가거나, 지원 불가로 안내한다 |
+| Chrome is present | Connect the extension to that Chrome |
+| No Chrome (Mac, Windows) | Say "Dool2 works in Chrome. I'll install it now", then **download the official Google installer and install it for the user.** We verify the signature before installing, and install in the user's location with no admin rights. We do not change the default browser |
+| Company policy blocks Chrome or extension installs | Go to dedicated-browser mode (below), or tell the user it is not supported |
 
-**확장 프로그램 설치 (사용자 클릭 한 번)**
-- 두리가 Chrome의 "외부 확장 프로그램" 등록 위치에 두리 확장을 올려 둔다. 등록 위치는 맥은 `External Extensions` 폴더, 윈도우는 사용자 레지스트리이고, 웹 스토어 업데이트 주소를 쓴다.
-- 그러면 Chrome이 "새 확장 프로그램이 추가됨 · [사용 설정]"을 띄우고, 사용자는 한 번만 누르면 된다.
-- 이 방식이 안 되는 환경에서는 웹 스토어 페이지를 열어 [Chrome에 추가]를 누르게 한다. 어느 쪽이든 클릭은 한 번이다.
-- 소비자 PC에서는 확장을 사용자 클릭 없이 설치할 방법이 없다. Chrome이 일부러 막아 둔 것이다.
+**Installing the extension (one user click)**
+- Dool2 places the Dool2 extension in Chrome's "external extensions" registration location. On Mac it is the `External Extensions` folder, on Windows it is the user registry, and it uses the web store update URL.
+- Chrome then shows "New extension added · [Enable]", and the user only has to click once.
+- In environments where this does not work, we open the web store page and have the user press [Add to Chrome]. Either way it is one click.
+- On a consumer PC there is no way to install an extension without a user click. Chrome blocks that on purpose.
 
-### 전용 브라우저 모드 (선택)
+### Dedicated-browser mode (optional)
 
-AI가 평소 브라우저를 쓰는 게 꺼려지는 사용자를 위한 모드다.
-- **같은 브라우저의 "두리" 프로필**에 확장을 설치한다. 진짜 Chrome 그대로이고 로그인만 따로 한 번 하면 된다. 가장 추천하는 대안이다.
-- 확장 설치가 막힌 환경에서만 두리가 Chrome을 별도 데이터 폴더로 평범하게 실행한 뒤 CDP로 붙는다. 이때도 자동화 표시(`--enable-automation`)는 남기지 않는다.
+This is a mode for users who are uneasy about the AI using their usual browser.
+- Install the extension in a **separate "Dool2" profile of the same browser.** It is real Chrome as is, and the user only needs to log in separately once. This is the most recommended alternative.
+- Only in environments where extension installs are blocked, Dool2 runs Chrome normally with a separate data folder and attaches with CDP. Even then, we leave no automation marker (`--enable-automation`).
 
-**검토 후 기본안에서 뺀 것: 자체 Chromium + 기존 브라우저 로그인 가져오기**
-- 맥: 키체인의 "Chrome Safe Storage" 키를 사용자 허용으로 읽으면 쿠키를 복호화해서 옮길 수 있다. 실제로 된다.
-- 윈도우: Chrome 127+의 앱 전용 암호화(App-Bound Encryption) 때문에 다른 프로그램은 쿠키 키를 정상적으로 풀 수 없다. 이걸 뚫는 방법은 정보 탈취 악성코드가 쓰는 기법과 같아서 백신에 걸린다. **사실상 불가**하다.
-- 옮긴 쿠키는 갈수록 덜 통한다.
-  - Chrome의 기기 묶음 세션(DBSC)은 Google 로그인부터 세션을 그 기기·그 브라우저에 묶는다.
-  - 한국 사이트도 새 환경으로 보고 "새 기기 로그인" 알림이나 재인증을 띄울 수 있다(사이트별 확인 필요).
-- 한 번 복사하는 것이라 이후 원래 브라우저와 로그인 상태가 따로 논다.
-- "브라우저 쿠키 키를 읽는 프로그램"은 보안을 내세우는 두리의 신뢰와 맞지 않는다.
+**Considered and removed from the default plan: our own Chromium + importing logins from the existing browser**
+- Mac: if the user allows reading the "Chrome Safe Storage" key in the keychain, cookies can be decrypted and moved. This does work.
+- Windows: because of Chrome 127+ App-Bound Encryption, other programs cannot normally unlock the cookie key. Getting around it uses the same techniques as info-stealing malware, so antivirus flags it. It is **practically impossible.**
+- Moved cookies work less and less.
+  - Chrome's Device Bound Session Credentials (DBSC) tie the session to that device and that browser, starting with Google login.
+  - Korean sites may also see it as a new environment and show a "new device login" alert or ask for re-authentication (needs checking per site).
+- It is a one-time copy, so afterwards the login state drifts apart from the original browser.
+- A "program that reads the browser's cookie key" does not fit Dool2's trust, which rests on security.
 
-→ 맥에서 "평소 브라우저와 완전히 분리하고 싶다"는 사용자용 **선택 기능**으로만 나중에 검토한다. 기본은 확장 프로그램 방식이다.
+→ We will consider it later only as an **optional feature** for Mac users who want "complete separation from my usual browser". The default is the extension approach.
 
-### 주의할 점
+### Things to watch
 
-- **사용자가 PC 앞에서 브라우저를 쓰는 중이면** 두리 작업은 별도 창에서 한다. 사용자가 그 창을 만지면 두리는 멈추고 "제가 하던 걸 이어서 할까요?"를 묻는다.
-- **확장 프로그램 권한이 넓다**(모든 사이트 읽기·제어). 그래서 확장은 아무것도 판단하지 않는 얇은 손으로만 둔다. 판단과 승인 게이트는 dool2d에만 있다. 확장 코드는 공개하고, 스토어 빌드가 공개 코드와 같다는 걸 확인할 수 있게 한다.
-- **확장 프로그램의 서비스 워커는 쉬면 끊긴다.** native messaging 연결로 깨워 두고, 끊기면 dool2d가 다시 붙는다. Claude in Chrome도 같은 문제를 문서에 적어 두었다.
-- **스토어 심사**: Chrome 웹 스토어, Edge 추가 기능, 웨일 스토어 심사를 받아야 한다. 심사가 늦어질 때를 대비해 개발자 모드 설치 안내도 문서로 둔다.
+- **If the user is using the browser at the PC**, Dool2 works in a separate window. If the user touches that window, Dool2 stops and asks "Shall I continue what I was doing?"
+- **Extension permissions are broad** (read and control all sites). So the extension stays a thin hand that decides nothing. Judgment and the approval gate live only in dool2d. The extension code is public, and we make it possible to verify that the store build matches the public code.
+- **The extension's service worker is cut off when idle.** We keep it awake with the native messaging connection, and dool2d reconnects if it drops. Other extension-based products document the same problem.
+- **Store review**: we must pass the Chrome Web Store, Edge Add-ons and Whale Store reviews. In case review is delayed, we also keep developer-mode install instructions in the docs.
 
-### 5.1.1 막히지 않게: 설계 원칙
+### 5.1.1 Not getting blocked: design principles
 
-두리 쪽 장점은 이미 정해져 있다. 집 IP, 진짜 PC, 진짜 Chrome, 본인 계정이다. 이 장점을 망치지 않는 게 핵심이다.
+Dool2's advantages are already settled: home IP, a real PC, real Chrome, the person's own account. The key is not to ruin these advantages.
 
-| 원칙 | 구체적으로 |
+| Principle | In practice |
 |---|---|
-| 한 사람, 한 브라우저 | 프로필 하나를 계속 쓴다. 쿠키와 방문 기록이 평소처럼 쌓인다. 작업마다 새 프로필을 만들지 않는다 |
-| 사람 속도 | 입력·클릭 사이에 사람 같은 간격을 둔다. 스크롤해서 보고 누른다. 같은 사이트에 탭을 여러 개 동시에 열지 않는다 |
-| 반복 조회는 천천히 | 취소표 감시 같은 반복 조회는 서비스별 최소 간격을 스킬에 적고 지킨다(기본 1분 이상) |
-| 자동화 흔적 최소화 | 필요 없는 CDP 기능은 켜지 않는다. 페이지에 스크립트를 넣지 않는다. 주요 봇 탐지 점검 페이지로 정기 시험한다 |
-| 로그인 유지 | 로그인은 사람이 한 번 하고 세션을 오래 유지한다. 두리가 로그인을 반복하지 않는다(반복 로그인은 의심받는 가장 흔한 이유다) |
-| 막히면 멈춤 | 캡차·차단·"비정상 접근" 화면이 나오면 바로 멈추고 사람에게 넘긴다(6.4). 다시 두드리지 않는다 |
-| 하지 않는 것 | 캡차 대신 풀어 주는 서비스, 브라우저 지문 위조, 프록시로 IP 바꾸기는 쓰지 않는다. 계정 정지 위험이 크고, "본인이 쓰는 브라우저"라는 우리 장점을 스스로 버리는 일이다 |
+| One person, one browser | Keep using one profile. Cookies and history build up as usual. Do not create a new profile for each task |
+| Human speed | Leave human-like gaps between typing and clicks. Scroll to look, then click. Do not open several tabs on the same site at once |
+| Repeated lookups go slowly | For repeated lookups such as watching for cancellations, write a minimum interval per service in the skill and obey it (default 1 minute or more) |
+| Minimize automation traces | Do not turn on CDP features that are not needed. Do not inject scripts into the page. Test regularly with the main bot-detection check pages |
+| Keep logins | A person logs in once and the session is kept for a long time. Dool2 does not log in repeatedly (repeated logins are the most common reason for suspicion) |
+| Stop when blocked | When a CAPTCHA, a block or an "abnormal access" screen appears, stop immediately and hand off to the person (6.4). Do not keep hitting it |
+| What we do not do | We do not use CAPTCHA-solving services, browser fingerprint spoofing, or IP changes through proxies. They carry a high risk of account suspension and throw away our own advantage of being "the browser the person uses" |
 
-**스킬마다 "막힘 지도"를 관리한다**
-- 사이트별로 어디서 캡차가 뜨는지, 몇 번 조회하면 막히는지, 로그인이 며칠 유지되는지를 스킬 문서에 기록한다.
-- 사용자가 동의하면 성공·실패·막힘 통계만 익명으로 보낸다. 내용과 계정 정보는 보내지 않는다.
-- 통계에서 막힘이 늘면 그 스킬을 먼저 고친다. 이게 한국향 하네스를 살아 있게 유지하는 방법이다.
-- 도구는 직접 구현하되 Playwright MCP(Apache-2.0)의 방식을 참고한다. 접근성 스냅샷에 요소 번호를 붙여 주고, 그 번호로 누르게 하는 방식이다.
-  - 도구 목록: `browser_open / snapshot / click / fill / select / press / scroll / wait / tabs / screenshot`
-  - 좌석 맵이나 달력처럼 스냅샷에 안 잡히는 화면은 스크린샷과 좌표 방식으로 보조한다.
-- **로그인·본인인증·캡차는 사람이 한다.**
-  - PC 앞에 있을 때는 두리 브라우저 창에서 바로 하면 된다.
-  - 밖에 있을 때는 원격 화면(6.4)으로 넘긴다.
-  - 우회는 시도하지 않는다.
-- 프로필은 하나만 기본으로 둔다(일반 브라우저처럼 로그인을 공유). 서비스별 분리는 옵션이다. 프로필 하나는 Chrome 하나만 동시에 쓸 수 있으므로, 같은 프로필 작업은 순서대로 처리한다.
-- (나중, 고급 옵션) Chrome 144+의 auto-connect로 평소 Chrome에 붙는 방식. 사용자가 직접 켜고, 연결할 때마다 허용해야 한다.
+**We maintain a "block map" for each skill**
+- Per site, we record in the skill doc where CAPTCHAs appear, how many lookups lead to a block, and how many days a login lasts.
+- If the user agrees, we send only anonymous success, failure and block statistics. We do not send content or account information.
+- If blocks increase in the statistics, we fix that skill first. This is how we keep the Korea-focused harness alive.
+- We implement the tools ourselves but refer to the approach of Playwright MCP (Apache-2.0): number the elements in an accessibility snapshot, and click by that number.
+  - Tool list: `browser_open / snapshot / click / fill / select / press / scroll / wait / tabs / screenshot`
+  - For screens that a snapshot cannot capture, such as seat maps or calendars, we assist with screenshots and coordinates.
+- **Login, identity verification and CAPTCHAs are done by the person.**
+  - When at the PC, they can do it right in the Dool2 browser window.
+  - When away, we hand off through remote view (6.4).
+  - We do not try to get around them.
+- We keep only one profile by default (sharing logins like a normal browser). Per-service separation is an option. One profile can be used by only one Chrome at a time, so tasks on the same profile are processed in order.
+- (Later, advanced option) Attaching to the usual Chrome with Chrome 144+ auto-connect. The user turns it on themselves and must allow it each time it connects.
 
-## 5.2 PC 화면 제어 (데스크톱 앱)
+## 5.2 PC screen control (desktop app)
 
-**구성**: OS별 작은 도우미 프로그램(`dool2-hands`)을 둔다. 맥은 Swift(`apps/hands-mac`), 윈도우는 UI Automation 도우미를 따로 만든다([ADR 0013](decisions/0013-hands-mac-swift.md)). 서명해서 앱에 넣고, dool2d가 자식 프로세스로 띄워 한 줄 JSON으로 부른다.
+**Structure**: a small helper program per OS (`dool2-hands`). On Mac it is Swift (`apps/hands-mac`), and on Windows we build a separate UI Automation helper ([ADR 0013](decisions/0013-hands-mac-swift.md)). It is signed and bundled in the app, and dool2d launches it as a child process and calls it with one-line JSON.
 
-| 기능 | 맥 | 윈도우 |
+| Function | Mac | Windows |
 |---|---|---|
-| 화면 보기 | ScreenCaptureKit | Windows.Graphics.Capture |
-| UI 구조 읽기 | Accessibility API (AXUIElement) | UI Automation |
-| 마우스·키보드 | CGEvent | SendInput |
-| 앱 열기·창 정리 | NSWorkspace | Shell / Win32 |
+| Seeing the screen | ScreenCaptureKit | Windows.Graphics.Capture |
+| Reading UI structure | Accessibility API (AXUIElement) | UI Automation |
+| Mouse and keyboard | CGEvent | SendInput |
+| Opening apps, arranging windows | NSWorkspace | Shell / Win32 |
 
-**도구**: `screen_status`, `screen_apps`(켜진 앱·설치된 앱 찾기), `screen_open`, `screen_read`(접근성 트리 + 요소 번호), `screen_click`, `screen_type`(한글은 붙여 넣기 방식), `screen_key`, `screen_screenshot`(축소한 이미지), `screen_request_app`(처음 쓰는 앱 허용 요청), `screen_request_approval`(보내기·결제·삭제·메신저 Enter).
-- 브라우저처럼 **UI 구조를 먼저 읽고**, 구조가 안 잡히는 화면만 스크린샷과 좌표로 처리한다.
-- 접근성 트리를 쓰는 오픈소스 구현(Cua Driver, Windows-MCP, open-codex-computer-use 등)을 참고한다. 그대로 가져다 쓸 수 있는지는 라이선스를 확인한 뒤 결정한다.
+**Tools**: `screen_status`, `screen_apps` (find running and installed apps), `screen_open`, `screen_read` (accessibility tree + element numbers), `screen_click`, `screen_type` (Korean is entered by pasting), `screen_key`, `screen_screenshot` (a reduced image), `screen_request_app` (ask to allow an app used for the first time), `screen_request_approval` (send, pay, delete, messenger Enter).
+- Like the browser, **read the UI structure first**, and use screenshots and coordinates only for screens where no structure can be captured.
+- We refer to open-source implementations that use the accessibility tree. Whether we can take any of them as is will be decided after checking the license.
 
-**안전장치**
-- **앱 허용 목록**: 사용자가 허용한 앱만 조작한다. 처음 쓰는 앱이 나오면 폰으로 "카카오톡을 조작해도 될까요?"를 묻는다.
-- **기본으로 막는 앱**: 터미널, 시스템 설정, 파일 관리자(Finder·탐색기), 비밀번호 관리자. 셸을 끈 의미가 없어지기 때문이다. 사용자가 켤 수는 있지만 경고를 크게 띄운다.
-- **브라우저는 화면 제어로 다루지 않는다.** 브라우저 일은 5.1 도구로만 한다. 그래야 네트워크 가드와 게이트가 우회되지 않는다.
-- **등급 판단**
-  - 카카오톡에서 전송 버튼이나 Enter를 누르는 일, 파일 삭제, 은행 앱의 이체·확인 버튼은 `연락하기`·`돈 내기`로 본다. 앱별 규칙은 스킬에 적고, 모르는 앱의 "보내기·확인·삭제" 성격 버튼은 위험으로 본다.
-  - 위험 동작 직전 화면 캡처를 허락 요청에 붙인다.
-- **사람이 끼어들 수 있게**: 화면 제어 중에는 PC 화면에 "두리가 PC를 쓰는 중 · Esc로 멈춤" 표시를 띄운다. 사용자가 마우스를 움직이면 바로 멈추고 폰에 알린다.
-- **보안 화면은 건드리지 않는다**: 윈도우 UAC 창, 맥 암호 입력 창, 공동인증서 비밀번호 입력은 사람에게 넘긴다.
+**Safety measures**
+- **App allow list**: only apps the user has allowed are operated. When an app comes up for the first time, we ask on the phone: "May I operate KakaoTalk?"
+- **Apps blocked by default**: terminal, system settings, file manager (Finder, Explorer), password manager. Otherwise turning off the shell would be pointless. The user can turn them on, but a large warning is shown.
+- **The browser is not handled by screen control.** Browser work uses only the 5.1 tools. This keeps the network guard and the gate from being bypassed.
+- **Tier judgment**
+  - Pressing the send button or Enter in KakaoTalk, deleting files, and transfer or confirm buttons in a bank app count as `contact` or `pay`. App-specific rules are written in the skill, and buttons of an unknown app that look like "send, confirm, delete" are treated as risky.
+  - A screen capture from right before the risky action is attached to the approval request.
+- **People can step in**: during screen control, a "Dool2 is using the PC · Esc to stop" indicator shows on the PC screen. If the user moves the mouse, Dool2 stops immediately and tells the phone.
+- **Secure screens are not touched**: the Windows UAC window, the Mac password prompt, and the joint certificate (공동인증서) password input are handed to the person.
 
-**현실적인 제약 (사용자에게 미리 알린다)**
-- **화면이 잠기면 화면 제어는 멈춘다.** 맥·윈도우 모두 잠금 화면에서는 다른 앱을 보거나 누를 수 없다. 브라우저 일(5.1)과 공식 연동은 계속된다.
-  - 앱 작업이 필요한 부탁이 오면 폰에 "PC 잠금을 풀어 주세요"를 띄운다.
-  - "자동 잠금 끄기"를 권하지는 않는다. 집 PC가 잠금 없이 켜져 있으면 그 자체로 위험하다. 앱 작업이 많은 사용자에게만 선택지로 알린다.
-- **맥 권한**: 처음 한 번 "손쉬운 사용"과 "화면 기록" 권한을 사용자가 직접 켜야 한다. 앱이 대신 켤 수 없다. 첫 설정 마법사에서 그림과 [설정 열기] 버튼으로 안내한다. 윈도우는 따로 켤 권한이 없다.
-- **윈도우는 화면을 함께 쓴다**: 두리가 조작하는 동안 사용자가 같은 화면에서 다른 일을 할 수 없다. 사용자가 PC 앞에 있으면 앱 작업을 시작하기 전에 묻는다.
+**Practical limits (told to the user in advance)**
+- **Screen control stops when the screen is locked.** On both Mac and Windows, you cannot see or click other apps on the lock screen. Browser work (5.1) and official integrations continue.
+  - When a request needs app work, the phone shows "Please unlock your PC".
+  - We do not recommend "turn off auto-lock". A home PC left on with no lock is itself a risk. We mention it as an option only to users with a lot of app work.
+- **Mac permissions**: the user must turn on the "Accessibility" and "Screen Recording" permissions themselves, once. The app cannot turn them on for them. The first-run setup wizard guides them with pictures and an [Open Settings] button. Windows has no permission to turn on separately.
+- **On Windows the screen is shared**: while Dool2 is operating, the user cannot do other things on the same screen. If the user is at the PC, we ask before starting app work.
 
-## 6. 폰 ↔ PC 연결
+## 6. Phone ↔ PC connection
 
-**원칙: 페어링한 폰만 이 PC에 부탁할 수 있다.** 중계 서버도, 두리 팀도, 같은 와이파이의 다른 기기도 연결할 수 없다. PC는 페어링 때 등록한 폰의 공개키로 서명된 메시지만 받고, 나머지는 열어 보지도 않고 버린다.
+**Principle: only a paired phone can make requests to this PC.** Neither the relay, nor the Dool2 team, nor another device on the same Wi-Fi can connect. The PC accepts only messages signed with the public key of the phone registered at pairing, and discards everything else without even opening it.
 
-### 6.1 페어링
-1. PC 설정 화면에 QR을 띄운다. QR에는 PC 공개키(X25519), 중계 서버 주소, 일회용 페어링 비밀, PC id가 들어 있다.
-2. 폰이 QR을 찍고 자기 키쌍을 만든다. 일회용 비밀을 담은 페어링 요청을 PC 공개키로 암호화해 보내고, 양쪽이 같은 공유 비밀에서 만든 확인 코드 6자리를 사람이 비교한다. 중계 서버는 이 과정의 내용을 볼 수 없다.
-3. 같은 자리에서 패스키(또는 네이티브 서명 키)를 등록한다. PC가 그 공개키를 저장한다.
-4. 가족이 같이 쓰면 폰을 여러 대 등록하고, 폰마다 권한을 정한다(예: 돈 내기 허락은 본인 폰만).
+### 6.1 Pairing
+1. The PC settings screen shows a QR code. The QR contains the PC public key (X25519), the relay address, a one-time pairing secret, and the PC id.
+2. The phone scans the QR and creates its own key pair. It sends a pairing request containing the one-time secret, encrypted with the PC public key. The two sides each derive a 6-digit confirmation code from the same shared secret, and a person compares them. The relay cannot see the content of this process.
+3. In the same place, it registers a passkey (or a native signing key). The PC stores that public key.
+4. If a family shares it, several phones are registered, and permissions are set per phone (for example, `pay` approvals only from the owner's phone).
 
-새 폰 추가는 둘 중 하나로만 할 수 있다.
-- PC 앞에서 QR을 직접 찍는다. PC 화면에 "새 폰을 연결할까요? 확인 코드 4821"이 뜨고, 폰과 코드가 같은지 보고 PC에서 눌러야 끝난다.
-- 이미 연결된 폰이 서명으로 허락한다.
+A new phone can be added in only one of two ways.
+- Scan the QR directly at the PC. The PC screen shows "Connect a new phone? Confirmation code 4821", and it finishes only when the person checks that the phone shows the same code and clicks on the PC.
+- An already connected phone approves it with a signature.
 
-그 외의 방법은 없다. 원격으로 몰래 새 기기를 붙일 수 없게 하기 위해서다.
+There is no other way. This keeps anyone from secretly attaching a new device remotely.
 
-폰 분실 대응
-- PC에서 그 폰을 바로 해제할 수 있다.
-- 다른 폰에서 해제하려면 남은 폰의 서명이 필요하다.
+If a phone is lost
+- The phone can be revoked right away from the PC.
+- To revoke it from another phone, a signature from a remaining phone is needed.
 
-솔직한 한계: 누군가 잠금이 풀린 PC 앞에 앉으면 새 폰을 붙일 수 있다. 그래서 새 폰을 연결할 때는 기존 폰에 알림을 보낸다. 원하면 PC 쪽 PIN을 요구하게 할 수 있다.
+Honest limit: if someone sits at an unlocked PC, they can attach a new phone. So when a new phone is connected, we send a notification to the existing phone. If wanted, a PC-side PIN can be required.
 
-### 6.2 암호화
-- 브라우저·Node 기본 암호화(WebCrypto)만 쓴다: X25519 → HKDF-SHA256 → AES-256-GCM, 승인 서명은 Ed25519 ([ADR 0012](decisions/0012-phone-link.md)). 처음 초안의 libsodium·Noise 대신이다. 순방향 비밀성이 없는 점은 ADR에 적어 두었다.
-- 중계 서버가 알 수 있는 건 기기 id, 메시지 크기, 시각뿐이다.
-- 규약은 `packages/protocol`에 있고 `docs/protocol.md`로 공개한다. 버전 필드를 넣어 폰과 PC 버전이 달라도 협상할 수 있게 한다.
+### 6.2 Encryption
+- We use only the browser and Node built-in cryptography (WebCrypto): X25519 → HKDF-SHA256 → AES-256-GCM, and Ed25519 for approval signatures ([ADR 0012](decisions/0012-phone-link.md)). This replaces libsodium and Noise from the first draft. The ADR notes the lack of forward secrecy.
+- All the relay can know is the device id, message size and time.
+- The protocol is in `packages/protocol` and published as `docs/protocol.md`. A version field lets the phone and PC negotiate even when their versions differ.
 
-### 6.3 중계 서버
-- **Cloudflare Workers + Durable Objects**로 짓는다. 페어링된 묶음(PC 1대와 그 폰들)마다 Durable Object 하나를 둔다.
-  - WebSocket Hibernation을 쓴다. 연결은 유지하되 메시지가 없을 때는 과금되지 않는다.
-  - 꺼진 PC로 가는 부탁은 Durable Object의 SQLite에 암호문으로 쌓아 둔다. 기본 7일 보관 후 삭제한다. PC가 켜지면 그때 받아서 처리한다. 랜딩의 "켜질 때 처리" 약속이 이것이다.
-  - 비용은 요청 100만 건당 $0.15, 저장 GB-월당 $0.20 수준이다. 사용자당 월 몇 원 이하로 예상한다(실측 필요).
-- 푸시
-  - PWA는 Web Push로 보낸다. iOS는 홈 화면에 추가한 경우만 받을 수 있다.
-  - 네이티브는 APNs·FCM으로 보낸다.
-  - 푸시 본문에는 내용을 넣지 않는다("두리가 확인할 게 있어요").
-- 자체 호스팅: 같은 규약을 쓰는 Node 버전(Docker 이미지)을 함께 제공한다.
+### 6.3 Relay
+- Built with **Cloudflare Workers + Durable Objects**. Each paired group (one PC and its phones) gets one Durable Object.
+  - It uses WebSocket Hibernation. The connection is kept, but nothing is billed while there are no messages.
+  - Requests for a PC that is off are stored as ciphertext in the Durable Object's SQLite. They are kept 7 days by default and then deleted. When the PC comes on, it receives and processes them. This is the landing page's promise of "handled when it turns on".
+  - The cost is about $0.15 per million requests and $0.20 per GB-month of storage. We expect a few won or less per user per month (needs measurement).
+- Push
+  - The PWA gets Web Push. On iOS it works only if the app was added to the Home Screen.
+  - Native uses APNs and FCM.
+  - Push bodies contain no content ("Dool2 needs you to check something").
+- Self-hosting: we also provide a Node version (Docker image) that uses the same protocol.
 
-### 6.4 사람이 할 차례: 캡차·본인인증·로그인 넘겨받기
+### 6.4 The person's turn: handing off CAPTCHAs, identity verification and login
 
-캡차, 본인인증, 로그인은 두리가 대신 하지 않는다. **브라우저 화면을 사용자에게 보여 주고, 무엇을 하면 되는지 짚어 준다.**
+Dool2 does not do CAPTCHAs, identity verification or login for the user. **It shows the browser screen to the user and points out what to do.**
 
-**흐름**
-1. **알아챔**: 아래 중 하나에 걸리면 두리가 바로 멈춘다.
-   - 스킬에 적힌 신호(예: 네이버 "자동입력 방지", SRT 보안문자)
-   - 일반 신호: reCAPTCHA·hCaptcha 프레임, "비정상적인 접근", 로그인 화면으로 튕김, 본인인증 팝업
-2. **알림**: 폰에 푸시를 보낸다. "쿠팡에서 확인이 필요해요 · 10초면 돼요"
-3. **보여 주기**: 폰에서 누르면 그 탭의 실시간 화면이 열린다.
-   - 위쪽에 안내 한 줄을 띄운다. 예: "아래 그림에서 신호등을 모두 고르고 [확인]을 눌러 주세요", "PASS 앱에서 인증을 마치고 돌아오세요"
-   - 해야 할 곳을 테두리로 강조한다.
-   - 확대, 키보드, 붙여넣기 버튼을 둔다.
-4. **끝남 확인**: 화면이 다음 단계로 넘어가면 두리가 알아채고 "이어서 할게요"를 띄운다. 사용자가 [다 했어요]를 눌러도 된다.
-5. **PC 앞에 있을 때**: 폰 대신 PC 화면에 두리 브라우저 창을 앞으로 띄우고, 같은 안내를 겹쳐 보여 준다.
-6. **응답이 없을 때**: 정해 둔 시간(기본 10분)이 지나도 답이 없으면 작업을 잠시 멈추고, 할 일 목록에 "확인 기다리는 중"으로 남긴다. 결제 시한처럼 시간이 정해진 일은 미리 알린다.
+**Flow**
+1. **Notice**: Dool2 stops immediately when it hits one of these.
+   - A signal written in the skill (for example Naver's "자동입력 방지" (automatic input prevention), SRT's security text (보안문자))
+   - General signals: a reCAPTCHA or hCaptcha frame, "비정상적인 접근" ("abnormal access"), being bounced to the login screen, an identity verification popup
+2. **Alert**: send a push to the phone. "Coupang needs your check · Takes 10 seconds"
+3. **Show**: when the user taps it on the phone, a live view of that tab opens.
+   - One line of guidance shows at the top. For example: "Select all the traffic lights in the picture below and tap [Confirm]", "Finish verifying in the PASS app and come back"
+   - The place to act is highlighted with an outline.
+   - There are zoom, keyboard and paste buttons.
+4. **Confirm it is done**: when the screen moves to the next step, Dool2 notices and shows "I'll continue". The user can also tap [Done].
+5. **When at the PC**: instead of the phone, the Dool2 browser window is brought to the front of the PC screen, with the same guidance overlaid.
+6. **When there is no response**: if there is no answer after the set time (10 minutes by default), the task pauses and stays in the task list as "Waiting for your check". For time-limited things such as a payment deadline, we warn in advance.
 
-본인인증(PASS·카카오 인증서·문자)은 대부분 폰에서 끝난다. 두리는 "폰에서 인증을 마쳐 주세요"만 안내하고 기다린다. 인증번호를 문자로 받는 경우에는 사용자가 원격 화면에 직접 입력한다. 두리가 문자를 읽어 대신 넣지 않는다.
+Identity verification (PASS, Kakao certificate, text message) is mostly finished on the phone. Dool2 only says "Please finish verification on your phone" and waits. When a code arrives by text message, the user types it into the remote view themselves. Dool2 does not read the text message and enter it for them.
 
-**원격 화면 기술**
-- 이 기능이 필요할 때만 켠다. 화면은 CDP `Page.startScreencast`로 JPEG 프레임을 받아 보내고, 터치·키 입력은 `Input.dispatch*`로 넣는다. 한글은 `Input.insertText`로 넣는다.
-- 영상이라 트래픽이 크다. 처음에는 낮은 화질과 프레임으로 중계 서버를 거친다. 나중에 WebRTC P2P로 바꾸고, 중계 서버는 연결 신호만 맡는다.
-- 한계: 결제 팝업, 새 창, 네이티브 대화상자는 따로 붙여야 한다. 은행 보안 키패드는 원격 입력이 막힐 수 있다.
+**Remote view technology**
+- It is turned on only when this feature is needed. The screen is received as JPEG frames with CDP `Page.startScreencast` and sent on, and touch and key input go in with `Input.dispatch*`. Korean is entered with `Input.insertText`.
+- It is video, so traffic is high. At first it goes through the relay at low quality and frame rate. Later we switch to WebRTC P2P, and the relay handles only the connection signaling.
+- Limits: payment popups, new windows and native dialogs must be attached separately. Bank security keypads may block remote input.
 
-### 6.5 두리가 다른 점
+### 6.5 How Dool2 is different
 
-"폰으로 부탁하면 내 PC가 일한다"는 기능 자체는 여러 곳에서 나오고 있다. 두리는 "원격 채팅"이나 "PC 조작" 자체로 승부하지 않는다. 두리가 다른 점은 다음과 같다.
-1. 돈 내기·연락하기를 **PC가 직접 확인하는 폰 서명**으로 막는다.
-2. 대화가 서비스 회사 서버 기록이 아니라 **종단 간 암호화**로 내 PC에만 남는다. 구간 암호화(TLS)만 하는 원격 기능과 다르다.
-3. **한국 서비스 스킬**이 있다: SRT, 캐치테이블, 쿠팡, 홈택스, 카카오톡 PC 등.
-4. Claude와 ChatGPT 중 **아무 구독이나** 쓴다.
-5. 개발자 도구가 아니라 **일반인용 화면과 설치**다.
+The basic feature of "ask from your phone and your PC does the work" is appearing in many places. Dool2 does not compete on "remote chat" or "PC control" themselves. Dool2 is different in these ways.
+1. `pay` and `contact` are blocked by a **phone signature that the PC checks directly.**
+2. Conversations stay only on my PC with **end-to-end encryption**, not as records on a service company's server. This differs from remote features that use only transport encryption (TLS).
+3. It has **Korean service skills**: SRT, CatchTable, Coupang, Hometax, KakaoTalk PC and more.
+4. It uses **either subscription**, Claude or ChatGPT.
+5. It is **screens and installation for ordinary people**, not a developer tool.
 
-이 다섯 가지가 랜딩 메시지의 중심이어야 한다.
+These five should be the center of the landing page message.
 
-## 7. PC 앱
+## 7. Desktop app
 
-- **Electron**을 쓴다. Tauri는 설치 파일이 작지만, Playwright 때문에 어차피 Node 사이드카와 브라우저가 붙어서 크기 이점이 거의 없다. 대신 사이드카 업데이트 같은 복잡함만 늘어난다.
-- 상주와 전원: 7.1
-- 기록과 열쇠
-  - 기록은 `<앱 데이터>/dool2.db`(SQLite)에 둔다.
-  - 페어링 키, Codex 토큰, DB 암호화 키는 OS 키체인(`safeStorage`)에 둔다.
-  - 단계별 화면 캡처는 파일로 저장하고 보관 기간을 정한다.
-- 업데이트
-  - 앱: electron-updater를 쓴다. 출처는 GitHub Releases이고, 서명된 업데이트만 설치한다.
-  - 스킬: 앱과 별도의 서명 묶음으로 받는다. 폰에서 허락해야 반영된다.
-- 코드 서명
-  - 맥: Apple Developer Program(연 $99)으로 서명하고 공증한다.
-  - 윈도우: Microsoft Artifact Signing은 한국에서 가입할 수 없다. 대신 OV 코드 서명 인증서(연 $150~500)를 사거나, SignPath Foundation 같은 오픈소스 무료 서명을 신청한다(조건 미확인).
-  - 서명이 없으면 SmartScreen 경고가 떠서 일반 사용자가 설치하기 어렵다.
+- We use **Electron**. Tauri makes a smaller installer, but because of Playwright it would still bring a Node sidecar and a browser, so there is almost no size advantage. It only adds complexity, such as updating the sidecar.
+- Staying resident and power: 7.1
+- Records and keys
+  - Records are in `<app data>/dool2.db` (SQLite).
+  - The pairing key, the Codex token and the DB encryption key are in the OS keychain (`safeStorage`).
+  - Per-step screen captures are saved as files with a set retention period.
+- Updates
+  - App: we use electron-updater. The source is GitHub Releases, and only signed updates are installed.
+  - Skills: received as a signed bundle separate from the app. They take effect only after approval on the phone.
+- Code signing
+  - Mac: sign and notarize with the Apple Developer Program ($99 per year).
+  - Windows: Microsoft Artifact Signing cannot be signed up for in Korea. Instead, buy an OV code signing certificate ($150 to $500 per year), or apply for free open-source signing such as the SignPath Foundation (conditions not confirmed).
+  - Without signing, a SmartScreen warning appears and ordinary users find it hard to install.
 
-### 7.1 늘 깨어 있기: "PC가 꺼지면 두리도 쉬어요"
+### 7.1 Always awake: "When the PC is off, Dool2 rests too"
 
-PC가 잠들거나 꺼지면 두리도 일을 못 한다. 그래서 **설치 과정에서 사용자에게 물어보고, 허락받은 설정만 바꾼다.** 몰래 바꾸지 않고, 설정 화면에서 언제든 되돌릴 수 있다.
+If the PC sleeps or is off, Dool2 cannot work either. So **we ask the user during installation and change only the settings they allow.** We do not change anything secretly, and everything can be reverted at any time in settings.
 
-**첫 설정 마법사의 "두리가 쉬지 않게" 단계**
+**The "Keep Dool2 from resting" step in the first-run setup wizard**
 ```
-PC가 잠들면 두리도 잠시 쉬어요. 맡긴 일은 PC가 깨어나면 이어서 할게요.
+When your PC sleeps, Dool2 rests for a while. It will continue your tasks when the PC wakes up.
 
-[✓] 두리가 일하는 동안 PC가 잠들지 않게 할게요        (화면은 꺼져도 돼요)
-[✓] PC를 켜면 두리도 자동으로 켜지게 할게요
-[ ] 맥: 정전 뒤 전기가 들어오면 PC가 다시 켜지게 할게요  (관리자 암호 한 번)
-[ ] 노트북: 덮개를 닫아도 전원이 연결돼 있으면 계속 일하게 할게요
+[✓] Keep the PC from sleeping while Dool2 works        (the screen can still turn off)
+[✓] Start Dool2 automatically when the PC starts
+[ ] Mac: turn the PC back on when power returns after an outage   (admin password once)
+[ ] Laptop: keep working with the lid closed while plugged in
 
-                                   [이렇게 할게요]  [나중에]
+                                   [Do this]  [Later]
 ```
 
-| 설정 | 방법 | 관리자 권한 | 비고 |
+| Setting | How | Admin rights | Notes |
 |---|---|---|---|
-| 일하는 동안 잠들지 않기 | 맥 전원 assertion, 윈도우 `SetThreadExecutionState` (Electron `powerSaveBlocker`) | 필요 없음 | 기본으로 켠다. 화면은 꺼지고 시스템만 깨어 있다. 할 일이나 지켜보기가 없으면 풀어서 평소 절전을 방해하지 않는다. "항상 깨어 있기"도 옵션으로 둔다 |
-| PC 켜면 두리 자동 시작 | 맥 로그인 항목, 윈도우 사용자 시작 프로그램 | 필요 없음 | 기본으로 켠다 |
-| 정전 후 자동 켜짐 (맥) | `pmset autorestart` | 필요 (암호 창 한 번) | 선택. 데스크톱 맥·맥 미니용 |
-| 덮개 닫아도 계속 (노트북) | 맥: 전원과 외부 화면이 연결돼 있을 때만 OS가 허용. 윈도우: 전원 옵션의 덮개 동작 | 윈도우는 확인 필요 | 선택. 맥은 조건을 안내만 한다 |
-| 윈도우 업데이트 재시작 | "사용 시간" 설정 안내 | — | 재시작되면 7.1 아래 흐름으로 복구한다 |
+| Do not sleep while working | Mac power assertion, Windows `SetThreadExecutionState` (Electron `powerSaveBlocker`) | Not needed | On by default. The screen turns off and only the system stays awake. When there are no tasks or watches, we release it so it does not get in the way of normal power saving. "Always stay awake" is also an option |
+| Start Dool2 when the PC starts | Mac login item, Windows user startup program | Not needed | On by default |
+| Power on after an outage (Mac) | `pmset autorestart` | Needed (one password prompt) | Optional. For desktop Macs and Mac minis |
+| Keep working with the lid closed (laptop) | Mac: the OS allows it only when power and an external display are connected. Windows: the lid action in power options | Windows: needs checking | Optional. On Mac we only explain the conditions |
+| Windows update restarts | Guide to the "active hours" setting | — | After a restart, we recover with the flow below 7.1 |
 
-**바꾸지 않는 것**
-- 화면 잠금, 자동 로그인, FileVault·BitLocker는 건드리지 않는다. 보안을 낮추는 설정이기 때문이다.
-- 그 대가로, 재부팅 뒤 사용자가 로그인하기 전까지 두리는 켜지지 않는다. 이 점을 솔직하게 안내한다.
+**What we do not change**
+- Screen lock, auto-login, and FileVault and BitLocker are not touched, because those settings lower security.
+- The price is that after a reboot, Dool2 does not start until the user logs in. We tell the user this honestly.
 
-**폰에서 보이는 상태**
+**State shown on the phone**
 
-| 상태 | 폰 화면 | 부탁하면 |
+| State | Phone screen | When the user makes a request |
 |---|---|---|
-| 깨어 있음 | "PC 연결됨" (초록) | 바로 처리 |
-| 쉬는 중 (잠자기·꺼짐) | "PC가 쉬는 중이에요 · 마지막 연결 오후 3:12" | "PC가 깨어나면 할게요"로 맡아 둔다(중계 서버 우편함, 6.3). 돌아오면 "PC가 돌아왔어요, 맡긴 일 시작할게요" 푸시 |
-| 오래 끊김 (기본 6시간 이상) | "PC 연결이 필요해요" + 확인할 것 안내: 전원, 인터넷, 재부팅 뒤 로그인했는지 | 맡아 두되, 시간이 정해진 일(예매 등)은 "제때 못 할 수 있어요"라고 미리 알린다 |
-| 화면 잠김 | "브라우저 일은 할 수 있어요 · 앱 작업은 PC 잠금을 풀어야 해요" | 브라우저·연동 일은 처리하고, 앱 작업만 기다린다 |
+| Awake | "PC connected" (green) | Handled right away |
+| Resting (sleeping or off) | "Your PC is resting · Last connected 3:12 PM" | Held as "I'll do it when your PC wakes up" (the relay mailbox, 6.3). When it returns, a push says "Your PC is back, starting your task" |
+| Disconnected for long (6 hours or more by default) | "Your PC needs to connect" + what to check: power, internet, whether you logged in after a reboot | Held, but for time-limited tasks (such as bookings) we warn in advance: "It may not happen in time" |
+| Screen locked | "I can do browser work · App work needs your PC unlocked" | Browser and integration work is handled, and only app work waits |
 
-- PC 상태는 중계 서버가 아는 "마지막 연결 시각"과 PC가 보내는 암호화된 상태 신호로 판단한다.
-- PC가 잠들기 직전에는 "잠자기 들어가요" 신호를 보낸다. 그래서 폰이 고장과 휴식을 구분할 수 있다.
+- PC state is judged from the "last connected time" the relay knows and the encrypted status signals the PC sends.
+- Right before the PC goes to sleep, it sends a "going to sleep" signal. This lets the phone tell a breakdown from a rest.
 
-## 8. 설치와 준비: 누구나, 터미널 없이
+## 8. Installation and setup: anyone, no terminal
 
-**목표**: 설치 파일을 한 번 실행하고 버튼 몇 번만 누르면 끝난다. 터미널, 관리자 권한, 재부팅, "컨테이너" 같은 말은 사용자에게 보이지 않는다. **두리에서 가장 중요한 경험이다.**
+**Goal**: run the installer once and press a few buttons, and you are done. Words like terminal, admin rights, reboot and "container" are never shown to the user. **This is the most important experience in Dool2.**
 
-### 8.0 원터치 설치: 사용자가 손대는 곳은 다섯 번
+### 8.0 One-touch install: the user touches it five times
 
-| # | 사용자가 하는 일 | 나머지는 두리가 |
+| # | What the user does | What Dool2 does for the rest |
 |---|---|---|
-| 1 | dool2.com에서 **[다운로드]** → 받은 파일 실행 | OS를 알아서 골라 준다. 윈도우는 설치 화면 없이 바로 깔리고 실행된다(사용자 위치, 관리자 권한 없음). 맥은 실행하면 "응용 프로그램 폴더로 옮길까요?"를 띄우고 알아서 옮긴다 |
-| 2 | **[시작하기]** 한 번 | Chrome 확인·설치, Claude Code 설치 또는 Codex 준비, 전원 설정(동의 화면 포함), 확장 프로그램 등록을 순서대로 자동 진행한다. 진행률만 보인다 |
-| 3 | AI 로그인: 브라우저에 뜬 공식 로그인 창에서 **[승인]** | 이미 Claude·ChatGPT에 로그인돼 있으면 버튼 하나로 끝난다 |
-| 4 | Chrome에 뜬 **[확장 프로그램 사용 설정]** 한 번 | 연결되면 초록 불이 들어온다 |
-| 5 | 폰으로 **QR 찍기** → Face ID·지문 | 폰 연결과 허락 열쇠 등록을 한 번에 한다 |
+| 1 | On dool2.com, press **[Download]** → run the downloaded file | Picks the OS automatically. On Windows it installs and runs right away with no install screen (user location, no admin rights). On Mac, when run, it shows "Move to the Applications folder?" and moves itself |
+| 2 | Press **[Get started]** once | Automatically goes in order: check and install Chrome, install Claude Code or prepare Codex, power settings (with a consent screen), register the extension. Only the progress is shown |
+| 3 | AI login: press **[Approve]** in the official login window in the browser | If already logged in to Claude or ChatGPT, one button finishes it |
+| 4 | Press **[Enable extension]** once in Chrome | When connected, a green light comes on |
+| 5 | **Scan the QR** with the phone → Face ID or fingerprint | Does phone pairing and registering the approval key in one go |
 
-**미루는 것(처음 설치 때 묻지 않음)**
-- 맥 "손쉬운 사용·화면 기록" 권한: PC 앱 작업(5.2)을 처음 시킬 때 묻는다.
-- 서비스 로그인: 확장 방식이라 평소 로그인을 그대로 쓴다. 로그인이 안 된 서비스만 그때 넘겨받기(6.4)로 처리한다.
+**What is postponed (not asked at first install)**
+- Mac "Accessibility and Screen Recording" permissions: asked when the user first requests PC app work (5.2).
+- Service logins: with the extension approach, usual logins are used as they are. Only services that are not logged in are handled then, through handing off (6.4).
 
-**설치를 막는 것들과 대응**
+**What blocks installation, and the response**
 
-| 막는 것 | 대응 |
+| Blocker | Response |
 |---|---|
-| 윈도우 SmartScreen "알 수 없는 게시자" | 코드 서명이 필수다. 첫 배포 전에 서명 인증서를 준비한다(7장). 평판이 쌓이기 전 초기에는 경고가 뜰 수 있으니, 다운로드 페이지에 [추가 정보] → [실행] 그림 안내를 둔다 |
-| 맥 "확인되지 않은 개발자" | Apple 공증(notarization)을 받으면 뜨지 않는다 |
-| 폰으로 dool2.com에 들어온 경우 | "두리는 PC에 설치해요"를 보여 주고 [PC로 링크 보내기]를 둔다(카카오톡 나에게 보내기, 이메일). 대기 신청자에게는 설치 링크를 메일로 보낸다 |
-| 설치 중 인터넷이 끊김 | 단계별로 이어서 받는다. 실패하면 [다시 시도] 한 번으로 그 단계부터 다시 한다 |
+| Windows SmartScreen "unknown publisher" | Code signing is required. Prepare a signing certificate before the first release (chapter 7). Warnings may appear early on, before reputation builds up, so the download page includes a picture guide for [More info] → [Run anyway] |
+| Mac "unidentified developer" | Does not appear once Apple notarization is done |
+| User opened dool2.com on a phone | Show "Dool2 installs on a PC" and offer [Send link to PC] (KakaoTalk "send to me", email). Waitlist signups get the install link by email |
+| Internet drops during install | Downloads resume step by step. On failure, one [Try again] restarts from that step |
 
-### 8.1 컨테이너를 쓰지 않는 이유
+### 8.1 Why we do not use containers
 
-컨테이너는 "필요한 게 다 들어 있고 격리된다"는 점이 매력이다. 하지만 맥·윈도우에서는 사용자에게 부담이 크다.
+The appeal of a container is that "everything needed is inside and it is isolated". But on Mac and Windows it is a heavy burden for the user.
 
-| | 컨테이너(Docker 등) | 올인원 앱 (채택) |
+| | Container (Docker, etc.) | All-in-one app (adopted) |
 |---|---|---|
-| 설치 | 컨테이너 런타임이 먼저 필요하다. 맥은 리눅스 VM, 윈도우는 WSL2가 필요하고, 관리자 권한·재부팅·BIOS 가상화 설정이 걸리기도 한다 | 설치 파일 하나. 관리자 권한이 필요 없다 |
-| 크기·자원 | VM 이미지가 GB 단위이고, 상시 메모리를 쓴다 | 수백 MB |
-| 브라우저 | 리눅스 Chrome이 VM 안에서 돈다. 화면을 보려면 별도 원격 화면이 필요하고, 봇 탐지에 더 잘 걸린다 | 내 PC의 진짜 Chrome. 로그인할 때 그냥 창을 보면 된다 |
-| AI 로그인 | VM 안에서 OAuth 브라우저 흐름이 꼬인다 | 공식 로그인 흐름이 기본 브라우저에서 그대로 열린다 |
-| 폰 열쇠·키체인 | VM 안에서는 OS 키체인을 못 쓴다 | OS 키체인을 쓴다 |
+| Install | A container runtime is needed first. Mac needs a Linux VM, Windows needs WSL2, and admin rights, a reboot or a BIOS virtualization setting may be involved | One installer. No admin rights needed |
+| Size and resources | The VM image is GBs and uses memory all the time | A few hundred MB |
+| Browser | Linux Chrome runs inside the VM. Seeing the screen needs a separate remote view, and bot detection catches it more | The real Chrome on my PC. To log in, you just look at the window |
+| AI login | The OAuth browser flow gets tangled inside the VM | The official login flow opens as is in the default browser |
+| Phone key and keychain | The OS keychain cannot be used inside the VM | Uses the OS keychain |
 
-**그래서 컨테이너의 장점을 컨테이너 없이 얻는다.**
-- **다 들어 있음**: 필요한 부품을 두리가 알아서 내려받고, 두리 전용 폴더에 둔다(8.2).
-- **격리**: 에이전트의 셸·파일·웹을 끄고 두리 도구만 쓰게 한다. 작업 폴더도 두리 전용 폴더로 묶는다(3장, 4장).
-- **고장 나면 스스로 고침**: 부품 상태를 주기적으로 점검하고, 문제가 생기면 "고치기" 버튼 하나로 다시 받는다(8.4).
+**So we get the benefits of containers without containers.**
+- **Everything inside**: Dool2 downloads the needed parts itself and puts them in a Dool2-only folder (8.2).
+- **Isolation**: turn off the agent's shell, files and web and let it use only Dool2 tools. The working folder is also confined to a Dool2-only folder (chapters 3 and 4).
+- **Heals itself when broken**: check the state of the parts regularly, and when a problem comes up, one "Fix" button downloads them again (8.4).
 
-컨테이너는 **두리 박스(리눅스)와 직접 호스팅하는 개발자용**으로만 제공한다. dool2d와 relay의 Docker 이미지를 둔다.
+Containers are provided only for the **Dool2 Box (Linux) and for developers who host it themselves.** We provide Docker images of dool2d and the relay.
 
-### 8.2 두리가 알아서 준비하는 부품
+### 8.2 Parts Dool2 prepares by itself
 
-| 부품 | 없으면 | 어디에 | 비고 |
+| Part | If missing | Where | Notes |
 |---|---|---|---|
-| Node 런타임 | 필요 없음 | Electron 안에 포함 | dool2d는 Electron의 Node로 돈다 |
-| Codex | 설치 파일에 포함 | 앱 안 | Apache-2.0이라 함께 배포할 수 있다. 검증한 버전으로 고정한다 |
-| Claude Code | **공식 설치 프로그램을 두리가 대신 실행** | 공식 기본 위치 (`~/.local/bin/claude`) | 독점 라이선스라 두리 설치 파일에 넣을 수 없다. 공식 경로로 받아야 "수정하지 않은 공식 바이너리" 조건도 지킨다. 업데이트는 Claude Code가 스스로 한다 |
-| 브라우저 | 사용자가 쓰는 Chrome·Edge·웨일 등을 그대로 쓴다. 윈도우는 Edge가 항상 있다. 맥에 Safari만 있으면 Google Chrome 공식 설치 파일을 대신 설치한다 | 브라우저 기본 위치 (맥은 `~/Applications`) | 관리자 권한 불필요 |
-| 두리 확장 프로그램 | 마법사에서 웹 스토어 페이지를 열어 준다. 사용자가 [추가] 한 번 | 브라우저 안 | native messaging 등록 파일은 두리가 사용자 폴더에 쓴다 |
+| Node runtime | Not needed | Included in Electron | dool2d runs on Electron's Node |
+| Codex | Included in the installer | Inside the app | Apache-2.0, so it can be shipped together. Pinned to a verified version |
+| Claude Code | **Dool2 runs the official installer for the user** | Official default location (`~/.local/bin/claude`) | Its proprietary license means we cannot put it in the Dool2 installer. Getting it from the official path also keeps the "unmodified official binary" condition. Claude Code updates itself |
+| Browser | Use the user's own Chrome, Edge, Whale, etc. as is. Windows always has Edge. If a Mac has only Safari, install the official Google Chrome installer for them | Browser default location (`~/Applications` on Mac) | No admin rights needed |
+| Dool2 extension | The wizard opens the web store page. The user clicks [Add] once | Inside the browser | Dool2 writes the native messaging registration file to the user folder |
 
-- 모든 다운로드는 **사용자 권한**으로 사용자 폴더에 설치한다. 관리자 권한 창이 뜨지 않는다. 윈도우 Claude Code 네이티브 설치도 관리자 권한이 필요 없다. Git Bash도 필요 없다.
-- 받은 파일은 공식 출처와 서명·체크섬을 확인한 뒤에만 실행한다.
-- 이미 사용자가 Claude Code를 쓰고 있으면 그걸 그대로 쓴다. 로그인도 이미 돼 있으면 건너뛴다.
+- All downloads are installed in the user folder with **user rights**. No admin rights window appears. The native Windows install of Claude Code also needs no admin rights. Git Bash is not needed either.
+- A downloaded file is run only after checking the official source and its signature and checksum.
+- If the user already uses Claude Code, we use that as is. If already logged in, we skip login.
 
-### 8.3 첫 실행 마법사
+### 8.3 First-run wizard
 
 ```
-① 설치 파일 실행 (윈도우: 더블클릭하면 바로 설치·실행 / 맥: 실행 → 응용 프로그램 폴더로 자동 이동)
-② "어떤 AI 구독을 쓰세요?"
-     [ Claude ]  [ ChatGPT ]  [ 둘 다 ]  [ 아직 없어요 → 구독 안내 ]
-③ "두리가 쉬지 않게" 동의 화면 (7.1) → [이렇게 할게요]
-④ [시작하기] → 자동 준비 (체크리스트가 하나씩 초록색으로 바뀜)
-     ✓ Chrome 확인 ................. 없으면 Google 공식 설치 파일로 설치
-     ✓ Claude Code 설치 ............ 공식 설치 프로그램 실행 중 (진행률 표시)
-     ◻ Claude 로그인  [로그인하기] → 기본 브라우저에 Anthropic 공식 로그인 창
-     ◻ 두리 확장 프로그램 → Chrome에 뜬 [사용 설정] 누르기
-     ✓ 전원 설정 적용
-     ✓ 시험 부탁 "안녕?" → 답 받음, 이번 주 사용량 3%
-⑤ 폰 연결: QR 찍기 → 폰에서 Face ID/지문으로 허락 열쇠 등록
-⑥ 끝 — "이제 폰으로 부탁해 보세요"
+① Run the installer (Windows: double-click to install and run right away / Mac: run → auto-move to the Applications folder)
+② "Which AI subscription do you use?"
+     [ Claude ]  [ ChatGPT ]  [ Both ]  [ I don't have one yet → subscription guide ]
+③ "Keep Dool2 from resting" consent screen (7.1) → [Do this]
+④ [Get started] → automatic preparation (the checklist turns green one by one)
+     ✓ Check Chrome ................. install from the official Google installer if missing
+     ✓ Install Claude Code ............ running the official installer (progress shown)
+     ◻ Claude login  [Log in] → Anthropic's official login window in the default browser
+     ◻ Dool2 extension → press [Enable] shown in Chrome
+     ✓ Power settings applied
+     ✓ Test request "Hi?" → got a reply, 3% used this week
+⑤ Connect phone: scan the QR → register the approval key with Face ID/fingerprint on the phone
+⑥ Done — "Now try making a request from your phone"
 ```
 
-- **Claude 로그인**: 두리가 보이지 않는 터미널(node-pty)로 `claude auth login`을 실행하면, 기본 브라우저에 Anthropic 공식 로그인 창이 뜬다. 사용자가 거기서 로그인을 끝내면 `claude auth status`로 확인한다.
-  - 사용자는 터미널을 보지 않는다.
-  - 두리는 토큰을 보지도 저장하지도 않는다. 로그인 정보는 Claude Code가 자기 자리(맥 키체인, 윈도우 `~/.claude`)에 둔다.
-- **ChatGPT 로그인**: "ChatGPT로 계속하기"를 누르면 브라우저에서 OpenAI 공식 로그인 창이 뜨고, 끝나면 바로 돌아온다.
-- **두리가 쉬지 않게**: 전원 설정을 물어보고, 허락받은 것만 바꾼다(7.1).
-- **맥 권한**(손쉬운 사용·화면 기록)은 여기서 묻지 않는다. PC 앱 작업을 처음 시킬 때 그림 안내와 [설정 열기]로 묻는다.
+- **Claude login**: Dool2 runs `claude auth login` in an invisible terminal (node-pty), and Anthropic's official login window opens in the default browser. When the user finishes logging in there, we confirm with `claude auth status`.
+  - The user never sees a terminal.
+  - Dool2 neither sees nor stores the token. The login information stays where Claude Code keeps it (Mac keychain, Windows `~/.claude`).
+- **ChatGPT login**: pressing "Continue with ChatGPT" opens OpenAI's official login window in the browser, and when it finishes, control returns right away.
+- **Keep Dool2 from resting**: we ask about power settings and change only what is allowed (7.1).
+- **Mac permissions** (Accessibility, Screen Recording) are not asked here. They are asked with a picture guide and [Open Settings] when PC app work is first requested.
 
-### 8.4 계속 잘 돌게 하기 (자가 점검)
+### 8.4 Keeping it running well (self-check)
 
-- **두리 진단 화면**: 부품마다 상태를 신호등으로 보여 준다(AI 설치·로그인·버전, 브라우저, 중계 연결, 폰 연결, 디스크 여유). 빨간불이면 옆에 **[고치기]** 버튼이 있다.
-- 주기적으로, 그리고 부탁을 처리하기 직전에 점검한다.
-  - Claude Code가 업데이트되어 플래그가 바뀌었으면 호환 모드로 돌리고 알린다.
-  - 로그인이 풀렸으면 폰에 "PC에서 Claude 로그인이 필요해요"를 보낸다.
-- 지원 요청용 **진단 묶음 내보내기**: 버전과 오류 로그만 담는다. 대화 내용과 개인정보는 넣지 않는다.
+- **Dool2 diagnostics screen**: shows the state of each part as a traffic light (AI install, login and version, browser, relay connection, phone connection, free disk space). A red light has a **[Fix]** button next to it.
+- It checks regularly, and right before handling a request.
+  - If Claude Code was updated and its flags changed, Dool2 runs in compatibility mode and tells the user.
+  - If the login has expired, it sends "Claude login is needed on your PC" to the phone.
+- **Export a diagnostics bundle** for support requests: it holds only versions and error logs. It does not include chat content or personal information.
 
-### 8.5 터미널 없이 문제를 해결할 수 없는 경우 (솔직한 한계)
+### 8.5 Cases where a problem cannot be solved without a terminal (honest limits)
 
-- 회사 PC처럼 관리 정책으로 설치나 실행이 막힌 경우
-- 백신이 Claude Code나 Codex 바이너리를 막는 경우: 예외 등록 방법을 안내한다
-- 아주 오래된 OS: Windows 10 1809 미만, 지원 종료된 macOS
+- When a management policy blocks install or running, as on a company PC
+- When antivirus blocks the Claude Code or Codex binary: we show how to add an exception
+- Very old OS: below Windows 10 1809, or a macOS that is no longer supported
 
-## 9. 주요 결정
+## 9. Key decisions
 
-확정된 결정은 [결정 기록(ADR)](decisions/README.md)으로 옮겨 이유와 함께 관리해요. 아래 표는 전체 요약이에요.
+Decisions that are settled are moved to the [decision records (ADR)](decisions/README.md) and managed with their reasons. The table below is a full summary.
 
-| # | 질문 | 추천 |
+| # | Question | Recommendation |
 |---|---|---|
-| 1 | Claude 연동 방식 | 사용자가 설치한 공식 `claude -p` 실행 + API 키 모드 병행 + Anthropic에 사전 문의 |
-| 2 | Codex 로그인 방식 | SIWC 공식 흐름(두리가 로그인 처리, Codex 바이너리 동봉). 대안은 사용자의 `codex login` 재사용인데 공식 근거가 약하다 |
-| 3 | 폰 앱 시작 형태 | PWA로 시작해서 빠르게 검증한다. 다만 돈 내기 서명의 "보안칩" 약속을 지키려면 네이티브(Expo)를 일찍 당긴다. 랜딩 문구 조정도 함께 |
-| 4 | PC 앱 프레임워크 | Electron (확정 2026-11-14) |
-| 4-1 | 설치 방식 | 컨테이너 없이 올인원 앱. Codex는 동봉하고, Claude Code·브라우저는 두리가 공식 경로로 대신 받는다. Docker는 두리 박스·자체 호스팅용으로만 (8장) |
-| 5 | 에이전트 | **Claude Code와 Codex 둘 다 지원** (확정 2026-11-14). 공통 인터페이스로 처음부터 둘 다 붙인다 |
-| 5-1 | 스킬 라이선스 | **CC BY-SA 4.0** (확정 2026-11-14, open-source.md 3.5) |
-| 5-2 | 브라우저 | 사용자 Chrome + 두리 확장 프로그램 (5.1). **Chrome 하나로 통일, 없으면 두리가 설치** (확정 2026-11-14) |
-| 6 | 랜딩 문구 | "평소 로그인 그대로"는 확장 방식이면 사실이 되므로 유지. "잠자기 꺼 두세요" → 설치 때 동의받아 두리가 설정(7.1) |
+| 1 | How to integrate Claude | Run the official `claude -p` the user installed + API key mode alongside + ask Anthropic in advance |
+| 2 | Codex login method | The official SIWC flow (Dool2 handles login, Codex binary bundled). The alternative is reusing the user's `codex login`, but its official basis is weak |
+| 3 | Form of the phone app at the start | Start with a PWA and validate fast. But to keep the "security chip" promise for `pay` signatures, bring native (Expo) forward early. Adjust the landing wording too |
+| 4 | PC app framework | Electron (confirmed 2026-11-14) |
+| 4-1 | Install method | All-in-one app with no containers. Codex is bundled, and Dool2 downloads Claude Code and the browser through official paths. Docker only for the Dool2 Box and self-hosting (chapter 8) |
+| 5 | Agent | **Support both Claude Code and Codex** (confirmed 2026-11-14). Connect both from the start through the common interface |
+| 5-1 | Skill license | **CC BY-SA 4.0** (confirmed 2026-11-14, open-source.md 3.5) |
+| 5-2 | Browser | The user's Chrome + the Dool2 extension (5.1). **Unified on Chrome, and Dool2 installs it if missing** (confirmed 2026-11-14) |
+| 6 | Landing wording | Keep "your usual logins as they are", since it becomes true with the extension approach. "Turn off sleep" → Dool2 sets it with consent at install (7.1) |
 
-## 10. 단계별 계획 (대략)
+## 10. Phased plan (rough)
 
-**순서 원칙 (2026-11-14 확정): PC 쪽을 먼저 끝까지 만들고, 폰 앱(클라이언트)은 맨 마지막에 만든다.** 폰이 붙기 전까지는 PC 앱 화면이 폰 역할을 대신한다. 부탁도 PC 창에서 하고, 허락도 PC 화면에서 받는다. 폰은 나중에 같은 규약으로 붙인다.
+**Ordering principle (confirmed 2026-11-14): build the PC side all the way first, and build the phone app (the client) last.** Until the phone connects, the PC app screen stands in for the phone. Requests are made in the PC window, and approvals are taken on the PC screen. The phone joins later with the same protocol.
 
-| 단계 | 내용 | 끝났다고 보는 기준 |
+| Stage | Content | Done when |
 |---|---|---|
-| M0 뼈대 ✅ | 모노레포, CI, `protocol`·`store`·`engine`, Claude·Codex 어댑터, PC 창에서 대화, 페르소나 | PC 창에서 부탁하면 고른 AI가 두리 도구만 써서 답하고 기록이 남는다 |
-| M1 설치·첫 설정 | 첫 실행 마법사, Claude 로그인 버튼(보이지 않는 터미널), Claude Code 자동 설치, Chrome 확인·설치, 전원 설정 동의, 트레이 상주·자동 시작, 자가 점검·[고치기] | 깨끗한 맥에서 설치 파일 실행 → 버튼 몇 번 → 첫 부탁 성공 |
-| M1+ 종량제 모드 | OpenCode(API 키)로 Claude·OpenAI·Google·OpenRouter·로컬 모델, 사용 금액 표시·월 한도 ([ADR 0010](decisions/0010-pay-as-you-go-opencode.md)) | 구독 없이 API 키만으로 첫 부탁 성공, 이번 대화 비용이 화면에 보인다 |
-| M2 브라우저 손 | 두리 Chrome 확장 + native messaging, 브라우저 도구, 넘겨받기(PC 화면), 첫 스킬(조회 위주), 두리 금고 로그인 채우기([ADR 0011](decisions/0011-login-vault.md)) | 평소 로그인 그대로 실제 한국 사이트 조회 성공, 캡차가 뜨면 멈추고 사람에게 넘김 |
-| M3 승인 게이트 | 위험도 분류, 작업별 권한 수준(읽기만·보호·전체)과 마지막 확인 스위치, 네트워크 가드, PC 화면에서 허락(나중에 폰 서명으로 교체), 게이트 회귀 테스트 | 허락 없이 결제 버튼이 눌리지 않는 것이 테스트로 고정됨, 실제 예약 1건 성공 |
-| M4 PC 화면 제어·스킬 확대 | `hands` 도우미(맥 → 윈도우), 앱 허용 목록, 기존 스킬 이식·검증, 막힘 지도 | 카카오톡 PC로 메시지 보내기(허락 후), 주요 스킬 "검증됨" |
-| M5 배포 | 윈도우 빌드, 코드 서명·공증, 자동 업데이트, 원터치 설치 파일, Codex Sign in with ChatGPT | dool2.com에서 받아 맥·윈도우에 경고 없이 설치 |
-| M6 폰 (마지막) | 중계 서버, 페어링(QR), 폰 앱, 생체인증 서명, 푸시, 꺼진 PC 우편함, 원격 화면 | 밖에서 폰으로 부탁 → 서명 → 예약 완료. 비공개 베타 시작 |
+| M0 Skeleton ✅ | Monorepo, CI, `protocol`, `store`, `engine`, Claude and Codex adapters, chat in the PC window, persona | A request in the PC window gets an answer from the chosen AI using only Dool2 tools, and a record is kept |
+| M1 Install and first setup | First-run wizard, Claude login button (invisible terminal), automatic Claude Code install, Chrome check and install, power setting consent, tray residency and auto-start, self-check and [Fix] | On a clean Mac: run the installer → a few buttons → the first request succeeds |
+| M1+ Pay-as-you-go mode | OpenCode (API key) with Claude, OpenAI, Google, OpenRouter and local models, spend display and monthly limit ([ADR 0010](decisions/0010-pay-as-you-go-opencode.md)) | The first request succeeds with only an API key and no subscription, and the cost of this chat is shown on screen |
+| M2 Browser hand | Dool2 Chrome extension + native messaging, browser tools, handing off (PC screen), first skills (mostly lookups), Dool2 vault login filling ([ADR 0011](decisions/0011-login-vault.md)) | A lookup on a real Korean site succeeds with the usual login as is, and when a CAPTCHA appears it stops and hands off to the person |
+| M3 Approval gate | Risk classification, per-task permission levels (read-only, protected, full) and a final confirmation switch, network guard, approval on the PC screen (replaced by phone signature later), gate regression test | That no payment button is pressed without approval is fixed by a test, and one real booking succeeds |
+| M4 PC screen control and more skills | `hands` helper (Mac → Windows), app allow list, port and verify the existing skills, block map | Sending a message through KakaoTalk PC (after approval), main skills "verified" |
+| M5 Release | Windows build, code signing and notarization, auto-update, one-touch installer, Codex Sign in with ChatGPT | Download from dool2.com and install on Mac and Windows with no warnings |
+| M6 Phone (last) | Relay, pairing (QR), phone app, biometric signing, push, mailbox for an off PC, remote view | Request from outside with the phone → sign → booking done. Private beta starts |
 
-## 11. 위험
+## 11. Risks
 
-| 위험 | 대응 |
+| Risk | Response |
 |---|---|
-| Anthropic 구독 정책 변경으로 `claude -p` 사용이 막힘 | 공식 바이너리를 수정 없이 실행하는 원칙을 지킨다. API 키 모드와 Codex를 대안으로 둔다. 사전 문의 |
-| app-server 프로토콜 변경 | Codex 버전 고정, 타입 생성 후 커밋, 업데이트 전 호환 테스트 |
-| 봇 탐지·캡차 | 실제 Chrome과 창 띄운 실행, 사람 같은 속도. 막히면 사람에게 넘기고 우회하지 않는다 |
-| 위험 동작 분류 누락 | 네트워크 가드와 결제 앱 2차 승인으로 겹겹이 막는다. 위협 모델에 공개 |
-| PC 악성코드 | 두리가 막을 수 없는 범위라고 명시. 키는 OS 키체인에 둔다 |
-| 공식 PWA가 변조됨(허락 화면 위조) | 서명 대상은 PC가 만든 해시라서 내용을 바꿔치기할 수는 없다. 그래도 표시 화면을 속일 위험이 남는다. 그래서 돈 내기는 네이티브 앱으로 옮기는 걸 우선한다 |
-| 윈도우 서명 비용·절차 | OV 인증서 예산을 잡거나 오픈소스 무료 서명을 신청한다 |
+| A change in Anthropic's subscription policy blocks use of `claude -p` | Keep the principle of running the official binary unmodified. Keep API key mode and Codex as alternatives. Ask in advance |
+| app-server protocol changes | Pin the Codex version, generate types and commit them, run compatibility tests before updating |
+| Bot detection and CAPTCHAs | Real Chrome with a visible window, human-like speed. When blocked, hand off to the person and do not get around it |
+| Missed classification of a risky action | Layer the network guard and the second approval in the payment app. Disclosed in the threat model |
+| Malware on the PC | State clearly that this is beyond what Dool2 can block. Keys are kept in the OS keychain |
+| The official PWA is tampered with (a fake approval screen) | What is signed is a hash made by the PC, so the content cannot be swapped. But the risk of deceiving the displayed screen remains. So we prioritize moving `pay` to the native app |
+| Windows signing cost and process | Budget for an OV certificate, or apply for free open-source signing |
 
-## 12. 근거 자료 (2026-11-14 확인)
+## 12. Sources (checked 2026-11-14)
 
-- Claude Code 법적 고지(인증·자격 사용): https://code.claude.com/docs/en/legal-and-compliance
-- Claude Code 헤드리스·CLI: https://code.claude.com/docs/en/headless , https://code.claude.com/docs/en/cli-reference
-- Agent SDK 개요(제3자 로그인 문구): https://code.claude.com/docs/en/agent-sdk/overview
-- Sign in with ChatGPT (오픈소스 앱): https://developers.openai.com/siwc/token-sharing-open-source.md
+- Claude Code legal notice (authentication and credential use): https://code.claude.com/docs/en/legal-and-compliance
+- Claude Code headless and CLI: https://code.claude.com/docs/en/headless , https://code.claude.com/docs/en/cli-reference
+- Agent SDK overview (third-party login wording): https://code.claude.com/docs/en/agent-sdk/overview
+- Sign in with ChatGPT (open-source apps): https://developers.openai.com/siwc/token-sharing-open-source.md
 - SIWC + app-server: https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server.md
 - Codex app-server: https://learn.chatgpt.com/docs/app-server.md
-- Codex 승인·보안: https://learn.chatgpt.com/docs/agent-approvals-security.md
-- Chrome 원격 디버깅 변경: https://developer.chrome.com/blog/remote-debugging-port
+- Codex approvals and security: https://learn.chatgpt.com/docs/agent-approvals-security.md
+- Chrome remote debugging change: https://developer.chrome.com/blog/remote-debugging-port
 - Playwright MCP: https://github.com/microsoft/playwright-mcp
-- Durable Objects 가격: https://developers.cloudflare.com/durable-objects/platform/pricing/
-- WebAuthn 명세: https://www.w3.org/TR/webauthn-3/
-- 윈도우 코드 서명 선택지: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
+- Durable Objects pricing: https://developers.cloudflare.com/durable-objects/platform/pricing/
+- WebAuthn spec: https://www.w3.org/TR/webauthn-3/
+- Windows code signing options: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options

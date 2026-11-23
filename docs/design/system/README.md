@@ -1,132 +1,134 @@
-# 두리
+# Dool2
 
-**dool² · 부탁은 폰으로, 일은 내 컴퓨터가.** 두리는 내 컴퓨터의 로그인된 브라우저에서 예약·장보기·메일 정리를 대신 하는 AI 비서예요. 폰으로 부탁하고, 돈이 드는 일은 폰에서 승인해요. 색과 캐릭터는 지금 dool2.com(민트 콘센트 얼굴, 검정 말풍선, 흰 앱, 네이비 랜딩)을 그대로 잇고, 그 위에 구조·말투·상태 규칙을 정리했어요. 랜딩·PC 앱·모바일 앱이 같은 얼굴을 갖게 하는 기준이에요.
+**dool² · Ask from your phone, the work happens on my computer.** Dool2 is an AI assistant that handles bookings, grocery shopping and mail cleanup in the logged-in browser on my own computer. You ask from your phone, and anything that costs money is approved on the phone. The colors and character directly continue the current dool2.com (mint outlet face, black chat bubble, white app, navy landing), and on top of that we organized the structure, voice and state rules. It is the standard that gives the landing page, desktop app and mobile app the same face.
 
-## v2 (2026-11-15): 부드러운 면
+## v2 (2026-11-15): soft surfaces
 
-실사용 뒤 화면을 다시 정했어요. 기준 화면은 [`../screens/soft/`](../screens/soft). 아래 v1 내용과 다르면 이 절이 이겨요.
+After real use, we redecided the screens. The reference screens are [`../screens/soft/`](../screens/soft). Where this differs from the v1 content below, this section wins.
 
-- **바탕**: 흰 바탕 대신 아주 옅은 회색 `bg #F5F6F8`(다크 `#0D0F12`). 카드·시트는 흰 `surface`로 떠 보이게.
-- **떠 있는 유리**: 머리의 메뉴 동그라미·내 PC 알약, 입력칸, 탭 막대, 시트만 `glass`(반투명 + 흐림) + `shadow-float`. 나머지는 면과 0.5px 선.
-- **머리**: 왼쪽 메뉴, 가운데 두리(동그라미 캐릭터 + 이름표에 지금 하는 일), 오른쪽 "내 PC" 연결 상태.
-- **말풍선**: 두리는 회색 `raise`, 나는 **옅은 민트 `me #D4F1E3`**(다크 `#1B4733`). v1의 검정 내 말풍선은 쓰지 않아요.
-- **승인**: 노랑 카드 대신 흰 승인 카드 + 큰 금액 + **짙은 민트 승인 버튼**(`approve #13885A`). 노랑(`butter`)은 기다림 점·배지·"직접 해 주세요" 카드에만.
-- **탭**: 아래에 떠 있는 알약 4칸(대화 · 맡긴 일 · 아이디어 · 연결). 지금 탭만 이름을 펼쳐요. 두리 자신(활동·권한·예정·기억)은 캐릭터를 눌러 여는 패널.
-- **카드**: 실시간 화면 카드(회색 판 + 주소 줄 + 실시간 표시 + 크게 보기), 결과 목록, 파일, 바텀시트 상세. 대답 중엔 점 셋, 물은 말 아래엔 빠른 답.
-- **로그인**: 아이디·비밀번호는 로그인 카드(금고), 로봇 확인·본인인증만 실시간 화면.
-- **모서리**: 말풍선·카드 20, 버튼·입력 14, 시트·서랍 32. 떠 있는 탭 막대·입력칸·빠른 답은 알약. 주 버튼은 알약 아님.
-- **움직임**: 보낸 말은 바로 화면에(답을 기다리지 않음), 대답은 쓰는 대로 흘러나오기, 탭 전환 0.22초, 시트 0.28초.
+- **Background**: instead of white, a very pale gray `bg #F5F6F8` (dark `#0D0F12`). Cards and sheets float as white `surface`.
+- **Floating glass**: only the menu circle and "my PC" pill in the header, the input field, the tab bar and sheets use `glass` (translucent + blur) + `shadow-float`. Everything else is surfaces and 0.5px lines.
+- **Header**: menu on the left, Dool2 in the middle (round character + a name tag showing what it is doing now), the "my PC" connection state on the right.
+- **Chat bubbles**: Dool2 is gray `raise`, I am **pale mint `me #D4F1E3`** (dark `#1B4733`). The black "me" bubble of v1 is not used.
+- **Approval**: instead of a yellow card, a white approval card + a large amount + a **deep mint approve button** (`approve #13885A`). Yellow (`butter`) is only for the waiting dot, badges and the "please do this yourself" card.
+- **Tabs**: 4 floating pill slots at the bottom (Chat · Tasks · Ideas · Connections). Only the current tab expands its name. Dool2 itself (activity, permissions, schedule, memory) is a panel opened by tapping the character.
+- **Cards**: live screen card (gray plate + address line + live indicator + enlarge), result list, file, bottom-sheet details. Three dots while answering, quick replies under a question it asked.
+- **Login**: IDs and passwords go through the login card (vault); only robot checks and identity verification use the live screen.
+- **Corners**: chat bubbles and cards 20, buttons and inputs 14, sheets and drawers 32. The floating tab bar, input field and quick replies are pills. The primary button is not a pill.
+- **Motion**: a sent message appears on screen immediately (without waiting for the reply), replies stream in as they are written, tab switch 0.22 s, sheet 0.28 s.
 
-## 한 줄 방향
+## One-line direction
 
-**깨끗한 흰 도구 위에 민트 친구 하나.** 화면은 흰색·검정·회색 선으로 단정하게. 귀여움은 민트 캐릭터와 "일하는 중" 표시에만 모아요. 화면이 귀여운 게 아니라, 두리가 귀여운 거예요.
+**One mint friend on a clean white tool.** Keep the screens tidy with white, black and gray lines. Concentrate cuteness only in the mint character and the "working" indicator. The screen is not cute; Dool2 is cute.
 
-### 원칙
+### Principles
 
-1. **하는 일이 보여야 믿는다.** "두리가 보고 있는 화면"과 단계 로그로 지금 어디서 뭘 하는지 항상 보여줘요. "생각 중..." 같은 막연한 표시는 쓰지 않아요.
-2. **돈과 메시지는 사람이 누른다.** 결제·전송은 반드시 승인 카드(butter)로 멈춰요. 승인 버튼은 화면에서 가장 무거운 요소예요.
-3. **민트는 두리의 색.** `brand`는 캐릭터, 워드마크의 ², "일하는 중" 점과 스피너에만. 버튼과 사용자 말풍선은 ink(검정)이에요.
-4. **카드보다 선.** 구분은 `line` 1px 헤어라인과 `surface-sunken` 회색 패널로. 그림자는 떠 있는 것(승인 시트, 팝오버)에만 `shadow-sheet`.
-5. **상태는 색으로 약속한다.** 민트=일하는 중, 노랑(`butter`)=당신이 필요해요, 검정 체크=끝났어요, 빨강=멈춤/오류. 이 외 의미로 색을 쓰지 않아요.
+1. **You trust what you can see being done.** Always show where and what it is doing, with "the screen Dool2 is looking at" and a step log. Do not use vague indicators like "thinking...".
+2. **A person presses money and messages.** Payment and sending must stop at an approval card (butter). The approve button is the heaviest element on the screen.
+3. **Mint is Dool2's color.** `brand` is only for the character, the ² in the wordmark, the "working" dot and spinner. Buttons and the user's bubble are ink (black).
+4. **Lines over cards.** Divide with `line` 1px hairlines and `surface-sunken` gray panels. Shadows (`shadow-sheet`) only for floating things (approval sheet, popovers).
+5. **State is promised by color.** Mint = working, yellow (`butter`) = you're needed, black check = done, red = stopped or error. Do not use color for any other meaning.
 
-## 브랜드
+## Brand
 
-- **워드마크** `dool²`: 소문자 dool + 민트 위첨자 ², 옆에 작게 "두리". 원본 로고 파일이 기준이에요(워드마크 SVG는 아직 이 시스템에 없음, 추가 필요).
-- **이름**: 앱 안에서는 "두리", 도메인·로고는 "dool²". 둘이 = 폰과 컴퓨터가 함께 일한다는 뜻.
+- **Wordmark** `dool²`: lowercase dool + mint superscript ², with a small "두리" beside it. The original logo file is the standard (the wordmark SVG is not yet in this system and needs to be added).
+- **Name**: "Dool2" (두리) inside the app, "dool²" for the domain and logo. The two-ness means the phone and computer work together.
 
-## 말투
+## Voice
 
-- 존댓말 "~요", 짧게. 한 문장에 한 가지. 두리는 1인칭: "찾아볼게요", "결제 전에 물어볼게요".
-- 장소감을 줘요: "우리 집에서 일하는 중", "내 컴퓨터가 해요".
-- 숫자·시간·가격은 정확하게, 앞에: "₩59,800 · 내일 09:00 서울→부산".
-- 금지: "AI가 도와드립니다", "스마트한", "혁신적인", 느낌표 연발, 이모지 아이콘.
-- 버튼은 동사로: `승인하기`, `대신 해줘`, `내가 할게요`. "확인/취소"만 쓰지 않아요.
+This is the Korean voice (see [persona](../../persona.md)). Each language gets its own native voice for the same character (ADR 0029). Korean examples are kept as data, with English glosses in parentheses.
 
-| 상황 | 좋아요 | 피해요 |
+- Polite 해요체 ("~요"), short. One thing per sentence. Dool2 speaks in the first person: "찾아볼게요" (I'll look), "결제 전에 물어볼게요" (I'll ask before paying).
+- Give a sense of place: "우리 집에서 일하는 중" (working at our home), "내 컴퓨터가 해요" (my computer does it).
+- Numbers, times and prices are exact and come first: "₩59,800 · 내일 09:00 서울→부산" (₩59,800 · tomorrow 09:00 Seoul→Busan).
+- Forbidden: "AI가 도와드립니다" (AI will help you), "스마트한" (smart), "혁신적인" (innovative), strings of exclamation marks, emoji as icons.
+- Buttons are verbs: `승인하기` (Approve), `대신 해줘` (Do it for me), `내가 할게요` (I'll do it). Do not use only "확인/취소" (OK/Cancel).
+
+| Situation | Good | Avoid |
 | --- | --- | --- |
-| 작업 시작 | 좋아요. 내일 7시, 4명, 조용한 한식집으로 찾아볼게요. | 요청을 처리하고 있습니다... |
-| 진행 | 캐치테이블을 살펴보는 중 | 작업 수행 중 |
-| 승인 요청 | ₩59,800 결제할까요? 7호차 12A 창가예요. | 결제를 진행하시겠습니까? |
-| 완료 | 예매했어요. 승차권은 코레일톡에 있어요. | 작업이 성공적으로 완료되었습니다! 🎉 |
-| 막힘 | 본인인증은 직접 해주셔야 해요. 폰에서 열어둘게요. | 오류가 발생했습니다. |
+| Starting a task | 좋아요. 내일 7시, 4명, 조용한 한식집으로 찾아볼게요. (Sure. I'll look for a quiet Korean restaurant tomorrow at 7, for 4.) | 요청을 처리하고 있습니다... (Your request is being processed...) |
+| In progress | 캐치테이블을 살펴보는 중 (Looking at Catchtable) | 작업 수행 중 (Performing task) |
+| Asking approval | ₩59,800 결제할까요? 7호차 12A 창가예요. (Pay ₩59,800? It's car 7, seat 12A, by the window.) | 결제를 진행하시겠습니까? (Do you wish to proceed with payment?) |
+| Done | 예매했어요. 승차권은 코레일톡에 있어요. (Booked. Your ticket is in the Korail Talk app.) | 작업이 성공적으로 완료되었습니다! 🎉 (The task was completed successfully! 🎉) |
+| Blocked | 본인인증은 직접 해주셔야 해요. 폰에서 열어둘게요. (You need to do the identity verification yourself. I'll open it on your phone.) | 오류가 발생했습니다. (An error has occurred.) |
 
-## 컬러
+## Color
 
-흰색·검정·회색이 화면의 90%, 나머지를 상태색이 나눠 써요. 라이트·다크 모두.
+White, black and gray make up 90% of the screen, and the state colors share the rest. Both light and dark.
 
-- **bg #ffffff / 다크 #16181d** 앱 배경.
-- **surface-sunken #f4f5f7** "두리가 보고 있는 화면" 패널, 로그, 선택된 행, 바로가기 타일.
-- **ink #111214** 텍스트, 기본 버튼, **사용자 말풍선**(흰 글자).
-- **brand #4cc98f dool² 민트** 캐릭터·²·일하는 중 점과 스피너. 흰 바탕 위 글자는 `brand-text` #167a4b. 민트·노랑 위 글자는 `on-accent` #0f2a1d.
-- **night #1d2846** 랜딩 히어로 네이비. 앱 안에서는 안 써요.
-- **butter #ffd66b** 승인·주의.
+- **bg #ffffff / dark #16181d** App background.
+- **surface-sunken #f4f5f7** The "screen Dool2 is looking at" panel, logs, selected rows, shortcut tiles.
+- **ink #111214** Text, default buttons, the **user's chat bubble** (white text).
+- **brand #4cc98f dool² mint** The character, ², the working dot and spinner. Text on a white background uses `brand-text` #167a4b. Text on mint or yellow uses `on-accent` #0f2a1d.
+- **night #1d2846** The landing hero navy. Not used inside the app.
+- **butter #ffd66b** Approval and caution.
 
-텍스트 대비: 본문 4.5:1 이상, `ink-muted`는 bg 위 6:1.
+Text contrast: body at least 4.5:1, `ink-muted` 6:1 on bg.
 
-## 타이포그래피
+## Typography
 
-- **Pretendard Variable** 하나로. 본문 450, 제목 680–760. 큰 글자일수록 자간을 좁혀요(display −0.035em).
-- **JetBrains Mono**는 로그·영수증·도메인처럼 정렬이 필요한 곳에만 (`log`). 두리가 실제로 일한다는 느낌을 주는 유일한 장치, 장식 금지.
-- 모바일 채팅 `body-lg` 17px, PC 채팅 `body` 15px.
+- **Pretendard Variable** only. Body 450, headings 680–760. The larger the text, the tighter the tracking (display −0.035em).
+- **JetBrains Mono** only where alignment is needed, such as logs, receipts and domains (`log`). It is the only device that gives the feeling that Dool2 is really working; no decoration.
+- Mobile chat `body-lg` 17px, desktop chat `body` 15px.
 
-## 캐릭터 — 두리 (3D, 2026-11-16부터)
+## Character: Dool2 (3D, since 2026-11-16)
 
-랜딩(dool2.com)의 **3D 두리** 그대로예요. 말랑한 민트 네모 몸(옆면에 살짝 무지개빛), 세로 캡슐 눈 둘, 열쇠 구멍 입, 짧은 두 발. 원본은 코드 [`packages/ui/doori3d.js`](../../../packages/ui/doori3d.js)이고, 표정은 **눈**과 머리 오른쪽 위 **작은 소품**으로만 바꿔요. 몸·입·색은 어느 표정에서도 같아요.
+It is the **3D Dool2** of the landing page (dool2.com) as is. A soft mint squarish body (with a slight rainbow sheen on the sides), two vertical capsule eyes, a keyhole mouth and two short feet. The source is the code [`packages/ui/doori3d.js`](../../../packages/ui/doori3d.js), and expressions change only through the **eyes** and a **small prop** at the upper right of the head. The body, mouth and color are the same in every expression.
 
-| 표정 | 파일 | 눈 | 소품 | 언제 |
+| Expression | File | Eyes | Prop | When |
 | --- | --- | --- | --- | --- |
-| 기본 | idle | 기본 캡슐 눈 | 없음 | 대기, 홈 |
-| 생각 | thinking | 위를 봄, 고개 살짝 돌림 | 점 세 개 | 계획 중(1–3초) |
-| 작업 | working | 힘 준 가는 눈, 숨이 빨라짐 | 땀방울 | 브라우저에서 실행 중 |
-| 질문 | asking | 커진 눈 | 노란 물음표 | 승인·본인인증 필요 |
-| 완료 | done | 웃는 눈 ^^, 분홍 볼 | 반짝 별 | 작업 끝 |
-| 잠 | sleeping | 감은 눈, 느린 숨 | 보라 Z z | PC가 꺼짐/오프라인 |
+| Default | idle | Default capsule eyes | None | Standby, home |
+| Thinking | thinking | Looks up, head turned slightly | Three dots | Planning (1–3 s) |
+| Working | working | Narrowed, strained eyes, faster breathing | Sweat drop | Running in the browser |
+| Asking | asking | Enlarged eyes | Yellow question mark | Approval or identity verification needed |
+| Done | done | Smiling eyes ^^, pink cheeks | Sparkle star | Task finished |
+| Sleeping | sleeping | Closed eyes, slow breathing | Purple Z z | PC is off or offline |
 
-규칙:
-- 화면당 크게 보이는 캐릭터는 하나. 메시지에는 그룹 첫 메시지에만 작게.
-- 크기: 22–56px는 미리 뽑은 그림(`packages/ui/doori/*.webp`), 64px 이상(두리 판·첫 화면·짝 맺기·PC 홈)은 움직이는 3D(`mountDoori`).
-- 움직이는 3D: 숨 쉬듯 오르내림, 가끔 깜빡임, 톡 치면 폴짝. 화면에서 안 보이면 멈추고, '동작 줄이기'면 한 장만 그려요.
-- 표정을 고치면 `packages/ui/doori-render.html`로 표정 그림을 다시 뽑아요.
-- 앱 아이콘은 3D 렌더를 잘라 쓰지 않고, 두리 얼굴을 아이콘으로 따로 그린 `packages/ui/doori/app-icon.svg`가 원본이에요. 판 전체가 민트 몸이고 그 위에 반짝이는 눈·열쇠 구멍 입·머리 광택 줄만 올려요(다리 없음). 고치면 `packages/ui/icon-render.html`로 PC·폰·확장·안드로이드 아이콘과 시작 화면을 한 번에 다시 뽑아요.
-- 로고(`mark.svg`)는 작은 표시용 평면 그림 그대로예요.
+Rules:
+- One large visible character per screen. In messages, only small, on the first message of a group.
+- Sizes: 22–56px use pre-rendered images (`packages/ui/doori/*.webp`); 64px and above (the Dool2 panel, first screen, pairing, desktop home) use the animated 3D (`mountDoori`).
+- Animated 3D: bobs up and down as if breathing, blinks now and then, hops when tapped. It stops when off screen, and draws just one frame under "reduce motion".
+- When you change an expression, re-render the expression images with `packages/ui/doori-render.html`.
+- The app icon is not cropped from the 3D render; the source is `packages/ui/doori/app-icon.svg`, a separately drawn icon of Dool2's face. The whole tile is the mint body, with only the glossy eyes, keyhole mouth and head highlight stripe on top (no legs). When changed, `packages/ui/icon-render.html` re-renders the desktop, phone, extension and Android icons and the splash screen all at once.
+- The logo (`mark.svg`) stays the flat drawing for small display.
 
-## 레이아웃
+## Layout
 
-**대화는 하나.** 주제마다 방을 새로 만들지 않아요. 두리와의 대화 하나에 날짜별로 일상 대화와 맡긴 일이 이어서 쌓이고, 작업은 그 안의 카드예요. 두리가 먼저 말을 걸고("점심은요?"), 빠른 답 버튼으로 바로 이어 말할 수 있어요. 다른 탭에 가 있어도 "지금 하는 일" 바가 위에 떠 있어요. 탭: 대화 · 맡긴 일 · 둘러보기 · 나의 두리. 입력창 오른쪽 `말하기`로 음성 대화를 시작해요(같은 대화에 글로 남아요). 두리 말은 `raise` 말풍선, 사용자 말은 ink 반전 말풍선이고, 두리는 사용자 메시지에 캐릭터 얼굴로 반응해요(이모지 대신).
+**One conversation.** We do not create a new room per topic. In the single conversation with Dool2, everyday talk and delegated tasks pile up in sequence by date, and a task is a card inside it. Dool2 speaks first ("점심은요?", "What about lunch?"), and quick-reply buttons let you continue right away. Even when you are on another tab, a "what's happening now" bar floats at the top. Tabs: Chat · Tasks · Explore · My Dool2. The `말하기` (Speak) button on the right of the input starts a voice conversation (it stays as text in the same conversation). Dool2's words are a `raise` bubble, the user's words are an ink-inverted bubble, and Dool2 reacts to a user message with its character face (instead of emoji).
 
-**다크가 기본.** 다크 bg #121418, surface #1b1d23, raise #23262d. 라이트는 같은 구조에 흰 바탕.
+**Dark is the default.** Dark bg #121418, surface #1b1d23, raise #23262d. Light is the same structure on a white background.
 
-**PC (≥1024px)** 3단: 사이드바 248px(작업 목록, 연결된 컴퓨터) / 대화 최대 720px / "두리의 화면" 400–480px(실시간 미리보기 + 단계 로그).
+**Desktop (≥1024px)** 3 columns: sidebar 248px (task list, connected computer) / conversation max 720px / "Dool2's screen" 400–480px (live preview + step log).
 
-**모바일 (<768px)** 단일 열, 좌우 16px, 하단 고정 입력창. 대화 안에 "두리의 화면" 카드가 인라인. 승인은 바텀시트(`radius-xl`).
+**Mobile (<768px)** Single column, 16px on both sides, input fixed at the bottom. The "Dool2's screen" card is inline in the conversation. Approval is a bottom sheet (`radius-xl`).
 
-**랜딩** 다크 배경 + `night` 히어로 안에 실제 앱 화면. 카피는 왼쪽 정렬, 실제 화면으로 증명.
+**Landing** Dark background + the real app screen inside a `night` hero. Copy is left-aligned, proven with real screens.
 
-**여백**: 4의 배수(`space-*`). 같은 화자 12px, 화자 바뀌면 24px.
+**Spacing**: multiples of 4 (`space-*`). 12px for the same speaker, 24px when the speaker changes.
 
-## 아이콘
+## Icons
 
-Lucide 계열 선 아이콘, 1.75px, 20px 박스, 끝 둥글게, ink/ink-muted. 이모지 금지. 바로가기(식당 예약·장보기·택배 조회·메일 정리)는 sunken 타일 + 흰 아이콘 칩(지금 dool2.com 방식). 사이트는 도메인 텍스트(catchtable.co.kr)로.
+Lucide-style line icons, 1.75px, 20px box, rounded ends, ink/ink-muted. No emoji. Shortcuts (restaurant booking, grocery shopping, parcel tracking, mail cleanup) are a sunken tile + a white icon chip (as dool2.com does now). Sites are shown as domain text (catchtable.co.kr).
 
-## 모션
+## Motion
 
-- 기본 160ms `cubic-bezier(.2,.8,.2,1)`, 바텀시트 240ms.
-- 새 메시지는 4px만 올라오며 등장. 스크롤 페이드업 금지.
-- 스피너는 로그의 진행 중 행에만, 민트 원호.
+- Default 160ms `cubic-bezier(.2,.8,.2,1)`, bottom sheet 240ms.
+- A new message appears rising only 4px. No scroll fade-up.
+- The spinner appears only on the in-progress row of the log, as a mint arc.
 
-## AI 티 안 나게 — 금지 목록
+## Not looking like AI: the prohibition list
 
-- 보라·파랑 그라데이션, 오로라/블롭 배경, 네온 글로우, ✨ 아이콘
-- 글래스모피즘
-- 카드 안의 카드, 모든 걸 둥근 카드에 → 선과 회색 패널로
-- 알약 버튼 남발 → 버튼은 `radius-md` 12px, 전송은 정사각 ink
-- 가운데 히어로 + 기능 카드 3개
-- 대문자 eyebrow 라벨 남발
-- 이모지 아이콘
-- 의미 없는 통계 블록("10x faster")
-- 스크롤마다 페이드업
-- 가짜 OS 상태 바
+- Purple and blue gradients, aurora and blob backgrounds, neon glow, ✨ icons
+- Glassmorphism
+- Cards inside cards, everything in rounded cards → use lines and gray panels instead
+- Overuse of pill buttons → buttons are `radius-md` 12px, send is a square ink button
+- A centered hero + 3 feature cards
+- Overuse of uppercase eyebrow labels
+- Emoji icons
+- Meaningless stat blocks ("10x faster")
+- Fade-up on every scroll
+- Fake OS status bars
 
-## 컴포넌트
+## Components
 
-Button · Composer · Message · ApprovalCard · AgentLog · StatusHeader · Avatar · PickCards · ChatBlocks(빠른 답·목록 줄·결과 한 장·보낼 글). 각 폴더 README에 규칙이 있어요.
+Button · Composer · Message · ApprovalCard · AgentLog · StatusHeader · Avatar · PickCards · ChatBlocks (quick replies, list rows, single result, draft to send). Each folder's README has its rules.

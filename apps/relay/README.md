@@ -1,48 +1,48 @@
 # @dool2/relay
 
-두리 **중계 서버**예요. 폰과 PC가 서로 다른 네트워크에 있어도 이어 주지만, **암호문 봉투만 옮겨요**. 내용은 볼 수 없어요([ADR 0012](../../docs/decisions/0012-phone-link.md)).
+The Dool2 **relay**. It connects the phone and the PC even when they are on different networks, but it **only carries ciphertext envelopes**. It cannot see the contents ([ADR 0012](../../docs/decisions/0012-phone-link.md)).
 
 ```bash
 pnpm build
-pnpm --filter @dool2/relay start      # http://127.0.0.1:8787 (폰 앱: /app/)
+pnpm --filter @dool2/relay start      # http://127.0.0.1:8787 (phone app: /app/)
 ```
 
-| 환경 변수         | 설명                                           |
-| ----------------- | ---------------------------------------------- |
-| `PORT`, `HOST`    | 기본 `8787`, `127.0.0.1`                       |
-| `DOOL2_PHONE_APP` | 폰 앱(PWA) 파일 폴더 (기본: `apps/phone/dist`) |
+| Environment variable | Description                                                   |
+| -------------------- | ------------------------------------------------------------- |
+| `PORT`, `HOST`       | Default `8787`, `127.0.0.1`                                   |
+| `DOOL2_PHONE_APP`    | Folder of the phone app (PWA) files (default: `apps/phone/dist`) |
 
-## 하는 일
+## What it does
 
-- 연결하면 먼저 **Ed25519 서명**으로 "이 기기"임을 증명해요. 기기 id는 서명 공개키의 해시라서 남의 id를 쓸 수 없어요.
-- 봉투의 `from`은 증명한 기기여야 해요. 아니면 연결을 끊어요.
-- PC 방마다 PC 하나와 폰 여럿을 이어요. 폰은 자기 방의 PC에게만 보낼 수 있어요.
-- 받는 쪽이 꺼져 있으면 **7일까지, 500개까지** 쌓아 두었다가 켜지면 넘겨요. 메시지 하나는 512KB까지예요.
-- 누가 페어링된 폰인지는 몰라요. 그건 PC가 판단해서 나머지는 버려요.
-- 연결마다 1초에 30개까지만 받아요.
+- On connect, the device first proves it is "this device" with an **Ed25519 signature**. The device id is the hash of the signing public key, so nobody can use someone else's id.
+- An envelope's `from` must be the proven device. Otherwise the connection is closed.
+- Each PC room connects one PC and several phones. A phone can only send to the PC in its own room.
+- If the receiving side is off, envelopes are held **for up to 7 days, up to 500**, and delivered when it comes on. A single message can be up to 512 KB.
+- It does not know which phones are paired. The PC decides that and discards the rest.
+- Each connection can send at most 30 messages per second.
 
-## 알 수 있는 것과 없는 것
+## What it can and cannot know
 
-| 중계 서버가 아는 것                                      | 모르는 것                      |
-| -------------------------------------------------------- | ------------------------------ |
-| 기기 id, 메시지 크기, 시각, 봉투 종류(`ask`, `reply` 등) | 부탁 내용, 답, 승인 내용, 화면 |
+| What the relay knows                                            | What it does not know                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------- |
+| Device id, message size, time, envelope kind (`ask`, `reply`, and so on) | Request content, answers, approval content, screens |
 
-## 공식 서버 (Cloudflare)
+## Official server (Cloudflare)
 
-공식 중계 서버는 **Cloudflare Workers + Durable Objects**에서 돌아요(`src/worker.ts`). 규칙은 Node 버전과 같은 `src/core.ts`를 써요.
+The official relay runs on **Cloudflare Workers + Durable Objects** (`src/worker.ts`). It uses `src/core.ts`, the same rules as the Node version.
 
-- PC 방(PC id)마다 Durable Object 하나. 접속 주소는 `wss://relay.dool2.com/link?room=<PC id>`예요.
-- WebSocket Hibernation으로 메시지가 없을 때는 잠들어 있어요(요금 없음).
-- 꺼진 기기로 가는 봉투는 그 방의 SQLite에 **암호문 그대로** 7일까지 쌓아 둬요. 서버를 다시 켜도 남아요.
-- 폰 앱은 내려주지 않아요. 폰 앱은 스토어 앱으로만 배포해요(서버가 앱 코드를 바꿔치기할 수 없게).
+- One Durable Object per PC room (PC id). The connection address is `wss://relay.dool2.com/link?room=<PC id>`.
+- With WebSocket Hibernation, it sleeps when there are no messages (no charge).
+- Envelopes for an offline device are kept in that room's SQLite **as ciphertext** for up to 7 days. They survive a server restart.
+- It does not serve the phone app. The phone app is distributed only as a store app (so a server cannot swap the app code).
 
 ```bash
-pnpm --filter @dool2/relay dev:cf                     # 내 컴퓨터에서 Cloudflare 환경으로 띄우기
-node apps/relay/scripts/smoke.mjs http://127.0.0.1:8787 # 전달·쌓아 두기·서명 확인
-pnpm --filter @dool2/relay deploy                     # 배포 (wrangler login 필요)
+pnpm --filter @dool2/relay dev:cf                     # run in a Cloudflare environment on your computer
+node apps/relay/scripts/smoke.mjs http://127.0.0.1:8787 # check delivery, queueing, and signatures
+pnpm --filter @dool2/relay deploy                     # deploy (needs wrangler login)
 node apps/relay/scripts/smoke.mjs https://relay.dool2.com
 ```
 
-## 직접 운영 (Node)
+## Running it yourself (Node)
 
-`src/main.ts`는 자체 호스팅·개발용이에요. 같은 규약이라 PC 앱 설정에서 주소만 바꾸면 돼요. 쌓아 둔 봉투는 메모리에만 있어서 서버를 다시 켜면 사라져요.
+`src/main.ts` is for self-hosting and development. It uses the same protocol, so you only change the address in the desktop app settings. Queued envelopes are only in memory, so they are lost when the server restarts.

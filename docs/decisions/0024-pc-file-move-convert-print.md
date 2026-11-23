@@ -1,77 +1,77 @@
-# 0024. PC 파일 옮기기·사진 형식 바꾸기·출력은 승인과 되돌리기를 붙여 두리 도구로 한다
+# 0024. Moving PC files, converting photo formats and printing are Dool2 tools, with approval and undo
 
-- 상태: 채택
-- 날짜: 2026-11-19
+- Status: Accepted
+- Date: 2026-11-19
 
-## 배경
+## Context
 
-[ADR 0022](0022-pc-file-tools.md)로 찾기·읽기·새로 만들기는 됐지만, 실사용 시험에서 세 가지가 막혔어요.
+[ADR 0022](0022-pc-file-tools.md) covered find, read and create new, but real-use tests got stuck on three things.
 
-- "다운로드에 있는 PDF 영수증·계약서·청구서·기타로 나눠 줘" → 표만 만들고 못 옮김
-- "아이폰 사진 HEIC 파일 JPG로 다 바꿔 줘" → 85개를 찾고도 "변환할 수 없어요"
-- "집 프린터로 학습지 출력해 줘" → "인쇄는 직접 해 주세요"
+- "다운로드에 있는 PDF 영수증·계약서·청구서·기타로 나눠 줘" (sort the PDFs in Downloads into receipts, contracts, invoices and other) → it made only a table and could not move the files
+- "아이폰 사진 HEIC 파일 JPG로 다 바꿔 줘" (convert all my iPhone HEIC photos to JPG) → it found 85 and still said "I can't convert them"
+- "집 프린터로 학습지 출력해 줘" (print the worksheet on my home printer) → "Please print it yourself"
 
-ADR 0022는 옮기기·이름 바꾸기를 "필요해지면 승인 게이트와 함께 따로 정한다"고 남겨 뒀어요.
+ADR 0022 left moving and renaming as "decide separately together with the approval gate when needed".
 
-## 결정
+## Decision
 
-두리 도구 세 개를 더해요. 볼 수 있는 폴더(바탕화면·문서·다운로드)와 민감한 파일 규칙은 ADR 0022 그대로예요.
+We add three Dool2 tools. The visible folders (Desktop, Documents, Downloads) and the sensitive-file rules stay as in ADR 0022.
 
-- `file_move`: 옮기기·이름 바꾸기(여러 개 한 번에, 없는 폴더는 만듦)
-  - 덮어쓰기·지우기는 없어요. 같은 이름이 있으면 `이름 (1)`로 옮겨요
-  - **2개 이상이면 승인 카드**(무엇을 어디로 — 본체가 만든 목록)를 거쳐요. 하나는 바로 해요(되돌릴 수 있어서)
-  - 옮긴 묶음을 `file-moves.json`(최근 20묶음)에 남겨 `undo: true`로 마지막 묶음부터 되돌려요. 원래 자리에 같은 이름이 생겼으면 번호를 붙여 돌려놓고, 그때 만든 폴더는 비었을 때만 치워요
-  - 폴더 자체(바탕화면·문서·다운로드), 밖으로 옮기기, 숨은 이름의 새 폴더는 받지 않아요
-- `file_convert`: 사진 형식 바꾸기(HEIC·PNG·WEBP·TIFF → JPG/PNG). 원본은 그대로 두고 새 파일을 만들어요(같은 이름이면 `(1)`, 이미 바꾼 것은 건너뜀). 새로 만들기뿐이라 승인은 없어요(file_write와 같음)
-  - 맥: 기본 `sips`(새 의존성 없음)
-  - 윈도우: PowerShell의 WPF 이미지 부품. HEIC·WEBP는 그 형식 확장(HEIF·WebP 이미지 확장)이 깔려 있어야 해서, 없으면 결과에 이유와 다음 길(확장 설치·아이폰 전송 설정)을 담아요
-  - 한 번에 70초까지 하고, 남으면 같은 입력으로 다시 부르라고 알려요(이미 바꾼 것은 건너뛰니 이어서 돼요)
-- `file_print`: 종이로 출력. 종이가 나가는 일이라 **늘 승인**(파일·매수·쪽·프린터)을 거쳐요
-  - 맥: CUPS `lp`. 프린터 목록은 `lpstat -e`, 상태는 `lpoptions -p`의 `printer-state`·`printer-state-reasons`로 봐요(lpstat 글은 맥 언어 설정을 따라 바뀌어서)
-  - 윈도우: 목록은 `Win32_Printer`(가상 프린터는 종이로 치지 않음), 출력은 파일을 여는 프로그램의 "인쇄 대상"(PrintTo). 쪽 고르기는 안 돼요
-  - 프린터가 없거나 꺼짐·멈춤·용지 없음이면 승인 전에 이유와 할 일을 결과로 돌려줘요
-  - PDF·사진·txt만. 워드·엑셀·한글은 PDF로, HEIC는 file_convert로 바꾼 뒤예요
+- `file_move`: move and rename (several at once; creates missing folders)
+  - No overwrite and no delete. If the same name exists, it moves it as `name (1)`
+  - **Two or more files need an approval card** (what goes where, as a list made by the daemon). One file is done right away (it can be undone)
+  - Each moved batch is kept in `file-moves.json` (the 20 most recent batches), and `undo: true` reverses the latest batch first. If the same name has appeared at the original place, it puts the file back with a number, and removes the folder it created then only if it is empty
+  - It does not accept the folders themselves (Desktop, Documents, Downloads), moving outside them, or a new folder with a hidden name
+- `file_convert`: change photo format (HEIC, PNG, WEBP, TIFF to JPG/PNG). It leaves the original and creates a new file (`(1)` if the name exists; ones already converted are skipped). It only creates new files, so no approval (same as file_write)
+  - Mac: `sips` by default (no new dependency)
+  - Windows: the WPF imaging components in PowerShell. HEIC and WEBP need that format's extension (HEIF and WebP image extensions) installed, so if it is missing the result carries the reason and the next route (install the extension, iPhone transfer setting)
+  - It works up to 70 seconds per call, and if there is more, it says to call again with the same input (already converted ones are skipped, so it continues)
+- `file_print`: print on paper. Since paper comes out, it **always needs approval** (file, copies, pages, printer)
+  - Mac: CUPS `lp`. The printer list comes from `lpstat -e`, and the state from `printer-state` and `printer-state-reasons` in `lpoptions -p` (because the lpstat text changes with the Mac's language setting)
+  - Windows: the list from `Win32_Printer` (virtual printers do not count as paper), printing through the "print to" verb (PrintTo) of the program that opens the file. Choosing pages is not possible
+  - If there is no printer, or it is off, stalled or out of paper, it returns the reason and what to do before asking for approval
+  - PDF, photos and txt only. Word, Excel and Hancom files must be turned into PDF first, and HEIC converted with file_convert
 
-승인은 기존 승인 게이트(`Approvals`)를 그대로 써요. 종류 `file`·`print`, 탭 번호 대신 `-2`, 주소 `file:move`·`file:print`이고, 승인 카드(PC·폰)는 본체가 만든 목록(`items`)을 보여 줘요. 승인하면 본체가 그 목록·그 파일만 해요. 대화 기록의 카드는 도구가 성공했을 때(승인을 실제로 요청했을 때)만 남겨요.
+Approval uses the existing approval gate (`Approvals`) as is. Kinds `file` and `print`, `-2` instead of a tab number, addresses `file:move` and `file:print`, and the approval card (PC and phone) shows the list (`items`) made by the daemon. When approved, the daemon does only that list and those files. The card in the conversation history is kept only when the tool succeeded (when approval was really requested).
 
-## 이유
+## Why
 
-- 사람이 PC에서 하는 흔한 정리 일이고, 두리가 표만 보여 주고 멈추면 사용자가 손으로 다시 해야 해요
-- 옮기기는 내용이 바뀌지 않고 되돌릴 수 있어서, 덮어쓰기·지우기만 막으면 위험이 작아요. 여러 개는 잘못 나누면 찾기 힘드니 목록으로 한 번 보여 줘요
-- 사진 바꾸기는 새 파일만 만들어서 file_write와 같은 무게예요
-- 출력은 되돌릴 수 없고(종이·잉크) 다른 사람이 볼 수 있어서 늘 승인을 받아요
-- 새 의존성 없이 OS 기본 도구(sips·lp·PowerShell)만 써요
+- It is common tidying that people do on a PC, and if Dool2 shows only a table and stops, the user has to do it again by hand
+- Moving does not change content and can be undone, so blocking only overwrite and delete keeps the risk small. Moving many files wrongly is hard to find again, so they are shown once as a list
+- Converting photos only creates new files, so it weighs the same as file_write
+- Printing cannot be undone (paper, ink) and others can see it, so it always gets approval
+- It uses only the OS's own tools (sips, lp, PowerShell), with no new dependency
 
-## 결과
+## Consequences
 
-- 위협 모델 T21을 고쳤어요
-- 윈도우 사진 바꾸기·출력은 이 결정 때 실제 윈도우에서 시험하지 못했어요. 시험 PC에서 확인하고 고쳐야 해요
-- 출력은 이 맥에서 프린터 목록 확인까지만 했어요(실제 출력 시험은 하지 않음)
-- 되돌리기는 두리가 옮긴 것만 돼요. 사용자가 그 뒤에 옮긴 파일은 건너뛰고 이유를 알려요
+- Threat model T21 was updated
+- Windows photo conversion and printing could not be tried on a real Windows machine when this was decided. They have to be checked and fixed on the test PC
+- Printing was only checked as far as listing printers on this Mac (no real print test)
+- Undo works only for what Dool2 moved. Files the user moved afterwards are skipped, and the reason is reported
 
-## 덧붙임 (2026-11-19): PDF 합치기·휴지통·내려받기·화면 잠그기
+## Addendum (2026-11-19): merge PDFs, Trash, download, lock the screen
 
-실사용 시험에서 "못 해요"라고 답한 네 가지("PDF 3개 하나로 합쳐 줘", "실수로 지운 발표 자료 살려 줘", "이거 집 PC에 받아 놔", "PC 화면 잠가 줘 / 다 끝나면 꺼 줘")를 같은 경계로 더해요.
+We add four things that real-use tests answered with "can't do" ("PDF 3개 하나로 합쳐 줘" (merge these 3 PDFs into one), "실수로 지운 발표 자료 살려 줘" (restore the presentation I deleted by mistake), "이거 집 PC에 받아 놔" (download this to my home PC), "PC 화면 잠가 줘 / 다 끝나면 꺼 줘" (lock my PC screen / shut it down when you're done)) within the same boundary.
 
-- `file_pdf`: 합치기(사진 jpg·png는 한 장씩 A4 쪽으로)·쪽 뽑기·나누기. pdfjs-dist는 읽기 전용이라 **pdf-lib**(MIT, 하위 의존도 MIT·Zlib·0BSD)을 더해요. 맥 기본 기능에는 PDF를 합치는 명령이 없어요. 새 파일만 만들어서 승인은 없어요. 암호 걸린 PDF는 못 연다고 알려요
-- `file_trash`: 휴지통에서 이름으로 찾기(바로)와 되살리기(하나는 바로, 2개 이상은 목록 승인). 원래 자리가 바탕화면·문서·다운로드 안이면 거기로, 아니면(모르거나 다른 폴더) 바탕화면으로, 같은 이름이면 `(1)`. **비우기·영구 삭제는 만들지 않아요**
-  - 맥: `~/.Trash`. 원래 자리는 Finder가 휴지통 `.DS_Store`에 적어 둔 `ptbL`·`ptbN`으로 읽어요. 두리에게 전체 디스크 접근 권한이 없으면 맥이 막아서(EPERM) 이유와 다음 길(휴지통에서 "되돌려 놓기", 권한 켜는 곳)을 돌려줘요
-  - 윈도우: 셸 휴지통(`Shell.Application` 10). 셸로 꺼내야 휴지통 기록도 정리되는데 셸은 이름을 못 바꿔서, 같은 이름이 있으면 바탕화면에 새 빈 폴더를 만들어 거기에 꺼내요(덮어쓰지 않게)
-- `file_download`: https 주소만, 다운로드 폴더로, 2GB까지, 이름은 사이트가 준 것(한글 `filename*`)을 정리해서. **이 PC·집 안 네트워크 주소(사설·루프백·.local)는 받지 않고**, 넘겨주는 주소도 하나씩 다시 확인해요(공유기 관리 화면 같은 곳을 대신 열지 않게). 실행 파일(.exe·.dmg·.pkg·.app·스크립트 등)은 받기 전에 승인. 받은 파일에는 브라우저처럼 "인터넷에서 받음" 표시(맥 quarantine, 윈도우 Zone.Identifier)를 붙여 열 때 운영체제가 한 번 더 확인하게 해요. 웹페이지·401·403이면 브라우저 도구로 열어 다운로드 버튼을 누르는 길을 알려요. 60초가 넘으면 뒤에서 이어 받고 "받는 중"으로 답해요
-- `pc_screen`: 화면 잠그기·잠자기는 승인 뒤 바로. **끄기는 만들지 않고**(저장 안 된 작업이 사라질 수 있어서) 잠자기를 권하는 다음 길을 돌려줘요. 잠그기는 두리 일을 멈추지 않아 언제든 되지만, 잠자기는 두리도 멈추니 다른 대화가 답하는 중이거나 서비스를 연결하는 중이면 끝난 뒤에 하라고 해요(요청 때와 승인 때 두 번 봐요)
-  - 맥: 잠그기 = 화면 끄기 + "화면이 꺼지면 바로 암호 요구" 설정 확인(`sysadminctl -screenLock status`, 꺼져 있으면 잠그지 않고 설정 길을 알려 줌), 잠자기 = `pmset`. 관리자 권한이 필요 없어요
-  - 윈도우: 잠그기 = `LockWorkStation`, 잠자기 = `SetSuspendState`(대기)
+- `file_pdf`: merge (photos jpg and png become one A4 page each), extract pages, split. pdfjs-dist is read-only, so we add **pdf-lib** (MIT, its dependencies MIT, Zlib and 0BSD). The Mac has no built-in command to merge PDFs. It only creates new files, so no approval. For a password-protected PDF it says it cannot open it
+- `file_trash`: find in the Trash by name (immediate) and restore (one right away, two or more with list approval). If the original place was inside Desktop, Documents or Downloads it goes back there, otherwise (unknown or another folder) to the Desktop, and `(1)` if the name exists. **No emptying and no permanent delete are built**
+  - Mac: `~/.Trash`. The original place is read from `ptbL` and `ptbN` that Finder writes in the Trash's `.DS_Store`. If Dool2 lacks Full Disk Access, the Mac blocks it (EPERM), so it returns the reason and the next route ("Put Back" in the Trash, where to turn on the permission)
+  - Windows: the shell Recycle Bin (`Shell.Application` 10). It has to be taken out through the shell for the Recycle Bin records to be cleaned up too, but the shell cannot rename, so if the same name exists it creates a new empty folder on the Desktop and takes it out there (so nothing is overwritten)
+- `file_download`: https addresses only, into the Downloads folder, up to 2 GB, with the name the site gave (Korean `filename*`) cleaned up. **Addresses on this PC or the home network (private, loopback, .local) are not fetched**, and redirect targets are checked again one by one (so it does not open something like the router admin page on someone's behalf). Executables (.exe, .dmg, .pkg, .app, scripts and so on) need approval before download. Downloaded files get the "downloaded from the internet" mark like a browser (macOS quarantine, Windows Zone.Identifier) so the operating system checks once more when opening. For a web page, 401 or 403, it explains the route of opening it with the browser tools and pressing the download button. If it takes over 60 seconds, it continues in the background and answers "downloading"
+- `pc_screen`: lock the screen and sleep right after approval. **Shutting down is not built** (unsaved work could be lost), and it returns the next route that recommends sleep. Locking does not stop Dool2's work, so it can be done any time, but sleep stops Dool2 too, so if another conversation is answering or a service is being connected it says to do it after that finishes (checked twice, at request time and at approval time)
+  - Mac: lock = turn off the display + check the setting "require password immediately after the screen turns off" (`sysadminctl -screenLock status`; if it is off, it does not lock and points to the setting), sleep = `pmset`. No administrator rights needed
+  - Windows: lock = `LockWorkStation`, sleep = `SetSuspendState` (standby)
 
-승인 종류에 `pc`(이 PC)를 더했고, 휴지통·내려받기는 `file` 종류에 `label`(되살리기·받기)로 구분해요. 내려받기는 실행 파일인지가 사이트 답을 봐야 알 수 있어서, 처음엔 승인이 필요하다는 결과만 돌려주고 AI가 `confirm: true`로 다시 부를 때 승인 카드를 띄워요(대화의 카드 기록이 입력만 보고 정해지게).
+We added `pc` (this PC) to the approval kinds, and Trash and download are distinguished within the `file` kind by `label` (restore, download). Whether a download is an executable can only be known from the site's reply, so at first it returns only a result saying approval is needed, and the approval card appears when the AI calls again with `confirm: true` (so that the card record in the conversation is decided from the input alone).
 
-- 위협 모델 T21에 더했어요
-- 윈도우 휴지통·잠그기·잠자기, 맥 휴지통(권한이 있을 때)은 가짜 명령으로만 시험했어요. 이 맥에서도 휴지통은 권한이 없어 막혔어요(그 경우의 안내는 시험함)
+- Added to threat model T21
+- Windows Recycle Bin, lock and sleep, and the Mac Trash (when permission is granted) were tested only with fake commands. Even on this Mac the Trash was blocked for lack of permission (the guidance for that case was tested)
 
-## 덧붙임 (2026-11-21): HTML을 PDF·PNG로 (`file_render`)
+## Addendum (2026-11-21): HTML to PDF and PNG (`file_render`)
 
-실사용 시험에서 두리가 5쪽 보고서를 "PDF나 워드로는 못 만들어요. 브라우저에서 열어 인쇄(PDF로 저장)하세요", 생일 초대장 그림을 "PNG로는 못 만들어서 화면을 캡처해 쓰셔야 해요"라고 답했어요. 사용자가 할 일이 아니라서 두리가 만든(또는 사용자 폴더에 있는) HTML·SVG를 그려 파일로 만들어요.
+In real-use tests Dool2 answered that it could not make a 5-page report as PDF or Word ("Open it in the browser and print (save as PDF)"), and about a birthday invitation picture, "I can't make it as PNG, so take a screen capture". That is not the user's job, so Dool2 renders the HTML or SVG it made (or that is in a user folder) into a file.
 
-- 그리기는 PC 앱(Electron)이 해요: 보이지 않는 창(offscreen)에 파일을 열어 PDF는 `printToPDF`(A4, 배경 포함, 여러 쪽, HTML의 `@page` 크기 우선, 가로 선택), PNG는 CDP `Page.captureScreenshot`으로 내용 전체를 2배로(세로 16,000px까지, 넘으면 잘랐다고 알림). 본체는 `renderFile` 옵션으로 받기만 하고, 앱 없이 본체만 돌면(개발·시험) 못 한다고 알려요
-- 그리기 창: 노드 기능 없음·샌드박스·창 열기·이동·내려받기·권한 요청 막음, 한 번에 하나씩. 스크립트는 켜요(차트). 불러오기는 **볼 수 있는 폴더 안의 민감하지 않은 로컬 파일**과 https GET(글꼴·그림)만, http·이 PC·집 안 네트워크 주소는 막아요. 멈춘 스크립트는 30초 뒤 창을 없애요
-- 원본은 그대로, 옆에 같은 이름 `.pdf`/`.png`(있으면 `(1)`). 새 파일만 만들어서 승인은 없어요. 보관함 '사진·파일'에도 올려요(PNG는 미리보기 그림과 함께)
-- 기존 `file_convert`(사진 형식)와 입력·쓰임이 달라 따로 둬요
+- The desktop app (Electron) does the rendering: it opens the file in an invisible window (offscreen) and uses `printToPDF` for PDF (A4, with backgrounds, multiple pages, the HTML's `@page` size first, landscape optional), and CDP `Page.captureScreenshot` for PNG, the whole content at 2x (up to 16,000 px tall; if longer, it is cut and the user is told). The daemon only receives it through the `renderFile` option, and if the daemon runs without the app (development, tests), it says it cannot
+- The rendering window: no Node features, sandboxed, opening windows, navigation, downloads and permission requests blocked, one at a time. Scripts are on (charts). Loading is limited to **non-sensitive local files inside the visible folders** and https GET (fonts, images); http and addresses on this PC or the home network are blocked. A stuck script gets the window destroyed after 30 seconds
+- The original is kept, and a same-name `.pdf` / `.png` is written next to it (`(1)` if it exists). It only creates new files, so no approval. It is also put into the Library's "Photos and files" (PNG with a preview image)
+- It is kept separate from the existing `file_convert` (photo formats) because the input and use differ

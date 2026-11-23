@@ -1,39 +1,39 @@
-# 0025. 두리가 알아 둔 것: 조회한 사실과 한 일을 남기고, 쓸지는 AI가 판단한다
+# 0025. What Dool2 has learned: keep looked-up facts and what was done, and let the AI judge whether to use them
 
-- 상태: 채택
-- 날짜: 2026-11-20
+- Status: Accepted
+- Date: 2026-11-20
 
-## 배경
+## Context
 
-혜택·환급 함께 시험에서 홈택스·정부24·내보험찾아줌에 로그인해서 본 결과를 다음 부탁에서 다시 쓰지 못했어요.
+In the joint test on benefits and refunds, results seen after logging in to Hometax, Gov24 and 내보험찾아줌 (Find My Insurance) could not be reused in the next request.
 
-- 같은 인증을 거듭 받았어요(사용자 피로).
-- 이미 아는 걸 다시 물었어요(5·6·10·11번).
-- 근거와 날짜 없이 말했어요.
+- The same verification was requested again and again (user fatigue).
+- It asked again for things it already knew (items 5, 6, 10 and 11).
+- It spoke without a source or a date.
 
-두리가 해 둔 신청·예약·배송도 기억하지 못해서, 발표일이나 무료취소 마감 같은 때를 챙기지 못했어요.
+It also did not remember the applications, bookings and deliveries Dool2 had made, so it could not look after times such as an announcement date or a free-cancellation deadline.
 
-## 결정
+## Decision
 
-1. **한 줄씩 남긴다(`know_save`).** 남기는 것은 두 가지예요.
-   - **사실(fact):** 로그인해서 본 내 정보 화면의 사실.
-   - **한 일(done):** 두리가 하거나 확인한 신청·결제·예약·배송·가입.
-   - 줄마다 무엇·값·어디서·기준 시점·본 날을 붙이고, 한 일에는 다음에 챙길 때를 더해요. 같은 이름이면 새 값으로 바꿔요.
-2. **시의성은 규칙으로 정하지 않는다.** 고정 TTL을 두지 않아요. 지침과 `know_find` 결과에 오늘 날짜와 기준 시점을 함께 주고, 그대로 쓸지 다시 조회할지는 AI가 판단해요.
-   - 감각만 도구 설명에 적어요: 연도 자료는 다음 해 자료가 나오면 낡고, 목록은 며칠, 이번 달 실적은 하루면 낡아요. 결정이 걸린 일은 다시 확인해요.
-3. **한 일은 지우지 않는다.** 취소·해지·완료되면 `know_update`로 끝남이 되고 더 챙기지 않아요.
-4. **먼저 챙기기와 합친다(0019 고침).** 살피는 주기는 하루 두 번에서 바뀌어요.
-   - **주기:** 아침 6시부터 밤 10시까지 매시 정각 뒤 한 번.
-   - **순서:** 챙길 때가 된 한 일을 먼저 보고, 그다음 연결한 서비스를 봐요.
-   - **지난번과의 간격:** 지난번 살핀 때를 알려 주어, 그 사이 바뀌기 어려운 곳은 AI가 건너뛰어요.
-   - **연결이 없어도:** 챙길 한 일이 있으면 살펴요.
-5. **지키는 것**
-   - 주민번호·계좌·카드·비밀번호는 넣지 않아요(금고·내 정보가 맡아요).
-   - 다른 사람 정보는 넣지 않아요.
-   - 이 PC에만 저장돼요.
-   - 사용자는 기억 화면에서 보고 지울 수 있어요.
+1. **Keep one line at a time (`know_save`).** Two kinds are kept.
+   - **Fact:** a fact from a my-information screen seen after logging in.
+   - **Done:** an application, payment, booking, delivery or sign-up that Dool2 made or confirmed.
+   - Each line gets what, value, where from, as-of time and the date seen, and a Done also gets when to look after it next. If the name is the same, the value is replaced by the new one.
+2. **Freshness is not set by rules.** There is no fixed TTL. The instructions and the `know_find` result carry today's date together with the as-of time, and the AI judges whether to use it as is or look it up again.
+   - Only a sense of it goes in the tool description: yearly data goes stale when the next year's data comes out, lists in a few days, this month's figures in a day. For anything a decision depends on, check again.
+3. **Done items are not deleted.** When canceled, terminated or completed, `know_update` marks it as ended and it is looked after no more.
+4. **Merge with the proactive check (amends 0019).** The checking interval changes from twice a day.
+   - **Interval:** once just after the hour, every hour from 6 a.m. to 10 p.m.
+   - **Order:** first the Done items that are due to be looked after, then the connected services.
+   - **Gap since last time:** it is told when it last checked, so the AI skips places that are unlikely to have changed since.
+   - **Even without connections:** if there is a Done item to look after, it checks.
+5. **Guardrails**
+   - National ID numbers, accounts, cards and passwords are not put in (the vault and My info handle them).
+   - Other people's information is not put in.
+   - It is stored only on this PC.
+   - The user can view and delete it on the memory screen.
 
-## 결과
+## Consequences
 
-- 지침에 진행 중인 한 일 15개와 최근 사실 20개가 날짜와 함께 붙어요.
-- 매시 살피기는 AI 호출이 늘어요. 챙길 일이 없고 바뀔 게 없으면 짧게 끝나요.
+- The instructions carry up to 15 Done items in progress and the 20 most recent facts, with dates.
+- Hourly checking means more AI calls. If there is nothing to look after and nothing that could have changed, it ends quickly.

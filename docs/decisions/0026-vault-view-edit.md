@@ -1,28 +1,28 @@
-# 0026. 금고 비밀번호를 사용자가 폰·PC에서 보고 고친다
+# 0026. The user views and edits vault passwords on the phone and PC
 
-- 상태: 채택 (ADR 0011을 고침)
-- 날짜: 2026-11-20
+- Status: Accepted (amends ADR 0011)
+- Date: 2026-11-20
 
-## 배경
+## Context
 
-ADR 0011은 금고를 "넣기만 하고 꺼낼 수 없게" 정했어요. 그런데 함께 시험(혜택·환급)에서 문제가 생겼어요.
+ADR 0011 designed the vault as "put in only, cannot be taken out". But a problem came up in the joint test (benefits and refunds).
 
-- 두리가 비밀번호를 새로 만들어 바꾸자 사용자가 새 비밀번호를 몰라 당황했어요.
-- 잘못 넣은 값을 고칠 길이 없었어요.
+- When Dool2 made up a new password and changed it, the user was lost without knowing the new password.
+- There was no way to fix a value entered wrongly.
 
-사용자 결정(11-20): "금고 비밀번호도 보기 넣자, 수정도 되고. 폰에서도 보이게."
+User decision (11-20): "Let's add viewing vault passwords too, and editing. And make them visible on the phone as well."
 
-## 결정
+## Decision
 
-1. **사용자 화면에서만 꺼낸다.** 폰 설정 > 금고와 PC 화면(화면용 토큰)에서만 볼 수 있어요. 두리(AI) 도구·대화 기록·일한 기록으로는 지금처럼 비밀번호가 나가지 않아요.
-2. **폰은 볼 때마다 폰 잠금을 확인한다.** 안드로이드 BiometricPrompt로 지문·얼굴·PIN·패턴 중 하나를 확인해요.
-   - 화면 잠금이 없는 폰이나 앱이 아닌 브라우저에서는 보여 주지 않아요.
-   - 보여 준 값은 30초 뒤나 시트를 닫으면 지워요.
-3. **오가는 길은 지금 그대로다.** 짝지은 폰과 PC 사이 종단 간 암호화로 오가고, 중계 서버는 내용을 볼 수 없어요.
-4. **고치기.** 아이디·비밀번호를 바꾸고, 빈 칸은 그대로 둬요. 고친 항목이 그 사이트의 로그인 값이 돼요.
-5. **기록.** 일한 기록에는 어느 사이트를 보거나 고쳤는지만 남기고, 값은 남기지 않아요.
+1. **They are taken out only on the user's screens.** They can be seen only in the phone's Settings > Vault and on the PC screen (screen token). Passwords still do not leave through Dool2 (AI) tools, conversation history or the activity log.
+2. **The phone checks the phone lock every time it shows one.** It uses Android BiometricPrompt to confirm one of fingerprint, face, PIN or pattern.
+   - It does not show them on a phone with no screen lock, or in a browser instead of the app.
+   - The shown value is erased after 30 seconds or when the sheet is closed.
+3. **The way they travel stays as it is now.** They go over the end-to-end encryption between the paired phone and PC, and the relay cannot see the content.
+4. **Editing.** Change the ID and password, and leave blank fields as they are. The edited entry becomes that site's login value.
+5. **Records.** The activity log records only which site was viewed or edited, never the values.
 
-## 결과
+## Consequences
 
-- 짝지은 폰을 잃어버려도, 잠금을 모르면 금고 비밀번호를 볼 수 없어요.
-- 폰 잠금 확인 기능을 넣으려고 androidx.biometric을 추가했어요. 예전 앱(b37 이하)에는 이 기능이 없어 "두리 앱에서만 볼 수 있어요"가 떠요.
+- Even if a paired phone is lost, the vault passwords cannot be seen without knowing the lock.
+- To add the phone lock check we added androidx.biometric. Older apps (b37 and below) do not have it and show "Can only be viewed in the Dool2 app".

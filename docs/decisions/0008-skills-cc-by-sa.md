@@ -1,23 +1,23 @@
-# 0008. 스킬은 CC BY-SA 4.0으로 공개한다
+# 0008. Publish skills under CC BY-SA 4.0
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-스킬은 두리가 특정 한국 서비스를 끝까지 처리하는 방법을 적은 문서예요. 두리의 해자가 여기 있어요. 사용자가 "내 계정으로 AI가 무엇을 하는지" 확인할 수 있어야 하므로 공개는 해야 해요. 남은 질문은 라이선스였어요.
+A skill is a document describing how Dool2 carries a specific Korean service through to the end. Dool2's moat is here. We must publish them so users can check "what the AI does with my account". The remaining question was the license.
 
-## 결정
+## Decision
 
-코드는 Apache-2.0, 스킬(`skills/`)은 **CC BY-SA 4.0**이에요.
+Code is Apache-2.0, and skills (`skills/`) are **CC BY-SA 4.0**.
 
-## 이유
+## Why
 
-- 스킬은 코드보다 문서에 가까워서 Creative Commons 계열이 자연스러워요.
-- 동일조건변경허락(SA) 덕분에 누가 가져가 고쳐 쓰면 개선한 내용도 같은 조건으로 공개해야 해요. "가져가기만 하는" 경쟁 제품을 견제하면서도 오픈소스다운 조건을 지켜요.
-- Apache-2.0으로 하면 단순하지만, 가장 공들인 부분을 그대로 가져가도 막을 수 없어요.
+- Skills are closer to documents than code, so a Creative Commons license is a natural fit.
+- With ShareAlike (SA), anyone who takes and modifies a skill must publish their improvements under the same terms. This holds back competing products that only take, while keeping terms that fit open source.
+- Apache-2.0 would be simpler, but it could not stop someone from taking our most carefully built part as it is.
 
-## 결과
+## Consequences
 
-- 기여자는 코드와 스킬의 라이선스가 다르다는 것을 알아야 해요. CONTRIBUTING과 README에 적어 둬요.
-- 스킬 문서는 복사할 수 있어도, 살아 있는 상태로 유지하는 운영(막힘 통계, 빠른 수정, 서명된 업데이트)은 복사할 수 없어요. 그 운영이 진짜 해자예요.
+- Contributors need to know that code and skills have different licenses. We state this in CONTRIBUTING and the README.
+- Skill documents can be copied, but the operations that keep them alive (block statistics, quick fixes, signed updates) cannot. That operation is the real moat.

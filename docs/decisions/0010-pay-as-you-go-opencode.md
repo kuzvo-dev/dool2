@@ -1,39 +1,39 @@
-# 0010. 구독이 없거나 부담되면 API 키 종량제로 쓴다 (OpenCode)
+# 0010. Without a subscription, or if one is a burden, use API keys and pay as you go (OpenCode)
 
-- 상태: 채택 (구현 예정)
-- 날짜: 2026-11-14
+- Status: Accepted (to be implemented)
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리는 Claude·ChatGPT 구독으로 돌아가요([ADR 0002](0002-official-agent-binaries.md)). 그런데 월 구독료가 부담되거나, 가끔만 쓰는 사람에게는 **쓴 만큼만 내는 방식**이 더 맞아요. 다양한 AI(Anthropic, OpenAI, Google, OpenRouter, 내 PC의 로컬 모델)를 고를 수 있으면 더 좋고요.
+Dool2 runs on Claude and ChatGPT subscriptions ([ADR 0002](0002-official-agent-binaries.md)). But for people for whom the monthly fee is a burden, or who use it only occasionally, **paying only for what they use** fits better. It would be even better to be able to choose among many AIs (Anthropic, OpenAI, Google, OpenRouter, and local models on my PC).
 
-## 결정
+## Decision
 
-세 번째 실행기로 오픈소스 에이전트 **OpenCode**(MIT)를 붙이고, **API 키 전용**으로 써요.
+Add the open-source agent **OpenCode** (MIT) as a third runner, used with **API keys only**.
 
-- 패키지 `packages/agent-opencode`, 공통 인터페이스 `AgentRuntime` 구현
-- 버전 고정: v2 계열(`@opencode/cli`). 옛 v1(`opencode-ai`)은 설정 키와 서버 주소가 달라서 쓰지 않아요
-- 실행: `opencode serve --stdio`를 두리 전용 폴더로 띄우고(설정·데이터·상태·캐시 폴더를 모두 따로, 자동 업데이트 끔, 사용자·프로젝트 설정 읽지 않음), 실행마다 새 비밀번호를 줘요. 두리가 꺼지면 함께 꺼져요
-- **두리 도구만 허용**([ADR 0003](0003-dool2-tools-only.md)): 권한 규칙에서 모든 도구를 막고 `dool2_*`만 열어요. MCP 도구를 코드 실행 도구로 감싸는 기능(`codemode`)은 꺼요. 묻는(ask) 권한 요청은 항상 거절해요
-- 사건 흐름: 글 조각(`session.text.delta`), 도구 호출·결과, 한 단계마다 **토큰과 비용(USD)**, 성공·실패·중단을 공통 `AgentEvent`로 바꿔요
-- 설치: Claude Code처럼 처음 쓸 때 공식 GitHub 릴리스에서 받고 `SHA256SUMS`로 확인해요. 설치 파일에 넣지 않아요
-- API 키는 OS 키체인(`safeStorage`)에 두고, 실행할 때 환경 변수로만 넘겨요
+- Package `packages/agent-opencode`, implementing the common `AgentRuntime` interface
+- Pinned version: the v2 line (`@opencode/cli`). We do not use the old v1 (`opencode-ai`) because its config keys and server address differ
+- Running: start `opencode serve --stdio` in a Dool2-specific folder (config, data, state and cache folders all separate, auto-update off, user and project config not read), with a new password for each run. It shuts down together with Dool2
+- **Only Dool2 tools allowed** ([ADR 0003](0003-dool2-tools-only.md)): the permission rules block every tool and open only `dool2_*`. The feature that wraps MCP tools into a code-execution tool (`codemode`) is turned off. Permission requests of the ask type are always refused
+- Event flow: text chunks (`session.text.delta`), tool calls and results, **tokens and cost (USD)** for each step, and success, failure and abort are converted into the common `AgentEvent`
+- Installation: like Claude Code, download from the official GitHub release on first use and verify with `SHA256SUMS`. It is not put in the installer
+- The API key is kept in the OS keychain (`safeStorage`) and passed only as an environment variable at run time
 
-## 하지 않는 것
+## What we do not do
 
-- **Claude Pro/Max 구독 로그인을 OpenCode로 쓰지 않아요.** Anthropic은 Claude Code와 자사 앱이 아닌 곳에서 구독 로그인을 쓰는 것을 허용하지 않아요. 구독은 공식 Claude Code로만 써요
-- OpenCode의 ChatGPT 로그인도 쓰지 않아요. ChatGPT 구독은 공식 Codex로 써요
-- OpenCode에 들어 있는 "사용자의 claude 실행" 방식 제공자도 쓰지 않아요
+- **We do not use a Claude Pro/Max subscription login through OpenCode.** Anthropic does not allow using subscription login anywhere other than Claude Code and its own apps. The subscription is used only through the official Claude Code
+- We do not use OpenCode's ChatGPT login either. The ChatGPT subscription is used through the official Codex
+- We do not use OpenCode's "run the user's claude" style provider either
 
-## 이유
+## Why
 
-- 이미 여러 AI 제공자와 로컬 모델을 지원하고, MCP와 세밀한 권한 규칙이 있어서 두리 원칙(두리 도구만)에 맞출 수 있어요
-- 단계별 비용을 알려 줘서 "이번 부탁에 120원 썼어요"처럼 보여 줄 수 있어요
-- MIT라서 함께 배포해도 돼요
+- It already supports many AI providers and local models, and has MCP and fine-grained permission rules, so it can be fitted to Dool2's principle (only Dool2 tools)
+- It reports per-step cost, so we can show things like "this request cost 120 won"
+- It is MIT, so we may ship it together with Dool2
 
-## 결과
+## Consequences
 
-- 마법사의 "어떤 AI 구독을 쓰세요?"에 **"구독 없이 쓴 만큼만 낼래요"** 를 더해요. 고르면 제공자와 API 키를 받아요
-- 화면에 이번 대화·이번 달 사용 금액을 보여 주고, 월 한도를 정할 수 있게 해요 (넘으면 멈추고 물어봐요)
-- OpenCode v2는 바뀌는 속도가 빨라요. 버전을 고정하고, 올리기 전에 서버 규약을 테스트로 확인해요
-- 시스템 전체 관리 설정(회사 PC 등)은 두리가 막을 수 없어요. 위협 모델에 적어요
+- In the wizard's "Which AI subscription do you use?", add **"No subscription, pay only for what I use"**. When chosen, we ask for the provider and API key
+- Show this conversation's and this month's spend on screen, and let users set a monthly limit (when exceeded, it stops and asks)
+- OpenCode v2 changes quickly. We pin the version and verify the server protocol with tests before upgrading
+- Dool2 cannot block system-wide managed settings (such as on a company PC). We note this in the threat model
