@@ -218,3 +218,20 @@ export function socialOrder(
     return hint ? { provider, hint } : { provider }
   })
 }
+
+/**
+ * The card in the user's language (ADR 0029): translated fields from `i18n[lang]` replace the Korean ones, abilities by
+ * position (tiers stay). Korean, or a card without a translation, is returned as is
+ */
+export function localizeCard<T extends ConnectCard>(card: T, lang: Lang): T {
+  const t = lang === 'ko' ? undefined : card.i18n?.[lang]
+  if (!t) return card
+  return {
+    ...card,
+    ...(t.name ? { name: t.name } : {}),
+    ...(t.login ? { login: t.login } : {}),
+    ...(t.summary ? { summary: t.summary } : {}),
+    ...(t.example ? { example: t.example } : {}),
+    abilities: card.abilities.map((a, i) => ({ ...a, ...(t.abilities?.[i] ?? {}) })),
+  }
+}

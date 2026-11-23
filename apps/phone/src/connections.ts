@@ -171,15 +171,17 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
   // While typing a search, redraw only the list below (rebuilding the input would cut off IME composition)
   const chips = el('div', 'chips idea-cats connect-cats')
   const results = el('div', 'connect-results')
-  const services = [...ctx.services].sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
+  const services = [...ctx.services].sort((a, b) => a.card.name.localeCompare(b.card.name, lang))
   const cats = (Object.keys(CATEGORY_LABEL) as ConnectCard['category'][])
     .map((id) => ({
       id,
       label: CATEGORY_LABEL[id],
       emo: CATEGORY_EMO[id],
-      list: services.filter((it) => it.card.category === id),
+      list: services.filter((it) => it.card.category === id && it.local !== false),
     }))
     .filter((c) => c.list.length)
+  // Services for another region (ADR 0029) are listed last, under "Other regions"
+  const away = services.filter((it) => it.local === false)
   const mine = services.filter((it) => it.connectedAt)
   let cat = ctx.cat
   const ul = (list: ConnectionItem[]) => {
@@ -219,9 +221,11 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
     if (q) {
       const shown = services.filter((it) => matchesCard(it.card, q))
       for (const c of cats) {
-        const list = shown.filter((it) => it.card.category === c.id)
+        const list = shown.filter((it) => it.card.category === c.id && it.local !== false)
         if (list.length) results.append(group(c.label, list))
       }
+      const far = shown.filter((it) => it.local === false)
+      if (far.length) results.append(group(m.otherRegions, far))
       if (!shown.length) results.append(el('p', 'cap empty', m.noMatch))
       return
     }
@@ -245,6 +249,7 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
         head.onclick = () => pick(c.id)
         results.append(el('section', 'connect-group', head, ul(c.list.slice(0, 3))))
       }
+      if (away.length) results.append(group(m.otherRegions, away))
       return
     }
     const c = cats.find((x) => x.id === cat)

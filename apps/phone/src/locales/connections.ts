@@ -2,6 +2,7 @@ import { messages } from '@dool2/i18n'
 
 export const connectionsText = messages({
   ko: {
+    otherRegions: '다른 지역',
     today: '오늘',
     yesterday: '어제',
     monthDay: (m: number, d: number) => `${m}월 ${d}일`,
@@ -37,6 +38,7 @@ export const connectionsText = messages({
     connectNote: '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 PC Chrome에 로그인해요.',
   },
   en: {
+    otherRegions: 'Other regions',
     today: 'Today',
     yesterday: 'Yesterday',
     monthDay: (m: number, d: number) =>

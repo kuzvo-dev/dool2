@@ -159,8 +159,10 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
     search.value = query
     const chips = el('div', 'chips idea-cats svc-cats')
     const groups = el('div', 'svc-groups')
+    // Services for another region (ADR 0029) are listed last, under "Other regions"
+    const here = (it: ConnectionItem) => it.local !== false
     const cats = (Object.keys(CATEGORY_LABEL) as ConnectCard['category'][]).filter((c) =>
-      items.some((it) => it.card.category === c),
+      items.some((it) => it.card.category === c && here(it)),
     )
     const draw = () => {
       const q = query.trim().toLowerCase()
@@ -202,9 +204,11 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         if (!q && cat === 'all' && mine.length) sections.push(section(m.connected, mine))
         for (const c of cats) {
           if (!q && cat !== 'all' && c !== cat) continue
-          const list = shown.filter((it) => it.card.category === c)
+          const list = shown.filter((it) => it.card.category === c && here(it))
           if (list.length) sections.push(section(CATEGORY_LABEL[c], list))
         }
+        const away = shown.filter((it) => !here(it) && (q || cat === 'all'))
+        if (away.length) sections.push(section(m.otherRegions, away))
       }
       if (!sections.length) sections.push(el('p', 'cap svc-empty', m.empty))
       groups.replaceChildren(...sections)

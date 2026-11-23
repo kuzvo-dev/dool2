@@ -72,6 +72,7 @@ export const categoryLabels = messages({
 
 export const connectionsText = messages({
   ko: {
+    otherRegions: '다른 지역',
     approvalLine: (titles: string) => `${titles} 같은 일은 폰에서 승인한 뒤에만 해요.`,
     date: (d: Date) => `${d.getMonth() + 1}월 ${d.getDate()}일`,
     safetyApproval: '결제·주문·보내기 같은 마지막 버튼은 폰에서 승인해야만 눌러요.',
@@ -110,6 +111,7 @@ export const connectionsText = messages({
     abilitiesTitle: '이렇게 맡겨요',
   },
   en: {
+    otherRegions: 'Other regions',
     approvalLine: (titles: string) => `Things like ${titles} only happen after you approve on your phone.`,
     date: (d: Date) => d.toLocaleDateString('en', { month: 'short', day: 'numeric' }),
     safetyApproval: 'Final buttons like pay, order or send are pressed only after you approve on your phone.',
