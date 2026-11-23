@@ -1,65 +1,77 @@
-// 피드·아이디어·목표·보관함 화면이 쓰는 계산 (DOM 없음, 테스트한다)
+// Calculations for the Feed, Ideas, Goals and Library screens (no DOM, tested)
 
 import type { FeedItem, GoalCategory, LibraryItem, Routine, RoutineSchedule } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
+import { lang } from './lang.js'
+import { goalCategoryHint, goalCategoryText, lifeModel, lifeTime } from './locales/life.js'
+import {
+  FEED_ROUTINE_TITLE,
+  GOAL_CATEGORY_LIST as GOAL_CATEGORIES_KR,
+  PHOTO_MARK_RE,
+} from './region/kr/life.js'
 
-/** 일정 문구 (@dool2/protocol/schedule의 scheduleLabel). 화면은 묶지 않고 불러오므로 함수로 받는다 */
+/** Schedule text (scheduleLabel from @dool2/protocol/schedule). Passed in because the window loads files unbundled */
 export type ScheduleLabel = (s: RoutineSchedule) => string
 
-/** @dool2/protocol의 GOAL_CATEGORIES (화면은 묶지 않고 불러오므로 값을 복사해 둔다. 테스트가 같은지 본다) */
-export const GOAL_CATEGORY_LIST: readonly GoalCategory[] = [
-  '건강',
-  '관계',
-  '돈',
-  '일',
-  '관심사',
-  '생산성',
-  '기타',
-]
+/** GOAL_CATEGORIES from @dool2/protocol (copied because the window is unbundled; a test checks they match) */
+export const GOAL_CATEGORY_LIST: readonly GoalCategory[] = GOAL_CATEGORIES_KR
 
-/** 아이콘 칸 색 (ui.css .tile.blue 등) */
+/** Goal category name in the UI language */
+export const goalCategoryLabel = (c: GoalCategory): string => goalCategoryText(lang)[c] ?? c
+
+/** Icon tile color (ui.css .tile.blue etc.) */
 export type Tone = 'blue' | 'mint' | 'amber' | 'rose' | 'violet' | ''
 
-const DAY = ['일', '월', '화', '수', '목', '금', '토']
-
-const clock = (h: number, m: number) =>
-  `${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+const clock = (h: number, m: number) => lifeTime(lang).clock(h, m)
 
 const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
-/** 다가오는·지난 시각: "오늘 오후 7:30", "내일 오전 7:30", "어제 오후 2:00", "11월 20일 (목) 오후 3:00" */
+/** The date part of a time near now: today, tomorrow, yesterday or a date ("Thu, Nov 20") */
+function dateWord(d: Date, now: Date): string {
+  const t = lifeTime(lang)
+  const day = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
+  if (sameDay(d, now)) return t.today
+  if (sameDay(d, day(1))) return t.tomorrow
+  if (sameDay(d, day(-1))) return t.yesterday
+  return t.date(d)
+}
+
+/** Upcoming or past time: "Today 7:30 PM", "Tomorrow 7:30 AM", "Yesterday 2:00 PM", "Thu, Nov 20 3:00 PM" */
 export function whenLabel(iso: string, now = new Date()): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  const t = clock(d.getHours(), d.getMinutes())
-  const day = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
-  if (sameDay(d, now)) return `오늘 ${t}`
-  if (sameDay(d, day(1))) return `내일 ${t}`
-  if (sameDay(d, day(-1))) return `어제 ${t}`
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY[d.getDay()]}) ${t}`
+  return `${dateWord(d, now)} ${clock(d.getHours(), d.getMinutes())}`
 }
 
-/** 날짜 나눔: 오늘 / 어제 / 11월 14일 (금) */
+/** Date only, or the time when it is today: "2:00 PM", "Yesterday", "Fri, Nov 14" */
+export function shortWhen(iso: string, now = new Date()): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return sameDay(d, now) ? timeLabel(iso) : dateWord(d, now)
+}
+
+/** Day divider: Today / Yesterday / Fri, Nov 14 */
 export function dayLabel(iso: string, now = new Date()): string {
   const d = new Date(iso)
-  if (sameDay(d, now)) return '오늘'
+  const t = lifeTime(lang)
+  if (sameDay(d, now)) return t.today
   const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-  if (sameDay(d, y)) return '어제'
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAY[d.getDay()]})`
+  if (sameDay(d, y)) return t.yesterday
+  return t.date(d)
 }
 
-/** 시각만: "오후 2:00" */
+/** Time only: "2:00 PM" */
 export function timeLabel(iso: string): string {
   const d = new Date(iso)
   return clock(d.getHours(), d.getMinutes())
 }
 
-/** 미리보기: 마크다운 기호(**, #, 목록 머리, `, [글](주소))를 빼고 한 줄로 */
+/** Preview: one line without markdown marks (**, #, list bullets, `, [text](url)) */
 export function plain(text: string, max = 160): string {
   const flat = text
-    // 사진 표시(잘린 것 포함)는 "(사진)"으로
-    .replace(/\s*\[사진:[^\]]*\]?/g, ' (사진)')
+    // Photo markers (cut-off ones too) become "(photo)"
+    .replace(PHOTO_MARK_RE, ` ${lifeModel(lang).photo}`)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
@@ -73,8 +85,9 @@ export function plain(text: string, max = 160): string {
 }
 
 /**
- * 목표의 언제 한 줄 (폰과 같은 말): "꺼 둠" · "끝남" · "정한 때 없음" ·
- * "평일 오전 7:30 · 12월 31일까지 · 맞을 때만 알림 · 다음 내일 오전 7:30". rule은 @dool2/protocol/schedule의 ruleLabel
+ * The "when" line of a goal (same words as the phone): "Off" · "Ended" · "No time set" ·
+ * "Weekdays 7:30 AM · until Dec 31 · notify only on match · next Tomorrow 7:30 AM". rule is ruleLabel from
+ * @dool2/protocol/schedule
  */
 export function routineWhen(
   r: Routine,
@@ -82,22 +95,23 @@ export function routineWhen(
   now = new Date(),
   rule?: (r: Routine) => string,
 ): string {
-  if (!r.enabled) return r.endedAt ? '끝남' : '꺼 둠'
-  if (!r.schedule) return '시간 정하지 않음'
+  const t = lifeModel(lang)
+  if (!r.enabled) return r.endedAt ? t.ended : t.off
+  if (!r.schedule) return t.noTime
   const head = [label(r.schedule), rule?.(r)].filter(Boolean).join(' · ')
-  return `${head}${r.nextRunAt ? ` · 다음 ${whenLabel(r.nextRunAt, now)}` : ''}`
+  return `${head}${r.nextRunAt ? ` · ${t.next(whenLabel(r.nextRunAt, now))}` : ''}`
 }
 
-/** 피드 글을 올리는 데 쓰는 예약 (목표 목록에는 보이지 않는다) */
-export const isFeedRoutine = (r: Routine) => r.target === 'feed' && r.title === '피드'
+/** The routine that posts the feed (not shown in the goal list) */
+export const isFeedRoutine = (r: Routine) => r.target === 'feed' && r.title === FEED_ROUTINE_TITLE
 
-/** 계획 진행: 2/5 */
+/** Plan progress: 2/5 */
 export function planProgress(r: Routine): { done: number; total: number } | undefined {
   if (!r.plan?.length) return undefined
   return { done: r.plan.filter((p) => p.done).length, total: r.plan.length }
 }
 
-/** 진행 중 목록 순서: 켜 둔 것 → 다음 할 때가 가까운 것 → 최근에 만든 것 */
+/** In-progress order: enabled first → next run soonest → newest */
 export function sortRoutines(list: Routine[]): Routine[] {
   return [...list].sort((a, b) => {
     if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
@@ -108,16 +122,16 @@ export function sortRoutines(list: Routine[]): Routine[] {
   })
 }
 
-/** 두리 판 "예정": 켜 둔 것 중 다음 할 때가 있는 것, 시간순 */
+/** Assistant panel "Schedule": enabled routines with a next run, by time */
 export function upcoming(list: Routine[]): Routine[] {
   return list
     .filter((r) => r.enabled && r.nextRunAt)
     .sort((a, b) => Date.parse(a.nextRunAt ?? '') - Date.parse(b.nextRunAt ?? ''))
 }
 
-// ── 피드 ──
+// ── Feed ──
 
-/** dom.ts ICON의 이름 중 이 화면들이 쓰는 것 */
+/** dom.ts ICON names these screens use */
 export type IconKey =
   | 'check'
   | 'clock'
@@ -140,19 +154,31 @@ export type IconKey =
   | 'sun'
   | 'box'
 
-/** 피드 종류 (폰 앱과 같은 이름·아이콘·색) */
-export const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconKey; tone: Tone; emo: string }> =
-  {
-    post: { label: '소식', icon: 'feed', tone: 'blue', emo: 'news' },
-    done: { label: '끝낸 일', icon: 'check', tone: 'mint', emo: 'check' },
-    routine: { label: '예약한 일', icon: 'clock', tone: 'violet', emo: 'routine' },
-    saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
-    goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
-    connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
-    suggest: { label: '먼저 챙겼어요', icon: 'idea', tone: 'amber', emo: 'bulb' },
-  }
+type KindMeta = { readonly label: string; icon: IconKey; tone: Tone; emo: string }
+type ModelKey = keyof ReturnType<typeof lifeModel>
 
-/** 피드를 날짜별로 묶는다 (새 것부터) */
+/** Kind with a label looked up in the UI language each time it is read */
+const kind = (key: ModelKey, icon: IconKey, tone: Tone, emo: string): KindMeta => ({
+  get label() {
+    return lifeModel(lang)[key] as string
+  },
+  icon,
+  tone,
+  emo,
+})
+
+/** Feed kinds (same names, icons and colors as the phone app) */
+export const FEED_KIND: Record<FeedItem['kind'], KindMeta> = {
+  post: kind('feedPost', 'feed', 'blue', 'news'),
+  done: kind('feedDone', 'check', 'mint', 'check'),
+  routine: kind('feedRoutine', 'clock', 'violet', 'routine'),
+  saved: kind('feedSaved', 'bookmark', 'amber', 'bookmark'),
+  goal: kind('feedGoal', 'goal', 'rose', 'other'),
+  connected: kind('feedConnected', 'link', 'blue', 'link'),
+  suggest: kind('feedSuggest', 'idea', 'amber', 'bulb'),
+}
+
+/** Groups the feed by day (newest first) */
 export function groupByDay<T extends { at: string }>(
   items: T[],
   now = new Date(),
@@ -167,49 +193,51 @@ export function groupByDay<T extends { at: string }>(
   return out
 }
 
-/** "이어서 말하기": 피드 글을 대화 입력칸에 (폰과 같은 말) */
+/** "Continue in chat": puts a feed post in the chat input (same words as the phone) */
 export function continueText(item: Pick<FeedItem, 'title'>): string {
-  return `"${plain(item.title, 40)}" 이야기인데요, `
+  return lifeModel(lang).continueText(plain(item.title, 40))
 }
 
-// ── 목표 ──
+// ── Goals ──
 
-/** 목표 분류 7개 (폰 앱과 같은 아이콘·색·힌트) */
-export const GOAL_META: Record<GoalCategory, { icon: IconKey; tone: Tone; hint: string; emo: string }> = {
-  건강: { icon: 'heart', tone: 'rose', hint: '운동·수면·식단', emo: 'health' },
-  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구', emo: 'relation' },
-  돈: { icon: 'card', tone: 'mint', hint: '저축·지출', emo: 'money' },
-  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부', emo: 'work' },
-  관심사: { icon: 'star', tone: 'amber', hint: '취미·배우기', emo: 'interest' },
-  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리', emo: 'productivity' },
-  기타: { icon: 'goal', tone: 'mint', hint: '그 밖의 목표', emo: 'other' },
+type GoalMeta = { icon: IconKey; tone: Tone; readonly hint: string; emo: string }
+
+const goalMeta = (c: GoalCategory, icon: IconKey, tone: Tone, emo: string): GoalMeta => ({
+  icon,
+  tone,
+  get hint() {
+    return goalCategoryHint(lang)[c]
+  },
+  emo,
+})
+
+const [HEALTH, RELATION, MONEY, WORK, INTEREST, PRODUCTIVITY, OTHER] = GOAL_CATEGORIES_KR
+
+/** The 7 goal categories (same icons, colors and hints as the phone app) */
+export const GOAL_META: Record<GoalCategory, GoalMeta> = {
+  [HEALTH]: goalMeta(HEALTH, 'heart', 'rose', 'health'),
+  [RELATION]: goalMeta(RELATION, 'mail', 'violet', 'relation'),
+  [MONEY]: goalMeta(MONEY, 'card', 'mint', 'money'),
+  [WORK]: goalMeta(WORK, 'pc', 'blue', 'work'),
+  [INTEREST]: goalMeta(INTEREST, 'star', 'amber', 'interest'),
+  [PRODUCTIVITY]: goalMeta(PRODUCTIVITY, 'list', 'blue', 'productivity'),
+  [OTHER]: goalMeta(OTHER, 'goal', 'mint', 'other'),
 }
 
-/** 맡겨 볼 만한 알아서 하는 일 (폰과 같은 예시) */
-export const ROUTINE_EXAMPLES: [string, string][] = [
-  ['매일 아침 7시 반에 날씨·일정·오는 택배 알려 줘', '아침 브리핑'],
-  ['매주 월요일 아침에 지난주 카드 쓴 돈 정리해 줘', '주간 가계부'],
-  ['매달 25일에 이번 달 휴대폰 요금 확인해 줘', '요금 확인'],
-  ['KTX 금요일 저녁 부산 가는 표, 취소표 나오면 알려 줘', '취소표 지켜보기'],
-]
-
-/** 목표 만들기: 분류를 누르면 입력칸에 넣는 말 */
+/** New goal: what goes into the input when a category is tapped */
 export function goalStarter(category: GoalCategory): string {
-  return `${category} 목표를 세우고 싶어요: `
+  return lifeModel(lang).goalStarter(goalCategoryLabel(category))
 }
 
-// ── 보관함 ──
+// ── Library ──
 
-/** 보관함 종류 (폰 앱과 같은 이름·아이콘·색) */
-export const LIBRARY_KIND: Record<
-  LibraryItem['kind'],
-  { label: string; icon: IconKey; tone: Tone; emo: string }
-> = {
-  note: { label: '정리', icon: 'note', tone: 'blue', emo: 'memo' },
-  link: { label: '링크', icon: 'link', tone: 'violet', emo: 'link' },
-  product: { label: '상품', icon: 'cart', tone: 'amber', emo: 'shopping' },
-  place: { label: '장소', icon: 'place', tone: 'rose', emo: 'pin' },
-  file: { label: '파일', icon: 'image', tone: 'mint', emo: 'picture' },
+/** Library kinds (same names, icons and colors as the phone app) */
+export const LIBRARY_KIND: Record<LibraryItem['kind'], KindMeta> = {
+  note: kind('libNote', 'note', 'blue', 'memo'),
+  link: kind('libLink', 'link', 'violet', 'link'),
+  product: kind('libProduct', 'cart', 'amber', 'shopping'),
+  place: kind('libPlace', 'place', 'rose', 'pin'),
+  file: kind('libFile', 'image', 'mint', 'picture'),
 }
 
 export type LibraryTab = 'made' | 'files'
@@ -219,7 +247,7 @@ export function libraryTab(items: LibraryItem[], tab: LibraryTab): LibraryItem[]
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
 }
 
-/** 주소에서 도메인만: "https://www.coupang.com/vp/1" → "coupang.com" */
+/** Domain only: "https://www.coupang.com/vp/1" → "coupang.com" */
 export function hostOf(url?: string): string {
   if (!url) return ''
   try {
@@ -229,8 +257,8 @@ export function hostOf(url?: string): string {
   }
 }
 
-/** 답 하나를 보관함에 남길 때 제목: 첫 줄(마크다운 뺀 것)을 짧게 */
+/** Title when saving one answer to the Library: the first line, without markdown, kept short */
 export function titleFrom(text: string): string {
   const first = text.split('\n').find((l) => plain(l))
-  return plain(first ?? text, 40) || '두리의 답'
+  return plain(first ?? text, 40) || lifeModel(lang).answerTitle
 }

@@ -1,54 +1,37 @@
-// 서비스 연결 화면 (ADR 0014): 분류별 목록 → 서비스 상세 → Chrome에서 로그인 → 연결 표시.
-// 화면은 카드(skills/<id>/connect.json)를 그리기만 한다. 서비스별 코드는 두지 않는다.
+// Service connection screen (ADR 0014): list by category -> service detail -> sign in in Chrome -> shown as connected.
+// The screen only draws cards (skills/<id>/connect.json). No per-service code here.
 import type { ConnectCard, ConnectionItem, SocialProvider, Tier } from '@dool2/protocol/connect'
+import { lang } from './lang.js'
+import { categoryLabels, connectionsText, socialLabels } from './locales/connections.js'
 
-/** 간편 로그인 이름 (@dool2/protocol/connect의 SOCIAL_LABEL 복사, 테스트가 같은지 본다) */
-export const SOCIAL_LABEL: Record<SocialProvider, string> = {
-  kakao: '카카오',
-  naver: '네이버',
-  google: '구글',
-  apple: 'Apple',
-  facebook: '페이스북',
-  payco: '페이코',
-  toss: '토스',
+/** A record whose values are looked up in the current language each time they are read (keys and order are fixed) */
+function live<K extends string>(pick: (l: typeof lang) => Record<K, string>): Record<K, string> {
+  const out = {} as Record<K, string>
+  for (const k of Object.keys(pick('ko')) as K[])
+    Object.defineProperty(out, k, { enumerable: true, get: () => pick(lang)[k] })
+  return out
 }
 
-/** @dool2/protocol/connect의 분류 이름 (화면 번들에 zod를 넣지 않으려고 복사해 둔다. 테스트가 같은지 본다) */
-export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
-  account: '간편 로그인 계정',
-  shopping: '쇼핑',
-  grocery: '장보기·배달',
-  fashion: '패션·뷰티',
-  travel: '여행·숙소',
-  flight: '항공',
-  tickets: '예매·예약',
-  media: '영상·음악',
-  books: '책',
-  social: 'SNS',
-  work: '업무',
-  mail: '메일·일정',
-  telecom: '통신',
-  finance: '카드·금융',
-  gov: '공공·세금',
-  life: '생활',
-  device: '휴대폰',
-  ai: 'AI 도구',
-}
+/** Sign-in provider names (copy of SOCIAL_LABEL in @dool2/protocol/connect; a test checks they match) */
+export const SOCIAL_LABEL: Record<SocialProvider, string> = live(socialLabels)
+
+/** Category names from @dool2/protocol/connect (copied so the window bundle has no zod; a test checks they match) */
+export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = live(categoryLabels)
 const APPROVAL: readonly Tier[] = ['pay', 'contact']
 
 export interface ConnectionsOptions {
   api<T>(path: string, init?: RequestInit): Promise<T>
-  /** 그릴 자리 (.messages) */
+  /** Where to draw (.messages) */
   box: HTMLElement
   setHeader(title: string, sub: string): void
-  /** 예시 부탁을 새 대화로 보내기 */
+  /** Send an example request as a new chat */
   ask(text: string): void
-  /** 연결하기는 대화에서 (ADR 0021): 대화에 연결 카드를 띄우고 대화로 간다 */
+  /** Connecting happens in the chat (ADR 0021): show a connect card in the chat and go there */
   connect(id: string): Promise<void>
 }
 
 const SVG = 'http://www.w3.org/2000/svg'
-/** 24 격자 선 아이콘 (ui.css svg.i) */
+/** Line icons on a 24 grid (ui.css svg.i) */
 function icon(paths: string[]): SVGSVGElement {
   const svg = document.createElementNS(SVG, 'svg')
   svg.setAttribute('class', 'i')
@@ -84,11 +67,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e
 }
 
-/** 서비스 아이콘: 로고 파일 없이 이름 첫 글자 (ADR 0014) */
+/** Service mark: first letter of the name, no logo file needed (ADR 0014) */
 function mark(card: ConnectCard, size: 'sm' | 'lg' = 'sm'): HTMLElement {
   const m = el('span', `svc-mark ${size}`, [...card.name][0] ?? '')
   m.setAttribute('aria-hidden', 'true')
-  // 로고 (dom.ts의 withLogo와 같다. 이 파일은 시험에서 dom.ts 없이 불러온다)
+  // Logo (same as withLogo in dom.ts; tests load this file without dom.ts)
   const img = document.createElement('img')
   img.className = 'svc-logo'
   img.alt = ''
@@ -102,43 +85,34 @@ function mark(card: ConnectCard, size: 'sm' | 'lg' = 'sm'): HTMLElement {
 function approvalLine(card: ConnectCard): string | undefined {
   const risky = card.abilities.filter((a) => APPROVAL.includes(a.tier)).map((a) => a.title)
   if (!risky.length) return undefined
-  return `${risky.slice(0, 3).join(', ')} 같은 일은 폰에서 승인한 뒤에만 해요.`
+  return connectionsText(lang).approvalLine(risky.slice(0, 3).join(', '))
 }
 
 function dateLabel(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`
+  return connectionsText(lang).date(new Date(iso))
 }
 
-/** 상세 화면의 "안전하게 지키는 방법" (연결 방식마다) */
+/** "How we keep it safe" lines on the detail screen (per connection method) */
 export function safetyLines(card: ConnectCard): string[] {
-  const approval = card.abilities.some((a) => APPROVAL.includes(a.tier))
-    ? ['결제·주문·보내기 같은 마지막 버튼은 폰에서 승인해야만 눌러요.']
-    : []
+  const m = connectionsText(lang)
+  const approval = card.abilities.some((a) => APPROVAL.includes(a.tier)) ? [m.safetyApproval] : []
   switch (card.how) {
     case 'browser':
-      return [
-        `로그인은 내 Chrome에서 직접 해요(${card.login ?? '아이디·비밀번호'}). 두리(AI)는 비밀번호를 보지 않아요.`,
-        '로그인이 풀리면 두리 금고에 저장한 값을 두리 본체가 채우거나, 화면을 넘겨 드려요.',
-        ...approval,
-      ]
+      return [m.safetyBrowserLogin(card.login ?? m.defaultLogin), m.safetyBrowserRelogin, ...approval]
     case 'official':
-      return [
-        '공식 연동이 준비되기 전까지는 내 Chrome에서 로그인해 둔 화면으로 일해요.',
-        '두리(AI)는 비밀번호를 보지 않아요.',
-        ...approval,
-      ]
+      return [m.safetyOfficial, m.safetyNoPassword, ...approval]
     case 'open':
-      return ['로그인 없이 쓰는 서비스예요. 연결하지 않아도 바로 부탁하면 돼요.', ...approval]
+      return [m.safetyOpen, ...approval]
     case 'device':
-      return ['폰 앱에서 권한을 켜요. 켠 뒤에도 폰 설정에서 언제든 끌 수 있어요.', ...approval]
+      return [m.safetyDevice, ...approval]
   }
 }
 
 export function renderConnections(opts: ConnectionsOptions, open?: string): Promise<void> {
+  const m = connectionsText(lang)
   let items: ConnectionItem[] = []
   let query = ''
-  /** 고른 분류 칩: 'all' · 'mine'(연결됨) · 카드 분류 */
+  /** Selected category chip: 'all', 'mine' (connected) or a card category */
   let cat = 'all'
 
   const load = async () => {
@@ -165,9 +139,9 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
     )
     const right = el('span', 'svc-state')
     if (it.connectedAt) {
-      right.append(el('span', 'dot ok'), el('span', '', '연결됨'))
-    } else if (it.card.how === 'open') right.append(el('span', '', '로그인 없이'))
-    else if (it.tools?.some((t) => !t.login)) right.append(el('span', '', '연결 없이도 찾기'))
+      right.append(el('span', 'dot ok'), el('span', '', m.connected))
+    } else if (it.card.how === 'open') right.append(el('span', '', m.noLogin))
+    else if (it.tools?.some((t) => !t.login)) right.append(el('span', '', m.findWithout))
     right.append(icon(ICON.chevron))
     b.append(mark(it.card), text, right)
     b.onclick = () => showDetail(it.card.id)
@@ -176,16 +150,12 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
   }
 
   const showList = () => {
-    opts.setHeader('서비스 연결', '두리에게 맡길 서비스를 연결해요')
+    opts.setHeader(m.title, m.sub)
     const view = el('div', 'connect-view')
-    const intro = el(
-      'p',
-      'sub',
-      '찾기·비교는 연결 없이도 돼요. 주문·예약·내역 보기처럼 로그인이 필요한 일만 한 번 연결해 두면, 폰에서 "주문한 거 언제 와?"처럼 부탁만 하면 돼요. 로그인은 내 Chrome에서 직접 해요.',
-    )
+    const intro = el('p', 'sub', m.intro)
     const search = el('input', 'field svc-search') as HTMLInputElement
     search.type = 'search'
-    search.placeholder = '서비스 찾기 (예: 쿠팡, 항공권, 택배)'
+    search.placeholder = m.search
     search.value = query
     const chips = el('div', 'chips idea-cats svc-cats')
     const groups = el('div', 'svc-groups')
@@ -213,8 +183,8 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         return b
       }
       chips.replaceChildren(
-        chip('all', '전체'),
-        ...(mine.length ? [chip('mine', `연결됨 ${mine.length}`)] : []),
+        chip('all', m.all),
+        ...(mine.length ? [chip('mine', m.connectedCount(mine.length))] : []),
         ...cats.map((c) => chip(c, CATEGORY_LABEL[c])),
       )
       const shown = q
@@ -227,23 +197,16 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
           )
         : items
       const sections: HTMLElement[] = []
-      if (!q && cat === 'mine') sections.push(section('연결됨', mine))
+      if (!q && cat === 'mine') sections.push(section(m.connected, mine))
       else {
-        if (!q && cat === 'all' && mine.length) sections.push(section('연결됨', mine))
+        if (!q && cat === 'all' && mine.length) sections.push(section(m.connected, mine))
         for (const c of cats) {
           if (!q && cat !== 'all' && c !== cat) continue
           const list = shown.filter((it) => it.card.category === c)
           if (list.length) sections.push(section(CATEGORY_LABEL[c], list))
         }
       }
-      if (!sections.length)
-        sections.push(
-          el(
-            'p',
-            'cap svc-empty',
-            '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.',
-          ),
-        )
+      if (!sections.length) sections.push(el('p', 'cap svc-empty', m.empty))
       groups.replaceChildren(...sections)
     }
     const section = (name: string, list: ConnectionItem[]) => {
@@ -272,15 +235,15 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
 
     const back = el('button', 'btn-text svc-back')
     back.type = 'button'
-    back.append(icon(ICON.back), '서비스 목록')
+    back.append(icon(ICON.back), m.back)
     back.onclick = () => showList()
 
     const head = el('div', 'svc-head')
     const names = el('div')
-    names.append(el('h2', 'title', c.name), el('p', 'cap mono', c.site ?? '폰 권한'))
+    names.append(el('h2', 'title', c.name), el('p', 'cap mono', c.site ?? m.phonePermission))
     head.append(mark(c, 'lg'), names)
 
-    // 대화 예시: 부탁 → 일하는 중 → 답
+    // Chat example: request -> working -> answer
     const demo = el('div', 'card quiet svc-demo')
     const working = el('p', 'svc-working')
     working.append(el('span', 'dot ok'), `${c.example.working}…`)
@@ -294,13 +257,13 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       li.append(icon(TIER_ICON[a.tier]), text)
       if (APPROVAL.includes(a.tier)) {
         const tag = el('span', 'svc-state')
-        tag.append(el('span', 'dot warn'), el('span', '', '폰 승인'))
+        tag.append(el('span', 'dot warn'), el('span', '', m.phoneApproval))
         li.append(tag)
       }
       abilities.append(li)
     }
 
-    // 서비스 도구(ADR 0018)가 있으면: 화면을 하나씩 누르지 않고 바로 하는 일
+    // With service tools (ADR 0018): things done directly, without tapping through screens
     const fast = (it.tools ?? []).length ? el('section', 'svc-fast') : undefined
     if (fast) {
       const list = el('ul', 'list svc-abilities')
@@ -308,42 +271,38 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         const li = el('li')
         li.append(icon(TIER_ICON[t.tier]), el('span', 'svc-name', t.title))
         if (!it.connectedAt) {
-          // 로그인 없이 바로 되는 일과, 연결해야 되는 일을 나눠 보여 준다
+          // Show which work right away without sign-in and which need a connection
           const tag = el('span', 'svc-state')
           tag.append(
             el('span', t.login ? 'dot' : 'dot ok'),
-            el('span', '', t.login ? '연결하면' : '로그인 없이'),
+            el('span', '', t.login ? m.ifConnected : m.noLogin),
           )
           li.append(tag)
         }
         list.append(li)
       }
-      fast.append(
-        el('h2', 'over', '바로 해요'),
-        el('p', 'cap', '두리가 이 일은 화면을 하나씩 누르지 않고 바로 해서 빨라요.'),
-        list,
-      )
+      fast.append(el('h2', 'over', m.fastTitle), el('p', 'cap', m.fastBody), list)
     }
 
     const safety = el('section', 'svc-safety')
     const ul = el('ul')
     for (const line of safetyLines(c)) ul.append(el('li', '', line))
-    safety.append(el('h2', 'over', '안전하게 지키는 방법'), ul)
+    safety.append(el('h2', 'over', m.safetyTitle), ul)
 
     const action = el('div', 'svc-action')
     const drawAction = (note?: string) => {
       const kids: (Node | string)[] = []
-      const tryAsk = el('button', 'btn-ghost', '부탁해 보기')
+      const tryAsk = el('button', 'btn-ghost', m.tryAsk)
       tryAsk.type = 'button'
       tryAsk.onclick = () => opts.ask(c.example.ask)
       if (c.how === 'device') {
-        kids.push(el('p', 'cap', '폰 앱의 서비스 연결에서 켜요.'))
+        kids.push(el('p', 'cap', m.deviceHint))
       } else if (c.how === 'open') {
         kids.push(tryAsk)
       } else if (it.connectedAt) {
         const state = el('p', 'svc-connected')
-        state.append(el('span', 'dot ok'), `${dateLabel(it.connectedAt)}에 연결했어요`)
-        const off = el('button', 'btn-text', '연결 끊기')
+        state.append(el('span', 'dot ok'), m.connectedOn(dateLabel(it.connectedAt)))
+        const off = el('button', 'btn-text', m.disconnect)
         off.type = 'button'
         off.onclick = async () => {
           await opts.api(`/api/connections/${c.id}`, { method: 'DELETE' })
@@ -352,8 +311,8 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
         }
         kids.push(state, tryAsk, off)
       } else {
-        // 연결하기는 대화에서: 아이디·비밀번호·간편 로그인·직접 하기는 대화의 연결 카드에서 이어 간다
-        const go = el('button', 'btn', '연결하기')
+        // Connecting happens in the chat: ID/password, sign-in accounts and doing it yourself continue on the chat's connect card
+        const go = el('button', 'btn', m.connect)
         go.type = 'button'
         go.onclick = async () => {
           go.disabled = true
@@ -364,10 +323,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
             drawAction((e as Error).message)
           }
         }
-        kids.push(
-          go,
-          el('p', 'cap', '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 Chrome에 로그인해요.'),
-        )
+        kids.push(go, el('p', 'cap', m.connectHint))
       }
       if (note) kids.push(el('p', 'cap svc-note', note))
       action.replaceChildren(...kids)
@@ -380,7 +336,7 @@ export function renderConnections(opts: ConnectionsOptions, open?: string): Prom
       head,
       el('p', 'svc-summary', c.summary),
       demo,
-      el('h2', 'over', '이렇게 맡겨요'),
+      el('h2', 'over', m.abilitiesTitle),
       abilities,
       ...(approval ? [el('p', 'cap svc-approval', approval)] : []),
       ...(fast ? [fast] : []),

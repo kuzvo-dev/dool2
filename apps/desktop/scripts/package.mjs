@@ -1,18 +1,21 @@
-// 두리 설치 파일 만들기. 맥은 우리 고정 인증서(DOOL2_MAC_SIGN_IDENTITY)로 서명하고, 없으면 ad-hoc 서명 (ADR 0028).
-// 맥은 처음 설치용 dmg와 앱 안 업데이트용 zip을, 윈도우는 설치 exe를 만든다 (릴리스: .github/workflows/release.yml)
+// Builds the Dool2 installers. Mac builds are signed with our fixed certificate (DOOL2_MAC_SIGN_IDENTITY), or ad-hoc
+// without it (ADR 0028). Mac gets a dmg for first install and a zip for in-app updates, Windows an installer exe
+// (release: .github/workflows/release.yml)
 //
 //   pnpm build && pnpm --filter @dool2/desktop package
 //
-// 1. 메인 프로세스, 두리 도구 서버, 브라우저 호스트를 esbuild로 한 파일씩 묶는다 (pnpm 작업 공간 링크를 따라가지 않게)
-// 2. 의존성 없는 준비 폴더(stage/)에 화면·아이콘과 함께 모은다
-// 3. Codex는 넣지 않는다 (처음 쓸 때 두리가 내려받는다, agent-codex/download.ts)
-// 4. electron-builder로 맥 dmg / 윈도우 설치 파일을 만든다 → release/
+// 1. Bundle the main process, the Dool2 tool server and the browser host into one file each with esbuild (so pnpm
+//    workspace links are not followed)
+// 2. Gather them with the window files and icons in a dependency-free stage folder (stage/)
+// 3. Codex is not included (Dool2 downloads it on first use, agent-codex/download.ts)
+// 4. electron-builder makes the Mac dmg / Windows installer → release/
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
+import { DISPLAY_NAME } from './region/kr/app-name.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const stage = join(root, 'stage')
@@ -22,13 +25,13 @@ const electronVersion = JSON.parse(
 ).version
 
 if (!existsSync(join(root, 'dist', 'main.js'))) {
-  console.error('먼저 pnpm build를 실행해 주세요')
+  console.error('Run pnpm build first')
   process.exit(1)
 }
 rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, 'dist'), { recursive: true })
 
-// esm 묶음 안에서 require가 필요한 의존성(cjs)을 위해 넣는다
+// For dependencies (cjs) that need require inside the esm bundle
 const banner = {
   js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
 }
@@ -48,12 +51,12 @@ await esbuild({
 })
 const mcpServer = fileURLToPath(import.meta.resolve('@dool2/mcp-tools/server'))
 await esbuild({ ...common, entryPoints: [mcpServer], outfile: join(stage, 'dist', 'mcp-server.mjs') })
-// Chrome이 두리 확장 요청으로 띄우는 native messaging 호스트 (ADR 0006)
+// Native messaging host Chrome starts for the Dool2 extension (ADR 0006)
 const host = fileURLToPath(import.meta.resolve('@dool2/browser/host'))
 await esbuild({ ...common, entryPoints: [host], outfile: join(stage, 'dist', 'native-host.mjs') })
 
-// PDF 읽기(pdfjs-dist)가 쓰는 한글·중국어·일본어 CID 글꼴 표(cmaps)와 그림 풀기(wasm).
-// 묶음 파일 옆 dist/pdfjs/에서 찾는다 (apps/daemon/src/pdf.ts). pdfjs 본체와 worker는 main.js 안에 묶인다
+// Korean, Chinese and Japanese CID font maps (cmaps) and image decoders (wasm) used by PDF reading (pdfjs-dist).
+// Looked up in dist/pdfjs/ next to the bundle (apps/daemon/src/pdf.ts). pdfjs itself and its worker are bundled in main.js
 const pdfjsDir = dirname(
   createRequire(import.meta.resolve('@dool2/daemon')).resolve('pdfjs-dist/package.json'),
 )
@@ -82,36 +85,38 @@ writeFileSync(
   ),
 )
 
-// 맥 칩 종류: 기본은 이 맥, DOOL2_ARCH로 다른 칩용도 (인텔 빌드 기계의 dmg 도구가 깨져 Apple 칩 기계에서 둘 다 만든다, 11-23)
+// Mac chip: this Mac by default, DOOL2_ARCH for the other one (the Intel build machine's dmg tool is broken, so the
+// Apple silicon machine builds both, 11-23)
 const MAC_ARCH = (process.env.DOOL2_ARCH ?? process.arch) === 'arm64' ? 'arm64' : 'x64'
 const { build } = await import('electron-builder')
 await build({
   projectDir: root,
   config: {
     appId: 'com.dool2.desktop',
-    // 앱 내부 이름은 영문으로 둔다. 한글이면 맥에서 Electron 도우미("두리 Helper")를 못 찾고
-    // 켜자마자 죽는다(SIGTRAP, 실측 2026-11-14). 사용자에게 보이는 이름은 아래에서 "두리"로 바꾼다
+    // Keep the internal name in Latin letters. With a Korean name macOS cannot find the Electron helper
+    // ("<name> Helper") and the app dies at launch (SIGTRAP, measured 2026-11-14). The display name is set below
     productName: 'Dool2',
     executableName: 'dool2',
-    // electron-builder가 채우는 자리표시자라서 일반 문자열로 둔다
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder 자리표시자
+    // Placeholders electron-builder fills in, so a plain string
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder placeholders
     artifactName: 'dool2-${version}-${os}-${arch}.${ext}',
     electronVersion,
     directories: { app: 'stage', output: 'release' },
-    // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
+    // Only the bundles. No node_modules at all (duplicate Codex and so on)
     files: ['**/*', '!**/node_modules/**'],
     asarUnpack: ['dist/mcp-server.mjs', 'dist/native-host.mjs', 'dist/pdfjs/**'],
-    // 두리 Chrome 확장 (웹 스토어 전까지 사용자가 직접 올린다)
+    // The Dool2 Chrome extension (users load it themselves until the web store release)
     extraResources: [
       { from: '../extension/dist', to: 'extension' },
-      // 두리 스킬 (CC BY-SA 4.0). 서명된 스킬 업데이트 채널은 M5
+      // Dool2 skills (CC BY-SA 4.0). A signed skill update channel comes in M5
       { from: '../../skills', to: 'skills', filter: ['**/*', '!_template/**'] },
-      // PC 화면 제어 도우미 (맥, ADR 0013). 윈도우 도우미는 따로
+      // PC screen control helper (Mac, ADR 0013). The Windows helper is separate
       ...(process.platform === 'darwin' ? [{ from: '../hands-mac/dist', to: 'hands' }] : []),
     ],
-    // 앱 전체를 다시 서명한다. Electron 기본 서명은 앱 묶음이 봉인되지 않아 맥이 앱을 알아보지 못하고, 손쉬운 사용·화면 기록
-    // 권한을 켜도 적용되지 않는다 (실측). 릴리스는 우리 고정 인증서로: 판이 바뀌어도 맥이 같은 앱으로 알아봐 권한·금고(키체인)가
-    // 이어진다. ad-hoc(-)은 판마다 지문이 바뀌어 업데이트할 때마다 권한이 풀린다 (ADR 0028)
+    // Re-sign the whole app. Electron's default signature leaves the bundle unsealed, so macOS does not recognize the
+    // app and Accessibility / Screen Recording permissions do not take effect even when turned on (measured). Releases
+    // use our fixed certificate: macOS sees each version as the same app, so permissions and the vault (keychain)
+    // carry over. Ad-hoc (-) changes the fingerprint every build, so permissions reset on every update (ADR 0028)
     afterPack: async (ctx) => {
       if (ctx.electronPlatformName !== 'darwin') return
       const appPath = join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`)
@@ -127,21 +132,21 @@ await build({
     mac: {
       category: 'public.app-category.productivity',
       extendInfo: {
-        CFBundleDisplayName: '두리',
+        CFBundleDisplayName: DISPLAY_NAME,
         LSApplicationCategoryType: 'public.app-category.productivity',
       },
-      // 처음 설치는 dmg, 앱 안 업데이트는 zip (update-install.ts가 풀어 바꿔 끼운다)
+      // dmg for first install, zip for in-app updates (update-install.ts unzips and swaps it in)
       target: ['dmg', 'zip'].map((target) => ({
         target,
         arch: [MAC_ARCH],
       })),
-      // electron-builder 서명은 쓰지 않는다 (애플 개발자 인증서 없음). 위 afterPack이 서명한다
+      // electron-builder signing is off (no Apple developer certificate). afterPack above signs
       identity: null,
     },
-    dmg: { title: '두리' },
+    dmg: { title: DISPLAY_NAME },
     win: { target: [{ target: 'nsis', arch: ['x64'] }] },
-    nsis: { oneClick: true, perMachine: false, shortcutName: '두리' },
+    nsis: { oneClick: true, perMachine: false, shortcutName: DISPLAY_NAME },
     publish: null,
   },
 })
-console.log('설치 파일을 만들었어요: apps/desktop/release/')
+console.log('Built installers: apps/desktop/release/')

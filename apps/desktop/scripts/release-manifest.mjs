@@ -1,10 +1,10 @@
-// 릴리스 버전 안내(version.json)를 만들고 우리 서명키로 서명한다 (ADR 0028, .github/workflows/release.yml).
+// Builds the release version info (version.json) and signs it with our key (ADR 0028, .github/workflows/release.yml).
 //
 //   DOOL2_UPDATE_KEY="$(cat update-key.pem)" node apps/desktop/scripts/release-manifest.mjs \
-//     --dir out --version 0.3.0 --notes "바뀐 점" [--min 0.2.0] [--base https://github.com/kuzvo-dev/dool2/releases/download/v0.3.0]
+//     --dir out --version 0.3.0 --notes "What changed" [--min 0.2.0] [--base https://github.com/kuzvo-dev/dool2/releases/download/v0.3.0]
 //
-// 폴더의 dool2-<버전>-mac-arm64.zip · -mac-x64.zip · -win-x64.exe를 찾아 확인값(sha256)·크기를 적는다.
-// 앱은 apps/desktop/src/update.ts의 openRelease로 같은 공개키를 맞춰 본다 (payload = Release JSON의 base64)
+// Finds dool2-<version>-mac-arm64.zip, -mac-x64.zip and -win-x64.exe in the folder and records checksum (sha256) and size.
+// The app checks it against the same public key with openRelease in apps/desktop/src/update.ts (payload = Release JSON in base64)
 import { createHash, sign } from 'node:crypto'
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -24,7 +24,7 @@ const dir = values.dir
 const version = values.version
 const key = process.env.DOOL2_UPDATE_KEY
 if (!dir || !version || !key) {
-  console.error('--dir, --version과 DOOL2_UPDATE_KEY가 필요해요')
+  console.error('--dir, --version and DOOL2_UPDATE_KEY are required')
   process.exit(1)
 }
 const base = values.base ?? `https://github.com/kuzvo-dev/dool2/releases/download/v${version}`
@@ -45,7 +45,7 @@ for (const [platform, name] of KINDS) {
   }
 }
 if (!Object.keys(files).length) {
-  console.error(`${dir}에 dool2-${version}-… 업데이트 파일이 없어요`)
+  console.error(`No dool2-${version}-… update files in ${dir}`)
   process.exit(1)
 }
 const release = {
@@ -59,4 +59,4 @@ const data = Buffer.from(JSON.stringify(release), 'utf8')
 const signed = { payload: data.toString('base64'), signature: sign(null, data, key).toString('base64') }
 const out = values.out ?? join(dir, 'version.json')
 writeFileSync(out, `${JSON.stringify(signed, null, 2)}\n`)
-console.log(`버전 안내를 만들었어요: ${out} (${Object.keys(files).join(', ')})`)
+console.log(`Wrote version info: ${out} (${Object.keys(files).join(', ')})`)

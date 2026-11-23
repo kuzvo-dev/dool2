@@ -1,4 +1,6 @@
-// 화면 그리기 도우미: 요소 만들기, 선 아이콘, 두리 캐릭터, 두리 답 (renderer.ts와 life-views.ts가 같이 쓴다)
+// Drawing helpers: elements, line icons, the Dool2 character, Dool2's answers (shared by renderer.ts and life-views.ts)
+import { lang } from './lang.js'
+import { domText } from './locales/dom.js'
 import { type Inline, richBlocks } from './rich.js'
 
 export function el<K extends keyof HTMLElementTagNameMap>(
@@ -12,7 +14,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
-/** 버튼 (type="button") */
+/** Button (type="button") */
 export function button(
   cls: string,
   onClick: (e: MouseEvent) => void,
@@ -24,7 +26,7 @@ export function button(
   return b
 }
 
-/** 24 격자 선 아이콘 (폰 앱 apps/phone/src/dom.ts와 같은 모양). 글자(›, ✓)나 이모지를 아이콘으로 쓰지 않는다 */
+/** Line icons on a 24 grid (same shapes as the phone app, apps/phone/src/dom.ts). Never use characters (›, ✓) or emoji as icons */
 export const ICON = {
   menu: ['M5 9h14M5 15h14'],
   close: ['M6 6l12 12M18 6 6 18'],
@@ -135,7 +137,7 @@ export function icon(name: IconName, cls = 'i'): SVGSVGElement {
   return svg
 }
 
-/** 아이콘 칸 (ui.css .tile + 색) */
+/** Icon tile (ui.css .tile + color) */
 export function tile(name: IconName, tone = '', size?: number): HTMLElement {
   const t = el('span', `tile ${tone}`.trim(), icon(name, 'i md'))
   if (size) {
@@ -145,7 +147,7 @@ export function tile(name: IconName, tone = '', size?: number): HTMLElement {
   return t
 }
 
-/** 두리 캐릭터 그림 (표정: thinking·working·asking·done·sleeping) */
+/** Dool2 character image (moods: thinking, working, asking, done, sleeping) */
 export function doori(mood = '', size?: number): HTMLElement {
   const d = el('span', `doori ${mood}`.trim())
   d.setAttribute('aria-hidden', 'true')
@@ -153,13 +155,13 @@ export function doori(mood = '', size?: number): HTMLElement {
   return d
 }
 
-/** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
+/** Animated 3D Dool2 (packages/ui/doori3d.js, bundled separately by the build) */
 interface LiveDoori {
   setMood(mood: string): void
   destroy(): void
 }
 type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
-const DOORI3D = './doori3d.js' // 글자로 넘겨야 화면 코드와 따로 불러온다
+const DOORI3D = './doori3d.js' // Passed as a string so it loads separately from the window code
 let doori3dModule: Promise<Doori3d> | undefined
 type Slot = {
   el: HTMLElement
@@ -171,7 +173,7 @@ type Slot = {
 const liveSlots = new Map<string, Slot>()
 const slotOf = new WeakMap<Element, Slot>()
 
-/** 3D는 화면에 보이는 자리만 띄운다. 20초 넘게 안 보이면 내려 GPU 메모리를 돌려준다 (자리마다 WebGL 하나라 셋이면 셋) */
+/** 3D runs only in spots visible on screen. After 20 s out of view it is torn down to free GPU memory (one WebGL context per spot) */
 const seen = new IntersectionObserver((entries) => {
   for (const e of entries) {
     const rec = slotOf.get(e.target)
@@ -192,7 +194,7 @@ function mountLive(rec: Slot) {
       rec.el.classList.add('live-ready')
     })
     .catch(() => {
-      // 3D를 못 쓰면 그림 그대로
+      // Without 3D, keep the still image
     })
 }
 function unmountLive(rec: Slot) {
@@ -202,7 +204,7 @@ function unmountLive(rec: Slot) {
   rec.el.classList.remove('live-ready')
 }
 
-/** 큰 자리의 두리: 먼저 그림을 보이고 3D가 준비되면 움직인다. 자리마다 캔버스 하나를 옮겨 쓴다 */
+/** Large Dool2: shows the still image first and animates once 3D is ready. One canvas is moved between spots */
 export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
   const hit = liveSlots.get(slot)
   if (hit) {
@@ -223,12 +225,12 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
   return d
 }
 
-/** 빈 화면: 두리 + 한 줄 + 설명 (+ 버튼) */
+/** Empty state: Dool2 + a headline + a description (+ a button) */
 export function emptyState(mood: string, title: string, sub: string, action?: HTMLElement): HTMLElement {
   return el('div', 'empty', doori(mood, 64), el('p', 'empty-t', title), el('p', 'cap', sub), action)
 }
 
-/** 켜고 끄기 (ui.css .switch, 부모 aria-checked) */
+/** On/off switch (ui.css .switch, aria-checked on the parent) */
 export function toggle(on: boolean, label: string, onChange: (on: boolean) => void): HTMLButtonElement {
   const b = button('toggle', (e) => {
     e.stopPropagation()
@@ -243,14 +245,14 @@ export function toggle(on: boolean, label: string, onChange: (on: boolean) => vo
   return b
 }
 
-/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
-/** 답 속 파일 링크를 누르면 (renderer가 붙인다: 본체에 열어 달라고) */
+/** Dool2 answer: draws only paragraphs, lists and **bold** (never parsed as HTML) */
+/** When a file link in an answer is clicked (renderer sets this: asks the daemon to open it) */
 let fileOpener: (path: string) => void = () => {}
 export function setFileOpener(fn: (path: string) => void) {
   fileOpener = fn
 }
 
-/** 답 속 PC 파일: 누르면 기본 앱으로 연다 (파일 아이콘 + 파일 이름) */
+/** PC file in an answer: opens in the default app on click (file icon + file name) */
 export function fileChip(text: string, path: string): HTMLElement {
   const b = button(
     'rich-file',
@@ -261,7 +263,7 @@ export function fileChip(text: string, path: string): HTMLElement {
     icon('file'),
     el('span', '', text),
   )
-  b.title = `${path}\n누르면 열어요`
+  b.title = `${path}\n${domText(lang).clickToOpen}`
   return b
 }
 
@@ -321,7 +323,7 @@ export function setRich(target: HTMLElement, text: string) {
   )
 }
 
-/** 서비스 표시에 로고를 얹는다 (logos/<카드 id>.png). 없거나 못 불러오면 이름 첫 글자가 그대로 보인다 */
+/** Puts a logo on a service mark (logos/<card id>.png). If missing or it fails to load, the first letter of the name stays */
 export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
   if (!id) return mark
   const img = document.createElement('img')
@@ -335,7 +337,7 @@ export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
   return mark
 }
 
-/** 입체 이모지 칸 (packages/ui/emoji/<key>.webp, Fluent Emoji 3D · MIT). 내용 분류에 쓴다 */
+/** 3D emoji tile (packages/ui/emoji/<key>.webp, Fluent Emoji 3D, MIT). Used for content categories */
 export function emoTile(key: string, cls = ''): HTMLElement {
   const s = document.createElement('span')
   s.className = `tile emo ${cls}`.trim()
