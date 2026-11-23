@@ -1,24 +1,24 @@
-# 0007. PC 쪽을 먼저 끝까지 만들고 폰은 마지막에 붙인다
+# 0007. Finish the PC side first and attach the phone last
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리는 폰(부탁·허락)과 PC(실행) 두 쪽으로 이뤄져요. 둘을 동시에 만들면 중계 서버, 페어링, 암호화까지 한꺼번에 필요해서 실제로 "일을 해내는" 부분의 검증이 늦어져요.
+Dool2 has two sides: the phone (requests and approvals) and the PC (execution). Building both at once would need the relay, pairing and encryption all together, which would delay verifying the part that actually "gets the job done".
 
-## 결정
+## Decision
 
-순서는 이래요: 설치·첫 설정(M1) → 브라우저(M2) → 승인 게이트(M3) → PC 제어·스킬(M4) → 배포(M5) → 폰·중계 서버(M6).
+The order is: install and first setup (M1) → browser (M2) → approval gate (M3) → PC control and skills (M4) → distribution (M5) → phone and relay (M6).
 
-폰이 붙기 전까지는 PC 앱 화면이 폰 역할을 대신해요. 부탁도 PC 창에서 하고, 허락도 PC 화면에서 받아요.
+Until the phone is attached, the desktop app's screen stands in for the phone. Requests are made in the PC window, and approvals are also taken on the PC screen.
 
-## 이유
+## Why
 
-- 두리의 가치(해자)는 한국 서비스를 끝까지 처리하는 PC 쪽 능력이에요. 이걸 먼저 증명해야 해요.
-- 폰 연결은 `packages/protocol`의 같은 규약 위에 나중에 얹을 수 있어요.
+- Dool2's value (its moat) is the PC-side ability to carry Korean services through to the end. That has to be proven first.
+- The phone link can be added later on top of the same protocol in `packages/protocol`.
 
-## 결과
+## Consequences
 
-- 승인 게이트는 처음에 PC 화면 허락으로 만들고, M6에서 폰 서명으로 바꿔요. 게이트 인터페이스는 이 교체를 전제로 설계해요.
-- M5 전까지는 개발자만 써 볼 수 있어요.
+- The approval gate is first built as approval on the PC screen and is replaced with a phone signature in M6. The gate interface is designed on the assumption of this swap.
+- Until M5, only developers can try it.

@@ -1,42 +1,42 @@
 # @dool2/daemon (dool2d)
 
-두리 본체예요. 에이전트 실행, 대화 진행, 기록을 맡고, 화면(PC 앱, 나중에 폰)에는 로컬 API로 기능을 열어 줘요. PC 앱은 이 본체를 같은 프로세스에서 띄워요.
+This is the Dool2 daemon. It runs agents, drives conversations, and keeps the records, and it exposes these features to the screens (the desktop app, later the phone) through a local API. The desktop app starts this daemon in the same process.
 
 ```bash
 pnpm build
-pnpm dev:daemon   # 주소와 토큰을 출력해요
+pnpm dev:daemon   # prints the address and token
 ```
 
-## 로컬 API
+## Local API
 
-`127.0.0.1`에서만 받고, 모든 요청에 `Authorization: Bearer <토큰>`이 필요해요. 토큰은 실행할 때마다 새로 만들어요.
+It listens on `127.0.0.1` only, and every request needs `Authorization: Bearer <token>`. A new token is created on every run.
 
-| 메서드              | 경로                            | 설명                                                                    |
-| ------------------- | ------------------------------- | ----------------------------------------------------------------------- |
-| GET                 | `/api/health`                   | 살아 있는지                                                             |
-| GET                 | `/api/agents`                   | Claude Code·Codex 설치·로그인 상태                                      |
-| POST                | `/api/agents/codex/login`       | ChatGPT 로그인 (끝날 때까지 기다림)                                     |
-| GET / POST / DELETE | `/api/agents/codex/install`     | Codex 받기 상태 / 시작 / 취소                                           |
-| GET / POST / DELETE | `/api/agents/claude/login`      | Claude 로그인 상태 / 시작(로그인 주소) / 취소                           |
-| POST                | `/api/agents/claude/login/code` | 브라우저에 나온 코드를 공식 로그인에 넘김                               |
-| GET / POST / DELETE | `/api/agents/claude/install`    | Claude Code 설치 상태(단계·진행률) / 시작 / 취소                        |
-| GET                 | `/api/browser`                  | Chrome 설치 여부·버전                                                   |
-| GET / POST / DELETE | `/api/browser/install`          | Chrome 설치 상태 / 시작 / 취소                                          |
-| GET                 | `/api/agents/opencode/catalog`  | 종량제로 고를 수 있는 AI 제공자·모델                                    |
-| GET / PUT / DELETE  | `/api/agents/opencode/account`  | 종량제 계정 (제공자·모델·API 키). 키는 저장만 하고 끝 4자리만 보여 줘요 |
-| GET / POST / DELETE | `/api/agents/opencode/install`  | 종량제 실행기 설치 상태 / 시작 / 취소                                   |
-| GET / PATCH         | `/api/settings`                 | 설정 읽기 / 바꿀 항목만 저장                                            |
-| GET / POST          | `/api/threads`                  | 대화 목록 / 새 대화                                                     |
-| GET                 | `/api/threads/:id`              | 대화와 메시지                                                           |
-| POST                | `/api/threads/:id/messages`     | 메시지 보내기. 응답은 SSE 스트림(`DaemonStreamEvent`)                   |
-| POST                | `/api/threads/:id/cancel`       | 진행 중인 답 멈추기                                                     |
+| Method              | Path                            | Description                                                                                                    |
+| ------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GET                 | `/api/health`                   | Whether it is alive                                                                                            |
+| GET                 | `/api/agents`                   | Install and login status of Claude Code and Codex                                                              |
+| POST                | `/api/agents/codex/login`       | ChatGPT login (waits until it finishes)                                                                        |
+| GET / POST / DELETE | `/api/agents/codex/install`     | Codex download status / start / cancel                                                                         |
+| GET / POST / DELETE | `/api/agents/claude/login`      | Claude login status / start (login URL) / cancel                                                               |
+| POST                | `/api/agents/claude/login/code` | Pass the code shown in the browser to the official login                                                       |
+| GET / POST / DELETE | `/api/agents/claude/install`    | Claude Code install status (step and progress) / start / cancel                                                |
+| GET                 | `/api/browser`                  | Whether Chrome is installed, and its version                                                                   |
+| GET / POST / DELETE | `/api/browser/install`          | Chrome install status / start / cancel                                                                         |
+| GET                 | `/api/agents/opencode/catalog`  | AI providers and models you can pick on pay-as-you-go                                                          |
+| GET / PUT / DELETE  | `/api/agents/opencode/account`  | Pay-as-you-go account (provider, model, API key). The key is only stored; only the last 4 characters are shown |
+| GET / POST / DELETE | `/api/agents/opencode/install`  | Pay-as-you-go runner install status / start / cancel                                                           |
+| GET / PATCH         | `/api/settings`                 | Read settings / save only the items that changed                                                               |
+| GET / POST          | `/api/threads`                  | List conversations / start a new one                                                                           |
+| GET                 | `/api/threads/:id`              | A conversation and its messages                                                                                |
+| POST                | `/api/threads/:id/messages`     | Send a message. The response is an SSE stream (`DaemonStreamEvent`)                                            |
+| POST                | `/api/threads/:id/cancel`       | Stop the answer in progress                                                                                    |
 
-## 데이터 폴더
+## Data folder
 
-| OS      | 위치                                  |
+| OS      | Location                              |
 | ------- | ------------------------------------- |
 | macOS   | `~/Library/Application Support/dool2` |
 | Windows | `%APPDATA%\dool2`                     |
-| 그 밖   | `$XDG_DATA_HOME/dool2`                |
+| Other   | `$XDG_DATA_HOME/dool2`                |
 
-`DOOL2_DATA_DIR`로 바꿀 수 있어요. 개발과 캡처에는 임시 폴더를 쓰세요. 데모 대화는 `node scripts/seed-demo.mjs <폴더>`로 만들 수 있어요.
+You can change it with `DOOL2_DATA_DIR`. Use a temporary folder for development and screenshots. You can create a demo conversation with `node scripts/seed-demo.mjs <folder>`.

@@ -1,66 +1,66 @@
 # @dool2/extension
 
-사용자가 평소 쓰는 Chrome에 설치하는 **두리 확장**이에요([ADR 0006](../../docs/decisions/0006-user-chrome-extension.md)). 평소 로그인 그대로 두리가 웹 일을 할 수 있게 해요.
+The **Dool2 extension**, installed in the Chrome the user already uses ([ADR 0006](../../docs/decisions/0006-user-chrome-extension.md)). It lets Dool2 do web tasks with the user's usual logins.
 
-확장은 **판단하지 않는 얇은 손**이에요. 무엇을 해도 되는지는 두리 본체(승인 게이트)가 정하고, 확장은 시킨 일만 해요.
+The extension is a **thin hand that does not make decisions**. The Dool2 daemon (the approval gate) decides what may be done, and the extension only does what it is told.
 
 ```
-두리 본체 ─ 로컬 소켓 ─ native messaging 호스트 ─ connectNative ─ 이 확장 ─ chrome.debugger ─ 두리 탭
+Dool2 daemon ─ local socket ─ native messaging host ─ connectNative ─ this extension ─ chrome.debugger ─ Dool2 tab
 ```
 
-## 지키는 것
+## What it guarantees
 
-- **두리가 연 탭만 다뤄요.** 두리 탭은 따로 연 "두리" 창의 초록색 탭 그룹에 모아요. 사용자가 연 탭은 읽지도 누르지도 않아요. 두리 탭에서 새 창 링크로 열린 탭만 두리 탭으로 이어 받아요.
-- **http·https 주소만 열어요.** `file:`, `chrome:`, `javascript:`, `data:`는 열지 않아요.
-- **입력은 실제 입력으로 넣어요.** 클릭·키는 `chrome.debugger`(CDP `Input.*`)로 넣어요. 페이지 스크립트로 흉내 낸 클릭은 쓰지 않아요.
-- **페이지가 두리 표시를 볼 수 없어요.** 페이지 읽기는 확장 전용 공간(isolated world)에서 하고, 누를 곳 표시(`e12`)도 그 안에만 둬요.
-- **비밀번호 칸에는 AI가 입력할 수 없어요.** 두리 금고(`fill`)로만 채우고, 그때도 지금 페이지 주소가 저장된 사이트와 같아야 해요([ADR 0011](../../docs/decisions/0011-login-vault.md)).
-- 디버거는 쓸 때만 붙이고, 2분 동안 안 쓰면 떼요. 그동안 Chrome 위에 "제어 중" 막대가 떠요. 사용자가 막대에서 **취소**를 누르면 그 탭은 다시 다루지 않아요.
+- **It only touches tabs Dool2 opened.** Dool2 tabs are collected in a green tab group inside a separate "Dool2" window. It never reads or clicks tabs the user opened. Only a tab opened from a Dool2 tab through a new-window link is taken over as a Dool2 tab.
+- **It only opens http and https addresses.** `file:`, `chrome:`, `javascript:`, and `data:` are not opened.
+- **Input is real input.** Clicks and keys go in through `chrome.debugger` (CDP `Input.*`). It does not use clicks imitated by page scripts.
+- **The page cannot see Dool2's markers.** The page is read in an extension-only space (isolated world), and the click-target markers (`e12`) live only inside it.
+- **The AI cannot type into password fields.** They are filled only from the Dool2 vault (`fill`), and even then the current page address must match the saved site ([ADR 0011](../../docs/decisions/0011-login-vault.md)).
+- The debugger is attached only while in use and detached after 2 minutes of no use. Meanwhile Chrome shows a "being controlled" bar. If the user presses **Cancel** on the bar, that tab is not handled again.
 
-## 할 수 있는 일
+## What it can do
 
-| 명령         | 하는 일                                                                         |
-| ------------ | ------------------------------------------------------------------------------- |
-| `open`       | 두리 창에 새 탭을 열고 다 뜰 때까지 기다려요                                    |
-| `navigate`   | 두리 탭의 주소를 바꿔요                                                         |
-| `snapshot`   | 페이지를 글로 읽어요. 누를 수 있는 것에 `[e3 버튼 "검색"]` 표시, 캡차 화면 감지 |
-| `click`      | 표시한 요소를 화면 가운데로 옮겨 마우스로 눌러요. 새 탭이 열리면 알려 줘요      |
-| `type`       | 표시한 칸에 글자를 넣어요(기존 글자는 바뀜). `submit`이면 Enter                 |
-| `press`      | Enter·Tab·Esc·방향키 등                                                         |
-| `scroll`     | 위·아래로 한 화면                                                               |
-| `screenshot` | 보이는 화면을 JPEG로(가로 최대 1280px)                                          |
-| `back`       | 뒤로 가기                                                                       |
-| `focus`      | 사람에게 넘길 때 두리 창·탭을 앞으로 가져와요                                   |
-| `fill`       | 두리 금고 값 채우기(주소·칸 확인)                                               |
-| `close`      | 두리 탭 닫기                                                                    |
+| Command      | What it does                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `open`       | Opens a new tab in the Dool2 window and waits until it has fully loaded                                                 |
+| `navigate`   | Changes the address of a Dool2 tab                                                                                      |
+| `snapshot`   | Reads the page as text. Marks clickable things like `[e3 button "검색"]` (button "Search"), and detects CAPTCHA screens |
+| `click`      | Scrolls the marked element to the center of the screen and clicks it with the mouse. Reports if a new tab opens         |
+| `type`       | Types into the marked field (replacing existing text). With `submit`, presses Enter                                     |
+| `press`      | Enter, Tab, Esc, arrow keys, and so on                                                                                  |
+| `scroll`     | One screen up or down                                                                                                   |
+| `screenshot` | The visible screen as JPEG (up to 1280px wide)                                                                          |
+| `back`       | Go back                                                                                                                 |
+| `focus`      | Brings the Dool2 window and tab to the front when handing off to a person                                               |
+| `fill`       | Fills a Dool2 vault value (checks address and field)                                                                    |
+| `close`      | Closes a Dool2 tab                                                                                                      |
 
-## 개발
+## Development
 
 ```bash
-pnpm build                       # → apps/extension/dist (Chrome에 올릴 폴더)
+pnpm build                       # → apps/extension/dist (the folder to load into Chrome)
 ```
 
-- 사용자 Chrome에서 시험하려면 `chrome://extensions` → 개발자 모드 → **압축해제된 확장 프로그램을 로드합니다** → `apps/extension/dist`. 그리고 두리 앱을 `DOOL2_REGISTER_HOST=1 pnpm dev:desktop`으로 켜야 Chrome이 두리 호스트를 찾아요.
-- 확장 id는 `manifest.json`의 `key`(공개키)로 고정돼 있어요(`mgjjgnbhoaalicncjbbcldjffpecocah`). 본체는 이 id에만 호스트를 열어 줘요. 웹 스토어에 올리면 스토어 id를 `@dool2/protocol`의 `STORE_EXTENSION_ID`에 채워요. 그러면 PC 앱이 [Chrome에 추가] 한 번과 외부 확장 등록으로 바뀌어요. 제출 방법·문구는 [docs/store/chrome-web-store.md](../../docs/store/chrome-web-store.md), 제출용 zip은 `pnpm --filter @dool2/extension pack`.
+- To test in the user's Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → `apps/extension/dist`. Then start the Dool2 app with `DOOL2_REGISTER_HOST=1 pnpm dev:desktop` so that Chrome can find the Dool2 host.
+- The extension id is fixed by the `key` (public key) in `manifest.json` (`mgjjgnbhoaalicncjbbcldjffpecocah`). The daemon opens the host only to this id. When the extension is published on the Web Store, fill the store id into `STORE_EXTENSION_ID` in `@dool2/protocol`. Then the desktop app switches to a single [Add to Chrome] click plus external extension registration. For how to submit and the wording, see [docs/store/chrome-web-store.md](../../docs/store/chrome-web-store.md); the zip for submission is made with `pnpm --filter @dool2/extension pack`.
 
-### 끝-끝 확인
+### End-to-end check
 
-시험용 Chrome(Chrome for Testing)에 확장을 올리고 진짜 본체와 붙여서, 시험용 페이지에서 열기·읽기·입력·클릭·새 탭·스크롤·캡처·캡차 감지·금지 동작을 확인해요. 사용자 Chrome과 프로필은 건드리지 않아요. 일반 Chrome은 137부터 명령줄로 확장을 올릴 수 없어서 Chrome for Testing을 써요.
+This loads the extension into a test Chrome (Chrome for Testing), connects it to the real daemon, and checks open, read, type, click, new tab, scroll, capture, CAPTCHA detection, and forbidden actions on a test page. It does not touch the user's Chrome or profile. Regular Chrome 137 and later cannot load extensions from the command line, so it uses Chrome for Testing.
 
 ```bash
 npx @puppeteer/browsers install chrome@stable --path ~/.cache/dool2-test
 pnpm build
-DOOL2_TEST_CHROME="<Chrome for Testing 실행 파일>" pnpm --filter @dool2/extension e2e
+DOOL2_TEST_CHROME="<Chrome for Testing executable>" pnpm --filter @dool2/extension e2e
 # → apps/extension/out/e2e-search.jpg, e2e-snapshot.txt
 ```
 
-## 실측으로 맞춘 것
+## Tuned from measurements
 
-- **뒤에 있는 탭은 입력을 받지 않아요.** 새 창 링크로 다른 탭이 앞에 오면 원래 탭의 클릭이 버려졌어요. 그래서 입력 전에 두리 창 안에서 그 탭을 앞 탭으로 돌려요(창 자체는 앞으로 가져오지 않아요).
-- **비밀번호 칸에 초점이 남으면** Chrome 비밀번호 제안 창이 다음 클릭을 삼켜요. 금고로 채운 뒤에는 초점을 빼요.
-- 탭이 그려지지 않는 중(`visibilityState: hidden`)이면 마우스 입력이 버려져요. 이때는 요소에 초점을 주고 Enter·Space로 눌러요. 초점을 못 받는 요소만 페이지 안에서 눌러요. **화면이 꺼진 PC에서의 동작은 아직 실제로 확인하지 못했어요(QA 항목).**
+- **A background tab does not receive input.** When a new-window link brought another tab to the front, clicks on the original tab were dropped. So before input, it switches that tab back to the front tab within the Dool2 window (it does not bring the window itself to the front).
+- **If focus stays on a password field**, Chrome's password suggestion popup swallows the next click. After filling from the vault, it removes the focus.
+- If the tab is not being drawn (`visibilityState: hidden`), mouse input is dropped. In that case it focuses the element and presses it with Enter or Space. Only elements that cannot take focus are clicked from inside the page. **Behavior on a PC with its screen off has not yet been verified in practice (a QA item).**
 
-## 알려진 한계
+## Known limits
 
-- 아직 iframe 안은 읽지 못해요(결제창·지도 등). 필요해지면 프레임별로 넓혀요.
-- 두리 창이 다른 창에 가려져 있으면 Chrome이 화면을 그리지 않아요. 그래서 마우스 이동·스크롤 확인을 오래 기다리지 않게 해 뒀어요.
+- It cannot yet read inside iframes (payment windows, maps, and so on). It will be widened per frame when needed.
+- If the Dool2 window is covered by another window, Chrome does not draw the screen. So the waits that confirm mouse moves and scrolls are kept short.

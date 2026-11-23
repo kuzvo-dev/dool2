@@ -1,15 +1,15 @@
 # @dool2/agent-claude
 
-Claude Code 어댑터예요. 사용자가 설치하고 로그인한 공식 `claude` 바이너리를 수정 없이 `claude -p`로 실행해요([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
+The Claude Code adapter. It runs the official `claude` binary that the user installed and logged in to, unmodified, with `claude -p` ([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
 
-- `ClaudeRuntime`: `AgentRuntime` 구현. `detect()`는 `claude --version`과 `claude auth status`로 설치·로그인·구독 종류를 확인해요.
-- `buildClaudeArgs()`: 내장 도구를 끄고(`--tools ""`) 두리 MCP 서버만 연결하는 실행 인자를 만들어요.
-- `ClaudeStreamParser`: `stream-json` 출력을 공통 `AgentEvent`로 바꿔요. 두리 도구가 아닌 도구가 보이면 `tools_unsafe`로 멈추게 해요.
+- `ClaudeRuntime`: the `AgentRuntime` implementation. `detect()` checks install, login, and subscription type with `claude --version` and `claude auth status`.
+- `buildClaudeArgs()`: builds launch arguments that turn off built-in tools (`--tools ""`) and connect only the Dool2 MCP server.
+- `ClaudeStreamParser`: converts `stream-json` output into the common `AgentEvent`. If it sees a tool that is not a Dool2 tool, it stops with `tools_unsafe`.
 
-- `ClaudeLogin`: 로그인 버튼. 공식 `claude auth login --claudeai`를 띄워 로그인 주소를 찾고, 사용자가 붙여 넣은 코드를 그대로 넘겨요. 브라우저에서 로그인이 끝나면 코드 없이도 `claude auth status`로 알아채요.
+- `ClaudeLogin`: the login button. It launches the official `claude auth login --claudeai`, finds the login URL, and passes along the code the user pastes as is. When login finishes in the browser, it notices through `claude auth status` even without a code.
 
-- `installClaudeCode()`, `ClaudeInstall`: 설치 버튼. 공식 설치 스크립트와 같은 순서로 공식 배포 서버에서 받아 SHA-256을 확인하고, 공식 `claude install`로 마무리해요.
+- `installClaudeCode()`, `ClaudeInstall`: the install button. In the same order as the official install script, it downloads from the official distribution server, verifies SHA-256, and finishes with the official `claude install`.
 
-**두리는 Claude 로그인 정보나 토큰을 읽거나 저장하지 않아요.** 이 원칙을 바꾸는 변경은 받지 않아요.
+**Dool2 never reads or stores Claude login information or tokens.** We do not accept changes that alter this principle.
 
-테스트는 실제 출력을 개인정보 없이 저장한 [`fixtures/`](fixtures)로 해요.
+Tests use [`fixtures/`](fixtures), real output saved without personal information.

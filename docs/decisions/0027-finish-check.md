@@ -1,76 +1,76 @@
-# 0027. 두리가 일을 끝내기 전에 한 번 더 따져 보고, 남았으면 스스로 이어서 한다
+# 0027. Dool2 double-checks before finishing a task, and continues on its own if something is left
 
-- 상태: 채택
-- 날짜: 2026-11-22
+- Status: Accepted
+- Date: 2026-11-22
 
-## 배경
+## Context
 
-2차 함께 시험에서 감점된 이유는 대부분 같았어요. 두리가 너무 일찍 멈추고 사람에게 넘긴 거예요.
+In the second joint test, most points were lost for the same reason: Dool2 stopped too early and handed off to the person.
 
-- 출석 주소를 짐작하다 포기했어요.
-- 차 보험을 3곳만 보고 "전화해 보세요"로 끝냈어요.
-- 검진 예약을 전화로 넘겼어요.
-- 청년 감면 서류를 하다가, 연결된 곳에서 뗄 수 있는 회사 정보를 사용자에게 물었어요.
+- It guessed the attendance address and gave up.
+- It looked at only 3 car insurance providers and ended with "please call".
+- It handed a health checkup booking off to a phone call.
+- While doing youth-discount paperwork, it asked the user for company information that could be obtained from a connected place.
 
-도구 결과에도 "이번 답을 끝내세요"라는 말이 27곳 있어요. 그래서 한 번 막히면 그 자리에서 답을 끝내기 쉬웠어요.
+There are also 27 places where a tool result says "end this answer". So once it got stuck, it was easy to end the answer right there.
 
-사용자 결정(11-22): "답이 느려지더라도 여러 번 핑퐁하는 게 실제로는 더 시간이 걸린다. 시켜 두고 뭐 하고 오면 다 돼 있으면 좋다."
+User decision (11-22): "Even if answers get slower, going back and forth many times actually takes longer. I want to hand it off, go do something, and come back to find it all done."
 
-## 결정
+## Decision
 
-사람 비서처럼 일하게 해요. 계획을 세우고, 막히면 다른 길로 가고, 결과는 마지막에 한 번 보고해요. 그 첫 단계로 **끝내기 전 검사**를 붙여요.
+Make it work like a human assistant: make a plan, take another route when stuck, and report the result once at the end. As the first step, add a **check before finishing**.
 
-1. **검사를 언제 하나요?** 두리가 도구를 써서 일한 차례가 끝날 때마다 해요.
-   - 승인·로그인·직접 해 주세요 카드를 기다리는 중이면 하지 않아요.
-   - 사용자가 멈췄거나, 오류로 끝났거나, 그사이 새 말이 들어왔으면 하지 않아요.
-2. **누가 판정하나요?** 따로 부르는 AI가 판정해요. 도구는 쓰지 않아요.
-   - 이 AI는 "부탁, 마지막 답, 이번에 쓴 도구"만 보고 판정해요. 판정 결과는 `{done, why, next}`로 돌려줘요.
-   - 사람에게 넘겨도 되는 것은 다음뿐이에요. 결제 승인, 본인 인증, 밖으로 보내기(문의·접수·메일·글 올리기) 승인, 정말 사용자만 아는 사실이에요.
-   - 사용자만 아는 사실도, 연결된 곳·메일·기억에서 찾거나 추정할 길이 있으면 두리 몫으로 봐요.
-3. **안 끝났으면 어떻게 하나요?** 같은 대화에 알림을 보내 이어서 하게 해요. 알림 내용은 "아직 ○○이 남았어요. 같은 방법은 되풀이하지 말고 다른 길로 하고, 끝나면 결과만 한 번에"예요.
-   - 화면에는 "끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요" 한 줄만 보여요.
-4. **몇 번까지 하나요?** 횟수는 일에 따라 달라져요.
-   - 기본은 2번까지 되돌려 보내요.
-   - 앞 차례에서 안 써 본 도구를 썼으면 진전이 있다고 보고 4번까지 늘려요.
-   - 같은 이유로 두 번 막히면 바로 멈춰요.
-   - 부탁을 받은 지 20분이 지나면 멈춰요.
-5. **알림은 언제 가나요?** 폰의 "끝났어요" 알림은 검사를 통과했거나 멈춘 뒤에 한 번만 보내요.
-6. **결제·연락 승인은 그대로예요.** 검사는 일을 더 하게 할 뿐, 승인 없이 결제하거나 보내게 하지 않아요.
-7. **기록을 남겨요.** 일한 기록(`finish-check`)에 판정, 횟수, 이유를 남겨요. 시험에서 A·B 비율을 비교할 때 써요.
+1. **When is the check done?** Every time a turn in which Dool2 used tools ends.
+   - It is not done while waiting on an approval, login or "please do it yourself" card.
+   - It is not done if the user stopped it, it ended with an error, or a new message came in meanwhile.
+2. **Who judges?** A separately called AI judges. It does not use tools.
+   - This AI judges seeing only "the request, the last answer and the tools used this time". The verdict comes back as `{done, why, next}`.
+   - Only these may be handed to a person: payment approval, identity verification, approval to send outward (inquiries, applications, mail, posting), and facts that only the user truly knows.
+   - Even a fact only the user knows counts as Dool2's job if there is a way to find or estimate it from connected places, mail or memory.
+3. **What happens if it is not finished?** A notice is sent into the same conversation so that Dool2 continues. The notice says "Still left: X. Do not repeat the same method, take another route, and when finished give only the result at once".
+   - The screen shows only one line: "I looked again before finishing and something is left, so I'll continue" (끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요).
+4. **How many times?** The count depends on the task.
+   - By default it is sent back up to 2 times.
+   - If it used a tool not tried in the previous turn, that counts as progress and the limit is raised to 4.
+   - If it gets stuck twice for the same reason, it stops immediately.
+   - It stops once 20 minutes have passed since the request.
+5. **When does the notification go?** The phone's "done" notification is sent only once, after the check passed or it stopped.
+6. **Payment and contact approvals stay as they are.** The check only makes Dool2 do more work; it never makes it pay or send without approval.
+7. **Keep a record.** The activity log (`finish-check`) records the verdict, the count and the reason. It is used when comparing the A and B rates in tests.
 
-## 이유
+## Why
 
-- 지침만 덧붙이면 길어질수록 덜 지켜졌어요. 그래서 끝난 뒤 따로 보는 AI가 결과를 보고 판정하는 쪽이 확실해요. 판단은 규칙이 아니라 AI가 해요(판정 AI).
-- 같은 AI에게 "다 했나요?"를 물으면 방금 한 말을 그대로 지키려 해요. 그래서 판정은 새 세션에서 해요.
-- 무한히 돌지 않게 횟수·시간·같은 실패 세 가지로 막아요.
+- Just adding to the instructions was followed less the longer they got. So having a separate AI look at the result after the work and judge is more reliable. The judgment is made by the AI, not by rules (judge AI).
+- If you ask the same AI "Are you done?", it tries to stand by what it just said. So the verdict is made in a fresh session.
+- Three things stop it from looping forever: count, time and the same failure.
 
-다른 안도 검토했어요.
+Other options were considered too.
 
-- **한 차례 안에서 계획표를 강제하는 안:** 도구 구조를 크게 바꿔야 해서 다음 단계로 미뤘어요.
-- **"이번 답을 끝내세요" 27곳을 전부 고치는 안:** 그 말들은 카드를 띄운 뒤 기다리라는 뜻이라 대부분 필요해요. 검사가 되돌려 보내면 그다음엔 다른 길로 가요.
+- **Forcing a plan table within a turn:** it needs a big change to the tool structure, so we postponed it to the next stage.
+- **Fixing all 27 "end this answer" places:** those mostly mean "wait after showing a card", so most are needed. When the check sends it back, it takes another route after that.
 
-## 결과
+## Consequences
 
-- 답이 늦어져요. 판정에 10~20초가 걸리고, 이어서 하는 차례가 늘어요. 사용자는 이 점을 감수하기로 했어요.
-- 비용이 늘어요. 판정은 짧은 글이라 작아요.
-- 중간 답도 지금은 대화에 그대로 보여요. 중간 답을 접어 두는 건 시험 결과를 보고 정해요.
-- 다시 볼 조건: 2차 ② 묶음을 기준선으로 같은 항목을 다시 시험해요. A·B 비율이 오르지 않거나 헛도는 차례가 많으면 다시 봐요.
+- Answers get slower. The verdict takes 10 to 20 seconds, and the number of continuing turns grows. The user chose to accept this.
+- Cost goes up. The verdict is short text, so it is small.
+- Intermediate answers are still shown in the conversation as they are. Whether to fold them away is decided after seeing test results.
+- Conditions to revisit: run the same items again with the second-round group (2) as the baseline. If the A and B rate does not rise, or many turns spin their wheels, look again.
 
-## 첫 측정 (2026-11-22, 2차 ② 되물음 33개)
+## First measurement (2026-11-22, 33 clarification items of round 2, group 2)
 
-같은 33개 부탁을 같은 방식으로 두 번 돌렸어요. 두리가 되물으면 "모르겠어, 할 수 있는 데까지 해 줘"를 한 번 보냈어요.
+The same 33 requests were run twice in the same way. When Dool2 asked back, we sent "모르겠어, 할 수 있는 데까지 해 줘" ("I don't know, just do what you can") once.
 
 | | A | B | C | D | A+B |
 |---|---|---|---|---|---|
-| 검사 전 | 3 | 13 | 15 | 2 | 16 (48%) |
-| 검사 후 | 7 | 24 | 2 | 0 | 31 (94%) |
+| Before the check | 3 | 13 | 15 | 2 | 16 (48%) |
+| After the check | 7 | 24 | 2 | 0 | 31 (94%) |
 
-- 17개가 올랐고, 내려간 건 없어요.
-- 판정은 94번 했어요. 끝남 34번, 되돌림 59번, 멈춤 1번이었어요.
-- 33개에 걸린 시간은 57분에서 72분으로 늘었어요(+26%).
-- 함께 고친 것:
-  - 지어낸 값으로 견적 요청을 보내지 않게 했어요.
-  - 짐작한 값을 다음 일에 사실로 쓰지 않게 했어요.
-  - 완료 화면을 보기 전에는 "해 뒀어요"라고 하지 않게 했어요.
-- 남은 일:
-  - 본인 인증(카카오톡)이 3분 안에 승인되지 않으면, 검사가 같은 인증을 다시 시도하게 둘 때가 있어요. 사람이 자리에 없을 때 인증 요청이 여러 번 갈 수 있어요.
+- 17 went up and none went down.
+- It judged 94 times: done 34 times, sent back 59 times, stopped once.
+- The time for the 33 grew from 57 to 72 minutes (+26%).
+- Fixed together with it:
+  - It no longer sends a quote request with made-up values.
+  - It no longer uses a guessed value as fact for the next task.
+  - It no longer says "it's done" before seeing the completion screen.
+- Remaining:
+  - If identity verification (KakaoTalk) is not approved within 3 minutes, the check sometimes lets it try the same verification again. When the person is away, the verification request may go out several times.

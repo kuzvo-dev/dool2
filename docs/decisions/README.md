@@ -1,56 +1,60 @@
-# 결정 기록 (ADR)
+# Decision records (ADR)
 
-구조에 영향을 주는 결정을 "왜 그렇게 정했는지"와 함께 남겨요. 외부 기여자가 같은 논의를 반복하지 않게 하고, 나중에 결정을 바꿀 때 무엇을 다시 따져 봐야 하는지 알 수 있게 하려는 거예요.
+We record decisions that affect the structure of the project, together with why we made them. This keeps outside contributors from repeating the same discussions, and shows what to re-examine when a decision is changed later.
 
-| 번호 | 결정 | 상태 |
+| No. | Decision | Status |
 |---|---|---|
-| [0001](0001-record-decisions.md) | 결정을 ADR로 기록한다 | 채택 |
-| [0002](0002-official-agent-binaries.md) | 공식 Claude Code·Codex를 수정 없이 실행한다 | 채택 |
-| [0003](0003-dool2-tools-only.md) | 에이전트 내장 도구를 끄고 두리 도구만 쓰게 한다 | 채택 |
-| [0004](0004-electron.md) | PC 앱은 Electron으로 만든다 | 채택 |
-| [0005](0005-no-containers.md) | 컨테이너 없이 올인원 앱으로 설치한다 | 채택 |
-| [0006](0006-user-chrome-extension.md) | 브라우저는 사용자 Chrome + 두리 확장으로 다룬다 | 채택 |
-| [0007](0007-pc-first.md) | PC 쪽을 먼저 끝까지 만들고 폰은 마지막에 붙인다 | 채택 |
-| [0008](0008-skills-cc-by-sa.md) | 스킬은 CC BY-SA 4.0으로 공개한다 | 채택 |
-| [0009](0009-node-sqlite.md) | 기록은 Node 내장 SQLite에 저장한다 | 채택 |
-| [0010](0010-pay-as-you-go-opencode.md) | 구독이 없으면 API 키 종량제로 쓴다 (OpenCode) | 채택 |
-| [0011](0011-login-vault.md) | 로그인 정보는 두리 금고에 두고, AI가 아닌 두리가 채운다 | 채택 (M2) |
-| [0012](0012-phone-link.md) | 폰 ↔ PC 연결: 브라우저 기본 암호화, 서명된 기기만, 중계 서버는 암호문만 | 채택 (M6) |
-| [0013](0013-hands-mac-swift.md) | PC 화면 제어 도우미는 OS마다 그 OS의 언어로 (맥은 Swift) | 채택 (M4) |
-| [0014](0014-connect-cards.md) | 서비스 연결은 템플릿(연결 카드 `connect.json`)으로 하나씩 더한다 | 채택 (절차 문서 부분은 0018로 대체) |
-| [0015](0015-one-conversation.md) | 두리와의 대화는 하나다 (AI 세션 하나를 구간으로 잇고, 맡긴 일은 대화 안의 카드) | 채택 |
-| [0016](0016-five-tabs-life.md) | 탭 다섯(대화·피드·아이디어·목표·보관함)과 두리의 생활 기록(목표·보관함·기억·피드) | 채택 |
-| [0017](0017-phone-native-app.md) | 폰 앱은 스토어 앱으로만(Capacitor): 웹앱을 접고, 공식 중계 서버는 앱을 내려주지 않는다 | 채택 |
-| [0018](0018-service-connectors.md) | 서비스는 커넥터(서비스별 도구 `tools.json`)로 붙인다: 확장은 고정 엔진, 연결한 서비스 도구만 보이기, `SKILL.md` 폐지 | 채택 |
-| [0019](0019-proactive-watch.md) | 먼저 챙기기: 연결한 서비스를 하루 두 번 살펴, 챙길 일만 먼저 알린다 | 채택 |
-| [0020](0020-connector-health.md) | 서비스 도구 고장 감시: 실사용 자동 쉬기, 매일 밤 실제 사이트 점검·이슈, 수리 PR 초안 | 채택 |
-| [0021](0021-connect-agent-takeover.md) | 연결하기: 자동 로그인이 멈추면 두리가 대화에서 이어받고, 하는 일은 늘 대화에 보인다 | 채택 |
-| [0022](0022-pc-file-tools.md) | PC 파일은 두리 도구로 찾기·읽기·새로 만들기만 한다 | 채택 |
-| [0023](0023-my-pay-methods.md) | 내 결제 수단: 무엇으로 낼지만 기억하고, 카드 번호·결제 비밀번호는 두지 않는다 | 채택 |
-| [0024](0024-pc-file-move-convert-print.md) | PC 파일 옮기기·사진 형식 바꾸기·출력은 승인과 되돌리기를 붙여 두리 도구로 한다 | 채택 |
+| [0001](0001-record-decisions.md) | Record decisions as ADRs | Accepted |
+| [0002](0002-official-agent-binaries.md) | Run the official Claude Code and Codex unmodified | Accepted |
+| [0003](0003-dool2-tools-only.md) | Turn off the agents' built-in tools and allow only Dool2 tools | Accepted |
+| [0004](0004-electron.md) | Build the desktop app with Electron | Accepted |
+| [0005](0005-no-containers.md) | Install as an all-in-one app, without containers | Accepted |
+| [0006](0006-user-chrome-extension.md) | Use the browser through the user's own Chrome plus the Dool2 extension | Accepted |
+| [0007](0007-pc-first.md) | Finish the PC side first and attach the phone last | Accepted |
+| [0008](0008-skills-cc-by-sa.md) | Publish skills under CC BY-SA 4.0 | Accepted |
+| [0009](0009-node-sqlite.md) | Store records in Node's built-in SQLite | Accepted |
+| [0010](0010-pay-as-you-go-opencode.md) | Without a subscription, use API keys and pay as you go (OpenCode) | Accepted |
+| [0011](0011-login-vault.md) | Keep login details in the Dool2 vault, and have Dool2, not the AI, fill them in | Accepted (M2) |
+| [0012](0012-phone-link.md) | Phone ↔ PC link: browser-native encryption, signed devices only, the relay sees only ciphertext | Accepted (M6) |
+| [0013](0013-hands-mac-swift.md) | The PC-control helper is written per OS in that OS's own language (Swift on Mac) | Accepted (M4) |
+| [0014](0014-connect-cards.md) | Add each service connection from a template (connect card `connect.json`) | Accepted (the procedure-doc part is superseded by 0018) |
+| [0015](0015-one-conversation.md) | There is one conversation with Dool2 (one AI session carried across segments; tasks are cards inside the conversation) | Accepted |
+| [0016](0016-five-tabs-life.md) | Five tabs (Chat, Feed, Ideas, Goals, Library) and Dool2's life record (goals, library, memory, feed) | Accepted |
+| [0017](0017-phone-native-app.md) | The phone app is a store app only (Capacitor): drop the web app, and the official relay does not serve the app | Accepted |
+| [0018](0018-service-connectors.md) | Services attach as connectors (per-service tools in `tools.json`): fixed extension engine, show only connected services' tools, retire `SKILL.md` | Accepted |
+| [0019](0019-proactive-watch.md) | Proactive check: look at connected services twice a day and notify only what needs attention | Accepted |
+| [0020](0020-connector-health.md) | Watching for broken service tools: auto-rest on real-use failures, nightly checks against the real sites with issues, draft fix PRs | Accepted |
+| [0021](0021-connect-agent-takeover.md) | Connecting: when automatic login stalls, Dool2 takes over in the chat, and what it does is always visible in the chat | Accepted |
+| [0022](0022-pc-file-tools.md) | PC files are only found, read and newly created, through Dool2 tools | Accepted |
+| [0023](0023-my-pay-methods.md) | My payment methods: remember only what to pay with, never card numbers or payment passwords | Accepted |
+| [0024](0024-pc-file-move-convert-print.md) | Moving PC files, converting photo formats and printing go through Dool2 tools with approval and undo | Accepted |
+| [0025](0025-know-ledger.md) | What Dool2 knows: keep looked-up facts and past actions, and let the AI judge whether to use them | Accepted |
+| [0026](0026-vault-view-edit.md) | Users can view and edit vault passwords on the phone or PC | Accepted (amends ADR 0011) |
+| [0027](0027-finish-check.md) | Before finishing a task, Dool2 checks once more and, if something is left, continues on its own | Accepted |
+| [0028](0028-web-release-update.md) | The desktop app is downloaded from the web, and new versions are fetched by the app itself from a signed notice | Accepted |
 | [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
 
-## 새 결정을 쓰는 법
+## How to write a new decision
 
-1. 다음 번호로 `NNNN-짧은-영문-이름.md` 파일을 만들어요.
-2. 아래 틀을 채워요. 길게 쓰지 않아도 돼요. **왜**가 가장 중요해요.
-3. PR로 올려요. 기존 결정을 뒤집을 때는 옛 문서의 상태를 "대체됨 (NNNN)"으로 바꾸고 지우지 않아요.
+1. Create a file named `NNNN-short-english-name.md` with the next number.
+2. Fill in the template below. It does not have to be long. The **Why** matters most.
+3. Open a PR. When you overturn an existing decision, change the old document's status to "Superseded by NNNN" and do not delete it.
 
 ```markdown
-# NNNN. 결정 제목
+# NNNN. Decision title
 
-- 상태: 제안 | 채택 | 대체됨 (NNNN)
-- 날짜: YYYY-MM-DD
+- Status: Proposed | Accepted | Superseded by NNNN
+- Date: YYYY-MM-DD
 
-## 배경
-무엇을 정해야 했고, 어떤 제약이 있었나요?
+## Context
+What had to be decided, and what constraints applied?
 
-## 결정
-무엇으로 정했나요?
+## Decision
+What did we decide?
 
-## 이유
-왜 그게 가장 나았나요? 검토한 다른 안은 무엇이었나요?
+## Why
+Why was this the best option? What other options did we consider?
 
-## 결과
-이 결정으로 생기는 좋은 점, 감수할 점, 나중에 다시 볼 조건.
+## Consequences
+The benefits of this decision, what we accept as costs, and the conditions under which to revisit it.
 ```

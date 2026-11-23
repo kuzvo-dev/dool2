@@ -1,39 +1,39 @@
-name: 스킬 요청
-description: 두리가 이 서비스를 쓸 줄 알면 좋겠어요
+name: Skill request
+description: I'd like Dool2 to know how to use this service
 labels: [skill, skill-request]
 body:
   - type: markdown
     attributes:
       value: |
-        스킬은 두리가 특정 서비스(예: SRT 예매, 홈택스 조회)를 끝까지 처리하는 방법을 적은 문서예요.
-        직접 써 주셔도 좋아요. 개발자가 아니어도 기여할 수 있어요.
+        A skill is a document that describes how Dool2 handles a specific service (for example, booking SRT trains or checking Hometax) from start to finish.
+        You're welcome to write one yourself. You don't have to be a developer to contribute.
   - type: input
     id: service
     attributes:
-      label: 서비스
-      placeholder: 예) SRT, 쿠팡, 홈택스, 카카오톡 PC
+      label: Service
+      placeholder: "e.g. SRT, Coupang, Hometax, KakaoTalk PC"
     validations:
       required: true
   - type: textarea
     id: task
     attributes:
-      label: 두리에게 맡기고 싶은 일
-      placeholder: 예) 매주 금요일 저녁 수서→부산 SRT 빈자리가 나면 알려 주기
+      label: What you want Dool2 to do
+      placeholder: "e.g. Every Friday evening, tell me when a seat opens on the SRT from Suseo to Busan"
     validations:
       required: true
   - type: checkboxes
     id: tiers
     attributes:
-      label: 이 일에 필요한 권한
-      description: 해당하는 것을 모두 골라 주세요. 돈 내기·연락하기는 항상 사용자 허락을 받아요.
+      label: Tiers this task needs
+      description: Select all that apply. Pay and contact always need the user's approval.
       options:
-        - label: 찾아보기 (조회만)
-        - label: 채워 두기 (입력까지만, 제출은 사용자가)
-        - label: 돈 내기 (결제·예약 확정)
-        - label: 연락하기 (메시지·글 보내기)
+        - label: Lookup (read only)
+        - label: Fill (fill in but don't submit; the user submits)
+        - label: Pay (payments, confirming a booking)
+        - label: Contact (sending messages or posts)
   - type: checkboxes
     id: write
     attributes:
-      label: 참여
+      label: Participation
       options:
-        - label: 이 스킬을 직접 써 볼 수 있어요.
+        - label: I can try this skill myself.

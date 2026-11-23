@@ -1,30 +1,30 @@
-# 0013. PC 화면 제어 도우미는 OS마다 그 OS의 언어로 만든다 (맥은 Swift)
+# 0013. The PC-control helper is written per OS in that OS's own language (Swift on Mac)
 
-- 상태: 채택 (M4, 맥 먼저. 윈도우는 다음)
-- 날짜: 2026-11-14
+- Status: Accepted (M4, Mac first. Windows next)
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-카카오톡 PC·메모·한글처럼 앱만 있는 일은 브라우저 도구로 못 해요. 앱 화면을 읽고(접근성 트리), 누르고, 글자를 넣고, 화면을 찍는 작은 도우미가 필요해요(docs/architecture.md 5.2). 처음 설계에서는 맥·윈도우 모두 Rust 하나로 만들려고 했어요.
+Tasks that exist only in apps, such as KakaoTalk PC, Notes and Hangul (HWP), cannot be done with browser tools. We need a small helper that reads the app screen (accessibility tree), clicks, types text and captures the screen (docs/architecture.md 5.2). The first design planned to build both Mac and Windows in a single Rust program.
 
-## 결정
+## Decision
 
-**도우미는 OS마다 그 OS가 가장 잘 받쳐 주는 언어로 작게 만들어요. 맥은 Swift**(`apps/hands-mac`, 파일 하나)예요. 윈도우는 UI Automation을 쓰는 도우미를 따로 만들어요.
+**The helper is kept small and written per OS in the language that OS supports best. On Mac that is Swift** (`apps/hands-mac`, a single file). For Windows we build a separate helper that uses UI Automation.
 
-- 두리 본체가 도우미를 자식 프로세스로 띄우고, 표준 입출력으로 한 줄 JSON을 주고받아요. 판단(허용한 앱, 위험한 버튼, 승인)은 전부 본체가 해요. 도우미는 손이에요.
-- 맥 API: 접근성(AXUIElement)으로 읽고 누르기, CGEvent로 키·마우스, ScreenCaptureKit으로 창 캡처, NSWorkspace로 앱 열기
-- 한글은 키 입력 대신 **붙여 넣기**로 넣고, 원래 클립보드를 되돌려요(입력기가 꼬이지 않게)
-- 도우미 스스로도 브라우저·비밀번호 관리자·두리 자신은 다루지 않아요(본체가 실수해도 넘지 않게)
-- 배포 앱에서는 두리 앱이 도우미를 띄우므로, 맥 권한(손쉬운 사용·화면 기록)은 **"두리" 앱 이름으로** 한 번 받아요
+- The Dool2 daemon starts the helper as a child process and exchanges one-line JSON over standard input and output. All judgment (allowed apps, risky buttons, approval) is the daemon's. The helper is the hands.
+- Mac APIs: read and click with accessibility (AXUIElement), keys and mouse with CGEvent, window capture with ScreenCaptureKit, open apps with NSWorkspace
+- Hangul text is entered by **pasting** instead of keystrokes, and the original clipboard is restored (so the input method does not get tangled)
+- The helper itself also refuses to touch browsers, password managers and Dool2 itself (so it does not cross the line even if the daemon makes a mistake)
+- In the shipped app the Dool2 app launches the helper, so the Mac permissions (Accessibility, Screen Recording) are requested once **under the app name "Dool2"**
 
-## 이유
+## Why
 
-- 맥 접근성·ScreenCaptureKit은 Swift에서 바로 쓰여요. Rust로 감싸는 라이브러리 층(objc 바인딩)이 없어 코드가 짧고 검토하기 쉬워요.
-- Xcode 명령줄 도구에 Swift가 들어 있어 따로 받을 도구가 없어요. 맥 CI(macos-latest)에서도 그대로 빌드돼요.
-- 윈도우 UI Automation은 C#/.NET이나 Rust windows 크레이트가 자연스러워요. 두 OS를 한 언어로 묶어 얻는 것보다 각 OS API를 곧게 쓰는 편이 실수가 적어요.
+- Mac accessibility and ScreenCaptureKit are used directly from Swift. There is no wrapper layer to write for Rust (objc bindings), so the code is short and easy to review.
+- Swift comes with the Xcode command-line tools, so there is no extra tool to download. It also builds as is on Mac CI (macos-latest).
+- For Windows UI Automation, C#/.NET or the Rust windows crate is the natural choice. Using each OS's API directly causes fewer mistakes than what we would gain by tying both OSes to one language.
 
-## 결과
+## Consequences
 
-- 도우미가 OS마다 따로라서 같은 명령(status·apps·open·snapshot·click·type·key·screenshot)을 각자 지켜야 해요. 본체 쪽 테스트(`screen-tools.test.ts`)가 규약을 고정해요.
-- 맥 권한은 사용자가 시스템 설정에서 직접 켜야 해요(앱이 대신 못 켜요). 설정의 "PC 앱 조작"에 [권한 켜기]가 시스템 창과 설정 화면을 열어 줘요.
-- 서명: 배포 앱과 함께 개발자 ID로 서명해야(M5) 권한이 업데이트 뒤에도 유지돼요. 서명 전에는 다시 빌드하면 권한을 다시 켜야 할 수 있어요.
+- Because the helper is separate per OS, each has to honor the same commands (status, apps, open, snapshot, click, type, key, screenshot). The daemon-side test (`screen-tools.test.ts`) pins the protocol.
+- Mac permissions must be turned on by the user in System Settings (the app cannot do it for them). The [Turn on permissions] button under "PC app control" in settings opens the system window and the settings screen.
+- Signing: the shipped app must be signed with a developer ID (M5) for permissions to persist after updates. Before signing, rebuilding may require turning the permissions on again.

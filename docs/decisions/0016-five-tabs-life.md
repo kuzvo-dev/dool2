@@ -1,36 +1,36 @@
-# 0016. 탭 다섯(대화·피드·아이디어·목표·보관함)과 두리의 생활 기록
+# 0016. Five tabs (Chat, Feed, Ideas, Goals, Library) and Dool2's life records
 
-- 상태: 채택
-- 날짜: 2026-11-16
+- Status: Accepted
+- Date: 2026-11-16
 
-## 배경
+## Context
 
-[0015](0015-one-conversation.md)로 대화는 하나가 됐지만, 대화 밖에서 두리가 "알아서" 하는 일과 남겨 둔 결과가 있을 곳이 없었어요.
-실사용 피드백은 "기능이 전반적으로 엉성하다", "개인 비서 앱 수준으로 맞추자"였어요. 개인 비서 앱이 공통으로 갖는 것은
-① 한 줄로 이어지는 대화, ② 먼저 알려 주는 소식, ③ 할 수 있는 일 제안, ④ 오래 챙기는 목표·예약, ⑤ 만든 것 보관이에요.
+[0015](0015-one-conversation.md) made the conversation one thread, but there was still no place for the things Dool2 does on its own outside the conversation, or for the results it leaves behind.
+Real-use feedback was "the features feel rough overall" and "let's bring it up to the level of a personal assistant app". What personal assistant apps have in common is
+(1) one continuous conversation, (2) news that arrives before you ask, (3) suggestions for things it could do, (4) goals and schedules it looks after over time, and (5) a place to keep what it makes.
 
-## 결정
+## Decision
 
-1. **탭은 다섯.** 대화 · 피드 · 아이디어 · 목표 · 보관함 (폰은 아래 떠 있는 탭 막대, PC는 왼쪽 메뉴). 연결·설정은 메뉴에서.
-2. **두리의 생활 기록(life)은 본체 저장소에만.** `apps/daemon/src/life.ts`
-   - 목표·알아서 하는 일(routines): 언제(매일·요일·한 번·N분마다, 한국 시간), 분류 7개(건강·관계·돈·일·관심사·생산성·기타), 계획 단계, 진행 기록, 결과를 대화로 말할지 피드에 올릴지.
-   - 보관함(library): 정리·링크·상품·장소·파일. 두리가 남기거나 사용자가 답을 길게 눌러 남긴다.
-   - 기억(memory): 사용자에 대해 알게 된 것. 매 대화 지침 끝에 붙고, 두리 판에서 보고 지운다.
-   - 피드(feed): 끝낸 일(도구를 써서 일한 차례), 알아서 한 일, 피드 글, 목표·보관함 알림. 반응(좋아요·별로예요).
-   - 피드 지시: "어떤 소식을 받을까요?" → 매일 오전 7:30 피드 글. 맞춤 아이디어: 매일 아침 6시 이후 하루 한 번.
-   - 두리 설정(identity): 호칭·말투·답 길이. 지침 맨 앞에 들어가고, 바꾸면 메인 대화의 다음 말부터 새 구간.
-3. **만들기는 대화로.** 두리 도구 `goal_*`, `library_save`, `memory_*`, `feed_post`, `idea_suggest`, `photo_view`. 화면에서는 켜기·끄기·지우기·체크·지금 해 보기만.
-4. **정해진 때는 본체가 30초마다 본다.** 대화로 할 일은 메인 대화에(답하는 중이면 줄 서기), 피드 글·아이디어는 **따로 하는 대화**(피드 전용)에서 해서 메인 대화를 어지럽히지 않는다. 결과는 피드 + 폰 알림.
-5. **따로 하는 대화.** 저장소 `threads.side`로 표시하고 메인 대화의 지금 구간·기록에서 뺀다. 메뉴에서 연필로 새로 만든다. 기억은 함께 쓴다.
-6. **두리 판(캐릭터를 누르면):** 예정 · 기억(두리 설정 포함) · 화면(두리가 다루는 Chrome 실시간) · 활동 · 승인.
+1. **Five tabs.** Chat · Feed · Ideas · Goals · Library (a floating tab bar at the bottom on the phone, a left menu on the PC). Connections and Settings are in the menu.
+2. **Dool2's life records (`life`) live only in the daemon's storage.** `apps/daemon/src/life.ts`
+   - Goals and things it does on its own (routines): when (daily, by weekday, once, every N minutes, Korea time), 7 categories (health, relationships, money, work, interests, productivity, other), plan steps, progress log, and whether the result is told in the conversation or posted to the Feed.
+   - Library: notes, links, products, places, files. Dool2 saves them, or the user long-presses an answer to save it.
+   - Memory: what Dool2 has learned about the user. It is appended to the end of each conversation's instructions, and the user can view and delete it in the Dool2 panel.
+   - Feed: finished work (turns in which tools were used), things done on its own, Feed posts, and alerts about goals and the Library. Reactions (like / dislike).
+   - Feed instruction: "What news would you like to get?" produces a Feed post every day at 7:30 a.m. Personalized ideas: once a day, after 6 a.m.
+   - Dool2 settings (identity): how to address the user, tone, answer length. They go at the very start of the instructions, and changing them starts a new segment from the next message in the main conversation.
+3. **Creating things happens in conversation.** Dool2 tools `goal_*`, `library_save`, `memory_*`, `feed_post`, `idea_suggest`, `photo_view`. The screens only offer turn on / turn off / delete / check off / try now.
+4. **The daemon checks scheduled times every 30 seconds.** Work that belongs in the conversation goes into the main conversation (queued if Dool2 is answering). Feed posts and ideas run in a **separate conversation** (Feed only) so they do not clutter the main one. Results go to the Feed plus a phone notification.
+5. **Separate conversations.** Marked with `threads.side` in storage and left out of the main conversation's current segment and history. Create one from the menu with the pencil. Memory is shared.
+6. **Dool2 panel (tap the character):** Schedule · Memory (including Dool2 settings) · Screen (live view of the Chrome that Dool2 operates) · Activity · Approvals.
 
-## 지키는 것
+## Guardrails
 
-- 돈·보내기는 항상 승인 (범위가 넓은 "항상 허용"은 두지 않는다).
-- 기억·보관함·피드는 이 PC에만. 폰과는 종단 암호화 연결로만 오간다.
-- 비밀번호·카드 번호·주민번호는 기억하지 않고, 사진 속에서도 옮겨 적지 않는다.
+- Paying and sending always need approval (there is no broad "always allow").
+- Memory, Library and Feed stay on this PC. They travel to the phone only over the end-to-end encrypted connection.
+- Dool2 does not remember passwords, card numbers or national ID numbers, and does not copy them out of photos either.
 
-## 결과
+## Consequences
 
-- 폰 #80·#81·#82, PC #85, 본체 #79·#86·#87·#88.
-- 남은 일: 음성 대화, 승인 범위 세분화, 사진 외 파일, 실제 한국 사이트별 로그인 시험(사용자 계정 필요).
+- Phone #80, #81, #82; desktop #85; daemon #79, #86, #87, #88.
+- Still to do: voice conversation, finer-grained approval scopes, files other than photos, and login tests on real Korean sites (needs user accounts).

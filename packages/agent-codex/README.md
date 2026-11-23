@@ -1,14 +1,14 @@
 # @dool2/agent-codex
 
-Codex 어댑터예요. 고정 버전의 `@openai/codex`(Apache-2.0)를 **처음 쓸 때 내려받고** `codex app-server`(JSON-RPC, 한 줄에 메시지 하나)로 실행해요([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
+The Codex adapter. It **downloads a pinned version** of `@openai/codex` (Apache-2.0) **on first use** and runs it as `codex app-server` (JSON-RPC, one message per line) ([ADR 0002](../../docs/decisions/0002-official-agent-binaries.md)).
 
-- `CodexRuntime`: `AgentRuntime` 구현. 사용자 본인의 Codex 설정과 섞이지 않게 두리 전용 `CODEX_HOME`을 써요. `login()`은 ChatGPT 로그인을 열어요.
-- `buildCodexArgs()`: 셸·웹 검색을 끄고 읽기 전용 샌드박스로 묶고, 두리 MCP 서버를 필수로 등록해요.
-- `CodexEventMapper`: app-server 알림을 공통 `AgentEvent`로 바꿔요. 셸 실행, 파일 변경, 웹 검색, 두리가 아닌 MCP 도구가 보이면 바로 멈춰요.
-- `JsonRpcClient`: app-server와 주고받는 최소 JSON-RPC 클라이언트.
-- `resolveBundledCodex()`: 플랫폼별로 함께 설치된 실행 파일 경로를 찾아요.
+- `CodexRuntime`: the `AgentRuntime` implementation. It uses a Dool2-only `CODEX_HOME` so it does not mix with the user's own Codex settings. `login()` opens the ChatGPT login.
+- `buildCodexArgs()`: turns off shell and web search, confines it to a read-only sandbox, and registers the Dool2 MCP server as required.
+- `CodexEventMapper`: converts app-server notifications into the common `AgentEvent`. If it sees shell execution, file changes, web search, or an MCP tool that is not Dool2's, it stops immediately.
+- `JsonRpcClient`: the minimal JSON-RPC client that talks to the app-server.
+- `resolveBundledCodex()`: finds the path of the executable installed alongside, per platform.
 
-Codex 버전을 올릴 때는 app-server 규약이 바뀌었는지 테스트로 확인해요.
+When raising the Codex version, check with tests whether the app-server protocol changed.
 
-- `installCodex()`, `CodexInstall`: npm 공식 레지스트리의 플랫폼별 패키지(`@openai/codex@0.169.0-<플랫폼>`)를 받아, **코드에 고정한 SHA-512**(`CODEX_PACKAGES`)와 맞을 때만 OS `tar`로 풀어요. 실행 파일과 함께 쓰는 도우미·자료(`vendor/<triple>`)를 그대로 둬요.
-- 사용자 PATH에 있는 다른 버전의 `codex`는 쓰지 않아요. app-server 규약이 버전마다 달라서 고정 버전만 써요.
+- `installCodex()`, `CodexInstall`: downloads the per-platform package from the official npm registry (`@openai/codex@0.169.0-<platform>`) and unpacks it with the OS `tar` only if it matches the **SHA-512 pinned in code** (`CODEX_PACKAGES`). The helpers and data used with the executable (`vendor/<triple>`) are left as they are.
+- It does not use another version of `codex` on the user's PATH. The app-server protocol differs between versions, so only the pinned version is used.

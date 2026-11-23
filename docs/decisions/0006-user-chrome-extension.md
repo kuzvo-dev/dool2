@@ -1,51 +1,50 @@
-# 0006. 브라우저는 사용자 Chrome + 두리 확장으로 다룬다
+# 0006. Use the browser through the user's own Chrome plus the Dool2 extension
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리의 가장 중요한 약속은 "한국 서비스에서 막히지 않는 것"이에요. 검토한 안은 이랬어요.
+Dool2's most important promise is "never get blocked on Korean services". The options we looked at:
 
-| 안 | 문제 |
+| Option | Problem |
 |---|---|
-| Playwright로 새 Chromium 띄우기 | 로그인이 매번 풀리고, 자동화 흔적 때문에 봇 탐지에 걸려요 |
-| 사용자 Chrome에 원격 디버깅 연결 | Chrome 136부터 기본 프로필에서 원격 디버깅이 막혔어요 |
-| 외부 AI 브라우저나 Chromium 포크 | 사용자가 새 브라우저에 다시 로그인해야 하고, 포크 유지 비용이 커요 |
-| 기존 브라우저 쿠키 가져오기 | 보안상 위험하고 OS 키체인 암호화 때문에 깨지기 쉬워요 |
+| Launch a new Chromium with Playwright | Logins reset every time, and automation traces trigger bot detection |
+| Attach remote debugging to the user's Chrome | Since Chrome 136, remote debugging is blocked on the default profile |
+| An external AI browser or a Chromium fork | The user has to log in again in a new browser, and maintaining a fork is costly |
+| Import cookies from the existing browser | Risky for security and easy to break because of OS keychain encryption |
 
-## 결정
+## Decision
 
-사용자가 평소 쓰는 **Chrome에 두리 확장 프로그램**을 설치하고, native messaging으로 두리 본체와 연결해요. 입력은 `chrome.debugger`로 실제 입력 이벤트를 보내요. 브라우저는 Chrome 하나로 통일하고, 없으면 두리가 설치해요. 원하는 사람을 위해 전용 프로필 모드를 선택지로 둬요.
+Install the **Dool2 extension in the Chrome** the user already uses, and connect it to the Dool2 daemon with native messaging. Input is sent as real input events through `chrome.debugger`. We settle on Chrome as the one browser, and Dool2 installs it if it is missing. A dedicated-profile mode is kept as an option for those who want it.
 
-## 이유
+## Why
 
-- 평소 로그인 그대로 쓰니 다시 로그인할 필요가 없고, 실제 사용자의 브라우저라 가장 덜 막혀요.
-- 확장 프로그램은 공개 코드와 스토어 빌드가 같은지 확인할 수 있어요.
-- 브라우저를 하나로 정해야 스킬과 테스트를 감당할 수 있어요.
+- It uses the user's usual logins, so there is no need to log in again, and since it is a real user's browser it gets blocked the least.
+- For an extension, you can check that the public code and the store build are the same.
+- We can only support the skills and tests if we settle on one browser.
 
-## 결과
+## Consequences
 
-- 확장 설치에 사용자 클릭이 한 번 필요해요("외부 확장 프로그램" 허용).
-- 캡차·본인인증은 우회하지 않고 사람에게 화면을 넘겨요.
-- 사용자 브라우저를 다루는 만큼 확장 권한과 메시지 검증을 보안 핵심 영역으로 리뷰해요.
+- Installing the extension needs one user click (allowing an "external extension").
+- CAPTCHAs and identity verification are not bypassed. The screen is handed off to the person.
+- Because this works on the user's browser, we review extension permissions and message validation as a security-critical area.
 
-## 다시 검토 (2026-11-14): Chromium 기반 자체 브라우저로 바꿀까?
+## Revisited (2026-11-14): should we switch to our own Chromium-based browser?
 
-AI 일을 위해 Chromium을 바탕으로 처음부터 만든 브라우저 방식도 다시 따져 봤어요. 이 방식은 브라우저 전체를 마음대로 다룰 수 있고, 권한 안내 없이 화면·입력을 제어하고, 금고·작업 패널 같은 화면을 브라우저 안에 자연스럽게 넣을 수 있다는 장점이 있어요.
+We also reconsidered the approach of building a browser from scratch on Chromium for AI work. Its advantages are that it gives full control over the whole browser, controls screen and input without permission prompts, and can fit screens such as the vault and the task panel naturally into the browser.
 
-**그래도 기본안은 그대로 둬요.**
+**We still keep the default option.**
 
-| 따져 본 점 | 자체 Chromium 브라우저 | 사용자 Chrome + 두리 확장 (지금) |
+| Point considered | Own Chromium browser | User's Chrome + Dool2 extension (current) |
 |---|---|---|
-| 평소 로그인 | 기존 브라우저에서 쿠키를 가져와야 해요. 윈도우는 Chrome 앱 전용 암호화 때문에 사실상 막히고, 한국 사이트는 "새 기기 로그인"으로 보고 다시 인증을 요구하기 쉬워요 | 평소 쓰던 그대로예요 |
-| 사용자 습관 | 브라우저를 바꿔야 해요 | 바꿀 필요 없어요 |
-| 보안 업데이트 | Chromium 보안 패치를 2~4주마다 직접 따라가야 해요 | Google이 해요 |
-| 설치 크기·서명 | 브라우저 하나를 더 배포해요 | 확장 하나예요 |
-| 은행·공공 사이트 보안 프로그램 | 브라우저별로 다시 설치·인식시켜야 할 수 있어요 | 이미 설치된 상태 그대로 써요 |
+| Usual logins | Cookies must be imported from the existing browser. On Windows this is practically blocked by Chrome's app-bound encryption, and Korean sites easily see it as a "login from a new device" and ask for verification again | Works exactly as the user usually does |
+| User habits | The user has to switch browsers | No need to switch |
+| Security updates | We would have to follow Chromium security patches ourselves every 2 to 4 weeks | Google does it |
+| Installer size and signing | We ship one more browser | One extension |
+| Security programs of banks and public sites | May need to be reinstalled and recognized per browser | Used as already installed |
 
-가져올 점은 따로 결정으로 남겼어요.
-- AI에게 비밀번호를 보여 주지 않고 두리가 채우는 금고 → [ADR 0011](0011-login-vault.md)
-- 작업마다 권한 수준을 고르는 화면(읽기만 / 보호 / 전체)과 "마지막 확인" 스위치 → 승인 게이트(M3) 화면에 반영
-- 확장으로 부족한 경우를 위한 **전용 프로필 모드**(Chrome을 별도 데이터 폴더로 실행, 포크 없음)는 계속 선택지로 둬요
-
+What we take from it is recorded as separate decisions.
+- A vault where Dool2 fills in passwords without showing them to the AI → [ADR 0011](0011-login-vault.md)
+- A screen for choosing the permission level per task (read-only / protected / full) and a "final check" switch → reflected in the approval gate (M3) screen
+- A **dedicated-profile mode** (running Chrome with a separate data folder, no fork) for cases where the extension is not enough stays as an option

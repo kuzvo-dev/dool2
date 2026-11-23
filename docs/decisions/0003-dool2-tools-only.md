@@ -1,24 +1,24 @@
-# 0003. 에이전트 내장 도구를 끄고 두리 도구만 쓰게 한다
+# 0003. Turn off the agents' built-in tools and allow only Dool2 tools
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-Claude Code와 Codex는 기본적으로 셸 명령, 파일 읽기·쓰기, 웹 검색을 할 수 있어요. 이 기능이 켜져 있으면 AI가 승인 게이트를 거치지 않고 결제 페이지에 요청을 보내거나 파일을 지울 수 있어요. 프롬프트 주입(웹페이지에 숨긴 지시)에도 약해져요.
+By default, Claude Code and Codex can run shell commands, read and write files, and search the web. With these on, the AI could send a request to a payment page or delete files without going through the approval gate. It would also be more vulnerable to prompt injection (instructions hidden in a web page).
 
-## 결정
+## Decision
 
-- **Claude**: `--tools ""`로 내장 도구를 모두 끄고, `--strict-mcp-config`로 두리 MCP 서버만 연결하고, `--allowedTools "mcp__dool2__*"`로 두리 도구만 허용해요. 사용자 설정 파일은 `--setting-sources ""`로 읽지 않아요.
-- **Codex**: `features.shell_tool=false`, `web_search="disabled"`, `sandbox_mode="read-only"`, `approval_policy="never"`로 띄우고, 두리 MCP 서버를 `required=true`로 붙여요.
-- **이중 확인**: 시작할 때 에이전트가 알려 준 도구 목록에 두리 도구가 아닌 것이 있으면 바로 멈춰요(`tools_unsafe`). Codex가 셸·파일 변경·웹 검색 항목을 시작하거나 두리가 아닌 MCP 서버를 부르면 대화를 끊어요. Codex의 승인 요청은 항상 거절해요.
+- **Claude**: turn off all built-in tools with `--tools ""`, connect only the Dool2 MCP server with `--strict-mcp-config`, and allow only Dool2 tools with `--allowedTools "mcp__dool2__*"`. User settings files are not read, via `--setting-sources ""`.
+- **Codex**: start it with `features.shell_tool=false`, `web_search="disabled"`, `sandbox_mode="read-only"` and `approval_policy="never"`, and attach the Dool2 MCP server with `required=true`.
+- **Double check**: at startup, if the tool list the agent reports contains anything that is not a Dool2 tool, stop immediately (`tools_unsafe`). If Codex starts a shell, file-change or web-search item, or calls an MCP server that is not Dool2, we cut the conversation. Codex approval requests are always refused.
 
-## 이유
+## Why
 
-- 승인 게이트는 "모든 위험한 동작이 두리 도구를 거친다"는 전제가 있어야 의미가 있어요.
-- 설정만 믿지 않고 실제 동작을 다시 확인해야 CLI 업데이트로 옵션 의미가 바뀌어도 안전해요.
+- The approval gate only means something if every risky action goes through a Dool2 tool.
+- We must not trust settings alone. Rechecking real behavior keeps us safe even if a CLI update changes what an option means.
 
-## 결과
+## Consequences
 
-- 에이전트가 할 수 있는 일은 두리 도구가 정해요. 새 능력이 필요하면 두리 도구를 추가해요.
-- 이 제한을 푸는 변경은 받지 않아요. 관련 코드(`packages/agent-*`)는 보안 핵심 영역으로 리뷰해요.
+- Dool2 tools decide what the agent can do. When a new capability is needed, we add a Dool2 tool.
+- Changes that loosen this restriction are not accepted. The related code (`packages/agent-*`) is reviewed as a security-critical area.

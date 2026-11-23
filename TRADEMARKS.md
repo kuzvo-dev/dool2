@@ -1,27 +1,27 @@
-# 상표 정책
+# Trademark Policy
 
-두리의 코드는 [Apache License 2.0](LICENSE)으로 누구나 자유롭게 쓰고, 고치고, 다시 배포할 수 있어요. 다만 **"두리", "dool2" 이름과 로고**(이하 "두리 상표")는 코드 라이선스에 포함되지 않아요. Apache-2.0 제6조도 상표 사용 권한은 주지 않는다고 정하고 있어요.
+Anyone may freely use, modify, and redistribute Dool2's code under the [Apache License 2.0](LICENSE). However, the **names "Dool2" (두리) and "dool2", and the logo** (together, the "Dool2 marks") are not covered by the code license. Section 6 of Apache-2.0 also says it grants no permission to use trademarks.
 
-이 정책을 두는 이유는 하나예요. 두리는 사용자 컴퓨터에서 결제·연락 같은 일을 대신 하는 프로그램이라서, 누군가 "두리"라는 이름으로 고친 버전을 배포하면 사용자가 공식 버전으로 착각하고 위험해질 수 있어요.
+We have this policy for one reason. Dool2 pays and contacts people on a user's behalf from their own computer. If someone distributes a modified version under the name "Dool2", users could mistake it for the official one and be put at risk.
 
-## 허락 없이 해도 되는 것
+## What you can do without asking
 
-- 두리를 **사실 그대로 언급하기.** 예: "두리와 호환돼요", "두리를 기반으로 만들었어요", 블로그 글·리뷰·발표·강의.
-- 이 레포를 **포크해서 개발하고 기여하기.** GitHub 포크의 이름이 `dool2`인 것은 괜찮아요.
-- 고치지 않은 공식 릴리스를 **그대로 재배포하기.**
+- **Refer to Dool2 factually.** For example: "works with Dool2", "built on Dool2", and blog posts, reviews, talks, and courses.
+- **Fork this repo to develop and contribute.** A GitHub fork named `dool2` is fine.
+- **Redistribute unmodified official releases** as they are.
 
-## 허락이 필요한 것
+## What needs permission
 
-- 고친 버전을 **"두리"나 "dool2", 또는 헷갈릴 만큼 비슷한 이름으로 배포하기.**
-  - 포크를 배포할 때는 다른 이름과 다른 로고를 써 주세요.
-  - "OO for 두리" 처럼 공식 제품처럼 보이는 이름도 피해 주세요.
-- 두리 로고를 제품·서비스·굿즈에 쓰기.
-- 공식 제품이나 공식 파트너처럼 보이게 하는 모든 사용.
+- **Distributing a modified version under "Dool2", "두리", "dool2", or a confusingly similar name.**
+  - If you distribute a fork, use a different name and a different logo.
+  - Please also avoid names like "X for Dool2" that look like an official product.
+- Using the Dool2 logo on products, services, or merchandise.
+- Any use that makes something look like an official product or official partner.
 
-## 문의
+## Questions
 
-상표 사용 허락이나 문의는 [Discussions](https://github.com/kuzvo-dev/dool2/discussions)에 남겨 주세요. 공개하기 어려운 내용이면 kuzvomain@gmail.com 으로 연락해 주세요.
+For permission to use the marks, or any questions, post in [Discussions](https://github.com/kuzvo-dev/dool2/discussions). If it isn't something to discuss publicly, email kuzvomain@gmail.com.
 
 ---
 
-Claude와 Claude Code는 Anthropic의 상표이고, ChatGPT와 Codex는 OpenAI의 상표예요. 두리는 두 회사와 제휴하거나 보증받지 않은 독립 프로젝트예요.
+Claude and Claude Code are trademarks of Anthropic, and ChatGPT and Codex are trademarks of OpenAI. Dool2 is an independent project, not affiliated with or endorsed by either company.

@@ -1,44 +1,44 @@
-name: 스킬 고장 신고
-description: 사이트가 바뀌어서 스킬이 더 이상 안 돼요
+name: Broken skill
+description: A skill no longer works because the site changed
 labels: [skill, skill-broken]
 body:
   - type: markdown
     attributes:
       value: |
-        사이트가 바뀌면 스킬은 금방 고장 나요. 빨리 알려 주실수록 빨리 고쳐요.
-        **아이디, 예약 번호, 결제 정보 같은 개인정보는 지우고** 올려 주세요.
+        Skills break quickly when a site changes. The sooner you tell us, the sooner we fix it.
+        **Please remove personal data such as IDs, booking numbers, and payment details** before posting.
   - type: input
     id: skill
     attributes:
-      label: 스킬 이름
-      placeholder: 예) skills/srt-reserve
+      label: Skill name
+      placeholder: "e.g. skills/srt-reserve"
     validations:
       required: true
   - type: textarea
     id: where
     attributes:
-      label: 어디서 막혔나요?
-      description: 어떤 단계에서 무엇이 달라졌는지 적어 주세요. 예) 좌석 선택 화면의 버튼 이름이 바뀌었어요.
+      label: Where did it get stuck?
+      description: "Tell us which step changed and how. For example: the button name on the seat selection screen changed."
     validations:
       required: true
   - type: dropdown
     id: blocker
     attributes:
-      label: 막힌 종류
+      label: Type of problem
       options:
-        - 화면·버튼이 바뀜
-        - 로그인이 풀림
-        - 캡차·로봇 확인이 뜸
-        - 본인인증이 새로 생김
-        - 접속이 차단됨
-        - 기타
+        - Screen or button changed
+        - Logged out
+        - CAPTCHA or robot check appeared
+        - New identity verification
+        - Access blocked
+        - Other
   - type: input
     id: date
     attributes:
-      label: 겪은 날짜
-      placeholder: 예) 2026-11-14
+      label: Date it happened
+      placeholder: "e.g. 2026-11-14"
   - type: textarea
     id: screens
     attributes:
-      label: 화면 캡처
-      description: 개인정보는 가려 주세요.
+      label: Screenshots
+      description: Please hide personal data.

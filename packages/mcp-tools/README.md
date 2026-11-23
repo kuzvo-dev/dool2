@@ -1,18 +1,18 @@
 # @dool2/mcp-tools
 
-두리 도구 서버(MCP)예요. 에이전트는 내장 도구가 꺼져 있어서 **이 서버의 도구만** 쓸 수 있어요([ADR 0003](../../docs/decisions/0003-dool2-tools-only.md)).
+The Dool2 tools server (MCP). The agent's built-in tools are off, so it can use **only this server's tools** ([ADR 0003](../../docs/decisions/0003-dool2-tools-only.md)).
 
-| 도구                                                     | 등급      | 설명                                                                                              |
-| -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------- |
-| `status`                                                 | 찾아보기  | 지금 날짜·시각(한국 시간)과 두리 상태                                                             |
-| `browser_open` · `browser_navigate` · `browser_read`     | 찾아보기  | 사용자 Chrome의 "두리" 탭을 열고 페이지를 글로 읽어요. 누를 곳은 `[e12 버튼 "검색"]`처럼 표시돼요 |
-| `browser_screenshot` · `browser_scroll` · `browser_back` | 찾아보기  | 화면을 그림으로 보기, 스크롤, 뒤로                                                                |
-| `browser_click` · `browser_type` · `browser_press`       | 채워 두기 | 실제 마우스·키 입력. **돈·연락·되돌릴 수 없는 버튼은 본체가 막고 사람에게 넘겨요**                |
-| `browser_close`                                          | 채워 두기 | 다 쓴 두리 탭 닫기                                                                                |
+| Tool                                                     | Tier   | Description                                                                                                                                |
+| -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`                                                 | lookup | The current date and time (Korea time) and Dool2's status                                                                                  |
+| `browser_open` · `browser_navigate` · `browser_read`     | lookup | Opens a "Dool2" tab in the user's Chrome and reads the page as text. Click targets are marked like `[e12 button "검색"]` (button "Search") |
+| `browser_screenshot` · `browser_scroll` · `browser_back` | lookup | See the screen as an image, scroll, go back                                                                                                |
+| `browser_click` · `browser_type` · `browser_press`       | fill   | Real mouse and key input. **The daemon blocks buttons that spend money, contact someone, or cannot be undone, and hands off to a person**  |
+| `browser_close`                                          | fill   | Closes a Dool2 tab that is done                                                                                                            |
 
-브라우저 도구는 판단하지 않고 두리 본체(`/api/tools/browser/<도구>`)에 넘겨요. 본체는 이 서버를 띄울 때 주소와 **도구 전용 토큰**(`DOOL2_API`, `DOOL2_TOOL_TOKEN`)을 넣어 줘요. 위험 판단은 본체의 `browser-tools.ts`에 있어요. PC 제어(M4) 도구도 여기에 추가돼요. M3부터 위험한 동작은 폰 승인을 거쳐 실행돼요.
+The browser tools do not make decisions; they pass to the Dool2 daemon (`/api/tools/browser/<tool>`). When the daemon starts this server, it supplies the address and a **tool-only token** (`DOOL2_API`, `DOOL2_TOOL_TOKEN`). The risk decisions live in the daemon's `browser-tools.ts`. PC control (M4) tools will be added here too. From M3, risky actions run only after phone approval.
 
-- `createServer()`: 도구를 등록한 MCP 서버를 만들어요.
-- `@dool2/mcp-tools/server`: 에이전트가 띄우는 stdio 진입점이에요.
+- `createServer()`: creates the MCP server with the tools registered.
+- `@dool2/mcp-tools/server`: the stdio entry point that the agent launches.
 
-새 도구를 추가할 때는 등급(찾아보기 / 채워 두기 / 돈 내기 / 연락하기)을 반드시 정하고, 조회만 하는 도구에는 `readOnlyHint`를 붙여요.
+When adding a new tool, always decide its tier (lookup / fill / pay / contact), and add `readOnlyHint` to tools that only look things up.

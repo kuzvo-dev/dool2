@@ -1,56 +1,56 @@
-# 행동 강령
+# Code of Conduct
 
-이 문서는 [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/)을 두리 커뮤니티에 맞게 옮긴 것이에요.
+This document is the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) adapted for the Dool2 community.
 
-## 약속
+## Our pledge
 
-우리는 참여자 모두가 나이, 몸의 크기, 눈에 보이거나 보이지 않는 장애, 민족, 성적 특징, 성 정체성과 표현, 경력, 학력, 사회경제적 지위, 국적, 외모, 인종, 카스트, 피부색, 종교, 성적 지향과 관계없이 괴롭힘 없이 참여할 수 있는 커뮤니티를 만들기로 약속해요.
+We pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, caste, color, religion, or sexual identity and orientation.
 
-우리는 열려 있고, 서로 반기고, 다양하고, 포용하는 건강한 커뮤니티를 위해 행동해요.
+We act in ways that help build an open, welcoming, diverse, inclusive, and healthy community.
 
-## 기준
+## Our standards
 
-좋은 환경을 만드는 행동의 예:
+Examples of behavior that contributes to a good environment:
 
-- 다른 사람에게 공감하고 친절하게 대하기
-- 다른 의견, 관점, 경험을 존중하기
-- 건설적인 피드백을 주고, 받을 때도 너그럽게 받기
-- 실수에 책임지고, 영향을 받은 사람에게 사과하고, 배우기
-- 개인보다 커뮤니티 전체에 가장 좋은 것에 집중하기
+- Showing empathy and kindness toward other people
+- Respecting differing opinions, viewpoints, and experiences
+- Giving and graciously accepting constructive feedback
+- Taking responsibility for our mistakes, apologizing to those affected, and learning from them
+- Focusing on what is best for the whole community, not just for us as individuals
 
-받아들일 수 없는 행동의 예:
+Examples of unacceptable behavior:
 
-- 성적인 언어나 이미지 사용, 원치 않는 성적 관심이나 접근
-- 비꼬기, 모욕하거나 깎아내리는 말, 개인·정치적 공격
-- 공개적이거나 사적인 괴롭힘
-- 다른 사람의 주소, 이메일, 계정 같은 개인정보를 허락 없이 공개하기
-- 그 밖에 직업적인 자리에서 부적절하다고 볼 만한 행동
+- Sexualized language or imagery, and unwelcome sexual attention or advances
+- Trolling, insulting or derogatory comments, and personal or political attacks
+- Public or private harassment
+- Publishing others' private information, such as a physical address, email address, or account, without their permission
+- Other conduct which could reasonably be considered inappropriate in a professional setting
 
-두리는 사용자 계정과 개인정보를 다루는 프로그램이라서 하나를 더 정해요. **이슈, PR, 로그, 스크린샷에 본인이나 다른 사람의 개인정보(계정, 전화번호, 주소, 실제 대화 내용)를 올리지 말아 주세요.** 실수로 올라간 것을 발견하면 메인테이너가 바로 가려요.
+Because Dool2 handles users' accounts and personal data, we add one more rule. **Please don't post your own or anyone else's personal information (accounts, phone numbers, addresses, real conversations) in issues, PRs, logs, or screenshots.** If we find something posted by mistake, a maintainer will hide it right away.
 
-## 집행 책임
+## Enforcement responsibilities
 
-커뮤니티 리더(메인테이너)는 이 기준을 분명히 하고 집행할 책임이 있어요. 부적절하거나 위협적이거나 해롭다고 보는 행동에는 공정하게 조치해요.
+Community leaders (maintainers) are responsible for clarifying and enforcing these standards. They will take fair action in response to any behavior they consider inappropriate, threatening, or harmful.
 
-커뮤니티 리더는 이 강령에 맞지 않는 댓글, 커밋, 코드, 위키 편집, 이슈 등을 지우거나 고치거나 거절할 수 있고, 조치 이유를 필요하면 알려요.
+Community leaders may remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that don't follow this Code of Conduct, and will explain the reasons for moderation decisions when appropriate.
 
-## 적용 범위
+## Scope
 
-이 강령은 레포의 이슈·PR·Discussions를 포함한 모든 커뮤니티 공간에 적용돼요. 공식 계정으로 글을 올리거나 행사에서 공식 대표로 나서는 것처럼, 커뮤니티를 공식적으로 대표하는 자리에도 적용돼요.
+This Code of Conduct applies in all community spaces, including the repo's issues, PRs, and Discussions. It also applies when someone officially represents the community, for example by posting from an official account or acting as an appointed representative at an event.
 
-## 신고
+## Reporting
 
-받아들일 수 없는 행동을 겪거나 봤다면 **kuzvomain@gmail.com** 으로 메인테이너에게 알려 주세요. 메일 제목에 "[행동 강령]"이라고 적어 주시면 먼저 확인해요. 모든 신고는 빠르고 공정하게 검토하고, 신고한 사람의 사생활과 안전을 지켜요.
+If you experience or witness unacceptable behavior, tell the maintainers at **kuzvomain@gmail.com**. Please put "[Code of Conduct]" in the subject line so we see it first. All reports are reviewed promptly and fairly, and we respect the privacy and safety of the person who reported.
 
-## 집행 지침
+## Enforcement guidelines
 
-커뮤니티 리더는 아래 기준에 따라 조치해요.
+Community leaders follow these guidelines when deciding on consequences.
 
-1. **바로잡기**: 부적절한 언어처럼 가벼운 위반. 비공개로 경고하고 무엇이 문제였는지 설명해요. 공개 사과를 요청할 수 있어요.
-2. **경고**: 한 번의 사건이나 반복된 행동. 정해진 기간 동안 관련된 사람과의 상호작용을 제한해요. 어기면 일시 차단까지 갈 수 있어요.
-3. **일시 차단**: 계속되는 부적절한 행동을 포함한 심각한 위반. 정해진 기간 동안 커뮤니티 참여를 막아요.
-4. **영구 차단**: 반복되는 위반, 특정인에 대한 괴롭힘, 집단에 대한 공격이나 비하. 커뮤니티에서 영구히 차단해요.
+1. **Correction**: a minor violation, such as inappropriate language. A private warning that explains what the problem was. A public apology may be requested.
+2. **Warning**: a single incident or a pattern of behavior. Interaction with the people involved is limited for a set period. Breaking those terms can lead to a temporary ban.
+3. **Temporary ban**: a serious violation, including sustained inappropriate behavior. The person is barred from participating in the community for a set period.
+4. **Permanent ban**: a pattern of violations, harassment of a specific person, or aggression toward or disparagement of groups of people. The person is permanently barred from the community.
 
-## 출처
+## Attribution
 
-이 강령은 [Contributor Covenant](https://www.contributor-covenant.org) 2.1판을 바탕으로 했어요. 집행 지침은 [Mozilla의 행동 강령 집행 사다리](https://github.com/mozilla/diversity)에서 영향을 받았어요.
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1. The enforcement guidelines were influenced by [Mozilla's code of conduct enforcement ladder](https://github.com/mozilla/diversity).

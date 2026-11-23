@@ -1,11 +1,11 @@
 # PickCards
-고를 후보(상품·숙소·식당·공연)를 답 아래에 붙이는 사진 카드 묶음. 메시지에 첨부한 사진처럼 보인다.
+A set of photo cards attached under a reply, for candidates to choose from (products, lodging, restaurants, shows). It looks like photos attached to the message.
 
-- 두리 답 말풍선 **바로 아래**, 옆으로 넘겨 본다(한 장 168px, 스냅). 2~8장, 추천 순서대로.
-- 카드: 정사각 사진(없으면 `surface-sunken` 빈칸) → 이름 2줄 → 가격(굵게) → 한 줄 정보(`ink-muted`, 평점·도착 등).
-- **모든 카드가 같은 크기**: 사진은 칸에 꽉 채워 자르고(사진 크기·비율 때문에 칸이 늘지 않는다), 이름은 한 줄이어도 두 줄 자리, 가격·정보가 없어도 그 줄 자리를 둔다. 버튼은 늘 맨 아래.
-- 영화 포스터·책 표지·공연 포스터 묶음은 **세로 3:4**(`.pick-cards.portrait`, show_cards의 `shape: portrait`).
-- 배지는 하나만, 사진 왼쪽 위 ink 알약(최저가·추천). 색으로 꾸미지 않는다.
-- 버튼 두 개: `보기`(선, 그 페이지를 연다) · `이걸로`(ink, 고른 걸 두리에게 보낸다). 결제는 여기서 하지 않는다 — 고른 뒤 두리가 승인 카드로 묻는다.
-- 사진은 화면이 바깥 서버에 직접 붙지 않고 PC 본체가 받아 넘긴다. 오기 전엔 빈칸, 오면 부드럽게 나타난다.
-- 카드를 붙인 답은 같은 목록을 글·표로 되풀이하지 않는다(고른 이유·차이만 2~4문장).
+- **Right under** Dool2's reply bubble, swiped sideways (168px per card, snapping). 2 to 8 cards, in order of recommendation.
+- Card: square photo (an empty `surface-sunken` slot if there is none) → name in 2 lines → price (bold) → one info line (`ink-muted`, rating, arrival, etc.).
+- **Every card is the same size**: the photo is cropped to fill its slot (the slot never stretches because of photo size or ratio), the name reserves two lines even if it is one, and the price and info lines keep their space even if empty. Buttons are always at the bottom.
+- Sets of movie posters, book covers and show posters are **portrait 3:4** (`.pick-cards.portrait`, `shape: portrait` of show_cards).
+- Only one badge, an ink pill at the top left of the photo (lowest price, recommended). No decoration with color.
+- Two buttons: `보기` (View; outline, opens that page) · `이걸로` (This one; ink, sends the chosen one to Dool2). Payment is not made here; after the choice, Dool2 asks with an approval card.
+- The screen does not connect directly to outside servers for photos; the PC daemon fetches and passes them on. The slot stays empty until they arrive, then they fade in smoothly.
+- A reply with cards does not repeat the same list as text or a table (only the reason for the choice and the differences, in 2 to 4 sentences).

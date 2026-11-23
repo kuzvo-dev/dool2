@@ -1,52 +1,52 @@
 # @dool2/desktop
 
-두리 PC 앱(Electron)이에요. 두리 본체(`@dool2/daemon`)를 같은 프로세스에서 띄우고, 화면에는 로컬 API 주소와 토큰만 건네요([ADR 0004](../../docs/decisions/0004-electron.md)).
+The Dool2 desktop app (Electron). It starts the Dool2 daemon (`@dool2/daemon`) in the same process and hands the screen only the local API address and token ([ADR 0004](../../docs/decisions/0004-electron.md)).
 
 ```bash
 pnpm build
 pnpm dev:desktop
 ```
 
-## 구조
+## Structure
 
-| 파일              | 역할                                                                      |
-| ----------------- | ------------------------------------------------------------------------- |
-| `src/main.ts`     | 메인 프로세스: 본체 시작, 창, 점검 모드                                   |
-| `src/preload.cts` | 화면에 노출하는 최소한의 다리 (`window.dool2`). Node 기능은 넘기지 않아요 |
-| `src/renderer/`   | 화면 (HTML·CSS·TypeScript, 프레임워크 없음)                               |
+| File              | Role                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `src/main.ts`     | Main process: starts the daemon, the window, and smoke mode                                       |
+| `src/preload.cts` | The minimal bridge exposed to the screen (`window.dool2`). It does not pass Node features through |
+| `src/renderer/`   | The screen (HTML, CSS, TypeScript, no framework)                                                  |
 
-창은 `contextIsolation`, `sandbox`를 켜고 `nodeIntegration`을 꺼요. 외부 링크는 기본 브라우저로 열고, 창 안에서 다른 페이지로 이동하지 않아요.
+The window turns `contextIsolation` and `sandbox` on and `nodeIntegration` off. External links open in the default browser, and the window never navigates to another page.
 
-## 점검 모드 (화면 캡처)
+## Smoke mode (screenshots)
 
-PR에 붙일 화면은 점검 모드로 찍어요. 창을 숨긴 채 띄워 화면이 다 그려지면 캡처하고 끝나요.
+Screens for PRs are captured in smoke mode. It starts with the window hidden, captures once the screen has finished drawing, and exits.
 
 ```bash
 DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke
 # → apps/desktop/out/smoke.png
 
-# 데모 대화·목표·보관함·피드를 넣고 탭을 골라 캡처
+# Load a demo conversation, goals, library and feed, then pick a tab to capture
 node apps/daemon/scripts/seed-demo.mjs /tmp/dool2-demo
 DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=goals+panel:memory pnpm --filter @dool2/desktop smoke
 ```
 
-| 환경 변수            | 설명                                                                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DOOL2_DATA_DIR`     | 데이터 폴더 (기본: OS 표준 위치)                                                                                                                                                           |
-| `DOOL2_SMOKE_OUT`    | 캡처를 저장할 폴더                                                                                                                                                                         |
-| `DOOL2_SMOKE_THEME`  | `dark`·`light`로 고정해서 캡처 (기본: 기기 설정)                                                                                                                                           |
-| `DOOL2_SMOKE_OPEN`   | 열어 둘 화면: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:서비스]`. 뒤에 `+panel:칸`(schedule·memory·screen·activity·approvals)이나 `+nopanel` |
-| `DOOL2_SMOKE_SETUP`  | 마법사·설정을 열어 찍기: `welcome` `choice` `check` `awake`, 설정은 `settings[:칸]` (general·ai·phone·vault·me·apps·about). `DOOL2_SMOKE_UPDATE=available`이면 새 버전이 있는 모습         |
-| `DOOL2_SMOKE_SCROLL` | 이 선택자가 보이게 굴린 뒤 찍기 (예: `.page-more` = 긴 목록 끝 줄). `DOOL2_SMOKE_SCROLL_TIMES`로 여러 번 (다음 페이지를 받으면 끝 줄이 다시 내려간다)                                      |
+| Environment variable | Description                                                                                                                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOOL2_DATA_DIR`     | Data folder (default: the standard OS location)                                                                                                                                                                                  |
+| `DOOL2_SMOKE_OUT`    | Folder to save captures in                                                                                                                                                                                                       |
+| `DOOL2_SMOKE_THEME`  | Capture with `dark` or `light` fixed (default: the device setting)                                                                                                                                                               |
+| `DOOL2_SMOKE_OPEN`   | Screen to leave open: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:service]`. Followed by `+panel:section` (schedule, memory, screen, activity, approvals) or `+nopanel`              |
+| `DOOL2_SMOKE_SETUP`  | Capture the wizard or settings: `welcome` `choice` `check` `awake`; for settings, `settings[:section]` (general, ai, phone, vault, me, apps, about). With `DOOL2_SMOKE_UPDATE=available`, it shows a new version being available |
+| `DOOL2_SMOKE_SCROLL` | Scroll until this selector is visible, then capture (for example `.page-more` = the last row of a long list). Use `DOOL2_SMOKE_SCROLL_TIMES` to repeat (when the next page loads, the last row moves down again)                 |
 
-## 설치 파일 만들기 (서명 없음, 개발용)
+## Building an installer (unsigned, for development)
 
 ```bash
 pnpm build
-pnpm --filter @dool2/desktop package   # → apps/desktop/release/dool2-<버전>-<arch>.dmg (윈도우는 .exe)
+pnpm --filter @dool2/desktop package   # → apps/desktop/release/dool2-<version>-<arch>.dmg (.exe on Windows)
 ```
 
-- 메인 프로세스와 두리 도구 서버를 esbuild로 한 파일씩 묶어 `stage/`에 모아요. Codex·Claude Code·종량제 실행기는 넣지 않고 처음 쓸 때 받아요.
-- 앱 내부 이름은 `Dool2`예요. 한글 이름이면 맥에서 Electron 도우미("두리 Helper")를 못 찾고 켜자마자 꺼져요. 사용자에게 보이는 이름은 "두리"예요.
-- 코드 서명·공증·자동 업데이트는 M5에서 붙여요. 지금 만든 dmg는 서명이 없어서 다른 맥에서는 "확인되지 않은 개발자" 경고가 떠요.
-- 맥 dmg는 약 120MB예요 (대부분 Electron).
+- The main process and the Dool2 tools server are each bundled into a single file with esbuild and collected in `stage/`. Codex, Claude Code, and the pay-as-you-go runner are not included; they are downloaded on first use.
+- The internal app name is `Dool2`. With a Korean name, macOS cannot find the Electron helper ("두리 Helper") and the app quits right after launch. The name users see is "Dool2".
+- Code signing, notarization, and auto-update are added in M5. The dmg built now is unsigned, so other Macs show an "unidentified developer" warning.
+- The macOS dmg is about 120 MB (mostly Electron).

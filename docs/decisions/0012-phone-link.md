@@ -1,49 +1,49 @@
-# 0012. 폰 ↔ PC 연결: 브라우저 기본 암호화, 서명된 기기만, 중계 서버는 암호문만
+# 0012. Phone ↔ PC link: browser-native encryption, signed devices only, the relay sees only ciphertext
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리의 약속은 "부탁은 폰으로, 일은 내 PC가"예요. 폰과 PC는 서로 다른 네트워크에 있어서 중계 서버가 필요해요. 중계 서버를 믿지 않으면서도(내용을 볼 수 없게), 폰 앱은 설치 없이 바로 쓸 수 있어야 해요(PWA).
+Dool2's promise is "ask from the phone, and my PC does the work". The phone and the PC are on different networks, so a relay is needed. We do not trust the relay (it must not be able to see the content), and yet the phone app has to be usable immediately without installation (PWA).
 
-설계 초안([architecture.md 6장](../architecture.md))은 libsodium(XChaCha20)과 Noise 핸드셰이크를 적었어요. 그런데 이 둘은 폰 브라우저에 라이브러리를 더 실어야 하고, 직접 짠 핸드셰이크는 실수할 곳이 많아요.
+The draft design ([architecture.md, chapter 6](../architecture.md)) specified libsodium (XChaCha20) and a Noise handshake. But both require loading extra libraries into the phone browser, and a hand-written handshake has many places for mistakes.
 
-## 결정
+## Decision
 
-**브라우저와 Node에 들어 있는 표준 암호화(WebCrypto)만 써요.** 외부 암호 라이브러리를 넣지 않아요.
+**We use only the standard cryptography built into browsers and Node (WebCrypto).** We add no external crypto libraries.
 
-- 키
-  - PC: X25519(암호화) + Ed25519(중계 서버에 "내가 이 PC"임을 증명)
-  - 폰: X25519(암호화) + Ed25519(승인 서명). 키는 폰 브라우저에 **꺼낼 수 없게** 만들어 둬요(non-extractable)
-- 암호화: X25519 공유 비밀 → HKDF-SHA256 → **AES-256-GCM**. 메시지마다 새 IV, 보내는 쪽·받는 쪽·종류·순번을 인증 데이터(AAD)로 묶어요
-- 재전송 막기: 보내는 쪽마다 순번(seq)이 늘어나야 하고, 같은 순번이나 더 작은 순번은 버려요
-- **페어링**
-  1. PC 화면에 QR: PC 공개키, PC id, 일회용 비밀(5분), 중계 서버 주소
-  2. 폰이 키를 만들고, 일회용 비밀을 담은 페어링 요청을 **PC 공개키로 암호화**해 보내요. 중계 서버는 못 읽어요
-  3. PC와 폰이 같은 공유 비밀에서 **확인 코드 6자리**를 만들어 각자 화면에 보여요. 사용자가 같은지 보고 **PC에서** [연결]을 눌러야 끝나요
-  4. 그 외의 방법으로는 새 폰을 붙일 수 없어요
-- **승인은 폰 서명으로**: 승인 요청의 내용(누를 버튼, 주소, 무엇을·얼마, 만료 시각, nonce)을 폰이 Ed25519로 서명하고, **PC가 페어링 때 받은 공개키로 직접 확인**해요. 중계 서버는 이 과정에 끼지 않아요
-- **중계 서버**(`apps/relay`): PC 방(id)마다 연결을 이어 주고, 꺼진 PC로 가는 암호문만 잠시(7일) 쌓아 둬요. PC는 Ed25519 서명으로 자기 방임을 증명해요. 먼저 Node 버전(자체 호스팅·개발용)을 만들고, 같은 규약으로 Cloudflare Durable Objects 버전을 배포할 때(M5) 붙여요
-- 폰 앱(`apps/phone`)은 PWA이고, 중계 서버가 함께 내려줘요
-- **앱이 꺼져 있을 때 알림 = 웹 푸시**(RFC 8030·8291·8292). **PC가 폰의 푸시 서비스(애플·구글)로 직접** 보내요. 중계 서버는 거치지 않아요
-  - PC가 VAPID 키(P-256)를 만들어 폰에 공개키를 알려 주고, 폰은 [알림 켜기]를 누른 뒤 그 키로 구독해 구독 정보를 암호화된 메시지로 PC에 보내요
-  - 알림 내용(승인 요청, 직접 해 주세요, 폰에서 맡긴 일이 끝남)은 **폰 브라우저만 풀 수 있게 암호화**(aes128gcm)돼서 푸시 서비스도 못 읽어요. 암호화는 `node:crypto`로 직접 하고, RFC 8291 부록 A의 예시와 바이트 단위로 같은지 테스트해요
-  - PC는 알려진 푸시 서비스 주소(https, fcm.googleapis.com·push.apple.com·mozilla·windows)로만 보내요. 폰이 엉뚱한 주소를 알려도 PC가 내부망 같은 곳에 요청하지 않게요
-  - 아이폰은 홈 화면에 추가한 앱에서만 알림을 받을 수 있어요(iOS 16.4 이상, https 필요). 그래서 실제 폰 확인은 공식 중계 서버를 https로 띄운 뒤(M5) 해요
-- **원격 화면**: 두리가 사람에게 넘긴 탭(로그인·로봇 확인 등)을 폰에서 보고 누를 수 있어요
-  - 폰이 화면을 달라고 하면 PC가 그 탭을 작게(가로 860px, JPEG) 찍어 암호화해 보내고, 폰은 보고 있는 동안 1초쯤마다 다시 달라고 해요(화면 공유 스트림이 아니라 한 장씩)
-  - 폰에서 누른 자리(사진 비율), 넣은 글자, 몇 가지 키(지우기·엔터·다음 칸·스크롤)만 그 탭에 전해요
-  - **두리가 넘긴 탭만, 넘긴 뒤 30분 동안**만 돼요. 다른 탭·사용자 탭은 볼 수도 누를 수도 없어요
-  - 여기서 넣은 글자(비밀번호 등)는 대화 기록과 AI에 남지 않아요. 중계 서버는 원격 화면 메시지를 쌓아 두지 않아요
+- Keys
+  - PC: X25519 (encryption) + Ed25519 (proves to the relay "I am this PC")
+  - Phone: X25519 (encryption) + Ed25519 (approval signatures). The keys are created **non-extractable** in the phone browser
+- Encryption: X25519 shared secret → HKDF-SHA256 → **AES-256-GCM**. A fresh IV for every message, and the sender, receiver, kind and sequence number are bound as authenticated data (AAD)
+- Replay protection: each sender's sequence number (seq) must keep increasing, and messages with the same or a smaller number are discarded
+- **Pairing**
+  1. A QR code on the PC screen: PC public key, PC id, a one-time secret (5 minutes), relay address
+  2. The phone creates its keys and sends a pairing request containing the one-time secret, **encrypted with the PC public key**. The relay cannot read it
+  3. The PC and phone each derive a **6-digit confirmation code** from the same shared secret and show it on their screens. The user checks that they match and presses [Connect] **on the PC** to finish
+  4. There is no other way to attach a new phone
+- **Approvals by phone signature**: the phone signs the content of an approval request (the button to press, the address, what and how much, expiry time, nonce) with Ed25519, and **the PC verifies it directly with the public key it received at pairing**. The relay takes no part in this
+- **Relay** (`apps/relay`): connects each PC room (id), and holds ciphertext addressed to a PC that is off only briefly (7 days). The PC proves it owns its room with an Ed25519 signature. We build the Node version first (for self-hosting and development), and attach the Cloudflare Durable Objects version using the same protocol when we deploy (M5)
+- The phone app (`apps/phone`) is a PWA, served by the relay
+- **Notifications while the app is closed = Web Push** (RFC 8030, 8291, 8292). **The PC sends directly to the phone's push service (Apple, Google)**, not through the relay
+  - The PC creates a VAPID key (P-256) and tells the phone the public key. After the user presses [Turn on notifications], the phone subscribes with that key and sends the subscription info to the PC in an encrypted message
+  - The notification content (approval request, please do it yourself, a task requested from the phone has finished) is **encrypted so that only the phone browser can decrypt it** (aes128gcm), so even the push service cannot read it. We do the encryption ourselves with `node:crypto`, and test that it matches the example in RFC 8291 Appendix A byte for byte
+  - The PC sends only to known push service addresses (https; fcm.googleapis.com, push.apple.com, mozilla, windows). This is so that even if the phone gives a bogus address, the PC does not send requests to places like an internal network
+  - iPhone can receive notifications only from an app added to the home screen (iOS 16.4 or later, https required). So checking on a real phone happens after the official relay is up over https (M5)
+- **Remote screen**: the phone can see and tap a tab that Dool2 handed off to a person (login, robot check and so on)
+  - When the phone asks for the screen, the PC captures that tab small (860 px wide, JPEG), encrypts it and sends it, and while the phone is watching it asks again about once a second (one still at a time, not a screen-sharing stream)
+  - Only the tapped position (as a fraction of the image), typed characters and a few keys (delete, enter, next field, scroll) are passed to that tab
+  - It works **only for the tab Dool2 handed off, and only for 30 minutes after the hand-off**. Other tabs and the user's own tabs can be neither seen nor tapped
+  - Characters typed here (such as passwords) do not remain in the conversation history or reach the AI. The relay does not store remote screen messages
 
-## 이유
+## Why
 
-- WebCrypto의 X25519·Ed25519·AES-GCM은 최신 Chrome·Safari·Node에 들어 있어요. 라이브러리 공급망 위험과 폰 앱 크기가 줄어요.
-- 핸드셰이크를 새로 짜는 대신, 이미 서로의 공개키를 아는 상태(QR + 사람이 확인한 코드)에서 정적 키 합의만 써요. 단순해서 검토하기 쉬워요.
+- WebCrypto's X25519, Ed25519 and AES-GCM ship in current Chrome, Safari and Node. This reduces library supply-chain risk and the size of the phone app.
+- Instead of writing a new handshake, we start from both sides already knowing each other's public keys (QR + a code the person confirmed) and use only static key agreement. It is simple and easy to review.
 
-## 결과
+## Consequences
 
-- **감수하는 점: 순방향 비밀성(forward secrecy)이 없어요.** 폰이나 PC의 키가 털리면 그 키로 암호화된 지난 메시지도 풀릴 수 있어요. 지난 메시지는 중계 서버에 7일 이상 남지 않게 해서 범위를 줄여요. 연결마다 임시 키를 더하는 방식(이중 래칫 등)은 사용자 수가 늘면 다시 검토해요.
-- 폰 서명 키는 생체인증과 묶이지 않아요(브라우저 키). 패스키(WebAuthn)·네이티브 보안칩 키로 돈 내기 승인을 강화하는 건 공식 도메인을 정한 뒤(M5)·네이티브 앱에서 해요. 위협 모델에 그대로 적어요.
-- 오래된 폰 브라우저(X25519 미지원)는 쓸 수 없어요. 안내 화면을 둬요.
+- **A cost we accept: there is no forward secrecy.** If a phone or PC key is stolen, past messages encrypted with that key could also be decrypted. We limit the range by not leaving past messages on the relay for more than 7 days. We will revisit adding ephemeral keys per connection (such as a double ratchet) as the user count grows.
+- The phone signing key is not tied to biometrics (it is a browser key). Strengthening pay approvals with passkeys (WebAuthn) or native secure-chip keys happens after the official domain is settled (M5), in the native app. We write this down in the threat model as it is.
+- Old phone browsers (without X25519 support) cannot be used. We provide a notice screen.

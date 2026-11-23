@@ -1,28 +1,28 @@
-# 0005. 컨테이너 없이 올인원 앱으로 설치한다
+# 0005. Install as an all-in-one app, without containers
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-필요한 부품(AI CLI, 브라우저, 본체)을 한 번에 맞추기 쉬운 방법으로 Docker 같은 컨테이너를 검토했어요. 두리의 사용자는 개발자가 아니에요. 설치는 "누구나, 터미널 없이, 원터치"여야 해요.
+We looked at containers such as Docker as an easy way to line up the required parts (AI CLI, browser, daemon) in one go. Dool2's users are not developers. Installation has to be "for anyone, without a terminal, one touch".
 
-## 결정
+## Decision
 
-컨테이너를 쓰지 않아요. 두리 앱 하나를 설치하면 나머지 부품은 두리가 공식 경로로 알아서 준비해요.
+We do not use containers. Users install one Dool2 app, and Dool2 prepares the other parts by itself through official channels.
 
-- Codex: 처음 쓸 때 npm 공식 레지스트리에서 고정 버전을 받고, **코드에 적어 둔 SHA-512**와 맞을 때만 설치 (설치 파일을 줄이려고 동봉하지 않음)
-- Claude Code: 공식 설치 스크립트와 같은 순서(최신 버전 → 매니페스트 체크섬 → 공식 배포 서버에서 내려받기 → SHA-256 확인 → 공식 `claude install`)를 두리가 대신 진행. 원격 스크립트를 셸에 파이프하지 않고, 진행률을 보여 줘요
-- Chrome: 없으면 공식 설치 파일로 설치
+- Codex: on first use, download the pinned version from the official npm registry and install it only if it matches the **SHA-512 written in the code** (not bundled, to keep the installer small)
+- Claude Code: Dool2 runs the same steps as the official install script (latest version → manifest checksum → download from the official distribution server → SHA-256 check → official `claude install`) on the user's behalf. It does not pipe a remote script into a shell, and it shows progress
+- Chrome: if missing, install it from the official installer
 
-Docker 이미지는 두리 박스와 직접 호스팅하려는 사람을 위한 선택지로만 둬요.
+A Docker image is offered only as an option for the Dool2 box and for people who want to self-host.
 
-## 이유
+## Why
 
-- 일반 사용자는 컨테이너 런타임이 무엇인지 몰라요. Docker Desktop 설치 자체가 관리자 권한, 가상화 설정, 라이선스 문제를 만들어요.
-- 두리는 사용자의 **실제 Chrome과 실제 데스크톱 앱**(카카오톡 PC, 인증서 창)을 다뤄야 해요. 컨테이너 안에서는 할 수 없어요.
+- Ordinary users do not know what a container runtime is. Installing Docker Desktop itself brings administrator rights, virtualization settings and licensing problems.
+- Dool2 has to work with the user's **real Chrome and real desktop apps** (KakaoTalk PC, certificate windows). That cannot be done inside a container.
 
-## 결과
+## Consequences
 
-- OS별 차이(경로, 권한, 전원 설정)를 두리가 직접 처리해야 해요.
-- 자가 점검과 [고치기] 버튼으로 깨진 부품을 되살리는 기능이 필요해요(M1).
+- Dool2 has to handle OS differences (paths, permissions, power settings) itself.
+- We need a self-check and a [Fix] button that revives broken parts (M1).

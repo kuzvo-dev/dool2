@@ -1,33 +1,33 @@
-# 0017. 폰 앱은 스토어 앱으로만: 웹앱(PWA)을 접는다
+# 0017. The phone app ships only as a store app: retire the web app (PWA)
 
-- 상태: 채택 (ADR 0012의 "폰 앱은 PWA" 부분을 바꿈)
-- 날짜: 2026-11-16
+- Status: Accepted (changes the "phone app is a PWA" part of ADR 0012)
+- Date: 2026-11-16
 
-## 배경
+## Context
 
-ADR 0012는 폰 앱을 PWA로 정하고 중계 서버가 `/app/`으로 내려주게 했어요. 메시지는 종단 간 암호화돼서 중계 서버가 볼 수 없어요.
+ADR 0012 decided that the phone app is a PWA and that the relay serves it at `/app/`. Messages are end-to-end encrypted, so the relay cannot read them.
 
-그런데 웹앱은 **열 때마다 서버에서 코드를 새로 받아요.** 서버를 쥔 쪽(두리 팀, 호스팅 회사, 서버를 턴 사람, 수사기관 요청)이 특정 사용자에게만 고친 코드를 내려주면, 폰 안에서 풀린 대화를 빼내거나 화면과 다른 내용에 승인 서명을 하게 만들 수 있어요. 키를 꺼낼 수 없게 해도 키를 **쓰는** 건 막지 못해요. "두리 팀도 못 봐요"라는 약속이 웹앱으로는 성립하지 않아요.
+But a web app **downloads its code from the server again every time it is opened.** Whoever controls the server (the Dool2 team, the hosting company, someone who breaks into the server, a law-enforcement request) could serve modified code to one particular user, pull decrypted conversations out of the phone, or make the user sign an approval for something different from what the screen shows. Making the keys non-extractable does not stop that code from **using** the keys. The promise "even the Dool2 team cannot see it" does not hold with a web app.
 
-## 결정
+## Decision
 
-- 폰 앱은 **스토어 앱(안드로이드·아이폰)으로만** 배포해요. 화면 코드는 지금 웹 코드를 그대로 쓰고 Capacitor로 감싸서, **코드가 앱 안에 담겨** 모두에게 같은 빌드로 가요.
-- 공식 중계 서버(`relay.dool2.com`)는 폰 앱을 내려주지 않아요. 메시지만 옮겨요.
-- 연결 초대(QR)에는 늘 중계 주소(`r`)를 실어요. 앱은 초대에 적힌 중계 서버로 붙고, 없으면 공식 중계 서버로 붙어요.
-- 연결: 앱 안의 **[QR 찍기]**(구글 코드 스캐너, 카메라 권한을 따로 묻지 않음) 또는 `dool2://pair#p=…` 링크.
-- 앱에는 서버가 붙이던 보안 헤더가 없어서 `index.html`에 같은 CSP를 넣어요.
-- 안드로이드부터 만들고 시험해요. 아이폰은 Xcode·Apple Developer 계정이 준비되면 같은 코드로 빌드해요.
+- The phone app ships **only as a store app (Android and iPhone).** The screen code stays the current web code, wrapped with Capacitor, so **the code is bundled inside the app** and everyone gets the same build.
+- The official relay (`relay.dool2.com`) does not serve the phone app. It only forwards messages.
+- A pairing invite (QR) always carries the relay address (`r`). The app connects to the relay named in the invite, and to the official relay if none is given.
+- Pairing: **[Scan QR]** inside the app (Google code scanner, no separate camera permission prompt) or a `dool2://pair#p=...` link.
+- The app does not get the security headers the server used to add, so the same CSP is put in `index.html`.
+- We build and test Android first. iPhone follows with the same code once Xcode and an Apple Developer account are ready.
 
-## 이유
+## Why
 
-- 웹 코드를 그대로 써서 화면을 다시 만들 필요가 없어요.
-- 스토어 앱은 서버가 사람마다 다른 코드를 내려줄 수 없고, 공개 소스와 빌드를 맞춰 볼 수 있어요.
-- 다른 안: "PWA를 쓰되 한계를 밝히기"는 핵심 약속을 깎아서 버렸어요. 서비스 워커로 코드를 고정하는 것도 브라우저가 업데이트를 강제할 수 있어서 막지 못해요.
+- The web code is reused as is, so the screens do not need to be rebuilt.
+- With a store app, the server cannot serve different code to different people, and the build can be checked against the public source.
+- Alternatives: "keep the PWA but state its limits" was dropped because it weakens the core promise. Pinning the code with a service worker does not help either, because the browser can force an update.
 
-## 결과
+## Consequences
 
-- 앱 안의 화면은 폰의 WebView로 그려요. 암호화(X25519)와 서명(Ed25519)은 **WebView 137 이상**에서 돼서, 오래된 WebView면 "Play 스토어에서 업데이트" 화면을 보여 줘요.
-- 다음에 할 일
-  - 승인 키를 폰 보안칩(Android Keystore·Secure Enclave)으로 옮겨요. 둘 다 **P-256**이 공통이라 승인 서명에 P-256을 받아야 해요(Ed25519는 지금처럼 브라우저 키).
-  - 앱이 꺼져 있을 때 알림: 웹 푸시 대신 FCM·APNs. 발송 키는 오픈소스 PC 앱에 넣을 수 없어서 중계 서버가 내용 없는(또는 기기에서 푸는) 알림을 보내요.
-  - 남은 웹앱 코드(서비스 워커·웹 푸시·홈 화면에 추가 안내)와 중계 서버의 `/app/`을 걷어내요. 지금 맥에서 하는 시험 판이 웹앱을 쓰고 있어서, 앱으로 시험이 끝난 뒤에 지워요.
+- The screens inside the app are drawn in the phone's WebView. Encryption (X25519) and signing (Ed25519) work on **WebView 137 or newer**, so an older WebView shows an "Update in Play Store" screen.
+- Next steps
+  - Move the approval key into the phone's security chip (Android Keystore, Secure Enclave). Both support **P-256**, so approval signatures must accept P-256 (Ed25519 stays as a browser key, as now).
+  - Notifications while the app is closed: FCM and APNs instead of web push. The sending keys cannot be put in the open-source desktop app, so the relay sends content-free notifications (or ones that are decrypted on the device).
+  - Remove the leftover web app code (service worker, web push, "add to home screen" prompt) and the relay's `/app/`. The test build currently running on the Mac uses the web app, so we delete it after testing with the app is done.

@@ -1,41 +1,41 @@
-# 0011. 로그인 정보는 두리 금고에 두고, AI가 아닌 두리가 채운다
+# 0011. Keep login details in the Dool2 vault, and have Dool2, not the AI, fill them in
 
-- 상태: 채택 (M2에서 구현, 사이트별 '물어보고 채우기'는 M3)
-- 날짜: 2026-11-14
+- Status: Accepted (implemented in M2; per-site "ask, then fill" is M3)
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-브라우저 일을 하다 보면 로그인이 풀린 사이트를 만나요. 지금 원칙은 "비밀번호는 묻지도 입력하지도 않고 사람에게 넘긴다"예요. 안전하지만, 매일 아침 브리핑 같은 반복 작업이 로그인 한 번에 멈춰요.
+In browser work, Dool2 runs into sites where the login has expired. The current principle is "never ask for or type a password, hand it off to the person". That is safe, but repeated tasks such as a morning briefing every day stop at one login.
 
-AI가 비밀번호를 직접 보거나 입력하게 하면 안 돼요. 대화 기록이나 AI 회사 서버에 남을 수 있고, 프롬프트 주입으로 엉뚱한 사이트에 입력할 수도 있어요.
+The AI must not see or type passwords itself. They could end up in conversation logs or on the AI company's servers, and prompt injection could make it type them into the wrong site.
 
-## 결정
+## Decision
 
-**두리 금고**를 만들어요.
+We build the **Dool2 vault**.
 
-- 사용자가 허락한 사이트의 아이디·비밀번호만 PC의 OS 키체인(맥 Keychain, 윈도우 자격 증명 관리자/`safeStorage`)에 저장해요
-- AI가 쓸 수 있는 건 `로그인 채우기(사이트)` 도구 하나예요. **AI는 값을 받지 않아요.** 두리 본체가 현재 페이지 주소가 저장된 사이트와 같은지 확인한 뒤, 브라우저에 직접 입력해요
-- 주소가 다르면(피싱·리디렉트) 채우지 않아요. 비밀번호 칸이 아닌 곳에도 채우지 않아요
-- 사이트별로 "항상 / 물어보고 / 쓰지 않기"를 정할 수 있고, 언제 어디에 채웠는지 기록을 남겨요
-- 인증번호·본인인증·캡차는 지금처럼 사람에게 넘겨요
+- Only the IDs and passwords of sites the user has allowed are stored in the PC's OS keychain (Keychain on Mac, Credential Manager / `safeStorage` on Windows)
+- The only thing the AI can use is a single `fill login (site)` tool. **The AI never receives the values.** The Dool2 daemon checks that the current page address matches the stored site, then types directly into the browser
+- If the address differs (phishing, redirect), nothing is filled. Nothing is filled outside a password field either
+- Per site, the user can choose "always / ask first / never use", and a record is kept of when and where things were filled
+- One-time codes, identity verification and CAPTCHAs are handed off to the person as they are now
 
-### 대화 안 로그인 카드 (2026-11-15 보탬)
+### Login card in the chat (added 2026-11-15)
 
-금고에 없는 사이트에서 로그인이 필요하면, 사람에게 넘기는 대신 **대화 안에 로그인 카드**를 띄워요(`browser_request_login`).
+When a site that is not in the vault needs a login, instead of handing off to the person, Dool2 shows a **login card in the chat** (`browser_request_login`).
 
-- 카드는 PC 앱과 폰 대화 모두에 떠요. 사용자가 넣은 아이디·비밀번호는 **AI를 거치지 않고** 본체 금고로 바로 가요. 폰에서 넣으면 폰↔PC 암호화(ADR 0012)로 PC에 가요
-- 사이트는 두리 탭이 지금 열고 있는 주소(origin, https)로 정해요. AI가 주소를 정할 수 없어요
-- AI는 "저장됐어요"만 듣고, 그다음은 지금과 같이 `browser_login`으로 본체가 칸을 채워요
-- 로그인 요청은 30분 뒤에 끝나고, 한 번만 쓸 수 있어요. 대화 기록에는 사이트 이름만 남아요
-- 로봇 확인·본인인증·문자 인증은 여전히 사람에게 넘겨요(`browser_handoff`, 폰에서는 원격 화면)
+- The card appears in both the desktop app and the phone chat. The ID and password the user enters go **straight to the daemon's vault without passing through the AI**. When entered on the phone, they travel to the PC over the phone ↔ PC encryption (ADR 0012)
+- The site is fixed by the address (origin, https) that the Dool2 tab currently has open. The AI cannot choose the address
+- The AI only hears "saved", and after that, as now, the daemon fills the fields with `browser_login`
+- A login request expires after 30 minutes and can be used only once. Only the site name stays in the conversation history
+- Robot checks, identity verification and text-message verification are still handed off to the person (`browser_handoff`, remote screen on the phone)
 
-## 이유
+## Why
 
-- 반복 작업이 로그인 때문에 멈추지 않으면서, AI에게 비밀번호가 노출되지 않아요
-- 확인과 입력을 코드가 해서 프롬프트 주입에 강해요
+- Repeated tasks no longer stop at a login, and passwords are never exposed to the AI
+- Code does the checking and typing, which makes it resistant to prompt injection
 
-## 결과
+## Consequences
 
-- 브라우저 확장(M2)에 "두리 본체가 준 값을 지정한 칸에 넣기" 동작이 필요해요. 값은 확장과 본체 사이에서만 오가고 기록·화면 캡처에 남지 않게 해요
-- 결제 비밀번호·카드 번호·공동인증서 비밀번호는 금고에 넣지 않아요. 돈과 직결된 값은 사람이 직접 넣어요
-- 위협 모델에 "금고 오남용" 항목을 더해요
+- The browser extension (M2) needs an action that puts "the value the Dool2 daemon gave it into the specified field". The value travels only between the extension and the daemon, and must not remain in logs or screen captures
+- Payment passwords, card numbers and joint certificate passwords do not go into the vault. Values tied directly to money are entered by the person themselves
+- Add a "vault misuse" item to the threat model

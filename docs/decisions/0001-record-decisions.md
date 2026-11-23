@@ -1,22 +1,22 @@
-# 0001. 결정을 ADR로 기록한다
+# 0001. Record decisions as ADRs
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-두리는 공개 레포에서 개발하고, 외부 기여자와 코딩 에이전트가 함께 일해요. 구조에 관한 결정이 대화나 커밋 메시지에만 남으면, 같은 질문("왜 Docker를 안 써요?")이 계속 반복돼요.
+Dool2 is developed in a public repo, where outside contributors and coding agents work together. If decisions about structure live only in conversations or commit messages, the same question ("Why don't you use Docker?") keeps coming back.
 
-## 결정
+## Decision
 
-구조에 영향을 주는 결정은 `docs/decisions/NNNN-이름.md`에 짧은 ADR(Architecture Decision Record)로 남겨요. 큰 설계의 전체 그림은 [아키텍처 문서](../architecture.md)에 두고, ADR에는 결정 하나와 그 이유만 적어요.
+Decisions that affect the structure are recorded as short ADRs (Architecture Decision Records) in `docs/decisions/NNNN-name.md`. The big picture of the design lives in the [architecture document](../architecture.md). An ADR holds only one decision and its reason.
 
-## 이유
+## Why
 
-- 결정의 "이유"는 코드에서 읽어 낼 수 없어요.
-- 결정을 바꿀 때 무엇을 다시 따져 봐야 하는지가 남아요.
+- The "why" of a decision cannot be read from the code.
+- It keeps a record of what to re-examine when a decision changes.
 
-## 결과
+## Consequences
 
-- 구조를 바꾸는 PR은 ADR을 함께 올리거나 기존 ADR을 갱신해요.
-- 옛 결정은 지우지 않고 "대체됨"으로 표시해요.
+- A PR that changes the structure includes an ADR or updates an existing one.
+- Old decisions are not deleted. They are marked "Superseded".

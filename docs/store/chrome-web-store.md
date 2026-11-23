@@ -1,76 +1,84 @@
-# Chrome 웹 스토어 등록
+# Chrome Web Store listing
 
-두리 확장을 Chrome 웹 스토어에 올리는 방법과 제출 화면에 넣을 내용이에요. 스토어에 올라가야
-PC 앱의 "Chrome에서 두리 확장 추가(클릭 한 번)"와 외부 확장 등록이 동작해요
-([설계 5.1](../architecture.md), 8.0).
+How to publish the Dool2 extension to the Chrome Web Store, and what to put in the submission screens. The desktop app's "Add the Dool2 extension from Chrome (one click)" and the external extension registration only work once it is on the store ([architecture 5.1](../architecture.md), 8.0).
 
-## 순서
+The store listing text is Korean data (the listing is Korean-language). It is kept as is, with an English translation next to it. Only the surrounding instructions are English.
 
-1. **개발자 계정 만들기**
-   - [Chrome 웹 스토어 개발자 대시보드](https://chrome.google.com/webstore/devconsole)에 두리 운영용 구글 계정으로 들어가요.
-   - 처음 한 번 등록비를 내요.
-   - 판매자 정보(이름·주소·연락 이메일)와 인증을 마쳐요.
-2. **제출용 zip 만들기**
+## Steps
+
+1. **Create a developer account**
+   - Go to the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole) with the Google account used for running Dool2.
+   - Pay the one-time registration fee.
+   - Finish the seller information (name, address, contact email) and verification.
+2. **Build the zip for submission**
 
    ```sh
    pnpm --filter @dool2/extension build
-   pnpm --filter @dool2/extension pack        # apps/extension/out/dool2-extension-<버전>.zip
+   pnpm --filter @dool2/extension pack        # apps/extension/out/dool2-extension-<version>.zip
    ```
 
-   - 개발용 `key`는 zip에서 빠져요. 스토어가 처음 올릴 때 id를 새로 정해 줘요.
-   - 코드는 줄이지(minify) 않았어요. 심사하는 사람이 읽을 수 있게요.
-3. **새 항목 → zip 올리기**
-   - 아래 "등록 정보"와 "개인정보 보호" 칸을 채워요.
-   - 공개 범위는 **비공개 링크(Unlisted)로 먼저** 올려도 돼요. 외부 등록과 [Chrome에 추가]는 비공개 링크 항목에서도 동작하는 것으로 알려져 있어요. 첫 시험 때 확인해요.
-4. **심사**
-   - `debugger` 권한과 모든 사이트 접근 때문에 정밀 심사가 붙을 수 있어요. 며칠에서 몇 주까지 걸려요.
-   - 반려되면 사유를 받아 이 문서와 권한 설명을 고쳐 다시 올려요.
-5. **id 채우기** (2026-11-17 제출: `ogpbnlgnijmebpeiaceeepemcngiocif`, 미등록, 검토 통과 후 자동 게시)
-   - 대시보드에 나온 항목 id(32글자)를 `packages/protocol/src/index.ts`의 `STORE_EXTENSION_ID`에 넣어요.
-   - 연결 통로(native messaging)는 바로 그 id를 허용해요.
-   - 심사를 통과해 게시되면 `STORE_EXTENSION_PUBLISHED`를 `true`로 바꿔요. 그때부터 PC 앱이 웹 스토어 방식([Chrome에 추가]·외부 등록)으로 바뀌어요.
-6. **확인 (실제 Chrome)**
-   - 맥: 첫 실행 화면 → [추가 방법] → Chrome에 열린 페이지에서 [Chrome에 추가] → 초록 불이 들어오는지 봐요.
-   - 맥: 확장을 지운 상태로 Chrome을 다시 켰을 때 [사용 설정]이 뜨는지 봐요.
-     - 외부 등록 동작은 2026-11-17 맥 Chrome 157에서 공개 확장으로 확인했어요. 웹 스토어에서 받아 "사용 설정 대기"로 설치됐어요.
-   - **윈도우:** 사용자 레지스트리(HKCU) 외부 등록이 먹는지 꼭 봐요. 공식 문서는 HKLM만 적어 두었어요. 안 되면 [Chrome에 추가] 방식만 써요.
+   - The development `key` is left out of the zip. The store assigns a new id on first upload.
+   - The code is not minified, so that reviewers can read it.
+3. **New item → upload the zip**
+   - Fill in the "Listing" and "Privacy practices" fields below.
+   - You may upload as an **Unlisted link first**. External registration and [Add to Chrome] are reported to work for unlisted items too. Confirm this in the first test.
+4. **Review**
+   - The `debugger` permission and access to all sites may trigger an in-depth review. It takes from several days to several weeks.
+   - If rejected, get the reason, fix this doc and the permission explanations, and resubmit.
+5. **Fill in the id** (submitted 2026-11-17: `ogpbnlgnijmebpeiaceeepemcngiocif`, not yet registered, auto-published after review passes)
+   - Put the item id (32 characters) shown in the dashboard into `STORE_EXTENSION_ID` in `packages/protocol/src/index.ts`.
+   - The connection channel (native messaging) allows exactly that id.
+   - Once it passes review and is published, change `STORE_EXTENSION_PUBLISHED` to `true`. From then on the desktop app switches to the web store method ([Add to Chrome] and external registration).
+6. **Verify (real Chrome)**
+   - Mac: first-run screen → [How to add] → on the page opened in Chrome, [Add to Chrome] → check that the green light comes on.
+   - Mac: with the extension removed, restart Chrome and check that [Enable] appears.
+     - External registration was confirmed on 2026-11-17 on Mac Chrome 157 with a public extension. It was installed from the web store as "waiting to be enabled".
+   - **Windows:** be sure to check that external registration in the user registry (HKCU) works. The official docs mention only HKLM. If it does not work, use only the [Add to Chrome] method.
 
-## 새 버전 올리기
+## Publishing a new version
 
-1. `apps/extension/package.json`의 version을 올려요 (스토어는 같은 버전을 다시 받지 않아요).
-2. `pnpm --filter @dool2/extension build && pnpm --filter @dool2/extension pack` → `apps/extension/out/dool2-extension-<버전>.zip`
-3. 대시보드 → 두리 항목 → 패키지 → [새 패키지 업로드] → 제출. 심사가 끝나면 Chrome이 몇 시간 안에 사용자 확장을 바꿔요.
-4. PC 앱에 새 확장 기능이 꼭 필요하면 `MIN_CONNECTOR_EXTENSION`을 올려요 (낮은 확장에서는 그 기능을 쓰지 않아요).
+1. Raise the version in `apps/extension/package.json` (the store does not accept the same version again).
+2. `pnpm --filter @dool2/extension build && pnpm --filter @dool2/extension pack` → `apps/extension/out/dool2-extension-<version>.zip`
+3. Dashboard → the Dool2 item → Package → [Upload new package] → submit. After review finishes, Chrome replaces users' extensions within a few hours.
+4. If the desktop app truly needs a new extension feature, raise `MIN_CONNECTOR_EXTENSION` (older extensions will not use that feature).
 
-| 버전 | 제출 | 상태 |
+| Version | Submitted | Status |
 |---|---|---|
-| 0.2.0 | 2026-11-17 | 게시 (2026-11-23 확인) |
-| 0.3.0 | 2026-11-23 | 검토 대기(통과 후 자동 게시, 새 그림과 함께 다시 제출) — 화면 보기·마우스·탭 정리·빌드 지문·그림 타일 자리(@center), 새 권한 `contentSettings` |
+| 0.2.0 | 2026-11-17 | Published (confirmed 2026-11-23) |
+| 0.3.0 | 2026-11-23 | Pending review (auto-published after passing; resubmitted with the new artwork). Contents: screen viewing, mouse, tab cleanup, build fingerprint, artwork tile slot (@center), new permission `contentSettings` |
 
-### 권한 사유 (개인정보 보호 탭)
+### Permission reason (Privacy practices tab)
 
-- **contentSettings** (0.3.0에서 더함): 두리가 사용자 대신 일하는 사이트에서 결제 창·본인인증 창이 새 창(팝업)으로 열릴 때, Chrome 팝업 차단 때문에 빈 화면만 남는 문제를 막으려고 씁니다. 두리가 지금 작업 중인 탭의 그 사이트(같은 사이트 범위)에만 contentSettings.popups를 '허용'으로 바꾸고, 다른 콘텐츠 설정(쿠키·자바스크립트·위치·카메라 등)은 읽거나 바꾸지 않습니다. 사용자가 주소창의 '팝업 허용'을 직접 누르던 것과 같은 동작이며, 결제·제출 같은 마지막 단계는 여전히 사용자 승인을 받은 뒤에만 진행합니다.
+Submitted text (Korean) with an English translation.
 
-### 그림 (2026-11-23 새로)
+- **contentSettings** (added in 0.3.0):
 
-`docs/store/art/store-art.html`을 고쳐 `#s1`~`#s5`(1280×800)·`#tile`(440×280)·`#marquee`(1400×560)를 그 크기로 찍고,
-투명도 없는 JPEG로 바꿔(`sips -s format jpeg`) 올린다 → `docs/store/art/out/`. 등록정보는 검토 대기 중에는 잠기므로
-'리뷰 취소' 뒤 고치고 다시 제출한다.
+  > 두리가 사용자 대신 일하는 사이트에서 결제 창·본인인증 창이 새 창(팝업)으로 열릴 때, Chrome 팝업 차단 때문에 빈 화면만 남는 문제를 막으려고 씁니다. 두리가 지금 작업 중인 탭의 그 사이트(같은 사이트 범위)에만 contentSettings.popups를 '허용'으로 바꾸고, 다른 콘텐츠 설정(쿠키·자바스크립트·위치·카메라 등)은 읽거나 바꾸지 않습니다. 사용자가 주소창의 '팝업 허용'을 직접 누르던 것과 같은 동작이며, 결제·제출 같은 마지막 단계는 여전히 사용자 승인을 받은 뒤에만 진행합니다.
+  >
+  > (English: Used so that, when a payment window or identity-verification window opens as a new window (popup) on a site where Dool2 is working for the user, Chrome's popup blocker does not leave only a blank screen. It changes contentSettings.popups to "allow" only for that site (same-site scope) in the tab Dool2 is currently working in, and does not read or change any other content setting (cookies, JavaScript, location, camera, etc.). It does the same thing as the user pressing "Allow popups" in the address bar by hand, and final steps such as payment or submission still proceed only after the user approves.)
 
-## 등록 정보
+### Artwork (new, 2026-11-23)
 
-| 칸 | 내용 |
+Edit `docs/store/art/store-art.html`, capture `#s1` to `#s5` (1280×800), `#tile` (440×280) and `#marquee` (1400×560) at those sizes,
+convert to JPEG without transparency (`sips -s format jpeg`) and upload → `docs/store/art/out/`. The listing is locked while
+under review, so cancel the review, edit, and resubmit.
+
+## Listing
+
+The fields contain Korean text to be pasted as is. An English translation follows each Korean text.
+
+| Field | Content |
 |---|---|
-| 이름 | 두리 |
-| 요약 (132자 이내) | 내 컴퓨터의 두리가 이 브라우저에서 대신 일할 수 있게 연결해요. 두리 PC 앱이 있어야 동작해요. |
-| 분류 | 생산성 (Productivity) |
-| 언어 | 한국어 |
-| 아이콘 | `apps/extension/static/icons/icon128.png` |
-| 스크린샷 (1280×800) | PC 앱 첫 설정의 "두리 확장 추가" 화면, 대화에서 일하는 화면, 두리 탭 그룹이 보이는 Chrome 화면 |
-| 홈페이지 | https://dool2.com |
-| 지원 | 공개 레포 이슈 또는 대표 이메일 |
+| Name | 두리 (Dool2) |
+| Summary (up to 132 characters) | 내 컴퓨터의 두리가 이 브라우저에서 대신 일할 수 있게 연결해요. 두리 PC 앱이 있어야 동작해요. (English: Connects Dool2 on my computer so it can work in this browser on my behalf. Requires the Dool2 desktop app.) |
+| Category | Productivity |
+| Language | Korean |
+| Icon | `apps/extension/static/icons/icon128.png` |
+| Screenshots (1280×800) | The "Add the Dool2 extension" screen from the desktop app's first setup, the screen where Dool2 works in the conversation, and a Chrome screen showing the Dool2 tab group |
+| Homepage | https://dool2.com |
+| Support | Public repo issues or the main contact email |
 
-**상세 설명**
+**Detailed description**
 
 > 두리는 내 컴퓨터에 사는 AI 비서예요. 폰이나 PC에서 "이번 주 토요일 저녁 성수에서 4명 식당 찾아 줘"처럼 부탁하면, 내 컴퓨터의 두리가 평소 쓰는 이 브라우저에서 대신 찾아보고 정리해 드려요.
 >
@@ -82,42 +90,58 @@ PC 앱의 "Chrome에서 두리 확장 추가(클릭 한 번)"와 외부 확장 �
 > - 페이지 내용은 사용자 컴퓨터의 두리 앱에만 전해져요. 두리 팀 서버로 보내지 않아요.
 > - 오픈소스예요. 코드를 누구나 볼 수 있어요.
 
-## 개인정보 보호 (Privacy practices 탭)
+English translation:
 
-**단일 목적 (Single purpose)**
+> Dool2 is an AI assistant that lives in my computer. When you ask from your phone or PC, such as "find a restaurant for 4 in Seongsu this Saturday evening", Dool2 on my computer looks it up and sorts it out for you in the browser you normally use.
+>
+> This extension is the link between the Dool2 desktop app and this browser. It only works with the Dool2 desktop app installed.
+>
+> - Your usual logins: sites you are already logged in to do not ask you to log in again.
+> - It only handles tabs Dool2 opened: Dool2's tabs gather in a "두리" (Dool2) tab group, and tabs you opened are left alone.
+> - Final buttons such as payment, booking confirmation and sending always get your approval before they are pressed.
+> - Page content goes only to the Dool2 app on your computer. It is not sent to the Dool2 team's servers.
+> - It is open source. Anyone can read the code.
+
+## Privacy practices tab
+
+**Single purpose**
 
 > 사용자 컴퓨터에 설치된 두리 PC 앱이, 사용자의 부탁에 따라 이 브라우저에서 탭을 열고 페이지를 읽고 누르고 입력할 수 있게 연결한다.
+>
+> (English: Lets the Dool2 desktop app installed on the user's computer open tabs, read pages, click and type in this browser according to the user's request.)
 
-**권한마다 쓰는 이유**
+**Why each permission is used**
 
-| 권한 | 이유 (제출 칸에 그대로) |
-|---|---|
-| `nativeMessaging` | 같은 컴퓨터에 설치된 두리 PC 앱과만 이야기하는 통로예요. 원격 서버와 통신하지 않아요. |
-| `debugger` | 사이트가 진짜 사용자 입력으로 받아들이는 클릭·타이핑을 넣고, 승인 화면에 보여 줄 캡처를 찍는 데 써요. 두리가 연 탭에만 붙이고, 2분 동안 안 쓰면 떼요. |
-| `tabs` | 두리가 일할 탭을 열고 닫고, 두리가 연 탭인지 확인해요. |
-| `tabGroups` | 두리가 연 탭을 "두리" 그룹으로 모아 사용자 탭과 구분하고, 다 쓴 탭을 정리해요. |
-| `scripting` | 두리가 연 탭의 화면을 글로 읽고, 누를 위치를 찾아요. |
-| `webNavigation` | 페이지 로딩이 끝났는지, 두리 탭에서 새 창이 열렸는지 알아요. |
-| `alarms` | 두리 PC 앱과 연결이 끊기면 다시 잇고, 오래 안 쓴 두리 탭을 정리해요. |
-| `storage` | 두리가 연 탭 목록 같은 작은 상태를 브라우저 안에 저장해요. |
-| 사이트 접근 (`http://*/*`, `https://*/*`) | 사용자가 부탁하는 사이트가 정해져 있지 않아서(식당 예약·장보기·택배 조회 등) 두리가 연 탭이면 어느 사이트든 읽고 누를 수 있어야 해요. 사용자가 연 탭은 다루지 않아요. |
+The "Reason" column is pasted into the submission field as is (Korean); the English column is a translation for reference.
 
-**원격 코드**: 사용하지 않음. 모든 코드는 확장 패키지 안에 있어요.
-
-**데이터 사용 공개**
-
-| 항목 | 답 | 설명 |
+| Permission | Reason (Korean, pasted as is) | English |
 |---|---|---|
-| 웹사이트 콘텐츠 | 다룸 | 두리가 연 탭의 페이지 글을 사용자 컴퓨터의 두리 앱에 전해요. 두리 앱은 사용자가 고른 AI(사용자 본인 계정의 Claude·Codex 등)에 그 부탁을 처리하라고 보내요. 두리 팀 서버로는 보내지 않아요. |
-| 개인 식별 정보·인증 정보 | 다룸 (두리 금고) | 사용자가 두리 앱에 저장한 로그인 정보를 그 사이트 로그인 칸에만 채워요. 값은 사용자 컴퓨터 안에만 있고 AI에도 보내지 않아요. |
-| 판매·제3자 제공 | 하지 않음 | |
-| 목적 외 사용·신용 평가 | 하지 않음 | |
+| `nativeMessaging` | 같은 컴퓨터에 설치된 두리 PC 앱과만 이야기하는 통로예요. 원격 서버와 통신하지 않아요. | A channel that talks only to the Dool2 desktop app installed on the same computer. It does not communicate with remote servers. |
+| `debugger` | 사이트가 진짜 사용자 입력으로 받아들이는 클릭·타이핑을 넣고, 승인 화면에 보여 줄 캡처를 찍는 데 써요. 두리가 연 탭에만 붙이고, 2분 동안 안 쓰면 떼요. | Used to send clicks and typing that sites accept as real user input, and to take the capture shown on the approval screen. Attached only to tabs Dool2 opened, and detached after 2 minutes of no use. |
+| `tabs` | 두리가 일할 탭을 열고 닫고, 두리가 연 탭인지 확인해요. | Opens and closes the tabs Dool2 works in, and checks whether a tab was opened by Dool2. |
+| `tabGroups` | 두리가 연 탭을 "두리" 그룹으로 모아 사용자 탭과 구분하고, 다 쓴 탭을 정리해요. | Gathers tabs Dool2 opened into a "두리" (Dool2) group to tell them apart from the user's tabs, and cleans up tabs it is done with. |
+| `scripting` | 두리가 연 탭의 화면을 글로 읽고, 누를 위치를 찾아요. | Reads the screen of tabs Dool2 opened as text, and finds where to click. |
+| `webNavigation` | 페이지 로딩이 끝났는지, 두리 탭에서 새 창이 열렸는지 알아요. | Knows whether a page has finished loading and whether a new window opened from a Dool2 tab. |
+| `alarms` | 두리 PC 앱과 연결이 끊기면 다시 잇고, 오래 안 쓴 두리 탭을 정리해요. | Reconnects when the connection to the Dool2 desktop app drops, and cleans up Dool2 tabs unused for a long time. |
+| `storage` | 두리가 연 탭 목록 같은 작은 상태를 브라우저 안에 저장해요. | Stores small state, such as the list of tabs Dool2 opened, inside the browser. |
+| Site access (`http://*/*`, `https://*/*`) | 사용자가 부탁하는 사이트가 정해져 있지 않아서(식당 예약·장보기·택배 조회 등) 두리가 연 탭이면 어느 사이트든 읽고 누를 수 있어야 해요. 사용자가 연 탭은 다루지 않아요. | The sites users ask about are not fixed (restaurant booking, grocery shopping, parcel tracking, etc.), so Dool2 must be able to read and click on any site in a tab it opened. Tabs the user opened are not touched. |
 
-이 표는 실제 동작에 맞춘 초안이에요. 대시보드의 체크 항목 이름에 맞춰 마지막으로 고르는 건 제출하는 사람이 해요.
+**Remote code**: not used. All code is inside the extension package.
 
-## 개인정보 처리방침에 더할 내용
+**Data usage disclosure**
 
-지금 dool2.com/privacy는 "베타 신청 사이트에서 받는 정보만 다룬다"고 범위를 정해 두었어요. 스토어 심사에 맞게 아래 절을 더해요.
+| Item | Answer | Explanation |
+|---|---|---|
+| Website content | Handled | Passes the page text of tabs Dool2 opened to the Dool2 app on the user's computer. The Dool2 app sends the request to the AI the user chose (Claude, Codex, etc. on the user's own account) to process. It is not sent to the Dool2 team's servers. |
+| Personally identifiable information, authentication information | Handled (Dool2 vault) | Fills login info that the user saved in the Dool2 app only into that site's login fields. The values stay only on the user's computer and are not sent to the AI either. |
+| Sale or transfer to third parties | Not done | |
+| Use for unrelated purposes, credit evaluation | Not done | |
+
+This table is a draft matched to the actual behavior. The person submitting makes the final choices to match the checkbox names in the dashboard.
+
+## Content to add to the privacy policy
+
+Right now dool2.com/privacy limits its scope to "only the information collected on the beta signup site". Add the section below to meet store review. The policy page is Korean, so the text to add is Korean data; an English translation follows.
 
 > **두리 앱과 브라우저 확장**
 > - 두리 PC 앱과 두리 브라우저 확장은 사용자 컴퓨터 안에서 동작해요. 대화, 기록, 브라우저에서 읽은 페이지 내용은 사용자 컴퓨터에만 저장되고 두리 팀 서버로 보내지 않아요.
@@ -127,9 +151,19 @@ PC 앱의 "Chrome에서 두리 확장 추가(클릭 한 번)"와 외부 확장 �
 > - 폰과 컴퓨터 사이 메시지는 종단간 암호화돼서 중계 서버도 내용을 볼 수 없어요.
 > - 두리는 이 정보를 팔거나 광고에 쓰지 않아요.
 
+English translation:
+
+> **The Dool2 app and browser extension**
+> - The Dool2 desktop app and the Dool2 browser extension run on the user's computer. Conversations, records and page content read in the browser are stored only on the user's computer and are not sent to the Dool2 team's servers.
+> - The Dool2 extension reads, clicks and types on pages only in tabs Dool2 opened. What it reads goes only to the Dool2 app on the same computer.
+> - To process the user's request, the Dool2 app sends the request and the needed page content to the AI service the user chose (the user's own account). This content follows that AI service's privacy policy.
+> - Site login information exists only in the Dool2 vault (encrypted storage on the user's computer) and is filled only into that site's login fields. It is not sent to AI services either.
+> - Messages between the phone and the computer are end-to-end encrypted, so even the relay cannot see their content.
+> - Dool2 does not sell this information or use it for advertising.
+
 ## Edge
 
-- Edge는 외부 등록에 Chrome 웹 스토어 주소를 그대로 받아서 PC 앱이 함께 등록해요.
-- Edge 사용자가 직접 찾아 설치할 수 있게 [Edge 부가 기능](https://partner.microsoft.com/dashboard/microsoftedge/)에도 올리면 좋아요.
-  - 거기서 받는 id는 다르니 `EXTENSION_IDS`에 더해요.
-  - 이건 다음 단계로 미뤄요.
+- Edge accepts the Chrome Web Store address as is for external registration, so the desktop app registers for it too.
+- It would be good to also publish to [Edge Add-ons](https://partner.microsoft.com/dashboard/microsoftedge/) so Edge users can find and install it themselves.
+  - The id you get there is different, so add it to `EXTENSION_IDS`.
+  - This is postponed to the next stage.

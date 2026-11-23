@@ -1,48 +1,48 @@
-# 두리 디자인 원본
+# Dool2 design source
 
-두리 화면(PC 앱·폰 앱·확장 프로그램·랜딩)을 만들 때 기준이 되는 디자인이에요. 디자인 도구에서 만든 원본을 그대로 옮겨 두고, 새 디자인이나 부품이 나오면 여기를 고쳐요.
+The design that is the standard when building Dool2 screens (desktop app, phone app, extension, landing). It is the original from the design tool, copied over as is; when a new design or component comes out, update it here.
 
-코드로 옮긴 결과는 [`packages/ui`](../../packages/ui)(토큰·부품 CSS)에 있어요. 둘이 다르면 **이 폴더가 기준**이고, `packages/ui`를 맞춰 고쳐요.
+The result translated into code is in [`packages/ui`](../../packages/ui) (tokens and component CSS). If the two differ, **this folder is the standard**, and `packages/ui` is changed to match.
 
-## 한 줄 방향 (v2, 2026-11-15)
+## One-line direction (v2, 2026-11-15)
 
-**부드러운 면 위에 민트 친구 하나.** 아주 옅은 회색 바탕 위에 흰 카드와 회색 말풍선을 두고, 머리 버튼·입력칸·탭 막대·시트처럼 손이 닿는 것만 유리처럼 떠 있어요. 귀여움은 두리 캐릭터와 "일하는 중" 표시에 모아요. 기준 화면은 [`screens/soft/`](screens/soft)예요.
+**One mint friend on a soft surface.** On a very pale gray background, white cards and gray chat bubbles sit, and only the things the hand touches, such as the header button, input field, tab bar and sheets, float like glass. Cuteness is concentrated in the Dool2 character and the "working" indicator. The reference screens are in [`screens/soft/`](screens/soft).
 
-1. **하는 일이 보여야 믿는다.** 머리 가운데 두리 이름표에 지금 하는 일을 한 줄로, 대화 안에는 실시간 화면 카드를 보여 줘요.
-2. **돈과 메시지는 사람이 누른다.** 결제·전송은 승인 카드에서 멈춰요. 승인 버튼(짙은 민트)이 화면에서 가장 무거워요. 노랑은 "당신이 필요해요" 점과 배지에만.
-3. **민트는 두리의 색.** 캐릭터, 일하는 중, 승인 버튼, 옅은 민트의 내 말풍선.
-4. **상자보다 면, 떠 있는 것은 유리.** 회색 면으로 나누고, 그림자는 떠 있는 것에만.
-5. **대화는 하나.** 메인 대화 하나에 일상과 맡긴 일이 이어지고, 큰 일만 "따로 하는 대화"로 나눠요.
+1. **You trust what you can see being done.** The Dool2 name tag in the middle of the header shows what it is doing right now in one line, and the chat shows a live screen card.
+2. **A person presses money and messages.** Payment and sending stop at the approval card. The approve button (deep mint) is the heaviest thing on the screen. Yellow is only for the "you're needed" dot and badge.
+3. **Mint is Dool2's color.** The character, working state, approve button, and the pale mint bubble for my words.
+4. **Surfaces rather than boxes; floating things are glass.** Divide with gray surfaces, and use shadows only for floating things.
+5. **One conversation.** Everyday talk and delegated tasks continue in one main conversation, and only big jobs are split off as a "separate conversation".
 
-이전 버전(v1, 다크·선 위주)의 화면 예시·가이드는 `screens/`·`guide/`에 남겨 뒀어요. v2와 다르면 v2가 기준이에요.
+Example screens and guides of the previous version (v1, dark and line-based) remain in `screens/` and `guide/`. Where they differ from v2, v2 is the standard.
 
-## 폴더
+## Folders
 
-| 폴더 | 내용 |
+| Folder | Contents |
 | --- | --- |
-| [`system/`](system) | 디자인 시스템 원본. [README](system/README.md)(원칙·말투·색·글자·캐릭터·배치·금지 목록), [`tokens.json`](system/tokens.json)(색·글자·여백·모서리·그림자 값), [`components/`](system/components)(부품 7개의 규칙과 견본, `bundle.css`), [`assets/`](system/assets)(캐릭터 표정 6개, 로고) |
-| [`screens/soft/`](screens/soft) | **v2 기준 화면.** 폰 대화·로그인·메뉴·맡긴 일·아이디어·연결·두리 패널·다크, PC. [screens.html](screens/soft/screens.html)(값) + 그림 5장 |
-| [`screens/`](screens) | v1 화면 예시 14장(PC 2, 모바일 6×다크·라이트). [README](screens/README.md)에 화면 목록이 있어요 |
-| [`guide/`](guide) | 디자인 시스템·화면 가이드 슬라이드 15장 |
+| [`system/`](system) | The design system source. [README](system/README.md) (principles, voice, color, type, character, layout, prohibitions), [`tokens.json`](system/tokens.json) (values for color, type, spacing, corners, shadows), [`components/`](system/components) (rules and samples for 7 components, `bundle.css`), [`assets/`](system/assets) (6 character expressions, logo) |
+| [`screens/soft/`](screens/soft) | **The v2 reference screens.** Phone chat, login, menu, tasks, ideas, connections, Dool2 panel, dark, PC. [screens.html](screens/soft/screens.html) (values) + 5 images |
+| [`screens/`](screens) | 14 example v1 screens (PC 2, mobile 6 × dark and light). The screen list is in the [README](screens/README.md) |
+| [`guide/`](guide) | 15 slides of the design system and screen guide |
 
-## 한눈에 보기
+## At a glance
 
-| 폰 대화 (v2) | 로그인 (v2) |
+| Phone chat (v2) | Login (v2) |
 | --- | --- |
-| ![대화](screens/soft/m-chat.png) | ![로그인](screens/soft/m-login.png) |
+| ![Chat](screens/soft/m-chat.png) | ![Login](screens/soft/m-login.png) |
 
-## 디자인을 고칠 때
+## When changing the design
 
-1. 디자인 도구에서 고친 뒤 내보내요. 디자인 시스템은 파일을 하나씩 내려받고, 화면은 화면마다 `HTML (.zip)`과 `PNG 2×`로, 가이드는 슬라이드 그림으로 내보내요.
-2. 이 폴더의 같은 이름 파일을 바꿔요. 화면 HTML 안의 해시 이름 그림(`./assets/….svg`)은 `system/assets/`의 캐릭터 파일 경로로, 글꼴은 `packages/ui/fonts/`로 바꿔 둬요. 디자인 도구 실행용 파일(`support.js`, `vendor/`)은 넣지 않아요.
-3. 새 부품이면 `system/components/<이름>/`에 `README.md`(규칙)와 `preview.html`(견본)을 넣고, `system/README.md`의 부품 목록에도 적어요.
-4. 같은 PR이나 바로 다음 PR에서 `packages/ui`(토큰·부품)와 앱 화면을 맞춰요.
+1. Change it in the design tool and export. For the design system, download the files one by one; for screens, export each screen as `HTML (.zip)` and `PNG 2×`; for the guide, export slide images.
+2. Replace the same-named file in this folder. Change the hash-named images inside the screen HTML (`./assets/….svg`) to the character file paths in `system/assets/`, and the fonts to `packages/ui/fonts/`. Do not include the files for running the design tool (`support.js`, `vendor/`).
+3. For a new component, put a `README.md` (rules) and `preview.html` (sample) in `system/components/<name>/`, and also list it in the component list of `system/README.md`.
+4. In the same PR or the very next PR, align `packages/ui` (tokens and components) and the app screens.
 
-## 원본끼리 다를 때
+## When the originals disagree
 
-원본 안에서도 서로 어긋나는 데가 있어요. 정할 때는 **v2 화면(`screens/soft/`) → 디자인 시스템 README → 부품 README → v1 화면(`screens/`)** 순서로 따라요.
+Even within the originals there are places that conflict. When deciding, follow this order: **v2 screens (`screens/soft/`) → design system README → component READMEs → v1 screens (`screens/`)**.
 
-- 두리 말: `components/Message`는 말풍선 없는 글이라고 하지만, 화면 예시와 시스템 README는 회색(`raise`) 말풍선이에요 → **회색 말풍선**.
-- 다크 바탕: `tokens.json`은 `#16181d`, 화면 예시와 시스템 README는 `#121418` → **`#121418`**(다크 기본).
-- 굵기: 예전 `packages/ui`는 700 이상을 안 썼지만, 새 시스템은 제목에 680–780을 써요 → **새 시스템**.
-- 승인 색: 예전 주황(`--warn`) 대신 버터 노랑(`butter`)이에요.
+- Dool2's speech: `components/Message` says it is text without a bubble, but the example screens and the system README use a gray (`raise`) bubble → **gray bubble**.
+- Dark background: `tokens.json` has `#16181d`, the example screens and the system README have `#121418` → **`#121418`** (dark default).
+- Weight: the old `packages/ui` did not use 700 or above, but the new system uses 680–780 for headings → **the new system**.
+- Approval color: butter yellow (`butter`) instead of the old orange (`--warn`).

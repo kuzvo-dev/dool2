@@ -1,43 +1,42 @@
-# 0022. PC 파일은 두리 도구로 찾기·읽기·새로 만들기만 한다
+# 0022. PC files: Dool2 tools only find, read and create new files
 
-- 상태: 채택
-- 날짜: 2026-11-18
+- Status: Accepted
+- Date: 2026-11-18
 
-## 배경
+## Context
 
-시나리오 시험(evals) 정적 검사에서 4,505개 중 약 600개가 PC 파일 일을 기대했어요(받은 계약서 PDF 읽기, 정산을 엑셀로, 기억을 바탕화면에 저장). 두리는 AI 내장 도구(셸·파일·웹)를 모두 꺼서([ADR 0003](0003-dool2-tools-only.md)) 이 일을 할 방법이 없었고, 시험 PC에서도 "바탕화면에 저장해 줘"에 "파일은 못 만들어요"라고 답했어요.
+A static check of the scenario tests (evals) found that about 600 of 4,505 expected PC file work (read a contract PDF received, put a settlement in Excel, save memory to the desktop). Dool2 turns off all of the AI's built-in tools (shell, files, web) ([ADR 0003](0003-dool2-tools-only.md)), so it had no way to do this, and on the test PC "save it to the desktop" was answered with "I can't create files".
 
-## 결정
+## Decision
 
-ADR 0003대로 내장 도구는 끈 채로, **두리 도구 세 개**를 더해요.
+Keeping the built-in tools off as in ADR 0003, we add **three Dool2 tools**.
 
-- `file_find`: 바탕화면·문서·다운로드에서 이름으로 찾기(최근 것 먼저 30개, 맥의 자모 나눈 한글 이름도)
-- `file_read`: 글로 읽기 — 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(간단한 글 뽑기). 3만 자씩, 이어 읽기. 옛 한국어 CSV(EUC-KR)도
-- `file_write`: **새 파일 만들기만** — md·txt·html·csv·xlsx. 같은 이름이 있으면 `이름 (2)`로 만들고 덮어쓰지 않아요. CSV는 엑셀이 한글을 깨지 않게 BOM을 붙여요
+- `file_find`: find by name in Desktop, Documents and Downloads (30 most recent first, including Korean names with decomposed jamo on Mac)
+- `file_read`: read as text: text, CSV, JSON, HTML, Word (docx), Excel (xlsx), PowerPoint (pptx), Hancom (hwpx), PDF (simple text extraction). 30,000 characters at a time, continuing to read on. Also old Korean CSV (EUC-KR)
+- `file_write`: **creating new files only**: md, txt, html, csv, xlsx. If the same name exists it creates `name (2)` and never overwrites. CSV gets a BOM so Excel does not garble Korean
 
-막는 것:
+What is blocked:
 
-- 바탕화면·문서·다운로드 **밖**은 못 읽어요. 실제 경로로 바꿔 확인해서 `../`·바로가기로 나가는 것도 막아요
-- 숨은 파일·폴더, 공동인증서(NPKI), 키·인증서(.pem·.key·.p12…), 비밀번호·지갑 파일은 읽지 않아요
-- 지우기·옮기기·이름 바꾸기·덮어쓰기는 없어요(되돌릴 수 없는 일). 필요해지면 승인 게이트와 함께 따로 정해요 → 옮기기·이름 바꾸기·사진 바꾸기·출력은 [ADR 0024](0024-pc-file-move-convert-print.md)로 더했어요(지우기·덮어쓰기는 여전히 없음)
-- 한글(.hwp, 바이너리)은 아직 못 읽어요. hwpx·PDF로 저장해 달라고 안내해요
+- Anything **outside** Desktop, Documents and Downloads cannot be read. Paths are resolved to the real path and checked, so leaving through `../` or a shortcut is blocked too
+- Hidden files and folders, the joint certificate (NPKI), keys and certificates (.pem, .key, .p12, ...), and password or wallet files are not read
+- There is no delete, move, rename or overwrite (they cannot be undone). If needed, decide them separately together with the approval gate. Move, rename, photo conversion and print were added by [ADR 0024](0024-pc-file-move-convert-print.md) (delete and overwrite still do not exist)
+- Hancom (.hwp, binary) cannot be read yet. Dool2 tells the user to save it as hwpx or PDF
 
-## 이유
+## Why
 
-- 파일 일은 생활·업무 부탁에서 흔하고(정산·계약서·서류), "PC에 사는 비서"라는 두리의 강점이 가장 잘 드러나는 일이에요
-- 범위를 사용자 폴더·새 파일로 좁히면, 내장 도구를 켜는 것보다 훨씬 작은 위험으로 대부분의 부탁을 해결해요
-- 읽은 내용이 AI 회사로 가는 것은 웹페이지를 읽는 것과 같아요. 그 내용을 밖으로 보내는 동작은 기존 승인 게이트가 막아요
+- File work is common in daily life and office requests (settlements, contracts, paperwork), and it best shows Dool2's strength as "an assistant that lives on your PC"
+- Narrowing the scope to the user's folders and new files solves most requests at far less risk than turning on the built-in tools
+- Read content going to the AI company is the same as reading a web page. Actions that send that content outside are blocked by the existing approval gate
 
-## 결과
+## Consequences
 
-- 위협 모델 T21
-- PDF 글 뽑기는 의존성 없이 간단히 해서 표·특수 글꼴은 빠질 수 있어요. 깨지면 사용자에게 알리라고 도구 설명에 적었어요
-- 설정에서 파일 도구를 끄는 스위치는 다음에(지금은 늘 켜짐)
+- Threat model T21
+- PDF text extraction is simple and dependency-free, so tables and special fonts can be lost. The tool description says to tell the user if it comes out garbled
+- A switch to turn the file tools off in Settings comes later (always on for now)
 
-## 더한 것 (2026-11-21): 사진·동영상 폴더, 웹사이트에 올리기
+## Added (2026-11-21): Pictures and Movies folders, uploading to websites
 
-- 실사용 시험에서 "사진 파일을 블로그 편집창에 올릴 방법이 없어요", "영상 파일을 사이트에 올리는 기능이 없어요", "동영상 폴더는 못 찾았어요"로 막혔어요
-- 볼 수 있는 폴더에 **사진(Pictures)·동영상(Movies, 윈도우 Videos)** 을 더했어요. 울타리는 같아요: 실제 경로로 확인, 숨은 폴더·인증서·키·비밀번호 파일 제외. 사진 보관함 같은 앱 묶음 폴더(.photoslibrary 등)는 찾을 때 건너뛰어요
-- `browser_upload`: 이 폴더들 안의 파일을 웹페이지 파일 칸(블로그 사진·쇼츠·민원·보험 서류)에 넣어요. 내 파일이 그 사이트로 나가는 일이라 **처음 한 번은 승인 카드(파일 이름·크기·사이트·화면)** 를 받고, 승인한 같은 파일·같은 사이트는 30분 동안 다시 묻지 않아요. 넣기만 하고 글 올리기·제출은 따로(보내기·제출 버튼은 기존 승인 게이트)
-- 확장은 Chrome DevTools(`DOM.setFileInputFiles`)로 경로를 그대로 넣고, 누를 때 칸을 만드는 사이트는 파일 고르기 창을 가로채(`Page.setInterceptFileChooserDialog`) PC에 창이 뜨지 않게 해요. 확장에 파일 접근이 꺼져 있으면 Chrome이 막아서, 본체가 파일을 조각(600KB)으로 보내 페이지 안에서 파일로 만들어요(이 길은 모두 합해 300MB까지)
-
+- Real-use tests got stuck on "no way to upload a photo file into the blog editor", "no feature to upload a video file to a site", and "could not find the Movies folder"
+- We added **Pictures and Movies (Videos on Windows)** to the folders that can be seen. The fences are the same: check the real path, exclude hidden folders, certificates, keys and password files. App bundle folders such as the Photos library (.photoslibrary and so on) are skipped when searching
+- `browser_upload`: puts a file from these folders into a web page's file field (blog photos, Shorts, civil complaints, insurance documents). Because it sends my file to that site, **the first time needs an approval card (file name, size, site, screen)**, and the same file to the same site is not asked again for 30 minutes after approval. It only attaches; posting or submitting is separate (the send and submit buttons go through the existing approval gate)
+- The extension puts the path in as is through Chrome DevTools (`DOM.setFileInputFiles`), and for sites that create the field when clicked it intercepts the file chooser dialog (`Page.setInterceptFileChooserDialog`) so no dialog appears on the PC. If file access is off for the extension, Chrome blocks it, so the daemon sends the file in 600 KB pieces and builds it into a file inside the page (up to 300 MB in total on this route)

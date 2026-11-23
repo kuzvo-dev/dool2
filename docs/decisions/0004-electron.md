@@ -1,23 +1,23 @@
-# 0004. PC 앱은 Electron으로 만든다
+# 0004. Build the desktop app with Electron
 
-- 상태: 채택
-- 날짜: 2026-11-14
+- Status: Accepted
+- Date: 2026-11-14
 
-## 배경
+## Context
 
-맥과 윈도우에서 같은 앱을 내야 하고, 두리 본체(dool2d)는 Node로 작성해요. 후보는 Electron, Tauri, 각 OS 네이티브였어요.
+We ship the same app on Mac and Windows, and the Dool2 daemon (dool2d) is written in Node. The candidates were Electron, Tauri and native apps per OS.
 
-## 결정
+## Decision
 
-Electron을 써요. 두리 본체는 같은 프로세스에서 띄우고, 화면(renderer)은 `contextIsolation`·`sandbox`를 켠 채 로컬 API(127.0.0.1, 토큰 인증)로만 본체와 이야기해요.
+We use Electron. The Dool2 daemon runs in the same process, and the UI (renderer), with `contextIsolation` and `sandbox` on, talks to the daemon only through a local API (127.0.0.1, token authentication).
 
-## 이유
+## Why
 
-- 본체가 Node라서 런타임을 하나로 묶을 수 있어요. Tauri는 Node 사이드카를 따로 배포해야 해요.
-- 자동 업데이트, 코드 서명, 트레이, 로그인 시 자동 시작 같은 배포 기능이 검증돼 있어요.
-- 기존 UI 자산을 그대로 옮길 수 있어요.
+- The daemon is Node, so we can keep a single runtime. Tauri would require shipping a Node sidecar separately.
+- Distribution features such as auto-update, code signing, a tray icon and start-at-login are proven.
+- We can carry over the existing UI assets as they are.
 
-## 결과
+## Consequences
 
-- 설치 파일이 커요(약 100MB 이상). 원터치 설치 경험에는 큰 문제가 아니라고 봐요.
-- Electron 보안 권고(노드 통합 끄기, 프리로드 최소화, 외부 이동 막기)를 계속 지켜요.
+- The installer is large (about 100 MB or more). We judge this is not a big problem for a one-touch install experience.
+- We keep following Electron's security guidance (node integration off, minimal preload, blocking external navigation).
