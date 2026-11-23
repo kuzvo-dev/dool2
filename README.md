@@ -15,8 +15,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-feed-dark.png">
-    <img src="docs/assets/pc-feed-light.png" alt="Dool2 desktop app, Feed tab: a morning briefing request, finished tasks and the morning update" width="860">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/pc-feed-dark.png">
+    <img src="docs/assets/en/pc-feed-light.png" alt="Dool2 desktop app, Feed tab: the morning news request, proactive check and things Dool2 noticed first" width="860">
   </picture>
 </p>
 
@@ -38,8 +38,8 @@ Dool2 is **Korean-first, going multilingual**. Korean services and the Korean UI
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-tabs-dark.png">
-    <img src="docs/assets/phone-tabs-light.png" alt="Dool2 phone app: Chat, Feed, Ideas, Goals and the assistant panel" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/phone-tabs-dark.png">
+    <img src="docs/assets/en/phone-tabs-light.png" alt="Dool2 phone app: Chat with result cards, Feed, Ideas, Goals and the assistant panel's Memory tab" width="900">
   </picture>
 </p>
 
@@ -47,11 +47,30 @@ Both the phone and desktop apps have five tabs.
 
 - **Chat**: one continuous conversation. You can keep sending messages while Dool2 is answering, and send photos such as receipts or screenshots.
 - **Feed**: tell Dool2 what to report (for example "weather, schedule and incoming parcels every morning") and it posts on schedule. Finished tasks show up here too.
-- **Ideas**: about 400 things you can ask, in 16 categories (groceries, money, trains and flights, paperwork, family and more), plus personal suggestions refreshed every morning from memory, goals and connected services.
+- **Ideas**: about 160 things you can ask, in 18 categories (groceries, money, trains and flights, paperwork, family and more), plus personal suggestions refreshed every morning from memory, goals and connected services.
 - **Goals**: say "exercise three times a week" or "check my phone bill every month" in chat, and Dool2 makes a plan and checks in on schedule.
 - **Library**: comparison tables, itineraries, links and photos Dool2 made or received.
 - **Assistant panel**: tap the character to see upcoming runs, memory, a live view of the Chrome tab Dool2 is using, activity and approvals. Set how Dool2 addresses you, its tone and answer length here.
 - **84 Korean service connections**: enter your ID and password once. They are encrypted in the PC's vault and the Dool2 daemon signs in for you, so the AI never sees the password. CAPTCHAs and identity checks are streamed live to your phone so you can finish them yourself.
+
+<table>
+  <tr>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/pc-ideas-dark.png"><img src="docs/assets/en/pc-ideas-light.png" alt="Desktop Ideas: today's picks, search and category chips"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/pc-goal-dark.png"><img src="docs/assets/en/pc-goal-light.png" alt="Desktop goal detail: schedule, next check-in and plan steps"></picture></td>
+  </tr>
+  <tr>
+    <td align="center">Ideas</td>
+    <td align="center">Goals</td>
+  </tr>
+  <tr>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/pc-library-dark.png"><img src="docs/assets/en/pc-library-light.png" alt="Desktop Library: price comparison, itinerary draft, place, link and list"></picture></td>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/en/pc-talk-panel-memory-dark.png"><img src="docs/assets/en/pc-talk-panel-memory-light.png" alt="Desktop chat with a result card, and the assistant panel's Memory tab: name, tone, answer length and memories"></picture></td>
+  </tr>
+  <tr>
+    <td align="center">Library</td>
+    <td align="center">Chat + assistant panel (Memory)</td>
+  </tr>
+</table>
 
 ## How it works
 

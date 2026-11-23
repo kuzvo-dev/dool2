@@ -9,13 +9,13 @@ pnpm --filter @dool2/relay start             # http://127.0.0.1:8787/app/
 
 ## Screens
 
-![Phone app: Chat, Feed, Ideas, Goals, assistant panel](../../docs/assets/phone-tabs-light.png)
+![Phone app: Chat, Feed, Ideas, Goals, assistant panel](../../docs/assets/en/phone-tabs-light.png)
 
 1. **Connect**: Scan the QR in the desktop Dool2 app under Settings → Connect phone. The same 6-digit confirmation code appears on the phone and the PC; press [It matches, connect] on the PC and you are done.
 2. **Five bottom tabs**
    - **Chat**: One continuous conversation. You can send the next message even while Dool2 is answering, and send photos with + in the input field.
    - **Feed**: Instructions for news to receive, posts that arrive at set times, and finished tasks. Like, dislike, and continue the conversation.
-   - **Ideas**: Personalized ideas (new every morning) plus 400-some ideas in 16 categories, with search. For ideas that need a service you have not connected, connect it and start right away.
+   - **Ideas**: Personalized ideas (new every morning) plus about 160 ideas in 18 categories, with search. For ideas that need a service you have not connected, connect it and start right away.
    - **Goals**: Goals in progress and things Dool2 does on its own, creating goals by category, plan check and check-in now.
    - **Library**: Things made / photos and files.
 3. **Assistant panel** (the character at the top): Schedule · Memory (how to address you, tone, answer length) · Screen · Activity · Approvals
