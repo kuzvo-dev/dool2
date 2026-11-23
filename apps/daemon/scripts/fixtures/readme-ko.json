@@ -1,0 +1,470 @@
+{
+  "identity": {
+    "userName": "민지",
+    "tone": "warm",
+    "length": "normal"
+  },
+  "conversation": [
+    {
+      "at": "@on:0,9,12",
+      "role": "user",
+      "text": "오늘 오는 택배 있어?"
+    },
+    {
+      "role": "tool",
+      "record": {
+        "kind": "work",
+        "steps": [
+          {
+            "text": "쿠팡 주문 내역 열기",
+            "ms": 2100,
+            "act": "웹페이지 여는 중",
+            "place": "www.coupang.com"
+          },
+          {
+            "text": "배송 상태 읽기",
+            "ms": 3400,
+            "act": "화면 읽는 중",
+            "place": "www.coupang.com"
+          }
+        ],
+        "count": 2,
+        "ms": 9800,
+        "host": "www.coupang.com"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "민지 님, 오고 있는 택배가 두 개예요. 키보드는 오늘 오후에, 러닝화는 내일 오전에 도착해요."
+    },
+    {
+      "role": "tool",
+      "record": {
+        "kind": "rows",
+        "title": "배송 현황",
+        "from": "쿠팡",
+        "lead": "none",
+        "rows": [
+          {
+            "title": "기계식 키보드",
+            "sub": "11월 20일 주문",
+            "state": "오늘 도착",
+            "tone": "done"
+          },
+          {
+            "title": "러닝화",
+            "sub": "11월 22일 주문",
+            "state": "내일 오전",
+            "tone": "wait"
+          },
+          {
+            "title": "휴지 30롤",
+            "sub": "11월 19일 주문",
+            "state": "배송 완료",
+            "tone": "done"
+          }
+        ]
+      }
+    },
+    {
+      "at": "@on:0,12,40",
+      "role": "user",
+      "text": "어제 본 무선 청소기 최저가 비교해 줘"
+    },
+    {
+      "role": "assistant",
+      "text": "같은 모델로 세 곳을 비교했어요. 가장 싼 곳이 배송도 내일이에요. 비교한 내용은 보관함에 남겨 뒀어요."
+    },
+    {
+      "role": "tool",
+      "record": {
+        "kind": "result",
+        "title": "최저가 · 무선 청소기 V12",
+        "from": "3곳 비교",
+        "big": "219,000원",
+        "bigNote": "무료 배송 · 내일 도착",
+        "facts": [
+          {
+            "label": "두 번째로 싼 곳",
+            "value": "카드 할인 시 224,500원"
+          },
+          {
+            "label": "평소 가격",
+            "value": "259,000원"
+          }
+        ],
+        "actions": [
+          {
+            "label": "이걸로 살래",
+            "ask": "무선 청소기 가장 싼 곳에서 사 줘"
+          }
+        ]
+      }
+    },
+    {
+      "at": "@on:0,18,20",
+      "role": "user",
+      "text": "내일 비 오면 우산 챙기라고 알려 줘"
+    },
+    {
+      "role": "assistant",
+      "text": "알겠어요. 내일 아침 7시에 날씨를 보고, 비 소식이 있을 때만 알려 드릴게요."
+    },
+    {
+      "role": "tool",
+      "record": {
+        "kind": "quick",
+        "replies": ["미세먼지도 봐 줘", "고마워"]
+      }
+    }
+  ],
+  "routines": [
+    {
+      "id": "r-walk",
+      "title": "주 3회 30분 걷기",
+      "prompt": "오늘 걸었는지 물어보고, 이번 주 몇 번 걸었는지 세어서 짧게 응원해 주세요.",
+      "schedule": {
+        "kind": "weekly",
+        "time": "20:00",
+        "days": [1, 3, 5]
+      },
+      "enabled": true,
+      "createdAt": "@ago:8640",
+      "category": "건강",
+      "plan": [
+        {
+          "text": "걷기 좋은 동네 코스 2개 찾기",
+          "done": true
+        },
+        {
+          "text": "월·수·금 저녁 8시로 시간 정하기",
+          "done": true
+        },
+        {
+          "text": "2주 동안 빠지지 않기",
+          "done": false
+        },
+        {
+          "text": "30분 → 40분으로 늘리기",
+          "done": false
+        }
+      ],
+      "log": [
+        {
+          "at": "@on:-2,20,5",
+          "text": "토요일: 35분 걸었어요. 이번 주 세 번째예요."
+        },
+        {
+          "at": "@on:-4,20,3",
+          "text": "수요일: 32분 걸었어요."
+        },
+        {
+          "at": "@on:-6,20,1",
+          "text": "월요일: 30분 걸었어요."
+        }
+      ],
+      "nextRunAt": "@on:0,20,0",
+      "lastRunAt": "@on:-2,20,0",
+      "lastResult": "지난주 세 번 걸어서 목표를 채웠어요. 이대로만 가요!"
+    },
+    {
+      "id": "r-food",
+      "title": "한 달 식비 40만 원 안으로",
+      "prompt": "카드 결제 문자를 보고 이번 주 식비를 정리해 주세요.",
+      "schedule": {
+        "kind": "weekly",
+        "time": "09:00",
+        "days": [1]
+      },
+      "enabled": true,
+      "createdAt": "@ago:14400",
+      "category": "돈",
+      "plan": [
+        {
+          "text": "지난달 식비 정리",
+          "done": true
+        },
+        {
+          "text": "배달은 주 2회까지",
+          "done": false
+        }
+      ],
+      "log": [
+        {
+          "at": "@on:0,9,1",
+          "text": "이번 주 지금까지 9만 2천 원, 잘 지키고 있어요."
+        }
+      ],
+      "nextRunAt": "@on:7,9,0",
+      "lastRunAt": "@on:0,9,0",
+      "lastResult": "이번 주 지금까지 9만 2천 원, 잘 지키고 있어요."
+    },
+    {
+      "id": "r-read",
+      "title": "한 달에 책 두 권 읽기",
+      "prompt": "읽는 책을 어디까지 읽었는지 묻고, 다 읽으면 다음 책을 골라 주세요.",
+      "schedule": {
+        "kind": "weekly",
+        "time": "21:30",
+        "days": [0]
+      },
+      "enabled": true,
+      "createdAt": "@ago:20160",
+      "category": "관심사",
+      "plan": [
+        {
+          "text": "이번 달 읽을 책 두 권 고르기",
+          "done": true
+        },
+        {
+          "text": "자기 전 20쪽씩 읽기",
+          "done": false
+        }
+      ],
+      "nextRunAt": "@on:6,21,30"
+    },
+    {
+      "id": "r-brief",
+      "title": "아침 브리핑",
+      "prompt": "오늘 날씨, 일정, 오는 택배를 짧게 알려 주세요.",
+      "schedule": {
+        "kind": "daily",
+        "time": "07:30"
+      },
+      "enabled": true,
+      "target": "feed",
+      "createdAt": "@ago:17280",
+      "nextRunAt": "@on:1,7,30",
+      "lastRunAt": "@on:0,7,30"
+    },
+    {
+      "id": "r-phone",
+      "title": "휴대폰 요금 확인",
+      "prompt": "이번 달 휴대폰 요금이 얼마 나왔는지 확인해 주세요.",
+      "schedule": {
+        "kind": "monthly",
+        "time": "10:00",
+        "day": 5
+      },
+      "enabled": true,
+      "createdAt": "@ago:28800",
+      "nextRunAt": "@on:12,10,0"
+    }
+  ],
+  "library": [
+    {
+      "id": "l-1",
+      "kind": "product",
+      "title": "무선 청소기 V12 최저가 3곳 비교",
+      "body": "같은 모델 기준으로 **가격·배송·적립**을 비교했어요.\n- 가장 싼 곳: 내일 도착\n- 두 번째: 카드 할인 시 비슷해요",
+      "price": "219,000원",
+      "url": "https://shop.example/item/vacuum-v12",
+      "savedAt": "@ago:338"
+    },
+    {
+      "id": "l-2",
+      "kind": "note",
+      "title": "아이랑 제주 2박 3일 일정 초안",
+      "body": "1일차 공항 → 협재 해변 → 숙소, 2일차 오름 한 곳·오후엔 실내 과학관, 3일차 동문시장 들렀다 공항.",
+      "savedAt": "@ago:1560"
+    },
+    {
+      "id": "l-3",
+      "kind": "place",
+      "title": "회사 근처 파스타집 (토 7시 두 자리 가능)",
+      "body": "창가 자리는 미리 말해야 해요. 주차는 바로 옆 공영 주차장.",
+      "savedAt": "@ago:4400"
+    },
+    {
+      "id": "l-4",
+      "kind": "link",
+      "title": "여권 재발급 준비물",
+      "body": "6개월 안에 찍은 사진, 예전 여권, 수수료 5만 3천 원. 일주일쯤 걸려요.",
+      "url": "https://example.com/passport-renewal",
+      "savedAt": "@ago:7300"
+    },
+    {
+      "id": "l-5",
+      "kind": "note",
+      "title": "주말 장보기 목록",
+      "body": "달걀, 우유, 귤, 두부, 시금치, 쌀 4kg. 마트 배송은 토요일 오전 10~12시.",
+      "savedAt": "@ago:9800"
+    }
+  ],
+  "memory": [
+    {
+      "id": "m-1",
+      "text": "민지라고 불러 주고, 답은 짧게",
+      "source": "user",
+      "at": "@ago:11520"
+    },
+    {
+      "id": "m-2",
+      "text": "아침은 7시 반에 먹어요",
+      "source": "user",
+      "at": "@ago:10080"
+    },
+    {
+      "id": "m-3",
+      "text": "아들이 초등학교 3학년이에요",
+      "source": "doori",
+      "at": "@ago:7200"
+    },
+    {
+      "id": "m-4",
+      "text": "기차·비행기는 창가 자리를 좋아해요",
+      "source": "doori",
+      "at": "@ago:2880"
+    },
+    {
+      "id": "m-5",
+      "text": "배달은 주로 저녁에 시켜요",
+      "source": "doori",
+      "at": "@ago:1440"
+    }
+  ],
+  "know": [
+    {
+      "id": "k-1",
+      "kind": "done",
+      "title": "러닝화 주문",
+      "value": "내일 오전 도착",
+      "source": "쿠팡",
+      "seenAt": "@on:0,9,12",
+      "next": "@on:1,10,0",
+      "nextWhat": "도착했는지 확인",
+      "state": "open",
+      "updatedAt": "@on:0,9,12"
+    },
+    {
+      "id": "k-2",
+      "kind": "fact",
+      "title": "휴대폰 요금",
+      "value": "월 5만 5천 원",
+      "source": "통신사 홈페이지",
+      "basis": "10월 청구분",
+      "seenAt": "@ago:12000",
+      "updatedAt": "@ago:12000"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "엄마 생신 선물 3만 원대로 골라 줘",
+      "why": "토요일이 엄마 생신이에요"
+    },
+    {
+      "text": "안 쓰는 영상 구독 두 개 해지해 줘",
+      "why": "석 달째 안 쓰고 있어요"
+    },
+    {
+      "text": "다음 달 치과 재진료 예약해 줘",
+      "why": "오늘 검진을 받으셨어요"
+    }
+  ],
+  "feedPrompt": "매일 아침 날씨·일정·오는 택배",
+  "feed": [
+    {
+      "id": "f-w1",
+      "kind": "suggest",
+      "title": "어제 주문한 러닝화, 내일 오전에 도착해요",
+      "body": "문 앞에 두고 간대요.",
+      "from": "쿠팡 주문 내역을 보고",
+      "key": "coupang-shoes-arriving",
+      "at": "@ago:30"
+    },
+    {
+      "id": "f-w2",
+      "kind": "suggest",
+      "title": "토요일이 엄마 생신이에요",
+      "body": "작년엔 꽃을 보냈어요. 올해도 3만 원대로 골라 둘까요?",
+      "from": "기억해 둔 것과 지난 주문을 보고",
+      "key": "memory-mom-birthday",
+      "ask": "토요일 엄마 생신 선물 3만 원대로 골라 줘. 작년엔 꽃을 보냈어",
+      "askLabel": "골라 줘",
+      "at": "@ago:95"
+    },
+    {
+      "id": "f-2",
+      "kind": "done",
+      "title": "무선 청소기 최저가 찾았어요",
+      "body": "세 곳을 비교해서 보관함에 남겨 뒀어요.",
+      "at": "@ago:340"
+    },
+    {
+      "id": "f-3",
+      "kind": "saved",
+      "title": "보관함에 남겼어요: 무선 청소기 V12 최저가 3곳 비교",
+      "at": "@ago:338"
+    },
+    {
+      "id": "f-1",
+      "kind": "post",
+      "title": "오늘 아침 소식",
+      "body": "오늘은 **맑고 최고 14도**예요. 오후 3시에 치과 예약이 있어요.\n- 택배 2개가 오늘 와요 (키보드, 휴지)\n- 내일은 비 소식이 있어요. 우산 챙기세요.",
+      "at": "@on:0,7,31",
+      "reaction": "up"
+    },
+    {
+      "id": "f-w3",
+      "kind": "suggest",
+      "title": "답장이 필요한 메일이 1개 있어요",
+      "body": "집주인이 다음 주 점검 시간을 물어봤어요.",
+      "from": "Gmail 받은편지함을 보고",
+      "key": "gmail-inspection-time",
+      "ask": "집주인 메일에 답장 초안 써 줘",
+      "askLabel": "초안 써 줘",
+      "answered": "yes",
+      "at": "@on:0,7,40"
+    },
+    {
+      "id": "f-4",
+      "kind": "routine",
+      "title": "걷기 체크인",
+      "body": "이번 주 세 번 걸었어요. 목표 달성!",
+      "ref": "r-walk",
+      "at": "@on:-2,20,6"
+    },
+    {
+      "id": "f-5",
+      "kind": "suggest",
+      "title": "안 쓰는 정기 결제 2개를 찾았어요",
+      "body": "영상 서비스 두 곳이 석 달째 안 쓰였어요. 정리할까요?",
+      "from": "카드 결제 내역을 보고",
+      "key": "card-unused-subscriptions",
+      "ask": "안 쓰는 영상 구독 두 개 해지해 줘",
+      "askLabel": "해지해 줘",
+      "at": "@on:-3,8,10"
+    },
+    {
+      "id": "f-6",
+      "kind": "goal",
+      "title": "목표를 세웠어요: 주 3회 30분 걷기",
+      "body": "월·수·금 오후 8:00",
+      "ref": "r-walk",
+      "at": "@ago:8640"
+    }
+  ],
+  "connections": {
+    "coupang": "@ago:12000",
+    "gmail": "@ago:9000"
+  },
+  "sideThreads": [
+    {
+      "title": "아들이랑 제주 여행",
+      "messages": [
+        {
+          "role": "user",
+          "text": "다음 달 제주 2박 3일 일정 짜 줘. 아들이랑 같이 가요"
+        },
+        {
+          "role": "assistant",
+          "text": "좋아요. 아이랑 가기 좋은 곳 위주로 짰어요.\n\n1. 첫날: 공항 → 협재 해변 → 숙소\n2. 둘째 날: 오름 한 곳, 오후엔 실내 과학관\n3. 셋째 날: 동문시장 들렀다 공항\n\n숙소는 서쪽이 동선이 편해요. 찾아볼까요?"
+        }
+      ]
+    },
+    {
+      "title": "3월 이사 준비",
+      "messages": []
+    }
+  ]
+}

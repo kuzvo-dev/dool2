@@ -16,8 +16,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-feed-dark.png">
-    <img src="docs/assets/pc-feed-light.png" alt="두리 PC 앱의 피드: 매일 아침 받을 소식 설정, 두리가 끝낸 일과 아침 소식" width="860">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/pc-feed-dark.png">
+    <img src="docs/assets/ko/pc-feed-light.png" alt="두리 PC 앱의 피드: 매일 아침 받을 소식, 먼저 챙기기, 두리가 먼저 알려 준 일" width="860">
   </picture>
 </p>
 
@@ -37,8 +37,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-tabs-dark.png">
-    <img src="docs/assets/phone-tabs-light.png" alt="두리 폰 앱: 대화, 피드, 아이디어, 목표, 두리 판" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/phone-tabs-dark.png">
+    <img src="docs/assets/ko/phone-tabs-light.png" alt="두리 폰 앱: 결과 카드가 있는 대화, 피드, 아이디어, 목표, 두리 판의 기억" width="900">
   </picture>
 </p>
 
@@ -46,7 +46,7 @@
 
 - **대화**: 하나로 이어지는 대화예요. 두리가 답하는 중에도 다음 말을 보낼 수 있고, 영수증·캡처 사진을 보내면 읽고 정리해요.
 - **피드**: "매일 아침 날씨·일정·오는 택배"처럼 받을 소식을 적어 두면 정해진 때 글이 올라와요. 두리가 끝낸 일도 여기 모여요.
-- **아이디어**: 맡길 만한 일 400여 가지를 16개 분류(장보기, 돈 관리, 기차·항공, 서류·행정, 아이·가족 등)로 모았어요. 맨 위에는 기억·목표·연결한 곳을 보고 매일 아침 새로 찾은 맞춤 아이디어가 있어요.
+- **아이디어**: 맡길 만한 일 160여 가지를 18개 분류(장보기, 돈 관리, 기차·항공, 서류·행정, 아이·가족 등)로 모았어요. 맨 위에는 기억·목표·연결한 곳을 보고 매일 아침 새로 찾은 맞춤 아이디어가 있어요.
 - **목표**: "주 3회 운동", "매달 휴대폰 요금 확인"처럼 대화로 말하면 계획을 세우고 정한 때 알아서 체크인해요.
 - **보관함**: 두리가 만든 비교표·일정·링크와 보낸 사진을 모아 둬요.
 - **두리 판**: 캐릭터를 누르면 예정, 기억, 화면(두리가 보는 Chrome을 실시간으로), 활동, 승인을 볼 수 있어요. 나를 부르는 이름·말투·답 길이도 여기서 정해요.
@@ -54,16 +54,16 @@
 
 <table>
   <tr>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-ideas-dark.png"><img src="docs/assets/pc-ideas-light.png" alt="PC 앱 아이디어: 찾기, 분류 칩, 분류별 부탁"></picture></td>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-goal-dark.png"><img src="docs/assets/pc-goal-light.png" alt="PC 앱 목표 상세: 체크인 일정, 계획 단계, 두리가 할 일"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/pc-ideas-dark.png"><img src="docs/assets/ko/pc-ideas-light.png" alt="PC 앱 아이디어: 오늘의 추천, 찾기, 분류 칩"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/pc-goal-dark.png"><img src="docs/assets/ko/pc-goal-light.png" alt="PC 앱 목표 상세: 언제, 다음 체크인, 계획 단계"></picture></td>
   </tr>
   <tr>
     <td align="center">아이디어</td>
     <td align="center">목표</td>
   </tr>
   <tr>
-    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-library-dark.png"><img src="docs/assets/pc-library-light.png" alt="PC 앱 보관함: 상품 비교, 일정 초안, 장소, 링크"></picture></td>
-    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pc-talk-panel-memory-dark.png"><img src="docs/assets/pc-talk-panel-memory-light.png" alt="PC 앱 대화와 두리 판의 기억: 호칭, 말투, 답 길이, 기억 목록"></picture></td>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/pc-library-dark.png"><img src="docs/assets/ko/pc-library-light.png" alt="PC 앱 보관함: 최저가 비교, 일정 초안, 장소, 링크, 목록"></picture></td>
+    <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ko/pc-talk-panel-memory-dark.png"><img src="docs/assets/ko/pc-talk-panel-memory-light.png" alt="PC 앱 대화의 결과 카드와 두리 판의 기억: 부르는 이름, 말투, 답 길이, 기억 목록"></picture></td>
   </tr>
   <tr>
     <td align="center">보관함</td>
