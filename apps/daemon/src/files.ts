@@ -1,8 +1,10 @@
-// PC 파일 도구 (ADR 0022): 사용자 폴더(바탕화면·문서·다운로드·사진·동영상)에서 찾기·읽기, 새 파일 만들기.
-// AI 기본 도구(셸·파일)는 끈 채로(ADR 0003) 두리 도구로만 연다. 지우기·덮어쓰기는 없다.
-// 옮기기·이름 바꾸기, 사진 형식 바꾸기, 출력은 file-ops.ts (ADR 0024, 승인·되돌리기와 함께).
-// 읽기: 글·CSV·JSON·HTML, 워드(docx)·엑셀(xlsx)·파워포인트(pptx)·한글(hwpx), PDF(pdf.ts, 쪽마다 줄·표를 살려).
-// 민감한 파일(인증서·키·비밀번호 파일·숨은 폴더)은 읽지 않는다.
+// PC file tools (ADR 0022): find and read in the user folders (Desktop, Documents, Downloads, Pictures, Movies),
+// and make new files. The AI's built-in tools (shell, files) stay off (ADR 0003); files open only through Dool2's
+// tools. No deleting or overwriting.
+// Move and rename, photo conversion and printing are in file-ops.ts (ADR 0024, with approval and undo).
+// Reads: text, CSV, JSON, HTML, Word (docx), Excel (xlsx), PowerPoint (pptx), Hangul (hwpx), PDF (pdf.ts, keeping
+// lines and tables per page).
+// Sensitive files (certificates, keys, password files, hidden folders) are never read.
 
 import { execFile } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
@@ -10,31 +12,35 @@ import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/pro
 import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
+import type { Lang } from '@dool2/i18n'
+import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
 import { FileOps, type FileOpsOptions } from './file-ops.js'
+import { filesCopy } from './locales/files.js'
+import { styleGuide } from './motion-kit.js'
 import { type PdfText, pdfScanImages, pdfText } from './pdf.js'
+import { DOORI_FOLDER_NAME, KR_SENSITIVE_WORDS, KR_USER_FOLDERS, SENT_PHOTO_RE } from './region/kr/files.js'
 
 export interface FileToolResult {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   isError?: boolean
 }
-/** AI에게 넘기는 그림 한 장의 한도 (모델이 받는 크기) */
+/** Size limit for one image handed to the AI (what the model accepts) */
 const IMAGE_MAX = 4_500_000
 const ok = (text: string): FileToolResult => ({ content: [{ type: 'text', text }] })
 const fail = (text: string): FileToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
-/** 두리가 다루는 사용자 폴더. 윈도우는 OneDrive로 옮겨진 바탕화면·문서도 */
-/** 두리가 만든 파일을 모으는 폴더 (문서 아래) */
-import { applyLook, DOC_LOOKS, type DocLook } from './doc-kit.js'
-import { styleGuide } from './motion-kit.js'
-
-export const DOORI_FOLDER = '두리'
+/** Folder (under Documents) where Dool2 collects the files it makes */
+export const DOORI_FOLDER = DOORI_FOLDER_NAME
 
 export type FolderKey = 'desktop' | 'documents' | 'downloads' | 'pictures' | 'movies'
-/** 두리가 다루는 폴더들. 사진·동영상은 블로그 사진·영상 올리기(browser_upload) 때문에 더했다 (없으면 빈 목록) */
+/**
+ * The folders Dool2 handles. On Windows also Desktop and Documents moved to OneDrive. Pictures and Movies were
+ * added for uploading blog photos and videos (browser_upload) (empty list when missing)
+ */
 export type UserFolders = Record<'desktop' | 'documents' | 'downloads', string[]> &
   Partial<Record<'pictures' | 'movies', string[]>>
-/** 사용자에게 알리는 폴더 이름들 */
-export const FOLDERS_TEXT = '바탕화면·문서·다운로드·사진·동영상'
+/** The folder names, as told to the AI */
+export const FOLDERS_TEXT = 'Desktop, Documents, Downloads, Pictures and Movies'
 
 export function userFolders(home = homedir()): Record<FolderKey, string[]> {
   const pick = (...names: string[]) =>
@@ -46,73 +52,79 @@ export function userFolders(home = homedir()): Record<FolderKey, string[]> {
       }
     })
   return {
-    desktop: pick('Desktop', 'OneDrive/Desktop', 'OneDrive/바탕 화면', '바탕 화면'),
-    documents: pick('Documents', 'OneDrive/Documents', 'OneDrive/문서', '문서'),
-    downloads: pick('Downloads', '다운로드'),
-    pictures: pick('Pictures', 'OneDrive/Pictures', 'OneDrive/사진', '사진'),
-    // 맥은 Movies, 윈도우는 Videos
-    movies: pick('Movies', 'Videos', 'OneDrive/Videos', 'OneDrive/동영상', '동영상'),
+    desktop: pick('Desktop', 'OneDrive/Desktop', ...KR_USER_FOLDERS.desktop),
+    documents: pick('Documents', 'OneDrive/Documents', ...KR_USER_FOLDERS.documents),
+    downloads: pick('Downloads', ...KR_USER_FOLDERS.downloads),
+    pictures: pick('Pictures', 'OneDrive/Pictures', ...KR_USER_FOLDERS.pictures),
+    // Movies on macOS, Videos on Windows
+    movies: pick('Movies', 'Videos', 'OneDrive/Videos', ...KR_USER_FOLDERS.movies),
   }
 }
 
 const FOLDER_LABEL: Record<FolderKey, string> = {
-  desktop: '바탕화면',
-  documents: '문서',
-  downloads: '다운로드',
-  pictures: '사진',
-  movies: '동영상',
+  desktop: 'Desktop',
+  documents: 'Documents',
+  downloads: 'Downloads',
+  pictures: 'Pictures',
+  movies: 'Movies',
 }
 
-// 읽지 않는 것: 숨은 파일·폴더, 공동인증서(NPKI), 키·인증서 파일, 비밀번호·지갑 파일, 환경 설정 비밀값
-const SENSITIVE =
-  /(^|[/\\])\.|npki|gpki|signcert|signpri|\.(pem|key|p12|pfx|der|cer|crt|keychain|kdbx|ovpn|ppk)$|id_rsa|id_ed25519|wallet|비밀번호|password|passwd/i
-// 찾을 때 건너뛰는 폴더 (무겁거나 사용자 문서가 아닌 것)
+// Never read: hidden files and folders, joint certificates (NPKI), key and certificate files, password and wallet
+// files, secret config values
+const SENSITIVE = new RegExp(
+  `(^|[/\\\\])\\.|npki|gpki|signcert|signpri|\\.(pem|key|p12|pfx|der|cer|crt|keychain|kdbx|ovpn|ppk)$|id_rsa|id_ed25519|wallet|${KR_SENSITIVE_WORDS}|password|passwd`,
+  'i',
+)
+// Folders skipped while finding (heavy, or not the user's documents)
 const SKIP_DIR =
   /^(node_modules|Library|AppData|\.git|\$RECYCLE\.BIN|System Volume Information|Photo Booth Library)$|\.(photoslibrary|photolibrary|migratedphotolibrary|aplibrary|imovielibrary|fcpbundle|tvlibrary)$/i
 
-/** 웹사이트에 올릴 파일 (browser_upload) */
+/** A file to upload to a website (browser_upload) */
 export interface UploadFile {
-  /** 실제 경로 (바로가기를 푼 것) */
+  /** Real path (shortcuts resolved) */
   path: string
   name: string
   size: number
   mtime: number
-  /** 사용자에게 보이는 경로 (~/Pictures/a.jpg) */
+  /** Path as the user sees it (~/Pictures/a.jpg) */
   show: string
 }
 export const UPLOAD_MAX_FILES = 20
 export const UPLOAD_MAX_BYTES = 4 * 1024 ** 3
 
-/** 파일 이름을 비교할 모양으로 (맥은 한글 이름을 자모로 나눠 저장한다: NFC로 맞춘다) */
+/** File names in a comparable form (macOS stores Korean names as separate jamo: normalize to NFC) */
 const norm = (s: string) => s.normalize('NFC').toLowerCase().replace(/\s+/g, '')
 
 export class FileTools {
   private readonly folders: Record<FolderKey, string[]>
   private readonly home: string
-  /** 옮기기·사진 바꾸기·출력 (승인은 opts.approvals로) */
+  /** Language of the text people read. Korean when not given */
+  private readonly lang: () => Lang
+  /** Move, photo conversion, printing (approval through opts.approvals) */
   readonly ops: FileOps
-  /** 사용자가 대화로 보낸 사진을 두는 곳 ("[사진: 이름.jpg]") — 웹사이트에 올릴 수 있다 */
+  /** Where photos the user sent in chat are kept (the chat's photo mark, SENT_PHOTO_RE); they can be uploaded */
   sentPhotos?: string
-  /** 새 파일을 만들었을 때 (보관함에 올린다) */
-  /** 모션그래픽 영상 (video_motion, 본체가 넣어 준다) */
+  /** Motion graphics video (video_motion, set by the daemon) */
   motionMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
-  /** 사진으로 영상 만들기 (video_make, 본체가 넣어 준다) */
+  /** Video from photos (video_make, set by the daemon) */
   videoMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
-  /** 그림 AI로 그림 만들기 (image_make, 본체가 브라우저와 함께 넣어 준다) */
+  /** Pictures from an image AI (image_make, set by the daemon together with the browser) */
   imageMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
-  /** AI 영상 클립 (video_clip, 구글 Flow) */
+  /** AI video clip (video_clip, Google Flow) */
   clipMaker?: { make(args: Record<string, unknown>): Promise<FileToolResult> }
+  /** A new file was made (added to the Library) */
   onWritten?: (f: {
     name: string
     kind: string
     path: string
     text?: string
     rows?: unknown[][]
-    /** 미리보기 그림 (JPEG base64, HTML을 PNG로 그린 것) */
+    /** Preview image (JPEG base64, HTML drawn as PNG) */
     image?: string
   }) => void
   constructor(folders?: UserFolders, home = homedir(), opts: FileOpsOptions = {}) {
-    // 실제 경로로 맞춘다 (맥은 /var → /private/var 같은 바로가기가 있다)
+    this.lang = opts.lang ?? (() => 'ko')
+    // Use real paths (macOS has shortcuts like /var → /private/var)
     const real = (p: string) => {
       try {
         return realpathSync(p)
@@ -142,7 +154,7 @@ export class FileTools {
       },
       opts,
     )
-    // HTML을 PDF·PNG로 그린 파일도 새로 만든 파일이라 보관함에 올린다
+    // Files drawn from HTML into PDF/PNG are new files too, so they go to the Library
     this.ops.onRendered = (f) => this.onWritten?.(f)
   }
 
@@ -150,7 +162,10 @@ export class FileTools {
     return Object.values(this.folders).flat()
   }
 
-  /** 아직 없을 수도 있는 폴더(옮길 곳·새 파일 둘 곳): 있는 데까지 실제 경로로 바꿔 사용자 폴더 안인지 본다 */
+  /**
+   * A folder that may not exist yet (move destination, place for a new file): resolves the real path as far as it
+   * exists and checks it is inside the user folders
+   */
   private insideNew(p: string): string | undefined {
     const raw = p.startsWith('~') ? join(this.home, p.slice(1)) : resolve(this.home, p)
     const rest: string[] = []
@@ -167,14 +182,14 @@ export class FileTools {
     } catch {
       return undefined
     }
-    // 새로 만들 이름에 숨은 이름(.으로 시작)·못 쓰는 글자는 받지 않는다
+    // New names may not be hidden (start with a dot) or contain characters that cannot be used
     if (rest.some((n) => n.startsWith('.') || /[:*?"<>|]/.test(n) || !n.trim())) return undefined
     const out = join(real, ...rest)
     if (SENSITIVE.test(out)) return undefined
     return this.roots().some((r) => out === r || out.startsWith(r + sep)) ? out : undefined
   }
 
-  /** 사용자 폴더 안의 실제 경로만 (../·바로가기로 밖에 나가는 것 막기) */
+  /** Only real paths inside the user folders (blocks escaping with ../ or shortcuts) */
   private inside(p: string): string | undefined {
     const raw = p.startsWith('~') ? join(this.home, p.slice(1)) : resolve(this.home, p)
     let real: string
@@ -186,26 +201,27 @@ export class FileTools {
     return this.roots().some((r) => real === r || real.startsWith(r + sep)) ? real : undefined
   }
 
-  /** 폴더 (첫 번째 후보) */
+  /** Folder (first candidate) */
   dir(key: FolderKey): string | undefined {
     return this.folders[key]?.[0]
   }
 
-  /** 사용자 폴더 안·민감하지 않은 파일인지 (모션 영상 장면에 넣는 사진) */
+  /** Whether the file is inside the user folders and not sensitive (photos placed in motion video scenes) */
   readable(p: string): boolean {
     return Boolean(this.realReadable(p))
   }
 
   /**
-   * 답 속 파일 링크를 PC에서 열거나 폰으로 보낼 때: 사용자 폴더 안·민감하지 않은 파일의 실제 경로.
-   * "~/…"·"/Users/…"·"C:\…" 모양 모두 받는다. 폴더·없는 파일·밖으로 나가는 경로는 undefined
+   * Opening a file link from an answer on the PC or sending it to the phone: the real path of a non-sensitive file
+   * inside the user folders. Takes "~/…", "/Users/…" and "C:\…" forms. Folders, missing files and paths that escape
+   * give undefined
    */
   realReadable(p: string): string | undefined {
     const r = this.inside(String(p ?? '').trim())
     return r && !SENSITIVE.test(r) ? r : undefined
   }
 
-  /** 사용자에게 보여 줄 경로 모양 */
+  /** The path as shown to the user */
   shown(p: string): string {
     return this.show(p)
   }
@@ -215,17 +231,20 @@ export class FileTools {
   }
 
   /**
-   * 웹사이트에 올릴 파일 확인 (browser_upload). 읽기와 같은 울타리: 사용자 폴더 안의 보통 파일만,
-   * 숨은 폴더·인증서·키·비밀번호 파일은 안 된다. 실제 경로(바로가기를 푼 것)·이름·크기를 돌려준다
+   * Checks files to upload to a website (browser_upload). Same fence as reading: only regular files inside the user
+   * folders, never hidden folders, certificates, keys or password files. Returns the real path (shortcuts
+   * resolved), name and size
    */
   async uploadable(paths: string[]): Promise<{ files: UploadFile[] } | { error: string }> {
     const list = paths.map((p) => String(p ?? '').trim()).filter(Boolean)
-    if (!list.length) return { error: '올릴 파일 경로를 주세요. file_find로 먼저 찾아요.' }
-    if (list.length > UPLOAD_MAX_FILES) return { error: `한 번에 ${UPLOAD_MAX_FILES}개까지만 올려요.` }
+    if (!list.length)
+      return { error: 'Give the paths of the files to upload. Find them with file_find first.' }
+    if (list.length > UPLOAD_MAX_FILES) return { error: `Up to ${UPLOAD_MAX_FILES} files at a time.` }
     const files: UploadFile[] = []
     for (const raw of list) {
-      // 대화로 받은 사진은 이름만으로 (실측 11-21: 보낸 사진이 PC 폴더에 없다며 블로그에 못 붙임)
-      const sent = /^(?:\[사진:\s*)?([\w-]+\.jpg)\]?$/.exec(raw)
+      // Photos received in chat go by name alone (measured 11-21: a sent photo could not be attached to a blog
+      // because it was not in a PC folder)
+      const sent = SENT_PHOTO_RE.exec(raw)
       if (sent && this.sentPhotos) {
         const sp = join(this.sentPhotos, sent[1] as string)
         const st = await stat(sp).catch(() => undefined)
@@ -236,7 +255,7 @@ export class FileTools {
               name: basename(sp),
               size: st.size,
               mtime: st.mtimeMs,
-              show: '대화로 보낸 사진',
+              show: filesCopy(this.lang()).sentPhoto,
             })
           continue
         }
@@ -244,14 +263,16 @@ export class FileTools {
       const p = this.inside(raw)
       if (!p)
         return {
-          error: `${basename(raw)}: 없거나 ${FOLDERS_TEXT} 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
+          error: `${basename(raw)}: missing or outside ${FOLDERS_TEXT}. Find the path with file_find first.`,
         }
       if (SENSITIVE.test(p))
-        return { error: `${basename(p)}: 인증서·키·비밀번호 같은 민감한 파일은 웹사이트에 올리지 않아요.` }
+        return {
+          error: `${basename(p)}: sensitive files such as certificates, keys and passwords are never uploaded to websites.`,
+        }
       const s = await stat(p).catch(() => undefined)
-      if (!s?.isFile()) return { error: `${basename(p)}: 파일이 아니에요(폴더는 올릴 수 없어요).` }
-      if (s.size > UPLOAD_MAX_BYTES) return { error: `${basename(p)}: 4GB보다 큰 파일은 올리지 않아요.` }
-      const away = await ensureLocal(p)
+      if (!s?.isFile()) return { error: `${basename(p)}: not a file (folders cannot be uploaded).` }
+      if (s.size > UPLOAD_MAX_BYTES) return { error: `${basename(p)}: files over 4GB are not uploaded.` }
+      const away = await ensureLocal(p, undefined, 'en')
       if (away) return { error: away }
       if (!files.some((f) => f.path === p))
         files.push({ path: p, name: basename(p), size: s.size, mtime: s.mtimeMs, show: this.show(p) })
@@ -292,27 +313,30 @@ export class FileTools {
       if (tool === 'video_motion')
         return this.motionMaker
           ? await this.motionMaker.make(args)
-          : fail('이 PC에서는 모션 영상을 만들 수 없어요.')
+          : fail('This PC cannot make motion videos.')
       if (tool === 'video_clip')
         return this.clipMaker
           ? await this.clipMaker.make(args)
-          : fail('AI 영상을 쓸 브라우저가 연결돼 있지 않아요. video_motion만으로 만들어요.')
+          : fail('No browser is connected for AI video. Make it with video_motion alone.')
       if (tool === 'video_make')
-        return this.videoMaker ? await this.videoMaker.make(args) : fail('이 PC에서는 영상을 만들 수 없어요.')
+        return this.videoMaker ? await this.videoMaker.make(args) : fail('This PC cannot make videos.')
       if (tool === 'image_make')
         return this.imageMaker
           ? await this.imageMaker.make(args)
-          : fail('그림 AI를 쓸 브라우저가 연결돼 있지 않아요. HTML로 그려 file_render로 PNG를 만들어요.')
+          : fail('No browser is connected for the image AI. Draw it in HTML and make a PNG with file_render.')
       if (tool === 'file_trash') return await this.ops.trash(args)
       if (tool === 'file_download') return await this.ops.download(args)
       if (tool === 'pc_screen') return await this.ops.power(args)
-      return fail(`모르는 파일 도구예요: ${tool}`)
+      return fail(`Unknown file tool: ${tool}`)
     } catch (e) {
       return fail((e as Error).message)
     }
   }
 
-  /** 이름으로 찾기: 바탕화면·문서·다운로드·사진·동영상(4단계 아래까지), 최근에 바뀐 것 먼저 30개(limit으로 300개까지) */
+  /**
+   * Find by name: Desktop, Documents, Downloads, Pictures, Movies (up to 4 levels down), most recently changed
+   * first, 30 (up to 300 with limit)
+   */
   async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
     const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
@@ -339,11 +363,11 @@ export class FileTools {
     }
     for (const r of roots) await walk(r, 0)
     hits.sort((a, b) => b.mtime - a.mtime)
-    if (!hits.length) return ok(`"${query}"이(가) 들어간 파일을 ${FOLDERS_TEXT}에서 찾지 못했어요.`)
+    if (!hits.length) return ok(`Found no file with "${query}" in ${FOLDERS_TEXT}.`)
     const kb = (n: number) =>
       n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
     const day = (t: number) =>
-      new Date(t).toLocaleString('ko-KR', {
+      new Date(t).toLocaleString('en-US', {
         timeZone: 'Asia/Seoul',
         month: 'numeric',
         day: 'numeric',
@@ -351,24 +375,25 @@ export class FileTools {
         minute: '2-digit',
       })
     return ok(
-      `${hits.length > max ? `${hits.length}개 중 최근 ${max}개` : `${hits.length}개`}:\n` +
+      `${hits.length > max ? `Latest ${max} of ${hits.length}` : `${hits.length}`}:\n` +
         hits
           .slice(0, max)
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
           .join('\n') +
-        (hits.length > max ? `\n다 보려면 limit을 늘려(300까지) 다시 찾아 주세요.` : '') +
-        '\n읽으려면 file_read, 옮기거나 이름을 바꾸려면 file_move, 사진 형식은 file_convert, 출력은 file_print, 웹사이트(블로그·영상·서류 첨부)에 올리려면 browser_upload에 이 경로를 그대로 주세요.',
+        (hits.length > max ? `\nTo see them all, raise limit (up to 300) and search again.` : '') +
+        '\nGive this path as is to file_read to read, file_move to move or rename, file_convert for photo formats, file_print to print, or browser_upload to upload to a website (blog, video, document attachments).',
     )
   }
 
-  /** 읽기: 글로 바꿔 3만 자씩. from으로 이어 읽는다 */
+  /** Read: converted to text, 30,000 characters at a time. Continue with from */
   async read(path: string, from = 0): Promise<FileToolResult> {
     const p = this.inside(path)
-    if (!p) return fail(`${FOLDERS_TEXT} 안의 파일만 읽을 수 있어요. file_find로 경로를 먼저 찾아 주세요.`)
-    if (SENSITIVE.test(p)) return fail('인증서·키·비밀번호 같은 민감한 파일은 두리가 읽지 않아요.')
+    if (!p) return fail(`Only files inside ${FOLDERS_TEXT} can be read. Find the path with file_find first.`)
+    if (SENSITIVE.test(p))
+      return fail('Dool2 never reads sensitive files such as certificates, keys and passwords.')
     const s = await stat(p)
     if (s.isDirectory()) return this.listDir(p)
-    if (s.size > 30 << 20) return fail('30MB보다 큰 파일은 읽지 않아요.')
+    if (s.size > 30 << 20) return fail('Files over 30MB are not read.')
     const buf = await readLocal(p)
     if (typeof buf === 'string') return fail(buf)
     const ext = extname(p).toLowerCase()
@@ -383,13 +408,14 @@ export class FileTools {
       } catch (e) {
         why = (e as Error).message
       }
-      // 글이 거의 없으면(쪽마다 열 자 미만) 스캔한 PDF로 본다
+      // Almost no text (under ten characters per page) means a scanned PDF
       text = pdf && pdf.letters >= pdf.pages * 10 ? pdf.text : ''
       if (pdf?.table)
         note =
-          "\n(표는 같은 줄의 칸을 ' | '로 나눴어요. 빈칸이 있으면 칸이 밀려 보일 수 있으니 항목과 금액을 짝지어 읽어 주세요.)"
+          "\n(Table cells on the same line are separated by ' | '. Empty cells can shift columns, so pair items with their amounts carefully.)"
       if (!text) {
-        // 스캔한 PDF: 안에 든 사진을 보여 준다 (사업자등록증·납세증명서 스캔). JPEG는 그대로, 아니면 풀어서 PNG로
+        // Scanned PDF: show the pictures inside (scanned business registration, tax certificates). JPEG as is,
+        // otherwise decoded to PNG
         let imgs = pdfImages(buf)
           .slice(0, 3)
           .map((data) => ({ data, mimeType: 'image/jpeg' }))
@@ -398,7 +424,7 @@ export class FileTools {
             .filter((data) => data.length <= IMAGE_MAX)
             .map((data) => ({ data, mimeType: 'image/png' }))
         if (imgs.length) {
-          const of = pdf && pdf.pages > imgs.length ? `${pdf.pages}쪽 중 앞 ` : ''
+          const of = pdf && pdf.pages > imgs.length ? `the first of ${pdf.pages} ` : ''
           return {
             content: [
               ...imgs.map((m) => ({
@@ -408,23 +434,25 @@ export class FileTools {
               })),
               {
                 type: 'text',
-                text: `${this.show(p)}: 글이 없는 스캔 PDF라 ${of}쪽 그림 ${imgs.length}장을 보여 드려요. 그림에 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+                text: `${this.show(p)}: a scanned PDF with no text, so here are ${of}page images (${imgs.length}). Answer from what the images show, and never copy sensitive values such as resident registration or card numbers.`,
               },
             ],
           }
         }
-        // 그림도 없으면 몇 글자라도 나온 글을 그대로 보여 준다
+        // No images either: show whatever little text came out
         if (pdf?.letters) text = pdf.text
-        else return fail(why || '이 PDF에서는 글도 그림도 뽑지 못했어요. 사용자에게 알려 주세요.')
+        else return fail(why || 'Could not get text or images out of this PDF. Tell the user.')
       }
     } else if (ext === '.hwp')
-      return fail('한글(.hwp) 파일은 아직 못 읽어요. 한글에서 hwpx나 PDF로 저장해 주시면 읽을 수 있어요.')
+      return fail(
+        'Hangul (.hwp) files cannot be read yet. Saving it as hwpx or PDF in Hangul makes it readable; tell the user.',
+      )
     else if (/^\.(png|jpe?g|gif|webp|heic|heif)$/.test(ext)) return this.image(p, buf, ext)
     else if (/\.(zip|exe|dmg|mp4|mov|mp3|m4a|wav)$/i.test(ext))
-      return fail('글이 아닌 파일이라 읽을 수 없어요. (녹음은 받아쓰기한 글이 있어야 해요)')
+      return fail('Not a text file, so it cannot be read. (A recording needs a transcript.)')
     else {
       text = buf.toString('utf8').replace(/^﻿/, '')
-      // UTF-8이 아니면(옛 한국어 CSV는 EUC-KR) 깨진 글자가 많다
+      // Not UTF-8 (old Korean CSVs are EUC-KR) gives many broken characters
       if ((text.match(/�/g)?.length ?? 0) > 20) {
         try {
           text = new TextDecoder('euc-kr').decode(buf)
@@ -435,21 +463,21 @@ export class FileTools {
     const CHUNK = 30_000
     const part = text.slice(from, from + CHUNK)
     const more = from + CHUNK < text.length
-    // PDF는 전체 쪽 수와 이번에 보여 준 쪽을 알려 준다
+    // For a PDF, say the total pages and which pages this part shows
     const pageAt = (i: number) => (pdf ? pdf.pageStarts.findLastIndex((s) => s <= i) + 1 : 0)
     const head = pdf
-      ? `PDF ${pdf.pages}쪽, ${text.length.toLocaleString()}자${from || more ? `, 이번에 ${pageAt(from)}~${pageAt(Math.min(text.length, from + CHUNK) - 1)}쪽` : ''}`
-      : `${text.length.toLocaleString()}자${from ? `, ${from}자부터` : ''}`
+      ? `PDF ${pdf.pages} pages, ${text.length.toLocaleString()} characters${from || more ? `, this part pages ${pageAt(from)}-${pageAt(Math.min(text.length, from + CHUNK) - 1)}` : ''}`
+      : `${text.length.toLocaleString()} characters${from ? `, from character ${from}` : ''}`
     return ok(
       `${this.show(p)} (${head})\n\n${part}` +
         (more
-          ? `\n\n… ${pdf ? `전체 ${pdf.pages}쪽 중 ${pageAt(from + CHUNK - 1)}쪽까지 보여 드렸어요. ` : ''}뒤에 ${(text.length - from - CHUNK).toLocaleString()}자 더 있어요. 이어 읽으려면 from: ${from + CHUNK}`
+          ? `\n\n… ${pdf ? `Shown up to page ${pageAt(from + CHUNK - 1)} of ${pdf.pages}. ` : ''}${(text.length - from - CHUNK).toLocaleString()} more characters follow. To continue reading, from: ${from + CHUNK}`
           : '') +
         note,
     )
   }
 
-  /** 사진 파일: 그림으로 넘긴다 (면허증·영수증 사진). 아이폰 HEIC는 맥에서 sips로 JPEG로 바꾼다 */
+  /** Photo files: handed over as images (license, receipt photos). iPhone HEIC becomes JPEG with sips on macOS */
   private async image(p: string, buf: Buffer, ext: string): Promise<FileToolResult> {
     let data = buf
     let mime =
@@ -461,9 +489,9 @@ export class FileTools {
             ? 'image/webp'
             : 'image/jpeg'
     if (ext === '.heic' || ext === '.heif' || buf.length > IMAGE_MAX) {
-      // 큰 사진·HEIC: 맥이면 sips로 줄여 JPEG로 (윈도우는 아직)
+      // Large photos and HEIC: on macOS shrink to JPEG with sips (not on Windows yet)
       if (process.platform !== 'darwin')
-        return fail('이 사진 형식·크기는 아직 못 읽어요. JPEG로 저장해 주세요.')
+        return fail('This photo format or size cannot be read yet. Ask the user to save it as JPEG.')
       const out = join(tmpdir(), `dool2-img-${process.pid}-${Date.now()}.jpg`)
       try {
         await new Promise<void>((res, rej) =>
@@ -477,18 +505,18 @@ export class FileTools {
         data = await readFile(out)
         mime = 'image/jpeg'
       } catch {
-        return fail('사진을 바꾸지 못했어요. JPEG로 저장해 주세요.')
+        return fail('Could not convert the photo. Ask the user to save it as JPEG.')
       } finally {
         await rm(out, { force: true })
       }
     }
-    if (data.length > IMAGE_MAX) return fail('사진이 너무 커요.')
+    if (data.length > IMAGE_MAX) return fail('The photo is too large.')
     return {
       content: [
         { type: 'image', data: data.toString('base64'), mimeType: mime },
         {
           type: 'text',
-          text: `${this.show(p)} 사진이에요. 보이는 내용으로 답하고, 주민번호·카드 번호 같은 민감한 값은 옮겨 적지 않아요.`,
+          text: `Photo ${this.show(p)}. Answer from what it shows, and never copy sensitive values such as resident registration or card numbers.`,
         },
       ],
     }
@@ -497,7 +525,7 @@ export class FileTools {
   private async listDir(p: string): Promise<FileToolResult> {
     const entries = await readdir(p, { withFileTypes: true })
     return ok(
-      `${this.show(p)} 폴더:\n${entries
+      `Folder ${this.show(p)}:\n${entries
         .filter((e) => !e.name.startsWith('.'))
         .slice(0, 60)
         .map((e) => `- ${e.name}${e.isDirectory() ? sep : ''}`)
@@ -505,35 +533,38 @@ export class FileTools {
     )
   }
 
-  /** 새 파일 만들기: 이미 있으면 이름 뒤에 (2)를 붙인다 (덮어쓰지 않는다) */
+  /** Makes a new file: if the name exists, adds (2) after it (never overwrites) */
   async write(o: {
     name: string
     kind: string
     text?: string
     rows?: unknown[][]
-    /** 비우면 두리 폴더(문서/두리) */
+    /** Empty means Dool2's folder (Documents/DOORI_FOLDER) */
     folder?: FolderKey
-    /** html 문서 디자인 틀 (doc-kit.ts) */
+    /** Design template for html documents (doc-kit.ts) */
     look?: DocLook
-    /** 두리 폴더의 같은 이름 파일을 고쳐 쓴다 (고친 판이 "(2)"로 쌓이지 않게) */
+    /** Rewrites the file of the same name in Dool2's folder (so edited versions do not pile up as "(2)") */
     replace?: boolean
   }): Promise<FileToolResult> {
     const kind = o.kind.toLowerCase()
     if (!['md', 'txt', 'csv', 'xlsx', 'html'].includes(kind))
-      return fail('md·txt·csv·xlsx·html만 만들 수 있어요.')
-    // 두리가 만든 것은 두리 폴더에 모은다 (바탕화면을 어지르지 않게). 사용자가 고른 폴더가 있으면 그곳
+      return fail('Only md, txt, csv, xlsx and html can be made.')
+    // What Dool2 makes goes in Dool2's folder (so the desktop stays tidy), or the folder the user picked
     const docs = this.folders.documents?.[0]
     const dir = o.folder ? this.folders[o.folder]?.[0] : docs ? join(docs, DOORI_FOLDER) : undefined
-    const where = o.folder ? FOLDER_LABEL[o.folder] : `문서/${DOORI_FOLDER} 폴더`
-    if (!dir) return fail(`${o.folder ? (FOLDER_LABEL[o.folder] ?? o.folder) : '문서'} 폴더를 찾지 못했어요.`)
+    const where = o.folder ? FOLDER_LABEL[o.folder] : `the Documents/${DOORI_FOLDER} folder`
+    if (!dir)
+      return fail(
+        `Could not find the ${o.folder ? (FOLDER_LABEL[o.folder] ?? o.folder) : 'Documents'} folder.`,
+      )
     const stem = basename(o.name.replace(/\.[a-z0-9]{1,5}$/i, ''))
       .replace(/[\\/:*?"<>|]/g, ' ')
       .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 ? ' ' : c))
       .trim()
       .slice(0, 80)
-    if (!stem) return fail('파일 이름을 주세요.')
+    if (!stem) return fail('Give a file name.')
     let data: Buffer
-    // 보관함 미리보기도 디자인 틀을 넣은 글로 그린다
+    // The Library preview is drawn from the text with the design template applied too
     let written = o.text
     if (kind === 'xlsx' || (kind === 'csv' && o.rows)) {
       const rows = (o.rows ?? csvRows(o.text ?? '')).slice(0, 20_000).map((r) => (Array.isArray(r) ? r : [r]))
@@ -541,13 +572,13 @@ export class FileTools {
     } else {
       const text = kind === 'html' && o.look ? applyLook(o.text ?? '', o.look) : (o.text ?? '')
       written = text
-      if (text.length > 2_000_000) return fail('2MB보다 긴 글은 만들지 않아요.')
-      // 엑셀이 한글 CSV를 깨지 않게 BOM을 붙인다
+      if (text.length > 2_000_000) return fail('Text longer than 2MB is not written.')
+      // Add a BOM so Excel does not garble Korean CSV
       data = Buffer.from(kind === 'csv' ? `﻿${text}` : text, 'utf8')
     }
     await mkdir(dir, { recursive: true })
     let target = join(dir, `${stem}.${kind}`)
-    // 고쳐 쓰기는 두리 폴더에서만 (사용자가 고른 바탕화면·다운로드의 파일은 덮어쓰지 않는다)
+    // Rewriting only in Dool2's folder (files in the Desktop or Downloads the user picked are never overwritten)
     const overwrite = o.replace === true && !o.folder && existsSync(target)
     if (!overwrite)
       for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${stem} (${i}).${kind}`)
@@ -555,12 +586,12 @@ export class FileTools {
     const shown = this.show(target)
     this.onWritten?.({ name: basename(target), kind, path: shown, text: written, rows: o.rows })
     return ok(
-      `${where}에 만들었어요: ${shown} (${data.length.toLocaleString()}바이트). 보관함의 '사진·파일'에도 올려서 폰에서도 볼 수 있어요. 사용자에게 "두리 폴더에 두고 보관함에 올렸어요"처럼 알려 주세요.`,
+      `Made in ${where}: ${shown} (${data.length.toLocaleString()} bytes). It is also in the Library under Photos & files, so the phone can see it. Tell the user something like "I saved it in the Dool2 folder and added it to your Library".`,
     )
   }
 }
 
-// ── 글 뽑기 ────────────────────────────────────────────
+// ── Text extraction ────────────────────────────────────────────
 
 const decodeXml = (s: string) =>
   s
@@ -572,7 +603,7 @@ const decodeXml = (s: string) =>
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
     .replace(/&amp;/g, '&')
 
-/** HTML에서 글만 (보관함 미리보기 글) */
+/** Text only from HTML (Library preview text) */
 export function htmlText(html: string) {
   return stripTags(html)
 }
@@ -589,17 +620,17 @@ function stripTags(html: string) {
     .trim()
 }
 
-/** zip 파일의 항목들 (이름 → 내용). 오피스·hwpx 문서는 zip 안의 XML이다 */
+/** Entries of a zip file (name → content). Office and hwpx documents are XML inside a zip */
 export function unzip(buf: Buffer): Map<string, Buffer> {
   const out = new Map<string, Buffer>()
-  // 끝에서 중앙 목록 끝 표시(EOCD)를 찾는다
+  // Find the end-of-central-directory record (EOCD) from the end
   let eocd = -1
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--)
     if (buf.readUInt32LE(i) === 0x06054b50) {
       eocd = i
       break
     }
-  if (eocd < 0) throw new Error('문서 파일이 깨졌어요 (zip 아님)')
+  if (eocd < 0) throw new Error('The document file is broken (not a zip)')
   const count = buf.readUInt16LE(eocd + 10)
   let p = buf.readUInt32LE(eocd + 16)
   for (let n = 0; n < count && p + 46 <= buf.length; n++) {
@@ -623,7 +654,7 @@ export function unzip(buf: Buffer): Map<string, Buffer> {
   return out
 }
 
-/** 워드·엑셀·파워포인트·한글(hwpx)의 글 */
+/** Text of Word, Excel, PowerPoint and Hangul (hwpx) documents */
 export function officeText(buf: Buffer, ext: string): string {
   const z = unzip(buf)
   const xml = (name: string) => z.get(name)?.toString('utf8') ?? ''
@@ -642,7 +673,7 @@ export function officeText(buf: Buffer, ext: string): string {
     const slides = [...z.keys()]
       .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
       .sort((a, b) => Number(/\d+/.exec(a)?.[0]) - Number(/\d+/.exec(b)?.[0]))
-    return slides.map((k, i) => `[슬라이드 ${i + 1}]\n${texts(xml(k), 'a:t').join('\n')}`).join('\n\n')
+    return slides.map((k, i) => `[Slide ${i + 1}]\n${texts(xml(k), 'a:t').join('\n')}`).join('\n\n')
   }
   if (ext === '.hwpx') {
     const sections = [...z.keys()].filter((k) => /^Contents\/section\d+\.xml$/i.test(k)).sort()
@@ -655,7 +686,7 @@ export function officeText(buf: Buffer, ext: string): string {
       .join('\n\n')
       .trim()
   }
-  // 엑셀: 시트마다 줄을 탭으로
+  // Excel: per sheet, rows with tab-separated cells
   const shared = texts(xml('xl/sharedStrings.xml'), 'si').map((si) => si.replace(/<[^>]+>/g, ''))
   const names = [...xml('xl/workbook.xml').matchAll(/<sheet [^>]*name="([^"]*)"/g)].map((m) =>
     decodeXml(m[1] ?? ''),
@@ -677,15 +708,15 @@ export function officeText(buf: Buffer, ext: string): string {
           })
           .join('\t'),
       )
-      return `[시트 ${names[i] ?? i + 1}]\n${rows.join('\n')}`
+      return `[Sheet ${names[i] ?? i + 1}]\n${rows.join('\n')}`
     })
     .join('\n\n')
 }
 
 /**
- * 파일 내용 읽기. 맥의 iCloud Drive가 공간을 아끼려고 내용을 클라우드에만 둔 파일(목록에는 보이는 '문서' 속 파일)은
- * 읽으면 "Resource deadlock avoided"(EDEADLK, -11)로 실패한다(실측 2026-11-19, 견적 PDF). 이때 brctl로 내려받고 다시 읽는다.
- * 못 읽으면 사용자에게 전할 이유를 글로 돌려준다
+ * Reads a file. Files macOS iCloud Drive keeps only in the cloud to save space (listed in Documents but not on
+ * disk) fail with "Resource deadlock avoided" (EDEADLK, -11) (measured 2026-11-19, a quote PDF). Then download with
+ * brctl and read again. When it cannot be read, returns the reason as text (for the AI)
  */
 export async function readLocal(p: string, wait = 30_000): Promise<Buffer | string> {
   try {
@@ -701,15 +732,17 @@ export async function readLocal(p: string, wait = 30_000): Promise<Buffer | stri
       return await readFile(p)
     } catch {}
   }
-  return 'iCloud Drive에만 있고 이 Mac에 내려받아지지 않은 파일이라 열지 못했어요. Finder에서 파일을 한 번 열거나 "지금 다운로드"를 누른 뒤 다시 부탁해 달라고 사용자에게 알려 주세요.'
+  return 'Could not open it: the file is only in iCloud Drive and is not downloaded to this Mac. Tell the user to open the file once in Finder or click "Download Now", then ask again.'
 }
 
 /**
- * 내용을 다 읽지 않고 이 Mac에 내려받아져 있게만 한다 (큰 영상도 올리기·그리기 전에). 첫 바이트를 읽어 보고,
- * iCloud에만 있으면(EDEADLK) brctl로 내려받고 기다린다. 됐으면 undefined, 못 했으면 사용자에게 전할 이유
- * (실측 11-21: '문서'의 보고서 html이 클라우드에만 있어 PDF 만들기가 실패해 두리가 이름을 바꿔 가며 우회했다)
+ * Only makes sure the file is downloaded to this Mac, without reading it all (also for large videos before
+ * uploading or drawing). Reads the first byte, and if the file is only in iCloud (EDEADLK) downloads it with brctl
+ * and waits. undefined when done, otherwise the reason for the user, in `lang` (shown on the phone, Korean by
+ * default) (measured 11-21: a report html in Documents was only in the cloud, PDF making failed and Dool2 worked
+ * around it by renaming files)
  */
-export async function ensureLocal(p: string, wait = 60_000): Promise<string | undefined> {
+export async function ensureLocal(p: string, wait = 60_000, lang: Lang = 'ko'): Promise<string | undefined> {
   const peek = async () => {
     const fh = await open(p, 'r')
     try {
@@ -733,10 +766,10 @@ export async function ensureLocal(p: string, wait = 60_000): Promise<string | un
       return undefined
     } catch {}
   }
-  return `${basename(p)}: iCloud Drive에만 있고 이 Mac에 아직 내려받아지지 않았어요. 조금 뒤 다시 해 볼게요.`
+  return filesCopy(lang).icloudAway(basename(p))
 }
 
-/** 스캔 PDF 안의 사진(JPEG, DCTDecode) */
+/** Photos inside a scanned PDF (JPEG, DCTDecode) */
 export function pdfImages(buf: Buffer): Buffer[] {
   const src = buf.toString('latin1')
   const out: Buffer[] = []
@@ -749,7 +782,7 @@ export function pdfImages(buf: Buffer): Buffer[] {
     re.lastIndex = end
     if (!/\/Subtype\s*\/Image/.test(dict) || !/DCTDecode/.test(dict) || /FlateDecode/.test(dict)) continue
     const data = buf.subarray(start, end)
-    // JPEG 시작 표시(FFD8)부터, 너무 작은 것(아이콘)은 뺀다
+    // From the JPEG start marker (FFD8); leave out tiny ones (icons)
     const at = data.indexOf(Buffer.from([0xff, 0xd8]))
     if (at >= 0 && data.length > 20_000 && data.length - at <= IMAGE_MAX)
       out.push(Buffer.from(data.subarray(at)))
@@ -757,7 +790,7 @@ export function pdfImages(buf: Buffer): Buffer[] {
   return out
 }
 
-// ── 만들기 ─────────────────────────────────────────────
+// ── Making files ─────────────────────────────────────────────
 
 function csvRows(text: string): string[][] {
   return text
@@ -789,7 +822,7 @@ function crc32(b: Buffer) {
   return (c ^ 0xffffffff) >>> 0
 }
 
-/** 압축 없는 zip (엑셀 파일 만들 때) */
+/** Uncompressed zip (for making Excel files) */
 export function zip(files: [string, string][]): Buffer {
   const parts: Buffer[] = []
   const central: Buffer[] = []
@@ -833,10 +866,10 @@ export function zip(files: [string, string][]): Buffer {
 const esc = (s: string) =>
   s
     .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
-    // XML에 못 넣는 제어 문자는 뺀다 (탭·줄바꿈은 둔다)
+    // Drop control characters XML cannot hold (keep tabs and line breaks)
     .replace(/./gsu, (c) => (c.charCodeAt(0) < 32 && !'\t\n\r'.includes(c) ? '' : c))
 
-/** 엑셀 파일 (시트 하나, 첫 줄은 굵게 하지 않은 그대로). 숫자처럼 생긴 칸은 숫자로 */
+/** Excel file (one sheet, first row not bolded). Cells that look like numbers become numbers */
 export function xlsx(rows: unknown[][]): Buffer {
   const col = (i: number) => {
     let s = ''

@@ -99,15 +99,15 @@ describe('올릴 파일 울타리 (browser_upload)', () => {
       const v = await files.uploadable([p])
       return 'error' in v ? v.error : ''
     }
-    expect(await err('~/Secret/a.jpg')).toContain('밖이에요')
-    expect(await err('/etc/hosts')).toContain('밖이에요')
-    expect(await err('~/Pictures/../Secret/a.jpg')).toContain('밖이에요')
-    expect(await err('~/Pictures/link/a.jpg')).toContain('밖이에요')
-    expect(await err('~/Pictures/.hidden/b.jpg')).toContain('민감한')
-    expect(await err('~/Documents/signPri.key')).toContain('민감한')
-    expect(await err('~/Documents/비밀번호 모음.txt')).toContain('민감한')
-    expect(await err('~/Pictures')).toContain('파일이 아니에요')
-    expect(await err('')).toContain('경로를 주세요')
+    expect(await err('~/Secret/a.jpg')).toContain('outside')
+    expect(await err('/etc/hosts')).toContain('outside')
+    expect(await err('~/Pictures/../Secret/a.jpg')).toContain('outside')
+    expect(await err('~/Pictures/link/a.jpg')).toContain('outside')
+    expect(await err('~/Pictures/.hidden/b.jpg')).toContain('sensitive')
+    expect(await err('~/Documents/signPri.key')).toContain('sensitive')
+    expect(await err('~/Documents/비밀번호 모음.txt')).toContain('sensitive')
+    expect(await err('~/Pictures')).toContain('not a file')
+    expect(await err('')).toContain('Give the paths')
   })
 
   it('사진 보관함 같은 앱 묶음 폴더는 찾을 때 건너뛴다', async () => {
@@ -138,7 +138,7 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     await t.run('read', { tabId: 3 })
     const r = await t.run('upload', { tabId: 3, ref: 'e2', paths: ['~/Pictures/제주 바다.jpg'] })
     expect(r.isError).toBeUndefined()
-    expect(text(r)).toContain('승인을 요청했어요')
+    expect(text(r)).toContain('Asked for approval')
     expect(b.calls.map((c) => c[0])).not.toContain('upload')
     const [rec] = t.approvals.list()
     expect(rec).toMatchObject({
@@ -157,7 +157,7 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     expect(String(((up?.paths ?? []) as string[])[0])).toContain(join('Pictures', '제주 바다.jpg'))
     // 같은 사이트에 같은 파일은 30분 동안 다시 묻지 않는다
     const again = await t.run('upload', { tabId: 3, ref: 'e3', paths: ['~/Pictures/제주 바다.jpg'] })
-    expect(text(again)).toContain('파일 칸에 제주 바다.jpg을(를) 넣었어요')
+    expect(text(again)).toContain('Put 제주 바다.jpg in the "첨부" file field')
     expect(t.approvals.list()).toHaveLength(1)
   })
 
@@ -170,7 +170,7 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     await t.run('upload', { tabId: 3, ref: 'e2', paths: ['~/Pictures/a.jpg'] })
     await t.approve(t.approvals.list()[0]?.id as string)
     const r = await t.run('upload', { tabId: 3, ref: 'e2', paths: ['~/Pictures/a.jpg', '~/Pictures/b.jpg'] })
-    expect(text(r)).toContain('승인을 요청했어요')
+    expect(text(r)).toContain('Asked for approval')
   })
 
   it('폴더 밖 파일·읽지 않은 표시는 승인 카드도 띄우지 않는다', async () => {
@@ -180,7 +180,7 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     await t.run('read', { tabId: 3 })
     const out = await t.run('upload', { tabId: 3, ref: 'e2', paths: ['~/Secret/a.jpg'] })
     expect(out.isError).toBe(true)
-    expect(text(out)).toContain('밖이에요')
+    expect(text(out)).toContain('outside')
     const unknown = await t.run('upload', { tabId: 3, ref: 'e99', paths: ['~/Pictures/a.jpg'] })
     expect(unknown.isError).toBe(true)
     expect(t.approvals.list()).toHaveLength(0)

@@ -46,8 +46,8 @@ describe('PC 파일 옮기기', () => {
       ],
     })
     expect(ask.isError).toBeFalsy()
-    expect(text(ask)).toContain('승인을 요청했어요')
-    expect(text(ask)).toContain('건너뛴 것 1개')
+    expect(text(ask)).toContain('Approval requested')
+    expect(text(ask)).toContain('Skipped 1')
     // 승인 전에는 아무것도 옮기지 않는다
     expect(existsSync(join(dl, '영수증_0312.pdf'))).toBe(true)
     expect(existsSync(join(dl, '계약서'))).toBe(false)
@@ -72,7 +72,7 @@ describe('PC 파일 옮기기', () => {
     expect((await tools.ops.approve(rec?.id ?? '')).ok).toBe(false)
 
     const back = await tools.run('file_move', { undo: true })
-    expect(text(back)).toContain('2개 중 2개를 원래 자리로')
+    expect(text(back)).toContain('Moved 2 of the 2 moved on')
     expect(readFileSync(join(dl, '영수증_0312.pdf'), 'utf8')).toBe('a')
     expect(readFileSync(join(dl, '임대차 계약서.pdf'), 'utf8')).toBe('b')
     // 이번에 만든 빈 폴더는 치우고, 원래 있던 폴더와 그 안 파일은 그대로
@@ -96,7 +96,7 @@ describe('PC 파일 옮기기', () => {
       home,
       { approvals, movesLog: join(home, 'data', 'file-moves.json') },
     )
-    expect(text(await again.run('file_move', { undo: true }))).toContain('원래 자리로')
+    expect(text(await again.run('file_move', { undo: true }))).toContain('back to where they were')
     expect(existsSync(join(dl, 'scan001.pdf'))).toBe(true)
   })
 
@@ -119,9 +119,9 @@ describe('PC 파일 옮기기', () => {
   it('찾기는 limit으로 30개보다 많이 보여 준다', async () => {
     const { tools, dl } = setup()
     for (let i = 0; i < 40; i++) writeFileSync(join(dl, `영수증 ${i}.pdf`), 'x')
-    expect(text(await tools.run('file_find', { query: '영수증' }))).toContain('40개 중 최근 30개')
+    expect(text(await tools.run('file_find', { query: '영수증' }))).toContain('Latest 30 of 40')
     const all = text(await tools.run('file_find', { query: '영수증', limit: 100 }))
-    expect(all).toContain('40개:')
+    expect(all).toContain('40:')
     expect(all.match(/영수증 \d+\.pdf/g)).toHaveLength(40)
   })
 })
@@ -136,18 +136,18 @@ describe('사진 형식 바꾸기', () => {
       writeFileSync(join(dl, '사진', 'b.png'), PNG)
       writeFileSync(join(dl, '사진', '메모.txt'), 'x')
       const r = await tools.run('file_convert', { paths: ['~/Downloads/사진'], only: ['png'] })
-      expect(text(r)).toContain('2개를 JPG로 바꿨어요')
+      expect(text(r)).toContain('Converted 2 to JPG')
       const jpg = readFileSync(join(dl, '사진', 'a.jpg'))
       expect([jpg[0], jpg[1]]).toEqual([0xff, 0xd8])
       expect(existsSync(join(dl, '사진', 'a.png'))).toBe(true)
       const again = await tools.run('file_convert', { paths: ['~/Downloads/사진'] })
-      expect(text(again)).toContain('건너뛴 것 2개')
+      expect(text(again)).toContain('Skipped 2')
       // 다른 폴더에 두기
       const out = await tools.run('file_convert', {
         paths: ['~/Downloads/사진/a.png'],
         folder: '~/Desktop/JPG',
       })
-      expect(text(out)).toContain('1개를 JPG로')
+      expect(text(out)).toContain('Converted 1 to JPG')
       expect(existsSync(join(dl, '..', 'Desktop', 'JPG', 'a.jpg'))).toBe(true)
       // 아이폰 HEIC: sips로 하나 만들어 HEIC만 골라 바꾼다
       execFileSync('sips', [
@@ -159,7 +159,7 @@ describe('사진 형식 바꾸기', () => {
         join(dl, '사진', 'IMG_0001.HEIC'),
       ])
       const heic = await tools.run('file_convert', { paths: ['~/Downloads/사진'], only: ['heic'] })
-      expect(text(heic)).toContain('1개를 JPG로 바꿨어요')
+      expect(text(heic)).toContain('Converted 1 to JPG')
       expect(existsSync(join(dl, '사진', 'IMG_0001.jpg'))).toBe(true)
       expect(existsSync(join(dl, '사진', 'IMG_0001.HEIC'))).toBe(true)
     },
@@ -169,9 +169,11 @@ describe('사진 형식 바꾸기', () => {
     const { tools, dl } = setup({ platform: 'linux' })
     writeFileSync(join(dl, 'a.heic'), 'x')
     writeFileSync(join(dl, 'a.txt'), 'x')
-    expect(text(await tools.run('file_convert', { paths: ['~/Downloads/a.heic'] }))).toContain('맥·윈도우만')
+    expect(text(await tools.run('file_convert', { paths: ['~/Downloads/a.heic'] }))).toContain(
+      'macOS and Windows only',
+    )
     expect(text(await tools.run('file_convert', { paths: ['~/Downloads/a.txt'] }))).toContain(
-      '사진 파일이 아니에요',
+      'not a photo file',
     )
   })
 
@@ -186,7 +188,7 @@ describe('사진 형식 바꾸기', () => {
     writeFileSync(join(dl, 'IMG_1.HEIC'), 'x')
     const r = await tools.run('file_convert', { paths: ['~/Downloads/IMG_1.HEIC'] })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('HEIF 이미지 확장')
+    expect(text(r)).toContain('HEIF Image Extensions')
     expect(calls).toEqual(['powershell.exe'])
   })
 })
@@ -217,8 +219,8 @@ describe('출력', () => {
     writeFileSync(join(dl, '학습지.pdf'), '%PDF')
     const r = await tools.run('file_print', { path: '~/Downloads/학습지.pdf' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('연결된 프린터가 없어요')
-    expect(text(r)).toContain('프린터 및 스캐너')
+    expect(text(r)).toContain('No printer is connected')
+    expect(text(r)).toContain('Printers & Scanners')
   })
 
   it('승인을 받은 뒤에만 기본 프린터로 보낸다 (매수·쪽)', async () => {
@@ -226,9 +228,9 @@ describe('출력', () => {
     const { tools, approvals, dl } = setup({ platform: 'darwin', exec })
     writeFileSync(join(dl, '학습지.pdf'), '%PDF')
     const list = text(await tools.run('file_print', {}))
-    expect(list).toContain('Brother_HL (기본): 쓸 수 있어요')
+    expect(list).toContain('Brother_HL (default): ready')
     const ask = await tools.run('file_print', { path: '~/Downloads/학습지.pdf', copies: 2, pages: '1-3' })
-    expect(text(ask)).toContain('승인을 요청했어요')
+    expect(text(ask)).toContain('Approval requested')
     expect(calls.some((c) => c[0] === 'lp')).toBe(false)
     const rec = approvals.list().find((a) => a.status === 'pending')
     expect(rec).toMatchObject({
@@ -259,8 +261,8 @@ describe('출력', () => {
     writeFileSync(join(dl, '학습지.pdf'), '%PDF')
     writeFileSync(join(dl, '학습지.docx'), 'x')
     writeFileSync(join(dl, 'IMG.heic'), 'x')
-    expect(text(await tools.run('file_print', { path: '~/Downloads/학습지.pdf' }))).toContain('오프라인')
-    expect(text(await tools.run('file_print', { path: '~/Downloads/학습지.docx' }))).toContain('PDF로 저장')
+    expect(text(await tools.run('file_print', { path: '~/Downloads/학습지.pdf' }))).toContain('offline')
+    expect(text(await tools.run('file_print', { path: '~/Downloads/학습지.docx' }))).toContain('saved as PDF')
     expect(text(await tools.run('file_print', { path: '~/Downloads/IMG.heic' }))).toContain('file_convert')
     expect(approvals.list()).toHaveLength(0)
   })
@@ -277,6 +279,6 @@ describe('출력', () => {
     const { tools, dl } = setup({ platform: 'win32', exec })
     writeFileSync(join(dl, 'a.pdf'), '%PDF')
     const r = text(await tools.run('file_print', { path: '~/Downloads/a.pdf' }))
-    expect(r).toContain('삼성 SL-M2030: 꺼져 있거나 연결이 끊겼어요')
+    expect(r).toContain('삼성 SL-M2030: off or disconnected')
   })
 })

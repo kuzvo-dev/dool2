@@ -185,7 +185,7 @@ describe('브라우저 도구 실행', () => {
     const tools = new BrowserTools(fakeBrowser())
     const r = await tools.run('click', { tabId: 3, ref: 'e2' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('먼저 페이지를 읽어')
+    expect(text(r)).toContain('Read the page first')
   })
 
   it('캡차가 보이면 사람에게 부탁하라고 적는다', async () => {
@@ -202,7 +202,7 @@ describe('브라우저 도구 실행', () => {
           }
         : { tabId: 3 }
     const r = await new BrowserTools(b).run('read', { tabId: 3 })
-    expect(text(r)).toContain('로봇 확인')
+    expect(text(r)).toContain('robot check')
   })
 
   it('확장이 없으면 오류를 글로 돌려준다', async () => {
@@ -271,8 +271,8 @@ describe('사이트 알림창', () => {
       { type: 'beforeunload', message: '', url: 'https://shop.example/' },
     ])
     const r = text(await new BrowserTools(b).run('read', { tabId: 3 }))
-    expect(r).toContain('💬 사이트 알림창: "아이디 또는 비밀번호가 틀렸어요"')
-    expect(r).toContain('떠날지 묻는 창')
+    expect(r).toContain('💬 Site alert: "아이디 또는 비밀번호가 틀렸어요"')
+    expect(r).toContain('whether to leave the page')
     expect(r).toContain('[e4 버튼 "바로 구매"]')
   })
 
@@ -284,7 +284,7 @@ describe('사이트 알림창', () => {
     })
     const tools = new BrowserTools(b)
     const r = text(await tools.run('read', { tabId: 3 }))
-    expect(r).toContain('⚠ 사이트 확인 창이 떠 있어요: "장바구니로 이동할까요?"')
+    expect(r).toContain('⚠ A site confirm dialog is open: "장바구니로 이동할까요?"')
     expect(r).toContain('browser_dialog')
     // 빈 화면이라고 1.5초 기다려 다시 읽지 않는다
     expect(b.calls.filter((c) => c[0] === 'snapshot')).toHaveLength(1)
@@ -295,14 +295,14 @@ describe('사이트 알림창', () => {
       accept: false,
       expect: '장바구니로 이동할까요?',
     })
-    expect(text(done)).toContain('[취소]')
+    expect(text(done)).toContain('[Cancel]')
     expect(text(done)).toContain('[e4 버튼 "바로 구매"]')
   })
 
   it('입력 창은 넣을 글을 함께 넘긴다', async () => {
     const b = dialogBrowser({ type: 'prompt', message: '수량', url: 'https://x/', defaultPrompt: '1' })
     const tools = new BrowserTools(b)
-    expect(text(await tools.run('read', { tabId: 3 }))).toContain('미리 적힌 글: "1"')
+    expect(text(await tools.run('read', { tabId: 3 }))).toContain('prefilled text: "1"')
     await tools.run('dialog', { tabId: 3, accept: true, text: '3' })
     expect(b.calls.find((c) => c[0] === 'dialog')?.[1]).toMatchObject({ accept: true, text: '3' })
   })
@@ -463,8 +463,8 @@ describe('여러 동작 한 번에', () => {
     })
     expect(r.isError).toBeUndefined()
     expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'type', 'type', 'click', 'click', 'snapshot'])
-    expect(text(r)).toContain('1. "이름"에 입력했어요.')
-    expect(text(r)).toContain('4. 버튼 "다음"을(를) 눌렀어요.')
+    expect(text(r)).toContain('1. Typed in "이름".')
+    expect(text(r)).toContain('4. Pressed 버튼 "다음".')
   })
 
   it('편집기가 그린 자리에 넣으면 눌러 넣었다고, 글이 안 보이면 다시 하라고 알린다 (사람에게 넘기지 않는다)', async () => {
@@ -475,12 +475,12 @@ describe('여러 동작 한 번에', () => {
     const tools = new BrowserTools(b)
     await tools.run('read', { tabId: 3 })
     const ok = await tools.run('type', { tabId: 3, ref: 'e1', text: '제주 바다 여행' })
-    expect(text(ok)).toContain('"이름" 자리를 눌러 입력했어요 (넣은 글이 화면에 보여요).')
+    expect(text(ok)).toContain('Clicked the "이름" spot and typed (the typed text shows on screen).')
     seen = false
     const miss = await tools.run('type', { tabId: 3, ref: 'e1', text: '제주 바다 여행' })
-    expect(text(miss)).toContain('넣은 글이 화면에 보이지 않아요')
+    expect(text(miss)).toContain('the typed text does not show on screen')
     expect(text(miss)).toContain('browser_click')
-    expect(text(miss)).not.toMatch(/복사|붙여/)
+    expect(text(miss)).not.toMatch(/copy|paste/i)
   })
 
   it('다른 화면으로 넘어가면 남은 동작은 하지 않는다', async () => {
@@ -497,7 +497,7 @@ describe('여러 동작 한 번에', () => {
       ],
     })
     expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'click', 'snapshot'])
-    expect(text(r)).toContain('다른 화면으로 넘어가서 남은 1개 동작은 하지 않았어요')
+    expect(text(r)).toContain('Because it moved to another screen, the remaining 1 actions were not done')
   })
 
   it('확인 창이 뜨면 멈추고 알린다', async () => {
@@ -519,7 +519,7 @@ describe('여러 동작 한 번에', () => {
         { do: 'wait', ms: 100 },
       ],
     })
-    expect(text(r)).toContain('사이트 확인 창이 떠서 남은 1개 동작은 하지 않았어요')
+    expect(text(r)).toContain('Because a site confirm dialog appeared, the remaining 1 actions were not done')
   })
 
   it('위험한 버튼은 하나씩 부를 때처럼 막고, 그 앞까지만 한다', async () => {
@@ -535,9 +535,9 @@ describe('여러 동작 한 번에', () => {
       ],
     })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('2. 멈췄어요')
+    expect(text(r)).toContain('2. Stopped')
     expect(text(r)).toContain('browser_checkout')
-    expect(text(r)).toContain('남은 1개 동작은 하지 않았어요')
+    expect(text(r)).toContain('the remaining 1 actions were not done')
     expect(b.calls.filter((c) => c[0] === 'click')).toHaveLength(0)
   })
 
@@ -547,7 +547,7 @@ describe('여러 동작 한 번에', () => {
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('hover', { tabId: 3, ref: 'e5' })
     expect(r.isError).toBeUndefined()
-    expect(text(r)).toContain('버튼 "바로 구매"에 마우스를 올렸어요.')
+    expect(text(r)).toContain('Hovered over 버튼 "바로 구매".')
     expect(b.calls.map((c) => c[0])).toEqual(['snapshot', 'hover', 'snapshot'])
   })
 
@@ -557,12 +557,12 @@ describe('여러 동작 한 번에', () => {
     await tools.run('read', { tabId: 3 })
     const bad = await tools.run('steps', { tabId: 3, steps: [{ do: 'eval', code: 'alert(1)' }] })
     expect(bad.isError).toBe(true)
-    expect(text(bad)).toContain('모르는 동작')
+    expect(text(bad)).toContain('Unknown action')
     const many = await tools.run('steps', {
       tabId: 3,
       steps: Array.from({ length: 13 }, () => ({ do: 'wait' })),
     })
-    expect(text(many)).toContain('12개까지')
+    expect(text(many)).toContain('Up to 12 actions')
   })
 })
 
@@ -588,7 +588,7 @@ describe('필요한 부분만 읽기', () => {
     })
     const r = text(await tools.run('read', { tabId: 3, from: '상품 150' }))
     expect(calls[0]).toEqual({ tabId: 3, maxChars: 8000, from: '상품 150' })
-    expect(r).toContain('앞 41,000자는 건너뛰고 읽었어요')
+    expect(r).toContain('Skipped the first 41,000 characters')
     // 잘렸으면 이어 읽을 자리를 알려 준다
     expect(r).toMatch(/skip: \d+/)
     // 일부만 읽을 때는 글이 적어도 빈 화면으로 보고 다시 읽지 않는다
@@ -598,9 +598,9 @@ describe('필요한 부분만 읽기', () => {
 
   it('보이는 부분만 읽으면 위·아래에 남은 글을 알린다', () => {
     expect(scopeLines({ around: { above: 1200, below: 0 } }, { view: true })).toEqual([
-      '(지금 화면에 보이는 부분만 읽었어요. ↑ 위에 글 1,200자쯤)',
+      '(Read only the part visible on screen. ↑ about 1,200 characters above)',
     ])
-    expect(scopeLines({ fromMissing: true }, { from: '없는 말' })[0]).toContain('찾지 못해 처음부터')
+    expect(scopeLines({ fromMissing: true }, { from: '없는 말' })[0]).toContain('so read from the start')
   })
 
   it('스크롤하면 보이는 부분을 읽어 돌려준다', async () => {
@@ -624,7 +624,7 @@ describe('필요한 부분만 읽기', () => {
     const r = text(await tools.run('scroll', { tabId: 3, direction: 'down' }))
     expect(calls.map((c) => c[0])).toEqual(['scroll', 'snapshot'])
     expect(calls[1]?.[1]).toMatchObject({ view: true })
-    expect(r).toContain('↓ 화면 아래에 글이 3,000자쯤 더 있어요')
+    expect(r).toContain('↓ About 3,000 more characters are below the screen')
   })
 })
 
@@ -733,8 +733,8 @@ describe('로그인 카드', () => {
     await tools.run('open', { url: 'https://shop.example/login' })
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('request_login', { tabId: 3, site: '시험 가게' })
-    expect(text(r)).toContain('로그인 카드를 띄웠어요')
-    expect(text(r)).not.toMatch(/password|비밀번호:/)
+    expect(text(r)).toContain('Showed a login card')
+    expect(text(r)).not.toMatch(/password:|비밀번호:/)
     const req = tools.logins.list()[0]
     expect(req).toMatchObject({
       tabId: 3,
@@ -821,21 +821,21 @@ describe('사이트 요령·빈 화면', () => {
         ? { id: 'catchtable', name: '캐치테이블', tools: ['catchtable_search'] }
         : undefined
     const first = text(await tools.run('open', { url: 'https://app.catchtable.co.kr/' }))
-    expect(first).toContain('두리 서비스 도구가 있어요: catchtable_search')
+    expect(first).toContain('has Dool2 service tools: catchtable_search')
     const again = text(await tools.run('read', { tabId: 3 }))
-    expect(again).not.toContain('서비스 도구')
+    expect(again).not.toContain('service tools')
   })
 
   it('막 연 화면이 비어 있으면 한 번 기다렸다 다시 읽는다', async () => {
     const r = text(await new BrowserTools(browserWith([EMPTY, PAGE])).run('read', { tabId: 3 }))
     expect(r).toContain('사과 1kg')
-    expect(r).not.toContain('글이 거의 없어요')
+    expect(r).not.toContain('almost no text')
   })
 
   it('계속 비어 있으면 주소가 틀렸을 수 있다고 다른 길을 알린다', async () => {
     const r = text(await new BrowserTools(browserWith([EMPTY])).run('read', { tabId: 3 }))
-    expect(r).toContain('글이 거의 없어요')
-    expect(r).toContain('홈')
+    expect(r).toContain('almost no text')
+    expect(r).toContain('home')
   })
 })
 
@@ -929,11 +929,11 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     const notice = `${ROOMS}\n이 숙박 시설에서 사용 가능한 결제 수단은 신용카드, 현금입니다.\n결제 가능한 신용카드: Visa, Mastercard`
     expect(checkoutScreen(notice, room.url)).toBeUndefined()
     expect(checkoutScreen('## 결제 수단\n[e1 라디오 "신용카드"]\n## 배송지 정보', room.url)).toBe(
-      '결제 수단·예약자 정보',
+      'payment method·booker details',
     )
     expect(checkoutScreen('여부 및 배송비 결제 방법 선택\n총 상품금액 12,900원', room.url)).toBeUndefined()
-    expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('결제 금액·예약자 정보')
-    expect(checkoutScreen('주문 상품', 'https://shop.example/order/sheet')).toBe('결제 단계 주소')
+    expect(checkoutScreen(CHECKOUT, 'https://kr.hotels.com/x')).toBe('payment amount·booker details')
+    expect(checkoutScreen('주문 상품', 'https://shop.example/order/sheet')).toBe('checkout URL')
     expect(confirmedScreen('예약이 완료되었습니다. 예약 번호: HC12345678')).toBeTruthy()
     expect(confirmedScreen('예약 완료하기')).toBeUndefined()
   })
@@ -949,7 +949,7 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     expect(b.calls.map((c) => c[0])).not.toContain('click')
     const ok = await tools.run('click', { tabId: 3, ref: 'e58', opens_checkout: true })
     expect(ok.isError).toBeUndefined()
-    expect(text(ok)).toContain('결제 화면이에요')
+    expect(text(ok)).toContain('This is a checkout screen')
   })
 
   it('승인 요청은 어느 단계의 버튼이든 받는다. 같은 버튼에 또 요청하면 새 카드 하나만 남는다', async () => {
@@ -986,7 +986,7 @@ describe('결제 흐름 (돈 내기 표준 순서)', () => {
     tools.startPayFlow(3, 'hotels-com.prepare_booking')
     await tools.run('read', { tabId: 3 })
     const r = await tools.run('click', { tabId: 3, ref: 'e58', opens_checkout: true })
-    expect(text(r)).toContain('이미 확정됐을 수 있어요')
+    expect(text(r)).toContain('may already be confirmed')
   })
 
   it('같은 서비스 사이트를 새 탭으로 다시 열어도 결제 흐름이다', async () => {
@@ -1063,7 +1063,7 @@ describe('쿠키 동의 창', () => {
     }
     const tools = new BrowserTools(b)
     const r = text(await tools.run('read', { tabId: 3 }))
-    expect(r).toContain('🪟 덮은 창: [e37 버튼 "모두 거부"]')
+    expect(r).toContain('🪟 Covering window: [e37 버튼 "모두 거부"]')
     expect(calls).toEqual(['snapshot'])
     expect(coverLine('앱으로 보면 10% 더 저렴해요 [e2 버튼 "앱에서 열기"] [e3 버튼 "나중에"]')).toContain(
       '[e3 버튼 "나중에"]',
@@ -1188,7 +1188,7 @@ describe('내 정보로 예약자 칸 채우기', () => {
       { tabId: 3, ref: 'e6', value: '1012345678', origin: 'https://kr.hotels.com' },
     ])
     const t = text(r)
-    expect(t).toContain('내 정보로 채웠어요')
+    expect(t).toContain('Filled from my info')
     expect(t).toContain('ho*****@example.com')
     expect(t).not.toContain('hong.gd@')
     expect(t).not.toContain('1234-5678')
@@ -1211,7 +1211,7 @@ describe('내 정보로 예약자 칸 채우기', () => {
         { ref: 'e5', key: 'email' },
       ],
     })
-    expect(text(r)).toContain('이메일이(가) 없어요')
+    expect(text(r)).toContain('My info has no 이메일')
     expect(text(r)).toContain('browser_request_profile')
     expect(b.calls.filter((c) => c[0] === 'fill')).toHaveLength(1)
     const card = await tools.run('request_profile', { fields: ['email', 'phone'], reason: '호텔 예약자 칸' })
@@ -1707,7 +1707,7 @@ describe('새 비밀번호 만들기', () => {
     })
     expect(r.isError).toBeUndefined()
     expect(t.fills.map((f) => f.value)).toEqual(['MyOwn!pass2026', 'MyOwn!pass2026'])
-    expect(t.text(r)).toContain('사용자가 정한')
+    expect(t.text(r)).toContain('the password the user set')
     expect(t.text(r)).not.toContain('MyOwn!pass2026')
     // 한 번 쓰면 지운다: 다음엔 두리가 만든다
     await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
@@ -1720,11 +1720,11 @@ describe('새 비밀번호 만들기', () => {
     const bad = await short.tools
       .run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
       .catch((e: Error) => ({ isError: true, content: [{ type: 'text' as const, text: e.message }] }))
-    expect(short.text(bad as never)).toContain('다시 부르세요')
+    expect(short.text(bad as never)).toContain('call browser_new_password again')
     const again = short.text(
       await short.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' }),
     )
-    expect(again).toContain('폰에')
+    expect(again).toContain("on the user's phone")
     expect(short.asked).toHaveLength(1)
   })
 
@@ -1752,7 +1752,7 @@ describe('새 비밀번호 만들기', () => {
     expect(t.saved).toHaveLength(1)
     expect(t.saved[0]).toMatchObject({ origin: 'https://www.shop.example', username: 'me@example.com' })
     expect(t.saved[0]?.password).toBe(t.fills[0]?.value)
-    expect(done).toContain('금고에 저장')
+    expect(done).toContain('saved it in the vault')
     expect(t.text(r)).not.toContain(t.saved[0]?.password as string)
     expect(done).not.toContain(t.saved[0]?.password as string)
   })
@@ -1788,7 +1788,7 @@ describe('새 비밀번호 만들기', () => {
     const r = await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
     expect(r.isError).toBe(true)
     expect(t.text(r)).not.toContain('browser_handoff')
-    expect(t.text(r)).toContain('browser_new_password를 다시')
+    expect(t.text(r)).toContain('call browser_new_password again')
   })
 
   it('"이미 가입된 이메일"이 새로 뜨면 만든 비밀번호를 버리고 로그인으로 바꾸라고 한다', async () => {
@@ -1798,7 +1798,7 @@ describe('새 비밀번호 만들기', () => {
     await t.tools.run('new_password', { tabId: 3, password: 'e2', username: 'me@example.com' })
     t.page.now = { ...t.form, text: `${t.form.text} 이미 가입된 이메일이에요. 로그인해 주세요.` }
     const out = t.text(await t.tools.run('read', { tabId: 3 }))
-    expect(out).toContain('버렸어요')
+    expect(out).toContain('discarded')
     // 그 뒤 완료처럼 보이는 글이 와도 저장할 것이 없다
     t.page.now = { ...t.form, title: '가입 완료', text: '가입이 완료됐어요' }
     await t.tools.run('read', { tabId: 3 })
@@ -1812,7 +1812,7 @@ describe('새 비밀번호 만들기', () => {
     expect(r.isError).toBeUndefined()
     expect(t.fills).toHaveLength(0)
     expect(t.asked).toEqual(['shop.example'])
-    expect(t.text(r)).toContain('물었어요')
+    expect(t.text(r)).toContain("Asked on the user's phone")
     // 묻는 길이 없으면 거절
     const t2 = signupBench()
     await t2.tools.run('read', { tabId: 3 })
@@ -1933,7 +1933,7 @@ describe('상품 옵션 고르기 (browser_select)', () => {
     const t = shop(['S', 'M (품절)', 'L'])
     await t.tools.run('read', { tabId: 3 })
     const listed = t.text(await t.tools.run('select', { tabId: 3, ref: 'e1' }))
-    expect(listed).toContain('2. M (품절) — 고를 수 없음')
+    expect(listed).toContain('2. M (품절) — cannot be chosen')
     const r = await t.tools.run('select', { tabId: 3, ref: 'e1', choose: 'l' })
     expect(r.isError).toBeUndefined()
     expect(t.chosen).toEqual(['L'])
@@ -1954,7 +1954,7 @@ describe('상품 옵션 고르기 (browser_select)', () => {
   it('"옵션을 선택해 주세요" 알림이 뜨면 옵션 칸을 짚어 알린다', async () => {
     const t = shop(['S'], '옵션을 선택해 주세요.')
     const out = t.text(await t.tools.run('read', { tabId: 3 }))
-    expect(out).toContain('🧩 옵션을 먼저 골라야 해요')
+    expect(out).toContain('🧩 An option must be chosen first')
     expect(out).toContain('[e1 버튼 "옵션 열기"]')
     const again = t.text(await t.tools.run('read', { tabId: 3 }))
     expect(again).not.toContain('🧩')
@@ -2001,7 +2001,7 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
     expect(r.isError).toBeFalsy()
     // 됐는지는 AI가 넘어간 화면을 보고 판단한다
     const t = r.content[0]?.type === 'text' ? r.content[0].text : ''
-    expect(t).toContain('직접 판단하세요')
+    expect(t).toContain('Judge from the screen below yourself')
     expect(t).toContain('로그아웃')
   }, 40_000)
 
@@ -2053,9 +2053,9 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
       const out = await waiting
       const text = out.content[0]?.type === 'text' ? out.content[0].text : ''
       expect(Date.now() - started).toBeLessThan(30_000)
-      expect(text).toContain('직접 판단하세요')
-      if (kind === 'dialog') expect(text).toContain('확인 창')
-      if (kind === 'popup') expect(text).toContain('인증 창이 닫혔어요')
+      expect(text).toContain('Judge from the screen below yourself')
+      if (kind === 'dialog') expect(text).toContain('confirm dialog')
+      if (kind === 'popup') expect(text).toContain('the verification window closed')
     }
   }, 80_000)
 })
@@ -2071,7 +2071,7 @@ describe('PC 화면 넘기기 관문', () => {
       emergency: true,
     })
     const t = first.content[0]?.type === 'text' ? first.content[0].text : ''
-    expect(t).toContain('아직 넘기지 않았어요')
+    expect(t).toContain('Not handed off yet')
     expect(b.calls.some((c) => c[0] === 'focus' || c[0] === 'hold')).toBe(false)
     await tools.run('handoff', { tabId: 3, reason: '휴대폰번호를 넣어 주세요', emergency: true })
     expect(b.calls.some((c) => c[0] === 'focus')).toBe(true)
@@ -2114,10 +2114,10 @@ describe('로그인 카드 값은 로그인에 성공해야 금고에 남는다'
     const out = text(
       await tools.run('login', { tabId: 3, failed: true, reason: '입력 정보를 찾을 수 없어요' }),
     )
-    expect(out).toContain('금고에서 지웠어요')
+    expect(out).toContain('removed from the vault')
     expect(removed).toEqual(['v1'])
     expect(text(await tools.run('request_login', { tabId: 3, site: '패스' }))).toContain(
-      '로그인 카드를 띄웠어요',
+      'Showed a login card',
     )
     // 성공해서 확인된 값은 지우지 않지만, 바뀐 것 같다고 하면 카드를 다시 띄울 수 있다
     entries.splice(0, 1, { id: 'v2', username: 'me', password: 'right' })
@@ -2131,10 +2131,10 @@ describe('로그인 카드 값은 로그인에 성공해야 금고에 남는다'
     await tools.run('read', { tabId: 3 })
     await tools.run('login', { tabId: 3, passwordRef: 'e2' })
     const stale = text(await tools.run('login', { tabId: 3, failed: true }))
-    expect(stale).toContain('바뀐 것 같아요')
+    expect(stale).toContain('seems to have changed')
     expect(removed).toEqual([])
     expect(text(await tools.run('request_login', { tabId: 3, site: '패스' }))).toContain(
-      '로그인 카드를 띄웠어요',
+      'Showed a login card',
     )
   }, 30_000)
 })
@@ -2168,7 +2168,7 @@ describe('인증 완료 판단은 AI가', () => {
     press('인증 완료했어요')
     const out = await waiting
     const text = out.content[0]?.type === 'text' ? out.content[0].text : ''
-    expect(text).toContain('직접 판단하세요')
+    expect(text).toContain('Judge from the screen below yourself')
     expect(text).toContain('인증이 완료되었습니다')
     // 짚어 준 버튼이 없으면 본체는 아무것도 누르지 않는다 (버튼 이름 규칙으로 고르지 않는다)
     expect(clicked).toBe(0)
@@ -2362,7 +2362,7 @@ describe('결제 비밀번호 키패드는 폰 보안 키패드로', () => {
     const dup = await tools
       .run('request_code', { tabId: 3, ref: 'e20001', kind: 'pin', keys: { ...map, '0': map['1'] } })
       .catch((e: Error) => e.message)
-    expect(String(JSON.stringify(dup))).toContain('같은 버튼')
+    expect(String(JSON.stringify(dup))).toContain('The same button')
     const ok = await tools.run('request_code', { tabId: 3, ref: 'e20001', kind: 'pin', keys: map })
     expect(ok.isError).toBeFalsy()
     expect(asked).toEqual([{ keys: map, length: 6 }])
@@ -2561,7 +2561,7 @@ describe('없는 페이지 안내', () => {
     }
     const tools = new BrowserTools(b as never)
     const r = text(await tools.run('open', { url: 'https://pay.example/attend/daily' }))
-    expect(r).toContain('첫 화면(https://pay.example/)')
+    expect(r).toContain('home page (https://pay.example/)')
   })
 })
 
@@ -2616,7 +2616,7 @@ describe('그림 키패드 결제 비밀번호 (request_code pin + box)', () => 
       ).isError,
     ).toBe(true)
     const ok = await tools.run('request_code', { tabId: 3, kind: 'pin', box, keys_at })
-    expect(text(ok)).toContain('보안 키패드 카드')
+    expect(text(ok)).toContain('secure keypad card')
     const points = pinArgs[3] as Record<string, { x: number; y: number }>
     expect(points['1']).toEqual({ x: 100 + Math.round(0.15 * 300), y: 400 + Math.round(0.125 * 400) })
     // 사용자가 넣은 번호대로 그 자리를 누른다
@@ -2662,7 +2662,7 @@ describe('그림 눌러 풀기 (browser_request_tap)', () => {
       ref: 'e7',
       say: '지도에서 이 그림의 위치를 눌러 주세요',
     })
-    expect(text(ok)).toContain('그림 카드를 띄웠어요')
+    expect(text(ok)).toContain('Showed an image card')
     expect(asked[0]).toEqual([
       3,
       '지도에서 이 그림의 위치를 눌러 주세요',
@@ -2679,7 +2679,7 @@ describe('그림 눌러 풀기 (browser_request_tap)', () => {
       box: { x: 300, y: 200, w: 400, h: 500 },
       say: 'x',
     })
-    expect(text(byBox)).toContain('그림 카드를 띄웠어요')
+    expect(text(byBox)).toContain('Showed an image card')
     expect(
       calls.find((c) => c[0] === 'element-shots' && (c[1] as { boxes?: unknown }).boxes)?.[1],
     ).toMatchObject({
@@ -2707,7 +2707,7 @@ describe('넘긴 화면 지켜보기', () => {
     await tools.run('read', { tabId: 3 })
     await tools.run('handoff', { tabId: 3, reason: '로봇 확인', emergency: true })
     const r = await tools.run('handoff', { tabId: 3, reason: '로봇 확인', emergency: true })
-    expect(text(r)).toContain('알아채')
+    expect(text(r)).toContain('notices')
     await new Promise((res) => setTimeout(res, 80))
     // 값만 바뀐 화면 (칸 이름 그대로)
     page = '# 로그인\n[e1 입력칸 "아이디" 값="duri"] [e2 버튼 "로그인"]'
@@ -2716,7 +2716,7 @@ describe('넘긴 화면 지켜보기', () => {
     url = 'https://x.example/home'
     page = '# 홈\n[e5 버튼 "로그아웃"]'
     await new Promise((res) => setTimeout(res, 120))
-    expect(seen).toEqual(['화면이 다음 단계로 넘어갔어요'])
+    expect(seen).toEqual(['the screen moved to the next step'])
   })
 })
 
@@ -2933,12 +2933,12 @@ describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
   it('결제 창(새 탭)·화면 안 액자의 [다음]·[결제하기]는 다시 막지 않고, 결제 중인 탭은 옮기지 않는다', async () => {
     const { b, tools } = await paid({ popup: 9 })
     await tools.run('read', { tabId: 9 })
-    expect(text(await tools.run('read', { tabId: 9 }))).toContain('💳 결제 중이에요')
+    expect(text(await tools.run('read', { tabId: 9 }))).toContain('💳 Paying')
     const next = await tools.run('click', { tabId: 9, ref: 'e2' })
     expect(next.isError).toBeUndefined()
     const pay = await tools.run('click', { tabId: 9, ref: 'e3' })
     expect(pay.isError).toBeUndefined()
-    expect(text(pay)).toContain('다시 승인받지 않고')
+    expect(text(pay)).toContain('without asking approval again')
     await tools.run('read', { tabId: 3 })
     expect((await tools.run('click', { tabId: 3, ref: 'e100001' })).isError).toBeUndefined()
     expect((await tools.run('navigate', { tabId: 9, url: 'https://x' })).isError).toBe(true)
@@ -2992,7 +2992,7 @@ describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
     const { tools, rec } = await paid()
     const r = await tools.run('order_done', { tabId: 3, failed: true, reason: '카드 한도 초과' })
     expect(r.isError).toBeUndefined()
-    expect(text(r)).toContain('다른 결제 수단')
+    expect(text(r)).toContain('another payment method')
     expect(text(r)).not.toContain('browser_handoff')
     expect(tools.approvals.get(rec?.id as string)?.status).toBe('failed')
     expect(tools.isPaying(3)).toBe(false)
