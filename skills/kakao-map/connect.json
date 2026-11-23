@@ -13,5 +13,29 @@
   "abilities": [
     { "title": "대중교통 길찾기", "say": "강남역에서 대화역 어떻게 가?", "tier": "lookup" },
     { "title": "막차 확인", "say": "여기서 집 가는 막차 몇 시야?", "tier": "lookup" }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Kakao Map",
+      "summary": "No sign-in needed. Dool2 finds public transit routes: what to take, where to transfer, the time and fare, and the last train on each leg.",
+      "example": {
+        "ask": "When is the last train from Gangnam to Daehwa in Ilsan?",
+        "working": "Finding a route on Kakao Map",
+        "reply": "Board Line 2 at Gangnam by 11:25 PM at the latest. The last Line 3 train to Daehwa from Gyodae, where you transfer, leaves at 11:29."
+      },
+      "abilities": [
+        {
+          "title": "Transit directions",
+          "say": "How do I get from Gangnam to Daehwa?"
+        },
+        {
+          "title": "Last train",
+          "say": "When is the last train home from here?"
+        }
+      ]
+    }
+  }
 }

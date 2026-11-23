@@ -39,5 +39,38 @@
       "say": "목요일 오후에 팀 회의 잡아 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Microsoft 365",
+      "login": "Microsoft account",
+      "summary": "Connect Outlook, Teams and OneDrive and Dool2 can pick out emails to answer, find files and chats, reply and set up meetings.",
+      "example": {
+        "ask": "Which emails do I need to answer this morning?",
+        "working": "Reading Outlook mail",
+        "reply": "Four. Mr. Han on the delivery schedule, HR on leave approval, Mr. Seo's Monday workshop invite, and a security training notice."
+      },
+      "abilities": [
+        {
+          "title": "Urgent email",
+          "say": "What's urgent in today's email?"
+        },
+        {
+          "title": "Find files",
+          "say": "Find the quote file I got in Teams"
+        },
+        {
+          "title": "Reply to email",
+          "say": "Tell Mr. Yoon I'm free on Friday"
+        },
+        {
+          "title": "Set a meeting",
+          "say": "Set a team meeting Thursday afternoon"
+        }
+      ]
+    }
+  }
 }

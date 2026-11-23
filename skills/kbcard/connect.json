@@ -42,5 +42,42 @@
     "카드값과 이용 내역은 로그인 뒤 마이 메뉴의 이용내역 조회·결제 예정 금액 화면에서 읽어요. 조회 기간을 이번 달·지난달로 바꿔 가며 봐요.",
     "포인트리와 실적·혜택은 포인트리 메뉴와 카드별 실적 조회 화면에서 찾아요. 결제나 카드 신청 버튼은 누르지 않아요.",
     "보안 키패드(카드 비밀번호 등)가 뜨면 browser_request_code(kind: \"pin\")로 키패드 버튼을 짚어 폰 보안 키패드로 받고, 추가 본인인증은 browser_fill_profile로 칸을 채운 뒤 browser_wait_auth(앱 승인)나 browser_request_code(문자 인증번호)로 받아요."
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "KB Kookmin Card",
+      "login": "ID and password",
+      "summary": "Sign in once and Dool2 can check this month's bill, spending by place, points and remaining spending target, and the discounts you got.",
+      "example": {
+        "ask": "What's my Kookmin Card bill on the 23rd?",
+        "working": "Reading the statement",
+        "reply": "₩593,700 is due on the 23rd. ₩310,000 of it went on groceries and the supermarket."
+      },
+      "abilities": [
+        {
+          "title": "Amount due",
+          "say": "Tell me my next card bill in advance"
+        },
+        {
+          "title": "Spending history",
+          "say": "How much did I spend at the gas station yesterday?"
+        },
+        {
+          "title": "Check points",
+          "say": "Do any points expire this month?"
+        },
+        {
+          "title": "Spending target",
+          "say": "How much more do I need to reach the target?"
+        },
+        {
+          "title": "Perks received",
+          "say": "How much discount did I get last month?"
+        }
+      ]
+    }
+  }
 }

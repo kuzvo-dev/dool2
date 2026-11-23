@@ -38,5 +38,38 @@
       "say": "짐 15kg 추가해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Jin Air",
+      "login": "ID and password",
+      "summary": "Dool2 can find Jin Air tickets at the lowest fare by date and book them, then check bookings and add baggage.",
+      "example": {
+        "ask": "Cheapest Jin Air to Clark next Thursday",
+        "working": "Checking fares",
+        "reply": "The 9 PM flight from Incheon is the cheapest at ₩159,000 one way. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Cheap flights",
+          "say": "Cheapest ticket to Cebu over the holiday"
+        },
+        {
+          "title": "Book",
+          "say": "Book that for two adults and a child"
+        },
+        {
+          "title": "Booking history",
+          "say": "What time does my flight leave this month?"
+        },
+        {
+          "title": "Add baggage",
+          "say": "Add 15kg of baggage"
+        }
+      ]
+    }
+  }
 }

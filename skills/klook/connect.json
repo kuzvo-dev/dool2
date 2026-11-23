@@ -40,5 +40,38 @@
       "say": "방콕 야경 투어 무료 취소 기간이면 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Klook",
+      "login": "ID and password",
+      "summary": "Dool2 can find tours, tickets and transit passes abroad and book them, then check vouchers and cancel. Payment goes out only after you approve.",
+      "example": {
+        "ask": "Bangkok floating market tour next Tuesday for 2",
+        "working": "Finding tours",
+        "reply": "A half-day tour with hotel pickup is ₩32,000 per person. It is rated 4.7 and cancels free up to a day before. Shall I book 2?"
+      },
+      "abilities": [
+        {
+          "title": "Find things to do",
+          "say": "Something to do with kids in Da Nang"
+        },
+        {
+          "title": "Book tickets",
+          "say": "Book 3 tickets for the Osaka aquarium"
+        },
+        {
+          "title": "View vouchers",
+          "say": "Show me all my vouchers for next week"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "Cancel the Bangkok night tour if it's still free"
+        }
+      ]
+    }
+  }
 }

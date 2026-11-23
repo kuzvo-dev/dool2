@@ -39,5 +39,38 @@
       "say": "내 마일리지로 제주 왕복 돼?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Korean Air",
+      "login": "SKYPASS ID and password",
+      "summary": "Dool2 can find and book Korean Air flights, check or cancel bookings and look up your SKYPASS miles. Booking happens only after you approve.",
+      "example": {
+        "ask": "Round trip Incheon to Singapore the first weekend next month",
+        "working": "Checking flights",
+        "reply": "A ₩680,000 economy round trip is the best. Out Friday at 9:00 from Incheon, back Sunday at 23:00 from Singapore. Shall I book this?"
+      },
+      "abilities": [
+        {
+          "title": "Find flights",
+          "say": "Flights to Busan next Friday evening"
+        },
+        {
+          "title": "Book",
+          "say": "Book that with an aisle seat"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "What time is my New York flight?"
+        },
+        {
+          "title": "Check miles",
+          "say": "Can my miles cover a round trip to Jeju?"
+        }
+      ]
+    }
+  }
 }

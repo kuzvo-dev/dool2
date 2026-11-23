@@ -46,5 +46,45 @@
     "로그인은 첫 화면 [로그인]에서 간편인증을 고르고 이름·생년월일·휴대폰 번호를 넣은 뒤, 사용자가 폰의 인증 앱에서 승인할 때까지 기다린다.",
     "메뉴가 깊으니 위쪽 메뉴 검색에 환급금 조회·신고내역·소득금액증명·근로장려금처럼 메뉴 이름을 넣어 바로 간다. 장려금은 사용자에게 소득·재산을 묻기 전에 로그인해 '신청 안내 대상' 조회로 대상 여부·예상액부터 본다.",
     "증명서는 발급 신청 화면까지 채워 두고, 마지막 발급 버튼과 저장·출력은 사용자에게 보여 준 뒤 누른다."
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Hometax",
+      "summary": "Approve a simple-auth notice on your phone to sign in. Dool2 can check refunds, filings and taxes due, and get certificates for you.",
+      "example": {
+        "ask": "Any tax refund I haven't claimed?",
+        "working": "Looking for unclaimed refunds",
+        "reply": "Yes, ₩63,820 from last year's income tax is still waiting. Add an account to receive it and I can apply right away. Open the form?"
+      },
+      "abilities": [
+        {
+          "title": "Check refunds",
+          "say": "Do I have any unclaimed tax refund?"
+        },
+        {
+          "title": "Check EITC and child credits",
+          "say": "See if I qualify for the earned income and child tax credits"
+        },
+        {
+          "title": "Filing history",
+          "say": "Did my income tax filing go through this year?"
+        },
+        {
+          "title": "Taxes due",
+          "say": "Any tax payment deadline coming up?"
+        },
+        {
+          "title": "Get certificates",
+          "say": "Get my income certificate for the bank"
+        },
+        {
+          "title": "Year-end tax data",
+          "say": "Download my year-end tax data for this year"
+        }
+      ]
+    }
+  }
 }

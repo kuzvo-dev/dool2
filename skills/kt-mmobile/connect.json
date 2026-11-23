@@ -38,5 +38,42 @@
       "say": "컬러링 같은 유료 부가서비스 정리해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "KT M mobile",
+      "login": "ID and password",
+      "summary": "Dool2 checks your remaining data and charges on the budget plan, moves you to a cheaper plan and cancels add-on services.",
+      "example": {
+        "ask": "How much data is left on M mobile and when will it run out?",
+        "working": "Checking remaining data",
+        "reply": "You used 7.4GB of 11GB. At about 0.3GB a day, it will run out around the 26th."
+      },
+      "abilities": [
+        {
+          "title": "Data use",
+          "say": "Will my data last this month?"
+        },
+        {
+          "title": "Check charges",
+          "say": "Why is this month's bill so high?"
+        },
+        {
+          "title": "Find plans",
+          "say": "Any plan under ₩20,000 with plenty of data?"
+        },
+        {
+          "title": "Change plan",
+          "say": "Move me to a cheaper plan next month"
+        },
+        {
+          "title": "Clear add-ons",
+          "say": "Clear out paid add-ons like ringback tones"
+        }
+      ]
+    }
+  }
 }

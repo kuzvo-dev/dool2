@@ -21,5 +21,29 @@
       "say": "이번 주 마감인 정부 공모전 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Korea Policy Briefing",
+      "summary": "No sign-in needed. Dool2 gathers the quizzes, contests and events that government ministries are running now, with their dates. You enter on each event's own site.",
+      "example": {
+        "ask": "Enter me in public agency quizzes with gift cards",
+        "working": "Checking government events",
+        "reply": "12 government events are running now. I'll start with the quizzes anyone can enter."
+      },
+      "abilities": [
+        {
+          "title": "Running government events",
+          "say": "Any public agency quiz events?"
+        },
+        {
+          "title": "Contests closing soon",
+          "say": "Any government contest closing this week?"
+        }
+      ]
+    }
+  }
 }

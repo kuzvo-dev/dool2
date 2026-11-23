@@ -41,5 +41,42 @@
       "say": "아까 그 판매자한테 직거래 되는지 물어봐 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Joongna",
+      "login": "Naver or Kakao sign-in",
+      "summary": "Dool2 can find listings and check prices on Joongna, write your sales posts and sort and answer chats. Posts and chats go out only after you approve.",
+      "example": {
+        "ask": "Any good used Dyson Airwrap?",
+        "working": "Looking for listings",
+        "reply": "11 listed this week, priced ₩320,000 to ₩380,000. One with all parts, unused for a year, is ₩340,000. Shall I message the seller?"
+      },
+      "abilities": [
+        {
+          "title": "Find listings",
+          "say": "Nintendo Switch under ₩200,000"
+        },
+        {
+          "title": "Check prices",
+          "say": "What would my Galaxy Watch sell for?"
+        },
+        {
+          "title": "Write a sales post",
+          "say": "Write a post to sell my unused stroller"
+        },
+        {
+          "title": "Sort chats",
+          "say": "Any inquiries on my post?"
+        },
+        {
+          "title": "Send a chat",
+          "say": "Ask that seller if they meet in person"
+        }
+      ]
+    }
+  }
 }

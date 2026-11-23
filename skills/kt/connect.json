@@ -38,5 +38,38 @@
       "say": "필요 없는 부가서비스 끊어 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "KT",
+      "login": "KT ID",
+      "summary": "Dool2 can check your KT data use and charges so far, change your plan and clear out add-on services.",
+      "example": {
+        "ask": "How much has built up on my KT bill since the 1st?",
+        "working": "Checking live charges",
+        "reply": "₩57,800 so far this month. That is your ₩55,000 plan plus ₩2,800 in small payments."
+      },
+      "abilities": [
+        {
+          "title": "Data use",
+          "say": "How many GB of KT data have I used so far?"
+        },
+        {
+          "title": "Check charges",
+          "say": "How much have I been charged so far?"
+        },
+        {
+          "title": "Change plan",
+          "say": "Switch me to a cheaper plan"
+        },
+        {
+          "title": "Clear add-ons",
+          "say": "Cancel the add-on services I don't need"
+        }
+      ]
+    }
+  }
 }
