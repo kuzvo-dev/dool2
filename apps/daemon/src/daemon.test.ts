@@ -180,6 +180,43 @@ describe('dool2d 로컬 API', () => {
   })
 })
 
+describe('답 속 파일 링크 열기 (/api/files/open)', () => {
+  it('사용자 폴더 안 파일은 PC 앱에 열라고 넘기고, 실행 파일은 폴더에서 보여 주고, 밖은 막는다', async () => {
+    const docs = await mkdtemp(join(tmpdir(), 'dool2-docs-'))
+    const outside = await mkdtemp(join(tmpdir(), 'dool2-out-'))
+    writeFileSync(join(docs, '초대장.png'), 'x')
+    writeFileSync(join(docs, '설치.dmg'), 'x')
+    writeFileSync(join(docs, 'id_rsa'), 'x')
+    writeFileSync(join(outside, '남의.txt'), 'x')
+    const opened: [string, string][] = []
+    const { api } = await boot(undefined, {
+      fileFolders: { desktop: [], documents: [docs], downloads: [] },
+      openFile: async (p, how) => {
+        opened.push([p, how])
+        return undefined
+      },
+    })
+    const open = async (path: string, reveal?: boolean) =>
+      api('/api/files/open', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...(reveal ? { reveal } : {}) }),
+      })
+    expect((await open(join(docs, '초대장.png'))).status).toBe(200)
+    expect((await open(join(docs, '초대장.png'), true)).status).toBe(200)
+    expect(await (await open(join(docs, '설치.dmg'))).json()).toEqual({ ok: true, how: 'reveal' })
+    expect((await open(join(outside, '남의.txt'))).status).toBe(404)
+    expect((await open(join(docs, 'id_rsa'))).status).toBe(404)
+    expect((await open(join(docs, '없음.png'))).status).toBe(404)
+    expect(opened.map(([p, how]) => [p.split(/[\\/]/).at(-1), how])).toEqual([
+      ['초대장.png', 'open'],
+      ['초대장.png', 'reveal'],
+      ['설치.dmg', 'reveal'],
+    ])
+    await rm(docs, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  })
+})
+
 describe('대화 하나 (ADR 0015)', () => {
   type State = { messages: { role: string; text: string }[]; busy: boolean; queued: string[] }
   const until = async (f: () => Promise<boolean>) => {

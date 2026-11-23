@@ -230,3 +230,35 @@ describe('영어 속생각 줄 빼기', () => {
     )
   })
 })
+
+describe('답 속 PC 파일 경로', () => {
+  it('`경로`는 파일 이름만 보이는 파일 조각으로', () => {
+    expect(inline('- **파일:** `~/Documents/두리/하늘이 생일 영상.mp4` (14초, 세로)')).toEqual([
+      { text: '- ' },
+      { text: '파일:', bold: true },
+      { text: ' ' },
+      { text: '하늘이 생일 영상.mp4', file: '~/Documents/두리/하늘이 생일 영상.mp4' },
+      { text: ' (14초, 세로)' },
+    ])
+  })
+  it('[이름](file:///…)과 [이름](~/…)도 파일로 (주소 글자는 풀어서)', () => {
+    expect(inline('[초대장](file:///Users/me/Documents/%EB%91%90%EB%A6%AC/a%20b.png) 보세요')).toEqual([
+      { text: '초대장', file: '/Users/me/Documents/두리/a b.png' },
+      { text: ' 보세요' },
+    ])
+    expect(inline('[정산](~/Desktop/11월 정산.xlsx)')).toEqual([
+      { text: '정산', file: '~/Desktop/11월 정산.xlsx' },
+    ])
+    expect(inline('`C:\\Users\\me\\Desktop\\a.pdf`')).toEqual([
+      { text: 'a.pdf', file: 'C:\\Users\\me\\Desktop\\a.pdf' },
+    ])
+  })
+  it('확장자 없는 경로·평범한 코드·웹 링크는 그대로', () => {
+    expect(inline('`~/Documents/두리`')).toEqual([{ text: '`~/Documents/두리`' }])
+    expect(inline('`npm run`')).toEqual([{ text: '`npm run`' }])
+    expect(inline('[뉴스](https://a.com/x.html)')).toEqual([{ text: '뉴스', href: 'https://a.com/x.html' }])
+  })
+  it('한 줄 미리 보기에는 파일 이름만', () => {
+    expect(stripLinks('만들었어요: `~/Documents/두리/초대장.png`')).toBe('만들었어요: 초대장.png')
+  })
+})

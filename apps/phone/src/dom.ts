@@ -177,11 +177,35 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
 }
 
 /** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
+/** 답 속 PC 파일 링크를 누르면 (main.ts가 붙인다: PC에서 받아 폰에 저장) */
+let fileOpener: (path: string, name: string) => void = () => {}
+export function setFileOpener(fn: (path: string, name: string) => void) {
+  fileOpener = fn
+}
+
 export function rich(text: string): DocumentFragment {
   const f = document.createDocumentFragment()
   const spans = (parent: HTMLElement, parts: Inline[]) => {
     for (const part of parts) {
-      if (part.href) {
+      const file = part.file
+      if (file) {
+        // PC에 있는 파일: 누르면 PC에서 받아 폰에 저장한다
+        parent.append(
+          h(
+            'button',
+            {
+              class: 'rich-file',
+              label: `${part.text} 폰에 받기`,
+              onclick: (e) => {
+                e.stopPropagation()
+                fileOpener(file, part.text)
+              },
+            },
+            icon('download'),
+            h('span', { text: part.text }),
+          ),
+        )
+      } else if (part.href) {
         const a = h('a', { class: part.src ? 'rich-src' : 'rich-link', text: part.text }) as HTMLAnchorElement
         a.href = part.href
         a.target = '_blank'

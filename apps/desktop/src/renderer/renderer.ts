@@ -33,7 +33,18 @@ import type { ConnectionItem } from '@dool2/protocol/connect'
 import { type BlockEnv, blockView } from './blocks-view.js'
 import { findCard, socialOrder } from './connect-text.js'
 import { renderConnections, SOCIAL_LABEL } from './connections.js'
-import { button, doori, el, emptyState, type IconName, icon, liveDoori, setRich, withLogo } from './dom.js'
+import {
+  button,
+  doori,
+  el,
+  emptyState,
+  type IconName,
+  icon,
+  liveDoori,
+  setFileOpener,
+  setRich,
+  withLogo,
+} from './dom.js'
 import type { LibraryTab } from './life-model.js'
 import { dayLabel, isFeedRoutine, plain, titleFrom } from './life-model.js'
 import {
@@ -259,6 +270,20 @@ const cut = (text: string, max: number) => {
   const t = text.replace(/\s+/g, ' ').trim()
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
+
+/** PC 파일 열기 (답 속 파일 링크·보관함). reveal이면 파인더·탐색기에서 그 파일을 보여 준다 */
+async function openPcFile(path: string, reveal = false) {
+  try {
+    const r = await api<{ how: 'open' | 'reveal' }>('/api/files/open', {
+      method: 'POST',
+      body: JSON.stringify({ path, ...(reveal ? { reveal } : {}) }),
+    })
+    if (r.how === 'reveal' && !reveal) toast('실행 파일이라 바로 열지 않고 폴더에서 보여 드려요')
+  } catch (e) {
+    toast((e as Error).message)
+  }
+}
+setFileOpener((path) => void openPcFile(path))
 
 // ── 잠깐 뜨는 알림 ────────────────────────────────────
 

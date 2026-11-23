@@ -1142,8 +1142,8 @@ export type PhoneToPc =
     }
   /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다). life-item으로 답 */
   | { kind: 'life-item'; id: string }
-  /** 보관함 파일 원본 한 조각 (폰에 저장·공유) */
-  | { kind: 'file-chunk'; id: string; offset: number }
+  /** 보관함 파일 원본 한 조각 (폰에 저장·공유). path가 있으면 답 속 파일 링크 (id는 폰이 기다리는 표시) */
+  | { kind: 'file-chunk'; id: string; offset: number; path?: string }
   | ({ kind: 'life-action' } & LifeAction)
   /**
    * 서비스 연결: open = PC Chrome에 그 서비스를 열고 원격 화면으로 넘겨 달라(폰에서 로그인),

@@ -193,8 +193,16 @@ export class FileTools {
 
   /** 사용자 폴더 안·민감하지 않은 파일인지 (모션 영상 장면에 넣는 사진) */
   readable(p: string): boolean {
-    const r = this.inside(p)
-    return Boolean(r) && !SENSITIVE.test(r as string)
+    return Boolean(this.realReadable(p))
+  }
+
+  /**
+   * 답 속 파일 링크를 PC에서 열거나 폰으로 보낼 때: 사용자 폴더 안·민감하지 않은 파일의 실제 경로.
+   * "~/…"·"/Users/…"·"C:\…" 모양 모두 받는다. 폴더·없는 파일·밖으로 나가는 경로는 undefined
+   */
+  realReadable(p: string): string | undefined {
+    const r = this.inside(String(p ?? '').trim())
+    return r && !SENSITIVE.test(r) ? r : undefined
   }
 
   /** 사용자에게 보여 줄 경로 모양 */

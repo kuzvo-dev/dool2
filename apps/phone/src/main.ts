@@ -89,6 +89,7 @@ import {
   liveDoori,
   rich,
   segBtn,
+  setFileOpener,
   shortTime,
   withLogo,
 } from './dom.js'
@@ -4144,8 +4145,15 @@ function lifeCtx(): LifeCtx {
 const fileChunkWaits = new Map<string, (m: Extract<PcToPhone, { kind: 'file-chunk' }>) => void>()
 let fileBusy = false
 
-/** PC에 있는 원본을 조각으로 받아 폰에 저장하거나 보낸다 (중계 봉투 한도 때문에 192KB씩) */
-async function fileAction(it: LibraryItem, how: 'save' | 'share') {
+// 답 속 PC 파일 링크: 누르면 PC에서 받아 폰에 저장한다 (경로가 사용자 폴더 안인지는 PC 본체가 본다)
+let fileLinkSeq = 0
+setFileOpener((path, name) => void fileAction({ id: `link-${++fileLinkSeq}`, title: name, path }, 'save'))
+
+/**
+ * PC에 있는 원본을 조각으로 받아 폰에 저장하거나 보낸다 (중계 봉투 한도 때문에 192KB씩).
+ * 보관함 항목은 id로, 답 속 파일 링크는 path로 부탁한다 (id는 조각을 기다리는 표시)
+ */
+async function fileAction(it: Pick<LibraryItem, 'id' | 'title' | 'path'>, how: 'save' | 'share') {
   if (fileBusy) return toast('다른 파일을 받는 중이에요')
   if (!st.online) return toast('PC가 꺼져 있어서 받을 수 없어요')
   fileBusy = true
@@ -4170,7 +4178,13 @@ async function fileAction(it: LibraryItem, how: 'save' | 'share') {
           fileChunkWaits.delete(key)
           done(x)
         })
-        void send({ kind: 'file-chunk', id: it.id, offset: at })
+        void send({
+          kind: 'file-chunk',
+          id: it.id,
+          offset: at,
+          // 보관함 항목은 본체가 id로 찾는다. 답 속 링크만 경로로
+          ...(it.id.startsWith('link-') && it.path ? { path: it.path } : {}),
+        })
       })
       if (m.error || !m.data) throw new Error(m.error ?? '파일을 받지 못했어요')
       size = m.size ?? 0
