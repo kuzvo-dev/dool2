@@ -34,13 +34,10 @@ describe('one answer per request', () => {
     expect([...hidden].sort()).toEqual(['a1', 'n1'])
   })
 
-  it('keeps the earlier answer while the next one has not come yet', () => {
-    const { hidden } = interimAnswers([
-      msg('u1', 'user', 'x'),
-      msg('a1', 'assistant'),
-      msg('n1', 'user', check),
-    ])
-    expect(hidden.size).toBe(0)
+  it('hides the check note always, and the earlier answer while Dool2 is still working', () => {
+    const list = [msg('u1', 'user', 'x'), msg('a1', 'assistant'), msg('n1', 'user', check)]
+    expect([...interimAnswers(list).hidden]).toEqual(['n1'])
+    expect([...interimAnswers(list, { running: true }).hidden].sort()).toEqual(['a1', 'n1'])
   })
 
   it('does not fold across approvals or a new request', () => {
@@ -60,7 +57,7 @@ describe('one answer per request', () => {
         msg('u2', 'user', 'y'),
         msg('n1', 'user', check),
         msg('a2', 'assistant'),
-      ]).hidden.size,
-    ).toBe(0)
+      ]).hidden,
+    ).toEqual(new Set(['n1']))
   })
 })

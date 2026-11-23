@@ -2803,7 +2803,7 @@ function chatItems(): Item[] {
   let lastDay = ''
   const superseded = oldConnectCards()
   // One answer per request: answers the finish check sent back and replaced are folded (open with "show earlier answers")
-  const fold = interimAnswers(st.conv)
+  const fold = interimAnswers(st.conv, { running: st.busy })
   const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
   const roleOf = new Map(st.conv.map((m) => [m.id, m.role]))
   for (const [i, m] of st.conv.entries()) {

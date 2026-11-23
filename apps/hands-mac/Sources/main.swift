@@ -238,6 +238,14 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
     }
     for c in kids(el) { walk(c, depth + 1) }
   }
+  // Which windows are open and which is in front: apps like KakaoTalk open each chat in its own window, and Dool2
+  // must know which chat it is typing into (11-23)
+  let appWins = (attr(AXUIElementCreateApplication(app.processIdentifier), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+  let titles = appWins.compactMap { w -> String? in
+    guard let t = text(w, kAXTitleAttribute) else { return nil }
+    return CFEqual(w, win) ? "\(t) (front)" : t
+  }
+  if titles.count > 1 { add("Open windows: \(titles.joined(separator: " · ")). Reading the front one first.") }
   walk(win, 0)
   // Also read popups (popovers such as the + menu), other windows and open menus: reading only the front window made their items unclickable (11-23 KakaoTalk new chat menu)
   let appEl = AXUIElementCreateApplication(app.processIdentifier)
@@ -328,6 +336,17 @@ func paste(_ s: String) async throws {
   if !items.isEmpty { pb.writeObjects(items) }
 }
 
+/** The list row this element is (or sits in), if any */
+func enclosingRow(_ el: AXUIElement) -> AXUIElement? {
+  var cur: AXUIElement? = el
+  for _ in 0..<6 {
+    guard let c = cur else { return nil }
+    if text(c, kAXRoleAttribute) == "AXRow" { return c }
+    cur = attr(c, kAXParentAttribute).map { $0 as! AXUIElement }
+  }
+  return nil
+}
+
 func click(_ args: [String: Any]) async throws -> [String: Any] {
   let bundleId = args["bundleId"] as? String ?? ""
   guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
@@ -337,6 +356,18 @@ func click(_ args: [String: Any]) async throws -> [String: Any] {
     // Use the accessibility "press" action when available (does not move the mouse)
     if AXUIElementPerformAction(el, kAXPressAction as CFString) == .success {
       return ["via": "press"]
+    }
+    // A list row with no press action (KakaoTalk's chat list): a single click only selects it. Select it and press
+    // Enter, which opens it the way a double click does. Keys go to the app, not to a window covering it (11-23)
+    if let row = enclosingRow(el) {
+      if let win = attr(row, kAXWindowAttribute) { AXUIElementPerformAction(win as! AXUIElement, kAXRaiseAction as CFString) }
+      try await Task.sleep(nanoseconds: 150_000_000)
+      if AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        try postKey("Enter", [])
+        try await Task.sleep(nanoseconds: 700_000_000)
+        return ["via": "open"]
+      }
     }
     guard let f = frame(el), f.width > 0 else { throw fail("\(ref)의 위치를 알 수 없어요") }
     postMouseClick(CGPoint(x: f.midX, y: f.midY))

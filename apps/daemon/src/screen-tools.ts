@@ -297,7 +297,9 @@ export class ScreenTools {
         return this.read(
           id,
           undefined,
-          `Pressed "${el.name || ref}" (${res.via === 'press' ? 'accessibility' : 'mouse'}).`,
+          res.via === 'open'
+            ? `Opened the list row "${el.name || ref}" (selected it and pressed Enter). If it opened a new window, the screen below is that window; check its title before typing.`
+            : `Pressed "${el.name || ref}" (${res.via === 'press' ? 'accessibility' : 'mouse'}).`,
         )
       }
       case 'type': {
