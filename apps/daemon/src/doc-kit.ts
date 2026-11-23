@@ -1,5 +1,5 @@
-// 문서 디자인 틀 (file_write의 look): 두리가 HTML 보고서·안내문·편지·표를 매번 처음부터 꾸미면 평범하고 빈 곳이 많았다(11-22 지적).
-// 디자인은 여기서 정해 두고, 두리는 내용과 정해진 이름표(class)만 쓴다. 그리는 창은 바깥 주소를 막으니 글꼴·차트도 모두 이 안에서.
+// Document design frames (the look of file_write): when Doori styled HTML reports, notices, letters and tables from scratch every time, they came out plain with empty spots (pointed out 11-22).
+// The design is fixed here, and Doori writes only the content and the given class names. The rendering window blocks outside addresses, so fonts and charts all live in here too.
 
 export const DOC_LOOKS = ['report', 'notice', 'letter', 'sheet'] as const
 export type DocLook = (typeof DOC_LOOKS)[number]
@@ -60,7 +60,7 @@ tr.total td{font-weight:700;border-top:2px solid var(--ink)}
 const LOOK: Record<DocLook, string> = {
   report: '',
   notice: `
-/* 붙여 두는 안내문: 멀리서도 읽히게 크게, A4 한 쪽을 채운다 */
+/* Posted notice: big enough to read from afar, fills one A4 page */
 body{font-size:19px;line-height:1.75}
 .page{min-height:258mm;display:flex;flex-direction:column;padding-top:40px}
 @media print{.page{min-height:258mm}}
@@ -90,7 +90,7 @@ th,td{padding:6px 8px}
 `,
 }
 
-/** 두리가 쓴 HTML에 디자인 틀을 넣는다: <head>가 있으면 그 안에, 없으면 문서로 감싼다. 내용은 .page 안에 */
+/** Puts the design frame into the HTML Doori wrote: inside <head> if there is one, otherwise wraps it as a document. Content goes inside .page */
 export function applyLook(html: string, look: DocLook): string {
   const css = `<style data-dool2-look="${look}">${BASE}${LOOK[look]}</style>`
   const meta = '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -99,12 +99,12 @@ export function applyLook(html: string, look: DocLook): string {
   return `<!doctype html><html lang="ko"><head>${meta}${css}</head>${body.replace(/^[\s\S]*?(<body)/i, '$1')}</html>`
 }
 
-/** 도구 설명에 붙는 이름표 안내 (짧게) */
+/** Class-name guide attached to the tool description (short) */
 export const LOOK_GUIDE =
-  'look을 주면 다듬은 디자인 틀을 본체가 넣어 준다(스타일을 직접 쓰지 말고 내용과 이름표만): ' +
-  'report=보고서·조사·비교, notice=안내문·공지·신청서, letter=편지·사과문·추천서, sheet=넓은 표. ' +
-  '이름표: <div class="cover"><div class="eyebrow">분류</div><h1>제목</h1><p class="lead">한 줄 요약</p><div class="meta">날짜·작성</div></div>, ' +
-  '<div class="kpis"><div class="kpi up"><b>119만</b><span>설명</span></div></div>(핵심 숫자 3~4개), <div class="callout">핵심 한마디</div>(warn이면 주의), ' +
-  '<div class="bars"><div class="bar"><span>이름</span><i style="--v:62%"></i><em>62%</em></div></div>(막대그래프), 표 숫자 칸은 class="num", 합계 줄은 tr class="total", ' +
-  '<span class="tag good|bad|warn">, <ol class="steps">(순서), <div class="two">(두 칸), <div class="sources">(출처), 쪽 나눔은 <div class="pagebreak"></div>. ' +
-  'notice는 <div class="box"><dl><dt>일시</dt><dd>…</dd></dl></div>와 <p class="sign">, letter는 <p class="to">·<p class="from">·<p class="date">. 내용은 <main class="page"> 안에 쓴다(없으면 본체가 감싼다).'
+  'When look is given, the daemon adds a polished design frame (do not write styles yourself, only content and class names): ' +
+  'report=report, research, comparison; notice=notice, announcement, application form; letter=letter, apology, recommendation; sheet=wide table. ' +
+  'Class names: <div class="cover"><div class="eyebrow">category</div><h1>title</h1><p class="lead">one-line summary</p><div class="meta">date, author</div></div>, ' +
+  '<div class="kpis"><div class="kpi up"><b>1.19M</b><span>description</span></div></div> (3-4 key numbers), <div class="callout">key remark</div> (warn for caution), ' +
+  '<div class="bars"><div class="bar"><span>name</span><i style="--v:62%"></i><em>62%</em></div></div> (bar chart), number cells in tables class="num", total row tr class="total", ' +
+  '<span class="tag good|bad|warn">, <ol class="steps"> (steps), <div class="two"> (two columns), <div class="sources"> (sources), page break <div class="pagebreak"></div>. ' +
+  'notice uses <div class="box"><dl><dt>When</dt><dd>...</dd></dl></div> and <p class="sign">; letter uses <p class="to">, <p class="from">, <p class="date">. Write the content inside <main class="page"> (the daemon wraps it if missing).'

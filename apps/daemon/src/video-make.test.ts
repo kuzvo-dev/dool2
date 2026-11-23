@@ -54,7 +54,7 @@ describe('사진으로 영상 만들기', () => {
     const real = FFMPEG_BUILDS[key]
     if (!real) throw new Error('no build')
     const fake = (async () => new Response(gz)) as unknown as typeof fetch
-    await expect(installFfmpeg(dir, fake, 'linux', 'x64')).rejects.toThrow('지문')
+    await expect(installFfmpeg(dir, fake, 'linux', 'x64')).rejects.toThrow('fingerprint')
     const saved = real.sha256
     real.sha256 = createHash('sha256').update(gz).digest('hex')
     try {

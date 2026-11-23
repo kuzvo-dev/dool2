@@ -1,8 +1,8 @@
-// 새 파일 이름 정하기 (PC 파일 도구가 함께 쓴다)
+// Choosing new file names (shared by the PC file tools)
 import { existsSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 
-/** 같은 이름이 있으면 "이름 (1).확장자", "(2)"… (덮어쓰지 않는다) */
+/** If the name exists: "name (1).ext", "(2)"... (never overwrites) */
 export function freeName(dir: string, name: string, taken: Set<string> = new Set()): string {
   const key = (p: string) => p.normalize('NFC').toLowerCase()
   const ext = extname(name)
@@ -14,10 +14,10 @@ export function freeName(dir: string, name: string, taken: Set<string> = new Set
       return p
     }
   }
-  throw new Error('같은 이름이 너무 많아요')
+  throw new Error('Too many files with the same name')
 }
 
-/** 파일 이름으로 못 쓰는 글자를 뺀다 */
+/** Removes characters that cannot be used in file names */
 export const cleanName = (s: string) =>
   basename(s.replace(/[\\/]+/g, ' '))
     .replace(/[:*?"<>|]/g, ' ')

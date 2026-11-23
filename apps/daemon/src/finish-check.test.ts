@@ -71,14 +71,20 @@ describe('끝내기 전 검사', () => {
     expect((await c.check('t', { answer: 'a', tools: ['x'] })).kind).toBe('again')
     expect((await c.check('t', { answer: 'b', tools: ['x'] })).kind).toBe('again')
     // 새 도구 없이 세 번째: 기본 2번을 넘었으니 멈춘다
-    expect(await c.check('t', { answer: 'c', tools: ['x'] })).toMatchObject({ kind: 'stop', reason: '횟수' })
+    expect(await c.check('t', { answer: 'c', tools: ['x'] })).toMatchObject({
+      kind: 'stop',
+      reason: 'rounds',
+    })
 
     const j2 = say(no(0), no(1), no(2), no(3), no(4))
     const c2 = new FinishCheck({ ask: j2.ask, baseCycles: 2, maxCycles: 4 })
     c2.begin('t', '부탁')
     for (const tool of ['a', 'b', 'c', 'd'])
       expect((await c2.check('t', { answer: 'x', tools: [tool] })).kind).toBe('again')
-    expect(await c2.check('t', { answer: 'x', tools: ['e'] })).toMatchObject({ kind: 'stop', reason: '횟수' })
+    expect(await c2.check('t', { answer: 'x', tools: ['e'] })).toMatchObject({
+      kind: 'stop',
+      reason: 'rounds',
+    })
   })
 
   it('같은 이유로 두 번 막히면 멈춘다', async () => {
@@ -89,7 +95,7 @@ describe('끝내기 전 검사', () => {
     expect((await c.check('t', { answer: 'a', tools: ['mail_search'] })).kind).toBe('again')
     expect(await c.check('t', { answer: 'b', tools: ['browser_open'] })).toMatchObject({
       kind: 'stop',
-      reason: '같은 막힘',
+      reason: 'same blocker',
     })
   })
 
@@ -99,7 +105,7 @@ describe('끝내기 전 검사', () => {
     const c = new FinishCheck({ ask: j.ask, now: () => now, maxMs: 1000 })
     c.begin('t', '부탁')
     now = 5000
-    expect(await c.check('t', { answer: 'x', tools: ['y'] })).toMatchObject({ kind: 'stop', reason: '시간' })
+    expect(await c.check('t', { answer: 'x', tools: ['y'] })).toMatchObject({ kind: 'stop', reason: 'time' })
   })
 
   it('멈추면 더 판정하지 않는다', async () => {
@@ -113,11 +119,11 @@ describe('끝내기 전 검사', () => {
   it('되돌려 보내는 알림에 남은 것과 다른 길을 적는다', () => {
     const note = againNote({ done: false, why: '1곳만 봤어요', next: '다른 곳' })
     expect(note).toContain('1곳만 봤어요')
-    expect(note).toContain('다른 길로')
+    expect(note).toContain('continue another way')
   })
 
   it('이미 되돌려 보냈으면 판정 글에 적는다', () => {
-    expect(judgePrompt({ ask: 'a', answer: 'b', tools: [], cycle: 2 })).toContain('이미 2번')
+    expect(judgePrompt({ ask: 'a', answer: 'b', tools: [], cycle: 2 })).toContain('Already sent back 2')
   })
 })
 

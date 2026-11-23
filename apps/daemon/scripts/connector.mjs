@@ -1,17 +1,17 @@
-// 서비스 도구(커넥터) 만들기·고치기 도구 (ADR 0018, .claude/skills/connector).
-// 시험용 Chrome(Chrome for Testing)에 두리 확장을 올리고 진짜 두리 본체로 커넥터를 실제 사이트에서 돌린다.
+// Tool to build and fix service tools (connectors) (ADR 0018, .claude/skills/connector).
+// Loads the Dool2 extension into a test Chrome (Chrome for Testing) and runs connectors on real sites with the real daemon.
 //
 //   pnpm build
 //   export DOOL2_TEST_CHROME=".../Google Chrome for Testing"
-//   pnpm connector check [id…]                     형식·안전 규칙 검사 (Chrome 없이)
-//   pnpm connector try <id> <도구> '<입력 JSON>'     한 번 돌려 결과(글·구조화)를 본다
-//   pnpm connector canary [id…]                    찾아보기 도구를 예시 입력으로 모두 돌려 본다 (실제 사이트 시험)
-//   pnpm connector page <주소> [선택자]              화면 읽기 / 선택자로 목록 뽑기 시험 (커넥터 쓰기 전 화면 살피기)
-//   pnpm connector try|canary … --pc               시험용 Chrome 대신 돌고 있는 시험용 PC의 진짜 Chrome에서
-//                                                  (DOOL2_TOOL_TOKEN, DOOL2_PC; 시험용 Chrome을 막는 사이트도 확인된다)
+//   pnpm connector check [id…]                     check format and safety rules (no Chrome)
+//   pnpm connector try <id> <tool> '<input JSON>'     run once and see the result (text and structured)
+//   pnpm connector canary [id…]                    run every lookup tool with example input (real-site test)
+//   pnpm connector page <url> [selector]              read a page / try pulling a list by selector (inspect the page before writing a connector)
+//   pnpm connector try|canary … --pc               in the real Chrome of the running test PC instead of the test Chrome
+//                                                  (DOOL2_TOOL_TOKEN, DOOL2_PC; also works for sites that block the test Chrome)
 //
-// 로그인이 필요한 도구: DOOL2_DEV_PROFILE=<폴더>로 같은 프로필을 계속 쓰고, 그 Chrome에서 직접 로그인해 둔다
-// (try에 --connected를 붙이면 연결한 것으로 본다). 비밀번호는 이 도구가 다루지 않는다.
+// Tools that need login: keep the same profile with DOOL2_DEV_PROFILE=<folder> and sign in by hand in that Chrome
+// (add --connected to try to treat it as connected). This tool never handles passwords.
 
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -60,21 +60,21 @@ if (cmd === 'check' || !cmd) {
       console.log(`✗ ${id}\n  ${problems.join('\n  ')}`)
     } else if (c) console.log(`✓ ${id} (${c.tools.map((t) => `${t.name}:${t.status}`).join(', ')})`)
   }
-  console.log(`${count}개 커넥터, 문제 ${bad}곳`)
+  console.log(`${count} connectors, ${bad} problems`)
   process.exit(bad ? 1 : 0)
 }
 
-// ── --pc: 돌고 있는 시험용 PC 본체의 진짜 Chrome에서 (시험용 Chrome을 막는 사이트도 된다) ──
-// DOOL2_PC(기본 http://127.0.0.1:8833)·DOOL2_TOOL_TOKEN. 본체는 DOOL2_DEV_RESET=1(시험용 PC)로 켜져 있어야 한다.
-// 레포의 skills/<id>/tools.json을 그대로 넘겨 돌리므로, 고친 정의를 설치하지 않고 바로 확인한다
+// ── --pc: in the real Chrome of the running test PC daemon (works for sites that block the test Chrome) ──
+// DOOL2_PC (default http://127.0.0.1:8833) and DOOL2_TOOL_TOKEN. The daemon must run with DOOL2_DEV_RESET=1 (test PC).
+// Passes the repo's skills/<id>/tools.json as is, so a fixed definition can be checked without installing it
 if (flags.has('--pc')) {
   const base = process.env.DOOL2_PC ?? 'http://127.0.0.1:8833'
   const token = process.env.DOOL2_TOOL_TOKEN
   if (!token) {
-    console.error('DOOL2_TOOL_TOKEN에 본체의 도구 토큰을 넣어 주세요')
+    console.error('Set DOOL2_TOOL_TOKEN to the daemon tool token')
     process.exit(2)
   }
-  // 결과를 다 쓴 뒤에 끝낸다 (파이프로 받을 때 process.exit가 큰 출력을 자른다)
+  // Exit after the output is fully written (process.exit cuts large output when piped)
   const exit = (code) => process.stdout.write('', () => process.exit(code))
   const run = async (id, tool, input, close = false) => {
     const res = await fetch(`${base}/api/tools/service/try`, {
@@ -83,12 +83,13 @@ if (flags.has('--pc')) {
       body: JSON.stringify({ connector: toolsOf(id), tool, input, close }),
       signal: AbortSignal.timeout(180_000),
     })
-    if (!res.ok) throw new Error(`본체가 거절했어요 (${res.status}): ${(await res.text()).slice(0, 200)}`)
+    if (!res.ok) throw new Error(`The daemon refused (${res.status}): ${(await res.text()).slice(0, 200)}`)
     return res.json()
   }
   const show = (r) => {
     for (const c of r.content ?? []) if (c.type === 'text') console.log(c.text)
-    if (r.structuredContent) console.log(`\n구조화된 결과:\n${JSON.stringify(r.structuredContent, null, 2)}`)
+    if (r.structuredContent)
+      console.log(`\nStructured result:\n${JSON.stringify(r.structuredContent, null, 2)}`)
   }
   if (cmd === 'try') {
     const [id, name, json] = args
@@ -96,7 +97,7 @@ if (flags.has('--pc')) {
     const r = await run(id, name, json ? JSON.parse(json) : {})
     show(r)
     console.log(
-      `\n${r.isError ? '✗ 실패' : '✓ 성공'} (${((Date.now() - t0) / 1000).toFixed(1)}초, 사용자 Chrome)`,
+      `\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s, user Chrome)`,
     )
     exit(r.isError ? 1 : 0)
     await new Promise(() => {})
@@ -130,25 +131,25 @@ if (flags.has('--pc')) {
           error: ok ? undefined : text.slice(0, 300),
         })
         console.log(
-          `${ok ? '✓' : '✗'} ${id}_${t.name} (${((Date.now() - t0) / 1000).toFixed(1)}초, ${rows.length}줄, 사진 ${pics}, 링크 ${links})${ok ? '' : `\n  ${text.split('\n')[0].slice(0, 200)}`}`,
+          `${ok ? '✓' : '✗'} ${id}_${t.name} (${((Date.now() - t0) / 1000).toFixed(1)}s, ${rows.length} rows, photos ${pics}, links ${links})${ok ? '' : `\n  ${text.split('\n')[0].slice(0, 200)}`}`,
         )
       }
     }
     const jsonOut = rest.find((a) => a.startsWith('--json='))?.slice(7)
     if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at: new Date().toISOString(), results }, null, 2))
-    console.log(`${results.length}개 중 실패 ${results.filter((x) => !x.ok).length} (사용자 Chrome)`)
+    console.log(`${results.length} run, ${results.filter((x) => !x.ok).length} failed (user Chrome)`)
     exit(0)
     await new Promise(() => {})
   }
-  console.error('--pc는 try·canary에만 써요')
+  console.error('--pc only works with try and canary')
   process.exit(2)
 }
 
-// ── 시험용 Chrome + 두리 본체 ──
+// ── Test Chrome + Dool2 daemon ──
 const chromeBin = process.env.DOOL2_TEST_CHROME
 if (!chromeBin) {
   console.error(
-    'DOOL2_TEST_CHROME에 Chrome for Testing 실행 파일 경로를 넣어 주세요 (npx @puppeteer/browsers install chrome@stable)',
+    'Set DOOL2_TEST_CHROME to the Chrome for Testing executable path (npx @puppeteer/browsers install chrome@stable)',
   )
   process.exit(2)
 }
@@ -183,7 +184,7 @@ const done = async (code) => {
 }
 for (let i = 0; i < 150 && !daemon.browser.status.connected; i++) await new Promise((r) => setTimeout(r, 200))
 if (!daemon.browser.status.connected) {
-  console.error('확장이 30초 안에 본체에 붙지 않았어요 (apps/extension을 빌드했나요?)')
+  console.error('The extension did not connect to the daemon within 30s (did you build apps/extension?)')
   await done(2)
 }
 const tools = new BrowserTools(daemon.browser)
@@ -196,7 +197,8 @@ const connectors = new Connectors({
 })
 const show = (r) => {
   for (const c of r.content) if (c.type === 'text') console.log(c.text)
-  if (r.structuredContent) console.log(`\n구조화된 결과:\n${JSON.stringify(r.structuredContent, null, 2)}`)
+  if (r.structuredContent)
+    console.log(`\nStructured result:\n${JSON.stringify(r.structuredContent, null, 2)}`)
 }
 
 try {
@@ -205,13 +207,13 @@ try {
     const t0 = Date.now()
     const r = await connectors.call(connectorToolName(id, name), json ? JSON.parse(json) : {})
     show(r)
-    console.log(`\n${r.isError ? '✗ 실패' : '✓ 성공'} (${((Date.now() - t0) / 1000).toFixed(1)}초)`)
+    console.log(`\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s)`)
     if (flags.has('--hold')) await new Promise((r) => setTimeout(r, 120_000))
     await done(r.isError ? 1 : 0)
   }
   if (cmd === 'canary') {
-    // 실제 사이트 점검 (ADR 0020): 찾아보기 도구를 예시 입력으로 돌려 시끄러운 고장(막힘)과
-    // 조용한 고장(줄 수·꼭 채워질 칸)을 함께 본다. --json 파일, --report HTML, --issues GitHub 이슈
+    // Real-site check (ADR 0020): runs lookup tools with example input and looks at both loud failures (blocked) and
+    // silent failures (row count, required fields). --json file, --report HTML, --issues GitHub issues
     const opt = (name) => {
       const i = rest.indexOf(name)
       return i >= 0 ? rest[i + 1] : undefined
@@ -230,7 +232,7 @@ try {
               .call(name, ex)
               .catch((e) => ({ isError: true, content: [{ type: 'text', text: String(e) }] }))
             const stopped = Boolean(r.structuredContent?.stopped)
-            // 사이트가 이 브라우저를 막은 것 (커넥터를 고칠 일이 아니다): 정상도 고장도 아닌 '막힘'
+            // The site blocked this browser (nothing to fix in the connector): neither ok nor broken, but 'blocked'
             const blocked = Boolean(r.structuredContent?.blocked)
             const problems = r.isError
               ? []
@@ -239,7 +241,7 @@ try {
                 : healthProblems(t, r.structuredContent ?? {}, true)
             return { r, problems, blocked, ok: !r.isError && !blocked && !problems.length }
           }
-          // 한 번 실패는 일시적일 수 있다 (브라우저 지연 등): 30초 쉬고 한 번 더 해 본 뒤에야 고장으로 본다
+          // One failure can be temporary (browser lag, etc.): wait 30s and retry once before calling it broken
           let run = await once()
           let retried = false
           if (!run.ok) {
@@ -262,19 +264,21 @@ try {
             problems,
             retried,
             blocked,
-            // 검증된 도구가 깨진 것만 고장(이슈·수리 대상). 초안은 보고서에만
+            // Only verified tools that broke count as broken (issue and repair target). Drafts go in the report only
             verified: String(t.status).startsWith('검증됨'),
             error: r.isError || blocked ? text.slice(0, 400) : undefined,
           })
           console.log(
-            `${ok ? '✓' : blocked ? '⊘' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}초${rows ? `, ${rows.length}줄` : ''})${ok ? '' : `\n  ${r.isError || blocked ? text.split('\n')[0] : problems.join(' · ')}`}`,
+            `${ok ? '✓' : blocked ? '⊘' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}s${rows ? `, ${rows.length} rows` : ''})${ok ? '' : `\n  ${r.isError || blocked ? text.split('\n')[0] : problems.join(' · ')}`}`,
           )
         }
       }
     }
     const fail = results.filter((x) => !x.ok && !x.blocked)
     const blockedN = results.filter((x) => x.blocked).length
-    console.log(`${results.length}개 중 실패 ${fail.length}${blockedN ? `, 사이트가 막음 ${blockedN}` : ''}`)
+    console.log(
+      `${results.length} run, ${fail.length} failed${blockedN ? `, blocked by site ${blockedN}` : ''}`,
+    )
     const at = new Date().toISOString()
     const jsonOut = opt('--json')
     if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ at, results }, null, 2))
@@ -292,7 +296,7 @@ try {
         tabId,
         spec: { items, fields: { text: {} }, limit: 10 },
       })
-      console.log(`${r.total}개 중 앞 ${r.rows.length}개:`)
+      console.log(`First ${r.rows.length} of ${r.total}:`)
       for (const row of r.rows) console.log(`- ${String(row.text).replace(/\n/g, ' ⏎ ').slice(0, 300)}`)
     } else {
       const r = await tools.run('read', { tabId, maxChars: Number(process.env.MAX ?? 8000) })
@@ -301,14 +305,14 @@ try {
     if (flags.has('--hold')) await new Promise((r) => setTimeout(r, 300_000))
     await done(0)
   }
-  console.error(`모르는 명령이에요: ${cmd}`)
+  console.error(`Unknown command: ${cmd}`)
   await done(2)
 } catch (e) {
   console.error(e)
   await done(1)
 }
 
-// ── 점검 보고서 (HTML) ──
+// ── Check report (HTML) ──
 function healthReport(at, results) {
   const esc = (x) =>
     String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
@@ -322,19 +326,19 @@ function healthReport(at, results) {
       list
         .map(
           (r, i) =>
-            `<tr class="${r.ok ? 'ok' : 'bad'}">${i === 0 ? `<td rowspan="${list.length}">${esc(svc)}</td>` : ''}<td>${esc(r.tool)}</td><td>${esc(JSON.stringify(r.input))}</td><td>${r.ok ? (r.retried ? '정상(다시 해서)' : '정상') : r.blocked ? '사이트가 막음' : r.verified ? '고장' : '초안·안 됨'}</td><td>${(r.ms / 1000).toFixed(1)}초</td><td>${r.rows ?? ''}</td><td>${esc(r.error?.split('\n')[0] ?? r.problems.join(' · '))}</td></tr>`,
+            `<tr class="${r.ok ? 'ok' : 'bad'}">${i === 0 ? `<td rowspan="${list.length}">${esc(svc)}</td>` : ''}<td>${esc(r.tool)}</td><td>${esc(JSON.stringify(r.input))}</td><td>${r.ok ? (r.retried ? 'ok (after retry)' : 'ok') : r.blocked ? 'blocked by site' : r.verified ? 'broken' : 'draft, not working'}</td><td>${(r.ms / 1000).toFixed(1)}s</td><td>${r.rows ?? ''}</td><td>${esc(r.error?.split('\n')[0] ?? r.problems.join(' · '))}</td></tr>`,
         )
         .join(''),
     )
     .join('')
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>두리 서비스 도구 점검</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dool2 service tool check</title>
 <style>body{font:14px -apple-system,sans-serif;margin:24px;background:#111318;color:#e8e8ea}h1{font-size:20px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #2a2d35;padding:6px 8px;text-align:left;vertical-align:top}tr.bad td{color:#ffb4a8}tr.ok td:nth-child(4){color:#7ee2b8}.sum{margin:8px 0 16px;color:#a8acb6}</style></head><body>
-<h1>두리 서비스 도구 점검</h1><p class="sum">${esc(at)} · ${results.length}개 시험 · 고장 ${bad}개 · 초안이라 안 된 것 ${draft}개 · 사이트가 이 브라우저를 막음 ${blocked}개</p>
-<table><tr><th>서비스</th><th>도구</th><th>입력</th><th>결과</th><th>시간</th><th>줄</th><th>문제</th></tr>${rows}</table></body></html>`
+<h1>Dool2 service tool check</h1><p class="sum">${esc(at)} · ${results.length} tested · ${bad} broken · ${draft} drafts not working · ${blocked} blocked by site</p>
+<table><tr><th>Service</th><th>Tool</th><th>Input</th><th>Result</th><th>Time</th><th>Rows</th><th>Problem</th></tr>${rows}</table></body></html>`
 }
 
-// ── GitHub 이슈 맞추기 (gh CLI, GH_TOKEN) ──
-// 깨진 도구마다 이슈 하나 ([커넥터] 도구 이름, 라벨 connector-broken). 다시 되면 댓글 남기고 닫는다
+// ── Sync GitHub issues (gh CLI, GH_TOKEN) ──
+// One issue per broken tool ([커넥터] tool name, label connector-broken). When it works again, comment and close
 async function syncIssues(results) {
   const repo = process.env.DOOL2_REPO ?? 'kuzvo-dev/dool2'
   const gh = (...a) => execFileSync('gh', a, { encoding: 'utf8', env: process.env })
@@ -348,7 +352,7 @@ async function syncIssues(results) {
       '--color',
       'E99695',
       '--description',
-      '서비스 도구가 실제 사이트에서 깨짐 (ADR 0020)',
+      'Service tool broken on the real site (ADR 0020)',
     )
   } catch {}
   const open = JSON.parse(
@@ -372,26 +376,26 @@ async function syncIssues(results) {
   for (const r of results) tools.set(r.tool, [...(tools.get(r.tool) ?? []), r])
   const today = new Date().toISOString().slice(0, 10)
   for (const [tool, list] of tools) {
-    // 초안 도구는 아직 확인 전이라 이슈를 열지 않는다 (보고서에만)
+    // Draft tools are not verified yet, so no issue is opened (report only)
     if (!list[0].verified) continue
-    // 사이트가 막은 것만 있으면 고쳐졌는지도 모른다: 이슈를 열지도 닫지도 않는다
+    // If the site only blocked us, we cannot tell whether it is fixed: neither open nor close the issue
     if (list.every((r) => r.blocked)) continue
     const bad = list.filter((r) => !r.ok && !r.blocked)
     const issue = issueOf(tool)
     if (bad.length) {
       const svc = list[0].service
       const body = [
-        `매일 점검(${today})에서 **${tool}** 이(가) 실제 사이트에서 깨졌어요.`,
+        `The daily check (${today}) found **${tool}** broken on the real site.`,
         '',
         ...bad.map(
           (r) =>
-            `- 입력 \`${JSON.stringify(r.input)}\`: ${r.error?.split('\n')[0] ?? r.problems.join(' · ')}`,
+            `- input \`${JSON.stringify(r.input)}\`: ${r.error?.split('\n')[0] ?? r.problems.join(' · ')}`,
         ),
         '',
-        '재현과 고치기 (`.claude/skills/connector`):',
+        'Reproduce and fix (`.claude/skills/connector`):',
         '```bash',
         `pnpm connector try ${svc} ${tool.slice(svc.replace(/-/g, '_').length + 1)} '${JSON.stringify(bad[0].input)}'`,
-        `pnpm connector page "<그 화면 주소>"`,
+        `pnpm connector page "<that page url>"`,
         '```',
       ].join('\n')
       if (issue) gh('issue', 'comment', String(issue.number), '--repo', repo, '--body', body)
@@ -408,7 +412,7 @@ async function syncIssues(results) {
           '--body',
           body,
         )
-      console.log(`이슈 ${issue ? `#${issue.number}에 댓글` : '새로'}: ${tool}`)
+      console.log(`Issue ${issue ? `#${issue.number} commented` : 'new'}: ${tool}`)
     } else if (issue) {
       gh(
         'issue',
@@ -417,9 +421,9 @@ async function syncIssues(results) {
         '--repo',
         repo,
         '--comment',
-        `매일 점검(${today})에서 다시 잘 돼요. 닫을게요.`,
+        `The daily check (${today}) passes again. Closing.`,
       )
-      console.log(`이슈 #${issue.number} 닫음: ${tool}`)
+      console.log(`Issue #${issue.number} closed: ${tool}`)
     }
   }
 }

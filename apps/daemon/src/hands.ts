@@ -1,10 +1,10 @@
-// PC 화면 제어 도우미(dool2-hands)를 띄우고 한 줄 JSON으로 부탁한다 (docs/architecture.md 5.2, ADR 0013).
-// 도우미는 처음 쓸 때 띄우고, 죽으면 다음 부탁 때 다시 띄운다.
+// Starts the PC screen control helper (dool2-hands) and sends it one-line JSON requests (docs/architecture.md 5.2, ADR 0013).
+// The helper is started on first use and started again on the next request if it died.
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 
 export interface HandsCaller {
-  /** 이 PC에서 화면 제어를 쓸 수 있는지 (도우미가 있는지) */
+  /** Whether screen control is available on this PC (whether the helper exists) */
   available(): boolean
   call(cmd: string, args?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>
 }
@@ -25,7 +25,7 @@ export class HandsProcess implements HandsCaller {
 
   private start() {
     if (this.child && this.child.exitCode === null) return this.child
-    if (!this.bin || !existsSync(this.bin)) throw new Error('이 PC에는 화면 제어 도우미가 없어요')
+    if (!this.bin || !existsSync(this.bin)) throw new Error('This PC has no screen control helper')
     const child = spawn(this.bin, [], { stdio: ['pipe', 'pipe', 'pipe'] })
     let rest = ''
     child.stdout.on('data', (chunk: Buffer) => {
@@ -38,7 +38,7 @@ export class HandsProcess implements HandsCaller {
     child.on('exit', () => {
       for (const [, w] of this.waiting) {
         clearTimeout(w.timer)
-        w.reject(new Error('화면 제어 도우미가 멈췄어요'))
+        w.reject(new Error('The screen control helper stopped'))
       }
       this.waiting.clear()
       if (this.child === child) this.child = undefined
@@ -59,7 +59,7 @@ export class HandsProcess implements HandsCaller {
     this.waiting.delete(msg.id)
     clearTimeout(w.timer)
     if (msg.ok) w.resolve(msg.result)
-    else w.reject(new Error(msg.error ?? '화면 제어에 실패했어요'))
+    else w.reject(new Error(msg.error ?? 'Screen control failed'))
   }
 
   call(cmd: string, args: Record<string, unknown> = {}, timeoutMs = 20_000): Promise<unknown> {
@@ -68,7 +68,7 @@ export class HandsProcess implements HandsCaller {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiting.delete(id)
-        reject(new Error('화면 제어 도우미가 답하지 않아요'))
+        reject(new Error('The screen control helper is not responding'))
       }, timeoutMs)
       this.waiting.set(id, { resolve, reject, timer })
       child.stdin.write(`${JSON.stringify({ id, cmd, args })}\n`)

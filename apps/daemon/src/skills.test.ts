@@ -109,7 +109,7 @@ describe('로그인 없이 되는 도구 알리기', () => {
           : {},
     )
     await s.connections()
-    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ — .*\(로그인 없이: catchtable_search\)$/m)
+    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ — .*\(no login: catchtable_search\)$/m)
   })
 })
 

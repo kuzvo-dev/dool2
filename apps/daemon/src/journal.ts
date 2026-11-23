@@ -1,10 +1,10 @@
-// 일한 기록 (문제를 찾을 때 보는 것): 연결하기·서비스 도구·답 한 차례·확장 연결이 어떻게 됐는지를 이 PC에 며칠만 남긴다.
+// Work journal (what to look at when finding a problem): how connecting, service tools, one turn of an answer and the extension link went, kept on this PC for a few days.
 //
-// - 날마다 파일 하나 (<데이터 폴더>/logs/2026-11-18.jsonl), 한 줄에 한 가지 일
-// - 멈춘 순간의 화면은 그림으로 (logs/shots/), 글 기록보다 짧게 둔다
-// - 며칠 지나면 지운다 (글 7일, 그림 3일). 다 합쳐 정해 둔 크기를 넘으면 오래된 것부터 지운다
-// - 아이디·비밀번호·인증번호는 적지 않는다. 글에 섞여 온 이메일·긴 숫자도 가린다
-// - 이 PC 밖으로 나가지 않는다 (본체 API로만 읽는다)
+// - One file per day (<data folder>/logs/2026-11-18.jsonl), one event per line
+// - The screen at the moment it stopped is kept as a picture (logs/shots/), for a shorter time than text
+// - Deleted after a few days (text 7 days, pictures 3 days). If the total passes the set size, the oldest go first
+// - IDs, passwords and verification codes are not written. Emails and long numbers mixed into text are masked too
+// - Never leaves this PC (read only through the daemon API)
 import {
   appendFileSync,
   existsSync,
@@ -16,18 +16,19 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { SECRET_KEY_KR } from './region/kr/journal.js'
 
-/** 글 기록을 두는 날 수 */
+/** Days to keep text records */
 export const KEEP_DAYS = 7
-/** 화면 그림을 두는 날 수 */
+/** Days to keep screen pictures */
 export const SHOT_DAYS = 3
-/** 기록 전체 크기 한도 */
+/** Size limit for all records */
 export const MAX_BYTES = 40 * 1024 * 1024
 
 export interface JournalEntry {
-  /** 언제 (ISO) */
+  /** When (ISO) */
   at: string
-  /** 무슨 일: connect-start · connect-step · connect-end · tool · turn · extension · note … */
+  /** What happened: connect-start · connect-step · connect-end · tool · turn · extension · note … */
   kind: string
   [field: string]: unknown
 }
@@ -39,13 +40,13 @@ export interface JournalOptions {
   now?: () => Date
 }
 
-/** 값을 적으면 안 되는 칸 이름 */
-const SECRET_KEY = /pass|pw$|^pw|secret|token|otp|credential|비밀|암호|인증번호/i
+/** Field names whose value must not be written */
+const SECRET_KEY = new RegExp(`pass|pw$|^pw|secret|token|otp|credential|${SECRET_KEY_KR}`, 'i')
 
-/** 가리지 않고 그대로 두는 칸 (본체가 만든 값: 그림 파일 이름, 시각) */
+/** Fields kept as they are (values the daemon made: picture file name, time) */
 const PLAIN_KEY = new Set(['shot', 't'])
 
-/** 글에 섞인 개인 정보 가리기: 이메일은 앞 한 글자만, 6자리 넘는 숫자(전화·인증번호·카드)는 별표로 */
+/** Mask personal info mixed into text: emails keep one leading letter, numbers over 6 digits (phone, codes, cards) become stars */
 export function scrubText(text: string, max = 400): string {
   return text
     .replace(/([\w.+-])[\w.+-]*@([\w-]+\.[\w.-]+)/g, '$1***@$2')
@@ -53,7 +54,7 @@ export function scrubText(text: string, max = 400): string {
     .slice(0, max)
 }
 
-/** 주소에서 물음표 뒤(검색어·토큰이 실린다)를 뗀다 */
+/** Cut the part after the question mark in an address (it carries search words and tokens) */
 export function scrubUrl(url: string): string {
   try {
     const u = new URL(url)
@@ -72,9 +73,9 @@ function scrub(value: unknown, depth = 0): unknown {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) {
       if (v === undefined) continue
-      // 그림 파일 이름·시각은 그대로 (숫자 가리기에 걸리면 그림을 못 찾고 언제인지 모른다)
+      // Picture file names and times stay as they are (if number masking hit them, the picture could not be found and the time would be lost)
       out[k] = SECRET_KEY.test(k)
-        ? '(가림)'
+        ? '(hidden)'
         : PLAIN_KEY.has(k) && typeof v === 'string'
           ? v.slice(0, 80)
           : scrub(v, depth + 1)
@@ -95,7 +96,7 @@ export class Journal {
   private timer?: ReturnType<typeof setInterval>
   private seq = 0
 
-  /** dir이 없으면 아무것도 남기지 않는다 (테스트·점검 모드) */
+  /** Without dir nothing is kept (tests, audit mode) */
   constructor(
     private readonly dir?: string,
     opts: JournalOptions = {},
@@ -108,7 +109,7 @@ export class Journal {
     try {
       mkdirSync(join(dir, 'shots'), { recursive: true })
       this.prune()
-      // 켜 둔 채 며칠이 지나도 지워지게
+      // So old records are deleted even if it stays on for days
       this.timer = setInterval(() => this.prune(), 6 * 3600_000)
       this.timer.unref?.()
     } catch {}
@@ -118,7 +119,7 @@ export class Journal {
     return this.dir ? join(this.dir, 'shots') : undefined
   }
 
-  /** 한 줄 남기기. 기록을 못 남겨도 하던 일은 계속한다 */
+  /** Write one line. If it cannot be written, the work goes on */
   write(kind: string, fields: Record<string, unknown> = {}) {
     if (!this.dir) return
     const at = this.now()
@@ -128,7 +129,7 @@ export class Journal {
     } catch {}
   }
 
-  /** 화면 그림 남기기 (JPEG base64). 파일 이름을 돌려준다 */
+  /** Save a screen picture (JPEG base64). Returns the file name */
   shot(label: string, base64: string): string | undefined {
     if (!this.dir || !base64) return undefined
     const at = this.now()
@@ -142,7 +143,7 @@ export class Journal {
     }
   }
 
-  /** 최근 기록 읽기 (오래된 것부터). kind를 주면 그 말로 시작하는 것만 */
+  /** Read recent records (oldest first). With kind, only those that start with it */
   read(o: { days?: number; kind?: string; limit?: number } = {}): JournalEntry[] {
     if (!this.dir) return []
     const days = Math.min(Math.max(o.days ?? 2, 1), this.keepDays)
@@ -167,7 +168,7 @@ export class Journal {
     return o.limit ? out.slice(-o.limit) : out
   }
 
-  /** 날짜가 지난 기록·그림을 지우고, 그래도 크면 오래된 것부터 더 지운다 */
+  /** Delete records and pictures past their days, and if still too big, delete older ones */
   prune() {
     if (!this.dir) return
     const now = this.now().getTime()
@@ -176,7 +177,7 @@ export class Journal {
       for (const f of this.dayFiles()) if (f.slice(0, 10) < oldest) rmSync(join(this.dir, f), { force: true })
       const shots = this.shotFiles()
       for (const s of shots) if (now - s.mtime > this.shotDays * 86_400_000) rmSync(s.path, { force: true })
-      // 크기 한도: 그림부터, 그다음 오래된 날 기록
+      // Size limit: pictures first, then the oldest days
       const left = [
         ...this.shotFiles(),
         ...this.dayFiles()

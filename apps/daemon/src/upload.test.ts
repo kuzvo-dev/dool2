@@ -215,7 +215,7 @@ describe('파일 올리기 승인 (browser_upload)', () => {
     await t.run('upload', { tabId: 3, ref: 'e2', paths: ['~/Pictures/a.jpg', '~/Pictures/b.jpg'] })
     const r = await t.approve(t.approvals.list()[0]?.id as string)
     expect(r.ok).toBe(false)
-    expect(r.message).toContain('a.jpg이(가) 들어가지 않았어요')
+    expect(r.message).toContain('a.jpg did not go into the file input')
   })
 
   it('승인한 뒤 화면이 바뀌었으면 넣지 않는다', async () => {

@@ -1,24 +1,26 @@
-// 모션그래픽 영상 (video_motion): 두리가 장면 HTML(모션 키트 이름표)을 쓰면 PC 앱이 한 장씩 찍고(renderMotion)
-// 영상 부품(ffmpeg)이 mp4로 묶는다. 사진을 잇기만 하는 video_make보다 움직임이 풍부하다(키네틱 타이포·색종이·콜라주·전환).
+// Motion graphics video (video_motion): when Dool2 writes scene HTML (motion kit class names), the PC app shoots it frame by frame (renderMotion)
+// and the video part (ffmpeg) packs it into an mp4. Richer movement than video_make, which only joins photos (kinetic type, confetti, collage, transitions).
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Lang } from '@dool2/i18n'
+import { motionText } from './locales/motion-text.js'
 import { MOTION_SHAPES, type MotionShape, motionDocument, motionLength } from './motion-kit.js'
 import { findFfmpeg, hasFilters, installFfmpeg, runFfmpeg } from './video-make.js'
 
 export interface MotionRenderRequest {
-  /** 그릴 HTML (임시 폴더) */
+  /** The HTML to draw (temp folder) */
   path: string
   width: number
   height: number
   fps: number
-  /** 초 */
+  /** Seconds */
   duration: number
-  /** 장면을 쓸 폴더 (frame_00001.jpg …) */
+  /** Folder to write frames to (frame_00001.jpg …) */
   outDir: string
-  /** 그 HTML이 불러도 되는 로컬 파일인지 (사용자 폴더의 사진) */
+  /** Whether that HTML may load this local file (a photo in the user's folder) */
   allowFile(path: string): boolean
 }
 export interface MotionRenderResult {
@@ -29,13 +31,15 @@ export type MotionRenderer = (req: MotionRenderRequest) => Promise<MotionRenderR
 export interface MotionDeps {
   binDir: string
   render?: MotionRenderer
-  /** 사용자 폴더 안·민감하지 않은 파일인지 (장면에 넣는 사진) */
+  /** Whether the file is inside the user's folders and not sensitive (a photo put in a scene) */
   readable: (p: string) => boolean
-  /** iCloud에만 있는 사진을 내려받는다 (못 하면 이유) — files.ensureLocal */
+  /** Download a photo that exists only in iCloud (the reason if it cannot) — files.ensureLocal */
   local?: (p: string) => Promise<string | undefined>
-  /** 배경음악 확인 */
+  /** Check the background music */
   resolveAll: (paths: string[]) => Promise<string[] | { error: string }>
   saveDir: () => string | undefined
+  /** Language of the saved file name (default Korean) */
+  lang?: () => Lang
   show: (p: string) => string
   onMade?: (f: { name: string; kind: 'mp4'; path: string; image?: string }) => void
   preview?: (jpeg: Buffer) => Promise<string | undefined>
@@ -52,10 +56,10 @@ const fail = (text: string): Result => ({ isError: true, content: [{ type: 'text
 const FPS = 30
 const MAX_SECONDS = 90
 
-/** html이 부르는 로컬 파일 (file:///…) */
+/** Local files the html loads (file:///…) */
 export function fileRefs(html: string): string[] {
   const out = new Set<string>()
-  // 따옴표 안(src="…", url('…'))은 끝 따옴표까지 — 이름에 괄호가 있어도("초대장 (2).png") 자르지 않는다
+  // Inside quotes (src="…", url('…')) up to the closing quote — a name with parentheses ("invitation (2).png") is not cut
   const found = [
     ...[...html.matchAll(/(["'])(file:\/\/\/[^"'<>]+?)\1/g)].map((m) => m[2] as string),
     ...[...html.matchAll(/url\(\s*(file:\/\/\/[^"'\s<>]+?)\s*\)/g)].map((m) => m[1] as string),
@@ -64,13 +68,13 @@ export function fileRefs(html: string): string[] {
     try {
       out.add(fileURLToPath(ref))
     } catch {
-      /* 잘못된 주소는 그리는 창이 막는다 */
+      /* A bad address is blocked by the drawing window */
     }
   }
   return [...out]
 }
 
-/** 장면마다 가운데 시각 (초) — 두리가 장면을 하나씩 확인하는 모음 그림 */
+/** The middle time of each scene (seconds) — for the contact sheet where Dool2 checks scenes one by one */
 export function sceneMiddles(html: string): number[] {
   const out: number[] = []
   let t = 0
@@ -92,41 +96,44 @@ export class MotionMaker {
   async make(args: Record<string, unknown>): Promise<Result> {
     if (!this.d.render)
       return fail(
-        '이 PC에서는 모션 영상을 그릴 수 없어요(PC 앱이 필요해요). video_make로 사진 영상을 만들어요.',
+        'Motion video cannot be drawn on this PC (the PC app is needed). Make a photo video with video_make instead.',
       )
     const html = typeof args.html === 'string' ? args.html : ''
     if (!/class="[^"]*\bscene\b/.test(html))
-      return fail('html에 <section class="scene" data-dur="3">…</section> 장면을 하나 이상 넣어 주세요.')
-    if (html.length > 400_000) return fail('html이 너무 길어요(400KB까지). 사진은 file:/// 경로로 넣어요.')
+      return fail('Put at least one scene like <section class="scene" data-dur="3">…</section> in the html.')
+    if (html.length > 400_000)
+      return fail('The html is too long (up to 400KB). Put photos in by file:/// path.')
     const length = motionLength(html)
     if (length <= 0 || length > MAX_SECONDS)
-      return fail(`영상 길이(장면 data-dur 합)는 ${MAX_SECONDS}초까지예요. 지금 ${length}초예요.`)
+      return fail(
+        `The video length (sum of scene data-dur) can be up to ${MAX_SECONDS} seconds. It is ${length} seconds now.`,
+      )
     const shape: MotionShape = args.shape === 'landscape' || args.shape === 'square' ? args.shape : 'portrait'
     const [width, height] = MOTION_SHAPES[shape]
     const dir = this.d.saveDir()
-    if (!dir) return fail('문서 폴더를 찾지 못했어요.')
+    if (!dir) return fail('Could not find the documents folder.')
     let music: string | undefined
     if (typeof args.music === 'string' && args.music.trim()) {
       const m = await this.d.resolveAll([args.music.trim()])
       if (!Array.isArray(m) || !m[0] || !/\.(mp3|m4a|aac|wav)$/i.test(m[0]))
-        return fail('배경음악은 사용자 폴더의 mp3·m4a 파일만 쓸 수 있어요.')
+        return fail("Background music can only be an mp3 or m4a file in the user's folders.")
       music = m[0]
     }
-    if (this.busy) return fail('다른 영상을 만드는 중이에요. 끝난 뒤에 다시 불러 주세요.')
-    // 장면 사진·영상: 못 쓰는 곳이거나 없으면 빈 장면이 된다 → 미리 알린다. iCloud에만 있으면 내려받는다
-    // (11-23 실측: iCloud에만 있던 사진이 3D 카드에서 흰 테두리만 남았다)
+    if (this.busy) return fail('Another video is being made. Call again when it is done.')
+    // Scene photos and videos: from a place we cannot use, or missing, they become an empty scene → say so in advance. If only in iCloud, download it
+    // (measured 11-23: a photo that was only in iCloud left just a white border on the 3D card)
     const missing: string[] = []
     for (const f of fileRefs(html).slice(0, 60)) {
       const why = !this.d.readable(f)
-        ? '두리가 쓸 수 없는 곳'
+        ? 'a place Dool2 cannot use'
         : !existsSync(f)
-          ? '파일 없음'
+          ? 'file missing'
           : await this.d.local?.(f).catch((e: Error) => e.message)
       if (why) missing.push(why.includes(basename(f)) ? why : `${basename(f)}(${why})`)
     }
     if (missing.length)
       return fail(
-        `장면에 넣은 파일을 불러올 수 없어요: ${missing.join(', ')}. file_find로 찾은 경로나 image_make로 만든 그림 경로로 바꿔 다시 불러 주세요.`,
+        `Cannot load files put in the scenes: ${missing.join(', ')}. Replace them with a path found by file_find or a picture path made by image_make, and call again.`,
       )
     this.busy = true
     const work = await mkdtemp(join(tmpdir(), 'dool2-motion-'))
@@ -147,16 +154,19 @@ export class MotionMaker {
         outDir: frames,
         allowFile: (p) => p === page || this.d.readable(p),
       })
-      if (r.frames < 2) return fail('장면을 그리지 못했어요. html을 확인해 주세요.')
+      if (r.frames < 2) return fail('Could not draw the scenes. Check the html.')
       const stem =
-        (typeof args.name === 'string' && args.name.trim() ? args.name : '두리 모션 영상')
+        (typeof args.name === 'string' && args.name.trim()
+          ? args.name
+          : motionText(this.d.lang?.() ?? 'ko').defaultName
+        )
           .replace(/\.[a-z0-9]{1,5}$/i, '')
           .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
           .trim()
-          .slice(0, 60) || '두리 모션 영상'
+          .slice(0, 60) || motionText(this.d.lang?.() ?? 'ko').defaultName
       await mkdir(dir, { recursive: true })
       let out = join(dir, `${stem}.mp4`)
-      // 고쳐 다시 만들기(replace): 같은 이름을 바꿔 쓴다 ("(2)~(7)" 판이 쌓이던 것 — 11-23 실측)
+      // Remake after fixing (replace): overwrite the same name (versions "(2)~(7)" used to pile up — measured 11-23)
       if (args.replace !== true)
         for (let i = 2; existsSync(out) && i < 100; i++) out = join(dir, `${stem} (${i}).mp4`)
       const run = this.d.run ?? runFfmpeg
@@ -204,10 +214,10 @@ export class MotionMaker {
         ],
         10 * 60_000,
       )
-      // 임시 폴더에서 만든 뒤 바꿔 넣는다 — 예전 판이 iCloud에만 남아 있으면(EDEADLK) 그 자리에 바로 쓰지 못한다(11-23 실측)
+      // Make it in a temp folder, then swap it in — if the old version exists only in iCloud (EDEADLK) we cannot write straight over it (measured 11-23)
       await rm(out, { force: true }).catch(() => undefined)
       await rename(encoded, out).catch(() => copyFile(encoded, out))
-      // 장면마다 한 컷 모음 (앞 6장면) + 첫 장면 미리보기
+      // One shot per scene as a contact sheet (first 6 scenes) + a preview of the first scene
       const pick = (sec: number) =>
         join(
           frames,
@@ -247,14 +257,14 @@ export class MotionMaker {
           {
             type: 'text',
             text:
-              `모션 영상을 만들었어요: ${shown} (${Math.round(len)}초, ${width}×${height}, ${(size / 1024 / 1024).toFixed(1)}MB). 보관함에도 올렸어요. ` +
-              `아래는 장면마다 한 컷(${mids.length}장면)이에요. 글자가 잘리거나 겹치고, 장면이 비거나, 고른 스타일·레퍼런스와 다르면 html을 고쳐 replace: true로 같은 이름에 다시 만들어요(두 번까지). 확인용 영상을 따로 만들지 않아요.`,
+              `Made the motion video: ${shown} (${Math.round(len)} s, ${width}×${height}, ${(size / 1024 / 1024).toFixed(1)}MB). It is also in the library. ` +
+              `Below is one shot per scene (${mids.length} scenes). If text is cut off or overlaps, a scene is empty, or it differs from the chosen style or reference, fix the html and remake it under the same name with replace: true (up to twice). Do not make a separate video just to check.`,
           },
           ...(shot ? [{ type: 'image' as const, data: shot, mimeType: 'image/jpeg' }] : []),
         ],
       }
     } catch (e) {
-      return fail(`모션 영상을 만들지 못했어요: ${(e as Error).message}`)
+      return fail(`Could not make the motion video: ${(e as Error).message}`)
     } finally {
       this.busy = false
       await rm(work, { recursive: true, force: true }).catch(() => undefined)

@@ -1,6 +1,7 @@
-// 두리의 생활 기록: 목표(알아서 하는 일·반복), 보관함(남겨 둔 결과), 기억(사용자에 대해 알게 된 것), 피드(한 일·알림).
-// 모두 이 PC의 저장소(설정 표)에만 둔다. AI는 도구(life_*)로 만들고, 폰·PC 화면은 같은 목록을 본다.
+// Dool2's life record: goals (things it does on its own, repeats), library (saved results), memory (what it learned about the user), feed (what it did, notices).
+// Everything stays in this PC's store (the settings table). The AI makes them with tools (life_*), and the phone and PC screens read the same lists.
 import { randomUUID } from 'node:crypto'
+import type { Lang } from '@dool2/i18n'
 import {
   cleanCards,
   type FeedItem,
@@ -22,14 +23,22 @@ import type { ConnectionItem } from '@dool2/protocol/connect'
 import { PAGE_SIZE, type Page, pageOf } from '@dool2/protocol/paging'
 import { nextRun, ruleLabel, scheduleLabel, untilEnd, untilLabel } from '@dool2/protocol/schedule'
 
-export { nextRun, ruleLabel, scheduleLabel, untilEnd }
+import { FEED_ROUTINE_TITLES, lifeText } from './locales/life-text.js'
+import { CONDITIONAL, END_MARK, LIBRARY_LABEL_KR, MORNING, QUIET_MARK } from './region/kr/life.js'
 
-/** 조건에 맞을 때만 알리는 일: 도는 차례의 답이 이 말로 시작하면 조용히 넘어간다 */
-export const QUIET_MARK = '알릴 것 없음'
-/** 끝나는 조건이 이뤄졌을 때 답 끝에 붙이는 표시: 붙으면 스스로 꺼진다 */
-export const END_MARK = '[끝]'
+export { END_MARK, nextRun, QUIET_MARK, ruleLabel, scheduleLabel, untilEnd }
 
-/** 도는 차례의 답 읽기: 조용히 넘길지, 끝났는지, 표시를 뺀 글 */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** "9:05 AM" from hour and minute (24-hour in) */
+const hhmmEn = (h: number, m: number) =>
+  `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+
+/** For tasks that only report when a condition holds: a run whose answer starts with this stays quiet */
+
+/** Appended to the end of an answer when the end condition came true: the task turns itself off */
+
+/** Reading the answer of a run: whether to stay quiet, whether it ended, and the text without the marks */
 export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
   const ended = !!r.until && answer.includes(END_MARK)
   const text = answer.split(END_MARK).join('').trim()
@@ -38,43 +47,43 @@ export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
   return { quiet, ended, text }
 }
 
-/** 정해진 때 두리에게 보낼 말: 할 일 + 조건에 맞지 않을 때·끝나는 조건을 답에 담는 법 */
+/** The message sent to Dool2 at the set time: the task + how to put the not-matching case and the end condition in the answer */
 export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until' | 'lastTold'>): string {
   const lines = [
     r.prompt,
-    '맡긴 일이 여럿이면 답을 "끝냈어요"(일마다 결과 한두 줄)와 "정해 주세요"(사용자가 고르거나 확인할 것, 없으면 빼요)로 나눠 써요.',
+    'If the task covers several things, split the answer into "Done" (one or two lines of result per item) and "Needs your decision" (what the user must choose or confirm; leave it out if nothing).',
   ]
   if (r.notify === 'when_found') {
     lines.push(
-      `조건에 맞을 때만 알리는 일이에요. 맞는 게 없으면 다른 말 없이 "${QUIET_MARK}"만 써요(사용자에게 알리지 않아요). 맞으면 확인한 것부터 짧게 써요.`,
+      `This task only reports when the condition holds. If nothing matches, write only "${QUIET_MARK}" and nothing else (the user is not told). If something matches, start with what you confirmed, briefly.`,
     )
-    // 지켜보기는 지난번에 알린 것을 알아야 같은 소식을 또 알리지 않는다
-    if (r.lastTold) lines.push(`지난번에 이미 알린 것 (같은 건 새 소식이 아니에요):\n${r.lastTold}`)
+    // A watch must know what was reported last time, so it does not report the same news again
+    if (r.lastTold) lines.push(`Already reported last time (the same item is not new):\n${r.lastTold}`)
   }
   if (r.until && !untilEnd(r.until))
     lines.push(
-      `끝나는 조건: ${r.until}. 이번에 이 조건이 이뤄졌으면 답 맨 끝에 "${END_MARK}"을 붙여요(이 일이 스스로 꺼져요).`,
+      `End condition: ${r.until}. If this condition came true this time, put "${END_MARK}" at the very end of the answer (this task then turns itself off).`,
     )
   return lines.join('\n')
 }
 
-/** 한국 시간 "12월 1일(화) 오전 9:00" */
+/** Korean time, like "Dec 1 (Tue) 9:00 AM" */
 function kstWhen(iso: string): string {
   const d = new Date(Date.parse(iso) + 9 * 3600_000)
   const h = d.getUTCHours()
   const m = d.getUTCMinutes()
-  return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${'일월화수목금토'[d.getUTCDay()]}) ${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} (${WEEKDAYS[d.getUTCDay()]}) ${hhmmEn(h, m)}`
 }
 
-/** "07:00" → "오전 7:00" */
+/** "07:00" → "7:00 AM" */
 function hhmmLabel(t: string): string {
   const [h = 0, m = 0] = t.split(':').map(Number)
-  return `${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`
+  return hhmmEn(h, m)
 }
 
 /**
- * 폰 알림을 미룰 시간(ms): 다음 tellAt(한국 시간)까지가 12시간 안이면 그만큼, 아니면 0(바로).
- * 새벽 3시에 끝낸 일 + 아침 7시 → 4시간 뒤. 아침 8시에 끝났는데 7시면 이미 지났으니 바로
+ * How long to hold the phone notice (ms): until the next tellAt (Korean time) if that is within 12 hours, else 0 (now).
+ * A job finished at 3 AM with 7 AM → 4 hours later. Finished at 8 AM with 7 AM already passed → now
  */
 export function tellDelay(tellAt: string | undefined, now: Date): number {
   if (!tellAt) return 0
@@ -86,35 +95,32 @@ export function tellDelay(tellAt: string | undefined, now: Date): number {
   return ms <= 12 * 3600_000 ? ms : 0
 }
 
-/** 정한 것 한 줄 (AI가 사용자에게 그대로 말한다): 언제 돌고 · 언제 끝나고 · 언제 알리는지 · 처음 할 때 */
+/** The one-line rule (the AI tells the user as it is): when it runs · when it ends · when it notifies · the first run */
 export function ruleSentence(r: Routine): string {
   const s = r.schedule
-  const when = s
-    ? `${scheduleLabel(s)}${s.kind === 'every' || s.kind === 'once' ? '' : '에'} 해요`
-    : '정한 때 없이 두어요(저절로 돌지 않아요)'
+  const when = s ? scheduleLabel(s) : 'No set time (does not run by itself)'
   const end =
     !s || s.kind === 'once'
       ? ''
       : r.until
         ? untilEnd(r.until)
-          ? `${untilLabel(r.until)} 하고 스스로 꺼져요`
-          : `"${r.until}" 되면 꺼져요`
-        : '끝나는 때 없음(지울 때까지)'
+          ? `${untilLabel(r.until)}, then turns itself off`
+          : `turns off when "${r.until}"`
+        : 'No end (until deleted)'
   const tell = !s
     ? ''
     : r.notify === 'when_found'
-      ? '조건에 맞을 때만 알리고 아니면 조용히 넘어가요'
+      ? 'notifies only when the condition holds, otherwise stays quiet'
       : r.target === 'feed'
-        ? '매번 피드에 올려요'
-        : '매번 알려요'
-  const later = s && r.tellAt ? `폰 알림은 ${hhmmLabel(r.tellAt)}까지 미뤄요` : ''
-  const first = r.nextRunAt ? `처음은 ${kstWhen(r.nextRunAt)}` : ''
+        ? 'posts to the feed every time'
+        : 'notifies every time'
+  const later = s && r.tellAt ? `phone notice is held until ${hhmmLabel(r.tellAt)}` : ''
+  const first = r.nextRunAt ? `first run ${kstWhen(r.nextRunAt)}` : ''
   return [when, end, tell, later, first].filter(Boolean).join(' · ')
 }
 
-/** 조건이 있는 지켜보기 같은 말 ("넘으면", "나오면", "뜨면" …) */
-const CONDITIONAL =
-  /(넘으면|넘어가면|나오면|뜨면|생기면|떨어지면|내려가면|오르면|올라가면|바뀌면|열리면|풀리면|있으면|이하면|이상이면|미만이면|초과하면)/
+/** Wording that makes a task a conditional watch ("when it exceeds", "when it shows up" ...) */
+// (the Korean wording list is in region/kr/life.ts)
 
 export interface Kv {
   getSetting(key: string): unknown
@@ -126,35 +132,35 @@ const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const bad = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
 /**
- * 저장 한도. 피드는 개수가 아니라 기간으로(90일) 남기고 페이지로 나눠 보여 준다 (넘치지 않게 개수도 넉넉히 막아 둔다).
- * 보관함은 사용자가 남긴 것이라 기간으로 지우지 않는다
+ * Storage limits. The feed is kept by age (90 days), not count, and shown in pages (the count cap is just generous to avoid overflow).
+ * The library is what the user saved, so it is never deleted by age
  */
 const LIMIT = { routines: 50, library: 2000, memory: 200, feed: 3000, know: 500 }
 export const FEED_KEEP_DAYS = 90
-/** 목록에 보내는 보관함 글 길이 (전체는 하나 받기로) */
+/** Length of a library body sent in lists (the full text is fetched one at a time) */
 const LIBRARY_PREVIEW = 400
-/** 목표 진행 기록: 저장은 50개, 화면에 보내는 건 최근 것만 (PC 상세 20줄·폰 8줄) */
+/** Goal progress log: 50 are stored, only the latest are sent to screens (PC detail 20 lines, phone 8) */
 const LOG_SENT = 20
-/** 피드 종류 중 "두리가 한 일"로 세는 것 (이번 주 두리가 한 일) */
+/** Feed kinds counted as "what Dool2 did" (this week's activity) */
 const DONE_KINDS = new Set<FeedItem['kind']>(['done', 'routine', 'post', 'saved', 'goal', 'connected'])
 const FEED_KINDS: FeedItem['kind'][] = ['done', 'routine', 'saved', 'goal', 'connected', 'suggest', 'post']
 const FEED_LABEL: Record<FeedItem['kind'], string> = {
-  post: '소식',
-  done: '끝낸 일',
-  routine: '예약한 일',
-  saved: '보관함',
-  goal: '목표',
-  connected: '연결',
-  suggest: '먼저 챙김',
+  post: 'News',
+  done: 'Done',
+  routine: 'Scheduled task',
+  saved: 'Library',
+  goal: 'Goal',
+  connected: 'Connected',
+  suggest: 'Looked ahead',
 }
 const feedAt = (f: FeedItem) => f.at
 const libraryAt = (it: LibraryItem) => it.savedAt
 const inTab = (it: LibraryItem, tab: LibraryTab) =>
   tab === 'files' ? it.kind === 'file' : it.kind !== 'file'
 
-/** 목록용: 긴 글은 앞부분만 (글자 단위로 잘라 이모지가 깨지지 않게) */
+/** For lists: long text keeps only the start (cut by character so emoji do not break) */
 function preview(it: LibraryItem): LibraryItem {
-  // 미리보기 사진은 목록에 싣지 않는다 (열 때 하나 받기로)
+  // The preview photo is not sent in the list (fetched one at a time when opened)
   if (it.image) {
     const { image: _i, ...rest } = it
     return { ...rest, body: [...it.body].slice(0, LIBRARY_PREVIEW).join(''), cut: true }
@@ -165,32 +171,34 @@ function preview(it: LibraryItem): LibraryItem {
   return { ...it, body: chars.slice(0, LIBRARY_PREVIEW).join(''), cut: true }
 }
 const LIBRARY_KINDS = ['note', 'link', 'product', 'place', 'file'] as const
-/** 보관함 종류 이름 (폰·PC 화면과 같은 말) */
+/** Library kind names (shown to the AI in English; Korean names for matching are in region/kr/life.ts) */
 const LIBRARY_LABEL: Record<LibraryItem['kind'], string> = {
-  note: '정리',
-  link: '링크',
-  product: '상품',
-  place: '장소',
-  file: '파일',
+  note: 'Note',
+  link: 'Link',
+  product: 'Product',
+  place: 'Place',
+  file: 'File',
 }
 export class Life {
-  /** 폰에서 보낸 사진 읽기 (본체가 붙인다) */
+  /** Language of the text people read (feed titles); the daemon sets it from settings */
+  lang: () => Lang = () => 'ko'
+  /** Read a photo sent from the phone (the daemon attaches it) */
   photo?: (name: string) => Promise<string>
-  /** 바뀌면 (폰·PC에 다시 보내기) */
+  /** On change (send again to phone and PC) */
   onChange?: () => void
-  /** 예약한 일을 할 때 (대화로 보내 두리가 한다) */
+  /** When a scheduled task is due (sent as a chat message and Dool2 does it) */
   onDue?: (r: Routine) => void
-  /** 맞춤 아이디어를 새로 찾을 때 (본체가 피드 대화에서 두리에게 부탁한다) */
+  /** When fresh personalized ideas are needed (the daemon asks Dool2 in the feed chat) */
   onIdeas?: () => void
   ideasBusy = false
-  /** 먼저 챙기기: 연결한 서비스가 있는지 (본체가 붙인다. 없으면 살펴보지 않는다) */
+  /** Looking ahead: whether any service is connected (the daemon attaches it; with none, nothing is checked) */
   watchSources?: () => string[]
-  /** 먼저 챙기기: 살펴볼 때 (본체가 피드 대화에서 두리에게 부탁한다) */
+  /** Looking ahead: when to look (the daemon asks Dool2 in the feed chat) */
   onWatch?: (lastAt?: string) => void
-  /** 먼저 챙긴 일을 피드에 올렸을 때 (본체가 폰에 알린다) */
+  /** When a look-ahead item was posted to the feed (the daemon notifies the phone) */
   onTell?: (f: FeedItem) => void
   watchBusy = false
-  /** 이번 살펴보기에서 올린 개수 (한 번에 너무 많이 알리지 않게) */
+  /** How many were posted in this look (so not too many are announced at once) */
   private told = 0
 
   constructor(
@@ -199,8 +207,8 @@ export class Life {
   ) {}
 
   /**
-   * 읽어 둔 목록 (설정 표의 JSON을 부를 때마다 다시 풀지 않게). 쓰기는 모두 put을 거쳐 함께 바뀐다.
-   * 본체가 설정 표를 직접 지웠으면(처음부터 다시) reload()로 비운다
+   * Cached lists (so the settings table JSON is not parsed on every call). All writes go through put, which keeps it in sync.
+   * If the daemon cleared the settings table directly (start over), empty it with reload()
    */
   private cache = new Map<string, unknown[]>()
   private list<T>(key: string): T[] {
@@ -211,14 +219,14 @@ export class Life {
     this.cache.set(key, list)
     return list
   }
-  /** 설정 표를 밖에서 바꿨을 때 다시 읽게 한다 */
+  /** Read again after the settings table was changed from outside */
   reload() {
     this.cache.clear()
   }
   private put<T>(key: keyof typeof LIMIT, items: T[]) {
     let keep = items.slice(0, LIMIT[key])
     if (key === 'feed') {
-      // 90일이 지난 소식은 지운다 (그 안의 것은 모두 페이지로 볼 수 있다)
+      // News older than 90 days is deleted (everything newer can be viewed in pages)
       const since = new Date(this.now().getTime() - FEED_KEEP_DAYS * 86_400_000).toISOString()
       keep = (keep as FeedItem[]).filter((f) => f.at >= since) as T[]
     }
@@ -227,7 +235,7 @@ export class Life {
     this.onChange?.()
   }
 
-  // ── 목표 ──
+  // ── Goals ──
   routines(): Routine[] {
     return this.list<Routine>('routines')
   }
@@ -246,7 +254,7 @@ export class Life {
     const next = input.schedule ? nextRun(input.schedule, now) : undefined
     const r: Routine = {
       id: randomUUID(),
-      title: input.title.slice(0, 60) || '이름 없는 목표',
+      title: input.title.slice(0, 60) || lifeText(this.lang()).unnamedGoal,
       prompt: input.prompt.slice(0, 1000),
       enabled: true,
       createdAt: now.toISOString(),
@@ -262,11 +270,11 @@ export class Life {
       ...(input.tellAt ? { tellAt: input.tellAt } : {}),
     }
     this.put('routines', [r, ...this.routines()])
-    // 피드 지시로 만든 일은 피드에 따로 알리지 않는다
+    // A task made by a feed instruction is not announced in the feed
     if (r.target !== 'feed')
       this.feed({
         kind: 'goal',
-        title: `${r.category ? '목표를 세웠어요' : '예약했어요'}: ${r.title}`,
+        title: `${r.category ? lifeText(this.lang()).goalMade : lifeText(this.lang()).scheduled}: ${r.title}`,
         ...(r.schedule
           ? { body: [scheduleLabel(r.schedule), ruleLabel(r)].filter(Boolean).join(' · ') }
           : {}),
@@ -274,7 +282,7 @@ export class Life {
       })
     return r
   }
-  /** 목표 고치기: 계획 단계·진행 기록, 알림의 언제·끝나는 때·알리기 */
+  /** Edit a goal: plan steps, progress log, and the notice's time, end and when to notify */
   updateGoal(
     id: string,
     patch: {
@@ -284,10 +292,10 @@ export class Life {
       title?: string
       prompt?: string
       schedule?: RoutineSchedule
-      /** 빈 글이면 끝나는 때를 지운다 */
+      /** An empty text clears the end */
       until?: string
       notify?: 'always' | 'when_found'
-      /** 빈 글이면 알림 미루기를 지운다 */
+      /** An empty text clears the notice delay */
       tellAt?: string
     },
   ) {
@@ -328,7 +336,7 @@ export class Life {
     if (!r) return undefined
     Object.assign(r, patch)
     if (patch.enabled) {
-      // 끝나서 꺼진 걸 다시 켜면: 다음 차례 전에 끝나는 날은 지운다 (켜자마자 다시 꺼지지 않게)
+      // Turning on one that ended: clear an end date that comes before the next run (so it does not turn off again right away)
       delete r.endedAt
       const end = untilEnd(r.until)
       const next = r.schedule ? nextRun(r.schedule, this.now()) : undefined
@@ -348,7 +356,7 @@ export class Life {
     this.put('routines', next)
     return true
   }
-  /** 지금 해야 할 일을 꺼내고 다음 시각을 정한다 (본체가 30초마다 부른다) */
+  /** Take out what is due now and set the next time (the daemon calls this every 30 seconds) */
   tick() {
     if (this.ideasDue() && !this.ideasBusy && (this.memory().length || this.routines().length))
       this.refreshIdeas()
@@ -366,7 +374,7 @@ export class Life {
     const due: Routine[] = []
     for (const r of ripe) {
       const end = untilEnd(r.until)
-      // 끝나는 날이 지났으면 하지 않고 끈다 (PC가 꺼져 있다 늦게 켜진 경우)
+      // If the end date has passed, do not run and turn it off (the PC was off and started late)
       if (end && end <= now) {
         this.end(r)
         continue
@@ -376,7 +384,7 @@ export class Life {
       const next = r.schedule ? nextRun(r.schedule, now) : undefined
       if (next && !(end && next >= end)) r.nextRunAt = next.toISOString()
       else if (next)
-        this.end(r) // 이번이 끝나는 날 전 마지막
+        this.end(r) // this is the last run before the end date
       else {
         delete r.nextRunAt
         r.enabled = false
@@ -386,21 +394,21 @@ export class Life {
     for (const r of due) this.onDue?.(r)
     return due
   }
-  /** 끝나는 때가 되어 스스로 끈다 */
+  /** Turn itself off when the end time comes */
   private end(r: Routine) {
     delete r.nextRunAt
     r.enabled = false
     r.endedAt = this.now().toISOString()
   }
-  /** 바로 한 번 해 보기 */
+  /** Try once right now */
   runNow(id: string) {
     const r = this.routines().find((x) => x.id === id)
     if (r) this.onDue?.(r)
     return r
   }
   /**
-   * 도는 차례의 결과 남기기. 조건에 맞을 때만 알리는 일인데 "알릴 것 없음"이면 피드에 올리지 않고(quiet),
-   * 끝나는 조건이 이뤄졌다는 표시가 있으면 끈다(ended). 본체는 quiet면 폰에도 알리지 않는다
+   * Record the result of a run. For a task that only reports when a condition holds, an answer of "${QUIET_MARK}" is not posted to the feed (quiet),
+   * and a mark saying the end condition came true turns it off (ended). The daemon does not notify the phone when quiet
    */
   noteRun(id: string, answer: string): { quiet: boolean; ended: boolean; item?: FeedItem } | undefined {
     const list = this.routines()
@@ -408,7 +416,7 @@ export class Life {
     if (!r) return
     const { quiet, ended, text: result } = readRun(r, answer)
     r.lastResult = result.slice(0, 300)
-    // 지켜보기가 다음 차례에 같은 소식을 또 알리지 않게, 알린 것을 넉넉히 남긴다
+    // Keep plenty of what was reported, so a watch does not report the same news on the next run
     if (r.notify === 'when_found' && !quiet) r.lastTold = result.slice(0, 1500)
     if (ended) this.end(r)
     if (r.category && !quiet)
@@ -416,13 +424,13 @@ export class Life {
     this.put('routines', list)
     if (quiet) return { quiet, ended }
     if (r.target === 'feed') {
-      // 답 첫 줄이 제목, 나머지가 글
+      // The first line of the answer is the title, the rest is the text
       const lines = result.trim().split('\n')
       const head = (lines[0] ?? '').replace(/^#+\s*|\*\*/g, '').trim()
       const body = lines.slice(1).join('\n').trim()
       const item = this.feed({
         kind: 'post',
-        title: head.slice(0, 80) || '오늘의 소식',
+        title: head.slice(0, 80) || lifeText(this.lang()).todayNews,
         body: (body || result).slice(0, 2000),
         ref: r.id,
       })
@@ -432,19 +440,23 @@ export class Life {
     return { quiet, ended, item }
   }
 
-  // ── 보관함 ──
+  // ── Library ──
   library(): LibraryItem[] {
     return this.list<LibraryItem>('library')
   }
   save(input: Omit<LibraryItem, 'id' | 'savedAt'>): LibraryItem {
     const item: LibraryItem = { ...input, id: randomUUID(), savedAt: this.now().toISOString() }
-    // 같은 PC 파일을 다시 만들면(같은 이름으로 고쳐 쓰기) 예전 칸은 빼고 새 것만 맨 위에 둔다
+    // If the same PC file is made again (rewritten under the same name), drop the old slot and put only the new one on top
     const rest = item.path ? this.library().filter((x) => x.path !== item.path) : this.library()
     this.put('library', [item, ...rest])
-    this.feed({ kind: 'saved', title: `보관함에 남겼어요: ${item.title}`, ref: item.id })
+    this.feed({
+      kind: 'saved',
+      title: `${lifeText(this.lang()).savedToLibrary}: ${item.title}`,
+      ref: item.id,
+    })
     return item
   }
-  /** 같은 PC 파일이 여러 칸으로 쌓인 것을 최근 것 하나로 (예전 판은 고쳐 쓸 때마다 칸이 늘었다). 켤 때 한 번 */
+  /** Collapse several slots of the same PC file into the latest one (older versions added a slot on every rewrite). Once at startup */
   tidyLibrary(): number {
     const list = this.library()
     const seen = new Set<string>()
@@ -452,7 +464,7 @@ export class Life {
     if (next.length !== list.length) this.put('library', next)
     return list.length - next.length
   }
-  /** 목록용 작은 미리보기를 붙인다 (PC 앱이 줄여 준 뒤) */
+  /** Attach a small preview for lists (after the PC app shrinks it) */
   setThumb(id: string, thumb: string) {
     const list = this.library()
     const it = list.find((x) => x.id === id)
@@ -466,7 +478,7 @@ export class Life {
     this.put('library', next)
     return next.length !== list.length
   }
-  /** 보관함 한 페이지 (칸별, 최근 것부터). 글은 앞부분만 */
+  /** One page of the library (per tab, latest first). Only the start of the text */
   libraryPage(o: { tab?: LibraryTab; before?: string; limit?: number } = {}): Page<LibraryItem> {
     const tab = o.tab ?? 'made'
     const p = pageOf(
@@ -474,7 +486,7 @@ export class Life {
       libraryAt,
       o,
     )
-    // 목록 미리보기는 합쳐 250KB까지만 싣는다 (폰으로 가는 봉투 한도 500KB, 암호화로 커지는 것까지)
+    // List previews are sent up to 250KB in total (the phone envelope limit is 500KB, including growth from encryption)
     let room = 250_000
     const items = p.items.map(preview).map((it) => {
       if (!it.thumb) return it
@@ -485,12 +497,12 @@ export class Life {
     })
     return { ...p, items }
   }
-  /** 보관함 하나 (전체 글) */
+  /** One library item (full text) */
   libraryItem(id: string): LibraryItem | undefined {
     return this.library().find((x) => x.id === id)
   }
 
-  // ── 기억 ──
+  // ── Memory ──
   memory(): MemoryItem[] {
     return this.list<MemoryItem>('memory')
   }
@@ -509,18 +521,18 @@ export class Life {
     this.put('memory', next)
     return next.length !== list.length
   }
-  /** 지침에 붙일 기억 (최근 40개) */
+  /** Memories to add to the instructions (latest 40) */
   memoryPrompt(): string {
     const list = this.memory().slice(0, 40)
     if (!list.length) return ''
-    return `## 사용자에 대해 기억하는 것 (자연스럽게 활용하고, 틀리면 memory_forget)\n${list.map((m) => `- ${m.text}`).join('\n')}`
+    return `## What you remember about the user (use it naturally, and call memory_forget if it is wrong)\n${list.map((m) => `- ${m.text}`).join('\n')}`
   }
 
-  // ── 알아 둔 것 (조회 기억·한 일 장부) ──
+  // ── Known facts (lookup memory and the ledger of what was done) ──
   know(): KnowItem[] {
     return this.list<KnowItem>('know')
   }
-  /** 같은 것(같은 종류·같은 이름·같은 곳)이 있으면 새 값으로 바꾼다 */
+  /** If the same one exists (same kind, name and place), replace it with the new value */
   knowSave(x: Partial<KnowItem> & { title: string; value: string; kind: KnowItem['kind'] }): KnowItem {
     const now = this.now().toISOString()
     const title = x.title.trim().slice(0, 80)
@@ -569,7 +581,7 @@ export class Life {
     }
     if (next) item.next = next
     else delete item.next
-    // 끝난 일은 더 챙기지 않는다
+    // Finished tasks are not followed up any more
     if (item.state === 'done') delete item.next
     this.put('know', [item, ...list.filter((k) => k.id !== hit.id)])
     return item
@@ -580,35 +592,35 @@ export class Life {
     this.put('know', next)
     return next.length !== list.length
   }
-  /** 챙길 때가 된 한 일 (다음에 챙길 때가 지났고 아직 진행 중) */
+  /** Tasks due for a follow-up (the next follow-up time has passed and they are still in progress) */
   knowDue(): KnowItem[] {
     const now = this.now().getTime()
     return this.know().filter((k) => k.state !== 'done' && k.next && Date.parse(k.next) <= now)
   }
-  /** 지침에 붙일 알아 둔 것: 진행 중인 한 일과 최근 사실 (날짜와 함께, 쓸지는 AI가 판단) */
+  /** Known facts to add to the instructions: tasks in progress and recent facts (with dates, the AI decides whether to use them) */
   knowPrompt(): string {
     const list = this.know()
     if (!list.length) return ''
     const open = list.filter((k) => k.kind === 'done' && k.state !== 'done').slice(0, 15)
     const facts = list.filter((k) => k.kind === 'fact').slice(0, 20)
     return [
-      `## 두리가 알아 둔 것 (오늘 ${knowDay(this.now().toISOString())}. 기준 시점과 본 날을 보고 지금도 쓸 수 있는지 네가 판단해요. 결정이 걸린 일은 다시 확인해요. 더 찾으려면 know_find)`,
-      ...(open.length ? ['진행 중인 일:', ...open.map(knowLine)] : []),
-      ...(facts.length ? ['알아 둔 사실:', ...facts.map(knowLine)] : []),
+      `## What Dool2 knows (today ${knowDay(this.now().toISOString())}. Look at the basis date and the day it was seen and judge for yourself whether it is still usable. Re-check anything a decision depends on. To look for more, use know_find)`,
+      ...(open.length ? ['In progress:', ...open.map(knowLine)] : []),
+      ...(facts.length ? ['Known facts:', ...facts.map(knowLine)] : []),
     ].join('\n')
   }
 
-  // ── 피드 ──
+  // ── Feed ──
   feedItems(): FeedItem[] {
     return this.list<FeedItem>('feed')
   }
-  /** 피드 한 페이지 (최근 것부터). kinds를 주면 그 종류만 (활동: done·routine) */
+  /** One page of the feed (latest first). With kinds, only those kinds (activity: done, routine) */
   feedPage(o: { before?: string; limit?: number; kinds?: FeedItem['kind'][] } = {}): Page<FeedItem> {
     const kinds = o.kinds?.length ? new Set(o.kinds) : undefined
     const all = this.feedItems()
     return pageOf(kinds ? all.filter((f) => kinds.has(f.kind)) : all, feedAt, o)
   }
-  /** 이번 주 두리가 한 일: 최근 days일 날마다 한 일 개수 (마지막이 오늘, 이 PC 시간 기준) */
+  /** What Dool2 did this week: the count per day over the last `days` days (the last is today, in this PC's time) */
   feedDays(days = 60, all = this.feedItems()): number[] {
     const out = Array<number>(days).fill(0)
     const start = new Date(this.now())
@@ -637,8 +649,8 @@ export class Life {
     this.put('feed', list)
   }
   /**
-   * 먼저 챙긴 일 올리기: 같은 열쇠(없으면 같은 제목)로 30일 안에 알린 적 있으면 올리지 않는다.
-   * 올리면 onTell로 폰에 알린다. 살펴보기 한 번에 3개까지
+   * Post a look-ahead item: skip it if the same key (or the same title when no key) was announced within 30 days.
+   * When posted, the phone is notified through onTell. Up to 3 per look
    */
   tell(input: {
     title: string
@@ -658,7 +670,7 @@ export class Life {
     if (this.watchBusy && this.told >= 3) return 'full'
     const f = this.feed({
       kind: 'suggest',
-      title: title || '두리가 먼저 챙겼어요',
+      title: title || lifeText(this.lang()).suggestFallback,
       ...(input.body?.trim() ? { body: input.body.trim().slice(0, 600) } : {}),
       ...(input.from?.trim() ? { from: input.from.trim().slice(0, 60) } : {}),
       ...(key ? { key } : {}),
@@ -671,7 +683,7 @@ export class Life {
     this.onTell?.(f)
     return f
   }
-  /** 최근에 먼저 알린 것 (살펴볼 때 같은 걸 또 올리지 않게 두리에게 보여 준다) */
+  /** What was announced recently (shown to Dool2 when it looks, so it does not post the same again) */
   recentTells(days = 14): FeedItem[] {
     const since = this.now().getTime() - days * 86_400_000
     return this.feedItems()
@@ -679,7 +691,7 @@ export class Life {
       .slice(0, 20)
   }
 
-  // ── 먼저 챙기기 ──
+  // ── Looking ahead ──
   watchOn(): boolean {
     return this.kv.getSetting('watchOff') !== true
   }
@@ -688,8 +700,8 @@ export class Life {
     this.onChange?.()
   }
   /**
-   * 한국 시간 아침 6시부터 밤 10시까지 매시 정각이 지나면 한 번씩 살펴본다 (사용자 결정 11-20: 한 일 장부와 합쳐 한 시간마다).
-   * 밤(22시 이후~6시 전)에는 하지 않는다: 자는 사이에 폰을 울리지 않게. PC를 늦게 켜도 그 낮 안이면 한다
+   * Look once after each full hour from 6 AM to 10 PM Korean time (user decision 11-20: merged with the ledger of what was done, once an hour).
+   * Not at night (after 22:00 until 6:00), so the phone does not ring while people sleep. If the PC starts late, it still looks within that day
    */
   private watchDue(): boolean {
     const now = this.now()
@@ -701,7 +713,7 @@ export class Life {
     const done = this.kv.getSetting('watchAt')
     return typeof done !== 'string' || Date.parse(done) < last
   }
-  /** 지금 살펴보기 (정해진 때가 되었거나, 화면에서 눌렀을 때) */
+  /** Look now (when the time came, or when pressed on a screen) */
   watchNow() {
     if (this.watchBusy) return
     this.watchBusy = true
@@ -721,17 +733,19 @@ export class Life {
     const v = this.kv.getSetting('feedPrompt')
     return typeof v === 'string' && v ? v : undefined
   }
-  /** 피드 지시: 매일 아침 7:30에 그 말대로 피드 글을 쓴다 (하나만 둔다) */
+  /** Feed instruction: write a feed post as told every day at 7:30 AM (only one is kept) */
   setFeedPrompt(text: string) {
     const t = text.trim().slice(0, 300)
     this.kv.setSetting('feedPrompt', t)
-    const list = this.routines().filter((r) => !(r.target === 'feed' && r.title === '피드'))
+    const list = this.routines().filter(
+      (r) => !(r.target === 'feed' && FEED_ROUTINE_TITLES.includes(r.title)),
+    )
     this.kv.setSetting('routines', list)
     this.cache.set('routines', list)
     if (t)
       this.addRoutine({
-        title: '피드',
-        prompt: `오늘의 피드 글을 써 주세요: ${t}\n이 답이 그대로 피드에 올라가요(feed_post 도구는 쓰지 않아요). 첫 줄은 짧은 제목, 그다음 핵심 3~5줄 목록. 확인한 것만 쓰고 맨 끝에 출처 사이트 이름을 적어요. "올렸어요" 같은 말은 쓰지 않아요.`,
+        title: lifeText(this.lang()).feedRoutine,
+        prompt: `Write today's feed post: ${t}\nThis answer is posted to the feed as it is (do not use the feed_post tool). The first line is a short title, then a list of 3 to 5 key lines. Write only what you confirmed and put the source site names at the very end. Do not write things like "posted". Write in the same language as this request.`,
         schedule: { kind: 'daily', time: '07:30' },
         target: 'feed',
       })
@@ -752,7 +766,7 @@ export class Life {
     this.ideasBusy = false
     this.onChange?.()
   }
-  /** 매일 아침 6시(한국)가 지나면 하루 한 번 새로 찾는다 */
+  /** Search anew once a day, after 6 AM (Korean time) each day */
   private ideasDue(): boolean {
     const at = this.kv.getSetting('ideasAt')
     const now = this.now()
@@ -774,8 +788,8 @@ export class Life {
   }
 
   /**
-   * 폰·PC 첫 화면에 보낼 것. 긴 목록(피드·보관함)은 첫 페이지만 보내고 나머지는 페이지로 (feedPage·libraryPage).
-   * logs: 목표마다 보낼 진행 기록 수 (폰은 8줄만 보여 준다)
+   * What to send to the first screen of phone and PC. Long lists (feed, library) send only the first page and the rest by page (feedPage, libraryPage).
+   * logs: how many progress records to send per goal (the phone shows only 8 lines)
    */
   state(o: { logs?: number } = {}): LifeState {
     const feedPrompt = this.feedPrompt()
@@ -822,7 +836,7 @@ export class Life {
     }
   }
 
-  /** 폰·PC 화면에서 한 일 */
+  /** Something done on the phone or PC screen */
   act(a: LifeAction): string | undefined {
     switch (a.action) {
       case 'routine-create': {
@@ -871,7 +885,7 @@ export class Life {
       case 'library-save':
         return this.save({
           kind: a.itemKind ?? 'note',
-          title: a.title.slice(0, 80) || '남긴 글',
+          title: a.title.slice(0, 80) || lifeText(this.lang()).savedNote,
           body: a.body.slice(0, 4000),
         }).id
       case 'library-delete':
@@ -906,7 +920,7 @@ export class Life {
     }
   }
 
-  // ── AI 도구 (life_*) ──
+  // ── AI tools (life_*) ──
   run(tool: string, a: Record<string, unknown>): ToolResult {
     try {
       switch (tool) {
@@ -919,11 +933,11 @@ export class Life {
           const first = schedule ? nextRun(schedule, this.now()) : undefined
           if (end && end <= this.now())
             return bad(
-              `끝나는 날(${rule.until})이 벌써 지났어요. 사용자에게 언제까지 할지 다시 물어봐 주세요.`,
+              `The end date (${rule.until}) has already passed. Ask the user again until when it should run.`,
             )
           if (end && first && first >= end)
             return bad(
-              `처음 할 때(${kstWhen(first.toISOString())})가 끝나는 날(${rule.until})보다 늦어서 한 번도 돌지 않아요. 언제나 끝나는 날을 고쳐 주세요.`,
+              `The first run (${kstWhen(first.toISOString())}) is later than the end date (${rule.until}), so it would never run. Fix the end date.`,
             )
           const category = GOAL_CATEGORIES.includes(a.category as GoalCategory)
             ? (a.category as GoalCategory)
@@ -943,27 +957,27 @@ export class Life {
           })
           return ok(
             [
-              `${category ? '목표를' : '예약을'} 만들었어요: "${r.title}" [id ${r.id.slice(0, 8)}]`,
-              `정한 것: ${ruleSentence(r)}.`,
+              `${category ? 'Goal' : 'Reminder'} created: "${r.title}" [id ${r.id.slice(0, 8)}]`,
+              `What was set: ${ruleSentence(r)}.`,
               ...ruleGaps(r),
-              '사용자에게 "정한 것"을 그대로 한 문장으로 말해 확인해 주세요.',
-              // 대화 속 옛 예약을 믿고 "이미 있어요"라며 맡긴 일을 빼지 않게, 지금 있는 것을 같이 준다
+              'Confirm with the user by telling them "What was set" as it is, in one sentence.',
+              // Also give what exists now, so an old reminder from the chat is not trusted ("it already exists") and a requested task left out
               otherRoutines(this.routines(), r.id),
               ...(a.preview === true
                 ? [
-                    '미리 보기: 지금 이 대화에서 prompt대로 한 번 해서, 예약한 때 받을 것과 같은 모양으로 보여 주세요. 정한 것은 그 아래 한 줄로.',
+                    'Preview: do the task once now in this chat, following the prompt, in the same shape as what will be received at the set time. Put "What was set" below it in one line.',
                   ]
                 : r.notify === 'when_found'
                   ? [
-                      // 지켜보기를 걸고 "내일부터 알려요"로만 끝내지 않게: 지금 것을 먼저 보여 준다
-                      '지금 상황: 이 답에서 지금 있는 것을 보여 주세요 — 아직 안 찾아봤으면 prompt대로 한 번 찾아서(소식·글이면 show_list로 줄마다 원문 링크, 오늘 것이 적으면 이번 주로 넓혀서. 조건 지켜보기면 지금 값·상태 한두 줄과 출처). 정한 것은 그 아래 한 줄로.',
+                      // Do not end a watch with only "I will tell you from tomorrow": show what exists now first
+                      'Current state: show what exists right now in this answer. If you have not looked yet, search once following the prompt (for news or posts, use show_list with the original link on each row, and widen to this week if today has little. For a condition watch, one or two lines of the current value or state and the source). Put "What was set" below it in one line.',
                     ]
                   : []),
             ].join('\n'),
           )
         }
         case 'goal_update': {
-          // 시각만 주면("7시로 바꿔 줘" → time만) 지금 언제의 나머지(매일·요일·날짜)를 그대로 쓴다
+          // If only a time is given ("change it to 7" → time only), keep the rest of the current schedule (daily, weekday, date)
           const cur = this.routines().find((x) => x.id === a.id || x.id.startsWith(String(a.id ?? '-')))
           const whenGiven = WHEN_KEYS.some((k) => a[k] !== undefined)
           const merged = whenGiven
@@ -980,7 +994,7 @@ export class Life {
           const end = untilEnd(rule.until)
           if (end && end <= this.now())
             return bad(
-              `끝나는 날(${rule.until})이 벌써 지났어요. 사용자에게 언제까지 할지 다시 물어봐 주세요.`,
+              `The end date (${rule.until}) has already passed. Ask the user again until when it should run.`,
             )
           const patch = {
             ...(Array.isArray(a.plan) ? { plan: a.plan.map(String) } : {}),
@@ -993,72 +1007,75 @@ export class Life {
             ...(rule.notify ? { notify: rule.notify } : {}),
             ...(rule.tellAt !== undefined ? { tellAt: rule.tellAt } : {}),
           }
-          if (!cur) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
-          // 아무것도 안 바뀌었는데 "고쳤어요"라고 하지 않게
+          if (!cur) return bad('No such goal. Check the id with goal_list.')
+          // Do not say "updated" when nothing changed
           if (!Object.keys(patch).length)
-            return bad('고칠 칸이 비었어요. 바꿀 것(time·schedule·prompt·until 등)을 주세요.')
+            return bad('Nothing to change. Give what to change (time, schedule, prompt, until, etc.).')
           const r = this.updateGoal(cur.id, patch)
-          if (!r) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
+          if (!r) return bad('No such goal. Check the id with goal_list.')
           const timing = schedule || a.until !== undefined || rule.notify || rule.tellAt !== undefined
           return ok(
             timing
-              ? [`고쳤어요: "${r.title}"`, `정한 것: ${ruleSentence(r)}.`, ...ruleGaps(r)].join('\n')
-              : `목표를 고쳤어요: ${r.title}`,
+              ? [`Updated: "${r.title}"`, `What was set: ${ruleSentence(r)}.`, ...ruleGaps(r)].join('\n')
+              : `Goal updated: ${r.title}`,
           )
         }
         case 'idea_suggest': {
           const list = Array.isArray(a.ideas) ? (a.ideas as SuggestedIdea[]) : []
           const ok2 = list.filter((i) => i && typeof i.text === 'string' && i.text.trim())
-          if (!ok2.length) return bad('ideas가 비었어요. [{text, why}] 3~6개를 주세요.')
+          if (!ok2.length) return bad('ideas is empty. Give 3 to 6 items as [{text, why}].')
           this.setIdeas(ok2)
-          return ok(`아이디어 ${Math.min(ok2.length, 6)}개를 아이디어 탭에 올렸어요.`)
+          return ok(`Posted ${Math.min(ok2.length, 6)} ideas to the Ideas tab.`)
         }
         case 'feed_post': {
           const f = this.feed({
             kind: 'post',
-            title: String(a.title ?? '').slice(0, 80) || '두리 소식',
+            title: String(a.title ?? '').slice(0, 80) || lifeText(this.lang()).postFallback,
             body: String(a.body ?? '').slice(0, 1500),
           })
-          return ok(`피드에 올렸어요: ${f.title}`)
+          return ok(`Posted to the feed: ${f.title}`)
         }
         case 'show_cards': {
-          // 기록은 대화 엔진이 답 아래에 남긴다 (threads.ts). 여기서는 다듬은 결과만 알려 준다
+          // The conversation engine keeps the record under the answer (threads.ts). Here we only report the cleaned result
           const cards = cleanCards(a.cards)
-          if (!cards.length) return bad('붙일 카드가 없어요. title이 있는 카드를 넣어 주세요.')
+          if (!cards.length) return bad('No cards to attach. Give cards that have a title.')
           const pics = cards.filter((c) => c.image).length
           return ok(
-            `카드 ${cards.length}장을 답 아래에 붙여요(사진 ${pics}장). 답 글에는 같은 목록을 되풀이하지 말고 고른 이유·차이만 짧게 말해요.`,
+            `Attaching ${cards.length} cards under the answer (${pics} with photos). In the answer text, do not repeat the same list; briefly say only why you picked them and the differences.`,
           )
         }
-        // 결과 블록: 기록은 대화 엔진이 답 아래에 남긴다 (threads.ts). 여기서는 다듬은 결과만 알려 준다
+        // Result blocks: the conversation engine keeps the record under the answer (threads.ts). Here we only report the cleaned result
         case 'show_list': {
           const r = cleanRows(a)
-          if (!r) return bad('붙일 줄이 없어요. rows에 title이 있는 줄을 넣어 주세요.')
-          const more = r.rows.length > 5 ? ` 5줄까지 보이고 나머지 ${r.rows.length - 5}줄은 펼쳐 봐요.` : ''
-          const picked = r.pick === 'multi' ? ` 미리 고른 것 ${r.rows.filter((x) => x.on).length}개.` : ''
+          if (!r) return bad('No rows to attach. Give rows that have a title in rows.')
+          const more =
+            r.rows.length > 5
+              ? ` The first 5 rows show and the other ${r.rows.length - 5} open on expand.`
+              : ''
+          const picked = r.pick === 'multi' ? ` ${r.rows.filter((x) => x.on).length} pre-selected.` : ''
           return ok(
-            `목록 ${r.rows.length}줄을 답 아래에 붙여요.${more}${picked} 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 같은 목록을 되풀이하지 말고 이유·다음 할 일만 짧게 말해요.`,
+            `Attaching a list of ${r.rows.length} rows under the answer.${more}${picked} One result block per answer, so if you call another block only the last one is attached. In the answer text, do not repeat the same list; briefly say only the reason and what to do next.`,
           )
         }
         case 'show_result': {
           const r = cleanResult(a)
-          if (!r) return bad('큰 값(big)이 없어요. 언제·얼마 같은 값 하나를 big에 넣어 주세요.')
+          if (!r) return bad('No big value (big). Put one value, like a time or an amount, in big.')
           return ok(
-            '결과 카드를 답 아래에 붙여요. 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 같은 값을 되풀이하지 말고 한두 문장만 말해요.',
+            'Attaching a result card under the answer. One result block per answer, so if you call another block only the last one is attached. In the answer text, do not repeat the same value; say just a sentence or two.',
           )
         }
         case 'show_route': {
           const r = cleanRoute(a)
-          if (!r) return bad('결론(big)과 구간(legs: line·from·to)이 있어야 해요.')
+          if (!r) return bad('Needs a conclusion (big) and legs (legs: line, from, to).')
           return ok(
-            `경로 카드(구간 ${r.legs.length}개)를 답 아래에 붙여요. 답 하나에 결과 블록 하나라, 다른 블록을 또 부르면 마지막 것만 붙어요. 답 글에는 구간을 되풀이하지 말고 결론 한 줄과 놓쳤을 때 대안만 말해요.`,
+            `Attaching a route card (${r.legs.length} legs) under the answer. One result block per answer, so if you call another block only the last one is attached. In the answer text, do not repeat the legs; say only the conclusion in one line and the alternative if they miss it.`,
           )
         }
         case 'show_draft': {
           const r = cleanDraft(a)
-          if (!r) return bad('보낼 글(text)이 비었어요.')
+          if (!r) return bad('The text to send (text) is empty.')
           return ok(
-            '보낼 글을 답 아래에 붙여요([복사]·[보내기]). 이 도구는 보내지 않아요. 사용자가 [보내기]를 누르면 "방금 쓴 글 그대로 보내 줘"가 오니, 그때 보내기 직전 승인을 받아요. 답 글에는 글을 되풀이하지 말고 한두 문장만 말해요.',
+            'Attaching the text to send under the answer ([Copy] and [Send] buttons). This tool does not send anything. When the user presses [Send], a message like "send the text you just wrote as it is" arrives, and you then get approval right before sending. In the answer text, do not repeat the text; say just a sentence or two.',
           )
         }
         case 'feed_tell': {
@@ -1070,18 +1087,19 @@ export class Life {
             ...(a.ask ? { ask: String(a.ask) } : {}),
             ...(a.ask_label ? { askLabel: String(a.ask_label) } : {}),
           })
-          if (r === 'dup') return ok('이미 알린 일이에요. 다시 올리지 않았어요.')
-          if (r === 'full') return bad('이번에는 3개까지만 알려요. 가장 중요한 것만 남기고 마쳐요.')
-          return ok(`피드에 올리고 폰에 알렸어요: ${r.title}`)
+          if (r === 'dup') return ok('Already announced. Not posted again.')
+          if (r === 'full')
+            return bad('Only 3 are announced this time. Keep the most important ones and finish.')
+          return ok(`Posted to the feed and notified the phone: ${r.title}`)
         }
         case 'goal_list': {
           const list = this.routines()
-          if (!list.length) return ok('아직 목표가 없어요.')
+          if (!list.length) return ok('There are no goals yet.')
           return ok(
             list
               .map(
                 (r) =>
-                  `- [${r.id.slice(0, 8)}] ${r.category ? `(${r.category}) ` : ''}${r.title} · ${r.schedule ? scheduleLabel(r.schedule) : '정한 때 없음'}${ruleLabel(r) ? ` · ${ruleLabel(r)}` : ''}${r.enabled ? '' : r.endedAt ? ' (끝남)' : ' (꺼짐)'}${r.plan ? ` · 계획 ${r.plan.filter((p) => p.done).length}/${r.plan.length}` : ''}${r.lastResult ? ` · 지난 결과: ${r.lastResult.slice(0, 80)}` : ''}`,
+                  `- [${r.id.slice(0, 8)}] ${r.category ? `(${r.category}) ` : ''}${r.title} · ${r.schedule ? scheduleLabel(r.schedule) : 'no set time'}${ruleLabel(r) ? ` · ${ruleLabel(r)}` : ''}${r.enabled ? '' : r.endedAt ? ' (ended)' : ' (off)'}${r.plan ? ` · plan ${r.plan.filter((p) => p.done).length}/${r.plan.length}` : ''}${r.lastResult ? ` · last result: ${r.lastResult.slice(0, 80)}` : ''}`,
               )
               .join('\n'),
           )
@@ -1089,19 +1107,19 @@ export class Life {
         case 'goal_delete': {
           const id = String(a.id ?? '')
           const r = this.routines().find((x) => x.id === id || x.id.startsWith(id))
-          if (!r || !this.removeRoutine(r.id)) return bad('그런 목표가 없어요. goal_list로 id를 확인하세요.')
-          return ok(`목표를 지웠어요: ${r.title}`)
+          if (!r || !this.removeRoutine(r.id)) return bad('No such goal. Check the id with goal_list.')
+          return ok(`Goal deleted: ${r.title}`)
         }
         case 'library_save': {
           const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : 'note'
           const item = this.save({
             kind,
-            title: String(a.title ?? '').slice(0, 80) || '제목 없음',
+            title: String(a.title ?? '').slice(0, 80) || lifeText(this.lang()).noTitle,
             body: String(a.body ?? '').slice(0, 4000),
             ...(a.url ? { url: String(a.url).slice(0, 500) } : {}),
             ...(a.price ? { price: String(a.price).slice(0, 40) } : {}),
           })
-          return ok(`보관함에 남겼어요: ${item.title}`)
+          return ok(`Saved to the library: ${item.title}`)
         }
         case 'library_find': {
           const kind = LIBRARY_KINDS.includes(a.kind as never) ? (a.kind as LibraryItem['kind']) : undefined
@@ -1134,13 +1152,13 @@ export class Life {
         }
         case 'memory_save': {
           const m = this.remember(String(a.text ?? ''))
-          return ok(`기억해 둘게요: ${m.text}`)
+          return ok(`Remembered: ${m.text}`)
         }
         case 'know_save': {
           const kind = a.kind === 'done' ? 'done' : 'fact'
           const title = String(a.title ?? '').trim()
           const value = String(a.value ?? '').trim()
-          if (!title || !value) return bad('title과 value가 필요해요')
+          if (!title || !value) return bad('title and value are required')
           const k = this.knowSave({
             kind,
             title,
@@ -1152,7 +1170,7 @@ export class Life {
             ...(typeof a.next_what === 'string' ? { nextWhat: a.next_what } : {}),
             ...(a.state === 'done' ? { state: 'done' as const } : {}),
           })
-          return ok(`알아 둘게요: ${knowLine(k)}${k.next ? ` — ${knowDay(k.next)}에 먼저 챙길게요` : ''}`)
+          return ok(`Noted: ${knowLine(k)}${k.next ? ` — will look ahead on ${knowDay(k.next)}` : ''}`)
         }
         case 'know_find': {
           const q = String(a.query ?? '').trim()
@@ -1165,17 +1183,19 @@ export class Life {
                 words.some((w) => `${k.title} ${k.value} ${k.source ?? ''} ${k.basis ?? ''}`.includes(w))),
           )
           if (!hits.length)
-            return ok(`알아 둔 것이 없어요${q ? ` ("${q}")` : ''}. 조회해서 알게 되면 know_save로 남겨요.`)
+            return ok(
+              `Nothing known${q ? ` ("${q}")` : ''}. When you learn it from a lookup, save it with know_save.`,
+            )
           return ok(
             [
-              `오늘 ${knowDay(this.now().toISOString())}. 본 날·기준 시점을 보고 지금도 쓸 수 있는지 판단해요(낡았거나 결정이 걸리면 다시 조회):`,
+              `Today is ${knowDay(this.now().toISOString())}. Look at the day it was seen and its basis and judge whether it is still usable (look it up again if it is stale or a decision depends on it):`,
               ...hits.slice(0, 30).map((k) => `${knowLine(k)} [id ${k.id.slice(0, 8)}]`),
             ].join('\n'),
           )
         }
         case 'know_update': {
           const q = String(a.id ?? a.title ?? '').trim()
-          if (!q) return bad('id나 title이 필요해요')
+          if (!q) return bad('id or title is required')
           const k = this.knowUpdate(q, {
             ...(typeof a.value === 'string' ? { value: a.value } : {}),
             ...(a.state === 'done' || a.state === 'open' ? { state: a.state } : {}),
@@ -1186,27 +1206,27 @@ export class Life {
                 : {}),
             ...(typeof a.next_what === 'string' ? { nextWhat: a.next_what } : {}),
           })
-          if (!k) return bad('그런 항목이 없어요. know_find로 id를 확인해요')
-          return ok(`고쳤어요: ${knowLine(k)}`)
+          if (!k) return bad('No such item. Check the id with know_find')
+          return ok(`Updated: ${knowLine(k)}`)
         }
         case 'memory_forget': {
           const q = String(a.text ?? a.id ?? '')
           const m = this.memory().find((x) => x.id === q || x.id.startsWith(q) || x.text.includes(q))
-          if (!m || !this.forget(m.id)) return bad('그런 기억이 없어요.')
-          return ok(`잊었어요: ${m.text}`)
+          if (!m || !this.forget(m.id)) return bad('No such memory.')
+          return ok(`Forgot: ${m.text}`)
         }
       }
-      return bad(`모르는 도구예요: ${tool}`)
+      return bad(`Unknown tool: ${tool}`)
     } catch (e) {
       return bad((e as Error).message)
     }
   }
 }
 
-/** 언제를 이루는 칸 */
+/** The fields that make up "when" */
 const WHEN_KEYS = ['schedule', 'time', 'days', 'day', 'at', 'minutes'] as const
 
-/** AI가 준 언제를 정리한다 */
+/** Clean up the "when" the AI gave */
 export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | undefined {
   const kind = String(a.schedule ?? a.kind ?? '')
   const time = String(a.time ?? '')
@@ -1230,22 +1250,22 @@ export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | und
   return undefined
 }
 
-/** 언제를 읽지 못했을 때: 무엇이 빠졌는지 */
+/** When "when" could not be read: what is missing */
 function scheduleHelp(a: Record<string, unknown>): string {
   const kind = String(a.schedule ?? '')
   const need: Record<string, string> = {
     daily: 'time("09:00")',
-    weekly: 'time과 days(0=일 … 6=토, 여러 개 가능)',
-    monthly: 'time과 day(1~31, 말일은 31)',
-    once: 'at(ISO 시각, +09:00 포함)',
-    every: 'minutes(15 이상)',
+    weekly: 'time and days (0=Sun … 6=Sat, several allowed)',
+    monthly: 'time and day (1-31, 31 for the last day)',
+    once: 'at (ISO time, with +09:00)',
+    every: 'minutes (15 or more)',
   }
   return need[kind]
-    ? `${kind}에는 ${need[kind]}이 필요해요.`
-    : '언제 할지(schedule)를 알 수 없어요. daily·weekly·monthly·once·every 중 하나로 주세요.'
+    ? `${kind} needs ${need[kind]}.`
+    : 'Cannot tell when to run (schedule). Give one of daily, weekly, monthly, once, every.'
 }
 
-/** AI가 준 끝나는 때·알리기 (잘못이면 고칠 말) */
+/** The end and notify settings the AI gave (the message to fix it if wrong) */
 function readRule(
   a: Record<string, unknown>,
 ): { until?: string; notify?: 'always' | 'when_found'; tellAt?: string } | string {
@@ -1253,83 +1273,78 @@ function readRule(
   if (typeof a.tell_at === 'string') {
     const t = a.tell_at.trim()
     if (t && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
-      return `알림 시각(tell_at "${t}")을 읽지 못했어요. "07:00"처럼 주세요.`
+      return `Could not read the notice time (tell_at "${t}"). Give it like "07:00".`
     out.tellAt = t ? t.padStart(5, '0') : ''
   }
   if (a.notify !== undefined) {
     if (a.notify !== 'always' && a.notify !== 'when_found')
-      return 'notify는 "always"(매번 알림)나 "when_found"(조건에 맞을 때만) 중 하나예요.'
+      return 'notify must be "always" (notify every time) or "when_found" (only when the condition holds).'
     out.notify = a.notify
   }
   if (typeof a.until === 'string' && a.until.trim()) {
     const u = a.until.trim()
     if (/^\d{4}-\d{2}-\d{2}/.test(u) && !untilEnd(u))
-      return `끝나는 날(${u})을 읽지 못했어요. "2026-12-31"처럼 주세요.`
+      return `Could not read the end date (${u}). Give it like "2026-12-31".`
     out.until = u
   }
   return out
 }
 
-/** 지금 켜져 있는 다른 예약 이름들 (여기에 없는 건 지워진 것) */
+/** Names of the other reminders that are on now (any not here were deleted) */
 function otherRoutines(list: Routine[], except: string): string {
   const names = list.filter((x) => x.id !== except && x.enabled).map((x) => `"${x.title}"`)
   return names.length
-    ? `지금 있는 다른 예약: ${names.slice(0, 10).join(' · ')}${names.length > 10 ? ` 외 ${names.length - 10}개` : ''} (대화에 나왔어도 여기에 없으면 사용자가 지운 거라 다시 만들지 않아요. 이번에 맡긴 일은 다른 예약에 있다며 빼지 말고 이 예약에 다 넣어요)`
-    : '지금 있는 다른 예약은 없어요 (대화에 나왔던 예약은 사용자가 지운 거라 다시 만들지 않아요).'
+    ? `Other reminders now: ${names.slice(0, 10).join(' · ')}${names.length > 10 ? ` and ${names.length - 10} more` : ''} (even if one came up in the chat, if it is not here the user deleted it, so do not recreate it. Do not leave out a task you were just given by saying another reminder has it; put it all in this one)`
+    : 'There are no other reminders now (reminders that came up in the chat were deleted by the user, so do not recreate them).'
 }
 
-/** 새벽(0~6시)에 한 번 해 두고 "아침"에 알려 달라는 일: 폰 알림은 아침 7시로 미룬다 */
+/** A one-off task done before dawn (0-6 AM) that should tell "in the morning": the phone notice waits until 7 AM */
 function morningTell(s: RoutineSchedule | undefined, text: string): boolean {
   if (s?.kind !== 'once') return false
-  return new Date(Date.parse(s.at) + 9 * 3600_000).getUTCHours() < 6 && /아침/.test(text)
+  return new Date(Date.parse(s.at) + 9 * 3600_000).getUTCHours() < 6 && MORNING.test(text)
 }
 
-/** 빠뜨리기 쉬운 것: 결과에 다음 길로 담는다 */
+/** Easy to miss: put the next step in the result */
 function ruleGaps(r: Routine): string[] {
   const s = r.schedule
-  if (!s) return r.category ? [] : ['정한 때가 없어 저절로 돌지 않아요 — 알림이면 goal_update에 schedule']
+  if (!s)
+    return r.category
+      ? []
+      : ['No set time, so it does not run by itself — if it is a reminder, add schedule with goal_update']
   if (s.kind === 'once') {
-    // 새벽에 해 두는 일: 폰 알림이 그 시각에 울리지 않게 아침 시각을 받는다
+    // A task done before dawn: ask for a morning time so the phone notice does not ring at that hour
     const h = new Date(Date.parse(s.at) + 9 * 3600_000).getUTCHours()
     return h < 6 && !r.tellAt
       ? [
-          '새벽에 하는 일이에요 — "아침에 알려 줘"였으면 goal_update에 tell_at "07:00"(폰 알림만 그때). 그 시각에 깨워 달라는 알림이면 그대로 두세요',
+          'This runs before dawn — if it was "tell me in the morning", add tell_at "07:00" with goal_update (only the phone notice waits). If it is a reminder meant to wake them at that time, leave it as it is',
         ]
       : []
   }
   const gaps: string[] = []
   if (r.notify === 'when_found' && !r.until)
     gaps.push(
-      '끝나는 때가 없어요 — 지켜보기는 끝이 있는 게 보통이에요. 정하려면 goal_update에 until(날짜 "2026-12-31"이나 조건 "취소표를 잡으면")',
+      'No end — a watch usually has an end. To set one, add until with goal_update (a date "2026-12-31" or a condition "when you get a cancellation seat")',
     )
   if (r.notify !== 'when_found' && CONDITIONAL.test(`${r.title} ${r.prompt}`))
     gaps.push(
-      '조건이 있는 지켜보기 같아요 — 조건에 맞을 때만 알리려면 goal_update에 notify: "when_found" (아니면 매번 알려요)',
+      'This looks like a conditional watch — to notify only when the condition holds, set notify: "when_found" with goal_update (otherwise it notifies every time)',
     )
   return gaps
 }
 
-/** 낱말 비교용: 띄어쓰기를 없애고 소문자로 ("성수 카페" = "성수카페") */
+/** For comparing words: remove spaces and lowercase ("Seongsu cafe" = "Seongsucafe") */
 const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase()
 
-/** 받침에 맞는 "으로/로" ("성수로", "귤로", "카페로", "ABC(으)로") */
-function euro(word: string): string {
-  const c = word.charCodeAt(word.length - 1)
-  if (c < 0xac00 || c > 0xd7a3) return '(으)로'
-  const jong = (c - 0xac00) % 28
-  return jong === 0 || jong === 8 ? '로' : '으로'
-}
-
-/** 저장한 날 (한국 시간 YYYY-MM-DD) */
+/** The day saved (Korean time YYYY-MM-DD) */
 function savedDay(iso: string): string {
   const t = Date.parse(iso)
-  if (Number.isNaN(t)) return '날짜 모름'
+  if (Number.isNaN(t)) return 'unknown date'
   return new Date(t + 9 * 3600_000).toISOString().slice(0, 10)
 }
 
 /**
- * 보관함 꺼내 보기 (library_find 도구). 사용자가 앱 보관함에서 보는 칸 그대로 돌려준다.
- * 낱말이 여럿이면 많이 맞은 것부터, 같으면 최근 것부터. 못 찾으면 이유와 저장된 것 목록을 준다
+ * Look through the library (library_find tool). Returns the slots as the user sees them in the app's library.
+ * With several words, the best matches first, then the latest. If nothing is found, gives the reason and the list of what is saved
  */
 export function findLibrary(
   all: LibraryItem[],
@@ -1342,68 +1357,79 @@ export function findLibrary(
   const recent = [...all].sort((x, y) => y.savedAt.localeCompare(x.savedAt))
   const kindLabel = opts.kind ? LIBRARY_LABEL[opts.kind] : ''
   if (!recent.length)
-    return '보관함이 비어 있어요. 아직 저장한 게 없어요. 예전 대화에서 본 것이면 conversation_search로 찾아봐요.'
+    return 'The library is empty. Nothing is saved yet. If it was in an earlier conversation, look with conversation_search.'
 
   const pool = opts.kind ? recent.filter((x) => x.kind === opts.kind) : recent
   const scored = pool
     .map((it) => {
-      const hay = squash([it.title, it.body, it.url ?? '', it.price ?? '', LIBRARY_LABEL[it.kind]].join(' '))
+      const hay = squash(
+        [
+          it.title,
+          it.body,
+          it.url ?? '',
+          it.price ?? '',
+          LIBRARY_LABEL[it.kind],
+          LIBRARY_LABEL_KR[it.kind],
+        ].join(' '),
+      )
       return { it, score: words.filter((w) => hay.includes(w)).length }
     })
     .filter((x) => !words.length || x.score > 0)
-    // sort는 안정 정렬이라 점수가 같으면 최근 순서가 그대로 남는다
+    // sort is stable, so with equal scores the latest-first order stays
     .sort((x, y) => y.score - x.score)
   const found = scored.slice(skip, skip + n).map((x) => x.it)
 
   if (!found.length && skip && scored.length)
-    return `맞는 것은 ${scored.length}개라 ${skip}개를 건너뛰면 남는 게 없어요. 여기까지예요. skip을 줄이거나 빼고 다시 찾아요.`
+    return `There are ${scored.length} matches, so skipping ${skip} leaves nothing. That is all. Lower skip or leave it out and search again.`
   if (!found.length) {
-    const where = kindLabel ? `보관함의 ${kindLabel} 중에` : '보관함에'
-    const what = q ? ` '${q}'${euro(q)}` : ''
+    const where = kindLabel ? `Among ${kindLabel} items in the library,` : 'In the library,'
+    const what = q ? ` '${q}'` : ''
     const titles = recent
       .slice(0, 5)
       .map((x) => `${x.title} (${LIBRARY_LABEL[x.kind]} · ${savedDay(x.savedAt)})`)
       .join(', ')
     return [
-      `${where}${what} 저장된 게 없어요. 저장된 것 ${recent.length}개, 최근: ${titles}.`,
-      '다음: 낱말을 바꾸거나 줄여서 다시 찾거나(예: 동네 이름만), query를 비우고 최근 것을 보거나, 대화에서 본 것이면 conversation_search로 찾아요. 없는 걸 있다고 지어내지 않아요.',
+      `${where}${what} nothing is saved. ${recent.length} saved, latest: ${titles}.`,
+      'Next: change or shorten the words and search again (for example just the neighborhood name), or clear query and look at the latest, or if it was in the conversation look with conversation_search. Do not make up what is not there.',
     ].join('\n')
   }
 
-  // 몇 개만 나오면 메모를 길게, 많으면 짧게 (전체 내용은 제목으로 다시 찾으면 길게 나온다)
+  // With few results show the memo longer, with many shorter (the full content comes out long when searched again by title)
   const room = found.length <= 3 ? 2000 : 300
   const lines = found.map((it, i) => {
-    const head = `${skip + i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · ${savedDay(it.savedAt)} 저장`
+    const head = `${skip + i + 1}. [${LIBRARY_LABEL[it.kind]}] ${it.title} · saved ${savedDay(it.savedAt)}`
     const body = it.body.trim()
-    const memo = body.length > room ? `${body.slice(0, room)}… (잘림)` : body
+    const memo = body.length > room ? `${body.slice(0, room)}… (cut)` : body
     return [
       head,
-      ...(it.price ? [`   가격: ${it.price}`] : []),
-      ...(it.url ? [`   링크: ${it.url}`] : []),
-      ...(memo ? [`   메모: ${memo.replace(/\n/g, '\n   ')}`] : []),
+      ...(it.price ? [`   Price: ${it.price}`] : []),
+      ...(it.url ? [`   Link: ${it.url}`] : []),
+      ...(memo ? [`   Memo: ${memo.replace(/\n/g, '\n   ')}`] : []),
     ].join('\n')
   })
-  const scope = [q ? `'${q}'` : '최근 것', kindLabel ? `${kindLabel} 종류` : ''].filter(Boolean).join(' · ')
+  const scope = [q ? `'${q}'` : 'latest', kindLabel ? `${kindLabel} type` : ''].filter(Boolean).join(' · ')
   const more =
     scored.length > found.length
       ? skip
-        ? ` (맞는 것 ${scored.length}개 중 ${skip + 1}~${skip + found.length}번째)`
-        : ` (맞는 것 ${scored.length}개 중 ${found.length}개)`
+        ? ` (matches ${skip + 1}-${skip + found.length} of ${scored.length})`
+        : ` (${found.length} of ${scored.length} matches)`
       : ''
   const rest = scored.length - skip - found.length
   return [
-    `보관함에서 ${scope} ${found.length}개를 찾았어요${more}. 보관함 전체 ${recent.length}개.`,
+    `Found ${found.length} in the library for ${scope}${more}. ${recent.length} in the library in total.`,
     '',
     ...lines,
     '',
-    '다음: 사용자에게 보여 줄 땐 show_list(줄마다 링크·가격)로 붙이고, 고를 후보(상품·장소)는 show_cards도 돼요(보관함엔 사진이 없어 사진 없이). 위에 있는 값만 쓰고, 메모가 잘렸으면 제목으로 다시 찾아요.',
-    ...(rest > 0 ? [`더 있어요(${rest}개): 이어서 보려면 같은 낱말로 skip: ${skip + found.length}`] : []),
+    'Next: to show them to the user, attach with show_list (link and price on each row); for candidates to choose from (products, places), show_cards also works (the library has no photos, so without photos). Use only the values above, and if a memo is cut, search again by title.',
+    ...(rest > 0
+      ? [`There is more (${rest}): to continue, use the same words with skip: ${skip + found.length}`]
+      : []),
   ].join('\n')
 }
 
 /**
- * 피드 찾아보기 (feed_find 도구): 두리가 한 일·예약한 일의 결과·소식·먼저 챙긴 일. 사용자가 피드에서 보는 칸 그대로.
- * 최근 것부터 limit개, 더 있으면 다음 커서(before)를 준다. 기간 안 종류별 개수도 함께 ("이번 주 뭐 했어?")
+ * Look through the feed (feed_find tool): what Dool2 did, results of scheduled tasks, news, look-ahead items. The slots as the user sees them in the feed.
+ * The latest `limit` first, with the next cursor (before) if there is more. Also the counts per kind in the period ("what did you do this week?")
  */
 export function findFeed(
   all: FeedItem[],
@@ -1417,7 +1443,7 @@ export function findFeed(
   const words = q ? [...new Set(q.split(' ').map(squash).filter(Boolean))] : []
   const kinds = opts.kinds?.length ? new Set(opts.kinds) : undefined
   if (!all.length)
-    return '피드가 비어 있어요. 아직 두리가 한 일이 없어요. 대화에서 한 일이면 conversation_search로 찾아봐요.'
+    return 'The feed is empty. Dool2 has not done anything yet. If it was done in a conversation, look with conversation_search.'
   const inRange = all.filter((f) => !since || f.at >= since)
   const pool = inRange.filter(
     (f) =>
@@ -1425,15 +1451,15 @@ export function findFeed(
       (!words.length || words.every((w) => squash(`${f.title} ${f.body ?? ''} ${f.from ?? ''}`).includes(w))),
   )
   const page = pageOf(pool, feedAt, { limit: n, ...(opts.before ? { before: opts.before } : {}) })
-  const period = days ? `최근 ${days}일` : `저장된 ${FEED_KEEP_DAYS}일`
+  const period = days ? `last ${days} days` : `saved ${FEED_KEEP_DAYS} days`
   const scope = [period, q ? `'${q}'` : '', kinds ? [...kinds].map((k) => FEED_LABEL[k]).join('·') : '']
     .filter(Boolean)
     .join(' · ')
   if (!page.items.length) {
-    if (opts.before) return `${scope}: 여기까지예요. 더 오래된 건 없어요.`
+    if (opts.before) return `${scope}: that is all. Nothing older.`
     return [
-      `${scope}에 맞는 게 없어요. 피드 전체 ${all.length}개.`,
-      '다음: 낱말을 줄이거나 기간(days)을 늘리거나 종류(kinds)를 빼고 다시 찾아요. 대화에서 한 일이면 conversation_search. 없는 걸 있다고 지어내지 않아요.',
+      `Nothing matches in ${scope}. ${all.length} in the feed in total.`,
+      'Next: shorten the words, widen the period (days), or drop the kinds and search again. If it was done in a conversation, use conversation_search. Do not make up what is not there.',
     ].join('\n')
   }
   const count = new Map<FeedItem['kind'], number>()
@@ -1444,21 +1470,23 @@ export function findFeed(
     return [
       `${i + 1}. [${FEED_LABEL[f.kind]}] ${kstWhen(f.at)} · ${f.title}`,
       ...(body ? [`   ${body}`] : []),
-      ...(f.from ? [`   어디서: ${f.from}`] : []),
-      ...(f.answered ? [`   사용자 답: ${f.answered === 'yes' ? '맡김' : '넘김'}`] : []),
+      ...(f.from ? [`   From: ${f.from}`] : []),
+      ...(f.answered ? [`   User answer: ${f.answered === 'yes' ? 'handed over' : 'skipped'}`] : []),
     ].join('\n')
   })
   return [
-    `피드에서 ${scope}: 맞는 것 ${pool.length}개 (${byKind}). ${opts.before ? '이어서 ' : '최근 것부터 '}${page.items.length}개.`,
+    `In the feed, ${scope}: ${pool.length} matches (${byKind}). ${opts.before ? 'Continuing, ' : 'Latest first, '}${page.items.length} shown.`,
     '',
     ...lines,
     '',
-    page.next ? `더 있어요: 이어서 보려면 같은 조건에 before: "${page.next}"` : '여기까지예요(더 없음).',
-    '다음: 사용자에게 보여 줄 땐 많으면 show_list로 붙이고 답 글은 요약만. 위에 있는 것만 말해요.',
+    page.next
+      ? `There is more: to continue, use the same conditions with before: "${page.next}"`
+      : 'That is all (no more).',
+    'Next: to show them to the user, attach with show_list if there are many and keep the answer text to a summary. Say only what is above.',
   ].join('\n')
 }
 
-/** 한 줄 미리보기: 마크다운 기호와 줄바꿈을 뺀다 */
+/** One-line preview: remove markdown marks and line breaks */
 function plainLine(text: string, max: number): string {
   const t = text
     .replace(/\*\*/g, '')
@@ -1469,8 +1497,8 @@ function plainLine(text: string, max: number): string {
 }
 
 /**
- * 먼저 챙기기: 피드 대화에서 두리에게 보내는 부탁.
- * 연결한 서비스만, 확인한 새 소식만, 한 번에 3개까지, 이미 알린 건 빼고, 없으면 조용히.
+ * Looking ahead: the request sent to Dool2 in the feed chat.
+ * Only connected services, only new things you confirmed, up to 3 at a time, skip what was already announced, and stay quiet if nothing.
  */
 export function watchPrompt(
   services: ConnectionItem[],
@@ -1480,7 +1508,7 @@ export function watchPrompt(
   lastAt?: string,
 ): string {
   const kst = new Date(now.getTime() + 9 * 3600_000)
-  const when = `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][kst.getUTCDay()]}요일 ${kst.getUTCHours()}시`
+  const when = `${MONTHS[kst.getUTCMonth()]} ${kst.getUTCDate()}, ${WEEKDAYS[kst.getUTCDay()]}, ${hhmmEn(kst.getUTCHours(), 0)}`
   const list = services
     .map((c) => {
       const look = c.card.abilities.filter((a) => a.tier === 'lookup').map((a) => a.title)
@@ -1489,52 +1517,52 @@ export function watchPrompt(
     .join('\n')
   const told = recent.length
     ? recent.map((f) => `- ${f.title}${f.key ? ` [${f.key}]` : ''}`).join('\n')
-    : '- (아직 없음)'
+    : '- (none yet)'
   const ago = lastAt ? Math.round((now.getTime() - Date.parse(lastAt)) / 60_000) : undefined
   return [
-    `먼저 챙기기 시간이에요 (지금 ${when}, 한국 시간). 사용자는 아무것도 부탁하지 않았어요. 비서처럼 먼저 살펴봐 주세요.`,
+    `It is time to look ahead (now ${when}, Korean time). The user has not asked for anything. Look ahead first, like an assistant.`,
     ...(ago !== undefined && ago > 0 && ago < 24 * 60
       ? [
-          `지난번에 살핀 때: ${ago < 90 ? `${ago}분` : `${Math.round(ago / 60)}시간`} 전. 그 사이 바뀌기 어려운 곳은 건너뛰고, 자주 바뀌는 것(배송·메일·마감 임박)부터 봐요.`,
+          `Last looked: ${ago < 90 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago. Skip places that are unlikely to have changed since, and start with things that change often (deliveries, mail, deadlines close).`,
         ]
       : []),
     ...(due.length
       ? [
           '',
-          '챙길 때가 된 일 (두리가 하거나 확인한 일 — 먼저 봐요):',
+          'Tasks due for a follow-up (things Dool2 did or checked — look at these first):',
           ...due.map(knowLine),
-          '→ 각각 지금 상태를 그 서비스에서 확인하고(발표·도착·마감·만기), 사용자가 알면 좋을 게 있으면 feed_tell로 알려요(ask에 바로 할 수 있는 일). 그다음 know_update로 상태(끝났으면 state "done")나 다음에 챙길 때(next)를 고쳐요. 더 챙길 게 없으면 next를 비워요.',
+          '→ For each, check its current state in that service (announcement, arrival, deadline, expiry), and if there is something the user would want to know, tell it with feed_tell (put what can be done right away in ask). Then update the state with know_update (state "done" if it is finished) or the next follow-up time (next). If there is nothing more to follow up, clear next.',
         ]
       : []),
     '',
-    '연결한 서비스 (이것만 열어 봐요):',
-    list || '- (없음)',
+    'Connected services (open only these):',
+    list || '- (none)',
     '',
-    '할 일:',
-    '1. 위 서비스에서 사용자가 지금 알면 좋을 새 소식을 확인해요. 예: 배송·도착 예정, 다가오는 예약·일정, 답이 필요한 메일, 기록·결과 발표, 결제·만료·마감 예정. 기억해 둔 기념일·약속이 가까우면 그것도요.',
-    '2. 직접 확인한 것만 feed_tell로 하나씩 올려요 (중요한 것부터 3개까지). title은 두리 말투 한 줄, from은 어디서 봤는지, key는 같은 일을 또 알리지 않을 열쇠.',
-    '3. 두리가 이어서 해 줄 수 있으면 ask에 부탁을 적어요 (예: 선물 고르기, 답장 초안, 예약 다시 확인). 돈 내기·보내기·지우기는 지금 하지 않아요.',
-    '4. 알릴 게 없으면 아무것도 올리지 않아요. 로그인이 풀렸으면 로그인하지 말고 넘어가요. 사람이 해야 하는 단계가 나와도 멈추고 넘어가요.',
-    '5. 새로 알게 된 신청·결제·예약·배송은 know_save(kind "done", 다음에 챙길 때 next)로 장부에 남겨요.',
-    '6. 답은 한 문장으로만 (예: "2개 알렸어요", "새 소식 없어요").',
+    'To do:',
+    '1. In the services above, check for new things the user would want to know now. For example: deliveries and arrival times, upcoming reservations and events, mail that needs a reply, announcements of records or results, payments, expiries and deadlines. Also remembered anniversaries and appointments if they are close.',
+    '2. Post only what you confirmed yourself, one by one with feed_tell (most important first, up to 3). title is one line in Dool2 voice, from is where you saw it, key is a key so the same thing is not announced again.',
+    '3. If Dool2 can carry on and do something, write the request in ask (for example: choosing a gift, drafting a reply, re-checking a reservation). Do not pay, send or delete now.',
+    '4. If there is nothing to announce, post nothing. If a login has expired, do not log in; move on. If a step only a person can do comes up, stop and move on.',
+    '5. Newly learned applications, payments, reservations and deliveries go in the ledger with know_save (kind "done", next = when to follow up).',
+    '6. Answer in one sentence only (for example: "Announced 2", "No new news"). Write it in the language the user speaks.',
     '',
-    '최근에 이미 알린 것 (다시 올리지 않아요):',
+    'Already announced recently (do not post again):',
     told,
   ].join('\n')
 }
 
-/** 알아 둔 것 날짜: 11/20(목) */
+/** Date of a known fact: 2026-11-20(Thu) */
 export function knowDay(iso: string): string {
   const d = new Date(Date.parse(iso) + 9 * 3600_000)
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}(${'일월화수목금토'[d.getUTCDay()]})`
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}(${WEEKDAYS[d.getUTCDay()]})`
 }
 
-/** 알아 둔 것 한 줄: 무엇: 값 (어디서 · 기준 · 본 날) [다음] */
+/** One line for a known fact: what: value (where · basis · day seen) [next] */
 export function knowLine(k: KnowItem): string {
-  const meta = [k.source, k.basis, `${k.kind === 'done' ? '한 날' : '본 날'} ${knowDay(k.seenAt)}`]
+  const meta = [k.source, k.basis, `${k.kind === 'done' ? 'done' : 'seen'} ${knowDay(k.seenAt)}`]
     .filter(Boolean)
     .join(' · ')
-  const state = k.kind === 'done' ? (k.state === 'done' ? ' [끝남]' : ' [진행 중]') : ''
-  const next = k.next ? ` → ${knowDay(k.next)} ${k.nextWhat ?? '챙기기'}` : ''
+  const state = k.kind === 'done' ? (k.state === 'done' ? ' [finished]' : ' [in progress]') : ''
+  const next = k.next ? ` → ${knowDay(k.next)} ${k.nextWhat ?? 'follow up'}` : ''
   return `- ${k.title}: ${k.value} (${meta})${state}${next}`
 }

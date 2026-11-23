@@ -71,7 +71,7 @@ describe('PDF 합치기·나누기', () => {
     const r = await tools.run('file_pdf', {
       paths: ['~/Downloads/견적 A.pdf', '~/Downloads/견적 B.pdf', '~/Downloads/영수증.png'],
     })
-    expect(text(r)).toContain('3개를 하나로 합쳤어요')
+    expect(text(r)).toContain('Merged 3 files into one')
     expect(text(r)).toContain('견적 A 외 2개 합침.pdf')
     expect(await pagesIn(join(dl, '견적 A 외 2개 합침.pdf'))).toBe(4)
     expect(readFileSync(join(dl, '견적 A.pdf'))).toEqual(a)
@@ -94,13 +94,13 @@ describe('PDF 합치기·나누기', () => {
     expect(await pagesIn(join(desk, '계약서 2-3,5쪽.pdf'))).toBe(3)
     expect(text(one)).toContain('~/Desktop')
     const parts = await tools.run('file_pdf', { paths: ['~/Downloads/계약서.pdf'], parts: ['1-2', '3-5'] })
-    expect(text(parts)).toContain('2개로 나눴어요')
+    expect(text(parts)).toContain('into 2 files')
     expect(await pagesIn(join(dl, '계약서 3-5쪽.pdf'))).toBe(3)
     const each = await tools.run('file_pdf', { paths: ['~/Downloads/계약서.pdf'], split: true })
-    expect(text(each)).toContain('5개로 나눴어요')
+    expect(text(each)).toContain('into 5 files')
     expect(existsSync(join(dl, '계약서 5쪽.pdf'))).toBe(true)
     expect(text(await tools.run('file_pdf', { paths: ['~/Downloads/계약서.pdf'], pages: '4-9' }))).toContain(
-      '5쪽까지',
+      'only 5 pages',
     )
   })
 
@@ -110,9 +110,9 @@ describe('PDF 합치기·나누기', () => {
     writeFileSync(join(dl, '메모.docx'), 'x')
     writeFileSync(join(dl, '깨진.pdf'), 'not a pdf')
     expect((await tools.run('file_pdf', { paths: ['~/Secret/a.pdf'] })).isError).toBe(true)
-    expect(text(await tools.run('file_pdf', { paths: ['~/Downloads/메모.docx'] }))).toContain('PDF로 저장')
+    expect(text(await tools.run('file_pdf', { paths: ['~/Downloads/메모.docx'] }))).toContain('saved as PDF')
     expect(text(await tools.run('file_pdf', { paths: ['~/Downloads/깨진.pdf'], split: true }))).toContain(
-      '열지 못해요',
+      'cannot open',
     )
     expect(pageList('1-3,5', 5)).toEqual([0, 1, 2, 4])
     expect(typeof pageList('3-1', 5)).toBe('string')
@@ -206,8 +206,8 @@ describe('휴지통에서 되살리기 (맥)', () => {
       try {
         const r = await tools.run('file_trash', { query: '발표' })
         expect(r.isError).toBe(true)
-        expect(text(r)).toContain('전체 디스크 접근 권한')
-        expect(text(r)).toContain('되돌려 놓기')
+        expect(text(r)).toContain('Full Disk Access')
+        expect(text(r)).toContain('Put Back')
       } finally {
         chmodSync(join(home, '.Trash'), 0o755)
       }
@@ -292,7 +292,7 @@ describe('파일 내려받기', () => {
     const { tools, dl } = setup({ platform: 'darwin', exec, fetch: f, resolve: publicIp })
     writeFileSync(join(dl, '가정통신문.pdf'), '먼저')
     const r = await tools.run('file_download', { url: 'https://files.example.com/d?id=7' })
-    expect(text(r)).toContain('받았어요: ~/Downloads/가정통신문 (1).pdf')
+    expect(text(r)).toContain('Downloaded: ~/Downloads/가정통신문 (1).pdf')
     expect(readFileSync(join(dl, '가정통신문 (1).pdf'), 'utf8')).toBe('PDF-DATA')
     expect(readFileSync(join(dl, '가정통신문.pdf'), 'utf8')).toBe('먼저')
     expect(calls.find((c) => c.cmd === 'xattr')?.args.slice(0, 2)).toEqual(['-w', 'com.apple.quarantine'])
@@ -313,7 +313,7 @@ describe('파일 내려받기', () => {
     const rec = approvals.list().find((a) => a.status === 'pending')
     expect(rec).toMatchObject({ kind: 'file', ref: 'file_download', label: '받기', where: 'dl.example.com' })
     const done = await tools.ops.approve(rec?.id ?? '')
-    expect(done.message).toContain('받았어요')
+    expect(done.message).toContain('Downloaded')
     expect(readFileSync(join(dl, 'setup.exe'), 'utf8')).toBe('MZ')
   })
 
@@ -325,7 +325,7 @@ describe('파일 내려받기', () => {
     })
     const { tools, dl } = setup({ fetch: f, resolve: publicIp })
     const html = text(await tools.run('file_download', { url: 'https://site.example.com/report.pdf' }))
-    expect(html).toContain('웹페이지')
+    expect(html).toContain('web page')
     expect(html).toContain('browser_open')
     expect(text(await tools.run('file_download', { url: 'https://site.example.com/private.pdf' }))).toContain(
       'browser_click',
@@ -343,17 +343,17 @@ describe('파일 내려받기', () => {
       'https://',
     )
     expect(text(await tools.run('file_download', { url: 'https://127.0.0.1/a.pdf' }))).toContain(
-      '집 안 네트워크',
+      'home network',
     )
     expect(text(await tools.run('file_download', { url: 'https://router.local/a.pdf' }))).toContain(
-      '집 안 네트워크',
+      'home network',
     )
     expect(text(await tools.run('file_download', { url: 'https://files.example.com/go' }))).toContain(
-      '넘겨준 주소',
+      'redirect address',
     )
     expect(seen).toEqual(['https://files.example.com/go'])
     const internal = (async () => [{ address: '10.0.0.5', family: 4 }]) as unknown as typeof publicIp
-    expect(await checkUrl('https://intranet.example.com/a', internal)).toContain('집 안 네트워크')
+    expect(await checkUrl('https://intranet.example.com/a', internal)).toContain('home network')
     expect(privateAddress('172.20.1.1')).toBe(true)
     expect(privateAddress('::ffff:192.168.1.1')).toBe(true)
     expect(privateAddress('8.8.8.8')).toBe(false)
@@ -380,7 +380,7 @@ describe('화면 잠그기·잠자기', () => {
     const { tools, approvals } = setup({ platform: 'darwin', exec })
     const r = await tools.run('pc_screen', { action: 'lock' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('시스템 설정 > 잠금 화면')
+    expect(text(r)).toContain('System Settings > Lock Screen')
     expect(approvals.list()).toHaveLength(0)
     expect(parseScreenLock('screenLock delay is 300 seconds')).toBe(300)
   })
@@ -392,7 +392,7 @@ describe('화면 잠그기·잠자기', () => {
     const r = await tools.run('pc_screen', { action: 'sleep' })
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('답하는 대화 1개, 쿠팡 연결')
-    expect(text(await tools.run('pc_screen', { action: 'off' }))).toContain('잠자기(action: "sleep")를 권해')
+    expect(text(await tools.run('pc_screen', { action: 'off' }))).toContain('(action: "sleep")')
     // 윈도우 잠그기는 일을 멈추지 않아 바쁠 때도 된다
     await tools.run('pc_screen', { action: 'lock' })
     const lock = approvals.list().find((a) => a.status === 'pending')
