@@ -23,6 +23,7 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # if you don't have i
 ## 1. Decide what to make into tools
 
 - The `abilities` (what it can do) in `skills/<id>/connect.json` is the starting point. If there is no card, make the card first (check with `pnpm connector check <id>`).
+- A new card also needs `regions` (`KR`, or `global` for services that work anywhere) and `i18n.en` (English name, summary, example and abilities in the same order). See `skills/README.md`.
 - **One user intent = one tool.** Like "find open tables at a restaurant", "prepare a reservation", "view order history". One screen is not one tool.
 - Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test.
 

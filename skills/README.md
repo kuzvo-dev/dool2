@@ -30,6 +30,8 @@ Note: the JSON examples and Korean strings in this guide are service text and ke
 | `abilities` | 2 to 6 things it can do: `title` a short name, `say` something the user might say (without quotes), `tier` the permission tier |
 | `signedIn` | (Optional) 1 to 5 phrases visible only to logged-in people. If these phrases are visible while connecting, it counts as login finished |
 | `hints` | (Optional) 1 to 3 short lines of tips for working in the browser while no connector exists yet (search addresses and so on). Remove them once a connector exists |
+| `regions` | Where the service is for: `KR`, `JP`, `TW`, or `global` for services that work anywhere with the same account. Omitted = `KR`. The connect screen lists the user's region and `global` first, and the rest under "Other regions" ([ADR 0029](../docs/decisions/0029-language-and-region.md)) |
+| `i18n.en` | English for the people-facing fields: `name` (official brand spelling), `login`, `summary`, `example`, and `abilities` (`title`, `say` only, same number and order as `abilities`). Write the Korean card first; maintainers can fill the English if you only write Korean |
 
 - Do not write notices like "payment is made after approval". If there is a task whose `tier` is `pay` or `contact`, the screen adds it automatically.
 - Do not include logo files. Write the wording in the [Dool2 persona](../docs/persona.md) voice, and do not include other companies' product names.
