@@ -37,5 +37,38 @@
       "say": "예약 당일 아침에 한 번 알려 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Catchtable",
+      "login": "Phone text verification",
+      "summary": "Find open tables for your date and party size, book restaurants and check your bookings. Dool2 reminds you before the visit. Deposits are paid only after you approve.",
+      "example": {
+        "ask": "Any table for 3 in Euljiro next Wednesday at lunch?",
+        "working": "Finding open tables",
+        "reply": "A Korean pub in Euljiro has 3 seats at 12:30 pm. No deposit. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Book a table",
+          "say": "Book Sunday brunch for 2"
+        },
+        {
+          "title": "Places to go",
+          "say": "Pasta in Mangwon with a table tonight"
+        },
+        {
+          "title": "My bookings",
+          "say": "Show my restaurant bookings"
+        },
+        {
+          "title": "Reminder",
+          "say": "Remind me on the morning of the booking"
+        }
+      ]
+    }
+  }
 }

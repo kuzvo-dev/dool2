@@ -40,5 +40,38 @@
       "say": "가습기 아직 발송 전이면 주문 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Gmarket",
+      "login": "ID and password",
+      "summary": "Find products on Gmarket, track delivery, reorder regulars, and cancel or return, all through Dool2. Orders go through only after you approve.",
+      "example": {
+        "ask": "Where are the hiking boots I ordered yesterday?",
+        "working": "Tracking delivery",
+        "reply": "They shipped this morning and are on the way. Expected tomorrow afternoon."
+      },
+      "abilities": [
+        {
+          "title": "Track delivery",
+          "say": "Where is my hiking backpack?"
+        },
+        {
+          "title": "Find products",
+          "say": "A well-reviewed humidifier around ₩20,000"
+        },
+        {
+          "title": "Reorder essentials",
+          "say": "Order another pack of my usual water"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "Cancel the humidifier if it has not shipped"
+        }
+      ]
+    }
+  }
 }

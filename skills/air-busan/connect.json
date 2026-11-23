@@ -32,5 +32,38 @@
       "say": "모은 스탬프 몇 개고 어디까지 쓸 수 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Air Busan",
+      "login": "ID and password",
+      "summary": "Connect Air Busan to find flights, book tickets and check your reservations and collected stamps through Dool2.",
+      "example": {
+        "ask": "An evening flight from Gimhae to Gimpo at the end of this month",
+        "working": "Checking flights",
+        "reply": "The Friday 7:15 pm flight from Gimhae has a ₩49,900 promo fare left. Shall I book one seat?"
+      },
+      "abilities": [
+        {
+          "title": "Find flights",
+          "say": "Cheapest dates to Taipei next month"
+        },
+        {
+          "title": "Book",
+          "say": "Book that flight for me and my mom"
+        },
+        {
+          "title": "My bookings",
+          "say": "What time does my flight leave?"
+        },
+        {
+          "title": "Check stamps",
+          "say": "How many stamps do I have and what can I use them for?"
+        }
+      ]
+    }
+  }
 }

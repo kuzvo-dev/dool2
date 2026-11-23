@@ -38,5 +38,38 @@
       "say": "늦게 체크인해도 되는지 물어봐 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Booking.com",
+      "login": "ID and password",
+      "summary": "Compare stays by what you care about, such as distance, quiet and price. Dool2 books free-cancellation rooms and changes or cancels them.",
+      "example": {
+        "ask": "3 nights in Jeju next month for 4, with a sea view",
+        "working": "Comparing stays",
+        "reply": "A seaside resort in Aewol is ₩210,000 a night, rated 8.9. Free cancellation until 5 days before. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Compare by what matters",
+          "say": "Only places with breakfast and a pool"
+        },
+        {
+          "title": "Book",
+          "say": "Book that one with free cancellation"
+        },
+        {
+          "title": "Change or cancel",
+          "say": "Shorten the Tokyo hotel by a day"
+        },
+        {
+          "title": "Ask the property",
+          "say": "Ask if a late check-in is OK"
+        }
+      ]
+    }
+  }
 }

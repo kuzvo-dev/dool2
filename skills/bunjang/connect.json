@@ -21,5 +21,29 @@
       "say": "갤럭시 워치 중고 얼마쯤 해?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Bunjang",
+      "summary": "No sign-in needed. Dool2 finds used listings on Bunjang and sums up price, condition and posting time to help you judge fair prices.",
+      "example": {
+        "ask": "Find used Nintendo Switch listings under ₩250,000",
+        "working": "Searching Bunjang",
+        "reply": "Many are under ₩250,000. Full sets with console and Joy-Cons are ₩160,000 to ₩200,000, and the cheapest is ₩150,000. I left out game-only posts."
+      },
+      "abilities": [
+        {
+          "title": "Find listings",
+          "say": "Used Nintendo Switch under ₩250,000?"
+        },
+        {
+          "title": "Check prices",
+          "say": "What does a used Galaxy Watch go for?"
+        }
+      ]
+    }
+  }
 }

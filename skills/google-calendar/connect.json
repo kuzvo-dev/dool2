@@ -37,5 +37,42 @@
       "say": "금요일 저녁 약속 초대장 보내 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Google Calendar",
+      "login": "Google account",
+      "summary": "Connect Google Calendar and leave viewing your day, finding free time, scheduling and moving events and sending invites to Dool2.",
+      "example": {
+        "ask": "When do I finish tomorrow?",
+        "working": "Checking your schedule",
+        "reply": "Your last event is a design review at 4:30 pm, so you are done around 5:30. You are free after that."
+      },
+      "abilities": [
+        {
+          "title": "Today's schedule",
+          "say": "Am I busy today?"
+        },
+        {
+          "title": "Find free time",
+          "say": "When do I have two free hours this week?"
+        },
+        {
+          "title": "Schedule events",
+          "say": "Move Thursday lunch to Friday"
+        },
+        {
+          "title": "Find past events",
+          "say": "When did I get my checkup last year?"
+        },
+        {
+          "title": "Send invites",
+          "say": "Send an invite for Friday evening"
+        }
+      ]
+    }
+  }
 }

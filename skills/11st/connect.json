@@ -39,5 +39,38 @@
       "say": "사이즈 안 맞는 운동화 반품해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "11st",
+      "login": "ID and password",
+      "summary": "Connect 11st and leave order tracking, lowest-price search, reorders, cancellations and returns to Dool2.",
+      "example": {
+        "ask": "Where are the keyboard and laptop stand I ordered on 11st?",
+        "working": "Checking your orders",
+        "reply": "The Bluetooth keyboard arrives this evening. The laptop stand is still being packed by the seller."
+      },
+      "abilities": [
+        {
+          "title": "Track delivery",
+          "say": "Is anything from 11st arriving today?"
+        },
+        {
+          "title": "Find the lowest price",
+          "say": "Find the cheapest wireless earbuds"
+        },
+        {
+          "title": "Reorder",
+          "say": "Order fabric softener again"
+        },
+        {
+          "title": "Cancel or return",
+          "say": "Return the sneakers, wrong size"
+        }
+      ]
+    }
+  }
 }

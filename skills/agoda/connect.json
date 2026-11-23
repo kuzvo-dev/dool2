@@ -38,5 +38,38 @@
       "say": "치앙마이 숙소 예약 없애 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Agoda",
+      "login": "ID and password",
+      "summary": "Find hotels and flights by area, price and amenities, book them, and cancel a stay you already booked, all through Dool2.",
+      "example": {
+        "ask": "Chiang Mai, 4 nights over the holiday, pool, under ₩80,000 a night",
+        "working": "Finding stays",
+        "reply": "A hotel with a pool near the Old City is ₩76,000 a night. Free cancellation until 5 days before check-in. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Find stays",
+          "say": "A resort in Phu Quoc for a family of 4"
+        },
+        {
+          "title": "Book",
+          "say": "Book a room with no cancellation fee"
+        },
+        {
+          "title": "Flights too",
+          "say": "A Friday evening flight to Fukuoka"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "Cancel my Chiang Mai booking"
+        }
+      ]
+    }
+  }
 }

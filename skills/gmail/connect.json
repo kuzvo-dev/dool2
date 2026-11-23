@@ -40,5 +40,42 @@
       "say": "작년 연말정산 자료 메일 찾아 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Gmail",
+      "login": "Google account",
+      "summary": "Connect Gmail and leave finding leaky subscriptions, checking parcels and flights and unsubscribing from promo mail to Dool2.",
+      "example": {
+        "ask": "Sum up my monthly subscriptions",
+        "working": "Gathering billing emails",
+        "reply": "Two subscriptions you have not used in three months cost ₩23,000 a month: music streaming and cloud storage. Shall I find how to cancel them?"
+      },
+      "abilities": [
+        {
+          "title": "Find subscriptions",
+          "say": "What subscriptions charge me monthly?"
+        },
+        {
+          "title": "Important mail",
+          "say": "Pick only mail I need to answer today"
+        },
+        {
+          "title": "Parcels and flights",
+          "say": "List parcels with shipping emails"
+        },
+        {
+          "title": "Unsubscribe",
+          "say": "Stop the promo emails"
+        },
+        {
+          "title": "Find mail",
+          "say": "Find last year's tax settlement email"
+        }
+      ]
+    }
+  }
 }

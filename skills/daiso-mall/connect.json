@@ -43,5 +43,42 @@
       "say": "깨져서 왔어, 반품해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Daiso Mall",
+      "login": "ID and password",
+      "summary": "Find household goods on Daiso Mall, fill your cart, reorder what you used, and track delivery and returns through Dool2.",
+      "example": {
+        "ask": "Order a bathroom brush and AA batteries",
+        "working": "Finding products",
+        "reply": "Bathroom brush ₩2,000 and a 10-pack of AA batteries ₩3,000. Arrives within three days. Shall I order?"
+      },
+      "abilities": [
+        {
+          "title": "Reorder",
+          "say": "Order the same AA batteries as last month"
+        },
+        {
+          "title": "Find products",
+          "say": "Find a pen holder for my desk"
+        },
+        {
+          "title": "Add to cart",
+          "say": "Put some cleaning supplies in my cart"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Has my Daiso Mall parcel shipped?"
+        },
+        {
+          "title": "Return",
+          "say": "It arrived broken, return it"
+        }
+      ]
+    }
+  }
 }

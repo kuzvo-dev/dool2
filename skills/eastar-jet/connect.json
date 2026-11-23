@@ -39,5 +39,38 @@
       "say": "창가 자리로 바꿔 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Eastar Jet",
+      "login": "ID and password",
+      "summary": "Find Eastar Jet tickets on the cheapest dates and book them. Dool2 also checks your booking and adds seats and baggage.",
+      "example": {
+        "ask": "What is the cheapest day to fly Incheon to Tokyo on Eastar in December?",
+        "working": "Checking fares by date",
+        "reply": "Thursday, December 10 is cheapest at ₩89,000, on the 8:20 am flight from Incheon. Shall I book it?"
+      },
+      "abilities": [
+        {
+          "title": "Cheapest date",
+          "say": "Cheapest day to Tokyo in December"
+        },
+        {
+          "title": "Book",
+          "say": "Book that flight for me and a friend"
+        },
+        {
+          "title": "Check booking",
+          "say": "Check my name spelling on the ticket"
+        },
+        {
+          "title": "Seats and baggage",
+          "say": "Switch me to a window seat"
+        }
+      ]
+    }
+  }
 }

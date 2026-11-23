@@ -42,5 +42,42 @@
       "say": "일요일 조조 표는 환불해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "CGV",
+      "login": "ID and password",
+      "summary": "Find showtimes, book good center seats, check your tickets and cancel, all your CGV errands through Dool2.",
+      "example": {
+        "ask": "Two IMAX seats at Wangsimni on Saturday evening, in the center",
+        "working": "Checking showtimes",
+        "reply": "The Saturday 6:20 pm IMAX show at Wangsimni has two center seats in row K. ₩42,000 total. Shall I book them?"
+      },
+      "abilities": [
+        {
+          "title": "Book good seats",
+          "say": "Two center seats for the 8 pm show"
+        },
+        {
+          "title": "Showtimes",
+          "say": "What is on after 9 pm tonight at Yongsan?"
+        },
+        {
+          "title": "Movies worth seeing",
+          "say": "Suggest something for IMAX this weekend"
+        },
+        {
+          "title": "My tickets",
+          "say": "Which screen and seats for Saturday?"
+        },
+        {
+          "title": "Cancel a booking",
+          "say": "Refund the Sunday morning ticket"
+        }
+      ]
+    }
+  }
 }

@@ -33,5 +33,38 @@
       "say": "스터디원 구하는 글 써 두고 보여 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Everytime",
+      "login": "ID and password",
+      "summary": "Dool2 looks up tomorrow's classes and rooms, new posts on your school board and next semester's course reviews. Posts and comments are shown to you first and go up only after you approve.",
+      "example": {
+        "ask": "What time is my first class the day after tomorrow?",
+        "working": "Checking your timetable",
+        "reply": "General Chemistry at 10:30 am in Science Hall 112. You are free after it until 2 pm."
+      },
+      "abilities": [
+        {
+          "title": "Timetable",
+          "say": "How many classes do I have Friday?"
+        },
+        {
+          "title": "Read boards",
+          "say": "Any posts selling used textbooks?"
+        },
+        {
+          "title": "Course reviews",
+          "say": "Easy-homework electives next semester"
+        },
+        {
+          "title": "Write a post",
+          "say": "Draft a post looking for study mates and show me"
+        }
+      ]
+    }
+  }
 }
