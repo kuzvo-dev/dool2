@@ -140,16 +140,16 @@ docs/             Design and operations docs (Korean originals in docs/ko/)
 
 ## Docs
 
-| Doc | What it covers |
-| --- | --- |
-| [Architecture](docs/architecture.md) | Overall structure, agent integration, approval gate, browser and desktop control, install, roadmap |
-| [Persona](docs/persona.md) | Dool2's character and voice, the basis for all user-facing copy |
-| [Design system](packages/ui/README.md) | Screen principles, tokens, parts. Samples in `packages/ui/preview.html` |
-| [Open source](docs/open-source.md) | What is public, licenses, business model, governance |
-| [Decision records (ADR)](docs/decisions/README.md) | Architecture decisions and why |
-| [Threat model](docs/security/threat-model.md) | What we protect, and what we cannot prevent |
-| [Glossary](docs/i18n/glossary.md) | Terms used across docs, code and UI copy |
-| [All docs](docs/README.md) | |
+| Doc                                                | What it covers                                                                                     |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [Architecture](docs/architecture.md)               | Overall structure, agent integration, approval gate, browser and desktop control, install, roadmap |
+| [Persona](docs/persona.md)                         | Dool2's character and voice, the basis for all user-facing copy                                    |
+| [Design system](packages/ui/README.md)             | Screen principles, tokens, parts. Samples in `packages/ui/preview.html`                            |
+| [Open source](docs/open-source.md)                 | What is public, licenses, business model, governance                                               |
+| [Decision records (ADR)](docs/decisions/README.md) | Architecture decisions and why                                                                     |
+| [Threat model](docs/security/threat-model.md)      | What we protect, and what we cannot prevent                                                        |
+| [Glossary](docs/i18n/glossary.md)                  | Terms used across docs, code and UI copy                                                           |
+| [All docs](docs/README.md)                         |                                                                                                    |
 
 ## Contributing
 

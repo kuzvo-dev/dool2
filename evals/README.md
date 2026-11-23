@@ -5,11 +5,11 @@ The bank holds **615 families → 4,505 scenarios**, drawn from real usage cases
 
 ## Three layers
 
-| Layer | What it checks                                                                      | AI   | Command                             |
-| ----- | ----------------------------------------------------------------------------------- | ---- | ----------------------------------- |
-| 1     | Bank format, and whether each scenario's needed tools and connect cards exist in the repo | No (CI) | `pnpm eval:static`            |
-| 2     | Replays recorded tool responses to look only at the AI's judgment                   | Yes  | (next step)                         |
-| 3     | End to end with the real AI and real sites (every approval is rejected)             | Yes  | `pnpm eval:run` → `pnpm eval:score` |
+| Layer | What it checks                                                                            | AI      | Command                             |
+| ----- | ----------------------------------------------------------------------------------------- | ------- | ----------------------------------- |
+| 1     | Bank format, and whether each scenario's needed tools and connect cards exist in the repo | No (CI) | `pnpm eval:static`                  |
+| 2     | Replays recorded tool responses to look only at the AI's judgment                         | Yes     | (next step)                         |
+| 3     | End to end with the real AI and real sites (every approval is rejected)                   | Yes     | `pnpm eval:run` → `pnpm eval:score` |
 
 ## Running layer 3
 

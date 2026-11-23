@@ -8,15 +8,15 @@ Commit messages, PR titles and bodies, and issues are written in English. Korean
 
 ## Ways to contribute
 
-| What you want to do                  | Where                                                                                                   |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| Questions, ideas, feedback           | [Discussions](https://github.com/kuzvo-dev/dool2/discussions)                                           |
-| Report a bug                         | [Issue: Bug report](https://github.com/kuzvo-dev/dool2/issues/new?template=1-bug.yml)                   |
-| Suggest a feature                    | [Issue: Feature request](https://github.com/kuzvo-dev/dool2/issues/new?template=2-feature.yml)         |
+| What you want to do                             | Where                                                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Questions, ideas, feedback                      | [Discussions](https://github.com/kuzvo-dev/dool2/discussions)                                      |
+| Report a bug                                    | [Issue: Bug report](https://github.com/kuzvo-dev/dool2/issues/new?template=1-bug.yml)              |
+| Suggest a feature                               | [Issue: Feature request](https://github.com/kuzvo-dev/dool2/issues/new?template=2-feature.yml)     |
 | Request or write a skill (how to use a service) | [Issue: Skill request](https://github.com/kuzvo-dev/dool2/issues/new?template=3-skill-request.yml) |
-| A skill broke because a site changed | [Issue: Broken skill](https://github.com/kuzvo-dev/dool2/issues/new?template=4-skill-broken.yml)        |
-| Security vulnerability               | [Report privately](SECURITY.md), not in a public issue                                                  |
-| Fix code or docs                     | Pull Request (steps below)                                                                              |
+| A skill broke because a site changed            | [Issue: Broken skill](https://github.com/kuzvo-dev/dool2/issues/new?template=4-skill-broken.yml)   |
+| Security vulnerability                          | [Report privately](SECURITY.md), not in a public issue                                             |
+| Fix code or docs                                | Pull Request (steps below)                                                                         |
 
 If you're new, start with issues labeled [`good first issue`](https://github.com/kuzvo-dev/dool2/labels/good%20first%20issue).
 
@@ -35,14 +35,14 @@ pnpm dev:desktop       # run the desktop app
 
 Common commands:
 
-| Command                                            | What it does                                                                 |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `pnpm build`                                       | Build all packages (Turborepo)                                               |
-| `pnpm test`                                        | Run tests (Vitest)                                                           |
-| `pnpm typecheck`                                   | Type check                                                                   |
-| `pnpm lint`                                        | Lint and format check (Biome). `pnpm format` fixes formatting                |
-| `pnpm dev:desktop`                                 | Run the desktop app                                                          |
-| `pnpm dev:daemon`                                  | Run only the Dool2 daemon, without a window                                  |
+| Command                                            | What it does                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `pnpm build`                                       | Build all packages (Turborepo)                                                      |
+| `pnpm test`                                        | Run tests (Vitest)                                                                  |
+| `pnpm typecheck`                                   | Type check                                                                          |
+| `pnpm lint`                                        | Lint and format check (Biome). `pnpm format` fixes formatting                       |
+| `pnpm dev:desktop`                                 | Run the desktop app                                                                 |
+| `pnpm dev:daemon`                                  | Run only the Dool2 daemon, without a window                                         |
 | `DOOL2_SMOKE=1 pnpm --filter @dool2/desktop smoke` | Launch the desktop app, capture the screen, and exit (`apps/desktop/out/smoke.png`) |
 
 For the repo layout see the [README](README.md#repository-layout), and for the overall design see the [architecture doc](docs/architecture.md).

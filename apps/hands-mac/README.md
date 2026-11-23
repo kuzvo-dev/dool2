@@ -7,17 +7,17 @@ pnpm --filter @dool2/hands-mac build      # → dist/dool2-hands (macOS only, ne
 printf '%s\n' '{"id":1,"cmd":"status"}' | ./dist/dool2-hands
 ```
 
-| Command              | What it does                                                                                       |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `status`             | Accessibility and Screen Recording permissions, and whether the screen is locked                   |
-| `request`            | Shows the system permission dialog (the user turns it on in Settings themselves)                   |
-| `apps` · `installed` | Running apps, and installed apps (bundle id and name)                                              |
-| `open`               | Opens an app and brings it to the front                                                            |
+| Command              | What it does                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `status`             | Accessibility and Screen Recording permissions, and whether the screen is locked                                                  |
+| `request`            | Shows the system permission dialog (the user turns it on in Settings themselves)                                                  |
+| `apps` · `installed` | Running apps, and installed apps (bundle id and name)                                                                             |
+| `open`               | Opens an app and brings it to the front                                                                                           |
 | `snapshot`           | The front window's accessibility tree as text like `[e12 button "보내기"]` (button "Send"). Password field values are not emitted |
-| `click`              | Presses an element with the accessibility "press"; if that fails, clicks its center with the mouse |
-| `type`               | Focuses a field and types by pasting (works for Korean), then restores the clipboard. Password fields are refused |
-| `key`                | Enter, Tab, arrows, cmd+…                                                                          |
-| `screenshot`         | Captures an app window (ScreenCaptureKit, JPEG)                                                    |
+| `click`              | Presses an element with the accessibility "press"; if that fails, clicks its center with the mouse                                |
+| `type`               | Focuses a field and types by pasting (works for Korean), then restores the clipboard. Password fields are refused                 |
+| `key`                | Enter, Tab, arrows, cmd+…                                                                                                         |
+| `screenshot`         | Captures an app window (ScreenCaptureKit, JPEG)                                                                                   |
 
 It does not operate browsers, password managers, or Dool2 itself, even if the daemon asks.
 

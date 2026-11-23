@@ -16,12 +16,12 @@ It helps if your report includes:
 
 ## How we handle reports
 
-| Step                                | Target                                      |
-| ----------------------------------- | ------------------------------------------- |
-| Reply confirming receipt            | Within 3 business days                      |
-| First assessment (impact, repro)    | Within 7 business days                      |
-| Release of a fixed version          | As soon as possible, depending on severity  |
-| Disclosure                          | After the fix ships, agreed with the reporter |
+| Step                             | Target                                        |
+| -------------------------------- | --------------------------------------------- |
+| Reply confirming receipt         | Within 3 business days                        |
+| First assessment (impact, repro) | Within 7 business days                        |
+| Release of a fixed version       | As soon as possible, depending on severity    |
+| Disclosure                       | After the fix ships, agreed with the reporter |
 
 If you want, we credit you in the security advisory. We don't offer monetary rewards (a bug bounty) yet.
 

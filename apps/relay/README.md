@@ -7,9 +7,9 @@ pnpm build
 pnpm --filter @dool2/relay start      # http://127.0.0.1:8787 (phone app: /app/)
 ```
 
-| Environment variable | Description                                                   |
-| -------------------- | ------------------------------------------------------------- |
-| `PORT`, `HOST`       | Default `8787`, `127.0.0.1`                                   |
+| Environment variable | Description                                                      |
+| -------------------- | ---------------------------------------------------------------- |
+| `PORT`, `HOST`       | Default `8787`, `127.0.0.1`                                      |
 | `DOOL2_PHONE_APP`    | Folder of the phone app (PWA) files (default: `apps/phone/dist`) |
 
 ## What it does
@@ -23,8 +23,8 @@ pnpm --filter @dool2/relay start      # http://127.0.0.1:8787 (phone app: /app/)
 
 ## What it can and cannot know
 
-| What the relay knows                                            | What it does not know                                   |
-| --------------------------------------------------------------- | ------------------------------------------------------- |
+| What the relay knows                                                     | What it does not know                               |
+| ------------------------------------------------------------------------ | --------------------------------------------------- |
 | Device id, message size, time, envelope kind (`ask`, `reply`, and so on) | Request content, answers, approval content, screens |
 
 ## Official server (Cloudflare)

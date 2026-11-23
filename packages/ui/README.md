@@ -46,42 +46,42 @@ Other rules:
 
 Colors get both themes from a single `light-dark()`. Follow the values in [docs/design/system/tokens.json](../../docs/design/system/tokens.json) and the screen examples.
 
-| Name                                      | Light / Dark                         | Used for                                                                                                                                   |
-| ----------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--bg`                                    | #ffffff / #121418                    | App background                                                                                                                             |
-| `--surface`                               | #ffffff / #1b1d23                    | One level raised: input, approval sheet, side panel                                                                                        |
-| `--surface-sunken`                        | #f4f5f7 / #0b0c0f                    | Sunken areas: Dool2's screen, logs                                                                                                         |
-| `--raise`                                 | #f1f2f4 / #23262d                    | Dool2's bubble, selected menu, icon tiles                                                                                                  |
-| `--line` / `--line-strong`                | #e6e8eb / #2a2d35, #8b9099 / #5c616b | Dividing lines / borders of inputs and secondary buttons                                                                                   |
-| `--ink` / `--ink-muted` / `--ink-inverse` |                                      | Body, primary button, my bubble / descriptions, times / text on ink                                                                        |
-| `--brand`                                 | #4cc98f                              | Dool2 mint (`--brand-text`, `--brand-soft`)                                                                                                |
-| `--butter`                                | #ffd66b                              | You are needed (`--butter-soft`; text on it is `--on-accent`)                                                                              |
-| `--danger`                                | #d0342c / #ff7a72                    | Stop, reject, error. Text only (`--danger-soft`)                                                                                           |
-| `--space-1…12`                            | 4·8·12·16·24·32·48px                 | 12 for the same speaker, 24 when the speaker changes                                                                                       |
-| `--radius-sm/md/lg/xl/full`               | 6·12·20·28·999px                     | Chips / buttons and inputs / bubbles and cards / bottom sheets / characters and dots only                                                  |
-| `--shadow-sheet`                          |                                      | Floating things only                                                                                                                       |
+| Name                                      | Light / Dark                         | Used for                                                                                                                                    |
+| ----------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--bg`                                    | #ffffff / #121418                    | App background                                                                                                                              |
+| `--surface`                               | #ffffff / #1b1d23                    | One level raised: input, approval sheet, side panel                                                                                         |
+| `--surface-sunken`                        | #f4f5f7 / #0b0c0f                    | Sunken areas: Dool2's screen, logs                                                                                                          |
+| `--raise`                                 | #f1f2f4 / #23262d                    | Dool2's bubble, selected menu, icon tiles                                                                                                   |
+| `--line` / `--line-strong`                | #e6e8eb / #2a2d35, #8b9099 / #5c616b | Dividing lines / borders of inputs and secondary buttons                                                                                    |
+| `--ink` / `--ink-muted` / `--ink-inverse` |                                      | Body, primary button, my bubble / descriptions, times / text on ink                                                                         |
+| `--brand`                                 | #4cc98f                              | Dool2 mint (`--brand-text`, `--brand-soft`)                                                                                                 |
+| `--butter`                                | #ffd66b                              | You are needed (`--butter-soft`; text on it is `--on-accent`)                                                                               |
+| `--danger`                                | #d0342c / #ff7a72                    | Stop, reject, error. Text only (`--danger-soft`)                                                                                            |
+| `--space-1…12`                            | 4·8·12·16·24·32·48px                 | 12 for the same speaker, 24 when the speaker changes                                                                                        |
+| `--radius-sm/md/lg/xl/full`               | 6·12·20·28·999px                     | Chips / buttons and inputs / bubbles and cards / bottom sheets / characters and dots only                                                   |
+| `--shadow-sheet`                          |                                      | Floating things only                                                                                                                        |
 | `--text-display` … `--text-log`           |                                      | Font sizes used with a single `font:` line (display 44, title-1 28, title-2 20, body-lg 17, body 15, label 14, caption 12.5, log 12.5 mono) |
 
 The old names (`--ink2` `--sub` `--faint` `--line2` `--side` `--fill` `--duri` `--warn` …) remain only while app screens are moved to the new components. Do not use them in new code.
 
 ## Components
 
-| Component             | Classes                                                                                                                                 | Used for                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Dool2 character       | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (size `--s`, `.bob`)                                                    | Status header, speaker, empty screens, approvals            |
-| Wordmark              | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                    | Above the desktop menu, samples                             |
-| Status                | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                              | Connection, progress, waiting for approval                  |
-| Buttons               | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                  |                                                             |
-| Choosing              | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                          | Quick replies and example requests, picking an AI, on/off, input |
-| Text                  | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                   |                                                             |
-| Conversation          | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                    | One conversation, the input field                           |
-| Work                  | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.stepbar`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | What it is doing now, Dool2's screen, step logs             |
-| Approval              | `.approve` (`-top` `-q` `-amount` `-body` `-actions` `-note`), `.btn-approve`, `.kv` (`dd.money` `dd.host`)                             | Payment and send approvals                                  |
-| Lists and cards       | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                   | Settings, tasks, logs                                       |
-| Frames                | `.navi`, `.tabs` + `.tab` (`.tab-label`, `.badge`), `.sheet` (`.float`), `.drawer`, `.scrim`, `.toast`, `.rise`                         | Desktop menu, floating mobile tabs, bottom sheets, menu drawer |
-| Floating header       | `.fbtn`, `.fpill`, `.agent` + `.agent-av` + `.agent-tag` (`span.ask`), `.composer.float`, `.quick`, `.typing`                           | Menu, Dool2, my PC, floating input, quick replies, answering |
-| Live screen           | `.livecard` + `.screen` + `.urlbar` + `.live-badge`                                                                                     | What Dool2 does in the PC's Chrome, shown inside the conversation |
-| Icon tile colors      | `.tile.blue` `.mint` `.amber` `.rose` `.violet`                                                                                         | Ideas, activity logs                                        |
+| Component        | Classes                                                                                                                                 | Used for                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Dool2 character  | `.doori` + `.thinking` `.working` `.asking` `.done` `.sleeping` (size `--s`, `.bob`)                                                    | Status header, speaker, empty screens, approvals                  |
+| Wordmark         | `.wordmark` (`dool<sup>2</sup> <small>두리</small>`)                                                                                    | Above the desktop menu, samples                                   |
+| Status           | `.dot` (`.work` `.ask` `.done` `.stop`, `.pulse`), `.spin`, `.shimmer`, `.pill` (`.ask` `.work`), `.count`                              | Connection, progress, waiting for approval                        |
+| Buttons          | `.btn` `.btn-ghost` `.btn-text` `.btn-danger` (`.sm` `.lg`), `.btn-link`, `.icon-btn` (`.lg`), `.send`                                  |                                                                   |
+| Choosing         | `.chip` (`.on` `.quiet`) `.chips`, `.seg`, `.switch`, `.field`                                                                          | Quick replies and example requests, picking an AI, on/off, input  |
+| Text             | `.display` `.title` `.title-2` `.over` `.cap` `.meta` `.mono` `.rich`                                                                   |                                                                   |
+| Conversation     | `.who`, `.bubble` (`.me`), `.react`, `.sep`, `.done-row`, `.msg.note`, `.composer` + `.cbtn` (`.go`)                                    | One conversation, the input field                                 |
+| Work             | `.livebar` (`.ask`), `.workcard` (`-head` `-foot`), `.screen` + `.urlbar`, `.stepbar`, `.log` + `.log-row` (`.live` `.ask`), `.worklog` | What it is doing now, Dool2's screen, step logs                   |
+| Approval         | `.approve` (`-top` `-q` `-amount` `-body` `-actions` `-note`), `.btn-approve`, `.kv` (`dd.money` `dd.host`)                             | Payment and send approvals                                        |
+| Lists and cards  | `.list` (`.boxed`), `.row` (`.row-t` `.row-d`), `.tile`, `.card` (`.quiet` `.ask`), `.task` (`.live`)                                   | Settings, tasks, logs                                             |
+| Frames           | `.navi`, `.tabs` + `.tab` (`.tab-label`, `.badge`), `.sheet` (`.float`), `.drawer`, `.scrim`, `.toast`, `.rise`                         | Desktop menu, floating mobile tabs, bottom sheets, menu drawer    |
+| Floating header  | `.fbtn`, `.fpill`, `.agent` + `.agent-av` + `.agent-tag` (`span.ask`), `.composer.float`, `.quick`, `.typing`                           | Menu, Dool2, my PC, floating input, quick replies, answering      |
+| Live screen      | `.livecard` + `.screen` + `.urlbar` + `.live-badge`                                                                                     | What Dool2 does in the PC's Chrome, shown inside the conversation |
+| Icon tile colors | `.tile.blue` `.mint` `.amber` `.rose` `.violet`                                                                                         | Ideas, activity logs                                              |
 
 Open [preview.html](preview.html) to see the exact looks.
 

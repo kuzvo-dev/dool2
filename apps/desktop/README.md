@@ -9,11 +9,11 @@ pnpm dev:desktop
 
 ## Structure
 
-| File              | Role                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| `src/main.ts`     | Main process: starts the daemon, the window, and smoke mode                           |
+| File              | Role                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `src/main.ts`     | Main process: starts the daemon, the window, and smoke mode                                       |
 | `src/preload.cts` | The minimal bridge exposed to the screen (`window.dool2`). It does not pass Node features through |
-| `src/renderer/`   | The screen (HTML, CSS, TypeScript, no framework)                                      |
+| `src/renderer/`   | The screen (HTML, CSS, TypeScript, no framework)                                                  |
 
 The window turns `contextIsolation` and `sandbox` on and `nodeIntegration` off. External links open in the default browser, and the window never navigates to another page.
 
@@ -30,14 +30,14 @@ node apps/daemon/scripts/seed-demo.mjs /tmp/dool2-demo
 DOOL2_DATA_DIR=/tmp/dool2-demo DOOL2_SMOKE_OPEN=goals+panel:memory pnpm --filter @dool2/desktop smoke
 ```
 
-| Environment variable | Description                                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DOOL2_DATA_DIR`     | Data folder (default: the standard OS location)                                                                                                                                                              |
-| `DOOL2_SMOKE_OUT`    | Folder to save captures in                                                                                                                                                                                   |
-| `DOOL2_SMOKE_THEME`  | Capture with `dark` or `light` fixed (default: the device setting)                                                                                                                                           |
-| `DOOL2_SMOKE_OPEN`   | Screen to leave open: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:service]`. Followed by `+panel:section` (schedule, memory, screen, activity, approvals) or `+nopanel` |
+| Environment variable | Description                                                                                                                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOOL2_DATA_DIR`     | Data folder (default: the standard OS location)                                                                                                                                                                                  |
+| `DOOL2_SMOKE_OUT`    | Folder to save captures in                                                                                                                                                                                                       |
+| `DOOL2_SMOKE_THEME`  | Capture with `dark` or `light` fixed (default: the device setting)                                                                                                                                                               |
+| `DOOL2_SMOKE_OPEN`   | Screen to leave open: `talk` `feed` `ideas` `goals` `goal[:id]` `library[:files]` `thread[:id]` `connections[:service]`. Followed by `+panel:section` (schedule, memory, screen, activity, approvals) or `+nopanel`              |
 | `DOOL2_SMOKE_SETUP`  | Capture the wizard or settings: `welcome` `choice` `check` `awake`; for settings, `settings[:section]` (general, ai, phone, vault, me, apps, about). With `DOOL2_SMOKE_UPDATE=available`, it shows a new version being available |
-| `DOOL2_SMOKE_SCROLL` | Scroll until this selector is visible, then capture (for example `.page-more` = the last row of a long list). Use `DOOL2_SMOKE_SCROLL_TIMES` to repeat (when the next page loads, the last row moves down again) |
+| `DOOL2_SMOKE_SCROLL` | Scroll until this selector is visible, then capture (for example `.page-more` = the last row of a long list). Use `DOOL2_SMOKE_SCROLL_TIMES` to repeat (when the next page loads, the last row moves down again)                 |
 
 ## Building an installer (unsigned, for development)
 

@@ -19,20 +19,20 @@ Dool2 daemon ─ local socket ─ native messaging host ─ connectNative ─ th
 
 ## What it can do
 
-| Command      | What it does                                                                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------ |
-| `open`       | Opens a new tab in the Dool2 window and waits until it has fully loaded                                |
-| `navigate`   | Changes the address of a Dool2 tab                                                                     |
+| Command      | What it does                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `open`       | Opens a new tab in the Dool2 window and waits until it has fully loaded                                                 |
+| `navigate`   | Changes the address of a Dool2 tab                                                                                      |
 | `snapshot`   | Reads the page as text. Marks clickable things like `[e3 button "검색"]` (button "Search"), and detects CAPTCHA screens |
-| `click`      | Scrolls the marked element to the center of the screen and clicks it with the mouse. Reports if a new tab opens |
-| `type`       | Types into the marked field (replacing existing text). With `submit`, presses Enter                    |
-| `press`      | Enter, Tab, Esc, arrow keys, and so on                                                                 |
-| `scroll`     | One screen up or down                                                                                  |
-| `screenshot` | The visible screen as JPEG (up to 1280px wide)                                                         |
-| `back`       | Go back                                                                                                |
-| `focus`      | Brings the Dool2 window and tab to the front when handing off to a person                              |
-| `fill`       | Fills a Dool2 vault value (checks address and field)                                                   |
-| `close`      | Closes a Dool2 tab                                                                                     |
+| `click`      | Scrolls the marked element to the center of the screen and clicks it with the mouse. Reports if a new tab opens         |
+| `type`       | Types into the marked field (replacing existing text). With `submit`, presses Enter                                     |
+| `press`      | Enter, Tab, Esc, arrow keys, and so on                                                                                  |
+| `scroll`     | One screen up or down                                                                                                   |
+| `screenshot` | The visible screen as JPEG (up to 1280px wide)                                                                          |
+| `back`       | Go back                                                                                                                 |
+| `focus`      | Brings the Dool2 window and tab to the front when handing off to a person                                               |
+| `fill`       | Fills a Dool2 vault value (checks address and field)                                                                    |
+| `close`      | Closes a Dool2 tab                                                                                                      |
 
 ## Development
 
