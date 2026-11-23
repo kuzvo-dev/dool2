@@ -857,8 +857,8 @@ function onStream(ev: DaemonStreamEvent) {
         pollWork()
       }
       // What is said before a tool is not a reply but the current action. Keep that single line as a step and clear the bubble
-      const act = mainCore(lang).doing(ev.event.title ?? toolLabel(ev.event.name))
-      const label = narrationLine(st.live) ?? act
+      const act = mainCore(lang).doing(ev.event.title ?? toolLabel(ev.event.name, lang))
+      const label = narrationLine(st.live, lang) ?? act
       st.live = ''
       // Where it worked: the opened address, or for web tools without one, the site of the screen being viewed
       const tabId = (ev.event.input as { tabId?: unknown } | undefined)?.tabId
@@ -1447,7 +1447,7 @@ function groupMark(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
 
 /** One service row: icon · name / what it does · time taken */
 function groupRow(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
-  const sub = state === 'doing' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
+  const sub = state === 'doing' ? g.act : g.kind === 'doori' ? '' : doneLine(g, lang)
   return h(
     'li',
     { class: `ws ${state}` },
@@ -1478,7 +1478,7 @@ function liveGroups(): WorkGroup[] {
       ...(next && at ? { ms: next - at } : {}),
     }
   })
-  return groupSteps(steps, placeCards())
+  return groupSteps(steps, placeCards(), lang)
 }
 
 /** Last of Dool2's narration lines (not a tool name) */
@@ -1803,7 +1803,7 @@ function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
  * Older records (no place info) read "How it worked · N steps"
  */
 function workDone(rec: WorkRecordMessage): HTMLElement {
-  const groups = groupSteps(rec.steps, placeCards())
+  const groups = groupSteps(rec.steps, placeCards(), lang)
   const places = [
     ...new Map(
       groups.filter((g) => g.kind === 'web' || g.kind === 'service').map((g) => [g.key, g]),
@@ -2192,7 +2192,7 @@ function ghostFor(draft: string): string {
     draft,
     talk: recentTalk(st.conv),
     mine: (st.life?.ideas ?? []).map((i) => i.text),
-    catalog: ideaCatalog(st.services ?? []).flatMap((g) => g.items.map((i) => i.ask)),
+    catalog: ideaCatalog(st.services ?? [], lang).flatMap((g) => g.items.map((i) => i.ask)),
   })
 }
 
@@ -2936,7 +2936,7 @@ function thinkingDots() {
 
 function liveBubble() {
   const b = h('div', { class: 'bubble rich streaming' })
-  b.append(rich(dropEnglishLines(st.live)))
+  b.append(rich(dropEnglishLines(st.live, lang)))
   riseWords(b)
   return b
 }
@@ -2986,7 +2986,7 @@ function syncChat() {
     let el = have.get(it.key)
     if (el && it.key === 'live') {
       // A streaming reply only swaps the text
-      el.replaceChildren(rich(dropEnglishLines(st.live)))
+      el.replaceChildren(rich(dropEnglishLines(st.live, lang)))
       riseWords(el)
     } else if (el && it.key === 'work') {
       // The work card only appends new steps (leaving the current screen picture as is)
@@ -3155,7 +3155,7 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   } catch {
     return h('span')
   }
-  const block = blockView(rec as { kind?: string }, blockEnv, used)
+  const block = blockView(rec as { kind?: string }, blockEnv, used, lang)
   if (block) return block
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
@@ -4572,7 +4572,7 @@ function ideaRow(it: IdeaItem, sec: IdeaSection) {
 }
 
 function ideasView() {
-  const groups = ideaCatalog(st.services ?? [])
+  const groups = ideaCatalog(st.services ?? [], lang)
   const box = h(
     'section',
     { class: 'tab-page' },
@@ -5085,7 +5085,7 @@ function settingsView() {
       row(
         'card',
         mSet.payMethods,
-        first ? mSet.payMain(payMethodLabel(first), mine.length - 1) : mSet.payNone,
+        first ? mSet.payMain(payMethodLabel(first, lang), mine.length - 1) : mSet.payNone,
         icon('chevron'),
         () => openOverlay({ kind: 'pay' }),
       ),
@@ -5385,7 +5385,7 @@ function paySheet() {
     )
   const ul = h('ul', { class: 'pay-list' })
   list.forEach((m, i) => {
-    const detail = payMethodDetail(m)
+    const detail = payMethodDetail(m, lang)
     ul.append(
       h(
         'li',
@@ -5397,7 +5397,7 @@ function paySheet() {
           h(
             'span',
             { class: 'row-t' },
-            payMethodTitle(m),
+            payMethodTitle(m, lang),
             i === 0 ? h('span', { class: 'pay-main', text: mSet.payMainTag }) : '',
           ),
           detail ? h('span', { class: 'row-d', text: detail }) : '',
@@ -5413,7 +5413,7 @@ function paySheet() {
           class: 'btn-text danger',
           text: mSet.remove,
           onclick: () => {
-            if (!confirm(mSet.removePayConfirm(payMethodLabel(m)))) return
+            if (!confirm(mSet.removePayConfirm(payMethodLabel(m, lang)))) return
             savePayMethods(list.filter((x) => x.id !== m.id))
           },
         }),
@@ -6595,7 +6595,7 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
   const id = it.card.id
   return {
     socialOnly: !ID_PASSWORD_LOGIN_RE.test(it.card.login ?? ''),
-    social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
+    social: socialOrder(it.card, st.services, lang).map(({ provider, hint }) => ({
       provider,
       ...(hint ? { hint } : {}),
       onclick: () => {
@@ -6632,7 +6632,7 @@ function connectSheet(id: string) {
     logo: id,
     // Places with only social sign-in or SMS verification: an ID field would only confuse
     socialOnly: Boolean(it.card.social?.length) && !ID_PASSWORD_LOGIN_RE.test(it.card.login ?? ''),
-    social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
+    social: socialOrder(it.card, st.services, lang).map(({ provider, hint }) => ({
       provider,
       ...(hint ? { hint } : {}),
       onclick: () => {
@@ -6750,7 +6750,8 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
     sd.busy = true
     if (ev.event.type === 'text') sd.live += ev.event.delta
     else if (ev.event.type === 'tool') {
-      const label = narrationLine(sd.live) ?? mdSide.stepSuffix(ev.event.title ?? toolLabel(ev.event.name))
+      const label =
+        narrationLine(sd.live, lang) ?? mdSide.stepSuffix(ev.event.title ?? toolLabel(ev.event.name, lang))
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps = [...sd.steps, label]
     }

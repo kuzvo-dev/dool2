@@ -298,7 +298,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     if (APPROVAL_TIERS.includes(a.tier)) li.append(el('span', 'pill ask', m.phoneApproval))
     abilities.append(li)
   }
-  const approval = approvalLine(c)
+  const approval = approvalLine(c, lang)
   box.append(el('h2', 'over', m.howToAsk), abilities)
   if (approval) box.append(el('p', 'cap', approval))
 
@@ -315,7 +315,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
   }
 
   const safety = el('ul', 'svc-safety')
-  for (const line of safetyLines(c)) safety.append(el('li', '', line))
+  for (const line of safetyLines(c, lang)) safety.append(el('li', '', line))
   box.append(el('h2', 'over', m.safety), safety)
 
   // Button row at the bottom

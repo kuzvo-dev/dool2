@@ -309,7 +309,7 @@ export function whenText(r: Routine) {
   if (!r.enabled) return r.endedAt ? L.ended : L.turnedOff
   if (!r.schedule) return L.noTime
   const next = r.nextRunAt ? L.next(nextText(r.nextRunAt)) : ''
-  return `${[scheduleLabel(r.schedule), ruleLabel(r)].filter(Boolean).join(' · ')}${next}`
+  return `${[scheduleLabel(r.schedule, lang), ruleLabel(r, lang)].filter(Boolean).join(' · ')}${next}`
 }
 
 function nextText(iso: string) {
@@ -800,7 +800,7 @@ export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
         'span',
         { class: 'row-text' },
         h('span', { class: 'row-t', text: r.title }),
-        h('span', { class: 'row-d', text: r.schedule ? scheduleLabel(r.schedule) : '' }),
+        h('span', { class: 'row-d', text: r.schedule ? scheduleLabel(r.schedule, lang) : '' }),
       ),
       h('span', { class: 'meta', text: r.nextRunAt ? nextText(r.nextRunAt) : '' }),
     ),

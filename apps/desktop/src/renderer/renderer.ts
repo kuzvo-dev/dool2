@@ -923,7 +923,7 @@ function onSideTurn(threadId: string, e: DaemonStreamEvent) {
     const ev = e.event
     if (ev.type === 'text') sd.live += ev.delta
     else if (ev.type === 'tool') {
-      const label = narrationLine(sd.live) ?? A().doing(ev.title ?? toolLabel(ev.name))
+      const label = narrationLine(sd.live, lang) ?? A().doing(ev.title ?? toolLabel(ev.name, lang))
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps.push(label)
     } else return
@@ -1194,7 +1194,7 @@ function screenTab(): HTMLElement {
   const t = state.turn
   if (state.busy && t) {
     const log = el('ul', 'worklog')
-    const groups = groupSteps(turnSteps(t.steps, t.info), placeCards())
+    const groups = groupSteps(turnSteps(t.steps, t.info), placeCards(), lang)
     groups.forEach((g, i) => {
       log.append(groupRow(g, i === groups.length - 1 ? 'now' : 'done'))
     })
@@ -1225,7 +1225,7 @@ function screenTab(): HTMLElement {
   } else if (state.lastTurn?.steps.length) {
     const lt = state.lastTurn
     const log = el('ul', 'worklog')
-    for (const g of groupSteps(turnSteps(lt.steps, lt.info, Date.now()), placeCards()))
+    for (const g of groupSteps(turnSteps(lt.steps, lt.info, Date.now()), placeCards(), lang))
       log.append(groupRow(g, 'done'))
     box.append(
       el(
@@ -1611,8 +1611,8 @@ function onAgent(ev: AgentEvent) {
   }
   if (ev.type === 'tool') {
     // Text before a tool call is what Dool2 is doing, not the answer. Keep one line as the step and clear the stream
-    const act = A().doing(ev.title ?? toolLabel(ev.name))
-    const label = narrationLine(t.text) ?? act
+    const act = A().doing(ev.title ?? toolLabel(ev.name, lang))
+    const label = narrationLine(t.text, lang) ?? act
     t.text = ''
     const place = toolPlace(ev.name, ev.input, t.host)
     if (/browser_(open|navigate)$/.test(ev.name) && place) t.host = place
@@ -1832,7 +1832,7 @@ const blockEnv: BlockEnv = {
 function toolCard(raw: string, active: boolean, used?: string): Node {
   try {
     const rec = JSON.parse(raw) as { kind?: string }
-    const block = blockView(rec, blockEnv, used)
+    const block = blockView(rec, blockEnv, used, lang)
     if (block) return block
     if (rec.kind === 'approval') return approvalCard(rec as ApprovalRecordMessage)
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
@@ -1995,7 +1995,7 @@ function groupMark(g: WorkGroup): HTMLElement {
 
 /** One service row: icon (spinner or check in the corner) · name / what it does · time taken */
 function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
-  const sub = state === 'now' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
+  const sub = state === 'now' ? g.act : g.kind === 'doori' ? '' : doneLine(g, lang)
   return el(
     'li',
     `ws ${state}`,
@@ -2012,7 +2012,7 @@ function groupRow(g: WorkGroup, state: 'now' | 'done'): HTMLElement {
 
 /** Work log: one folded line above the answer ("logos · Looked at 4 places · 37s"), opens into one row per service */
 function workDoneCard(rec: WorkRecordMessage): HTMLElement {
-  const groups = groupSteps(rec.steps, placeCards())
+  const groups = groupSteps(rec.steps, placeCards(), lang)
   const places = [
     ...new Map(
       groups.filter((g) => g.kind === 'web' || g.kind === 'service').map((g) => [g.key, g]),
@@ -2090,7 +2090,7 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
   const redraw = () => card.replaceWith(connectCard(rec))
   // Social login: reuses the Kakao, Naver… login in this PC's Chrome (in the order used before)
   const social = el('div', 'social-row')
-  for (const { provider, hint } of c.social?.length ? socialOrder(c, state.services) : []) {
+  for (const { provider, hint } of c.social?.length ? socialOrder(c, state.services, lang) : []) {
     const b = button(
       `btn-social ${provider}`,
       async () => {

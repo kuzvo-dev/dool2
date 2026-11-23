@@ -461,7 +461,7 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
 
 export function ideasView(ctx: LifeCtx): HTMLElement {
   const t = lifeText(lang)
-  const groups = ideaCatalog(ctx.services())
+  const groups = ideaCatalog(ctx.services(), lang)
   return el(
     'div',
     'page',
@@ -513,7 +513,7 @@ function goalRow(ctx: LifeCtx, r: Routine) {
           )
         : undefined,
       r.lastResult
-        ? el('span', 'meta goal-last', t.lastResultLine(plain(resultLine(r.lastResult), 90)))
+        ? el('span', 'meta goal-last', t.lastResultLine(plain(resultLine(r.lastResult, lang), 90)))
         : undefined,
     ),
   )
@@ -592,13 +592,13 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
     if (v) facts.append(el('dt', '', k), el('dd', '', v))
   }
   const m = lifeModel(lang)
-  fact(t.factWhen, r.schedule ? scheduleLabel(r.schedule) : m.noTime)
+  fact(t.factWhen, r.schedule ? scheduleLabel(r.schedule, lang) : m.noTime)
   fact(
     t.factNext,
     r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : r.endedAt ? m.ended : m.off,
   )
   if (r.schedule && r.schedule.kind !== 'once')
-    fact(t.factUntil, r.until ? untilLabel(r.until) : t.untilDeleted)
+    fact(t.factUntil, r.until ? untilLabel(r.until, lang) : t.untilDeleted)
   fact(t.factLast, r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
   fact(
     t.factResult,
@@ -845,7 +845,7 @@ export function scheduleTab(ctx: LifeCtx): HTMLElement {
           'span',
           'grow',
           el('span', 'side-t', r.title),
-          el('span', 'meta', r.schedule ? scheduleLabel(r.schedule) : ''),
+          el('span', 'meta', r.schedule ? scheduleLabel(r.schedule, lang) : ''),
         ),
         el('span', 'side-when meta', whenLabel(r.nextRunAt ?? '', now)),
       ),
