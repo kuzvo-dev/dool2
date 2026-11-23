@@ -1,6 +1,8 @@
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, UsageLimit } from '@dool2/protocol'
+import { CLAUDE_TEXT, type ClaudeText } from './locales/claude.js'
 
-/** 두리 도구 이름 앞부분. 이 밖의 도구가 보이면 위험으로 본다. */
+/** Prefix of Dool2 tool names. Any other tool is treated as unsafe. */
 export const DOOL2_TOOL_PREFIX = 'mcp__dool2__'
 
 type Json = Record<string, unknown>
@@ -9,10 +11,16 @@ const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 /**
- * `claude -p --output-format stream-json --verbose --include-partial-messages` 출력을
- * 한 줄씩 받아 두리 공통 이벤트로 바꾼다.
+ * Takes the output of `claude -p --output-format stream-json --verbose --include-partial-messages`
+ * line by line and turns it into Dool2's common events.
  */
 export class ClaudeStreamParser {
+  private readonly t: ClaudeText
+  /** lang: language of the error messages people see */
+  constructor(lang: Lang = 'ko') {
+    this.t = CLAUDE_TEXT[lang]
+  }
+
   private readonly toolNames = new Map<string, string>()
   private sawDelta = false
   private sessionId: string | undefined
@@ -38,7 +46,7 @@ export class ClaudeStreamParser {
       case 'user':
         return this.onUser(msg)
       case 'rate_limit_event':
-        return onRateLimit(msg)
+        return onRateLimit(msg, this.t)
       case 'result':
         return this.onResult(msg)
       default:
@@ -64,7 +72,7 @@ export class ClaudeStreamParser {
           {
             type: 'error',
             code: 'tools_unsafe',
-            message: `두리 도구가 아닌 도구가 켜져 있어서 멈췄어요: ${unsafe.join(', ')}`,
+            message: this.t.toolsUnsafe(unsafe.join(', ')),
           },
         ]
       }
@@ -75,7 +83,7 @@ export class ClaudeStreamParser {
         {
           type: 'error',
           code: 'not_logged_in',
-          message: 'Claude 로그인이 필요해요. PC에서 다시 로그인해 주세요.',
+          message: this.t.loginAgain,
         },
       ]
     }
@@ -93,8 +101,8 @@ export class ClaudeStreamParser {
   }
 
   private onAssistant(msg: Json): AgentEvent[] {
-    // AI 호출마다 들어오는 사용량. 마지막 호출의 입력 토큰(캐시 포함)이 지금 세션의 크기다.
-    // result의 사용량은 호출들을 더한 값이라 크기로 쓰면 안 된다
+    // Usage arrives with every AI call. The last call's input tokens (cache included) are the session's current size.
+    // The usage in result is the sum over calls, so it must not be used as the size
     if (isObj(msg.message) && isObj(msg.message.usage) && typeof msg.parent_tool_use_id !== 'string') {
       const u = msg.message.usage
       const tokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
@@ -108,7 +116,7 @@ export class ClaudeStreamParser {
         if (typeof block.id === 'string') this.toolNames.set(block.id, block.name)
         out.push({ type: 'tool', name: block.name, input: block.input })
       }
-      // 부분 메시지를 받았으면 같은 글이 또 오므로 건너뛴다
+      // Skip when partial messages already came, since the same text arrives again
       if (block.type === 'text' && typeof block.text === 'string' && !this.sawDelta) {
         out.push({ type: 'text', delta: block.text })
       }
@@ -138,9 +146,7 @@ export class ClaudeStreamParser {
           type: 'error',
           code,
           message:
-            code === 'not_logged_in'
-              ? 'Claude 로그인이 필요해요. PC에서 다시 로그인해 주세요.'
-              : `Claude Code가 일을 끝내지 못했어요${text ? `: ${text.slice(0, 200)}` : ''}`,
+            code === 'not_logged_in' ? this.t.loginAgain : this.t.unfinished(text ? text.slice(0, 200) : ''),
         },
       ]
     }
@@ -149,7 +155,7 @@ export class ClaudeStreamParser {
   }
 }
 
-function onRateLimit(msg: Json): AgentEvent[] {
+function onRateLimit(msg: Json, t: ClaudeText): AgentEvent[] {
   const info = msg.rate_limit_info
   if (!isObj(info)) return []
   const limits: UsageLimit[] = []
@@ -170,7 +176,7 @@ function onRateLimit(msg: Json): AgentEvent[] {
       typeof info.resetsAt === 'number' ? new Date(info.resetsAt * 1000).toISOString() : undefined
     out.push({
       type: 'limit_reached',
-      message: 'Claude 사용량이 다 찼어요. 한도가 풀리면 다시 할게요.',
+      message: t.limit,
       ...(resetsAt ? { resetsAt } : {}),
     })
   }

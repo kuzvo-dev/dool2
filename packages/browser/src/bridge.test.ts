@@ -26,7 +26,7 @@ describe('native messaging 형식', () => {
   })
 
   it('브라우저로 1MB가 넘는 메시지는 보내지 않는다', () => {
-    expect(() => encodeFrame({ x: 'a'.repeat(1024 * 1024) })).toThrow('너무 커요')
+    expect(() => encodeFrame({ x: 'a'.repeat(1024 * 1024) })).toThrow('too large')
   })
 
   it('줄 단위 JSON을 나눠 읽는다', () => {

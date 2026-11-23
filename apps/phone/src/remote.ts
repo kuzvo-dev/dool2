@@ -1,11 +1,13 @@
-// 원격 화면: 두리가 넘긴 PC 탭을 폰에서 직접 다룬다.
-// - PC 탭을 폰 너비로 그리게 해서(view) 글씨가 제 크기로 보인다
-// - 쓸어서 내리기(손가락으로 끈 만큼), 두 손가락으로 키우기, 길게 누르면 돋보기로 정확히
-// - 입력칸을 누르면 아래에 글자 막대가 뜨고 폰 키보드가 바로 열린다. 쓰는 대로 PC 칸에 들어간다
-// - 화면의 버튼은 아래에 큰 버튼으로도 모은다
-// 이 화면은 한 번 만들고 그림·정보만 바꾼다 (다시 그리면 키보드가 닫히고 손가락 동작이 끊긴다)
+// Remote screen: handle the PC tab Dool2 handed over, directly from the phone.
+// - The PC tab is drawn at phone width (view) so text shows at a readable size
+// - Swipe to scroll (follows the finger), pinch to zoom, long press for a magnifier to aim exactly
+// - Tapping an input opens a text bar below and the phone keyboard opens at once. What you type goes into the PC field
+// - Buttons on the page are also gathered as big buttons below
+// This screen is built once and only the image and info change (redrawing would close the keyboard and cut off gestures)
 import type { RemoteButton, RemoteField, RemoteFocus, RemoteForm, RemoteFormValue } from '@dool2/protocol'
 import { h, icon } from './dom.js'
+import { lang } from './lang.js'
+import { remoteText } from './locales/remote.js'
 import { otpBoxes, reduced, Spring, springTo, tick } from './motion.js'
 import { createFormPane } from './remote-form.js'
 
@@ -37,9 +39,9 @@ export interface RemoteOpts {
   done(): void
   handBack(): void
   hostOf(url: string): string
-  /** '필요한 칸만'을 달라 */
+  /** Ask for "fields only" */
   form(): void
-  /** 칸만 화면에서 채운 값 넣기·버튼 누르기 */
+  /** Put in the values filled on the fields-only screen and press a button */
   fill(values: RemoteFormValue[], press?: string): void
 }
 
@@ -54,56 +56,57 @@ const HOLD_MS = 280
 const MOVE_PX = 8
 
 export function createRemote(o: RemoteOpts): RemoteScreen {
+  const t = remoteText(lang)
   let shot: Shot | undefined
   let viewH = 0
   let viewSent = false
 
-  // ── 머리 ──
-  const host = h('span', { class: 'remote-url-text', text: '불러오는 중…' })
+  // ── Header ──
+  const host = h('span', { class: 'remote-url-text', text: t.loading })
   const rate = h('span', { class: 'remote-rate', text: '' })
   const head = h(
     'div',
     { class: 'remote-bar' },
-    h('button', { class: 'fbtn small', label: '닫기', onclick: () => leave(o.back) }, icon('close')),
+    h('button', { class: 'fbtn small', label: t.close, onclick: () => leave(o.back) }, icon('close')),
     h(
       'span',
       { class: 'remote-pill' },
       h('span', { class: 'live-dot' }),
-      h('span', { class: 'remote-state', text: '직접 하는 중 · 두리는 잠깐 쉬어요' }),
+      h('span', { class: 'remote-state', text: t.state }),
     ),
   )
   const where = h('div', { class: 'remote-where' }, icon('lock'), host, rate)
 
-  // ── 화면 (그림 + 손가락 동작) ──
+  // ── Screen (image + finger gestures) ──
   const img = h('img', { class: 'remote-shot' })
-  img.alt = 'PC 화면. 누르면 PC에서도 그 자리를 눌러요'
+  img.alt = t.shotAlt
   img.draggable = false
   const marks = h('div', { class: 'remote-marks' })
   const stage = h('div', { class: 'remote-stage' }, img, marks)
-  const msg = h('p', { class: 'remote-msg' }, h('span', { class: 'spin' }), 'PC 화면을 가져오는 중…')
+  const msg = h('p', { class: 'remote-msg' }, h('span', { class: 'spin' }), t.fetching)
   const loupe = h('div', { class: 'remote-loupe' })
   loupe.hidden = true
   const hint = h('span', {
     class: 'remote-hint',
-    text: '쓸어서 내리기 · 두 손가락으로 크게 · 길게 누르면 돋보기',
+    text: t.hint,
   })
-  const zoomReset = h('button', { class: 'remote-zoom', text: '원래 크기' })
+  const zoomReset = h('button', { class: 'remote-zoom', text: t.resetZoom })
   zoomReset.hidden = true
   const frame = h('div', { class: 'remote-frame' }, msg, stage, loupe, hint, zoomReset)
 
-  // ── 버튼 모음 ──
+  // ── Button collection ──
   const acts = h('div', { class: 'remote-acts' })
   let actSig = ''
 
-  // ── 글자 막대 (입력칸을 누르면) ──
+  // ── Text bar (when an input is tapped) ──
   const typeLabel = h('span', { class: 'remote-type-label', text: '' })
   const typeInput = h('input', { class: 'remote-type-input' })
   typeInput.autocomplete = 'off'
   typeInput.setAttribute('autocapitalize', 'off')
   typeInput.setAttribute('autocorrect', 'off')
   typeInput.spellcheck = false
-  const nextBtn = h('button', { class: 'chip', text: '다음 칸' })
-  const doneBtn = h('button', { class: 'chip on', text: '완료' })
+  const nextBtn = h('button', { class: 'chip', text: t.nextField })
+  const doneBtn = h('button', { class: 'chip on', text: t.done })
   const typeBar = h(
     'div',
     { class: 'remote-typebar' },
@@ -112,28 +115,28 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   )
   typeBar.hidden = true
 
-  // ── 인증번호 칸 ──
+  // ── Verification code boxes ──
   const otpBox = h('div', { class: 'remote-otp' })
   otpBox.hidden = true
 
   const tools = h(
     'div',
     { class: 'remote-tools' },
-    h('button', { class: 'chip', text: '키보드', onclick: () => openType(undefined, true) }),
-    h('button', { class: 'chip', text: '인증번호', onclick: () => toggleOtp() }),
-    h('button', { class: 'chip', text: '엔터', onclick: () => o.input({ action: 'key', key: 'Enter' }) }),
+    h('button', { class: 'chip', text: t.keyboard, onclick: () => openType(undefined, true) }),
+    h('button', { class: 'chip', text: t.code, onclick: () => toggleOtp() }),
+    h('button', { class: 'chip', text: t.enter, onclick: () => o.input({ action: 'key', key: 'Enter' }) }),
   )
   const foot = h(
     'div',
     { class: 'remote-foot' },
-    h('button', { class: 'btn-ghost', text: '두리에게 맡기기', onclick: () => leave(o.handBack) }),
+    h('button', { class: 'btn-ghost', text: t.handBack, onclick: () => leave(o.handBack) }),
     h('button', {
       class: 'btn btn-approve',
-      text: o.connectId ? '로그인했어요' : '다 했어요',
+      text: o.connectId ? t.loggedIn : t.allDone,
       onclick: () => leave(o.done),
     }),
   )
-  // ── 필요한 칸만 / 화면 보기 ──
+  // ── Fields only / view screen ──
   let mode: 'form' | 'screen' = 'screen'
   let chosen = false
   const formPane = createFormPane({
@@ -142,8 +145,8 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     showScreen: () => setMode('screen', true),
   })
   formPane.el.hidden = true
-  const segForm = h('button', { text: '필요한 칸만', onclick: () => setMode('form', true) })
-  const segScreen = h('button', { text: '화면 보기', onclick: () => setMode('screen', true) })
+  const segForm = h('button', { text: t.onlyFields, onclick: () => setMode('form', true) })
+  const segScreen = h('button', { text: t.viewScreen, onclick: () => setMode('screen', true) })
   const seg = h('div', { class: 'remote-seg' }, segForm, segScreen)
   seg.hidden = true
   const setMode = (m: 'form' | 'screen', byUser = false) => {
@@ -159,7 +162,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       typeBar.hidden = true
       otpBox.hidden = true
     } else {
-      // 화면 보기로 오면 폰 너비 그리기를 다시 부탁한다 (그동안 풀렸을 수 있다)
+      // Coming back to the screen view: ask again for phone-width drawing (it may have been reset meanwhile)
       viewSent = false
       requestAnimationFrame(sendView)
     }
@@ -189,7 +192,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     then()
   }
 
-  // 화면 크기를 정해 PC에 폰 너비로 그려 달라고 한다 (처음 한 번, 붙은 뒤에 잰다)
+  // Decide the screen size and ask the PC to draw at phone width (once at first, measured after attaching)
   const sendView = () => {
     if (viewSent || !frame.isConnected) return
     const w = Math.round(frame.clientWidth)
@@ -200,7 +203,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     o.input({ action: 'view', w, h: viewH })
   }
 
-  // 받은 그림이 폰 너비 모양이 아니면(PC에서 풀렸으면) 다시 부탁한다 (3초에 한 번까지)
+  // If the image is not phone-width shaped (reset on the PC), ask again (at most once every 3 s)
   let viewW = 0
   let lastViewAsk = 0
   const checkView = () => {
@@ -219,7 +222,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     )
   }
 
-  // ── 확대·이동·스크롤 미리 보기 ──
+  // ── Zoom, pan and scroll preview ──
   let zoom = 1
   let panX = 0
   let panY = 0
@@ -251,8 +254,8 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     })
   })
 
-  // 그림 안 자리 → 사진 비율(0~1)
-  // 그림은 칸에 맞춰 줄어(위에 붙어) 보이므로, 실제로 그림이 그려진 자리를 잰다
+  // Position in the image > image ratio (0 to 1)
+  // The image shrinks to fit (stuck to the top), so measure where it is actually drawn
   const shotRect = () => {
     const b = img.getBoundingClientRect()
     const ar =
@@ -263,7 +266,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     }
     return { left: b.left, top: b.top, width: b.width, height: b.width / ar }
   }
-  // 화면 칸 기준 자리 (스크롤 미리 보기로 그림이 밀려 있어도 손가락 자리 그대로)
+  // Position relative to the frame (the finger position stays right even if the scroll preview shifted the image)
   const frameFrac = (cx: number, cy: number): [number, number] => {
     const fr = frame.getBoundingClientRect()
     return [(cx - fr.left) / fr.width, (cy - fr.top) / fr.height]
@@ -273,7 +276,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     return { fx: (cx - r.left) / r.width, fy: (cy - r.top) / r.height, r }
   }
 
-  // ── 손가락 ──
+  // ── Fingers ──
   const pts = new Map<number, { x: number; y: number }>()
   let gesture:
     | {
@@ -297,7 +300,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   const flushScroll = (fx: number, fy: number) => {
     if (!pendingScroll) return
     const r = shotRect()
-    // 손가락으로 끈 화면 픽셀 → 페이지 픽셀 (확대해 있으면 그만큼 덜)
+    // Screen pixels dragged by the finger > page pixels (less when zoomed in)
     const page = -(pendingScroll * viewH) / Math.max(1, r.height)
     pendingScroll = 0
     lastScrollSend = performance.now()
@@ -375,7 +378,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       const d = Math.hypot(a.x - b.x, a.y - b.y)
       const fr = frame.getBoundingClientRect()
       const nz = Math.min(3, Math.max(1, (g.z0 * d) / Math.max(1, g.d0)))
-      // 두 손가락 가운데를 기준으로 키운다
+      // Zoom around the midpoint of the two fingers
       const ox = g.cx - fr.left
       const oy = g.cy - fr.top
       panX = ox - ((ox - g.px0) * nz) / g.z0
@@ -398,8 +401,8 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       clampPan()
       applyStage()
     } else if (g.mode === 'scroll') {
-      // 그림은 바로 따라 움직이고, PC에는 조금씩 모아 보낸다
-      // 이번 손가락 동작에서 움직인 만큼만 (앞 동작의 미리 보기는 따로)
+      // The image follows right away; scrolls are sent to the PC in small batches
+      // Only what moved in this gesture (the preview from the earlier gesture is separate)
       pendingScroll += dy - g.last
       g.last = dy
       scrollPreview = g.base + dy
@@ -424,22 +427,22 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     if (e.type === 'pointercancel') return
     if (g.mode === 'scroll') {
       flushScroll(...frameFrac(g.x0, g.y0))
-      // 다음 그림이 오면 미리 보기를 풀고, 오지 않으면 스프링으로 제자리
+      // When the next image arrives, drop the preview; if none does, spring back into place
       clearTimeout(scrollTimer)
       scrollTimer = setTimeout(() => settlePreview(), 900)
       return
     }
     if (g.mode === 'pan') return
-    // 누르기 (그냥 톡, 또는 돋보기로 맞춘 뒤 뗀 자리)
+    // Tap (a plain tap, or the spot where the finger lifted after aiming with the magnifier)
     tapAt(e.clientX, e.clientY)
   }
   frame.addEventListener('pointerup', end)
   frame.addEventListener('pointercancel', end)
   frame.addEventListener('contextmenu', (e) => e.preventDefault())
-  // 화면을 눌러도 글자 막대에서 초점이 빠지지 않게 (키보드가 닫혔다 열리며 깜빡이지 않게)
+  // Keep focus in the text bar when the screen is tapped (so the keyboard does not close and reopen)
   frame.addEventListener('mousedown', (e) => e.preventDefault())
 
-  // 키보드가 올라오면 글자 막대를 키보드 바로 위로 (화면 크기는 그대로 둔다)
+  // When the keyboard rises, move the text bar right above it (the screen size stays the same)
   const onViewport = () => {
     const vv = window.visualViewport
     if (!vv) return
@@ -464,25 +467,25 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   const tapAt = (cx: number, cy: number) => {
     const { fx, fy } = toFrac(cx, cy)
     if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) return
-    // 누른 자리 표시
+    // Mark the tapped spot
     const sr = marks.getBoundingClientRect()
     const dot = h('span', { class: 'tap-dot' })
     dot.style.left = `${((cx - sr.left) / sr.width) * 100}%`
     dot.style.top = `${((cy - sr.top) / sr.height) * 100}%`
     marks.append(dot)
     setTimeout(() => dot.remove(), 800)
-    // 입력칸이면 키보드를 지금(손가락을 뗀 그 순간에) 연다: 나중에 열면 폰이 키보드를 막는다
+    // For an input, open the keyboard now (the moment the finger lifts): opening it later gets blocked by the phone
     const f = shot?.fields?.find((x) => fx >= x.x && fx <= x.x + x.w && fy >= x.y && fy <= x.y + x.h)
     if (f) openType(f)
-    // 칸이 아닌 곳을 누르면 글자 막대를 닫는다 (칸 정보가 없으면 그대로 둔다)
+    // Tapping outside a field closes the text bar (left as is when there is no field info)
     else if (!typeBar.hidden && shot?.fields?.length) closeType()
     o.input({ action: 'tap', x: fx, y: fy })
   }
 
-  // ── 글자 막대: 쓴 글자를 앞에 보낸 것과 비교해 늘어난 만큼 넣고 줄어든 만큼 지운다 ──
+  // ── Text bar: compare with what was sent before, type what was added and delete what was removed ──
   let sent = ''
   let fresh = false
-  /** 마지막으로 누른 칸 (그 칸의 정보가 온 그림만 막대에 채운다) */
+  /** The field tapped last (only an image carrying that field's info fills the bar) */
   let tapped: RemoteField | undefined
   const flushType = () => {
     const v = typeInput.value
@@ -510,12 +513,12 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   nextBtn.addEventListener('click', () => {
     flushType()
     o.input({ action: 'key', key: 'Tab' })
-    // 다음 칸의 글자는 다음 그림에서 받아 온다
+    // The next field's text comes from the next image
     typeInput.value = ''
     sent = ''
     fresh = true
     tapped = undefined
-    typeLabel.textContent = '다음 칸'
+    typeLabel.textContent = t.nextField
   })
   doneBtn.addEventListener('pointerdown', (e) => e.preventDefault())
   doneBtn.addEventListener('click', () => {
@@ -528,8 +531,8 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     typeBar.hidden = false
     typeInput.type = f?.secret ? 'password' : 'text'
     typeInput.inputMode = (f?.mode as typeof typeInput.inputMode) || 'text'
-    typeInput.placeholder = f?.secret ? '비밀번호 (PC 칸에만 들어가요)' : '여기에 쓰면 PC 칸에 들어가요'
-    typeLabel.textContent = f?.label || (f?.secret ? '비밀번호' : '누른 칸')
+    typeInput.placeholder = f?.secret ? t.secretPlaceholder : t.typePlaceholder
+    typeLabel.textContent = f?.label || (f?.secret ? t.password : t.tappedField)
     tapped = f
     if (!keep) {
       typeInput.value = ''
@@ -560,7 +563,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     }
     closeType()
     otpBox.replaceChildren(
-      h('p', { class: 'meta', text: 'PC 화면에서 인증번호 칸을 먼저 눌러 주세요' }),
+      h('p', { class: 'meta', text: t.tapCodeFirst }),
       otpBoxes({
         value: '',
         onDone: (code) => {
@@ -575,7 +578,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     queueMicrotask(() => document.getElementById('otp-input')?.focus())
   }
 
-  // ── 새 그림·정보 ──
+  // ── New image and info ──
   let formUrl = ''
   let formAskedAt = 0
   const askForm = () => {
@@ -586,16 +589,16 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
   }
   const update = (s: Shot | undefined, fps?: number) => {
     shot = s
-    // 처음 화면이 오거나 주소가 바뀌면 칸을 새로 받아 온다
+    // On the first screen or when the address changes, fetch the fields again
     if (s?.url && s.url !== formUrl) {
-      // 처음 화면이면 바로 묻는다 (기다리는 동안 화면을 가려 둔다), 넘어간 화면이면 그려지길 잠깐 기다린다
+      // On the first screen ask right away (the screen stays covered while waiting); on a moved-on page wait briefly for it to render
       const first = !formUrl
       formUrl = s.url
       setTimeout(askForm, first ? 0 : 600)
     }
     if (!viewSent) requestAnimationFrame(sendView)
     if (s?.url || s?.title) host.textContent = o.hostOf(s.url ?? '') || s.title || ''
-    rate.textContent = fps ? `실시간 · 초당 ${fps}장` : '실시간'
+    rate.textContent = fps ? t.liveFps(fps) : t.live
     if (s?.error) {
       msg.hidden = false
       msg.replaceChildren(s.error)
@@ -607,7 +610,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       if (img.src !== src) {
         img.src = src
         checkView()
-        // 스크롤을 보낸 뒤 온 그림이면 미리 보기를 푼다
+        // If the image came after a scroll was sent, drop the preview
         if (scrollPreview && !gesture && performance.now() - lastScrollSend > 150) {
           scrollPreview = 0
           applyStage()
@@ -615,7 +618,7 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       }
     }
     frame.classList.toggle('busy', Boolean(s?.busy))
-    // 화면의 버튼 모음 (바뀔 때만 다시)
+    // Buttons on the page (redrawn only when they change)
     const list = s?.actions ?? []
     const sig = list.map((a) => `${a.label}@${a.x.toFixed(2)},${a.y.toFixed(2)}`).join('|')
     if (sig !== actSig) {
@@ -634,8 +637,8 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
       )
       acts.hidden = !list.length || mode === 'form'
     }
-    // 칸을 누른 뒤 첫 그림: 칸에 이미 있는 글자를 막대에 채운다 (비밀번호 칸은 비워 둔다)
-    // 누르기 전에 찍힌 그림이 늦게 올 수 있어서, 누른 칸과 같은 칸일 때만 받는다
+    // First image after tapping a field: fill the bar with the text already in the field (password fields stay empty)
+    // An image taken before the tap can arrive late, so accept it only for the tapped field
     const f = s?.focus
     const same =
       f &&
@@ -658,15 +661,15 @@ export function createRemote(o: RemoteOpts): RemoteScreen {
     formPane.set(form, error)
     const usable = formPane.usable()
     seg.hidden = !usable && mode !== 'form'
-    // 사람이 채울 칸이 있으면 처음엔 칸만 보여 준다 (사람이 고른 쪽이 있으면 그대로)
+    // If there are fields to fill, show only the fields at first (unless the person already picked a view)
     if (!chosen && usable && mode !== 'form') setMode('form')
     if (!chosen && !usable && mode === 'form' && !formPane.finishing()) setMode('screen')
   }
 
   applyStage()
   setMode('screen')
-  // 처음 열 때: '필요한 칸만'을 받기 전에 웹 화면이 먼저 번쩍 보였다가 칸 화면으로 바뀌던 것 →
-  // 칸을 받을 때까지(최대 2.5초) 화면을 가려 두고, 칸이 없을 때만 화면 보기로 연다
+  // On first open: the web screen used to flash before switching to the fields view, so
+  // keep the screen covered until the fields arrive (2.5 s max) and open the screen view only if there are none
   el.classList.add('deciding')
   let decidedYet = false
   function decided() {

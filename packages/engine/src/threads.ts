@@ -1,3 +1,4 @@
+import type { Lang } from '@dool2/i18n'
 import {
   type AgentEvent,
   type AgentId,
@@ -19,29 +20,40 @@ import {
   cleanRows,
   type QuickRecordMessage,
 } from '@dool2/protocol/blocks'
-import { narrationLine, splitQuick, stripMonologue, toolLabel, toolPlace } from '@dool2/protocol/rich'
-import type { Store } from '@dool2/store'
+import {
+  APP_NOTE,
+  narrationLine,
+  splitQuick,
+  stripMonologue,
+  toolLabel,
+  toolPlace,
+} from '@dool2/protocol/rich'
+import { isNewThreadTitle, type Store } from '@dool2/store'
+import { THREAD_TEXT } from './locales/threads.js'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
+import { ABOVE_BLOCK } from './region/kr/block-below.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
 
 export interface ThreadServiceOptions {
   store: Store
   runtimes: Partial<Record<AgentId, AgentRuntime>>
-  /** 두리 전용 작업 폴더 */
+  /** Dool2's own working folder */
   workspaceDir: string
   mcpServers: McpServerSpec[]
   systemPrompt?: string | (() => string)
-  /** 탭 번호 → 그 탭의 사이트 주소 (일한 과정을 사이트별로 묶는다) */
+  /** Tab number → that tab's site host (groups the work steps by site) */
   tabHost?: (tabId: number) => string | undefined
-  /** 서비스 도구 이름 → 사람이 읽는 제목 ("가게 찾기·영업 확인"). 일한 과정에 "일하는 중" 대신 보인다 */
+  /** Service tool name → a title people read ("find shops, check hours"). Shown in the work steps instead of "working" */
   toolTitle?: (name: string) => string | undefined
-  /** 말과 함께 넘기는 지금 시각 한 줄 (기본 nowLine, 시험에서는 끈다) */
+  /** The current-time line sent with each message (nowLine by default, off in tests) */
   timeLine?: () => string | undefined
-  /** 그림 AI로 방금 만든 그림 (image_make가 성공하면 한 번 꺼내 답 아래에 붙인다) */
+  /** The picture the image AI just made (taken once when image_make succeeds, and attached below the reply) */
   takeMadeImage?: () => MadeImageRecordMessage | undefined
+  /** Language of the text the records show people (card titles, work steps). Korean when not given */
+  lang?: () => Lang
 }
 
-/** 대화 단위로 에이전트를 돌리고 기록을 남긴다. */
+/** Runs the agent per thread and keeps the record. */
 export class ThreadService {
   private readonly running = new Map<string, AbortController>()
 
@@ -49,7 +61,7 @@ export class ThreadService {
 
   runtime(agent: AgentId): AgentRuntime {
     const rt = this.opts.runtimes[agent]
-    if (!rt) throw new Error(`지원하지 않는 AI예요: ${agent}`)
+    if (!rt) throw new Error(`Unsupported AI: ${agent}`)
     return rt
   }
 
@@ -62,7 +74,7 @@ export class ThreadService {
     this.running.get(threadId)?.abort()
   }
 
-  /** 두리 지침 + 앞 구간에서 넘겨받은 내용 (ADR 0015) */
+  /** Dool2's instructions + what was carried over from the previous segment (ADR 0015) */
   private systemFor(thread: { carry?: string }) {
     const sp = this.opts.systemPrompt
     const base = (typeof sp === 'function' ? sp() : sp) ?? DOOL2_SYSTEM_PROMPT
@@ -70,12 +82,12 @@ export class ThreadService {
   }
 
   /**
-   * 기록에 남기지 않는 한 차례: 구간을 닫기 전에 그 AI에게 요약을 부탁한다.
-   * 이어 할 세션이 없거나 답하는 중이면 하지 않는다. 오래 걸리면 그만둔다
+   * A turn that is not recorded: asks the AI for a summary before the segment is closed.
+   * Skipped when there is no session to resume or a reply is running. Gives up when it takes too long
    */
   async summarize(threadId: string, timeoutMs = 90_000): Promise<string | undefined> {
-    // 한글 요약이 아닌 답("No response requested." 같은 영어 한 줄)은 요약으로 쓰지 않고 한 번 더 부탁한다
-    // (실측 11-21: 그 답을 요약으로 받아 새 대화가 아침에 한 일·결제 카드를 모른 채 이어졌다)
+    // A reply that is not a summary (a one-liner like "No response requested.") is not used; ask once more
+    // (seen 11-21: that reply was taken as the summary, and the new segment went on without knowing the morning's work and payment card)
     for (let i = 0; i < 2; i++) {
       const text = await this.summarizeOnce(threadId, timeoutMs)
       if (text === undefined) return undefined
@@ -87,7 +99,7 @@ export class ThreadService {
   private async summarizeOnce(threadId: string, timeoutMs: number): Promise<string | undefined> {
     const thread = this.opts.store.getThread(threadId)
     if (!thread?.resumeId || this.running.has(threadId) || this.summarizing.has(threadId)) return undefined
-    // 요약은 "답하는 중"이 아니다: 답이 끝난 뒤 미리 요약하는 동안 새 말이 줄에 서지 않게 따로 센다
+    // A summary is not "replying": counted separately so new messages don't queue while it summarizes ahead after a reply
     const ac = new AbortController()
     this.summarizing.add(threadId)
     try {
@@ -115,33 +127,35 @@ export class ThreadService {
   }
 
   /**
-   * 사용자 글을 저장하고 에이전트를 한 턴 돌린다.
-   * 같은 대화에서 동시에 두 턴은 돌리지 않는다.
+   * Saves the user's message and runs the agent for one turn.
+   * Never runs two turns at once in the same thread.
    */
-  /** aside: 이번 차례에만 AI에게 덧붙여 보낼 배경 (기록·화면에는 남기지 않는다. 예: 방금 먼저 알린 것) */
+  /** aside: background sent to the AI on this turn only (not recorded or shown, e.g. what was just sent as a proactive alert) */
   async *send(threadId: string, text: string, o: { aside?: string } = {}): AsyncGenerator<DaemonStreamEvent> {
     const { store } = this.opts
     const thread = store.getThread(threadId)
-    if (!thread) throw new Error(`대화를 찾을 수 없어요: ${threadId}`)
-    if (this.running.has(threadId)) throw new Error('이 대화는 아직 답하는 중이에요')
+    if (!thread) throw new Error(`Thread not found: ${threadId}`)
+    if (this.running.has(threadId)) throw new Error('This thread is still replying')
+    const lang = this.opts.lang?.() ?? 'ko'
+    const t = THREAD_TEXT[lang]
 
     const ac = new AbortController()
     this.running.set(threadId, ac)
     try {
       const userMsg = store.addMessage(threadId, 'user', text)
       yield { type: 'saved', message: userMsg }
-      if (thread.title === '새 대화') store.updateThread(threadId, { title: titleFrom(text) })
+      if (isNewThreadTitle(thread.title)) store.updateThread(threadId, { title: titleFrom(text) })
 
       let answer = ''
       let resumeId = thread.resumeId
       let failed: AgentEvent | undefined
-      // 답은 'done'이 오자마자 저장해 화면에 보낸다. 공식 CLI가 끝 정리(도구 서버 닫기 등)를 하는 0.5초쯤을 기다리지 않는다
+      // Save the reply and send it to the screens as soon as 'done' arrives. Don't wait the ~0.5 s the official CLI spends cleaning up (closing tool servers and so on)
       let saved = false
-      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle)
-      // 답에 붙일 결과 블록 (show_cards·show_list·show_result·show_draft·show_route): 답을 저장한 바로 뒤에 남겨 답 아래에 보인다.
-      // 답 하나에 결과 블록 하나 — 여러 번 부르면 마지막 것만 (사진 카드끼리는 이어 붙인다)
+      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle, lang)
+      // Result block for the reply (show_cards, show_list, show_result, show_draft, show_route): saved right after the reply so it shows below it.
+      // One result block per reply. Called several times, only the last one stays (photo cards are joined)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
-      /** PC 파일 승인(여러 개 옮기기·출력): 도구가 승인을 실제로 요청했을 때(성공한 결과)만 카드를 남긴다 */
+      /** PC file approvals (moving several, printing): a card is kept only when the tool actually asked for approval (a successful result) */
       let fileAsk: { name: string; record: ApprovalRecordMessage } | undefined
       let approvalAsk: { name: string; record: ApprovalRecordMessage } | undefined
       let handoffAsk: { name: string; record: HandoffRecord } | undefined
@@ -151,15 +165,15 @@ export class ThreadService {
         block = undefined
         return m
       }
-      // 답 저장: 일한 과정 → 답 글 → 결과 블록 → 빠른 답 (답 끝 [[답: a | b]] 줄은 떼어 버튼으로)
-      /** 답 글 아래에 둘 카드 (넘기기·로그인·승인): 답이 저장되기 전에 오면 모아 뒀다가 답 다음에 남긴다 */
+      // Saving the reply: work steps → reply text → result block → quick replies (the quick-reply line at the end becomes buttons)
+      /** Cards that go below the reply text (hand-off, login, approval): held until the reply is saved, then saved after it */
       const below: string[] = []
       const saveAnswer = () => {
         const out = []
         const rec = work.record()
         if (rec) out.push(store.addMessage(threadId, 'tool', JSON.stringify(rec)))
         const raw = stripMonologue(answer)
-        // 결과 블록은 답 글 아래에 보인다: AI가 "위 목록·위에 정리"라고 써도 아래로 고친다 (도구를 먼저 불러 '위'라고 쓴다)
+        // Result blocks show below the reply text: if the AI wrote "the list above", change it to below (it calls the tool first, then writes "above")
         const full = block ? blockBelow(raw) : raw
         const { text, replies } = splitQuick(full)
         out.push(store.addMessage(threadId, 'assistant', text || full))
@@ -173,7 +187,7 @@ export class ThreadService {
         return out
       }
       const events = this.runtime(thread.agent).runTurn({
-        // 지금 시각은 지침이 아니라 말과 함께 (지침이 매분 바뀌면 AI 대화 캐시가 깨진다). 없으면 AI가 시각을 알려고 status를 부른다
+        // The current time goes with the message, not the instructions (instructions changing every minute would break the AI's cache). Without it the AI calls status to learn the time
         text: [(this.opts.timeLine ?? nowLine)(), o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: this.systemFor(thread),
@@ -183,7 +197,7 @@ export class ThreadService {
       })
       for await (const ev of events) {
         if (ev.type === 'started' && ev.resumeId) resumeId = ev.resumeId
-        // 답은 마지막 도구 뒤의 말만. 도구 앞 혼잣말("날짜를 맞출게요")은 일하는 중 표시일 뿐이다
+        // The reply is only the text after the last tool. Talk before a tool ("setting the date") is just a work-in-progress line
         if (ev.type === 'tool') {
           work.tool(ev.name, answer, ev.input)
           answer = ''
@@ -191,7 +205,7 @@ export class ThreadService {
         if (ev.type === 'tool' && /show_cards$/.test(ev.name)) {
           const input = ev.input as { cards?: unknown; shape?: unknown } | undefined
           const list = cleanCards(input?.cards)
-          // 한 차례에 여러 번 부르면 이어 붙인다 (10장까지)
+          // Called several times in a turn, they are joined (up to 10 cards)
           const prev = block?.kind === 'cards' ? block : undefined
           if (list.length)
             block = {
@@ -220,22 +234,20 @@ export class ThreadService {
           if (!answer.trim() && ev.text) answer = ev.text
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
-        // 구간의 실제 크기: 다음 말 전에 구간을 바꿀지 볼 때 쓴다 (ADR 0015)
+        // Real size of the segment: used to decide before the next message whether to start a new one (ADR 0015)
         if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
-        // 서비스 도구면 제목을 실어 보낸다: 화면이 "일하는 중" 대신 "가게 찾기·영업 확인 중"을 보인다
-        // (화면은 끝에 " 중"을 붙이니 떼고 보낸다)
-        const title =
-          ev.type === 'tool'
-            ? serviceAct(ev.name, ev.input, this.opts.toolTitle)?.replace(/ 중$/, '')
-            : undefined
+        // For service tools, send the title along: the screens show "finding shops" instead of "working"
+        // (the screens add the "in progress" word themselves, so it is removed here)
+        const svc = ev.type === 'tool' ? serviceAct(ev.name, ev.input, this.opts.toolTitle, lang) : undefined
+        const title = svc ? t.stripAct(svc) : undefined
         yield { type: 'agent', event: title && ev.type === 'tool' ? { ...ev, title } : ev }
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
           for (const m of saveAnswer()) yield { type: 'saved', message: m }
         }
-        // 사람에게 넘기기는 기록에 남겨 둔다 (다시 열어도 [다 했어요]가 보이게).
-        // 실제로 넘겼을 때(성공한 결과)만: 처음 부르면 넘기지 않고 화면을 다시 읽어 실패로 돌려준다
+        // Hand-offs are kept in the record (so the done button shows after reopening).
+        // Only when actually handed off (a successful result): the first call reads the screen again and returns a failure instead
         if (ev.type === 'tool' && /browser_handoff$/.test(ev.name)) {
           const input = (ev.input ?? {}) as { tabId?: unknown; reason?: unknown }
           handoffAsk = {
@@ -243,11 +255,11 @@ export class ThreadService {
             record: {
               kind: 'handoff',
               ...(typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
-              reason: typeof input.reason === 'string' ? input.reason : '직접 해 주실 일이 있어요',
+              reason: typeof input.reason === 'string' ? input.reason : t.handoffReason,
             },
           }
         }
-        // 그림 AI로 만든 그림: 답 글 아래에 큰 그림으로 남긴다 (두리가 따로 카드를 붙이지 않아도)
+        // A picture made by the image AI: kept as a large picture below the reply text (even if Dool2 attaches no card)
         if (ev.type === 'tool_result' && ev.ok && /image_make$/.test(ev.name ?? '')) {
           const made = this.opts.takeMadeImage?.()
           if (made) below.push(JSON.stringify(made))
@@ -255,15 +267,15 @@ export class ThreadService {
         if (ev.type === 'tool_result' && handoffAsk && (!ev.name || ev.name === handoffAsk.name)) {
           const ask = handoffAsk
           handoffAsk = undefined
-          // 답 글보다 위에 뜨지 않게: 답이 아직이면 답 다음에 남긴다 (사용자: "버튼이 메시지보다 위에 있어 별로")
+          // Never above the reply text: if the reply isn't saved yet, save it after the reply (user feedback: the button above the message looked bad)
           if (ev.ok) {
             if (saved)
               yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
             else below.push(JSON.stringify(ask.record))
           }
         }
-        // 승인 요청도 남긴다. 카드는 본체에 상태(기다림·승인·거절·만료)를 물어 그린다
-        // 로그인 카드 요청도 남긴다 (값은 남기지 않는다. 카드가 본체에 상태를 묻는다)
+        // Approval requests are kept too. The card asks the daemon for its state (waiting, approved, declined, expired)
+        // Login card requests are kept too (no values are stored; the card asks the daemon for its state)
         if (ev.type === 'tool' && /browser_request_login$/.test(ev.name)) {
           const input = (ev.input ?? {}) as { tabId?: unknown; site?: unknown }
           const record: LoginRecordMessage = {
@@ -273,7 +285,7 @@ export class ThreadService {
           }
           yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
         }
-        // 서비스 연결 부탁: 대화에 연결 카드를 남긴다 (값은 카드 → 금고로만 간다)
+        // Connection request: keeps a connect card in the conversation (values go only card → vault)
         if (ev.type === 'tool' && /connect_ask$/.test(ev.name)) {
           const input = (ev.input ?? {}) as { service?: unknown }
           if (typeof input.service === 'string' && input.service.trim()) {
@@ -284,15 +296,17 @@ export class ThreadService {
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(record)) }
           }
         }
-        // PC 파일·PC 승인은 탭 번호 대신 -2, ref는 도구 이름 (ADR 0024).
-        // 하나만 옮기기·되살리기, 되돌리기, 프린터 목록, 실행 파일이 아닌 내려받기, 끄기 부탁은 승인이 없다
+        // PC file and PC approvals use -2 instead of a tab number, and ref is the tool name (ADR 0024).
+        // Moving or restoring one item, undo, listing printers, downloads that are not programs, and power-off requests need no approval
         if (ev.type === 'tool') {
           const ref = /(file_move|file_print|file_trash|file_download|pc_screen)$/.exec(ev.name)?.[1]
-          const what = ref ? fileApprovalWhat(ref, (ev.input ?? {}) as Record<string, unknown>) : undefined
+          const what = ref
+            ? fileApprovalWhat(ref, (ev.input ?? {}) as Record<string, unknown>, lang)
+            : undefined
           if (ref)
             fileAsk = what ? { name: ev.name, record: { kind: 'approval', tabId: -2, ref, what } } : undefined
         }
-        // 문자 보내기(내 폰 번호로): 탭 번호 대신 -3, ref "sms". 폰 카드가 받는 사람을 찾아 보여 준다
+        // Sending a text (from the user's phone number): -3 instead of a tab number, ref "sms". The phone card looks up and shows the recipient
         if (ev.type === 'tool' && /phone_sms$/.test(ev.name)) {
           const text = String(((ev.input ?? {}) as { text?: unknown }).text ?? '').slice(0, 300)
           fileAsk = text
@@ -305,9 +319,9 @@ export class ThreadService {
           if (ev.ok)
             yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
         }
-        // PC 앱(화면 제어) 승인은 탭 번호 대신 -1, 앱 허용 요청은 ref "app"
+        // PC app (screen control) approvals use -1 instead of a tab number, and app access requests use ref "app"
         const screen = ev.type === 'tool' && /screen_request_(?:approval|app)$/.test(ev.name)
-        // 결제 카드(browser_checkout)도 같은 승인 카드다 (what이 없으면 제목·상품 이름으로)
+        // The payment card (browser_checkout) is the same approval card (title and product names when there is no what)
         if (ev.type === 'tool' && (screen || /browser_(?:request_approval|checkout)$/.test(ev.name))) {
           const input = (ev.input ?? {}) as {
             tabId?: unknown
@@ -324,7 +338,7 @@ export class ThreadService {
             input.what =
               [typeof input.title === 'string' ? input.title : '', names.join('·')]
                 .filter(Boolean)
-                .join(' · ') || '결제'
+                .join(' · ') || t.payment
           }
           const appRequest = /screen_request_app$/.test(ev.name)
           const record: ApprovalRecordMessage = {
@@ -332,18 +346,18 @@ export class ThreadService {
             ...(screen ? { tabId: -1 } : typeof input.tabId === 'number' ? { tabId: input.tabId } : {}),
             ...(appRequest ? { ref: 'app' } : typeof input.ref === 'string' ? { ref: input.ref } : {}),
             what: appRequest
-              ? `앱 조작 허용${typeof input.why === 'string' ? `: ${input.why}` : ''}`
+              ? t.appControl(typeof input.why === 'string' ? input.why : undefined)
               : typeof input.what === 'string'
                 ? input.what
                 : '',
           }
-          // 도구가 실제로 승인을 요청했을 때(성공한 결과)만 카드를 남긴다 (이미 승인한 사이트의 동의 등은 실패로 돌아온다)
+          // Keep the card only when the tool actually asked for approval (a successful result; consent on an already approved site comes back as a failure)
           approvalAsk = { name: ev.name, record }
         }
         if (ev.type === 'tool_result' && approvalAsk && (!ev.name || ev.name === approvalAsk.name)) {
           const ask = approvalAsk
           approvalAsk = undefined
-          // 승인·결제 카드도 답 글 아래에 (사용자 11-20: "메시지가 위라 잘 안 보여" — 카드가 길어 답이 위로 밀렸다)
+          // Approval and payment cards also go below the reply text (user feedback 11-20: long cards pushed the reply up out of view)
           if (ev.ok) {
             if (saved)
               yield { type: 'saved', message: store.addMessage(threadId, 'tool', JSON.stringify(ask.record)) }
@@ -354,13 +368,13 @@ export class ThreadService {
 
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
       if (saved) {
-        // 이미 저장했다
+        // already saved
       } else if (answer) {
         for (const m of saveAnswer()) yield { type: 'saved', message: m }
       } else if (failed && 'message' in failed) {
         yield { type: 'saved', message: store.addMessage(threadId, 'system', failed.message) }
       }
-      // 답 없이 끝났어도 넘기기 카드는 남긴다
+      // Keep hand-off cards even when the turn ended without a reply
       for (const r of below.splice(0)) yield { type: 'saved', message: store.addMessage(threadId, 'tool', r) }
     } finally {
       this.running.delete(threadId)
@@ -369,38 +383,42 @@ export class ThreadService {
   }
 }
 
-/** 요약 부탁에 받은 답이 요약다운지: 한글이 있고, 글머리표 줄이 하나라도 있으면 */
+/** Whether the reply to a summary request looks like a summary: it has at least one bullet line */
 export function looksLikeSummary(text: string): boolean {
-  return /[가-힣]/.test(text) && /^\s*[-*•]\s+\S/m.test(text)
+  return /^\s*[-*•]\s+\S/m.test(text)
 }
 
-/** 구간을 닫을 때 AI에게 보내는 요약 부탁 (기록에 남지 않는다) */
+/** Summary request sent to the AI when a segment is closed (not recorded) */
 export const SUMMARY_REQUEST =
-  '[두리 앱 알림] 대화가 길어져서 새 대화로 이어 가요. 지금까지 사용자와 나눈 이야기에서 앞으로도 기억해야 할 것' +
-  '(사용자 취향, 약속, 진행 중이거나 끝낸 일, 정해진 날짜·시간·금액)을 한국어 글머리표 15줄 안으로 요약해 주세요. ' +
-  '도구는 쓰지 말고 요약만 답해 주세요. 답할 것이 없다는 말 대신 꼭 요약을 써 주세요.'
+  `${APP_NOTE}The conversation is getting long, so it will continue in a new one. Summarize what you need to keep remembering ` +
+  'from the conversation with the user so far (their preferences, promises, tasks in progress or done, set dates, times and amounts) ' +
+  'in up to 15 bullet lines, in the language you and the user have been using. ' +
+  "Don't use tools; reply with the summary only. Always write a summary instead of saying there is nothing to reply to."
 
-/** PC 파일·PC 도구가 승인을 요청하는 입력이면 승인 카드에 적을 말, 아니면 undefined (본체 file-ops.ts와 같은 기준) */
-export function fileApprovalWhat(ref: string, input: Record<string, unknown>): string | undefined {
+/** For PC file and PC tool input that asks for approval, the text for the approval card; otherwise undefined (same rules as the daemon's file-ops.ts) */
+export function fileApprovalWhat(
+  ref: string,
+  input: Record<string, unknown>,
+  lang: Lang = 'ko',
+): string | undefined {
+  const t = THREAD_TEXT[lang]
   const base = (p: unknown) => String(p).split(/[\\/]/).pop()
   if (ref === 'file_move')
     return input.undo !== true && Array.isArray(input.moves) && input.moves.length >= 2
-      ? `파일 ${input.moves.length}개 옮기기`
+      ? t.fileMove(input.moves.length)
       : undefined
   if (ref === 'file_print')
-    return typeof input.path === 'string' && input.path.trim() ? `"${base(input.path)}" 출력` : undefined
+    return typeof input.path === 'string' && input.path.trim()
+      ? t.filePrint(String(base(input.path)))
+      : undefined
   if (ref === 'file_trash')
     return Array.isArray(input.restore) && input.restore.length >= 2
-      ? `휴지통에서 ${input.restore.length}개 되살리기`
+      ? t.fileRestore(input.restore.length)
       : undefined
   if (ref === 'file_download')
-    return input.confirm === true && typeof input.url === 'string' ? '실행 파일 받기' : undefined
+    return input.confirm === true && typeof input.url === 'string' ? t.fileDownload : undefined
   if (ref === 'pc_screen')
-    return input.action === 'lock'
-      ? '이 PC 화면 잠그기'
-      : input.action === 'sleep'
-        ? '이 PC 잠자기'
-        : undefined
+    return input.action === 'lock' ? t.pcLock : input.action === 'sleep' ? t.pcSleep : undefined
   return undefined
 }
 
@@ -409,11 +427,11 @@ function titleFrom(text: string) {
   return one.length > 30 ? `${one.slice(0, 30)}…` : one
 }
 
-/** 정리·기억 같은 속일만 한 차례에는 일한 과정을 남기지 않는다 (답마다 카드가 붙지 않게) */
+/** Turns that only did housekeeping like organizing or remembering leave no work steps (so not every reply gets a card) */
 const QUIET_TOOL =
   /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search|show_(cards|list|result|draft)/
 
-/** 한 차례 동안 한 일을 모아 '일한 과정' 기록(WorkRecordMessage)을 만든다. 폰·PC 화면의 단계 표시와 같은 이름을 쓴다 */
+/** Collects what was done in a turn into a work record (WorkRecordMessage). Uses the same names as the step display on the phone and PC screens */
 export class WorkLog {
   private readonly started: number
   private steps: { text: string; act: string; place?: string; at: number }[] = []
@@ -423,20 +441,22 @@ export class WorkLog {
     private readonly now: () => number = Date.now,
     private readonly tabHost?: (tabId: number) => string | undefined,
     private readonly toolTitle?: (name: string) => string | undefined,
+    private readonly lang: Lang = 'ko',
   ) {
     this.started = now()
   }
-  /** 도구를 부를 때: 그 앞에 한 혼잣말 한 줄, 없으면 도구 이름("웹페이지 여는 중"). 일한 곳(place)도 같이 남긴다 */
+  /** On a tool call: the one line said before it, else the tool name ("opening a web page"). Also records where (place) */
   tool(name: string, before: string, input?: unknown) {
     const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
     if (!QUIET_TOOL.test(bare)) this.worked = true
-    // 주소 없는 웹 도구: 그 탭의 사이트, 모르면 마지막으로 연 사이트
+    // Web tools without a URL: that tab's site, else the last site opened
     const tabId = (input as { tabId?: unknown } | undefined)?.tabId
     const here = (typeof tabId === 'number' ? this.tabHost?.(tabId) : undefined) ?? this.host
     const place = toolPlace(name, input, here)
     if (/^browser_(open|navigate)$/.test(bare) && place) this.host = place
-    // 서비스 도구는 제목으로 ("네이버 지도 · 일하기" 대신 "가게 찾기·영업 확인")
-    const act = serviceAct(name, input, this.toolTitle) ?? `${toolLabel(name)} 중`
+    // Service tools use their title ("find shops, check hours" instead of "Naver Map · working")
+    const act =
+      serviceAct(name, input, this.toolTitle, this.lang) ?? THREAD_TEXT[this.lang].toolAct(toolLabel(name))
     const text = narrationLine(before) ?? act
     const last = this.steps.at(-1)
     if (last?.text !== text || last.place !== place)
@@ -457,33 +477,33 @@ export class WorkLog {
 }
 
 /**
- * 서비스 도구(직접 부른 것이든 service_call로 부른 것이든)의 일하는 중 글: "극장 찾기 중", "상영 중인 영화 보는 중".
- * 제목을 모르면 undefined (그때는 toolLabel)
+ * Work line for a service tool (called directly or through service_call), from its title.
+ * Undefined when the title is unknown (toolLabel is used then)
  */
 export function serviceAct(
   name: string,
   input: unknown,
   toolTitle?: (name: string) => string | undefined,
+  lang: Lang = 'ko',
 ): string | undefined {
   const bare = name.replace(/^(mcp__dool2__|dool2_)/, '')
   const inner = (input as { tool?: unknown } | undefined)?.tool
   const target = bare === 'service_call' && typeof inner === 'string' ? inner : bare
   const title = toolTitle?.(target)
   if (!title) return undefined
-  // 하는 일 이름(찾기·확인·조회·준비)은 "… 중", 볼 것 이름(상영 중인 영화·상영 시간)은 "… 보는 중"
-  return /(기|인|회|비|약|청|문|소|색|산)$/.test(title) ? `${title} 중` : `${title} 보는 중`
+  const t = THREAD_TEXT[lang]
+  return t.serviceAct(t.serviceBare(title))
 }
 
-/** 말과 함께 넘기는 지금 시각 한 줄 (데이터) */
+/** The current-time line sent with each message (for the AI) */
 export function nowLine(now = Date.now()): string {
   const d = new Date(now + 9 * 3600_000)
   const p = (n: number) => String(n).padStart(2, '0')
-  return `(지금 ${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}(${'일월화수목금토'[d.getUTCDay()]}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}, 한국 시각)`
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]
+  return `(Now ${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} (${day}) ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}, Korea time)`
 }
 
-/** 같은 답에 붙는 결과 블록을 가리키는 '위'를 '아래'로 (블록은 답 글 아래에 보인다) */
+/** Turns "above" into "below" where it points at the reply's result block (blocks show below the reply text) */
 export function blockBelow(text: string): string {
-  return text
-    .replace(/위(?:의)? (목록|카드|사진 카드|표|초안|글|결과|줄)/g, '아래 $1')
-    .replace(/위에 (정리|붙|써|적|모아|올려|넣어|보여|골라)/g, '아래에 $1')
+  return ABOVE_BLOCK.reduce((s, [re, to]) => s.replace(re, to), text)
 }

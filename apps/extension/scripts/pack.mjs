@@ -1,6 +1,6 @@
-// 웹 스토어 제출용 zip: dist/를 묶되 manifest의 개발용 `key`는 뺀다.
-// 웹 스토어는 처음 올릴 때 id를 새로 정해 준다. 그 id를 @dool2/protocol의 STORE_EXTENSION_ID에 채운다.
-//   pnpm --filter @dool2/extension build && node apps/extension/scripts/pack.mjs [나갈 폴더]
+// Zip for the web store: bundle dist/ but remove the development `key` from the manifest.
+// The web store assigns a new id on first upload. Put that id in STORE_EXTENSION_ID of @dool2/protocol.
+//   pnpm --filter @dool2/extension build && node apps/extension/scripts/pack.mjs [output folder]
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

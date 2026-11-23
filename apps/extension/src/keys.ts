@@ -1,10 +1,11 @@
-// 키 이름 → CDP Input.dispatchKeyEvent 값. 실제 키보드 입력과 같은 이벤트를 만든다.
+// Key name -> CDP Input.dispatchKeyEvent values. Produces the same events as a real keyboard.
+import { KEY_ALIASES_KR } from './region/kr/keys.js'
 
 export interface KeyDef {
   key: string
   code: string
   keyCode: number
-  /** 글자를 만드는 키 (Enter는 \r이어야 폼이 제출된다) */
+  /** Key that produces a character (Enter must be \r for forms to submit) */
   text?: string
 }
 
@@ -28,7 +29,6 @@ const KEYS: Record<string, KeyDef> = {
 const ALIASES: Record<string, string> = {
   enter: 'Enter',
   return: 'Enter',
-  엔터: 'Enter',
   tab: 'Tab',
   esc: 'Escape',
   escape: 'Escape',
@@ -47,6 +47,7 @@ const ALIASES: Record<string, string> = {
   pagedown: 'PageDown',
   home: 'Home',
   end: 'End',
+  ...KEY_ALIASES_KR,
 }
 
 export const KEY_NAMES = Object.keys(KEYS)
@@ -55,12 +56,12 @@ export function keyDef(name: string): KeyDef | undefined {
   return KEYS[name] ?? KEYS[ALIASES[name.trim().toLowerCase()] ?? '']
 }
 
-/** 이 확장이 열어도 되는 주소: http·https만 (file:, chrome:, javascript:, data: 금지) */
+/** Addresses this extension may open: http and https only (no file:, chrome:, javascript:, data:) */
 export function safeUrl(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined
   let s = raw.trim()
   if (!s) return undefined
-  // "naver.com"처럼 스킴 없이 오면 https로 본다
+  // Without a scheme, like "naver.com", treat it as https
   if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = `https://${s}`
   try {
     const u = new URL(s)
@@ -70,7 +71,7 @@ export function safeUrl(raw: unknown): string | undefined {
   }
 }
 
-/** JSON에서 점 경로로 꺼내기: "data.list", 뒤에서 "items.-1", 모으기 "items.*.name" (빈 경로면 전체) */
+/** Pick from JSON by dot path: "data.list", from the end "items.-1", collecting "items.*.name" (empty path means the whole thing) */
 export function pickPath(v: unknown, path: string): unknown {
   const keys = path.split('.').filter(Boolean)
   let cur = v

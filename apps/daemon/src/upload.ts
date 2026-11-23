@@ -1,15 +1,15 @@
-// PC 파일을 웹페이지의 파일 칸에 넣기 (browser_upload): 블로그 사진, 쇼츠·영상 올리기, 민원·보험 서류 첨부.
-// 확장이 파일 경로를 그대로 넣는 게 먼저다(Chrome DevTools DOM.setFileInputFiles: 큰 영상도 빠르다).
-// 확장에 파일 접근이 꺼져 있으면 Chrome이 그 길을 막는다: 그때는 본체가 파일을 조각내 보내고 확장이 페이지 안에서 파일로 만든다.
-// 해도 되는지(승인)는 browser-tools.ts가 정한다. 여기는 보내기만 한다
+// Put PC files into a web page's file input (browser_upload): blog photos, shorts and videos, attachments for civil or insurance forms.
+// The first choice is for the extension to put the file path in directly (Chrome DevTools DOM.setFileInputFiles: fast even for big videos).
+// If file access is off for the extension, Chrome blocks that way: then the daemon sends the file in chunks and the extension rebuilds the file inside the page.
+// Whether it is allowed (approval) is decided by browser-tools.ts. This file only sends
 import { open } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { BrowserCaller } from './browser-tools.js'
 import type { UploadFile } from './files.js'
 
-/** 조각 하나 (원래 크기). base64로 늘어도 Chrome으로 가는 한 메시지 한도(1MB) 안에 든다 */
+/** One chunk (raw size). Even after base64 growth it fits Chrome's one-message limit (1MB) */
 export const UPLOAD_CHUNK = 600 * 1024
-/** 조각으로 보낼 때(파일 접근이 꺼진 확장)의 모두 합한 한도: 페이지 안에서 파일을 만들어 메모리를 쓴다 */
+/** Total limit when sending in chunks (extension without file access): the file is built inside the page and uses memory */
 export const PAGE_UPLOAD_MAX = 300 * 1024 * 1024
 
 const MIME: Record<string, string> = {
@@ -51,7 +51,7 @@ export function mimeOf(name: string): string {
   return MIME[extname(name).toLowerCase()] ?? ''
 }
 
-/** 크기를 사람이 읽는 글로 (12KB, 3.4MB) */
+/** Size as human-readable text (12KB, 3.4MB) */
 export function sizeText(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)}GB`
   if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)}MB`
@@ -59,8 +59,8 @@ export function sizeText(n: number): string {
 }
 
 /**
- * 파일 칸이 받는 종류(accept)와 맞지 않는 파일 이름들. accept가 비었으면 다 받는다.
- * ".jpg,.png", "image/*", "video/mp4" 모양을 본다 (사이트가 결국 다시 확인하니 알리기만 한다)
+ * File names that do not match the kinds the input accepts (accept). Empty accept takes everything.
+ * Looks at shapes like ".jpg,.png", "image/*", "video/mp4" (the site checks again anyway, so we only warn)
  */
 export function notAccepted(accept: string, names: string[]): string[] {
   const rules = accept
@@ -81,26 +81,26 @@ export function notAccepted(accept: string, names: string[]): string[] {
   })
 }
 
-/** 확장의 upload 결과 */
+/** Result of the extension's upload */
 export interface UploadReply {
-  /** 칸에 들어간 파일 이름들 (넣은 뒤 칸에서 다시 읽은 것) */
+  /** File names that ended up in the input (read back from it after filling) */
   names?: string[]
   accept?: string
   multiple?: boolean
-  /** cdp: 경로를 그대로 넣음, page: 조각을 받아 페이지 안에서 만듦 */
+  /** cdp: path put in directly, page: chunks received and the file built inside the page */
   how?: 'cdp' | 'page'
-  /** 파일 칸을 어떻게 찾았나: self(그 칸)·label·inside·near(둘레의 칸)·chooser(눌러서 뜬 고르기 창) */
+  /** How the file input was found: self (that input), label, inside, near (an input around it), chooser (the picker opened by clicking) */
   found?: string
-  /** 조각으로 보내 달라 (파일 접근이 꺼진 확장) */
+  /** Asks to be sent in chunks (extension without file access) */
   needBytes?: boolean
   token?: string
-  /** 경로로 못 넣은 까닭 (Chrome이 막음 등) */
+  /** Why the path could not be used (blocked by Chrome etc.) */
   why?: string
 }
 
 /**
- * 파일들을 그 칸에 넣는다. 확장이 경로로 못 넣으면 조각으로 보낸다.
- * 칸에 들어간 이름이 모자라면 오류를 낸다 (넣었다고 하지 않는다)
+ * Puts the files into that input. If the extension cannot use paths, sends chunks.
+ * If fewer names ended up in the input, throws an error (never claims they went in)
  */
 export async function sendFiles(
   browser: BrowserCaller,
@@ -119,8 +119,8 @@ export async function sendFiles(
     if (total > PAGE_UPLOAD_MAX) {
       await browser.call('upload', { tabId, token, cancel: true }, 10_000).catch(() => undefined)
       throw new Error(
-        `파일이 모두 ${sizeText(total)}라 지금 방식으로는 못 올려요(${sizeText(PAGE_UPLOAD_MAX)}까지). ` +
-          "두리 확장의 '파일 URL에 대한 액세스 허용'이 켜져 있으면 크기 제한 없이 올라가요. 더 작은 파일로 나누거나 줄여서 올려요.",
+        `The files total ${sizeText(total)}, too much for this method (up to ${sizeText(PAGE_UPLOAD_MAX)}). ` +
+          "With 'Allow access to file URLs' turned on for the Doori extension there is no size limit. Otherwise split into smaller files or shrink them.",
       )
     }
     const meta: { name: string; type: string; lastModified: number; parts: number }[] = []
@@ -151,7 +151,7 @@ export async function sendFiles(
   const missing = files.filter((f) => !got.includes(f.name)).map((f) => f.name)
   if (missing.length)
     throw new Error(
-      `파일 칸에 ${missing.join(', ')}이(가) 들어가지 않았어요${got.length ? ` (들어간 것: ${got.join(', ')})` : ''}. 페이지를 다시 읽고 파일 칸·올리기 버튼을 확인해 주세요.`,
+      `${missing.join(', ')} did not go into the file input${got.length ? ` (went in: ${got.join(', ')})` : ''}. Read the page again and check the file input and the upload button.`,
     )
   return r
 }

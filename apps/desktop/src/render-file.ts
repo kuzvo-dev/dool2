@@ -1,25 +1,26 @@
-// HTML 파일을 PDF(A4, 여러 쪽)·PNG로 그린다 (두리 file_render, apps/daemon/src/render.ts).
-// 보이지 않는 창(offscreen)에서 연다: 노드 기능 없음·샌드박스·창 열기·이동·내려받기·권한 요청은 막는다.
-// 스크립트는 켠다(두리가 그린 차트·그림). 불러오는 것은 사용자 폴더 안의 로컬 파일(옆에 둔 사진·글꼴)과
-// https 글꼴·그림만: http·이 PC·집 안 네트워크 주소는 막는다. 한 번에 하나씩 그린다
+// Renders an HTML file to PDF (A4, multiple pages) or PNG (Dool2 file_render, apps/daemon/src/render.ts).
+// Opens it in a hidden (offscreen) window: no Node, sandboxed, and new windows, navigation, downloads and permission
+// requests are blocked. Scripts are on (charts and drawings Dool2 made). It only loads local files in the user's
+// folders (photos and fonts next to it) and https fonts and images: http, this PC and home network addresses are
+// blocked. Renders one at a time
 import { isIP } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from '@dool2/daemon'
 import { BrowserWindow, nativeImage, session } from 'electron'
 
 const PARTITION = 'dool2-render-file'
-/** A4 너비 (CSS px, 96dpi) */
+/** A4 width (CSS px, 96dpi) */
 const A4_WIDTH = 794
 const A4_HEIGHT = 1123
-/** PNG 세로 한도 (CSS px). 넘으면 위에서 이만큼만 */
+/** PNG height limit (CSS px). Taller pages are cut to this from the top */
 const MAX_PNG_HEIGHT = 16_000
-/** 2배로 찍을 때 한 변 한도 (그림 버퍼 한도) */
+/** Side limit when capturing at 2x (image buffer limit) */
 const MAX_PNG_SIDE = 16_384
 
 let current: HtmlRenderRequest | undefined
 let ready = false
 
-/** 이 그리기 창이 불러도 되는 주소인지 */
+/** Whether this render window may load the address */
 export function allowedUrl(url: string, method: string, req: HtmlRenderRequest | undefined): boolean {
   if (!req) return false
   let u: URL
@@ -38,7 +39,7 @@ export function allowedUrl(url: string, method: string, req: HtmlRenderRequest |
   }
   if (u.protocol !== 'https:' || method !== 'GET') return false
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase()
-  // 이 PC·집 안 네트워크는 막는다 (주소 이름 대신 숫자 주소로 부르는 것도)
+  // Block this PC and the home network (numeric addresses too, not just names)
   return !(host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isIP(host))
 }
 
@@ -58,7 +59,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([
     p,
     new Promise<never>((_, rej) => {
-      t = setTimeout(() => rej(new Error(`너무 오래 걸려 멈췄어요(${what})`)), ms)
+      t = setTimeout(() => rej(new Error(`Stopped, took too long (${what})`)), ms)
     }),
   ]).finally(() => clearTimeout(t))
 }
@@ -91,20 +92,20 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     wc.on('will-navigate', (e) => e.preventDefault())
     wc.on('will-redirect', (e) => e.preventDefault())
-    await withTimeout(w.loadFile(req.path), 30_000, '파일 열기')
-    // 글꼴·그림이 다 그려질 때까지 (스크립트가 멈춰 있으면 기다리지 않는다)
+    await withTimeout(w.loadFile(req.path), 30_000, 'open file')
+    // Until fonts and images are drawn (does not wait if a script hangs)
     await withTimeout(
       wc.executeJavaScript(
         'Promise.all([document.fonts ? document.fonts.ready : 0, ...Array.from(document.images, (i) => i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r }))]).then(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 300))))',
         true,
       ),
       15_000,
-      '그림 불러오기',
+      'load images',
     ).catch(() => undefined)
 
     if (req.to === 'pdf') {
-      // 쪽 미리보기: 두리가 그린 모습을 보고 고친다(빈 쪽·넘친 표). 첫 쪽은 보관함·폰에도 보인다.
-      // 화면을 A4 높이만큼씩 내려 찍는다 (인쇄 쪽 나눔과 대략 같다)
+      // Page previews: Dool2 looks at the result and fixes it (empty pages, overflowing tables). The first page also
+      // shows in the Library and on the phone. Captures the screen one A4 height at a time (close to print breaks)
       const pages: string[] = []
       const total = Number(
         await wc.executeJavaScript('document.documentElement.scrollHeight').catch(() => A4_HEIGHT),
@@ -129,11 +130,11 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
           pageSize: 'A4',
           landscape: req.landscape === true,
           printBackground: true,
-          // HTML에 @page 크기가 있으면 그것을 따른다
+          // Follow the @page size when the HTML has one
           preferCSSPageSize: true,
         }),
         60_000,
-        'PDF 만들기',
+        'make PDF',
       )
       return {
         data: Buffer.from(data),
@@ -142,7 +143,7 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
       }
     }
 
-    // PNG: 내용 전체 크기로 화면을 늘려 2배로 찍는다 (CDP)
+    // PNG: grow the view to the full content size and capture at 2x (CDP)
     const dbg = wc.debugger
     dbg.attach('1.3')
     try {
@@ -169,7 +170,7 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
           clip: { x: 0, y: 0, width: cw, height: ch, scale: 1 },
         }),
         60_000,
-        '그림 찍기',
+        'capture image',
       )) as { data: string }
       const data = Buffer.from(shot.data, 'base64')
       const img = nativeImage.createFromBuffer(data)
@@ -195,7 +196,7 @@ async function renderOnce(req: HtmlRenderRequest): Promise<HtmlRenderResult> {
 
 let queue: Promise<unknown> = Promise.resolve()
 
-/** 한 번에 하나씩 (그리기 세션의 요청 막기 규칙을 그 파일에 맞춰 둔다) */
+/** One at a time (the render session's request-blocking rules are set for that file) */
 export const renderFile: HtmlRenderer = (req) => {
   const run = queue.then(() => renderOnce(req))
   queue = run.catch(() => undefined)

@@ -1,4 +1,4 @@
-// 폰에 남기는 것: PC 정보와 이 폰의 키. 키는 IndexedDB에 CryptoKey 그대로(꺼낼 수 없는 키) 둔다.
+// What the phone keeps: PC info and this phone's key. The key stays in IndexedDB as a CryptoKey (not extractable).
 import type { StoredMessage } from '@dool2/protocol'
 import type { DeviceKeys } from '@dool2/protocol/e2e'
 
@@ -7,11 +7,11 @@ export interface Saved {
   pcBoxPub: string
   pcName: string
   keys: DeviceKeys
-  /** 페어링이 PC에서 확인됐는지 */
+  /** Whether the PC has confirmed pairing */
   paired: boolean
-  /** 보낸 봉투 순번 (다시 열어도 줄지 않게) */
+  /** Sequence number of sent envelopes (never goes down, even after reopening) */
   seq: number
-  /** 중계 서버 주소 (초대에 있었으면). 없으면 폰 앱을 연 주소 */
+  /** Relay address (if the invite had one). Otherwise the address the phone app was opened from */
   relay?: string
 }
 
@@ -42,8 +42,8 @@ export const save = (v: Saved) => tx('readwrite', (s) => s.put(v, 'link'))
 export const clear = () => tx('readwrite', (s) => s.delete('link'))
 
 /**
- * 마지막 대화 몇 줄: 앱을 열자마자 PC 연결을 기다리지 않고 보이게 (연결되면 PC 기록으로 바뀐다).
- * 이 폰 앱 저장소에만 두고, 연결을 지우면 같이 지운다
+ * The last few chat lines, so they show right away without waiting for the PC (replaced by the PC history once connected).
+ * Kept only in this phone app's storage and deleted along with the connection
  */
 export const loadConv = () =>
   tx<StoredMessage[] | undefined>('readonly', (s) => s.get('conv') as IDBRequest<StoredMessage[] | undefined>)

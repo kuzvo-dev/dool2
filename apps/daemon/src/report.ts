@@ -1,14 +1,16 @@
-// 문제 알리기 (PC 앱 설정): 사용자가 적은 한 줄 + (고르면) 최근 이틀 기록을 두리 팀에 보낸다.
-// 기록은 '무슨 일이 성공·실패했는지'만: 정해 둔 칸만 남기고 대화 내용·파일 이름·주소·이유 글은 뺀다.
-// 보내기 전에 사용자가 '보낼 내용 보기'로 그대로 확인한다 (/api/report/preview). 받는 곳: dool2.com/api/report
+// Report a problem (desktop app settings): the line the user wrote + (if chosen) the last two days of logs go to the Doori team.
+// The log holds only 'what succeeded or failed': just the fixed fields are kept, with conversation content, file names, addresses and reason text left out.
+// Before sending, the user checks exactly what goes with 'View what will be sent' (/api/report/preview). Receiver: dool2.com/api/report
 import { homedir, release } from 'node:os'
+import type { Lang } from '@dool2/i18n'
 import type { AgentStatus } from '@dool2/protocol'
 import type { JournalEntry } from './journal.js'
 import { scrubText } from './journal.js'
+import { REPORT_TEXT } from './locales/report.js'
 
 export const REPORT_URL = 'https://dool2.com/api/report'
 
-/** 기록에서 남기는 칸 (값이 짧은 숫자·참거짓·이름일 때만) */
+/** Fields kept from the log (only when the value is a short number, boolean or name) */
 const KEEP = new Set([
   'at',
   'kind',
@@ -35,13 +37,13 @@ const KEEP = new Set([
   'reason',
 ])
 
-/** 오류 글은 남기되 개인 정보·홈 폴더 경로를 가린다 */
+/** Keep error text but hide personal info and the home folder path */
 function cleanError(v: unknown): string | undefined {
   if (typeof v !== 'string' || !v) return undefined
   return scrubText(v.split(homedir()).join('~'), 200)
 }
 
-/** 기록 한 줄을 보낼 모양으로 (정해 둔 칸 + 오류만) */
+/** One log line in the shape to send (the fixed fields + error only) */
 export function reportEntry(e: JournalEntry): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(e)) {
@@ -57,11 +59,11 @@ export function reportEntry(e: JournalEntry): Record<string, unknown> {
 }
 
 export interface ReportInput {
-  /** 사용자가 적은 설명 */
+  /** Description the user wrote */
   text: string
-  /** 답장 받을 메일 (선택) */
+  /** Email for the reply (optional) */
   contact?: string
-  /** 최근 기록을 함께 보낼지 */
+  /** Whether to send the recent log too */
   includeLogs: boolean
 }
 
@@ -98,16 +100,17 @@ export function buildReport(
       connected: Boolean(ctx.extension.connected),
       ...(ctx.extension.version ? { version: ctx.extension.version } : {}),
     },
-    // 새것부터 400줄까지 (보내는 크기 제한)
+    // Newest 400 lines at most (size limit for sending)
     logs: input.includeLogs ? ctx.entries.slice(-400).map(reportEntry) : [],
   }
 }
 
-/** 두리 팀에 보낸다. 받은 번호를 돌려준다 */
+/** Sends to the Doori team. Returns the number received */
 export async function sendReport(
   payload: ReportPayload,
   f: typeof fetch = fetch,
   url = process.env.DOOL2_REPORT_URL ?? REPORT_URL,
+  lang: Lang = 'ko',
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   try {
     const r = await f(url, {
@@ -117,9 +120,9 @@ export async function sendReport(
       signal: AbortSignal.timeout(20_000),
     })
     const j = (await r.json().catch(() => ({}))) as { ok?: boolean; id?: string }
-    if (!r.ok || !j.ok) return { ok: false, error: `보내지 못했어요 (${r.status})` }
+    if (!r.ok || !j.ok) return { ok: false, error: REPORT_TEXT[lang].failedStatus(r.status) }
     return { ok: true, ...(j.id ? { id: j.id } : {}) }
   } catch (e) {
-    return { ok: false, error: `보내지 못했어요: ${(e as Error).message}` }
+    return { ok: false, error: REPORT_TEXT[lang].failed((e as Error).message) }
   }
 }

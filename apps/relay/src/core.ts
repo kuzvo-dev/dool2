@@ -1,28 +1,29 @@
-// 중계 서버 규칙. Node 버전(index.ts)과 Cloudflare 버전(worker.ts)이 같이 쓴다.
-// 플랫폼 API(소켓·저장소)는 쓰지 않고, 판단만 한다.
+// Relay rules, shared by the Node version (index.ts) and the Cloudflare version (worker.ts).
+// No platform APIs (sockets, storage) here, only decisions.
 import { deviceId, type Envelope, verifyText } from '@dool2/protocol/e2e'
 import { helloText } from '@dool2/protocol/link'
 
 export const MAX_MESSAGE = 512 * 1024
 export const QUEUE_TTL_MS = 7 * 24 * 60 * 60_000
 export const QUEUE_MAX = 500
-/** 쌓아 두지 않는 봉투 종류 (지금 보는 사람에게만 의미가 있다) */
+/** Envelope kinds that are never queued (they only matter to someone watching right now) */
 export const LIVE_KINDS = new Set(['screen', 'remote', 'stream'])
-/** 대기열 자르기는 이만큼 쌓일 때마다 한 번 (자를 때 줄을 많이 읽는다) */
+/** Trim the queue once every this many envelopes (trimming reads many rows) */
 export const TRIM_EVERY = 50
 export const AUTH_SKEW_MS = 2 * 60_000
-/** 연결하고 이 시간 안에 증명하지 않으면 끊는다 */
+/** Close the connection if it does not prove itself within this time after connecting */
 export const AUTH_TIMEOUT_MS = 10_000
-/** 연결마다 1초에 보낼 수 있는 수: PC는 여러 폰에 흘려 쓰는 답·실시간 화면을 보내서 넉넉히, 폰은 적게.
- *  넘으면 끊는다 (끊기면 그사이 메시지를 잃으니, 정상 사용으로는 닿지 않게 잡는다) */
+/** Messages per second per connection: generous for the PC (it streams replies and live screens to several
+ *  phones), low for phones. Over the limit the connection is closed (messages in between are lost, so the limit is
+ *  set where normal use never reaches it) */
 export const RATE_LIMIT = { pc: 600, phone: 60 } as const
 
-/** 연결 직후 첫 메시지. ts를 서명해서 다른 연결의 증명을 다시 쓰지 못하게 한다 */
+/** First message after connecting. Signs ts so another connection cannot replay the proof */
 export interface Hello {
   role: 'pc' | 'phone'
   id: string
   signPub: string
-  /** 폰: 연결할 PC 방 */
+  /** Phone: the PC room to join */
   room?: string
   ts: number
   sig: string
@@ -31,11 +32,11 @@ export interface Hello {
 export interface Me {
   id: string
   role: 'pc' | 'phone'
-  /** 이 기기가 속한 방 (PC id) */
+  /** The room this device belongs to (PC id) */
   room: string
 }
 
-/** 닫을 때 쓰는 코드 */
+/** Close codes */
 export const CLOSE = {
   helloTimeout: 4001,
   badJson: 4002,
@@ -47,8 +48,8 @@ export const CLOSE = {
 } as const
 
 /**
- * 첫 메시지가 올바른 기기 증명인지 본다. 맞으면 그 기기, 아니면 undefined.
- * urlRoom: 접속 주소에 실린 방(`/link?room=`). 있으면 증명한 방과 같아야 한다
+ * Checks that the first message is a valid device proof. Returns the device if so, otherwise undefined.
+ * urlRoom: the room in the connect URL (`/link?room=`). If present, it must match the proven room
  */
 export async function checkHello(msg: unknown, now: number, urlRoom?: string): Promise<Me | undefined> {
   const h = msg as Hello
@@ -69,23 +70,24 @@ export async function checkHello(msg: unknown, now: number, urlRoom?: string): P
 
 export type Route =
   | { ok: false; close: number; reason: string }
-  /** drop: 조용히 버린다 (다른 방으로 가는 봉투) */
+  /** drop: silently discard (envelope for another room) */
   | { ok: true; drop: true }
   | { ok: true; drop: false; to: string; queue: boolean }
 
 /**
- * 증명한 기기가 보낸 봉투를 어디로 보낼지 정한다.
- * roomOf: 받는 기기가 속한 방을 알면 돌려준다 (Node 버전은 방을 섞어 들고 있어서 필요하다)
+ * Decides where to send an envelope from a proven device.
+ * roomOf: returns the receiving device's room if known (needed by the Node version, which holds all rooms together)
  */
 export function route(me: Me, msg: unknown, roomOf?: (id: string) => string | undefined): Route {
   const env = msg as Envelope
   if (env?.from !== me.id || typeof env.to !== 'string')
     return { ok: false, close: CLOSE.badFrom, reason: 'bad from' }
-  // 폰은 자기 방의 PC에게만, PC는 자기 방의 폰에게만 보낼 수 있다
+  // A phone may only send to the PC of its room, and a PC only to phones in its room
   if (me.role === 'phone' && env.to !== me.room) return { ok: true, drop: true }
   const targetRoom = roomOf?.(env.to)
   if (me.role === 'pc' && targetRoom !== undefined && targetRoom !== me.id) return { ok: true, drop: true }
-  // 원격 화면·흘려 쓰는 답(stream)은 지금 보는 사람에게만 의미가 있다. 꺼진 기기에 쌓아 두지 않는다
-  // (폰은 다시 붙으면 대화를 처음부터 받아 온다. 실측: 시험 대화 150번의 글자 조각이 쌓여 하루 읽기 한도 90%)
+  // Remote screens and streamed replies only matter to someone watching now. Do not queue them for offline devices
+  // (a phone re-fetches the chat from the start when it reconnects. Measured: queued stream chunks from 150 test
+  // chats used 90% of the daily read limit)
   return { ok: true, drop: false, to: env.to, queue: !LIVE_KINDS.has(String(env.kind)) }
 }

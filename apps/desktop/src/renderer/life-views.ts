@@ -1,5 +1,6 @@
-// 피드 · 아이디어 · 목표 · 보관함 화면과 두리 판의 예정 · 기억 · 활동 (GET /api/life, POST /api/life/action)
-// 문구·아이콘·빈 상태는 폰 앱(apps/phone/src/life-views.ts)과 같게 둔다. PC는 넓은 화면에 맞춰 배치만 다르다.
+// Feed, Ideas, Goals and Library screens, and the assistant panel's Schedule, Memory and Activity tabs
+// (GET /api/life, POST /api/life/action). Copy, icons and empty states match the phone app
+// (apps/phone/src/life-views.ts). Only the layout differs, for the wide screen.
 import type { FeedItem, GoalCategory, LibraryItem, LifeAction, LifeState, Routine } from '@dool2/protocol'
 import type { ConnectionItem } from '@dool2/protocol/connect'
 import {
@@ -24,11 +25,13 @@ import {
   needsConnect,
   searchIdeas,
 } from './ideas.js'
+import { lang } from './lang.js'
 import {
   continueText,
   FEED_KIND,
   GOAL_CATEGORY_LIST,
   GOAL_META,
+  goalCategoryLabel,
   goalStarter,
   groupByDay,
   hostOf,
@@ -38,43 +41,44 @@ import {
   libraryTab,
   plain,
   planProgress,
-  ROUTINE_EXAMPLES,
   routineWhen,
+  shortWhen,
   sortRoutines,
   timeLabel,
   upcoming,
   whenLabel,
 } from './life-model.js'
+import { lifeModel, lifeText, routineExamples } from './locales/life.js'
 import type { Pager } from './paging.js'
 import { resultLine } from './rich.js'
 import { ruleLabel, scheduleLabel, untilLabel } from './schedule.js'
 
 export interface LifeCtx {
   life(): LifeState
-  /** 긴 목록: 받아 둔 것과 다음 페이지 (피드·보관함 칸·두리 판 활동) */
+  /** Long lists: what was loaded and the next page (Feed, Library tabs, panel Activity) */
   feedList(): Pager<FeedItem>
   libraryList(tab: LibraryTab): Pager<LibraryItem>
   activityList(): Pager<FeedItem>
-  /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다) */
+  /** Full text of one Library item (lists only carry the start) */
   libraryFull(id: string): Promise<LibraryItem | undefined>
-  /** PC 파일을 기본 앱으로 연다 (reveal이면 파인더·탐색기에서 보여 준다) */
+  /** Opens a PC file in its default app (reveal: shows it in Finder or Explorer) */
   openFile(path: string, reveal?: boolean): void
-  /** 연결한 서비스 (맞춤 아이디어) */
+  /** Connected services (for tailored ideas) */
   services(): ConnectionItem[]
-  /** 동작을 본체에 보내고, 돌아온 상태로 화면을 다시 그린다 */
+  /** Sends an action to the daemon and redraws with the state it returns */
   act(a: LifeAction): Promise<void>
-  /** 바로 대화로 보낸다 */
+  /** Sends straight to chat */
   send(text: string): void
-  /** 대화 입력칸에 넣고 대화로 간다 */
+  /** Puts text in the chat input and goes to Chat */
   compose(text: string): void
   openGoal(id: string): void
   openView(view: 'feed' | 'ideas' | 'goals' | 'library' | 'connect'): void
-  /** 서비스 연결 화면 (아이디·비밀번호 넣는 곳) */
+  /** Service connection screen (where the ID and password go) */
   openService(id: string): void
   toast(text: string): void
-  /** 피드 맨 위: 나를 기다리는 승인·로그인, 지금 하는 일 */
+  /** Top of the Feed: approvals and logins waiting for me, current work */
   waiting(): HTMLElement[]
-  /** 두리 판 활동 맨 위: 지금 하는 일 */
+  /** Top of the panel's Activity: current work */
   working(): HTMLElement | undefined
 }
 
@@ -90,7 +94,7 @@ function section(title: string, ...children: (Node | false | undefined)[]) {
   return el('section', 'page-sec', el('h2', 'over', title), ...children)
 }
 
-/** 두 번 눌러야 지운다 (실수 방지) */
+/** Deletes only on the second tap (prevents mistakes) */
 function confirmButton(
   cls: string,
   label: (Node | string)[],
@@ -119,34 +123,30 @@ function confirmButton(
   return b
 }
 
-/** 목록 끝 줄: 받는 중 · [더 보기] · 여기까지예요 (아래로 내리면 저절로 받는다) */
+/** Last row of a list: loading · [Show more] · end (scrolling down loads more by itself) */
 function moreRow(p: Pager<{ id: string }>): HTMLElement | undefined {
   if (!p.items.length) return undefined
-  if (p.loading) return el('p', 'cap page-more', el('span', 'spin'), '더 불러오는 중…')
+  const t = lifeText(lang)
+  if (p.loading) return el('p', 'cap page-more', el('span', 'spin'), t.loadingMore)
   if (p.next)
     return el(
       'div',
       'page-more',
-      button('btn-text sm', () => p.more(), '더 보기'),
+      button('btn-text sm', () => p.more(), t.more),
     )
-  return el('p', 'cap page-more', '여기까지예요')
+  return el('p', 'cap page-more', t.end)
 }
 
-/** 날짜만: "어제", "11월 14일 (금)" (오늘이면 시각) */
-const shortWhen = (iso: string) => {
-  const w = whenLabel(iso)
-  return w.startsWith('오늘') ? timeLabel(iso) : w.replace(/ 오[전후] .*$/, '')
-}
-
-// ── 피드 ─────────────────────────────────────────────
+// ── Feed ─────────────────────────────────────────────
 
 export function feedView(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const life = ctx.life()
   const prompt = life.feedPrompt
   const input = el('input', 'field grow')
-  input.placeholder = prompt ? '바꿀 내용을 적어 주세요' : '예: 매일 아침 날씨·일정·오는 택배'
-  input.setAttribute('aria-label', '받고 싶은 소식')
-  const save = el('button', 'btn sm', prompt ? '바꾸기' : '받기')
+  input.placeholder = prompt ? t.feedPromptChange : t.feedPromptExample
+  input.setAttribute('aria-label', t.feedPromptAria)
+  const save = el('button', 'btn sm', prompt ? t.feedPromptUpdate : t.feedPromptSave)
   save.type = 'submit'
   const form = el('form', 'feed-form', input, save)
   form.onsubmit = (e) => {
@@ -154,17 +154,15 @@ export function feedView(ctx: LifeCtx): HTMLElement {
     const text = input.value.trim()
     if (!text) return
     save.disabled = true
-    void ctx
-      .act({ action: 'feed-prompt', text })
-      .then(() => ctx.toast('매일 오전 7:30에 찾아서 올려 드릴게요'))
+    void ctx.act({ action: 'feed-prompt', text }).then(() => ctx.toast(t.feedPromptSaved))
   }
   const askCard = el(
     'div',
     'card feed-prompt',
-    el('div', 'card-label', doori('', 22), '어떤 소식을 받을까요?'),
+    el('div', 'card-label', doori('', 22), t.feedPromptAsk),
     prompt
-      ? el('p', 'feed-prompt-now', el('strong', '', prompt), el('span', 'meta', ' · 매일 오전 7:30에 올려요'))
-      : el('p', 'cap', '적어 두면 매일 아침 7시 반에 정리해서 올려 드려요.'),
+      ? el('p', 'feed-prompt-now', el('strong', '', prompt), el('span', 'meta', t.feedPromptNow))
+      : el('p', 'cap', t.feedPromptHint),
     el(
       'div',
       'feed-prompt-row',
@@ -173,8 +171,8 @@ export function feedView(ctx: LifeCtx): HTMLElement {
         ? button(
             'btn-text sm',
             () =>
-              void ctx.act({ action: 'feed-prompt', text: '' }).then(() => ctx.toast('소식 받기를 멈췄어요')),
-            '그만 받기',
+              void ctx.act({ action: 'feed-prompt', text: '' }).then(() => ctx.toast(t.feedPromptStopped)),
+            t.feedPromptStop,
           )
         : undefined,
     ),
@@ -184,10 +182,7 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   const waiting = ctx.waiting()
   if (waiting.length) body.push(el('div', 'feed-waiting', ...waiting))
   const list = ctx.feedList()
-  if (!list.items.length)
-    body.push(
-      emptyState('sleeping', '아직 올라온 소식이 없어요', '두리가 끝낸 일과 매일 아침 소식이 여기 모여요.'),
-    )
+  if (!list.items.length) body.push(emptyState('sleeping', t.feedEmptyTitle, t.feedEmptyBody))
   for (const g of groupByDay(list.items)) {
     const ul = el('ul', 'feed-list')
     for (const f of g.items) ul.append(feedItem(ctx, f))
@@ -195,34 +190,26 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   }
   const more = moreRow(list)
   if (more) body.push(more)
-  return el(
-    'div',
-    'page page-narrow',
-    pageHead('피드', '두리가 한 일과 먼저 알려 드릴 것을 모아 둬요'),
-    askCard,
-    watchCard(ctx),
-    ...body,
-  )
+  return el('div', 'page page-narrow', pageHead(t.feedTitle, t.feedSub), askCard, watchCard(ctx), ...body)
 }
 
-/** 먼저 챙기기: 아침 6시~밤 10시 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴 챙길 일만 알린다 (ADR 0019·0025) */
+/** Proactive check: every hour from 6 AM to 10 PM, looks at connected services and Dool2's own work and only reports what needs attention (ADR 0019, 0025) */
 function watchCard(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const w = ctx.life().watch ?? { on: true }
   const linked = ctx.services().filter((c) => c.connectedAt && c.card.how !== 'device')
+  const names = linked.map((c) => c.card.name).join(', ')
   const sub = !linked.length
-    ? '서비스를 연결하면 아침 6시부터 밤 10시까지 한 시간마다 살펴, 챙길 일만 알려 드려요.'
+    ? t.watchNoLinks
     : w.busy
-      ? `${linked.map((c) => c.card.name).join(', ')} 살펴보는 중이에요…`
+      ? t.watchBusy(names)
       : w.on
-        ? `아침 6시~밤 10시, 한 시간마다 살펴봐요: ${linked.map((c) => c.card.name).join(', ')}`
-        : '꺼 두었어요. 켜면 연결한 서비스를 살펴 먼저 알려 드려요.'
+        ? t.watchOn(names)
+        : t.watchOff
   const now = button(
     'btn-ghost sm',
-    () =>
-      void ctx
-        .act({ action: 'watch-now' })
-        .then(() => ctx.toast('지금 살펴볼게요. 챙길 일이 있으면 알려 드릴게요')),
-    w.busy ? '살펴보는 중…' : '지금 살펴보기',
+    () => void ctx.act({ action: 'watch-now' }).then(() => ctx.toast(t.watchNowToast)),
+    w.busy ? t.watchBusyButton : t.watchNow,
   )
   now.disabled = Boolean(w.busy) || !linked.length
   return el(
@@ -231,25 +218,26 @@ function watchCard(ctx: LifeCtx): HTMLElement {
     el(
       'div',
       'watch-row',
-      el('div', 'grow', el('p', 'row-t', '먼저 챙기기'), el('p', 'cap', sub)),
-      linked.length ? now : button('btn-ghost sm', () => ctx.openView('connect'), '연결하기'),
-      toggle(w.on, '먼저 챙기기', (on) => void ctx.act({ action: 'watch', on })),
+      el('div', 'grow', el('p', 'row-t', t.watchTitle), el('p', 'cap', sub)),
+      linked.length ? now : button('btn-ghost sm', () => ctx.openView('connect'), t.connect),
+      toggle(w.on, t.watchTitle, (on) => void ctx.act({ action: 'watch', on })),
     ),
   )
 }
 
 function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
+  const t = lifeText(lang)
   const k = FEED_KIND[f.kind] ?? FEED_KIND.post
-  // 두리 소식·알아서 한 일은 긴 글이라 접어 두고 누르면 펼친다
+  // Dool2's news and scheduled work are long, so they start folded and expand on tap
   const long = f.kind === 'post' || f.kind === 'routine'
   let text: HTMLElement | undefined
   if (f.body) {
     if (long) {
       text = el('div', 'feed-text rich clamp')
       setRich(text, f.body)
-      const t = text
-      t.title = '눌러서 펼치기'
-      t.onclick = () => t.classList.toggle('open')
+      const box = text
+      box.title = t.tapToExpand
+      box.onclick = () => box.classList.toggle('open')
     } else text = el('p', 'feed-text', plain(f.body, 160))
   }
   const react = (r: 'up' | 'down') => () =>
@@ -264,37 +252,37 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
   const actions = el(
     'div',
     'feed-actions',
-    chip('up', '좋아요', f.reaction === 'up', react('up')),
-    chip('down', '별로예요', f.reaction === 'down', react('down')),
-    button('chip quiet', () => ctx.compose(continueText(f)), icon('reply'), '이어서 말하기'),
+    chip('up', t.like, f.reaction === 'up', react('up')),
+    chip('down', t.dislike, f.reaction === 'down', react('down')),
+    button('chip quiet', () => ctx.compose(continueText(f)), icon('reply'), t.continueTalk),
   )
-  // 먼저 챙긴 일의 제안: [해 줘]는 그 부탁을 대화로 보내고, [괜찮아요]는 넘긴다. 답하면 고른 것만 남긴다
+  // A proactive suggestion: [Do it] sends the request to chat, [No thanks] skips it. After answering only the choice stays
   if (f.kind === 'suggest' && f.ask) {
     const ask = f.ask
     actions.replaceChildren(
       ...(f.answered
-        ? [el('span', 'cap', f.answered === 'yes' ? '맡겼어요' : '넘겼어요')]
+        ? [el('span', 'cap', f.answered === 'yes' ? t.suggestYes : t.suggestNo)]
         : [
             button(
               'btn sm',
               () =>
                 void ctx.act({ action: 'feed-answer', id: f.id, answer: 'yes' }).then(() => ctx.send(ask)),
-              f.askLabel || '해 줘',
+              f.askLabel || t.doIt,
             ),
             button(
               'btn-ghost sm',
               () => void ctx.act({ action: 'feed-answer', id: f.id, answer: 'no' }),
-              '괜찮아요',
+              t.noThanks,
             ),
           ]),
     )
   }
-  // 결과가 흩어지지 않게: 목표·보관함에서 나온 글이면 그리로
+  // Keep results in one place: posts from a goal or the Library link back there
   const goal = f.ref ? ctx.life().routines.find((r) => r.id === f.ref) : undefined
   if (goal && !isFeedRoutine(goal))
-    actions.append(button('btn-text sm', () => ctx.openGoal(goal.id), '목표 보기', icon('chevron')))
+    actions.append(button('btn-text sm', () => ctx.openGoal(goal.id), t.seeGoal, icon('chevron')))
   else if (f.kind === 'saved')
-    actions.append(button('btn-text sm', () => ctx.openView('library'), '보관함 보기', icon('chevron')))
+    actions.append(button('btn-text sm', () => ctx.openView('library'), t.seeLibrary, icon('chevron')))
   return el(
     'li',
     'feed-item',
@@ -311,16 +299,17 @@ function feedItem(ctx: LifeCtx, f: FeedItem): HTMLElement {
   )
 }
 
-// ── 아이디어 ─────────────────────────────────────────
+// ── Ideas ────────────────────────────────────────────
 
-/** 두리가 먼저 찾은 할 일 (기억·목표·연결 기반, 매일 아침 새로) */
+/** Things Dool2 found to do (from memory, goals and connections, fresh every morning) */
 function suggestedBox(ctx: LifeCtx) {
+  const t = lifeText(lang)
   const life = ctx.life()
   const ideas = life.ideas ?? []
   const refresh = button(
     'btn-ghost sm',
     () => void ctx.act({ action: 'ideas-refresh' }),
-    life.ideasBusy ? '찾는 중…' : ideas.length ? '새로 찾기' : '찾아 줘',
+    life.ideasBusy ? t.ideasFinding : ideas.length ? t.ideasRefresh : t.ideasFind,
   )
   refresh.disabled = Boolean(life.ideasBusy)
   return el(
@@ -330,7 +319,7 @@ function suggestedBox(ctx: LifeCtx) {
       'div',
       'suggested-head',
       doori(life.ideasBusy ? 'thinking' : '', 28),
-      el('div', 'grow', el('p', 'row-t', '오늘의 추천'), el('p', 'cap', '나에게 맞춰 매일 아침 새로 골라요')),
+      el('div', 'grow', el('p', 'row-t', t.ideasToday), el('p', 'cap', t.ideasTodaySub)),
       refresh,
     ),
     ...ideas.map((i) =>
@@ -345,16 +334,17 @@ function suggestedBox(ctx: LifeCtx) {
   )
 }
 
-/** 아이디어 탭에서 고른 분류와 찾는 말 (탭을 오가도 남는다) */
+/** Category and search text picked on the Ideas tab (kept when switching tabs) */
 const ideaPick = { cat: 'all', query: '' }
 
 function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
+  const t = lifeText(lang)
   const later = needsConnect(it)
   return button(
     'idea-row',
     () => {
       if (later && it.service) {
-        ctx.toast(`${it.service.name}을(를) 연결하면 바로 맡길 수 있어요`)
+        ctx.toast(t.ideaConnectToast(it.service.name))
         ctx.openService(it.service.id)
       } else if (it.fill) ctx.compose(it.fill)
       else ctx.send(it.ask)
@@ -362,18 +352,19 @@ function ideaRow(ctx: LifeCtx, it: IdeaItem, sec: IdeaSection) {
     it.service ? withLogo(el('span', 'svc-mark', it.service.mark), it.service.id) : emoTile(sec.emo),
     el('span', 'grow', el('span', 'idea-t', it.text), el('span', 'cap', it.note)),
     later
-      ? el('span', 'idea-tag', '연결')
+      ? el('span', 'idea-tag', t.ideaTagConnect)
       : it.fill
-        ? el('span', 'idea-tag', '채워서')
+        ? el('span', 'idea-tag', t.ideaTagFill)
         : icon('send', 'i idea-go'),
   )
 }
 
 function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
+  const t = lifeText(lang)
   const box = el('div', 'idea-catalog')
   const search = el('input', 'field idea-search')
   search.type = 'search'
-  search.placeholder = '아이디어 찾기 (택배, 항공권, 영수증…)'
+  search.placeholder = t.ideaSearch
   search.value = ideaPick.query
   const chips = el('div', 'chips idea-cats')
   const body = el('div', 'idea-body')
@@ -395,7 +386,7 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
       )
       return c
     }
-    chips.replaceChildren(chip('all', '전체'), ...groups.map((g) => chip(g.section.id, g.section.label)))
+    chips.replaceChildren(chip('all', t.ideaAll), ...groups.map((g) => chip(g.section.id, g.section.label)))
     body.replaceChildren()
     if (q) {
       const found = searchIdeas(groups, q)
@@ -411,14 +402,8 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
             el(
               'span',
               'grow',
-              el('span', 'idea-t', `"${q}" 그대로 부탁하기`),
-              el(
-                'span',
-                'cap',
-                found.length
-                  ? '찾는 게 없으면 그냥 말해 보세요'
-                  : '맞는 아이디어가 없어요. 그래도 두리가 해 볼게요',
-              ),
+              el('span', 'idea-t', t.ideaAskAsIs(q)),
+              el('span', 'cap', found.length ? t.ideaNoMatchSome : t.ideaNoMatch),
             ),
           ),
         ),
@@ -441,7 +426,7 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
               },
               emoTile(sec.emo, 'sm'),
               el('strong', '', sec.label),
-              el('span', 'cap', `${g.items.length}가지 모두 보기`),
+              el('span', 'cap', t.ideaSeeAll(g.items.length)),
               icon('chevron', 'i'),
             ),
             list(g.items.slice(0, 4).map((item) => ({ section: sec, item }))),
@@ -455,12 +440,12 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
     const ready = g.items.filter((i) => !needsConnect(i))
     const later = g.items.filter(needsConnect)
     if (ready.length)
-      body.append(section('바로 할 수 있어요', list(ready.map((item) => ({ section: g.section, item })))))
+      body.append(section(t.ideaReady, list(ready.map((item) => ({ section: g.section, item })))))
     if (later.length)
       body.append(
         section(
-          '연결하면 할 수 있어요',
-          el('p', 'cap idea-later', '아이디·비밀번호를 한 번 넣어 두면 그다음부터는 말로만 맡기면 돼요'),
+          t.ideaLater,
+          el('p', 'cap idea-later', t.ideaLaterHint),
           list(later.map((item) => ({ section: g.section, item }))),
         ),
       )
@@ -475,23 +460,24 @@ function ideaCatalogBox(ctx: LifeCtx, groups: IdeaGroup[]): HTMLElement {
 }
 
 export function ideasView(ctx: LifeCtx): HTMLElement {
-  const groups = ideaCatalog(ctx.services())
+  const t = lifeText(lang)
+  const groups = ideaCatalog(ctx.services(), lang)
   return el(
     'div',
     'page',
-    pageHead('아이디어', `누르면 두리가 바로 시작해요 · ${ideaCount(groups)}가지`),
+    pageHead(t.ideasTitle, t.ideasSub(ideaCount(groups))),
     suggestedBox(ctx),
     ideaCatalogBox(ctx, groups),
     el(
       'div',
       'card ask idea-human',
-      el('div', 'card-label', doori('asking', 22), '이건 직접 해 주셔야 해요'),
-      el('p', 'cap', '본인인증, 보안 문자, 공동인증서. 대신 그 화면을 바로 띄워 드릴게요.'),
+      el('div', 'card-label', doori('asking', 22), t.ideasHumanTitle),
+      el('p', 'cap', t.ideasHumanBody),
     ),
   )
 }
 
-// ── 목표 ─────────────────────────────────────────────
+// ── Goals ────────────────────────────────────────────
 
 function routineTile(r: Routine) {
   if (r.category) {
@@ -507,6 +493,7 @@ function progressBar(done: number, total: number) {
 }
 
 function goalRow(ctx: LifeCtx, r: Routine) {
+  const t = lifeText(lang)
   const p = planProgress(r)
   const row = button(
     `goal-row${r.enabled ? '' : ' off'}`,
@@ -516,24 +503,24 @@ function goalRow(ctx: LifeCtx, r: Routine) {
       'span',
       'grow',
       el('span', 'row-t', r.title),
-      el('span', 'row-d', [r.category, when(r)].filter(Boolean).join(' · ')),
+      el('span', 'row-d', [r.category && goalCategoryLabel(r.category), when(r)].filter(Boolean).join(' · ')),
       p
         ? el(
             'span',
             'goal-progress',
             progressBar(p.done, p.total),
-            el('span', 'meta', `계획 ${p.done}/${p.total}`),
+            el('span', 'meta', t.plan(p.done, p.total)),
           )
         : undefined,
       r.lastResult
-        ? el('span', 'meta goal-last', `최근 결과 · ${plain(resultLine(r.lastResult), 90)}`)
+        ? el('span', 'meta goal-last', t.lastResultLine(plain(resultLine(r.lastResult, lang), 90)))
         : undefined,
     ),
   )
   row.append(
     toggle(
       r.enabled,
-      r.enabled ? '끄기' : '켜기',
+      r.enabled ? t.turnOff : t.turnOn,
       (on) => void ctx.act({ action: 'routine-toggle', id: r.id, on }),
     ),
   )
@@ -541,6 +528,7 @@ function goalRow(ctx: LifeCtx, r: Routine) {
 }
 
 export function goalsView(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const list = sortRoutines(ctx.life().routines.filter((r) => !isFeedRoutine(r)))
   const goals = list.filter((r) => r.category)
   const routines = list.filter((r) => !r.category)
@@ -550,39 +538,35 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       'goal-new',
       () => ctx.compose(goalStarter(c)),
       emoTile(m.emo),
-      el('span', 'grow', el('span', 'row-t', c), el('span', 'cap', m.hint)),
+      el('span', 'grow', el('span', 'row-t', goalCategoryLabel(c)), el('span', 'cap', m.hint)),
       icon('plus', 'i md goal-plus'),
     )
   })
   return el(
     'div',
     'page',
-    pageHead('목표', '정해 둔 때가 되면 두리가 먼저 해요'),
+    pageHead(t.goalsTitle, t.goalsSub),
     goals.length
-      ? section('진행 중', el('div', 'goal-list', ...goals.map((r) => goalRow(ctx, r))))
+      ? section(t.goalsActive, el('div', 'goal-list', ...goals.map((r) => goalRow(ctx, r))))
       : undefined,
     routines.length
-      ? section('예약한 일', el('div', 'goal-list', ...routines.map((r) => goalRow(ctx, r))))
+      ? section(t.goalsScheduled, el('div', 'goal-list', ...routines.map((r) => goalRow(ctx, r))))
       : undefined,
     list.length
       ? undefined
       : el(
           'div',
           'card goal-hint',
-          el('div', 'card-label', doori('', 22), '대화로 말하면 돼요'),
-          el(
-            'p',
-            '',
-            '"매일 아침 7시 반에 날씨랑 일정 알려 줘", "주 3회 운동하고 싶어"처럼 말하면 두리가 목표와 일정을 만들어요.',
-          ),
+          el('div', 'card-label', doori('', 22), t.goalsHintTitle),
+          el('p', '', t.goalsHintBody),
         ),
-    section('새 목표 세우기', el('div', 'goal-grid', ...create)),
+    section(t.goalsNew, el('div', 'goal-grid', ...create)),
     section(
-      '이렇게 많이 예약해요',
+      t.goalsExamples,
       el(
         'div',
         'idea-list',
-        ...ROUTINE_EXAMPLES.map(([text, note]) =>
+        ...routineExamples[lang].map(([text, note]) =>
           button(
             'idea-row',
             () => ctx.send(text),
@@ -597,32 +581,28 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
 }
 
 export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElement {
+  const t = lifeText(lang)
   const r = ctx.life().routines.find((x) => x.id === id)
-  const backBtn = button('btn-text back-btn', back, icon('back'), '목표')
-  if (!r)
-    return el(
-      'div',
-      'page',
-      backBtn,
-      emptyState('', '이 목표는 지워졌어요', '목표 목록에서 다른 목표를 골라 주세요.'),
-    )
+  const backBtn = button('btn-text back-btn', back, icon('back'), t.goalBack)
+  if (!r) return el('div', 'page', backBtn, emptyState('', t.goalGoneTitle, t.goalGoneBody))
   const p = planProgress(r)
   const now = new Date()
   const facts = el('dl', 'kv goal-facts')
   const fact = (k: string, v?: string) => {
     if (v) facts.append(el('dt', '', k), el('dd', '', v))
   }
-  fact('언제', r.schedule ? scheduleLabel(r.schedule) : '시간 정하지 않음')
+  const m = lifeModel(lang)
+  fact(t.factWhen, r.schedule ? scheduleLabel(r.schedule, lang) : m.noTime)
   fact(
-    '다음 체크인',
-    r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : r.endedAt ? '끝남' : '꺼 둠',
+    t.factNext,
+    r.enabled ? (r.nextRunAt ? whenLabel(r.nextRunAt, now) : undefined) : r.endedAt ? m.ended : m.off,
   )
   if (r.schedule && r.schedule.kind !== 'once')
-    fact('끝나는 때', r.until ? untilLabel(r.until) : '지울 때까지')
-  fact('최근', r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
+    fact(t.factUntil, r.until ? untilLabel(r.until, lang) : t.untilDeleted)
+  fact(t.factLast, r.lastRunAt ? whenLabel(r.lastRunAt, now) : undefined)
   fact(
-    '결과는',
-    `${r.notify === 'when_found' ? '조건에 맞을 때만 ' : ''}${r.target === 'feed' ? '피드에 올려요' : '대화로 알려 드려요'}`,
+    t.factResult,
+    `${r.notify === 'when_found' ? t.resultOnlyMatch : ''}${r.target === 'feed' ? t.resultFeed : t.resultChat}`,
   )
 
   const actions = el(
@@ -630,28 +610,20 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
     'goal-actions',
     button(
       'btn sm',
-      () =>
-        void ctx
-          .act({ action: 'routine-run', id: r.id })
-          .then(() => ctx.toast('지금 시작했어요. 끝나면 알려 드릴게요.')),
+      () => void ctx.act({ action: 'routine-run', id: r.id }).then(() => ctx.toast(t.runStarted)),
       icon('play'),
-      r.category ? '지금 체크인' : '지금 해 보기',
+      r.category ? t.checkInNow : t.tryNow,
     ),
-    button(
-      'btn-ghost sm',
-      () => ctx.compose(`"${r.title}" 목표 말인데요, `),
-      icon('reply'),
-      '대화로 이어 가기',
-    ),
+    button('btn-ghost sm', () => ctx.compose(t.goalTalk(r.title)), icon('reply'), t.goalContinue),
     el('span', 'grow'),
     button(
       'btn-text sm',
       () => void ctx.act({ action: 'routine-toggle', id: r.id, on: !r.enabled }),
-      r.enabled ? '잠시 끄기' : '다시 켜기',
+      r.enabled ? t.pause : t.resume,
     ),
-    confirmButton('btn-text sm danger', [icon('trash'), '지우기'], '한 번 더 누르면 지워요', () => {
+    confirmButton('btn-text sm danger', [icon('trash'), t.delete], t.deleteConfirm, () => {
       void ctx.act({ action: 'routine-delete', id: r.id }).then(() => {
-        ctx.toast('목표를 지웠어요')
+        ctx.toast(t.goalDeleted)
         back()
       })
     }),
@@ -673,7 +645,7 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
           return el('li', '', b)
         }),
       )
-    : el('p', 'cap', '아직 계획이 없어요. 대화에서 "계획 세워 줘"라고 하면 두리가 단계를 나눠 둘게요.')
+    : el('p', 'cap', t.noPlan)
 
   const log = [...(r.log ?? [])].sort((a, b) => b.at.localeCompare(a.at))
   return el(
@@ -688,16 +660,20 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
         'div',
         'grow',
         el('h1', 'title-2', r.title),
-        el('p', 'cap', [r.category ?? '예약한 일', when(r, now)].join(' · ')),
+        el(
+          'p',
+          'cap',
+          [r.category ? goalCategoryLabel(r.category) : t.goalsScheduled, when(r, now)].join(' · '),
+        ),
       ),
     ),
     actions,
     facts,
-    section(p ? `계획 ${p.done}/${p.total}` : '계획', p ? progressBar(p.done, p.total) : undefined, plan),
-    section('두리가 할 일', el('p', 'goal-prompt', r.prompt)),
+    section(p ? t.plan(p.done, p.total) : t.planTitle, p ? progressBar(p.done, p.total) : undefined, plan),
+    section(t.goalTask, el('p', 'goal-prompt', r.prompt)),
     log.length
       ? section(
-          '진행 기록',
+          t.goalLog,
           el(
             'ul',
             'goal-log',
@@ -709,19 +685,20 @@ export function goalDetail(ctx: LifeCtx, id: string, back: () => void): HTMLElem
           ),
         )
       : r.lastResult
-        ? section('지난 결과', el('p', 'goal-result', plain(r.lastResult, 600)))
-        : section('진행 기록', el('p', 'cap', '체크인하면 여기에 날짜별로 남아요.')),
+        ? section(t.goalLastResult, el('p', 'goal-result', plain(r.lastResult, 600)))
+        : section(t.goalLog, el('p', 'cap', t.goalLogEmpty)),
   )
 }
 
-// ── 보관함 ───────────────────────────────────────────
+// ── Library ──────────────────────────────────────────
 
 export function libraryView(ctx: LifeCtx, tab: LibraryTab, setTab: (t: LibraryTab) => void): HTMLElement {
+  const t = lifeText(lang)
   const count = ctx.life().libraryCount
   const seg = el('div', 'seg')
   for (const [id, label] of [
-    ['made', '만든 것'],
-    ['files', '사진·파일'],
+    ['made', t.libMade],
+    ['files', t.libFiles],
   ] as const) {
     const n = count?.[id] ?? ctx.libraryList(id).items.length
     const b = button('', () => setTab(id), label, n ? el('span', 'seg-n', String(n)) : undefined)
@@ -733,39 +710,36 @@ export function libraryView(ctx: LifeCtx, tab: LibraryTab, setTab: (t: LibraryTa
   const body = items.length
     ? el('div', 'lib-list', el('div', 'lib-grid', ...items.map((it) => libraryCard(ctx, it))), moreRow(list))
     : tab === 'made'
-      ? emptyState(
-          '',
-          '아직 남긴 게 없어요',
-          '두리가 찾아 준 상품, 정리한 글, 링크를 남겨 두면 여기에 모여요. 답 아래의 [보관함에 남기기]로도 남길 수 있어요.',
-        )
-      : emptyState('', '아직 사진·파일이 없어요', '두리가 만든 파일과 받은 사진이 여기에 모여요.')
-  return el('div', 'page', pageHead('보관함', '두리가 찾아 주거나 만든 것 중 남겨 둔 것', seg), body)
+      ? emptyState('', t.libEmptyMadeTitle, t.libEmptyMadeBody)
+      : emptyState('', t.libEmptyFilesTitle, t.libEmptyFilesBody)
+  return el('div', 'page', pageHead(t.libTitle, t.libSub, seg), body)
 }
 
-/** 펼쳐 둔 보관함 카드 (두리가 일하는 동안 화면을 다시 그려도 접히지 않게) */
+/** Expanded Library cards (so they stay open when the screen redraws while Dool2 works) */
 const openCards = new Set<string>()
 
-/** 파일 칸의 글: 끝의 "PC: 경로" 줄은 버튼으로 대신하니 뺀다 */
+/** Text of a file item: drops the trailing "PC: path" line, since buttons replace it */
 const fileBody = (it: LibraryItem, body: string) =>
   it.path ? body.replace(/\s*PC: [^\n]*$/, '').trim() : body
 
 function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
+  const t = lifeText(lang)
   const k = LIBRARY_KIND[it.kind] ?? LIBRARY_KIND.note
   const host = hostOf(it.url)
   const path = it.path
   const actions = el('div', 'lib-actions')
   if (path)
     actions.append(
-      button('btn-text sm', () => ctx.openFile(path), icon('external'), '열기'),
+      button('btn-text sm', () => ctx.openFile(path), icon('external'), t.open),
       (() => {
         const b = button('icon-btn', () => ctx.openFile(path, true), icon('library'))
-        b.title = '폴더에서 보기'
-        b.setAttribute('aria-label', '폴더에서 보기')
+        b.title = t.showInFolder
+        b.setAttribute('aria-label', t.showInFolder)
         return b
       })(),
     )
   if (it.url?.startsWith('https://')) {
-    const a = el('a', 'btn-text sm', icon('link'), '열기')
+    const a = el('a', 'btn-text sm', icon('link'), t.open)
     a.href = it.url
     a.target = '_blank'
     a.rel = 'noopener'
@@ -774,17 +748,17 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
   actions.append(
     button(
       'btn-text sm',
-      () => ctx.compose(`보관함의 "${plain(it.title, 40)}" 말인데요, `),
+      () => ctx.compose(t.libTalk(plain(it.title, 40))),
       icon('reply'),
-      path ? '고쳐 달라기' : '이어서 말하기',
+      path ? t.askEdit : t.continueTalk,
     ),
     el('span', 'grow'),
-    confirmButton('icon-btn lib-del', [icon('trash')], '지울까요?', () => {
+    confirmButton('icon-btn lib-del', [icon('trash')], t.deleteAsk, () => {
       openCards.delete(it.id)
-      void ctx.act({ action: 'library-delete', id: it.id }).then(() => ctx.toast('보관함에서 지웠어요'))
+      void ctx.act({ action: 'library-delete', id: it.id }).then(() => ctx.toast(t.libDeleted))
     }),
   )
-  // 그림이 있는 파일: 목록에서도 작은 미리보기 (누르면 연다)
+  // Files with a picture: a small preview in the list too (tap to open)
   let thumb: HTMLElement | undefined
   if (it.thumb) {
     const img = el('img', 'lib-thumb-img') as HTMLImageElement
@@ -792,7 +766,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
     img.alt = ''
     img.loading = 'lazy'
     thumb = path ? button('lib-thumb', () => ctx.openFile(path), img) : el('div', 'lib-thumb', img)
-    if (path) thumb.title = '누르면 열어요'
+    if (path) thumb.title = t.tapToOpen
   }
   const shown = fileBody(it, it.body)
   let text: HTMLElement | undefined
@@ -800,7 +774,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
     text = el('div', 'lib-text rich clamp')
     setRich(text, it.cut ? `${shown}…` : shown)
     const t = text
-    // 목록에는 앞부분만 온다: 펼칠 때 전체 글을 받아 바꿔 넣는다
+    // Lists only carry the start: fetch the full text on expand and swap it in
     let full = !it.cut
     const fill = () => {
       if (full) return
@@ -810,7 +784,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
         .then((x) => {
           if (!x) return
           setRich(t, fileBody(x, x.body))
-          // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
+          // Pictures and invitations Dool2 made: a preview the PC rendered
           if (x.image) {
             const img = el('img', 'lib-shot') as HTMLImageElement
             img.src = `data:image/jpeg;base64,${x.image}`
@@ -821,7 +795,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
         .catch(() => (full = false))
     }
     t.onclick = (e) => {
-      // 글 속 링크·파일 칩을 누른 것이면 펼치지 않는다
+      // Do not expand when a link or file chip inside the text was clicked
       if ((e.target as HTMLElement).closest('a, button')) return
       t.classList.toggle('open')
       if (t.classList.contains('open')) {
@@ -851,13 +825,13 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
   )
 }
 
-// ── 두리 판: 예정 · 기억 · 활동 ───────────────────────
+// ── Assistant panel: Schedule · Memory · Activity ─────
 
 const sideEmpty = (text: string) => el('p', 'cap side-empty', text)
 
 export function scheduleTab(ctx: LifeCtx): HTMLElement {
   const list = upcoming(ctx.life().routines)
-  if (!list.length) return sideEmpty('예정된 일이 없어요. "내일 10시에 알려 줘"처럼 말하면 여기에 보여요.')
+  if (!list.length) return sideEmpty(lifeText(lang).scheduleEmpty)
   const now = new Date()
   return el(
     'div',
@@ -871,7 +845,7 @@ export function scheduleTab(ctx: LifeCtx): HTMLElement {
           'span',
           'grow',
           el('span', 'side-t', r.title),
-          el('span', 'meta', r.schedule ? scheduleLabel(r.schedule) : ''),
+          el('span', 'meta', r.schedule ? scheduleLabel(r.schedule, lang) : ''),
         ),
         el('span', 'side-when meta', whenLabel(r.nextRunAt ?? '', now)),
       ),
@@ -879,19 +853,20 @@ export function scheduleTab(ctx: LifeCtx): HTMLElement {
   )
 }
 
-/** 두리 설정: 나를 부르는 이름 · 말투 · 답 길이 */
+/** Assistant settings: what to call me · tone · answer length */
 function identityBlock(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const id = ctx.life().identity ?? {}
   const name = el('input', 'field grow')
-  name.placeholder = '예: 민지 (비우면 호칭 없이)'
-  name.setAttribute('aria-label', '나를 부르는 이름')
+  name.placeholder = t.namePlaceholder
+  name.setAttribute('aria-label', t.nameLabel)
   name.value = id.userName ?? ''
-  const save = el('button', 'btn sm', '저장')
+  const save = el('button', 'btn sm', t.save)
   save.type = 'submit'
   const form = el('form', 'feed-form', name, save)
   form.onsubmit = (e) => {
     e.preventDefault()
-    void ctx.act({ action: 'identity', userName: name.value }).then(() => ctx.toast('이제 그렇게 부를게요'))
+    void ctx.act({ action: 'identity', userName: name.value }).then(() => ctx.toast(t.nameSaved))
   }
   const seg = <T extends string>(cur: T, opts: [T, string][], pick: (v: T) => void) => {
     const box = el('div', 'seg')
@@ -907,37 +882,38 @@ function identityBlock(ctx: LifeCtx): HTMLElement {
   return el(
     'div',
     'identity',
-    el('p', 'over', '나를 부르는 이름'),
+    el('p', 'over', t.nameLabel),
     form,
-    el('p', 'over', '말투'),
+    el('p', 'over', t.tone),
     seg(
       id.tone ?? 'warm',
       [
-        ['warm', '다정하게'],
-        ['neat', '깔끔하게'],
-        ['buddy', '친구처럼'],
+        ['warm', t.toneWarm],
+        ['neat', t.toneNeat],
+        ['buddy', t.toneBuddy],
       ],
       (tone) => void ctx.act({ action: 'identity', tone }),
     ),
-    el('p', 'over', '답 길이'),
+    el('p', 'over', t.length),
     seg(
       id.length ?? 'normal',
       [
-        ['short', '짧게'],
-        ['normal', '보통'],
-        ['detail', '자세히'],
+        ['short', t.lengthShort],
+        ['normal', t.lengthNormal],
+        ['detail', t.lengthDetail],
       ],
       (length) => void ctx.act({ action: 'identity', length }),
     ),
-    el('p', 'over', '기억'),
+    el('p', 'over', t.memory),
   )
 }
 
 export function memoryTab(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const input = el('input', 'field grow')
-  input.placeholder = '예: 아이가 초3이에요'
-  input.setAttribute('aria-label', '두리가 알아 두면 좋은 것')
-  const add = el('button', 'btn sm', '기억하기')
+  input.placeholder = t.memoryPlaceholder
+  input.setAttribute('aria-label', t.memoryAria)
+  const add = el('button', 'btn sm', t.remember)
   add.type = 'submit'
   const form = el('form', 'feed-form', input, add)
   form.onsubmit = (e) => {
@@ -946,29 +922,25 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
     if (!text) return
     add.disabled = true
     input.blur()
-    void ctx.act({ action: 'memory-add', text }).then(() => ctx.toast('기억해 둘게요'))
+    void ctx.act({ action: 'memory-add', text }).then(() => ctx.toast(t.remembered))
   }
   const items = [...ctx.life().memory].sort((a, b) => b.at.localeCompare(a.at))
   return el(
     'div',
     'memory',
     identityBlock(ctx),
-    el(
-      'p',
-      'cap',
-      '두리가 대화하며 알게 된 것이에요. 틀린 건 지우면 다음 대화부터 잊어요. 이 PC에만 저장돼요.',
-    ),
+    el('p', 'cap', t.memoryAbout),
     form,
     items.length
       ? el(
           'div',
           'side-list',
           ...items.map((m) => {
-            const forget = confirmButton('icon-btn', [icon('trash')], '잊을까요?', () => {
-              void ctx.act({ action: 'memory-delete', id: m.id }).then(() => ctx.toast('잊었어요'))
+            const forget = confirmButton('icon-btn', [icon('trash')], t.forgetAsk, () => {
+              void ctx.act({ action: 'memory-delete', id: m.id }).then(() => ctx.toast(t.forgotten))
             })
-            forget.setAttribute('aria-label', '잊기')
-            forget.title = '잊기'
+            forget.setAttribute('aria-label', t.forget)
+            forget.title = t.forget
             return el(
               'div',
               'side-row',
@@ -977,42 +949,43 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
                 'span',
                 'grow',
                 el('span', 'side-t', m.text),
-                el('span', 'meta', `${m.source === 'user' ? '직접 적음' : '대화에서'} · ${shortWhen(m.at)}`),
+                el('span', 'meta', `${m.source === 'user' ? t.byUser : t.fromChat} · ${shortWhen(m.at)}`),
               ),
               forget,
             )
           }),
         )
-      : sideEmpty('아직 기억한 게 없어요.'),
+      : sideEmpty(t.memoryEmpty),
     ...knowBlock(ctx),
   )
 }
 
-/** 두리가 알아 둔 것: 로그인해서 본 사실과 두리가 한 신청·예약 (본 날·기준 시점과 함께) */
+/** What Dool2 knows: facts seen after logging in and applications or bookings it made (with seen date and basis) */
 function knowBlock(ctx: LifeCtx): HTMLElement[] {
   const know = ctx.life().know ?? []
   if (!know.length) return []
+  const t = lifeText(lang)
   return [
-    el('p', 'cap', '두리가 조회하거나 해 둔 일이에요. 다음 부탁에서 다시 묻지 않고 써요.'),
+    el('p', 'cap', t.knowAbout),
     el(
       'div',
       'side-list',
       ...know.map((k) => {
-        const forget = confirmButton('icon-btn', [icon('trash')], '지울까요?', () => {
-          void ctx.act({ action: 'know-delete', id: k.id }).then(() => ctx.toast('지웠어요'))
+        const forget = confirmButton('icon-btn', [icon('trash')], t.deleteAsk, () => {
+          void ctx.act({ action: 'know-delete', id: k.id }).then(() => ctx.toast(t.deleted))
         })
-        forget.setAttribute('aria-label', '지우기')
-        forget.title = '지우기'
+        forget.setAttribute('aria-label', t.delete)
+        forget.title = t.delete
         const meta = [
           k.source,
           k.basis,
           shortWhen(k.seenAt),
           k.kind === 'done'
             ? k.state === 'done'
-              ? '끝남'
+              ? t.knowDone
               : k.next
-                ? `${shortWhen(k.next)} 챙김`
-                : '진행 중'
+                ? t.knowNext(shortWhen(k.next))
+                : t.knowOngoing
             : '',
         ]
           .filter(Boolean)
@@ -1030,11 +1003,12 @@ function knowBlock(ctx: LifeCtx): HTMLElement[] {
 }
 
 export function activityTab(ctx: LifeCtx): HTMLElement {
+  const t = lifeText(lang)
   const list = ctx.activityList()
   const done = list.items
   const working = ctx.working()
-  if (!list.started && !working) return el('p', 'cap side-empty', el('span', 'spin'), ' 받는 중…')
-  if (!done.length && !working) return sideEmpty('아직 한 일이 없어요')
+  if (!list.started && !working) return el('p', 'cap side-empty', el('span', 'spin'), t.loading)
+  if (!done.length && !working) return sideEmpty(t.activityEmpty)
   return el(
     'div',
     'activity',

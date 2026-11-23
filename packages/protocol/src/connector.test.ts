@@ -55,17 +55,17 @@ describe('커넥터 검사', () => {
         ],
       }),
     ])
-    expect(p.join('\n')).toMatch(/demo\.co\.kr 주소만 열 수 있어요/)
-    expect(p.join('\n')).toMatch(/\{\{nope\}\}가 무엇인지 몰라요/)
-    expect(p.join('\n')).toMatch(/거르개 \|base64/)
-    expect(p.join('\n')).toMatch(/첫 단계는 주소 열기/)
+    expect(p.join('\n')).toMatch(/only demo\.co\.kr addresses can be opened/)
+    expect(p.join('\n')).toMatch(/\{\{nope\}\} is not defined/)
+    expect(p.join('\n')).toMatch(/unknown filter \|base64/)
+    expect(p.join('\n')).toMatch(/the first step must be opening an address/)
   })
 
   it('승인 요청은 돈 내기·연락하기의 마지막에만, 그런 도구는 승인이나 넘기기로 끝난다', () => {
     const approve = { approve: { text: '예약', what: '예약', where: '데모' } }
     expect(
       check([tool({ steps: [{ open: 'https://demo.co.kr/' }, approve], result: {}, output: {} })]).join('\n'),
-    ).toMatch(/돈 내기·연락하기 도구에만/)
+    ).toMatch(/can only be put in pay or contact tools/)
     expect(
       check([
         tool({
@@ -75,7 +75,7 @@ describe('커넥터 검사', () => {
           output: {},
         }),
       ]).join('\n'),
-    ).toMatch(/승인 요청\(approve\)이나 AI에게 넘기기로 끝나야/)
+    ).toMatch(/must end with an approval request \(approve\) or handing over to the AI/)
     expect(
       check([
         tool({
@@ -85,7 +85,7 @@ describe('커넥터 검사', () => {
           output: {},
         }),
       ]).join('\n'),
-    ).toMatch(/마지막 단계여야/)
+    ).toMatch(/must be the last step/)
   })
 
   it('틀린 capture 패턴, 금지된 지시, 예시·결과 칸 불일치를 잡는다', () => {
@@ -97,11 +97,11 @@ describe('커넥터 검사', () => {
         result: { rows: '{{rows}}', extra: 'x' },
       }),
     ]).join('\n')
-    expect(p).toMatch(/capture의 주소 패턴\(정규식\)이 틀렸어요/)
-    expect(p).toMatch(/금지된 지시/)
-    expect(p).toMatch(/예시 1에 keyword가 없어요/)
-    expect(p).toMatch(/예시 1의 wrong는 입력 칸에 없어요/)
-    expect(p).toMatch(/result의 extra가 output에 없어요/)
+    expect(p).toMatch(/the capture address pattern \(regex\) is wrong/)
+    expect(p).toMatch(/a forbidden instruction is present/)
+    expect(p).toMatch(/example 1 is missing keyword/)
+    expect(p).toMatch(/wrong in example 1 is not an input field/)
+    expect(p).toMatch(/extra in result is not in output/)
   })
 })
 
@@ -117,12 +117,12 @@ describe('입력 검사', () => {
   it('필수·형식·범위·고르기', () => {
     expect(checkInput(input, { date: '2026-11-27', people: 4, area: '성수' })).toEqual([])
     expect(checkInput(input, { people: 0, area: '강남', date: '11/27', x: 1 })).toEqual([
-      'people는 1 이상이어야 해요',
-      'area는 성수·한남 중 하나여야 해요',
-      'date는 YYYY-MM-DD로 적어 주세요',
-      'x라는 칸은 없어요',
+      'people must be 1 or more',
+      'area must be one of 성수, 한남',
+      'date must be written as YYYY-MM-DD',
+      'x is not a field',
     ])
-    expect(checkInput(input, { people: 2.5 })).toEqual(['date가 필요해요', 'people는 정수여야 해요'])
+    expect(checkInput(input, { people: 2.5 })).toEqual(['date is required', 'people must be an integer'])
   })
 })
 
@@ -168,7 +168,7 @@ describe('조건부 채우기와 거르기', async () => {
       },
       'demo.co.kr',
     )
-    expect(p.join('\n')).toMatch(/\{\{nope\}\}가 무엇인지 몰라요/)
+    expect(p.join('\n')).toMatch(/\{\{nope\}\} is not defined/)
   })
 })
 
@@ -187,10 +187,10 @@ describe('건강 기준 (ADR 0020)', async () => {
       ],
     }
     expect(healthProblems(t, out, true)).toEqual([
-      'rows가 2줄이에요 (적어도 3줄)',
-      'rows.price 칸이 2줄 중 1줄만 채워졌어요',
+      'rows has 2 rows (at least 3)',
+      'rows.price is filled in only 1 of 2 rows',
     ])
-    expect(healthProblems(t, out)).toEqual(['rows.price 칸이 2줄 중 1줄만 채워졌어요'])
+    expect(healthProblems(t, out)).toEqual(['rows.price is filled in only 1 of 2 rows'])
     expect(healthProblems(t, { rows: [] })).toEqual([])
   })
 })

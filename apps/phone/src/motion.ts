@@ -1,44 +1,46 @@
-// 스프링 움직임: 단단함(k)·감쇠(c)로 움직인다. 같은 값이면 어디서든 같은 느낌으로 움직인다.
-// 1) springEase(): 스프링을 CSS linear() 곡선으로 바꿔 element.animate()에 쓴다 (한 번 움직이고 끝나는 것)
-// 2) Spring + tick(): 손으로 미는 것처럼 매 프레임 따라가는 것 (꾹 누르기 등)
+// Spring motion: driven by stiffness (k) and damping (c). The same values feel the same everywhere.
+// 1) springEase(): turns a spring into a CSS linear() curve for element.animate() (one-shot moves)
+// 2) Spring + tick(): follows every frame like being pushed by hand (press and hold, etc.)
+import { lang } from './lang.js'
+import { motionText } from './locales/motion.js'
 
-/** 쓰는 스프링 (k 단단함, c 감쇠) */
+/** Springs in use (k stiffness, c damping) */
 export const SPRING = {
-  /** 놓았을 때 자리 잡기: 작게 한 번 넘친다 */
+  /** Settling on release: overshoots slightly once */
   settle: [280, 22],
-  /** 큰 움직임: 시트·판 */
+  /** Big moves: sheets and panels */
   soft: [260, 24],
-  /** 늘어나는 하이라이트의 앞쪽 끝 */
+  /** Leading edge of a stretching highlight */
   lead: [620, 36],
-  /** 늘어나는 하이라이트의 뒤쪽 끝 (뒤처져서 늘어나 보인다) */
+  /** Trailing edge of a stretching highlight (lags behind so it looks stretched) */
   trail: [190, 19],
-  /** 아이콘·숫자가 톡 */
+  /** A quick pop for icons and numbers */
   pop: [520, 16],
-  /** 흐려지며 나타나기, 작은 이동 */
+  /** Fade in, small moves */
   fade: [420, 32],
-  /** 일찍 놓았을 때 되돌아가기 */
+  /** Returning when released early */
   release: [260, 14],
-  /** 펼치는 카드 (참고 값: expand 240 21) */
+  /** Expanding card (reference: expand 240 21) */
   expand: [240, 21],
-  /** 당긴 목록이 돌아오기 */
+  /** A pulled list returning */
   pull: [260, 18],
-  /** 입력칸 높이 */
+  /** Input box height */
   field: [420, 34],
-  /** 버튼 모양 바뀜 (보내기 ↔ 멈추기) */
+  /** Button shape change (send / stop) */
   morph: [520, 30],
-  /** 메뉴 줄이 하나씩 떠오르기 */
+  /** Menu rows rising one by one */
   item: [260, 22],
-  /** 체크가 그려지기 */
+  /** A check being drawn */
   check: [140, 20],
-  /** 아래 탭: 버튼·글자 자리 */
+  /** Bottom tabs: button and label position */
   bar: [340, 28],
-  /** 아래 탭: 아이콘이 찌그러졌다 톡 */
+  /** Bottom tabs: the icon squashes then pops */
   squash: [520, 14],
-  /** 숫자 자리마다 굴러 서기 */
+  /** Each digit rolling into place */
   count: [320, 24],
-  /** 손가락을 바로 따라가기 (넘침 없음) */
+  /** Following the finger directly (no overshoot) */
   follow: [900, 50],
-  /** 덜 던진 카드가 돌아오기 */
+  /** A card thrown too weakly coming back */
   back: [280, 16],
 } as const satisfies Record<string, readonly [number, number]>
 
@@ -56,7 +58,7 @@ const supportsLinear = (() => {
 
 const cache = new Map<string, { easing: string; ms: number }>()
 
-/** 0에서 1로 가는 스프링을 linear() 곡선과 걸리는 시간으로 (질량 1) */
+/** A spring going from 0 to 1 as a linear() curve and its duration (mass 1) */
 export function springEase(name: SpringName): { easing: string; ms: number } {
   const hit = cache.get(name)
   if (hit) return hit
@@ -66,7 +68,7 @@ export function springEase(name: SpringName): { easing: string; ms: number } {
   let v = 0
   let t = 0
   const pts: [number, number][] = []
-  // 멈출 때까지 (1에 아주 가깝고 거의 안 움직이면) 최대 2초
+  // Until it stops (very close to 1 and barely moving), 2 s at most
   while (t < 2) {
     const a = -k * (x - 1) - c * v
     v += a * dt
@@ -91,7 +93,7 @@ export function springEase(name: SpringName): { easing: string; ms: number } {
   return r
 }
 
-/** 스프링으로 한 번 움직인다. 움직임 줄이기 설정이면 바로 끝 모습 */
+/** Moves once with a spring. With reduce-motion on, jumps straight to the end state */
 export function springTo(
   el: Element,
   frames: Keyframe[],
@@ -108,7 +110,7 @@ export function springTo(
   }
 }
 
-/** 매 프레임 따라가는 스프링 하나 */
+/** One spring that follows every frame */
 export class Spring {
   v = 0
   t: number
@@ -133,16 +135,16 @@ export class Spring {
   }
 }
 
-/** 프레임마다 부른다. false를 돌려주면 멈춘다 */
+/** Called every frame. Returning false stops it */
 export function tick(frame: (dt: number) => boolean | undefined): () => void {
-  // 시간은 프레임 시각끼리만 잰다. 프레임 시각이 시작 시각보다 앞설 수 있어서(뒤로 가면 스프링이 터진다) 0 아래로 내려가지 않게 한다
+  // Time is measured only between frame timestamps. A frame time can precede the start time (going backwards makes the spring blow up), so clamp at 0
   let last: number | undefined
   let stop = false
   const loop = (now: number) => {
     if (stop) return
     const dt = last === undefined ? 1 / 60 : Math.min(Math.max((now - last) / 1000, 0), 1 / 30)
     last = now
-    // 프레임 안에서 4번 나눠 계산하면 단단한 스프링도 튀지 않는다
+    // Splitting each frame into 4 steps keeps even stiff springs from jittering
     let go: boolean | undefined = true
     for (let i = 0; i < 4 && go !== false; i++) go = frame(dt / 4)
     if (go !== false) requestAnimationFrame(loop)
@@ -153,8 +155,8 @@ export function tick(frame: (dt: number) => boolean | undefined): () => void {
   }
 }
 
-// ── 꾹 눌러 승인: 누르는 동안 왼쪽부터 차오르고, 다 차면 승인. 일찍 놓으면 되돌아가며 고개를 젓는다 ──
-// 다 차면 글자가 빠지고 도는 고리(보내는 중) → 체크가 그려지며 "승인했어요"가 떠오른다 → 잠깐 뒤 after()
+// ── Press and hold to approve: fills from the left while held, approves when full. Released early, it goes back and shakes its head ──
+// When full the label drops out and a ring spins (sending), then a check is drawn and the done text rises, then after() a moment later
 
 const CHECK_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path pathLength="1" d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
@@ -163,17 +165,17 @@ export function holdButton(o: {
   label: string
   done: string
   cls?: string
-  /** 다 차는 데 걸리는 시간(초) */
+  /** Time to fill (seconds) */
   sec?: number
-  /** 다 찼을 때. 프로미스를 돌려주면 끝날 때까지 도는 고리를 보이고, 실패하면 되돌린다 */
+  /** When full. If it returns a promise, a ring spins until it ends, and it rolls back on failure */
   onDone(): unknown
-  /** 체크까지 보여 준 뒤 (카드를 접는 등) */
+  /** After the check has been shown (collapse the card, etc.) */
   after?(): void
 }): HTMLButtonElement {
   const btn = document.createElement('button')
   btn.className = `hold ${o.cls ?? ''}`.trim()
   btn.type = 'button'
-  btn.setAttribute('aria-label', `${o.label} (꾹 누르기)`)
+  btn.setAttribute('aria-label', motionText(lang).holdAria(o.label))
   const fill = document.createElement('span')
   fill.className = 'hold-fill'
   const under = document.createElement('span')
@@ -191,7 +193,7 @@ export function holdButton(o: {
   spin.className = 'hold-spin'
   const hint = document.createElement('span')
   hint.className = 'hold-hint'
-  hint.textContent = '꾹 누르고 있어 주세요'
+  hint.textContent = motionText(lang).holdHint
   btn.append(under, fill, over, spin, hint)
   const sec = o.sec ?? 0.9
   const p = new Spring(0).use('release')
@@ -283,7 +285,7 @@ export function holdButton(o: {
           setTimeout(() => o.after?.(), 750)
         },
         () => {
-          // 보내지 못했으면 처음으로: 초록이 빠지며 흔들린다
+          // If it could not be sent, back to the start: the green drains and it shakes
           btn.classList.remove('busy')
           btn.removeAttribute('aria-busy')
           springTo(spin, [{ opacity: 1 }, { opacity: 0 }], 'fade', { fill: 'forwards' })
@@ -310,7 +312,7 @@ export function holdButton(o: {
     if (p.x < 1) {
       p.t = 0
       shake.v += 260 * Math.min(1, p.x * 2 + 0.3)
-      // 그냥 눌렀다 뗐으면 어떻게 하는지 알려 준다
+      // If it was just tapped and released, show how it works
       if (p.x < 0.25) {
         hint.classList.add('show')
         clearTimeout(hintTimer)
@@ -337,19 +339,19 @@ export function holdButton(o: {
   return btn
 }
 
-// ── 칸 고르기: 하이라이트가 앞 칸에서 새 칸으로 스프링으로 미끄러진다 ──
+// ── Segment picker: the highlight springs from the old segment to the new one ──
 
 let segMove: { key: string; x: number; w: number } | undefined
 const segKey = (seg: Element) => [...seg.children].map((c) => c.textContent).join('|')
 
-/** 칸을 누르기 직전에 부른다 (다시 그리기 전 자리를 기억) */
+/** Call just before a segment is tapped (remembers the position before redraw) */
 export function rememberSeg(btn: HTMLElement) {
   const seg = btn.parentElement
   const cur = seg?.querySelector<HTMLElement>('button[aria-pressed="true"]')
   if (seg && cur && cur !== btn) segMove = { key: segKey(seg), x: cur.offsetLeft, w: cur.offsetWidth }
 }
 
-/** 다시 그린 뒤 부른다: 같은 칸 묶음을 찾아 하이라이트를 움직인다 */
+/** Call after redrawing: finds the same segment group and moves the highlight */
 export function playSeg() {
   const m = segMove
   segMove = undefined
@@ -377,7 +379,7 @@ export function playSeg() {
   else done()
 }
 
-// ── 스위치: 손잡이가 가는 쪽으로 길게 늘어났다가, 자리에 와서 살짝 튕기며 둥글어진다 ──
+// ── Switch: the knob stretches toward where it goes, then bounces slightly and rounds out in place ──
 
 let flip: { id: string; on: boolean; at: number } | undefined
 
@@ -410,7 +412,7 @@ export function playFlip() {
   )
 }
 
-// ── 생각하는 중: 점들이 가까워지면 서로 늘어나 붙는 쫀득한 필터 (한 번만 넣는다) ──
+// ── Thinking: a gooey filter where dots stretch and merge when they get close (added once) ──
 
 export function gooFilter() {
   if (document.getElementById('goo')) return
@@ -427,7 +429,7 @@ export function gooFilter() {
   document.body.append(svg)
 }
 
-// ── 좋아요 터짐: 누른 자리에서 작은 점들이 둥글게 퍼지며 사라진다 ──
+// ── Like burst: small dots spread out in a circle from the tapped spot and vanish ──
 
 const BURST = ['#ff5a76', '#ff9f45', '#ffd34d', '#4cd38a', '#4ea8ff', '#9b7bff', '#ff7ac8', '#ff5a76']
 
@@ -446,7 +448,7 @@ export function burst(from: Element) {
     const a = (i / BURST.length) * Math.PI * 2 + 0.2
     const x = Math.cos(a) * 30
     const y = Math.sin(a) * 30
-    // 점은 스프링이 아니라 한 번에 퍼졌다 사라진다 (스프링은 넘쳤다 돌아오며 점이 되돌아온다)
+    // Dots spread and vanish in one go, not by spring (a spring would overshoot and bring the dots back)
     const far = 34 + (i % 2) * 6
     d.animate(
       [
@@ -468,14 +470,14 @@ export function burst(from: Element) {
   setTimeout(() => box.remove(), 900)
 }
 
-// ── 펼치는 카드: 바꾸기 전·후 높이를 재서 스프링으로 늘였다 줄인다 ──
+// ── Expanding card: measures the height before and after the change and springs between them ──
 
 export function springHeight(el: HTMLElement, change: () => void, name: SpringName = 'expand') {
   const h0 = el.getBoundingClientRect().height
   change()
   const h1 = el.getBoundingClientRect().height
   if (Math.abs(h1 - h0) < 1) return
-  // 접을 때 최대 높이에 막혀 바로 줄어들지 않게, 움직이는 동안은 풀어 둔다
+  // Lifted while animating so collapsing is not blocked by the max height
   el.style.overflow = 'hidden'
   el.style.maxHeight = 'none'
   const a = springTo(el, [{ height: `${h0}px` }, { height: `${h1}px` }], name)
@@ -487,7 +489,7 @@ export function springHeight(el: HTMLElement, change: () => void, name: SpringNa
   else done()
 }
 
-// ── 메뉴 줄: 아래에서 하나씩 떠오른다 ──
+// ── Menu rows: rise one by one from below ──
 
 export function riseIn(els: Iterable<Element>, gap = 45) {
   let i = 0
@@ -506,7 +508,7 @@ export function riseIn(els: Iterable<Element>, gap = 45) {
     )
 }
 
-// ── 체크: 톡 커지며 선이 그려진다 ──
+// ── Check: pops up while the line is drawn ──
 
 export function drawCheck(box: Element, delay = 0) {
   springTo(box, [{ transform: 'scale(0.7)' }, { transform: 'scale(1)' }], 'pop', { delay })
@@ -520,12 +522,12 @@ export function drawCheck(box: Element, delay = 0) {
   }
 }
 
-// ── 인증번호 칸: 숨은 입력칸 하나 + 보이는 칸 여섯. 숫자가 톡 떨어지고, 다 차면 칸이 붙어 초록 알약이 된다 ──
+// ── Verification code boxes: one hidden input + six visible boxes. Digits drop in, and when full the boxes merge into a green pill ──
 
 export function otpBoxes(o: {
   value?: string
   length?: number
-  /** 자릿수를 모를 때: 4~8자리를 받고 [넣기]로 보낸다 (사이트마다 4·6·7자리로 달랐다 — 실측 11-22 키즈노트 4자리) */
+  /** When the digit count is unknown: accept 4 to 8 digits and send with the Enter button (sites differ: 4, 6 or 7 digits; measured 11-22: one site used 4) */
   flex?: boolean
   onInput?(v: string): void
   onDone(code: string): void
@@ -543,7 +545,7 @@ export function otpBoxes(o: {
   inp.inputMode = 'numeric'
   inp.autocomplete = 'one-time-code'
   inp.maxLength = N
-  inp.setAttribute('aria-label', `인증번호 ${N}자리`)
+  inp.setAttribute('aria-label', motionText(lang).otpAria(N))
   const cells = [...Array(N)].map(() => {
     const el = document.createElement('span')
     el.className = 'otp-bx'
@@ -554,15 +556,15 @@ export function otpBoxes(o: {
   })
   const ok = document.createElement('span')
   ok.className = 'otp-ok'
-  ok.innerHTML = `${CHECK_SVG}<span>넣었어요</span>`
+  ok.innerHTML = `${CHECK_SVG}<span>${motionText(lang).otpDone}</span>`
   box.append(row, ok, inp)
-  // 자릿수를 모르면 [넣기]: 4자리부터 눌러 보낸다
+  // Unknown digit count: the Enter button, usable from 4 digits
   const go = document.createElement('button')
   go.type = 'button'
   go.className = 'btn lg otp-go'
-  go.textContent = '넣기'
+  go.textContent = motionText(lang).otpGo
   go.disabled = true
-  // 버튼은 상자 밖에 둔다 (상자는 높이가 고정이라 안에 넣으면 아래 글 위로 넘쳤다 — 실측 11-22)
+  // The button stays outside the box (the box has a fixed height, so inside it overflowed onto the text below; measured 11-22)
   let val = ''
   let done = false
   const set = (raw: string, quiet = false) => {
@@ -587,7 +589,7 @@ export function otpBoxes(o: {
     inp.value = v
     go.disabled = done || v.length < 4
     if (!flex && v.length === N && !done) {
-      // 다시 그려져 다 찬 채로 시작하면 이미 보낸 것: 초록으로만 보이고 다시 보내지 않는다
+      // If redrawn already full, it was already sent: shown green only and not sent again
       if (quiet) {
         done = true
         for (const c of cells) c.el.classList.remove('on')
@@ -605,7 +607,7 @@ export function otpBoxes(o: {
       c.el.classList.remove('on')
       if (i >= val.length) c.el.hidden = true
     })
-    // 칸 사이가 닫히며 하나로 붙고, 초록이 되며 '넣었어요'
+    // The gaps close and the boxes merge into one, turn green, and show the done text
     springTo(row, [{ gap: '8px' }, { gap: '0px' }], 'soft', { delay: 200, fill: 'forwards' })
     setTimeout(() => box.classList.add('joined'), 200)
     setTimeout(() => {
@@ -643,7 +645,7 @@ export function otpBoxes(o: {
   return flex ? Object.assign(box, { go }) : box
 }
 
-// ── 이어 쓰기 제안: 쓰는 말 뒤에 흐린 글씨로 나머지를 보여 주고, 받으면 글자가 하나씩 밝아지며 톡 ──
+// ── Continue-typing suggestion: shows the rest in faint text after what is typed, and on accept the letters brighten one by one ──
 
 export function acceptGhost(letters: HTMLElement[]) {
   letters.forEach((l, i) => {

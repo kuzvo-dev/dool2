@@ -1,13 +1,13 @@
-// 카드 사진: 폰·PC 화면이 바깥 서버에 직접 붙지 않게 본체가 대신 받아 data: 주소로 넘긴다.
-// - https 주소만, IP 주소·localhost·내부 이름은 받지 않는다 (본체가 집 안 기기에 붙는 길이 되지 않게)
-// - 그림 종류(jpeg·png·webp·gif·avif)만, 900KB까지, 6초까지 기다린다. svg는 받지 않는다
-// - 같은 주소는 기억해 둔다 (최근 300장)
+// Card pictures: so the phone and PC screens never connect to outside servers directly, the daemon fetches and passes them as data: addresses.
+// - https addresses only; IP addresses, localhost and internal names are refused (so the daemon cannot become a path to home devices)
+// - Only image types (jpeg, png, webp, gif, avif), up to 900KB, waiting up to 6 seconds. svg is refused
+// - The same address is remembered (last 300 pictures)
 
 const TYPES = /^image\/(jpeg|png|webp|gif|avif)$/
 const MAX_BYTES = 900_000
 const KEEP = 300
 
-/** 받아도 되는 주소인가: https, 이름으로 된 바깥 주소 */
+/** Whether the address may be fetched: https, a public address given by name */
 export function thumbAllowed(raw: string): boolean {
   let u: URL
   try {
@@ -19,12 +19,12 @@ export function thumbAllowed(raw: string): boolean {
   const h = u.hostname.toLowerCase()
   if (!h.includes('.') || h === 'localhost' || /\.(local|localhost|internal|lan|home|arpa)$/.test(h))
     return false
-  // IP 주소(4·6)는 받지 않는다: CDN은 늘 이름으로 온다
+  // IP addresses (v4 and v6) are refused: CDNs always come by name
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.startsWith('[') || h.includes(':')) return false
   return true
 }
 
-/** 브라우저(두리 확장)로 받아 줄이기: 사이트가 막지 않고, 긴 쪽 360px JPEG로 작아진다 */
+/** Fetch and shrink through the browser (Doori extension): the site does not block it, and it becomes a JPEG of 360px on the long edge */
 export type ThumbShrinker = (url: string) => Promise<string | undefined>
 
 export class Thumbs {
@@ -39,17 +39,17 @@ export class Thumbs {
     if (!thumbAllowed(url)) return Promise.resolve(undefined)
     const hit = this.cache.get(url)
     if (hit) {
-      // 최근에 쓴 것을 뒤로 (오래 안 쓴 것부터 지운다)
+      // Move the recently used one to the back (the least recently used is dropped first)
       this.cache.delete(url)
       this.cache.set(url, hit)
       return hit
     }
-    // 브라우저가 붙어 있으면 거기서 받아 줄이고, 안 되면 본체가 그대로 받는다
+    // If a browser is connected, fetch and shrink there; if that fails, the daemon fetches it as is
     const p = (this.shrink ? this.shrink(url).catch(() => undefined) : Promise.resolve(undefined))
       .then((v) => v ?? this.load(url))
       .catch(() => undefined)
     this.cache.set(url, p)
-    // 못 받은 것은 기억하지 않는다 (잠깐 끊겼다면 다음에 다시)
+    // Failures are not remembered (if it was a brief outage, try again next time)
     void p.then((v) => {
       if (v === undefined) this.cache.delete(url)
     })
@@ -67,7 +67,7 @@ export class Thumbs {
       redirect: 'follow',
       headers: { accept: 'image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8' },
     })
-    // 다른 곳으로 넘겨졌으면 그 주소도 같은 규칙으로 본다
+    // If redirected elsewhere, that address gets the same check
     if (!res.ok || (res.url && !thumbAllowed(res.url))) return undefined
     const type = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
     if (!TYPES.test(type)) return undefined

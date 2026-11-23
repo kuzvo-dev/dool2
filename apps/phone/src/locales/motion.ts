@@ -1,0 +1,38 @@
+import { messages } from '@dool2/i18n'
+
+export const motionText = messages({
+  ko: {
+    holdAria: (label: string) => `${label} (꾹 누르기)`,
+    holdHint: '꾹 누르고 있어 주세요',
+    otpAria: (n: number) => `인증번호 ${n}자리`,
+    otpDone: '넣었어요',
+    otpGo: '넣기',
+    statWeek: '이번 주 두리가 한 일',
+    statMonth: '한 달 동안 두리가 한 일',
+    statPeriod: '기간',
+    days7: '7일',
+    days30: '30일',
+    statUnit: '건',
+    sameAsBefore: '지난번과 같아요',
+    vsBefore: (diff: string) => `지난번보다 ${diff}`,
+    take: '맡기기',
+    later: '다음에',
+  },
+  en: {
+    holdAria: (label: string) => `${label} (press and hold)`,
+    holdHint: 'Press and hold',
+    otpAria: (n: number) => `${n}-digit code`,
+    otpDone: 'Entered',
+    otpGo: 'Enter',
+    statWeek: 'What Dool2 did this week',
+    statMonth: 'What Dool2 did this month',
+    statPeriod: 'Period',
+    days7: '7 days',
+    days30: '30 days',
+    statUnit: '',
+    sameAsBefore: 'Same as last time',
+    vsBefore: (diff: string) => `${diff} vs last time`,
+    take: 'Hand it over',
+    later: 'Not now',
+  },
+})

@@ -84,7 +84,7 @@ describe('그림 만들기 (제미나이 웹)', () => {
     const { maker } = await setup(['[e1 링크 "로그인"] [e2 버튼 "무료로 회원가입"]\nGemini'])
     const r = await maker.make({ prompt: '공룡' })
     expect(r.isError).toBe(true)
-    expect(JSON.stringify(r.content)).toContain('로그인')
+    expect(JSON.stringify(r.content)).toContain('Not signed in')
     // 조용히 직접 그리지 않고 연결 카드를 띄우게 한다
     expect(JSON.stringify(r.content)).toContain('connect_ask')
   })

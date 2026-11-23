@@ -1,54 +1,54 @@
 /*
- * 두리 디자인 시스템 (@dool2/ui)
- * PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품. 화면 배치는 각 앱의 style.css가 맡는다.
- * 디자인 원본: docs/design (다르면 원본이 기준), 쓰는 법: packages/ui/README.md, 견본: packages/ui/preview.html
+ * Dool2 design system (@dool2/ui)
+ * Tokens and parts shared by the desktop app, phone app and Chrome extension. Each app's style.css handles layout.
+ * Design source: docs/design (the source wins if they differ), usage: packages/ui/README.md, samples: packages/ui/preview.html
  *
- * 부드러운 면 위에 민트 친구 하나. (v2, docs/design/screens/soft)
- * 1. 하는 일이 보여야 믿는다 — 머리의 두리 이름표에 지금 하는 일, 대화 안에 실시간 화면 카드
- * 2. 돈과 메시지는 사람이 누른다 — 승인 카드에서 멈추고, 승인 버튼(짙은 민트)이 화면에서 가장 무겁다
- * 3. 민트는 두리의 색 — 캐릭터, 일하는 중, 승인 버튼, 옅은 민트의 내 말풍선
- * 4. 상자보다 면, 떠 있는 것은 유리 — 회색 면으로 나누고, 머리 버튼·입력칸·탭 막대·시트만 떠 있다
- * 5. 상태는 색으로 약속한다 — 민트 = 일하는 중, 노랑 점 = 당신이 필요해요, ink 체크 = 끝, 빨강 = 멈춤
+ * One mint friend on soft surfaces. (v2, docs/design/screens/soft)
+ * 1. Trust comes from seeing the work: the current task on Dool2's name tag in the header, live screen cards in the chat
+ * 2. People press for money and messages: stop at the approval card, and the approve button (dark mint) is the heaviest thing on screen
+ * 3. Mint is Dool2's color: the character, working, the approve button, my bubbles in light mint
+ * 4. Surfaces over boxes, glass for floating things: split with gray surfaces; only header buttons, input, tab bar and sheets float
+ * 5. Status is a color promise: mint = working, yellow dot = needs you, ink check = done, red = stopped
  *
- * 테마: <html data-theme="auto">면 기기 설정을 따르고, "dark"·"light"로 고정할 수 있다. 없으면 라이트.
+ * Theme: <html data-theme="auto"> follows the device setting; "dark" or "light" pins it. Without it, light.
  */
 
-/* ── 토큰 ─────────────────────────────────────────── */
+/* ── Tokens ─────────────────────────────────────────── */
 :root {
   color-scheme: light;
 
-  /* 바탕 */
-  --bg: light-dark(#f5f6f8, #0d0f12); /* 앱 바탕: 아주 옅은 회색 (흰 카드가 떠 보이게) */
-  --surface: light-dark(#ffffff, #17191d); /* 카드, 시트, 옆 판 */
-  --surface-sunken: light-dark(#f0f2f5, #0a0b0d); /* 들어간 곳: 두리의 화면, 상품 미리보기 */
-  --raise: light-dark(#eef0f3, #202328); /* 두리 말풍선, 선택된 메뉴, 아이콘 칸 */
+  /* Background */
+  --bg: light-dark(#f5f6f8, #0d0f12); /* App background: very light gray (so white cards stand out) */
+  --surface: light-dark(#ffffff, #17191d); /* Cards, sheets, side panels */
+  --surface-sunken: light-dark(#f0f2f5, #0a0b0d); /* Sunken areas: Dool2's screen, product previews */
+  --raise: light-dark(#eef0f3, #202328); /* Dool2 bubbles, selected menu, icon tiles */
   --line: light-dark(#e6e8ed, #262a31);
-  --line-strong: light-dark(#8b9099, #5c616b); /* 입력 테두리, 보조 버튼 */
+  --line-strong: light-dark(#8b9099, #5c616b); /* Input borders, secondary buttons */
   --scrim: light-dark(rgba(17, 18, 20, 0.42), rgba(0, 0, 0, 0.6));
 
-  /* 글자 */
-  --ink: light-dark(#111214, #f2f3f5); /* 본문, 주 버튼, 내 말풍선 */
-  --ink-muted: light-dark(#5f646d, #a3a8b1); /* 설명, 시각 */
-  --ink-faint: light-dark(#8b9099, #6c717b); /* 빈 상태, 자리 표시 */
-  --ink-inverse: light-dark(#ffffff, #111214); /* ink 위의 글자 */
-  --on-accent: #0f2a1d; /* 민트·노랑 위의 글자 */
-  --me: light-dark(#d4f1e3, #1b4733); /* 내 말풍선: 옅은 민트 */
+  /* Text */
+  --ink: light-dark(#111214, #f2f3f5); /* Body text, primary button, my bubbles */
+  --ink-muted: light-dark(#5f646d, #a3a8b1); /* Descriptions, times */
+  --ink-faint: light-dark(#8b9099, #6c717b); /* Empty states, placeholders */
+  --ink-inverse: light-dark(#ffffff, #111214); /* Text on ink */
+  --on-accent: #0f2a1d; /* Text on mint and yellow */
+  --me: light-dark(#d4f1e3, #1b4733); /* My bubbles: light mint */
   --me-ink: light-dark(#08331f, #e9fff4);
 
-  /* 색: 상태로만 쓴다 */
-  --brand: #4cc98f; /* 두리 민트: 캐릭터, ², 일하는 중 */
+  /* Colors: only for status */
+  --brand: #4cc98f; /* Dool2 mint: character, the ², working */
   --brand-text: light-dark(#167a4b, #6fe0a8);
   --brand-soft: light-dark(#e5f7ee, #15302a);
-  --approve: #13885a; /* 승인 버튼 하나에만 (짙은 민트) */
+  --approve: #13885a; /* Only for the approve button (dark mint) */
   --approve-hi: #1aa369;
-  --butter: #ffd66b; /* 당신이 필요해요: 승인, 본인인증 */
+  --butter: #ffd66b; /* Needs you: approval, identity verification */
   --butter-soft: light-dark(#fff4d1, #352d14);
-  --danger: light-dark(#d0342c, #ff7a72); /* 멈추기, 거절, 오류: 글자로만 */
+  --danger: light-dark(#d0342c, #ff7a72); /* Stop, decline, error: text only */
   --danger-soft: light-dark(#fde4e2, #3a1816);
-  --night: #1d2846; /* 랜딩 히어로에만 */
+  --night: #1d2846; /* Landing hero only */
   --focus: var(--ink);
 
-  /* 여백 (4의 배수) */
+  /* Spacing (multiples of 4) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -57,34 +57,34 @@
   --space-8: 32px;
   --space-12: 48px;
 
-  /* 모서리 */
-  --radius-sm: 6px; /* 칩, 기록 줄 */
-  --radius-md: 14px; /* 버튼, 입력, 목록 줄 */
-  --radius-lg: 20px; /* 말풍선, 카드 */
-  --radius-xl: 32px; /* 바텀시트, 서랍 */
-  --radius-full: 999px; /* 캐릭터·점·토글, 떠 있는 탭 막대·입력칸·빠른 답. 주 버튼은 알약 아님 */
+  /* Corners */
+  --radius-sm: 6px; /* Chips, log lines */
+  --radius-md: 14px; /* Buttons, inputs, list rows */
+  --radius-lg: 20px; /* Bubbles, cards */
+  --radius-xl: 32px; /* Bottom sheets, drawers */
+  --radius-full: 999px; /* Character, dots, toggles, floating tab bar, input and quick replies. The primary button is not a pill */
 
-  /* 그림자: 떠 있는 것(승인 시트, 팝오버)에만 */
+  /* Shadows: only for floating things (approval sheet, popovers) */
   --shadow-a: light-dark(rgba(24, 24, 27, 0.04), rgba(0, 0, 0, 0.4));
   --shadow-b: light-dark(rgba(24, 24, 27, 0.18), rgba(0, 0, 0, 0.6));
   --shadow-sheet: 0 1px 0 var(--shadow-a), 0 14px 36px -12px var(--shadow-b);
   --shadow-card:
     0 0.5px 0 light-dark(rgba(16, 24, 40, 0.04), transparent),
     0 1px 2px light-dark(rgba(16, 24, 40, 0.05), transparent);
-  /* 떠 있는 유리: 머리 버튼, 입력칸, 탭 막대 */
+  /* Floating glass: header buttons, input, tab bar */
   --glass: light-dark(rgba(255, 255, 255, 0.74), rgba(30, 33, 38, 0.72));
   --glass-line: light-dark(rgba(16, 24, 40, 0.07), rgba(255, 255, 255, 0.07));
   --shadow-float:
     0 0 0 0.5px var(--glass-line), 0 12px 32px -12px light-dark(rgba(16, 24, 40, 0.28), rgba(0, 0, 0, 0.8)),
     0 2px 6px -2px light-dark(rgba(16, 24, 40, 0.08), rgba(0, 0, 0, 0.4));
 
-  /* 움직임 */
+  /* Motion */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 160ms;
   --dur-tab: 220ms;
   --dur-sheet: 280ms;
 
-  /* 글꼴 */
+  /* Fonts */
   --font-sans:
     "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
     "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
@@ -100,7 +100,7 @@
   --text-log: 450 12.5px / 19px var(--font-mono);
 
   /*
-   * 예전 이름 (옮기는 중). 앱 화면을 새 부품으로 옮기면 지운다.
+   * Old names (migrating). Remove once app screens move to the new parts.
    */
   --ink2: var(--ink-muted);
   --sub: var(--ink-muted);
@@ -137,7 +137,7 @@
   color-scheme: light;
 }
 
-/* ── 바탕 ─────────────────────────────────────────── */
+/* ── Base ─────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -150,7 +150,7 @@ body {
   color: var(--ink);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  /* 한국어는 낱말 단위로 줄을 바꾼다. 숫자는 줄을 맞춘다 */
+  /* Korean wraps at word boundaries. Numbers are tabular */
   word-break: keep-all;
   overflow-wrap: break-word;
   font-variant-numeric: tabular-nums;
@@ -176,7 +176,7 @@ a {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-/* 선 아이콘: 24 격자, 선 1.75, 끝 둥글게. 크기는 width·height로 */
+/* Line icons: 24 grid, 1.75 stroke, round caps. Size with width and height */
 svg.i {
   width: 16px;
   height: 16px;
@@ -192,9 +192,9 @@ svg.i.md {
   height: 20px;
 }
 
-/* ── 두리 ─────────────────────────────────────────── */
-/* 캐릭터: <span class="doori working"></span>. 크기는 --s (22–56은 그림, 64 이상은 .live로 3D)
-   그림은 3D 두리(doori3d.js)를 표정마다 미리 뽑은 것. 몸은 그림 정가운데, 소품은 머리 오른쪽 위 모서리 */
+/* ── Dool2 ─────────────────────────────────────────── */
+/* Character: <span class="doori working"></span>. Size with --s (22-56 uses images, 64 and up uses .live for 3D)
+   Images are pre-rendered per mood from the 3D Dool2 (doori3d.js). Body in the exact center, prop at the top right of the head */
 .doori {
   --s: 32px;
   position: relative;
@@ -219,7 +219,7 @@ svg.i.md {
 .doori.sleeping {
   background-image: url("doori/sleeping.webp");
 }
-/* 움직이는 3D: 그림 위에 캔버스를 얹고, 그려지면 그림을 감춘다 */
+/* Animated 3D: a canvas over the image; the image hides once the canvas draws */
 .doori .doori-canvas {
   position: absolute;
   inset: 0;
@@ -231,7 +231,7 @@ svg.i.md {
 .doori.live-ready {
   background-image: none;
 }
-/* 일하는 중에 천천히 떠 있는 움직임 (큰 캐릭터 하나에만) */
+/* Slow floating motion while working (only for one large character) */
 .doori.bob {
   animation: ui-bob 3.2s ease-in-out infinite;
 }
@@ -240,7 +240,7 @@ svg.i.md {
     transform: translateY(-3px);
   }
 }
-/* 예전 얼굴(.face): 두리 표시(작은 로고) */
+/* Old face (.face): the Dool2 mark (small logo) */
 .face {
   --s: 22px;
   flex: none;
@@ -249,7 +249,7 @@ svg.i.md {
   height: var(--s);
   background: url("doori/mark.svg") center / contain no-repeat;
 }
-/* 워드마크: dool² 두리 */
+/* Wordmark: dool² (Dool2) */
 .wordmark {
   display: inline-block;
   white-space: nowrap;
@@ -271,8 +271,8 @@ svg.i.md {
   color: var(--ink-muted);
 }
 
-/* ── 상태 ─────────────────────────────────────────── */
-/* 점 하나로 말한다. .work 민트(일하는 중·연결됨), .ask 노랑(당신이 필요해요), .done ink(끝), .stop 빨강, 없으면 꺼짐 */
+/* ── Status ─────────────────────────────────────────── */
+/* One dot says it all. .work mint (working, connected), .ask yellow (needs you), .done ink (done), .stop red, none = off */
 .dot {
   flex: none;
   display: inline-block;
@@ -297,7 +297,7 @@ svg.i.md {
 .dot.bad {
   background: var(--danger);
 }
-/* 살아 있는 점: 지금 일하는 중 */
+/* Live dot: working right now */
 .dot.pulse {
   animation: ui-pulse 1.6s ease-in-out infinite;
 }
@@ -306,7 +306,7 @@ svg.i.md {
     opacity: 0.35;
   }
 }
-/* 민트 원호: 기록의 진행 중 줄에만 */
+/* Mint arc: only on the in-progress log line */
 .spin {
   flex: none;
   display: inline-block;
@@ -323,7 +323,7 @@ svg.i.md {
     transform: rotate(360deg);
   }
 }
-/* 글자 위로 빛이 지나간다: 지금 하는 일 한 줄 */
+/* A shimmer passes over the text: the current task line */
 .shimmer {
   color: transparent;
   background:
@@ -348,7 +348,7 @@ svg.i.md {
     background-position: 0% 0;
   }
 }
-/* 작은 상태 이름표: "승인 대기" (노랑 바탕), "연결됨" (민트 바탕) */
+/* Small status tag: "awaiting approval" (yellow background), "connected" (mint background) */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -368,7 +368,7 @@ svg.i.md {
 .pill.work {
   background: var(--brand-soft);
 }
-/* 숫자 배지: 메뉴 옆 "1" */
+/* Number badge: "1" next to a menu item */
 .count {
   min-width: 18px;
   padding: 1px 6px;
@@ -381,7 +381,7 @@ svg.i.md {
   text-align: center;
 }
 
-/* ── 버튼: 동사로 끝낸다. 알약 아님 ─────────────────── */
+/* ── Buttons: labels are verbs. Not pills ─────────────────── */
 .btn,
 .btn-ghost,
 .btn-text,
@@ -410,25 +410,25 @@ svg.i.md {
 .btn-light:active {
   transform: translateY(1px);
 }
-/* 주 버튼: 한 화면에 하나 */
+/* Primary button: one per screen */
 .btn,
 .btn-small,
 .btn-light {
   background: var(--ink);
   color: var(--ink-inverse);
 }
-/* 보조 버튼: "내가 할게요" */
+/* Secondary button: "I'll do it" */
 .btn-ghost {
   background: transparent;
   color: var(--ink);
   border-color: var(--line-strong);
 }
-/* 글자 버튼: 도구줄·줄 안의 작은 동작 */
+/* Text button: small actions in toolbars and rows */
 .btn-text {
   padding: 0 12px;
   color: var(--ink-muted);
 }
-/* 멈추기·거절: 테두리만, 빨강은 글자 */
+/* Stop, decline: outline only, red text */
 .btn-danger {
   background: transparent;
   color: var(--danger);
@@ -456,7 +456,7 @@ svg.i.md {
   cursor: default;
   transform: none;
 }
-/* 크기: .sm 34px (메시지 안), .lg 52px (모바일 주 버튼, 승인) */
+/* Sizes: .sm 34px (inside messages), .lg 52px (mobile primary button, approval) */
 .btn-small,
 .btn.sm,
 .btn-ghost.sm,
@@ -508,7 +508,7 @@ svg.i.md {
   border-radius: 14px;
   color: var(--ink);
 }
-/* 보내기: ink 정사각 */
+/* Send: ink square */
 .send {
   flex: none;
   display: inline-grid;
@@ -529,8 +529,8 @@ svg.i.md {
   cursor: default;
 }
 
-/* ── 고르기 ───────────────────────────────────────── */
-/* 빠른 답·예시 부탁: 사용자가 할 말 그대로, 최대 3개 */
+/* ── Choosing ───────────────────────────────────────── */
+/* Quick replies and sample requests: in the user's own words, at most 3 */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -555,7 +555,7 @@ svg.i.md {
   border-color: var(--ink);
   color: var(--ink-inverse);
 }
-/* 덜 눈에 띄는 칩: 둘러보기 분류 등 */
+/* Quieter chips: browse categories and similar */
 .chip.quiet {
   height: 32px;
   padding: 0 12px;
@@ -568,7 +568,7 @@ svg.i.md {
   flex-wrap: wrap;
   gap: 6px;
 }
-/* 몇 개 중 하나 고르기 */
+/* Pick one of a few */
 .seg {
   display: inline-flex;
   gap: 2px;
@@ -596,7 +596,7 @@ svg.i.md {
   color: var(--ink);
   box-shadow: 0 0 0 1px var(--line);
 }
-/* 켜고 끄기. 부모에 aria-checked="true"면 켜진다 */
+/* On/off toggle. On when the parent has aria-checked="true" */
 .switch {
   position: relative;
   display: inline-block;
@@ -643,7 +643,7 @@ svg.i.md {
   border-color: var(--ink);
 }
 
-/* ── 글자 ─────────────────────────────────────────── */
+/* ── Text ─────────────────────────────────────────── */
 .display {
   margin: 0;
   font: var(--text-display);
@@ -659,7 +659,7 @@ svg.i.md {
   font: var(--text-title-2);
   letter-spacing: -0.015em;
 }
-/* 구역 이름: 회색 작은 글씨. 대문자 영어 이름표는 쓰지 않는다 */
+/* Section name: small gray text. No uppercase English labels */
 .over {
   margin: 0 0 4px;
   font-size: 13px;
@@ -677,13 +677,13 @@ svg.i.md {
   font: var(--text-caption);
   color: var(--ink-muted);
 }
-/* 고정폭: 기록·영수증·도메인처럼 줄을 맞춰야 하는 곳에만 */
+/* Monospace: only where columns must line up, like logs, receipts and domains */
 .mono {
   font-family: var(--font-mono);
   font-size: 0.86em;
   letter-spacing: 0;
 }
-/* 두리 답: 문단·목록 (@dool2/protocol/rich) */
+/* Dool2's replies: paragraphs and lists (@dool2/protocol/rich) */
 .rich p,
 .rich ul,
 .rich ol {
@@ -706,8 +706,8 @@ svg.i.md {
   font-weight: 650;
 }
 
-/* ── 대화 ─────────────────────────────────────────── */
-/* 말한 사람: 두리 얼굴(24px) + 이름 + 시각. 두리 묶음의 첫 말에만 */
+/* ── Chat ─────────────────────────────────────────── */
+/* Speaker: Dool2 face (24px) + name + time. Only on the first message of a Dool2 group */
 .who {
   display: flex;
   align-items: center;
@@ -719,7 +719,7 @@ svg.i.md {
 .who .doori {
   --s: 22px;
 }
-/* 말풍선: 두리는 회색, 나는 ink 반전 */
+/* Bubbles: Dool2 in gray, mine in inverted ink */
 .bubble {
   align-self: flex-start;
   max-width: 84%;
@@ -746,7 +746,7 @@ svg.i.md {
 .bubble.me + .bubble.me {
   border-top-right-radius: 6px;
 }
-/* 내 말에 두리가 얼굴로 반응 (이모지 대신) */
+/* Dool2 reacts to my message with a face (instead of an emoji) */
 .react {
   position: absolute;
   right: -6px;
@@ -762,7 +762,7 @@ svg.i.md {
 .react .doori {
   --s: 20px;
 }
-/* 날짜 나눔: ─── 오늘 ─── */
+/* Date divider: ─── Today ─── */
 .sep {
   display: flex;
   align-items: center;
@@ -778,7 +778,7 @@ svg.i.md {
   height: 1px;
   background: var(--line);
 }
-/* 끝난 일 한 줄: ✓ 미용실 예약했어요 · 토 11:00 › */
+/* Finished task line: ✓ Booked the hair salon · Sat 11:00 › */
 .done-row {
   display: flex;
   align-items: center;
@@ -789,7 +789,7 @@ svg.i.md {
   font-size: 14px;
   text-align: left;
 }
-/* 두리 앱이 대신 보낸 알림 (승인 결과): 가운데 회색 한 줄 */
+/* Notice the Dool2 app posted on your behalf (approval result): one centered gray line */
 .msg.note {
   align-self: center;
   display: flex;
@@ -810,7 +810,7 @@ svg.i.md {
   background: var(--brand);
   transform: translateY(-1px);
 }
-/* 입력창: 첨부 · 글 · 말로 부탁하기 · 말하기(또는 보내기) */
+/* Composer: attach · text · ask by voice · speak (or send) */
 .composer {
   display: flex;
   align-items: center;
@@ -868,8 +868,8 @@ svg.i.md {
   cursor: default;
 }
 
-/* ── 떠 있는 머리: 메뉴 · 두리 · 내 PC ───────────────── */
-/* 동그란 유리 버튼 (메뉴, 닫기) */
+/* ── Floating header: menu · Dool2 · my PC ───────────────── */
+/* Round glass button (menu, close) */
 .fbtn {
   display: inline-grid;
   place-items: center;
@@ -886,7 +886,7 @@ svg.i.md {
   width: 22px;
   height: 22px;
 }
-/* 알약 유리 버튼 (내 PC 상태) */
+/* Pill glass button (my PC status) */
 .fpill {
   display: inline-flex;
   align-items: center;
@@ -901,7 +901,7 @@ svg.i.md {
   backdrop-filter: saturate(1.8) blur(20px);
   box-shadow: var(--shadow-float);
 }
-/* 가운데 두리: 캐릭터 동그라미 + 이름표(지금 하는 일) */
+/* Dool2 in the middle: character circle + name tag (current task) */
 .agent {
   display: flex;
   flex-direction: column;
@@ -956,7 +956,7 @@ svg.i.md {
     opacity: 0.25;
   }
 }
-/* 떠 있는 입력칸: + · 글 · 말하기 */
+/* Floating input: + · text · speak */
 .composer.float {
   border: 0;
   border-radius: var(--radius-full);
@@ -965,7 +965,7 @@ svg.i.md {
   backdrop-filter: saturate(1.8) blur(22px);
   box-shadow: var(--shadow-float);
 }
-/* 빠른 답: 두리가 물은 말 아래 */
+/* Quick replies: under Dool2's question */
 .quick {
   display: flex;
   flex-wrap: wrap;
@@ -981,7 +981,7 @@ svg.i.md {
     var(--shadow-card);
   font: 550 13.5px / 1 var(--font-sans);
 }
-/* 대답 중: 점 셋 */
+/* Replying: three dots */
 .typing {
   align-self: flex-start;
   display: inline-flex;
@@ -1010,7 +1010,7 @@ svg.i.md {
     opacity: 1;
   }
 }
-/* 대화 안의 실시간 화면 카드: 회색 판 + 머리(무엇을 하는 중) + 미리보기 + 크게 보기 */
+/* Live screen card in the chat: gray panel + header (what it is doing) + preview + view larger */
 .livecard {
   width: min(320px, 100%);
   padding: 12px;
@@ -1046,8 +1046,8 @@ svg.i.md {
   animation: ui-pulse 1.4s infinite;
 }
 
-/* ── 일 ───────────────────────────────────────────── */
-/* 지금 하는 일 막대: 어디서든 위에 떠 있다 */
+/* ── Tasks ───────────────────────────────────────────── */
+/* Current task bar: floats on top everywhere */
 .livebar {
   display: flex;
   align-items: center;
@@ -1067,7 +1067,7 @@ svg.i.md {
 .livebar b {
   font-weight: 650;
 }
-/* 두리가 보고 있는 화면 */
+/* The screen Dool2 is looking at */
 .screen {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -1087,7 +1087,7 @@ svg.i.md {
   font-weight: 500;
   color: var(--ink);
 }
-/* 진행 중인 일 카드: 제목 · 상태 / 두리의 화면 / 진행 막대 */
+/* In-progress task card: title · status / Dool2's screen / progress bar */
 .workcard {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1120,7 +1120,7 @@ svg.i.md {
   gap: 8px;
   padding: 10px 16px 14px;
 }
-/* 단계 막대: <span class="stepbar"><i class="on"></i><i class="now"></i><i></i></span> */
+/* Step bar: <span class="stepbar"><i class="on"></i><i class="now"></i><i></i></span> */
 .stepbar {
   flex: 1;
   display: flex;
@@ -1139,7 +1139,7 @@ svg.i.md {
   background: var(--brand);
   opacity: 0.5;
 }
-/* 무엇을 했는지 한 줄씩 (AgentLog). 진짜 도메인을 적는다 */
+/* What was done, one line each (AgentLog). Shows the real domain */
 .log {
   padding: 6px;
   border-radius: var(--radius-md);
@@ -1177,7 +1177,7 @@ svg.i.md {
   background: var(--butter-soft);
   color: var(--ink);
 }
-/* 진행 단계 (짧은 목록): 끝난 일 ✓, 지금 하는 일(원호), 다음 일(빈 원) */
+/* Progress steps (short list): done ✓, current (arc), next (empty circle) */
 .worklog {
   margin: 0;
   padding: 0;
@@ -1227,7 +1227,7 @@ svg.i.md {
   border: 1.6px solid var(--line-strong);
 }
 
-/* ── 승인: 돈·메시지는 여기서 멈춘다 ────────────────── */
+/* ── Approval: money and messages stop here ────────────────── */
 .approve {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1253,7 +1253,7 @@ svg.i.md {
 .approve-body {
   padding: 6px 16px 4px;
 }
-/* 승인할 목록 (PC 파일 옮기기: 한 줄에 "a.pdf → ~/Downloads/영수증/"). 길면 카드 안에서 굴린다 */
+/* List to approve (moving PC files: one per line, "a.pdf → ~/Downloads/Receipts/"). Scrolls inside the card when long */
 .approve-items {
   margin: 0;
   padding: 0;
@@ -1277,7 +1277,7 @@ svg.i.md {
   letter-spacing: 0;
   color: var(--ink-muted);
 }
-/* 승인 버튼: 화면에서 가장 무겁다. 한 화면에 하나 */
+/* Approve button: the heaviest thing on screen. One per screen */
 .btn-approve {
   background: linear-gradient(180deg, var(--approve-hi), var(--approve));
   color: #fff;
@@ -1300,7 +1300,7 @@ svg.i.md {
   font: var(--text-caption);
   color: var(--ink-muted);
 }
-/* 이름·값 줄: <dl class="kv"><dt>좌석</dt><dd>7호차 12A</dd>…</dl> */
+/* Name/value rows: <dl class="kv"><dt>Seat</dt><dd>Car 7, 12A</dd>…</dl> */
 .kv {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1337,8 +1337,8 @@ svg.i.md {
   font-weight: 450;
 }
 
-/* ── 목록·카드 ────────────────────────────────────── */
-/* 선으로 나눈 목록. .boxed면 테두리 하나로 감싼다 */
+/* ── Lists and cards ────────────────────────────────────── */
+/* List split by lines. .boxed wraps it in one border */
 .list {
   margin: 0;
   padding: 0;
@@ -1352,7 +1352,7 @@ svg.i.md {
   border-radius: 14px;
   overflow: hidden;
 }
-/* 목록 한 줄: 아이콘 칸 · 제목/설명 · 끝 */
+/* List row: icon tile · title/description · trailing */
 .row {
   display: flex;
   align-items: center;
@@ -1375,7 +1375,7 @@ svg.i.md {
   line-height: 19px;
   color: var(--ink-muted);
 }
-/* 아이콘 칸 (바로가기 타일) */
+/* Icon tile (shortcut tile) */
 .tile {
   flex: none;
   display: grid;
@@ -1386,7 +1386,7 @@ svg.i.md {
   background: var(--raise);
   color: var(--ink);
 }
-/* 감싸야 할 때만 쓰는 카드. 카드 안에 카드를 넣지 않는다 */
+/* Card, only when something needs wrapping. No cards inside cards */
 .card {
   display: flex;
   flex-direction: column;
@@ -1397,11 +1397,11 @@ svg.i.md {
   background: var(--surface);
   box-shadow: var(--shadow-card);
 }
-/* 끝난 일·기록: 가볍게 */
+/* Finished tasks and logs: light */
 .card.quiet {
   background: transparent;
 }
-/* 당신이 필요해요: 승인·본인인증 (예전 .dark) */
+/* Needs you: approval, identity verification (formerly .dark) */
 .card.ask,
 .card.dark {
   border-color: transparent;
@@ -1420,7 +1420,7 @@ svg.i.md {
 .card.dark .card-label {
   color: var(--ink);
 }
-/* 맡긴 일 카드: 상태 줄 → 제목 → 내용 */
+/* Task card: status line → title → content */
 .task {
   min-width: 0;
   display: flex;
@@ -1462,7 +1462,7 @@ button.task:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* 지금 하는 일 (예전 .dark) */
+/* Current task (formerly .dark) */
 .task.live,
 .task.dark {
   border-color: transparent;
@@ -1475,8 +1475,8 @@ button.task:hover {
   justify-content: flex-start;
 }
 
-/* 아이콘 칸 색 (아이디어·활동 기록): 옅은 그라데이션 다섯 가지 */
-/* 기능 아이콘 칸: 색을 빼고 차분하게 (내용 분류는 아래 입체 이모지) */
+/* Icon tile colors (ideas, activity log): five light gradients */
+/* Feature icon tiles: no color, calm (content categories use the 3D emoji below) */
 .tile.blue,
 .tile.mint,
 .tile.amber,
@@ -1485,7 +1485,7 @@ button.task:hover {
   background: var(--raise);
   color: var(--ink);
 }
-/* 내용 분류: 입체 이모지 (Fluent Emoji 3D) */
+/* Content categories: 3D emoji (Fluent Emoji 3D) */
 .tile.emo {
   background: transparent;
   box-shadow: none;
@@ -1499,8 +1499,8 @@ button.task:hover {
   user-select: none;
 }
 
-/* ── 틀 ───────────────────────────────────────────── */
-/* PC 왼쪽 메뉴 한 줄 */
+/* ── Layout ───────────────────────────────────────────── */
+/* Desktop left menu row */
 .navi {
   display: flex;
   align-items: center;
@@ -1523,7 +1523,7 @@ button.task:hover {
   background: var(--raise);
   color: var(--ink);
 }
-/* 모바일 아래 탭 4개: 떠 있는 알약. 지금 탭만 이름을 펼친다 */
+/* Mobile bottom tabs (4): a floating pill. Only the current tab shows its name */
 .tabs {
   display: inline-flex;
   align-items: center;
@@ -1573,7 +1573,7 @@ button.task:hover {
 .tab[aria-current="page"] .tab-label {
   display: inline;
 }
-/* 나를 기다리는 것이 있으면 노랑 점 */
+/* Yellow dot when something is waiting for me */
 .tab .badge {
   position: absolute;
   top: 10px;
@@ -1584,7 +1584,7 @@ button.task:hover {
   background: var(--butter);
   box-shadow: 0 0 0 2px var(--surface);
 }
-/* 바텀시트 (모바일 승인) */
+/* Bottom sheet (mobile approval) */
 .scrim {
   position: fixed;
   inset: 0;
@@ -1605,14 +1605,14 @@ button.task:hover {
   background: var(--line-strong);
   opacity: 0.6;
 }
-/* 떠 있는 바텀시트: 네 모서리 둥글게, 화면 가장자리에서 8px 떨어진다 */
+/* Floating bottom sheet: four rounded corners, 8px from the screen edges */
 .sheet.float {
   border-radius: var(--radius-xl);
   box-shadow:
     0 -0.5px 0 var(--glass-line),
     var(--shadow-sheet);
 }
-/* 왼쪽 메뉴 서랍 (모바일): 메인 대화 + 따로 하는 대화 */
+/* Left menu drawer (mobile): main chat + separate chats */
 .drawer {
   display: flex;
   flex-direction: column;
@@ -1630,7 +1630,7 @@ button.task:hover {
   font-weight: 650;
 }
 
-/* 잠깐 뜨는 알림 */
+/* Toast */
 .toast {
   padding: 10px 16px;
   border-radius: 14px;
@@ -1642,7 +1642,7 @@ button.task:hover {
   box-shadow: var(--shadow-sheet);
 }
 
-/* 새 메시지는 4px만 올라오며 나온다. 스크롤 페이드업은 쓰지 않는다 */
+/* New messages rise just 4px as they appear. No scroll fade-up */
 .rise {
   animation: ui-rise var(--dur) var(--ease) both;
 }
@@ -1671,7 +1671,7 @@ button.task:hover {
   }
 }
 
-/* ── 답에 붙는 카드 묶음 (상품·숙소·식당): 옆으로 넘겨 보는 사진 카드 ── */
+/* ── Card sets attached to replies (products, stays, restaurants): photo cards that scroll sideways ── */
 .pick-cards {
   display: flex;
   gap: 10px;
@@ -1707,11 +1707,11 @@ button.task:hover {
   place-items: center;
   color: var(--ink-faint);
 }
-/* 세로 포스터·책 표지 묶음: 3:4 */
+/* Portrait posters and book covers: 3:4 */
 .pick-cards.portrait .pick-photo {
   aspect-ratio: 3 / 4;
 }
-/* 사진 크기·비율과 상관없이 칸에 꽉 채워 자른다 (칸은 사진 때문에 늘어나지 않는다) */
+/* Crop to fill the slot whatever the photo size or ratio (the slot never grows because of the photo) */
 .pick-card .pick-photo img {
   position: absolute;
   inset: 0;
@@ -1745,7 +1745,7 @@ button.task:hover {
 .pick-card .pick-title {
   font-size: var(--text-label);
   line-height: 1.35;
-  /* 이름이 한 줄이어도 두 줄 자리를 두어 가격·정보 줄이 카드마다 같은 높이에 온다 */
+  /* Reserve two lines even for a one-line name, so price and info rows line up across cards */
   min-height: calc(1.35em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1789,9 +1789,9 @@ button.task:hover {
   color: var(--ink-inverse);
 }
 
-/* ── 결과 블록 (docs/design/system/components/ChatBlocks) ───────────
- * 답 말풍선 바로 아래 하나. 같은 틀: 머리 줄 · 내용 · 버튼 2개까지. 카드 안 카드·안쪽 스크롤 없음.
- * 목록 줄(.cb-rows) · 결과 한 장(.cb-result) · 보낼 글(.cb-draft), 빠른 답은 .quick.cb-quick
+/* ── Result blocks (docs/design/system/components/ChatBlocks) ───────────
+ * One right under the reply bubble. Same frame: header row · content · up to 2 buttons. No cards in cards, no inner scrolling.
+ * List rows (.cb-rows) · single result (.cb-result) · message draft (.cb-draft), quick replies are .quick.cb-quick
  */
 .cb {
   display: flex;
@@ -1839,7 +1839,7 @@ button.task:hover {
   font-weight: 500;
   color: var(--ink-faint);
 }
-/* 끝났어요 체크: ink 동그라미 (상태 약속: 검정 체크 = 끝) */
+/* Done check: ink circle (status promise: black check = done) */
 .cb-done {
   flex: none;
   position: relative;
@@ -1871,7 +1871,7 @@ button.task:hover {
   font-size: 14px;
 }
 
-/* 목록 줄 */
+/* List rows */
 .cb-list {
   list-style: none;
   margin: 0;
@@ -2027,7 +2027,7 @@ button.task:hover {
   font-weight: 600;
   text-align: center;
 }
-/* 여러 개 고르기: 두리가 미리 체크, 끈 줄은 흐리게 */
+/* Pick several: Dool2 pre-checks, unchecked rows are dimmed */
 .cb-check {
   position: relative;
   flex: none;
@@ -2061,7 +2061,7 @@ button.task:hover {
   pointer-events: none;
 }
 
-/* 경로 카드 (길찾기): 노선 색 막대 + 구간 줄 */
+/* Route card (directions): line color bar + leg rows */
 .cb-route-bar {
   display: flex;
   gap: 3px;
@@ -2136,7 +2136,7 @@ button.task:hover {
   color: var(--ink-muted);
 }
 
-/* 결과 한 장 */
+/* Single result */
 .cb-body {
   padding: 4px 14px 4px;
 }
@@ -2228,7 +2228,7 @@ button.task:hover {
   font: var(--text-log);
 }
 
-/* 보낼 글 */
+/* Message draft */
 .cb-to {
   padding: 12px 14px 0;
   font: var(--text-caption);
@@ -2254,7 +2254,7 @@ button.task:hover {
   user-select: text;
 }
 
-/* 빠른 답: 첫 버튼이 두리 추천(ink), 누르면 나머지는 흐리게 */
+/* Quick replies: the first button is Dool2's pick (ink); once one is pressed the rest dim */
 .quick.cb-quick button.main {
   background: var(--ink);
   color: var(--ink-inverse);

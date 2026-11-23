@@ -1,5 +1,7 @@
-// 간편 로그인 공급자 로고 (각 공급자 안내의 모양을 단순하게 그린 것). 버튼 왼쪽에 둔다
+// Social sign-in provider logos (simplified from each provider's guidelines), shown on the left of the button
 import type { SocialProvider } from '@dool2/protocol/connect'
+import { lang } from './lang.js'
+import { socialCta } from './locales/brands.js'
 
 const SVG: Record<SocialProvider, string> = {
   kakao:
@@ -17,16 +19,8 @@ const SVG: Record<SocialProvider, string> = {
   toss: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="#fff"/><circle cx="12" cy="12" r="4.2" fill="#0064ff"/></svg>',
 }
 
-/** 버튼 글: "카카오로 계속하기" */
-export const SOCIAL_CTA: Record<SocialProvider, string> = {
-  kakao: '카카오로 계속하기',
-  naver: '네이버로 계속하기',
-  google: 'Google로 계속하기',
-  apple: 'Apple로 계속하기',
-  facebook: 'Facebook으로 계속하기',
-  payco: 'PAYCO로 계속하기',
-  toss: '토스로 계속하기',
-}
+/** Button text: "Continue with Kakao" */
+export const SOCIAL_CTA: Record<SocialProvider, string> = socialCta(lang)
 
 export function brandMark(p: SocialProvider): HTMLElement {
   const span = document.createElement('span')

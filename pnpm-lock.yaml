@@ -188,6 +188,9 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../engine
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -197,6 +200,9 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../engine
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -209,6 +215,9 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../engine
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -218,12 +227,18 @@ importers:
       '@dool2/engine':
         specifier: workspace:*
         version: link:../engine
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/engine:
     dependencies:
+      '@dool2/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@dool2/protocol':
         specifier: workspace:*
         version: link:../protocol

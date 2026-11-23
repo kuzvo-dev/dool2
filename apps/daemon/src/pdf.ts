@@ -1,45 +1,46 @@
-// PDF 읽기: pdfjs-dist(Mozilla PDF.js, Apache-2.0)로 쪽마다 글을 뽑는다.
-// 예전 방식(스트림을 직접 풀어 ToUnicode 표를 하나로 합치기)은 글꼴마다 표가 다른 한글 견적서·고지서에서
-// 글자가 깨졌다. PDF.js는 글꼴별 ToUnicode·CID 글꼴 표(cmaps)·압축·객체 스트림을 모두 다룬다.
+// PDF reading: pulls text page by page with pdfjs-dist (Mozilla PDF.js, Apache-2.0).
+// The old approach (unpacking streams by hand and merging ToUnicode tables into one) garbled Korean quotes and bills
+// where every font has its own table. PDF.js handles per-font ToUnicode, CID font tables (cmaps), compression and object streams.
 //
-// - 줄: 같은 높이(y)에 놓인 글 조각을 한 줄로 모으고 왼쪽부터 잇는다
-// - 표: 조각 사이가 글자 1.5개보다 넓으면 칸이 바뀐 것으로 보고 ' | '로 나눈다
-// - 스캔 PDF: 글이 거의 없으면 쪽마다 가장 큰 사진을 PNG로 꺼낸다 (캔버스 없이)
-// - PC 앱 묶음(esbuild)에도 들어가도록 worker는 직접 import 하고, cmaps·wasm은 dist/pdfjs/에 복사해 둔다
+// - Lines: text pieces at the same height (y) are gathered into one line and joined from the left
+// - Tables: a gap wider than 1.5 characters between pieces means a new cell, split with ' | '
+// - Scanned PDFs: with almost no text, the largest picture on each page is extracted as PNG (no canvas)
+// - To work inside the desktop app bundle (esbuild), the worker is imported directly and cmaps and wasm are copied to dist/pdfjs/
 //   (apps/desktop/scripts/package.mjs)
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
+import { PDF_PAGE_MARK_RE, pdfFieldMark, pdfPageMark, pdfTruncated } from './region/kr/pdf.js'
 
 type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
 
 export interface PdfText {
-  /** 쪽 수 */
+  /** Page count */
   pages: number
-  /** 쪽마다 "[n쪽]" 머리를 붙여 이은 글 */
+  /** Text joined page by page, each with a page-number header */
   text: string
-  /** text 안에서 각 쪽이 시작하는 위치 (이어 읽기 안내용) */
+  /** Where each page starts inside text (for continue-reading hints) */
   pageStarts: number[]
-  /** 글자·숫자 수 (스캔 PDF 판단용) */
+  /** Count of letters and digits (to tell scanned PDFs) */
   letters: number
-  /** 표처럼 칸을 ' | '로 나눈 줄이 있었는지 */
+  /** Whether any line was split into cells with ' | ' like a table */
   table: boolean
 }
 
-/** 너무 큰 PDF에서 멈추지 않게 이만큼까지만 읽는다 */
+/** Read only this many pages so huge PDFs do not hang */
 const MAX_PAGES = 500
 
 let lib: Promise<PdfJs> | undefined
-/** pdfjs를 처음 쓸 때 한 번만 불러온다 (두리 본체 시작을 느리게 하지 않게) */
+/** Load pdfjs once, on first use (so the daemon starts fast) */
 function pdfjs(): Promise<PdfJs> {
   lib ??= (async () => {
-    // Node에는 캔버스가 없어 불러올 때 경고를 찍는다. 그림 그리기는 쓰지 않으니 그 경고만 잠깐 숨긴다
+    // Node has no canvas, so loading prints a warning. We never draw, so hide just that warning for a moment
     const warn = console.warn
     console.warn = () => {}
     try {
-      // 별도 worker 대신 같은 스레드에서 돌린다. 경로 문자열로 불러오면 묶음에 빠지므로 직접 import
+      // Run in the same thread instead of a separate worker. Loading by path string would be left out of the bundle, so import directly
       ;(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = await import(
         'pdfjs-dist/legacy/build/pdf.worker.mjs'
       )
@@ -51,7 +52,7 @@ function pdfjs(): Promise<PdfJs> {
   return lib
 }
 
-/** cmaps(한글 CID 글꼴 표)·wasm이 있는 폴더. PC 앱 묶음이면 dist/pdfjs, 개발 중이면 node_modules */
+/** Folder with cmaps (Korean CID font tables) and wasm: dist/pdfjs in the desktop bundle, node_modules in development */
 function assetDir(): string | undefined {
   const here = dirname(fileURLToPath(import.meta.url))
   const bundled = join(here, 'pdfjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
@@ -67,7 +68,7 @@ async function open(buf: Buffer) {
   const p = await pdfjs()
   const dir = assetDir()
   const task = p.getDocument({
-    // pdfjs가 넘긴 배열을 옮겨 가므로 복사본을 준다
+    // pdfjs takes over the array it is given, so pass a copy
     data: new Uint8Array(buf),
     ...(dir ? { cMapUrl: join(dir, 'cmaps') + sep, cMapPacked: true, wasmUrl: join(dir, 'wasm') + sep } : {}),
     verbosity: 0,
@@ -79,8 +80,10 @@ async function open(buf: Buffer) {
   } catch (e) {
     await task.destroy().catch(() => {})
     if ((e as Error).name === 'PasswordException')
-      throw new Error('암호가 걸린 PDF라 읽지 못했어요. 암호를 푼 파일로 저장해 주시면 읽을 수 있어요.')
-    throw new Error(`PDF를 열지 못했어요(${(e as Error).message}). 파일이 깨졌을 수 있어요.`)
+      throw new Error(
+        'This PDF is password-protected and cannot be read. Save a copy without the password and it can be read.',
+      )
+    throw new Error(`Could not open the PDF (${(e as Error).message}). The file may be corrupted.`)
   }
 }
 
@@ -92,10 +95,10 @@ interface Piece {
   h: number
 }
 
-/** 한 쪽의 글 조각을 줄·칸으로 정리 */
+/** Arrange one page's text pieces into lines and cells */
 export function layout(pieces: Piece[]): { text: string; table: boolean } {
   const items = pieces.filter((t) => t.str.trim())
-  // 위에서 아래로, 같은 높이면 왼쪽부터
+  // Top to bottom, left to right at the same height
   items.sort((a, b) => b.y - a.y || a.x - b.x)
   const lines: { y: number; h: number; items: Piece[] }[] = []
   for (const it of items) {
@@ -118,7 +121,7 @@ export function layout(pieces: Piece[]): { text: string; table: boolean } {
     for (const it of l.items) {
       if (last) {
         const em = Math.max(last.h, it.h) || 10
-        // 굵게 보이려고 같은 글을 살짝 비켜 두 번 그린 것은 한 번만
+        // Text drawn twice, slightly offset, to look bold counts once
         if (it.str === last.str && Math.abs(it.x - last.x) < em * 0.3) continue
         const gap = it.x - (last.x + last.w)
         if (gap > em * 1.5) {
@@ -131,7 +134,7 @@ export function layout(pieces: Piece[]): { text: string; table: boolean } {
     }
     s = s.replace(/\s+/g, ' ').trim()
     if (!s) continue
-    // 줄 사이가 크게 벌어지면 문단이 바뀐 것으로 보고 빈 줄
+    // A big gap between lines means a new paragraph: add a blank line
     if (prevY !== undefined && prevY - l.y > Math.max(prevH, l.h) * 2.2) out.push('')
     out.push(s)
     prevY = l.y
@@ -140,7 +143,7 @@ export function layout(pieces: Piece[]): { text: string; table: boolean } {
   return { text: out.join('\n'), table }
 }
 
-/** PDF 글: 쪽마다 줄·표를 살려 뽑는다 */
+/** PDF text: extracted page by page, keeping lines and tables */
 export async function pdfText(buf: Buffer): Promise<PdfText> {
   const { task, doc } = await open(buf)
   try {
@@ -160,29 +163,29 @@ export async function pdfText(buf: Buffer): Promise<PdfText> {
       }
       const lay = layout(pieces)
       table ||= lay.table
-      // 입력칸(서식 PDF)에 적힌 값은 글 조각에 없어서 따로 붙인다
+      // Values typed into form fields (form PDFs) are not in the text pieces, so add them separately
       const fields = (await page.getAnnotations().catch(() => []))
         .map((a: { fieldValue?: unknown }) => a.fieldValue)
         .filter((v: unknown): v is string => typeof v === 'string' && v.trim() !== '')
-      const body = [lay.text, ...(fields.length ? [`(입력칸) ${fields.join(' | ')}`] : [])]
+      const body = [lay.text, ...(fields.length ? [pdfFieldMark(fields.join(' | '))] : [])]
         .filter(Boolean)
         .join('\n')
-      const part = `[${n}쪽]\n${body}\n`
+      const part = `${pdfPageMark(n)}\n${body}\n`
       pageStarts.push(len)
       parts.push(part)
       len += part.length + 1
       page.cleanup()
     }
     let text = parts.join('\n').trimEnd()
-    if (pages > MAX_PAGES) text += `\n\n(전체 ${pages}쪽 중 앞 ${MAX_PAGES}쪽만 읽었어요)`
-    const letters = text.replace(/\[\d+쪽\]/g, '').match(/[\p{L}\p{N}]/gu)?.length ?? 0
+    if (pages > MAX_PAGES) text += `\n\n${pdfTruncated(pages, MAX_PAGES)}`
+    const letters = text.replace(PDF_PAGE_MARK_RE, '').match(/[\p{L}\p{N}]/gu)?.length ?? 0
     return { pages, text, pageStarts, letters, table }
   } finally {
     await task.destroy().catch(() => {})
   }
 }
 
-/** 스캔 PDF: 쪽마다 가장 큰 사진을 PNG로 (앞쪽부터 max장). 그림이 크면 긴 변 maxSide로 줄인다 */
+/** Scanned PDF: the largest picture on each page as PNG (first max pages). Big pictures are shrunk to maxSide on the long edge */
 export async function pdfScanImages(buf: Buffer, max = 3, maxSide = 1600): Promise<Buffer[]> {
   const { p, task, doc } = await open(buf)
   const out: Buffer[] = []
@@ -213,7 +216,7 @@ export async function pdfScanImages(buf: Buffer, max = 3, maxSide = 1600): Promi
   }
 }
 
-/** pdfjs가 풀어 준 그림 (kind 1: 흑백 1비트, 2: RGB, 3: RGBA) */
+/** Image decoded by pdfjs (kind 1: 1-bit black and white, 2: RGB, 3: RGBA) */
 interface RawImage {
   width: number
   height: number
@@ -221,7 +224,7 @@ interface RawImage {
   data: Uint8Array | Uint8ClampedArray
 }
 
-/** 같은 크기의 RGB로 바꾸면서 긴 변을 maxSide 아래로 줄인다 (칸 평균) */
+/** Convert to RGB while shrinking the long edge below maxSide (box average) */
 function shrink(img: RawImage, maxSide: number): { width: number; height: number; rgb: Buffer } {
   const { width: w, height: h, kind, data } = img
   const f = Math.max(1, Math.ceil(Math.max(w, h) / maxSide))
@@ -244,7 +247,7 @@ function shrink(img: RawImage, maxSide: number): { width: number; height: number
   return { width: W, height: H, rgb }
 }
 
-/** 아주 작은 PNG 만들기 (RGB 8비트, 필터 없음) */
+/** Make a tiny PNG (RGB 8-bit, no filter) */
 function png({ width, height, rgb }: { width: number; height: number; rgb: Buffer }): Buffer {
   const raw = Buffer.alloc((width * 3 + 1) * height)
   for (let y = 0; y < height; y++) rgb.copy(raw, y * (width * 3 + 1) + 1, y * width * 3, (y + 1) * width * 3)
@@ -259,7 +262,7 @@ function png({ width, height, rgb }: { width: number; height: number; rgb: Buffe
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
-  ihdr[8] = 8 // 비트 깊이
+  ihdr[8] = 8 // bit depth
   ihdr[9] = 2 // RGB
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

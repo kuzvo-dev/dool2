@@ -1,9 +1,10 @@
-// 폰 연결 (M6, ADR 0012). PC 쪽: 중계 서버에 붙어 있다가, 페어링된 폰이 보낸 봉투만 열어 처리한다.
-// - 페어링: QR(일회용 비밀, 5분) → 폰의 암호화된 요청 → 확인 코드 6자리 → PC 화면에서 [연결]
-// - 페어링 안 된 기기, 순번이 맞지 않는 봉투, 열리지 않는 봉투는 조용히 버린다
-// - 승인은 폰의 Ed25519 서명을 PC가 직접 확인한 뒤에만 처리한다
+// Phone link (M6, ADR 0012). PC side: stays connected to the relay and opens only envelopes from paired phones.
+// - Pairing: QR (one-time secret, 5 minutes) → the phone's encrypted request → 6-digit confirm code → [Connect] on the PC screen
+// - Envelopes from unpaired devices, with a wrong sequence number, or that fail to open are dropped silently
+// - Approvals are handled only after the PC itself verifies the phone's Ed25519 signature
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
+import type { Lang } from '@dool2/i18n'
 import {
   type AgentId,
   type ApprovalView,
@@ -46,12 +47,13 @@ import {
 import { LinkClient, resetSignText } from '@dool2/protocol/link'
 import type { Page } from '@dool2/protocol/paging'
 import QRCode from 'qrcode'
+import { linkCopy } from './locales/link.js'
 import { allowedEndpoint, generateVapid, type PushMessage, sendPush, type VapidKeys } from './webpush.js'
 
 export const PAIR_TTL_MS = 5 * 60_000
 /**
- * 중계 서버가 받는 봉투 한 개의 크기 (apps/relay MAX_MESSAGE = 512KB). 넘으면 중계가 PC 연결을 끊어 버리므로
- * 보내기 전에 막는다 (조금 여유를 둔다)
+ * Size of one envelope the relay accepts (apps/relay MAX_MESSAGE = 512KB). Above that the relay drops the PC
+ * connection, so it is blocked before sending (with a little margin)
  */
 export const SEND_MAX = 500 * 1024
 const FEED_KINDS = new Set<FeedItem['kind']>([
@@ -69,11 +71,11 @@ export interface SecretStoreLike {
   set(key: string, value: string | undefined): Promise<void>
 }
 
-/** 폰 부탁을 처리할 본체 기능 (index.ts가 채운다) */
+/** Daemon features that handle phone requests (index.ts fills them in) */
 export interface LinkHost {
   state(): Promise<Omit<Extract<PcToPhone, { kind: 'state' }>, 'kind' | 'pcName'>>
   thread(id: string): Promise<Extract<PcToPhone, { kind: 'thread' }> | undefined>
-  /** 대화를 시작하고 스트림 이벤트를 돌려준다. 이벤트는 broadcastStream으로도 나간다 */
+  /** Starts a conversation and returns stream events. Events also go out through broadcastStream */
   ask(input: { threadId?: string; agent?: AgentId; text: string; image?: string }): Promise<string>
   cancel(threadId: string): void
   approval(id: string): (ApprovalView & { shot?: string }) | undefined
@@ -82,21 +84,21 @@ export interface LinkHost {
     decision: 'approve' | 'reject',
     choice?: string,
   ): Promise<{ ok: boolean; message: string }>
-  /** 로그인 카드에 넣은 값을 금고에 저장 */
+  /** Saves the values entered on a login card to the vault */
   login(id: string, username: string, password: string): Promise<{ ok: boolean; message: string }>
-  /** 로그인 중 화면이 물은 것에 대한 폰의 답 (인증번호 등) */
+  /** The phone's answer to what the screen asked during login (verification code and so on) */
   infoAnswer(id: string, value: string | undefined): void
-  /** 카드에서 "처음이에요 · 가입해 주세요"를 눌렀다 (site: 사이트 주소, loginId: 닫을 로그인 카드) */
+  /** The user tapped "I'm new · sign me up" on the card (site: site address, loginId: login card to close) */
   signup?(site: string, loginId: string | undefined): void
-  /** 계정을 몰라요 (아이디 찾기·비밀번호 재설정을 두리가) */
+  /** The user doesn't know the account (Dool2 finds the ID or resets the password) */
   forgot?(site: string, loginId: string | undefined): void
-  /** 폰이 알린 할 수 있는 것 (hello). 문자 보내기는 이걸로 폰 앱이 새 판인지 본다 */
+  /** Capabilities the phone announced (hello). Text sending uses this to see if the phone app is new enough */
   caps?(phone: string, caps: string[]): void
-  /** 폰이 직접 보낸 문자의 결과 (승인 서명보다 먼저 온다) */
+  /** Result of a text the phone sent itself (arrives before the approval signature) */
   smsResult?(id: string, r: { ok: boolean; message: string }): void
-  /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
+  /** Report a problem: saves the phone app's recent trail to the activity log */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
-  /** 설정 > 내 정보·결제 수단 (값은 가려서만 돌려준다) */
+  /** Settings > My info and payment methods (values are returned masked only) */
   profile?(
     action:
       | { kind: 'get' }
@@ -105,7 +107,7 @@ export interface LinkHost {
       | { kind: 'forget-pay'; host: string }
       | { kind: 'pay-methods'; methods: unknown[] },
   ): Promise<Omit<Extract<PcToPhone, { kind: 'profile' }>, 'kind'>>
-  /** 설정 > 금고 (ADR 0026): 목록·하나 보기·고치기·지우기. 보기는 사용자가 폰 잠금을 확인한 뒤에만 온다 */
+  /** Settings > Vault (ADR 0026): list, view one, edit, delete. View comes only after the user passes the phone lock check */
   vault?(
     action:
       | { kind: 'get' }
@@ -116,48 +118,48 @@ export interface LinkHost {
     | Omit<Extract<PcToPhone, { kind: 'vault' }>, 'kind'>
     | Omit<Extract<PcToPhone, { kind: 'vault-secret' }>, 'kind'>
   >
-  /** 카드 사진을 받아 data: 주소로 (못 받으면 undefined) */
+  /** Fetches a card image as a data: URL (undefined if it can't) */
   thumb?(url: string): Promise<string | undefined>
-  /** 처음부터 다시 (시험용 PC만, 없으면 거절). services면 연결한 서비스 표시도 */
+  /** Start over (test PCs only, refused otherwise). With services, also clears connected service marks */
   reset?(phone: string, o: { services: boolean }): Promise<{ ok: boolean; message: string }>
-  /** 원격 화면: 두리가 넘긴 탭의 화면 한 장, 그 탭에 사람이 한 입력 */
+  /** Remote screen: one frame of the tab Dool2 handed off, and the person's input on that tab */
   screen(tabId: number, fit?: ScreenFit): Promise<{ shot: string; url: string; title: string } & RemoteInfo>
-  /** 원격 화면 '필요한 칸만' */
+  /** Remote screen 'needed fields only' */
   form(tabId: number): Promise<RemoteForm>
-  /** 칸만 화면에서 채운 값 넣기·버튼 누르기 */
+  /** Enter values filled on the fields-only screen and press a button */
   fill(tabId: number, values: RemoteFormValue[], press?: string): Promise<void>
   remote(input: Extract<PhoneToPc, { kind: 'remote' }>): Promise<void>
-  /** 서비스 연결 (ADR 0014): 목록, Chrome에서 열기(원격 화면 허용), 연결 표시·해제 */
+  /** Service connections (ADR 0014): list, open in Chrome (allows the remote screen), mark and unmark connected */
   connections(): Promise<ConnectionItem[]>
-  /** 대화 하나 (ADR 0015) */
+  /** One conversation (ADR 0015) */
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify'): Promise<{ tabId?: number }>
-  /** 따로 하는 대화: 새로 만들기·지우기 */
+  /** Side conversations: create and delete */
   sideNew(): Promise<Extract<PcToPhone, { kind: 'thread' }>>
   sideDelete(id: string): Promise<boolean>
-  /** 목표·보관함·기억·피드 */
+  /** Goals, library, memory, feed */
   life(): Promise<LifeState>
   lifeAction(a: LifeAction): Promise<LifeState>
-  /** 긴 목록 나눠 받기: 피드(kinds로 종류 고르기), 보관함(칸별, 글은 앞부분만) */
+  /** Long lists in pages: feed (pick kinds), library (per tab, text truncated) */
   feedPage(q: { before?: string; limit?: number; kinds?: FeedItem['kind'][] }): Promise<Page<FeedItem>>
   libraryPage(q: { before?: string; limit?: number; tab?: LibraryTab }): Promise<Page<LibraryItem>>
-  /** 보관함 하나 (전체 글) */
+  /** One library item (full text) */
   libraryItem(id: string): Promise<LibraryItem | undefined>
-  /** 보관함 파일 원본 한 조각 (폰에 저장·공유) */
+  /** One chunk of a library file's original (to save or share on the phone) */
   fileChunk?(
     id: string,
     offset: number,
-    /** 답 속 파일 링크: 보관함 id 대신 PC 경로 (본체가 사용자 폴더 안인지 본다) */
+    /** File link in a reply: a PC path instead of a library id (the daemon checks it's inside the user's folders) */
     path?: string,
   ): Promise<{ size: number; name: string; mime: string; data: string } | { error: string }>
-  /** 연결하기: 금고에 넣고 대신 로그인 */
+  /** Connect: save to the vault and log in for the user */
   connectLogin(
     id: string,
     username: string,
     password: string,
   ): Promise<{ ok: boolean; message: string; human?: boolean; tabId?: number }>
-  /** 간편 로그인으로 연결하기 */
+  /** Connect with social login */
   connectSocial(
     id: string,
     provider: SocialProvider,
@@ -191,17 +193,23 @@ export class PhoneLink {
     private readonly host: LinkHost,
     private readonly opts: {
       relay?: () => string | undefined
-      /** 폰 앱 주소 (예: https://dool2.com/space/). 없으면 중계 서버의 /app/ */
+      /** Phone app address (for example https://dool2.com/space/). Defaults to the relay's /app/ */
       appUrl?: () => string | undefined
-      /** 폰에 보일 이 PC 이름 (설정에서 바꿀 수 있어서 함수) */
+      /** This PC's name as shown on the phone (a function because it can change in settings) */
       name?: () => string | undefined
-      /** 폰에서 PC 이름을 바꿨다: 설정에 저장한다 */
+      /** The PC was renamed from the phone: save it to settings */
       rename?: (name: string) => void
       now?: () => number
-      /** 테스트용: 푸시 보내기 */
+      /** For tests: sending push */
       push?: typeof sendPush
+      /** Language for messages people read on the phone and the pairing screen (default Korean) */
+      lang?: () => Lang
     } = {},
   ) {}
+
+  private get m() {
+    return linkCopy(this.opts.lang?.() ?? 'ko')
+  }
 
   private now() {
     return (this.opts.now ?? Date.now)()
@@ -219,11 +227,11 @@ export class PhoneLink {
     this.vapid = vapid ? (JSON.parse(vapid) as VapidKeys) : generateVapid()
     if (!vapid) await this.secrets.set(VAPID, JSON.stringify(this.vapid))
     this.guard = new SeqGuard(JSON.parse((await this.secrets.get(SEQS)) ?? '{}'))
-    this.seq = Date.now() // 다시 켜도 순번이 줄지 않게 시각에서 시작한다
+    this.seq = Date.now() // Start from the clock so the sequence never goes down after a restart
     this.connect()
   }
 
-  /** 중계 서버 주소가 바뀌면 다시 붙는다 */
+  /** Reconnects when the relay address changes */
   connect() {
     this.client?.stop()
     this.client = undefined
@@ -259,14 +267,14 @@ export class PhoneLink {
     }
   }
 
-  // ── 페어링 ──
+  // ── Pairing ──
 
   async startPairing(): Promise<PairStatus> {
     const relay = this.opts.relay?.()
-    if (!relay || !this.keys) throw new Error('중계 서버 주소가 정해지지 않았어요')
+    if (!relay || !this.keys) throw new Error(this.m.noRelay)
     const secret = b64u(randomBytes(24))
     const app = this.opts.appUrl?.() || new URL('/app/', relay).href
-    // 중계 주소는 늘 초대에 싣는다: 스토어 앱은 QR을 찍은 주소가 아니라 초대에 적힌 중계 서버로 붙는다
+    // Always put the relay address in the invite: the store app connects to the relay in the invite, not the address it scanned
     const invite: PairInvite = {
       pc: this.keys.id,
       k: this.keys.boxPub,
@@ -290,7 +298,7 @@ export class PhoneLink {
     return { state: 'waiting', ...base }
   }
 
-  /** PC 화면에서 확인 코드를 보고 [연결] 또는 [취소] */
+  /** [Connect] or [Cancel] on the PC screen after checking the confirm code */
   async confirmPairing(accept: boolean): Promise<PairStatus> {
     const p = this.pairing
     const pend = p?.pending
@@ -327,12 +335,12 @@ export class PhoneLink {
     return this.phones.length < before
   }
 
-  // ── 받기 ──
+  // ── Receiving ──
 
   private async keyFor(id: string, boxPub: string) {
     const cached = this.keyCache.get(id)
     if (cached) return cached
-    if (!this.keys) throw new Error('키가 없어요')
+    if (!this.keys) throw new Error('No device keys')
     const k = await linkKey(this.keys.boxPriv, boxPub, [this.keys.id, id])
     this.keyCache.set(id, k)
     return k
@@ -342,9 +350,10 @@ export class PhoneLink {
     if (!this.keys || env.to !== this.keys.id || env.v !== LINK_VERSION) return
     if (env.kind === 'pair') return this.receivePair(env)
     const phone = this.phones.find((x) => x.id === env.from)
-    if (!phone) return // 페어링 안 된 기기
-    // 푸는 일은 받은 순서대로 하나씩: 동시에 풀면 끝나는 순서가 뒤섞여, 순번 검사(작은 순번은 버림)가
-    // 앞선 메시지를 버렸다 (본체를 막 켠 뒤 앱을 열면 서비스 목록 요청이 사라져 "받는 중…"에서 멈춤)
+    if (!phone) return // Unpaired device
+    // Open envelopes one at a time in arrival order: opening in parallel finished out of order, and the sequence check
+    // (drops lower numbers) dropped earlier messages (opening the app right after the daemon started lost the service
+    // list request and got stuck at "Loading…")
     const opened = this.inbox.then(async () => {
       let m: PhoneToPc
       try {
@@ -361,10 +370,10 @@ export class PhoneLink {
     this.inbox = opened.catch(() => undefined)
     const msg = await opened
     if (!msg || msg.kind === 'ping') return
-    // 처리는 기다리지 않고 나란히 (오래 걸리는 부탁이 다음 메시지를 막지 않게)
+    // Handle in parallel without waiting (so a long request doesn't block the next message)
     await this.handle(phone, msg).catch((e: Error) => this.send(phone, { kind: 'error', message: e.message }))
   }
-  /** 받은 봉투를 하나씩 푸는 줄 */
+  /** Queue that opens received envelopes one at a time */
   private inbox: Promise<unknown> = Promise.resolve()
 
   private async receivePair(env: Envelope) {
@@ -384,7 +393,7 @@ export class PhoneLink {
       phoneId: env.from,
       boxPub: env.pub,
       signPub: msg.signPub,
-      name: String(msg.name ?? '폰').slice(0, 40),
+      name: String(msg.name ?? this.m.phone).slice(0, 40),
       code: await pairCode(this.keys.boxPriv, env.pub),
     }
   }
@@ -412,7 +421,7 @@ export class PhoneLink {
           .slice(0, 40)
         if (!name || !this.opts.rename) return
         this.opts.rename(name)
-        // 연결된 폰 모두에 새 이름이 보이게
+        // So every connected phone sees the new name
         for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
         return
       }
@@ -439,7 +448,7 @@ export class PhoneLink {
         try {
           if (msg.kind === 'form-fill') {
             await this.host.fill(tabId, msg.values, msg.press)
-            // 눌렀으면 화면이 바뀌었을 수 있어 그림도 새로
+            // A press may have changed the screen, so send a new frame too
             const s = await this.host.screen(tabId).catch(() => undefined)
             if (s) await this.send(phone, { kind: 'screen', tabId, ...s })
           }
@@ -451,7 +460,7 @@ export class PhoneLink {
       case 'push': {
         const sub = msg.sub
         if (sub && (!allowedEndpoint(String(sub.endpoint)) || !sub.keys?.p256dh || !sub.keys?.auth))
-          return this.send(phone, { kind: 'error', message: '이 브라우저의 알림 주소는 쓸 수 없어요' })
+          return this.send(phone, { kind: 'error', message: this.m.badPushAddress })
         await this.savePush(
           phone.id,
           sub
@@ -487,7 +496,7 @@ export class PhoneLink {
           const r = await this.host.connect(String(msg.id), action)
           if (action === 'open' && r.tabId !== undefined)
             return this.send(phone, { kind: 'connect-opened', id: String(msg.id), tabId: r.tabId })
-          // 대화에 남긴 말·카드는 대화 흐름(stream)으로 이미 갔다
+          // Messages and cards left in the chat already went out through the stream
           if (action === 'chat' || action === 'verify') return
           return this.send(phone, { kind: 'connections', services: await this.host.connections() })
         } catch (e) {
@@ -498,7 +507,7 @@ export class PhoneLink {
         try {
           await this.send(phone, await this.host.sideNew())
         } catch (e) {
-          // 너무 많으면 만들지 않는다 (폰은 알림으로 보여 주고 메뉴로 돌아간다)
+          // Not created when there are too many (the phone shows a notice and goes back to the menu)
           return this.send(phone, { kind: 'error', message: (e as Error).message })
         }
         return this.send(phone, await this.stateFor(phone))
@@ -539,7 +548,7 @@ export class PhoneLink {
         const path = typeof msg.path === 'string' && msg.path ? msg.path.slice(0, 1000) : undefined
         const r = this.host.fileChunk
           ? await this.host.fileChunk(id, offset, path).catch((e: Error) => ({ error: e.message }))
-          : { error: '이 PC에서는 파일을 보낼 수 없어요' }
+          : { error: this.m.noFileSend }
         return this.send(phone, { kind: 'file-chunk', id, offset, ...r })
       }
       case 'life-action': {
@@ -552,7 +561,7 @@ export class PhoneLink {
       }
       case 'connect-login': {
         const id = String(msg.id)
-        // 기다리지 않는다: 로그인은 본체가 뒤에서 하고, 결과(connect-result·연결 목록)는 모든 폰에 따로 간다
+        // Don't wait: the daemon logs in in the background, and the result (connect-result, connection list) goes to every phone separately
         void this.host
           .connectLogin(id, String(msg.username).slice(0, 200), String(msg.password).slice(0, 500))
           .catch((e: Error) =>
@@ -568,7 +577,7 @@ export class PhoneLink {
             kind: 'connect-result',
             id,
             ok: false,
-            message: '간편 로그인 종류가 이상해요',
+            message: this.m.badSocial,
           })
         void this.host
           .connectSocial(id, provider.data)
@@ -604,7 +613,7 @@ export class PhoneLink {
           String(msg.username ?? '').slice(0, 200),
           String(msg.password ?? '').slice(0, 500),
         )
-        // 실패만 이 폰에 알린다 (성공은 본체가 모든 폰에 알린다)
+        // Only failures go to this phone (the daemon tells every phone about success)
         if (!r.ok) return this.send(phone, { kind: 'login-done', id: String(msg.id), ...r })
         return
       }
@@ -623,7 +632,7 @@ export class PhoneLink {
       case 'info-answer':
         return this.host.infoAnswer(String(msg.id), typeof msg.value === 'string' ? msg.value : undefined)
       case 'report': {
-        // 폰이 보낸 것을 그대로 믿지 않는다: 개수·길이를 자른다
+        // Don't trust what the phone sent as is: cap counts and lengths
         const trail = (Array.isArray(msg.trail) ? msg.trail : [])
           .slice(-300)
           .filter((t) => t && typeof t.at === 'number' && typeof t.what === 'string')
@@ -666,7 +675,7 @@ export class PhoneLink {
       case 'pay-choice-forget':
       case 'pay-methods-set': {
         if (!this.host.profile) return
-        // 폰이 보낸 것을 그대로 믿지 않는다: 칸 수·길이를 자른다
+        // Don't trust what the phone sent as is: cap field counts and lengths
         const values: Record<string, string> = {}
         if (msg.kind === 'profile-set' && msg.values && typeof msg.values === 'object')
           for (const [k, v] of Object.entries(msg.values).slice(0, 20))
@@ -694,17 +703,16 @@ export class PhoneLink {
       }
       case 'reset': {
         const no = (message: string) => this.send(phone, { kind: 'reset-done', ok: false, message })
-        if (!this.host.reset) return no('이 PC에서는 처음부터 다시를 쓸 수 없어요')
+        if (!this.host.reset) return no(this.m.noReset)
         const at = Number(msg.at)
         const services = msg.services === true
-        // 폰 서명을 PC가 직접 확인한다: 중계 서버나 다른 기기가 PC 데이터를 지울 수 없게. 오래된 서명은 다시 쓰지 못한다
-        if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 120_000)
-          return no('요청이 오래됐어요. 다시 눌러 주세요')
+        // The PC verifies the phone's signature itself, so the relay or another device can't wipe PC data. Old signatures can't be reused
+        if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 120_000) return no(this.m.staleRequest)
         if (
           typeof msg.sig !== 'string' ||
           !(await verifyText(phone.signPub, resetSignText(at, services), msg.sig))
         )
-          return no('서명이 맞지 않아요')
+          return no(this.m.badSignature)
         const r = await this.host.reset(phone.name, { services })
         await this.send(phone, { kind: 'reset-done', ...r })
         if (r.ok) for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
@@ -717,13 +725,13 @@ export class PhoneLink {
             kind: 'decided',
             id: msg.id,
             ok: false,
-            message: '승인 요청을 찾을 수 없어요',
+            message: this.m.noApproval,
           })
-        // 폰 서명을 PC가 직접 확인한다. 중계 서버나 다른 기기는 승인을 만들 수 없다
-        // 고른 결제 수단도 서명에 묶여 있다 (중간에서 다른 수단으로 바꿀 수 없다)
+        // The PC verifies the phone's signature itself. The relay or other devices can't create approvals
+        // The chosen payment method is bound to the signature too (it can't be swapped in between)
         const choice = typeof msg.choice === 'string' && msg.choice ? msg.choice : undefined
         if (!(await verifyText(phone.signPub, approvalSignText(a, msg.decision, choice), msg.sig)))
-          return this.send(phone, { kind: 'decided', id: msg.id, ok: false, message: '서명이 맞지 않아요' })
+          return this.send(phone, { kind: 'decided', id: msg.id, ok: false, message: this.m.badSignature })
         const r = await this.host.decide(msg.id, msg.decision, choice)
         return this.broadcast({ kind: 'decided', id: msg.id, ...r })
       }
@@ -751,8 +759,9 @@ export class PhoneLink {
   }
 
   /**
-   * 앱이 꺼져 있어도 폰에 알림을 띄운다 (웹 푸시). 승인 요청, 직접 해 주세요, 폰에서 맡긴 일이 끝났을 때.
-   * 내용은 폰 브라우저만 풀 수 있게 암호화된다. 구독이 없어졌으면(410) 지운다
+   * Shows a notification on the phone even when the app is closed (web push): approval requests, "please do this
+   * yourself", and when a task from the phone finishes. Encrypted so only the phone browser can open it. Removed when
+   * the subscription is gone (410)
    */
   async notify(msg: PushMessage) {
     const vapid = this.vapid
@@ -768,11 +777,11 @@ export class PhoneLink {
     )
   }
 
-  // ── 보내기 ──
+  // ── Sending ──
 
-  /** 폰마다 마지막으로 보낸 생활 기록 (바뀐 게 없으면 모두에게 다시 보내지 않는다) */
+  /** Last life state sent to each phone (not sent again when nothing changed) */
   private lastLife = new Map<string, string>()
-  /** 너무 커서 못 보낸 횟수 (점검용) */
+  /** How many times something was too large to send (for checks) */
   tooBig = 0
 
   private async sendTo(id: string, boxPub: string, body: PcToPhone): Promise<void> {
@@ -783,13 +792,13 @@ export class PhoneLink {
       { v: LINK_VERSION, from: this.keys.id, to: id, kind: body.kind, seq: ++this.seq },
       body,
     )
-    // 중계 한도를 넘으면 보내지 않는다: 보내면 중계가 연결을 끊고, 폰이 다시 부탁하면 또 끊기는 고리가 된다
+    // Don't send above the relay limit: the relay would drop the connection, and the phone asking again would loop
     if (JSON.stringify(env).length > SEND_MAX) {
       this.tooBig++
       if (body.kind === 'error') return
       return this.sendTo(id, boxPub, {
         kind: 'error',
-        message: '보낼 내용이 너무 커서 폰으로 못 보냈어요. PC 화면에서 확인해 주세요',
+        message: this.m.tooBig,
       })
     }
     this.client.send(env)
@@ -800,17 +809,17 @@ export class PhoneLink {
     return this.sendTo(phone.id, phone.boxPub, body)
   }
 
-  /** 폰마다 마지막으로 소식을 받은 때 */
+  /** When each phone was last heard from */
   private lastSeen = new Map<string, number>()
 
   /**
-   * 모든 폰에 보낸다 (새 승인 요청, 연결 결과 등).
-   * live면 지금 앱을 켜 둔 폰(3분 안에 소식이 온 폰)에만: 흘려 쓰는 답·실시간 화면은 꺼진 폰에 쌓아 둘 필요가 없고,
-   * 예전에 연결했던 폰이 많으면 중계 한도를 넘어 연결이 끊긴다
+   * Sends to every phone (new approval requests, connect results and so on).
+   * With live, only to phones with the app open (heard from in the last 3 minutes): streamed replies and live screens
+   * don't need to pile up on closed phones, and many old paired phones would exceed the relay limit and drop the link
    */
   async broadcast(body: PcToPhone, o: { live?: boolean } = {}) {
     const now = this.now()
-    // 생활 기록은 그 폰에 마지막으로 보낸 것과 같으면 다시 보내지 않는다 (방금 동작의 답으로 이미 갔다)
+    // Don't resend life state identical to the last one sent to that phone (it already went as the reply to the action)
     const life = body.kind === 'life' ? JSON.stringify(body.state) : undefined
     for (const p of this.phones) {
       if (o.live && now - (this.lastSeen.get(p.id) ?? 0) > 180_000) continue
@@ -819,7 +828,7 @@ export class PhoneLink {
     }
   }
 
-  /** 대화 진행을 폰에도 흘려보낸다. 글자 조각은 0.12초씩 모아서 보낸다 (쓰는 대로 보이게, 너무 잘게 쪼개지 않게) */
+  /** Streams conversation progress to phones too. Text pieces are batched every 0.12 s (appears as it's written, not too finely split) */
   streamer(threadId: string) {
     let buf = ''
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -844,7 +853,7 @@ export class PhoneLink {
         timer ??= setTimeout(flush, 120)
         return
       }
-      // 화면이 쓰는 것만 보낸다 (글자·도구 단계). 사용량·크기 같은 안쪽 신호는 보내지 않는다
+      // Send only what the screen uses (text and tool steps). Internal signals like usage and size are not sent
       if (ev.type === 'agent' && ev.event.type !== 'tool') return
       flush()
       void this.broadcast({ kind: 'stream', threadId, event: ev }, { live: ev.type === 'agent' })

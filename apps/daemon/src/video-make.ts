@@ -1,6 +1,6 @@
-// 사진으로 영상 만들기 (video_make): 사진 여러 장을 천천히 확대(켄 번스)·부드러운 장면 전환·자막·배경음악으로 이은 mp4.
-// "아이 사진으로 생일 영상", "여행 사진 영상으로" 같은 부탁. 영상 부품(ffmpeg)은 PC에 있으면 쓰고, 없으면 처음 쓸 때
-// 고정 판(정적 빌드, sha256 확인)을 받아 둔다 (쉬운 설치: 사용자가 따로 깔지 않는다).
+// Video from photos (video_make): an mp4 joining several photos with slow zoom (Ken Burns), soft scene transitions, captions and background music.
+// For requests like "a birthday video from the kid's photos" or "make a video of the trip photos". The video part (ffmpeg) is used if the PC has one;
+// otherwise a pinned build (static, sha256 checked) is downloaded on first use (easy install: the user installs nothing).
 
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -9,8 +9,9 @@ import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'no
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
+import { DEFAULT_VIDEO_NAME } from './region/kr/image-ui.js'
 
-/** 받을 영상 부품: ffmpeg-static b6.0 (GPL 정적 빌드). 받은 .gz의 sha256을 고정해 바꿔치기를 막는다 */
+/** Video part to download: ffmpeg-static b6.0 (GPL static build). The sha256 of the downloaded .gz is pinned to prevent swapping */
 const FFMPEG_BASE = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0'
 export const FFMPEG_BUILDS: Record<string, { file: string; sha256: string }> = {
   'darwin-arm64': {
@@ -33,7 +34,7 @@ export const FFMPEG_BUILDS: Record<string, { file: string; sha256: string }> = {
 
 const exe = (platform = process.platform) => (platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
 
-/** PC에 있는 ffmpeg: 두리가 받아 둔 것 → 흔한 설치 위치 */
+/** ffmpeg on the PC: the one Dool downloaded first, then common install locations */
 export function findFfmpeg(binDir: string, platform = process.platform): string | undefined {
   const mine = join(binDir, exe(platform))
   if (existsSync(mine)) return mine
@@ -44,7 +45,7 @@ export function findFfmpeg(binDir: string, platform = process.platform): string 
   return common.find((p) => existsSync(p))
 }
 
-/** 영상 부품 받기 (처음 한 번). 받은 것의 지문이 다르면 쓰지 않는다 */
+/** Downloads the video part (once). Not used if the fingerprint differs */
 export async function installFfmpeg(
   binDir: string,
   fetcher: typeof fetch = fetch,
@@ -52,12 +53,13 @@ export async function installFfmpeg(
   arch = process.arch,
 ): Promise<string> {
   const build = FFMPEG_BUILDS[`${platform}-${arch}`]
-  if (!build) throw new Error(`이 PC(${platform}-${arch})용 영상 부품이 없어요`)
+  if (!build) throw new Error(`No video part for this PC (${platform}-${arch})`)
   const res = await fetcher(`${FFMPEG_BASE}/${build.file}`, { signal: AbortSignal.timeout(180_000) })
-  if (!res.ok) throw new Error(`영상 부품을 받지 못했어요 (${res.status})`)
+  if (!res.ok) throw new Error(`Could not download the video part (${res.status})`)
   const gz = Buffer.from(await res.arrayBuffer())
   const sum = createHash('sha256').update(gz).digest('hex')
-  if (sum !== build.sha256) throw new Error('받은 영상 부품의 지문이 맞지 않아 쓰지 않았어요')
+  if (sum !== build.sha256)
+    throw new Error('The downloaded video part has a wrong fingerprint, so it was not used')
   await mkdir(binDir, { recursive: true })
   const target = join(binDir, exe(platform))
   const part = `${target}.part`
@@ -67,7 +69,7 @@ export async function installFfmpeg(
   return target
 }
 
-/** 자막 글꼴: 한글이 나오는 시스템 글꼴 */
+/** Caption font: a system font that shows Hangul */
 export function captionFont(platform = process.platform): string | undefined {
   const list =
     platform === 'darwin'
@@ -81,7 +83,7 @@ export function captionFont(platform = process.platform): string | undefined {
   return list.find((p) => existsSync(p))
 }
 
-/** ffmpeg 필터 안에 넣을 파일 경로 (윈도의 C: 같은 콜론·역슬래시를 막는다) */
+/** File path to put inside an ffmpeg filter (escapes colons and backslashes like Windows C:) */
 export function filterPath(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")
 }
@@ -95,11 +97,11 @@ export type VideoShape = keyof typeof VIDEO_SIZES
 
 export interface SlideshowPlan {
   photos: string[]
-  /** 사진마다 자막 파일 (줄마다 한 파일, 없으면 자막 없음) */
+  /** Caption file per photo (one file per line, none means no caption) */
   captionFiles: (string | string[] | undefined)[]
-  /** 첫 장 위 큰 제목 파일 (줄마다 한 파일) */
+  /** Big title files over the first photo (one file per line) */
   titleFile?: string | string[]
-  /** 글자 수 (글자 크기를 화면 너비에 맞춘다) */
+  /** Character count (fits the font size to the screen width) */
   titleLength?: number
   captionLengths?: number[]
   font?: string
@@ -112,17 +114,17 @@ export interface SlideshowPlan {
 const FPS = 30
 const FADE = 0.7
 
-/** 영상 길이 (초): 사진마다 sec, 마지막에 전환 한 번 몫 */
+/** Video length (seconds): sec per photo, plus one transition at the end */
 export function slideshowLength(n: number, sec: number) {
   return n * sec + FADE
 }
 
-/** 글자 크기: 기본 크기와 한 줄이 너비 안에 드는 크기 중 작은 것 (한글 한 자 ≈ 글자 크기 너비) */
+/** Font size: the smaller of the default size and the size at which a line fits the width (one Hangul character is about one font size wide) */
 export function fit(base: number, width: number, length = 0): number {
   return Math.round(length > 0 ? Math.min(base, width / (length * 1.02)) : base)
 }
 
-/** 긴 글은 띄어쓰기에서 두 줄로 (가운데에 가까운 곳). 긴 줄의 글자 수도 돌려준다 */
+/** Splits long text into two lines at a space (nearest the middle). Also returns the character count of the longer line */
 export function twoLines(text: string, max: number): { lines: string[]; longest: number } {
   const chars = [...text]
   if (chars.length <= max || !text.includes(' ')) return { lines: [text], longest: chars.length }
@@ -135,13 +137,13 @@ export function twoLines(text: string, max: number): { lines: string[]; longest:
   return { lines: [a, b], longest: Math.max([...a].length, [...b].length) }
 }
 
-/** 장면마다 가운데 한 컷 (영상 프레임 번호, 앞 6장면까지) */
+/** One middle frame per scene (video frame number, up to the first 6 scenes) */
 export function sceneFrames(n: number, sec: number): number[] {
   const pick = n <= 6 ? [...Array(n).keys()] : [...Array(6).keys()].map((k) => Math.round((k * (n - 1)) / 5))
   return pick.map((i) => Math.round((i * sec + sec / 2) * FPS))
 }
 
-/** ffmpeg 인자 (순수 함수, 시험에서 본다) */
+/** ffmpeg arguments (pure function, checked in tests) */
 export function slideshowArgs(p: SlideshowPlan): string[] {
   const [W, H] = VIDEO_SIZES[p.shape]
   const n = p.photos.length
@@ -153,9 +155,9 @@ export function slideshowArgs(p: SlideshowPlan): string[] {
   const frames = Math.round(dur * FPS)
   const f: string[] = []
   p.photos.forEach((_, i) => {
-    // 화면을 꽉 채우게 자르고, 천천히 확대(앞뒤로 번갈아 다른 곳에서)
+    // Crop to fill the screen and zoom slowly (alternating start points)
     const zoom = `zoompan=z='min(1+0.10*on/${frames},1.10)':x='iw/2-(iw/zoom/2)${i % 2 ? '+iw*0.03*on/' + frames : ''}':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=${FPS}`
-    // 사진은 잘리지 않게 다 보이고, 남는 자리는 같은 사진을 흐리게 깔아 채운다 (세로 화면에 가로 사진도)
+    // Show the whole photo uncropped and fill the leftover space with a blurred copy (also landscape photos on a portrait screen)
     const bw = Math.round(W * 1.25)
     const bh = Math.round(H * 1.25)
     f.push(
@@ -165,7 +167,7 @@ export function slideshowArgs(p: SlideshowPlan): string[] {
     )
     let chain = `[b${i}][f${i}]overlay=(W-w)/2:(H-h)/2,setsar=1,${zoom}`
     const font = p.font ? `fontfile='${filterPath(p.font)}':` : ''
-    // 줄마다 따로 가운데 정렬 (여러 줄을 한 번에 그리면 왼쪽으로 붙는다)
+    // Center each line separately (drawing several lines at once aligns them left)
     const lines = (files: string | string[], size: number, centerY: number, style: string, fade = '') => {
       const list = Array.isArray(files) ? files : [files]
       const lh = Math.round(size * 1.38)
@@ -199,7 +201,7 @@ export function slideshowArgs(p: SlideshowPlan): string[] {
     last = out
   }
   const total = slideshowLength(n, p.sec)
-  // 끝은 검게 사라진다
+  // The end fades to black
   f.push(`[${n > 1 ? 'vx' : 'v0'}]fade=t=out:st=${(total - 0.8).toFixed(2)}:d=0.8[v]`)
   if (p.music)
     f.push(
@@ -228,24 +230,24 @@ export function slideshowArgs(p: SlideshowPlan): string[] {
 }
 
 export interface VideoMakeDeps {
-  /** 영상 부품을 둘 곳 (두리 데이터 폴더/bin) */
+  /** Where to keep the video part (Dool data folder/bin) */
   binDir: string
-  /** 사진 경로 확인: 사용자 폴더 안의 파일·대화로 받은 사진이면 실제 경로들 (iCloud에만 있으면 내려받는다) */
+  /** Resolves photo paths: real paths for files in the user folders or photos received in chat (downloads them if only in iCloud) */
   resolveAll: (paths: string[]) => Promise<string[] | { error: string }>
   saveDir: () => string | undefined
   show: (p: string) => string
   onMade?: (f: { name: string; kind: 'mp4'; path: string; image?: string }) => void
-  /** 첫 장면 JPEG → 줄인 base64 (보관함·대화 미리보기) */
+  /** First scene JPEG -> shrunk base64 (library and chat preview) */
   preview?: (jpeg: Buffer) => Promise<string | undefined>
   fetcher?: typeof fetch
   run?: (bin: string, args: string[], timeoutMs: number) => Promise<void>
-  /** 그 ffmpeg에 필요한 기능(자막·전환·확대)이 있나 */
+  /** Whether that ffmpeg has the needed features (captions, transitions, zoom) */
   hasFilters?: (bin: string) => Promise<boolean>
 }
 
 const NEED = ['drawtext', 'xfade', 'zoompan', 'boxblur']
 const checked = new Map<string, boolean>()
-/** ffmpeg에 영상 만들기에 쓰는 필터가 다 있는지 (한 번 본 것은 기억) */
+/** Whether ffmpeg has all the filters used for making videos (remembers what it already checked) */
 export async function hasFilters(bin: string): Promise<boolean> {
   const hit = checked.get(bin)
   if (hit !== undefined) return hit
@@ -296,31 +298,33 @@ export class VideoMaker {
   async make(args: Record<string, unknown>): Promise<Result> {
     const raw = Array.isArray(args.photos) ? (args.photos as unknown[]).map(String).filter(Boolean) : []
     if (raw.length < 2)
-      return fail('사진을 2장 이상 photos에 주세요 (file_find로 찾은 경로나 대화로 받은 "photo:이름").')
-    if (raw.length > 40) return fail('사진은 40장까지예요. 고르고 골라 주세요.')
+      return fail(
+        'Give at least 2 photos in photos (paths found with file_find, or "photo:name" received in chat).',
+      )
+    if (raw.length > 40) return fail('Up to 40 photos. Pick the best ones.')
     const got = await this.d.resolveAll(raw.map((r) => r.replace(/^photo:/, '')))
     if (!Array.isArray(got)) return fail(got.error)
     const photos = got
     for (const p of photos)
       if (!/\.(jpe?g|png|webp|bmp)$/i.test(p))
         return fail(
-          `${basename(p)}: jpg·png 사진만 돼요. HEIC 같은 건 file_convert로 jpg로 바꾼 뒤 다시 불러요.`,
+          `${basename(p)}: only jpg and png photos work. Convert HEIC and others to jpg with file_convert, then call again.`,
         )
     let music: string | undefined
     if (typeof args.music === 'string' && args.music.trim()) {
       const m = await this.d.resolveAll([args.music.trim()])
       if (!Array.isArray(m) || !m[0] || !/\.(mp3|m4a|aac|wav)$/i.test(m[0]))
-        return fail('배경음악은 사용자 폴더의 mp3·m4a 파일만 쓸 수 있어요.')
+        return fail('Background music can only be an mp3 or m4a file in the user folders.')
       music = m[0]
     }
     const dir = this.d.saveDir()
-    if (!dir) return fail('문서 폴더를 찾지 못했어요.')
-    if (this.busy) return fail('다른 영상을 만드는 중이에요. 끝난 뒤에 다시 불러 주세요.')
+    if (!dir) return fail('Could not find the Documents folder.')
+    if (this.busy) return fail('Another video is being made. Call again after it finishes.')
     this.busy = true
     const work = await mkdtemp(join(tmpdir(), 'dool2-video-'))
     try {
       let bin = findFfmpeg(this.d.binDir)
-      // PC에 있던 ffmpeg가 자막·전환 기능이 빠진 판이면 두리용을 받는다 (실측 11-23: Homebrew 판에 drawtext가 없었다)
+      // If the ffmpeg on the PC lacks captions or transitions, download Dool's own (measured 11-23: the Homebrew build had no drawtext)
       if (bin && !(await (this.d.hasFilters ?? hasFilters)(bin))) bin = undefined
       if (!bin) bin = await installFfmpeg(this.d.binDir, this.d.fetcher ?? fetch)
       const captions = Array.isArray(args.captions)
@@ -357,11 +361,11 @@ export class VideoMaker {
       const shape: VideoShape =
         args.shape === 'landscape' || args.shape === 'square' ? args.shape : 'portrait'
       const stem =
-        (typeof args.name === 'string' && args.name.trim() ? args.name : title || '두리 영상')
+        (typeof args.name === 'string' && args.name.trim() ? args.name : title || DEFAULT_VIDEO_NAME)
           .replace(/\.[a-z0-9]{1,5}$/i, '')
           .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
           .trim()
-          .slice(0, 60) || '두리 영상'
+          .slice(0, 60) || DEFAULT_VIDEO_NAME
       await mkdir(dir, { recursive: true })
       let out = join(dir, `${stem}.mp4`)
       for (let i = 2; existsSync(out) && i < 100; i++) out = join(dir, `${stem} (${i}).mp4`)
@@ -380,7 +384,7 @@ export class VideoMaker {
       }
       const run = this.d.run ?? runFfmpeg
       await run(bin, slideshowArgs(plan), 10 * 60_000)
-      // 첫 장면(제목이 뜬 뒤)을 미리보기로
+      // Use the first scene (after the title shows) as the preview
       const poster = join(work, 'poster.jpg')
       await run(
         bin,
@@ -390,7 +394,7 @@ export class VideoMaker {
       const small = existsSync(poster)
         ? await this.d.preview?.(await readFile(poster)).catch(() => undefined)
         : undefined
-      // 두리가 장면마다 확인하게 한 컷씩 모은 그림 (확인용 영상을 따로 만들지 않게)
+      // One frame per scene gathered into a picture so Dool can check each scene (no separate check video)
       const frames = sceneFrames(photos.length, sec)
       const sheetFile = join(work, 'scenes.jpg')
       const select = frames.map((x) => `eq(n\\,${x})`).join('+')
@@ -423,8 +427,8 @@ export class VideoMaker {
           {
             type: 'text',
             text:
-              `영상을 만들었어요: ${shown} (${photos.length}장, ${Math.round(length)}초, ${VIDEO_SIZES[shape].join('×')}, ${(size / 1024 / 1024).toFixed(1)}MB). 보관함에도 올렸고, 폰 보관함에서 '폰에 저장'하면 폰에 받을 수 있어요. ` +
-              `아래는 장면마다 한 컷씩(${frames.length}장면) 모은 그림이에요. 이걸로 모든 장면을 확인하고, 확인용 영상을 따로 만들지 않아요. 자막이 잘리거나 사진이 이상하면 고쳐 다시 만들어요. 사용자에게 파일 이름과 길이를 알려 줘요.`,
+              `Made the video: ${shown} (${photos.length} photos, ${Math.round(length)} s, ${VIDEO_SIZES[shape].join('×')}, ${(size / 1024 / 1024).toFixed(1)}MB). It is also uploaded to the library, and the user can get it on the phone with "Save to phone" in the phone library. ` +
+              `Below is one frame per scene (${frames.length} scenes) in one picture. Use it to check every scene; do not make a separate check video. If captions are cut off or a photo looks wrong, fix it and make it again. Tell the user the file name and length.`,
           },
           ...(sheet
             ? [{ type: 'image' as const, data: sheet, mimeType: 'image/jpeg' }]
@@ -434,7 +438,7 @@ export class VideoMaker {
         ],
       }
     } catch (e) {
-      return fail(`영상을 만들지 못했어요: ${(e as Error).message}`)
+      return fail(`Could not make the video: ${(e as Error).message}`)
     } finally {
       this.busy = false
       await rm(work, { recursive: true, force: true }).catch(() => undefined)

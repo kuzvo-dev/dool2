@@ -1,5 +1,5 @@
-// 대화 안 로그인 카드 (ADR 0011 보탬). 금고에 없는 사이트에서 두리가 아이디·비밀번호를 부탁하면 여기에 요청을 만든다.
-// 사용자가 PC나 폰의 카드에 넣은 값은 AI를 거치지 않고 금고(OS 키체인)에만 들어간다. AI는 "저장됐어요"만 알고 browser_login으로 채운다.
+// In-conversation login card (ADR 0011 addendum). When Doori needs an ID and password for a site not in the vault, the request is made here.
+// Values the user types into the card on the PC or phone bypass the AI and go only into the vault (OS keychain). The AI learns only "saved" and fills the form with browser_login.
 import { randomUUID } from 'node:crypto'
 import type { LoginRequestView } from '@dool2/protocol'
 
@@ -7,13 +7,13 @@ export const LOGIN_TTL_MS = 30 * 60_000
 
 export class LoginRequests {
   private items = new Map<string, LoginRequestView>()
-  /** 새 요청이 생기면 (폰에 알리기) */
+  /** When a new request appears (notify the phone) */
   onCreate?: (r: LoginRequestView) => void
 
   constructor(private readonly now: () => number = Date.now) {}
 
   create(n: { tabId: number; origin: string; site: string; connect?: boolean }): LoginRequestView {
-    // 같은 사이트에 기다리는 요청이 있으면 새것으로 바꾼다
+    // If a request for the same site is already waiting, replace it with the new one
     for (const r of this.items.values())
       if (r.status === 'pending' && r.origin === n.origin) r.status = 'expired'
     const t = this.now()

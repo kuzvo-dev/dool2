@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 자체 호스팅·개발용 실행: PORT, HOST, DOOL2_PHONE_APP(폰 앱 dist 폴더)
+// Self-hosted / dev runner: PORT, HOST, DOOL2_PHONE_APP (phone app dist folder)
 import { fileURLToPath } from 'node:url'
 import { startRelay } from './index.js'
 
@@ -8,9 +8,9 @@ const relay = await startRelay({
   port: Number(process.env.PORT ?? 8787),
   host: process.env.HOST ?? '127.0.0.1',
   appDir,
-  log: (l) => console.log(`[중계] ${l}`),
+  log: (l) => console.log(`[relay] ${l}`),
 })
-console.log(`두리 중계 서버: ${relay.url} (폰 앱 ${relay.url}/app/)`)
+console.log(`Dool2 relay: ${relay.url} (phone app ${relay.url}/app/)`)
 const stop = () => relay.close().then(() => process.exit(0))
 process.on('SIGINT', stop)
 process.on('SIGTERM', stop)

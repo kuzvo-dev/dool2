@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectCard } from './connect.js'
-import { matchesCard, safetyLines } from './connect-text.js'
+import { approvalLine, CATEGORY_LABEL, categoryLabel, matchesCard, safetyLines } from './connect-text.js'
 
 const card: ConnectCard = {
   id: 'demo',
@@ -37,5 +37,21 @@ describe('연결 화면 문구', () => {
         abilities: [card.abilities[0] as ConnectCard['abilities'][number]],
       }),
     ).toHaveLength(1)
+  })
+})
+
+describe('English copy', () => {
+  it('has an English name for every category, and Korean stays the default', () => {
+    for (const k of Object.keys(CATEGORY_LABEL) as (keyof typeof CATEGORY_LABEL)[]) {
+      expect(categoryLabel(k)).toBe(CATEGORY_LABEL[k])
+      expect(categoryLabel(k, 'en')).not.toMatch(/[가-힣]/)
+    }
+  })
+  it('safety lines and approval line follow the language', () => {
+    const card = { how: 'open' as const, abilities: [{ title: 'Order', say: 'x', tier: 'pay' as const }] }
+    expect(approvalLine(card, 'en')).toBe(
+      'Things like Order only happen after you approve them on your phone.',
+    )
+    expect(safetyLines(card, 'en').join(' ')).not.toMatch(/[가-힣]/)
   })
 })

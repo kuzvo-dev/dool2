@@ -7,7 +7,7 @@ const fixed = () => new Date('2026-11-14T03:00:00Z')
 
 describe('두리 MCP 도구', () => {
   it('상태 글에 한국 시각을 넣는다', () => {
-    expect(statusText({ now: fixed })).toContain('2026년 11월 14일 토 12:00')
+    expect(statusText({ now: fixed })).toContain('Sat, November 14, 2026 at 12:00')
   })
 
   it('MCP로 status 도구를 부를 수 있다', async () => {
@@ -109,7 +109,7 @@ describe('두리 MCP 도구', () => {
 
     const res = await client.callTool({ name: 'status', arguments: {} })
     const content = res.content as { type: string; text: string }[]
-    expect(content[0]?.text).toContain('두리 연결됨')
+    expect(content[0]?.text).toContain('Dool2 connected')
     await client.close()
   })
 })
@@ -147,7 +147,10 @@ describe('브라우저 도구', () => {
   it('본체 주소가 없으면 알려 준다', async () => {
     const { daemonClient } = await import('./browser.js')
     const r = await daemonClient({})('open', {})
-    expect(r).toEqual({ isError: true, content: [{ type: 'text', text: '두리 본체와 연결돼 있지 않아요' }] })
+    expect(r).toEqual({
+      isError: true,
+      content: [{ type: 'text', text: 'Not connected to the Dool2 daemon' }],
+    })
   })
 })
 

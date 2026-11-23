@@ -1,35 +1,35 @@
-// 결제 흐름 시험 가게: 실제 쇼핑몰 결제처럼 상품 → 주문서 → 배송지 추가(액자) → 주소 찾기(액자 속 액자)
-// → 결제 수단·쿠폰·수량·요청사항 → [결제하기] → 늦게 뜨는 결제 회사 창(새 창 또는 화면 안 액자)
-// → 카드 고르기·[다음] → 섞인 비밀번호 키패드(화면 아래로 잘림) → 주문 완료 화면 + 주문번호.
+// Payment-flow test shop: like a real shop's checkout: product -> order page -> add address (frame) -> address search (frame inside a frame)
+// -> payment method, coupon, quantity, request note -> [Pay] -> a late payment company window (new window or in-page frame)
+// -> choose card, [Next] -> shuffled PIN keypad (cut off below the screen) -> order complete page + order number.
 //
-// 왜: 실측 11-20 G마켓 실주문이 이 흐름에서 여섯 번 막혔다 (배송지 액자가 0.8초 늦게 그려져 '안 떠요'로 판단,
-// 주소 찾기 액자 속 액자의 좌표·번호 밀림, 주소 검색 Enter가 결제로 막힘, 결제 창이 늦게 새 창으로 떠 못 찾음,
-// 결제 회사 창 안 [다음]이 다시 승인으로 막힘, 키패드가 화면 아래로 잘림, 주문번호 확인 없이 끝으로 침).
-// 실계정을 건드리기 전에 같은 모양을 여기서 먼저 끝까지 통과시킨다 (apps/extension/scripts/e2e-pay.mjs, live.mjs).
+// Why: a real Gmarket order (measured 11-20) got stuck six times in this flow (the address frame painted 0.8s late and was judged "not shown",
+// coordinates and numbers shifted in the frame inside the address-search frame, Enter in address search was blocked as a payment, the payment window opened late as a new window and was not found,
+// [Next] inside the payment company window was blocked for approval again, the keypad was cut off below the screen, and it finished without checking the order number).
+// Before touching a real account, pass the same shape through here end to end first (apps/extension/scripts/e2e-pay.mjs, live.mjs).
 //
-// 사이트는 넷으로 나눈다 (다른 사이트라 Chrome이 액자를 다른 프로세스로 띄운다 — 실제 PG·주소 찾기와 같은 모양):
-//   가게      http://127.0.0.1:<shop>       상품·주문서·주문 완료
-//   배송지    http://addr.localhost:<addr>   배송지 추가 양식 (주문서 안 액자)
-//   주소 찾기 http://juso.localhost:<juso>   우편번호 찾기 (배송지 양식 안 액자 = 액자 속 액자)
-//   결제 회사 http://pg.localhost:<pg>       카드 고르기·비밀번호 키패드 (새 창 또는 화면 안 액자)
-// (*.localhost는 Chrome·curl이 알아서 127.0.0.1로 보낸다. 사이트가 서로 달라 'localhost'만 쓴 것보다 실제에 가깝다)
+// The site is split in four (different sites, so Chrome puts the frames in different processes - the same shape as a real PG and address search):
+//   shop            http://127.0.0.1:<shop>       product, order page, order complete
+//   address         http://addr.localhost:<addr>   add-address form (frame inside the order page)
+//   address search  http://juso.localhost:<juso>   postal code search (frame inside the address form = frame in a frame)
+//   payment company http://pg.localhost:<pg>       card choice, PIN keypad (new window or in-page frame)
+// (*.localhost is sent to 127.0.0.1 by Chrome and curl. Being different sites it is closer to real than using only 'localhost')
 //
-// 주소 뒤 고르기(?addr=…&pg=…)로 모양을 바꾼다. 상품 화면 주소에 붙이면 끝까지 이어진다:
-//   addr=cross(기본)|same   배송지 양식 액자가 다른 사이트 / 같은 가게 주소
-//   pg=popup(기본)|layer    결제 회사 창이 새 창(window.open) / 주문서 위 화면 안 액자
-//   late=<ms>               [결제하기] 뒤 결제 창이 뜨기까지 (기본 1200, 준비 요청 시간). Chrome은 누른 뒤 5초 동안은
-//                           팝업을 허용하므로 5000 넘게 주면 팝업 차단에 걸린다 (사이트 팝업 허용 전에는 '차단' 안내가 뜬다)
-//   keypad=off(기본)|on     키패드가 화면 아래로 잘림(위에서 760px, 창 900px) / 화면 아래에 붙어 다 보임
-//   keys=text(기본)|img     키패드 숫자가 글자 / 그림(이름 없음: 버튼마다 잘라 봐야 숫자를 안다)
-//   ship=none(기본)|saved   배송지 없음 / 저장된 배송지가 이미 있음 (단골. 배송지 단계를 건너 결제 단계만 볼 때)
-// 결제 비밀번호는 PIN(123456). 5번 틀리면 잠긴다. 틀리면 키패드 자리를 다시 섞는다(실제 보안 키패드처럼).
+// Options after the address (?addr=...&pg=...) change the shape. Put them on the product page address and they carry through:
+//   addr=cross(default)|same   the address form frame is another site / the shop's own address
+//   pg=popup(default)|layer    the payment company window is a new window (window.open) / an in-page frame over the order page
+//   late=<ms>               how long after [Pay] the payment window appears (default 1200, the prepare request time). Chrome allows
+//                           popups for 5 seconds after a click, so above 5000 it hits popup blocking (before the site's popups are allowed a 'blocked' notice appears)
+//   keypad=off(default)|on     keypad cut off below the screen (760px from the top, 900px window) / stuck to the bottom and fully visible
+//   keys=text(default)|img     keypad digits are text / images (no name: each button must be cropped and looked at to know the digit)
+//   ship=none(default)|saved   no address / a saved address already exists (a regular customer. To see only the payment step, skipping the address step)
+// The payment PIN is 123456. It locks after 5 wrong tries. A wrong try reshuffles the keypad (like a real security keypad).
 //
 //   import { start } from './pay-shop.mjs'
-//   const shop = await start()            // 포트 0 = 빈 포트. start({ ports: { shop: 8791, addr: 8792, juso: 8793, pg: 8794 } })
-//   shop.product                          // 상품 화면 주소
+//   const shop = await start()            // port 0 = a free port. start({ ports: { shop: 8791, addr: 8792, juso: 8793, pg: 8794 } })
+//   shop.product                          // product page address
 //   await shop.close()
 //
-//   손으로 띄우기: node apps/extension/scripts/pay-shop.mjs   (8791~8794)
+//   Start by hand: node apps/extension/scripts/pay-shop.mjs   (8791~8794)
 import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
@@ -38,7 +38,7 @@ export const PIN = '123456'
 export const PRODUCT = { name: '제주 귤 3kg (로열과)', price: 15_900 }
 export const COUPON = { id: 'first', name: '첫 주문 1,000원 할인', off: 1_000 }
 const MAX_TRIES = 5
-/** 주소 찾기 결과 (실측 11-20 G마켓 주소 찾기 결과 줄 모양: 도로명 (마을) 우편번호) */
+/** Address search results (shape of a result line in Gmarket address search, measured 11-20: road name (village) postal code) */
 export const JUSO = [
   {
     road: '경기도 용인시 수지구 테스트로 27 (테스트마을)',
@@ -53,7 +53,7 @@ export const JUSO = [
   { road: '서울특별시 성동구 테스트길 3 (성수동)', jibun: '서울특별시 성동구 성수동1가 13', zip: '04790' },
 ]
 
-/** 저장된 배송지 (ship=saved) */
+/** Saved address (ship=saved) */
 export const SAVED_ADDR = {
   name: '김두리',
   tel: '010-1234-5678',
@@ -69,7 +69,7 @@ const esc = (s) =>
     (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' })[c],
   )
 
-/** 주소 뒤 고르기 → 모양 */
+/** Options after the address -> shape */
 function flagsOf(u) {
   const q = u.searchParams
   const late = Math.min(Math.max(Number(q.get('late')) || 1200, 0), 20_000)
@@ -104,7 +104,7 @@ button{font:inherit;padding:6px 14px;cursor:pointer}input,select{font:inherit;pa
 .box{border:1px solid #ddd;border-radius:8px;padding:12px 16px;margin:10px 0}.err{color:#d33}.muted{color:#888}${css}</style></head>
 <body>${body}${script ? `<script>${script}</script>` : ''}</body></html>`
 
-/** 가게 화면들 */
+/** Shop pages */
 function productPage(f) {
   return page(
     `${PRODUCT.name} - 두리 결제 가게`,
@@ -115,7 +115,7 @@ function productPage(f) {
 <label>옵션 <select id="opt"><option>3kg (로열과) +0원</option></select></label>
 <p><button id="cart">장바구니</button> <button id="buy">구매하기</button></p><p id="msg" role="status"></p>`,
     {
-      // [구매하기]는 결제가 아니라 주문서로 넘어가기만 한다 (실측 11-20 G마켓)
+      // [Buy] does not pay, it only moves to the order page (measured 11-20 Gmarket)
       script: `cart.onclick = () => { msg.textContent = '장바구니에 담았어요' }
 buy.onclick = () => { msg.textContent = '주문서로 이동 중…'; setTimeout(() => { location.href = '/checkout/order?${qsOf(f)}' }, 300) }`,
     },
@@ -176,7 +176,7 @@ function openLayer(src, w, h) {
   layer.innerHTML = '<iframe title="' + (src.includes('/payment/') ? '결제' : '배송지 추가') + '" src="' + src + '" style="width:' + w + ';height:' + h + '"></iframe>'
   layer.hidden = false
 }
-// 배송지 추가: 양식은 다른 사이트의 액자로 뜨고, 그 안의 글은 0.8초 뒤에 그려진다 (실측 11-20 G마켓)
+// Add address: the form opens as a frame of another site, and its text is drawn 0.8s later (measured 11-20 Gmarket)
 addaddr.onclick = () => openLayer(C.addrUrl, '480px', '620px')
 function showAddr(a) {
   addr = a
@@ -196,7 +196,7 @@ addEventListener('message', (e) => {
   if (d.type === 'pg-done') done(d.tid)
 })
 if (C.saved) showAddr(C.saved)
-// 결제 창이 알려 주지 못하는 경우를 대비해 가게 서버에도 결제가 끝났는지 묻는다 (실제 가게들도 그렇게 한다)
+// In case the payment window cannot tell us, also ask the shop server whether payment finished (real shops do that too)
 function poll() {
   if (finished || !tid) return
   fetch('/api/pay/status?tid=' + encodeURIComponent(tid)).then((r) => r.json()).then((s) => {
@@ -209,7 +209,7 @@ pay.onclick = async () => {
   if (paying) return
   paying = true; pay.disabled = true; pay.textContent = '결제 준비 중…'
   const method = document.querySelector('input[name=pm]:checked').value
-  // 결제 창은 누른 순간이 아니라 준비 요청이 끝난 뒤에 연다 (실측 11-20 G마켓: 늦게 뜬 새 창을 못 찾았다)
+  // The payment window opens after the prepare request finishes, not at the moment of the click (measured 11-20 Gmarket: a late new window was not found)
   const r = await fetch('/api/pay/prepare?' + C.qs, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ qty, coupon: applied ? C.coupon.id : '', method, addr, memo: memo.value }) }).then((x) => x.json())
   paying = false; pay.disabled = false; render()
@@ -242,12 +242,12 @@ function completePage(order, f) {
   )
 }
 
-/** 배송지 추가 양식 (주문서 안 액자). 글은 0.8초 늦게 그려진다 */
+/** Add-address form (frame inside the order page). Its text is drawn 0.8s late */
 function addrPage(origins) {
   const cfg = { juso: `${origins.juso}/juso/search`, trusted: [origins.juso] }
   return page('배송지 추가', '<p id="loading">불러오는 중…</p><div id="root"></div>', {
     script: `const C = ${JSON.stringify(cfg)}
-// window.name처럼 이름이 겹치는 칸이 있어 id로 찾는다
+// Some fields share a name like window.name, so look them up by id
 const $ = (id) => document.getElementById(id)
 setTimeout(() => {
   $('loading').remove()
@@ -260,7 +260,7 @@ setTimeout(() => {
     '<p><label><input type="checkbox" id="def" checked> 기본 배송지로 저장</label></p>' +
     '<p id="ferr" class="err" role="alert"></p>' +
     '<p><button id="save" type="button">저장하기</button> <button id="cancel" type="button">닫기</button></p><div id="jusobox"></div>'
-  // 우편번호 찾기: 또 다른 사이트의 액자를 이 액자 안에 띄운다 (액자 속 액자, 실측 11-20 G마켓)
+  // Postal code search: open another site's frame inside this frame (frame in a frame, measured 11-20 Gmarket)
   $('findzip').onclick = () => { $('jusobox').innerHTML = '<iframe title="우편번호 찾기" src="' + C.juso + '" style="width:100%;height:330px;border:1px solid #ccc"></iframe>' }
   $('cancel').onclick = () => parent.postMessage({ type: 'addr-close' }, '*')
   $('save').onclick = () => {
@@ -281,7 +281,7 @@ addEventListener('message', (e) => {
   })
 }
 
-/** 우편번호 찾기 (배송지 양식 안 액자). Enter나 🔍로 찾고, 결과는 0.6초 뒤에 */
+/** Postal code search (frame inside the address form). Search with Enter or the magnifier; results come after 0.6s */
 function jusoPage() {
   return page(
     '우편번호 찾기',
@@ -314,7 +314,7 @@ x.onclick = () => parent.postMessage({ type: 'juso-close' }, '*')`,
   )
 }
 
-/** 결제 회사 창: 카드 고르기 → [다음] → 섞인 6자리 키패드 */
+/** Payment company window: choose card -> [Next] -> shuffled 6-digit keypad */
 function pgPage(f, tid, layer) {
   const cfg = { tid, layer, keys: f.keys, max: MAX_TRIES }
   return page(
@@ -330,8 +330,8 @@ ${['신한카드', '국민카드', '현대카드', '삼성카드'].map((c) => `<
 <div id="pad" class="pad ${f.keypad === 'on' ? 'on' : 'off'}" hidden></div>
 <div id="s3" hidden><h2>결제가 완료되었어요</h2><p>잠시 뒤 가게 화면으로 돌아가요.</p></div>`,
     {
-      // keypad=off: 키패드를 위에서 760px에 둔다. 900px 창(보이는 곳 약 800px)에서는 둘째 줄부터 화면 아래로 잘린다
-      // (실측 11-20 G마켓 결제 회사 키패드가 화면 밖에 그려져 눌리지 않았다)
+      // keypad=off: put the keypad 760px from the top. In a 900px window (about 800px visible) it is cut off below the screen from the second row
+      // (measured 11-20 Gmarket: the payment company keypad was drawn off-screen and could not be clicked)
       css: '.pad{position:fixed;left:0;right:0;background:#f4f5f7;border-top:1px solid #ccc;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px}.pad[hidden]{display:none}.pad.off{top:760px}.pad.on{bottom:0}.pad button{height:64px;font-size:24px;background:#fff;border:1px solid #ccc;border-radius:8px}.pad button img{pointer-events:none}',
       script: `const C = ${JSON.stringify(cfg)}
 const svg = (d) => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><text x="20" y="31" font-size="28" font-family="sans-serif" text-anchor="middle" fill="#123">' + d + '</text></svg>')
@@ -351,12 +351,12 @@ next.onclick = async () => {
   setTimeout(() => { s1.hidden = true; s2.hidden = false; who.textContent = card.value + ' 결제 비밀번호 6자리를 눌러 주세요'; keypad() }, 400)
 }
 function dotsText() { dots.textContent = '●'.repeat(picked.length) + '○'.repeat(6 - picked.length) + ' (' + picked.length + '/6자리)' }
-// 키패드: 숫자 자리를 서버가 섞어 준다. 누른 '자리'만 보내고 서버가 숫자로 바꾼다 (실제 보안 키패드처럼)
+// Keypad: the server shuffles the digit positions. Only the pressed 'position' is sent and the server turns it into a digit (like a real security keypad)
 async function keypad() {
   const { layout } = await api('/api/pg/layout?tid=' + encodeURIComponent(C.tid))
   picked = []; dotsText()
   const keys = layout.map((d, i) => '<button type="button" class="k" data-i="' + i + '">' + (C.keys === 'img' ? '<img alt="" width="40" height="40" src="' + svg(d) + '">' : d) + '</button>')
-  // 마지막 줄: 재배열 · 숫자 · 지우기
+  // Last row: reshuffle, digit, delete
   pad.innerHTML = keys.slice(0, 9).join('') + '<button type="button" id="mix">재배열</button>' + keys[9] + '<button type="button" id="del">지우기</button>'
   pad.hidden = false
   for (const b of pad.querySelectorAll('.k')) b.onclick = () => press(Number(b.dataset.i))
@@ -401,11 +401,11 @@ const readBody = (req) =>
   })
 
 /**
- * 가게 띄우기. 같은 처리기를 네 포트에 붙이고, 페이지끼리는 정해진 사이트 주소로 서로를 부른다
+ * Start the shop. The same handler is attached to four ports, and pages call each other at fixed site addresses
  * @param {{ host?: string, ports?: { shop?: number, addr?: number, juso?: number, pg?: number } }} [o]
  */
 export async function start({ host = '127.0.0.1', ports = {} } = {}) {
-  /** 결제 기록 (시험이 두 번 결제됐는지 등을 볼 수 있게 밖으로 내보낸다) */
+  /** Payment records (exported so a test can check things like whether it was paid twice) */
   const state = { orders: new Map(), prepares: 0, paid: 0, seq: 0 }
   const origins = {}
   const hostOf = { shop: host, addr: 'addr.localhost', juso: 'juso.localhost', pg: 'pg.localhost' }
@@ -460,7 +460,7 @@ export async function start({ host = '127.0.0.1', ports = {} } = {}) {
         tries: 0,
         layout: shuffle(),
       })
-      // 준비 요청이 늦게 끝난다: 결제 창은 그 뒤에 뜬다 (late, 기본 1.2초)
+      // The prepare request finishes late: the payment window appears after it (late, default 1.2s)
       await new Promise((r) => setTimeout(r, f.late))
       return json(res, {
         tid,
@@ -479,13 +479,13 @@ export async function start({ host = '127.0.0.1', ports = {} } = {}) {
       o.inst = String(b.inst ?? '').slice(0, 20)
       return json(res, { ok: true })
     }
-    // 키패드 자리: 부를 때마다 새로 섞는다 (처음·재배열·틀린 뒤)
+    // Keypad positions: reshuffled every time it is called (first time, reshuffle, after a wrong try)
     if (p === '/api/pg/layout') {
       if (!order) return json(res, { layout: [] }, 404)
       order.layout = shuffle()
       return json(res, { layout: order.layout })
     }
-    // 시험 전용 정답지: 지금 키패드 자리 (그림 키패드에서 'AI가 그림을 읽은 결과'를 대신한다). 실제 PG에는 없다
+    // Answer sheet for tests only: the current keypad positions (stands in for 'what the AI read from the images' on an image keypad). Not in a real PG
     if (p === '/api/pg/keymap') return order ? json(res, { layout: order.layout }) : json(res, {}, 404)
     if (p === '/api/pg/auth' && req.method === 'POST') {
       const b = await readBody(req)
@@ -540,9 +540,9 @@ export async function start({ host = '127.0.0.1', ports = {} } = {}) {
   }
 }
 
-// 손으로 띄우기
+// Start by hand
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const shop = await start({ ports: { shop: 8791, addr: 8792, juso: 8793, pg: 8794 } })
-  console.log(`결제 가게: ${shop.product}`)
-  console.log(`  모양 바꾸기: ${shop.product}?pg=layer&addr=same&keypad=on&keys=img&late=6000`)
+  console.log(`Payment shop: ${shop.product}`)
+  console.log(`  change the shape: ${shop.product}?pg=layer&addr=same&keypad=on&keys=img&late=6000`)
 }

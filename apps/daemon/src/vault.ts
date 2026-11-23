@@ -1,8 +1,11 @@
-// 두리 금고 (ADR 0011). 로그인 정보는 비밀값 보관소(PC 앱은 OS 키체인으로 암호화)에만 둔다.
-// AI는 값을 받지 않는다: browser_login 도구는 "이 칸에 채워 줘"만 부탁하고, 본체가 주소를 확인한 뒤 확장에 직접 넘긴다.
+// Dool2 vault (ADR 0011). Login details live only in the secret store (the desktop app encrypts it with the OS keychain).
+// The AI never gets the values: the browser_login tool only asks "fill this field", and the daemon checks the URL and
+// hands the values straight to the extension.
 import { randomUUID } from 'node:crypto'
+import type { Lang } from '@dool2/i18n'
 import type { VaultEntry } from '@dool2/protocol'
 import { findCard } from '@dool2/protocol/connect-text'
+import { vaultCopy } from './locales/vault.js'
 
 export interface SecretStoreLike {
   get(key: string): Promise<string | undefined>
@@ -15,19 +18,19 @@ interface Stored extends VaultEntry {
 
 const KEY = 'vault.entries'
 
-/** 저장할 사이트 주소. https만 받는다 (이 PC 안의 시험용 주소는 http도) */
-export function vaultOrigin(raw: string): string {
+/** Site address to save. https only (http too for test addresses on this PC). Errors are shown to people in `lang` */
+export function vaultOrigin(raw: string, lang: Lang = 'ko'): string {
   let s = raw.trim()
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = `https://${s}`
   let u: URL
   try {
     u = new URL(s)
   } catch {
-    throw new Error('사이트 주소가 올바르지 않아요')
+    throw new Error(vaultCopy(lang).badUrl)
   }
   const local = u.hostname === '127.0.0.1' || u.hostname === 'localhost'
   if (u.protocol !== 'https:' && !(local && u.protocol === 'http:'))
-    throw new Error('https로 시작하는 사이트만 저장할 수 있어요')
+    throw new Error(vaultCopy(lang).httpsOnly)
   return u.origin
 }
 
@@ -36,6 +39,9 @@ export class Vault {
     private readonly secrets: SecretStoreLike,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  /** Language for errors people read (bad site address). index.ts can set it from userLang(settings) */
+  userLang: () => Lang = () => 'ko'
 
   private async load(): Promise<Stored[]> {
     const raw = await this.secrets.get(KEY)
@@ -52,14 +58,14 @@ export class Vault {
     await this.secrets.set(KEY, list.length ? JSON.stringify(list) : undefined)
   }
 
-  /** 비밀번호를 뺀 목록 */
+  /** The list without passwords */
   async list(): Promise<VaultEntry[]> {
     return (await this.load()).map(({ password: _p, ...e }) => e)
   }
 
-  /** 같은 사이트·같은 아이디면 비밀번호를 바꾼다 */
+  /** Same site and same ID: replaces the password */
   async add(input: { url: string; username: string; password: string }): Promise<VaultEntry> {
-    const origin = vaultOrigin(input.url)
+    const origin = vaultOrigin(input.url, this.userLang())
     const list = await this.load()
     const old = list.find((e) => e.origin === origin && e.username === input.username)
     const entry: Stored = old
@@ -85,9 +91,9 @@ export class Vault {
   }
 
   /**
-   * 본체 안에서만 쓴다: 지금 페이지 origin과 정확히 같은 항목.
-   * 같은 사이트에 여러 개면 가장 나중에 넣은 것 (add가 새로 넣거나 고친 항목을 맨 뒤에 둔다).
-   * 처음 것을 주면, 아이디를 잘못 쳤다가 고쳐 넣은 뒤에도 예전의 틀린 계정으로 계속 로그인을 시도한다
+   * Used only inside the daemon: the entry whose origin exactly matches the current page.
+   * If a site has several, the most recently added one (add puts new or changed entries last).
+   * Returning the first one would keep trying the old wrong account even after the user fixed a mistyped ID
    */
   async findForOrigin(
     origin: string,
@@ -97,15 +103,15 @@ export class Vault {
   }
 
   /**
-   * 사용자가 화면(폰·PC)에서 볼 때만: 비밀번호 하나 (ADR 0026). AI 도구·기록으로는 나가지 않는다.
-   * 폰은 기기 잠금 확인 뒤에 부탁하고, 본체는 일한 기록에 사이트만 남긴다
+   * Only when the user views it on a screen (phone or PC): one password (ADR 0026). Never goes to AI tools or logs.
+   * The phone asks after a device lock check, and the daemon logs only the site in the activity log
    */
   async reveal(id: string): Promise<{ origin: string; username: string; password: string } | undefined> {
     const e = (await this.load()).find((x) => x.id === id)
     return e ? { origin: e.origin, username: e.username, password: e.password } : undefined
   }
 
-  /** 사용자가 고친다: 아이디·비밀번호 (빈 값은 그대로 둔다) */
+  /** The user edits the ID and password (empty values are left unchanged) */
   async update(id: string, patch: { username?: string; password?: string }): Promise<VaultEntry | undefined> {
     const list = await this.load()
     const e = list.find((x) => x.id === id)
@@ -113,13 +119,13 @@ export class Vault {
     const username = patch.username?.trim()
     if (username) e.username = username.slice(0, 200)
     if (patch.password) e.password = patch.password.slice(0, 200)
-    // 고친 항목을 맨 뒤로: 같은 사이트에 여러 개면 findForOrigin이 이것을 쓴다
+    // Move the edited entry last: if a site has several, findForOrigin uses this one
     await this.save([...list.filter((x) => x !== e), e])
     const { password: _p, ...view } = e
     return view
   }
 
-  /** 두리가 만든 새 비밀번호를 저장한다 (가입·비번 변경). origin은 이미 origin 형태 */
+  /** Saves a new password Dool2 made (sign-up, password change). origin is already in origin form */
   async savePassword(origin: string, username: string, password: string) {
     await this.add({ url: origin, username, password })
   }
@@ -133,21 +139,21 @@ export class Vault {
   }
 }
 
-// ── AI 도구 vault_find: 금고에 어느 사이트 로그인이 있는지만. 비밀번호는 절대, 아이디는 가려서 ──
+// ── AI tool vault_find: only which sites have a login in the vault. Never passwords, IDs masked ──
 
-/** 금고 목록에 이름을 붙이고 이름으로 찾을 때 쓰는 연결 카드 */
+/** Connect cards used to name vault entries and to find them by name */
 export interface VaultSiteCard {
   id: string
   name: string
   site?: string
-  /** 연결돼 있는지 */
+  /** Whether it is connected */
   connected?: boolean
-  /** 간편 로그인으로 연결했으면 그 공급자 이름 (예: "카카오") */
+  /** If connected with social login, the provider name (for example "Kakao") */
   social?: string
 }
 
 /**
- * AI에게 보일 아이디: 이메일은 앞 한 글자, 그 밖은 앞 두 글자만
+ * ID as shown to the AI: first letter for emails, first two letters otherwise
  * ("felix990810@gmail.com" → "f***@gmail.com", "duri1234" → "du******", "ab" → "a***")
  */
 export function maskUsername(u: string): string {
@@ -158,7 +164,7 @@ export function maskUsername(u: string): string {
   return `${s.slice(0, 2)}${'*'.repeat(Math.min(Math.max(s.length - 2, 3), 6))}`
 }
 
-/** 보일 사이트 이름: "https://www.coupang.com" → "coupang.com" */
+/** Site name to show: "https://www.coupang.com" → "coupang.com" */
 function siteOf(origin: string): string {
   try {
     return new URL(origin).host.replace(/^www\./, '')
@@ -167,30 +173,23 @@ function siteOf(origin: string): string {
   }
 }
 
-/** 같은 사이트인지 (하위 주소 포함: login.coupang.com ↔ coupang.com) */
+/** Whether it's the same site (subdomains included: login.coupang.com ↔ coupang.com) */
 function sameSite(host: string, site: string): boolean {
   const s = site.replace(/^www\./, '')
   return host === s || host.endsWith(`.${s}`) || s.endsWith(`.${host}`)
 }
 
-/** 한국 시간 YYYY-MM-DD */
+/** YYYY-MM-DD in Korea time */
 function day(iso: string): string {
   const t = Date.parse(iso)
-  return Number.isNaN(t) ? '날짜 모름' : new Date(t + 9 * 3600_000).toISOString().slice(0, 10)
+  return Number.isNaN(t) ? 'unknown date' : new Date(t + 9 * 3600_000).toISOString().slice(0, 10)
 }
 
 const squash = (s: string) => s.replace(/\s+/g, '').toLowerCase()
 
-/** 받침에 맞는 "은/는" ("쿠팡은", "야놀자는", "SRT(은)는") */
-function eun(word: string): string {
-  const c = word.charCodeAt(word.length - 1)
-  if (c < 0xac00 || c > 0xd7a3) return `${word}(은)는`
-  return `${word}${(c - 0xac00) % 28 ? '은' : '는'}`
-}
-
 /**
- * 금고 보기 (vault_find 도구). query가 없으면 저장된 사이트 전부, 있으면 그 사이트가 있는지 예/아니요로.
- * 받는 목록은 이미 비밀번호를 뺀 것(Vault.list)이고, 아이디도 여기서 가린다
+ * Vault view (vault_find tool). Without query, every saved site; with query, yes or no for that site.
+ * The entries come without passwords (Vault.list), and IDs are masked here too
  */
 export function vaultSitesText(
   entries: VaultEntry[],
@@ -206,33 +205,33 @@ export function vaultSitesText(
   const line = (r: (typeof rows)[number], i: number) =>
     [
       `${i + 1}. ${r.card ? `${r.card.name} · ` : ''}${r.host}`,
-      `아이디 ${maskUsername(r.e.username)}`,
-      r.e.lastUsedAt ? `마지막 사용 ${day(r.e.lastUsedAt)}` : '아직 두리가 쓴 적 없음',
-      `저장 ${day(r.e.createdAt)}`,
+      `ID ${maskUsername(r.e.username)}`,
+      r.e.lastUsedAt ? `last used ${day(r.e.lastUsedAt)}` : 'not used by Dool2 yet',
+      `saved ${day(r.e.createdAt)}`,
     ].join(' · ')
   const safe =
-    '비밀번호는 두리(AI)도 볼 수 없고 아이디는 가려서 보여요. 비밀번호를 대화로 묻거나 알려 주지 않아요.'
+    'Passwords are hidden even from Dool2 (the AI), and IDs are masked. Never ask for or tell a password in the chat.'
   const use =
-    '로그인이 필요하면 그 사이트 로그인 화면에서 browser_login이 금고 값을 직접 채워요(값은 두리에게 오지 않아요). 연결 카드가 있는 서비스는 connect_ask가 이 계정으로 다시 로그인해요.'
+    "When a login is needed, browser_login fills the vault values directly on that site's login screen (the values never come to Dool2). For services with a connect card, connect_ask logs in again with this account."
 
   const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
   if (!q) {
     if (!rows.length)
       return [
-        '금고에 저장된 로그인이 없어요.',
-        '다음: 로그인이 필요한 서비스면 connect_ask로 연결 카드를 띄워요. 사용자가 카드에 넣은 아이디·비밀번호는 PC 금고에만 암호화해 저장돼요. 비밀번호를 대화로 묻지 않아요.',
+        'No logins saved in the vault.',
+        'Next: if the service needs a login, show a connect card with connect_ask. The ID and password the user enters on the card are stored encrypted only in the vault on the PC. Never ask for a password in the chat.',
       ].join('\n')
     const shown = rows.slice(0, 30)
     return [
-      `금고에 로그인이 저장된 사이트 ${rows.length}곳이에요${rows.length > shown.length ? ` (최근 ${shown.length}곳만)` : ''}. ${safe}`,
+      `${rows.length} site(s) have a login saved in the vault${rows.length > shown.length ? ` (only the latest ${shown.length})` : ''}. ${safe}`,
       '',
       ...shown.map(line),
       '',
-      `다음: ${use} 저장·지우기는 사용자가 PC 앱 설정의 두리 금고에서 해요.`,
+      `Next: ${use} The user saves and deletes logins in the Dool2 vault in the desktop app settings.`,
     ].join('\n')
   }
 
-  // 찾기: 연결 카드 이름("쿠팡")이나 주소("coupang.com")로 그 사이트를 정하고, 아니면 낱말로
+  // Find: pick the site by connect card name (e.g. Coupang) or address ("coupang.com"), otherwise by word
   let card = findCard(cards, q)
   let target = card?.site
   if (!target && /\.[a-z]{2,}/i.test(q)) {
@@ -240,7 +239,7 @@ export function vaultSitesText(
       target = siteOf(vaultOrigin(q))
       card ??= cards.find((c) => c.site && target && sameSite(target, c.site))
     } catch {
-      // 주소가 아니면 낱말로 찾는다
+      // Not an address: search by word
     }
   }
   const hit = rows.filter((r) =>
@@ -251,28 +250,30 @@ export function vaultSitesText(
   const label = card ? `${card.name}(${card.site ?? card.id})` : `'${q}'`
   if (hit.length)
     return [
-      `네, ${label} 로그인이 금고에 저장돼 있어요${hit.length > 1 ? ` (${hit.length}개, 두리는 가장 최근에 넣은 것을 써요)` : ''}. ${safe}`,
+      `Yes, a login for ${label} is saved in the vault${hit.length > 1 ? ` (${hit.length} of them; Dool2 uses the most recently added one)` : ''}. ${safe}`,
       '',
       ...hit.map(line),
       '',
-      `다음: ${use}`,
+      `Next: ${use}`,
     ].join('\n')
 
   const others = rows.length
-    ? `금고에 저장된 사이트 ${rows.length}곳: ${rows
+    ? `Sites saved in the vault (${rows.length}): ${rows
         .slice(0, 10)
         .map((r) => (r.card ? `${r.card.name}(${r.host})` : r.host))
-        .join(', ')}${rows.length > 10 ? ' 등' : ''}.`
-    : '금고가 비어 있어요.'
+        .join(', ')}${rows.length > 10 ? ' and more' : ''}.`
+    : 'The vault is empty.'
   const conn = card?.connected
     ? card.social
-      ? `다만 ${eun(card.name)} ${card.social} 간편 로그인으로 연결돼 있어 금고 없이도 두리가 로그인해요.`
-      : `${eun(card.name)} 연결돼 있어요(PC Chrome에 로그인 유지). 로그인이 풀리면 그때 연결 카드를 띄워요.`
+      ? `But ${card.name} is connected with ${card.social} social login, so Dool2 logs in without the vault.`
+      : `${card.name} is connected (logged in on Chrome on the PC). If the login expires, show the connect card then.`
     : ''
   const next = card?.social
-    ? `다음: 로그인이 풀리면 connect_ask("${card.id}")가 ${card.social} 간편 로그인으로 다시 로그인해요. 비밀번호를 대화로 묻지 않아요.`
+    ? `Next: if the login expires, connect_ask("${card.id}") logs in again with ${card.social} social login. Never ask for a password in the chat.`
     : card
-      ? `다음: 로그인이 필요해지면 connect_ask("${card.id}")로 연결 카드를 띄워요. 사용자가 카드에 넣은 아이디·비밀번호는 PC 금고에만 저장돼요. 비밀번호를 대화로 묻지 않아요.`
-      : '다음: 연결 카드가 없는 사이트면 그 사이트 로그인 화면에서 browser_login을 쓰고, "금고에 없어요"면 browser_request_login으로 로그인 카드를 띄워요. 서비스 이름이면 connect_ask로 연결 카드를 찾아봐요. 비밀번호를 대화로 묻지 않아요.'
-  return [`아니요, ${label} 로그인은 금고에 없어요.${conn ? ` ${conn}` : ''}`, others, next].join('\n')
+      ? `Next: when a login is needed, show the connect card with connect_ask("${card.id}"). The ID and password the user enters on the card are stored only in the vault on the PC. Never ask for a password in the chat.`
+      : 'Next: for a site without a connect card, use browser_login on its login screen, and if it says the vault has nothing, show a login card with browser_request_login. If it is a service name, look for a connect card with connect_ask. Never ask for a password in the chat.'
+  return [`No, there is no login for ${label} in the vault.${conn ? ` ${conn}` : ''}`, others, next].join(
+    '\n',
+  )
 }

@@ -1,7 +1,9 @@
-// API 키 같은 비밀값을 OS 키체인(Electron safeStorage)으로 암호화해 파일에 둔다.
-// 맥은 Keychain, 윈도우는 DPAPI가 키를 지킨다. 암호화를 쓸 수 없는 환경이면 저장하지 않는다 (평문 저장 금지).
+// Stores secrets like API keys in a file, encrypted with the OS keychain (Electron safeStorage).
+// Keychain guards the key on Mac, DPAPI on Windows. Without encryption nothing is stored (never plain text).
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import type { SecretStore } from '@dool2/daemon'
+import type { Lang } from '@dool2/i18n'
+import { mainText } from './locales/main.js'
 
 export interface Crypter {
   isEncryptionAvailable(): boolean
@@ -9,7 +11,8 @@ export interface Crypter {
   decryptString(encrypted: Buffer): string
 }
 
-export function fileSecrets(path: string, crypter: Crypter): SecretStore {
+/** `lang`: language of the error shown when the key cannot be stored (default Korean) */
+export function fileSecrets(path: string, crypter: Crypter, lang: () => Lang = () => 'ko'): SecretStore {
   const load = async (): Promise<Record<string, string>> => {
     try {
       return JSON.parse(await readFile(path, 'utf8')) as Record<string, string>
@@ -31,11 +34,10 @@ export function fileSecrets(path: string, crypter: Crypter): SecretStore {
       const all = await load()
       if (value === undefined) delete all[key]
       else {
-        if (!crypter.isEncryptionAvailable())
-          throw new Error('이 컴퓨터에서는 키를 안전하게 저장할 수 없어요 (OS 키체인을 쓸 수 없음)')
+        if (!crypter.isEncryptionAvailable()) throw new Error(mainText(lang()).secretsUnavailable)
         all[key] = crypter.encryptString(value).toString('base64')
       }
-      // 쓰다가 꺼져도 파일이 깨지지 않게 임시 파일에 쓰고 바꿔 끼운다
+      // Write to a temp file and swap it in, so a crash mid-write never breaks the file
       const tmp = `${path}.tmp`
       await writeFile(tmp, JSON.stringify(all), { mode: 0o600 })
       await rename(tmp, path)

@@ -1,4 +1,4 @@
-// 두리 폰 앱 빌드 → dist/ (중계 서버가 /app/으로 내려준다)
+// Builds the Dool2 phone app into dist/ (the relay serves it at /app/)
 import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +20,7 @@ await build({
   logLevel: 'warning',
 })
 cpSync(join(root, 'static'), dist, { recursive: true })
-// 디자인 시스템. 글꼴은 넣지 않는다 (폰은 기기 글꼴)
+// Design system. No fonts are bundled (the phone uses the device font)
 copyUi(dist)
-// 큰 자리의 움직이는 두리: 화면이 필요할 때만 불러온다
+// The animated Dool2 for big spots: loaded only when a screen needs it
 await bundleDoori3d(build, join(dist, 'doori3d.js'))

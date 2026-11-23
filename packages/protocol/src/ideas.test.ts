@@ -6,6 +6,7 @@ import {
   IDEA_SECTIONS,
   ideaCatalog,
   ideaCount,
+  ideaSections,
   needsConnect,
   searchIdeas,
   serviceAsk,
@@ -51,6 +52,29 @@ describe('아이디어 모음', () => {
     expect(serviceAsk({ name: '연락처', how: 'device' }, '엄마 번호 알려 줘')).toBe('엄마 번호 알려 줘')
     expect(serviceMark('11번가')).toBe('11')
     expect(serviceMark('쿠팡')).toBe('쿠')
+  })
+
+  it('English sections run parallel to the Korean ones', () => {
+    const en = ideaSections('en')
+    expect(en.map((s) => s.id)).toEqual(IDEA_SECTIONS.map((s) => s.id))
+    for (const [i, s] of en.entries()) {
+      const ko = IDEA_SECTIONS[i]
+      expect(s.asks.length).toBe(ko?.asks.length)
+      expect(s.label).not.toMatch(/[가-힣]/)
+      for (const [j, a] of s.asks.entries()) {
+        expect(a.text).not.toMatch(/[가-힣]/)
+        expect(a.note).not.toMatch(/[가-힣]/)
+        expect(Boolean(a.fill)).toBe(Boolean(ko?.asks[j]?.fill))
+      }
+    }
+    expect(ideaCount(ideaCatalog([], 'en'))).toBe(ideaCount(ideaCatalog()))
+    expect(ideaSections('ko')).toBe(IDEA_SECTIONS)
+  })
+
+  it('English service ask', () => {
+    expect(serviceAsk({ name: '쿠팡', how: 'browser' }, 'what is arriving today?', 'en')).toBe(
+      'On 쿠팡: what is arriving today?',
+    )
   })
 
   it('띄어쓰기 없이도 찾는다', () => {

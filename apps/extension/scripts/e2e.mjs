@@ -1,10 +1,10 @@
-// 확장 끝-끝 확인: 시험용 Chrome(Chrome for Testing)에 확장을 올리고, 진짜 두리 본체와 native messaging으로 붙여
-// 탭 열기 → 읽기 → 입력 → 클릭 → 화면 캡처까지 돌린다. 사용자 Chrome·프로필은 건드리지 않는다.
+// Extension end-to-end check: load the extension into a test Chrome (Chrome for Testing), attach it to the real Dool2 daemon over native messaging,
+// and run open tab -> read -> type -> click -> screen capture. The user's Chrome and profile are not touched.
 //
 //   pnpm build
 //   DOOL2_TEST_CHROME=".../Google Chrome for Testing" node apps/extension/scripts/e2e.mjs
 //
-// (일반 Chrome 137+는 --load-extension을 막아서 Chrome for Testing을 쓴다:
+// (regular Chrome 137+ blocks --load-extension, so use Chrome for Testing:
 //  npx @puppeteer/browsers install chrome@stable)
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -17,14 +17,14 @@ import { BrowserTools, FileTools, memorySecrets, startDaemon, Vault } from '@doo
 
 const chromeBin = process.env.DOOL2_TEST_CHROME
 if (!chromeBin) {
-  console.error('DOOL2_TEST_CHROME에 Chrome for Testing 실행 파일 경로를 넣어 주세요')
+  console.error('Set DOOL2_TEST_CHROME to the path of the Chrome for Testing executable')
   process.exit(2)
 }
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = process.env.DOOL2_E2E_OUT ?? join(root, 'out')
 mkdirSync(out, { recursive: true })
 
-// ── 시험용 웹페이지 ──
+// ── Test web pages ──
 const PAGES = {
   '/': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>두리 시험 가게</title>
 <style>body{font:16px sans-serif;margin:40px}.hidden{display:none}</style></head><body>
@@ -40,8 +40,8 @@ const PAGES = {
   '/login': `<!doctype html><title>로그인</title><h1>로그인</h1>
 <form action="/welcome" method="get"><label>아이디 <input name="id"></label> <label>비밀번호 <input type="password" name="pw"></label> <button>로그인</button></form>`,
   '/popup': '<!doctype html><title>새 창</title><h1>새 창이에요</h1>',
-  // 휴대폰용 React 사이트 흉내 (캐치테이블): 목록 줄은 div + onClick 처리기만 있고 손가락 커서·role이 없다.
-  // 검색칸은 입력을 조금 늦게 상태에 반영해서, 글을 넣자마자 Enter를 치면 빈 검색이 된다
+  // Imitates a phone React site (Catch Table): list rows are a div with only an onClick handler, no pointer cursor and no role.
+  // The search box reflects input into state a little late, so pressing Enter right after typing makes an empty search
   '/app': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>맛집 앱</title></head><body>
 <input id="q" placeholder="어떤 맛집 찾으시나요?">
 <div id="list"><div class="row"><span>성수 사위식당</span> <span>4.3 · 한식</span></div>
@@ -69,7 +69,7 @@ const hall = document.getElementById('hall')
 hall.addEventListener('click', () => hall.setAttribute('aria-checked', 'true'))
 for (const c of document.querySelectorAll('.chip'))
   props(c, { onClick: () => { document.title = '예약: ' + c.parentElement.querySelector('b').textContent } })
-// 목록 칸 재활용 흉내: 같은 칸(DOM)에 다른 가게를 그린다
+// Imitates list row recycling: draws a different shop in the same row (DOM)
 document.getElementById('shuffle').addEventListener('click', () => {
   const [a, b] = document.querySelectorAll('.card')
   for (const sel of ['b', 'i']) {
@@ -78,14 +78,14 @@ document.getElementById('shuffle').addEventListener('click', () => {
     b.querySelector(sel).textContent = t
   }
 })
-// 처리기 표시도 손가락 커서도 없는 상자 (사이트가 위에서 클릭을 받는 경우): 글자로만 누를 수 있다
+// A box with neither a handler mark nor a pointer cursor (the site takes clicks higher up): it can only be clicked by its text
 document.addEventListener('click', (e) => { if (e.target.closest?.('#plain')) document.title = '고름: 골목 식당' })
 let kw = ''
 const q = document.getElementById('q')
 q.addEventListener('input', () => setTimeout(() => { kw = q.value }, 100))
 q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '검색: ' + (kw || '(빈칸)') })
 </script></body></html>`,
-  // 커넥터 엔진: 목록 뽑기 (숨은 줄은 빼고, 칸마다 선택자·속성·줄·정규식)
+  // Connector engine: pull a list (leaving out hidden rows; selector, attribute, row and regex per field)
   '/list': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>가게 목록</title></head><body>
 <ul id="shops"><li class="shop"><a href="/shop/1"><b>가게 가</b></a>
 <p>4.5 (120) · 한식</p><em>오후 7:00</em><em>오후 7:30</em></li>
@@ -94,7 +94,7 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 <li class="shop" style="display:none"><b>숨은 가게</b></li></ul>
 <script>fetch('/api/items?q=%EC%84%B1%EC%88%98').then((r) => r.json()).then((d) => { document.title = '목록 ' + d.items.length })</script>
 </body></html>`,
-  // 사이트 알림창: 알림(alert)·확인(confirm)·입력(prompt), 여는 중 알림, 떠나기 확인
+  // Site dialogs: alert, confirm, prompt, an alert while opening, a leave-page confirmation
   '/dialogs': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>알림창 가게</title></head><body>
 <h1>알림창 가게</h1><p>사과 1kg 9,900원. 버튼마다 사이트 알림창이 떠요.</p>
 <button onclick="alert('아이디 또는 비밀번호가 틀렸어요'); document.title='알림 뒤'">로그인</button>
@@ -106,19 +106,19 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
     '<!doctype html><meta charset="utf-8"><title>여는 중 알림</title><script>alert("로그인이 필요한 서비스입니다")</script><h1>로그인이 필요해요</h1>',
   '/leave': `<!doctype html><meta charset="utf-8"><title>쓰는 중</title><h1>글쓰기</h1><label>제목 <input id="t"></label>
 <script>addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = '' })</script>`,
-  // 여러 동작 한 번에: 칸 여러 개 + 동의 체크 + 다음
+  // Many actions at once: several fields + consent checkboxes + next
   '/join': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>가입</title></head><body>
 <h1>회원 가입</h1><p>배송받을 분의 정보를 넣어 주세요. ${'자주 묻는 질문과 안내 문구가 길게 이어져요. '.repeat(60)}</p>
 <form action="/join/done"><label>이름 <input name="name"></label><br><label>휴대폰 번호 <input name="phone"></label><br>
 <label>주소 <input name="addr"></label><br>
 <label><input type="checkbox" name="a1" required> 이용약관 동의 (필수)</label><br><label><input type="checkbox" name="a2" required> 개인정보 수집 동의 (필수)</label><br>
 <button>다음</button></form></body></html>`,
-  // 긴 페이지: 위쪽 메뉴가 길고 상품이 200개
+  // A long page: a long menu at the top and 200 products
   '/long': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>긴 목록</title></head><body>
 <nav>${Array.from({ length: 300 }, (_, i) => `<a href="/c/${i}">카테고리 메뉴 ${i}</a>`).join(' ')}</nav>
 <h1>검색 결과</h1><ul>${Array.from({ length: 200 }, (_, i) => `<li style="height:40px">상품 ${i + 1} 사과 ${i + 1}kg ${(i + 1) * 1000}원 <button onclick="document.title='담음 ${i + 1}'">담기</button></li>`).join('')}</ul>
 </body></html>`,
-  // 마우스: 올려야 펼쳐지는 메뉴, 누르기 전 움직임을 세는 버튼
+  // Mouse: a menu that opens only on hover, and a button that counts movements before the click
   '/hover': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>마우스 가게</title>
 <style>body{font:16px sans-serif;margin:40px}.menu{position:relative}.menu .sub{display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid #ccc;padding:8px}.menu:hover .sub{display:block}#buy{margin-top:220px;margin-left:300px;padding:12px 20px}</style></head><body>
 <h1>마우스 가게</h1><p>카테고리에 마우스를 올리면 코너가 펼쳐져요.</p>
@@ -129,7 +129,7 @@ q.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.title = '
 document.getElementById('jsmenu').addEventListener('mouseenter', () => { document.getElementById('jssub').hidden = false })
 document.getElementById('buy').addEventListener('click', () => { document.title = '움직임 ' + moves })</script>
 </body></html>`,
-  // PC 파일 올리기: 숨은 파일 칸을 여는 버튼, 보이는 파일 칸, 누를 때 칸을 만드는 버튼(문서에 붙이지 않는 칸)
+  // PC file upload: a button that opens a hidden file field, a visible file field, and a button that creates the field on click (a field not attached to the document)
   '/upload': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>블로그 글쓰기</title></head><body>
 <h1>블로그 글쓰기</h1><p>사진과 서류를 올려 주세요.</p>
 <div class="toolbar"><input type="file" id="pic" accept="image/*" multiple style="display:none">
@@ -152,33 +152,33 @@ document.getElementById('doc').addEventListener('click', () => {
 </script></body></html>`,
   '/captcha':
     '<!doctype html><title>확인</title><h1>로그인</h1><p>자동입력 방지 문자를 입력해 주세요</p><img src="/x" alt="보안문자">',
-  // 빈 주소 액자(결제 회사가 about:blank 액자를 만들어 스크립트로 채운다)와 srcdoc 액자
+  // Frames with an empty address (a payment company creates an about:blank frame and fills it with script) and a srcdoc frame
   '/blank-frames': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>결제 액자</title></head><body style="margin:30px">
 <h1>주문서</h1><p>결제 수단을 골라 주세요.</p>
 <iframe id="amount" style="width:360px;height:80px;border:0;margin-left:120px"></iframe>
 <iframe id="pick" style="width:360px;height:90px;border:2px solid #ccc;margin:40px 0 0 220px" srcdoc="<!doctype html><meta charset=utf-8><button style='margin:20px 0 0 60px' onclick=&quot;document.body.insertAdjacentHTML('beforeend','<p>카드 골랐어요</p>')&quot;>카드 선택</button>"></iframe>
 <script>const d = document.getElementById('amount').contentDocument; d.open(); d.write('<!doctype html><meta charset=utf-8><p>결제 금액 12,300원</p>'); d.close()</script>
 </body></html>`,
-  // 늦게 뜨는 새 창, 한 번에 두 창(두 번째는 Chrome이 막는다)
+  // A new window that opens late, and two windows at once (Chrome blocks the second)
   '/pops': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>새 창 가게</title></head><body>
 <h1>새 창 가게</h1>
 <button onclick="setTimeout(() => window.open('/popup?late'), 2000)">늦게 새 창</button>
 <button onclick="window.open('/popup?one'); window.open('/popup?two')">두 창</button>
 </body></html>`,
-  // 누르고 한참 뒤에 바뀌는 화면 (결제 완료가 늦게 뜬다)
+  // A screen that changes long after the click (payment completion appears late)
   '/later': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>늦은 가게</title></head><body>
 <h1>늦은 가게</h1>
 <button onclick="setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<p>결제 완료 주문번호 A-123</p>'), 3500)">결제 확인</button>
 </body></html>`,
-  // 화면 아래 끝의 키패드 (굴려서 보이는 것)와 화면 아래로 잘린 고정 키패드 (굴려도 안 보이는 것)
+  // A keypad at the bottom of the page (visible after scrolling) and a fixed keypad cut off below the screen (not visible even after scrolling)
   '/keypad': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>키패드</title></head><body style="margin:0">
 <h1>결제 비밀번호</h1><div style="height:2200px">위쪽 안내</div>
 <div id="pad">${[1, 2, 3].map((n) => `<button style="width:80px;height:50px" onclick="document.title='누름 ${n}'">${n}</button>`).join('')}</div>
 <div style="position:fixed;left:20px;top:1150px"><button style="width:90px;height:50px" onclick="document.title='고정 9'">9</button></div>
 </body></html>`,
-  // 네이버 블로그 글쓰기(SmartEditor ONE) 흉내: 편집기 전체가 같은 사이트 액자 안이고, 제목·본문은 글 칸이 아니라 그려 둔 상자다.
-  // 누르면(mousedown) 숨은 about:blank 액자 속 contenteditable(입력 버퍼)에 초점을 주고, 거기 들어온 글을 옮겨 그린 뒤 버퍼를 비운다.
-  // 스크립트로 초점만 주거나 버퍼 밖에 넣은 글은 받지 않는다. Enter는 제목이면 본문으로, 본문이면 새 문단으로
+  // Imitates Naver Blog writing (SmartEditor ONE): the whole editor is inside a same-site frame, and the title and body are drawn boxes, not text fields.
+  // On press (mousedown) it gives focus to a contenteditable (input buffer) inside a hidden about:blank frame, redraws the text that arrives there, then clears the buffer.
+  // It does not accept text from script-only focus or text put outside the buffer. Enter moves from the title to the body, and in the body starts a new paragraph
   '/se-write': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>블로그 글쓰기</title></head><body style="margin:0">
 <iframe id="mainFrame" src="/se-form" style="width:1000px;height:700px;border:0"></iframe></body></html>`,
   '/se-form': `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>글쓰기</title>
@@ -232,7 +232,7 @@ const site = createServer((req, res) => {
       `<!doctype html><title>가입 확인</title><h1>가입 정보 확인</h1><p>${v('name')} / ${v('phone')} / ${v('addr')} / 동의 ${v('a1')}${v('a2')}</p>`,
     )
   }
-  // 실제 사이트에서 만나는 까다로운 모양 모음: 열린 shadow DOM, 다른 주소의 액자, 늦게 넘어가는 화면, 내려받기
+  // A collection of tricky shapes met on real sites: open shadow DOM, a frame at another address, a screen that navigates late, downloads
   if (url.pathname === '/robust') {
     const port = site.address().port
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -251,7 +251,7 @@ const site = createServer((req, res) => {
   r.querySelector('button').addEventListener('click', () => { document.title = '귤 담음' })
 } })</script></body></html>`)
   }
-  // 겹친 액자: 페이지(127.0.0.1) → 배송지 창(localhost) → 주소 찾기 창(127.0.0.1). 단계마다 자리가 어긋나 있다
+  // Nested frames: page (127.0.0.1) -> delivery address window (localhost) -> address search window (127.0.0.1). Positions are offset at each step
   if (url.pathname === '/nested') {
     const port = site.address().port
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -303,12 +303,12 @@ const site = createServer((req, res) => {
 await new Promise((r) => site.listen(0, '127.0.0.1', r))
 const base = `http://127.0.0.1:${site.address().port}`
 
-// ── 두리 본체 + 시험용 Chrome ──
+// ── Dool2 daemon + test Chrome ──
 const tmp = mkdtempSync(join(tmpdir(), 'dool2-e2e-'))
 const profile = join(tmp, 'profile')
 const daemon = await startDaemon({
   dataDir: join(tmp, 'data'),
-  // DOOL2_E2E_AGENT=claude|codex면 진짜 AI로 대화까지 돌린다 (그 AI의 로그인·사용량을 쓴다)
+  // With DOOL2_E2E_AGENT=claude|codex it runs the conversation with a real AI too (it uses that AI's login and usage)
   ...(process.env.DOOL2_E2E_AGENT ? {} : { runtimes: {} }),
   nativeHost: { defaultTargets: false, extraDirs: [join(profile, 'NativeMessagingHosts')] },
 })
@@ -320,15 +320,15 @@ const chrome = spawn(
     '--no-first-run',
     '--no-default-browser-check',
     '--window-size=1200,900',
-    // GitHub 리눅스 러너는 Chrome 샌드박스를 쓸 수 없다 (사용자 이름공간 제한)
+    // GitHub Linux runners cannot use the Chrome sandbox (user namespace restriction)
     ...(process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
   ],
   { stdio: 'ignore' },
 )
 
-// 한 단계가 실패해도 나머지 단계는 이어서 돌려 전체 결과를 본다 (앞 단계가 꼭 필요한 단계만 멈춘다)
-// DOOL2_E2E_ONLY="올리기" 처럼 주면 이름에 그 말이 든 단계(와 꼭 필요한 단계)만 돈다
+// If one step fails the remaining steps still run so the whole result is visible (only steps that need an earlier step stop)
+// With DOOL2_E2E_ONLY="upload", only steps whose name contains that word (and steps they need) run
 const only = process.env.DOOL2_E2E_ONLY
 const step = async (name, fn, { must = false } = {}) => {
   if (only && !must && !name.includes(only)) return undefined
@@ -348,18 +348,18 @@ const call = (cmd, args) => daemon.browser.call(cmd, args)
 let failed = false
 try {
   await step(
-    '확장이 본체에 붙는다',
+    'The extension attaches to the daemon',
     async () => {
       for (let i = 0; i < 150 && !daemon.browser.status.connected; i++)
         await new Promise((r) => setTimeout(r, 200))
-      assert.equal(daemon.browser.status.connected, true, '30초 안에 연결되지 않았어요')
+      assert.equal(daemon.browser.status.connected, true, 'Did not connect within 30 seconds')
       console.log(`  ${JSON.stringify(daemon.browser.status)}`)
     },
     { must: true },
   )
 
   const { tabId } = await step(
-    '탭 열기',
+    'Open a tab',
     async () => {
       const r = await call('open', { url: base })
       assert.equal(r.title, '두리 시험 가게')
@@ -369,7 +369,7 @@ try {
   )
 
   const snap = await step(
-    '페이지 읽기',
+    'Read the page',
     async () => {
       const r = await call('snapshot', { tabId })
       writeFileSync(join(out, 'e2e-snapshot.txt'), r.text)
@@ -385,105 +385,111 @@ try {
   )
   const ref = (re) => {
     const m = snap.text.match(re)
-    assert.ok(m, `${re} 를 찾지 못했어요`)
+    assert.ok(m, `${re} was not found`)
     return m[1]
   }
 
-  await step('비밀번호 칸에는 입력하지 않는다', async () => {
-    await assert.rejects(call('type', { tabId, ref: ref(/\[(e\d+) 비밀번호칸/), text: 'x' }), /금고/)
+  await step('Does not type into a password field', async () => {
+    await assert.rejects(call('type', { tabId, ref: ref(/\[(e\d+) 비밀번호칸/), text: 'x' }), /vault/)
   })
 
-  await step('입력하고 Enter', async () => {
+  await step('Type and press Enter', async () => {
     const r = await call('type', { tabId, ref: ref(/\[(e\d+) 입력칸 "검색어"/), text: '사과', submit: true })
     assert.match(r.url, /\/search\?q=%EC%82%AC%EA%B3%BC/)
     assert.equal(r.title, '검색 결과')
   })
 
-  await step('화면 캡처', async () => {
+  await step('Screen capture', async () => {
     const r = await call('screenshot', { tabId })
     assert.equal(r.mime, 'image/jpeg')
     writeFileSync(join(out, 'e2e-search.jpg'), Buffer.from(r.data, 'base64'))
   })
 
-  await step('뒤로 가서 링크 클릭 → 새 탭도 두리 탭', async () => {
+  await step('Go back and click a link -> the new tab is a Dool2 tab too', async () => {
     await call('back', { tabId })
     const s = await call('snapshot', { tabId })
     const link = s.text.match(/\[(e\d+) 링크 "새 창으로 보기"\]/)?.[1]
     assert.ok(link)
     const t = Date.now()
     const r = await call('click', { tabId, ref: link })
-    assert.ok(Date.now() - t < 3000, `클릭이 너무 느려요 (${Date.now() - t}ms)`)
-    assert.ok(r.newTabId, '새 탭 id가 없어요')
+    assert.ok(Date.now() - t < 3000, `The click is too slow (${Date.now() - t}ms)`)
+    assert.ok(r.newTabId, 'No new tab id')
     const p = await call('snapshot', { tabId: r.newTabId })
     assert.match(p.text, /새 창이에요/)
-    // 새 탭이 앞에 있는 동안에도 원래 탭의 버튼을 누를 수 있다 (뒤 탭은 입력을 받지 않아서 앞으로 돌린다)
+    // Even while the new tab is in front, the original tab's button can be clicked (a background tab takes no input, so it is brought to the front)
     const buy = s.text.match(/\[(e\d+) 버튼 "바로 구매"\]/)?.[1]
     const bought = await call('click', { tabId, ref: buy })
     assert.equal(bought.title, '구매됨')
     await call('close', { tabId: r.newTabId })
   })
 
-  await step('스크롤', async () => {
+  await step('Scroll', async () => {
     await call('scroll', { tabId, direction: 'down' })
   })
 
-  await step('React 클릭 상자도 누를 수 있게 읽고, 늦게 받는 칸도 Enter로 검색된다', async () => {
-    await call('navigate', { tabId, url: `${base}/app` })
-    const s = await call('snapshot', { tabId })
-    writeFileSync(join(out, 'e2e-app-snapshot.txt'), s.text)
-    const row = s.text.match(/\[(e\d+) 버튼 "성수 까망 4\.7 · 이탈리아음식"\]/)?.[1]
-    assert.ok(row, `목록 줄에 표시가 없어요:\n${s.text}`)
-    // 긴 상자는 표시만 붙이고 안의 글은 그대로 읽는다
-    assert.match(s.text, /끝 문장/)
-    const picked = await call('click', { tabId, ref: row })
-    assert.equal(picked.title, '고름: 성수 까망')
-    const q = s.text.match(/\[(e\d+) 입력칸 "어떤 맛집 찾으시나요\?"\]/)?.[1]
-    const r = await call('type', { tabId, ref: q, text: '성수', submit: true })
-    assert.equal(r.title, '검색: 성수')
-  })
+  await step(
+    'Read React click boxes so they can be clicked, and a late-reflecting field is searched with Enter',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/app` })
+      const s = await call('snapshot', { tabId })
+      writeFileSync(join(out, 'e2e-app-snapshot.txt'), s.text)
+      const row = s.text.match(/\[(e\d+) 버튼 "성수 까망 4\.7 · 이탈리아음식"\]/)?.[1]
+      assert.ok(row, `The list row has no mark:\n${s.text}`)
+      // A long box only gets a mark and its inner text is read as is
+      assert.match(s.text, /끝 문장/)
+      const picked = await call('click', { tabId, ref: row })
+      assert.equal(picked.title, '고름: 성수 까망')
+      const q = s.text.match(/\[(e\d+) 입력칸 "어떤 맛집 찾으시나요\?"\]/)?.[1]
+      const r = await call('type', { tabId, ref: q, text: '성수', submit: true })
+      assert.equal(r.title, '검색: 성수')
+    },
+  )
 
-  await step('숨은 칸을 품은 라디오 라벨을 읽고, 칸이 재활용되면 엉뚱한 것을 누르지 않는다', async () => {
-    await call('navigate', { tabId, url: `${base}/app` })
-    const s = await call('snapshot', { tabId })
-    const hall = s.text.match(/\[(e\d+) 라디오 "홀"\]/)?.[1]
-    assert.ok(hall, `라디오 "홀"이 없어요:\n${s.text}`)
-    assert.match(s.text, /라디오 "룸" 비활성/)
-    await call('click', { tabId, ref: hall })
-    assert.match((await call('snapshot', { tabId })).text, /라디오 "홀" 선택됨/)
-    const s2 = await call('snapshot', { tabId })
-    const chipA = s2.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
-    assert.ok(chipA, `가게 가의 날짜 칸이 없어요:\n${s2.text}`)
-    await call('click', { tabId, ref: s2.text.match(/\[(e\d+) 버튼 "섞기"\]/)?.[1] })
-    await assert.rejects(call('click', { tabId, ref: chipA }), /다시 읽/)
-    const s3 = await call('snapshot', { tabId })
-    const chip = s3.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
-    const r = await call('click', { tabId, ref: chip })
-    assert.equal(r.title, '예약: 가게 가')
-  })
+  await step(
+    'Read a radio label that wraps a hidden field, and do not click the wrong thing when a row is recycled',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/app` })
+      const s = await call('snapshot', { tabId })
+      const hall = s.text.match(/\[(e\d+) 라디오 "홀"\]/)?.[1]
+      assert.ok(hall, `The radio "홀" is missing:\n${s.text}`)
+      assert.match(s.text, /라디오 "룸" 비활성/)
+      await call('click', { tabId, ref: hall })
+      assert.match((await call('snapshot', { tabId })).text, /라디오 "홀" 선택됨/)
+      const s2 = await call('snapshot', { tabId })
+      const chipA = s2.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
+      assert.ok(chipA, `The date chip of 가게 가 is missing:\n${s2.text}`)
+      await call('click', { tabId, ref: s2.text.match(/\[(e\d+) 버튼 "섞기"\]/)?.[1] })
+      await assert.rejects(call('click', { tabId, ref: chipA }), /Read again and choose/)
+      const s3 = await call('snapshot', { tabId })
+      const chip = s3.text.match(/가게 가 조용한 한식집 \[(e\d+) 버튼 "27일 예약"\]/)?.[1]
+      const r = await call('click', { tabId, ref: chip })
+      assert.equal(r.title, '예약: 가게 가')
+    },
+  )
 
-  await step('숨긴 라디오는 라벨을, 상자 없는 버튼은 안의 글을 누른다', async () => {
+  await step('A hidden radio clicks its label, and a box-less button clicks its inner text', async () => {
     await call('navigate', { tabId, url: `${base}/app` })
     const s = await call('snapshot', { tabId })
     const t730 = s.text.match(/\[(e\d+) 라디오 "오후 7:30"\]/)?.[1]
-    assert.ok(t730, `시간 라디오가 없어요:\n${s.text}`)
+    assert.ok(t730, `The time radio is missing:\n${s.text}`)
     await call('click', { tabId, ref: t730 })
     assert.match((await call('snapshot', { tabId })).text, /라디오 "오후 7:30" 선택됨/)
     const dc = s.text.match(/\[(e\d+) 버튼 "지도에서 보기"\]/)?.[1]
-    assert.ok(dc, `상자 없는 버튼이 없어요:\n${s.text}`)
+    assert.ok(dc, `The box-less button is missing:\n${s.text}`)
     assert.equal((await call('click', { tabId, ref: dc })).title, '상자 없는 버튼')
   })
 
-  await step('다른 버튼이 덮은 자리는 누르지 않는다', async () => {
+  await step('Does not click a spot covered by another button', async () => {
     await call('navigate', { tabId, url: `${base}/app` })
     const s = await call('snapshot', { tabId })
     const under = s.text.match(/\[(e\d+) 버튼 "아래 버튼"\]/)?.[1]
-    assert.ok(under, `아래 버튼이 없어요:\n${s.text}`)
-    await assert.rejects(call('click', { tabId, ref: under }), /덮고 있어서 누르지 않았어요/)
+    assert.ok(under, `The lower button is missing:\n${s.text}`)
+    await assert.rejects(call('click', { tabId, ref: under }), /is covered by another button/)
     const t = await call('snapshot', { tabId })
     assert.doesNotMatch(t.text, /팝업 예약 눌림/)
   })
 
-  await step('표시가 없는 상자는 화면 글자로 누른다', async () => {
+  await step('A box with no mark is clicked by its on-screen text', async () => {
     const tools = new BrowserTools(daemon.browser)
     const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
     await call('navigate', { tabId, url: `${base}/app` })
@@ -494,25 +500,28 @@ try {
     assert.match(text(r), /고름: 골목 식당/)
   })
 
-  await step('이름 없는 아이콘 버튼·수량 버튼·그림뿐인 팝업을 읽는다', async () => {
+  await step('Read nameless icon buttons, quantity buttons, and a popup that is only a picture', async () => {
     await call('navigate', { tabId, url: `${base}/app` })
     const s = await call('snapshot', { tabId })
     assert.match(s.text, /버튼 "수량 줄이기" 비활성\]\s+0\s+\[e\d+ 버튼 "수량 늘리기"\]/, s.text)
-    // 아이콘 속성으로 짐작한 이름은 (추정)으로 알린다 (화면에 적힌 이름이 아니다)
+    // A name guessed from icon attributes is reported with (guessed) (it is not the name written on the screen)
     assert.match(s.text, /\[e\d+ 버튼 "닫기" \(추정\)\]/)
-    assert.match(s.text, /안내는 그림이라 글로 읽을 수 없어요/)
+    assert.match(s.text, /notice is an image and cannot be read as text/)
   })
 
-  await step('눌러도 글이 안 바뀌는 버튼(키패드 숫자)은 한 번만 누른다', async () => {
-    await call('navigate', { tabId, url: `${base}/app` })
-    const s = await call('snapshot', { tabId })
-    const key = s.text.match(/\[(e\d+) 링크 "7"\]/)?.[1]
-    assert.ok(key, `키패드 버튼이 없어요:\n${s.text}`)
-    await call('click', { tabId, ref: key })
-    const t = await call('snapshot', { tabId })
-    // 화면 글은 그대로라 예전에는 '마우스가 안 먹었다'고 보고 한 번 더 눌러 2자리가 됐다 (실측 쿠팡 결제 비밀번호)
-    assert.equal(t.title, '비밀번호 1자리')
-  })
+  await step(
+    'A button whose text does not change on click (a keypad digit) is clicked only once',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/app` })
+      const s = await call('snapshot', { tabId })
+      const key = s.text.match(/\[(e\d+) 링크 "7"\]/)?.[1]
+      assert.ok(key, `The keypad button is missing:\n${s.text}`)
+      await call('click', { tabId, ref: key })
+      const t = await call('snapshot', { tabId })
+      // The page text stays the same, so it used to be reported as "the mouse did not work" and clicked again, giving 2 digits (measured Coupang payment PIN)
+      assert.equal(t.title, '비밀번호 1자리')
+    },
+  )
 
   await step('커넥터 엔진: 목록 뽑기·글자 찾기·페이지가 받은 응답 읽기', async () => {
     await call('navigate', { tabId, url: `${base}/list` })
@@ -542,42 +551,42 @@ try {
     ])
     const f = await call('find', { tabId, patterns: { has: '가게 나', no: '없는 말' } })
     assert.deepEqual(f.found, { has: '가게 나', no: null })
-    // 페이지가 스스로 받은 응답 읽기: 두리는 요청하지 않고 듣기만 한다
+    // Reading responses the page received by itself: Dool2 sends no request, it only listens
     const opened = await call('open', { url: `${base}/list`, capture: true })
     const d = await call('capture', { tabId: opened.tabId, url: 'api/items', pick: 'items.*.name' })
     assert.deepEqual(d.json, ['가게 가'])
     await assert.rejects(
       call('capture', { tabId: opened.tabId, url: 'api/none', timeoutMs: 600 }),
-      /받지 않았어요/,
+      /did not receive that data/,
     )
     await call('close', { tabId: opened.tabId })
   })
 
-  await step('캡차 화면을 알아챈다', async () => {
+  await step('Notice a captcha screen', async () => {
     await call('navigate', { tabId, url: `${base}/captcha` })
     const r = await call('snapshot', { tabId })
     assert.equal(r.captcha, true)
   })
 
-  await step('위험한 주소는 열지 않는다', async () => {
-    await assert.rejects(call('navigate', { tabId, url: 'javascript:alert(1)' }), /http·https/)
-    await assert.rejects(call('open', { url: 'file:///etc/passwd' }), /http·https/)
+  await step('Does not open dangerous addresses', async () => {
+    await assert.rejects(call('navigate', { tabId, url: 'javascript:alert(1)' }), /http and https/)
+    await assert.rejects(call('open', { url: 'file:///etc/passwd' }), /http and https/)
   })
 
-  await step('두리가 열지 않은 탭은 다루지 않는다', async () => {
-    await assert.rejects(call('snapshot', { tabId: 1 }), /두리가 연 탭이 아니에요/)
+  await step('Does not touch tabs Dool2 did not open', async () => {
+    await assert.rejects(call('snapshot', { tabId: 1 }), /Not a tab Dool2 opened/)
   })
 
-  await step('닫힌 두리 탭은 "닫혔어요"로 알리고, 잡아 두기(hold)를 받는다', async () => {
+  await step('A closed Dool2 tab is reported as "closed", and hold is accepted', async () => {
     const extra = await call('open', { url: `${base}/login` })
     const held = await call('hold', { tabId: extra.tabId, ms: 60_000 })
     assert.ok(held.until > Date.now())
     await call('close', { tabId: extra.tabId })
     await new Promise((r) => setTimeout(r, 300))
-    await assert.rejects(call('snapshot', { tabId: extra.tabId }), /탭이 닫혔어요/)
+    await assert.rejects(call('snapshot', { tabId: extra.tabId }), /The tab was closed/)
   })
 
-  await step('두리 금고로 로그인 (AI에게 값이 가지 않는다)', async () => {
+  await step('Log in with the Dool2 vault (the value does not go to the AI)', async () => {
     const vault = new Vault(memorySecrets())
     await vault.add({ url: `${base}/login`, username: 'duri', password: 'pw-금고-123' })
     const tools = new BrowserTools(daemon.browser, vault)
@@ -595,63 +604,66 @@ try {
     assert.match(text(after), /로그인 성공/)
   })
 
-  await step('사이트 알림창: 알림은 닫고 글을 알리고, 확인·입력 창은 AI가 고른다', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    await call('navigate', { tabId, url: `${base}/dialogs` })
-    const page = text(await tools.run('read', { tabId }))
-    const btn = (label) => page.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
-    // 알림(alert): 멈추지 않고, 알림 글을 읽어 준다
-    let t = Date.now()
-    let r = text(await tools.run('click', { tabId, ref: btn('로그인') }))
-    assert.ok(Date.now() - t < 5000, `알림창 클릭이 너무 느려요 (${Date.now() - t}ms)`)
-    assert.match(r, /💬 사이트 알림창: "아이디 또는 비밀번호가 틀렸어요"/)
-    assert.match(r, /알림 뒤/)
-    // 확인(confirm): 떠 있는 채로 AI에게 알리고, [취소]를 고르면 페이지가 false를 받는다
-    t = Date.now()
-    r = text(await tools.run('click', { tabId, ref: btn('담기') }))
-    assert.ok(Date.now() - t < 5000, `확인 창 클릭이 너무 느려요 (${Date.now() - t}ms)`)
-    assert.match(r, /⚠ 사이트 확인 창이 떠 있어요: "장바구니로 이동할까요\?"/)
-    // 떠 있는 동안 다른 명령은 기다리지 않고 바로 알린다
-    t = Date.now()
-    await assert.rejects(call('click', { tabId, ref: btn('수량') }), /확인 창이 떠 있어서/)
-    assert.ok(Date.now() - t < 2000)
-    r = text(await tools.run('dialog', { tabId, accept: false }))
-    assert.match(r, /머무름/)
-    // 입력(prompt): 글을 넣어 [확인]
-    r = text(await tools.run('click', { tabId, ref: btn('수량') }))
-    assert.match(r, /사이트 확인 창이 떠 있어요: "수량을 넣어 주세요"/)
-    r = text(await tools.run('dialog', { tabId, accept: true, text: '3' }))
-    assert.match(r, /수량 3/)
-    // 버튼('다음')은 위험해 보이지 않아도, 주문이 되는 확인 창의 [확인]은 승인 없이 누르지 않는다 → 승인하면 두리가 누른다
-    text(await tools.run('read', { tabId }))
-    r = text(await tools.run('click', { tabId, ref: btn('다음') }))
-    assert.match(r, /주문하시겠습니까/)
-    const blocked = await tools.run('dialog', { tabId, accept: true })
-    assert.equal(blocked.isError, true)
-    // 개편 뒤 문구: 막는 대신 승인 카드 길(browser_request_approval dialog)을 알려 준다. 누르지 않은 것은 같다
-    assert.match(text(blocked), /승인이 필요해요[\s\S]*browser_request_approval\(dialog: true/)
-    const asked = await tools.run('request_approval', {
-      tabId,
-      dialog: true,
-      what: '사과 주문',
-      where: '시험 가게',
-    })
-    assert.equal(asked.isError, undefined, text(asked))
-    const pending = tools.approvals.list().find((x) => x.status === 'pending')
-    assert.equal(pending?.role, '확인 창')
-    const done = await tools.approve(pending.id)
-    assert.equal(done.ok, true, done.message)
-    assert.equal((await call('snapshot', { tabId })).title, '주문됨')
-  })
+  await step(
+    'Site dialogs: an alert is closed and its text reported; the AI chooses on confirm and prompt',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/dialogs` })
+      const page = text(await tools.run('read', { tabId }))
+      const btn = (label) => page.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
+      // alert: does not stop, and its text is read out
+      let t = Date.now()
+      let r = text(await tools.run('click', { tabId, ref: btn('로그인') }))
+      assert.ok(Date.now() - t < 5000, `The alert click is too slow (${Date.now() - t}ms)`)
+      assert.match(r, /💬 Site alert: "아이디 또는 비밀번호가 틀렸어요"/)
+      assert.match(r, /알림 뒤/)
+      // confirm: stays open and is reported to the AI; choosing [Cancel] makes the page receive false
+      t = Date.now()
+      r = text(await tools.run('click', { tabId, ref: btn('담기') }))
+      assert.ok(Date.now() - t < 5000, `The confirm click is too slow (${Date.now() - t}ms)`)
+      assert.match(r, /⚠ A site confirm dialog is open: "장바구니로 이동할까요\?"/)
+      // While it is open, other commands do not wait and report right away
+      t = Date.now()
+      await assert.rejects(call('click', { tabId, ref: btn('수량') }), /A site confirm dialog is open/)
+      assert.ok(Date.now() - t < 2000)
+      r = text(await tools.run('dialog', { tabId, accept: false }))
+      assert.match(r, /머무름/)
+      // prompt: type text and press [OK]
+      r = text(await tools.run('click', { tabId, ref: btn('수량') }))
+      assert.match(r, /site confirm dialog is open: "수량을 넣어 주세요"/)
+      r = text(await tools.run('dialog', { tabId, accept: true, text: '3' }))
+      assert.match(r, /수량 3/)
+      // Even if the button ('다음') does not look risky, [OK] on a confirm that places an order is not pressed without approval -> once approved, Dool2 presses it
+      text(await tools.run('read', { tabId }))
+      r = text(await tools.run('click', { tabId, ref: btn('다음') }))
+      assert.match(r, /주문하시겠습니까/)
+      const blocked = await tools.run('dialog', { tabId, accept: true })
+      assert.equal(blocked.isError, true)
+      // Wording after the revamp: instead of blocking, it points to the approval card path (browser_request_approval dialog). What was not pressed is the same
+      assert.match(text(blocked), /승인이 필요해요[\s\S]*browser_request_approval\(dialog: true/)
+      const asked = await tools.run('request_approval', {
+        tabId,
+        dialog: true,
+        what: '사과 주문',
+        where: '시험 가게',
+      })
+      assert.equal(asked.isError, undefined, text(asked))
+      const pending = tools.approvals.list().find((x) => x.status === 'pending')
+      assert.equal(pending?.role, '확인 창')
+      const done = await tools.approve(pending.id)
+      assert.equal(done.ok, true, done.message)
+      assert.equal((await call('snapshot', { tabId })).title, '주문됨')
+    },
+  )
 
-  await step('여는 중 알림창과 떠나기 확인 창에서 멈추지 않는다', async () => {
+  await step('Does not stop at an alert while opening or a leave-page confirmation', async () => {
     const tools = new BrowserTools(daemon.browser)
     const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
     let t = Date.now()
     const opened = await tools.run('open', { url: `${base}/hello-alert` })
-    assert.ok(Date.now() - t < 8000, `여는 데 너무 오래 걸려요 (${Date.now() - t}ms)`)
-    assert.match(text(opened), /💬 사이트 알림창: "로그인이 필요한 서비스입니다"/)
+    assert.ok(Date.now() - t < 8000, `Opening took too long (${Date.now() - t}ms)`)
+    assert.match(text(opened), /💬 Site alert: "로그인이 필요한 서비스입니다"/)
     assert.match(text(opened), /로그인이 필요해요/)
     const other = Number(text(opened).match(/\[탭 (\d+)\]/)?.[1])
     await call('close', { tabId: other })
@@ -660,146 +672,158 @@ try {
     await call('type', { tabId, ref: s.text.match(/\[(e\d+) 입력칸 "제목"\]/)?.[1], text: '쓰던 글' })
     t = Date.now()
     const moved = await tools.run('navigate', { tabId, url: `${base}/list` })
-    assert.ok(Date.now() - t < 8000, `떠나는 데 너무 오래 걸려요 (${Date.now() - t}ms)`)
+    assert.ok(Date.now() - t < 8000, `Leaving took too long (${Date.now() - t}ms)`)
     assert.match(text(moved), /\[e\d+ 링크 "가게 가"\]/)
-    assert.match(text(moved), /떠날지 묻는 창이 떠서/)
-  })
-
-  await step('여러 동작 한 번에: 폼을 하나씩 채울 때보다 빠르고 돌려받는 글이 적다', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    const fill = (page) => {
-      const ref = (re) => page.match(re)?.[1]
-      return [
-        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "이름"\]/), text: '김두리' },
-        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "휴대폰 번호"\]/), text: '01012345678' },
-        { do: 'type', ref: ref(/\[(e\d+) 입력칸 "주소"\]/), text: '서울 성동구 성수동' },
-        { do: 'click', ref: ref(/\[(e\d+) 체크박스 "이용약관 동의 \(필수\)"\]/) },
-        { do: 'click', ref: ref(/\[(e\d+) 체크박스 "개인정보 수집 동의 \(필수\)"\]/) },
-        { do: 'click', ref: ref(/\[(e\d+) 버튼 "다음"\]/) },
-      ]
-    }
-    const done = /김두리 \/ 01012345678 \/ 서울 성동구 성수동 \/ 동의 onon/
-    // 하나씩: 동작마다 도구를 부르고, 도구마다 페이지를 읽어 돌려받는다
-    await call('navigate', { tabId, url: `${base}/join` })
-    let steps = fill(text(await tools.run('read', { tabId })))
-    let t = Date.now()
-    let chars = 0
-    let last = ''
-    for (const s of steps) {
-      last = text(await tools.run(s.do, { tabId, ...s }))
-      chars += last.length
-    }
-    const one = { calls: steps.length, ms: Date.now() - t, chars }
-    assert.match(last, done)
-    // 한 번에
-    await call('navigate', { tabId, url: `${base}/join` })
-    steps = fill(text(await tools.run('read', { tabId })))
-    t = Date.now()
-    const r = await tools.run('steps', { tabId, steps })
-    const all = { calls: 1, ms: Date.now() - t, chars: text(r).length }
-    assert.equal(r.isError, undefined, text(r))
-    assert.match(text(r), done)
-    console.log(`  하나씩 ${JSON.stringify(one)} → 한 번에 ${JSON.stringify(all)}`)
-    assert.ok(all.ms < one.ms, '한 번에 한 쪽이 더 느려요')
-    assert.ok(all.chars * 3 < one.chars, '돌려받는 글이 충분히 줄지 않았어요')
-  })
-
-  await step('필요한 부분만 읽기: 긴 페이지에서 찾는 줄부터, 보이는 화면만', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    await call('navigate', { tabId, url: `${base}/long` })
-    // 처음부터 읽으면 메뉴만 보이다 잘린다
-    const top = text(await tools.run('read', { tabId }))
-    assert.doesNotMatch(top, /상품 150 /)
-    assert.match(top, /skip: \d+/)
-    // 예전 방법: 최대로 늘려 처음부터 다시 읽기
-    const big = text(await tools.run('read', { tabId, maxChars: 40000 }))
-    // 새 방법: 그 줄부터
-    const from = text(await tools.run('read', { tabId, from: '상품 150 ' }))
-    assert.match(from, /^상품 150 사과/m)
-    const buy = from.match(/상품 150 사과 150kg 150000원 \[(e\d+) 버튼 "담기"\]/)?.[1]
-    assert.ok(buy, from.slice(0, 400))
-    assert.match(text(await tools.run('click', { tabId, ref: buy })), /담음 150/)
-    console.log(
-      `  상품 150 찾기: 처음부터 크게 ${big.length.toLocaleString()}자${/상품 150 /.test(big) ? '' : '(못 찾음)'} → 그 줄부터 ${from.length.toLocaleString()}자`,
-    )
-    // 보이는 화면만: 내린 뒤에는 위쪽 메뉴가 빠지고, 위·아래에 남은 글을 알린다
-    await call('navigate', { tabId, url: `${base}/long` })
-    await tools.run('read', { tabId })
-    const scrolled = text(await tools.run('scroll', { tabId, direction: 'down' }))
-    assert.match(scrolled, /지금 화면에 보이는 부분만/)
-    assert.match(scrolled, /↓ 화면 아래에 글이/)
-    assert.ok(scrolled.length < 4000, `보이는 부분이 너무 길어요 (${scrolled.length}자)`)
-    console.log(`  스크롤 뒤 보이는 부분: ${scrolled.length.toLocaleString()}자`)
-  })
-
-  await step('마우스: 옮겨 가서 누르고, 올려 두면 메뉴가 펼쳐지고, 하는 일을 커서로 보여 준다', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    await call('navigate', { tabId, url: `${base}/hover` })
-    const page = text(await tools.run('read', { tabId }))
-    assert.doesNotMatch(page, /사과 코너/)
-    const cat = page.match(/\[(e\d+) 링크 "과일 카테고리"\]/)?.[1]
-    const opened = text(await tools.run('hover', { tabId, ref: cat }))
-    // 스크립트로 여는 메뉴(mouseenter)
-    const veg = text(
-      await tools.run('hover', { tabId, ref: opened.match(/\[(e\d+) 링크 "채소 카테고리"\]/)?.[1] }),
-    )
-    console.log(`  올려 두기: CSS 메뉴 ${/사과 코너/.test(opened)} / 스크립트 메뉴 ${/배추 코너/.test(veg)}`)
-    assert.match(veg, /\[e\d+ 링크 "배추 코너"\]/)
-    // 리눅스 가상 화면(CI의 xvfb)은 마우스 이벤트는 오는데 CSS :hover를 반영하지 않는다 (맥·윈도우 창은 반영, 실측)
-    if (!(process.env.CI && process.platform === 'linux')) assert.match(opened, /\[e\d+ 링크 "사과 코너"\]/)
-    const buy = veg.match(/\[(e\d+) 버튼 "장바구니 담기"\]/)?.[1]
-    const t = Date.now()
-    const r = await call('click', { tabId, ref: buy })
-    const moves = Number(r.title.match(/움직임 (\d+)/)?.[1])
-    console.log(`  누르기 전 마우스 움직임 ${moves}번, 누르기 ${Date.now() - t}ms`)
-    assert.ok(moves >= 3, `마우스가 움직이지 않고 눌렀어요 (${r.title})`)
-    const shot = await call('screenshot', { tabId })
-    writeFileSync(join(out, 'e2e-cursor.jpg'), Buffer.from(shot.data, 'base64'))
-    // 커서는 읽기에 섞이지 않는다
-    assert.doesNotMatch(text(await tools.run('read', { tabId })), /누르는 중/)
-  })
-
-  await step('까다로운 모양: shadow DOM·다른 주소 액자·늦게 넘어가기·내려받기·표시 유지', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    await call('navigate', { tabId, url: `${base}/robust` })
-    let page = text(await tools.run('read', { tabId }))
-    const btn = (label, p = page) => p.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
-    // 열린 shadow DOM 속 글과 버튼
-    assert.match(page, /그림자 속 상품 귤 3kg/)
-    assert.match(text(await tools.run('click', { tabId, ref: btn('귤 담기') })), /귤 담음/)
-    // 다른 주소(localhost)의 액자 속 버튼
-    page = text(await tools.run('read', { tabId }))
-    assert.match(page, /화면 안 액자 \(localhost\)/, page.slice(-600))
-    assert.match(text(await tools.run('click', { tabId, ref: btn('쿠폰 받기') })), /쿠폰 받음/)
-    // 표시 유지: 위에 새 상자가 생겨도 같은 버튼은 같은 표시
-    page = text(await tools.run('read', { tabId }))
-    const keep = btn('그대로 버튼')
-    await tools.run('click', { tabId, ref: btn('배너 띄우기') })
-    page = text(await tools.run('read', { tabId }))
-    assert.match(page, /새 배너가 위에 생겼어요/)
-    assert.equal(btn('그대로 버튼'), keep, '같은 버튼의 표시가 바뀌었어요')
-    assert.match(text(await tools.run('click', { tabId, ref: keep })), /그대로 눌림/)
-    // 내려받기 링크: 멈추지 않고, 탭을 계속 쓸 수 있다
-    let t = Date.now()
-    await tools.run('click', { tabId, ref: page.match(/\[(e\d+) 링크 "주문 내역 내려받기"\]/)?.[1] })
-    assert.ok(Date.now() - t < 6000, `내려받기 누르기가 너무 느려요 (${Date.now() - t}ms)`)
-    page = text(await tools.run('read', { tabId }))
-    assert.match(page, /까다로운 가게/)
-    // 누르고 0.6초 뒤에 넘어가는 화면: 누른 결과로 새 화면을 읽는다
-    t = Date.now()
-    const moved = text(await tools.run('click', { tabId, ref: btn('늦게 넘어가기') }))
-    assert.match(moved, /"late" 검색 결과/, moved.slice(0, 300))
+    assert.match(text(moved), /asked whether to leave the page/)
   })
 
   await step(
-    '겹친 액자: 안쪽 액자 버튼을 진짜 마우스로 정확히 누르고, 액자 나무를 알린다 (실측 11-20 G마켓)',
+    'Many actions at once: faster than filling a form one by one, and less text comes back',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      const fill = (page) => {
+        const ref = (re) => page.match(re)?.[1]
+        return [
+          { do: 'type', ref: ref(/\[(e\d+) 입력칸 "이름"\]/), text: '김두리' },
+          { do: 'type', ref: ref(/\[(e\d+) 입력칸 "휴대폰 번호"\]/), text: '01012345678' },
+          { do: 'type', ref: ref(/\[(e\d+) 입력칸 "주소"\]/), text: '서울 성동구 성수동' },
+          { do: 'click', ref: ref(/\[(e\d+) 체크박스 "이용약관 동의 \(필수\)"\]/) },
+          { do: 'click', ref: ref(/\[(e\d+) 체크박스 "개인정보 수집 동의 \(필수\)"\]/) },
+          { do: 'click', ref: ref(/\[(e\d+) 버튼 "다음"\]/) },
+        ]
+      }
+      const done = /김두리 \/ 01012345678 \/ 서울 성동구 성수동 \/ 동의 onon/
+      // One by one: call a tool per action, and each tool reads the page and returns it
+      await call('navigate', { tabId, url: `${base}/join` })
+      let steps = fill(text(await tools.run('read', { tabId })))
+      let t = Date.now()
+      let chars = 0
+      let last = ''
+      for (const s of steps) {
+        last = text(await tools.run(s.do, { tabId, ...s }))
+        chars += last.length
+      }
+      const one = { calls: steps.length, ms: Date.now() - t, chars }
+      assert.match(last, done)
+      // At once
+      await call('navigate', { tabId, url: `${base}/join` })
+      steps = fill(text(await tools.run('read', { tabId })))
+      t = Date.now()
+      const r = await tools.run('steps', { tabId, steps })
+      const all = { calls: 1, ms: Date.now() - t, chars: text(r).length }
+      assert.equal(r.isError, undefined, text(r))
+      assert.match(text(r), done)
+      console.log(`  one by one ${JSON.stringify(one)} -> at once ${JSON.stringify(all)}`)
+      assert.ok(all.ms < one.ms, 'At once is slower')
+      assert.ok(all.chars * 3 < one.chars, 'The returned text did not shrink enough')
+    },
+  )
+
+  await step(
+    'Read only the needed part: from the line to find in a long page, visible screen only',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/long` })
+      // Reading from the start shows only the menu and gets cut
+      const top = text(await tools.run('read', { tabId }))
+      assert.doesNotMatch(top, /상품 150 /)
+      assert.match(top, /skip: \d+/)
+      // Old way: raise the limit to the maximum and read from the start again
+      const big = text(await tools.run('read', { tabId, maxChars: 40000 }))
+      // New way: from that line
+      const from = text(await tools.run('read', { tabId, from: '상품 150 ' }))
+      assert.match(from, /^상품 150 사과/m)
+      const buy = from.match(/상품 150 사과 150kg 150000원 \[(e\d+) 버튼 "담기"\]/)?.[1]
+      assert.ok(buy, from.slice(0, 400))
+      assert.match(text(await tools.run('click', { tabId, ref: buy })), /담음 150/)
+      console.log(
+        `  상품 150 찾기: 처음부터 크게 ${big.length.toLocaleString()}자${/상품 150 /.test(big) ? '' : '(못 찾음)'} → 그 줄부터 ${from.length.toLocaleString()}자`,
+      )
+      // Visible screen only: after scrolling the top menu drops out, and the text left above and below is reported
+      await call('navigate', { tabId, url: `${base}/long` })
+      await tools.run('read', { tabId })
+      const scrolled = text(await tools.run('scroll', { tabId, direction: 'down' }))
+      assert.match(scrolled, /Read only the part visible on screen/)
+      assert.match(scrolled, /↓ About [\d,]+ more characters are below the screen/)
+      assert.ok(scrolled.length < 4000, `The visible part is too long (${scrolled.length} chars)`)
+      console.log(`  Visible part after scrolling: ${scrolled.length.toLocaleString()} chars`)
+    },
+  )
+
+  await step(
+    'Mouse: move and click, hover opens a menu, and what Dool2 does is shown with a cursor',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/hover` })
+      const page = text(await tools.run('read', { tabId }))
+      assert.doesNotMatch(page, /사과 코너/)
+      const cat = page.match(/\[(e\d+) 링크 "과일 카테고리"\]/)?.[1]
+      const opened = text(await tools.run('hover', { tabId, ref: cat }))
+      // A menu opened by script (mouseenter)
+      const veg = text(
+        await tools.run('hover', { tabId, ref: opened.match(/\[(e\d+) 링크 "채소 카테고리"\]/)?.[1] }),
+      )
+      console.log(`  Hover: CSS menu ${/사과 코너/.test(opened)} / script menu ${/배추 코너/.test(veg)}`)
+      assert.match(veg, /\[e\d+ 링크 "배추 코너"\]/)
+      // Linux virtual screens (xvfb in CI) deliver mouse events but do not reflect CSS :hover (Mac and Windows windows do, measured)
+      if (!(process.env.CI && process.platform === 'linux')) assert.match(opened, /\[e\d+ 링크 "사과 코너"\]/)
+      const buy = veg.match(/\[(e\d+) 버튼 "장바구니 담기"\]/)?.[1]
+      const t = Date.now()
+      const r = await call('click', { tabId, ref: buy })
+      const moves = Number(r.title.match(/움직임 (\d+)/)?.[1])
+      console.log(`  Mouse movements before the click: ${moves}, click ${Date.now() - t}ms`)
+      assert.ok(moves >= 3, `Clicked without the mouse moving (${r.title})`)
+      const shot = await call('screenshot', { tabId })
+      writeFileSync(join(out, 'e2e-cursor.jpg'), Buffer.from(shot.data, 'base64'))
+      // The cursor does not get mixed into reads
+      assert.doesNotMatch(text(await tools.run('read', { tabId })), /누르는 중/)
+    },
+  )
+
+  await step(
+    'Tricky shapes: shadow DOM, frame at another address, late navigation, downloads, stable marks',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/robust` })
+      let page = text(await tools.run('read', { tabId }))
+      const btn = (label, p = page) => p.match(new RegExp(`\\[(e\\d+) 버튼 "${label}"\\]`))?.[1]
+      // Text and button inside an open shadow DOM
+      assert.match(page, /그림자 속 상품 귤 3kg/)
+      assert.match(text(await tools.run('click', { tabId, ref: btn('귤 담기') })), /귤 담음/)
+      // A button inside a frame at another address (localhost)
+      page = text(await tools.run('read', { tabId }))
+      assert.match(page, /화면 안 액자 \(localhost\)/, page.slice(-600))
+      assert.match(text(await tools.run('click', { tabId, ref: btn('쿠폰 받기') })), /쿠폰 받음/)
+      // Stable marks: even if a new box appears above, the same button keeps the same mark
+      page = text(await tools.run('read', { tabId }))
+      const keep = btn('그대로 버튼')
+      await tools.run('click', { tabId, ref: btn('배너 띄우기') })
+      page = text(await tools.run('read', { tabId }))
+      assert.match(page, /새 배너가 위에 생겼어요/)
+      assert.equal(btn('그대로 버튼'), keep, 'The mark of the same button changed')
+      assert.match(text(await tools.run('click', { tabId, ref: keep })), /그대로 눌림/)
+      // Download link: does not stop, and the tab stays usable
+      let t = Date.now()
+      await tools.run('click', { tabId, ref: page.match(/\[(e\d+) 링크 "주문 내역 내려받기"\]/)?.[1] })
+      assert.ok(Date.now() - t < 6000, `The download click is too slow (${Date.now() - t}ms)`)
+      page = text(await tools.run('read', { tabId }))
+      assert.match(page, /까다로운 가게/)
+      // A screen that navigates 0.6s after the click: the new screen is read as the click result
+      t = Date.now()
+      const moved = text(await tools.run('click', { tabId, ref: btn('늦게 넘어가기') }))
+      assert.match(moved, /"late" 검색 결과/, moved.slice(0, 300))
+    },
+  )
+
+  await step(
+    'Nested frames: click the inner frame button exactly with the real mouse, and report the frame tree (measured 11-20 Gmarket)',
     async () => {
       await call('navigate', { tabId, url: `${base}/nested` })
-      // 액자가 늦게 뜬다: 안쪽 버튼이 보일 때까지 읽는다
+      // The frame appears late: read until the inner button is visible
       let s
       for (let i = 0; i < 10; i++) {
         s = await call('snapshot', { tabId })
@@ -807,40 +831,43 @@ try {
         await new Promise((r) => setTimeout(r, 300))
       }
       writeFileSync(join(out, 'e2e-nested.txt'), s.text)
-      assert.match(s.text, /## 화면 안 액자 목록/, s.text.slice(-800))
-      // 본문 글 속 그 자리에 액자 표시, 목록에는 바깥 액자
-      assert.match(s.text, /\[액자 f\d+\]/)
-      assert.match(s.text, /- f\d+ 127\.0\.0\.1\/nest2 · 바깥: f\d+ · 보임/, s.text.slice(-800))
+      assert.match(s.text, /## 화면 안 액자 list/, s.text.slice(-800))
+      // A frame placeholder at that spot in the body text, and the outer frame in the list
+      assert.match(s.text, /\[frame f\d+\]/)
+      assert.match(s.text, /- f\d+ 127\.0\.0\.1\/nest2 · outer: f\d+ · visible/, s.text.slice(-800))
       const btn = s.text.match(/\[(e\d+) 버튼 "서울 성동구"\]/)?.[1]
-      assert.ok(btn && /^e\d{5,}$/.test(btn), `안쪽 액자 버튼 표시가 없어요:\n${s.text.slice(-800)}`)
+      assert.ok(btn && /^e\d{5,}$/.test(btn), `The inner frame button has no mark:\n${s.text.slice(-800)}`)
       const r = await call('click', { tabId, ref: btn })
-      // 누른 자리 = 바깥 액자 안쪽(300+6+10) + 안쪽 액자 안쪽(150+3) + 버튼 가운데(90+70) = 629.
-      // 예전에는 바깥 문서에서만 찾고 못 찾으면 (0,0)으로 잡아 160 근처를 눌렀다
+      // Click position = outer frame inner (300+6+10) + inner frame inner (150+3) + button center (90+70) = 629.
+      // It used to look only in the outer document and, if not found, assume (0,0) and click near 160
       assert.ok(Math.abs(r.point.x - 629) <= 2, JSON.stringify(r))
       assert.ok(r.point.y > 300 && r.point.y < 560, JSON.stringify(r))
       assert.equal(r.delivered, true, JSON.stringify(r))
-      // 그려지는 창(CI 가상 화면)이면 진짜 마우스가 닿는다. 가려진 창은 다른 주소 액자에 마우스가 안 가서 키보드로 누른다
-      console.log(`  누른 자리 ${JSON.stringify(r.point)} · ${r.via}`)
+      // In a window that paints (CI virtual screen) the real mouse reaches it. In an occluded window the mouse does not reach a frame at another address, so it is clicked by keyboard
+      console.log(`  Click position ${JSON.stringify(r.point)} · ${r.via}`)
       const after = await call('snapshot', { tabId })
       assert.match(after.text, /주소 골랐어요: 서울 성동구/)
     },
   )
 
-  await step('빈 주소(about:blank) 액자의 글과 srcdoc 액자의 버튼도 읽고 누른다', async () => {
-    await call('navigate', { tabId, url: `${base}/blank-frames` })
-    const s = await call('snapshot', { tabId })
-    writeFileSync(join(out, 'e2e-blank-frames.txt'), s.text)
-    assert.match(s.text, /결제 금액 12,300원/, s.text.slice(-800))
-    assert.match(s.text, /about:blank · 바깥: 본문 · 보임 · 글만/, s.text.slice(-800))
-    const card = s.text.match(/\[(e\d+) 버튼 "카드 선택"\]/)?.[1]
-    assert.ok(card, `srcdoc 액자 버튼이 없어요:\n${s.text.slice(-800)}`)
-    const r = await call('click', { tabId, ref: card })
-    assert.equal(r.delivered, true, JSON.stringify(r))
-    assert.match((await call('snapshot', { tabId })).text, /카드 골랐어요/)
-  })
+  await step(
+    'Read and click text in an empty-address (about:blank) frame and a button in a srcdoc frame',
+    async () => {
+      await call('navigate', { tabId, url: `${base}/blank-frames` })
+      const s = await call('snapshot', { tabId })
+      writeFileSync(join(out, 'e2e-blank-frames.txt'), s.text)
+      assert.match(s.text, /결제 금액 12,300원/, s.text.slice(-800))
+      assert.match(s.text, /about:blank · outer: main · visible · text only/, s.text.slice(-800))
+      const card = s.text.match(/\[(e\d+) 버튼 "카드 선택"\]/)?.[1]
+      assert.ok(card, `The srcdoc frame button is missing:\n${s.text.slice(-800)}`)
+      const r = await call('click', { tabId, ref: card })
+      assert.equal(r.delivered, true, JSON.stringify(r))
+      assert.match((await call('snapshot', { tabId })).text, /카드 골랐어요/)
+    },
+  )
 
   await step(
-    '블로그 편집기(액자 속 그려 둔 제목·본문, 숨은 입력 액자)에 제목·여러 문단을 넣는다 (실측 11-21 네이버 블로그)',
+    'Blog editor (drawn title and body inside frames, hidden input frame): enter a title and several paragraphs (measured 11-21 Naver Blog)',
     async () => {
       const tools = new BrowserTools(daemon.browser)
       const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
@@ -852,75 +879,82 @@ try {
         await new Promise((r) => setTimeout(r, 300))
       }
       writeFileSync(join(out, 'e2e-se-editor.txt'), page)
-      // 그려 둔 빈 자리 안내 글이 넣을 곳(입력칸)으로 읽힌다 (예전에는 그냥 글이라 AI가 넣을 곳을 몰랐다)
+      // The drawn empty-slot placeholder text is read as a place to type (it used to be plain text, so the AI did not know where to type)
       const title = page.match(/\[(e\d+) 입력칸 "제목"\]/)?.[1]
       const body = page.match(/\[(e\d+) 입력칸 "글감과 함께 나의 일상을 기록해보세요!"\]/)?.[1]
       assert.ok(title && body, page.slice(-900))
-      // 진짜 칸 곁에 겹쳐 둔 안내 글은 칸을 하나 더 만들지 않는다
+      // A placeholder laid over beside a real field does not make one more field
       assert.match(page, /입력칸 "글감 검색"/)
       assert.doesNotMatch(page, /입력칸 "글감 찾기"/)
       const form = async () => {
         const s = await call('snapshot', { tabId })
         return s.text
       }
-      // 제목: 자리를 진짜 마우스로 눌러 편집기가 숨은 칸에 초점을 주게 하고 넣는다
+      // Title: click the spot with the real mouse so the editor gives focus to the hidden field, then type
       const t = text(await tools.run('type', { tabId, ref: title, text: '제주 바다 여행' }))
-      assert.match(t, /넣은 글이 화면에 보여요/, t.slice(0, 300))
-      // 본문: 줄바꿈은 새 문단 (Enter), 빈 줄도 그대로
+      assert.match(t, /the typed text shows on screen/, t.slice(0, 300))
+      // Body: newlines become new paragraphs (Enter), empty lines stay as they are
       const b = text(
         await tools.run('steps', {
           tabId,
           steps: [{ do: 'type', ref: body, text: '첫째 날 바다를 봤어요.\n\n둘째 날은 오름에 올랐어요.' }],
         }),
       )
-      assert.match(b, /넣은 글이 화면에 보여요/, b.slice(0, 300))
+      assert.match(b, /the typed text shows on screen/, b.slice(0, 300))
       const after = await form()
       writeFileSync(join(out, 'e2e-se-editor-after.txt'), after)
       assert.match(after, /제주 바다 여행/)
       assert.match(after, /첫째 날 바다를 봤어요\.\s*\n\s*둘째 날은 오름에 올랐어요\./, after.slice(-600))
-      assert.doesNotMatch(after, /제주 바다 여행.*첫째 날/, '제목과 본문이 섞였어요')
-      // 이어 쓰기: 글이 든 본문 문단을 화면 글자로 눌러(액자 속도 찾는다) 그 끝에 붙인다
+      assert.doesNotMatch(after, /제주 바다 여행.*첫째 날/, 'The title and body got mixed')
+      // Continue writing: click the body paragraph that has text by its on-screen text (frames are searched too) and append at its end
       const more = text(await tools.run('click', { tabId, text: '둘째 날은 오름에 올랐어요.' }))
-      assert.doesNotMatch(more, /찾지 못했어요/)
+      assert.doesNotMatch(more, /Could not find the text/)
     },
   )
 
-  await step('늦게 뜬 새 창은 탭 목록에 남고, 한 번에 두 창 중 막힌 창을 알린다', async () => {
-    const tools = new BrowserTools(daemon.browser)
-    const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
-    await call('navigate', { tabId, url: `${base}/pops` })
-    const s = await call('snapshot', { tabId })
-    const late = s.text.match(/\[(e\d+) 버튼 "늦게 새 창"\]/)?.[1]
-    const r = await call('click', { tabId, ref: late })
-    assert.equal(r.newTabId, undefined, '2초 뒤에 뜨는 창이 누르기 결과에 벌써 있어요')
-    // 기다리기: 새 탭이 생기면 바로 돌아온다
-    const w = await call('wait', { tabId, ms: 6000 })
-    assert.equal(w.changed, true, JSON.stringify(w))
-    assert.ok(
-      w.what.some((x) => /새 탭 \d+/.test(x)),
-      JSON.stringify(w.what),
-    )
-    const list = await call('tabs', {})
-    const child = list.tabs.find((t) => t.opener === tabId && /\/popup\?late/.test(t.url))
-    assert.ok(child, `늦게 뜬 창이 목록에 없어요: ${JSON.stringify(list.tabs)}`)
-    // popup 명령도 그 창을 알려 준다 (한 번만)
-    assert.equal((await call('popup', { tabId })).newTabId, child.tabId)
-    assert.equal((await call('popup', { tabId })).newTabId, undefined)
-    await call('close', { tabId: child.tabId })
-    // 한 번에 두 창: 둘째는 Chrome이 막는다
-    const two = s.text.match(/\[(e\d+) 버튼 "두 창"\]/)?.[1]
-    const r2 = await call('click', { tabId, ref: two })
-    assert.ok(r2.newTabId, JSON.stringify(r2))
-    await new Promise((res) => setTimeout(res, 1800))
-    const t = text(await tools.run('tabs', {}))
-    console.log(`  ${t.split('\n').join('\n  ')}`)
-    assert.match(t, /막은 새 창[\s\S]*\/popup\?two/)
-    assert.doesNotMatch(t, /막은 새 창[\s\S]*\/popup\?one/)
-    assert.match(t, new RegExp(`탭 ${tabId}이\\(가\\) 연 창`))
-    await call('close', { tabId: r2.newTabId })
-  })
+  await step(
+    'A late new window stays in the tab list, and the blocked one of two windows at once is reported',
+    async () => {
+      const tools = new BrowserTools(daemon.browser)
+      const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
+      await call('navigate', { tabId, url: `${base}/pops` })
+      const s = await call('snapshot', { tabId })
+      const late = s.text.match(/\[(e\d+) 버튼 "늦게 새 창"\]/)?.[1]
+      const r = await call('click', { tabId, ref: late })
+      assert.equal(
+        r.newTabId,
+        undefined,
+        'The window that opens after 2 seconds is already in the click result',
+      )
+      // Wait: returns right away when a new tab appears
+      const w = await call('wait', { tabId, ms: 6000 })
+      assert.equal(w.changed, true, JSON.stringify(w))
+      assert.ok(
+        w.what.some((x) => /new tab \d+/.test(x)),
+        JSON.stringify(w.what),
+      )
+      const list = await call('tabs', {})
+      const child = list.tabs.find((t) => t.opener === tabId && /\/popup\?late/.test(t.url))
+      assert.ok(child, `The late window is not in the list: ${JSON.stringify(list.tabs)}`)
+      // The popup command also reports that window (only once)
+      assert.equal((await call('popup', { tabId })).newTabId, child.tabId)
+      assert.equal((await call('popup', { tabId })).newTabId, undefined)
+      await call('close', { tabId: child.tabId })
+      // Two windows at once: Chrome blocks the second
+      const two = s.text.match(/\[(e\d+) 버튼 "두 창"\]/)?.[1]
+      const r2 = await call('click', { tabId, ref: two })
+      assert.ok(r2.newTabId, JSON.stringify(r2))
+      await new Promise((res) => setTimeout(res, 1800))
+      const t = text(await tools.run('tabs', {}))
+      console.log(`  ${t.split('\n').join('\n  ')}`)
+      assert.match(t, /Chrome blocked[\s\S]*\/popup\?two/)
+      assert.doesNotMatch(t, /Chrome blocked[\s\S]*\/popup\?one/)
+      assert.match(t, new RegExp(`window opened by tab ${tabId}`))
+      await call('close', { tabId: r2.newTabId })
+    },
+  )
 
-  await step('기다리기: 늦게 바뀌는 화면은 바뀌는 대로 돌아오고 무엇이 바뀌었는지 알린다', async () => {
+  await step('Wait: a screen that changes late returns as it changes and reports what changed', async () => {
     const tools = new BrowserTools(daemon.browser)
     const text = (r) => r.content.map((c) => c.text ?? '').join('\n')
     await call('navigate', { tabId, url: `${base}/later` })
@@ -929,15 +963,15 @@ try {
     const t = Date.now()
     const w = text(await tools.run('wait', { tabId, ms: 8000 }))
     const took = Date.now() - t
-    assert.match(w, /바뀐 것/, w)
+    assert.match(w, /What changed/, w)
     assert.match(w, /주문번호 A-123/, w)
-    assert.ok(took < 6000, `바뀐 뒤에도 끝까지 기다렸어요 (${took}ms)`)
+    assert.ok(took < 6000, `Kept waiting to the end after the change (${took}ms)`)
     const still = await call('wait', { tabId, ms: 700 })
     assert.equal(still.changed, false, JSON.stringify(still))
   })
 
   await step(
-    '요소 사진: 화면 아래 버튼은 굴려서, 화면 아래로 잘린 고정 버튼은 잠깐 늘려 찍고 표시마다 상태를 알린다',
+    'Element pictures: scroll to a button below the screen, briefly stretch for a fixed button cut off below the screen, and report the status of each mark',
     async () => {
       await call('navigate', { tabId, url: `${base}/keypad` })
       const s = await call('snapshot', { tabId })
@@ -951,9 +985,9 @@ try {
         ['ok', 'ok', 'ok', 'ok', 'missing'],
       )
       assert.equal(r.shots.length, 4)
-      for (const sh of r.shots) assert.ok(sh.data.length > 500, `${sh.ref} 사진이 비었어요`)
+      for (const sh of r.shots) assert.ok(sh.data.length > 500, `${sh.ref} picture is empty`)
       writeFileSync(join(out, 'e2e-key-9.jpg'), Buffer.from(r.shots[3].data, 'base64'))
-      // 화면 아래로 잘린 고정 버튼도 누른다 (그때만 화면을 늘렸다가 되돌린다)
+      // Also click the fixed button cut off below the screen (only then is the viewport stretched and restored)
       const c = await call('click', { tabId, ref: fixed })
       assert.equal(c.title, '고정 9', JSON.stringify(c))
       const k = await call('click', { tabId, ref: keys[1] })
@@ -961,7 +995,7 @@ try {
     },
   )
 
-  await step('스크롤: 얼마나 굴렀는지·끝인지 알린다', async () => {
+  await step('Scroll: report how far it scrolled and whether it reached the end', async () => {
     await call('navigate', { tabId, url: `${base}/long` })
     const r = await call('scroll', { tabId, direction: 'down' })
     assert.ok(r.scroll && r.scroll.after > r.scroll.before, JSON.stringify(r.scroll))
@@ -969,7 +1003,7 @@ try {
   })
 
   await step(
-    'PC 파일 올리기: 숨은 칸을 여는 버튼·보이는 파일 칸·누를 때 만드는 칸(고르기 창 가로채기)·조각으로 넣기',
+    'PC file upload: a button that opens a hidden field, a visible file field, a field created on click (intercepting the chooser), and insertion in chunks',
     async () => {
       const up = join(tmp, 'up')
       for (const d of ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies'])
@@ -982,7 +1016,7 @@ try {
       const s = await call('snapshot', { tabId })
       const r = (re) => {
         const m = s.text.match(re)
-        assert.ok(m, `${re} 가 없어요:\n${s.text}`)
+        assert.ok(m, `${re} is missing:\n${s.text}`)
         return m[1]
       }
       const add = r(/\[(e\d+) 버튼 "사진 추가"\]/)
@@ -997,7 +1031,7 @@ try {
         }
         return title()
       }
-      // ① 경로를 그대로 (확장에 파일 접근이 꺼져 있으면 Chrome이 막고 조각으로 받겠다고 한다)
+      // (1) The path as is (if file access is off for the extension, Chrome blocks it and says it will receive chunks)
       const a = await call('upload', { tabId, ref: add, paths: [jpg] })
       console.log(
         `  사진 추가: ${JSON.stringify({ how: a.how, found: a.found, needBytes: a.needBytes, why: a.why })}`,
@@ -1014,14 +1048,14 @@ try {
       const a2 = await send(a, jpg, '제주 바다.jpg', 'image/jpeg')
       assert.deepEqual(a2.names, ['제주 바다.jpg'])
       assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다:image\/jpeg input\+change$/)
-      // ③ 조각으로 받아 페이지 안에서 (보이는 파일 칸)
+      // (3) Receive in chunks inside the page (a visible file field)
       const b = await call('upload', { tabId, ref: rcpt, paths: [pdf], viaPage: true })
       assert.equal(b.needBytes, true)
       assert.equal(b.found, 'self')
       const b2 = await send(b, pdf, '진단서.pdf', 'application/pdf')
       assert.equal(b2.how, 'page')
       assert.match(await waitTitle(/^영수증 /), /^영수증 진단서\.pdf:\d+:PDF서류:application\/pdf$/)
-      // ② 누를 때 칸을 만드는 버튼: 고르기 창을 가로채 넣는다 (PC에 창이 뜨지 않는다), 조각으로도
+      // (2) A button that creates the field on click: intercept the chooser and insert (no window opens on the PC), also by chunks
       const c = await call('upload', { tabId, ref: doc, paths: [pdf] })
       assert.equal(c.found, 'chooser')
       await send(c, pdf, '진단서.pdf', 'application/pdf')
@@ -1031,7 +1065,7 @@ try {
       assert.equal(c2.needBytes, true)
       await send(c2, jpg, '제주 바다.jpg', 'image/jpeg')
       assert.match(await waitTitle(/^서류 제주/), /^서류 제주 바다\.jpg:\d+:JPG바다:image\/jpeg$/)
-      // 본체 도구: 승인 카드 → 승인하면 두리가 넣는다
+      // Daemon tool: approval card -> once approved, Dool2 inserts it
       const files = new FileTools(
         Object.fromEntries(
           ['desktop', 'documents', 'downloads', 'pictures', 'movies'].map((k, i) => [
@@ -1046,17 +1080,17 @@ try {
       await call('navigate', { tabId, url: `${base}/upload` })
       await tools.run('read', { tabId })
       const asked = await tools.run('upload', { tabId, ref: add, paths: ['~/Pictures/제주 바다.jpg'] })
-      assert.match(asked.content[0].text, /승인을 요청했어요/)
+      assert.match(asked.content[0].text, /Asked for approval/)
       const [rec] = tools.approvals.list()
       assert.equal(rec.kind, 'contact')
       const done = await tools.approve(rec.id)
-      console.log(`  승인 뒤: ${done.message}`)
+      console.log(`  After approval: ${done.message}`)
       assert.equal(done.ok, true)
       assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다/)
     },
   )
 
-  await step('탭 닫기', async () => {
+  await step('Close the tab', async () => {
     await call('close', { tabId })
   })
 
@@ -1091,45 +1125,48 @@ try {
       const done = events.find((e) => e.event?.type === 'done')
       const err = events.find((e) => e.event?.type === 'error')
       const answer = done?.event.text ?? err?.event.message ?? ''
-      console.log(`  > ${text}\n${tools.map((t) => `    도구: ${t}`).join('\n')}\n  두리: ${answer}`)
+      console.log(`  > ${text}\n${tools.map((t) => `    tool: ${t}`).join('\n')}\n  Dool2: ${answer}`)
       return { tools, answer }
     }
-    await step(`AI(${agent})가 가게에서 사과 값을 찾는다`, async () => {
+    await step(`AI(${agent}) finds the apple price in the shop`, async () => {
       const r = await ask(`${base} 에서 사과 1kg 가격 알려줘`)
       assert.ok(
         r.tools.some((t) => t.includes('browser_open')),
-        '브라우저를 쓰지 않았어요',
+        'Did not use the browser',
       )
       assert.match(r.answer, /9,?900/)
     })
-    await step(`AI(${agent})는 구매 버튼을 승인 요청하고, 승인하면 본체가 누른다`, async () => {
-      const r = await ask(`${base} 에서 사과 바로 구매 버튼 눌러줘`)
-      assert.ok(
-        r.tools.some((t) => t.includes('browser_request_approval')),
-        '승인을 요청하지 않았어요',
-      )
-      assert.ok(!r.tools.some((t) => /browser_click .*"바로 구매"/.test(t)))
-      const pending = daemon.approvals.list().find((x) => x.status === 'pending')
-      assert.ok(pending, '기다리는 승인 요청이 없어요')
-      console.log(
-        `  승인 카드: ${JSON.stringify({ what: pending.what, amount: pending.amount, label: pending.label })}`,
-      )
-      const res = await fetch(`${daemon.url}/api/approvals/${pending.id}`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${daemon.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ decision: 'approve' }),
-      })
-      const out = await res.json()
-      console.log(`  승인 결과: ${out.message}`)
-      assert.equal(out.ok, true)
-      assert.match(out.message, /구매됨/)
-      writeFileSync(join(out ? join(root, 'out') : '', 'e2e-agent.txt'), JSON.stringify(r, null, 2))
-    })
-    await step(`AI(${agent})가 캡차 화면에서 사람에게 넘긴다`, async () => {
+    await step(
+      `AI(${agent}) asks approval for the buy button, and the daemon presses it once approved`,
+      async () => {
+        const r = await ask(`${base} 에서 사과 바로 구매 버튼 눌러줘`)
+        assert.ok(
+          r.tools.some((t) => t.includes('browser_request_approval')),
+          'Did not ask for approval',
+        )
+        assert.ok(!r.tools.some((t) => /browser_click .*"바로 구매"/.test(t)))
+        const pending = daemon.approvals.list().find((x) => x.status === 'pending')
+        assert.ok(pending, 'No pending approval request')
+        console.log(
+          `  승인 카드: ${JSON.stringify({ what: pending.what, amount: pending.amount, label: pending.label })}`,
+        )
+        const res = await fetch(`${daemon.url}/api/approvals/${pending.id}`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${daemon.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ decision: 'approve' }),
+        })
+        const out = await res.json()
+        console.log(`  Approval result: ${out.message}`)
+        assert.equal(out.ok, true)
+        assert.match(out.message, /구매됨/)
+        writeFileSync(join(out ? join(root, 'out') : '', 'e2e-agent.txt'), JSON.stringify(r, null, 2))
+      },
+    )
+    await step(`AI(${agent}) hands off to a person on a captcha screen`, async () => {
       const r = await ask(`${base}/captcha 에서 로그인해줘`)
       assert.ok(
         r.tools.some((t) => t.includes('browser_handoff')),
-        '사람에게 넘기지 않았어요',
+        'Did not hand off to a person',
       )
     })
   }
@@ -1142,5 +1179,5 @@ try {
   await new Promise((r) => setTimeout(r, 500))
   rmSync(tmp, { recursive: true, force: true })
 }
-console.log(failed ? '실패' : '모두 통과')
+console.log(failed ? 'failed' : 'all passed')
 process.exit(failed ? 1 : 0)

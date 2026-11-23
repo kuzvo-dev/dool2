@@ -1,24 +1,25 @@
-name: 릴리스
+name: Release
 
-# 두리 PC 앱 설치 파일을 만들어 GitHub Releases에 올린다 (ADR 0028).
-# Actions 탭 → 릴리스 → Run workflow. apps/desktop/package.json의 version과 같은 버전을 넣는다.
-# 공개(publish) 전에 메인테이너가 v<버전> 태그를 먼저 만든다: 저장소의 '태그 보호' 규칙이 관리자만 태그를 만들게 한다
-# (11-23: 빌드 토큰이 태그를 못 만들어 0.3.0 올리기가 실패했다). git tag -a v0.3.0 <커밋> && git push origin v0.3.0
-# publish를 끄면 올리지 않고 파일만 만든다 (점검용: 각 OS에서 앱을 켜 찍은 화면도 함께 받는다).
+# Builds the Dool2 desktop app installers and uploads them to GitHub Releases (ADR 0028).
+# Actions tab -> Release -> Run workflow. Enter the same version as `version` in apps/desktop/package.json.
+# Before publishing, a maintainer creates the v<version> tag first: the repo's tag protection ruleset lets only
+# admins create tags (11-23: publishing 0.3.0 failed because the build token could not create the tag).
+#   git tag -a v0.3.0 <commit> && git push origin v0.3.0
+# With publish off, it only builds the files (for checks: you also get screenshots of the app started on each OS).
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 버전 (apps/desktop/package.json과 같게, 예 0.3.0)
+        description: Version (same as apps/desktop/package.json, e.g. 0.3.0)
         required: true
       notes:
-        description: 바뀐 점 (사용자에게 보이는 한 줄)
+        description: What changed (one line shown to users)
         required: true
       min:
-        description: 이보다 낮은 버전은 꼭 업데이트 (비우면 없음)
+        description: Versions below this must update (leave empty for none)
         required: false
       publish:
-        description: GitHub Releases에 올리기 (끄면 파일만 만든다)
+        description: Upload to GitHub Releases (off builds the files only)
         type: boolean
         default: false
 
@@ -31,12 +32,12 @@ concurrency:
 
 jobs:
   mac:
-    name: 맥 (${{ matrix.arch }})
+    name: macOS (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        # 둘 다 Apple 칩 기계에서 만든다: 인텔 기계(macos-15-intel)의 dmg 도구가 깨진다
-        # (dmgbuild struct.error, 11-23). 인텔용 켜 보기는 Rosetta로 돈다
+        # Both are built on Apple silicon: the dmg tool breaks on Intel machines (macos-15-intel)
+        # (dmgbuild struct.error, 11-23). The Intel launch check runs under Rosetta
         arch: [arm64, x64]
     runs-on: macos-15
     env:
@@ -48,7 +49,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: corepack enable
-      - name: 버전 확인
+      - name: Check version
         env:
           VERSION: ${{ inputs.version }}
         run: test "$(node -p "require('./apps/desktop/package.json').version")" = "$VERSION"
@@ -56,9 +57,10 @@ jobs:
         timeout-minutes: 8
       - run: pnpm build
         timeout-minutes: 12
-      # 우리 고정 인증서를 임시 키체인에 넣고 코드 서명에 쓰도록 믿게 한다 (러너는 비밀번호 없는 sudo).
-      # 판이 바뀌어도 같은 인증서라 맥이 같은 앱으로 알아본다: 손쉬운 사용·화면 기록 권한과 금고(키체인)가 이어진다
-      - name: 서명 인증서 준비
+      # Put our fixed certificate in a temporary keychain and trust it for code signing (runners have passwordless sudo).
+      # Every version uses the same certificate, so macOS sees the same app: Accessibility and Screen Recording
+      # permissions and the vault (keychain) carry over
+      - name: Prepare signing certificate
         env:
           P12: ${{ secrets.DOOL2_MAC_CERT_P12 }}
           P12_PASS: ${{ secrets.DOOL2_MAC_CERT_PASS }}
@@ -78,20 +80,20 @@ jobs:
           security find-identity -v -p codesigning "$kc"
           echo "DOOL2_MAC_SIGN_KEYCHAIN=$kc" >> "$GITHUB_ENV"
           rm -f "$RUNNER_TEMP/sign.p12"
-      - name: 설치 파일 만들기
+      - name: Build installers
         env:
           DOOL2_MAC_SIGN_IDENTITY: Dool2 Release
         run: pnpm --filter @dool2/desktop package
         timeout-minutes: 15
-      - name: 서명 확인
+      - name: Verify signature
         run: |
           app=$(ls -d apps/desktop/release/mac*/Dool2.app)
           codesign --verify --deep --strict "$app"
           codesign -dr - "$app" 2>&1 | tee "$RUNNER_TEMP/requirement.txt"
           grep -q 'certificate root' "$RUNNER_TEMP/requirement.txt"
-      # 점검: 만든 앱을 켜서 첫 화면을 찍는다 (사람이 맥에서 켜 보기 전에 앱이 뜨는지)
-      # 인텔용은 Rosetta로 돌아 느리다: 오래 기다리고, 안 떠도 빌드는 실패로 치지 않는다 (11-23: 3분 초과)
-      - name: 켜 보기
+      # Check: launch the built app and capture the first screen (does it start before a person tries it on a Mac)
+      # The Intel build runs under Rosetta and is slow: wait longer, and do not fail the build if it does not start (11-23: over 3 minutes)
+      - name: Launch check
         timeout-minutes: ${{ matrix.arch == 'x64' && 8 || 3 }}
         continue-on-error: ${{ matrix.arch == 'x64' }}
         run: |
@@ -114,7 +116,7 @@ jobs:
           path: ${{ runner.temp }}/smoke
 
   windows:
-    name: 윈도우 (x64)
+    name: Windows (x64)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -123,7 +125,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: corepack enable
-      - name: 버전 확인
+      - name: Check version
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
@@ -132,10 +134,10 @@ jobs:
         timeout-minutes: 8
       - run: pnpm build
         timeout-minutes: 12
-      - name: 설치 파일 만들기
+      - name: Build installers
         run: pnpm --filter @dool2/desktop package
         timeout-minutes: 15
-      - name: 켜 보기
+      - name: Launch check
         shell: bash
         timeout-minutes: 3
         run: |
@@ -155,7 +157,7 @@ jobs:
           path: ${{ runner.temp }}/smoke
 
   publish:
-    name: 올리기
+    name: Publish
     needs: [mac, windows]
     if: inputs.publish
     runs-on: ubuntu-latest
@@ -171,7 +173,7 @@ jobs:
           pattern: "{mac,win}-*"
           path: out
           merge-multiple: true
-      - name: 버전 안내 서명
+      - name: Sign version manifest
         env:
           DOOL2_UPDATE_KEY: ${{ secrets.DOOL2_UPDATE_KEY }}
           VERSION: ${{ inputs.version }}
@@ -181,13 +183,13 @@ jobs:
           node apps/desktop/scripts/release-manifest.mjs --dir out --version "$VERSION" --notes "$NOTES" \
             ${MIN:+--min "$MIN"}
           ls -la out
-      - name: 태그 확인
+      - name: Check tag
         env:
           VERSION: ${{ inputs.version }}
         run: |
           git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null \
             || { echo "::error::v$VERSION 태그가 없어요. 태그 보호 규칙 때문에 메인테이너가 먼저 만들어 올려야 해요"; exit 1; }
-      - name: GitHub Releases에 올리기
+      - name: Upload to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}

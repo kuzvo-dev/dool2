@@ -1,7 +1,9 @@
-// 내 결제 수단 (ADR 0023): "무엇으로 낼지"라는 선호만. 카드 번호·유효기간·CVC·결제 비밀번호는 받지도 두지도 않는다.
-// 폰 앱·PC 앱·본체가 같이 쓴다 (의존성 없이).
+// My payment methods (ADR 0023): only the preference "what to pay with". Card numbers, expiry dates, CVC and payment passwords are never received or stored.
+// Shared by the phone app, PC app and core (no runtime dependencies, only types are imported).
 
-/** 등록할 수 있는 결제 수단 종류와 보이는 이름 */
+import type { Lang } from '@dool2/i18n'
+
+/** The kinds of payment method you can register, with their display names (Korean, the reference copy) */
 export const PAY_KINDS = {
   naverpay: '네이버페이',
   kakaopay: '카카오페이',
@@ -17,26 +19,65 @@ export const PAY_KINDS = {
 
 export type PayKind = keyof typeof PAY_KINDS
 
+/** The same names in English */
+const PAY_KINDS_EN: Record<PayKind, string> = {
+  naverpay: 'Naver Pay',
+  kakaopay: 'Kakao Pay',
+  tosspay: 'Toss Pay',
+  payco: 'PAYCO',
+  samsungpay: 'Samsung Pay',
+  applepay: 'Apple Pay',
+  smilepay: 'Smile Pay',
+  ssgpay: 'SSG Pay',
+  lpay: 'L.PAY',
+  card: 'Card',
+}
+
+/** The display name of a payment method kind */
+export function payKindName(kind: PayKind, lang: Lang = 'ko'): string {
+  return lang === 'en' ? PAY_KINDS_EN[kind] : PAY_KINDS[kind]
+}
+
+/** Text shown to the user (Korean is the reference copy) */
+const TEXT = {
+  ko: {
+    unknown: '결제 수단을 알 수 없어요',
+    unknownKind: '결제 수단 종류를 알 수 없어요',
+    noCardNumber: '카드 번호는 저장하지 않아요. 끝 4자리만 적어 주세요',
+    last4Digits: '끝 4자리는 숫자 4개로 적어 주세요',
+    pickIssuer: '카드사를 골라 주세요',
+    ending: (last4: string) => `끝 ${last4}`,
+  },
+  en: {
+    unknown: "I don't recognize this payment method",
+    unknownKind: "I don't recognize this kind of payment method",
+    noCardNumber: "Card numbers aren't saved. Please enter only the last 4 digits",
+    last4Digits: 'Please enter the last 4 digits as 4 numbers',
+    pickIssuer: 'Please choose the card company',
+    ending: (last4: string) => `ending ${last4}`,
+  },
+} as const
+
 export interface PayMethod {
   id: string
   kind: PayKind
-  /** 간편결제 안에서 쓰는 것 (그 간편결제 화면에서 고른 가린 표시, 예: "신한카드(1234)", "네이버페이 머니") */
+  /** Used inside a mobile wallet (a masked label picked on that wallet's screen, e.g. "신한카드(1234)", "네이버페이 머니") */
   inner?: string
-  /** 카드: 카드사 (예: "신한카드") */
+  /** Card: the card company (e.g. "신한카드") */
   issuer?: string
-  /** 카드: 내가 붙인 이름 (예: "생활비") */
+  /** Card: a name I gave it (e.g. "Living costs") */
   nickname?: string
-  /** 카드: 끝 4자리 (선택) */
+  /** Card: last 4 digits (optional) */
   last4?: string
   addedAt: string
 }
 
-/** 폰이 보내는 것 (id가 없으면 새로 만든다) */
+/** What the phone sends (a new id is made when there is none) */
 export type PayMethodInput = Omit<PayMethod, 'id' | 'addedAt'> & { id?: string; addedAt?: string }
 
 export const MAX_PAY_METHODS = 10
 
-/** 카드 등록 때 고르는 카드사 (목록에 없으면 직접 적는다) */
+/** Card companies to choose from when registering a card (type it in if it is not in the list) */
 export const CARD_ISSUERS = [
   '신한카드',
   'KB국민카드',
@@ -52,7 +93,7 @@ export const CARD_ISSUERS = [
   '토스뱅크',
 ] as const
 
-// 숫자 5개 이상(공백·하이픈 무시)은 카드 번호일 수 있어 받지 않는다
+// Five or more digits (ignoring spaces and hyphens) could be a card number, so they are not accepted
 const LONG_DIGITS = /\d{5,}/
 
 function clean(v: unknown, max: number): string | undefined {
@@ -62,50 +103,51 @@ function clean(v: unknown, max: number): string | undefined {
 }
 
 /**
- * 폰이 보낸 결제 수단 하나를 검사해 저장할 모양으로. 받을 수 없으면 사용자에게 보일 이유(문자열)
+ * Checks one payment method sent by the phone and turns it into the shape to store. If it cannot be accepted, returns the reason (a string) to show the user
  */
-export function cleanPayMethod(raw: unknown, id: string, now: string): PayMethod | string {
-  if (!raw || typeof raw !== 'object') return '결제 수단을 알 수 없어요'
+export function cleanPayMethod(raw: unknown, id: string, now: string, lang: Lang = 'ko'): PayMethod | string {
+  const t = TEXT[lang]
+  if (!raw || typeof raw !== 'object') return t.unknown
   const r = raw as Record<string, unknown>
   const kind = r.kind
-  if (typeof kind !== 'string' || !(kind in PAY_KINDS)) return '결제 수단 종류를 알 수 없어요'
+  if (typeof kind !== 'string' || !(kind in PAY_KINDS)) return t.unknownKind
   const inner = clean(r.inner, 40)
   const issuer = clean(r.issuer, 20)
   const nickname = clean(r.nickname, 20)
   const last4 = clean(r.last4, 8)
   for (const v of [inner, issuer, nickname, last4])
-    if (v && LONG_DIGITS.test(v.replace(/[\s-]/g, '')))
-      return '카드 번호는 저장하지 않아요. 끝 4자리만 적어 주세요'
-  if (last4 && !/^\d{4}$/.test(last4)) return '끝 4자리는 숫자 4개로 적어 주세요'
+    if (v && LONG_DIGITS.test(v.replace(/[\s-]/g, ''))) return t.noCardNumber
+  if (last4 && !/^\d{4}$/.test(last4)) return t.last4Digits
   const base = {
     id: clean(r.id, 40) ?? id,
     kind: kind as PayKind,
     addedAt: clean(r.addedAt, 40) ?? now,
   }
   if (kind === 'card') {
-    if (!issuer) return '카드사를 골라 주세요'
+    if (!issuer) return t.pickIssuer
     return { ...base, issuer, ...(nickname ? { nickname } : {}), ...(last4 ? { last4 } : {}) }
   }
   return { ...base, ...(inner ? { inner } : {}) }
 }
 
-/** 목록 제목: "네이버페이", "신한카드" */
-export function payMethodTitle(m: PayMethod): string {
-  return m.kind === 'card' ? (m.issuer ?? PAY_KINDS.card) : PAY_KINDS[m.kind]
+/** List title: "네이버페이", "신한카드" ("Naver Pay") */
+export function payMethodTitle(m: PayMethod, lang: Lang = 'ko'): string {
+  return m.kind === 'card' ? (m.issuer ?? payKindName('card', lang)) : payKindName(m.kind, lang)
 }
 
-/** 목록 아래 글: "신한카드(1234)", "생활비 · 끝 1234" */
-export function payMethodDetail(m: PayMethod): string {
+/** Text under the list item: "신한카드(1234)", "Living costs · ending 1234" */
+export function payMethodDetail(m: PayMethod, lang: Lang = 'ko'): string {
+  const t = TEXT[lang]
   if (m.kind !== 'card') return m.inner ?? ''
-  return [m.nickname, m.last4 ? `끝 ${m.last4}` : ''].filter(Boolean).join(' · ')
+  return [m.nickname, m.last4 ? t.ending(m.last4) : ''].filter(Boolean).join(' · ')
 }
 
-/** 한 줄: "네이버페이 · 신한카드(1234)" */
-export function payMethodLabel(m: PayMethod): string {
-  return [payMethodTitle(m), payMethodDetail(m)].filter(Boolean).join(' · ')
+/** One line: "네이버페이 · 신한카드(1234)" */
+export function payMethodLabel(m: PayMethod, lang: Lang = 'ko'): string {
+  return [payMethodTitle(m, lang), payMethodDetail(m, lang)].filter(Boolean).join(' · ')
 }
 
-// 결제 화면 칸 이름이 그 간편결제인지
+// Whether a payment-screen option name is that mobile wallet
 const KIND_RE: Record<Exclude<PayKind, 'card'>, RegExp> = {
   naverpay: /네이버\s*페이|N\s*pay|naver\s*pay/i,
   kakaopay: /카카오\s*페이|kakao\s*pay/i,
@@ -118,20 +160,20 @@ const KIND_RE: Record<Exclude<PayKind, 'card'>, RegExp> = {
   lpay: /L\.?\s*PAY|엘\s*페이/i,
 }
 
-/** 결제 화면의 칸 이름이 이 결제 수단인지 ("카카오페이 혜택" ↔ 카카오페이, "신용/체크카드" ↔ 카드) */
+/** Whether a payment-screen option name is this payment method ("카카오페이 혜택" matches Kakao Pay, "신용/체크카드" matches card) */
 export function payMethodMatches(m: PayMethod, option: string): boolean {
   if (m.kind !== 'card') return KIND_RE[m.kind].test(option)
-  // 카드: 일반 카드 결제 칸. 'NOL 카드 페이'·'카드 혜택'처럼 간편결제나 안내는 아니다
+  // Card: the ordinary card payment option. Wallets and notices like 'NOL 카드 페이'·'카드 혜택' are not it
   if (/페이|pay|머니|포인트/i.test(option)) return false
   const brand = (m.issuer ?? '').replace(/카드$/, '')
   if (brand && option.includes(brand)) return true
-  // 야놀자처럼 카드는 '다른 결제 수단' 안에 있는 사이트도 있다
+  // Some sites, like Yanolja, keep cards inside 'Other payment methods'
   return /카드|일반\s*결제|다른\s*결제\s*수단/.test(option)
 }
 
 /**
- * 결제 화면의 칸들 중 내 결제 수단 순서대로 처음 맞는 것. 없으면 undefined
- * (맨 위가 주 결제 수단: 사이트가 그걸 받으면 그것, 안 받으면 다음 것)
+ * Among the options on the payment screen, the first one that matches my payment methods in order. undefined if none
+ * (the top one is the main method: if the site accepts it, that one, otherwise the next)
  */
 export function pickPayMethod(
   methods: PayMethod[],

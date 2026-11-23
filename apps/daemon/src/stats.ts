@@ -1,7 +1,7 @@
-// 사용 통계 (사용자가 동의했을 때만, 숫자만). 베타가 잘 쓰이는지 보려고 하루 단위 숫자를 dool2.com/api/stats로 보낸다.
-// 보내는 것: 무작위 기기 번호(이 PC에서 만든 것, 이름·계정과 연결 안 됨), 날짜, 앱 버전·운영체제,
-// 그날 부탁 수·답한 수·도구 성공/실패 수·끝내기 전 검사 결과 수, AI·확장 연결 여부, 연결한 서비스 개수.
-// 대화 내용·사이트·파일 이름·서비스 이름은 보내지 않는다. 켜져 있는 동안 1시간마다 오늘 숫자를 고쳐 보낸다(같은 날은 덮어씀)
+// Usage stats (only when the user agrees, numbers only). To see whether the beta is used well, daily numbers go to dool2.com/api/stats.
+// What is sent: a random device number (made on this PC, not linked to a name or account), the date, app version and operating system,
+// that day's number of requests, answers, tool successes/failures and pre-finish check results, whether an AI and the extension are connected, and the number of connected services.
+// Conversation content, sites, file names and service names are never sent. While on, today's numbers are re-sent every hour (the same day is overwritten)
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -27,13 +27,13 @@ export interface DayStats {
   connections: number
 }
 
-/** 이 PC의 날짜 (YYYY-MM-DD, 현지 시간) */
+/** Date on this PC (YYYY-MM-DD, local time) */
 export function localDay(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-/** 그날 기록에서 숫자만 센다 */
+/** Counts only numbers from that day's log */
 export function countDay(entries: JournalEntry[], day: string) {
   const c = { turns: 0, answered: 0, toolsOk: 0, toolsFail: 0, finishDone: 0, finishAgain: 0 }
   for (const e of entries) {
@@ -53,13 +53,13 @@ export function countDay(entries: JournalEntry[], day: string) {
 }
 
 export interface StatsDeps {
-  /** 기기 번호·마지막 보낸 날을 둘 폴더 (데이터 폴더) */
+  /** Folder for the device number and the last day sent (the data folder) */
   dir: string
-  /** 사용자가 동의했는지 (설정 usageStats === true) */
+  /** Whether the user agreed (setting usageStats === true) */
   enabled: () => boolean
   version: string
   entries: () => JournalEntry[]
-  /** 지금 상태 (로그인된 AI id, 확장 연결, 연결한 서비스 개수) */
+  /** Current state (logged-in AI ids, extension connection, number of connected services) */
   status: () => Promise<{ agents: string[]; extension: boolean; connections: number }>
   fetch?: typeof fetch
   now?: () => Date
@@ -87,7 +87,7 @@ export class StatsReporter {
     await writeFile(join(this.d.dir, 'stats.json'), JSON.stringify(s), { mode: 0o600 }).catch(() => undefined)
   }
 
-  /** 보낼 숫자 (동의 화면의 '무엇을 보내나요' 보기에도 쓴다) */
+  /** The numbers to send (also used by the consent screen's 'What is sent?' view) */
   async build(day: string, iid = 'example'): Promise<DayStats> {
     const st = await this.d.status().catch(() => ({ agents: [], extension: false, connections: 0 }))
     return {
@@ -103,7 +103,7 @@ export class StatsReporter {
     }
   }
 
-  /** 오늘 숫자를 보낸다. 날이 바뀌었으면 어제 것을 마지막으로 한 번 더 (꺼져 있던 날은 기록으로 채운다) */
+  /** Sends today's numbers. If the day changed, yesterday's once more as the last (days it was off are filled from the log) */
   async tick(): Promise<number> {
     if (!this.d.enabled()) return 0
     const now = (this.d.now ?? (() => new Date()))()

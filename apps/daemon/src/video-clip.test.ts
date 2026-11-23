@@ -120,7 +120,7 @@ describe('AI 영상 클립 (구글 Flow)', () => {
     expect(made[0]).toMatchObject({ name: '춤추는 공룡.mp4', image: 'POSTER' })
     expect(worked).toEqual(['flow'])
     const text = JSON.stringify(r.content)
-    expect(text).toContain('크레딧 24')
+    expect(text).toContain('24 credits')
     expect(text).toContain('<video class=\\"bg\\"')
     expect(r.content.some((c) => c.type === 'image')).toBe(true)
     // 탭은 닫는다

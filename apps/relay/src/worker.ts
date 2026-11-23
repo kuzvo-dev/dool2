@@ -1,9 +1,9 @@
-// 두리 공식 중계 서버 (Cloudflare Workers + Durable Objects). 규칙은 Node 버전과 같다(core.ts).
+// Official Dool2 relay (Cloudflare Workers + Durable Objects). Same rules as the Node version (core.ts).
 //
-// - PC 방(PC id)마다 Durable Object 하나. 접속 주소 `/link?room=<PC id>`로 그 방에 바로 붙는다
-// - WebSocket Hibernation: 연결은 이어 두되, 메시지가 없을 때는 깨어 있지 않는다(요금 없음)
-// - 꺼진 기기로 가는 봉투는 그 방의 SQLite에 암호문 그대로 7일까지 쌓아 둔다
-// - 폰 앱은 내려주지 않는다. 폰 앱은 스토어 앱으로만 배포한다(서버가 앱 코드를 바꿔치기할 수 없게)
+// - One Durable Object per PC room (PC id). The connect URL `/link?room=<PC id>` goes straight to that room
+// - WebSocket Hibernation: connections stay open but the object sleeps when there are no messages (no charge)
+// - Envelopes for offline devices are kept as ciphertext in the room's SQLite for up to 7 days
+// - The phone app is not served here. It ships only as a store app (so the server cannot swap the app code)
 import { DurableObject } from 'cloudflare:workers'
 import {
   AUTH_TIMEOUT_MS,
@@ -22,23 +22,23 @@ export interface Env {
   ROOMS: DurableObjectNamespace<RelayRoom>
 }
 
-/** 방 이름(PC id)은 서명 공개키 해시의 base64url 16바이트 → 22자 */
+/** Room name (PC id) is 16 bytes of the signing public key hash in base64url -> 22 chars */
 const ROOM_RE = /^[A-Za-z0-9_-]{16,64}$/
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url)
     if (url.pathname === '/healthz') return new Response('ok')
-    if (url.pathname !== '/link') return new Response('없는 주소예요', { status: 404 })
+    if (url.pathname !== '/link') return new Response('Not found', { status: 404 })
     if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket')
-      return new Response('WebSocket으로만 붙을 수 있어요', { status: 426 })
+      return new Response('WebSocket only', { status: 426 })
     const room = url.searchParams.get('room') ?? ''
-    if (!ROOM_RE.test(room)) return new Response('방(room)이 필요해요', { status: 400 })
+    if (!ROOM_RE.test(room)) return new Response('room is required', { status: 400 })
     return env.ROOMS.get(env.ROOMS.idFromName(room)).fetch(req)
   },
 } satisfies ExportedHandler<Env>
 
-/** 소켓마다 붙여 두는 상태. 잠들었다 깨어나도 남는다 */
+/** State attached to each socket. Survives hibernation */
 interface Attachment {
   room: string
   at: number
@@ -47,7 +47,7 @@ interface Attachment {
 
 export class RelayRoom extends DurableObject<Env> {
   private readonly sql: SqlStorage
-  /** 1초 창마다 보낸 수. 잠들면 사라지는데, 그건 그동안 아무것도 안 보냈다는 뜻이라 괜찮다 */
+  /** Messages sent per 1-second window. Lost on hibernation, which is fine: it means nothing was sent meanwhile */
   private readonly rate = new WeakMap<WebSocket, { at: number; n: number }>()
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -84,7 +84,7 @@ export class RelayRoom extends DurableObject<Env> {
       if (now - a.at > AUTH_TIMEOUT_MS) return ws.close(CLOSE.helloTimeout, 'hello timeout')
       const me = await checkHello(msg, now, a.room)
       if (!me) return ws.close(CLOSE.badHello, 'bad hello')
-      // 같은 기기가 다시 붙으면 예전 연결을 닫는다
+      // If the same device reconnects, close the old connection
       for (const other of this.socketOf(me.id)) other.close(CLOSE.replaced, 'replaced')
       ws.serializeAttachment({ ...a, me } satisfies Attachment)
       ws.send(JSON.stringify({ relay: 'ready', id: me.id }))
@@ -96,7 +96,7 @@ export class RelayRoom extends DurableObject<Env> {
     this.rate.set(ws, r)
     if (++r.n > RATE_LIMIT[a.me.role]) return ws.close(CLOSE.tooFast, 'too fast')
 
-    // 이 방에는 이 PC와 그 폰들만 붙는다. 그래서 PC가 보내는 곳은 늘 자기 방이다
+    // Only this PC and its phones join this room, so the PC always sends within its own room
     const dest = route(a.me, msg)
     if (!dest.ok) return ws.close(dest.close, dest.reason)
     if (dest.drop) return
@@ -109,13 +109,13 @@ export class RelayRoom extends DurableObject<Env> {
     try {
       ws.close(code, reason)
     } catch {
-      // 이미 닫힘
+      // already closed
     }
   }
 
   async webSocketError(): Promise<void> {}
 
-  /** 증명하지 않은 연결을 끊고, 오래된 봉투를 지운다 */
+  /** Close unproven connections and delete old envelopes */
   async alarm(): Promise<void> {
     const now = Date.now()
     let pending = false
@@ -131,17 +131,17 @@ export class RelayRoom extends DurableObject<Env> {
     else if (oldest) await this.wakeAt(oldest + QUEUE_TTL_MS)
   }
 
-  /** 증명을 마친 그 기기의 연결 */
+  /** Connections of the given proven device */
   private socketOf(id: string): WebSocket[] {
     return this.ctx.getWebSockets().filter((ws) => (ws.deserializeAttachment() as Attachment).me?.id === id)
   }
 
-  /** 받는 기기마다 자르기 전에 쌓은 수 (잠들면 0부터 다시 센다: 그래도 TRIM_EVERY 안에 자른다) */
+  /** Envelopes queued per receiver since the last trim (restarts at 0 after hibernation: still trims within TRIM_EVERY) */
   private readonly sinceTrim = new Map<string, number>()
 
   private async enqueue(to: string, data: string, now: number) {
     this.sql.exec('INSERT INTO queue (to_id, at, data) VALUES (?, ?, ?)', to, now, data)
-    // 자르기는 대기열을 다시 읽어서(최대 QUEUE_MAX줄) 봉투마다 하면 읽기가 크게 늘어난다: 몇 번에 한 번만
+    // Trimming re-reads the queue (up to QUEUE_MAX rows), so doing it per envelope multiplies reads: only once every few
     const n = (this.sinceTrim.get(to) ?? 0) + 1
     this.sinceTrim.set(to, n % TRIM_EVERY)
     if (n < TRIM_EVERY) {
@@ -166,7 +166,7 @@ export class RelayRoom extends DurableObject<Env> {
     for (const r of rows) ws.send(r.data)
   }
 
-  /** 알람은 하나뿐이라, 이미 더 이른 알람이 있으면 그대로 둔다 */
+  /** There is only one alarm, so keep an existing earlier one */
   private async wakeAt(t: number) {
     const cur = await this.ctx.storage.getAlarm()
     if (cur === null || cur > t) await this.ctx.storage.setAlarm(t)

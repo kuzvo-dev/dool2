@@ -1,7 +1,7 @@
 {
   "name": "dool2",
   "private": true,
-  "description": "두리 — 내 컴퓨터에 사는 AI 비서",
+  "description": "Dool2: an AI assistant that lives on your computer",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@10.34.9",

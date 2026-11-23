@@ -1,44 +1,45 @@
-// HTML을 PDF(A4, 여러 쪽)·PNG 그림으로 (file_render). 두리가 만든 보고서·초대장을 사용자가 브라우저에서
-// 인쇄하거나 화면을 캡처하지 않아도 되게 한다. 그리기는 PC 앱(Electron)이 보이지 않는 창에서 한다(opts.renderFile).
-// 앱 없이 본체만 돌면(시험·개발) 그리는 부품이 없다고 알린다. 원본은 그대로 두고 옆에 같은 이름.pdf/.png를 만든다
+// HTML to PDF (A4, several pages) or a PNG picture (file_render). So the user does not have to print reports and invitations
+// Dool made, or capture the screen, in the browser. Drawing is done by the PC app (Electron) in a hidden window (opts.renderFile).
+// When the daemon runs without the app (tests, development) it reports that there is no drawing part. The original stays and a file with the same name .pdf/.png is made beside it
 import { stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import { freeName } from './file-names.js'
 import type { FileScope, FileToolResult } from './file-ops.js'
 import { ensureLocal } from './files.js'
+import { DOORI_DIR } from './region/kr/dool-folder.js'
 
 export type RenderTarget = 'pdf' | 'png'
 
 export interface HtmlRenderRequest {
-  /** 그릴 파일 (실제 경로, 볼 수 있는 폴더 안의 html·htm·svg) */
+  /** File to draw (real path, an html/htm/svg inside the visible folders) */
   path: string
   to: RenderTarget
-  /** PDF를 가로로 */
+  /** PDF in landscape */
   landscape?: boolean
-  /** PNG 가로 (CSS px). 세로는 내용 길이만큼 */
+  /** PNG width (CSS px). The height follows the content */
   width?: number
-  /** 그 파일이 불러도 되는 다른 로컬 파일인지 (옆에 둔 사진·글꼴). 볼 수 있는 폴더 안·민감하지 않은 것만 */
+  /** Whether that file may load another local file (photos and fonts beside it). Only inside the visible folders and not sensitive */
   allowFile(path: string): boolean
 }
 
 export interface HtmlRenderResult {
   data: Buffer
-  /** PNG 크기 (px) */
+  /** PNG size (px) */
   width?: number
   height?: number
-  /** 너무 길어 위에서부터 이만큼(CSS px)만 담았다 */
+  /** Too long, so only this much (CSS px) from the top was captured */
   cut?: number
-  /** 보관함·폰에 보일 미리보기 (JPEG base64) */
+  /** Preview shown in the library and phone (JPEG base64) */
   preview?: string
-  /** PDF 쪽마다 대략의 모습 (JPEG base64, 앞 6쪽까지). 두리가 넘치거나 빈 쪽을 보고 고친다 */
+  /** Rough look of each PDF page (JPEG base64, up to the first 6). Dool spots overflowing or empty pages and fixes them */
   pages?: string[]
 }
 
-/** PC 앱이 주는 그리기 부품 */
+/** Drawing part the PC app provides */
 export type HtmlRenderer = (req: HtmlRenderRequest) => Promise<HtmlRenderResult>
 
-/** 만든 파일 (보관함에 올린다) */
+/** Made file (uploaded to the library) */
 export interface RenderedFile {
   name: string
   kind: RenderTarget
@@ -54,14 +55,12 @@ const MAX_SOURCE = 20 << 20
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 export const RENDER_TIMEOUT_MS = 90_000
 export const NO_RENDERER =
-  '지금 두리 본체가 PC 앱 밖에서(개발·시험용으로) 돌고 있어 PDF·PNG로 그리는 부품이 없어요. 두리 PC 앱에서는 바로 돼요. HTML 파일은 그대로 있어요.'
+  'The Dool daemon is running outside the PC app (for development or tests), so there is no part to draw PDF or PNG. It works right away in the Dool PC app. The HTML file is unchanged.'
 
 const kb = (n: number) =>
   n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
 
-/** 새 파일 자리: 원본 옆 같은 이름.pdf/.png (같은 이름이 있으면 "(1)") */
-/** 두리가 만든 것을 모으는 폴더 이름 (files.ts DOORI_FOLDER와 같다) */
-const DOORI_DIR = '두리'
+/** New file location: beside the original with the same name .pdf/.png ("(1)" if the name is taken) */
 
 export function renderOutPath(src: string, to: RenderTarget, taken?: Set<string>): string {
   return freeName(dirname(src), `${basename(src, extname(src))}.${to}`, taken)
@@ -75,28 +74,29 @@ export async function renderTool(
   timeoutMs = RENDER_TIMEOUT_MS,
 ): Promise<FileToolResult> {
   const raw = typeof args.path === 'string' ? args.path.trim() : ''
-  if (!raw) return fail('PDF·PNG로 만들 HTML 파일을 path에 주세요 (file_write가 알려 준 경로 그대로).')
+  if (!raw)
+    return fail('Give the HTML file to turn into PDF or PNG in path (the path file_write returned, as is).')
   const to: RenderTarget = String(args.to ?? 'pdf').toLowerCase() === 'png' ? 'png' : 'pdf'
   const p = scope.inside(raw)
   if (!p)
     return fail(
-      `${basename(raw)}: 없거나 바탕화면·문서·다운로드 밖이에요. file_find로 경로를 먼저 찾아 주세요.`,
+      `${basename(raw)}: missing, or outside Desktop, Documents and Downloads. Find the path with file_find first.`,
     )
-  if (scope.sensitive(p)) return fail(`${basename(p)}: 민감한 파일이라 손대지 않아요.`)
+  if (scope.sensitive(p)) return fail(`${basename(p)}: a sensitive file, so it is not touched.`)
   const ext = extname(p).toLowerCase()
   if (!RENDER_EXT.test(ext)) {
     if (ext === '.pdf' || /^\.(jpe?g|png|heic|webp)$/.test(ext))
       return fail(
-        `${basename(p)}: 이미 PDF·사진이에요. 사진을 PDF로 묶으려면 file_pdf, 사진 형식은 file_convert를 써요.`,
+        `${basename(p)}: already a PDF or photo. To bundle photos into a PDF use file_pdf, and for photo formats use file_convert.`,
       )
     return fail(
-      `${basename(p)}: HTML(html·htm)·SVG만 PDF·PNG로 그려요. 글·표 내용이면 file_write로 html을 만든 뒤 그 파일을 주세요.`,
+      `${basename(p)}: only HTML (html, htm) and SVG can be drawn to PDF or PNG. For text or tables, make an html with file_write and give that file.`,
     )
   }
   const s = await stat(p)
-  if (s.isDirectory()) return fail(`${basename(p)}: 폴더 말고 파일을 주세요.`)
-  if (s.size > MAX_SOURCE) return fail(`${basename(p)}: 20MB보다 큰 HTML은 그리지 않아요.`)
-  // iCloud Drive가 클라우드에만 둔 파일은 먼저 내려받는다 (그대로 열면 빈 화면·실패)
+  if (s.isDirectory()) return fail(`${basename(p)}: give a file, not a folder.`)
+  if (s.size > MAX_SOURCE) return fail(`${basename(p)}: HTML larger than 20MB is not drawn.`)
+  // Files iCloud Drive keeps only in the cloud are downloaded first (opening them as is gives a blank page or fails)
   const away = await ensureLocal(p)
   if (away) return fail(away)
   if (!renderer) return fail(NO_RENDERER)
@@ -125,7 +125,7 @@ export async function renderTool(
           () =>
             rej(
               new Error(
-                '그리는 데 너무 오래 걸려 멈췄어요. HTML을 가볍게(큰 그림·스크립트 줄여) 다시 만들어 보세요.',
+                'Drawing took too long and was stopped. Make the HTML lighter (fewer big images and scripts) and try again.',
               ),
             ),
           timeoutMs,
@@ -133,23 +133,23 @@ export async function renderTool(
       }),
     ])
   } catch (e) {
-    return fail(`${basename(p)}을(를) ${to.toUpperCase()}로 그리지 못했어요: ${(e as Error).message}`)
+    return fail(`Could not draw ${basename(p)} as ${to.toUpperCase()}: ${(e as Error).message}`)
   } finally {
     clearTimeout(timer)
   }
 
-  // 받은 것이 정말 그 형식인지 본다
+  // Check that what came back really is that format
   let pages = 0
   if (to === 'pdf') {
     try {
       pages = (await PDFDocument.load(out.data, { updateMetadata: false })).getPageCount()
     } catch {
-      return fail(`${basename(p)}을(를) PDF로 그리지 못했어요 (만든 PDF가 깨졌어요).`)
+      return fail(`Could not draw ${basename(p)} as PDF (the PDF made is corrupt).`)
     }
   } else if (out.data.length < 8 || !out.data.subarray(0, 8).equals(PNG_SIG))
-    return fail(`${basename(p)}을(를) PNG로 그리지 못했어요 (만든 그림이 깨졌어요).`)
+    return fail(`Could not draw ${basename(p)} as PNG (the picture made is corrupt).`)
 
-  // 고쳐 다시 그리기(replace): 두리 폴더 안에서는 같은 이름 파일을 바꿔 쓴다 ("(최종)"·"(1)" 판이 쌓이지 않게)
+  // Redraw after fixing (replace): inside the Dool folder the file with the same name is overwritten (so "(final)" and "(1)" copies do not pile up)
   const same = join(dirname(p), `${basename(p, extname(p))}.${to}`)
   const mine = args.replace === true && basename(dirname(p)) === DOORI_DIR
   const at = mine ? same : renderOutPath(p, to)
@@ -158,27 +158,27 @@ export async function renderTool(
   onMade?.({ name: basename(at), kind: to, path: shown, ...(out.preview ? { image: out.preview } : {}) })
   const what =
     to === 'pdf'
-      ? `PDF로 만들었어요: ${shown} (${args.landscape === true ? 'A4 가로' : 'A4'} ${pages}쪽, ${kb(out.data.length)})`
-      : `PNG 그림으로 만들었어요: ${shown} (${out.width && out.height ? `${out.width}×${out.height}, ` : ''}${kb(out.data.length)})`
+      ? `Made a PDF: ${shown} (${args.landscape === true ? 'A4 landscape' : 'A4'}, ${pages} page(s), ${kb(out.data.length)})`
+      : `Made a PNG picture: ${shown} (${out.width && out.height ? `${out.width}×${out.height}, ` : ''}${kb(out.data.length)})`
   const cut = out.cut
-    ? ` 내용이 너무 길어 위에서 ${out.cut.toLocaleString()}px까지만 담았어요. 전부 담으려면 to: "pdf"로 쪽을 나눠 만들어요.`
+    ? ` The content was too long, so only the top ${out.cut.toLocaleString()}px was captured. To capture everything, split it into pages with to: "pdf".`
     : ''
-  const text = `${what}. 원본 ${basename(p)}은 그대로 뒀어요.${cut} 사용자에게 이 경로를 그대로 알려 주세요(브라우저 인쇄·화면 캡처를 부탁하지 않아요).${onMade ? " 보관함의 '사진·파일'에도 올려서 폰에서도 볼 수 있어요." : ''}`
-  // 그린 결과를 두리가 직접 보고 고치게 미리보기를 같이 준다 (11-22: 첫 쪽 절반이 빈 보고서를 그대로 넘겼다)
+  const text = `${what}. The original ${basename(p)} was left as is.${cut} Tell the user this path as is (do not ask them to print from the browser or capture the screen).${onMade ? ' It is also uploaded to the library under Photos and files, so it can be seen on the phone too.' : ''}`
+  // Give the preview too so Dool looks at the result and fixes it (11-22: a report with a half-empty first page was handed over as is)
   if (!out.preview) return ok(text)
-  // 화면으로 찍은 쪽보다 PDF 쪽이 많으면 마지막 쪽에 넘친 몇 줄만 있을 수 있다 (화면과 인쇄의 쪽 나눔이 다르다)
+  // If the PDF has more pages than the screen capture, the last page may hold only a few overflowed lines (screen and print split pages differently)
   const over =
     to === 'pdf' && pages > (out.pages?.length ?? 1)
-      ? ` 주의: PDF는 ${pages}쪽인데 아래 모습은 ${out.pages?.length ?? 1}쪽뿐이에요. 인쇄에서 넘친 줄이 다음 쪽으로 갔을 수 있으니, 여백·글자를 줄이거나 내용을 덜어 ${out.pages?.length ?? 1}쪽에 맞춰 같은 이름으로(replace: true) 다시 그려요. 쪽을 잘라 붙이는 file_pdf로 맞추지 않아요.`
+      ? ` Note: the PDF has ${pages} pages but the views below show only ${out.pages?.length ?? 1}. Lines that overflowed in print may have moved to the next page, so reduce margins and text or cut content to fit ${out.pages?.length ?? 1} page(s) and draw again with the same name (replace: true). Do not fit it by cutting and pasting pages with file_pdf.`
       : ''
   return {
     content: [
       {
         type: 'text',
         text:
-          `${text}\n\n아래는 그린 모습${to === 'pdf' ? (out.pages?.length ? `(앞 ${out.pages.length}쪽, 화면으로 찍어 쪽 나눔은 대략)` : '(첫 쪽)') : ''}이에요. 넘기기 전에 직접 보고 확인해요: ` +
-          '① 쪽 절반 넘게 비었거나 끝에 빈 쪽이 생겼나 ② 글자가 너무 작거나 겹치고 잘렸나 ③ 표·막대가 쪽 밖으로 넘쳤나 ④ 숫자·날짜·이름이 틀렸나 ⑤ 제목·핵심 숫자가 첫눈에 보이나. ' +
-          '고칠 게 있으면 html을 고쳐(file_write에 replace: true, look 그대로) 다시 file_render(replace: true) 해요(두 번까지). 괜찮으면 그대로 사용자에게 알려요.' +
+          `${text}\n\nBelow is how it looks${to === 'pdf' ? (out.pages?.length ? ` (first ${out.pages.length} page(s), captured from the screen so page breaks are approximate)` : ' (first page)') : ''}. Look at it yourself before handing it over: ` +
+          '(1) Is more than half a page empty, or is there an empty page at the end? (2) Is text too small, overlapping or cut off? (3) Do tables or bars overflow the page? (4) Are numbers, dates or names wrong? (5) Are the title and key numbers visible at a glance? ' +
+          'If something needs fixing, fix the html (file_write with replace: true, same look) and run file_render (replace: true) again (up to twice). If it is fine, tell the user as is.' +
           over,
       },
       ...(out.pages?.length ? out.pages : [out.preview]).map((data) => ({

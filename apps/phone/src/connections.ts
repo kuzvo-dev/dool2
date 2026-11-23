@@ -1,5 +1,5 @@
-// 폰 앱: 서비스 연결 (ADR 0014). 목록 → 서비스 상세 → 아이디·비밀번호(금고) → 두리가 PC Chrome에서 대신 로그인 → 연결 표시.
-// 화면은 연결 카드(skills/<id>/connect.json)를 그리기만 한다. 탭 개편 때 "나의 두리"에 그대로 끼운다.
+// Phone app: service connections (ADR 0014). List > service detail > ID and password (vault) > Dool2 logs in on the PC's Chrome > connected.
+// The screen only draws connect cards (skills/<id>/connect.json).
 import type { ConnectCard, ConnectionItem, Tier } from '@dool2/protocol/connect'
 
 export { socialOrder } from '@dool2/protocol/connect'
@@ -13,18 +13,20 @@ import {
   safetyLines,
 } from '@dool2/protocol/connect-text'
 import { emoTile, withLogo } from './dom.js'
+import { lang } from './lang.js'
+import { connectionsText } from './locales/connections.js'
 
 export interface ConnectCtx {
   services?: ConnectionItem[]
   query: string
-  /** 고른 분류 칩: 'all' · 'mine'(로그인해 둔 곳) · 카드 분류 */
+  /** Chosen category chip: 'all' · 'mine' (logged-in services) · a card category */
   cat: string
   online: boolean
-  /** 연결하기를 눌러 PC 답을 기다리는 서비스 */
+  /** The service waiting for the PC after tapping Connect */
   opening?: string
-  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  /** Services the Dool2 daemon is logging in to right now */
   connecting?: Set<string>
-  /** 화면 머리: back이 있으면 뒤로 버튼 */
+  /** Screen header: a back button if `back` is given */
   header(title: string, back?: () => void): HTMLElement
   home(): void
   list(): void
@@ -33,7 +35,7 @@ export interface ConnectCtx {
   setCat(cat: string): void
   open(id: string): void
   mark(id: string, on: boolean): void
-  /** 예시 부탁을 부탁 칸에 넣고 홈으로 */
+  /** Puts the example request in the request box and goes home */
   tryAsk(text: string): void
 }
 
@@ -80,27 +82,29 @@ function svg(paths: string[]): SVGSVGElement {
   return s
 }
 
-/** 연결한 날: 오늘 · 어제 · 11월 15일 */
+/** Connection date: today, yesterday, or the date */
 export function whenLabel(iso: string, now = new Date()): string {
+  const m = connectionsText(lang)
   const d = new Date(iso)
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
   const diff = Math.round((day(now) - day(d)) / 86_400_000)
-  if (diff <= 0) return '오늘'
-  if (diff === 1) return '어제'
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`
+  if (diff <= 0) return m.today
+  if (diff === 1) return m.yesterday
+  return m.monthDay(d.getMonth() + 1, d.getDate())
 }
 
-/** 서비스 아이콘: 로고 파일 없이 이름 첫 글자 */
+/** Service icon: the first letter of the name, no logo file */
 function mark(card: ConnectCard, big = false) {
-  // 숫자로 시작하면 숫자 묶음(11번가 → 11), 아니면 첫 글자
+  // If it starts with digits, use them as a group (11st → 11), otherwise the first letter
   const lead = /^\d+/.exec(card.name)?.[0] ?? [...card.name][0] ?? ''
   const m = el('span', big ? 'svc-mark lg' : 'svc-mark', lead)
   m.setAttribute('aria-hidden', 'true')
   return withLogo(m, card.id)
 }
 
-/** 홈에 두는 입구 한 줄: "서비스 연결 · 연결한 곳 3" */
+/** The entry row on home: "Connect services · 3 connected" */
 export function connectEntry(services: ConnectionItem[] | undefined, onclick: () => void): HTMLElement {
+  const m = connectionsText(lang)
   const n = services?.filter((s) => s.connectedAt).length ?? 0
   const b = el(
     'button',
@@ -109,12 +113,8 @@ export function connectEntry(services: ConnectionItem[] | undefined, onclick: ()
     el(
       'span',
       'row-text',
-      el('strong', 'row-t', '서비스 연결'),
-      el(
-        'span',
-        'row-d',
-        n ? `연결한 곳 ${n}개 · 더 연결하기` : '쇼핑·예매·통신사… 한 번 연결해 두고 부탁해요',
-      ),
+      el('strong', 'row-t', m.entryTitle),
+      el('span', 'row-d', n ? m.entryCount(n) : m.entryEmpty),
     ),
     svg(PATH.chevron),
   )
@@ -124,14 +124,15 @@ export function connectEntry(services: ConnectionItem[] | undefined, onclick: ()
 }
 
 function row(it: ConnectionItem, ctx: ConnectCtx): HTMLElement {
+  const m = connectionsText(lang)
   const b = el('button', 'row svc-row')
   b.type = 'button'
   const right = it.connectedAt
     ? el('span', 'meta', whenLabel(it.connectedAt))
     : it.card.how === 'open'
-      ? el('span', 'meta', '로그인 없이')
+      ? el('span', 'meta', m.noLogin)
       : it.tools?.some((t) => !t.login)
-        ? el('span', 'meta', '연결 없이도 찾기')
+        ? el('span', 'meta', m.searchWithoutConnect)
         : svg(PATH.chevron)
   b.append(
     mark(it.card),
@@ -155,24 +156,19 @@ function row(it: ConnectionItem, ctx: ConnectCtx): HTMLElement {
 }
 
 export function connectionsView(ctx: ConnectCtx): HTMLElement {
-  const box = el('section', 'tab-page connect', ctx.header('연결'))
+  const m = connectionsText(lang)
+  const box = el('section', 'tab-page connect', ctx.header(m.title))
   if (!ctx.services) {
-    box.append(el('p', 'wait', el('span', 'spin'), 'PC에서 서비스 목록을 받는 중…'))
+    box.append(el('p', 'wait', el('span', 'spin'), m.loading))
     return box
   }
-  box.append(
-    el(
-      'p',
-      'cap connect-intro',
-      '찾기·비교는 연결 없이도 돼요. 주문·예약·내역 보기처럼 로그인이 필요한 일만 한 번 연결해 두면 부탁만 하면 돼요. 아이디·비밀번호는 PC 금고에만 저장돼요.',
-    ),
-  )
+  box.append(el('p', 'cap connect-intro', m.intro))
   const search = el('input', 'field connect-search')
   search.id = 'connect-search'
   search.type = 'search'
-  search.placeholder = '서비스 찾기 (쿠팡, 항공권, 택배…)'
+  search.placeholder = m.searchPlaceholder
   search.value = ctx.query
-  // 찾는 글자를 칠 때는 아래 목록만 다시 그린다 (칸까지 새로 만들면 한글을 조합하는 중에 글자가 끊긴다)
+  // While typing a search, redraw only the list below (rebuilding the input would cut off IME composition)
   const chips = el('div', 'chips idea-cats connect-cats')
   const results = el('div', 'connect-results')
   const services = [...ctx.services].sort((a, b) => a.card.name.localeCompare(b.card.name, 'ko'))
@@ -215,8 +211,8 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
       return b
     }
     chips.replaceChildren(
-      chip('all', '전체'),
-      ...(mine.length ? [chip('mine', `로그인해 둔 곳 ${mine.length}`)] : []),
+      chip('all', m.all),
+      ...(mine.length ? [chip('mine', m.loggedInCount(mine.length))] : []),
       ...cats.map((c) => chip(c.id, c.label)),
     )
     results.replaceChildren()
@@ -226,29 +222,22 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
         const list = shown.filter((it) => it.card.category === c.id)
         if (list.length) results.append(group(c.label, list))
       }
-      if (!shown.length)
-        results.append(
-          el(
-            'p',
-            'cap empty',
-            '맞는 서비스가 없어요. 그래도 부탁해 보면 두리가 일반적인 방법으로 해 볼게요.',
-          ),
-        )
+      if (!shown.length) results.append(el('p', 'cap empty', m.noMatch))
       return
     }
     if (cat === 'mine') {
-      results.append(group('두리가 로그인해 둔 곳', mine))
+      results.append(group(m.loggedInGroup, mine))
       return
     }
     if (cat === 'all') {
-      if (mine.length) results.append(group('두리가 로그인해 둔 곳', mine))
+      if (mine.length) results.append(group(m.loggedInGroup, mine))
       for (const c of cats) {
         const head = el(
           'button',
           'idea-sec-head',
           emoTile(c.emo, 'sm'),
           el('strong', '', c.label),
-          el('span', 'meta', `${c.list.length}곳`),
+          el('span', 'meta', m.placesCount(c.list.length)),
           svg(PATH.chevron),
         )
         head.lastElementChild?.setAttribute('class', 'i chev')
@@ -271,6 +260,7 @@ export function connectionsView(ctx: ConnectCtx): HTMLElement {
 }
 
 export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
+  const m = connectionsText(lang)
   const it = ctx.services?.find((s) => s.card.id === id)
   if (!it) return connectionsView(ctx)
   const c = it.card
@@ -281,12 +271,12 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
       'div',
       'svc-head',
       mark(c, true),
-      el('div', '', el('h1', 'title', c.name), el('p', 'meta mono', c.site ?? '폰 권한')),
+      el('div', '', el('h1', 'title', c.name), el('p', 'meta mono', c.site ?? m.phonePermission)),
     ),
     el('p', 'svc-summary', c.summary),
   )
 
-  // 대화 예시: 부탁 → 일하는 중 → 답 (두리 말은 회색 말풍선, 내 말은 ink)
+  // Chat example: request > working > reply (Dool2 in a gray bubble, mine in ink)
   box.append(
     el(
       'div',
@@ -305,61 +295,50 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
       svg(TIER_ICON[a.tier]),
       el('span', 'row-text', el('span', 'row-t', a.title), el('span', 'row-d', `“${a.say}”`)),
     )
-    if (APPROVAL_TIERS.includes(a.tier)) li.append(el('span', 'pill ask', '폰 승인'))
+    if (APPROVAL_TIERS.includes(a.tier)) li.append(el('span', 'pill ask', m.phoneApproval))
     abilities.append(li)
   }
-  const approval = approvalLine(c)
-  box.append(el('h2', 'over', '이렇게 맡겨요'), abilities)
+  const approval = approvalLine(c, lang)
+  box.append(el('h2', 'over', m.howToAsk), abilities)
   if (approval) box.append(el('p', 'cap', approval))
 
-  // 서비스 도구(ADR 0018)가 있으면: 화면을 하나씩 누르지 않고 바로 하는 일
+  // If there are service tools (ADR 0018): things done directly without tapping through screens
   if (it.tools?.length) {
     const fast = el('ul', 'list svc-abilities')
     for (const t of it.tools) {
       const li = el('li', 'row', svg(TIER_ICON[t.tier]), el('span', 'row-text', el('span', 'row-t', t.title)))
       if (!it.connectedAt)
-        li.append(el('span', t.login ? 'pill' : 'meta', t.login ? '연결하면' : '로그인 없이'))
+        li.append(el('span', t.login ? 'pill' : 'meta', t.login ? m.whenConnected : m.noLogin))
       fast.append(li)
     }
-    box.append(
-      el('h2', 'over', '바로 해요'),
-      el('p', 'cap', '두리가 이 일은 화면을 하나씩 누르지 않고 바로 해서 빨라요.'),
-      fast,
-    )
+    box.append(el('h2', 'over', m.doItDirectly), el('p', 'cap', m.directlyNote), fast)
   }
 
   const safety = el('ul', 'svc-safety')
-  for (const line of safetyLines(c)) safety.append(el('li', '', line))
-  box.append(el('h2', 'over', '안전하게 지키는 방법'), safety)
+  for (const line of safetyLines(c, lang)) safety.append(el('li', '', line))
+  box.append(el('h2', 'over', m.safety), safety)
 
-  // 아래 버튼 줄
+  // Button row at the bottom
   const bar = el('div', 'svc-action')
-  const tryAsk = el('button', 'btn-ghost', '부탁해 보기')
+  const tryAsk = el('button', 'btn-ghost', m.tryAsk)
   tryAsk.type = 'button'
   tryAsk.onclick = () => ctx.tryAsk(c.example.ask)
   if (c.how === 'device') {
-    bar.append(el('p', 'cap', '폰 권한으로 켜는 연결은 두리 폰 앱(네이티브)에서 준비 중이에요.'))
+    bar.append(el('p', 'cap', m.devicePending))
   } else if (c.how === 'open') {
     bar.append(tryAsk)
   } else if (it.connectedAt) {
-    const off = el('button', 'btn-text', '연결 끊기')
+    const off = el('button', 'btn-text', m.disconnect)
     off.type = 'button'
     off.onclick = () => ctx.mark(c.id, false)
-    bar.append(el('p', 'meta svc-connected', `${whenLabel(it.connectedAt)} 연결했어요`), tryAsk, off)
+    bar.append(el('p', 'meta svc-connected', m.connectedOn(whenLabel(it.connectedAt))), tryAsk, off)
   } else {
     const busy = ctx.connecting?.has(c.id)
-    const go = el(
-      'button',
-      'btn lg',
-      busy ? '두리가 로그인하는 중…' : ctx.opening === c.id ? 'PC에서 여는 중…' : '연결하기',
-    )
+    const go = el('button', 'btn lg', busy ? m.loggingIn : ctx.opening === c.id ? m.openingOnPc : m.connect)
     go.type = 'button'
     go.disabled = !ctx.online || ctx.opening === c.id || Boolean(busy)
     go.onclick = () => ctx.open(c.id)
-    bar.append(
-      go,
-      el('p', 'cap', '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 PC Chrome에 로그인해요.'),
-    )
+    bar.append(go, el('p', 'cap', m.connectNote))
   }
   box.append(bar)
   return box

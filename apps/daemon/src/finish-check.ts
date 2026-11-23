@@ -1,7 +1,10 @@
+import type { Lang } from '@dool2/i18n'
+import { FINISH_CHECK_TEXT } from './locales/finish-check.js'
+
 /**
- * 끝내기 전 검사 (ADR 0027): 두리가 도구로 일한 차례가 끝나면 따로 부른 AI가
- * "부탁 대비 끝났나, 남은 게 정말 사람 몫인가"를 판정한다. 안 끝났으면 같은 대화에 이어서 하라고 되돌려 보낸다.
- * 횟수는 일마다 다르다: 기본 2번, 새 도구를 써서 진전이 있으면 4번까지, 같은 이유로 두 번 막히면·20분 넘으면 멈춘다.
+ * Check before finishing (ADR 0027): when Dool's turn of tool work ends, a separately called AI judges
+ * "is it done against the request, and is what is left really the person's part?". If not done, it sends the work back into the same conversation.
+ * The number of rounds varies per job: 2 by default, up to 4 if new tools were used (progress); it stops when blocked twice for the same reason or after 20 minutes.
  */
 
 export interface Verdict {
@@ -11,24 +14,26 @@ export interface Verdict {
 }
 
 export interface FinishCheckOptions {
-  /** 판정 글을 보내고 답 글을 받는다 (도구 없는 새 세션). 실패하면 undefined */
+  /** Sends the judging text and gets the answer (a new session without tools). undefined on failure */
   ask: (prompt: string) => Promise<string | undefined>
   now?: () => number
-  /** 진전이 없을 때 되돌려 보내는 횟수 */
+  /** Rounds to send back when there is no progress */
   baseCycles?: number
-  /** 진전이 있을 때 늘려 주는 최대 횟수 */
+  /** Maximum rounds when there is progress */
   maxCycles?: number
-  /** 부탁을 받은 뒤 이 시간이 지나면 더 보내지 않는다 */
+  /** After this much time since the request, stop sending it back */
   maxMs?: number
+  /** Language of the note people see (default: Korean) */
+  lang?: () => Lang
 }
 
 interface AskState {
   gen: number
   ask: string
   started: number
-  /** 되돌려 보낸 횟수 */
+  /** Rounds sent back so far */
   cycles: number
-  /** 지금까지 쓴 도구 */
+  /** Tools used so far */
   tools: Set<string>
   whys: string[]
 }
@@ -39,27 +44,29 @@ export type CheckResult =
   | { kind: 'stop'; why: string; cycles: number; reason: string }
   | { kind: 'again'; why: string; next?: string; cycles: number; note: string }
 
-/** 판정 AI에게 주는 지침 */
+/** Instructions for the judging AI */
 export const JUDGE_SYSTEM = [
-  '당신은 개인 비서 AI "두리"의 일을 검사하는 사람이에요. 도구는 없고, 판정만 해요.',
-  '두리가 할 수 있는 일: 사용자 PC의 브라우저로 사용자가 로그인해 둔 사이트·연결한 서비스 조회와 조작, 메일 찾기, 웹 검색, 기억(사용자 정보) 찾기·저장, 계정 찾기·가입, 서류 떼기, 초안 만들기, 비교·계산·추정.',
-  '사람에게 넘겨도 되는 것은 이것뿐이에요: 결제 승인, 본인 인증(문자·인증서·간편 인증), 밖으로 보내기(문의·접수·메일·글 올리기) 승인, 사용자만 아는 사실(취향·결정·연결 안 된 곳의 비밀번호).',
-  '사용자만 아는 것처럼 보여도, 메일·연결된 서비스·기억·고지서·결제 내역에서 찾거나 추정할 길이 남았으면 두리 몫이에요.',
-  '남에게 보내는 요청·접수에 넣을 사실(주소·날짜·증상)을 사용자만 알면 그걸 모아 묻고 멈춘 건 끝난 거예요. 지어낸 값으로 보내라고 하지 마세요.',
-  '답에 "예약해 뒀어요·신청했어요"처럼 끝냈다고 했는데 도구 기록에 그 동작(누르기·승인)이 없으면 끝난 게 아니에요: 정말 됐는지 확인하게 해요.',
-  '"전화해 보세요"·"앱에서 하세요"·"직접 확인하세요"로 끝냈는데 두리가 웹으로 더 해 볼 길이 있으면 끝난 게 아니에요.',
-  '부탁에서 요구한 것(예: 3곳 비교, 예약까지, 신청서 채우기)이 빠졌으면 끝난 게 아니에요. 승인 카드를 띄우고 기다리는 중이면 끝난 걸로 봐요.',
-  '답은 JSON 한 줄만: {"done": true|false, "why": "남은 것 또는 끝난 이유 한 문장", "next": "안 끝났으면 두리가 해 볼 다른 길 한 문장"}',
+  'You review the work of a personal assistant AI named "Dool". You have no tools; you only judge.',
+  "What Dool can do: look up and operate sites the user is signed in to and services they connected, using the browser on the user's PC; find mail; search the web; find and save memory (user info); find or create accounts; get official documents; make drafts; compare, calculate and estimate.",
+  'Only these may be handed to the person: payment approval, identity verification (SMS, certificate, simple auth), approval to send something out (inquiry, application, mail, posting), and facts only the user knows (taste, decisions, passwords for places that are not connected).',
+  "Even if something looks like only the user knows it, it is Dool's part if a way remains to find or estimate it from mail, connected services, memory, bills or payment history.",
+  'If facts for a request or application going to others (address, date, symptoms) are known only to the user, gathering them, asking, and stopping counts as done. Do not tell it to send with made-up values.',
+  'If the answer claims it finished, like "I booked it" or "I applied", but the tool record has no such action (click, approval), it is not done: make it verify that it really happened.',
+  'If it ended with "please call", "do it in the app" or "check yourself" while Dool still has a way to try on the web, it is not done.',
+  'If something the request asked for is missing (e.g. compare 3 places, up to booking, fill in the application), it is not done. If an approval card is shown and it is waiting, count it as done.',
+  'Answer with one line of JSON only: {"done": true|false, "why": "one sentence on what is left or why it is done", "next": "if not done, one sentence on another way Dool can try"}',
 ].join('\n')
 
 export function judgePrompt(i: { ask: string; answer: string; tools: string[]; cycle: number }): string {
-  const tools = [...new Set(i.tools)].slice(0, 30).join(', ') || '(없음)'
+  const tools = [...new Set(i.tools)].slice(0, 30).join(', ') || '(none)'
   return [
-    `사용자 부탁:\n${i.ask.slice(0, 1500)}`,
-    `두리가 이번까지 쓴 도구: ${tools}`,
-    i.cycle > 0 ? `(이미 ${i.cycle}번 되돌려 보냈어요. 정말 더 할 길이 있을 때만 false)` : '',
-    `두리의 마지막 답:\n${i.answer.slice(0, 3000)}`,
-    '이 부탁이 두리 몫까지 다 끝났나요? JSON 한 줄로만 답하세요.',
+    `User request:\n${i.ask.slice(0, 1500)}`,
+    `Tools Dool has used so far: ${tools}`,
+    i.cycle > 0
+      ? `(Already sent back ${i.cycle} time(s). Answer false only if there is really more to try)`
+      : '',
+    `Dool's last answer:\n${i.answer.slice(0, 3000)}`,
+    "Is this request fully done, including Dool's part? Answer with one line of JSON only.",
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -79,7 +86,7 @@ export function parseVerdict(text: string | undefined): Verdict | undefined {
   }
 }
 
-/** 두 이유가 같은 막힘인지 (글자 두 개씩 겹치는 비율) */
+/** Whether two reasons are the same blocker (share of overlapping character pairs) */
 export function sameBlocker(a: string, b: string): boolean {
   const grams = (s: string) => {
     const t = s.replace(/\s+/g, '')
@@ -104,7 +111,7 @@ export class FinishCheck {
     this.now = opts.now ?? Date.now
   }
 
-  /** 사용자가 새 부탁을 했다 (앱 알림이 아닌 말) */
+  /** The user made a new request (a message, not an app notification) */
   begin(threadId: string, ask: string): void {
     this.asks.set(threadId, {
       gen: ++this.gen,
@@ -116,36 +123,36 @@ export class FinishCheck {
     })
   }
 
-  /** 지금 하고 있는 부탁 글 */
+  /** Text of the request being worked on */
   askOf(threadId: string): string | undefined {
     return this.asks.get(threadId)?.ask
   }
 
-  /** 사용자가 멈췄다: 이 부탁은 더 이어서 하지 않는다 */
+  /** The user stopped it: do not continue this request */
   drop(threadId: string): void {
     this.asks.delete(threadId)
   }
 
-  /** 지금 부탁의 번호 (판정하는 사이 새 부탁이 왔는지 보려고) */
+  /** Number of the current request (to see whether a new one arrived while judging) */
   current(threadId: string): number | undefined {
     return this.asks.get(threadId)?.gen
   }
 
   async check(threadId: string, turn: { answer: string; tools: string[] }): Promise<CheckResult> {
     const s = this.asks.get(threadId)
-    if (!s) return { kind: 'skip', reason: '부탁 없음' }
+    if (!s) return { kind: 'skip', reason: 'no request' }
     const fresh = turn.tools.filter((t) => !s.tools.has(t))
     for (const t of turn.tools) s.tools.add(t)
-    if (!s.tools.size) return { kind: 'skip', reason: '도구 안 씀' }
-    if (!turn.answer.trim()) return { kind: 'skip', reason: '답 없음' }
-    // 진전(앞에서 안 써 본 도구)이 있으면 최대까지, 없으면 기본 횟수까지
+    if (!s.tools.size) return { kind: 'skip', reason: 'no tools used' }
+    if (!turn.answer.trim()) return { kind: 'skip', reason: 'no answer' }
+    // With progress (a tool not used before) go up to the maximum, otherwise up to the default rounds
     const limit = fresh.length > 0 ? (this.opts.maxCycles ?? 4) : (this.opts.baseCycles ?? 2)
     const v = parseVerdict(
       await this.opts.ask(
         judgePrompt({ ask: s.ask, answer: turn.answer, tools: [...s.tools], cycle: s.cycles }),
       ),
     )
-    if (!v) return { kind: 'skip', reason: '판정 실패' }
+    if (!v) return { kind: 'skip', reason: 'judge failed' }
     if (v.done) {
       this.asks.delete(threadId)
       return { kind: 'done', why: v.why, cycles: s.cycles }
@@ -154,9 +161,9 @@ export class FinishCheck {
       this.asks.delete(threadId)
       return { kind: 'stop', why: v.why, cycles: s.cycles, reason }
     }
-    if (s.cycles >= limit) return stop('횟수')
-    if (this.now() - s.started > (this.opts.maxMs ?? 20 * 60_000)) return stop('시간')
-    if (s.whys.some((w) => sameBlocker(w, v.why))) return stop('같은 막힘')
+    if (s.cycles >= limit) return stop('rounds')
+    if (this.now() - s.started > (this.opts.maxMs ?? 20 * 60_000)) return stop('time')
+    if (s.whys.some((w) => sameBlocker(w, v.why))) return stop('same blocker')
     s.whys.push(v.why)
     s.cycles++
     return {
@@ -164,18 +171,18 @@ export class FinishCheck {
       why: v.why,
       ...(v.next ? { next: v.next } : {}),
       cycles: s.cycles,
-      note: againNote(v),
+      note: againNote(v, this.opts.lang?.()),
     }
   }
 }
 
-/** 되돌려 보내는 알림 (첫 문장만 화면에 보이고 나머지는 AI에게만) */
-export function againNote(v: Verdict): string {
+/** Note sent back (only the first sentence shows on screen, the rest is for the AI only) */
+export function againNote(v: Verdict, lang: Lang = 'ko'): string {
   return [
-    '끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요.',
-    `(끝내기 전 검사) 아직 남았어요: ${v.why}`,
-    v.next ? `해 볼 길: ${v.next}` : '',
-    '같은 방법은 되풀이하지 말고 다른 길로 이어서 해 주세요. 사용자만 아는 것이면 메일·연결된 곳·기억에서 먼저 찾거나 추정하고, 정말 없을 때만 한 번에 모아서 물어요. 끝나면 결과→한 일→남은 것 순서로 한 번에 알려 주세요.',
+    FINISH_CHECK_TEXT[lang].again,
+    `(Check before finishing) Something is still left: ${v.why}`,
+    v.next ? `A way to try: ${v.next}` : '',
+    'Do not repeat the same method; continue another way. If only the user knows it, first look in mail, connected places and memory or estimate it, and ask only if it really is not there, gathering all questions in one message. When done, report once in the order result, what was done, what is left. Reply to the user in their language.',
   ]
     .filter(Boolean)
     .join(' ')

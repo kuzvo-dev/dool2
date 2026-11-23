@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "두리 중계 서버: 폰 ↔ PC 암호문만 이어 준다 (내용은 볼 수 없음)",
+  "description": "Dool2 relay: forwards only ciphertext between phone and PC (cannot read the content)",
   "type": "module",
   "exports": {
     ".": {

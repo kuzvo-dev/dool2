@@ -1,7 +1,7 @@
 /*
- * 두리 PC 앱 화면 배치. 색·글꼴·버튼·카드 같은 부품은 @dool2/ui(ui.css)에 있다.
- * 디자인 원본: docs/design/screens/soft/pc.png (왼쪽 메뉴 / 가운데 지금 탭 / 오른쪽 두리 판)
- * 여기에는 배치(그리드·여백·위치)만 둔다.
+ * Dool2 desktop app layout. Parts like colors, fonts, buttons and cards live in @dool2/ui (ui.css).
+ * Design source: docs/design/screens/soft/pc.png (left menu / center current tab / right assistant panel)
+ * Only layout (grid, spacing, position) goes here.
  */
 html,
 body {
@@ -26,7 +26,7 @@ ol {
 .app {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  /* 창 높이에 고정한다. 긴 내용은 안쪽만 스크롤한다 */
+  /* Fixed to the window height. Long content scrolls inside */
   grid-template-rows: 100%;
   height: 100%;
   overflow: hidden;
@@ -35,7 +35,7 @@ ol {
   grid-template-columns: 248px minmax(0, 1fr) 372px;
 }
 
-/* ── 왼쪽: 탭 5개 · 지금 · 따로 하는 대화 · 연결 · 설정 ── */
+/* ── Left: five tabs · Now · side chats · connections · settings ── */
 .side {
   display: flex;
   flex-direction: column;
@@ -111,7 +111,7 @@ ol {
   gap: 4px;
   color: var(--ink-muted);
 }
-/* 따로 하는 대화가 많아 왼쪽이 스크롤될 때 줄이 눌려 작아지지 않게 */
+/* Keep rows from shrinking when many side chats make the left column scroll */
 .side > :not(.grow) {
   flex-shrink: 0;
 }
@@ -137,7 +137,7 @@ ol {
 .notice.update {
   background: var(--brand-soft);
 }
-/* 꼭 업데이트해야 할 때 화면 전체를 덮는 안내 */
+/* Covers the whole screen when an update is required */
 .update-wall {
   position: fixed;
   inset: 0;
@@ -164,7 +164,7 @@ ol {
   justify-self: center;
 }
 
-/* ── 가운데: 떠 있는 머리 + 지금 탭 ─────────────────── */
+/* ── Center: floating header + current tab ─────────────────── */
 .main {
   position: relative;
   display: grid;
@@ -257,7 +257,7 @@ ol {
   padding: 112px max(32px, calc((100% - 920px) / 2)) 48px;
 }
 
-/* ── 대화 ──────────────────────────────────────── */
+/* ── Chat ──────────────────────────────────────── */
 .thread,
 .live {
   display: flex;
@@ -273,7 +273,7 @@ ol {
 .thread .sep:first-child {
   margin-top: 0;
 }
-/* 두리 → 나, 나 → 두리로 말한 사람이 바뀌면 조금 더 띄운다 */
+/* A little more space when the speaker changes (Dool2 → me, me → Dool2) */
 .thread .bubble.me + .who,
 .thread .answer + .bubble.me,
 .thread .bubble + .bubble.me {
@@ -292,7 +292,7 @@ ol {
   align-self: flex-end;
   margin-top: -6px;
 }
-/* 두리 답 + 아래 작은 동작 (가져다 대면 보인다) */
+/* Dool2's answer + small actions below (shown on hover) */
 .answer {
   display: flex;
   flex-direction: column;
@@ -335,7 +335,7 @@ ol {
 .thread > .approve {
   max-width: 560px;
 }
-/* 대화가 비었을 때: 두리 + 인사 + 예시 */
+/* Empty chat: Dool2 + greeting + examples */
 .empty-view {
   display: flex;
   flex-direction: column;
@@ -352,7 +352,7 @@ ol {
   justify-content: center;
   margin-top: 8px;
 }
-/* 떠 있는 입력칸: + · 글 · 보내기(일하는 중이면 멈추기) */
+/* Floating composer: + · text · send (stop while working) */
 .composer-dock {
   padding: 4px max(28px, calc((100% - 760px) / 2)) 16px;
 }
@@ -403,7 +403,7 @@ ol {
   text-align: center;
 }
 
-/* ── 대화 안의 카드 ─────────────────────────────── */
+/* ── Cards in the chat ─────────────────────────────── */
 .approval-shot {
   display: block;
   width: 100%;
@@ -472,7 +472,7 @@ ol {
   gap: 6px;
 }
 
-/* ── 따로 하는 대화 ──────────────────────────── */
+/* ── Side chats ──────────────────────────── */
 .side-head {
   display: flex;
   align-items: flex-start;
@@ -489,7 +489,7 @@ ol {
   line-height: 1.6;
 }
 
-/* ── 탭 화면 공통 ──────────────────────────────── */
+/* ── Shared tab screens ──────────────────────────────── */
 .page {
   display: flex;
   flex-direction: column;
@@ -535,7 +535,7 @@ ol {
 .armed {
   color: var(--danger);
 }
-/* 빈 화면: 두리 + 한 줄 + 설명 */
+/* Empty screen: Dool2 + one line + description */
 .empty {
   display: flex;
   flex-direction: column;
@@ -559,7 +559,7 @@ ol {
 .empty .btn-ghost {
   margin-top: 8px;
 }
-/* 접힌 긴 글: 누르면 펼친다 */
+/* Folded long text: click to expand */
 .clamp {
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -577,7 +577,7 @@ ol {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* 흰 면 하나 (목록 줄·카드) */
+/* One white surface (list rows, cards) */
 .feed-item,
 .goal-row,
 .goal-new,
@@ -606,7 +606,7 @@ ol {
   border-radius: var(--radius-full);
 }
 
-/* ── 피드 ──────────────────────────────────────── */
+/* ── Feed ──────────────────────────────────────── */
 .feed-prompt-now strong {
   font-weight: 650;
 }
@@ -682,7 +682,7 @@ ol {
   margin-left: auto;
 }
 
-/* ── 아이디어 ───────────────────────────────────── */
+/* ── Ideas ───────────────────────────────────── */
 .idea-list {
   display: flex;
   flex-direction: column;
@@ -746,7 +746,7 @@ ol {
 .idea-human {
   margin-top: 32px;
 }
-/* 분류별 모음: 찾기 · 분류 칩 · 목록 */
+/* By category: search · category chips · list */
 .idea-catalog {
   margin-top: 28px;
 }
@@ -799,7 +799,7 @@ ol {
   margin: -4px 0 10px;
 }
 
-/* ── 목표 ──────────────────────────────────────── */
+/* ── Goals ──────────────────────────────────────── */
 .goal-list {
   display: flex;
   flex-direction: column;
@@ -958,7 +958,7 @@ ol {
   padding-top: 1px;
 }
 
-/* ── 보관함 ─────────────────────────────────────── */
+/* ── Library ─────────────────────────────────────── */
 .lib-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
@@ -996,7 +996,7 @@ ol {
   margin: 2px -8px -6px;
 }
 
-/* ── 오른쪽: 두리 판 ───────────────────────────── */
+/* ── Right: assistant panel ───────────────────────────── */
 .panel {
   position: relative;
   display: none;
@@ -1060,6 +1060,13 @@ ol {
 .panel-tabs button svg.i {
   width: 14px;
   height: 14px;
+}
+/* English labels are longer: the label alone fits the panel without the icon */
+html:lang(en) .panel-tabs button svg.i {
+  display: none;
+}
+html:lang(en) .panel-tabs button {
+  padding: 0 2px;
 }
 .panel-tabs .dot {
   position: absolute;
@@ -1178,7 +1185,7 @@ button.side-row:hover {
   margin-top: 1px;
 }
 
-/* 잠깐 뜨는 알림 */
+/* Toast */
 .app-toast {
   position: fixed;
   left: 50%;
@@ -1188,7 +1195,7 @@ button.side-row:hover {
   transform: translateX(-50%);
 }
 
-/* 좁은 창: 두리 판은 오른쪽 위에 떠 있게 */
+/* Narrow window: the assistant panel floats at the top right */
 @media (max-width: 1100px) {
   .app.panel-open {
     grid-template-columns: 220px minmax(0, 1fr);
@@ -1207,12 +1214,12 @@ button.side-row:hover {
   }
 }
 
-/* ── 첫 실행 마법사 · 설정 ─────────────────────────── */
+/* ── First-run wizard · Settings ─────────────────────────── */
 .setup {
   position: fixed;
   inset: 0;
   z-index: 10;
-  /* 카드가 창보다 길면 스크롤한다 (가운데 정렬은 카드의 margin: auto로) */
+  /* Scroll when the card is taller than the window (centered by the card's margin: auto) */
   display: flex;
   overflow-y: auto;
   padding: 32px;
@@ -1221,7 +1228,7 @@ button.side-row:hover {
 .setup[hidden] {
   display: none;
 }
-/* 설정: 앱 안 페이지 (왼쪽 메뉴는 그대로 보이고, 설정 안에 칸 목록) */
+/* Settings: an in-app page (the left menu stays visible, with a list of sections inside Settings) */
 .setup.in-app {
   left: 248px;
   z-index: 5;
@@ -1443,7 +1450,7 @@ button.side-row:hover {
   grid-column: 1 / -1;
 }
 
-/* 준비 목록·토글: 선으로 나눈 한 덩어리 목록 */
+/* Checklists and toggles: one block of rows split by lines */
 .checks {
   list-style: none;
   display: flex;
@@ -1504,7 +1511,7 @@ button.side-row:hover {
   font-size: 13px;
   line-height: 1.5;
 }
-/* 설정 '두리 버전': 새 버전의 바뀐 점 */
+/* Settings 'Dool2 version': what changed in the new version */
 .checks .text .ver-notes {
   margin-top: 2px;
   color: var(--ink);
@@ -1523,7 +1530,7 @@ button.side-row:hover {
 .toggle-row:hover {
   background: var(--raise);
 }
-/* 켜고 끄는 스위치 */
+/* On/off switch */
 .setup-hint {
   color: var(--ink-muted);
   font-size: 12.5px;
@@ -1552,7 +1559,7 @@ button.side-row:hover {
   margin-left: 4px;
 }
 
-/* 설치·로그인·폰 연결처럼 진행 중인 일 */
+/* Work in progress, like installing, logging in or pairing the phone */
 .login-panel {
   display: flex;
   flex-direction: column;
@@ -1637,7 +1644,7 @@ button.side-row:hover {
   transition: width 0.5s var(--ease);
 }
 
-/* 두리 확장 추가 안내 */
+/* How to add the Dool2 extension */
 .ext-steps {
   margin: 0;
   padding-left: 20px;
@@ -1668,7 +1675,7 @@ button.side-row:hover {
   color: var(--ink-muted);
 }
 
-/* 두리 금고 */
+/* Dool2 vault */
 .vault {
   display: grid;
   gap: 10px;
@@ -1707,7 +1714,7 @@ button.side-row:hover {
   color: var(--ink-faint);
 }
 
-/* 폰 연결 */
+/* Phone pairing */
 .pair-panel {
   align-items: center;
   text-align: center;
@@ -1729,7 +1736,7 @@ button.side-row:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 서비스 연결: 분류별 목록 → 상세 ─────────────── */
+/* ── Service connections: list by category → detail ─────────────── */
 .connect-view {
   display: flex;
   flex-direction: column;
@@ -1794,7 +1801,7 @@ button.side-row:hover {
   width: 16px;
   height: 16px;
 }
-/* 로고 파일 없이 이름 첫 글자 (ADR 0014) */
+/* First letter of the name when there is no logo file (ADR 0014) */
 .svc-mark {
   display: inline-grid;
   flex: none;
@@ -1892,7 +1899,7 @@ button.side-row:hover {
   font-size: 13px;
   line-height: 1.6;
 }
-/* 연결 버튼 줄은 스크롤해도 아래에 남는다 */
+/* The connect button row stays at the bottom while scrolling */
 .svc-action {
   position: sticky;
   bottom: -24px;
@@ -1922,7 +1929,7 @@ button.side-row:hover {
   color: var(--ink);
 }
 
-/* 연결하기: 아이디·비밀번호 칸 */
+/* Connect: ID and password fields */
 .svc-login {
   display: grid;
   gap: 8px;
@@ -1930,7 +1937,7 @@ button.side-row:hover {
   max-width: 360px;
 }
 
-/* 두리 설정 (기억 칸 위) */
+/* Dool2 settings (above the memory section) */
 .identity {
   display: grid;
   gap: 8px;
@@ -1943,7 +1950,7 @@ button.side-row:hover {
   width: 100%;
 }
 
-/* 두리가 찾은 할 일 */
+/* To-dos Dool2 found */
 .card.suggested {
   display: grid;
   gap: 4px;
@@ -1961,7 +1968,7 @@ button.side-row:hover {
   min-width: 0;
 }
 
-/* 사진: 붙여 넣기·끌어 놓기 */
+/* Photos: paste and drag and drop */
 .attach-preview {
   display: flex;
   align-items: flex-start;
@@ -2002,7 +2009,7 @@ button.side-row:hover {
   height: 16px;
 }
 
-/* 서비스 로고: 첫 글자 위에 덮고, 불러오면 글자를 감춘다 */
+/* Service logo: covers the first letter, which is hidden once the logo loads */
 .svc-mark {
   position: relative;
   overflow: hidden;
@@ -2021,7 +2028,7 @@ button.side-row:hover {
 .svc-mark.has-logo .svc-logo {
   opacity: 1;
 }
-/* 대화 안 연결 카드 */
+/* Connect card in the chat */
 .connect-card .login-head .spin {
   margin-left: auto;
 }
@@ -2032,7 +2039,7 @@ button.side-row:hover {
   font-size: 11px;
 }
 
-/* 간편 로그인으로 연결 (공급자 고유 색) */
+/* Connect with social login (provider brand colors) */
 .social-row {
   display: flex;
   flex-wrap: wrap;
@@ -2093,7 +2100,7 @@ button.side-row:hover {
   margin-top: 10px;
 }
 
-/* 일한 과정: 답 위에 접힌 한 줄 */
+/* Work steps: one folded line above the answer */
 .work-done {
   align-self: flex-start;
   max-width: 520px;
@@ -2132,7 +2139,7 @@ button.side-row:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* 답 속 표·제목 (마크다운 표가 | 글자로 보이지 않게) */
+/* Tables and headings in answers (so markdown tables do not show as | characters) */
 .rich-table-wrap {
   max-width: 100%;
   margin: 8px 0;
@@ -2170,7 +2177,7 @@ button.side-row:hover {
   font-size: 15px;
   font-weight: 700;
 }
-/* 표가 있는 답은 화면 폭까지 (칸이 잘리지 않게) */
+/* Answers with tables use the full width (so columns are not cut) */
 .chat-list > .bubble.rich:has(.rich-table-wrap) {
   max-width: 100%;
 }
@@ -2178,7 +2185,7 @@ button.side-row:hover {
   white-space: nowrap;
 }
 
-/* 먼저 챙기기 (ADR 0019) */
+/* Proactive check (ADR 0019) */
 .watch-card {
   margin-top: 12px;
 }
@@ -2191,7 +2198,7 @@ button.side-row:hover {
   margin-top: 4px;
 }
 
-/* 대화 안 먼저 챙긴 일 카드 (ADR 0019) */
+/* Proactive check card in the chat (ADR 0019) */
 .tell-card p {
   margin: 4px 0 0;
 }
@@ -2205,7 +2212,7 @@ button.side-row:hover {
   margin-top: 12px;
 }
 
-/* 일하는 과정: 일한 곳(서비스)마다 한 줄 — 로고(모서리에 빙글빙글/체크) · 이름 / 하는 일 · 걸린 시간 (폰과 같은 모양) */
+/* Work steps: one row per place worked (service) — logo (spinner/check at the corner) · name / what it does · time taken (same as the phone) */
 .worklog li.ws {
   gap: 12px;
   padding: 2px 0;
@@ -2316,7 +2323,7 @@ button.side-row:hover {
   margin-left: 0;
 }
 
-/* 더 보기·접기 꺾쇠: 아래(펼치기) / 위(접기) */
+/* Show more / fold chevrons: down (expand) / up (fold) */
 .more-chev {
   width: 14px;
   height: 14px;
@@ -2326,7 +2333,7 @@ button.side-row:hover {
 .more-chev.open {
   transform: rotate(-90deg);
 }
-/* 긴 목록 끝 줄: 받는 중 · 더 보기 · 여기까지예요 */
+/* Last row of a long list: loading · show more · that's all */
 .page-more {
   display: flex;
   align-items: center;
@@ -2340,7 +2347,7 @@ button.side-row:hover {
   flex-direction: column;
 }
 
-/* 답 속 링크와 출처 칩 ("([MBC](주소))" → 작은 칩) */
+/* Links and source chips in answers ("([MBC](url))" → a small chip) */
 .rich-link {
   color: var(--brand);
   text-decoration: underline;
@@ -2365,7 +2372,7 @@ button.side-row:hover {
   border-color: var(--brand);
 }
 
-/* 답 속 PC 파일 ("`~/Documents/두리/초대장.png`") → 누르면 여는 파일 칩 */
+/* PC files in answers ("`~/Documents/Dool2/invite.png`") → a file chip that opens on click */
 .rich-file {
   display: inline-flex;
   align-items: center;
@@ -2400,7 +2407,7 @@ button.side-row:hover {
   text-underline-offset: 2px;
 }
 
-/* 보관함: 그림이 있는 파일의 목록 미리보기 (누르면 연다) */
+/* Library: list previews of files with images (click to open) */
 .lib-thumb {
   display: block;
   flex: none;
@@ -2426,7 +2433,7 @@ button.lib-thumb:hover .lib-thumb-img {
   opacity: 0.92;
 }
 
-/* 보관함: 두리가 만든 그림 미리보기 */
+/* Library: previews of images Dool2 made */
 .lib-shot {
   display: block;
   max-width: 100%;
@@ -2435,7 +2442,7 @@ button.lib-thumb:hover .lib-thumb-img {
   background: #fff;
 }
 
-/* 금고 비밀번호 보기 (ADR 0026) */
+/* Show a vault password (ADR 0026) */
 .vault-pw {
   display: block;
   margin-top: 4px;
@@ -2444,7 +2451,7 @@ button.lib-thumb:hover .lib-thumb-img {
   word-break: break-all;
 }
 
-/* 그림 AI로 만든 그림 */
+/* Images made with an image AI */
 .made {
   margin: 4px 0 6px;
 }
@@ -2465,7 +2472,7 @@ button.lib-thumb:hover .lib-thumb-img {
   cursor: zoom-in;
 }
 
-/* 문제 알리기 (설정) */
+/* Report a problem (Settings) */
 .report-block {
   display: grid;
   gap: 10px;
@@ -2513,7 +2520,7 @@ button.lib-thumb:hover .lib-thumb-img {
   white-space: pre-wrap;
 }
 
-/* 한 번 묻는 띠 (사용 통계): 좁은 왼쪽 칸이라 글 아래로 버튼 */
+/* One-time ask banner (usage stats): the left column is narrow, so buttons go below the text */
 .notice.ask {
   flex-direction: column;
   align-items: stretch;
