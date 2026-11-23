@@ -476,12 +476,16 @@ export function isFinishCheckNote(text: string): boolean {
 }
 
 /**
- * One answer per request: when the finish check sent Dool2 back to keep going and a newer answer came, the earlier
- * answers of that request and the check notes are folded away (11-23: three answers in a row read oddly).
+ * One answer per request: when the finish check sent Dool2 back to keep going, the earlier answers of that request
+ * are folded away once a newer answer came, or right away while Dool2 is still working on it (`running`), so it reads
+ * as "still working" rather than "answered, then started over" (11-23). The check notes themselves are never shown.
  * Returns the ids to hide and, for each answer that replaced others, the ids it replaced (for "show earlier answers").
  * Notes from other sources (approvals, sign-in) do not fold anything: those answers are separate steps
  */
-export function interimAnswers(messages: readonly { id: string; role: string; text: string }[]): {
+export function interimAnswers(
+  messages: readonly { id: string; role: string; text: string }[],
+  opts: { running?: boolean } = {},
+): {
   hidden: Set<string>
   replaced: Map<string, string[]>
 } {
@@ -491,8 +495,10 @@ export function interimAnswers(messages: readonly { id: string; role: string; te
   let notes: string[] = []
   for (const m of messages) {
     if (m.role === 'user') {
-      if (isFinishCheckNote(m.text)) notes.push(m.id)
-      else if (!m.text.startsWith(APP_NOTE)) {
+      if (isFinishCheckNote(m.text)) {
+        notes.push(m.id)
+        hidden.add(m.id)
+      } else if (!m.text.startsWith(APP_NOTE)) {
         answers = []
         notes = []
       }
@@ -510,6 +516,8 @@ export function interimAnswers(messages: readonly { id: string; role: string; te
     }
     answers.push(m.id)
   }
+  // Still working after a check note: the earlier answer is a draft, not the answer
+  if (opts.running && notes.length && answers.length) for (const id of answers) hidden.add(id)
   return { hidden, replaced }
 }
 

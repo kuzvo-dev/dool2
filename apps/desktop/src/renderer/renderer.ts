@@ -1399,7 +1399,7 @@ function renderTalk() {
   let day = ''
   let prevRole = ''
   // One answer per request: answers the finish check sent back and replaced are folded (11-23)
-  const fold = interimAnswers(state.messages)
+  const fold = interimAnswers(state.messages, { running: state.busy })
   const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
   const roleOf = new Map(state.messages.map((x) => [x.id, x.role]))
   for (const { m, i } of order) {
