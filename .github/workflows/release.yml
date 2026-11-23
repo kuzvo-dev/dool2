@@ -1,0 +1,186 @@
+name: 릴리스
+
+# 두리 PC 앱 설치 파일을 만들어 GitHub Releases에 올린다 (ADR 0028).
+# Actions 탭 → 릴리스 → Run workflow. apps/desktop/package.json의 version과 같은 버전을 넣는다.
+# publish를 끄면 올리지 않고 파일만 만든다 (점검용: 각 OS에서 앱을 켜 찍은 화면도 함께 받는다).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 버전 (apps/desktop/package.json과 같게, 예 0.3.0)
+        required: true
+      notes:
+        description: 바뀐 점 (사용자에게 보이는 한 줄)
+        required: true
+      min:
+        description: 이보다 낮은 버전은 꼭 업데이트 (비우면 없음)
+        required: false
+      publish:
+        description: GitHub Releases에 올리기 (끄면 파일만 만든다)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    name: 맥 (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: 버전 확인
+        env:
+          VERSION: ${{ inputs.version }}
+        run: test "$(node -p "require('./apps/desktop/package.json').version")" = "$VERSION"
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 8
+      - run: pnpm build
+        timeout-minutes: 12
+      # 우리 고정 인증서를 임시 키체인에 넣고 코드 서명에 쓰도록 믿게 한다 (러너는 비밀번호 없는 sudo).
+      # 판이 바뀌어도 같은 인증서라 맥이 같은 앱으로 알아본다: 손쉬운 사용·화면 기록 권한과 금고(키체인)가 이어진다
+      - name: 서명 인증서 준비
+        env:
+          P12: ${{ secrets.DOOL2_MAC_CERT_P12 }}
+          P12_PASS: ${{ secrets.DOOL2_MAC_CERT_PASS }}
+        run: |
+          kc="$RUNNER_TEMP/dool2.keychain-db"
+          kp="$(openssl rand -hex 12)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          security import "$RUNNER_TEMP/sign.p12" -k "$kc" -P "$P12_PASS" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kp" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          openssl pkcs12 -in "$RUNNER_TEMP/sign.p12" -clcerts -nokeys -passin env:P12_PASS -out "$RUNNER_TEMP/sign.crt" \
+            || openssl pkcs12 -legacy -in "$RUNNER_TEMP/sign.p12" -clcerts -nokeys -passin env:P12_PASS -out "$RUNNER_TEMP/sign.crt"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/sign.crt"
+          security find-identity -v -p codesigning "$kc"
+          echo "DOOL2_MAC_SIGN_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/sign.p12"
+      - name: 설치 파일 만들기
+        env:
+          DOOL2_MAC_SIGN_IDENTITY: Dool2 Release
+        run: pnpm --filter @dool2/desktop package
+        timeout-minutes: 15
+      - name: 서명 확인
+        run: |
+          app=$(ls -d apps/desktop/release/mac*/Dool2.app)
+          codesign --verify --deep --strict "$app"
+          codesign -dr - "$app" 2>&1 | tee "$RUNNER_TEMP/requirement.txt"
+          grep -q 'certificate root' "$RUNNER_TEMP/requirement.txt"
+      # 점검: 만든 앱을 켜서 첫 화면을 찍는다 (사람이 맥에서 켜 보기 전에 앱이 뜨는지)
+      - name: 켜 보기
+        timeout-minutes: 3
+        run: |
+          app=$(ls -d apps/desktop/release/mac*/Dool2.app)
+          mkdir -p "$RUNNER_TEMP/smoke"
+          DOOL2_SMOKE=1 DOOL2_SMOKE_UPDATE=available DOOL2_SMOKE_OUT="$RUNNER_TEMP/smoke" DOOL2_DATA_DIR="$RUNNER_TEMP/data" \
+            "$app/Contents/MacOS/Dool2" | tee "$RUNNER_TEMP/smoke/log.txt"
+          grep -q 'DOOL2_SMOKE' "$RUNNER_TEMP/smoke/log.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/dool2-*.dmg
+            apps/desktop/release/dool2-*.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-mac-${{ matrix.arch }}
+          path: ${{ runner.temp }}/smoke
+
+  windows:
+    name: 윈도우 (x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: 버전 확인
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: test "$(node -p "require('./apps/desktop/package.json').version")" = "$VERSION"
+      - run: pnpm install --frozen-lockfile
+        timeout-minutes: 8
+      - run: pnpm build
+        timeout-minutes: 12
+      - name: 설치 파일 만들기
+        run: pnpm --filter @dool2/desktop package
+        timeout-minutes: 15
+      - name: 켜 보기
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke"
+          DOOL2_SMOKE=1 DOOL2_SMOKE_UPDATE=available DOOL2_SMOKE_OUT="$RUNNER_TEMP/smoke" DOOL2_DATA_DIR="$RUNNER_TEMP/data" \
+            apps/desktop/release/win-unpacked/dool2.exe | tee "$RUNNER_TEMP/smoke/log.txt"
+          grep -q 'DOOL2_SMOKE' "$RUNNER_TEMP/smoke/log.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: win-x64
+          path: apps/desktop/release/dool2-*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-win-x64
+          path: ${{ runner.temp }}/smoke
+
+  publish:
+    name: 올리기
+    needs: [mac, windows]
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{mac,win}-*"
+          path: out
+          merge-multiple: true
+      - name: 버전 안내 서명
+        env:
+          DOOL2_UPDATE_KEY: ${{ secrets.DOOL2_UPDATE_KEY }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+          MIN: ${{ inputs.min }}
+        run: |
+          node apps/desktop/scripts/release-manifest.mjs --dir out --version "$VERSION" --notes "$NOTES" \
+            ${MIN:+--min "$MIN"}
+          ls -la out
+      - name: GitHub Releases에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          gh release create "v$VERSION" out/* --target "$GITHUB_SHA" --title "두리 $VERSION" --notes "$NOTES"

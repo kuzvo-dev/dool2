@@ -32,6 +32,8 @@ import { KeepAwake, loginItemSettings } from './power.js'
 import { renderFile } from './render-file.js'
 import { renderMotion } from './render-motion.js'
 import { fileSecrets } from './secrets.js'
+import { Updater, type UpdateState } from './update.js'
+import { installUpdate } from './update-install.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const assets = join(here, '..', 'assets')
@@ -43,6 +45,7 @@ let daemon: Daemon | undefined
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
+let updater: Updater | undefined
 const keepAwake = new KeepAwake({
   start: () => powerSaveBlocker.start('prevent-app-suspension'),
   stop: (id) => powerSaveBlocker.stop(id),
@@ -252,6 +255,19 @@ async function renderHtml(html: string): Promise<string | undefined> {
 }
 
 /** 개발·CI 점검: 창을 띄워 화면이 그려지는지 보고 캡처한 뒤 종료한다 */
+/** 점검 캡처용 가짜 업데이트 상태 (DOOL2_SMOKE_UPDATE=available|required) */
+function smokeUpdate(): UpdateState | undefined {
+  const k = SMOKE ? process.env.DOOL2_SMOKE_UPDATE : undefined
+  if (k !== 'available' && k !== 'required') return undefined
+  return {
+    status: 'available',
+    current: app.getVersion(),
+    latest: '0.3.0',
+    notes: 'AI 영상 클립, 더 멋있는 모션 영상, 새 버전 알림',
+    required: k === 'required',
+  }
+}
+
 async function smoke(w: BrowserWindow) {
   const ready = await new Promise<string>((resolve) => {
     ipcMain.once('dool2:ready', (_e, summary: string) => resolve(summary))
@@ -356,6 +372,37 @@ app.whenReady().then(async () => {
       ? { smokeAsk: process.env.DOOL2_SMOKE_ASK, smokeAskWait: Number(process.env.DOOL2_SMOKE_ASK_WAIT ?? 0) }
       : {}),
   }))
+
+  // 새 버전 알림·설치 (ADR 0028): 배포 앱에서만 (시험은 DOOL2_UPDATE_FEED로 다른 안내를 줄 수 있다)
+  ipcMain.handle('dool2:update-state', () => updater?.state() ?? smokeUpdate() ?? null)
+  ipcMain.handle('dool2:update-install', () => updater?.install() ?? null)
+  if (!SMOKE && (app.isPackaged || process.env.DOOL2_UPDATE_FEED)) {
+    updater = new Updater({
+      current: app.getVersion(),
+      platform: `${process.platform}-${process.arch}`,
+      ...(process.env.DOOL2_UPDATE_FEED ? { feed: process.env.DOOL2_UPDATE_FEED } : {}),
+      dir: join(dataDir, 'updates'),
+      onChange: (s: UpdateState) => win?.webContents.send('dool2:update', s),
+      install: (file) =>
+        installUpdate(file, {
+          exe: app.getPath('exe'),
+          relaunch: async () => {
+            quitting = true
+            await daemon?.close().catch(() => undefined)
+            app.relaunch()
+            app.exit(0)
+          },
+          quit: async () => {
+            quitting = true
+            await daemon?.close().catch(() => undefined)
+            app.exit(0)
+          },
+        }),
+    })
+    const check = () => void updater?.check()
+    setTimeout(check, 20_000)
+    setInterval(check, 6 * 60 * 60_000)
+  }
 
   if (!SMOKE) createTray()
   d.events.on('settings', applySettings)

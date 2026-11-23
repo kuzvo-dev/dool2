@@ -77,7 +77,67 @@ declare global {
       revealExtension(): void
       storeExtension(): Promise<string | null>
       openStore(): void
+      update: {
+        state(): Promise<UpdateView | null>
+        install(): Promise<UpdateView | null>
+        onChange(cb: (s: UpdateView) => void): void
+      }
     }
+  }
+}
+
+/** 새 버전 (apps/desktop/src/update.ts의 UpdateState) */
+interface UpdateView {
+  status: 'idle' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
+  current: string
+  latest?: string
+  notes?: string
+  required?: boolean
+  progress?: number
+  error?: string
+}
+
+/** 새 버전 띠 (왼쪽 위) + 꼭 업데이트해야 하면 화면 전체를 막는 안내 (ADR 0028) */
+function renderUpdate(u: UpdateView | null) {
+  const box = $('update')
+  const wall = $('update-wall')
+  const show =
+    !!u && !!u.latest && ['available', 'downloading', 'ready', 'installing', 'error'].includes(u.status)
+  const busy = u?.status === 'downloading' || u?.status === 'ready' || u?.status === 'installing'
+  const line = !u
+    ? ''
+    : busy
+      ? u.status === 'downloading'
+        ? `새 버전 받는 중 ${Math.round((u.progress ?? 0) * 100)}%`
+        : '새 버전으로 바꾸는 중… 곧 다시 켜져요'
+      : u.status === 'error' && u.latest
+        ? `업데이트하지 못했어요: ${u.error ?? ''}`
+        : `새 버전 ${u.latest}이 나왔어요`
+  const go = () => {
+    void window.dool2.update.install().then((s) => renderUpdate(s))
+    renderUpdate(u ? { ...u, status: 'downloading', progress: u.progress ?? 0 } : null)
+  }
+  box.hidden = !show || !!u?.required
+  if (!box.hidden && u) {
+    const act = busy
+      ? el('span', 'muted', '')
+      : button('btn-small', go, u.status === 'error' ? '다시 해 보기' : '업데이트')
+    box.replaceChildren(el('span', 'notice-text', line), act)
+    box.title = u.notes ?? ''
+  }
+  wall.hidden = !show || !u?.required
+  if (!wall.hidden && u) {
+    const card = el('div', 'update-card')
+    card.append(
+      el('h2', '', '새 버전으로 업데이트해 주세요'),
+      el('p', '', `지금 쓰는 ${u.current}은 더 이상 쓸 수 없어요. 업데이트하면 대화·연결·금고는 그대로예요.`),
+      ...(u.notes ? [el('p', 'muted', `바뀐 점: ${u.notes}`)] : []),
+      el('p', 'update-line', busy || u.status === 'error' ? line : ''),
+      busy
+        ? el('span', '', '')
+        : button('btn', go, u.status === 'error' ? '다시 해 보기' : `${u.latest}로 업데이트`),
+    )
+    wall.replaceChildren(card)
   }
 }
 
@@ -2516,6 +2576,11 @@ async function main() {
   renderDevice(settings)
   renderSend()
   void connectLive()
+  void window.dool2.update
+    .state()
+    .then(renderUpdate)
+    .catch(() => {})
+  window.dool2.update.onChange(renderUpdate)
   // 확장·승인·로그인 요청을 새로 본다 (폰에서 한 일도 보이게). 창이 앞에 있을 때만 3초마다, 뒤에 있으면 15초마다
   let polledAt = 0
   setInterval(() => {

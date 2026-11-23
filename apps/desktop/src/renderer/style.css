@@ -134,6 +134,35 @@ ol {
 .notice-text {
   flex: 1;
 }
+.notice.update {
+  background: var(--brand-soft);
+}
+/* 꼭 업데이트해야 할 때 화면 전체를 덮는 안내 */
+.update-wall {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
+}
+.update-wall[hidden] {
+  display: none;
+}
+.update-card {
+  display: grid;
+  gap: 10px;
+  max-width: 420px;
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.update-card .btn {
+  justify-self: center;
+}
 
 /* ── 가운데: 떠 있는 머리 + 지금 탭 ─────────────────── */
 .main {
