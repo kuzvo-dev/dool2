@@ -25,7 +25,12 @@ describe('one answer per request', () => {
 
   it('also reads notes saved before the move to English', () => {
     const old = appNote('끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요. (끝내기 전 검사) 아직 남았어요')
-    const { hidden } = interimAnswers([msg('u1', 'user', 'x'), msg('a1', 'assistant'), msg('n1', 'user', old), msg('a2', 'assistant')])
+    const { hidden } = interimAnswers([
+      msg('u1', 'user', 'x'),
+      msg('a1', 'assistant'),
+      msg('n1', 'user', old),
+      msg('a2', 'assistant'),
+    ])
     expect([...hidden].sort()).toEqual(['a1', 'n1'])
   })
 

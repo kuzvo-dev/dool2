@@ -470,7 +470,9 @@ export const FINISH_CHECK_MARK = '(Check before finishing)'
 const OLD_FINISH_CHECK_MARK = '(\uB05D\uB0B4\uAE30 \uC804 \uAC80\uC0AC)'
 
 export function isFinishCheckNote(text: string): boolean {
-  return text.startsWith(APP_NOTE) && (text.includes(FINISH_CHECK_MARK) || text.includes(OLD_FINISH_CHECK_MARK))
+  return (
+    text.startsWith(APP_NOTE) && (text.includes(FINISH_CHECK_MARK) || text.includes(OLD_FINISH_CHECK_MARK))
+  )
 }
 
 /**
