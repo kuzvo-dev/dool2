@@ -463,6 +463,56 @@ export function readAppNote(text: string): string | undefined {
   return shown.join(' ').trim()
 }
 
+/** Marker in the finish check's "keep going" note (language independent, apps/daemon/src/finish-check.ts againNote) */
+export const FINISH_CHECK_MARK = '(Check before finishing)'
+
+/** The same marker in records saved before the move to English (11-23 and earlier), escaped to keep code free of Hangul */
+const OLD_FINISH_CHECK_MARK = '(\uB05D\uB0B4\uAE30 \uC804 \uAC80\uC0AC)'
+
+export function isFinishCheckNote(text: string): boolean {
+  return (
+    text.startsWith(APP_NOTE) && (text.includes(FINISH_CHECK_MARK) || text.includes(OLD_FINISH_CHECK_MARK))
+  )
+}
+
+/**
+ * One answer per request: when the finish check sent Dool2 back to keep going and a newer answer came, the earlier
+ * answers of that request and the check notes are folded away (11-23: three answers in a row read oddly).
+ * Returns the ids to hide and, for each answer that replaced others, the ids it replaced (for "show earlier answers").
+ * Notes from other sources (approvals, sign-in) do not fold anything: those answers are separate steps
+ */
+export function interimAnswers(messages: readonly { id: string; role: string; text: string }[]): {
+  hidden: Set<string>
+  replaced: Map<string, string[]>
+} {
+  const hidden = new Set<string>()
+  const replaced = new Map<string, string[]>()
+  let answers: string[] = []
+  let notes: string[] = []
+  for (const m of messages) {
+    if (m.role === 'user') {
+      if (isFinishCheckNote(m.text)) notes.push(m.id)
+      else if (!m.text.startsWith(APP_NOTE)) {
+        answers = []
+        notes = []
+      }
+      continue
+    }
+    if (m.role !== 'assistant') continue
+    if (notes.length && answers.length) {
+      const earlier = [...answers, ...notes]
+      for (const id of earlier) hidden.add(id)
+      // an answer that replaced an answer that itself replaced others carries the whole chain
+      replaced.set(m.id, [...answers.flatMap((a) => [...(replaced.get(a) ?? []), a]), ...notes])
+      for (const a of answers) replaced.delete(a)
+      answers = []
+      notes = []
+    }
+    answers.push(m.id)
+  }
+  return { hidden, replaced }
+}
+
 /**
  * Removes English inner-thought paragraphs mixed into an answer. Only paragraphs with no Hangul at all and in a thinking tone are dropped
  * (English paragraphs like URLs, product names and code stay). If everything would be dropped, the original text is kept.

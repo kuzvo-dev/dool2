@@ -62,6 +62,7 @@ import {
 import {
   dropEnglishLines,
   hyphenate,
+  interimAnswers,
   josa,
   narrationLine,
   readAppNote,
@@ -1885,6 +1886,8 @@ function toast(text: string, onTap?: () => void) {
 
 const tShell = shellText(lang)
 const tChat = chatText(lang)
+/** Answers whose folded earlier answers the user opened */
+const openEarlier = new Set<string>()
 const tSms = smsText(lang)
 const tAppr = approvalText(lang)
 
@@ -2783,7 +2786,31 @@ function chatItems(): Item[] {
   let lastNote = ''
   let lastDay = ''
   const superseded = oldConnectCards()
+  // One answer per request: answers the finish check sent back and replaced are folded (open with "show earlier answers")
+  const fold = interimAnswers(st.conv)
+  const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
+  const roleOf = new Map(st.conv.map((m) => [m.id, m.role]))
   for (const [i, m] of st.conv.entries()) {
+    if (fold.hidden.has(m.id) && !revealed.has(m.id)) continue
+    const earlier = fold.replaced.get(m.id)
+    if (earlier) {
+      const n = earlier.filter((id) => roleOf.get(id) === 'assistant').length
+      const open = openEarlier.has(m.id)
+      items.push({
+        key: `earlier:${m.id}`,
+        sig: open ? '1' : '0',
+        make: () =>
+          h('button', {
+            class: 'btn-text earlier-answers',
+            text: open ? tChat.hideEarlierAnswers : tChat.showEarlierAnswers(n),
+            onclick: () => {
+              if (open) openEarlier.delete(m.id)
+              else openEarlier.add(m.id)
+              render()
+            },
+          }),
+      })
+    }
     // If the same notice was recorded several times in a row (old records), show only one
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue

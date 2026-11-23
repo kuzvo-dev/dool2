@@ -1,4 +1,5 @@
 import type { Lang } from '@dool2/i18n'
+import { FINISH_CHECK_MARK } from '@dool2/protocol/rich'
 import { FINISH_CHECK_TEXT } from './locales/finish-check.js'
 
 /**
@@ -180,9 +181,9 @@ export class FinishCheck {
 export function againNote(v: Verdict, lang: Lang = 'ko'): string {
   return [
     FINISH_CHECK_TEXT[lang].again,
-    `(Check before finishing) Something is still left: ${v.why}`,
+    `${FINISH_CHECK_MARK} Something is still left: ${v.why}`,
     v.next ? `A way to try: ${v.next}` : '',
-    'Do not repeat the same method; continue another way. If only the user knows it, first look in mail, connected places and memory or estimate it, and ask only if it really is not there, gathering all questions in one message. When done, report once in the order result, what was done, what is left. Reply to the user in their language.',
+    'Do not repeat the same method; continue another way. If only the user knows it, first look in mail, connected places and memory or estimate it, and ask only if it really is not there, gathering all questions in one message. When done, report once in the order result, what was done, what is left. Your next answer replaces your earlier answer to this request on screen (the earlier one is folded away), so write it as the one complete answer: keep what still matters from before, not only the new part. Reply to the user in their language.',
   ]
     .filter(Boolean)
     .join(' ')
