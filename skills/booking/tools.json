@@ -193,7 +193,7 @@
       "result": {
         "hotels": "{{hotels}}"
       },
-      "next": "사용자가 중요하게 여긴 조건(위치·평점·무료 취소·가격)으로 2~3곳을 골라 짧게 견줘 보여 줘요. 총 요금은 기간 전체 금액이라고 알려요. 예약하려면 booking_prepare_booking에 hotel_path·날짜·인원을 넘겨요.",
+      "next": "사용자가 중요하게 여긴 조건(위치·평점·무료 취소·가격)으로 2~3곳을 골라 짧게 견줘 보여 줘요. 총 요금은 기간 전체 금액이라고 알려요. 예약하려면 booking_prepare_booking에 hotel_path·날짜·인원을 넘겨요. 최저가나 비교를 물으면 같은 날짜·인원으로 다른 숙소 서비스 한두 곳(국내는 yeogi_search·yanolja_search, 해외는 agoda_search·booking_search 중 이것 말고)도 찾아 같은 조건으로 합쳐 견줘요.",
       "minIntervalSec": 300
     },
     {
