@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "두리 폰 앱 (PWA): 폰으로 부탁하고, 결제·보내기는 폰에서 승인",
+  "description": "Dool2 phone app: ask from your phone, and approve payments and sending on the phone",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",

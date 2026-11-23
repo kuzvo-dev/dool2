@@ -1,5 +1,5 @@
-// 폰 앱: 피드 · 목표 · 보관함 탭과 그 상세 시트, 두리 판의 예정·기억 칸.
-// 데이터는 PC 본체의 생활 기록(LifeState)이고, 바꾸는 일은 life-action으로 보낸다.
+// Phone app: the Feed, Goals and Library tabs with their detail sheets, and the upcoming and memory sections of the assistant panel.
+// The data is the daemon's life record on the PC (LifeState); changes are sent as life-action.
 import {
   type FeedItem,
   GOAL_CATEGORIES,
@@ -13,57 +13,59 @@ import type { Pager } from '@dool2/protocol/paging'
 import { stripLinks, withoutPhotoMark } from '@dool2/protocol/rich'
 import { ruleLabel, scheduleLabel } from '@dool2/protocol/schedule'
 import { doori, emoTile, h, type IconName, icon, rich, segBtn, shortTime } from './dom.js'
+import { lang } from './lang.js'
+import { lifeText } from './locales/life.js'
 import { burst, drawCheck, rememberFlip, springHeight } from './motion.js'
 import { statCard } from './motion-cards.js'
+import { FEED_ROUTINE_TITLE, GOAL_CATEGORY_STYLE } from './region/kr/life-views.js'
+
+const L = lifeText(lang)
 
 export interface LifeCtx {
   life?: LifeState
   online: boolean
   act(a: LifeAction): void
-  /** 바로 대화로 보내기 */
+  /** Send straight to the chat */
   ask(text: string): void
-  /** 대화 입력칸에 넣고 대화 탭으로 */
+  /** Put in the chat input and go to the chat tab */
   fill(text: string): void
   openGoal(id: string): void
   openItem(id: string): void
   close(): void
-  /** 긴 목록: 받아 둔 것과 다음 페이지 (피드, 지금 보이는 보관함 칸) */
+  /** Long lists: what is loaded and the next page (feed, the library segment in view) */
   feedList: Pager<FeedItem>
   libraryList: Pager<LibraryItem>
-  /** 보관함 하나: 앞부분만 받은 글이면 전체를 부탁하고 지금 가진 것을 준다 */
+  /** One library item: if only the start was received, ask for all of it and return what we have */
   fullItem(id: string): LibraryItem | undefined
-  /** 피드 맨 위 "나를 기다려요·지금 하는 일" (승인·로그인·진행) */
+  /** Top of the feed: "waiting for me / doing now" (approvals, logins, progress) */
   waiting: HTMLElement[]
-  /** 보관함 파일 원본을 PC에서 받아 폰에 저장하거나 다른 앱으로 보내기 */
+  /** Fetch the original library file from the PC and save it on the phone or send it to another app */
   fileAction?(it: LibraryItem, how: 'save' | 'share'): void
-  /** 그림 크게 보기 */
+  /** View an image large */
   view?(src: string, title: string, path?: string): void
-  /** 보관함 칸: 만든 것 / 사진·파일 */
+  /** Library segment: made / photos and files */
   librarySeg: 'made' | 'media'
   setLibrarySeg(seg: 'made' | 'media'): void
 }
 
 const FEED_KIND: Record<FeedItem['kind'], { label: string; icon: IconName; tone: string; emo: string }> = {
-  post: { label: '소식', icon: 'feed', tone: 'blue', emo: 'news' },
-  done: { label: '끝낸 일', icon: 'check', tone: 'mint', emo: 'check' },
-  routine: { label: '예약한 일', icon: 'clock', tone: 'violet', emo: 'routine' },
-  saved: { label: '보관함', icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
-  goal: { label: '목표', icon: 'goal', tone: 'rose', emo: 'other' },
-  connected: { label: '연결', icon: 'link', tone: 'blue', emo: 'link' },
-  suggest: { label: '먼저 챙겼어요', icon: 'idea', tone: 'amber', emo: 'bulb' },
+  post: { label: L.kindPost, icon: 'feed', tone: 'blue', emo: 'news' },
+  done: { label: L.kindDone, icon: 'check', tone: 'mint', emo: 'check' },
+  routine: { label: L.kindRoutine, icon: 'clock', tone: 'violet', emo: 'routine' },
+  saved: { label: L.kindSaved, icon: 'bookmark', tone: 'amber', emo: 'bookmark' },
+  goal: { label: L.kindGoal, icon: 'goal', tone: 'rose', emo: 'other' },
+  connected: { label: L.kindConnected, icon: 'link', tone: 'blue', emo: 'link' },
+  suggest: { label: L.kindSuggest, icon: 'idea', tone: 'amber', emo: 'bulb' },
 }
 
-const CATEGORY: Record<GoalCategory, { icon: IconName; tone: string; hint: string; emo: string }> = {
-  건강: { icon: 'heart', tone: 'rose', hint: '운동·수면·식단', emo: 'health' },
-  관계: { icon: 'mail', tone: 'violet', hint: '가족·친구', emo: 'relation' },
-  돈: { icon: 'card', tone: 'mint', hint: '저축·지출', emo: 'money' },
-  일: { icon: 'pc', tone: 'blue', hint: '업무·이직·공부', emo: 'work' },
-  관심사: { icon: 'star', tone: 'amber', hint: '취미·배우기', emo: 'interest' },
-  생산성: { icon: 'list', tone: 'blue', hint: '습관·정리', emo: 'productivity' },
-  기타: { icon: 'goal', tone: 'mint', hint: '그 밖의 목표', emo: 'other' },
-}
+const CATEGORY = Object.fromEntries(
+  Object.entries(GOAL_CATEGORY_STYLE).map(([c, st]) => [c, { ...st, hint: L.hint(st.emo) }]),
+) as Record<GoalCategory, { icon: IconName; tone: string; hint: string; emo: string }>
 
-/** 답·글에서 굵게 표시를 빼고 한 줄로 */
+/** A goal category's name in the UI language */
+const categoryLabel = (c: GoalCategory) => L.categoryName(CATEGORY[c].emo) || c
+
+/** A reply or text on one line, without bold marks */
 export function plain(text: string, max = 120) {
   const t = stripLinks(text)
     .replace(/\*\*/g, '')
@@ -89,33 +91,33 @@ function empty(mood: string, title: string, sub: string) {
   )
 }
 
-/** 목록 끝 줄: 받는 중 · [더 보기] · 여기까지예요 (아래로 내리면 저절로 받는다) */
+/** End-of-list row: loading, [Show more], or "That's all" (more loads on its own when scrolled down) */
 export function moreRow(p: Pager<{ id: string }>): HTMLElement | undefined {
   if (!p.items.length) return undefined
-  if (p.loading) return h('p', { class: 'wait page-more' }, h('span', { class: 'spin' }), '더 불러오는 중…')
+  if (p.loading) return h('p', { class: 'wait page-more' }, h('span', { class: 'spin' }), L.loadingMore)
   if (p.next)
     return h(
       'div',
       { class: 'page-more' },
-      h('button', { class: 'btn-text small', text: '더 보기', onclick: () => p.more() }),
+      h('button', { class: 'btn-text small', text: L.more, onclick: () => p.more() }),
     )
-  return h('p', { class: 'meta page-more', text: '여기까지예요' })
+  return h('p', { class: 'meta page-more', text: L.endOfList })
 }
 
-// ── 피드 ──
+// ── Feed ──
 
 export function feedView(ctx: LifeCtx): HTMLElement {
-  const box = h('section', { class: 'tab-page feed' }, ...header('피드'))
-  // 이번 주 두리가 한 일: 한 일이 하나라도 있으면
-  // (PC가 60일 날마다 개수를 세어 보낸다: 받은 피드 페이지와 상관없이 정확하다)
+  const box = h('section', { class: 'tab-page feed' }, ...header(L.feedTitle))
+  // What Dool2 did this week: if there is at least one task
+  // (the PC counts every day of the last 60 and sends the numbers, so it is exact regardless of loaded feed pages)
   const days = ctx.life?.feedDays
   if (days?.some((n) => n > 0)) box.append(statCard(days))
-  // 피드 지시: 무엇을 올릴지 말로 정한다
+  // Feed instruction: say in words what to post
   const prompt = ctx.life?.feedPrompt
   const input = h('input', { class: 'field' })
   input.id = 'feed-prompt'
-  input.placeholder = prompt ? '바꿀 내용을 적어 주세요' : '예: 매일 아침 날씨·일정·오는 택배'
-  const save = h('button', { class: 'btn small', text: prompt ? '바꾸기' : '받기' })
+  input.placeholder = prompt ? L.feedPlaceholderChange : L.feedPlaceholderNew
+  const save = h('button', { class: 'btn small', text: prompt ? L.change : L.receive })
   save.type = 'submit'
   const form = h('form', { class: 'feed-form' }, input, save)
   form.onsubmit = (e) => {
@@ -129,20 +131,20 @@ export function feedView(ctx: LifeCtx): HTMLElement {
     h(
       'div',
       { class: 'card feed-prompt' },
-      h('div', { class: 'card-label' }, doori('', 22), '어떤 소식을 받을까요?'),
+      h('div', { class: 'card-label' }, doori('', 22), L.whichNews),
       prompt
         ? h(
             'p',
             { class: 'card-text' },
             h('strong', { text: prompt }),
-            h('span', { class: 'meta', text: ' · 매일 오전 7:30에 올려요' }),
+            h('span', { class: 'meta', text: L.dailyAt }),
           )
-        : h('p', { class: 'meta', text: '적어 두면 매일 아침 7시 반에 정리해서 올려 드려요.' }),
+        : h('p', { class: 'meta', text: L.feedHelp }),
       form,
       prompt
         ? h('button', {
             class: 'btn-text small',
-            text: '그만 받기',
+            text: L.stopReceiving,
             onclick: () => ctx.act({ action: 'feed-prompt', text: '' }),
           })
         : undefined,
@@ -151,11 +153,8 @@ export function feedView(ctx: LifeCtx): HTMLElement {
   if (ctx.life) box.append(watchCard(ctx))
   if (ctx.waiting.length) box.append(...ctx.waiting)
   const items = ctx.feedList.items
-  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
-  else if (!items.length)
-    box.append(
-      empty('sleeping', '아직 올라온 소식이 없어요', '두리가 끝낸 일과 매일 아침 소식이 여기 모여요.'),
-    )
+  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), L.receiving))
+  else if (!items.length) box.append(empty('sleeping', L.noNews, L.noNewsSub))
   let day = ''
   for (const f of items) {
     const d = dayLabel(f.at)
@@ -175,7 +174,7 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
   const long = f.kind === 'post' || f.kind === 'routine'
   const body = h('div', { class: long ? 'feed-body clamp' : 'feed-body' })
   if (f.body) body.append(long ? rich(f.body) : plain(f.body, 160))
-  // 긴 글은 접어 두고 누르면 펼친다
+  // Long text is folded and opens when tapped
   if (long) body.onclick = () => springHeight(body, () => body.classList.toggle('open'))
   const react = (r: 'up' | 'down') => () =>
     ctx.act({ action: 'feed-react', id: f.id, ...(f.reaction === r ? {} : { reaction: r }) })
@@ -201,9 +200,9 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
             'button',
             {
               class: f.reaction === 'up' ? 'chip on' : 'chip',
-              label: '좋아요',
+              label: L.like,
               onclick: (e: MouseEvent) => {
-                // 새로 누를 때만 터진다 (취소할 때는 조용히)
+                // Bursts only on a new tap (quiet when undoing)
                 if (f.reaction !== 'up') burst(e.currentTarget as HTMLElement)
                 react('up')()
               },
@@ -212,36 +211,36 @@ function feedCard(ctx: LifeCtx, f: FeedItem) {
           ),
           h(
             'button',
-            { class: f.reaction === 'down' ? 'chip on' : 'chip', label: '별로예요', onclick: react('down') },
+            { class: f.reaction === 'down' ? 'chip on' : 'chip', label: L.dislike, onclick: react('down') },
             icon('down'),
           ),
           h(
             'button',
             {
               class: 'chip',
-              onclick: () => ctx.fill(`"${plain(f.title, 40)}" 이야기인데요, `),
+              onclick: () => ctx.fill(L.aboutPost(plain(f.title, 40))),
             },
             icon('reply'),
-            '이어서 말하기',
+            L.continueTalk,
           ),
         ),
   )
 }
 
-/** 먼저 챙긴 일의 제안: [해 줘]는 그 부탁을 대화로 보내고, [괜찮아요]는 넘긴다 */
+/** A proactive suggestion: [Do it] sends that request to the chat, [No thanks] skips it */
 function suggestActions(ctx: LifeCtx, f: FeedItem, ask: string) {
   if (f.answered)
     return h(
       'div',
       { class: 'feed-actions' },
-      h('span', { class: 'meta', text: f.answered === 'yes' ? '맡겼어요' : '넘겼어요' }),
+      h('span', { class: 'meta', text: f.answered === 'yes' ? L.handedOver : L.skipped }),
     )
   return h(
     'div',
     { class: 'feed-actions suggest-actions' },
     h('button', {
       class: 'btn small',
-      text: f.askLabel || '해 줘',
+      text: f.askLabel || L.doIt,
       onclick: () => {
         ctx.act({ action: 'feed-answer', id: f.id, answer: 'yes' })
         ctx.ask(ask)
@@ -249,18 +248,18 @@ function suggestActions(ctx: LifeCtx, f: FeedItem, ask: string) {
     }),
     h('button', {
       class: 'btn-ghost small',
-      text: '괜찮아요',
+      text: L.fine,
       onclick: () => ctx.act({ action: 'feed-answer', id: f.id, answer: 'no' }),
     }),
   )
 }
 
-/** 먼저 챙기기 스위치: 아침 6시~밤 10시 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴 챙길 일만 알린다 (ADR 0019·0025) */
+/** Proactive check switch: every hour from 6 AM to 10 PM, looks at connected services and what Dool2 did, and only reports what needs attention (ADR 0019, 0025) */
 function watchCard(ctx: LifeCtx) {
   const w = ctx.life?.watch ?? { on: true }
   const sw = h('button', {
     class: w.on ? 'switch on' : 'switch',
-    label: w.on ? '먼저 챙기기 끄기' : '먼저 챙기기 켜기',
+    label: w.on ? L.watchOff : L.watchOn,
     onclick: () => ctx.act({ action: 'watch', on: !w.on }),
   })
   sw.setAttribute('role', 'switch')
@@ -274,14 +273,10 @@ function watchCard(ctx: LifeCtx) {
       h(
         'div',
         { class: 'grow' },
-        h('strong', { text: '먼저 챙기기' }),
+        h('strong', { text: L.watchTitle }),
         h('p', {
           class: 'meta',
-          text: w.busy
-            ? '연결한 서비스를 살펴보는 중이에요…'
-            : w.on
-              ? '아침 6시부터 밤 10시까지 한 시간마다 연결한 서비스와 두리가 해 둔 일을 살펴, 챙길 일만 알려 드려요.'
-              : '꺼 두었어요.',
+          text: w.busy ? L.watchBusy : w.on ? L.watchDesc : L.watchIsOff,
         }),
       ),
       sw,
@@ -289,7 +284,7 @@ function watchCard(ctx: LifeCtx) {
     w.on && !w.busy
       ? h('button', {
           class: 'btn-text small',
-          text: '지금 살펴보기',
+          text: L.watchNow,
           onclick: () => ctx.act({ action: 'watch-now' }),
         })
       : undefined,
@@ -302,18 +297,18 @@ function dayLabel(iso: string) {
   const diff = Math.round(
     (new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000,
   )
-  if (diff <= 0) return '오늘'
-  if (diff === 1) return '어제'
-  return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
+  if (diff <= 0) return L.today
+  if (diff === 1) return L.yesterday
+  return L.dayLong(d)
 }
 
-// ── 목표 ──
+// ── Goals ──
 
 export function whenText(r: Routine) {
-  // 끝나는 때가 지나 스스로 꺼진 건 "끝남"
-  if (!r.enabled) return r.endedAt ? '끝남' : '꺼 둠'
-  if (!r.schedule) return '시간 정하지 않음'
-  const next = r.nextRunAt ? ` · 다음 ${nextText(r.nextRunAt)}` : ''
+  // One that turned itself off after its end time counts as "ended"
+  if (!r.enabled) return r.endedAt ? L.ended : L.turnedOff
+  if (!r.schedule) return L.noTime
+  const next = r.nextRunAt ? L.next(nextText(r.nextRunAt)) : ''
   return `${[scheduleLabel(r.schedule), ruleLabel(r)].filter(Boolean).join(' · ')}${next}`
 }
 
@@ -323,16 +318,16 @@ function nextText(iso: string) {
   const days = Math.round(
     (new Date(d.toDateString()).getTime() - new Date(now.toDateString()).getTime()) / 86_400_000,
   )
-  const t = d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
-  if (days === 0) return `오늘 ${t}`
-  if (days === 1) return `내일 ${t}`
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${t}`
+  const t = d.toLocaleTimeString(lang, { hour: 'numeric', minute: '2-digit' })
+  if (days === 0) return L.todayAt(t)
+  if (days === 1) return L.tomorrowAt(t)
+  return L.dateAt(d.getMonth() + 1, d.getDate(), t)
 }
 
-/** 목표 화면에서 펼쳐 둔 칸 (다시 그려도 그대로) */
+/** Folds left open on the goals screen (kept across redraws) */
 const goalsOpen = { off: false, add: false }
 
-/** 펼침 칸: 다시 그려도 열린 채로 둔다 */
+/** A fold: stays open across redraws */
 function fold(key: keyof typeof goalsOpen, summary: string, ...body: (Node | undefined)[]) {
   const d = h('details', { class: 'goal-fold' }, h('summary', { class: 'over', text: summary }), ...body)
   d.open = goalsOpen[key]
@@ -343,30 +338,28 @@ function fold(key: keyof typeof goalsOpen, summary: string, ...body: (Node | und
 }
 
 /**
- * 목표: 진행 중인 목표는 카드, 예약한 일은 한 줄씩(다음 할 때 가까운 순).
- * 꺼 둔 것·끝난 것과 새 목표 세우기는 접어 둔다 (목표가 많아지면 보기 불편했다, 11-20 실사용)
+ * Goals: goals in progress are cards, scheduled tasks are one row each (soonest first).
+ * Turned-off or ended ones and "set a new goal" are folded (too much to scan with many goals, seen in real use 11-20)
  */
 export function goalsView(ctx: LifeCtx): HTMLElement {
-  const box = h(
-    'section',
-    { class: 'tab-page goals' },
-    ...header('목표', '정해 둔 때가 되면 두리가 먼저 해요'),
+  const box = h('section', { class: 'tab-page goals' }, ...header(L.goalsTitle, L.goalsSub))
+  const list = (ctx.life?.routines ?? []).filter(
+    (r) => !(r.target === 'feed' && r.title === FEED_ROUTINE_TITLE),
   )
-  const list = (ctx.life?.routines ?? []).filter((r) => !(r.target === 'feed' && r.title === '피드'))
   const on = list.filter((r) => r.enabled)
   const off = list.filter((r) => !r.enabled)
   const soon = (a: Routine, b: Routine) =>
     (a.nextRunAt ?? '9999').localeCompare(b.nextRunAt ?? '9999') || a.title.localeCompare(b.title)
   const goals = on.filter((r) => r.category).sort(soon)
   const routines = on.filter((r) => !r.category).sort(soon)
-  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
+  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), L.receiving))
   if (goals.length) {
-    box.append(h('h2', { class: 'over', text: `진행 중 ${goals.length}` }))
+    box.append(h('h2', { class: 'over', text: L.inProgress(goals.length) }))
     for (const g of goals) box.append(goalCard(ctx, g))
   }
   if (routines.length) {
     box.append(
-      h('h2', { class: 'over', text: `예약한 일 ${routines.length}` }),
+      h('h2', { class: 'over', text: L.scheduledCount(routines.length) }),
       h('div', { class: 'card goal-rows' }, ...routines.map((r) => goalRow(ctx, r))),
     )
   }
@@ -374,7 +367,7 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
     box.append(
       fold(
         'off',
-        `꺼 둔 것·끝난 것 ${off.length}`,
+        L.offCount(off.length),
         h('div', { class: 'card goal-rows' }, ...off.map((r) => goalRow(ctx, r))),
       ),
     )
@@ -383,10 +376,10 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       h(
         'div',
         { class: 'card ask-card' },
-        h('div', { class: 'card-label' }, doori('', 22), '대화로 말하면 돼요'),
+        h('div', { class: 'card-label' }, doori('', 22), L.askByChat),
         h('p', {
           class: 'card-text',
-          text: '"매일 아침 7시 반에 날씨랑 일정 알려 줘", "주 3회 운동하고 싶어"처럼 말하면 두리가 목표와 일정을 만들어요.',
+          text: L.askByChatText,
         }),
       ),
     )
@@ -396,12 +389,12 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
     grid.append(
       h(
         'button',
-        { class: 'goal-tile', onclick: () => ctx.fill(`${c} 목표를 세우고 싶어요: `) },
+        { class: 'goal-tile', onclick: () => ctx.fill(L.newGoalFill(categoryLabel(c))) },
         emoTile(k.emo),
         h(
           'span',
           { class: 'row-text' },
-          h('span', { class: 'row-t', text: c }),
+          h('span', { class: 'row-t', text: categoryLabel(c) }),
           h('span', { class: 'row-d', text: k.hint }),
         ),
         icon('plus', 'i plus'),
@@ -410,11 +403,11 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
   }
   const examples = (
     [
-      ['매일 아침 7시 반에 날씨·일정·오는 택배 알려 줘', '아침 브리핑'],
-      ['매주 월요일 아침에 지난주 카드 쓴 돈 정리해 줘', '주간 가계부'],
-      ['매달 25일에 이번 달 휴대폰 요금 확인해 줘', '요금 확인'],
-      ['KTX 금요일 저녁 부산 가는 표, 취소표 나오면 알려 줘', '취소표 지켜보기'],
-    ] as const
+      [L.example1, L.exampleNote1],
+      [L.example2, L.exampleNote2],
+      [L.example3, L.exampleNote3],
+      [L.example4, L.exampleNote4],
+    ] as [string, string][]
   ).map(([t, note]) =>
     h(
       'button',
@@ -428,24 +421,16 @@ export function goalsView(ctx: LifeCtx): HTMLElement {
       ),
     ),
   )
-  // 목표가 적으면 펼쳐 두고, 많아지면 접어 둔다
+  // With few goals show them open; with many, fold them
   if (list.length < 3) {
-    box.append(h('h2', { class: 'over', text: '새 목표 세우기' }), grid)
-    box.append(h('h2', { class: 'over', text: '이렇게 많이 예약해요' }), ...examples)
+    box.append(h('h2', { class: 'over', text: L.newGoal }), grid)
+    box.append(h('h2', { class: 'over', text: L.manyScheduled }), ...examples)
   } else
-    box.append(
-      fold(
-        'add',
-        '새 목표 세우기',
-        grid,
-        h('h2', { class: 'over', text: '이렇게 많이 예약해요' }),
-        ...examples,
-      ),
-    )
+    box.append(fold('add', L.newGoal, grid, h('h2', { class: 'over', text: L.manyScheduled }), ...examples))
   return box
 }
 
-/** 예약한 일 한 줄: 이름 · 언제(다음 할 때), 오른쪽 스위치 */
+/** A scheduled-task row: name, when (next run), and a switch on the right */
 function goalRow(ctx: LifeCtx, r: Routine) {
   const k = r.category ? CATEGORY[r.category] : undefined
   return h(
@@ -456,17 +441,20 @@ function goalRow(ctx: LifeCtx, r: Routine) {
       'span',
       { class: 'row-text' },
       h('span', { class: 'row-t', text: r.title }),
-      h('span', { class: 'row-d', text: [r.category, whenText(r)].filter(Boolean).join(' · ') }),
+      h('span', {
+        class: 'row-d',
+        text: [r.category ? categoryLabel(r.category) : undefined, whenText(r)].filter(Boolean).join(' · '),
+      }),
     ),
     toggle(ctx, r),
   )
 }
 
-/** 켜고 끄기 스위치 */
+/** On/off switch */
 function toggle(ctx: LifeCtx, r: Routine) {
   const sw = h('button', {
     class: r.enabled ? 'switch on' : 'switch',
-    label: r.enabled ? '끄기' : '켜기',
+    label: r.enabled ? L.turnOff : L.turnOn,
     onclick: (e) => {
       e.stopPropagation()
       rememberFlip(r.id, !r.enabled)
@@ -489,7 +477,7 @@ function goalCard(ctx: LifeCtx, r: Routine) {
   const k = r.category ? CATEGORY[r.category] : undefined
   const done = r.plan?.filter((p) => p.done).length ?? 0
   const total = r.plan?.length ?? 0
-  // 최근 결과는 목록에서 빼고 상세에서 본다 (목록이 길어졌다)
+  // The latest result is left out of the list and shown in the detail (the list got too long)
   return h(
     'div',
     { class: r.enabled ? 'card goal-card' : 'card goal-card off', onclick: () => ctx.openGoal(r.id) },
@@ -501,7 +489,10 @@ function goalCard(ctx: LifeCtx, r: Routine) {
         'span',
         { class: 'row-text' },
         h('span', { class: 'row-t', text: r.title }),
-        h('span', { class: 'row-d', text: [r.category, whenText(r)].filter(Boolean).join(' · ') }),
+        h('span', {
+          class: 'row-d',
+          text: [r.category ? categoryLabel(r.category) : undefined, whenText(r)].filter(Boolean).join(' · '),
+        }),
       ),
       toggle(ctx, r),
     ),
@@ -510,20 +501,20 @@ function goalCard(ctx: LifeCtx, r: Routine) {
           'div',
           { class: 'goal-progress' },
           bar(total ? done / total : 0),
-          h('span', { class: 'meta', text: `계획 ${done}/${total}` }),
+          h('span', { class: 'meta', text: L.plan(done, total) }),
         )
       : undefined,
   )
 }
 
-/** 목표 상세 (시트) */
+/** Goal detail (sheet) */
 export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
   const sheet = h('section', { class: 'sheet float app-sheet rise goal-sheet' })
   const r = ctx.life?.routines.find((x) => x.id === id)
   if (!r) return sheet
   const k = r.category ? CATEGORY[r.category] : undefined
   sheet.append(
-    h('button', { class: 'fbtn small sheet-x', label: '닫기', onclick: ctx.close }, icon('close')),
+    h('button', { class: 'fbtn small sheet-x', label: L.close, onclick: ctx.close }, icon('close')),
     h(
       'div',
       { class: 'approve-head' },
@@ -532,7 +523,10 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
         'div',
         {},
         h('strong', { class: 'title-2', text: r.title }),
-        h('span', { class: 'meta', text: [r.category ?? '예약한 일', whenText(r)].join(' · ') }),
+        h('span', {
+          class: 'meta',
+          text: [r.category ? categoryLabel(r.category) : L.kindRoutine, whenText(r)].join(' · '),
+        }),
       ),
     ),
   )
@@ -544,7 +538,7 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
         {
           class: p.done ? 'plan-step done' : 'plan-step',
           onclick: (e: MouseEvent) => {
-            // 끝냈다고 누르면 바로 체크가 그려진다 (PC 답을 기다리지 않는다)
+            // Tapping done draws the check right away (does not wait for the PC)
             const b = e.currentTarget as HTMLElement
             if (!p.done) {
               b.classList.add('done')
@@ -560,14 +554,11 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
       )
       ul.append(h('li', {}, b))
     })
-    sheet.append(h('h2', { class: 'over', text: '계획' }), ul)
+    sheet.append(h('h2', { class: 'over', text: L.planTitle }), ul)
   }
-  sheet.append(
-    h('h2', { class: 'over', text: '두리가 할 일' }),
-    h('p', { class: 'card-text', text: r.prompt }),
-  )
+  sheet.append(h('h2', { class: 'over', text: L.doriTodo }), h('p', { class: 'card-text', text: r.prompt }))
   if (r.log?.length) {
-    sheet.append(h('h2', { class: 'over', text: '진행 기록' }))
+    sheet.append(h('h2', { class: 'over', text: L.progressLog }))
     for (const l of r.log.slice(0, 8))
       sheet.append(
         h(
@@ -579,7 +570,7 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
       )
   } else if (r.lastResult)
     sheet.append(
-      h('h2', { class: 'over', text: '지난 결과' }),
+      h('h2', { class: 'over', text: L.lastResult }),
       h('p', { class: 'card-text', text: plain(r.lastResult, 300) }),
     )
   sheet.append(
@@ -590,13 +581,13 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
         'button',
         { class: 'btn', onclick: () => (ctx.act({ action: 'routine-run', id: r.id }), ctx.close()) },
         icon('play'),
-        r.category ? '지금 체크인' : '지금 해 보기',
+        r.category ? L.checkInNow : L.tryNow,
       ),
       h(
         'button',
-        { class: 'btn-ghost', onclick: () => ctx.fill(`"${r.title}" 목표 말인데요, `) },
+        { class: 'btn-ghost', onclick: () => ctx.fill(L.aboutGoal(r.title)) },
         icon('reply'),
-        '대화로 이어 가기',
+        L.continueInChat,
       ),
     ),
     h(
@@ -604,14 +595,14 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
       { class: 'sheet-actions' },
       h('button', {
         class: 'btn-text',
-        text: r.enabled ? '잠시 끄기' : '다시 켜기',
+        text: r.enabled ? L.pause : L.resume,
         onclick: () => ctx.act({ action: 'routine-toggle', id: r.id, on: !r.enabled }),
       }),
       h('button', {
         class: 'btn-text danger',
-        text: '지우기',
+        text: L.delete,
         onclick: () => {
-          if (confirm(`"${r.title}"을 지울까요?`)) {
+          if (confirm(L.confirmDelete(r.title))) {
             ctx.act({ action: 'routine-delete', id: r.id })
             ctx.close()
           }
@@ -622,22 +613,22 @@ export function goalSheet(ctx: LifeCtx, id: string): HTMLElement {
   return sheet
 }
 
-// ── 보관함 ──
+// ── Library ──
 
 const ITEM: Record<LibraryItem['kind'], { icon: IconName; tone: string; label: string; emo: string }> = {
-  note: { icon: 'note', tone: 'blue', label: '정리', emo: 'memo' },
-  link: { icon: 'link', tone: 'violet', label: '링크', emo: 'link' },
-  product: { icon: 'cart', tone: 'amber', label: '상품', emo: 'shopping' },
-  place: { icon: 'place', tone: 'rose', label: '장소', emo: 'pin' },
-  file: { icon: 'image', tone: 'mint', label: '파일', emo: 'picture' },
+  note: { icon: 'note', tone: 'blue', label: L.itemNote, emo: 'memo' },
+  link: { icon: 'link', tone: 'violet', label: L.itemLink, emo: 'link' },
+  product: { icon: 'cart', tone: 'amber', label: L.itemProduct, emo: 'shopping' },
+  place: { icon: 'place', tone: 'rose', label: L.itemPlace, emo: 'pin' },
+  file: { icon: 'image', tone: 'mint', label: L.itemFile, emo: 'picture' },
 }
 
 export function libraryView(ctx: LifeCtx): HTMLElement {
-  const box = h('section', { class: 'tab-page library' }, ...header('보관함'))
+  const box = h('section', { class: 'tab-page library' }, ...header(L.libraryTitle))
   const seg = h('div', { class: 'seg' })
   for (const [id, label] of [
-    ['made', '만든 것'],
-    ['media', '사진·파일'],
+    ['made', L.madeSeg],
+    ['media', L.mediaSeg],
   ] as const)
     seg.append(
       segBtn(ctx.librarySeg === id, {
@@ -647,15 +638,13 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
     )
   box.append(seg)
   const list = ctx.libraryList.items
-  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'))
+  if (!ctx.life) box.append(h('p', { class: 'wait' }, h('span', { class: 'spin' }), L.receiving))
   else if (!list.length)
     box.append(
       empty(
         '',
-        ctx.librarySeg === 'media' ? '아직 사진·파일이 없어요' : '아직 남긴 게 없어요',
-        ctx.librarySeg === 'media'
-          ? '두리가 만든 파일과 받은 사진이 여기에 모여요.'
-          : '상품 비교, 정리한 글, 링크를 모아 두는 곳이에요. 두리 답을 길게 누르면 남길 수 있어요.',
+        ctx.librarySeg === 'media' ? L.noMedia : L.noSaved,
+        ctx.librarySeg === 'media' ? L.noMediaSub : L.noSavedSub,
       ),
     )
   for (const it of list) {
@@ -664,7 +653,7 @@ export function libraryView(ctx: LifeCtx): HTMLElement {
       h(
         'button',
         { class: 'card lib-card', onclick: () => ctx.openItem(it.id) },
-        // 그림이 있는 파일은 작은 미리보기로 (없으면 종류 그림)
+        // A file with an image gets a small preview (otherwise the kind icon)
         it.thumb ? thumbTile(it.thumb, it.title) : emoTile(k.emo),
         h(
           'span',
@@ -695,7 +684,7 @@ function previewImg(b64: string, alt: string, onOpen?: (src: string) => void) {
   return img
 }
 
-/** 목록 줄의 작은 미리보기 */
+/** Small preview in a list row */
 function thumbTile(b64: string, alt: string) {
   const img = h('img', { class: 'lib-thumb' }) as HTMLImageElement
   img.src = `data:image/jpeg;base64,${b64}`
@@ -709,10 +698,10 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
   if (!it) return sheet
   const k = ITEM[it.kind]
   const body = h('div', { class: 'item-body bubble rich' })
-  // 앞부분만 받은 글: 전체가 오면 시트를 다시 그린다
+  // Only the start was received: the sheet is redrawn when the whole thing arrives
   body.append(rich(it.cut ? `${it.body}…` : it.body))
   sheet.append(
-    h('button', { class: 'fbtn small sheet-x', label: '닫기', onclick: ctx.close }, icon('close')),
+    h('button', { class: 'fbtn small sheet-x', label: L.close, onclick: ctx.close }, icon('close')),
     h(
       'div',
       { class: 'approve-head' },
@@ -727,10 +716,10 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
         }),
       ),
     ),
-    // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
+    // A picture or invitation Dool2 made: a preview rendered by the PC
     ...(it.image ? [previewImg(it.image, it.title, (src) => ctx.view?.(src, it.title, it.path))] : []),
     ...(it.body ? [body] : []),
-    // PC에 있는 원본 파일: 폰에 저장하거나 카톡·메일로 보내기
+    // The original file on the PC: save it on the phone or send it by messenger or mail
     ...(it.path && ctx.fileAction
       ? [
           h(
@@ -740,13 +729,13 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
               'button',
               { class: 'btn', onclick: () => ctx.fileAction?.(it, 'save') },
               icon('download'),
-              '폰에 저장',
+              L.saveToPhone,
             ),
             h(
               'button',
               { class: 'btn-ghost', onclick: () => ctx.fileAction?.(it, 'share') },
               icon('share'),
-              '보내기',
+              L.send,
             ),
           ),
         ]
@@ -754,17 +743,17 @@ export function itemSheet(ctx: LifeCtx, id: string): HTMLElement {
     h(
       'div',
       { class: 'sheet-actions' },
-      it.url ? h('a', { class: 'btn' }, icon('link'), `${hostOf(it.url)} 열기`) : undefined,
+      it.url ? h('a', { class: 'btn' }, icon('link'), L.openHost(hostOf(it.url))) : undefined,
       h(
         'button',
-        { class: 'btn-ghost', onclick: () => ctx.fill(`보관함의 "${it.title}" 말인데요, `) },
+        { class: 'btn-ghost', onclick: () => ctx.fill(L.aboutItem(it.title)) },
         icon('reply'),
-        '이어서 말하기',
+        L.continueTalk,
       ),
     ),
     h('button', {
       class: 'btn-text danger',
-      text: '보관함에서 지우기',
+      text: L.deleteFromLibrary,
       onclick: () => {
         ctx.act({ action: 'library-delete', id: it.id })
         ctx.close()
@@ -789,7 +778,7 @@ function hostOf(url?: string) {
   }
 }
 
-// ── 두리 판: 예정 · 기억 ──
+// ── Assistant panel: upcoming and memory ──
 
 export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
   const list = (ctx.life?.routines ?? [])
@@ -799,7 +788,7 @@ export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
     return [
       h('p', {
         class: 'meta seg-empty',
-        text: '예정된 일이 없어요. "내일 10시에 알려 줘"처럼 말하면 여기에 보여요.',
+        text: L.noUpcoming,
       }),
     ]
   return list.map((r) =>
@@ -818,14 +807,14 @@ export function upcomingSeg(ctx: LifeCtx): HTMLElement[] {
   )
 }
 
-/** 두리 설정: 나를 부르는 이름 · 말투 · 답 길이 */
+/** Dool2 settings: what to call me, tone, reply length */
 function identityBlock(ctx: LifeCtx): HTMLElement {
   const id = ctx.life?.identity ?? {}
   const name = h('input', { class: 'field' })
   name.id = 'identity-name'
-  name.placeholder = '예: 민지 (비우면 호칭 없이)'
+  name.placeholder = L.namePlaceholder
   name.value = id.userName ?? ''
-  const save = h('button', { class: 'btn small', text: '저장' })
+  const save = h('button', { class: 'btn small', text: L.save })
   save.type = 'submit'
   const form = h('form', { class: 'feed-form' }, name, save)
   form.onsubmit = (e) => {
@@ -841,29 +830,29 @@ function identityBlock(ctx: LifeCtx): HTMLElement {
   return h(
     'div',
     { class: 'identity' },
-    h('p', { class: 'over', text: '나를 부르는 이름' }),
+    h('p', { class: 'over', text: L.callMe }),
     form,
-    h('p', { class: 'over', text: '말투' }),
+    h('p', { class: 'over', text: L.tone }),
     seg(
       id.tone ?? 'warm',
       [
-        ['warm', '다정하게'],
-        ['neat', '깔끔하게'],
-        ['buddy', '친구처럼'],
+        ['warm', L.toneWarm],
+        ['neat', L.toneNeat],
+        ['buddy', L.toneBuddy],
       ],
       (tone) => ctx.act({ action: 'identity', tone }),
     ),
-    h('p', { class: 'over', text: '답 길이' }),
+    h('p', { class: 'over', text: L.length }),
     seg(
       id.length ?? 'normal',
       [
-        ['short', '짧게'],
-        ['normal', '보통'],
-        ['detail', '자세히'],
+        ['short', L.lengthShort],
+        ['normal', L.lengthNormal],
+        ['detail', L.lengthDetail],
       ],
       (length) => ctx.act({ action: 'identity', length }),
     ),
-    h('p', { class: 'over', text: '기억' }),
+    h('p', { class: 'over', text: L.memory }),
   )
 }
 
@@ -871,8 +860,8 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
   const out: HTMLElement[] = [identityBlock(ctx)]
   const input = h('input', { class: 'field' })
   input.id = 'memory-add'
-  input.placeholder = '두리가 알아 두면 좋은 것 (예: 아이가 초3이에요)'
-  const add = h('button', { class: 'btn small', text: '기억하기' })
+  input.placeholder = L.memoryPlaceholder
+  const add = h('button', { class: 'btn small', text: L.remember })
   add.type = 'submit'
   const form = h('form', { class: 'feed-form' }, input, add)
   form.onsubmit = (e) => {
@@ -885,12 +874,12 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
   out.push(
     h('p', {
       class: 'meta seg-note',
-      text: '두리가 대화하며 알게 된 것이에요. 틀린 건 지우면 다음 대화부터 잊어요. 이 PC에만 저장돼요.',
+      text: L.memoryNote,
     }),
     form,
   )
   const list = ctx.life?.memory ?? []
-  if (!list.length) out.push(h('p', { class: 'meta seg-empty', text: '아직 기억한 게 없어요.' }))
+  if (!list.length) out.push(h('p', { class: 'meta seg-empty', text: L.noMemory }))
   for (const m of list)
     out.push(
       h(
@@ -903,27 +892,27 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
           h('span', { class: 'row-t', text: m.text }),
           h('span', {
             class: 'row-d',
-            text: `${m.source === 'user' ? '직접 적음' : '대화에서'} · ${shortTime(m.at)}`,
+            text: `${m.source === 'user' ? L.writtenByMe : L.fromChat} · ${shortTime(m.at)}`,
           }),
         ),
         h(
           'button',
           {
             class: 'fbtn small',
-            label: '잊기',
+            label: L.forget,
             onclick: () => ctx.act({ action: 'memory-delete', id: m.id }),
           },
           icon('trash'),
         ),
       ),
     )
-  // 두리가 알아 둔 것: 로그인해서 본 사실과 두리가 한 신청·예약 (본 날·기준 시점과 함께)
+  // What Dool2 knows: facts seen after logging in and applications or bookings it made (with the date seen and the as-of time)
   const know = ctx.life?.know ?? []
   if (know.length) {
     out.push(
       h('p', {
         class: 'meta seg-note',
-        text: '두리가 조회하거나 해 둔 일이에요. 다음 부탁에서 다시 묻지 않고 써요.',
+        text: L.knowNote,
       }),
     )
     for (const k of know)
@@ -948,10 +937,10 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
                 shortTime(k.seenAt),
                 k.kind === 'done'
                   ? k.state === 'done'
-                    ? '끝남'
+                    ? L.knowEnded
                     : k.next
-                      ? `${shortTime(k.next)} 챙김`
-                      : '진행 중'
+                      ? L.knowNext(shortTime(k.next))
+                      : L.knowRunning
                   : '',
               ]
                 .filter(Boolean)
@@ -962,7 +951,7 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
             'button',
             {
               class: 'fbtn small',
-              label: '지우기',
+              label: L.delete,
               onclick: () => ctx.act({ action: 'know-delete', id: k.id }),
             },
             icon('trash'),

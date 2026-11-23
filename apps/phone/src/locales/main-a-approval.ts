@@ -1,0 +1,36 @@
+import { messages } from '@dool2/i18n'
+
+export const mainApproval = messages({
+  ko: {
+    change: '바꾸기',
+    shipTo: (label: string) => `받는 곳 · ${label}`,
+    shipWhere: '받는 곳 · 어디로 받을까요?',
+    newAddressPlaceholder: '새 주소 (도로명·동·호수)',
+    newAddress: '+ 새 주소',
+    payMethod: '결제 수단',
+    titleMine: (title: string) => `${title} · 내 결제 수단을 먼저 골라 뒀어요`,
+    titleAsk: (title: string) => `${title} · 어떤 걸로 할까요?`,
+    titleSummary: (title: string, summary: string) => `${title} · ${summary}`,
+    more: (n: number) => `더 보기 ${n}`,
+    mineAria: (label: string, mine: string) => `${label} (내 결제 수단: ${mine})`,
+    choseTitle: '두리가 고른 것',
+    approveSent: '승인을 보냈어요. PC에서 누르는 중…',
+    rejectSent: '거절을 보냈어요',
+  },
+  en: {
+    change: 'Change',
+    shipTo: (label: string) => `Deliver to · ${label}`,
+    shipWhere: 'Deliver to · Where to?',
+    newAddressPlaceholder: 'New address (street, unit)',
+    newAddress: '+ New address',
+    payMethod: 'Payment method',
+    titleMine: (title: string) => `${title} · Your saved method is picked first`,
+    titleAsk: (title: string) => `${title} · Which one?`,
+    titleSummary: (title: string, summary: string) => `${title} · ${summary}`,
+    more: (n: number) => `More ${n}`,
+    mineAria: (label: string, mine: string) => `${label} (your payment method: ${mine})`,
+    choseTitle: 'Chosen by Dool2',
+    approveSent: 'Approval sent. Tapping it on your PC…',
+    rejectSent: 'Declined',
+  },
+})

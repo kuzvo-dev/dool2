@@ -1,5 +1,7 @@
-// 화면 그리기 도우미: 요소 만들기, 선 아이콘, 두리 답(문단·목록·굵게)
+// Drawing helpers: building elements, line icons, Dool2 replies (paragraphs, lists, bold)
 import { type Inline, richBlocks } from '@dool2/protocol/rich'
+import { lang } from './lang.js'
+import { domText } from './locales/dom.js'
 import { rememberSeg } from './motion.js'
 
 type Child = Node | string | false | undefined | null
@@ -19,7 +21,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
-/** 24 격자 선 아이콘. 글자(›, ✓)를 아이콘으로 쓰지 않는다 */
+/** 24-grid line icons. Characters (›, ✓) are not used as icons */
 export const ICON = {
   menu: ['M5 9h14M5 15h14'],
   close: ['M6 6l12 12M18 6 6 18'],
@@ -124,7 +126,7 @@ export function icon(name: IconName, cls = 'i'): SVGSVGElement {
   return svg
 }
 
-/** 두리 캐릭터 (표정: idle·working·asking·done·thinking·sleeping) */
+/** The Dool2 character (moods: idle, working, asking, done, thinking, sleeping) */
 export function doori(mood = '', size?: number) {
   const s = h('span', { class: `doori ${mood}`.trim() })
   if (size) s.style.setProperty('--s', `${size}px`)
@@ -132,20 +134,20 @@ export function doori(mood = '', size?: number) {
   return s
 }
 
-/** 움직이는 3D 두리 (packages/ui/doori3d.js를 빌드가 따로 묶은 파일) */
+/** The animated 3D Dool2 (packages/ui/doori3d.js, bundled separately by the build) */
 interface LiveDoori {
   setMood(mood: string): void
   destroy(): void
 }
 type Doori3d = { mountDoori(host: HTMLElement, opts: { mood?: string }): LiveDoori }
-const DOORI3D = './doori3d.js' // 글자로 넘겨야 빌드가 app.js에 묶지 않는다
+const DOORI3D = './doori3d.js' // Passed as a string so the build does not bundle it into app.js
 let doori3dModule: Promise<Doori3d> | undefined
 const liveSlots = new Map<string, { el: HTMLElement; mood: string; live?: LiveDoori }>()
 const MOOD_CLASSES = ['thinking', 'working', 'asking', 'done', 'sleeping']
 
 /**
- * 큰 자리의 두리: 먼저 정지 그림을 보이고, 3D가 준비되면 그 위에서 움직인다.
- * 자리(slot)마다 하나를 만들어 다시 그려도 같은 캔버스를 옮겨 쓴다. 3D를 못 쓰는 기기는 그림 그대로.
+ * Dool2 in a big spot: shows a still image first, then animates over it once 3D is ready.
+ * One per slot, so redraws reuse the same canvas. Devices without 3D keep the still image.
  */
 export function liveDoori(slot: string, mood: string, size: number): HTMLElement {
   const hit = liveSlots.get(slot)
@@ -160,7 +162,7 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
     return hit.el
   }
   const el = doori(mood, size)
-  // 다시 그릴 때 새로 만들지 않고 옮겨 쓰는 부품이라는 표시 (main.ts의 holdLive)
+  // Marks a part that is moved on redraw instead of rebuilt (holdLive in main.ts)
   el.dataset.liveSlot = slot
   const rec: { el: HTMLElement; mood: string; live?: LiveDoori } = { el, mood }
   liveSlots.set(slot, rec)
@@ -171,13 +173,13 @@ export function liveDoori(slot: string, mood: string, size: number): HTMLElement
       el.classList.add('live-ready')
     })
     .catch(() => {
-      // WebGL이 없거나 파일을 못 받으면 그림 그대로
+      // No WebGL or the file failed to load: keep the still image
     })
   return el
 }
 
-/** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
-/** 답 속 PC 파일 링크를 누르면 (main.ts가 붙인다: PC에서 받아 폰에 저장) */
+/** Dool2 reply: draws only paragraphs, lists and **bold** (never parsed as HTML) */
+/** When a PC file link in a reply is tapped (set by main.ts: fetch from the PC and save on the phone) */
 let fileOpener: (path: string, name: string) => void = () => {}
 export function setFileOpener(fn: (path: string, name: string) => void) {
   fileOpener = fn
@@ -189,13 +191,13 @@ export function rich(text: string): DocumentFragment {
     for (const part of parts) {
       const file = part.file
       if (file) {
-        // PC에 있는 파일: 누르면 PC에서 받아 폰에 저장한다
+        // A file on the PC: tapping fetches it from the PC and saves it on the phone
         parent.append(
           h(
             'button',
             {
               class: 'rich-file',
-              label: `${part.text} 폰에 받기`,
+              label: domText(lang).saveToPhone(part.text),
               onclick: (e) => {
                 e.stopPropagation()
                 fileOpener(file, part.text)
@@ -222,7 +224,7 @@ export function rich(text: string): DocumentFragment {
       continue
     }
     if (block.type === 'table') {
-      // 표: 좁은 폰에서는 옆으로 밀어 본다 (줄바꿈으로 칸이 무너지지 않게)
+      // Table: scrolls sideways on a narrow phone (so cells do not collapse when wrapping)
       const table = h('table', { class: 'rich-table' })
       if (block.head) {
         const tr = h('tr')
@@ -260,7 +262,7 @@ export function rich(text: string): DocumentFragment {
     if (block.type === 'ol' && block.start !== 1) (list as HTMLOListElement).start = block.start
     for (const item of block.items) {
       const li = h('li')
-      // 할 일 목록 "[ ] 항목" / "[x] 항목"은 동그라미 체크로
+      // To-do list "[ ] item" / "[x] item" becomes round checkboxes
       const first = item[0]
       const m = first && !first.bold ? /^\[( |x|X)\]\s*/.exec(first.text) : null
       if (m && first) {
@@ -274,15 +276,15 @@ export function rich(text: string): DocumentFragment {
   return f
 }
 
-/** 오늘이면 "오전 10:03", 아니면 "11. 14." */
+/** Today: the time ("10:03 AM"); otherwise the short date ("11/14") */
 export function shortTime(iso: string) {
   const d = new Date(iso)
   return new Date().toDateString() === d.toDateString()
-    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+    ? d.toLocaleTimeString(lang, { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString(lang, { month: 'numeric', day: 'numeric' })
 }
 
-/** 칸 고르기(.seg) 버튼: 고른 칸은 aria-pressed */
+/** Segmented (.seg) button: the chosen one has aria-pressed */
 export function segBtn(on: boolean, props: { text: string; onclick: () => void }) {
   const b: HTMLButtonElement = h('button', {
     text: props.text,
@@ -295,7 +297,7 @@ export function segBtn(on: boolean, props: { text: string; onclick: () => void }
   return b
 }
 
-/** 서비스 표시에 로고를 얹는다 (logos/<카드 id>.png). 없거나 못 불러오면 이름 첫 글자가 그대로 보인다 */
+/** Puts the logo on a service mark (logos/<card id>.png). If missing or failing to load, the first letter of the name stays */
 export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
   if (!id) return mark
   const img = document.createElement('img')
@@ -309,7 +311,7 @@ export function withLogo<T extends HTMLElement>(mark: T, id?: string): T {
   return mark
 }
 
-/** 입체 이모지 칸 (packages/ui/emoji/<key>.webp, Fluent Emoji 3D · MIT). 내용 분류에 쓴다 */
+/** 3D emoji tile (packages/ui/emoji/<key>.webp, Fluent Emoji 3D, MIT). Used for content categories */
 export function emoTile(key: string, cls = ''): HTMLElement {
   const s = document.createElement('span')
   s.className = `tile emo ${cls}`.trim()

@@ -1,8 +1,8 @@
-// QA 한 바퀴: 설치한 두리 앱을 처음 쓰는 사람처럼 써 보며 화면·영상을 남긴다.
-// 설치한 앱(/Applications/dool2.app)을 개발자 통로(--remote-debugging-port)로 열어 누르고 입력하고, 창을 녹화한다.
-// 폰은 ego 브라우저로 폰 크기 화면을 찍는다. 사용자 Chrome은 건드리지 않는다(시험용 Chrome + 시험 가게).
+// QA walkthrough: uses the installed Dool2 app like a first-time user and records screenshots and video.
+// Opens the installed app (/Applications/dool2.app) with the developer channel (--remote-debugging-port), clicks and types, and records the window.
+// The phone is captured at phone size with the ego browser. The user's Chrome is never touched (test Chrome + test shop).
 //
-//   node apps/phone/scripts/qa-walkthrough.mjs <결과 폴더>
+//   node apps/phone/scripts/qa-walkthrough.mjs <output dir>
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -36,7 +36,7 @@ const note = (title, detail = '') => {
   log('■', title, detail)
 }
 
-// ── 시험 가게 ──
+// ── Test shop ──
 const shop = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   if (req.url?.startsWith('/login')) {
@@ -52,7 +52,7 @@ const shop = createServer((req, res) => {
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)
 })
 await new Promise((r) => shop.listen(8790, '127.0.0.1', r))
-// 두 번째 사이트 (폰에서 로그인 카드를 시험할 다른 주소)
+// A second site (another address to test the login card from the phone)
 const shop2 = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   res.end(`<!doctype html><title>두리 시험 쇼핑몰 로그인</title><h1>시험 쇼핑몰 로그인</h1>
@@ -61,9 +61,9 @@ const shop2 = createServer((req, res) => {
 })
 await new Promise((r) => shop2.listen(8791, '127.0.0.1', r))
 const relay = await startRelay({ port: 8787, appDir: join(root, 'apps', 'phone', 'dist') })
-log('시험 가게 :8790, 중계 서버 :8787')
+log('test shop :8790, relay :8787')
 
-// ── 앱 켜기 ──
+// ── Launch the app ──
 mkdirSync(join(PROFILE, 'NativeMessagingHosts'), { recursive: true })
 execFileSync('open', [
   '-n',
@@ -89,10 +89,10 @@ for (let i = 0; i < 60 && !target; i++) {
     target = list.find((t) => t.type === 'page' && t.url.includes('index.html'))
   } catch {}
 }
-if (!target) throw new Error('앱 창을 찾지 못했어요')
-log('앱 창:', target.url)
+if (!target) throw new Error('App window not found')
+log('app window:', target.url)
 
-// ── 개발자 통로 (CDP) ──
+// ── Developer channel (CDP) ──
 const ws = new WebSocket(target.webSocketDebuggerUrl)
 await new Promise((r) => ws.addEventListener('open', r, { once: true }))
 let seq = 0
@@ -121,7 +121,7 @@ function cdp(method, params = {}) {
 }
 async function js(expr) {
   const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true })
-  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? 'eval 실패')
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? 'eval failed')
   return r.result.value
 }
 async function waitFor(expr, ms = 30_000, what = expr) {
@@ -130,7 +130,7 @@ async function waitFor(expr, ms = 30_000, what = expr) {
     if (await js(expr).catch(() => false)) return
     await sleep(300)
   }
-  throw new Error(`기다렸지만 안 됐어요: ${what}`)
+  throw new Error(`Waited but it did not happen: ${what}`)
 }
 let shotNo = 0
 async function shot(name) {
@@ -139,7 +139,7 @@ async function shot(name) {
   writeFileSync(f, Buffer.from(r.data, 'base64'))
   return f
 }
-/** 화면에 보이는 커서를 그 자리로 옮기고 누른다 (영상에서 어디를 눌렀는지 보이게) */
+/** Moves a visible cursor to that spot and clicks (so the video shows where it clicked) */
 async function clickAt(x, y) {
   await js(`(() => {
     let c = document.getElementById('qa-cursor')
@@ -167,7 +167,7 @@ async function click(text, sel = 'button') {
     const r = e.getBoundingClientRect()
     return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
   })()`)
-  if (!at) throw new Error(`누를 것을 못 찾았어요: ${text}`)
+  if (!at) throw new Error(`Nothing to click found: ${text}`)
   await sleep(300)
   await clickAt(at.x, at.y)
 }
@@ -175,9 +175,9 @@ async function type(selector, text) {
   const at = await js(
     `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + r.height / 2) } })()`,
   )
-  if (!at) throw new Error(`입력칸이 없어요: ${selector}`)
+  if (!at) throw new Error(`No input field: ${selector}`)
   await clickAt(at.x, at.y)
-  // 사람이 치듯 조금씩
+  // A little at a time, like a person typing
   for (const ch of text) {
     await cdp('Input.insertText', { text: ch })
     await sleep(35)
@@ -193,10 +193,10 @@ const api = async (path, init = {}) => {
   ).json()
 }
 
-// ── 폰 (ego 브라우저) ──
+// ── Phone (ego browser) ──
 let phoneNo = 0
 let space
-/** ego 브라우저에 대본을 넘긴다. 비동기로 부른다 (같은 프로세스의 중계 서버·시험 가게가 멈추지 않게) */
+/** Hands a script to the ego browser. Called asynchronously (so the relay and test shop in the same process do not stall) */
 function ego(script) {
   return new Promise((resolve, reject) => {
     const child = spawn(join(homedir(), '.local/bin/ego-browser'), ['nodejs'], {
@@ -210,7 +210,7 @@ function ego(script) {
       out += d
     })
     child.on('close', (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`폰 단계 실패: ${out.slice(-600)}`)),
+      code === 0 ? resolve(out) : reject(new Error(`Phone step failed: ${out.slice(-600)}`)),
     )
     child.stdin.end(script)
   })
@@ -237,25 +237,25 @@ await cdp('Runtime.enable')
 await cdp('Page.startScreencast', { format: 'jpeg', quality: 72, maxWidth: 1400, everyNthFrame: 1 })
 
 try {
-  // 1. 첫 실행 마법사
-  await waitFor(`!!document.querySelector('.setup-card')`, 30_000, '첫 화면')
+  // 1. First-run wizard
+  await waitFor(`!!document.querySelector('.setup-card')`, 30_000, 'first screen')
   await sleep(1200)
-  note('처음 켰을 때: 인사', await shot('welcome'))
+  note('First launch: greeting', await shot('welcome'))
   await click('시작하기')
   await waitFor(`!!document.querySelector('.choices')`)
   await sleep(800)
-  note('어떤 AI로 일할까요?', await shot('choice'))
+  note('Which AI to work with?', await shot('choice'))
   await click('Claude', '.choice')
   await sleep(500)
   await click('다음')
-  await waitFor(`!!document.querySelector('.checks')`, 60_000, '준비 상태')
+  await waitFor(`!!document.querySelector('.checks')`, 60_000, 'readiness')
   await sleep(1500)
-  note('준비 상태 확인 (Claude Code·Chrome·두리 확장)', await shot('check'))
+  note('Readiness check (Claude Code, Chrome, Dool2 extension)', await shot('check'))
 
-  // 2. 두리 확장 연결
+  // 2. Connect the Dool2 extension
   await click('추가 방법')
   await sleep(1200)
-  note('두리 확장 추가 안내', await shot('extension-guide'))
+  note('How to add the Dool2 extension', await shot('extension-guide'))
   const extDir = join(DATA, 'chrome-extension')
   for (let i = 0; i < 20 && !existsSync(join(extDir, 'manifest.json')); i++) await sleep(500)
   const chrome = spawn(
@@ -274,88 +274,92 @@ try {
   await waitFor(
     `[...document.querySelectorAll('.checks li.ok .text strong')].some((e) => e.textContent.includes('확장'))`,
     90_000,
-    '확장 연결',
+    'extension connected',
   )
   await sleep(1200)
-  note('두리 확장이 연결됨', await shot('extension-connected'))
+  note('Dool2 extension connected', await shot('extension-connected'))
   await click('다음')
   await waitFor(`!!document.querySelector('.toggles')`)
   await sleep(800)
-  note('두리가 쉬지 않게 할까요? (시험이라 [나중에])', await shot('awake'))
+  note('Keep Dool2 awake? (testing, so Later)', await shot('awake'))
   await click('나중에')
   await waitFor(
     `!document.querySelector('.setup:not([hidden])') && !!document.getElementById('home')`,
     20_000,
-    '홈',
+    'home',
   )
   await sleep(1500)
-  note('홈 화면', await shot('home'))
+  note('Home screen', await shot('home'))
 
-  // 3. 첫 부탁
+  // 3. First request
   await type('#input', '넌 누구야? 한 문장으로')
   await sleep(400)
   await click('', '#send')
   await waitFor(
     `!!document.querySelector('.msg.assistant') && !document.querySelector('.work:not(.done)')`,
     180_000,
-    '첫 답',
+    'first reply',
   )
   await sleep(1500)
-  note('첫 부탁과 답', await shot('first-answer'))
+  note('First request and reply', await shot('first-answer'))
 
-  // 4. 웹 일 + 승인
+  // 4. Web task + approval
   await click('새 부탁', '.nav-item')
   await sleep(800)
   await type('#input', '두리 시험 가게(http://127.0.0.1:8790/)에서 제주 귤 바로 구매해 줘')
   await click('', '#send')
-  await waitFor(`!!document.querySelector('.worklog li')`, 120_000, '일하는 중')
+  await waitFor(`!!document.querySelector('.worklog li')`, 120_000, 'working')
   await sleep(2500)
-  note('웹 일 하는 중 (진행 단계)', await shot('working'))
-  await waitFor(`!!document.querySelector('.approval.pending .approval-actions')`, 300_000, '승인 요청')
+  note('Web task in progress (steps)', await shot('working'))
+  await waitFor(
+    `!!document.querySelector('.approval.pending .approval-actions')`,
+    300_000,
+    'approval request',
+  )
   await sleep(2500)
-  note('승인 요청 (화면 캡처·금액·누를 버튼)', await shot('approval'))
+  note('Approval request (screen capture, amount, button to press)', await shot('approval'))
   await click('누르기', '.approval-actions button')
   await waitFor(
     `[...document.querySelectorAll('.msg.assistant')].length >= 2 && !document.querySelector('.work:not(.done)') && !document.querySelector('.approval.pending')`,
     300_000,
-    '승인 뒤 답',
+    'reply after approval',
   )
   await sleep(2000)
-  note('승인 → 두리가 누르고 확인', await shot('approved'))
+  note('Approved > Dool2 presses and checks', await shot('approved'))
 
-  // 4-2. 로그인 카드 (PC): 금고에 없는 사이트 → 대화 안 카드에 넣으면 금고에만 저장 → 두리가 채우고 로그인
+  // 4-2. Login card (PC): a site not in the vault > entering it in the chat card stores it only in the vault > Dool2 fills it in and logs in
   await click('새 부탁', '.nav-item')
   await sleep(800)
   await type('#input', '두리 시험 가게 로그인 페이지(http://127.0.0.1:8790/login)에 로그인해 줘')
   await click('', '#send')
-  await waitFor(`!!document.querySelector('.login-card form')`, 300_000, '로그인 카드')
+  await waitFor(`!!document.querySelector('.login-card form')`, 300_000, 'login card')
   await sleep(1500)
-  note('로그인 카드 (PC)', await shot('login-card'))
+  note('Login card (PC)', await shot('login-card'))
   await type('.login-card input[autocomplete=username]', 'dool2')
   await type('.login-card input[type=password]', 'test-password')
   await sleep(400)
-  note('로그인 카드에 입력', await shot('login-typed'))
+  note('Entered in the login card', await shot('login-typed'))
   await click('로그인', '.login-card button')
   await waitFor(
     `!document.querySelector('.work:not(.done)') && [...document.querySelectorAll('.msg.assistant')].length >= 2`,
     300_000,
-    '로그인 뒤 답',
+    'reply after login',
   )
   await sleep(2000)
-  note('두리가 금고로 채우고 로그인', await shot('login-done'))
+  note('Dool2 fills from the vault and logs in', await shot('login-done'))
 
-  // 5. 설정 → 폰 연결
+  // 5. Settings > connect the phone
   await click('', '#open-settings')
-  await waitFor(`!!document.querySelector('.setup-card .checks')`, 30_000, '설정')
+  await waitFor(`!!document.querySelector('.setup-card .checks')`, 30_000, 'settings')
   await sleep(1200)
-  note('설정', await shot('settings'))
+  note('Settings', await shot('settings'))
   await click('폰 연결하기')
   await waitFor(`!!document.querySelector('.pair-qr')`, 20_000, 'QR')
   await sleep(1000)
-  note('폰 연결 QR', await shot('pair-qr'))
+  note('Phone pairing QR', await shot('pair-qr'))
   const pair = (await api('/api/link/pair')).pair
   await phone(`await page.goto(${JSON.stringify(pair.url)});
-// 처음 열 때 앱이 늦게 뜨면 한 번 더 연다
+// If the app is slow to appear on first open, open it once more
 if (!(await page.waitForSelector(".code", { timeout: 15000 }).then(() => true).catch(() => false))) {
   await page.goto(${JSON.stringify(pair.url)});
   await page.waitForSelector(".code", { timeout: 20000 });
@@ -365,15 +369,15 @@ await snap(${JSON.stringify(pshot('pair-code'))});`)
   await waitFor(
     `[...document.querySelectorAll('button')].some((b) => b.textContent.includes('같아요, 연결'))`,
     30_000,
-    '확인 코드',
+    'confirmation code',
   )
   await sleep(800)
-  note('PC와 폰에 같은 확인 코드', await shot('pair-confirm'))
+  note('Same confirmation code on PC and phone', await shot('pair-confirm'))
   await click('같아요, 연결')
   await sleep(1500)
-  note('폰 연결됨', await shot('paired'))
+  note('Phone connected', await shot('paired'))
 
-  // 6. 폰에서 부탁 → 로그인 카드 → 두리가 로그인
+  // 6. Ask from the phone > login card > Dool2 logs in
   await phone(`await page.waitForSelector(".quick", { timeout: 30000 });
 await page.waitForTimeout(2500);
 await snap(${JSON.stringify(pshot('home'))});
@@ -395,30 +399,30 @@ await page.waitForFunction(() => !document.querySelector(".activity") && documen
 await page.waitForTimeout(1500);
 await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 await snap(${JSON.stringify(pshot('login-done'))});`)
-  note('폰: 부탁 → 로그인 카드 → 금고에 저장 → 두리가 로그인', '')
+  note('Phone: request > login card > save to vault > Dool2 logs in', '')
 
-  // 7. PC에서도 폰 대화가 보이는지, PC 앱 조작 설정
+  // 7. Check the phone chat shows on the PC too, and the PC app control settings
   await click('닫기')
   await sleep(1500)
   await js(`[...document.querySelectorAll('.threads button')][0]?.click()`)
   await sleep(2500)
-  note('폰에서 맡긴 일이 PC에도', await shot('thread-from-phone'))
+  note('A task from the phone also shows on the PC', await shot('thread-from-phone'))
   await click('', '#open-settings')
-  await waitFor(`!!document.querySelector('.setup-card .checks')`, 30_000, '설정')
+  await waitFor(`!!document.querySelector('.setup-card .checks')`, 30_000, 'settings')
   await js(
     `[...document.querySelectorAll('.setup-card .over')].find((e) => e.textContent.includes('PC 앱 조작'))?.scrollIntoView({ block: 'start' })`,
   )
   await sleep(1200)
-  note('설정: PC 앱 조작 (권한 상태·허용한 앱)', await shot('settings-pc-control'))
+  note('Settings: PC app control (permission state, allowed apps)', await shot('settings-pc-control'))
   await click('닫기')
   await sleep(1000)
 } catch (e) {
-  note('멈춘 곳', String(e.message))
+  note('Where it stopped', String(e.message))
   await shot('error').catch(() => {})
 } finally {
   await cdp('Page.stopScreencast').catch(() => {})
   writeFileSync(join(OUT, 'steps.json'), JSON.stringify(steps, null, 2))
-  // 영상: 화면이 바뀐 프레임을 시간대로 잇되, 오래 기다린 구간은 1.5초로 줄인다
+  // Video: join the frames where the screen changed along the timeline, shortening long waits to 1.5 s
   const list = frames.map((f, i) => {
     const next = frames[i + 1]?.t ?? f.t + 1500
     return `file '${f.f}'\nduration ${Math.min(Math.max((next - f.t) / 1000, 0.04), 1.5).toFixed(3)}`
@@ -445,7 +449,7 @@ await snap(${JSON.stringify(pshot('login-done'))});`)
       join(OUT, 'pc.mp4'),
     ])
   }
-  log('프레임', frames.length, '→', join(OUT, 'pc.mp4'))
+  log('frames', frames.length, '→', join(OUT, 'pc.mp4'))
   ws.close()
   await relay.close()
   shop.close()
