@@ -150,7 +150,7 @@ describe('승인 게이트', () => {
     const click = await tools.run('click', { tabId: 1, ref: 'e2' })
     expect(click.isError).toBe(true)
     expect(JSON.stringify(click)).not.toContain('browser_handoff')
-    expect(JSON.stringify(click)).toContain('직접 누르기')
+    expect(JSON.stringify(click)).toContain('press the final button myself')
     const r = await tools.run('request_approval', ask)
     expect(r.isError).toBe(true)
     expect(tools.approvals.list()).toHaveLength(0)

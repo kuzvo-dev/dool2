@@ -706,6 +706,7 @@ describe('본인인증 창', () => {
     const r = certScreen(t)
     expect(r).toContain('본인인증')
     expect(r).toContain('토스')
+    expect(certScreen(t, 'en')).toContain('Toss app')
   })
   it('로그인 폼은 본인인증 창이 아니다', () => {
     expect(certScreen('[e3 입력칸 "아이디"] [e4 비밀번호칸 "비밀번호"] [e5 버튼 "로그인"]')).toBeUndefined()

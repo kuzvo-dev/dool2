@@ -115,7 +115,7 @@ describe('PC 파일 도구', () => {
     ])
     expect(officeText(docx, '.docx')).toBe('첫 줄 이어서\n둘째 & 줄')
     const pptx = zip([['ppt/slides/slide1.xml', '<p:sld><a:t>제목</a:t><a:t>내용</a:t></p:sld>']])
-    expect(officeText(pptx, '.pptx')).toContain('[슬라이드 1]\n제목\n내용')
+    expect(officeText(pptx, '.pptx')).toContain('[Slide 1]\n제목\n내용')
     const hwpx = zip([
       ['Contents/section0.xml', '<hs:sec><hp:p><hp:run><hp:t>한글 문서</hp:t></hp:run></hp:p></hs:sec>'],
     ])
@@ -145,7 +145,7 @@ describe('PC 파일 도구', () => {
     writeFileSync(join(home, 'Documents', '사업자등록증.pdf'), pdf)
     const s = await tools.run('file_read', { path: '~/Documents/사업자등록증.pdf' })
     expect(s.content[0]).toMatchObject({ type: 'image' })
-    expect(text(s as never)).toContain('스캔 PDF')
+    expect(text(s as never)).toContain('scanned PDF')
   })
 
   it('PDF: 글꼴마다 다른 ToUnicode, 한글 CID 글꼴(UniKS-UCS2-H), 표 칸, 쪽 나눔', async () => {
@@ -176,7 +176,7 @@ describe('PC 파일 도구', () => {
     const { home, tools } = setup()
     writeFileSync(join(home, 'Documents', '욕실 견적.pdf'), pdf)
     const out = text(await tools.run('file_read', { path: '~/Documents/욕실 견적.pdf' }))
-    expect(out).toContain('(PDF 2쪽,')
+    expect(out).toContain('(PDF 2 pages,')
     expect(out).toContain('욕실 타일 | 2 | 1,200,000')
     expect(out).toContain("' | '")
   })
@@ -188,13 +188,13 @@ describe('PC 파일 도구', () => {
     const { home, tools } = setup()
     writeFileSync(join(home, 'Downloads', '공고문.pdf'), pdf)
     const a = text(await tools.run('file_read', { path: '~/Downloads/공고문.pdf' }))
-    const upTo = /PDF 7쪽, [\d,]+자, 이번에 1~(\d)쪽/.exec(a)?.[1]
+    const upTo = /PDF 7 pages, [\d,]+ characters, this part pages 1-(\d)/.exec(a)?.[1]
     expect(upTo).toBeDefined()
-    expect(a).toContain(`전체 7쪽 중 ${upTo}쪽까지 보여 드렸어요`)
-    expect(a).toContain('이어 읽으려면 from: 30000')
+    expect(a).toContain(`Shown up to page ${upTo} of 7`)
+    expect(a).toContain('To continue reading, from: 30000')
     const b = text(await tools.run('file_read', { path: '~/Downloads/공고문.pdf', from: 30000 }))
-    expect(b).toContain(`이번에 ${upTo}~7쪽`)
-    expect(b).not.toContain('이어 읽으려면')
+    expect(b).toContain(`this part pages ${upTo}-7`)
+    expect(b).not.toContain('To continue reading')
   })
 
   it('글이 없는 스캔 PDF(압축된 그림)는 쪽 그림을 PNG로 넘긴다', async () => {
@@ -210,7 +210,7 @@ describe('PC 파일 도구', () => {
     const png = Buffer.from((r.content[0] as { data: string }).data, 'base64')
     expect(png.subarray(1, 4).toString()).toBe('PNG')
     expect(png.readUInt32BE(16)).toBe(w)
-    expect(text(r as never)).toContain('스캔 PDF')
+    expect(text(r as never)).toContain('scanned PDF')
   })
 })
 

@@ -88,22 +88,38 @@ describe('PC 화면 제어', () => {
   it('앱스토어에서 받는 중인 앱은 설치 중이라고 알린다 (빈 앱을 보고 설치됐다고 하지 않게)', async () => {
     const { tools } = setup()
     const r = text(await tools.run('apps', { query: '받는중' }))
-    expect(r).toContain('받는중 (com.example.Downloading) · 아직 설치 중')
-    expect(text(await tools.run('apps', { query: '메모' }))).not.toContain('설치 중')
+    expect(r).toContain('받는중 (com.example.Downloading) · still installing')
+    expect(text(await tools.run('apps', { query: '메모' }))).not.toContain('installing')
+  })
+
+  it('승인 카드 글은 사용자 언어로 (기본 한국어)', async () => {
+    const ko = setup(fakeHands(), [])
+    await ko.tools.run('apps', {})
+    await ko.tools.run('request_app', { bundleId: KAKAO })
+    expect(ko.tools.approvals.list()[0]).toMatchObject({ what: '두리가 카카오톡을 조작해도 될까요?' })
+    const en = new ScreenTools(fakeHands(), new Approvals(), {
+      allowed: () => [],
+      setAllowed: () => {},
+      finalStep: () => 'approve',
+      lang: () => 'en',
+    })
+    await en.run('apps', {})
+    await en.run('request_app', { bundleId: KAKAO })
+    expect(en.approvals.list()[0]).toMatchObject({ what: 'Can Dool2 control 카카오톡?' })
   })
 
   it('터미널·설정·Finder는 기본으로 막고, 허용 요청도 받지 않는다', async () => {
     const { tools } = setup()
-    expect(text(await tools.run('read', { bundleId: 'com.apple.Terminal' }))).toContain('기본으로 막아 둔')
+    expect(text(await tools.run('read', { bundleId: 'com.apple.Terminal' }))).toContain('blocked by default')
     expect((await tools.run('request_app', { bundleId: 'com.apple.finder' })).isError).toBe(true)
   })
 
   it('권한이 꺼져 있거나 화면이 잠겨 있으면 사용자에게 말하게 한다', async () => {
     expect(
       text(await setup(fakeHands({ accessibility: false })).tools.run('read', { bundleId: KAKAO })),
-    ).toContain('손쉬운 사용')
+    ).toContain('Accessibility')
     expect(text(await setup(fakeHands({ locked: true })).tools.run('read', { bundleId: KAKAO }))).toContain(
-      '잠금을 풀어',
+      'unlock the PC',
     )
   })
 

@@ -1,9 +1,11 @@
-// 서비스 도구(커넥터) 실행기 (ADR 0018). skills/<id>/tools.json을 읽어 엔진 동작으로 풀어 실행한다.
+// Service tool (connector) runner (ADR 0018). Reads skills/<id>/tools.json and runs it as engine steps.
 //
-// - 커넥터는 데이터다. 할 수 있는 일은 여기 적힌 엔진 동작뿐이고, 누르기·입력은 BrowserTools를 거쳐
-//   지금과 같은 위험 판단(승인 게이트)을 받는다. 찾아보기 도구는 위험한 버튼을 아예 못 누른다.
-// - AI에게는 연결한 서비스(+로그인 없는 서비스)의 도구만 바로 보이고(catalog), 나머지는 service_find → service_call.
-// - 막히면 열어 둔 탭 번호와 함께 "브라우저 도구로 이어서"를 돌려준다. 사이트가 바뀐 것일 수 있어 기록해 둔다.
+// - A connector is data. It can only do the engine steps listed here, and clicks and typing go through
+//   BrowserTools, so they get the same risk check (approval gate). Lookup tools cannot press risky buttons at all.
+// - The AI sees only the tools of connected services (+ services without login) directly (catalog); the rest go
+//   through service_find → service_call.
+// - When a step fails, it returns the open tab number with "continue with browser tools", and records the
+//   breakage since the site may have changed.
 import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -38,16 +40,26 @@ import {
 } from './browser-tools.js'
 import type { ConnectorHealth, Outcome } from './connector-health.js'
 import type { Journal } from './journal.js'
+import {
+  AREA_SUFFIX,
+  AREA_WORD,
+  EXTENSION_OFFLINE,
+  HUMAN_CHECK,
+  MY_ADDRESS,
+  SNAPSHOT_ROLE,
+  TOOL_STATUS,
+  YES,
+} from './region/kr/connectors.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,40}$/
-/** 같은 서비스를 잇달아 열 때 사이 간격. 한꺼번에 여러 번 열면 사이트가 막는다 (쿠팡, 2026-11-18) */
+/** Gap between back-to-back opens of the same service. Opening many at once gets blocked (Coupang, 2026-11-18) */
 const SITE_GAP_MS = 1500
-/** 표시를 못 찾았을 때 다시 읽는 길이 (보통 읽기는 8천 자) */
+/** Read length when a mark was not found (a normal read is 8,000 chars) */
 const LONG_READ = 60_000
-/** 막은 화면 글이 이런 말이면 사람이 풀 수 있는 로봇 확인이다 (그냥 접속 차단과 다르다) */
-const HUMAN_CHECK = /보안\s*확인|로봇|캡차|captcha|자동\s*입력|보안\s*문자/i
+/** Extension-offline errors once the browser bridge message is in English (see EXTENSION_OFFLINE) */
+const EXTENSION_OFFLINE_EN = /extension.*not connected|not connected.*extension/i
 
-/** AI에게 내보이는 도구 하나 (MCP 서버가 그대로 등록한다) */
+/** One tool shown to the AI (the MCP server registers it as is) */
 export interface ServiceToolSpec {
   name: string
   title: string
@@ -60,11 +72,11 @@ export interface ServiceToolSpec {
 interface Loaded {
   card: ConnectCard
   connector?: Connector
-  /** tools.json이 있는데 형식이 틀렸으면 그 문제 */
+  /** The problem, when tools.json exists but has the wrong shape */
   broken?: string
 }
 
-/** 막힌 기록 (사이트가 바뀌었는지 볼 때) */
+/** A breakage record (to see whether a site changed) */
 export interface Breakage {
   tool: string
   step: number
@@ -79,12 +91,12 @@ const text = (t: string, isError = false): ToolResult => ({
   ...(isError ? { isError: true } : {}),
 })
 
-/** 오늘 날짜 (한국 시간, YYYY-MM-DD) */
+/** Today's date (Korea time, YYYY-MM-DD) */
 function today(now: Date): string {
   return new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10)
 }
 
-/** 읽은 값을 이름에 담기. append면 앞에서 모은 목록 뒤에 붙인다 (여러 기간·여러 쪽을 한 목록으로) */
+/** Store a read value under a name. With append, add to the list collected so far (several periods or pages in one list) */
 function keep(scope: Scope, name: string, value: unknown, append?: boolean) {
   const before = scope[name]
   if (!append || before === undefined || before === null) {
@@ -95,18 +107,18 @@ function keep(scope: Scope, name: string, value: unknown, append?: boolean) {
   scope[name] = [...list(before), ...list(value)]
 }
 
-/** 단계 실패: 이 단계에서 막혔다 (optional이면 건너뛴다) */
+/** Step failed: stuck at this step (skipped when optional) */
 class StepError extends Error {}
-/** 위험 판단에 멈췄다 (돌려줄 말 그대로) */
+/** Stopped by the risk check (the message is returned as is) */
 class GuardStop extends Error {}
 
 export class Connectors {
   private cache?: { at: number; items: Map<string, Loaded> }
-  /** 서비스마다 다시 쓰는 탭 (탭이 너무 많아지지 않게) */
+  /** One reused tab per service (so tabs do not pile up) */
   private tabs = new Map<string, number>()
-  /** 같은 입력으로 다시 부르면 지난 결과 (minIntervalSec) */
+  /** Last result for the same input (minIntervalSec) */
   private recent = new Map<string, { at: number; result: ToolResult }>()
-  /** 서비스마다 한 번에 하나씩: 같은 탭을 여러 부름이 동시에 옮기지 않게 줄을 세운다 */
+  /** One call at a time per service: queue calls so they do not move the same tab at once */
   private lanes = new Map<string, Promise<unknown>>()
   private lastRun = new Map<string, number>()
   readonly breakages: Breakage[] = []
@@ -116,44 +128,45 @@ export class Connectors {
       dir: string | undefined
       browser: BrowserCaller
       tools: BrowserTools
-      /** 연결을 마친 서비스 id → 시각 */
+      /** Connected service id → time */
       connected: () => Record<string, string>
       now?: () => Date
-      /** 기다리기 간격 (시험에서 줄인다) */
+      /** Poll interval (shorter in tests) */
       pollMs?: number
-      /** 건강 기록 (ADR 0020): 잇달아 깨지는 도구는 잠시 쉰다 */
+      /** Health record (ADR 0020): tools that keep breaking rest for a while */
       health?: ConnectorHealth
-      /** 일한 기록: 도구를 부를 때마다 결과·걸린 시간·막힌 까닭을 며칠 남긴다 */
+      /** Activity log: each tool call keeps its result, time taken and reason for a few days */
       journal?: Journal
-      /** 연결된 확장 버전 (예전 확장에는 커넥터 엔진이 없다) */
+      /** Connected extension version (older extensions have no connector engine) */
       extensionVersion?: () => string | undefined
-      /** 같은 서비스를 잇달아 열 때 사이 간격 (시험에서 줄인다) */
+      /** Gap between back-to-back opens of the same service (shorter in tests) */
       gapMs?: number
       /**
-       * 이 서비스에 연결한 계정 아이디(금고). 도구 주소의 {{account}}에 들어간다 —
-       * 크롬에 다른 구글 계정이 먼저 로그인돼 있으면 /mail/u/0이 엉뚱한 메일함을 열었다(실측)
+       * Account ID connected to this service (vault). Goes into {{account}} in tool URLs —
+       * when another Google account was signed in to Chrome first, /mail/u/0 opened the wrong mailbox (measured)
        */
       accountFor?: (card: ConnectCard) => Promise<string | undefined>
       /**
-       * 내 정보 주소(가리지 않은 값). 도구의 주소 칸이 비었거나 "내 주소"면 본체가 채운다 —
-       * AI는 가린 주소만 봐서 동네 이름만 넣었고, 그 위치가 배달 주소가 됐다(실측 요기요 '신봉동 33')
+       * Address from my info (unmasked). The daemon fills a tool's address field when it is empty or "my address" —
+       * the AI only saw the masked address, typed just the neighborhood, and that became the delivery address
+       * (measured on Yogiyo: "Sinbong-dong 33")
        */
       homeAddress?: () => Promise<string | undefined>
       /**
-       * 사용자의 마지막 말 (시각·글). 찾은 뒤 사용자가 아직 고르지 않았으면 돈 내기 도구(주문 준비)를 멈춘다 —
-       * 지침으로는 "2~3개 카드로 고르게"를 따르지 않고 혼자 골랐다(실측 장보기 3)
+       * The user's last message (time, text). Used to flag a pay tool (order prep) called before the user picked —
+       * the AI ignored the "let them pick from 2–3 cards" guidance and picked alone (measured, grocery 3)
        */
       lastUser?: () => { at: number; text: string } | undefined
     },
   ) {}
 
-  /** 연결된 확장이 커넥터 엔진보다 예전이면 그 버전 (모르면 undefined: 실행해 보고 판단) */
+  /** The extension version, when it is older than the connector engine (undefined when unknown: try and see) */
   private oldExtension(): string | undefined {
     const v = this.opts.extensionVersion?.()
     return v && !versionAtLeast(v, MIN_CONNECTOR_EXTENSION) ? v : undefined
   }
 
-  /** 쉬는 중이 아니고 막힘 표시도 없는 도구 */
+  /** A tool that is not resting and not marked blocked */
   private live(card: ConnectCard, t: ConnectorTool) {
     return this.usable(t) && !this.opts.health?.resting(connectorToolName(card.id, t.name), toolPrint(t))
   }
@@ -162,13 +175,13 @@ export class Connectors {
     return (this.opts.now ?? (() => new Date()))()
   }
 
-  /** 카드·커넥터 읽기 (10초 동안은 다시 읽지 않는다) */
-  /** 서비스 도구 이름 → 제목 (일한 과정 표시용, 불러온 뒤부터) */
+  /** Service tool name → title (for showing work steps, after loading) */
   private titles = new Map<string, string>()
   titleOf(name: string): string | undefined {
     return this.titles.get(name)
   }
 
+  /** Reads cards and connectors (not again within 10 seconds) */
   async load(): Promise<Map<string, Loaded>> {
     if (this.cache && Date.now() - this.cache.at < 10_000) return this.cache.items
     const items = new Map<string, Loaded>()
@@ -195,8 +208,8 @@ export class Connectors {
             if (r.success && r.data.id === n) loaded.connector = r.data
             else
               loaded.broken = r.success
-                ? 'id가 폴더 이름과 달라요'
-                : (r.error.issues[0]?.message ?? '형식 오류')
+                ? 'id does not match the folder name'
+                : (r.error.issues[0]?.message ?? 'invalid format')
           } catch (e) {
             loaded.broken = (e as Error).message
           }
@@ -216,9 +229,9 @@ export class Connectors {
   }
 
   /**
-   * 시험용 PC: 아직 설치하지 않은 도구 정의(tools.json)를 이 PC의 진짜 Chrome에서 한 번 돌린다.
-   * 시험용 Chrome은 막는 사이트(쿠팡·29CM 등)도 사용자 Chrome에서는 열리니, 고친 정의를 여기서 확인한다.
-   * 상태(초안·막힘)·쉬는 중·같은 입력 간격은 보지 않는다. 결과의 빈 칸(조용한 고장)은 함께 알려 준다
+   * Test PC: run a tool definition (tools.json) that is not installed yet once in this PC's real Chrome.
+   * Sites that block the test Chrome (Coupang, 29CM, …) open in the user's Chrome, so fixed definitions are checked here.
+   * Ignores status (draft, blocked), resting and the same-input interval. Reports empty result fields (silent breakage)
    */
   async tryDraft(
     raw: unknown,
@@ -229,27 +242,27 @@ export class Connectors {
     const r = ConnectorSchema.safeParse(raw)
     if (!r.success)
       return text(
-        `도구 정의 형식이 틀렸어요: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`,
+        `The tool definition has the wrong shape: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`,
         true,
       )
     const card = (await this.load()).get(r.data.id)?.card
-    if (!card) return text(`이 PC에 ${r.data.id} 연결 카드가 없어요`, true)
+    if (!card) return text(`This PC has no connect card for ${r.data.id}`, true)
     const tool = r.data.tools.find((t) => t.name === toolName)
-    if (!tool) return text(`${r.data.id}에 ${toolName} 도구가 없어요`, true)
+    if (!tool) return text(`${r.data.id} has no tool named ${toolName}`, true)
     const args: Record<string, unknown> = {}
     for (const [k, p] of Object.entries(tool.input.properties))
       if (p.default !== undefined) args[k] = p.default
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
     await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
-    if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    if (bad.length) return text(`Fix the input: ${bad.join(', ')}`, true)
     const pick = this.pickGate(card.id, tool)
-    // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
+    // Connected account: only for tools with {{account}} in a URL (none = 0, Chrome's first account)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
     const { outcome, detail, ...ran } = await this.inLane(card.id, () => this.execute(card, tool, args))
     const result = withNote(ran, pick)
-    // 여러 서비스를 차례로 시험할 때 사용자 Chrome에 탭이 쌓이지 않게 (8GB 맥이 멈춘 적이 있다)
+    // Do not pile up tabs in the user's Chrome when testing many services in a row (an 8 GB Mac froze once)
     const tab = this.tabs.get(card.id)
     if (o.close && tab !== undefined) {
       await this.opts.browser.call('close', { tabId: tab }).catch(() => undefined)
@@ -260,19 +273,23 @@ export class Connectors {
     return sick.length
       ? {
           ...result,
-          content: [...result.content, { type: 'text', text: `(결과 칸이 비어 있어요: ${sick.join(', ')})` }],
+          content: [
+            ...result.content,
+            { type: 'text', text: `(Result fields are empty: ${sick.join(', ')})` },
+          ],
         }
       : result
   }
 
-  /** 시험·개발: 파일을 고친 뒤 바로 다시 읽게 */
+  /** Tests and development: reread right after a file changes */
   invalidate() {
     this.cache = undefined
   }
 
   /**
-   * 주소 칸(address)이 비었거나 "내 주소"면 내 정보 주소로 채운다. 같은 동네 이름인데 내 번지가 없으면(AI가 동네만 짐작한 것)
-   * 내 정보 주소로 바꾼다 — 다른 곳으로 보낼 때는 동네부터 다르다
+   * Fills an empty or "my address" address field with the address from my info. When it names the same
+   * neighborhood but has none of my street numbers (the AI guessed just the area), replaces it with my address —
+   * sending somewhere else starts with a different neighborhood
    */
   private async fillHome(tool: ConnectorTool, args: Record<string, unknown>) {
     const keys = Object.keys(tool.input.properties).filter((k) => /address|addr/i.test(k))
@@ -281,20 +298,17 @@ export class Connectors {
     if (!home) return
     for (const k of keys) {
       const v = args[k]
-      const ask =
-        v === undefined ||
-        v === '' ||
-        (typeof v === 'string' && /^\s*(내\s*(정보\s*)?주소|우리\s*집|집|home)\s*$/i.test(v))
+      const ask = v === undefined || v === '' || (typeof v === 'string' && MY_ADDRESS.test(v))
       if (ask) {
         args[k] = home
         continue
       }
       if (typeof v !== 'string') continue
-      // 같은 동네(동·로 이름 앞부분)인데 내 정보 주소의 번지 숫자가 하나도 없으면 짐작한 주소다
+      // Same neighborhood (start of the dong/ro name) but none of my address numbers: a guessed address
       const stems = home
         .split(/\s+/)
-        .filter((w) => /(동|읍|면|로|길)$/.test(w))
-        .map((w) => w.replace(/\d*(동|읍|면|로|길)$/, ''))
+        .filter((w) => AREA_WORD.test(w))
+        .map((w) => w.replace(AREA_SUFFIX, ''))
         .filter((w) => w.length >= 2)
       const nums = (t: string): string[] => t.match(/\d+/g) ?? []
       const sameArea = stems.some((st) => v.includes(st))
@@ -304,9 +318,10 @@ export class Connectors {
   }
 
   /**
-   * 찾아본 뒤 사용자 말 없이 바로 주문 준비(돈 내기)를 부르면 결과에 한 줄 붙인다. 막지 않는다:
-   * 사용자가 이미 골랐는지("알아서 시켜 줘" 등)는 대화를 본 AI가 판단한다 (예전엔 말을 정규식으로 보고 멈췄다).
-   * 돈은 여기서 나가지 않는다: 마지막 결제 버튼은 결제 카드로 따로 승인받는다
+   * When order prep (pay) is called right after a lookup with no new user message, adds a line to the result. It
+   * does not block: the AI, which sees the chat, judges whether the user already picked ("just order it" etc.)
+   * (it used to stop on a regex over the message). No money moves here: the last pay button gets its own approval
+   * on the payment card
    */
   private findAt = new Map<string, number>()
   private pickGate(cardId: string, tool: ConnectorTool): string | undefined {
@@ -318,11 +333,11 @@ export class Connectors {
     const found = this.findAt.get(cardId)
     const user = this.opts.lastUser?.()
     if (!found || !user || user.at > found) return undefined
-    return '(찾아본 뒤 사용자 말 없이 주문 준비로 왔어요. 사용자가 아직 안 골랐으면 찾은 후보 2~3개를 show_cards로 보여 고르게 하고 이번 답을 끝내요. 이미 골랐으면(알아서 해 달라고 했으면 포함) 그대로 진행해요.)'
+    return '(You came to order prep right after a lookup, with no new message from the user. If the user has not picked yet, show 2–3 of the found options with show_cards, let them pick, and end this reply. If they already picked (including asking you to decide for them), go ahead.)'
   }
 
   private usable(t: ConnectorTool) {
-    return !t.status.startsWith('막힘')
+    return !t.status.startsWith(TOOL_STATUS.blocked)
   }
 
   private isConnected(card: ConnectCard) {
@@ -335,7 +350,7 @@ export class Connectors {
     )
   }
 
-  /** 바로 보이는 도구: 연결한 서비스와 로그인 없는 서비스(open)의 도구 */
+  /** Directly visible tools: those of connected services and services without login (open) */
   async catalog(): Promise<ServiceToolSpec[]> {
     const out: ServiceToolSpec[] = []
     if (this.oldExtension()) return out
@@ -346,14 +361,14 @@ export class Connectors {
     return out
   }
 
-  /** AI가 보는 도구 안내: 설명 + 입력 예시 + 상태 */
+  /** Tool guide the AI sees: description + input examples + status */
   spec(card: ConnectCard, t: ConnectorTool): ServiceToolSpec {
     const ex = t.examples.map((e) => JSON.stringify(e)).join(' / ')
     const notes = [
-      `[${card.name} · ${t.tier}${t.login ? ' · 연결 필요' : ''}]`,
+      `[${card.name} · ${t.tier}${t.login ? ' · needs connection' : ''}]`,
       t.description,
-      `입력 예: ${ex}`,
-      t.status === '초안' ? '(처음 써 보는 도구예요. 결과를 한 번 더 확인해 주세요)' : '',
+      `Input examples: ${ex}`,
+      t.status === TOOL_STATUS.draft ? '(This tool is new. Double-check its results)' : '',
     ]
     return {
       name: connectorToolName(card.id, t.name),
@@ -365,7 +380,7 @@ export class Connectors {
     }
   }
 
-  /** 도구 이름으로 찾기 */
+  /** Look up by tool name */
   private async resolve(name: string): Promise<{ card: ConnectCard; tool: ConnectorTool } | undefined> {
     for (const { card, connector } of (await this.load()).values()) {
       for (const t of connector?.tools ?? [])
@@ -374,7 +389,7 @@ export class Connectors {
     return undefined
   }
 
-  /** 주소의 사이트에 커넥터가 있으면 (브라우저로 열었을 때 도구를 쓰라고 알린다) */
+  /** The connector for a URL's site, if any (to suggest its tools when the site is opened in the browser) */
   async forUrl(url: string): Promise<{ id: string; name: string; tools: string[] } | undefined> {
     let host: string
     try {
@@ -396,8 +411,9 @@ export class Connectors {
   }
 
   /**
-   * 돈 내기 도구가 있는 서비스의 사이트들. 이 사이트의 탭은 도구를 거치지 않고 열었어도 결제 흐름으로 본다
-   * (실측: 앞 대화에서 열어 둔 호텔 탭으로 바로 가서, 결제 화면을 여는 [예약하기]에 승인을 다시 받았다)
+   * Sites of services that have a pay tool. Tabs on these sites are a payment flow even when opened without a tool
+   * (measured: the AI went straight to a hotel tab from an earlier chat and asked approval again for the [Book]
+   * button that only opens checkout)
    */
   async paySites(): Promise<string[]> {
     const out: string[] = []
@@ -409,19 +425,22 @@ export class Connectors {
     return out
   }
 
-  /** 연결 화면에 보일 커넥터 상태 요약과 도구 이름 */
+  /**
+   * Connector status summary and tool names for the connect screen. The status is a catalog data value
+   * (TOOL_STATUS: verified(date) / draft / blocked), the same words as tools.json
+   */
   async summary(id: string): Promise<{ status?: string; tools?: ConnectionTool[] }> {
     const c = (await this.load()).get(id)?.connector
     if (!c) return {}
-    const ok = c.tools.filter((t) => t.status.startsWith('검증됨'))
+    const ok = c.tools.filter((t) => t.status.startsWith(TOOL_STATUS.verified))
     const status = ok.length
-      ? `검증됨(${ok
+      ? `${TOOL_STATUS.verified}(${ok
           .map((t) => /\d{4}-\d{2}-\d{2}/.exec(t.status)?.[0] ?? '')
           .sort()
           .at(-1)})`
       : c.tools.some((t) => this.usable(t))
-        ? '초안'
-        : '막힘'
+        ? TOOL_STATUS.draft
+        : TOOL_STATUS.blocked
     const tools = c.tools
       .filter((t) => this.usable(t))
       .map((t) => ({
@@ -429,7 +448,7 @@ export class Connectors {
         title: t.title,
         tier: t.tier,
         login: t.login,
-        verified: t.status.startsWith('검증됨'),
+        verified: t.status.startsWith(TOOL_STATUS.verified),
       }))
     return { status, tools }
   }
@@ -438,7 +457,7 @@ export class Connectors {
     for (const [k, v] of this.tabs) if (v === tabId) this.tabs.delete(k)
   }
 
-  // ── 서비스 찾기 (service_find) ──
+  // ── Find a service (service_find) ──
 
   async find(query: string): Promise<ToolResult> {
     const items = [...(await this.load()).values()].filter((x) => x.card.how !== 'device')
@@ -467,69 +486,72 @@ export class Connectors {
     ).slice(0, 5)
     if (!hit.length)
       return text(
-        `맞는 서비스가 없어요. 일반 검색이나 브라우저 도구로 해 보세요. (서비스: ${items.map((x) => x.card.id).join(', ')})`,
+        `No matching service. Try a web search or the browser tools. (Services: ${items.map((x) => x.card.id).join(', ')})`,
       )
-    // 연결 전 서비스는 사용자가 쓰는 곳인지 모른다: '내 ○○'를 다루는 일이면 정하기 전에 묻게 (실측 11-22: 카탈로그에
-    // 통신사가 하나뿐이라 사용자가 그 통신사를 쓴다고 넘겨짚고 남의 요금제와 연결 카드를 띄웠다)
+    // A service that is not connected yet may not be the one the user uses: for "my ..." tasks, ask before deciding
+    // (measured 11-22: the catalog had a single carrier, so the AI assumed the user was on it and showed someone
+    // else's plans and a connect card)
     const unsure = hit.some((it) => !this.isConnected(it.card) && it.card.how !== 'open')
     const caution = unsure
-      ? '\n\n⚠️ "연결 전"인 서비스는 사용자가 실제로 쓰는 곳인지 몰라요(같은 종류의 다른 업체일 수 있어요). 내 요금제·내 보장·내 내역처럼 사용자 계정이 필요한 일이면, 이 서비스로 정하거나 연결 카드를 띄우기 전에 어느 곳을 쓰는지 빠른 답 버튼으로 먼저 물어요. 들은 답은 know_save로 기억해요.'
+      ? '\n\n⚠️ A "not connected" service may not be the one the user actually uses (it could be another company of the same kind). For tasks that need the user\'s account, like my plan, my coverage or my history, first ask which one they use with quick reply buttons, before settling on this service or showing a connect card. Remember the answer with know_save.'
       : ''
     return text(hit.map((it) => this.describe(it)).join('\n\n') + caution)
   }
 
-  /** 서비스 하나를 AI가 읽을 글로: 연결 상태, 도구(등급·입력), 연동 안내 */
+  /** One service as text for the AI: connection state, tools (tier, input), connection guide */
   private describe({ card, connector }: Loaded): string {
     const connected = this.isConnected(card)
-    const state = card.how === 'open' ? '로그인 없이 씀' : connected ? '연결됨' : '연결 전'
+    const state = card.how === 'open' ? 'no login needed' : connected ? 'connected' : 'not connected'
     const lines = [`## ${card.name} (${card.id}) — ${state}`, card.summary]
     const tools = connector?.tools.filter((t) => this.usable(t)) ?? []
     if (!tools.length) {
       lines.push(
-        '두리 서비스 도구는 아직 없어요. 브라우저 도구로 해요' +
-          (card.site ? ` (https://${card.site}/).` : '.'),
-        ...(card.hints ?? []).map((h) => `- 요령: ${h}`),
+        'No Dool2 service tools yet. Use the browser tools' + (card.site ? ` (https://${card.site}/).` : '.'),
+        ...(card.hints ?? []).map((h) => `- Tip: ${h}`),
       )
       if (!connected && (card.how === 'browser' || card.how === 'official'))
-        lines.push(`로그인이 필요한 단계가 되면 connect_ask('${card.id}')로 연결 카드를 띄워요.`)
+        lines.push(`When a step needs login, show the connect card with connect_ask('${card.id}').`)
       return lines.join('\n')
     }
     for (const t of tools) {
       const need = this.opts.health?.resting(connectorToolName(card.id, t.name), toolPrint(t))
-        ? '요즘 막혀서 쉬는 중 — 브라우저 도구로'
+        ? 'resting after recent failures — use browser tools'
         : t.login && !connected
-          ? '연결 필요'
+          ? 'needs connection'
           : t.login
-            ? '연결됨'
-            : '로그인 없이'
+            ? 'connected'
+            : 'no login'
       const args = Object.entries(t.input.properties)
         .map(
           ([k, p]) =>
-            `${k}${t.input.required.includes(k) && !/address|addr/i.test(k) ? '*' : ''}(${p.description.split(/[.(]/)[0]?.trim()}${/address|addr/i.test(k) ? ' — 비우거나 "내 주소"면 내 정보 주소로 채워요' : ''})`,
+            `${k}${t.input.required.includes(k) && !/address|addr/i.test(k) ? '*' : ''}(${p.description.split(/[.(]/)[0]?.trim()}${/address|addr/i.test(k) ? ' — leave empty or "my address" to use the address in my info' : ''})`,
         )
         .join(', ')
       lines.push(
-        `- ${connectorToolName(card.id, t.name)} [${t.tier} · ${need}] ${t.title} — 입력: ${args || '없음'}`,
+        `- ${connectorToolName(card.id, t.name)} [${t.tier} · ${need}] ${t.title} — input: ${args || 'none'}`,
       )
     }
-    // 사이트 요령은 도구가 있어도 보여 준다 (도구 밖의 일 — 예: 정부24 미환급금 조회 — 을 어디서 할지 알게)
-    lines.push(...(card.hints ?? []).map((h) => `- 요령: ${h}`))
+    // Site tips are shown even when there are tools (so the AI knows where to do things outside the tools,
+    // e.g. checking unclaimed refunds on Gov24)
+    lines.push(...(card.hints ?? []).map((h) => `- Tip: ${h}`))
     const locked = tools.filter((t) => t.login && !connected)
     if (locked.length)
       lines.push(
-        `연결하면 바로: ${locked.map((t) => t.title).join(', ')}. 그 단계가 되면 connect_ask('${card.id}')로 연결 카드를 띄우고 답을 끝내요. 로그인 없이 되는 도구로 먼저 찾아 주는 건 괜찮아요.`,
+        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, show the connect card with connect_ask('${card.id}') and end the reply. Looking things up first with tools that need no login is fine.`,
       )
     lines.push(
       connected
-        ? '바로 보이는 도구 목록에 있으면 그대로 부르고, 없으면 service_call로 불러요.'
-        : "service_call({ tool: '<도구 이름>', input: { … } })로 불러요.",
+        ? 'If it is in the directly visible tool list, call it as is; otherwise call it with service_call.'
+        : "Call it with service_call({ tool: '<tool name>', input: { … } }).",
     )
     return lines.join('\n')
   }
 
-  // ── 내 주문 모아 보기 (orders_all) ──
-  // "택배 어디쯤", "찌그러져 왔어 배상", "지난주 산 것 반품"처럼 어느 쇼핑몰인지 모를 때, 연결한 쇼핑몰의 주문 찾기를 한 번에 돌린다.
-  // (실측 11-21: 쿠팡 하나만 보고 연결된 네이버페이·G마켓은 안 본 채 "어디서 샀는지 알려 달라"고 했다)
+  // ── All my orders (orders_all) ──
+  // When it is unclear which shop ("where's my package", "it arrived dented, claim", "return what I bought last
+  // week"), runs the order lookup of every connected shop at once.
+  // (measured 11-21: the AI checked only Coupang, skipped the connected Naver Pay and Gmarket, and asked
+  // "where did you buy it?")
   async ordersAll(): Promise<ToolResult> {
     const picks: { card: ConnectCard; name: string }[] = []
     for (const { card, connector } of (await this.load()).values()) {
@@ -539,7 +561,7 @@ export class Connectors {
     }
     if (!picks.length)
       return text(
-        '주문 내역을 볼 수 있게 연결한 쇼핑몰이 없어요. 어디서 샀는지 물을 때 흔한 곳(쿠팡·네이버) 연결 카드를 connect_ask로 같이 띄워요.',
+        'No shop is connected for viewing orders. When you ask where they bought it, also show connect cards for common shops (Coupang, Naver) with connect_ask.',
       )
     const results = await Promise.all(
       picks.map(async (p) => {
@@ -548,44 +570,44 @@ export class Connectors {
           .map((c) => (c.type === 'text' ? c.text : ''))
           .join('\n')
           .trim()
-        return `## ${p.card.name}${r.isError ? ' (못 봄)' : ''}\n${body.slice(0, 6000)}`
+        return `## ${p.card.name}${r.isError ? ' (could not check)' : ''}\n${body.slice(0, 6000)}`
       }),
     )
     return text(
       [
-        `연결한 쇼핑몰 ${picks.length}곳(${picks.map((p) => p.card.name).join('·')})의 최근 주문이에요.`,
+        `Recent orders from ${picks.length} connected shops (${picks.map((p) => p.card.name).join(', ')}).`,
         ...results,
-        '사용자가 하나를 골라야 하면(어느 택배·어느 주문) 여러 쇼핑몰 것을 합쳐 show_list pick one으로 보여 줘요. 줄마다 상품(title)·쇼핑몰과 주문일(sub)·배송 상태(state). 메일 속 송장(다른 쇼핑몰·선물)은 메일 검색으로 더 찾아요.',
+        'If the user needs to pick one (which package, which order), merge the shops into one show_list pick one. Each row: product (title), shop and order date (sub), delivery status (state). For tracking numbers in email (other shops, gifts), search the mail too.',
       ].join('\n\n'),
     )
   }
 
-  // ── 실행 (service_call, 바로 보이는 도구) ──
+  // ── Run (service_call, directly visible tools) ──
 
   async call(name: string, input: Record<string, unknown>): Promise<ToolResult> {
     const found = await this.resolve(name)
-    if (!found) return text(`그런 서비스 도구가 없어요: ${name}. service_find로 이름을 확인해 주세요.`, true)
+    if (!found) return text(`No such service tool: ${name}. Check the name with service_find.`, true)
     const { card, tool } = found
     if (!this.usable(tool))
       return text(
-        `${card.name}의 '${tool.title}' 도구는 지금 막혀 있어요(${tool.status}). 브라우저 도구로 해 주세요.`,
+        `${card.name}'s '${tool.title}' tool is blocked right now (${tool.status}). Use the browser tools.`,
         true,
       )
-    // 기본값 채우기 → 입력 검사
+    // Fill defaults → check input
     const args: Record<string, unknown> = {}
     for (const [k, p] of Object.entries(tool.input.properties))
       if (p.default !== undefined) args[k] = p.default
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
     await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
-    if (bad.length) return text(`입력을 고쳐 주세요: ${bad.join(', ')}`, true)
+    if (bad.length) return text(`Fix the input: ${bad.join(', ')}`, true)
     const pick = this.pickGate(card.id, tool)
-    // 연결한 계정: 주소에 {{account}}를 쓰는 도구만 (없으면 0 = 크롬의 첫 계정)
+    // Connected account: only for tools with {{account}} in a URL (none = 0, Chrome's first account)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
     if (tool.login && !this.isConnected(card))
       return text(
-        `${card.name} 연결이 필요해요('${tool.title}'은 로그인해야 해요). connect_ask('${card.id}')로 연결 카드를 띄우고 "카드에서 연결해 주세요"라고 짧게 말한 뒤 답을 끝내세요. 연결되면 앱 알림이 와요. 그때 이 도구를 다시 불러요.`,
+        `${card.name} needs to be connected ('${tool.title}' needs login). Show the connect card with connect_ask('${card.id}'), briefly ask the user to connect on the card, and end the reply. An app notification comes when it is connected. Then call this tool again.`,
         true,
       )
     const key = `${name} ${JSON.stringify(args)}`
@@ -598,7 +620,7 @@ export class Connectors {
           ...last.result.content,
           {
             type: 'text',
-            text: `(지금 ${checkedAt()}. 위 결과는 ${min}분 전(${checkedAt(last.at)})에 본 것이에요. 사이트에 자주 묻지 않으려고 다시 보지 않았어요)`,
+            text: `(Now ${checkedAt()}. The result above is from ${min} min ago (${checkedAt(last.at)}). Not checked again, to avoid asking the site too often)`,
           },
         ],
       }
@@ -607,19 +629,19 @@ export class Connectors {
     if (old) this.opts.journal?.write('tool', { tool: name, outcome: 'old-extension', detail: old })
     if (old)
       return text(
-        `Chrome의 두리 확장이 예전 버전(${old})이라 서비스 도구를 쓸 수 없어요. 브라우저 도구로 같은 일을 해 주세요. 확장이 ${MIN_CONNECTOR_EXTENSION} 이상으로 업데이트되면 다시 돼요.`,
+        `The Dool2 extension in Chrome is an old version (${old}), so service tools cannot run. Do the same task with the browser tools. They work again once the extension is updated to ${MIN_CONNECTOR_EXTENSION} or later.`,
         true,
       )
     const rest = this.opts.health?.resting(name, toolPrint(tool))
     if (rest)
       return text(
-        `${card.name}의 '${tool.title}' 도구는 요즘 사이트가 바뀌어 잠시 쉬고 있어요(${rest.reason}). 브라우저 도구로 같은 일을 해 주세요.`,
+        `${card.name}'s '${tool.title}' tool is resting because the site changed recently (${rest.reason}). Do the same task with the browser tools.`,
         true,
       )
     const startedAt = Date.now()
     const { outcome, detail, ...ran } = await this.inLane(card.id, () => this.execute(card, tool, args))
     const result = withNote(ran, pick)
-    // 결과는 왔는데 꼭 채워질 칸이 비면 조용한 고장 (ADR 0020)
+    // A result came back but a field that should be filled is empty: silent breakage (ADR 0020)
     let final: ToolResult = result
     let seen = outcome
     let why = detail
@@ -634,16 +656,17 @@ export class Connectors {
             ...result.content,
             {
               type: 'text',
-              text: `(결과 칸이 비어 있어요: ${why}. 사이트가 바뀌었을 수 있으니 브라우저 도구로 화면을 확인해 주세요)`,
+              text: `(Result fields are empty: ${why}. The site may have changed, so check the screen with the browser tools)`,
             },
           ],
         }
       }
     }
-    // 확장이 끊겨 있던 때(앱 다시 켜기·Chrome 꺼짐)는 도구 고장이 아니다: 세면 멀쩡한 도구가 6시간 쉰다
-    const offline = /확장 프로그램과 연결돼 있지 않|확장과 연결돼 있지 않/.test(why ?? '')
+    // When the extension was disconnected (app restart, Chrome closed), the tool is not broken: counting it would
+    // rest a working tool for 6 hours
+    const offline = EXTENSION_OFFLINE.test(why ?? '') || EXTENSION_OFFLINE_EN.test(why ?? '')
     if (seen && !offline) this.opts.health?.record(name, seen, why, toolPrint(tool))
-    // 입력값(찾는 말·주소 등)은 적지 않는다: 도구 이름·결과·까닭·걸린 시간만
+    // Input values (search words, addresses, …) are not logged: only tool name, outcome, reason and time taken
     this.opts.journal?.write('tool', {
       tool: name,
       outcome: seen ?? (final.isError ? 'error' : 'ok'),
@@ -655,7 +678,7 @@ export class Connectors {
     return final
   }
 
-  /** 같은 서비스 부름은 앞 부름이 끝나고 간격을 둔 뒤에 (다른 서비스는 그대로 동시에) */
+  /** Calls to the same service run after the previous one ends, plus a gap (other services run in parallel) */
   private inLane<T>(id: string, run: () => Promise<T>): Promise<T> {
     const gap = this.opts.gapMs ?? SITE_GAP_MS
     const prev = this.lanes.get(id) ?? Promise.resolve()
@@ -686,28 +709,29 @@ export class Connectors {
     const b = this.opts.browser
     const scope: Scope = { ...args, today: today(this.now()) }
     let tabId: number | undefined = this.tabs.get(card.id)
-    // 결제 중인 탭은 쓰지 않고 새 탭에서 한다 (실측 11-20: 주문 내역 도구가 결제 중인 탭을 옮겨 결제가 끊겼다)
+    // Do not use a tab that is mid-payment; use a new tab (measured 11-20: an order history tool moved the paying
+    // tab and the payment broke)
     if (tabId !== undefined && this.opts.tools.isPaying(tabId)) {
       this.tabs.delete(card.id)
       tabId = undefined
     }
     const need = () => {
-      if (tabId === undefined) throw new StepError('먼저 주소를 열어야 해요')
+      if (tabId === undefined) throw new StepError('Open a URL first')
       return tabId
     }
     const site = card.site ?? ''
-    // 페이지가 받은 응답을 읽는 도구면 주소를 열 때부터 응답 듣기를 켠다
+    // A tool that reads the page's own responses turns on listening when the URL opens
     const capture = tool.steps.some((x) => 'capture' in x)
     const pollMs = this.opts.pollMs ?? 300
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-    // long: 긴 화면 끝에 붙는 창(매장 재고 창 등)까지 표시를 받으려고 길게 읽기
+    // long: read further to get marks for panels at the end of long pages (store stock panels, …)
     const read = async (long = false) => {
       const r = await this.opts.tools.run('read', { tabId: need(), ...(long ? { maxChars: LONG_READ } : {}) })
       if (r.isError) throw new StepError(firstText(r))
       return firstText(r)
     }
     for (const [i, step] of tool.steps.entries()) {
-      // if: 채운 글이 비면 이 단계는 건너뛴다 (앞 기간에서 찾았으면 더 예전 기간은 열지 않기 등)
+      // if: skip this step when the filled text is empty (e.g. do not open older periods once found in an earlier one)
       if (step.if !== undefined && !fill(step.if, scope).trim()) continue
       const kind = stepKind(step)
       try {
@@ -724,8 +748,8 @@ export class Connectors {
           captcha: (t) => this.captchaStop(card, tool, t),
           open: async (url) => {
             if (!onSites(url, [site, ...(card.alsoSites ?? [])]))
-              throw new StepError(`${site} 밖의 주소는 열지 않아요: ${url}`)
-            // 이 서비스에 쓰던 탭이 있으면 그 탭에서 (없어졌으면 새로 연다)
+              throw new StepError(`Will not open a URL outside ${site}: ${url}`)
+            // Reuse this service's tab if there is one (open a new one if it is gone)
             if (tabId !== undefined) {
               const ok = await b
                 .call('navigate', { tabId, url, ...(capture ? { capture } : {}) }, 40_000)
@@ -743,13 +767,13 @@ export class Connectors {
             }
             tabId = r.tabId
             this.tabs.set(card.id, r.tabId)
-            // 일하는 동안 폰 대화에 이 화면이 보이게 (끝난 뒤에 알리면 일하는 내내 화면이 비어 있다)
+            // Show this screen in the phone chat while working (telling it only at the end leaves it blank meanwhile)
             this.opts.tools.watchTab(r.tabId)
           },
         })
         if (done) {
           const r = this.finish(done, tabId)
-          // 승인 요청·AI에게 넘기기는 잘 된 것, 마감·로그인 필요 같은 멈춤은 정상 멈춤
+          // Asking approval or handing off to the AI is success; stops like sold out or login needed are normal stops
           const sc = r.structuredContent as { stopped?: unknown; blocked?: unknown } | undefined
           const stopped = r.isError || Boolean(sc?.stopped)
           return { ...r, outcome: sc?.blocked ? 'blocked' : stopped ? 'stopped' : 'ok' }
@@ -758,11 +782,12 @@ export class Connectors {
         const optional = 'optional' in step && step.optional
         if (e instanceof GuardStop)
           return {
-            ...text(`${e.message}${tabId !== undefined ? ` [탭 ${tabId}]` : ''}`, true),
+            ...text(`${e.message}${tabId !== undefined ? ` [Tab ${tabId}]` : ''}`, true),
             outcome: 'stopped',
           }
         if (optional && e instanceof StepError) continue
-        // 단계가 깨진 까닭이 로봇 확인이면 사이트가 바뀐 게 아니다: 폰 카드로 풀고 다시 부르게 (고장으로 세지 않는다)
+        // A step broken by a robot check does not mean the site changed: solve it on a phone card and call again
+        // (not counted as a breakage)
         if (tabId !== undefined && (await this.captchaOn(tabId))) {
           this.opts.tools.lastTabId = tabId
           return { ...this.captchaStop(card, tool, tabId), outcome: 'blocked' }
@@ -770,35 +795,37 @@ export class Connectors {
         return {
           ...this.broke(card, tool, i, kind, (e as Error).message, tabId),
           outcome: 'broke',
-          detail: `${i + 1}단계(${kind}): ${(e as Error).message}`,
+          detail: `step ${i + 1} (${kind}): ${(e as Error).message}`,
         }
       }
     }
-    // 돌려줄 값
+    // Values to return
     const out: Record<string, unknown> = {}
     for (const [k, tpl] of Object.entries(tool.result)) {
       const field = tool.output[k]
       out[k] = field ? coerce(fillValue(tpl, scope), field) : fillValue(tpl, scope)
     }
     const lines = [render(tool, out)]
-    // 확인 시각: 답에 '지금'을 쓸 때 앞 대화의 시각을 끌어오지 않게 (실측: 8분 전 시각을 '지금'이라고 씀)
-    lines.push('', `확인 시각: ${checkedAt()} (${card.name}, 방금 확인)`)
+    // Check time: so "now" in a reply does not reuse a time from earlier in the chat (measured: an 8-minute-old
+    // time was called "now")
+    lines.push('', `Checked at: ${checkedAt()} (${card.name}, just now)`)
     if (tool.next) lines.push('', fill(tool.next, scope))
-    // 고를 후보에 사진·주소가 있으면 카드로 보여 주라고 한 줄 (도구마다 next에 쓰지 않아도 되게)
+    // One line asking for cards when the options have photos and links (so each tool's next need not say it)
     const rows = Object.values(out).filter(Array.isArray).flat() as Record<string, unknown>[]
     const pics = rows.some((r) => r && typeof r === 'object' && r.image)
     if (
       rows.some((r) => r && typeof r === 'object' && (r.image || r.link)) &&
       pics &&
-      // 도구가 다른 결과 블록(목록 줄·경로·결과 한 장)을 쓰라고 하면 부딪히지 않게 그 말을 따른다
+      // When the tool asks for another result block (list rows, route, single result), follow it to avoid a clash
       !/show_(cards|list|route|result)/.test(tool.next ?? '')
     )
       lines.push(
         '',
-        '후보를 보여 줄 땐 show_cards로 사진(image)·가격·주소(link)를 그대로 넣은 카드를 붙이고, 글로는 고른 이유만 짧게 말해요.',
+        'When showing options, attach show_cards with the photo (image), price and link exactly as given, and in text say only briefly why you picked them.',
       )
-    // 사진 없는 목록(주문·내역·일정·회차·빈자리)은 글 목록 대신 목록 줄로.
-    // 회차처럼 한 칸에 여러 줄을 담는 도구(cards: false + 목록 칸)도: 도구의 next가 "회차 2~4개를 보여 줘요"라고만 하면 글로 늘어놓는다
+    // Lists without photos (orders, history, schedules, showtimes, open seats) go in list rows, not a text list.
+    // Also tools with many rows in one field, like showtimes (cards: false + a list field): when the tool's next
+    // only says "show 2–4 showtimes", the AI lists them as text
     const listy =
       tool.cards === false &&
       Object.values(tool.output).some((f) => f.type === 'list' || f.type === 'strings')
@@ -809,31 +836,32 @@ export class Connectors {
     )
       lines.push(
         '',
-        '후보·목록을 사용자에게 보여 줄 땐 글이나 표로 늘어놓지 말고 show_list로 줄을 붙여요. 하나를 고르게 하면 pick one(회차·시간·이름은 title, 상영관·남은 자리·조건은 sub, 가격은 value, 매진은 state). 글로는 요점만 짧게.',
+        'When showing options or lists to the user, do not lay them out as text or a table; attach rows with show_list. To let them pick one, use pick one (showtime, time or name in title; screen, seats left or conditions in sub; price in value; sold out in state). Keep the text to the key points.',
       )
-    // 목록이 비어 왔으면 같은 사이트를 낱말만 바꿔 거듭 두드리지 않게 (실측: 쿠팡 주문을 연달아 열다 Access Denied)
+    // When the list came back empty, do not keep hitting the same site with reworded queries (measured: opening
+    // Coupang orders back to back got Access Denied)
     const lists = Object.entries(tool.output).filter(([, f]) => f.type === 'list')
     if (lists.length && lists.every(([k]) => Array.isArray(out[k]) && !(out[k] as unknown[]).length))
       lines.push(
         '',
-        '결과가 비었어요. 이 도구를 낱말만 바꿔 여러 번 다시 부르지 말아요(사이트가 막을 수 있어요). 한 번만 넓혀(낱말 줄이기·기간 늘리기) 보거나, 다른 곳(다른 쇼핑·결제 내역·메일)을 봐요.',
+        'The result is empty. Do not call this tool again many times with reworded input (the site may block you). Broaden it once (fewer words, longer period), or look elsewhere (another shop, payment history, mail).',
       )
-    if (tool.status === '초안')
-      lines.push('', '(처음 써 보는 도구예요. 이상해 보이면 브라우저 도구로 화면을 확인해 주세요)')
-    if (tabId !== undefined) lines.push(`[탭 ${tabId}]`)
+    if (tool.status === TOOL_STATUS.draft)
+      lines.push('', '(This tool is new. If something looks off, check the screen with the browser tools)')
+    if (tabId !== undefined) lines.push(`[Tab ${tabId}]`)
     this.opts.tools.lastTabId = tabId
     return { content: [{ type: 'text', text: lines.join('\n') }], structuredContent: out, outcome: 'ok' }
   }
 
-  /** 끝내는 단계(승인 요청·AI에게 넘기기·멈춤)의 결과 */
+  /** Result of a final step (approval request, hand-off to the AI, stop) */
   private finish(done: ToolResult, tabId: number | undefined): ToolResult {
     if (tabId !== undefined) this.opts.tools.lastTabId = tabId
     return done.isError ? done : { ...done, structuredContent: done.structuredContent ?? {} }
   }
 
   /**
-   * 방금 읽은 화면에서 조건에 맞는 표시를 찾는다. 없으면 한 번 길게 다시 읽어 찾는다:
-   * 긴 화면 맨 끝에 붙는 창(매장별 재고 창 등)은 보통 읽기 길이 밖이라 표시가 안 잡힌다 (ABC마트, 2026-11-21)
+   * Finds a mark matching the condition on the page just read. If none, reads once more at full length:
+   * panels at the very end of long pages (stock per store, …) are past the normal read length (ABC Mart, 2026-11-21)
    */
   private async refOn(
     tabId: number,
@@ -847,7 +875,7 @@ export class Connectors {
     return look()
   }
 
-  /** 탭에 사람이 풀 로봇 확인(캡차·보안 확인)이 떠 있나 (확장이 화면에서 본 것) */
+  /** Whether the tab shows a robot check (CAPTCHA, security check) a person must solve (as seen by the extension) */
   private async captchaOn(tabId: number): Promise<boolean> {
     const s = (await this.opts.browser
       .call('snapshot', { tabId, maxChars: 2000 }, 10_000)
@@ -856,24 +884,25 @@ export class Connectors {
   }
 
   /**
-   * 로봇 확인에 막혔을 때: 막다른 길로 끝내지 않고, 열어 둔 탭에서 폰 카드로 풀게 한 뒤 같은 도구를 다시 부르게 한다.
-   * 어떤 확인인지(글자 입력·그림 누르기·체크 한 번)는 AI가 화면을 보고 고른다
+   * Stuck on a robot check: do not end at a dead end. Have the person solve it on a phone card for the open tab,
+   * then call the same tool again. The AI looks at the screen to pick the kind of check (type text, tap a picture,
+   * one checkbox)
    */
   private captchaStop(card: ConnectCard, tool: ConnectorTool, tabId: number): ToolResult {
     const name = connectorToolName(card.id, tool.name)
-    const say = `${card.name} 화면에 로봇 확인(보안 확인)이 떴어요. 사용자가 폰에서 풀면 이어서 볼 수 있어요.`
+    const say = `A robot check (security check) appeared on the ${card.name} page. Once the user solves it on the phone, you can continue.`
     return {
       content: [
         {
           type: 'text',
           text: [
-            `${say} [탭 ${tabId}]을 열어 두었어요.`,
-            `1) browser_read(tabId: ${tabId})로 화면을 읽어 어떤 확인인지 봐요.`,
-            '2) 글자·숫자를 넣거나 질문에 답을 적는 확인(보안문자·영수증 질문 등)이면 그 입력칸으로 browser_request_code(kind: "captcha")를 불러요(먼저 pick 없이 부르면 그림 후보가 와요. 답을 네가 읽어 넣지 않아요).',
-            '   그림을 눌러 푸는 확인(칸 고르기·지도 누르기)이면 browser_screenshot으로 본 뒤 browser_request_tap(box: 문제 그림 자리, say: 화면의 문제 글)으로 폰에 그림 카드를 보내요. "로봇이 아닙니다" 체크 한 번이면 직접 눌러요.',
-            '3) 카드를 보냈으면 같은 답 안에서 다른 서비스로 찾을 수 있는 건 먼저 찾아 보여 주고, "폰에서 로봇 확인을 풀어 주시면 이어서 볼게요"처럼 한 문장으로 알린 뒤 답을 끝내요.',
-            `4) 풀었다는 알림이 오면 화면에서 [확인]·[제출]을 눌러 넘긴 뒤 ${name}을 같은 입력으로 다시 불러요.`,
-            '"막혀서 못 봤어요"로 끝내거나 PC에서 직접 하라고 하지 않아요.',
+            `${say} [Tab ${tabId}] is left open.`,
+            `1) Read the screen with browser_read(tabId: ${tabId}) to see which check it is.`,
+            '2) If the check asks to type letters or numbers or to answer a question (security code, receipt question, …), call browser_request_code(kind: "captcha") on that input field (calling it first without pick returns image candidates; do not read and type the answer yourself).',
+            '   If it is solved by tapping pictures (pick tiles, tap a map), look with browser_screenshot, then send a picture card to the phone with browser_request_tap(box: where the puzzle image is, say: the puzzle text on screen). If it is a single "I\'m not a robot" checkbox, click it yourself.',
+            '3) After sending the card, in the same reply first find and show what other services can find, then say in one sentence that you will continue once they solve the robot check on the phone, and end the reply.',
+            `4) When the solved notification comes, press [OK] or [Submit] on the screen to move on, then call ${name} again with the same input.`,
+            'Do not end with "it was blocked so I could not check", and do not tell the user to do it on the PC themselves.',
           ].join('\n'),
         },
       ],
@@ -897,32 +926,34 @@ export class Connectors {
       at: this.now().toISOString(),
     })
     if (this.breakages.length > 200) this.breakages.shift()
-    console.warn(`[커넥터] ${connectorToolName(card.id, tool.name)} ${i + 1}단계(${kind}) 막힘: ${reason}`)
+    console.warn(
+      `[connector] ${connectorToolName(card.id, tool.name)} step ${i + 1} (${kind}) failed: ${reason}`,
+    )
     return text(
-      `${card.name} '${tool.title}' 도구가 ${i + 1}단계(${kind})에서 막혔어요: ${reason}. ` +
+      `${card.name} '${tool.title}' tool got stuck at step ${i + 1} (${kind}): ${reason}. ` +
         (tabId !== undefined
-          ? `사이트 화면이 바뀌었을 수 있어요. [탭 ${tabId}]이 열려 있으니 browser_read로 읽고 브라우저 도구로 이어서 해 주세요.`
-          : '브라우저 도구로 해 주세요.'),
+          ? `The site may have changed. [Tab ${tabId}] is open: read it with browser_read and continue with the browser tools.`
+          : 'Use the browser tools.'),
       true,
     )
   }
 
-  /** 단계 하나. 끝내는 단계면 돌려줄 결과를 준다 */
+  /** One step. A final step returns the result to give back */
   private async step(
     s: Step,
     c: {
       scope: Scope
       tier: ConnectorTool['tier']
-      /** 서비스.도구 이름 (결제 흐름 기록용) */
+      /** service.tool name (for the payment flow record) */
       tool: string
-      /** 이 서비스의 사이트들 (결제 흐름을 사이트 단위로 기억할 때) */
+      /** This service's sites (to remember the payment flow per site) */
       sites: string[]
       site: string
       pollMs: number
       sleep: (ms: number) => Promise<unknown>
       read: (long?: boolean) => Promise<string>
       need: () => number
-      /** 로봇 확인에 막혔을 때 돌려줄 결과 (폰 카드로 풀고 다시 부르기) */
+      /** Result to return when stuck on a robot check (solve on a phone card, then call again) */
       captcha: (tabId: number) => ToolResult
       open: (url: string) => Promise<void>
     },
@@ -962,12 +993,12 @@ export class Connectors {
         }
         if (ok) return
         if (Date.now() > until) {
-          // soft면 멈추지 않고 넘어간다 (다음 handoff에서 AI가 실제 화면을 읽는다)
+          // soft: move on without stopping (the AI reads the real screen at the next handoff)
           if (s.wait.soft) return
           throw new StepError(
             s.wait.text || s.wait.items
-              ? `기다린 것이 화면에 안 나왔어요 (${s.wait.text ?? s.wait.items})`
-              : `"${s.wait.gone}"이(가) 사라지지 않았어요`,
+              ? `What it waited for did not appear on screen (${s.wait.text ?? s.wait.items})`
+              : `"${s.wait.gone}" did not go away`,
           )
         }
         await c.sleep(c.pollMs)
@@ -989,10 +1020,11 @@ export class Connectors {
       const say = f(s.say)
       if (s.login)
         return text(
-          `${say} 로그인이 필요한 화면이에요. connect_ask를 부르세요. 연결한 적이 있으면(금고 계정·간편 로그인) 두리 본체가 알아서 다시 로그인하고, 처음이면 연결 카드가 떠요. [탭 ${c.need()}]`,
+          `${say} This page needs login. Call connect_ask. If it was connected before (vault account or social login), the Dool2 daemon logs in again by itself; if it is the first time, a connect card appears. [Tab ${c.need()}]`,
           true,
         )
-      // 막은 화면이 사람이 풀 수 있는 로봇 확인이면 막다른 길이 아니다: 폰 카드로 풀고 같은 도구를 다시 부른다
+      // A blocking page that is a robot check a person can solve is not a dead end: solve it on a phone card and
+      // call the same tool again
       if (s.blocked && (HUMAN_CHECK.test(r.found.hit) || (await this.captchaOn(c.need()))))
         return c.captcha(c.need())
       if (s.blocked)
@@ -1000,7 +1032,7 @@ export class Connectors {
           content: [
             {
               type: 'text',
-              text: `${say} (같은 사이트를 곧바로 다시 열면 더 오래 막혀요. 바로 다시 부르지 말고, 같은 답 안에서 같은 일을 하는 다른 서비스나 다른 길(브라우저 웹 검색 등)로 이어서 결과를 가져와요)`,
+              text: `${say} (Opening the same site again right away keeps it blocked longer. Do not call it again right away; in the same reply, get the result another way, with another service that does the same thing or another route such as a web search in the browser)`,
             },
           ],
           structuredContent: { stopped: say, blocked: true },
@@ -1015,7 +1047,7 @@ export class Connectors {
         }
         if (r.found.hit) return
         if (Date.now() > until) {
-          // 기다린 글 대신 로봇 확인이 떠 있으면 "없어요"가 아니다: 폰 카드로 풀고 다시 부르게
+          // A robot check instead of the expected text is not "nothing found": solve it on a phone card and call again
           if (await this.captchaOn(c.need())) return c.captcha(c.need())
           const say = f(s.say)
           return { content: [{ type: 'text', text: say }], structuredContent: { stopped: say } }
@@ -1027,13 +1059,18 @@ export class Connectors {
       await c.read()
       const tabId = c.need()
       const want = f(s.click.text)
-      // 화면 읽기에 같은 이름의 버튼·라디오·링크가 있으면 그 표시로 (뒤에 깔린 화면의 같은 글자를 누르지 않게)
+      // When the page read has a button, radio or link with this exact name, use its mark (so the same words on a
+      // page underneath are not clicked)
       const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
-      const ref = await this.refOn(tabId, c.read, (v) => v.role !== '글' && norm(v.name) === norm(want))
+      const ref = await this.refOn(
+        tabId,
+        c.read,
+        (v) => v.role !== SNAPSHOT_ROLE.text && norm(v.name) === norm(want),
+      )
       const r = await this.opts.tools.run('click', ref ? { tabId, ref } : { tabId, text: want })
       if (r.isError) {
         const msg = firstText(r)
-        // 위험 판단에 걸린 것은 커넥터가 넘을 수 없다: 그대로 AI에게
+        // A connector cannot get past the risk check: pass it to the AI as is
         if (msg.startsWith(GATE_STOP)) throw new GuardStop(msg)
         throw new StepError(msg)
       }
@@ -1046,9 +1083,9 @@ export class Connectors {
       const ref = await this.refOn(
         tabId,
         c.read,
-        (v) => (v.role === '입력칸' || v.role === '검색칸') && want.test(v.name),
+        (v) => (v.role === SNAPSHOT_ROLE.input || v.role === SNAPSHOT_ROLE.search) && want.test(v.name),
       )
-      if (!ref) throw new StepError(`입력칸(${s.type.field})을 찾지 못했어요`)
+      if (!ref) throw new StepError(`Could not find the input field (${s.type.field})`)
       const r = await this.opts.tools.run('type', {
         tabId,
         ref,
@@ -1063,12 +1100,13 @@ export class Connectors {
       return
     }
     if ('choose' in s) {
-      // 펼침 목록(정렬·목록 개수 등): 이름이 맞는 선택 상자에서 그 항목을 고른다 (사이트가 목록을 새로 부른다)
+      // Dropdown (sort, page size, …): pick the option in the select box with a matching name (the site reloads
+      // the list)
       await c.read()
       const tabId = c.need()
       const want = new RegExp(f(s.choose.field))
-      const ref = await this.refOn(tabId, c.read, (v) => v.role === '선택 상자' && want.test(v.name))
-      if (!ref) throw new StepError(`선택 상자(${s.choose.field})를 찾지 못했어요`)
+      const ref = await this.refOn(tabId, c.read, (v) => v.role === SNAPSHOT_ROLE.select && want.test(v.name))
+      if (!ref) throw new StepError(`Could not find the select box (${s.choose.field})`)
       const r = await this.opts.tools.run('select', { tabId, ref, choose: f(s.choose.option) })
       if (r.isError) throw new StepError(firstText(r))
       return
@@ -1102,7 +1140,9 @@ export class Connectors {
         const r = (await b.call('extract', { tabId: c.need(), spec })) as { rows: Record<string, unknown>[] }
         if (r.rows.length >= min || Date.now() > until) {
           if (r.rows.length < min)
-            throw new StepError(`목록(${spec.items})이 ${min}줄 넘게 나와야 하는데 ${r.rows.length}줄이에요`)
+            throw new StepError(
+              `The list (${spec.items}) should have at least ${min} rows but has ${r.rows.length}`,
+            )
           c.scope[s.as] = r.rows
           return
         }
@@ -1115,7 +1155,7 @@ export class Connectors {
         const after = s.embedded.after
         const r = (await b.call('extract', {
           tabId: c.need(),
-          // 변수 안 데이터(after)면 스크립트가 여럿이라 그 글자가 든 것을 고른다
+          // Data inside a variable (after): there are several scripts, so pick the one containing that text
           spec: {
             items: f(s.embedded.css),
             hidden: true,
@@ -1131,17 +1171,17 @@ export class Connectors {
           try {
             data = JSON.parse(text)
           } catch {
-            throw new StepError(`${s.embedded.css} 안의 글이 JSON이 아니에요`)
+            throw new StepError(`The text inside ${s.embedded.css} is not JSON`)
           }
           keep(c.scope, s.as, s.embedded.pick ? pick(data, s.embedded.pick) : data, s.append)
           return
         }
-        if (Date.now() > until) throw new StepError(`화면에 ${s.embedded.css} 데이터가 없어요`)
+        if (Date.now() > until) throw new StepError(`No ${s.embedded.css} data on the page`)
         await c.sleep(c.pollMs)
       }
     }
     if ('capture' in s) {
-      // 페이지가 스스로 받은 응답을 읽는다 (두리가 요청을 보내지 않는다)
+      // Reads responses the page received on its own (Dool2 sends no requests)
       const r = (await b
         .call(
           'capture',
@@ -1150,7 +1190,7 @@ export class Connectors {
             url: f(s.capture.url),
             pick: s.capture.pick ?? '',
             timeoutMs: s.capture.timeoutMs ?? 10_000,
-            // 읽기만 하는 목록 화면이라 못 들었으면 한 번 새로 고쳐도 된다 (확장은 시킬 때만 새로 고친다)
+            // A read-only list page, so reloading once is fine if nothing was heard (the extension reloads only when told)
             reloadIfSilent: true,
           },
           40_000,
@@ -1163,15 +1203,15 @@ export class Connectors {
     }
     if ('filter' in s) {
       const from = pick(c.scope, s.filter.from)
-      if (!Array.isArray(from)) throw new StepError(`${s.filter.from}이(가) 목록이 아니에요`)
+      if (!Array.isArray(from)) throw new StepError(`${s.filter.from} is not a list`)
       const want = s.filter.value !== undefined ? f(s.filter.value).trim() : ''
       c.scope[s.as] = from.filter((row) => matches(pick(row, s.filter.where), s.filter.op, want))
       return
     }
     if ('map' in s) {
       const raw = pick(c.scope, s.map.from)
-      if (!Array.isArray(raw)) throw new StepError(`${s.map.from}이(가) 목록이 아니에요`)
-      // 여러 묶음으로 나뉜 목록("groups.*.items")은 한 줄로 펼친다
+      if (!Array.isArray(raw)) throw new StepError(`${s.map.from} is not a list`)
+      // A list split into groups ("groups.*.items") is flattened into one
       const from: unknown[] = raw.length && raw.every(Array.isArray) ? raw.flat() : raw
       c.scope[s.as] = from
         .slice(0, Number(typeof s.map.limit === 'string' ? f(s.map.limit) : s.map.limit) || 50)
@@ -1179,7 +1219,7 @@ export class Connectors {
           Object.fromEntries(
             Object.entries(s.map.fields).map(([k, p]) => [
               k,
-              // "{{…}}"가 있으면 줄 안의 값(없으면 입력·앞 단계 값)으로 채운 글, 아니면 경로
+              // With "{{…}}": text filled from the row (else from input and earlier steps); otherwise a path
               (p.includes('{{')
                 ? fill(p, { ...c.scope, ...(row as Scope) }).trim()
                 : firstImage(k, pick(row, p))) ?? null,
@@ -1207,22 +1247,23 @@ export class Connectors {
           },
           kind,
         )
-        .catch((e: Error) => text(`${e.message} [탭 ${tabId}]`, true))
+        .catch((e: Error) => text(`${e.message} [Tab ${tabId}]`, true))
       return r
     }
     if ('handoff_to_agent' in s) {
-      // 돈 내기 도구가 넘긴 탭은 결제 흐름: 탭을 잡아 두고 결제 화면 안내를 붙인다. 승인은 마지막 결제 버튼에서 한 번 (browser-tools)
+      // A tab handed over by a pay tool is a payment flow: hold the tab and add the checkout guide. Approval happens
+      // once, at the last pay button (browser-tools)
       const pay = c.tier === 'pay'
       if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
-      // 늦게 그리는 화면(Gmail·구글 캘린더 등)은 정해진 기다림 뒤에도 비어 있다: 그려질 때까지 조금 더 읽는다
-      // (실측: 빈 화면을 넘겨받은 AI가 "검색 결과가 비어 있어요·연결이 안 된 것 같아요"라고 답했다)
+      // Slow-drawing pages (Gmail, Google Calendar, …) are still empty after the fixed wait: read a bit more until
+      // drawn (measured: given an empty page, the AI answered "the results are empty, it seems not connected")
       let page = await c.read()
       for (let i = 0; i < 8 && thinPage(page); i++) {
         await c.sleep(1000)
         page = await c.read()
       }
       return text(
-        `${f(s.handoff_to_agent)}\n${pay ? `${PAY_ORDER}\n` : ''}여기부터는 브라우저 도구로 이어서 해요.\n\n${page}`,
+        `${f(s.handoff_to_agent)}\n${pay ? `${PAY_ORDER}\n` : ''}From here, continue with the browser tools.\n\n${page}`,
       )
     }
     return
@@ -1230,28 +1271,28 @@ export class Connectors {
 }
 
 /**
- * 돈 내기 흐름의 목표와 도구 지도 (모든 돈 내기 도구의 넘기기 글 뒤에 붙는다).
- * 순서는 AI가 화면을 보고 정한다. 사람 몫은 폰 카드로만
+ * Goal and tool map for the pay flow (added after the hand-off text of every pay tool).
+ * The AI decides the order by looking at the screen. The person's part happens only on phone cards
  */
 export const PAY_ORDER = [
-  '[결제] 목표: 완료 화면과 주문(예약)번호까지. 순서는 화면을 보고 정해요.',
-  '- 결제 화면으로 넘어가기만 하는 [주문하기]·[구매하기]·[예약하기]: browser_click(opens_checkout: true)',
-  '- 예약자·주문자·배송지 칸: browser_fill_profile (없는 항목만 browser_request_profile)',
-  '- 결제 승인: 마지막 결제 버튼에서 browser_checkout(결제 카드) 한 번. 결제 수단 고르기는 choices로. 결제 화면에서 멈추고 묻지 않아요',
-  '- 승인 뒤 결제 창: 같은 결제라 끝까지 마쳐요. 결제 비밀번호 키패드는 browser_request_code(kind: pin), 인증번호는 browser_request_code, 앱 승인은 browser_wait_auth, 로봇 확인은 browser_request_tap',
-  '- 끝: 완료 화면에서 주문(예약)번호를 읽어 browser_order_done',
-  '- 돈이 나가지 않는 신청(취소·반품·요금제 변경·해지): 마지막 버튼에서 browser_request_approval',
-  '- 로그인 요구: 그 서비스의 connect_ask(연결한 적이 있으면 두리가 알아서 다시 로그인해요), 연결 카드가 없는 사이트면 browser_request_login',
-  '- 저장된 카드가 없어 새 카드 번호를 처음 넣어야 할 때만 browser_handoff(emergency: true)',
-  '눌렀는데 화면이 그대로면 browser_read로 무엇이 막는지(덮은 창·쿠키 동의 창·빈 필수 칸) 보고 그것부터 처리해요. 막히면 다른 결제 수단·다른 화면으로 다시 해 봐요.',
+  '[Payment] Goal: reach the completion page and the order (booking) number. Decide the order by looking at the screen.',
+  '- [Order], [Buy], [Book] buttons that only move on to the checkout page: browser_click(opens_checkout: true)',
+  '- Booker, orderer and shipping address fields: browser_fill_profile (browser_request_profile only for missing items)',
+  '- Payment approval: browser_checkout (payment card) once, at the last pay button. Pick the payment method with choices. Do not stop on the checkout page to ask',
+  '- Payment windows after approval: it is the same payment, so finish it. Payment password keypad: browser_request_code(kind: pin); verification codes: browser_request_code; app approval: browser_wait_auth; robot checks: browser_request_tap',
+  '- End: read the order (booking) number on the completion page and call browser_order_done',
+  '- Requests where no money moves (cancel, return, plan change, termination): browser_request_approval at the last button',
+  "- Login required: that service's connect_ask (if it was connected before, Dool2 logs in again by itself); for sites without a connect card, browser_request_login",
+  '- browser_handoff(emergency: true) only when there is no saved card and a new card number must be entered for the first time',
+  'If the screen stays the same after a click, use browser_read to see what blocks it (an overlay, a cookie consent window, an empty required field) and handle that first. If stuck, try another payment method or another screen.',
 ].join('\n')
 
-/** 도구 결과 끝에 안내 한 줄을 붙인다 (없으면 그대로) */
+/** Adds one guide line at the end of a tool result (unchanged when none) */
 function withNote<T extends ToolResult>(r: T, note: string | undefined): T {
   return note ? { ...r, content: [...r.content, { type: 'text', text: note }] } : r
 }
 
-/** 아직 덜 그려진 화면: 머리줄 뒤 글이 거의 없고 누를 것도 거의 없다 */
+/** A page not fully drawn yet: almost no text after the header line and almost nothing to press */
 export function thinPage(page: string): boolean {
   const body = page.split('\n').slice(1).join('\n')
   const refs = body.match(/\[e\d+ /g)?.length ?? 0
@@ -1263,23 +1304,23 @@ function firstText(r: ToolResult): string {
   return c && c.type === 'text' ? c.text : ''
 }
 
-/** 출력 칸 모양에 맞추기 ('4.5' → 4.5, 빈 값은 null) */
-/** 사진 칸(image)에 여러 장이 잡히면 첫 장 (색상별 사진 등) */
+/** The first photo when the image field caught several (photos per color, …) */
 function firstImage(key: string, v: unknown): unknown {
   return key === 'image' && Array.isArray(v) ? v.find((x) => typeof x === 'string' && x) : v
 }
 
+/** Fits a value to the output field's shape ('4.5' → 4.5, empty → null) */
 export function coerce(v: unknown, field: OutputField): unknown {
   const one = (x: unknown, type: string): unknown => {
     if (x === undefined || x === null || x === '') return null
     if (type === 'strings') return Array.isArray(x) ? x.map(String) : [String(x)]
     if (type === 'number' || type === 'integer') {
-      // 글 속 첫 수: "4.5 (120)" → 4.5, "12,900원" → 12900
+      // First number in the text: "4.5 (120)" → 4.5, "12,900 KRW" → 12900
       const m = typeof x === 'number' ? undefined : /-?\d[\d,]*(?:\.\d+)?/.exec(String(x))
       const n = typeof x === 'number' ? x : m ? Number(m[0].replace(/,/g, '')) : Number.NaN
       return Number.isFinite(n) ? (type === 'integer' ? Math.round(n) : n) : null
     }
-    if (type === 'boolean') return typeof x === 'boolean' ? x : /^(true|1|예|네|있음)$/i.test(String(x))
+    if (type === 'boolean') return typeof x === 'boolean' ? x : YES.test(String(x))
     return typeof x === 'string' ? x : Array.isArray(x) ? x.join(', ') : String(x)
   }
   if (field.type === 'list') {
@@ -1293,36 +1334,38 @@ export function coerce(v: unknown, field: OutputField): unknown {
   return one(v, field.type)
 }
 
-/** 결과를 AI가 읽기 쉬운 짧은 글로: 목록은 번호 줄, 나머지는 "이름: 값" */
+/** The result as short text for the AI: lists as numbered lines, the rest as "name: value" */
 export function render(tool: ConnectorTool, out: Record<string, unknown>): string {
   const lines: string[] = []
   for (const [k, v] of Object.entries(out)) {
     const field = tool.output[k]
     if (field?.type === 'list' && Array.isArray(v)) {
-      lines.push(`${field.description ?? k} (${v.length}개)`)
+      lines.push(`${field.description ?? k} (${v.length})`)
       v.slice(0, 30).forEach((row, i) => {
         const cells = Object.entries(row as Record<string, unknown>)
           .filter(([, x]) => x !== null && x !== '' && !(Array.isArray(x) && !x.length))
           .map(([kk, x]) => `${kk}: ${Array.isArray(x) ? x.join(', ') : x}`)
         lines.push(`${i + 1}. ${cells.join(' · ')}`)
       })
-      if (v.length > 30) lines.push(`… 그 밖에 ${v.length - 30}개`)
+      if (v.length > 30) lines.push(`… ${v.length - 30} more`)
     } else if (v !== null && v !== undefined && v !== '') {
       lines.push(`${field?.description ?? k}: ${Array.isArray(v) ? v.join(', ') : v}`)
     }
   }
-  return lines.join('\n') || '(돌려줄 내용이 없어요)'
+  return lines.join('\n') || '(nothing to return)'
 }
 
-/** 한국 시간 "11/19(목) 16:49" */
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Korea time, "11/19 (Thu) 16:49" */
 function checkedAt(now = Date.now()): string {
   const d = new Date(now + 9 * 3600_000)
   const hh = String(d.getUTCHours()).padStart(2, '0')
   const mm = String(d.getUTCMinutes()).padStart(2, '0')
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]}) ${hh}:${mm}`
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()} (${WEEKDAYS[d.getUTCDay()]}) ${hh}:${mm}`
 }
 
-/** 도구 정의 지문 (건강 기록용): 고친 정의가 들어오면 예전 고장으로 쉬게 하지 않는다 */
+/** Tool definition fingerprint (for the health record): a fixed definition does not rest for old breakages */
 const prints = new WeakMap<object, string>()
 function toolPrint(t: ConnectorTool): string {
   let v = prints.get(t)

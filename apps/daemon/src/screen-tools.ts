@@ -1,14 +1,19 @@
-// PC 화면 제어 도구의 본체 쪽 실행기 (docs/architecture.md 5.2, ADR 0013, 위협 모델 T20).
-// AI(MCP 도구 서버)는 여기로 부탁만 하고, 해도 되는지는 여기서 정한다. 도우미(dool2-hands)는 판단하지 않는 손이다.
+// Daemon-side runner of the PC screen control tools (docs/architecture.md 5.2, ADR 0013, threat model T20).
+// The AI (MCP tool server) only asks here, and this code decides whether it may. The helper (dool2-hands) is a hand
+// that makes no decisions.
 //
-// - 사용자가 허용한 앱만 다룬다. 처음 쓰는 앱은 "이 앱을 두리가 조작해도 될까요?" 승인을 받는다
-// - 터미널·시스템 설정·Finder는 기본으로 막는다(셸을 끈 의미가 없어진다). 브라우저는 브라우저 도구로만 (도우미도 막는다)
-// - 보내기·결제·삭제 성격의 버튼, 메신저에서 Enter는 승인을 받은 뒤 본체가 직접 누른다 (브라우저와 같은 승인 게이트)
-// - 비밀번호 칸 값은 읽지도 넣지도 않는다
-import { josa } from '@dool2/protocol/rich'
+// - Only apps the user allowed. An app used for the first time needs approval ("Can Dool2 control this app?")
+// - Terminals, System Settings and Finder are blocked by default (otherwise turning off the shell means nothing).
+//   Browsers only through the browser tools (the helper blocks them too)
+// - Send, pay and delete buttons, and Enter in messengers, are pressed by the daemon itself after approval (the same
+//   approval gate as the browser)
+// - Password field values are never read or typed
+import type { Lang } from '@dool2/i18n'
 import type { ApprovalRecord, Approvals } from './approvals.js'
 import { classifyRisk, parseRefs, type RiskKind, type ToolResult } from './browser-tools.js'
 import type { HandsCaller } from './hands.js'
+import { screenCopy } from './locales/screen.js'
+import { PASSWORD_ROLE } from './region/kr/screen.js'
 
 export const SCREEN_TOOLS = [
   'status',
@@ -24,7 +29,7 @@ export const SCREEN_TOOLS = [
   'request_approval',
 ] as const
 
-/** 사용자가 켜기 전에는 다루지 않는 앱 (셸·설정·파일을 AI가 마음대로 다루면 안 된다) */
+/** Apps not controlled until the user turns them on (the AI must not freely handle the shell, settings or files) */
 export const DEFAULT_BLOCKED = [
   'com.apple.Terminal',
   'com.googlecode.iterm2',
@@ -38,7 +43,7 @@ export const DEFAULT_BLOCKED = [
   'com.apple.Automator',
 ]
 
-/** Enter를 누르면 메시지가 나가는 앱 */
+/** Apps where pressing Enter sends a message */
 export const MESSENGERS = [
   'com.kakao.KakaoTalkMac',
   'com.tinyspeck.slackmacgap',
@@ -57,13 +62,15 @@ export interface ScreenSettings {
   allowed(): string[]
   setAllowed(list: string[]): Promise<void> | void
   finalStep(): 'approve' | 'self'
-  /** 금고 계정 (사이트 주소·아이디만). 앱 로그인에 쓸 계정을 고른다 */
+  /** Vault accounts (site address and ID only). Picks the account for an app login */
   vaultList?(): Promise<{ id: string; origin: string; username: string }[]>
-  /** 금고 값 꺼내기 (본체 안에서만 쓴다. AI에게 돌려주지 않는다) */
+  /** Reads vault values (used only inside the daemon, never returned to the AI) */
   vaultReveal?(id: string): Promise<{ username: string; password: string } | undefined>
+  /** Language for text people read (approval cards and results). Default Korean */
+  lang?(): Lang
 }
 
-/** 주소에서 이름 부분 (accounts.kakao.com → kakao). 흔한 앞뒤 말은 뺀다 */
+/** Name part of an address (accounts.kakao.com → kakao). Common prefixes and suffixes are dropped */
 const HOST_NOISE = new Set([
   'www',
   'accounts',
@@ -95,8 +102,8 @@ export function hostWords(origin: string): string[] {
 }
 
 /**
- * 이 앱에 넣어도 되는 금고 계정: 사이트 이름(kakao)이 앱 번들 id(com.kakao.KakaoTalkMac)에 들어 있을 때만.
- * AI가 다른 사이트 비밀번호를 엉뚱한 앱에 넣지 못하게 본체가 정한다
+ * Vault accounts that may go into this app: only when the site name (kakao) is in the app bundle id
+ * (com.kakao.KakaoTalkMac). The daemon decides, so the AI can't put another site's password into the wrong app
  */
 export function vaultForApp<T extends { origin: string }>(
   bundleId: string,
@@ -128,12 +135,12 @@ interface AppInfo {
   bundleId: string
   name: string
   active?: boolean
-  /** 앱스토어에서 받는 중 (아직 열 수 없다) */
+  /** Downloading from the App Store (can't be opened yet) */
   installing?: boolean
 }
 
 export class ScreenTools {
-  /** 앱별 마지막으로 읽은 화면의 요소 (누를 버튼 글자를 AI 말이 아니라 화면에서 확인하려고) */
+  /** Elements of the last screen read per app (to check button labels against the screen, not the AI's words) */
   private screens = new Map<string, Map<string, { role: string; name: string }>>()
   private names = new Map<string, string>()
 
@@ -143,6 +150,10 @@ export class ScreenTools {
     private readonly settings: ScreenSettings,
   ) {}
 
+  private get m() {
+    return screenCopy(this.settings.lang?.() ?? 'ko')
+  }
+
   available() {
     return this.hands.available()
   }
@@ -151,25 +162,25 @@ export class ScreenTools {
     return this.settings.allowed().includes(bundleId)
   }
 
-  /** 허용 안 한 앱이면 AI에게 할 일을 알려 준다 */
+  /** For an app that isn't allowed, tells the AI what to do */
   private gate(bundleId: unknown): string | ToolResult {
     if (typeof bundleId !== 'string' || !/^[\w.-]+$/.test(bundleId))
-      return err('bundleId가 필요해요. screen_apps로 앱 목록을 먼저 보세요.')
+      return err('bundleId is required. Look at the app list with screen_apps first.')
     if (!this.allowedApp(bundleId)) {
       const blocked = DEFAULT_BLOCKED.includes(bundleId)
       return err(
         blocked
-          ? `${bundleId}는 기본으로 막아 둔 앱이에요(터미널·설정·파일 관리자). 사용자가 두리 설정에서 직접 켜야 해요. 다른 방법을 찾거나 사용자에게 직접 해 달라고 부탁하세요.`
-          : `사용자가 이 앱(${bundleId})을 두리가 조작하도록 아직 허용하지 않았어요. screen_request_app으로 허용을 요청하고 이번 답을 끝내세요.`,
+          ? `${bundleId} is blocked by default (terminal, settings, file manager). The user has to turn it on in Dool2 settings themselves. Find another way, or ask the user to do it themselves.`
+          : `The user hasn't approved Dool2 controlling this app (${bundleId}) yet. Request approval with screen_request_app and end this reply.`,
       )
     }
     return bundleId
   }
 
   /**
-   * 메신저에서 이 Enter가 보내기인지: 글을 쓰는 칸(입력칸)에 초점이 있을 때만 보내기다.
-   * 검색칸·채팅 목록에서 Enter는 방 열기라 승인을 받지 않는다 (11-23 실측: 방 열기에도 승인을 두 번 받았다).
-   * 모르겠으면 보내기로 본다
+   * Whether this Enter sends in a messenger: only when focus is in the message input.
+   * Enter in a search field or the chat list opens a room, so no approval (measured 11-23: approval was asked twice
+   * just to open a room). When unsure, treat it as sending
    */
   private async enterSends(id: string): Promise<boolean> {
     const f = (await this.hands.call('focused', { bundleId: id }).catch(() => undefined)) as
@@ -186,38 +197,47 @@ export class ScreenTools {
     return (await this.hands.call('status')) as Status
   }
 
-  /** 권한·잠금 확인. 문제가 있으면 AI가 할 말 */
-  private async ready(needScreen = false): Promise<ToolResult | undefined> {
-    if (!this.hands.available())
-      return err('이 PC에서는 아직 PC 화면 제어를 쓸 수 없어요 (지금은 맥만 돼요).')
+  /** Permission and lock check. The problem, if any */
+  private async problem(
+    needScreen = false,
+  ): Promise<'unavailable' | 'locked' | 'accessibility' | 'screen' | undefined> {
+    if (!this.hands.available()) return 'unavailable'
     const s = await this.status()
-    if (s.locked)
-      return err(
-        'PC 화면이 잠겨 있어서 앱을 다룰 수 없어요. 사용자에게 PC 잠금을 풀어 달라고 부탁하고 이번 답을 끝내세요.',
-      )
-    if (!s.accessibility || (needScreen && !s.screenRecording))
-      return err(
-        `맥의 ${!s.accessibility ? '"손쉬운 사용"' : '"화면 기록"'} 권한이 꺼져 있어요. 사용자에게 두리 설정 → PC 앱 조작에서 [권한 켜기]를 눌러 달라고 부탁하고 이번 답을 끝내세요.`,
-      )
+    if (s.locked) return 'locked'
+    if (!s.accessibility) return 'accessibility'
+    if (needScreen && !s.screenRecording) return 'screen'
     return undefined
+  }
+
+  /** Permission and lock check. If there's a problem, what the AI should do */
+  private async ready(needScreen = false): Promise<ToolResult | undefined> {
+    const p = await this.problem(needScreen)
+    if (!p) return undefined
+    if (p === 'unavailable') return err(UNAVAILABLE)
+    if (p === 'locked')
+      return err(
+        "The PC screen is locked, so apps can't be controlled. Ask the user to unlock the PC and end this reply.",
+      )
+    return err(
+      `The Mac ${p === 'accessibility' ? '"Accessibility"' : '"Screen Recording"'} permission is off. Ask the user to press [Turn on permission] in Dool2 settings → PC app control, and end this reply.`,
+    )
   }
 
   async run(tool: string, a: Record<string, unknown>): Promise<ToolResult> {
     switch (tool) {
       case 'status': {
-        if (!this.hands.available())
-          return text('이 PC에서는 아직 PC 화면 제어를 쓸 수 없어요 (지금은 맥만 돼요).')
+        if (!this.hands.available()) return text(UNAVAILABLE)
         const s = await this.status()
         const allowed = this.settings.allowed()
         return text(
           [
-            `손쉬운 사용 권한: ${s.accessibility ? '켜짐' : '꺼짐'} · 화면 기록 권한: ${s.screenRecording ? '켜짐' : '꺼짐'} · 화면 잠김: ${s.locked ? '예' : '아니요'}`,
-            `허용한 앱: ${allowed.length ? allowed.join(', ') : '없음'}`,
+            `Accessibility permission: ${s.accessibility ? 'on' : 'off'} · Screen Recording permission: ${s.screenRecording ? 'on' : 'off'} · Screen locked: ${s.locked ? 'yes' : 'no'}`,
+            `Allowed apps: ${allowed.length ? allowed.join(', ') : 'none'}`,
           ].join('\n'),
         )
       }
       case 'apps': {
-        if (!this.hands.available()) return err('이 PC에서는 아직 PC 화면 제어를 쓸 수 없어요.')
+        if (!this.hands.available()) return err("PC screen control isn't available on this PC yet.")
         const running = (await this.hands.call('apps')) as AppInfo[]
         const q = typeof a.query === 'string' ? a.query.trim().toLowerCase() : ''
         const installed = q
@@ -226,22 +246,22 @@ export class ScreenTools {
             )
           : []
         const mark = (x: AppInfo) =>
-          `${x.name} (${x.bundleId})${this.allowedApp(x.bundleId) ? ' · 허용됨' : DEFAULT_BLOCKED.includes(x.bundleId) ? ' · 막힘' : ''}`
+          `${x.name} (${x.bundleId})${this.allowedApp(x.bundleId) ? ' · allowed' : DEFAULT_BLOCKED.includes(x.bundleId) ? ' · blocked' : ''}`
         for (const x of [...running, ...installed]) this.names.set(x.bundleId, x.name)
         return text(
           [
-            '켜져 있는 앱:',
-            ...running.map((x) => `- ${mark(x)}${x.active ? ' · 앞에 있음' : ''}`),
+            'Running apps:',
+            ...running.map((x) => `- ${mark(x)}${x.active ? ' · in front' : ''}`),
             ...(q
               ? [
                   '',
-                  `설치된 앱 중 "${q}":`,
+                  `Installed apps matching "${q}":`,
                   ...(installed.length
                     ? installed.map(
                         (x) =>
-                          `- ${mark(x)}${x.installing ? ' · 아직 설치 중(앱스토어에서 받는 중이라 열 수 없어요. 설치됐다고 말하지 말고 App Store 화면에서 진행률을 보세요)' : ''}`,
+                          `- ${mark(x)}${x.installing ? " · still installing (downloading from the App Store, can't be opened yet. Don't say it's installed; check the progress on the App Store screen)" : ''}`,
                       )
-                    : ['- 없음']),
+                    : ['- none']),
                 ]
               : []),
           ].join('\n'),
@@ -253,7 +273,7 @@ export class ScreenTools {
         const r = await this.ready()
         if (r) return r
         await this.hands.call('open', { bundleId: id }, 30_000)
-        return this.read(id, undefined, '앱을 열었어요.')
+        return this.read(id, undefined, 'Opened the app.')
       }
       case 'read': {
         const id = this.gate(a.bundleId)
@@ -269,7 +289,7 @@ export class ScreenTools {
         if (r) return r
         const ref = String(a.ref ?? '')
         const el = this.screens.get(id)?.get(ref)
-        if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
+        if (!el) return err(unknownRef(ref))
         const risk = classifyRisk(el.name)
         if (risk) return this.blocked(risk.kind, risk.reason, el.name, ref)
         const res = (await this.hands.call('click', { bundleId: id, ref })) as { via: string }
@@ -277,7 +297,7 @@ export class ScreenTools {
         return this.read(
           id,
           undefined,
-          `"${el.name || ref}"을(를) 눌렀어요 (${res.via === 'press' ? '접근성' : '마우스'}).`,
+          `Pressed "${el.name || ref}" (${res.via === 'press' ? 'accessibility' : 'mouse'}).`,
         )
       }
       case 'type': {
@@ -285,18 +305,18 @@ export class ScreenTools {
         if (typeof id !== 'string') return id
         const r = await this.ready()
         if (r) return r
-        if (typeof a.text !== 'string' || !a.text) return err('넣을 글자가 없어요')
+        if (typeof a.text !== 'string' || !a.text) return err('No text to type')
         const ref = typeof a.ref === 'string' ? a.ref : undefined
         if (ref) {
           const el = this.screens.get(id)?.get(ref)
-          if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
-          if (el.role === '비밀번호칸')
+          if (!el) return err(unknownRef(ref))
+          if (el.role === PASSWORD_ROLE)
             return err(
-              '비밀번호 칸에는 screen_type으로 넣지 않아요. 로그인 화면이면 screen_login으로 금고 계정을 넣어요.',
+              "Don't type into a password field with screen_type. On a login screen, use screen_login to fill the vault account.",
             )
         }
         await this.hands.call('type', { bundleId: id, text: a.text, ...(ref ? { ref } : {}) })
-        return text(`글자를 넣었어요. 아직 보내지는 않았어요. 확인하려면 screen_read로 다시 읽으세요.`)
+        return text('Typed the text. Nothing was sent yet. To check, read again with screen_read.')
       }
       case 'login': {
         const id = this.gate(a.bundleId)
@@ -304,22 +324,22 @@ export class ScreenTools {
         const r = await this.ready()
         if (r) return r
         if (!this.settings.vaultList || !this.settings.vaultReveal)
-          return err('이 PC에서는 금고를 쓸 수 없어요.')
+          return err("The vault isn't available on this PC.")
         const all = await this.settings.vaultList()
         const fit = vaultForApp(id, all, typeof a.site === 'string' ? a.site : undefined)
         const name = this.names.get(id) ?? id
         if (!fit.length)
           return err(
-            `금고에 ${name}에 쓸 계정이 없어요. 계정 사이트 주소로 로그인 카드를 띄워(browser_request_login, url 예: https://accounts.kakao.com) 사용자가 폰에서 아이디·비밀번호를 넣게 한 뒤 screen_login을 다시 불러요.`,
+            `The vault has no account for ${name}. Show a login card for the account's site address (browser_request_login, url for example https://accounts.kakao.com) so the user enters the ID and password on the phone, then call screen_login again.`,
           )
         if (fit.length > 1 && typeof a.site !== 'string')
           return err(
-            `${name}에 쓸 수 있는 계정이 여러 개예요: ${fit.map((e) => `${new URL(e.origin).hostname}(${e.username})`).join(', ')}. site로 하나를 골라 다시 불러요.`,
+            `There are several accounts for ${name}: ${fit.map((e) => `${new URL(e.origin).hostname}(${e.username})`).join(', ')}. Pick one with site and call again.`,
           )
         const entry = fit[0] as (typeof fit)[number]
         const cred = await this.settings.vaultReveal(entry.id)
         if (!cred?.password)
-          return err('금고에서 비밀번호를 꺼내지 못했어요. 로그인 카드로 다시 받아 주세요.')
+          return err("Couldn't read the password from the vault. Get it again with a login card.")
         await this.hands.call(
           'fill_login',
           { bundleId: id, username: cred.username, password: cred.password },
@@ -329,7 +349,7 @@ export class ScreenTools {
         return this.read(
           id,
           undefined,
-          `금고의 ${new URL(entry.origin).hostname} 계정(${entry.username})으로 아이디·비밀번호를 넣었어요(값은 두리만 봐요). 로그인 버튼을 screen_click으로 누르고, 기기 인증·인증번호가 나오면 폰 카드로 받아요.`,
+          `Filled the ID and password with the vault's ${new URL(entry.origin).hostname} account (${entry.username}) (only the daemon sees the values). Press the login button with screen_click, and if device verification or a verification code comes up, get it with a phone card.`,
         )
       }
       case 'key': {
@@ -339,17 +359,17 @@ export class ScreenTools {
         if (r) return r
         const key = String(a.key ?? '')
         const mods = Array.isArray(a.modifiers) ? a.modifiers.map(String) : []
-        // 메신저에서 Enter는 "보내기"다
+        // Enter in a messenger means "send"
         if (
           (key === 'Enter' || key === 'Return') &&
           MESSENGERS.includes(id) &&
           !mods.includes('shift') &&
           (await this.enterSends(id))
         )
-          return this.blocked('contact', '메신저에서 Enter(보내기)', 'Enter', 'key:Enter')
+          return this.blocked('contact', this.m.enterSends, 'Enter', 'key:Enter')
         await this.hands.call('key', { bundleId: id, key, modifiers: mods })
         await sleep(300)
-        return this.read(id, undefined, `${[...mods, key].join('+')} 키를 눌렀어요.`)
+        return this.read(id, undefined, `Pressed ${[...mods, key].join('+')}.`)
       }
       case 'screenshot': {
         const id = this.gate(a.bundleId)
@@ -362,31 +382,34 @@ export class ScreenTools {
         }
         return {
           content: [
-            { type: 'text', text: `${this.names.get(id) ?? id} 창 "${s.window}"` },
+            { type: 'text', text: `${this.names.get(id) ?? id} window "${s.window}"` },
             { type: 'image', data: s.data, mimeType: 'image/jpeg' },
           ],
         }
       }
       case 'request_app': {
-        if (typeof a.bundleId !== 'string' || !/^[\w.-]+$/.test(a.bundleId)) return err('bundleId가 필요해요')
+        if (typeof a.bundleId !== 'string' || !/^[\w.-]+$/.test(a.bundleId))
+          return err('bundleId is required')
         if (DEFAULT_BLOCKED.includes(a.bundleId))
-          return err('기본으로 막아 둔 앱이라 요청할 수 없어요. 사용자가 두리 설정에서 직접 켜야 해요.')
-        if (this.allowedApp(a.bundleId)) return text('이미 허용된 앱이에요.')
+          return err(
+            "This app is blocked by default, so it can't be requested. The user has to turn it on in Dool2 settings themselves.",
+          )
+        if (this.allowedApp(a.bundleId)) return text('This app is already allowed.')
         const name = this.names.get(a.bundleId) ?? a.bundleId
         const rec = this.approvals.create({
           tabId: -1,
           ref: 'app',
-          role: '앱',
+          role: this.m.appRole,
           label: name,
           url: `app:${a.bundleId}`,
           kind: 'app',
-          reason: '처음 다루는 앱',
-          what: `두리가 ${josa(name, '을/를')} 조작해도 될까요?`,
+          reason: this.m.firstApp,
+          what: this.m.mayControl(name),
           where: name,
-          ...(typeof a.why === 'string' ? { cancel: `하려는 일: ${a.why.slice(0, 200)}` } : {}),
+          ...(typeof a.why === 'string' ? { cancel: this.m.purpose(a.why.slice(0, 200)) } : {}),
         })
         return text(
-          `허용을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 ${name}을(를) 조작해도 되는지 한 문장으로 묻고 이번 답을 끝내세요. 허용하면 다음 메시지로 알려 줘요.`,
+          `Requested approval (${rec.id.slice(0, 8)}). Ask the user in one sentence whether Dool2 may control ${name}, and end this reply. If they approve, the next message will say so.`,
         )
       }
       case 'request_approval': {
@@ -394,15 +417,13 @@ export class ScreenTools {
         if (typeof id !== 'string') return id
         const ref = String(a.ref ?? '')
         const isEnter = ref === 'key:Enter'
-        const el = isEnter ? { role: '키', name: 'Enter' } : this.screens.get(id)?.get(ref)
-        if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
-        const risk = isEnter
-          ? { kind: 'contact' as const, reason: '메신저에서 Enter(보내기)' }
-          : classifyRisk(el.name)
-        if (!risk) return err('이 버튼은 승인 없이 눌러도 돼요. screen_click을 쓰세요.')
+        const el = isEnter ? { role: this.m.keyRole, name: 'Enter' } : this.screens.get(id)?.get(ref)
+        if (!el) return err(unknownRef(ref))
+        const risk = isEnter ? { kind: 'contact' as const, reason: this.m.enterSends } : classifyRisk(el.name)
+        if (!risk) return err('This button can be pressed without approval. Use screen_click.')
         if (this.settings.finalStep() === 'self')
           return err(
-            '사용자가 "마지막 버튼은 항상 직접 누르기"로 정해 두었어요. 승인 카드는 띄우지 않아요. 마지막 버튼 바로 앞까지 준비해 둔 것(무엇을·어디서·얼마)을 한두 문장으로 정리해 "준비해 뒀어요"라고 알리고 이번 답을 끝내세요. 다른 앱으로 가라고 하지 않아요.',
+            'The user chose "always press the last button myself". Do not show an approval card. Sum up in one or two sentences what is ready right up to the last button (what, where, how much), tell the user it is ready, and end this reply. Do not tell the user to go to another app.',
           )
         const shot = await this.hands
           .call('screenshot', { bundleId: id, maxWidth: 1000 }, 30_000)
@@ -417,28 +438,28 @@ export class ScreenTools {
           url: `app:${id}`,
           kind: risk.kind,
           reason: risk.reason,
-          what: String(a.what ?? '').slice(0, 200) || `${name}에서 "${el.name}" 누르기`,
+          what: String(a.what ?? '').slice(0, 200) || this.m.pressIn(name, el.name),
           where: name,
           ...(typeof a.amount === 'string' ? { amount: a.amount.slice(0, 60) } : {}),
           ...(shot ? { shot } : {}),
         })
         return text(
-          `승인을 요청했어요(${rec.id.slice(0, 8)}). 사용자에게 무엇을 승인해 달라는지 한두 문장으로 말하고 이번 답은 여기서 끝내세요. 승인하면 두리가 그것 하나만 하고 다음 메시지로 결과를 알려 줘요.`,
+          `Requested approval (${rec.id.slice(0, 8)}). Tell the user in one or two sentences what you are asking them to approve, and end this reply here. If they approve, Dool2 does only that one thing and the next message reports the result.`,
         )
       }
     }
-    return err(`모르는 화면 도구예요: ${tool}`)
+    return err(`Unknown screen tool: ${tool}`)
   }
 
   private blocked(kind: RiskKind, reason: string, label: string, ref: string): ToolResult {
     const what =
       kind === 'money'
-        ? '돈이 나가는 일'
+        ? 'spends money'
         : kind === 'contact'
-          ? '다른 사람에게 보내는 일'
-          : '되돌릴 수 없는 일'
+          ? 'sends something to another person'
+          : "can't be undone"
     return err(
-      `"${label}"은(는) ${what}(${reason})이라 승인 없이는 하지 않아요. 무엇을 하려는지 정리해 screen_request_approval(ref: "${ref}")로 승인을 요청하고 이번 답을 끝내세요.`,
+      `"${label}" ${what} (${reason}), so it is never done without approval. Sum up what you want to do, request approval with screen_request_approval(ref: "${ref}"), and end this reply.`,
     )
   }
 
@@ -452,19 +473,20 @@ export class ScreenTools {
     return text(
       [
         ...(note ? [note] : []),
-        `[앱 ${s.app}] 창: ${s.window || '(제목 없음)'}`,
+        `[app ${s.app}] window: ${s.window || '(untitled)'}`,
         '',
         s.text ||
-          '(읽을 글이 없어요. 이 앱은 접근성 정보를 잘 주지 않아요. screen_screenshot으로 화면을 보세요)',
-        ...(s.truncated ? ['', '(화면이 길어서 앞부분만 읽었어요)'] : []),
+          "(No text to read. This app doesn't expose much accessibility info. Look at the screen with screen_screenshot)",
+        ...(s.truncated ? ['', '(The screen is long, so only the first part was read)'] : []),
       ].join('\n'),
     )
   }
 
-  /** 사용자가 승인한 것 하나만 한다: 앱 허용, 또는 승인한 버튼(글자가 그대로일 때만)·Enter */
+  /** Does only the one thing the user approved: allow the app, or press the approved button (only if its label is unchanged) or Enter. Messages are for people */
   async approve(id: string): Promise<{ ok: boolean; message: string }> {
+    const m = this.m
     const rec: ApprovalRecord | undefined = this.approvals.take(id)
-    if (!rec) return { ok: false, message: '이미 처리했거나 시간이 지난 승인 요청이에요' }
+    if (!rec) return { ok: false, message: m.gone }
     const bundleId = rec.url.replace(/^app:/, '')
     const finish = (ok: boolean, message: string) => {
       this.approvals.finish(id, ok, message)
@@ -473,28 +495,30 @@ export class ScreenTools {
     try {
       if (rec.kind === 'app') {
         await this.settings.setAllowed([...new Set([...this.settings.allowed(), bundleId])])
-        return finish(true, `${josa(rec.label, '을/를')} 두리가 조작하도록 허용했어요.`)
+        return finish(true, m.allowed(rec.label))
       }
-      const r = await this.ready()
-      if (r) return finish(false, r.content.map((c) => (c.type === 'text' ? c.text : '')).join(' '))
-      if (rec.ref === 'key:Enter') {
-        await this.hands.call('key', { bundleId, key: 'Enter', modifiers: [] })
-        return finish(true, `${rec.where}에서 Enter를 눌렀어요.`)
-      }
-      // 누르기 직전 화면을 다시 읽어, 승인한 버튼이 그대로일 때만 누른다
-      await this.read(bundleId)
-      const now = this.screens.get(bundleId)?.get(rec.ref)
-      if (!now || now.name !== rec.label || now.role !== rec.role)
+      const p = await this.problem()
+      if (p)
         return finish(
           false,
-          `승인한 뒤 화면이 바뀌어서 "${rec.label}" 버튼을 누르지 않았어요. 화면을 다시 확인해 주세요.`,
+          p === 'unavailable' ? m.unavailable : p === 'locked' ? m.locked : m.permissionOff(p === 'screen'),
         )
+      if (rec.ref === 'key:Enter') {
+        await this.hands.call('key', { bundleId, key: 'Enter', modifiers: [] })
+        return finish(true, m.pressedEnter(rec.where))
+      }
+      // Read the screen again right before pressing, and press only if the approved button is unchanged
+      await this.read(bundleId)
+      const now = this.screens.get(bundleId)?.get(rec.ref)
+      if (!now || now.name !== rec.label || now.role !== rec.role) return finish(false, m.changed(rec.label))
       await this.hands.call('click', { bundleId, ref: rec.ref })
-      return finish(true, `${rec.where}의 "${rec.label}" 버튼을 눌렀어요.`)
+      return finish(true, m.pressed(rec.where, rec.label))
     } catch (e) {
-      return finish(false, `"${rec.label}"을(를) 하지 못했어요: ${(e as Error).message}`)
+      return finish(false, m.failed(rec.label, (e as Error).message))
     }
   }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const UNAVAILABLE = "PC screen control isn't available on this PC yet (Mac only for now)."
+const unknownRef = (ref: string) => `Unknown ${ref}. Read the screen with screen_read first.`

@@ -1,30 +1,30 @@
-// 승인 게이트 (docs/architecture.md 4장, M3).
-// 위험한 버튼(돈·연락·되돌릴 수 없음)은 AI가 누를 수 없다. AI는 "이 버튼을 눌러도 될지" 요청만 하고,
-// 사용자가 화면 캡처와 내용을 보고 승인하면 **두리 본체가** 그 버튼 하나만 직접 누른다.
-// - 한 번만 쓸 수 있고, 10분(결제는 1시간)이 지나면 끝난다. 승인 한 번 = 버튼 한 번
-// - 결제는 누른 뒤에도 '승인됨(결제 중)'으로 두고, 주문 완료(browser_order_done)에서 주문번호와 함께 끝낸다
-// - 누르기 직전 페이지를 다시 읽어, 승인한 버튼(글자)과 주소가 그대로일 때만 누른다
-// - AI가 적은 금액·내용은 틀릴 수 있다(프롬프트 주입). 그래서 승인 카드에 실제 화면 캡처를 함께 보여 준다
-// 폰 생체인증 서명은 폰 앱(M6)과 함께 붙는다. 지금은 PC 앱의 화면용 토큰을 가진 쪽(사용자 화면)만 승인할 수 있다.
+// Approval gate (docs/architecture.md chapter 4, M3).
+// The AI cannot press risky buttons (money, contact, irreversible). It only asks "may I press this button?",
+// and when the user approves after seeing the screenshot and details, **the Dool2 daemon** presses that one button.
+// - Single use, and it ends after 10 minutes (1 hour for payments). One approval = one button press
+// - A payment stays 'approved (paying)' after the press, and ends with the order number at order done (browser_order_done)
+// - Right before pressing, the page is read again, and the button is pressed only if the approved label and URL are unchanged
+// - Amounts and details the AI writes can be wrong (prompt injection), so the approval card also shows a real screenshot
+// Biometric signing on the phone comes with the phone app (M6). For now only the holder of the desktop app's screen token (the user's screen) can approve.
 import { randomUUID } from 'node:crypto'
 import type { ApprovalView } from '@dool2/protocol'
 
 export const APPROVAL_TTL_MS = 10 * 60_000
 /**
- * 결제 카드는 1시간: 승인은 결제 때 한 번이라 사용자가 카드를 열어 고르고 생각할 시간이 필요하다.
- * 누르기 직전에 화면(주소·버튼 글자)을 다시 확인하므로 오래 기다려도 엉뚱한 곳을 누르지 않는다
- * (실측 11-20: 23분 뒤 승인하자 '시간이 지난 승인'이 되어 카드를 다시 받아야 했다)
+ * Payment cards last 1 hour: approval happens once at payment, so the user needs time to open the card, choose and think.
+ * The screen (URL and button label) is checked again right before pressing, so a long wait never presses the wrong thing
+ * (measured 11-20: approving after 23 minutes gave an 'expired approval' and the card had to be requested again)
  */
 export const MONEY_APPROVAL_TTL_MS = 60 * 60_000
-/** 끝난 요청을 남겨 두는 시간 (폰 기록용). 지나면 지운다 — 본체가 하루 내내 켜져 있어도 쌓이지 않게 */
+/** How long finished requests are kept (for the phone's history). Deleted after that, so they don't pile up while the daemon runs all day */
 export const APPROVAL_KEEP_MS = 60 * 60_000
 
 export interface ApprovalRecord extends ApprovalView {
-  /** 승인 카드에 보여 줄 화면 캡처 (JPEG base64) */
+  /** Screenshot shown on the approval card (JPEG base64) */
   shot?: string
-  /** 선택지 id → 결제 화면의 그 칸(표시와 글자). 화면에는 보내지 않는다 */
+  /** Choice id → that field on the payment screen (ref and label). Not sent to the screen */
   choiceRefs?: Record<string, { ref: string; role: string; name: string; near?: string }>
-  /** 세부 선택 묶음 → 그 펼침 목록 표시와 고를 것 글자들 */
+  /** Sub-choice group → that dropdown's ref and the option labels */
   subRefs?: Record<string, { ref: string; options: string[] }>
 }
 
@@ -60,7 +60,7 @@ export interface NewApproval {
 
 export class Approvals {
   private items = new Map<string, ApprovalRecord>()
-  /** 새 승인 요청이 생기면 (폰에 알리기) */
+  /** When a new approval request is created (notify the phone) */
   onCreate?: (rec: ApprovalRecord) => void
 
   constructor(private readonly now: () => number = Date.now) {}
@@ -68,7 +68,7 @@ export class Approvals {
   create(n: NewApproval): ApprovalRecord {
     const t = this.now()
     this.prune(t)
-    // 같은 탭·같은 버튼에 기다리는 요청이 있으면 새것으로 바꾼다
+    // A pending request for the same tab and button is replaced by the new one
     for (const r of this.items.values())
       if (r.status === 'pending' && r.tabId === n.tabId && r.ref === n.ref && r.url === n.url)
         r.status = 'expired'
@@ -81,7 +81,7 @@ export class Approvals {
     }
     this.items.set(rec.id, rec)
     this.onCreate?.(rec)
-    // 시간이 지나면 폰 카드도 닫는다 (안 닫으면 만료된 카드를 눌러 '시간이 지난 승인'만 받는다)
+    // Close the phone card when time runs out (otherwise tapping an expired card only gets 'approval expired')
     const ttl = Date.parse(rec.expiresAt) - t
     const timer = setTimeout(() => {
       if (this.get(rec.id)?.status === 'expired') this.onChange?.(rec)
@@ -106,7 +106,7 @@ export class Approvals {
     })
   }
 
-  /** 기다리는 요청을 하나 꺼내 처리 중으로 바꾼다. 이미 처리됐거나 만료됐으면 undefined */
+  /** Takes one pending request and marks it in progress. undefined if already handled or expired */
   take(id: string): ApprovalRecord | undefined {
     const r = this.get(id)
     if (!r || r.status !== 'pending') return undefined
@@ -122,7 +122,7 @@ export class Approvals {
     return true
   }
 
-  /** 탭이 닫히면 그 탭에서 기다리던 요청은 더 누를 수 없다. 새 요청이 같은 탭의 예전 요청을 대신할 때도 쓴다 */
+  /** When a tab closes, its pending requests can no longer be pressed. Also used when a new request replaces an older one in the same tab */
   expireTab(tabId: number) {
     for (const r of this.items.values())
       if (r.status === 'pending' && r.tabId === tabId) {
@@ -131,10 +131,10 @@ export class Approvals {
         this.onChange?.(r)
       }
   }
-  /** 기다리던 요청이 만료됐을 때 (폰 카드를 닫는다) */
+  /** When a pending request expires (closes the phone card) */
   onChange?: (rec: ApprovalRecord) => void
 
-  /** 끝난 지 오래된 요청을 지우고, 끝난 요청의 화면 캡처(수백 KB)는 바로 버린다 */
+  /** Deletes long-finished requests, and drops screenshots (hundreds of KB) of finished requests right away */
   private prune(now: number) {
     for (const [id, r] of this.items) {
       this.get(id)
@@ -144,7 +144,7 @@ export class Approvals {
     }
   }
 
-  /** 누르기는 했지만 아직 끝나지 않은 승인 (결제: 주문 완료까지). 상태는 '승인됨' 그대로, 지금까지의 결과만 남긴다 */
+  /** An approval that was pressed but isn't finished yet (payment: until the order is done). Status stays 'approved', only the result so far is kept */
   progress(id: string, result: string) {
     const r = this.items.get(id)
     if (!r) return
@@ -152,7 +152,7 @@ export class Approvals {
     r.shot = undefined
   }
 
-  /** 승인을 끝내고 폰·화면에 알린다 (결제가 주문 완료·실패로 끝났을 때) */
+  /** Ends the approval and tells the phone and screen (when a payment ends in a completed or failed order) */
   settle(id: string, ok: boolean, result: string) {
     const r = this.items.get(id)
     if (!r) return

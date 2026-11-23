@@ -200,13 +200,13 @@ describe('서비스 도구 실행기', () => {
     expect(r.structuredContent).toEqual({ shops: [{ name: '가게 가', rating: 4.5, times: ['오후 7:00'] }] })
     expect(textOf(r)).toContain('1. name: 가게 가 · rating: 4.5 · times: 오후 7:00')
     expect(textOf(r)).toContain('예약하려면 demo_eats_book')
-    expect(textOf(r)).toContain('[탭 7]')
+    expect(textOf(r)).toContain('[Tab 7]')
   })
 
   it('내 주문 모아 보기: 주문 도구가 있는 연결한 쇼핑몰이 없으면 연결 카드를 권한다', async () => {
     const { connectors, calls } = await setup({ connected: true })
     const r = await connectors.ordersAll()
-    expect(textOf(r)).toContain('연결한 쇼핑몰이 없어요')
+    expect(textOf(r)).toContain('No shop is connected')
     expect(calls).toEqual([])
   })
 
@@ -216,7 +216,7 @@ describe('서비스 도구 실행기', () => {
     const n = calls.length
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(calls.length).toBe(n)
-    expect(textOf(r)).toContain('분 전(')
+    expect(textOf(r)).toContain(' min ago (')
   })
 
   it('입력이 틀리면 실행하지 않고 무엇을 고칠지 알려 준다', async () => {
@@ -231,7 +231,7 @@ describe('서비스 도구 실행기', () => {
     const { connectors } = await setup({ rows: [] })
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toMatch(/2단계\(wait\)에서 막혔어요.*\[탭 7\].*browser_read/)
+    expect(textOf(r)).toMatch(/step 2 \(wait\).*\[Tab 7\].*browser_read/)
     expect(connectors.breakages[0]).toMatchObject({ tool: 'demo_eats_search', step: 2, kind: 'wait' })
   })
 
@@ -246,7 +246,7 @@ describe('서비스 도구 실행기', () => {
   it('돈 내기 도구는 마지막 버튼을 누르지 않고 승인 요청으로 끝낸다', async () => {
     const { connectors, calls, tools } = await setup({ connected: true })
     const r = await connectors.call('demo_eats_book', { shop: '가게 가', time: '19:00' })
-    expect(textOf(r)).toContain('승인을 요청했어요')
+    expect(textOf(r)).toContain('Asked for approval')
     // 시간 버튼은 눌렀고(오후 7:00), 예약하기는 누르지 않았다
     const clicks = calls.filter((c) => c[0] === 'click')
     expect(clicks).toHaveLength(1)
@@ -282,17 +282,19 @@ describe('서비스 도구 실행기', () => {
       openWorldHint: true,
     })
     expect(cat[1]?.annotations.destructiveHint).toBe(true)
-    expect(cat[0]?.description).toContain('입력 예: {"keyword":"성수"}')
+    expect(cat[0]?.description).toContain('Input examples: {"keyword":"성수"}')
   })
 
   it('서비스 찾기는 도구·등급·입력 칸과 연결하면 되는 일을 알려 준다', async () => {
     const { connectors } = await setup()
     const r = textOf(await connectors.find('성수 식당'))
-    expect(r).toContain('## 데모맛집 (demo-eats) — 연결 전')
+    expect(r).toContain('## 데모맛집 (demo-eats) — not connected')
     expect(r).toContain(
-      '- demo_eats_search [lookup · 로그인 없이] 식당 찾기 — 입력: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
+      '- demo_eats_search [lookup · no login] 식당 찾기 — input: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
     )
-    expect(r).toContain("연결하면 바로: 예약. 그 단계가 되면 connect_ask('demo-eats')")
+    expect(r).toContain(
+      "After connecting: 예약. When you reach that step, show the connect card with connect_ask('demo-eats')",
+    )
   })
 
   it('주소로 그 사이트의 도구를 찾는다 (브라우저로 열었을 때 도구를 쓰라고)', async () => {
@@ -376,13 +378,13 @@ describe('서비스 도구 실행기', () => {
     }
     ;(await c.load()).get('demo-eats')!.connector = raw
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
-    expect(textOf(r)).toContain('결과 칸이 비어 있어요: shops.name 칸이 2줄 중 0줄만 채워졌어요')
+    expect(textOf(r)).toContain('Result fields are empty: shops.name 칸이 2줄 중 0줄만 채워졌어요')
     expect(health.summary().demo_eats_search?.last).toBe('empty')
     await connectors.call('demo_eats_search', { keyword: '한남' })
     await connectors.call('demo_eats_search', { keyword: '강남' })
     expect((await connectors.catalog()).map((t) => t.name)).not.toContain('demo_eats_search')
     const rest = await connectors.call('demo_eats_search', { keyword: '홍대' })
-    expect(textOf(rest)).toMatch(/잠시 쉬고 있어요.*브라우저 도구로/)
+    expect(textOf(rest)).toMatch(/is resting.*browser tools/)
   })
 
   it('예전 확장(커넥터 엔진 없음)이면 서비스 도구를 내보이지 않고 브라우저로 하라고 한다', async () => {
@@ -390,7 +392,7 @@ describe('서비스 도구 실행기', () => {
     ;(on as unknown as { opts: { extensionVersion: () => string } }).opts.extensionVersion = () => '0.1.0'
     expect(await on.catalog()).toEqual([])
     const r = await on.call('demo_eats_search', { keyword: '성수' })
-    expect(textOf(r)).toMatch(/예전 버전\(0\.1\.0\).*브라우저 도구로/)
+    expect(textOf(r)).toMatch(/old version \(0\.1\.0\).*browser tools/)
   })
 
   it('같은 서비스는 한 번에 하나씩, 사이를 두고 연다 (한 탭을 동시에 옮기면 사이트가 막는다)', async () => {
@@ -452,7 +454,7 @@ describe('서비스 도구 실행기', () => {
     })
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(r.structuredContent).toEqual({ stopped: '데모맛집이 이 브라우저를 막았어요.', blocked: true })
-    expect(textOf(r)).toContain('바로 다시 부르지 말고')
+    expect(textOf(r)).toContain('Do not call it again right away')
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 
@@ -501,10 +503,10 @@ describe('서비스 도구 실행기', () => {
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
     expect(r.structuredContent).toMatchObject({ blocked: true, captcha: true, tabId: 7 })
     const t = textOf(r)
-    expect(t).toContain('[탭 7]')
+    expect(t).toContain('[Tab 7]')
     expect(t).toContain('browser_request_code(kind: "captcha")')
     expect(t).toContain('browser_request_tap')
-    expect(t).toContain('demo_eats_search을 같은 입력으로 다시 불러요')
+    expect(t).toContain('call demo_eats_search again with the same input')
     expect(t).not.toContain('다른 곳에서 찾을게요')
     expect(calls).not.toContain('close')
     // 로봇 확인은 고장이 아니다: 쉬게 하지 않는다
@@ -755,13 +757,13 @@ describe('찾은 뒤 바로 주문 준비로 오면 한 줄 붙인다 (판단은
     expect(c.pickGate('food', { tier: 'lookup' })).toBeUndefined()
     const note = c.pickGate('food', { tier: 'pay' })
     expect(note).toContain('show_cards')
-    expect(note).toContain('이미 골랐으면')
+    expect(note).toContain('If they already picked')
     user = { at: Date.now() + 1, text: '두 번째 걸로' }
     expect(c.pickGate('food', { tier: 'pay' })).toBeUndefined()
     // "알아서"는 정규식으로 가리지 않는다: 같은 안내가 붙고 AI가 대화를 보고 진행한다
     c.pickGate('food', { tier: 'lookup' })
     user = { at: Date.now() - 5, text: '알아서 골라서 바로 시켜 줘' }
-    expect(c.pickGate('food', { tier: 'pay' })).toContain('알아서')
+    expect(c.pickGate('food', { tier: 'pay' })).toContain('decide for them')
   })
 
   it('같은 동네 이름인데 내 번지가 없으면 짐작한 주소라 내 정보 주소로 바꾼다', async () => {

@@ -592,17 +592,17 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     }
     // 화면용 토큰으로는 부를 수 없다
     expect(await tool('vault_find', {}, 't0ken')).toBe('HTTP 401')
-    expect(await tool('pay_method_list')).toContain('등록된 결제 수단이 없어요')
-    expect(await tool('vault_find', { site: '쿠팡' })).toContain('아니요, 쿠팡')
+    expect(await tool('pay_method_list')).toContain('No payment methods saved')
+    expect(await tool('vault_find', { site: '쿠팡' })).toContain('No, there is no login for 쿠팡')
     await api('/api/vault', {
       method: 'POST',
       body: JSON.stringify({ url: 'https://www.coupang.com', username: 'duri1234', password: 'pw-123' }),
     })
     const yes = await tool('vault_find', { site: '쿠팡' })
-    expect(yes).toContain('네, 쿠팡')
+    expect(yes).toContain('Yes, a login for 쿠팡')
     expect(yes).toContain('du******')
     expect(yes).not.toMatch(/pw-123|duri1234/)
-    expect(await tool('vault_find')).toContain('로그인이 저장된 사이트 1곳')
+    expect(await tool('vault_find')).toContain('1 site(s) have a login saved')
   })
 })
 
@@ -668,7 +668,7 @@ describe('승인 API', () => {
         }),
       })
     ).json()) as { content: { text: string }[] }
-    expect(r.content[0]?.text).toContain('승인을 요청했어요')
+    expect(r.content[0]?.text).toContain('Approval requested')
     const { approvals } = (await (await api('/api/approvals')).json()) as {
       approvals: { id: string; kind: string; items?: string[] }[]
     }
