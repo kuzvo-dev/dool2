@@ -1,19 +1,20 @@
-// 화면 그리기 도우미 (PC 앱·폰 앱이 같이 쓴다)
-// - 두리 답을 그릴 때 쓰는 아주 작은 마크다운: 문단, "- " 목록, "1. " 목록, **굵게**
-// - 일하는 중에 보여 줄 도구 이름 ("웹페이지 여는 중")
-// HTML은 해석하지 않는다. 결과는 글자 조각뿐이라 PC 앱·폰 앱이 각자 DOM으로 그린다.
-// 의존성이 없어야 한다 (PC 앱 화면에 파일 그대로 복사해 쓴다).
+// Screen drawing helpers (shared by the PC app and the phone app)
+// - A very small markdown for drawing Dool2's answers: paragraphs, "- " lists, "1. " lists, **bold**
+// - Tool names to show while working ("웹페이지 여는 중" / "Opening a web page")
+// HTML is not interpreted. The result is only text pieces, so the PC app and the phone app each draw them into their own DOM.
+// It must have no dependencies (the PC app copies this file as-is next to its window), so catalogs here are plain objects and only types are imported.
+import type { Lang } from '@dool2/i18n'
 
 export interface Inline {
   text: string
   bold?: true
-  /** 누르면 열 주소 (https만) */
+  /** Address to open on press (https only) */
   href?: string
-  /** 출처 칩: 문장 끝 "([MBC](주소), [연합뉴스](주소))" → 작은 칩으로 */
+  /** Source chip: "([MBC](url), [연합뉴스](url))" at the end of a sentence becomes small chips */
   src?: true
   /**
-   * PC 파일 경로 ("~/Documents/두리/초대장.png"). 답에 `경로`·[이름](file:///경로)·[이름](~/경로)로 적힌 것.
-   * PC 앱은 누르면 그 파일을 열고, 폰은 PC에서 받아 저장한다 (경로가 사용자 폴더 안인지는 본체가 본다)
+   * A PC file path ("~/Documents/두리/초대장.png"). Written in an answer as `path`, [name](file:///path) or [name](~/path).
+   * The PC app opens the file on press, and the phone fetches it from the PC and saves it (the core checks the path is inside the user's folder)
    */
   file?: string
 }
@@ -22,17 +23,17 @@ export type RichBlock =
   | { type: 'p'; lines: Inline[][] }
   | { type: 'ul'; items: Inline[][] }
   | { type: 'ol'; start: number; items: Inline[][] }
-  /** "## 제목" (1~3) */
+  /** "## Heading" (1-3) */
   | { type: 'h'; level: 1 | 2 | 3; text: Inline[] }
-  /** 마크다운 표 "| a | b |" (둘째 줄 "|---|---|"이 있으면 첫 줄이 머리) */
+  /** Markdown table "| a | b |" (if the second line is "|---|---|", the first line is the header) */
   | { type: 'table'; head?: Inline[][]; rows: Inline[][][] }
 
-// 링크: [글](https://…) 또는 맨 주소. 출처 묶음: "([A](u), [B](u))"
+// Links: [text](https://…) or a bare URL. Source group: "([A](u), [B](u))"
 const MD_LINK = String.raw`\[([^\]\n]{1,80})\]\((https?:\/\/[^\s)]+)\)`
 const SRC_GROUP = new RegExp(String.raw`\s?\(\s*(${MD_LINK}(?:\s*[,·]\s*${MD_LINK})*)\s*\)`, 'g')
 const LINK_OR_URL = new RegExp(String.raw`${MD_LINK}|(https?:\/\/[^\s)<>\]]+[^\s)<>\].,!?])`, 'g')
 
-/** 맨 주소를 보여 줄 글: 사이트 이름만 (www. 뺌) */
+/** Text to show for a bare URL: just the site name (without www.) */
 function hostLabel(url: string): string {
   try {
     return new URL(url).host.replace(/^www\./, '')
@@ -52,14 +53,14 @@ function bolds(text: string): Inline[] {
   return out
 }
 
-// PC 파일: `~/Documents/두리/초대장.png` (확장자가 있는 경로만), [이름](file:///Users/…), [이름](~/…)
-// 맥 "~/"·"/Users/", 리눅스 "/home/", 윈도우 "C:\" 경로
+// PC files: `~/Documents/두리/초대장.png` (only paths with an extension), [name](file:///Users/…), [name](~/…)
+// Mac "~/" and "/Users/", Linux "/home/", Windows "C:\" paths
 const PATH = String.raw`(?:~[\/\\]|\/Users\/|\/home\/|[A-Za-z]:\\)[^\`\n]{0,300}?\.[A-Za-z0-9]{1,6}`
 const CODE_PATH = String.raw`\`(${PATH})\``
 const MD_FILE = String.raw`\[([^\]\n]{1,80})\]\(((?:file:\/\/|~[\/\\])[^)\n]{1,600})\)`
 const FILE_RE = new RegExp(`${CODE_PATH}|${MD_FILE}`, 'g')
 
-/** file:///Users/a/%EB%91%90.png → /Users/a/두.png (윈도우 file:///C:/… → C:/…) */
+/** file:///Users/a/%EB%91%90.png -> /Users/a/두.png (Windows file:///C:/… -> C:/…) */
 function filePath(target: string): string {
   if (!target.startsWith('file://')) return target
   let p = target.slice('file://'.length).replace(/^localhost\//, '/')
@@ -69,12 +70,12 @@ function filePath(target: string): string {
   return /^\/[A-Za-z]:[/\\]/.test(p) ? p.slice(1) : p
 }
 
-/** 파일 이름만: "~/Documents/두리/초대장.png" → "초대장.png" */
+/** File name only: "~/Documents/두리/초대장.png" -> "초대장.png" */
 export function fileName(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path
 }
 
-/** 파일 경로를 조각으로 (나머지는 굵게만 본다) */
+/** Split a file path into pieces (the rest only looks at bold) */
 function files(text: string): Inline[] {
   const out: Inline[] = []
   let at = 0
@@ -89,7 +90,7 @@ function files(text: string): Inline[] {
   return out
 }
 
-/** 링크·맨 주소·파일 경로를 조각으로 (나머지는 굵게만 본다) */
+/** Split links, bare URLs and file paths into pieces (the rest only looks at bold) */
 function links(text: string, src?: true): Inline[] {
   const out: Inline[] = []
   let at = 0
@@ -104,7 +105,7 @@ function links(text: string, src?: true): Inline[] {
   return out
 }
 
-/** 한 줄 미리 보기용: 출처 묶음 "([A](주소))"는 빼고, 링크는 글만, 파일 경로는 파일 이름만 남긴다 */
+/** For a one-line preview: drops the source group "([A](url))", keeps only the text of links, and only the file name of file paths */
 export function stripLinks(text: string): string {
   return text
     .replace(SRC_GROUP, '')
@@ -115,7 +116,7 @@ export function stripLinks(text: string): string {
 export function inline(text: string): Inline[] {
   const out: Inline[] = []
   let at = 0
-  // 출처 묶음은 괄호·쉼표를 빼고 칩만 남긴다
+  // Source groups lose their parentheses and commas, leaving only the chips
   for (const m of text.matchAll(SRC_GROUP)) {
     const i = m.index ?? 0
     if (i > at) out.push(...links(text.slice(at, i)))
@@ -126,7 +127,7 @@ export function inline(text: string): Inline[] {
   return out
 }
 
-/** 표 한 줄 "| a | b |" → 칸들 */
+/** One table row "| a | b |" -> cells */
 function tableCells(line: string): string[] {
   return line
     .trim()
@@ -138,10 +139,10 @@ function tableCells(line: string): string[] {
 const TABLE_LINE = /^\s*\|.*\|\s*$/
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 
-/** 빈 줄로 문단을 나누고, 이어진 "- "·"1. " 줄은 목록으로, "| |" 줄은 표로, "## "는 제목으로 묶는다 */
+/** Split paragraphs on blank lines, group consecutive "- " and "1. " lines into lists, "| |" lines into tables and "## " into headings */
 export function richBlocks(text: string): RichBlock[] {
   const blocks: RichBlock[] = []
-  // 답 끝 빠른 답 줄([[답: …]])은 버튼으로 따로 그린다. 흘러오는 중인 덜 온 꼬리도 감춘다
+  // The quick-reply line at the end of an answer ([[답: …]]) is drawn separately as buttons. A half-arrived tail still streaming in is hidden too
   for (const chunk of hideQuickTail(text)
     .replace(/\r\n/g, '\n')
     .split(/\n{2,}/)) {
@@ -154,7 +155,7 @@ export function richBlocks(text: string): RichBlock[] {
     const lines = chunk.split('\n')
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      // 표: 이어진 "| … |" 줄. 둘째 줄이 "|---|"면 첫 줄이 머리
+      // Table: consecutive "| … |" lines. If the second line is "|---|", the first line is the header
       if (TABLE_LINE.test(line)) {
         const rows: string[] = []
         while (i < lines.length && TABLE_LINE.test(lines[i] ?? '')) rows.push(lines[i++] ?? '')
@@ -191,7 +192,7 @@ export function richBlocks(text: string): RichBlock[] {
   return blocks
 }
 
-/** 일하는 중 표시: "웹페이지 여는" (도구 이름 앞의 mcp__dool2__ / dool2_는 떼고 본다) */
+/** Working indicator: "웹페이지 여는" (the mcp__dool2__ / dool2_ prefix of the tool name is dropped first) */
 const TOOL_LABEL: Record<string, string> = {
   status: '두리 상태 확인하는',
   browser_login: '금고로 로그인 칸 채우는',
@@ -276,23 +277,125 @@ const TOOL_LABEL: Record<string, string> = {
   service_call: '서비스에서 일하는',
   orders_all: '내 주문 모아 보는',
 }
-/** 서비스 도구(catchtable_search …)는 끝말로: 찾기·조회·보기·준비 */
+/** Service tools (catchtable_search …) go by their ending: search, check, view, prepare */
 const SERVICE_VERB: [RegExp, string][] = [
   [/_(?:search|find)$/, '찾는'],
   [/_(?:track|check|status)$/, '조회하는'],
   [/_(?:list|orders|history|view|detail|slots)$/, '보는'],
   [/_(?:prepare|book|reserve|order|cart)\w*$/, '준비하는'],
 ]
-export function toolLabel(name: string): string {
+/** English working labels, as full phrases (the Korean ones are word stems that take " 중") */
+const TOOL_LABEL_EN: Record<string, string> = {
+  status: 'Checking Dool2 status',
+  browser_login: 'Filling in the sign-in fields from the vault',
+  browser_open: 'Opening a web page',
+  browser_navigate: 'Opening a web page',
+  browser_read: 'Reading the page',
+  browser_click: 'Clicking',
+  browser_type: 'Typing',
+  browser_press: 'Pressing a key',
+  browser_scroll: 'Scrolling',
+  browser_screenshot: 'Looking at the screen',
+  browser_back: 'Going back',
+  browser_wait: 'Waiting for the screen to change',
+  browser_tabs: 'Checking the open tabs',
+  browser_close: 'Closing a tab',
+  browser_handoff: 'Asking for your help',
+  browser_request_approval: 'Asking for approval',
+  browser_checkout: 'Showing the payment card',
+  browser_order_done: 'Confirming the order',
+  browser_wait_auth: 'Waiting for approval in the authenticator app',
+  browser_request_code: 'Getting a value from your phone',
+  browser_request_login: 'Showing the sign-in card',
+  browser_fill_profile: 'Filling in your info',
+  browser_request_profile: 'Showing the info card',
+  browser_new_password: 'Creating a new password',
+  browser_select: 'Choosing an option',
+  browser_dialog: "Answering the site's prompt",
+  browser_steps: 'Doing several actions',
+  browser_hover: 'Hovering the mouse',
+  browser_upload: 'Uploading a file',
+  screen_status: 'Checking PC status',
+  screen_apps: 'Looking for the app',
+  screen_open: 'Opening the app',
+  screen_read: 'Reading the app screen',
+  screen_click: 'Clicking in the app',
+  screen_type: 'Typing in the app',
+  screen_key: 'Pressing a key in the app',
+  screen_screenshot: 'Looking at the app screen',
+  screen_request_app: 'Asking to use the app',
+  screen_request_approval: 'Asking for approval',
+  goal_create: 'Creating a goal',
+  goal_list: 'Looking at goals',
+  goal_update: 'Updating a goal',
+  goal_delete: 'Deleting a goal',
+  library_save: 'Saving to the library',
+  library_find: 'Looking in the library',
+  memory_save: 'Remembering',
+  memory_forget: 'Forgetting',
+  idea_suggest: 'Finding things to do',
+  photo_view: 'Looking at the photo',
+  pay_method_list: 'Checking payment methods',
+  profile_view: 'Looking at your info',
+  vault_find: 'Looking in the vault',
+  feed_post: 'Posting to the feed',
+  feed_tell: 'Telling you what was done ahead of time',
+  feed_find: 'Looking at the feed',
+  connect_ask: 'Showing the connect card',
+  show_cards: 'Making cards',
+  show_list: 'Making a list',
+  show_result: 'Putting the results together',
+  show_route: 'Working out the route',
+  show_draft: 'Writing a draft to send',
+  phone_sms: 'Sending a text',
+  conversation_search: 'Searching past chats',
+  file_find: 'Looking for files',
+  file_read: 'Reading a file',
+  file_write: 'Creating a file',
+  file_move: 'Moving files',
+  file_convert: 'Converting photo formats',
+  file_print: 'Printing',
+  file_pdf: 'Making a PDF',
+  file_render: 'Making a PDF or image',
+  image_make: 'Drawing with image AI',
+  video_make: 'Making a video',
+  video_motion: 'Making a motion video',
+  video_clip: 'Making an AI video clip',
+  video_style: 'Choosing a video style',
+  file_trash: 'Looking in the trash',
+  file_download: 'Downloading a file',
+  pc_screen: 'Working with the PC screen',
+  service_find: 'Looking for a service',
+  service_call: 'Working in a service',
+  orders_all: 'Gathering your orders',
+}
+const SERVICE_VERB_EN: [RegExp, string][] = [
+  [/_(?:search|find)$/, 'Searching'],
+  [/_(?:track|check|status)$/, 'Checking'],
+  [/_(?:list|orders|history|view|detail|slots)$/, 'Looking things up'],
+  [/_(?:prepare|book|reserve|order|cart)\w*$/, 'Getting it ready'],
+]
+
+/**
+ * The working label for a tool. Korean is a word stem ("웹페이지 여는") that callers follow with " 중";
+ * English is a full phrase ("Opening a web page"), so use toolAct() when you want the finished text
+ */
+export function toolLabel(name: string, lang: Lang = 'ko'): string {
   const n = name.replace(/^(mcp__dool2__|dool2_)/, '')
+  if (lang === 'en') return TOOL_LABEL_EN[n] ?? SERVICE_VERB_EN.find(([re]) => re.test(n))?.[1] ?? 'Working'
   return TOOL_LABEL[n] ?? SERVICE_VERB.find(([re]) => re.test(n))?.[1] ?? '일하는'
 }
 
+/** The finished "what is being done" text: "웹페이지 여는 중" / "Opening a web page" */
+export function toolAct(name: string, lang: Lang = 'ko'): string {
+  return lang === 'en' ? toolLabel(name, 'en') : `${toolLabel(name)} 중`
+}
+
 /**
- * 단계가 일어난 곳 (일하는 카드에서 서비스 아이콘으로 묶는 기준).
- * - 웹: 사이트 주소 "search.naver.com" (주소가 없는 browser_ 도구는 지금 보고 있는 곳 here)
- * - 서비스 도구: "tool:catchtable_search" (어느 연결 카드인지는 화면이 카드 목록으로 찾는다)
- * - PC 앱 "app", 파일 "file". 그 밖(기억·목표처럼 두리 안에서 하는 일)은 undefined
+ * Where a step happened (the key for grouping the working card by service icon).
+ * - Web: the site address "search.naver.com" (for browser_ tools without an address, the place being viewed now, here)
+ * - Service tool: "tool:catchtable_search" (the screen finds which connect card it is from the card list)
+ * - PC app "app", files "file". Everything else (work done inside Dool2, like memory and goals) is undefined
  */
 export function toolPlace(name: string, input?: unknown, here?: string): string | undefined {
   const n = name.replace(/^(mcp__dool2__|dool2_)/, '')
@@ -321,25 +424,25 @@ export function toolPlace(name: string, input?: unknown, here?: string): string 
   return undefined
 }
 
-/** 폰에서 보낸 사진 표시: 말 끝의 "[사진: 파일이름]" */
+/** Mark for a photo sent from the phone: "[사진: file name]" at the end of the message (a protocol marker, kept in Korean) */
 export const PHOTO_MARK = '[사진: '
-/** 말에서 사진 표시를 떼어 낸다: { text, photo } */
+/** Strip the photo mark from the message: { text, photo } */
 export function splitPhoto(text: string): { text: string; photo?: string } {
   const m = /\s*\[사진: ([\w-]+\.jpg)\]\s*$/.exec(text)
   return m ? { text: text.slice(0, m.index).trim(), photo: m[1] as string } : { text }
 }
 
-/** 화면 제목용: 사진 표시(잘린 것 포함)를 "(사진)"으로 */
+/** For screen titles: the photo mark (even a cut-off one) becomes "(사진)" */
 export function withoutPhotoMark(text: string): string {
   return text.replace(/\s*\[사진:[^\]]*\]?/g, ' (사진)').trim()
 }
 
 /**
- * 두리 앱이 사용자 대신 AI에게 보내는 알림 (승인 결과 등). 대화 기록에는 user로 남지만,
- * 화면에서는 내 말풍선이 아니라 가운데 회색 알림 줄로 보여 준다.
+ * A notice the Dool2 app sends to the AI on the user's behalf (approval results etc.). It stays in the history as user,
+ * but the screen shows it as a grey notice line in the middle, not as my speech bubble.
  */
 export const APP_NOTE = '[두리 앱 알림] '
-/** AI에게만 필요한 문장 (화면 알림 줄에서는 뺀다): 도구 이름, "이어서 해 주세요" 같은 지시 */
+/** Sentences only the AI needs (left out of the on-screen notice line): tool names and instructions like "continue" */
 const AI_ONLY =
   /browser_\w+|screen_\w+|connect_\w+|이어서 해 주세요|누르지 말아 주세요|^지금 화면:|^사용자에게/
 
@@ -347,11 +450,11 @@ export function appNote(text: string): string {
   return APP_NOTE + text
 }
 
-/** 알림이면 화면에 보여 줄 글 (AI에게만 필요한 꼬리말은 뺀다), 아니면 undefined */
+/** The text to show on screen if it is a notice (the tail only the AI needs is dropped), otherwise undefined */
 export function readAppNote(text: string): string | undefined {
   if (!text.startsWith(APP_NOTE)) return undefined
-  // 사람에게 하는 말이 앞에 오고 AI 지시가 뒤에 붙는다: 지시가 처음 나오는 문장에서 끊는다
-  // (문장마다 거르면 괄호 속 "규칙 판단이라 틀릴 수 있어요" 같은 AI용 말이 새어 나왔다 — 실측 11-21)
+  // What is meant for people comes first and the AI's instructions are attached after: cut at the first sentence with an instruction
+  // (filtering sentence by sentence let AI-only remarks like "this is a rule-based judgment and may be wrong" in parentheses leak out, measured 11-21)
   const shown: string[] = []
   for (const sentence of text.slice(APP_NOTE.length).split(/(?<=[.!?요])\s+/)) {
     if (AI_ONLY.test(sentence) || /[(（]/.test(sentence)) break
@@ -361,18 +464,21 @@ export function readAppNote(text: string): string | undefined {
 }
 
 /**
- * 답에 섞여 나온 영어 속생각 문단을 걷어 낸다. 한글이 하나도 없고 속생각 말투인 문단만 뺀다
- * (URL·상품명·코드처럼 영어인 문단은 남긴다). 다 걷어 내면 원래 글을 그대로 둔다.
+ * Removes English inner-thought paragraphs mixed into an answer. Only paragraphs with no Hangul at all and in a thinking tone are dropped
+ * (English paragraphs like URLs, product names and code stay). If everything would be dropped, the original text is kept.
  */
-/** 결과 한 줄: 앞의 인사("좋은 아침이에요." 등)를 빼고 결과부터 */
-export function resultLine(text: string): string {
-  return text
-    .replace(/\*\*/g, '')
-    .replace(/^\s*(?:좋은\s*(?:아침|오후|저녁|하루)이?에요|안녕하세요|안녕)[.!~,]*\s*/u, '')
-    .trim()
+/** One result line: drops the leading greeting ("좋은 아침이에요." etc.) so the result comes first */
+export function resultLine(text: string, lang: Lang = 'ko'): string {
+  const greeting =
+    lang === 'en'
+      ? /^\s*(?:good\s+(?:morning|afternoon|evening|day)|hello|hi|hey)[.!~,]*\s*/iu
+      : /^\s*(?:좋은\s*(?:아침|오후|저녁|하루)이?에요|안녕하세요|안녕)[.!~,]*\s*/u
+  return text.replace(/\*\*/g, '').replace(greeting, '').trim()
 }
 
-export function stripMonologue(text: string): string {
+export function stripMonologue(text: string, lang: Lang = 'ko'): string {
+  // The Hangul test below is how Korean answers are told apart from English inner thoughts; an English answer has nothing to tell apart
+  if (lang === 'en') return text
   const THINK =
     /\b(I'll|I will|I'm going to|Let me|Let's|Now I|Now let|First,|Next,|Then I|skill|tool|tab \d|ref|click|scroll|navigate|snapshot)\b/i
   const kept = dropEnglishLines(text)
@@ -384,10 +490,11 @@ export function stripMonologue(text: string): string {
 }
 
 /**
- * 한글 답 사이에 섞인 영어 속생각 줄("Menu may still be loading.")을 뺀다: 한글이 없고 영어 단어가 4개 이상 이어진 줄.
- * 주소(http)·표 줄(|)·상품 이름처럼 짧은 영어는 남긴다 (사용자 11-20: 진행 중에 영어 생각이 보인다)
+ * Drops English inner-thought lines ("Menu may still be loading.") mixed into a Korean answer: lines with no Hangul and four or more English words in a row.
+ * Short English like addresses (http), table lines (|) and product names stays (user report 11-20: English thoughts show while in progress)
  */
-export function dropEnglishLines(text: string): string {
+export function dropEnglishLines(text: string, lang: Lang = 'ko'): string {
+  if (lang === 'en') return text
   return text
     .split('\n')
     .filter(
@@ -401,21 +508,21 @@ export function dropEnglishLines(text: string): string {
 }
 
 /**
- * 일하는 중간에 한 말(도구를 쓰기 전 혼잣말)에서 "지금 하는 일"로 보여 줄 한 줄.
- * 한글이 있는 마지막 문장만 쓰고(영어 속생각은 버린다), 60자를 넘으면 자른다.
+ * One line to show as "what is being done now" from what was said mid-work (the monologue before using a tool).
+ * Only the last sentence containing Hangul is used (English inner thoughts are dropped; with lang 'en' the last sentence is used as is), and it is cut when longer than 60 characters.
  */
-export function narrationLine(text: string): string | undefined {
+export function narrationLine(text: string, lang: Lang = 'ko'): string | undefined {
   const sentences = text
     .replace(/\s+/g, ' ')
     .split(/(?<=[.!?…요다])\s+|(?<=[.!?])(?=\S)/)
     .map((x) => x.trim())
-    .filter((x) => /[가-힣]/.test(x))
+    .filter((x) => lang === 'en' || /[가-힣]/.test(x))
   const last = sentences.at(-1)
   if (!last) return undefined
   return last.length > 60 ? `${last.slice(0, 59)}…` : last
 }
 
-/** 받침에 맞는 조사: josa('주문', '을/를') → '주문을'. 한글이 아니면 받침 없는 쪽 */
+/** Particle that fits the final consonant: josa('주문', '을/를') -> '주문을'. For non-Hangul it picks the form without a final consonant */
 export function josa(word: string, pair: '을/를' | '은/는' | '이/가' | '과/와'): string {
   const [withFinal, without] = pair.split('/') as [string, string]
   const last =
@@ -428,15 +535,15 @@ export function josa(word: string, pair: '을/를' | '은/는' | '이/가' | '�
   return word + (hasFinal ? withFinal : without)
 }
 
-// ── 빠른 답: 답 글 끝 한 줄 [[답: a | b | c]] ─────────────
+// ── Quick replies: one line [[답: a | b | c]] at the end of an answer ─────────────
 
 const QUICK_LINE = /\n?[ \t]*\[\[답\s*[:：]([^\]\n]*)\]\][ \t]*$/
-/** 아직 흘러오는 중인 꼬리 ([[답: 화요… 처럼 덜 온 것) */
+/** A tail still streaming in (a partial one like [[답: 화요…) */
 const QUICK_PARTIAL = /\n?[ \t]*\[(\[(답(\s*[:：][^\]\n]*\]?)?)?)?$/
 
 /**
- * 답 끝의 빠른 답 줄을 떼어 낸다. 2~4개, 하나에 20자까지만 버튼으로.
- * 줄이 이상하면 버튼 없이 줄만 지운다
+ * Strips the quick-reply line at the end of an answer. 2-4 items, and only up to 20 characters each become buttons.
+ * If the line looks wrong, only the line is removed, with no buttons
  */
 export function splitQuick(text: string): { text: string; replies?: string[] } {
   const m = text.match(QUICK_LINE)
@@ -451,18 +558,18 @@ export function splitQuick(text: string): { text: string; replies?: string[] } {
   return replies.length >= 2 ? { text: body, replies } : { text: body }
 }
 
-/** 흘러오는 중인 답에서 빠른 답 줄(덜 온 것 포함)을 감춘다 */
+/** Hides the quick-reply line (even a partial one) from an answer still streaming in */
 export function hideQuickTail(text: string): string {
   const done = text.match(QUICK_LINE)
   if (done) return text.slice(0, done.index).trimEnd()
   const part = text.match(QUICK_PARTIAL)
-  // "[" 하나만 왔을 때는 글 속 대괄호일 수도 있지만, 한 글자 잠깐 늦게 보이는 것뿐이라 감춘다
+  // A lone "[" may be a bracket in the text, but it is only one character shown a moment late, so hide it
   return part && part.index !== undefined && part[0].trim() ? text.slice(0, part.index).trimEnd() : text
 }
 
 /**
- * 입력하는 동안 하이픈 넣기: 휴대폰 010-1234-5678, 생년월일 1990-01-31.
- * 숫자만 보고 다시 만들어서 지우거나 붙여 넣어도 맞는다. 그 밖의 글자가 섞이면 그대로 둔다
+ * Hyphenating while typing: mobile 010-1234-5678, birth date 1990-01-31.
+ * Rebuilt from the digits alone, so deleting or pasting still works. If other characters are mixed in, it is left as is
  */
 export function hyphenate(kind: 'phone' | 'birth', value: string): string {
   if (/[^\d\s-]/.test(value)) return value
@@ -472,7 +579,7 @@ export function hyphenate(kind: 'phone' | 'birth', value: string): string {
     return [n.slice(0, 4), n.slice(4, 6), n.slice(6)].filter(Boolean).join('-')
   }
   const n = d.slice(0, 11)
-  // 02 지역번호는 2자리, 그 밖은 3자리 + 가운데 3~4자리
+  // The 02 area code has 2 digits, others have 3 digits + 3-4 middle digits
   const head = n.startsWith('02') ? 2 : 3
   if (n.length <= head) return n
   const mid = n.length - head > 7 ? 4 : n.length - head > 6 ? (n.startsWith('02') ? 4 : 3) : 4

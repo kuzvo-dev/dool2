@@ -1,19 +1,19 @@
-// 긴 목록(피드·보관함·활동) 나눠 받기. 본체는 pageOf로 자르고, 폰·PC 화면은 Pager로 이어 붙인다.
-// 순서는 언제나 "최근 것부터, 같은 시각이면 id 큰 것부터"라 같은 밀리초에 생긴 것도 빠지거나 겹치지 않는다.
-// 커서는 "<시각>|<id>" (시각만 줘도 된다: 그 시각보다 앞의 것). 화면은 묶지 않고 불러오므로 다른 모듈을 부르지 않는다
+// Fetching long lists (feed, library, activity) in pages. The core slices with pageOf, and the phone and PC screens chain pages with Pager.
+// The order is always "newest first, and for the same time, larger id first", so items created in the same millisecond are neither skipped nor repeated.
+// The cursor is "<time>|<id>" (a time alone also works: everything before that time). The screens load modules unbundled, so this file imports no other module
 
-/** 한 페이지. next가 없으면 끝(더 없음) */
+/** One page. No next means the end (nothing more) */
 export interface Page<T> {
   items: T[]
   next?: string
 }
 
-/** 한 번에 보내는 기본 개수 */
+/** Default number of items per request */
 export const PAGE_SIZE = 30
-/** 한 번에 보낼 수 있는 가장 많은 개수 */
+/** The most items one request can return */
 export const PAGE_MAX = 100
 
-/** 이 항목 다음부터 받을 커서 */
+/** The cursor to fetch what comes after this item */
 export const cursorOf = (at: string, id: string) => `${at}|${id}`
 
 function readCursor(c: string): { at: string; id?: string } {
@@ -21,25 +21,25 @@ function readCursor(c: string): { at: string; id?: string } {
   return i < 0 ? { at: c } : { at: c.slice(0, i), id: c.slice(i + 1) || undefined }
 }
 
-/** a가 b보다 앞(최근)이면 음수 */
+/** Negative if a comes before b (is newer) */
 function order(aAt: string, aId: string, bAt: string, bId: string): number {
   if (aAt !== bAt) return aAt < bAt ? 1 : -1
   return aId === bId ? 0 : aId < bId ? 1 : -1
 }
 
-/** 커서보다 뒤(더 오래된 것)인지 */
+/** Whether it comes after the cursor (is older) */
 export function isAfter(at: string, id: string, cursor: string): boolean {
   const c = readCursor(cursor)
   if (at !== c.at) return at < c.at
   return c.id !== undefined && id < c.id
 }
 
-/** 최근 것부터 줄 세우기 (같은 시각이면 id 큰 것부터) */
+/** Sort newest first (for the same time, larger id first) */
 export function newestFirst<T extends { id: string }>(items: T[], at: (t: T) => string): T[] {
   return [...items].sort((a, b) => order(at(a), a.id, at(b), b.id))
 }
 
-/** 한 페이지 자르기: before(커서)보다 뒤의 것 중 앞에서 limit개 */
+/** Cut one page: the first limit items among those after before (the cursor) */
 export function pageOf<T extends { id: string }>(
   items: T[],
   at: (t: T) => string,
@@ -55,9 +55,9 @@ export function pageOf<T extends { id: string }>(
 }
 
 /**
- * 새로 받은 첫 페이지(head)를 이미 받아 둔 목록에 맞춘다.
- * head가 덮는 범위(맨 앞 ~ head의 마지막)는 head가 맞다(지워진 건 빠지고 바뀐 건 새 것으로).
- * 그보다 오래된 것은 앞서 받아 둔 것을 그대로 두고, 그 뒤 커서도 이어 쓴다
+ * Fits a freshly fetched first page (head) onto the list already fetched.
+ * The range head covers (from the very start to head's last item) is whatever head says (deleted items drop out, changed ones become the new version).
+ * Anything older than that keeps what was fetched earlier, and the cursor after it carries on
  */
 export function mergeHead<T extends { id: string }>(
   head: Page<T>,
@@ -65,7 +65,7 @@ export function mergeHead<T extends { id: string }>(
   at: (t: T) => string,
 ): Page<T> {
   const last = head.items.at(-1)
-  // head가 끝까지 다 담았으면(또는 비었으면) head가 전부다
+  // If head holds everything (or is empty), head is the whole list
   if (!head.next || !last) return { items: [...head.items], ...(head.next ? { next: head.next } : {}) }
   const edge = cursorOf(at(last), last.id)
   const ids = new Set(head.items.map((t) => t.id))
@@ -78,30 +78,30 @@ export function mergeHead<T extends { id: string }>(
 }
 
 /**
- * 화면의 긴 목록 하나: 첫 페이지는 상태(life)로 오고, 아래로 내리면 more()로 다음 페이지를 부탁한다.
- * 답은 take()로 넣는다 (PC는 바로, 폰은 중계로 온 답을 받았을 때)
+ * One long list on a screen: the first page arrives with the state (life), and scrolling down asks for the next page with more().
+ * Replies go in with take() (the PC right away, the phone when the reply comes through the relay)
  */
 export class Pager<T extends { id: string }> {
   items: T[] = []
   next?: string
   loading = false
-  /** 한 번이라도 받았는지 (받기 전엔 "여기까지예요"를 보이지 않는다) */
+  /** Whether anything was fetched even once (before that, "That's all" is not shown) */
   started = false
   private timer?: ReturnType<typeof setTimeout>
 
   constructor(
     private readonly at: (t: T) => string,
-    /** 다음 페이지를 부탁한다 (before 없으면 첫 페이지) */
+    /** Ask for the next page (the first page when before is missing) */
     private readonly ask: (before?: string) => void,
     private readonly changed: () => void = () => {},
   ) {}
 
-  /** 더 없음 */
+  /** Nothing more */
   get end(): boolean {
     return this.started && !this.next
   }
 
-  /** 받은 페이지 넣기. before가 없으면 첫 페이지(새로 고침), 있으면 지금 커서의 다음 페이지일 때만 붙인다 */
+  /** Put in a fetched page. Without before it is the first page (refresh); with before it is appended only if it is the next page after the current cursor */
   take(before: string | undefined, page: Page<T>) {
     if (before === undefined) {
       const m = mergeHead(page, { items: this.items, ...(this.next ? { next: this.next } : {}) }, this.at)
@@ -119,7 +119,7 @@ export class Pager<T extends { id: string }> {
     this.changed()
   }
 
-  /** 다음 페이지 부탁 (이미 부탁했거나 끝이면 하지 않는다). 답이 안 오면 10초 뒤 다시 누를 수 있게 */
+  /** Ask for the next page (does nothing if already asked or at the end). If no reply comes, it can be pressed again after 10 seconds */
   more(): boolean {
     if (this.loading || !this.next) return false
     this.loading = true
@@ -133,17 +133,17 @@ export class Pager<T extends { id: string }> {
     return true
   }
 
-  /** 첫 페이지 다시 받기 (상태로 첫 페이지가 오지 않는 목록: 활동) */
+  /** Fetch the first page again (for lists whose first page does not come with the state: activity) */
   refresh() {
     this.ask(undefined)
   }
 
-  /** 하나만 바꾸기 (반응·답처럼 화면에서 바로 바뀌어 보여야 할 때) */
+  /** Change one item (when a reaction or reply must show on screen right away) */
   patch(id: string, f: (t: T) => T) {
     this.items = this.items.map((t) => (t.id === id ? f(t) : t))
   }
 
-  /** 하나 빼기 (지웠을 때: 첫 페이지 밖의 것은 새 첫 페이지가 와도 남아 있으니 바로 뺀다) */
+  /** Remove one item (after deleting: items outside the first page stay even when a new first page arrives, so remove it right away) */
   remove(id: string) {
     this.items = this.items.filter((t) => t.id !== id)
   }

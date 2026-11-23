@@ -23,13 +23,13 @@ describe('연결 카드', () => {
   })
 
   it('폴더 이름, 빠진 도메인·로그인, 따옴표, 모르는 등급을 잡는다', () => {
-    expect(checkConnectCard('other', card)[0]).toContain('폴더 이름')
+    expect(checkConnectCard('other', card)[0]).toContain('folder name')
     const { site: _s, login: _l, ...rest } = card
     const problems = checkConnectCard('demo', rest)
     expect(problems.some((p) => p.startsWith('site'))).toBe(true)
     expect(problems.some((p) => p.startsWith('login'))).toBe(true)
     const quoted = { ...card, abilities: [{ ...card.abilities[0], say: '“언제 와?”' }, card.abilities[1]] }
-    expect(checkConnectCard('demo', quoted).some((p) => p.includes('따옴표'))).toBe(true)
+    expect(checkConnectCard('demo', quoted).some((p) => p.includes('quotes'))).toBe(true)
     const tier = { ...card, abilities: [{ ...card.abilities[0], tier: '마음대로' }, card.abilities[1]] }
     expect(checkConnectCard('demo', tier)).not.toEqual([])
   })
