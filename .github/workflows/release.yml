@@ -22,6 +22,11 @@ on:
         description: Upload to GitHub Releases (off builds the files only)
         type: boolean
         default: false
+      mac_runner:
+        description: macOS build machine (Apple silicon runners were out of capacity for a full day on 11-23; Intel builds both chips)
+        type: choice
+        options: [macos-15-intel, macos-15]
+        default: macos-15-intel
 
 permissions:
   contents: read
@@ -36,12 +41,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both are built on Apple silicon: the dmg tool breaks on Intel machines (macos-15-intel)
-        # (dmgbuild struct.error, 11-23). The Intel launch check runs under Rosetta
+        # One machine type builds both chips (inputs.mac_runner). Intel is the default: Apple silicon runners got no
+        # capacity for a full day (11-23 to 11-24). electron-builder's dmg tool breaks on Intel (dmgbuild struct.error,
+        # 11-23), so there the dmg is made with hdiutil (DOOL2_DMG). The launch check runs only for the machine's own
+        # chip, or the Intel build under Rosetta on Apple silicon
         arch: [arm64, x64]
-    runs-on: macos-15
+    runs-on: ${{ inputs.mac_runner }}
     env:
       DOOL2_ARCH: ${{ matrix.arch }}
+      DOOL2_DMG: ${{ inputs.mac_runner == 'macos-15-intel' && 'hdiutil' || '' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,10 +100,12 @@ jobs:
           codesign -dr - "$app" 2>&1 | tee "$RUNNER_TEMP/requirement.txt"
           grep -q 'certificate root' "$RUNNER_TEMP/requirement.txt"
       # Check: launch the built app and capture the first screen (does it start before a person tries it on a Mac)
-      # The Intel build runs under Rosetta and is slow: wait longer, and do not fail the build if it does not start (11-23: over 3 minutes)
+      # An Intel machine cannot run the Apple silicon build, so that one is skipped there. The Intel build under
+      # Rosetta on Apple silicon is slow: wait longer, and do not fail the build if it does not start (11-23: over 3 minutes)
       - name: Launch check
-        timeout-minutes: ${{ matrix.arch == 'x64' && 8 || 3 }}
-        continue-on-error: ${{ matrix.arch == 'x64' }}
+        if: ${{ !(inputs.mac_runner == 'macos-15-intel' && matrix.arch == 'arm64') }}
+        timeout-minutes: ${{ (inputs.mac_runner == 'macos-15' && matrix.arch == 'x64') && 8 || 3 }}
+        continue-on-error: ${{ inputs.mac_runner == 'macos-15' && matrix.arch == 'x64' }}
         run: |
           app=$(ls -d apps/desktop/release/mac*/Dool2.app)
           mkdir -p "$RUNNER_TEMP/smoke"

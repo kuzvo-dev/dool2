@@ -10,7 +10,16 @@
 // 3. Codex is not included (Dool2 downloads it on first use, agent-codex/download.ts)
 // 4. electron-builder makes the Mac dmg / Windows installer → release/
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -88,6 +97,10 @@ writeFileSync(
 // Mac chip: this Mac by default, DOOL2_ARCH for the other one (the Intel build machine's dmg tool is broken, so the
 // Apple silicon machine builds both, 11-23)
 const MAC_ARCH = (process.env.DOOL2_ARCH ?? process.arch) === 'arm64' ? 'arm64' : 'x64'
+// DOOL2_DMG=hdiutil: electron-builder's dmg tool (dmgbuild) breaks on Intel build machines (struct.error, 11-23),
+// so there the dmg is made with macOS's own hdiutil from the signed app instead. Used when releases build on Intel
+// runners because Apple silicon runners get no capacity (11-23 to 11-24: a full day of cancelled jobs)
+const HDIUTIL_DMG = process.platform === 'darwin' && process.env.DOOL2_DMG === 'hdiutil'
 const { build } = await import('electron-builder')
 await build({
   projectDir: root,
@@ -136,7 +149,7 @@ await build({
         LSApplicationCategoryType: 'public.app-category.productivity',
       },
       // dmg for first install, zip for in-app updates (update-install.ts unzips and swaps it in)
-      target: ['dmg', 'zip'].map((target) => ({
+      target: (HDIUTIL_DMG ? ['zip'] : ['dmg', 'zip']).map((target) => ({
         target,
         arch: [MAC_ARCH],
       })),
@@ -149,4 +162,23 @@ await build({
     publish: null,
   },
 })
+if (HDIUTIL_DMG) {
+  // The app electron-builder left in release/mac (x64) or release/mac-arm64, already signed by afterPack
+  const appDir = join(root, 'release', MAC_ARCH === 'arm64' ? 'mac-arm64' : 'mac')
+  const app = readdirSync(appDir).find((f) => f.endsWith('.app'))
+  if (!app) throw new Error(`No app in ${appDir}`)
+  const src = join(root, 'release', `dmg-src-${MAC_ARCH}`)
+  rmSync(src, { recursive: true, force: true })
+  mkdirSync(src, { recursive: true })
+  // ditto keeps the signature, symlinks and extended attributes
+  execFileSync('ditto', [join(appDir, app), join(src, app)], { stdio: 'inherit' })
+  symlinkSync('/Applications', join(src, 'Applications'))
+  const dmg = join(root, 'release', `dool2-${pkg.version}-mac-${MAC_ARCH}.dmg`)
+  execFileSync(
+    'hdiutil',
+    ['create', '-volname', DISPLAY_NAME, '-srcfolder', src, '-ov', '-format', 'UDZO', dmg],
+    { stdio: 'inherit' },
+  )
+  rmSync(src, { recursive: true, force: true })
+}
 console.log('Built installers: apps/desktop/release/')
