@@ -5,7 +5,7 @@
       "name": "search",
       "title": "짧은 제목",
       "description": "언제 쓰는지, 무엇을 돌려주는지, 다음에 무엇을 하면 되는지 (AI가 읽어요).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "초안",
       "input": {
         "properties": {

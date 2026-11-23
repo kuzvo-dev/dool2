@@ -5,7 +5,7 @@
       "name": "theaters",
       "title": "극장 찾기",
       "description": "로그인 없이 된다. 지역의 CGV 극장 이름 목록을 예매 화면에서 읽어 돌려준다. 상영 시간을 찾을 때 극장 이름을 정확히 모르면 먼저 부른다. 받은 이름 그대로 cgv_showtimes의 theater에 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 서울·경기 극장 목록, 화면 읽기)",
       "input": {
         "properties": {
@@ -113,7 +113,7 @@
       "name": "movies",
       "title": "상영 중인 영화",
       "description": "로그인 없이 된다. CGV 무비차트(예매율 순)를 돌려준다: 순서대로 제목·관람 등급·개봉일 또는 에그지수·누적 관객 수. '요즘 볼 만한 영화'에 쓴다. 제목 일부로 좁힐 수 있다. 시간표는 cgv_showtimes. CGV 한 곳의 순위예요. 극장 전체 예매율 순위('예매율 1위')는 kobis_booking_rank로.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 무비차트 목록·제목 거르기, 화면 읽기)",
       "input": {
         "properties": {
@@ -254,7 +254,7 @@
       "name": "showtimes",
       "title": "상영 시간 찾기",
       "description": "로그인 없이 된다. CGV 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화 제목, 상영관·형식별(예: IMAX관 IMAX LASER 2D) 회차 시작~끝 시각과 남은/전체 좌석(예: 19:40- 22:14 265/268석). 예매 화면의 날짜(오늘부터 약 2주)만 된다. 극장 이름을 모르면 cgv_theaters. 사용자가 말한 영화·시간대만 골라 보여 준다. 예매하려면 cgv_prepare_booking.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 왕십리 토요일 시간표와 남은 좌석, 화면 읽기)",
       "input": {
         "properties": {
@@ -396,7 +396,7 @@
       "name": "prepare_booking",
       "title": "예매 준비",
       "description": "고른 극장·날짜의 시간표를 열어 영화·시작 시각 회차를 눌러 인원·좌석 화면으로 가서 예매까지 마친다. 좌석 단계부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('cgv'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -541,7 +541,7 @@
       "name": "tickets",
       "title": "티켓 보기",
       "description": "로그인한 사용자의 CGV 모바일 티켓(예매 내역)을 본다. '오늘 밤 티켓 어디 있어?', '내 영화 몇 관이야?'에 쓴다. 영화·극장·관·날짜·시각·좌석·예매 번호 끝자리를 정리한다. 예매 취소는 하지 않는다(취소는 사용자 승인 뒤 브라우저 도구로).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

@@ -5,7 +5,7 @@
       "name": "search",
       "title": "메일 찾기",
       "description": "네이버 메일에서 검색어로 메일을 찾아 보낸 사람·제목·날짜·핵심 내용(금액·송장번호·첨부)을 정리한다. 로그인해야 한다. '어제 받은 영수증 찾아 줘'에 쓴다. (공식 연동 전 웹 화면 기준)",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -54,7 +54,7 @@
       "name": "draft",
       "title": "메일 써 두기",
       "description": "네이버 메일 쓰기 화면에 받는 사람·제목·내용(또는 받은 메일에 대한 답장)을 채우고 '임시저장'까지 한다. 보내지는 않는다. 로그인해야 한다. 임시저장 전에 사용자에게 확인(browser_request_approval)받는다. 보내려면 naver_mail_send.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {
@@ -114,7 +114,7 @@
       "name": "send",
       "title": "메일 보내기",
       "description": "네이버 메일 임시보관함에서 써 둔 메일(또는 새로 쓴 메일)을 열어 보내기 직전까지 간다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 내용은 naver_mail_draft로 먼저 써 두고 사용자가 확인한 것만 보낸다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

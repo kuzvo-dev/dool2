@@ -106,7 +106,7 @@ if (flags.has('--pc')) {
     for (const id of args.length ? args : services()) {
       const c = toolsOf(id)
       for (const t of c?.tools ?? []) {
-        if (t.tier !== '찾아보기' || (t.login && !flags.has('--connected'))) continue
+        if (t.tier !== 'lookup' || (t.login && !flags.has('--connected'))) continue
         const ex = (t.examples ?? [{}])[0] ?? {}
         const t0 = Date.now()
         const r = await run(id, t.name, ex, true).catch((e) => ({
@@ -221,7 +221,7 @@ try {
     for (const id of ids.length ? ids : services()) {
       const c = toolsOf(id)
       for (const t of c?.tools ?? []) {
-        if (t.tier !== '찾아보기' || t.login || t.status.startsWith('막힘')) continue
+        if (t.tier !== 'lookup' || t.login || t.status.startsWith('막힘')) continue
         const name = connectorToolName(id, t.name)
         for (const ex of t.examples) {
           const t0 = Date.now()

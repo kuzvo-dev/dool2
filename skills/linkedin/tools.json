@@ -5,7 +5,7 @@
       "name": "search_jobs",
       "title": "공고 찾기",
       "description": "로그인 없이 된다(로그인돼 있으면 로그인 화면에서 읽는다). 링크드인 채용 검색으로 직무·회사 이름과 지역, 올린 때(하루·일주일·한 달), 근무 형태(원격·하이브리드·출근)로 공고를 찾아 공고 제목·회사·지역·올린 때·공고 번호·주소를 돌려준다. 자세한 내용은 linkedin_job, 지원은 linkedin_prepare_apply.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-20, 비로그인 목록 + 로그인 화면 공고 칸, frontend·Seoul)",
       "input": {
@@ -201,7 +201,7 @@
       "name": "job",
       "title": "공고 자세히",
       "description": "로그인 없이 된다. 링크드인 공고 번호로 공개 공고 화면을 열어 제목·회사·지역·지원자 수·경력 수준·고용 형태·직무 내용(앞부분)을 돌려준다. 번호는 linkedin_search_jobs에서.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 공개 공고 요약, 화면 읽기)",
       "input": {
@@ -341,7 +341,7 @@
       "name": "prepare_apply",
       "title": "지원 준비",
       "description": "로그인해야 된다. 공고 화면을 열어 '간편 지원' 양식을 채우는 일을 AI에게 넘긴다(회사 사이트로 가는 '지원'이면 그 주소를 알려 준다). 이력서는 사용자 계정에 올려 둔 것만 고른다. '제출'은 공고·회사·보낼 이력서·답변을 보여 주고 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -384,7 +384,7 @@
       "name": "messages",
       "title": "메시지 확인",
       "description": "로그인해야 된다. 링크드인 메시지함을 열어 안 읽은 대화를 보낸 사람·회사·한 줄 요약·시각으로 정리한다. 리크루터 연락은 따로 짚는다. 답장은 linkedin_reply.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -417,7 +417,7 @@
       "name": "reply",
       "title": "메시지 답장",
       "description": "로그인해야 된다. 고른 사람과의 링크드인 대화를 열어 답장을 써 두고 AI에게 넘긴다. '보내기'는 받는 사람과 글을 보여 주고 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -467,7 +467,7 @@
       "name": "prepare_connect",
       "title": "1촌 요청 준비",
       "description": "로그인해야 된다. 이름(과 회사)으로 사람을 찾아 1촌 요청 창을 여는 일을 AI에게 넘긴다. 메모를 붙일 수 있다. '보내기'는 누구에게(이름·직함·회사) 무슨 메모로 보내는지 보여 주고 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

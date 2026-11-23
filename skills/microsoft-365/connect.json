@@ -22,22 +22,22 @@
     {
       "title": "급한 메일",
       "say": "오늘 들어온 메일 중에 급한 거 뭐야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "파일 찾기",
       "say": "Teams에서 받은 견적서 파일 찾아 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "메일 답장",
       "say": "윤 차장님 메일에 금요일 가능하다고 답해 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "회의 잡기",
       "say": "목요일 오후에 팀 회의 잡아 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ]
 }

@@ -347,10 +347,10 @@ export function connectorToolName(serviceId: string, name: string): string {
 
 /** 등급 → MCP 도구 힌트 */
 export function tierAnnotations(tier: Tier) {
-  const read = tier === '찾아보기'
+  const read = tier === 'lookup'
   return {
     readOnlyHint: read,
-    destructiveHint: tier === '돈 내기' || tier === '연락하기',
+    destructiveHint: tier === 'pay' || tier === 'contact',
     idempotentHint: read,
     openWorldHint: true,
   }
@@ -599,7 +599,7 @@ export function checkConnector(
     if (
       category &&
       CARD_CATEGORIES.includes(category) &&
-      t.tier === '찾아보기' &&
+      t.tier === 'lookup' &&
       t.cards !== false &&
       lists.length
     ) {
@@ -655,7 +655,7 @@ export function checkConnector(
       }
       if ('approve' in s) {
         for (const v of Object.values(s.approve)) if (v) useAll(v, where)
-        if (t.tier !== '돈 내기' && t.tier !== '연락하기')
+        if (t.tier !== 'pay' && t.tier !== 'contact')
           problems.push(`${at} 승인 요청(approve)은 돈 내기·연락하기 도구에만 둘 수 있어요`)
         if (i !== t.steps.length - 1) problems.push(`${at} 승인 요청(approve)은 마지막 단계여야 해요`)
       }
@@ -668,7 +668,7 @@ export function checkConnector(
     if (!kinds.includes('open')) problems.push(`${at} 처음에 주소를 여는(open) 단계가 필요해요`)
     else if (kinds[0] !== 'open') problems.push(`${at} 첫 단계는 주소 열기(open)여야 해요`)
     const last = kinds.at(-1)
-    if ((t.tier === '돈 내기' || t.tier === '연락하기') && last !== 'approve' && last !== 'handoff_to_agent')
+    if ((t.tier === 'pay' || t.tier === 'contact') && last !== 'approve' && last !== 'handoff_to_agent')
       problems.push(`${at} 돈 내기·연락하기 도구는 승인 요청(approve)이나 AI에게 넘기기로 끝나야 해요`)
     for (const [k, tpl] of Object.entries(t.result)) {
       if (!(k in t.output)) problems.push(`${at} result의 ${k}가 output에 없어요`)

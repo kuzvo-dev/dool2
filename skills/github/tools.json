@@ -5,7 +5,7 @@
       "name": "commits",
       "title": "무슨 일이 있었는지",
       "description": "로그인 없이 된다(공개 저장소). GitHub 저장소의 커밋 기록을 최신순으로 돌려준다(제목·작성자·시각·커밋 링크). path로 파일·폴더를, since로 날짜를 좁힌다. '지난주에 결제 코드 누가 바꿨어?'에 쓴다: repo와 path(예: src/payment)를 넣는다. 비공개 저장소는 연결(로그인)해야 보인다. 바뀐 내용은 link를 열어 본다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-18, 공개 저장소 폴더별 커밋·since 거르기)",
       "input": {
         "properties": {
@@ -129,7 +129,7 @@
       "name": "reviews",
       "title": "리뷰·CI 챙기기",
       "description": "GitHub에서 내게 리뷰 요청된 PR과 내 PR의 CI(검사) 상태를 정리한다. 로그인해야 한다. '내가 리뷰해야 할 거 남았어?', '내 PR 검사 통과했어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -163,7 +163,7 @@
       "name": "comment",
       "title": "댓글 남기기",
       "description": "GitHub 이슈·PR에 남길 댓글을 써 두고, 올리기 직전에 사용자에게 보여 승인받는다. 로그인해야 한다. 댓글 올리기는 사용자 승인(browser_request_approval)을 받아야만 한다. '이 이슈에 재현 방법 물어봐 줘'에 쓴다: 문장은 사용자와 먼저 정한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -220,7 +220,7 @@
       "name": "prepare_pr",
       "title": "작은 수정 올리기",
       "description": "GitHub 웹 편집기로 파일 하나를 고쳐(오타 등) PR을 올리기 직전까지 간다. 로그인해야 한다. 커밋·PR 만들기는 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 내용은 사용자와 먼저 정한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

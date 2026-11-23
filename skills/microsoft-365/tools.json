@@ -5,7 +5,7 @@
       "name": "inbox",
       "title": "챙길 일 한눈에",
       "description": "Outlook 받은편지함과 오늘 일정에서 급한 것(안 읽은 중요 메일·플래그·답장 기다리는 메일·오늘 회의)을 골라 정리한다. 로그인해야 한다. 'Outlook에 급한 거 있어?'에 쓴다. (공식 연동 전 웹 화면 기준. Outlook은 microsoft.com 밖 주소라 계정 화면에서 넘어간다)",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -34,7 +34,7 @@
       "name": "find",
       "title": "파일·대화 찾기",
       "description": "Outlook 메일, OneDrive·SharePoint 파일, Teams 대화에서 검색어로 찾아 제목·위치·날짜·보낸 사람을 정리한다. 로그인해야 한다. '지난달 계약서 어디 있어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -73,7 +73,7 @@
       "name": "reply",
       "title": "대신 답장",
       "description": "Outlook에서 고른 메일에 답장을 써 두고 보내기 직전에 승인받는다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 답장 문장은 사용자와 먼저 정한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -124,7 +124,7 @@
       "name": "schedule_meeting",
       "title": "회의 잡기",
       "description": "Outlook 일정에 새 회의(제목·날짜·시간·참석자·Teams 회의 여부)를 채워 초대 보내기 직전까지 간다. 로그인해야 한다. 초대 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

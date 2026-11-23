@@ -5,7 +5,7 @@
       "name": "plans",
       "title": "요금제 찾기",
       "description": "로그인 없이 된다. kt M모바일 유심/eSIM 요금제 목록(요금제 이름·망(LTE/5G)·데이터·음성·문자·월 기본료·할인 후 월 요금·요금제 코드)을 인기순으로 돌려준다. '더 싼 요금제 있어?', '7GB 요금제 얼마야?'에 쓴다. max_price는 월 기본료 상한, keyword는 이름에 든 말(예: 7GB, 5G, 무제한). 지금 쓰는 양과 견주려면 kt_mmobile_usage, 실제로 바꾸려면 kt_mmobile_change_plan.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 유심 요금제 193개 인기순·월 기본료 상한·이름 거르기)",
       "input": {
         "properties": {
@@ -174,7 +174,7 @@
       "name": "usage",
       "title": "데이터 이용량",
       "description": "이번 달 남은 데이터·음성·문자(기본 제공량·쓴 양)를 kt M모바일 마이페이지 '이용량 조회'에서 읽는다. 로그인해야 한다. '데이터 얼마나 남았어?'에 쓴다. 요금은 kt_mmobile_bill.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -215,7 +215,7 @@
       "name": "bill",
       "title": "요금 확인",
       "description": "청구 요금(월별 합계·항목별 금액·납부 상태)을 kt M모바일 마이페이지 '요금조회'에서 읽는다. 로그인해야 한다. '지난달 요금 왜 더 나왔어?'에 쓴다: 그 달과 전달 항목을 견준다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -262,7 +262,7 @@
       "name": "change_plan",
       "title": "요금제 바꾸기",
       "description": "kt M모바일 마이페이지 '요금제 즉시/예약 변경' 화면에서 사용자가 고른 요금제로 바꾸기 직전(바뀌는 요금·적용 시점·안내)까지 간다. 로그인해야 한다. 변경 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 요금제를 모르면 먼저 kt_mmobile_plans·kt_mmobile_usage로 함께 고른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -321,7 +321,7 @@
       "name": "addons",
       "title": "부가서비스 정리",
       "description": "kt M모바일 마이페이지 '부가서비스 신청/해지'에서 가입된 부가서비스(이름·월 요금)를 보여 주고, 사용자가 고른 것을 해지 직전까지 간다. 로그인해야 한다. 해지는 사용자 승인(browser_request_approval)을 받아야만 한다. cancel을 비우면 목록만 정리한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

@@ -61,10 +61,10 @@ const PATH = {
   ],
 }
 const TIER_ICON: Record<Tier, string[]> = {
-  찾아보기: PATH.search,
-  '채워 두기': PATH.fill,
-  '돈 내기': PATH.pay,
-  연락하기: PATH.send,
+  lookup: PATH.search,
+  fill: PATH.fill,
+  pay: PATH.pay,
+  contact: PATH.send,
 }
 function svg(paths: string[]): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'

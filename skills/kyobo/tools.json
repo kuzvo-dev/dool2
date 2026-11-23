@@ -5,7 +5,7 @@
       "name": "search",
       "title": "책 찾기",
       "description": "교보문고에서 책을 제목·저자·주제로 찾아 제목·종류([국내도서]/[eBook] 등)·저자·출판사·출간일·판매가·정가·할인율·별점·배송 종류와 도착 예정·전자책 링크·품절 여부·상품 번호(S…/E…)·ISBN·링크를 돌려준다. 로그인 없이 된다. 전자책만 보려면 kind=eBook. 매장 재고는 kyobo_store_stock, 주문·매장에서 받기는 kyobo_prepare_order에 product_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 데미안·파이썬 입문 검색)",
       "input": {
         "properties": {
@@ -245,7 +245,7 @@
       "name": "store_stock",
       "title": "매장 재고 보기",
       "description": "고른 책의 상품 화면을 열어 교보문고 매장(광화문점·강남점 등)별 재고와 책 위치를 확인한다. 로그인 없이 된다. '오늘 광화문점에서 찾아갈 수 있어?'에 쓴다. 바로드림(매장에서 받기)으로 주문하려면 kyobo_prepare_order에 store를 함께 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 상품 화면 → 매장별 재고 창 열기까지)",
       "input": {
         "properties": {
@@ -307,7 +307,7 @@
       "name": "orders",
       "title": "주문·배송 확인",
       "description": "교보문고 주문/배송 조회 화면을 열어 최근 주문의 주문일·책 제목·결제 금액·지금 상태(출고 준비·배송 중·배송 완료·바로드림 준비 완료)와 도착 예정을 읽어 정리한다. 로그인(연결)해야 된다. '주문한 책 언제 와?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -350,7 +350,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 책 화면을 열어 택배로 받기나 바로드림(매장에서 받기)으로 주문까지 마친다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('kyobo'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {

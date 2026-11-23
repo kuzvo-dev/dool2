@@ -5,7 +5,7 @@
       "name": "search",
       "title": "국내 숙소 찾기",
       "description": "로그인 없이 된다. 지역·숙소 이름·테마(예: 강릉, 가평 풀빌라)로 NOL(야놀자) 국내 숙소를 그 체크인·체크아웃으로 찾아 숙소마다 이름·숙소 id·종류·위치 안내·평점·후기 수·1박 최저가(회원가, 성인 2명 기준)·정가·입실 시각·광고 표시·링크를 돌려준다. 화면에 처음 뜨는 15곳 안팎이다. max_price를 주면 그 값 이하만 남긴다. 인원 맞춘 객실·무료 취소·남은 객실은 yanolja_prepare_booking이 연 숙소 화면에서 본다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-17, 강릉·해운대 날짜별 숙소 목록·1박 가격 거르기. 인원은 성인 2 고정)",
       "input": {
@@ -192,7 +192,7 @@
       "name": "leisure_search",
       "title": "레저·입장권 찾기",
       "description": "로그인 없이 된다. 키워드(예: 아쿠아리움, 워터파크, 서울 스파)로 NOL(야놀자) 국내 레저·입장권 상품을 찾아 이름·상품 id·분류·지역·평점·후기 수·최저가·정가·링크를 돌려준다. 날짜별 남은 수량과 권종은 상품 화면에서 본다: 사려면 yanolja_prepare_ticket.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "초안",
       "input": {
@@ -350,7 +350,7 @@
       "name": "prepare_booking",
       "title": "숙소 예약 준비",
       "description": "yanolja_search로 고른 숙소의 객실 선택 화면을 그 날짜·인원으로 열어, 객실별 가격·무료 취소 기한·남은 객실을 읽고 사용자가 고른 객실의 '예약하기'를 거쳐 예약까지 마친다. 예약 단계에서 로그인이 필요하면 connect_ask('yanolja'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": false,
       "status": "초안",
       "input": {
@@ -425,7 +425,7 @@
       "name": "prepare_ticket",
       "title": "레저·입장권 구매 준비",
       "description": "yanolja_leisure_search로 고른 레저·입장권 상품 화면을 열어 권종·날짜·수량을 고르는 데까지 데려간다. 구매 단계에서 로그인이 필요하면 connect_ask('yanolja'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": false,
       "status": "초안",
       "input": {
@@ -493,7 +493,7 @@
       "name": "reservations",
       "title": "예약 내역",
       "description": "로그인해야 된다. NOL(야놀자)에서 예약한 국내 숙소·레저·교통 예약 내역을 열어 다가오는 예약부터 숙소·상품 이름, 이용 날짜, 객실·권종, 인원, 금액, 상태(예약확정·이용완료·취소)를 정리한다. 변경·취소는 이 화면에서 사용자가 고른 예약을 열어 규정을 보여 준 뒤 승인받아야만 한다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

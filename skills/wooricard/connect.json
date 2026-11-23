@@ -15,27 +15,27 @@
     {
       "title": "결제 예정 금액",
       "say": "우리카드 이번 결제일 청구 금액 알려 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "이용 내역",
       "say": "이번 주 우리카드로 뭐 샀어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "실적 확인",
       "say": "실적 채우려면 얼마 더 써야 해?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "포인트 조회",
       "say": "모아 둔 우리카드 포인트로 뭐 할 수 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "카드 혜택",
       "say": "이 카드로 주유 할인 돼?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     }
   ],
   "hints": [

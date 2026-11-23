@@ -34,7 +34,7 @@ export const CATEGORY_LABEL: Record<ConnectCard['category'], string> = {
   device: '휴대폰',
   ai: 'AI 도구',
 }
-const APPROVAL: readonly Tier[] = ['돈 내기', '연락하기']
+const APPROVAL: readonly Tier[] = ['pay', 'contact']
 
 export interface ConnectionsOptions {
   api<T>(path: string, init?: RequestInit): Promise<T>
@@ -71,10 +71,10 @@ const ICON = {
   shield: ['M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z', 'm9 12 2 2 4-4'],
 }
 const TIER_ICON: Record<Tier, string[]> = {
-  찾아보기: ICON.search,
-  '채워 두기': ICON.fill,
-  '돈 내기': ICON.pay,
-  연락하기: ICON.send,
+  lookup: ICON.search,
+  fill: ICON.fill,
+  pay: ICON.pay,
+  contact: ICON.send,
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) {

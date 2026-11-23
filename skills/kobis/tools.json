@@ -5,7 +5,7 @@
       "name": "booking_rank",
       "title": "실시간 예매율 순위",
       "description": "로그인 없이 된다. 영화진흥위원회 영화관 입장권 통합전산망의 실시간 예매율 순위(CGV·메가박스·롯데시네마 등 극장 전체 합산)를 돌려준다: 순위·제목·개봉일·예매율·예매 관객 수·누적 관객 수. '예매율 1위', '요즘 뭐가 인기야', '볼 만한 영화 순위'에는 극장 한 곳의 목록(cgv_movies 등) 말고 이것을 먼저 쓴다. 상영 시간은 극장 도구(cgv_showtimes·megabox_showtimes·lotte-cinema_showtimes)로.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-19, 실시간 예매율 표 1~20위, 화면 읽기)",
       "input": {

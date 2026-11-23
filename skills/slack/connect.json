@@ -15,22 +15,22 @@
     {
       "title": "멘션 정리",
       "say": "오늘 나 찾은 사람 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "채널 요약",
       "say": "휴가 동안 #dev 채널 요약해 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "담당자 찾기",
       "say": "결제 시스템 담당이 누구야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "대신 답글",
       "say": "#marketing에 시안 3시까지 올린다고 써 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ]
 }

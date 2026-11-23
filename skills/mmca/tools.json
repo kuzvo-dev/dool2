@@ -5,7 +5,7 @@
       "name": "exhibitions",
       "title": "볼 만한 전시",
       "description": "로그인 없이 된다. 국립현대미술관(서울·과천·덕수궁·청주)의 현재·예정 전시를 돌려준다: 전시명·관·전시실·기간(시작·끝)·관람료·작가·한 줄 소개·예약 주소(booking_url). 한 쪽에 8개씩이라 더 보려면 page를 늘린다. '이번 달에 끝나는 전시'는 end로 고른다. 관람 예약은 mmca_prepare_booking에 booking_url 끝 숫자(booking_id)를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 전체·과천 현재 전시, 예정 전시, 화면이 받은 목록 읽기)",
       "input": {
         "properties": {
@@ -143,7 +143,7 @@
       "name": "prepare_booking",
       "title": "관람 예약 준비",
       "description": "전시 예약 화면(booking_id)을 열어 날짜·관람 시간을 골라 '예매하기'를 거쳐 예약까지 마친다. 관람권은 대개 무료~수천 원이고 일주일 단위로 열린다(매주 월요일 오후 6시). 예매하기부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('mmca'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -205,7 +205,7 @@
       "name": "reservations",
       "title": "예약 보기",
       "description": "로그인한 사용자의 국립현대미술관 전시 예약 내역을 본다. '예약한 전시 언제였지?'에 쓴다. 전시·관·날짜·시간·인원·상태를 정리한다. 예약 취소는 하지 않는다(취소는 사용자 승인 뒤 브라우저 도구로).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

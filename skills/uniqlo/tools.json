@@ -5,7 +5,7 @@
       "name": "search",
       "title": "상품 찾기",
       "description": "로그인 없이 된다. 유니클로(GU 포함)에서 검색어로 상품을 찾아 이름·성별·사이즈 범위·가격·할인 표시·별점·상품 번호·가격 그룹·보이는 색상 코드·링크·사진을 돌려준다. 검색 화면을 열어 상품 칸을 읽는다(첫 화면 24개 안팎). 재고는 uniqlo_stock(매장은 uniqlo_store_stock)에 product_no·color_code와 사이즈 코드를 넘긴다 — 사이즈 코드: XS 002·S 003·M 004·L 005·XL 006·XXL 007·3XL 008. 다른 색상은 상품 링크를 열면 보인다. 주문은 uniqlo_prepare_order. 세일 알림은 goal_create로 하루 한 번 불러 가격·할인 표시가 바뀌었는지 보면 된다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-20, 히트텍·니트 검색, 성별·가격 거르기, 화면의 상품 칸 읽기 — 검색 결과가 서버 렌더링으로 바뀜)",
       "input": {
@@ -231,7 +231,7 @@
       "name": "stock",
       "title": "사이즈 재고 보기",
       "description": "로그인 없이 된다. 유니클로 상품 화면을 그 색상·사이즈로 열어 온라인 재고(재고 있음·재고 적음·품절)와 지금 가격, 화면에 고른 색상·사이즈 이름을 돌려준다. 색상 코드·사이즈 코드는 uniqlo_search의 color_codes·size_codes에서 고른다(예: 블랙 09, L 005). 매장 재고는 uniqlo_store_stock.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 색상·사이즈 코드로 온라인 재고·가격)",
       "input": {
@@ -332,7 +332,7 @@
       "name": "store_stock",
       "title": "매장 재고 보기",
       "description": "로그인 없이 된다. 유니클로 상품 화면을 그 색상·사이즈로 열고 '매장 선택'에서 사용자가 말한 매장(또는 동네)을 찾아 그 매장의 재고를 읽게 탭을 넘긴다. 매장 고르기는 화면마다 달라 브라우저 도구로 이어서 한다. 온라인 재고만 필요하면 uniqlo_stock.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "초안",
       "input": {
@@ -399,7 +399,7 @@
       "name": "orders",
       "title": "주문·배송 확인",
       "description": "로그인(연결)해야 된다. 유니클로 마이 페이지를 열어 '구매 내역'에서 최근 주문의 주문일·상품·색상·사이즈·결제 금액·받는 방법(택배·매장 픽업)·지금 상태(결제 완료·출고 준비·배송 중·배송 완료·픽업 가능)를 읽어 정리한다. '주문한 거 언제 와?'에 먼저 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -446,7 +446,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 상품 화면을 그 색상·사이즈로 열어 개수를 맞추고 주문까지 마친다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('uniqlo'). '장바구니에 담은 것 주문해 줘'면 장바구니(https://www.uniqlo.com/kr/ko/cart)부터 연다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {

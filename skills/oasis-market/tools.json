@@ -5,7 +5,7 @@
       "name": "search",
       "title": "상품 찾기",
       "description": "오아시스마켓에서 상품을 검색어로 찾아 이름(용량 포함)·판매가·정가·할인율·쿠폰 적용가·단위 가격·보관(냉장·냉동)·배송 종류(오아시스배송 등)·별점·리뷰 수·상품 번호·링크를 돌려준다. 로그인 없이 된다. 유기농·무항생제 같은 조건은 검색어에 넣는다(예: 유기농 바나나). 주문하려면 oasis_market_prepare_order에 product_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 우유·유기농 바나나 검색)",
       "input": {
         "properties": {
@@ -191,7 +191,7 @@
       "name": "orders",
       "title": "주문·배송 확인",
       "description": "오아시스마켓 주문/배송조회 화면을 열어 최근 주문의 주문일·상품·결제 금액·배송 상태(새벽배송 도착 예정 포함)를 읽어 정리한다. 로그인(연결)해야 된다. '어제 주문한 거 언제 와?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -234,7 +234,7 @@
       "name": "frequent",
       "title": "자주 사는 상품",
       "description": "오아시스마켓 '자주구매' 목록을 열어 자주 산 상품의 이름·가격·지금 살 수 있는지(품절 여부)를 읽어 정리한다. 로그인(연결)해야 된다. '늘 사던 걸로 담아 줘'에서 무엇을 담을지 먼저 사용자에게 보여 줄 때 쓴다. 담고 주문하려면 oasis_market_prepare_order로 하나씩 이어 간다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -277,7 +277,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 상품 화면을 열어 개수를 맞추고 주문까지 마친다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('oasis-market'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {

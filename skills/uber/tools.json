@@ -5,7 +5,7 @@
       "name": "estimate",
       "title": "요금 알아보기",
       "description": "타는 곳·내리는 곳으로 Uber 차 종류별 예상 요금과 도착 예정 시간을 알아본다. 화면은 로그인 없이 열리지만 요금 표시는 로그인이 필요할 수 있다(그러면 연결 안내). 위치는 화면 검색칸에 넣고 고르는 방식이라 열어 둔 탭에서 브라우저 도구로 이어서 한다. 부르려면 uber_request.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "초안",
       "input": {
@@ -54,7 +54,7 @@
       "name": "request",
       "title": "차 부르기·예약",
       "description": "Uber 차를 지금 부르거나 정한 시각에 예약 픽업까지 마친다. 로그인해야 한다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -124,7 +124,7 @@
       "name": "trips",
       "title": "이용 내역",
       "description": "로그인해야 한다. Uber 이용 내역(날짜·출발/도착·차 종류·요금)을 정리하고, 원하면 그 이동의 영수증 화면을 연다. '지난주 탄 거 영수증 보여 줘'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

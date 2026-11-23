@@ -5,7 +5,7 @@
       "name": "theaters",
       "title": "극장 찾기",
       "description": "로그인 없이 된다. 지역의 메가박스 극장 이름과 극장 번호(theater_id)를 돌려준다. 상영 시간을 찾기 전에 극장 번호를 모르면 먼저 부른다(예: 강남 1372, 코엑스 1351, 성수 1331, 홍대 1212). 받은 theater_id로 megabox_showtimes.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 서울·경기 극장 목록)",
       "input": {
         "properties": {
@@ -99,7 +99,7 @@
       "name": "movies",
       "title": "상영 중인 영화",
       "description": "로그인 없이 된다. 지금 메가박스에서 상영 중인 영화를 예매율 순으로 돌려준다(순위·제목·영화 번호·예매율·개봉일·관람 등급). 제목 일부로 좁힐 수도 있다. 시간표는 megabox_showtimes. 메가박스 한 곳의 순위예요. 극장 전체 예매율 순위('예매율 1위')는 kobis_booking_rank로.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 예매율 순 목록·제목 거르기, 화면 읽기)",
       "input": {
         "properties": {
@@ -243,7 +243,7 @@
       "name": "showtimes",
       "title": "상영 시간 찾기",
       "description": "로그인 없이 된다. 메가박스 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화·관람 정보·상영관별(관 이름·총 좌석·상영 형식) 회차 시각·남은 좌석. 극장 번호를 모르면 megabox_theaters 먼저. 극장 화면이 보여 주는 날짜(오늘부터 약 2주)만 된다. 사용자가 말한 영화·시간대만 골라 보여 준다. 예매하려면 megabox_prepare_booking.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 강남 내일·토요일 시간표와 남은 좌석, 화면 읽기)",
       "input": {
         "properties": {
@@ -356,7 +356,7 @@
       "name": "prepare_booking",
       "title": "예매 준비",
       "description": "고른 극장·날짜·영화·시작 시각 회차를 골라 인원/좌석 화면으로 가서 예매까지 마친다. 좌석 단계부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('megabox'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -435,7 +435,7 @@
       "name": "tickets",
       "title": "티켓 보기",
       "description": "로그인한 사용자의 메가박스 예매 내역을 본다. '오늘 밤 티켓 어디 있어?'에 쓴다. 영화·극장·관·날짜·시각·좌석을 정리한다. 예매 취소는 하지 않는다(취소는 사용자 승인 뒤 브라우저 도구로).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

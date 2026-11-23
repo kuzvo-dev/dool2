@@ -5,7 +5,7 @@
       "name": "reports",
       "title": "알림장 확인",
       "description": "키즈노트 알림장(선생님이 쓴 오늘 하루·식사·낮잠·건강·배변 기록과 사진 수)을 읽어 정리한다. 로그인해야 한다. '오늘 낮잠 얼마나 잤대?', '어제 알림장 뭐래?'에 쓴다. date를 주면 그날 것을 찾는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -50,7 +50,7 @@
       "name": "album",
       "title": "앨범 사진 보기",
       "description": "키즈노트 앨범에서 최근(또는 그 주) 올라온 앨범 제목·날짜·사진 수를 정리하고 사진을 열어 보여 줄 수 있게 한다. 로그인해야 한다. '이번 주 사진 보여 줘'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -95,7 +95,7 @@
       "name": "notices",
       "title": "공지사항 챙기기",
       "description": "키즈노트 원 공지사항(제목·날짜·준비물·마감일·행사 일정)을 최근 것부터 정리한다. 로그인해야 한다. '원에서 새 공지 올라왔어?', 매일 확인(새 공지 알림)에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -135,7 +135,7 @@
       "name": "prepare_medication",
       "title": "투약의뢰서 준비",
       "description": "키즈노트 투약의뢰서를 써 두고, 보내기 직전에 사용자에게 보여 승인받는다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 약 이름·용량·시간·보관 방법을 사용자에게 먼저 확인한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approvalLine, type ConnectCard, checkConnectCard } from './connect.js'
+import { approvalLine, type ConnectCard, checkConnectCard, TierSchema } from './connect.js'
 
 const card: ConnectCard = {
   id: 'demo',
@@ -11,9 +11,9 @@ const card: ConnectCard = {
   summary: '데모몰을 연결하면 주문부터 배송 확인까지 두리에게 맡길 수 있어요.',
   example: { ask: '주문한 거 언제 와?', working: '배송 조회 중', reply: '내일 오전에 도착해요.' },
   abilities: [
-    { title: '배송 조회', say: '주문한 거 언제 와?', tier: '찾아보기' },
-    { title: '주문', say: '늘 사던 걸로 시켜 줘', tier: '돈 내기' },
-    { title: '판매자 문의', say: '언제 보내는지 물어봐 줘', tier: '연락하기' },
+    { title: '배송 조회', say: '주문한 거 언제 와?', tier: 'lookup' },
+    { title: '주문', say: '늘 사던 걸로 시켜 줘', tier: 'pay' },
+    { title: '판매자 문의', say: '언제 보내는지 물어봐 줘', tier: 'contact' },
   ],
 }
 
@@ -44,5 +44,20 @@ describe('연결 카드', () => {
     expect(
       approvalLine({ abilities: [card.abilities[0] as ConnectCard['abilities'][number]] }),
     ).toBeUndefined()
+  })
+})
+
+describe('TierSchema (ADR 0029)', () => {
+  it('accepts the English keys', () => {
+    for (const t of ['lookup', 'fill', 'pay', 'contact']) expect(TierSchema.parse(t)).toBe(t)
+  })
+  it('maps the Korean values used before ADR 0029', () => {
+    expect(TierSchema.parse('찾아보기')).toBe('lookup')
+    expect(TierSchema.parse('채워 두기')).toBe('fill')
+    expect(TierSchema.parse('돈 내기')).toBe('pay')
+    expect(TierSchema.parse('연락하기')).toBe('contact')
+  })
+  it('rejects anything else', () => {
+    expect(() => TierSchema.parse('buy')).toThrow()
   })
 })

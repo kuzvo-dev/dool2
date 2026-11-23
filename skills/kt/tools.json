@@ -5,7 +5,7 @@
       "name": "plans",
       "title": "요금제 찾기",
       "description": "로그인 없이 된다. KT 모바일 요금제 목록(요금제 이름·데이터·음성/문자·월 요금·선택약정 할인가·자세히 보기 링크)을 돌려준다. '더 싼 요금제 있어?', '데이터 무제한 얼마야?'에 쓴다. max_price를 주면 월 요금이 그 이하인 것만. 온라인 전용(요고)은 kind로 고른다. 지금 쓰는 요금제·사용량과 견주려면 kt_usage, 실제로 바꾸려면 kt_change_plan.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 통합요금제 5개·온라인전용 탭·월 요금 상한 거르기)",
       "input": {
         "properties": {
@@ -129,7 +129,7 @@
       "name": "usage",
       "title": "데이터 이용량",
       "description": "이번 달 남은 데이터·음성·문자(기본 제공량과 쓴 양)를 KT 마이의 이용량 조회 화면에서 읽는다. 로그인해야 한다. '데이터 얼마나 남았어?'에 쓴다. 요금이 궁금하면 kt_bill.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -163,7 +163,7 @@
       "name": "bill",
       "title": "요금 확인",
       "description": "이번 달 지금까지 쓴 요금(실시간 요금)이나 지난달 청구 요금(요금명세서, 항목별)을 KT 마이에서 읽는다. 로그인해야 한다. '이번 달 요금 얼마야?', '지난달 왜 더 나왔어?'에 쓴다. 지난달과 견주려면 month에 지난달을 넣는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -206,7 +206,7 @@
       "name": "change_plan",
       "title": "요금제 바꾸기",
       "description": "KT 마이의 요금제 변경 화면을 열고 사용자가 고른 요금제로 바꾸기 직전(변경 내용·바뀌는 요금·위약금/할인 반환 안내)까지 간다. 로그인해야 한다. 바꾸기 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 요금제를 모르면 먼저 kt_plans·kt_usage로 함께 고른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -249,7 +249,7 @@
       "name": "addons",
       "title": "부가서비스 정리",
       "description": "KT 마이의 '부가서비스 조회/변경' 화면에서 가입된 부가서비스(이름·월 요금·가입일)를 보여 주고, 사용자가 고른 것을 해지 직전까지 간다. 로그인해야 한다. 해지는 사용자 승인(browser_request_approval)을 받아야만 한다. cancel을 비우면 목록만 정리한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

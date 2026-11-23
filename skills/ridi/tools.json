@@ -5,7 +5,7 @@
       "name": "search",
       "title": "작품 찾기",
       "description": "로그인 없이 된다. 리디에서 전자책·웹소설·만화를 제목·저자로 찾아 제목·저자(역자 포함)·출판사·분류·판매가·정가·대여 가격·권수(화수)·완결 여부·표시(Select=리디셀렉트 구독으로 읽기, 대여, 할인)·작품 번호·링크를 돌려준다. 사려면 ridi_prepare_purchase에 book_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 데미안·판타지 검색, 화면 속 데이터)",
       "input": {
         "properties": {
@@ -141,7 +141,7 @@
       "name": "library",
       "title": "내 서재 보기",
       "description": "리디 내 서재를 열어 최근 산·빌린 작품의 제목·산 날짜·읽은 정도와, 연재 작품에 새 화가 올라왔는지를 읽어 정리한다. 로그인(연결)해야 된다. '이번 달에 산 책 뭐 있어?', '보던 웹툰 새 화 나왔어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -189,7 +189,7 @@
       "name": "prepare_purchase",
       "title": "구매 준비",
       "description": "고른 작품 화면을 열어 구매(또는 대여·리디셀렉트로 읽기)까지 마친다. 구매는 로그인이 필요하다: 연결 전이면 그때 connect_ask('ridi'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {

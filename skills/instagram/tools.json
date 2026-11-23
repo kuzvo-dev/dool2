@@ -5,7 +5,7 @@
       "name": "dms",
       "title": "DM 한눈에",
       "description": "로그인해야 된다(인스타그램은 로그인 없이는 DM·검색·피드가 모두 막혀 있다). DM 받은 편지함을 열어 답하지 않은 대화·새 메시지 요청을 보낸 사람·마지막 메시지 요약·시각으로 정리한다. '오늘 놓친 DM 있어?'에 쓴다. 읽기만 하고 답장은 instagram_reply_dm.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -28,7 +28,7 @@
       "name": "reply_dm",
       "title": "DM 답장",
       "description": "로그인해야 된다. 고른 사람과의 DM 대화를 열어 답장을 써 두고 AI에게 넘긴다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 답장 내용은 사용자와 먼저 정해 둔다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -52,7 +52,7 @@
       "name": "prepare_post",
       "title": "게시물 올리기 준비",
       "description": "로그인해야 된다. 인스타그램 새 게시물 만들기 화면을 열어 사진 고르기·문구 쓰기까지 AI에게 넘긴다. 사진 파일은 사용자가 준 것만 쓴다. 올리기('공유하기')는 사진·문구·위치를 보여 주고 사용자 승인(browser_request_approval)을 받아야만 한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -76,7 +76,7 @@
       "name": "saved",
       "title": "저장한 게시물",
       "description": "로그인해야 된다. 내가 저장한 게시물(컬렉션)을 열어 게시물 주인·내용 요약을 읽고, 원하면 주제별 컬렉션으로 정리하는 일을 AI에게 넘긴다. '저장한 맛집 게시물만 모아 줘'에 쓴다. 저장 취소·컬렉션 지우기는 사용자 확인 뒤에만 한다.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {

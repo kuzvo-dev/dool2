@@ -12,8 +12,8 @@ const card: ConnectCard = {
   summary: '데모몰을 연결하면 주문까지 맡길 수 있어요.',
   example: { ask: '시켜 줘', working: '찾는 중', reply: '주문할까요?' },
   abilities: [
-    { title: '배송 조회', say: '언제 와?', tier: '찾아보기' },
-    { title: '주문', say: '시켜 줘', tier: '돈 내기' },
+    { title: '배송 조회', say: '언제 와?', tier: 'lookup' },
+    { title: '주문', say: '시켜 줘', tier: 'pay' },
   ],
 }
 

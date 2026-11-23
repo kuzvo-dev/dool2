@@ -20,27 +20,27 @@
     {
       "title": "배송 조회",
       "say": "산 거 언제 받을 수 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "상품 찾기",
       "say": "15만 원 이하 남성 겨울 코트",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "주문",
       "say": "이 코트 95 사이즈로 사 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     },
     {
       "title": "L.POINT 확인",
       "say": "이번 결제에 쓸 엘포인트 잔액 봐 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "취소·반품",
       "say": "출고 전이면 이 주문 없애 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     }
   ]
 }

@@ -5,7 +5,7 @@
       "name": "search",
       "title": "상품 찾기",
       "description": "코스트코 온라인몰에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 번호·가격·단위 가격·할인 금액·평점·리뷰 수·재고·배송비 포함 여부·링크). 로그인 없이 된다. '커클랜드 올리브유 있어?'처럼 있는지 확인하거나 단위 가격을 견줄 때 쓴다. 매장 가격과 다를 수 있다. 사려면 costco_prepare_order에 product_id를 넘긴다(회원 로그인 필요).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 검색·낮은 가격순)",
       "input": {
         "properties": {
@@ -147,7 +147,7 @@
       "name": "orders",
       "title": "주문·배송 조회",
       "description": "코스트코 온라인 주문 내역(주문일·상품·금액·주문 상태·출고·배송 상태)을 연다. 로그인해야 한다. '전기포트 출고됐어?' 같은 질문, 다시 주문할 상품 찾기, 취소·반품 전 확인에 쓴다. 다시 주문은 costco_prepare_order, 취소·반품은 costco_cancel_return.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -190,7 +190,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 코스트코 상품 화면을 열어 수량을 맞추고 결제까지 마친다. 온라인 주문은 회원 로그인이 필요하다: 연결 전이면 connect_ask('costco'). 다시 주문도 이 도구로. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -243,7 +243,7 @@
       "name": "cancel_return",
       "title": "취소·반품 신청",
       "description": "코스트코 온라인 주문 내역에서 고른 주문의 취소(출고 전)나 반품 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유·수거 방법은 사용자가 말한 것으로, 없으면 흔한 것(단순 변심·문 앞 수거)으로 골라 승인 카드에 적어 바꿀 수 있게 한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

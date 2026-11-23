@@ -5,7 +5,7 @@
       "name": "search",
       "title": "책 찾기",
       "description": "yes24에서 책을 제목·저자·주제로 찾아 제목·종류([도서]/[eBook])·저자·출판사·출간일·판매가·정가·할인율·별점·배송(언제 도착)·전자책 가격·중고 상품 수·품절 여부·상품 번호·링크를 돌려준다. 로그인 없이 된다. 전자책만 보려면 kind=EBOOK. 주문하려면 yes24_prepare_order에 goods_no를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 어린왕자·데미안 검색)",
       "input": {
         "properties": {
@@ -223,7 +223,7 @@
       "name": "orders",
       "title": "주문·배송 확인",
       "description": "yes24 주문/배송 조회 화면을 열어 최근 주문의 주문일·책 제목·결제 금액·지금 상태(출고 준비·배송 중·배송 완료)와 도착 예정을 읽어 정리한다. 로그인(연결)해야 된다. '주문한 책 언제 와?'에 쓴다. 취소·반품은 yes24_prepare_cancel.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -269,7 +269,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 책 화면을 열어 개수를 맞추고 주문까지 마친다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('yes24'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -329,7 +329,7 @@
       "name": "prepare_cancel",
       "title": "취소·반품 준비",
       "description": "yes24 주문 내역에서 고른 주문의 취소(출고 전)나 반품(받은 뒤) 신청 화면까지 간다. 사유 고르기·환불 금액 확인은 열어 둔 탭에서 브라우저 도구로 이어서 하고, 취소·반품 신청 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 로그인(연결)해야 된다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

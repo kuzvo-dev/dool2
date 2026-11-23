@@ -310,11 +310,11 @@ export class Connectors {
    */
   private findAt = new Map<string, number>()
   private pickGate(cardId: string, tool: ConnectorTool): string | undefined {
-    if (tool.tier === '찾아보기') {
+    if (tool.tier === 'lookup') {
       this.findAt.set(cardId, Date.now())
       return undefined
     }
-    if (tool.tier !== '돈 내기') return undefined
+    if (tool.tier !== 'pay') return undefined
     const found = this.findAt.get(cardId)
     const user = this.opts.lastUser?.()
     if (!found || !user || user.at > found) return undefined
@@ -402,7 +402,7 @@ export class Connectors {
   async paySites(): Promise<string[]> {
     const out: string[] = []
     for (const { card, connector } of (await this.load()).values()) {
-      if (!connector?.tools.some((t) => t.tier === '돈 내기' && this.usable(t))) continue
+      if (!connector?.tools.some((t) => t.tier === 'pay' && this.usable(t))) continue
       for (const site of [card.site, ...(card.alsoSites ?? [])])
         if (site) out.push(site.replace(/:\d+$/, '').replace(/^www\./, ''))
     }
@@ -1194,7 +1194,7 @@ export class Connectors {
       const m = await this.opts.tools.markText(tabId, f(s.approve.text)).catch((e: Error) => {
         throw new StepError(e.message)
       })
-      const kind: RiskKind = c.tier === '연락하기' ? 'contact' : 'money'
+      const kind: RiskKind = c.tier === 'contact' ? 'contact' : 'money'
       const r = await this.opts.tools
         .askApproval(
           tabId,
@@ -1212,7 +1212,7 @@ export class Connectors {
     }
     if ('handoff_to_agent' in s) {
       // 돈 내기 도구가 넘긴 탭은 결제 흐름: 탭을 잡아 두고 결제 화면 안내를 붙인다. 승인은 마지막 결제 버튼에서 한 번 (browser-tools)
-      const pay = c.tier === '돈 내기'
+      const pay = c.tier === 'pay'
       if (pay) this.opts.tools.startPayFlow(c.need(), c.tool, c.sites)
       // 늦게 그리는 화면(Gmail·구글 캘린더 등)은 정해진 기다림 뒤에도 비어 있다: 그려질 때까지 조금 더 읽는다
       // (실측: 빈 화면을 넘겨받은 AI가 "검색 결과가 비어 있어요·연결이 안 된 것 같아요"라고 답했다)

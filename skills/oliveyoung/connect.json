@@ -15,27 +15,27 @@
     {
       "title": "다시 주문",
       "say": "늘 쓰던 립밤 두 개 주문해 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     },
     {
       "title": "제품 추천",
       "say": "건성용 수분크림 찾아 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "랭킹 보기",
       "say": "요즘 선크림 1위 뭐야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "세일 알림",
       "say": "세일 기간 되면 알려 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "배송 조회",
       "say": "오늘드림 지금 어디쯤이야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     }
   ],
   "loginUrl": "https://www.oliveyoung.co.kr/store/login/loginForm.do",
