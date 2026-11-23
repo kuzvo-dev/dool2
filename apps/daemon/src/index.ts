@@ -105,6 +105,7 @@ import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import type { HtmlRenderer } from './render.js'
+import { buildReport, sendReport } from './report.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
@@ -206,6 +207,8 @@ export interface DaemonOptions {
   appUrl?: string
   /** 폰에 보일 이 PC 이름 */
   pcName?: string
+  /** PC 앱 버전 (문제 알리기에 함께 보낸다) */
+  appVersion?: string
   /** 테스트용: 웹 푸시 보내기 */
   push?: typeof sendPush
   /** 테스트용: 에이전트를 바꿔 끼운다 */
@@ -3083,6 +3086,34 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         else await hands.call('request')
         return json(res, 200, { screen: await read() })
       }
+    }
+
+    // 문제 알리기 (report.ts): 보낼 내용 보기(preview) → 보내기. 기록은 정해 둔 칸만, 대화·파일 이름은 빼고
+    if (a === 'report' && req.method === 'POST' && (!b || b === 'preview')) {
+      const body = (await readJson(req).catch(() => ({}))) as {
+        text?: unknown
+        contact?: unknown
+        includeLogs?: unknown
+      }
+      const text = typeof body.text === 'string' ? body.text : ''
+      if (!b && !text.trim()) return json(res, 400, { error: '무슨 일이 있었는지 한 줄 적어 주세요' })
+      const payload = buildReport(
+        {
+          text,
+          ...(typeof body.contact === 'string' ? { contact: body.contact } : {}),
+          includeLogs: body.includeLogs !== false,
+        },
+        {
+          version: opts.appVersion ?? 'dev',
+          agents: await detectAll().catch(() => []),
+          extension: browser.status as { connected?: boolean; version?: string },
+          entries: journal.read({ days: 2, limit: 2_000 }),
+        },
+      )
+      if (b === 'preview') return json(res, 200, { payload })
+      const sent = await sendReport(payload)
+      journal.write('report', { ok: sent.ok, ...(sent.id ? { id: sent.id } : {}), logs: payload.logs.length })
+      return json(res, sent.ok ? 200 : 502, sent)
     }
 
     if (req.method === 'GET' && a === 'agents' && !b) {

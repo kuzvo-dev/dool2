@@ -324,6 +324,7 @@ app.whenReady().then(async () => {
     },
     // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다
     ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
+    appVersion: app.getVersion(),
     dataDir,
     secrets: fileSecrets(join(dataDir, 'secrets.json'), safeStorage),
     // 폰 연결은 공식 중계 서버로. 직접 운영하는 서버는 설정(relay)이나 DOOL2_RELAY가 먼저다
