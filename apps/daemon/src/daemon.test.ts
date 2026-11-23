@@ -264,6 +264,30 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(r.content[0]?.text).toContain('No past conversation found')
   })
 
+  it('the same tool call with the same result a third time gets a loop note', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const search = async (query: string) =>
+      (await (
+        await fetch(`${daemon?.url}/api/tools/life/conversation_search`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ query }),
+        })
+      ).json()) as { content: { text: string }[] }
+    const texts = async (query: string) => (await search(query)).content.map((x) => x.text).join('\n')
+    expect(await texts('vacuum')).not.toContain('Loop check')
+    expect(await texts('vacuum')).not.toContain('Loop check')
+    // A different input is a different call
+    expect(await texts('robot vacuum')).not.toContain('Loop check')
+    const third = await texts('vacuum')
+    expect(third).toContain('No past conversation found')
+    expect(third).toContain('Loop check: this is the 3rd call')
+  })
+
   it('답하는 동안 보낸 말은 줄을 섰다가 한 차례로 이어서 간다', async () => {
     const rt = new GateRuntime()
     const { api } = await boot(rt)
