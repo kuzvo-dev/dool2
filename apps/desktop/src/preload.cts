@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('dool2', {
   update: {
     state: (): Promise<unknown> => ipcRenderer.invoke('dool2:update-state'),
     install: (): Promise<unknown> => ipcRenderer.invoke('dool2:update-install'),
+    /** 지금 바로 새 버전이 있는지 본다 (설정의 [업데이트 확인]) */
+    check: (): Promise<unknown> => ipcRenderer.invoke('dool2:update-check'),
+    /** 이 앱 버전 */
+    version: (): Promise<string> => ipcRenderer.invoke('dool2:version'),
     onChange: (cb: (s: unknown) => void) => {
       ipcRenderer.on('dool2:update', (_e, s) => cb(s))
     },
