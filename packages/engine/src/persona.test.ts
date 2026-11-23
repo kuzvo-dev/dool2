@@ -110,3 +110,14 @@ describe('결과 블록 위치 말', () => {
     expect(blockBelow('위가 아파요')).toBe('위가 아파요')
   })
 })
+
+describe('global prompt size budget', () => {
+  // AGENTS.md: fix by sharpening tools, not by adding instructions. Tips for one tool or one service belong in that
+  // tool's description or service card, not here. Lower this as lines move out; do not raise it to fit a new rule.
+  const BUDGET = 37_000
+
+  it('stays within the budget in every voice language', () => {
+    for (const lang of ['ko', 'en'] as const)
+      expect(buildSystemPrompt({ lang }).length, `prompt for ${lang}`).toBeLessThanOrEqual(BUDGET)
+  })
+})

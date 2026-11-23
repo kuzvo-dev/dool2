@@ -523,7 +523,8 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         'pick: multi is for choosing several at once (adding groceries to a cart, gift candidates, documents to get): leave on empty for items Dool2 picked (checked by default), set on: false for uncertain ones and give the reason in sub. ' +
         'If every row has amount (won), the button shows the total, like "Add 3 · ₩25,860". The button (action) is one action for the whole list (e.g. "Add to calendar"). ' +
         'Money, contacting people and deleting are never done directly by the button: tapping sends a request, and approval is asked then. Never include made-up values. ' +
-        "Once attached, do not repeat the same list in the answer text; give only the reasons and next steps in 2-4 sentences. Write all row text in the user's language.",
+        "Once attached, do not repeat the same list in the answer text; give only the reasons and next steps in 2-4 sentences. Write all row text in the user's language. " +
+        'Benefits, events, support programs and notices: name in title, agency and who can join in sub, whether the user qualifies in state ("eligible", "not eligible" or "needs checking", in the reply language; tone done, stop or wait), deadline in date (lead: date) and the official page in url.',
       inputSchema: {
         title: z
           .string()
@@ -702,7 +703,8 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         'Attaches text that will be used word for word (text message, KakaoTalk, email, civil petition, review, post) below the answer. The user taps copy or send. ' +
         'Tapping send puts a request to send the draft exactly as written into the chat, and approval is asked right before sending then (this tool does not send). ' +
-        'Do not include facts the user did not say; leave blanks like [date]. Once attached, do not repeat the text in the answer; just one or two sentences.',
+        'Do not include facts the user did not say; leave blanks like [date]. Once attached, do not repeat the text in the answer; just one or two sentences. ' +
+        'Reviews: write naturally in 3 to 5 sentences (about 150 Korean characters) with the product name, features and when it is used. Give 5 stars, and fill required questions like thickness, size or taste with a neutral answer (average, just right, satisfied) without asking the user.',
       inputSchema: {
         to: z
           .string()

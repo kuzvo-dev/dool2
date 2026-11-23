@@ -253,7 +253,8 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
         'Renders an HTML file (html, htm, SVG too) as is into a PDF or a PNG image file. Use when the user wants a report, document, notice or resume as PDF ("give me a PDF", "as Word or PDF", "so I can print it"), or a picture, invitation, poster or card as PNG ("as an image", "save as a photo", "a picture to send on KakaoTalk"). ' +
         'Create the html with file_write first (for PDF, fit the A4 width; page breaks with CSS page-break-before) and give its path. HTML already in the user folders works too. ' +
         'PDF is A4 (multiple pages, background colors included, landscape: true for landscape); PNG is captured at width (the designed width in px, default 800) for the full content height, sharp (2x). ' +
-        'The output appears next to the original as same-name.pdf/.png, with "(1)" if the name exists. Tell the user the path from the result. Do not ask the user to print from a browser or take a screenshot.',
+        'The output appears next to the original as same-name.pdf/.png, with "(1)" if the name exists. Tell the user the path from the result. Do not ask the user to print from a browser or take a screenshot. ' +
+        'Look at the preview it returns: if there are blank pages, overflowing tables or wrong numbers, fix and render again, rewriting the same file with replace: true in file_write and here. Do not make separate check files (page breaks, review folders) or "(final)" versions.',
       inputSchema: {
         path: z
           .string()
@@ -340,7 +341,8 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Make a motion graphics video',
       description:
-        'Makes a motion graphics video (mp4) with moving text, confetti, photo collages and scene transitions. Use when the user wants something "stylish": birthday or anniversary videos, shop or product promo Shorts, travel highlights, notice or card-news videos (for simply joining photos, use video_make). ' +
+        'Makes a motion graphics video (mp4) with moving text, confetti, photo collages and scene transitions. Videos should look great by default, so use this for celebration, anniversary, shop or product promo, travel highlight, notice and card-news videos (only plain photo slideshows use video_make). ' +
+        'When scenes really move (a dancing lead, steaming food, an ocean view), first make 1 or 2 clips with video_clip and lay them as scene backgrounds here; if that fails, make it with this tool alone. ' +
         'Plan first: (0) check the matching style rules and examples with video_style; (1) decide purpose and mood, and if the user gives a reference (e.g. "like trendy Reels", "vlog feel", a link) or the mood is unclear, find 2-3 similar videos with a web search and sum up their traits (colors, font feel, pace, transitions, decorations) in 3 lines; (2) storyboard 5-10 scenes (text, photo, motion and length per scene); (3) write the html. Shorts and promos: fast 1.2-2 s scenes with big text; sentimental and memories: slower 3-4 s scenes. ' +
         'How to use the motion kit: ' +
         'Scenes are <section class="scene" data-dur="3" data-in="fade|zoom|slide|wipe|circle|flash">…</section> in order. Give elements inside a scene their entry time with style="--at:.4s"; motion classes: pop, rise, drop, slam, zoom, left, right, spin, stamp, reveal, blur, type (style="--n:<character count>"), polaroid (style="--r:-6deg"), words (word by word, kinetic typography), marker (highlighter). ' +
@@ -384,7 +386,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Make a video from photos',
       description:
-        'Joins several photos (2-40) into an mp4 video with slow zoom, smooth transitions, captions, an opening title and background music, saved in the Dool2 folder (in Documents) and the Library. Use for requests like "a birthday video from my kid\'s photos", "turn my travel photos into a video", "a memories video". ' +
+        'Joins several photos (2-40) into an mp4 video with slow zoom, smooth transitions, captions, an opening title and background music, saved in the Dool2 folder (in Documents) and the Library. Use only for plain photo slideshows ("just put my photos into a video"); celebration, promo, highlight and card-news videos look better with video_motion. ' +
         'Photos are paths found with file_find (Pictures folder), photo names received in chat ("photo:name.jpg"), or picture paths made with image_make. They play in the order given (pick them in the order they were taken). ' +
         'Vertical (portrait, phone and Instagram Stories) is the default; landscape for YouTube or TV. Photos are never cropped; leftover space is filled with a blur. Captions are short per photo (about 20 characters), optional. ' +
         'Background music only from mp3/m4a in the user folders (provided by the user). On first use it downloads the video components once (about 30 s), which can take a while. The first scene of the result comes back too; check it and remake if something looks off.',
