@@ -1221,6 +1221,104 @@ button.side-row:hover {
 .setup[hidden] {
   display: none;
 }
+/* 설정: 앱 안 페이지 (왼쪽 메뉴는 그대로 보이고, 설정 안에 칸 목록) */
+.setup.in-app {
+  left: 248px;
+  z-index: 5;
+  display: block;
+  padding: 0;
+  background: var(--bg);
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 40px;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 56px 40px 64px;
+}
+.settings-side {
+  position: sticky;
+  top: 56px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-title {
+  padding: 0 12px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-tab:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.settings-tab.on {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+.settings-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 680px;
+}
+.settings-content > .page-head {
+  margin-bottom: 8px;
+}
+.settings-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings-sec > .over {
+  padding: 0;
+}
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.about-links a {
+  text-decoration: none;
+}
 .setup-card {
   margin: auto;
   flex: none;
