@@ -236,6 +236,9 @@ export function runSetup(opts: SetupOptions): {
   // "두리가 쉬지 않게" 단계의 선택 (기본은 둘 다 켬, 사용자가 끌 수 있다)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
   let autoStart = current.launchAtLogin ?? true
+  // 사용 통계 (숫자만): 처음 설정 마지막 화면에서 묻는다. 끄면 보내지 않는다 (apps/daemon/src/stats.ts)
+  let shareStats = current.usageStats ?? true
+  let statsPreview: string | undefined
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   // 설정 화면에서 지금 보는 칸 (폰 연결 버튼으로 열면 폰 칸)
@@ -368,7 +371,7 @@ export function runSetup(opts: SetupOptions): {
       pollLogin()
     }
 
-    const finish = async (power?: Pick<Settings, 'keepAwake' | 'launchAtLogin'>) => {
+    const finish = async (power?: Pick<Settings, 'keepAwake' | 'launchAtLogin' | 'usageStats'>) => {
       stopLogin()
       for (const t of Object.values(installTimers)) clearTimeout(t)
       const defaultAgent = choice ? pickDefault(choice, agents) : undefined
@@ -586,6 +589,17 @@ export function runSetup(opts: SetupOptions): {
             autoStart = v
           }),
         )
+        const statsList = el('ul', 'checks toggles')
+        statsList.append(
+          toggle(
+            '사용 통계 보내기 (숫자만)',
+            '두리를 더 낫게 만드는 데 써요. 하루 한 번, 부탁 몇 개를 끝냈는지 같은 숫자만 보내요. 대화·사이트·파일 이름은 보내지 않아요.',
+            shareStats,
+            (v) => {
+              shareStats = v
+            },
+          ),
+        )
         card.append(
           list,
           el(
@@ -593,6 +607,8 @@ export function runSetup(opts: SetupOptions): {
             'setup-hint',
             '화면 잠금이나 보안 설정은 건드리지 않아요. 그래서 컴퓨터를 다시 켜면, 로그인한 뒤에 두리가 돌아와요.',
           ),
+          statsList,
+          statsPeek(),
         )
         const foot = el('div', 'setup-foot')
         foot.append(
@@ -601,7 +617,12 @@ export function runSetup(opts: SetupOptions): {
           button(
             'btn',
             '이렇게 할게요',
-            () => void finish({ keepAwake: awakeWorking ? 'working' : 'off', launchAtLogin: autoStart }),
+            () =>
+              void finish({
+                keepAwake: awakeWorking ? 'working' : 'off',
+                launchAtLogin: autoStart,
+                usageStats: shareStats,
+              }),
           ),
         )
         card.append(foot)
@@ -684,6 +705,25 @@ export function runSetup(opts: SetupOptions): {
             head('일반', '두리가 언제 일하고, 마지막 버튼을 누가 누를지 정해요.'),
             sec('두리가 쉬지 않게', undefined, list),
             sec('마지막 확인', undefined, gate),
+            sec(
+              '사용 통계',
+              undefined,
+              (() => {
+                const ul = el('ul', 'checks toggles')
+                ul.append(
+                  toggleRow(
+                    '사용 통계 보내기 (숫자만)',
+                    current.usageStats
+                      ? '하루 한 번 숫자만 보내요. 대화·사이트·파일 이름은 보내지 않아요.'
+                      : '꺼져 있어요. 아무것도 보내지 않아요.',
+                    current.usageStats === true,
+                    () => void save({ usageStats: current.usageStats !== true }),
+                  ),
+                )
+                return ul
+              })(),
+              statsPeek(),
+            ),
           )
         } else if (settingsTab === 'ai') {
           const ai = el('p', 'setup-hint')
@@ -1671,6 +1711,23 @@ export function runSetup(opts: SetupOptions): {
     }
 
     /** 켜고 끄는 줄 하나 */
+    /** 사용 통계로 보내는 숫자를 그대로 보여 주기 */
+    const statsPeek = () => {
+      const box = el('div', 'report-block')
+      box.append(
+        button('btn-link', statsPreview ? '보내는 숫자 접기' : '무엇을 보내나요?', async () => {
+          if (statsPreview) statsPreview = undefined
+          else {
+            const r = await opts.api<{ stats: unknown }>('/api/stats/preview').catch(() => undefined)
+            statsPreview = r ? JSON.stringify(r.stats, null, 2) : '내용을 만들지 못했어요'
+          }
+          render()
+        }),
+      )
+      if (statsPreview) box.append(el('pre', 'report-preview', statsPreview))
+      return box
+    }
+
     const toggleRow = (label: string, detail: string, on: boolean, onClick: () => void) => {
       const li = el('li', on ? 'ok' : 'todo')
       const b = button('toggle-row', '', onClick)
