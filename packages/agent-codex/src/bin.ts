@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
-/** 두리와 함께 배포하는 Codex 버전. app-server 규약이 버전마다 바뀌어서 고정한다. */
+/** Codex version shipped with Dool2. Pinned because the app-server protocol changes between versions. */
 export const CODEX_VERSION = '0.169.0'
 
 const TRIPLES: Record<string, { triple: string; pkg: string }> = {
@@ -15,8 +15,8 @@ const TRIPLES: Record<string, { triple: string; pkg: string }> = {
 }
 
 /**
- * 함께 설치된 Codex 실행 파일 위치. npm 래퍼(node 필요)를 거치지 않고 네이티브 바이너리를 바로 쓴다.
- * 못 찾으면 undefined.
+ * Location of the bundled Codex executable. Uses the native binary directly, without the npm wrapper (which needs node).
+ * Undefined when not found.
  */
 export function resolveBundledCodex(platform = process.platform, arch = process.arch): string | undefined {
   const target = TRIPLES[`${platform}-${arch}`]

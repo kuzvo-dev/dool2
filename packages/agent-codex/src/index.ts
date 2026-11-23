@@ -1,15 +1,17 @@
-// Codex 어댑터 (docs/architecture.md 3.3).
-// 두리와 함께 배포하는 고정 버전 Codex를 `codex app-server`(stdio JSON-RPC)로 돌린다.
-// CODEX_HOME을 두리 전용 폴더로 분리해 사용자 개인 Codex 설정과 섞지 않는다.
-// 셸·웹 검색을 끄고 읽기 전용 샌드박스로 묶는다. 두리 도구(MCP)가 없으면 시작하지 않는다.
-// TODO(M3): 로그인은 OpenAI "Sign in with ChatGPT"(오픈소스 앱 경로)로 바꾼다. M0은 `codex login`을 쓴다.
+// Codex adapter (docs/architecture.md 3.3).
+// Runs the pinned Codex version shipped with Dool2 as `codex app-server` (stdio JSON-RPC).
+// CODEX_HOME is a Dool2-only folder so it never mixes with the user's own Codex settings.
+// Shell and web search are off, inside a read-only sandbox. It doesn't start without Dool2 tools (MCP).
+// TODO(M3): switch sign-in to OpenAI "Sign in with ChatGPT" (the open-source app path). M0 uses `codex login`.
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { type AgentRuntime, type McpServerSpec, runOnce, type TurnInput } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { resolveBundledCodex } from './bin.js'
 import { downloadedCodexBin } from './download.js'
+import { CODEX_TEXT } from './locales/codex.js'
 import { CodexEventMapper, rateLimitEvents } from './map.js'
 import { JsonRpcClient } from './rpc.js'
 
@@ -20,11 +22,11 @@ export { JsonRpcClient } from './rpc.js'
 
 const toml = (v: unknown) => JSON.stringify(v)
 
-/** `codex app-server` 실행 인자. 순수 함수라 테스트로 고정한다. */
+/** Arguments for `codex app-server`. A pure function, pinned by tests. */
 export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
   const args = [
     'app-server',
-    // 셸 명령 도구를 끈다
+    // Turn off the shell command tool
     '-c',
     'features.shell_tool=false',
     '-c',
@@ -37,7 +39,7 @@ export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
   for (const s of mcpServers) {
     const base = `mcp_servers.${s.name}`
     args.push('-c', `${base}.command=${toml(s.command)}`, '-c', `${base}.args=${toml(s.args)}`)
-    // 두리 도구가 뜨지 못하면 스레드 시작 자체를 실패시킨다
+    // Fail the thread start itself if the Dool2 tools can't start
     args.push('-c', `${base}.required=true`)
     for (const [k, v] of Object.entries(s.env ?? {})) args.push('-c', `${base}.env.${k}=${toml(v)}`)
   }
@@ -45,12 +47,14 @@ export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
 }
 
 export interface CodexRuntimeOptions {
-  /** 두리 전용 CODEX_HOME (로그인·설정·세션이 여기에 남는다) */
+  /** Dool2-only CODEX_HOME (sign-in, settings and sessions live here) */
   codexHome: string
-  /** 지정하지 않으면 처음 쓸 때 내려받은 것(installDir) → 개발 중 node_modules의 고정 버전 순서로 찾는다 */
+  /** When not given: the copy downloaded on first use (installDir), then the pinned version in node_modules during development */
   binPath?: string
-  /** 처음 쓸 때 Codex를 내려받는 폴더 (download.ts) */
+  /** Folder Codex is downloaded to on first use (download.ts) */
   installDir?: string
+  /** Language of the status and error messages people see, read each time. Korean when not given */
+  lang?: () => Lang
 }
 
 export class CodexRuntime implements AgentRuntime {
@@ -59,8 +63,12 @@ export class CodexRuntime implements AgentRuntime {
 
   constructor(private readonly opts: CodexRuntimeOptions) {}
 
+  private lang(): Lang {
+    return this.opts.lang?.() ?? 'ko'
+  }
+
   private async bin() {
-    // 사용자 PATH의 다른 버전 codex는 쓰지 않는다 (app-server 규약이 버전마다 달라서 고정 버전만)
+    // Never use another codex version from the user's PATH (only the pinned one, since the app-server protocol changes)
     if (this.resolved) return this.resolved
     const downloaded = this.opts.installDir ? downloadedCodexBin(this.opts.installDir) : undefined
     this.resolved =
@@ -76,8 +84,8 @@ export class CodexRuntime implements AgentRuntime {
 
   async detect(): Promise<AgentStatus> {
     const path = await this.bin()
-    if (!path)
-      return { id: 'codex', installed: false, loggedIn: false, problem: 'Codex를 아직 받지 않았어요' }
+    const t = CODEX_TEXT[this.lang()]
+    if (!path) return { id: 'codex', installed: false, loggedIn: false, problem: t.notDownloaded }
     await mkdir(this.opts.codexHome, { recursive: true })
     const status: AgentStatus = { id: 'codex', installed: true, path, loggedIn: false }
     try {
@@ -88,17 +96,17 @@ export class CodexRuntime implements AgentRuntime {
       const out = `${s.stdout}\n${s.stderr}`
       status.loggedIn = s.code === 0 && !/not logged in/i.test(out)
       if (/chatgpt/i.test(out)) status.plan = 'chatgpt'
-      if (!status.loggedIn) status.problem = 'ChatGPT 로그인이 필요해요'
+      if (!status.loggedIn) status.problem = t.needLogin
     } catch (err) {
-      status.problem = `Codex 상태를 확인하지 못했어요: ${(err as Error).message}`
+      status.problem = t.statusFailed((err as Error).message)
     }
     return status
   }
 
-  /** 공식 로그인 흐름을 연다 (브라우저에 OpenAI 로그인 창). 끝나면 종료 코드를 돌려준다. */
+  /** Opens the official sign-in flow (an OpenAI sign-in window in the browser). Returns the exit code when done. */
   async login(): Promise<number | null> {
     const path = await this.bin()
-    if (!path) throw new Error('Codex를 찾지 못했어요')
+    if (!path) throw new Error(CODEX_TEXT[this.lang()].notFound)
     await mkdir(this.opts.codexHome, { recursive: true })
     const r = await runOnce(path, ['login'], { env: this.env(), timeoutMs: 10 * 60_000 })
     return r.code
@@ -107,17 +115,18 @@ export class CodexRuntime implements AgentRuntime {
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
     const path = await this.bin()
     if (!path) {
-      yield { type: 'error', code: 'not_installed', message: 'Codex를 찾지 못했어요' }
+      yield { type: 'error', code: 'not_installed', message: CODEX_TEXT[this.lang()].notFound }
       return
     }
+    const t = CODEX_TEXT[this.lang()]
     await mkdir(this.opts.codexHome, { recursive: true })
-    // 로그인이 안 돼 있으면 Codex가 재시도하느라 오래 걸리므로 먼저 확인한다
+    // Check sign-in first, since Codex takes a long time retrying when signed out
     const login = await runOnce(path, ['login', 'status'], { env: this.env() }).catch(() => undefined)
     if (login && (login.code !== 0 || /not logged in/i.test(login.stdout + login.stderr))) {
       yield {
         type: 'error',
         code: 'not_logged_in',
-        message: 'ChatGPT 로그인이 필요해요. PC에서 로그인해 주세요.',
+        message: t.loginFirst,
       }
       return
     }
@@ -137,7 +146,7 @@ export class CodexRuntime implements AgentRuntime {
       child.on('error', () => resolve(-1))
     })
 
-    // 알림을 이벤트 큐로 모은다
+    // Collect notifications into the event queue
     const queue: AgentEvent[] = []
     let wake: (() => void) | undefined
     let finished = false
@@ -164,12 +173,12 @@ export class CodexRuntime implements AgentRuntime {
           wake?.()
         }
       },
-      // 셸·파일은 꺼 두었으므로 승인 요청은 두리 도구 외에는 모두 거절한다
+      // Shell and files are off, so every approval request except for Dool2 tools is declined
       (method, params) => {
         if (method === 'mcpServer/elicitation/request' && params.serverName === 'dool2')
           return { action: 'accept', content: null }
         if (method.endsWith('requestApproval')) return { decision: 'decline' }
-        throw new Error(`두리가 처리하지 않는 요청이에요: ${method}`)
+        throw new Error(`Request not handled by Dool2: ${method}`)
       },
     )
     const pumping = rpc.pump().then(() => {
@@ -182,7 +191,7 @@ export class CodexRuntime implements AgentRuntime {
 
     try {
       await rpc.request('initialize', {
-        clientInfo: { name: 'dool2', title: '두리', version: '0.0.0' },
+        clientInfo: { name: 'dool2', title: 'Dool2', version: '0.0.0' },
         capabilities: null,
       })
       rpc.notify('initialized')
@@ -200,7 +209,7 @@ export class CodexRuntime implements AgentRuntime {
           })
         : await rpc.request<{ thread: { id: string }; model?: string }>('thread/start', threadParams)
       const threadId = started.thread.id
-      mapper = new CodexEventMapper(threadId)
+      mapper = new CodexEventMapper(threadId, this.lang())
       yield { type: 'started', resumeId: threadId, tools: input.mcpServers.map((s) => `mcp__${s.name}__*`) }
 
       await rpc.request('turn/start', {
@@ -221,7 +230,7 @@ export class CodexRuntime implements AgentRuntime {
       }
       while (queue.length) yield queue.shift() as AgentEvent
     } catch (err) {
-      if (input.signal?.aborted) yield { type: 'error', code: 'aborted', message: '멈췄어요' }
+      if (input.signal?.aborted) yield { type: 'error', code: 'aborted', message: t.stopped }
       else {
         const msg = (err as Error).message
         const notLoggedIn = /auth|login|unauthorized/i.test(msg + stderrTail)
@@ -229,9 +238,9 @@ export class CodexRuntime implements AgentRuntime {
           ? {
               type: 'error',
               code: 'not_logged_in',
-              message: 'ChatGPT 로그인이 필요해요. PC에서 다시 로그인해 주세요.',
+              message: t.loginAgain,
             }
-          : { type: 'error', code: 'process_failed', message: `Codex가 일을 끝내지 못했어요: ${msg}` }
+          : { type: 'error', code: 'process_failed', message: t.unfinished(msg) }
       }
     } finally {
       input.signal?.removeEventListener('abort', onAbort)

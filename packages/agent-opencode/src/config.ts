@@ -1,14 +1,16 @@
-// OpenCode v2 설정과 실행 환경 (ADR 0010).
-// 두리 전용 폴더에서만 돌고, 두리 도구(MCP `dool2`)만 쓸 수 있게 묶는다. 실측: OpenCode v2.3.0, 2026-11-14.
+// OpenCode v2 config and run environment (ADR 0010).
+// Runs only in a Dool2-only folder and can use only Dool2 tools (MCP `dool2`). Measured on OpenCode v2.3.0, 2026-11-14.
 import { join } from 'node:path'
 import type { McpServerSpec } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
 import type { PaygProvider } from '@dool2/protocol'
+import { OPENCODE_TEXT } from './locales/opencode.js'
 
 export const DOOL2_AGENT = 'dool2'
-/** OpenCode는 MCP 도구 이름을 `<서버>_<도구>`로 만든다 */
+/** OpenCode names MCP tools `<server>_<tool>` */
 export const DOOL2_TOOL_PREFIX = 'dool2_'
 
-/** 마지막에 맞는 규칙이 이긴다: 모두 막고 두리 도구만 연다 */
+/** The last matching rule wins: block everything, then open only Dool2 tools */
 const PERMISSIONS = [
   { action: '*', resource: '*', effect: 'deny' },
   { action: `${DOOL2_TOOL_PREFIX}*`, resource: '*', effect: 'allow' },
@@ -23,7 +25,7 @@ export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
   return {
     permissions: PERMISSIONS,
     policies: [
-      // OpenCode 자체 무료 모델은 대화를 그 회사 서버로 보낸다. 사용자가 고른 제공자만 쓴다
+      // OpenCode's own free models send the conversation to that company's servers. Use only the provider the user picked
       { action: 'provider.use', resource: 'opencode', effect: 'deny' },
       { action: 'websearch.use', resource: '*', effect: 'deny' },
       { action: 'skill.use', resource: '*', effect: 'deny' },
@@ -33,11 +35,11 @@ export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
     agents: {
       [DOOL2_AGENT]: {
         mode: 'primary',
-        description: '두리',
+        description: 'Dool2',
         system: input.systemPrompt,
         permissions: PERMISSIONS,
       },
-      // 기본 에이전트들은 셸·파일 도구를 쓰므로 끈다
+      // The built-in agents use shell and file tools, so turn them off
       build: { disabled: true },
       plan: { disabled: true },
       general: { disabled: true },
@@ -55,7 +57,7 @@ export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
             type: 'local',
             command: [s.command, ...s.args],
             ...(s.env ? { environment: s.env } : {}),
-            // 기본값(true)이면 MCP 도구를 코드 실행 도구 하나로 감싸서, 위 권한 규칙에 막힌다
+            // With the default (true), MCP tools are wrapped in one code-execution tool, which the permission rules above block
             codemode: false,
           },
         ]),
@@ -64,7 +66,7 @@ export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
   }
 }
 
-/** API 키를 넘길 환경 변수 이름 (OpenCode 제공자 ID 기준) */
+/** Environment variable that carries the API key (by OpenCode provider ID) */
 export const PROVIDER_ENV: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
@@ -73,7 +75,7 @@ export const PROVIDER_ENV: Record<string, string> = {
 }
 
 export interface OpenCodeEnvInput {
-  /** 두리 전용 OpenCode 폴더 (설정·데이터·상태·캐시를 모두 이 안에) */
+  /** Dool2-only OpenCode folder (config, data, state and cache all inside) */
   home: string
   password: string
   config: object
@@ -82,10 +84,10 @@ export interface OpenCodeEnvInput {
   base?: NodeJS.ProcessEnv
 }
 
-/** 사용자 본인의 OpenCode·Claude 설정을 읽지 않게, 모든 폴더를 두리 쪽으로 돌린다 */
+/** Points every folder at Dool2's side so the user's own OpenCode and Claude settings are never read */
 export function buildOpenCodeEnv(input: OpenCodeEnvInput): NodeJS.ProcessEnv {
   const keyVar = PROVIDER_ENV[input.provider]
-  if (!keyVar) throw new Error(`지원하지 않는 AI 제공자예요: ${input.provider}`)
+  if (!keyVar) throw new Error(`Unsupported AI provider: ${input.provider}`)
   const base = input.base ?? process.env
   const keep = [
     'PATH',
@@ -117,40 +119,46 @@ export function buildOpenCodeEnv(input: OpenCodeEnvInput): NodeJS.ProcessEnv {
   }
 }
 
-/** 화면에서 고를 수 있는 제공자와 모델 (OpenCode v2.3.0 모델 목록에서 확인, 2026-11-14) */
-export const PAYG_PROVIDERS: PaygProvider[] = [
-  {
-    id: 'anthropic',
-    label: 'Anthropic (Claude)',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    models: [
-      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 · 추천' },
-      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 · 저렴' },
-      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · 가장 똑똑함' },
-    ],
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI (GPT)',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    models: [
-      { id: 'gpt-5.6', label: 'GPT-5.6 · 추천' },
-      { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini · 저렴' },
-    ],
-  },
-  {
-    id: 'google',
-    label: 'Google (Gemini)',
-    keyUrl: 'https://aistudio.google.com/apikey',
-    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · 추천' }],
-  },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter (여러 회사 모델)',
-    keyUrl: 'https://openrouter.ai/keys',
-    models: [
-      { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
-      { id: 'openai/gpt-5.2', label: 'GPT-5.2' },
-    ],
-  },
-]
+/** Providers and models people can pick on screen (checked against the OpenCode v2.3.0 model list, 2026-11-14) */
+export function paygProviders(lang: Lang = 'ko'): PaygProvider[] {
+  const t = OPENCODE_TEXT[lang]
+  return [
+    {
+      id: 'anthropic',
+      label: 'Anthropic (Claude)',
+      keyUrl: 'https://console.anthropic.com/settings/keys',
+      models: [
+        { id: 'claude-sonnet-5-5', label: `Claude Sonnet 5.5 · ${t.recommended}` },
+        { id: 'claude-haiku-5-5', label: `Claude Haiku 5.5 · ${t.cheap}` },
+        { id: 'claude-opus-5-5', label: `Claude Opus 5.5 · ${t.smartest}` },
+      ],
+    },
+    {
+      id: 'openai',
+      label: 'OpenAI (GPT)',
+      keyUrl: 'https://platform.openai.com/api-keys',
+      models: [
+        { id: 'gpt-5.6', label: `GPT-5.6 · ${t.recommended}` },
+        { id: 'gpt-5.4-mini', label: `GPT-5.4 mini · ${t.cheap}` },
+      ],
+    },
+    {
+      id: 'google',
+      label: 'Google (Gemini)',
+      keyUrl: 'https://aistudio.google.com/apikey',
+      models: [{ id: 'gemini-3.8-flash', label: `Gemini 3.8 Flash · ${t.recommended}` }],
+    },
+    {
+      id: 'openrouter',
+      label: t.openRouter,
+      keyUrl: 'https://openrouter.ai/keys',
+      models: [
+        { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
+        { id: 'openai/gpt-5.2', label: 'GPT-5.2' },
+      ],
+    },
+  ]
+}
+
+/** The provider list in Korean (kept for callers written before ADR 0029) */
+export const PAYG_PROVIDERS: PaygProvider[] = paygProviders('ko')

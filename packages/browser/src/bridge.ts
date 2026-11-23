@@ -1,8 +1,8 @@
-// 두리 본체 쪽 브라우저 다리. 로컬 소켓(맥·리눅스 유닉스 소켓, 윈도우 이름 있는 파이프)을 열어 두면
-// Chrome이 띄운 native messaging 호스트(host.ts)가 붙는다. 호스트는 메시지를 그대로 옮기기만 한다.
+// Browser bridge on the Dool2 daemon side. It opens a local socket (Unix socket on macOS and Linux, a named pipe
+// on Windows), and the native messaging host Chrome starts (host.ts) connects to it. The host only relays messages.
 //
-// 아무나 붙지 못하게: 시작할 때마다 새 토큰을 만들어 사용자만 읽을 수 있는 파일에 적고,
-// 호스트는 첫 줄로 그 토큰을 보내야 한다.
+// So that nobody else can connect: each start writes a new token to a file only the user can read,
+// and the host must send that token as its first line.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { chmod, rm, writeFile } from 'node:fs/promises'
@@ -16,9 +16,13 @@ import type {
   BrowserCommand,
   ExtensionStatus,
 } from '@dool2/protocol'
+import { BRIDGE_TEXT } from './locales/bridge.js'
 import { LineReader } from './native.js'
 
-/** 호스트가 읽는 연결 정보 파일 이름 (데이터 폴더 안) */
+/** The daemon matches these words, so they stay Korean until it matches error codes (see locales/bridge.ts) */
+const T = BRIDGE_TEXT.ko
+
+/** Name of the connection info file the host reads (in the data folder) */
 export const BRIDGE_FILE = 'browser-bridge.json'
 
 export interface BridgeInfo {
@@ -26,7 +30,7 @@ export interface BridgeInfo {
   token: string
 }
 
-/** 소켓 위치. 유닉스 소켓 경로는 100자 남짓까지만 되므로 길면 임시 폴더로 옮긴다 */
+/** Socket location. Unix socket paths only allow about 100 characters, so long ones move to the temp folder */
 export function bridgeSocketPath(dataDir: string, platform: NodeJS.Platform = process.platform): string {
   const hash = createHash('sha256').update(dataDir).digest('hex').slice(0, 12)
   if (platform === 'win32') return `\\\\.\\pipe\\dool2-browser-${hash}`
@@ -86,17 +90,16 @@ export class BrowserBridge extends EventEmitter<BrowserBridgeEvents> {
     await writeFile(join(this.dataDir, BRIDGE_FILE), JSON.stringify(info), { mode: 0o600 })
   }
 
-  /** 확장에 일을 시키고 답을 기다린다 */
+  /** Sends the extension a command and waits for the answer */
   call(cmd: BrowserCommand, args: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<unknown> {
     const conn = this.conn
-    if (!conn || !this.hello)
-      return Promise.reject(new BrowserError('Chrome의 두리 확장 프로그램과 연결돼 있지 않아요'))
+    if (!conn || !this.hello) return Promise.reject(new BrowserError(T.notConnected))
     const id = ++this.seq
     const req: BridgeRequest = { id, cmd, args }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new BrowserError('브라우저가 제때 답하지 않았어요'))
+        reject(new BrowserError(T.timeout))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
       conn.write(`${JSON.stringify(req)}\n`)
@@ -113,7 +116,7 @@ export class BrowserBridge extends EventEmitter<BrowserBridgeEvents> {
   private accept(sock: Socket) {
     const reader = new LineReader()
     let authed = false
-    // 토큰을 보내지 않고 버티는 연결은 끊는다
+    // Drop connections that hang on without sending the token
     const authTimer = setTimeout(() => sock.destroy(), 5_000)
     sock.on('data', (chunk) => {
       let messages: unknown[]
@@ -127,7 +130,7 @@ export class BrowserBridge extends EventEmitter<BrowserBridgeEvents> {
           clearTimeout(authTimer)
           if (!tokenMatches((msg as { token?: unknown })?.token, this.token)) return sock.destroy()
           authed = true
-          // 새 연결이 오면 예전 연결은 끊는다 (확장이 다시 붙은 경우)
+          // A new connection replaces the old one (the extension reconnected)
           if (this.conn && this.conn !== sock) this.drop(this.conn)
           this.conn = sock
           continue
@@ -175,7 +178,7 @@ export class BrowserBridge extends EventEmitter<BrowserBridgeEvents> {
     this.hello = undefined
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer)
-      p.reject(new BrowserError('브라우저 연결이 끊겼어요'))
+      p.reject(new BrowserError(T.closed))
       this.pending.delete(id)
     }
     if (wasConnected) this.emit('status', this.status)
