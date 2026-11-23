@@ -223,7 +223,7 @@ describe('서비스 도구 실행기', () => {
     const { connectors, calls } = await setup()
     const r = await connectors.call('demo_eats_search', { date: '11월 27일' })
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toMatch(/keyword가 필요해요.*date는 YYYY-MM-DD/)
+    expect(textOf(r)).toMatch(/keyword is required.*date must be written as YYYY-MM-DD/)
     expect(calls).toEqual([])
   })
 
@@ -378,7 +378,7 @@ describe('서비스 도구 실행기', () => {
     }
     ;(await c.load()).get('demo-eats')!.connector = raw
     const r = await connectors.call('demo_eats_search', { keyword: '성수' })
-    expect(textOf(r)).toContain('Result fields are empty: shops.name 칸이 2줄 중 0줄만 채워졌어요')
+    expect(textOf(r)).toContain('Result fields are empty: shops.name is filled in only 0 of 2 rows')
     expect(health.summary().demo_eats_search?.last).toBe('empty')
     await connectors.call('demo_eats_search', { keyword: '한남' })
     await connectors.call('demo_eats_search', { keyword: '강남' })
