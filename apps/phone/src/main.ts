@@ -121,6 +121,7 @@ import { mainCSettings } from './locales/main-c-settings.js'
 import { mdCred } from './locales/main-d-cred.js'
 import { mdSheets } from './locales/main-d-sheets.js'
 import { mdSide } from './locales/main-d-side.js'
+import { swText } from './locales/sw.js'
 import {
   acceptGhost,
   drawCheck,
@@ -175,6 +176,7 @@ import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './
 
 // Screen readers and CSS (:lang) follow the UI language (ADR 0029)
 document.documentElement.lang = lang
+document.title = swText(lang).appName
 
 const app = document.getElementById('app') as HTMLElement
 

@@ -84,7 +84,13 @@ export interface LifeCtx {
 
 export const emptyLife = (): LifeState => ({ routines: [], library: [], memory: [], feed: [] })
 
-const when = (r: Routine, now?: Date) => routineWhen(r, scheduleLabel, now, ruleLabel)
+const when = (r: Routine, now?: Date) =>
+  routineWhen(
+    r,
+    (sc) => scheduleLabel(sc, lang),
+    now,
+    (x) => ruleLabel(x, lang),
+  )
 
 function pageHead(title: string, sub?: string, ...extra: HTMLElement[]) {
   return el('header', 'page-head', el('h1', 'title', title), sub ? el('p', 'cap', sub) : undefined, ...extra)

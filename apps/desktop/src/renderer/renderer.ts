@@ -314,7 +314,8 @@ const hhmm = (iso: string) =>
   new Date(iso).toLocaleTimeString(lang === 'ko' ? 'ko-KR' : lang, {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    // Korean screens have always shown 24-hour time; English uses the locale's clock
+    ...(lang === 'ko' ? { hour12: false } : {}),
   })
 
 const elapsed = (sec: number) =>
