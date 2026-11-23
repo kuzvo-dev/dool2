@@ -11,9 +11,57 @@
     "reply": "오늘 아침 7시에 동네 대리점에 도착했어요. 오늘 저녁까지 배송될 예정이에요."
   },
   "abilities": [
-    { "title": "배송 조회", "say": "택배 어디쯤 왔어?", "tier": "lookup" },
-    { "title": "택배 보내기", "say": "내일 오후에 방문 접수 잡아 줘", "tier": "pay" },
-    { "title": "반품 예약", "say": "이 운송장으로 반품 회수 예약해 줘", "tier": "pay" },
-    { "title": "예약 확인·취소", "say": "잡아 둔 방문 예약 취소해 줘", "tier": "fill" }
-  ]
+    {
+      "title": "배송 조회",
+      "say": "택배 어디쯤 왔어?",
+      "tier": "lookup"
+    },
+    {
+      "title": "택배 보내기",
+      "say": "내일 오후에 방문 접수 잡아 줘",
+      "tier": "pay"
+    },
+    {
+      "title": "반품 예약",
+      "say": "이 운송장으로 반품 회수 예약해 줘",
+      "tier": "pay"
+    },
+    {
+      "title": "예약 확인·취소",
+      "say": "잡아 둔 방문 예약 취소해 줘",
+      "tier": "fill"
+    }
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "CJ Logistics",
+      "summary": "With a tracking number and no sign-in, Dool2 shows where your parcel is. It also fills in parcel sending and return pickups until the final submit.",
+      "example": {
+        "ask": "Where is parcel 641234567890?",
+        "working": "Tracking the parcel",
+        "reply": "It reached your local branch at 7 am today. Delivery is expected this evening."
+      },
+      "abilities": [
+        {
+          "title": "Track delivery",
+          "say": "Where is my parcel?"
+        },
+        {
+          "title": "Send a parcel",
+          "say": "Book a pickup tomorrow afternoon"
+        },
+        {
+          "title": "Book a return",
+          "say": "Book a return pickup for this tracking number"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "Cancel the pickup I booked"
+        }
+      ]
+    }
+  }
 }

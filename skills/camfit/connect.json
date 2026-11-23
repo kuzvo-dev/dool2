@@ -38,5 +38,38 @@
       "say": "가평 캠핑장 잡아 둔 거 환불되는지 보고 취소해 줘",
       "tier": "pay"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Camfit",
+      "login": "ID and password",
+      "summary": "Find campsites and glamping with open spots for your dates, check when bookings open, then book and cancel through Dool2.",
+      "example": {
+        "ask": "Any Hongcheon campsite with electricity on the last weekend of this month?",
+        "working": "Finding open spots",
+        "reply": "Three spots are open. A riverside deck site with electricity is ₩48,000 a night. Shall I open the booking page?"
+      },
+      "abilities": [
+        {
+          "title": "Find open spots",
+          "say": "Pet-friendly campsites next weekend"
+        },
+        {
+          "title": "Book",
+          "say": "Book Friday night in glamping there"
+        },
+        {
+          "title": "Check opening day",
+          "say": "When do bookings open next month?"
+        },
+        {
+          "title": "Check or cancel",
+          "say": "See if the Gapyeong booking is refundable, then cancel"
+        }
+      ]
+    }
+  }
 }

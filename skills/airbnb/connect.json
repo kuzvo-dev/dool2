@@ -39,5 +39,38 @@
       "say": "다음 달 숙소 체크인 몇 시야?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Airbnb",
+      "login": "ID and password",
+      "summary": "Find a place that fits your group, price and wishes, book it, message the host and check your trips, all through Dool2.",
+      "example": {
+        "ask": "Three friends and I are going to Gyeongju in December. Find a place with a yard",
+        "working": "Narrowing down stays",
+        "reply": "Two hanok houses with a yard. The better reviewed is ₩210,000 a night with free cancellation until 3 days before. Pick dates and I will book it."
+      },
+      "abilities": [
+        {
+          "title": "Find stays",
+          "say": "A sea-view place for 4 in Busan"
+        },
+        {
+          "title": "Book",
+          "say": "Book the second house"
+        },
+        {
+          "title": "Message the host",
+          "say": "Ask if a late check-in is OK"
+        },
+        {
+          "title": "My trips",
+          "say": "What time is check-in next month?"
+        }
+      ]
+    }
+  }
 }

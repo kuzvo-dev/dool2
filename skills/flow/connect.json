@@ -31,5 +31,34 @@
   ],
   "signedIn": [
     "Google 계정:"
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Google Flow",
+      "login": "Google account",
+      "summary": "Connect Google Flow and Dool2 makes moving scenes with a video AI, like a dancing character or steaming food, for birthday, promo and trip videos. Free daily credits apply.",
+      "example": {
+        "ask": "Make a cool birthday video for my kid",
+        "working": "Making scenes with a video AI",
+        "reply": "I made a scene of a baby dinosaur in a party hat dancing, added the name, date and photo, and finished a 13-second video."
+      },
+      "abilities": [
+        {
+          "title": "Celebration video",
+          "say": "Make a birthday video for my kid"
+        },
+        {
+          "title": "Promo video",
+          "say": "Make a short for my bakery's new menu"
+        },
+        {
+          "title": "AI scene clips",
+          "say": "Make a video of a snowy seaside"
+        }
+      ]
+    }
+  }
 }

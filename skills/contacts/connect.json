@@ -20,5 +20,29 @@
       "say": "누나한테 나 10분 늦는다고 문자 넣어 줘",
       "tier": "contact"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Contacts",
+      "summary": "Share your contacts once and just say Mom or my manager, and Dool2 knows who you mean. Numbers never leave Dool2.",
+      "example": {
+        "ask": "Text Sujin that I am leaving now",
+        "working": "Finding Sujin",
+        "reply": "Found Lee Sujin. Send \"Leaving now, about 20 minutes\"?"
+      },
+      "abilities": [
+        {
+          "title": "Find a person",
+          "say": "What is Manager Kim's number?"
+        },
+        {
+          "title": "Send a text",
+          "say": "Text my sister that I will be 10 minutes late"
+        }
+      ]
+    }
+  }
 }

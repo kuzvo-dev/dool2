@@ -38,5 +38,38 @@
       "say": "이번 주문에 할인 더 받을 방법 있어?",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "29CM",
+      "login": "ID and password",
+      "summary": "Order wishlisted clothes and home goods in the options you want. Dool2 also tracks parcels and checks coupons and points.",
+      "example": {
+        "ask": "Order the wishlisted cardigan in ivory, size S",
+        "working": "Checking options",
+        "reply": "Ivory S is in stock. With a coupon it is ₩64,800 and arrives Friday. Shall I order it?"
+      },
+      "abilities": [
+        {
+          "title": "Find items",
+          "say": "Pick a candle warmer under ₩50,000"
+        },
+        {
+          "title": "Order with options",
+          "say": "One more of this cardigan in another color"
+        },
+        {
+          "title": "Track delivery",
+          "say": "Where is my 29CM order?"
+        },
+        {
+          "title": "Coupons and points",
+          "say": "Any way to save more on this order?"
+        }
+      ]
+    }
+  }
 }

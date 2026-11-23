@@ -23,5 +23,30 @@
       "say": "구글은 회사 계정 말고 개인 계정으로 해 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "global"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Google Account",
+      "login": "Google account",
+      "summary": "Connect your Google account and Dool2 signs in with one tap to sites you joined with Google. With several accounts, it asks which one once.",
+      "example": {
+        "ask": "Connect the sites I joined with Google",
+        "working": "Signing in with Google",
+        "reply": "Connected Aladin and Kyobo Book Centre with your Google account m***@gmail.com."
+      },
+      "abilities": [
+        {
+          "title": "Sign in with Google",
+          "say": "Connect the sites I joined with Google"
+        },
+        {
+          "title": "Choose an account",
+          "say": "Use my personal Google account, not work"
+        }
+      ]
+    }
+  }
 }

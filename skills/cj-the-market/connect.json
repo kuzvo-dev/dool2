@@ -42,5 +42,42 @@
       "say": "지금 핫딜 중인 비비고 제품 골라 줘",
       "tier": "lookup"
     }
-  ]
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "CJ The Market",
+      "login": "ID and password",
+      "summary": "Find CJ products like Hetbahn and Bibigo on CJ The Market, fill your cart, order with hot deals and coupons, and track delivery through Dool2.",
+      "example": {
+        "ask": "Add a box of Hetbahn and some dumplings",
+        "working": "Adding to your cart",
+        "reply": "Added a 24-pack of Hetbahn for ₩27,900 and 2 bags of 1 kg dumplings for ₩15,800. Over ₩30,000, so shipping is free. Shall I order?"
+      },
+      "abilities": [
+        {
+          "title": "Find products",
+          "say": "What Gourmet pizzas do they have?"
+        },
+        {
+          "title": "Grocery run",
+          "say": "Add some Bibigo kimchi and soup"
+        },
+        {
+          "title": "Order with a coupon",
+          "say": "Use a discount coupon and check out"
+        },
+        {
+          "title": "Track delivery",
+          "say": "When do the dumplings arrive?"
+        },
+        {
+          "title": "See hot deals",
+          "say": "Pick Bibigo items on hot deal now"
+        }
+      ]
+    }
+  }
 }
