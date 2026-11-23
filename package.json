@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "biome check .",
+    "lint": "biome check . && node scripts/check-hangul.mjs",
     "format": "biome check --write .",
     "dev:daemon": "pnpm build && pnpm --filter @dool2/daemon dev",
     "dev:desktop": "pnpm build && pnpm --filter @dool2/desktop dev",

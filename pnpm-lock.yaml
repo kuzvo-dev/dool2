@@ -219,6 +219,8 @@ importers:
         specifier: workspace:*
         version: link:../store
 
+  packages/i18n: {}
+
   packages/mcp-tools:
     dependencies:
       '@modelcontextprotocol/sdk':
