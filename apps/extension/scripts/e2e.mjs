@@ -947,8 +947,8 @@ try {
       await new Promise((res) => setTimeout(res, 1800))
       const t = text(await tools.run('tabs', {}))
       console.log(`  ${t.split('\n').join('\n  ')}`)
-      assert.match(t, /blocked new window[\s\S]*\/popup\?two/)
-      assert.doesNotMatch(t, /blocked new window[\s\S]*\/popup\?one/)
+      assert.match(t, /Chrome blocked[\s\S]*\/popup\?two/)
+      assert.doesNotMatch(t, /Chrome blocked[\s\S]*\/popup\?one/)
       assert.match(t, new RegExp(`window opened by tab ${tabId}`))
       await call('close', { tabId: r2.newTabId })
     },
