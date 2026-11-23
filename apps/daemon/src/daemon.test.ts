@@ -264,6 +264,54 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(r.content[0]?.text).toContain('No past conversation found')
   })
 
+  it('records tool answers on a test PC and plays them back instead of running the tool', async () => {
+    const { api, rt } = await boot(undefined, { devReset: true })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const search = async (query: string) =>
+      (await (
+        await fetch(`${daemon?.url}/api/tools/life/conversation_search`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ query }),
+        })
+      ).json()) as { isError?: boolean; content: { text: string }[] }
+    const tape = async (body: unknown) =>
+      (await (
+        await api('/api/eval/tape', { method: 'POST', body: JSON.stringify({ ...(body as object) }) })
+      ).json()) as {
+        entries: { tool: string; input: unknown; result: { content: { text: string }[] } }[]
+        replayed: { match: string }[]
+        missed: { tool: string }[]
+      }
+    await tape({ mode: 'record' })
+    const real = await search('vacuum')
+    const rec = await tape({ mode: 'off' })
+    expect(rec.entries).toEqual([
+      { tool: 'life/conversation_search', input: { query: 'vacuum' }, result: real },
+    ])
+    // Replay: the tape answers, the tool does not run
+    const entries = rec.entries.map((e) => ({
+      ...e,
+      result: { content: [{ type: 'text', text: 'from the tape' }] },
+    }))
+    await tape({ mode: 'replay', entries })
+    expect((await search('vacuum')).content[0]?.text).toBe('from the tape')
+    expect((await search('robot vacuum')).content[0]?.text).toBe('from the tape') // search words may differ
+    const report = await tape({ mode: 'off' })
+    expect(report.replayed.map((x) => x.match)).toEqual(['exact', 'loose'])
+    // After the test the real tool runs again
+    expect((await search('vacuum')).content[0]?.text).toContain('No past conversation found')
+  })
+
+  it('the tool tape is only for a test PC', async () => {
+    const { api } = await boot()
+    const r = await api('/api/eval/tape', { method: 'POST', body: '{"mode":"record"}' })
+    expect(r.status).toBe(403)
+  })
+
   it('the same tool call with the same result a third time gets a loop note', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State

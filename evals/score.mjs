@@ -375,6 +375,7 @@ ${r.check.gates.length ? `<p class="bad"><b>관문</b> ${esc(r.check.gates.join(
 ${r.judge?.reason ? `<p><b>채점</b> ${esc(r.judge.reason)}</p>` : ''}${r.judge?.never?.length ? `<p class="bad"><b>어긴 것</b> ${esc(r.judge.never.join(' · '))}</p>` : ''}
 ${r.judge?.fix ? `<p><b>고칠 것</b> ${esc(r.judge.fix)}</p>` : ''}${r.judge?.easier ? `<p><b>더 편하게</b> ${esc(r.judge.easier)}</p>` : ''}
 <p><b>도구</b> ${esc(r.check.tools.join(' → ') || '없음')}</p>${r.shape ? `<p><b>답 모양</b> ${esc([r.shape.blocks.join('·') || '블록 없음', r.shape.quick ? '빠른 답' : '', r.shape.textList ? '글 목록' : '', r.shape.askNoQuick ? '버튼 없는 고르기' : ''].filter(Boolean).join(' · '))}</p>` : ''}
+${r.replay ? `<p><b>Replay (layer 2)</b> ${r.replay.replayed} answered from the tape (${r.replay.loose} with other search words) · ${r.replay.missed.length} not recorded${r.replay.missed.length ? `: ${esc(r.replay.missed.map((x) => x.tool).join(', '))}` : ''}</p>` : ''}
 ${(r.approvals ?? []).map((a) => `<p><b>승인 요청</b> ${esc(a.label)} · ${esc(a.what)} · ${esc(a.amount ?? '')}</p>`).join('')}
 <pre>${esc((r.final || r.text || '').slice(0, 2500))}</pre></div></details>`,
     )

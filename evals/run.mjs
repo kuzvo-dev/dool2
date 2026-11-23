@@ -7,7 +7,7 @@
 // --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { EVALS, scenarios } from './lib/bank.mjs'
@@ -40,6 +40,37 @@ if (!token) {
   process.exit(2)
 }
 const out = arg('out', join(EVALS, 'out', new Date().toISOString().slice(0, 10)))
+// Layer 2 (needs a test PC daemon, DOOL2_DEV_RESET=1):
+// --record keeps every tool answer of the run in the record (tape).
+// --replay <dir> runs the scenarios that have a tape in <dir> again, with the daemon answering each tool call from
+// the tape instead of running it. Sites, logins and the browser stay out of it, so the difference between two
+// replays is the AI's judgment (after a persona, tool description or harness change).
+const recordTape = flag('record')
+const replayDir = arg('replay')
+/** scenario id → tape entries recorded in the replay folder (first round of each) */
+const tapes = new Map()
+if (replayDir && !existsSync(replayDir)) {
+  console.error(`No such folder: ${replayDir}`)
+  process.exit(2)
+}
+if (replayDir)
+  for (const f of readdirSync(replayDir)) {
+    if (!f.endsWith('.json') || f.startsWith('_') || f.includes('~')) continue
+    try {
+      const rec = JSON.parse(readFileSync(join(replayDir, f), 'utf8'))
+      if (rec?.id && Array.isArray(rec.tape) && rec.tape.length) tapes.set(rec.id, rec.tape)
+    } catch {}
+  }
+if (replayDir && !tapes.size) {
+  console.error(`No records with a tape in ${replayDir} (record them first with --record)`)
+  process.exit(2)
+}
+/** Turns the daemon's tool tape on or off; fails loudly when the daemon is not a test PC */
+async function tape(body) {
+  const r = await api('/api/eval/tape', { method: 'POST', body: JSON.stringify(body) })
+  if (r.status === 403) throw new Error('The tool tape needs a test PC daemon (DOOL2_DEV_RESET=1)')
+  return r
+}
 const timeoutMs = Number(arg('timeout', '420')) * 1000
 mkdirSync(out, { recursive: true })
 
@@ -182,6 +213,8 @@ async function runOne(sc) {
     void api(`/api/threads/${thread.id}/cancel`, { method: 'POST' })
     ctl.abort()
   }, timeoutMs)
+  if (replayDir) await tape({ mode: 'replay', entries: tapes.get(sc.id) })
+  else if (recordTape) await tape({ mode: 'record' })
   try {
     const r = await fetch(`${daemon}/api/threads/${thread.id}/messages`, {
       method: 'POST',
@@ -230,6 +263,22 @@ async function runOne(sc) {
     clearTimeout(timer)
   }
   rec.ms = Date.now() - started.getTime()
+  let replayApprovals
+  if (replayDir || recordTape) {
+    const t = await tape({ mode: 'off' })
+    if (recordTape) rec.tape = t.entries ?? []
+    else {
+      rec.layer = 2
+      rec.replay = {
+        from: replayDir,
+        replayed: (t.replayed ?? []).length,
+        loose: (t.replayed ?? []).filter((x) => x.match === 'loose').length,
+        missed: t.missed ?? [],
+      }
+      // Nothing really ran, so approvals come from the replayed calls that created one when recorded
+      replayApprovals = (t.replayed ?? []).flatMap((x) => x.approvals ?? [])
+    }
+  }
   // 이 대화 동안 생긴 승인 요청: 기록하고, 기다리는 것은 거절한다 (시험에서는 결제·보내기를 하지 않는다)
   const { approvals = [] } = await api('/api/approvals')
   // 같이 도는 다른 시나리오의 승인은 빼고: 이 대화가 다룬 탭의 승인만
@@ -241,6 +290,7 @@ async function runOne(sc) {
     .filter((a) => Date.parse(a.createdAt) >= started.getTime())
     .filter((a) => concurrency === 1 || myTabs.has(a.tabId) || myWhats.has(String(a.what ?? '')))
     .map(({ shot: _s, ...a }) => a)
+  if (replayApprovals) rec.approvals = replayApprovals
   for (const a of rec.approvals)
     if (a.status === 'pending')
       await api(`/api/approvals/${a.id}`, { method: 'POST', body: JSON.stringify({ decision: 'reject' }) })
@@ -306,7 +356,7 @@ async function waitDaemon() {
 }
 const DOWN = /fetch failed|ECONNREFUSED|401|socket|terminated|aborted|timeout/i
 
-const list = pick(scenarios())
+const list = pick(scenarios().filter((s) => !replayDir || tapes.has(s.id)))
 console.log(`시나리오 ${list.length}개 → ${out}`)
 let n = 0
 // 같은 시나리오를 여러 번 (AI 답은 매번 달라서 한 번으로는 좋아졌는지 알기 어렵다). 두 번째부터 파일 이름 뒤에 ~2, ~3
@@ -316,6 +366,11 @@ let stop = false
 const retried = new Set()
 // 여러 개를 같이 돌린다 (따로 하는 대화를 동시에 N개). 기본 1
 const concurrency = Math.max(1, Number(arg('concurrency', '1')))
+// The tape is one per daemon, so recording or replaying runs one scenario at a time
+if ((recordTape || replayDir) && concurrency > 1) {
+  console.error('--record and --replay run one scenario at a time (leave out --concurrency)')
+  process.exit(2)
+}
 const queue = [...jobs]
 async function runJob(job) {
   const [sc, round] = job
