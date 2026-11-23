@@ -15,6 +15,7 @@ import type {
   Settings,
   VaultEntry,
 } from '@dool2/protocol'
+import { type IconName, icon } from './dom.js'
 import { hyphenate } from './rich.js'
 import {
   AI_CHOICE_LABEL,
@@ -59,8 +60,11 @@ export interface SetupOptions {
     version(): Promise<string>
   }
   /** 이 단계와 선택으로 바로 연다. action은 점검 모드에서 버튼을 대신 누른다 */
-  start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction }
+  start?: { step: SetupStep; choice?: AiChoice; action?: CheckAction; tab?: SettingsTab }
 }
+
+/** 설정 화면의 칸 */
+export type SettingsTab = 'general' | 'ai' | 'phone' | 'vault' | 'me' | 'apps' | 'about'
 
 type InstallKind = 'claude' | 'chrome' | 'opencode' | 'codex'
 
@@ -151,7 +155,13 @@ function button(cls: string, text: string, onClick: () => void) {
 }
 
 /** 마법사를 띄운다. shown은 첫 화면이 다 그려졌을 때, done은 마법사를 끝냈을 때 풀린다 */
-export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Promise<SetupResult> } {
+export function runSetup(opts: SetupOptions): {
+  shown: Promise<void>
+  done: Promise<SetupResult>
+  /** 설정을 닫는다 (왼쪽 메뉴로 다른 화면에 갈 때) */
+  close(): void
+} {
+  let closeNow: () => void = () => {}
   let markShown: () => void = () => {}
   const shown = new Promise<void>((r) => {
     markShown = r
@@ -228,6 +238,9 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
   let autoStart = current.launchAtLogin ?? true
   let sending = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
+  // 설정 화면에서 지금 보는 칸 (폰 연결 버튼으로 열면 폰 칸)
+  let settingsTab: SettingsTab =
+    opts.start?.tab ?? (opts.start?.action === 'phone-pair' ? 'phone' : 'general')
   // 단계가 바뀔 때만 나타나는 효과를 준다 (입력 중에 다시 그려도 깜빡이지 않게)
   let enter = true
   // 점검 모드에서 버튼을 대신 누르면, 그 결과까지 그린 뒤에 캡처한다
@@ -381,6 +394,7 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       root.replaceChildren()
       resolve({ settings: current })
     }
+    closeNow = close
 
     /** 설정 화면의 스위치는 누르는 즉시 저장한다 */
     const save = async (patch: Partial<Settings>) => {
@@ -594,13 +608,50 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
       }
 
       if (step === 'settings') {
-        card.append(
-          el('h1', 'setup-title', '설정'),
-          el('p', 'setup-sub', '두리가 일할 준비가 됐는지 확인하고, 쉬는 방식을 바꿀 수 있어요.'),
-        )
-        if (loading) card.append(el('p', 'setup-sub', '이 컴퓨터를 살펴보는 중이에요…'))
-        else {
-          card.append(el('h2', 'over', '준비 상태'), ...checksBlock(choice ?? 'both'))
+        // 설정은 앱 안 페이지: 왼쪽 메뉴는 그대로 두고, 설정 안의 칸 목록으로 한 칸씩 본다
+        card.className = 'settings-page'
+        const todo = checklist(choice ?? 'both', agents, chrome, extension).filter((x) => !x.ok).length
+        const tabs: [SettingsTab, IconName, string, string?][] = [
+          ['general', 'gear', '일반'],
+          ['ai', 'brain', 'AI · 브라우저', !loading && todo ? String(todo) : undefined],
+          ['phone', 'phone', '폰 연결'],
+          ['vault', 'lock', '두리 금고'],
+          ['me', 'card', '내 정보 · 결제'],
+          ...(screen?.available ? ([['apps', 'pc', 'PC 앱 조작']] as [SettingsTab, IconName, string][]) : []),
+          ['about', 'info', '두리 정보', ver.info?.status === 'available' ? 'N' : undefined],
+        ]
+        if (!tabs.some(([id]) => id === settingsTab)) settingsTab = 'general'
+        const nav = el('nav', 'settings-nav')
+        nav.setAttribute('aria-label', '설정 칸')
+        for (const [id, ic, label, badge] of tabs) {
+          const b = button('settings-tab', '', () => {
+            settingsTab = id
+            root.scrollTop = 0
+            render()
+          })
+          b.replaceChildren(icon(ic, 'i md'), el('span', 'grow', label))
+          if (badge) b.append(el('span', 'settings-badge', badge))
+          if (id === settingsTab) {
+            b.classList.add('on')
+            b.setAttribute('aria-current', 'page')
+          }
+          nav.append(b)
+        }
+        const body = el('div', 'settings-content')
+        const sec = (title: string, sub: string | undefined, ...children: HTMLElement[]) => {
+          const box = el('section', 'settings-sec')
+          box.append(el('h2', 'over', title))
+          if (sub) box.append(el('p', 'setup-hint', sub))
+          box.append(...children)
+          return box
+        }
+        const head = (title: string, sub: string) => {
+          const h = el('header', 'page-head')
+          h.append(el('h1', 'title', title), el('p', 'cap', sub))
+          return h
+        }
+        if (loading) body.append(el('p', 'setup-sub', '이 컴퓨터를 살펴보는 중이에요…'))
+        else if (settingsTab === 'general') {
           const awake = current.keepAwake === 'working' || current.keepAwake === 'always'
           const list = el('ul', 'checks toggles')
           list.append(
@@ -617,7 +668,6 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
               () => void save({ launchAtLogin: current.launchAtLogin !== true }),
             ),
           )
-          card.append(el('h2', 'over', '두리가 쉬지 않게'), list)
           const approve = (current.finalStep ?? 'approve') === 'approve'
           const gate = el('ul', 'checks toggles')
           gate.append(
@@ -630,28 +680,80 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
               () => void save({ finalStep: approve ? 'self' : 'approve' }),
             ),
           )
-          card.append(el('h2', 'over', '마지막 확인'), gate)
-          card.append(el('h2', 'over', '폰 연결'), phoneBlock())
-          card.append(el('h2', 'over', '두리 금고'), vaultBlock())
-          card.append(el('h2', 'over', '내 정보 · 결제'), meBlock())
-          if (screen?.available) card.append(el('h2', 'over', 'PC 앱 조작'), screenBlock())
-          card.append(el('h2', 'over', '두리 버전'), versionBlock())
+          body.append(
+            head('일반', '두리가 언제 일하고, 마지막 버튼을 누가 누를지 정해요.'),
+            sec('두리가 쉬지 않게', undefined, list),
+            sec('마지막 확인', undefined, gate),
+          )
+        } else if (settingsTab === 'ai') {
           const ai = el('p', 'setup-hint')
           ai.append(
             `고른 AI 구독: ${choice ? AI_CHOICE_LABEL[choice] : '아직 안 골랐어요'} · `,
             button('btn-link', '처음 설정 다시 하기', () => void go('welcome')),
           )
-          card.append(ai)
+          body.append(
+            head(
+              'AI · 브라우저',
+              todo
+                ? `할 일이 ${todo}개 남았어요. 아래 버튼으로 마저 준비해요.`
+                : '두리가 일할 준비가 다 됐어요.',
+            ),
+            sec('준비 상태', undefined, ...checksBlock(choice ?? 'both')),
+            ai,
+          )
+        } else if (settingsTab === 'phone')
+          body.append(
+            head('폰 연결', '밖에서도 폰으로 부탁하고, 결제·보내기는 폰에서 승인해요.'),
+            sec('이 PC와 폰', undefined, phoneBlock()),
+          )
+        else if (settingsTab === 'vault')
+          body.append(
+            head('두리 금고', '로그인이 풀려도 두리가 대신 채울 아이디·비밀번호를 이 PC에만 둬요.'),
+            sec('저장한 사이트', undefined, vaultBlock()),
+          )
+        else if (settingsTab === 'me')
+          body.append(
+            head('내 정보 · 결제', '예약·주문할 때 두리가 채우는 내 정보와 결제 수단이에요.'),
+            sec('내 정보', undefined, meBlock()),
+          )
+        else if (settingsTab === 'apps')
+          body.append(
+            head('PC 앱 조작', '앱만 있는 일(카카오톡 PC 등)을 두리가 대신 할 때 필요한 권한이에요.'),
+            sec('권한과 허용한 앱', undefined, screenBlock()),
+          )
+        else {
+          const links = el('div', 'about-links')
+          for (const [label, url] of [
+            ['두리 사이트', 'https://dool2.com'],
+            ['소스 코드 (오픈소스)', 'https://github.com/kuzvo-dev/dool2'],
+            ['문제 알리기', 'https://github.com/kuzvo-dev/dool2/issues'],
+          ] as const) {
+            const a = el('a', 'btn-ghost', label)
+            a.href = url
+            a.target = '_blank'
+            a.rel = 'noopener'
+            links.append(a)
+          }
+          body.append(
+            head('두리 정보', '지금 버전과 새 버전, 두리를 더 알아보는 곳이에요.'),
+            sec('두리 버전', undefined, versionBlock()),
+            sec('더 알아보기', undefined, links),
+          )
         }
-        const foot = el('div', 'setup-foot')
-        foot.append(button('btn', '닫기', close))
-        card.append(foot)
+        const layout = el('div', 'settings-layout')
+        const side = el('div', 'settings-side')
+        side.append(el('h1', 'settings-title', '설정'), nav)
+        layout.append(side, body)
+        card.append(layout)
       }
 
       // 입력 중이던 코드 칸은 다시 그린 뒤에도 커서를 유지한다
       const typing = ['claude-code', 'payg-key', 'vault-url', 'vault-user', 'vault-pw', 'relay-url'].find(
         (id) => document.activeElement?.id === id,
       )
+      // 설정은 앱 안에 (왼쪽 메뉴가 보이게), 마법사는 화면 전체에
+      root.classList.toggle('in-app', step === 'settings')
+      root.setAttribute('aria-label', step === 'settings' ? '설정' : '첫 설정')
       root.replaceChildren(card)
       if (typing) document.getElementById(typing)?.focus()
       if (scrollToPair) {
@@ -1735,5 +1837,5 @@ export function runSetup(opts: SetupOptions): { shown: Promise<void>; done: Prom
     }
     void begin()
   })
-  return { shown, done }
+  return { shown, done, close: () => closeNow() }
 }

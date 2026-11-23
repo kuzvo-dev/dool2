@@ -61,7 +61,7 @@ import {
 } from './life-views.js'
 import { type Page, Pager } from './paging.js'
 import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
-import { runSetup, type SetupOptions } from './setup.js'
+import { runSetup, type SettingsTab, type SetupOptions } from './setup.js'
 import {
   type CheckAction,
   costLabel,
@@ -125,7 +125,7 @@ function renderUpdate(u: UpdateView | null) {
         : '새 버전으로 바꾸는 중… 곧 다시 켜져요'
       : u.status === 'error' && u.latest
         ? `업데이트하지 못했어요: ${u.error ?? ''}`
-        : `새 버전 ${u.latest}이 나왔어요`
+        : `새 버전이 나왔어요 (${u.latest})`
   const go = () => {
     void window.dool2.update.install().then((s) => renderUpdate(s))
     renderUpdate(u ? { ...u, status: 'downloading', progress: u.progress ?? 0 } : null)
@@ -314,6 +314,18 @@ const readyAgents = () => state.agents.filter((a) => a.installed && a.loggedIn)
 
 /** 첫 실행 마법사를 연다 (main에서 채운다) */
 let openSetup: (start?: SetupOptions['start']) => Promise<void> = async () => {}
+/** 열려 있는 설정 (앱 안 페이지). 왼쪽 메뉴로 다른 화면에 가면 닫는다 */
+let settingsOpen: { close(): void } | undefined
+// 설정이 열린 채 왼쪽 메뉴(탭·연결·따로 하는 대화·지금)를 누르면 설정을 닫고 그리로 간다
+document.addEventListener(
+  'click',
+  (e) => {
+    const t = e.target as HTMLElement
+    const b = t.closest('.side button, .side a')
+    if (settingsOpen && b && !b.classList.contains('on') && !t.closest('.notice')) settingsOpen.close()
+  },
+  true,
+)
 
 /** 연결 상태 한 줄. 할 일이 있으면 줄 전체가 버튼이 된다 */
 function statRow(name: string, cls: string, meta: string, title: string, onClick?: () => void) {
@@ -391,7 +403,7 @@ function renderDevice(settings?: Settings) {
   const box = $('notice')
   box.hidden = !settings.setupDone || ready
   if (box.hidden) return
-  const fix = button('btn-small', () => void openSetup({ step: 'settings' }), '고치기')
+  const fix = button('btn-small', () => void openSetup({ step: 'settings', tab: 'ai' }), '고치기')
   box.replaceChildren(el('span', 'notice-text', '두리가 일할 AI가 연결돼 있지 않아요'), fix)
 }
 
@@ -934,8 +946,13 @@ function renderUsage(limits: UsageLimit[]) {
 
 function renderTabs() {
   const waiting = pendingApprovals().length + pendingLogins().length
-  const current: Tab | undefined =
-    state.view === 'goal' ? 'goals' : TABS.some(([t]) => t === state.view) ? (state.view as Tab) : undefined
+  const current: Tab | undefined = settingsOpen
+    ? undefined
+    : state.view === 'goal'
+      ? 'goals'
+      : TABS.some(([t]) => t === state.view)
+        ? (state.view as Tab)
+        : undefined
   $('tabs').replaceChildren(
     ...TABS.map(([id, ic, label]) => {
       const b = button('navi', () => void show(id), icon(ic, 'i md'), el('span', 'grow', label))
@@ -952,21 +969,23 @@ function renderTabs() {
     }),
   )
   const connect = button('navi', () => void show('connect'), icon('apps', 'i md'), el('span', 'grow', '연결'))
-  if (state.view === 'connect') {
+  if (state.view === 'connect' && !settingsOpen) {
     connect.classList.add('on')
     connect.setAttribute('aria-current', 'page')
   }
   const connected = state.services.filter((s) => s.connectedAt).length
   if (connected) connect.append(el('span', 'meta', String(connected)))
-  $('side-foot').replaceChildren(
-    connect,
-    button(
-      'navi',
-      () => void openSetup({ step: 'settings' }),
-      icon('gear', 'i md'),
-      el('span', 'grow', '설정'),
-    ),
+  const gear = button(
+    'navi',
+    () => void (settingsOpen ? undefined : openSetup({ step: 'settings' })),
+    icon('gear', 'i md'),
+    el('span', 'grow', '설정'),
   )
+  if (settingsOpen) {
+    gear.classList.add('on')
+    gear.setAttribute('aria-current', 'page')
+  }
+  $('side-foot').replaceChildren(connect, gear)
   renderThreads()
 }
 
@@ -2655,7 +2674,9 @@ async function main() {
   const start = [...SETUP_STEPS, 'settings'].includes(smokeStep as SetupStep)
     ? {
         step: smokeStep as SetupStep,
-        choice: (smokeChoice || undefined) as AiChoice | undefined,
+        // 설정은 둘째 값이 칸 (settings:about)
+        ...(smokeStep === 'settings' && smokeChoice ? { tab: smokeChoice as SettingsTab } : {}),
+        choice: (smokeStep === 'settings' ? undefined : smokeChoice || undefined) as AiChoice | undefined,
         action: (smokeAction || undefined) as CheckAction | undefined,
       }
     : undefined
@@ -2691,7 +2712,11 @@ async function main() {
       },
       ...(from ? { start: from } : {}),
     })
+    settingsOpen = (from?.step ?? 'welcome') === 'settings' ? wizard : undefined
+    renderTabs()
     void wizard.done.then((r) => {
+      settingsOpen = undefined
+      renderTabs()
       savedSettings = r.settings
       if (savedSettings.aiChoice) state.choice = savedSettings.aiChoice
       renderDevice(savedSettings)
