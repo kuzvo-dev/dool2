@@ -99,6 +99,37 @@ declare global {
   }
 }
 
+/** 처음 설정을 이미 마친 분께 한 번만: 사용 통계(숫자만)를 보내도 될지 (설정 → 일반에서 언제든 바꾼다) */
+function renderStatsAsk(settings: Settings) {
+  const old = document.getElementById('stats-ask')
+  if (!settings.setupDone || settings.usageStats !== undefined) {
+    old?.remove()
+    return
+  }
+  if (old) return
+  const box = el('div', 'notice ask')
+  box.id = 'stats-ask'
+  const answer = (v: boolean) => async () => {
+    box.remove()
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ usageStats: v }) }).catch(() => {})
+  }
+  const actions = el('div', 'ask-actions')
+  actions.append(
+    button('btn-small', answer(true), '보낼게요'),
+    button('btn-ghost', answer(false), '괜찮아요'),
+  )
+  box.append(
+    el('strong', 'ask-title', '사용 통계를 보내도 될까요?'),
+    el(
+      'span',
+      'notice-text',
+      '숫자만 보내요(부탁 몇 개를 끝냈는지 등). 대화·사이트 이름은 안 보내고, 설정에서 언제든 꺼요.',
+    ),
+    actions,
+  )
+  $('notice').after(box)
+}
+
 /** 새 버전 (apps/desktop/src/update.ts의 UpdateState) */
 interface UpdateView {
   status: 'idle' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
@@ -2621,6 +2652,7 @@ async function main() {
   ])
   if (settings.aiChoice) state.choice = settings.aiChoice
   renderDevice(settings)
+  renderStatsAsk(settings)
   renderSend()
   void connectLive()
   void window.dool2.update

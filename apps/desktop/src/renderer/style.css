@@ -2512,3 +2512,21 @@ button.lib-thumb:hover .lib-thumb-img {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+/* 한 번 묻는 띠 (사용 통계): 좁은 왼쪽 칸이라 글 아래로 버튼 */
+.notice.ask {
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--brand-soft);
+}
+.notice.ask .ask-title {
+  font-size: 14px;
+}
+.ask-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.ask-actions > button {
+  height: 36px;
+}

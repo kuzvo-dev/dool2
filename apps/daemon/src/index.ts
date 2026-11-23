@@ -109,6 +109,7 @@ import { buildReport, sendReport } from './report.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
+import { localDay, StatsReporter } from './stats.js'
 import { Thumbs } from './thumbs.js'
 import { mimeOf } from './upload.js'
 import { Vault, vaultSitesText } from './vault.js'
@@ -727,6 +728,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * 막히면 마지막으로 확인된 상태를 쓰고, 어느 AI가 막혔는지 일한 기록에 남긴다
    */
   const agentStatus = new Map<string, Awaited<ReturnType<AgentRuntime['detect']>>>()
+  // 사용 통계 (동의했을 때만, 숫자만): 1시간마다 오늘 숫자를 고쳐 보낸다 (stats.ts)
+  const stats = new StatsReporter({
+    dir: paths.dataDir,
+    enabled: () => readSettings().usageStats === true && opts.journal !== false,
+    version: opts.appVersion ?? 'dev',
+    entries: () => journal.read({ days: 2, limit: 5_000 }),
+    status: async () => ({
+      agents: (await detectAll()).filter((a) => a.installed && a.loggedIn).map((a) => a.id),
+      extension: Boolean(browser.status.connected),
+      connections: (await skills.connections()).filter((c) => c.connectedAt).length,
+    }),
+  })
+  if (opts.appVersion) {
+    stats.start()
+    // 방금 동의했으면 기다리지 않고 바로 한 번 (다음은 1시간마다)
+    let statsOn = readSettings().usageStats === true
+    events.on('settings', (st: Settings) => {
+      const on = st.usageStats === true
+      if (on && !statsOn) void stats.tick().catch(() => undefined)
+      statsOn = on
+    })
+  }
   const detectAll = () =>
     Promise.all(
       Object.entries(runtimes).map(async ([id, rt]) => {
@@ -3088,6 +3111,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     }
 
+    // 사용 통계: 보낼 숫자를 그대로 보여 주기 (동의 화면·설정의 '무엇을 보내나요')
+    if (a === 'stats' && b === 'preview' && req.method === 'GET')
+      return json(res, 200, { stats: await stats.build(localDay(new Date())) })
+
     // 문제 알리기 (report.ts): 보낼 내용 보기(preview) → 보내기. 기록은 정해 둔 칸만, 대화·파일 이름은 빼고
     if (a === 'report' && req.method === 'POST' && (!b || b === 'preview')) {
       const body = (await readJson(req).catch(() => ({}))) as {
@@ -3677,6 +3704,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         server.closeAllConnections()
         server.close(() => {
           store.close()
+          stats.stop()
           if (hands instanceof HandsProcess) hands.close()
           browser.close().then(resolve, resolve)
         })
