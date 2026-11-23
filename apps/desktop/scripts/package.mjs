@@ -82,6 +82,8 @@ writeFileSync(
   ),
 )
 
+// 맥 칩 종류: 기본은 이 맥, DOOL2_ARCH로 다른 칩용도 (인텔 빌드 기계의 dmg 도구가 깨져 Apple 칩 기계에서 둘 다 만든다, 11-23)
+const MAC_ARCH = (process.env.DOOL2_ARCH ?? process.arch) === 'arm64' ? 'arm64' : 'x64'
 const { build } = await import('electron-builder')
 await build({
   projectDir: root,
@@ -131,7 +133,7 @@ await build({
       // 처음 설치는 dmg, 앱 안 업데이트는 zip (update-install.ts가 풀어 바꿔 끼운다)
       target: ['dmg', 'zip'].map((target) => ({
         target,
-        arch: [process.arch === 'arm64' ? 'arm64' : 'x64'],
+        arch: [MAC_ARCH],
       })),
       // electron-builder 서명은 쓰지 않는다 (애플 개발자 인증서 없음). 위 afterPack이 서명한다
       identity: null,

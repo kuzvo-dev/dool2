@@ -17,7 +17,8 @@ execFileSync(
     '-swift-version',
     '5',
     '-target',
-    `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos14.0`,
+    // DOOL2_ARCH로 다른 칩용도 만든다 (릴리스: Apple 칩 기계에서 인텔용까지)
+    `${(process.env.DOOL2_ARCH ?? process.arch) === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos14.0`,
     '-o',
     join(root, 'dist', 'dool2-hands'),
     join(root, 'Sources', 'main.swift'),

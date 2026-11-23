@@ -33,12 +33,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            arch: arm64
-          - os: macos-15-intel
-            arch: x64
-    runs-on: ${{ matrix.os }}
+        # 둘 다 Apple 칩 기계에서 만든다: 인텔 기계(macos-15-intel)의 dmg 도구가 깨진다
+        # (dmgbuild struct.error, 11-23). 인텔용 켜 보기는 Rosetta로 돈다
+        arch: [arm64, x64]
+    runs-on: macos-15
+    env:
+      DOOL2_ARCH: ${{ matrix.arch }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
