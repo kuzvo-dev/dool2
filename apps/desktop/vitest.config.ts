@@ -7,6 +7,7 @@ const protocol = (f: string) => fileURLToPath(new URL(`../../packages/protocol/s
 const i18n = fileURLToPath(new URL('../../packages/i18n/src/index.ts', import.meta.url))
 
 export default defineConfig({
+  test: { setupFiles: ['./test/setup.ts'] },
   resolve: {
     alias: [
       { find: /^\.\/connect-text\.js$/, replacement: protocol('connect-text.ts') },
