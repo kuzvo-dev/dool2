@@ -1,4 +1,4 @@
-/* 확장 아이콘을 누르면 뜨는 작은 창. 부품은 ui.css (@dool2/ui) */
+/* The small window shown when the extension icon is clicked. Components come from ui.css (@dool2/ui) */
 body {
   width: 272px;
   padding: 14px 16px 16px;

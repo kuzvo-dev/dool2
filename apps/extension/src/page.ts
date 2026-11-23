@@ -1,6 +1,9 @@
-// 페이지 안에서 도는 함수들. chrome.scripting.executeScript로 확장 전용 공간(ISOLATED world)에 넣는다.
-// 그래서 페이지 스크립트는 두리가 붙인 표시(ref)를 볼 수 없다. (예외: pageMarkTaps만 페이지 공간에서 돈다)
-// 주의: 각 함수는 바깥 변수를 쓰면 안 된다 (문자열로 옮겨져 따로 실행된다).
+// Functions that run inside the page. Injected with chrome.scripting.executeScript into the extension's own world (ISOLATED world).
+// So page scripts cannot see the marks (ref) Dool2 attaches. (Exception: only pageMarkTaps runs in the page world.)
+// Caution: each function must not use outside variables (it is serialized to a string and run separately).
+// Korean left on purpose (these functions are serialized into the page, so they cannot import region modules): snapshot words the daemon parses
+// (role words like 버튼·입력칸·비밀번호칸, state suffixes, [그림 "..."], (화면에 보이는 칸), (추정), icon names), Korean-site regexes (survey, code, captcha,
+// carrier, button words), and pageForm `label:` values shown on the phone (고르기, 통신사, 인증 앱, 닫기).
 
 export interface SnapshotResult {
   url: string
@@ -8,27 +11,27 @@ export interface SnapshotResult {
   text: string
   truncated: boolean
   refs: number
-  /** 캡차·자동입력 방지 화면이 보인다 */
+  /** A captcha / anti-automation screen is visible */
   captcha: boolean
-  /** view로 읽었을 때: 화면 위·아래에 남은 글 (대략의 글자 수) */
+  /** When read with view: the text left above and below the screen (approximate character count) */
   around?: { above: number; below: number }
-  /** from·skip으로 앞에서 건너뛴 글자 수 */
+  /** Characters skipped from the start by from/skip */
   skipped?: number
-  /** from 글자를 페이지에서 찾지 못했다 (처음부터 읽었다) */
+  /** The from text was not found on the page (read from the start) */
   fromMissing?: boolean
-  /** 이 문서 안의 액자(iframe) 상자들 (액자 자리 찾기·화면 순서·글 속 [액자] 자리 표시에 쓴다) */
+  /** Frame (iframe) boxes in this document (used to find frame positions, screen order, and [frame] placeholders in the text) */
   kids?: KidBox[]
-  /** 이 문서(액자) 자신의 크기와, 같은 주소라 바로 재 본 바깥 상자 */
+  /** This document's (frame's) own size, and the outer box measured directly when same-origin */
   self?: FrameSelf
-  /** 표시 번호가 대역 끝에 가까워 처음부터 새로 매겼다 (전에 받은 표시는 다른 것을 가리킬 수 있다) */
+  /** Mark numbers came near the end of the range, so numbering restarted from the beginning (marks received earlier may point to other things) */
   renumbered?: boolean
-  /** 대역(1만 개)이 다 차서 표시를 못 붙인 누를 것 수 */
+  /** Number of clickable items that got no mark because the range (10,000) was full */
   refsCapped?: number
 }
 
-/** 문서 안 액자 하나 (그 문서의 보이는 화면 기준, 안쪽 상자) */
+/** One frame inside a document (inner box relative to that document's visible viewport) */
 export interface KidBox {
-  /** 액자 주소 (src를 전체 주소로. 없으면 '') */
+  /** Frame URL (src as a full address. '' if none) */
   src: string
   srcdoc: boolean
   name: string
@@ -36,20 +39,20 @@ export interface KidBox {
   y: number
   w: number
   h: number
-  /** 크기가 있고 숨지 않았다 */
+  /** Has a size and is not hidden */
   shown: boolean
-  /** 글 속 자리 표시 번호 (읽은 글에 보이지 않는 구분 문자 U+2063으로 감싼 F{n}이 들어 있다) */
+  /** Placeholder number in the text (the read text contains F{n} wrapped in the invisible separator U+2063) */
   marker?: number
 }
 
-/** 액자 문서 자신: 크기, 같은 주소면 바깥 문서에서 본 자기 상자(frameElement) */
+/** The frame document itself: its size, and if same-origin its own box seen from the outer document (frameElement) */
 export interface FrameSelf {
   w: number
   h: number
   owner?: { x: number; y: number; w: number; h: number }
 }
 
-/** 어디를 읽을지. view: 지금 화면에 보이는 부분만, from: 이 글자가 나오는 줄부터, skip: 앞에서 이만큼 건너뛰고 */
+/** Where to read. view: only the part visible now, from: from the line where this text appears, skip: skip this many characters from the start */
 export interface ReadScope {
   view?: boolean
   from?: string
@@ -57,10 +60,10 @@ export interface ReadScope {
 }
 
 /**
- * 페이지 스크립트 공간(MAIN world)에서 돈다: React·Vue가 클릭 처리기만 붙인 상자에 data-dool2-tap 표시를 단다.
- * 휴대폰용 사이트(캐치테이블 등)는 목록 줄·카드를 손가락 커서·role 없이 div + onClick으로 만들어서,
- * 확장 공간에서는 누를 수 있는지 알 길이 없다 (처리기는 페이지 스크립트 쪽 속성에만 있다).
- * 표시만 달고 아무것도 누르거나 읽어 가지 않는다. 사이트가 같은 표시를 직접 달아도 버튼으로 보일 뿐이다.
+ * Runs in the page script world (MAIN world): puts a data-dool2-tap mark on boxes that only have React/Vue click handlers.
+ * Mobile sites (Catch Table, etc.) build list rows and cards as div + onClick with no pointer cursor or role,
+ * so there is no way to tell from the extension world whether they are clickable (handlers exist only on the page-script side).
+ * It only puts a mark and clicks or reads nothing. If a site puts the same mark itself, it just looks like a button.
  */
 export function pageMarkTaps(): number {
   const TAP = 'data-dool2-tap'
@@ -70,12 +73,12 @@ export function pageMarkTaps(): number {
   const hasTap = (el: Element): boolean => {
     const o = el as unknown as Record<string, unknown>
     for (const k of Object.keys(o)) {
-      // React 17+: __reactProps$무작위 = 그 요소의 props
+      // React 17+: __reactProps$random = that element's props
       if (k.startsWith('__reactProps$')) {
         const p = o[k] as Record<string, unknown> | null
         if (p && EVENTS.some((e) => typeof p[e] === 'function')) return true
       }
-      // Vue 3: _vei = 붙인 처리기 (onClick 등)
+      // Vue 3: _vei = attached handlers (onClick, etc.)
       if (k === '_vei') {
         const v = o[k] as Record<string, unknown> | null
         if (v && Object.keys(v).some((e) => VUE.test(e))) return true
@@ -97,18 +100,18 @@ export function pageMarkTaps(): number {
   return n
 }
 
-/** 페이지를 AI가 읽기 좋은 글로 바꾼다. 누를 수 있는 것에는 [e12 버튼 "검색"]처럼 표시를 붙인다 */
-/** base: 화면 안 액자(iframe)는 표시 번호를 10000씩 띄워 매긴다 (액자 1 → e10001…) */
+/** Turn the page into text the AI can read well. Clickable things get a mark like [e12 버튼 "검색"] */
+/** base: frames (iframe) on the screen are numbered in steps of 10000 (frame 1 -> e10001...) */
 export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}): SnapshotResult {
   type State = {
     refs: Map<string, WeakRef<Element>>
     ids: WeakMap<Element, string>
     seq: number
-    /** 이 문서의 표시 대역 시작 (액자 n → n*10000). 글자로 표시 붙이기(pageMarkText)도 같은 대역을 쓴다 */
+    /** Start of this document's mark range (frame n -> n*10000). Marking by text (pageMarkText) uses the same range */
     base?: number
-    /** 두리 금고가 채운 칸: 값을 글로 내보내지 않는다 */
+    /** Fields filled by the Dool2 vault: the value is not put out as text */
     filled?: WeakSet<Element>
-    /** 표시마다 읽을 때의 앞쪽 글 (누르기 직전에 견줘 다른 칸이 됐는지 본다) */
+    /** Text before each mark at read time (compared just before clicking to see if it became a different field) */
     ctx?: Map<string, string>
     ctxOf?: (el: Element, max?: number) => string
   }
@@ -117,9 +120,9 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   const st = g.__dool2
   st.refs = new Map()
   st.base = base
-  // 표시 번호는 문서마다 대역 하나(1만 개) 안에서만 매긴다. 넘치면 다음 액자 대역(e10000…)으로 번져
-  // 본체가 다른 액자의 표시로 알아듣는다. 대역의 7할을 넘었으면 읽기 시작 때 처음부터 새로 매기고(알린다),
-  // 한 번 읽는 사이에 대역이 다 차면 더 붙이지 않고 몇 개를 못 붙였는지 알린다
+  // Mark numbers are assigned only within one range (10,000) per document. Overflow would spill into the next frame range (e10000...)
+  // and the daemon would read it as another frame's mark. If over 70% of the range is used, renumber from the start at the start of a read (and report it),
+  // and if the range fills up during one read, stop marking and report how many could not be marked
   const SPAN = 10_000
   let renumbered = false
   let capped = 0
@@ -141,8 +144,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   }
   const ctx = new Map<string, string>()
   st.ctx = ctx
-  // 요소 앞쪽 글 300자. 목록을 굴리면 칸을 재활용하는 사이트(캐치테이블 가게 목록)는 같은 칸에 다른 가게를
-  // 그린다: 날짜 칸 글("11.27 (금) 예약 가능")은 같아도 앞쪽의 가게 이름·설명이 달라진다
+  // First 300 characters before the element. On sites that recycle rows when a list scrolls (Catch Table store list), the same row
+  // shows a different store: the date text ("11.27 (Fri) available") stays the same but the store name and description before it change
   const ctxOf = (el: Element, max = 300) => {
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     w.currentNode = el
@@ -180,21 +183,21 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     treeitem: '항목',
   }
   const clean = (s: string | null | undefined, max = 80) => {
-    // 큰따옴표는 표시 [e1 버튼 "이름"]의 경계라서 작은따옴표로 바꾼다
+    // Double quotes are the boundary of the mark [e1 버튼 "name"], so replace them with single quotes
     const t = (s ?? '').replace(/\s+/g, ' ').replaceAll('"', "'").trim()
     return t.length > max ? `${t.slice(0, max - 1)}…` : t
   }
 
-  /** 안에 누르거나 입력할 것이 따로 있는 큰 상자 (페이지 전체를 감싼 tabindex·role 상자): 하나로 묶지 않는다 */
+  /** A big box with separate clickable or typeable things inside (a tabindex/role box wrapping the whole page): not merged into one */
   const TAP = 'data-dool2-tap'
-  /** 이보다 글이 긴 클릭 상자는 이름만 짧게 달고 안을 계속 읽는다 */
+  /** A click box with text longer than this gets only a short name and the inside is still read */
   const LONG_TAP = 120
   const INNER =
     'input:not([type=hidden]),select,textarea,button,a[href],[role=button],[role=link],[role=textbox],[data-dool2-tap]'
   const wrapsControls = (el: Element) => {
     for (const c of el.querySelectorAll(INNER)) {
-      // 꾸밈용 숨은 칸은 치지 않는다: <label role="radio" aria-label="홀"> 안의 크기 0·aria-hidden input
-      // (캐치테이블 테이블 타입). 이걸 진짜 칸으로 보면 라벨을 건너뛰고, 안의 글은 aria-hidden이라 다 사라졌다
+      // Decorative hidden fields do not count: a size-0 aria-hidden input inside <label role="radio" aria-label="홀">
+      // (Catch Table table type). Treating it as a real field skipped the label, and the text inside vanished because it is aria-hidden
       if (c.closest('[aria-hidden="true"]')) continue
       const r = c.getBoundingClientRect()
       if (r.width === 0 && r.height === 0) continue
@@ -206,7 +209,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   const interactiveRole = (el: Element): string | undefined => {
     const role = el.getAttribute('role')
     if (role && ROLES[role]) {
-      // 네이티브가 아닌 role 상자가 안에 칸·버튼을 품고 있으면 안을 읽는다
+      // If a non-native role box contains fields or buttons, read the inside
       if (!['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) && wrapsControls(el))
         return undefined
       return ROLES[role]
@@ -233,20 +236,20 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       }
     }
     if ((el as HTMLElement).isContentEditable && !el.parentElement?.isContentEditable) return '입력칸'
-    // 편집기가 그려 둔 빈 자리 안내 글("제목"·"본문을 입력하세요"): 글 칸(input·contenteditable)이 아니어도 눌러서 쓰는 자리다.
-    // 네이버 블로그(SmartEditor ONE)는 제목·본문을 그림처럼 그려 두고, 누르면 숨은 액자 속 칸으로 글을 받는다.
-    // 표시가 없으면 AI가 넣을 곳을 몰라 글을 못 넣었다 (실측 11-21). 칸 옆에 겹쳐 둔 안내 글(진짜 칸이 곁에 있음)은 뺀다
+    // Empty-slot hint text drawn by an editor ("Title", "Enter the body"): even if it is not a text field (input, contenteditable), it is a place to click and write.
+    // Naver Blog (SmartEditor ONE) draws the title and body like pictures, and on click receives text into a hidden field in a frame.
+    // Without a mark the AI did not know where to put text and could not enter it (measured 11-21). Hint text overlaid next to a field (a real field beside it) is excluded
     if (editorPlaceholder(el)) return '입력칸'
     if ((el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') && !wrapsControls(el))
       return '버튼'
-    // React·Vue가 클릭 처리기만 붙인 상자 (휴대폰용 사이트의 목록 줄·가게 카드): pageMarkTaps가 표시해 둔다
+    // Boxes with only React/Vue click handlers (list rows and store cards on mobile sites): pageMarkTaps marks them
     if (el.hasAttribute(TAP) && !wrapsControls(el)) return '버튼'
-    // 손가락 커서만 준 글자 상자 ("카카오로 로그인" div 등): 짧은 글이면 버튼으로 본다
+    // Text boxes given only a finger cursor (a "Log in with Kakao" div, etc.): short text counts as a button
     if (pointerBox(el)) return '버튼'
     return undefined
   }
 
-  /** 편집기의 빈 자리 안내 글: 이름(class)에 placeholder가 든 짧은 글 상자. 곁(부모 안)에 진짜 칸·버튼이 있으면 아니다 */
+  /** Empty-slot hint text in an editor: a short text box whose name (class) contains placeholder. Not it if a real field or button is beside it (in the parent) */
   const editorPlaceholder = (el: Element): boolean => {
     if (!['SPAN', 'DIV', 'P'].includes(el.tagName)) return false
     const cls = el.getAttribute('class') ?? ''
@@ -258,14 +261,14 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return !wrapsControls(el) && !(parent && wrapsControls(parent))
   }
 
-  /** 커서가 손가락인 짧은 상자 (부모부터 손가락이면 가장 바깥 하나만) */
+  /** Short boxes with a finger cursor (if a parent is a finger too, only the outermost one) */
   const POINTER_TAGS = new Set(['DIV', 'SPAN', 'LI', 'P', 'LABEL', 'IMG', 'DT', 'DD'])
   const pointerBox = (el: Element): boolean => {
     if (!POINTER_TAGS.has(el.tagName) || wrapsControls(el)) return false
     if (getComputedStyle(el).cursor !== 'pointer') return false
     const parent = el.parentElement
     if (parent && POINTER_TAGS.has(parent.tagName) && getComputedStyle(parent).cursor === 'pointer') {
-      // 부모가 짧은 손가락 상자면 부모가 이미 버튼이다
+      // If the parent is a short finger box, the parent is already the button
       const pt = (parent as HTMLElement).innerText?.trim() ?? ''
       if (pt.length > 0 && pt.length <= 40) return false
     }
@@ -274,7 +277,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return t.length > 0 || el.hasAttribute('aria-label') || el.querySelector('img[alt]') !== null
   }
 
-  /** 요소 바로 뒤(또는 요소만 감싼 부모 바로 뒤)에 붙은 한 줄짜리 짧은 글자. 다른 누를 것이 들어 있으면 쓰지 않는다 */
+  /** Short one-line text right after the element (or right after a parent wrapping only the element). Not used if other clickable things are inside */
   const captionAfter = (el: Element): string => {
     let cur: Element | null = el
     for (let i = 0; i < 2 && cur; i++) {
@@ -287,7 +290,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
           return ''
         const raw = (isEl ? (sib as HTMLElement).innerText : sib.textContent) ?? ''
         const t = raw.trim()
-        // 이름다운 글자만 (수량 칸 "0"·가격·기호는 이름이 아니다)
+        // Only name-like text (a quantity field "0", prices and symbols are not names)
         if (
           t &&
           t.length <= 20 &&
@@ -298,7 +301,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
           return clean(t)
         return ''
       }
-      // 요소가 부모의 유일한 자식이면 부모 뒤를 본다 (<li><a><img></a></li><li>…</li> 말고 <div><a><img></a></div><span>이름</span>)
+      // If the element is the parent's only child, look after the parent (<div><a><img></a></div><span>name</span> rather than <li><a><img></a></li><li>...</li>)
       const parent: Element | null = cur.parentElement
       if (!parent || parent.children.length !== 1) return ''
       cur = parent
@@ -323,8 +326,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       return clean(el.value)
     const text = clean((el as HTMLElement).innerText)
     if (text) return text
-    // 그림만 있는 버튼·링크 바로 뒤에 붙은 짧은 글자(아이콘 아래 이름)를 이름으로 본다. 그림 설명(alt)은 틀릴 때가 많다
-    // (실측 홈택스 간편인증: 앱 아이콘 alt가 모두 "페이스북 로그인"이거나 비어 있어 카카오톡 대신 카카오뱅크를 눌렀다)
+    // Short text right after an image-only button or link (the name under an icon) counts as the name. Image descriptions (alt) are often wrong
+    // (measured Hometax simple authentication: every app icon alt was "페이스북 로그인" or empty, so Kakao Bank was clicked instead of KakaoTalk)
     const cap = captionAfter(el)
     if (cap) return cap
     const img = el.querySelector('img[alt]')
@@ -335,19 +338,19 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
         el.getAttribute('name'),
     )
     if (own) return own
-    // 여기부터는 화면에 적힌 이름이 아니라 두리가 짐작한 이름이다: 표시에 (추정)을 달아 AI가 화면과 견줘 보게 한다
+    // From here on the name is not what is written on screen but what Dool2 guessed: add (추정) to the mark so the AI compares it with the screen
     const quantity = stepperName(el)
     if (quantity) return quantity
     const icon = iconName(el)
     if (icon) guessed = true
     return icon
   }
-  /** 이번 표시의 이름이 짐작(아이콘 속성)인지 */
+  /** Whether this mark's name is a guess (icon attributes) */
   let guessed = false
 
   /**
-   * 수량 고르기: 한 상자 안에 이름 없는 버튼 둘과 숫자 하나만 있을 때만 앞은 줄이기, 뒤는 늘리기
-   * (캐치테이블 추가 상품 등). 다른 글·버튼이 섞인 상자는 짐작하지 않는다
+   * Quantity choice: only when a box has two unnamed buttons and one number: the first decreases, the second increases
+   * (Catch Table add-ons, etc.). Boxes mixed with other text or buttons are not guessed
    */
   const stepperName = (el: Element): string => {
     const BTN = 'button,[role=button],a[href]'
@@ -367,7 +370,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return ''
   }
 
-  /** 글 없는 아이콘 버튼의 뜻을 속성(테스트 id·클래스·아이콘 이름·svg 제목)에서 찾는다. 못 찾으면 '' */
+  /** Find the meaning of a text-less icon button from attributes (test id, class, icon name, svg title). '' if not found */
   const ICONS: [RegExp, string][] = [
     [/(?:^|[^a-z])(?:minus|decrease|decrement|subtract|remove-one|qty-down|count-down)(?:[^a-z]|$)/i, '빼기'],
     [/(?:^|[^a-z])(?:plus|increase|increment|add-one|qty-up|count-up)(?:[^a-z]|$)/i, '더하기'],
@@ -381,7 +384,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     [/(?:^|[^a-z])(?:delete|trash|bin)(?:[^a-z]|$)/i, '삭제'],
     [/(?:^|[^a-z])(?:cart|basket)(?:[^a-z]|$)/i, '장바구니'],
     [/(?:^|[^a-z])(?:home)(?:[^a-z]|$)/i, '홈'],
-    // 글 없는 간편 로그인 아이콘 (실측 알라딘: <a class="naver" href="javascript:goNaverLogin()">)
+    // Text-less simple-login icons (measured Aladin: <a class="naver" href="javascript:goNaverLogin()">)
     [/(?:^|[^a-z])kakao(?:[^a-z]|$)/i, '카카오 로그인'],
     [/(?:^|[^a-z])naver(?:[^a-z]|$)/i, '네이버 로그인'],
     [/(?:^|[^a-z])google(?:[^a-z]|$)/i, '구글 로그인'],
@@ -407,7 +410,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       const t = e.querySelector?.('title')?.textContent
       if (t) bits.push(t)
     }
-    // IconPlus·icMinus 같은 낙타 표기도 단어로 나눈다
+    // Also split camelCase like IconPlus and icMinus into words
     const hay = bits.join(' ').replace(/([a-z])([A-Z])/g, '$1 $2')
     for (const [re, name] of ICONS) if (re.test(hay)) return name
     return ''
@@ -418,7 +421,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     if (el instanceof HTMLInputElement) {
       if (el.type === 'checkbox' || el.type === 'radio') return el.checked ? ' 선택됨' : ''
       if (el.type === 'password') return el.value ? ' 채워짐' : ''
-      // 파일 칸: 글자를 넣는 칸이 아니라 browser_upload로 파일을 넣는다
+      // File field: not a field to type text into; put files in with browser_upload
       if (el.type === 'file') {
         const names = Array.from(el.files ?? [], (f) => f.name).join(', ')
         return ` 파일 칸${names ? ` 고른 파일="${clean(names, 80)}"` : ''}`
@@ -448,9 +451,9 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     cur = ''
   }
   const skip = Math.max(0, Math.floor(Number(scope.skip) || 0))
-  // 건너뛸 글도 읽어야 어디서부터인지 안다 (from은 어디 있을지 몰라 넉넉히)
+  // Text to be skipped must be read too to know where it starts (from: it is unknown where it is, so generous)
   let budget = scope.from ? Math.max((maxChars + skip) * 2, 400_000) : (maxChars + skip) * 2
-  // view: 화면 위·아래로 완전히 벗어난 상자는 읽지 않고 글자 수만 센다 (고정된 머리말·팝업은 화면 안이라 읽는다)
+  // view: boxes entirely above or below the screen are not read, only their characters are counted (fixed headers and popups are on screen so they are read)
   const vh = window.innerHeight
   const around = { above: 0, below: 0 }
   const offscreen = (el: Element): number => {
@@ -462,9 +465,9 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     return 0
   }
 
-  /** 이번 읽기에서 표시를 붙인 것 (빠진 입력칸을 따로 모을 때 견준다) */
+  /** Items marked in this read (compared when separately collecting missing input fields) */
   const shownNow = new Set<Element>()
-  /** 이 문서 안의 액자들: 확장이 액자마다 화면 자리를 맞춰 보고(중첩 액자 좌표), 화면 순서로 늘어놓는다 */
+  /** Frames in this document: the extension fits each frame's screen position (nested frame coordinates) and lines them up in screen order */
   const kids: KidBox[] = []
   const kidOf = (f: HTMLIFrameElement): KidBox => {
     const r = f.getBoundingClientRect()
@@ -500,7 +503,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const el = node as Element
-    // 액자 자리: 글 속 그 자리에 표시를 남긴다 (확장이 [액자 f3]으로 바꾼다. 액자 안 글은 아래에 따로 붙는다)
+    // Frame position: leave a placeholder at that spot in the text (the extension turns it into [frame f3]. Text inside the frame is appended below)
     if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
       const k = kidOf(el as HTMLIFrameElement)
       if (k.shown) {
@@ -512,8 +515,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     }
     if (SKIP.has(el.tagName)) return
     if (el.getAttribute('aria-hidden') === 'true') return
-    // display: contents 상자는 자기 상자가 없어서 checkVisibility가 늘 false다. 안은 보이니 계속 읽는다
-    // (캐치테이블 검색 화면 전체가 이 상자 안에 있다)
+    // display: contents boxes have no box of their own, so checkVisibility is always false. The inside is visible, so keep reading
+    // (the whole Catch Table search screen is inside such a box)
     if (!el.checkVisibility({ visibilityProperty: true })) {
       const cs = getComputedStyle(el)
       if (cs.display !== 'contents' || cs.visibility === 'hidden') return
@@ -534,18 +537,18 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
         st.refs.set(ref, new WeakRef(el))
         ctx.set(ref, ctxOf(el))
       }
-      // 클릭 처리기만 붙은 긴 상자 (글 단락·카드 전체): 표시만 붙이고 안의 글은 그대로 읽는다
+      // Long boxes with only a click handler (text paragraphs, whole cards): only mark them and read the text inside as is
       const long = el.hasAttribute(TAP) && ((el as HTMLElement).innerText?.trim().length ?? 0) > LONG_TAP
       guessed = false
       const name = long ? clean((el as HTMLElement).innerText, 30) : nameOf(el)
       const label = `${role}${name ? ` "${name}"` : ''}${guessed ? ' (추정)' : ''}${extra(el)}`
-      // 대역이 다 차 표시를 못 붙인 것도 글로는 보이게 (누를 수는 없다고 알린다)
+      // Items that could not be marked because the range is full still show in the text (and are reported as not clickable)
       cur += ref ? ` [${ref} ${label}] ` : ` (${label}) `
       if (!long) return
     }
     const block = BLOCK.has(el.tagName)
     if (block) flush()
-    // 팝업인데 버튼 말고 글이 거의 없으면(안내를 그림으로 그린 팝업) AI가 화면을 찍어 보게 알린다
+    // If it is a popup with almost no text except buttons (a popup whose notice is drawn as an image), tell the AI to take a screenshot
     if (
       el.tagName === 'DIALOG' ||
       el.getAttribute('role') === 'dialog' ||
@@ -562,7 +565,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
           el.querySelector('img, canvas, svg, picture, [style*="background"]')
         )
           cur +=
-            ' [이 창의 안내는 그림이라 글로 읽을 수 없어요. 무엇인지 알아야 하면 화면을 찍어 확인하세요] '
+            " [This window's notice is an image and cannot be read as text. Take a screenshot to see what it is] "
       }
     }
     const h = /^H([1-6])$/.exec(el.tagName)
@@ -579,8 +582,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   }
   if (document.body) walk(document.body)
   flush()
-  // 화면에 보이는데 읽기에서 빠진 입력칸: 사이트가 칸을 감싼 상자에 aria-hidden을 잘못 붙이면 통째로 빠진다
-  // (실측 금융인증서 창 4user.yeskey.or.kr: "휴대폰번호를 입력해주세요" 아래 칸이 안 보여 두리가 PC 화면을 넘겼다)
+  // Input fields visible on screen but missing from the read: if a site wrongly puts aria-hidden on the box wrapping a field, it is dropped entirely
+  // (measured financial certificate window 4user.yeskey.or.kr: the field below "휴대폰번호를 입력해주세요" was not visible, so Dool2 handed the PC screen over)
   if (budget > 0 && !scope.from) {
     const missed: string[] = []
     for (const el of document.querySelectorAll('input:not([type=hidden]),textarea,select')) {
@@ -603,7 +606,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
       ctx.set(ref, ctxOf(el))
       const box = el.closest('label, div, li, p, td')
       const near = clean((box as HTMLElement | null)?.innerText, 30)
-      // 이름이 '예) 010-…' 같은 보기뿐이면 칸 위의 짧은 글(휴대폰번호)을 앞에 붙인다
+      // If the name is only an example like '예) 010-…', put the short text above the field (phone number) in front
       const own = nameOf(el) || el.getAttribute('placeholder') || ''
       const name = near && !own.includes(near) && near.length <= 20 ? `${near} ${own}`.trim() : own || near
       missed.push(`[${ref} ${role}${name ? ` "${clean(name, 40)}"` : ''}${extra(el)}]`)
@@ -611,13 +614,13 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
     if (missed.length) lines.push(`(화면에 보이는 칸) ${missed.join(' ')}`)
   }
 
-  // 읽다가 글 한도로 멈췄거나 숨은 상자 속이라 못 지나간 액자도 자리 맞추기에는 넣는다 (글 속 표시는 없다)
+  // Frames that stopped at the text limit or were inside hidden boxes and could not be passed are also included for position fitting (no marks in the text)
   const met = new Set(kids.map((k) => `${k.src}|${k.x}|${k.y}|${k.w}|${k.h}`))
   for (const f of Array.from(document.querySelectorAll('iframe, frame')).slice(0, 60)) {
     const k = kidOf(f as HTMLIFrameElement)
     if (!met.has(`${k.src}|${k.x}|${k.y}|${k.w}|${k.h}`)) kids.push(k)
   }
-  // 같은 주소의 액자면 바깥 문서에서 본 자기 상자를 바로 잴 수 있다 (about:blank·srcdoc 결제 액자 포함)
+  // For a same-origin frame its own box seen from the outer document can be measured directly (including about:blank and srcdoc payment frames)
   let owner: FrameSelf['owner']
   try {
     const fe = window.frameElement as HTMLIFrameElement | null
@@ -641,8 +644,8 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   text = text.slice(start, start + maxChars)
 
   const bodyText = document.body?.innerText ?? ''
-  // 보안 문자: 실제로 풀어야 하는 것만. 보이지 않는 reCAPTCHA(오른쪽 아래 배지, "protected by reCAPTCHA")는
-  // 사람이 할 게 없는데 예전에는 이것 때문에 KT·CGV·링크드인 같은 곳을 "사람 차례"로 넘겼다
+  // Captcha: only ones that really must be solved. The invisible reCAPTCHA (bottom-right badge, "protected by reCAPTCHA")
+  // needs nothing from a person, yet this used to hand places like KT, CGV and LinkedIn over as "a person's turn"
   const shown = (el: Element) => {
     if (el.closest('.grecaptcha-badge')) return false
     const r = el.getBoundingClientRect()
@@ -662,11 +665,11 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   ].some((el) => {
     if (!shown(el)) return false
     const src = el instanceof HTMLIFrameElement ? el.src : ''
-    // 보이지 않는 reCAPTCHA의 틀(size=invisible)은 문제가 아니다
+    // The invisible reCAPTCHA frame (size=invisible) is not a problem
     return !/[?&]size=invisible/.test(src)
   })
-  // 글자로만 찾는 것은 짧은 화면(로그인·확인 화면)에서만: 긴 화면(메일함·글)은 내용에 그 말이 섞인다
-  // (지메일 받은편지함: 메일 제목의 '보안문자' 때문에 로봇 확인으로 보였다)
+  // Searching by text only on short screens (login, confirmation): on long screens (inbox, articles) the content mixes in those words
+  // (Gmail inbox: the mail subject's '보안문자' made it look like a robot check)
   const captcha =
     challenge ||
     (bodyText.length < 6000 &&
@@ -691,7 +694,7 @@ export function pageSnapshot(maxChars: number, base = 0, scope: ReadScope = {}):
   }
 }
 
-/** point: 좌표만 / type: 초점 + 기존 글자 선택 / activate: 키보드로 누를 수 있게 초점만 */
+/** point: coordinates only / type: focus + select existing text / activate: only focus so it can be pressed by keyboard */
 export type LocateMode = 'point' | 'type' | 'activate'
 
 export interface LocateResult {
@@ -701,36 +704,36 @@ export interface LocateResult {
   tag: string
   isPassword: boolean
   origin: string
-  /** 탭이 화면에 그려지지 않는 중이다 (창이 가려짐·화면 꺼짐). 이때는 마우스 입력이 버려진다 */
+  /** The tab is not painting (window occluded, screen off). Mouse input is dropped then */
   hidden: boolean
-  /** activate: 초점을 받았는지 */
+  /** activate: whether it got focus */
   focused?: boolean
-  /** activate: 체크박스·라디오처럼 Space로 누르는 요소 */
+  /** activate: an element pressed with Space, like a checkbox or radio */
   toggle?: boolean
-  /** 그 자리를 다른 것이 덮고 있다 (팝업 등) */
+  /** Something else covers that spot (a popup, etc.) */
   coveredBy?: string
-  /** 화면 안 액자(iframe) 속 요소 (좌표는 페이지 화면 기준으로 바꿔 둠) */
+  /** An element inside a frame (iframe) on the page (coordinates already converted to page viewport) */
   frame?: boolean
-  /** 화면 밖에 있어서 굴려 옮겼다 (늦게 뜨는 그림·목록으로 자리가 밀릴 수 있어 부르는 쪽이 다시 잰다) */
+  /** It was off-screen and was scrolled into view (positions may shift from late-loading images or lists, so the caller measures again) */
   moved?: boolean
-  /** 덮은 것이 다른 버튼·링크다 (force로 불렀을 때만 여기까지 온다: 마우스 대신 그 요소를 직접 누른다) */
+  /** What covers it is another button or link (only reached when called with force: the element is pressed directly instead of by mouse) */
   coveredByControl?: boolean
-  /** force로 불렀는데 둘레 글이 읽을 때와 달랐다 (알리기만 한다) */
+  /** Called with force but the surrounding text differed from the read (only reported) */
   ctxChanged?: { was: string; now: string }
-  /** 굴려도 보이는 화면 밖이다 (화면 아래에 고정된 창 등). y는 실제 자리(잘리지 않은 값) */
+  /** Off-screen even when scrolled (a window fixed at the bottom, etc.). y is the real position (uncut value) */
   outside?: boolean
-  /** type: 글 칸(input·textarea·contenteditable)이 아니다 — 편집기가 그린 자리라 눌러서 초점을 줘야 한다 */
+  /** type: not a text field (input, textarea, contenteditable) - a spot drawn by an editor, so click it to give focus */
   drawn?: boolean
-  /** type(drawn): 안내 글이 아닌 글이 이미 들어 있다 (끝에 이어 쓴다) */
+  /** type (drawn): text other than the hint text is already there (continue at the end) */
   filled?: boolean
-  /** 요소 상자 아래 끝 (이 문서 화면 기준) */
+  /** Bottom edge of the element box (relative to this document's viewport) */
   bottom?: number
 }
 
 /**
- * 화면에 보이는 글자로 누를 곳 찾기: 그 글자를 가진 가장 작은 보이는 요소에 표시(ref)를 붙인다.
- * 가게 카드처럼 링크·버튼·손가락 커서 없이 사이트 스크립트로만 눌리는 상자가 있다 (캐치테이블 검색 결과).
- * 글자 요소를 누르면 클릭이 카드까지 올라가 카드가 눌린다
+ * Find where to click by on-screen text: put a mark (ref) on the smallest visible element holding that text.
+ * Some boxes like store cards have no link, button or finger cursor and are clicked only by site script (Catch Table search results).
+ * Clicking the text element lets the click bubble up to the card, so the card is clicked
  */
 export function pageMarkText(
   text: string,
@@ -742,10 +745,10 @@ export function pageMarkText(
     base?: number
   }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
-  if (!st) return { ok: false, error: '먼저 페이지를 읽어 주세요' }
+  if (!st) return { ok: false, error: 'Read the page first' }
   const norm = (s: string) => s.replace(/\s+/g, ' ').trim()
   const want = norm(text)
-  if (!want) return { ok: false, error: '누를 글자를 주세요' }
+  if (!want) return { ok: false, error: 'No text to click was given' }
   let best: { el: Element; exact: boolean; area: number; rank: number } | undefined
   for (const el of Array.from(document.body?.querySelectorAll('*') ?? [])) {
     if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|HTML|BODY)$/.test(el.tagName)) continue
@@ -757,7 +760,7 @@ export function pageMarkText(
     if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue
     const exact = t === want
     const area = r.width * r.height
-    // 화면 안에 있는데 다른 것이 덮고 있으면(목록 창 뒤 지도 이름표 등) 누를 곳이 아니다: 맨 뒤로
+    // If it is on screen but something else covers it (a map label behind a list window, etc.), it is not where to click: put it last
     const cx = r.left + r.width / 2
     const cy = r.top + r.height / 2
     const inView = cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight
@@ -767,11 +770,11 @@ export function pageMarkText(
     if (!best || rank > best.rank || (rank === best.rank && area < best.area))
       best = { el, exact, area, rank }
   }
-  if (!best) return { ok: false, error: `화면에서 "${want}" 글자를 찾지 못했어요` }
+  if (!best) return { ok: false, error: `Could not find the text "${want}" on the screen` }
   let ref = st.ids.get(best.el)
   if (!ref) {
-    // 표시 대역(1만 개) 안에서만 매긴다 (넘치면 다른 액자의 표시로 읽힌다)
-    if (st.seq >= 9_999) return { ok: false, error: '표시 번호가 다 찼어요. 페이지를 다시 읽어 주세요' }
+    // Numbered only within the mark range (10,000) (overflow would read as another frame's mark)
+    if (st.seq >= 9_999) return { ok: false, error: 'The mark numbers are used up. Read the page again' }
     ref = `e${(st.base ?? 0) + ++st.seq}`
     st.ids.set(best.el, ref)
   }
@@ -779,9 +782,9 @@ export function pageMarkText(
   return { ok: true, ref, name: norm((best.el as HTMLElement).innerText ?? '').slice(0, 60) }
 }
 
-/** 읽을 때의 앞쪽 글(was)이 지금 앞쪽 글(now)에서 사라졌나: 다른 칸이 그려졌다는 뜻.
- *  더해진 글은 괜찮다. 바로 앞 낱말 6개 중 둘이 사라져도 다른 칸이다 (짧은 가게 이름·설명만 바뀐 칸).
- *  (pageLocate 안에 같은 규칙이 있다) */
+/** Whether the leading text at read time (was) has disappeared from the current leading text (now): it means a different field was drawn.
+ *  Added text is fine. If two of the last 6 words vanished it is a different field too (a field where only a short store name or description changed).
+ *  (pageLocate has the same rule inside) */
 export function ctxReplaced(was: string, now: string): boolean {
   if (now.endsWith(was)) return false
   const have = new Set(now.split(' '))
@@ -791,7 +794,7 @@ export function ctxReplaced(was: string, now: string): boolean {
   return (gone >= 3 && gone >= words.length * 0.2) || goneNear >= 2
 }
 
-/** 표시(ref)가 가리키는 요소를 화면 가운데로 옮기고 좌표를 돌려준다 */
+/** Scroll the element the mark (ref) points to to the center of the screen and return coordinates */
 export function pageLocate(
   ref: string,
   mode: LocateMode,
@@ -805,16 +808,16 @@ export function pageLocate(
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
   if (!el || !el.isConnected)
-    return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
+    return { ok: false, error: `${ref} was not found. The screen may have changed, so read it again` }
   if (mode === 'type' && el instanceof HTMLInputElement && el.type === 'file')
-    return { ok: false, error: `${ref}는 파일 칸이에요. 글자 대신 browser_upload로 PC 파일을 넣어요` }
-  // 상자가 없는 요소(display: contents 버튼 등)는 크기가 0으로 재진다: 안에 그려진 자식들의 영역을 쓴다
-  // (캐치테이블 날짜·인원 창의 시간 버튼: 화면엔 보이는데 "보이지 않아요"로 못 눌렀다)
+    return { ok: false, error: `${ref} is a file field. Put PC files in with browser_upload instead of text` }
+  // Elements with no box (display: contents buttons, etc.) measure as size 0: use the area of the children drawn inside
+  // (Catch Table date/party window time buttons: visible on screen but could not be clicked as "not visible")
   const drawn = (e: Element) => {
     const b = e.getBoundingClientRect()
     return b.width > 0 && b.height > 0
   }
-  // 숨긴 라디오·체크박스(크기 0 input)는 감싼 라벨을 누른다 (캐치테이블 시간 칸: <label><input radio><span>오후 7:30</span></label>)
+  // For hidden radios and checkboxes (size-0 input), click the wrapping label (Catch Table time field: <label><input radio><span>7:30 PM</span></label>)
   const label =
     el instanceof HTMLInputElement && !drawn(el) ? Array.from(el.labels ?? []).find(drawn) : undefined
   const anchor = label ?? (drawn(el) ? el : (Array.from(el.querySelectorAll('*')).find(drawn) ?? el))
@@ -836,15 +839,15 @@ export function pageLocate(
   }
   const r0 = box()
   const moved = r0.bottom < 0 || r0.top > window.innerHeight || r0.right < 0 || r0.left > window.innerWidth
-  // 가로는 필요할 때만 옮긴다: 가로로 넘기는 달력(캐치테이블)은 가운데로 옮기면 사이트가 바로 되돌려서
-  // 두 칸 옆 날짜가 눌렸다 (27일을 눌렀는데 25일)
+  // Move horizontally only when needed: on horizontally paged calendars (Catch Table) centering made the site snap back at once,
+  // so the date two cells over was clicked (clicked the 27th, got the 25th)
   anchor.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
-  // 읽은 뒤 같은 칸에 다른 것이 그려졌으면 누르지 않는다 (가게 목록 칸 재활용: 아세누 27일을 눌렀는데 다른 가게가 열렸다)
-  // 글이 더해진 것(아이디를 넣으면 생기는 '지우기' 버튼·안내 등)은 괜찮다. 읽을 때 있던 글이 사라졌을 때만
-  // 다른 칸이 그려진 것으로 본다 (무신사·카카오 로그인: 아이디를 채우자 비밀번호 칸 앞 글이 늘어 채우기가 막혔다).
-  // 입력은 목록 칸 재활용과 상관없어 보지 않는다
-  // (규칙은 ctxReplaced와 같다. 페이지에 넣는 함수라 따로 부를 수 없어 여기 그대로 둔다)
-  // 판단은 AI가 한다: 읽을 때·지금 글을 함께 알려 주고, 같은 것이라고 보면 force로 다시 부르게 한다
+  // If something else was drawn in the same field after the read, do not click (store list field recycling: clicked Aseno's 27th and another store opened)
+  // Added text (a 'clear' button or hint that appears after typing an ID) is fine. Only when text that was there at read time disappeared
+  // is it treated as a different field being drawn (Musinsa / Kakao login: filling the ID lengthened the text before the password field and blocked filling).
+  // Typing does not care about list field recycling, so it is not checked
+  // (the rule equals ctxReplaced. This is a function put into the page and cannot call it separately, so it stays here as is)
+  // The AI decides: tell it the text at read time and now, and if it judges them the same, have it call again with force
   const was = st?.ctx?.get(ref)
   let ctxChanged: { was: string; now: string } | undefined
   if (mode !== 'type' && was !== undefined && st?.ctxOf) {
@@ -859,15 +862,15 @@ export function pageLocate(
         if (!force)
           return {
             ok: false,
-            error: `${ref} 둘레 글이 읽을 때와 달라졌어요 (목록이 다시 그려졌을 수 있어요). 읽을 때: "…${ctxChanged.was}" / 지금: "…${ctxChanged.now}". 다시 읽고 골라 주세요. 같은 것이 맞으면 force: true로 누를 수 있어요`,
+            error: `The text around ${ref} differs from when it was read (the list may have been redrawn). At read time: "…${ctxChanged.was}" / now: "…${ctxChanged.now}". Read again and choose. If it is really the same one, you can click with force: true`,
           }
       }
     }
   }
   const r = box()
-  if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref}가 화면에 보이지 않아요` }
-  // 굴려도 화면 밖이면(아래에 고정된 창) 실제 자리를 알려 부르는 쪽이 화면을 늘려 다시 재게 한다.
-  // 일부만 보이면 보이는 부분의 가운데를 누른다 (화면 끝으로 자른 자리는 다른 것일 수 있다)
+  if (r.width === 0 || r.height === 0) return { ok: false, error: `${ref} is not visible on the screen` }
+  // If it is off-screen even when scrolled (a window fixed at the bottom), report the real position so the caller stretches the viewport and measures again.
+  // If only partly visible, click the center of the visible part (a spot cut at the screen edge may be something else)
   const W = window.innerWidth
   const H = window.innerHeight
   const outside = r.bottom <= 0 || r.top >= H || r.right <= 0 || r.left >= W
@@ -877,14 +880,14 @@ export function pageLocate(
   const y = outside
     ? r.top + r.height / 2
     : Math.min(Math.max((Math.max(r.top, 0) + Math.min(r.bottom, H)) / 2, 1), H - 1)
-  // 그 자리의 맨 위 요소: 열린 shadow DOM 안까지 내려가서 본다 (문서에서 재면 그림자 주인(host)이 나와 덮인 것으로 보였다)
+  // The topmost element at that spot: look down into open shadow DOM too (measuring in the document gave the shadow host and looked covered)
   let top: Element | null = outside ? null : document.elementFromPoint(x, y)
   for (let i = 0; top?.shadowRoot && i < 8; i++) {
     const inner = top.shadowRoot.elementFromPoint(x, y)
     if (!inner || inner === top) break
     top = inner
   }
-  /** a가 b를 품는지 (shadow DOM 경계를 넘어 위로) */
+  /** Whether a contains b (going up across shadow DOM boundaries) */
   const holds = (a: Element, b: Node | null): boolean => {
     for (let n: Node | null = b; n; n = n.parentNode ?? (n as ShadowRoot).host ?? null)
       if (n === a) return true
@@ -894,9 +897,9 @@ export function pageLocate(
   let coveredByControl = false
   if (top && !holds(el, top) && !(label && holds(label, top)) && top.closest('label')?.control !== el) {
     coveredBy = ((top as HTMLElement).innerText || top.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
-    // 덮은 것이 다른 버튼·링크면 누르지 않는다: 그 자리를 누르면 덮은 버튼이 눌린다
-    // (캐치테이블: 결제 방식 화면의 '다음' 위에 '이 방식으로 예약' 팝업이 떠 있었다).
-    // force면 마우스 대신 그 요소를 직접(키보드·스크립트) 누르게 알린다
+    // If what covers it is another button or link, do not click: clicking that spot would press the covering button
+    // (Catch Table: a 'Reserve with this method' popup was over 'Next' on the payment method screen).
+    // With force, tell it to click the element directly (keyboard or script) instead of by mouse
     const other = top.closest(
       'a[href],button,input,select,textarea,label,[role=button],[role=link],[role=radio],[role=checkbox],[onclick],[data-dool2-tap]',
     )
@@ -908,7 +911,7 @@ export function pageLocate(
       if (!force)
         return {
           ok: false,
-          error: `${ref} 자리를 다른 버튼 "${name}"이(가) 덮고 있어서 누르지 않았어요. 팝업이면 먼저 닫고(닫기·X) 다시 읽어 주세요. 덮인 채로 그 요소를 직접 누르려면 force: true`,
+          error: `${ref} is covered by another button "${name}", so nothing was clicked. If it is a popup, close it first (Close or X) and read again. To click the element directly while covered, use force: true`,
         }
       coveredByControl = true
       coveredBy = name
@@ -919,7 +922,7 @@ export function pageLocate(
   let drawnBox = false
   let filled = false
   if (mode === 'type') {
-    // 버튼·링크는 아니다: 입력하려다 눌러 버리면 안 된다 (발행·보내기 버튼은 승인 카드로만 누른다)
+    // Not a button or link: typing must not click it by accident (publish and send buttons are pressed only through an approval card)
     drawnBox =
       !(
         el instanceof HTMLInputElement ||
@@ -931,7 +934,7 @@ export function pageLocate(
         'a[href],button,summary,label,[role=button],[role=link],[role=menuitem],[role=tab],[role=option],[onclick]',
       )
     if (drawnBox) {
-      // 편집기가 그린 자리: 스크립트 초점은 주지 않는다 (누를 때 편집기가 자기 칸에 초점을 준다)
+      // A spot drawn by an editor: no script focus is given (the editor focuses its own field when clicked)
       filled =
         !/(^|[\s_-])placeholder/i.test(el.getAttribute('class') ?? '') &&
         (h.innerText ?? '').replace(/[\u200b\ufeff]/g, '').trim() !== ''
@@ -971,7 +974,7 @@ export function pageLocate(
   }
 }
 
-/** 넣은 글이 이 문서 화면 글에 보이나 (편집기가 그린 자리에 넣은 뒤 확인). 빈칸·폭 없는 글자는 무시한다 */
+/** Whether the typed text is visible in this document's screen text (checked after typing into an editor-drawn spot). Blanks and zero-width characters are ignored */
 export function pageShowsText(probe: string): boolean {
   const norm = (s: string) =>
     s
@@ -984,9 +987,9 @@ export function pageShowsText(probe: string): boolean {
 }
 
 /**
- * 펼침 목록의 고를 것들. 진짜 select는 그대로 읽고, 꾸민 목록(role=combobox: 쿠팡 결제 화면의 카드·할부)은
- * 근처에 숨은 select가 있으면 그것을, 없으면 눌러 열어 새로 보인 항목을 읽은 뒤 다시 닫는다.
- * 못 읽으면 options 없이 왜 못 읽었는지(why: 요소 모양)를 돌려준다 (일한 기록에 남겨 고칠 때 쓴다)
+ * Choices of a dropdown. A real select is read as is; for a styled list (role=combobox: card and installments on Coupang's payment screen),
+ * a nearby hidden select is used if there is one, otherwise it is clicked open, the newly visible items are read, and it is closed again.
+ * If it cannot be read, return why (the element shape) without options (kept in the activity log for fixing)
  */
 export async function pageSelectOptions(
   ref: string,
@@ -1001,7 +1004,7 @@ export async function pageSelectOptions(
     return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'
   }
   const press = (t: Element) => {
-    // pointer*는 PointerEvent로 (요즘 목록 부품(Radix 등)은 MouseEvent로 온 pointerdown을 무시한다. 실측 무신사·오늘의집)
+    // Use PointerEvent for pointer* (modern list components (Radix, etc.) ignore a pointerdown sent as MouseEvent. Measured Musinsa, Today's House)
     const r = t.getBoundingClientRect()
     const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
     for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
@@ -1027,8 +1030,8 @@ export async function pageSelectOptions(
       )
   }
   /**
-   * 목록 열기. 상자를 눌러 보고, 안 열리면 감싼 칸(…control)을 누르고, 그래도 안 열리면 초점을 주고 ↓ 키
-   * (실측 쿠팡: react-select. 보이는 상자는 감싼 칸이고 role=combobox는 숨은 입력칸이라 그 자체를 눌러서는 안 열린다)
+   * Open the list. Click the box; if it does not open, click the wrapping field (...control); if it still does not open, give focus and press the down arrow
+   * (measured Coupang: react-select. The visible box is the wrapping field and role=combobox is a hidden input, so clicking it does not open the list)
    */
   const openList = async (box: HTMLElement) => {
     const opened = () => box.getAttribute('aria-expanded') === 'true'
@@ -1060,13 +1063,13 @@ export async function pageSelectOptions(
       .filter((a) => /^(role|aria-|class|type|name|data-)/.test(a.name))
       .map((a) => `[${a.name}=${a.value.slice(0, 40)}]`)
       .join('')}`
-  // 꾸민 목록 뒤에 숨은 진짜 select (모양만 바꾼 목록)
+  // The real select hidden behind a styled list (a list that only changed the look)
   let up: Element | null = el
   for (let i = 0; i < 3 && up; i++, up = up.parentElement) {
     const sel = up.querySelector('select')
     if (sel && sel.options.length >= 2) return { options: fromSelect(sel) }
   }
-  // opened: 본체가 진짜 마우스로 이미 열었다 (누르기 전 보이던 것은 pageRememberShown이 남겨 둠)
+  // opened: the daemon already opened it with the real mouse (what was visible before the click is kept by pageRememberShown)
   const before =
     opened && st?.shownBefore
       ? st.shownBefore
@@ -1085,7 +1088,7 @@ export async function pageSelectOptions(
   const fresh = [...document.querySelectorAll('body *')].filter((e) => shownEl(e) && !before.has(e))
   if (items.length < 2)
     items = fresh.filter((e) => e.matches('[role=option],li,[role=menuitem],[role=menuitemradio]'))
-  // 같은 모양으로 늘어선 줄 묶음 (줄마다 "S" + "내일 도착보장"처럼 글이 여럿이면 줄 전체가 항목. 실측 무신사)
+  // A group of rows lined up in the same shape (if each row has several texts like "S" + "Arrives tomorrow guaranteed", the whole row is the item. Measured Musinsa)
   if (items.length < 2) {
     let rows: Element[] = []
     for (const e of fresh) {
@@ -1098,7 +1101,7 @@ export async function pageSelectOptions(
     }
     if (rows.length >= 2) items = rows
   }
-  // 그래도 없으면 새로 보인 글 조각 중 가장 안쪽(글만 있는 것)
+  // If still none, the innermost of the newly visible text pieces (the one with only text)
   if (items.length < 2)
     items = fresh.filter((e) => {
       const t = norm(e.textContent)
@@ -1107,7 +1110,7 @@ export async function pageSelectOptions(
   items = items.filter((e) => !items.some((o) => o !== e && e.contains(o)))
   const now = norm(el.getAttribute('aria-valuetext') || el.textContent || el.nextElementSibling?.textContent)
   const options = items.slice(0, 40).map((o) => {
-    // innerText: 줄 안의 글 조각 사이를 띄운다 ("S내일 도착" → "S 내일 도착")
+    // innerText: put a space between text pieces inside a row ("S내일 도착" -> "S 내일 도착")
     const label = norm((o as HTMLElement).innerText || o.textContent).slice(0, 60)
     const selected =
       o.getAttribute('aria-selected') === 'true' ||
@@ -1115,7 +1118,7 @@ export async function pageSelectOptions(
       (!!now && label === now)
     return { label, selected }
   })
-  // 연 목록은 닫아 둔다
+  // Close the list that was opened
   if (!wasOpen && (el.getAttribute('aria-expanded') === 'true' || items.some(shownEl))) {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await new Promise((r) => setTimeout(r, 150))
@@ -1128,14 +1131,14 @@ export async function pageSelectOptions(
     .map((e) => `${shape(e)}"${norm(e.textContent).slice(0, 20)}"`)
     .join(' | ')
   return {
-    why: `${shape(el)} < ${el.parentElement ? shape(el.parentElement) : ''} · 연 뒤 expanded=${el.getAttribute('aria-expanded')} 새로 보인 요소 ${fresh.length}개: ${sample}`.slice(
+    why: `${shape(el)} < ${el.parentElement ? shape(el.parentElement) : ''} · after opening expanded=${el.getAttribute('aria-expanded')} newly visible elements ${fresh.length}: ${sample}`.slice(
       0,
       900,
     ),
   }
 }
 
-/** 진짜 마우스로 목록을 열기 전에 지금 보이는 것을 남겨 둔다 (연 뒤 새로 보인 것만 목록으로 읽으려고) */
+/** Before opening a list with the real mouse, keep what is visible now (so only what is newly visible after opening is read as the list) */
 export function pageRememberShown(): number {
   type State = { refs: Map<string, WeakRef<Element>>; shownBefore?: Set<Element> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
@@ -1150,8 +1153,8 @@ export function pageRememberShown(): number {
 }
 
 /**
- * 연 목록에서 글자가 같은 항목의 화면 자리 (본체가 진짜 마우스로 누른다).
- * 새로 보인 것 중 가장 안쪽을 먼저, 같은 글이 없으면 그 글로 시작하는 것이 하나뿐일 때 그것
+ * Screen position of the item with the same text in the opened list (the daemon clicks it with the real mouse).
+ * The innermost of the newly visible ones first; if no same text, the one that starts with that text when there is only one
  */
 export function pageOptionPoint(
   label: string,
@@ -1159,7 +1162,7 @@ export function pageOptionPoint(
   type State = { shownBefore?: Set<Element> }
   const before = (globalThis as unknown as { __dool2?: State }).__dool2?.shownBefore
   const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
-  // innerText: 줄 안의 글 조각 사이를 띄운다 ("S내일 도착" → "S 내일 도착"). 목록 읽기와 같은 글
+  // innerText: put a space between text pieces inside a row ("S내일 도착" -> "S 내일 도착"). Same text as when reading the list
   const text = (e: Element) => norm((e as HTMLElement).innerText || e.textContent)
   const want = norm(label)
   const shown = (e: Element) => {
@@ -1170,7 +1173,7 @@ export function pageOptionPoint(
   const fresh = before ? all.filter((e) => !before.has(e)) : all
   const inner = (list: Element[]) => list.filter((e) => !list.some((o) => o !== e && e.contains(o)))
   for (const pool of [fresh, all]) {
-    // 줄 전체 글이 같으면 그 줄(가장 안쪽 줄)을, 아니면 글 조각이 같은 것을, 그다음 그 글로 시작하는 것이 하나뿐일 때
+    // If the whole row text is the same, that row (the innermost row); otherwise the one with the same text piece; then the one that starts with that text if only one
     let hit = inner(pool.filter((e) => text(e) === want))
     if (!hit.length) {
       const starts = inner(pool.filter((e) => text(e).startsWith(want) && text(e).length <= want.length + 40))
@@ -1183,17 +1186,17 @@ export function pageOptionPoint(
       return { ok: true, x: r.left + r.width / 2, y: r.top + r.height / 2, label: text(e).slice(0, 60) }
     }
   }
-  return { ok: false, error: `"${label}"을(를) 연 목록에서 찾지 못했어요` }
+  return { ok: false, error: `"${label}" was not found in the opened list` }
 }
 
-/** 펼침 목록에서 글자가 같은 것을 고른다 (진짜·숨은 select는 값을 바꾸고 input·change, 꾸민 목록은 열어 그 항목을 누른다) */
+/** Choose the one with the same text in a dropdown (real and hidden selects get their value changed with input and change events; a styled list is opened and that item clicked) */
 export async function pageSelectChoose(ref: string, label: string) {
   type State = { refs: Map<string, WeakRef<Element>> }
   const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
   const norm = (x: string | null | undefined) => (x ?? '').replace(/\s+/g, ' ').trim()
   const setSelect = (sel: HTMLSelectElement) => {
     const opt = [...sel.options].find((o) => !o.disabled && norm(o.textContent) === norm(label))
-    if (!opt) return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
+    if (!opt) return { ok: false, error: `"${label}" was not found in the list` }
     sel.value = opt.value
     opt.selected = true
     sel.dispatchEvent(new Event('input', { bubbles: true }))
@@ -1201,15 +1204,15 @@ export async function pageSelectChoose(ref: string, label: string) {
     return { ok: true, label: norm(opt.textContent) }
   }
   if (el instanceof HTMLSelectElement) return setSelect(el)
-  if (!(el instanceof HTMLElement)) return { ok: false, error: `${ref}는 펼침 목록이 아니에요` }
-  // 꾸민 목록 뒤에 숨은 진짜 select면 그 값을 바꾼다 (읽을 때와 같은 순서)
+  if (!(el instanceof HTMLElement)) return { ok: false, error: `${ref} is not a dropdown list` }
+  // If it is the real select hidden behind a styled list, change its value (same order as when reading)
   let up: Element | null = el
   for (let i = 0; i < 3 && up; i++, up = up.parentElement) {
     const sel = up.querySelector('select')
     if (sel && sel.options.length >= 2) return setSelect(sel)
   }
   const press = (t: Element) => {
-    // pointer*는 PointerEvent로 (요즘 목록 부품(Radix 등)은 MouseEvent로 온 pointerdown을 무시한다. 실측 무신사·오늘의집)
+    // Use PointerEvent for pointer* (modern list components (Radix, etc.) ignore a pointerdown sent as MouseEvent. Measured Musinsa, Today's House)
     const r = t.getBoundingClientRect()
     const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 }
     for (const k of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
@@ -1240,7 +1243,7 @@ export async function pageSelectChoose(ref: string, label: string) {
   }
   const before = new Set([...document.querySelectorAll('body *')].filter(shown))
   if (el.getAttribute('aria-expanded') !== 'true') {
-    // 읽을 때와 같은 순서로 연다: 상자 → 감싼 칸 → ↓ 키
+    // Open in the same order as when reading: box -> wrapping field -> down arrow
     const opened = () => el.getAttribute('aria-expanded') === 'true'
     const wait = () => new Promise((r) => setTimeout(r, 350))
     press(el)
@@ -1258,7 +1261,7 @@ export async function pageSelectChoose(ref: string, label: string) {
       await wait()
     }
   }
-  // 읽을 때처럼 새로 보인 것 중 글이 같은 가장 안쪽 (늘 DOM에 있는 aria-controls 목록이면 보이는 것 전부)
+  // As when reading, among the newly visible ones the innermost with the same text (if it is an aria-controls list that is always in the DOM, all the visible ones)
   const cands = [...document.querySelectorAll('body *')].filter(
     (e) =>
       shown(e) &&
@@ -1270,14 +1273,14 @@ export async function pageSelectChoose(ref: string, label: string) {
   const opt = cands.filter((e) => !cands.some((o) => o !== e && e.contains(o)))[0]
   if (!opt) {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    return { ok: false, error: `"${label}"을(를) 목록에서 찾지 못했어요` }
+    return { ok: false, error: `"${label}" was not found in the list` }
   }
   press(opt)
   await new Promise((r) => setTimeout(r, 250))
   return { ok: true, label: norm(opt.textContent) }
 }
 
-/** 마지막 수단: 초점을 못 받는 요소를 페이지 안에서 누른다 */
+/** Last resort: click an element that cannot take focus from inside the page */
 export function pageClick(ref: string) {
   type State = { refs: Map<string, WeakRef<Element>> }
   const el = (globalThis as unknown as { __dool2?: State }).__dool2?.refs.get(ref)?.deref()
@@ -1290,9 +1293,9 @@ export function pageScroll(dir: number) {
 }
 
 /**
- * 폰 너비로 그렸더니 오른쪽 화면 밖으로 밀려나 잘린 입력칸·버튼 수.
- * 너비가 고정된 PC용 창(정부24 간편인증 액자: 이름·생년월일·[인증 요청]이 412px 밖으로 나감)을 찾는다.
- * 일부러 숨긴 것은 세지 않는다: 가로로 넘기는 목록(잘라 보이는 상자 안), 통째로 밖에 있는 서랍 메뉴(걸친 상자가 없음)
+ * Number of input fields and buttons that were pushed off the right edge and cut off when drawn at phone width.
+ * Finds PC windows with a fixed width (Gov24 simple authentication frame: name, birth date and [Request authentication] go beyond 412px).
+ * Things hidden on purpose are not counted: horizontally paged lists (inside a clipping box), drawer menus entirely outside (no straddling box)
  */
 export function pageCutOff() {
   const PICK =
@@ -1300,7 +1303,7 @@ export function pageCutOff() {
   const count = (doc: Document, win: Window): number => {
     const vw = win.innerWidth
     let n = 0
-    // 가로로 밀어 볼 수 있는 넓은 페이지(PC용 쇼핑몰 첫 화면)는 지금처럼 둔다. 밀 수도 없게 잘린 것만 센다
+    // Wide pages that can be swiped horizontally (the first screen of a PC shopping site) stay as they are. Only things cut off so they cannot even be pushed are counted
     const wide = doc.documentElement.scrollWidth > vw + 8
     if (!wide)
       for (const el of doc.querySelectorAll(PICK)) {
@@ -1324,7 +1327,7 @@ export function pageCutOff() {
         }
         if (straddle && !clipped) n++
       }
-    // 같은 주소의 액자 안도 (간편인증 창이 액자다). 다른 주소 액자는 읽을 수 없어 넘어간다
+    // Inside a same-origin frame too (the simple authentication window is a frame). Frames at another address cannot be read and are skipped
     for (const f of doc.querySelectorAll('iframe')) {
       const r = f.getBoundingClientRect()
       if (r.width < 50 || r.height < 50 || r.left >= vw) continue
@@ -1339,7 +1342,7 @@ export function pageCutOff() {
 }
 
 export function pageViewport() {
-  // 폰 너비로 그릴 때 페이지가 넓으면 폰처럼 줄여 보인다: 실제로 보이는 영역(visualViewport)도 같이
+  // When drawn at phone width a wide page looks shrunk like on a phone: the actually visible area (visualViewport) too
   const vv = window.visualViewport
   return {
     width: window.innerWidth,
@@ -1354,9 +1357,9 @@ export function pageViewport() {
   }
 }
 
-/** 두리 금고로 채운 칸이라고 표시한다 (그 뒤 페이지 읽기에서 값이 나가지 않게) */
-/** 칸에 실제로 들어간 글자 수 (금고 값이 잘려 들어갔는지 본다. 값은 돌려주지 않는다) */
-/** 지금 초점이 있는 칸에 든 글자 수 (원격 '필요한 칸만'으로 넣은 값이 들어갔는지 볼 때). 칸이 아니면 -1 */
+/** Mark a field as filled by the Dool2 vault (so the value does not go out in later page reads) */
+/** Number of characters actually in the field (to see whether the vault value was cut. The value is not returned) */
+/** Number of characters in the field that has focus now (to check whether a value entered via the remote "only needed fields" went in). -1 if not a field */
 export function pageActiveValueLength(): number {
   let a: Element | null = document.activeElement
   while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement
@@ -1368,14 +1371,14 @@ export function pageValueLength(ref: string, alnum = false): number {
   type State = { refs: Map<string, WeakRef<Element>> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
-  // 글자·숫자만 센다: 칸이 스스로 붙이는 구분자(010-1234-…, 1999 / 08 / 10)는 잘림이 아니다
-  // (비밀번호는 기호가 빠졌는지 봐야 해서 그대로 센다)
+  // Count only letters and digits: separators the field adds itself (010-1234-..., 1999 / 08 / 10) are not truncation
+  // (passwords are counted as is because we need to see whether symbols were dropped)
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
     return alnum ? el.value.replace(/[^0-9A-Za-z\uAC00-\uD7A3]/g, '').length : el.value.length
   return -1
 }
 
-/** 표시 하나의 화면 자리 (이 액자 기준). 키패드 버튼처럼 그림만 있는 것을 하나씩 잘라 볼 때 */
+/** Screen position of one mark (relative to this frame). For cutting out and viewing picture-only items one at a time, like keypad buttons */
 export function pageRect(ref: string): { x: number; y: number; w: number; h: number } | undefined {
   type State = { refs: Map<string, WeakRef<Element>> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
@@ -1386,8 +1389,8 @@ export function pageRect(ref: string): { x: number; y: number; w: number; h: num
 }
 
 /**
- * 보안문자 그림 후보: 칸 둘레의 그림·캔버스(가까운 순 3개)와, 칸을 품은 덩어리 상자, 칸 위쪽 띠.
- * 어느 게 보안문자인지는 고르지 않는다 — 잘라서 AI에게 보여 주고 AI가 고른다 (화면 보기 좌표, 이 액자 기준)
+ * Captcha picture candidates: pictures and canvases around the field (3 nearest), the box wrapping the field, and a strip above the field.
+ * It does not choose which is the captcha - they are cut out and shown to the AI, and the AI chooses (screen-view coordinates, relative to this frame)
  */
 export function pageCaptchaRects(
   ref: string,
@@ -1411,7 +1414,13 @@ export function pageCaptchaRects(
     .sort((a, b) => a.d - b.d)
     .slice(0, 3)
   for (const { r } of pics)
-    out.push({ x: r.left - 4, y: r.top - 4, w: r.width + 8, h: r.height + 8, what: '칸 둘레 그림' })
+    out.push({
+      x: r.left - 4,
+      y: r.top - 4,
+      w: r.width + 8,
+      h: r.height + 8,
+      what: 'picture around the field',
+    })
   let box: Element | null = el.parentElement
   let rect: DOMRect | undefined
   for (let i = 0; box && i < 6; box = box.parentElement, i++) {
@@ -1419,21 +1428,22 @@ export function pageCaptchaRects(
     if (b.width > 760 || b.height > 360) break
     if (b.height >= q.height + 30) rect = b
   }
-  if (rect) out.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height, what: '칸을 품은 상자' })
+  if (rect)
+    out.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height, what: 'box wrapping the field' })
   const top = Math.max(0, q.top - 140)
   out.push({
     x: Math.max(0, q.left - 40),
     y: top,
     w: Math.min(q.width + 320, 680),
     h: q.bottom - top + 8,
-    what: '칸 위쪽',
+    what: 'above the field',
   })
   return out.filter((r) => r.w > 8 && r.h > 8)
 }
 
 /**
- * 링크가 다른 화면으로 가기만 하는지: 진짜 주소(http)로 가고, 누르면 도는 스크립트(onclick)가 없을 때만.
- * javascript:·#·onclick 링크는 버튼처럼 무엇이든 할 수 있어 아니라고 본다 (승인 게이트가 쓴다)
+ * Whether a link only goes to another screen: only when it goes to a real address (http) and has no script run on click (onclick).
+ * javascript:, # and onclick links can do anything like a button, so they count as no (used by the approval gate)
  */
 export function pageLinkNavigates(ref: string): boolean {
   type State = { refs: Map<string, WeakRef<Element>> }
@@ -1446,7 +1456,7 @@ export function pageLinkNavigates(ref: string): boolean {
   try {
     const u = new URL(raw, location.href)
     if (!/^https?:$/.test(u.protocol)) return false
-    // 같은 페이지 안 이동(#)만 다른 건 이동이 아니다
+    // Only a same-page jump (#) differing is not navigation
     return !(u.origin === location.origin && u.pathname === location.pathname && u.search === location.search)
   } catch {
     return false
@@ -1460,15 +1470,15 @@ export function pageMarkFilled(ref: string) {
   if (!st || !el) return false
   st.filled ??= new WeakSet()
   st.filled.add(el)
-  // 칸에서 초점을 뺀다. 비밀번호 칸에 초점이 남아 있으면 Chrome 비밀번호 제안 창이 떠서
-  // 다음 클릭(로그인 버튼)을 그 창이 삼킨다 (실측)
+  // Take focus off the field. If a password field keeps focus, Chrome's password suggestion window appears
+  // and swallows the next click (the login button) (measured)
   ;(el as HTMLElement).blur()
   return true
 }
 
 /**
- * 원격 화면(폰)에서 누른 곳: 창이 가려져 있어 마우스 입력이 버려질 때 쓴다.
- * 그 자리의 요소에 초점을 주고(입력칸이면 거기서 끝), 아니면 누른다. 사이트가 보기에는 스크립트 클릭이다
+ * Where it was tapped on the remote screen (phone): used when the window is occluded and mouse input is dropped.
+ * Give focus to the element at that spot (if it is an input field, that is all), otherwise click it. To the site it looks like a script click
  */
 export function pageTapAt(x: number, y: number) {
   const el = document.elementFromPoint(x, y) as HTMLElement | null
@@ -1489,11 +1499,11 @@ export function pageTapAt(x: number, y: number) {
 }
 
 /**
- * 원격 화면(폰)에 같이 보낼 것: 보이는 입력칸 자리, 누를 만한 버튼, 지금 글자가 들어갈 칸.
- * 자리는 화면 비율(0~1). 비밀번호 칸의 글자는 보내지 않는다
+ * What to send along to the remote screen (phone): visible input field spots, buttons worth clicking, and the field where text goes now.
+ * Spots are ratios of the screen (0-1). Text in password fields is not sent
  */
 export function pageRemoteInfo() {
-  // 자리는 보이는 영역(visualViewport) 기준 비율: 폰에 간 그림과 같은 기준
+  // Spots are ratios of the visible area (visualViewport): same basis as the image sent to the phone
   const vv = window.visualViewport
   const OX = vv?.offsetLeft ?? 0
   const OY = vv?.offsetTop ?? 0
@@ -1566,7 +1576,7 @@ export function pageRemoteInfo() {
       18,
     )
     if (!text || text.length < 1 || seen.has(text)) continue
-    // 다른 것에 가려진 버튼은 빼고
+    // Leave out buttons covered by something else
     const cx = r.left + r.width / 2
     const cy = r.top + r.height / 2
     if (cx < OX || cy < OY || cx > OX + W || cy > OY + H) continue
@@ -1609,7 +1619,7 @@ export function pageRemoteInfo() {
   return { fields, actions, focus }
 }
 
-/** 원격으로 칸을 누른 뒤: 글자를 이어 쓰기 좋게 커서를 칸 끝으로 */
+/** After tapping a field remotely: put the caret at the end of the field so continuing to write is easy */
 export function pageCaretEnd() {
   const el = document.activeElement
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -1617,12 +1627,12 @@ export function pageCaretEnd() {
       const n = el.value.length
       el.setSelectionRange(n, n)
     } catch {
-      // 숫자·이메일 칸은 커서를 옮길 수 없다
+      // Number and email fields cannot move the caret
     }
   }
 }
 
-/** 원격 화면에서 손가락으로 끈 만큼 (가려진 창용): 그 자리의 스크롤 되는 상자부터 */
+/** As far as a finger dragged on the remote screen (for occluded windows): starting from the scrollable box at that spot */
 export function pageScrollBy(x: number, y: number, dy: number) {
   let el = document.elementFromPoint(x, y) as HTMLElement | null
   while (el && el !== document.body) {
@@ -1636,9 +1646,9 @@ export function pageScrollBy(x: number, y: number, dy: number) {
   window.scrollBy({ top: dy, behavior: 'instant' })
 }
 
-// ── 원격 화면 '필요한 칸만': 페이지에서 사람이 채울 칸·고를 것·누를 버튼을 뽑는다 ──
-// 폰은 이걸 폰 입력칸으로 다시 그리고, 쓴 값은 pageFormFill로 진짜 칸에 넣는다.
-// 비밀번호 칸의 글자는 내보내지 않는다
+// ── Remote screen "only needed fields": pull from the page the fields a person fills, the things to choose and the buttons to click ──
+// The phone redraws these as phone input fields, and the values written are put into the real fields with pageFormFill.
+// Text in password fields is not sent out
 
 type FormField = {
   id: string
@@ -1665,8 +1675,8 @@ export function pageForm(inFrame = false) {
   }
   const clip = (s: string, n: number) => s.replace(/\s+/g, ' ').trim().slice(0, n)
   /**
-   * 다른 창(보안문자·안내 팝업·액자)에 가려진 칸인가. 가려진 칸을 폰에 보여 주면 사용자는 엉뚱한 칸을 채운다
-   * (카카오 지도 보안문자가 로그인 칸 위에 떠 있는데 로그인 칸을 보여 줬다)
+   * Whether the field is covered by another window (captcha, notice popup, frame). Showing a covered field on the phone makes the user fill the wrong field
+   * (a Kakao Map captcha floated over the login field, yet the login field was shown)
    */
   const covered = (el: Element) => {
     const r = el.getBoundingClientRect()
@@ -1676,7 +1686,7 @@ export function pageForm(inFrame = false) {
     const top = document.elementFromPoint(x, y)
     if (!top || top === el || el.contains(top) || top.contains(el)) return false
     if ([...((el as HTMLInputElement).labels ?? [])].some((l) => l === top || l.contains(top))) return false
-    // 덮은 것이 팝업(고정 위치·대화 상자)이나 액자 안이면 가려진 것. 칸 위에 얹힌 자리 글씨는 아니다
+    // If what covers it is a popup (fixed position or dialog) or inside a frame, it is covered. Placeholder text laid over the field is not
     for (let n: Element | null = top; n && n !== document.body; n = n.parentElement) {
       if (n.contains(el)) return false
       if (
@@ -1695,9 +1705,9 @@ export function pageForm(inFrame = false) {
     return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05 && !covered(el)
   }
   /**
-   * 지금 떠 있는 창(가운데를 덮은 고정 창·대화 상자)이 있으면 그 안의 칸만 본다. 뒤에 깔린 페이지 칸(만족도 설문·검색칸)을
-   * 폰에 보여 주면 사용자는 엉뚱한 칸을 본다(정부24: 회원/비회원 창 대신 페이지 맨 아래 설문이 나왔다).
-   * 가운데를 덮은 것이 액자면 그 액자 안을 봐 달라고 알린다(간편인증 창)
+   * If a window is open now (a fixed window or dialog covering the center), look only at fields inside it. Showing page fields behind it (a satisfaction survey, a search field)
+   * on the phone shows the user the wrong fields (Gov24: instead of the member / non-member window the survey at the bottom of the page appeared).
+   * If what covers the center is a frame, report that the frame's inside should be looked at (the simple authentication window)
    */
   let root: Element | Document = document
   let frame: string | undefined
@@ -1713,7 +1723,7 @@ export function pageForm(inFrame = false) {
         getComputedStyle(n).position === 'fixed'
       ) {
         const r = n.getBoundingClientRect()
-        // 화면 전체를 감싼 앱 껍데기는 창이 아니다
+        // An app shell wrapping the whole screen is not a window
         if (
           r.height < innerHeight * 0.98 ||
           r.width < innerWidth * 0.98 ||
@@ -1727,7 +1737,7 @@ export function pageForm(inFrame = false) {
   }
   if (frame) return { title: '', fields: [] as FormField[], buttons: [], url: location.href, frame }
   const inRoot = <E extends Element>(sel: string) => [...root.querySelectorAll<E>(sel)]
-  // 페이지 끝의 만족도 조사·의견 칸은 사람이 할 일이 아니다
+  // The satisfaction survey and feedback fields at the end of a page are not something a person should do
   const SURVEY = /만족도|만족하|불편사항|개선이?\s*필요|의견을?\s*(남겨|입력)|평가해|설문|별점|추천하시겠/
   const inSurvey = (el: Element) => {
     for (let n: Element | null = el, i = 0; n && i < 8; n = n.parentElement, i++) {
@@ -1740,7 +1750,7 @@ export function pageForm(inFrame = false) {
     }
     return false
   }
-  // 영문 변수 이름(MinfoEstCheck)은 사람에게 보일 이름이 아니다
+  // An English variable name (MinfoEstCheck) is not a name to show a person
   const human = (t: string) => (/^[A-Za-z_$][\w$-]*$/.test(t.trim()) ? '' : t)
   const textOf = (el: Element | null | undefined) =>
     clip((el as HTMLElement | null)?.innerText ?? el?.textContent ?? '', 40)
@@ -1765,7 +1775,7 @@ export function pageForm(inFrame = false) {
       el.title,
     ]
     for (const c of cands) if (c && clip(c, 40)) return clip(c, 40)
-    // 바로 앞의 짧은 글 (같은 줄 제목)
+    // The short text right before (a title on the same line)
     let p: Element | null = el
     for (let i = 0; i < 3 && p; i++) {
       let s = p.previousElementSibling
@@ -1782,7 +1792,7 @@ export function pageForm(inFrame = false) {
   const used = new Set<Element>()
   const CODE = /인증\s*번호|인증코드|확인\s*코드|otp|verification|auth.?code|certi.?num|보안\s*코드/i
   const CAPTCHA_INPUT = /보안\s*문자|자동\s*입력|captcha|자동등록방지|문자를\s*입력/i
-  // 글자 칸
+  // Text fields
   for (const el of inRoot<HTMLInputElement | HTMLTextAreaElement>('input, textarea')) {
     if (fields.length >= 16) break
     if (
@@ -1818,7 +1828,7 @@ export function pageForm(inFrame = false) {
       ...(CAPTCHA_INPUT.test(hay) ? { captchaRect: { x: 0, y: 0, w: 0, h: 0 } } : {}),
     })
   }
-  // 고르기: 셀렉트
+  // Choice: select
   for (const el of inRoot<HTMLSelectElement>('select')) {
     if (fields.length >= 20 || el.disabled || !visible(el) || inSurvey(el)) continue
     const options = [...el.options]
@@ -1832,7 +1842,7 @@ export function pageForm(inFrame = false) {
     if (!options.length) continue
     fields.push({ id: keep(el), kind: 'choice', label: labelOf(el), options })
   }
-  // 고르기: 라디오 묶음
+  // Choice: radio group
   const groups = new Map<string, HTMLInputElement[]>()
   for (const el of inRoot<HTMLInputElement>('input[type="radio"]')) {
     if (el.disabled) continue
@@ -1857,7 +1867,7 @@ export function pageForm(inFrame = false) {
       })),
     })
   }
-  // 고르기: 통신사 버튼 (폼 칸이 아니라 버튼으로 만든 사이트가 많다)
+  // Choice: carrier buttons (many sites build them as buttons, not form fields)
   const CARRIER =
     /^(SKT|KT|LG\s?U\+|LGU\+|알뜰폰|SKT\s?알뜰폰|KT\s?알뜰폰|LG\s?U\+\s?알뜰폰|SK텔레콤|LG유플러스)$/i
   const carriers: { el: HTMLElement; label: string }[] = []
@@ -1885,7 +1895,7 @@ export function pageForm(inFrame = false) {
       })),
     })
   }
-  // 고르기: 그림 타일 (간편인증 앱 카카오톡·네이버·토스…). 페이지 전체의 상품 목록과 헷갈리지 않게 떠 있는 창·액자 안에서만
+  // Choice: picture tiles (simple-authentication apps KakaoTalk, Naver, Toss...). Only inside an open window or frame, so they are not confused with the product list of the whole page
   const tiles = new Set<Element>()
   if (root !== document || inFrame) {
     for (const list of inRoot<HTMLElement>('ul, ol')) {
@@ -1920,7 +1930,7 @@ export function pageForm(inFrame = false) {
       })
     }
   }
-  // 체크 (약관 동의 등). 진짜 칸은 숨기고 라벨만 보이는 사이트가 많아 라벨도 본다
+  // Checks (terms agreement, etc.). Many sites hide the real field and show only the label, so the label is looked at too
   let checks = 0
   for (const el of inRoot<HTMLInputElement>('input[type="checkbox"]')) {
     if (checks >= 8 || el.disabled || inSurvey(el)) continue
@@ -1931,9 +1941,9 @@ export function pageForm(inFrame = false) {
     checks++
     fields.push({ id: keep(el), kind: 'check', label, ...(el.checked ? { checked: true } : {}) })
   }
-  // 보안문자 그림: '보안문자' 칸마다 그 칸에 가장 가까운 그림을 붙인다.
-  // 이름에 '보안'이 든 첫 그림을 쓰던 때는 본인확인 창의 PASS 로고를 잘라 보냈다(실측 한국모바일인증) —
-  // 그림 이름은 참고만 하고, 칸과의 거리로 고른다
+  // Captcha picture: attach to each 'captcha' field the picture nearest to that field.
+  // When the first picture whose name contained 'security' was used, the PASS logo of an identity check window was cut out and sent (measured Korea Mobile Authentication) -
+  // the picture name is only a hint; choose by distance to the field
   const CAPTCHA_HINT = /captcha|kaptcha|보안|자동입력|security.?(code|img)|simplecaptcha/i
   const pics = inRoot<HTMLImageElement | HTMLCanvasElement>('img, canvas').filter((img) => {
     if (!visible(img)) return false
@@ -1949,7 +1959,7 @@ export function pageForm(inFrame = false) {
     for (const img of pics) {
       const r = img.getBoundingClientRect()
       const hay = `${img.getAttribute('alt') ?? ''} ${img.getAttribute('src') ?? ''} ${img.id} ${img.className} ${img.getAttribute('title') ?? ''}`
-      // 칸과 그림 가장자리 사이 거리 (위·왼쪽·같은 줄 어디든)
+      // Distance between the field and the picture edge (above, left, or on the same line, anywhere)
       const dx = Math.max(0, r.left - q.right, q.left - r.right)
       const dy = Math.max(0, r.top - q.bottom, q.top - r.bottom)
       const d = Math.hypot(dx, dy) * (CAPTCHA_HINT.test(hay) ? 0.6 : 1)
@@ -1961,8 +1971,8 @@ export function pageForm(inFrame = false) {
       f.code = false
       continue
     }
-    // 그림 태그를 못 찾았다(배경 그림·캔버스·액자 속 그림): 칸을 품은 덩어리 상자를 통째로 찍는다.
-    // 너무 크면(창 전체) 칸 위쪽 120px와 칸 줄만 찍는다 (실측 본인확인 창: 보안문자 그림이 아예 안 보였다)
+    // No picture tag found (background image, canvas, picture in a frame): capture the whole box wrapping the field.
+    // If it is too big (the whole window), capture only 120px above the field and the field's row (measured identity check window: the captcha picture was not visible at all)
     let box: Element | null = el.parentElement
     let rect: DOMRect | undefined
     for (let i = 0; box && i < 5; box = box.parentElement, i++) {
@@ -1978,7 +1988,7 @@ export function pageForm(inFrame = false) {
     f.code = false
   }
   for (const f of fields) if (f.captchaRect && !f.captchaRect.w) delete f.captchaRect
-  // 페이지에 나온 순서대로 (글자 칸·고르기·체크를 따로 모았으므로)
+  // In the order they appear on the page (since text fields, choices and checks were collected separately)
   const at = (f: FormField) => {
     const id = f.kind === 'choice' && f.options?.[0] && !st.els.get(f.id)?.deref() ? f.options[0].id : f.id
     return st.els.get(id.split(':')[0] ?? id)?.deref()
@@ -1989,12 +1999,12 @@ export function pageForm(inFrame = false) {
     if (!x || !y || x === y) return 0
     return x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
   })
-  // 누를 버튼
+  // Buttons to click
   const buttons: { id: string; label: string; main?: boolean }[] = []
   const seen = new Set<string>()
   const MAIN =
     /^(다음|확인|로그인|인증|인증번호\s*(받기|요청|전송)|본인\s*인증|완료|동의|신청|제출|계속|조회|등록|next|ok|continue|submit|sign in|log in)/i
-  // 떠 있는 창 안에서는 글자 링크도 버튼이다(정부24 '비회원 신청하기'는 꾸밈 없는 링크)
+  // Inside an open window, text links are buttons too (Gov24 'Apply as non-member' is a plain link with no decoration)
   for (const el of inRoot<HTMLElement>(
     root === document && !inFrame
       ? 'button, input[type="submit"], input[type="button"], [role="button"], a[class*="btn"], a[class*="button"]'
@@ -2009,13 +2019,13 @@ export function pageForm(inFrame = false) {
     if (!label || seen.has(label) || CARRIER.test(label) || tiles.has(el)) continue
     seen.add(label)
     const main = (el as HTMLButtonElement).type === 'submit' || MAIN.test(label)
-    // 머리말·메뉴·바닥글 버튼(정부24·전체메뉴·공유하기)은 할 일과 상관없다
+    // Header, menu and footer buttons (Gov24, full menu, share) have nothing to do with the task
     if (
       !main &&
       el.closest('header, nav, footer, [role="navigation"], [role="banner"], [role="contentinfo"]')
     )
       continue
-    // '공동인증서 등록 레이어 닫기'처럼 사이트가 잘못 붙인 닫기 이름은 '닫기'로
+    // A close name wrongly put on by a site, like '공동인증서 등록 레이어 닫기', becomes '닫기'
     buttons.push({
       id: keep(el),
       label: /닫기$/.test(label) ? '닫기' : label,
@@ -2028,7 +2038,7 @@ export function pageForm(inFrame = false) {
   return { title, fields, buttons, url: location.href }
 }
 
-/** 폰에서 고른 것: 진짜 칸을 화면 가운데로 옮기고 자리를 알려 준다 (보이는 화면 기준, CSS 픽셀) */
+/** What was chosen on the phone: scroll the real field to the center of the screen and report the position (relative to the visible screen, CSS pixels) */
 export function pageFormTarget(id: string) {
   const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
   const [base, opt] = id.split(':')
@@ -2040,7 +2050,7 @@ export function pageFormTarget(id: string) {
     el.dispatchEvent(new Event('change', { bubbles: true }))
     return { ok: true as const, done: true }
   }
-  // 숨긴 체크·라디오는 라벨을 누른다
+  // Hidden checks and radios click the label
   let target: HTMLElement = el
   if (
     el instanceof HTMLInputElement &&
@@ -2068,8 +2078,8 @@ export function pageFormTarget(id: string) {
 }
 
 /**
- * 체크·라디오를 누른 뒤에도 원하는 상태가 아니면 라벨(같은 줄의 글자)을 누른다.
- * 칸을 투명하게 덮어 두고 옆 글자 줄로만 체크되는 화면이 있다 (실측 카카오 동의: 폰에서 체크해도 PC는 그대로였다)
+ * After clicking a check or radio, if it is still not in the wanted state, click the label (the text on the same line).
+ * Some screens cover the field transparently and check only through the text beside it (measured Kakao consent: checking on the phone left the PC unchanged)
  */
 export function pageFormCheckFix(id: string, want: boolean) {
   const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
@@ -2086,7 +2096,7 @@ export function pageFormCheckFix(id: string, want: boolean) {
   return { ok: true, checked: el.checked }
 }
 
-/** 글자 칸 비우고 초점 (그다음 확장이 진짜 키 입력처럼 넣는다) */
+/** Clear a text field and focus it (the extension then types as with real key input) */
 export function pageFormFocus(id: string) {
   const st = (globalThis as unknown as { __dool2form?: { els: Map<string, WeakRef<Element>> } }).__dool2form
   const el = st?.els.get(id)?.deref()
@@ -2096,40 +2106,40 @@ export function pageFormFocus(id: string) {
   return true
 }
 
-/** 보안문자 그림 자리 (문서 기준 → 지금 보이는 화면 기준) */
+/** Captcha picture position (document-based -> relative to the screen visible now) */
 export function pageScrollToDoc(x: number, y: number) {
   window.scrollTo({ left: Math.max(0, x - 40), top: Math.max(0, y - 120), behavior: 'instant' })
   return { sx: window.scrollX, sy: window.scrollY }
 }
 
-// ── 커넥터 엔진 동작 (ADR 0018): 목록 뽑기·글자 찾기 (페이지가 받은 응답 읽기는 background.ts의 capture) ──
-// 커넥터(tools.json)는 데이터라서, 무엇을 뽑을지만 넘기고 실제 일은 여기 고정된 함수가 한다.
+// ── Connector engine actions (ADR 0018): pulling lists and finding text (reading responses the page received is capture in background.ts) ──
+// Connectors (tools.json) are data, so only what to pull is passed and the real work is done by fixed functions here.
 
-/** 한 칸을 어떻게 뽑을지 */
+/** How to pull one field */
 export interface ExtractField {
-  /** 줄(항목) 안에서 찾을 선택자. 없으면 줄 자체 */
+  /** Selector to find inside a row (item). The row itself if none */
   css?: string
-  /** 읽을 속성 (href·src는 전체 주소로, '@center'는 화면 안 가운데 자리 "x,y"). 없으면 보이는 글 */
+  /** Attribute to read (href and src as full addresses, '@center' is the center spot on screen "x,y"). Visible text if none */
   attr?: string
-  /** 글을 줄로 나눠 n번째(0부터, 음수는 뒤에서) */
+  /** Split the text into lines and take the nth (from 0, negative from the end) */
   line?: number
-  /** 정규식. 묶음 1이 있으면 그것, 없으면 맞은 글 전체 */
+  /** Regex. Group 1 if there is one, otherwise the whole match */
   match?: string
-  /** css에 맞는 것을 모두 (글 목록) */
+  /** All that match the css (a list of texts) */
   list?: boolean
-  /** 글을 다듬거나 자르지 않고 그대로 (화면에 박힌 JSON 읽기) */
+  /** The text as is, without trimming or cutting (for reading JSON embedded in the screen) */
   raw?: boolean
-  /** 가장 그럴듯한 사진 주소 하나 (늦게 그리는 사진·배경 그림까지, 아이콘·로고는 빼고, https로) */
+  /** The single most likely photo address (including late-drawn photos and background images, without icons and logos, as https) */
   image?: boolean
 }
 export interface ExtractSpec {
-  /** 목록의 줄(항목) 선택자 */
+  /** Selector of the list's rows (items) */
   items: string
   fields: Record<string, ExtractField>
-  /** 이 안에서만 찾기 */
+  /** Search only inside this */
   within?: string
   limit?: number
-  /** 보이지 않는 요소도 (script 안의 데이터 등) */
+  /** Also invisible elements (data inside a script, etc.) */
   hidden?: boolean
 }
 export type ExtractValue = string | string[] | null
@@ -2137,7 +2147,7 @@ export type ExtractResult =
   | { ok: true; rows: Record<string, ExtractValue>[]; total: number; url: string }
   | { ok: false; error: string }
 
-/** 화면의 목록을 칸별로 뽑는다 (보이지 않는 줄은 건너뛴다). 읽기만 하고 아무것도 누르지 않는다 */
+/** Pull the on-screen list field by field (invisible rows are skipped). Only reads and clicks nothing */
 export function pageExtract(spec: ExtractSpec): ExtractResult {
   const norm = (s: string) =>
     s
@@ -2150,14 +2160,14 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
         ? Array.from(root.querySelectorAll(sel))
         : [root.querySelector(sel)].filter((x) => x !== null)
     } catch {
-      throw new Error(`선택자가 틀렸어요: ${sel}`)
+      throw new Error(`Bad selector: ${sel}`)
     }
   }
   try {
     let root: ParentNode = document
     if (spec.within) {
       const w = q(document, spec.within, false)[0]
-      if (!w) return { ok: false, error: `"${spec.within}" 영역이 화면에 없어요` }
+      if (!w) return { ok: false, error: `The "${spec.within}" area is not on the screen` }
       root = w
     }
     const res: Record<string, RegExp | undefined> = {}
@@ -2165,13 +2175,13 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
       try {
         res[k] = f.match ? new RegExp(f.match) : undefined
       } catch {
-        return { ok: false, error: `${k}의 정규식이 틀렸어요: ${f.match}` }
+        return { ok: false, error: `Bad regex for ${k}: ${f.match}` }
       }
     }
     const read = (el: Element, f: ExtractField, re: RegExp | undefined): string | null => {
       let v: string | null
       if (f.attr === '@center') {
-        // 화면 안 가운데 자리 "x,y" (CSS 픽셀): 버튼 표시가 없는 그림 타일을 누를 때 (Flow 영상 목록)
+        // Center spot on screen "x,y" (CSS pixels): when clicking a picture tile that has no button mark (Flow video list)
         const r = el.getBoundingClientRect()
         v = r.width && r.height ? `${Math.round(r.x + r.width / 2)},${Math.round(r.y + r.height / 2)}` : null
       } else if (f.attr) {
@@ -2192,7 +2202,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
       }
       return v === null ? null : v.slice(0, 500)
     }
-    // 사진 고르기: 사이트마다 늦게 그리는 방법이 달라서 주소가 있을 만한 곳을 다 본다
+    // Choosing a photo: sites draw late in different ways, so look at every place an address might be
     const NOT_PHOTO =
       /(^|[\W_])(icon|ico|logo|badge|sprite|blank|spacer|placeholder|loading|loader|star|bul|arrow|btn|emoji|flag|rating|avatar-default)([\W_]|$)/i
     const absolute = (u: string): string | null => {
@@ -2207,7 +2217,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
         return null
       }
     }
-    // srcset: 폰 카드에 알맞은 크기(400px 언저리)를 고른다
+    // srcset: choose a size suited to the phone card (around 400px)
     const fromSrcset = (v: string | null): string | null => {
       if (!v) return null
       const opts = v
@@ -2234,7 +2244,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
         const img = el as HTMLImageElement
         const w = r.width || img.naturalWidth || Number(el.getAttribute('width')) || 0
         const hgt = r.height || img.naturalHeight || Number(el.getAttribute('height')) || 0
-        // 그려진 크기를 알면 아주 작은 그림(아이콘)은 뺀다. 아직 안 그려졌으면(0) 일단 받는다
+        // If the drawn size is known, drop very small pictures (icons). If not drawn yet (0), take it for now
         if (w && hgt && (w < 48 || hgt < 48)) return
         cands.push({ url, area: w * hgt || 1 })
       }
@@ -2256,7 +2266,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
             img.getAttribute('data-original') ??
             img.getAttribute('data-lazy') ??
             fromSrcset(img.getAttribute('data-srcset'))
-          // src가 투명 그림·자리표시면 늦게 넣는 주소를 먼저
+          // If src is a transparent image or placeholder, the late-inserted address first
           const placeholder = !src || src.startsWith('data:') || NOT_PHOTO.test(src)
           push(placeholder ? (lazy ?? img.currentSrc ?? null) : img.currentSrc || src, img)
           if (placeholder && !lazy) push(fromSrcset(img.getAttribute('srcset')), img)
@@ -2312,7 +2322,7 @@ export function pageExtract(spec: ExtractSpec): ExtractResult {
   }
 }
 
-/** 목록의 n번째 줄을 화면 가운데로 (늦게 그리는 사진을 불러오게). 줄 수를 돌려준다. n이 -1이면 맨 위로 */
+/** Scroll the nth row of the list to the center of the screen (so late-drawn photos load). Returns the row count. n of -1 means the top */
 export function pageRevealItem(items: string, n: number): number {
   let list: Element[] = []
   try {
@@ -2325,7 +2335,7 @@ export function pageRevealItem(items: string, n: number): number {
   return list.length
 }
 
-/** 화면 글에 이 말들이 있는지 (정규식, 여러 개). 기다리기·화면 확인에 쓴다 */
+/** Whether these words are in the screen text (regexes, several). Used for waiting and screen checks */
 export function pageFind(patterns: Record<string, string>): {
   url: string
   title: string
@@ -2344,8 +2354,8 @@ export function pageFind(patterns: Record<string, string>): {
 }
 
 /**
- * 두리가 누르거나 입력하는 자리를 페이지 위에 잠깐 보여 준다 (일하는 화면·Chrome에서 무엇을 하는지 보이게).
- * 마우스 입력을 받지 않고(pointer-events: none) 읽기에도 빠진다(aria-hidden, body 밖). 2.5초 뒤 사라진다
+ * Briefly show on the page where Dool2 clicks or types (so the working screen and Chrome show what it is doing).
+ * It takes no mouse input (pointer-events: none) and is left out of reads too (aria-hidden, outside body). Disappears after 2.5 seconds
  */
 export function pageCursor(x: number, y: number, label: string) {
   const TAG = 'dool2-cursor'
@@ -2371,14 +2381,14 @@ export function pageCursor(x: number, y: number, label: string) {
   }, 2500)
 }
 
-// ── 액자(iframe) 자리 재기 ──
-// 액자 속 요소를 누르려면 그 액자가 페이지 화면의 어디에 그려지는지 알아야 한다. 액자 안에 또 액자가 있으면
-// (결제 화면 → 배송지 추가 창 → 주소 찾기 창) 단계마다 바깥 문서에서 액자 상자를 재어 더한다.
-// 예전에는 맨 바깥 문서에서 주소로만 찾고, 못 찾으면 (0,0)으로 눌러 엉뚱한 곳이 조용히 눌렸다 (실측 11-20 G마켓 주소 찾기)
+// ── Measuring frame (iframe) position ──
+// To click an element in a frame, you must know where that frame is drawn on the page viewport. If a frame is inside a frame
+// (payment screen -> add delivery address window -> address search window), measure the frame box in the outer document at each step and add them up.
+// It used to find it only by address in the outermost document, and if not found clicked (0,0), so the wrong place was quietly clicked (measured 11-20 Gmarket address search)
 
 /**
- * 액자 문서 안에서: 자기 크기, 그리고 같은 주소라 바깥 문서를 볼 수 있으면 자기 상자(frameElement).
- * py(이 액자 화면 기준 누를 자리의 세로 위치)를 주면 그 자리가 바깥 화면에 보이게 바깥을 굴린 뒤 잰다
+ * Inside a frame document: its own size, and if same-origin so the outer document can be seen, its own box (frameElement).
+ * Given py (vertical position of the spot to click relative to this frame's viewport), scroll the outer one so that spot is visible on the outer screen, then measure
  */
 export function pageFrameSelf(py = -1): FrameSelf {
   const self: FrameSelf = { w: window.innerWidth, h: window.innerHeight }
@@ -2415,9 +2425,9 @@ export function pageFrameSelf(py = -1): FrameSelf {
 }
 
 /**
- * 바깥 문서에서: 주소가 url이고 안쪽 크기가 w×h인 액자 상자 (이 문서 화면 기준).
- * 주소(전체 → 주소+경로 → 출처)와 크기로 점수를 매겨 하나로 정해지면 그 상자, 같은 점수가 여럿이면 ambiguous,
- * 없으면 undefined. pick을 주면(본 액자가 알려 준 순번) 그 액자. py를 주면 그 자리가 보이게 굴린 뒤 잰다
+ * In the outer document: the frame box whose address is url and inner size is w x h (relative to this document's viewport).
+ * Score by address (full -> address+path -> origin) and size; if one is settled, that box; if several tie, ambiguous;
+ * undefined if none. Given pick (the index the viewed frame told us), that frame. Given py, scroll so that spot is visible, then measure
  */
 export function pageFrameBox(
   url: string,
@@ -2457,7 +2467,7 @@ export function pageFrameBox(
     else if (src === url) s = 4
     else if (src && norm(src, true) === norm(url, true)) s = 3
     else if (src && norm(src, false) === norm(url, false)) s = 2
-    // 액자 안에서 주소가 바뀌었으면(결제 단계 이동) src와 다르다: 크기로 맞춘다
+    // If the address changed inside the frame (payment step moved), it differs from src: match by size
     const b = box(f)
     if (w > 0 && h > 0 && Math.abs(b.w - w) <= 2 && Math.abs(b.h - h) <= 2) s += 2
     return s
@@ -2490,7 +2500,7 @@ export function pageFrameBox(
   return b
 }
 
-/** 같은 모양 액자가 여럿일 때 가리기: 바깥 문서가 메시지를 기다렸다가, 보낸 창이 어느 액자인지 순번을 남긴다 */
+/** Telling apart several look-alike frames: the outer document waits for a message, and the sending window leaves its index */
 export function pageFrameProbeListen(token: string) {
   const g = globalThis as unknown as { __dool2probe?: Record<string, number> }
   g.__dool2probe ??= {}
@@ -2517,11 +2527,11 @@ export function pageFrameProbeRead(token: string): number {
   return typeof n === 'number' ? n : -1
 }
 
-// ── 누름이 닿았는지 ──
-// 진짜 마우스 입력이 그 요소까지 왔는지를 페이지 안에서 직접 본다. 화면이 안 바뀌는 버튼(키패드 숫자)을
-// "안 눌렸다"고 보고 다시 눌러 두 번 들어가던 것을 막는다 (실측 쿠팡 결제 비밀번호 7자리)
+// ── Whether a click reached ──
+// Check directly inside the page whether real mouse input reached that element. This prevents buttons whose screen does not change (keypad digits)
+// from being reported "not clicked" and clicked again so the digit went in twice (measured Coupang payment PIN, 7 digits)
 
-/** 누르기 직전에 건다: 사람 입력(isTrusted)으로 온 pointerdown·mousedown·click이 그 요소에 닿으면 남긴다 */
+/** Set just before clicking: record when a pointerdown, mousedown or click that came as human input (isTrusted) reaches that element */
 export function pageHitArm(ref: string): boolean {
   type State = { refs: Map<string, WeakRef<Element>> }
   type Hit = { hit: boolean; other: string; n: number; off: () => void }
@@ -2549,7 +2559,7 @@ export function pageHitArm(ref: string): boolean {
   g.__dool2hit = box
   return true
 }
-/** 걸어 둔 것을 읽고 뗀다. armed: 걸려 있었는지 (문서가 바뀌었으면 false) */
+/** Read and remove what was set. armed: whether it was set (false if the document changed) */
 export function pageHitRead(keep = false): { armed: boolean; hit: boolean; other?: string; n: number } {
   type Hit = { hit: boolean; other: string; n: number; off: () => void }
   const g = globalThis as unknown as { __dool2hit?: Hit }
@@ -2562,16 +2572,16 @@ export function pageHitRead(keep = false): { armed: boolean; hit: boolean; other
   return { armed: true, hit: b.hit, n: b.n, ...(b.other ? { other: b.other } : {}) }
 }
 
-// ── 무엇이 바뀌었나 (누른 뒤 다시 누를지·기다리기) ──
+// ── What changed (whether to click again after a click, and waiting) ──
 
-/** 문서 바뀜 세기를 건다 (key마다 따로: 누르기와 기다리기가 서로 끄지 않게) */
+/** Set document change counting (separately per key: so clicking and waiting do not turn each other off) */
 export function pageMutArm(key: string): boolean {
   type Box = { n: number; added: number; removed: number; attrs: number; text: string; o: MutationObserver }
   const g = globalThis as unknown as { __dool2mut?: Record<string, Box> }
   g.__dool2mut ??= {}
   g.__dool2mut[key]?.o.disconnect()
   const mine = (n: Node | null) => {
-    // 두리 커서·표시 달기는 세지 않는다
+    // Dool2 cursor and marks are not counted
     for (let x: Node | null = n; x; x = x.parentNode)
       if ((x as Element).tagName === 'DOOL2-CURSOR') return true
     return false
@@ -2604,7 +2614,7 @@ export function pageMutArm(key: string): boolean {
   g.__dool2mut[key] = box
   return true
 }
-/** 센 것을 읽는다 (stop이면 끈다). 걸려 있지 않았으면 n: -1 */
+/** Read the counts (turn off if stop). n: -1 if it was not set */
 export function pageMutRead(
   key: string,
   stop = true,
@@ -2620,11 +2630,11 @@ export function pageMutRead(
   return { n: b.n, added: b.added, removed: b.removed, attrs: b.attrs, text: b.text.trim().slice(0, 160) }
 }
 
-// ── 스크롤 대상 ──
+// ── Scroll target ──
 
 /**
- * 굴릴 상자: ref가 있으면 그 요소(또는 그것을 품은 굴러가는 상자), 없으면 문서.
- * dir를 주면(가려진 창) 그 상자를 페이지 안에서 굴린다. 위치·끝까지 갔는지·휠을 굴릴 가운데 자리를 돌려준다
+ * The box to scroll: with ref, that element (or the scrolling box containing it); without, the document.
+ * Given dir (occluded window), scroll that box inside the page. Returns the position, whether it reached the end, and the center spot to roll the wheel at
  */
 export function pageScrollInfo(
   ref: string | null,
@@ -2636,8 +2646,7 @@ export function pageScrollInfo(
   let sc: HTMLElement = doc
   if (ref) {
     const el = st?.refs.get(ref)?.deref()
-    if (!el)
-      return { ok: false, top: 0, max: 0, h: 0, x: 0, y: 0, box: false, error: `${ref}를 찾을 수 없어요` }
+    if (!el) return { ok: false, top: 0, max: 0, h: 0, x: 0, y: 0, box: false, error: `${ref} was not found` }
     for (let e: Element | null = el; e && e !== document.body && e !== document.documentElement; ) {
       const cs = getComputedStyle(e)
       if (/(auto|scroll|overlay)/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1) {
@@ -2664,9 +2673,9 @@ export function pageScrollInfo(
   return { ok: true, top, max, h: isDoc ? window.innerHeight : sc.clientHeight, x: cx, y: cy, box: !isDoc }
 }
 
-// ── 요소 사진 ──
+// ── Element photo ──
 
-/** 찍을 요소를 보이게 굴린 뒤 상자와 상태 (missing: 없음, zeroSize: 크기 0, offscreen: 굴려도 화면 밖) */
+/** After scrolling the element to be captured into view, the box and status (missing: none, zeroSize: size 0, offscreen: off-screen even when scrolled) */
 export function pageShotRect(ref: string): {
   status: 'ok' | 'missing' | 'zeroSize' | 'offscreen'
   x: number
@@ -2689,12 +2698,12 @@ export function pageShotRect(ref: string): {
   return { status: off() ? 'offscreen' : 'ok', x: r.left, y: r.top, w: r.width, h: r.height }
 }
 
-// ── 막힌 새 창 (팝업 차단) ──
-// 결제 창은 누른 뒤 서버에 다녀와 window.open으로 뜨는데, 그때는 사람이 누른 순간이 아니라 Chrome이 막는다
-// (실측 11-20 G마켓 카드 결제: 화면만 하얗게 남았다). 두리 탭에서만, 페이지 공간(MAIN)에서 window.open을 지켜본다.
-// 열기를 대신하거나 막지 않는다: 부른 주소·때·돌려받은 창이 없었는지만 남기고, 확장이 새 탭이 실제로 열렸는지 견준다
+// ── Blocked new windows (popup blocking) ──
+// A payment window is opened by window.open after a round trip to the server following the click, and then Chrome blocks it because it is not the moment a person clicked
+// (measured 11-20 Gmarket card payment: the screen stayed white). Only in Dool2 tabs, window.open is watched in the page world (MAIN).
+// It neither performs nor blocks the opening: it only records the called address, the time and whether no window was returned, and the extension compares whether a new tab really opened
 
-/** 페이지 공간(MAIN)에서 돈다: window.open 부름을 남긴다 (한 문서에 한 번만) */
+/** Runs in the page world (MAIN): record window.open calls (once per document) */
 export function pageHookOpen(): boolean {
   const w = window as unknown as {
     open: typeof window.open
@@ -2702,10 +2711,10 @@ export function pageHookOpen(): boolean {
   }
   if (w.__dool2opens) return false
   const log: { url: string; at: number; none: boolean }[] = []
-  // 열거되지 않게 (페이지가 window를 훑어도 잘 안 보이게)
+  // Not enumerable (so it is hard to see even if the page sweeps window)
   Object.defineProperty(w, '__dool2opens', { value: log, enumerable: false })
   const orig = w.open
-  // 원래 함수를 감싼 Proxy: 이름·인자 수·this가 그대로다
+  // A Proxy wrapping the original function: name, argument count and this stay the same
   w.open = new Proxy(orig, {
     apply(target, self, args: unknown[]) {
       const r = Reflect.apply(target, self, args) as Window | null
@@ -2722,17 +2731,17 @@ export function pageHookOpen(): boolean {
   })
   return true
 }
-/** 페이지 공간(MAIN): 남긴 window.open 부름을 가져가고 비운다 */
+/** Page world (MAIN): take away the recorded window.open calls and clear them */
 export function pageReadOpens(): { url: string; at: number; none: boolean }[] {
   const w = window as unknown as { __dool2opens?: { url: string; at: number; none: boolean }[] }
   const log = w.__dool2opens ?? []
   return log.splice(0, log.length)
 }
 
-// ── PC 파일 올리기 (browser_upload) ──
-// 표시(ref)가 파일 칸이면 그 칸, 버튼·라벨이면 딸린 파일 칸을 찾는다. 확장이 경로로 넣을 수 있으면(CDP) 표시만 달아 두고,
-// 못 넣으면 본체가 보낸 조각을 모아 페이지 안에서 파일로 만든다. 아래 셋은 확장 공간(executeScript)과
-// 페이지 공간(Runtime.callFunctionOn, this = 파일 칸) 어디서든 돌도록 바깥 것을 쓰지 않는다
+// ── Uploading PC files (browser_upload) ──
+// If the mark (ref) is a file field, that field; if a button or label, find its attached file field. If the extension can insert by path (CDP), only a mark is put,
+// and if not, the chunks the daemon sent are collected and built into a file inside the page. The three below do not use outside things so they run
+// anywhere: the extension world (executeScript) or the page world (Runtime.callFunctionOn, this = the file field)
 
 export type UploadTarget =
   | { ok: false; error: string }
@@ -2746,17 +2755,17 @@ export type UploadTarget =
     }
 
 /**
- * 올릴 칸 찾기: 그 칸 → 라벨이 가리키는 칸 → 안에 든 칸 하나. near면 가까운 상자(4단계 위까지)에 하나뿐인 칸도
- * (버튼을 눌러도 고르기 창이 안 뜰 때만: 멀리 있는 다른 칸을 잘못 고르지 않게)
+ * Find the field to upload to: that field -> the field a label points to -> the one field inside. With near, also the single field in a nearby box (up to 4 levels up)
+ * (only when clicking the button opens no chooser: so a far-away other field is not chosen by mistake)
  */
 export function pageUploadTarget(ref: string, token: string, near: boolean): UploadTarget {
   type State = { refs: Map<string, WeakRef<Element>> }
   const st = (globalThis as unknown as { __dool2?: State }).__dool2
   const el = st?.refs.get(ref)?.deref()
   if (!el?.isConnected)
-    return { ok: false, error: `${ref}를 찾을 수 없어요. 화면이 바뀌었을 수 있으니 다시 읽어 주세요` }
+    return { ok: false, error: `${ref} was not found. The screen may have changed, so read it again` }
   const isFile = (e: unknown): e is HTMLInputElement => e instanceof HTMLInputElement && e.type === 'file'
-  /** 열린 shadow DOM 안까지 파일 칸 모으기 */
+  /** Collect file fields, including inside open shadow DOM */
   const filesIn = (root: Element | ShadowRoot): HTMLInputElement[] => {
     const out: HTMLInputElement[] = []
     const walk = (r: Element | ShadowRoot) => {
@@ -2795,7 +2804,7 @@ export function pageUploadTarget(ref: string, token: string, near: boolean): Upl
         how = 'near'
         break
       }
-      // 칸이 여럿이면 어느 것인지 모른다: 눌러서 뜨는 고르기 창으로
+      // If there are several fields it is unknown which: use the chooser that opens on click
       if (list.length > 1) break
       box = (box as Element).parentNode
     }
@@ -2808,7 +2817,7 @@ export function pageUploadTarget(ref: string, token: string, near: boolean): Upl
   return { ok: true, how, accept: input.accept, multiple: input.multiple, disabled: input.disabled }
 }
 
-/** 파일 조각 하나 받기 (base64). 받은 조각 수를 돌려준다 */
+/** Receive one file chunk (base64). Returns the number of chunks received */
 export function pageUploadChunk(token: string, b64: string): number {
   const g = globalThis as unknown as { __dool2parts?: Record<string, Uint8Array[]> }
   g.__dool2parts ??= {}
@@ -2827,8 +2836,8 @@ export function pageUploadChunk(token: string, b64: string): number {
 }
 
 /**
- * 모은 조각으로 파일을 만들어 칸에 넣고 input·change를 알린다 (사람이 파일을 고른 것과 같게).
- * this가 파일 칸이면(페이지 공간) 그것에, 아니면 pageUploadTarget이 찾아 둔 칸에
+ * Build a file from the collected chunks, put it into the field and fire input and change (same as a person choosing the file).
+ * If this is a file field (page world), into it; otherwise into the field pageUploadTarget found
  */
 export function pageUploadFinish(
   this: unknown,
@@ -2844,7 +2853,7 @@ export function pageUploadFinish(
   const parts = g.__dool2parts?.[token] ?? []
   if (g.__dool2parts) delete g.__dool2parts[token]
   if (g.__dool2up) delete g.__dool2up[token]
-  if (!input) throw new Error('파일 칸이 사라졌어요. 페이지를 다시 읽어 주세요')
+  if (!input) throw new Error('The file field is gone. Read the page again')
   input.removeAttribute('data-dool2-up')
   const dt = new DataTransfer()
   let at = 0
@@ -2863,7 +2872,7 @@ export function pageUploadFinish(
   }
 }
 
-/** 넣은 뒤 칸에 든 파일 이름 (경로로 넣었을 때). 표시도 지운다 */
+/** After inserting, the file name in the field (when inserted by path). The mark is also cleared */
 export function pageUploadState(
   this: unknown,
   token: string,
