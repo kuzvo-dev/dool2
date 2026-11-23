@@ -5,7 +5,7 @@
       "name": "chart",
       "title": "차트 보기",
       "description": "로그인 없이 된다. 멜론 차트(기본 TOP100 실시간, 또는 일간·주간·월간·HOT100)를 순위대로 돌려준다: 순위·곡·가수·앨범·순위 변화(예: 2단계 상승, 순위 진입)·곡 번호. '오늘 TOP 100에 새로 들어온 곡', '요즘 1위 뭐야'에 쓴다. 기준 시각은 chart_time. 곡을 더 찾으려면 melon_search, 플레이리스트에 담으려면 melon_prepare_playlist.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, TOP100·일간 순위, 화면 읽기)",
       "input": {
@@ -170,7 +170,7 @@
       "name": "search",
       "title": "노래 찾기",
       "description": "로그인 없이 된다. 곡 이름·가수 이름으로 멜론에서 노래를 찾아 곡·가수·앨범·좋아요 수·곡 번호를 돌려준다(정확도순). 가사 한 구절로 찾으려면 melon_lyrics. 플레이리스트에 담으려면 song_id를 melon_prepare_playlist에 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 곡 검색·결과 없음 안내, 화면 읽기)",
       "input": {
@@ -304,7 +304,7 @@
       "name": "lyrics",
       "title": "가사로 노래 찾기",
       "description": "로그인 없이 된다. 가사에 들어간 말로 멜론에서 노래를 찾는다('가사에 바다 들어간 노래', '…라는 가사 나오는 노래 뭐지?'). 곡 이름·가수·가사 일부·곡 번호를 돌려준다. 계절·분위기 같은 조건은 결과를 보고 AI가 골라 말한다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 가사 검색, 화면 읽기)",
       "input": {
@@ -428,7 +428,7 @@
       "name": "prepare_playlist",
       "title": "플레이리스트 만들기",
       "description": "로그인해야 된다. 고른 곡(곡 번호)을 멜론 플레이리스트에 담을 수 있게 내 플레이리스트 화면을 열어 AI에게 넘긴다. 곡은 melon_chart·melon_search·melon_lyrics에서 받은 song_id로. 새 플레이리스트 이름과 담을 곡 목록을 사용자에게 먼저 보여 주고 확인받은 뒤에 만든다.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {
@@ -479,7 +479,7 @@
       "name": "membership",
       "title": "이용권 확인",
       "description": "로그인해야 된다. 멜론에서 쓰고 있는 이용권 이름·다음 결제일·결제 금액·결제 수단(끝자리만)을 확인한다. '다음 결제일이랑 금액 알려 줘'에 쓴다. 해지·변경은 하지 않는다(사용자가 원하면 화면만 안내).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

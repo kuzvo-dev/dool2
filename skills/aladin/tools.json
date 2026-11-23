@@ -5,7 +5,7 @@
       "name": "search",
       "title": "책 찾기",
       "description": "알라딘에서 새 책을 제목·저자·주제로 찾아 제목·종류([국내도서]/[eBook] 등)·저자·출판사·출간·판매가·정가·할인율·별점·배송(양탄자배송 도착 예정)·전자책 가격·품절 여부·상품 번호·링크를 돌려준다. 로그인 없이 된다. 더 싼 중고를 보려면 aladin_used, 주문하려면 aladin_prepare_order에 item_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 데미안·어린왕자 검색)",
       "input": {
         "properties": {
@@ -218,7 +218,7 @@
       "name": "used",
       "title": "중고 가격 보기",
       "description": "알라딘 중고 검색으로 책마다 새 책 가격·전자책 가격·알라딘 직접 중고 최저가·광활한 우주점(매장) 중고 최저가·판매자 중고 최저가와 각각의 개수를 돌려준다. 로그인 없이 된다. '새 책보다 싼 중고 있어?'에 쓴다. 가격이 '-'면 그 종류 중고가 없다. 중고로 주문하려면 aladin_prepare_order에 item_id와 used=true를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 데미안 중고 검색)",
       "input": {
         "properties": {
@@ -419,7 +419,7 @@
       "name": "orders",
       "title": "주문·배송 확인",
       "description": "알라딘 주문 내역 화면을 열어 최근 주문의 주문일·책 제목·결제 금액·지금 상태(출고 준비·출고 완료·배송 중·배송 완료)와 도착 예정을 읽어 정리한다. 로그인(연결)해야 된다. '주문한 책 출고됐어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -462,7 +462,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 책을 새 책이나 중고로 주문까지 마친다. 새 책은 상품 화면, 중고는 중고 모두 보기 화면을 연다. 주문은 로그인이 필요하다: 연결 전이면 그때 connect_ask('aladin'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {

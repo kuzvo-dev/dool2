@@ -5,7 +5,7 @@
       "name": "plans",
       "title": "요금제 찾기",
       "description": "로그인 없이 된다. LG U+ 모바일 통합 요금제를 묶음별로 돌려준다(요금제 이름·데이터·월 요금·약정 할인가). group: 'MB~ 월'=데이터 30GB 아래 데이터플랜(싼 쪽, 기본), 'GB~ 월'=31GB 이상 데이터플랜, '무제한 월'=무제한 플러스플랜. max_price로 월 요금 상한. '더 싼 요금제 있어?'에 쓴다. 지금 쓰는 양은 lguplus_usage, 바꾸려면 lguplus_change_plan.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-18, 통합 요금제 세 묶음 펼쳐 읽기·월 요금 상한)",
       "input": {
         "properties": {
@@ -127,7 +127,7 @@
       "name": "usage",
       "title": "데이터 사용량",
       "description": "이번 달 남은 데이터·음성·문자(기본 제공량·쓴 양)를 LG U+ MY의 사용량 조회 화면에서 읽는다. 로그인해야 한다. '데이터 얼마나 남았어?'에 쓴다. 요금은 lguplus_bill.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -168,7 +168,7 @@
       "name": "bill",
       "title": "요금 확인",
       "description": "이번 달 지금까지 요금(실시간 요금)이나 청구 요금(월별 합계·항목별)을 LG U+ MY의 요금 조회 화면에서 읽는다. 로그인해야 한다. '이번 달 요금 얼마 나와?', '지난달 왜 더 나왔어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -215,7 +215,7 @@
       "name": "change_plan",
       "title": "요금제 바꾸기",
       "description": "LG U+ MY의 요금제 변경 화면에서 사용자가 고른 요금제로 바꾸기 직전(바뀌는 요금·적용 시점·약정/할인 안내)까지 간다. 로그인해야 한다. 변경 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 요금제를 모르면 먼저 lguplus_plans·lguplus_usage로 함께 고른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -265,7 +265,7 @@
       "name": "addons",
       "title": "부가서비스 정리",
       "description": "LG U+ MY의 가입 부가서비스 화면에서 가입된 부가서비스(이름·월 요금)를 보여 주고, 사용자가 고른 것을 해지 직전까지 간다. 로그인해야 한다. 해지는 사용자 승인(browser_request_approval)을 받아야만 한다. cancel을 비우면 목록만 정리한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

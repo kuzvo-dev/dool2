@@ -5,7 +5,7 @@
       "name": "search",
       "title": "작품 찾기",
       "description": "로그인 없이 된다. 티빙에서 작품 이름·출연자·주제어로 시리즈(드라마·예능)와 영화를 찾아 이름과 작품 번호를 돌려준다. 영화 줄은 검색어와 비슷한 추천도 섞여 있다. 줄거리·출연·회차는 tving_content에 content_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 시리즈·영화 검색, 화면 읽기)",
       "input": {
@@ -174,7 +174,7 @@
       "name": "browse",
       "title": "분류별 작품 보기",
       "description": "로그인 없이 된다. 티빙 분류 화면(드라마·예능·영화·애니)을 열어 묶음(예: 실시간 인기 예능, 지금 방영 중인 예능, 따끈한 최신회차 모음)마다 작품 이름과 작품 번호를 돌려준다. '이번 주말 몰아볼 예능', '새로 올라온 드라마'에 쓴다. 자세한 정보는 tving_content.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 예능·드라마 묶음, 화면 읽기)",
       "input": {
@@ -317,7 +317,7 @@
       "name": "content",
       "title": "작품 정보",
       "description": "로그인 없이 된다. 티빙 작품 번호로 작품 화면을 열어 이름·연도·분류·시즌 수·총 회차·출연·줄거리와 회차 목록(앞쪽)을 돌려준다. 번호는 tving_search·tving_browse에서. 보기는 이용권이 있어야 한다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-18, 작품 정보·회차, 화면 읽기)",
       "input": {
@@ -454,7 +454,7 @@
       "name": "history",
       "title": "시청 내역",
       "description": "로그인해야 된다. 티빙 시청 내역(최근 3개월)을 열어 작품·회차·어디까지 봤는지를 읽는다. '어제 보던 거 어디까지 봤어?'에 쓴다. 프로필 고르기가 나오면 기억해 둔 내 프로필(없으면 사용자 이름과 같은 프로필)을 고르고, 그래도 모르면 빠른 답으로 묻는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -487,7 +487,7 @@
       "name": "membership",
       "title": "이용권 확인",
       "description": "로그인해야 된다. 티빙 마이 화면에서 지금 이용권 이름·다음 결제일·결제 금액·결제 수단(끝자리만)을 확인한다. 해지·변경은 하지 않는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -520,7 +520,7 @@
       "name": "wishlist",
       "title": "찜하기",
       "description": "로그인해야 된다. 티빙 작품 화면을 열어 '찜'을 누르게 AI에게 넘긴다(되돌릴 수 있는 일). 작품 번호는 tving_search·tving_browse에서. 찜 목록만 보고 싶으면 browser로 https://www.tving.com/my/wish 를 연다.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {

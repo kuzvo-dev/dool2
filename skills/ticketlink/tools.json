@@ -5,7 +5,7 @@
       "name": "search",
       "title": "공연 찾기",
       "description": "로그인 없이 된다. 검색어(공연 이름·장르·배우·공연장)로 티켓링크 공연·전시를 찾아 제목·공연장·기간·좌석 등급별 가격·상품 번호를 돌려준다. 스포츠 경기는 여기서 안 나온다. 날짜별 회차와 남은 좌석은 ticketlink_details에 product_id를 넘겨 본다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 뮤지컬·콘서트 검색)",
       "input": {
         "properties": {
@@ -138,7 +138,7 @@
       "name": "details",
       "title": "회차·남은 좌석",
       "description": "로그인 없이 된다. 티켓링크 공연 하나의 정보(공연장·관람 시간·기간·관람 등급·가격)와 지금 달력에서 예매할 수 있는 날짜 목록, 첫 공연일(selected_date)의 회차(시각·출연진)와 좌석 등급별 남은 좌석(매진 포함)을 돌려준다. 다른 날짜의 회차·남은 좌석은 ticketlink_prepare_booking으로 그 날짜를 골라 열어 둔 탭에서 읽는다. 예매하려면 ticketlink_prepare_booking.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 뮤지컬 상품 정보·예매 가능 날짜·첫 공연일 회차와 등급별 남은 좌석)",
       "input": {
         "properties": {
@@ -344,7 +344,7 @@
       "name": "prepare_booking",
       "title": "예매 준비",
       "description": "티켓링크 공연의 날짜·회차를 골라 '예매하기'로 좌석 고르기 화면으로 가서 예매까지 마친다. 예매하기부터 로그인이 필요하다: 연결 전이면 그때 connect_ask('ticketlink'). 대기열은 기다리고, 보안문자는 browser_request_code(kind: \"captcha\")로 폰에서 받는다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -422,7 +422,7 @@
       "name": "tickets",
       "title": "티켓 보기",
       "description": "로그인한 사용자의 티켓링크 예매 내역을 본다. '일요일 티켓 어디 있어?'에 쓴다. 공연·경기 이름·날짜·시각·장소·좌석·매수·예매 상태를 정리한다. 예매 취소는 하지 않는다(취소는 사용자 승인 뒤 브라우저 도구로).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

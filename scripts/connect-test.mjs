@@ -192,7 +192,7 @@ for (const [id, p] of plan) {
   // 3) 로그인이 필요한 도구
   for (const t of toolsOf(id)) {
     if (!t.login) continue
-    if (t.tier !== '찾아보기' && !flags.has('--deep')) {
+    if (t.tier !== 'lookup' && !flags.has('--deep')) {
       row.tools.push({
         tool: name(id, t.name),
         title: t.title,

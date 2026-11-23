@@ -16,32 +16,32 @@
     {
       "title": "책 찾기",
       "say": "요즘 많이 읽는 경제 책 알려 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "중고 가격",
       "say": "이 책 중고로 사면 얼마야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "장바구니 담기",
       "say": "이 책 장바구니에 넣어 둬",
-      "tier": "채워 두기"
+      "tier": "fill"
     },
     {
       "title": "주문",
       "say": "장바구니에 있는 책 다 주문해 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     },
     {
       "title": "배송 조회",
       "say": "알라딘 주문 오늘 와?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "취소·반품",
       "say": "파본이야, 반품해 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     }
   ],
   "social": [

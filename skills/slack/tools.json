@@ -5,7 +5,7 @@
       "name": "mentions",
       "title": "멘션 놓치지 않기",
       "description": "Slack에서 나를 멘션했거나 DM으로 부탁한 것(누가·어느 채널·무엇을·언제까지)을 골라 정리한다. 로그인해야 한다. '오늘 나한테 부탁한 거 있어?'에 쓴다. (공식 연동 전 웹 화면 기준)",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -45,7 +45,7 @@
       "name": "catch_up",
       "title": "빠르게 따라잡기",
       "description": "Slack 채널에서 기간 동안 오간 이야기를 결정·할 일·질문 위주로 요약한다. 로그인해야 한다. '나 없는 동안 #dev에서 무슨 일 있었어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -94,7 +94,7 @@
       "name": "post",
       "title": "대신 올리기",
       "description": "Slack 채널이나 DM에 올릴 메시지를 입력칸에 써 두고, 보내기 직전에 승인받는다. 로그인해야 한다. 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 문장은 사용자와 먼저 정한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

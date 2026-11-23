@@ -15,22 +15,22 @@
     {
       "title": "리뷰·CI 확인",
       "say": "나한테 리뷰 온 거랑 깨진 빌드 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "변경 이력",
       "say": "결제 화면 최근에 누가 손댔어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "댓글 남기기",
       "say": "이 이슈에 어떤 버전 쓰는지 물어봐 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "작은 수정 PR",
       "say": "README 깨진 링크 고쳐서 올려 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ]
 }

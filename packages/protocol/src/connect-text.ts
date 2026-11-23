@@ -46,7 +46,7 @@ export const CATEGORY_EMO: Record<keyof typeof CATEGORY_LABEL, string> = {
 }
 
 /** 폰 승인이 있어야만 하는 등급 (docs/architecture.md 4.1) */
-export const APPROVAL_TIERS: readonly Tier[] = ['돈 내기', '연락하기']
+export const APPROVAL_TIERS: readonly Tier[] = ['pay', 'contact']
 
 /**
  * 상세 화면의 안전 문장. 카드에 따로 적지 않고 등급에서 만든다 (적은 말과 실제 동작이 어긋나지 않게)

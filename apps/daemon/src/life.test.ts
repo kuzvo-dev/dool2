@@ -318,8 +318,8 @@ describe('먼저 챙기기', () => {
       id: 'coupang',
       name: '쿠팡',
       abilities: [
-        { title: '배송 조회', say: '', tier: '찾아보기' },
-        { title: '장바구니 담기', say: '', tier: '채워 두기' },
+        { title: '배송 조회', say: '', tier: 'lookup' },
+        { title: '장바구니 담기', say: '', tier: 'fill' },
       ],
     }
     const text = watchPrompt(

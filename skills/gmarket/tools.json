@@ -5,7 +5,7 @@
       "name": "search",
       "title": "상품 찾기",
       "description": "G마켓에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 번호·가격·정가·배송(오늘출발·배송비)·만족도·상품평 수·구매 수·브랜드·판매자·링크). 로그인 없이 된다. 싼 것부터 보려면 sort 1, 많이 팔린 순은 8. 가격 거르기는 없어서 '5만 원 이하'면 sort 1로 찾고 price로 고른다. 사이즈 같은 조건은 keyword에 넣는다(예: 운동화 260). 사려면 gmarket_prepare_order에 product_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-18, 사용자 Chrome에서 운동화·섬유유연제 검색 20개, 사진·링크)",
       "input": {
         "properties": {
@@ -173,7 +173,7 @@
       "name": "orders",
       "title": "주문·배송 조회",
       "description": "G마켓 주문 내역(주문일·상품·옵션·결제 금액·주문 상태·배송 상태)을 연다. 로그인해야 한다. '캠핑 의자 출발했어?' 같은 질문, 다시 주문할 상품 찾기, 취소·반품 전 확인에 쓴다. 다시 주문은 gmarket_prepare_order, 취소·반품은 gmarket_cancel_return.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -216,7 +216,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 G마켓 상품 화면을 열어 옵션·수량을 고르고 주문서로 가서 주문을 마친다. 주문서는 로그인이 필요하다: 연결 전이면 connect_ask('gmarket'). 생필품 재주문도 이 도구로(gmarket_orders에서 찾은 상품 번호). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -270,7 +270,7 @@
       "name": "cancel_return",
       "title": "취소·반품 신청",
       "description": "G마켓 주문 내역에서 고른 주문의 취소(발송 전)나 반품·교환 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유·수거 방법은 사용자가 말한 것으로, 없으면 흔한 것(단순 변심·문 앞 수거)으로 골라 승인 카드에 적어 바꿀 수 있게 한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

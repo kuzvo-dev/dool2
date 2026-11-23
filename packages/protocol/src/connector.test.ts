@@ -5,7 +5,7 @@ const tool = (over: Record<string, unknown> = {}) => ({
   name: 'search',
   title: '찾기',
   description: '가게를 찾는다.',
-  tier: '찾아보기',
+  tier: 'lookup',
   status: '초안',
   input: { properties: { keyword: { type: 'string', description: '검색어' } }, required: ['keyword'] },
   output: { rows: { type: 'list', fields: { name: { type: 'string' } } } },
@@ -69,7 +69,7 @@ describe('커넥터 검사', () => {
     expect(
       check([
         tool({
-          tier: '돈 내기',
+          tier: 'pay',
           steps: [{ open: 'https://demo.co.kr/' }, { sleep: 100 }],
           result: {},
           output: {},
@@ -79,7 +79,7 @@ describe('커넥터 검사', () => {
     expect(
       check([
         tool({
-          tier: '돈 내기',
+          tier: 'pay',
           steps: [{ open: 'https://demo.co.kr/' }, approve, { sleep: 100 }],
           result: {},
           output: {},

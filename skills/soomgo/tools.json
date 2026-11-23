@@ -5,7 +5,7 @@
       "name": "search_pros",
       "title": "고수 찾기",
       "description": "로그인 없이 된다. 서비스 이름(에어컨 청소·입주청소·이사·피아노 레슨 등)으로 숨고 고수를 검색 결과 순으로 찾아 고수 이름·평점·리뷰 수·고용 횟수·경력·한 줄 소개·프로필 주소를 돌려준다. 지역은 검색어에 붙여 본다(예: 성동구 에어컨 청소). 견적을 받으려면 soomgo_prepare_request.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-17, 에어컨 청소·이사 고수 목록)",
       "input": {
@@ -147,7 +147,7 @@
       "name": "prepare_request",
       "title": "견적 요청서 쓰기",
       "description": "숨고 견적 요청서를 서비스 질문지에 맞춰 채워 '요청서 보내기' 직전까지 간다. 보내면 여러 고수에게 요청이 가니 보내기는 사용자 승인(browser_request_approval)을 받아야만 한다. 보내기 단계에서 로그인이 필요하다: 연결 전이면 그때 connect_ask('soomgo').",
-      "tier": "연락하기",
+      "tier": "contact",
       "status": "초안",
       "input": {
         "properties": {
@@ -195,7 +195,7 @@
       "name": "quotes",
       "title": "받은 견적 보기",
       "description": "로그인한 사용자가 보낸 요청서와 고수들이 보낸 견적을 본다. '받은 견적 중에 제일 괜찮은 거 골라 줘'에 쓴다. 요청서마다 고수 이름·견적 금액·평점·리뷰 수·메시지 요지를 정리해 비교한다. 고용·결제는 하지 않는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -232,7 +232,7 @@
       "name": "send_message",
       "title": "고수에게 메시지",
       "description": "로그인한 사용자 대신 숨고 채팅방에서 고수에게 메시지를 보낼 준비를 한다(방문 시간 확인·추가 질문 등). 채팅 목록에서 그 고수의 방을 열어 입력칸에 글을 써 두고, 보내기는 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

@@ -5,7 +5,7 @@
       "name": "search",
       "title": "항공편 찾기",
       "description": "로그인 없이 된다(조회 화면은 로그인 없이 열린다). 출발·도착 공항 코드와 가는 날(·오는 날)·인원으로 진에어 항공편을 찾아 편명·출발/도착 시각·운임 종류별 가격·남은 좌석을 정리한다. 이 사이트는 날짜를 달력으로만 고를 수 있어 열어 둔 탭에서 브라우저 도구로 조회를 이어서 한다. 예매하려면 jin_air_prepare_booking.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "초안",
       "input": {
@@ -81,7 +81,7 @@
       "name": "prepare_booking",
       "title": "예매 준비",
       "description": "고른 진에어 편(편명)과 운임으로 예매를 결제까지 마친다. 운임 고르기까지는 로그인 없이 되고, 탑승객 정보·결제는 로그인(또는 비회원 예매)이 필요하다. jin_air_search로 편명과 운임을 먼저 확인한다. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -167,7 +167,7 @@
       "name": "reservations",
       "title": "예약 내역",
       "description": "로그인해야 한다. 진에어 예약 조회 화면을 열어 다가오는 여정(편명·날짜·시각·공항·좌석 번호·결제 상태)을 정리한다. '다음 주 제주 비행기 좌석 몇 번이야?'에 쓴다. 취소·변경은 하지 않는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

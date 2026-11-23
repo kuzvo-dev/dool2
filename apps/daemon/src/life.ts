@@ -1483,7 +1483,7 @@ export function watchPrompt(
   const when = `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][kst.getUTCDay()]}요일 ${kst.getUTCHours()}시`
   const list = services
     .map((c) => {
-      const look = c.card.abilities.filter((a) => a.tier === '찾아보기').map((a) => a.title)
+      const look = c.card.abilities.filter((a) => a.tier === 'lookup').map((a) => a.title)
       return `- ${c.card.name}(${c.card.id})${look.length ? `: ${look.join(', ')}` : ''}`
     })
     .join('\n')

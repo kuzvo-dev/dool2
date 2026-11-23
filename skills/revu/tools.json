@@ -5,7 +5,7 @@
       "name": "trending",
       "title": "인기 체험단",
       "description": "로그인 없이 된다. 레뷰 첫 화면의 '지금 신청 급상승' 체험단(전 분야)을 돌려준다: 캠페인 이름·제공 내역·남은 기간·신청자 수/모집 인원·캠페인 번호. 검색어·지역·분야로 찾기는 레뷰가 로그인을 요구해서 revu_search(연결 필요).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "검증됨(2026-11-17, 첫 화면 급상승 목록)",
       "input": {
@@ -148,7 +148,7 @@
       "name": "search",
       "title": "체험단 찾기",
       "description": "로그인한 사용자가 검색어(지역·가게·제품, 예: 망원 카페, 홍대 맛집)로 레뷰 체험단을 찾는다. 레뷰는 검색 결과를 로그인해야 보여 준다. 열린 결과에서 캠페인 이름·제공 내역·남은 기간·신청/모집 인원·캠페인 번호를 정리한다. 신청은 revu_apply.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -195,7 +195,7 @@
       "name": "apply",
       "title": "체험단 신청",
       "description": "로그인한 사용자 대신 레뷰 캠페인 신청서를 채워 '신청하기' 직전까지 간다. 신청은 광고주에게 내 정보·채널이 가는 일이라 사용자 승인(browser_request_approval)을 받아야만 누른다. 캠페인 번호는 revu_trending·revu_search 결과.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -248,7 +248,7 @@
       "name": "my_campaigns",
       "title": "선정 결과·리뷰 마감",
       "description": "로그인한 사용자의 레뷰 신청·선정 내역을 본다. '지난주에 신청한 거 선정됐어?', '리뷰 마감 언제야?'에 쓴다. 캠페인마다 상태(신청·선정·미선정·리뷰 작성 중)·발표일·리뷰 등록 마감일을 정리한다. 마감을 챙겨 달라면 goal_create로 알림을 만든다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

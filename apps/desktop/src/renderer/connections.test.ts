@@ -19,8 +19,8 @@ describe('서비스 연결 화면', () => {
       summary: '데모를 연결하면 주문까지 맡길 수 있어요.',
       example: { ask: '시켜 줘', working: '찾는 중', reply: '주문할까요?' },
       abilities: [
-        { title: '찾기', say: '찾아 줘', tier: '찾아보기' },
-        { title: '주문', say: '시켜 줘', tier: '돈 내기' },
+        { title: '찾기', say: '찾아 줘', tier: 'lookup' },
+        { title: '주문', say: '시켜 줘', tier: 'pay' },
       ],
     } satisfies ConnectCard
     const lines = safetyLines(card)

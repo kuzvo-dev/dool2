@@ -5,7 +5,7 @@
       "name": "timetable",
       "title": "시간표 확인",
       "description": "에브리타임 내 시간표(이번 학기 과목·요일·시간·강의실)를 읽는다. 로그인해야 한다. '오늘 공강 몇 시부터야?', '내일 첫 수업 몇 시야?'에 쓴다. day를 주면 그 요일만 정리한다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -53,7 +53,7 @@
       "name": "posts",
       "title": "게시판 글 찾기",
       "description": "우리 학교 에브리타임 게시판에서 검색어로 글을 찾아 제목·게시판·시간·공감/댓글 수·첫 줄을 정리한다. 로그인해야 한다. '이번 주 학식 후기 올라온 거 있어?'에 쓴다. 글은 읽기만 한다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -102,7 +102,7 @@
       "name": "lecture_reviews",
       "title": "강의평 보기",
       "description": "에브리타임 강의평에서 과목명·교수명으로 찾아 강의평 평점·과제/조모임/학점 경향·최근 강의평 몇 개를 정리한다. 로그인해야 한다. '그 교수님 수업 강의평 어때?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -146,7 +146,7 @@
       "name": "prepare_post",
       "title": "글쓰기 준비",
       "description": "에브리타임 게시판에 올릴 글을 써 두고, 올리기 직전에 사용자에게 보여 승인받는다. 로그인해야 한다. 글 올리기는 사용자 승인(browser_request_approval)을 받아야만 한다. 게시판·제목·내용을 사용자와 먼저 정한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

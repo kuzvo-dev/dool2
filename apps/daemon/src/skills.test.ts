@@ -33,8 +33,8 @@ describe('연결 카드', () => {
     summary: '데모몰을 연결하면 주문부터 배송 확인까지 두리에게 맡길 수 있어요.',
     example: { ask: '주문한 거 언제 와?', working: '배송 조회 중', reply: '내일 오전에 도착해요.' },
     abilities: [
-      { title: '배송 조회', say: '주문한 거 언제 와?', tier: '찾아보기' },
-      { title: '주문', say: '늘 사던 걸로 시켜 줘', tier: '돈 내기' },
+      { title: '배송 조회', say: '주문한 거 언제 와?', tier: 'lookup' },
+      { title: '주문', say: '늘 사던 걸로 시켜 줘', tier: 'pay' },
     ],
   }
   const setup = async () => {
@@ -69,7 +69,7 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
                 {
                   name: 'catchtable_search',
                   title: '식당 빈자리 찾기',
-                  tier: '찾아보기',
+                  tier: 'lookup',
                   login: false,
                   verified: true,
                 },
@@ -99,11 +99,11 @@ describe('로그인 없이 되는 도구 알리기', () => {
                 {
                   name: 'catchtable_search',
                   title: '식당 빈자리 찾기',
-                  tier: '찾아보기',
+                  tier: 'lookup',
                   login: false,
                   verified: true,
                 },
-                { name: 'catchtable_my', title: '내 예약', tier: '찾아보기', login: true, verified: false },
+                { name: 'catchtable_my', title: '내 예약', tier: 'lookup', login: true, verified: false },
               ],
             }
           : {},

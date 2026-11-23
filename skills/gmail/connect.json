@@ -18,27 +18,27 @@
     {
       "title": "구독 찾기",
       "say": "매달 빠져나가는 구독 뭐 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "중요한 메일",
       "say": "오늘 답해야 할 메일만 골라 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "택배·항공편",
       "say": "배송 출발 메일 온 택배들 정리해 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "수신 거부",
       "say": "광고 메일 그만 오게 해 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "메일 찾기",
       "say": "작년 연말정산 자료 메일 찾아 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     }
   ]
 }

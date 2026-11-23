@@ -5,7 +5,7 @@
       "name": "activity",
       "title": "알림 한눈에",
       "description": "로그인해야 된다(스레드는 로그인 없이 검색·알림이 안 된다). 활동(알림) 화면을 열어 좋아요·답글·새 팔로워·언급을 글별로 묶어 정리한다. 질문하는 답글은 따로 짚는다. '오늘 스레드에서 놓친 거 있어?'에 쓴다. 답글 달기는 threads_reply.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": { "properties": {}, "required": [] },
@@ -23,7 +23,7 @@
       "name": "prepare_post",
       "title": "글 올리기 준비",
       "description": "로그인해야 된다. 스레드 새 글 쓰기 창을 글이 채워진 채로 열어 AI에게 넘긴다. 사진이 있으면 사용자가 준 파일만 붙인다. '게시'는 글·사진·공개 범위를 보여 주고 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -47,7 +47,7 @@
       "name": "reply",
       "title": "답글 달기",
       "description": "로그인해야 된다. 활동(알림) 화면에서 고른 사람의 답글을 찾아 그 아래에 답글을 써 두고 AI에게 넘긴다. 여러 명에게 같은 말을 달 때도 한 명씩 쓴다. '게시'는 누구에게 무슨 글을 다는지 보여 주고 사용자 승인(browser_request_approval)을 받아야만 누른다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -71,7 +71,7 @@
       "name": "my_posts",
       "title": "내 글 찾기",
       "description": "로그인해야 된다. 내 프로필의 스레드 탭을 열어 내가 쓴 글 중 주제어가 들어간 글을 날짜·한 줄 요약·반응(좋아요·답글 수)으로 찾아 준다. '지난달에 쓴 여행 글 찾아 줘'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

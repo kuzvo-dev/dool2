@@ -16,17 +16,17 @@
     {
       "title": "메일 찾기",
       "say": "지난달 관리비 고지서 메일 찾아 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "메일 써 두기",
       "say": "이 내용으로 답장 써 둬",
-      "tier": "채워 두기"
+      "tier": "fill"
     },
     {
       "title": "메일 보내기",
       "say": "확인한 메일 보내 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ],
   "loginUrl": "https://nid.naver.com/nidlogin.login"

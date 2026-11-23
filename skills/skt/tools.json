@@ -5,7 +5,7 @@
       "name": "plans",
       "title": "요금제 찾기",
       "description": "로그인 없이 된다. SK텔레콤 T world의 데이터 적게 쓰는 사람용 '라이트' 요금제를 묶음별로 읽어 요금제 이름·데이터·월 요금·선택약정 반영가·요금제 id를 돌려준다. group: '라이트 39'=월 3.9~4.9만 원(가장 쌈, 기본), '라이트 55'=5.5~5.9만 원, '라이트 69'=6.9~7.9만 원(100GB 이상). max_price로 월 요금 상한. '데이터 덜 쓰는데 더 싼 요금제 있어?'에 쓴다. 무제한(베스트) 요금제는 link의 요금제 화면에서 본다. 지금 쓰는 양은 skt_usage, 바꾸려면 skt_change_plan.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-18, 라이트 세 묶음 펼쳐 읽기·월 요금 상한)",
       "input": {
         "properties": {
@@ -149,7 +149,7 @@
       "name": "usage",
       "title": "남은 데이터",
       "description": "이번 달 남은 데이터·음성·문자(기본 제공량·쓴 양·남은 양)를 T world '나의 잔여 데이터/통화'에서 읽는다. 로그인해야 한다. '데이터 얼마나 남았어?'에 쓴다. 요금은 skt_bill.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -190,7 +190,7 @@
       "name": "bill",
       "title": "요금 확인",
       "description": "이번 달 지금까지 요금(실시간 이용요금)이나 지난 청구 요금(요금안내서: 월별 합계·항목별)을 T world에서 읽는다. 로그인해야 한다. '이번 달 요금 얼마 나왔어?', '지난달 왜 더 나왔어?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -237,7 +237,7 @@
       "name": "change_plan",
       "title": "요금제 바꾸기",
       "description": "T world '나의 요금제' 화면에서 요금제 변경으로 들어가 사용자가 고른 요금제로 바꾸기 직전(바뀌는 요금·적용 시점·약정/할인 안내)까지 간다. 로그인해야 한다. 변경 확정은 사용자 승인(browser_request_approval)을 받아야만 한다. 바꿀 요금제를 모르면 먼저 skt_plans·skt_usage로 함께 고른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -287,7 +287,7 @@
       "name": "addons",
       "title": "부가서비스 정리",
       "description": "T world '나의 요금제/부가서비스' 화면에서 가입된 부가서비스(이름·월 요금)를 보여 주고, 사용자가 고른 것을 해지 직전까지 간다. 로그인해야 한다. 해지는 사용자 승인(browser_request_approval)을 받아야만 한다. cancel을 비우면 목록만 정리한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

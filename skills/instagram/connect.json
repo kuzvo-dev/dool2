@@ -18,22 +18,22 @@
     {
       "title": "DM 한눈에",
       "say": "오늘 온 DM 중에 급한 거 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "DM 답장",
       "say": "수진이 DM에 토요일 괜찮다고 답장 써 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "게시물 올리기",
       "say": "어제 찍은 사진 3장 피드에 올려 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "저장한 게시물 정리",
       "say": "저장한 맛집 게시물만 모아 줘",
-      "tier": "채워 두기"
+      "tier": "fill"
     }
   ]
 }

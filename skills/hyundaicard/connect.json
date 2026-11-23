@@ -15,32 +15,32 @@
     {
       "title": "카드값 확인",
       "say": "이번 결제일에 얼마 나가?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "이용 내역",
       "say": "지난달 택시비 다 합치면 얼마야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "M포인트 조회",
       "say": "M포인트 지금 몇 점이야?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "실적 확인",
       "say": "전월 실적 조건 넘겼는지 확인해 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "혜택 찾기",
       "say": "내 카드로 할인되는 영화관 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "이벤트 응모",
       "say": "캐시백 이벤트 있으면 응모해 줘",
-      "tier": "채워 두기"
+      "tier": "fill"
     }
   ],
   "hints": [

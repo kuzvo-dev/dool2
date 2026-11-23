@@ -15,22 +15,22 @@
     {
       "title": "찾기",
       "say": "사용자가 할 법한 말",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "담아 두기",
       "say": "장바구니에 담아 줘",
-      "tier": "채워 두기"
+      "tier": "fill"
     },
     {
       "title": "주문",
       "say": "지난번에 산 세제 같은 걸로 하나 더 주문해 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     },
     {
       "title": "문의 남기기",
       "say": "판매자한테 언제 보내는지 물어봐 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ],
   "signedIn": [

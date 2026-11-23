@@ -42,8 +42,8 @@ const CARD = {
   summary: '데모맛집을 연결하면 식당 찾기부터 예약까지 두리에게 맡길 수 있어요.',
   example: { ask: '성수 저녁 4명', working: '빈자리 찾는 중', reply: '가게 가에 7시 자리가 있어요.' },
   abilities: [
-    { title: '식당 찾기', say: '성수 저녁 4명', tier: '찾아보기' },
-    { title: '예약', say: '거기 7시로 잡아 줘', tier: '돈 내기' },
+    { title: '식당 찾기', say: '성수 저녁 4명', tier: 'lookup' },
+    { title: '예약', say: '거기 7시로 잡아 줘', tier: 'pay' },
   ],
 }
 
@@ -54,7 +54,7 @@ const CONNECTOR = {
       name: 'search',
       title: '식당 찾기',
       description: '지역·가게 이름으로 식당과 날짜별 빈자리를 찾는다. 가게 이름·별점·빈 시간을 돌려준다.',
-      tier: '찾아보기',
+      tier: 'lookup',
       status: '검증됨(2026-11-17)',
       input: {
         properties: {
@@ -94,7 +94,7 @@ const CONNECTOR = {
       name: 'book',
       title: '예약',
       description: '고른 가게의 시간을 골라 예약 직전까지 간 뒤 사용자 승인을 받는다.',
-      tier: '돈 내기',
+      tier: 'pay',
       login: true,
       status: '초안',
       input: {
@@ -117,7 +117,7 @@ const CONNECTOR = {
       name: 'peek',
       title: '나쁜 도구',
       description: '찾아보기인데 위험한 버튼을 누르려는 도구 (시험용).',
-      tier: '찾아보기',
+      tier: 'lookup',
       status: '초안',
       input: { properties: {}, required: [] },
       output: {},
@@ -290,7 +290,7 @@ describe('서비스 도구 실행기', () => {
     const r = textOf(await connectors.find('성수 식당'))
     expect(r).toContain('## 데모맛집 (demo-eats) — 연결 전')
     expect(r).toContain(
-      '- demo_eats_search [찾아보기 · 로그인 없이] 식당 찾기 — 입력: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
+      '- demo_eats_search [lookup · 로그인 없이] 식당 찾기 — 입력: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
     )
     expect(r).toContain("연결하면 바로: 예약. 그 단계가 되면 connect_ask('demo-eats')")
   })
@@ -316,7 +316,7 @@ describe('서비스 도구 실행기', () => {
     }
     const ctx = {
       scope,
-      tier: '찾아보기',
+      tier: 'lookup',
       site: 'eats.example',
       pollMs: 1,
       sleep: async () => {},
@@ -752,16 +752,16 @@ describe('찾은 뒤 바로 주문 준비로 오면 한 줄 붙인다 (판단은
     const c = new Connectors({ lastUser: () => user } as never) as unknown as {
       pickGate: (id: string, t: { tier: string }) => string | undefined
     }
-    expect(c.pickGate('food', { tier: '찾아보기' })).toBeUndefined()
-    const note = c.pickGate('food', { tier: '돈 내기' })
+    expect(c.pickGate('food', { tier: 'lookup' })).toBeUndefined()
+    const note = c.pickGate('food', { tier: 'pay' })
     expect(note).toContain('show_cards')
     expect(note).toContain('이미 골랐으면')
     user = { at: Date.now() + 1, text: '두 번째 걸로' }
-    expect(c.pickGate('food', { tier: '돈 내기' })).toBeUndefined()
+    expect(c.pickGate('food', { tier: 'pay' })).toBeUndefined()
     // "알아서"는 정규식으로 가리지 않는다: 같은 안내가 붙고 AI가 대화를 보고 진행한다
-    c.pickGate('food', { tier: '찾아보기' })
+    c.pickGate('food', { tier: 'lookup' })
     user = { at: Date.now() - 5, text: '알아서 골라서 바로 시켜 줘' }
-    expect(c.pickGate('food', { tier: '돈 내기' })).toContain('알아서')
+    expect(c.pickGate('food', { tier: 'pay' })).toContain('알아서')
   })
 
   it('같은 동네 이름인데 내 번지가 없으면 짐작한 주소라 내 정보 주소로 바꾼다', async () => {

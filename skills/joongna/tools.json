@@ -5,7 +5,7 @@
       "name": "search",
       "title": "매물·시세 찾기",
       "description": "중고나라에서 중고 매물을 찾고 시세를 함께 돌려준다: 검색된 매물의 평균·최고·최저 가격, 전체 매물 수, 매물 목록(제목·상품 id·가격·찜·채팅 수·올린 때·무료배송·링크). 로그인 없이 된다. 판매완료 매물은 빠진다. '20만 원 안쪽'이면 max_price, 싼 것부터면 sort PRICE_ASC_SORT. 제목에 '삽니다·구합니다'(사는 글)나 게임 칩·부품만 파는 글이 섞이니 제목을 보고 거른다. 번개장터(bunjang_search)·당근(daangn_search)도 함께 보면 매물과 시세를 더 넓게 본다. 판매자에게 물어보려면 joongna_send_chat.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 시세 요약·가격대·정렬)",
       "input": {
         "properties": {
@@ -186,7 +186,7 @@
       "name": "chats",
       "title": "채팅 정리",
       "description": "중고나라 채팅 목록을 열어 누가 어떤 매물에 무슨 말을 했는지 정리한다(상대 닉네임·매물·마지막 말·시간·안 읽은 수). 로그인해야 한다. '책상 글에 누가 채팅했어?' 같은 질문에 쓴다. 답장은 joongna_send_chat.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -229,7 +229,7 @@
       "name": "send_chat",
       "title": "채팅 보내기",
       "description": "중고나라 매물의 판매자에게 채팅을 보낼 준비를 한다(직거래 되는지, 상태, 가격 흥정 등). 로그인해야 한다. 보내기 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 보낼 말은 사용자에게 먼저 보여 주고 확인한다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {
@@ -281,7 +281,7 @@
       "name": "prepare_listing",
       "title": "판매글 써 두기",
       "description": "중고나라 판매하기 화면에 판매글(제목·가격·설명·거래 방법)을 채워 둔다. 로그인해야 한다. 사진은 사용자가 준 파일로만 올린다. 등록 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 올리기 전에 채운 내용을 사용자에게 보여 준다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

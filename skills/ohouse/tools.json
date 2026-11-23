@@ -5,7 +5,7 @@
       "name": "search",
       "title": "가구·소품 찾기",
       "description": "로그인 없이 된다. 오늘의집 쇼핑에서 가구·소품을 검색어로 찾아 이름·브랜드·판매가·할인율·평점·리뷰 수·배송비(무료배송/배송비 별도)·상품 id·링크를 돌려준다. '2인용 소파 50만 원 이하'처럼 가격대가 있으면 max_price(와 min_price)를 넣는다. 광고(AD) 상품도 섞여 있다. 사려면 ohouse_prepare_order에 product_id를 넘긴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 2인용 소파·러그 검색, 가격 거르기)",
       "input": {
         "properties": {
@@ -214,7 +214,7 @@
       "name": "orders",
       "title": "주문·배송 조회",
       "description": "오늘의집 주문배송 내역(주문일·상품·옵션·결제 금액·주문 상태·배송·설치 일정)을 연다. 로그인해야 한다. '침대 프레임 언제 와?' 같은 질문, 교환·반품 전 확인에 쓴다. 교환·반품은 ohouse_exchange_return.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -257,7 +257,7 @@
       "name": "prepare_order",
       "title": "주문 준비",
       "description": "고른 오늘의집 상품 화면을 열어 옵션(색상·크기)·수량을 고르고 결제까지 마친다. 주문은 로그인이 필요하다: 연결 전이면 connect_ask('ohouse'). 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 주문번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "status": "초안",
       "input": {
         "properties": {
@@ -310,7 +310,7 @@
       "name": "exchange_return",
       "title": "교환·반품 신청",
       "description": "오늘의집 주문배송 내역에서 고른 주문의 교환·반품(취소 포함) 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유·바꿀 옵션은 사용자가 말한 것으로 고르고, 사진이 필요하면 대화에 받은 사진을 쓴다(없을 때만 사진을 부탁한다).",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

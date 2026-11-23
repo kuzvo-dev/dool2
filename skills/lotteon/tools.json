@@ -5,7 +5,7 @@
       "name": "search",
       "title": "상품 찾기",
       "description": "롯데ON에서 상품을 찾아 비교에 쓸 칸을 돌려준다(이름·상품 id·브랜드·지금 가격·정가·할인율·평점·리뷰 수·배송 표시·품절 여부·링크). 로그인 없이 된다. '15만 원 이하'처럼 가격대가 있으면 max_price를, 싼 것부터 보려면 sort를 price.asc로. 광고 상품이 앞에 섞일 수 있다. 사려면 상품 링크를 열어 브라우저 도구로, 주문 상태는 lotteon_orders. 가격 조건은 받은 결과에서 거른다(낮은 가격순이 필요하면 받은 목록을 정렬해 보여 준다).",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "status": "검증됨(2026-11-17, 검색·가격대)",
       "input": {
         "properties": {
@@ -163,7 +163,7 @@
       "name": "orders",
       "title": "주문·배송 조회",
       "description": "롯데ON 주문배송 내역(주문일·상품·결제 금액·주문 상태·배송 상태)을 연다. 로그인해야 한다. '니트 출발했어?' 같은 질문, 취소·반품 전 확인에 쓴다. 취소·반품은 lotteon_cancel_return.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -206,7 +206,7 @@
       "name": "points",
       "title": "L.POINT 확인",
       "description": "마이롯데에서 쓸 수 있는 L.POINT·롯데ON 포인트·쿠폰 수를 읽는다. 로그인해야 한다. '이번 주문에 포인트 쓸 수 있어?' 같은 질문에 쓴다. 실제 사용은 주문서에서 사용자가 말한 만큼만.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -240,7 +240,7 @@
       "name": "cancel_return",
       "title": "취소·반품 신청",
       "description": "롯데ON 주문배송 내역에서 고른 주문의 취소(발송 전)나 반품·교환 신청을 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 사유·수거 방법은 사용자가 말한 것으로, 없으면 흔한 것(단순 변심·문 앞 수거)으로 골라 승인 카드에 적어 바꿀 수 있게 한다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {

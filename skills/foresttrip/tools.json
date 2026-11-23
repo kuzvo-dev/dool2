@@ -5,7 +5,7 @@
       "name": "search",
       "title": "빈 객실 찾기",
       "description": "지역(또는 휴양림 이름)·들어가는 날·나오는 날·인원으로 자연휴양림 빈 객실(숙박시설)을 찾아 휴양림 이름·객실 이름·정원·1박 요금·예약 가능 여부를 정리한다. 조회 화면은 로그인 없이 열리지만, 이 사이트는 지역·날짜를 화면에서 골라야 하고 대기열(넷퍼넬)이 있어 열어 둔 탭에서 브라우저 도구로 이어서 한다. 예약(결제)은 로그인이 필요하다: foresttrip_prepare_booking.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": false,
       "status": "초안",
       "input": {
@@ -83,7 +83,7 @@
       "name": "prepare_booking",
       "title": "예약 준비",
       "description": "고른 휴양림 객실 예약을 결제까지 마친다. 로그인해야 한다(숲나들e 회원). 국립 휴양림 주말·성수기는 추첨제라 바로 예약이 안 될 수 있다: 그때는 foresttrip_lottery. 결제는 마지막 결제 버튼에서 결제 카드(browser_checkout)로 한 번 승인받고, 승인되면 결제 창까지 마쳐 완료 화면의 예약번호로 browser_order_done을 부른다.",
-      "tier": "돈 내기",
+      "tier": "pay",
       "login": true,
       "status": "초안",
       "input": {
@@ -157,7 +157,7 @@
       "name": "lottery",
       "title": "추첨 신청",
       "description": "국립 자연휴양림 주말·성수기 추첨(대기 신청)을 신청 직전까지 준비한다. 로그인해야 한다. 신청 버튼은 사용자 승인(browser_request_approval)을 받아야만 누른다. 결과 확인은 foresttrip_reservations.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {
@@ -226,7 +226,7 @@
       "name": "reservations",
       "title": "예약·추첨 확인",
       "description": "로그인해야 한다. 숲나들e 마이페이지에서 예약 내역(휴양림·객실·날짜·결제 상태·결제 기한)과 추첨 신청·당첨 결과를 정리한다. '휴양림 예약 결제됐어?', '추첨 결과 나왔어?'에 쓴다. 취소는 하지 않는다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {

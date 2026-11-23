@@ -15,22 +15,22 @@
     {
       "title": "알림 확인",
       "say": "어제부터 스레드 반응 어땠어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "글 올리기",
       "say": "이 사진이랑 한 줄 써서 올려 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "답글 달기",
       "say": "장소 물어본 사람한테 답해 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "내 글 찾기",
       "say": "지난달에 쓴 여행 글 찾아 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     }
   ],
   "signedIn": [

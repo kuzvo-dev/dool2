@@ -19,27 +19,27 @@
     {
       "title": "매물 찾기",
       "say": "닌텐도 스위치 20만 원 안쪽",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "시세 확인",
       "say": "내 갤럭시 워치 팔면 얼마 받아?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "판매글 쓰기",
       "say": "안 쓰는 유모차 팔 글 써 둬",
-      "tier": "연락하기"
+      "tier": "contact"
     },
     {
       "title": "채팅 정리",
       "say": "내 판매글에 문의 온 거 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "채팅 보내기",
       "say": "아까 그 판매자한테 직거래 되는지 물어봐 줘",
-      "tier": "연락하기"
+      "tier": "contact"
     }
   ]
 }

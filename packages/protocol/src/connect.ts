@@ -6,9 +6,25 @@ import { APPROVAL_TIERS, approvalLine, CATEGORY_LABEL } from './connect-text.js'
 
 export { APPROVAL_TIERS, approvalLine }
 
-/** 권한 등급 (docs/architecture.md 4.1). 돈 내기·연락하기는 폰 승인이 있어야만 실행된다 */
-export const TierSchema = z.enum(['찾아보기', '채워 두기', '돈 내기', '연락하기'])
-export type Tier = z.infer<typeof TierSchema>
+/**
+ * Risk tier of an ability or tool (docs/architecture.md 4.1, ADR 0029).
+ * `pay` and `contact` run only after approval signed on the phone.
+ */
+export const TIERS = ['lookup', 'fill', 'pay', 'contact'] as const
+export type Tier = (typeof TIERS)[number]
+
+/** Korean values used before ADR 0029. Still accepted when reading cards, mapped to the English keys. */
+export const LEGACY_TIERS: Readonly<Record<string, Tier>> = {
+  찾아보기: 'lookup',
+  '채워 두기': 'fill',
+  '돈 내기': 'pay',
+  연락하기: 'contact',
+}
+
+export const TierSchema = z.preprocess(
+  (v) => (typeof v === 'string' && v in LEGACY_TIERS ? LEGACY_TIERS[v] : v),
+  z.enum(TIERS),
+)
 
 /** 연결 화면의 분류 (connect-text.ts의 CATEGORY_LABEL). 순서가 곧 목록 순서다 */
 export const CONNECT_CATEGORIES = CATEGORY_LABEL

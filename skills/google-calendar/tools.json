@@ -5,7 +5,7 @@
       "name": "agenda",
       "title": "하루 일정",
       "description": "구글 캘린더에서 그날(없으면 오늘) 일정을 시간순으로 읽는다(시간·제목·장소·참석자 수·화상회의 여부). 로그인해야 한다. '오늘 뭐 있어?', '내일 오후 비어 있어?'에 쓴다. (공식 연동 전 웹 화면 기준)",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -45,7 +45,7 @@
       "name": "search",
       "title": "언제였는지 찾기",
       "description": "구글 캘린더에서 검색어로 지난·앞으로의 일정을 찾아 날짜·시간·제목을 돌려준다. 로그인해야 한다. '미용실 마지막으로 간 게 언제야?'에 쓴다.",
-      "tier": "찾아보기",
+      "tier": "lookup",
       "login": true,
       "status": "초안",
       "input": {
@@ -89,7 +89,7 @@
       "name": "prepare_event",
       "title": "일정 잡고 옮기기",
       "description": "구글 캘린더 새 일정 화면을 제목·날짜·시간·장소를 채워 연다. 저장 전에 사용자에게 확인(browser_request_approval)받는다. 로그인해야 한다. 기존 일정을 옮길 때('2시 일정 내일로 미뤄 줘')는 move에 그 일정 제목을 넣으면 그 일정을 찾아 날짜·시간을 바꾸는 쪽으로 안내한다. 참석자를 초대하려면 google_calendar_invite.",
-      "tier": "채워 두기",
+      "tier": "fill",
       "login": true,
       "status": "초안",
       "input": {
@@ -169,7 +169,7 @@
       "name": "invite",
       "title": "초대 보내기",
       "description": "구글 캘린더 새 일정에 참석자(메일 주소)를 넣어 초대장을 보내기 직전까지 간다. 로그인해야 한다. 초대 보내기(저장)는 사용자 승인(browser_request_approval)을 받아야만 한다. 참석자 메일 주소는 사용자에게 받는다.",
-      "tier": "연락하기",
+      "tier": "contact",
       "login": true,
       "status": "초안",
       "input": {

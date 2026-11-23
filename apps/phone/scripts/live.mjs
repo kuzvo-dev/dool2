@@ -221,8 +221,8 @@ writeFileSync(
     summary: '연결하기를 끝까지 시험해 보는 가게예요.',
     example: { ask: '추천 상품 뭐야?', working: '가게 보는 중', reply: '오늘은 제주 귤 3kg이에요.' },
     abilities: [
-      { title: '추천 상품 보기', say: '추천 상품 뭐야?', tier: '찾아보기' },
-      { title: '바로 구매', say: '귤 사 줘', tier: '돈 내기' },
+      { title: '추천 상품 보기', say: '추천 상품 뭐야?', tier: 'lookup' },
+      { title: '바로 구매', say: '귤 사 줘', tier: 'pay' },
     ],
     signedIn: ['로그아웃'],
   }),

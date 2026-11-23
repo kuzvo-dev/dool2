@@ -18,22 +18,22 @@
     {
       "title": "열차 자리 찾기",
       "say": "내일 아침 서울에서 대전 가는 KTX 자리 있어?",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "취소표 지켜보기",
       "say": "금요일 저녁 부산 가는 KTX 매진이야, 취소표 나오면 알려 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "수서 출발(SRT 노선)도 같이",
       "say": "수서에서 동대구 가는 거 자리 봐 줘",
-      "tier": "찾아보기"
+      "tier": "lookup"
     },
     {
       "title": "승차권 예매",
       "say": "토요일 아침 첫 KTX 창가 자리로 끊어 줘",
-      "tier": "돈 내기"
+      "tier": "pay"
     }
   ],
   "signedIn": [
