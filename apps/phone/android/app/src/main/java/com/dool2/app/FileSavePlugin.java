@@ -19,9 +19,9 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 
 /**
- * 보관함 파일을 폰에 저장하거나 다른 앱으로 보내기.
- * 저장: 그림은 사진첩(Pictures/두리), 그 밖은 다운로드(Download/두리) — 안드로이드 10부터 권한 없이.
- * 보내기: 앱 캐시에 두고 공유 창(카톡·메일 등)을 띄운다.
+ * Saves library files on the phone or sends them to another app.
+ * Save: images go to the gallery (Pictures/<app folder>), anything else to Downloads (Download/<app folder>), no permission needed from Android 10.
+ * Send: puts the file in the app cache and opens the share sheet (messenger, mail, etc.).
  */
 @CapacitorPlugin(name = "FileSave")
 public class FileSavePlugin extends Plugin {

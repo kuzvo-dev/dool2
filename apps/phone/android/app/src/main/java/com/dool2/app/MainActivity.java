@@ -6,11 +6,11 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // 폰 잠금 확인 (금고 비밀번호 보기, ADR 0026)
+        // Phone lock check (viewing vault passwords, ADR 0026)
         registerPlugin(DeviceAuthPlugin.class);
-        // 보관함 파일을 폰에 저장·다른 앱으로 보내기
+        // Save library files on the phone or send them to another app
         registerPlugin(FileSavePlugin.class);
-        // 내 번호로 문자 보내기 (승인 카드에서 승인한 것만)
+        // Send a text from my number (only what was approved on an approval card)
         registerPlugin(SmsPlugin.class);
         super.onCreate(savedInstanceState);
     }

@@ -1,24 +1,27 @@
-// 원격 화면 '필요한 칸만': PC 화면에서 사람이 해야 할 칸·고를 것·버튼만 폰 입력칸으로 다시 그린다.
-// 브라우저 탭이든 (나중에) PC 앱 창이든 같은 모양(RemoteForm)을 받는다.
-// 쓴 값은 버튼을 누를 때 한꺼번에 PC의 진짜 칸에 넣고, 화면이 넘어가면 새 칸을 다시 받아 온다
+// Remote screen, "only the fields": redraws just the fields, choices and buttons a person must handle on the PC
+// screen as phone inputs. A browser tab and (later) a PC app window both give the same shape (RemoteForm).
+// Typed values go into the real fields on the PC all at once when a button is pressed; when the page changes,
+// the new fields are fetched again.
 import type { RemoteForm, RemoteFormButton, RemoteFormField, RemoteFormValue } from '@dool2/protocol'
 import { h } from './dom.js'
+import { lang } from './lang.js'
+import { remoteFormText } from './locales/remote-form.js'
 import { drawCheck, otpBoxes, riseIn, springTo } from './motion.js'
 
 export interface FormPaneOpts {
   fill(values: RemoteFormValue[], press?: string): void
-  /** 화면이 넘어간 것 같을 때: 두리에게 이어서 맡기기 */
+  /** When the page seems to have moved on: hand the rest to Dool2 */
   finish(): void
-  /** 칸이 없거나 못 읽을 때 화면 보기로 */
+  /** When there are no fields or they cannot be read: show the screen */
   showScreen(): void
 }
 
 export interface FormPane {
   el: HTMLElement
   set(form: RemoteForm | undefined, error?: string): void
-  /** 칸이 하나라도 있는지 */
+  /** Whether there is at least one field */
   usable(): boolean
-  /** '끝난 것 같아요' 알림을 보여 주는 중 */
+  /** Whether the "looks finished" notice is showing */
   finishing(): boolean
 }
 
@@ -26,6 +29,7 @@ const MAX_CHIPS = 8
 const isText = (f: RemoteFormField) => ['text', 'number', 'tel', 'email', 'secret'].includes(f.kind)
 
 export function createFormPane(o: FormPaneOpts): FormPane {
+  const t = remoteFormText(lang)
   const el = h('div', { class: 'rform' })
   let form: RemoteForm | undefined
   let dirty = new Map<string, RemoteFormValue>()
@@ -46,23 +50,23 @@ export function createFormPane(o: FormPaneOpts): FormPane {
   const fieldEl = (f: RemoteFormField): HTMLElement => {
     const head = h('div', {
       class: 'rform-label',
-      text: f.label || (f.kind === 'secret' ? '비밀번호' : '입력'),
+      text: f.label || (f.kind === 'secret' ? t.password : t.input),
     })
-    // 보안문자: 그림을 크게, 칸 하나
+    // Captcha: a big image and one field
     if (f.captcha) {
       const img = h('img', { class: 'rform-captcha' })
       img.src = `data:image/jpeg;base64,${f.captcha}`
-      img.alt = '보안문자 그림'
+      img.alt = t.captchaAlt
       const inp = textInput(f, 'rform-input big')
       return h(
         'div',
         { class: 'rform-field' },
-        h('div', { class: 'rform-label', text: '그림의 글자를 따라 써 주세요' }),
+        h('div', { class: 'rform-label', text: t.captchaLabel }),
         img,
         inp,
       )
     }
-    // 문자 인증번호: 여섯 칸 (다 넣으면 주 버튼이 하나면 바로 누른다)
+    // SMS verification code: six boxes (once filled, the main button is pressed if there is only one)
     if (f.code) {
       const n = f.max && f.max >= 4 && f.max <= 8 ? f.max : 6
       const box = otpBoxes({
@@ -97,7 +101,7 @@ export function createFormPane(o: FormPaneOpts): FormPane {
         return h('div', { class: 'rform-field' }, head, row)
       }
       const sel = h('select', { class: 'rform-input' })
-      sel.append(h('option', { text: '골라 주세요' }))
+      sel.append(h('option', { text: t.pickOne }))
       for (const op of opts) {
         const x = h('option', { text: op.label })
         x.value = op.id
@@ -143,7 +147,7 @@ export function createFormPane(o: FormPaneOpts): FormPane {
     inp.setAttribute('autocapitalize', 'off')
     inp.spellcheck = false
     if (f.max) inp.maxLength = f.max
-    inp.placeholder = f.kind === 'secret' ? 'PC 칸에만 들어가요' : f.hint || ''
+    inp.placeholder = f.kind === 'secret' ? t.secretHint : f.hint || ''
     if (f.value) inp.value = f.value
     inp.oninput = () => put({ id: f.id, value: inp.value })
     inp.onkeydown = (e) => {
@@ -162,7 +166,7 @@ export function createFormPane(o: FormPaneOpts): FormPane {
     const fields = f.fields
     const main = f.buttons.find((b) => b.main) ?? f.buttons[0]
     const others = f.buttons.filter((b) => b !== main)
-    // 이름이 같은 칸이 이어지면(생년월일 앞 6자리 + 뒷자리 첫 숫자, 번호 나눠 쓰기) 한 줄로
+    // Consecutive fields with the same label (birth date 6 digits + first digit of the rest, split numbers) go on one line
     const rows: HTMLElement[] = []
     for (let i = 0; i < fields.length; i++) {
       const f = fields[i] as RemoteFormField
@@ -196,7 +200,7 @@ export function createFormPane(o: FormPaneOpts): FormPane {
     const parts: HTMLElement[] = []
     if (f.title) parts.push(h('div', { class: 'rform-title', text: f.title }))
     if (fields.length) parts.push(list)
-    else parts.push(h('p', { class: 'rform-empty', text: '이 화면에는 채울 칸이 없어요' }))
+    else parts.push(h('p', { class: 'rform-empty', text: t.noFields }))
     if (others.length)
       parts.push(
         h(
@@ -210,7 +214,7 @@ export function createFormPane(o: FormPaneOpts): FormPane {
     parts.push(
       h('button', {
         class: 'btn-text rform-screen',
-        text: 'PC 화면 그대로 보기',
+        text: t.viewPcScreen,
         onclick: () => o.showScreen(),
       }),
     )
@@ -218,26 +222,24 @@ export function createFormPane(o: FormPaneOpts): FormPane {
     riseIn(list.children, 35)
   }
 
-  // 화면이 넘어간 것 같을 때: 두리에게 이어서 맡길지 묻는다
+  // When the page seems to have moved on: ask whether to hand the rest to Dool2
   const moved = (next: RemoteForm) => {
     const p = pressed
     pressed = undefined
-    // 넘어간 화면에 아직 채울 칸이 있으면 그대로 이어서 (알림은 할 일이 끝나 보일 때만)
+    // If the new page still has fields to fill, just continue (the notice is only for when the task looks finished)
     if (!p?.url || !next.url || p.url === next.url || next.fields.length) return false
     const card = h(
       'div',
       { class: 'rform-moved' },
-      h('strong', { text: '다음 화면으로 넘어갔어요' }),
+      h('strong', { text: t.movedTitle }),
       h('span', {
-        text: next.fields.length
-          ? '이어서 채울 칸이 있어요. 계속하거나 두리에게 맡겨 주세요'
-          : '할 일이 끝난 것 같아요',
+        text: next.fields.length ? t.movedMore : t.movedDone,
       }),
       h(
         'div',
         { class: 'rform-moved-btns' },
-        h('button', { class: 'btn-ghost', text: '계속 할게요', onclick: () => card.remove() }),
-        h('button', { class: 'btn btn-approve', text: '두리에게 이어서 맡기기', onclick: () => o.finish() }),
+        h('button', { class: 'btn-ghost', text: t.keepGoing, onclick: () => card.remove() }),
+        h('button', { class: 'btn btn-approve', text: t.handOver, onclick: () => o.finish() }),
       ),
     )
     el.prepend(card)
@@ -263,14 +265,14 @@ export function createFormPane(o: FormPaneOpts): FormPane {
           h('p', { class: 'rform-empty', text: error }),
           h('button', {
             class: 'btn-text rform-screen',
-            text: 'PC 화면 그대로 보기',
+            text: t.viewPcScreen,
             onclick: () => o.showScreen(),
           }),
         )
         return
       }
       if (!next) return
-      // 같은 칸이면 다시 그리지 않는다 (쓰던 글자·키보드가 그대로)
+      // Same fields: do not redraw (typed text and the keyboard stay)
       const nsig = JSON.stringify([
         next.url,
         next.fields.map((f) => [f.id, f.kind, f.label, f.options?.length, Boolean(f.captcha)]),

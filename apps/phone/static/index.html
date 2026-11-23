@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d0f12" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- 앱에는 서버가 붙이는 보안 헤더가 없어서 여기서 같은 규칙을 건다: 앱 안의 코드만, 연결은 중계 서버로만 -->
+    <!-- The app has no security headers added by a server, so the same rules are set here: only code inside the app, connections only to the relay -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: wss:; img-src 'self' data: blob:; style-src 'self'; script-src 'self'" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon192.png" />

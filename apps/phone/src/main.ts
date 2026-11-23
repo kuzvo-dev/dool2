@@ -1,6 +1,6 @@
-// 두리 폰 앱 (v2 디자인: docs/design/screens/soft). PC의 두리와 중계 서버를 거쳐 종단 간 암호화로 이야기한다 (ADR 0012).
-// 화면: 연결(페어링) → 앱(대화 하나 · 맡긴 일 · 아이디어 · 연결) + 메뉴 서랍 · 두리 패널 · 승인/로그인 시트 · PC 화면
-// 머리·탭·입력칸은 한 번만 만들고, 대화는 바뀐 말만 덧붙인다 (다시 그려도 깜빡이거나 스크롤이 튀지 않게).
+// Dool2 phone app (v2 design: docs/design/screens/soft). Talks to Dool2 on the PC through the relay with end-to-end encryption (ADR 0012).
+// Screens: connect (pairing) -> app (one chat · tasks · ideas · connections) + menu drawer · Dool2 panel · approval and login sheets · PC screen
+// The header, tabs and input are built once, and the chat only appends changed messages (so a redraw does not flicker or jump the scroll).
 import type {
   ApprovalRecordMessage,
   ApprovalView,
@@ -95,6 +95,7 @@ import {
   withLogo,
 } from './dom.js'
 import { matchTextBox, recentTalk, ghostRest as suggestRest } from './ghost.js'
+import { lang } from './lang.js'
 import {
   feedView,
   goalSheet,
@@ -107,6 +108,19 @@ import {
   plain,
   upcomingSeg,
 } from './life-views.js'
+import { mainApproval } from './locales/main-a-approval.js'
+import { mainCore } from './locales/main-a-core.js'
+import { mainWork } from './locales/main-a-work.js'
+import { approvalText } from './locales/main-b-approval.js'
+import { chatText } from './locales/main-b-chat.js'
+import { shellText } from './locales/main-b-shell.js'
+import { smsText } from './locales/main-b-sms.js'
+import { mainCCards } from './locales/main-c-cards.js'
+import { mainCFeed } from './locales/main-c-feed.js'
+import { mainCSettings } from './locales/main-c-settings.js'
+import { mdCred } from './locales/main-d-cred.js'
+import { mdSheets } from './locales/main-d-sheets.js'
+import { mdSide } from './locales/main-d-side.js'
 import {
   acceptGhost,
   drawCheck,
@@ -137,13 +151,32 @@ import {
   smsPermissions,
   smsSend,
 } from './native.js'
+import { ID_LOGIN, OPEN_SCREEN_TAIL, PREFERRED_INSTALLMENT } from './region/kr/main-a-chat.js'
+import {
+  HONORIFIC_RE,
+  MY_ADDRESS_PREFIX,
+  MY_ADDRESS_PREFIX_RE,
+  PEOPLE_LABEL_RE,
+  REQUEST_LABEL_RE,
+  TICKET_LABEL_RE,
+  TIME_LABEL_RE,
+  WHEN_LABEL_RE,
+} from './region/kr/main-b-approval.js'
+import { ENTER_SUFFIX, FILE_MOVE_LABEL, FILE_RESTORE_LABEL, PICK_LABEL } from './region/kr/main-c-labels.js'
+import {
+  AUTH_DONE_OPTION,
+  DIGITS_RE,
+  FEED_THREAD_TITLE,
+  ID_PASSWORD_LOGIN_RE,
+  PAY_SECRET_RE,
+} from './region/kr/main-d.js'
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
 
 const app = document.getElementById('app') as HTMLElement
 
-// ── 상태 ──
-/** 탭 막대 5칸 + 메뉴에서 여는 쪽(연결·설정) */
+// ── State ──
+/** Five tab bar slots plus pages opened from the menu (connect, settings) */
 type Tab = 'chat' | 'feed' | 'ideas' | 'goals' | 'library' | 'connect' | 'settings'
 type Screen =
   | { name: 'intro' }
@@ -151,34 +184,34 @@ type Screen =
   | { name: 'pairing'; code: string; pcName: string; rejected?: boolean }
   | { name: 'app' }
   | { name: 'remote'; tabId: number; connectId?: string }
-  /** 따로 하는 대화 하나 */
+  /** One side conversation */
   | { name: 'side'; id: string }
 type Overlay =
   | { kind: 'drawer' }
   | { kind: 'agent' }
   | { kind: 'approval'; id: string }
-  /** 결제 카드의 받는 곳·결제 수단 고르기 시트 */
+  /** Sheet for picking the delivery place and payment method on a payment card */
   | { kind: 'pick-ship'; id: string; back?: boolean }
   | { kind: 'pick-pay'; id: string; back?: boolean }
   | { kind: 'login'; id: string }
-  /** 로그인 중 화면이 묻는 것 (인증번호 등) */
+  /** What the screen asks for during login (verification code and so on) */
   | { kind: 'info'; id: string }
-  /** 서비스 연결하기: 아이디·비밀번호 → 두리가 대신 로그인 */
+  /** Connect a service: ID and password -> Dool2 logs in for you */
   | { kind: 'connect'; id: string }
   | { kind: 'goal'; id: string }
   | { kind: 'item'; id: string }
-  /** 답을 길게 눌렀을 때: 보관함에 남기기·복사 */
+  /** On long-press of a reply: save to library, copy */
   | { kind: 'msg'; id: string }
-  /** 문제 알리기: 방금 있었던 일을 PC의 기록에 남긴다 */
+  /** Report a problem: leaves what just happened in the PC's log */
   | { kind: 'report' }
-  /** 설정 > 내 정보: 가린 값 보기·고치기·지우기 */
+  /** Settings > My info: view masked values, edit, delete */
   | { kind: 'profile' }
-  /** 설정 > 금고: 저장된 로그인 보기(폰 잠금 확인 뒤)·고치기·지우기 (ADR 0026) */
+  /** Settings > Vault: view saved logins (after phone lock check), edit, delete (ADR 0026) */
   | { kind: 'vault' }
-  /** 설정 > 결제 수단: 내 결제 수단 목록(맨 위가 주 결제 수단)·추가 (ADR 0023) */
+  /** Settings > Payment methods: my methods (the top one is the main one) and adding (ADR 0023) */
   | { kind: 'pay' }
   | { kind: 'pay-add' }
-  /** 입력칸 + : 빠른 메뉴 */
+  /** Input box +: quick menu */
   | { kind: 'plus' }
   | undefined
 
@@ -187,62 +220,62 @@ const st: {
   key?: CryptoKey
   client?: LinkClient
   online: boolean
-  /** 중계에는 붙었는데 PC가 답하지 않는다 (PC가 꺼졌거나, PC에서 이 폰 연결을 지웠다) */
+  /** Connected to the relay but the PC does not answer (the PC is off, or this phone's link was removed on the PC) */
   pcSilent: boolean
   screen: Screen
   tab: Tab
   overlay: Overlay
   pc?: Extract<PcToPhone, { kind: 'state' }>
-  /** 대화 하나 */
+  /** One conversation */
   conv: StoredMessage[]
   convLoaded: boolean
   hasMore: boolean
   busy: boolean
   queued: string[]
-  /** 지금 답에서 온 글자와 한 일 */
+  /** Text and actions from the current reply */
   live: string
   steps: string[]
-  /** 보냈지만 PC가 아직 받았다고 하지 않은 말 (바로 화면에 띄운다) */
+  /** Messages sent but not yet confirmed by the PC (shown on screen right away) */
   pending: { id: number; text: string; photo?: string }[]
-  /** 보낼 사진 (줄인 JPEG base64) */
+  /** Photo to send (shrunk JPEG, base64) */
   attach?: string
   approvals: Map<string, ApprovalView & { shot?: string }>
   decided: Map<string, { ok: boolean; message: string }>
-  /** 승인 카드에서 고른 선택지 (결제 수단): 승인 id → 선택지 id */
+  /** Option picked on an approval card (payment method): approval id -> option id */
   choice: Map<string, string>
-  /** 설정 > 내 정보(가린 값)·사이트별 마지막 결제 수단 (PC에 물어 받는다) */
+  /** Settings > My info (masked values) and the last payment method per site (asked from the PC) */
   profile?: {
     have: Record<string, string>
     missing: string[]
     payChoices: Record<string, string>
-    /** 내 결제 수단 (예전 PC면 undefined: 등록 기능을 숨긴다) */
+    /** My payment methods (undefined on an older PC: hides registration) */
     payMethods?: PayMethod[]
   }
-  /** 설정 > 금고 목록 (비밀번호 없음) */
+  /** Settings > Vault list (no passwords) */
   vault?: (VaultEntry & { name?: string })[]
-  /** 잠깐 보이는 비밀번호 (30초 뒤·시트를 닫으면 지운다) */
+  /** Password shown briefly (cleared after 30 seconds or when the sheet closes) */
   vaultShown?: { id: string; username: string; password: string }
-  /** 고치는 중인 항목 */
+  /** Item being edited */
   vaultEdit?: string
-  /** 결제 수단 추가 시트에 쓰는 중인 것 */
+  /** What the add-payment-method sheet is filling in */
   payDraft: { kind?: PayKind; inner: string; issuer: string; nickname: string; last4: string }
   logins: Map<string, LoginRequestView>
   infos: Map<string, InfoRequestView>
   loginDraft: { id: string; user: string; pw: string; busy?: boolean; error?: string }
-  /** 대신 로그인이 끝까지 못 간 서비스 → 그 화면(탭) */
+  /** Service whose login on our behalf did not finish -> its screen (tab) */
   connectTabs: Map<string, number>
-  /** 연결하는 동안 두리가 로그인하고 있는 탭과 그 화면 (연결 카드에 작게 실시간으로) */
+  /** Tab Dool2 is logging in on while connecting, and its screen (shown small and live on the connect card) */
   connectLive: Map<string, { tabId: number; shot?: string }>
   services?: ConnectionItem[]
   connectQuery: string
   connectCat: string
-  /** 아이디어 탭: 고른 분류('all' = 전체)와 찾는 말 */
+  /** Ideas tab: the chosen category ('all' = everything) and the search text */
   ideaCat: string
-  /** 두리 본체가 지금 로그인하고 있는 서비스 */
+  /** Services the Dool2 daemon is logging in to right now */
   connecting: Set<string>
-  /** 연결하는 동안 본체가 알려 온 단계 (서비스 id → 단계) */
+  /** Steps the daemon reported while connecting (service id -> steps) */
   connectSteps: Map<string, ConnectStep[]>
-  /** 연결이 끝까지 못 갔을 때 그 까닭 (카드가 "직접 마쳐 주세요"·"다시 넣기"로 남는다) */
+  /** Why a connection did not finish (the card stays as "finish it yourself" or "enter again") */
   connectFails: Map<
     string,
     {
@@ -253,17 +286,17 @@ const st: {
       at?: number
     }
   >
-  /** 일하는 화면: 두리가 웹에서 일하는 동안 대화에 띄우는 그 탭의 실시간 화면 */
+  /** Working screen: live view of the tab shown in the chat while Dool2 works on the web */
   work: { tabId?: number; web: boolean; shot?: string; url?: string }
   ideaQuery: string
-  /** 연결하고 나서 바로 보낼 아이디어 (연결 안 한 곳의 아이디어를 눌렀을 때) */
+  /** Idea to send right after connecting (when an idea for an unconnected service was tapped) */
   afterConnect?: { id: string; text: string; at: number }
   connectDetail?: string
   opening?: string
   agentSeg: 'upcoming' | 'memory' | 'screen' | 'activity' | 'approvals'
-  /** 목표·보관함·기억·피드 (PC 본체) */
+  /** Goals, library, memory and feed (from the PC daemon) */
   life?: LifeState
-  /** 열어 둔 따로 하는 대화 */
+  /** Side conversations that are open */
   side?: {
     id: string
     title: string
@@ -273,9 +306,9 @@ const st: {
     busy: boolean
     draft: string
   }
-  /** 새 따로 하는 대화를 만들어 달라고 했다 (만들어지면 바로 연다) */
+  /** A new side conversation was requested (opened as soon as it exists) */
   sideWanted?: boolean
-  /** 메뉴에서 따로 하는 대화를 모두 펼쳐 보는 중 */
+  /** Showing every side conversation in the menu */
   sideAll?: boolean
   librarySeg: 'made' | 'media'
   draft: string
@@ -318,26 +351,26 @@ const st: {
 }
 let pendingSeq = 0
 
-// ── 연결 ──
+// ── Connection ──
 
-// 보내기는 한 줄로 세운다. 순번(seq)을 올리고 저장·암호화를 기다리는 사이 다른 메시지가 끼면
-// 같은 순번으로 나가거나 순서가 뒤집혀, PC가 뒤의 것을 재전송으로 보고 버린다
+// Sending is queued in a single line. If another message slips in while the sequence number is raised and we wait for saving and encryption, it
+// would go out with the same number or in the wrong order, and the PC would take the later one for a resend and drop it
 let sending = Promise.resolve()
 function send(body: PhoneToPc): Promise<void> {
-  if (!QUIET_SEND.has(body.kind)) mark(`보냄 ${body.kind}${'action' in body ? `:${body.action}` : ''}`)
+  if (!QUIET_SEND.has(body.kind)) mark(`sent ${body.kind}${'action' in body ? `:${body.action}` : ''}`)
   sending = sending.then(() => sendNow(body)).catch(() => {})
   return sending
 }
 
-// ── 앱에서 방금 있었던 일 (문제 알리기용) ──
-// 누른 것·받은 신호의 종류와 시각만 폰 메모리에 300줄까지 둔다. 대화 내용·넣은 값은 담지 않는다.
-// [문제 알리기]를 누를 때만 PC로 보내고, PC의 일한 기록에 며칠 남는다
+// ── What just happened in the app (for reporting a problem) ──
+// Only the kind and time of taps and received signals are kept in phone memory, up to 300 lines. Chat content and entered values are not stored.
+// Sent to the PC only when [Report a problem] is tapped, and kept in the PC's activity log for a few days
 const trail: { at: number; what: string }[] = []
 function mark(what: string) {
   trail.push({ at: Date.now(), what: what.slice(0, 160) })
   if (trail.length > 300) trail.splice(0, trail.length - 300)
 }
-/** 너무 자주 오가서 적지 않는 것 */
+/** Signals that come too often to log */
 const QUIET_SEND = new Set<string>(['screen', 'ping', 'remote', 'report', 'thumb'])
 
 async function sendNow(body: PhoneToPc) {
@@ -353,24 +386,17 @@ async function sendNow(body: PhoneToPc) {
 let heard = false
 let silentTimer: ReturnType<typeof setTimeout> | undefined
 
-/** 이 폰의 연결을 지우고 처음(QR 찍기)으로 */
-/** 처음부터 다시 (시험용 PC): 두 번 묻고, 이 폰의 키로 서명해 보낸다. PC가 서명을 확인한 뒤에만 지운다 */
+/** Clears this phone's connection and returns to the start (scan QR) */
+/** Start over (test PC): asks twice and sends a request signed with this phone's key. The PC erases only after verifying the signature */
 async function resetAll() {
   const s = st.saved
   if (!s) return
-  if (
-    !confirm(
-      '처음부터 다시 할까요?\n\nPC의 대화·기억·목표·보관함·아이디어·내 정보가 모두 지워져요. 되돌릴 수 없어요.',
-    )
-  )
-    return
-  const services = confirm(
-    '연결한 서비스도 처음부터 할까요?\n\n[확인] 연결 표시도 지워요\n[취소] 연결은 그대로 둬요\n\n금고의 비밀번호와 이 폰의 PC 연결은 어느 쪽이든 남아요.',
-  )
-  mark(`처음부터 다시 (서비스 ${services ? '포함' : '빼고'})`)
+  if (!confirm(mainCore(lang).resetAsk)) return
+  const services = confirm(mainCore(lang).resetServicesAsk)
+  mark(`reset (services ${services ? 'included' : 'kept'})`)
   const at = Date.now()
   const sig = await signText(s.keys.signPriv, resetSignText(at, services))
-  toast('지우는 중이에요…')
+  toast(mainCore(lang).resetting)
   await send({ kind: 'reset', at, services, sig })
 }
 
@@ -401,11 +427,11 @@ function connect() {
     room: s.pcId,
     onEnvelope: (env) => void receive(env),
     onState: (state) => {
-      if (st.online !== (state === 'ready')) mark(`중계 ${state}`)
+      if (st.online !== (state === 'ready')) mark(`relay ${state}`)
       st.online = state === 'ready'
       clearTimeout(silentTimer)
       if (state === 'ready' && st.saved?.paired) {
-        // 7초 안에 PC가 아무 말도 없으면 알려 준다 (빈 화면으로 멈춰 있지 않게)
+        // If the PC says nothing within 7 seconds, tell the user (so it does not sit on an empty screen)
         heard = false
         silentTimer = setTimeout(() => {
           if (heard || !st.online) return
@@ -440,9 +466,9 @@ async function receive(env: Envelope) {
       s.paired = true
       s.pcName = msg.pcName
       await save(s)
-      toast('연결됐어요. 이제 폰으로 부탁해 보세요')
+      toast(mainCore(lang).paired)
       st.screen = { name: 'app' }
-      // 다시 연결할 때와 같은 것을 받아 온다 (피드·목표·아이디어가 비어 보이지 않게)
+      // Fetch the same things as on reconnect (so feed, goals and ideas do not look empty)
       void send({ kind: 'conversation' })
       void send({ kind: 'connections' })
       void send({ kind: 'life' })
@@ -454,22 +480,22 @@ async function receive(env: Envelope) {
       break
     case 'state':
       st.pc = msg
-      // PC 이름을 PC나 다른 폰에서 바꿨으면 따라간다
+      // If the PC name was changed on the PC or another phone, follow it
       if (msg.pcName && msg.pcName !== s.pcName) {
         s.pcName = msg.pcName
         await save(s)
       }
       for (const a of msg.approvals) if (!st.approvals.has(a.id)) st.approvals.set(a.id, a)
       for (const l of msg.logins ?? []) st.logins.set(l.id, l)
-      // PC가 보낸 기다리는 로그인이 전부다: 목록에 없으면 PC에서 끝났거나(본체를 다시 켬·시간 지남) 사라진 것
-      // (컬리 로그인 카드가 연결을 마친 뒤에도 '나를 기다려요'에 남았다)
+      // The pending logins the PC sent are the whole list: one not in it has finished on the PC (daemon restarted, timed out) or is gone
+      // (a Kurly login card used to stay under "waiting for me" even after connecting)
       for (const l of st.logins.values())
         if (l.status === 'pending' && !(msg.logins ?? []).some((x) => x.id === l.id))
           st.logins.set(l.id, { ...l, status: 'expired' })
       for (const q of msg.infos ?? []) st.infos.set(q.id, q)
       for (const id of st.infos.keys()) if (!(msg.infos ?? []).some((q) => q.id === id)) st.infos.delete(id)
       st.connecting = new Set(msg.connecting ?? [])
-      // 일하는 중에 앱을 다시 열었으면: 두리가 보고 있는 탭을 받아 일하는 화면을 이어서 띄운다
+      // If the app was reopened mid-work: get the tab Dool2 is looking at and keep showing the working screen
       if (msg.activeTab !== undefined && st.work.tabId === undefined)
         st.work = { ...st.work, tabId: msg.activeTab }
       void syncPush()
@@ -487,14 +513,14 @@ async function receive(env: Envelope) {
       st.hasMore = msg.state.hasMore
       st.busy = msg.state.busy
       st.queued = msg.state.queued
-      // 다시 받아 온 기록에 이미 있거나 줄 선 말은 "보내는 중"에서 뺀다 (안 그러면 같은 말이 두 번 보인다)
+      // Drop from "sending" any message already in the re-fetched record or already queued (otherwise it shows twice)
       if (!msg.before) {
         const mine = new Set(
           msg.state.messages.filter((m) => m.role === 'user').map((m) => splitPhoto(m.text).text),
         )
         st.pending = st.pending.filter((p) => !mine.has(p.text) && !msg.state.queued.includes(p.text))
       }
-      // 다시 받아 온 기록이 끝난 상태면, 놓친 끝 신호 때문에 남은 "대답하는 중"을 지운다
+      // If the re-fetched record is finished, clear a "replying" state left by a missed end signal
       if (!msg.before && !msg.state.busy) {
         st.live = ''
         st.steps = []
@@ -503,7 +529,7 @@ async function receive(env: Envelope) {
     case 'conversation-status':
       st.busy = msg.busy
       st.queued = msg.queued
-      // 줄 선 말로 넘어간 건 "보내는 중"에서 뺀다
+      // A message that moved to the queue is dropped from "sending"
       st.pending = st.pending.filter((p) => !msg.queued.includes(p.text))
       if (!msg.busy) {
         st.live = ''
@@ -511,7 +537,7 @@ async function receive(env: Envelope) {
       }
       break
     case 'stream':
-      // 따로 하는 대화의 진행은 그 화면으로, 나머지는 메인 대화로
+      // Progress of a side conversation goes to its own screen, the rest to the main chat
       if (isSideThread(msg.threadId)) {
         onSideStream(msg.threadId, msg.event)
         if (st.screen.name !== 'side') return
@@ -522,7 +548,7 @@ async function receive(env: Envelope) {
     case 'approval':
       st.approvals.set(msg.approval.id, msg.approval)
       if (msg.approval.status === 'pending')
-        notify('승인을 기다려요', msg.approval.what, `approval-${msg.approval.id}`)
+        notify(mainCore(lang).approvalWaiting, msg.approval.what, `approval-${msg.approval.id}`)
       break
     case 'thumb':
       gotThumb(msg.url, msg.data)
@@ -555,7 +581,7 @@ async function receive(env: Envelope) {
     case 'reset-done': {
       toast(msg.message)
       if (!msg.ok) break
-      // 이 폰에 남긴 대화 조각·방금 기록도 지우고, 앱을 처음 연 것처럼 다시 띄운다 (PC 연결·화면 테마는 그대로)
+      // Also clear the conversation pieces and recent log kept on this phone, and relaunch as if the app was opened for the first time (PC link and theme stay)
       await clearConv().catch(() => undefined)
       trail.splice(0)
       setTimeout(() => location.reload(), 1200)
@@ -565,13 +591,13 @@ async function receive(env: Envelope) {
       st.decided.set(msg.id, { ok: msg.ok, message: msg.message })
       const a = st.approvals.get(msg.id)
       if (a && msg.ok) st.approvals.set(msg.id, { ...a, status: a.status === 'pending' ? 'done' : a.status })
-      // 잘 됐으면 카드가 바로 바뀌니 알림 막대는 띄우지 않는다
+      // On success the card changes right away, so no toast bar is shown
       if (!msg.ok) toast(msg.message)
       void send({ kind: 'approval', id: msg.id })
       break
     }
     case 'info-request':
-      // 연결 중 화면이 묻는 것: 입력 화면을 바로 띄운다 (PC 화면을 찾아 칠 필요 없이)
+      // What the screen asks for while connecting: open the input screen right away (no need to find the PC screen and type there)
       st.infos.set(msg.request.id, msg.request)
       openOverlay({ kind: 'info', id: msg.request.id })
       break
@@ -581,11 +607,11 @@ async function receive(env: Envelope) {
       break
     case 'login-request':
       st.logins.set(msg.request.id, msg.request)
-      // 서비스 연결 중 두리가 부탁한 계정(카카오 등): 입력 화면을 바로 띄운다
+      // An account Dool2 asked for while connecting a service (Kakao and so on): open the input screen right away
       if (msg.request.connect) openOverlay({ kind: 'login', id: msg.request.id })
       notify(
-        '로그인이 필요해요',
-        `${msg.request.site} 아이디와 비밀번호를 넣어 주세요`,
+        mainCore(lang).loginNeeded,
+        mainCore(lang).loginNeededBody(msg.request.site),
         `login-${msg.request.id}`,
       )
       break
@@ -610,7 +636,7 @@ async function receive(env: Envelope) {
           ? [...st.connectLive.values()].find((l) => l.tabId === msg.tabId)
           : undefined
       if (live && msg.shot) {
-        // 연결 카드 안 로그인 화면: 그림만 바꾼다
+        // Login screen inside a connect card: only swap the image
         const first = !live.shot
         live.shot = msg.shot
         const img = document.querySelector<HTMLImageElement>(`.connect-shot[data-tab="${msg.tabId}"]`)
@@ -619,7 +645,7 @@ async function receive(env: Envelope) {
         return
       }
       if (st.screen.name !== 'remote' && msg.tabId === st.work.tabId && msg.shot) {
-        // 대화 안 일하는 화면: 그림만 바꾼다
+        // Working screen in the chat: only swap the image
         const first = !st.work.shot
         st.work = { ...st.work, shot: msg.shot, ...(msg.url ? { url: msg.url } : {}) }
         const shotHost = msg.url ? hostOf(msg.url) : ''
@@ -635,8 +661,8 @@ async function receive(env: Envelope) {
       if (msg.error) break
       frameTimes.push(performance.now())
       nextScreen(msg.tabId)
-      // 실시간 화면: 그림만 바꾼다 (화면 전체를 다시 그리지 않아 깜빡이지 않는다)
-      // 원격 화면은 한 번 만든 화면에 그림·정보만 바꾼다
+      // Live screen: only swap the image (the whole screen is not redrawn, so it does not flicker)
+      // The remote screen is built once, and only its image and info are swapped
       if (remoteUi?.tabId === msg.tabId && hadShot) {
         remoteUi.update(st.screenShot, fps())
         return
@@ -645,13 +671,13 @@ async function receive(env: Envelope) {
     }
     case 'connections': {
       st.services = msg.services
-      // 사람이나 두리가 화면에서 로그인을 마쳐 연결된 경우에도, 미뤄 둔 부탁(연결하면 바로 시작)을 이어서 보낸다
+      // Even when a person or Dool2 finished the login on the screen and it connected, send the postponed request (start right after connecting)
       if (st.afterConnect && msg.services.some((s) => s.card.id === st.afterConnect?.id && s.connectedAt))
         runAfterConnect(st.afterConnect.id)
-      // 원격 화면으로 로그인하는 중에 PC가 로그인을 확인하면 그 서비스로 돌아간다
+      // If the PC confirms the login while logging in on the remote screen, go back to that service
       const v = st.screen
-      // 연결 카드에서 연 화면이든, 두리가 넘긴 화면(같은 로그인 탭)이든: 그 서비스가 연결되면 닫는다.
-      // 그대로 두면 로그인 뒤 사이트 첫 화면(검색칸 등)을 '필요한 칸'으로 그려 버린다 (실측 11번가)
+      // Whether opened from a connect card or handed over by Dool2 (the same login tab): close it once that service is connected.
+      // Left open, the site's first screen after login (a search box and so on) would be drawn as a "field needed" (measured on 11st)
       const ownerOf = (tabId: number) =>
         [...st.connectTabs.entries()].find(([, t]) => t === tabId)?.[0] ??
         [...st.connectFails.entries()].find(([, f]) => f.tabId === tabId)?.[0]
@@ -659,13 +685,13 @@ async function receive(env: Envelope) {
       if (v.name === 'remote' && remoteFor) {
         const done = msg.services.find((x) => x.card.id === remoteFor && x.connectedAt)
         if (done) {
-          // 대화로 돌아간다: 연결 카드가 "연결돼 있어요"로 바뀌고 이어지는 일도 거기서 보인다
-          // (연결 화면에서 시작했을 때만 그 서비스 화면으로)
+          // Go back to the chat: the connect card turns to "connected" and the follow-up work shows there
+          // (to that service's screen only if it started from the connect screen)
           st.screen = { name: 'app' }
           st.tab = remoteFrom === 'connect' ? 'connect' : 'chat'
           if (st.tab === 'connect') st.connectDetail = done.card.id
           else stickToBottom = true
-          toast(`${done.card.name} 연결됐어요`)
+          toast(mainCore(lang).serviceConnected(done.card.name))
           runAfterConnect(done.card.id)
         }
       }
@@ -676,7 +702,7 @@ async function receive(env: Envelope) {
       takeLife(msg.state)
       break
     case 'life-page':
-      // 부탁한 목록의 다음 페이지 (before 없으면 첫 페이지 다시 받기)
+      // Next page of the request list (without before, fetch the first page again)
       if (msg.list === 'library') libPagers[msg.tab === 'files' ? 'files' : 'made'].take(msg.before, msg)
       else (msg.kinds?.length ? activityPager : feedPager).take(msg.before, msg)
       break
@@ -687,10 +713,10 @@ async function receive(env: Envelope) {
       fileChunkWaits.get(`${msg.id}:${msg.offset}`)?.(msg)
       break
     case 'work-tab': {
-      // 두리가 이 탭에서 일하기 시작했다 (브라우저 도구든 서비스 도구든): 답하는 중이면 대화에 그 화면을 띄운다.
-      // 예전에는 도구 이름이 browser_일 때만 띄워서, 서비스 도구로 일하면 화면이 안 보였다
+      // Dool2 started working on this tab (browser tool or service tool): if it is replying, show that screen in the chat.
+      // It used to open only when the tool name was browser_, so the screen did not show when working with service tools
       const fresh = msg.tabId !== st.work.tabId
-      // 방금 연 사이트의 새 탭이면 그 탭의 사이트로 기억한다
+      // If it is a new tab of the site just opened, remember that site for the tab
       if (openedHost && !tabHosts.has(msg.tabId)) {
         tabHosts.set(msg.tabId, openedHost)
         openedHost = undefined
@@ -707,7 +733,7 @@ async function receive(env: Envelope) {
     }
     case 'connect-status':
       st.connecting = new Set(msg.connecting)
-      // 다시 하기 시작하면 지난번 실패는 지운다
+      // Starting again clears the last failure
       for (const id of msg.connecting) st.connectFails.delete(id)
       for (const id of st.connectSteps.keys()) if (!st.connecting.has(id)) st.connectSteps.delete(id)
       for (const id of st.connectLive.keys()) if (!st.connecting.has(id)) st.connectLive.delete(id)
@@ -730,7 +756,7 @@ async function receive(env: Envelope) {
       if (msg.tabId !== undefined) st.connectTabs.set(msg.id, msg.tabId)
       if (msg.ok) {
         st.connectFails.delete(msg.id)
-        // 연결 목록이 오기 전에도 카드가 바로 "연결돼 있어요"로 (잠깐 처음 상태로 돌아가 보이지 않게)
+        // Turn the card to "connected" even before the connection list arrives (so it does not briefly look unconnected)
         const it = st.services?.find((x) => x.card.id === msg.id)
         if (it && !it.connectedAt) it.connectedAt = new Date().toISOString()
       } else
@@ -738,20 +764,20 @@ async function receive(env: Envelope) {
           reason: msg.reason ?? (msg.human ? 'human' : 'unknown'),
           message: msg.message,
           ...(msg.tabId !== undefined ? { tabId: msg.tabId } : {}),
-          // 두리가 이어받았으면 그때부터 (답하기 시작하기 전 잠깐도 '이어서 하는 중'으로 보이게)
+          // If Dool2 took over, from then on (so the moment before it starts replying also reads as "carrying on")
           ...(msg.agent ? { agent: true, at: Date.now() } : {}),
         })
       if (msg.ok) {
         st.connectTabs.delete(msg.id)
         if (st.overlay?.kind === 'connect') st.overlay = undefined
-        // 대화를 보고 있으면 카드가 "연결돼 있어요"로 바뀌는 걸로 충분하다 (같은 말을 또 띄우지 않는다)
+        // If the chat is on screen, the card turning to "connected" is enough (do not say the same thing twice)
         if (st.tab !== 'chat' || st.screen.name !== 'app') toast(msg.message)
         runAfterConnect(msg.id)
       } else if (st.tab !== 'chat' || st.screen.name !== 'app') {
-        // 화면을 멋대로 바꾸지 않는다: 알리기만 한다. 사람 차례면 알림을 눌러 바로 그 화면을 연다
+        // Do not switch screens on our own: only notify. If it is the person's turn, tapping the toast opens that screen
         const tab = msg.tabId
         if (tab !== undefined && msg.reason === 'human')
-          toast(`${msg.message} 눌러서 열기`, () => openRemote(tab, msg.id))
+          toast(mainCore(lang).tapToOpen(msg.message), () => openRemote(tab, msg.id))
         else toast(msg.message)
       }
       break
@@ -782,27 +808,29 @@ async function receive(env: Envelope) {
   renderSoon()
 }
 
-/** 받은 신호를 한 줄로 (내용 말고 종류만. 흘러오는 글자·화면 그림은 적지 않는다) */
+/** One line per received signal (kind only, no content; streamed text and screen images are not logged) */
 function markReceived(msg: PcToPhone) {
   if (msg.kind === 'screen' || msg.kind === 'form') return
   if (msg.kind === 'stream') {
     const ev = msg.event
     if (ev.type === 'agent') {
-      if (ev.event.type === 'tool') mark(`받음 도구 ${ev.event.name}`)
+      if (ev.event.type === 'tool') mark(`received tool ${ev.event.name}`)
       return
     }
-    return mark(`받음 stream:${ev.type}${ev.type === 'saved' ? `:${ev.message.role}` : ''}`)
+    return mark(`received stream:${ev.type}${ev.type === 'saved' ? `:${ev.message.role}` : ''}`)
   }
   if (msg.kind === 'connect-result')
     return mark(
-      `받음 connect-result ${msg.id} ${msg.ok ? 'ok' : (msg.reason ?? 'fail')}${msg.agent ? ' 이어받음' : ''}`,
+      `received connect-result ${msg.id} ${msg.ok ? 'ok' : (msg.reason ?? 'fail')}${msg.agent ? ' taken-over' : ''}`,
     )
-  if (msg.kind === 'connect-progress') return mark(`받음 connect-progress ${msg.id} ${msg.steps.length}단계`)
-  if (msg.kind === 'connect-status') return mark(`받음 connect-status ${msg.connecting.join(',') || '없음'}`)
+  if (msg.kind === 'connect-progress')
+    return mark(`received connect-progress ${msg.id} ${msg.steps.length} steps`)
+  if (msg.kind === 'connect-status')
+    return mark(`received connect-status ${msg.connecting.join(',') || 'none'}`)
   if (msg.kind === 'conversation-status')
-    return mark(`받음 conversation-status ${msg.busy ? '답하는 중' : '쉼'}`)
-  if (msg.kind === 'error') return mark(`받음 error ${msg.message}`)
-  mark(`받음 ${msg.kind}`)
+    return mark(`received conversation-status ${msg.busy ? 'replying' : 'idle'}`)
+  if (msg.kind === 'error') return mark(`received error ${msg.message}`)
+  mark(`received ${msg.kind}`)
 }
 
 function onStream(ev: DaemonStreamEvent) {
@@ -822,17 +850,17 @@ function onStream(ev: DaemonStreamEvent) {
     st.busy = true
     if (ev.event.type === 'text') st.live += ev.event.delta
     else if (ev.event.type === 'tool') {
-      // 웹에서 일하기 시작하면 대화에 그 화면을 띄운다
-      // (서비스 도구는 본체가 탭을 열면서 work-tab으로 알린다. 다른 도구를 잠깐 쓴다고 화면을 끄지 않는다)
+      // When work on the web starts, show that screen in the chat
+      // (Service tools announce their tab with work-tab when the daemon opens it. Using another tool briefly does not turn the view off)
       if (/browser_/.test(ev.event.name) && !st.work.web) {
         st.work = { ...st.work, web: true }
         pollWork()
       }
-      // 도구 앞에 한 말은 답이 아니라 지금 하는 일. 한국어 한 줄만 단계로 남기고 말풍선은 비운다
-      const act = `${ev.event.title ?? toolLabel(ev.event.name)} 중`
+      // What is said before a tool is not a reply but the current action. Keep that single line as a step and clear the bubble
+      const act = mainCore(lang).doing(ev.event.title ?? toolLabel(ev.event.name))
       const label = narrationLine(st.live) ?? act
       st.live = ''
-      // 일한 곳: 연 주소, 주소 없는 웹 도구는 지금 보는 화면의 사이트
+      // Where it worked: the opened address, or for web tools without one, the site of the screen being viewed
       const tabId = (ev.event.input as { tabId?: unknown } | undefined)?.tabId
       const shown = st.work.url && tabId === st.work.tabId ? hostOf(st.work.url) : ''
       const here = (typeof tabId === 'number' ? tabHosts.get(tabId) : undefined) || shown || workHost
@@ -879,12 +907,12 @@ function pick(m: Omit<Shot, 'tabId'>) {
   }
 }
 
-// ── 할 일 ──
+// ── Tasks ──
 
-/** 부탁 보내기: 내 말을 바로 화면에 띄우고 PC에 보낸다 */
+/** Send a request: show my message right away and send it to the PC */
 function ask(text: string) {
   const photo = st.attach
-  const t = text.trim() || (photo ? '이 사진 봐 줘' : '')
+  const t = text.trim() || (photo ? mainCore(lang).photoDefault : '')
   if (!t || !st.online) return
   st.pending.push({ id: ++pendingSeq, text: t, ...(photo ? { photo } : {}) })
   st.draft = ''
@@ -896,15 +924,15 @@ function ask(text: string) {
 }
 
 /**
- * 연결하기는 대화에서: 내 말 "○○ 연결해 줘"를 바로 띄우고, PC가 연결 카드를 대화에 남긴다.
- * 로그인은 그 카드에서 이어 가고, 진행·결과도 같은 대화에 남는다 (연결 화면에서 기다리지 않게)
+ * Connecting happens in the chat: show my message "Connect X" right away, and the PC leaves a connect card in the chat.
+ * Login continues on that card, and progress and results stay in the same chat (no waiting on the connect screen)
  */
 function connectInChat(id: string) {
   const it = st.services?.find((s) => s.card.id === id)
-  // 로그인해서 쓰는 곳(브라우저·공식 연동 전)은 모두 대화에서 연결한다. 폰 권한(device)만 연결 화면에서 켠다
+  // Services used by logging in (browser, before an official integration) all connect in the chat. Only phone permissions (device) are turned on from the connect screen
   if (!it || it.card.how === 'device' || it.card.how === 'open') return openOverlay({ kind: 'connect', id })
-  if (!st.online) return toast('PC와 연결되면 할 수 있어요')
-  // 같은 연결 카드가 대화 끝 가까이에 이미 있으면 새로 쌓지 않고 그 카드로 간다
+  if (!st.online) return toast(mainCore(lang).needPcOnline)
+  // If the same connect card is already near the end of the chat, go to it instead of stacking a new one
   const near = st.conv.slice(-6).some((m) => {
     if (m.role !== 'tool') return false
     try {
@@ -916,14 +944,14 @@ function connectInChat(id: string) {
   })
   st.connectDetail = undefined
   if (near) return setTab('chat')
-  st.pending.push({ id: ++pendingSeq, text: `${it.card.name} 연결해 줘` })
+  st.pending.push({ id: ++pendingSeq, text: mainCore(lang).connectAsk(it.card.name) })
   setTab('chat')
   void send({ kind: 'connect', id, action: 'chat' })
 }
 
 let convSaveTimer: ReturnType<typeof setTimeout> | undefined
 let convSavedLast = ''
-/** 마지막 대화 40줄을 폰에 남긴다 (바뀌었을 때만, 1초 모아서) */
+/** Keeps the last 40 conversation lines on the phone (only when changed, batched for 1 second) */
 function keepConv() {
   if (!st.convLoaded) return
   const tail = st.conv.slice(-40)
@@ -936,7 +964,7 @@ function keepConv() {
   }, 1000)
 }
 
-/** 사진을 가로 1024px·300KB 이하 JPEG로 줄인다 (중계 한 번에 보낼 수 있게) */
+/** Shrinks a photo to a JPEG of at most 1024px and 300KB (so one relay message can carry it) */
 async function shrinkPhoto(file: File): Promise<string> {
   const bmp = await createImageBitmap(file)
   for (const [max, q] of [
@@ -952,10 +980,10 @@ async function shrinkPhoto(file: File): Promise<string> {
     const data = c.toDataURL('image/jpeg', q).split(',')[1] ?? ''
     if (data.length < 300_000) return data
   }
-  throw new Error('사진이 너무 커요')
+  throw new Error(mainCore(lang).photoTooBig)
 }
 
-/** + > 사진 보내기 */
+/** + > Send a photo */
 function pickPhoto() {
   const input = document.createElement('input')
   input.type = 'file'
@@ -976,13 +1004,13 @@ function pickPhoto() {
   input.click()
 }
 
-/** 승인할 때 고른 선택지 (결제 수단). 고르지 않았으면 카드의 기본값 */
+/** Option picked when approving (payment method). If none, the card's default */
 function chosenOf(a: ApprovalView): string | undefined {
   if (!a.choices?.length) return undefined
   return st.choice.get(a.id) ?? a.choice ?? a.choices[0]?.id
 }
 
-/** 세부 선택(등록 카드·할부)에서 고른 것. 고르지 않았으면 결제 화면에서 골라져 있던 것 */
+/** What was picked in a sub-choice (registered card, installments). If none, what was preselected on the payment screen */
 function subChosenOf(
   a: ApprovalView,
   g: NonNullable<ApprovalView['subChoices']>[number],
@@ -990,19 +1018,19 @@ function subChosenOf(
   return st.choice.get(`${a.id}:${g.key}`) ?? g.choice ?? g.options[0]?.id
 }
 
-/** 지금 고른 결제 수단에 딸린 세부 선택만 (카드를 골라야 등록 카드·할부가 있다) */
+/** Only the sub-choices of the current payment method (registered cards and installments exist only for cards) */
 function subsFor(a: ApprovalView) {
   const main = chosenOf(a)
   return (a.subChoices ?? []).filter((g) => !g.when || !main || g.when === main)
 }
 
-/** 받는 곳에서 고른 것 (기본: 지금 골라진 배송지 a0) */
+/** What was picked for the delivery place (default: the current address a0) */
 function shipChosenOf(a: ApprovalView): string | undefined {
   if (!a.shipOptions?.length) return undefined
   return st.choice.get(`${a.id}:ship`) ?? 'a0'
 }
 
-/** 서명·전송할 선택 전체: 결제 수단과 세부 선택, 바꾼 받는 곳을 쉼표로 ("c2,s1o3,a1") */
+/** All picks to sign and send: payment method, sub-choices and a changed delivery place, comma-joined ("c2,s1o3,a1") */
 function choiceString(a: ApprovalView): string | undefined {
   const ship = shipChosenOf(a)
   const parts = [
@@ -1013,33 +1041,33 @@ function choiceString(a: ApprovalView): string | undefined {
   return parts.length ? parts.join(',') : undefined
 }
 
-/** 받는 곳: 지금 배송지 한 줄과 [바꾸기] — 펼치면 저장된 다른 배송지에서 고른다 (결제 승인 한 장에서 다 정한다) */
+/** Delivery place: the current address on one line plus [Change]; expanded, it lists other saved addresses (everything is decided on one payment approval) */
 function shipRow(a: ApprovalView): HTMLElement | undefined {
   const opts = a.shipOptions
   if (!opts?.length) return undefined
   const now = shipChosenOf(a)
   const cur = opts.find((o) => o.id === now) ?? opts[0]
   const key = `${a.id}:ship`
-  // 내 정보 주소와 다르면 처음부터 펼쳐 경고와 함께 고르게 한다
+  // If it differs from the address in My info, open it from the start with a warning
   const open = st.choice.has(`${key}:open`) || Boolean(a.shipWarn)
   if (!open)
     return h(
       'div',
       { class: 'approve-choices one-line' },
-      h('span', { class: 'meta', text: `받는 곳 · ${cur?.label ?? ''}` }),
+      h('span', { class: 'meta', text: mainApproval(lang).shipTo(cur?.label ?? '') }),
       h('button', {
         class: 'chip chip-more',
-        text: '바꾸기',
+        text: mainApproval(lang).change,
         onclick: () => {
           st.choice.set(`${key}:open`, '1')
           render()
         },
       }),
     )
-  // 새 주소: 그 사이트에 아직 없는 곳으로 받기 (두리가 사이트 배송지에 추가한 뒤 결제)
+  // New address: deliver somewhere that site does not have yet (Dool2 adds it to the site's addresses, then pays)
   const isNew = now?.startsWith('n:')
   const input = h('input', { class: 'field' }) as HTMLInputElement
-  input.placeholder = '새 주소 (도로명·동·호수)'
+  input.placeholder = mainApproval(lang).newAddressPlaceholder
   input.value = isNew ? decodeURIComponent(now?.slice(2) ?? '') : ''
   input.onchange = () => {
     const v = input.value.trim()
@@ -1048,7 +1076,7 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
   return h(
     'div',
     { class: 'approve-choices' },
-    h('span', { class: 'meta', text: '받는 곳 · 어디로 받을까요?' }),
+    h('span', { class: 'meta', text: mainApproval(lang).shipWhere }),
     ...(a.shipWarn ? [h('p', { class: 'field-err ship-warn', text: `⚠ ${a.shipWarn}` })] : []),
     h(
       'div',
@@ -1065,7 +1093,7 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
       ),
       h('button', {
         class: `chip${isNew ? ' on' : ''}`,
-        text: '+ 새 주소',
+        text: mainApproval(lang).newAddress,
         onclick: () => {
           if (!isNew) st.choice.set(key, 'n:')
           render()
@@ -1079,16 +1107,16 @@ function shipRow(a: ApprovalView): HTMLElement | undefined {
 async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = false) {
   const s = st.saved
   if (!s) return
-  // 고른 결제 수단·카드·할부도 서명에 함께 묶는다 (중간에서 다른 것으로 바꿀 수 없다)
+  // The chosen payment method, card and installment are signed too (nobody in between can swap them)
   const choice = decision === 'approve' ? choiceString(a) : undefined
-  // 승인 내용에 이 폰의 키로 서명한다. PC가 페어링 때 받은 공개키로 확인한다
+  // The approval content is signed with this phone's key. The PC verifies it with the public key it received at pairing
   const sig = await signText(s.keys.signPriv, approvalSignText(a, decision, choice))
-  // 꾹 눌러 승인은 체크를 보여 준 뒤에 카드를 접는다 (markDecided를 나중에 부른다)
+  // Hold-to-approve folds the card after showing the check (markDecided is called later)
   if (!quiet) markDecided(a, decision)
   await send({ kind: 'decide', id: a.id, decision, sig, ...(choice ? { choice } : {}) })
 }
 
-/** 고른 결제 수단에 맞춘 마지막 버튼 이름 ('카드로 결제하기' → 네이버페이를 고르면 '네이버페이로 결제하기') */
+/** Final button label that follows the chosen payment method ("Pay by card" becomes "Pay with Naver Pay" when that is picked) */
 function finalLabel(a: ApprovalView): string {
   const now = a.choices?.find((c) => c.id === chosenOf(a))
   if (!now) return a.label
@@ -1096,10 +1124,10 @@ function finalLabel(a: ApprovalView): string {
   return from ? `${now.label}${a.label.slice(from.label.length)}` : a.label
 }
 
-/** 승인 카드의 '어떤 걸로 결제할까요?' 줄 (사이트가 받는 수단만, 기본은 이 사이트에서 마지막으로 쓴 것) */
+/** The "which payment method?" row of an approval card (only methods the site accepts; default is the last one used on this site) */
 /**
- * 고를 것이 많으면(할부 12개월 등) 자주 쓰는 것만 먼저: 지금 고른 것, 일시불·무이자, 앞에서 몇 개. 나머지는 [더 보기]
- * (실측 쿠팡 할부: 일시불~12개월 12개가 칩으로 늘어서 승인 카드가 길었다)
+ * With many options (12-month installments and so on) show the common ones first: the current pick, pay-in-full and interest-free, a few from the top. The rest sit behind [More]
+ * (measured on Coupang installments: 12 chips from pay-in-full to 12 months made the approval card long)
  */
 function shown<T extends { id: string; label: string }>(
   options: T[],
@@ -1107,8 +1135,8 @@ function shown<T extends { id: string; label: string }>(
   key: string,
 ): T[] {
   if (options.length <= 6 || st.choice.get(`${key}:more`)) return options
-  const keep = options.filter((o, i) => i < 3 || /일시불|무이자/.test(o.label)).slice(0, 5)
-  // 지금 고른 것은 늘 보인다
+  const keep = options.filter((o, i) => i < 3 || PREFERRED_INSTALLMENT.test(o.label)).slice(0, 5)
+  // The current pick is always shown
   const cur = options.find((o) => o.id === now)
   if (cur && !keep.includes(cur)) keep.push(cur)
   return keep.length < options.length ? keep : options
@@ -1123,7 +1151,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
     now: string | undefined,
     key: string,
   ) =>
-    // 고를 게 많으면(등록 카드·할부·은행) 칩 대신 셀렉트 박스 하나로 (11-20 실사용: 칩이 늘어서 고르기 어려웠다)
+    // With many options (registered cards, installments, banks) use one select box instead of chips (real use on 11-20: a long row of chips was hard to choose from)
     options.length > 4
       ? selectRow(title, options, now, (id) => {
           st.choice.set(key, id)
@@ -1137,7 +1165,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
             'div',
             { class: 'chip-row' },
             ...shown(options, now, key).map((c) => {
-              // 내 결제 수단과 맞는 칩은 점을 붙인다 (ADR 0023)
+              // A chip that matches my payment method gets a dot (ADR 0023)
               const chip = h(
                 'button',
                 {
@@ -1150,14 +1178,14 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
                 c.mine ? h('span', { class: 'mine-dot' }) : '',
                 c.label,
               )
-              if (c.mine) chip.setAttribute('aria-label', `${c.label} (내 결제 수단: ${c.mine})`)
+              if (c.mine) chip.setAttribute('aria-label', mainApproval(lang).mineAria(c.label, c.mine ?? ''))
               return chip
             }),
             ...(shown(options, now, key).length < options.length
               ? [
                   h('button', {
                     class: 'chip chip-more',
-                    text: `더 보기 ${options.length - shown(options, now, key).length}`,
+                    text: mainApproval(lang).more(options.length - shown(options, now, key).length),
                     onclick: () => {
                       st.choice.set(`${key}:more`, '1')
                       render()
@@ -1167,7 +1195,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
               : []),
           ),
         )
-  // 아직 아무것도 안 바꿨으면 한 줄로 요약 (카드 · 신한카드 · 일시불 [바꾸기]). [바꾸기]를 누르면 칩이 펼쳐진다
+  // If nothing was changed yet, summarize on one line (Card · Shinhan Card · Pay in full [Change]). Tapping [Change] opens the chips
   const groups: {
     title: string
     options: { id: string; label: string; mine?: string }[]
@@ -1178,8 +1206,8 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
       ? [
           {
             title: a.choices.some((c) => c.mine)
-              ? `${a.choiceTitle ?? '결제 수단'} · 내 결제 수단을 먼저 골라 뒀어요`
-              : `${a.choiceTitle ?? '결제 수단'} · 어떤 걸로 할까요?`,
+              ? mainApproval(lang).titleMine(a.choiceTitle ?? mainApproval(lang).payMethod)
+              : mainApproval(lang).titleAsk(a.choiceTitle ?? mainApproval(lang).payMethod),
             options: a.choices,
             now: chosenOf(a),
             key: a.id,
@@ -1202,10 +1230,13 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
     return h(
       'div',
       { class: 'approve-choices one-line' },
-      h('span', { class: 'meta', text: `${a.choiceTitle ?? '결제 수단'} · ${summary}` }),
+      h('span', {
+        class: 'meta',
+        text: mainApproval(lang).titleSummary(a.choiceTitle ?? mainApproval(lang).payMethod, summary),
+      }),
       h('button', {
         class: 'chip chip-more',
-        text: '바꾸기',
+        text: mainApproval(lang).change,
         onclick: () => {
           st.choice.set(`${a.id}:open`, '1')
           render()
@@ -1216,7 +1247,7 @@ function choiceRow(a: ApprovalView): HTMLElement | undefined {
   return h('div', {}, ...groups.map((g) => row(g.title, g.options, g.now, g.key)))
 }
 
-/** 셀렉트 박스 줄: 제목과 펼쳐 고르는 목록 (폰 기본 고르기 화면이 뜬다). 내 결제 수단은 ● 표시 */
+/** Select box row: a title and a list to pick from (the phone's own picker opens). My payment methods get a ● */
 function selectRow(
   title: string,
   options: { id: string; label: string; mine?: string }[],
@@ -1236,13 +1267,13 @@ function selectRow(
   return h('label', { class: 'approve-choices select-row' }, h('span', { class: 'meta', text: title }), sel)
 }
 
-/** 두리가 결제 전에 스스로 고른 것 (보험 안 함·약관 동의 등)을 따로 한 줄로 보여 준다 */
+/** Shows what Dool2 picked by itself before paying (no insurance, terms accepted and so on) as its own line */
 function choseRow(a: ApprovalView): HTMLElement | undefined {
   if (!a.chose?.length) return undefined
   return h(
     'div',
     { class: 'approve-chose' },
-    h('span', { class: 'meta', text: '두리가 고른 것' }),
+    h('span', { class: 'meta', text: mainApproval(lang).choseTitle }),
     h('p', { text: a.chose.join(' · ') }),
   )
 }
@@ -1251,14 +1282,14 @@ function markDecided(a: ApprovalView, decision: 'approve' | 'reject') {
   if (st.decided.has(a.id)) return
   st.decided.set(a.id, {
     ok: true,
-    message: decision === 'approve' ? '승인을 보냈어요. PC에서 누르는 중…' : '거절을 보냈어요',
+    message: decision === 'approve' ? mainApproval(lang).approveSent : mainApproval(lang).rejectSent,
   })
   render()
 }
 
 const pendingApprovals = () =>
   [...st.approvals.values()].filter((a) => a.status === 'pending' && !st.decided.has(a.id))
-/** 기다리는 로그인: 시간이 지났거나 그 서비스가 이미 연결된 것은 빼고 */
+/** Pending logins, minus expired ones and ones whose service is already connected */
 const pendingLogins = () =>
   [...st.logins.values()].filter((l) => {
     if (l.status !== 'pending' || Date.parse(l.expiresAt) <= Date.now()) return false
@@ -1267,10 +1298,10 @@ const pendingLogins = () =>
     return !(svc?.connectedAt && Date.parse(svc.connectedAt) >= Date.parse(l.createdAt))
   })
 
-// ── 원격 화면: 두리가 넘긴 PC 탭을 폰에서 보고 누른다 (다음 단계에서 실시간 화면으로 바꾼다) ──
+// ── Remote screen: see and tap the PC tab Dool2 handed over, from the phone (turned into a live view in the next step) ──
 
 let screenTimer: ReturnType<typeof setTimeout> | undefined
-/** 실시간 화면: 그림이 오면 곧바로 다음 그림을 부탁한다 (초당 3~5장). 2초 동안 안 오면 다시 부탁 */
+/** Live screen: when an image arrives, ask for the next one right away (3 to 5 per second). If none comes in 2 seconds, ask again */
 const frameTimes: number[] = []
 function nextScreen(tabId: number) {
   clearTimeout(screenTimer)
@@ -1283,14 +1314,14 @@ function nextScreen(tabId: number) {
   screenTimer = setTimeout(ask, 120)
 }
 
-/** 초당 몇 장 오는지 (최근 2초) */
+/** Images per second (last 2 seconds) */
 function fps() {
   const now = performance.now()
   while (frameTimes.length && now - (frameTimes[0] ?? 0) > 2000) frameTimes.shift()
   return Math.max(1, Math.round(frameTimes.length / 2))
 }
 
-/** 원격 화면을 열기 전 탭 (닫으면 거기로 돌아간다: 대화에서 열었으면 대화로) */
+/** Tab before the remote screen opened (closing returns there: to the chat if opened from the chat) */
 let remoteFrom: Tab = 'chat'
 function openRemote(tabId: number, connectId?: string) {
   if (st.screen.name === 'app') remoteFrom = st.tab
@@ -1310,7 +1341,7 @@ function remote(input: Omit<Extract<PhoneToPc, { kind: 'remote' }>, 'kind' | 'ta
   void send({ kind: 'remote', tabId, ...input })
 }
 
-// ── 일하는 화면: 두리가 웹에서 일하는 동안 대화에 그 탭을 작게 실시간으로 ──
+// ── Working screen: while Dool2 works on the web, that tab shown small and live in the chat ──
 
 let workTimer: ReturnType<typeof setTimeout> | undefined
 function pollWork() {
@@ -1331,7 +1362,7 @@ function pollWork() {
   workTimer = setTimeout(tick, 300)
 }
 
-/** 연결하는 동안: 대화의 연결 카드에 두리가 로그인하고 있는 화면을 작게 실시간으로 */
+/** While connecting: the screen Dool2 is logging in on, shown small and live on the chat's connect card */
 let connectTimer: ReturnType<typeof setTimeout> | undefined
 function pollConnect() {
   clearTimeout(connectTimer)
@@ -1346,7 +1377,7 @@ function pollConnect() {
   connectTimer = setTimeout(tick, 300)
 }
 
-/** 연결 카드 안의 로그인 화면 (누르면 크게 열어 직접 할 수 있다) */
+/** Login screen inside a connect card (tap to open it large and do it yourself) */
 function connectPeek(id: string): HTMLElement | undefined {
   const l = st.connectLive.get(id)
   if (!l?.shot) return undefined
@@ -1355,34 +1386,34 @@ function connectPeek(id: string): HTMLElement | undefined {
   img.src = `data:image/jpeg;base64,${l.shot}`
   return h(
     'button',
-    { class: 'wp-peek', label: '로그인 화면 크게 보기', onclick: () => openRemote(l.tabId, id) },
+    { class: 'wp-peek', label: mainWork(lang).loginPeekLabel, onclick: () => openRemote(l.tabId, id) },
     h(
       'span',
       { class: 'wp-bar' },
-      h('span', { text: '두리가 로그인하고 있는 화면' }),
-      h('span', { class: 'wp-live', text: '지금' }),
+      h('span', { text: mainWork(lang).loginPeekTitle }),
+      h('span', { class: 'wp-live', text: mainWork(lang).now }),
     ),
     img,
   )
 }
 
-/** 단계가 시작된 때 (st.steps와 같은 순서) */
+/** When each step started (same order as st.steps) */
 const stepAt: number[] = []
-/** 단계마다 도구가 한 일·일한 곳 (st.steps와 같은 순서) */
+/** What the tool did and where, per step (same order as st.steps) */
 const stepInfo: { act: string; place?: string }[] = []
-/** 마지막으로 연 사이트 (탭을 모르는 browser_ 도구가 이어서 쓴다) */
+/** Last site opened (used by browser_ tools that do not know their tab) */
 let workHost: string | undefined
-/** 탭 번호 → 그 탭의 사이트. 화면 그림의 주소와 '연 직후 새 탭' 알림으로 채운다 (여러 탭을 오가도 맞는 줄에) */
+/** Tab id -> that tab's site. Filled from screen image addresses and "new tab right after opening" notices (so rows stay right across many tabs) */
 const tabHosts = new Map<number, string>()
-/** 방금 browser_open으로 연 사이트: 다음에 처음 보는 탭이 그 사이트 */
+/** Site just opened with browser_open: the next new tab belongs to it */
 let openedHost: string | undefined
-/** 일하는 카드에서 앞 단계까지 펼쳤는지 (차례마다 처음엔 접힘) */
+/** Whether earlier steps are expanded on the working card (folded at the start of each turn) */
 let workAllSteps = false
-/** 두리가 보고 있는 화면을 펼쳐 둘지 (기본은 접힘, 펼쳐 두면 다음 일에도 그대로) */
+/** Whether the view Dool2 is looking at stays expanded (folded by default; once expanded it stays so for the next task) */
 const PEEK_KEY = 'dool2.workPeek'
 const peekOpen = () => localStorage.getItem(PEEK_KEY) === '1'
 
-/** 사이트 주소 → 연결 카드 이름 (catchtable.co.kr → 캐치테이블), 없으면 주소 */
+/** Site address -> connect card name (catchtable.co.kr -> CatchTable), or the address if none */
 function siteName(host: string): string {
   return cardForHost(host, placeCards())?.name ?? bareHost(host)
 }
@@ -1396,11 +1427,10 @@ function placeCards(): PlaceCard[] {
 }
 
 function secs(ms: number) {
-  const s = Math.max(1, Math.round(ms / 1000))
-  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`
+  return mainWork(lang).secs(Math.max(1, Math.round(ms / 1000)))
 }
 
-/** 줄 왼쪽 아이콘: 서비스 로고(없으면 첫 글자), PC 앱·파일·두리 일은 선 아이콘. 모서리에 빙글빙글/체크 */
+/** Icon at the left of a row: service logo (first letter if none), line icons for PC apps, files and Dool2's own work. A spinner or check sits in the corner */
 function groupMark(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
   const glyph: IconName | undefined =
     g.kind === 'app' ? 'pc' : g.kind === 'file' ? 'note' : g.kind === 'doori' ? 'brain' : undefined
@@ -1415,7 +1445,7 @@ function groupMark(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
   )
 }
 
-/** 서비스 한 줄: 아이콘 · 이름 / 하는 일 · 걸린 시간 */
+/** One service row: icon · name / what it does · time taken */
 function groupRow(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
   const sub = state === 'doing' ? g.act : g.kind === 'doori' ? '' : doneLine(g)
   return h(
@@ -1432,10 +1462,10 @@ function groupRow(g: WorkGroup, state: 'done' | 'doing'): HTMLElement {
   )
 }
 
-/** 같은 줄인지 (다시 그릴 때 그대로 둘지) */
+/** Whether it is the same row (so a redraw can leave it alone) */
 const groupSig = (g: WorkGroup, state: string) => `${g.key}|${g.title}|${g.act}|${g.count}|${state}`
 
-/** 지금 하는 일의 줄들 (끝난 줄은 걸린 시간까지) */
+/** Rows for the current work (finished rows include time taken) */
 function liveGroups(): WorkGroup[] {
   const steps = st.steps.map((text, i) => {
     const next = stepAt[i + 1]
@@ -1451,7 +1481,7 @@ function liveGroups(): WorkGroup[] {
   return groupSteps(steps, placeCards())
 }
 
-/** 두리 혼잣말 가운데 마지막 것 (도구 이름이 아닌 것) */
+/** Last of Dool2's narration lines (not a tool name) */
 function lastNarration(): string | undefined {
   for (let i = st.steps.length - 1; i >= 0; i--) {
     const t = st.steps[i] as string
@@ -1468,27 +1498,27 @@ function clockText() {
 }
 
 /**
- * 대화 안 일하는 카드: 두리 + 지금 하는 말 · 서비스별 줄(빙글빙글 → 체크) · 접힌 '두리가 보고 있는 화면'.
- * 화면은 기본 접힘(작은 미리보기 + 지금 점), 누르면 펼쳐지고 펼친 화면을 누르면 크게 본다
+ * Working card in the chat: Dool2 + what it is saying now · per-service rows (spinner -> check) · a folded "what Dool2 is looking at" view.
+ * The view is folded by default (small preview + live dot); tap to expand, tap the expanded view to open it large
  */
 function workPanel(): HTMLElement {
   const toggle = h(
     'button',
-    { class: 'wp-peek-bar', label: '두리가 보고 있는 화면 펼치기' },
+    { class: 'wp-peek-bar', label: mainWork(lang).viewExpand },
     h('img', { class: 'work-thumb' }),
-    h('span', { class: 'wp-peek-t', text: '두리가 보고 있는 화면' }),
-    h('span', { class: 'wp-live', text: '지금' }),
+    h('span', { class: 'wp-peek-t', text: mainWork(lang).viewTitle }),
+    h('span', { class: 'wp-live', text: mainWork(lang).now }),
     icon('chevron', 'i wp-chev'),
   )
   const big = h(
     'button',
     {
       class: 'wp-peek wp-peek-in',
-      label: '두리 화면 크게 보기',
+      label: mainWork(lang).viewBig,
       onclick: () => st.work.tabId !== undefined && openRemote(st.work.tabId),
     },
     h('img', { class: 'work-shot' }),
-    h('span', { class: 'wp-hint', text: '누르면 크게 보고 직접 누를 수 있어요' }),
+    h('span', { class: 'wp-hint', text: mainWork(lang).viewHint }),
   )
   const wrap = h('div', { class: 'wp-view' }, toggle, h('div', { class: 'wp-shot-box' }, h('div', {}, big)))
   const setOpen = (open: boolean) => {
@@ -1509,7 +1539,7 @@ function workPanel(): HTMLElement {
     h('ol', { class: 'wp-steps' }),
     wrap,
   )
-  // 걸린 시간: 카드가 화면에 있는 동안만 1초마다
+  // Time taken: updated every second only while the card is on screen
   const tick = () => {
     if (!card.isConnected && clock.textContent) return
     clock.textContent = clockText()
@@ -1521,10 +1551,10 @@ function workPanel(): HTMLElement {
 }
 
 function updateWorkPanel(card: HTMLElement) {
-  const title = lastNarration() ?? '부탁하신 일을 하는 중'
+  const title = lastNarration() ?? mainWork(lang).workingTitle
   const t = card.querySelector('.wp-title')
   if (t && t.textContent !== title) t.textContent = title
-  // 지금 화면: 웹에서 일하고 그림이 왔을 때만
+  // Current screen: only when working on the web and an image has arrived
   const view = card.querySelector<HTMLElement>('.wp-view')
   const shot = st.work.web ? st.work.shot : undefined
   if (view) view.hidden = !shot
@@ -1533,7 +1563,7 @@ function updateWorkPanel(card: HTMLElement) {
     for (const img of card.querySelectorAll<HTMLImageElement>('.work-shot, .work-thumb'))
       if (img.src !== src) img.src = src
   }
-  // 줄: 바뀐 것만. 새 줄은 아래에서 떠오르고, 방금 끝난 줄은 체크가 톡
+  // Rows: only what changed. New rows rise in from below, and a row that just finished pops its check
   const list = card.querySelector<HTMLElement>('.wp-steps')
   if (!list) return
   const groups = liveGroups()
@@ -1541,7 +1571,7 @@ function updateWorkPanel(card: HTMLElement) {
   const shown = groups.slice(hidden)
   const more = list.querySelector<HTMLElement>('.ws.more')
   if (hidden) {
-    const text = `앞 단계 ${hidden}개`
+    const text = mainWork(lang).earlier(hidden)
     if (!more)
       list.prepend(
         h(
@@ -1549,7 +1579,7 @@ function updateWorkPanel(card: HTMLElement) {
           { class: 'ws more' },
           h('button', {
             text,
-            label: '앞 단계 펼치기',
+            label: mainWork(lang).earlierExpand,
             onclick: () => {
               workAllSteps = true
               updateWorkPanel(card)
@@ -1559,9 +1589,9 @@ function updateWorkPanel(card: HTMLElement) {
       )
     else if (more.textContent !== text) (more.firstElementChild as HTMLElement).textContent = text
   } else more?.remove()
-  // 줄은 곳(key)마다 하나: 있던 줄은 옮기고(다시 간 곳은 맨 아래로), 바뀐 줄만 새로 그린다
+  // One row per place (key): existing rows are moved (a place visited again goes to the bottom) and only changed rows are redrawn
   const old = new Map<string, HTMLElement>()
-  // 같은 key 줄이 둘이면 하나만 남긴다 (남은 줄은 다시 지워지지 않고 쌓인다)
+  // If two rows share a key keep only one (a leftover row would never be removed and would pile up)
   for (const r of list.querySelectorAll<HTMLElement>('.ws:not(.more)')) {
     const k = r.dataset.key ?? ''
     if (old.has(k)) r.remove()
@@ -1581,7 +1611,7 @@ function updateWorkPanel(card: HTMLElement) {
       if (row) row.replaceWith(el)
     }
     if (!el) return
-    // 제자리가 아니면 옮긴다 (더 보기 줄 뒤로 i번째)
+    // If it is not in place, move it (to position i after the "more" row)
     const at = list.querySelectorAll('.ws:not(.more)')[i]
     if (at !== el) list.insertBefore(el, at ?? null)
     if (!row && (i > 0 || groups.length > 1))
@@ -1601,8 +1631,8 @@ function updateWorkPanel(card: HTMLElement) {
 }
 
 /**
- * 연결이 사람을 기다리는지: 마지막 단계가 계정·인증번호를 묻고 있고 그 요청이 아직 열려 있으면.
- * 단계를 못 받았으면(앱을 나중에 열었거나 예전 PC) 연결용 로그인 요청이 열려 있는지로 본다
+ * Whether the connection is waiting for a person: the last step asks for an account or verification code and that request is still open.
+ * If no steps arrived (the app opened later, or an older PC), check for an open login request for connecting instead
  */
 function connectWaiting(id: string): ConnectStep['ask'] | undefined {
   const open = (a: NonNullable<ConnectStep['ask']>) =>
@@ -1615,14 +1645,14 @@ function connectWaiting(id: string): ConnectStep['ask'] | undefined {
   if (last) return open(last) ? last : undefined
   if (!st.connecting.has(id)) return undefined
   const login = [...st.logins.values()].find((l) => l.status === 'pending' && l.connect)
-  if (login) return { kind: 'login', id: login.id, label: `${login.site} 넣기` }
+  if (login) return { kind: 'login', id: login.id, label: mainWork(lang).enter(login.site) }
   const info = [...st.infos.values()].at(-1)
-  return info ? { kind: 'info', id: info.id, label: `${info.label} 넣기` } : undefined
+  return info ? { kind: 'info', id: info.id, label: mainWork(lang).enter(info.label) } : undefined
 }
 
 /**
- * 연결이 끝까지 못 갔을 때 카드: 까닭 + 바로 할 수 있는 것 하나.
- * 사람 차례(보안문자·본인인증)는 [화면 열기] — 마치면 두리가 알아서 연결로 표시한다
+ * Card for a connection that did not finish: the reason plus one thing to do right away.
+ * When it is the person's turn (CAPTCHA, identity check) the card offers [Open screen]; once done, Dool2 marks it connected by itself
  */
 function connectFailCard(
   c: ConnectionItem['card'],
@@ -1632,7 +1662,7 @@ function connectFailCard(
   const tab = fail.tabId
   const openScreen = () => tab !== undefined && openRemote(tab, c.id)
   const retry = () => openOverlay({ kind: 'connect', id: c.id })
-  // 두리가 아이디·비밀번호 카드를 띄웠으면 그게 먼저다: 사용자 차례 (실측 11-21 아시아나: '이어서 하고 있어요'에 가려 카드가 안 보였다)
+  // If Dool2 raised an ID and password card, that comes first: it is the user's turn (measured 11-21 Asiana: the card was hidden behind "carrying on")
   const waiting = [...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === c.id)
   if (waiting)
     return h(
@@ -1645,8 +1675,8 @@ function connectFailCard(
         h(
           'div',
           {},
-          h('strong', { text: `${c.name} 아이디·비밀번호를 넣어 주세요` }),
-          h('span', { class: 'meta', text: '넣어 주시면 두리가 로그인해서 연결해요' }),
+          h('strong', { text: mainWork(lang).enterCreds(c.name) }),
+          h('span', { class: 'meta', text: mainWork(lang).enterCredsMeta }),
         ),
       ),
       h(
@@ -1654,12 +1684,12 @@ function connectFailCard(
         { class: 'approve-actions' },
         h('button', {
           class: 'btn',
-          text: '넣기',
+          text: mainWork(lang).enterBtn,
           onclick: () => openOverlay({ kind: 'login', id: waiting.id }),
         }),
       ),
     )
-  // 자동 로그인이 멈춰 두리가 대화에서 이어받은 동안: 실패가 아니라 하는 중이다 (진행은 바로 아래 일하는 카드에 보인다)
+  // While Dool2 carries on in the chat after the automatic login stopped: it is not a failure but work in progress (progress shows on the working card right below)
   if (agentOn(fail))
     return h(
       'div',
@@ -1671,10 +1701,10 @@ function connectFailCard(
         h(
           'div',
           {},
-          h('strong', { text: '두리가 화면을 보며 이어서 하고 있어요' }),
+          h('strong', { text: mainWork(lang).takingOver }),
           h('span', {
             class: 'meta',
-            text: '로그인 화면이 예상과 달라서, 직접 읽어 가며 로그인하는 중이에요',
+            text: mainWork(lang).takingOverMeta,
           }),
         ),
         h('span', { class: 'spin' }),
@@ -1683,26 +1713,26 @@ function connectFailCard(
   const view =
     fail.reason === 'wrong'
       ? {
-          title: '아이디나 비밀번호가 맞지 않아요',
-          meta: '다시 넣어 주시면 두리가 바로 다시 해 볼게요',
-          main: h('button', { class: 'btn', text: '다시 넣기', onclick: retry }),
+          title: mainWork(lang).wrongTitle,
+          meta: mainWork(lang).wrongMeta,
+          main: h('button', { class: 'btn', text: mainWork(lang).reenter, onclick: retry }),
           sub: undefined,
         }
       : fail.reason === 'human'
         ? {
-            title: '이 단계는 직접 해 주셔야 해요',
-            meta: `${fail.message.replace(/\.?\s*화면을 열어 직접 마쳐 주세요\.?$/, '')}. 마치시면 두리가 알아서 연결해요`,
+            title: mainWork(lang).humanTitle,
+            meta: mainWork(lang).humanMeta(fail.message.replace(OPEN_SCREEN_TAIL, '')),
             main:
               tab !== undefined
-                ? h('button', { class: 'btn', text: '화면 열기', onclick: openScreen })
+                ? h('button', { class: 'btn', text: mainWork(lang).openScreen, onclick: openScreen })
                 : undefined,
-            sub: h('button', { class: 'btn-ghost', text: '처음부터 다시', onclick: retry }),
+            sub: h('button', { class: 'btn-ghost', text: mainWork(lang).startOver, onclick: retry }),
           }
         : {
-            title: `${c.name} 로그인을 끝까지 못 했어요`,
+            title: mainWork(lang).failTitle(c.name),
             meta: fail.message,
-            // 화면 직접 보기는 카드에서 빼고, 다시 해 보기 안(로그인 화면)에서 안 될 때만 보인다 — 안 누르는 게 제일 좋다 (사용자 의견)
-            main: h('button', { class: 'btn', text: '다시 해 보기', onclick: retry }),
+            // Viewing the screen directly is left off the card and shows only when trying again (the login screen) fails: not needing it is best (user feedback)
+            main: h('button', { class: 'btn', text: mainWork(lang).retry, onclick: retry }),
             sub: undefined,
           }
   return h(
@@ -1718,24 +1748,24 @@ function connectFailCard(
   )
 }
 
-/** 자동 로그인이 멈춘 뒤 두리가 이어받아 하는 중인가 (답하는 중이거나, 넘겨받은 지 20초 안) */
+/** Whether Dool2 is carrying on after the automatic login stopped (replying, or took over within 20 seconds) */
 function agentOn(fail: { agent?: boolean; at?: number }): boolean {
   return Boolean(fail.agent) && (st.busy || Date.now() - (fail.at ?? 0) < 20_000)
 }
 
-/** 연결 카드 설명: 그 서비스가 실제로 되는 방법대로 (간편 로그인만 되는 곳에 "아이디·비밀번호"라고 하지 않는다) */
+/** Connect card description, matching how the service really works (never say "ID and password" for a social-login-only service) */
 function connectHow(c: ConnectionItem['card']): string {
   const social = (c.social ?? []).slice(0, 2).map((p) => SOCIAL_LABEL[p])
-  const idLogin = /아이디|비밀번호|이메일/.test(c.login ?? '')
-  if (social.length && !idLogin) return `${social.join('·')} 간편 로그인으로 두리가 PC에서 연결해요`
-  if (social.length) return `아이디·비밀번호나 ${social.join('·')} 간편 로그인으로 연결해요`
-  return '아이디·비밀번호를 넣으면 두리가 PC에서 로그인해요'
+  const idLogin = ID_LOGIN.test(c.login ?? '')
+  if (social.length && !idLogin) return mainWork(lang).howSocialOnly(social.join('·'))
+  if (social.length) return mainWork(lang).howSocialOrId(social.join('·'))
+  return mainWork(lang).howId
 }
 
-/** 연결하는 동안 단계: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
+/** Steps while connecting: finished steps get a ✓ and time taken, the current step a spinner */
 function connectStepList(id: string, waiting = false): HTMLElement | undefined {
   const all = st.connectSteps.get(id)
-  // 사람을 기다릴 때는 카드 제목이 "○○이 필요해요"라서 같은 말의 마지막 단계는 뺀다
+  // When waiting for a person the card title already says "X needed", so the last step with the same words is dropped
   const steps = waiting && all?.at(-1)?.ask ? all.slice(0, -1) : all
   if (!steps?.length) return undefined
   const list = h('ol', { class: 'wp-steps connect-steps' })
@@ -1743,7 +1773,7 @@ function connectStepList(id: string, waiting = false): HTMLElement | undefined {
     const next = steps[i + 1]
     list.append(stepRow(s.text, next ? 'done' : 'doing', next ? next.at - s.at : undefined))
   })
-  // 새로 온 단계만 아래에서 떠오른다
+  // Only the newly arrived step rises in from below
   const last = list.lastElementChild
   if (last && steps.length > 1)
     springTo(
@@ -1757,7 +1787,7 @@ function connectStepList(id: string, waiting = false): HTMLElement | undefined {
   return list
 }
 
-/** 연결하는 동안 단계 한 줄: 끝난 단계는 ✓와 걸린 시간, 지금 단계는 도는 동그라미 */
+/** One step row while connecting: finished steps get a ✓ and time taken, the current step a spinner */
 function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
   return h(
     'li',
@@ -1769,8 +1799,8 @@ function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
 }
 
 /**
- * 끝난 뒤: 답 위에 접힌 한 줄 "아이콘 묶음 · 4곳 살펴봤어요 · 41초" (누르면 서비스별 줄이 펼쳐진다).
- * 예전 기록(곳 정보 없음)은 "일한 과정 · N단계"
+ * After it ends: a folded line above the reply, "icon stack · Looked at 4 places · 41s" (tap to open the per-service rows).
+ * Older records (no place info) read "How it worked · N steps"
  */
 function workDone(rec: WorkRecordMessage): HTMLElement {
   const groups = groupSteps(rec.steps, placeCards())
@@ -1781,7 +1811,7 @@ function workDone(rec: WorkRecordMessage): HTMLElement {
   ]
   const list = h('ol', { class: 'wp-steps' })
   if (rec.count > rec.steps.length)
-    list.append(h('li', { class: 'ws more', text: `앞의 ${rec.count - rec.steps.length}단계는 줄였어요` }))
+    list.append(h('li', { class: 'ws more', text: mainWork(lang).trimmed(rec.count - rec.steps.length) }))
   for (const g of groups) list.append(groupRow(g, 'done'))
   list.hidden = true
   const lead = places.length
@@ -1795,19 +1825,19 @@ function workDone(rec: WorkRecordMessage): HTMLElement {
     : h('span', { class: 'wd-ok' }, icon('check', 'i'))
   const title = places.length
     ? places.length === 1
-      ? `${places[0]?.title}에서 일했어요`
-      : `${places.length}곳 살펴봤어요`
+      ? mainWork(lang).workedAt(places[0]?.title ?? '')
+      : mainWork(lang).lookedAt(places.length)
     : rec.host
-      ? `${siteName(rec.host)}에서 일했어요`
-      : '일한 과정'
+      ? mainWork(lang).workedAt(siteName(rec.host))
+      : mainWork(lang).process
   const head = h(
     'button',
-    { class: 'wd-head', label: '일한 과정 펼치기' },
+    { class: 'wd-head', label: mainWork(lang).processExpand },
     lead,
     h('span', { class: 'wd-title', text: title }),
     h('span', {
       class: 'wd-meta',
-      text: places.length ? secs(rec.ms) : `${rec.count}단계 · ${secs(rec.ms)}`,
+      text: places.length ? secs(rec.ms) : `${mainWork(lang).stepCount(rec.count)} · ${secs(rec.ms)}`,
     }),
     icon('chevron', 'i wd-chev'),
   )
@@ -1831,12 +1861,12 @@ function workDone(rec: WorkRecordMessage): HTMLElement {
   return card
 }
 
-// ── 알림 ──
+// ── Toast ──
 
-/** 알림 막대 (누를 수 있으면 onTap: 예를 들어 [화면 열기]) */
+/** Toast bar (onTap when it can be tapped, for example [Open screen]) */
 let toastTap: (() => void) | undefined
 function toast(text: string, onTap?: () => void) {
-  mark(`알림 ${text}`)
+  mark(`toast ${text}`)
   st.toast = text
   toastTap = onTap
   render()
@@ -1848,8 +1878,13 @@ function toast(text: string, onTap?: () => void) {
   }, 3200)
 }
 
+const tShell = shellText(lang)
+const tChat = chatText(lang)
+const tSms = smsText(lang)
+const tAppr = approvalText(lang)
+
 function notify(title: string, body: string, tag?: string) {
-  // 앱이 뒤에 있을 때만. PC가 보낸 푸시 알림과 tag가 같아서 둘이 겹치지 않는다
+  // Only while the app is in the background. The tag matches the push notification from the PC, so the two never double up
   if (document.visibilityState === 'visible') return
   if ('Notification' in window && Notification.permission === 'granted')
     new Notification(title, { body, ...(tag ? { tag } : {}) })
@@ -1863,7 +1898,7 @@ function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
   return x.length === b.length && x.every((v, i) => v === b[i])
 }
 
-/** 알림을 허락했으면 이 PC의 키로 푸시를 구독하고 PC에 알린다 */
+/** If notifications are allowed, subscribe to push with this PC's key and tell the PC */
 let syncing = false
 async function syncPush() {
   const vapid = st.pc?.vapid
@@ -1888,13 +1923,13 @@ async function syncPush() {
         })
     }
   } catch {
-    // 알림 주소를 못 받는 브라우저 (예: 홈 화면에 추가하지 않은 아이폰 사파리)
+    // Browsers that cannot get a notification address (e.g. iPhone Safari without Add to Home Screen)
   } finally {
     syncing = false
   }
 }
 
-/** 알림을 눌러 열었으면 (#a=승인 id, #t=대화) 그 화면으로 간다 */
+/** If opened from a notification (#a=approval id, #t=chat), go to that screen */
 let pendingOpen = ''
 function openPending() {
   const tab = /^#tab=(chat|feed|ideas|goals|library)$/.exec(pendingOpen)?.[1] as Tab | undefined
@@ -1916,20 +1951,20 @@ function openPending() {
   } else st.tab = 'chat'
 }
 
-// ── 페어링 ──
+// ── Pairing ──
 
 async function startPairing(raw: string) {
   let invite: PairInvite
   try {
     invite = JSON.parse(new TextDecoder().decode(fromB64u(raw))) as PairInvite
   } catch {
-    toast('QR이 올바르지 않아요. PC에서 다시 띄워 주세요')
+    toast(tShell.qrInvalid)
     return
   }
-  // 이미 연결된 그 PC의 초대면 지금 연결을 지우지 않는다 (같은 링크가 다시 들어온 경우)
+  // If the invite is from the PC we are already connected to, keep the current connection (same link opened again)
   if (st.saved?.paired && st.saved.pcId === invite.pc) {
     history.replaceState(null, '', location.pathname)
-    toast(`${st.saved.pcName ?? 'PC'}와 이미 연결돼 있어요`)
+    toast(tShell.alreadyPaired(st.saved.pcName ?? 'PC'))
     return
   }
   history.replaceState(null, '', location.pathname)
@@ -1958,7 +1993,7 @@ async function startPairing(raw: string) {
   st.screen = { name: 'pairing', code, pcName: invite.n }
   render()
   connect()
-  // 페어링 요청: 이 폰의 X25519 공개키를 머리에 실어, PC가 키를 만들 수 있게 한다
+  // Pairing request: carry this phone's X25519 public key in the header so the PC can derive the key
   saved.seq += 1
   await save(saved)
   const body: PhoneToPc = { kind: 'pair', secret: invite.s, signPub: keys.signPub, name: deviceName() }
@@ -1973,15 +2008,15 @@ async function startPairing(raw: string) {
 
 function deviceName() {
   const ua = navigator.userAgent
-  if (/iPhone/.test(ua)) return '아이폰'
-  if (/iPad/.test(ua)) return '아이패드'
-  if (/Android/.test(ua)) return '안드로이드 폰'
-  return '폰'
+  if (/iPhone/.test(ua)) return tShell.devIphone
+  if (/iPad/.test(ua)) return tShell.devIpad
+  if (/Android/.test(ua)) return tShell.devAndroid
+  return tShell.devPhone
 }
 
-// ── 화면 ──
+// ── Screens ──
 
-/** 대화 아래쪽을 보고 있으면 새 말이 와도 아래에 붙어 있는다 */
+/** While viewing the bottom of the chat, stay at the bottom when new messages arrive */
 let stickToBottom = true
 let shell:
   | {
@@ -1998,8 +2033,8 @@ let shell:
   | undefined
 
 /**
- * PC에서 온 소식으로 다시 그릴 때: 한 프레임에 한 번만 그린다.
- * 답이 흘러오는 동안에는 소식이 초당 수십 번 와서, 올 때마다 그리면 화면 전체가 그만큼 다시 만들어졌다
+ * When re-rendering for news from the PC: draw once per frame.
+ * While a reply streams in, news arrives dozens of times a second, and drawing on each one rebuilt the whole screen that often
  */
 let renderQueued = 0
 function renderSoon() {
@@ -2030,7 +2065,7 @@ function render() {
               ? sideView(s.id)
               : remoteView(s)
     if (s.name === 'remote') {
-      // 같은 원격 화면이면 그대로 둔다 (다시 꽂으면 키보드가 닫힌다)
+      // Keep the same remote screen as is (re-inserting it closes the keyboard)
       remoteToast ??= h('div', { class: 'toast float-toast' })
       remoteToast.textContent = st.toast ?? ''
       remoteToast.hidden = !st.toast
@@ -2061,7 +2096,7 @@ function render() {
         }
       : null
   }
-  // 다시 그린 뒤: 칸 하이라이트·스위치 손잡이를 앞 자리에서 새 자리로 움직인다
+  // After re-rendering: move the segment highlight and switch knob from the old spot to the new one
   playSeg()
   playFlip()
 }
@@ -2070,14 +2105,14 @@ function buildShell() {
   const top = h('header', { class: 'app-top' })
   const page = h('main', { class: 'app-page' })
   const chat = h('div', { class: 'chat-list' })
-  // 스크롤하는 동안 위에 떠서 지금 보는 말이 언제인지 알려 주는 날짜 (멈추면 사라진다)
+  // A date that floats on top while scrolling to show when the visible message was sent (fades when scrolling stops)
   const dayPill = h('div', { class: 'day-pill' })
   dayPill.setAttribute('aria-hidden', 'true')
   let dayPillTimer: ReturnType<typeof setTimeout> | undefined
   page.addEventListener(
     'scroll',
     () => {
-      // 아래 탭은 내려도 숨기지 않는다: 숨으면 다른 탭으로 갈 길이 안 보였다 (사용자 의견)
+      // The bottom tabs are not hidden on scroll: hidden, there was no visible way to other tabs (user feedback)
       if (st.tab === 'chat') {
         stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
         const label = dayAtTop(page, chat)
@@ -2086,22 +2121,22 @@ function buildShell() {
         clearTimeout(dayPillTimer)
         dayPillTimer = setTimeout(() => dayPill.classList.remove('on'), 1400)
       }
-      // 피드·보관함: 아래 끝 가까이 내리면 다음 페이지
+      // Feed and library: near the bottom, load the next page
       else if (page.scrollHeight - page.scrollTop - page.clientHeight < 600) visiblePager()?.more()
     },
     { passive: true },
   )
   const textarea = h('textarea')
   textarea.rows = 1
-  textarea.placeholder = '두리에게 부탁하기'
-  textarea.setAttribute('aria-label', '부탁')
+  textarea.placeholder = tShell.askPlaceholder
+  textarea.setAttribute('aria-label', tShell.askLabel)
   textarea.addEventListener('input', () => {
     st.draft = textarea.value
     autosize(textarea)
     renderComposer()
   })
   textarea.addEventListener('keydown', (e) => {
-    // 이어 쓰기 제안 받기: Tab, 또는 글 끝에서 →
+    // Accept the continuation suggestion: Tab, or → at the end of the text
     if (
       ghostRest &&
       (e.key === 'Tab' || (e.key === 'ArrowRight' && textarea.selectionStart === textarea.value.length)) &&
@@ -2120,10 +2155,10 @@ function buildShell() {
   })
   const plus = h(
     'button',
-    { class: 'cbtn plus', label: '더 하기', onclick: () => openOverlay({ kind: 'plus' }) },
+    { class: 'cbtn plus', label: tShell.more, onclick: () => openOverlay({ kind: 'plus' }) },
     icon('plus', 'i md'),
   )
-  const sendBtn = h('button', { class: 'send-btn', label: '보내기' })
+  const sendBtn = h('button', { class: 'send-btn', label: tShell.send })
   sendBtn.addEventListener('click', () => {
     if (!st.draft.trim() && !st.attach && st.busy) return void send({ kind: 'conversation-cancel' })
     ask(st.draft)
@@ -2137,7 +2172,7 @@ function buildShell() {
   ghost.setAttribute('aria-hidden', 'true')
   const field = h('div', { class: 'ghost-wrap' }, textarea, ghost)
   const composerBox = h('div', { class: 'composer float app-composer' }, attachBox, plus, field, sendBtn)
-  const tabs = h('nav', { class: 'tabs app-tabs', label: '탭' })
+  const tabs = h('nav', { class: 'tabs app-tabs', label: tShell.tabsLabel })
   const overlay = h('div', { class: 'app-overlay' })
   const toast = h('div', { class: 'toast float-toast' })
   toast.setAttribute('role', 'status')
@@ -2147,7 +2182,7 @@ function buildShell() {
   pullToRefresh(page)
 }
 
-// ── 이어 쓰기 제안: 쓰는 말이 아이디어의 앞부분과 같으면 나머지를 흐리게 보여 준다 (누르거나 Tab으로 받기) ──
+// ── Continuation suggestion: if what is typed matches the start of an idea, show the rest faded (tap or press Tab to accept) ──
 
 let ghostEl: HTMLElement | undefined
 let ghostRest = ''
@@ -2166,7 +2201,7 @@ function updateGhost() {
   const t = shell?.textarea
   if (!g || !t) return
   const rest = ghostFor(st.draft)
-  // 한 줄일 때만: 쓴 말이 두 줄로 넘어가면 글자 자리가 어긋나서 보이지 않는다
+  // Only on one line: once the text wraps to two lines the letters no longer line up, so it is hidden
   const oneLine = t.scrollHeight <= Number.parseFloat(getComputedStyle(t).minHeight) + 2
   if (!rest || !oneLine) {
     ghostRest = ''
@@ -2176,19 +2211,19 @@ function updateGhost() {
   }
   if (rest === ghostRest && !g.hidden) return
   ghostRest = rest
-  // 입력칸과 같은 글꼴·안쪽 여백으로 겹쳐 그린다
+  // Drawn on top with the same font and padding as the input
   matchTextBox(g, t)
   const typed = h('span', { class: 'ghost-typed', text: st.draft })
   const letters = [...rest].map((ch) => h('span', { class: 'g', text: ch }))
   const restEl = h('span', { class: 'ghost-rest', onclick: takeGhost }, ...letters)
   const key = h(
     'button',
-    { class: 'ghost-key', label: '이어 쓰기 받기', onclick: takeGhost },
+    { class: 'ghost-key', label: tShell.ghostKey, onclick: takeGhost },
     icon('chevron', 'i'),
   )
   g.replaceChildren(typed, restEl, key)
   g.hidden = false
-  // 넘칠 때만 오른쪽을 흐린다 (다 들어가면 마지막 글자까지 또렷하게)
+  // Fade the right edge only when it overflows (if it all fits, keep the last letter sharp)
   restEl.classList.toggle('clip', restEl.scrollWidth > restEl.clientWidth + 1)
   springTo(restEl, [{ opacity: 0 }, { opacity: 1 }], 'fade')
   springTo(
@@ -2207,7 +2242,7 @@ function takeGhost() {
   if (!g || !t || !ghostRest) return
   const full = st.draft + ghostRest
   ghostRest = ''
-  // 흐린 글자가 왼쪽부터 밝아지며 톡, 그다음 진짜 글자로 바꾼다
+  // The faded letters light up from the left with a pop, then are swapped for the real text
   const letters = [...g.querySelectorAll<HTMLElement>('.ghost-rest .g')]
   acceptGhost(letters)
   g.querySelector('.ghost-key')?.remove()
@@ -2230,7 +2265,7 @@ function takeGhost() {
   )
 }
 
-/** 입력칸 높이: 줄이 늘고 줄 때 스프링으로 */
+/** Input height: springs when lines are added or removed */
 function autosize(t: HTMLTextAreaElement) {
   const h0 = t.offsetHeight
   t.style.height = 'auto'
@@ -2244,7 +2279,7 @@ const TAB_ORDER: Tab[] = ['chat', 'feed', 'ideas', 'goals', 'library']
 function setTab(tab: Tab) {
   const from = TAB_ORDER.indexOf(st.tab)
   const to = TAB_ORDER.indexOf(tab)
-  mark(`탭 ${tab}`)
+  mark(`tab ${tab}`)
   st.tab = tab
   st.overlay = undefined
   if (tab === 'chat') stickToBottom = true
@@ -2257,7 +2292,7 @@ function setTab(tab: Tab) {
     pollWork()
     pollConnect()
   }
-  // 탭 순서대로 옆에서 밀려 들어온다
+  // Slide in from the side in tab order
   if (from >= 0 && to >= 0 && from !== to && !reducedMotion())
     page.animate(
       [
@@ -2270,7 +2305,7 @@ function setTab(tab: Tab) {
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** 머리: 메뉴 · 두리(지금 하는 일) · 내 PC */
+/** Header: menu · Dool2 (what it is doing now) · my PC */
 function renderTop() {
   const t = shell?.top
   if (!t) return
@@ -2284,20 +2319,20 @@ function renderTop() {
           ? 'working'
           : ''
   const status = !st.online
-    ? 'PC 연결 중…'
+    ? tShell.pcConnecting
     : st.pcSilent
-      ? 'PC가 답하지 않아요'
+      ? tShell.pcSilent
       : waiting
         ? pendingApprovals().length
-          ? '승인을 기다려요'
-          : '로그인을 기다려요'
+          ? tShell.waitApproval
+          : tShell.waitLogin
         : st.busy || st.pending.length
-          ? (st.steps.at(-1) ?? '대답하는 중…')
+          ? (st.steps.at(-1) ?? tShell.answering)
           : ''
   const pcOn = st.online && !st.pcSilent
   const pcName = shortPc(st.saved?.pcName)
-  // 바뀐 것이 없으면 그대로 둔다. 답이 흘러오는 동안 매번 버튼을 새로 만들면
-  // 누르는 사이에 버튼이 사라져서 메뉴·두리 버튼이 안 눌리는 일이 생겼다
+  // Leave it alone if nothing changed. Rebuilding the buttons on every update while a reply streams in
+  // made them vanish mid-tap, so the menu and Dool2 buttons sometimes could not be pressed
   const sig = [mood, status, waiting ? 1 : 0, pcOn ? 1 : 0, pcName].join('|')
   if (t.dataset.sig === sig && t.childElementCount) return
   t.dataset.sig = sig
@@ -2305,18 +2340,18 @@ function renderTop() {
     t.replaceChildren(
       h(
         'button',
-        { class: 'fbtn', label: '메뉴', onclick: () => openOverlay({ kind: 'drawer' }) },
+        { class: 'fbtn', label: tShell.menu, onclick: () => openOverlay({ kind: 'drawer' }) },
         icon('menu'),
       ),
       h(
         'button',
-        { class: 'agent', label: '두리 패널 열기', onclick: () => openOverlay({ kind: 'agent' }) },
+        { class: 'agent', label: tShell.openAgent, onclick: () => openOverlay({ kind: 'agent' }) },
         h('span', { class: 'agent-av' }),
         h('span', { class: 'agent-tag' }),
       ),
       h(
         'button',
-        { class: 'fpill', label: '내 PC', onclick: () => setTab('settings') },
+        { class: 'fpill', label: tShell.myPc, onclick: () => setTab('settings') },
         h('span', { class: 'dot' }),
         h('span', { class: 'fpill-name' }),
       ),
@@ -2329,14 +2364,14 @@ function renderTop() {
   t.querySelector('.fpill .dot')?.classList.toggle('work', pcOn)
   const nameEl = t.querySelector('.fpill-name')
   if (nameEl && nameEl.textContent !== pcName) nameEl.textContent = pcName
-  // 상태 섬: 글이 바뀌면 앞 크기에서 새 크기로 스프링 (가로가 먼저 닿고 세로가 따라온다), 글은 흐려졌다 또렷해진다
+  // Status island: when the text changes, spring from the old size to the new one (width lands first, height follows); the text fades out and back in
   const old = t.querySelector<HTMLElement>('.agent-tag')
   if (!old || old.dataset.status === status) return
   const before = old.dataset.status !== undefined ? { w: old.offsetWidth, h: old.offsetHeight } : undefined
   const tag = h(
     'span',
     { class: 'agent-tag' },
-    '두리',
+    tShell.agentName,
     status && h('span', { class: waiting ? 'ask' : !pcOn ? 'off' : '', text: status }),
   )
   tag.dataset.status = status
@@ -2361,20 +2396,20 @@ function renderTop() {
 }
 
 function shortPc(name?: string) {
-  if (!name) return '내 PC'
+  if (!name) return tShell.myPc
   return name.length > 8 ? `${name.slice(0, 7)}…` : name
 }
 
 function openOverlay(o: Overlay) {
-  mark(o ? `열기 ${o.kind}` : '닫기')
-  // 금고 시트를 닫으면 보여 준 비밀번호를 바로 지운다
+  mark(o ? `open ${o.kind}` : 'close')
+  // Closing the vault sheet clears any password that was shown
   if (o?.kind !== 'vault') st.vaultShown = undefined
   st.overlay = o
   render()
 }
 
 let pillStop: (() => void) | undefined
-/** 지금 하는 일에서 이미 보여 준 단계 수 (새로 온 단계만 움직인다) */
+/** Number of steps of the current task already shown (only new steps animate) */
 let shownSteps = 0
 
 function renderTabs() {
@@ -2382,13 +2417,13 @@ function renderTabs() {
   if (!t) return
   const waiting = pendingApprovals().length + pendingLogins().length
   const items: [Tab, IconName, string][] = [
-    ['chat', 'chat', '대화'],
-    ['feed', 'feed', '피드'],
-    ['ideas', 'idea', '아이디어'],
-    ['goals', 'goal', '목표'],
-    ['library', 'library', '보관함'],
+    ['chat', 'chat', tShell.tabChat],
+    ['feed', 'feed', tShell.tabFeed],
+    ['ideas', 'idea', tShell.tabIdeas],
+    ['goals', 'goal', tShell.tabGoals],
+    ['library', 'library', tShell.tabLibrary],
   ]
-  // 버튼은 한 번만 만든다: 다시 그리면 움직임이 끊긴다
+  // Build the buttons once: rebuilding would cut the animation
   if (!t.querySelector('.tab')) {
     t.classList.add('has-pill')
     t.replaceChildren(
@@ -2410,7 +2445,7 @@ function renderTabs() {
   const btns = [...t.querySelectorAll<HTMLElement>('.tab')]
   const pill = t.querySelector<HTMLElement>('.tab-pill') as HTMLElement
   const ready = t.dataset.ready === '1'
-  // 태블릿은 왼쪽 세로 막대: 알약이 위아래로 움직인다
+  // On tablets the tab bar is a vertical bar on the left: the pill moves up and down
   const vertical = getComputedStyle(t).flexDirection === 'column'
   const pos = (e: HTMLElement) => (vertical ? e.offsetTop : e.offsetLeft)
   const size = (e: HTMLElement) => (vertical ? e.offsetHeight : e.offsetWidth)
@@ -2431,13 +2466,13 @@ function renderTabs() {
   if (!active) return
   pill.style.removeProperty(vertical ? 'left' : 'top')
   pill.style.removeProperty(vertical ? 'width' : 'height')
-  // 화면이 바뀌는 도중이라 칸 크기가 0이면 다음에 다시 잰다
+  // If the screen is mid-change and a cell has size 0, measure again next time
   if (!size(active)) return
   pill.style[P] = `${pos(active)}px`
   pill.style[S] = `${size(active)}px`
   t.dataset.ready = '1'
   if (!ready || !changed || reducedMotion()) return
-  // 알약: 가는 쪽 끝이 먼저(lead) 닿고 뒤쪽 끝이 늦게(trail) 따라와서, 움직이는 동안 늘어났다가 줄어든다
+  // Pill: the leading edge lands first and the trailing edge follows later, so it stretches and then shrinks while moving
   const toA = pos(active)
   const toB = toA + size(active)
   const fwd = toA > pillFrom.x
@@ -2453,7 +2488,7 @@ function renderTabs() {
     pill.style[S] = `${Math.max(8, B.x - A.x).toFixed(2)}px`
     return !(A.resting && B.resting)
   })
-  // 나머지 탭은 제자리로 스프링, 고른 탭 아이콘은 찌그러졌다 톡, 이름은 떠오른다 (참고 값: bar 340 28, squash 520 14)
+  // The other tabs spring back into place; the chosen tab's icon squashes then pops, and its name floats up (reference values: bar 340 28, squash 520 14)
   for (const b of btns) {
     const dx = (before.get(b) ?? 0) - pos(b)
     if (dx)
@@ -2486,7 +2521,7 @@ function renderComposer() {
   if (!shell) return
   const { composerBox, textarea, sendBtn } = shell
   composerBox.hidden = st.tab !== 'chat'
-  // 기다리는 입력 카드를 닫았으면 입력창 위에 다시 여는 줄
+  // A line above the composer to reopen a waiting input card that was closed
   let slot = composerBox.querySelector<HTMLElement>(':scope > .info-wait-slot')
   if (!slot) {
     slot = h('div', { class: 'info-wait-slot' })
@@ -2497,14 +2532,14 @@ function renderComposer() {
   if (st.attach) {
     const img = h('img')
     img.src = `data:image/jpeg;base64,${st.attach}`
-    img.alt = '보낼 사진'
+    img.alt = tShell.photoToSend
     attachBox.replaceChildren(
       img,
       h(
         'button',
         {
           class: 'fbtn small',
-          label: '사진 빼기',
+          label: tShell.removePhoto,
           onclick: () => {
             st.attach = undefined
             render()
@@ -2524,7 +2559,7 @@ function renderComposer() {
   }
   const has = Boolean(st.draft.trim() || st.attach)
   const stop = !has && st.busy
-  // 보내기 ↔ 멈추기: 앞 아이콘은 돌며 작아지고 새 아이콘이 톡 커진다
+  // Send <-> stop: the old icon spins and shrinks, and the new icon pops in
   const mode = stop ? 'stop' : 'send'
   if (sendBtn.dataset.mode !== mode) {
     const first = !sendBtn.dataset.mode
@@ -2534,7 +2569,7 @@ function renderComposer() {
     if (!first)
       springTo(ic, [{ transform: `scale(0) rotate(${stop ? -90 : 90}deg)` }, { transform: 'none' }], 'morph')
   }
-  sendBtn.setAttribute('aria-label', stop ? '멈추기' : '보내기')
+  sendBtn.setAttribute('aria-label', stop ? tShell.stop : tShell.send)
   sendBtn.classList.toggle('ready', has)
   sendBtn.classList.toggle('stop', stop)
   sendBtn.disabled = !st.online || (!has && !st.busy)
@@ -2549,7 +2584,7 @@ function renderPage() {
     pageDrawn = ''
     if (page.firstChild !== chat || page.childNodes.length !== 1) page.replaceChildren(chat)
     syncChat()
-    // (그 사이 다른 탭으로 갔으면 그 탭을 끝으로 내리지 않는다)
+    // (If the user went to another tab meanwhile, do not scroll that tab to the end)
     if (stickToBottom)
       requestAnimationFrame(() => {
         if (st.tab === 'chat') page.scrollTo({ top: page.scrollHeight })
@@ -2569,8 +2604,8 @@ function renderPage() {
             : st.tab === 'settings'
               ? settingsView()
               : connectView()
-  // 모양이 그대로면 손대지 않는다. PC에서 소식이 올 때마다 탭 화면을 통째로 다시 꽂으면
-  // 그림이 깜빡이고, 찾기 칸에 쓰던 글자의 커서와 키보드가 사라진다
+  // Do not touch it if the shape is unchanged. Re-inserting the whole tab on every news item from the PC
+  // makes the picture flicker and drops the cursor and keyboard of text typed in the search box
   const drawn = `${st.tab}\n${view.outerHTML}`
   if (drawn === pageDrawn && page.firstChild && page.firstChild !== chat) return
   pageDrawn = drawn
@@ -2581,18 +2616,18 @@ function renderPage() {
   typing?.()
 }
 
-/** 마지막으로 그린 탭 화면의 모양 (대화 탭은 바뀐 말만 따로 맞춘다) */
+/** Shape of the tab screen drawn last (the chat tab syncs only changed messages separately) */
 let pageDrawn = ''
 
-/** 탭 화면이 스스로 일부를 다시 그렸을 때(찾기): 지금 모양을 기억해 둔다 (다음 소식에 통째로 다시 꽂지 않게) */
+/** When a tab screen redraws part of itself (search): remember the current shape (so the next news does not re-insert it whole) */
 function pageSettled() {
   const view = shell?.page.firstElementChild
   if (view && st.tab !== 'chat') pageDrawn = `${st.tab}\n${view.outerHTML}`
 }
 
 /**
- * 다시 그리기 전에: 그 안에서 글을 쓰는 중이면 쓰던 글자·커서를 기억했다가 새 칸에 돌려준다.
- * (id가 있는 칸만. 새 칸이 이미 값을 갖고 그려졌으면 그 값을 둔다)
+ * Before re-rendering: if the user is typing inside, remember the text and cursor and give them back to the new field.
+ * (Only fields with an id. If the new field was drawn with a value already, keep that value)
  */
 function typingIn(box: HTMLElement): (() => void) | undefined {
   const fields = [...box.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[id], textarea[id]')]
@@ -2609,7 +2644,7 @@ function typingIn(box: HTMLElement): (() => void) | undefined {
       const el = document.getElementById(f.id) as HTMLInputElement | null
       if (!el || !box.contains(el) || el.value) continue
       el.value = f.value
-      // 칸을 보고 그리는 것(인증번호 상자)이 따라오게
+      // So things drawn from a field (the verification code box) follow along
       el.dispatchEvent(new Event('input', { bubbles: true }))
     }
     if (!active) return
@@ -2623,7 +2658,7 @@ function typingIn(box: HTMLElement): (() => void) | undefined {
   }
 }
 
-/** 커서 자리 (이메일·숫자 칸은 물으면 오류가 난다) */
+/** Cursor position (asking an email or number field throws an error) */
 function safeCaret(el: HTMLInputElement | HTMLTextAreaElement): number | null {
   try {
     return el.selectionStart
@@ -2632,15 +2667,15 @@ function safeCaret(el: HTMLInputElement | HTMLTextAreaElement): number | null {
   }
 }
 
-// ── 대화: 바뀐 말만 ──
+// ── Chat: only changed messages ──
 
-/** i번째 기록 다음에 사용자가 한 말 (보내는 중인 말 포함). 없으면 undefined */
+/** What the user said after record i (including a message being sent). undefined if none */
 function saidAfter(i: number): string | undefined {
   for (const m of st.conv.slice(i + 1)) if (m.role === 'user') return readAppNote(m.text) ?? m.text
   return st.pending[0]?.text
 }
 
-/** 결과 블록(빠른 답·목록 줄·결과 한 장·보낼 글)이 쓰는 것: 말 보내기, 바깥 주소 열기, 사진, 복사 */
+/** What result blocks (quick replies, list rows, result card, draft to send) use: send a message, open an outside link, photos, copy */
 const blockEnv: BlockEnv = {
   send: (text) => ask(text),
   open: (url) => openOutside(url),
@@ -2652,10 +2687,10 @@ const blockEnv: BlockEnv = {
     ) ?? Promise.resolve(false),
 }
 
-/** 앱 밖 브라우저(또는 그 서비스 앱)로 연다 */
+/** Open in the browser outside the app (or that service's app) */
 function openOutside(url: string) {
   try {
-    mark(`바깥 열기 ${new URL(url).host}`)
+    mark(`open external ${new URL(url).host}`)
   } catch {}
   const a = document.createElement('a')
   a.href = url
@@ -2664,14 +2699,14 @@ function openOutside(url: string) {
   a.click()
 }
 
-/** 화면 위쪽에 보이는 말의 날짜. 그날의 날짜 줄이 아직 화면에 보이면 겹치지 않게 비운다 */
+/** Date of the message at the top of the screen. Empty if that day's date line is still visible, so they do not overlap */
 function dayAtTop(page: HTMLElement, chat: HTMLElement): string {
   const top = page.getBoundingClientRect().top + 120
   let label = ''
   for (const sep of chat.querySelectorAll<HTMLElement>(':scope > .day-sep')) {
     const y = sep.getBoundingClientRect().top
     if (y > top) {
-      // 다음 날짜 줄이 떠 있는 날짜 바로 아래까지 올라왔으면 떠 있는 쪽은 숨긴다
+      // If the next date line has scrolled up right under the floating date, hide the floating one
       if (y < top + 36) return ''
       break
     }
@@ -2680,20 +2715,20 @@ function dayAtTop(page: HTMLElement, chat: HTMLElement): string {
   return label
 }
 
-/** 날짜 열쇠 (내 폰 시간대 기준 YYYY-M-D) */
+/** Date key (YYYY-M-D in this phone's time zone) */
 function dayKey(iso: string): string {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
 
-/** 날짜 줄 글: 오늘 · 어제 · 11월 20일 목요일 (올해가 아니면 연도까지) */
+/** Date line text: Today · Yesterday · Thursday, November 20 (with the year if not this year) */
 function dayLabel(iso: string): string {
   const d = new Date(iso)
   const now = new Date()
   const key = dayKey(iso)
-  if (key === dayKey(now.toISOString())) return '오늘'
-  if (key === dayKey(new Date(now.getTime() - 86_400_000).toISOString())) return '어제'
-  return d.toLocaleDateString('ko-KR', {
+  if (key === dayKey(now.toISOString())) return tChat.today
+  if (key === dayKey(new Date(now.getTime() - 86_400_000).toISOString())) return tChat.yesterday
+  return d.toLocaleDateString(tChat.locale, {
     ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
     month: 'long',
     day: 'numeric',
@@ -2701,7 +2736,7 @@ function dayLabel(iso: string): string {
   })
 }
 
-/** 말풍선 옆 시간 (오후 6:14). 같은 사람이 같은 분에 이어 말했으면 마지막 말풍선에만 */
+/** Time beside a bubble (6:14 PM). If the same person kept talking in the same minute, only on the last bubble */
 function bubbleTime(i: number): string {
   const m = st.conv[i]
   if (!m) return ''
@@ -2717,10 +2752,10 @@ function bubbleTime(i: number): string {
   const d = new Date(m.createdAt)
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleTimeString(tChat.locale, { hour: 'numeric', minute: '2-digit' })
 }
 
-/** 대화 목록에 있어야 할 것 (key, 서명, 만들기). 서명이 같으면 그대로 둔다 */
+/** What the chat list should contain (key, signature, build). Unchanged if the signature is the same */
 type Item = { key: string; sig: string; make: () => HTMLElement }
 
 function chatItems(): Item[] {
@@ -2734,7 +2769,7 @@ function chatItems(): Item[] {
       make: () =>
         h('button', {
           class: 'btn-text more',
-          text: '이전 대화 더 보기',
+          text: tChat.earlier,
           onclick: () => void send({ kind: 'conversation', before: first.createdAt }),
         }),
     })
@@ -2744,11 +2779,11 @@ function chatItems(): Item[] {
   let lastDay = ''
   const superseded = oldConnectCards()
   for (const [i, m] of st.conv.entries()) {
-    // 같은 알림이 이어서 여러 번 남았으면(예전 기록) 하나만 보인다
+    // If the same notice was recorded several times in a row (old records), show only one
     const noteText = m.role !== 'assistant' && m.role !== 'tool' ? readAppNote(m.text) : undefined
     if (noteText !== undefined && noteText === lastNote) continue
     lastNote = noteText ?? ''
-    // 날이 바뀌면 가운데에 날짜 한 줄 (스크롤할 때는 위에 떠 있는 날짜가 따라온다)
+    // When the day changes, a date line in the middle (while scrolling, the floating date follows)
     const day = dayKey(m.createdAt)
     if (day && day !== lastDay) {
       lastDay = day
@@ -2756,9 +2791,9 @@ function chatItems(): Item[] {
       items.push({ key: `day:${day}`, sig: label, make: () => h('p', { class: 'day-sep', text: label }) })
     }
     if (m.role === 'tool') {
-      // 같은 서비스 연결 카드가 여럿이면 마지막 것만 살아 움직인다 (앞의 것은 한 줄로)
+      // If there are several connect cards for the same service, only the last stays live (earlier ones collapse to one line)
       const old = superseded.has(m.id)
-      // 빠른 답·여러 개 고르기는 사용자가 그다음에 한 말을 알아야 흐리게·잠가 그린다
+      // Quick replies and multi-select need to know what the user said next, to draw faded and locked
       const used = /"kind":"quick"|"pick":"multi"/.test(m.text) ? saidAfter(i) : undefined
       items.push({
         key: m.id,
@@ -2766,7 +2801,7 @@ function chatItems(): Item[] {
         make: () => toolCard(m.text, !old, used),
       })
     } else if (m.role === 'user') {
-      // 두리 앱이 AI에게 보낸 알림(승인 결과 등)은 내 말이 아니라 가운데 작은 줄로
+      // Notices the Dool2 app sent to the AI (approval results, etc.) are not my words, so show them as a small centered line
       const note = readAppNote(m.text)
       const time = note === undefined ? bubbleTime(i) : ''
       items.push({
@@ -2789,7 +2824,7 @@ function chatItems(): Item[] {
           b.append(rich(m.text))
           if (time) b.dataset.time = time
           onLongPress(b, () => openOverlay({ kind: 'msg', id: m.id }))
-          // 방금 온 답이면 돈·퍼센트가 굴러서 선다 (지난 대화를 불러올 때는 그대로)
+          // For a reply that just arrived, money and percentages roll into place (loaded older chat stays as is)
           if (Date.now() - Date.parse(m.createdAt) < 60_000) rollNumbers(b)
           return b
         },
@@ -2818,15 +2853,15 @@ function chatItems(): Item[] {
           'div',
           { class: 'queued' },
           h('div', { class: 'bubble me', text: q }),
-          h('span', { class: 'meta', text: '이어서 말할게요' }),
+          h('span', { class: 'meta', text: tChat.continued }),
         ),
     })
   })
   if (st.busy || st.pending.length) {
     const shot = st.work.web && st.busy && st.work.tabId !== undefined && st.work.shot
-    // 일하는 과정은 카드 하나로: 지금 보는 화면 + 단계 (랜딩의 "○○을 살펴보는 중")
+    // The work process is one card: the screen being viewed + steps (like the landing page's "Looking at ...")
     if (st.busy && (st.steps.length || shot)) items.push({ key: 'work', sig: '', make: workPanel })
-    // 답 글이 흘러나오기 전까지는 일하는 카드 아래에도 "•••"를 둔다: 지금 쓰고 있구나 느껴지게 (11-22 사용자 요청)
+    // Until the reply text starts streaming, keep "•••" under the work card too, so it feels like it is writing (user request, 11-22)
     if (st.live) items.push({ key: 'live', sig: '', make: liveBubble })
     else
       items.push({
@@ -2838,24 +2873,24 @@ function chatItems(): Item[] {
   return items
 }
 
-/** 내 말풍선: 사진을 보냈으면 사진(보낸 직후) 또는 "사진" 표시 */
+/** My bubble: if a photo was sent, the photo (right after sending) or a "Photo" chip */
 function meBubble(raw: string, photo?: string, cls = 'bubble me') {
   const { text, photo: name } = splitPhoto(raw)
   const b = h('div', { class: `${cls}${photo || name ? ' with-photo' : ''}` })
   if (photo) {
     const img = h('img', { class: 'sent-photo' })
     img.src = `data:image/jpeg;base64,${photo}`
-    img.alt = '보낸 사진'
+    img.alt = tChat.photoSent
     b.append(img)
   } else if (name) {
-    // 지난 말·다른 기기에서 보낸 사진: PC에 부탁해 받아 보여 준다 (받기 전·못 받으면 "사진" 표시)
-    const chip = h('span', { class: 'photo-chip' }, icon('image', 'i'), '사진')
+    // Photos from earlier messages or other devices: ask the PC and show them (a "Photo" chip before they arrive or if they fail)
+    const chip = h('span', { class: 'photo-chip' }, icon('image', 'i'), tChat.photo)
     b.append(chip)
     void thumbOf(`photo:${name}`).then((data) => {
       if (!data) return
       const img = h('img', { class: 'sent-photo' })
       img.src = data
-      img.alt = '보낸 사진'
+      img.alt = tChat.photoSent
       chip.replaceWith(img)
     })
   }
@@ -2863,7 +2898,7 @@ function meBubble(raw: string, photo?: string, cls = 'bubble me') {
   return b
 }
 
-/** 길게 누르기 (폰) · 오른쪽 클릭 (PC 브라우저) */
+/** Long press (phone) · right click (desktop browser) */
 function onLongPress(el: HTMLElement, fn: () => void) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let x = 0
@@ -2889,12 +2924,12 @@ function onLongPress(el: HTMLElement, fn: () => void) {
   })
 }
 
-/** 생각하는 중: 점 셋이 차례로 통통 튀고, 쫀득한 필터로 서로 늘어나 붙는다 */
+/** Thinking: three dots bounce in turn and stretch into each other with a gooey filter */
 function thinkingDots() {
   gooFilter()
   return h(
     'span',
-    { class: 'typing goo', label: '생각하는 중' },
+    { class: 'typing goo', label: tChat.thinking },
     h('span', { class: 'goo-dots' }, h('i'), h('i'), h('i')),
   )
 }
@@ -2907,8 +2942,8 @@ function liveBubble() {
 }
 
 /**
- * 흘러오는 답: 새로 온 낱말만 아래에서 떠오르며 또렷해진다.
- * 글을 다시 그릴 때마다 낱말을 감싸고, 앞에서 이미 보인 낱말 수보다 뒤에 있는 것만 움직인다
+ * Streaming reply: only newly arrived words float up from below and sharpen.
+ * Words are wrapped on every redraw, and only those after the count of words already shown move
  */
 function riseWords(el: HTMLElement) {
   const seen = Number(el.dataset.words ?? 0)
@@ -2950,11 +2985,11 @@ function syncChat() {
     keep.add(it.key)
     let el = have.get(it.key)
     if (el && it.key === 'live') {
-      // 흘러오는 답은 글자만 바꾼다
+      // A streaming reply only swaps the text
       el.replaceChildren(rich(dropEnglishLines(st.live)))
       riseWords(el)
     } else if (el && it.key === 'work') {
-      // 일하는 카드는 새 단계만 붙인다 (지금 화면 그림은 그대로 두고)
+      // The work card only appends new steps (leaving the current screen picture as is)
       updateWorkPanel(el)
     } else if (!el || el.dataset.sig !== it.sig) {
       const fresh = it.make()
@@ -2974,22 +3009,22 @@ function syncChat() {
   for (const [k, el] of have) if (!keep.has(k)) el.remove()
 }
 
-/** PC가 답하지 않을 때: 빈 화면 대신 이유와 할 일 */
+/** When the PC is not answering: the reason and what to do, instead of a blank screen */
 function silentCard() {
   const pc = st.saved?.pcName ?? 'PC'
   return h(
     'div',
     { class: 'card ask-card silent-card' },
-    h('div', { class: 'card-label' }, doori('sleeping', 22), `${pc}가 답하지 않아요`),
+    h('div', { class: 'card-label' }, doori('sleeping', 22), tChat.pcSilentTitle(pc)),
     h('p', {
       class: 'card-text',
-      text: 'PC가 켜져 있고 두리가 실행 중인지 확인해 주세요. PC에서 이 폰 연결을 지웠다면 다시 연결해야 해요.',
+      text: tChat.pcSilentBody,
     }),
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost', text: '다시 시도', onclick: () => connect() }),
-      h('button', { class: 'btn', text: '다시 연결하기', onclick: () => void forgetPc() }),
+      h('button', { class: 'btn-ghost', text: tChat.retry, onclick: () => connect() }),
+      h('button', { class: 'btn', text: tChat.reconnect, onclick: () => void forgetPc() }),
     ),
   )
 }
@@ -2998,27 +3033,27 @@ function helloCard() {
   return h(
     'div',
     { class: 'hello' },
-    h('div', { class: 'bubble', text: `안녕하세요, 두리예요. ${st.saved?.pcName ?? '내 PC'}에서 일해요.` }),
+    h('div', { class: 'bubble', text: tChat.hello(st.saved?.pcName ?? tShell.myPc) }),
     h('div', {
       class: 'bubble',
-      text: '예약·장보기·택배·서류처럼 귀찮은 일을 말로 맡겨 주세요. 돈 쓰는 일은 꼭 먼저 물어볼게요.',
+      text: tChat.helloBody,
     }),
     h(
       'div',
       { class: 'quick' },
-      ...['택배 어디쯤 왔어?', '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘', '뭘 할 수 있어?'].map((q) =>
+      ...[tChat.quick1, tChat.quick2, tChat.quick3].map((q) =>
         h('button', { text: q, onclick: () => ask(q) }),
       ),
     ),
     h(
       'div',
       { class: 'card start-card' },
-      h('strong', { text: '처음이면 이렇게 시작해 보세요' }),
+      h('strong', { text: tChat.startTitle }),
       ...(
         [
-          ['apps', '1', '자주 쓰는 쇼핑몰·통신사를 연결해 두기', () => setTab('connect')],
-          ['feed', '2', '매일 아침 받을 소식 정하기', () => setTab('feed')],
-          ['goal', '3', '예약하고 목표 세우기', () => setTab('goals')],
+          ['apps', '1', tChat.start1, () => setTab('connect')],
+          ['feed', '2', tChat.start2, () => setTab('feed')],
+          ['goal', '3', tChat.start3, () => setTab('goals')],
         ] as [IconName, string, string, () => void][]
       ).map(([ic, n, t, go]) =>
         h(
@@ -3038,14 +3073,14 @@ function toolSig(raw: string) {
     const rec = JSON.parse(raw) as { kind?: string }
     if (rec.kind === 'approval') {
       const a = approvalFor(rec as ApprovalRecordMessage)
-      // 승인 카드에서 고른 결제 수단·카드·할부도 넣는다. 빠지면 칩을 눌러도 카드를 다시 그리지 않아 고른 게 안 바뀌었다 (실측)
+      // Also include the payment method, card and installments chosen on the approval card. Without them, tapping a chip did not redraw the card and the choice did not change (measured)
       const picked = a
         ? [...st.choice]
             .filter(([k]) => k === a.id || k.startsWith(`${a.id}:`))
             .map(([k, v]) => `${k}=${v}`)
             .join(',')
         : ''
-      // 문자 카드: 받는 사람 찾기 결과·고른 사람·오류도 (넣는 중인 번호는 빼야 칸이 다시 그려지며 글자가 끊기지 않는다)
+      // Text card: also the recipient search result, the chosen person and the error (leave out the number being typed, or the field is redrawn and typing breaks)
       const sms = a && isSms(a) ? smsStates.get(a.id) : undefined
       const smsSig = sms ? `${sms.state}:${sms.people.length}:${sms.pick}:${sms.error ?? ''}` : ''
       return `${a?.id}:${a?.status}:${a ? (st.decided.get(a.id)?.message ?? '') : ''}:${picked}:${smsSig}`
@@ -3066,7 +3101,7 @@ function toolSig(raw: string) {
       const f = it ? st.connectFails.get(it.card.id) : undefined
       const fail = f ? `${f.reason}${agentOn(f) ? ':agent' : ''}` : ''
       const peek = it && st.connectLive.get(it.card.id)?.shot ? 1 : 0
-      // 그 서비스 아이디·비밀번호 카드가 떠 있는지 (연결 카드가 그 카드를 가리킨다)
+      // Whether that service's ID and password card is showing (the connect card points to it)
       const login = it
         ? ([...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === it.card.id)
             ?.id ?? '')
@@ -3089,7 +3124,7 @@ function loginFor(rec: LoginRecordMessage) {
     .sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0]
 }
 
-/** 뒤에 같은 서비스 연결 카드가 또 있는 카드들 (메시지 id) */
+/** Cards that have another connect card for the same service after them (message ids) */
 function oldConnectCards(): Set<string> {
   const lastFor = new Map<string, string>()
   const out = new Set<string>()
@@ -3129,24 +3164,24 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)
   if ((rec as { kind?: string }).kind === 'made') return madeInline(rec as unknown as MadeImageRecordMessage)
-  // 직접 해 주세요
+  // Your turn
   const tabId = rec.tabId
   return h(
     'div',
     { class: 'card ask-card' },
-    h('div', { class: 'card-label' }, doori('asking', 22), '직접 해 주세요'),
+    h('div', { class: 'card-label' }, doori('asking', 22), tChat.handTitle),
     h('p', { class: 'card-text', text: rec.reason }),
     tabId !== undefined &&
-      h('button', { class: 'btn-ghost', text: '폰에서 PC 화면 열기', onclick: () => openRemote(tabId) }),
+      h('button', { class: 'btn-ghost', text: tChat.openPc, onclick: () => openRemote(tabId) }),
   )
 }
 
-/** 대화 안의 승인 카드: 무엇을 · 얼마 · [거절][승인하기] */
-// ── 문자 보내기 (내 번호로) ─────────────────────────────
-// PC(두리)는 받는 사람 이름과 글만 보낸다. 번호는 이 폰이 연락처에서 찾고 밖으로 보내지 않는다.
-// 사용자가 꾹 눌러 승인하면 이 폰이 바로 보내고(다른 앱을 열지 않는다), 결과 → 승인 서명 순서로 PC에 알린다
+/** Approval card in the chat: what · how much · [Decline][Approve] */
+// ── Sending a text (from my own number) ─────────────────────────────
+// The PC (Dool2) sends only the recipient's name and the text. This phone finds the number in contacts and never sends it out.
+// When the user holds to approve, this phone sends it right away (no other app opens), then tells the PC the result, then the approval signature
 
-/** 이 앱이 할 수 있는 것 (PC가 문자 보내기를 맡겨도 되는지 안다) */
+/** What this app can do (so the PC knows whether it may hand off texting) */
 const capsReady: Promise<PhoneCap[]> = smsAvailable().then((ok) => (ok ? ['sms'] : []))
 function hello() {
   void capsReady.then((caps) => send({ kind: 'hello', caps }))
@@ -3162,7 +3197,7 @@ interface SmsState {
 const smsStates = new Map<string, SmsState>()
 const isSms = (a: ApprovalView) => a.url.startsWith('sms:')
 const smsTo = (a: ApprovalView) => a.url.slice(4)
-/** 번호처럼 보이면 (숫자 8자 이상) 연락처를 찾지 않고 그대로 */
+/** If it looks like a number (8 or more digits), use it as is without searching contacts */
 const phoneLike = (v: string) => v.replace(/[^0-9]/g, '').length >= 8 && /^[0-9+\-\s().]+$/.test(v)
 const maskNumber = (n: string) => {
   const d = n.replace(/[^0-9]/g, '')
@@ -3185,10 +3220,10 @@ function smsState(a: ApprovalView): SmsState {
   s = { state: 'finding', people: [], pick: 0, manual: '' }
   smsStates.set(a.id, s)
   const mine = s
-  // 카드가 처음 뜰 때 연락처·문자 권한을 한 번에 묻고, 그다음 찾는다
+  // When the card first shows, ask for contacts and text permission at once, then search
   void smsPermissions()
-    // 호칭 "님"은 빼고 찾는다 (김 팀장님 → 김 팀장)
-    .then(() => smsFind(to.replace(/님$/, '').trim()))
+    // Search without the Korean honorific suffix (see region/kr/main-b-approval.ts)
+    .then(() => smsFind(to.replace(HONORIFIC_RE, '').trim()))
     .then((r) => {
       mine.people = r.people
       mine.state = r.denied ? 'denied' : r.people.length ? 'found' : 'none'
@@ -3197,32 +3232,32 @@ function smsState(a: ApprovalView): SmsState {
   return s
 }
 
-/** 보낼 번호와 받는 사람 이름 (못 정했으면 undefined) */
+/** Number to send to and the recipient's name (undefined if not decided) */
 function smsTarget(s: SmsState): { name: string; number: string } | undefined {
   if (s.manual.replace(/[^0-9]/g, '').length >= 8) return { name: '', number: s.manual }
   const p = s.state === 'found' ? s.people[s.pick] : undefined
   return p ? { name: p.name, number: p.number } : undefined
 }
 
-/** 문자 플러그인의 실패 코드 → 사용자에게 보일 말 */
+/** Text plugin failure code -> message for the user */
 function smsWhy(reason?: string, detail?: string): string {
   switch (reason) {
     case 'denied':
-      return '문자 보내기 권한이 없어요. 권한을 허용한 뒤 다시 눌러 주세요'
+      return tSms.denied
     case 'bad':
-      return '받는 번호나 글이 비어 있어요'
+      return tSms.bad
     case 'no-phone':
-      return '이 기기는 문자를 보낼 수 없어요 (전화 기능이 없어요)'
+      return tSms.noPhone
     case 'no-service':
-      return '신호가 없어요'
+      return tSms.noSignal
     case 'radio-off':
-      return '비행기 모드예요'
+      return tSms.airplane
     case 'carrier':
-      return `통신사가 받지 않았어요 (${detail ?? ''})`
+      return tSms.carrier(detail)
     case 'timeout':
-      return '보냈는지 30초 안에 확인하지 못했어요. 폰 문자 앱의 보낸 문자를 봐 주세요'
+      return tSms.timeout
     default:
-      return detail ? `보내지 못했어요 (${detail})` : '까닭을 모르겠어요'
+      return detail ? tSms.failedWith(detail) : tSms.unknown
   }
 }
 
@@ -3230,27 +3265,25 @@ async function sendSms(a: ApprovalView) {
   const s = smsState(a)
   const t = smsTarget(s)
   if (!t) {
-    s.error = '받는 사람 번호를 골라 주세요'
+    s.error = tSms.pickNumber
     render()
     throw new Error(s.error)
   }
   if (Date.parse(a.expiresAt) <= Date.now()) {
-    s.error = '승인 시간이 지나 보내지 않았어요. 두리에게 다시 부탁해 주세요'
+    s.error = tSms.expired
     render()
     throw new Error(s.error)
   }
   s.error = undefined
   if (!(await smsPermissions()).sms) {
-    s.error = '문자 보내기 권한을 허용해야 보낼 수 있어요'
+    s.error = tSms.needPerm
     render()
     throw new Error(s.error)
   }
   const r = await smsSend(t.number, a.what)
   const who = t.name ? `${t.name}(${maskNumber(t.number)})` : maskNumber(t.number)
-  const message = r.ok
-    ? `${who}에게 문자를 보냈어요`
-    : `${who}에게 못 보냈어요: ${smsWhy(r.reason, r.message)}`
-  // 결과를 먼저, 그다음 승인 서명 (PC는 서명이 맞을 때만 이 결과를 끝으로 적는다)
+  const message = r.ok ? tSms.sent(who) : tSms.notSent(who, smsWhy(r.reason, r.message))
+  // Result first, then the approval signature (the PC records this result as final only when the signature is valid)
   await send({ kind: 'sms-result', id: a.id, ok: r.ok, message })
   await decide(a, 'approve', true)
   if (!r.ok) toast(message)
@@ -3261,17 +3294,17 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
   const to = smsTo(a)
   const who = h('div', { class: 'approve-choices sms-to' })
   const label = (t: string) => h('span', { class: 'meta', text: t })
-  if (s.state === 'finding') who.append(label(`받는 사람 · 연락처에서 '${to}' 찾는 중…`))
+  if (s.state === 'finding') who.append(label(tSms.finding(to)))
   else if (s.state === 'found' && s.people.length === 1) {
     const p = s.people[0] as SmsPerson
     who.append(
-      label('받는 사람'),
+      label(tSms.to),
       h('strong', { text: [p.name, showNumber(p.number)].filter(Boolean).join(' · ') }),
       ...(p.label ? [h('span', { class: 'meta', text: p.label })] : []),
     )
   } else if (s.state === 'found') {
     who.append(
-      label(`'${to}'이(가) 여러 명이에요. 누구에게 보낼까요?`),
+      label(tSms.many(to)),
       h(
         'div',
         { class: 'choice-list' },
@@ -3290,13 +3323,7 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
     )
   }
   if (s.state === 'none' || s.state === 'denied') {
-    who.append(
-      label(
-        s.state === 'denied'
-          ? `연락처를 볼 수 없어서 '${to}'의 번호를 몰라요. 번호를 넣어 주세요`
-          : `연락처에서 '${to}'을(를) 못 찾았어요. 번호를 넣어 주세요`,
-      ),
-    )
+    who.append(label(s.state === 'denied' ? tSms.noAccess(to) : tSms.notFound(to)))
     const input = h('input', { class: 'field' }) as HTMLInputElement
     input.type = 'tel'
     input.inputMode = 'tel'
@@ -3314,12 +3341,7 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
       'div',
       { class: 'approve-head' },
       h('span', { class: 'tile amber' }, icon('mail', 'i md')),
-      h(
-        'div',
-        {},
-        h('strong', { text: '문자 보낼까요?' }),
-        h('span', { class: 'meta', text: '내 번호로 · 이 폰에서 바로 보내요' }),
-      ),
+      h('div', {}, h('strong', { text: tSms.askTitle }), h('span', { class: 'meta', text: tSms.askMeta })),
     ),
     who,
     h('p', { class: 'approve-what sms-text', text: a.what }),
@@ -3327,10 +3349,10 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', { class: 'btn-ghost', text: tAppr.reject, onclick: () => void decide(a, 'reject') }),
       holdButton({
-        label: '꾹 눌러 보내기',
-        done: '보냈어요',
+        label: tSms.hold,
+        done: tSms.done,
         cls: 'btn btn-approve',
         onDone: () => sendSms(a),
         after: () => markDecided(a, 'approve'),
@@ -3343,22 +3365,22 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
   const a = approvalFor(rec)
   const decided = a ? st.decided.get(a.id) : undefined
   if (!a || a.status !== 'pending' || decided) {
-    // 정한 뒤에는 한 줄로: 승인했어요 · 15,900원 · 제주 귤 3kg 바로 구매
-    const what = a?.what || rec.what || '승인 요청'
+    // Once decided, one line: Approved · 15,900 won · Jeju tangerines 3kg, buy now
+    const what = a?.what || rec.what || tAppr.request
     const failed = (decided && !decided.ok) || a?.status === 'failed'
     const sms = a ? isSms(a) : rec.ref === 'sms'
     const head = failed
       ? sms
-        ? '못 보냈어요'
-        : '못 눌렀어요'
+        ? tAppr.notSent
+        : tAppr.notTapped
       : a?.status === 'rejected'
-        ? '거절했어요'
+        ? tAppr.rejected
         : a?.status === 'expired'
-          ? '시간이 지나 취소됐어요'
+          ? tAppr.expired
           : a || decided
             ? sms
-              ? '보냈어요'
-              : '승인했어요'
+              ? tAppr.sent
+              : tAppr.approved
             : ''
     return h(
       'p',
@@ -3393,10 +3415,10 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', { class: 'btn-ghost', text: tAppr.reject, onclick: () => void decide(a, 'reject') }),
       holdButton({
-        label: '꾹 눌러 승인',
-        done: '승인했어요',
+        label: tAppr.holdApprove,
+        done: tAppr.approved,
         cls: 'btn btn-approve',
         onDone: () => decide(a, 'approve', true),
         after: () => markDecided(a, 'approve'),
@@ -3404,21 +3426,21 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
     ),
     h('button', {
       class: 'btn-link',
-      text: '화면 보고 결정하기',
+      text: tAppr.viewScreen,
       onclick: () => openOverlay({ kind: 'approval', id: a.id }),
     }),
   )
 }
 
 /**
- * 결제 카드 (11-20 사용자 시안): 어느 결제든 같은 틀. 가게·상품·금액·받는 곳·결제 수단·정보 줄, 맨 아래 큰 결제 버튼.
- * 받는 곳·결제 수단은 줄 전체를 누르면 고르기 시트가 열린다. 승인은 이 카드에서 한 번뿐
+ * Checkout card (user mockup, 11-20): the same frame for every payment. Shop, goods, amount, delivery address, payment method, info rows, and a big pay button at the bottom.
+ * Tapping a whole delivery or payment row opens a picker sheet. Approval happens once, on this card
  */
 function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTMLElement {
   const host = hostOf(a.url)
   const name = a.where || host
-  // 도착·이용 시각 하나는 머리 줄에 (줄 목록에는 다시 안 씀)
-  const when = (a.info ?? []).find((x) => /도착|이용|일시|체크인|출발/.test(x.label))
+  // One arrival or usage time goes in the header line (not repeated in the row list)
+  const when = (a.info ?? []).find((x) => WHEN_LABEL_RE.test(x.label))
   const head = h(
     'div',
     { class: 'co-head' },
@@ -3476,7 +3498,7 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
       ),
     ),
     ...(a.amount
-      ? [h('div', { class: 'co-tot' }, h('span', { text: '총 결제 금액' }), h('b', { text: a.amount }))]
+      ? [h('div', { class: 'co-tot' }, h('span', { text: tAppr.total }), h('b', { text: a.amount }))]
       : []),
   )
   const row = (ic: IconName, k: string, v: string, onclick?: () => void, warn = false) =>
@@ -3496,13 +3518,16 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
   const ship = shipChosenOf(a)
   if (a.shipOptions?.length) {
     const cur = ship?.startsWith('n:')
-      ? `새 주소 ${decodeURIComponent(ship.slice(2))}`
-      : (a.shipOptions.find((o) => o.id === ship) ?? a.shipOptions[0])?.label.replace(/^내 정보 주소 · /, '')
+      ? tAppr.newAddr(decodeURIComponent(ship.slice(2)))
+      : (a.shipOptions.find((o) => o.id === ship) ?? a.shipOptions[0])?.label.replace(
+          MY_ADDRESS_PREFIX_RE,
+          '',
+        )
     const warn = Boolean(a.shipWarn) && (ship ?? 'a0') === 'a0'
     rows.push(
       row(
         'place',
-        warn ? '받는 곳 · 내 정보 주소와 달라요' : '받는 곳',
+        warn ? tAppr.shipWarn : tAppr.ship,
         cur ?? '',
         () => openOverlay({ kind: 'pick-ship', id: a.id, back: inSheet }),
         warn,
@@ -3511,13 +3536,13 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
   }
   for (const x of a.info ?? []) {
     if (x === when) continue
-    const ic: IconName = /요청/.test(x.label)
+    const ic: IconName = REQUEST_LABEL_RE.test(x.label)
       ? 'chat'
-      : /도착|일시|시간|체크/.test(x.label)
+      : TIME_LABEL_RE.test(x.label)
         ? 'clock'
-        : /예약자|탑승객|투숙객|받는|휴대폰|전화|연락처/.test(x.label)
+        : PEOPLE_LABEL_RE.test(x.label)
           ? 'users'
-          : /좌석|티켓/.test(x.label)
+          : TICKET_LABEL_RE.test(x.label)
             ? 'ticket'
             : 'note'
     rows.push(row(ic, x.label, x.value))
@@ -3530,25 +3555,23 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
     rows.push(
       row(
         'card',
-        a.choiceTitle ?? '결제 수단',
-        [main?.label, ...subs].filter(Boolean).join(' · ') || '고르기',
+        a.choiceTitle ?? tAppr.payMethod,
+        [main?.label, ...subs].filter(Boolean).join(' · ') || tAppr.choose,
         () => openOverlay({ kind: 'pick-pay', id: a.id, back: inSheet }),
       ),
     )
   }
-  const fine = [a.cancel, a.chose?.length ? `두리가 고른 것: ${a.chose.join(' · ')}` : '']
-    .filter(Boolean)
-    .join(' · ')
+  const fine = [a.cancel, a.chose?.length ? tAppr.chose(a.chose.join(' · ')) : ''].filter(Boolean).join(' · ')
   const shot =
     inSheet && a.shot
       ? (() => {
           const img = h('img', { class: 'sheet-shot' }) as HTMLImageElement
-          img.alt = 'PC 화면'
+          img.alt = tAppr.pcScreenAlt
           img.src = `data:image/jpeg;base64,${a.shot}`
           return h(
             'details',
             { class: 'co-shot' },
-            h('summary', { class: 'meta', text: 'PC 결제 화면 보기' }),
+            h('summary', { class: 'meta', text: tAppr.viewPcCheckout }),
             img,
           )
         })()
@@ -3565,34 +3588,29 @@ function checkoutCard(a: ApprovalView & { shot?: string }, inSheet = false): HTM
     h(
       'div',
       { class: 'co-actions' },
-      h('button', { class: 'btn-ghost', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', { class: 'btn-ghost', text: tAppr.reject, onclick: () => void decide(a, 'reject') }),
       holdButton({
-        label: `꾹 눌러 ${a.amount ? `${a.amount} ` : ''}결제`,
-        done: '승인했어요',
+        label: tAppr.holdPay(a.amount),
+        done: tAppr.approved,
         cls: 'btn btn-approve',
         onDone: () => decide(a, 'approve', true),
         after: () => markDecided(a, 'approve'),
       }),
     ),
-    h(
-      'p',
-      { class: 'co-lock' },
-      icon('lock', 'i'),
-      ` 승인하면 두리가 이 결제 버튼 한 번만 눌러요${a.after ? ` · ${a.after}` : ''}`,
-    ),
+    h('p', { class: 'co-lock' }, icon('lock', 'i'), tAppr.afterNote(a.after)),
     ...(inSheet
       ? []
       : [
           h('button', {
             class: 'btn-link',
-            text: 'PC 결제 화면 보기',
+            text: tAppr.viewPcCheckout,
             onclick: () => openOverlay({ kind: 'approval', id: a.id }),
           }),
         ]),
   )
 }
 
-/** 받는 곳 고르기 시트: 지금 화면 주소·저장된 주소·내 정보 주소·새 주소 */
+/** Delivery address picker sheet: address on screen, saved address, my info address, new address */
 function shipPicker(id: string, back = false): HTMLElement {
   const a = st.approvals.get(id)
   const sheet = h('section', { class: 'sheet float app-sheet rise pick-sheet' })
@@ -3601,7 +3619,7 @@ function shipPicker(id: string, back = false): HTMLElement {
   const now = shipChosenOf(a) ?? 'a0'
   const isNew = now.startsWith('n:')
   const input = h('input', { class: 'field' }) as HTMLInputElement
-  input.placeholder = '도로명·건물·동호수'
+  input.placeholder = tAppr.addrPlaceholder
   input.value = isNew ? decodeURIComponent(now.slice(2)) : ''
   const opt = (
     on: boolean,
@@ -3629,15 +3647,15 @@ function shipPicker(id: string, back = false): HTMLElement {
       ),
     )
   sheet.append(
-    h('h3', { class: 'title-2', text: '어디로 받을까요?' }),
+    h('h3', { class: 'title-2', text: tAppr.whereTitle }),
     ...(a.shipWarn ? [h('p', { class: 'field-err', text: `⚠ ${a.shipWarn}` })] : []),
     ...a.shipOptions.map((o, i) => {
-      const mine = o.label.startsWith('내 정보 주소 · ')
+      const mine = o.label.startsWith(MY_ADDRESS_PREFIX)
       return opt(
         now === o.id,
-        mine ? '우리 집' : i === 0 ? '지금 화면 주소' : '저장된 주소',
-        o.label.replace(/^내 정보 주소 · /, ''),
-        mine ? '내 정보' : undefined,
+        mine ? tAppr.home : i === 0 ? tAppr.screenAddr : tAppr.savedAddr,
+        o.label.replace(MY_ADDRESS_PREFIX_RE, ''),
+        mine ? tAppr.myInfo : undefined,
         () => {
           st.choice.set(key, o.id)
           render()
@@ -3646,7 +3664,7 @@ function shipPicker(id: string, back = false): HTMLElement {
     }),
     opt(
       isNew,
-      '+ 새 주소',
+      tAppr.newAddrBtn,
       undefined,
       undefined,
       () => {
@@ -3658,14 +3676,14 @@ function shipPicker(id: string, back = false): HTMLElement {
     ),
     h('button', {
       class: 'btn lg',
-      text: '이 주소로 받기',
+      text: tAppr.useAddr,
       onclick: () => {
         if (isNew) {
           const v = input.value.trim()
-          if (!v) return toast('새 주소를 넣어 주세요')
+          if (!v) return toast(tAppr.enterAddr)
           st.choice.set(key, `n:${encodeURIComponent(v.slice(0, 100))}`)
         }
-        // 결제 카드 시트에서 열었으면 그 카드로 돌아간다
+        // If opened from the checkout sheet, go back to that card
         openOverlay(back ? { kind: 'approval', id } : undefined)
       },
     }),
@@ -3673,7 +3691,7 @@ function shipPicker(id: string, back = false): HTMLElement {
   return sheet
 }
 
-/** 결제 수단 고르기 시트: 수단마다 한 줄, 고른 수단 안의 카드·할부는 셀렉트 박스 */
+/** Payment method picker sheet: one row per method, with card and installments inside the chosen method as select boxes */
 function payPicker(id: string, back = false): HTMLElement {
   const a = st.approvals.get(id)
   const sheet = h('section', { class: 'sheet float app-sheet rise pick-sheet' })
@@ -3698,9 +3716,9 @@ function payPicker(id: string, back = false): HTMLElement {
       }
       return h('label', { class: 'pick-sub' }, h('span', { class: 'meta', text: g.title }), sel)
     })
-  const list = a.choices?.length ? a.choices : [{ id: '', label: '지금 결제 수단' }]
+  const list = a.choices?.length ? a.choices : [{ id: '', label: mCards.nowPayMethod }]
   sheet.append(
-    h('h3', { class: 'title-2', text: '어떻게 결제할까요?' }),
+    h('h3', { class: 'title-2', text: mCards.howToPay }),
     ...list.map((c) =>
       h(
         'button',
@@ -3719,7 +3737,7 @@ function payPicker(id: string, back = false): HTMLElement {
             'span',
             { class: 'pick-name' },
             c.label,
-            ...(c.mine ? [h('span', { class: 'pick-tag', text: '내 결제 수단' })] : []),
+            ...(c.mine ? [h('span', { class: 'pick-tag', text: mCards.myPayMethod })] : []),
           ),
           ...(c.id === (main ?? '') ? subsOf(c.id || undefined) : []),
         ),
@@ -3727,36 +3745,44 @@ function payPicker(id: string, back = false): HTMLElement {
     ),
     h('button', {
       class: 'btn lg',
-      text: '이걸로 할게요',
+      text: mCards.useThis,
       onclick: () => openOverlay(back ? { kind: 'approval', id } : undefined),
     }),
   )
   return sheet
 }
 
-/** 승인할 목록 (PC 파일 옮기기·출력): 앞 max줄과 남은 개수 */
+const mCards = mainCCards(lang)
+
+/** Items to approve (PC file moves and prints): the first max lines and how many are left */
 function itemsList(a: ApprovalView, max: number): HTMLElement | undefined {
   if (!a.items?.length) return undefined
   return h(
     'ul',
     { class: 'approve-items' },
     ...a.items.slice(0, max).map((line) => h('li', { text: line })),
-    ...(a.items.length > max ? [h('li', { class: 'meta', text: `… 외 ${a.items.length - max}개` })] : []),
+    ...(a.items.length > max
+      ? [h('li', { class: 'meta', text: mCards.moreItems(a.items.length - max) })]
+      : []),
   )
 }
 
 function approveQuestion(a: ApprovalView) {
-  if (a.kind === 'money') return '결제할까요?'
-  if (a.kind === 'contact') return isSms(a) ? '문자 보낼까요?' : '보낼까요?'
-  if (a.kind === 'app') return '이 PC 앱을 다뤄도 될까요?'
+  if (a.kind === 'money') return mCards.qMoney
+  if (a.kind === 'contact') return isSms(a) ? mCards.qSms : mCards.qSend
+  if (a.kind === 'app') return mCards.qApp
   if (a.kind === 'file')
-    return `이대로 ${a.label === '옮기기' ? '옮길까요' : a.label === '되살리기' ? '되살릴까요' : '받을까요'}?`
-  if (a.kind === 'print') return '출력할까요?'
-  if (a.kind === 'pc') return `${a.label}를 할까요?`
-  return '진행할까요?'
+    return a.label === FILE_MOVE_LABEL
+      ? mCards.qFileMove
+      : a.label === FILE_RESTORE_LABEL
+        ? mCards.qFileRestore
+        : mCards.qFileSave
+  if (a.kind === 'print') return mCards.qPrint
+  if (a.kind === 'pc') return mCards.qPc(a.label)
+  return mCards.qGo
 }
 
-/** 로그인할 주소가 어느 연결 카드의 사이트인지 (로고) */
+/** Which connect card's site a login address belongs to (for the logo) */
 function cardIdFor(url: string): string | undefined {
   const host = hostOf(url).replace(/^www\./, '')
   if (!host) return undefined
@@ -3784,10 +3810,8 @@ function connectFor(rec: ConnectRecordMessage) {
   return card ? services.find((s) => s.card.id === card.id) : undefined
 }
 
-/** 대화 안의 연결 카드 (connect_ask): [연결하기] → 아이디·비밀번호 시트 → 본체가 뒤에서 로그인 */
-/** 먼저 챙긴 일 (ADR 0019): 피드 카드와 같은 내용·같은 답. [해 줘]는 그 부탁을 대화로 보낸다 */
-// ── 답에 붙는 카드 (상품·숙소·식당) ──
-// 사진은 폰이 바깥 서버에 직접 붙지 않고 PC에 부탁해 data: 주소로 받는다 (한 번 받은 건 앱을 켜 둔 동안 기억)
+// ── Cards attached to a reply (products, stays, restaurants) ──
+// The phone does not talk to outside servers for photos. It asks the PC and gets a data: URL (kept while the app is open)
 const thumbCache = new Map<string, string | null>()
 const thumbAsked = new Set<string>()
 function wantThumb(url: string) {
@@ -3795,7 +3819,7 @@ function wantThumb(url: string) {
   thumbAsked.add(url)
   void send({ kind: 'thumb', url })
 }
-/** 사진을 기다리는 블록들 (결과 블록은 Promise로 받는다) */
+/** Blocks waiting for a photo (result blocks get a Promise) */
 const thumbWaiting = new Map<string, ((data: string | undefined) => void)[]>()
 function thumbOf(url: string): Promise<string | undefined> {
   const have = thumbCache.get(url)
@@ -3819,9 +3843,9 @@ function showThumb(img: HTMLImageElement, data: string) {
   img.src = data
 }
 
-/** 그림 AI로 만든 그림: 답 아래에 크게, 누르면 화면 가득 */
+/** A picture made by the image AI: large under the reply, tap to fill the screen */
 function madeInline(rec: MadeImageRecordMessage): HTMLElement {
-  const box = h('button', { class: 'made-photo', label: `${rec.title} 크게 보기` }, icon('image', 'i'))
+  const box = h('button', { class: 'made-photo', label: mCards.viewBig(rec.title) }, icon('image', 'i'))
   let src = ''
   void thumbOf(`photo:${rec.photo}`).then((data) => {
     if (!data) return
@@ -3833,13 +3857,13 @@ function madeInline(rec: MadeImageRecordMessage): HTMLElement {
   })
   box.addEventListener('click', () => {
     if (!src) return
-    mark('만든 그림 크게 보기')
+    mark('Open made image full screen')
     openViewer(src, rec.title, rec.path)
   })
   return h('div', { class: 'made' }, box)
 }
 
-/** 그림 크게 보기: 화면 가득, 아무 데나 누르면 닫힌다 */
+/** Full-screen picture view: tap anywhere to close */
 function openViewer(src: string, title: string, path?: string) {
   const img = h('img', {}) as HTMLImageElement
   img.src = src
@@ -3852,10 +3876,10 @@ function openViewer(src: string, title: string, path?: string) {
       'div',
       { class: 'viewer-top' },
       h('span', { text: title }),
-      h('button', { class: 'icon-btn', label: '닫기', onclick: close }, icon('close', 'i')),
+      h('button', { class: 'icon-btn', label: mCards.close, onclick: close }, icon('close', 'i')),
     ),
     img,
-    path ? h('p', { class: 'viewer-note', text: `원본은 PC ${path}에 있어요` }) : undefined,
+    path ? h('p', { class: 'viewer-note', text: mCards.originalOnPc(path) }) : undefined,
   )
   document.body.append(view)
 }
@@ -3889,7 +3913,7 @@ function cardsInline(rec: CardsRecordMessage): HTMLElement {
           'div',
           { class: 'pick-body' },
           h('span', { class: 'pick-title', text: c.title }),
-          // 비어 있어도 자리는 둔다 (카드마다 가격·정보 줄이 같은 높이에)
+          // Keep the slot even when empty (so price and info lines line up across cards)
           h('span', { class: 'pick-price', text: c.price ?? '' }),
           h('span', { class: 'pick-note', text: c.note ?? '' }),
         ),
@@ -3898,10 +3922,10 @@ function cardsInline(rec: CardsRecordMessage): HTMLElement {
           { class: 'pick-actions' },
           c.url
             ? h('button', {
-                text: '보기',
+                text: mCards.view,
                 onclick: () => {
-                  mark(`카드 보기 ${new URL(c.url ?? '').host}`)
-                  // 앱 밖 브라우저(또는 그 서비스 앱)로 연다
+                  mark(`Card view ${new URL(c.url ?? '').host}`)
+                  // Open in the browser outside the app (or that service's app)
                   const a = document.createElement('a')
                   a.href = c.url ?? ''
                   a.target = '_blank'
@@ -3912,8 +3936,8 @@ function cardsInline(rec: CardsRecordMessage): HTMLElement {
             : undefined,
           h('button', {
             class: 'go',
-            text: '이걸로',
-            onclick: () => ask(`이걸로 할게: ${c.title}${c.price ? ` (${c.price})` : ''}`),
+            text: mCards.pickThis,
+            onclick: () => ask(mCards.pickThisAsk(c.title, c.price ?? '')),
           }),
         ),
       )
@@ -3927,19 +3951,22 @@ function tellInline(rec: TellRecordMessage): HTMLElement {
   return h(
     'div',
     { class: 'card tell-card' },
-    h('div', { class: 'card-label' }, doori('', 22), '먼저 챙겼어요'),
+    h('div', { class: 'card-label' }, doori('', 22), mCards.tellLabel),
     h('strong', { class: 'tell-title', text: rec.title }),
     rec.body ? h('div', { class: 'tell-body rich' }, rich(rec.body)) : undefined,
     rec.from ? h('p', { class: 'meta', text: rec.from }) : undefined,
     say
       ? answered
-        ? h('p', { class: 'meta tell-done', text: answered === 'yes' ? '맡겼어요' : '넘겼어요' })
+        ? h('p', {
+            class: 'meta tell-done',
+            text: answered === 'yes' ? mCards.tellHandedOver : mCards.tellPassed,
+          })
         : h(
             'div',
             { class: 'tell-actions' },
             h('button', {
               class: 'btn small',
-              text: rec.askLabel || '해 줘',
+              text: rec.askLabel || mCards.tellDoIt,
               onclick: () => {
                 lifeAct({ action: 'feed-answer', id: rec.id, answer: 'yes' })
                 ask(say)
@@ -3947,7 +3974,7 @@ function tellInline(rec: TellRecordMessage): HTMLElement {
             }),
             h('button', {
               class: 'btn-ghost small',
-              text: '괜찮아요',
+              text: mCards.tellNoThanks,
               onclick: () => lifeAct({ action: 'feed-answer', id: rec.id, answer: 'no' }),
             }),
           )
@@ -3957,9 +3984,10 @@ function tellInline(rec: TellRecordMessage): HTMLElement {
 
 function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   const it = connectFor(rec)
-  // 서비스 목록이 아직 안 왔으면(앱을 막 열었을 때) 조용히 자리만 둔다. 오면 다시 그린다
-  if (!it && !st.services) return h('p', { class: 'done-line connect-line' }, icon('link'), '연결 카드')
-  if (!it) return h('p', { class: 'done-line' }, icon('link'), `${rec.service} 연결 카드를 찾지 못했어요`)
+  // If the service list has not arrived yet (app just opened), quietly hold the spot and redraw when it does
+  if (!it && !st.services)
+    return h('p', { class: 'done-line connect-line' }, icon('link'), mCards.connectCard)
+  if (!it) return h('p', { class: 'done-line' }, icon('link'), mCards.connectNotFound(rec.service))
   const c = it.card
   const mark = (big = false) =>
     withLogo(
@@ -3969,18 +3997,18 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       }),
       c.id,
     )
-  if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결돼 있어요`)
-  if (!live) return h('p', { class: 'done-line connect-line' }, mark(), `${c.name} 연결 카드`)
+  if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), mCards.isConnected(c.name))
+  if (!live) return h('p', { class: 'done-line connect-line' }, mark(), mCards.cardOf(c.name))
   const busy = st.connecting.has(c.id)
-  // 공식 연동(지메일 등)도 준비되기 전까지는 PC Chrome에 로그인해서 쓴다: 브라우저 연결과 같은 카드
+  // Official integrations (Gmail and so on) log in through PC Chrome until they are ready: same card as a browser connection
   const browser = c.how === 'browser' || c.how === 'official'
-  // 계정·인증번호를 기다리면: 무엇이 필요한지와 [넣기] 버튼 (빙글빙글만 돌지 않게)
+  // When waiting for an account or code: show what is needed and an enter button (not just a spinner)
   const fail = busy ? undefined : st.connectFails.get(c.id)
   if (fail) return connectFailCard(c, fail, mark(true))
   const wait = busy ? connectWaiting(c.id) : undefined
   if (wait?.kind === 'confirm') {
-    // 휴대폰 앱에서 승인: 넣을 건 없고, 누르면 두리가 알아서 이어 간다
-    const step = st.connectSteps.get(c.id)?.at(-1)?.text ?? '휴대폰에서 확인을 눌러 주세요'
+    // Approval in a phone app: nothing to enter, and Dool2 carries on by itself once tapped
+    const step = st.connectSteps.get(c.id)?.at(-1)?.text ?? mCards.tapConfirmOnPhone
     return h(
       'div',
       { class: 'card approve-card connect-card ask' },
@@ -3997,15 +4025,15 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         { class: 'approve-actions' },
         h('button', {
           class: 'btn-ghost',
-          text: 'PC 화면 보기',
+          text: mCards.viewPcScreen,
           onclick: () => openRemote(Number(wait.id), c.id),
         }),
       ),
     )
   }
-  if (wait?.label === '고르기') {
-    // 하나 고르기 (어느 계정으로 할지 등): 질문 그대로 보여 주고 [고르기]
-    const ask = st.connectSteps.get(c.id)?.at(-1)?.text ?? '하나 골라 주세요'
+  if (wait?.label === PICK_LABEL) {
+    // Pick one (which account to use and so on): show the question as is, with a pick button
+    const ask = st.connectSteps.get(c.id)?.at(-1)?.text ?? mCards.pickOne
     return h(
       'div',
       { class: 'card approve-card connect-card ask' },
@@ -4017,7 +4045,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
           'div',
           {},
           h('strong', { text: ask }),
-          h('span', { class: 'meta', text: `고르시면 두리가 이어서 ${c.name}에 로그인해요` }),
+          h('span', { class: 'meta', text: mCards.afterPick(c.name) }),
         ),
       ),
       connectStepList(c.id, true),
@@ -4026,14 +4054,14 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         { class: 'approve-actions' },
         h('button', {
           class: 'btn',
-          text: '고르기',
+          text: mCards.pick,
           onclick: () => openOverlay({ kind: 'info', id: wait.id }),
         }),
       ),
     )
   }
   if (wait) {
-    const what = wait.label.replace(/ 넣기$/, '')
+    const what = wait.label.replace(ENTER_SUFFIX, '')
     return h(
       'div',
       { class: 'card approve-card connect-card ask' },
@@ -4044,8 +4072,8 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         h(
           'div',
           {},
-          h('strong', { text: `${josa(what, '이/가')} 필요해요` }),
-          h('span', { class: 'meta', text: `넣어 주시면 두리가 이어서 ${c.name}에 로그인해요` }),
+          h('strong', { text: mCards.isNeeded(what, josa(what, '이/가')) }),
+          h('span', { class: 'meta', text: mCards.afterEnter(c.name) }),
         ),
       ),
       connectStepList(c.id, true),
@@ -4070,14 +4098,10 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       h(
         'div',
         {},
-        h('strong', { text: busy ? `${c.name}에 로그인하는 중이에요` : `${c.name} 연결` }),
+        h('strong', { text: busy ? mCards.loggingIn(c.name) : mCards.connectTitle(c.name) }),
         h('span', {
           class: 'meta',
-          text: busy
-            ? 'PC에서 두리가 하고 있어요. 아래 화면에서 지켜볼 수 있어요'
-            : browser
-              ? connectHow(c)
-              : '연결 화면에서 켜요',
+          text: busy ? mCards.watchBelow : browser ? connectHow(c) : mCards.turnOnInConnect,
         }),
       ),
       busy && !st.connectSteps.get(c.id)?.length ? h('span', { class: 'spin' }) : undefined,
@@ -4090,7 +4114,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
           { class: 'approve-actions' },
           h('button', {
             class: 'btn',
-            text: '연결하기',
+            text: mCards.connectDo,
             onclick: () => {
               if (browser) return openOverlay({ kind: 'connect', id: c.id })
               st.tab = 'connect'
@@ -4103,8 +4127,8 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
 }
 
 /**
- * 로그인 요청(두리가 일하다 띄운 카드)과 같은 사이트의 연결 상태.
- * 간편 로그인으로 이어서 하는 중이거나 사람 차례로 멈췄으면, 로그인 카드도 그 상태를 보여 준다 (제자리 돌기 막기)
+ * Connection state for the same site as a login request (a card Dool2 raised while working).
+ * If an easy login is in progress or stopped on the person's turn, the login card shows that state too (no going in circles)
  */
 function loginLink(origin: string) {
   const cid = cardIdFor(origin)
@@ -4114,7 +4138,7 @@ function loginLink(origin: string) {
   return busy || fail ? { cid, busy, fail } : undefined
 }
 
-/** 나를 기다려요의 로그인 카드를 눌렀을 때: 사람 차례면 그 화면, 하는 중이면 대화(카드), 아니면 로그인 화면 */
+/** Tapping a login card under "waiting for me": the screen if it is the person's turn, the chat (card) if in progress, else the login sheet */
 function openLogin(l: LoginRequestView) {
   const link = loginLink(l.origin)
   if (link?.fail?.tabId !== undefined && link.fail.reason === 'human')
@@ -4125,7 +4149,7 @@ function openLogin(l: LoginRequestView) {
 
 function loginInline(rec: LoginRecordMessage): HTMLElement {
   const r = loginFor(rec)
-  // 같은 사이트를 간편 로그인으로 잇는 중·멈춤: 연결 카드와 같은 모양(단계·까닭·[화면 열기])
+  // Same site being linked by easy login, or stopped: same look as the connect card (steps, reason, open screen)
   const link = r?.status === 'pending' ? loginLink(r.origin) : undefined
   if (link) return connectInline({ kind: 'connect', service: link.cid }, true)
   if (!r || r.status !== 'pending')
@@ -4133,9 +4157,7 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
       'p',
       { class: 'done-line' },
       icon('lock'),
-      r?.status === 'saved'
-        ? `${r.site} 로그인 정보를 PC 금고에 저장했어요`
-        : `${rec.site || '사이트'} 로그인 요청이 끝났어요`,
+      r?.status === 'saved' ? mCards.loginSaved(r.site) : mCards.loginDone(rec.site || mCards.siteFallback),
     )
   return h(
     'div',
@@ -4147,7 +4169,7 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
       h(
         'div',
         {},
-        h('strong', { text: `${r.site} 로그인이 필요해요` }),
+        h('strong', { text: mCards.loginNeeded(r.site) }),
         h('span', { class: 'meta', text: hostOf(r.origin) }),
       ),
     ),
@@ -4156,28 +4178,30 @@ function loginInline(rec: LoginRecordMessage): HTMLElement {
       { class: 'approve-actions' },
       h('button', {
         class: 'btn',
-        text: '로그인하기',
+        text: mCards.loginDo,
         onclick: () => openOverlay({ kind: 'login', id: r.id }),
       }),
     ),
   )
 }
 
-// ── 맡긴 일 ──
+// ── Tasks ──
 
-/** 피드 맨 위: 나를 기다리는 것·지금 하는 일·다음 차례 */
+/** Top of the feed: what is waiting for me, what is being done now, and what is next */
+const mFeed = mainCFeed(lang)
+
 function waitingCards(): HTMLElement[] {
   const box = h('div', { class: 'waiting' })
   const approvals = pendingApprovals()
   const logins = pendingLogins()
   if (approvals.length || logins.length) {
-    box.append(h('h2', { class: 'over', text: '나를 기다려요' }))
+    box.append(h('h2', { class: 'over', text: mFeed.waitingForMe }))
     for (const a of approvals)
       box.append(
         h(
           'button',
           { class: 'task-card ask', onclick: () => openOverlay({ kind: 'approval', id: a.id }) },
-          h('span', { class: 'meta' }, h('span', { class: 'dot ask' }), '승인을 기다려요'),
+          h('span', { class: 'meta' }, h('span', { class: 'dot ask' }), mFeed.waitingApproval),
           h('strong', { text: [a.what, a.amount].filter(Boolean).join(' · ') }),
           h('span', { class: 'meta', text: a.where }),
         ),
@@ -4185,14 +4209,14 @@ function waitingCards(): HTMLElement[] {
     for (const l of logins) {
       const link = loginLink(l.origin)
       const state = link?.busy
-        ? (st.connectSteps.get(link.cid)?.at(-1)?.text ?? '두리가 로그인하는 중이에요')
+        ? (st.connectSteps.get(link.cid)?.at(-1)?.text ?? mFeed.doriLoggingIn)
         : link?.fail?.reason === 'human'
-          ? '직접 해 주셔야 해요 · 눌러서 화면 열기'
+          ? mFeed.doYourself
           : link?.fail?.reason === 'wrong'
-            ? '아이디나 비밀번호가 맞지 않아요'
+            ? mFeed.wrongLogin
             : link?.fail
-              ? '로그인을 끝까지 못 했어요'
-              : '로그인이 필요해요'
+              ? mFeed.loginNotFinished
+              : mFeed.loginNeeded
       box.append(
         h(
           'button',
@@ -4203,7 +4227,7 @@ function waitingCards(): HTMLElement[] {
             h('span', { class: `dot ${link?.busy ? 'work pulse' : 'ask'}` }),
             state,
           ),
-          h('strong', { text: `${l.site} 로그인` }),
+          h('strong', { text: mFeed.siteLogin(l.site) }),
           h('span', { class: 'meta', text: hostOf(l.origin) }),
         ),
       )
@@ -4214,7 +4238,7 @@ function waitingCards(): HTMLElement[] {
     if (st.steps.length < shownSteps) shownSteps = 0
     st.steps.forEach((s, i) => {
       const li = h('li', { class: i === st.steps.length - 1 ? 'now' : 'done', text: s })
-      // 새 단계가 오면: 방금 끝난 단계의 동그라미가 톡, 새 단계는 아래에서 떠오른다
+      // When a new step arrives: the circle of the step just finished pops, and the new step rises from below
       if (i >= shownSteps && i > 0) {
         springTo(
           li,
@@ -4232,29 +4256,29 @@ function waitingCards(): HTMLElement[] {
     })
     shownSteps = st.steps.length
     box.append(
-      h('h2', { class: 'over', text: '지금 하는 일' }),
+      h('h2', { class: 'over', text: mFeed.workingNow }),
       h(
         'div',
         { class: 'task-card' },
-        h('span', { class: 'meta' }, h('span', { class: 'dot work pulse' }), '하는 중'),
-        h('strong', { text: lastUserText() ?? '부탁하신 일' }),
-        st.steps.length ? log : h('span', { class: 'meta', text: '대답을 쓰는 중이에요' }),
+        h('span', { class: 'meta' }, h('span', { class: 'dot work pulse' }), mFeed.working),
+        h('strong', { text: lastUserText() ?? mFeed.yourRequest }),
+        st.steps.length ? log : h('span', { class: 'meta', text: mFeed.writingReply }),
         h('button', {
           class: 'btn-text',
-          text: '멈추기',
+          text: mFeed.stop,
           onclick: () => void send({ kind: 'conversation-cancel' }),
         }),
       ),
     )
   }
   if (st.queued.length) {
-    box.append(h('h2', { class: 'over', text: '다음 차례' }))
+    box.append(h('h2', { class: 'over', text: mFeed.upNext }))
     for (const q of st.queued) box.append(h('div', { class: 'row' }, h('span', { class: 'row-t', text: q })))
   }
   return box.childNodes.length ? [box] : []
 }
 
-// ── 긴 목록: 첫 페이지는 life로 오고, 아래로 내리면 life-page로 다음 페이지를 받아 이어 붙인다 ──
+// ── Long lists: the first page comes with life, scrolling down fetches the next pages with life-page ──
 const feedPager = new Pager<FeedItem>(
   (f) => f.at,
   (before) => void send({ kind: 'life-page', list: 'feed', ...(before ? { before } : {}) }),
@@ -4267,7 +4291,7 @@ const libPager = (tab: 'made' | 'files') =>
     () => renderSoon(),
   )
 const libPagers = { made: libPager('made'), files: libPager('files') }
-/** 두리 판 활동: 끝낸 일·예약한 일만 (첫 페이지도 따로 받는다) */
+/** Dool2 panel activity: finished and scheduled tasks only (the first page is fetched separately) */
 const activityPager = new Pager<FeedItem>(
   (f) => f.at,
   (before) =>
@@ -4275,10 +4299,10 @@ const activityPager = new Pager<FeedItem>(
   () => renderSoon(),
 )
 let activityAskedAt = 0
-/** 보관함 하나의 전체 글 (목록에는 앞부분만 온다) */
+/** Full text of one library item (the list only has the beginning) */
 const fullItems = new Map<string, LibraryItem>()
 
-/** 받은 첫 페이지를 목록마다 맞춘다 (더 받아 둔 건 그대로) */
+/** Fit the first page we got into each list (pages fetched later stay as they are) */
 function takeLife(life: LifeState) {
   st.life = life
   feedPager.take(undefined, { items: life.feed, ...(life.feedNext ? { next: life.feedNext } : {}) })
@@ -4289,12 +4313,12 @@ function takeLife(life: LifeState) {
       ...(next ? { next } : {}),
     })
   }
-  // 보관함 글이 바뀌었을 수 있다: 다시 열 때 새로 받는다
+  // Library items may have changed: fetch again when reopened
   fullItems.clear()
   if (activityPager.started) activityPager.refresh()
 }
 
-/** 지금 보이는 긴 목록 (아래로 내리면 더 받는다) */
+/** The long list in view (scrolling down fetches more) */
 function visiblePager(): Pager<{ id: string }> | undefined {
   if (st.tab === 'feed') return feedPager
   if (st.tab === 'library') return libPagers[st.librarySeg === 'media' ? 'files' : 'made']
@@ -4302,7 +4326,7 @@ function visiblePager(): Pager<{ id: string }> | undefined {
 }
 
 function lifeAct(a: LifeAction) {
-  // 첫 페이지 밖에서 누른 것도 바로 바뀌어 보이게 (PC가 보내는 새 첫 페이지는 그 앞만 맞춘다)
+  // Show taps outside the first page right away (a new first page from the PC only fixes the part before it)
   for (const p of [feedPager, activityPager]) {
     if (a.action === 'feed-react')
       p.patch(a.id, (f) => {
@@ -4339,7 +4363,7 @@ function lifeCtx(): LifeCtx {
       const full = fullItems.get(id)
       if (full) return full
       const it = [...libPagers.made.items, ...libPagers.files.items].find((x) => x.id === id)
-      // 앞부분만 받은 글이면 전체를 부탁한다 (오면 시트를 다시 그린다)
+      // If only the beginning arrived, ask for the whole text (the sheet is redrawn when it comes)
       if (it?.cut) void send({ kind: 'life-item', id })
       return it
     },
@@ -4353,24 +4377,24 @@ function lifeCtx(): LifeCtx {
   }
 }
 
-/** 보관함 파일 원본 조각 기다리기 ("id:offset" → 받으면 부를 것) */
+/** Waiting for chunks of a library file original ("id:offset" -> what to call when it arrives) */
 const fileChunkWaits = new Map<string, (m: Extract<PcToPhone, { kind: 'file-chunk' }>) => void>()
 let fileBusy = false
 
-// 답 속 PC 파일 링크: 누르면 PC에서 받아 폰에 저장한다 (경로가 사용자 폴더 안인지는 PC 본체가 본다)
+// PC file links inside a reply: tapping gets the file from the PC and saves it on the phone (the daemon checks the path is inside the user's folders)
 let fileLinkSeq = 0
 setFileOpener((path, name) => void fileAction({ id: `link-${++fileLinkSeq}`, title: name, path }, 'save'))
 
 /**
- * PC에 있는 원본을 조각으로 받아 폰에 저장하거나 보낸다 (중계 봉투 한도 때문에 192KB씩).
- * 보관함 항목은 id로, 답 속 파일 링크는 path로 부탁한다 (id는 조각을 기다리는 표시)
+ * Gets the original from the PC in chunks and saves or shares it on the phone (192KB at a time because of the relay envelope limit).
+ * Library items are asked for by id, file links inside replies by path (the id marks which chunk we wait for)
  */
 async function fileAction(it: Pick<LibraryItem, 'id' | 'title' | 'path'>, how: 'save' | 'share') {
-  if (fileBusy) return toast('다른 파일을 받는 중이에요')
-  if (!st.online) return toast('PC가 꺼져 있어서 받을 수 없어요')
+  if (fileBusy) return toast(mFeed.fileBusy)
+  if (!st.online) return toast(mFeed.pcOffNoFile)
   fileBusy = true
-  mark(how === 'save' ? '보관함 파일 저장' : '보관함 파일 보내기')
-  toast('PC에서 파일을 받는 중이에요')
+  mark(how === 'save' ? 'Library file save' : 'Library file share')
+  toast(mFeed.receivingFile)
   try {
     const parts: string[] = []
     let offset = 0
@@ -4383,7 +4407,7 @@ async function fileAction(it: Pick<LibraryItem, 'id' | 'title' | 'path'>, how: '
         const key = `${it.id}:${at}`
         const timer = setTimeout(() => {
           fileChunkWaits.delete(key)
-          fail(new Error('PC가 답하지 않아요'))
+          fail(new Error(mFeed.pcNoAnswer))
         }, 30_000)
         fileChunkWaits.set(key, (x) => {
           clearTimeout(timer)
@@ -4394,11 +4418,11 @@ async function fileAction(it: Pick<LibraryItem, 'id' | 'title' | 'path'>, how: '
           kind: 'file-chunk',
           id: it.id,
           offset: at,
-          // 보관함 항목은 본체가 id로 찾는다. 답 속 링크만 경로로
+          // The daemon finds library items by id. Only links inside replies use a path
           ...(it.id.startsWith('link-') && it.path ? { path: it.path } : {}),
         })
       })
-      if (m.error || !m.data) throw new Error(m.error ?? '파일을 받지 못했어요')
+      if (m.error || !m.data) throw new Error(m.error ?? mFeed.fileFailed)
       size = m.size ?? 0
       name = m.name ?? name
       mime = m.mime ?? mime
@@ -4425,7 +4449,7 @@ function lastUserText() {
   ][0]
 }
 
-/** 답을 한 줄 미리 보기로: 굵게·목록 표시를 빼고 공백을 줄인다 */
+/** A reply as a one-line preview: drop bold and list marks, squeeze whitespace */
 function plainPreview(text: string, max = 80) {
   const t = stripLinks(text)
     .replace(/\*\*/g, '')
@@ -4436,9 +4460,9 @@ function plainPreview(text: string, max = 80) {
 }
 
 /**
- * 맡긴 일 목록 (최근 6개). 부탁 하나가 일 하나:
- * - 두리가 되물어서 이어 답한 말("동탄역"), 앱 알림(승인 결과)은 새 일이 아니라 앞 일에 이어 붙인다
- * - 제목은 처음 부탁, 설명은 마지막 답
+ * Task list (latest 6). One request is one task:
+ * - A follow-up answer to something Dool2 asked ("Dongtan Station") and app notes (approval results) are not new tasks. They attach to the one before
+ * - The title is the first request, the description is the last reply
  */
 function recentDone() {
   const out: { ask: string; answer: string; at: string; id: string }[] = []
@@ -4446,7 +4470,7 @@ function recentDone() {
   let last: { text: string; at: number } | undefined
   for (const m of st.conv) {
     if (m.role === 'user') {
-      // 두리가 묻고 바로 짧게 답한 말("동탄역")은 앞 일의 이어짐
+      // A short answer right after Dool2 asked ("Dongtan Station") continues the previous task
       const quickReply =
         !!last && m.text.trim().length <= 8 && Date.parse(m.createdAt) - last.at < 10 * 60_000
       const followUp = readAppNote(m.text) !== undefined || quickReply
@@ -4463,7 +4487,7 @@ function recentDone() {
   return out.reverse().slice(0, 6)
 }
 
-/** 대화 탭으로 가서 그 말이 보이게 */
+/** Go to the chat tab so that message is in view */
 function showInChat(id: string) {
   setTab('chat')
   requestAnimationFrame(() => {
@@ -4486,9 +4510,9 @@ function emptyState(mood: string, title: string, sub: string) {
   )
 }
 
-// ── 아이디어 ──
+// ── Ideas ──
 
-/** 연결하고 나서 미뤄 둔 아이디어를 보낸다 (10분 안에 연결했을 때만) */
+/** Send the idea we put off until connecting (only if connected within 10 minutes) */
 function runAfterConnect(id: string) {
   const p = st.afterConnect
   if (!p || p.id !== id) return
@@ -4502,7 +4526,7 @@ function tapIdea(it: IdeaItem) {
     connectInChat(it.service.id)
     return
   }
-  // 채울 게 있는 부탁(이 상품·사진 보낼게…)은 보내지 않고 입력칸에 넣는다
+  // A request with blanks to fill (this product, I'll send a photo…) goes into the input box instead of being sent
   if (it.fill) {
     composeDraft(it.fill)
     return
@@ -4510,7 +4534,7 @@ function tapIdea(it: IdeaItem) {
   ask(it.ask)
 }
 
-/** 대화 입력칸에 글을 넣고 커서를 끝에 둔다 (보내지는 않는다) */
+/** Put text in the chat input and place the cursor at the end (does not send) */
 function composeDraft(text: string) {
   st.draft = text
   st.tab = 'chat'
@@ -4540,9 +4564,9 @@ function ideaRow(it: IdeaItem, sec: IdeaSection) {
       h('span', { class: 'row-d', text: it.note }),
     ),
     needsConnect(it)
-      ? h('span', { class: 'idea-tag', text: '연결' })
+      ? h('span', { class: 'idea-tag', text: mFeed.tagConnect })
       : it.fill
-        ? h('span', { class: 'idea-tag', text: '채워서' })
+        ? h('span', { class: 'idea-tag', text: mFeed.tagFill })
         : undefined,
   )
 }
@@ -4552,15 +4576,15 @@ function ideasView() {
   const box = h(
     'section',
     { class: 'tab-page' },
-    h('h1', { class: 'ptitle', text: '아이디어' }),
-    h('p', { class: 'psub', text: `누르면 두리가 바로 시작해요 · ${ideaCount(groups)}가지` }),
+    h('h1', { class: 'ptitle', text: mFeed.ideasTitle }),
+    h('p', { class: 'psub', text: mFeed.ideasSub(ideaCount(groups)) }),
   )
-  // 두리가 먼저 찾은 할 일 (기억·목표·연결 기반, 매일 아침 새로)
+  // Things Dool2 found to do on its own (from memory, goals and connections, fresh every morning)
   const ideas = st.life?.ideas ?? []
   const busy = Boolean(st.life?.ideasBusy)
   const refresh = h('button', {
     class: 'btn-ghost small',
-    text: busy ? '찾는 중…' : ideas.length ? '새로 찾기' : '찾아 줘',
+    text: busy ? mFeed.searching : ideas.length ? mFeed.findAgain : mFeed.findForMe,
     onclick: () => lifeAct({ action: 'ideas-refresh' }),
   })
   refresh.disabled = busy || !st.online
@@ -4575,12 +4599,12 @@ function ideasView() {
         h(
           'span',
           { class: 'row-text' },
-          h('span', { class: 'row-t', text: '오늘의 추천' }),
-          h('span', { class: 'row-d', text: '나에게 맞춰 매일 아침 새로 골라요' }),
+          h('span', { class: 'row-t', text: mFeed.todaysPick }),
+          h('span', { class: 'row-d', text: mFeed.todaysPickSub }),
         ),
         refresh,
       ),
-      // 둘 이상이면 카드 더미로: 오른쪽으로 넘기면 맡기고, 왼쪽은 다음에
+      // Two or more become a card stack: swipe right to hand it over, left for later
       ...(ideas.length > 1
         ? [swipeDeck(ideas, { onTake: (text) => ask(text) })]
         : ideas.map((i) =>
@@ -4599,12 +4623,12 @@ function ideasView() {
     ),
   )
 
-  // 찾기 + 분류. 글자를 칠 때마다 페이지 전체를 다시 그리면 한글 조합이 끊기므로 아래 목록만 다시 그린다
+  // Search and categories. Redrawing the whole page on every keystroke breaks Hangul composition, so only the list below is redrawn
   const wasTyping = document.activeElement?.id === 'idea-search'
   const search = h('input', { class: 'field idea-search' })
   search.id = 'idea-search'
   search.type = 'search'
-  search.placeholder = '아이디어 찾기 (택배, 항공권, 영수증…)'
+  search.placeholder = mFeed.searchPlaceholder
   search.value = st.ideaQuery
   if (wasTyping)
     queueMicrotask(() => {
@@ -4633,7 +4657,7 @@ function ideasView() {
         text: label,
         onclick: () => pick(id),
       })
-    chips.replaceChildren(chip('all', '전체'), ...groups.map((g) => chip(g.section.id, g.section.label)))
+    chips.replaceChildren(chip('all', mFeed.all), ...groups.map((g) => chip(g.section.id, g.section.label)))
     body.replaceChildren()
     if (q) {
       const found = searchIdeas(groups, q)
@@ -4646,12 +4670,10 @@ function ideasView() {
           h(
             'span',
             { class: 'row-text' },
-            h('span', { class: 'row-t', text: `"${q}" 그대로 부탁하기` }),
+            h('span', { class: 'row-t', text: mFeed.askAsIs(q) }),
             h('span', {
               class: 'row-d',
-              text: found.length
-                ? '찾는 게 없으면 그냥 말해 보세요'
-                : '맞는 아이디어가 없어요. 그래도 두리가 해 볼게요',
+              text: found.length ? mFeed.justSay : mFeed.noMatch,
             }),
           ),
         ),
@@ -4667,7 +4689,7 @@ function ideasView() {
             { class: 'idea-sec-head', onclick: () => pick(sec.id) },
             emoTile(sec.emo, 'sm'),
             h('strong', { text: sec.label }),
-            h('span', { class: 'meta', text: `${g.items.length}가지` }),
+            h('span', { class: 'meta', text: mFeed.count(g.items.length) }),
             icon('chevron', 'i chev'),
           ),
           list(g.items.slice(0, 3).map((item) => ({ section: sec, item }))),
@@ -4681,15 +4703,15 @@ function ideasView() {
     const later = g.items.filter(needsConnect)
     if (ready.length)
       body.append(
-        h('h2', { class: 'over', text: '바로 할 수 있어요' }),
+        h('h2', { class: 'over', text: mFeed.readyNow }),
         list(ready.map((item) => ({ section: g.section, item }))),
       )
     if (later.length)
       body.append(
-        h('h2', { class: 'over', text: '연결하면 할 수 있어요' }),
+        h('h2', { class: 'over', text: mFeed.afterConnect }),
         h('p', {
           class: 'meta idea-later',
-          text: '누르면 아이디·비밀번호를 한 번 넣고, 연결되면 바로 시작해요',
+          text: mFeed.afterConnectNote,
         }),
         list(later.map((item) => ({ section: g.section, item }))),
       )
@@ -4706,17 +4728,17 @@ function ideasView() {
     h(
       'div',
       { class: 'card ask-card' },
-      h('div', { class: 'card-label' }, doori('asking', 22), '이건 직접 해 주셔야 해요'),
+      h('div', { class: 'card-label' }, doori('asking', 22), mFeed.doItYourself),
       h('p', {
         class: 'card-text',
-        text: '본인인증, 보안 문자, 공동인증서. 대신 그 화면을 폰에 바로 띄워 드릴게요.',
+        text: mFeed.doItYourselfText,
       }),
     ),
   )
   return box
 }
 
-// ── 연결 (connections.ts) ──
+// ── Connections (connections.ts) ──
 
 function connectCtx(): ConnectCtx {
   return {
@@ -4730,7 +4752,7 @@ function connectCtx(): ConnectCtx {
       h(
         'div',
         { class: back ? 'page-head sub' : 'page-head' },
-        back && h('button', { class: 'fbtn small', label: '뒤로', onclick: back }, icon('back')),
+        back && h('button', { class: 'fbtn small', label: mSet.back, onclick: back }, icon('back')),
         title && h(back ? 'h2' : 'h1', { class: back ? 'title-2' : 'ptitle', text: title }),
       ),
     home: () => setTab('chat'),
@@ -4745,7 +4767,7 @@ function connectCtx(): ConnectCtx {
       shell?.page.scrollTo({ top: 0 })
     },
     setQuery: (q) => {
-      // 목록은 연결 화면이 제자리에서 다시 그렸다: 찾는 말만 기억한다
+      // The connections screen redrew the list in place: only remember the search text
       st.connectQuery = q
       pageSettled()
     },
@@ -4763,11 +4785,12 @@ function connectView() {
   return st.connectDetail ? serviceView(connectCtx(), st.connectDetail) : connectionsView(connectCtx())
 }
 
-// ── 겹쳐 뜨는 것: 메뉴 서랍 · 두리 패널 · 승인 시트 · 로그인 시트 ──
+// ── Overlays: menu drawer, Dool2 panel, approval sheet, login sheet ──
+const mSet = mainCSettings(lang)
 
-/** 마지막으로 그린 겹침 화면의 모양 (같으면 다시 꽂지 않는다) */
+/** Shape of the overlay drawn last (if it is the same, do not insert it again) */
 let overlayDrawn = ''
-/** 닫히는 움직임 (닫히는 중에 다시 열면 그만둔다) */
+/** Closing animations (cancelled if reopened while closing) */
 let overlayClosing: Animation[] = []
 
 function renderOverlay() {
@@ -4779,7 +4802,7 @@ function renderOverlay() {
   overlayClosing = []
   delete o.dataset.closing
   o.hidden = false
-  // 꾹 누르는 중·보내는 중에 다시 그리면 버튼이 처음으로 돌아가서, 그동안은 그대로 둔다
+  // Redrawing while a button is held or sending resets it, so leave it alone meanwhile
   const key = 'id' in ov ? `${ov.kind}:${ov.id}` : ov.kind
   if (o.dataset.key === key && o.querySelector('.hold.holding, .hold.busy, .hold.done')) return
   const opening = o.dataset.key !== key
@@ -4818,16 +4841,16 @@ function renderOverlay() {
                                   : ov.kind === 'report'
                                     ? reportSheet()
                                     : loginSheet(ov.id)
-  // 열려 있는 동안에도 PC에서 소식이 올 때마다 여기로 온다. 모양이 그대로면 손대지 않는다:
-  // 새로 꽂으면 올라오는 움직임이 처음부터 또 돌아 시트·메뉴가 두세 번씩 튀고, 쓰던 글자와 스크롤도 사라진다
+  // While open, this runs every time news arrives from the PC. If the shape is the same, leave it alone:
+  // inserting anew replays the rise animation, so sheets and menus bounce two or three times and lose typed text and scroll
   const drawn = body.outerHTML
   if (!opening && drawn === overlayDrawn && o.childElementCount) return putBack()
   overlayDrawn = drawn
   o.dataset.key = key
   o.dataset.kind = ov.kind
-  // 입력 카드는 바깥을 눌러도 닫히지 않는다 (실수로 내려 막혔다). [나중에 할게요]로만 닫는다
+  // Input cards do not close when tapping outside (a slip blocked it). Only the "later" button closes them
   const scrim = h('div', { class: 'scrim', onclick: () => ov.kind !== 'info' && openOverlay(undefined) })
-  // 내용만 바뀐 것이면 제자리에서 바꾼다 (올라오는 움직임은 처음 열 때 한 번만)
+  // If only the content changed, swap it in place (the rise animation runs once, on first open)
   if (!opening) {
     scrim.classList.add('still')
     body.classList.add('still')
@@ -4837,14 +4860,14 @@ function renderOverlay() {
   const typing = opening ? undefined : typingIn(o)
   o.replaceChildren(scrim, body)
   if (y) body.scrollTop = y
-  // 처음 열 때만: 메뉴 줄이 하나씩 떠오른다
+  // Only on first open: menu rows rise one by one
   if (opening) riseIn(body.querySelectorAll(':scope > .set-row, :scope > .navi, :scope > .row'))
   typing?.()
 }
 
 /**
- * 움직이는 두리처럼 새로 만들지 않고 옮겨 쓰는 부품이 지금 있는 자리.
- * 새 화면을 만들면 그 부품이 새 화면으로 옮겨 가므로, 새 화면을 버릴 때는 제자리로 돌려놓는다
+ * Where parts that are moved instead of rebuilt (like the animated Dool2) are right now.
+ * Building a new screen moves those parts into it, so when a new screen is thrown away they are put back
  */
 function holdLive(box: HTMLElement): () => void {
   const spots = [...box.querySelectorAll<HTMLElement>('[data-live-slot]')].map((el) => ({
@@ -4857,7 +4880,7 @@ function holdLive(box: HTMLElement): () => void {
   }
 }
 
-/** 닫기: 열릴 때의 반대로 내려가며 사라진다 (뚝 끊기지 않게) */
+/** Close: slides away in reverse of opening (not an abrupt cut) */
 function closeOverlay(o: HTMLElement) {
   if (o.hidden || o.dataset.closing) return
   const done = () => {
@@ -4866,7 +4889,7 @@ function closeOverlay(o: HTMLElement) {
     delete o.dataset.closing
     overlayClosing = []
   }
-  // 같은 것을 바로 다시 열어도 처음 여는 것으로 본다
+  // Opening the same one again right away counts as a first open
   delete o.dataset.key
   overlayDrawn = ''
   const els = [...o.children] as HTMLElement[]
@@ -4890,17 +4913,17 @@ function closeOverlay(o: HTMLElement) {
     if (overlayClosing === closing) done()
   }
   void Promise.all(closing.map((a) => a.finished)).then(end, () => {})
-  // 화면이 가려져 움직임이 멈춰도(앱이 뒤로 감) 닫히다 만 채로 남지 않게
+  // Even if the animation stops because the screen is hidden (app went to background), do not stay half closed
   setTimeout(end, 600)
 }
 
 function drawerView() {
   const tabs: [Tab, IconName, string][] = [
-    ['chat', 'chat', '대화'],
-    ['feed', 'feed', '피드'],
-    ['ideas', 'idea', '아이디어'],
-    ['goals', 'goal', '목표'],
-    ['library', 'library', '보관함'],
+    ['chat', 'chat', mSet.tabChat],
+    ['feed', 'feed', mSet.tabFeed],
+    ['ideas', 'idea', mSet.tabIdeas],
+    ['goals', 'goal', mSet.tabGoals],
+    ['library', 'library', mSet.tabLibrary],
   ]
   const navi = (tab: Tab, ic: IconName, label: string, extra?: Node) =>
     h(
@@ -4914,23 +4937,23 @@ function drawerView() {
   return h(
     'aside',
     { class: 'drawer app-drawer' },
-    h('div', { class: 'drawer-title' }, doori('', 28), '두리'),
+    h('div', { class: 'drawer-title' }, doori('', 28), mSet.appName),
     ...tabs.map(([t, ic, label]) => navi(t, ic, label)),
     h(
       'div',
       { class: 'drawer-sec side-head' },
-      h('span', { class: 'over', text: '따로 하는 대화' }),
-      h('button', { class: 'fbtn small', label: '새 대화', onclick: newSide }, icon('pencil')),
+      h('span', { class: 'over', text: mSet.sideChats }),
+      h('button', { class: 'fbtn small', label: mSet.newChat, onclick: newSide }, icon('pencil')),
     ),
     ...sideMenu(),
-    h('p', { class: 'over drawer-sec', text: '설정' }),
+    h('p', { class: 'over drawer-sec', text: mSet.settings }),
     navi(
       'connect',
       'apps',
-      '연결',
-      connected ? h('span', { class: 'meta navi-count', text: `${connected}곳` }) : undefined,
+      mSet.connections,
+      connected ? h('span', { class: 'meta navi-count', text: mSet.placesCount(connected) }) : undefined,
     ),
-    navi('settings', 'gear', '설정'),
+    navi('settings', 'gear', mSet.settings),
     h(
       'div',
       { class: 'navi static' },
@@ -4938,29 +4961,29 @@ function drawerView() {
       h(
         'span',
         { class: 'row-text' },
-        h('span', { text: st.saved?.pcName ?? '내 PC' }),
+        h('span', { text: st.saved?.pcName ?? mSet.myPc }),
         h('span', {
           class: 'meta',
-          text: !st.online ? '연결 중…' : st.pcSilent ? '답하지 않아요' : '연결돼 있어요',
+          text: !st.online ? mSet.pcConnecting : st.pcSilent ? mSet.pcSilent : mSet.pcConnected,
         }),
       ),
     ),
-    h('p', { class: 'meta drawer-foot', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
+    h('p', { class: 'meta drawer-foot', text: mSet.drawerFoot }),
   )
 }
 
-/** 내 PC 이름 바꾸기: PC 설정에 저장돼서, 같은 PC에 연결한 다른 폰에도 새 이름이 보여요 */
+/** Rename my PC: saved in the PC settings, so other phones connected to the same PC see the new name too */
 function renamePc() {
-  if (!st.online) return toast('PC와 연결된 뒤에 바꿀 수 있어요')
-  const name = prompt('이 PC를 뭐라고 부를까요? (예: 집 맥북, 회사 PC)', st.saved?.pcName ?? '')?.trim()
+  if (!st.online) return toast(mSet.renameNeedsOnline)
+  const name = prompt(mSet.renamePrompt, st.saved?.pcName ?? '')?.trim()
   if (!name || name === st.saved?.pcName) return
   void send({ kind: 'rename-pc', name: name.slice(0, 40) })
-  toast(`"${name.slice(0, 40)}"(으)로 바꿨어요`)
+  toast(mSet.renamed(name.slice(0, 40)))
 }
 
-/** 설정 (메뉴 > 설정): 알림·화면·내 PC·약속 */
+/** Settings (menu > settings): notifications, display, my PC, promises */
 function settingsView() {
-  const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: '설정' }))
+  const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: mSet.settings }))
   const row = (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) =>
     h(
       onclick ? 'button' : 'div',
@@ -4976,16 +4999,12 @@ function settingsView() {
     )
   const perm = 'Notification' in window ? Notification.permission : 'denied'
   box.append(
-    h('h2', { class: 'over', text: '알림' }),
+    h('h2', { class: 'over', text: mSet.notifications }),
     row(
       'bell',
-      '폰 알림',
-      perm === 'granted'
-        ? '켜져 있어요 · 승인 요청·끝낸 일·피드 새 글'
-        : perm === 'denied'
-          ? '브라우저 설정에서 막혀 있어요'
-          : '꺼져 있어요',
-      perm === 'default' ? h('span', { class: 'btn small', text: '켜기' }) : undefined,
+      mSet.phoneNotif,
+      perm === 'granted' ? mSet.notifOn : perm === 'denied' ? mSet.notifBlocked : mSet.notifOff,
+      perm === 'default' ? h('span', { class: 'btn small', text: mSet.turnOn }) : undefined,
       perm === 'default'
         ? () =>
             void Notification.requestPermission().then(() => {
@@ -4998,9 +5017,9 @@ function settingsView() {
   const theme = document.documentElement.dataset.theme ?? 'auto'
   const seg = h('div', { class: 'seg' })
   for (const [id, label] of [
-    ['auto', '기기 따라'],
-    ['light', '밝게'],
-    ['dark', '어둡게'],
+    ['auto', mSet.themeAuto],
+    ['light', mSet.themeLight],
+    ['dark', mSet.themeDark],
   ] as const)
     seg.append(
       segBtn(theme === id, {
@@ -5012,57 +5031,47 @@ function settingsView() {
         },
       }),
     )
-  box.append(h('h2', { class: 'over', text: '화면' }), seg)
+  box.append(h('h2', { class: 'over', text: mSet.screen }), seg)
   box.append(
-    h('h2', { class: 'over', text: '내 PC' }),
+    h('h2', { class: 'over', text: mSet.pcSection }),
     row(
       'pc',
-      st.saved?.pcName ?? '내 PC',
-      !st.online
-        ? '연결 중…'
-        : st.pcSilent
-          ? '답하지 않아요'
-          : '연결돼 있어요 · 두리는 이 PC의 Chrome에서 일해요',
-      h('span', { class: 'meta', text: '이름 바꾸기' }),
+      st.saved?.pcName ?? mSet.myPc,
+      !st.online ? mSet.pcConnecting : st.pcSilent ? mSet.pcSilent : mSet.pcRunning,
+      h('span', { class: 'meta', text: mSet.rename }),
       () => renamePc(),
     ),
     row(
       'apps',
-      '연결한 서비스',
-      `${(st.services ?? []).filter((x) => x.connectedAt).length}곳 · 아이디·비밀번호는 PC 금고에만`,
+      mSet.connectedServices,
+      mSet.connectedServicesSub((st.services ?? []).filter((x) => x.connectedAt).length),
       icon('chevron'),
       () => setTab('connect'),
     ),
-    row(
-      'lock',
-      '금고',
-      '저장된 아이디·비밀번호 보기·고치기 · 볼 때마다 폰 잠금 확인',
-      icon('chevron'),
-      () => {
-        void send({ kind: 'vault-get' })
-        openOverlay({ kind: 'vault' })
-      },
-    ),
-    row('hand', '문제 알리기', '방금 이상했던 일을 내 PC에 남겨요 · 7일 뒤 지워져요', icon('chevron'), () =>
+    row('lock', mSet.vault, mSet.vaultSub, icon('chevron'), () => {
+      void send({ kind: 'vault-get' })
+      openOverlay({ kind: 'vault' })
+    }),
+    row('hand', mSet.reportProblem, mSet.reportProblemSub, icon('chevron'), () =>
       openOverlay({ kind: 'report' }),
     ),
-    row('close', '다른 PC와 다시 연결', '이 폰의 연결을 지우고 QR을 다시 찍어요', undefined, () => {
-      if (confirm('이 폰의 PC 연결을 지울까요? PC에서 QR을 다시 찍으면 다시 연결돼요.')) void forgetPc()
+    row('close', mSet.repair, mSet.repairSub, undefined, () => {
+      if (confirm(mSet.repairConfirm)) void forgetPc()
     }),
   )
-  // 내 정보·결제 수단: 예약·주문 칸을 두리가 채울 때 쓰는 것. 값은 PC 금고에만, 여기서도 가린 값만 보인다
+  // My info and payment methods: used when Dool2 fills booking and order fields. Values stay in the PC vault, and only masked values show here
   if (!st.profile) void send({ kind: 'profile-get' })
   const have = Object.keys(st.profile?.have ?? {})
   box.append(
-    h('h2', { class: 'over', text: '내 정보 · 결제' }),
+    h('h2', { class: 'over', text: mSet.infoAndPay }),
     row(
       'note',
-      '내 정보',
+      mSet.myInfo,
       !st.profile
-        ? '불러오는 중…'
+        ? mSet.loading
         : have.length
-          ? `${have.map((k) => PROFILE_LABEL[k] ?? k).join('·')} · 예약·주문 칸을 두리가 채워요`
-          : '아직 없어요 · 처음 예약할 때 한 번만 물어봐요',
+          ? mSet.myInfoHave(have.map((k) => PROFILE_LABEL[k] ?? k).join('·'))
+          : mSet.myInfoNone,
       icon('chevron'),
       () => openOverlay({ kind: 'profile' }),
     ),
@@ -5070,15 +5079,13 @@ function settingsView() {
   const mine = st.profile?.payMethods
   const pays = Object.entries(st.profile?.payChoices ?? {})
   if (mine) {
-    // 내 결제 수단 (ADR 0023): 맨 위가 주 결제 수단. 사이트마다 기억한 것은 시트 안에
+    // My payment methods (ADR 0023): the top one is the main method. What is remembered per site is inside the sheet
     const first = mine[0]
     box.append(
       row(
         'card',
-        '결제 수단',
-        first
-          ? `주 결제 수단 · ${payMethodLabel(first)}${mine.length > 1 ? ` 외 ${mine.length - 1}개` : ''}`
-          : '아직 없어요 · 주로 쓰는 결제 수단을 등록해 두세요',
+        mSet.payMethods,
+        first ? mSet.payMain(payMethodLabel(first), mine.length - 1) : mSet.payNone,
         icon('chevron'),
         () => openOverlay({ kind: 'pay' }),
       ),
@@ -5089,33 +5096,24 @@ function settingsView() {
         row(
           'card',
           `${label}`,
-          `${host.replace(/^www\./, '')} · 다음에도 이 수단을 먼저 골라 둬요`,
-          h('span', { class: 'meta', text: '잊기' }),
+          mSet.payRemembered(host.replace(/^www\./, '')),
+          h('span', { class: 'meta', text: mSet.forget }),
           () => void send({ kind: 'pay-choice-forget', host }),
         ),
       )
-  else
-    box.append(
-      row('card', '결제 수단', '결제할 때 고른 수단을 사이트마다 기억해요 · 카드 번호는 저장하지 않아요'),
-    )
-  // 시험용 PC에서만: 새 사용자처럼 처음부터 다시 해 보기
+  else box.append(row('card', mSet.payMethods, mSet.payRememberNote))
+  // Test PCs only: start over like a new user
   if (st.pc?.dev)
     box.append(
-      h('h2', { class: 'over', text: '시험용' }),
-      row(
-        'trash',
-        '처음부터 다시',
-        'PC의 대화·기억·목표·보관함을 지우고 새로 시작해요',
-        undefined,
-        () => void resetAll(),
-      ),
+      h('h2', { class: 'over', text: mSet.testOnly }),
+      row('trash', mSet.startOver, mSet.startOverSub, undefined, () => void resetAll()),
     )
-  box.append(h('h2', { class: 'over', text: '두리의 약속' }))
+  box.append(h('h2', { class: 'over', text: mSet.promises }))
   for (const [ic, t] of [
-    ['card', '돈 쓰는 일과 메시지 보내기는 꼭 먼저 물어봐요. 이건 끌 수 없어요.'],
-    ['lock', '비밀번호와 카드 번호는 두리(AI)도 저희도 못 봐요.'],
-    ['pc', '대화·기억·보관함은 내 PC에만 저장돼요. 폰과 PC 사이는 암호화돼요.'],
-    ['hand', '본인인증·보안 문자는 화면을 띄워 드리고 직접 하시게 해요.'],
+    ['card', mSet.promise1],
+    ['lock', mSet.promise2],
+    ['pc', mSet.promise3],
+    ['hand', mSet.promise4],
   ] as [IconName, string][])
     box.append(
       h(
@@ -5128,28 +5126,30 @@ function settingsView() {
   return box
 }
 
-const PROFILE_LABEL: Record<string, string> = {
-  name: '이름',
-  name_en_last: '영문 성',
-  name_en_first: '영문 이름',
-  email: '이메일',
-  phone: '휴대폰 번호',
-  birth: '생년월일',
-  zip: '우편번호',
-  address: '주소',
-  address_detail: '상세 주소',
-  rrn_back: '주민번호 뒷자리',
-  auth_app: '간편인증 앱',
-  carrier: '통신사',
-  passport_no: '여권 번호',
-  passport_issued: '여권 발급일',
-  passport_expiry: '여권 만료일',
-  sex: '성별',
-  birth_city: '태어난 도시',
-  car_no: '차량번호',
-}
+const PROFILE_LABEL: Record<string, string> = Object.fromEntries(
+  [
+    'name',
+    'name_en_last',
+    'name_en_first',
+    'email',
+    'phone',
+    'birth',
+    'zip',
+    'address',
+    'address_detail',
+    'rrn_back',
+    'auth_app',
+    'carrier',
+    'passport_no',
+    'passport_issued',
+    'passport_expiry',
+    'sex',
+    'birth_city',
+    'car_no',
+  ].map((k) => [k, mSet.profileLabel(k)]),
+)
 
-/** 설정 > 내 정보: 있는 항목은 가린 값만 보이고, 새로 넣은 칸만 바뀐다 (빈 칸은 그대로) */
+/** Settings > my info: existing items only show masked values, and only newly filled fields change (empty ones stay) */
 function profileSheet() {
   const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
   const p = st.profile
@@ -5160,25 +5160,25 @@ function profileSheet() {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: '내 정보' }),
-        h('span', { class: 'meta', text: '예약·주문 칸을 두리가 채울 때 써요' }),
+        h('strong', { class: 'title-2', text: mSet.myInfo }),
+        h('span', { class: 'meta', text: mSet.profileSub }),
       ),
     ),
   )
   if (!p) {
-    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    sheet.append(h('p', { class: 'meta', text: mSet.loading }))
     return sheet
   }
   const inputs = Object.entries(PROFILE_LABEL).map(([key, label]) => {
     const input = h('input', { class: 'field' })
     input.name = key
     if (key === 'auth_app' || key === 'carrier') {
-      // 간편인증 앱·통신사는 고르기 (비밀값이 아니라 지금 고른 것이 그대로 보인다)
+      // Verification app and carrier are picked from a list (not secret, so the current pick shows as is)
       input.type = 'hidden'
       const opts = key === 'carrier' ? CARRIERS : AUTH_APPS
       return { key, label, input, chips: choiceChips(opts, p.have[key] ?? '', (v) => (input.value = v)) }
     }
-    input.placeholder = p.have[key] ? `${p.have[key]} (바꿀 때만 넣기)` : '없음'
+    input.placeholder = p.have[key] ? mSet.profileChange(p.have[key]) : mSet.profileEmpty
     input.setAttribute('aria-label', label)
     if (key === 'phone') input.type = 'tel'
     if (key === 'email') input.type = 'email'
@@ -5190,7 +5190,7 @@ function profileSheet() {
     autoHyphen(input, key)
     return { key, label, input, chips: undefined as HTMLElement | undefined }
   })
-  const go = h('button', { class: 'btn lg', text: '저장' })
+  const go = h('button', { class: 'btn lg', text: mSet.save })
   go.type = 'submit'
   const form = h(
     'form',
@@ -5212,17 +5212,12 @@ function profileSheet() {
   }
   sheet.append(
     form,
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      '값은 이 PC의 두리 금고에만 있어요. 여기와 두리(AI)에게는 가린 값만 보여요.',
-    ),
+    h('p', { class: 'lock-note' }, icon('lock'), mSet.profileNote),
     h('button', {
       class: 'btn-text cred-direct',
-      text: '내 정보 모두 지우기',
+      text: mSet.profileClear,
       onclick: () => {
-        if (!confirm('내 정보를 모두 지울까요? 다음 예약 때 다시 물어봐요.')) return
+        if (!confirm(mSet.profileClearConfirm)) return
         void send({ kind: 'profile-clear' })
         openOverlay(undefined)
       },
@@ -5232,8 +5227,8 @@ function profileSheet() {
 }
 
 /**
- * 설정 > 금고 (ADR 0026): 저장된 로그인 목록. [보기]는 폰 잠금(지문·얼굴·PIN)을 확인한 뒤 PC에 부탁하고 30초만 보여 준다.
- * [고치기]는 아이디·비밀번호를 바꾼다(빈 칸은 그대로). 두리(AI)에게는 비밀번호가 가지 않는다
+ * Settings > vault (ADR 0026): the list of saved logins. Show checks the phone lock (fingerprint, face, PIN), asks the PC, and shows it for 30 seconds only.
+ * Edit changes the ID and password (empty fields stay). Dool2 (the AI) never gets the password
  */
 function vaultSheet() {
   const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
@@ -5244,17 +5239,17 @@ function vaultSheet() {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: '금고' }),
-        h('span', { class: 'meta', text: '두리가 로그인할 때 쓰는 아이디·비밀번호예요' }),
+        h('strong', { class: 'title-2', text: mSet.vault }),
+        h('span', { class: 'meta', text: mSet.vaultSheetSub }),
       ),
     ),
   )
   const list = st.vault
   if (!list) {
-    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    sheet.append(h('p', { class: 'meta', text: mSet.loading }))
     return sheet
   }
-  if (!list.length) sheet.append(h('p', { class: 'meta', text: '아직 저장된 로그인이 없어요.' }))
+  if (!list.length) sheet.append(h('p', { class: 'meta', text: mSet.vaultEmpty }))
   const site = (o: string) => {
     try {
       return new URL(o).hostname.replace(/^www\./, '')
@@ -5265,24 +5260,21 @@ function vaultSheet() {
   for (const e of list) {
     const shown = st.vaultShown?.id === e.id ? st.vaultShown : undefined
     const view = h('button', {
-      text: shown ? '숨기기' : '보기',
+      text: shown ? mSet.hide : mSet.show,
       onclick: async () => {
         if (shown) {
           st.vaultShown = undefined
           render()
           return
         }
-        const ok = await confirmDevice(
-          '비밀번호 보기',
-          `${e.name ?? site(e.origin)} 비밀번호를 보려면 확인해 주세요`,
-        )
+        const ok = await confirmDevice(mSet.showPassword, mSet.showPasswordWhy(e.name ?? site(e.origin)))
         if (ok === 'ok') void send({ kind: 'vault-reveal', id: e.id })
-        else if (ok === 'no-lock') toast('폰에 화면 잠금(지문·PIN)을 설정하면 볼 수 있어요')
-        else if (ok === 'web') toast('두리 앱에서만 볼 수 있어요')
+        else if (ok === 'no-lock') toast(mSet.noLock)
+        else if (ok === 'web') toast(mSet.onlyInApp)
       },
     })
     const edit = h('button', {
-      text: '고치기',
+      text: mSet.edit,
       onclick: () => {
         st.vaultEdit = st.vaultEdit === e.id ? undefined : e.id
         render()
@@ -5290,14 +5282,9 @@ function vaultSheet() {
     })
     const del = h('button', {
       class: 'danger',
-      text: '지우기',
+      text: mSet.remove,
       onclick: () => {
-        if (
-          !confirm(
-            `${e.name ?? site(e.origin)} 로그인을 금고에서 지울까요? 다음에 로그인할 때 다시 물어봐요.`,
-          )
-        )
-          return
+        if (!confirm(mSet.vaultDeleteConfirm(e.name ?? site(e.origin)))) return
         void send({ kind: 'vault-delete', id: e.id })
       },
     })
@@ -5315,13 +5302,13 @@ function vaultSheet() {
     )
     if (st.vaultEdit === e.id) {
       const user = h('input', { class: 'field' }) as HTMLInputElement
-      user.placeholder = `아이디 (${e.username})`
+      user.placeholder = mSet.idPlaceholder(e.username)
       user.autocomplete = 'off'
       const pw = h('input', { class: 'field' }) as HTMLInputElement
       pw.type = 'password'
-      pw.placeholder = '새 비밀번호 (바꿀 때만)'
+      pw.placeholder = mSet.newPassword
       pw.autocomplete = 'new-password'
-      const save = h('button', { class: 'btn sm', text: '저장' })
+      const save = h('button', { class: 'btn sm', text: mSet.save })
       save.type = 'submit'
       const form = h('form', { class: 'cred-form' }, user, pw, save)
       form.onsubmit = (ev) => {
@@ -5338,18 +5325,11 @@ function vaultSheet() {
     }
     sheet.append(card)
   }
-  sheet.append(
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      '비밀번호는 이 PC 금고에만 있어요. 볼 때마다 폰 잠금을 확인하고 30초 뒤 가려요. 두리(AI)에게는 가지 않아요.',
-    ),
-  )
+  sheet.append(h('p', { class: 'lock-note' }, icon('lock'), mSet.vaultNote))
   return sheet
 }
 
-/** 결제 수단 표시: 간편결제는 첫 글자 색 칸, 카드는 카드 그림 */
+/** Payment method mark: pay apps get a colored first letter, cards get a card picture */
 const PAY_LETTER: Partial<Record<PayKind, string>> = {
   naverpay: 'N',
   kakaopay: 'K',
@@ -5369,14 +5349,14 @@ function payMark(kind: PayKind): HTMLElement {
   return mark
 }
 
-/** 목록을 통째로 PC에 보낸다 (PC가 검사하고 저장한 목록을 돌려준다) */
+/** Send the whole list to the PC (the PC checks it, saves it and returns the saved list) */
 function savePayMethods(list: PayMethod[]) {
   if (st.profile) st.profile = { ...st.profile, payMethods: list }
   void send({ kind: 'pay-methods-set', methods: list })
   render()
 }
 
-/** 설정 > 결제 수단: 맨 위가 주 결제 수단. 결제 때 사이트가 받는 것 중 위에 있는 것부터 골라 둔다 */
+/** Settings > payment methods: the top one is the main method. At payment, the first one the site accepts is picked */
 function paySheet() {
   const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet pay-sheet' })
   sheet.append(
@@ -5386,21 +5366,21 @@ function paySheet() {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: '결제 수단' }),
-        h('span', { class: 'meta', text: '결제할 때 사이트가 받는 것 중 위에 있는 것부터 골라 둬요' }),
+        h('strong', { class: 'title-2', text: mSet.payMethods }),
+        h('span', { class: 'meta', text: mSet.paySub }),
       ),
     ),
   )
   const list = st.profile?.payMethods
   if (!list) {
-    sheet.append(h('p', { class: 'meta', text: '불러오는 중…' }))
+    sheet.append(h('p', { class: 'meta', text: mSet.loading }))
     return sheet
   }
   if (!list.length)
     sheet.append(
       h('p', {
         class: 'pay-empty',
-        text: '아직 없어요. 네이버페이·카카오페이·카드처럼 주로 쓰는 것을 등록해 두세요.',
+        text: mSet.payEmpty,
       }),
     )
   const ul = h('ul', { class: 'pay-list' })
@@ -5418,22 +5398,22 @@ function paySheet() {
             'span',
             { class: 'row-t' },
             payMethodTitle(m),
-            i === 0 ? h('span', { class: 'pay-main', text: '주 결제 수단' }) : '',
+            i === 0 ? h('span', { class: 'pay-main', text: mSet.payMainTag }) : '',
           ),
           detail ? h('span', { class: 'row-d', text: detail }) : '',
         ),
         i > 0
           ? h('button', {
               class: 'btn-text',
-              text: '주로 쓰기',
+              text: mSet.makeMain,
               onclick: () => savePayMethods([m, ...list.filter((x) => x.id !== m.id)]),
             })
           : '',
         h('button', {
           class: 'btn-text danger',
-          text: '지우기',
+          text: mSet.remove,
           onclick: () => {
-            if (!confirm(`${payMethodLabel(m)}을(를) 지울까요?`)) return
+            if (!confirm(mSet.removePayConfirm(payMethodLabel(m)))) return
             savePayMethods(list.filter((x) => x.id !== m.id))
           },
         }),
@@ -5444,17 +5424,17 @@ function paySheet() {
   sheet.append(
     h('button', {
       class: 'btn lg',
-      text: '결제 수단 추가',
+      text: mSet.payAdd,
       onclick: () => {
         st.payDraft = { inner: '', issuer: '', nickname: '', last4: '' }
         openOverlay({ kind: 'pay-add' })
       },
     }),
   )
-  // 사이트마다 지난번에 고른 것 (내 결제 수단이 그 사이트에 없을 때 쓴다)
+  // What was picked last time for each site (used when my payment methods are not on that site)
   const pays = Object.entries(st.profile?.payChoices ?? {})
   if (pays.length) {
-    sheet.append(h('h3', { class: 'over', text: '사이트마다 지난번에 고른 것' }))
+    sheet.append(h('h3', { class: 'over', text: mSet.lastChosen }))
     for (const [host, label] of pays)
       sheet.append(
         h(
@@ -5468,24 +5448,17 @@ function paySheet() {
           ),
           h('button', {
             class: 'btn-text',
-            text: '잊기',
+            text: mSet.forget,
             onclick: () => void send({ kind: 'pay-choice-forget', host }),
           }),
         ),
       )
   }
-  sheet.append(
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      '카드 번호·결제 비밀번호는 받지 않아요. 무엇으로 낼지만 내 PC에 기억하고, 결제는 매번 승인을 받아요.',
-    ),
-  )
+  sheet.append(h('p', { class: 'lock-note' }, icon('lock'), mSet.payNote))
   return sheet
 }
 
-/** 결제 수단 추가: 종류 고르기 → 간편결제는 그 안에서 쓰는 것(선택), 카드는 카드사·별칭·끝 4자리 */
+/** Add payment method: pick a type, then for pay apps what is used inside (optional), for cards the issuer, nickname and last 4 digits */
 function payAddSheet() {
   const d = st.payDraft
   const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet pay-sheet' })
@@ -5496,8 +5469,8 @@ function payAddSheet() {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: '결제 수단 추가' }),
-        h('span', { class: 'meta', text: '주로 쓰는 것부터 등록해 두세요' }),
+        h('strong', { class: 'title-2', text: mSet.payAdd }),
+        h('span', { class: 'meta', text: mSet.payAddSub }),
       ),
     ),
   )
@@ -5509,7 +5482,7 @@ function payAddSheet() {
     h(
       'div',
       { class: 'approve-choices' },
-      h('span', { class: 'meta', text: '무엇으로 낼까요?' }),
+      h('span', { class: 'meta', text: mdSheets.payHow }),
       h(
         'div',
         { class: 'chip-row' },
@@ -5545,7 +5518,7 @@ function payAddSheet() {
       h(
         'div',
         { class: 'approve-choices' },
-        h('span', { class: 'meta', text: '카드사' }),
+        h('span', { class: 'meta', text: mdSheets.issuer }),
         h(
           'div',
           { class: 'chip-row' },
@@ -5562,22 +5535,19 @@ function payAddSheet() {
           ),
         ),
       ),
-      field('pay-nickname', '별칭 (선택)', 'nickname', '예: 생활비, 회사 카드'),
-      field('pay-last4', '끝 4자리 (선택)', 'last4', '예: 1234'),
+      field('pay-nickname', mdSheets.nicknameLabel, 'nickname', mdSheets.nicknamePh),
+      field('pay-last4', mdSheets.last4Label, 'last4', mdSheets.last4Ph),
     )
-  } else
-    form.append(
-      field('pay-inner', `${PAY_KINDS[d.kind]} 안에서 쓰는 것 (선택)`, 'inner', '예: 신한카드(1234), 머니'),
-    )
-  const go = h('button', { class: 'btn lg', text: '등록' })
+  } else form.append(field('pay-inner', mdSheets.innerLabel(PAY_KINDS[d.kind]), 'inner', mdSheets.innerPh))
+  const go = h('button', { class: 'btn lg', text: mdSheets.register })
   go.type = 'submit'
   form.append(go)
   form.onsubmit = (e) => {
     e.preventDefault()
     const now = st.payDraft
     if (!now.kind) return
-    if (now.kind === 'card' && !now.issuer) return toast('카드사를 골라 주세요')
-    if (now.last4 && !/^\d{4}$/.test(now.last4.trim())) return toast('끝 4자리는 숫자 4개로 적어 주세요')
+    if (now.kind === 'card' && !now.issuer) return toast(mdSheets.pickIssuer)
+    if (now.last4 && !/^\d{4}$/.test(now.last4.trim())) return toast(mdSheets.last4Err)
     const m: PayMethod = {
       id: crypto.randomUUID(),
       kind: now.kind,
@@ -5595,19 +5565,11 @@ function payAddSheet() {
     savePayMethods([...(st.profile?.payMethods ?? []), m])
     openOverlay({ kind: 'pay' })
   }
-  sheet.append(
-    form,
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      '카드 번호·유효기간·CVC·결제 비밀번호는 넣지 마세요. 두리는 받지도 저장하지도 않아요.',
-    ),
-  )
+  sheet.append(form, h('p', { class: 'lock-note' }, icon('lock'), mdSheets.noSecrets))
   return sheet
 }
 
-/** 입력칸 + : 아이디어·목표·피드·따로 하는 대화·연결 */
+/** Composer + menu: ideas, goals, feed, separate chat, connections */
 function plusSheet() {
   const item = (ic: IconName, tone: string, title: string, sub: string, onclick: () => void) =>
     h(
@@ -5624,16 +5586,16 @@ function plusSheet() {
   return h(
     'section',
     { class: 'sheet float app-sheet rise plus-sheet' },
-    item('image', 'blue', '사진 보내기', '영수증·캡처·상품 사진을 보여 주고 부탁하기', () => pickPhoto()),
-    item('idea', 'amber', '아이디어', '두리에게 맡길 만한 일 보기', () => setTab('ideas')),
-    item('goal', 'rose', '목표·알림 만들기', '매일 아침 브리핑, 운동, 저축…', () => setTab('goals')),
-    item('feed', 'blue', '피드 받기', '매일 아침 받을 소식 정하기', () => setTab('feed')),
-    item('pencil', 'violet', '따로 하는 대화', '여행 준비처럼 긴 주제는 따로', () => newSide()),
-    item('apps', 'mint', '서비스 연결', '쇼핑몰·통신사·예매 사이트 로그인해 두기', () => setTab('connect')),
+    item('image', 'blue', mdSheets.plusPhoto, mdSheets.plusPhotoSub, () => pickPhoto()),
+    item('idea', 'amber', mdSheets.plusIdeas, mdSheets.plusIdeasSub, () => setTab('ideas')),
+    item('goal', 'rose', mdSheets.plusGoals, mdSheets.plusGoalsSub, () => setTab('goals')),
+    item('feed', 'blue', mdSheets.plusFeed, mdSheets.plusFeedSub, () => setTab('feed')),
+    item('pencil', 'violet', mdSheets.plusSide, mdSheets.plusSideSub, () => newSide()),
+    item('apps', 'mint', mdSheets.plusConnect, mdSheets.plusConnectSub, () => setTab('connect')),
   )
 }
 
-/** 답을 길게 누르면: 보관함에 남기기 · 복사 */
+/** Long-press on a reply: save to the library or copy */
 function msgSheet(id: string) {
   const m = st.conv.find((x) => x.id === id)
   const sheet = h('section', { class: 'sheet float app-sheet rise msg-sheet' })
@@ -5648,11 +5610,11 @@ function msgSheet(id: string) {
         onclick: () => {
           lifeAct({ action: 'library-save', title, body: m.text })
           openOverlay(undefined)
-          toast('보관함에 남겼어요')
+          toast(mdSheets.savedToLibrary)
         },
       },
       h('span', { class: 'tile sm amber' }, icon('bookmark', 'i')),
-      h('span', { class: 'row-t', text: '보관함에 남기기' }),
+      h('span', { class: 'row-t', text: mdSheets.saveToLibrary }),
     ),
     h(
       'button',
@@ -5662,14 +5624,14 @@ function msgSheet(id: string) {
           const row = e.currentTarget as HTMLElement
           void navigator.clipboard?.writeText(m.text).then(
             () => {
-              // 복사 아이콘이 돌며 작아지고 체크가 그려진다, 글은 '복사했어요'로 올라간다
+              // The copy icon shrinks as the check is drawn, and the label slides up to "Copied"
               const tile = row.querySelector('.tile') as HTMLElement
               const label = row.querySelector('.row-t') as HTMLElement
               const ok = icon('check', 'i')
               tile.replaceChildren(ok)
               tile.classList.replace('blue', 'mint')
               drawCheck(ok)
-              label.textContent = '복사했어요'
+              label.textContent = mdSheets.copied
               springTo(
                 label,
                 [
@@ -5681,16 +5643,16 @@ function msgSheet(id: string) {
               setTimeout(() => openOverlay(undefined), 700)
             },
             () => {
-              toast('복사하지 못했어요')
+              toast(mdSheets.copyFailed)
               openOverlay(undefined)
             },
           )
         },
       },
       h('span', { class: 'tile sm blue' }, icon('copy', 'i')),
-      h('span', { class: 'row-t', text: '복사' }),
+      h('span', { class: 'row-t', text: mdSheets.copy }),
     ),
-    h('button', { class: 'btn-ghost wide', text: '닫기', onclick: () => openOverlay(undefined) }),
+    h('button', { class: 'btn-ghost wide', text: mdSheets.close, onclick: () => openOverlay(undefined) }),
   )
   return sheet
 }
@@ -5699,11 +5661,11 @@ function agentPanel() {
   const waiting = pendingApprovals().length + pendingLogins().length
   const mood = !st.online || st.pcSilent ? 'sleeping' : waiting ? 'asking' : st.busy ? 'working' : ''
   const segs: [typeof st.agentSeg, IconName, string][] = [
-    ['upcoming', 'clock', '예정'],
-    ['memory', 'brain', '기억'],
-    ['screen', 'pc', '화면'],
-    ['activity', 'list', '활동'],
-    ['approvals', 'hand', '승인'],
+    ['upcoming', 'clock', mdSheets.segUpcoming],
+    ['memory', 'brain', mdSheets.segMemory],
+    ['screen', 'pc', mdSheets.segScreen],
+    ['activity', 'list', mdSheets.segActivity],
+    ['approvals', 'hand', mdSheets.segApprovals],
   ]
   const seg = h(
     'div',
@@ -5753,13 +5715,13 @@ function agentPanel() {
     body.append(
       h('p', {
         class: 'meta seg-note',
-        text: '두리가 PC의 Chrome에서 보고 있는 화면을 실시간으로 봐요. 직접 누르면 두리는 잠깐 멈춰요.',
+        text: mdSheets.screenNote,
       }),
       tab !== undefined
-        ? h('button', { class: 'btn wide', onclick: () => openRemote(tab) }, icon('pc'), '두리 화면 보기')
+        ? h('button', { class: 'btn wide', onclick: () => openRemote(tab) }, icon('pc'), mdSheets.viewScreen)
         : h('p', {
             class: 'meta seg-empty',
-            text: '지금 두리가 연 화면이 없어요. 웹에서 일을 시작하면 볼 수 있어요.',
+            text: mdSheets.noScreen,
           }),
     )
   } else if (st.agentSeg === 'activity') {
@@ -5767,11 +5729,11 @@ function agentPanel() {
       body.append(
         act(
           h('span', { class: 'tile sm mint' }, icon('globe', 'i')),
-          st.steps.at(-1) ?? '대답하는 중',
+          st.steps.at(-1) ?? mdSheets.answering,
           lastUserText(),
         ),
       )
-    // 처음 열 때 첫 페이지를 부탁한다 (답이 안 오면 10초 뒤 다시)
+    // Ask for the first page when opened (retry after 10 seconds if no answer)
     if (!activityPager.started && Date.now() - activityAskedAt > 10_000) {
       activityAskedAt = Date.now()
       activityPager.refresh()
@@ -5795,8 +5757,8 @@ function agentPanel() {
     if (!done.length && !st.busy)
       body.append(
         activityPager.started
-          ? h('p', { class: 'meta seg-empty', text: '아직 한 일이 없어요' })
-          : h('p', { class: 'wait' }, h('span', { class: 'spin' }), 'PC에서 받는 중…'),
+          ? h('p', { class: 'meta seg-empty', text: mdSheets.nothingDone })
+          : h('p', { class: 'wait' }, h('span', { class: 'spin' }), mdSheets.receiving),
       )
   } else {
     const approvals = pendingApprovals()
@@ -5807,7 +5769,7 @@ function agentPanel() {
           h('span', { class: 'tile sm amber' }, icon('card', 'i')),
           [a.what, a.amount].filter(Boolean).join(' · '),
           a.where,
-          '기다려요',
+          mdSheets.waiting,
           () => openOverlay({ kind: 'approval', id: a.id }),
         ),
       )
@@ -5815,9 +5777,9 @@ function agentPanel() {
       body.append(
         act(
           h('span', { class: 'tile sm amber' }, icon('lock', 'i')),
-          `${l.site} 로그인`,
+          mdSheets.loginOf(l.site),
           hostOf(l.origin),
-          '기다려요',
+          mdSheets.waiting,
           () => openLogin(l),
         ),
       )
@@ -5830,35 +5792,43 @@ function agentPanel() {
         act(
           h('span', { class: 'tile sm mint' }, icon(a.status === 'rejected' ? 'close' : 'check', 'i')),
           [a.what, a.amount].filter(Boolean).join(' · '),
-          a.status === 'rejected' ? '거절했어요' : a.status === 'expired' ? '시간이 지났어요' : '승인했어요',
+          a.status === 'rejected'
+            ? mdSheets.rejected
+            : a.status === 'expired'
+              ? mdSheets.expired
+              : mdSheets.approved,
         ),
       )
     if (!approvals.length && !logins.length && !history.length)
       body.append(
         h('p', {
           class: 'meta seg-empty',
-          text: '기다리는 승인이 없어요. 돈 쓰는 일·보내기 전에 여기로 물어봐요.',
+          text: mdSheets.noApprovals,
         }),
       )
   }
-  const where = st.saved?.pcName ?? '내 PC'
+  const where = st.saved?.pcName ?? mdSheets.myPc
   return h(
     'section',
     { class: 'agent-panel rise' },
     h(
       'div',
       { class: 'panel-head' },
-      h('button', { class: 'fbtn', label: '닫기', onclick: () => openOverlay(undefined) }, icon('close')),
+      h(
+        'button',
+        { class: 'fbtn', label: mdSheets.close, onclick: () => openOverlay(undefined) },
+        icon('close'),
+      ),
     ),
     h('div', { class: 'agent-big' }, liveDoori('agent', mood, 136)),
-    h('h2', { class: 'agent-name', text: st.busy ? '두리가 일하는 중' : '두리' }),
+    h('h2', { class: 'agent-name', text: st.busy ? mdSheets.nameWorking : mdSheets.name }),
     h(
       'p',
       { class: 'agent-where' },
       h('span', { class: st.online ? 'dot work' : 'dot' }),
       st.online
-        ? `${where}에서 ${st.busy ? (st.steps.at(-1) ?? '일하는 중') : '쉬는 중'}`
-        : `${where}에 연결 중…`,
+        ? mdSheets.onPc(where, st.busy ? (st.steps.at(-1) ?? mdSheets.working) : mdSheets.resting)
+        : mdSheets.connectingPc(where),
     ),
     seg,
     body,
@@ -5870,11 +5840,11 @@ function approvalSheet(id: string) {
   const sheet = h('section', { class: 'sheet float app-sheet rise' })
   const close = h(
     'button',
-    { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+    { class: 'fbtn small sheet-x', label: mdSheets.close, onclick: () => openOverlay(undefined) },
     icon('close'),
   )
   if (!a) {
-    sheet.append(close, h('p', { class: 'meta', text: '불러오는 중…' }))
+    sheet.append(close, h('p', { class: 'meta', text: mdSheets.loading }))
     return sheet
   }
   if (!a.shot && a.status === 'pending') void send({ kind: 'approval', id })
@@ -5889,16 +5859,16 @@ function approvalSheet(id: string) {
   const rows = h('dl', { class: 'kv' })
   const row = (k: string, v?: string, cls?: string) =>
     v && rows.append(h('dt', { text: k }), h('dd', { text: v, ...(cls ? { class: cls } : {}) }))
-  row('무엇을', a.what)
-  row('어디서', a.where)
-  row('주소', hostOf(a.url), 'host')
+  row(mdSheets.rowWhat, a.what)
+  row(mdSheets.rowWhere, a.where)
+  row(mdSheets.rowUrl, hostOf(a.url), 'host')
   const pc = a.kind === 'file' || a.kind === 'print' || a.kind === 'pc'
-  row(pc ? '알아 두기' : '취소 조건', a.cancel)
-  if (a.kind !== 'app' && !pc) row('누를 버튼', `"${finalLabel(a)}"`)
+  row(pc ? mdSheets.rowKnow : mdSheets.rowCancel, a.cancel)
+  if (a.kind !== 'app' && !pc) row(mdSheets.rowButton, `"${finalLabel(a)}"`)
   const items = itemsList(a, 100)
   if (items)
     rows.append(
-      h('dt', { text: a.kind === 'print' ? '파일' : `목록 ${a.items?.length}개` }),
+      h('dt', { text: a.kind === 'print' ? mdSheets.rowFile : mdSheets.rowList(a.items?.length) }),
       h('dd', {}, items),
     )
   sheet.append(
@@ -5925,7 +5895,7 @@ function approvalSheet(id: string) {
   if (pick) sheet.append(pick)
   if (a.shot) {
     const img = h('img', { class: 'sheet-shot' })
-    img.alt = 'PC 화면'
+    img.alt = mdSheets.pcScreen
     img.src = `data:image/jpeg;base64,${a.shot}`
     sheet.append(img)
   }
@@ -5938,10 +5908,10 @@ function approvalSheet(id: string) {
           done?.message ??
           a.result ??
           (a.status === 'rejected'
-            ? '거절했어요'
+            ? mdSheets.rejected
             : a.status === 'expired'
-              ? '승인 시간이 지났어요'
-              : '처리했어요'),
+              ? mdSheets.expiredLong
+              : mdSheets.handled),
       }),
     )
     return sheet
@@ -5951,20 +5921,20 @@ function approvalSheet(id: string) {
       class: 'meta',
       text:
         a.kind === 'file'
-          ? '목록이 맞는지 봐 주세요. 승인하면 두리가 이 목록대로만 하고, 덮어쓰거나 지우지 않아요.'
+          ? mdSheets.hintFile
           : a.kind === 'pc'
-            ? '승인하면 두리가 바로 해요.'
+            ? mdSheets.hintPc
             : a.kind === 'print'
-              ? '파일과 매수가 맞는지 봐 주세요. 승인하면 두리가 이 파일만 프린터로 보내요.'
-              : '"얼마"·"무엇을"은 두리가 읽어 적은 것이라 화면과 맞는지 봐 주세요. 승인하면 두리가 이 버튼 하나만 눌러요.',
+              ? mdSheets.hintPrint
+              : mdSheets.hintMoney,
     }),
     h(
       'div',
       { class: 'approve-actions' },
-      h('button', { class: 'btn-ghost lg', text: '거절', onclick: () => void decide(a, 'reject') }),
+      h('button', { class: 'btn-ghost lg', text: mdSheets.reject, onclick: () => void decide(a, 'reject') }),
       holdButton({
-        label: a.kind === 'app' ? '꾹 눌러 허용' : '꾹 눌러 승인',
-        done: a.kind === 'app' ? '허용했어요' : '승인했어요',
+        label: a.kind === 'app' ? mdSheets.holdAllow : mdSheets.holdApprove,
+        done: a.kind === 'app' ? mdSheets.allowed : mdSheets.approved,
         cls: 'btn btn-approve lg',
         onDone: () => decide(a, 'approve', true),
         after: () => markDecided(a, 'approve'),
@@ -5974,9 +5944,9 @@ function approvalSheet(id: string) {
   return sheet
 }
 
-/** 로그인 시트: 넣은 값은 암호화돼 PC 금고로만 간다. AI·대화 기록에는 남지 않는다 */
+/** Sign-in sheet: what is typed is encrypted and goes only to the PC vault. It never reaches the AI or the chat history */
 interface CredTarget {
-  /** 앞서 자동 로그인이 멈췄는지: 그때만 '화면 보면서 직접'을 보인다 */
+  /** Whether automatic sign-in got stuck earlier: only then is "do it on the screen" shown */
   stuck?: boolean
   key: string
   site: string
@@ -5985,30 +5955,30 @@ interface CredTarget {
   submitText: string
   submit(user: string, password: string): void
   direct?: { text: string; onclick(): void }
-  /** 간편 로그인 버튼 (카카오로 연결…): 아이디·비밀번호 없이 공급자 계정으로 */
+  /** Social sign-in buttons (connect with Kakao...): through the provider account, no ID or password */
   social?: { provider: SocialProvider; hint?: string; onclick(): void }[]
-  /** 연결되면 바로 시작할 부탁 */
+  /** Request to start right after connecting */
   next?: string
-  /** 로고를 보여 줄 연결 카드 id */
+  /** Id of the connection card whose logo to show */
   logo?: string
-  /** 카카오·네이버 같은 공급자 계정이면 그 로고 */
+  /** The provider's logo when this is a provider account such as Kakao or Naver */
   brand?: SocialProvider
-  /** 간편 로그인만 되는 곳 (아이디·비밀번호 로그인이 없다): 아이디 칸을 보여 주지 않는다 */
+  /** Only social sign-in works here (no ID/password login): the ID field is hidden */
   socialOnly?: boolean
-  /** "처음이에요 · 가입해 주세요" 버튼 (두리에게 회원가입을 부탁한다) */
+  /** "First time, please sign me up" button (asks Dool2 to create an account) */
   signup?: () => void
-  /** "계정을 몰라요 · 찾아 주세요" 버튼 (두리가 아이디 찾기·비밀번호 재설정) */
+  /** "I don't know my account, please find it" button (Dool2 recovers the ID or resets the password) */
   forgot?: () => void
 }
 
-/** 아이디·비밀번호 시트 (로그인 카드, 서비스 연결하기). 값은 PC 금고로만 간다 */
+/** ID and password sheet (sign-in card, connect a service). Values go only to the PC vault */
 function credSheet(t: CredTarget) {
   const sheet = h('section', { class: 'sheet float app-sheet rise' })
   const d = st.loginDraft
   if (d.id !== t.key) Object.assign(d, { id: t.key, user: '', pw: '', busy: false, error: undefined })
   const user = h('input', { class: 'field' })
   user.id = 'login-user'
-  user.placeholder = '아이디 또는 이메일'
+  user.placeholder = mdCred.idPh
   user.autocomplete = 'username'
   user.value = d.user
   user.oninput = () => {
@@ -6017,7 +5987,7 @@ function credSheet(t: CredTarget) {
   const pw = h('input', { class: 'field' })
   pw.id = 'login-pw'
   pw.type = 'password'
-  pw.placeholder = '비밀번호'
+  pw.placeholder = mdCred.pwPh
   pw.autocomplete = 'current-password'
   pw.value = d.pw
   pw.oninput = () => {
@@ -6047,7 +6017,7 @@ function credSheet(t: CredTarget) {
   sheet.append(
     h(
       'button',
-      { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+      { class: 'fbtn small sheet-x', label: mdCred.close, onclick: () => openOverlay(undefined) },
       icon('close'),
     ),
     h(
@@ -6062,14 +6032,14 @@ function credSheet(t: CredTarget) {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: `${t.site} 로그인` }),
+        h('strong', { class: 'title-2', text: mdCred.signInTitle(t.site) }),
         h('span', {
           class: 'meta',
-          text: `${t.host} · ${st.saved?.pcName ?? '내 PC'}의 Chrome에서 두리가 로그인해요`,
+          text: mdCred.signInWhere(t.host, st.saved?.pcName ?? mdCred.myPc),
         }),
       ),
     ),
-    ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), `연결되면 바로 시작해요: ${t.next}`)] : []),
+    ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), mdCred.startAfter(t.next))] : []),
     ...(t.social?.length
       ? [
           h(
@@ -6079,38 +6049,31 @@ function credSheet(t: CredTarget) {
               const b = h('button', { class: `btn-social ${x.provider}`, onclick: x.onclick })
               b.type = 'button'
               b.append(brandMark(x.provider), h('span', { text: SOCIAL_CTA[x.provider] }))
-              // 이어 쓰면 새 계정이 안 생기는 공급자 표시 (최근 사용·N곳에서 사용)
+              // Mark providers that reuse an existing account instead of creating a new one (recently used, used on N sites)
               if (x.hint) b.append(h('span', { class: 'social-hint', text: x.hint }))
               return b
             }),
           ),
-          ...(t.socialOnly
-            ? []
-            : [h('p', { class: 'social-or' }, h('span', { text: '또는 아이디·비밀번호로' }))]),
+          ...(t.socialOnly ? [] : [h('p', { class: 'social-or' }, h('span', { text: mdCred.orWithId }))]),
         ]
       : []),
     ...(t.socialOnly && t.social?.length ? [] : [form]),
-    // 계정 찾기 | 가입하기: 로그인 화면에서 흔히 보는 한 줄 링크로 (크게 두 줄이면 산만했다 — 사용자 의견)
+    // Find account | Sign up: a one-line link like on most sign-in screens (two big buttons felt busy, per user feedback)
     ...(t.forgot || t.signup
       ? [
           h(
             'div',
             { class: 'cred-links' },
-            ...(t.forgot ? [h('button', { class: 'btn-text', text: '계정 찾기', onclick: t.forgot })] : []),
-            ...(t.forgot && t.signup ? [h('span', { class: 'cred-sep' })] : []),
-            ...(t.signup
-              ? [h('button', { class: 'btn-text', text: '처음이면 가입하기', onclick: t.signup })]
+            ...(t.forgot
+              ? [h('button', { class: 'btn-text', text: mdCred.findAccount, onclick: t.forgot })]
               : []),
+            ...(t.forgot && t.signup ? [h('span', { class: 'cred-sep' })] : []),
+            ...(t.signup ? [h('button', { class: 'btn-text', text: mdCred.signUp, onclick: t.signup })] : []),
           ),
         ]
       : []),
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      'PC의 두리 금고(키체인)에만 암호화해 저장돼요. 두리(AI)·대화 기록·중계 서버 어디에도 남지 않아요.',
-    ),
-    // 화면 직접 보기는 안 될 때만 (로그인이 실패했거나 연결이 멈췄을 때)
+    h('p', { class: 'lock-note' }, icon('lock'), mdCred.vaultNote),
+    // Show "watch the screen" only when sign-in failed or the connection got stuck
     ...(t.direct && (d.error || t.stuck)
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
@@ -6118,14 +6081,14 @@ function credSheet(t: CredTarget) {
   return sheet
 }
 
-/** 문제 알리기: 한 줄 적고(안 적어도 됨) 보내면, 앱에서 방금 있었던 일이 PC의 일한 기록에 남는다 */
+/** Report a problem: write a line (optional) and send, and what just happened in the app is saved in the PC's activity log */
 function reportSheet() {
   const note = h('textarea', { class: 'field report-note' })
   note.id = 'report-note'
   note.rows = 3
   note.maxLength = 500
-  note.placeholder = '무슨 일이 있었나요? (안 적어도 돼요)'
-  const go = h('button', { class: 'btn lg', text: st.online ? '보내기' : 'PC와 연결되면 보낼 수 있어요' })
+  note.placeholder = mdCred.reportPh
+  const go = h('button', { class: 'btn lg', text: st.online ? mdCred.reportSend : mdCred.reportNeedPc })
   go.disabled = !st.online
   go.onclick = () => {
     void send({
@@ -6134,16 +6097,16 @@ function reportSheet() {
       ...(note.value.trim() ? { note: note.value.trim() } : {}),
       app: navigator.userAgent,
     })
-    mark('문제 알리기 보냄')
+    mark('report sent')
     st.overlay = undefined
-    toast('남겼어요. 내 PC에만 7일 보관돼요')
+    toast(mdCred.reportSaved)
   }
   return h(
     'section',
     { class: 'sheet float app-sheet rise report-sheet' },
     h(
       'button',
-      { class: 'fbtn small sheet-x', label: '닫기', onclick: () => openOverlay(undefined) },
+      { class: 'fbtn small sheet-x', label: mdCred.close, onclick: () => openOverlay(undefined) },
       icon('close'),
     ),
     h(
@@ -6153,22 +6116,17 @@ function reportSheet() {
       h(
         'div',
         {},
-        h('strong', { class: 'title-2', text: '문제 알리기' }),
-        h('span', { class: 'meta', text: `${st.saved?.pcName ?? '내 PC'}에 남겨요` }),
+        h('strong', { class: 'title-2', text: mdCred.reportTitle }),
+        h('span', { class: 'meta', text: mdCred.reportKeepOn(st.saved?.pcName ?? mdCred.myPc) }),
       ),
     ),
     note,
     go,
-    h(
-      'p',
-      { class: 'lock-note' },
-      icon('lock'),
-      '앱에서 누른 것과 받은 신호의 종류·시각만 가요. 대화 내용·비밀번호는 가지 않아요. 내 PC에만 남고 7일 뒤 지워져요.',
-    ),
+    h('p', { class: 'lock-note' }, icon('lock'), mdCred.reportNote),
   )
 }
 
-/** 로그인 중 화면이 묻는 것 (인증번호·휴대폰 번호): 폰 입력 화면으로 받아 PC 칸에 넣는다 */
+/** What the page asks during sign-in (verification code, phone number): collected on the phone and typed into the PC field */
 function infoSheet(id: string) {
   const q = st.infos.get(id)
   const sheet = h('section', { class: 'sheet float app-sheet rise info-sheet' })
@@ -6178,7 +6136,7 @@ function infoSheet(id: string) {
     st.infos.delete(id)
     st.overlay = undefined
     render()
-    if (value) toast('넣었어요. 두리가 이어서 할게요')
+    if (value) toast(mdCred.filled)
   }
   const head = h(
     'div',
@@ -6191,32 +6149,32 @@ function infoSheet(id: string) {
         class: 'title-2',
         text:
           q.field === 'otp'
-            ? '인증번호를 넣어 주세요'
+            ? mdCred.otpTitle
             : q.field === 'tap'
-              ? '로봇 확인을 풀어 주세요'
+              ? mdCred.tapTitle
               : q.field === 'form'
-                ? '내 정보를 한 번만 넣어 주세요'
+                ? mdCred.formTitle
                 : q.label,
       }),
       h('span', {
         class: 'meta',
-        text: q.field === 'form' ? '예약·주문 칸을 두리가 알아서 채워요' : `${q.site} · ${q.host}`,
+        text: q.field === 'form' ? mdCred.formSub : `${q.site} \u00b7 ${q.host}`,
       }),
     ),
   )
   const body: Node[] = []
   if (q.hint) body.push(h('p', { class: 'info-hint', text: q.hint.replace(/^\s*#+\s*/, '') }))
-  // 그림 눌러 풀기(로봇 확인): 그림에서 누른 곳을 0~1000 비율로 보내면 두리가 PC 화면의 같은 자리를 누른다
+  // Solve by tapping the image (robot check): taps are sent as 0-1000 ratios, and Dool2 clicks the same spot on the PC screen
   if (q.field === 'tap' && q.image) {
     const max = Math.max(1, q.maxTaps ?? 1)
     const points: [number, number][] = []
     const img = h('img', { class: 'tap-img' }) as HTMLImageElement
     img.src = `data:image/jpeg;base64,${q.image}`
-    img.alt = '로봇 확인 그림'
+    img.alt = mdCred.tapAlt
     img.draggable = false
     const dots = h('div', { class: 'tap-dots' })
-    const done = h('button', { class: 'btn lg', text: '다 눌렀어요' }) as HTMLButtonElement
-    const redo = h('button', { class: 'btn-ghost lg', text: '다시' }) as HTMLButtonElement
+    const done = h('button', { class: 'btn lg', text: mdCred.tapDone }) as HTMLButtonElement
+    const redo = h('button', { class: 'btn-ghost lg', text: mdCred.tapRedo }) as HTMLButtonElement
     const draw = () => {
       dots.replaceChildren(
         ...points.map(([x, y], i) => {
@@ -6227,7 +6185,7 @@ function infoSheet(id: string) {
         }),
       )
       done.disabled = points.length === 0
-      done.textContent = max > 1 ? `다 눌렀어요 (${points.length}/${max})` : '이곳으로 할게요'
+      done.textContent = max > 1 ? mdCred.tapDoneCount(points.length, max) : mdCred.tapHere
     }
     const box = h('div', { class: 'tap-box' }, img, dots)
     box.onclick = (e) => {
@@ -6235,7 +6193,7 @@ function infoSheet(id: string) {
       const x = Math.round(((e.clientX - r.left) / r.width) * 1000)
       const y = Math.round(((e.clientY - r.top) / r.height) * 1000)
       if (x < 0 || y < 0 || x > 1000 || y > 1000) return
-      // 한 곳만 누르는 문제는 다시 누르면 옮긴다
+      // When only one tap is needed, tapping again moves it
       if (max === 1) points.splice(0, points.length, [x, y])
       else if (points.length < max) points.push([x, y])
       draw()
@@ -6253,19 +6211,19 @@ function infoSheet(id: string) {
       ...body,
       box,
       h('div', { class: 'tap-actions' }, redo, done),
-      h('button', { class: 'btn-link', text: '나중에 할게요', onclick: () => answer() }),
+      h('button', { class: 'btn-link', text: mdCred.later, onclick: () => answer() }),
     )
     return sheet
   }
-  // 보안문자: 두리가 고른 그림을 보여 주고 그 글자를 받는다 (PC 화면을 보지 않아도 된다)
+  // Security code: show the image Dool2 picked and take the letters (no need to look at the PC screen)
   if (q.image) {
     const img = h('img', { class: 'captcha-img' }) as HTMLImageElement
     img.src = `data:image/jpeg;base64,${q.image}`
-    img.alt = '보안문자 그림'
+    img.alt = mdCred.captchaAlt
     body.push(img)
   }
   if (q.field === 'choice' && q.options?.length) {
-    // 하나 고르기 (예: 구글 계정이 여럿일 때). 고른 글을 그대로 답한다
+    // Pick one (e.g. several Google accounts). The chosen text is sent back as is
     body.push(
       h(
         'div',
@@ -6278,22 +6236,22 @@ function infoSheet(id: string) {
           }),
         ),
       ),
-      h('button', { class: 'btn-link', text: '나중에 할게요', onclick: () => answer() }),
+      h('button', { class: 'btn-link', text: mdCred.later, onclick: () => answer() }),
     )
     sheet.append(head, ...body)
     return sheet
   }
   if (q.field === 'form' && q.fields?.length) {
-    // 내 정보 카드: 여러 칸을 한 번에 받는다. 값은 PC 금고에만, 두리(AI)는 가린 값만 본다
+    // Personal info card: several fields at once. Values go only to the PC vault, and Dool2 (the AI) sees only masked values
     const inputs = q.fields.map((f) => {
       const input = h('input', { class: 'field' })
       input.name = f.key
       if (f.type === 'choice' && f.options?.length) {
-        // 하나 고르기 (간편인증 앱): 칩을 누르면 숨은 칸에 그 이름이 들어간다
+        // Pick one (simple-auth app): tapping a chip puts its name in the hidden field
         input.type = 'hidden'
         return { f, input, chips: choiceChips(f.options, '', (v) => (input.value = v)) }
       }
-      input.placeholder = f.example ? `예: ${f.example}` : f.label
+      input.placeholder = f.example ? mdCred.example(f.example) : f.label
       input.setAttribute('aria-label', f.label)
       if (f.type === 'tel') {
         input.type = 'tel'
@@ -6314,7 +6272,7 @@ function infoSheet(id: string) {
       autoHyphen(input, f.key)
       return { f, input, chips: undefined as HTMLElement | undefined }
     })
-    const go = h('button', { class: 'btn lg', text: '저장하고 이어서 하기' })
+    const go = h('button', { class: 'btn lg', text: mdCred.saveContinue })
     go.type = 'submit'
     const form = h(
       'form',
@@ -6328,7 +6286,7 @@ function infoSheet(id: string) {
     )
     form.onsubmit = (e) => {
       e.preventDefault()
-      // 칸마다 형식 검사: 맞지 않으면 그 칸 아래에 안내를 띄우고 멈춘다 (빈 칸은 넘긴다)
+      // Check each field's format: if it doesn't match, show a hint under that field and stop (empty fields are skipped)
       let bad: HTMLInputElement | undefined
       for (const { f, input } of inputs) {
         const v = input.value.trim()
@@ -6338,7 +6296,7 @@ function infoSheet(id: string) {
         input.classList.add('invalid')
         input.insertAdjacentElement(
           'afterend',
-          h('span', { class: 'field-err', text: f.patternHint || `${f.label} 형식을 확인해 주세요` }),
+          h('span', { class: 'field-err', text: f.patternHint || mdCred.badFormatOf(f.label) }),
         )
         bad ??= input
       }
@@ -6353,7 +6311,7 @@ function infoSheet(id: string) {
     body.push(form)
     queueMicrotask(() => inputs.find((x) => !x.chips)?.input.focus())
   } else if (q.field === 'password') {
-    // 사용자가 정하는 새 비밀번호: 두 번 넣어 맞는지 보고 PC 금고로만 보낸다 (두리·기록에는 남지 않는다)
+    // New password chosen by the user: typed twice to check, then sent only to the PC vault (never to Dool2 or the log)
     const mk = (ph: string) => {
       const i = h('input', { class: 'field' }) as HTMLInputElement
       i.type = 'password'
@@ -6362,29 +6320,29 @@ function infoSheet(id: string) {
       i.setAttribute('aria-label', ph)
       return i
     }
-    const pw1 = mk('새 비밀번호')
-    const pw2 = mk('한 번 더')
+    const pw1 = mk(mdCred.newPw)
+    const pw2 = mk(mdCred.onceMore)
     const err = h('p', { class: 'field-err', text: '' })
-    const show = h('button', { class: 'btn-text', text: '보기' })
+    const show = h('button', { class: 'btn-text', text: mdCred.show })
     show.type = 'button'
     show.onclick = () => {
       const t = pw1.type === 'password' ? 'text' : 'password'
       pw1.type = t
       pw2.type = t
-      show.textContent = t === 'password' ? '보기' : '숨기기'
+      show.textContent = t === 'password' ? mdCred.show : mdCred.hide
     }
-    const go = h('button', { class: 'btn lg', text: '정하기' })
+    const go = h('button', { class: 'btn lg', text: mdCred.setPw })
     go.type = 'submit'
     const form = h('form', { class: 'cred-form' }, pw1, pw2, show, err, go)
     form.onsubmit = (e) => {
       e.preventDefault()
       const v = pw1.value
       if (q.pattern && !new RegExp(q.pattern).test(v)) {
-        err.textContent = q.patternHint || '형식을 확인해 주세요'
+        err.textContent = q.patternHint || mdCred.badFormat
         return
       }
       if (v !== pw2.value) {
-        err.textContent = '두 칸이 달라요. 같게 넣어 주세요'
+        err.textContent = mdCred.pwMismatch
         return
       }
       answer(v)
@@ -6392,25 +6350,24 @@ function infoSheet(id: string) {
     body.push(form)
     queueMicrotask(() => pw1.focus())
   } else if (q.field === 'secret') {
-    // 주민번호 뒷자리처럼 저장하지 않는 값: 폰 키보드 대신 숫자 위치를 섞은 보안 키패드로 받는다
-    // 같은 카드는 다시 그려도 같은 키패드를 쓴다: 그릴 때마다 새로 섞여 숫자가 2~3번 바뀌고,
-    // 누르는 순간 자리가 바뀌어 다른 숫자가 들어갔다(실측 결제 비밀번호 틀림, 11-20)
+    // Values that are never stored, like the back digits of a resident number: taken on a secure keypad with shuffled digit positions instead of the phone keyboard
+    // The same card keeps the same keypad when redrawn: reshuffling on each draw changed the digits 2-3 times,
+    // and the positions moved at the moment of a tap so a different digit went in (measured: wrong payment PIN, 11-20)
     let pad = pads.get(q.id)
     if (!pad) {
       pad = securePad(q.pattern, q.patternHint, (v) => {
         pads.delete(q.id)
         answer(v)
       })
-      // 옮겨 쓰는 부품으로 표시: 다시 그린 시트를 버릴 때(모양이 같아 그대로 둘 때) 원래 시트로 돌려놓는다.
-      // 안 하면 버린 새 시트로 옮겨 간 채 사라져, 보이는 카드에 키패드가 없었다 (실측 11-20 쿠팡 결제 비밀번호)
+      // Mark it as a reusable part: when a redrawn sheet is discarded (the shape is the same so the old one stays), it goes back to the original sheet.
+      // Without this it moved into the discarded new sheet and vanished, leaving the visible card without a keypad (measured 11-20, payment PIN in a shop)
       pad.dataset.liveSlot = 'pad'
       pads.set(q.id, pad)
     }
     body.push(pad)
   } else if (q.field === 'otp') {
-    // 자릿수: 화면 안내('4자리')나 형식에서 알면 그만큼, 모르면 4~8자리를 받아 [넣기]로
-    const said =
-      `${q.label} ${q.hint ?? ''}`.match(/(\d)\s*자리/)?.[1] ?? q.pattern?.match(/\\d\{(\d)\}/)?.[1]
+    // Digit count: use it if the page hint ("4 digits") or the pattern says, else accept 4-8 digits and finish with [Enter]
+    const said = `${q.label} ${q.hint ?? ''}`.match(DIGITS_RE)?.[1] ?? q.pattern?.match(/\\d\{(\d)\}/)?.[1]
     const len = said ? Number(said) : undefined
     const otp = otpBoxes({
       ...(len && len >= 4 && len <= 8 ? { length: len } : { flex: true }),
@@ -6420,9 +6377,7 @@ function infoSheet(id: string) {
     body.push(
       h('p', {
         class: 'meta',
-        text: otp.go
-          ? '문자로 왔으면 키보드 위에 번호가 떠요. 다 넣고 [넣기]를 눌러 주세요.'
-          : '문자로 왔으면 키보드 위에 번호가 떠요. 누르면 바로 들어가요.',
+        text: otp.go ? mdCred.otpHintGo : mdCred.otpHintAuto,
       }),
     )
     if (otp.go) body.push(otp.go)
@@ -6441,9 +6396,9 @@ function infoSheet(id: string) {
       input.setAttribute('autocapitalize', 'off')
       input.setAttribute('autocorrect', 'off')
       input.spellcheck = false
-      input.placeholder = '그림의 글자'
+      input.placeholder = mdCred.imagePh
     }
-    const go = h('button', { class: 'btn lg', text: '넣기' })
+    const go = h('button', { class: 'btn lg', text: mdCred.put })
     go.type = 'submit'
     const form = h('form', { class: 'cred-form' }, input, go)
     form.onsubmit = (e) => {
@@ -6461,19 +6416,19 @@ function infoSheet(id: string) {
       { class: 'lock-note' },
       icon('lock'),
       q.field === 'form'
-        ? '넣은 값은 이 PC의 두리 금고에만 저장돼요. 두리(AI)는 가린 값(홍*동)만 봐요.'
-        : q.field === 'secret' && /결제|비밀번호/.test(q.label)
-          ? '넣은 숫자는 그 화면 키패드에만 눌러지고 저장하지 않아요. 두리(AI)는 보지 않아요.'
+        ? mdCred.noteForm
+        : q.field === 'secret' && PAY_SECRET_RE.test(q.label)
+          ? mdCred.notePay
           : q.field === 'secret' || q.field === 'password'
-            ? '넣은 값은 이 PC 금고에 암호화해 저장해요. 두리(AI)는 보지 않아요.'
-            : '넣은 값은 그 칸에만 들어가요. 저장하지 않고, 두리(AI)도 보지 않아요.',
+            ? mdCred.noteVault
+            : mdCred.noteOther,
     ),
-    h('button', { class: 'btn-text cred-direct', text: '지금은 안 할게요', onclick: () => answer() }),
+    h('button', { class: 'btn-text cred-direct', text: mdCred.notNow, onclick: () => answer() }),
   )
   return sheet
 }
 
-/** 휴대폰·생년월일 칸은 숫자만 쳐도 하이픈이 들어간다 */
+/** Phone and birth-date fields add hyphens as you type digits */
 function autoHyphen(input: HTMLInputElement, key: string) {
   if (key !== 'phone' && key !== 'birth') return
   input.inputMode = 'numeric'
@@ -6483,10 +6438,10 @@ function autoHyphen(input: HTMLInputElement, key: string) {
 }
 
 /**
- * 보안 키패드 (은행 앱처럼): 숫자 자리를 섞고, 누르면 누른 키와 다른 숫자 하나가 함께 반짝여
- * 어깨너머로 봐도 어떤 숫자인지 모르게 한다. 값은 이 함수 안에만 있고 [넣기]를 누를 때만 넘긴다
+ * Secure keypad (like banking apps): shuffles digit positions, and a tap flashes another digit too
+ * so nobody looking over your shoulder can tell which one it was. The value stays inside this function and is handed over only on [Enter]
  */
-/** 열려 있는 보안 키패드 (카드 id별, 다시 그려도 자리·넣은 값이 그대로) */
+/** Open secure keypads (by card id; positions and typed value survive a redraw) */
 const pads = new Map<string, HTMLElement>()
 
 function securePad(
@@ -6498,7 +6453,7 @@ function securePad(
   let value = ''
   const dots = h('div', { class: 'pad-dots' })
   const err = h('p', { class: 'field-err pad-err', text: '' })
-  const go = h('button', { class: 'btn lg', text: '넣기' }) as HTMLButtonElement
+  const go = h('button', { class: 'btn lg', text: mdCred.put }) as HTMLButtonElement
   const grid = h('div', { class: 'pad-grid' })
   const paint = () => {
     dots.replaceChildren(
@@ -6507,7 +6462,7 @@ function securePad(
     go.disabled = value.length < max
     err.textContent = ''
   }
-  // 누른 키와 함께 다른 숫자 키 하나도 눌린 것처럼 보인다
+  // Another digit key looks pressed together with the tapped one
   const flash = (el: HTMLElement) => {
     const others = [...grid.querySelectorAll<HTMLElement>('.pad-key.num')].filter((k) => k !== el)
     const decoy = others[Math.floor(Math.random() * others.length)]
@@ -6545,7 +6500,7 @@ function securePad(
       )
     grid.replaceChildren(
       ...digits.slice(0, 9).map(num),
-      key('재배열', () => layout(), 'fn', '숫자 자리 다시 섞기'),
+      key(mdCred.shuffle, () => layout(), 'fn', mdCred.shuffleAria),
       num(digits[9] as string),
       key(
         icon('back'),
@@ -6554,13 +6509,13 @@ function securePad(
           paint()
         },
         'fn',
-        '하나 지우기',
+        mdCred.deleteAria,
       ),
     )
   }
   go.onclick = () => {
     if (pattern && !new RegExp(pattern).test(value)) {
-      err.textContent = hint || '형식을 확인해 주세요'
+      err.textContent = hint || mdCred.badFormat
       return
     }
     onDone(value)
@@ -6571,7 +6526,7 @@ function securePad(
   return h('div', { class: 'secure-pad' }, dots, err, grid, go)
 }
 
-/** 하나 고르기 칩 (간편인증 앱 등). 누른 칩만 켜지고 onPick으로 알린다 */
+/** Pick-one chips (simple-auth app etc.). Only the tapped chip turns on and onPick is called */
 function choiceChips(options: readonly string[], current: string, onPick: (v: string) => void): HTMLElement {
   const box = h('div', { class: 'choice-chips' })
   for (const o of options) {
@@ -6586,7 +6541,7 @@ function choiceChips(options: readonly string[], current: string, onPick: (v: st
   return box
 }
 
-/** 공급자 계정 주소면 그 공급자 (accounts.kakao.com → kakao) */
+/** The provider when the address is a provider account (accounts.kakao.com -> kakao) */
 function brandOf(origin: string): SocialProvider | undefined {
   const h = hostOf(origin)
   if (/(^|\.)kakao\.com$/.test(h)) return 'kakao'
@@ -6607,59 +6562,55 @@ function loginSheet(id: string) {
     host: hostOf(r.origin),
     ...(cardIdFor(r.origin) ? { logo: cardIdFor(r.origin) } : {}),
     ...(brandOf(r.origin) ? { brand: brandOf(r.origin) } : {}),
-    busyText: '저장하는 중…',
-    submitText: '로그인하기',
+    busyText: mdCred.saving,
+    submitText: mdCred.signIn,
     submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
-    direct: { text: '화면 보면서 직접 할게요', onclick: () => openRemote(r.tabId) },
+    direct: { text: mdCred.directLogin, onclick: () => openRemote(r.tabId) },
     stuck: Boolean(loginLink(r.origin)?.fail),
-    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    // If the user doesn't know the ID or password, Dool2 recovers it: the sign-in card is withdrawn and the request goes to the chat (only identity-check codes use a phone card)
     forgot: () => {
       void send({ kind: 'forgot', site: r.origin, loginId: r.id })
-      void send({
-        kind: 'ask',
-        text: `${r.site} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
-      })
+      void send({ kind: 'ask', text: mdCred.forgotAsk(r.site) })
       st.overlay = undefined
       st.tab = 'chat'
-      toast(`${r.site} 계정 찾기를 두리가 해 볼게요`)
+      toast(mdCred.forgotToast(r.site))
     },
-    // 계정이 없으면 두리가 가입해 줘요: 이 사이트 가입을 고른 것으로 알리고, 대화로 부탁을 보낸다
+    // If there is no account, Dool2 signs up: report that sign-up was chosen for this site and send the request to the chat
     signup: () => {
       void send({ kind: 'signup', site: r.origin, loginId: r.id })
-      void send({ kind: 'ask', text: `${r.site} 회원가입해서 이어서 해 줘` })
+      void send({ kind: 'ask', text: mdCred.signupAsk(r.site) })
       st.overlay = undefined
       st.tab = 'chat'
-      toast(`${r.site} 가입을 두리가 해 볼게요`)
+      toast(mdCred.signupToast(r.site))
     },
-    // 연결 카드가 있는 사이트면 간편 로그인도 같이 (연결하기 화면과 같은 선택지)
+    // For sites with a connection card, offer social sign-in too (same choices as the connect screen)
     ...loginChoices(cardIdFor(r.origin)),
   })
 }
 
-/** 연결 카드의 간편 로그인 버튼 (로그인 요청 카드·연결하기 화면이 같은 선택지를 쓴다) */
+/** Social sign-in buttons of a connection card (the sign-in request card and the connect screen share the same choices) */
 function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | 'socialOnly'> {
   const it = cardId ? st.services?.find((x) => x.card.id === cardId) : undefined
   if (!it?.card.social?.length) return {}
   const id = it.card.id
   return {
-    socialOnly: !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
+    socialOnly: !ID_PASSWORD_LOGIN_RE.test(it.card.login ?? ''),
     social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
       provider,
       ...(hint ? { hint } : {}),
       onclick: () => {
-        // 공급자 쪽이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
+        // If the provider is already signed in on the PC's Chrome, Dool2 only passes the button and consent; otherwise it hands over that screen
         void send({ kind: 'connect-social', id, provider })
         st.overlay = undefined
         st.connecting.add(id)
-        if (st.tab !== 'chat')
-          toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+        if (st.tab !== 'chat') toast(mdCred.socialToast(SOCIAL_LABEL[provider], it.card.name))
         render()
       },
     })),
   }
 }
 
-/** 서비스 연결하기: 아이디·비밀번호를 넣으면 두리가 PC Chrome에서 대신 로그인하고 결과를 알려 준다 */
+/** Connect a service: after you enter the ID and password, Dool2 signs in on the PC's Chrome for you and reports back */
 function connectSheet(id: string) {
   const it = st.services?.find((x) => x.card.id === id)
   if (!it) return h('section', { class: 'sheet float app-sheet rise' })
@@ -6667,36 +6618,34 @@ function connectSheet(id: string) {
     key: `connect:${id}`,
     site: it.card.name,
     host: it.card.site ?? '',
-    busyText: '두리가 로그인하는 중…',
-    submitText: '연결하기',
+    busyText: mdCred.connecting,
+    submitText: mdCred.connect,
     submit: (username, password) => {
-      // 기다리지 않는다: 시트를 닫고, 로그인은 두리 본체가 뒤에서 한다 (끝나면 대화·알림으로)
+      // Don't wait: close the sheet and Dool2 signs in behind the scenes (reported in the chat or by notification)
       void send({ kind: 'connect-login', id, username, password })
       st.loginDraft.busy = false
       st.overlay = undefined
       st.connecting.add(id)
-      if (st.tab !== 'chat')
-        toast(`${it.card.name} 로그인은 두리가 PC에서 할게요. 끝나면 대화로 알려 드릴게요`)
+      if (st.tab !== 'chat') toast(mdCred.connectToast(it.card.name))
     },
     ...(st.afterConnect?.id === id ? { next: st.afterConnect.text } : {}),
     logo: id,
-    // 간편 로그인·문자 인증만 되는 곳(캐치테이블·에이블리): 아이디 칸은 헷갈리기만 한다
-    socialOnly: Boolean(it.card.social?.length) && !/아이디|비밀번호|이메일/.test(it.card.login ?? ''),
+    // Places with only social sign-in or SMS verification: an ID field would only confuse
+    socialOnly: Boolean(it.card.social?.length) && !ID_PASSWORD_LOGIN_RE.test(it.card.login ?? ''),
     social: socialOrder(it.card, st.services).map(({ provider, hint }) => ({
       provider,
       ...(hint ? { hint } : {}),
       onclick: () => {
-        // 공급자 쪽(카카오 등)이 PC Chrome에 로그인돼 있으면 두리가 버튼·동의만 넘기고, 아니면 그 화면을 넘겨 드려요
+        // If the provider (Kakao etc.) is already signed in on the PC's Chrome, Dool2 only passes the button and consent; otherwise it hands over that screen
         void send({ kind: 'connect-social', id, provider })
         st.overlay = undefined
         st.connecting.add(id)
-        if (st.tab !== 'chat')
-          toast(`${SOCIAL_LABEL[provider]}로 ${it.card.name}에 로그인해 볼게요. 끝나면 대화로 알려 드릴게요`)
+        if (st.tab !== 'chat') toast(mdCred.socialToast(SOCIAL_LABEL[provider], it.card.name))
       },
     })),
     stuck: st.connectFails.has(id),
     direct: {
-      text: st.connectTabs.has(id) ? 'PC 화면 보면서 마저 하기' : '화면 보면서 직접 로그인할게요',
+      text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.directConnect,
       onclick: () => {
         const tab = st.connectTabs.get(id)
         if (tab !== undefined) return openRemote(tab, id)
@@ -6706,38 +6655,35 @@ function connectSheet(id: string) {
         void send({ kind: 'connect', id, action: 'open' })
       },
     },
-    // 아이디·비밀번호를 모르면 두리가 찾아요: 로그인 카드를 거두고 대화로 부탁을 보낸다 (본인인증 인증번호만 폰 카드로)
+    // If the user doesn't know the ID or password, Dool2 recovers it: the sign-in card is withdrawn and the request goes to the chat (only identity-check codes use a phone card)
     forgot: () => {
       void send({ kind: 'forgot', site: it.card.site ?? it.card.id })
-      void send({
-        kind: 'ask',
-        text: `${it.card.name} 아이디·비밀번호를 몰라요. 아이디 찾기·비밀번호 재설정을 대신 해서 연결해 줘`,
-      })
+      void send({ kind: 'ask', text: mdCred.forgotAsk(it.card.name) })
       st.overlay = undefined
       st.tab = 'chat'
-      toast(`${it.card.name} 계정 찾기를 두리가 해 볼게요`)
+      toast(mdCred.forgotToast(it.card.name))
     },
-    // 계정이 없으면 두리가 가입해 줘요: 대화로 부탁을 보내고 두리가 가입 흐름을 한다
+    // If there is no account, Dool2 signs up: the request goes to the chat and Dool2 runs the sign-up flow
     signup: () => {
       if (it.card.site) void send({ kind: 'signup', site: it.card.site })
-      void send({ kind: 'ask', text: `${it.card.name} 회원가입해서 이어서 해 줘` })
+      void send({ kind: 'ask', text: mdCred.signupAsk(it.card.name) })
       st.overlay = undefined
       st.tab = 'chat'
-      toast(`${it.card.name} 가입을 두리가 해 볼게요`)
+      toast(mdCred.signupToast(it.card.name))
     },
   })
 }
 
-// ── 따로 하는 대화 ──
+// ── Separate chats ──
 
 function sideThreads() {
-  return (st.pc?.threads ?? []).filter((t) => t.side && t.title !== '두리 피드')
+  return (st.pc?.threads ?? []).filter((t) => t.side && t.title !== FEED_THREAD_TITLE)
 }
 
-/** 메뉴의 따로 하는 대화: 최근 몇 개만 보여 주고 나머지는 '더 보기'로 펼친다 (서랍은 통째로 스크롤된다) */
+/** Separate chats in the menu: show the latest few and expand the rest with "Show more" (the drawer scrolls as a whole) */
 function sideMenu(): Node[] {
   const all = sideThreads()
-  // 답하는 중인 대화는 접어 둔 쪽에 있어도 보이게 앞으로
+  // Chats that are replying come first, so they show even when the list is folded
   const pinned = all.filter((t) => t.busy)
   const rest = all.filter((t) => !pinned.includes(t))
   const ordered = [...pinned, ...rest]
@@ -6751,8 +6697,7 @@ function sideMenu(): Node[] {
       h('span', { class: 'side-name', text: t.title }),
     ),
   )
-  if (!all.length)
-    items.push(h('p', { class: 'meta side-empty', text: '여행·이사처럼 길게 이어질 일은 따로 이야기해요' }))
+  if (!all.length) items.push(h('p', { class: 'meta side-empty', text: mdSide.sideEmpty }))
   if (more > 0 || (st.sideAll && ordered.length > SIDE_THREAD_PEEK))
     items.push(
       h(
@@ -6764,7 +6709,7 @@ function sideMenu(): Node[] {
             renderOverlay()
           },
         },
-        h('span', { text: st.sideAll ? '접기' : `${more}개 더 보기` }),
+        h('span', { text: st.sideAll ? mdSide.fold : mdSide.showMore(more) }),
         icon('chevron', st.sideAll ? 'i more-chev open' : 'i more-chev'),
       ),
     )
@@ -6775,7 +6720,7 @@ function isSideThread(id: string) {
   return st.side?.id === id || (st.pc?.threads ?? []).some((t) => t.id === id && t.side)
 }
 
-function openSide(id: string, title = '따로 하는 대화') {
+function openSide(id: string, title = mdSide.sideTitle) {
   st.side = { id, title, messages: [], live: '', steps: [], busy: false, draft: '' }
   st.overlay = undefined
   st.screen = { name: 'side', id }
@@ -6805,7 +6750,7 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
     sd.busy = true
     if (ev.event.type === 'text') sd.live += ev.event.delta
     else if (ev.event.type === 'tool') {
-      const label = narrationLine(sd.live) ?? `${ev.event.title ?? toolLabel(ev.event.name)} 중`
+      const label = narrationLine(sd.live) ?? mdSide.stepSuffix(ev.event.title ?? toolLabel(ev.event.name))
       sd.live = ''
       if (sd.steps.at(-1) !== label) sd.steps = [...sd.steps, label]
     }
@@ -6819,7 +6764,7 @@ function onSideStream(threadId: string, ev: DaemonStreamEvent) {
 }
 
 /**
- * 기다리는 입력 카드가 있는데 닫혀 있으면 다시 여는 줄 (실수로 내리면 다시 열 길이 없었다)
+ * A bar that reopens a waiting input card when it is closed (there used to be no way to reopen one dismissed by mistake)
  */
 function infoWaitBar(): HTMLElement[] {
   const open = st.overlay?.kind === 'info' ? (st.overlay as { id: string }).id : undefined
@@ -6829,15 +6774,15 @@ function infoWaitBar(): HTMLElement[] {
     h(
       'button',
       { class: 'info-wait-bar', onclick: () => openOverlay({ kind: 'info', id: q.id }) },
-      h('span', { text: `넣을 것이 있어요 · ${q.label}` }),
-      h('strong', { text: '열기' }),
+      h('span', { text: mdSide.waitingInput(q.label) }),
+      h('strong', { text: mdSide.open }),
     ),
   ]
 }
 
 /**
- * 따로 하는 대화 화면에서도 사람에게 묻는 카드(내 정보·보안 키패드·인증번호·승인·로그인)를 띄운다.
- * 이 화면은 소식이 올 때마다 다시 그려서, 같은 카드면 만들어 둔 것을 그대로 쓴다 (넣던 값이 날아가지 않게)
+ * The separate-chat screen also shows the cards that ask the person (personal info, secure keypad, verification code, approval, sign-in).
+ * This screen redraws on every update, so the same card reuses what was already built (typed values aren't lost)
  */
 let sideSheet: { key: string; el: HTMLElement } | undefined
 function sideOverlay(): HTMLElement[] {
@@ -6856,7 +6801,7 @@ function sideOverlay(): HTMLElement[] {
           : loginSheet(ov.id)
     const box = h('div', { class: 'app-overlay' })
     box.dataset.kind = ov.kind
-    // 입력 카드는 바깥을 눌러도 닫히지 않는다 (실수로 내려 막혔다). [나중에 할게요]로만 닫는다
+    // Input cards don't close when you tap outside (dismissing by mistake blocked people). Only [Later] closes them
     box.append(
       h('div', { class: 'scrim', onclick: () => ov.kind !== 'info' && openOverlay(undefined) }),
       body,
@@ -6886,7 +6831,7 @@ function sideView(id: string) {
       b.append(rich(m.text))
       list.append(b)
     } else if (m.role === 'tool') {
-      // 빠른 답은 큰 대화로 보내지므로 따로 하는 대화에서는 그리지 않는다
+      // Quick replies go to the main chat, so they are not drawn in a separate chat
       if (!m.text.includes('"kind":"quick"')) list.append(toolCard(m.text))
     }
   }
@@ -6904,23 +6849,23 @@ function sideView(id: string) {
       h(
         'div',
         { class: 'card ask-card' },
-        h('div', { class: 'card-label' }, doori('', 22), '주제 하나를 따로 이야기해요'),
+        h('div', { class: 'card-label' }, doori('', 22), mdSide.sideIntro),
         h('p', {
           class: 'card-text',
-          text: '여행 계획, 이사 준비처럼 길게 이어질 일을 여기서 하면 메인 대화가 어지럽지 않아요. 두리는 메인 대화에서 알게 된 것도 기억해요.',
+          text: mdSide.sideIntroText,
         }),
       ),
     )
   const ta = h('textarea')
   ta.id = 'side-input'
   ta.rows = 1
-  ta.placeholder = '두리에게 부탁하기'
+  ta.placeholder = mdSide.askPh
   ta.value = sd?.draft ?? ''
   ta.oninput = () => {
     if (sd) sd.draft = ta.value
     autosize(ta)
   }
-  const go = h('button', { class: 'send-btn ready', label: '보내기' }, icon('send', 'i md'))
+  const go = h('button', { class: 'send-btn ready', label: mdSide.send }, icon('send', 'i md'))
   const submit = () => {
     const text = ta.value.trim()
     if (!text || !sd || !st.online) return
@@ -6946,15 +6891,15 @@ function sideView(id: string) {
     h(
       'header',
       { class: 'side-top' },
-      h('button', { class: 'fbtn', label: '뒤로', onclick: back }, icon('back')),
-      h('strong', { class: 'side-title', text: sd?.title ?? '따로 하는 대화' }),
+      h('button', { class: 'fbtn', label: mdSide.back, onclick: back }, icon('back')),
+      h('strong', { class: 'side-title', text: sd?.title ?? mdSide.sideTitle }),
       h(
         'button',
         {
           class: 'fbtn',
-          label: '지우기',
+          label: mdSide.delete,
           onclick: () => {
-            if (!confirm('이 대화를 지울까요?')) return
+            if (!confirm(mdSide.confirmDelete)) return
             void send({ kind: 'side-delete', id })
             back()
           },
@@ -6978,41 +6923,41 @@ function sideView(id: string) {
   return page
 }
 
-// ── 연결 전 화면 ──
+// ── Screens before connecting ──
 
 function introView() {
   return h(
     'section',
     { class: 'center-page' },
     liveDoori('intro', '', 120),
-    h('h1', { class: 'display-s', text: '두리' }),
-    h('p', { class: 'psub', text: '내 컴퓨터의 두리에게 폰으로 부탁해요.' }),
+    h('h1', { class: 'display-s', text: mdSide.name }),
+    h('p', { class: 'psub', text: mdSide.introSub }),
     h(
       'ol',
       { class: 'steps' },
-      h('li', { text: 'PC에서 두리 앱을 열어요' }),
-      h('li', { text: '설정 → 폰 연결 → [폰 연결하기]' }),
-      h('li', { text: isNative() ? '아래 [QR 찍기]로 PC 화면의 QR을 찍어요' : '폰 카메라로 QR을 찍어요' }),
+      h('li', { text: mdSide.step1 }),
+      h('li', { text: mdSide.step2 }),
+      h('li', { text: isNative() ? mdSide.step3Native : mdSide.step3Web }),
     ),
-    isNative() ? h('button', { class: 'btn', text: 'QR 찍기', onclick: () => void scanInvite() }) : null,
-    h('p', { class: 'meta', text: '주고받는 내용은 PC와 이 폰만 열 수 있게 암호화돼요.' }),
+    isNative() ? h('button', { class: 'btn', text: mdSide.scanQr, onclick: () => void scanInvite() }) : null,
+    h('p', { class: 'meta', text: mdSide.encrypted }),
   )
 }
 
-/** 앱: PC 화면의 연결 QR을 찍어 연결을 시작한다 */
+/** App: scan the connection QR on the PC screen to start connecting */
 async function scanInvite() {
   try {
     const text = await scanQr()
     if (!text) return
     const invite = inviteFrom(text)
-    if (!invite) return toast('두리 연결 QR이 아니에요. PC의 설정 → 폰 연결에서 띄운 QR을 찍어 주세요')
+    if (!invite) return toast(mdSide.notDoolQr)
     await startPairing(invite)
   } catch (e) {
-    toast((e as Error).message || 'QR을 찍지 못했어요')
+    toast((e as Error).message || mdSide.scanFailed)
   }
 }
 
-/** 안드로이드 뒤로 가기: 열린 창 → 따로 하는 대화·원격 화면 → 대화 탭 순서로 닫는다. 더 닫을 게 없으면 false */
+/** Android back: closes the open sheet, then a separate chat or remote screen, then returns to the chat tab. Returns false when nothing is left to close */
 function goBack(): boolean {
   if (st.overlay) {
     st.overlay = undefined
@@ -7038,25 +6983,25 @@ function unsupportedView() {
     liveDoori('center', 'asking', 104),
     ...(isNative()
       ? [
-          // 앱 안의 화면은 폰의 WebView로 그린다. 암호화(X25519·Ed25519)는 WebView 137 이상에서 된다
-          h('h1', { class: 'title-2', text: '업데이트가 하나 필요해요' }),
+          // The app's screens are drawn by the phone's WebView. Encryption (X25519, Ed25519) works on WebView 137 and later
+          h('h1', { class: 'title-2', text: mdSide.updateTitle }),
           h('p', {
             class: 'psub',
-            text: '폰의 Android System WebView가 오래돼서 암호화를 쓸 수 없어요. Play 스토어에서 업데이트한 뒤 다시 열어 주세요.',
+            text: mdSide.updateText,
           }),
           h('button', {
             class: 'btn',
-            text: 'Play 스토어에서 업데이트',
+            text: mdSide.updateBtn,
             onclick: () => {
               location.href = 'https://play.google.com/store/apps/details?id=com.google.android.webview'
             },
           }),
         ]
       : [
-          h('h1', { class: 'title-2', text: '이 브라우저에서는 열 수 없어요' }),
+          h('h1', { class: 'title-2', text: mdSide.browserTitle }),
           h('p', {
             class: 'psub',
-            text: '아이폰은 사파리 17 이상, 안드로이드는 크롬 최신 버전에서 열어 주세요.',
+            text: mdSide.browserText,
           }),
         ]),
   )
@@ -7068,34 +7013,34 @@ function pairingView(v: Extract<Screen, { name: 'pairing' }>) {
       'section',
       { class: 'center-page' },
       liveDoori('center', 'asking', 104),
-      h('h1', { class: 'title-2', text: 'PC에서 연결을 거절했어요' }),
-      h('p', { class: 'psub', text: '숫자가 달랐다면 PC에서 QR을 새로 띄워 다시 찍어 주세요.' }),
+      h('h1', { class: 'title-2', text: mdSide.rejectedTitle }),
+      h('p', { class: 'psub', text: mdSide.rejectedText }),
     )
   return h(
     'section',
     { class: 'center-page' },
     liveDoori('center', 'thinking', 104),
-    h('h1', { class: 'title-2', text: `${v.pcName}에 연결할게요` }),
-    h('p', { class: 'psub', text: 'PC 화면에 이 숫자가 보이나요?' }),
+    h('h1', { class: 'title-2', text: mdSide.connectTo(v.pcName) }),
+    h('p', { class: 'psub', text: mdSide.seeNumber }),
     h('p', { class: 'pair-code mono', text: v.code }),
     h('p', {
       class: 'meta',
-      text: 'PC에서 [같아요, 연결]을 눌러 주세요. 숫자가 다르면 "다른 숫자예요"를 눌러 주세요.',
+      text: mdSide.pairHint,
     }),
   )
 }
 
-/** PC 화면 (지금은 화면 한 장씩. 로그인 단계에서 실시간 화면으로 바꾼다) */
+/** PC screen (one still image at a time for now; replaced by a live view at the sign-in step) */
 let remoteUi: RemoteScreen | undefined
 let remoteToast: HTMLElement | undefined
 
-/** 원격 화면: 탭마다 한 번 만들고 그 뒤로는 그림·정보만 바꾼다 (remote.ts) */
+/** Remote screen: built once per tab, then only the image and info change (remote.ts) */
 function remoteView(v: Extract<Screen, { name: 'remote' }>) {
   if (remoteUi?.tabId !== v.tabId) {
     const back = () => {
       st.screen = { name: 'app' }
       remoteUi = undefined
-      // 열기 전 화면으로 (대화의 연결 카드에서 열었으면 대화로, 연결 화면에서 열었으면 그 서비스로)
+      // Back to where it was opened from (the chat if opened from a connection card, that service if opened from the connect screen)
       st.tab = remoteFrom
       if (v.connectId && remoteFrom === 'connect') st.connectDetail = v.connectId
       render()
@@ -7107,15 +7052,15 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
       back,
       handBack: back,
       done: () => {
-        // 연결: 눌렀다고 바로 연결로 치지 않는다. PC가 정말 로그인됐는지 보고 알려 준다
+        // Connect: tapping doesn't count as connected right away. The PC checks it is really signed in and reports back
         if (v.connectId) {
           st.connecting.add(v.connectId)
           void send({ kind: 'connect', id: v.connectId, action: 'verify' })
-          toast('로그인됐는지 확인할게요')
+          toast(mdSide.checkingLogin)
         } else {
-          // 대화에 '다 했어요'를 쓰지 않고 PC에 알린다: 두리가 화면을 확인하고 알아서 이어 간다
+          // Don't write "done" in the chat; tell the PC instead: Dool2 checks the screen and carries on by itself
           void send({ kind: 'remote', tabId: v.tabId, action: 'done' })
-          toast('확인하고 이어서 할게요')
+          toast(mdSide.checkingContinue)
         }
         back()
       },
@@ -7129,9 +7074,9 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
   return remoteUi.el
 }
 
-// ── 시작 ──
+// ── Start ──
 
-// 앱이 열려 있는 채로 새 QR을 찍거나 알림을 누르면 주소의 # 뒤만 바뀐다
+// Scanning a new QR or tapping a notification while the app is open changes only the part after # in the address
 window.addEventListener('hashchange', () => {
   const invite = /#p=([\w-]+)/.exec(location.hash)?.[1]
   if (invite) return void startPairing(invite)
@@ -7144,11 +7089,11 @@ window.addEventListener('hashchange', () => {
   }
 })
 
-// ── 다시 맞추기: 앱을 내렸다 오거나 신호가 끊겨도 PC와 같은 화면이 되게 ──
+// ── Resync: after the app was in the background or the signal dropped, show the same as the PC ──
 
 let lastStreamAt = Date.now()
 
-/** PC에서 대화·상태·생활·연결을 다시 받아 온다 */
+/** Fetch the chat, status, life and connections from the PC again */
 function resync() {
   if (!st.online || !st.saved?.paired) return
   hello()
@@ -7159,28 +7104,28 @@ function resync() {
 }
 
 function startResync() {
-  // 앱으로 돌아오면 (폰은 뒤로 가 있는 동안 연결이 끊기거나 신호를 놓친다)
+  // When the app comes back to the front (while it was in the background the phone may have lost the connection or missed signals)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return
     if (st.client && !st.online) connect()
     else resync()
-    // 보던 화면(일하는 화면·연결 중 화면)을 다시 받아 오기 시작한다
+    // Start fetching the screen being watched (working screen, connecting screen) again
     pollWork()
     pollConnect()
-    // 인증 앱(카톡·PASS)에서 승인하고 돌아왔으면 [인증 완료했어요]를 바로 앞에 (실측 11-22 국가검진: 카드를 못 찾아 3분이 지났다)
+    // If the user approved in an auth app (KakaoTalk, PASS) and came back, bring the [I verified] card to the front (measured 11-22 national checkup: it took 3 minutes to find the card)
     const auth = [...st.infos.values()].find(
-      (q) => q.status === 'pending' && q.options?.includes('인증 완료했어요'),
+      (q) => q.status === 'pending' && q.options?.includes(AUTH_DONE_OPTION),
     )
     if (auth && st.overlay?.kind !== 'info') {
       openOverlay({ kind: 'info', id: auth.id })
       navigator.vibrate?.(20)
     }
   })
-  // 앱을 켜 두고 있다고 1분마다 알린다 (PC는 켜 둔 폰에만 흘려 쓰는 답을 보낸다)
+  // Tell the PC every minute that the app is open (the PC streams replies only to phones that are open)
   setInterval(() => {
     if (st.online && st.saved?.paired && document.visibilityState === 'visible') void send({ kind: 'ping' })
   }, 60_000)
-  // 답하는 중인데 40초 넘게 아무 신호가 없으면 기록을 다시 받는다
+  // If a reply is in progress but no signal came for over 40 seconds, fetch the history again
   setInterval(() => {
     if (st.busy && Date.now() - lastStreamAt > 40_000) {
       lastStreamAt = Date.now()
@@ -7189,10 +7134,10 @@ function startResync() {
   }, 10_000)
 }
 
-/** 당겨서 새로고침: 목록 맨 위에서 아래로 당겼다 놓으면 PC에서 다시 받아 온다 */
+/** Pull to refresh: pulling down from the top of a list and releasing fetches again from the PC */
 /**
- * 당겨서 새로고침: 처음엔 반만 따라오고 멀리 당길수록 무거워진다(고무줄).
- * 넘으면 두리가 톡 커지며 알려 주고, 놓으면 그 자리에서 돌다가 스프링으로 돌아간다
+ * Pull to refresh: it follows at half speed at first and gets heavier the further you pull (rubber band).
+ * Past the threshold Dool2 pops bigger to show it, and on release it spins in place and springs back
  */
 function pullToRefresh(page: HTMLElement) {
   const ind = h('div', { class: 'ptr' }, doori('', 28))
@@ -7239,7 +7184,7 @@ function pullToRefresh(page: HTMLElement) {
         armed = false
         run()
       }
-      // 손가락을 바로 따라간다
+      // Follows the finger directly
       P.x = P.t = rubber(dy)
       P.v = 0
       const over = P.x >= TH
@@ -7277,22 +7222,22 @@ function pullToRefresh(page: HTMLElement) {
 }
 
 async function main() {
-  // 아이폰 사파리는 viewport의 확대 막기를 무시해서, 꼬집기 확대를 따로 막는다 (원격 화면은 자체로 처리)
+  // iPhone Safari ignores the viewport's zoom lock, so pinch zoom is blocked separately (the remote screen handles it itself)
   document.addEventListener('gesturestart', (e) => e.preventDefault())
-  // 앱 안에서 난 오류도 방금 있었던 일에 적어 둔다 (문제 알리기를 누르면 같이 간다)
-  window.addEventListener('error', (e) => mark(`오류 ${e.message}`))
+  // Errors inside the app are noted too (they go along when the user reports a problem)
+  window.addEventListener('error', (e) => mark(`error ${e.message}`))
   window.addEventListener('unhandledrejection', (e) =>
-    mark(`오류 ${String((e.reason as Error | undefined)?.message ?? e.reason)}`),
+    mark(`error ${String((e.reason as Error | undefined)?.message ?? e.reason)}`),
   )
-  document.addEventListener('visibilitychange', () => mark(`앱 ${document.visibilityState}`))
-  mark('앱 켬')
+  document.addEventListener('visibilitychange', () => mark(`app ${document.visibilityState}`))
+  mark('app started')
   document.documentElement.dataset.theme = 'auto'
   if (!globalThis.crypto?.subtle || !('indexedDB' in window)) {
     st.screen = { name: 'unsupported' }
     return render()
   }
   try {
-    // 암호화(X25519)와 서명(Ed25519) 둘 다 되어야 한다. 크롬·WebView는 X25519가 133, Ed25519가 137부터
+    // Both encryption (X25519) and signing (Ed25519) are needed. Chrome and WebView support X25519 from 133 and Ed25519 from 137
     await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])
     await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])
   } catch {
@@ -7301,7 +7246,7 @@ async function main() {
   }
   const theme = localStorage.getItem('dool2-theme')
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
-  // 앱에서는 서비스 워커를 쓰지 않는다 (앱 코드가 이미 앱 안에 있다)
+  // The app doesn't use a service worker (the app code is already inside the app)
   if (!isNative() && 'serviceWorker' in navigator)
     void navigator.serviceWorker.register('sw.js').catch(() => {})
   listenNative({
@@ -7320,7 +7265,7 @@ async function main() {
     return render()
   }
   st.saved = saved
-  // 지난번 대화를 먼저 보여 준다 (PC 연결을 기다리는 동안 빈 화면이 아니게)
+  // Show the previous chat first (so the screen isn't empty while waiting for the PC)
   if (saved.paired) st.conv = (await loadConv().catch(() => undefined)) ?? []
   st.key = await linkKey(saved.keys.boxPriv, saved.pcBoxPub, [saved.keys.id, saved.pcId])
   st.screen = saved.paired
@@ -7329,9 +7274,9 @@ async function main() {
   render()
   connect()
   startResync()
-  // 태블릿을 돌리거나 창 크기가 바뀌면 탭 알약 자리를 다시 잡는다
-  // 폴드를 펴고 접거나 태블릿을 돌리면 탭 막대 모양(가로·세로, 칸 너비)이 바뀐다.
-  // 바뀌는 도중에 재면 알약 자리가 틀어지므로, 움직이던 알약은 멈추고 자리가 잡힌 뒤 다시 잰다
+  // Re-place the tab pill when the tablet rotates or the window size changes
+  // Unfolding, folding or rotating changes the tab bar shape (landscape or portrait, cell width).
+  // Measuring mid-change misplaces the pill, so a moving pill stops and is measured again after layout settles
   let settleTabs: ReturnType<typeof setTimeout> | undefined
   const onResize = () => {
     pillStop?.()

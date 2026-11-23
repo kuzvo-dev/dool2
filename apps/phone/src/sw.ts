@@ -1,4 +1,7 @@
-// 홈 화면에 추가할 수 있게 하는 최소한의 서비스 워커. 앱 껍데기만 저장하고, 대화 내용은 저장하지 않는다.
+// A minimal service worker so the app can be added to the home screen. It caches only the app shell, never chat content.
+import { lang } from './lang.js'
+import { swText } from './locales/sw.js'
+
 interface ExtendableEvent extends Event {
   waitUntil(p: Promise<unknown>): void
 }
@@ -53,22 +56,22 @@ sw.addEventListener('activate', (e) => {
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))),
   )
 })
-// 네트워크 먼저, 안 되면 저장해 둔 껍데기
+// Network first, then the cached shell
 sw.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return
   e.respondWith(fetch(e.request).catch(async () => (await caches.match(e.request)) ?? Response.error()))
 })
 
-// ── 알림 (웹 푸시) ──
-// PC가 승인 요청·직접 해 주세요·맡긴 일이 끝났을 때 보낸다. 내용은 이 브라우저만 풀 수 있게 암호화돼 온다.
-// 앱이 열려 있어도 항상 띄운다 (아이폰은 푸시를 받고 알림을 안 띄우면 권한을 거둔다). 같은 tag는 새 것으로 바뀐다
+// ── Notifications (web push) ──
+// The PC sends these for approval requests, hand-offs and finished tasks. The payload is encrypted so only this browser can read it.
+// Always shown, even with the app open (iPhone revokes permission if a push arrives without a notification). The same tag is replaced by the newer one
 sw.addEventListener('push', (e) => {
   let msg: { title?: string; body?: string; tag?: string; url?: string } = {}
   try {
     msg = (e.data?.json() ?? {}) as typeof msg
   } catch {}
   e.waitUntil(
-    sw.registration.showNotification(msg.title || '두리', {
+    sw.registration.showNotification(msg.title || swText(lang).appName, {
       body: msg.body ?? '',
       ...(msg.tag ? { tag: msg.tag } : {}),
       icon: 'icons/icon192.png',
@@ -78,11 +81,11 @@ sw.addEventListener('push', (e) => {
   )
 })
 
-// 알림을 누르면 앱을 열고 그 승인·대화로 간다. 열려 있는 앱이 있으면 그 창을 쓴다
+// Tapping a notification opens the app at that approval or chat. An already open window is reused
 sw.addEventListener('notificationclick', (e) => {
   e.notification.close()
   const hash = String(e.notification.data?.url ?? '')
-  // #a=승인, #t=대화, #tab=탭 (예약한 일·먼저 챙긴 일은 피드로)
+  // #a=approval, #t=chat, #tab=tab (scheduled and proactive tasks go to the feed)
   const ok = /^#(?:[at]=[\w-]+|tab=(?:chat|feed|ideas|goals|library))$/.test(hash)
   const target = new URL(`./${ok ? hash : ''}`, sw.registration.scope).href
   e.waitUntil(

@@ -1,0 +1,58 @@
+import { messages } from '@dool2/i18n'
+
+// Chat tab: conversation list, empty states, hand-over card
+export const chatText = messages({
+  ko: {
+    earlier: '이전 대화 더 보기',
+    today: '오늘',
+    yesterday: '어제',
+    continued: '이어서 말할게요',
+    photoSent: '보낸 사진',
+    photo: '사진',
+    thinking: '생각하는 중',
+    pcSilentTitle: (pc: string) => `${pc}가 답하지 않아요`,
+    pcSilentBody:
+      'PC가 켜져 있고 두리가 실행 중인지 확인해 주세요. PC에서 이 폰 연결을 지웠다면 다시 연결해야 해요.',
+    retry: '다시 시도',
+    reconnect: '다시 연결하기',
+    hello: (pc: string) => `안녕하세요, 두리예요. ${pc}에서 일해요.`,
+    helloBody: '예약·장보기·택배·서류처럼 귀찮은 일을 말로 맡겨 주세요. 돈 쓰는 일은 꼭 먼저 물어볼게요.',
+    quick1: '택배 어디쯤 왔어?',
+    quick2: '이번 주 토요일 저녁 7시, 2명 식당 예약해 줘',
+    quick3: '뭘 할 수 있어?',
+    startTitle: '처음이면 이렇게 시작해 보세요',
+    start1: '자주 쓰는 쇼핑몰·통신사를 연결해 두기',
+    start2: '매일 아침 받을 소식 정하기',
+    start3: '예약하고 목표 세우기',
+    handTitle: '직접 해 주세요',
+    openPc: '폰에서 PC 화면 열기',
+    locale: 'ko-KR',
+  },
+  en: {
+    earlier: 'Show earlier messages',
+    today: 'Today',
+    yesterday: 'Yesterday',
+    continued: "I'll pick it up from here",
+    photoSent: 'Sent photo',
+    photo: 'Photo',
+    thinking: 'Thinking',
+    pcSilentTitle: (pc: string) => `${pc} isn't answering`,
+    pcSilentBody:
+      'Check that your PC is on and Dool2 is running. If you removed this phone on the PC, connect again.',
+    retry: 'Try again',
+    reconnect: 'Connect again',
+    hello: (pc: string) => `Hi, I'm Dool2. I work on ${pc}.`,
+    helloBody:
+      "Hand me the tedious stuff: bookings, groceries, parcels, paperwork. I'll always ask before spending money.",
+    quick1: "Where's my parcel?",
+    quick2: 'Book a table for 2 this Saturday at 7 pm',
+    quick3: 'What can you do?',
+    startTitle: 'New here? Start like this',
+    start1: 'Connect the shops and carriers you use often',
+    start2: 'Pick the news you want each morning',
+    start3: 'Make bookings and set goals',
+    handTitle: 'Your turn',
+    openPc: 'Open the PC screen on your phone',
+    locale: 'en-US',
+  },
+})

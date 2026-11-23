@@ -1,10 +1,10 @@
-// 폰 앱 끝-끝 확인용 판: 중계 서버(폰 앱 포함) + 두리 본체(진짜 AI) + 시험용 Chrome(두리 확장) + 시험 가게.
-// 띄워 두고 폰 대신 브라우저로 /app/을 열어 시험한다. 사용자 Chrome·프로필은 건드리지 않는다.
+// End-to-end test bench for the phone app: relay (with the phone app) + Dool2 daemon (real AI) + test Chrome (Dool2 extension) + test shop.
+// Leave it running and open /app/ in a browser instead of a phone. The user's Chrome and profile are never touched.
 //
 //   pnpm build
-//   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     → /tmp/dool2-live.json 에 주소·토큰
-//   DOOL2_LIVE_DIR=<폴더> 를 주면 그 폴더를 계속 쓴다 (다시 켜도 폰 연결이 남는다)
-//   결제 흐름 가게: http://127.0.0.1:8791/goods/1234 (가게 8790의 /pay 로도 간다. 배송지·주소 찾기·결제 회사는 8792~8794)
+//   DOOL2_TEST_CHROME=... node apps/phone/scripts/live.mjs     -> writes the address and token to /tmp/dool2-live.json
+//   DOOL2_LIVE_DIR=<dir> keeps using that folder (the phone connection survives a restart)
+//   Payment-flow shop: http://127.0.0.1:8791/goods/1234 (also reachable from /pay on shop 8790; address, address search and payment company are 8792 to 8794)
 import { spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -13,20 +13,20 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startDaemon } from '@dool2/daemon'
 import { startRelay } from '@dool2/relay'
-// 결제 흐름 시험 가게 (주문서·배송지 액자·주소 찾기·늦은 결제 창·키패드·주문번호, 실측 11-20 G마켓 모양)
+// Payment-flow test shop (order form, address frame, address search, late payment window, keypad, order number; modeled on a Korean marketplace measured 11-20)
 import { start as startPayShop } from '../../extension/scripts/pay-shop.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const chromeBin = process.env.DOOL2_TEST_CHROME
-// DOOL2_LIVE_DIR를 주면 그 폴더를 다시 쓴다 (본체를 다시 켜도 폰 연결·대화가 남는다)
+// With DOOL2_LIVE_DIR the folder is reused (phone connection and chats survive a daemon restart)
 const keep = process.env.DOOL2_LIVE_DIR
 const tmp = keep ?? mkdtempSync(join(tmpdir(), 'dool2-live-'))
 
 const shop = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-  // 로그인 페이지: 두리 금고에 없는 사이트라 사람에게 넘긴다 (원격 화면 시험용)
-  // 낯선 가게 (DOOL2_SHOP_ODD=1, 자동 로그인이 화면을 못 알아보는 경우 시험): '로그인'이라는 말이 없고 칸 이름도 다르다.
-  // 정해 둔 순서로는 못 들어가서 두리(AI)가 대화에서 화면을 읽고 이어받아야 한다
+  // Login page: a site not in the vault, so it is handed to the person (for testing the remote screen)
+  // Unfamiliar shop (DOOL2_SHOP_ODD=1, tests when auto-login cannot read the screen): no word for "login" and the field names differ.
+  // The fixed sequence cannot get in, so Dool2 (the AI) has to read the screen in chat and take over
   if (req.url?.startsWith('/odd/enter')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>단골 창구</title>
 <h1>단골 창구</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>어서 오세요</h1><p>'+this.no.value+'님 반가워요</p><a href=/odd>로그아웃</a>'">
@@ -49,7 +49,7 @@ const shop = createServer((req, res) => {
 <p><button style="font-size:20px;padding:8px 20px">로그인</button></p></form>`)
     return
   }
-  // 본인인증 흉내 (원격 화면 '필요한 칸만' 시험): 이름·생년월일 6+1·통신사 버튼·번호·약관 → 인증번호 → 끝
+  // Identity verification mock (tests the remote "fields only" screen): name, birth date 6+1, carrier buttons, number, terms > code > done
   if (req.url?.startsWith('/verify/code')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>인증번호 입력</title>
 <style>body{font:16px sans-serif;padding:16px}input{font-size:18px;padding:8px}</style>
@@ -59,7 +59,7 @@ const shop = createServer((req, res) => {
     return
   }
   if (req.url?.startsWith('/verified')) {
-    // 받은 값을 보여 준다 (폰에서 넣은 값이 진짜 칸에 들어갔는지 시험)
+    // Shows the received values (to check that what was typed on the phone reached the real fields)
     const q = new URL(req.url ?? '/', 'http://x').searchParams
     const first = new URL(decodeURIComponent(q.get('from') ?? '/'), 'http://x').searchParams
     const show = [...first.entries(), ['code', q.get('code') ?? '']]
@@ -84,7 +84,7 @@ const shop = createServer((req, res) => {
 <script>document.querySelectorAll('.tel button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tel button').forEach(x=>x.classList.remove('on'));b.classList.add('on')})</script>`)
     return
   }
-  // 보안문자 흉내
+  // Captcha mock
   if (req.url?.startsWith('/captcha')) {
     const ok = /answer=7K2Q8/i.test(req.url)
     const svg = encodeURIComponent(
@@ -98,7 +98,7 @@ const shop = createServer((req, res) => {
     )
     return
   }
-  // 쿠팡 모양 결제 화면: 이름 없는 결제 수단 버튼(바로 뒤 글), 꾸민 펼침 목록(role=combobox, 눌러야 항목이 보임)
+  // Payment screen in the shape of a Korean e-commerce site: unnamed payment-method buttons (label is the text right after), styled dropdowns (role=combobox, items show only on click)
   if (req.url?.startsWith('/checkout2')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>주문/결제</title>
 <style>.combo{display:inline-block;min-width:200px;border:1px solid #999;padding:4px;cursor:pointer}.list{border:1px solid #999;margin:0;padding:0;list-style:none}.list li{padding:4px;cursor:pointer}.list li.selected{font-weight:bold}</style>
@@ -131,7 +131,7 @@ go.onclick = () => { const how = method === '카드' ? ccv.textContent + ' · ' 
 </script>`)
     return
   }
-  // 결제 화면 (결제 흐름 시험): 배송지·결제 수단 라디오·총 결제 금액. 결제 수단을 바꾸면 마지막 버튼 이름도 바뀐다
+  // Payment screen (payment-flow test): address, payment method radios, total. Changing the method also changes the last button's name
   if (req.url?.startsWith('/checkout')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>주문 결제</title>
 <h1>주문 결제</h1><p>제주 귤 3kg 1개</p>
@@ -148,7 +148,7 @@ go.onclick = () => { const how = method === '카드' ? ccv.textContent + ' · ' 
 go.onclick = () => { const how = card.hidden ? go.textContent : cardno.value + ' · ' + months.value; document.title = '주문 완료'; document.body.insertAdjacentHTML('beforeend', '<h2>주문이 완료됐어요</h2><p>' + how + '</p>') }</script>`)
     return
   }
-  // 회원가입 화면 (가입 흐름 시험): 이름·이메일·비밀번호·확인·필수 약관
+  // Sign-up screen (sign-up flow test): name, email, password, confirmation, required terms
   if (req.url?.startsWith('/signup')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>회원가입</title>
 <h1>회원가입</h1>
@@ -168,7 +168,7 @@ if(/taken/.test(d.get('email')||'')||location.search.includes('taken')){document
 document.title='가입 완료';document.body.insertAdjacentHTML('beforeend','<h2>가입이 완료됐어요</h2><p>'+d.get('email')+' / 비번길이 '+(d.get('pw')||'').length+'</p>')}</script>`)
     return
   }
-  // 결제 흐름 가게로 (8791~8794 따로 띄움). 뒤의 고르기(?pg=layer 등)는 그대로 넘긴다
+  // Go to the payment-flow shop (8791 to 8794 run separately). Trailing options (?pg=layer etc.) are passed on
   if (req.url?.startsWith('/pay')) {
     res.writeHead(302, { location: `${payShop.product}${req.url.slice(4)}` })
     res.end()
@@ -188,10 +188,10 @@ await new Promise((r) => shop.listen(8790, '127.0.0.1', r))
 const relay = await startRelay({
   port: 8787,
   appDir: join(root, 'apps', 'phone', 'dist'),
-  log: (l) => console.log(`[중계] ${l}`),
+  log: (l) => console.log(`[relay] ${l}`),
 })
 const profile = join(tmp, 'profile')
-// 폴더를 다시 쓸 때는 폰 연결 키도 파일에 남긴다 (시험 판 전용, 실제 앱은 키체인)
+// When the folder is reused, the phone connection keys are also kept in a file (test bench only; the real app uses the keychain)
 const secretFile = join(tmp, 'secrets.json')
 const fileSecrets = {
   read: () => (existsSync(secretFile) ? JSON.parse(readFileSync(secretFile, 'utf8')) : {}),
@@ -205,7 +205,7 @@ const fileSecrets = {
     writeFileSync(secretFile, JSON.stringify(all), { mode: 0o600 })
   },
 }
-// 연결 카드: 저장소의 카드에 시험 가게를 하나 더한다 (연결하기 끝-끝 시험)
+// Connect cards: adds the test shop to the repo's cards (end-to-end test of connecting)
 const skillsDir = join(tmp, 'skills')
 cpSync(join(root, 'skills'), skillsDir, { recursive: true })
 mkdirSync(join(skillsDir, 'test-shop'), { recursive: true })
@@ -233,7 +233,7 @@ const daemon = await startDaemon({
   dataDir: join(tmp, 'data'),
   relay: relay.url,
   pcName: process.env.DOOL2_PC_NAME ?? '시험 PC',
-  // 도구 토큰을 고정하면 점검 스크립트가 도구(browser_*)를 직접 불러 화면을 띄울 수 있다
+  // A fixed tool token lets check scripts call the tools (browser_*) directly to open a page
   ...(process.env.DOOL2_TOOL_TOKEN ? { toolToken: process.env.DOOL2_TOOL_TOKEN } : {}),
   nativeHost: { defaultTargets: false, extraDirs: [join(profile, 'NativeMessagingHosts')] },
 })
@@ -262,13 +262,13 @@ writeFileSync(
     payShop: payShop.product,
   }),
 )
-console.log(`준비됐어요: 폰 앱 ${relay.url}/app/ · 본체 ${daemon.url}`)
+console.log(`Ready: phone app ${relay.url}/app/ · daemon ${daemon.url}`)
 console.log(
-  `결제 흐름 가게: ${payShop.product} (예: "${payShop.product} 에서 귤 사 줘", 모양 바꾸기 ?pg=layer&keypad=on)`,
+  `Payment-flow shop: ${payShop.product} (e.g. ask to buy tangerines there; change the look with ?pg=layer&keypad=on)`,
 )
 
 const stop = async () => {
-  // 시험용 Chrome·열린 연결이 늦게 닫혀도 3초 안에는 끝낸다
+  // Finish within 3 seconds even if the test Chrome or open connections close late
   setTimeout(() => process.exit(0), 3000).unref()
   chrome?.kill()
   await daemon.close()

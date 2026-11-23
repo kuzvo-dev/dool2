@@ -1,10 +1,13 @@
-// 움직이는 카드 셋: 숫자 굴리기(돈·퍼센트), 이번 주 두리가 한 일(통계 카드), 오늘의 추천 넘기기(카드 더미)
-// 페이지는 다시 그릴 때마다 새로 만들어지므로, 카드는 내용이 같으면 같은 요소를 다시 꽂아 움직임이 끊기지 않게 한다
+// Three animated cards: number roll (money, percent), what Dool2 did this week (stats card), swiping today's picks (card deck)
+// Pages are rebuilt on every redraw, so a card with the same content is plugged back in as the same element to keep motion unbroken
+import { lang } from './lang.js'
+import { motionText } from './locales/motion.js'
 import { reduced, SPRING, Spring, springTo, tick } from './motion.js'
+import { KR_AMOUNT } from './region/kr/motion-cards.js'
 
-// ── 숫자 굴리기: 새로 온 답의 돈·퍼센트가 자리마다 0에서 굴러 제 숫자에 선다 (참고 값: count-roll 320 24) ──
+// ── Number roll: money and percents in a new reply roll from 0 at each digit and settle on their value (reference: count-roll 320 24) ──
 
-const NUM = /\d{1,3}(?:,\d{3})+(?:원|만 원|만원)?|\d+(?:\.\d+)?(?:원|%|만 원|만원)/g
+const NUM = KR_AMOUNT
 
 export function rollNumbers(root: HTMLElement) {
   if (reduced()) return
@@ -54,26 +57,27 @@ export function rollNumbers(root: HTMLElement) {
   }
 }
 
-// ── 이번 주 두리가 한 일: 날마다 몇 건인지 부드러운 선, 합계는 굴러 올라가고, 7일·30일을 바꾸면 점이 왼쪽부터 옮겨 간다 ──
+// ── What Dool2 did this week: a smooth line of daily counts, the total rolls up, and switching 7/30 days moves the dots from the left ──
 
 let statCache: { sig: string; el: HTMLElement } | undefined
 
-/** 날마다 개수(마지막이 오늘) 중 offset일 전까지의 마지막 days일 */
+/** The last `days` days of daily counts (last is today), ending `offset` days ago */
 function dayCounts(all: number[], days: number, offset = 0): number[] {
   const end = all.length - offset
   const out = all.slice(Math.max(0, end - days), Math.max(0, end))
   return [...Array<number>(days - out.length).fill(0), ...out]
 }
 
-/** all: PC가 세어 보낸 최근 60일 날마다 한 일 개수 (LifeState.feedDays, 마지막이 오늘) */
+/** all: daily task counts for the last 60 days counted by the PC (LifeState.feedDays, last is today) */
 export function statCard(feed: number[]): HTMLElement {
+  const txt = motionText(lang)
   const sig = feed.join(',')
   if (statCache?.sig === sig) return statCache.el
   const prev = statCache?.el
   const card = document.createElement('div')
   card.className = 'card stat-card'
-  card.innerHTML = `<div class="stat-head"><span class="stat-label">이번 주 두리가 한 일</span><div class="stat-seg" role="group" aria-label="기간"><span class="stat-pill"></span><button type="button" aria-pressed="true">7일</button><button type="button" aria-pressed="false">30일</button></div></div>
-<div class="stat-num"><b class="stat-big">0</b><span class="stat-unit">건</span><span class="stat-delta"></span></div>
+  card.innerHTML = `<div class="stat-head"><span class="stat-label">${txt.statWeek}</span><div class="stat-seg" role="group" aria-label="${txt.statPeriod}"><span class="stat-pill"></span><button type="button" aria-pressed="true">${txt.days7}</button><button type="button" aria-pressed="false">${txt.days30}</button></div></div>
+<div class="stat-num"><b class="stat-big">0</b><span class="stat-unit">${txt.statUnit}</span><span class="stat-delta"></span></div>
 <svg class="stat-chart" height="72" preserveAspectRatio="none"><path class="stat-fill"/><path class="stat-line"/></svg>`
   const big = card.querySelector('.stat-big') as HTMLElement
   const label = card.querySelector('.stat-label') as HTMLElement
@@ -84,7 +88,7 @@ export function statCard(feed: number[]): HTMLElement {
   const pill = card.querySelector('.stat-pill') as HTMLElement
   const btns = [...card.querySelectorAll<HTMLButtonElement>('.stat-seg button')]
   const N = 30
-  // 점은 언제나 30개: 7일일 때는 앞쪽 23개를 첫날 값에 겹쳐 둔다
+  // There are always 30 dots: for 7 days the first 23 are stacked on the first day's value
   const pts = [...Array(N)].map(() => new Spring(0, 200, 17))
   const val = new Spring(0, 160, 22)
   const px = new Spring(0).use('bar')
@@ -131,9 +135,9 @@ export function statCard(feed: number[]): HTMLElement {
     const counts = dayCounts(feed, days)
     const before = dayCounts(feed, days, days).reduce((a, b) => a + b, 0)
     const total = counts.reduce((a, b) => a + b, 0)
-    label.textContent = days === 7 ? '이번 주 두리가 한 일' : '한 달 동안 두리가 한 일'
+    label.textContent = days === 7 ? txt.statWeek : txt.statMonth
     const diff = total - before
-    delta.textContent = diff === 0 ? '지난번과 같아요' : `지난번보다 ${diff > 0 ? '+' : ''}${diff}`
+    delta.textContent = diff === 0 ? txt.sameAsBefore : txt.vsBefore(`${diff > 0 ? '+' : ''}${diff}`)
     delta.classList.toggle('up', diff > 0)
     btns.forEach((b, i) => {
       b.setAttribute('aria-pressed', String(i === (days === 7 ? 0 : 1)))
@@ -146,7 +150,7 @@ export function statCard(feed: number[]): HTMLElement {
       pw.x = pw.t
     }
     val.t = total
-    // 왼쪽부터 차례로 새 값으로
+    // One by one from the left to the new values
     const full = days === 7 ? [...Array(N - 7).fill(counts[0] ?? 0), ...counts] : counts
     pts.forEach((p, i) => {
       setTimeout(() => {
@@ -161,9 +165,9 @@ export function statCard(feed: number[]): HTMLElement {
   btns.forEach((b, i) => {
     b.addEventListener('click', () => pick(i === 0 ? 7 : 30))
   })
-  // 붙은 뒤에 재야 버튼 자리를 안다
+  // Measure after attaching to know where the buttons are
   requestAnimationFrame(() => {
-    // 같은 카드가 새로 그려지면(새 일이 생김) 앞 숫자에서 이어서 굴린다
+    // When the same card is redrawn (a new task appeared), keep rolling from the previous number
     if (prev) val.x = Number(prev.querySelector('.stat-big')?.textContent ?? 0)
     pick(7, true)
   })
@@ -171,8 +175,8 @@ export function statCard(feed: number[]): HTMLElement {
   return card
 }
 
-// ── 오늘의 추천 카드 더미: 위 카드를 손으로 끌면 기울며 따라오고, 멀리·빠르게 던지면 날아간다 ──
-// 오른쪽 = 맡기기, 왼쪽 = 다음에 (뒤로 돌아간다). 참고 값: drag 900 50, return 280 16, 기준 110px
+// ── Today's picks deck: dragging the top card tilts and follows the hand, and a far or fast throw sends it flying ──
+// Right = hand it over, left = later (goes to the back). Reference values: drag 900 50, return 280 16, threshold 110px
 
 export interface DeckItem {
   text: string
@@ -182,6 +186,7 @@ export interface DeckItem {
 let deckCache: { sig: string; el: HTMLElement } | undefined
 
 export function swipeDeck(items: DeckItem[], o: { onTake(text: string): void }): HTMLElement {
+  const txt = motionText(lang)
   const sig = items.map((i) => i.text).join('\n')
   if (deckCache?.sig === sig) return deckCache.el
   const TH = 110
@@ -199,10 +204,10 @@ export function swipeDeck(items: DeckItem[], o: { onTake(text: string): void }):
     w.textContent = it.why ?? ''
     const save = document.createElement('span')
     save.className = 'stamp take'
-    save.textContent = '맡기기'
+    save.textContent = txt.take
     const skip = document.createElement('span')
     skip.className = 'stamp skip'
-    skip.textContent = '다음에'
+    skip.textContent = txt.later
     el.append(t, w, save, skip)
     deck.append(el)
     return {
@@ -223,10 +228,10 @@ export function swipeDeck(items: DeckItem[], o: { onTake(text: string): void }):
   bar.className = 'deck-bar'
   const skipBtn = document.createElement('button')
   skipBtn.className = 'btn-ghost'
-  skipBtn.textContent = '다음에'
+  skipBtn.textContent = txt.later
   const takeBtn = document.createElement('button')
   takeBtn.className = 'btn'
-  takeBtn.textContent = '맡기기'
+  takeBtn.textContent = txt.take
   bar.append(skipBtn, takeBtn)
   const wrap = document.createElement('div')
   wrap.className = 'deck-wrap'
