@@ -144,6 +144,8 @@ export interface LinkHost {
   fileChunk?(
     id: string,
     offset: number,
+    /** 답 속 파일 링크: 보관함 id 대신 PC 경로 (본체가 사용자 폴더 안인지 본다) */
+    path?: string,
   ): Promise<{ size: number; name: string; mime: string; data: string } | { error: string }>
   /** 연결하기: 금고에 넣고 대신 로그인 */
   connectLogin(
@@ -517,8 +519,9 @@ export class PhoneLink {
       case 'file-chunk': {
         const id = String(msg.id).slice(0, 80)
         const offset = Math.max(0, Math.floor(Number(msg.offset) || 0))
+        const path = typeof msg.path === 'string' && msg.path ? msg.path.slice(0, 1000) : undefined
         const r = this.host.fileChunk
-          ? await this.host.fileChunk(id, offset).catch((e: Error) => ({ error: e.message }))
+          ? await this.host.fileChunk(id, offset, path).catch((e: Error) => ({ error: e.message }))
           : { error: '이 PC에서는 파일을 보낼 수 없어요' }
         return this.send(phone, { kind: 'file-chunk', id, offset, ...r })
       }

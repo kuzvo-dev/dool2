@@ -242,10 +242,32 @@ export function toggle(on: boolean, label: string, onChange: (on: boolean) => vo
 }
 
 /** 두리 답: 문단·목록·**굵게**만 그린다 (HTML로 해석하지 않는다) */
+/** 답 속 파일 링크를 누르면 (renderer가 붙인다: 본체에 열어 달라고) */
+let fileOpener: (path: string) => void = () => {}
+export function setFileOpener(fn: (path: string) => void) {
+  fileOpener = fn
+}
+
+/** 답 속 PC 파일: 누르면 기본 앱으로 연다 (파일 아이콘 + 파일 이름) */
+export function fileChip(text: string, path: string): HTMLElement {
+  const b = button(
+    'rich-file',
+    (e) => {
+      e.stopPropagation()
+      fileOpener(path)
+    },
+    icon('file'),
+    el('span', '', text),
+  )
+  b.title = `${path}\n누르면 열어요`
+  return b
+}
+
 export function setRich(target: HTMLElement, text: string) {
   const spans = (parent: HTMLElement, parts: Inline[]) => {
     for (const part of parts) {
-      if (part.href) {
+      if (part.file) parent.append(fileChip(part.text, part.file))
+      else if (part.href) {
         const a = el('a', part.src ? 'rich-src' : 'rich-link', part.text) as HTMLAnchorElement
         a.href = part.href
         a.target = '_blank'

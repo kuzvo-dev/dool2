@@ -1,5 +1,5 @@
 // 폰 연결 끝-끝: 진짜 중계 서버 + 진짜 본체 + 폰 흉내(브라우저와 같은 WebCrypto)
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentEvent, AgentStatus, PairInvite, PcToPhone, PhoneToPc } from '@dool2/protocol'
@@ -595,6 +595,41 @@ describe('보관함 파일을 폰으로 받기', () => {
     const m = p.inbox.find((x) => x.kind === 'file-chunk')
     expect(m?.kind === 'file-chunk' && m.error).toBeTruthy()
   })
+
+  it('답 속 파일 링크(path)도 받는다: 사용자 폴더 안만, 밖·민감한 파일은 이유를 돌려준다', async () => {
+    const docs = await mkdtemp(join(tmpdir(), 'dool2-docs-'))
+    const outside = await mkdtemp(join(tmpdir(), 'dool2-out-'))
+    await writeFile(join(docs, '초대장.png'), Buffer.from('그림'))
+    await writeFile(join(docs, 'key.pem'), 'secret')
+    await writeFile(join(outside, '남의.txt'), 'x')
+    const { api } = await boot({ fileFolders: { desktop: [], documents: [docs], downloads: [] } })
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    const ask = async (path: string) => {
+      p.inbox.length = 0
+      await p.send({ kind: 'file-chunk', id: `p:${path}`, offset: 0, path })
+      await waitFor(() => p.inbox.some((m) => m.kind === 'file-chunk'))
+      const m = p.inbox.find((x) => x.kind === 'file-chunk')
+      if (m?.kind !== 'file-chunk') throw new Error('답 없음')
+      return m
+    }
+    const ok = await ask(join(docs, '초대장.png'))
+    expect(ok.name).toBe('초대장.png')
+    expect(Buffer.from(ok.data ?? '', 'base64').toString()).toBe('그림')
+    expect((await ask(join(outside, '남의.txt'))).error).toBeTruthy()
+    expect((await ask(join(docs, 'key.pem'))).error).toBeTruthy()
+    expect((await ask(join(docs, '..', 'x.txt'))).error).toBeTruthy()
+    await rm(docs, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }, 30_000)
 })
 
 describe('폰에서 긴 목록 나눠 받기', () => {

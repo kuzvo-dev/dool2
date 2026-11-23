@@ -311,6 +311,16 @@ app.whenReady().then(async () => {
     renderFile,
     // 모션그래픽 영상 장면을 한 장씩 찍기 (video_motion)
     renderMotion,
+    // 답 속 파일 링크·보관함 [열기]: 본체가 사용자 폴더 안 파일인지 본 뒤 기본 앱으로 열거나 폴더에서 보여 준다
+    openFile: async (path, how) => {
+      if (SMOKE) return undefined
+      if (how === 'reveal') {
+        shell.showItemInFolder(path)
+        return undefined
+      }
+      const err = await shell.openPath(path)
+      return err ? `파일을 열지 못했어요: ${err}` : undefined
+    },
     // 폰에 보일 이 PC 이름 (기본: 컴퓨터 이름). 시험 캡처에 실제 컴퓨터 이름이 나오지 않게 바꿀 수 있다
     ...(process.env.DOOL2_PC_NAME ? { pcName: process.env.DOOL2_PC_NAME } : {}),
     dataDir,

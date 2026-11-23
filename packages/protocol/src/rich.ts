@@ -11,6 +11,11 @@ export interface Inline {
   href?: string
   /** 출처 칩: 문장 끝 "([MBC](주소), [연합뉴스](주소))" → 작은 칩으로 */
   src?: true
+  /**
+   * PC 파일 경로 ("~/Documents/두리/초대장.png"). 답에 `경로`·[이름](file:///경로)·[이름](~/경로)로 적힌 것.
+   * PC 앱은 누르면 그 파일을 열고, 폰은 PC에서 받아 저장한다 (경로가 사용자 폴더 안인지는 본체가 본다)
+   */
+  file?: string
 }
 
 export type RichBlock =
@@ -47,24 +52,64 @@ function bolds(text: string): Inline[] {
   return out
 }
 
-/** 링크·맨 주소를 조각으로 (나머지는 굵게만 본다) */
-function links(text: string, src?: true): Inline[] {
+// PC 파일: `~/Documents/두리/초대장.png` (확장자가 있는 경로만), [이름](file:///Users/…), [이름](~/…)
+// 맥 "~/"·"/Users/", 리눅스 "/home/", 윈도우 "C:\" 경로
+const PATH = String.raw`(?:~[\/\\]|\/Users\/|\/home\/|[A-Za-z]:\\)[^\`\n]{0,300}?\.[A-Za-z0-9]{1,6}`
+const CODE_PATH = String.raw`\`(${PATH})\``
+const MD_FILE = String.raw`\[([^\]\n]{1,80})\]\(((?:file:\/\/|~[\/\\])[^)\n]{1,600})\)`
+const FILE_RE = new RegExp(`${CODE_PATH}|${MD_FILE}`, 'g')
+
+/** file:///Users/a/%EB%91%90.png → /Users/a/두.png (윈도우 file:///C:/… → C:/…) */
+function filePath(target: string): string {
+  if (!target.startsWith('file://')) return target
+  let p = target.slice('file://'.length).replace(/^localhost\//, '/')
+  try {
+    p = decodeURIComponent(p)
+  } catch {}
+  return /^\/[A-Za-z]:[/\\]/.test(p) ? p.slice(1) : p
+}
+
+/** 파일 이름만: "~/Documents/두리/초대장.png" → "초대장.png" */
+export function fileName(path: string): string {
+  return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path
+}
+
+/** 파일 경로를 조각으로 (나머지는 굵게만 본다) */
+function files(text: string): Inline[] {
   const out: Inline[] = []
   let at = 0
-  for (const m of text.matchAll(LINK_OR_URL)) {
+  for (const m of text.matchAll(FILE_RE)) {
     const i = m.index ?? 0
     if (i > at) out.push(...bolds(text.slice(at, i)))
-    const href = m[2] ?? m[3] ?? ''
-    out.push({ text: m[1] ?? hostLabel(href), href, ...(src ? { src } : {}) })
+    const path = m[1] ?? filePath((m[3] ?? '').trim())
+    out.push({ text: m[2] ?? fileName(path), file: path })
     at = i + m[0].length
   }
   if (at < text.length) out.push(...bolds(text.slice(at)))
   return out
 }
 
-/** 한 줄 미리 보기용: 출처 묶음 "([A](주소))"는 빼고, 링크는 글만 남긴다 */
+/** 링크·맨 주소·파일 경로를 조각으로 (나머지는 굵게만 본다) */
+function links(text: string, src?: true): Inline[] {
+  const out: Inline[] = []
+  let at = 0
+  for (const m of text.matchAll(LINK_OR_URL)) {
+    const i = m.index ?? 0
+    if (i > at) out.push(...files(text.slice(at, i)))
+    const href = m[2] ?? m[3] ?? ''
+    out.push({ text: m[1] ?? hostLabel(href), href, ...(src ? { src } : {}) })
+    at = i + m[0].length
+  }
+  if (at < text.length) out.push(...files(text.slice(at)))
+  return out
+}
+
+/** 한 줄 미리 보기용: 출처 묶음 "([A](주소))"는 빼고, 링크는 글만, 파일 경로는 파일 이름만 남긴다 */
 export function stripLinks(text: string): string {
-  return text.replace(SRC_GROUP, '').replace(new RegExp(MD_LINK, 'g'), '$1')
+  return text
+    .replace(SRC_GROUP, '')
+    .replace(new RegExp(MD_LINK, 'g'), '$1')
+    .replace(FILE_RE, (_m, code?: string, label?: string) => label ?? fileName(code ?? ''))
 }
 
 export function inline(text: string): Inline[] {

@@ -91,6 +91,7 @@ import { askedForAccount, BrowserTools } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
+import { EXEC_EXT } from './download.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
@@ -152,6 +153,11 @@ export interface DaemonOptions {
   renderFile?: HtmlRenderer
   /** 움직이는 HTML을 영상 장면으로 한 장씩 찍는다 (PC 앱이 준다, video_motion) */
   renderMotion?: MotionRenderer
+  /**
+   * PC 파일을 기본 앱으로 열거나(open) 파인더·탐색기에서 보여 준다(reveal). PC 앱이 준다.
+   * 답 속 파일 링크·보관함 [열기]가 쓴다. 못 열면 이유를 돌려준다
+   */
+  openFile?: (path: string, how: 'open' | 'reveal') => Promise<string | undefined>
   dataDir?: string
   /** false면 일한 기록(logs 폴더)을 남기지 않는다 (기본: 며칠만 남김, journal.ts) */
   journal?: false
@@ -1594,10 +1600,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       libraryPage: async (q) => life.libraryPage(q),
       libraryItem: async (id) => life.libraryItem(id),
       // 보관함 파일 원본을 폰으로 (조각으로 나눠, 두리가 만든 파일 경로만)
-      fileChunk: async (id, offset) => {
-        const it = life.libraryItem(id)
-        if (!it?.path) return { error: '보관함에 PC 파일이 없는 항목이에요' }
-        const full = it.path.startsWith('~') ? join(homedir(), it.path.slice(1)) : it.path
+      // 답 속 파일 링크는 path로 (사용자 폴더 안·민감하지 않은 파일만)
+      fileChunk: async (id, offset, path) => {
+        let full: string
+        if (path) {
+          const real = fileTools.realReadable(path)
+          if (!real)
+            return { error: 'PC에서 그 파일을 찾지 못했어요. 옮기거나 지웠거나, 보낼 수 없는 곳이에요' }
+          full = real
+        } else {
+          const it = life.libraryItem(id)
+          if (!it?.path) return { error: '보관함에 PC 파일이 없는 항목이에요' }
+          full = it.path.startsWith('~') ? join(homedir(), it.path.slice(1)) : it.path
+        }
         // iCloud에만 있으면 내려받는다 (문서 폴더 동기화)
         const away = await ensureLocal(full).catch(() => undefined)
         if (away) return { error: away }
@@ -3404,6 +3419,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const url = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? ''
       const data = await thumbOrPhoto(url.slice(0, 800))
       return json(res, 200, data ? { data } : {})
+    }
+    // 답 속 파일 링크·보관함 [열기]: 사용자 폴더 안의 파일만 연다. 실행 파일은 열지 않고 폴더에서 보여 준다
+    if (a === 'files' && b === 'open' && !c && req.method === 'POST') {
+      const body = (await readJson(req)) as { path?: unknown; reveal?: unknown }
+      const real = fileTools.realReadable(String(body?.path ?? '').slice(0, 1000))
+      if (!real)
+        return json(res, 404, {
+          error: 'PC에서 그 파일을 찾지 못했어요. 옮기거나 지웠거나, 두리가 열 수 없는 곳이에요',
+        })
+      if (!opts.openFile) return json(res, 501, { error: '이 PC에서는 파일을 열 수 없어요' })
+      const how = body?.reveal === true || EXEC_EXT.test(real) ? 'reveal' : 'open'
+      const err = await opts.openFile(real, how).catch((e: Error) => e.message)
+      return err ? json(res, 500, { error: err }) : json(res, 200, { ok: true, how })
     }
     if (a === 'life' && !b && req.method === 'GET') return json(res, 200, life.state())
     // 긴 목록 나눠 받기: 피드(kinds=done,routine이면 활동), 보관함(tab=made|files). before는 앞 페이지의 next
