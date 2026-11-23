@@ -1052,9 +1052,18 @@ export type LifeAction =
   | { action: 'watch'; on: boolean }
   | { action: 'watch-now' }
 
+/** 폰 앱이 할 수 있는 것 (hello로 알린다) */
+export type PhoneCap = 'sms'
+
 export type PhoneToPc =
   | { kind: 'pair'; secret: string; signPub: string; name: string }
-  | { kind: 'hello' }
+  /** caps: 이 폰 앱이 할 수 있는 것 ('sms' = 내 번호로 문자 보내기). 예전 앱은 보내지 않는다 */
+  | { kind: 'hello'; caps?: PhoneCap[] }
+  /**
+   * 문자 보내기 결과 (승인 서명 decide보다 먼저 보낸다). 사용자가 폰에서 승인하면 폰 앱이 직접 보낸다.
+   * message는 폰이 만든 한 줄 (받는 사람 이름과 가린 번호, 못 보냈으면 까닭). 번호 전체는 싣지 않는다
+   */
+  | { kind: 'sms-result'; id: string; ok: boolean; message: string }
   /** 폰에 보일 이 PC 이름 바꾸기 (PC 설정에 저장돼 다른 폰에도 같이 보인다) */
   | { kind: 'rename-pc'; name: string }
   /** 앱을 켜 두고 있어요 (1분마다). PC는 흘려 쓰는 답·실시간 화면을 켜 둔 폰에만 보낸다 */

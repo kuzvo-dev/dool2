@@ -17,6 +17,7 @@ export const SCREEN_TOOLS = [
   'read',
   'click',
   'type',
+  'login',
   'key',
   'screenshot',
   'request_app',
@@ -56,6 +57,39 @@ export interface ScreenSettings {
   allowed(): string[]
   setAllowed(list: string[]): Promise<void> | void
   finalStep(): 'approve' | 'self'
+  /** 금고 계정 (사이트 주소·아이디만). 앱 로그인에 쓸 계정을 고른다 */
+  vaultList?(): Promise<{ id: string; origin: string; username: string }[]>
+  /** 금고 값 꺼내기 (본체 안에서만 쓴다. AI에게 돌려주지 않는다) */
+  vaultReveal?(id: string): Promise<{ username: string; password: string } | undefined>
+}
+
+/** 주소에서 이름 부분 (accounts.kakao.com → kakao). 흔한 앞뒤 말은 뺀다 */
+const HOST_NOISE = new Set(['www', 'accounts', 'account', 'login', 'nid', 'auth', 'id', 'm', 'com', 'co', 'kr', 'net', 'org', 'io', 'app'])
+export function hostWords(origin: string): string[] {
+  let host = ''
+  try {
+    host = new URL(origin).hostname
+  } catch {
+    return []
+  }
+  return host
+    .toLowerCase()
+    .split('.')
+    .filter((w) => w.length >= 3 && !HOST_NOISE.has(w))
+}
+
+/**
+ * 이 앱에 넣어도 되는 금고 계정: 사이트 이름(kakao)이 앱 번들 id(com.kakao.KakaoTalkMac)에 들어 있을 때만.
+ * AI가 다른 사이트 비밀번호를 엉뚱한 앱에 넣지 못하게 본체가 정한다
+ */
+export function vaultForApp<T extends { origin: string }>(bundleId: string, entries: T[], site?: string): T[] {
+  const id = bundleId.toLowerCase()
+  const want = site?.toLowerCase().replace(/^https?:\/\//, '').trim()
+  return entries.filter((e) => {
+    const words = hostWords(e.origin)
+    if (!words.some((w) => id.includes(w))) return false
+    return !want || e.origin.toLowerCase().includes(want)
+  })
 }
 
 const text = (t: string): ToolResult => ({ content: [{ type: 'text', text: t }] })
@@ -71,6 +105,8 @@ interface AppInfo {
   bundleId: string
   name: string
   active?: boolean
+  /** 앱스토어에서 받는 중 (아직 열 수 없다) */
+  installing?: boolean
 }
 
 export class ScreenTools {
@@ -105,6 +141,20 @@ export class ScreenTools {
       )
     }
     return bundleId
+  }
+
+  /**
+   * 메신저에서 이 Enter가 보내기인지: 글을 쓰는 칸(입력칸)에 초점이 있을 때만 보내기다.
+   * 검색칸·채팅 목록에서 Enter는 방 열기라 승인을 받지 않는다 (11-23 실측: 방 열기에도 승인을 두 번 받았다).
+   * 모르겠으면 보내기로 본다
+   */
+  private async enterSends(id: string): Promise<boolean> {
+    const f = (await this.hands.call('focused', { bundleId: id }).catch(() => undefined)) as
+      | { role?: string; subrole?: string }
+      | undefined
+    if (!f?.role) return true
+    if (f.subrole === 'AXSearchField') return false
+    return ['AXTextArea', 'AXTextField', 'AXComboBox', 'AXWebArea', 'AXGroup', 'AXScrollArea'].includes(f.role)
   }
 
   private async status(): Promise<Status> {
@@ -161,7 +211,12 @@ export class ScreenTools {
               ? [
                   '',
                   `설치된 앱 중 "${q}":`,
-                  ...(installed.length ? installed.map((x) => `- ${mark(x)}`) : ['- 없음']),
+                  ...(installed.length
+                    ? installed.map(
+                        (x) =>
+                          `- ${mark(x)}${x.installing ? ' · 아직 설치 중(앱스토어에서 받는 중이라 열 수 없어요. 설치됐다고 말하지 말고 App Store 화면에서 진행률을 보세요)' : ''}`,
+                      )
+                    : ['- 없음']),
                 ]
               : []),
           ].join('\n'),
@@ -211,10 +266,38 @@ export class ScreenTools {
           const el = this.screens.get(id)?.get(ref)
           if (!el) return err(`${ref}를 모르겠어요. screen_read로 화면을 먼저 읽어 주세요.`)
           if (el.role === '비밀번호칸')
-            return err('비밀번호 칸에는 넣지 않아요. 사용자에게 직접 해 달라고 부탁하세요.')
+            return err('비밀번호 칸에는 screen_type으로 넣지 않아요. 로그인 화면이면 screen_login으로 금고 계정을 넣어요.')
         }
         await this.hands.call('type', { bundleId: id, text: a.text, ...(ref ? { ref } : {}) })
         return text(`글자를 넣었어요. 아직 보내지는 않았어요. 확인하려면 screen_read로 다시 읽으세요.`)
+      }
+      case 'login': {
+        const id = this.gate(a.bundleId)
+        if (typeof id !== 'string') return id
+        const r = await this.ready()
+        if (r) return r
+        if (!this.settings.vaultList || !this.settings.vaultReveal) return err('이 PC에서는 금고를 쓸 수 없어요.')
+        const all = await this.settings.vaultList()
+        const fit = vaultForApp(id, all, typeof a.site === 'string' ? a.site : undefined)
+        const name = this.names.get(id) ?? id
+        if (!fit.length)
+          return err(
+            `금고에 ${name}에 쓸 계정이 없어요. 계정 사이트 주소로 로그인 카드를 띄워(browser_request_login, url 예: https://accounts.kakao.com) 사용자가 폰에서 아이디·비밀번호를 넣게 한 뒤 screen_login을 다시 불러요.`,
+          )
+        if (fit.length > 1 && typeof a.site !== 'string')
+          return err(
+            `${name}에 쓸 수 있는 계정이 여러 개예요: ${fit.map((e) => `${new URL(e.origin).hostname}(${e.username})`).join(', ')}. site로 하나를 골라 다시 불러요.`,
+          )
+        const entry = fit[0] as (typeof fit)[number]
+        const cred = await this.settings.vaultReveal(entry.id)
+        if (!cred?.password) return err('금고에서 비밀번호를 꺼내지 못했어요. 로그인 카드로 다시 받아 주세요.')
+        await this.hands.call('fill_login', { bundleId: id, username: cred.username, password: cred.password }, 30_000)
+        await sleep(300)
+        return this.read(
+          id,
+          undefined,
+          `금고의 ${new URL(entry.origin).hostname} 계정(${entry.username})으로 아이디·비밀번호를 넣었어요(값은 두리만 봐요). 로그인 버튼을 screen_click으로 누르고, 기기 인증·인증번호가 나오면 폰 카드로 받아요.`,
+        )
       }
       case 'key': {
         const id = this.gate(a.bundleId)
@@ -224,7 +307,12 @@ export class ScreenTools {
         const key = String(a.key ?? '')
         const mods = Array.isArray(a.modifiers) ? a.modifiers.map(String) : []
         // 메신저에서 Enter는 "보내기"다
-        if ((key === 'Enter' || key === 'Return') && MESSENGERS.includes(id) && !mods.includes('shift'))
+        if (
+          (key === 'Enter' || key === 'Return') &&
+          MESSENGERS.includes(id) &&
+          !mods.includes('shift') &&
+          (await this.enterSends(id))
+        )
           return this.blocked('contact', '메신저에서 Enter(보내기)', 'Enter', 'key:Enter')
         await this.hands.call('key', { bundleId: id, key, modifiers: mods })
         await sleep(300)

@@ -76,16 +76,28 @@ func installedApps() -> [[String: Any]] {
     for it in items where it.hasSuffix(".app") {
       let path = (d as NSString).appendingPathComponent(it)
       guard let b = Bundle(path: path), let id = b.bundleIdentifier else { continue }
-      out.append(["bundleId": id, "name": fm.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")])
+      var row: [String: Any] = ["bundleId": id, "name": fm.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")]
+      // 앱스토어에서 받는 중이면 아이콘·정보만 있는 빈 앱이 먼저 생긴다 (실행 파일이 없다). 설치됐다고 말하면 안 된다
+      if !hasExecutable(b) { row["installing"] = true }
+      out.append(row)
     }
   }
   return out
+}
+
+/** 실행 파일까지 있어야 다 깔린 앱이다 (앱스토어 설치 중인 빈 앱은 Info.plist·아이콘만 있다) */
+func hasExecutable(_ b: Bundle) -> Bool {
+  guard let exe = b.executableURL else { return false }
+  return FileManager.default.isExecutableFile(atPath: exe.path)
 }
 
 func openApp(_ bundleId: String) async throws -> [String: Any] {
   try checkAllowed(bundleId)
   guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
     throw fail("이 앱이 설치돼 있지 않아요: \(bundleId)")
+  }
+  if let b = Bundle(url: url), !hasExecutable(b) {
+    throw fail("아직 설치 중이에요(앱스토어에서 받는 중): \(bundleId). 받기가 끝난 뒤 다시 여세요")
   }
   let cfg = NSWorkspace.OpenConfiguration()
   cfg.activates = true
@@ -171,6 +183,7 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
   guard let win = focusedWindow(app.processIdentifier) else { throw fail("이 앱에 열린 창이 없어요") }
   refs = [:]
   refsApp = bundleId
+  let winFrame = frame(win)
   var lines: [String] = []
   var size = 0
   var nodes = 0
@@ -199,6 +212,12 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
       refs[ref] = el
       var line = "[\(ref) \(kr)"
       if let nm = name { line += " \"\(nm.prefix(80).replacingOccurrences(of: "\"", with: "'"))\"" }
+      else if let f = frame(el), let wf = winFrame, wf.width > 0, wf.height > 0, f.width > 0 {
+        // 글자 없는 그림 버튼 (카카오톡 새 채팅의 일반채팅·팀채팅·오픈채팅): 창 안 위치로 화면 그림과 맞춰 고르게 한다
+        let x = Int(((f.midX - wf.minX) / wf.width * 100).rounded())
+        let y = Int(((f.midY - wf.minY) / wf.height * 100).rounded())
+        line += " 이름 없음 · 창 왼쪽에서 \(x)% 위에서 \(y)%"
+      }
       if role == "AXTextField" || role == "AXTextArea" || role == "AXComboBox" {
         // 비밀번호 칸 값은 절대 내보내지 않는다
         if sub != "AXSecureTextField", let v = text(el, kAXValueAttribute) {
@@ -220,6 +239,18 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
     for c in kids(el) { walk(c, depth + 1) }
   }
   walk(win, 0)
+  // 팝업(+ 메뉴 같은 popover)·다른 창·열린 메뉴도 읽는다: 앞 창만 읽으면 그 안의 항목을 누를 수 없었다 (11-23 카카오톡 새 채팅 메뉴)
+  let appEl = AXUIElementCreateApplication(app.processIdentifier)
+  for w in (attr(appEl, kAXWindowsAttribute) as? [AXUIElement]) ?? [] where !CFEqual(w, win) {
+    if truncated { break }
+    add("## (다른 창) \(text(w, kAXTitleAttribute) ?? "")")
+    walk(w, 0)
+  }
+  for c in kids(appEl) where text(c, kAXRoleAttribute) == "AXMenu" {
+    if truncated { break }
+    add("## (열린 메뉴)")
+    walk(c, 0)
+  }
   return [
     "app": app.localizedName ?? bundleId,
     "bundleId": bundleId,
@@ -331,6 +362,90 @@ func typeText(_ args: [String: Any]) async throws -> [String: Any] {
   return ["typed": s.count]
 }
 
+/** 글자를 키 입력으로 친다 (클립보드를 쓰지 않는다: 비밀번호가 클립보드에 남으면 안 된다) */
+func typeUnicode(_ s: String) {
+  let src = CGEventSource(stateID: .hidSystemState)
+  for ch in s.utf16 {
+    var c = ch
+    let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
+    let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false)
+    down?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c)
+    up?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c)
+    down?.post(tap: .cghidEventTap)
+    usleep(8_000)
+    up?.post(tap: .cghidEventTap)
+    usleep(8_000)
+  }
+}
+
+/** 칸을 눌러 비우고 넣는다 */
+func focusAndClear(_ el: AXUIElement) async throws {
+  AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+  if let f = frame(el), f.width > 0 { postMouseClick(CGPoint(x: f.midX, y: f.midY)) }
+  try await Task.sleep(nanoseconds: 150_000_000)
+  try postKey("a", ["cmd"])
+  try postKey("Backspace", [])
+  try await Task.sleep(nanoseconds: 80_000_000)
+}
+
+/**
+ * 로그인 칸 채우기: 본체가 금고에서 꺼낸 아이디·비밀번호를 지금 창의 로그인 칸에 넣는다 (값은 AI를 거치지 않는다).
+ * 비밀번호는 비밀번호 칸(AXSecureTextField)에만 넣는다. 아이디는 비밀번호 칸 위쪽의 입력칸에.
+ * 로그인 버튼은 누르지 않는다 (두리가 화면을 읽고 누른다)
+ */
+func fillLogin(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
+  let user = args["username"] as? String ?? ""
+  guard let password = args["password"] as? String, !password.isEmpty else { throw fail("넣을 비밀번호가 없어요") }
+  let app = try await activate(bundleId)
+  guard let win = focusedWindow(app.processIdentifier) else { throw fail("이 앱에 열린 창이 없어요") }
+  var fields: [AXUIElement] = []
+  var secure: AXUIElement?
+  var nodes = 0
+  func walk(_ el: AXUIElement, _ depth: Int) {
+    if nodes > 2500 || depth > 40 { return }
+    nodes += 1
+    let role = text(el, kAXRoleAttribute) ?? ""
+    let sub = text(el, kAXSubroleAttribute)
+    if (attr(el, kAXEnabledAttribute) as? Bool) != false {
+      if sub == "AXSecureTextField" {
+        if secure == nil { secure = el }
+        return
+      }
+      if (role == "AXTextField" || role == "AXComboBox") && sub != "AXSearchField" { fields.append(el) }
+    }
+    for c in kids(el) { walk(c, depth + 1) }
+  }
+  walk(win, 0)
+  guard let pw = secure else { throw fail("이 창에 비밀번호 칸이 보이지 않아요. 로그인 화면인지 screen_read로 확인해 주세요") }
+  let pwY = frame(pw)?.minY ?? .greatestFiniteMagnitude
+  let userField = fields.last(where: { (frame($0)?.minY ?? 0) < pwY }) ?? fields.first
+  var filledUser = false
+  if !user.isEmpty, let uf = userField {
+    try await focusAndClear(uf)
+    // 아이디(메일·전화번호)는 한글 입력기에 걸리지 않게 붙여 넣는다 (비밀번호가 아니라 클립보드를 써도 된다)
+    try await paste(user)
+    try await Task.sleep(nanoseconds: 150_000_000)
+    filledUser = true
+  }
+  try await focusAndClear(pw)
+  typeUnicode(password)
+  return ["username": filledUser, "password": true]
+}
+
+/** 지금 글자가 들어가는 곳 (메신저에서 Enter가 보내기인지 가린다: 검색칸·목록이면 보내기가 아니다) */
+func focusedInfo(_ args: [String: Any]) async throws -> [String: Any] {
+  let bundleId = args["bundleId"] as? String ?? ""
+  try checkAllowed(bundleId)
+  guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
+  guard let app = runningApp(bundleId) else { throw fail("이 앱이 켜져 있지 않아요") }
+  let appEl = AXUIElementCreateApplication(app.processIdentifier)
+  guard let f = attr(appEl, kAXFocusedUIElementAttribute) else { return ["role": ""] }
+  let el = f as! AXUIElement
+  return ["role": text(el, kAXRoleAttribute) ?? "", "subrole": text(el, kAXSubroleAttribute) ?? ""]
+}
+
 func pressKey(_ args: [String: Any]) async throws -> [String: Any] {
   let bundleId = args["bundleId"] as? String ?? ""
   guard AXIsProcessTrusted() else { throw fail("손쉬운 사용 권한이 필요해요") }
@@ -405,6 +520,8 @@ func run(_ cmd: String, _ args: [String: Any]) async throws -> Any {
     return try await snapshot(args["bundleId"] as? String ?? "", maxChars: args["maxChars"] as? Int ?? 12000)
   case "click": return try await click(args)
   case "type": return try await typeText(args)
+  case "fill_login": return try await fillLogin(args)
+  case "focused": return try await focusedInfo(args)
   case "key": return try await pressKey(args)
   case "screenshot": return try await screenshot(args)
   default: throw fail("모르는 명령이에요: \(cmd)")

@@ -589,6 +589,26 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('show_draft'),
   )
   server.registerTool(
+    'phone_sms',
+    {
+      title: '문자 보내기 (내 폰 번호로)',
+      description:
+        '사용자 폰 번호로 문자(SMS)를 보낸다. "엄마한테 늦는다고 문자 보내 줘", show_draft(via: sms)의 [보내기]를 눌렀을 때 쓴다. ' +
+        '폰에 승인 카드가 뜨고, 사용자가 받는 사람과 글을 보고 승인하면 폰 앱이 직접 보낸다(다른 앱을 열지 않는다). ' +
+        '받는 사람은 연락처 이름 그대로 넘기면 폰이 연락처에서 번호를 찾는다: 번호를 몰라도 묻지 말고 이름으로 부른다. ' +
+        '부른 뒤에는 폰에서 확인해 달라고 한 문장으로 말하고 답을 끝낸다. 결과(보냈어요·못 보낸 까닭)는 이어서 온다. ' +
+        '카카오톡은 이 도구가 아니라 PC 카카오톡 화면 제어(screen_*)로 보낸다.',
+      inputSchema: {
+        to: z
+          .string()
+          .max(40)
+          .describe('받는 사람: 연락처 이름(엄마, 김민수, 김 팀장님) 또는 전화번호(010-1234-5678). 여러 명이면 한 명씩 부른다'),
+        text: z.string().max(1000).describe('보낼 글 그대로 (사용자가 말하지 않은 사실은 넣지 않는다)'),
+      },
+    },
+    call('phone_sms'),
+  )
+  server.registerTool(
     'feed_post',
     {
       title: '피드에 올리기',

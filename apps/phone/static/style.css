@@ -360,6 +360,20 @@ button {
   color: var(--ink-muted);
   line-height: 1.5;
 }
+/* 문자 보내기 카드: 받는 사람 한 줄, 보낼 글은 말풍선처럼 줄바꿈 그대로 */
+.sms-to strong {
+  font-size: 16px;
+}
+.sms-card .sms-text {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--raise);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
 .approve-card .approve-actions,
 .app-sheet .approve-actions {
   display: grid;

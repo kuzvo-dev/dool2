@@ -69,6 +69,18 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'login',
+    '앱에 로그인 칸 채우기',
+    'PC 앱(카카오톡 PC 등)의 로그인 화면에서 금고의 아이디·비밀번호를 넣는다. 값은 두리 본체가 직접 넣고 AI에게는 보이지 않는다. ' +
+      '앱 이름과 맞는 사이트 계정만 쓴다(카카오톡 ↔ accounts.kakao.com). 넣은 뒤 로그인 버튼은 screen_click으로 누른다. ' +
+      '금고에 계정이 없으면 그 사이트 주소로 로그인 카드를 띄워 폰에서 받는다. 비밀번호 칸에 screen_type을 쓰지 않는다.',
+    {
+      bundleId,
+      site: z.string().max(80).optional().describe('계정이 여러 개일 때 고를 사이트 주소 (예: accounts.kakao.com)'),
+    },
+    false,
+  )
+  tool(
     'key',
     '앱에서 키 누르기',
     'Tab, Escape, 화살표, Backspace 같은 키를 누른다. modifiers로 cmd·shift·option·ctrl. 메신저에서 Enter는 보내기라서 승인을 받는다.',

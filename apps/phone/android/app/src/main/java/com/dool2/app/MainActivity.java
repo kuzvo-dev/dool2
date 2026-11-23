@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DeviceAuthPlugin.class);
         // 보관함 파일을 폰에 저장·다른 앱으로 보내기
         registerPlugin(FileSavePlugin.class);
+        // 내 번호로 문자 보내기 (승인 카드에서 승인한 것만)
+        registerPlugin(SmsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

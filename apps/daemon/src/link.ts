@@ -90,6 +90,10 @@ export interface LinkHost {
   signup?(site: string, loginId: string | undefined): void
   /** 계정을 몰라요 (아이디 찾기·비밀번호 재설정을 두리가) */
   forgot?(site: string, loginId: string | undefined): void
+  /** 폰이 알린 할 수 있는 것 (hello). 문자 보내기는 이걸로 폰 앱이 새 판인지 본다 */
+  caps?(phone: string, caps: string[]): void
+  /** 폰이 직접 보낸 문자의 결과 (승인 서명보다 먼저 온다) */
+  smsResult?(id: string, r: { ok: boolean; message: string }): void
   /** 문제 알리기: 폰 앱의 방금 기록을 일한 기록에 남긴다 */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
   /** 설정 > 내 정보·결제 수단 (값은 가려서만 돌려준다) */
@@ -388,7 +392,18 @@ export class PhoneLink {
   private async handle(phone: PairedPhone, msg: PhoneToPc) {
     switch (msg.kind) {
       case 'hello':
+        this.host.caps?.(
+          phone.id,
+          (Array.isArray(msg.caps) ? (msg.caps as unknown[]) : []).filter((c): c is string => typeof c === 'string').slice(0, 20),
+        )
         return this.send(phone, await this.stateFor(phone))
+      case 'sms-result':
+        if (typeof msg.id !== 'string') return
+        this.host.smsResult?.(msg.id, {
+          ok: msg.ok === true,
+          message: String(msg.message ?? '').slice(0, 300),
+        })
+        return
       case 'rename-pc': {
         const name = String(msg.name ?? '')
           .trim()

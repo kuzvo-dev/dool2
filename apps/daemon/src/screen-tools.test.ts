@@ -9,8 +9,16 @@ const KAKAO = 'com.kakao.KakaoTalkMac'
 function fakeHands(opts: { accessibility?: boolean; locked?: boolean } = {}) {
   const calls: [string, Record<string, unknown> | undefined][] = []
   let sendLabel = '전송'
-  const hands: HandsCaller & { calls: typeof calls; setSend(l: string): void } = {
+  let focusedRole: { role: string; subrole?: string } = { role: 'AXTextArea' }
+  const hands: HandsCaller & {
+    calls: typeof calls
+    setSend(l: string): void
+    setFocused(f: { role: string; subrole?: string }): void
+  } = {
     calls,
+    setFocused: (f) => {
+      focusedRole = f
+    },
     setSend: (l) => {
       sendLabel = l
     },
@@ -24,7 +32,11 @@ function fakeHands(opts: { accessibility?: boolean; locked?: boolean } = {}) {
           locked: opts.locked ?? false,
         }
       if (cmd === 'apps') return [{ bundleId: KAKAO, name: '카카오톡', active: true }]
-      if (cmd === 'installed') return [{ bundleId: 'com.apple.Notes', name: '메모' }]
+      if (cmd === 'installed')
+        return [
+          { bundleId: 'com.apple.Notes', name: '메모' },
+          { bundleId: 'com.example.Downloading', name: '받는중', installing: true },
+        ]
       if (cmd === 'snapshot')
         return {
           app: '카카오톡',
@@ -34,6 +46,7 @@ function fakeHands(opts: { accessibility?: boolean; locked?: boolean } = {}) {
         }
       if (cmd === 'screenshot') return { data: 'SHOT', window: '엄마' }
       if (cmd === 'click') return { via: 'press' }
+      if (cmd === 'focused') return focusedRole
       return {}
     },
   }
@@ -70,6 +83,13 @@ describe('PC 화면 제어', () => {
     const done = await tools.approve(rec?.id ?? '')
     expect(done.ok).toBe(true)
     expect(allowed()).toEqual([KAKAO])
+  })
+
+  it('앱스토어에서 받는 중인 앱은 설치 중이라고 알린다 (빈 앱을 보고 설치됐다고 하지 않게)', async () => {
+    const { tools } = setup()
+    const r = text(await tools.run('apps', { query: '받는중' }))
+    expect(r).toContain('받는중 (com.example.Downloading) · 아직 설치 중')
+    expect(text(await tools.run('apps', { query: '메모' }))).not.toContain('설치 중')
   })
 
   it('터미널·설정·Finder는 기본으로 막고, 허용 요청도 받지 않는다', async () => {
@@ -140,5 +160,64 @@ describe('PC 화면 제어', () => {
     const rec = tools.approvals.list().at(-1)
     expect((await tools.approve(rec?.id ?? '')).ok).toBe(true)
     expect(hands.calls.at(-1)).toEqual(['key', { bundleId: KAKAO, key: 'Enter', modifiers: [] }])
+  })
+})
+
+describe('앱 로그인 (금고 계정)', () => {
+  it('앱 이름과 맞는 사이트 계정만 고른다', async () => {
+    const { vaultForApp } = await import('./screen-tools.js')
+    const entries = [
+      { origin: 'https://accounts.kakao.com', username: 'a' },
+      { origin: 'https://nid.naver.com', username: 'b' },
+      { origin: 'https://www.coupang.com', username: 'c' },
+    ]
+    expect(vaultForApp('com.kakao.KakaoTalkMac', entries).map((e) => e.username)).toEqual(['a'])
+    expect(vaultForApp('com.apple.Notes', entries)).toEqual([])
+  })
+
+  it('금고 값은 도우미에게만 넘기고 AI에게 돌려주지 않는다', async () => {
+    const hands = fakeHands()
+    const tools = new ScreenTools(hands, new Approvals(), {
+      allowed: () => [KAKAO],
+      setAllowed: () => {},
+      finalStep: () => 'approve',
+      vaultList: async () => [
+        { id: 'v1', origin: 'https://accounts.kakao.com', username: 'me@example.com' },
+        { id: 'v2', origin: 'https://nid.naver.com', username: 'naver' },
+      ],
+      vaultReveal: async (id) => (id === 'v1' ? { username: 'me@example.com', password: 'S3cret!' } : undefined),
+    })
+    const r = await tools.run('login', { bundleId: KAKAO })
+    expect(r.isError).toBeFalsy()
+    expect(text(r)).not.toContain('S3cret!')
+    const fill = hands.calls.find(([c]) => c === 'fill_login')
+    expect(fill?.[1]).toMatchObject({ bundleId: KAKAO, username: 'me@example.com', password: 'S3cret!' })
+  })
+
+  it('맞는 계정이 없으면 로그인 카드로 받게 한다', async () => {
+    const tools = new ScreenTools(fakeHands(), new Approvals(), {
+      allowed: () => [KAKAO],
+      setAllowed: () => {},
+      finalStep: () => 'approve',
+      vaultList: async () => [{ id: 'v2', origin: 'https://nid.naver.com', username: 'naver' }],
+      vaultReveal: async () => undefined,
+    })
+    expect(text(await tools.run('login', { bundleId: KAKAO }))).toContain('browser_request_login')
+  })
+})
+
+describe('메신저 Enter', () => {
+  it('검색칸·목록에서 Enter(방 열기)는 승인 없이, 입력칸에서 Enter(보내기)는 승인을 받는다', async () => {
+    const { tools, hands } = setup()
+    const keys = () => hands.calls.filter(([c]) => c === 'key').length
+    hands.setFocused({ role: 'AXTextField', subrole: 'AXSearchField' })
+    expect((await tools.run('key', { bundleId: KAKAO, key: 'Enter' })).isError).toBeFalsy()
+    hands.setFocused({ role: 'AXTable' })
+    expect((await tools.run('key', { bundleId: KAKAO, key: 'Enter' })).isError).toBeFalsy()
+    expect(keys()).toBe(2)
+    hands.setFocused({ role: 'AXTextArea' })
+    const r = await tools.run('key', { bundleId: KAKAO, key: 'Enter' })
+    expect(text(r)).toContain('screen_request_approval')
+    expect(keys()).toBe(2)
   })
 })

@@ -141,3 +141,70 @@ export async function shareFile(name: string, mime: string, data: string): Promi
     return `보내지 못했어요: ${(e as Error).message || '새 앱으로 바꿔 주세요'}`
   }
 }
+
+/** 내 번호로 문자 보내기 (SmsPlugin.java). 사용자가 승인 카드에서 승인한 문자만 보낸다 */
+export interface SmsPerson {
+  name: string
+  number: string
+  label: string
+}
+const Sms = registerPlugin<{
+  available(): Promise<{ ok: boolean }>
+  permissions(): Promise<{ contacts: boolean; sms: boolean }>
+  ask(): Promise<void>
+  find(o: { query: string }): Promise<{ people: SmsPerson[]; denied?: boolean }>
+  send(o: {
+    to: string
+    text: string
+  }): Promise<{ ok: boolean; parts?: number; reason?: string; message?: string }>
+}>('Sms')
+
+/** 이 앱이 문자를 보낼 수 있는지 (앱 + 플러그인 + 전화 기능). 예전 앱·웹이면 false */
+export async function smsAvailable(): Promise<boolean> {
+  if (!isNative()) return false
+  try {
+    return (await Sms.available()).ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 연락처·문자 권한: 없으면 한 번에 묻고, 답할 때까지(최대 60초) 1초마다 다시 본다.
+ * 권한 창이 떠 있는 동안 앱이 얼려져 플러그인 콜백이 사라지는 일이 있어 콜백에 기대지 않는다
+ */
+export async function smsPermissions(): Promise<{ contacts: boolean; sms: boolean }> {
+  try {
+    let p = await Sms.permissions()
+    if (p.contacts && p.sms) return p
+    await Sms.ask()
+    // 창이 둘(연락처·문자) 연달아 뜬다. 둘 다 답하거나 60초가 지날 때까지 본다
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1000))
+      p = await Sms.permissions()
+      if (p.contacts && p.sms) return p
+      // 거절했으면 창이 닫히고 앱이 다시 앞에 온다: 그 답으로 끝낸다
+      if (i >= 2 && document.hasFocus()) return p
+    }
+    return p
+  } catch {
+    return { contacts: false, sms: false }
+  }
+}
+
+/** 연락처에서 이름으로 찾기 (권한은 smsPermissions로 먼저). denied: 연락처 권한이 없다 */
+export async function smsFind(query: string): Promise<{ people: SmsPerson[]; denied?: boolean }> {
+  try {
+    return await Sms.find({ query })
+  } catch {
+    return { people: [] }
+  }
+}
+
+export async function smsSend(to: string, text: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    return await Sms.send({ to, text })
+  } catch (e) {
+    return { ok: false, message: `보내지 못했어요: ${(e as Error).message}` }
+  }
+}
