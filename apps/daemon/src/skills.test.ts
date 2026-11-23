@@ -80,10 +80,12 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
     await s.connections()
     const map = s.serviceMap()
     expect(map).toMatch(/- 캐치테이블\(catchtable\)✓⚡ — .*식당.*\[식당 예약[^\n]*\]$/m)
-    expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) — /)
+    // Not connected: name, category and abilities only (service_find shows the rest)
+    expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) \[/)
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
-    expect(map.length).toBeLessThan(13100) // 서비스가 늘면 조금씩 (11-20 고향사랑e음·정책브리핑, 11-21 비급여 진료비·유실물, 11-23 그림 AI 둘)
+    // It goes into every session's instructions: only connected and no-login services carry their summary
+    expect(map.length).toBeLessThan(7500)
   })
 })
 
@@ -109,7 +111,7 @@ describe('로그인 없이 되는 도구 알리기', () => {
           : {},
     )
     await s.connections()
-    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ — .*\(no login: catchtable_search\)$/m)
+    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ \[.*\(no login: catchtable_search\)$/m)
   })
 })
 

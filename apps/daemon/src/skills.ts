@@ -90,14 +90,18 @@ export class Skills {
       // What the service is (summary) and what it can do: the AI picks the service that fits the request
       // Even before connecting, list the tools that work without login (so it does not ask to connect first)
       const free = !on ? (it.tools ?? []).filter((t) => !t.login).map((t) => t.name) : []
-      const line = `${c.name}(${c.id})${on ? '✓' : ''}${it.tools?.length ? '⚡' : ''} — ${c.summary} [${can}]${free.length ? ` (no login: ${free.join(', ')})` : ''}`
+      // The one-line summary only for services Dool2 can use right away (connected, or no login at all), or when
+      // there are no abilities to go by. For the rest the name, category and abilities are enough to pick one, and
+      // service_find gives the full card. This list goes into every session's instructions, so it stays short
+      const summary = on || c.how === 'open' || !c.abilities.length ? ` — ${c.summary}` : ''
+      const line = `${c.name}(${c.id})${on ? '✓' : ''}${it.tools?.length ? '⚡' : ''}${summary} [${can}]${free.length ? ` (no login: ${free.join(', ')})` : ''}`
       const k = CONNECT_CATEGORIES[c.category]
       by.set(k, [...(by.get(k) ?? []), line])
     }
     if (!by.size) return ''
     return [
       '## Services (✓ connected, ⚡ Doori tools, [ ] abilities)',
-      'Even if a request names no service, pick the best one below yourself.',
+      'Even if a request names no service, pick the best one below yourself. service_find shows any service in full (what it does, tools, inputs).',
       ...[...by].map(([k, lines]) => `### ${k}\n${lines.map((l) => `- ${l}`).join('\n')}`),
     ].join('\n')
   }
