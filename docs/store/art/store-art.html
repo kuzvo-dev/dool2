@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>두리 웹 스토어 그림</title>
+<!-- Chrome 웹 스토어 그림 (스크린샷 1280×800 ×5, 작은 홍보 타일 440×280, 큰 배너 1400×560).
+     주소 끝 #s1~#s5·#tile·#marquee로 한 장씩 보여 주고 그 크기로 찍는다 (docs/store/art/render.mjs) -->
+<style>
+@font-face { font-family: Pretendard; src: url('../../../packages/ui/fonts/PretendardVariable.woff2') format('woff2'); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --mint: #4cc98f; --mint-deep: #1f9e66; --mint-soft: #15302a; --butter: #ffd66b; --ink: #f2f3f5; --muted: #a3a8b1; --bg: #0d0f12; --card: #171a1f; --line: #262a31; }
+html, body { background: #000; font-family: Pretendard, 'Apple SD Gothic Neo', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; word-break: keep-all; }
+.slide { display: none; position: relative; overflow: hidden; background: var(--bg); }
+.slide:target { display: block; }
+.shot { width: 1280px; height: 800px; }
+.tile { width: 440px; height: 280px; }
+.marquee { width: 1400px; height: 560px; }
+.glow { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .55; pointer-events: none; }
+.g1 { width: 620px; height: 620px; background: radial-gradient(circle, rgba(76, 201, 143, .55), transparent 70%); right: -120px; top: -140px; }
+.g2 { width: 520px; height: 520px; background: radial-gradient(circle, rgba(255, 214, 107, .22), transparent 70%); left: -160px; bottom: -220px; }
+.copy { position: absolute; left: 88px; top: 0; bottom: 0; width: 470px; display: flex; flex-direction: column; justify-content: center; }
+.eyebrow { display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; background: var(--mint-soft); color: #6fe0a8; font-size: 17px; font-weight: 700; }
+.eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); }
+h1 { margin-top: 22px; font-size: 58px; line-height: 1.16; font-weight: 900; letter-spacing: -2px; }
+h1 em { font-style: normal; color: var(--mint); }
+.sub { margin-top: 22px; font-size: 22px; line-height: 1.6; color: var(--muted); }
+.stage { position: absolute; right: 70px; top: 50%; transform: translateY(-50%); width: 600px; }
+.mascot { position: absolute; filter: drop-shadow(0 24px 40px rgba(0, 0, 0, .45)); }
+/* 브라우저 창 */
+.win { background: #f5f6f8; border-radius: 18px; overflow: hidden; box-shadow: 0 40px 90px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06); color: #111214; }
+.bar { display: flex; align-items: flex-end; gap: 6px; padding: 12px 12px 0; background: #dfe3e8; height: 50px; }
+.dots { display: flex; gap: 7px; align-self: center; margin: 0 10px 8px 4px; }
+.dots b { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .dots b:nth-child(2) { background: #febc2e; } .dots b:nth-child(3) { background: #28c840; }
+.tab { height: 36px; padding: 0 16px; border-radius: 10px 10px 0 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #4b5059; white-space: nowrap; }
+.tab.on { background: #f5f6f8; color: #111214; }
+.tab .fav { width: 16px; height: 16px; border-radius: 4px; background: #c5cad2; }
+.grp { height: 26px; align-self: center; margin-bottom: 6px; padding: 0 12px; border-radius: 8px; background: var(--mint); color: #08311f; font-size: 13px; font-weight: 800; display: flex; align-items: center; }
+.grp + .tab, .tab.g { box-shadow: inset 0 3px 0 var(--mint); }
+.url { margin: 10px 14px; height: 36px; border-radius: 999px; background: #e7eaee; display: flex; align-items: center; padding: 0 16px; font-size: 14px; color: #5f646d; gap: 10px; }
+.url .lock { width: 12px; height: 12px; border-radius: 3px; background: #9aa0a8; }
+.page { padding: 18px 22px 24px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.ok { background: #e5f7ee; color: #167a4b; }
+.row { color: #111214; display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 14px; background: #fff; box-shadow: 0 1px 0 #e9ebef; margin-top: 10px; }
+.thumb { width: 64px; height: 64px; border-radius: 12px; flex: none; }
+.t1 { background: linear-gradient(135deg, #ffd6a5, #ff9f6b); } .t2 { background: linear-gradient(135deg, #b9e6ff, #6fb7ff); } .t3 { background: linear-gradient(135deg, #c7f0d8, #4cc98f); }
+.row h4 { font-size: 16px; font-weight: 800; } .row p { font-size: 13px; color: #6c717b; margin-top: 3px; }
+.cursor { position: absolute; display: flex; align-items: flex-start; gap: 4px; }
+.cursor svg { filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .35)); }
+.cursor span { margin-top: 14px; padding: 5px 11px; border-radius: 999px; background: var(--mint); color: #08311f; font-size: 13px; font-weight: 800; white-space: nowrap; }
+/* 대화 */
+.chat { display: flex; flex-direction: column; gap: 14px; }
+.me, .duri { max-width: 430px; padding: 16px 20px; border-radius: 22px; font-size: 19px; line-height: 1.5; }
+.me { align-self: flex-end; background: var(--mint); color: #062818; font-weight: 600; border-bottom-right-radius: 6px; }
+.duri { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+.duri small { display: block; margin-top: 8px; font-size: 14px; color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 26px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 52px; padding: 0 28px; border-radius: 999px; font-size: 18px; font-weight: 800; }
+.b-ok { background: var(--mint); color: #062818; } .b-no { background: #2a2e36; color: var(--ink); }
+.k { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 17px; } .k:last-of-type { border: 0; }
+.k span { color: var(--muted); } .k b { font-weight: 700; }
+.node { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 18px 20px; display: flex; align-items: center; gap: 14px; font-size: 18px; font-weight: 700; }
+.node small { display: block; font-size: 14px; color: var(--muted); font-weight: 500; margin-top: 3px; }
+.ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; flex: none; }
+</style>
+</head>
+<body>
+
+<!-- 1. 첫 장: 말만 하세요 -->
+<section id="s1" class="slide shot">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="copy">
+    <span class="eyebrow"><i></i>내 컴퓨터에서 일하는 AI 비서</span>
+    <h1>말만 하세요,<br><em>일은 내 컴퓨터가</em></h1>
+    <p class="sub">두리에게 부탁하면 이 확장으로<br>평소 쓰는 크롬에서 대신 찾고, 고르고, 정리해요.</p>
+  </div>
+  <div class="stage" style="width:560px">
+    <div class="chat">
+      <div class="me">토요일 저녁 성수에서 4명 갈 만한 식당 찾아 줘</div>
+      <div class="duri">평소 쓰시는 크롬으로 찾아봤어요. 7시에 4명 자리 있는 곳 3군데예요.
+        <small>예약은 고르시면 승인받고 할게요</small></div>
+      <div class="row" style="margin-top:2px"><div class="thumb t1"></div><div><h4>성수 화덕 비스트로</h4><p>★ 4.7 · 7:00 4명 가능 · 1인 3만 원대</p></div></div>
+      <div class="row" style="margin-top:0"><div class="thumb t3"></div><div><h4>뚝섬 제철 한식</h4><p>★ 4.6 · 7:30 4명 가능 · 룸 있음</p></div></div>
+    </div>
+    <img class="mascot" src="../../../packages/ui/doori/done.webp" width="170" style="left:-150px;top:-70px">
+  </div>
+</section>
+
+<!-- 2. 평소 로그인 그대로 -->
+<section id="s2" class="slide shot">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="copy">
+    <span class="eyebrow"><i></i>평소 로그인 그대로</span>
+    <h1>새로 가입할 것<br><em>하나도 없어요</em></h1>
+    <p class="sub">이미 로그인해 둔 쇼핑·택배·예약 사이트를<br>두리가 그대로 써요. 비밀번호를 알려 줄 필요도 없어요.</p>
+  </div>
+  <div class="stage">
+    <div class="win">
+      <div class="bar"><div class="dots"><b></b><b></b><b></b></div><span class="grp">두리</span><div class="tab on g"><i class="fav" style="background:#ff9f6b"></i>주문 내역</div><div class="tab g"><i class="fav" style="background:#6fb7ff"></i>택배 조회</div></div>
+      <div class="url"><i class="lock"></i>shop.example.com/my/orders</div>
+      <div class="page">
+        <span class="pill ok">● 이미 로그인돼 있어요</span>
+        <div class="row"><div class="thumb t1"></div><div><h4>겨울 이불 세트</h4><p>배송 중 · 내일(화) 도착 예정</p></div></div>
+        <div class="row"><div class="thumb t2"></div><div><h4>무선 가습기</h4><p>배송 완료 · 11월 21일</p></div></div>
+        <div class="row"><div class="thumb t3"></div><div><h4>유기농 사과 2kg</h4><p>상품 준비 중</p></div></div>
+      </div>
+    </div>
+    <img class="mascot" src="../../../packages/ui/doori/working.webp" width="150" style="right:-40px;bottom:-70px">
+  </div>
+</section>
+
+<!-- 3. 두리 탭만 -->
+<section id="s3" class="slide shot">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="copy">
+    <span class="eyebrow"><i></i>내 탭은 그대로</span>
+    <h1>두리는<br><em>두리 탭에서만</em> 일해요</h1>
+    <p class="sub">두리가 연 탭은 초록 '두리' 묶음에 모여요.<br>내가 보던 탭은 건드리지 않아요.</p>
+  </div>
+  <div class="stage">
+    <div class="win">
+      <div class="bar"><div class="dots"><b></b><b></b><b></b></div><div class="tab"><i class="fav"></i>메일</div><div class="tab"><i class="fav"></i>문서</div><span class="grp">두리</span><div class="tab on g"><i class="fav" style="background:#4cc98f"></i>병원 예약</div><div class="tab g"><i class="fav" style="background:#ffd66b"></i>날씨</div></div>
+      <div class="url"><i class="lock"></i>clinic.example.com/reserve</div>
+      <div class="page" style="position:relative;height:330px">
+        <div style="font-size:20px;font-weight:800">진료 예약</div>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <span class="pill" style="background:#eef0f3;color:#4b5059">11/26 (수)</span><span class="pill" style="background:#111214;color:#fff">11/27 (목)</span><span class="pill" style="background:#eef0f3;color:#4b5059">11/28 (금)</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px">
+          <span class="pill" style="justify-content:center;background:#fff;border:1px solid #e3e6ea">09:30</span><span class="pill" style="justify-content:center;background:#fff;border:1px solid #e3e6ea">10:00</span><span class="pill" style="justify-content:center;background:#e5f7ee;color:#167a4b;border:1px solid #4cc98f">10:30</span><span class="pill" style="justify-content:center;background:#fff;border:1px solid #e3e6ea">11:00</span>
+        </div>
+        <div class="row" style="margin-top:22px"><div class="thumb t3" style="width:52px;height:52px"></div><div><h4>11월 27일 (목) 10:30 · 내과</h4><p>예약 확정 전에 승인을 받아요</p></div></div>
+        <div style="margin-top:14px;display:flex;gap:8px"><span class="pill ok">● 로그인돼 있어요</span><span class="pill" style="background:#fff4d1;color:#7a5a00">승인 대기</span></div>
+        <div class="cursor" style="left:300px;top:118px"><svg width="22" height="26" viewBox="0 0 22 26"><path d="M2 2l17 11-8 1.5L7 23z" fill="#fff" stroke="#111214" stroke-width="2" stroke-linejoin="round"/></svg><span>두리가 고르는 중</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 승인 -->
+<section id="s4" class="slide shot">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="copy">
+    <span class="eyebrow"><i></i>마지막 버튼은 내가</span>
+    <h1>결제·보내기는<br><em>꼭 내 승인</em>을 받아요</h1>
+    <p class="sub">구매, 예약 확정, 메시지 보내기 같은 버튼은<br>누르기 전에 무엇을 할지 보여 주고 물어봐요.</p>
+  </div>
+  <div class="stage" style="width:520px">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:12px"><img src="../../../packages/ui/doori/asking.webp" width="56"><div><div style="font-size:21px;font-weight:800">이대로 진행할까요?</div><div style="font-size:15px;color:var(--muted);margin-top:3px">두리가 '바로 구매'를 누르려고 해요</div></div></div>
+      <div style="margin-top:18px">
+        <div class="k"><span>무엇을</span><b>유기농 사과 2kg</b></div>
+        <div class="k"><span>어디서</span><b>평소 쓰는 쇼핑몰</b></div>
+        <div class="k"><span>금액</span><b style="color:var(--butter)">19,800원</b></div>
+        <div class="k"><span>취소</span><b>배송 전까지 가능</b></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:22px"><span class="btn b-no" style="flex:1">그만두기</span><span class="btn b-ok" style="flex:1.4">승인</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. 내 컴퓨터에만 -->
+<section id="s5" class="slide shot">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="copy">
+    <span class="eyebrow"><i></i>대화는 내 컴퓨터에</span>
+    <h1>페이지 내용은<br><em>내 컴퓨터에만</em> 남아요</h1>
+    <p class="sub">확장은 내 컴퓨터의 두리 앱과만 이야기해요.<br>두리 팀 서버로 보내지 않아요. 코드는 모두 공개돼 있어요.</p>
+  </div>
+  <div class="stage" style="width:520px">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="node" style="border-color:#2f6b50;background:#132620"><span class="ico" style="background:#1f4d39">💻</span><div>내 컴퓨터<small>두리 앱 + 이 크롬 확장 · 대화·기록·로그인</small></div></div>
+      <div style="text-align:center;color:var(--muted);font-size:15px">⇅ 필요할 때만</div>
+      <div class="node"><span class="ico" style="background:#2a2e36">✨</span><div>내가 고른 AI<small>쓰고 있는 ChatGPT나 Claude 구독</small></div></div>
+      <div class="node" style="opacity:.55"><span class="ico" style="background:#2a2e36">🚫</span><div style="text-decoration:line-through">두리 팀 서버<small style="text-decoration:none">대화·페이지 내용이 오지 않아요</small></div></div>
+      <div style="display:flex;gap:8px;margin-top:6px"><span class="pill" style="background:var(--mint-soft);color:#6fe0a8">오픈소스</span><span class="pill" style="background:#2a2e36;color:var(--ink)">무료</span></div>
+    </div>
+    <img class="mascot" src="../../../packages/ui/doori/idle.webp" width="140" style="right:-30px;top:-110px">
+  </div>
+</section>
+
+<!-- 작은 홍보 타일 440×280 -->
+<section id="tile" class="slide tile">
+  <div class="glow g1" style="width:360px;height:360px;right:-120px;top:-120px"></div>
+  <img src="../../../packages/ui/doori/done.webp" width="150" style="position:absolute;right:22px;top:58px;filter:drop-shadow(0 14px 24px rgba(0,0,0,.45))">
+  <div style="position:absolute;left:30px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;width:250px">
+    <div style="font-size:44px;font-weight:900;letter-spacing:-1.5px">두리</div>
+    <div style="font-size:19px;line-height:1.45;color:var(--muted);margin-top:8px">말만 하세요,<br><b style="color:var(--mint)">일은 내 컴퓨터가</b></div>
+  </div>
+</section>
+
+<!-- 큰 배너 1400×560 -->
+<section id="marquee" class="slide marquee">
+  <div class="glow g1" style="width:760px;height:760px"></div><div class="glow g2"></div>
+  <div class="copy" style="left:110px;width:640px">
+    <span class="eyebrow"><i></i>내 컴퓨터에서 일하는 AI 비서</span>
+    <h1 style="font-size:66px">말만 하세요,<br><em>일은 내 컴퓨터가</em></h1>
+    <p class="sub">평소 쓰는 크롬에서 대신 찾고, 고르고, 정리해요. 돈 쓰는 일은 꼭 먼저 물어봐요.</p>
+  </div>
+  <img src="../../../packages/ui/doori/working.webp" width="250" style="position:absolute;right:300px;top:150px;filter:drop-shadow(0 30px 40px rgba(0,0,0,.5))">
+  <img src="../../../packages/ui/doori/done.webp" width="190" style="position:absolute;right:110px;top:90px;filter:drop-shadow(0 30px 40px rgba(0,0,0,.5))">
+  <img src="../../../packages/ui/doori/asking.webp" width="150" style="position:absolute;right:150px;top:330px;filter:drop-shadow(0 30px 40px rgba(0,0,0,.5))">
+</section>
+
+</body>
+</html>
