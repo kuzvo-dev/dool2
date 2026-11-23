@@ -415,7 +415,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Memories are attached to the end of the instructions for each chat
     // Service map: lets requests without a service name still pick a fitting service (connected ones first)
     systemPrompt: () =>
-      [buildSystemPrompt({ ...life.identity(), lang: lang() }), skills.serviceMap(), life.memoryPrompt(), life.knowPrompt()]
+      [
+        buildSystemPrompt({ ...life.identity(), lang: lang() }),
+        skills.serviceMap(),
+        life.memoryPrompt(),
+        life.knowPrompt(),
+      ]
         .filter(Boolean)
         .join('\n\n'),
   })
@@ -3448,7 +3453,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? body.url
             : (card.loginUrl ?? connectUrl(card))
         if (!url) return json(res, 400, { error: m().noSiteUrl })
-        const r = await probeLogin(browser, { card, url, lang: lang() })
+        const r = await probeLogin(browser, { card, url }, { lang: lang() })
         for (const t of r.tabs ?? [r.tabId]) await browser.call('close', { tabId: t }).catch(() => undefined)
         return json(res, 200, r)
       }

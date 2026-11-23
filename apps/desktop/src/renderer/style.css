@@ -1061,6 +1061,13 @@ ol {
   width: 14px;
   height: 14px;
 }
+/* English labels are longer: the label alone fits the panel without the icon */
+html:lang(en) .panel-tabs button svg.i {
+  display: none;
+}
+html:lang(en) .panel-tabs button {
+  padding: 0 2px;
+}
 .panel-tabs .dot {
   position: absolute;
   top: 4px;

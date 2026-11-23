@@ -173,6 +173,9 @@ import {
 import { createRemote, type RemoteScreen, type Shot } from './remote.js'
 import { clear, clearConv, load, loadConv, type Saved, save, saveConv } from './store.js'
 
+// Screen readers and CSS (:lang) follow the UI language (ADR 0029)
+document.documentElement.lang = lang
+
 const app = document.getElementById('app') as HTMLElement
 
 // ── State ──
