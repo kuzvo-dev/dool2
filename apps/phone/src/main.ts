@@ -27,7 +27,14 @@ import type {
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
-import { AUTH_APPS, CARRIERS, FILE_CHUNK, SIDE_THREAD_PEEK, type VaultEntry } from '@dool2/protocol'
+import {
+  AUTH_APPS,
+  agentLabel,
+  CARRIERS,
+  FILE_CHUNK,
+  SIDE_THREAD_PEEK,
+  type VaultEntry,
+} from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
 import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
@@ -5049,6 +5056,9 @@ function renamePc() {
 }
 
 /** Settings (menu > settings): notifications, display, my PC, promises */
+// Settings follows the PC settings page (apps/desktop setup.ts): the same sections in the same order and words
+// (general → AI · browser → connection → vault → my info · payment → about), each a boxed list, on/off as switches.
+// What only the PC can change (which AI, the extension) shows as status with where to change it
 function settingsView() {
   const box = h('section', { class: 'tab-page settings' }, h('h1', { class: 'ptitle', text: mSet.settings }))
   const row = (ic: IconName, title: string, sub: string, right?: Node, onclick?: () => void) =>
@@ -5064,14 +5074,59 @@ function settingsView() {
       ),
       right,
     )
+  const toggle = (on: boolean) => {
+    const sw = h('span', { class: on ? 'switch on' : 'switch' })
+    sw.setAttribute('role', 'switch')
+    sw.setAttribute('aria-checked', String(on))
+    return sw
+  }
+  const link = (ic: IconName, title: string, sub: string, href: string) => {
+    const a = h(
+      'a',
+      { class: 'set-row' },
+      h('span', { class: 'tile sm blue' }, icon(ic, 'i')),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('span', { class: 'row-t', text: title }),
+        h('span', { class: 'row-d', text: sub }),
+      ),
+      icon('chevron'),
+    )
+    a.href = href
+    a.target = '_blank'
+    a.rel = 'noopener'
+    return a
+  }
+  /** One section: a small title and its rows in a box, like the PC settings */
+  const sec = (title: string, ...rows: (Node | undefined)[]) =>
+    box.append(
+      h('h2', { class: 'over', text: title }),
+      h('div', { class: 'set-list' }, ...rows.filter((x): x is Node => Boolean(x))),
+    )
+  const chev = () => icon('chevron')
+
+  // ── General (PC: general) ──
+  // Auto-approve (ADR 0030): everything except payments without a card. Turned on with the phone lock and a signed request
+  const auto = st.pc?.autoApprove === true
+  sec(
+    mSet.secFinal,
+    row(
+      'hand',
+      mSet.autoApprove,
+      auto ? mSet.autoApproveOnSub : mSet.autoApproveOffSub,
+      toggle(auto),
+      () => void setAutoApprove(!auto),
+    ),
+  )
   const perm = 'Notification' in window ? Notification.permission : 'denied'
-  box.append(
-    h('h2', { class: 'over', text: mSet.notifications }),
+  sec(
+    mSet.notifications,
     row(
       'bell',
       mSet.phoneNotif,
       perm === 'granted' ? mSet.notifOn : perm === 'denied' ? mSet.notifBlocked : mSet.notifOff,
-      perm === 'default' ? h('span', { class: 'btn small', text: mSet.turnOn }) : undefined,
+      toggle(perm === 'granted'),
       perm === 'default'
         ? () =>
             void Notification.requestPermission().then(() => {
@@ -5104,8 +5159,25 @@ function settingsView() {
   for (const id of LANGS)
     langSeg.append(segBtn(lang === id, { text: LANG_NAMES[id], onclick: () => setLang(id) }))
   box.append(h('h2', { class: 'over', text: mSet.language }), langSeg)
-  box.append(
-    h('h2', { class: 'over', text: mSet.pcSection }),
+
+  // ── AI · browser (PC: AI · browser): status only, changed on the PC ──
+  const agent = st.pc?.defaultAgent ?? st.pc?.agents[0]
+  sec(
+    mSet.secAi,
+    row('brain', mSet.aiRow, agent ? mSet.aiSub(agentLabel(agent, lang)) : mSet.aiNone),
+    row('globe', mSet.browserRow, st.pc?.extension ? mSet.browserOn : mSet.browserOff),
+    row(
+      'apps',
+      mSet.connectedServices,
+      mSet.connectedServicesSub((st.services ?? []).filter((x) => x.connectedAt).length),
+      chev(),
+      () => setTab('connect'),
+    ),
+  )
+
+  // ── Connection (PC: phone connection) ──
+  sec(
+    mSet.secPc,
     row(
       'pc',
       st.saved?.pcName ?? mSet.myPc,
@@ -5113,93 +5185,85 @@ function settingsView() {
       h('span', { class: 'meta', text: mSet.rename }),
       () => renamePc(),
     ),
-    row(
-      'apps',
-      mSet.connectedServices,
-      mSet.connectedServicesSub((st.services ?? []).filter((x) => x.connectedAt).length),
-      icon('chevron'),
-      () => setTab('connect'),
-    ),
-    row('lock', mSet.vault, mSet.vaultSub, icon('chevron'), () => {
-      void send({ kind: 'vault-get' })
-      openOverlay({ kind: 'vault' })
-    }),
-    row('hand', mSet.reportProblem, mSet.reportProblemSub, icon('chevron'), () =>
-      openOverlay({ kind: 'report' }),
-    ),
     row('close', mSet.repair, mSet.repairSub, undefined, () => {
       if (confirm(mSet.repairConfirm)) void forgetPc()
     }),
   )
-  // My info and payment methods: used when Dool2 fills booking and order fields. Values stay in the PC vault, and only masked values show here
+
+  // ── Dool2 vault (PC: Dool2 vault) ──
+  sec(
+    mSet.secVault,
+    row('lock', mSet.vaultRow, mSet.vaultSub, chev(), () => {
+      void send({ kind: 'vault-get' })
+      openOverlay({ kind: 'vault' })
+    }),
+  )
+
+  // ── My info · payment (PC: my info · payment) ──
+  // Used when Dool2 fills booking and order fields. Values stay in the PC vault, and only masked values show here
   if (!st.profile) void send({ kind: 'profile-get' })
   const have = Object.keys(st.profile?.have ?? {})
-  box.append(
-    h('h2', { class: 'over', text: mSet.infoAndPay }),
-    row(
-      'note',
-      mSet.myInfo,
-      !st.profile
-        ? mSet.loading
-        : have.length
-          ? mSet.myInfoHave(have.map((k) => PROFILE_LABEL[k] ?? k).join('·'))
-          : mSet.myInfoNone,
-      icon('chevron'),
-      () => openOverlay({ kind: 'profile' }),
-    ),
+  const infoRow = row(
+    'note',
+    mSet.myInfo,
+    !st.profile
+      ? mSet.loading
+      : have.length
+        ? mSet.myInfoHave(have.map((k) => PROFILE_LABEL[k] ?? k).join('·'))
+        : mSet.myInfoNone,
+    chev(),
+    () => openOverlay({ kind: 'profile' }),
   )
   const mine = st.profile?.payMethods
   const pays = Object.entries(st.profile?.payChoices ?? {})
-  if (mine) {
-    // My payment methods (ADR 0023): the top one is the main method. What is remembered per site is inside the sheet
-    const first = mine[0]
-    box.append(
-      row(
-        'card',
-        mSet.payMethods,
-        first ? mSet.payMain(payMethodLabel(first, lang), mine.length - 1) : mSet.payNone,
-        icon('chevron'),
-        () => openOverlay({ kind: 'pay' }),
-      ),
-    )
-  } else if (pays.length)
-    for (const [host, label] of pays)
-      box.append(
+  // My payment methods (ADR 0023): the top one is the main method. What is remembered per site is inside the sheet
+  const payRows: Node[] = mine
+    ? [
         row(
           'card',
-          `${label}`,
-          mSet.payRemembered(host.replace(/^www\./, '')),
-          h('span', { class: 'meta', text: mSet.forget }),
-          () => void send({ kind: 'pay-choice-forget', host }),
+          mSet.payMethods,
+          mine[0] ? mSet.payMain(payMethodLabel(mine[0], lang), mine.length - 1) : mSet.payNone,
+          chev(),
+          () => openOverlay({ kind: 'pay' }),
         ),
-      )
-  else box.append(row('card', mSet.payMethods, mSet.payRememberNote))
-  // Auto-approve (ADR 0030): everything except payments without a card. Turned on with the phone lock and a signed request
-  const auto = st.pc?.autoApprove === true
-  box.append(
-    h('h2', { class: 'over', text: mSet.approvals }),
-    row(
-      'hand',
-      mSet.autoApprove,
-      auto ? mSet.autoApproveOnSub : mSet.autoApproveOffSub,
-      h('span', { class: auto ? 'meta' : 'btn small', text: auto ? mSet.turnOff : mSet.turnOn }),
-      () => void setAutoApprove(!auto),
-    ),
+      ]
+    : pays.length
+      ? pays.map(([host, label]) =>
+          row(
+            'card',
+            `${label}`,
+            mSet.payRemembered(host.replace(/^www\./, '')),
+            h('span', { class: 'meta', text: mSet.forget }),
+            () => void send({ kind: 'pay-choice-forget', host }),
+          ),
+        )
+      : [row('card', mSet.payMethods, mSet.payRememberNote)]
+  sec(mSet.infoAndPay, infoRow, ...payRows)
+
+  // ── About Dool2 (PC: about) ──
+  sec(
+    mSet.secAbout,
+    row('hand', mSet.reportProblem, mSet.reportProblemSub, chev(), () => openOverlay({ kind: 'report' })),
+    link('globe', mSet.siteLink, 'dool2.com', 'https://dool2.com'),
+    link('link', mSet.sourceLink, 'github.com/kuzvo-dev/dool2', 'https://github.com/kuzvo-dev/dool2'),
   )
+
   // Test PCs only: start over like a new user
   if (st.pc?.dev)
-    box.append(
-      h('h2', { class: 'over', text: mSet.testOnly }),
+    sec(
+      mSet.testOnly,
       row('trash', mSet.startOver, mSet.startOverSub, undefined, () => void resetAll()),
     )
+
   box.append(h('h2', { class: 'over', text: mSet.promises }))
+  const promises = h('div', { class: 'set-list' })
   for (const [ic, t] of [
     ['card', mSet.promise1],
     ['lock', mSet.promise2],
     ['pc', mSet.promise3],
     ['hand', mSet.promise4],
   ] as [IconName, string][])
-    box.append(
+    promises.append(
       h(
         'div',
         { class: 'set-row' },
@@ -5207,6 +5271,7 @@ function settingsView() {
         h('span', { class: 'row-t', text: t }),
       ),
     )
+  box.append(promises)
   return box
 }
 
