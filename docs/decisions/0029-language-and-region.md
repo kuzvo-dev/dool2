@@ -38,8 +38,11 @@ Korean services.
 - On first run both are guessed from the device (OS language; region from OS locale, then time zone) and shown
   on the setup screen so the user can change them. Both can be changed later in Settings.
 - The PC holds the user's `region`. Each device (PC app, phone app, extension) shows its UI in its own
-  `language` setting, which defaults to that device's OS language. The assistant answers in the language of the
-  device the request came from.
+  `language` setting. Until the user picks one, the default is **Korean when the region is Korea** (a Korean PC
+  with an English OS still starts in Korean), **otherwise the device's OS language**, falling back to English.
+  The desktop app saves the language it settled on at first run, so the daemon and the phone agree.
+  The assistant answers in the language the user writes in.
+  (Amended 2026-11-23: the Korea rule protects existing Korean users on English OSes.)
 
 ### 2. The repository is English
 

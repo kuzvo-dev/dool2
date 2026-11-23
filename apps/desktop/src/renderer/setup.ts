@@ -96,15 +96,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
-/** Developer mode (`localStorage['dool2.dev'] === '1'`): shows settings that are not ready for everyone */
-function devMode(): boolean {
-  try {
-    return localStorage.getItem('dool2.dev') === '1'
-  } catch {
-    return false
-  }
-}
-
 function button(cls: string, text: string, onClick: () => void) {
   const b = el('button', cls, text)
   b.type = 'button'
@@ -637,7 +628,7 @@ export function runSetup(opts: SetupOptions): {
               statsPeek(),
             ),
           )
-          if (devMode()) body.append(sec(m.secLanguage, undefined, languageRow()))
+          body.append(sec(m.secLanguage, undefined, languageRow()))
         } else if (settingsTab === 'ai') {
           const ai = el('p', 'setup-hint')
           ai.append(
@@ -1553,7 +1544,7 @@ export function runSetup(opts: SetupOptions): {
       sel.value = lang
       sel.onchange = () => {
         const next = sel.value as Lang
-        void save({ language: next }).then(() => switchLang(next))
+        void save({ language: next }).then(() => switchLang(next, current.region))
       }
       const l = el('label', undefined, m.languageLabel)
       l.append(sel)

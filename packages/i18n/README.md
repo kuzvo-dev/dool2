@@ -2,7 +2,7 @@
 
 Language and region for Dool2 ([ADR 0029](../../docs/decisions/0029-language-and-region.md)).
 
-- **Language** (`ko`, `en`): which words the user reads. Each device follows its OS language unless the user picks
+- **Language** (`ko`, `en`): which words the user reads. Until the user picks one, Korean when the region is Korea, else the device's OS language. The user picks
   one in Settings. Unshipped languages fall back to English.
 - **Region** (`KR`, `JP`, `TW`): which services and local features make sense. The PC holds it. It is guessed from
   the locale and time zone on first run and confirmed on the setup screen.

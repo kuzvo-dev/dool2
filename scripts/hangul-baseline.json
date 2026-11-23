@@ -5,7 +5,7 @@
   "apps/daemon/scripts/connector.mjs": 6,
   "apps/daemon/scripts/seed-demo.mjs": 94,
   "apps/extension/scripts/e2e-pay.mjs": 84,
-  "apps/extension/scripts/e2e.mjs": 288,
+  "apps/extension/scripts/e2e.mjs": 278,
   "apps/extension/scripts/pay-shop.mjs": 93,
   "apps/extension/src/page.ts": 89,
   "apps/hands-mac/Sources/main.swift": 47,
