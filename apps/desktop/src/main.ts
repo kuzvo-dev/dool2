@@ -7,7 +7,7 @@ import { delimiter, dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerExternalExtension } from '@dool2/browser'
 import { type Daemon, startDaemon } from '@dool2/daemon'
-import { initialLang, type Lang } from '@dool2/i18n'
+import { deviceRegion, initialLang, type Lang } from '@dool2/i18n'
 import {
   type Settings,
   STORE_EXTENSION_ID,
@@ -49,7 +49,11 @@ let tray: Tray | undefined
 let quitting = false
 let updater: Updater | undefined
 /** UI language from settings, read each time text is shown so a change in Settings applies next time */
-const uiLang = (): Lang => initialLang(daemon?.settings().language, app.getPreferredSystemLanguages())
+const uiLang = (): Lang => {
+  const st = daemon?.settings()
+  const os = app.getPreferredSystemLanguages()
+  return initialLang(st?.language, os, st?.region ?? deviceRegion(os))
+}
 const keepAwake = new KeepAwake({
   start: () => powerSaveBlocker.start('prevent-app-suspension'),
   stop: (id) => powerSaveBlocker.stop(id),

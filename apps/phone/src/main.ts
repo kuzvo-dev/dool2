@@ -1,6 +1,8 @@
 // Dool2 phone app (v2 design: docs/design/screens/soft). Talks to Dool2 on the PC through the relay with end-to-end encryption (ADR 0012).
 // Screens: connect (pairing) -> app (one chat · tasks · ideas · connections) + menu drawer · Dool2 panel · approval and login sheets · PC screen
 // The header, tabs and input are built once, and the chat only appends changed messages (so a redraw does not flicker or jump the scroll).
+
+import { LANG_NAMES, LANGS } from '@dool2/i18n'
 import type {
   ApprovalRecordMessage,
   ApprovalView,
@@ -96,7 +98,7 @@ import {
   withLogo,
 } from './dom.js'
 import { matchTextBox, recentTalk, ghostRest as suggestRest } from './ghost.js'
-import { lang } from './lang.js'
+import { lang, setLang } from './lang.js'
 import {
   feedView,
   goalSheet,
@@ -5097,6 +5099,11 @@ function settingsView() {
       }),
     )
   box.append(h('h2', { class: 'over', text: mSet.screen }), seg)
+  // Language of this phone (ADR 0029). Each device keeps its own; changing it reloads the app
+  const langSeg = h('div', { class: 'seg' })
+  for (const id of LANGS)
+    langSeg.append(segBtn(lang === id, { text: LANG_NAMES[id], onclick: () => setLang(id) }))
+  box.append(h('h2', { class: 'over', text: mSet.language }), langSeg)
   box.append(
     h('h2', { class: 'over', text: mSet.pcSection }),
     row(

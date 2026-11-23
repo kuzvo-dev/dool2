@@ -2644,7 +2644,10 @@ async function main() {
 
   // Language first (ADR 0029): every load below may render text
   const { settings } = await api<{ settings: Settings }>('/api/settings')
-  syncLang(settings.language)
+  syncLang(settings.language, settings.region)
+  // First run: keep the language this window settled on, so the daemon (notices, the AI's voice) and the phone agree
+  if (!settings.language)
+    void api('/api/settings', { method: 'PATCH', body: JSON.stringify({ language: lang }) }).catch(() => {})
   renderStatic()
   await Promise.all([
     loadAgents(),

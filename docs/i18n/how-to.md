@@ -57,8 +57,9 @@ Shared packages must not import `@dool2/i18n` at runtime from files the desktop 
 `rich`, `blocks`, `blocks-view`, `work-steps`, `schedule`, `ideas`, `paging`). Write the catalog as a plain object
 typed with `import type`, so the copied file has no new runtime import.
 
-Until every screen has English copy, apps start in Korean (`UI_FOLLOWS_DEVICE = false` in `@dool2/i18n`). To see
-English, set `language: "en"` in settings (`PATCH /api/settings`).
+Apps start in the language the user picked; otherwise Korean when the region is Korea, otherwise the device
+language (`initialLang` in `@dool2/i18n`). To see English on a Korean machine, pick English in Settings or set
+`language: "en"` (`PATCH /api/settings`).
 
 ## 4. Check
 

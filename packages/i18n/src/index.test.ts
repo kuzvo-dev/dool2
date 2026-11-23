@@ -88,10 +88,15 @@ describe('formatMoney', () => {
 
 describe('initialLang', () => {
   it('keeps a saved choice', () => {
-    expect(initialLang('en', ['ko-KR'])).toBe('en')
+    expect(initialLang('en', ['ko-KR'], 'KR')).toBe('en')
   })
-  it('stays Korean until UI_FOLLOWS_DEVICE is on', () => {
-    expect(initialLang(undefined, ['en-US'])).toBe('ko')
-    expect(initialLang('fr', ['en-US'])).toBe('ko')
+  it('starts in Korean when the region is Korea, whatever the device language', () => {
+    expect(initialLang(undefined, ['en-US'], 'KR')).toBe('ko')
+  })
+  it('follows the device language elsewhere, falling back to English', () => {
+    expect(initialLang(undefined, ['en-US'], 'JP')).toBe('en')
+    expect(initialLang(undefined, ['ko-KR'], undefined)).toBe('ko')
+    expect(initialLang(undefined, ['ja-JP'], 'JP')).toBe('en')
+    expect(initialLang('fr', ['de-DE'])).toBe('en')
   })
 })

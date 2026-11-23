@@ -5,6 +5,9 @@
 export const LANGS = ['ko', 'en'] as const
 export type Lang = (typeof LANGS)[number]
 
+/** Each language's name in that language, for language pickers. */
+export const LANG_NAMES: Record<Lang, string> = { ko: '한국어', en: 'English' }
+
 /** Language used when the device language is not shipped yet. */
 export const FALLBACK_LANG: Lang = 'en'
 
@@ -35,18 +38,28 @@ export function resolveLang(preferred: string | readonly (string | undefined)[] 
 }
 
 /**
- * Whether apps start in the device language. Off while screens are being moved to locale files, so nobody sees
- * a half-English app; turned on when every screen has English copy (ADR 0029).
+ * First UI language for an app (ADR 0029):
+ * 1. the language the user picked,
+ * 2. Korean when the region is Korea (a Korean PC with an English OS still starts in Korean),
+ * 3. otherwise the device language, falling back to English.
  */
-export const UI_FOLLOWS_DEVICE = false
-
-/** First UI language for an app: the saved choice, else the device language (once enabled), else Korean. */
 export function initialLang(
   saved: unknown,
   preferred: string | readonly (string | undefined)[] | undefined,
+  region?: Region,
 ): Lang {
   if (isLang(saved)) return saved
-  return UI_FOLLOWS_DEVICE ? resolveLang(preferred) : 'ko'
+  if (region === 'KR') return 'ko'
+  return resolveLang(preferred)
+}
+
+/** The device's region guess from its languages and this runtime's time zone. */
+export function deviceRegion(locales: readonly (string | undefined)[] | undefined): Region | undefined {
+  let timeZone: string | undefined
+  try {
+    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {}
+  return guessRegion({ locales: locales ?? [], ...(timeZone ? { timeZone } : {}) })
 }
 
 const ZONE_REGION: Record<string, Region> = {
