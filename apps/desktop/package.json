@@ -1,6 +1,6 @@
 {
   "name": "@dool2/desktop",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "license": "Apache-2.0",
   "description": "두리 PC 앱 — 내 컴퓨터에 사는 AI 비서",
