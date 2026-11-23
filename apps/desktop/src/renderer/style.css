@@ -2537,3 +2537,10 @@ button.lib-thumb:hover .lib-thumb-img {
 .ask-actions > button {
   height: 36px;
 }
+
+/* One answer per request: "show earlier answers" above the answer that replaced them (11-23) */
+.thread .earlier-answers {
+  align-self: flex-start;
+  margin: 4px 0 -2px;
+  color: var(--ink-muted);
+}

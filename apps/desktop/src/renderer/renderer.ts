@@ -66,7 +66,15 @@ import { statsAsk } from './locales/stats-ask.js'
 import { talkText } from './locales/talk.js'
 import { type Page, Pager } from './paging.js'
 import { FEED_THREAD_TITLE, LOGIN_BUSY_RE } from './region/kr/talk.js'
-import { appNote, narrationLine, readAppNote, splitPhoto, toolLabel, toolPlace } from './rich.js'
+import {
+  appNote,
+  interimAnswers,
+  narrationLine,
+  readAppNote,
+  splitPhoto,
+  toolLabel,
+  toolPlace,
+} from './rich.js'
 import { runSetup, type SettingsTab, type SetupOptions } from './setup.js'
 import {
   type CheckAction,
@@ -80,6 +88,8 @@ import { doneLine, groupSteps, type PlaceCard, type WorkGroup, type WorkStepIn }
 
 /** Copy in the current language (read on every call, so a language switch shows up on the next render) */
 const A = () => appText(lang)
+/** Answers whose folded earlier answers the user opened */
+const openEarlier = new Set<string>()
 const T = () => talkText(lang)
 
 declare global {
@@ -1387,7 +1397,29 @@ function renderTalk() {
   }
   let day = ''
   let prevRole = ''
+  // One answer per request: answers the finish check sent back and replaced are folded (11-23)
+  const fold = interimAnswers(state.messages)
+  const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
+  const roleOf = new Map(state.messages.map((x) => [x.id, x.role]))
   for (const { m, i } of order) {
+    if (fold.hidden.has(m.id) && !revealed.has(m.id)) continue
+    const earlier = fold.replaced.get(m.id)
+    if (earlier) {
+      const n = earlier.filter((id) => roleOf.get(id) === 'assistant').length
+      const open = openEarlier.has(m.id)
+      list.append(
+        button(
+          'btn-text sm earlier-answers',
+          () => {
+            if (open) openEarlier.delete(m.id)
+            else openEarlier.add(m.id)
+            renderTalk()
+          },
+          open ? A().hideEarlierAnswers : A().showEarlierAnswers(n),
+        ),
+      )
+      prevRole = ''
+    }
     const d = dayLabel(m.createdAt)
     if (d !== day) {
       day = d

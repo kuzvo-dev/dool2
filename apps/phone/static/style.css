@@ -4244,3 +4244,12 @@ textarea.ghosting {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
+/* One answer per request: "show earlier answers" above the answer that replaced them (11-23) */
+.btn-text.earlier-answers {
+  align-self: flex-start;
+  margin: 2px 0 -4px 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
