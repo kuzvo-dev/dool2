@@ -438,9 +438,19 @@ export class Life {
   }
   save(input: Omit<LibraryItem, 'id' | 'savedAt'>): LibraryItem {
     const item: LibraryItem = { ...input, id: randomUUID(), savedAt: this.now().toISOString() }
-    this.put('library', [item, ...this.library()])
+    // 같은 PC 파일을 다시 만들면(같은 이름으로 고쳐 쓰기) 예전 칸은 빼고 새 것만 맨 위에 둔다
+    const rest = item.path ? this.library().filter((x) => x.path !== item.path) : this.library()
+    this.put('library', [item, ...rest])
     this.feed({ kind: 'saved', title: `보관함에 남겼어요: ${item.title}`, ref: item.id })
     return item
+  }
+  /** 같은 PC 파일이 여러 칸으로 쌓인 것을 최근 것 하나로 (예전 판은 고쳐 쓸 때마다 칸이 늘었다). 켤 때 한 번 */
+  tidyLibrary(): number {
+    const list = this.library()
+    const seen = new Set<string>()
+    const next = list.filter((x) => !x.path || (!seen.has(x.path) && Boolean(seen.add(x.path))))
+    if (next.length !== list.length) this.put('library', next)
+    return list.length - next.length
   }
   /** 목록용 작은 미리보기를 붙인다 (PC 앱이 줄여 준 뒤) */
   setThumb(id: string, thumb: string) {

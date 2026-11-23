@@ -57,6 +57,8 @@ export interface LifeCtx {
   activityList(): Pager<FeedItem>
   /** 보관함 하나의 전체 글 (목록에는 앞부분만 온다) */
   libraryFull(id: string): Promise<LibraryItem | undefined>
+  /** PC 파일을 기본 앱으로 연다 (reveal이면 파인더·탐색기에서 보여 준다) */
+  openFile(path: string, reveal?: boolean): void
   /** 연결한 서비스 (맞춤 아이디어) */
   services(): ConnectionItem[]
   /** 동작을 본체에 보내고, 돌아온 상태로 화면을 다시 그린다 */
@@ -740,10 +742,28 @@ export function libraryView(ctx: LifeCtx, tab: LibraryTab, setTab: (t: LibraryTa
   return el('div', 'page', pageHead('보관함', '두리가 찾아 주거나 만든 것 중 남겨 둔 것', seg), body)
 }
 
+/** 펼쳐 둔 보관함 카드 (두리가 일하는 동안 화면을 다시 그려도 접히지 않게) */
+const openCards = new Set<string>()
+
+/** 파일 칸의 글: 끝의 "PC: 경로" 줄은 버튼으로 대신하니 뺀다 */
+const fileBody = (it: LibraryItem, body: string) =>
+  it.path ? body.replace(/\s*PC: [^\n]*$/, '').trim() : body
+
 function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
   const k = LIBRARY_KIND[it.kind] ?? LIBRARY_KIND.note
   const host = hostOf(it.url)
+  const path = it.path
   const actions = el('div', 'lib-actions')
+  if (path)
+    actions.append(
+      button('btn-text sm', () => ctx.openFile(path), icon('external'), '열기'),
+      (() => {
+        const b = button('icon-btn', () => ctx.openFile(path, true), icon('library'))
+        b.title = '폴더에서 보기'
+        b.setAttribute('aria-label', '폴더에서 보기')
+        return b
+      })(),
+    )
   if (it.url?.startsWith('https://')) {
     const a = el('a', 'btn-text sm', icon('link'), '열기')
     a.href = it.url
@@ -756,29 +776,40 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
       'btn-text sm',
       () => ctx.compose(`보관함의 "${plain(it.title, 40)}" 말인데요, `),
       icon('reply'),
-      '이어서 말하기',
+      path ? '고쳐 달라기' : '이어서 말하기',
     ),
     el('span', 'grow'),
     confirmButton('icon-btn lib-del', [icon('trash')], '지울까요?', () => {
+      openCards.delete(it.id)
       void ctx.act({ action: 'library-delete', id: it.id }).then(() => ctx.toast('보관함에서 지웠어요'))
     }),
   )
+  // 그림이 있는 파일: 목록에서도 작은 미리보기 (누르면 연다)
+  let thumb: HTMLElement | undefined
+  if (it.thumb) {
+    const img = el('img', 'lib-thumb-img') as HTMLImageElement
+    img.src = `data:image/jpeg;base64,${it.thumb}`
+    img.alt = ''
+    img.loading = 'lazy'
+    thumb = path ? button('lib-thumb', () => ctx.openFile(path), img) : el('div', 'lib-thumb', img)
+    if (path) thumb.title = '누르면 열어요'
+  }
+  const shown = fileBody(it, it.body)
   let text: HTMLElement | undefined
-  if (it.body) {
+  if (shown) {
     text = el('div', 'lib-text rich clamp')
-    setRich(text, it.cut ? `${it.body}…` : it.body)
+    setRich(text, it.cut ? `${shown}…` : shown)
     const t = text
     // 목록에는 앞부분만 온다: 펼칠 때 전체 글을 받아 바꿔 넣는다
     let full = !it.cut
-    t.onclick = () => {
-      t.classList.toggle('open')
-      if (full || !t.classList.contains('open')) return
+    const fill = () => {
+      if (full) return
       full = true
       void ctx
         .libraryFull(it.id)
         .then((x) => {
           if (!x) return
-          setRich(t, x.body)
+          setRich(t, fileBody(x, x.body))
           // 두리가 만든 그림·초대장: PC가 그려 찍은 미리보기
           if (x.image) {
             const img = el('img', 'lib-shot') as HTMLImageElement
@@ -789,6 +820,19 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
         })
         .catch(() => (full = false))
     }
+    t.onclick = (e) => {
+      // 글 속 링크·파일 칩을 누른 것이면 펼치지 않는다
+      if ((e.target as HTMLElement).closest('a, button')) return
+      t.classList.toggle('open')
+      if (t.classList.contains('open')) {
+        openCards.add(it.id)
+        fill()
+      } else openCards.delete(it.id)
+    }
+    if (openCards.has(it.id)) {
+      t.classList.add('open')
+      fill()
+    }
   }
   return el(
     'article',
@@ -796,7 +840,7 @@ function libraryCard(ctx: LifeCtx, it: LibraryItem): HTMLElement {
     el(
       'div',
       'lib-top',
-      emoTile(k.emo),
+      thumb ?? emoTile(k.emo),
       el('span', 'meta grow', [k.label, host].filter(Boolean).join(' · ')),
       el('time', 'meta', shortWhen(it.savedAt)),
     ),

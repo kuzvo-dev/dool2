@@ -551,6 +551,7 @@ const lifeCtx: LifeCtx = {
   feedList: () => feedPager,
   libraryList: (tab) => libPagers[tab],
   activityList: () => activityPager,
+  openFile: (path, reveal) => void openPcFile(path, reveal),
   libraryFull: async (id) =>
     (await api<{ item?: LibraryItem }>(`/api/life/library/${encodeURIComponent(id)}`)).item,
   services: () => state.services,
