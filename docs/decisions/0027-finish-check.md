@@ -74,3 +74,17 @@ The same 33 requests were run twice in the same way. When Dool2 asked back, we s
   - It no longer says "it's done" before seeing the completion screen.
 - Remaining:
   - If identity verification (KakaoTalk) is not approved within 3 minutes, the check sometimes lets it try the same verification again. When the person is away, the verification request may go out several times.
+
+## Addition (2026-11-23): loop guard inside a turn
+
+The check above looks at a turn after it ends. Inside a turn, the agent's own loop decides what to call next, and
+that loop belongs to the official program we do not change. But every tool call of every agent passes through the
+daemon's tool address, so the daemon can see when Dool2 is going around in circles.
+
+- When the **same tool is called with the same input and returns the same text result** for the 3rd time within
+  15 minutes, the daemon adds one line to that result: calling again will not change anything, take another route,
+  or say in one sentence what is blocked (`apps/daemon/src/loop-guard.ts`).
+- It does not block or stop the call. It only sharpens the result the AI reads, so the AI still decides.
+- A page that changed between reads is not a repeat, and waiting tools (`*wait*`) are not counted.
+- The window spans turns, so a turn the check sent back that repeats the same dead end is caught as well.
+- Each note is recorded in the activity log (`loop-guard`, tool and count), so we can see how often it fires.

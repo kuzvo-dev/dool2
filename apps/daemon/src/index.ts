@@ -104,6 +104,7 @@ import { userLang } from './lang.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { forAI, indexText } from './locales/index-text.js'
+import { LoopGuard } from './loop-guard.js'
 import { MotionMaker, type MotionRenderer } from './motion.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
@@ -379,6 +380,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** Text for people in the language they chose (ADR 0029) */
   const m = () => indexText(userLang(readSettings()))
   const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
+  /** Notices the same tool call with the same result again and again, and adds "take another route" to it */
+  const loopGuard = new LoopGuard()
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** Goals, library, memories and feed */
   const life = new Life(store)
@@ -2973,6 +2976,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Address only for the Doori tool server: can be called only with the tool token
     if (parts[0] === 'api' && a === 'tools') {
       if (!authorized(req, toolToken)) return json(res, 401, { error: m().needAuth })
+      // Loop guard: the same call with the same result again gets a "take another route" line (the call still runs)
+      if (req.method === 'POST' && b && c && !d) {
+        const input = await readJson(req)
+        resultHooks.set(res, (body) => {
+          const { result, count } = loopGuard.check(`${b}/${c}`, input, body)
+          if (count) journal.write('loop-guard', { tool: `${b}/${c}`, count })
+          return result
+        })
+      }
       // Requests this call creates that auto-approve takes are approved before the AI gets the answer (ADR 0030)
       const pendingBefore = autoApprover.before()
       const reply = async (r: ToolResult) => json(res, 200, await autoApprover.after(pendingBefore, r))
@@ -3853,7 +3865,15 @@ function pageQuery(url: URL): {
   }
 }
 
+/** Changes a 200 answer right before it is sent (the loop guard adds its line to tool results) */
+const resultHooks = new WeakMap<ServerResponse, (body: unknown) => unknown>()
+
 function json(res: ServerResponse, status: number, body: unknown) {
+  const hook = status === 200 ? resultHooks.get(res) : undefined
+  if (hook) {
+    resultHooks.delete(res)
+    body = hook(body)
+  }
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
 }
@@ -3861,12 +3881,19 @@ function json(res: ServerResponse, status: number, body: unknown) {
 /** Messages (with photos) are accepted up to the photo size: the image in SendMessageRequestSchema is up to 2,000,000 characters */
 const MESSAGE_MAX = 2_100_000
 
+/** Request bodies already read, so a body can be read twice (the loop guard reads it before the route does) */
+const bodies = new WeakMap<IncomingMessage, string>()
+
 async function readJson(req: IncomingMessage, max = 100_000): Promise<unknown> {
-  let raw = ''
-  for await (const chunk of req) {
-    raw += chunk
-    if (raw.length > max) throw new Error('Request too large')
-  }
+  let raw = bodies.get(req)
+  if (raw === undefined) {
+    raw = ''
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > max) throw new Error('Request too large')
+    }
+    bodies.set(req, raw)
+  } else if (raw.length > max) throw new Error('Request too large')
   return raw ? JSON.parse(raw) : {}
 }
 
