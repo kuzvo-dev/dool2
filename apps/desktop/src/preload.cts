@@ -20,4 +20,12 @@ contextBridge.exposeInMainWorld('dool2', {
   storeExtension: (): Promise<string | null> => ipcRenderer.invoke('dool2:store-extension'),
   /** Chrome에서 웹 스토어의 두리 확장 페이지를 연다 */
   openStore: () => ipcRenderer.send('dool2:open-store'),
+  /** 새 버전 (ADR 0028) */
+  update: {
+    state: (): Promise<unknown> => ipcRenderer.invoke('dool2:update-state'),
+    install: (): Promise<unknown> => ipcRenderer.invoke('dool2:update-install'),
+    onChange: (cb: (s: unknown) => void) => {
+      ipcRenderer.on('dool2:update', (_e, s) => cb(s))
+    },
+  },
 })

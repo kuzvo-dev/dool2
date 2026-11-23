@@ -1,4 +1,5 @@
-// 두리 설치 파일 만들기 (서명 없음, 개발용). 서명·공증은 M5에서 붙인다.
+// 두리 설치 파일 만들기. 맥은 우리 고정 인증서(DOOL2_MAC_SIGN_IDENTITY)로 서명하고, 없으면 ad-hoc 서명 (ADR 0028).
+// 맥은 처음 설치용 dmg와 앱 안 업데이트용 zip을, 윈도우는 설치 exe를 만든다 (릴리스: .github/workflows/release.yml)
 //
 //   pnpm build && pnpm --filter @dool2/desktop package
 //
@@ -92,7 +93,7 @@ await build({
     executableName: 'dool2',
     // electron-builder가 채우는 자리표시자라서 일반 문자열로 둔다
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder 자리표시자
-    artifactName: 'dool2-${version}-${arch}.${ext}',
+    artifactName: 'dool2-${version}-${os}-${arch}.${ext}',
     electronVersion,
     directories: { app: 'stage', output: 'release' },
     // 묶음 파일만 넣는다. node_modules는 하나도 넣지 않는다 (Codex 중복 등)
@@ -106,12 +107,19 @@ await build({
       // PC 화면 제어 도우미 (맥, ADR 0013). 윈도우 도우미는 따로
       ...(process.platform === 'darwin' ? [{ from: '../hands-mac/dist', to: 'hands' }] : []),
     ],
-    // 개발자 ID 서명(M5) 전에는 앱 전체를 ad-hoc으로 다시 서명한다. Electron 기본 서명은 앱 묶음이 봉인되지 않아
-    // 맥이 앱을 알아보지 못하고, 손쉬운 사용·화면 기록 권한을 켜도 적용되지 않는다 (실측)
+    // 앱 전체를 다시 서명한다. Electron 기본 서명은 앱 묶음이 봉인되지 않아 맥이 앱을 알아보지 못하고, 손쉬운 사용·화면 기록
+    // 권한을 켜도 적용되지 않는다 (실측). 릴리스는 우리 고정 인증서로: 판이 바뀌어도 맥이 같은 앱으로 알아봐 권한·금고(키체인)가
+    // 이어진다. ad-hoc(-)은 판마다 지문이 바뀌어 업데이트할 때마다 권한이 풀린다 (ADR 0028)
     afterPack: async (ctx) => {
       if (ctx.electronPlatformName !== 'darwin') return
       const appPath = join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`)
-      execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' })
+      const identity = process.env.DOOL2_MAC_SIGN_IDENTITY || '-'
+      const keychain = process.env.DOOL2_MAC_SIGN_KEYCHAIN
+      execFileSync(
+        'codesign',
+        ['--force', '--deep', '--sign', identity, ...(keychain ? ['--keychain', keychain] : []), appPath],
+        { stdio: 'inherit' },
+      )
     },
     icon: 'assets/icon.png',
     mac: {
@@ -120,8 +128,12 @@ await build({
         CFBundleDisplayName: '두리',
         LSApplicationCategoryType: 'public.app-category.productivity',
       },
-      target: [{ target: 'dmg', arch: [process.arch === 'arm64' ? 'arm64' : 'x64'] }],
-      // M5 전까지는 서명하지 않는다
+      // 처음 설치는 dmg, 앱 안 업데이트는 zip (update-install.ts가 풀어 바꿔 끼운다)
+      target: ['dmg', 'zip'].map((target) => ({
+        target,
+        arch: [process.arch === 'arm64' ? 'arm64' : 'x64'],
+      })),
+      // electron-builder 서명은 쓰지 않는다 (애플 개발자 인증서 없음). 위 afterPack이 서명한다
       identity: null,
     },
     dmg: { title: '두리' },
