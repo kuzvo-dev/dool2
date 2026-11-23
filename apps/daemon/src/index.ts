@@ -125,6 +125,7 @@ import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
 import { Thumbs } from './thumbs.js'
+import { type TapeEntry, ToolTape } from './tool-tape.js'
 import { mimeOf } from './upload.js'
 import { Vault, vaultSitesText } from './vault.js'
 import { VideoClipMaker } from './video-clip.js'
@@ -382,6 +383,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
   /** Notices the same tool call with the same result again and again, and adds "take another route" to it */
   const loopGuard = new LoopGuard()
+  /** Scenario tests on a test PC: records tool answers, or plays them back instead of running tools (evals layer 2) */
+  const toolTape = new ToolTape()
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** Goals, library, memories and feed */
   const life = new Life(store)
@@ -2978,10 +2981,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (!authorized(req, toolToken)) return json(res, 401, { error: m().needAuth })
       // Loop guard: the same call with the same result again gets a "take another route" line (the call still runs)
       if (req.method === 'POST' && b && c && !d) {
+        const tool = `${b}/${c}`
         const input = await readJson(req)
+        const guard = (body: unknown) => {
+          const { result, count } = loopGuard.check(tool, input, body)
+          if (count) journal.write('loop-guard', { tool, count })
+          return result
+        }
+        // Replay test: answer from the tape, run nothing
+        if (toolTape.current === 'replay') {
+          resultHooks.set(res, guard)
+          return json(res, 200, toolTape.replay(tool, input))
+        }
+        // Record test: keep the answer the AI gets and the approval requests this call created
+        const seen =
+          toolTape.current === 'record' ? new Set(browserTools.approvals.list().map((x) => x.id)) : undefined
         resultHooks.set(res, (body) => {
-          const { result, count } = loopGuard.check(`${b}/${c}`, input, body)
-          if (count) journal.write('loop-guard', { tool: `${b}/${c}`, count })
+          const result = guard(body)
+          if (seen) {
+            const approvals = browserTools.approvals
+              .list()
+              .filter((x) => !seen.has(x.id))
+              .map(({ label, what, amount, kind }) => ({ label, what, amount, kind }))
+            toolTape.record({ tool, input, result, approvals })
+          }
           return result
         })
       }
@@ -3215,6 +3238,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (parts[0] !== 'api') return json(res, 404, { error: m().noRoute })
 
     if (req.method === 'GET' && a === 'health') return json(res, 200, { ok: true, dataDir: paths.dataDir })
+
+    // Scenario tests (evals layer 2), test PC only: { mode: 'record' | 'replay' | 'off', entries? }. 'off' returns the report
+    if (req.method === 'POST' && a === 'eval' && b === 'tape' && !c) {
+      if (!devReset) return json(res, 403, { error: m().testPcOnly })
+      const body = (await readJson(req, 200_000_000)) as { mode?: unknown; entries?: unknown }
+      if (body.mode === 'off') return json(res, 200, toolTape.stop())
+      if (body.mode !== 'record' && body.mode !== 'replay') return json(res, 400, { error: m().badRequest })
+      toolTape.start(body.mode, Array.isArray(body.entries) ? (body.entries as TapeEntry[]) : [])
+      return json(res, 200, { ok: true, mode: body.mode })
+    }
 
     // PC screen control (M4): permissions and allowed apps. The user turns on the permission in Mac settings ([Turn on permission] only opens a system window)
     if (a === 'screen' && !c) {

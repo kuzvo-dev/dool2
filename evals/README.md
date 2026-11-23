@@ -8,7 +8,7 @@ The bank holds **615 families → 4,505 scenarios**, drawn from real usage cases
 | Layer | What it checks                                                                            | AI      | Command                             |
 | ----- | ----------------------------------------------------------------------------------------- | ------- | ----------------------------------- |
 | 1     | Bank format, and whether each scenario's needed tools and connect cards exist in the repo | No (CI) | `pnpm eval:static`                  |
-| 2     | Replays recorded tool responses to look only at the AI's judgment                         | Yes     | (next step)                         |
+| 2     | Replays recorded tool responses to look only at the AI's judgment                         | Yes     | `pnpm eval:run --replay <dir>`      |
 | 3     | End to end with the real AI and real sites (every approval is rejected)                   | Yes     | `pnpm eval:run` → `pnpm eval:score` |
 
 ## Running layer 3
@@ -22,6 +22,32 @@ node evals/score.mjs evals/out/<date> --judge --html evals/out/<date>/card.html
 - Selecting: `--ids a#1,b#2` · `--where key=value,…` (type, now, pri, cat, perturb; for ones with no perturbation, `perturb=기본` "default") · `--n` · `--seed` · `--per-family` (default 1: more different tasks rather than the same task in different tones)
 - Safety: any **approval request** raised during a test is recorded and then **rejected immediately** (no payments, no sending). Goals, memories, and library items created by the test are deleted afterward. Feed posts cannot be deleted, so only a record is left.
 - Scenarios that already have a record are skipped (use `--again` to rerun). It stops when it hits a usage limit.
+
+## Running layer 2 (replay)
+
+Layer 3 answers change from day to day (a site shows other items, a login expires), so two runs differ for reasons
+that are not Dool2's judgment. Layer 2 fixes the tool answers: record a run once, then replay it after every
+persona, tool description or harness change. Only the AI's choices can change, and no site, login or browser is used.
+
+```bash
+# The daemon must be a test PC (DOOL2_DEV_RESET=1): the tool tape is closed on a normal PC
+# 1) Record: a normal layer 3 run that also keeps every tool answer in each record ("tape")
+node evals/run.mjs --token <screen token> --where type=실행+승인 --n 20 --record --out evals/out/tape-base
+# 2) Replay: the same scenarios, with the daemon answering each tool call from the tape instead of running it
+node evals/run.mjs --token <screen token> --replay evals/out/tape-base --out evals/out/replay-<change>
+node evals/score.mjs evals/out/replay-<change> --judge --html evals/out/replay-<change>/card.html
+node evals/compare.mjs evals/out/replay-before evals/out/replay-<change>
+```
+
+- A call is answered when the same tool gets the same input (each recorded answer in order, then reused). If only
+  the search words (`query`, `keyword` …) differ, it is answered too and counted as "other search words". Anything
+  else gets "not recorded" (like a failed tool) and is listed on the report card. Many "not recorded" calls mean this
+  run left the recorded path, so look at those before trusting the score.
+- Nothing runs while replaying: no browser, no files, no messages, no approvals. A call that created an approval
+  request when it was recorded counts as reaching that approval in the replay, so the code verdict still works.
+- One scenario at a time (the tape is one per daemon). A tape left on (the runner stopped halfway) turns itself off
+  after 30 minutes.
+- It still calls the real AI, so it uses subscription quota. It replaces the sites, not the AI.
 
 ## Scoring
 
