@@ -827,6 +827,33 @@ describe('긴 목록 나눠 받기 (피드·보관함)', () => {
     expect(life.libraryItem(page.items[29]?.id ?? '')?.thumb).toHaveLength(10_000)
   })
 
+  it('같은 PC 파일을 다시 만들면 예전 칸은 빼고 새 것만, 예전에 쌓인 것은 켤 때 하나로', () => {
+    const store = kv()
+    const life = new Life(store, () => MON_8AM)
+    life.save({ kind: 'file', title: '영상.mp4', body: '1판', path: '~/Documents/두리/영상.mp4' })
+    life.save({ kind: 'note', title: '메모', body: '글' })
+    life.save({ kind: 'file', title: '영상.mp4', body: '2판', path: '~/Documents/두리/영상.mp4' })
+    expect(life.library().map((x) => x.body)).toEqual(['2판', '글'])
+    // 예전 판이 쌓아 둔 것 (고쳐 쓸 때마다 칸이 늘었다)
+    const dup = (body: string) => ({
+      id: body,
+      kind: 'file',
+      title: '그림.png',
+      body,
+      path: '~/Documents/두리/그림.png',
+      savedAt: MON_8AM.toISOString(),
+    })
+    store.setSetting('library', [
+      dup('새'),
+      { ...dup('따로'), path: '~/Desktop/a.png' },
+      dup('옛'),
+      dup('더 옛'),
+    ])
+    const again = new Life(store, () => MON_8AM)
+    expect(again.tidyLibrary()).toBe(2)
+    expect(again.library().map((x) => x.body)).toEqual(['새', '따로'])
+  })
+
   it('목표 진행 기록은 최근 것만 보낸다 (저장은 그대로)', () => {
     const life = new Life(kv(), () => MON_8AM)
     life.run('goal_create', { title: '걷기', prompt: '걸었는지', category: '건강' })

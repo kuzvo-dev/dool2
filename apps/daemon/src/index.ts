@@ -356,6 +356,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const mcp = dool2McpServer(opts.mcpServerScript)
   /** 목표·보관함·기억·피드 */
   const life = new Life(store)
+  life.tidyLibrary()
   // 폰에서 보낸 사진: 작업 폴더 photos/에 두고, 말에는 표시만 붙인다 (두리는 photo_view로 본다)
   const photoDir = join(paths.workspace, 'photos')
   async function savePhoto(b64: string): Promise<string> {
