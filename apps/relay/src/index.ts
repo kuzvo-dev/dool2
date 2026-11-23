@@ -1,11 +1,11 @@
-// 두리 중계 서버 (ADR 0012). 폰과 PC 사이에서 암호문 봉투만 옮긴다. 내용은 볼 수 없다.
+// Dool2 relay (ADR 0012). Only moves ciphertext envelopes between phone and PC. It cannot read the content.
 //
-// - 연결하면 먼저 "나는 이 기기"임을 Ed25519 서명으로 증명한다 (기기 id = 서명 공개키 해시)
-// - 봉투의 from은 증명한 기기여야 한다 (남을 사칭할 수 없다)
-// - PC 방(id)마다 PC 하나와 폰 여럿을 잇는다. 받는 쪽이 꺼져 있으면 7일까지 쌓아 두고, 켜지면 넘긴다
-// - 누가 페어링된 폰인지는 모른다. 그건 PC가 판단해서 나머지는 버린다
+// - On connect, a device first proves "I am this device" with an Ed25519 signature (device id = hash of the signing public key)
+// - An envelope's `from` must be the proven device (no impersonation)
+// - Each PC room (id) links one PC and several phones. If the receiver is offline, envelopes are queued for up to 7 days and delivered when it comes back
+// - The relay does not know which phones are paired. The PC decides that and discards the rest
 //
-// 이 Node 버전은 자체 호스팅·개발용이다. 공식 서버는 같은 규칙(core.ts)으로 Cloudflare Durable Objects에 올린다(worker.ts).
+// This Node version is for self-hosting and development. The official relay runs the same rules (core.ts) on Cloudflare Durable Objects (worker.ts).
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -34,7 +34,7 @@ interface Queued {
 export interface RelayOptions {
   port?: number
   host?: string
-  /** 폰 앱(PWA) 파일 폴더. /app/ 아래로 내려준다 */
+  /** Phone app (PWA) files folder. Served under /app/ */
   appDir?: string
   now?: () => number
   log?: (line: string) => void
@@ -44,7 +44,7 @@ export interface Relay {
   url: string
   port: number
   server: Server
-  /** 쌓여 있는 봉투 수 (확인용) */
+  /** Number of queued envelopes (for checks) */
   queued(id: string): number
   close(): Promise<void>
 }
@@ -62,9 +62,9 @@ const TYPES: Record<string, string> = {
 export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
   const now = opts.now ?? Date.now
   const log = opts.log ?? (() => {})
-  /** 기기 id → 연결 (PC는 하나, 폰은 기기마다 하나) */
+  /** Device id -> connection (one for the PC, one per phone) */
   const sockets = new Map<string, WebSocket>()
-  /** 기기 id → 그 기기가 속한 방(PC id) */
+  /** Device id -> the room (PC id) the device belongs to */
   const rooms = new Map<string, string>()
   const queues = new Map<string, Queued[]>()
 
@@ -87,7 +87,7 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
   }
 
   wss.on('connection', (ws, req) => {
-    // 주소에 방이 실려 오면(`/link?room=`) 증명한 방과 같아야 한다. 예전 접속기는 방 없이 온다
+    // If the URL carries a room (`/link?room=`), it must match the proven room. Older clients connect without one
     const urlRoom = new URL(req.url ?? '/', 'http://x').searchParams.get('room') ?? undefined
     let me: Me | undefined
     const authTimer = setTimeout(() => ws.close(CLOSE.helloTimeout, 'hello timeout'), AUTH_TIMEOUT_MS)
@@ -111,13 +111,13 @@ export async function startRelay(opts: RelayOptions = {}): Promise<Relay> {
         clearTimeout(authTimer)
         me = who
         budget = RATE_LIMIT[me.role]
-        // 같은 기기가 다시 붙으면 예전 연결을 닫는다
+        // If the same device reconnects, close the old connection
         sockets.get(me.id)?.close(CLOSE.replaced, 'replaced')
         sockets.set(me.id, ws)
         rooms.set(me.id, me.room)
         ws.send(JSON.stringify({ relay: 'ready', id: me.id }))
         flush(me.id, ws)
-        log(`연결: ${me.role} ${me.id.slice(0, 6)}`)
+        log(`connected: ${me.role} ${me.id.slice(0, 6)}`)
         return
       }
       if (--budget < 0) return ws.close(CLOSE.tooFast, 'too fast')
@@ -168,7 +168,7 @@ async function serveHttp(req: IncomingMessage, res: ServerResponse, appDir?: str
   }
   if (!appDir || !url.pathname.startsWith('/app/')) {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
-    return res.end('없는 주소예요')
+    return res.end('Not found')
   }
   let rel = decodeURIComponent(url.pathname.slice('/app/'.length)) || 'index.html'
   if (rel.endsWith('/')) rel += 'index.html'
@@ -178,11 +178,11 @@ async function serveHttp(req: IncomingMessage, res: ServerResponse, appDir?: str
     return
   }
   const st = await stat(file).catch(() => undefined)
-  // 앱 안의 화면 이동은 모두 index.html이 처리한다
+  // index.html handles all in-app navigation
   const target = st?.isFile() ? file : join(appDir, 'index.html')
   res.writeHead(200, {
     'content-type': TYPES[extname(target)] ?? 'application/octet-stream',
-    // 앱은 작고 자주 바뀐다. 매번 새것인지 확인하게 해서 업데이트가 바로 닿게 한다 (아이콘만 오래 둔다)
+    // The app is small and changes often. Revalidate every time so updates land right away (only icons are cached long)
     'cache-control': extname(target) === '.png' ? 'public, max-age=86400' : 'no-cache',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',

@@ -1,4 +1,4 @@
-// dool2-hands(맥) 빌드 → dist/dool2-hands. 맥이 아니면 아무것도 하지 않는다 (윈도우 도우미는 따로)
+// Builds dool2-hands (macOS) -> dist/dool2-hands. Does nothing on other OSes (the Windows helper is separate)
 import { execFileSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 if (process.platform !== 'darwin') {
-  console.log('dool2-hands: 맥이 아니라서 건너뛰어요')
+  console.log('dool2-hands: not macOS, skipping')
   process.exit(0)
 }
 mkdirSync(join(root, 'dist'), { recursive: true })
@@ -17,7 +17,7 @@ execFileSync(
     '-swift-version',
     '5',
     '-target',
-    // DOOL2_ARCH로 다른 칩용도 만든다 (릴리스: Apple 칩 기계에서 인텔용까지)
+    // DOOL2_ARCH builds for another chip too (release: Intel builds on an Apple silicon machine)
     `${(process.env.DOOL2_ARCH ?? process.arch) === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos14.0`,
     '-o',
     join(root, 'dist', 'dool2-hands'),

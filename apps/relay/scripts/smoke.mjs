@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 중계 서버가 제대로 도는지 밖에서 확인한다: node scripts/smoke.mjs https://relay.dool2.com
-// 1) 폰 → PC 암호문 전달  2) 꺼진 PC로 보낸 봉투가 PC가 켜지면 도착  3) 서명이 틀리면 끊김
+// Checks from outside that the relay works: node scripts/smoke.mjs https://relay.dool2.com
+// 1) phone -> PC ciphertext delivery  2) an envelope sent to an offline PC arrives when it comes online  3) a bad signature is disconnected
 import { generateDevice, linkKey, open, seal } from '@dool2/protocol/e2e'
 import { LinkClient, linkUrl } from '@dool2/protocol/link'
 
@@ -10,7 +10,7 @@ const wait = async (check, ms = 10_000) => {
     if (check()) return
     await new Promise((r) => setTimeout(r, 50))
   }
-  throw new Error('시간 초과')
+  throw new Error('timed out')
 }
 const clients = []
 const connect = async (role, keys, room) => {
@@ -35,30 +35,26 @@ try {
 
   let phone
   let pc
-  await step('꺼진 PC로 보낸 부탁이 쌓였다가 PC가 켜지면 도착', async () => {
+  await step('request sent to an offline PC is queued and arrives when the PC comes online', async () => {
     phone = await connect('phone', phoneKeys, pcKeys.id)
     phone.c.send(
-      await seal(
-        kPhone,
-        { v: 1, from: phoneKeys.id, to: pcKeys.id, kind: 'ask', seq: 1 },
-        { text: '나중에' },
-      ),
+      await seal(kPhone, { v: 1, from: phoneKeys.id, to: pcKeys.id, kind: 'ask', seq: 1 }, { text: 'later' }),
     )
     await new Promise((r) => setTimeout(r, 500))
     pc = await connect('pc', pcKeys)
     await wait(() => pc.got.length === 1)
-    if ((await open(kPc, pc.got[0])).text !== '나중에') throw new Error('내용이 달라요')
+    if ((await open(kPc, pc.got[0])).text !== 'later') throw new Error('content differs')
   })
-  await step('폰 → PC, PC → 폰 실시간 전달 (내용은 암호문)', async () => {
+  await step('live phone -> PC and PC -> phone delivery (content is ciphertext)', async () => {
     phone.c.send(
-      await seal(kPhone, { v: 1, from: phoneKeys.id, to: pcKeys.id, kind: 'ask', seq: 2 }, { text: '안녕' }),
+      await seal(kPhone, { v: 1, from: phoneKeys.id, to: pcKeys.id, kind: 'ask', seq: 2 }, { text: 'hello' }),
     )
     await wait(() => pc.got.length === 2)
-    if (JSON.stringify(pc.got[1]).includes('안녕')) throw new Error('평문이 보여요')
+    if (JSON.stringify(pc.got[1]).includes('hello')) throw new Error('plaintext is visible')
     pc.c.send(await seal(kPc, { v: 1, from: pcKeys.id, to: phoneKeys.id, kind: 'reply', seq: 1 }, 'ok'))
     await wait(() => phone.got.length === 1)
   })
-  await step('서명이 틀린 접속은 끊긴다', async () => {
+  await step('connection with a bad signature is closed', async () => {
     const ws = new WebSocket(linkUrl(relay, pcKeys.id))
     await new Promise((r, j) => {
       ws.onopen = r
@@ -70,9 +66,9 @@ try {
     ws.send(
       JSON.stringify({ role: 'pc', id: pcKeys.id, signPub: pcKeys.signPub, ts: Date.now(), sig: 'AAAA' }),
     )
-    if ((await code) !== 4003) throw new Error('끊기지 않았어요')
+    if ((await code) !== 4003) throw new Error('not disconnected')
   })
-  console.log(`모두 통과: ${relay}`)
+  console.log(`all passed: ${relay}`)
 } catch (e) {
   console.error(`✗ ${e.message}`)
   process.exitCode = 1

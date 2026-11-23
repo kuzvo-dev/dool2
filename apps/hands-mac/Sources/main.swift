@@ -1,11 +1,11 @@
-// dool2-hands (맥): 두리 PC 화면 제어 도우미 (docs/architecture.md 5.2, ADR 0013)
+// dool2-hands (macOS): Dool2 PC screen control helper (docs/architecture.md 5.2, ADR 0013)
 //
-// 두리 본체가 띄워서 표준 입출력으로 한 줄 JSON을 주고받는다.
+// Started by the Dool2 daemon; exchanges one-line JSON over stdin/stdout.
 //   → {"id":1,"cmd":"snapshot","args":{"bundleId":"com.tinyspeck.slackmacgap"}}
-//   ← {"id":1,"ok":true,"result":{...}}  또는  {"id":1,"ok":false,"error":"..."}
+//   ← {"id":1,"ok":true,"result":{...}}  or  {"id":1,"ok":false,"error":"..."}
 //
-// 판단은 하지 않는다. 어떤 앱을 다뤄도 되는지, 어떤 버튼이 위험한지는 본체가 정한다.
-// 다만 브라우저·비밀번호 관리자·두리 자신은 여기서도 막는다 (본체가 실수해도 넘지 않게).
+// It makes no decisions. The daemon decides which apps may be controlled and which buttons are risky.
+// But browsers, password managers and Dool2 itself are blocked here too (so a daemon mistake cannot cross that line).
 import ApplicationServices
 import Cocoa
 import ScreenCaptureKit
@@ -27,9 +27,9 @@ func reply(_ id: Any, ok: Bool, _ payload: Any) {
   FileHandle.standardOutput.write((s + "\n").data(using: .utf8)!)
 }
 
-// ── 막는 앱 ─────────────────────────────────────────────
+// ── Blocked apps ─────────────────────────────────────────────
 
-/** 본체 설정과 상관없이 절대 다루지 않는 앱 (브라우저는 브라우저 도구로만, 비밀번호 관리자, 두리 자신) */
+/** Apps never controlled regardless of daemon settings (browsers only via browser tools, password managers, Dool2 itself) */
 let hardBlocked: [String] = [
   "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.canary", "com.google.chrome.for.testing",
   "com.apple.Safari", "company.thebrowser.Browser", "com.microsoft.edgemac", "org.mozilla.firefox",
@@ -44,7 +44,7 @@ func checkAllowed(_ bundleId: String) throws {
   }
 }
 
-// ── 앱 ─────────────────────────────────────────────────
+// ── Apps ─────────────────────────────────────────────────
 
 func runningApp(_ bundleId: String) -> NSRunningApplication? {
   NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first
@@ -63,7 +63,7 @@ func appsList() -> [[String: Any]] {
     }
 }
 
-/** 설치된 앱 (이름으로 번들 id를 찾으려고). /Applications, /System/Applications, ~/Applications */
+/** Installed apps (to look up bundle ids by name). /Applications, /System/Applications, ~/Applications */
 func installedApps() -> [[String: Any]] {
   let fm = FileManager.default
   let dirs = [
@@ -77,7 +77,7 @@ func installedApps() -> [[String: Any]] {
       let path = (d as NSString).appendingPathComponent(it)
       guard let b = Bundle(path: path), let id = b.bundleIdentifier else { continue }
       var row: [String: Any] = ["bundleId": id, "name": fm.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")]
-      // 앱스토어에서 받는 중이면 아이콘·정보만 있는 빈 앱이 먼저 생긴다 (실행 파일이 없다). 설치됐다고 말하면 안 된다
+      // While downloading from the App Store, an empty app with only the icon and info appears first (no executable). Do not report it as installed
       if !hasExecutable(b) { row["installing"] = true }
       out.append(row)
     }
@@ -85,7 +85,7 @@ func installedApps() -> [[String: Any]] {
   return out
 }
 
-/** 실행 파일까지 있어야 다 깔린 앱이다 (앱스토어 설치 중인 빈 앱은 Info.plist·아이콘만 있다) */
+/** An app is fully installed only once it has an executable (an App Store app still installing has only Info.plist and the icon) */
 func hasExecutable(_ b: Bundle) -> Bool {
   guard let exe = b.executableURL else { return false }
   return FileManager.default.isExecutableFile(atPath: exe.path)
@@ -102,7 +102,7 @@ func openApp(_ bundleId: String) async throws -> [String: Any] {
   let cfg = NSWorkspace.OpenConfiguration()
   cfg.activates = true
   _ = try await NSWorkspace.shared.openApplication(at: url, configuration: cfg)
-  // 창이 뜰 때까지 잠깐 기다린다 (최대 8초)
+  // Wait briefly for a window to appear (up to 8 seconds)
   for _ in 0..<40 {
     if let app = runningApp(bundleId), app.isFinishedLaunching, focusedWindow(app.processIdentifier) != nil { break }
     try await Task.sleep(nanoseconds: 200_000_000)
@@ -120,7 +120,7 @@ func activate(_ bundleId: String) async throws -> NSRunningApplication {
   return app
 }
 
-// ── 접근성 트리 ─────────────────────────────────────────
+// ── Accessibility tree ─────────────────────────────────────────
 
 func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
   var v: AnyObject?
@@ -154,7 +154,7 @@ func focusedWindow(_ pid: pid_t) -> AXUIElement? {
   return (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first
 }
 
-/** 브라우저 도구와 같은 말: [e12 버튼 "보내기"] */
+/** Same Korean role words as the browser tools, e.g. [e12 <button> "<Send>"] (read by the daemon and the AI) */
 func roleName(_ role: String, _ subrole: String?) -> String? {
   if subrole == "AXSecureTextField" { return "비밀번호칸" }
   if subrole == "AXSearchField" { return "검색칸" }
@@ -213,13 +213,13 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
       var line = "[\(ref) \(kr)"
       if let nm = name { line += " \"\(nm.prefix(80).replacingOccurrences(of: "\"", with: "'"))\"" }
       else if let f = frame(el), let wf = winFrame, wf.width > 0, wf.height > 0, f.width > 0 {
-        // 글자 없는 그림 버튼 (카카오톡 새 채팅의 일반채팅·팀채팅·오픈채팅): 창 안 위치로 화면 그림과 맞춰 고르게 한다
+        // Icon buttons without text (e.g. the chat type buttons in KakaoTalk new chat): give the position in the window so it can be matched with the screenshot
         let x = Int(((f.midX - wf.minX) / wf.width * 100).rounded())
         let y = Int(((f.midY - wf.minY) / wf.height * 100).rounded())
         line += " 이름 없음 · 창 왼쪽에서 \(x)% 위에서 \(y)%"
       }
       if role == "AXTextField" || role == "AXTextArea" || role == "AXComboBox" {
-        // 비밀번호 칸 값은 절대 내보내지 않는다
+        // Never output the value of a password field
         if sub != "AXSecureTextField", let v = text(el, kAXValueAttribute) {
           line += " 값: \"\(v.prefix(120).replacingOccurrences(of: "\"", with: "'"))\""
         }
@@ -229,7 +229,7 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
       }
       if (attr(el, kAXEnabledAttribute) as? Bool) == false { line += " (못 누름)" }
       add(line + "]")
-      // 행·셀 안의 글자도 읽어야 무엇인지 안다
+      // Read the text inside rows and cells too, to know what they are
       if role != "AXRow" && role != "AXCell" { return }
     } else if role == "AXImage", let nm = name {
       add("(그림: \(nm.prefix(60)))")
@@ -239,7 +239,7 @@ func snapshot(_ bundleId: String, maxChars: Int) async throws -> [String: Any] {
     for c in kids(el) { walk(c, depth + 1) }
   }
   walk(win, 0)
-  // 팝업(+ 메뉴 같은 popover)·다른 창·열린 메뉴도 읽는다: 앞 창만 읽으면 그 안의 항목을 누를 수 없었다 (11-23 카카오톡 새 채팅 메뉴)
+  // Also read popups (popovers such as the + menu), other windows and open menus: reading only the front window made their items unclickable (11-23 KakaoTalk new chat menu)
   let appEl = AXUIElementCreateApplication(app.processIdentifier)
   for w in (attr(appEl, kAXWindowsAttribute) as? [AXUIElement]) ?? [] where !CFEqual(w, win) {
     if truncated { break }
@@ -267,7 +267,7 @@ func element(_ ref: String, _ bundleId: String) throws -> AXUIElement {
   return el
 }
 
-// ── 입력 ───────────────────────────────────────────────
+// ── Input ───────────────────────────────────────────────
 
 func postMouseClick(_ p: CGPoint) {
   let src = CGEventSource(stateID: .hidSystemState)
@@ -307,7 +307,7 @@ func postKey(_ key: String, _ mods: [String]) throws {
   up?.post(tap: .cghidEventTap)
 }
 
-/** 한글은 키 입력으로 치면 입력기가 꼬인다. 클립보드에 넣고 붙여 넣은 뒤 원래 클립보드를 되돌린다 */
+/** Typing Korean as key presses confuses the input method. Put it on the clipboard, paste, then restore the original clipboard */
 func paste(_ s: String) async throws {
   let pb = NSPasteboard.general
   let saved: [[NSPasteboard.PasteboardType: Data]] = (pb.pasteboardItems ?? []).map { item in
@@ -334,7 +334,7 @@ func click(_ args: [String: Any]) async throws -> [String: Any] {
   _ = try await activate(bundleId)
   if let ref = args["ref"] as? String {
     let el = try element(ref, bundleId)
-    // 접근성 "누르기"가 되면 그걸로 (마우스를 움직이지 않는다)
+    // Use the accessibility "press" action when available (does not move the mouse)
     if AXUIElementPerformAction(el, kAXPressAction as CFString) == .success {
       return ["via": "press"]
     }
@@ -362,7 +362,7 @@ func typeText(_ args: [String: Any]) async throws -> [String: Any] {
   return ["typed": s.count]
 }
 
-/** 글자를 키 입력으로 친다 (클립보드를 쓰지 않는다: 비밀번호가 클립보드에 남으면 안 된다) */
+/** Types text as key presses (no clipboard: a password must never stay on the clipboard) */
 func typeUnicode(_ s: String) {
   let src = CGEventSource(stateID: .hidSystemState)
   for ch in s.utf16 {
@@ -378,7 +378,7 @@ func typeUnicode(_ s: String) {
   }
 }
 
-/** 칸을 눌러 비우고 넣는다 */
+/** Clicks the field, clears it and types */
 func focusAndClear(_ el: AXUIElement) async throws {
   AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
   if let f = frame(el), f.width > 0 { postMouseClick(CGPoint(x: f.midX, y: f.midY)) }
@@ -389,9 +389,9 @@ func focusAndClear(_ el: AXUIElement) async throws {
 }
 
 /**
- * 로그인 칸 채우기: 본체가 금고에서 꺼낸 아이디·비밀번호를 지금 창의 로그인 칸에 넣는다 (값은 AI를 거치지 않는다).
- * 비밀번호는 비밀번호 칸(AXSecureTextField)에만 넣는다. 아이디는 비밀번호 칸 위쪽의 입력칸에.
- * 로그인 버튼은 누르지 않는다 (두리가 화면을 읽고 누른다)
+ * Fill login fields: puts the ID and password the daemon took from the vault into the login fields of the current
+ * window (the values never pass through the AI). The password goes only into a password field (AXSecureTextField),
+ * the ID into the text field above it. Does not click the login button (Dool2 reads the screen and clicks it)
  */
 func fillLogin(_ args: [String: Any]) async throws -> [String: Any] {
   let bundleId = args["bundleId"] as? String ?? ""
@@ -424,7 +424,7 @@ func fillLogin(_ args: [String: Any]) async throws -> [String: Any] {
   var filledUser = false
   if !user.isEmpty, let uf = userField {
     try await focusAndClear(uf)
-    // 아이디(메일·전화번호)는 한글 입력기에 걸리지 않게 붙여 넣는다 (비밀번호가 아니라 클립보드를 써도 된다)
+    // Paste the ID (email or phone number) so the Korean input method does not catch it (not a password, so the clipboard is fine)
     try await paste(user)
     try await Task.sleep(nanoseconds: 150_000_000)
     filledUser = true
@@ -434,7 +434,7 @@ func fillLogin(_ args: [String: Any]) async throws -> [String: Any] {
   return ["username": filledUser, "password": true]
 }
 
-/** 지금 글자가 들어가는 곳 (메신저에서 Enter가 보내기인지 가린다: 검색칸·목록이면 보내기가 아니다) */
+/** Where typed text goes now (tells whether Enter sends in a messenger: in a search field or list it does not) */
 func focusedInfo(_ args: [String: Any]) async throws -> [String: Any] {
   let bundleId = args["bundleId"] as? String ?? ""
   try checkAllowed(bundleId)
@@ -454,7 +454,7 @@ func pressKey(_ args: [String: Any]) async throws -> [String: Any] {
   return ["pressed": args["key"] as? String ?? ""]
 }
 
-// ── 화면 캡처 ───────────────────────────────────────────
+// ── Screen capture ───────────────────────────────────────────
 
 func screenshot(_ args: [String: Any]) async throws -> [String: Any] {
   let bundleId = args["bundleId"] as? String ?? ""
@@ -486,7 +486,7 @@ func screenshot(_ args: [String: Any]) async throws -> [String: Any] {
   ]
 }
 
-// ── 상태·권한 ───────────────────────────────────────────
+// ── Status and permissions ───────────────────────────────────────────
 
 func status() -> [String: Any] {
   let session = CGSessionCopyCurrentDictionary() as? [String: Any]
@@ -498,7 +498,7 @@ func status() -> [String: Any] {
   ]
 }
 
-/** 시스템 권한 창을 띄운다 (사용자가 직접 켜야 한다) */
+/** Opens the system permission prompt (the user has to turn it on) */
 func requestPermissions() -> [String: Any] {
   let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
   _ = AXIsProcessTrustedWithOptions(opts)
@@ -506,7 +506,7 @@ func requestPermissions() -> [String: Any] {
   return status()
 }
 
-// ── 명령 ───────────────────────────────────────────────
+// ── Commands ───────────────────────────────────────────────
 
 @MainActor
 func run(_ cmd: String, _ args: [String: Any]) async throws -> Any {
@@ -549,7 +549,7 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 DispatchQueue.global().async {
   while let line = readLine() { handle(line) }
-  // 본체가 끝나면(입력이 닫히면) 같이 끝난다
+  // Exit when the daemon exits (stdin closes)
   exit(0)
 }
 app.run()

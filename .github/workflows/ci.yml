@@ -4,15 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
-  # 맥·윈도우까지 돌리고 싶을 때: Actions 탭 → CI → Run workflow (full 켜기)
+  # To run on macOS and Windows too: Actions tab -> CI -> Run workflow (turn on full)
   workflow_dispatch:
     inputs:
       full:
-        description: 맥·윈도우도 검사
+        description: Also check on macOS and Windows
         type: boolean
         default: true
 
-# 기본은 읽기 전용. 외부 기여자 PR은 메인테이너 승인 뒤에만 돈다 (레포 설정)
+# Read-only by default. PRs from outside contributors run only after a maintainer approves (repo setting)
 permissions:
   contents: read
 
@@ -22,17 +22,17 @@ concurrency:
 
 jobs:
   check:
-    name: 검사 (${{ matrix.os }})
+    name: Check (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        # 지금은 혼자 개발하는 동안이라 리눅스 하나만 (2026-11-17, 기여자가 생기면 셋 다로 되돌린다).
-        # 맥·윈도우는 손으로 돌리기(workflow_dispatch, full)로. 되돌릴 때 맥은 Intel 러너:
-        # GitHub 맥 arm64(macos-latest)는 자리가 모자라 몇 시간씩 못 잡히는 일이 있었다 (2026-11-16)
+        # Linux only while there is a single developer (2026-11-17; go back to all three once contributors join).
+        # macOS and Windows run by hand (workflow_dispatch, full). When restoring, use the Intel runner for macOS:
+        # GitHub macOS arm64 (macos-latest) was short on capacity and sometimes not picked up for hours (2026-11-16)
         os: ${{ fromJSON(inputs.full && '["macos-15-intel","windows-latest","ubuntu-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     env:
-      # CI에서는 Electron 창을 띄우지 않으니 바이너리를 받지 않는다
+      # CI never opens an Electron window, so skip the binary download
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,21 +48,22 @@ jobs:
         timeout-minutes: 8
       - run: pnpm typecheck
         timeout-minutes: 6
-      # 맥 러너에서 가끔 테스트가 멈춰 15분 뒤 취소되면 로그가 남지 않는다: 단계 시간 제한으로 실패시켜 로그를 남긴다
+      # Tests sometimes hang on macOS runners, and a cancel after 15 minutes leaves no log: a step timeout fails it and keeps the log
       - run: pnpm test
         timeout-minutes: 8
-      # 시나리오 은행 형식 + 시나리오마다 필요한 도구·서비스 카드가 있는지 (AI 없이)
+      # Scenario bank format, and that each scenario has the tools and service cards it needs (no AI)
       - run: pnpm eval:static
         timeout-minutes: 2
 
   e2e:
-    # 확장을 진짜 Chrome(Chrome for Testing)에 올리고 진짜 본체와 붙여 시험 가게에서 열기·읽기·누르기·알림창·
-    # 액자·shadow DOM·마우스까지 돌린다 (apps/extension/scripts/e2e.mjs). 사이트 모양에 따른 회귀를 막는다
-    name: 실제 브라우저 시험 (확장)
+    # Loads the extension into real Chrome (Chrome for Testing), connects it to a real daemon, and runs open, read,
+    # click, dialogs, iframes, shadow DOM and mouse on test shops (apps/extension/scripts/e2e.mjs). Catches regressions
+    # that depend on site structure
+    name: Real browser test (extension)
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      # 시험한 Chrome 판으로 고정 (Chrome이 바뀌어 깨지는 것과 코드가 깨지는 것을 섞지 않게)
+      # Pinned to the tested Chrome build (so Chrome changes and code breakage are not mixed up)
       CHROME_BUILD: "157.0.8103.78"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,21 +75,22 @@ jobs:
         timeout-minutes: 6
       - run: pnpm turbo run build --filter=@dool2/extension...
         timeout-minutes: 8
-      - name: Chrome for Testing 받기
+      - name: Download Chrome for Testing
         timeout-minutes: 4
         run: |
           out=$(npx -y @puppeteer/browsers@2 install "chrome@$CHROME_BUILD" --path "$RUNNER_TEMP/chrome" | tail -1)
           echo "DOOL2_TEST_CHROME=${out#* }" >> "$GITHUB_ENV"
-      - name: 시험 돌리기
+      - name: Run tests
         timeout-minutes: 8
         run: xvfb-run -a node apps/extension/scripts/e2e.mjs
-      # 결제 시험 가게(pay-shop.mjs)에서 주문서 → 배송지 액자 → 주소 찾기 액자 속 액자 → 결제 카드 → 늦게 뜨는 결제 창
-      # → 키패드 → 주문 완료 + 주문번호까지 두리 도구로 끝까지 (실측 11-20 G마켓). 단계별 표는 out/e2e-pay-result.txt
-      - name: 결제 흐름 시험
+      # On the payment test shop (pay-shop.mjs), Dool2 tools go all the way: order form -> shipping iframe -> address
+      # search iframe inside an iframe -> payment card -> late payment window -> keypad -> order complete with an order
+      # number (measured 11-20 on Gmarket). Per-step table in out/e2e-pay-result.txt
+      - name: Payment flow test
         if: ${{ !cancelled() }}
         timeout-minutes: 8
         run: xvfb-run -a node apps/extension/scripts/e2e-pay.mjs
-      - name: 실패하면 읽은 화면·캡처 남기기
+      - name: On failure, keep page reads and screenshots
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -97,14 +99,14 @@ jobs:
           retention-days: 7
 
   dco:
-    name: DCO 서명 확인
+    name: DCO sign-off check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: 모든 커밋에 Signed-off-by가 있는지 확인
+      - name: Check every commit has Signed-off-by
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}

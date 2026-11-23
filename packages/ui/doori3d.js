@@ -1,9 +1,9 @@
-// 3D 두리: 말랑한 네모 몸 + 콘센트 얼굴(두 눈 + 열쇠 구멍 입) + 짧은 두 발. 랜딩의 두리와 같은 모양.
-// 표정 6개(idle·thinking·working·asking·done·sleeping)는 눈과 머리 옆 소품으로 바꾼다.
+// 3D Dool2: soft square body + power-outlet face (two eyes + keyhole mouth) + two short feet. Same shape as on the landing page.
+// The 6 moods (idle, thinking, working, asking, done, sleeping) change the eyes and a prop beside the head.
 //
-// 쓰는 곳 두 가지:
-//  - 작은 자리: doori/*.webp (이 파일로 미리 뽑은 정지 그림, doori-render.html로 다시 뽑는다)
-//  - 큰 자리: 앱 빌드가 이 파일을 three와 함께 doori3d.js 하나로 묶고, 화면이 필요할 때만 불러 mountDoori()
+// Used in two ways:
+//  - Small spots: doori/*.webp (still images pre-rendered from this file, re-render with doori-render.html)
+//  - Large spots: the app build bundles this file with three into one doori3d.js, and screens load it only when needed and call mountDoori()
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
@@ -36,7 +36,7 @@ export function createDoori(renderer) {
   const body = new THREE.Group()
   root.add(body)
 
-  // ── 몸 (위는 밝게, 아래는 진하게, 옆면에 살짝 무지개빛)
+  // ── Body (lighter on top, darker below, a slight iridescence on the sides)
   const W = 2.0
   const H = 1.95
   const D = 1.6
@@ -73,14 +73,14 @@ export function createDoori(renderer) {
   })
   body.add(new THREE.Mesh(geo, shell))
 
-  // ── 얼굴
+  // ── Face
   const face = new THREE.Group()
   face.position.z = D / 2 + 0.005
   body.add(face)
   const ink = new THREE.MeshPhysicalMaterial({ color: '#111214', roughness: 0.2, clearcoat: 1 })
   const white = new THREE.MeshBasicMaterial({ color: '#ffffff' })
 
-  // 뜬 눈 (캡슐 + 반짝임)
+  // Open eyes (capsule + sparkle)
   const openEyes = []
   for (const ex of [-0.32, 0.32]) {
     const eye = new THREE.Group()
@@ -93,7 +93,7 @@ export function createDoori(renderer) {
     face.add(eye)
     openEyes.push(eye)
   }
-  // 웃는 눈 ^ ^ / 감은 눈 ‿ ‿ : 반원 고리
+  // Smiling eyes ^ ^ / closed eyes ‿ ‿ : half-ring arcs
   const arcEye = (flip) => {
     const g = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.042, 12, 32, Math.PI), ink)
     g.scale.z = 0.5
@@ -112,7 +112,7 @@ export function createDoori(renderer) {
     face.add(e)
     return e
   })
-  // 볼 (다 했어요)
+  // Cheeks (done)
   const blushMat = new THREE.MeshBasicMaterial({
     color: '#ffa0b8',
     transparent: true,
@@ -127,7 +127,7 @@ export function createDoori(renderer) {
     return b
   })
 
-  // 열쇠 구멍 입
+  // Keyhole mouth
   const keyMat = new THREE.MeshStandardMaterial({ color: darken(MINT, 0.55), roughness: 0.4 })
   const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.094, 0.094, 0.03, 32), keyMat)
   hole.rotation.x = Math.PI / 2
@@ -142,7 +142,7 @@ export function createDoori(renderer) {
   stem.position.z = -0.015
   face.add(hole, stem)
 
-  // ── 발
+  // ── Feet
   const footMat = new THREE.MeshPhysicalMaterial({ color: darken(MINT, 0.12), roughness: 0.25, clearcoat: 1 })
   for (const fx of [-0.42, 0.42]) {
     const foot = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.42, 0.52, 6, 0.19), footMat)
@@ -150,9 +150,9 @@ export function createDoori(renderer) {
     root.add(foot)
   }
 
-  // ── 소품 (몸 밖, 머리 오른쪽 위)
+  // ── Props (outside the body, top right of the head)
   const glossy = (color) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.2, clearcoat: 1 })
-  // 생각 중: 점 세 개
+  // Thinking: three dots
   const dots = new THREE.Group()
   ;[
     [0.9, 0.92, 0.07],
@@ -164,7 +164,7 @@ export function createDoori(renderer) {
     dots.add(s)
   })
   root.add(dots)
-  // 물어보는 중: 노란 물음표
+  // Asking: yellow question mark
   const ask = new THREE.Group()
   const hook = new THREE.CatmullRomCurve3(
     [
@@ -186,7 +186,7 @@ export function createDoori(renderer) {
   ask.position.set(1.0, 0.95, 0.3)
   ask.rotation.z = -0.18
   root.add(ask)
-  // 일하는 중: 땀방울
+  // Working: sweat drop
   const sweat = new THREE.Group()
   const drop = new THREE.Mesh(new THREE.SphereGeometry(0.11, 24, 24), glossy('#7fc6ff'))
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 24), glossy('#7fc6ff'))
@@ -196,7 +196,7 @@ export function createDoori(renderer) {
   sweat.rotation.z = -0.35
   sweat.scale.setScalar(1.45)
   root.add(sweat)
-  // 다 했어요: 반짝 별 두 개
+  // Done: two sparkling stars
   const starShape = new THREE.Shape()
   for (let i = 0; i < 8; i++) {
     const r = i % 2 ? 0.045 : 0.16
@@ -222,7 +222,7 @@ export function createDoori(renderer) {
     sparks.add(m)
   })
   root.add(sparks)
-  // 자는 중: Z z
+  // Sleeping: Z z
   const zShape = new THREE.Shape()
   ;[
     [-0.5, 0.5],
@@ -273,7 +273,7 @@ export function createDoori(renderer) {
     sweat.visible = mood === 'working'
     sparks.visible = mood === 'done'
     zs.visible = mood === 'sleeping'
-    // 눈 위치·크기: 생각 중엔 위를, 일하는 중엔 아래를 집중해서 본다
+    // Eye position and size: looks up while thinking, focuses down while working
     const look = {
       thinking: [-0.05, 0.08, 1, 1],
       working: [0.05, -0.02, 1, 0.66],
@@ -290,7 +290,7 @@ export function createDoori(renderer) {
   }
   setMood('idle')
 
-  /** 움직임 한 칸: 숨쉬기·깜빡임·소품 흔들림 */
+  /** One animation step: breathing, blinking, prop wobble */
   let nextBlink = 2.2
   function animate(t) {
     const breath = mood === 'sleeping' ? 0.9 : mood === 'working' ? 3.2 : 1.4
@@ -320,7 +320,7 @@ export function createDoori(renderer) {
 
 export function makeCamera(aspect = 1) {
   const camera = new THREE.PerspectiveCamera(26, aspect, 0.1, 100)
-  // 몸이 그림 정가운데 (소품은 머리 오른쪽 위 모서리에 붙어 그림 안에 들어온다)
+  // Body in the exact center of the image (the prop sits at the top right corner of the head, inside the frame)
   camera.position.set(0, 0, 7.3)
   camera.lookAt(0, 0, 0)
   return camera
@@ -335,14 +335,14 @@ export function makeRenderer(opts = {}) {
 }
 
 /**
- * 큰 자리에 움직이는 두리를 띄운다. host 안에 캔버스를 넣고, 화면에서 사라지면 멈춘다.
- * 톡 치면 폴짝. 기기에서 '동작 줄이기'를 켜 두면 한 장만 그린다.
+ * Shows an animated Dool2 in a large spot. Puts a canvas inside host and pauses when it leaves the screen.
+ * A tap makes it hop. With "reduce motion" on the device, it draws a single frame.
  * @param {HTMLElement} host
  * @param {{ mood?: string }} [opts]
  */
 export function mountDoori(host, opts = {}) {
   const renderer = makeRenderer()
-  // 작은 캔버스라 1.5배면 레티나에서도 충분하다 (2배는 그릴 픽셀이 1.8배)
+  // The canvas is small, so 1.5x is enough even on Retina (2x means 1.8x the pixels to draw)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
   const canvas = renderer.domElement
   canvas.className = 'doori-canvas'
@@ -374,10 +374,10 @@ export function mountDoori(host, opts = {}) {
     if (!still) d.root.rotation.y = (mood === 'thinking' ? -0.32 : -0.18) + Math.sin(t * 0.5) * 0.06
     renderer.render(d.scene, camera)
   }
-  // 늘 60~120장을 그리면 GPU·CPU를 50% 넘게 쓴다(실측, 두리 셋). 그래서
-  // - 폴짝·표정 바꾸기·마우스 올리기 뒤 1초는 제 속도로
-  // - 일하는 중·생각 중은 움직임이 보이게 초당 15장 (창이 뒤에 있으면 6장)
-  // - 가만히 있으면 6초 뒤 멈추고 마지막 장면을 둔다. 다시 건드리면 움직인다
+  // Always drawing 60-120 fps uses over 50% GPU/CPU (measured, three Dool2s). So
+  // - full speed for 1 second after a hop, mood change or hover
+  // - 15 fps while working or thinking so the motion shows (6 fps when the window is in the background)
+  // - when idle, stop after 6 seconds and keep the last frame. Touching it again resumes
   const busyMood = () => mood === 'working' || mood === 'thinking'
   const loop = (now = performance.now()) => {
     raf = 0
@@ -440,7 +440,7 @@ export function mountDoori(host, opts = {}) {
       canvas.removeEventListener('pointerenter', onHover)
       d.dispose()
       renderer.dispose()
-      // WebGL 문맥을 바로 돌려준다 (안 하면 GC 때까지 GPU 메모리를 쥔다)
+      // Release the WebGL context right away (otherwise it holds GPU memory until GC)
       renderer.forceContextLoss()
       canvas.remove()
     },

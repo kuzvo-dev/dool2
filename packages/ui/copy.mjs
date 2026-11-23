@@ -1,5 +1,5 @@
-// 앱 빌드가 부르는 도우미: ui.css와 두리 캐릭터(doori/), 글꼴을 앱의 dist 폴더로 복사한다.
-// 앱 화면은 묶지 않고 파일을 그대로 불러오므로, 같은 폴더에 ui.css·doori/·fonts/가 있어야 한다.
+// Helper called by app builds: copies ui.css, the Dool2 character (doori/) and fonts into the app's dist folder.
+// App screens load files as is (not bundled), so ui.css, doori/ and fonts/ must sit in the same folder.
 //   import { copyUi } from '../../../packages/ui/copy.mjs'
 //   copyUi('dist/renderer', { fonts: true })
 import { cpSync, mkdirSync } from 'node:fs'
@@ -13,9 +13,9 @@ export function copyUi(to, opts = {}) {
   mkdirSync(to, { recursive: true })
   cpSync(join(here, 'ui.css'), join(to, 'ui.css'))
   cpSync(join(here, 'doori'), join(to, 'doori'), { recursive: true })
-  // 입체 이모지 (Fluent Emoji 3D, MIT · emoji/LICENSE)
+  // 3D emoji (Fluent Emoji 3D, MIT, emoji/LICENSE)
   cpSync(join(here, 'emoji'), join(to, 'emoji'), { recursive: true })
-  // 서비스 로고 (연결 카드 id.png). 없는 카드는 화면이 이름 첫 글자를 보여 준다
+  // Service logos (connect card id.png). Cards without one show the first letter of the name
   cpSync(join(here, 'logos'), join(to, 'logos'), { recursive: true, filter: (f) => !f.endsWith('.md') })
   if (opts.fonts) {
     cpSync(join(here, 'fonts.css'), join(to, 'fonts.css'))
@@ -24,8 +24,8 @@ export function copyUi(to, opts = {}) {
 }
 
 /**
- * 3D 두리(doori3d.js + three)를 화면이 따로 불러올 파일 하나로 묶는다. 앱의 esbuild를 넘겨받는다.
- * 화면은 import('./doori3d.js')로 필요할 때만 불러오고, 실패하면 정지 그림을 그대로 둔다.
+ * Bundles the 3D Dool2 (doori3d.js + three) into one file that screens load separately. Takes the app's esbuild.
+ * Screens load it with import('./doori3d.js') only when needed, and keep the still image if that fails.
  * @param {typeof import('esbuild').build} build @param {string} outfile
  */
 export function bundleDoori3d(build, outfile) {

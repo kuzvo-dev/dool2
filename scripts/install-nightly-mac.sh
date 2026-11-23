@@ -1,17 +1,17 @@
 #!/bin/bash
-# 맥에 서비스 도구 매일 점검(scripts/connector-nightly.sh)을 launchd로 건다 (ADR 0020).
-# 매일 새벽 4:30 (맥이 잠들어 있었으면 깨어날 때) 돈다. 끄기: launchctl bootout gui/$UID/com.dool2.connector-nightly
+# Installs the nightly service tools check (scripts/connector-nightly.sh) on a Mac with launchd (ADR 0020).
+# Runs daily at 4:30 a.m. (or on wake if the Mac was asleep). Turn off: launchctl bootout gui/$UID/com.dool2.connector-nightly
 #
-#   DOOL2_TEST_CHROME=".../Google Chrome for Testing" DOOL2_GH_USER=<계정> bash scripts/install-nightly-mac.sh
+#   DOOL2_TEST_CHROME=".../Google Chrome for Testing" DOOL2_GH_USER=<account> bash scripts/install-nightly-mac.sh
 set -euo pipefail
-: "${DOOL2_TEST_CHROME:?Chrome for Testing 경로가 필요해요}"
+: "${DOOL2_TEST_CHROME:?Path to Chrome for Testing is required}"
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 DIR=${DOOL2_NIGHTLY_DIR:-$HOME/dev/kuzvo/dool2-nightly}
 LABEL=com.dool2.connector-nightly
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 NODE_DIR=$(dirname "$(command -v node)")
 
-# 점검용 작업 폴더 (이 레포의 git worktree)
+# Working folder for the check (a git worktree of this repo)
 if [ ! -d "$DIR" ]; then
   git -C "$HERE" fetch -q origin
   git -C "$HERE" worktree add -q --detach "$DIR" origin/main
@@ -40,4 +40,4 @@ cat >"$PLIST" <<EOF
 EOF
 launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$UID" "$PLIST"
-echo "걸었어요: 매일 4:30 ($PLIST). 지금 한 번 돌리려면: launchctl kickstart gui/$UID/$LABEL"
+echo "Installed: daily at 4:30 ($PLIST). To run once now: launchctl kickstart gui/$UID/$LABEL"

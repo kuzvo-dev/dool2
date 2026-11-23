@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "두리 디자인 시스템: PC 앱·폰 앱·Chrome 확장이 같이 쓰는 토큰과 부품 (CSS, 3D 두리)",
+  "description": "Dool2 design system: tokens and parts shared by the desktop app, phone app and Chrome extension (CSS, 3D Dool2)",
   "files": [
     "ui.css",
     "doori",

@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="ko">
 <!--
-  두리 그림 다시 뽑기 (개발용). doori3d.js를 고친 뒤 이 페이지를 http로 열면
-  표정 그림(doori/*.webp)을 그려서 보여 주고, 눌러서 내려받을 수 있다.
-  앱 아이콘은 여기서 뽑지 않는다: doori/app-icon.svg 를 고치고 icon-render.html 로 뽑는다.
+  Re-render the Dool2 images (dev only). After editing doori3d.js, open this page over http:
+  it draws the mood images (doori/*.webp), and you can click them to download.
+  App icons are not rendered here: edit doori/app-icon.svg and render them with icon-render.html.
     cd packages/ui && python3 -m http.server 8799   →   http://127.0.0.1:8799/doori-render.html
-  three는 CDN에서 불러온다 (package.json의 three 버전과 맞출 것).
+  three is loaded from a CDN (keep it in sync with the three version in package.json).
 -->
 <head>
 <meta charset="utf-8" />
-<title>두리 그림 뽑기</title>
+<title>Render Dool2 images</title>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
@@ -24,7 +24,7 @@
 </style>
 </head>
 <body>
-<h1>두리 그림</h1>
+<h1>Dool2 images</h1>
 <div class="grid" id="out"></div>
 <script type="module">
 import { createDoori, MOODS, makeCamera, makeRenderer } from './doori3d.js'
@@ -35,7 +35,7 @@ renderer.setPixelRatio(1)
 const d = createDoori(renderer)
 const camera = makeCamera(1)
 
-/** 표정 하나를 size 크기 캔버스로 */
+/** Render one mood onto a canvas of the given size */
 function shot(mood, size) {
   renderer.setSize(size, size, false)
   d.setMood(mood)
@@ -47,7 +47,7 @@ function shot(mood, size) {
   return c
 }
 
-// 표정 그림: 256px webp (화면에서 최대 120px까지, 2배 밀도)
+// Mood images: 256px webp (shown at up to 120px, 2x density)
 for (const m of MOODS) out[`doori/${m}.webp`] = shot(m, 256).toDataURL('image/webp', 0.9)
 
 window.__out = out
