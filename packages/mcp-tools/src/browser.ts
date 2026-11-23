@@ -187,7 +187,8 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'select',
     'Pick from a list',
-    'Reads or picks from a dropdown (product color/size options, select boxes, fields like "open options" or "please select"). Without choose it returns the list (with sold-out marks and the current pick); with choose set to an item\'s text (e.g. "M", "Black", as written on the page) it picks that and returns the changed page. Lists that scripts cannot open are opened by Dool2 with a real mouse. Never use it for payment method or installment lists (use choices on the approval card).',
+    'Reads or picks from a dropdown (product color/size options, select boxes, fields like "open options" or "please select"). Without choose it returns the list (with sold-out marks and the current pick); with choose set to an item\'s text (e.g. "M", "Black", as written on the page) it picks that and returns the changed page. Lists that scripts cannot open are opened by Dool2 with a real mouse. Never use it for payment method or installment lists (use choices on the approval card). ' +
+      'Product options (color, size, volume): pick what the user said; if they did not say, use the clothing and shoe sizes and frequently picked colors in memory; only if memory has nothing, show the options that can be picked (not sold out) and ask once. When the user tells or picks a size, save it with memory_save (e.g. "clothing size M · shoes 260"). Never pick a sold-out option; say so.',
     {
       tabId,
       ref: ref.describe('Ref of the list field (e.g. e49 "open options", e51 select box "color")'),
