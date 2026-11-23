@@ -188,7 +188,7 @@
       "result": {
         "homes": "{{homes}}"
       },
-      "next": "인원에 맞는 침실·침대 수, 평점·후기 수, 총액, 취소 수수료를 견줘 2~3곳을 짧게 보여 주고 고르게 해요. 총액은 그 기간 전체 금액이에요. 예약하려면 airbnb_prepare_booking에 room_id·날짜·인원을 넘기고, 호스트에게 물어볼 게 있으면 airbnb_ask_host.",
+      "next": "인원에 맞는 침실·침대 수, 평점·후기 수, 총액, 취소 수수료를 견줘 2~3곳을 짧게 보여 주고 고르게 해요. 총액은 그 기간 전체 금액이에요. 예약하려면 airbnb_prepare_booking에 room_id·날짜·인원을 넘기고, 호스트에게 물어볼 게 있으면 airbnb_ask_host. 최저가나 비교를 물으면 같은 날짜·인원으로 다른 숙소 서비스 한두 곳(국내는 yeogi_search·yanolja_search, 해외는 agoda_search·booking_search 중 이것 말고)도 찾아 같은 조건으로 합쳐 견줘요.",
       "minIntervalSec": 300
     },
     {

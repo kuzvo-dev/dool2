@@ -160,7 +160,7 @@
         "series": "{{series}}",
         "movies": "{{movies}}"
       },
-      "next": "찾던 작품이 맞는지 이름 몇 개로 물어요. 자세한 정보는 tving_content, 찜은 tving_wishlist.",
+      "next": "찾던 작품이 맞는지 이름 몇 개로 물어요. 자세한 정보는 tving_content, 찜은 tving_wishlist. 어디서 볼 수 있는지 물으면 watcha_search·netflix_browse 결과도 함께 봐요.",
       "expect": {
         "rows": 3,
         "filled": [

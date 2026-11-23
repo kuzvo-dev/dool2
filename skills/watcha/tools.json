@@ -127,7 +127,7 @@
         "titles": "{{titles}}",
         "tags": "{{tags}}"
       },
-      "next": "찾던 작품이 맞는지 이름·연도로 물어요. 분위기·장르로 찾는 중이면 '구독' 태그의 tag_id를 watcha_tag에 넘겨요.",
+      "next": "찾던 작품이 맞는지 이름·연도로 물어요. 분위기·장르로 찾는 중이면 '구독' 태그의 tag_id를 watcha_tag에 넘겨요. 어디서 볼 수 있는지 물으면 tving_search·netflix_browse 결과도 함께 봐요.",
       "expect": {
         "rows": 3,
         "filled": [
