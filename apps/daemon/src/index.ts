@@ -461,6 +461,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   vault.userLang = lang
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   browserTools.userLang = lang
+  // Clicks and typing give only what changed on the page; DOOL2_CLICK_CHANGES=0 gives whole pages (to compare in evals)
+  browserTools.changesOnly = process.env.DOOL2_CLICK_CHANGES !== '0'
   // Remembered routes (ADR 0034): clicks that led somewhere on a site, walked again without the AI in between
   browserTools.routes = new RouteBook(join(paths.dataDir, 'routes.json'))
   // My info (booker and orderer fields): in the same store as the vault, and the AI only sees masked values (browser_fill_profile)

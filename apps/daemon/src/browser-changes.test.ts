@@ -156,6 +156,16 @@ describe('results after clicks and typing', () => {
     expect(out).toContain('This is a checkout screen')
   })
 
+  it('switched off, clicks give the whole page', async () => {
+    const b = shop({ 'click:e15': { text: page('product-options-open') } })
+    const tools = new BrowserTools(b)
+    tools.changesOnly = false
+    await tools.run('read', { tabId: 3 }, ai)
+    const out = text(await tools.run('click', { tabId: 3, ref: 'e15' }, ai))
+    expect(out).toContain('[e20 버튼 "장바구니 담기"]')
+    expect(out).not.toContain('Only what changed')
+  })
+
   it('the same click with no change gives the same result (the loop check can see repeats)', async () => {
     const tools = new BrowserTools(shop())
     await tools.run('read', { tabId: 3 }, ai)

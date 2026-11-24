@@ -847,6 +847,8 @@ export class BrowserTools {
   private pages = new Map<number, PageInfo>()
   /** Per tab: the last whole page the AI saw. Clicks and typing on the same page give only what changed since */
   private seen = new Map<number, SeenPage>()
+  /** Off: clicks and typing give the whole page as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
+  changesOnly = true
   /** Per AI tool call: whole pages read during the call (they become what the AI saw once the call returns) */
   private call = new AsyncLocalStorage<{ reads: Map<number, SeenPage> }>()
   /** Screens where a hand-off was sent back once (tab:URL) — handed off only the second time */
@@ -4039,7 +4041,7 @@ export class BrowserTools {
     this.pages.set(tabId, info)
     // Only changes, against the last whole page the AI saw here (while it is fresh)
     const ctx = this.call.getStore()
-    const base = changes && ctx && !partial ? this.seen.get(tabId) : undefined
+    const base = changes && this.changesOnly && ctx && !partial ? this.seen.get(tabId) : undefined
     const diff =
       base && Date.now() - base.at < SEEN_TTL_MS
         ? pageDiff(base, { url: s.url, text: s.text, truncated: s.truncated })
