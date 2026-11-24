@@ -124,6 +124,10 @@ describe('result blocks (rules moved from the global prompt)', () => {
     expect(d('browser_login')).toContain('first try the simple login the user used on that site')
     expect(d('browser_request_login')).toContain('never sign up on your own')
     expect(d('browser_read')).toContain('not a list page')
+    expect(d('browser_checkout')).toContain('found cheaper on another site earlier in this conversation')
+    expect(d('browser_order_done')).toContain('suggest the helpful follow-ups briefly')
+    expect(d('browser_dialog')).toContain("if it matches the user's request, otherwise [Cancel]")
+    expect(d('browser_handoff')).toContain('Everything a person must do goes through phone cards')
     expect(d('browser_read')).toContain("none for the user's own account pages")
     const r = await client.callTool({ name: 'tool_find', arguments: { query: 'browser_new_password' } })
     const pw = (r.content as { text: string }[])[0]?.text ?? ''
