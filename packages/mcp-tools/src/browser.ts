@@ -283,7 +283,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'login',
     'Fill login from the Dool2 vault',
-    "If the site is saved in the user's Dool2 vault, Dool2 fills the ID and password fields itself. The values are never shown. After filling, click the login button with browser_click. If after clicking the screen says the login failed (e.g. a wrong-password message; you judge), call again with failed: true to report it, so new values can be collected with a card. If the vault has no entry, show a login card with browser_request_login.",
+    "If the site is saved in the user's Dool2 vault, Dool2 fills the ID and password fields itself. The values are never shown. After filling, click the login button with browser_click. If after clicking the screen says the login failed (e.g. a wrong-password message; you judge), call again with failed: true to report it, so new values can be collected with a card. If the vault has no entry, first try the simple login the user used on that site (a remembered method, or Kakao, Naver, Google and so on already signed in in the browser), and if that fails too, show a login card with browser_request_login. If the password is unknown or wrong, the user can choose to reset it from that card.",
     {
       tabId,
       passwordRef: ref.optional().describe('Ref of the password field (e.g. e7). Omit with failed'),
@@ -305,7 +305,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_login',
     'Show login card',
-    "Use on a login page when the site is not in the Dool2 vault (when browser_login says it is not in the vault). Shows a login card on the user's phone. The ID and password the user enters are stored only in the vault and never come to you. After calling, end this reply. For robot checks: picture puzzles use browser_request_tap, text ones browser_request_code (kind: captcha); authentication app approvals use browser_wait_auth; SMS verification codes use browser_request_code.",
+    "Use on a login page when the site is not in the Dool2 vault (when browser_login says it is not in the vault). Shows a login card on the user's phone. The ID and password the user enters are stored only in the vault and never come to you. After calling, say briefly that they can put their ID and password in the card and end this reply. The card also has 'Find account' and 'New here? Sign up' buttons, so do not ask about those separately, and never sign up on your own. For robot checks: picture puzzles use browser_request_tap, text ones browser_request_code (kind: captcha); authentication app approvals use browser_wait_auth; SMS verification codes use browser_request_code.",
     {
       tabId,
       site: z.string().max(60).describe('Site name shown to the user, as the user knows it (e.g. "Costco")'),
@@ -510,7 +510,9 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'new_password',
     'Create a new password',
-    'Use to fill the "new password" field on sign-up or password recovery/change screens. Dool2 creates a strong password that fits the field\'s length rules and types it into that field (and the confirm field). You never receive the password (the result has no value). It is saved in the vault after Dool2 sees the screen confirming the sign-up or change. If the user did not choose to sign up or change the password on that site, Dool2 asks on the phone first and types nothing (then end the reply). Give the ID (email) as username, or my info email is used. Never use it for the password field of a login screen (an existing account).',
+    'Use to fill the "new password" field on sign-up or password recovery/change screens. Dool2 creates a strong password that fits the field\'s length rules and types it into that field (and the confirm field). You never receive the password (the result has no value). It is saved in the vault after Dool2 sees the screen confirming the sign-up or change. If the user did not choose to sign up or change the password on that site, Dool2 asks on the phone first and types nothing (then end the reply). Give the ID (email) as username, or my info email is used. Never use it for the password field of a login screen (an existing account). ' +
+      "Signing up: the ID is my info email, name and phone come from browser_fill_profile, agree only to required terms. Email verification: find and read the site's email with gmail_search; phone codes: browser_request_code; robot checks: browser_request_code (kind: captcha) for text, browser_request_tap for pictures. Read the screen again after signing up (the vault saves only after the completion screen). If the email is already registered, switch to logging in. " +
+      "Resetting a password (hard to undo, so only after the user chose it): open the site's password recovery screen and enter the email to send the reset email; if Gmail is connected, read the link or code in it and open it, then use this with purpose: reset. If identity verification comes up, fill the fields with browser_fill_profile and get it with browser_wait_auth (app approval) or browser_request_code (text message code). If Gmail is not connected so the email cannot be read, show the Gmail connect card with connect_ask and continue once connected.",
     {
       tabId,
       password: ref.describe('Field for the new password'),

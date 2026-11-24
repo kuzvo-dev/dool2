@@ -113,6 +113,23 @@ describe('result blocks (rules moved from the global prompt)', () => {
     expect(d('show_draft')).toContain('this tool does not send')
     await client.close()
   })
+
+  it('carry the login, sign-up and password reset steps', async () => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({}).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    const d = (n: string) => tools.find((t) => t.name === n)?.description ?? ''
+    expect(d('browser_login')).toContain('first try the simple login the user used on that site')
+    expect(d('browser_request_login')).toContain('never sign up on your own')
+    const r = await client.callTool({ name: 'tool_find', arguments: { query: 'browser_new_password' } })
+    const pw = (r.content as { text: string }[])[0]?.text ?? ''
+    expect(pw).toContain('agree only to required terms')
+    expect(pw).toContain('If the email is already registered, switch to logging in')
+    expect(pw).toContain('show the Gmail connect card with connect_ask')
+    await client.close()
+  })
 })
 
 describe('브라우저 도구', () => {
