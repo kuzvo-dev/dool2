@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
 import { createServer, servicesOf, statusText } from './index.js'
+import { ON_DEMAND_TOOLS } from './on-demand.js'
 
 const fixed = () => new Date('2026-11-14T03:00:00Z')
 
@@ -40,26 +41,13 @@ describe('두리 MCP 도구', () => {
       'browser_request_code',
       'browser_request_tap',
       'browser_request_profile',
-      'browser_new_password',
       'browser_request_approval',
       'browser_checkout',
       'browser_order_done',
       'browser_dialog',
       'browser_handoff',
       'browser_close',
-      'screen_status',
-      'screen_apps',
-      'screen_open',
-      'screen_read',
-      'screen_click',
-      'screen_type',
-      'screen_login',
       'kakao_send',
-      'kakao_read',
-      'screen_key',
-      'screen_screenshot',
-      'screen_request_app',
-      'screen_request_approval',
       'goal_create',
       'goal_list',
       'goal_update',
@@ -70,7 +58,6 @@ describe('두리 MCP 도구', () => {
       'know_find',
       'know_update',
       'memory_forget',
-      'idea_suggest',
       'photo_view',
       'connect_ask',
       'profile_view',
@@ -81,14 +68,10 @@ describe('두리 MCP 도구', () => {
       'show_result',
       'show_draft',
       'phone_sms',
-      'feed_post',
       'feed_tell',
       'feed_find',
       'conversation_search',
       'file_find',
-      'file_read',
-      'file_write',
-      'file_render',
       'service_find',
       'orders_all',
       'service_call',
@@ -219,6 +202,55 @@ describe('tools on demand (ADR 0033)', () => {
     const text = (r: { content: unknown }) => (r.content as { text: string }[])[0]?.text ?? ''
     return { client, calls, text }
   }
+
+  it('keeps these tools aside (the eval bank reads tool names from this file)', () => {
+    expect([...ON_DEMAND_TOOLS]).toEqual([
+      'video_style',
+      'video_clip',
+      'video_motion',
+      'video_make',
+      'image_make',
+      'file_move',
+      'file_convert',
+      'file_print',
+      'file_pdf',
+      'file_trash',
+      'file_download',
+      'pc_screen',
+      'browser_hover',
+      'browser_upload',
+      'show_route',
+      'goal_delete',
+      'screen_status',
+      'screen_apps',
+      'screen_open',
+      'screen_read',
+      'screen_click',
+      'screen_type',
+      'screen_login',
+      'screen_key',
+      'screen_screenshot',
+      'screen_request_app',
+      'screen_request_approval',
+      'kakao_read',
+      'file_read',
+      'file_write',
+      'file_render',
+      'browser_new_password',
+      'feed_post',
+      'idea_suggest',
+    ])
+  })
+
+  it('brings a whole group in full when asked by the start of the names', async () => {
+    const { client, text } = await connect()
+    const screen = text(await client.callTool({ name: 'tool_find', arguments: { query: 'screen' } }))
+    for (const n of ['screen_apps', 'screen_click', 'screen_request_approval'])
+      expect(screen).toContain(`## ${n}`)
+    expect(screen).not.toContain('## kakao_read')
+    expect(screen).toContain('"bundleId"')
+    await client.close()
+  })
 
   it('lists the tools kept aside in tool_find, and shows one in full with its input', async () => {
     const { client, text } = await connect()

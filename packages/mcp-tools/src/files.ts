@@ -21,7 +21,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Find PC files',
       description:
-        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first.',
+        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first. Read one with file_read.',
       inputSchema: {
         query: z
           .string()
