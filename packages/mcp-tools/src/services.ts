@@ -111,13 +111,28 @@ export function outputShape(output: ServiceToolSpec['output']): z.ZodRawShape {
 }
 
 /**
+ * Drops fields with nothing in them (null, '', []) from a structured result, at every depth. The AI reads the
+ * structured result as JSON, and empty fields of every row (no rating, no discount, no badges) were about 4% of it.
+ * The text result already leaves them out, and every output field is optional
+ */
+export function withoutEmpty(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(withoutEmpty)
+  if (!v || typeof v !== 'object') return v
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v))
+    if (x !== null && x !== undefined && x !== '' && !(Array.isArray(x) && !x.length))
+      out[k] = withoutEmpty(x)
+  return out
+}
+
+/**
  * Daemon result → MCP result. When there is a structured result the AI reads it instead of the text (measured: the
  * Google Calendar hand-off tool showed only "{}" and the AI said it could not tell whether the screen opened). So tools
  * without output fields drop the structured result, and an empty result from a tool with output fields (hand-off, stop)
  * carries the text in a `text` field.
  */
 export const pass = (r: ToolResult & { structuredContent?: Record<string, unknown> }, hasOutput = true) => {
-  const sc = r.structuredContent
+  const sc = r.structuredContent ? (withoutEmpty(r.structuredContent) as Record<string, unknown>) : undefined
   const text = r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
   const structured = !hasOutput || r.isError || !sc ? undefined : Object.keys(sc).length ? sc : { text }
   return {
