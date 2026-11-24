@@ -177,7 +177,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: 'Save to the Library',
       description:
         'Saves results the user may reuse to the Library: organized notes and comparison tables (note), links found (link), products (product, with price), places (place). ' +
-        'Use after comparing several products, making a schedule or list, or when the user says "save this". Write title and body in the user\'s language.',
+        'Use after comparing several products, making a schedule or list, or when the user says "save this". Write title and body in the user\'s language, and say briefly in the answer that it is saved to the Library.',
       inputSchema: {
         kind: z.enum(['note', 'link', 'product', 'place', 'file']),
         title: z.string().max(80),
@@ -231,7 +231,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         'Remembers facts about the user that will help later: name and how to address them, neighborhood, family, frequent places, likes, services used, schedule habits. ' +
         'When the user tells you something you would otherwise have to ask again, like where "my neighborhood, home, office, kid\'s school" is, remember it right away along with the current task (so the next "near me" request does not ask again). ' +
-        "One sentence at a time, in the user's language. Never remember sensitive values like passwords, card numbers or resident registration numbers.",
+        'One sentence at a time, in the user\'s language. Save quietly: do not announce "I\'ll remember that" every time. Never remember sensitive values like passwords, card numbers or resident registration numbers.',
       inputSchema: {
         text: z
           .string()
@@ -392,7 +392,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'View a sent photo',
       description:
-        "When the user's message ends with a photo marker in brackets with a file name (like [photo: filename.jpg], with the label in the user's language), view that photo. Use to read and organize receipts, screenshots and product photos.",
+        "When the user's message ends with a photo marker in brackets with a file name (like [photo: filename.jpg], with the label in the user's language), view that photo before answering. Use to read and organize receipts, screenshots and product photos. Do not copy sensitive values in it (card numbers, resident registration numbers) into the answer.",
       inputSchema: {
         name: z.string().max(80).describe('Photo file name (e.g. 2026-11-16T01-30-00-000Z.jpg)'),
       },
@@ -882,7 +882,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         'Searches earlier conversations with the user. When the user brings up something said before ("what was that vacuum we looked at last week?", "the restaurant you mentioned then") ' +
         'and it is not in your current memory (summary of earlier chat, recent messages), search with this first instead of guessing. ' +
-        'Short excerpts come back with the date (Korea time) and who said it. If nothing matches, try once more with different words.',
+        'Short excerpts come back with the date (Korea time) and who said it. If nothing matches, try once more with different words; if still nothing, say honestly that you do not remember.',
       inputSchema: {
         query: z
           .string()
