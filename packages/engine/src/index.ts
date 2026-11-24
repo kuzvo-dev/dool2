@@ -1,4 +1,5 @@
 export * from './conversation.js'
+export * from './models.js'
 export * from './persona.js'
 export * from './process.js'
 export * from './runtime.js'

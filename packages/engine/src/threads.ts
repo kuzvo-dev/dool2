@@ -30,6 +30,7 @@ import {
 } from '@dool2/protocol/rich'
 import { isNewThreadTitle, type Store } from '@dool2/store'
 import { THREAD_TEXT } from './locales/threads.js'
+import type { ModelRole } from './models.js'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import { promptUpdate } from './pinned-prompt.js'
 import { ABOVE_BLOCK } from './region/kr/block-below.js'
@@ -52,6 +53,8 @@ export interface ThreadServiceOptions {
   takeMadeImage?: () => MadeImageRecordMessage | undefined
   /** Language of the text the records show people (card titles, work steps). Korean when not given */
   lang?: () => Lang
+  /** The model for a role on this agent (ADR 0035). undefined: the agent's default model */
+  modelFor?: (agent: AgentId, role: ModelRole) => string | undefined
   /** How much of the turn's first AI call came from the provider's cache (work log, ADR 0032) */
   onCache?: (threadId: string, x: { input: number; cached: number; noted: boolean }) => void
 }
@@ -130,7 +133,9 @@ export class ThreadService {
     this.summarizing.add(threadId)
     try {
       let text = ''
+      const model = this.opts.modelFor?.(thread.agent, 'summary')
       const events = this.runtime(thread.agent).runTurn({
+        ...(model ? { model } : {}),
         text: SUMMARY_REQUEST,
         resumeId: thread.resumeId,
         systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
@@ -156,8 +161,15 @@ export class ThreadService {
    * Saves the user's message and runs the agent for one turn.
    * Never runs two turns at once in the same thread.
    */
-  /** aside: background sent to the AI on this turn only (not recorded or shown, e.g. what was just sent as a proactive alert) */
-  async *send(threadId: string, text: string, o: { aside?: string } = {}): AsyncGenerator<DaemonStreamEvent> {
+  /**
+   * aside: background sent to the AI on this turn only (not recorded or shown, e.g. what was just sent as a proactive alert).
+   * role: what the turn is for, which picks the model (ADR 0035). A user's request by default
+   */
+  async *send(
+    threadId: string,
+    text: string,
+    o: { aside?: string; role?: ModelRole } = {},
+  ): AsyncGenerator<DaemonStreamEvent> {
     const { store } = this.opts
     const thread = store.getThread(threadId)
     if (!thread) throw new Error(`Thread not found: ${threadId}`)
@@ -214,7 +226,9 @@ export class ThreadService {
       }
       // Pinned instructions; what changed since (memory, what Dool2 knows, connections) rides on this message (ADR 0032)
       const prompt = this.promptFor(threadId, thread)
+      const model = this.opts.modelFor?.(thread.agent, o.role ?? 'task')
       const events = this.runtime(thread.agent).runTurn({
+        ...(model ? { model } : {}),
         // The current time goes with the message, not the instructions (instructions changing every minute would break the AI's cache). Without it the AI calls status to learn the time
         text: [(this.opts.timeLine ?? nowLine)(), prompt.note, o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),

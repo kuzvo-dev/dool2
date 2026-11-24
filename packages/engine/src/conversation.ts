@@ -1,6 +1,7 @@
 import type { AgentId, DaemonStreamEvent, StoredMessage } from '@dool2/protocol'
 import { APP_NOTE } from '@dool2/protocol/rich'
 import { NEW_THREAD_TITLE, type Store, type ThreadRecord } from '@dool2/store'
+import { modelProfile } from './models.js'
 import { OLD_CARRY_HEAD } from './region/kr/carry.js'
 import type { ThreadService } from './threads.js'
 
@@ -19,11 +20,15 @@ export interface ConversationLimits {
   contextTokens: number
 }
 
+/** Limits for the agent's default model; turns, characters and tokens come from the model profile (ADR 0035) */
 export const DEFAULT_LIMITS: ConversationLimits = {
-  turns: 40,
-  chars: 60_000,
+  ...modelProfile('claude').limits,
   idleMs: 12 * 60 * 60 * 1000,
-  contextTokens: 120_000,
+}
+
+/** The limits for an agent: its model profile, then any override */
+export function limitsFor(agent: AgentId, override: Partial<ConversationLimits> = {}): ConversationLimits {
+  return { ...DEFAULT_LIMITS, ...modelProfile(agent).limits, ...override }
 }
 
 export type RotateReason = 'first' | 'agent' | 'idle' | 'long'
@@ -41,11 +46,9 @@ export interface ConversationOptions {
  * When it gets long, after a long idle, or when the AI changes, the previous segment is closed and a new one opens with the summary and recent messages.
  */
 export class ConversationService {
-  private readonly limits: ConversationLimits
   private readonly now: () => Date
 
   constructor(private readonly opts: ConversationOptions) {
-    this.limits = { ...DEFAULT_LIMITS, ...opts.limits }
     this.now = opts.now ?? (() => new Date())
   }
 
@@ -100,11 +103,12 @@ export class ConversationService {
     const size = this.opts.store.sessionSize(cur.id)
     if (size.turns === 0) return undefined
     if (this.rotateNext) return 'idle'
-    if (this.now().getTime() - Date.parse(cur.updatedAt) > this.limits.idleMs) return 'idle'
+    const limits = limitsFor(agent, this.opts.limits)
+    if (this.now().getTime() - Date.parse(cur.updatedAt) > limits.idleMs) return 'idle'
     if (
-      size.turns >= this.limits.turns ||
-      size.chars >= this.limits.chars ||
-      size.contextTokens >= this.limits.contextTokens
+      size.turns >= limits.turns ||
+      size.chars >= limits.chars ||
+      size.contextTokens >= limits.contextTokens
     )
       return 'long'
     return undefined

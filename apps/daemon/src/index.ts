@@ -25,6 +25,8 @@ import {
   buildSystemPrompt,
   ConversationService,
   type McpServerSpec,
+  type ModelRole,
+  modelForRole,
   ThreadService,
 } from '@dool2/engine'
 import { deviceRegion } from '@dool2/i18n'
@@ -397,6 +399,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return m
     },
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
+    // Which model each kind of call uses (ADR 0035): requests on the agent's model, side jobs on its small model
+    modelFor: (agent, role) => modelForRole(agent, role),
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
     onCache: (threadId, x) =>
       journal.write('cache', {
@@ -2682,7 +2686,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return t.id
   }
   /** One run of a scheduled task. note: what a quick check found (ADR 0031), added to the ask */
-  async function runRoutine(r: Routine, tries = 0, note?: string) {
+  /** role: 'watch' when a quick check woke it (ADR 0035). Only used in the separate chat, so the main chat's model and cache stay */
+  async function runRoutine(r: Routine, tries = 0, note?: string, role?: ModelRole) {
     let threadId: string
     let text: string
     // Tasks that notify only when a condition is met run in a separate chat (so "nothing to report" does not pile up in the main chat on days with no match)
@@ -2709,13 +2714,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (threads.isRunning(threadId)) {
       // If the separate chat is busy with other work (proactive checks, ideas), try again in a minute (up to 30 minutes)
       if (quietly && tries < 30)
-        setTimeout(() => void runRoutine(r, tries + 1, note).catch(() => {}), 60_000).unref?.()
+        setTimeout(() => void runRoutine(r, tries + 1, note, role).catch(() => {}), 60_000).unref?.()
       return
     }
     routineThreads.add(threadId)
     let answer = ''
     try {
-      for await (const ev of tracked(threadId, threads.send(threadId, text)))
+      for await (const ev of tracked(threadId, threads.send(threadId, text, role && quietly ? { role } : {})))
         if (ev.type === 'saved' && ev.message.role === 'assistant') answer = ev.message.text
     } finally {
       routineThreads.delete(threadId)
@@ -2822,7 +2827,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             call: (tool, input) => connectors.call(tool, input),
             noteCheck: (id, print, text) => life.noteCheck(id, print, text),
             noteCheckFail: (id) => life.noteCheckFail(id),
-            wake: (routine, note) => runRoutine(routine, 0, note),
+            // Judging a change against the condition is a short side job: the small model (ADR 0035)
+            wake: (routine, note) => runRoutine(routine, 0, note, 'watch'),
             log: (entry) => journal.write('quick-check', entry),
           })
         : runRoutine(r)
