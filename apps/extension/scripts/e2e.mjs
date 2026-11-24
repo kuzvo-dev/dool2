@@ -296,6 +296,20 @@ const site = createServer((req, res) => {
       `<!doctype html><title>검색 결과</title><h1>"${q.replace(/[<>&"]/g, '')}" 검색 결과</h1><p>사과 1kg 9,900원</p>`,
     )
   }
+  // A page whose content is on screen at once but whose load event waits on a slow ad image (like many shopping sites)
+  if (url.pathname === '/slow-ad') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(`<!doctype html><title>광고 많은 가게</title><h1>광고 많은 가게</h1>
+<p>오늘의 특가: 귤 5kg 12,900원</p><img src="/slow-ad.gif" width="300" height="100" alt="">`)
+  }
+  if (url.pathname === '/slow-ad.gif') {
+    const timer = setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'image/gif' })
+      res.end(Buffer.from('R0lGODlhAQABAAAAACw=', 'base64'))
+    }, 15_000)
+    req.on('close', () => clearTimeout(timer))
+    return
+  }
   const body = PAGES[url.pathname]
   res.writeHead(body ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' })
   res.end(body ?? 'not found')
@@ -1089,6 +1103,24 @@ try {
       assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다/)
     },
   )
+
+  await step('A slow ad does not hold back opening, reading or moving to the next page', async () => {
+    let t = Date.now()
+    const r = await call('open', { url: `${base}/slow-ad` })
+    const opened = Date.now() - t
+    assert.equal(r.title, '광고 많은 가게')
+    assert.ok(opened < 6_000, `Opening waited ${opened}ms for the ad (load event is 15 s away)`)
+    t = Date.now()
+    const snap = await call('snapshot', { tabId: r.tabId })
+    assert.match(snap.text, /귤 5kg 12,900원/)
+    assert.ok(Date.now() - t < 4_000, `Reading waited ${Date.now() - t}ms`)
+    // Moving on still waits for the new page, not the old one that is already quiet
+    t = Date.now()
+    const next = await call('navigate', { tabId: r.tabId, url: `${base}/popup` })
+    assert.equal(next.title, '새 창')
+    console.log(`  open ${opened}ms, move ${Date.now() - t}ms`)
+    await call('close', { tabId: r.tabId })
+  })
 
   await step('Close the tab', async () => {
     await call('close', { tabId })
