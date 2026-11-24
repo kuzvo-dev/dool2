@@ -424,6 +424,40 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(rt.inputs).toHaveLength(2)
   })
 
+  it('작업 기록에 AI가 뜬 시각, 첫 말까지 걸린 시간, 실패 까닭을 남긴다', async () => {
+    class LimitRuntime extends EchoRuntime {
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        if (input.text.includes('한도')) {
+          yield { type: 'started', resumeId: 'r1', tools: [] }
+          yield { type: 'limit_reached', message: '사용량 한도' }
+          return
+        }
+        yield* super.runTurn(input)
+      }
+    }
+    const { api } = await boot(new LimitRuntime())
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"안녕"}' })
+    await until(async () => !(await state()).busy && (await state()).messages.length >= 2)
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"한도 시험"}' })
+    await until(async () => !(await state()).busy && (await state()).messages.length >= 3)
+    const { readdir, readFile } = await import('node:fs/promises')
+    const logs = join(dir ?? '', 'logs')
+    const lines = (
+      await Promise.all(
+        (await readdir(logs)).filter((f) => f.endsWith('.jsonl')).map((f) => readFile(join(logs, f), 'utf8')),
+      )
+    )
+      .join('\n')
+      .split('\n')
+      .filter((l) => l.includes('"kind":"turn"'))
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+    expect(lines[0]).toMatchObject({ answered: true })
+    expect(typeof lines[0]?.startMs).toBe('number')
+    expect(typeof lines[0]?.firstMs).toBe('number')
+    expect(lines[1]).toMatchObject({ code: 'limit_reached' })
+  })
+
   it('멈추기는 지금 차례를 그만두게 한다', async () => {
     const rt = new GateRuntime()
     const { api } = await boot(rt)

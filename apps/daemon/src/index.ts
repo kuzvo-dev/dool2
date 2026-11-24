@@ -1893,8 +1893,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // The before-finishing check runs only in chats with the user (not feed posts or scheduled tasks)
     const checkable = threadId !== store.getSetting('feedThread') && !routineThreads.has(threadId)
     let failed = false
+    // Where the time of the turn went, for problem reports: the AI program up (started), the first word or tool, and
+    // why it failed (a usage limit shows here). A tester's first answer was slow and the log could not say why
+    let startMs: number | undefined
+    let firstMs: number | undefined
+    let failCode: string | undefined
     try {
       for await (const ev of inner) {
+        if (ev.type === 'agent') {
+          const at = Date.now() - turnAt
+          if (ev.event.type === 'started') startMs ??= at
+          if (ev.event.type === 'text' || ev.event.type === 'tool') firstMs ??= at
+          if (ev.event.type === 'error') failCode ??= ev.event.code
+          if (ev.event.type === 'limit_reached') failCode ??= 'limit_reached'
+        }
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text)) {
           askText = withoutPhotoMark(ev.message.text)
           if (checkable) finishCheck?.begin(threadId, askText)
@@ -1948,6 +1960,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ms: Date.now() - turnAt,
         tools: turnTools,
         answered: answerText.length > 0,
+        ...(startMs !== undefined ? { startMs } : {}),
+        ...(firstMs !== undefined ? { firstMs } : {}),
+        ...(failCode ? { code: failCode } : {}),
         ...(asked ? { waitingForUser: true } : {}),
         ...(turnFromPhone ? { phone: true } : {}),
       })

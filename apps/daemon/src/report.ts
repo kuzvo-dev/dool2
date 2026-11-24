@@ -16,6 +16,8 @@ const KEEP = new Set([
   'kind',
   'where',
   'ms',
+  'startMs',
+  'firstMs',
   'tools',
   'tool',
   'ok',
