@@ -421,6 +421,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return m
     },
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
+    // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
+    onCache: (threadId, x) =>
+      journal.write('cache', {
+        threadId,
+        input: x.input,
+        cached: x.cached,
+        share: x.input ? Math.round((x.cached / x.input) * 100) : 0,
+        ...(x.noted ? { noted: true } : {}),
+      }),
     // Memories are attached to the end of the instructions for each chat
     // Service map: lets requests without a service name still pick a fitting service (connected ones first)
     systemPrompt: () =>

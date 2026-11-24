@@ -446,3 +446,55 @@ describe('일한 과정 기록 (WorkLog)', () => {
     expect(JSON.parse(msgs[1]?.text ?? '')).toMatchObject({ kind: 'work', count: 1, host: 'example.com' })
   })
 })
+
+describe('pinned instructions (ADR 0032)', () => {
+  const done: AgentEvent[] = [
+    { type: 'started', resumeId: 's1', tools: [] },
+    { type: 'done', resumeId: 's1', text: 'ok' },
+  ]
+  function pinnedSetup() {
+    const store = new Store(':memory:')
+    const rt = new FakeRuntime(done)
+    let memory = '## What you remember\n- likes gukbap'
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [],
+      systemPrompt: () => `You are Dool2.\n\n## Rules\n- be kind\n\n${memory}`,
+    })
+    const setMemory = (m: string) => {
+      memory = m
+    }
+    return { store, rt, svc, setMemory }
+  }
+
+  it('keeps the instructions of the segment and sends a changed section once, on the next message', async () => {
+    const { store, rt, svc, setMemory } = pinnedSetup()
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    const first = rt.inputs[0]?.systemPrompt
+    setMemory('## What you remember\n- likes gukbap\n- lives in Seongsu')
+    await collect(svc.send(t.id, 'next'))
+    await collect(svc.send(t.id, 'again'))
+    // The instructions stay byte-identical, so the provider's cache keeps the conversation
+    expect(rt.inputs.map((i) => i.systemPrompt)).toEqual([first, first, first])
+    // The change rides on the next message only, and only the changed section
+    expect(rt.inputs[1]?.text).toContain('Update to your instructions')
+    expect(rt.inputs[1]?.text).toContain('- lives in Seongsu')
+    expect(rt.inputs[1]?.text).not.toContain('be kind')
+    expect(rt.inputs[2]?.text).not.toContain('Update to your instructions')
+  })
+
+  it('a new segment pins a fresh copy', async () => {
+    const { store, rt, svc, setMemory } = pinnedSetup()
+    const a = store.createThread('claude')
+    await collect(svc.send(a.id, 'hi'))
+    setMemory('## What you remember\n- likes naengmyeon')
+    const b = store.createThread('claude')
+    await collect(svc.send(b.id, 'hi'))
+    expect(rt.inputs[1]?.systemPrompt).toContain('likes naengmyeon')
+    expect(rt.inputs[1]?.text).not.toContain('Update to your instructions')
+  })
+})

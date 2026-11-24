@@ -31,6 +31,7 @@ import {
 import { isNewThreadTitle, type Store } from '@dool2/store'
 import { THREAD_TEXT } from './locales/threads.js'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
+import { promptUpdate } from './pinned-prompt.js'
 import { ABOVE_BLOCK } from './region/kr/block-below.js'
 import type { AgentRuntime, McpServerSpec } from './runtime.js'
 
@@ -51,6 +52,8 @@ export interface ThreadServiceOptions {
   takeMadeImage?: () => MadeImageRecordMessage | undefined
   /** Language of the text the records show people (card titles, work steps). Korean when not given */
   lang?: () => Lang
+  /** How much of the turn's first AI call came from the provider's cache (work log, ADR 0032) */
+  onCache?: (threadId: string, x: { input: number; cached: number; noted: boolean }) => void
 }
 
 /** Runs the agent per thread and keeps the record. */
@@ -81,6 +84,29 @@ export class ThreadService {
     return thread.carry ? `${base}\n\n${thread.carry}` : base
   }
 
+  /** Instructions pinned per segment, and what the last update note already told (ADR 0032) */
+  private pinned = new Map<string, string>()
+  private noted = new Map<string, string>()
+
+  /**
+   * The instructions for this segment's turn: the copy pinned at its first turn, so the start of every request stays
+   * the same and the provider's cache keeps working. If they changed since, note: the changed sections, sent once
+   */
+  private promptFor(threadId: string, thread: { carry?: string }): { system: string; note?: string } {
+    const fresh = this.systemFor(thread)
+    const pinned = this.pinned.get(threadId)
+    if (pinned === undefined) {
+      this.pinned.set(threadId, fresh)
+      return { system: fresh }
+    }
+    // What the AI believes now: the pinned copy plus the last update note (each note replaces sections by heading)
+    const believed = this.noted.get(threadId) ?? pinned
+    if (believed === fresh) return { system: pinned }
+    const note = promptUpdate(believed, fresh)
+    this.noted.set(threadId, fresh)
+    return note ? { system: pinned, note } : { system: pinned }
+  }
+
   /**
    * A turn that is not recorded: asks the AI for a summary before the segment is closed.
    * Skipped when there is no session to resume or a reply is running. Gives up when it takes too long
@@ -107,7 +133,7 @@ export class ThreadService {
       const events = this.runtime(thread.agent).runTurn({
         text: SUMMARY_REQUEST,
         resumeId: thread.resumeId,
-        systemPrompt: this.systemFor(thread),
+        systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
         mcpServers: this.opts.mcpServers,
         cwd: this.opts.workspaceDir,
         signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs)]),
@@ -186,11 +212,13 @@ export class ThreadService {
         }
         return out
       }
+      // Pinned instructions; what changed since (memory, what Dool2 knows, connections) rides on this message (ADR 0032)
+      const prompt = this.promptFor(threadId, thread)
       const events = this.runtime(thread.agent).runTurn({
         // The current time goes with the message, not the instructions (instructions changing every minute would break the AI's cache). Without it the AI calls status to learn the time
-        text: [(this.opts.timeLine ?? nowLine)(), o.aside, text].filter(Boolean).join('\n\n'),
+        text: [(this.opts.timeLine ?? nowLine)(), prompt.note, o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
-        systemPrompt: this.systemFor(thread),
+        systemPrompt: prompt.system,
         mcpServers: this.opts.mcpServers,
         cwd: this.opts.workspaceDir,
         signal: ac.signal,
@@ -235,7 +263,15 @@ export class ThreadService {
         }
         if (ev.type === 'error' || ev.type === 'limit_reached') failed = ev
         // Real size of the segment: used to decide before the next message whether to start a new one (ADR 0015)
-        if (ev.type === 'context') store.setContextTokens(threadId, ev.tokens)
+        if (ev.type === 'context') {
+          store.setContextTokens(threadId, ev.tokens)
+          if (ev.firstInput)
+            this.opts.onCache?.(threadId, {
+              input: ev.firstInput,
+              cached: ev.firstCached ?? 0,
+              noted: Boolean(prompt.note),
+            })
+        }
         // For service tools, send the title along: the screens show "finding shops" instead of "working"
         // (the screens add the "in progress" word themselves, so it is removed here)
         const svc = ev.type === 'tool' ? serviceAct(ev.name, ev.input, this.opts.toolTitle, lang) : undefined

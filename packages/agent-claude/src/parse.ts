@@ -25,6 +25,8 @@ export class ClaudeStreamParser {
   private sawDelta = false
   private sessionId: string | undefined
   private contextTokens = 0
+  /** The turn's first AI call: all input and the part read from cache (ADR 0032) */
+  private first?: { input: number; cached: number }
 
   push(line: string): AgentEvent[] {
     let msg: unknown
@@ -107,6 +109,7 @@ export class ClaudeStreamParser {
       const u = msg.message.usage
       const tokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
       if (tokens > 0) this.contextTokens = tokens
+      if (tokens > 0 && !this.first) this.first = { input: tokens, cached: num(u.cache_read_input_tokens) }
     }
     const content = isObj(msg.message) && Array.isArray(msg.message.content) ? msg.message.content : []
     const out: AgentEvent[] = []
@@ -151,7 +154,16 @@ export class ClaudeStreamParser {
       ]
     }
     const done: AgentEvent = { type: 'done', text, ...(this.sessionId ? { resumeId: this.sessionId } : {}) }
-    return this.contextTokens ? [{ type: 'context', tokens: this.contextTokens }, done] : [done]
+    return this.contextTokens
+      ? [
+          {
+            type: 'context',
+            tokens: this.contextTokens,
+            ...(this.first ? { firstInput: this.first.input, firstCached: this.first.cached } : {}),
+          },
+          done,
+        ]
+      : [done]
   }
 }
 
