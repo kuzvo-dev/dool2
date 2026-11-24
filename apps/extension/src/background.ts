@@ -492,17 +492,51 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   port?.postMessage({ event: 'tab-closed', tabId })
 })
 
-async function waitLoad(tabId: number, timeoutMs = 20_000) {
+/** The page text has to stay the same this long before a page that is still loading counts as ready */
+const READY_QUIET_MS = 700
+
+/**
+ * Wait until the page can be used, like a person would: the load finished, or the document is parsed and its text
+ * stopped changing for READY_QUIET_MS. Ads and trackers hold back the load event for 10 to 30 seconds after the
+ * content is on screen (measured 11-24: yes24 content at 1.8 s, load at 21 s; daum 2.3 s vs 10.7 s; the text at that
+ * point was 98-100% of the final text), and waiting for it made every page move take 20 s.
+ * full: wait for the load event itself (connector extraction, which was verified against it)
+ */
+async function waitLoad(tabId: number, timeoutMs = 20_000, full = false) {
   const until = Date.now() + timeoutMs
+  let base = -1
+  let quietSince = 0
   while (Date.now() < until) {
     const t = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!t) throw new Error('The tab was closed')
     if (t.status === 'complete') return t
     // If a confirm dialog appears while opening, the load cannot finish until it is answered: report instead of waiting
     if (dialogs.has(tabId)) return t
-    await sleep(200)
+    if (!full) {
+      // Not yet on the new document (navigation not committed): the text read would be the old page's
+      const n = t.pendingUrl ? undefined : await textLength(tabId)
+      const now = Date.now()
+      // Small changes (a clock, a rolling banner) do not count as the page still drawing
+      if (n === undefined || base < 0 || Math.abs(n - base) > Math.max(20, base * 0.01)) {
+        base = n ?? -1
+        quietSince = now
+      } else if (now - quietSince >= READY_QUIET_MS) return t
+    }
+    await sleep(150)
   }
   return chrome.tabs.get(tabId)
+}
+
+/** Length of the page's visible text, or undefined while the document is still being parsed or has no text yet */
+async function textLength(tabId: number): Promise<number | undefined> {
+  const [r] = await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: () => (document.readyState === 'loading' ? -1 : (document.body?.innerText.length ?? 0)),
+    })
+    .catch(() => [])
+  const n = r?.result
+  return typeof n === 'number' && n > 0 ? n : undefined
 }
 
 /** Wait briefly (up to 1.2s) for the page to change after input. If a navigation started, wait until it ends (including navigation inside frames) */
@@ -1695,7 +1729,7 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
     case 'extract': {
       // Connector: pull the list on the screen item by item (read only)
       const tabId = await ownedTab(a)
-      await waitLoad(tabId, 10_000)
+      await waitLoad(tabId, 10_000, true)
       if (attached.has(tabId)) await paint(tabId)
       const spec = a.spec as ExtractSpec
       let r = await inPage(tabId, pageExtract, spec)
