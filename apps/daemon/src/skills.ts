@@ -82,6 +82,8 @@ export class Skills {
    */
   serviceMap(): string {
     const by = new Map<string, string[]>()
+    /** Category → services shown by name only */
+    const later = new Map<string, string[]>()
     for (const it of this.last) {
       if (it.card.how === 'device') continue
       const c = it.card
@@ -89,20 +91,43 @@ export class Skills {
       const can = c.abilities.map((a) => a.title).join('·')
       // What the service is (summary) and what it can do: the AI picks the service that fits the request
       // Even before connecting, list the tools that work without login (so it does not ask to connect first)
-      const free = !on ? (it.tools ?? []).filter((t) => !t.login).map((t) => t.name) : []
-      // The one-line summary only for services Dool2 can use right away (connected, or no login at all), or when
-      // there are no abilities to go by. For the rest the name, category and abilities are enough to pick one, and
-      // service_find gives the full card. This list goes into every session's instructions, so it stays short
-      const summary = on || c.how === 'open' || !c.abilities.length ? ` — ${c.summary}` : ''
-      const line = `${c.name}(${c.id})${on ? '✓' : ''}${it.tools?.length ? '⚡' : ''}${summary} [${can}]${free.length ? ` (no login: ${free.join(', ')})` : ''}`
+      // Tool names without the service part (catchtable_search → search): the header says how names are made
+      const prefix = `${c.id.replace(/-/g, '_')}_`
+      const free = !on
+        ? (it.tools ?? [])
+            .filter((t) => !t.login)
+            .map((t) => (t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name))
+        : []
       const k = CONNECT_CATEGORIES[c.category]
+      const tools = it.tools?.length ? '⚡' : ''
+      // This list goes into every session's instructions, so it stays short. In full only the services Dool2 can use
+      // right away (connected, no login at all, or tools that work without login); the rest are names in their
+      // category, since without a connection there is nothing to do there but suggest one (service_find has the card)
+      if (!on && c.how !== 'open' && !free.length) {
+        later.set(k, [...(later.get(k) ?? []), `${c.name}(${c.id})${tools}`])
+        continue
+      }
+      // The one-line summary only for services Dool2 can use with nothing more (connected, or no login at all), or
+      // when there are no abilities to go by
+      const summary = on || c.how === 'open' || !c.abilities.length ? ` — ${c.summary}` : ''
+      const line = `${c.name}(${c.id})${on ? '✓' : ''}${tools}${summary} [${can}]${free.length ? ` (no login: ${free.join(', ')})` : ''}`
       by.set(k, [...(by.get(k) ?? []), line])
     }
-    if (!by.size) return ''
+    if (!by.size && !later.size) return ''
+    const cats = [...new Set([...by.keys(), ...later.keys()])]
     return [
-      '## Services (✓ connected, ⚡ Doori tools, [ ] abilities)',
-      'Even if a request names no service, pick the best one below yourself. service_find shows any service in full (what it does, tools, inputs).',
-      ...[...by].map(([k, lines]) => `### ${k}\n${lines.map((l) => `- ${l}`).join('\n')}`),
+      '## Services (✓ connected, ⚡ Dool2 tools, [ ] abilities, no login: tools that work without connecting, named <id>_<tool> with - as _, e.g. catchtable_search)',
+      '- Even if a request names no service, pick the one below that can see it through (find → choose → book or order), judged by the purpose of the request. service_find shows any service in full (what it does, tools, inputs).',
+      '- Connected ones (✓) first: they are logged in, so availability, booking and ordering work.',
+      '- Tools marked no login run right away with service_call. If the best fit is not connected, do what works without login there first (search, compare, availability) and show candidates; show its connect card (connect_ask) only when the user has picked and reaches a step that needs login (booking, ordering, history). Ask to connect first only where nothing works without login.',
+      '- Service tools (⚡) are faster and more accurate than clicking through screens: call one directly if it is in your tool list, otherwise look at its input with service_find and call it with service_call. Use general search (portal, maps) only when no service fits or to add reviews, and say how the places found can be booked or ordered through a service.',
+      '- If you only searched with a service that is not connected and connecting would let you do more, suggest it once, briefly, at the end of the reply; not again in the same conversation, nor after the user declined.',
+      ...cats.map((k) => {
+        const lines = (by.get(k) ?? []).map((l) => `- ${l}`)
+        const rest = later.get(k)
+        if (rest?.length) lines.push(`- Needs connecting to use: ${rest.join(', ')}`)
+        return `### ${k}\n${lines.join('\n')}`
+      }),
     ].join('\n')
   }
 }
