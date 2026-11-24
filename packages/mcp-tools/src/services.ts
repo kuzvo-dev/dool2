@@ -129,12 +129,21 @@ export function withoutEmpty(v: unknown): unknown {
  * Daemon result → MCP result. When there is a structured result the AI reads it instead of the text (measured: the
  * Google Calendar hand-off tool showed only "{}" and the AI said it could not tell whether the screen opened). So tools
  * without output fields drop the structured result, and an empty result from a tool with output fields (hand-off, stop)
- * carries the text in a `text` field.
+ * carries the text in a `text` field. For the same reason the lines after the data (check time, the tool's next step,
+ * which result block to attach) ride in the structured result as `next`, or the AI never sees them.
  */
-export const pass = (r: ToolResult & { structuredContent?: Record<string, unknown> }, hasOutput = true) => {
+export const pass = (
+  r: ToolResult & { structuredContent?: Record<string, unknown>; hint?: string },
+  hasOutput = true,
+) => {
   const sc = r.structuredContent ? (withoutEmpty(r.structuredContent) as Record<string, unknown>) : undefined
   const text = r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
-  const structured = !hasOutput || r.isError || !sc ? undefined : Object.keys(sc).length ? sc : { text }
+  const structured =
+    !hasOutput || r.isError || !sc
+      ? undefined
+      : Object.keys(sc).length
+        ? { ...sc, ...(r.hint ? { next: r.hint } : {}) }
+        : { text }
   return {
     content: r.content,
     ...(structured ? { structuredContent: structured } : {}),
@@ -206,7 +215,13 @@ export function registerServiceTools(
             description: spec.description,
             inputSchema: inputShape(spec.input),
             ...(hasOutput
-              ? { outputSchema: { ...outputShape(spec.output), text: z.string().optional() } }
+              ? {
+                  outputSchema: {
+                    ...outputShape(spec.output),
+                    text: z.string().optional(),
+                    next: z.string().optional().describe('What to do with this result'),
+                  },
+                }
               : {}),
             annotations: { title: spec.title, ...spec.annotations },
           },
