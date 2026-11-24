@@ -46,6 +46,7 @@ The store listing text is Korean data (the listing is Korean-language). It is ke
 |---|---|---|
 | 0.2.0 | 2026-11-17 | Published (confirmed 2026-11-23) |
 | 0.3.0 | 2026-11-23 | Pending review (auto-published after passing; resubmitted with the new artwork). Contents: screen viewing, mouse, tab cleanup, build fingerprint, artwork tile slot (@center), new permission `contentSettings` |
+| 0.3.1 | 2026-11-24 | Ready to upload. Contents: a page is ready when its content shows, not after every ad (#437); no new permission |
 
 ### Permission reason (Privacy practices tab)
 
