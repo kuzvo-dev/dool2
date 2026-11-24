@@ -25,10 +25,8 @@ describe('두리 MCP 도구', () => {
       'browser_click',
       'browser_type',
       'browser_press',
-      'browser_hover',
       'browser_steps',
       'browser_select',
-      'browser_upload',
       'browser_scroll',
       'browser_screenshot',
       'browser_back',
@@ -64,7 +62,6 @@ describe('두리 MCP 도구', () => {
       'goal_create',
       'goal_list',
       'goal_update',
-      'goal_delete',
       'library_save',
       'library_find',
       'memory_save',
@@ -81,7 +78,6 @@ describe('두리 MCP 도구', () => {
       'show_cards',
       'show_list',
       'show_result',
-      'show_route',
       'show_draft',
       'phone_sms',
       'feed_post',
@@ -91,22 +87,12 @@ describe('두리 MCP 도구', () => {
       'file_find',
       'file_read',
       'file_write',
-      'file_move',
-      'file_convert',
-      'file_print',
-      'file_pdf',
       'file_render',
-      'video_style',
-      'video_clip',
-      'video_motion',
-      'video_make',
-      'image_make',
-      'file_trash',
-      'file_download',
-      'pc_screen',
       'service_find',
       'orders_all',
       'service_call',
+      'tool_find',
+      'tool_call',
     ])
 
     const res = await client.callTool({ name: 'status', arguments: {} })
@@ -214,5 +200,48 @@ describe('서비스 도구 (ADR 0018)', () => {
     await servicesOf(server)?.sync()
     expect((await client.listTools()).tools.some((t) => t.name === 'demo_eats_search')).toBe(false)
     servicesOf(server)?.stop()
+  })
+})
+
+describe('tools on demand (ADR 0033)', () => {
+  async function connect() {
+    const calls: [string, unknown][] = []
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({
+      files: async (tool, args) => {
+        calls.push([tool, args])
+        return { content: [{ type: 'text', text: `ran ${tool}` }] }
+      },
+    }).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const text = (r: { content: unknown }) => (r.content as { text: string }[])[0]?.text ?? ''
+    return { client, calls, text }
+  }
+
+  it('lists the tools kept aside in tool_find, and shows one in full with its input', async () => {
+    const { client, text } = await connect()
+    const { tools } = await client.listTools()
+    expect(tools.find((t) => t.name === 'tool_find')?.description).toContain('file_pdf (Merge or split PDFs)')
+    const one = text(await client.callTool({ name: 'tool_find', arguments: { query: 'file_pdf' } }))
+    expect(one).toContain('## file_pdf')
+    expect(one).toContain('"paths"')
+    await client.close()
+  })
+
+  it('tool_call runs the same handler with checked input, and refuses bad input or names', async () => {
+    const { client, calls, text } = await connect()
+    const ok = await client.callTool({
+      name: 'tool_call',
+      arguments: { tool: 'file_pdf', input: { paths: ['~/Downloads/a.pdf'], split: true } },
+    })
+    expect(text(ok)).toBe('ran file_pdf')
+    expect(calls).toEqual([['file_pdf', { paths: ['~/Downloads/a.pdf'], split: true }]])
+    const bad = await client.callTool({ name: 'tool_call', arguments: { tool: 'file_pdf', input: {} } })
+    expect(bad.isError).toBe(true)
+    expect(text(bad)).toContain('Fix the input for file_pdf')
+    const none = await client.callTool({ name: 'tool_call', arguments: { tool: 'rm_rf', input: {} } })
+    expect(none.isError).toBe(true)
+    await client.close()
   })
 })

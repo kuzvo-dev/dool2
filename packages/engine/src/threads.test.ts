@@ -498,3 +498,29 @@ describe('pinned instructions (ADR 0032)', () => {
     expect(rt.inputs[1]?.text).not.toContain('Update to your instructions')
   })
 })
+
+describe('tool_call unwrapping (ADR 0033)', () => {
+  it('treats a tool run through tool_call as the tool itself, result included', async () => {
+    const { unwrapToolCall } = await import('./threads.js')
+    const ev = unwrapToolCall({
+      type: 'tool',
+      name: 'mcp__dool2__tool_call',
+      input: { tool: 'file_move', input: { moves: [{}, {}] } },
+    })
+    expect(ev).toEqual({ type: 'tool', name: 'mcp__dool2__file_move', input: { moves: [{}, {}] } })
+    expect(
+      unwrapToolCall(
+        { type: 'tool_result', name: 'mcp__dool2__tool_call', ok: true },
+        'mcp__dool2__file_move',
+      ),
+    ).toEqual({
+      type: 'tool_result',
+      name: 'mcp__dool2__file_move',
+      ok: true,
+    })
+    // other tools pass through
+    expect(unwrapToolCall({ type: 'tool', name: 'mcp__dool2__browser_click', input: {} })).toMatchObject({
+      name: 'mcp__dool2__browser_click',
+    })
+  })
+})
