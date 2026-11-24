@@ -53,7 +53,13 @@ describe('ClaudeStreamParser — 실제 출력', () => {
   })
 
   it('세션 크기는 입력 토큰 + 캐시 읽기 + 캐시 만들기', () => {
-    expect(events.find((e) => e.type === 'context')).toEqual({ type: 'context', tokens: 2 + 2102 + 649 })
+    expect(events.find((e) => e.type === 'context')).toEqual({
+      type: 'context',
+      tokens: 2 + 2102 + 649,
+      // the turn's first AI call: all input, and the part read from cache (ADR 0032)
+      firstInput: 2 + 2102 + 649,
+      firstCached: 649,
+    })
   })
 
   it('부분 메시지와 완성 메시지의 글을 두 번 내지 않는다', () => {
@@ -156,7 +162,9 @@ describe('ClaudeStreamParser — 안전장치', () => {
         usage: { input_tokens: 15, cache_read_input_tokens: 41_000 },
       }),
     ])
-    expect(events.filter((e) => e.type === 'context')).toEqual([{ type: 'context', tokens: 40_005 }])
+    expect(events.filter((e) => e.type === 'context')).toEqual([
+      { type: 'context', tokens: 40_005, firstInput: 1010, firstCached: 1000 },
+    ])
   })
 
   it('사용량이 없으면 세션 크기를 내지 않는다', () => {

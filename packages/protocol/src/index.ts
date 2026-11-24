@@ -57,7 +57,11 @@ export type AgentEvent =
    * How much the AI session actually reads now (tokens). Based on the last AI call of the turn, once per turn (ADR 0015).
    * It includes tool results like browser pages, so it is used to decide when to switch segments. It is not shown on screen
    */
-  | { type: 'context'; tokens: number }
+  /**
+   * Size of the session (the last AI call's input). first*: the turn's first AI call, input and the part read from
+   * the provider's cache (to see whether pinned instructions keep the cache, ADR 0032)
+   */
+  | { type: 'context'; tokens: number; firstInput?: number; firstCached?: number }
   | { type: 'limit_reached'; resetsAt?: string; message: string }
   | { type: 'error'; code: AgentErrorCode; message: string }
   | { type: 'done'; resumeId?: string; text: string }

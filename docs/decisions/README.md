@@ -35,6 +35,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
 | [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted |
 | [0031](0031-quick-check-watch.md) | Quick checks: watches check every minute without the AI, and wake it only on a change | Accepted |
+| [0032](0032-pinned-instructions.md) | Instructions are pinned per segment; what changes rides on the next message | Accepted |
 
 ## How to write a new decision
 
