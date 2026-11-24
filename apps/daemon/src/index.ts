@@ -1860,6 +1860,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
     activeThreads.add(threadId)
+    // A turn may be a new AI session (a new segment) that has not seen the pages: its first click reads the whole page
+    browserTools.forgetSeen()
     live.emit('event', { kind: 'busy', busy: true })
     // Send the same progress to connected phones too (so chats started on the PC show on the phone)
     // The separate chat that writes feed posts is not streamed to the phone's chat screen (the result goes to the feed)
@@ -3071,7 +3073,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const reply = async (r: ToolResult) => json(res, 200, await autoApprover.after(pendingBefore, r))
       if (req.method === 'POST' && b === 'browser' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
-        return reply(await browserTools.run(c, args && typeof args === 'object' ? args : {}))
+        return reply(await browserTools.run(c, args && typeof args === 'object' ? args : {}, { ai: true }))
       }
       if (req.method === 'POST' && b === 'screen' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
