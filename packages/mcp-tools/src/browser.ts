@@ -315,7 +315,8 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'fill_profile',
     'Fill booker/buyer fields from my info',
-    'Dool2 itself fills name, English name, email, mobile, date of birth and address fields on payment and booking screens and in simple authentication windows (identity verification on Gov24, Hometax, etc.; simple authentication = verifying through an app such as Kakao, Naver, Toss or PASS) with the user\'s "my info". In a simple authentication window, fill name, date of birth and mobile with this, click the authentication app from my info given in the result, click through to [request verification], then wait for approval with browser_wait_auth and continue (never ask about the authentication app in chat). You only point at fields and items; you never see the values (the result has masked values only). Use this first instead of asking the user for name or contact details. If an item is missing from my info the result says so; then show a card with browser_request_profile. Pick the item that fits the field shape: separate English last/first name fields → name_en_last, name_en_first; one field → name_en_full; a phone field with a separate country code picker → phone_local; a phone field with a separate prefix (010) picker → phone_rest (last 8 digits); split into three (010-1234-5678) → phone_head, phone_mid, phone_last; digits-only fields → phone_digits, birth_digits; 6-digit date of birth → birth6. Passport fields (electronic travel authorizations like ESTA, flights, overseas lodging) → passport_no, passport_issued, passport_expiry, sex, birth_city; if missing from my info, show a phone card with browser_request_profile (do not ask the user to put a passport photo in a PC folder). Car tasks (periodic inspection, recalls, car tax, insurance quotes) → car_no. The back digits of the resident registration number in identity verification → rrn_back (filled right away if in my info, otherwise received once through the phone\'s secure keypad and saved in the vault; never hand it to the user to type).',
+    'Dool2 itself fills booker and buyer fields (name, English name, email, mobile, date of birth, address, passport, car number) on payment and booking screens and in simple authentication windows with the user\'s "my info". You only point at fields; you never see the values (the result has masked values). Use this first instead of asking the user for name or contact details; if an item is missing the result says so, then show a card with browser_request_profile. ' +
+      'In a simple authentication window (identity verification on Gov24, Hometax, etc. through an app such as Kakao, Naver, Toss or PASS), fill name, date of birth and mobile with this, click the authentication app from my info given in the result, click through to [request verification], then wait with browser_wait_auth (never ask about the app in chat).',
     {
       tabId,
       fields: z
@@ -350,7 +351,9 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
                 'birth_city',
                 'car_no',
               ])
-              .describe('My info item to fill in'),
+              .describe(
+                "My info item that fits the field shape: separate English last/first name → name_en_last, name_en_first; one field → name_en_full; phone with a separate country code picker → phone_local; with a separate 010 picker → phone_rest (last 8 digits); split in three → phone_head, phone_mid, phone_last; digits only → phone_digits, birth_digits; 6-digit birth date → birth6; passport fields (ESTA, flights, overseas lodging) → passport_no, passport_issued, passport_expiry, sex, birth_city (if missing, browser_request_profile; never ask for a passport photo in a PC folder); car tasks (inspection, recalls, car tax, insurance) → car_no; resident number back digits → rrn_back (filled if saved, otherwise received once on the phone's secure keypad; never hand it to the user to type)",
+              ),
           }),
         )
         .min(1)
@@ -380,7 +383,9 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_code',
     'Get a value on the phone and fill it in (verification code, resident number back digits, CAPTCHA)',
-    "For values Dool2 does not know on identity verification screens, receives them through a card on the user's phone and types them straight into that field (ref): SMS or KakaoTalk verification codes (kind: code), the back digits of the resident registration number (kind: rrn_back), payment password keypads (kind: pin; first give the keypad buttons in key_refs and each button comes back as a cropped image. Look at those images and call again mapping each digit to its button ref in keys. If the keypad is an image without button refs, give the keypad box in box instead of key_refs and point at each digit position in the cropped image with keys_at. The user enters the password on the phone's secure keypad and Dool2 clicks those buttons. Never hand it to a person), and CAPTCHA or anti-bot text (kind: captcha; first call without pick and a few images cropped around the field come back, then call again with pick set to the number of the image where the CAPTCHA is clearest. That image shows on the card. Never read and type the characters yourself). You never see the values either (resident number back digits are saved in the vault and filled next time with rrn_back in browser_fill_profile), and never ask for them in chat. Use this instead of telling the user to type it on the PC themselves. For verification codes, use it after filling name, date of birth and mobile with browser_fill_profile and clicking [get verification code]. After calling, end this reply; when the notification that the value was entered arrives, click [OK] or [verify] and continue.",
+    "For values Dool2 does not know on identity verification and payment screens: a card on the user's phone receives the value and Dool2 types it straight into that field (ref). You never see it; never ask for it in chat or tell the user to type it on the PC. " +
+      'kind (see its description) covers verification codes (after filling name, date of birth and mobile with browser_fill_profile and clicking [get verification code]), resident number back digits, payment password keypads (two calls, see key_refs or box) and CAPTCHA text (two calls, see pick; never read and type it yourself). ' +
+      'After calling, end this reply; when the notification that the value was entered arrives, click [OK] or [verify] and continue.',
     {
       tabId,
       ref: ref.optional().describe('Ref of the input for the code (not needed for an image keypad pin)'),
@@ -393,7 +398,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .enum(['code', 'rrn_back', 'captcha', 'pin'])
         .optional()
         .describe(
-          'code = verification code (default, not saved) · rrn_back = resident registration number back digits (identity verification field, saved in the vault) · captcha = CAPTCHA (with image) · pin = payment password keypad (needs keys)',
+          "code = SMS or KakaoTalk verification code (default, not saved) · rrn_back = resident registration number back digits (saved in the vault, filled next time with rrn_back in browser_fill_profile) · captcha = CAPTCHA or anti-bot text (with image) · pin = payment password keypad: the user enters it on the phone's secure keypad and Dool2 clicks the buttons; never hand it to a person",
         ),
       keys: z
         .record(z.string(), z.string())
@@ -427,7 +432,9 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .min(1)
         .max(6)
         .optional()
-        .describe('For captcha: number of the earlier image where the CAPTCHA is clearest'),
+        .describe(
+          'For captcha: call first without it and a few images cropped around the field come back; call again with the number of the one where the CAPTCHA is clearest (that image shows on the card)',
+        ),
     },
     false,
   )

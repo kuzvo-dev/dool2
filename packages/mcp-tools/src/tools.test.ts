@@ -96,6 +96,20 @@ describe('두리 MCP 도구', () => {
   })
 })
 
+describe('tool list size budget', () => {
+  // Every visible tool rides along on every request (ADR 0033). A description says when to use the tool in a few
+  // sentences; details go in input fields, results, or on demand. Lower this as it shrinks; do not raise it to fit
+  it('stays within the budget (Dool2 tools, no service tools)', async () => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({}).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(92_000)
+    await client.close()
+  })
+})
+
 describe('result blocks (rules moved from the global prompt)', () => {
   it('say in their descriptions what goes where', async () => {
     const [clientT, serverT] = InMemoryTransport.createLinkedPair()
@@ -388,7 +402,9 @@ describe('tools on demand (ADR 0033)', () => {
   it('lists the tools kept aside in tool_find, and shows one in full with its input', async () => {
     const { client, text } = await connect()
     const { tools } = await client.listTools()
-    expect(tools.find((t) => t.name === 'tool_find')?.description).toContain('file_pdf (Merge or split PDFs)')
+    const index = tools.find((t) => t.name === 'tool_find')?.description ?? ''
+    expect(index).toContain('file_* (read, write, move, convert, print, pdf, render, trash, download)')
+    expect(index).toContain('show_route (Attach a route card to the answer)')
     const one = text(await client.callTool({ name: 'tool_find', arguments: { query: 'file_pdf' } }))
     expect(one).toContain('## file_pdf')
     expect(one).toContain('"paths"')

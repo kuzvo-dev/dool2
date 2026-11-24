@@ -71,6 +71,23 @@ const whenFields = {
     ),
 }
 
+/**
+ * The same fields for goal_update, described in a word: goal_create (always listed next to it) explains each one, and
+ * the long descriptions were sent twice on every request
+ */
+const whenUpdate = Object.fromEntries(
+  Object.entries(whenFields).map(([k, f]) => [
+    k,
+    f.describe(
+      k === 'until' || k === 'tell_at'
+        ? `As in goal_create; "" clears it`
+        : k === 'time'
+          ? 'As in goal_create; to change only the time, give just this and the rest stays'
+          : 'As in goal_create',
+    ),
+  ]),
+) as typeof whenFields
+
 export function registerLifeTools(server: McpServer, client: BrowserClient) {
   const call = (tool: string) => async (args: Record<string, unknown>) => {
     const r = await client(tool, args)
@@ -83,14 +100,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         'Creates one when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
         'Reminders are made with this too. Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
-        '"check my card bill on the last day of each month" → monthly day 31 · "Mon, Wed, Fri at 7" → weekly days [1,3,5] · ' +
+        '"check my card bill on the last day of each month" → monthly day 31 · ' +
         '"tell me when a cancelled ticket shows up" → every + notify "when_found" + until (show or departure date), with check_tool + check_input when a service lookup tool can see it (then every 1-5 minutes is fine) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
-        '"every day until December 31" → until "2026-12-31" · ' +
         '"tell me when the engine oil is due next" → write the last change date in prompt, monthly + when_found (when it is due) + until "when the user says it was changed" · ' +
         '"tell me when the notice with no date yet is posted" → daily + when_found + until "when the notice is posted and reported". ' +
         'For goals give category and plan (3-6 steps) together, and the check-in time as schedule. ' +
-        'Before creating a watch, look up what is there now and show it in the answer: for news or posts a list (show_list, with the original link on each row; if there is little from today, widen to this week); for recruitments or conditions one or two lines on the current situation (when the last round was, expected announcements, whether the user qualifies based on my info) with source links. Never end with just "there was nothing". Places the user asked to watch as well (e.g. district office notices) go into the watch prompt without asking. ' +
-        'Tell the user the schedule the result reports (when it runs, when it ends, when it notifies) as is, to confirm. If the result says something is missing, ask the user or fill it with goal_update. If the time is already past, do not create it; ask for another time. ' +
+        'Places the user asked to watch as well (e.g. district office notices) go into the watch prompt without asking. If the time is already past, ask for another time. The result says what to confirm with the user and what to show now. ' +
         "Write title, prompt, plan and until conditions in the user's language.",
       inputSchema: {
         title: z
@@ -150,7 +165,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         id: z.string().max(40).describe('id from goal_list (the first 8 characters work too)'),
         title: z.string().max(60).optional(),
         prompt: z.string().max(1000).optional().describe('When rewriting what Dool2 should do at that time'),
-        ...whenFields,
+        ...whenUpdate,
         plan: z.array(z.string().max(120)).max(12).optional(),
         done: z.array(z.number().int().min(0)).optional(),
         log: z

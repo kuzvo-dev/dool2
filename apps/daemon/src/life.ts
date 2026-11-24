@@ -1026,7 +1026,7 @@ export class Life {
                 : r.notify === 'when_found'
                   ? [
                       // Do not end a watch with only "I will tell you from tomorrow": show what exists now first
-                      'Current state: show what exists right now in this answer. If you have not looked yet, search once following the prompt (for news or posts, use show_list with the original link on each row, and widen to this week if today has little. For a condition watch, one or two lines of the current value or state and the source). Put "What was set" below it in one line.',
+                      'Current state: show what exists right now in this answer. If you have not looked yet, search once following the prompt (for news or posts, use show_list with the original link on each row, and widen to this week if today has little. For a condition watch or a recruitment, one or two lines of the current value or state with source links: when the last round was, expected announcements, whether the user qualifies by my info). Never end with just "there was nothing". Put "What was set" below it in one line.',
                     ]
                   : []),
             ].join('\n'),

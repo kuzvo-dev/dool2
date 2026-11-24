@@ -90,7 +90,22 @@ export function onDemand(server: McpServer, names: readonly string[] = ON_DEMAND
 
   const finish = () => {
     if (!held.size) return
-    const index = [...held].map(([n, h]) => `${n} (${h.title})`).join(', ')
+    // Groups of 4 or more (screen_, file_, video_) are named once with their members, the rest with their titles
+    const prefix = (n: string) => n.split('_')[0] ?? n
+    const size = new Map<string, number>()
+    for (const n of held.keys()) size.set(prefix(n), (size.get(prefix(n)) ?? 0) + 1)
+    const parts: string[] = []
+    const done = new Set<string>()
+    for (const [n, h] of held) {
+      const p = prefix(n)
+      if ((size.get(p) ?? 0) < 4) parts.push(`${n} (${h.title})`)
+      else if (!done.has(p)) {
+        done.add(p)
+        const members = [...held.keys()].filter((x) => prefix(x) === p).map((x) => x.slice(p.length + 1))
+        parts.push(`${p}_* (${members.join(', ')})`)
+      }
+    }
+    const index = parts.join(', ')
     server.registerTool(
       'tool_find',
       {
