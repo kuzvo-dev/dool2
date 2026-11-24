@@ -4,14 +4,37 @@ import { NEW_THREAD_TITLE, type Store, type ThreadRecord } from '@dool2/store'
 import { OLD_CARRY_HEAD } from './region/kr/carry.js'
 import type { ThreadService } from './threads.js'
 
+/**
+ * How long the provider keeps a conversation cached after its last AI call. Measured on 1,185 turns of this app's
+ * sessions: every turn within 60 minutes read 99–100% from the cache, almost none after 65; the subscription CLI
+ * writes 1-hour cache entries (ADR 0036)
+ */
+export const CACHE_LIFE_MS = 60 * 60_000
+
+/**
+ * The handoff summary made ahead (ADR 0036): this long after the last reply, while the cache still holds the
+ * conversation, so the summary reads it cheaply and the switch on the next message is instant. Late in the cache's
+ * life on purpose: most pauses end within half an hour (the summary would be wasted), and those that pass an hour
+ * are the ones that switch
+ */
+export const HANDOFF_AFTER_MS = 50 * 60_000
+/** Segments shorter than this (user turns) get no summary: the recent messages carried over hold all of them */
+export const HANDOFF_MIN_TURNS = 4
+
 /** When to start a new segment (ADR 0015) */
 export interface ConversationLimits {
   /** Number of user turns */
   turns: number
   /** Stored characters */
   chars: number
-  /** New segment after this long since the last message (milliseconds) */
+  /**
+   * New segment after this long since the last message, when the switch loses nothing: a handoff was made ahead, or
+   * the segment is short enough for the recent messages to carry it. Just past the cache's life (ADR 0036): after it,
+   * continuing reads the whole conversation again at full price anyway
+   */
   idleMs: number
+  /** New segment after this long in any case (recent messages only when there is no handoff) */
+  staleMs: number
   /**
    * Tokens the AI actually read on its last turn. Tool results such as browser pages are not in the stored
    * character count, so segments with a lot of web work slow down and cost more long before the turn or character limits
@@ -22,9 +45,18 @@ export interface ConversationLimits {
 export const DEFAULT_LIMITS: ConversationLimits = {
   turns: 40,
   chars: 60_000,
-  idleMs: 12 * 60 * 60 * 1000,
+  idleMs: CACHE_LIFE_MS + 5 * 60_000,
+  staleMs: 12 * 60 * 60 * 1000,
   contextTokens: 120_000,
 }
+
+/** The handoff made ahead for a segment, valid while the segment has not changed since (basis: its updatedAt then) */
+interface Handoff {
+  threadId: string
+  basis: string
+  summary: string
+}
+const HANDOFF_KEY = 'handoff'
 
 export type RotateReason = 'first' | 'agent' | 'idle' | 'long'
 
@@ -33,6 +65,10 @@ export interface ConversationOptions {
   threads: ThreadService
   limits?: Partial<ConversationLimits>
   now?: () => Date
+  /** Wait after a reply before the handoff is made ahead (HANDOFF_AFTER_MS by default) */
+  handoffAfterMs?: number
+  /** Work log: a handoff made ahead (or tried and not made), how long it took and the segment's user turns */
+  onHandoff?: (x: { made: boolean; ms: number; turns: number }) => void
 }
 
 /**
@@ -62,6 +98,66 @@ export class ConversationService {
       cur.id,
       this.opts.threads.summarize(cur.id).catch(() => undefined),
     )
+  }
+
+  /** Segments a handoff was already tried for (at most once each, to spare the user's quota) */
+  private readonly handoffTried = new Set<string>()
+  private handoffTimer: ReturnType<typeof setTimeout> | undefined
+  private handoffRun: AbortController | undefined
+
+  /**
+   * Called after a reply ends. Makes the handoff summary later (HANDOFF_AFTER_MS), while the provider's cache still
+   * holds the conversation, if the user has not written by then. Once per segment, not for short segments
+   */
+  handoffLater() {
+    clearTimeout(this.handoffTimer)
+    const cur = this.current()
+    if (!cur || this.handoffTried.has(cur.id)) return
+    if (this.opts.store.sessionSize(cur.id).turns < HANDOFF_MIN_TURNS) return
+    const id = cur.id
+    this.handoffTimer = setTimeout(
+      () => void this.makeHandoff(id),
+      this.opts.handoffAfterMs ?? HANDOFF_AFTER_MS,
+    )
+    this.handoffTimer.unref?.()
+  }
+
+  /** A new message came: the handoff waiting or being made is not needed now */
+  cancelHandoff() {
+    clearTimeout(this.handoffTimer)
+    this.handoffTimer = undefined
+    this.handoffRun?.abort()
+    this.handoffRun = undefined
+  }
+
+  private async makeHandoff(id: string) {
+    const cur = this.current()
+    if (cur?.id !== id || this.handoffTried.has(id) || this.opts.threads.isRunning(id)) return
+    // The PC slept past the cache's life: a summary now reads everything at full price, as continuing would. Skip it
+    // (the segment switches after staleMs then, as before)
+    const started = this.now().getTime()
+    if (started - Date.parse(cur.updatedAt) >= CACHE_LIFE_MS) return
+    this.handoffTried.add(id)
+    const ac = new AbortController()
+    this.handoffRun = ac
+    const turns = this.opts.store.sessionSize(id).turns
+    const summary = await this.opts.threads.summarize(id, 90_000, ac.signal).catch(() => undefined)
+    if (this.handoffRun === ac) this.handoffRun = undefined
+    const made = Boolean(summary) && !ac.signal.aborted
+    if (made && summary) {
+      const h: Handoff = { threadId: id, basis: cur.updatedAt, summary }
+      this.opts.store.setSetting(HANDOFF_KEY, h)
+    }
+    this.opts.onHandoff?.({ made, ms: this.now().getTime() - started, turns })
+  }
+
+  /** The handoff made ahead for this segment, if nothing was said in it since */
+  readyHandoff(cur: ThreadRecord | undefined = this.current()): string | undefined {
+    if (!cur) return undefined
+    const h = this.opts.store.getSetting(HANDOFF_KEY) as Partial<Handoff> | undefined
+    return h && h.threadId === cur.id && h.basis === cur.updatedAt && typeof h.summary === 'string'
+      ? h.summary
+      : undefined
   }
 
   /** Start a new segment from the next message (after the tone setting changes, so the old tone isn't followed) */
@@ -100,7 +196,10 @@ export class ConversationService {
     const size = this.opts.store.sessionSize(cur.id)
     if (size.turns === 0) return undefined
     if (this.rotateNext) return 'idle'
-    if (this.now().getTime() - Date.parse(cur.updatedAt) > this.limits.idleMs) return 'idle'
+    const idle = this.now().getTime() - Date.parse(cur.updatedAt)
+    if (idle > this.limits.staleMs) return 'idle'
+    // Past the cache's life: switch when it loses nothing (a handoff is ready, or the segment is short)
+    if (idle > this.limits.idleMs && (size.turns < HANDOFF_MIN_TURNS || this.readyHandoff(cur))) return 'idle'
     if (
       size.turns >= this.limits.turns ||
       size.chars >= this.limits.chars ||
@@ -128,10 +227,12 @@ export class ConversationService {
 
   /**
    * The segment for the next message. Closes the previous one and opens a new one when needed.
-   * Asks the AI for a summary only when switching for length (after idle or an AI change, only recent messages are carried)
+   * A handoff made ahead is used whatever the reason. Without one, the AI is asked for a summary only when switching for
+   * length (after idle or an AI change, only recent messages are carried)
    */
   async prepare(agent: AgentId): Promise<{ session: ThreadRecord; rotated?: RotateReason }> {
     const { store, threads } = this.opts
+    this.cancelHandoff()
     const cur = this.current()
     const reason = this.needsRotate(agent, cur)
     if (!reason && cur) return { session: cur }
@@ -140,7 +241,10 @@ export class ConversationService {
     if (cur) {
       const early = this.early.get(cur.id)
       this.early.delete(cur.id)
-      const summary = reason === 'long' ? ((await early) ?? (await threads.summarize(cur.id))) : undefined
+      const ready = this.readyHandoff(cur)
+      const summary =
+        ready ?? (reason === 'long' ? ((await early) ?? (await threads.summarize(cur.id))) : undefined)
+      if (ready) store.setSetting(HANDOFF_KEY, undefined)
       store.closeSession(cur.id, summary)
       // The closed segment's resident agent program is not needed any more (ADR 0035)
       void threads.release(cur.id)

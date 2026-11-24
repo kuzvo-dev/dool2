@@ -26,7 +26,7 @@ changes arrive as notes in a new user turn.
 2. When the instructions built now differ from what the AI was last told, the next message carries an **update note**
    with only the sections that changed (matched by `## ` heading, ignoring the explanation in parentheses), and the
    names of sections that no longer apply. Each version is told once.
-3. A new segment (ADR 0015: long, idle 12 hours, or a different AI) pins a fresh copy, so notes do not pile up.
+3. A new segment (ADR 0015: long, idle past the cache's life per ADR 0036, or a different AI) pins a fresh copy, so notes do not pile up.
 4. **The service tool list is pinned per segment too.** The tool definitions come before the instructions in every
    request, so a change there breaks the cache for everything after it. It changed during a segment whenever a service
    was connected or disconnected, a login-free service tool was used for the first time (it then joins the visible

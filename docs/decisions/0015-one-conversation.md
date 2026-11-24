@@ -17,7 +17,7 @@ There were two ways. One shows a single conversation on screen but splits the re
 2. **Stored as segments.** The old `threads` table is used as the conversation's **segments (session)**. The conversation = the messages of all segments joined in time order. Exactly one segment is open at any time (the current segment), and new remarks continue the current segment's AI session with `--resume`.
 3. **Change segments when it gets long.** At the next turn we move to a new AI session.
    - When the segment has grown long (when the number of turns, the character count, or the number of tokens the AI actually reads exceeds a threshold)
-   - When a long time has passed since the last remark (for example, 12 hours)
+   - When a long time has passed since the last remark (for example, 12 hours; ADR 0036 ties it to the provider's cache life)
    - When the AI (Claude Code, Codex, OpenCode) is changed in settings
 
    When moving over, the previous segment's **summary**, the last few remarks and the state of tasks in progress go into the new session's first instructions. The summary is made by asking that AI briefly once when the segment is closed, and is stored with the segment. Segment boundaries are not visible on the user's screen (only date dividers are).

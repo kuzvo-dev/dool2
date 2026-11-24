@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol'
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
-import { buildCarry, ConversationService, formatSearch } from './conversation.js'
+import { buildCarry, ConversationService, formatSearch, HANDOFF_MIN_TURNS } from './conversation.js'
 import type { AgentRuntime, TurnInput } from './runtime.js'
 import { SUMMARY_REQUEST, ThreadService } from './threads.js'
 
@@ -35,7 +35,10 @@ async function drain(it: AsyncIterable<DaemonStreamEvent>) {
   }
 }
 
-function setup(limits = {}) {
+function setup(
+  limits = {},
+  more: { handoffAfterMs?: number; onHandoff?: (x: { made: boolean }) => void } = {},
+) {
   let t = Date.parse('2026-11-15T00:00:00Z')
   const now = () => new Date(t)
   const tick = (ms: number) => {
@@ -52,7 +55,7 @@ function setup(limits = {}) {
     mcpServers: [],
     systemPrompt: '두리 지침',
   })
-  const convo = new ConversationService({ store, threads, limits, now })
+  const convo = new ConversationService({ store, threads, limits, now, ...more })
   return { store, claude, codex, convo, tick }
 }
 
@@ -222,5 +225,96 @@ describe('segment handoff', () => {
     ])
       expect(SUMMARY_REQUEST).toContain(h)
     expect(looksLikeSummary('Now:\n- book a table for 2\nDid not work:\n- site X blocked login')).toBe(true)
+  })
+})
+
+describe('cache-aware segments (ADR 0036)', () => {
+  const MIN = 60_000
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  async function talk(convo: ConversationService, n: number) {
+    for (let i = 0; i < n; i++) await drain(convo.send('claude', `turn ${i}`))
+  }
+
+  it('past the cache life, a short segment switches; a longer one waits for the stale limit without a handoff', async () => {
+    const short = setup()
+    await talk(short.convo, 2)
+    short.tick(70 * MIN)
+    expect(short.convo.needsRotate('claude')).toBe('idle')
+
+    const long = setup()
+    await talk(long.convo, HANDOFF_MIN_TURNS)
+    long.tick(70 * MIN)
+    expect(long.convo.needsRotate('claude')).toBeUndefined()
+    long.tick(12 * 60 * MIN)
+    expect(long.convo.needsRotate('claude')).toBe('idle')
+  })
+
+  it('makes the handoff ahead in a copy of the session, and the switch after the pause uses it at once', async () => {
+    const seen: { made: boolean }[] = []
+    const { convo, claude, store, tick } = setup({}, { handoffAfterMs: 5, onHandoff: (x) => seen.push(x) })
+    await talk(convo, HANDOFF_MIN_TURNS)
+    const first = convo.current()
+    convo.handoffLater()
+    await sleep(40)
+    expect(seen).toEqual([expect.objectContaining({ made: true })])
+    const asks = claude.inputs.filter((i) => i.text === SUMMARY_REQUEST)
+    expect(asks).toHaveLength(1)
+    expect(asks[0]?.fork).toBe(true)
+    expect(convo.readyHandoff()).toBe('- 국밥을 좋아함')
+
+    tick(70 * MIN)
+    expect(convo.needsRotate('claude')).toBe('idle')
+    await drain(convo.send('claude', 'good morning'))
+    // No second summary at the switch: the one made ahead is carried
+    expect(claude.inputs.filter((i) => i.text === SUMMARY_REQUEST)).toHaveLength(1)
+    expect(convo.current()?.id).not.toBe(first?.id)
+    expect(store.getThread(first?.id ?? '')).toMatchObject({ summary: '- 국밥을 좋아함' })
+    expect(claude.inputs.at(-1)?.systemPrompt).toContain(
+      'Handoff from the earlier conversation:\n- 국밥을 좋아함',
+    )
+    expect(convo.readyHandoff()).toBeUndefined()
+  })
+
+  it('a message before the handoff time cancels it, and a handoff older than the last message is not used', async () => {
+    const { convo, claude, tick } = setup({}, { handoffAfterMs: 20 })
+    await talk(convo, HANDOFF_MIN_TURNS)
+    convo.handoffLater()
+    await drain(convo.send('claude', 'one more'))
+    await sleep(50)
+    expect(claude.inputs.some((i) => i.text === SUMMARY_REQUEST)).toBe(false)
+
+    convo.handoffLater()
+    await sleep(50)
+    expect(convo.readyHandoff()).toBeDefined()
+    tick(1000)
+    await drain(convo.send('claude', 'and another'))
+    // Said after the handoff was made: it no longer covers the segment
+    expect(convo.readyHandoff()).toBeUndefined()
+    tick(70 * MIN)
+    expect(convo.needsRotate('claude')).toBeUndefined()
+  })
+
+  it('once per segment, never for short segments', async () => {
+    const { convo, claude } = setup({}, { handoffAfterMs: 5 })
+    await talk(convo, HANDOFF_MIN_TURNS - 1)
+    convo.handoffLater()
+    await sleep(30)
+    expect(claude.inputs.some((i) => i.text === SUMMARY_REQUEST)).toBe(false)
+    await talk(convo, 1)
+    convo.handoffLater()
+    await sleep(30)
+    await talk(convo, 1)
+    convo.handoffLater()
+    await sleep(30)
+    expect(claude.inputs.filter((i) => i.text === SUMMARY_REQUEST)).toHaveLength(1)
+  })
+
+  it('skips the handoff when the cache is already gone (the PC slept past it)', async () => {
+    const { convo, claude, tick } = setup({}, { handoffAfterMs: 5 })
+    await talk(convo, HANDOFF_MIN_TURNS)
+    convo.handoffLater()
+    tick(61 * MIN)
+    await sleep(30)
+    expect(claude.inputs.some((i) => i.text === SUMMARY_REQUEST)).toBe(false)
   })
 })

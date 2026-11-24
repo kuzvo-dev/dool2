@@ -472,7 +472,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         .join('\n\n'),
   })
   /** One conversation (ADR 0015): picking and switching segments */
-  const conversation = new ConversationService({ store, threads })
+  const conversation = new ConversationService({
+    store,
+    threads,
+    onHandoff: (x) => journal.write('handoff', x),
+  })
   /** Streams what happens in the conversation to the PC screen (GET /api/conversation/live) */
   const live = new EventEmitter<{ event: [ConversationLiveEvent] }>()
   // Also tells the phone the conversation state (answering, queued messages). Only when it changes
@@ -2140,7 +2144,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         })
       } else if (again && feedAsk) lastAsk.set(threadId, feedAsk)
       // If the next message is about to switch segments, summarize beforehand (so the next message is saved and answered right away)
-      if (!again && conversation.current()?.id === threadId) conversation.prewarm()
+      if (!again && conversation.current()?.id === threadId) {
+        conversation.prewarm()
+        // And the handoff for a switch after a long pause, made while the provider's cache still holds the segment (ADR 0036)
+        conversation.handoffLater()
+      }
       if (next) setTimeout(() => followUp(threadId, next), 0)
       else if (again) {
         const note = again
