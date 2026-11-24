@@ -339,13 +339,13 @@ describe('처음부터 다시 (시험용 PC)', () => {
     expect((await api('/api/settings')).settings.autoApprove).toBe(true)
   })
 
-  it('보통 PC는 dev를 알리지 않고 처음부터 다시를 거절한다', async () => {
+  it('a normal PC does not announce dev, but resets with a fresh signature from this phone', async () => {
     const { api, p } = await paired(false)
     await waitFor(() => p.inbox.some((m) => m.kind === 'state'))
     expect(p.inbox.find((m) => m.kind === 'state')).not.toHaveProperty('dev')
     await api('/api/life/action', {
       method: 'POST',
-      body: JSON.stringify({ action: 'memory-add', text: '기억 하나' }),
+      body: JSON.stringify({ action: 'memory-add', text: 'one memory' }),
     })
     const at = Date.now()
     await p.send({
@@ -355,8 +355,20 @@ describe('처음부터 다시 (시험용 PC)', () => {
       sig: await signText(p.keys.signPriv, resetSignText(at, false)),
     })
     await waitFor(() => done(p).length === 1)
-    expect(done(p)[0]?.ok).toBe(false)
-    expect((await api('/api/life')).memory.length).toBe(1)
+    expect(done(p)[0]?.ok).toBe(true)
+    expect((await api('/api/life')).memory.length).toBe(0)
+  })
+
+  it('the PC settings reset with the screen token, keeping the phone link', async () => {
+    const { api } = await paired(false)
+    await api('/api/life/action', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'memory-add', text: 'one memory' }),
+    })
+    const r = await api('/api/reset', { method: 'POST', body: JSON.stringify({ services: false }) })
+    expect(r.ok).toBe(true)
+    expect((await api('/api/life')).memory.length).toBe(0)
+    expect((await api('/api/link')).link.phones).toHaveLength(1)
   })
 })
 

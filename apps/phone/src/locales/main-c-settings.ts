@@ -81,9 +81,9 @@ export const mainCSettings = messages({
     secAbout: '두리 정보',
     siteLink: '두리 사이트',
     sourceLink: '소스 코드 (오픈소스)',
-    testOnly: '시험용',
-    startOver: '처음부터 다시',
-    startOverSub: 'PC의 대화·기억·목표·보관함을 지우고 새로 시작해요',
+    secReset: '데이터 초기화',
+    startOver: '데이터 초기화',
+    startOverSub: 'PC의 대화·기억·목표·보관함·내 정보를 지우고 처음처럼 시작해요 · 금고와 폰 연결은 남아요',
     promises: '두리의 약속',
     promise1:
       '돈 쓰는 일은 꼭 먼저 물어봐요. 이건 끌 수 없어요. 메시지 보내기는 자동 승인을 켰을 때만 묻지 않아요.',
@@ -226,9 +226,10 @@ export const mainCSettings = messages({
     secAbout: 'About Dool2',
     siteLink: 'Dool2 website',
     sourceLink: 'Source code (open source)',
-    testOnly: 'Test only',
-    startOver: 'Start over',
-    startOverSub: 'Clears chats, memory, goals and library on the PC and starts fresh',
+    secReset: 'Reset data',
+    startOver: 'Reset data',
+    startOverSub:
+      'Erases chats, memory, goals, library and your info on the PC · the vault and the phone link stay',
     promises: 'Dool2 promises',
     promise1:
       'I always ask before spending money. You can’t turn this off. Messages go without asking only if you turn on auto-approve.',

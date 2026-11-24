@@ -127,6 +127,15 @@ export const setupText = messages({
     secReport: '문제 알리기',
     reportSub: '막히거나 이상한 점을 두리 팀에 바로 알려요. 직접 읽고 고쳐요.',
     secMore: '더 알아보기',
+    secReset: '데이터 초기화',
+    resetSub: '처음 쓰는 것처럼 다시 시작해요. 되돌릴 수 없어요.',
+    resetStart: '데이터 초기화…',
+    resetWhat:
+      '이 PC의 대화·기억·목표·보관함·아이디어·내 정보가 모두 지워져요. 금고의 비밀번호, 폰 연결, PC 설정은 남아요.',
+    resetServices: '연결한 서비스 표시도 지우기',
+    resetConfirm: '모두 지우기',
+    resetting: '지우는 중…',
+    resetCancel: '그만두기',
     // Phone
     relayNeeded: '폰에서 부탁하려면 중계 서버 주소가 필요해요. 공식 주소는 출시 때 자동으로 들어가요.',
     relayPlaceholder: 'https://… (직접 운영하는 중계 서버)',
@@ -379,6 +388,15 @@ export const setupText = messages({
     reportSub:
       'Tell the Dool2 team when something gets stuck or looks wrong. We read every report and fix it.',
     secMore: 'Learn more',
+    secReset: 'Reset data',
+    resetSub: 'Start over as if you were new. This cannot be undone.',
+    resetStart: 'Reset data…',
+    resetWhat:
+      'Erases chats, memory, goals, library, ideas and your info on this PC. Vault passwords, the phone link and PC settings stay.',
+    resetServices: 'Also clear connected services',
+    resetConfirm: 'Erase everything',
+    resetting: 'Erasing…',
+    resetCancel: 'Cancel',
     relayNeeded:
       'To ask from your phone, Dool2 needs a relay address. The official one is filled in automatically at launch.',
     relayPlaceholder: 'https://… (your own relay)',

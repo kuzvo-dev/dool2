@@ -1461,7 +1461,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return b64 ? `data:image/jpeg;base64,${b64}` : undefined
   }
   const devReset = opts.devReset ?? process.env.DOOL2_DEV_RESET === '1'
-  /** Start over (test PC): like a new user. Keeps the vault passwords, phone pairing, PC settings (name, AI choice) and the work log */
+  /**
+   * Reset data (settings on the PC and the phone): start over like a new user. Erases chats, memory, goals, library,
+   * ideas and my info. Keeps the vault passwords, phone pairing, PC settings (name, AI choice) and the work log
+   */
   async function resetAll(
     phone: string,
     o: { services: boolean },
@@ -1579,7 +1582,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (loginId && browserTools.logins.finish(loginId, 'cancelled'))
           void link.broadcast({ kind: 'login-done', id: loginId, ok: false, message: m().switchedToFind })
       },
-      ...(devReset ? { reset: (phone: string, o: { services: boolean }) => resetAll(phone, o) } : {}),
+      // From the phone only with a request signed by the phone key (checked in link.ts)
+      reset: (phone: string, o: { services: boolean }) => resetAll(phone, o),
       thumb: (url) => thumbOrPhoto(url),
       // Settings > Vault (ADR 0026): the user views and edits on the phone. Viewing is requested only after the phone verified the device lock.
       // The password goes only to that phone, and the work log keeps only which site was viewed
@@ -3238,6 +3242,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (parts[0] !== 'api') return json(res, 404, { error: m().noRoute })
 
     if (req.method === 'GET' && a === 'health') return json(res, 200, { ok: true, dataDir: paths.dataDir })
+
+    // Reset data from the PC settings (screen token only). The phone sends a signed request over the link instead
+    if (req.method === 'POST' && a === 'reset' && !b) {
+      const body = (await readJson(req)) as { services?: unknown }
+      return json(res, 200, await resetAll('pc', { services: body.services === true }))
+    }
 
     // Scenario tests (evals layer 2), test PC only: { mode: 'record' | 'replay' | 'off', entries? }. 'off' returns the report
     if (req.method === 'POST' && a === 'eval' && b === 'tape' && !c) {

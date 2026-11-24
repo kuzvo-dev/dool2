@@ -402,12 +402,16 @@ let heard = false
 let silentTimer: ReturnType<typeof setTimeout> | undefined
 
 /** Clears this phone's connection and returns to the start (scan QR) */
-/** Start over (test PC): asks twice and sends a request signed with this phone's key. The PC erases only after verifying the signature */
+/**
+ * Reset data: asks twice, checks the phone lock, and sends a request signed with this phone's key. The PC erases only
+ * after verifying the signature
+ */
 async function resetAll() {
   const s = st.saved
   if (!s) return
   if (!confirm(mainCore(lang).resetAsk)) return
   const services = confirm(mainCore(lang).resetServicesAsk)
+  if ((await confirmDevice(mSet.startOver)) === 'cancel') return
   mark(`reset (services ${services ? 'included' : 'kept'})`)
   const at = Date.now()
   const sig = await signText(s.keys.signPriv, resetSignText(at, services))
@@ -5248,12 +5252,11 @@ function settingsView() {
     link('link', mSet.sourceLink, 'github.com/kuzvo-dev/dool2', 'https://github.com/kuzvo-dev/dool2'),
   )
 
-  // Test PCs only: start over like a new user
-  if (st.pc?.dev)
-    sec(
-      mSet.testOnly,
-      row('trash', mSet.startOver, mSet.startOverSub, undefined, () => void resetAll()),
-    )
+  // Reset data (PC: About Dool2 > Reset data): start over like a new user. The vault and the phone link stay
+  sec(
+    mSet.secReset,
+    row('trash', mSet.startOver, mSet.startOverSub, chev(), () => void resetAll()),
+  )
 
   box.append(h('h2', { class: 'over', text: mSet.promises }))
   const promises = h('div', { class: 'set-list' })
