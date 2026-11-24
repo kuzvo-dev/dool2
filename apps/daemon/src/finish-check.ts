@@ -15,8 +15,11 @@ export interface Verdict {
 }
 
 export interface FinishCheckOptions {
-  /** Sends the judging text and gets the answer (a new session without tools). undefined on failure */
-  ask: (prompt: string) => Promise<string | undefined>
+  /**
+   * Sends the judging text and gets the answer (a new session without tools). undefined on failure.
+   * signal: aborted when the user stops the request while it is being judged
+   */
+  ask: (prompt: string, signal: AbortSignal) => Promise<string | undefined>
   now?: () => number
   /** Rounds to send back when there is no progress */
   baseCycles?: number
@@ -105,6 +108,8 @@ export function sameBlocker(a: string, b: string): boolean {
 
 export class FinishCheck {
   private readonly asks = new Map<string, AskState>()
+  /** Verdicts being asked right now, so stopping can end them at once */
+  private readonly judging = new Map<string, AbortController>()
   private gen = 0
   private readonly now: () => number
 
@@ -132,6 +137,8 @@ export class FinishCheck {
   /** The user stopped it: do not continue this request */
   drop(threadId: string): void {
     this.asks.delete(threadId)
+    this.judging.get(threadId)?.abort()
+    this.judging.delete(threadId)
   }
 
   /** Number of the current request (to see whether a new one arrived while judging) */
@@ -148,11 +155,20 @@ export class FinishCheck {
     if (!turn.answer.trim()) return { kind: 'skip', reason: 'no answer' }
     // With progress (a tool not used before) go up to the maximum, otherwise up to the default rounds
     const limit = fresh.length > 0 ? (this.opts.maxCycles ?? 4) : (this.opts.baseCycles ?? 2)
-    const v = parseVerdict(
-      await this.opts.ask(
+    const ac = new AbortController()
+    this.judging.set(threadId, ac)
+    let said: string | undefined
+    try {
+      said = await this.opts.ask(
         judgePrompt({ ask: s.ask, answer: turn.answer, tools: [...s.tools], cycle: s.cycles }),
-      ),
-    )
+        ac.signal,
+      )
+    } finally {
+      if (this.judging.get(threadId) === ac) this.judging.delete(threadId)
+    }
+    // Stopped (or a new request began) while judging: this verdict no longer counts
+    if (ac.signal.aborted || this.asks.get(threadId) !== s) return { kind: 'skip', reason: 'stopped' }
+    const v = parseVerdict(said)
     if (!v) return { kind: 'skip', reason: 'judge failed' }
     if (v.done) {
       this.asks.delete(threadId)

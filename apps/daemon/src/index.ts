@@ -235,7 +235,7 @@ export interface DaemonOptions {
   /** For tests: swaps out the agents */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
   /** The judge AI for the before-finishing check (ADR 0027). Default is a fresh Claude session; off in tests that swap runtimes */
-  finishJudge?: ((prompt: string) => Promise<string | undefined>) | false
+  finishJudge?: ((prompt: string, signal: AbortSignal) => Promise<string | undefined>) | false
 }
 
 /** Store for secrets. The PC app encrypts them with the OS keychain (safeStorage) */
@@ -355,7 +355,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       : (opts.finishJudge ??
         (opts.runtimes
           ? undefined
-          : async (prompt: string) => {
+          : async (prompt: string, signal: AbortSignal) => {
               const rt = runtimes.claude
               if (!rt) return undefined
               let text = ''
@@ -366,7 +366,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
                   mcpServers: [],
                   cwd: paths.workspace,
                   model: 'sonnet',
-                  signal: AbortSignal.timeout(90_000),
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
                 })) {
                   if (ev.type === 'text') text += ev.delta
                   if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
@@ -1537,10 +1537,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         })().catch(() => {})
         return id
       },
-      cancel: (id) => {
-        finishCheck?.drop(id)
-        threads.cancel(id)
-      },
+      cancel: (id) => stopThread(id),
       approval: (id) => browserTools.approvals.get(id),
       screen: async (tabId, fit) => {
         const s = await browserTools.remoteScreen(tabId, fit)
@@ -1709,11 +1706,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           hasMore: messages.length === (limit ?? 60),
         }
       },
-      cancelConversation: () => {
-        const cur = conversation.current()?.id
-        if (cur) finishCheck?.drop(cur)
-        conversation.cancel()
-      },
+      cancelConversation: () => stopConversation(),
       connect: async (id, action) => {
         const card = await skills.card(id)
         if (!card) throw new Error(m().noSuchService)
@@ -1856,6 +1849,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const judging = new Set<string>()
   /** Chat records waiting for a person */
   const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
+  /**
+   * The user pressed stop (PC or phone): end the running turn, the before-finishing check that may be judging it, and
+   * the rounds it would send back. Stopping only the turn let a verdict that arrived later start the work again
+   */
+  function stopThread(threadId: string) {
+    finishCheck?.drop(threadId)
+    threads.cancel(threadId)
+  }
+  function stopConversation() {
+    const cur = conversation.current()?.id
+    if (cur) stopThread(cur)
+  }
   /** The first request of a chat being continued by the before-finishing check (when the verdict ends, the check's record is cleared) */
   const lastAsk = new Map<string, string>()
   /** Wraps one chat turn and reports the "working" state */
@@ -1994,7 +1999,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const note = again
         // A continued turn also counts as a task handed over from the phone: the "done" notification goes out once, at the last turn
         if (turnFromPhone) fromPhone.add(threadId)
-        setTimeout(() => followUp(threadId, appNote(note)), 0)
+        // Unless the user pressed stop in the meantime (stopping drops the request)
+        setTimeout(() => {
+          if (finishCheck?.current(threadId) !== undefined) followUp(threadId, appNote(note))
+        }, 0)
       }
       // Chat: gather messages queued while answering into one turn and send them next
       else if (queued.length && conversation.current()?.id === threadId) {
@@ -3819,7 +3827,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 202, await talk(text))
     }
     if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
-      conversation.cancel()
+      stopConversation()
       return json(res, 200, { ok: true })
     }
     if (a === 'conversation' && b === 'live' && req.method === 'GET') {
@@ -3864,7 +3872,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return json(res, 200, { ok: true })
       }
       if (req.method === 'POST' && c === 'cancel') {
-        threads.cancel(b)
+        stopThread(b)
         return json(res, 200, { ok: true })
       }
       if (req.method === 'POST' && c === 'messages') {

@@ -116,6 +116,23 @@ describe('끝내기 전 검사', () => {
     expect((await c.check('t', { answer: 'x', tools: ['y'] })).kind).toBe('skip')
   })
 
+  it('판정하는 중에 멈추면 판정을 끊고, 늦게 온 판정은 쓰지 않는다', async () => {
+    let signal: AbortSignal | undefined
+    const c = new FinishCheck({
+      ask: (_p, s) =>
+        new Promise((resolve) => {
+          signal = s
+          s.addEventListener('abort', () => resolve('{"done":false,"why":"a"}'))
+        }),
+    })
+    c.begin('t', '부탁')
+    const r = c.check('t', { answer: 'x', tools: ['y'] })
+    c.drop('t')
+    expect(signal?.aborted).toBe(true)
+    expect(await r).toEqual({ kind: 'skip', reason: 'stopped' })
+    expect(c.current('t')).toBeUndefined()
+  })
+
   it('되돌려 보내는 알림에 남은 것과 다른 길을 적는다', () => {
     const note = againNote({ done: false, why: '1곳만 봤어요', next: '다른 곳' })
     expect(note).toContain('1곳만 봤어요')

@@ -433,6 +433,41 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(r.status).toBe(200)
     rt.release()
   })
+
+  it('멈추기는 끝내기 전 검사도 끝내고, 늦게 온 판정으로 일을 다시 시작하지 않는다', async () => {
+    class ToolRuntime extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'tool', name: 'mcp__dool2__browser_open', input: {} }
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new ToolRuntime()
+    let judged = 0
+    let aborted = false
+    const { api } = await boot(rt, {
+      // A judge that answers only when stopped, and then says "not done" (a verdict that arrives late)
+      finishJudge: (_p, signal) => {
+        judged++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            aborted = true
+            resolve('{"done":false,"why":"1곳만 봤어요","next":"다른 곳"}')
+          }),
+        )
+      },
+    })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"차 보험 3곳 비교해 줘"}' })
+    await until(async () => judged === 1)
+    expect((await state()).busy).toBe(true)
+    await api('/api/conversation/cancel', { method: 'POST' })
+    await until(async () => !(await state()).busy)
+    expect(aborted).toBe(true)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(rt.inputs).toHaveLength(1)
+  })
 })
 
 describe('설정', () => {
