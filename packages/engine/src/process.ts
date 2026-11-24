@@ -129,3 +129,92 @@ export function spawnLines(
 
   return { lines: lines(), exit, kill: () => child.kill() }
 }
+
+export interface StreamProcess {
+  /** stdout lines (NDJSON). One reader for the whole life of the process */
+  lines: AsyncIterator<string>
+  /** When the process ends: the exit code and the tail of stderr */
+  exit: Promise<{ code: number | null; stderrTail: string }>
+  /** Whether the process is still running */
+  readonly alive: boolean
+  /** Writes one line to stdin. False when stdin is closed */
+  write(line: string): boolean
+  /** Closes stdin (a program reading lines ends on its own) */
+  end(): void
+  kill(): void
+}
+
+/**
+ * Starts a long-running process that keeps stdin open, for programs that take one JSON line per message and stay up
+ * between messages (the resident agent session).
+ */
+export function spawnStream(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): StreamProcess {
+  const child = spawn(cmd, args, {
+    cwd: opts.cwd,
+    env: opts.env ?? process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+  let alive = true
+  let stderrTail = ''
+  child.stderr.setEncoding('utf8').on('data', (d: string) => {
+    stderrTail = (stderrTail + d).slice(-4000)
+  })
+  // Writing to a program that already ended must not crash the daemon
+  child.stdin.on('error', () => {})
+  const exit = new Promise<{ code: number | null; stderrTail: string }>((resolve) => {
+    child.on('error', (err) => {
+      alive = false
+      stderrTail += `\n${err.message}`
+      resolve({ code: -1, stderrTail })
+    })
+    // 'exit', not only 'close': between messages nobody reads stdout, and 'close' waits for stdout to be read to its end
+    child.on('exit', (code) => {
+      alive = false
+      resolve({ code, stderrTail })
+    })
+    child.on('close', (code) => {
+      alive = false
+      resolve({ code, stderrTail })
+    })
+  })
+
+  async function* lines() {
+    let buf = ''
+    child.stdout.setEncoding('utf8')
+    for await (const chunk of child.stdout as AsyncIterable<string>) {
+      buf += chunk
+      let nl = buf.indexOf('\n')
+      while (nl >= 0) {
+        const line = buf.slice(0, nl).replace(/\r$/, '')
+        buf = buf.slice(nl + 1)
+        if (line.trim()) yield line
+        nl = buf.indexOf('\n')
+      }
+    }
+    if (buf.trim()) yield buf
+  }
+
+  return {
+    lines: lines(),
+    exit,
+    get alive() {
+      return alive
+    },
+    write(line: string) {
+      if (!alive || child.stdin.destroyed || child.stdin.writableEnded) return false
+      child.stdin.write(line.endsWith('\n') ? line : `${line}\n`, 'utf8')
+      return true
+    },
+    end() {
+      if (!child.stdin.writableEnded) child.stdin.end()
+    },
+    kill() {
+      if (alive) child.kill()
+    },
+  }
+}
