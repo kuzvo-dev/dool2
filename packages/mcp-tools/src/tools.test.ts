@@ -214,8 +214,9 @@ describe('서비스 도구 (ADR 0018)', () => {
       if (tool === 'catalog') return { tools: catalog } as never
       calls.push([tool, args])
       return {
-        content: [{ type: 'text' as const, text: '1. 가게 가' }],
+        content: [{ type: 'text' as const, text: '1. 가게 가\n\nChecked at: 12:00' }],
         structuredContent: { shops: [{ name: '가게 가', rating: 4.5 }] },
+        hint: 'Checked at: 12:00',
       } as never
     }
     const server = createServer({ services })
@@ -231,7 +232,12 @@ describe('서비스 도구 (ADR 0018)', () => {
     expect(tool?.outputSchema?.properties).toHaveProperty('shops')
 
     const r = await client.callTool({ name: 'demo_eats_search', arguments: { keyword: '성수', people: 4 } })
-    expect(r.structuredContent).toEqual({ shops: [{ name: '가게 가', rating: 4.5 }] })
+    // The lines after the data reach the AI too: it reads the structured result, not the text
+    expect(r.structuredContent).toEqual({
+      shops: [{ name: '가게 가', rating: 4.5 }],
+      next: 'Checked at: 12:00',
+    })
+    expect(tool?.outputSchema?.properties).toHaveProperty('next')
     expect(calls[0]).toEqual(['call', { tool: 'demo_eats_search', input: { keyword: '성수', people: 4 } }])
     // 입력 모양이 틀리면 본체까지 가지 않는다
     const bad = await client.callTool({ name: 'demo_eats_search', arguments: { keyword: '성수', people: 0 } })

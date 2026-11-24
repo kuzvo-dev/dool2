@@ -119,6 +119,8 @@ export interface ToolResult {
   isError?: boolean
   /** Structured result of a service tool (connector) (MCP structuredContent) */
   structuredContent?: Record<string, unknown>
+  /** What to do with a service tool's result (its text after the data), passed into the structured result as next */
+  hint?: string
 }
 
 export interface BrowserCaller {

@@ -209,6 +209,11 @@ describe('서비스 도구 실행기', () => {
     expect(textOf(r)).toContain('1. name: 가게 가 · rating: 4.5 · times: 오후 7:00')
     expect(textOf(r)).toContain('예약하려면 demo_eats_book')
     expect(textOf(r)).toContain('[Tab 7]')
+    // The same lines go apart as hint (the tool server puts them in the structured result, which the AI reads)
+    expect(r.hint).toMatch(/^Checked at: /)
+    expect(r.hint).toContain('예약하려면 demo_eats_book')
+    expect(r.hint).toContain('[Tab 7]')
+    expect(r.hint).not.toContain('가게 가')
   })
 
   it('내 주문 모아 보기: 주문 도구가 있는 연결한 쇼핑몰이 없으면 연결 카드를 권한다', async () => {

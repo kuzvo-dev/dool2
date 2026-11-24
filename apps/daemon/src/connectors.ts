@@ -875,8 +875,12 @@ export class Connectors {
     const lines = [render(tool, out)]
     // Check time: so "now" in a reply does not reuse a time from earlier in the chat (measured: an 8-minute-old
     // time was called "now")
-    lines.push('', `Checked at: ${checkedAt()} (${card.name}, just now)`)
-    if (tool.next) lines.push('', fill(tool.next, scope))
+    // What to do with the result (check time, the tool's next step, which result block). Also sent apart as hint: a
+    // tool with output fields reaches the AI as its structured result, not this text, so the tool server puts the
+    // hint into that result (next) or these lines never reach it
+    const notes: string[] = []
+    notes.push(`Checked at: ${checkedAt()} (${card.name}, just now)`)
+    if (tool.next) notes.push(fill(tool.next, scope))
     // One line asking for cards when the options have photos and links (so each tool's next need not say it)
     const rows = Object.values(out).filter(Array.isArray).flat() as Record<string, unknown>[]
     const pics = rows.some((r) => r && typeof r === 'object' && r.image)
@@ -886,8 +890,7 @@ export class Connectors {
       // When the tool asks for another result block (list rows, route, single result), follow it to avoid a clash
       !/show_(cards|list|route|result)/.test(tool.next ?? '')
     )
-      lines.push(
-        '',
+      notes.push(
         'When showing options, attach show_cards with the photo (image), price and link exactly as given, and in text say only briefly why you picked them.',
       )
     // Lists without photos (orders, history, schedules, showtimes, open seats) go in list rows, not a text list.
@@ -901,23 +904,27 @@ export class Connectors {
       (rows.length >= 3 || (listy && rows.length > 0)) &&
       !/show_(cards|list|route|result)/.test(tool.next ?? '')
     )
-      lines.push(
-        '',
+      notes.push(
         'When showing options or lists to the user, do not lay them out as text or a table; attach rows with show_list. To let them pick one, use pick one (showtime, time or name in title; screen, seats left or conditions in sub; price in value; sold out in state). Keep the text to the key points.',
       )
     // When the list came back empty, do not keep hitting the same site with reworded queries (measured: opening
     // Coupang orders back to back got Access Denied)
     const lists = Object.entries(tool.output).filter(([, f]) => f.type === 'list')
     if (lists.length && lists.every(([k]) => Array.isArray(out[k]) && !(out[k] as unknown[]).length))
-      lines.push(
-        '',
+      notes.push(
         'The result is empty. Do not call this tool again many times with reworded input (the site may block you). Broaden it once (fewer words, longer period), or look elsewhere (another shop, payment history, mail).',
       )
     if (tool.status === TOOL_STATUS.draft)
-      lines.push('', '(This tool is new. If something looks off, check the screen with the browser tools)')
-    if (tabId !== undefined) lines.push(`[Tab ${tabId}]`)
+      notes.push('(This tool is new. If something looks off, check the screen with the browser tools)')
+    if (tabId !== undefined) notes.push(`[Tab ${tabId}]`)
+    for (const n of notes) lines.push(n.startsWith('[Tab ') ? n : `\n${n}`)
     this.opts.tools.lastTabId = tabId
-    return { content: [{ type: 'text', text: lines.join('\n') }], structuredContent: out, outcome: 'ok' }
+    return {
+      content: [{ type: 'text', text: lines.join('\n') }],
+      structuredContent: out,
+      hint: notes.join('\n'),
+      outcome: 'ok',
+    }
   }
 
   /** Result of a final step (approval request, hand-off to the AI, stop) */
