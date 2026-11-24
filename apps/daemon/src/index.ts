@@ -3,7 +3,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
@@ -381,6 +381,44 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (!/^[\w-]+\.jpg$/.test(name)) throw new Error(m().photoBadName)
     return (await readFile(join(photoDir, name))).toString('base64')
   }
+  /**
+   * The segment's service tool list, written before its agent program starts (ThreadService beforeRun), one file per
+   * segment (toolset). The tool server reads it at start and answers the agent at once; it used to ask the daemon
+   * first and wait up to 3 s, and a late answer left the turn without Dool2 tools. The list is the one the segment
+   * pinned (ADR 0032). Removed when it cannot be made, so the server asks the daemon
+   */
+  const serviceToolsDir = join(paths.dataDir, 'service-tools')
+  let serviceToolsSeq = 0
+  async function writeServiceTools(toolset: string) {
+    // Same rule as serviceToolsPath in @dool2/mcp-tools (segment ids are UUIDs)
+    if (!/^[\w-]{1,80}$/.test(toolset)) return
+    const file = join(serviceToolsDir, `${toolset}.json`)
+    // A temporary name per write, so two chats starting at once never rename each other's file away
+    const tmp = `${file}.${process.pid}-${++serviceToolsSeq}.tmp`
+    try {
+      const tools = await connectors.catalogFor(toolset)
+      await mkdir(serviceToolsDir, { recursive: true })
+      await writeFile(tmp, JSON.stringify({ tools }))
+      await rename(tmp, file)
+      await pruneServiceTools()
+    } catch {
+      await rm(tmp, { force: true }).catch(() => {})
+      await rm(file, { force: true }).catch(() => {})
+    }
+  }
+  /** Keeps the newest files only (a segment's file is written again before each of its turns) */
+  async function pruneServiceTools(keep = 40) {
+    const names = (await readdir(serviceToolsDir)).filter((n) => n.endsWith('.json'))
+    if (names.length <= keep) return
+    const dated = await Promise.all(
+      names.map(async (n) => ({
+        n,
+        at: (await stat(join(serviceToolsDir, n)).catch(() => undefined))?.mtimeMs ?? 0,
+      })),
+    )
+    dated.sort((a, b) => b.at - a.at)
+    for (const { n } of dated.slice(keep)) await rm(join(serviceToolsDir, n), { force: true }).catch(() => {})
+  }
   const threads = new ThreadService({
     lang,
     store,
@@ -397,6 +435,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return m
     },
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
+    // The tool server reads the service tool list from a file at start instead of waiting up to 3 s for the daemon
+    beforeRun: (threadId) => writeServiceTools(threadId),
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
     onCache: (threadId, x) =>
       journal.write('cache', {
@@ -3946,7 +3986,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   })
 
   // Now that the address is known, tell the tool server (ThreadService uses the same object)
-  mcp.env = { ...mcp.env, DOOL2_API: `http://127.0.0.1:${port}`, DOOL2_TOOL_TOKEN: toolToken }
+  mcp.env = {
+    ...mcp.env,
+    DOOL2_API: `http://127.0.0.1:${port}`,
+    DOOL2_TOOL_TOKEN: toolToken,
+    DOOL2_SERVICE_TOOLS: serviceToolsDir,
+  }
 
   let closing: Promise<void> | undefined
   return {

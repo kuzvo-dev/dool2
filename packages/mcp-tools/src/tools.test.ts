@@ -1,7 +1,17 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
-import { createServer, servicesOf, statusText } from './index.js'
+import {
+  createReadyServer,
+  createServer,
+  readServiceToolsFile,
+  servicesOf,
+  serviceToolsPath,
+  statusText,
+} from './index.js'
 import { ON_DEMAND_TOOLS } from './on-demand.js'
 
 const fixed = () => new Date('2026-11-14T03:00:00Z')
@@ -215,6 +225,57 @@ describe('서비스 도구 (ADR 0018)', () => {
     await servicesOf(server)?.sync()
     expect((await client.listTools()).tools.some((t) => t.name === 'demo_eats_search')).toBe(false)
     servicesOf(server)?.stop()
+  })
+})
+
+describe('tool server start', () => {
+  const spec = {
+    name: 'demo_eats_search',
+    title: 'Demo eats: search',
+    description: 'Finds restaurants.',
+    input: { properties: { keyword: { type: 'string', description: 'area' } }, required: ['keyword'] },
+    output: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }
+
+  it('starts at once with the tool list the daemon wrote, without asking the daemon first', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dool2-tools-'))
+    writeFileSync(join(dir, 'segment-1.json'), JSON.stringify({ tools: [spec] }))
+    let asked = 0
+    const services = async (tool: string) => {
+      // A daemon that never answers: the old start waited 3 seconds for it
+      if (tool === 'catalog') {
+        asked++
+        return new Promise<never>(() => {})
+      }
+      return { content: [] } as never
+    }
+    const t0 = Date.now()
+    const server = await createReadyServer(
+      { services },
+      { DOOL2_SERVICE_TOOLS: dir, DOOL2_TOOLSET: 'segment-1' },
+    )
+    expect(Date.now() - t0).toBeLessThan(500)
+    expect(asked).toBe(0)
+    expect(servicesOf(server)?.names()).toEqual(['demo_eats_search'])
+    servicesOf(server)?.stop()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('reads one file per segment, and only for a safe segment name', () => {
+    expect(serviceToolsPath('/d', 'abc-123')).toBe(join('/d', 'abc-123.json'))
+    expect(serviceToolsPath('/d', '../x')).toBeUndefined()
+    expect(serviceToolsPath('/d', undefined)).toBeUndefined()
+    expect(serviceToolsPath(undefined, 'abc')).toBeUndefined()
+  })
+
+  it('reads nothing from a missing or broken file', () => {
+    expect(readServiceToolsFile(undefined)).toBeUndefined()
+    expect(readServiceToolsFile('/nonexistent/service-tools.json')).toBeUndefined()
+    const dir = mkdtempSync(join(tmpdir(), 'dool2-tools-'))
+    writeFileSync(join(dir, 'x.json'), '{oops')
+    expect(readServiceToolsFile(join(dir, 'x.json'))).toBeUndefined()
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

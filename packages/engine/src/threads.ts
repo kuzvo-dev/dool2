@@ -57,6 +57,11 @@ export interface ThreadServiceOptions {
    * previous turn of the same thread ended (missing on a thread's first turn), to see how long the cache lives
    */
   onCache?: (threadId: string, x: { input: number; cached: number; noted: boolean; gapMs?: number }) => void
+  /**
+   * Runs before the agent program starts, with the segment (toolset) id: the daemon writes that segment's service tool
+   * list, so the tool server starts with it at once instead of asking the daemon first. A failure does not stop the turn
+   */
+  beforeRun?: (threadId: string) => Promise<void> | void
 }
 
 /** Runs the agent per thread and keeps the record. */
@@ -91,6 +96,12 @@ export class ThreadService {
 
   cancel(threadId: string) {
     this.running.get(threadId)?.abort()
+  }
+
+  private async prepareRun(threadId: string) {
+    try {
+      await this.opts.beforeRun?.(threadId)
+    } catch {}
   }
 
   /** Dool2's instructions + what was carried over from the previous segment (ADR 0015) */
@@ -153,6 +164,7 @@ export class ThreadService {
     const ac = new AbortController()
     this.summarizing.add(threadId)
     try {
+      await this.prepareRun(threadId)
       let text = ''
       const events = this.runtime(thread.agent).runTurn({
         text: SUMMARY_REQUEST,
@@ -240,6 +252,7 @@ export class ThreadService {
       }
       // Pinned instructions; what changed since (memory, what Dool2 knows, connections) rides on this message (ADR 0032)
       const prompt = this.promptFor(threadId, thread)
+      await this.prepareRun(threadId)
       const events = this.runtime(thread.agent).runTurn({
         // The current time goes with the message, not the instructions (instructions changing every minute would break the AI's cache). Without it the AI calls status to learn the time
         text: [(this.opts.timeLine ?? nowLine)(), prompt.note, o.aside, text].filter(Boolean).join('\n\n'),

@@ -4,6 +4,8 @@
 // - Tools of connected services (plus services without login) are visible right away. The list is fixed for a segment
 //   (ADR 0032): a service connected meanwhile is used through service_call until the next segment.
 // - Other services are found with service_find and called with service_call (we do not push 300 tools at once).
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { BrowserClient, ToolResult } from './browser.js'
@@ -133,10 +135,30 @@ export interface ServiceTools {
   stop(): void
 }
 
+/**
+ * The tool list the daemon wrote for this segment (a JSON file `{ tools: [...] }`), read at start so
+ * the server can answer the agent at once instead of asking the daemon first. Undefined when missing or unreadable
+ */
+export function readServiceToolsFile(path: string | undefined): ServiceToolSpec[] | undefined {
+  if (!path) return undefined
+  try {
+    const r = JSON.parse(readFileSync(path, 'utf8')) as { tools?: unknown }
+    return Array.isArray(r.tools) ? (r.tools as ServiceToolSpec[]) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The file of one segment's service tool list in the folder the daemon gave (undefined for an unsafe segment name) */
+export function serviceToolsPath(dir: string | undefined, toolset: string | undefined): string | undefined {
+  if (!dir || !toolset || !/^[\w-]{1,80}$/.test(toolset)) return undefined
+  return join(dir, `${toolset}.json`)
+}
+
 export function registerServiceTools(
   server: McpServer,
   client: BrowserClient,
-  opts: { pollMs?: number; toolset?: string } = {},
+  opts: { pollMs?: number; toolset?: string; initial?: ServiceToolSpec[] } = {},
 ): ServiceTools {
   const registered = new Map<string, { key: string; tool: RegisteredTool }>()
   let syncing: Promise<void> | undefined
@@ -146,7 +168,10 @@ export function registerServiceTools(
       () => undefined,
     )) as unknown as { tools?: ServiceToolSpec[] } | undefined
     if (!r || !Array.isArray(r.tools)) return
-    const want = new Map(r.tools.map((t) => [t.name, t]))
+    apply(r.tools)
+  }
+  const apply = (tools: ServiceToolSpec[]) => {
+    const want = new Map(tools.map((t) => [t.name, t]))
     for (const [name, reg] of registered) {
       if (want.has(name)) continue
       reg.tool.remove()
@@ -180,6 +205,7 @@ export function registerServiceTools(
       }
     }
   }
+  if (opts.initial) apply(opts.initial)
   const once = () => {
     syncing ??= sync().finally(() => {
       syncing = undefined
