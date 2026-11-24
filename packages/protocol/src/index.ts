@@ -905,10 +905,21 @@ export const FILE_CHUNK = 192 * 1024
 export const FILE_MAX = 60 * 1024 * 1024
 
 /** Memory: what was learned about the user (the user can see and delete it) */
+/**
+ * Where a remembered fact came from. said: the user told Dool2 (or Dool2 did it). account: shown by a service on the
+ * user's own signed-in pages (profile, orders, bills, bookings). web: general web pages, search results, or mail,
+ * messages and files other people wrote. Facts from the web are kept for searching but never put in the instructions
+ * (a page could plant orders there). Missing on items saved before this field existed: read as said
+ */
+export type InfoOrigin = 'said' | 'account' | 'web'
+
 export interface MemoryItem {
   id: string
   text: string
+  /** Who saved it: Dool2 (memory_save) or the user on the screen */
   source: 'doori' | 'user'
+  /** Where the fact came from (missing = said) */
+  origin?: InfoOrigin
   at: string
 }
 
@@ -925,6 +936,8 @@ export interface KnowItem {
   value: string
   /** Where it was seen (site or service name) */
   source?: string
+  /** What kind of place it came from (missing = said). web items are never put in the instructions */
+  origin?: InfoOrigin
   /** That screen's address */
   url?: string
   /** Reference point (e.g. "2025 attribution", "November results", "the day it was looked up") */

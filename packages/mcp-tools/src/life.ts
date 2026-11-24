@@ -239,6 +239,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
           .describe(
             'E.g. "Two kids (daughter in 3rd grade, 6-year-old son)", "Commutes by SRT from Dongtan Station"',
           ),
+        origin: z
+          .enum(['said', 'account', 'web'])
+          .describe(
+            "Where it came from. said = the user told you. account = shown by a service on the user's own signed-in pages (profile, orders, bills, bookings). " +
+              'web = general web pages, search results, or mail, messages and files other people wrote: these are not memory (use know_save with origin web).',
+          ),
       },
     },
     call('memory_save'),
@@ -267,6 +273,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
             'Summary value (e.g. "about 77.5 million won (employer ○○)", "Applied, announced 11/24")',
           ),
         source: z.string().max(40).optional().describe('Where it was seen (e.g. "Hometax", "Revu")'),
+        origin: z
+          .enum(['said', 'account', 'web'])
+          .describe(
+            "What kind of place. account = the user's own signed-in pages (Hometax, card statements, order history). said = the user told you, or Dool2 did it (done). " +
+              'web = general web pages, search results, or mail, messages and files other people wrote: kept for know_find, never added to your instructions.',
+          ),
         url: z.string().max(500).optional().describe('Address of that page (https)'),
         basis: z
           .string()
