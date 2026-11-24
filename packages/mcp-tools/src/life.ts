@@ -745,7 +745,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         'An approval card appears on the phone; when the user approves after seeing the recipient and text, the phone app sends it itself (no other app is opened). ' +
         'Pass the recipient as the contact name as is and the phone finds the number in contacts: even if you do not know the number, do not ask; call with the name. ' +
         'After calling, say in one sentence to check the phone and end the reply. The result (sent, or why it failed) arrives afterwards. ' +
-        'KakaoTalk messages are sent with PC KakaoTalk screen control (screen_*), not this tool.',
+        'KakaoTalk messages go through kakao_send, not this tool.',
       inputSchema: {
         to: z
           .string()
