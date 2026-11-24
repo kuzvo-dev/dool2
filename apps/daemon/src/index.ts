@@ -1849,12 +1849,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const judging = new Set<string>()
   /** Chat records waiting for a person */
   const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
+  /** Authenticator approvals watched off the turn, per chat (stopping ends them) */
+  const authWatches = new Map<string, AbortController>()
   /**
    * The user pressed stop (PC or phone): end the running turn, the before-finishing check that may be judging it, and
    * the rounds it would send back. Stopping only the turn let a verdict that arrived later start the work again
    */
   function stopThread(threadId: string) {
     finishCheck?.drop(threadId)
+    authWatches.get(threadId)?.abort()
+    authWatches.delete(threadId)
     threads.cancel(threadId)
   }
   function stopConversation() {
@@ -1903,6 +1907,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           !/(goal|memory|library|feed)_|status|skill_/.test(ev.event.name)
         )
           usedTool = true
+        // Waiting for an authenticator approval off the turn: the reply ends waiting for the person
+        if (ev.type === 'agent' && ev.event.type === 'tool' && ev.event.name.endsWith('browser_wait_auth'))
+          asked = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
         if (ev.type === 'agent' && ev.event.type === 'tool' && turnTools.length < 60)
           turnTools.push(ev.event.name.replace(/^(mcp__dool2__|dool2_)/, ''))
@@ -2549,6 +2556,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     )
     const id = infoRequests.pending().at(-1)?.id
     return { answer, cancel: () => void (id && infoRequests.cancel(id)) }
+  }
+  // Waiting for that approval does not hold the chat: the reply ends, and the screen comes back as a new message
+  browserTools.afterAuth = () => {
+    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    if (!only) return undefined
+    authWatches.get(only)?.abort()
+    const ac = new AbortController()
+    authWatches.set(only, ac)
+    return {
+      signal: ac.signal,
+      deliver: (text) => {
+        if (authWatches.get(only) === ac) authWatches.delete(only)
+        followUp(only, appNote(forAI(m().authWaitOver, text)))
+      },
+    }
   }
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {

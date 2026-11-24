@@ -434,6 +434,27 @@ describe('대화 하나 (ADR 0015)', () => {
     rt.release()
   })
 
+  it('인증 승인을 기다리며 끝낸 답은 끝내기 전 검사로 되돌리지 않는다', async () => {
+    class AuthRuntime extends EchoRuntime {
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        yield { type: 'tool', name: 'mcp__dool2__browser_wait_auth', input: {} }
+        yield* super.runTurn(input)
+      }
+    }
+    let judged = 0
+    const { api } = await boot(new AuthRuntime(), {
+      finishJudge: async () => {
+        judged++
+        return '{"done":false,"why":"인증이 아직 안 끝났어요"}'
+      },
+    })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"건강보험 자격 확인해 줘"}' })
+    await until(async () => !(await state()).busy && (await state()).messages.length >= 2)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(judged).toBe(0)
+  })
+
   it('멈추기는 끝내기 전 검사도 끝내고, 늦게 온 판정으로 일을 다시 시작하지 않는다', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []
