@@ -121,6 +121,21 @@ describe('dool2d 로컬 API', () => {
     expect(rt.last?.cwd).toBe(join(dir as string, 'workspace'))
   })
 
+  it('writes the service tool list before the agent starts, for the tool server to read at once', async () => {
+    const { api, rt } = await boot()
+    const { thread } = (await (
+      await api('/api/threads', { method: 'POST', body: '{"agent":"claude"}' })
+    ).json()) as { thread: { id: string } }
+    await readSse(await api(`/api/threads/${thread.id}/messages`, { method: 'POST', body: '{"text":"hi"}' }))
+    const env = rt.last?.mcpServers[0]?.env
+    expect(env?.DOOL2_SERVICE_TOOLS).toBe(join(dir as string, 'service-tools'))
+    // One file per segment, named by the segment id the tool server gets as DOOL2_TOOLSET
+    expect(env?.DOOL2_TOOLSET).toBe(thread.id)
+    const { readFile } = await import('node:fs/promises')
+    const file = join(dir as string, 'service-tools', `${thread.id}.json`)
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ tools: expect.any(Array) })
+  })
+
   it('지원하지 않는 AI로는 대화를 만들지 않는다', async () => {
     const { api } = await boot()
     const res = await api('/api/threads', { method: 'POST', body: '{"agent":"codex"}' })

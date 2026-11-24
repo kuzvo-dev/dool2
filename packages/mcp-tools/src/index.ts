@@ -8,15 +8,23 @@ import { registerFileTools } from './files.js'
 import { registerLifeTools } from './life.js'
 import { onDemand } from './on-demand.js'
 import { registerScreenTools } from './screen.js'
-import { registerServiceTools, type ServiceTools } from './services.js'
+import {
+  readServiceToolsFile,
+  registerServiceTools,
+  type ServiceToolSpec,
+  type ServiceTools,
+  serviceToolsPath,
+} from './services.js'
 
 export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
 export {
   inputShape,
   outputShape,
+  readServiceToolsFile,
   registerServiceTools,
   type ServiceToolSpec,
   type ServiceTools,
+  serviceToolsPath,
 } from './services.js'
 
 export const SERVER_NAME = 'dool2'
@@ -40,6 +48,8 @@ export interface ToolContext {
    * list fixed for the segment (ADR 0032)
    */
   toolset?: string
+  /** Service tools known before start (the list the daemon wrote for this segment). Registered right away */
+  serviceTools?: ServiceToolSpec[]
 }
 
 const serviceTools = new WeakMap<McpServer, ServiceTools>()
@@ -89,15 +99,25 @@ export function createServer(ctx: ToolContext = {}) {
     registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {
       ...(ctx.servicePollMs ? { pollMs: ctx.servicePollMs } : {}),
       ...(toolset ? { toolset } : {}),
+      ...(ctx.serviceTools ? { initial: ctx.serviceTools } : {}),
     }),
   )
   od.finish()
   return server
 }
 
-/** Server started by the runner: fetches the connected services' tools first (3 seconds at most), then connects */
-export async function createReadyServer(ctx: ToolContext = {}) {
-  const server = createServer(ctx)
-  await Promise.race([servicesOf(server)?.sync(), new Promise((r) => setTimeout(r, 3000).unref?.())])
+/**
+ * Server started by the runner. The daemon writes the segment's service tool list before starting the agent
+ * (DOOL2_SERVICE_TOOLS folder, one file per DOOL2_TOOLSET), so the server connects at once with those tools. Without
+ * that file it asks the daemon first (3 seconds at most): a server that answered the agent late left the turn without
+ * Dool2 tools
+ */
+export async function createReadyServer(ctx: ToolContext = {}, env: NodeJS.ProcessEnv = process.env) {
+  const known =
+    ctx.serviceTools ??
+    readServiceToolsFile(serviceToolsPath(env.DOOL2_SERVICE_TOOLS, ctx.toolset ?? env.DOOL2_TOOLSET))
+  const server = createServer(known ? { ...ctx, serviceTools: known } : ctx)
+  if (!known)
+    await Promise.race([servicesOf(server)?.sync(), new Promise((r) => setTimeout(r, 3000).unref?.())])
   return server
 }
