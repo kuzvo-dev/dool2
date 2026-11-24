@@ -1,6 +1,7 @@
 // Usage stats (only when the user agrees, numbers only). To see whether the beta is used well, daily numbers go to dool2.com/api/stats.
 // What is sent: a random device number (made on this PC, not linked to a name or account), the date, app version and operating system,
-// that day's number of requests, answers, tool successes/failures and pre-finish check results, whether an AI and the extension are connected, and the number of connected services.
+// that day's number of requests, answers, tool successes/failures and pre-finish check results, whether an AI and the extension are connected, and the number of connected services,
+// and how long answers took (median and slowest 10% of a whole answer, median time to the first word), tool calls per day and remembered routes taken.
 // Conversation content, sites, file names and service names are never sent. While on, today's numbers are re-sent every hour (the same day is overwritten)
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -22,6 +23,14 @@ export interface DayStats {
   toolsFail: number
   finishDone: number
   finishAgain: number
+  /** Whole answer, median and slowest 10% (ms). 0 = no answer that day */
+  turnMsP50: number
+  turnMsP90: number
+  /** Time to the first word or tool (ms, median). 0 = not measured (before 0.4.4) */
+  firstMsP50: number
+  /** Tool calls in the day's answers, and how many were remembered routes (ADR 0034) */
+  toolCalls: number
+  routes: number
   agents: string[]
   extension: boolean
   connections: number
@@ -33,14 +42,33 @@ export function localDay(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+/** Nearest-rank percentile of whole milliseconds (0 when empty) */
+function percentile(values: number[], p: number): number {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  return Math.round(sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0)
+}
+
 /** Counts only numbers from that day's log */
 export function countDay(entries: JournalEntry[], day: string) {
   const c = { turns: 0, answered: 0, toolsOk: 0, toolsFail: 0, finishDone: 0, finishAgain: 0 }
+  // Answers the person waited for (not feed posts written in the background)
+  const turnMs: number[] = []
+  const firstMs: number[] = []
+  let toolCalls = 0
+  let routes = 0
   for (const e of entries) {
     if (localDay(new Date(e.at)) !== day) continue
     if (e.kind === 'turn') {
       c.turns++
       if (e.answered === true) c.answered++
+      if (e.answered === true && e.where !== 'feed') {
+        if (typeof e.ms === 'number') turnMs.push(e.ms)
+        if (typeof e.firstMs === 'number') firstMs.push(e.firstMs)
+        const tools = Array.isArray(e.tools) ? (e.tools as unknown[]) : []
+        toolCalls += tools.length
+        routes += tools.filter((t) => t === 'browser_route').length
+      }
     } else if (e.kind === 'tool' || e.kind === 'file-tool') {
       if (e.ok === false) c.toolsFail++
       else if (e.ok === true) c.toolsOk++
@@ -49,7 +77,14 @@ export function countDay(entries: JournalEntry[], day: string) {
       else if (e.result === 'again') c.finishAgain++
     }
   }
-  return c
+  return {
+    ...c,
+    turnMsP50: percentile(turnMs, 50),
+    turnMsP90: percentile(turnMs, 90),
+    firstMsP50: percentile(firstMs, 50),
+    toolCalls,
+    routes,
+  }
 }
 
 export interface StatsDeps {

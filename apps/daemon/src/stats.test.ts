@@ -17,7 +17,15 @@ describe('사용 통계', () => {
     const day = '2026-11-23'
     const c = countDay(
       [
-        { at: at(day, 9), kind: 'turn', answered: true, tools: ['x'] },
+        {
+          at: at(day, 9),
+          kind: 'turn',
+          answered: true,
+          tools: ['x', 'browser_route'],
+          ms: 8000,
+          firstMs: 2000,
+        },
+        { at: at(day, 9), kind: 'turn', where: 'feed', answered: true, tools: ['y'], ms: 90000 },
         { at: at(day, 10), kind: 'turn', answered: false },
         { at: at(day, 10), kind: 'file-tool', tool: 'video_motion', ok: true, path: '~/비밀.mp4' },
         { at: at(day, 11), kind: 'tool', ok: false },
@@ -27,7 +35,20 @@ describe('사용 통계', () => {
       ],
       day,
     )
-    expect(c).toEqual({ turns: 2, answered: 1, toolsOk: 1, toolsFail: 1, finishDone: 1, finishAgain: 1 })
+    expect(c).toEqual({
+      turns: 3,
+      answered: 2,
+      toolsOk: 1,
+      toolsFail: 1,
+      finishDone: 1,
+      finishAgain: 1,
+      // 피드 글쓰기는 사람이 기다린 답이 아니라 시간에서 빠진다
+      turnMsP50: 8000,
+      turnMsP90: 8000,
+      firstMsP50: 2000,
+      toolCalls: 2,
+      routes: 1,
+    })
   })
 
   it('동의하지 않았으면 아무것도 보내지 않는다', async () => {
@@ -87,10 +108,15 @@ describe('사용 통계', () => {
         'extension',
         'finishAgain',
         'finishDone',
+        'firstMsP50',
         'iid',
         'platform',
+        'routes',
+        'toolCalls',
         'toolsFail',
         'toolsOk',
+        'turnMsP50',
+        'turnMsP90',
         'turns',
         'version',
       ].sort(),
