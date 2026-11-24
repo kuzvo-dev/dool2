@@ -39,6 +39,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0033](0033-tools-on-demand.md) | Rarely used tools are found and run on demand | Accepted |
 | [0034](0034-remembered-routes.md) | Remembered routes: walk a known path on a site without the AI at each click | Accepted |
 | [0035](0035-resident-agent-session.md) | One resident Claude Code program per conversation segment | Accepted |
+| [0036](0036-cache-aware-segments.md) | Cache-aware segments: switch after an hour away, with the handoff made while the cache lives | Accepted |
 
 ## How to write a new decision
 

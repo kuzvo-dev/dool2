@@ -227,18 +227,23 @@ export class ThreadService {
    * A turn that is not recorded: asks the AI for a summary before the segment is closed.
    * Skipped when there is no session to resume or a reply is running. Gives up when it takes too long
    */
-  async summarize(threadId: string, timeoutMs = 90_000): Promise<string | undefined> {
+  async summarize(threadId: string, timeoutMs = 90_000, signal?: AbortSignal): Promise<string | undefined> {
     // A reply that is not a summary (a one-liner like "No response requested.") is not used; ask once more
     // (seen 11-21: that reply was taken as the summary, and the new segment went on without knowing the morning's work and payment card)
     for (let i = 0; i < 2; i++) {
-      const text = await this.summarizeOnce(threadId, timeoutMs)
+      if (signal?.aborted) return undefined
+      const text = await this.summarizeOnce(threadId, timeoutMs, signal)
       if (text === undefined) return undefined
       if (looksLikeSummary(text)) return text
     }
     return undefined
   }
 
-  private async summarizeOnce(threadId: string, timeoutMs: number): Promise<string | undefined> {
+  private async summarizeOnce(
+    threadId: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
     const thread = this.opts.store.getThread(threadId)
     if (!thread?.resumeId || this.running.has(threadId) || this.summarizing.has(threadId)) return undefined
     // A summary is not "replying": counted separately so new messages don't queue while it summarizes ahead after a reply
@@ -255,7 +260,7 @@ export class ThreadService {
         systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
         mcpServers: this.serversFor(threadId),
         cwd: this.opts.workspaceDir,
-        signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs)]),
+        signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
       })
       for await (const ev of events) {
         if (ev.type === 'tool') text = ''
