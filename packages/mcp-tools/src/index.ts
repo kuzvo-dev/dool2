@@ -35,6 +35,11 @@ export interface ToolContext {
   files?: BrowserClient
   /** How often to re-fetch the service tool list (default 30 seconds) */
   servicePollMs?: number
+  /**
+   * The segment this server works for (DOOL2_TOOLSET from the engine by default). The daemon keeps its service tool
+   * list fixed for the segment (ADR 0032)
+   */
+  toolset?: string
 }
 
 const serviceTools = new WeakMap<McpServer, ServiceTools>()
@@ -72,6 +77,7 @@ export function createServer(ctx: ToolContext = {}) {
     },
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
+  const toolset = ctx.toolset ?? process.env.DOOL2_TOOLSET
   // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033)
   const od = onDemand(server)
   registerBrowserTools(od.server, ctx.browser ?? daemonClient())
@@ -82,6 +88,7 @@ export function createServer(ctx: ToolContext = {}) {
     server,
     registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {
       ...(ctx.servicePollMs ? { pollMs: ctx.servicePollMs } : {}),
+      ...(toolset ? { toolset } : {}),
     }),
   )
   od.finish()

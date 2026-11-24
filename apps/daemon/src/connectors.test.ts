@@ -304,6 +304,30 @@ describe('서비스 도구 실행기', () => {
     expect((await all.connectors.catalog()).length).toBeGreaterThan(1)
   })
 
+  it('keeps the first tool list of a segment for the rest of it (ADR 0032)', async () => {
+    const recent = ['demo_eats_search']
+    const { connectors } = await setup({ open: true, recent })
+    const names = async (toolset: string) => (await connectors.catalogFor(toolset)).map((t) => t.name)
+    expect(await names('seg-1')).toEqual(['demo_eats_search'])
+    // A tool used for the first time would join the list: not in this segment, only in the next one
+    recent.push('demo_eats_peek')
+    expect(await names('seg-1')).toEqual(['demo_eats_search'])
+    expect(await names('seg-2')).toEqual(['demo_eats_search', 'demo_eats_peek'])
+    // Without a segment, the current list
+    expect((await connectors.catalogFor('')).map((t) => t.name)).toEqual([
+      'demo_eats_search',
+      'demo_eats_peek',
+    ])
+  })
+
+  it('does not keep an empty list, so a segment that starts before anything is ready still gets its tools', async () => {
+    const recent: string[] = []
+    const { connectors } = await setup({ open: true, recent })
+    expect(await connectors.catalogFor('seg-1')).toEqual([])
+    recent.push('demo_eats_search')
+    expect((await connectors.catalogFor('seg-1')).map((t) => t.name)).toEqual(['demo_eats_search'])
+  })
+
   it('서비스 찾기는 도구·등급·입력 칸과 연결하면 되는 일을 알려 준다', async () => {
     const { connectors } = await setup()
     const r = textOf(await connectors.find('성수 식당'))

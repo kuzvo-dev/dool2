@@ -375,6 +375,31 @@ export class Connectors {
     return out
   }
 
+  /** Service tool lists fixed per segment (toolset = segment id), oldest first */
+  private readonly pinnedCatalogs = new Map<string, ServiceToolSpec[]>()
+
+  /**
+   * The directly visible tools for one segment (ADR 0032). The tool list is the very start of every AI request, so a
+   * change in it (a service connected, a login-free tool used for the first time) made the provider read the whole
+   * conversation again at full price. The first list a segment gets is kept for the rest of it; tools that appear
+   * later are used through service_call until the next segment. An empty list is not kept (the extension may not be
+   * up yet). Without a toolset, the current list
+   */
+  async catalogFor(toolset: string): Promise<ServiceToolSpec[]> {
+    if (!toolset) return this.catalog()
+    const pinned = this.pinnedCatalogs.get(toolset)
+    if (pinned) return pinned
+    const list = await this.catalog()
+    if (!list.length) return list
+    this.pinnedCatalogs.set(toolset, list)
+    // Segments come and go; keep the recent ones
+    for (const k of this.pinnedCatalogs.keys()) {
+      if (this.pinnedCatalogs.size <= 200) break
+      this.pinnedCatalogs.delete(k)
+    }
+    return list
+  }
+
   /** Tool guide the AI sees: description + input examples + status */
   spec(card: ConnectCard, t: ConnectorTool): ServiceToolSpec {
     const ex = t.examples.map((e) => JSON.stringify(e)).join(' / ')

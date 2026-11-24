@@ -1,8 +1,8 @@
 // Service tools (ADR 0018): typed tools per service (catchtable_search, cj_logistics_track …).
 // The Dool2 daemon reads skills/<id>/tools.json and runs them. This server only exposes the tools the daemon reports as MCP tools.
 //
-// - Tools of connected services (plus services without login) are visible right away. When connections change, the list
-//   is announced again (tools/list_changed).
+// - Tools of connected services (plus services without login) are visible right away. The list is fixed for a segment
+//   (ADR 0032): a service connected meanwhile is used through service_call until the next segment.
 // - Other services are found with service_find and called with service_call (we do not push 300 tools at once).
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
@@ -136,15 +136,15 @@ export interface ServiceTools {
 export function registerServiceTools(
   server: McpServer,
   client: BrowserClient,
-  opts: { pollMs?: number } = {},
+  opts: { pollMs?: number; toolset?: string } = {},
 ): ServiceTools {
   const registered = new Map<string, { key: string; tool: RegisteredTool }>()
   let syncing: Promise<void> | undefined
 
   const sync = async () => {
-    const r = (await client('catalog', {}).catch(() => undefined)) as unknown as
-      | { tools?: ServiceToolSpec[] }
-      | undefined
+    const r = (await client('catalog', opts.toolset ? { toolset: opts.toolset } : {}).catch(
+      () => undefined,
+    )) as unknown as { tools?: ServiceToolSpec[] } | undefined
     if (!r || !Array.isArray(r.tools)) return
     const want = new Map(r.tools.map((t) => [t.name, t]))
     for (const [name, reg] of registered) {
