@@ -6,6 +6,8 @@
 // 고르기: --ids a#1,b#2 | --where type=실행+승인,now=ok,pri=3 | --n 30 (가족마다 하나씩 고르게 섞음) --seed 1 | --per-family 1
 // --repeat 3: 같은 시나리오를 세 번 (흔들림을 줄여 비교한다)
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
+// Agent and model axis (ADR 0037): --agent claude|codex|opencode picks the AI of the test chat, --model <name> runs the
+// requests on that model (test PC daemon only). Replay the same tape per model, then compare with evals/models.mjs
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -39,7 +41,17 @@ if (!token) {
   console.error('화면 토큰이 필요해요: --token, --token-file 또는 DOOL2_TOKEN')
   process.exit(2)
 }
-const out = arg('out', join(EVALS, 'out', new Date().toISOString().slice(0, 10)))
+const agent = arg('agent')
+const model = arg('model')
+const axis = [agent, model].filter(Boolean).join('-')
+const out = arg(
+  'out',
+  join(
+    EVALS,
+    'out',
+    `${new Date().toISOString().slice(0, 10)}${axis ? `-${axis.replace(/[^\w.-]+/g, '_')}` : ''}`,
+  ),
+)
 // Layer 2 (needs a test PC daemon, DOOL2_DEV_RESET=1):
 // --record keeps every tool answer of the run in the record (tape).
 // --replay <dir> runs the scenarios that have a tape in <dir> again, with the daemon answering each tool call from
@@ -70,6 +82,15 @@ async function tape(body) {
   const r = await api('/api/eval/tape', { method: 'POST', body: JSON.stringify(body) })
   if (r.status === 403) throw new Error('The tool tape needs a test PC daemon (DOOL2_DEV_RESET=1)')
   return r
+}
+/** Sets the model the daemon uses for the next requests (undefined: back to each agent's default) */
+async function useModel(name) {
+  const r = await api('/api/eval/model', {
+    method: 'POST',
+    body: JSON.stringify(name ? { model: name } : {}),
+  })
+  if (r.ok !== true)
+    throw new Error(`--model needs a test PC daemon (DOOL2_DEV_RESET=1): ${r.error ?? r.text ?? r.status}`)
 }
 const timeoutMs = Number(arg('timeout', '420')) * 1000
 mkdirSync(out, { recursive: true })
@@ -196,11 +217,16 @@ async function runOne(sc) {
   // 시험 전부터 떠 있던 카드(인증번호·내 정보)는 이 시나리오 것이 아니다
   const infoBefore = new Set(((await api('/api/info')).requests ?? []).map((q) => q.id))
   const started = new Date()
-  const { thread } = await api('/api/threads', { method: 'POST', body: JSON.stringify({ side: true }) })
-  if (!thread?.id) throw new Error('대화를 만들지 못했어요')
+  const { thread, error } = await api('/api/threads', {
+    method: 'POST',
+    body: JSON.stringify({ side: true, ...(agent ? { agent } : {}) }),
+  })
+  if (!thread?.id) throw new Error(`대화를 만들지 못했어요${error ? `: ${error}` : ''}`)
   const rec = {
     id: sc.id,
     scenario: sc,
+    agent: thread.agent ?? agent,
+    ...(model ? { model } : {}),
     startedAt: started.toISOString(),
     thread: thread.id,
     tools: [],
@@ -332,6 +358,10 @@ async function runOne(sc) {
   rec.created.feed = (s2.feed ?? []).filter((x) => !before.feed.has(x.id))
   const msgs = await api(`/api/threads/${thread.id}`)
   rec.messages = (msgs.messages ?? []).map((m) => ({ role: m.role, text: m.text ?? m.content }))
+  // How many times the before-finishing check sent the work back (its notes are app notes with this marker)
+  rec.sentBack = rec.messages.filter(
+    (m) => m.role === 'user' && String(m.text).includes('(Check before finishing)'),
+  ).length
   await api(`/api/threads/${thread.id}`, { method: 'DELETE' })
   return rec
 }
@@ -357,7 +387,8 @@ async function waitDaemon() {
 const DOWN = /fetch failed|ECONNREFUSED|401|socket|terminated|aborted|timeout/i
 
 const list = pick(scenarios().filter((s) => !replayDir || tapes.has(s.id)))
-console.log(`시나리오 ${list.length}개 → ${out}`)
+console.log(`시나리오 ${list.length}개 → ${out}${axis ? ` (${axis})` : ''}`)
+if (model) await useModel(model)
 let n = 0
 // 같은 시나리오를 여러 번 (AI 답은 매번 달라서 한 번으로는 좋아졌는지 알기 어렵다). 두 번째부터 파일 이름 뒤에 ~2, ~3
 const repeat = Math.max(1, Number(arg('repeat', '1')))
@@ -438,5 +469,7 @@ await Promise.all(
 )
 // 다른 시험 기록과 섞지 않게 고른 목록을 남긴다
 writeFileSync(join(out, '_picked.json'), JSON.stringify(list.map((s) => s.id)))
+// Leave the daemon on its default model for whatever runs next
+if (model) await useModel(undefined).catch(() => {})
 // 권한 창에 막힌 폴더 읽기가 남아 있으면 프로세스가 끝나지 않는다: 일이 끝났으면 나간다
 process.exit(0)
