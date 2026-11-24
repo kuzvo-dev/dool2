@@ -9,7 +9,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./server": "./dist/server.js"
+    "./server": "./dist/server.js",
+    "./lookups": {
+      "types": "./dist/lookups.d.ts",
+      "default": "./dist/lookups.js"
+    }
   },
   "bin": {
     "dool2-mcp": "./dist/server.js"

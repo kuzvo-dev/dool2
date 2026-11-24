@@ -12,6 +12,7 @@ import {
   serviceToolsPath,
   statusText,
 } from './index.js'
+import { LOOKUP_TOOLS } from './lookups.js'
 import { ON_DEMAND_TOOLS } from './on-demand.js'
 
 const fixed = () => new Date('2026-11-14T03:00:00Z')
@@ -425,5 +426,23 @@ describe('tools on demand (ADR 0033)', () => {
     const none = await client.callTool({ name: 'tool_call', arguments: { tool: 'rm_rf', input: {} } })
     expect(none.isError).toBe(true)
     await client.close()
+  })
+})
+
+describe('lookup tools', () => {
+  it('LOOKUP_TOOLS is every read-only tool that does not work in the browser, on the screen or in apps', async () => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({ now: fixed }).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    const readOnly = tools
+      .filter((t) => t.annotations?.readOnlyHint && !/^(browser|screen|kakao)_/.test(t.name))
+      .map((t) => t.name)
+      .sort()
+    // Listed read-only tools are all lookups; the rest of the list is kept aside until asked for (ADR 0033)
+    expect(readOnly.filter((n) => !LOOKUP_TOOLS.has(n))).toEqual([])
+    const aside = new Set<string>(ON_DEMAND_TOOLS)
+    expect([...LOOKUP_TOOLS].filter((n) => !readOnly.includes(n) && !aside.has(n))).toEqual([])
   })
 })

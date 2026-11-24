@@ -1,6 +1,14 @@
 import { appNote, readAppNote } from '@dool2/protocol/rich'
 import { describe, expect, it } from 'vitest'
-import { againNote, FinishCheck, judgePrompt, parseVerdict, sameBlocker } from './finish-check.js'
+import {
+  againNote,
+  claimsDone,
+  donePage,
+  FinishCheck,
+  judgePrompt,
+  parseVerdict,
+  sameBlocker,
+} from './finish-check.js'
 
 const say = (...answers: string[]) => {
   const asked: string[] = []
@@ -21,7 +29,10 @@ describe('끝내기 전 검사', () => {
       done: false,
       why: '3곳 중 1곳만 봤어요',
       next: '다른 2곳',
+      kind: 'other',
     })
+    expect(parseVerdict('{"done":false,"why":"x","kind":"asked-user"}')?.kind).toBe('asked-user')
+    expect(parseVerdict('{"done":true,"why":"x","kind":"asked-user"}')?.kind).toBeUndefined()
     expect(parseVerdict('모르겠어요')).toBeUndefined()
     expect(parseVerdict('{"why":"x"}')).toBeUndefined()
   })
@@ -162,5 +173,100 @@ describe('알림 글', () => {
     expect(readAppNote(appNote(againNote({ done: false, why: '1곳만 봤어요', next: '다른 곳' })))).toBe(
       '끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요.',
     )
+  })
+})
+
+describe('false completion, caught by code (no judge)', () => {
+  it('finds claims of a finished outside action in Korean and English', () => {
+    for (const yes of [
+      '내일 7시로 예약했어요.',
+      '주문해 뒀어요',
+      '신청을 마쳤어요!',
+      '결제 완료했어요',
+      '엄마에게 문자 보냈어요.',
+      '예약이 완료됐어요',
+      'I booked a table for two at 7.',
+      "I've sent the message to Mina.",
+      'Your order has been placed.',
+    ])
+      expect(claimsDone(yes), yes).toBe(true)
+    for (const no of [
+      '예약할게요. 승인해 주세요.',
+      '지난달에 주문했던 내역이에요.',
+      '아직 못 보냈어요.',
+      '문자는 안 보냈어요',
+      '예약하지 않았어요. 시간을 골라 주세요.',
+      '3곳을 비교했어요.',
+      'I could not book it: the site asks for a phone check.',
+      'Shall I order it?',
+    ])
+      expect(claimsDone(no), no).toBe(false)
+  })
+
+  it('knows a page that shows a finished action', () => {
+    expect(donePage({ title: '주문이 완료되었습니다', url: 'https://shop.example/x' })).toBe(true)
+    expect(donePage({ title: 'Booking confirmed', url: 'https://x.example/' })).toBe(true)
+    expect(donePage({ title: 'x', url: 'https://x.example/order/complete?id=1' })).toBe(true)
+    expect(donePage({ title: '장바구니', url: 'https://shop.example/cart' })).toBe(false)
+  })
+
+  it('sends back a claim with no approval and no finished page at once, without asking the judge', async () => {
+    const j = say()
+    const c = new FinishCheck({ ask: j.ask, evidence: () => ({ approvals: 0, donePage: false }) })
+    c.begin('t', '내일 7시 2명 예약해 줘')
+    const r = await c.check('t', { answer: '내일 7시로 예약했어요.', tools: ['browser_click'] })
+    expect(r).toMatchObject({ kind: 'again', because: 'unverified', source: 'code', cycles: 1 })
+    expect(j.asked).toHaveLength(0)
+  })
+
+  it('a claim backed by an approval or a finished page goes to the judge', async () => {
+    for (const evidence of [
+      { approvals: 1, donePage: false },
+      { approvals: 0, donePage: true },
+    ]) {
+      const j = say('{"done":true,"why":"booked"}')
+      const c = new FinishCheck({ ask: j.ask, evidence: () => evidence })
+      c.begin('t', '예약해 줘')
+      expect((await c.check('t', { answer: '예약했어요', tools: ['browser_click'] })).kind).toBe('done')
+      expect(j.asked).toHaveLength(1)
+    }
+  })
+
+  it('the judge reads the daemon facts', async () => {
+    const j = say('{"done":true,"why":"ok"}')
+    const c = new FinishCheck({
+      ask: j.ask,
+      evidence: () => ({ approvals: 0, lastPage: { title: 'Cart', url: 'https://shop.example/cart' } }),
+    })
+    c.begin('t', 'buy socks')
+    await c.check('t', { answer: 'Here are 3 options.', tools: ['browser_open'], failures: 2 })
+    expect(j.asked[0]).toContain('Approval requests during this request: none')
+    expect(j.asked[0]).toContain('Last page read: Cart — https://shop.example/cart')
+    expect(j.asked[0]).toContain('Tool calls that failed this turn: 2')
+  })
+})
+
+describe('simple requests are not judged', () => {
+  it('one or two lookups and nothing else: no judge', async () => {
+    const j = say()
+    const c = new FinishCheck({ ask: j.ask })
+    c.begin('t', 'when does my parcel arrive?')
+    expect(
+      await c.check('t', { answer: 'Tomorrow morning.', tools: ['cj_logistics_track'], lookups: 1 }),
+    ).toEqual({ kind: 'skip', reason: 'simple' })
+    expect(j.asked).toHaveLength(0)
+  })
+
+  it('a browser step, a non-lookup or a third call is judged', async () => {
+    for (const turn of [
+      { tools: ['browser_open'], lookups: 0 },
+      { tools: ['know_find', 'goal_create'], lookups: 1 },
+      { tools: ['know_find', 'gmail_search', 'orders_all'], lookups: 3 },
+    ]) {
+      const j = say('{"done":true,"why":"ok"}')
+      const c = new FinishCheck({ ask: j.ask })
+      c.begin('t', 'x')
+      expect((await c.check('t', { answer: 'a', ...turn })).kind).toBe('done')
+    }
   })
 })
