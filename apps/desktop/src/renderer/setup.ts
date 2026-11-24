@@ -671,6 +671,7 @@ export function runSetup(opts: SetupOptions): {
             sec(m.secVersion, undefined, versionBlock()),
             sec(m.secReport, m.reportSub, reportBlock()),
             sec(m.secMore, undefined, links),
+            sec(m.secReset, m.resetSub, resetBlock()),
           )
         }
         const layout = el('div', 'settings-layout')
@@ -869,6 +870,60 @@ export function runSetup(opts: SetupOptions): {
     const PANES = {
       accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
       screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    }
+    // ── Reset data: start over like a new user. Asks inside the page first (what goes, what stays), the daemon
+    // erases (POST /api/reset). The phone does the same with a request signed by the phone key ──
+    const reset: { asking: boolean; services: boolean; busy: boolean; message?: string; ok?: boolean } = {
+      asking: false,
+      services: false,
+      busy: false,
+    }
+    const resetBlock = () => {
+      const wrap = el('div', 'report-block')
+      if (reset.message) wrap.append(el('p', reset.ok ? 'setup-hint' : 'report-error', reset.message))
+      if (!reset.asking) {
+        const start = el('div', 'report-actions')
+        start.append(
+          button('btn-ghost', m.resetStart, () => {
+            Object.assign(reset, { asking: true, services: false, message: undefined })
+            render()
+          }),
+        )
+        wrap.append(start)
+        return wrap
+      }
+      wrap.append(el('p', 'setup-hint', m.resetWhat))
+      const check = el('label', 'report-check')
+      const cb = el('input')
+      cb.type = 'checkbox'
+      cb.checked = reset.services
+      cb.onchange = () => {
+        reset.services = cb.checked
+      }
+      check.append(cb, m.resetServices)
+      const row = el('div', 'report-actions')
+      const go = button('btn-danger', reset.busy ? m.resetting : m.resetConfirm, async () => {
+        if (reset.busy) return
+        reset.busy = true
+        render()
+        const r = await opts
+          .api<{ ok: boolean; message: string }>('/api/reset', {
+            method: 'POST',
+            body: JSON.stringify({ services: reset.services }),
+          })
+          .catch((e: Error) => ({ ok: false, message: e.message }))
+        Object.assign(reset, { busy: false, asking: !r.ok, ok: r.ok, message: r.message })
+        render()
+      })
+      row.append(
+        go,
+        button('btn-ghost', m.resetCancel, () => {
+          Object.assign(reset, { asking: false, message: undefined })
+          render()
+        }),
+      )
+      wrap.append(check, row)
+      return wrap
     }
     // ── Report a problem: one line plus, if chosen, the last two days of logs. Logs hold only successes and failures, no conversations or file names (apps/daemon/src/report.ts) ──
     const report: {

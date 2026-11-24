@@ -3,9 +3,9 @@ import { messages } from '@dool2/i18n'
 export const mainCore = messages({
   ko: {
     resetAsk:
-      '처음부터 다시 할까요?\n\nPC의 대화·기억·목표·보관함·아이디어·내 정보가 모두 지워져요. 되돌릴 수 없어요.',
+      '데이터를 초기화할까요?\n\nPC의 대화·기억·목표·보관함·아이디어·내 정보가 모두 지워져요. 되돌릴 수 없어요.',
     resetServicesAsk:
-      '연결한 서비스도 처음부터 할까요?\n\n[확인] 연결 표시도 지워요\n[취소] 연결은 그대로 둬요\n\n금고의 비밀번호와 이 폰의 PC 연결은 어느 쪽이든 남아요.',
+      '연결한 서비스 표시도 지울까요?\n\n[확인] 연결 표시도 지워요\n[취소] 연결은 그대로 둬요\n\n금고의 비밀번호와 이 폰의 PC 연결은 어느 쪽이든 남아요.',
     resetting: '지우는 중이에요…',
     paired: '연결됐어요. 이제 폰으로 부탁해 보세요',
     approvalWaiting: '승인을 기다려요',
@@ -21,9 +21,9 @@ export const mainCore = messages({
   },
   en: {
     resetAsk:
-      'Start over?\n\nEverything on your PC will be erased: chats, memory, goals, library, ideas and your info. This cannot be undone.',
+      'Reset your data?\n\nEverything on your PC will be erased: chats, memory, goals, library, ideas and your info. This cannot be undone.',
     resetServicesAsk:
-      'Start over with connected services too?\n\n[OK] Clear the connections too\n[Cancel] Keep the connections\n\nVault passwords and this phone’s link to your PC stay either way.',
+      'Clear connected services too?\n\n[OK] Clear the connections too\n[Cancel] Keep the connections\n\nVault passwords and this phone’s link to your PC stay either way.',
     resetting: 'Erasing…',
     paired: 'Connected. You can now ask Dool2 from your phone',
     approvalWaiting: 'Waiting for your approval',
