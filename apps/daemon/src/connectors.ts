@@ -185,6 +185,11 @@ export class Connectors {
   titleOf(name: string): string | undefined {
     return this.titles.get(name)
   }
+  /** Service tool name → tier (after loading): the before-finishing check counts lookups */
+  private tiers = new Map<string, ConnectorTool['tier']>()
+  tierOf(name: string): ConnectorTool['tier'] | undefined {
+    return this.tiers.get(name)
+  }
 
   /** Reads cards and connectors (not again within 10 seconds) */
   async load(): Promise<Map<string, Loaded>> {
@@ -226,6 +231,13 @@ export class Connectors {
       [...items.values()].flatMap(({ card, connector }) =>
         (connector?.tools ?? []).map(
           (t) => [connectorToolName(card.id, t.name), t.title] as [string, string],
+        ),
+      ),
+    )
+    this.tiers = new Map(
+      [...items.values()].flatMap(({ card, connector }) =>
+        (connector?.tools ?? []).map(
+          (t) => [connectorToolName(card.id, t.name), t.tier] as [string, ConnectorTool['tier']],
         ),
       ),
     )

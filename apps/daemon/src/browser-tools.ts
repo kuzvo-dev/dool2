@@ -29,6 +29,8 @@ import {
 } from '@dool2/protocol/pay-methods'
 import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals, MONEY_APPROVAL_TTL_MS } from './approvals.js'
 import type { UploadFile } from './files.js'
+import { donePage } from './finish-check.js'
+import { scrubUrl } from './journal.js'
 import { browserText } from './locales/browser.js'
 import { LoginRequests } from './logins.js'
 import { pageDiff, type SeenPage } from './page-diff.js'
@@ -893,6 +895,22 @@ export class BrowserTools {
   }
 
   /** Site of the URL the tab was last read at (when the work log groups steps by site). undefined if unknown */
+  /** Pages read lately (title, address without the query, whether it showed a finished action): finish-check evidence */
+  private reads: { at: number; title: string; url: string; done: boolean }[] = []
+  private noteRead(s: { url: string; title: string; text: string }) {
+    this.reads.push({ at: Date.now(), title: s.title, url: scrubUrl(s.url), done: donePage(s) })
+    if (this.reads.length > 30) this.reads.shift()
+  }
+  /** The last page read since a time, and whether any page read since then showed a finished action */
+  readsSince(t: number): { lastPage?: { title: string; url: string }; donePage: boolean } {
+    const recent = this.reads.filter((r) => r.at >= t)
+    const last = recent.at(-1)
+    return {
+      ...(last ? { lastPage: { title: last.title, url: last.url } } : {}),
+      donePage: recent.some((r) => r.done),
+    }
+  }
+
   tabHost(tabId: number): string | undefined {
     try {
       return new URL(this.pages.get(tabId)?.url ?? '').host || undefined
@@ -4061,6 +4079,7 @@ export class BrowserTools {
         ? pageDiff(base, { url: s.url, text: s.text, truncated: s.truncated })
         : undefined
     if (!partial) ctx?.reads.set(tabId, { url: s.url, text: s.text, truncated: s.truncated, at: Date.now() })
+    this.noteRead(s)
     const accountNote = await this.settlePassword(s)
     const loginNote = await this.settleLogin(tabId, s)
     // If "please choose an option" appeared after pressing the buy button, tell how to point at the option field and choose
