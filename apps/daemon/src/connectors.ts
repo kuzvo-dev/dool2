@@ -133,6 +133,11 @@ export class Connectors {
       now?: () => Date
       /** Poll interval (shorter in tests) */
       pollMs?: number
+      /**
+       * Service tools this user used lately (tool names). Tools of services without login are listed directly only if
+       * used lately; the others are reached with service_find / service_call. undefined: list them all
+       */
+      recentTools?: () => ReadonlySet<string>
       /** Health record (ADR 0020): tools that keep breaking rest for a while */
       health?: ConnectorHealth
       /** Activity log: each tool call keeps its result, time taken and reason for a few days */
@@ -350,13 +355,22 @@ export class Connectors {
     )
   }
 
-  /** Directly visible tools: those of connected services and services without login (open) */
+  /**
+   * Directly visible tools: those of connected services, and of services without login (open) that this user used
+   * lately. Every listed tool rides along on every AI request: the 17 open-service tools alone were about 13K tokens
+   * for every user, a new user included, while most were used a few times a week (work log 11-20 to 11-24)
+   */
   async catalog(): Promise<ServiceToolSpec[]> {
     const out: ServiceToolSpec[] = []
     if (this.oldExtension()) return out
+    const recent = this.opts.recentTools?.()
     for (const { card, connector } of (await this.load()).values()) {
       if (!connector || !this.isConnected(card)) continue
-      for (const t of connector.tools) if (this.live(card, t)) out.push(this.spec(card, t))
+      for (const t of connector.tools) {
+        if (!this.live(card, t)) continue
+        if (card.how === 'open' && recent && !recent.has(connectorToolName(card.id, t.name))) continue
+        out.push(this.spec(card, t))
+      }
     }
     return out
   }

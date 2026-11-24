@@ -705,6 +705,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     for (const k of Object.keys(now)) if (k.startsWith(`${host}|`)) delete now[k]
     store.setSetting('paySubChoices', now)
   }
+  /** Tools used in the last days of the work log (open-service tools are listed directly only if used lately) */
+  const recentServiceTools: ReadonlySet<string> = new Set(
+    journal
+      .read({ kind: 'turn', days: KEEP_DAYS })
+      .flatMap((e) => (Array.isArray(e.tools) ? (e.tools as string[]) : [])),
+  )
   const skillsDir = opts.skillsDir ?? defaultSkillsDir()
   // Service tools (connectors, ADR 0018): run the tools.json next to a connect card with the engine
   const connectors = new Connectors({
@@ -712,6 +718,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     browser,
     tools: browserTools,
     connected: () => readSettings().connections ?? {},
+    // Read once at start, so the tool list does not change in the middle of a conversation (that would break the cache)
+    recentTools: () => recentServiceTools,
     extensionVersion: () => (browser.status.connected ? browser.status.version : undefined),
     health: new ConnectorHealth(join(paths.dataDir, 'connector-health.json')),
     journal,

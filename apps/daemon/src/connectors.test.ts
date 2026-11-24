@@ -140,11 +140,18 @@ async function setup(
     found?: Record<string, string>
     /** 화면에 로봇 확인이 떠 있다고 할지 */
     captcha?: boolean
+    /** 로그인 없이 쓰는 서비스로 (how: open) */
+    open?: boolean
+    /** 이 사용자가 요즘 쓴 도구 */
+    recent?: string[]
   } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
   await mkdir(join(dir, 'demo-eats'))
-  await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+  await writeFile(
+    join(dir, 'demo-eats', 'connect.json'),
+    JSON.stringify(opts.open ? { ...CARD, how: 'open' } : CARD),
+  )
   await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(CONNECTOR))
   const calls: [string, Record<string, unknown> | undefined][] = []
   let url = 'https://eats.example/'
@@ -181,6 +188,7 @@ async function setup(
     pollMs: 1,
     gapMs: opts.gapMs ?? 0,
     ...(opts.health ? { health: opts.health } : {}),
+    ...(opts.recent ? { recentTools: () => new Set(opts.recent) } : {}),
   })
   return { connectors, calls, tools }
 }
@@ -283,6 +291,17 @@ describe('서비스 도구 실행기', () => {
     })
     expect(cat[1]?.annotations.destructiveHint).toBe(true)
     expect(cat[0]?.description).toContain('Input examples: {"keyword":"성수"}')
+  })
+
+  it('로그인 없이 쓰는 서비스는 요즘 쓴 도구만 바로 보이고, 나머지도 service_call로 그대로 부른다', async () => {
+    const fresh = await setup({ open: true, recent: [] })
+    expect(await fresh.connectors.catalog()).toEqual([])
+    expect((await fresh.connectors.call('demo_eats_search', { keyword: '성수' })).isError).toBeUndefined()
+    const used = await setup({ open: true, recent: ['demo_eats_search', 'gmail_search'] })
+    expect((await used.connectors.catalog()).map((t) => t.name)).toEqual(['demo_eats_search'])
+    // 기록을 모르면 예전처럼 다 보인다
+    const all = await setup({ open: true })
+    expect((await all.connectors.catalog()).length).toBeGreaterThan(1)
   })
 
   it('서비스 찾기는 도구·등급·입력 칸과 연결하면 되는 일을 알려 준다', async () => {
