@@ -602,7 +602,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'checkout',
     'Payment card',
-    "The only way to get payment approved. Use before clicking the last pay button on the payment screen (where the payment method and final amount are chosen). Do not stop on the payment screen to ask; set the delivery address, payment method and coupons, get to the last button, then call this. For any payment (shopping, groceries, delivery, lodging, flights, tickets), read the payment screen and fill the fields below; one payment card appears on the phone, where the user picks the delivery address and payment method and approves once (this is the only approval). [Order] or [Buy] buttons before the payment screen are passed with browser_click (opens_checkout: true), not this. Fill in values exactly as written on the screen; never make them up. After calling, do not repeat the card's contents in text; say just one or two lines (what for how much, anything to check) and end the reply. When the approval notification arrives, finish the same payment all the way through the payment window that opens after Dool2 clicks (choosing a card, next, payment password keypad via browser_request_code kind: pin), then read the order (booking) number on the completion screen and call browser_order_done.",
+    "The only way to get payment approved. Use before clicking the last pay button on the payment screen (where the payment method and final amount are chosen). Do not stop on the payment screen to ask; set the delivery address, payment method and coupons, get to the last button, then call this. For any payment (shopping, groceries, delivery, lodging, flights, tickets), read the payment screen and fill the fields below; one payment card appears on the phone, where the user picks the delivery address and payment method and approves once (this is the only approval). [Order] or [Buy] buttons before the payment screen are passed with browser_click (opens_checkout: true), not this. Fill in values exactly as written on the screen; never make them up. If the same product or room was found cheaper on another site earlier in this conversation, add it as one info line (the price and how much cheaper), but do not delay the payment to search anew; if the final price (with coupons and shipping) is unknown, say so. After calling, do not repeat the card's contents in text; say just one or two lines (what for how much, anything to check) and end the reply. When the approval notification arrives, finish the same payment all the way through the payment window that opens after Dool2 clicks (choosing a card, next, payment password keypad via browser_request_code kind: pin), then read the order (booking) number on the completion screen and call browser_order_done.",
     {
       tabId,
       ref: ref.describe('Ref of the last button (pay, complete booking, etc.)'),
@@ -679,7 +679,9 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .array(z.string().max(60))
         .max(8)
         .optional()
-        .describe("What Dool2 picked by itself, in the user's language (coupon applied, no insurance, etc.)"),
+        .describe(
+          "What Dool2 picked on the screen by itself before paying, in the user's language (coupon applied, no travel insurance, agreed to all terms, no points). The user sees and can change them on the card; payment methods the user picks go in choices",
+        ),
       cancel: z
         .string()
         .max(200)
@@ -704,7 +706,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'order_done',
     'Report order complete',
-    'Use when an approved payment is finished: if you read the order number on the order (booking) completion screen, call with order_no. Dool2 releases the payment lock (the paying tab and payment window) and marks the payment approval as complete with the order number. Then show the result with show_result and record it with know_save. If the payment did not go through (declined, timed out, error), call with failed: true and reason, check whether money was taken, then try another way.',
+    'Use when an approved payment is finished: if you read the order number on the order (booking) completion screen, call with order_no. Dool2 releases the payment lock (the paying tab and payment window) and marks the payment approval as complete with the order number. Then show the result with show_result and record it with know_save. If the payment did not go through (declined, timed out, error), call with failed: true and reason, check whether money was taken, then try another way. After a success, suggest the helpful follow-ups briefly, all at once, and do them when the user agrees: adding it to the calendar if it has a date (bookings, shows, trips), a reminder the day before a free cancellation or return deadline (goal_create), saving the order number and confirmation to the Library (library_save).',
     {
       tabId,
       order_no: z
@@ -725,7 +727,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'dialog',
     'Answer a site dialog',
-    'Use when reading the page says a site confirm dialog is open. Clicks [OK] (accept: true) or [Cancel] (accept: false) in the dialog the site opened (e.g. "Go to your cart?") and returns the changed page. For prompt dialogs, put the text in text. [OK] that would pay, order, send or delete is blocked by Dool2 and needs approval.',
+    'Use when reading the page says a site confirm dialog is open; handle it before anything else. Clicks [OK] (accept: true) if it matches the user\'s request, otherwise [Cancel] (accept: false), in the dialog the site opened (e.g. "Go to your cart?") and returns the changed page. A site alert (💬 in the page read) is only something the site told you (e.g. the password is wrong): read it and decide what to do next. For prompt dialogs, put the text in text. [OK] that would pay, order, send or delete is blocked by Dool2 and needs approval.',
     {
       tabId,
       accept: z.boolean().describe('true for [OK], false for [Cancel]'),
