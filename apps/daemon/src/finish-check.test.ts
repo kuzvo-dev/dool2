@@ -108,6 +108,19 @@ describe('끝내기 전 검사', () => {
     expect(await c.check('t', { answer: 'x', tools: ['y'] })).toMatchObject({ kind: 'stop', reason: 'time' })
   })
 
+  it('기본으로 부탁 하나는 10분까지만 되돌려 보낸다', async () => {
+    let now = 0
+    const c = new FinishCheck({
+      ask: say('{"done":false,"why":"a"}', '{"done":false,"why":"b"}').ask,
+      now: () => now,
+    })
+    c.begin('t', '부탁')
+    now = 9 * 60_000
+    expect((await c.check('t', { answer: 'x', tools: ['y'] })).kind).toBe('again')
+    now = 11 * 60_000
+    expect(await c.check('t', { answer: 'x', tools: ['z'] })).toMatchObject({ kind: 'stop', reason: 'time' })
+  })
+
   it('멈추면 더 판정하지 않는다', async () => {
     const j = say()
     const c = new FinishCheck({ ask: j.ask })

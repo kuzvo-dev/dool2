@@ -5,7 +5,7 @@ import { FINISH_CHECK_TEXT } from './locales/finish-check.js'
 /**
  * Check before finishing (ADR 0027): when Dool's turn of tool work ends, a separately called AI judges
  * "is it done against the request, and is what is left really the person's part?". If not done, it sends the work back into the same conversation.
- * The number of rounds varies per job: 2 by default, up to 4 if new tools were used (progress); it stops when blocked twice for the same reason or after 20 minutes.
+ * The number of rounds varies per job: 2 by default, up to 4 if new tools were used (progress); it stops when blocked twice for the same reason or after 10 minutes.
  */
 
 export interface Verdict {
@@ -179,7 +179,7 @@ export class FinishCheck {
       return { kind: 'stop', why: v.why, cycles: s.cycles, reason }
     }
     if (s.cycles >= limit) return stop('rounds')
-    if (this.now() - s.started > (this.opts.maxMs ?? 20 * 60_000)) return stop('time')
+    if (this.now() - s.started > (this.opts.maxMs ?? 10 * 60_000)) return stop('time')
     if (s.whys.some((w) => sameBlocker(w, v.why))) return stop('same blocker')
     s.whys.push(v.why)
     s.cycles++
