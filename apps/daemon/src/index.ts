@@ -120,6 +120,7 @@ import {
 } from './region/kr/index-matchers.js'
 import type { HtmlRenderer } from './render.js'
 import { buildReport, sendReport } from './report.js'
+import { RouteBook } from './routes.js'
 import { runQuickCheck } from './routine-check.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
@@ -146,6 +147,7 @@ export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export type { MotionRenderer, MotionRenderRequest, MotionRenderResult } from './motion.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from './render.js'
+export { RouteBook } from './routes.js'
 export { Skills } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
@@ -485,6 +487,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   vault.userLang = lang
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
   browserTools.userLang = lang
+  // Remembered routes (ADR 0034): clicks that led somewhere on a site, walked again without the AI in between
+  browserTools.routes = new RouteBook(join(paths.dataDir, 'routes.json'))
   // My info (booker and orderer fields): in the same store as the vault, and the AI only sees masked values (browser_fill_profile)
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile

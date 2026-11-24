@@ -13,7 +13,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BrowserTools, FileTools, memorySecrets, startDaemon, Vault } from '@dool2/daemon'
+import { BrowserTools, FileTools, memorySecrets, RouteBook, startDaemon, Vault } from '@dool2/daemon'
 
 const chromeBin = process.env.DOOL2_TEST_CHROME
 if (!chromeBin) {
@@ -295,6 +295,19 @@ const site = createServer((req, res) => {
     return res.end(
       `<!doctype html><title>검색 결과</title><h1>"${q.replace(/[<>&"]/g, '')}" 검색 결과</h1><p>사과 1kg 9,900원</p>`,
     )
+  }
+  // Remembered routes (ADR 0034): home → [마이페이지] → [주문목록]
+  if (url.pathname.startsWith('/r/')) {
+    const pages = {
+      '/r/home':
+        '<!doctype html><title>길 가게</title><h1>길 가게</h1><a href="/r/my">마이페이지</a> <a href="/r/help">고객센터</a>',
+      '/r/my':
+        '<!doctype html><title>마이페이지</title><h1>마이페이지</h1><a href="/r/orders">주문목록</a> <a href="/r/home">홈</a>',
+      '/r/orders': '<!doctype html><title>주문목록</title><h1>주문목록</h1><p>귤 5kg 배송 중</p>',
+    }
+    const body = pages[url.pathname]
+    res.writeHead(body ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' })
+    return res.end(body ?? 'not found')
   }
   // A page whose content is on screen at once but whose load event waits on a slow ad image (like many shopping sites)
   if (url.pathname === '/slow-ad') {
@@ -1103,6 +1116,27 @@ try {
       assert.match(await waitTitle(/^사진 /), /^사진 제주 바다\.jpg:\d+:JPG바다/)
     },
   )
+
+  await step('A walk of clicks is remembered and walked again without the AI', async () => {
+    const tools = new BrowserTools(daemon.browser)
+    tools.routes = new RouteBook(join(tmp, 'routes.json'))
+    const first = await tools.run('open', { url: `${base}/r/home` })
+    const tab = Number(/\[(?:tab|탭) (\d+)\]/.exec(first.content[0].text)?.[1])
+    assert.ok(tab > 0, 'No tab number in the page read')
+    await tools.run('click', { tabId: tab, text: '마이페이지' })
+    const orders = await tools.run('click', { tabId: tab, text: '주문목록' })
+    assert.match(orders.content.map((c) => c.text).join('\n'), /귤 5kg 배송 중/)
+    await tools.run('navigate', { tabId: tab, url: `${base}/r/home` })
+    const again = await tools.run('navigate', { tabId: tab, url: `${base}/r/home` })
+    assert.match(again.content.map((c) => c.text).join('\n'), /\[r1\] 주문목록: '마이페이지' → '주문목록'/)
+    const t = Date.now()
+    const walked = await tools.run('route', { tabId: tab, route: 'r1' })
+    const text = walked.content.map((c) => c.text).join('\n')
+    assert.match(text, /Took the remembered route \[r1\]/)
+    assert.match(text, /귤 5kg 배송 중/)
+    console.log(`  walked 2 clicks in ${Date.now() - t}ms`)
+    await call('close', { tabId: tab })
+  })
 
   await step('A slow ad does not hold back opening, reading or moving to the next page', async () => {
     let t = Date.now()
