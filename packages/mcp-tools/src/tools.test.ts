@@ -128,6 +128,10 @@ describe('result blocks (rules moved from the global prompt)', () => {
     expect(d('browser_order_done')).toContain('suggest the helpful follow-ups briefly')
     expect(d('browser_dialog')).toContain("if it matches the user's request, otherwise [Cancel]")
     expect(d('browser_handoff')).toContain('Everything a person must do goes through phone cards')
+    expect(d('memory_save')).toContain('Save quietly')
+    expect(d('library_save')).toContain('say briefly in the answer that it is saved to the Library')
+    expect(d('conversation_search')).toContain('say honestly that you do not remember')
+    expect(d('photo_view')).toContain('Do not copy sensitive values')
     expect(d('browser_read')).toContain("none for the user's own account pages")
     const r = await client.callTool({ name: 'tool_find', arguments: { query: 'browser_new_password' } })
     const pw = (r.content as { text: string }[])[0]?.text ?? ''

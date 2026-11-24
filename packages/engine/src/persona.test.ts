@@ -118,7 +118,7 @@ describe('결과 블록 위치 말', () => {
 describe('global prompt size budget', () => {
   // AGENTS.md: fix by sharpening tools, not by adding instructions. Tips for one tool or one service belong in that
   // tool's description or service card, not here. Lower this as lines move out; do not raise it to fit a new rule.
-  const BUDGET = 27_000
+  const BUDGET = 25_500
 
   it('stays within the budget in every voice language', () => {
     for (const lang of ['ko', 'en'] as const)
