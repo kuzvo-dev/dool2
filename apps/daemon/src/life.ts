@@ -15,6 +15,7 @@ import {
   type LifeState,
   type MemoryItem,
   type Routine,
+  type RoutineCheck,
   type RoutineSchedule,
   type SuggestedIdea,
 } from '@dool2/protocol'
@@ -249,6 +250,7 @@ export class Life {
     until?: string
     notify?: 'always' | 'when_found'
     tellAt?: string
+    check?: RoutineCheck
   }): Routine {
     const now = this.now()
     const next = input.schedule ? nextRun(input.schedule, now) : undefined
@@ -268,6 +270,7 @@ export class Life {
       ...(input.until?.trim() ? { until: input.until.trim().slice(0, 120) } : {}),
       ...(input.notify === 'when_found' ? { notify: 'when_found' as const } : {}),
       ...(input.tellAt ? { tellAt: input.tellAt } : {}),
+      ...(input.check ? { check: input.check } : {}),
     }
     this.put('routines', [r, ...this.routines()])
     // A task made by a feed instruction is not announced in the feed
@@ -297,6 +300,8 @@ export class Life {
       notify?: 'always' | 'when_found'
       /** An empty text clears the notice delay */
       tellAt?: string
+      /** A new quick check (ADR 0031): starts over from a new baseline */
+      check?: RoutineCheck
     },
   ) {
     const list = this.routines()
@@ -322,6 +327,12 @@ export class Life {
     if (patch.tellAt !== undefined) {
       if (patch.tellAt) r.tellAt = patch.tellAt
       else delete r.tellAt
+    }
+    if (patch.check) {
+      r.check = patch.check
+      delete r.checkPrint
+      delete r.checkText
+      delete r.checkFails
     }
     if (patch.plan) r.plan = patch.plan.slice(0, 12).map((t) => ({ text: t.slice(0, 120), done: false }))
     for (const i of patch.done ?? []) if (r.plan?.[i]) r.plan[i].done = true
@@ -355,6 +366,36 @@ export class Life {
     if (next.length === list.length) return false
     this.put('routines', next)
     return true
+  }
+  /**
+   * Record one quick-check result (ADR 0031). The first result is only the baseline. Returns whether it changed and
+   * the short text before and now, so the daemon wakes Dool2 only on a change
+   */
+  noteCheck(
+    id: string,
+    print: string,
+    text: string,
+  ): { first: boolean; changed: boolean; before?: string; now: string } | undefined {
+    const list = this.routines()
+    const r = list.find((x) => x.id === id)
+    if (!r) return undefined
+    const first = r.checkPrint === undefined
+    const changed = !first && r.checkPrint !== print
+    const before = r.checkText
+    r.checkPrint = print
+    r.checkText = text.slice(0, 600)
+    delete r.checkFails
+    this.put('routines', list)
+    return { first, changed, ...(before !== undefined ? { before } : {}), now: r.checkText }
+  }
+  /** A quick check failed: how many times in a row now */
+  noteCheckFail(id: string): number {
+    const list = this.routines()
+    const r = list.find((x) => x.id === id)
+    if (!r) return 0
+    r.checkFails = (r.checkFails ?? 0) + 1
+    this.put('routines', list)
+    return r.checkFails
   }
   /** Take out what is due now and set the next time (the daemon calls this every 30 seconds) */
   tick() {
@@ -925,8 +966,14 @@ export class Life {
     try {
       switch (tool) {
         case 'goal_create': {
-          const schedule = a.schedule ? parseSchedule(a) : undefined
+          let schedule = a.schedule ? parseSchedule(a) : undefined
           if (a.schedule && !schedule) return bad(scheduleHelp(a))
+          // Quick check (ADR 0031): checked by the daemon (index.ts) before it gets here
+          const check = readCheck(a)
+          if (typeof check === 'string') return bad(check)
+          const fast = everyFloor(schedule, check)
+          if (typeof fast === 'string') return bad(fast)
+          schedule = fast
           const rule = readRule(a)
           if (typeof rule === 'string') return bad(rule)
           const end = untilEnd(rule.until)
@@ -954,11 +1001,13 @@ export class Life {
             ...(rule.tellAt === undefined && morningTell(schedule, `${a.title ?? ''} ${a.prompt ?? ''}`)
               ? { tellAt: '07:00' }
               : {}),
+            ...(check ? { check: check.check } : {}),
           })
           return ok(
             [
               `${category ? 'Goal' : 'Reminder'} created: "${r.title}" [id ${r.id.slice(0, 8)}]`,
               `What was set: ${ruleSentence(r)}.`,
+              ...(check?.note ? [check.note] : []),
               ...ruleGaps(r),
               'Confirm with the user by telling them "What was set" as it is, in one sentence.',
               // Also give what exists now, so an old reminder from the chat is not trusted ("it already exists") and a requested task left out
@@ -987,8 +1036,17 @@ export class Life {
                 schedule: a.schedule ?? cur?.schedule?.kind,
               }
             : undefined
-          const schedule = merged ? parseSchedule(merged) : undefined
+          let schedule = merged ? parseSchedule(merged) : undefined
           if (merged && !schedule) return bad(scheduleHelp(merged))
+          const check = readCheck(a)
+          if (typeof check === 'string') return bad(check)
+          // The interval floor uses the check it will have: the new one, else the one it already has
+          const keep = check ?? (cur?.check ? { check: cur.check, minMinutes: 1 } : undefined)
+          if (schedule || check) {
+            const fast = everyFloor(schedule ?? cur?.schedule, keep)
+            if (typeof fast === 'string') return bad(fast)
+            if (schedule || fast !== cur?.schedule) schedule = fast
+          }
           const rule = readRule(a)
           if (typeof rule === 'string') return bad(rule)
           const end = untilEnd(rule.until)
@@ -1006,6 +1064,7 @@ export class Life {
             ...(typeof a.until === 'string' ? { until: a.until } : {}),
             ...(rule.notify ? { notify: rule.notify } : {}),
             ...(rule.tellAt !== undefined ? { tellAt: rule.tellAt } : {}),
+            ...(check ? { check: check.check } : {}),
           }
           if (!cur) return bad('No such goal. Check the id with goal_list.')
           // Do not say "updated" when nothing changed
@@ -1227,6 +1286,44 @@ export class Life {
 const WHEN_KEYS = ['schedule', 'time', 'days', 'day', 'at', 'minutes'] as const
 
 /** Clean up the "when" the AI gave */
+/** Tasks Dool2 (the AI) runs itself: at most every 15 minutes (each run is a full answer turn) */
+export const AI_EVERY_MIN = 15
+
+/**
+ * The quick check the daemon checked and attached (`_check`, ADR 0031). The AI cannot set `_check`: the daemon drops
+ * it from the AI's input and sets it only after checking `check_tool` (index.ts)
+ */
+function readCheck(
+  a: Record<string, unknown>,
+): { check: RoutineCheck; minMinutes: number; note?: string } | undefined | string {
+  const c = a._check as { tool?: unknown; input?: unknown; minMinutes?: unknown; note?: unknown } | undefined
+  if (!c) return a.check_tool ? 'check_tool could not be checked. Try again.' : undefined
+  if (typeof c.tool !== 'string' || !c.tool) return 'check_tool is missing.'
+  return {
+    check: {
+      tool: c.tool,
+      input: c.input && typeof c.input === 'object' ? (c.input as Record<string, unknown>) : {},
+    },
+    minMinutes: Math.max(1, Number(c.minMinutes) || 1),
+    ...(typeof c.note === 'string' ? { note: c.note } : {}),
+  }
+}
+
+/**
+ * The shortest interval: 15 minutes for tasks the AI runs, down to 1 minute (or the service's own minimum) with a
+ * quick check. Raises a quick check's interval to the service minimum instead of refusing
+ */
+function everyFloor(
+  schedule: RoutineSchedule | undefined,
+  check: { minMinutes: number } | undefined,
+): RoutineSchedule | undefined | string {
+  if (schedule?.kind !== 'every') return schedule
+  if (!check && schedule.minutes < AI_EVERY_MIN)
+    return `Every ${schedule.minutes} minutes is too often for a task Dool2 runs itself (${AI_EVERY_MIN} or more). For things that vanish fast (cancelled tickets, open tables, restocks), give check_tool (a lookup service tool) and check_input: the daemon then checks every 1 minute or more without you and wakes you only when the result changes. Otherwise use ${AI_EVERY_MIN} or more.`
+  if (check && schedule.minutes < check.minMinutes) return { kind: 'every', minutes: check.minMinutes }
+  return schedule
+}
+
 export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | undefined {
   const kind = String(a.schedule ?? a.kind ?? '')
   const time = String(a.time ?? '')
@@ -1245,7 +1342,7 @@ export function parseSchedule(a: Record<string, unknown>): RoutineSchedule | und
   }
   if (kind === 'once' && typeof a.at === 'string' && !Number.isNaN(Date.parse(a.at)))
     return { kind: 'once', at: new Date(a.at).toISOString() }
-  if (kind === 'every' && Number(a.minutes) >= 15)
+  if (kind === 'every' && Number(a.minutes) >= 1)
     return { kind: 'every', minutes: Math.round(Number(a.minutes)) }
   return undefined
 }
@@ -1258,7 +1355,7 @@ function scheduleHelp(a: Record<string, unknown>): string {
     weekly: 'time and days (0=Sun … 6=Sat, several allowed)',
     monthly: 'time and day (1-31, 31 for the last day)',
     once: 'at (ISO time, with +09:00)',
-    every: 'minutes (15 or more)',
+    every: 'minutes (15 or more; 1 or more only with check_tool)',
   }
   return need[kind]
     ? `${kind} needs ${need[kind]}.`

@@ -389,6 +389,34 @@ export class Connectors {
     return undefined
   }
 
+  /**
+   * Whether a service tool can be a watch's quick check (ADR 0031): only lookups, usable now, signed in if it needs
+   * it. Returns the shortest interval the service allows (minIntervalSec) or why it cannot
+   */
+  async checkable(
+    name: string,
+  ): Promise<{ ok: true; minMinutes: number; title: string } | { ok: false; why: string }> {
+    const found = await this.resolve(name)
+    if (!found) return { ok: false, why: `No such service tool: ${name}. Check the name with service_find.` }
+    const { card, tool } = found
+    if (tool.tier !== 'lookup')
+      return {
+        ok: false,
+        why: `${name} is a ${tool.tier} tool. A quick check can only use a lookup tool (it never orders, books or sends).`,
+      }
+    if (!this.usable(tool)) return { ok: false, why: `${name} is not usable right now (${tool.status}).` }
+    if (tool.login && !this.isConnected(card))
+      return {
+        ok: false,
+        why: `${name} needs ${card.name} to be connected first. Show the connect card with connect_ask('${card.id}').`,
+      }
+    return {
+      ok: true,
+      minMinutes: Math.max(1, Math.ceil((tool.minIntervalSec ?? 60) / 60)),
+      title: tool.title,
+    }
+  }
+
   /** The connector for a URL's site, if any (to suggest its tools when the site is opened in the browser) */
   async forUrl(url: string): Promise<{ id: string; name: string; tools: string[] } | undefined> {
     let host: string

@@ -33,7 +33,23 @@ const whenFields = {
     .string()
     .optional()
     .describe('For once: ISO time (with Korea time +09:00, e.g. "2026-11-20T10:00:00+09:00")'),
-  minutes: z.number().int().min(15).optional().describe('For every: interval in minutes (15 or more)'),
+  minutes: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('For every: interval in minutes. 15 or more; 1 or more only with check_tool (a quick check)'),
+  check_tool: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      'Quick check for watches of things that vanish fast (cancelled tickets, open tables, restocks, price drops): a lookup service tool (e.g. "catchtable_search") the daemon runs at each set time without you. You are woken only when its result changes, so every 1 minute is fine. Use with schedule every + notify when_found + until. Only lookup tools; it never books or pays',
+    ),
+  check_input: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Input for check_tool, exactly as you would call it (date, people, area …)'),
   until: z
     .string()
     .max(120)
@@ -68,7 +84,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         'Creates one when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
         'Reminders are made with this too. Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
         '"check my card bill on the last day of each month" → monthly day 31 · "Mon, Wed, Fri at 7" → weekly days [1,3,5] · ' +
-        '"tell me when a cancelled ticket shows up" → every or daily + notify "when_found" + until (show or departure date) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
+        '"tell me when a cancelled ticket shows up" → every + notify "when_found" + until (show or departure date), with check_tool + check_input when a service lookup tool can see it (then every 1-5 minutes is fine) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
         '"every day until December 31" → until "2026-12-31" · ' +
         '"tell me when the engine oil is due next" → write the last change date in prompt, monthly + when_found (when it is due) + until "when the user says it was changed" · ' +
         '"tell me when the notice with no date yet is posted" → daily + when_found + until "when the notice is posted and reported". ' +
