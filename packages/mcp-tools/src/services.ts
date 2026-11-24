@@ -273,7 +273,8 @@ export function registerServiceTools(
       description:
         'Reads recent orders and delivery status from all connected shopping sites (Coupang, Naver Pay, Gmarket, 11st, etc.) at once. ' +
         "When it is unclear which shop is meant ('where is my parcel', 'the box arrived crushed', 'return what I bought last week', 'when does it arrive'), " +
-        'use this first instead of calling each shop\'s order tool separately. Do not check just one shop and then ask "where did you buy it?".',
+        'use this first instead of calling each shop\'s order tool separately, then email. Do not check just one shop and then ask "where did you buy it?"; ask only if it is still not found. ' +
+        "Seller words (purchase orders, waybills, settlements, how many orders) mean that service's seller (owner) pages, not these purchases.",
       inputSchema: {},
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
     },
