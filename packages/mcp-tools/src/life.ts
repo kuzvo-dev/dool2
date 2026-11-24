@@ -460,7 +460,8 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       description:
         'When showing candidates to choose from, like products, lodging, restaurants or shows, attaches them below the answer as photo cards (swipe sideways; tapping opens the page; tapping the pick button sends the choice to the chat). ' +
         'Use the photo (image), address (link) and price from the service tool result as is. Never include made-up addresses or photos. 2-8 cards, in recommended order. ' +
-        'Once attached, do not list the same items or table again in the answer text; say only why you picked them and how they differ, in 2-4 sentences. The cards show below the answer text, so refer to them as "the cards below". Write card text in the user\'s language.',
+        'Once attached, do not list the same items or table again in the answer text; say only why you picked them and how they differ, in 2-4 sentences. The cards show below the answer text, so refer to them as "the cards below". Write card text in the user\'s language. ' +
+        "For an order with several to choose from (delivery menus, household goods, gifts), badge the first card as recommended (in the user's language) and say why in a line or two; when the user picks, add that one and go on to payment approval.",
       inputSchema: {
         cards: z
           .array(
@@ -535,7 +536,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         'Attaches a list as rows below the answer when photos are not the reason to choose (listings, orders, emails, events, deadlines, documents, announcements, application history). ' +
         'When photos are the reason to choose (products, lodging, restaurants, posters), use show_cards. When each row\'s status matters, like open now or seats left, use this list (state, tone). Use it instead of writing out lists longer than 2 lines. The list shows below the answer text, so refer to it as "the list below". ' +
         'Choose the look with the leading item (lead): date = date (events, deadlines; date field required) · file = file (received documents, created files) · img = small photo · logo = service logo · none. ' +
-        'With pick: one, tapping a row sends that choice to the chat (pick one). ' +
+        'With pick: one, tapping a row sends that choice to the chat (pick one). When the user must pick one candidate whose rows have details (show times, free slots, listings, branches, plans), use pick: one whatever the count, instead of a text list, table or quick replies, and add no quick replies: time in title, seats left and terms in sub, price in value, sold out as state with tone stop. Also use it for picks among more than 5 (all banks, card companies or airlines). ' +
         'pick: multi is for choosing several at once (adding groceries to a cart, gift candidates, documents to get): leave on empty for items Dool2 picked (checked by default), set on: false for uncertain ones and give the reason in sub. ' +
         'If every row has amount (won), the button shows the total, like "Add 3 · ₩25,860". The button (action) is one action for the whole list (e.g. "Add to calendar"). ' +
         'Money, contacting people and deleting are never done directly by the button: tapping sends a request, and approval is asked then. Never include made-up values. ' +

@@ -1111,7 +1111,12 @@ export class Life {
             r.rows.length > 5
               ? ` The first 5 rows show and the other ${r.rows.length - 5} open on expand.`
               : ''
-          const picked = r.pick === 'multi' ? ` ${r.rows.filter((x) => x.on).length} pre-selected.` : ''
+          const picked =
+            r.pick === 'multi'
+              ? ` ${r.rows.filter((x) => x.on).length} pre-selected.`
+              : r.pick === 'one'
+                ? ' Tapping a row sends the choice, so add no quick replies.'
+                : ''
           return ok(
             `Attaching a list of ${r.rows.length} rows under the answer.${more}${picked} One result block per answer, so if you call another block only the last one is attached. In the answer text, do not repeat the same list; briefly say only the reason and what to do next.`,
           )

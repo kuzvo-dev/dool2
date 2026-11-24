@@ -51,14 +51,15 @@ describe('두리 페르소나 지침', () => {
   })
 
   it('고를 후보는 사진 카드로 붙이고 목록을 되풀이하지 않는다', () => {
-    expect(DOOL2_SYSTEM_PROMPT).toContain('attach photo cards below the reply with show_cards')
+    // How each block is filled lives in the show_* tool descriptions (packages/mcp-tools); the prompt keeps which one
+    expect(DOOL2_SYSTEM_PROMPT).toContain('Attach one result block below the reply (one per reply)')
+    for (const t of ['show_cards', 'show_list', 'show_result', 'show_draft'])
+      expect(DOOL2_SYSTEM_PROMPT).toContain(t)
+    expect(DOOL2_SYSTEM_PROMPT).toContain("don't repeat its content")
     expect(DOOL2_SYSTEM_PROMPT).toContain('[[답: option 1 | option 2 | option 3]]')
     expect(DOOL2_SYSTEM_PROMPT).toContain('[[답: 화요일 10시로 | 목요일 3시로 | 다른 날 볼래]]')
     expect(buildSystemPrompt({ lang: 'en' })).toContain('[[답: Tue 10 am | Thu 3 pm | Another day]]')
-    expect(DOOL2_SYSTEM_PROMPT).toContain('show_list pick multi')
-    expect(DOOL2_SYSTEM_PROMPT).toContain('show them with show_list pick one')
-    expect(DOOL2_SYSTEM_PROMPT).toContain('show_result')
-    expect(DOOL2_SYSTEM_PROMPT).toContain('show_draft')
+    expect(DOOL2_SYSTEM_PROMPT).toContain('use show_list pick one instead')
   })
 
   it('폰 카드 전에 다시 읽고 보이는 화면대로 말한다', () => {
@@ -114,7 +115,7 @@ describe('결과 블록 위치 말', () => {
 describe('global prompt size budget', () => {
   // AGENTS.md: fix by sharpening tools, not by adding instructions. Tips for one tool or one service belong in that
   // tool's description or service card, not here. Lower this as lines move out; do not raise it to fit a new rule.
-  const BUDGET = 36_500
+  const BUDGET = 34_000
 
   it('stays within the budget in every voice language', () => {
     for (const lang of ['ko', 'en'] as const)

@@ -86,6 +86,25 @@ describe('두리 MCP 도구', () => {
   })
 })
 
+describe('result blocks (rules moved from the global prompt)', () => {
+  it('say in their descriptions what goes where', async () => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({}).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    const d = (n: string) => tools.find((t) => t.name === n)?.description ?? ''
+    expect(d('show_cards')).toContain('Never include made-up addresses or photos')
+    expect(d('show_cards')).toContain('badge the first card as recommended')
+    expect(d('show_list')).toContain('use pick: one whatever the count')
+    expect(d('show_list')).toContain('more than 5 (all banks, card companies or airlines)')
+    expect(d('show_list')).toContain('set on: false for uncertain ones')
+    expect(d('show_result')).toContain('confirmed by reading the completion screen again')
+    expect(d('show_draft')).toContain('this tool does not send')
+    await client.close()
+  })
+})
+
 describe('브라우저 도구', () => {
   it('본체에 그대로 넘기고 결과(오류 포함)를 돌려준다', async () => {
     const calls: [string, unknown][] = []
