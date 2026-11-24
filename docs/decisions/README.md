@@ -30,7 +30,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0024](0024-pc-file-move-convert-print.md) | Moving PC files, converting photo formats and printing go through Dool2 tools with approval and undo | Accepted |
 | [0025](0025-know-ledger.md) | What Dool2 knows: keep looked-up facts and past actions, and let the AI judge whether to use them | Accepted |
 | [0026](0026-vault-view-edit.md) | Users can view and edit vault passwords on the phone or PC | Accepted (amends ADR 0011) |
-| [0027](0027-finish-check.md) | Before finishing a task, Dool2 checks once more and, if something is left, continues on its own | Accepted |
+| [0027](0027-finish-check.md) | Before finishing a task, Dool2 checks once more and, if something is left, continues on its own | Turned off (2026-11-24) |
 | [0028](0028-web-release-update.md) | The desktop app is downloaded from the web, and new versions are fetched by the app itself from a signed notice | Accepted |
 | [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
 | [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted |
