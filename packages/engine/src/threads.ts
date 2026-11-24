@@ -394,12 +394,24 @@ export function looksLikeSummary(text: string): boolean {
   return /^\s*[-*•]\s+\S/m.test(text)
 }
 
-/** Summary request sent to the AI when a segment is closed (not recorded) */
+/**
+ * Summary request sent to the AI when a segment is closed (not recorded). A handoff with fixed headings, so what is
+ * easy to lose in a free summary (where a task stands, what it waits on, what already failed, what was promised)
+ * survives into the next segment (ADR 0015)
+ */
 export const SUMMARY_REQUEST =
-  `${APP_NOTE}The conversation is getting long, so it will continue in a new one. Summarize what you need to keep remembering ` +
-  'from the conversation with the user so far (their preferences, promises, tasks in progress or done, set dates, times and amounts) ' +
-  'in up to 15 bullet lines, in the language you and the user have been using. ' +
-  "Don't use tools; reply with the summary only. Always write a summary instead of saying there is nothing to reply to."
+  `${APP_NOTE}The conversation is getting long, so it will continue in a new one, where you will only have this handoff. ` +
+  'Write the handoff for yourself in the language you and the user have been using: bullet lines under these headings, ' +
+  'skipping a heading with nothing under it.\n' +
+  'Now: what the user wants right now, in their words\n' +
+  'Done: bookings, orders, applications and messages sent, with their numbers, dates and amounts\n' +
+  'In progress: each unfinished task, the step it reached and what it waits on (an approval, a login, the user, a date)\n' +
+  'Promised: reminders, watches and follow-ups you set or said you would do\n' +
+  'About the user: preferences and facts learned in this conversation\n' +
+  'Did not work: sites or routes that failed and why, so they are not tried again the same way\n' +
+  'Next: the one next step\n' +
+  'Up to 20 lines in all. Only what the conversation shows; no guesses. ' +
+  "Don't use tools; reply with the handoff only. Always write a handoff instead of saying there is nothing to reply to."
 
 /** For PC file and PC tool input that asks for approval, the text for the approval card; otherwise undefined (same rules as the daemon's file-ops.ts) */
 export function fileApprovalWhat(

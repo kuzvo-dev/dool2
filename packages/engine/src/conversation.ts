@@ -173,7 +173,7 @@ export function buildCarry(
   const parts = [
     `${CARRY_HEAD} You are continuing one conversation with the user, who doesn't know it was split. Keep the following in mind and continue naturally.`,
   ]
-  if (summary) parts.push(`Summary:\n${cut(summary, 2500)}`)
+  if (summary) parts.push(`Handoff from the earlier conversation:\n${cut(summary, 3500)}`)
   else if (prev.carry)
     parts.push(
       `Earlier conversation:\n${cut(prev.carry.replace(OLD_CARRY_HEAD, '').replace(CARRY_HEAD_LINE, ''), 2500)}`,
