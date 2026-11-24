@@ -123,6 +123,8 @@ describe('result blocks (rules moved from the global prompt)', () => {
     const d = (n: string) => tools.find((t) => t.name === n)?.description ?? ''
     expect(d('browser_login')).toContain('first try the simple login the user used on that site')
     expect(d('browser_request_login')).toContain('never sign up on your own')
+    expect(d('browser_read')).toContain('not a list page')
+    expect(d('browser_read')).toContain("none for the user's own account pages")
     const r = await client.callTool({ name: 'tool_find', arguments: { query: 'browser_new_password' } })
     const pw = (r.content as { text: string }[])[0]?.text ?? ''
     expect(pw).toContain('agree only to required terms')
