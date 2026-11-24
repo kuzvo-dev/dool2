@@ -383,6 +383,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (!/^[\w-]+\.jpg$/.test(name)) throw new Error(m().photoBadName)
     return (await readFile(join(photoDir, name))).toString('base64')
   }
+  /** Evals on a test PC replay the same tape per model (POST /api/eval/model). undefined: each agent's default */
+  let evalModel: string | undefined
   const threads = new ThreadService({
     lang,
     store,
@@ -400,7 +402,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
     // Which model each kind of call uses (ADR 0035): requests on the agent's model, side jobs on its small model
-    modelFor: (agent, role) => modelForRole(agent, role),
+    modelFor: (agent, role) => modelForRole(agent, role, evalModel),
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
     onCache: (threadId, x) =>
       journal.write('cache', {
@@ -3338,6 +3340,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (body.mode !== 'record' && body.mode !== 'replay') return json(res, 400, { error: m().badRequest })
       toolTape.start(body.mode, Array.isArray(body.entries) ? (body.entries as TapeEntry[]) : [])
       return json(res, 200, { ok: true, mode: body.mode })
+    }
+
+    // Evals: run the next requests on another model, to compare the same tape per model (ADR 0035). Test PC only
+    if (req.method === 'POST' && a === 'eval' && b === 'model' && !c) {
+      if (!devReset) return json(res, 403, { error: m().testPcOnly })
+      const body = (await readJson(req)) as { model?: unknown }
+      if (body.model !== undefined && (typeof body.model !== 'string' || !/^[\w.:-]{1,80}$/.test(body.model)))
+        return json(res, 400, { error: m().badRequest })
+      evalModel = body.model || undefined
+      return json(res, 200, { ok: true, ...(evalModel ? { model: evalModel } : {}) })
     }
 
     // PC screen control (M4): permissions and allowed apps. The user turns on the permission in Mac settings ([Turn on permission] only opens a system window)
