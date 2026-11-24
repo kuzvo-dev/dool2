@@ -63,6 +63,10 @@ export const indexText = messages({
     approvedOnPhone: (message: string) => `폰에서 승인했어요. ${message}`,
     doneAutomatically: (message: string) => `자동 승인으로 했어요. ${message}`,
     approvalWaiting: '승인을 기다려요',
+    approvalHeld: '자동 승인 대신 여쭤봐요',
+    autoPausedTitle: '오늘은 자동 승인을 멈췄어요',
+    autoPausedBody:
+      '부탁하지 않은 일을 하려는 게 여러 번 보여서, 오늘은 하나씩 폰으로 여쭤볼게요. 설정에서 다시 켤 수 있어요.',
     pressLabel: (label: string) => `"${label}" 누르기`,
     handoffTitle: 'PC에서 직접 해 주세요',
     loginNeeded: '로그인이 필요해요',
@@ -219,6 +223,10 @@ export const indexText = messages({
     approvedOnPhone: (message: string) => `Approved on the phone. ${message}`,
     doneAutomatically: (message: string) => `Done by auto-approve. ${message}`,
     approvalWaiting: 'Waiting for your approval',
+    approvalHeld: 'Checking with you first',
+    autoPausedTitle: 'Auto-approve paused for today',
+    autoPausedBody:
+      "Dool2 was about to do several things you didn't ask for, so today it will check each one with you on the phone. You can turn it back on in settings.",
     pressLabel: (label: string) => `Press "${label}"`,
     handoffTitle: 'Please do this on the PC',
     loginNeeded: 'Sign-in needed',

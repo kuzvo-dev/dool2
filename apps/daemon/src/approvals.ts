@@ -56,7 +56,7 @@ export interface NewApproval {
   after?: string
   lines?: ApprovalView['lines']
   info?: ApprovalView['info']
-  /** Set by the caller when auto-approve already decided (a text the phone sends on its own) */
+  /** Set by the caller when auto-approve already decided */
   auto?: boolean
 }
 
@@ -65,8 +65,9 @@ export class Approvals {
   /** When a new approval request is created (notify the phone) */
   onCreate?: (rec: ApprovalRecord) => void
   /**
-   * Auto-approve (ADR 0030): true when this request will be approved right away without the user. Such requests
-   * are not sent to the phone as cards (no push), and the tool route approves them before answering the AI
+   * Auto-approve (ADR 0030): true when auto-approve may take this request. Such requests are not announced here: the
+   * tool route reviews them before answering the AI (auto-review.ts), then approves them, lets the phone send a text
+   * on its own (announce), or turns them into a normal card (hold)
    */
   autoDecide?: (n: NewApproval) => boolean
 
@@ -88,9 +89,8 @@ export class Approvals {
     }
     if (!rec.auto && this.autoDecide?.(n)) rec.auto = true
     this.items.set(rec.id, rec)
-    // A request auto-approve handles on the PC is not shown as a card. A text the phone sends on its own still goes
-    // to the phone (it does the sending)
-    if (!rec.auto || rec.url.startsWith('sms:')) this.onCreate?.(rec)
+    // A request auto-approve may take is not shown yet: the review decides first (announce or hold)
+    if (!rec.auto) this.onCreate?.(rec)
     // Close the phone card when time runs out (otherwise tapping an expired card only gets 'approval expired')
     const ttl = Date.parse(rec.expiresAt) - t
     const timer = setTimeout(() => {
@@ -130,6 +130,24 @@ export class Approvals {
     r.status = 'rejected'
     r.shot = undefined
     return true
+  }
+
+  /** Sends a reviewed auto request to the phone as is (a text the phone sends on its own) */
+  announce(id: string) {
+    const r = this.get(id)
+    if (r?.status === 'pending') this.onCreate?.(r)
+  }
+
+  /**
+   * Auto-approve does not take this request after all (the review held it): it becomes a normal card on the phone,
+   * with the reason on it
+   */
+  hold(id: string, why: NonNullable<ApprovalView['held']>) {
+    const r = this.get(id)
+    if (r?.status !== 'pending') return
+    delete r.auto
+    r.held = why
+    this.onCreate?.(r)
   }
 
   /** When a tab closes, its pending requests can no longer be pressed. Also used when a new request replaces an older one in the same tab */

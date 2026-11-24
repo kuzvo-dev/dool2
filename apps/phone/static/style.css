@@ -360,6 +360,15 @@ button {
   color: var(--ink-muted);
   line-height: 1.5;
 }
+/* Auto-approve sent this request as a card: one line on why (ADR 0030 amendment) */
+.approve-held {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--butter-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
 /* Send-text card: one line for the recipient, the message keeps its line breaks like a bubble */
 .sms-to strong {
   font-size: 16px;

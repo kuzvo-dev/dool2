@@ -707,6 +707,12 @@ export interface ApprovalView {
   expiresAt: string
   /** Approved by auto-approve, not by the user (ADR 0030). A text with this set is sent by the phone on its own */
   auto?: boolean
+  /**
+   * Auto-approve was on but did not take this request, so it came to the user as a normal card (ADR 0030 amendment).
+   * unrelated: the review found it does not match what the user asked. unchecked: the review could not run
+   * (no Claude, timeout, no request to compare with). Screens say why on the card
+   */
+  held?: 'unrelated' | 'unchecked'
   /** The outcome (pressed / could not press because the screen changed) */
   result?: string
   /**

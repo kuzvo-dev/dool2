@@ -33,7 +33,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0027](0027-finish-check.md) | Before finishing a task, Dool2 checks once more and, if something is left, continues on its own | Turned off (2026-11-24) |
 | [0028](0028-web-release-update.md) | The desktop app is downloaded from the web, and new versions are fetched by the app itself from a signed notice | Accepted |
 | [0029](0029-language-and-region.md) | Language and region are separate settings; the repo is English, the product is multilingual | Accepted |
-| [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted |
+| [0030](0030-auto-approve.md) | Auto-approve: everything except payments without an approval card | Accepted (review added 2026-11-25) |
 | [0031](0031-quick-check-watch.md) | Quick checks: watches check every minute without the AI, and wake it only on a change | Accepted |
 | [0032](0032-pinned-instructions.md) | Instructions are pinned per segment; what changes rides on the next message | Accepted |
 | [0033](0033-tools-on-demand.md) | Rarely used tools are found and run on demand | Accepted |

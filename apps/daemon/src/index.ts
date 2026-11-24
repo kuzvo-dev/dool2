@@ -89,6 +89,7 @@ import {
   sameAccount,
   socialLogin,
 } from './auto-login.js'
+import { AutoReview, REVIEW_SYSTEM } from './auto-review.js'
 import { askedForAccount, BrowserTools, type ToolResult } from './browser-tools.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
@@ -238,6 +239,12 @@ export interface DaemonOptions {
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
   /** The judge AI for the before-finishing check (ADR 0027). Off by default since 2026-11-24; only tests pass one */
   finishJudge?: ((prompt: string, signal: AbortSignal) => Promise<string | undefined>) | false
+  /**
+   * The reviewer AI that checks auto-approve requests against the user's words (ADR 0030 amendment). Default: a fresh
+   * tool-less Claude session on a small model when the chat runs on Claude; none (every request becomes a card) in
+   * tests that swap runtimes or with false
+   */
+  autoReviewer?: ((prompt: string, signal: AbortSignal) => Promise<string | undefined>) | false
 }
 
 /** Store for secrets. The PC app encrypts them with the OS keychain (safeStorage) */
@@ -827,15 +834,74 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if ((st.autoApprove === true) === autoOn) return
     autoOn = st.autoApprove === true
     journal.write('auto-approve-set', { on: autoOn })
+    // Turned on again after a pause: the user has seen the notice
+    if (autoOn) autoReview.resume()
     // link is created further down; a settings change before that has no phones to tell
     try {
       void link.resync()
     } catch {}
   })
-  browserTools.approvals.autoDecide = (n) => autoCovers(readSettings().autoApprove === true, n)
+  /** The chat whose tool call made the request (the only chat answering now), like the approval card's chat */
+  const workingThread = () => (activeThreads.size === 1 ? [...activeThreads][0] : undefined)
+  /** What the user typed in that chat, last few, oldest first (no app notes, no Dool2 answers, no tool results) */
+  const recentAsks = (): string[] => {
+    const threadId = workingThread()
+    if (!threadId) return []
+    return store
+      .listMessages(threadId)
+      .filter((x) => x.role === 'user' && !readAppNote(x.text))
+      .slice(-4)
+      .map((x) => withoutPhotoMark(x.text))
+  }
+  // Review before auto-approve: a small Claude call with no tools and no Dool2 instructions. Only for chats that run on
+  // Claude (the user's own sign-in); other agents get a card for every request (fail closed)
+  const reviewAsk =
+    opts.autoReviewer !== undefined
+      ? opts.autoReviewer || undefined
+      : opts.runtimes
+        ? undefined
+        : async (prompt: string, signal: AbortSignal) => {
+            const threadId = workingThread()
+            const rt = runtimes.claude
+            if (!rt || !threadId || store.getThread(threadId)?.agent !== 'claude') return undefined
+            let text = ''
+            try {
+              for await (const ev of rt.runTurn({
+                text: prompt,
+                systemPrompt: REVIEW_SYSTEM,
+                mcpServers: [],
+                cwd: paths.workspace,
+                model: 'haiku',
+                signal,
+              })) {
+                if (ev.type === 'text') text += ev.delta
+                if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
+                if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
+              }
+            } catch {
+              return undefined
+            }
+            return text
+          }
+  const autoReview = new AutoReview({
+    ...(reviewAsk ? { ask: reviewAsk } : {}),
+    asks: recentAsks,
+    // Several blocks: auto-approve pauses for today, and the user hears it once (the AI also tells them in the chat)
+    onPause: (why) => {
+      journal.write('auto-approve-paused', { why })
+      try {
+        void link
+          .notify({ title: m().autoPausedTitle, body: m().autoPausedBody, tag: 'auto-approve-paused' })
+          .catch(() => {})
+      } catch {}
+    },
+  })
+  browserTools.approvals.autoDecide = (n) =>
+    autoCovers(readSettings().autoApprove === true && !autoReview.paused(), n)
   const autoApprover = new AutoApprover(
     browserTools.approvals,
     (id) => approveAny(id),
+    (a) => autoReview.check(a),
     (e) => journal.write('auto-approve', e),
   )
 
@@ -1858,7 +1924,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Notify the phone even if the app is off
     void link
       .notify({
-        title: m().approvalWaiting,
+        title: rec.held ? m().approvalHeld : m().approvalWaiting,
         body: [rec.what, rec.amount].filter(Boolean).join(' · ') || m().pressLabel(rec.label),
         tag: `approval-${rec.id}`,
         url: `#a=${rec.id}`,
@@ -3375,7 +3441,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (c === 'call') {
           const input =
             args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
-          return json(res, 200, await connectors.call(String(args.tool ?? ''), input))
+          // A service tool's last step can ask approval like the browser does, so it goes through auto-approve too
+          return reply(await connectors.call(String(args.tool ?? ''), input))
         }
         return json(res, 404, { error: m().noRoute })
       }
