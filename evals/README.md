@@ -1,7 +1,7 @@
 # Scenario tests (evals)
 
 This is where we measure, in numbers, whether Dool2 does the tasks real people hand it **as intended**.
-The bank holds **615 families → 4,505 scenarios**, drawn from real usage cases and expanded by varying tone, values, and perturbations.
+The bank holds **618 families → 4,515 scenarios**, drawn from real usage cases and expanded by varying tone, values, and perturbations.
 
 ## Three layers
 
