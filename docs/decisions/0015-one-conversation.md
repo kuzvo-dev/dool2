@@ -65,3 +65,11 @@ The turn count and stored character count only count the remarks of the user and
 ### Tool for searching past conversation
 
 We added the Dool2 tool `conversation_search` (the word to find, up to 20 results). It searches the user's and Dool2's remarks in the earlier segments of the main conversation and returns them briefly with the date (Korean time) and who said it. It ignores spaces, and when there are several words it returns remarks matching more words first, and the most recent first among equals. It leaves out the current segment because the AI already knows it, and also leaves out separate conversations (such as feed posts) and tool records (approval and login cards). We added "If the user brings up something from before and you do not remember it, look it up first instead of guessing" to Dool2's instructions.
+
+## Addition (2026-11-24): the summary is a handoff with fixed headings
+
+A free summary of "what to keep remembering" tended to keep preferences and lose where tasks stood. The summary
+request now asks for a handoff under fixed headings: **Now, Done, In progress (step and what it waits on), Promised,
+About the user, Did not work, Next**, up to 20 bullet lines, only what the conversation shows. The next segment gets
+it as "Handoff from the earlier conversation" (up to 3,500 characters). Modeled on another harness's compaction
+handoff (intent, facts, errors and fixes, pending tasks, next step).

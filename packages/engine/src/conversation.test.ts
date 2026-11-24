@@ -207,3 +207,20 @@ describe('ConversationService (대화는 하나)', () => {
     expect(line.length).toBeLessThan(220)
   })
 })
+
+describe('segment handoff', () => {
+  it('asks for a handoff under fixed headings, as bullet lines', async () => {
+    const { SUMMARY_REQUEST, looksLikeSummary } = await import('./threads.js')
+    for (const h of [
+      'Now:',
+      'Done:',
+      'In progress:',
+      'Promised:',
+      'About the user:',
+      'Did not work:',
+      'Next:',
+    ])
+      expect(SUMMARY_REQUEST).toContain(h)
+    expect(looksLikeSummary('Now:\n- book a table for 2\nDid not work:\n- site X blocked login')).toBe(true)
+  })
+})
