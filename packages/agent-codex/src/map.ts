@@ -1,5 +1,5 @@
 import type { Lang } from '@dool2/i18n'
-import type { AgentEvent, UsageLimit } from '@dool2/protocol'
+import { type AgentEvent, resultChars, type UsageLimit } from '@dool2/protocol'
 import { CODEX_TEXT, type CodexText } from './locales/codex.js'
 
 type Json = Record<string, unknown>
@@ -99,7 +99,22 @@ export class CodexEventMapper {
         }
       }
       if (phase === 'started') return { events: [{ type: 'tool', name, input: item.arguments }] }
-      return { events: [{ type: 'tool_result', name, ok: item.status === 'completed' }] }
+      // The text the tool gave back (result.content), or the error message when it failed
+      const chars = isObj(item.result)
+        ? resultChars(item.result.content)
+        : isObj(item.error) && typeof item.error.message === 'string'
+          ? item.error.message.length
+          : undefined
+      return {
+        events: [
+          {
+            type: 'tool_result',
+            name,
+            ok: item.status === 'completed',
+            ...(chars !== undefined ? { chars } : {}),
+          },
+        ],
+      }
     }
     if (item.type === 'agentMessage' && phase === 'completed' && typeof item.text === 'string') {
       this.finalText = this.finalText ? `${this.finalText}\n\n${item.text}` : item.text

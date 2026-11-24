@@ -1,7 +1,7 @@
 // Turns OpenCode v2 server events (`GET /api/event`, SSE) into Dool2's common AgentEvent.
 // Event shapes were checked against OpenCode v2.3.0 schema/session-event.ts and real output.
 import type { Lang } from '@dool2/i18n'
-import type { AgentEvent } from '@dool2/protocol'
+import { type AgentEvent, resultChars } from '@dool2/protocol'
 import { DOOL2_TOOL_PREFIX } from './config.js'
 import { OPENCODE_TEXT, type OpenCodeText } from './locales/opencode.js'
 
@@ -109,9 +109,16 @@ export class OpenCodeEventMapper {
       case 'session.tool.success':
       case 'session.tool.failed': {
         const name = this.toolNames.get(String(d.id ?? ''))
+        // The text the tool gave back, when the event carries it (output, or the error message)
+        const chars = resultChars(d.output ?? d.error)
         return {
           events: [
-            { type: 'tool_result', ...(name ? { name } : {}), ok: ev.type === 'session.tool.success' },
+            {
+              type: 'tool_result',
+              ...(name ? { name } : {}),
+              ok: ev.type === 'session.tool.success',
+              ...(chars !== undefined ? { chars } : {}),
+            },
           ],
         }
       }

@@ -432,6 +432,19 @@ describe('대화 하나 (ADR 0015)', () => {
           yield { type: 'limit_reached', message: '사용량 한도' }
           return
         }
+        if (input.text.includes('도구')) {
+          yield { type: 'started', resumeId: 'r1', tools: [] }
+          yield { type: 'tool', name: 'mcp__dool2__browser_read', input: {} }
+          yield { type: 'tool', name: 'mcp__dool2__service_find', input: {} }
+          // Results can come back in another order than the calls
+          yield { type: 'tool_result', name: 'mcp__dool2__service_find', ok: true, chars: 30 }
+          yield { type: 'tool_result', name: 'mcp__dool2__browser_read', ok: true, chars: 1200 }
+          yield { type: 'tool', name: 'mcp__dool2__browser_read', input: {} }
+          yield { type: 'tool_result', name: 'mcp__dool2__browser_read', ok: false }
+          yield { type: 'text', delta: '다 봤어요' }
+          yield { type: 'done', resumeId: 'r1', text: '다 봤어요' }
+          return
+        }
         yield* super.runTurn(input)
       }
     }
@@ -441,6 +454,8 @@ describe('대화 하나 (ADR 0015)', () => {
     await until(async () => !(await state()).busy && (await state()).messages.length >= 2)
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"한도 시험"}' })
     await until(async () => !(await state()).busy && (await state()).messages.length >= 3)
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"도구 시험"}' })
+    await until(async () => !(await state()).busy && (await state()).messages.length >= 5)
     const { readdir, readFile } = await import('node:fs/promises')
     const logs = join(dir ?? '', 'logs')
     const lines = (
@@ -456,6 +471,12 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(typeof lines[0]?.startMs).toBe('number')
     expect(typeof lines[0]?.firstMs).toBe('number')
     expect(lines[1]).toMatchObject({ code: 'limit_reached' })
+    // How much text each tool result gave the AI, next to its call (sizes only; null = not known)
+    expect(lines[0]).not.toHaveProperty('chars')
+    expect(lines[2]).toMatchObject({
+      tools: ['browser_read', 'service_find', 'browser_read'],
+      chars: [1200, 30, null],
+    })
   })
 
   it('멈추기는 지금 차례를 그만두게 한다', async () => {

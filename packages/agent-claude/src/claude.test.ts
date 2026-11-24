@@ -117,6 +117,40 @@ describe('ClaudeStreamParser — 안전장치', () => {
     ])
   })
 
+  it('tool_result carries how many characters of text the AI got', () => {
+    const events = parseAll([
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 't1', name: 'mcp__dool2__browser_read', input: {} },
+            { type: 'tool_use', id: 't2', name: 'mcp__dool2__browser_screenshot', input: {} },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'page text' },
+            {
+              type: 'tool_result',
+              tool_use_id: 't2',
+              content: [
+                { type: 'text', text: 'tab 3 — title' },
+                { type: 'image', source: { data: 'AAAA' } },
+              ],
+            },
+          ],
+        },
+      }),
+    ])
+    expect(events.filter((e) => e.type === 'tool_result')).toEqual([
+      { type: 'tool_result', name: 'mcp__dool2__browser_read', ok: true, chars: 9 },
+      { type: 'tool_result', name: 'mcp__dool2__browser_screenshot', ok: true, chars: 13 },
+    ])
+  })
+
   it('한도가 막히면 limit_reached를 낸다', () => {
     const events = parseAll([
       JSON.stringify({

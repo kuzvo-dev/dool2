@@ -1,5 +1,5 @@
 import type { Lang } from '@dool2/i18n'
-import type { AgentEvent, UsageLimit } from '@dool2/protocol'
+import { type AgentEvent, resultChars, type UsageLimit } from '@dool2/protocol'
 import { CLAUDE_TEXT, type ClaudeText } from './locales/claude.js'
 
 /** Prefix of Dool2 tool names. Any other tool is treated as unsafe. */
@@ -134,7 +134,13 @@ export class ClaudeStreamParser {
       if (!isObj(block) || block.type !== 'tool_result') continue
       const id = typeof block.tool_use_id === 'string' ? block.tool_use_id : undefined
       const name = id ? this.toolNames.get(id) : undefined
-      out.push({ type: 'tool_result', ok: block.is_error !== true, ...(name ? { name } : {}) })
+      const chars = resultChars(block.content)
+      out.push({
+        type: 'tool_result',
+        ok: block.is_error !== true,
+        ...(name ? { name } : {}),
+        ...(chars !== undefined ? { chars } : {}),
+      })
     }
     return out
   }
