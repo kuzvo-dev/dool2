@@ -102,7 +102,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'click',
     'Click',
-    "Clicks a marked (ref) button or link with a real mouse and returns the changed page. For boxes without a ref (shop or product cards in search results, etc.) put the on-screen text (shop name, etc.) exactly in text instead of ref, and that text is clicked. Buttons with words like pay, order, send or delete are blocked by Dool2 and redirected to an approval card (browser_checkout for payment, browser_request_approval for send/delete). After a payment is approved, buttons inside the payment provider's window are not blocked again.",
+    "Clicks a marked (ref) button or link with a real mouse and returns what changed on the page (the whole page if it moved to another page). For boxes without a ref (shop or product cards in search results, etc.) put the on-screen text (shop name, etc.) exactly in text instead of ref, and that text is clicked. Buttons with words like pay, order, send or delete are blocked by Dool2 and redirected to an approval card (browser_checkout for payment, browser_request_approval for send/delete). After a payment is approved, buttons inside the payment provider's window are not blocked again.",
     {
       tabId,
       ref: ref.optional(),

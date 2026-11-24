@@ -9,6 +9,7 @@
 // ② Never put one site's account into another site. ③ Vault values never go to the AI.
 // After the payment button is pressed, the payment group (payment company window, new tabs) carries on until order complete (browser_order_done).
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomInt } from 'node:crypto'
 import type { Lang } from '@dool2/i18n'
 import type {
@@ -30,6 +31,7 @@ import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals, MONEY_APPROVAL_TTL_MS 
 import type { UploadFile } from './files.js'
 import { browserText } from './locales/browser.js'
 import { LoginRequests } from './logins.js'
+import { pageDiff, type SeenPage } from './page-diff.js'
 import {
   maskValue,
   PROFILE_FIELDS,
@@ -838,8 +840,17 @@ export const AUTH_FRAME_SITES = [
   'siren24.com',
 ]
 
+/** How long the last page the AI saw in a tab stays the base for showing only changes */
+export const SEEN_TTL_MS = 10 * 60_000
+
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
+  /** Per tab: the last whole page the AI saw. Clicks and typing on the same page give only what changed since */
+  private seen = new Map<number, SeenPage>()
+  /** Off: clicks and typing give the whole page as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
+  changesOnly = true
+  /** Per AI tool call: whole pages read during the call (they become what the AI saw once the call returns) */
+  private call = new AsyncLocalStorage<{ reads: Map<number, SeenPage> }>()
   /** Screens where a hand-off was sent back once (tab:URL) — handed off only the second time */
   private handoffChecked = new Set<string>()
   /** Sites (origin) received through a login card that have not logged in successfully yet. On failure the vault entry is removed and the card asked again */
@@ -1111,7 +1122,26 @@ export class BrowserTools {
   /** Tabs walking a remembered route now (their clicks are not counted as walks by hand) */
   private walking = new Set<number>()
 
-  async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+  /**
+   * Runs a browser tool. ai: the result goes to the AI as it is (the tool address the AI calls), so the pages it read
+   * become what the AI saw. Calls made inside Dool2 (service tool steps) leave that alone and always read whole pages
+   */
+  async run(tool: string, args: Record<string, unknown>, opts: { ai?: boolean } = {}): Promise<ToolResult> {
+    // (outside any AI call's record, so a Dool2 call made while serving one does not count as seen)
+    if (!opts.ai) return this.call.exit(() => this.runCall(tool, args))
+    const reads = new Map<number, SeenPage>()
+    const r = await this.call.run({ reads }, () => this.runCall(tool, args))
+    // A failed call may not have shown the pages it read: keep the older base (changes against it are still all there)
+    if (!r.isError) for (const [tabId, page] of reads) this.seen.set(tabId, page)
+    return r
+  }
+
+  /** Forgets the pages the AI saw (a new turn may be a new AI session that has not seen them): the next read is whole */
+  forgetSeen() {
+    this.seen.clear()
+  }
+
+  private async runCall(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
     // Typing, keys, choices and other changes make the page depend on what was entered: the walk is no longer a route
     if (typeof args.tabId === 'number' && !TRAIL_KEEPS.has(tool)) this.trails.delete(args.tabId)
@@ -1177,7 +1207,7 @@ export class BrowserTools {
           this.trails.delete(tabId)
           return this.read(r.newTabId, undefined, `${r.note} A new tab opened, so I read that tab.`)
         }
-        const out = await this.read(tabId, undefined, r.note)
+        const out = await this.read(tabId, undefined, r.note, {}, true)
         this.noteTrail(tabId, was?.url, pressed)
         if (!inFrame || frameSig() !== before) return out
         await new Promise((res) => setTimeout(res, 1_500))
@@ -1185,10 +1215,12 @@ export class BrowserTools {
           tabId,
           undefined,
           `${r.note} (waited briefly for the frame on the page to change and read again)`,
+          {},
+          true,
         )
       }
       case 'type':
-        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note, {}, true)
       case 'press':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
       case 'hover':
@@ -1236,6 +1268,7 @@ export class BrowserTools {
       case 'close': {
         await this.browser.call('close', { tabId })
         this.pages.delete(tabId)
+        this.seen.delete(tabId)
         return { content: [{ type: 'text', text: `Closed tab ${tabId}.` }] }
       }
       case 'login': {
@@ -3669,6 +3702,7 @@ export class BrowserTools {
   /** A tab closed (by the user or tab cleanup): removes its records and expires approvals waiting on it */
   forgetTab(tabId: number) {
     this.pages.delete(tabId)
+    this.seen.delete(tabId)
     this.guided.delete(tabId)
     this.handedOff.delete(tabId)
     this.dialogs.delete(tabId)
@@ -3973,11 +4007,16 @@ export class BrowserTools {
     }
   }
 
+  /**
+   * Reads the page and makes the result for the AI. changes: after a click or typing, give only the lines that changed
+   * since the last whole page the AI saw in this tab (the whole page when it moved or mostly changed)
+   */
   private async read(
     tabId: number,
     maxChars?: unknown,
     note?: string,
     scope: { view?: boolean; from?: string; skip?: number } = {},
+    changes = false,
   ): Promise<ToolResult> {
     const max = Number(maxChars) || 8_000
     const partial = Boolean(scope.view || scope.from || scope.skip)
@@ -4012,6 +4051,14 @@ export class BrowserTools {
     this.dialogs.delete(tabId)
     const info = { ...pageInfo(s.url, s.text), title: s.title }
     this.pages.set(tabId, info)
+    // Only changes, against the last whole page the AI saw here (while it is fresh)
+    const ctx = this.call.getStore()
+    const base = changes && this.changesOnly && ctx && !partial ? this.seen.get(tabId) : undefined
+    const diff =
+      base && Date.now() - base.at < SEEN_TTL_MS
+        ? pageDiff(base, { url: s.url, text: s.text, truncated: s.truncated })
+        : undefined
+    if (!partial) ctx?.reads.set(tabId, { url: s.url, text: s.text, truncated: s.truncated, at: Date.now() })
     const accountNote = await this.settlePassword(s)
     const loginNote = await this.settleLogin(tabId, s)
     // If "please choose an option" appeared after pressing the buy button, tell how to point at the option field and choose
@@ -4066,14 +4113,16 @@ export class BrowserTools {
           ]
         : []),
       '',
-      s.text || '(No text to read. If the screen is still drawing, read again in a moment)',
-      ...(s.around?.below
+      ...(diff
+        ? changeLines(diff)
+        : [s.text || '(No text to read. If the screen is still drawing, read again in a moment)']),
+      ...(!diff && s.around?.below
         ? [
             '',
             `↓ About ${s.around.below.toLocaleString()} more characters are below the screen. Scroll down with browser_scroll and read again with view.`,
           ]
         : []),
-      ...(s.truncated
+      ...(!diff && s.truncated
         ? [
             '',
             `(The text is long, so only ${max} characters are shown. To continue, read again with skip: ${(s.skipped ?? 0) + (s.mainLength ?? s.text.length)}; to jump to a part, put its text in from to read from that line)`,
@@ -4082,6 +4131,16 @@ export class BrowserTools {
     ]
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
+}
+
+/** The page text part of a result that shows only what changed (one line says how to get the whole page) */
+export function changeLines(d: { lines: number; changed: number; text: string }): string[] {
+  if (!d.text)
+    return ['(The page text did not change since the last read. browser_read shows the whole page.)']
+  return [
+    `(Only what changed since the last read: ${d.changed} new or changed lines of ${d.lines}; the rest is as it was. browser_read shows the whole page.)`,
+    d.text,
+  ]
 }
 
 /** Line telling which part was read (view, from, skip) */
