@@ -100,6 +100,7 @@ import { FinishCheck } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
+import { withInjectionNote } from './injection-note.js'
 import { Journal, KEEP_DAYS, noteResultChars, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
 import { userLang } from './lang.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
@@ -3185,7 +3186,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const guard = (body: unknown) => {
           const { result, count } = loopGuard.check(tool, input, body)
           if (count) journal.write('loop-guard', { tool, count })
-          return result
+          // Text aimed at an AI in what was read (page, mail, file, app screen): one warning line on top
+          const noted = withInjectionNote(tool, result)
+          if (noted.kinds) journal.write('injection-note', { tool, kinds: noted.kinds })
+          return noted.result
         }
         // Replay test: answer from the tape, run nothing
         if (toolTape.current === 'replay') {
@@ -4133,7 +4137,7 @@ function pageQuery(url: URL): {
   }
 }
 
-/** Changes a 200 answer right before it is sent (the loop guard adds its line to tool results) */
+/** Changes a 200 answer right before it is sent (the loop guard and the injection note add their lines to tool results) */
 const resultHooks = new WeakMap<ServerResponse, (body: unknown) => unknown>()
 
 function json(res: ServerResponse, status: number, body: unknown) {
