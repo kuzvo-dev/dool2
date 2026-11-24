@@ -145,6 +145,11 @@ export class Approvals {
   onChange?: (rec: ApprovalRecord) => void
 
   /** Deletes long-finished requests, and drops screenshots (hundreds of KB) of finished requests right away */
+  /** Requests created at or after a time, auto-approved ones too (evidence for the before-finishing check) */
+  since(t: number): ApprovalRecord[] {
+    return [...this.items.values()].filter((r) => Date.parse(r.createdAt) >= t)
+  }
+
   private prune(now: number) {
     for (const [id, r] of this.items) {
       this.get(id)

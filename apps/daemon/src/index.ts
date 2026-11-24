@@ -30,6 +30,7 @@ import {
   ThreadService,
 } from '@dool2/engine'
 import { deviceRegion } from '@dool2/i18n'
+import { LOOKUP_TOOLS } from '@dool2/mcp-tools/lookups'
 import {
   type AgentId,
   AgentIdSchema,
@@ -97,7 +98,7 @@ import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
-import { FinishCheck } from './finish-check.js'
+import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
@@ -352,10 +353,50 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount, lang }),
   }
-  // Before-finishing check (ADR 0027): turned off 2026-11-24. Sending finished answers back made them vanish and
-  // start over, and testers read it as Dool2 thinking forever. Kept only for tests that pass their own judge
-  const judgeAsk = opts.finishJudge || undefined
-  const finishCheck = judgeAsk ? new FinishCheck({ ask: judgeAsk }) : undefined
+  // Before-finishing check (ADR 0027): a fresh session without tools gives a verdict only, on the agent's small model
+  // (ADR 0035). Turned off 2026-11-24 because sent-back answers vanished and started over; FINISH_CHECK_ON brings it
+  // back once the screens keep the answer as a draft until the verdict
+  const judgeAsk =
+    opts.finishJudge === false
+      ? undefined
+      : (opts.finishJudge ??
+        (opts.runtimes || !FINISH_CHECK_ON
+          ? undefined
+          : async (prompt: string, signal: AbortSignal, threadId: string) => {
+              const agent = store.getThread(threadId)?.agent ?? 'claude'
+              const rt = runtimes[agent]
+              if (!rt) return undefined
+              const model = modelForRole(agent, 'judge', evalModel)
+              let text = ''
+              try {
+                for await (const ev of rt.runTurn({
+                  text: prompt,
+                  systemPrompt: JUDGE_SYSTEM,
+                  mcpServers: [],
+                  cwd: paths.workspace,
+                  ...(model ? { model } : {}),
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+                })) {
+                  if (ev.type === 'text') text += ev.delta
+                  if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
+                  if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
+                }
+              } catch {
+                return undefined
+              }
+              return text
+            }))
+  const finishCheck = judgeAsk
+    ? new FinishCheck({
+        ask: judgeAsk,
+        lang: () => lang(),
+        // What the daemon saw since the request began: approval requests (auto-approved too) and pages read
+        evidence: (since) => ({
+          approvals: browserTools.approvals.since(since).length,
+          ...browserTools.readsSince(since),
+        }),
+      })
+    : undefined
   // The Doori tool server (MCP) is a child the agent starts, so it gets a different token from the screen's. This token can only call the tool address (T5)
   /** Text for people in the language they chose (ADR 0029) */
   const m = () => indexText(userLang(readSettings()))
@@ -1890,6 +1931,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     let startMs: number | undefined
     let firstMs: number | undefined
     let failCode: string | undefined
+    // For the before-finishing check: calls that only looked something up, and tool calls that failed
+    let lookups = 0
+    let toolFails = 0
     try {
       for await (const ev of inner) {
         if (ev.type === 'agent') {
@@ -1915,8 +1959,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (ev.type === 'agent' && ev.event.type === 'tool' && ev.event.name.endsWith('browser_wait_auth'))
           asked = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
-        if (ev.type === 'agent' && ev.event.type === 'tool' && turnTools.length < 60)
-          turnTools.push(ev.event.name.replace(/^(mcp__dool2__|dool2_)/, ''))
+        if (ev.type === 'agent' && ev.event.type === 'tool') {
+          const name = ev.event.name.replace(/^(mcp__dool2__|dool2_)/, '')
+          if (turnTools.length < 60) turnTools.push(name)
+          const inner = (ev.event.input as { tool?: unknown } | undefined)?.tool
+          const tool = name === 'service_call' && typeof inner === 'string' ? inner : name
+          if (LOOKUP_TOOLS.has(tool) || connectors.tierOf(tool) === 'lookup') lookups++
+        }
+        if (ev.type === 'agent' && ev.event.type === 'tool_result' && !ev.event.ok) toolFails++
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
         const rec =
@@ -1974,16 +2024,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const gen = finishCheck.current(threadId)
         judging.add(threadId)
         const r = await finishCheck
-          .check(threadId, { answer: answerText, tools: turnTools })
+          .check(threadId, { answer: answerText, tools: turnTools, lookups, failures: toolFails })
           .catch(() => undefined)
           .finally(() => judging.delete(threadId))
+        // Every verdict with why it sent work back (kind) and who decided (the judge or the code check), so the top
+        // reasons can be counted per week (apps/daemon/scripts/finish-reasons.mjs). Simple requests not judged too
         if (r && r.kind !== 'skip')
           journal.write('finish-check', {
             result: r.kind,
             cycles: r.cycles,
             why: r.why,
+            ms: r.ms,
             ...(r.kind === 'stop' ? { reason: r.reason } : {}),
+            ...(r.kind !== 'done' ? { because: r.because, source: r.source } : {}),
           })
+        else if (r?.reason === 'simple') journal.write('finish-check', { result: 'skip', reason: 'simple' })
         // If a new request or stop came in while judging, do not send it back
         // (if a message the user sent while judging is queued, that message comes first)
         const spoke = queued.length > 0 && conversation.current()?.id === threadId

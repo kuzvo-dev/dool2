@@ -113,3 +113,25 @@ The check is off by default; the daemon no longer asks a judge unless a test pas
 
 The code stays so it can be turned on again for evals; revisit only with a design that never takes back an answer
 the person already saw.
+
+## Change (2026-11-25): a small judge with evidence, a code check, and simple requests skipped
+
+Groundwork for bringing the check back (still off by default until the screens keep the answer as a draft, see below).
+
+- **The judge runs on the agent's small model** (`haiku` for Claude Code, ADR 0035), in a fresh session on the same
+  agent as the conversation, with a 60-second limit.
+- **Evidence the daemon already knows** goes into the judging text as facts, not claims: how many approval requests
+  were created since the request began (auto-approved ones too), the last page read (title and address without the
+  query), whether any page read showed a finished action, and how many tool calls failed this turn.
+- **False completion is caught by code, without the AI.** If the answer says it booked, applied, sent, ordered or paid
+  (Korean and English patterns, denials such as "could not send" excluded, `claimsDone`) but nothing in this request
+  asked for approval and no page read showed a finished action (`donePage`, or `browser_order_done`), the work is sent
+  back at once with "check on the result page that it really went through". It uses the same round limits.
+- **Simple requests are not judged**: one or two lookups (lookup-tier service tools or Dool2's read-only tools, never
+  the browser) and nothing else. In the work log of 11-19 to 11-25, 12 of 169 judged requests were like this.
+- **Why it sent work back is counted.** The judge also returns a `kind` from a fixed list (`asked-user`, `handed-off`,
+  `unverified`, `missing-part`, `blocked`, `other`); the work log keeps it with `source` (judge or code) and the judge
+  time. `node apps/daemon/scripts/finish-reasons.mjs` prints the top kinds per week, counts only. Reading the 99
+  "not done" reasons of 11-19 to 11-25 by hand gave roughly: asked the person for something findable 26%, handed off
+  ("call them", "check it yourself") 24%, part missing 21%, stopped at a blocker 15%, claimed without doing or
+  checking 13%.

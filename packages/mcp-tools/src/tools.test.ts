@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe, expect, it } from 'vitest'
 import { createServer, servicesOf, statusText } from './index.js'
+import { LOOKUP_TOOLS } from './lookups.js'
 
 const fixed = () => new Date('2026-11-14T03:00:00Z')
 
@@ -244,5 +245,20 @@ describe('tools on demand (ADR 0033)', () => {
     const none = await client.callTool({ name: 'tool_call', arguments: { tool: 'rm_rf', input: {} } })
     expect(none.isError).toBe(true)
     await client.close()
+  })
+})
+
+describe('lookup tools', () => {
+  it('LOOKUP_TOOLS is every read-only tool that does not work in the browser, on the screen or in apps', async () => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({ now: fixed }).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    const readOnly = tools
+      .filter((t) => t.annotations?.readOnlyHint && !/^(browser|screen|kakao)_/.test(t.name))
+      .map((t) => t.name)
+      .sort()
+    expect([...LOOKUP_TOOLS].sort()).toEqual(readOnly)
   })
 })

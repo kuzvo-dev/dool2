@@ -444,6 +444,48 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(rt.inputs).toHaveLength(2)
   })
 
+  it('a claimed booking with no approval and no finished page is sent back by code, and the log says why', async () => {
+    class ClaimRuntime extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'started', resumeId: 'r1', tools: [] }
+        yield { type: 'tool', name: 'mcp__dool2__browser_click', input: {} }
+        const text =
+          this.inputs.length === 1 ? '내일 7시로 예약했어요.' : '아직 예약은 안 됐어요. 시간을 골라 주세요.'
+        yield { type: 'text', delta: text }
+        yield { type: 'done', resumeId: 'r1', text }
+      }
+    }
+    const rt = new ClaimRuntime()
+    const prompts: string[] = []
+    const { api } = await boot(rt, {
+      finishJudge: async (p) => {
+        prompts.push(p)
+        return '{"done":true,"why":"asked the time"}'
+      },
+    })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"내일 7시 2명 예약해 줘"}' })
+    await until(async () => prompts.length === 1 && !(await state()).busy)
+    // The first answer never reached the judge: code sent it back, the second answer was judged
+    expect(rt.inputs).toHaveLength(2)
+    expect(prompts[0]).toContain('Approval requests during this request: none')
+    const { readdir, readFile } = await import('node:fs/promises')
+    const logs = join(dir ?? '', 'logs')
+    const checks = (
+      await Promise.all(
+        (await readdir(logs)).filter((f) => f.endsWith('.jsonl')).map((f) => readFile(join(logs, f), 'utf8')),
+      )
+    )
+      .join('\n')
+      .split('\n')
+      .filter((l) => l.includes('"kind":"finish-check"'))
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+    expect(checks[0]).toMatchObject({ result: 'again', because: 'unverified', source: 'code' })
+    expect(checks[1]).toMatchObject({ result: 'done' })
+  })
+
   it('작업 기록에 AI가 뜬 시각, 첫 말까지 걸린 시간, 실패 까닭을 남긴다', async () => {
     class LimitRuntime extends EchoRuntime {
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
