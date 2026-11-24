@@ -1108,6 +1108,8 @@ export class BrowserTools {
   routePause: () => number = () => 600 + Math.random() * 1200
   /** Per tab: where Dool2 opened it and the clicks since that each moved to another page */
   private trails = new Map<number, { start: string; steps: string[] }>()
+  /** Tabs walking a remembered route now (their clicks are not counted as walks by hand) */
+  private walking = new Set<number>()
 
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
@@ -3893,7 +3895,7 @@ export class BrowserTools {
     t.steps.push(pressed)
     // Kept when a click moved on, and not when the walk came back to where it started (home again)
     if (page.url === before || t.steps.length < 2 || routeStart(page.url) === t.start) return
-    this.routes?.record({ start: t.start, steps: t.steps, title: page.title ?? '' })
+    this.routes?.record({ start: t.start, steps: t.steps, title: page.title ?? '' }, !this.walking.has(tabId))
   }
 
   /**
@@ -3919,19 +3921,29 @@ export class BrowserTools {
       return { ...out, content: [{ type: 'text', text: note }, ...out.content] }
     }
     let out: ToolResult | undefined
-    for (const [i, step] of r.steps.entries()) {
-      await new Promise((res) => setTimeout(res, this.routePause()))
-      try {
-        out = await this.dispatch('click', { tabId, text: step })
-      } catch (e) {
-        // The link is gone (the site changed): this route is no longer kept
-        this.routes?.forget(r.id)
-        return stop(i, (e as Error).message, await this.read(tabId).catch(() => undefined))
+    this.walking.add(tabId)
+    try {
+      for (const [i, step] of r.steps.entries()) {
+        await new Promise((res) => setTimeout(res, this.routePause()))
+        try {
+          out = await this.dispatch('click', { tabId, text: step })
+        } catch (e) {
+          // The link is gone (the site changed): this route is no longer kept
+          this.routes?.forget(r.id)
+          return stop(i, (e as Error).message, await this.read(tabId).catch(() => undefined))
+        }
+        if (out.isError) {
+          this.routes?.failed(r.id)
+          return stop(i, 'the click did not go through', out)
+        }
       }
-      if (out.isError) return stop(i, 'the click did not go through', out)
+    } finally {
+      this.walking.delete(tabId)
     }
-    if (routeStart(this.pages.get(tabId)?.url ?? '') === r.start && out)
+    if (routeStart(this.pages.get(tabId)?.url ?? '') === r.start && out) {
+      this.routes?.failed(r.id)
       return stop(r.steps.length - 1, 'the clicks went through but the page did not move', out)
+    }
     this.routes?.used(r.id)
     const done = `Took the remembered route [${r.id}] (${r.steps.length} clicks, no AI step in between).`
     return out ? { ...out, content: [{ type: 'text', text: done }, ...out.content] } : { content: [] }

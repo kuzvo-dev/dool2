@@ -1,9 +1,9 @@
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BrowserTools } from './browser-tools.js'
-import { RouteBook, routeStart, stepNameOk } from './routes.js'
+import { type Route, RouteBook, routeCounts, routeStart, stepNameOk } from './routes.js'
 
 /** A shop: home → [마이페이지] opens a menu on the same page → [주문목록] moves to the orders page */
 function shop() {
@@ -90,6 +90,18 @@ describe('기억한 길 (ADR 0034)', { timeout: 30_000 }, () => {
     expect(text(r)).toContain('주문 2건')
     expect(b.calls.filter((c) => c === 'click')).toHaveLength(2)
     expect(tools.routes?.get('r1')?.uses).toBe(1)
+    // The clicks of a route walk are not counted again as a walk by hand
+    expect(tools.routes?.get('r1')?.seen).toBe(1)
+  })
+
+  it('같은 클릭을 손으로 다시 하면 본 횟수를 센다', async () => {
+    const { tools } = await setup()
+    for (let i = 0; i < 2; i++) {
+      await tools.run('open', { url: 'https://shop.example/' })
+      await tools.run('click', { tabId: 3, text: '마이페이지' })
+      await tools.run('click', { tabId: 3, ref: 'e3' })
+    }
+    expect(tools.routes?.get('r1')).toMatchObject({ uses: 0, seen: 2 })
   })
 
   it('사이트가 바뀌어 링크가 없으면 그 자리에서 멈추고 화면을 주며, 그 길은 지운다', async () => {
@@ -146,5 +158,28 @@ describe('길 책', () => {
     const reread = new RouteBook(file)
     expect(reread.forHost('a.example').map((r) => r.title)).toContain('7')
     expect(reread.forHost('a.example').map((r) => r.title)).not.toContain('0')
+  })
+
+  it('성공·실패 횟수를 남기고, 횟수가 없는 예전 파일도 읽는다', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'dool2-routes-')), 'routes.json')
+    const old = { id: 'r4', host: 'a.example', start: 'https://a.example/', steps: ['메뉴', '주문'] }
+    await writeFile(file, JSON.stringify({ routes: [{ ...old, title: '주문', uses: 3, lastAt: 'x' }] }))
+    const book = new RouteBook(file, () => new Date(0))
+    const r = book.get('r4') as Route
+    expect(routeCounts(r)).toEqual({ ok: 4, failed: 0 })
+    book.used('r4')
+    book.failed('r4')
+    book.record({ start: 'https://a.example/', steps: ['메뉴', '주문'], title: '주문' })
+    const saved = JSON.parse(await readFile(file, 'utf8')) as { routes: Route[] }
+    expect(saved.routes[0]).toMatchObject({ uses: 4, fails: 1, seen: 2, lastAt: '1970-01-01T00:00:00.000Z' })
+    expect(routeCounts(saved.routes[0] as Route)).toEqual({ ok: 6, failed: 1 })
+    // A new route starts with one walk by hand, and none when it was made by the clicks of a route walk
+    book.record({ start: 'https://a.example/', steps: ['메뉴', '쿠폰'], title: '쿠폰' })
+    book.record({ start: 'https://a.example/', steps: ['메뉴', '찜'], title: '찜' }, false)
+    expect(book.forHost('a.example').map((x) => [x.title, x.seen])).toEqual([
+      ['주문', 2],
+      ['쿠폰', 1],
+      ['찜', 0],
+    ])
   })
 })
