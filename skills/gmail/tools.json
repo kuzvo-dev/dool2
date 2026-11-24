@@ -77,10 +77,15 @@
         },
         {
           "wait": {
-            "text": "\\d+-\\d+|검색결과가 없습니다|일치하는 메일이 없습니다|No messages matched|Google 계정으로 로그인|이메일 또는 휴대전화",
+            "text": "\\d+-\\d+|검색결과가 없습니다|일치하는 메일이 없습니다|No messages matched|Google 계정으로 로그인|이메일 또는 휴대전화|Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
             "timeoutMs": 15000,
             "soft": true
           }
+        },
+        {
+          "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "login": true
         },
         {
           "stop_if": "Google 계정으로 로그인|이메일 또는 휴대전화|계정 만들기",
@@ -181,6 +186,11 @@
           "sleep": 2500
         },
         {
+          "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "login": true
+        },
+        {
           "stop_if": "Google 계정으로 로그인|이메일 또는 휴대전화|계정 만들기",
           "say": "Gmail 구독을 보려면 먼저 Gmail을 연결(로그인)해야 해요.",
           "login": true
@@ -223,6 +233,11 @@
         },
         {
           "sleep": 2500
+        },
+        {
+          "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "login": true
         },
         {
           "stop_if": "Google 계정으로 로그인|이메일 또는 휴대전화|계정 만들기",
