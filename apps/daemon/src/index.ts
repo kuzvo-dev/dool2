@@ -147,6 +147,7 @@ export { PAIR_TTL_MS, PhoneLink } from './link.js'
 export type { MotionRenderer, MotionRenderRequest, MotionRenderResult } from './motion.js'
 export { dataPaths, defaultDataDir } from './paths.js'
 export type { HtmlRenderer, HtmlRenderRequest, HtmlRenderResult } from './render.js'
+export { RouteBook } from './routes.js'
 export { Skills } from './skills.js'
 export { Vault, vaultOrigin } from './vault.js'
 
