@@ -84,6 +84,14 @@ export class ThreadService {
     return thread.carry ? `${base}\n\n${thread.carry}` : base
   }
 
+  /**
+   * The tool servers for this segment's turns. Each gets the segment id (DOOL2_TOOLSET), so the daemon hands the same
+   * service tool list to every turn of the segment and the start of the request stays the same (ADR 0032)
+   */
+  private serversFor(threadId: string): McpServerSpec[] {
+    return this.opts.mcpServers.map((s) => ({ ...s, env: { ...s.env, DOOL2_TOOLSET: threadId } }))
+  }
+
   /** Instructions pinned per segment, and what the last update note already told (ADR 0032) */
   private pinned = new Map<string, string>()
   private noted = new Map<string, string>()
@@ -134,7 +142,7 @@ export class ThreadService {
         text: SUMMARY_REQUEST,
         resumeId: thread.resumeId,
         systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
-        mcpServers: this.opts.mcpServers,
+        mcpServers: this.serversFor(threadId),
         cwd: this.opts.workspaceDir,
         signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs)]),
       })
@@ -219,7 +227,7 @@ export class ThreadService {
         text: [(this.opts.timeLine ?? nowLine)(), prompt.note, o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
         systemPrompt: prompt.system,
-        mcpServers: this.opts.mcpServers,
+        mcpServers: this.serversFor(threadId),
         cwd: this.opts.workspaceDir,
         signal: ac.signal,
       })

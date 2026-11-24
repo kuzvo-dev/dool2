@@ -101,6 +101,8 @@ describe('ThreadService', () => {
     expect(store.getThread(t.id)).toMatchObject({ resumeId: 's1', title: '인사해 줘' })
     expect(rt.inputs[0]?.resumeId).toBeUndefined()
     expect(rt.inputs[0]?.mcpServers[0]?.name).toBe('dool2')
+    // The tool server learns its segment, so the daemon keeps the tool list fixed for it (ADR 0032)
+    expect(rt.inputs[0]?.mcpServers[0]?.env).toEqual({ DOOL2_TOOLSET: t.id })
   })
 
   it('덧붙인 배경(aside)은 AI에게만 가고 기록에는 내 말만 남는다', async () => {

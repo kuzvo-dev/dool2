@@ -3287,7 +3287,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       // Service tools: catalog (tools shown right away), find (find a service), call (run)
       if (req.method === 'POST' && b === 'service' && c && !d) {
         const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
-        if (c === 'catalog') return json(res, 200, { tools: await connectors.catalog() })
+        if (c === 'catalog')
+          return json(res, 200, { tools: await connectors.catalogFor(String(args.toolset ?? '')) })
         if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
         if (c === 'orders_all') return json(res, 200, await connectors.ordersAll())
         // Test PC only: runs a tool definition not yet installed once in the user's Chrome (pnpm connector try --pc)

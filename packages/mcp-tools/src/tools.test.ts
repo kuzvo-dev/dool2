@@ -166,6 +166,18 @@ describe('서비스 도구 (ADR 0018)', () => {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }
 
+  it('asks the daemon for the tool list of its segment', async () => {
+    const asked: unknown[] = []
+    const services = async (tool: string, args: Record<string, unknown>) => {
+      if (tool === 'catalog') asked.push(args)
+      return { tools: [] } as never
+    }
+    const server = createServer({ services, toolset: 'seg-1' })
+    await servicesOf(server)?.sync()
+    expect(asked[0]).toEqual({ toolset: 'seg-1' })
+    servicesOf(server)?.stop()
+  })
+
   it('연결한 서비스의 도구를 입력·출력 모양과 힌트를 달아 내보이고, 목록이 바뀌면 따라간다', async () => {
     let catalog: unknown[] = [spec]
     const calls: unknown[] = []
