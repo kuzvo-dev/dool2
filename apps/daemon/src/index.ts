@@ -95,7 +95,7 @@ import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
-import { FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
+import { FinishCheck } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
@@ -236,7 +236,7 @@ export interface DaemonOptions {
   push?: typeof sendPush
   /** For tests: swaps out the agents */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
-  /** The judge AI for the before-finishing check (ADR 0027). Default is a fresh Claude session; off in tests that swap runtimes */
+  /** The judge AI for the before-finishing check (ADR 0027). Off by default since 2026-11-24; only tests pass one */
   finishJudge?: ((prompt: string, signal: AbortSignal) => Promise<string | undefined>) | false
 }
 
@@ -350,35 +350,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount, lang }),
   }
-  // Before-finishing check (ADR 0027): ask a fresh session without tools for a verdict only
-  const judgeAsk =
-    opts.finishJudge === false
-      ? undefined
-      : (opts.finishJudge ??
-        (opts.runtimes
-          ? undefined
-          : async (prompt: string, signal: AbortSignal) => {
-              const rt = runtimes.claude
-              if (!rt) return undefined
-              let text = ''
-              try {
-                for await (const ev of rt.runTurn({
-                  text: prompt,
-                  systemPrompt: JUDGE_SYSTEM,
-                  mcpServers: [],
-                  cwd: paths.workspace,
-                  model: 'sonnet',
-                  signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
-                })) {
-                  if (ev.type === 'text') text += ev.delta
-                  if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
-                  if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
-                }
-              } catch {
-                return undefined
-              }
-              return text
-            }))
+  // Before-finishing check (ADR 0027): turned off 2026-11-24. Sending finished answers back made them vanish and
+  // start over, and testers read it as Dool2 thinking forever. Kept only for tests that pass their own judge
+  const judgeAsk = opts.finishJudge || undefined
   const finishCheck = judgeAsk ? new FinishCheck({ ask: judgeAsk }) : undefined
   // The Doori tool server (MCP) is a child the agent starts, so it gets a different token from the screen's. This token can only call the tool address (T5)
   /** Text for people in the language they chose (ADR 0029) */

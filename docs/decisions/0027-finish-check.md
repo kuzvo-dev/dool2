@@ -1,6 +1,6 @@
 # 0027. Dool2 double-checks before finishing a task, and continues on its own if something is left
 
-- Status: Accepted
+- Status: Turned off (2026-11-24)
 - Date: 2026-11-22
 
 ## Context
@@ -99,3 +99,17 @@ A tester said Dool2 "kept thinking forever and could not be stopped". Two causes
   reading the reasons, most were right (a claimed send with no send action, "call them" while the web was still
   open), so the rounds stay. The time a request may take is cut to **10 minutes**: past that, it is better to
   report what is left than to keep the person waiting.
+
+## Turned off (2026-11-24)
+
+The check is off by default; the daemon no longer asks a judge unless a test passes one (`finishJudge`).
+
+- What people saw: an answer appeared, then vanished and Dool2 started working again. Testers and the maintainer read
+  it as Dool2 thinking forever, and the stop fix (#436) and the 10-minute limit (#442) did not change that feeling.
+- Each judge call was a separate AI request on the user's quota, and a "not done" round repeated the whole work.
+- What it caught (a claimed send with no send action, "please call" while the web was still open) goes back to the
+  tools: their results say what was not done and what to try next, which is how Dool2 fixes mistakes (AGENTS.md
+  "Fix by sharpening tools").
+
+The code stays so it can be turned on again for evals; revisit only with a design that never takes back an answer
+the person already saw.
