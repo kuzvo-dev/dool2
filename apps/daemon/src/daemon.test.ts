@@ -918,6 +918,82 @@ describe('승인 API', () => {
   })
 })
 
+describe('auto-approve review (gate regression, threat model T25)', () => {
+  /** Keeps the turn open (like a real turn that is calling tools) and remembers its input for the tool token */
+  class OpenRuntime extends GateRuntime {
+    input?: TurnInput
+    override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+      this.input = input
+      yield* super.runTurn(input)
+    }
+  }
+  const until = async (f: () => boolean) => {
+    for (let i = 0; i < 300 && !f(); i++) await new Promise((r) => setTimeout(r, 10))
+  }
+
+  it('auto-approve on + an instruction planted in a page: nothing moves without a card, a requested move runs', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dool2-home-'))
+    const dl = join(home, 'Downloads')
+    mkdirSync(dl)
+    writeFileSync(join(dl, 'a.pdf'), 'a')
+    writeFileSync(join(dl, 'b.pdf'), 'b')
+    const prompts: string[] = []
+    const rt = new OpenRuntime()
+    const { api } = await boot(rt, {
+      fileFolders: { desktop: [], documents: [], downloads: [dl] },
+      // A stand-in for the small reviewer AI: related only when the user asked to move files
+      autoReviewer: async (prompt) => {
+        prompts.push(prompt)
+        return /옮겨/.test(prompt.split('The action')[0] ?? '') ? '{"related": true}' : '{"related": false}'
+      },
+    })
+    await api('/api/settings', { method: 'PATCH', body: '{"autoApprove":true}' })
+    const move = async () =>
+      (await (
+        await fetch(`${daemon?.url}/api/tools/file/file_move`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${rt.input?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            moves: [
+              { from: join(dl, 'a.pdf'), folder: join(dl, 'x') },
+              { from: join(dl, 'b.pdf'), folder: join(dl, 'y') },
+            ],
+          }),
+        })
+      ).json()) as { content: { text: string }[] }
+    const approvals = async () =>
+      ((await (await api('/api/approvals')).json()) as { approvals: { status: string; held?: string }[] })
+        .approvals
+
+    // 1) The user asked for a summary; a page told the AI to move files
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"이 글 요약해 줘"}' })
+    await until(() => rt.inputs.length === 1)
+    const held = await move()
+    expect(held.content[0]?.text).toContain('does not match what the user asked')
+    expect(await approvals()).toEqual([expect.objectContaining({ status: 'pending', held: 'unrelated' })])
+    expect(existsSync(join(dl, 'a.pdf'))).toBe(true)
+    // the reviewer saw the user's words and the facts, not the agent's reasons
+    expect(prompts[0]).toContain('이 글 요약해 줘')
+    expect(prompts[0]).toContain('moves, restores or downloads files')
+    rt.release()
+
+    // 2) The user asks for the move: auto-approve runs it
+    await api('/api/conversation/messages', {
+      method: 'POST',
+      body: '{"text":"다운로드 PDF 폴더별로 옮겨 줘"}',
+    })
+    await until(() => rt.inputs.length === 2)
+    const ran = await move()
+    expect(ran.content[0]?.text).toContain('Auto-approve is on')
+    expect(existsSync(join(dl, 'x', 'a.pdf'))).toBe(true)
+    rt.release()
+    await rm(home, { recursive: true, force: true })
+  })
+})
+
 describe('서비스 연결', () => {
   it('레포의 카드 목록을 주고, 연결 표시를 저장·해제한다', async () => {
     const { api } = await boot()

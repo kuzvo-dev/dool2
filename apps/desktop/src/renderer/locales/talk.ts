@@ -103,6 +103,8 @@ export const talkText = messages({
     recipient: '받는 사람',
     textToSend: '보낼 글',
     smsNote: '문자는 폰에서 받는 사람을 확인하고 승인하면 폰이 바로 보내요.',
+    heldUnrelated: '부탁하신 일과 달라 보여서 자동으로 하지 않고 여쭤봐요.',
+    heldUnchecked: '이번 건 자동 승인 확인을 못 해서 직접 여쭤봐요.',
     what: '무엇을',
     address: '주소',
     goodToKnow: '알아 두기',
@@ -229,6 +231,9 @@ export const talkText = messages({
     recipient: 'To',
     textToSend: 'Message',
     smsNote: 'Check the recipient on your phone and approve there, and the phone sends the text right away.',
+    heldUnrelated:
+      "This doesn't look like what you asked for, so I'm checking with you instead of doing it automatically.",
+    heldUnchecked: "I couldn't double-check this one, so I'm asking you instead of doing it automatically.",
     what: 'What',
     address: 'Address',
     goodToKnow: 'Good to know',

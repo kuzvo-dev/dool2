@@ -96,7 +96,7 @@ export const setupText = messages({
     finalStepOff: '꺼져 있어요. 마지막 버튼은 항상 직접 누르세요. 두리는 바로 앞까지만 준비해요.',
     autoApprove: '자동 승인 (결제만 묻기)',
     autoApproveOn:
-      '켜져 있어요. 결제 말고는 승인 카드 없이 두리가 바로 해요. 메시지 보내기·지우기·PC 앱 다루기도 묻지 않아요.',
+      '켜져 있어요. 결제 말고는 승인 카드 없이 두리가 바로 해요. 메시지 보내기·지우기·PC 앱 다루기도 묻지 않아요. 부탁하신 일과 상관없어 보이는 건 그때만 물어봐요.',
     autoApproveOff:
       '꺼져 있어요. 보내기·지우기 같은 일은 폰 승인 카드로 먼저 물어봐요. 결제는 켜도 늘 물어봐요.',
     secAwake: '두리가 쉬지 않게',
@@ -353,7 +353,7 @@ export const setupText = messages({
       'Off. You always press the last button yourself. Dool2 gets everything ready up to that point.',
     autoApprove: 'Auto-approve (ask only for payments)',
     autoApproveOn:
-      'On. Except for payments, Dool2 just does it with no approval card, including sending messages, deleting and using PC apps.',
+      "On. Except for payments, Dool2 just does it with no approval card, including sending messages, deleting and using PC apps. Anything that doesn't look like what you asked for still asks.",
     autoApproveOff:
       'Off. Sending, deleting and similar steps ask first with an approval card on your phone. Payments always ask, even when on.',
     secAwake: 'Keep Dool2 running',

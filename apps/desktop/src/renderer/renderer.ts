@@ -2385,6 +2385,10 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
         el('span', 'meta', [riskLabel(v.kind), v.where].filter(Boolean).join(' · ')),
       ),
     )
+    // Auto-approve sent this one as a card: say why (ADR 0030 amendment)
+    const held = v.held
+      ? [el('p', 'approve-held', v.held === 'unrelated' ? T().heldUnrelated : T().heldUnchecked)]
+      : []
     const rows = el('dl', 'kv')
     const row = (k: string, val?: string, cls?: string) => {
       if (!val) return
@@ -2394,7 +2398,12 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     if (v.url.startsWith('sms:')) {
       row(T().recipient, v.label)
       row(T().textToSend, v.what)
-      card.replaceChildren(top, el('div', 'approve-body', rows), el('p', 'approve-note', T().smsNote))
+      card.replaceChildren(
+        top,
+        ...held,
+        el('div', 'approve-body', rows),
+        el('p', 'approve-note', T().smsNote),
+      )
       return
     }
     row(T().what, v.what)
@@ -2443,6 +2452,7 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
     yes.onclick = () => void decide('approve')
     card.replaceChildren(
       top,
+      ...held,
       el('div', 'approve-body', rows),
       el('div', 'approve-actions', no, yes),
       el(

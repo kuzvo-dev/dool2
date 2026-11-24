@@ -32,3 +32,40 @@ Add one setting, `autoApprove` (off by default). When it is on:
 - Payment flows are unchanged.
 - New approval kinds are covered automatically. Anything that must always ask has to be a payment, or the gate needs
   a new exception here.
+
+## Amendment: a review before every auto decision (2026-11-25)
+
+With auto-approve on, a web page, mail or file with hidden instructions could make Dool2 send, forward or delete
+things the user never asked for, and nothing stood between that request and the button. The gate stays, and one
+layer goes in front of the auto decision.
+
+- **What is reviewed.** Every request auto-approve would take (everything except payments). Payments never reach
+  the review; they always ask, as before.
+- **Who reviews.** A small AI call with no tools and no Dool2 instructions: a fresh Claude Code session on a small
+  model (`haiku`), only when the chat runs on Claude (the user's own sign-in, same as the agent). It sees only:
+  - the user's last few messages in the chat that is working (what they typed, no app notes), and
+  - the normalized facts of the request: kind, site (host only), button, recipient, amount, file list, and the
+    one-line "what it does".
+  It never sees the agent's explanation, tool results or page content. Its answer is one line, `{"related": bool}`.
+- **Fail closed.** If the action does not match what the user asked, or the review cannot run (another agent,
+  no request to compare with, an error, no answer within 25 seconds, an answer it cannot read), auto-approve does
+  not take the request: it becomes a normal card on the phone with one line saying why
+  (`ApprovalView.held`: `unrelated` or `unchecked`). The AI is told the same and asked to tell the user what the
+  card is for. A text (SMS) is only handed to the phone to send on its own after the review passes.
+- **Pause.** After 3 blocks in a row or 20 in a day (only `unrelated` counts), auto-approve pauses until the next
+  day, a restart, or the user turning it on again in settings. The user gets one notification, and the AI is told
+  to say it in the chat. The switch itself is not changed.
+- **Not a replacement.** The review is one more layer in front of the gate, not a replacement for it: a published
+  study of the same kind of classifier found it missed about 17% of overreaching actions. Payments still always ask,
+  the daemon still presses only the one button that was approved, and every other rule of the gate stays.
+
+### Consequences
+
+- Each auto-approved request costs one small AI call on the user's subscription and adds a few seconds before the
+  tool answers. Requests that would have asked anyway (auto-approve off, payments) cost nothing.
+- Users on Codex or pay-as-you-go get a card for every request even with auto-approve on, until a tool-less call is
+  available for those runtimes.
+- A request that is a clear step of the user's task but is phrased far from their words can come as a card. That
+  is the safe direction; the card says why.
+- The work log keeps one line per decision (`auto-approve`: kind, ok, `held`, review time) and the pause
+  (`auto-approve-paused`), with no message content.

@@ -10,6 +10,8 @@ export const approvalText = messages({
     notSent: '못 보냈어요',
     notTapped: '못 눌렀어요',
     autoDone: '자동으로 했어요',
+    heldUnrelated: '부탁하신 일과 달라 보여서 자동으로 하지 않고 여쭤봐요.',
+    heldUnchecked: '이번 건 자동 승인 확인을 못 해서 직접 여쭤봐요.',
     rejected: '거절했어요',
     expired: '시간이 지나 취소됐어요',
     sent: '보냈어요',
@@ -44,6 +46,9 @@ export const approvalText = messages({
     notSent: "Couldn't send",
     notTapped: "Couldn't finish",
     autoDone: 'Done automatically',
+    heldUnrelated:
+      "This doesn't look like what you asked for, so I'm checking with you instead of doing it automatically.",
+    heldUnchecked: "I couldn't double-check this one, so I'm asking you instead of doing it automatically.",
     rejected: 'Declined',
     expired: 'Timed out and cancelled',
     sent: 'Sent',

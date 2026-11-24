@@ -3419,6 +3419,7 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
       h('span', { class: 'tile amber' }, icon('mail', 'i md')),
       h('div', {}, h('strong', { text: tSms.askTitle }), h('span', { class: 'meta', text: tSms.askMeta })),
     ),
+    heldLine(a),
     who,
     h('p', { class: 'approve-what sms-text', text: a.what }),
     s.error ? h('p', { class: 'field-err', text: s.error }) : undefined,
@@ -3435,6 +3436,15 @@ function smsCard(a: ApprovalView, big = false): HTMLElement {
       }),
     ),
   )
+}
+
+/** Why auto-approve sent this one as a card (ADR 0030 amendment). Nothing when it was a normal request */
+function heldLine(a: ApprovalView): HTMLElement | undefined {
+  if (!a.held) return undefined
+  return h('p', {
+    class: 'approve-held',
+    text: a.held === 'unrelated' ? tAppr.heldUnrelated : tAppr.heldUnchecked,
+  })
 }
 
 function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
@@ -3484,6 +3494,7 @@ function approvalInline(rec: ApprovalRecordMessage): HTMLElement {
         h('span', { class: 'meta', text: [a.where, hostOf(a.url)].filter(Boolean).join(' · ') }),
       ),
     ),
+    heldLine(a),
     a.amount && h('p', { class: 'approve-amount', text: a.amount }),
     h('p', { class: 'approve-what', text: a.what }),
     itemsList(a, 5),
