@@ -396,7 +396,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         'Use when the user says something like "connect Coupang", or when the next step of the task really needs a login (booking, ordering, viewing their own history). ' +
         'For things that work without login, like searching, comparing or checking availability, do them on that service first and show candidates; show the card once the user picks. ' +
         "Shows that service's connect card in the chat. When the user enters the ID and password on the card, the Dool2 daemon logs in for them in Chrome on the PC, " +
-        'and a notification arrives in the chat when done. Never ask for or accept IDs or passwords in chat. Briefly say you showed the card, and wait.',
+        'and a notification arrives in the chat when done. Never ask for or accept IDs or passwords in chat. Briefly say they can connect it in the card and end the reply; when the notification arrives, continue the task that stopped.',
       inputSchema: {
         service: z
           .string()

@@ -80,12 +80,16 @@ describe('서비스 지도 (AI가 부탁에 맞는 서비스를 스스로 고르
     await s.connections()
     const map = s.serviceMap()
     expect(map).toMatch(/- 캐치테이블\(catchtable\)✓⚡ — .*식당.*\[식당 예약[^\n]*\]$/m)
-    // Not connected: name, category and abilities only (service_find shows the rest)
-    expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- 컬리\(kurly\) \[/)
+    // Not connected and nothing works without login: just the name in its category (service_find shows the rest)
+    expect(map).toMatch(/### 장보기·배달\n(- .*\n)*- Needs connecting to use: .*컬리\(kurly\)/)
+    expect(map).not.toMatch(/컬리\(kurly\) \[/)
+    // How to pick a service and when to suggest connecting rides in the header (moved from the global prompt)
+    expect(map).toContain('Connected ones (✓) first')
+    expect(map).toContain('show its connect card (connect_ask) only when the user has picked')
     // 폰 권한(연락처 등)은 빼고, 너무 길지 않게
     expect(map).not.toMatch(/contacts/)
     // It goes into every session's instructions: only connected and no-login services carry their summary
-    expect(map.length).toBeLessThan(7500)
+    expect(map.length).toBeLessThan(6000)
   })
 })
 
@@ -111,7 +115,9 @@ describe('로그인 없이 되는 도구 알리기', () => {
           : {},
     )
     await s.connections()
-    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ \[.*\(no login: catchtable_search\)$/m)
+    // Without the service part of the name: the header says names are <id>_<tool>
+    expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ \[.*\(no login: search\)$/m)
+    expect(s.serviceMap()).toContain('named <id>_<tool>')
   })
 })
 
