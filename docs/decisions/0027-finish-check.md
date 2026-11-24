@@ -33,7 +33,7 @@ Make it work like a human assistant: make a plan, take another route when stuck,
    - By default it is sent back up to 2 times.
    - If it used a tool not tried in the previous turn, that counts as progress and the limit is raised to 4.
    - If it gets stuck twice for the same reason, it stops immediately.
-   - It stops once 20 minutes have passed since the request.
+   - It stops once 10 minutes have passed since the request (20 until 2026-11-24, see below).
 5. **When does the notification go?** The phone's "done" notification is sent only once, after the check passed or it stopped.
 6. **Payment and contact approvals stay as they are.** The check only makes Dool2 do more work; it never makes it pay or send without approval.
 7. **Keep a record.** The activity log (`finish-check`) records the verdict, the count and the reason. It is used when comparing the A and B rates in tests.
@@ -88,3 +88,14 @@ daemon's tool address, so the daemon can see when Dool2 is going around in circl
 - A page that changed between reads is not a repeat, and waiting tools (`*wait*`) are not counted.
 - The window spans turns, so a turn the check sent back that repeats the same dead end is caught as well.
 - Each note is recorded in the activity log (`loop-guard`, tool and count), so we can see how often it fires.
+
+## Change (2026-11-24): 10 minutes, and stop ends the check
+
+A tester said Dool2 "kept thinking forever and could not be stopped". Two causes, both in this check:
+
+- Stop on the PC did not end a verdict in progress, and a late "not done" verdict started the work again. Every
+  stop now drops the request and aborts the judge (#436).
+- A request could be sent back for up to 20 minutes. In 5 days of logs the check sent work back 87 of 163 times;
+  reading the reasons, most were right (a claimed send with no send action, "call them" while the web was still
+  open), so the rounds stay. The time a request may take is cut to **10 minutes**: past that, it is better to
+  report what is left than to keep the person waiting.
