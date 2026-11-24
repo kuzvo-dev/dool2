@@ -120,6 +120,7 @@ import {
 } from './region/kr/index-matchers.js'
 import type { HtmlRenderer } from './render.js'
 import { buildReport, sendReport } from './report.js'
+import { runQuickCheck } from './routine-check.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
@@ -2640,7 +2641,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     store.setSetting('feedThread', t.id)
     return t.id
   }
-  async function runRoutine(r: Routine, tries = 0) {
+  /** One run of a scheduled task. note: what a quick check found (ADR 0031), added to the ask */
+  async function runRoutine(r: Routine, tries = 0, note?: string) {
     let threadId: string
     let text: string
     // Tasks that notify only when a condition is met run in a separate chat (so "nothing to report" does not pile up in the main chat on days with no match)
@@ -2648,12 +2650,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (quietly) {
       threadId = await feedThreadId()
       text = r.target === 'feed' ? routineAsk(r) : `This is a scheduled task ("${r.title}"). ${routineAsk(r)}`
+      if (note) text += `\n\n${note}`
     } else {
       // To the chat: if it is answering, wait in line
       text = appNote(
         forAI(
           '',
-          `This is a scheduled task ("${r.title}"). ${routineAsk(r)} Skip the greeting and give the result first, briefly.`,
+          `This is a scheduled task ("${r.title}"). ${routineAsk(r)} Skip the greeting and give the result first, briefly.${note ? `\n\n${note}` : ''}`,
         ),
       )
       if (conversationBusy()) {
@@ -2666,7 +2669,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (threads.isRunning(threadId)) {
       // If the separate chat is busy with other work (proactive checks, ideas), try again in a minute (up to 30 minutes)
       if (quietly && tries < 30)
-        setTimeout(() => void runRoutine(r, tries + 1).catch(() => {}), 60_000).unref?.()
+        setTimeout(() => void runRoutine(r, tries + 1, note).catch(() => {}), 60_000).unref?.()
       return
     }
     routineThreads.add(threadId)
@@ -2772,7 +2775,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .notify({ title: f.title, body: f.body ?? f.from ?? '', tag: `tell-${f.id}`, url: '#tab=chat' })
       .catch(() => {})
   }
-  life.onDue = (r) => void runRoutine(r).catch((e: Error) => life.noteRun(r.id, m().scheduledFail(e.message)))
+  life.onDue = (r) =>
+    void (
+      r.check
+        ? runQuickCheck(r, {
+            call: (tool, input) => connectors.call(tool, input),
+            noteCheck: (id, print, text) => life.noteCheck(id, print, text),
+            noteCheckFail: (id) => life.noteCheckFail(id),
+            wake: (routine, note) => runRoutine(routine, 0, note),
+            log: (entry) => journal.write('quick-check', entry),
+          })
+        : runRoutine(r)
+    ).catch((e: Error) => life.noteRun(r.id, m().scheduledFail(e.message)))
   const lifeTimer = setInterval(() => life.tick(), 30_000)
   lifeTimer.unref?.()
 
@@ -3206,8 +3220,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
       }
       if (req.method === 'POST' && b === 'life' && c && !d) {
-        const args = (await readJson(req)) as Record<string, unknown>
-        return json(res, 200, life.run(c, args && typeof args === 'object' ? args : {}))
+        const raw = (await readJson(req)) as Record<string, unknown>
+        const { _check: _ignored, ...args } = raw && typeof raw === 'object' ? raw : {}
+        // Quick check of a watch (ADR 0031): the daemon checks the service tool and attaches it as _check
+        if (
+          (c === 'goal_create' || c === 'goal_update') &&
+          typeof args.check_tool === 'string' &&
+          args.check_tool
+        ) {
+          const tool = args.check_tool.slice(0, 120)
+          const can = await connectors.checkable(tool)
+          if (!can.ok) return json(res, 200, { isError: true, content: [{ type: 'text', text: can.why }] })
+          const input =
+            args.check_input && typeof args.check_input === 'object'
+              ? (args.check_input as Record<string, unknown>)
+              : {}
+          args._check = {
+            tool,
+            input,
+            minMinutes: can.minMinutes,
+            note: `Quick check: every set time the daemon runs ${tool} ("${can.title}") with this input without you, and wakes you only when the result changes (the first result is the baseline).${can.minMinutes > 1 ? ` This service allows checking every ${can.minMinutes} minutes at most, so the interval is at least that.` : ''}`,
+          }
+        }
+        return json(res, 200, life.run(c, args))
       }
       // Service tools: catalog (tools shown right away), find (find a service), call (run)
       if (req.method === 'POST' && b === 'service' && c && !d) {

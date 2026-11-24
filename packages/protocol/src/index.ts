@@ -832,6 +832,22 @@ export interface Routine {
   tellAt?: string
   /** The time it turned itself off after the end passed */
   endedAt?: string
+  /**
+   * Quick check (ADR 0031): a lookup service tool the daemon runs at each set time without the AI. Dool2 (the AI) is
+   * woken only when its result changes, so "every N minutes" can go down to 1 minute
+   */
+  check?: RoutineCheck
+  /** Fingerprint and short text of the last quick-check result (to tell a change) */
+  checkPrint?: string
+  checkText?: string
+  /** Quick checks that failed in a row */
+  checkFails?: number
+}
+
+/** A lookup service tool and its input, run without the AI (ADR 0031) */
+export interface RoutineCheck {
+  tool: string
+  input: Record<string, unknown>
 }
 
 /** Library: things Dool2 found or made that were kept */

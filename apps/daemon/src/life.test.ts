@@ -42,7 +42,9 @@ describe('언제', () => {
       time: '09:00',
       days: [1],
     })
-    expect(parseSchedule({ schedule: 'every', minutes: 5 })).toBeUndefined()
+    // under 15 minutes parses (quick checks go down to 1); goal_create keeps AI-run tasks at 15 or more
+    expect(parseSchedule({ schedule: 'every', minutes: 5 })).toEqual({ kind: 'every', minutes: 5 })
+    expect(parseSchedule({ schedule: 'every', minutes: 0 })).toBeUndefined()
   })
 })
 
@@ -906,5 +908,75 @@ describe('긴 목록 나눠 받기 (피드·보관함)', () => {
     expect(second).toContain('11. [Note] 메모 1')
     expect(second).not.toContain('skip:')
     expect(text(life.run('library_find', { skip: 50 }))).toContain('hat is all')
+  })
+})
+
+describe('quick checks (ADR 0031)', () => {
+  const text = (r: { content: { text?: string }[] }) => r.content.map((x) => x.text ?? '').join('\n')
+
+  it('keeps tasks the AI runs at 15 minutes or more, and points to check_tool', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const r = life.run('goal_create', { title: 'Tickets', prompt: 'p', schedule: 'every', minutes: 5 })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('check_tool')
+    expect(life.routines()).toHaveLength(0)
+  })
+
+  it('allows 1 minute with a checked quick check, raised to the service minimum', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    const r = life.run('goal_create', {
+      title: 'Tickets',
+      prompt: 'p',
+      schedule: 'every',
+      minutes: 1,
+      notify: 'when_found',
+      _check: { tool: 'shop_search', input: { date: '2026-12-01' }, minMinutes: 5, note: 'Quick check: …' },
+    })
+    expect(r.isError).toBeUndefined()
+    expect(text(r)).toContain('Quick check: …')
+    const saved = life.routines()[0]
+    expect(saved?.schedule).toEqual({ kind: 'every', minutes: 5 })
+    expect(saved?.check).toEqual({ tool: 'shop_search', input: { date: '2026-12-01' } })
+  })
+
+  it('records the baseline, then a change, and counts failures', () => {
+    const life = new Life(kv(), () => MON_8AM)
+    life.run('goal_create', {
+      title: 'Tickets',
+      prompt: 'p',
+      schedule: 'every',
+      minutes: 1,
+      _check: { tool: 'shop_search', input: {}, minMinutes: 1 },
+    })
+    const id = life.routines()[0]?.id ?? ''
+    expect(life.noteCheck(id, 'a', 'none')).toMatchObject({ first: true, changed: false })
+    expect(life.noteCheck(id, 'a', 'none')).toMatchObject({ first: false, changed: false })
+    expect(life.noteCheckFail(id)).toBe(1)
+    expect(life.noteCheckFail(id)).toBe(2)
+    expect(life.noteCheck(id, 'b', 'one seat')).toMatchObject({
+      changed: true,
+      before: 'none',
+      now: 'one seat',
+    })
+    expect(life.routines()[0]?.checkFails).toBeUndefined()
+  })
+
+  it('a quick check runs every minute through the same tick', () => {
+    let now = MON_8AM
+    const life = new Life(kv(), () => now)
+    const due: string[] = []
+    life.onDue = (r) => due.push(r.title)
+    life.run('goal_create', {
+      title: 'Tickets',
+      prompt: 'p',
+      schedule: 'every',
+      minutes: 1,
+      _check: { tool: 'shop_search', input: {}, minMinutes: 1 },
+    })
+    now = new Date(MON_8AM.getTime() + 61_000)
+    life.tick()
+    now = new Date(MON_8AM.getTime() + 122_000)
+    life.tick()
+    expect(due).toEqual(['Tickets', 'Tickets'])
   })
 })

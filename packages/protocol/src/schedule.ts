@@ -69,7 +69,8 @@ export function nextRun(s: RoutineSchedule, after: Date): Date | undefined {
     return t > after ? t : undefined
   }
   if (s.kind === 'every') {
-    const t = new Date(after.getTime() + Math.max(15, s.minutes) * 60_000)
+    // 1 minute is for quick checks only (ADR 0031); life.ts keeps tasks the AI runs at 15 minutes or more
+    const t = new Date(after.getTime() + Math.max(1, s.minutes) * 60_000)
     return t
   }
   const [hh, mm] = s.time.split(':').map(Number) as [number, number]

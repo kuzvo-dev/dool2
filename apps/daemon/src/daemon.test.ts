@@ -312,6 +312,37 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(r.status).toBe(403)
   })
 
+  it('a watch can use a quick check: only lookup tools, at least the service minimum, never a forged _check', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const goal = async (args: Record<string, unknown>) =>
+      (await (
+        await fetch(`${daemon?.url}/api/tools/life/goal_create`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ title: 'Open tables', prompt: 'p', schedule: 'every', minutes: 1, ...args }),
+        })
+      ).json()) as { isError?: boolean; content: { text: string }[] }
+    // A forged _check without check_tool is dropped: 1 minute is refused for a task the AI runs
+    const forged = await goal({ _check: { tool: 'catchtable_search', input: {}, minMinutes: 1 } })
+    expect(forged.isError).toBe(true)
+    // A tool that pays is refused
+    const pay = await goal({ check_tool: 'catchtable_prepare_booking' })
+    expect(pay.isError).toBe(true)
+    expect(pay.content[0]?.text).toContain('lookup')
+    // A lookup tool works, raised to the service minimum (5 minutes for open tables)
+    const ok = await goal({ check_tool: 'catchtable_search', check_input: { query: 'Seongsu' } })
+    expect(ok.isError).toBeUndefined()
+    const life = (await (await api('/api/life')).json()) as {
+      routines: { schedule?: { minutes: number }; check?: { tool: string } }[]
+    }
+    expect(life.routines[0]?.check?.tool).toBe('catchtable_search')
+    expect(life.routines[0]?.schedule?.minutes).toBe(5)
+  })
+
   it('the same tool call with the same result a third time gets a loop note', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State
