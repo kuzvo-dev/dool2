@@ -742,7 +742,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'close',
     'Close tab',
-    'Closes a Dool2 tab you are done with. Close the tabs you opened when the work is finished.',
+    'Closes a Dool2 tab. Usually not needed: Dool2 tidies its tabs by itself (keeps the few most recent, closes idle ones), so do not spend a step closing tabs at the end of a task. Close one only when it gets in the way, like a duplicate of the same page. Never close the tab or payment window of a payment in progress before its completion screen.',
     { tabId },
     false,
   )
