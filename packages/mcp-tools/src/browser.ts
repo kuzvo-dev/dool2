@@ -185,6 +185,19 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     false,
   )
   tool(
+    'route',
+    'Take a remembered route',
+    'Goes to a page by a route Dool2 took on this site before. Opening or moving to a site lists its routes as [r3] with the page they end on and the links pressed. Dool2 presses the same links itself, pausing like a person between them, without asking you at each click, and returns the final page. Prefer it over clicking the same menus one by one. If a link is not on the page any more, it stops there and returns that page; carry on yourself. Payment, send and delete buttons are gated exactly as in browser_click.',
+    {
+      tabId,
+      route: z
+        .string()
+        .regex(/^r\d+$/)
+        .describe('Route id from the list, e.g. r3'),
+    },
+    false,
+  )
+  tool(
     'select',
     'Pick from a list',
     'Reads or picks from a dropdown (product color/size options, select boxes, fields like "open options" or "please select"). Without choose it returns the list (with sold-out marks and the current pick); with choose set to an item\'s text (e.g. "M", "Black", as written on the page) it picks that and returns the changed page. Lists that scripts cannot open are opened by Dool2 with a real mouse. Never use it for payment method or installment lists (use choices on the approval card). ' +

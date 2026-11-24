@@ -106,6 +106,7 @@ import {
   tabTag,
   WORD_CHARS,
 } from './region/kr/browser.js'
+import { MAX_STEPS as ROUTE_MAX_STEPS, type RouteBook, routeStart } from './routes.js'
 import { notAccepted, sendFiles, sizeText, type UploadReply } from './upload.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
@@ -152,6 +153,7 @@ export const BROWSER_TOOLS = [
   'wait',
   'tabs',
   'upload',
+  'route',
 ] as const
 export type BrowserTool = (typeof BROWSER_TOOLS)[number]
 
@@ -286,11 +288,26 @@ const RISK_TEXT: Record<RiskKind, string> = {
 }
 
 /** Error when the AI tries to move a tab that is in the middle of paying */
+/** Tools that do not change what a page depends on (the walk toward a route goes on through them) */
+const TRAIL_KEEPS = new Set([
+  'open',
+  'navigate',
+  'read',
+  'click',
+  'scroll',
+  'screenshot',
+  'wait',
+  'tabs',
+  'route',
+])
+
 const PAYING_TAB_MOVE =
   'This tab is paying. It is not moved to another URL until the payment finishes (order complete screen). If the screen is blank, the payment window may have opened in a new window or a frame on the page: find it with browser_read or browser_screenshot and finish the payment (payment PIN and verification go through phone cards). Do other things in a new tab with browser_open.'
 
 interface PageInfo {
   url: string
+  /** Page title (a remembered route is named after the page it ends on) */
+  title?: string
   refs: Map<string, { role: string; name: string }>
   /** If this is a checkout screen (where payment method and booker details are entered), the marks seen */
   checkout?: string
@@ -1085,8 +1102,17 @@ export class BrowserTools {
     this.ownPw.set(key, pw)
   }
 
+  /** Remembered routes (ADR 0034). Without it nothing is remembered and browser_route is unavailable */
+  routes?: RouteBook
+  /** Pause before each click of a remembered route, like a person (shorter in tests) */
+  routePause: () => number = () => 600 + Math.random() * 1200
+  /** Per tab: where Dool2 opened it and the clicks since that each moved to another page */
+  private trails = new Map<number, { start: string; steps: string[] }>()
+
   async run(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (typeof args.tabId === 'number') this.allowRemote(args.tabId)
+    // Typing, keys, choices and other changes make the page depend on what was entered: the walk is no longer a route
+    if (typeof args.tabId === 'number' && !TRAIL_KEEPS.has(tool)) this.trails.delete(args.tabId)
     try {
       // If a new tab is a window opened by a paying tab (payment window), add it to that payment group (a late payment window is the same payment)
       if (typeof args.tabId === 'number' && !this.pages.has(args.tabId)) await this.adoptTab(args.tabId)
@@ -1106,16 +1132,20 @@ export class BrowserTools {
         const r = (await this.browser.call('open', { url: a.url }, 40_000)) as { tabId: number }
         this.lastTabId = r.tabId
         this.allowRemote(r.tabId)
-        return this.notFoundHint(
+        const out = this.notFoundHint(
           String(a.url ?? ''),
           await this.read(r.tabId, undefined, 'Opened a new tab.'),
         )
+        return this.startTrail(r.tabId, out)
       }
       case 'navigate': {
         // A paying tab is not moved (measured 11-20 Gmarket: after approval, the tab showing the card payment window was moved to order history and the payment broke)
         if (this.isPaying(tabId)) throw new Error(PAYING_TAB_MOVE)
         await this.browser.call('navigate', { tabId, url: a.url }, 40_000)
-        return this.notFoundHint(String(a.url ?? ''), await this.read(tabId, undefined, 'Opened the URL.'))
+        return this.startTrail(
+          tabId,
+          this.notFoundHint(String(a.url ?? ''), await this.read(tabId, undefined, 'Opened the URL.')),
+        )
       }
       case 'read':
         return this.read(tabId, a.maxChars, undefined, {
@@ -1133,10 +1163,20 @@ export class BrowserTools {
             .map(([k, v]) => `${k}:${v.role}:${v.name}`)
             .join('|')
         const before = inFrame ? frameSig() : ''
+        const was = this.pages.get(tabId)
+        const pressed =
+          typeof a.text === 'string' && a.text.trim()
+            ? a.text.trim()
+            : inFrame
+              ? undefined
+              : was?.refs.get(String(a.ref ?? ''))?.name
         const r = await this.act(tabId, { ...a, do: 'click' })
-        if (r.newTabId)
+        if (r.newTabId) {
+          this.trails.delete(tabId)
           return this.read(r.newTabId, undefined, `${r.note} A new tab opened, so I read that tab.`)
+        }
         const out = await this.read(tabId, undefined, r.note)
+        this.noteTrail(tabId, was?.url, pressed)
         if (!inFrame || frameSig() !== before) return out
         await new Promise((res) => setTimeout(res, 1_500))
         return this.read(
@@ -1153,6 +1193,8 @@ export class BrowserTools {
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'hover' })).note)
       case 'steps':
         return this.steps(tabId, a)
+      case 'route':
+        return this.route(tabId, String(a.route ?? ''))
       case 'scroll': {
         const r = (await this.browser.call('scroll', {
           tabId,
@@ -3825,6 +3867,76 @@ export class BrowserTools {
   }
 
   /** If a guessed deep URL is a 'missing page', tells the AI to find its way from the home page (measured 11-22 guessing Naver Pay and Coupang attendance URLs) */
+  /** A tab was opened or moved to an address: a new walk starts there, and routes known on that site are listed */
+  private startTrail(tabId: number, out: ToolResult): ToolResult {
+    const page = this.pages.get(tabId)
+    const start = page && routeStart(page.url)
+    if (!start) return out
+    this.trails.set(tabId, { start, steps: [] })
+    const hint = this.routes?.hint(new URL(start).host)
+    return hint ? { ...out, content: [...out.content, { type: 'text', text: hint }] } : out
+  }
+
+  /**
+   * Every click by a name extends the walk (opening a menu before its link too). When a click moves the tab to
+   * another page and the walk has two or more clicks, it is remembered as a route
+   */
+  private noteTrail(tabId: number, before: string | undefined, pressed: string | undefined) {
+    const t = this.trails.get(tabId)
+    const page = this.pages.get(tabId)
+    if (!t || !page) return
+    // An unnamed button cannot be pressed again by name; a payment is never a route
+    if (!pressed || !before || this.isPaying(tabId) || t.steps.length >= ROUTE_MAX_STEPS) {
+      this.trails.delete(tabId)
+      return
+    }
+    t.steps.push(pressed)
+    // Kept when a click moved on, and not when the walk came back to where it started (home again)
+    if (page.url === before || t.steps.length < 2 || routeStart(page.url) === t.start) return
+    this.routes?.record({ start: t.start, steps: t.steps, title: page.title ?? '' })
+  }
+
+  /**
+   * Walks a remembered route: opens its start if needed and presses the same links by name, pausing like a person
+   * between them (no AI step in between). Each click goes through the same approval gate as browser_click. Stops at
+   * the first step that is not on the page and returns that page
+   */
+  private async route(tabId: number, id: string): Promise<ToolResult> {
+    const r = this.routes?.get(id)
+    if (!r)
+      throw new Error(
+        `There is no remembered route ${id || '(empty)'}. Use one listed when you open the site.`,
+      )
+    if (this.isPaying(tabId)) throw new Error(PAYING_TAB_MOVE)
+    if (routeStart(this.pages.get(tabId)?.url ?? '') !== r.start) {
+      await this.browser.call('navigate', { tabId, url: r.start }, 40_000)
+      await this.read(tabId)
+    }
+    this.trails.set(tabId, { start: r.start, steps: [] })
+    const stop = (i: number, why: string, out?: ToolResult): ToolResult => {
+      const note = `The route [${r.id}] stopped at step ${i + 1} ('${r.steps[i]}'): ${why}. Carry on yourself from this page.`
+      if (!out) return { content: [{ type: 'text', text: note }] }
+      return { ...out, content: [{ type: 'text', text: note }, ...out.content] }
+    }
+    let out: ToolResult | undefined
+    for (const [i, step] of r.steps.entries()) {
+      await new Promise((res) => setTimeout(res, this.routePause()))
+      try {
+        out = await this.dispatch('click', { tabId, text: step })
+      } catch (e) {
+        // The link is gone (the site changed): this route is no longer kept
+        this.routes?.forget(r.id)
+        return stop(i, (e as Error).message, await this.read(tabId).catch(() => undefined))
+      }
+      if (out.isError) return stop(i, 'the click did not go through', out)
+    }
+    if (routeStart(this.pages.get(tabId)?.url ?? '') === r.start && out)
+      return stop(r.steps.length - 1, 'the clicks went through but the page did not move', out)
+    this.routes?.used(r.id)
+    const done = `Took the remembered route [${r.id}] (${r.steps.length} clicks, no AI step in between).`
+    return out ? { ...out, content: [{ type: 'text', text: done }, ...out.content] } : { content: [] }
+  }
+
   private notFoundHint(url: string, out: ToolResult): ToolResult {
     const head = out.content
       .map((c) => (c.type === 'text' ? c.text : ''))
@@ -3886,7 +3998,7 @@ export class BrowserTools {
       }
     }
     this.dialogs.delete(tabId)
-    const info = pageInfo(s.url, s.text)
+    const info = { ...pageInfo(s.url, s.text), title: s.title }
     this.pages.set(tabId, info)
     const accountNote = await this.settlePassword(s)
     const loginNote = await this.settleLogin(tabId, s)

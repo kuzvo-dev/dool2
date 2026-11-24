@@ -37,6 +37,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0031](0031-quick-check-watch.md) | Quick checks: watches check every minute without the AI, and wake it only on a change | Accepted |
 | [0032](0032-pinned-instructions.md) | Instructions are pinned per segment; what changes rides on the next message | Accepted |
 | [0033](0033-tools-on-demand.md) | Rarely used tools are found and run on demand | Accepted |
+| [0034](0034-remembered-routes.md) | Remembered routes: walk a known path on a site without the AI at each click | Accepted |
 
 ## How to write a new decision
 
