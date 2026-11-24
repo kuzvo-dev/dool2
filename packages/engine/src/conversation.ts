@@ -142,6 +142,8 @@ export class ConversationService {
       this.early.delete(cur.id)
       const summary = reason === 'long' ? ((await early) ?? (await threads.summarize(cur.id))) : undefined
       store.closeSession(cur.id, summary)
+      // The closed segment's resident agent program is not needed any more (ADR 0035)
+      void threads.release(cur.id)
       carry = buildCarry(cur, summary, store.listMessages(cur.id))
       if (this.rotateNote) carry = `${carry}\n\n${this.rotateNote}`
     }

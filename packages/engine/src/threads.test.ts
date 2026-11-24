@@ -2,7 +2,7 @@ import type { AgentEvent, AgentStatus, DaemonStreamEvent } from '@dool2/protocol
 import { Store } from '@dool2/store'
 import { describe, expect, it } from 'vitest'
 import { buildCarry } from './conversation.js'
-import type { AgentRuntime, TurnInput } from './runtime.js'
+import type { AgentRuntime, AgentSession, SessionInput, TurnInput } from './runtime.js'
 import { fileApprovalWhat, looksLikeSummary, serviceAct, ThreadService, WorkLog } from './threads.js'
 
 describe('PC 파일·PC 승인 카드 (ADR 0024)', () => {
@@ -546,6 +546,130 @@ describe('cache record', () => {
     })
     await collect(svc.send(t.id, 'hi'))
     expect(typeof seen[0]?.gapMs).toBe('number')
+  })
+})
+
+describe('resident sessions (ADR 0035)', () => {
+  class FakeSession implements AgentSession {
+    sent: string[] = []
+    signals: (AbortSignal | undefined)[] = []
+    closed = false
+    get alive() {
+      return !this.closed
+    }
+    async *send(text: string, signal?: AbortSignal): AsyncGenerator<AgentEvent> {
+      this.sent.push(text)
+      this.signals.push(signal)
+      yield { type: 'started', resumeId: 'r1', tools: [] }
+      yield { type: 'text', delta: `got ${text}` }
+      yield { type: 'done', resumeId: 'r1', text: `got ${text}` }
+    }
+    interrupt() {}
+    async close() {
+      this.closed = true
+    }
+  }
+  class SessionRuntime extends FakeRuntime {
+    opened: SessionInput[] = []
+    sessions: FakeSession[] = []
+    async openSession(input: SessionInput) {
+      this.opened.push(input)
+      const s = new FakeSession()
+      this.sessions.push(s)
+      return s
+    }
+  }
+  function residentSetup(o: { resident?: boolean; idleMs?: number } = {}) {
+    const store = new Store(':memory:')
+    const rt = new SessionRuntime([{ type: 'done', resumeId: 'r1', text: '- summary' }])
+    let resident = o.resident ?? true
+    let runs = 0
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [{ name: 'dool2', command: 'node', args: ['mcp.js'] }],
+      resident: () => resident,
+      beforeRun: () => {
+        runs++
+      },
+      ...(o.idleMs ? { residentIdleMs: o.idleMs } : {}),
+    })
+    return {
+      store,
+      rt,
+      svc,
+      runs: () => runs,
+      setResident: (v: boolean) => {
+        resident = v
+      },
+    }
+  }
+
+  it('sends every message of the segment to one program, opened once', async () => {
+    const { store, rt, svc, runs } = residentSetup()
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    await collect(svc.send(t.id, 'again'))
+    expect(rt.opened).toHaveLength(1)
+    expect(rt.inputs).toHaveLength(0)
+    expect(rt.sessions[0]?.sent).toEqual(['hi', 'again'])
+    expect(store.listMessages(t.id).map((m) => m.text)).toEqual(['hi', 'got hi', 'again', 'got again'])
+    expect(store.getThread(t.id)?.resumeId).toBe('r1')
+    // The tool list file is written when the program starts, not for every message
+    expect(runs()).toBe(1)
+    expect(rt.opened[0]?.mcpServers[0]?.env?.DOOL2_TOOLSET).toBe(t.id)
+  })
+
+  it('stop reaches the session as its abort signal', async () => {
+    const { store, rt, svc } = residentSetup()
+    const t = store.createThread('claude')
+    const it = svc.send(t.id, 'long job')
+    for await (const ev of it) if (ev.type === 'agent' && ev.event.type === 'started') svc.cancel(t.id)
+    expect(rt.sessions[0]?.signals[0]?.aborted).toBe(true)
+    expect(rt.sessions[0]?.closed).toBe(false)
+  })
+
+  it('closes the program after a long idle and opens it again with the session id on the next message', async () => {
+    const { store, rt, svc } = residentSetup({ idleMs: 10 })
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    expect(svc.hasSession(t.id)).toBe(true)
+    await new Promise((r) => setTimeout(r, 40))
+    expect(svc.hasSession(t.id)).toBe(false)
+    expect(rt.sessions[0]?.closed).toBe(true)
+    await collect(svc.send(t.id, 'back'))
+    expect(rt.opened).toHaveLength(2)
+    expect(rt.opened[1]?.resumeId).toBe('r1')
+  })
+
+  it('a thread that is not resident runs one program per turn and lets go of its session', async () => {
+    const { store, rt, svc, setResident } = residentSetup()
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    setResident(false)
+    await collect(svc.send(t.id, 'side'))
+    expect(rt.sessions[0]?.closed).toBe(true)
+    expect(rt.inputs).toHaveLength(1)
+  })
+
+  it('a summary runs in a copy of the session, outside the resident program', async () => {
+    const { store, rt, svc } = residentSetup()
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    expect(await svc.summarize(t.id)).toBe('- summary')
+    expect(rt.inputs[0]).toMatchObject({ resumeId: 'r1', fork: true })
+    expect(rt.sessions[0]?.sent).toEqual(['hi'])
+  })
+
+  it('release ends the program (segment closed)', async () => {
+    const { store, rt, svc } = residentSetup()
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    await svc.release(t.id)
+    expect(rt.sessions[0]?.closed).toBe(true)
+    expect(svc.hasSession(t.id)).toBe(false)
   })
 })
 

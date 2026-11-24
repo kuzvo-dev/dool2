@@ -98,23 +98,23 @@ Electron main ──spawn──▶ dool2d (Node, utilityProcess or child process
 
 ```ts
 interface AgentRuntime {
-  id: 'claude' | 'codex' | 'claude-api'
-  detect(): Promise<{ installed: boolean; version?: string; loggedIn: boolean; plan?: string }>
-  startThread(opts: { system: string; resumeId?: string }): Promise<ThreadHandle>
+  id: 'claude' | 'codex' | 'opencode'
+  detect(): Promise<AgentStatus>
+  /** One turn in a fresh program (side chats, the feed, summaries, runtimes without sessions) */
+  runTurn(input: TurnInput): AsyncIterable<AgentEvent>
+  /** One program kept running for a conversation segment (ADR 0035) */
+  openSession?(input: SessionInput): Promise<AgentSession | undefined>
 }
-interface ThreadHandle {
-  send(text: string): void
-  interrupt(): void
-  events: AsyncIterable<
-    | { type: 'text'; delta: string }
-    | { type: 'tool'; name: string; input: unknown }
-    | { type: 'usage'; limits: { kind: string; percent: number; resetsAt?: string }[] }
-    | { type: 'limit_reached'; resetsAt?: string }
-    | { type: 'error'; code: string }
-    | { type: 'done'; resumeId: string }
-  >
+interface AgentSession {
+  readonly alive: boolean
+  send(text: string, signal?: AbortSignal): AsyncIterable<AgentEvent> // one turn, until done or error
+  interrupt(): void // the stop button; the session stays usable
+  close(): Promise<void>
 }
 ```
+
+`packages/engine/src/runtime.ts` has the full types. Claude Code implements `openSession`; Codex and OpenCode use
+`runTurn` for now.
 
 - In settings, the user picks either "Run with Claude Code" or "Run with Codex". If both are connected, Dool2 can switch to the other when one hits its limit (only when the user turns this on).
 - Per-service know-how does not use each CLI's skill feature. Instead, Dool2 provides it as Dool2 service tools (connectors, `skills/<id>/tools.json`, ADR 0018). The tools of connected services (`catchtable_search` …) are visible right away, and the rest go through `service_find` → `service_call`. This way both agents use the same tools, and the approval gate and signature check also sit in one place.
@@ -136,7 +136,7 @@ interface ThreadHandle {
   - If the user is not logged in, we guide them to open a terminal and run `claude auth login`.
   - We check login state from the output (JSON) of `claude auth status`.
 - We do not use `--bare`, because that mode does not read the subscription login.
-- Launch form (draft; re-check the flags for each version):
+- Launch form (checked on 2.1.325; one program per conversation segment, ADR 0035):
   ```
   claude -p
     --input-format stream-json --output-format stream-json --verbose
@@ -147,6 +147,8 @@ interface ThreadHandle {
     --append-system-prompt-file <Dool2 instructions>
     --resume <session id>                       # when continuing a chat
   ```
+  Messages go in as one `{"type":"user",...}` line each and a turn ends at its `result` line. Stop is a
+  `control_request` with `subtype: "interrupt"`. Summaries use `--resume <id> --fork-session` in a separate program.
   The working folder is an empty Dool2-only folder (`<app data>/workspace`), because `-p` also runs the `.claude/` settings and `.mcp.json` in the working folder.
 - We receive usage from the stream's `rate_limit_event` and show it on the phone, for example "62% used this week".
 - In case the limit is reached or a policy change blocks us, we also keep an **API key mode** (`claude-api`), where the user enters their own key.

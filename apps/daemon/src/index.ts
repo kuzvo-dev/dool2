@@ -437,6 +437,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     ...(opts.timeLine ? { timeLine: opts.timeLine } : {}),
     // The tool server reads the service tool list from a file at start instead of waiting up to 3 s for the daemon
     beforeRun: (threadId) => writeServiceTools(threadId),
+    // One agent program kept running per segment of the main conversation (ADR 0035). Side chats, the feed and
+    // summaries keep one program per turn. Off with the residentAgent setting
+    resident: (threadId) => readSettings().residentAgent !== false && conversation.current()?.id === threadId,
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
     onCache: (threadId, x) =>
       journal.write('cache', {
@@ -4013,6 +4016,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     close: () =>
       (closing ??= new Promise<void>((resolve) => {
         claudeLogin?.cancel()
+        // Resident agent programs end with the daemon (they would otherwise outlive it)
+        void threads.releaseAll()
         journal.stop()
         clearInterval(lifeTimer)
         clearInterval(keepTimer)

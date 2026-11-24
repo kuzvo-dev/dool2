@@ -33,7 +33,7 @@ import { THREAD_TEXT } from './locales/threads.js'
 import { DOOL2_SYSTEM_PROMPT } from './persona.js'
 import { promptUpdate } from './pinned-prompt.js'
 import { ABOVE_BLOCK } from './region/kr/block-below.js'
-import type { AgentRuntime, McpServerSpec } from './runtime.js'
+import type { AgentRuntime, AgentSession, McpServerSpec, TurnInput } from './runtime.js'
 
 export interface ThreadServiceOptions {
   store: Store
@@ -62,7 +62,17 @@ export interface ThreadServiceOptions {
    * list, so the tool server starts with it at once instead of asking the daemon first. A failure does not stop the turn
    */
   beforeRun?: (threadId: string) => Promise<void> | void
+  /**
+   * Whether this thread's turns go to a resident agent session (ADR 0035): one agent program kept running for the
+   * segment instead of one per message. Only for runtimes that offer sessions; the rest use runTurn
+   */
+  resident?: (threadId: string) => boolean
+  /** A resident session idle this long is closed; the next message opens it again with --resume (default 30 min) */
+  residentIdleMs?: number
 }
+
+/** Default time a resident session may sit idle before its program is closed */
+export const RESIDENT_IDLE_MS = 30 * 60_000
 
 /** Runs the agent per thread and keeps the record. */
 export class ThreadService {
@@ -96,6 +106,77 @@ export class ThreadService {
 
   cancel(threadId: string) {
     this.running.get(threadId)?.abort()
+  }
+
+  /** Resident sessions per thread (ADR 0035). key: what the program was opened with; a change opens a new one */
+  private readonly sessions = new Map<
+    string,
+    { session: AgentSession; key: string; idle?: ReturnType<typeof setTimeout> }
+  >()
+
+  /** Whether a resident program is kept for this thread now (tests, diagnostics) */
+  hasSession(threadId: string): boolean {
+    return this.sessions.has(threadId)
+  }
+
+  /** Closes the thread's resident session (segment closed, idle, AI changed). The next message opens it again */
+  async release(threadId: string) {
+    const e = this.sessions.get(threadId)
+    if (!e) return
+    this.sessions.delete(threadId)
+    clearTimeout(e.idle)
+    await e.session.close().catch(() => {})
+  }
+
+  /** Closes every resident session (the daemon is stopping) */
+  async releaseAll() {
+    await Promise.all([...this.sessions.keys()].map((id) => this.release(id)))
+  }
+
+  /**
+   * The events of one turn: on the thread's resident session when it has one or may open one, else a fresh program
+   * (runTurn). The tool list file is written only when a program starts
+   */
+  private async turnEvents(
+    threadId: string,
+    agent: AgentId,
+    input: TurnInput,
+  ): Promise<AsyncIterable<AgentEvent>> {
+    const rt = this.runtime(agent)
+    const { text, signal, ...open } = input
+    if (!rt.openSession || !this.opts.resident?.(threadId)) {
+      if (this.sessions.has(threadId)) await this.release(threadId)
+      await this.prepareRun(threadId)
+      return rt.runTurn(input)
+    }
+    // The CLI's session id moves on by itself inside the session, so it is not part of what the program was opened with
+    const { resumeId, ...fixed } = open
+    const key = JSON.stringify([agent, fixed])
+    let e = this.sessions.get(threadId)
+    if (e && e.key !== key) {
+      await this.release(threadId)
+      e = undefined
+    }
+    if (!e) {
+      await this.prepareRun(threadId)
+      const session = await rt.openSession(open).catch(() => undefined)
+      if (!session) return rt.runTurn(input)
+      e = { session, key }
+      this.sessions.set(threadId, e)
+    }
+    clearTimeout(e.idle)
+    return e.session.send(text, signal)
+  }
+
+  /** After a turn: close the resident program if no message comes for a while */
+  private idleLater(threadId: string) {
+    const e = this.sessions.get(threadId)
+    if (!e) return
+    clearTimeout(e.idle)
+    e.idle = setTimeout(() => {
+      if (!this.running.has(threadId)) void this.release(threadId)
+    }, this.opts.residentIdleMs ?? RESIDENT_IDLE_MS)
+    e.idle.unref?.()
   }
 
   private async prepareRun(threadId: string) {
@@ -169,6 +250,8 @@ export class ThreadService {
       const events = this.runtime(thread.agent).runTurn({
         text: SUMMARY_REQUEST,
         resumeId: thread.resumeId,
+        // In a copy of the session: the request and the handoff stay out of the conversation the user continues
+        fork: true,
         systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
         mcpServers: this.serversFor(threadId),
         cwd: this.opts.workspaceDir,
@@ -252,8 +335,7 @@ export class ThreadService {
       }
       // Pinned instructions; what changed since (memory, what Dool2 knows, connections) rides on this message (ADR 0032)
       const prompt = this.promptFor(threadId, thread)
-      await this.prepareRun(threadId)
-      const events = this.runtime(thread.agent).runTurn({
+      const events = await this.turnEvents(threadId, thread.agent, {
         // The current time goes with the message, not the instructions (instructions changing every minute would break the AI's cache). Without it the AI calls status to learn the time
         text: [(this.opts.timeLine ?? nowLine)(), prompt.note, o.aside, text].filter(Boolean).join('\n\n'),
         ...(resumeId ? { resumeId } : {}),
@@ -465,6 +547,7 @@ export class ThreadService {
     } finally {
       this.lastCall.set(threadId, Date.now())
       this.running.delete(threadId)
+      this.idleLater(threadId)
       yield { type: 'end' }
     }
   }

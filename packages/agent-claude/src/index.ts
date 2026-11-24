@@ -3,12 +3,20 @@
 // Sign-in is done by the official `claude auth login` too, and Dool2 never reads or stores tokens (login.ts).
 // All built-in tools are turned off so only Dool2's MCP tools are used (ADR 0003).
 
-import { type AgentRuntime, findExecutable, runOnce, spawnLines, type TurnInput } from '@dool2/engine'
+import {
+  type AgentRuntime,
+  findExecutable,
+  runOnce,
+  type SessionInput,
+  spawnLines,
+  type TurnInput,
+} from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { ClaudeInstall } from './install.js'
 import { CLAUDE_TEXT } from './locales/claude.js'
 import { ClaudeLogin, type ClaudeLoginOptions } from './login.js'
+import { ClaudeSession } from './session.js'
 
 export {
   CLAUDE_DOWNLOAD_BASE,
@@ -23,13 +31,24 @@ import { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
 
 export { ClaudeLogin, type ClaudeLoginOptions, type LoginChild, loginEnv, type SpawnLogin } from './login.js'
 export { ClaudeStreamParser, DOOL2_TOOL_PREFIX } from './parse.js'
+export {
+  ClaudeSession,
+  type ClaudeSessionOptions,
+  interruptLine,
+  type SpawnStream,
+  userLine,
+} from './session.js'
 
 /** Default model Dool2 uses with Claude Code */
 export const CLAUDE_DEFAULT_MODEL = 'sonnet'
 
-/** Arguments for `claude -p`. A pure function, pinned by tests. */
+/**
+ * Arguments for `claude -p`. A pure function, pinned by tests.
+ * stream: a resident session (ADR 0035) that takes one JSON line per message on stdin instead of one text and exit
+ */
 export function buildClaudeArgs(
-  input: Pick<TurnInput, 'resumeId' | 'systemPrompt' | 'mcpServers' | 'model'>,
+  input: Pick<TurnInput, 'resumeId' | 'systemPrompt' | 'mcpServers' | 'model' | 'fork'>,
+  o: { stream?: boolean } = {},
 ): string[] {
   const mcpConfig = {
     mcpServers: Object.fromEntries(
@@ -42,7 +61,7 @@ export function buildClaudeArgs(
   const args = [
     '-p',
     '--input-format',
-    'text',
+    o.stream ? 'stream-json' : 'text',
     '--output-format',
     'stream-json',
     '--verbose',
@@ -65,6 +84,7 @@ export function buildClaudeArgs(
     input.model || CLAUDE_DEFAULT_MODEL,
   ]
   if (input.resumeId) args.push('--resume', input.resumeId)
+  if (input.resumeId && input.fork) args.push('--fork-session')
   return args
 }
 
@@ -137,6 +157,23 @@ export class ClaudeRuntime implements AgentRuntime {
         return Boolean(this.resolvedPath)
       },
     })
+  }
+
+  /**
+   * A resident session (ADR 0035): the program starts now, so it and the Dool2 tool server are up when the first
+   * message comes. Undefined when Claude Code is not installed (runTurn tells the user)
+   */
+  async openSession(input: SessionInput): Promise<ClaudeSession | undefined> {
+    const bin = await this.bin()
+    if (!bin) return undefined
+    const session = new ClaudeSession({
+      bin,
+      input,
+      lang: this.lang(),
+      args: (resumeId) => buildClaudeArgs({ ...input, ...(resumeId ? { resumeId } : {}) }, { stream: true }),
+    })
+    session.start()
+    return session
   }
 
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {

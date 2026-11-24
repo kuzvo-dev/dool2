@@ -190,6 +190,11 @@ export const SettingsSchema = z.object({
    * Turned on from the PC settings or the phone (phone changes are signed, see autoApproveSignText)
    */
   autoApprove: z.boolean().optional(),
+  /**
+   * Keep the AI program running between messages of the conversation (ADR 0035). Empty: on. False: start it for every
+   * message, as before (a fallback if the resident session misbehaves)
+   */
+  residentAgent: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
   /** UI language of the desktop app and the language Dool2 answers in by default (ADR 0029). Empty: follow the device */
