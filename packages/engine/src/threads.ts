@@ -52,8 +52,11 @@ export interface ThreadServiceOptions {
   takeMadeImage?: () => MadeImageRecordMessage | undefined
   /** Language of the text the records show people (card titles, work steps). Korean when not given */
   lang?: () => Lang
-  /** How much of the turn's first AI call came from the provider's cache (work log, ADR 0032) */
-  onCache?: (threadId: string, x: { input: number; cached: number; noted: boolean }) => void
+  /**
+   * How much of the turn's first AI call came from the provider's cache (work log, ADR 0032). gapMs: time since the
+   * previous turn of the same thread ended (missing on a thread's first turn), to see how long the cache lives
+   */
+  onCache?: (threadId: string, x: { input: number; cached: number; noted: boolean; gapMs?: number }) => void
 }
 
 /** Runs the agent per thread and keeps the record. */
@@ -69,6 +72,19 @@ export class ThreadService {
   }
 
   private readonly summarizing = new Set<string>()
+  /** When the last AI call of each thread ended (turns and summaries both keep the provider's cache warm) */
+  private readonly lastCall = new Map<string, number>()
+  /**
+   * Time since the thread's previous AI call. After a restart the time of its last message stands in. Undefined on
+   * the thread's first turn
+   */
+  private gapOf(threadId: string, thread: { updatedAt: string }, now: number): number | undefined {
+    const last = this.lastCall.get(threadId)
+    if (last !== undefined) return Math.max(0, now - last)
+    if (this.opts.store.sessionSize(threadId).turns === 0) return undefined
+    const at = Date.parse(thread.updatedAt)
+    return Number.isFinite(at) ? Math.max(0, now - at) : undefined
+  }
   isRunning(threadId: string) {
     return this.running.has(threadId)
   }
@@ -148,6 +164,7 @@ export class ThreadService {
     } catch {
       return undefined
     } finally {
+      this.lastCall.set(threadId, Date.now())
       this.summarizing.delete(threadId)
     }
   }
@@ -167,6 +184,7 @@ export class ThreadService {
 
     const ac = new AbortController()
     this.running.set(threadId, ac)
+    const gapMs = this.gapOf(threadId, thread, Date.now())
     try {
       const userMsg = store.addMessage(threadId, 'user', text)
       yield { type: 'saved', message: userMsg }
@@ -274,6 +292,7 @@ export class ThreadService {
               input: ev.firstInput,
               cached: ev.firstCached ?? 0,
               noted: Boolean(prompt.note),
+              ...(gapMs !== undefined ? { gapMs } : {}),
             })
         }
         // For service tools, send the title along: the screens show "finding shops" instead of "working"
@@ -423,6 +442,7 @@ export class ThreadService {
       // Keep hand-off cards even when the turn ended without a reply
       for (const r of below.splice(0)) yield { type: 'saved', message: store.addMessage(threadId, 'tool', r) }
     } finally {
+      this.lastCall.set(threadId, Date.now())
       this.running.delete(threadId)
       yield { type: 'end' }
     }

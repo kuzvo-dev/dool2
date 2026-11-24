@@ -405,6 +405,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         cached: x.cached,
         share: x.input ? Math.round((x.cached / x.input) * 100) : 0,
         ...(x.noted ? { noted: true } : {}),
+        // Time since the segment's previous turn: how long the provider's cache lives decides when to switch segments
+        ...(x.gapMs !== undefined ? { gapMs: x.gapMs } : {}),
       }),
     // Memories are attached to the end of the instructions for each chat
     // Service map: lets requests without a service name still pick a fitting service (connected ones first)
@@ -1853,10 +1855,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** The first request of a chat being continued by the before-finishing check (when the verdict ends, the check's record is cleared) */
   const lastAsk = new Map<string, string>()
-  /** Wraps one chat turn and reports the "working" state */
+  /**
+   * Wraps one chat turn and reports the "working" state.
+   * receivedAt: when the request reached the daemon (before picking the segment), for the turn's phase timings
+   */
   async function* tracked(
     threadId: string,
     inner: AsyncIterable<DaemonStreamEvent>,
+    o: { receivedAt?: number } = {},
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
     activeThreads.add(threadId)
@@ -1880,8 +1886,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const checkable = threadId !== store.getSetting('feedThread') && !routineThreads.has(threadId)
     let failed = false
     // Where the time of the turn went, for problem reports: the AI program up (started), the first word or tool, and
-    // why it failed (a usage limit shows here). A tester's first answer was slow and the log could not say why
+    // why it failed (a usage limit shows here). A tester's first answer was slow and the log could not say why.
+    // Phases, all from the turn's start: prepMs before it (request received → segment picked, a summary can sit here),
+    // startMs the AI program ready, eventMs the first sign of the AI after that, textMs the first word, firstMs the first
+    // word or tool
+    const prepMs = o.receivedAt !== undefined ? Math.max(0, turnAt - o.receivedAt) : undefined
     let startMs: number | undefined
+    let eventMs: number | undefined
+    let textMs: number | undefined
     let firstMs: number | undefined
     let failCode: string | undefined
     try {
@@ -1889,6 +1901,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (ev.type === 'agent') {
           const at = Date.now() - turnAt
           if (ev.event.type === 'started') startMs ??= at
+          else if (startMs !== undefined) eventMs ??= at
+          if (ev.event.type === 'text') textMs ??= at
           if (ev.event.type === 'text' || ev.event.type === 'tool') firstMs ??= at
           if (ev.event.type === 'error') failCode ??= ev.event.code
           if (ev.event.type === 'limit_reached') failCode ??= 'limit_reached'
@@ -1946,7 +1960,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ms: Date.now() - turnAt,
         tools: turnTools,
         answered: answerText.length > 0,
+        ...(prepMs !== undefined ? { prepMs } : {}),
         ...(startMs !== undefined ? { startMs } : {}),
+        ...(eventMs !== undefined ? { eventMs } : {}),
+        ...(textMs !== undefined ? { textMs } : {}),
         ...(firstMs !== undefined ? { firstMs } : {}),
         ...(failCode ? { code: failCode } : {}),
         ...(asked ? { waitingForUser: true } : {}),
@@ -2642,6 +2659,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * Progress goes through GET /api/conversation/live and the phone stream
    */
   async function talk(text: string, o: { agent?: AgentId; viaPhone?: boolean } = {}) {
+    const receivedAt = Date.now()
     if (conversationBusy()) {
       queued.push(text)
       live.emit('event', { kind: 'queued', texts: [...queued] })
@@ -2663,7 +2681,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
       : undefined
     void (async () => {
-      for await (const _ of tracked(sessionId, threads.send(sessionId, text, aside ? { aside } : {}))) {
+      for await (const _ of tracked(sessionId, threads.send(sessionId, text, aside ? { aside } : {}), {
+        receivedAt,
+      })) {
       }
     })().catch(() => {})
     return { queued: false }

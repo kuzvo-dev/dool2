@@ -499,6 +499,54 @@ describe('pinned instructions (ADR 0032)', () => {
   })
 })
 
+describe('cache record', () => {
+  it('reports the gap since the previous turn of the same thread (none on the first turn)', async () => {
+    const store = new Store(':memory:')
+    const rt = new FakeRuntime([
+      { type: 'started', resumeId: 's1', tools: [] },
+      { type: 'context', tokens: 1000, firstInput: 1000, firstCached: 900 },
+      { type: 'done', resumeId: 's1', text: 'ok' },
+    ])
+    const seen: { input: number; cached: number; gapMs?: number }[] = []
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [],
+      onCache: (_id, x) => seen.push(x),
+    })
+    const t = store.createThread('claude')
+    await collect(svc.send(t.id, 'hi'))
+    await new Promise((r) => setTimeout(r, 20))
+    await collect(svc.send(t.id, 'next'))
+    expect(seen[0]?.gapMs).toBeUndefined()
+    expect(seen[1]?.gapMs).toBeGreaterThanOrEqual(15)
+    expect(seen[1]?.gapMs).toBeLessThan(5000)
+  })
+
+  it('after a restart, the last message time stands in for the previous turn', async () => {
+    const store = new Store(':memory:')
+    const t = store.createThread('claude')
+    store.addMessage(t.id, 'user', 'earlier')
+    const rt = new FakeRuntime([
+      { type: 'context', tokens: 1000, firstInput: 1000, firstCached: 0 },
+      { type: 'done', text: 'ok' },
+    ])
+    const seen: { gapMs?: number }[] = []
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [],
+      onCache: (_id, x) => seen.push(x),
+    })
+    await collect(svc.send(t.id, 'hi'))
+    expect(typeof seen[0]?.gapMs).toBe('number')
+  })
+})
+
 describe('tool_call unwrapping (ADR 0033)', () => {
   it('treats a tool run through tool_call as the tool itself, result included', async () => {
     const { unwrapToolCall } = await import('./threads.js')

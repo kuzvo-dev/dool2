@@ -455,6 +455,10 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(lines[0]).toMatchObject({ answered: true })
     expect(typeof lines[0]?.startMs).toBe('number')
     expect(typeof lines[0]?.firstMs).toBe('number')
+    // Phases: request received → turn start, the first AI event after the program is ready, the first word
+    expect(typeof lines[0]?.prepMs).toBe('number')
+    expect(typeof lines[0]?.eventMs).toBe('number')
+    expect(typeof lines[0]?.textMs).toBe('number')
     expect(lines[1]).toMatchObject({ code: 'limit_reached' })
   })
 
