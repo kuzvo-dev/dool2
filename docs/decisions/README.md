@@ -40,6 +40,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0034](0034-remembered-routes.md) | Remembered routes: walk a known path on a site without the AI at each click | Accepted |
 | [0035](0035-resident-agent-session.md) | One resident Claude Code program per conversation segment | Accepted |
 | [0036](0036-cache-aware-segments.md) | Cache-aware segments: switch after an hour away, with the handoff made while the cache lives | Accepted |
+| [0037](0037-model-profiles.md) | Model profiles and role routing: side jobs on a small model, one table for what differs per model | Accepted |
 
 ## How to write a new decision
 
