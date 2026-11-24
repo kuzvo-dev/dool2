@@ -906,6 +906,12 @@ export class BrowserTools {
   requestProfile?: (fields: ProfileField[], reason: string, options?: string[]) => string | undefined
   /** Sends a notification to the user's phone (waiting for an authenticator app approval, etc.) */
   notifyUser?: (title: string, body: string) => void
+  /**
+   * Waiting for an authenticator approval off the turn: called when browser_wait_auth starts. Returns where to send
+   * the screen once it changes (or the user taps the card) and a signal that ends the watch (the user stopped).
+   * undefined: wait inside the tool call as before
+   */
+  afterAuth?: () => { deliver: (text: string) => void; signal: AbortSignal } | undefined
   /** Waits for an authenticator app approval with a phone card: pressing [I've verified] resolves answer. cancel closes the card */
   askAuthDone?: (
     host: string,
@@ -2142,40 +2148,68 @@ export class BrowserTools {
           this.pages.set(tabId, pageInfo(main.url, main.text))
           return this.read(tabId, undefined, `${why}. ${judge}`)
         }
-        while (Date.now() - started < 180_000) {
-          await new Promise((r) => setTimeout(r, 3_000))
-          const c = await changed()
-          if (c) {
-            this.onNote?.('wait-auth', { by: 'screen', why: c.why, url: c.main.url.replace(/[?#].*$/, '') })
-            return handBack(c.main, `The screen changed while waiting for verification (${c.why})`)
-          }
-          if (!pressedByUser) continue
-          // The user said they approved. If the AI pointed at a button (ref), press only that once, then hand the screen to the AI
-          let pressed = ''
-          if (typeof a.ref === 'string') {
-            const now = await snap(tabId)
-            const btn = now && buttons(now.text).find((b) => b.ref === a.ref)
-            if (btn) {
-              await this.browser.call('click', { tabId, ref: btn.ref }, 30_000).catch(() => undefined)
-              await new Promise((r) => setTimeout(r, 2_500))
-              pressed = btn.name
+        const watch = async (signal?: AbortSignal): Promise<ToolResult> => {
+          while (Date.now() - started < 180_000) {
+            await new Promise((r) => setTimeout(r, 3_000))
+            if (signal?.aborted) {
+              waiting?.cancel()
+              return { content: [] }
             }
+            const c = await changed()
+            if (c) {
+              this.onNote?.('wait-auth', { by: 'screen', why: c.why, url: c.main.url.replace(/[?#].*$/, '') })
+              return handBack(c.main, `The screen changed while waiting for verification (${c.why})`)
+            }
+            if (!pressedByUser) continue
+            // The user said they approved. If the AI pointed at a button (ref), press only that once, then hand the screen to the AI
+            let pressed = ''
+            if (typeof a.ref === 'string') {
+              const now = await snap(tabId)
+              const btn = now && buttons(now.text).find((b) => b.ref === a.ref)
+              if (btn) {
+                await this.browser.call('click', { tabId, ref: btn.ref }, 30_000).catch(() => undefined)
+                await new Promise((r) => setTimeout(r, 2_500))
+                pressed = btn.name
+              }
+            }
+            this.onNote?.('wait-auth', { by: 'user', pressed })
+            const main = (await snap(tabId)) ?? first.get(tabId)
+            if (!main) break
+            return handBack(
+              main,
+              `The user approved in the authenticator app and pressed [I've verified].${pressed ? ` Dool2 pressed the pointed-at [${pressed}] once.` : ''}`,
+            )
           }
-          this.onNote?.('wait-auth', { by: 'user', pressed })
-          const main = (await snap(tabId)) ?? first.get(tabId)
-          if (!main) break
-          return handBack(
-            main,
-            `The user approved in the authenticator app and pressed [I've verified].${pressed ? ` Dool2 pressed the pointed-at [${pressed}] once.` : ''}`,
-          )
+          waiting?.cancel()
+          expired()
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'No approval was confirmed for 3 minutes, so waiting stopped (the verification request expires soon too). Do not request again; answer the user briefly, like "Verification timed out, so I stopped. To try again, say \'do it again\'", and end this reply.',
+              },
+            ],
+          }
         }
-        waiting?.cancel()
-        expired()
+        // Off the turn: the conversation is free while the user opens the app and approves (a wait here held every
+        // other message for up to 3 minutes, measured 11-19 to 11-24: 9 waits, 1,461 s). The screen comes back as a new message
+        const sink = this.afterAuth?.()
+        if (!sink) return watch()
+        void watch(sink.signal)
+          .then((r) => {
+            if (sink.signal.aborted) return
+            const text = r.content
+              .map((c) => (c.type === 'text' ? c.text : ''))
+              .filter(Boolean)
+              .join('\n')
+            if (text) sink.deliver(text)
+          })
+          .catch(() => undefined)
         return {
           content: [
             {
               type: 'text',
-              text: 'No approval was confirmed for 3 minutes, so waiting stopped (the verification request expires soon too). Do not request again; answer the user briefly, like "Verification timed out, so I stopped. To try again, say \'do it again\'", and end this reply.',
+              text: 'The card is on the phone and Dool2 is watching the screen. End this reply now with one short line, like "Approve it in the app. I\'ll carry on as soon as it\'s done." Do not call browser_wait_auth again or click anything. When the screen changes or the user taps the card, the screen comes to you as a new message; continue from there.',
             },
           ],
         }

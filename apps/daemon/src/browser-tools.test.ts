@@ -2060,6 +2060,66 @@ describe('간편인증 기다리기 (폰 [인증 완료했어요])', () => {
   }, 80_000)
 })
 
+describe('간편인증 기다리기는 대화를 붙잡지 않는다', () => {
+  const site = () => {
+    let done = false
+    return {
+      approve: () => {
+        done = true
+      },
+      call: async (cmd: string) => {
+        if (cmd === 'snapshot')
+          return done
+            ? { tabId: 3, url: 'https://gov.example/home', title: '홈', text: '# 홈\n[e1 링크 "로그아웃"]' }
+            : {
+                tabId: 3,
+                url: 'https://gov.example/login',
+                title: '로그인',
+                text: '# 간편인증\n[e9 버튼 "인증 완료"]',
+              }
+        return { tabId: 3, url: done ? 'https://gov.example/home' : 'https://gov.example/login', title: '' }
+      },
+    }
+  }
+
+  it('바로 답을 끝내게 하고, 화면이 바뀌면 그 화면을 새 메시지로 보낸다', async () => {
+    const b = site()
+    const tools = new BrowserTools(b as never)
+    let cancelled = false
+    tools.askAuthDone = () => ({ answer: new Promise(() => {}), cancel: () => (cancelled = true) })
+    const delivered: string[] = []
+    tools.afterAuth = () => ({ signal: new AbortController().signal, deliver: (t) => delivered.push(t) })
+    await tools.run('read', { tabId: 3 })
+    const t0 = Date.now()
+    const r = await tools.run('wait_auth', { tabId: 3 })
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(r.content[0]?.type === 'text' ? r.content[0].text : '').toContain('End this reply now')
+    b.approve()
+    for (let i = 0; i < 100 && !delivered.length; i++) await new Promise((r) => setTimeout(r, 100))
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0]).toContain('Judge from the screen below yourself')
+    expect(delivered[0]).toContain('로그아웃')
+    expect(cancelled).toBe(true)
+  }, 20_000)
+
+  it('멈추면 지켜보기를 그만두고 아무것도 보내지 않는다', async () => {
+    const b = site()
+    const tools = new BrowserTools(b as never)
+    let cancelled = false
+    tools.askAuthDone = () => ({ answer: new Promise(() => {}), cancel: () => (cancelled = true) })
+    const ac = new AbortController()
+    const delivered: string[] = []
+    tools.afterAuth = () => ({ signal: ac.signal, deliver: (t) => delivered.push(t) })
+    await tools.run('read', { tabId: 3 })
+    await tools.run('wait_auth', { tabId: 3 })
+    ac.abort()
+    b.approve()
+    await new Promise((r) => setTimeout(r, 4_500))
+    expect(delivered).toEqual([])
+    expect(cancelled).toBe(true)
+  }, 20_000)
+})
+
 describe('PC 화면 넘기기 관문', () => {
   it('같은 화면에서 처음 부르면 넘기지 않고 화면을 다시 읽어 돌려주고, 두 번째에만 넘긴다', async () => {
     const b = fakeBrowser()
