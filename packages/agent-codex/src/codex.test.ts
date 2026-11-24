@@ -79,6 +79,39 @@ describe('CodexEventMapper', () => {
     expect(r?.abort).toBe(true)
   })
 
+  it('tool_result carries how many characters of text the tool gave back', () => {
+    const events = run([
+      [
+        'item/completed',
+        {
+          item: {
+            type: 'mcpToolCall',
+            server: 'dool2',
+            tool: 'browser_read',
+            status: 'completed',
+            result: { content: [{ type: 'text', text: 'page text' }] },
+          },
+        },
+      ],
+      [
+        'item/completed',
+        {
+          item: {
+            type: 'mcpToolCall',
+            server: 'dool2',
+            tool: 'browser_click',
+            status: 'failed',
+            error: { message: 'No e9 ref' },
+          },
+        },
+      ],
+    ]).flatMap((r) => r.events)
+    expect(events).toEqual<AgentEvent[]>([
+      { type: 'tool_result', name: 'mcp__dool2__browser_read', ok: true, chars: 9 },
+      { type: 'tool_result', name: 'mcp__dool2__browser_click', ok: false, chars: 9 },
+    ])
+  })
+
   it('사용량 한도와 로그인 문제를 구분한다', () => {
     const [limit, auth, retry] = run([
       ['error', { willRetry: false, error: { message: 'x', codexErrorInfo: 'usageLimitExceeded' } }],

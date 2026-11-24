@@ -49,7 +49,8 @@ export type AgentEvent =
   | { type: 'text'; delta: string }
   /** title: the human-readable title of a service tool (added by the engine, for the working indicator) */
   | { type: 'tool'; name: string; input: unknown; title?: string }
-  | { type: 'tool_result'; name?: string; ok: boolean }
+  /** chars: how many characters of text the result gave the AI (sizes only, for the work log). Missing when unknown */
+  | { type: 'tool_result'; name?: string; ok: boolean; chars?: number }
   | { type: 'usage'; limits: UsageLimit[] }
   /** Pay-as-you-go: money (USD) and tokens used in this step */
   | { type: 'cost'; usd: number; inputTokens: number; outputTokens: number }
@@ -101,6 +102,20 @@ export function previewText(text: string, max = 140): string {
     .replace(/\s+/g, ' ')
     .trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+
+/**
+ * Characters of text in a tool result as the AI gets it: a plain string, or the text parts of a content list
+ * (images and other parts are not counted). undefined when the shape is unknown
+ */
+export function resultChars(content: unknown): number | undefined {
+  if (typeof content === 'string') return content.length
+  if (!Array.isArray(content)) return undefined
+  let n = 0
+  for (const part of content)
+    if (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string')
+      n += (part as { text: string }).text.length
+  return n
 }
 
 export interface StoredMessage {

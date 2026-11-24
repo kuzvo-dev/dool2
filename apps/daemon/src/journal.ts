@@ -85,6 +85,22 @@ function scrub(value: unknown, depth = 0): unknown {
   return undefined
 }
 
+/**
+ * Puts one tool result's size (characters of text the AI got) next to its call in a turn record: the first call of
+ * that tool without a size yet. tools and chars are parallel lists (chars null = not known). Results of calls past
+ * the list's cap are dropped
+ */
+export function noteResultChars(
+  tools: string[],
+  chars: (number | null)[],
+  name: string | undefined,
+  size: number,
+) {
+  const tool = name?.replace(/^(mcp__dool2__|dool2_)/, '')
+  const i = tools.findIndex((t, k) => chars[k] === null && (tool === undefined || t === tool))
+  if (i >= 0) chars[i] = Math.max(0, Math.round(size))
+}
+
 const day = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 

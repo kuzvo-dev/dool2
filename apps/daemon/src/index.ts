@@ -99,7 +99,7 @@ import { FinishCheck } from './finish-check.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
-import { Journal, KEEP_DAYS, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
+import { Journal, KEEP_DAYS, noteResultChars, SHOT_DAYS, scrubText, scrubUrl } from './journal.js'
 import { userLang } from './lang.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
@@ -1881,6 +1881,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Work log: the tool names used this turn and how long they took (the content of the words is not written)
     const turnAt = Date.now()
     const turnTools: string[] = []
+    // Characters of text each tool result gave the AI, in the order of turnTools (sizes only; null = not known),
+    // to see which tools fill the session
+    const turnChars: (number | null)[] = []
     const turnFromPhone = fromPhone.has(threadId)
     // The before-finishing check runs only in chats with the user (not feed posts or scheduled tasks)
     const checkable = threadId !== store.getSetting('feedThread') && !routineThreads.has(threadId)
@@ -1923,8 +1926,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (ev.type === 'agent' && ev.event.type === 'tool' && ev.event.name.endsWith('browser_wait_auth'))
           asked = true
         if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
-        if (ev.type === 'agent' && ev.event.type === 'tool' && turnTools.length < 60)
+        if (ev.type === 'agent' && ev.event.type === 'tool' && turnTools.length < 60) {
           turnTools.push(ev.event.name.replace(/^(mcp__dool2__|dool2_)/, ''))
+          turnChars.push(null)
+        }
+        if (ev.type === 'agent' && ev.event.type === 'tool_result' && typeof ev.event.chars === 'number')
+          noteResultChars(turnTools, turnChars, ev.event.name, ev.event.chars)
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
         const rec =
@@ -1959,6 +1966,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         where: side ? 'side' : threadId === store.getSetting('feedThread') ? 'feed' : 'main',
         ms: Date.now() - turnAt,
         tools: turnTools,
+        ...(turnChars.some((c) => c !== null) ? { chars: turnChars } : {}),
         answered: answerText.length > 0,
         ...(prepMs !== undefined ? { prepMs } : {}),
         ...(startMs !== undefined ? { startMs } : {}),

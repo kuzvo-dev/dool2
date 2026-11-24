@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, utimesSync, writeFi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { Journal, scrubText, scrubUrl } from './journal.js'
+import { Journal, noteResultChars, scrubText, scrubUrl } from './journal.js'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'dool2-journal-'))
 const at = (iso: string) => () => new Date(iso)
@@ -98,5 +98,24 @@ describe('일한 기록', () => {
     j.write('note', { text: 'x' })
     expect(j.shot('a', 'AAAA')).toBeUndefined()
     expect(j.read()).toEqual([])
+  })
+})
+
+describe('noteResultChars', () => {
+  it('puts each result size next to the first call of that tool without one', () => {
+    const tools = ['browser_click', 'service_find', 'browser_click']
+    const chars: (number | null)[] = [null, null, null]
+    noteResultChars(tools, chars, 'mcp__dool2__service_find', 40)
+    noteResultChars(tools, chars, 'mcp__dool2__browser_click', 2_200.4)
+    noteResultChars(tools, chars, 'browser_click', 900)
+    // A result whose call is past the list's cap is dropped
+    noteResultChars(tools, chars, 'browser_click', 5)
+    expect(chars).toEqual([2_200, 40, 900])
+  })
+
+  it('a result without a tool name goes to the oldest call without a size', () => {
+    const chars: (number | null)[] = [7, null]
+    noteResultChars(['a', 'b'], chars, undefined, 12)
+    expect(chars).toEqual([7, 12])
   })
 })
