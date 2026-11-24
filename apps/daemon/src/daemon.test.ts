@@ -321,6 +321,26 @@ describe('대화 하나 (ADR 0015)', () => {
     expect((await search('vacuum')).content[0]?.text).toContain('No past conversation found')
   })
 
+  it('evals pick the model of the next requests on a test PC only (ADR 0037)', async () => {
+    const { api, rt } = await boot(undefined, { devReset: true })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const r = await api('/api/eval/model', { method: 'POST', body: '{"model":"haiku"}' })
+    expect(await r.json()).toEqual({ ok: true, model: 'haiku' })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    expect(rt.last?.model).toBe('haiku')
+    expect((await api('/api/eval/model', { method: 'POST', body: '{"model":"a b"}' })).status).toBe(400)
+    await api('/api/eval/model', { method: 'POST', body: '{}' })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"again"}' })
+    await until(async () => (await state()).messages.length === 4 && !(await state()).busy)
+    expect(rt.last?.model).toBeUndefined()
+  })
+
+  it('the eval model is closed on a normal PC', async () => {
+    const { api } = await boot()
+    expect((await api('/api/eval/model', { method: 'POST', body: '{"model":"haiku"}' })).status).toBe(403)
+  })
+
   it('the tool tape is only for a test PC', async () => {
     const { api } = await boot()
     const r = await api('/api/eval/tape', { method: 'POST', body: '{"mode":"record"}' })

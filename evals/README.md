@@ -49,6 +49,23 @@ node evals/compare.mjs evals/out/replay-before evals/out/replay-<change>
   after 30 minutes.
 - It still calls the real AI, so it uses subscription quota. It replaces the sites, not the AI.
 
+## Per agent and model (ADR 0037)
+
+Replay the same tape on another agent or model and compare them side by side. `--agent` picks the AI of the test chat
+(it must be signed in on the test PC). `--model` runs the requests on that model; the daemon accepts it only on a test
+PC and goes back to the default when the run ends. Side jobs keep their routing (the judge stays on the small model).
+
+```bash
+node evals/run.mjs --token <screen token> --replay evals/out/tape-base --out evals/out/replay-sonnet
+node evals/run.mjs --token <screen token> --replay evals/out/tape-base --model haiku --out evals/out/replay-haiku
+node evals/run.mjs --token <screen token> --replay evals/out/tape-base --agent codex --out evals/out/replay-codex
+node evals/score.mjs evals/out/replay-haiku --judge   # and the others
+node evals/models.mjs evals/out/replay-sonnet evals/out/replay-haiku evals/out/replay-codex
+```
+
+`models.mjs` prints one row per folder over the scenarios present in all of them: AI score, passes, median time, and
+how often the before-finishing check sent the work back (`sentBack` in each record).
+
 ## Scoring
 
 - **Code verdict**: whether the result shape (went as far as approval, handed off to a person, asked back, answered, error) fits the scenario type, and the gates (suspected false completion, multiple approvals)
