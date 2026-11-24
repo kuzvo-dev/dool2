@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type BrowserClient, daemonClient, registerBrowserTools } from './browser.js'
 import { registerFileTools } from './files.js'
 import { registerLifeTools } from './life.js'
+import { onDemand } from './on-demand.js'
 import { registerScreenTools } from './screen.js'
 import { registerServiceTools, type ServiceTools } from './services.js'
 
@@ -71,16 +72,19 @@ export function createServer(ctx: ToolContext = {}) {
     },
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
-  registerBrowserTools(server, ctx.browser ?? daemonClient())
-  registerScreenTools(server, ctx.screen ?? daemonClient(process.env, 'screen'))
-  registerLifeTools(server, ctx.life ?? daemonClient(process.env, 'life'))
-  registerFileTools(server, ctx.files ?? daemonClient(process.env, 'file'))
+  // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033)
+  const od = onDemand(server)
+  registerBrowserTools(od.server, ctx.browser ?? daemonClient())
+  registerScreenTools(od.server, ctx.screen ?? daemonClient(process.env, 'screen'))
+  registerLifeTools(od.server, ctx.life ?? daemonClient(process.env, 'life'))
+  registerFileTools(od.server, ctx.files ?? daemonClient(process.env, 'file'))
   serviceTools.set(
     server,
     registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {
       ...(ctx.servicePollMs ? { pollMs: ctx.servicePollMs } : {}),
     }),
   )
+  od.finish()
   return server
 }
 

@@ -223,7 +223,11 @@ export class ThreadService {
         cwd: this.opts.workspaceDir,
         signal: ac.signal,
       })
-      for await (const ev of events) {
+      // A tool run through tool_call (ADR 0033) is handled as the tool itself: work steps, approval cards, records
+      let inner: string | undefined
+      for await (const raw of events) {
+        const ev = unwrapToolCall(raw, inner)
+        if (ev.type === 'tool') inner = ev.name
         if (ev.type === 'started' && ev.resumeId) resumeId = ev.resumeId
         // The reply is only the text after the last tool. Talk before a tool ("setting the date") is just a work-in-progress line
         if (ev.type === 'tool') {
@@ -426,6 +430,21 @@ export class ThreadService {
 }
 
 /** Whether the reply to a summary request looks like a summary: it has at least one bullet line */
+/**
+ * tool_call({ tool, input }) (ADR 0033) → the tool event as if that tool had been called directly, and its result
+ * under the same name (inner: the last tool name, for the result that follows)
+ */
+export function unwrapToolCall(ev: AgentEvent, inner?: string): AgentEvent {
+  if (ev.type === 'tool' && /(^|__)tool_call$/.test(ev.name)) {
+    const a = (ev.input ?? {}) as { tool?: unknown; input?: unknown }
+    if (typeof a.tool === 'string' && /^[a-z0-9_]+$/.test(a.tool))
+      return { ...ev, name: ev.name.replace(/tool_call$/, a.tool), input: a.input ?? {} }
+  }
+  if (ev.type === 'tool_result' && ev.name && /(^|__)tool_call$/.test(ev.name) && inner)
+    return { ...ev, name: inner }
+  return ev
+}
+
 export function looksLikeSummary(text: string): boolean {
   return /^\s*[-*•]\s+\S/m.test(text)
 }

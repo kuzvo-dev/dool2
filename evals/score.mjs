@@ -21,6 +21,8 @@ const short = (n) => n.replace(/^mcp__dool2__/, '')
 const toolLabel = (t) => {
   const n = short(t.name)
   if (n === 'service_call' && t.input?.tool) return String(t.input.tool)
+  // Tools kept aside and run through tool_call (ADR 0033) count as the tool itself
+  if (n === 'tool_call' && t.input?.tool) return String(t.input.tool)
   return n
 }
 
