@@ -27,6 +27,26 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # if you don't have i
 - **One user intent = one tool.** Like "find open tables at a restaurant", "prepare a reservation", "view order history". One screen is not one tool.
 - Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test.
 
+### Starting from remembered routes
+
+Dool2 remembers the clicks it walks on a site (ADR 0034). Routes it walked often are a good place to start:
+
+```bash
+pnpm build
+pnpm connector routes                       # reads routes.json in the Dool2 data folder
+pnpm connector routes --from <routes.json or data folder> --out <folder>
+```
+
+It writes drafts to `out/connector-drafts/<id>/tools.json` (never into `skills/`) for routes that reached their page 3+
+times in 80%+ of walks, and prints what it left out (page titles, query strings, id-like address parts). Each draft is
+a `lookup` tool that opens the start, presses the same links and hands the page to the AI. It is not a connector yet:
+
+- The `_draft` block makes the daemon and `pnpm connector check` refuse the file. Delete it only after the review.
+- Check that the address and click names hold nothing personal, then rewrite the tool like any other (sections 2–3):
+  a real name, Korean title, description and `next`, `login` if the page needs sign-in, and an `extract` (or
+  `embedded`/`capture`) in place of `handoff_to_agent` so it returns rows. Then test it (section 5) and submit (section 7).
+- Do not commit drafts made from your own routes as they are; commit only the reviewed tool.
+
 ## 2. Inspect the site (most robust first)
 
 1. **Build state from the address**: Put the search term, date, and party size in the address and see whether that screen comes up directly (for example `?keyword=성수` (Seongsu), `?date=261127&personCount=4`, `?gnbInvcNo=…`). This reduces clicking steps.
@@ -86,6 +106,8 @@ pnpm connector canary <id>                        # all lookup tools with exampl
 ## 7. Submitting
 
 - One PR = one service (or one tool). Paste the `pnpm connector try` result (with personal information masked) in the PR body.
+- A `lookup` tool that returns rows can also back a quick check on a watch (ADR 0031), so mention it in the PR when the
+  tool came from remembered routes.
 - `pnpm lint && pnpm build && pnpm typecheck && pnpm test`.
 - Words the user sees (`say`, `next`, result field descriptions) are written in Dool2's voice and do not include other companies' product names.
 - Update the status table in `skills/README.md`. `skills/` is CC BY-SA 4.0.

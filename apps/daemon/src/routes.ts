@@ -13,8 +13,19 @@ export interface Route {
   steps: string[]
   /** Title of the page the route ends on */
   title: string
+  /** Walks with browser_route that reached the end (successes). The name is kept for files written before counts */
   uses: number
+  /** Walks with browser_route that stopped on the way (a click that did not go through, a page that did not move) */
+  fails?: number
+  /** Times the AI walked the same clicks by hand, the first walk included (missing in older files = 1) */
+  seen?: number
+  /** Last time the route was walked, by hand or with browser_route */
   lastAt: string
+}
+
+/** Times a route reached its page (with browser_route or by hand) and times it stopped (ADR 0034 follow-up) */
+export function routeCounts(r: Route): { ok: number; failed: number } {
+  return { ok: (r.uses || 0) + (r.seen ?? 1), failed: r.fails ?? 0 }
 }
 
 /** Most routes kept per site (the least recently used go first) */
@@ -71,8 +82,11 @@ export class RouteBook {
     return this.routes.find((r) => r.id === id)
   }
 
-  /** Keeps a route. The same start and clicks are one route (its title and time are refreshed). Returns the id */
-  record(r: { start: string; steps: string[]; title: string }): string | undefined {
+  /**
+   * Keeps a route. The same start and clicks are one route (its title and time are refreshed, and a walk by hand is
+   * counted). byHand is false for the clicks of a browser_route walk, which counts itself. Returns the id
+   */
+  record(r: { start: string; steps: string[]; title: string }, byHand = true): string | undefined {
     const start = routeStart(r.start)
     if (!start || r.steps.length < MIN_STEPS || r.steps.length > MAX_STEPS) return undefined
     if (!r.steps.every(stepNameOk)) return undefined
@@ -82,6 +96,7 @@ export class RouteBook {
     const same = this.routes.find((x) => key(x) === key({ start, steps: r.steps }))
     if (same) {
       same.title = r.title.slice(0, 80)
+      if (byHand) same.seen = (same.seen ?? 1) + 1
       same.lastAt = at
       this.save()
       return same.id
@@ -93,6 +108,7 @@ export class RouteBook {
       steps: [...r.steps],
       title: r.title.slice(0, 80),
       uses: 0,
+      seen: byHand ? 1 : 0,
       lastAt: at,
     }
     this.routes.push(route)
@@ -114,6 +130,15 @@ export class RouteBook {
     const r = this.get(id)
     if (!r) return
     r.uses++
+    r.lastAt = this.now().toISOString()
+    this.save()
+  }
+
+  /** A walk with browser_route that stopped on the way (the route is kept: the link was still there) */
+  failed(id: string) {
+    const r = this.get(id)
+    if (!r) return
+    r.fails = (r.fails ?? 0) + 1
     r.lastAt = this.now().toISOString()
     this.save()
   }

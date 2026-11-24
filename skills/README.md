@@ -99,6 +99,7 @@ pnpm connector check catchtable                            # format and safety r
 pnpm connector page "https://…" "li.item"                  # test the screen text / a list selector
 pnpm connector try catchtable search '{"keyword":"성수","date":"2026-11-27","people":4}'   # keyword "Seongsu", 4 people
 pnpm connector canary [--json result.json] [--report report.html] [--issues]   # all lookup tools with example inputs (including silent failures)
+pnpm connector routes [--from <routes.json>] [--out <folder>]   # drafts from often-walked remembered routes (ADR 0034), for a person to review
 ```
 
 ## Status

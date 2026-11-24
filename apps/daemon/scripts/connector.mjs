@@ -9,14 +9,27 @@
 //   pnpm connector page <url> [selector]              read a page / try pulling a list by selector (inspect the page before writing a connector)
 //   pnpm connector try|canary … --pc               in the real Chrome of the running test PC instead of the test Chrome
 //                                                  (DOOL2_TOOL_TOKEN, DOOL2_PC; also works for sites that block the test Chrome)
+//   pnpm connector routes [--from <routes.json|data folder>] [--out <folder>]
+//                                                  draft lookup tools from often-walked remembered routes (ADR 0034) into
+//                                                  out/connector-drafts/<id>/tools.json for a person to review (no Chrome;
+//                                                  registers nothing)
 //
 // Tools that need login: keep the same profile with DOOL2_DEV_PROFILE=<folder> and sign in by hand in that Chrome
 // (add --connected to try to treat it as connected). This tool never handles passwords.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkConnectCard } from '@dool2/protocol/connect'
 import { checkConnector, connectorToolName, healthProblems } from '@dool2/protocol/connector'
@@ -62,6 +75,97 @@ if (cmd === 'check' || !cmd) {
   }
   console.log(`${count} connectors, ${bad} problems`)
   process.exit(bad ? 1 : 0)
+}
+
+// ── routes: connector drafts from remembered routes (ADR 0034 follow-up). Writes files for a person; registers nothing ──
+if (cmd === 'routes') {
+  const { routeDrafts, DRAFT_MIN_SUCCESSES, DRAFT_MIN_RATE } = await import('../dist/route-drafts.js')
+  const { defaultDataDir } = await import('../dist/paths.js')
+  const opt = (name) => {
+    const i = rest.indexOf(name)
+    return i >= 0 ? rest[i + 1] : undefined
+  }
+  let from = resolve(opt('--from') ?? defaultDataDir())
+  if (existsSync(from) && statSync(from).isDirectory()) from = join(from, 'routes.json')
+  const out = resolve(opt('--out') ?? join(repo, 'out', 'connector-drafts'))
+  if (!relative(skillsDir, out).startsWith('..')) {
+    console.error('Drafts are never written into skills/. Pick another --out folder.')
+    process.exit(2)
+  }
+  let routes = []
+  try {
+    const raw = readJson(from)
+    routes = Array.isArray(raw.routes) ? raw.routes : []
+  } catch {
+    console.log(`No remembered routes at ${from}.`)
+    console.log(
+      'Dool2 keeps a route when it walks 2 to 6 clicks on a site. Use --from <routes.json or data folder>.',
+    )
+    process.exit(0)
+  }
+  const cards = services().map((id) => {
+    let card = {}
+    try {
+      card = readJson(join(skillsDir, id, 'connect.json'))
+    } catch {}
+    return {
+      id,
+      site: card.site,
+      alsoSites: card.alsoSites,
+      tools: (toolsOf(id)?.tools ?? []).map((t) => t.name),
+    }
+  })
+  const r = routeDrafts(routes, cards, new Date().toLocaleDateString('sv'))
+  const qualified = r.drafts.reduce((n, d) => n + d.routes.length, 0)
+  console.log(`Remembered routes: ${from}`)
+  console.log(
+    `${r.total} routes, ${qualified} qualify (reached their page ${DRAFT_MIN_SUCCESSES}+ times and in ${Math.round(DRAFT_MIN_RATE * 100)}%+ of walks)`,
+  )
+  const shown = (p) => (relative(process.cwd(), p).startsWith('..') ? p : relative(process.cwd(), p))
+  for (const d of r.drafts) {
+    const file = join(out, d.id, 'tools.json')
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `${JSON.stringify(d.file, null, 2)}\n`)
+    console.log(
+      `\nDraft for ${d.id} (${d.existing ? 'existing service' : `new service, site ${d.sites[0]}`}): ${shown(file)}`,
+    )
+    for (const x of d.routes) {
+      console.log(`  ${x.tool}: ${x.successes} walks reached the page, ${x.failures} stopped`)
+      if (x.stripped.length) console.log(`    left out: ${x.stripped.join('; ')}`)
+    }
+    if (d.problems.length) console.log(`  shape problems to fix: ${d.problems.join(' · ')}`)
+  }
+  if (r.skipped.length) {
+    const why = new Map()
+    for (const s of r.skipped) {
+      const k = s.why.startsWith('reached its page') ? 'not walked enough yet' : s.why
+      why.set(k, (why.get(k) ?? 0) + 1)
+    }
+    console.log(`\nSkipped ${r.skipped.length}: ${[...why].map(([k, n]) => `${k} (${n})`).join(', ')}`)
+  }
+  if (!r.drafts.length) {
+    console.log('\nNo drafts this time. Nothing was written.')
+    process.exit(0)
+  }
+  console.log(`
+Nothing was registered or published. Each draft is a lookup tool that walks the same clicks and then hands the
+page to the AI. Next steps for a person (.claude/skills/connector):
+  1. Review: open the start address, press the same links, and check that the address and click names hold
+     nothing personal (names, account or order numbers).
+  2. Rewrite each tool: a real name, title, description and next in Dool2's voice (Korean for Korean services),
+     login: true with a stop_if login step if the page needs sign-in, and replace handoff_to_agent with extract,
+     embedded or capture so it returns rows.
+  3. Delete the _draft block. The daemon and \`pnpm connector check\` refuse the file while it is there.
+  4. Copy the tools into skills/<id>/tools.json (a new service also needs skills/<id>/connect.json: copy
+     skills/_template), then test:
+       pnpm connector check <id>
+       pnpm connector try <id> <tool> '{}'      (add --pc to use the test PC's Chrome)
+       pnpm connector canary <id>
+  5. Open a PR (one service per PR) with the try result, personal details masked. A lookup tool that returns
+     rows can also back quick checks on watches (ADR 0031).`)
+  // Exit after the output is fully written (process.exit cuts output when piped)
+  process.stdout.write('', () => process.exit(0))
+  await new Promise(() => {})
 }
 
 // ── --pc: in the real Chrome of the running test PC daemon (works for sites that block the test Chrome) ──

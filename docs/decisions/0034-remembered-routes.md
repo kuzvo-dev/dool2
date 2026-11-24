@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-24
-- Related: [0006 user Chrome extension](0006-user-chrome-extension.md), [0018 service connectors](0018-service-connectors.md), [0033 tools on demand](0033-tools-on-demand.md)
+- Related: [0006 user Chrome extension](0006-user-chrome-extension.md), [0018 service connectors](0018-service-connectors.md), [0033 tools on demand](0033-tools-on-demand.md), [0031 quick checks](0031-quick-check-watch.md)
 
 ## Context
 
@@ -54,3 +54,32 @@ Going faster must not get Dool2 blocked: it uses the person's real Chrome, real 
 - A route can lead to a page that changed meaning (a renamed menu). The walk only presses links by their exact names
   and returns the final page to the AI, which still judges what it sees.
 - Revisit when the work log shows how often routes are offered, taken and broken (`route` steps in `turn` records).
+
+## Follow-up (2026-11-25): counts and connector drafts
+
+The Why section named the next step: a route used often is a good connector draft. Two parts, both small:
+
+1. **Counts.** Each route in `routes.json` now also keeps `seen` (walks by hand with the same clicks, the first one
+   included) and `fails` (`browser_route` walks that stopped because a click did not go through or the page did not
+   move). `uses` keeps its meaning (`browser_route` walks that reached the end) and `lastAt` is the last walk of
+   either kind. Clicks made by a `browser_route` walk are not counted again as a walk by hand. Files written before
+   have no `seen` or `fails` and read as one walk by hand and no failures. A route whose link is gone is still
+   forgotten, as before, so a broken route never becomes a draft.
+2. **Drafts.** `pnpm connector routes` (no Chrome) reads `routes.json` from the data folder (`--from` points
+   elsewhere) and keeps routes that reached their page at least 3 times in at least 80% of walks
+   (`DRAFT_MIN_SUCCESSES`, `DRAFT_MIN_RATE` in `apps/daemon/src/route-drafts.ts`). Each site becomes a draft
+   `tools.json` with one `lookup` tool per route: open the start, wait for and press each link by name at a
+   person's pace, then `handoff_to_agent`. Never `fill`, `pay` or `contact`.
+   - **Nothing is registered.** Drafts go to `out/connector-drafts/<id>/tools.json` (git-ignored); the command
+     refuses to write into `skills/`. Each draft starts with a `_draft` block that the strict connector schema
+     rejects, so the daemon and `pnpm connector check` refuse the file until a person has reviewed it and deleted
+     the block. The command prints the review steps (rewrite the tool, replace the handoff with `extract`, test with
+     `pnpm connector check`/`try`/`canary`, open a PR).
+   - **Nothing personal.** Page titles are left out (they can hold a name), the query and `#` part of the start are
+     dropped, the start is cut back before any path part that looks like an id (4+ digits, an email, a UUID, a long
+     letter-digit token), and routes with click names that look like numbers, addresses or emails are skipped. The
+     output says what was left out for each route.
+
+A connector made this way returns rows once a person replaces the handoff, and then it can back a quick check on a
+watch ([ADR 0031](0031-quick-check-watch.md)): sites people visit often become sites Dool2 can watch without the AI.
+
