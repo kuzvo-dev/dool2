@@ -77,7 +77,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'read',
     'Read page',
-    'Reads the tab\'s current page as text (if you use it in the answer, add a source link ([screen name](page address))). Clickable things are marked like [e12 button "Search"]. For long pages read only what you need: put text to look for in from (e.g. the page\'s "search results" heading, as written on the page) to start at that line, view: true for only what is on screen now, and if it was cut off, continue with the skip value given.',
+    'Reads the tab\'s current page as text. If you use it in the answer, add a source link at the end of that line ([screen name](page address)): the article or post itself, not a list page; for an agency\'s programs, grants and events its own site, press release or application page rather than an article; none for the user\'s own account pages (orders, balances). Clickable things are marked like [e12 button "Search"]. For long pages read only what you need: put text to look for in from (e.g. the page\'s "search results" heading, as written on the page) to start at that line, view: true for only what is on screen now, and if it was cut off, continue with the skip value given.',
     {
       tabId,
       maxChars: z.number().int().min(1000).max(40000).optional(),
