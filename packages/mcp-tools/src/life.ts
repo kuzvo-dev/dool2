@@ -99,13 +99,13 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
       title: 'Create a goal or scheduled task',
       description:
         'Creates one when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
-        'Reminders are made with this too. Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
+        'Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
         '"check my card bill on the last day of each month" → monthly day 31 · ' +
         '"tell me when a cancelled ticket shows up" → every + notify "when_found" + until (show or departure date), with check_tool + check_input when a service lookup tool can see it (then every 1-5 minutes is fine) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
         '"tell me when the engine oil is due next" → write the last change date in prompt, monthly + when_found (when it is due) + until "when the user says it was changed" · ' +
         '"tell me when the notice with no date yet is posted" → daily + when_found + until "when the notice is posted and reported". ' +
         'For goals give category and plan (3-6 steps) together, and the check-in time as schedule. ' +
-        'Places the user asked to watch as well (e.g. district office notices) go into the watch prompt without asking. If the time is already past, ask for another time. The result says what to confirm with the user and what to show now. ' +
+        'Places the user asked to watch as well go into the watch prompt without asking. If the time is already past, ask for another time. The result says what to confirm with the user and what to show now. ' +
         "Write title, prompt, plan and until conditions in the user's language.",
       inputSchema: {
         title: z
