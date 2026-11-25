@@ -19,6 +19,7 @@ import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/
 import { type Relay, startRelay } from '@dool2/relay'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
+import { pairLink } from './link.js'
 
 class EchoRuntime {
   readonly id = 'claude' as const
@@ -103,6 +104,22 @@ async function phone(url: string) {
     })
   return { keys, invite, inbox, send, code: await pairCode(keys.boxPriv, invite.k), raw: c, key }
 }
+
+describe('the pairing link', () => {
+  it('opens the app on the official relay, which serves no phone app (a web address there was "page not found")', () => {
+    expect(pairLink('https://relay.dool2.com', 'abc')).toBe('dool2://pair#p=abc')
+    expect(pairLink('https://relay.dool2.com/', 'abc')).toBe('dool2://pair#p=abc')
+    // A self-hosted relay serves the phone app at /app/
+    expect(pairLink('http://127.0.0.1:8787', 'abc')).toBe('http://127.0.0.1:8787/app/#p=abc')
+    // An app address set for the PC wins
+    expect(pairLink('https://relay.dool2.com', 'abc', 'https://dool2.com/space/')).toBe(
+      'https://dool2.com/space/#p=abc',
+    )
+    // The phone's scanner and its app-link handler read the invite out of any of them
+    for (const url of ['dool2://pair#p=abc', 'http://127.0.0.1:8787/app/#p=abc'])
+      expect(/#p=([\w-]+)/.exec(url)?.[1]).toBe('abc')
+  })
+})
 
 describe('폰 연결', () => {
   it('초대에는 늘 중계 주소를 싣는다 (스토어 앱·다른 곳의 폰 앱)', async () => {

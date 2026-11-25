@@ -144,6 +144,8 @@ export function runSetup(opts: SetupOptions): {
   let pairTimer: ReturnType<typeof setTimeout> | undefined
   /** Scroll to the QR or confirmation code when it appears (the Settings screen is long) */
   let scrollToPair = false
+  /** The pairing link last copied (the button reads "Copied" for that invite only) */
+  let pairCopied = ''
   // My info and payment (Settings screen): only masked values come in. Editing changes only the filled fields
   const me: {
     have: Record<string, string>
@@ -835,6 +837,14 @@ export function runSetup(opts: SetupOptions): {
           img.alt = m.qrAlt
           img.src = `data:image/svg+xml;base64,${btoa(st.qr)}`
           panel.append(img, el('p', 'cap', m.qrHint))
+          // The same invite as a link to send to the phone (it opens the Dool2 app there)
+          const pairUrl = st.url
+          const copy = button('btn-link', pairCopied === pairUrl ? m.copied : m.copyPairLink, async () => {
+            await navigator.clipboard.writeText(pairUrl).catch(() => {})
+            pairCopied = pairUrl
+            render()
+          })
+          panel.append(copy, el('p', 'cap', m.pairLinkHint))
         } else {
           panel.append(
             el('strong', undefined, m.pairAsk(st.name)),
