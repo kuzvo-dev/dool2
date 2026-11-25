@@ -10,10 +10,11 @@ import { CLAIM_KR, DENIAL_KR, DONE_PAGE_KR } from './region/kr/finish-claims.js'
  */
 
 /**
- * Whether the daemon asks a judge by default. Off since 2026-11-24 (answers vanished and started over on screen);
- * on again once the screens keep the answer as a draft in the progress card until the verdict
+ * Whether the daemon asks a judge by default (chats with the user; never feed posts or scheduled tasks). Off
+ * 2026-11-24 to 11-25 because answers vanished and started over on screen; on again with the draft design: the screens
+ * keep the answer as a draft in the progress card until the verdict, so no answer the person saw is taken back
  */
-export const FINISH_CHECK_ON = false
+export const FINISH_CHECK_ON = true
 
 /** Why work was sent back, as a fixed list so the reasons can be counted per week (scripts/finish-reasons.mjs) */
 export const SEND_BACK_KINDS = [
@@ -274,6 +275,11 @@ export class FinishCheck {
     this.judging.delete(threadId)
   }
 
+  /** Rounds the current request was sent back so far */
+  rounds(threadId: string): number {
+    return this.asks.get(threadId)?.cycles ?? 0
+  }
+
   /** Number of the current request (to see whether a new one arrived while judging) */
   current(threadId: string): number | undefined {
     return this.asks.get(threadId)?.gen
@@ -369,12 +375,13 @@ export class FinishCheck {
 
 /** Note sent back (only the first sentence shows on screen, the rest is for the AI only) */
 export function againNote(v: Verdict, lang: Lang = 'ko'): string {
+  // One part per line: the screen reads "A way to try:" back as the step it shows while Dool2 continues (finishNext)
   return [
-    FINISH_CHECK_TEXT[lang].again,
-    `${FINISH_CHECK_MARK} Something is still left: ${v.why}`,
+    `${FINISH_CHECK_TEXT[lang].again} ${FINISH_CHECK_MARK}`,
+    `Something is still left: ${v.why}`,
     v.next ? `A way to try: ${v.next}` : '',
     'Do not repeat the same method; continue another way. If only the user knows it, first look in mail, connected places and memory or estimate it, and ask only if it really is not there, gathering all questions in one message. When done, report once in the order result, what was done, what is left. Your next answer replaces your earlier answer to this request on screen (the earlier one is folded away), so write it as the one complete answer: keep what still matters from before, not only the new part. Reply to the user in their language.',
   ]
     .filter(Boolean)
-    .join(' ')
+    .join('\n')
 }

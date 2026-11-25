@@ -18,6 +18,7 @@ import type {
   ExtensionStatus,
   FeedItem,
   HandoffRecord,
+  LeftRecordMessage,
   LibraryItem,
   LifeAction,
   LifeState,
@@ -68,6 +69,7 @@ import { type Page, Pager } from './paging.js'
 import { FEED_THREAD_TITLE, LOGIN_BUSY_RE } from './region/kr/talk.js'
 import {
   appNote,
+  finishProgress,
   interimAnswers,
   narrationLine,
   readAppNote,
@@ -273,6 +275,8 @@ const state: {
   messages: StoredMessage[]
   hasMore: boolean
   busy: boolean
+  /** The last answer is a draft being checked before it is final (ADR 0027) */
+  checking: boolean
   queued: string[]
   turn?: Turn
   /** Last finished turn (kept on the panel while resting) */
@@ -295,6 +299,7 @@ const state: {
   messages: [],
   hasMore: false,
   busy: false,
+  checking: false,
   queued: [],
   approvals: [],
   logins: [],
@@ -1370,6 +1375,7 @@ async function loadConversation() {
   state.hasMore = s.hasMore
   state.queued = s.queued
   state.busy = s.busy
+  state.checking = s.checking === true
   if (state.view === 'talk') renderTalk()
   renderPanel('live')
 }
@@ -1400,6 +1406,9 @@ function renderTalk() {
   let prevRole = ''
   // One answer per request: answers the finish check sent back and replaced are folded (11-23)
   const fold = interimAnswers(state.messages, { running: state.busy })
+  // The answer being checked or continued stays in the progress card as a draft, never as a message first (ADR 0027)
+  const draft = finishProgress(state.messages, { running: state.busy, checking: state.checking })?.draft
+  if (draft) fold.hidden.add(draft)
   const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
   const roleOf = new Map(state.messages.map((x) => [x.id, x.role]))
   for (const { m, i } of order) {
@@ -1496,28 +1505,84 @@ function answerTools(text: string) {
   return el('div', 'answer-tools', save)
 }
 
-/** Below the chat: the answer being written + one "working" line + queued messages */
+/** m:ss since a time (the progress card shows elapsed time, never an estimate of what is left) */
+const clockText = (from: number) => {
+  const sec = Math.max(0, Math.floor((Date.now() - from) / 1000))
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+}
+
+/**
+ * The progress card (ProgressCard): one card per request while Dool2 works. Steps update in place, elapsed time and
+ * stop sit on it, and the answer is a draft inside it until the before-finishing check passes (ADR 0027)
+ */
+function progressCard(t: Turn | undefined): HTMLElement {
+  const fp = finishProgress(state.messages, { running: state.busy, checking: state.checking })
+  const draftMsg = fp?.draft ? state.messages.find((m) => m.id === fp.draft) : undefined
+  // Text written after tools were used is the draft of the answer, not a bubble yet
+  const writing = t?.text && t.steps.length ? t.text : ''
+  const title = state.checking
+    ? A().checkingTitle
+    : fp?.rounds
+      ? fp.next
+        ? A().continuingTitle(fp.next)
+        : A().continuingPlain
+      : writing
+        ? A().writingTitle
+        : t?.steps.length
+          ? `${t.activity}…`
+          : A().thinkingDots
+  const time = el('span', 'wc-time', clockText(t?.started ?? Date.now()))
+  time.dataset.from = String(t?.started ?? Date.now())
+  const card = el(
+    'article',
+    'workcard wc-progress',
+    el('div', 'workcard-head', el('span', 'spin'), el('b', 'shimmer', title), time),
+  )
+  // While continuing, the current step of this round under the title
+  if (fp?.rounds && !state.checking && t?.steps.length) card.append(el('p', 'wc-now', `${t.activity}…`))
+  const draftText = writing || draftMsg?.text
+  if (draftText) {
+    const d = el('details', 'wc-draft')
+    const body = el('div', 'rich')
+    setRich(body, draftText)
+    d.append(el('summary', '', fp?.rounds && !state.checking ? A().earlierDraft : A().seeDraft), body)
+    card.append(d)
+  }
+  const foot = el('div', 'workcard-foot')
+  if (draftMsg)
+    foot.append(
+      button(
+        'btn-ghost sm',
+        () => void api('/api/conversation/accept', { method: 'POST' }).catch(() => {}),
+        A().takeAsIs,
+      ),
+    )
+  foot.append(
+    el('span', 'grow'),
+    button(
+      'btn-text sm wc-stop',
+      () => void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {}),
+      A().stopWork,
+    ),
+  )
+  card.append(foot)
+  return card
+}
+
+/** Below the chat: the answer being written, or the progress card while working with tools + queued messages */
 function renderLive() {
   const live = document.getElementById('live')
   if (!live) return
   const parts: HTMLElement[] = []
   const t = state.turn
-  if (state.busy && t) {
-    if (t.text) {
+  if (state.busy) {
+    const fp = finishProgress(state.messages, { running: true, checking: state.checking })
+    // A plain chat answer streams as a bubble; work with tools (or a check) gets the one progress card
+    if (t?.text && !t.steps.length && !fp) {
       const b = el('div', 'bubble rich')
       setRich(b, t.text)
       parts.push(who(new Date().toISOString()), b)
-    }
-    parts.push(
-      el(
-        'div',
-        'working',
-        el('span', 'spin'),
-        el('span', 'shimmer', t.steps.length ? `${t.activity}…` : A().thinkingDots),
-      ),
-    )
-  } else if (state.busy) {
-    parts.push(el('div', 'working', el('span', 'spin'), el('span', 'shimmer', T().dooriWorkingDots)))
+    } else parts.push(progressCard(t))
   }
   for (const q of state.queued)
     parts.push(el('div', 'bubble me queued', q), el('p', 'queued-note meta', T().queuedNote))
@@ -1568,6 +1633,11 @@ function onLive(ev: ConversationLiveEvent) {
       void api<ConversationState>('/api/conversation?limit=1')
         .then((s) => setMainBusy(s.busy))
         .catch(() => {})
+    return
+  }
+  if (ev.kind === 'checking') {
+    state.checking = ev.checking
+    if (state.view === 'talk') renderTalk()
     return
   }
   if (ev.kind === 'queued') {
@@ -1666,6 +1736,11 @@ function onAgent(ev: AgentEvent) {
 
 /** Appends one saved message to the end of the chat (without redrawing) */
 function appendSaved(m: StoredMessage) {
+  // A draft answer waits in the progress card until it is checked (ADR 0027)
+  if (finishProgress(state.messages, { running: state.busy, checking: state.checking })?.draft === m.id) {
+    renderLive()
+    return
+  }
   const list = document.querySelector('#messages .thread')
   if (!list) {
     renderTalk()
@@ -1871,6 +1946,7 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
     if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
+    if (rec.kind === 'left') return leftCard(rec as LeftRecordMessage, active)
     if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
     if (rec.kind === 'cards') return pickCards(rec as CardsRecordMessage)
     if (rec.kind === 'made') {
@@ -1891,6 +1967,20 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
     return document.createTextNode('')
   }
   return handoffCard(raw, active)
+}
+
+/** What the before-finishing check left at its limit, with [Continue] (only until the next message) */
+function leftCard(rec: LeftRecordMessage, active: boolean): HTMLElement {
+  const go = button(
+    'btn-ghost sm',
+    () => {
+      go.disabled = true
+      void api('/api/conversation/continue', { method: 'POST' }).catch(() => {})
+    },
+    A().continueLeft,
+  )
+  go.disabled = !active || state.busy
+  return el('div', 'card quiet left-card', el('div', 'card-label', A().leftTitle), el('p', '', rec.why), go)
 }
 
 /** Card photos: the window never connects to outside servers; it gets them from the daemon (/api/thumb) and caches them */
@@ -2680,6 +2770,10 @@ async function main() {
   window.dool2.update.onChange(renderUpdate)
   // Re-check the extension, approvals and login requests (so phone actions show up). Every 3s in front, 15s behind
   let polledAt = 0
+  setInterval(() => {
+    for (const c of document.querySelectorAll<HTMLElement>('.wc-time'))
+      c.textContent = clockText(Number(c.dataset.from) || Date.now())
+  }, 1_000)
   setInterval(() => {
     const clock = document.getElementById('work-clock')
     if (clock && state.turn) clock.textContent = elapsed(Math.floor((Date.now() - state.turn.started) / 1000))

@@ -107,8 +107,14 @@ export class ThreadService {
     return this.running.has(threadId)
   }
 
-  cancel(threadId: string) {
-    this.running.get(threadId)?.abort()
+  /** Turns whose partial answer is dropped when they stop (the person took the earlier draft as the result) */
+  private readonly discard = new Set<string>()
+  /** Stops the running turn. discard: save nothing of it (no partial answer, no "stopped" line) */
+  cancel(threadId: string, o: { discard?: boolean } = {}) {
+    const ac = this.running.get(threadId)
+    if (!ac) return
+    if (o.discard) this.discard.add(threadId)
+    ac.abort()
   }
 
   /** Resident sessions per thread (ADR 0035). key: what the program was opened with; a change opens a new one */
@@ -554,8 +560,8 @@ export class ThreadService {
       }
 
       if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
-      if (saved) {
-        // already saved
+      if (saved || this.discard.has(threadId)) {
+        // already saved, or dropped on purpose
       } else if (answer) {
         for (const m of saveAnswer()) yield { type: 'saved', message: m }
       } else if (failed && 'message' in failed) {
@@ -564,6 +570,7 @@ export class ThreadService {
       // Keep hand-off cards even when the turn ended without a reply
       for (const r of below.splice(0)) yield { type: 'saved', message: store.addMessage(threadId, 'tool', r) }
     } finally {
+      this.discard.delete(threadId)
       this.lastCall.set(threadId, Date.now())
       this.running.delete(threadId)
       this.idleLater(threadId)

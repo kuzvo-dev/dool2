@@ -62,3 +62,39 @@ describe('model profiles (ADR 0037)', () => {
     expect(inputs.map((i) => i.model)).toEqual([undefined, 'haiku'])
   })
 })
+
+describe('stopping a turn without keeping it', () => {
+  it('cancel with discard saves no partial answer and no stopped line', async () => {
+    let release = () => {}
+    const rt: AgentRuntime = {
+      id: 'claude',
+      detect: async () => ({ id: 'claude', installed: true, loggedIn: true }),
+      async *runTurn(input) {
+        yield { type: 'text', delta: 'half an ans' }
+        await new Promise<void>((r) => {
+          release = r
+          input.signal?.addEventListener('abort', () => r())
+        })
+        yield { type: 'error', code: 'aborted', message: 'stopped' }
+      },
+    }
+    const store = new Store(':memory:')
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [],
+    })
+    const t = store.createThread('claude')
+    const run = (async () => {
+      for await (const _ of svc.send(t.id, 'go on')) {
+      }
+    })()
+    await new Promise((r) => setTimeout(r, 10))
+    svc.cancel(t.id, { discard: true })
+    release()
+    await run
+    expect(store.listMessages(t.id).map((m) => m.role)).toEqual(['user'])
+  })
+})

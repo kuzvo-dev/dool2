@@ -131,4 +131,4 @@ Lucide-style line icons, 1.75px, 20px box, rounded ends, ink/ink-muted. No emoji
 
 ## Components
 
-Button · Composer · Message · ApprovalCard · AgentLog · StatusHeader · Avatar · PickCards · ChatBlocks (quick replies, list rows, single result, draft to send). Each folder's README has its rules.
+Button · Composer · Message · ApprovalCard · AgentLog · ProgressCard (one card per request, the answer as a draft until it is checked) · StatusHeader · Avatar · PickCards · ChatBlocks (quick replies, list rows, single result, draft to send). Each folder's README has its rules.

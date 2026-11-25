@@ -136,6 +136,10 @@ export interface LinkHost {
   /** One conversation (ADR 0015) */
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
+  /** Take the draft as the result (ADR 0027) */
+  acceptConversation(): void
+  /** Continue what the before-finishing check left */
+  continueConversation(): void
   connect(id: string, action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify'): Promise<{ tabId?: number }>
   /** Side conversations: create and delete */
   sideNew(): Promise<Extract<PcToPhone, { kind: 'thread' }>>
@@ -484,6 +488,10 @@ export class PhoneLink {
       }
       case 'conversation-cancel':
         return this.host.cancelConversation()
+      case 'conversation-accept':
+        return this.host.acceptConversation()
+      case 'conversation-continue':
+        return this.host.continueConversation()
       case 'connect': {
         const action = msg.action
         if (
