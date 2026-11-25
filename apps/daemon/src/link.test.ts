@@ -2,6 +2,8 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
+import { encodeFrame, runHost } from '@dool2/browser'
 import type { AgentEvent, AgentStatus, PairInvite, PcToPhone, PhoneToPc } from '@dool2/protocol'
 import { approvalSignText, FILE_CHUNK } from '@dool2/protocol'
 import {
@@ -251,6 +253,22 @@ describe('처음부터 다시 (시험용 PC)', () => {
   }
   const done = (p: Awaited<ReturnType<typeof phone>>) =>
     p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'reset-done' }> => m.kind === 'reset-done')
+
+  it('Chrome going on or off reaches the phones (a connected service says Chrome is closed meanwhile)', async () => {
+    const { p } = await paired(false)
+    const lastExtension = () =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'state' }> => m.kind === 'state').at(-1)?.extension
+    await waitFor(() => lastExtension() === false)
+    // The extension connects through its native host, as Chrome would start it
+    const toHost = new PassThrough()
+    const done = runHost({ dataDir: dir ?? '', stdin: toHost, stdout: new PassThrough(), waitMs: 2_000 })
+    toHost.write(encodeFrame({ event: 'hello', version: '0.3.2', browser: 'Chrome 158' }))
+    await waitFor(() => lastExtension() === true)
+    // Chrome closes
+    toHost.end()
+    await done
+    await waitFor(() => lastExtension() === false)
+  })
 
   it('시험용 PC에서만, 이 폰의 새 서명일 때만 대화·기억을 지운다 (연결은 고를 때만)', async () => {
     const { api, p } = await paired(true)

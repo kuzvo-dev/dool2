@@ -2236,6 +2236,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       lang,
     },
   )
+  // Chrome or its extension went on or off: the phones redraw what depends on it (a connected service's chip says
+  // Chrome is closed instead of "connected" while its tools cannot run, 11-25)
+  let phoneExtension = browser.status.connected
+  let extensionResync: ReturnType<typeof setTimeout> | undefined
+  browser.on('status', (s) => {
+    if (s.connected === phoneExtension) return
+    phoneExtension = s.connected
+    clearTimeout(extensionResync)
+    extensionResync = setTimeout(() => void link.resync().catch(() => {}), 500)
+    extensionResync.unref?.()
+  })
   browserTools.approvals.onChange = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
   browserTools.approvals.onCreate = (rec) => {
     // An approval request comes from a tool call: the chat that made it

@@ -54,6 +54,7 @@ export const talkText = messages({
     // Connect card
     cardNotFound: (service: string) => `${service} 연결 카드를 찾지 못했어요`,
     isConnected: (name: string) => `${name} 연결돼 있어요`,
+    chromeOffFor: (name: string) => `${name} · Chrome이 꺼져 있어 지금은 못 써요`,
     loggingIn: (name: string) => `${name}에 로그인하는 중이에요`,
     connectTitle: (name: string) => `${name} 연결`,
     busyNote: '두리가 Chrome에서 하고 있어요. 다른 일을 하셔도 돼요',
@@ -185,6 +186,7 @@ export const talkText = messages({
 
     cardNotFound: (service: string) => `Couldn't find the connect card for ${service}`,
     isConnected: (name: string) => `${name} is connected`,
+    chromeOffFor: (name: string) => `${name} · Chrome is closed, so it can't be used right now`,
     loggingIn: (name: string) => `Logging in to ${name}`,
     connectTitle: (name: string) => `Connect ${name}`,
     busyNote: 'Dool2 is doing it in Chrome. Feel free to do other things',

@@ -514,8 +514,11 @@ async function loadAgents() {
 async function loadExtension() {
   const { extension } = await api<{ extension: ExtensionStatus }>('/api/browser/extension')
   const changed = JSON.stringify(extension) !== JSON.stringify(state.extension)
+  const flipped = extension.connected !== state.extension?.connected
   state.extension = extension
   if (changed) renderDevice()
+  // Connected services' chips in the chat depend on it
+  if (flipped && state.view === 'talk') renderTalk()
   return extension
 }
 
@@ -2455,7 +2458,9 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
   const mark = withLogo(el('span', 'svc-mark', /^\d+/.exec(c.name)?.[0] ?? [...c.name][0] ?? ''), c.id)
   if (it.connectedAt) {
     card.className = 'card quiet connect-card'
-    card.append(el('div', 'card-label', mark, T().isConnected(c.name)))
+    // Its tools run in Chrome: while Chrome or the extension is off, say so instead of "connected"
+    const off = c.how !== 'device' && state.extension !== undefined && !state.extension.connected
+    card.append(el('div', 'card-label', mark, off ? T().chromeOffFor(c.name) : T().isConnected(c.name)))
     return card
   }
   const busy = state.connecting.has(c.id)

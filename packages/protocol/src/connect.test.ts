@@ -5,6 +5,7 @@ import {
   ConnectCardSchema,
   checkConnectCard,
   localizeCard,
+  needsPcChrome,
   TierSchema,
 } from './connect.js'
 
@@ -110,5 +111,14 @@ describe('localizeCard (ADR 0029)', () => {
   it('rejects translations with a different number of abilities', () => {
     const bad = { ...base, i18n: { en: { abilities: [{ title: 'Only one', say: 'one' }] } } }
     expect(ConnectCardSchema.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('services that run in the PC Chrome', () => {
+  it('everything but phone features needs Chrome on the PC', () => {
+    expect(needsPcChrome({ how: 'browser' })).toBe(true)
+    expect(needsPcChrome({ how: 'official' })).toBe(true)
+    expect(needsPcChrome({ how: 'open' })).toBe(true)
+    expect(needsPcChrome({ how: 'device' })).toBe(false)
   })
 })

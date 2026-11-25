@@ -47,6 +47,14 @@ export type ConnectCategory = z.infer<typeof ConnectCategorySchema>
 export const ConnectHowSchema = z.enum(['browser', 'official', 'open', 'device'])
 export type ConnectHow = z.infer<typeof ConnectHowSchema>
 
+/**
+ * Whether a service's tools run in the PC's Chrome (everything but phone features). While Chrome or the Dool2
+ * extension is off, such a connected service cannot be used, so the screens do not call it "connected" then
+ */
+export function needsPcChrome(card: { how: ConnectHow }): boolean {
+  return card.how !== 'device'
+}
+
 /** One-tap sign-in providers */
 export const SocialProviderSchema = z.enum(['kakao', 'naver', 'google', 'apple', 'facebook', 'payco', 'toss'])
 export type SocialProvider = z.infer<typeof SocialProviderSchema>
