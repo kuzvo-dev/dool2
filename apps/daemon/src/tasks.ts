@@ -27,6 +27,11 @@ export interface TaskSpec {
   avoid: string[]
   /** It needs the browser or PC apps (one task at a time) */
   browser: boolean
+  /**
+   * It only reads pages (a quick check): it runs at once in its own background tab, next to a task that holds the
+   * browser, and clicks, types, signs in or pays only when no other task holds it
+   */
+  lookup: boolean
 }
 
 const strings = (v: unknown, max: number, len = 200): string[] =>
@@ -51,7 +56,8 @@ export function parseTaskSpec(a: Record<string, unknown>): TaskSpec | string {
     doneWhen,
     known: strings(a.known, 12),
     avoid: strings(a.avoid, 8),
-    browser: a.browser !== false,
+    browser: a.browser !== false || a.lookup === true,
+    lookup: a.lookup === true,
   }
 }
 
@@ -89,6 +95,13 @@ export interface Task {
   recordId?: string
   /** The site it worked on last */
   host?: string
+  /**
+   * Messages held while it waits for the browser after it had begun: the person's answer to its card, or its own next
+   * round when it gave the browser to a task the person answered. Its next turn starts with them
+   */
+  resume: string[]
+  /** The person answered its card while another task held the browser: it is first in line, and the holder yields */
+  answered?: boolean
 }
 
 /**
@@ -119,6 +132,20 @@ export function saidIn(said: string, asked: string[]): boolean {
   return asked.some((a) => bare(a).includes(w)) || bare(asked.join('')).includes(w)
 }
 
+/**
+ * Browser tools that only open, read, move between or close pages, never bringing a tab forward: what a lookup task
+ * does beside the task that drives the browser (ADR 0038). Clicking, typing, scrolling and screenshots front the tab
+ */
+export const LOOKUP_READS: ReadonlySet<string> = new Set([
+  'open',
+  'navigate',
+  'read',
+  'back',
+  'tabs',
+  'wait',
+  'close',
+])
+
 const ENDED: ReadonlySet<TaskStatus> = new Set(['done', 'stopped', 'failed'])
 
 export interface TaskBoardOptions {
@@ -127,6 +154,8 @@ export interface TaskBoardOptions {
   /** Same helpers as the conversation's work steps */
   tabHost?: (tabId: number) => string | undefined
   toolTitle?: (name: string) => string | undefined
+  /** Lookup tasks may read beside the holder (the browser extension opens tabs in the background). Default yes */
+  parallelReads?: () => boolean
 }
 
 export class TaskBoard {
@@ -134,8 +163,13 @@ export class TaskBoard {
   /** Tasks from before a restart, only to draw their cards */
   private readonly frozen = new Map<string, TaskView>()
   private seq = 0
-  /** The task that has the browser now (one Chrome profile, one task at a time) */
+  /**
+   * The task that drives the browser now (one Chrome profile, one acting task at a time). A task waiting for the person
+   * gives it up; lookup tasks read beside it in their own tabs without it
+   */
   holder: string | undefined
+  /** Which task each tab belongs to (opened or first used by it): no task touches another task's tab */
+  private readonly tabs = new Map<number, string>()
   private readonly now: () => number
 
   constructor(private readonly o: TaskBoardOptions = {}) {
@@ -155,6 +189,7 @@ export class TaskBoard {
       begun: false,
       work: new WorkLog(this.now, this.o.tabHost, this.o.toolTitle, this.o.lang?.() ?? 'ko'),
       turnOut: [],
+      resume: [],
     }
     this.tasks.set(t.id, t)
     return t
@@ -181,41 +216,103 @@ export class TaskBoard {
     return this.all().filter((t) => !this.ended(t))
   }
 
-  /** Whether it may run now: it needs no browser, or the browser is free or already its own */
-  canStart(t: Task): boolean {
-    return !t.spec.browser || this.holder === undefined || this.holder === t.id
+  /** It drives the browser or PC apps, so it takes turns with them (a lookup task reads beside the holder) */
+  needsSlot(t: Task): boolean {
+    return t.spec.browser && !(t.spec.lookup && this.parallel())
   }
-  /** Tasks ahead of a waiting one: the one holding the browser and the browser tasks waiting since earlier */
+  private parallel(): boolean {
+    return this.o.parallelReads?.() ?? true
+  }
+  /** Whether it may run now: it needs no slot, or the browser is free or already its own */
+  canStart(t: Task): boolean {
+    return !this.needsSlot(t) || this.holder === undefined || this.holder === t.id
+  }
+  /** Tasks ahead of a waiting one: the one holding the browser and the tasks before it in line */
   ahead(t: Task): number {
-    if (t.status !== 'waiting' || !t.spec.browser) return 0
-    const before = this.all().filter(
-      (x) => x !== t && x.status === 'waiting' && x.spec.browser && x.createdAt <= t.createdAt,
-    )
-    return before.length + (this.holder && this.holder !== t.id ? 1 : 0)
+    if (t.status !== 'waiting' || !this.needsSlot(t)) return 0
+    const line = this.line()
+    const at = line.indexOf(t)
+    return (at < 0 ? line.length : at) + (this.holder && this.holder !== t.id ? 1 : 0)
+  }
+  /**
+   * Who waits for the slot, in order: tasks the person just answered first (they are mid-flow and the person is
+   * there), then tasks that had begun, then new ones as they came
+   */
+  private line(): Task[] {
+    const rank = (t: Task) => (t.answered ? 0 : t.begun ? 1 : 2)
+    return this.all()
+      .filter((t) => t.status === 'waiting' && this.needsSlot(t))
+      .sort((a, b) => rank(a) - rank(b) || a.createdAt - b.createdAt)
   }
   /** The first waiting task that may run now */
   nextReady(): Task | undefined {
-    return this.all().find((t) => t.status === 'waiting' && this.canStart(t))
+    const free = this.all().find((t) => t.status === 'waiting' && !this.needsSlot(t))
+    if (free) return free
+    const first = this.line()[0]
+    return first && this.canStart(first) ? first : undefined
+  }
+  /** Another task the person answered waits for the slot this task holds (it yields at the end of its turn) */
+  yieldsTo(t: Task): Task | undefined {
+    if (this.holder !== t.id) return undefined
+    return this.line().find((x) => x !== t && x.answered)
   }
   start(t: Task): void {
     t.status = 'working'
     t.startedAt ??= this.now()
     t.endedAt = undefined
-    if (t.spec.browser) this.holder = t.id
+    t.answered = undefined
+    if (this.needsSlot(t)) this.holder = t.id
   }
   /**
-   * A browser or PC app call from a chat: a task may use them if no other task holds them (it then holds them until it
-   * ends). Chats that are not tasks are not lined up here (side chats, the feed: as before task sessions)
+   * A browser or PC app call from a chat. read: it only opens, reads or closes pages. A task may act if no other task
+   * holds the slot (it then holds it until it waits for the person or ends); a lookup task reads beside the holder
+   * (background: in a tab it opens without bringing it forward). The tab it names must not be another task's. Chats
+   * that are not tasks are not lined up here (side chats, the feed: as before task sessions)
    */
-  claim(threadId: string): { ok: true } | { ok: false; holder: Task } {
+  claim(
+    threadId: string,
+    o: { read?: boolean; tabId?: number } = {},
+  ): { ok: true; background?: boolean } | { ok: false; holder?: Task; tab?: Task } {
     const t = this.byThread(threadId)
-    if (!t || this.holder === t.id) return { ok: true }
+    if (!t) return { ok: true }
+    if (o.tabId !== undefined) {
+      const owner = this.tabOwner(o.tabId)
+      if (owner && owner !== t) return { ok: false, tab: owner }
+    }
+    const own = () => {
+      if (o.tabId !== undefined) this.own(t, o.tabId)
+    }
+    if (this.holder === t.id) {
+      own()
+      return { ok: true }
+    }
     const h = this.holder ? this.tasks.get(this.holder) : undefined
-    if (!h || this.ended(h)) {
+    const free = !h || this.ended(h)
+    if (o.read && t.spec.lookup && this.parallel()) {
+      own()
+      return free ? { ok: true } : { ok: true, background: true }
+    }
+    if (free) {
       this.holder = t.id
+      own()
       return { ok: true }
     }
     return { ok: false, holder: h }
+  }
+  /** Whether a lookup task reads in the background now (another task drives the browser) */
+  readsBeside(threadId: string): boolean {
+    const t = this.byThread(threadId)
+    return Boolean(t?.spec.lookup && this.parallel() && this.holder && this.holder !== t.id)
+  }
+  /** A tab a task opened or used is its own until it ends */
+  own(t: Task, tabId: number): void {
+    if (!this.tabs.has(tabId) || !this.tabOwner(tabId)) this.tabs.set(tabId, t.id)
+  }
+  /** The live task a tab belongs to */
+  tabOwner(tabId: number): Task | undefined {
+    const id = this.tabs.get(tabId)
+    const t = id ? this.tasks.get(id) : undefined
+    return t && !this.ended(t) ? t : undefined
   }
   release(t: Task): void {
     if (this.holder === t.id) this.holder = undefined
@@ -227,7 +324,10 @@ export class TaskBoard {
     t.draft = undefined
     t.stopping = undefined
     t.accepting = undefined
+    t.resume = []
+    t.answered = undefined
     this.release(t)
+    for (const [tab, id] of this.tabs) if (id === t.id) this.tabs.delete(tab)
   }
 
   /** A tool call of the task: one more step on its card */
@@ -417,7 +517,7 @@ export function withTaskHint<T>(result: T, tool?: string): T {
  * user to search themselves (WP7 bench, twice)
  */
 export const FIND_HINT =
-  'If none of these answers it, the web does: hand the lookup to a task with task_start (browser: true) and tell the user you are on it; it starts after a task that holds the browser, if any. Do not send the user to look it up themselves.'
+  'If none of these answers it, the web does: hand the lookup to a task with task_start (lookup: true) and tell the user you are on it; it starts at once in its own tab, even while another task uses the browser. Do not send the user to look it up themselves.'
 
 /**
  * task_list for the conversation AI: what each task is doing, waiting on, or came out with. waitsOn: the cards a
@@ -509,5 +609,6 @@ export function signInSpec(service: string, steps: string, lang: Lang = 'ko'): T
     known: ['The ID and password are in the vault (browser_login)'],
     avoid: ['asking the user for the password', 'signing up for a new account without the user choosing it'],
     browser: true,
+    lookup: false,
   }
 }

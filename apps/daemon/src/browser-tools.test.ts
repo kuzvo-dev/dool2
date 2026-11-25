@@ -146,6 +146,30 @@ describe('브라우저 도구 실행', () => {
     expect(b.calls.map((c) => c[0])).toEqual(['open', 'snapshot'])
   })
 
+  it('a lookup beside another task opens its tab behind and leaves the live view where it was', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    const opened: [number, string][] = []
+    tools.onOpen = (tabId, viewer) => opened.push([tabId, viewer])
+    tools.lastTabId = 1
+    // An older extension ignores background: the daemon learns it from the answer
+    await tools.run('open', { url: 'https://weather.example' }, { ai: true, viewer: 'tw', background: true })
+    expect(b.calls[0]).toEqual(['open', { url: 'https://weather.example', background: true }])
+    expect(tools.backgroundOpens).toBe(false)
+    expect(tools.lastTabId).toBe(1)
+    expect(opened).toEqual([[3, 'tw']])
+    const ext = fakeBrowser()
+    const call = ext.call
+    ext.call = async (cmd, args) => (cmd === 'open' ? { tabId: 4, background: true } : call(cmd, args))
+    const t2 = new BrowserTools(ext)
+    await t2.run('open', { url: 'https://weather.example' }, { ai: true, viewer: 'tw', background: true })
+    expect(t2.backgroundOpens).toBe(true)
+    expect(t2.lastTabId).toBeUndefined()
+    // The task that drives the browser opens in front as before
+    await t2.run('open', { url: 'https://shop.example' }, { ai: true, viewer: 'ta' })
+    expect(t2.lastTabId).toBe(4)
+  })
+
   it('구매 버튼은 누르지 않고 승인을 요청하라고 한다', async () => {
     const b = fakeBrowser()
     const tools = new BrowserTools(b)

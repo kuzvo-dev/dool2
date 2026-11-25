@@ -148,6 +148,7 @@ import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
 import {
+  LOOKUP_READS,
   namesTaskTool,
   notesMessage,
   parseTaskSpec,
@@ -524,6 +525,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     lang,
     tabHost: (tabId) => browserTools.tabHost(tabId),
     toolTitle: (name) => connectors.titleOf(name),
+    // An older extension brings every new tab forward: lookups then take turns like the others
+    parallelReads: () => browserTools.backgroundOpens !== false,
   })
   tasks.restore(store.getSetting('tasks'))
   const taskSessionsOn = () => readSettings().taskSessions ?? TASK_SESSIONS_DEFAULT
@@ -2248,6 +2251,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const side = store.getThread(threadId)?.side === true
     // Whether this answer produced an approval request or a "please do it yourself" (then no separate "done" notification is sent)
     let asked = false
+    // It handed the tab to the person or put up a connection: the person uses the browser, so a task keeps it
+    let personDrives = false
     // When this turn began: a tool result since then that waits for the person also means the turn waits
     const turnBegan = Date.now()
     // Feed "finished tasks": the request and answer of a turn that did work with tools (more than looking things up)
@@ -2365,6 +2370,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // so the "done" notification goes out as usual and the before-finishing check runs (it checks whether a question asked by a quick answer was really needed)
         if (rec?.kind && WAITING_KINDS.has(rec.kind)) {
           asked = true
+          if (rec.kind === 'handoff' || rec.kind === 'connect') personDrives = true
           // A task's card for the person also goes in the conversation, where the person is (ADR 0038)
           const cur = task ? conversation.current()?.id : undefined
           if (cur && ev.type === 'saved') postSaved(cur, store.addMessage(cur, 'tool', ev.message.text))
@@ -2517,6 +2523,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (task)
         taskTurnEnded(task, {
           asked,
+          holds: personDrives,
           again: again !== undefined,
           next: next !== undefined,
           failed,
@@ -3083,6 +3090,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
   }
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
+  // The tab a task opens is its own: no other task works in it (ADR 0038)
+  browserTools.onOpen = (tabId, viewer) => {
+    const t = tasks.byThread(viewer)
+    if (t) tasks.own(t, tabId)
+  }
   browserTools.logins.onCreate = (r) => {
     const only = workingThread()
     if (only) loginThread.set(r.id, only)
@@ -3128,7 +3140,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * If that chat is still answering (on the phone the card shows before the answer), do not discard it: send it when the answer ends
    */
   const pendingFollowUps = new Map<string, string[]>()
-  function followUp(threadId: string, said: string) {
+  function followUp(threadId: string, said: string, o: { started?: boolean } = {}) {
     // A timer may fire after the daemon closed (its database is closed then): nothing to follow up
     if (closing || !store.getThread(threadId)) return
     // An app note telling the conversation of task sessions to use a tool only a task has (ADR 0038)
@@ -3146,6 +3158,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (threads.isRunning(threadId)) {
       pendingFollowUps.set(threadId, [...(pendingFollowUps.get(threadId) ?? []), text])
       return
+    }
+    if (task && tasks.needsSlot(task) && task.begun) {
+      // The browser is free: a task the person answered takes it back at once
+      if (tasks.holder === undefined) tasks.start(task)
+      else if (tasks.holder !== task.id) {
+        // Another task drives it: this one waits first in line with the answer, and that task yields at its turn's end
+        task.answered = task.answered || task.status === 'needs-you'
+        task.status = 'waiting'
+        task.resume.push(text)
+        journal.write('task', { id: task.id, event: 'line', answered: task.answered === true })
+        emitTask(task)
+        return
+      }
+      // Its own next round, while a task the person answered waits: it gives the browser over and goes on after it
+      else if (!o.started && tasks.yieldsTo(task)) {
+        tasks.release(task)
+        task.status = 'waiting'
+        task.resume.push(text)
+        journal.write('task', { id: task.id, event: 'yield' })
+        emitTask(task)
+        startNext()
+        return
+      }
     }
     fromPhone.add(threadId)
     void (async () => {
@@ -3251,14 +3286,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       emitTask(t)
       return false
     }
+    const answered = t.answered === true
     tasks.start(t)
-    const text = t.begun ? notesMessage(t.notes.splice(0), lang(), t.shownNotes) : taskBrief(t, lang())
+    // A task that had begun and waited for the browser goes on with what it was holding: the person's answer to its
+    // card, its own next round, the person's notes
+    const held = t.resume.splice(0)
+    const notes = t.notes.length ? notesMessage(t.notes.splice(0), lang(), t.shownNotes) : ''
+    const text = !t.begun
+      ? taskBrief(t, lang())
+      : [...held, notes].filter(Boolean).join('\n\n') || notesMessage([], lang(), t.shownNotes)
+    const fresh = !t.begun || !held.length
     t.begun = true
-    // The finish check compares the task's answer with what it was given to get done
-    finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
-    journal.write('task', { id: t.id, event: 'run' })
+    // The finish check compares the task's answer with what it was given to get done (a resumed round keeps its count)
+    if (fresh) finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
+    journal.write('task', {
+      id: t.id,
+      event: held.length ? 'resume' : 'run',
+      ...(answered ? { answered: true } : {}),
+    })
     emitTask(t)
-    followUp(t.threadId, text)
+    followUp(t.threadId, text, { started: true })
     return true
   }
   /** Starts what waits in line once the browser is free */
@@ -3323,7 +3370,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** After each turn of a task: continue, wait for the person, take the person's notes, or end */
   function taskTurnEnded(
     t: Task,
-    r: { asked: boolean; again: boolean; next: boolean; failed: boolean; nextStep?: string },
+    r: { asked: boolean; again: boolean; next: boolean; failed: boolean; nextStep?: string; holds?: boolean },
   ) {
     if (tasks.ended(t)) return
     if (t.stopping) return endTask(t, 'stopped')
@@ -3349,6 +3396,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     if (r.asked) {
       t.status = 'needs-you'
+      // Waiting for the person does not hold the browser (it could be half an hour): the next task in line starts. Its
+      // tabs stay its own, and it takes the browser back when the person answers. A hand-over (the person works in its
+      // tab) or a connection keeps it: the person is using the browser then
+      if (!r.holds) {
+        tasks.release(t)
+        startNext()
+      }
       emitTask(t)
       return
     }
@@ -3418,6 +3472,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const text = notesMessage(t.notes.splice(0), lang(), t.shownNotes)
     emitTask(t)
     followUp(t.threadId, text)
+    if ((t.status as Task['status']) === 'waiting')
+      return `Task ${t.id} goes on with this note as soon as the browser is free (another task is using it). Tell the user in one short sentence.`
     return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
   }
   /** A new task from a spec: its own chat, its card in the conversation segment it came from, then it starts or waits */
@@ -3447,6 +3503,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       t.begun = true
       tasks.start(t)
       t.status = evalSeed.status
+      // Waiting for the person, it does not hold the browser (as a real task)
+      if (evalSeed.status === 'needs-you') tasks.release(t)
       if (evalSeed.now) t.now = evalSeed.now
       emitTask(t)
       return t
@@ -3589,12 +3647,34 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         true,
       )
     if (kind === 'task' && (b === 'browser' || b === 'screen')) {
-      const r = tasks.claim(caller)
-      if (!r.ok)
+      const args = (await readJson(req)) as { tabId?: unknown } | null
+      const tabId = b === 'browser' && typeof args?.tabId === 'number' ? args.tabId : undefined
+      const r = tasks.claim(caller, {
+        read: b === 'browser' && LOOKUP_READS.has(c),
+        ...(tabId !== undefined ? { tabId } : {}),
+      })
+      if (r.ok) return undefined
+      if (r.tab)
         return toolText(
-          `The browser and PC apps are in use by another task (${r.holder.id} "${r.holder.spec.title}"). Go on with the other tools, or finish saying what still needs the browser.`,
+          `Tab ${tabId} belongs to another task (${r.tab.id} "${r.tab.spec.title}"); two tasks never work in one tab. Open your own with browser_open.`,
           true,
         )
+      const h = r.holder as Task
+      const t = tasks.byThread(caller)
+      return toolText(
+        t?.spec.lookup
+          ? `This lookup task reads pages beside another task that is using the browser (${h.id} "${h.spec.title}"): open, navigate, read and close work now; clicking, typing, signing in, paying and PC apps wait for it. Read what you can, or finish saying what still needs a click.`
+          : `The browser and PC apps are in use by another task (${h.id} "${h.spec.title}"). Go on with the other tools, or finish saying what still needs the browser.`,
+        true,
+      )
+    }
+    // A service tool drives the browser itself (clicks, types): a lookup task reading beside another task does not run one
+    if (kind === 'task' && b === 'service' && c === 'call' && tasks.readsBeside(caller)) {
+      const h = tasks.holder ? tasks.get(tasks.holder) : undefined
+      return toolText(
+        `Service tools drive the browser, which another task is using now${h ? ` (${h.id} "${h.spec.title}")` : ''}. Read the site with browser_open and browser_read instead, or finish saying what is left.`,
+        true,
+      )
     }
     return undefined
   }
@@ -4053,6 +4133,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           await browserTools.run(c, args && typeof args === 'object' ? args : {}, {
             ai: true,
             viewer: caller ?? '',
+            // A lookup task reading beside the task that drives the browser opens its tabs behind (ADR 0038)
+            ...(caller && tasks.readsBeside(caller) ? { background: true } : {}),
           }),
         )
       }

@@ -875,7 +875,18 @@ export class BrowserTools {
   /** Off: actions give the whole page as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
   changesOnly = true
   /** Per AI tool call: whose call it is and the whole pages read during it (they become what it saw once it returns) */
-  private call = new AsyncLocalStorage<{ reads: Map<number, SeenPage>; viewer: string }>()
+  private call = new AsyncLocalStorage<{
+    reads: Map<number, SeenPage>
+    viewer: string
+    background?: boolean
+  }>()
+  /**
+   * Whether the browser extension opens a tab without bringing it forward when asked (lookup tasks reading beside the
+   * task that drives the browser, ADR 0038). Unknown until the first such open; an older extension says no
+   */
+  backgroundOpens: boolean | undefined
+  /** A tab was opened by an AI call (viewer: its chat), so its task owns it */
+  onOpen?: (tabId: number, viewer: string) => void
   /** Screens where a hand-off was sent back once (tab:URL) — handed off only the second time */
   private handoffChecked = new Set<string>()
   /** Sites (origin) received through a login card that have not logged in successfully yet. On failure the vault entry is removed and the card asked again */
@@ -1182,13 +1193,15 @@ export class BrowserTools {
   async run(
     tool: string,
     args: Record<string, unknown>,
-    opts: { ai?: boolean; viewer?: string } = {},
+    opts: { ai?: boolean; viewer?: string; background?: boolean } = {},
   ): Promise<ToolResult> {
     // (outside any AI call's record, so a Dool2 call made while serving one does not count as seen)
     if (!opts.ai) return this.call.exit(() => this.runCall(tool, args))
     const reads = new Map<number, SeenPage>()
     const viewer = opts.viewer ?? ''
-    const r = await this.call.run({ reads, viewer }, () => this.runCall(tool, args))
+    const r = await this.call.run({ reads, viewer, ...(opts.background ? { background: true } : {}) }, () =>
+      this.runCall(tool, args),
+    )
     // A failed call may not have shown the pages it read: keep the older base (changes against it are still all there)
     if (!r.isError && reads.size) {
       this.pruneSeen()
@@ -1249,8 +1262,10 @@ export class BrowserTools {
       // If a new tab is a window opened by a paying tab (payment window), add it to that payment group (a late payment window is the same payment)
       if (typeof args.tabId === 'number' && !this.pages.has(args.tabId)) await this.adoptTab(args.tabId)
       const r = await this.dispatch(tool, args)
-      // Only tabs handled without error become "the tab Dool2 is looking at" (a tool called with a wrong id must not make the live view show the wrong tab)
-      if (!r.isError && typeof args.tabId === 'number') this.lastTabId = args.tabId
+      // Only tabs handled without error become "the tab Dool2 is looking at" (a tool called with a wrong id must not make the live view show the wrong tab).
+      // A lookup reading in the background leaves the live view on the task that drives the browser
+      if (!r.isError && typeof args.tabId === 'number' && !this.call.getStore()?.background)
+        this.lastTabId = args.tabId
       return r
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: (e as Error).message }] }
@@ -1261,8 +1276,17 @@ export class BrowserTools {
     const tabId = Number(a.tabId)
     switch (tool as BrowserTool) {
       case 'open': {
-        const r = (await this.browser.call('open', { url: a.url }, 40_000)) as { tabId: number }
-        this.lastTabId = r.tabId
+        const scope = this.call.getStore()
+        const background = scope?.background === true
+        const r = (await this.browser.call(
+          'open',
+          { url: a.url, ...(background ? { background: true } : {}) },
+          40_000,
+        )) as { tabId: number; background?: boolean }
+        // An extension that does not know background opens brings the tab forward: lookups then wait their turn
+        if (background) this.backgroundOpens = r.background === true
+        if (!background) this.lastTabId = r.tabId
+        if (scope?.viewer) this.onOpen?.(r.tabId, scope.viewer)
         this.allowRemote(r.tabId)
         const out = this.notFoundHint(
           String(a.url ?? ''),
