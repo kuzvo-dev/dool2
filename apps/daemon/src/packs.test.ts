@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
+import { buildSystemPrompt, checkPromptFiles, PROMPT_FILES, setPromptFiles } from '@dool2/engine'
 import { describe, expect, it } from 'vitest'
 import { Connectors } from './connectors.js'
 import { ConnectorPacks, openPack, type PackBundle, type PackManifest } from './packs.js'
@@ -131,6 +132,63 @@ describe('연결 정보 묶음 (ADR 0039)', () => {
     expect(readFileSync(join(dir, 'coupang', 'tools.json'), 'utf8')).toBe(text('coupang', 'tools.json'))
     // A card that is not readable and not in the app is left out
     expect(() => readFileSync(join(dir, 'newshop', 'connect.json'))).toThrow()
+  })
+
+  it('묶음의 지침 파일은 엔진이 쓸 수 있을 때만 받고, 받으면 바꿔 끼운다 (ADR 0040)', async () => {
+    const coupang = {
+      'coupang/connect.json': text('coupang', 'connect.json'),
+      'coupang/tools.json': text('coupang', 'tools.json'),
+    }
+    const good = Object.fromEntries(
+      Object.entries(PROMPT_FILES).map(([k, v]) => [
+        `prompts/${k}`,
+        k === 'persona.md' ? v.replace('a dash of wit', 'a dash of wit and patience') : v,
+      ]),
+    )
+    const s = setup()
+    let changed = 0
+    const packs = await ConnectorPacks.open({
+      dataDir: s.dataDir,
+      bundledDir: s.bundled,
+      bundledPack: s.bundledPack,
+      appVersion: '0.5.0',
+      feed: FEED,
+      publicKeys: [PUB],
+      fetch: makePack(200, { files: { ...coupang, ...good } }).fetch,
+      checkPrompts: checkPromptFiles,
+      onChange: () => {
+        changed++
+      },
+    })
+    await packs.check()
+    expect(changed).toBe(1)
+    const files = (await packs.promptFiles()) ?? {}
+    expect(Object.keys(files).sort()).toEqual(Object.keys(PROMPT_FILES).sort())
+    expect(setPromptFiles(files)).toEqual([])
+    expect(buildSystemPrompt({ lang: 'en' })).toContain('a dash of wit and patience')
+    setPromptFiles(undefined)
+    await packs.rollback()
+    expect(changed).toBe(2)
+    expect(await packs.promptFiles()).toBeUndefined()
+
+    // Without the money rules slot the instruction files stay out; the cards still come
+    const noMoney = {
+      ...good,
+      'prompts/persona.md': (good['prompts/persona.md'] ?? '').replace('{{money}}', ''),
+    }
+    const s2 = setup()
+    const p2 = await ConnectorPacks.open({
+      dataDir: s2.dataDir,
+      bundledDir: s2.bundled,
+      bundledPack: s2.bundledPack,
+      appVersion: '0.5.0',
+      feed: FEED,
+      publicKeys: [PUB],
+      fetch: makePack(300, { files: { ...coupang, ...noMoney } }).fetch,
+      checkPrompts: checkPromptFiles,
+    })
+    expect((await p2.check()).active).toBe(300)
+    expect(await p2.promptFiles()).toBeUndefined()
   })
 
   it('되돌리면 앱에 든 것으로 돌아가고 그 묶음은 다시 받지 않는다', async () => {

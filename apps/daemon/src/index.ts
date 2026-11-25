@@ -27,9 +27,11 @@ import {
   askSideJob,
   buildSystemPrompt,
   ConversationService,
+  checkPromptFiles,
   type McpServerSpec,
   type ModelRole,
   modelForRole,
+  setPromptFiles,
   ThreadService,
 } from '@dool2/engine'
 import { deviceRegion } from '@dool2/i18n'
@@ -925,8 +927,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         },
         publicKeys: opts.packs.publicKeys,
         log: (kind, data) => journal.write(kind, data),
+        // Instruction files in a pack (ADR 0040): used only if the engine can use them, with the money rules kept
+        checkPrompts: checkPromptFiles,
+        onChange: () => applyPackPrompts(),
       })
     : undefined
+  /** Switches Dool2's instructions to the pack in use (pinned per segment, ADR 0032: the next segment gets them) */
+  async function applyPackPrompts() {
+    const problems = setPromptFiles(await packs?.promptFiles())
+    if (problems.length) journal.write('pack-prompts-refused', { problems: problems.slice(0, 5) })
+  }
+  await applyPackPrompts()
   packs?.start()
   const skillsDir = () => packs?.dir() ?? bundledSkills
   // Service tools (connectors, ADR 0018): run the tools.json next to a connect card with the engine

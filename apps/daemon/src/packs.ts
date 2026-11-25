@@ -63,9 +63,18 @@ export interface PackOptions {
   fetch?: typeof fetch
   now?: () => Date
   log?: (kind: string, data: Record<string, unknown>) => void
+  /**
+   * Checks the instruction files of a pack (prompts/, ADR 0040): their problems, empty when usable. Without it a
+   * pack's instruction files are left out
+   */
+  checkPrompts?: (files: Record<string, string>) => string[]
+  /** Called after the pack in use changed (taken or put back), so the instruction files can be switched too */
+  onChange?: () => void | Promise<void>
 }
 
 const FILE = /^([a-z0-9][a-z0-9-]{0,40})\/(connect|tools)\.json$/
+/** Instruction files (ADR 0040): prompts/persona.md, prompts/voice/ko.md, … */
+const PROMPT = /^prompts\/((?:[a-z0-9-]+\/)*[a-z0-9-]+\.md)$/
 /** A pack bigger than this is refused (the whole skills/ is about 3 MB as text) */
 const MAX_BYTES = 30 * 1024 * 1024
 
@@ -105,9 +114,21 @@ export function openPack(signed: unknown, publicKeys: string[]): PackManifest | 
 export async function usableFiles(
   bundle: PackBundle,
   bundledDir: string | undefined,
+  checkPrompts?: (files: Record<string, string>) => string[],
 ): Promise<{ files: Map<string, string>; fallback: string[] }> {
   const files = new Map<string, string>()
   const fallback: string[] = []
+  // Instruction files go in as one set or not at all: a set this app cannot use leaves the ones it carries
+  const prompts: Record<string, string> = {}
+  for (const [path, text] of Object.entries(bundle.files)) {
+    const m = PROMPT.exec(path)
+    if (m) prompts[m[1] as string] = text
+  }
+  if (Object.keys(prompts).length) {
+    const problems = checkPrompts ? checkPrompts(prompts) : ['no instruction check']
+    if (problems.length) fallback.push('prompts/')
+    else for (const [rel, text] of Object.entries(prompts)) files.set(`prompts/${rel}`, text)
+  }
   const bundled = async (path: string) =>
     bundledDir ? await readFile(join(bundledDir, path), 'utf8').catch(() => undefined) : undefined
   const ids = new Set<string>()
@@ -181,6 +202,22 @@ export class ConnectorPacks {
     return new ConnectorPacks(opts, st)
   }
 
+  /** Instruction files of the pack in use ("voice/ko.md" → text), or undefined to use the ones the app carries */
+  async promptFiles(): Promise<Record<string, string> | undefined> {
+    if (!this.st.active) return undefined
+    const base = join(this.opts.dataDir, 'packs', String(this.st.active), 'prompts')
+    const out: Record<string, string> = {}
+    const walk = async (dir: string, rel: string) => {
+      for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+        const r = rel ? `${rel}/${e.name}` : e.name
+        if (e.isDirectory()) await walk(join(dir, e.name), r)
+        else if (PROMPT.test(`prompts/${r}`)) out[r] = await readFile(join(dir, e.name), 'utf8')
+      }
+    }
+    await walk(base, '')
+    return Object.keys(out).length ? out : undefined
+  }
+
   /** skills/ folder to read cards and connectors from now */
   dir(): string | undefined {
     return this.st.active
@@ -223,6 +260,7 @@ export class ConnectorPacks {
     this.st.active = 0
     delete this.st.note
     await this.save()
+    await this.opts.onChange?.()
     return this.state()
   }
 
@@ -271,13 +309,15 @@ export class ConnectorPacks {
     } catch (e) {
       return done(`bundle: ${(e as Error).message}`)
     }
-    const { files, fallback } = await usableFiles(bundle, this.opts.bundledDir)
-    if (!files.size) return done('no readable cards in the pack')
+    const { files, fallback } = await usableFiles(bundle, this.opts.bundledDir, this.opts.checkPrompts)
+    if (![...files.keys()].some((p) => FILE.test(p))) return done('no readable cards in the pack')
     await this.install(m.pack, files)
     this.st.highest = m.pack
     this.st.active = m.pack
     this.log('pack-installed', { pack: m.pack, files: files.size, fallback })
-    return done()
+    const st = await done()
+    await this.opts.onChange?.()
+    return st
   }
 
   /** Writes the pack next to the others and switches to it (a half-written pack is never used) */
@@ -286,7 +326,7 @@ export class ConnectorPacks {
     const tmp = join(root, `${pack}.tmp`)
     await rm(tmp, { recursive: true, force: true })
     for (const [path, text] of files) {
-      const p = join(tmp, 'skills', path)
+      const p = path.startsWith('prompts/') ? join(tmp, path) : join(tmp, 'skills', path)
       await mkdir(join(p, '..'), { recursive: true })
       await writeFile(p, text)
     }
