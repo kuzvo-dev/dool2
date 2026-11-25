@@ -532,12 +532,53 @@ describe('task sessions (ADR 0038)', () => {
     await api('/api/eval/tape', { method: 'POST', body: '{"mode":"off"}' })
   })
 
+  it('evals on a test PC: a task already running when the scenario begins, which never runs', async () => {
+    const rt = new TwoSessions(conversation, async function* () {
+      yield* say('the task ran')
+    })
+    const { api, send, state, task: view } = await boot(rt, { devReset: true })
+    const seed = (body: unknown) => api('/api/eval/task', { method: 'POST', body: JSON.stringify(body) })
+    expect((await seed({ title: 'Train' })).status).toBe(400)
+    const r = (await (
+      await seed({
+        title: 'Train',
+        goal: 'book a KTX to Busan on Friday evening, 2 people',
+        done_when: ['a ticket number is read'],
+        now: 'picking seats',
+      })
+    ).json()) as { ok: boolean; task: TaskView }
+    expect(r.task).toMatchObject({ id: 't1', status: 'working', now: 'picking seats' })
+    // The conversation is told it runs, and its card is in the segment the message goes to
+    await send('how is the weather')
+    await until(
+      async () => (await state()).messages.some((x) => x.text === 'Sure: how is the weather'),
+      'answer',
+    )
+    const conv = rt.seen.find((i) => rt.kind(i) === 'conversation')
+    expect(`${conv?.aside ?? ''}${conv?.text ?? ''}`).toContain('t1 "Train" (working)')
+    expect((await state()).messages.some((x) => x.role === 'tool' && x.text.includes('"kind":"task"'))).toBe(
+      true,
+    )
+    // Steering it keeps the note for the record instead of running the task
+    await send('make it 7 pm')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Passed on.'), 'steer')
+    const got = (await (await api('/api/eval/task/t1')).json()) as { task: TaskView; told: string[] }
+    expect(got.task.status).toBe('working')
+    expect(got.told.join('\n')).toContain('make it 7 pm')
+    expect(rt.seen.some((i) => rt.kind(i) === 'task')).toBe(false)
+    // The next scenario's fresh segment ends it
+    await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":true}' })
+    expect((await view())?.status).toBe('stopped')
+    expect((await api('/api/eval/task/t9')).status).toBe(404)
+  })
+
   it('the eval segment switch is for test PCs only', async () => {
     const rt = new TwoSessions(conversation, conversation)
     const { api } = await boot(rt)
     expect((await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":true}' })).status).toBe(
       403,
     )
+    expect((await api('/api/eval/task', { method: 'POST', body: '{}' })).status).toBe(403)
   })
 
   it('without the setting nothing changes: no session kind, no task tools', async () => {

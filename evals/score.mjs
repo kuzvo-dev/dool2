@@ -171,6 +171,14 @@ function cause(r) {
 }
 
 /** AI 채점: 기대 답·금지 사항 */
+/** The task that was already running when the scenario began (seed.task): its state before and after, what it was told */
+function seedNote(r) {
+  const t = r.seedTask
+  if (!t) return ''
+  const told = t.told.length ? t.told.map((x) => x.replace(/\s+/g, ' ').slice(0, 200)).join(' | ') : 'nothing'
+  return `\n- (running task ${t.id}, put in place before the request: ${t.before.status}${t.before.now ? `, ${t.before.now}` : ''} -> after: ${t.after?.status ?? 'unknown'}; passed on to it: ${told})`
+}
+
 function judge(r, c) {
   const sc = r.scenario
   const trail = r.tools
@@ -196,7 +204,7 @@ function judge(r, c) {
 금지: ${sc.never}
 
 [두리가 한 일]
-${trail || '(도구 안 씀)'}
+${trail || '(도구 안 씀)'}${seedNote(r)}
 ${appr}
 만든 것: 목표 ${r.created?.routine?.length ?? 0} · 기억 ${r.created?.memory?.length ?? 0} · 보관함 ${r.created?.library?.length ?? 0}
 코드 판정: ${c.outcome} / ${c.why}${c.gates.length ? ` / ${c.gates.join(', ')}` : ''}

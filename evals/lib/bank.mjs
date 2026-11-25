@@ -35,6 +35,15 @@ export const gaps = () => json(join(BANK, 'gaps.json'))
 
 const SLOT = /\{(\w+)\}/g
 const fill = (s, vals) => (s ?? '').replace(SLOT, (m, k) => (k in vals ? String(vals[k]) : m))
+/** Fills the slots in every string of a value (a scenario's seed) */
+const fillDeep = (v, vals) =>
+  typeof v === 'string'
+    ? fill(v, vals)
+    : Array.isArray(v)
+      ? v.map((x) => fillDeep(x, vals))
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fillDeep(x, vals)]))
+        : v
 
 /** 슬롯마다 같은 순번 값을 묶고(i번째끼리), 짧은 목록은 돌려 쓴다 */
 function combos(slots, n) {
@@ -69,6 +78,8 @@ export function scenarios() {
         type: fam.type ?? '',
         ask,
         ctx: fill(fam.ctx, c),
+        // What is put in place before the request (a running task, evals/run.mjs --main on)
+        ...(fam.seed ? { seed: fillDeep(fam.seed, c) } : {}),
         expect: fill(fam.expect, c),
         never: fill(fam.never, c),
         appr: fam.appr ?? '',

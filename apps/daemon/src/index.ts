@@ -3114,6 +3114,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // An app note telling the conversation of task sessions to use a tool only a task has (ADR 0038)
     const text =
       sessionOf(threadId) === 'conversation' && namesTaskTool(said) ? `${said}\n${TASK_HINT}` : said
+    // A task an eval put in place never runs: what it would be told is kept for the record (POST /api/eval/task)
+    const held = evalTasks.get(threadId)
+    if (held) {
+      held.push(text)
+      return
+    }
     // A late answer (a sign-in saved, a code entered) for a task that already ended does not start it again
     const task = tasks.byThread(threadId)
     if (task && tasks.ended(task)) return
@@ -3201,6 +3207,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // ── Task sessions (ADR 0038) ───────────────────────────────────
   /** Tasks that ended, for the conversation AI's next message (it did not see their results being posted) */
   const unseenTasks: string[] = []
+  /** Task chats an eval put in place (test PC only): thread id → the messages it would have been sent */
+  const evalTasks = new Map<string, string[]>()
   /** Each task's result, for task_list */
   const taskResults = new Map<string, string>()
   let taskSave: ReturnType<typeof setTimeout> | undefined
@@ -3390,7 +3398,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
   }
   /** A new task from a spec: its own chat, its card in the conversation segment it came from, then it starts or waits */
-  async function openTask(parentId: string, spec: TaskSpec): Promise<Task> {
+  async function openTask(
+    parentId: string,
+    spec: TaskSpec,
+    evalSeed?: { status: 'working' | 'needs-you'; now?: string },
+  ): Promise<Task> {
     const agent = store.getThread(parentId)?.agent ?? (await pickAgent(undefined))
     const thread = store.createTaskThread(agent, spec.title)
     const t = tasks.create(thread.id, parentId, spec)
@@ -3406,6 +3418,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       known: spec.known.length,
       avoid: spec.avoid.length,
     })
+    if (evalSeed) {
+      // Already under way when the scenario begins: it holds the browser like a running task, but never runs
+      evalTasks.set(thread.id, [])
+      t.begun = true
+      tasks.start(t)
+      t.status = evalSeed.status
+      if (evalSeed.now) t.now = evalSeed.now
+      emitTask(t)
+      return t
+    }
     startTask(t)
     return t
   }
@@ -4223,7 +4245,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         typeof body.taskSessions !== 'boolean'
       )
         return json(res, 400, { error: m().badRequest })
-      if (conversationBusy() || tasks.active().some((t) => t.status !== 'needs-you'))
+      // Tasks an eval put in place never run, so they do not keep it busy
+      if (
+        conversationBusy() ||
+        tasks.active().some((t) => t.status !== 'needs-you' && !evalTasks.has(t.threadId))
+      )
         return json(res, 409, { error: m().threadStillAnswering })
       const before = readSettings().taskSessions
       if (body.taskSessions !== undefined) {
@@ -4242,6 +4268,37 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ...(before !== undefined ? { before } : {}),
         taskSessions: taskSessionsOn(),
       })
+    }
+
+    // Evals on the main conversation (ADR 0038), test PC only: a task already running when the scenario begins, from a
+    // task_start spec and a state (working, or needs-you while it waits for an approval), so scenarios about talking
+    // to a running task, steering, asking about or stopping it measure that. It never runs; GET returns its card and
+    // what it would have been told (task_steer notes), for the record
+    if (a === 'eval' && b === 'task') {
+      if (!devReset) return json(res, 403, { error: m().testPcOnly })
+      if (req.method === 'GET' && c) {
+        const t = tasks.get(c)
+        const v = t ? tasks.view(t) : tasks.frozenView(c)
+        if (!v) return json(res, 404, { error: m().noSuchEntry })
+        return json(res, 200, { task: v, told: evalTasks.get(v.threadId) ?? [] })
+      }
+      if (req.method === 'POST' && !c) {
+        const body = (await readJson(req)) as Record<string, unknown>
+        const status = body.status ?? 'working'
+        if (status !== 'working' && status !== 'needs-you') return json(res, 400, { error: m().badRequest })
+        const spec = parseTaskSpec(body)
+        if (typeof spec === 'string') return json(res, 400, { error: spec })
+        // Tasks exist only with task sessions on
+        if (!taskSessionsOn()) return json(res, 400, { error: m().badRequest })
+        if (conversationBusy()) return json(res, 409, { error: m().threadStillAnswering })
+        // The segment the next message goes to, so the task's card is in it
+        const parent = (await conversation.prepare(await pickAgent(undefined))).session
+        const t = await openTask(parent.id, spec, {
+          status,
+          ...(typeof body.now === 'string' && body.now.trim() ? { now: body.now.trim().slice(0, 200) } : {}),
+        })
+        return json(res, 200, { ok: true, task: tasks.view(t) })
+      }
     }
 
     // Evals: run the next requests on another model, to compare the same tape per model (ADR 0037). Test PC only
