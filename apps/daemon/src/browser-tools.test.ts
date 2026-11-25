@@ -19,6 +19,7 @@ import {
   parseRefs,
   payNow,
   payOptions,
+  payWhatLine,
   promoClose,
   type SiteDialog,
   sameFinal,
@@ -2617,6 +2618,14 @@ describe('결제 카드 (browser_checkout)', () => {
     expect(rec?.goods?.[0]).not.toHaveProperty('image')
     expect(rec?.lines?.[1]).toEqual({ label: '배달료', value: '3,000원', kind: 'fee' })
     expect(rec?.lines?.[2]).not.toHaveProperty('kind')
+  })
+
+  it("the payment card's what names the title and the goods once each", () => {
+    expect(payWhatLine('제주 귤 3kg (로열과)', ['제주 귤 3kg (로열과)'])).toBe('제주 귤 3kg (로열과)')
+    expect(payWhatLine('제주 귤 3kg', ['제주 귤 3kg (로열과)'])).toBe('제주 귤 3kg (로열과)')
+    expect(payWhatLine('호호솥밥', ['전복솥밥', ''])).toBe('호호솥밥 · 전복솥밥')
+    expect(payWhatLine('', ['사과', '배'])).toBe('사과·배')
+    expect(payWhatLine('', [])).toBe('')
   })
 
   it('결제 화면 표시가 없어도 카드를 띄운다 (결제 화면인지는 AI가 판단, final_here 없어도)', async () => {
