@@ -96,7 +96,7 @@ node evals/compare.mjs evals/out/replay-tasks-off evals/out/replay-tasks-on
 ```
 
 The task-session families (`bank/families/87-task-sessions.jsonl`) assume a task is already running; they need
-`--main on`. Turn the `TASK_SESSIONS_DEFAULT` on only when the "on" replay keeps the "off" score.
+`--main on`. `TASK_SESSIONS_DEFAULT` is on; compare against `--main off` to see what the split changed.
 
 ## Scoring
 

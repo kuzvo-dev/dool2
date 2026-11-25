@@ -1,6 +1,6 @@
 # 0038. The conversation hands longer work to a task session
 
-- Status: Accepted (behind the `taskSessions` setting, off by default; see Consequences)
+- Status: Accepted (on by default since round 2 of the harness overhaul; the `taskSessions` setting turns it off)
 - Date: 2026-11-25
 - Related: [0015 one conversation](0015-one-conversation.md) (its "conversation session + a work session per task"
   option), [0027 finish check](0027-finish-check.md), [0032 pinned instructions](0032-pinned-instructions.md),
@@ -95,12 +95,12 @@ conversation), never the spec the AI wrote. See the threat model (T28).
 
 - A task costs one more AI turn at its start (the conversation's `task_start` turn) and the task's own turns. Its
   program is kept running while the task runs (ADR 0035) and closed when it ends.
-- **Off by default** (`TASK_SESSIONS_DEFAULT` in `apps/daemon/src/tasks.ts`; `taskSessions: true` in settings turns
-  it on, from the next segment). The daemon tests with stand-in agents cover start → talk while it runs → steer →
-  approval in the task → finish check against done-when → one result → stop, take-as-is, and two tasks in line for
-  one browser (`apps/daemon/src/task-sessions.test.ts`). They cannot cover what the real AI does with the split: the
-  instructions still describe browser work, and the conversation must reach for `task_start` instead. Turn the
-  default on after a replay of the eval bank's run-and-approve types with the setting on keeps its score.
+- **On by default** (`TASK_SESSIONS_DEFAULT` in `apps/daemon/src/tasks.ts`; `taskSessions: false` in settings turns
+  it off, from the next segment). It started off until a real-AI replay could confirm the split; the maintainer
+  decided to turn it on first and check the behavior in one real-app acceptance run afterwards, because the prompt
+  and tool list per kind of session (the point of the split) only exist with it on. The daemon tests with stand-in
+  agents cover start → talk while it runs → steer → approval in the task → finish check against done-when → one
+  result → stop, take-as-is, and two tasks in line for one browser (`apps/daemon/src/task-sessions.test.ts`).
 - Whether the conversation AI picks `task_start` at the right times, writes a usable spec and forwards steering
   well is a judgment of the real AI; the daemon tests cover the flow with stand-in agents only. The eval bank has
   "talk while a task runs" and "change the task midway" scenarios for that replay.

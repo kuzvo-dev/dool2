@@ -9,6 +9,7 @@ import type { AgentRuntime, TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus, StoredMessage, TaskView } from '@dool2/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
+import { TASK_SESSIONS_DEFAULT } from './tasks.js'
 
 type Result = { isError?: boolean; content: { type: string; text: string }[]; routed?: boolean }
 type Script = (input: TurnInput, rt: TwoSessions) => AsyncGenerator<AgentEvent>
@@ -476,7 +477,7 @@ describe('task sessions (ADR 0038)', () => {
     const back = (await (
       await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":null}' })
     ).json()) as { taskSessions: boolean }
-    expect(back.taskSessions).toBe(false)
+    expect(back.taskSessions).toBe(TASK_SESSIONS_DEFAULT)
   })
 
   it('a replayed tape never answers the task tools: the task runs for real', async () => {
