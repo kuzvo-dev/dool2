@@ -202,6 +202,11 @@ export const SettingsSchema = z.object({
    * (TASK_SESSIONS_DEFAULT in the daemon). Applies from the next segment of the conversation
    */
   taskSessions: z.boolean().optional(),
+  /**
+   * Open the user's Chrome by itself when Dool2 needs the browser and Chrome is closed (ADR 0006 follow-up). Empty: on.
+   * False: leave Chrome closed and say so
+   */
+  chromeAutoOpen: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
   /** Connector packs (ADR 0039): beta takes each pack before everyone (test PCs); off turns automatic packs off */

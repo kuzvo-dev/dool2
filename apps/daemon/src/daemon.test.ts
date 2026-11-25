@@ -1275,3 +1275,60 @@ describe('서비스 연결', () => {
     expect(r.status).toBe(409)
   })
 })
+
+describe('Opening Chrome when a tool needs the browser (ADR 0006 follow-up)', () => {
+  const until = async (f: () => Promise<boolean>) => {
+    for (let i = 0; i < 200; i++) {
+      if (await f()) return
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    throw new Error('waited too long')
+  }
+
+  it('a browser tool opens the closed Chrome in the extension profile, and says what is wrong when it does not connect', async () => {
+    const launches: { profile?: string; running: boolean }[] = []
+    const { api, rt } = await boot(undefined, {
+      chrome: {
+        detect: async () => ({ installed: true, version: '157.0.8103.79' }),
+        running: async () => false,
+        profile: async () => ({ dir: 'Profile 1', name: 'Work', hasExtension: true }),
+        // A stand-in: no real Chrome starts, and the extension never connects
+        launch: async (o) => {
+          launches.push(o)
+          return true
+        },
+        waitMs: 30,
+      },
+    })
+    const state = async () =>
+      (await (await api('/api/conversation')).json()) as { messages: unknown[]; busy: boolean }
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    const tool = async (name: string, body: unknown) =>
+      (await (
+        await fetch(`${daemon?.url}/api/tools/browser/${name}`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      ).json()) as { isError?: boolean; content: { text: string }[] }
+
+    // The setting off: nothing is opened, and the answer says Chrome is closed
+    await api('/api/settings', { method: 'PATCH', body: '{"chromeAutoOpen":false}' })
+    const off = await tool('open', { url: 'https://example.com' })
+    expect(off.isError).toBe(true)
+    expect(off.content[0]?.text).toContain('opening Chrome automatically is off')
+    expect(launches).toEqual([])
+
+    await api('/api/settings', { method: 'PATCH', body: '{"chromeAutoOpen":true}' })
+    const r = await tool('open', { url: 'https://example.com' })
+    expect(launches).toEqual([{ profile: 'Profile 1', running: false }])
+    expect(r.isError).toBe(true)
+    expect(r.content[0]?.text).toContain('Dool2 opened Chrome (the "Work" profile)')
+    expect(r.content[0]?.text).toContain('The service connection itself is fine')
+    // Right after: the same answer, Chrome is not opened again
+    await tool('read', { tabId: 1 })
+    expect(launches).toHaveLength(1)
+  })
+})

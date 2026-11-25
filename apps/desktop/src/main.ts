@@ -185,7 +185,12 @@ function nativeHostOption() {
   const script = app.isPackaged
     ? join(here, 'native-host.mjs').replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
     : undefined
-  return { nativeHost: { ...(script ? { script } : {}), extraDirs, defaultTargets } }
+  return {
+    nativeHost: { ...(script ? { script } : {}), extraDirs, defaultTargets },
+    // Open the user's Chrome when Dool2 needs the browser and the extension is not there (ADR 0006 follow-up): only
+    // where the host is registered with the user's own Chrome, never for a test Chrome
+    launchChrome: defaultTargets,
+  }
 }
 
 /**

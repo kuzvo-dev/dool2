@@ -17,9 +17,13 @@ import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
 import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS, paygProviders } from '@dool2/agent-opencode'
 import {
   BrowserBridge,
+  BrowserError,
   ChromeInstall,
+  chromeRunning,
   detectChrome,
+  findChromeProfile,
   type HostRuntime,
+  launchChrome,
   registerNativeHost,
 } from '@dool2/browser'
 import {
@@ -110,6 +114,13 @@ import {
 } from './auto-login.js'
 import { AutoReview, REVIEW_SYSTEM } from './auto-review.js'
 import { askedForAccount, BrowserTools, type ToolResult } from './browser-tools.js'
+import {
+  type BrowserNotReady,
+  browserMissingText,
+  ChromeLauncher,
+  type ChromeLaunchReason,
+  type LaunchProfile,
+} from './chrome-launch.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -242,8 +253,25 @@ export interface DaemonOptions {
   codexBin?: string
   /** Store for secrets such as API keys (default: memory) */
   secrets?: SecretStore
-  /** For tests: swaps out the Chrome check and install */
-  chrome?: { detect(): Promise<ChromeStatus>; createInstall?(downloadDir: string): ChromeInstall }
+  /**
+   * For tests: swaps out the Chrome check and install, and (running, profile, launch) whether Chrome runs, which
+   * profile has the extension and opening it, so a test never starts a real Chrome
+   */
+  chrome?: {
+    detect(): Promise<ChromeStatus>
+    createInstall?(downloadDir: string): ChromeInstall
+    running?(): Promise<boolean>
+    profile?(): Promise<LaunchProfile | undefined>
+    launch?(o: { profile?: string; running: boolean }): Promise<boolean>
+    /** How long to wait for the extension after opening Chrome (default 20 s) */
+    waitMs?: number
+  }
+  /**
+   * Open the user's own Chrome when a browser, service or connect call needs it and the extension is not there (ADR
+   * 0006 follow-up). The PC app turns it on where it registers the extension's host with the user's Chrome; check mode
+   * and tests leave it off (or pass chrome.launch). The chromeAutoOpen setting turns it off for the person
+   */
+  launchChrome?: boolean
   /**
    * Registers the native messaging host with Chrome (how the Doori extension reaches the daemon, ADR 0006).
    * Without it nothing is registered. Check mode and tests leave it empty so the user's Chrome is untouched.
@@ -676,6 +704,59 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       ...(s.connected ? { version: s.version, browser: s.browser } : {}),
     })
   })
+  /** Resolves true as soon as the extension connects, false after ms */
+  const extensionConnects = (ms: number) =>
+    new Promise<boolean>((resolve) => {
+      if (browser.status.connected) return resolve(true)
+      const done = (ok: boolean) => {
+        clearTimeout(timer)
+        browser.off('status', seen)
+        resolve(ok)
+      }
+      const seen = (s: ExtensionStatus) => {
+        if (s.connected) done(true)
+      }
+      const timer = setTimeout(() => done(false), ms)
+      browser.on('status', seen)
+    })
+  // Opening Chrome when the browser is needed (ADR 0006 follow-up). Only the PC app (launchChrome) or a test with
+  // stand-ins (chrome.launch) has it: check mode and other tests never start a Chrome
+  const chromeLauncher =
+    opts.launchChrome || opts.chrome?.launch
+      ? new ChromeLauncher({
+          connected: () => browser.status.connected,
+          waitConnected: extensionConnects,
+          installed: async () => (await (opts.chrome ? opts.chrome.detect() : detectChrome())).installed,
+          running: opts.chrome?.running ?? (() => chromeRunning()),
+          profile: opts.chrome?.profile ?? (() => findChromeProfile()),
+          launch: opts.chrome?.launch ?? ((o) => launchChrome(undefined, undefined, o)),
+          enabled: () => readSettings().chromeAutoOpen !== false,
+          journal: (d) => journal.write('chrome-launch', d),
+          ...(opts.chrome?.waitMs !== undefined
+            ? { waitMs: opts.chrome.waitMs, graceMs: opts.chrome.waitMs }
+            : {}),
+        })
+      : undefined
+  /**
+   * What needed the browser in this call (a browser tool, a service tool, a connect card). Set around those calls only,
+   * so the daemon's own background reads (thumbnails, checks, keeping connections) never open Chrome
+   */
+  const launchScope = new AsyncLocalStorage<ChromeLaunchReason>()
+  /** What the person reads on a connect card when Chrome could not be made ready */
+  const chromeMissingCard = (r: BrowserNotReady) => {
+    const t = m()
+    if (r.why === 'not-installed') return t.chromeNotInstalled
+    if (r.why === 'off' || r.why === 'launch-failed') return t.chromeClosed
+    return r.profile ? t.chromeExtensionOffIn(r.profile) : t.chromeExtensionOff
+  }
+  // A call that needs the extension while it is not there first opens Chrome (closing a tab never does: a delayed
+  // close after Chrome was shut). When it is still not there, the call fails with what is wrong and what to do
+  browser.whenOffline = async (cmd) => {
+    const reason = launchScope.getStore()
+    if (!reason || !chromeLauncher || cmd === 'close') return
+    const r = await chromeLauncher.ensure(reason)
+    if (!r.ok) throw new BrowserError(reason === 'connect' ? chromeMissingCard(r) : browserMissingText(r))
+  }
   const vault = new Vault(secrets)
   vault.userLang = lang
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
@@ -1603,8 +1684,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const startedAt = Date.now()
     connectTried.set(card.id, how)
     journal.write('connect-start', { id: card.id, how })
+    // A connect the person or the AI asked for opens Chrome when it is closed; keeping connections in the background
+    // never does (ADR 0006 follow-up)
+    const work = how.startsWith('keep:') ? run() : launchScope.run('connect', run)
     // Thrown errors are inner talk mixed with screen markers (e2 and so on), so give the user plain words and keep the original only in the record
-    const p: Promise<ConnectResult> = run().catch((e: Error) => {
+    const p: Promise<ConnectResult> = work.catch((e: Error) => {
       console.warn(`[connect] ${card.id} auto sign-in error: ${e.message}`)
       const tabId = connectTabs.get(card.id)
       return {
@@ -4167,12 +4251,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (c === 'handoff' && caller && typeof args?.tabId === 'number')
           handoffThread.set(args.tabId, caller)
         return reply(
-          await browserTools.run(c, args && typeof args === 'object' ? args : {}, {
-            ai: true,
-            viewer: caller ?? '',
-            // A lookup task reading beside the task that drives the browser opens its tabs behind (ADR 0038)
-            ...(caller && tasks.readsBeside(caller) ? { background: true } : {}),
-          }),
+          // A browser tool opens Chrome when the extension is not there (ADR 0006 follow-up)
+          await launchScope.run('browser', () =>
+            browserTools.run(c, args && typeof args === 'object' ? args : {}, {
+              ai: true,
+              viewer: caller ?? '',
+              // A lookup task reading beside the task that drives the browser opens its tabs behind (ADR 0038)
+              ...(caller && tasks.readsBeside(caller) ? { background: true } : {}),
+            }),
+          ),
         )
       }
       if (req.method === 'POST' && b === 'screen' && c && !d) {
@@ -4424,7 +4511,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
         if (c === 'catalog') return json(res, 200, { tools: await catalogOf(String(args.toolset ?? '')) })
         if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
-        if (c === 'orders_all') return json(res, 200, await connectors.ordersAll())
+        // A service tool that reaches for the browser opens Chrome when the extension is not there (ADR 0006 follow-up)
+        const inScope = <T>(run: () => Promise<T>) => launchScope.run('service', run)
+        if (c === 'orders_all') return json(res, 200, await inScope(() => connectors.ordersAll()))
         // Test PC only: runs a tool definition not yet installed once in the user's Chrome (pnpm connector try --pc)
         if (c === 'try') {
           if (!devReset) return json(res, 403, { error: m().testPcOnly })
@@ -4433,16 +4522,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return json(
             res,
             200,
-            await connectors.tryDraft(args.connector, String(args.tool ?? ''), input, {
-              close: args.close === true,
-            }),
+            await inScope(() =>
+              connectors.tryDraft(args.connector, String(args.tool ?? ''), input, {
+                close: args.close === true,
+              }),
+            ),
           )
         }
         if (c === 'call') {
           const input =
             args.input && typeof args.input === 'object' ? (args.input as Record<string, unknown>) : {}
           // A service tool's last step can ask approval like the browser does, so it goes through auto-approve too
-          return reply(await connectors.call(String(args.tool ?? ''), input))
+          return reply(await inScope(() => connectors.call(String(args.tool ?? ''), input)))
         }
         return json(res, 404, { error: m().noRoute })
       }
