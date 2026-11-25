@@ -68,12 +68,26 @@ export function registerTaskTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Tell a task something',
       description:
-        'Passes the user\'s words to a task: a change ("make it 7 pm"), an answer to its question or an extra ' +
-        'condition. Use it when the user talks about a task already started instead of starting another. The task reads ' +
-        'it at its next step.',
+        'Passes the user\'s words to a task, exactly as they wrote them: a change ("make it 7"), an answer to its ' +
+        'question or an extra condition. Use it when the user talks about a task already started instead of starting ' +
+        'another. The task reads it at its next step together with its spec (a task for Friday evening reads "7" as ' +
+        '7 pm), so do not fill in what the user left open.',
       inputSchema: {
         id,
-        note: z.string().min(1).max(600).describe("What to pass on, close to the user's words"),
+        said: z
+          .string()
+          .min(1)
+          .max(600)
+          .describe(
+            "The user's own words about the task, copied exactly (the part of their message that is about it). Not reworded, completed or translated",
+          ),
+        added: z
+          .string()
+          .max(300)
+          .optional()
+          .describe(
+            'Only what the conversation already settled that the task needs to read those words (e.g. "the train is the one in the task, Friday"). The task sees it as yours, not the user\'s. Never a detail the user did not give',
+          ),
       },
     },
     run('task_steer'),

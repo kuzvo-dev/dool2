@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   notesMessage,
   parseTaskSpec,
+  saidIn,
   signInSpec,
   stoppedText,
   TaskBoard,
@@ -51,12 +52,31 @@ describe('task specs', () => {
     expect(brief).toContain('- 2 adults')
     expect(brief).toContain('- over 100,000 won')
     // A note sent while it waited goes into the brief, once
-    expect(brief).toContain('- window seat')
+    expect(brief).toContain('- "window seat"')
     expect(t.notes).toEqual([])
-    expect(readAppNote(notesMessage(['make it 7 pm'], 'ko'))).toBe('"make it 7 pm" 전해 받았어요.')
+    const n = [{ said: 'make it 7 pm' }]
+    expect(readAppNote(notesMessage(n, 'ko'))).toBe('"make it 7 pm" 전해 받았어요.')
     // Words the person typed in the task's detail are already in its chat: not shown a second time
-    expect(readAppNote(notesMessage(['make it 7 pm'], 'en', new Set(['make it 7 pm'])))).toBe('')
-    expect(notesMessage(['make it 7 pm'], 'en', new Set(['make it 7 pm']))).toContain('"make it 7 pm"')
+    expect(readAppNote(notesMessage(n, 'en', new Set(['make it 7 pm'])))).toBe('')
+    expect(notesMessage(n, 'en', new Set(['make it 7 pm']))).toContain('"make it 7 pm"')
+    // What the conversation added reaches the task as its own, never in the person's chat as their words
+    const added = notesMessage([{ said: 'make it 7', added: 'the Friday train' }], 'en')
+    expect(readAppNote(added)).toBe('Passed on: "make it 7".')
+    expect(added).toContain('"make it 7" (Dool2\'s own addition, not the user\'s words: the Friday train)')
+  })
+})
+
+describe("the words passed to a task are the user's", () => {
+  it('found in what they wrote, whatever the spacing or punctuation, or across two messages', () => {
+    const asked = ['아 기차 7시로 바꿔 줘', 'and a window seat!']
+    expect(saidIn('아 기차 7시로 바꿔 줘', asked)).toBe(true)
+    expect(saidIn('기차 7시로 바꿔줘.', asked)).toBe(true)
+    expect(saidIn('Window seat', asked)).toBe(true)
+    expect(saidIn('바꿔 줘 and a window', asked)).toBe(true)
+    // A detail the user never said, or a translation, is not their words
+    expect(saidIn('기차 오전 7시로 바꿔 줘', asked)).toBe(false)
+    expect(saidIn('make the train 7', asked)).toBe(false)
+    expect(saidIn('...', asked)).toBe(false)
   })
 })
 
@@ -89,12 +109,15 @@ describe('notes passed on while a task works', () => {
     const b = new TaskBoard()
     const t = b.create('th', 'seg', spec())
     b.start(t)
-    b.note(t, 'make it 7 pm')
+    b.note(t, 'make it 7 pm', 'the Friday train')
     const notes = b.takeNotes('th')
     expect(b.takeNotes('th')).toEqual([])
     const r = withNotes({ content: [{ type: 'text', text: 'page' }] }, notes)
     expect(r.content.at(-1)?.text).toContain('Message from the user')
-    expect(r.content.at(-1)?.text).toContain('"make it 7 pm"')
+    // The user's exact words come first, the conversation's addition after them, marked as not theirs
+    expect(r.content.at(-1)?.text).toContain(
+      '"make it 7 pm" (Dool2\'s own addition, not the user\'s words: the Friday train)',
+    )
     const sc = withNotes(
       { content: [{ type: 'text', text: 'x' }], structuredContent: { a: 1 }, hint: 'next' },
       notes,

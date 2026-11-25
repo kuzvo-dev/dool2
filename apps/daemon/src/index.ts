@@ -151,6 +151,7 @@ import {
   namesTaskTool,
   notesMessage,
   parseTaskSpec,
+  saidIn,
   signInSpec,
   stoppedText,
   TASK_HINT,
@@ -3383,11 +3384,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return true
   }
   /** The person's words for a task (task_steer): at its next tool result while it works, else as its next message */
-  function steerTask(t: Task, note: string): string {
-    journal.write('task-steer', { id: t.id, status: t.status })
+  function steerTask(t: Task, said: string, added?: string): string {
+    journal.write('task-steer', { id: t.id, status: t.status, ...(added ? { added: true } : {}) })
     if (t.status === 'stopped' || t.status === 'failed')
       return `Task ${t.id} has ended (${t.status}). If the user still wants it, start a new one with task_start.`
-    tasks.note(t, note)
+    tasks.note(t, said, added)
     if (t.status === 'waiting') {
       emitTask(t)
       return `Task ${t.id} is still in line for the browser; it starts with this note. Tell the user in one short sentence.`
@@ -3526,9 +3527,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return toolText(stoppedText(t, approved))
     }
     if (name === 'task_steer') {
-      const note = String(args.note ?? '').trim()
-      if (!note) return toolText('note is empty: write what to pass on.', true)
-      return toolText(steerTask(t, note.slice(0, 600)))
+      const said = String(args.said ?? '').trim()
+      const added = typeof args.added === 'string' ? args.added.trim() : ''
+      if (!said) return toolText("said is empty: copy the user's own words about the task.", true)
+      // The task acts on the user's words, so they must be theirs: a paraphrase is how details get made up
+      const asked = store
+        .listMessages(caller)
+        .filter((x) => x.role === 'user' && !readAppNote(x.text))
+        .slice(-6)
+        .map((x) => withoutPhotoMark(x.text))
+      if (asked.length && !saidIn(said, asked))
+        return toolText(
+          `said must be the user's words copied exactly, not reworded or translated. Their last message: "${(asked.at(-1) ?? '').slice(0, 300)}". ` +
+            'Copy the part about the task into said; what the conversation already settled goes in added. Leave open what the user left open: the task reads their words with its spec.',
+          true,
+        )
+      return toolText(steerTask(t, said.slice(0, 600), added || undefined))
     }
     return toolText(`No such task tool: ${name}`, true)
   }

@@ -99,7 +99,14 @@ const conversation: Script = async function* (input, rt) {
     return
   }
   if (/^make it/i.test(ask)) {
-    yield* used(input, rt, 'task', 'task_steer', { id: 't1', note: ask })
+    yield* used(input, rt, 'task', 'task_steer', { id: 't1', said: ask })
+    yield* say('Passed on.')
+    return
+  }
+  // "change it": first passes words the user never wrote (a detail filled in), then their own words with an addition
+  if (/^change it/i.test(ask)) {
+    yield* used(input, rt, 'task', 'task_steer', { id: 't1', said: 'change it to 7 am' })
+    yield* used(input, rt, 'task', 'task_steer', { id: 't1', said: ask, added: 'the Friday train' })
     yield* say('Passed on.')
     return
   }
@@ -579,6 +586,38 @@ describe('task sessions (ADR 0038)', () => {
     await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":true}' })
     expect((await view())?.status).toBe('stopped')
     expect((await api('/api/eval/task/t9')).status).toBe(404)
+  })
+
+  it("task_steer passes the user's own words, refuses words they never wrote, and marks what the AI added", async () => {
+    const rt = new TwoSessions(conversation, async function* () {
+      yield* say('the task ran')
+    })
+    const { api, send, state } = await boot(rt, { devReset: true })
+    await api('/api/eval/task', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Train',
+        goal: 'book a KTX to Busan on Friday evening, 2 people',
+        done_when: ['a ticket number is read'],
+      }),
+    })
+    await send('change it to 7')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Passed on.'), 'steer')
+    const [refused, passed] = rt.results.task_steer ?? []
+    // "7 am" is not what the user wrote: refused, with their words to copy
+    expect(refused?.isError).toBe(true)
+    expect(textOf(refused as Result)).toContain('"change it to 7"')
+    expect(passed?.isError).toBeFalsy()
+    const got = (await (await api('/api/eval/task/t1')).json()) as { told: string[] }
+    const told = got.told.join('\n')
+    // Only the second call reached the task: the user's words first, the addition after them as Dool2's own
+    expect(told).not.toContain('7 am')
+    expect(told).toContain(
+      '"change it to 7" (Dool2\'s own addition, not the user\'s words: the Friday train)',
+    )
+    // The task's chat shows the person only their own words
+    expect(told).toContain('"change it to 7" 전해 받았어요.')
+    await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":true}' })
   })
 
   it('the eval segment switch is for test PCs only', async () => {
