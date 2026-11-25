@@ -66,7 +66,12 @@ interface Held {
  * Wraps the server: registering a tool in ON_DEMAND_TOOLS holds it instead of listing it. Call `finish()` after all
  * tools are registered to add tool_find and tool_call
  */
-export function onDemand(server: McpServer, names: readonly string[] = ON_DEMAND_TOOLS) {
+export function onDemand(
+  server: McpServer,
+  names: readonly string[] = ON_DEMAND_TOOLS,
+  /** Said at the end of tool_find's description: where tools this session lacks are (ADR 0038) */
+  elsewhere?: string,
+) {
   const want = new Set(names)
   const held = new Map<string, Held>()
   const proxy = new Proxy(server, {
@@ -110,12 +115,13 @@ export function onDemand(server: McpServer, names: readonly string[] = ON_DEMAND
       'tool_find',
       {
         title: 'Find more Dool2 tools',
-        description:
-          `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. ` +
-          'When a request needs one, call this with its name, its group or a few words to get the full description and input, then run it with tool_call: ' +
-          'working in PC apps such as KakaoTalk for PC, Notes or Hancom Office (query "screen" brings every screen_ tool); reading a PC file the user means (file_read), writing a document or spreadsheet (file_write), making a PDF or image from HTML (file_render); ' +
-          'a new password when signing up or resetting one (browser_new_password); a video, a picture made by the image AI, merging or splitting PDFs, printing, moving, converting or restoring files, downloading, locking the PC, a route map, uploading a file to a site, deleting a goal, posting to the feed, suggesting things to do. ' +
-          'When your instructions or another tool\'s description or result name one of these (e.g. "use image_make", "request approval with screen_request_app"), it means this way. Never say Dool2 cannot do these.',
+        description: elsewhere
+          ? `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. Call this with a name to get its description and input, then run it with tool_call. ${elsewhere}`
+          : `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. ` +
+            'When a request needs one, call this with its name, its group or a few words to get the full description and input, then run it with tool_call: ' +
+            'working in PC apps such as KakaoTalk for PC, Notes or Hancom Office (query "screen" brings every screen_ tool); reading a PC file the user means (file_read), writing a document or spreadsheet (file_write), making a PDF or image from HTML (file_render); ' +
+            'a new password when signing up or resetting one (browser_new_password); a video, a picture made by the image AI, merging or splitting PDFs, printing, moving, converting or restoring files, downloading, locking the PC, a route map, uploading a file to a site, deleting a goal, posting to the feed, suggesting things to do. ' +
+            'When your instructions or another tool\'s description or result name one of these (e.g. "use image_make", "request approval with screen_request_app"), it means this way. Never say Dool2 cannot do these.',
         inputSchema: {
           query: z
             .string()

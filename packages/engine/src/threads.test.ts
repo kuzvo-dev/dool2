@@ -105,6 +105,29 @@ describe('ThreadService', () => {
     expect(rt.inputs[0]?.mcpServers[0]?.env).toEqual({ DOOL2_TOOLSET: t.id })
   })
 
+  it('gives each thread its own tool server settings, such as the kind of session (ADR 0038)', async () => {
+    const store = new Store(':memory:')
+    const rt = new FakeRuntime([{ type: 'done', resumeId: 's1', text: 'ok' }])
+    const svc = new ThreadService({
+      timeLine: () => undefined,
+      store,
+      runtimes: { claude: rt },
+      workspaceDir: '/tmp/ws',
+      mcpServers: [{ name: 'dool2', command: 'node', args: ['mcp.js'], env: { DOOL2_API: 'x' } }],
+      toolEnv: (id) => (id === talk.id ? { DOOL2_SESSION: 'conversation' } : undefined),
+    })
+    const talk = store.createThread('claude')
+    const other = store.createThread('claude')
+    await collect(svc.send(talk.id, 'hi'))
+    await collect(svc.send(other.id, 'hi'))
+    expect(rt.inputs[0]?.mcpServers[0]?.env).toEqual({
+      DOOL2_API: 'x',
+      DOOL2_SESSION: 'conversation',
+      DOOL2_TOOLSET: talk.id,
+    })
+    expect(rt.inputs[1]?.mcpServers[0]?.env).toEqual({ DOOL2_API: 'x', DOOL2_TOOLSET: other.id })
+  })
+
   it('덧붙인 배경(aside)은 AI에게만 가고 기록에는 내 말만 남는다', async () => {
     const { store, rt, svc } = setup([{ type: 'done', resumeId: 's1', text: '내일 오전에 와요' }])
     const t = store.createThread('claude')

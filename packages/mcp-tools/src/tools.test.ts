@@ -111,6 +111,106 @@ describe('tool list size budget', () => {
   })
 })
 
+describe('conversation and task sessions (ADR 0038)', () => {
+  const list = async (session?: 'conversation' | 'task') => {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer(session ? { session } : {}).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    return { tools, client }
+  }
+
+  it('the conversation talks, remembers, looks up and shows; the browser, PC apps and files are in tasks', async () => {
+    const { tools, client } = await list('conversation')
+    expect(tools.map((t) => t.name)).toEqual([
+      'status',
+      'goal_create',
+      'goal_list',
+      'goal_update',
+      'library_save',
+      'library_find',
+      'memory_save',
+      'know_save',
+      'know_find',
+      'know_update',
+      'memory_forget',
+      'photo_view',
+      'connect_ask',
+      'profile_view',
+      'pay_method_list',
+      'vault_find',
+      'show_cards',
+      'show_list',
+      'show_result',
+      'show_draft',
+      'feed_tell',
+      'feed_find',
+      'conversation_search',
+      'task_start',
+      'task_steer',
+      'task_stop',
+      'task_list',
+      'service_find',
+      'orders_all',
+      'service_call',
+      'tool_find',
+      'tool_call',
+    ])
+    // tool_find offers only what this session has, and says where the rest is
+    const find = tools.find((t) => t.name === 'tool_find')?.description ?? ''
+    expect(find).toContain('goal_delete')
+    expect(find).not.toContain('screen_')
+    expect(find).toContain('task_start')
+    const r = await client.callTool({ name: 'tool_call', arguments: { tool: 'file_pdf', input: {} } })
+    expect(r.isError).toBe(true)
+    await client.close()
+  })
+
+  it('a task has every tool but the task tools, like a chat without a kind', async () => {
+    const task = await list('task')
+    const plain = await list()
+    expect(task.tools.map((t) => t.name)).toEqual(plain.tools.map((t) => t.name))
+    expect(task.tools.some((t) => t.name.startsWith('task_'))).toBe(false)
+    expect(task.tools.some((t) => t.name === 'browser_open')).toBe(true)
+    await task.client.close()
+    await plain.client.close()
+  })
+
+  it("the conversation's tool list has its own, much smaller budget", async () => {
+    // Every request of the conversation carries it; about half of the full list (Dool2 tools, no service tools)
+    const { tools, client } = await list('conversation')
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(46_000)
+    await client.close()
+  })
+
+  it('task tools call the daemon and say when to use them', async () => {
+    const calls: [string, Record<string, unknown>][] = []
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair()
+    await createServer({
+      session: 'conversation',
+      tasks: async (tool, args) => {
+        calls.push([tool, args])
+        return { content: [{ type: 'text', text: 'Task t1 started' }] }
+      },
+    }).connect(serverT)
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(clientT)
+    const { tools } = await client.listTools()
+    expect(tools.find((t) => t.name === 'task_start')?.description).toContain('browser or PC apps')
+    const r = await client.callTool({
+      name: 'task_start',
+      arguments: { title: 'KTX', goal: 'Book a KTX to Busan', done_when: ['a ticket number is read'] },
+    })
+    expect((r.content as { text: string }[])[0]?.text).toBe('Task t1 started')
+    // A spec without a done-when never reaches the daemon
+    const bad = await client.callTool({ name: 'task_start', arguments: { title: 'x', goal: 'do it' } })
+    expect(bad.isError).toBe(true)
+    expect(calls.map(([t]) => t)).toEqual(['task_start'])
+    await client.close()
+  })
+})
+
 describe('result blocks (rules moved from the global prompt)', () => {
   it('say in their descriptions what goes where', async () => {
     const [clientT, serverT] = InMemoryTransport.createLinkedPair()
@@ -452,7 +552,14 @@ describe('lookup tools', () => {
     await createServer({ now: fixed }).connect(serverT)
     const client = new Client({ name: 'test', version: '0' })
     await client.connect(clientT)
-    const { tools } = await client.listTools()
+    const { tools: full } = await client.listTools()
+    // The conversation's own tools too (ADR 0038)
+    const [c2, s2] = InMemoryTransport.createLinkedPair()
+    await createServer({ now: fixed, session: 'conversation' }).connect(s2)
+    const talk = new Client({ name: 'test', version: '0' })
+    await talk.connect(c2)
+    const tools = [...full, ...(await talk.listTools()).tools.filter((t) => t.name.startsWith('task_'))]
+    await talk.close()
     const readOnly = tools
       .filter((t) => t.annotations?.readOnlyHint && !/^(browser|screen|kakao)_/.test(t.name))
       .map((t) => t.name)
