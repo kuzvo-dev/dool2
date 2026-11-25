@@ -265,6 +265,9 @@ try {
       `--load-extension=${extDir}`,
       '--no-first-run',
       '--no-default-browser-check',
+      // macOS: a test profile never asks for the login keychain (a prompt nobody answers blocks the installed app)
+      '--use-mock-keychain',
+      '--password-store=basic',
       '--window-size=1100,820',
       'about:blank',
     ],
