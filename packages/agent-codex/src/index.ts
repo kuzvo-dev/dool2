@@ -15,11 +15,13 @@ import {
 import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { resolveBundledCodex } from './bin.js'
+import { writeOnlyDool2Catalog } from './catalog.js'
 import { downloadedCodexBin } from './download.js'
 import { CODEX_TEXT } from './locales/codex.js'
 import { CodexSession, type SpawnCodex } from './session.js'
 
 export { CODEX_VERSION, resolveBundledCodex } from './bin.js'
+export { CATALOG_FILE, onlyDool2Catalog, writeOnlyDool2Catalog } from './catalog.js'
 export * from './download.js'
 export { CodexEventMapper } from './map.js'
 export { JsonRpcClient } from './rpc.js'
@@ -39,8 +41,30 @@ export const SIDE_JOB_CONFIG = [
   'include_collaboration_mode_instructions=false',
 ]
 
-/** Arguments for `codex app-server`. A pure function, pinned by tests. sideJob: a tool-less side job (no MCP servers) */
-export function buildCodexArgs(mcpServers: McpServerSpec[], o: { sideJob?: boolean } = {}): string[] {
+/**
+ * Codex's own tools that are not shell, files or web, turned off for every thread (ADR 0003): a sub-agent works on its
+ * own thread outside Dool2's work log; goals, the sleep timer, the image viewer (it reads any picture file on the PC)
+ * and asking the user through Codex are not Dool2 tools. Checked on the pinned 0.169.0: the model is offered none of
+ * them (fixtures/app-server-tools-0.169.0.json). The JavaScript tool and the per-model sub-agent tools go with Dool2's
+ * model catalog (catalog.ts)
+ */
+export const ONLY_DOOL2_CONFIG = [
+  'features.multi_agent=false',
+  'features.multi_agent_v2.disable_native_tools=true',
+  'features.goals=false',
+  'features.sleep_tool=false',
+  'features.view_image=false',
+  'tools.experimental_request_user_input={enabled=false}',
+]
+
+/**
+ * Arguments for `codex app-server`. A pure function, pinned by tests. sideJob: a tool-less side job (no MCP servers).
+ * catalog: Dool2's model catalog (writeOnlyDool2Catalog), which the runtime always passes
+ */
+export function buildCodexArgs(
+  mcpServers: McpServerSpec[],
+  o: { sideJob?: boolean; catalog?: string } = {},
+): string[] {
   const args = [
     'app-server',
     // Turn off the shell command tool
@@ -53,6 +77,8 @@ export function buildCodexArgs(mcpServers: McpServerSpec[], o: { sideJob?: boole
     '-c',
     'approval_policy="never"',
   ]
+  for (const c of ONLY_DOOL2_CONFIG) args.push('-c', c)
+  if (o.catalog) args.push('-c', `model_catalog_json=${toml(o.catalog)}`)
   if (o.sideJob) for (const c of SIDE_JOB_CONFIG) args.push('-c', c)
   for (const s of mcpServers) {
     const base = `mcp_servers.${s.name}`
@@ -79,11 +105,15 @@ export interface CodexRuntimeOptions {
   lang?: () => Lang
   /** For tests: starts the program (a fake app-server) */
   spawn?: SpawnCodex
+  /** For tests: writes Dool2's model catalog and returns its path (writeOnlyDool2Catalog) */
+  catalog?: (bin: string) => Promise<string>
 }
 
 export class CodexRuntime implements AgentRuntime {
   readonly id = 'codex' as const
   private resolved: string | undefined
+  /** Dool2's model catalog, written once per run of Dool2 (tried again after a failure) */
+  private catalogPath: Promise<string> | undefined
 
   constructor(private readonly opts: CodexRuntimeOptions) {}
 
@@ -142,11 +172,33 @@ export class CodexRuntime implements AgentRuntime {
     return !(login && (login.code !== 0 || /not logged in/i.test(login.stdout + login.stderr)))
   }
 
-  private session(path: string, input: SessionInput, sideJob = false, fork = false): CodexSession {
+  /**
+   * Dool2's model catalog (no JavaScript tool, no sub-agents). Undefined when it cannot be written: Codex is then not
+   * started at all, since its own catalog would offer those tools (fail closed)
+   */
+  private async catalog(path: string): Promise<string | undefined> {
+    if (!this.catalogPath) {
+      const write =
+        this.opts.catalog ?? ((bin) => writeOnlyDool2Catalog(bin, this.opts.codexHome, this.env()))
+      this.catalogPath = write(path)
+      this.catalogPath.catch(() => {
+        this.catalogPath = undefined
+      })
+    }
+    return this.catalogPath.catch(() => undefined)
+  }
+
+  private session(
+    path: string,
+    catalog: string,
+    input: SessionInput,
+    sideJob = false,
+    fork = false,
+  ): CodexSession {
     return new CodexSession({
       ...(fork ? { fork } : {}),
       bin: path,
-      args: buildCodexArgs(sideJob ? [] : input.mcpServers, { sideJob }),
+      args: buildCodexArgs(sideJob ? [] : input.mcpServers, { sideJob, catalog }),
       env: this.env(),
       input,
       sideJob,
@@ -164,7 +216,10 @@ export class CodexRuntime implements AgentRuntime {
     if (!path) return undefined
     await mkdir(this.opts.codexHome, { recursive: true })
     if (!(await this.signedIn(path))) return undefined
-    const session = this.session(path, input)
+    // Without Dool2's catalog there is no session; runTurn then says why
+    const catalog = await this.catalog(path)
+    if (!catalog) return undefined
+    const session = this.session(path, catalog, input)
     session.start().catch(() => {})
     return session
   }
@@ -181,9 +236,20 @@ export class CodexRuntime implements AgentRuntime {
       yield { type: 'error', code: 'not_logged_in', message: CODEX_TEXT[this.lang()].loginFirst }
       return
     }
+    const catalog = await this.catalog(path)
+    if (!catalog) {
+      yield { type: 'error', code: 'tools_unsafe', message: CODEX_TEXT[this.lang()].notOnlyDool2 }
+      return
+    }
     const { text, signal, fork, sideJob, ...open } = input
     // A summary continues in a copy of the thread (a resident program may hold the original)
-    const session = this.session(path, open, sideJob === true, fork === true && Boolean(open.resumeId))
+    const session = this.session(
+      path,
+      catalog,
+      open,
+      sideJob === true,
+      fork === true && Boolean(open.resumeId),
+    )
     try {
       yield* session.send(text, signal)
     } finally {

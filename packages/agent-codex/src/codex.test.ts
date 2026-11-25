@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs'
 import type { AgentEvent } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { buildCodexArgs, CodexEventMapper, JsonRpcClient, resolveBundledCodex } from './index.js'
+import {
+  buildCodexArgs,
+  CATALOG_FILE,
+  CodexEventMapper,
+  JsonRpcClient,
+  ONLY_DOOL2_CONFIG,
+  onlyDool2Catalog,
+  resolveBundledCodex,
+  writeOnlyDool2Catalog,
+} from './index.js'
 
 describe('buildCodexArgs', () => {
   const args = buildCodexArgs([{ name: 'dool2', command: '/app/node', args: ['/app/mcp.js'] }])
@@ -271,5 +280,120 @@ describe('Codex 내려받기', () => {
     const { CODEX_PACKAGES } = await import('./download.js')
     for (const p of ['darwin-arm64', 'darwin-x64', 'win32-x64', 'win32-arm64'])
       expect(CODEX_PACKAGES[p]?.integrity).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/)
+  })
+})
+
+describe('only Dool2 tools on Codex (ADR 0003)', () => {
+  const fixture = (name: string) => new URL(`../fixtures/${name}`, import.meta.url)
+  const lines = (name: string) =>
+    readFileSync(fixture(name), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { case: string; method: string; params: Record<string, unknown> })
+
+  it('turns off sub-agents, goals, the sleep timer, the image viewer and asking through Codex', () => {
+    for (const o of [{}, { sideJob: true }]) {
+      const args = buildCodexArgs([], o)
+      const pairs = args.filter((_, i) => args[i - 1] === '-c')
+      for (const c of ONLY_DOOL2_CONFIG) expect(pairs).toContain(c)
+    }
+    expect(ONLY_DOOL2_CONFIG).toContain('features.multi_agent_v2.disable_native_tools=true')
+    const args = buildCodexArgs([], { catalog: '/home/codex/dool2-model-catalog.json' })
+    expect(args).toContain('model_catalog_json="/home/codex/dool2-model-catalog.json"')
+  })
+
+  it("Dool2's catalog offers plain tools only: no JavaScript tool, no sub-agents, Dool2's tools up front", () => {
+    const raw = JSON.parse(readFileSync(fixture('debug-models-0.169.0.json'), 'utf8'))
+    // The pinned catalog puts the newer models in code mode with sub-agent tools
+    expect(raw.models.some((m: { tool_mode?: string }) => m.tool_mode === 'code_mode_only')).toBe(true)
+    const cat = onlyDool2Catalog(raw)
+    expect(cat.models).toHaveLength(raw.models.length)
+    for (const m of cat.models) {
+      expect(m).toMatchObject({
+        tool_mode: 'direct',
+        supports_search_tool: false,
+        node_repl_disabled: true,
+        apply_patch_tool_type: null,
+      })
+      expect(m).not.toHaveProperty('multi_agent_version')
+      expect(m.slug).toEqual(expect.any(String))
+    }
+    expect(() => onlyDool2Catalog({ models: [] })).toThrow()
+    expect(() => onlyDool2Catalog('not a catalog')).toThrow()
+  })
+
+  it('what the pinned program offered the model before and after (captured with a stand-in for the model)', () => {
+    const t = JSON.parse(readFileSync(fixture('app-server-tools-0.169.0.json'), 'utf8')) as Record<
+      'before' | 'after',
+      Record<string, string[]>
+    >
+    const all = (o: Record<string, string[]>) => Object.values(o).flat()
+    expect(all(t.before)).toEqual(expect.arrayContaining(['exec', 'spawn_agent', 'request_user_input']))
+    // After: Dool2's tools up front, Dool2's own MCP resources and the clock; nothing that acts or starts an agent
+    expect(t.after.mcp__dool2).toEqual(['browser_open'])
+    const others = Object.entries(t.after)
+      .filter(([ns]) => ns !== 'mcp__dool2')
+      .flatMap(([, names]) => names)
+    expect(others.sort()).toEqual(
+      ['curr_time', 'list_mcp_resource_templates', 'list_mcp_resources', 'read_mcp_resource'].sort(),
+    )
+  })
+
+  it('writes the catalog from the program, keeps an earlier copy when it cannot, and fails with none', async () => {
+    const { mkdtemp, readFile, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const home = await mkdtemp(join(tmpdir(), 'dool2-codex-cat-'))
+    try {
+      const raw = readFileSync(fixture('debug-models-0.169.0.json'), 'utf8')
+      const calls: string[][] = []
+      const ok = async (_bin: string, args: string[]) => {
+        calls.push(args)
+        return { code: 0, stdout: raw, stderr: '' }
+      }
+      const failing = async () => ({ code: 1, stdout: '', stderr: 'boom' })
+      await expect(writeOnlyDool2Catalog('/x/codex', home, {}, failing)).rejects.toThrow('boom')
+      const path = await writeOnlyDool2Catalog('/x/codex', home, {}, ok)
+      expect(calls).toEqual([['debug', 'models']])
+      expect(path).toBe(join(home, CATALOG_FILE))
+      const written = JSON.parse(await readFile(path, 'utf8'))
+      expect(written.models.every((m: { tool_mode: string }) => m.tool_mode === 'direct')).toBe(true)
+      expect(await writeOnlyDool2Catalog('/x/codex', home, {}, failing)).toBe(path)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at a sub-agent: its start on this thread, or any work on another thread', () => {
+    const spawn = lines('app-server-other-agents.jsonl').filter((l) => l.case === 'spawn_agent')
+    const thread = String(spawn[0]?.params.threadId)
+    const m = new CodexEventMapper(thread, 'en')
+    const first = spawn.map((l) => m.map(l.method, l.params)).find((r) => r.abort)
+    expect(first?.events).toEqual([
+      {
+        type: 'error',
+        code: 'tools_unsafe',
+        message:
+          'Stopped because it tried to hand work to another AI. Everything Dool2 does has to show under "What Dool2 did"',
+      },
+    ])
+    // Its lines on its own thread, even without the parent's item
+    const child = new CodexEventMapper('th1', 'en')
+    expect(child.map('item/started', { threadId: 'th-other', item: { type: 'agentMessage' } }).abort).toBe(
+      true,
+    )
+    expect(child.map('turn/completed', { threadId: 'th-other', turn: { status: 'completed' } })).toEqual({
+      events: [],
+    })
+    expect(child.map('item/started', { threadId: 'th1', item: { type: 'collabAgentToolCall' } }).abort).toBe(
+      true,
+    )
+  })
+
+  it('stops at the image viewer (it reads picture files on the PC)', () => {
+    const view = lines('app-server-other-agents.jsonl').filter((l) => l.case === 'view_image')
+    const m = new CodexEventMapper(String(view[0]?.params.threadId), 'en')
+    const r = view.map((l) => m.map(l.method, l.params)).find((x) => x.abort)
+    expect(r?.events[0]).toMatchObject({ type: 'error', code: 'tools_unsafe' })
   })
 })
