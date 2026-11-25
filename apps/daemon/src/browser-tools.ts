@@ -2236,7 +2236,10 @@ export class BrowserTools {
         // Notify the phone and press [verification done] every few seconds to see whether it was approved. Text like "not signed" means not yet.
         // Some sites (Hometax) open the verification window as a popup (new tab), so tabs Dool2 opened recently are checked too
         const am = browserText(this.userLang())
-        const msg = String(a.message ?? '').trim() || am.authBody
+        const msg =
+          String(a.message ?? '')
+            .trim()
+            .slice(0, 120) || am.authBody
         this.notifyUser?.(am.authTitle, msg)
         // Only keep the tab open. No phone remote screen prep (holdForPerson) — the screen changed and closed the verification window (measured)
         this.hold(tabId, 200_000)
@@ -4113,7 +4116,8 @@ export class BrowserTools {
     scope: { view?: boolean; from?: string; skip?: number } = {},
     changes = true,
   ): Promise<ToolResult> {
-    const max = Number(maxChars) || PAGE_READ_CHARS
+    // Small values the AI sometimes gives (they used to fail the input check) read at least 1,000 characters
+    const max = Math.max(1_000, Number(maxChars) || PAGE_READ_CHARS)
     const partial = Boolean(scope.view || scope.from || scope.skip)
     let s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
     const notes = [...(s.dialogNotes ?? [])]

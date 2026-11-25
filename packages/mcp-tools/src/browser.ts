@@ -68,7 +68,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'open',
     'Open new tab',
-    "Opens a new tab in the Dool2 window of the user's Chrome and returns the page read as text. The user's usual logins apply. Use this first to find or do anything on the web; without a page's exact address, open the site's home page and use its menu or search. Cite what you read as a link ([site](page address)) on that line.",
+    "Opens a new tab in the Dool2 window of the user's Chrome (their logins apply) and returns the page as text. Start web work here; without a page's exact address, open the site's home page and use its menu or search. Cite what you read as a link ([site](page address)).",
     { url: z.string().describe('Address to open (e.g. https://www.naver.com)') },
     true,
   )
@@ -82,57 +82,41 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'read',
     'Read page',
-    'Reads the tab\'s current page as text. If you use it in the answer, add a source link at the end of that line ([screen name](page address)): the article or post itself, not a list page; for an agency\'s programs, grants and events its own site, press release or application page rather than an article; none for the user\'s own account pages (orders, balances). Clickable things are marked like [e12 button "Search"]. For long pages read only what you need: put text to look for in from (e.g. the page\'s "search results" heading, as written on the page) to start at that line, view: true for only what is on screen now, and if it was cut off, continue with the skip value given.',
+    `Reads the tab's page as text; clickable things are marked like [e12 button "Search"]. Long pages: from starts at a line containing that text, view: true reads only what is on screen, skip continues after a cut. When you use it in the answer, link the source: the article or post itself (not a list page), an agency's own page for its programs; none for the user's own account pages. E.g. {tabId: 3, from: "Search results"}`,
     {
       tabId,
-      maxChars: z.number().int().min(1000).max(40000).optional(),
-      view: z
-        .boolean()
-        .optional()
-        .describe('true = only the part visible on screen now (use after scrolling)'),
-      from: z
-        .string()
-        .max(100)
-        .optional()
-        .describe('Start reading at the line containing this text, as written on the page (skips top menus)'),
-      skip: z
-        .number()
-        .int()
-        .min(0)
-        .optional()
-        .describe('Skip this many characters from the start (to continue after a cut-off)'),
+      maxChars: z.number().int().min(1).max(40000).optional(),
+      view: z.boolean().optional(),
+      from: z.string().max(100).optional().describe('Text as written on the page, e.g. a heading'),
+      skip: z.number().int().min(0).optional().describe('The skip value a cut-off result gave'),
     },
     true,
   )
   tool(
     'click',
     'Click',
-    "Clicks a marked (ref) button or link with a real mouse and returns what changed on the page (the whole page if it moved to another page). For boxes without a ref (shop or product cards in search results, etc.) put the on-screen text (shop name, etc.) exactly in text instead of ref, and that text is clicked. Buttons with words like pay, order, send or delete are blocked by Dool2 and redirected to an approval card (browser_checkout for payment, browser_request_approval for send/delete). After a payment is approved, buttons inside the payment provider's window are not blocked again.",
+    "Clicks a marked (ref) button or link with a real mouse and returns what changed. Without a ref, put the on-screen text exactly in text. Pay, order, send and delete buttons are stopped by Dool2 and sent to an approval card (browser_checkout, browser_request_approval); inside an approved payment's window they are not stopped again.",
     {
       tabId,
       ref: ref.optional(),
-      text: z
-        .string()
-        .max(80)
-        .optional()
-        .describe('When there is no ref: the on-screen text of what to click, exactly (e.g. a shop name)'),
+      text: z.string().max(80).optional().describe('No ref: the on-screen text, exactly'),
       opens_checkout: z
         .boolean()
         .optional()
         .describe(
-          'true if, from the screen, you judge this button only moves on to the payment screen (where the payment method and final amount are chosen), like [Order] in a cart or order sheet. It is clicked without approval; approval is asked only once, at the last button of the payment screen',
+          'true if it only moves on to the payment screen ([Order] in a cart); approval comes once, at the last pay button',
         ),
       final: z
         .boolean()
         .optional()
         .describe(
-          'true if, from the screen, you judge this button actually spends money (or sends, deletes) or confirms something. Even if the button label has no such words, Dool2 will not click it and redirects to an approval card',
+          'true if it spends money, sends, deletes or confirms, whatever its label (goes to approval)',
         ),
       force: z
         .boolean()
         .optional()
         .describe(
-          'true if it stopped because the surrounding text changed since reading or another element covers it, and after checking the text it reported you still judge the element is right (if covered, the element is clicked directly instead of with the mouse)',
+          'true after it stopped (text changed or covered) and you checked it is still the right element',
         ),
     },
     false,
@@ -140,9 +124,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'type',
     'Type',
-    'Types text into a marked (ref) input (replacing what was there). With submit: true it also presses Enter. It cannot type into password fields. ' +
-      'Title and body areas of blog or community post editors (placeholders like [input "Title"] or [input "Enter body text"]) also work: give them as ref and Dool2 clicks that spot and types (line breaks become new paragraphs, long bodies go in one call). ' +
-      'Never tell the user to copy and paste because you cannot type: if the result says it is not visible on screen, look at the screen and try again.',
+    'Types into a marked (ref) input, replacing what was there; submit: true presses Enter. Works in post editors too (title and body boxes; line breaks become paragraphs). Not for password fields. Never ask the user to copy and paste: if it is not visible, look and try again.',
     { tabId, ref, text: z.string().max(20000), submit: z.boolean().optional() },
     false,
   )
@@ -163,103 +145,75 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'steps',
     'Several actions at once',
-    'Does a sequence of actions on the screen you read (filling several fields, picking then clicking, etc.) in order, then reads the page once at the end. Actions are only click (ref or text), type (ref, text, submit), press (key), hover (ref), scroll (direction) and wait (ms). If it moves to another screen, a new tab or confirm dialog opens, or something blocks, it stops there and skips the rest. Buttons like pay, order, send or delete are blocked exactly as in browser_click.',
+    'Does several actions on the screen you read in order (fill fields, pick then click), then reads the page once. It stops at a new screen, tab, dialog or block and skips the rest. Pay, order, send and delete are stopped as in browser_click. E.g. steps: [{do:"type",ref:"e5",text:"Busan"},{do:"click",ref:"e9"}]',
     {
       tabId,
       steps: z
         .array(
           z.object({
-            do: z.enum(['click', 'type', 'press', 'hover', 'scroll', 'wait']).describe('Action'),
-            ref: ref.optional().describe('click, type, hover: element ref'),
+            do: z.enum(['click', 'type', 'press', 'hover', 'scroll', 'wait']),
+            ref: ref.optional(),
             text: z
               .string()
               .max(20000)
               .optional()
-              .describe('type: text to enter / click: on-screen text to click when there is no ref'),
-            submit: z.boolean().optional().describe('type: press Enter after typing'),
-            key: z.string().max(20).optional().describe('press: key name (Enter, Tab, Escape …)'),
-            direction: z.enum(['up', 'down']).optional().describe('scroll: direction'),
-            ms: z.number().int().min(100).max(5000).optional().describe('wait: time to wait (ms)'),
+              .describe('type: the text · click without ref: on-screen text'),
+            submit: z.boolean().optional(),
+            key: z.string().max(20).optional().describe('press: Enter, Tab, Escape …'),
+            direction: z.enum(['up', 'down']).optional(),
+            ms: z.number().int().min(0).max(5000).optional().describe('wait: ms'),
           }),
         )
         .min(1)
-        .max(12)
-        .describe('Actions in order (up to 12)'),
-      maxChars: z.number().int().min(1000).max(40000).optional(),
+        .max(12),
+      maxChars: z.number().int().min(1).max(40000).optional(),
     },
     false,
   )
   tool(
     'route',
     'Take a remembered route',
-    'Goes to a page by a route Dool2 took on this site before. Opening or moving to a site lists its routes as [r3] with the page they end on and the links pressed. Dool2 presses the same links itself, pausing like a person between them, without asking you at each click, and returns the final page. Prefer it over clicking the same menus one by one. If a link is not on the page any more, it stops there and returns that page; carry on yourself. Payment, send and delete buttons are gated exactly as in browser_click.',
+    "Goes to a page by a route Dool2 took on this site before (opening the site lists them as [r3]): Dool2 presses the same links itself at a person's pace and returns the last page. If a link is gone it stops there; carry on yourself. Gated as in browser_click.",
     {
       tabId,
       route: z
         .string()
         .regex(/^r\d+$/)
-        .describe('Route id from the list, e.g. r3'),
+        .describe('E.g. r3'),
     },
     false,
   )
   tool(
     'select',
     'Pick from a list',
-    'Reads or picks from a dropdown (product color/size options, select boxes, fields like "open options" or "please select"). Without choose it returns the list (with sold-out marks and the current pick); with choose set to an item\'s text (e.g. "M", "Black", as written on the page) it picks that and returns the changed page. Lists that scripts cannot open are opened by Dool2 with a real mouse. Never use it for payment method or installment lists (use choices on the approval card). ' +
-      'Product options (color, size, volume): pick what the user said; if they did not say, use the clothing and shoe sizes and frequently picked colors in memory; only if memory has nothing, show the options that can be picked (not sold out) and ask once. When the user tells or picks a size, save it with memory_save (e.g. "clothing size M · shoes 260"). Never pick a sold-out option; say so.',
+    'Reads or picks from a dropdown or option list (size, color, select boxes). Without choose it lists the options with sold-out marks; with choose it picks that text. Pick what the user said, else a size or color from memory, else ask once with the options that are not sold out; never a sold-out one. Say a size the user gave in your answer so it is remembered. Not for payment methods (approval card choices).',
     {
       tabId,
-      ref: ref.describe('Ref of the list field (e.g. e49 "open options", e51 select box "color")'),
-      choose: z
-        .string()
-        .max(60)
-        .optional()
-        .describe(
-          'Item text to pick (the option the user said, otherwise a remembered size or color). Empty = only view the list',
-        ),
+      ref: ref.describe('The list field'),
+      choose: z.string().max(60).optional().describe('Option text as on the page. Empty = only list them'),
     },
     false,
   )
   tool(
     'upload',
     'Upload PC files',
-    "Attaches files from the user's PC to a web page: photos in a blog post, uploading Shorts or videos, documents for civil petitions or insurance claims, changing a profile picture. " +
-      'First find the files with file_find (photos: folder pictures, videos: movies, received documents: downloads or documents) and pass the paths as is in paths. For photos the user sent in chat (shown as a photo marker with name.jpg), pass that name (name.jpg) as is. ' +
-      "For ref give the page's button like [Add photo], [Choose file] or [Upload video], or the file field: files go straight into the attached file field, or if there is none, into the file picker that opens when that button is clicked. Do not click that button with browser_click. " +
-      "The user's files go out to that site, so the first time an approval card (file names, site) appears on the phone: ask in one or two sentences as the result says and end the reply; after approval Dool2 attaches them and tells you in the next message. The same files to the same site are not asked again for 30 minutes. " +
-      'It only attaches: afterwards read the page to confirm what was uploaded (preview, file names), then continue with posting or submitting. Never make the user move files themselves.',
+    "Attaches PC files to a web page (blog photos, videos, documents for petitions or claims). Find them with file_find and pass the paths as given (a photo sent in chat: its name.jpg). ref is the page's upload button or file field; don't click it yourself. The first time, an approval card (files, site) goes to the phone: say so and end the reply; Dool2 attaches them after approval. Read the page afterwards to confirm, then go on.",
     {
       tabId,
-      ref: ref.describe(
-        'Ref of the upload button or file field (e.g. e31 button "Add photo", e40 input "Attachment")',
-      ),
-      paths: z
-        .array(z.string().max(500))
-        .min(1)
-        .max(20)
-        .describe(
-          'File paths to upload (exactly as file_find gave them, e.g. ["~/Pictures/Jeju sea.jpg"]). Several in one call',
-        ),
-      what: z
-        .string()
-        .max(120)
-        .optional()
-        .describe(
-          'One line for the approval card, in the user\'s language (e.g. "3 photos for the Jeju trip post on Naver Blog")',
-        ),
+      ref: ref.describe('The upload button or file field'),
+      paths: z.array(z.string().max(500)).min(1).max(20).describe('Paths as file_find gave them'),
+      what: z.string().max(120).optional().describe('One line for the approval card'),
     },
     false,
   )
   tool(
     'scroll',
     'Scroll',
-    'Scrolls one screen up or down and returns what is visible on screen now. browser_read reads the whole page without scrolling, so use this only to follow what is visible on screen.',
+    'Scrolls one screen and returns what is visible now. browser_read reads the whole page already; use this only to follow what is on screen.',
     {
       tabId,
       direction: z.enum(['up', 'down']),
-      ref: ref
-        .optional()
-        .describe('Scrolls this element (or the list pane or modal containing it). Empty = the page'),
+      ref: ref.optional().describe('Scroll this pane. Empty = the page'),
     },
     true,
   )
@@ -274,60 +228,50 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'wait',
     'Wait for a change',
-    'Waits until the screen changes (at most ms; default 3 s, max 10 s) and reports what changed (text or elements, frame navigation, address change, new tab, blocked popup, site alert). Use when a payment window or verification result appears late after a click. Judge whether it worked by reading with browser_read.',
+    'Waits until the screen changes (default 3 s, at most 10 s) and reports what changed (text, address, new tab, blocked popup, site alert), when a payment window or a result appears late.',
     { tabId, ms: z.number().int().min(100).max(10_000).optional() },
     true,
   )
   tool(
     'tabs',
     'Dool2 tab list',
-    'Shows all Dool2 tabs: tab number, title and address, which tab opened which new window, whether it is a popup, recently closed new windows, new windows Chrome blocked (popup blocker), and tabs closed during cleanup. Use when a payment or login window appeared late or a tab disappeared.',
+    'Lists the Dool2 tabs (number, title, address, which opened which, popups, blocked or recently closed windows), when a payment or login window appeared late or a tab disappeared.',
     { tabId: tabId.optional().describe('To see only new windows blocked in this tab') },
     true,
   )
   tool(
     'login',
     'Fill login from the Dool2 vault',
-    "If the site is saved in the user's Dool2 vault, Dool2 fills the ID and password fields itself. The values are never shown. After filling, click the login button with browser_click. If after clicking the screen says the login failed (e.g. a wrong-password message; you judge), call again with failed: true to report it, so new values can be collected with a card. If the vault has no entry, first try the simple login the user used on that site (a remembered method, or Kakao, Naver, Google and so on already signed in in the browser), and if that fails too, show a login card with browser_request_login. If the password is unknown or wrong, the user can choose to reset it from that card.",
+    'Fills the ID and password from the Dool2 vault on a login screen (you never see them), then press the login button with browser_click. If the screen then says it failed, call again with failed: true so new values are collected. If the vault has none, first try the simple login the user used on that site (Kakao, Naver, Google already signed in), then browser_request_login.',
     {
       tabId,
-      passwordRef: ref.optional().describe('Ref of the password field (e.g. e7). Omit with failed'),
-      usernameRef: ref.optional().describe('Ref of the ID field. Omit if the ID is already filled'),
-      failed: z
-        .boolean()
-        .optional()
-        .describe(
-          'true when you logged in with the vault values but the screen says it failed (you judge from the screen)',
-        ),
-      reason: z
-        .string()
-        .max(80)
-        .optional()
-        .describe('With failed: what the screen said, as written (e.g. "The password does not match")'),
+      passwordRef: ref.optional(),
+      usernameRef: ref.optional().describe('Omit if the ID is already filled'),
+      failed: z.boolean().optional(),
+      reason: z.string().max(80).optional().describe('With failed: what the screen said'),
     },
     false,
   )
   tool(
     'request_login',
     'Show login card',
-    "Use on a login page when the site is not in the Dool2 vault (when browser_login says it is not in the vault). Shows a login card on the user's phone. The ID and password the user enters are stored only in the vault and never come to you. After calling, say briefly that they can put their ID and password in the card and end this reply. The card also has 'Find account' and 'New here? Sign up' buttons, so do not ask about those separately, and never sign up on your own. For robot checks: picture puzzles use browser_request_tap, text ones browser_request_code (kind: captcha); authentication app approvals use browser_wait_auth; SMS verification codes use browser_request_code.",
+    "Shows a login card on the phone when the site is not in the vault. The ID and password go only to the vault. Say they can put them in the card and end the reply. The card has find-account and sign-up buttons, so don't ask about those, and never sign up on your own.",
     {
       tabId,
-      site: z.string().max(60).describe('Site name shown to the user, as the user knows it (e.g. "Costco")'),
+      site: z.string().max(60).describe('Site name as the user knows it'),
     },
     false,
   )
   tool(
     'fill_profile',
     'Fill booker/buyer fields from my info',
-    'Dool2 itself fills booker and buyer fields (name, English name, email, mobile, date of birth, address, passport, car number) on payment and booking screens and in simple authentication windows with the user\'s "my info". You only point at fields; you never see the values (the result has masked values). Use this first instead of asking the user for name or contact details; if an item is missing the result says so, then show a card with browser_request_profile. ' +
-      'In a simple authentication window (identity verification on Gov24, Hometax, etc. through an app such as Kakao, Naver, Toss or PASS), fill name, date of birth and mobile with this, click the authentication app from my info given in the result, click through to [request verification], then wait with browser_wait_auth (never ask about the app in chat).',
+    "Fills booker and buyer fields (name, English name, email, mobile, birth date, address, passport, car number, resident number back digits) from the user's saved info; you point at fields and never see values. Use it instead of asking. A missing item: browser_request_profile. In a simple authentication window, fill name, birth date and mobile, pick the app the result names, request it, then browser_wait_auth.",
     {
       tabId,
       fields: z
         .array(
           z.object({
-            ref: ref.describe('Ref of the input to fill (e.g. e12)'),
+            ref,
             key: z
               .enum([
                 'name',
@@ -357,7 +301,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
                 'car_no',
               ])
               .describe(
-                "My info item that fits the field shape: separate English last/first name → name_en_last, name_en_first; one field → name_en_full; phone with a separate country code picker → phone_local; with a separate 010 picker → phone_rest (last 8 digits); split in three → phone_head, phone_mid, phone_last; digits only → phone_digits, birth_digits; 6-digit birth date → birth6; passport fields (ESTA, flights, overseas lodging) → passport_no, passport_issued, passport_expiry, sex, birth_city (if missing, browser_request_profile; never ask for a passport photo in a PC folder); car tasks (inspection, recalls, car tax, insurance) → car_no; resident number back digits → rrn_back (filled if saved, otherwise received once on the phone's secure keypad; never hand it to the user to type)",
+                'The item that fits the field shape: phone_local after a country picker, phone_rest after a 010 picker, phone_head/mid/last when split in three, birth6 for 6 digits; rrn_back comes from the phone keypad if not saved',
               ),
           }),
         )
@@ -369,84 +313,58 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'wait_auth',
     'Wait for authentication app approval',
-    "Use after sending a simple authentication request (KakaoTalk, Naver, Toss, PASS, etc.). Public records that need the user's own data (health checkup eligibility, insurance claims, refunds, certificates) and logins on public sites go this way before asking the user anything: open the agency's site, fill the fields with browser_fill_profile, request the verification, then this; the user only approves on the phone. Right before calling, write one line in the user's language like \"I sent the verification request to KakaoTalk (the chosen app). Approve it there, then tap the done button on the card.\" (it shows in the progress card right away). It shows a notification and a card with a verified-done button on the user's phone, and Dool2 watches the screen for up to 3 minutes without holding the conversation: after calling, end this reply. Do not click anything while waiting (some sites close the verification window if you click before approval). When the screen changes (address, confirm dialog, verification window closed) or the user taps the card, the screen comes to you as a new message; judge from the screen whether it worked and continue: click a [verification complete] or [OK] button if there is one, and call again only if the screen says it is not done yet. With ref, that button is clicked once the moment the user taps the card. Do not hand off with browser_handoff and wait for the user to finish (the verification expires meanwhile).",
+    'Use after sending a simple authentication request (KakaoTalk, Naver, Toss, PASS). Public records that need the user\'s own data and logins on public sites go this way before asking the user anything: fill with browser_fill_profile, request it, then this. Right before, write one line on what to approve where. The phone gets a card; Dool2 watches the screen up to 3 minutes: end this reply and don\'t click meanwhile. The changed screen comes back as a new message; judge it and press [OK] if there is one. E.g. {tabId: 2, ref: "e40"}',
     {
       tabId,
-      ref: ref
-        .optional()
-        .describe('Ref of the [verification complete] or [OK] button to click after approval (omit if none)'),
-      message: z
-        .string()
-        .max(80)
-        .optional()
-        .describe(
-          'Text for the phone notification, in the user\'s language (e.g. "Please approve the Gov24 verification in KakaoTalk")',
-        ),
+      ref: ref.optional().describe('[OK] button to press once the user taps the card'),
+      message: z.string().max(200).optional().describe('Phone notification text'),
     },
     false,
   )
   tool(
     'request_code',
     'Get a value on the phone and fill it in (verification code, resident number back digits, CAPTCHA)',
-    "For values Dool2 does not know on identity verification and payment screens: a card on the user's phone receives the value and Dool2 types it straight into that field (ref). You never see it; never ask for it in chat or tell the user to type it on the PC. Press what Dool2 can (pop-ups, choosing a method) first. " +
-      'kind (see its description) covers verification codes (after filling name, date of birth and mobile with browser_fill_profile and clicking [get verification code]), resident number back digits, payment password keypads (two calls, see key_refs or box) and CAPTCHA text (two calls, see pick; never read and type it yourself). ' +
-      'After calling, end this reply; when the notification that the value was entered arrives, click [OK] or [verify] and continue.',
+    'Gets a value only the person has (a verification code, resident number back digits, a payment password, CAPTCHA text) on a phone card and types it straight into the field; you never see it, and never ask for it in chat. Press what Dool2 can (pop-ups, choosing a method) first. pin and captcha take two calls (see their fields). End this reply; when the value is in, press [OK] and go on.',
     {
       tabId,
-      ref: ref.optional().describe('Ref of the input for the code (not needed for an image keypad pin)'),
-      label: z
-        .string()
-        .max(40)
-        .optional()
-        .describe('Field name shown on the card, in the user\'s language (e.g. "6-digit verification code")'),
+      ref: ref.optional().describe('The input (not for an image keypad)'),
+      label: z.string().max(40).optional().describe('Field name on the card'),
       kind: z
         .enum(['code', 'rrn_back', 'captcha', 'pin'])
         .optional()
         .describe(
-          "code = SMS or KakaoTalk verification code (default, not saved) · rrn_back = resident registration number back digits (saved in the vault, filled next time with rrn_back in browser_fill_profile) · captcha = CAPTCHA or anti-bot text (with image) · pin = payment password keypad: the user enters it on the phone's secure keypad and Dool2 clicks the buttons; never hand it to a person",
+          'code (default) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad)',
         ),
       keys: z
         .record(z.string(), z.string())
         .optional()
-        .describe(
-          'For pin: after looking at the cropped button images, the button ref for each digit ({"0":"e20005","1":"e20003",…})',
-        ),
-      key_refs: z
-        .array(ref)
-        .max(16)
-        .optional()
-        .describe(
-          'For pin, first: all keypad button refs. Each button comes back cropped; look at them and call again with keys',
-        ),
+        .describe('pin, second call: digit → button ref, from the cropped images'),
+      key_refs: z.array(ref).max(16).optional().describe('pin, first call: all keypad button refs'),
       box: z
         .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
         .optional()
         .describe(
-          'For pin when the keypad is an image without button refs: the box around the whole number keypad on the browser_screenshot screen (0-1000). Give only box first to get the crop, then call again with the same box and keys_at pointing at the digits in that image',
+          'pin keypad as an image: its box on the screenshot (0-1000); first box alone, then with keys_at',
         ),
       keys_at: z
         .record(z.string(), z.array(z.number()).length(2))
         .optional()
-        .describe(
-          'Centers of the 0-9 buttons in the keypad image cropped with box ({"0":[x,y],…}, 0-1000 relative to the image)',
-        ),
-      length: z.number().int().min(4).max(8).optional().describe('Number of pin digits (default 6)'),
+        .describe('Centers of 0-9 in the cropped image (0-1000)'),
+      length: z.number().int().min(4).max(8).optional(),
       pick: z
         .number()
         .int()
         .min(1)
         .max(6)
         .optional()
-        .describe(
-          'For captcha: call first without it and a few images cropped around the field come back; call again with the number of the one where the CAPTCHA is clearest (that image shows on the card)',
-        ),
+        .describe('captcha, second call: the number of the clearest crop'),
     },
     false,
   )
   tool(
     'request_tap',
     'Solve a picture robot check by tapping',
-    'Solves robot checks that are answered by tapping a picture (tap where this picture is on the map, select all squares with traffic lights, etc.) through a card on the user\'s phone. Give the spot of the robot check picture (ref, or if it has none, a box marked on the browser_screenshot screen); only that area is cropped and shown on the phone with the instruction (say), and Dool2 taps the places the user tapped at the same positions on the PC screen, in order. Put the question text (e.g. "Tap the location of this picture on the map") in say exactly as written on the screen. If the question picture sits outside the box, mark the box so it is included. Never guess the answer and tap yourself. Use this instead of browser_handoff. After calling, end this reply; when the notification that it was tapped arrives, read the screen again and click [OK] or [Submit] to continue (if another puzzle appears, call again).',
+    "Solves a picture robot check (tap the spot, pick the squares) through a phone card: give the picture's ref or its box on the screenshot, and the question exactly as written in say; Dool2 taps where the user tapped. Never guess the answer yourself. End this reply; when it is tapped, read the screen and press [OK] or [Submit].",
     {
       tabId,
       ref: ref.optional().describe('Ref of the robot check picture box, if the page has one (otherwise box)'),
@@ -458,24 +376,16 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
           h: z.number().min(10).max(1000),
         })
         .optional()
-        .describe(
-          'Box on the browser_screenshot screen that contains the question text, picture and map (top-left of the screen 0, right and bottom edges 1000). Be generous',
-        ),
-      say: z.string().max(80).describe('Question text shown on the card (exactly as written on the screen)'),
-      taps: z
-        .number()
-        .int()
-        .min(1)
-        .max(9)
-        .optional()
-        .describe('Number of taps allowed (default 1; for selecting several squares, up to that many)'),
+        .describe('Box on the screenshot (0-1000) around question and picture, generously'),
+      say: z.string().max(80).describe('The question as written'),
+      taps: z.number().int().min(1).max(9).optional().describe('Taps allowed (default 1)'),
     },
     false,
   )
   tool(
     'request_profile',
     'Show my info card',
-    'Use when booker or buyer fields need filling but an item is missing from my info (when browser_fill_profile says it is missing). Also show this card with car_no or passport_* when a car number (periodic inspection, recalls, car tax, insurance) or passport (ESTA, overseas flights) is needed but missing (never ask in chat). Also show it with address when where the user lives is needed (nearby search, departure time, district office, community center) but my info has no address (never ask for the neighborhood in chat; once entered it is not asked again; ask only when a different place is the starting point). Do the parts that work without the address first (reading and assessing received photos or documents, general info, candidates based on Seoul) and put them in the answer, then show the card. It shows a my info card on the phone that the user fills once. The values are stored only in the PC vault and you get masked values only. Never ask for name, email or phone number in chat. After showing the card, finish any research that works without that info and end with the results in the answer.',
+    "Shows a card on the phone to fill a missing item of the user's info once (when browser_fill_profile says it is missing, or a car number, passport or home address is needed); values stay in the PC vault. Never ask for these in chat. Finish what works without it first and put that in the answer.",
     {
       fields: z
         .array(
@@ -506,16 +416,8 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .array(z.string().max(20))
         .max(10)
         .optional()
-        .describe(
-          "When collecting auth_app: the authentication app names shown in that site's simple authentication window (exactly as on screen, e.g. the Korean names for KakaoTalk, Naver, Toss). The user only picks one",
-        ),
-      reason: z
-        .string()
-        .max(120)
-        .optional()
-        .describe(
-          'One line on why it is needed, in the user\'s language (e.g. "To fill the booker fields for Le Dortoir")',
-        ),
+        .describe('auth_app: the app names as on the screen'),
+      reason: z.string().max(120).optional().describe('Why it is needed, one line'),
     },
     false,
   )
@@ -544,61 +446,32 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     'Request approval',
-    'Approval card for actions that do not spend money: use for buttons that need approval, like send, delete, apply (including cancel, return, plan change, termination) or personal data consent (when browser_click or browser_dialog says it will not proceed without approval). Never use it for payment (the last button that spends money): payment goes only through browser_checkout (the payment card). After the user approves on the phone, Dool2 clicks only that button. For [OK] in a site confirm dialog, use dialog: true instead of ref. If there are fields to choose (recipient, application type, pickup method, etc.), do not pick them yourself: put their refs in choices so the user picks on the card. After calling, end this reply; when the approval notification arrives, read the screen again to confirm it is done.',
+    'Approval card for actions that do not spend money: send, delete, apply, cancel, return, change a plan, consent (when browser_click or browser_dialog says it needs approval). Payment goes only through browser_checkout. After approval on the phone Dool2 clicks only that button. Fields the user should pick go in choices; what Dool2 picked itself in chose. Lay out what, where, amount and cancellation terms as written. End this reply; when approved, read the screen to confirm.',
     {
       tabId,
-      ref: ref.optional().describe('Ref of the button to click (omit for a confirm dialog)'),
-      dialog: z
-        .boolean()
-        .optional()
-        .describe('true to get approval for [OK] in the open site confirm dialog'),
-      what: z.string().max(200).describe('What, in the user\'s language (e.g. "Return order: apples 1 kg")'),
-      where: z.string().max(100).describe('Where (site or shop name, e.g. "Dool2 test shop")'),
-      amount: z
-        .string()
-        .max(60)
-        .optional()
-        .describe('How much (exactly as written on the page, with its currency, e.g. "₩9,900")'),
+      ref: ref.optional().describe('The button (omit with dialog)'),
+      dialog: z.boolean().optional().describe("true for [OK] in the site's open confirm dialog"),
+      what: z.string().max(200).describe('E.g. "Return order: apples 1 kg"'),
+      where: z.string().max(100).describe('Site or shop'),
+      amount: z.string().max(60).optional().describe('As written, with currency'),
       cancel: z
         .string()
         .max(200)
         .optional()
-        .describe(
-          "Cancellation or refund terms (if unknown, say there is no notice, in the user's language)",
-        ),
-      choices: z
-        .array(ref)
-        .max(8)
-        .optional()
-        .describe(
-          'Refs of fields the user picks while approving (pickup method, application type radios, etc., e.g. ["e31","e32"]). Payment methods go in browser_checkout choices',
-        ),
-      choiceTitle: z
-        .string()
-        .max(20)
-        .optional()
-        .describe("Title for the choices, in the user's language (e.g. pickup method)"),
+        .describe('Cancellation or refund terms, or that there is no notice'),
+      choices: z.array(ref).max(8).optional().describe('Fields the user picks on the card'),
+      choiceTitle: z.string().max(20).optional(),
       chose: z
         .array(z.string().max(60))
         .max(8)
         .optional()
-        .describe(
-          'What Dool2 picked on the screen by itself, in the user\'s language (e.g. ["Reason: changed my mind","Agree to all terms","Pickup at the door"]). Listed so the user can see and change them on the approval card. Different from choices, which the user picks',
-        ),
-      ship_to: z
-        .string()
-        .max(120)
-        .optional()
-        .describe(
-          'Address that goes into the application, like a return pickup or exchange delivery address (e.g. "Home · Sinbong-dong, Suji-gu, Yongin …, at the door"). For payment delivery addresses use ship_to in browser_checkout',
-        ),
+        .describe('What Dool2 picked itself, so the user can change it'),
+      ship_to: z.string().max(120).optional().describe('Pickup or exchange address in the application'),
       ship_options: z
         .array(z.string().max(120))
         .max(5)
         .optional()
-        .describe(
-          'Other addresses saved on the site (shown under [change address]). If the user picks one on the approval card, Dool2 changes it and then clicks. For payment use ship_options in browser_checkout',
-        ),
+        .describe('Other addresses saved on the site'),
       count: z
         .number()
         .int()
@@ -606,7 +479,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(20)
         .optional()
         .describe(
-          'Count when doing the same action several times in a row (e.g. deleting 6 events, sending 5 emails). List them all in what and get approval once with the first button. Once approved, the rest are clicked on the same site without further approval requests (within 10 minutes). Never use for payment',
+          'The same action N times in a row (list all in what); one approval covers them for 10 minutes',
         ),
     },
     false,
@@ -614,41 +487,24 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'checkout',
     'Payment card',
-    "The only way to get payment approved. Use before clicking the last pay button on the payment screen (where the payment method and final amount are chosen). Do not stop on the payment screen to ask; set the delivery address, payment method and coupons, get to the last button, then call this. For any payment, read the payment screen and fill the fields below; one payment card appears on the phone, where the user picks the delivery address and payment method and approves once (this is the only approval). [Order] or [Buy] buttons before the payment screen are passed with browser_click (opens_checkout: true), not this. Fill in values exactly as written on the screen; never make them up. If the same product or room was found cheaper on another site earlier in this conversation, add it as one info line (the price and how much cheaper), but do not delay the payment to search anew; if the final price (with coupons and shipping) is unknown, say so. After calling, do not repeat the card's contents in text; say just one or two lines (what for how much, anything to check) and end the reply. When the approval notification arrives, finish the same payment all the way through the payment window that opens after Dool2 clicks (choosing a card, next, payment password keypad via browser_request_code kind: pin), then read the order (booking) number on the completion screen and call browser_order_done.",
+    "The only way to get a payment approved: at the last pay button of the payment screen, after setting address, method and coupons (don't stop earlier to ask; [Order] before it is browser_click with opens_checkout). Fill the fields exactly as on the screen; one card on the phone lets the user pick address and method and approve once. If the same item was found cheaper on another site earlier in this conversation, add one info line. Then say one or two lines and end the reply. After approval finish the same payment through its window (keypad: browser_request_code kind pin), read the order number, call browser_order_done.",
     {
       tabId,
-      ref: ref.describe('Ref of the last button (pay, complete booking, etc.)'),
-      title: z
-        .string()
-        .max(60)
-        .describe(
-          'Shop or product bundle name, as on the screen (e.g. "Hoho Sotbap - Suji branch", "Grand Hyatt Jeju · Deluxe King")',
-        ),
-      where: z.string().max(60).describe('Site or service name (e.g. "Coupang", "Kurly")'),
-      total: z
-        .string()
-        .max(60)
-        .describe('Final payment amount (as on screen, with its currency, e.g. "₩17,500")'),
+      ref: ref.describe('The last pay button'),
+      title: z.string().max(60).describe('Shop or product bundle, as on the screen'),
+      where: z.string().max(60).describe('Site or service'),
+      total: z.string().max(60).describe('Final amount, with currency'),
       goods: z
         .array(
           z.object({
             name: z.string().max(80),
-            option: z.string().max(80).optional().describe('Option, size, color, room or seat'),
-            qty: z
-              .string()
-              .max(20)
-              .optional()
-              .describe('Quantity, as on screen (e.g. "1 item", "2 nights", "2 adults")'),
+            option: z.string().max(80).optional(),
+            qty: z.string().max(20).optional().describe('E.g. "2 nights"'),
             price: z.string().max(30).optional(),
-            image: z
-              .string()
-              .max(800)
-              .optional()
-              .describe('Product photo address (https, exactly as on screen or in a tool result)'),
+            image: z.string().max(800).optional(),
           }),
         )
-        .max(20)
-        .describe('Product lines'),
+        .max(20),
       lines: z
         .array(
           z.object({
@@ -659,119 +515,83 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         )
         .max(10)
         .optional()
-        .describe(
-          'Amount lines (item total, shipping/delivery fee, discounts, points). The final amount goes in total',
-        ),
+        .describe('Item total, fees, discounts, points'),
       info: z
         .array(z.object({ label: z.string().max(16), value: z.string().max(160) }))
         .max(8)
         .optional()
-        .describe(
-          'Info lines (expected arrival, date and time of use, booker/passengers, requests, seats, etc.)',
-        ),
-      ship_to: z
-        .string()
-        .max(120)
-        .optional()
-        .describe('For shipping or delivery: the currently selected delivery address'),
+        .describe('Arrival, date of use, passengers, seats …'),
+      ship_to: z.string().max(120).optional().describe('The selected delivery address'),
       ship_options: z
         .array(z.string().max(120))
         .max(5)
         .optional()
-        .describe('Other delivery addresses saved on the site (read by opening the change-address view)'),
+        .describe('Other saved addresses (from the change-address view)'),
       choices: z
         .array(ref)
         .max(8)
         .optional()
         .describe(
-          'Refs of the payment method (or payment mode like pay now / pay on site) choices. Expand methods that are hidden behind a toggle first. Leave out methods the screen says do not work now (e.g. "Internet Explorer only", "app only", "under maintenance"): the payment would fail even if the user picked them',
+          'Payment method options (expand hidden ones; leave out ones the screen says do not work now)',
         ),
       choiceTitle: z.string().max(20).optional(),
       chose: z
         .array(z.string().max(60))
         .max(8)
         .optional()
-        .describe(
-          "What Dool2 picked on the screen by itself before paying, in the user's language (coupon applied, no travel insurance, agreed to all terms, no points). The user sees and can change them on the card; payment methods the user picks go in choices",
-        ),
-      cancel: z
-        .string()
-        .max(200)
-        .optional()
-        .describe('Cancellation, refund and exchange policy (as on screen)'),
+        .describe('What Dool2 picked itself (coupon, no insurance, terms)'),
+      cancel: z.string().max(200).optional().describe('As on the screen'),
       after: z
         .string()
         .max(120)
         .optional()
-        .describe(
-          'What happens after approval, as read from the screen, in the user\'s language (e.g. if the chosen method moves to a payment window like Naver Pay, Kakao Pay or Toss: "The payment password for the Naver Pay window is entered on your phone keypad"; for pay-on-delivery: "The order goes in as soon as you tap"). So the user knows what tapping will do',
-        ),
+        .describe('What happens after approval (e.g. "The payment password goes in on your phone keypad")'),
       final_here: z
         .boolean()
         .optional()
-        .describe(
-          "true when there is no separate payment screen and this screen's button spends money directly (the card appears either way)",
-        ),
+        .describe("true when this screen's button pays directly (no separate payment screen)"),
     },
     false,
   )
   tool(
     'order_done',
     'Report order complete',
-    'Use when an approved payment is finished: if you read the order number on the order (booking) completion screen, call with order_no. Dool2 releases the payment lock (the paying tab and payment window) and marks the payment approval as complete with the order number. Then show the result with show_result and record it with know_save. If the payment did not go through (declined, timed out, error), call with failed: true and reason, check whether money was taken, then try another way. After a success, suggest the helpful follow-ups briefly, all at once, and do them when the user agrees: adding it to the calendar if it has a date (bookings, shows, trips), a reminder the day before a free cancellation or return deadline (goal_create), saving the order number and confirmation to the Library (library_save).',
+    'Reports the end of an approved payment: with order_no once you read the order (booking) number on the completion screen, or failed: true with the reason (then check whether money was taken and try another way). Dool2 releases the payment lock. Then show the result and suggest the helpful follow-ups briefly, all at once (calendar, a reminder before a free cancellation deadline, saving the confirmation).',
     {
       tabId,
-      order_no: z
-        .string()
-        .max(60)
-        .optional()
-        .describe('Order or booking number (exactly as on the completion screen). Required unless failed'),
-      summary: z
-        .string()
-        .max(200)
-        .optional()
-        .describe('What for how much, in the user\'s language (e.g. "Apples 1 kg ₩9,900 · arriving 11/22")'),
-      failed: z.boolean().optional().describe('true if the payment could not be completed'),
-      reason: z.string().max(200).optional().describe('With failed: the reason the screen gave'),
+      order_no: z.string().max(60).optional().describe('As on the completion screen. Required unless failed'),
+      summary: z.string().max(200).optional().describe('What for how much'),
+      failed: z.boolean().optional(),
+      reason: z.string().max(200).optional(),
     },
     false,
   )
   tool(
     'dialog',
     'Answer a site dialog',
-    'Use when reading the page says a site confirm dialog is open; handle it before anything else. Clicks [OK] (accept: true) if it matches the user\'s request, otherwise [Cancel] (accept: false), in the dialog the site opened (e.g. "Go to your cart?") and returns the changed page. A site alert (💬 in the page read) is only something the site told you (e.g. the password is wrong): read it and decide what to do next. For prompt dialogs, put the text in text. [OK] that would pay, order, send or delete is blocked by Dool2 and needs approval.',
+    "Answers a site confirm dialog the page read says is open, before anything else: [OK] (accept: true) if it matches the user's request, otherwise [Cancel]. A site alert (💬) is only information. [OK] that pays, orders, sends or deletes needs approval.",
     {
       tabId,
-      accept: z.boolean().describe('true for [OK], false for [Cancel]'),
-      text: z.string().max(500).optional().describe('Text to enter, for prompt dialogs'),
+      accept: z.boolean(),
+      text: z.string().max(500).optional().describe('For prompt dialogs'),
     },
     false,
   )
   tool(
     'handoff',
     'Hand off to the user',
-    'Emergency only (only with emergency: true): lets the user open the PC screen from the phone and operate it directly. Everything a person must do goes through phone cards: name, contact, date of birth and resident number back digits via browser_fill_profile; verification codes, payment password keypads and certificate passwords via browser_request_code; robot checks via browser_request_tap (pictures) or browser_request_code (kind: captcha, text); authentication app approvals via browser_wait_auth; IDs and passwords via browser_request_login; payments via browser_checkout; send, delete and consent via browser_request_approval. Use this only for fields none of those can handle and only a person can fill (e.g. entering a new card number for the first time because no card is saved). The first call on a given screen does not hand off; it reads the screen again and returns it (do it yourself if you can; call again only if truly needed). It brings the Dool2 tab in front of the user and tells them what to do. After calling, end this reply.',
+    'Emergency only (emergency: true): lets the user operate the PC screen from the phone. Everything a person must do goes through phone cards instead: browser_fill_profile, browser_request_code (codes, keypads, CAPTCHA text), browser_request_tap (picture checks), browser_wait_auth, browser_request_login, browser_checkout, browser_request_approval. Use it only for a field none of those can take (a new card number when none is saved). The first call on a screen only reads it again. End this reply after calling.',
     {
       tabId,
-      reason: z
-        .string()
-        .max(200)
-        .describe(
-          'Request shown to the user, in the user\'s language (e.g. "No card is saved. Just enter the new card number and Dool2 will do the rest")',
-        ),
-      emergency: z
-        .boolean()
-        .optional()
-        .describe(
-          'true only in a real emergency that phone cards (request_code, request_tap, checkout, fill_profile) cannot handle. Without it nothing is handed off',
-        ),
+      reason: z.string().max(200).describe('What the user should do'),
+      emergency: z.boolean().optional().describe('Without it nothing is handed off'),
     },
     false,
   )
   tool(
     'close',
     'Close tab',
-    'Closes a Dool2 tab. Usually not needed: Dool2 tidies its tabs by itself (keeps the few most recent, closes idle ones), so do not spend a step closing tabs at the end of a task. Close one only when it gets in the way, like a duplicate of the same page. Never close the tab or payment window of a payment in progress before its completion screen.',
+    "Closes a Dool2 tab that gets in the way (a duplicate). Dool2 tidies tabs itself, so don't close them at the end of a task, and never close a payment in progress before its completion screen.",
     { tabId },
     false,
   )

@@ -193,6 +193,10 @@ The two lists are made as disjoint as the work allows, from calls recounted in t
 - **No kind**: every tool but the task tools, as before.
 
 Descriptions and input fields were shortened at the same time (they say when to use the tool; details only where the
-AI fills a field). Budgets, pinned in `packages/mcp-tools/src/tools.test.ts`: conversation ≤ 25 tools and 30,000 B,
-task ≤ 35 tools and 55,000 B, no kind 78,000 B (Dool2 tools, no service tools). The kind and the list are fixed per
+AI fills a field). Budgets, pinned in `packages/mcp-tools/src/tools.test.ts`: conversation ≤ 25 tools and 28,000 B,
+task ≤ 35 tools and 45,000 B, no kind 66,000 B (Dool2 tools, no service tools; round 2 targets were 30,000 and
+55,000). The browser tools were shortened the same way, and the five Dool2 tools with the most input errors in the
+session files (`browser_read`, `browser_steps`, `know_save`, `service_call`, `browser_wait_auth`) carry one short input
+example; the limits that caused most of those errors (`maxChars` minimum, `steps` wait minimum, the notification
+length) were relaxed and are clamped by the daemon instead. The kind and the list are fixed per
 segment (`DOOL2_SESSION`, `DOOL2_TOOLSET`, ADR 0032): turning task sessions on or off rotates to a new segment.

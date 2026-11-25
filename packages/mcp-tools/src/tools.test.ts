@@ -106,7 +106,7 @@ describe('tool list size budget', () => {
     const client = new Client({ name: 'test', version: '0' })
     await client.connect(clientT)
     const { tools } = await client.listTools()
-    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(78_000)
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(66_000)
     await client.close()
   })
 })
@@ -225,11 +225,11 @@ describe('conversation and task sessions (ADR 0038)', () => {
     // raise them to fit. Targets: conversation 25 tools / 30,000 B, task 35 tools / 55,000 B
     const conv = await list('conversation')
     expect(conv.tools.length).toBeLessThanOrEqual(25)
-    expect(JSON.stringify(conv.tools).length).toBeLessThanOrEqual(30_000)
+    expect(JSON.stringify(conv.tools).length).toBeLessThanOrEqual(28_000)
     await conv.client.close()
     const task = await list('task')
     expect(task.tools.length).toBeLessThanOrEqual(35)
-    expect(JSON.stringify(task.tools).length).toBeLessThanOrEqual(55_000)
+    expect(JSON.stringify(task.tools).length).toBeLessThanOrEqual(45_000)
     await task.client.close()
   })
 

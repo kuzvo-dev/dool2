@@ -193,7 +193,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Record what you learned',
       description:
-        "Records in one line a fact seen on the user's own signed-in pages (fact) or something Dool2 did or confirmed (done: an application, payment, order, booking, sign-up), so the next request needs no new verification. Add source and basis; for things done and expiries add next and next_what, and the proactive check follows up then (no goal for the same time). The same title is replaced. Never resident, account or card numbers, passwords, or other people's information.",
+        'Records in one line a fact seen on the user\'s own signed-in pages (fact) or something Dool2 did or confirmed (done: an application, payment, order, booking, sign-up), so the next request needs no new verification. Add source and basis; for things done and expiries add next and next_what, and the proactive check follows up then (no goal for the same time). The same title is replaced. E.g. {kind: "fact", title: "Total salary, tax year 2025", value: "about 77.5M won", origin: "account", source: "Hometax", basis: "tax year 2025"}. Never resident, account or card numbers, passwords, or other people\'s information.',
       inputSchema: {
         kind: z
           .enum(['fact', 'done'])
