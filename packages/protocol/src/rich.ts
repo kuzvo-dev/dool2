@@ -276,6 +276,11 @@ const TOOL_LABEL: Record<string, string> = {
   service_find: '서비스 찾는',
   service_call: '서비스에서 일하는',
   orders_all: '내 주문 모아 보는',
+  // Task tools of the conversation (ADR 0038): Dool2's own work, not a service called "task"
+  task_start: '일 맡기는',
+  task_steer: '맡긴 일에 전하는',
+  task_stop: '맡긴 일 멈추는',
+  task_list: '맡긴 일 보는',
 }
 /** Service tools (catchtable_search …) go by their ending: search, check, view, prepare */
 const SERVICE_VERB: [RegExp, string][] = [
@@ -368,6 +373,10 @@ const TOOL_LABEL_EN: Record<string, string> = {
   service_find: 'Looking for a service',
   service_call: 'Working in a service',
   orders_all: 'Gathering your orders',
+  task_start: 'Handing the work to a task',
+  task_steer: 'Passing it on to the task',
+  task_stop: 'Stopping the task',
+  task_list: 'Checking the tasks',
 }
 const SERVICE_VERB_EN: [RegExp, string][] = [
   [/_(?:search|find)$/, 'Searching'],

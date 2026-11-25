@@ -9,6 +9,7 @@ import {
   richBlocks,
   stripLinks,
   stripMonologue,
+  toolAct,
   toolPlace,
   withoutPhotoMark,
 } from './rich.js'
@@ -182,6 +183,13 @@ describe('toolPlace (일하는 카드를 서비스별로 묶는 기준)', () => 
     expect(toolPlace('mcp__dool2__file_write', {})).toBe('file')
   })
   it('두리 안에서 하는 일은 곳이 없다', () => {
+    // Task tools are Dool2's own work: no "task" service line on the card (measured: "task에서 일했어요")
+    for (const n of ['task_start', 'task_steer', 'task_stop', 'task_list']) {
+      expect(toolPlace(`mcp__dool2__${n}`, { title: 'x' })).toBeUndefined()
+      expect(toolAct(n)).not.toBe('일하는 중')
+      expect(toolAct(n, 'en')).not.toBe('Working')
+    }
+    expect(toolAct('task_start')).toBe('일 맡기는 중')
     expect(toolPlace('mcp__dool2__memory_save', {})).toBeUndefined()
     expect(toolPlace('mcp__dool2__service_find', { query: '택배' })).toBeUndefined()
     expect(toolPlace('mcp__dool2__show_cards', {})).toBeUndefined()
