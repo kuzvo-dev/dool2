@@ -184,6 +184,8 @@ export function runSetup(opts: SetupOptions): {
     saving: boolean
     error?: string
     account?: PaygAccount | null
+    /** Asking "remove the saved key?" */
+    removing?: boolean
   } = { open: false, providers: [], provider: 'anthropic', model: '', key: '', saving: false }
   // Choices on the "keep Dool2 running" step (both on by default, the user can turn them off)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
@@ -1482,6 +1484,7 @@ export function runSetup(opts: SetupOptions): {
     const openPayg = async () => {
       payg.open = true
       payg.error = undefined
+      payg.removing = false
       render()
       const [cat, acc] = await Promise.all([
         opts
@@ -1503,6 +1506,12 @@ export function runSetup(opts: SetupOptions): {
       if (payg.saving) return
       if (!payg.key.trim() && !payg.account?.hasKey) {
         payg.error = m.apiKeyNeeded
+        render()
+        return
+      }
+      // The saved key belongs to the saved company: another company needs its own key
+      if (!payg.key.trim() && payg.account && payg.account.provider !== payg.provider) {
+        payg.error = m.otherCompanyKey
         render()
         return
       }
@@ -1528,13 +1537,64 @@ export function runSetup(opts: SetupOptions): {
       render()
     }
 
-    /** Pay as you go: pick a provider and model and enter an API key. The key is stored only in this PC's keychain */
+    const removePayg = async () => {
+      if (payg.saving) return
+      payg.saving = true
+      payg.error = undefined
+      render()
+      try {
+        await opts.api('/api/agents/opencode/account', { method: 'DELETE' })
+        Object.assign(payg, { open: false, removing: false, key: '', account: null })
+        agents = await opts.loadAgents()
+      } catch (err) {
+        payg.error = (err as Error).message
+      }
+      payg.saving = false
+      render()
+    }
+
+    /** "Remove the saved key?" with what happens next */
+    const paygRemoveAsk = () => {
+      const box = el('div', 'report-block')
+      box.append(el('p', 'setup-hint', m.removeKeyAsk))
+      const row = el('div', 'report-actions')
+      row.append(
+        button('btn-danger', payg.saving ? m.removingKey : m.removeKeyConfirm, () => void removePayg()),
+        button('btn-ghost', m.keepKey, () => {
+          payg.removing = false
+          render()
+        }),
+      )
+      box.append(row)
+      return box
+    }
+
+    /**
+     * Pay as you go: pick a provider and model and enter an API key. The key is stored only in this PC's keychain.
+     * The same panel adds the first key (setup) and changes or removes a saved one (Settings → AI). Only the last 4
+     * characters of a saved key ever reach this screen
+     */
     const paygPanel = () => {
       const panel = el('div', 'login-panel')
-      panel.append(el('strong', undefined, m.paygTitle), el('p', undefined, m.paygKeyInfo))
+      const saved = payg.account?.hasKey ? payg.account : undefined
+      panel.append(
+        el('strong', undefined, saved ? m.paygChangeTitle : m.paygTitle),
+        el('p', undefined, m.paygKeyInfo),
+      )
       if (payg.providers.length === 0) {
         panel.append(el('p', undefined, m.loading))
         return panel
+      }
+      if (saved) {
+        const prov = payg.providers.find((p) => p.id === saved.provider)
+        const model = prov?.models.find((x) => x.id === saved.model)
+        panel.append(
+          el(
+            'p',
+            'setup-hint',
+            m.paygNow(prov?.label ?? saved.provider, model?.label ?? saved.model, saved.keyHint ?? ''),
+          ),
+        )
       }
       const form = el('form', 'key-form')
       const provSel = el('select')
@@ -1546,6 +1606,7 @@ export function runSetup(opts: SetupOptions): {
       }
       provSel.onchange = () => {
         payg.provider = provSel.value
+        payg.error = undefined
         payg.model = payg.providers.find((p) => p.id === payg.provider)?.models[0]?.id ?? ''
         render()
       }
@@ -1588,14 +1649,25 @@ export function runSetup(opts: SetupOptions): {
       save.disabled = payg.saving
       row.append(save)
       if (prov) row.append(button('btn-link', m.getKey, () => window.open(prov.keyUrl)))
+      if (saved && !payg.removing)
+        row.append(
+          button('btn-link', m.removeKey, () => {
+            payg.removing = true
+            payg.error = undefined
+            render()
+          }),
+        )
       row.append(
         button('btn-link', m.close, () => {
           payg.open = false
+          payg.removing = false
+          payg.key = ''
           render()
         }),
       )
       form.append(row)
       panel.append(form)
+      if (saved && payg.removing) panel.append(paygRemoveAsk())
       if (payg.error) panel.append(el('p', 'login-error', payg.error))
       panel.append(el('p', 'cap', m.paygCap))
       return panel
@@ -1670,7 +1742,9 @@ export function runSetup(opts: SetupOptions): {
             item.action === 'codex-install'
               ? m.install
               : item.action === 'payg-key'
-                ? m.addKey
+                ? item.ok
+                  ? m.changeKey
+                  : m.addKey
                 : item.action === 'extension-install'
                   ? m.howToAdd
                   : item.action === 'codex-login'
