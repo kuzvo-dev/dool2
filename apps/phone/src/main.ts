@@ -577,12 +577,12 @@ async function receive(env: Envelope) {
         st.steps = []
       }
       break
-    // A task changed (ADR 0038): its card redraws in place
+    // A task changed (ADR 0038): its card redraws in its place in the chat. Through the chat list (its signature
+    // carries the task's state), not by swapping the element: a swapped-in card lost the list's key, so the next
+    // redraw added the card again and the old one stayed
     case 'task':
       st.tasks.set(msg.task.id, msg.task)
-      for (const c of document.querySelectorAll<HTMLElement>(`.task-card[data-task="${msg.task.id}"]`))
-        c.replaceWith(taskInline({ kind: 'task', id: msg.task.id, title: msg.task.title }))
-      return
+      break
     case 'conversation-status':
       st.busy = msg.busy
       st.checking = msg.checking === true
@@ -3394,6 +3394,26 @@ function helloCard() {
   )
 }
 
+/** What a task card shows, so the chat list redraws it when the task moves on (and leaves it alone otherwise) */
+function taskSig(v: TaskView | undefined): string {
+  if (!v) return 'task:none'
+  const last = v.steps.at(-1)
+  return [
+    'task',
+    v.status,
+    v.count,
+    v.steps.length,
+    last ? JSON.stringify(last) : '',
+    v.now ?? '',
+    v.continuing ? 1 : 0,
+    v.ahead ?? '',
+    v.notes ?? '',
+    v.draft?.length ?? 0,
+    v.endedAt ?? '',
+    v.title,
+  ].join(':')
+}
+
 function toolSig(raw: string) {
   try {
     const rec = JSON.parse(raw) as { kind?: string }
@@ -3420,6 +3440,7 @@ function toolSig(raw: string) {
     }
     if (rec.kind === 'tell')
       return `tell:${feedPager.items.find((f) => f.id === (rec as TellRecordMessage).id)?.answered ?? ''}`
+    if (rec.kind === 'task') return taskSig(st.tasks.get((rec as TaskRecordMessage).id))
     if (rec.kind === 'connect') {
       const it = connectFor(rec as ConnectRecordMessage)
       const steps = it ? (st.connectSteps.get(it.card.id)?.length ?? 0) : 0

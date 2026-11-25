@@ -509,7 +509,10 @@ export function interimAnswers(
       if (isFinishCheckNote(m.text)) {
         notes.push(m.id)
         hidden.add(m.id)
-      } else if (!m.text.startsWith(APP_NOTE)) {
+      } else if (!m.text.startsWith(APP_NOTE) || !notes.length) {
+        // A new request, or another app note (sign-in verified, approval result) before any check note: the answers
+        // so far were separate steps, not drafts (11-25: the connect card's answer and "connected" were folded
+        // into "3 earlier answers" under a task hand-over)
         answers = []
         notes = []
       }

@@ -62,6 +62,37 @@ describe('one answer per request', () => {
   })
 })
 
+describe('answers before another app note are separate steps', () => {
+  it('folds only the answer the check sent back, not the connect steps before it (11-25)', () => {
+    const verified = appNote('Gmail is connected and Doori has verified the sign-in.')
+    const { hidden, replaced } = interimAnswers([
+      msg('u1', 'user', 'summarize my mail every morning'),
+      msg('c1', 'tool', '{"kind":"connect","service":"gmail"}'),
+      msg('a1', 'assistant'), // "connect Gmail first"
+      msg('a2', 'assistant'), // "Gmail is connected"
+      msg('n1', 'user', verified),
+      msg('a3', 'assistant'), // scheduled, the preview could not run
+      msg('n2', 'user', check),
+      msg('k1', 'tool', '{"kind":"task","id":"t1","title":"Mail summary"}'),
+      msg('a4', 'assistant'), // handed to a task
+    ])
+    expect([...hidden].sort()).toEqual(['a3', 'n2'])
+    expect(replaced.get('a4')).toEqual(['a3', 'n2'])
+  })
+
+  it('an app note after a check note keeps the chain (the same request, still being finished)', () => {
+    const approved = appNote('Approved on the phone.')
+    const { hidden } = interimAnswers([
+      msg('u1', 'user', 'x'),
+      msg('a1', 'assistant'),
+      msg('n1', 'user', check),
+      msg('n2', 'user', approved),
+      msg('a2', 'assistant'),
+    ])
+    expect([...hidden].sort()).toEqual(['a1', 'n1'])
+  })
+})
+
 describe('the draft in the progress card (finishProgress)', () => {
   const note = (why: string, next?: string) =>
     appNote(
