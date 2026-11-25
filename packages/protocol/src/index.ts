@@ -317,6 +317,8 @@ export type ConversationLiveEvent =
     }
   | { kind: 'queued'; texts: string[] }
   | { kind: 'busy'; busy: boolean }
+  /** A message was received and Dool2 starts on it (sent before the AI is called, so a status shows within a second) */
+  | { kind: 'ack' }
   /** The main conversation's last answer is being checked before it is final (ADR 0027), or no longer */
   | { kind: 'checking'; checking: boolean }
   /** Goals, library, memory or feed changed (fetch again with GET /api/life) */

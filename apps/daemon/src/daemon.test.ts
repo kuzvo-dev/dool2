@@ -501,6 +501,32 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(checks[1]).toMatchObject({ result: 'done' })
   })
 
+  it('acknowledges a message before the AI is called, and logs how long that took', async () => {
+    const { api } = await boot()
+    const live = await api('/api/conversation/live')
+    const reader = live.body?.getReader()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    let seen = ''
+    const dec = new TextDecoder()
+    while (!seen.includes('"type":"end"')) seen += dec.decode((await reader?.read())?.value)
+    await reader?.cancel()
+    expect(seen.indexOf('"kind":"ack"')).toBeGreaterThan(0)
+    expect(seen.indexOf('"kind":"ack"')).toBeLessThan(seen.indexOf('"role":"user"'))
+    const { readdir, readFile } = await import('node:fs/promises')
+    const logs = join(dir ?? '', 'logs')
+    const turn = (
+      await Promise.all(
+        (await readdir(logs)).filter((f) => f.endsWith('.jsonl')).map((f) => readFile(join(logs, f), 'utf8')),
+      )
+    )
+      .join('\n')
+      .split('\n')
+      .find((l) => l.includes('"kind":"turn"'))
+    expect(typeof JSON.parse(turn ?? '{}').ackMs).toBe('number')
+  })
+
   it('the draft design: checking is said before the answer, busy holds between rounds, and the limit leaves [Continue]', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []

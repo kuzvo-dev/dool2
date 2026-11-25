@@ -84,6 +84,8 @@ import {
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
 import {
+  AWAY_MIN_MS,
+  awaySummary,
   bareHost,
   cardForHost,
   doneLine,
@@ -959,6 +961,7 @@ function ask(text: string) {
   const photo = st.attach
   const t = text.trim() || (photo ? mainCore(lang).photoDefault : '')
   if (!t || !st.online) return
+  awayFrom = undefined
   st.pending.push({ id: ++pendingSeq, text: t, ...(photo ? { photo } : {}) })
   st.draft = ''
   st.attach = undefined
@@ -2957,6 +2960,8 @@ function chatItems(): Item[] {
       })
     }
   }
+  const away = awayItem()
+  if (away) items.push(away)
   for (const p of st.pending)
     items.push({
       key: `p${p.id}`,
@@ -2992,6 +2997,74 @@ function chatItems(): Item[] {
       })
   }
   return items
+}
+
+// ── Return summary: what happened while the person was away, from stored records (no AI) ──
+
+const SEEN_KEY = 'dool2.seenAt'
+/** When the person was last here, if it was long enough ago to sum up */
+let awayFrom: number | undefined
+function noteSeen() {
+  localStorage.setItem(SEEN_KEY, String(Date.now()))
+}
+function checkAway() {
+  const seen = Number(localStorage.getItem(SEEN_KEY))
+  if (seen && Date.now() - seen >= AWAY_MIN_MS) awayFrom = seen
+  noteSeen()
+}
+const timeOf = (iso: string) =>
+  new Date(iso).toLocaleTimeString(tChat.locale, { hour: 'numeric', minute: '2-digit' })
+
+function awayItem(): Item | undefined {
+  if (awayFrom === undefined) return undefined
+  const s = awaySummary({
+    since: awayFrom,
+    now: Date.now(),
+    feed: st.life?.feed ?? [],
+    approvals: [...st.approvals.values()],
+    logins: [...st.logins.values()],
+  })
+  if (!s) return undefined
+  return {
+    key: 'away',
+    sig: JSON.stringify(s),
+    make: () =>
+      h(
+        'div',
+        { class: 'card quiet away-card' },
+        h('div', { class: 'card-label', text: tChat.awayTitle }),
+        s.doneCount > 0 && h('p', { text: tChat.awayDone(s.doneCount) }),
+        s.doneCount > 0 && h('ul', {}, ...s.done.map((d) => h('li', { text: d.title }))),
+        s.waiting.length > 0 && h('p', { text: tChat.awayWaiting }),
+        s.waiting.length > 0 &&
+          h(
+            'ul',
+            {},
+            ...s.waiting.map((w) =>
+              h(
+                'li',
+                {},
+                w.title,
+                h('div', {
+                  class: 'away-if',
+                  text:
+                    w.kind === 'approval'
+                      ? tChat.awayApprovalIfNot(timeOf(w.expiresAt))
+                      : tChat.awayLoginIfNot(timeOf(w.expiresAt)),
+                }),
+              ),
+            ),
+          ),
+        h('button', {
+          class: 'btn-text sm',
+          text: tChat.awayOk,
+          onclick: () => {
+            awayFrom = undefined
+            render()
+          },
+        }),
+      ),
+  }
 }
 
 /** My bubble: if a photo was sent, the photo (right after sending) or a "Photo" chip */
@@ -7352,8 +7425,15 @@ function resync() {
 
 function startResync() {
   // When the app comes back to the front (while it was in the background the phone may have lost the connection or missed signals)
+  // The return summary: coming back after a while sums up what happened, from the records
+  checkAway()
+  setInterval(() => document.visibilityState === 'visible' && noteSeen(), 60_000)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return
+    if (document.visibilityState !== 'visible') {
+      noteSeen()
+      return
+    }
+    checkAway()
     if (st.client && !st.online) connect()
     else resync()
     // Start fetching the screen being watched (working screen, connecting screen) again

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actDone, baseDomain, doneLine, groupSteps, type WorkGroup } from './work-steps.js'
+import { actDone, awaySummary, baseDomain, doneLine, groupSteps, type WorkGroup } from './work-steps.js'
 
 const cards = [
   { id: 'naver-mail', name: '네이버 메일', site: 'mail.naver.com' },
@@ -107,5 +107,46 @@ describe('일하는 카드: 서비스별 줄', () => {
     expect(actDone('파일 만드는 중')).toBe('파일 만들기')
     expect(actDone('입력하는 중')).toBe('입력하기')
     expect(actDone('조회하는 중')).toBe('조회하기')
+  })
+})
+
+describe('return summary (awaySummary)', () => {
+  const now = Date.parse('2026-11-25T12:00:00Z')
+  const since = Date.parse('2026-11-25T09:00:00Z')
+  it('lists tasks finished since then and what waits, soonest first, from records only', () => {
+    const s = awaySummary({
+      since,
+      now,
+      feed: [
+        { kind: 'done', title: 'Train tickets', at: '2026-11-25T10:00:00Z', ref: 't1' },
+        { kind: 'routine', title: 'Morning briefing', at: '2026-11-25T11:00:00Z' },
+        { kind: 'done', title: 'Old task', at: '2026-11-25T08:00:00Z' },
+        { kind: 'suggest', title: 'An idea', at: '2026-11-25T11:30:00Z' },
+      ],
+      approvals: [
+        {
+          id: 'a1',
+          status: 'pending',
+          what: 'Pay for tickets',
+          label: 'Pay',
+          amount: '59,800 won',
+          expiresAt: '2026-11-25T12:20:00Z',
+        },
+        { id: 'a2', status: 'pending', label: 'Send', expiresAt: '2026-11-25T11:50:00Z' },
+        { id: 'a3', status: 'approved', label: 'x', expiresAt: '2026-11-25T13:00:00Z' },
+      ],
+      logins: [{ id: 'l1', status: 'pending', site: 'Shop', expiresAt: '2026-11-25T12:10:00Z' }],
+    })
+    expect(s?.done.map((d) => d.title)).toEqual(['Morning briefing', 'Train tickets'])
+    expect(s?.doneCount).toBe(2)
+    // a2 already ran out, a3 is decided
+    expect(s?.waiting.map((w) => [w.kind, w.title])).toEqual([
+      ['login', 'Shop'],
+      ['approval', 'Pay for tickets · 59,800 won'],
+    ])
+  })
+
+  it('says nothing when nothing happened', () => {
+    expect(awaySummary({ since, now, feed: [], approvals: [], logins: [] })).toBeUndefined()
   })
 })

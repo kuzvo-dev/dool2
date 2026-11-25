@@ -86,7 +86,15 @@ import {
   SETUP_STEPS,
   type SetupStep,
 } from './setup-model.js'
-import { doneLine, groupSteps, type PlaceCard, type WorkGroup, type WorkStepIn } from './work-steps.js'
+import {
+  AWAY_MIN_MS,
+  awaySummary,
+  doneLine,
+  groupSteps,
+  type PlaceCard,
+  type WorkGroup,
+  type WorkStepIn,
+} from './work-steps.js'
 
 /** Copy in the current language (read on every call, so a language switch shows up on the next render) */
 const A = () => appText(lang)
@@ -1447,6 +1455,8 @@ function renderTalk() {
     list.append(messageEl(m.role, m.text, note))
     prevRole = note !== undefined ? 'note' : m.role
   }
+  const away = awayCard()
+  if (away) list.append(away)
   const live = el('div', 'live')
   live.id = 'live'
   box.replaceChildren(list, live)
@@ -1569,6 +1579,72 @@ function progressCard(t: Turn | undefined): HTMLElement {
   return card
 }
 
+// ── Return summary: what happened while the person was away, from stored records (no AI) ──
+
+const SEEN_KEY = 'dool2.seenAt'
+/** When the person was last here, if it was long enough ago to sum up */
+let awayFrom: number | undefined
+function noteSeen() {
+  localStorage.setItem(SEEN_KEY, String(Date.now()))
+}
+/** On opening or coming back: was the person away long enough? */
+function checkAway() {
+  const seen = Number(localStorage.getItem(SEEN_KEY))
+  if (seen && Date.now() - seen >= AWAY_MIN_MS) awayFrom = seen
+  noteSeen()
+}
+
+function awayCard(): HTMLElement | undefined {
+  if (awayFrom === undefined) return undefined
+  const s = awaySummary({
+    since: awayFrom,
+    now: Date.now(),
+    feed: state.life.feed,
+    approvals: state.approvals,
+    logins: state.logins,
+  })
+  if (!s) return undefined
+  const card = el('div', 'card quiet away-card', el('div', 'card-label', A().awayTitle))
+  if (s.doneCount)
+    card.append(
+      el('p', '', A().awayDone(s.doneCount)),
+      el('ul', '', ...s.done.map((d) => el('li', '', d.title))),
+    )
+  if (s.waiting.length)
+    card.append(
+      el('p', '', A().awayWaiting),
+      el(
+        'ul',
+        '',
+        ...s.waiting.map((w) =>
+          el(
+            'li',
+            '',
+            w.title,
+            el(
+              'div',
+              'away-if',
+              w.kind === 'approval'
+                ? A().awayApprovalIfNot(hhmm(w.expiresAt))
+                : A().awayLoginIfNot(hhmm(w.expiresAt)),
+            ),
+          ),
+        ),
+      ),
+    )
+  card.append(
+    button(
+      'btn-text sm',
+      () => {
+        awayFrom = undefined
+        renderTalk()
+      },
+      A().awayOk,
+    ),
+  )
+  return card
+}
+
 /** Below the chat: the answer being written, or the progress card while working with tools + queued messages */
 function renderLive() {
   const live = document.getElementById('live')
@@ -1633,6 +1709,11 @@ function onLive(ev: ConversationLiveEvent) {
       void api<ConversationState>('/api/conversation?limit=1')
         .then((s) => setMainBusy(s.busy))
         .catch(() => {})
+    return
+  }
+  if (ev.kind === 'ack') {
+    // Received: show the status line now, before the AI has said anything
+    setMainBusy(true)
     return
   }
   if (ev.kind === 'checking') {
@@ -1881,6 +1962,7 @@ async function attachPhoto(file: File | undefined | null) {
 /** Sends one message. If Dool2 is answering, the daemon queues it and passes it on next */
 async function send(text: string) {
   if (!text.trim() && !photo) return
+  awayFrom = undefined
   if (state.view !== 'talk') await show('talk')
   const image = photo
   photo = undefined
@@ -2158,7 +2240,8 @@ function workDoneCard(rec: WorkRecordMessage): HTMLElement {
       '',
       lead,
       el('b', '', title),
-      el('span', 'meta', places.length ? secs(rec.ms) : T().stepsTime(rec.count, secs(rec.ms))),
+      // Folded to one line when done: where · how many steps · how long
+      el('span', 'meta', T().stepsTime(rec.count, secs(rec.ms))),
     ),
     el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
   )
@@ -2783,7 +2866,19 @@ async function main() {
     void loadWaiting().catch(() => {})
   }, 3_000)
   // Re-check right away when the window comes back to front
+  // The return summary: when the window comes back after a while, sum up what happened from the records
+  checkAway()
+  void Promise.all([loadLife(), loadWaiting()])
+    .then(() => state.view === 'talk' && renderTalk())
+    .catch(() => {})
+  window.addEventListener('blur', noteSeen)
+  setInterval(() => document.hasFocus() && noteSeen(), 60_000)
   window.addEventListener('focus', () => {
+    checkAway()
+    if (awayFrom !== undefined)
+      void Promise.all([loadLife(), loadWaiting()])
+        .then(() => state.view === 'talk' && renderTalk())
+        .catch(() => {})
     polledAt = Date.now()
     void loadExtension().catch(() => {})
     void loadWaiting().catch(() => {})

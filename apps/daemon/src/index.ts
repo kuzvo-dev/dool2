@@ -537,7 +537,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // Also tells the phone the conversation state (answering, queued messages). Only when it changes
   let lastStatus = ''
   live.on('event', (ev) => {
-    if (ev.kind !== 'busy' && ev.kind !== 'queued' && ev.kind !== 'checking') return
+    if (ev.kind !== 'busy' && ev.kind !== 'queued' && ev.kind !== 'checking' && ev.kind !== 'ack') return
     const status = {
       kind: 'conversation-status' as const,
       busy: conversationBusy() || activeThreads.size > 0,
@@ -1679,11 +1679,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return thread ? { kind: 'thread', thread, messages: store.listMessages(id) } : undefined
       },
       ask: async ({ threadId, agent, text: said, image }) => {
+        const receivedAt = Date.now()
         // Photo: kept in Doori's work folder, and Doori views it with photo_view
         const text = image ? `${said}\n\n${await savePhoto(image)}` : said
         // One conversation: a request without a chosen room goes to the conversation (queued if it is working)
         if (!threadId) {
-          await talk(text, { agent, viaPhone: true })
+          await talk(text, { agent, viaPhone: true, receivedAt })
           return conversation.current()?.id ?? ''
         }
         const id =
@@ -2082,7 +2083,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   async function* tracked(
     threadId: string,
     inner: AsyncIterable<DaemonStreamEvent>,
-    o: { receivedAt?: number } = {},
+    o: { receivedAt?: number; ackMs?: number } = {},
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
     continuing.delete(threadId)
@@ -2219,6 +2220,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         tools: turnTools,
         ...(turnChars.some((c) => c !== null) ? { chars: turnChars } : {}),
         answered: answerText.length > 0,
+        ...(o.ackMs !== undefined ? { ackMs: o.ackMs } : {}),
         ...(prepMs !== undefined ? { prepMs } : {}),
         ...(startMs !== undefined ? { startMs } : {}),
         ...(eventMs !== undefined ? { eventMs } : {}),
@@ -2945,14 +2947,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * Sends one message to the chat. If it is answering, queue it and send it after that turn ends (ADR 0015).
    * Progress goes through GET /api/conversation/live and the phone stream
    */
-  async function talk(text: string, o: { agent?: AgentId; viaPhone?: boolean } = {}) {
-    const receivedAt = Date.now()
+  async function talk(text: string, o: { agent?: AgentId; viaPhone?: boolean; receivedAt?: number } = {}) {
+    const receivedAt = o.receivedAt ?? Date.now()
     if (conversationBusy()) {
       queued.push(text)
       live.emit('event', { kind: 'queued', texts: [...queued] })
       return { queued: true }
     }
     preparing = true
+    // Acknowledge before anything slow (picking the segment can summarize, the AI takes seconds to start): the screens
+    // show a status line at once. ackMs goes in the turn record next to the time to the first word
+    live.emit('event', { kind: 'ack' })
+    const ackMs = Date.now() - receivedAt
     let sessionId: string
     try {
       sessionId = (await conversation.prepare(await pickAgent(o.agent))).session.id
@@ -2970,6 +2976,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     void (async () => {
       for await (const _ of tracked(sessionId, threads.send(sessionId, text, aside ? { aside } : {}), {
         receivedAt,
+        ackMs,
       })) {
       }
     })().catch(() => {})
@@ -4170,9 +4177,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return json(res, 200, body)
     }
     if (a === 'conversation' && b === 'messages' && req.method === 'POST') {
+      const receivedAt = Date.now()
       const body = SendMessageRequestSchema.parse(await readJson(req, MESSAGE_MAX))
       const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text
-      return json(res, 202, await talk(text))
+      return json(res, 202, await talk(text, { receivedAt }))
     }
     if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
       stopConversation()
