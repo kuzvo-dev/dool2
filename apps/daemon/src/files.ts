@@ -289,6 +289,7 @@ export class FileTools {
           String(args.query ?? ''),
           args.folder as FolderKey | undefined,
           Number(args.limit ?? 0) || undefined,
+          args.sort === 'size' ? 'size' : 'recent',
         )
       if (tool === 'file_read') return await this.read(String(args.path ?? ''), Number(args.from ?? 0) || 0)
       if (tool === 'file_write')
@@ -339,7 +340,12 @@ export class FileTools {
    * Find by name: Desktop, Documents, Downloads, Pictures, Movies (up to 4 levels down), most recently changed
    * first, 30 (up to 300 with limit)
    */
-  async find(query: string, folder?: FolderKey, limit = 30): Promise<FileToolResult> {
+  async find(
+    query: string,
+    folder?: FolderKey,
+    limit = 30,
+    sort: 'recent' | 'size' = 'recent',
+  ): Promise<FileToolResult> {
     const max = Math.min(Math.max(Math.floor(limit), 1), 300)
     const words = norm(query)
       .split(/[,·]/)
@@ -373,7 +379,8 @@ export class FileTools {
       ])
       if (!done) blocked.push(basename(r))
     }
-    hits.sort((a, b) => b.mtime - a.mtime)
+    // Biggest first for "what takes the space" (11-26: ten calls by file type to find the 5 biggest in Downloads)
+    hits.sort((a, b) => (sort === 'size' ? b.size - a.size : b.mtime - a.mtime))
     const ask = blocked.length
       ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Tell the user in one sentence: on the PC, press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders. Do not try other ways (browser, apps, screen); call file_find again once they did.`
       : ''
@@ -390,7 +397,7 @@ export class FileTools {
         minute: '2-digit',
       })
     return ok(
-      `${hits.length > max ? `Latest ${max} of ${hits.length}` : `${hits.length}`}:\n` +
+      `${hits.length > max ? `${sort === 'size' ? 'Biggest' : 'Latest'} ${max} of ${hits.length}` : `${hits.length}`}${sort === 'size' ? ', biggest first' : ''}:\n` +
         hits
           .slice(0, max)
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
