@@ -255,7 +255,7 @@
       "title": "상영 시간 찾기",
       "description": "로그인 없이 된다. CGV 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화 제목, 상영관·형식별(예: IMAX관 IMAX LASER 2D) 회차 시작~끝 시각과 남은/전체 좌석(예: 19:40- 22:14 265/268석). 예매 화면의 날짜(오늘부터 약 2주)만 된다. 극장 이름을 모르면 cgv_theaters. 사용자가 말한 영화·시간대만 골라 보여 준다. 예매하려면 cgv_prepare_booking.",
       "tier": "lookup",
-      "status": "검증됨(2026-11-21, 왕십리 오늘·이틀 뒤 시간표와 남은 좌석, 화면 읽기)",
+      "status": "검증됨(2026-11-26, 왕십리 오늘·이틀 뒤 시간표와 남은 좌석, 지난 날짜는 안내로 멈춤, 화면 읽기)",
       "input": {
         "properties": {
           "region": {
@@ -331,7 +331,7 @@
         {
           "wait": {
             "text": "서울\\(\\d+\\)",
-            "timeoutMs": 8000
+            "timeoutMs": 20000
           }
         },
         {
@@ -351,8 +351,9 @@
         {
           "wait": {
             "text": "{{date|dow}}\\s*{{date|dd1|re}}",
-            "timeoutMs": 8000
-          }
+            "timeoutMs": 12000
+          },
+          "optional": true
         },
         {
           "require": "{{date|dow}}\\s*{{date|dd1|re}}",
