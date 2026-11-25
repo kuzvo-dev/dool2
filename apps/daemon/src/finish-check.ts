@@ -47,6 +47,8 @@ export interface Evidence {
   /** The last page Dool2 read, and whether any page read since the request began showed a finished action */
   lastPage?: { title: string; url: string }
   donePage?: boolean
+  /** Hand-offs to the person since the request began: what blocked, and what Dool2 tried first */
+  handoffs?: { blocker: string; tried: string }[]
 }
 
 /** One turn as the check sees it */
@@ -158,6 +160,12 @@ export function judgePrompt(i: {
       ? `Last page read: ${e.lastPage.title.slice(0, 120) || '(no title)'} — ${e.lastPage.url.slice(0, 200)}`
       : '',
     e?.donePage ? 'A page read during this request showed a finished action.' : '',
+    ...(e?.handoffs ?? [])
+      .slice(0, 3)
+      .map(
+        (h) =>
+          `Handed to the person (${h.blocker}) after trying: ${h.tried.slice(0, 200) || '(nothing said)'}`,
+      ),
     i.failures ? `Tool calls that failed this turn: ${i.failures}` : '',
   ].filter(Boolean)
   return [

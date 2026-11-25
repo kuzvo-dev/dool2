@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { handBack, WAIT_MARK, waits } from './hand-back.js'
+import { handBack, WAIT_MARK, waits, waitsForPerson } from './hand-back.js'
 
 describe('results that end the turn', () => {
   it('say what was done, what is left, who acts next and that the turn waits', () => {
@@ -20,5 +20,15 @@ describe('results that end the turn', () => {
     expect(handBack({ done: 'x', left: 'y', who: 'dool2', after: 'z', tell: 'w' })).toContain(
       'Left: y (Dool2, by itself).',
     )
+  })
+
+  it('tell a wait for the person from a wait for Dool2 in a tool result', () => {
+    const r = (who: 'person' | 'dool2') => ({
+      content: [{ type: 'text', text: handBack({ done: 'a', left: 'b', who, after: 'c', tell: 'd' }) }],
+    })
+    expect(waitsForPerson(r('person'))).toBe(true)
+    expect(waitsForPerson(r('dool2'))).toBe(false)
+    expect(waitsForPerson({ content: [{ type: 'text', text: 'Pressed.' }] })).toBe(false)
+    expect(waitsForPerson(undefined)).toBe(false)
   })
 })
