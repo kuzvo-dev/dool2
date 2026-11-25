@@ -161,3 +161,25 @@ What the person pays: a request that needed no more work is shown as final only 
 (ADR 0037) and skipping simple requests keep that short; the work log keeps the judge time (`ms`) to watch it.
 Revisit when send-backs become rare (the "answer first, judge in parallel" option of the research becomes cheaper),
 or if testers still read the card as "thinking forever".
+
+## Change (2026-11-25, round 2): fix the causes in the tools, and skip the judge when the code already knows
+
+The top send-back kinds (asked the person for something findable 26%, handed off 24%, stopped at a blocker 15%) came
+from tool results more than from the AI: many results only said "end this reply", so neither the AI nor the judge
+could tell a real wait from a step that should have been tried. The causes are fixed in the tools:
+
+- **Every result that ends a turn says what was done, what is left, who acts next and that the turn waits**
+  (`apps/daemon/src/hand-back.ts`). They all start with the same mark.
+- **Asking and handing off carry what is easy to forget**: `browser_request_profile` needs `looked` (where the values
+  were looked for first), `browser_handoff` needs `blocker` and `tried`, and a hand-off with nothing tried is refused
+  when the site has service tools or a remembered route.
+
+And the check uses what the code already knows:
+
+- **A turn whose tool result ended it to wait for the person is not judged** (logged as `skip`, reason `waiting`),
+  like approval, sign-in, connection and hand-off records before. The code evidence is conclusive there: the judge was
+  only asked to confirm "an approval card is shown and waiting", or sent back a wait it could not tell apart.
+- **Hand-offs go to the judge as facts**: what blocked and what was tried first.
+
+The rule for removing the check stays as written: replay the same recorded requests with the check off; if A+B with it
+off comes close to A+B with it on, remove it or keep only the code check. That needs the real-app run (round 2, WP7).

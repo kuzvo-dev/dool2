@@ -42,3 +42,12 @@ export function waits(text: string): boolean {
 function trimDot(s: string): string {
   return s.trim().replace(/[.。]+$/, '')
 }
+
+/** Whether a tool result ends the turn to wait for the person (not for Dool2 itself) */
+export function waitsForPerson(result: unknown): boolean {
+  const content = (result as { content?: { type: string; text?: string }[] } | undefined)?.content
+  return (
+    Array.isArray(content) &&
+    content.some((c) => c.type === 'text' && c.text?.includes(`${WAIT_MARK} the person.`))
+  )
+}

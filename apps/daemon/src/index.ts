@@ -113,7 +113,7 @@ import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
-import { handBack } from './hand-back.js'
+import { handBack, waitsForPerson } from './hand-back.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
@@ -430,6 +430,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
                 prompt,
                 AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
               )))
+  /** Per chat: when a tool result last ended its turn to wait for the person (hand-back.ts) */
+  const personWaited = new Map<string, number>()
   const finishCheck = judgeAsk
     ? new FinishCheck({
         ask: judgeAsk,
@@ -442,6 +444,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             return owner === undefined || owner === threadId
           }).length,
           ...browserTools.readsSince(since, threadId),
+          handoffs: browserTools.handoffsSince(since),
         }),
       })
     : undefined
@@ -2238,6 +2241,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const side = store.getThread(threadId)?.side === true
     // Whether this answer produced an approval request or a "please do it yourself" (then no separate "done" notification is sent)
     let asked = false
+    // When this turn began: a tool result since then that waits for the person also means the turn waits
+    const turnBegan = Date.now()
     // Feed "finished tasks": the request and answer of a turn that worked with tools
     let askText = ''
     let usedTool = false
@@ -2394,6 +2399,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
       // If phone approval or sign-in results arrived while answering, send them next
       const next = pendingFollowUps.get(threadId)?.shift()
+      // A tool result this turn ended it to wait for the person (a phone card, a permission, the final button left to
+      // them): that is conclusive, the judge is not asked
+      if ((personWaited.get(threadId) ?? 0) >= turnBegan) {
+        asked = true
+        journal.write('finish-check', { result: 'skip', reason: 'waiting' })
+      }
       // Before-finishing check: if it is not waiting for a person, there is no next message, and the turn worked with tools, judge separately whether it is finished
       let again: string | undefined
       if (
@@ -3930,6 +3941,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           if (count) journal.write('loop-guard', { tool, count })
           // Text aimed at an AI in what was read (page, mail, file, app screen): one warning line on top
           const noted = withInjectionNote(tool, result)
+          // A result that ends the turn to wait for the person (hand-back.ts): the finish check need not judge it
+          if (caller && waitsForPerson(noted.result)) personWaited.set(caller, Date.now())
           if (noted.kinds) journal.write('injection-note', { tool, kinds: noted.kinds })
           // The conversation of task sessions told to use a browser, app or file tool: how to get it done (ADR 0038)
           const talk = caller !== undefined && sessionOf(caller) === 'conversation'

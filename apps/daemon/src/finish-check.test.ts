@@ -177,6 +177,19 @@ describe('끝내기 전 검사', () => {
 
   it('이미 되돌려 보냈으면 판정 글에 적는다', () => {
     expect(judgePrompt({ ask: 'a', answer: 'b', tools: [], cycle: 2 })).toContain('Already sent back 2')
+    const handed = judgePrompt({
+      ask: 'a',
+      answer: 'b',
+      tools: ['browser_handoff'],
+      cycle: 0,
+      evidence: {
+        approvals: 0,
+        handoffs: [{ blocker: 'identity_check', tried: 'the service tool stopped at a check' }],
+      },
+    })
+    expect(handed).toContain(
+      'Handed to the person (identity_check) after trying: the service tool stopped at a check',
+    )
   })
 })
 
