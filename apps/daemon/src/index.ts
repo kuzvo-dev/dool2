@@ -138,6 +138,7 @@ import {
 } from './region/kr/index-matchers.js'
 import type { HtmlRenderer } from './render.js'
 import { buildReport, sendReport } from './report.js'
+import { capResult } from './result-cap.js'
 import { RouteBook } from './routes.js'
 import { runQuickCheck } from './routine-check.js'
 import { ScreenTools } from './screen-tools.js'
@@ -3907,16 +3908,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const noted = withInjectionNote(tool, result)
           if (noted.kinds) journal.write('injection-note', { tool, kinds: noted.kinds })
           // The conversation of task sessions told to use a browser, app or file tool: how to get it done (ADR 0038)
-          if (caller && sessionOf(caller) === 'conversation') return withTaskHint(noted.result)
+          const talk = caller !== undefined && sessionOf(caller) === 'conversation'
+          // No result gives the AI more than 6,000 characters unless it asked for more (everything above read it whole)
+          const capped = capResult(tool, input, talk ? withTaskHint(noted.result) : noted.result)
+          if (capped.cut) journal.write('result-cap', { tool, ...capped.cut })
+          if (talk) return capped.result
           // What the person passed on to this task while it works rides at the end of its next result (ADR 0038)
           const notes = caller ? tasks.takeNotes(caller) : []
-          if (!notes.length) return noted.result
+          if (!notes.length) return capped.result
           const t = caller ? tasks.byThread(caller) : undefined
           if (t) {
             journal.write('task-steer', { id: t.id, delivered: notes.length })
             emitTask(t)
           }
-          return withNotes(noted.result, notes)
+          return withNotes(capped.result, notes)
         }
         // Replay test: answer from the tape, run nothing
         // Task tools start and steer task sessions (ADR 0038): the daemon's own work, never answered from a tape or
