@@ -4743,6 +4743,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
         connectAsked.set(card.id, Date.now())
         if (caller) connectThread.set(card.id, caller)
+        // Sites signed in through Chrome: look right away, so the card already asks "this account?" or shows the ID and
+        // password entry (it said "enter your ID and password" while Chrome was signed in, test PC loop 11-26)
+        if (card.how === 'browser' || card.how === 'official') {
+          void startConnect(card, () => connectStart(card), 'look')
+          return text(
+            handBack({
+              done: `Dool2 is checking whether Chrome is already signed in to ${card.name}; the ${card.name} card on the phone then asks "connect this account?" or shows the ID and password entry`,
+              left: 'the person answers on the card (never in chat; do not ask for the password)',
+              who: 'person',
+              after: waiting
+                ? 'when it is connected, a chat note tells you to continue the task that stopped'
+                : 'when it is connected, Dool2 says so in the chat; nothing else follows unless the person asks (do not promise to do more)',
+              tell: `in one sentence, to answer on the ${card.name} card`,
+            }),
+          )
+        }
         void link
           .notify({
             title: m().connectCardTitle(card.name),
@@ -4754,16 +4770,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return text(
           handBack({
             done: `a ${card.name} connect card is now in the chat`,
-            left: card.account?.pick
-              ? 'tap the button on the card: the provider account chooser opens on the phone, where they pick (or add) the account. Never ask for a password'
-              : card.how === 'browser'
-                ? 'enter the ID and password on the card (never in chat; do not ask for the password)'
-                : 'tap the card and connect on the Connect screen',
+            left: 'tap the card and connect on the Connect screen',
             who: 'person',
-            after:
-              card.how === 'browser' && !card.account?.pick
-                ? 'Dool2 signs in and the result arrives as a chat note; then carry on with the task'
-                : 'a chat note comes when it is connected; then carry on with the task',
+            after: 'a chat note comes when it is connected; then carry on with the task',
             tell: `that the ${card.name} connect card is in the chat and what to do on it`,
           }),
         )

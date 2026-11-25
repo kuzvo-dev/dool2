@@ -960,7 +960,7 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
         ).json()) as { content: { text: string }[] }
       ).content[0]?.text ?? ''
     // 금고에 없으면: 처음 쓰는 서비스라 연결 카드
-    expect(await ask('coupang')).toContain('connect card is now in the chat')
+    expect(await ask('coupang')).toContain('checking whether Chrome is already signed in')
     // 금고에 계정이 있으면: 묻지 않고 두리 본체가 다시 로그인한다 (끝나면 대화 알림으로 이어서)
     await api('/api/vault', {
       method: 'POST',
@@ -1013,7 +1013,7 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
           body: JSON.stringify({ service: 'coupang' }),
         })
       ).json()) as { content: { text: string }[] }
-      expect(r.content[0]?.text).toContain('connect card is now in the chat')
+      expect(r.content[0]?.text).toContain('checking whether Chrome is already signed in')
     } finally {
       Date.now = realNow
     }
