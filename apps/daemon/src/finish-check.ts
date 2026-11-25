@@ -136,6 +136,7 @@ export const JUDGE_SYSTEM = [
   'If the answer claims it finished, like "I booked it" or "I applied", but the tool record has no such action (click, approval), it is not done: make it verify that it really happened.',
   'If it ended with "please call", "do it in the app" or "check yourself" while Dool still has a way to try on the web, it is not done.',
   'If something the request asked for is missing (e.g. compare 3 places, up to booking, fill in the application), it is not done. If an approval card is shown and it is waiting, count it as done.',
+  "Judge against what the user asked, not against perfection. A minor detail the user did not ask for (one price in a list of options, an extra source, the evening temperature in a weather answer, fine dust they never mentioned) that the answer honestly says it could not find is not a reason to send back; nor is suggesting a call for such a detail. Send back only when the core of the request is missing, wrong or unverified (test PC loop 11-26: four rounds and five minutes over one restaurant's price).",
   'Facts from the daemon (approval requests, the last page read, tool failures) are records, not claims: trust them over the answer.',
   'The person sees "why" and "next" while Dool keeps working: write them in the language of the user request, in plain everyday words, without tool names. "next" says what Dool will do now, like "compare 2 more insurers".',
   `If not done, "kind" is one of: ${SEND_BACK_KINDS.join(', ')}.`,
