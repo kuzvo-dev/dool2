@@ -121,7 +121,14 @@ import {
   type ChromeLaunchReason,
   type LaunchProfile,
 } from './chrome-launch.js'
-import { accountIn, accountName, readAccount } from './connect-account.js'
+import {
+  accountIn,
+  accountName,
+  chooserAccounts,
+  readAccount,
+  sameSignIn,
+  useAnotherRef,
+} from './connect-account.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -1371,6 +1378,94 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return connectFinish(card, r)
   }
   /**
+   * Connect a service whose account is picked (Google, ADR 0041) without the person watching the PC: Dool2 reads the
+   * accounts on Google's chooser in a background tab and asks on the phone which one, as buttons. The account picked
+   * opens on its own address (/mail/u/<email>/), so nothing is pressed on Google's side. Only an account that is not
+   * in Chrome yet (or signed out) needs Google's own sign-in, and that one screen goes to the person
+   */
+  const connectPick = async (card: ConnectCard): Promise<ConnectResult> => {
+    const pick = card.account?.pick
+    if (!pick) throw new Error(m().noSuchService)
+    if (!browser.status.connected) throw new Error(m().extNotConnectedPc)
+    const step = connectStep(card.id)
+    step(m().readingGoogleAccounts)
+    const opened = (await browser.call('open', { url: pick, background: true }, 40_000)) as { tabId: number }
+    const tabId = opened.tabId
+    const close = () => browser.call('close', { tabId }).catch(() => undefined)
+    let accounts: ReturnType<typeof chooserAccounts> = []
+    let page: { url: string; text: string } | undefined
+    for (let i = 0; i < 4 && !accounts.length; i++) {
+      await new Promise((r) => setTimeout(r, 2_000))
+      page = (await browser.call('snapshot', { tabId, maxChars: 30_000 }, 20_000).catch(() => undefined)) as
+        | { url: string; text: string }
+        | undefined
+      if (!page) continue
+      accounts = chooserAccounts(page.text)
+      // Google may skip the chooser and go straight to the service with its only account
+      const who = accountIn(card, page)
+      if (!accounts.length && who) accounts = [{ ref: '', email: who, signedOut: false }]
+    }
+    // Nothing signed in to Chrome yet: Google's own sign-in is the only way, so that one screen goes to the person
+    const toPerson = (message: string): ConnectResult => {
+      browserTools.holdForPerson(tabId)
+      loginWatch.start(card, tabId)
+      return { ok: false, human: true, reason: 'human', tabId, message }
+    }
+    if (!accounts.length) return toPerson(m().noGoogleAccountInChrome)
+    // Signed in before with an account that is still in Chrome: use it again without asking
+    const known = connectAccounts()[card.id] ?? connectAccounts().google
+    let chosen = known ? accounts.find((a) => !a.signedOut && sameSignIn(known, a.email)) : undefined
+    if (!chosen) {
+      const add = m().addGoogleAccount
+      const label = (a: (typeof accounts)[number]) => (a.signedOut ? m().signedOutAccount(a.email) : a.email)
+      const answer = await loginAsk(card)
+        .info?.({
+          field: 'choice',
+          label: m().whichGoogleAccount(card.name),
+          hint: m().whichGoogleAccountHint,
+          host: 'accounts.google.com',
+          options: [...accounts.map(label), add].slice(0, 8),
+        })
+        .catch(() => undefined)
+      if (!answer) {
+        await close()
+        return { ok: false, reason: 'unknown', message: m().pickNotAnswered(card.name) }
+      }
+      const hit = accounts.find((a) => label(a) === answer.trim())
+      if (!hit || hit.signedOut) {
+        // A signed-out account or a new one: press its row (or "use another account") and hand that sign-in over
+        const ref = hit?.ref || (page ? useAnotherRef(page.text) : undefined)
+        if (ref) await browser.call('click', { tabId, ref }, 30_000).catch(() => undefined)
+        return toPerson(m().signInOnScreen(card.name))
+      }
+      chosen = hit
+    }
+    // Press that account's row: Google goes on to the service as that account, whose page shows the full address
+    // (the chooser may show it masked). Without a row (Google skipped the chooser), the tab is already there
+    step(m().checkingAccount)
+    if (chosen.ref) await browser.call('click', { tabId, ref: chosen.ref }, 30_000).catch(() => undefined)
+    let who: string | undefined
+    for (let i = 0; i < 6 && !who; i++) {
+      await new Promise((r) => setTimeout(r, 2_000))
+      const p = (await browser
+        .call('snapshot', { tabId, maxChars: 30_000 }, 20_000)
+        .catch(() => undefined)) as { url: string; text: string } | undefined
+      if (p) who = accountIn(card, p)
+    }
+    await close()
+    journal.write('connect-account-read', { id: card.id, state: who ? 'seen' : 'none', via: 'pick' })
+    // The page did not show the picked account (Google asked for its password, or the row press did not take)
+    if (!who || !sameSignIn(chosen.email, who))
+      return {
+        ok: false,
+        reason: 'other-account',
+        message: m().accountNotInChromePick(card.name, maskAccount(chosen.email)),
+      }
+    rememberAccount(card.id, who)
+    connectMark(card.id, true)
+    return { ok: true, message: m().connectedAs(card.name, maskAccount(who)) }
+  }
+  /**
    * The method used to connect each service (vault: vault account, social:kakao and so on). When a sign-in expires, Doori signs in again the same way.
    * No secrets, only the method name
    */
@@ -2231,6 +2326,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const card = await skills.card(id)
         if (!card) throw new Error(m().noSuchService)
         if (action === 'open') return { tabId: await connectOpen(card, true) }
+        // Pick a Google account on the phone (no PC screen); the result comes as connect-result
+        if (action === 'pick') {
+          void startConnect(card, () => connectPick(card), 'pick')
+          return {}
+        }
         if (action === 'chat') {
           connectInChat(card)
           return {}
@@ -4452,6 +4552,22 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return text(
             `${card.name} signs in with the ${parent.card.name} account. ${parent.card.name} is already connected, so use the ${card.name} tools right away without a connect card. If a tool meets a sign-in screen, reconnect then with connect_ask('${parent.card.id}').`,
           )
+        // Picked accounts (Google): ask on the phone right away which account, as buttons on this card (ADR 0041).
+        // An account connected before that is still in Chrome is used again without asking
+        if (card.account?.pick && browser.status.connected) {
+          connectAsked.set(card.id, Date.now())
+          if (caller) connectThread.set(card.id, caller)
+          void startConnect(card, () => connectPick(card), 'pick')
+          return text(
+            handBack({
+              done: `Dool2 is reading the Google accounts in Chrome and asks on the phone which one to connect to ${card.name} (buttons on this card)`,
+              left: 'the person taps their account',
+              who: 'person',
+              after: 'when it is connected, a chat note tells you to continue',
+              tell: `to tap their account on the ${card.name} card (never ask for a password)`,
+            }),
+          )
+        }
         // When a sign-in is needed again but there is a vault account or a quick sign-in used before, Doori signs in again without asking.
         // When it ends, connectDone sends "continue the stopped task" to the chat
         // Picked accounts (Google) are never signed in with a typed password: the person picks again on the card (ADR 0041)

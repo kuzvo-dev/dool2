@@ -5,6 +5,8 @@
 // because the typed account was not in Chrome). This module reads the account a page shows and compares it.
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { sameAccount } from './auto-login.js'
+import { ACCOUNT_SWITCH } from './region/kr/auto-login.js'
+import { ROW, SIGNED_OUT, USE_ANOTHER } from './region/kr/connect-account-ui.js'
 
 type Card = Pick<ConnectCard, 'id' | 'site' | 'account'>
 
@@ -108,4 +110,36 @@ export async function readAccount(
   } finally {
     await browser.call('close', { tabId: opened.tabId }).catch(() => undefined)
   }
+}
+
+/** One account on a provider's account chooser (Google), as the snapshot reads it */
+export interface ChooserAccount {
+  /** Snapshot ref of its row (to press it when the person picks a signed-out account) */
+  ref: string
+  email: string
+  /** Listed but signed out: needs the password again */
+  signedOut: boolean
+}
+
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/
+
+/**
+ * The accounts on Google's account chooser (measured: one link row per account with its name and email; a signed-out
+ * one also says so). The "switch account" line of a confirm page is not an account
+ */
+export function chooserAccounts(text: string): ChooserAccount[] {
+  const out: ChooserAccount[] = []
+  for (const m of text.matchAll(ROW)) {
+    const name = m[2] ?? ''
+    const email = EMAIL.exec(name)?.[0]
+    if (!email || ACCOUNT_SWITCH.test(name) || out.some((a) => a.email === email)) continue
+    out.push({ ref: m[1] as string, email, signedOut: SIGNED_OUT.test(name) })
+  }
+  return out
+}
+
+/** The chooser's "Use another account" row (to add an account that is not in Chrome yet) */
+export function useAnotherRef(text: string): string | undefined {
+  for (const m of text.matchAll(ROW)) if (USE_ANOTHER.test(m[2] ?? '')) return m[1]
+  return undefined
 }

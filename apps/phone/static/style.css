@@ -393,6 +393,15 @@ button {
 .approve-card .btn-link {
   align-self: center;
 }
+/* Which account (Google, ADR 0041): one full-width button per account, right on the connect card */
+.approve-card .pick-list {
+  display: grid;
+  gap: 8px;
+}
+.approve-card .pick-list button {
+  width: 100%;
+  overflow-wrap: anywhere;
+}
 
 /* ── Tab screens ── */
 .tab-page {

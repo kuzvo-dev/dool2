@@ -1328,7 +1328,8 @@ export type PhoneToPc =
    */
   /** chat: leave "Connect ○○" and the connect card in the conversation right away (does not call the AI) */
   /** verify: when [I signed in] is pressed, the core opens the site, checks it is really signed in, and marks it connected */
-  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' }
+  /** pick: choose a Google-style account on the phone (ADR 0041) */
+  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' | 'pick' }
   /** Connecting: put the ID and password in the vault and the Dool2 core signs in for you (the values do not pass through the AI) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
   /** The answer to what the screen asks during sign-in (verification code, etc.). Without value, cancel */

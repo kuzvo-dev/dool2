@@ -29,6 +29,16 @@ export const indexText = messages({
     connectRequest: (name: string) => `${name} 연결해 줘`,
     alreadyLoggedIn: (name: string) => `${name}에 로그인돼 있어요.`,
     checkingAccount: '어느 계정인지 확인하는 중',
+    readingGoogleAccounts: 'PC Chrome의 Google 계정 확인하는 중',
+    whichGoogleAccount: (name: string) => `${name}에 어느 계정을 연결할까요?`,
+    whichGoogleAccountHint: 'PC Chrome에 로그인된 Google 계정이에요',
+    addGoogleAccount: '다른 계정 추가',
+    signedOutAccount: (email: string) => `${email} (다시 로그인 필요)`,
+    noGoogleAccountInChrome:
+      'PC Chrome에 로그인된 Google 계정이 없어요. 화면을 열어 Google에 한 번 로그인해 주세요.',
+    signInOnScreen: (name: string) => `${name}에 쓸 Google 계정으로 화면에서 한 번 로그인해 주세요.`,
+    pickNotAnswered: (name: string) => `${name}에 연결할 계정을 아직 고르지 않았어요.`,
+    connectedAs: (name: string, who: string) => `${josa(name, '을/를')} ${who} 계정으로 연결했어요.`,
     otherAccountSignedIn: (name: string, who: string) =>
       `Chrome에는 ${name}에 ${who} 계정으로 로그인돼 있어요. 이 계정으로 연결할까요?`,
     otherAccountHint: '넣어 주신 아이디와 달라서 여쭤봐요',
@@ -208,6 +218,16 @@ export const indexText = messages({
     connectRequest: (name: string) => `Connect ${name}`,
     alreadyLoggedIn: (name: string) => `You are signed in to ${name}.`,
     checkingAccount: 'Checking which account it is',
+    readingGoogleAccounts: 'Checking the Google accounts in Chrome on the PC',
+    whichGoogleAccount: (name: string) => `Which account should ${name} use?`,
+    whichGoogleAccountHint: 'Google accounts signed in to Chrome on the PC',
+    addGoogleAccount: 'Add another account',
+    signedOutAccount: (email: string) => `${email} (sign in again)`,
+    noGoogleAccountInChrome:
+      'No Google account is signed in to Chrome on the PC. Open the screen and sign in to Google once.',
+    signInOnScreen: (name: string) => `Sign in once on the screen with the Google account for ${name}.`,
+    pickNotAnswered: (name: string) => `No account was picked for ${name} yet.`,
+    connectedAs: (name: string, who: string) => `Connected ${name} as ${who}.`,
     otherAccountSignedIn: (name: string, who: string) =>
       `Chrome is signed in to ${name} as ${who}. Connect with this account?`,
     otherAccountHint: 'It differs from the ID you entered, so I am asking',

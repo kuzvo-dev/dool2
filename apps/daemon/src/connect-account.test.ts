@@ -2,7 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { type ConnectCard, ConnectCardSchema } from '@dool2/protocol/connect'
 import { describe, expect, it } from 'vitest'
-import { accountIn, accountName, accountPage, readAccount, sameSignIn } from './connect-account.js'
+import {
+  accountIn,
+  accountName,
+  accountPage,
+  chooserAccounts,
+  readAccount,
+  sameSignIn,
+  useAnotherRef,
+} from './connect-account.js'
 
 const skill = async (id: string): Promise<ConnectCard> =>
   ConnectCardSchema.parse(
@@ -103,5 +111,31 @@ describe('which account a connection is', () => {
     expect(await readAccount(browserShowing(inbox('a@gmail.com')), plain, 'a', { wait: 0 })).toEqual({
       state: 'unknown',
     })
+  })
+})
+
+describe("Google's account chooser (picked on the phone)", () => {
+  const chooser = [
+    '계정 선택',
+    'Gmail(으)로 이동',
+    '[e10 링크 "쿠즈보 kuzvo@gmail.com"]',
+    '[e11 링크 "회사 work@company.com"]',
+    '[e12 링크 "옛 계정 old@gmail.com 로그아웃됨"]',
+    '[e13 링크 "다른 계정 사용"]',
+    '[e14 링크 "도움말"]',
+  ].join('\n')
+
+  it('lists every account with its row, and which ones are signed out', () => {
+    expect(chooserAccounts(chooser)).toEqual([
+      { ref: 'e10', email: 'kuzvo@gmail.com', signedOut: false },
+      { ref: 'e11', email: 'work@company.com', signedOut: false },
+      { ref: 'e12', email: 'old@gmail.com', signedOut: true },
+    ])
+    expect(useAnotherRef(chooser)).toBe('e13')
+  })
+
+  it('does not take the "switch account" line of a confirm page for an account', () => {
+    expect(chooserAccounts('[e3 버튼 "kuzvo@gmail.com 선택되었습니다. 계정 전환"]')).toEqual([])
+    expect(chooserAccounts('로그인\n[e2 입력칸 "이메일 또는 휴대전화"]')).toEqual([])
   })
 })
