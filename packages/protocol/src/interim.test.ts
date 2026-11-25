@@ -18,9 +18,30 @@ describe('one answer per request', () => {
       msg('t2', 'tool', '{"kind":"work"}'),
       msg('a3', 'assistant'),
     ])
-    expect([...hidden].sort()).toEqual(['a1', 'a2', 'n1', 'n2'])
-    expect(replaced.get('a3')).toEqual(['a1', 'n1', 'a2', 'n2'])
+    // The first round's work record folds with its answer; the last round's stays with the answer it led to
+    expect([...hidden].sort()).toEqual(['a1', 'a2', 'n1', 'n2', 't1'])
+    expect(replaced.get('a3')).toEqual(['a1', 't1', 'n1', 'a2', 'n2'])
     expect(replaced.has('a2')).toBe(false)
+  })
+
+  it('folds the lists a draft showed, so the same list does not show three times (11-26)', () => {
+    const rows = '{"kind":"rows","rows":[]}'
+    const list = [
+      msg('u1', 'user', '계정 바꿔 줘'),
+      msg('w1', 'tool', '{"kind":"work"}'),
+      msg('a1', 'assistant'),
+      msg('r1', 'tool', rows),
+      msg('n1', 'user', check),
+      msg('w2', 'tool', '{"kind":"work"}'),
+      msg('a2', 'assistant'),
+      msg('r2', 'tool', rows),
+    ]
+    const { hidden, replaced } = interimAnswers(list)
+    expect([...hidden].sort()).toEqual(['a1', 'n1', 'r1', 'w1'])
+    expect(replaced.get('a2')).toEqual(['a1', 'w1', 'r1', 'n1'])
+    // While the second round still runs, the first round's list is a draft too
+    const running = interimAnswers(list.slice(0, 6), { running: true })
+    expect([...running.hidden].sort()).toEqual(['a1', 'n1', 'r1', 'w1'])
   })
 
   it('also reads notes saved before the move to English', () => {

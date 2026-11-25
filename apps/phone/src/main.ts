@@ -1871,7 +1871,7 @@ function connectFailCard(
  * A short choice (which Google account) answered right on the card: one button per option, no sheet in between.
  * Long lists still open the sheet
  */
-function pickChoices(id: string): HTMLElement | undefined {
+function pickChoices(id: string, cardId: string): HTMLElement | undefined {
   const q = st.infos.get(id)
   const options = q?.field === 'choice' ? (q.options ?? []) : []
   if (!options.length || options.length > 5) return undefined
@@ -1885,6 +1885,9 @@ function pickChoices(id: string): HTMLElement | undefined {
         onclick: () => {
           void send({ kind: 'info-answer', id, value: o })
           st.infos.delete(id)
+          // Show it moving at once (a step with a spinner) until the PC's next step arrives
+          const steps = st.connectSteps.get(cardId) ?? []
+          st.connectSteps.set(cardId, [...steps, { text: mCards.goingWith(o), at: Date.now() }])
           render()
         },
       }),
@@ -4441,11 +4444,14 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       }),
       c.id,
     )
+  // Connecting again (switching the account) shows the work and the question, not the old "connected" line: tapping an
+  // account showed only a toast while the card said "connected" (11-26)
+  const busy = st.connecting.has(c.id)
   // Connected, but its tools run in the PC's Chrome: while Chrome or the extension is off, say so, not "connected"
-  if (it.connectedAt && needsPcChrome(c) && st.pc && !st.pc.extension)
+  if (!busy && it.connectedAt && needsPcChrome(c) && st.pc && !st.pc.extension)
     return h('p', { class: 'done-line connect-line off' }, mark(), mCards.chromeOffFor(c.name))
   // Which account it is, when Dool2 read it on the service's page (ADR 0041)
-  if (it.connectedAt)
+  if (!busy && it.connectedAt)
     return h(
       'p',
       { class: 'done-line connect-line' },
@@ -4453,7 +4459,6 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       it.signedInAs ? mCards.isConnectedAs(c.name, it.signedInAs) : mCards.isConnected(c.name),
     )
   if (!live) return h('p', { class: 'done-line connect-line' }, mark(), mCards.cardOf(c.name))
-  const busy = st.connecting.has(c.id)
   // Official integrations (Gmail and so on) log in through PC Chrome until they are ready: same card as a browser connection
   const browser = c.how === 'browser' || c.how === 'official'
   // When waiting for an account or code: show what is needed and an enter button (not just a spinner)
@@ -4503,7 +4508,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         ),
       ),
       connectStepList(c.id, true),
-      pickChoices(wait.id) ??
+      pickChoices(wait.id, c.id) ??
         h(
           'div',
           { class: 'approve-actions' },
