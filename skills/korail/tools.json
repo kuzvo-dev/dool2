@@ -224,7 +224,7 @@
         "more": "{{raw.h_next_pg_flg}}",
         "link": "https://www.korail.com/ticket/search/list?txtGoStart={{from|url}}&txtGoEnd={{to|url}}&txtGoAbrdDt={{#date}}{{date|digits}}{{/date}}{{^date}}{{today|digits}}{{/date}}&txtGoHour={{time|digits}}00&txtPsgFlg_1=1&txtTrnGpCd={{#ktx_only}}100{{/ktx_only}}{{^ktx_only}}109{{/ktx_only}}{{#nearby}}&adjStnScdlOfrFlg=Y&adjStnScdlOfrFlg2=Y&srtCheckYn=Y&ebizCrossCheck=Y{{/nearby}}"
       },
-      "next": "show_list로 열차마다 한 줄(출발→도착 시각·열차, value 요금, state 일반실 상태, 매진은 tone stop)을 붙이고, 글은 결론 한 줄(자리 있는 가장 이른 열차·요금)만. 다 매진이면 취소표 지켜보기(goal_create, available_only=true로 이 도구)를 권해요. 지켜보다 자리가 나오면 열차·시각·요금과 link를 알려요. 예매는 사이트에서 순식간에 다시 팔릴 수 있다고 덧붙여요.",
+      "next": "show_list로 열차마다 한 줄(출발→도착 시각·열차, value 요금, state 일반실 상태, 매진은 tone stop)을 붙이고, 글은 결론 한 줄(자리 있는 가장 이른 열차·요금)만. 다 매진이면 취소표 지켜보기(goal_create, available_only=true로 이 도구)를 권해요. 지켜보다 자리가 나오면 열차·시각·요금과 link를 알려요. 자리는 금방 다시 팔릴 수 있으니, 열차를 고르면 두리가 바로 예매를 준비한다고(결제 전에 승인 카드) 제안하고 고를 열차를 quick replies로 붙여요. 사이트에서 직접 하라고 하지 않아요.",
       "minIntervalSec": 300,
       "cards": false
     }
