@@ -74,7 +74,7 @@ export interface Task {
   /** The answer being checked */
   draft?: string
   /** Notes from the person not yet given to the task */
-  notes: string[]
+  notes: TaskNote[]
   /** Notes already in its chat as the person's own words (typed in its detail): not shown again when delivered */
   shownNotes: Set<string>
   /** Its first message (the brief) was sent */
@@ -89,6 +89,34 @@ export interface Task {
   recordId?: string
   /** The site it worked on last */
   host?: string
+}
+
+/**
+ * Something the person passed to a task (task_steer, or typed in its detail): their own words, exactly, and what the
+ * conversation AI added to read them, kept apart so the task never takes a guess for something the user said
+ */
+export interface TaskNote {
+  said: string
+  added?: string
+}
+
+/** One note as the task reads it: the user's words first, then the conversation's addition marked as its own */
+export function noteText(n: TaskNote): string {
+  return `"${n.said}"${n.added ? ` (Dool2's own addition, not the user's words: ${n.added})` : ''}`
+}
+
+/** Letters and digits only, lower case: spacing, punctuation and quotes do not make words someone else's */
+const bare = (s: string) =>
+  s
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, '')
+
+/** Whether the words handed to task_steer as the user's are in what the user wrote (in one message or across them) */
+export function saidIn(said: string, asked: string[]): boolean {
+  const w = bare(said)
+  if (!w) return false
+  return asked.some((a) => bare(a).includes(w)) || bare(asked.join('')).includes(w)
 }
 
 const ENDED: ReadonlySet<TaskStatus> = new Set(['done', 'stopped', 'failed'])
@@ -211,11 +239,12 @@ export class TaskBoard {
     if (rec?.host) t.host = rec.host
   }
 
-  note(t: Task, text: string): void {
-    t.notes.push(text.trim().slice(0, 600))
+  note(t: Task, said: string, added?: string): void {
+    const extra = added?.trim().slice(0, 300)
+    t.notes.push({ said: said.trim().slice(0, 600), ...(extra ? { added: extra } : {}) })
   }
   /** Notes for the task's next tool result, taken once */
-  takeNotes(threadId: string): string[] {
+  takeNotes(threadId: string): TaskNote[] {
     const t = this.byThread(threadId)
     if (!t?.notes.length || this.ended(t)) return []
     return t.notes.splice(0)
@@ -298,7 +327,7 @@ export function taskBrief(t: Task, lang: Lang = 'ko'): string {
     list('Done when:', s.doneWhen),
     list('Already known (do not ask again):', s.known),
     list('Must not happen:', s.avoid),
-    list('The user also said, while the task waited to start:', t.notes.splice(0)),
+    list('The user also said, while the task waited to start:', t.notes.splice(0).map(noteText)),
     'Notes the user sends while you work arrive at the end of a tool result as "Message from the user". Follow them; ' +
       'where they differ from this spec, they come first.',
   ]
@@ -308,9 +337,10 @@ export function taskBrief(t: Task, lang: Lang = 'ko'): string {
 }
 
 /** The person's notes as the next message of a task that is not in a turn (waiting for them, or just done) */
-export function notesMessage(notes: string[], lang: Lang = 'ko', shown?: ReadonlySet<string>): string {
-  const said = notes.map((n) => `"${n}"`).join(' / ')
-  const fresh = notes.filter((n) => !shown?.has(n))
+export function notesMessage(notes: TaskNote[], lang: Lang = 'ko', shown?: ReadonlySet<string>): string {
+  const said = notes.map(noteText).join(' / ')
+  // The task's chat shows only the user's own words, never the conversation's addition
+  const fresh = notes.filter((n) => !shown?.has(n.said)).map((n) => n.said)
   return appNote(
     forAI(
       fresh.length ? TASKS_TEXT(lang).noteShown(fresh.join(' / ')) : '',
@@ -320,17 +350,17 @@ export function notesMessage(notes: string[], lang: Lang = 'ko', shown?: Readonl
 }
 
 /** What a tool result carries when the person passed something on (ADR 0038 steering) */
-export function steerLines(notes: string[]): string {
+export function steerLines(notes: TaskNote[]): string {
   return notes
     .map(
       (n) =>
-        `Message from the user, sent through the conversation while you work (it comes before the task spec where they differ): "${n}"`,
+        `Message from the user, sent through the conversation while you work (it comes before the task spec where they differ): ${noteText(n)}`,
     )
     .join('\n')
 }
 
 /** A tool result with the person's notes added at the end, where the AI reads it (text, and the structured next) */
-export function withNotes<T>(result: T, notes: string[]): T {
+export function withNotes<T>(result: T, notes: TaskNote[]): T {
   if (!notes.length) return result
   const r = result as {
     content?: { type: string; text?: string }[]

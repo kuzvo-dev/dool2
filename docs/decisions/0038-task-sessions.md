@@ -40,7 +40,11 @@ guess is wrong.
    - `task_start({ goal, done_when[], known[], avoid[], title, browser })` opens a task session and returns at once.
      Its description says when: browser or PC app work, or several steps. One or two lookups stay in the
      conversation.
-   - `task_steer({ id, note })` passes the person's words to a running task. `task_stop({ id })` stops it.
+   - `task_steer({ id, said, added })` passes the person's words to a running task: `said` is their own words,
+     copied exactly (the daemon refuses words the person never wrote), and `added` is what the conversation already
+     settled, which the task sees marked as Dool2's, not the person's. The task reads the words first and resolves
+     what they leave open with its spec, so the conversation does not fill in a detail ("7" became "7 a.m." for an
+     evening train in the acceptance run). `task_stop({ id })` stops it.
      `task_list()` says what each task is doing, what it waits on and what came out.
 4. **Steering without touching the agent's loop.** A note for a running task is appended to the task session's next
    tool result ("Message from the person, sent while you work: …"), at the same place the loop guard adds its line. A
