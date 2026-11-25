@@ -1399,7 +1399,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     card: ConnectCard,
     opts: { another?: boolean } = {},
   ): Promise<ConnectResult> => {
-    if (!browser.status.connected) throw new Error(m().extNotConnectedPc)
+    // No check of the extension here: the browser calls below open Chrome and wait for it (launch scope 'connect')
     const credentials: ConnectResult = {
       ok: false,
       reason: 'credentials',
@@ -4653,7 +4653,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         // Picked accounts (Google): ask on the phone right away which account, as buttons on this card (ADR 0041).
         // An account connected before that is still in Chrome is used again without asking
-        if (card.account?.pick && browser.status.connected) {
+        // Not gated on the extension being connected this second: the look opens Chrome and waits for it (a restart's
+        // few seconds without the extension sent this down the old card path and dropped the connection, 11-26)
+        if (card.account?.pick) {
           connectAsked.set(card.id, Date.now())
           if (caller) connectThread.set(card.id, caller)
           void startConnect(card, () => connectStart(card), 'look')
@@ -4668,7 +4670,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         }
         // Another account: the phone asks for its ID and password at once; the saved account is not signed in again
-        if (another && browser.status.connected) {
+        if (another) {
           connectAsked.set(card.id, Date.now())
           if (caller) connectThread.set(card.id, caller)
           void startConnect(card, () => connectStart(card, { another: true }), 'look')
