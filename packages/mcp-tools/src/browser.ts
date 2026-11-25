@@ -21,7 +21,12 @@ export function daemonClient(env: NodeJS.ProcessEnv = process.env, kind = 'brows
     try {
       const res = await fetch(`${api}/api/tools/${kind}/${encodeURIComponent(tool)}`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          // Which chat (segment) this server works for, so approvals and phone cards go back to it (ADR 0038)
+          ...(env.DOOL2_TOOLSET ? { 'x-dool2-toolset': env.DOOL2_TOOLSET } : {}),
+        },
         body: JSON.stringify(args),
         // Waiting for an authentication app approval waits up to 3 minutes (a 90 s cutoff timed out while the user was approving)
         signal: AbortSignal.timeout(tool === 'wait_auth' ? 200_000 : 90_000),

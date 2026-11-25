@@ -41,6 +41,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0035](0035-resident-agent-session.md) | One resident Claude Code program per conversation segment | Accepted |
 | [0036](0036-cache-aware-segments.md) | Cache-aware segments: switch after an hour away, with the handoff made while the cache lives | Accepted |
 | [0037](0037-model-profiles.md) | Model profiles and role routing: side jobs on a small model, one table for what differs per model | Accepted |
+| [0038](0038-task-sessions.md) | The conversation hands longer work to a task session: split tools, steering through the next tool result, one result per task | Accepted |
 
 ## How to write a new decision
 

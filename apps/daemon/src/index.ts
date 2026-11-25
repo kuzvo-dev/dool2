@@ -1,5 +1,6 @@
 // dool2d — the Doori core. The PC app window (Electron) starts it, and on a Doori box it runs on its own.
 // M0: takes chats through a local API (127.0.0.1 + token), runs Claude Code and Codex, and keeps a record.
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync } from 'node:fs'
@@ -907,8 +908,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       void link.resync()
     } catch {}
   })
-  /** The chat whose tool call made the request (the only chat answering now), like the approval card's chat */
-  const workingThread = () => (activeThreads.size === 1 ? [...activeThreads][0] : undefined)
+  /**
+   * The chat whose tool call is being handled: the tool server names its segment (DOOL2_TOOLSET) on every call, so
+   * approvals, sign-ins and phone cards go back to the chat that asked even when several chats work at once (ADR 0038).
+   * Without that name (an older tool server) it is the only chat answering now, as before
+   */
+  const workingThread = () =>
+    callerScope.getStore() ?? (activeThreads.size === 1 ? [...activeThreads][0] : undefined)
   /** What the user typed in that chat, last few, oldest first (no app notes, no Dool2 answers, no tool results) */
   const recentAsks = (): string[] => {
     const threadId = workingThread()
@@ -1987,8 +1993,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   )
   browserTools.approvals.onChange = (rec) => void link.broadcast({ kind: 'approval', approval: rec })
   browserTools.approvals.onCreate = (rec) => {
-    // An approval request comes from a tool call in the chat that is answering. If there is only one, treat it as that chat
-    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    // An approval request comes from a tool call: the chat that made it
+    const only = workingThread()
     if (only) approvalThread.set(rec.id, only)
     void link.broadcast({ kind: 'approval', approval: rec })
     // Notify the phone even if the app is off
@@ -2366,7 +2372,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // Ask before sign-up or password change: if the user asked for it in the chat, go ahead, otherwise show a choice card on the phone.
   // Instructions alone let the AI sign up without asking, so the daemon confirms before making a new password
   browserTools.askSignup = (site, key, purpose, needOwn) => {
-    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const threadId = workingThread()
     const lastAsk = threadId
       ? (store
           .listMessages(threadId)
@@ -2439,7 +2445,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   // My info card: receive only once and keep it in the vault, and when saved, tell the chat to continue
   browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef, image) => {
-    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const threadId = workingThread()
     // The last digits of the ID number: not stored, only put into this field
     if (kind === 'rrn_back') {
       label = m().rrnLabel
@@ -2543,7 +2549,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.onHandoffChanged = handoffDone
   // Solving by tapping the picture (robot check): taps the spots tapped on the phone card (0 to 1000 relative to the picture) in order at the same places on the PC screen
   browserTools.requestTap = (tabId, say, host, image, rect, taps) => {
-    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const threadId = workingThread()
     // Close earlier picture cards of the same site (the puzzle picture changed)
     for (const q of infoRequests.pending())
       if (q.field === 'tap' && q.host === host) infoRequests.cancel(q.id)
@@ -2603,7 +2609,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   // Payment password: receive it on the phone's secure keypad and tap the keypad buttons pointed out earlier in order. The value is kept out of the record and the AI
   browserTools.requestPin = (tabId, label, host, keys, length) => {
-    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const threadId = workingThread()
     const answer = infoRequests.ask(
       {
         site: host || m().sitePay,
@@ -2639,7 +2645,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return id
   }
   browserTools.requestProfile = (fields, reason, options) => {
-    const threadId = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const threadId = workingThread()
     const names = (list: string[]) =>
       list.map((f) => PROFILE_FIELDS[f as keyof typeof PROFILE_FIELDS].label).join('·')
     // The verification app is not received as text but as a separate choice card (from the apps shown in that site's verification window)
@@ -2863,7 +2869,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   // Waiting for that approval does not hold the chat: the reply ends, and the screen comes back as a new message
   browserTools.afterAuth = () => {
-    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const only = workingThread()
     if (!only) return undefined
     authWatches.get(only)?.abort()
     const ac = new AbortController()
@@ -2878,7 +2884,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   browserTools.onActiveTab = (tabId) => void link.broadcast({ kind: 'work-tab', tabId }, { live: true })
   browserTools.logins.onCreate = (r) => {
-    const only = activeThreads.size === 1 ? [...activeThreads][0] : undefined
+    const only = workingThread()
     if (only) loginThread.set(r.id, only)
     void link.broadcast({ kind: 'login-request', request: r })
     void link
@@ -3337,13 +3343,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
 
   const server = createServer((req, res) => {
-    handle(req, res).catch((err: Error) => {
+    // A tool call runs as its chat's (workingThread), named by the tool server
+    const caller = toolCaller(req)
+    ;(caller ? callerScope.run(caller, () => handle(req, res)) : handle(req, res)).catch((err: Error) => {
       // Input validation failure is 400, the rest 500
       const bad = err.name === 'ZodError' || err instanceof SyntaxError
       if (!res.headersSent) json(res, bad ? 400 : 500, { error: bad ? m().badRequest : err.message })
       else res.end()
     })
   })
+
+  /**
+   * The chat a tool call comes from: the segment id its tool server sends (x-dool2-toolset), when that chat exists.
+   * Only on the tool address; the tool token is still checked there. The AI cannot set it: it has no network of its own
+   */
+  function toolCaller(req: IncomingMessage): string | undefined {
+    if (!req.url?.startsWith('/api/tools/')) return undefined
+    const v = req.headers['x-dool2-toolset']
+    if (typeof v !== 'string' || !/^[\w-]{1,80}$/.test(v)) return undefined
+    return store.getThread(v) ? v : undefined
+  }
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? '/', 'http://localhost')
@@ -4329,6 +4348,9 @@ function pageQuery(url: URL): {
     ...(tab === 'files' || tab === 'made' ? { tab } : {}),
   }
 }
+
+/** The chat (segment) whose tool server made the tool call being handled (x-dool2-toolset) */
+const callerScope = new AsyncLocalStorage<string>()
 
 /** Changes a 200 answer right before it is sent (the loop guard and the injection note add their lines to tool results) */
 const resultHooks = new WeakMap<ServerResponse, (body: unknown) => unknown>()
