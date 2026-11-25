@@ -355,7 +355,7 @@ export class Connectors {
     const found = this.findAt.get(cardId)
     const user = this.opts.lastUser?.()
     if (!found || !user || user.at > found) return undefined
-    return '(You came to order prep right after a lookup, with no new message from the user. If the user has not picked yet, show 2–3 of the found options with show_cards, let them pick, and end this reply. If they already picked (including asking you to decide for them), go ahead.)'
+    return '(You came to order prep right after a lookup, with no new message from the user. If the user has not picked yet, show 2–3 of the found options with show_cards and let them pick: that ends this turn, waiting for the person, and their pick comes as the next message. If they already picked (including asking you to decide for them), go ahead.)'
   }
 
   private usable(t: ConnectorTool) {
@@ -662,7 +662,7 @@ export class Connectors {
     const locked = tools.filter((t) => t.login && !connected)
     if (locked.length)
       lines.push(
-        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, show the connect card with connect_ask('${card.id}') and end the reply. Looking things up first with tools that need no login is fine.`,
+        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, call connect_ask('${card.id}'): connecting on that card is the person's step, and its result ends the turn. Looking things up first with tools that need no login is fine.`,
       )
     lines.push(
       connected
@@ -740,7 +740,7 @@ export class Connectors {
       return this.shape(card, tool, kept.out, kept.scope, kept.tabId, { offset, key: listKey })
     if (tool.login && !this.isConnected(card))
       return text(
-        `${card.name} needs to be connected ('${tool.title}' needs login). Show the connect card with connect_ask('${card.id}'), briefly ask the user to connect on the card, and end the reply. An app notification comes when it is connected. Then call this tool again.`,
+        `${card.name} needs to be connected ('${tool.title}' needs login). Done: nothing yet. Left: the person connects ${card.name} on a connect card. Next: call connect_ask('${card.id}') to show that card (its result ends the turn and says what to tell the user). An app notification comes when it is connected; then call this tool again.`,
         true,
       )
     const key = `${name} ${JSON.stringify(args)}`
@@ -1075,7 +1075,7 @@ export class Connectors {
             `1) Read the screen with browser_read(tabId: ${tabId}) to see which check it is.`,
             '2) If the check asks to type letters or numbers or to answer a question (security code, receipt question, …), call browser_request_code(kind: "captcha") on that input field (calling it first without pick returns image candidates; do not read and type the answer yourself).',
             '   If it is solved by tapping pictures (pick tiles, tap a map), look with browser_screenshot, then send a picture card to the phone with browser_request_tap(box: where the puzzle image is, say: the puzzle text on screen). If it is a single "I\'m not a robot" checkbox, click it yourself.',
-            '3) After sending the card, in the same reply first find and show what other services can find, then say in one sentence that you will continue once they solve the robot check on the phone, and end the reply.',
+            '3) After sending the card (its result says the turn waits for the person), in the same reply first find and show what other services can find, then say in one sentence that you continue once they solve the robot check on the phone.',
             `4) When the solved notification comes, press [OK] or [Submit] on the screen to move on, then call ${name} again with the same input.`,
             'Do not end with "it was blocked so I could not check", and do not tell the user to do it on the PC themselves.',
           ].join('\n'),

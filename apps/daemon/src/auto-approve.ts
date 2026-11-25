@@ -5,10 +5,12 @@
 // A text (sms:) is sent by the phone itself, so the PC only flags it; the phone sends it when its app is open.
 // Before any of that, a review compares the request with what the user asked (auto-review.ts). A request it holds
 // becomes a normal card on the phone, and the AI is told why.
+
 import type { ApprovalView } from '@dool2/protocol'
 import type { Approvals, NewApproval } from './approvals.js'
 import type { HeldWhy, ReviewResult } from './auto-review.js'
 import type { ToolResult } from './browser-tools.js'
+import { handBack } from './hand-back.js'
 
 /** Money leaves the user's account: always asks, whatever the setting */
 export function isPayment(a: Pick<ApprovalView, 'kind' | 'amount'>): boolean {
@@ -122,7 +124,13 @@ export function heldNote(
     paused
       ? 'Auto-approve is now paused for today because several actions did not match the requests. Tell the user so in one sentence; it resumes tomorrow or when they turn it on again in settings.'
       : '',
-    'Tell the user in one sentence what the card on the phone is for, then end this answer.',
+    handBack({
+      done: 'the requests above are normal approval cards on the phone',
+      left: 'approve or decline each card',
+      who: 'person',
+      after: 'the next message says what was approved, and Dool2 carries on from there',
+      tell: 'what each card on the phone is for',
+    }),
   ]
     .filter(Boolean)
     .join('\n')

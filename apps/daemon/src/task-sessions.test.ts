@@ -533,7 +533,7 @@ describe('task sessions (ADR 0038)', () => {
     await api('/api/eval/tape', { method: 'POST', body: '{"mode":"replay","entries":[]}' })
     await send('book a train')
     await until(async () => (await view())?.status === 'done', 'task done')
-    expect(textOf(rt.results.task_start?.[0] as Result)).toContain('Task t1')
+    expect(textOf(rt.results.task_start?.[0] as Result)).toContain('task t1')
     await api('/api/eval/tape', { method: 'POST', body: '{"mode":"off"}' })
   })
 
