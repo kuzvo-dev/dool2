@@ -48,7 +48,7 @@ layer goes in front of the auto decision.
     one-line "what it does".
   It never sees the agent's explanation, tool results or page content. Its answer is one line, `{"related": bool}`.
 - **Fail closed.** If the action does not match what the user asked, or the review cannot run (another agent,
-  no request to compare with, an error, no answer within 25 seconds, an answer it cannot read), auto-approve does
+  no request to compare with, an error, no answer within 45 seconds, an answer it cannot read), auto-approve does
   not take the request: it becomes a normal card on the phone with one line saying why
   (`ApprovalView.held`: `unrelated` or `unchecked`). The AI is told the same and asked to tell the user what the
   card is for. A text (SMS) is only handed to the phone to send on its own after the review passes.
@@ -87,4 +87,11 @@ no tools at all and no Dool2 instructions.
   billed to their key like every other call.
 
 The facts sent are the same, and they go to the same AI provider that already runs the chat. Fail closed is
-unchanged: no working chat, an error, no answer in 25 seconds or an unreadable answer is a card on the phone.
+unchanged: no working chat, an error, no answer in 45 seconds or an unreadable answer is a card on the phone.
+
+## Change (2026-11-25): the review waits up to 45 seconds
+
+It waited 25 seconds. In the round 2 acceptance run a request the user had asked for in so many words ("leave this
+comment") came back unchecked after 25.0 seconds and became a card. A fresh review program measured 21 s when cold
+and 2.7 to 3 s when warm on the same PC; with a task's own turn running beside it, 25 s was not enough. The wait is
+now 45 seconds (`REVIEW_TIMEOUT_MS`); fail closed is unchanged, only fewer requests the user asked for end up as cards.

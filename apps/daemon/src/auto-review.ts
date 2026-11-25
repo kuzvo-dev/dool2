@@ -13,6 +13,9 @@ import type { ApprovalView } from '@dool2/protocol'
 
 export type HeldWhy = NonNullable<ApprovalView['held']>
 
+/** How long a review may take before the request becomes a normal card (fail closed) */
+export const REVIEW_TIMEOUT_MS = 45_000
+
 /** paused: this block paused auto-approve for the rest of the day (the tool result tells the AI so it tells the user) */
 export type ReviewResult = { ok: true; ms: number } | { ok: false; why: HeldWhy; ms: number; paused?: true }
 
@@ -94,7 +97,10 @@ export interface AutoReviewOptions {
   ask?: (prompt: string, signal: AbortSignal) => Promise<string | undefined>
   /** The user's recent requests in the chat that is working, oldest first */
   asks: () => string[]
-  /** Longest wait for a verdict. Default 25 s (a fresh AI process starts each time) */
+  /**
+   * Longest wait for a verdict. Default 45 s: a fresh AI process starts each time, and on the WP7 bench a cold one
+   * took 21 s alone and 25 s+ while a task's own turn ran, so the request the user had asked for became a card
+   */
   timeoutMs?: number
   /** Blocks in a row that pause auto-approve. Default 3 */
   streak?: number
@@ -139,7 +145,7 @@ export class AutoReview {
     const asks = this.opts.asks().filter((x) => x.trim())
     const ask = this.opts.ask
     if (!ask || !asks.length) return { ok: false, why: 'unchecked', ms: ms() }
-    const timeoutMs = this.opts.timeoutMs ?? 25_000
+    const timeoutMs = this.opts.timeoutMs ?? REVIEW_TIMEOUT_MS
     const ctl = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const said = await Promise.race([
