@@ -198,6 +198,23 @@ describe('브라우저 도구', () => {
       content: [{ type: 'text', text: 'Not connected to the Dool2 daemon' }],
     })
   })
+
+  it('names its chat on every call, so the daemon knows where an approval belongs', async () => {
+    const { createServer: http } = await import('node:http')
+    const seen: (string | undefined)[] = []
+    const srv = http((req, res) => {
+      seen.push(req.headers['x-dool2-toolset'] as string | undefined)
+      res.end('{"content":[]}')
+    })
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as { port: number }).port
+    const { daemonClient } = await import('./browser.js')
+    const env = { DOOL2_API: `http://127.0.0.1:${port}`, DOOL2_TOOL_TOKEN: 't' }
+    await daemonClient({ ...env, DOOL2_TOOLSET: 'seg-1' })('open', {})
+    await daemonClient(env)('open', {})
+    srv.close()
+    expect(seen).toEqual(['seg-1', undefined])
+  })
 })
 
 describe('서비스 도구 (ADR 0018)', () => {

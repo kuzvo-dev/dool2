@@ -1108,6 +1108,60 @@ describe('승인 API', () => {
   })
 })
 
+describe('which chat a tool call came from (ADR 0038)', () => {
+  it('two chats answering at once: the approval belongs to the chat whose tool server asked', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dool2-home-'))
+    const dl = join(home, 'Downloads')
+    mkdirSync(dl)
+    writeFileSync(join(dl, 'a.pdf'), 'a')
+    writeFileSync(join(dl, 'b.pdf'), 'b')
+    class Held extends GateRuntime {
+      seen: TurnInput[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.seen.push(input)
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new Held()
+    const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    const until = async (f: () => boolean) => {
+      for (let i = 0; i < 300 && !f(); i++) await new Promise((r) => setTimeout(r, 10))
+    }
+    const { thread: side } = (await (
+      await api('/api/threads', { method: 'POST', body: '{"side":true}' })
+    ).json()) as { thread: { id: string } }
+    void api(`/api/threads/${side.id}/messages`, { method: 'POST', body: '{"text":"sort my downloads"}' })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hello"}' })
+    await until(() => rt.seen.length === 2)
+    const sideEnv = rt.seen.find((x) => x.mcpServers[0]?.env?.DOOL2_TOOLSET === side.id)?.mcpServers[0]?.env
+    expect(sideEnv).toBeDefined()
+    const r = (await (
+      await fetch(`${daemon?.url}/api/tools/file/file_move`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${sideEnv?.DOOL2_TOOL_TOKEN}`,
+          'content-type': 'application/json',
+          'x-dool2-toolset': side.id,
+        },
+        body: JSON.stringify({
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, 'x') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, 'y') },
+          ],
+        }),
+      })
+    ).json()) as { content: { text: string }[] }
+    expect(r.content[0]?.text).toContain('Approval requested')
+    const list = (await (await api('/api/threads')).json()) as {
+      threads: { id: string; approval?: { id: string } }[]
+    }
+    expect(list.threads.find((t) => t.id === side.id)?.approval).toBeDefined()
+    expect(list.threads.filter((t) => t.approval)).toHaveLength(1)
+    rt.release()
+    await rm(home, { recursive: true, force: true })
+  })
+})
+
 describe('auto-approve review (gate regression, threat model T25)', () => {
   /** Keeps the turn open (like a real turn that is calling tools) and remembers its input for the tool token */
   class OpenRuntime extends GateRuntime {
