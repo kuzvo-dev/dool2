@@ -17,8 +17,8 @@
       "tier": "lookup"
     },
     {
-      "title": "인기 영화 순위",
-      "say": "요즘 극장에서 뭐가 제일 인기야?",
+      "title": "박스오피스 순위",
+      "say": "요즘 박스오피스 1위 영화 뭐야?",
       "tier": "lookup"
     }
   ],
@@ -40,8 +40,8 @@
           "say": "Which movie leads advance ticket sales?"
         },
         {
-          "title": "Popular movies",
-          "say": "What's most popular in theaters now?"
+          "title": "Box office ranking",
+          "say": "What is number one at the box office?"
         }
       ]
     }
