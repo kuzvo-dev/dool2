@@ -3998,7 +3998,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   async function taskTool(caller: string | undefined, name: string, args: Record<string, unknown>) {
     if (!caller || sessionOf(caller) !== 'conversation')
       return toolText('Task tools work only in the conversation.', true)
-    if (name === 'task_list') return toolText(taskListText(tasks, taskResults, Date.now(), taskCards))
+    // Results are kept in memory; after a restart (an update, the PC waking) they come from the task's saved chat, or
+    // the AI saw "done" with no result and told the user the result never arrived (test PC loop 11-26)
+    const resultsNow = () => {
+      const all = new Map(taskResults)
+      for (const t of tasks.all())
+        if (!all.has(t.id) && (t.status === 'done' || t.status === 'failed')) {
+          const answer = lastAnswerOf(t.threadId).find((x) => x.role === 'assistant')?.text
+          if (answer) all.set(t.id, answer)
+        }
+      return all
+    }
+    if (name === 'task_list') return toolText(taskListText(tasks, resultsNow(), Date.now(), taskCards))
     if (name === 'task_start') {
       const spec = parseTaskSpec(args)
       if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
@@ -4037,7 +4048,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const t = tasks.get(String(args.id ?? ''))
     if (!t)
       return toolText(
-        `No task "${String(args.id ?? '')}".\n${taskListText(tasks, taskResults, Date.now(), taskCards)}`,
+        `No task "${String(args.id ?? '')}".\n${taskListText(tasks, resultsNow(), Date.now(), taskCards)}`,
         true,
       )
     if (name === 'task_stop') {
