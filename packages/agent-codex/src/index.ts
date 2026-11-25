@@ -59,6 +59,10 @@ export function buildCodexArgs(mcpServers: McpServerSpec[], o: { sideJob?: boole
     args.push('-c', `${base}.command=${toml(s.command)}`, '-c', `${base}.args=${toml(s.args)}`)
     // Fail the thread start itself if the Dool2 tools can't start
     args.push('-c', `${base}.required=true`)
+    // Dool2 tools run without Codex's own approval step: Dool2 asks the person itself (approval cards, the phone
+    // signature). Under approval_policy "never" Codex otherwise fails every call it would have asked about with
+    // "MCP tool call requires approval" (checked on 0.169.0, fixtures/app-server-tool-approval.jsonl)
+    args.push('-c', `${base}.default_tools_approval_mode="approve"`)
     for (const [k, v] of Object.entries(s.env ?? {})) args.push('-c', `${base}.env.${k}=${toml(v)}`)
   }
   return args

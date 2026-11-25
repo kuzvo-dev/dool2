@@ -10,7 +10,7 @@ By default, Claude Code and Codex can run shell commands, read and write files, 
 ## Decision
 
 - **Claude**: turn off all built-in tools with `--tools ""`, connect only the Dool2 MCP server with `--strict-mcp-config`, and allow only Dool2 tools with `--allowedTools "mcp__dool2__*"`. User settings files are not read, via `--setting-sources ""`.
-- **Codex**: start it with `features.shell_tool=false`, `web_search="disabled"`, `sandbox_mode="read-only"` and `approval_policy="never"`, and attach the Dool2 MCP server with `required=true`.
+- **Codex**: start it with `features.shell_tool=false`, `web_search="disabled"`, `sandbox_mode="read-only"` and `approval_policy="never"`, and attach the Dool2 MCP server with `required=true` and `default_tools_approval_mode="approve"`. Dool2 tools then run without Codex's own approval step, the same as `--allowedTools` on Claude: Dool2 asks the person itself (approval cards, the phone signature). Without it, Codex 0.169.0 under `approval_policy="never"` fails every Dool2 tool call it would have asked about ("MCP tool call requires approval"), seen with a local stand-in for the model (`packages/agent-codex/fixtures/app-server-tool-approval.jsonl`).
 - **Double check**: at startup, if the tool list the agent reports contains anything that is not a Dool2 tool, stop immediately (`tools_unsafe`). If Codex starts a shell, file-change or web-search item, or calls an MCP server that is not Dool2, we cut the conversation. Codex approval requests are always refused.
 
 ## Why
