@@ -1038,3 +1038,41 @@ describe('quick lookup instead of a browser task (test PC loop 11-26)', () => {
     })
   })
 })
+
+describe('quick lookup leaves actions alone (test PC loop 11-26)', () => {
+  it('does not point an order or booking task to the search tool', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify({ ...CARD, how: 'open' }))
+    const book = {
+      name: 'prepare_booking',
+      title: '예약 준비',
+      description: '고른 식당의 자리를 예약 직전까지 준비한다.',
+      tier: 'pay',
+      status: '초안',
+      input: { properties: { shop: { type: 'string', description: '가게' } }, required: ['shop'] },
+      output: {},
+      examples: [{ shop: 'a' }],
+      steps: [
+        { open: 'https://eats.example/' },
+        { approve: { text: '예약', what: '예약', where: '데모맛집' } },
+      ],
+      result: {},
+    }
+    await writeFile(
+      join(dir, 'demo-eats', 'tools.json'),
+      JSON.stringify({ ...CONNECTOR, tools: [...CONNECTOR.tools, book] }),
+    )
+    const browser = { call: async () => ({}) }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+    })
+    expect(await connectors.quickLookup('데모맛집 성수 식당 찾기')).toMatchObject({
+      tool: 'demo_eats_search',
+    })
+    expect(await connectors.quickLookup('데모맛집 예약 준비')).toBeUndefined()
+  })
+})
