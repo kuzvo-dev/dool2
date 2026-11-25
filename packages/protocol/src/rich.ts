@@ -584,6 +584,36 @@ export function finishProgress(
 }
 
 /**
+ * A "please do this yourself" record the screens may draw: kind handoff with a reason. Anything else (a record kind
+ * this screen does not know yet, a hand-off without its reason) is not one: an older phone drew every unknown record
+ * as an empty "Your turn" card that never went away (11-25, the task card record)
+ */
+export function handoffRecord(rec: unknown): { kind: 'handoff'; tabId?: number; reason: string } | undefined {
+  if (!rec || typeof rec !== 'object') return undefined
+  const r = rec as { kind?: unknown; tabId?: unknown; reason?: unknown }
+  if (r.kind !== 'handoff' || typeof r.reason !== 'string' || !r.reason.trim()) return undefined
+  return {
+    kind: 'handoff',
+    ...(typeof r.tabId === 'number' ? { tabId: r.tabId } : {}),
+    reason: r.reason.trim(),
+  }
+}
+
+/**
+ * Whether the hand-off at index i still waits for the person: nothing was said after it (by the person, or by the
+ * app for them: "the screen changed", an approval result) and the chat it sits in has not ended (a task that ended).
+ * Once the conversation moved on, the card closes to a quiet line without its buttons
+ */
+export function handoffOpen(
+  messages: readonly { role: string }[],
+  i: number,
+  opts: { ended?: boolean } = {},
+): boolean {
+  if (opts.ended) return false
+  return !messages.slice(i + 1).some((m) => m.role === 'user')
+}
+
+/**
  * Removes English inner-thought paragraphs mixed into an answer. Only paragraphs with no Hangul at all and in a thinking tone are dropped
  * (English paragraphs like URLs, product names and code stay). If everything would be dropped, the original text is kept.
  */

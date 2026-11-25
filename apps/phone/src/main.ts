@@ -74,6 +74,8 @@ import {
 import {
   dropEnglishLines,
   finishProgress,
+  handoffOpen,
+  handoffRecord,
   hyphenate,
   interimAnswers,
   josa,
@@ -3029,7 +3031,8 @@ function chatItems(): Item[] {
     }
     if (m.role === 'tool') {
       // If there are several connect cards for the same service, only the last stays live (earlier ones collapse to one line)
-      const old = superseded.has(m.id)
+      // A hand-off closes once the conversation moved on
+      const old = superseded.has(m.id) || (m.text.includes('"kind":"handoff"') && !handoffOpen(st.conv, i))
       // Quick replies and multi-select need to know what the user said next, to draw faded and locked
       const used = /"kind":"quick"|"pick":"multi"/.test(m.text) ? saidAfter(i) : undefined
       items.push({
@@ -3489,13 +3492,18 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)
   if ((rec as { kind?: string }).kind === 'made') return madeInline(rec as unknown as MadeImageRecordMessage)
-  // Your turn
-  const tabId = rec.tabId
+  // Your turn. Only a real hand-off with its reason: a record this app does not know yet draws nothing (an older
+  // phone drew the task card record as an empty "Your turn" card that never went away, 11-25)
+  const hand = handoffRecord(rec)
+  if (!hand) return h('span')
+  // Once the conversation moved on (or its task ended), one quiet line without the button
+  if (!live) return h('p', { class: 'done-line hand-line' }, icon('check', 'i'), tChat.handDone(hand.reason))
+  const tabId = hand.tabId
   return h(
     'div',
     { class: 'card ask-card' },
     h('div', { class: 'card-label' }, doori('asking', 22), tChat.handTitle),
-    h('p', { class: 'card-text', text: rec.reason }),
+    h('p', { class: 'card-text', text: hand.reason }),
     tabId !== undefined &&
       h('button', { class: 'btn-ghost', text: tChat.openPc, onclick: () => openRemote(tabId) }),
   )
@@ -7268,7 +7276,10 @@ function sideView(id: string) {
     render()
   }
   const list = h('div', { class: 'chat-list side-list' })
-  for (const m of sd?.messages ?? []) {
+  // A task's own chat (its card's Details): its hand-off cards close when the task ended
+  const task = sd ? [...st.tasks.values()].find((t) => t.threadId === sd.id) : undefined
+  const ended = task !== undefined && ['done', 'stopped', 'failed'].includes(task.status)
+  for (const [i, m] of (sd?.messages ?? []).entries()) {
     if (m.role === 'user') {
       const note = readAppNote(m.text)
       list.append(
@@ -7282,7 +7293,13 @@ function sideView(id: string) {
       list.append(b)
     } else if (m.role === 'tool') {
       // Quick replies go to the main chat, so they are not drawn in a separate chat
-      if (!m.text.includes('"kind":"quick"')) list.append(toolCard(m.text))
+      if (!m.text.includes('"kind":"quick"'))
+        list.append(
+          toolCard(
+            m.text,
+            !m.text.includes('"kind":"handoff"') || handoffOpen(sd?.messages ?? [], i, { ended }),
+          ),
+        )
     }
   }
   if (sd?.busy) {
