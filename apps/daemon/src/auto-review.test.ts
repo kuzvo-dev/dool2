@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { AutoReview, parseReview, reviewFacts, reviewPrompt } from './auto-review.js'
+import { describe, expect, it, vi } from 'vitest'
+import { AutoReview, parseReview, REVIEW_TIMEOUT_MS, reviewFacts, reviewPrompt } from './auto-review.js'
 
 const mail = {
   kind: 'contact' as const,
@@ -146,5 +146,24 @@ describe('auto-approve review', () => {
     const r = new AutoReview({ asks: () => ['요약해 줘'] })
     for (let i = 0; i < 5; i++) await r.check(mail)
     expect(r.paused()).toBe(false)
+  })
+
+  it('waits for a slow cold review (30 s) instead of turning the request into a card', async () => {
+    vi.useFakeTimers()
+    try {
+      const review = new AutoReview({
+        asks: () => ['김 대리에게 회의록 메일 보내 줘'],
+        ask: () => new Promise((done) => setTimeout(() => done('{"related": true}'), 30_000)),
+      })
+      const r = review.check(mail)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(await r).toMatchObject({ ok: true })
+      const late = new AutoReview({ asks: () => ['보내 줘'], ask: () => new Promise(() => {}) })
+      const r2 = late.check(mail)
+      await vi.advanceTimersByTimeAsync(REVIEW_TIMEOUT_MS)
+      expect(await r2).toMatchObject({ ok: false, why: 'unchecked' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
