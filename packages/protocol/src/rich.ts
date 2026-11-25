@@ -508,6 +508,11 @@ export function interimAnswers(
   // to the drafts, so they fold with them (11-26: three copies of the same mail list showed while the answers folded)
   let tools: string[] = []
   let draftTools: string[] = []
+  // A task handed over in this request: the reply that says it started ("I'm looking it up") is replaced by the
+  // reply with the task's result, so one request shows one answer (11-26: "reading it now" and the result showed
+  // one under the other)
+  let taskOpen = false
+  let acks: string[] = []
   for (const m of messages) {
     if (m.role === 'user') {
       if (isFinishCheckNote(m.text)) {
@@ -524,13 +529,33 @@ export function interimAnswers(
         tools = []
         draftTools = []
       }
+      // Only a new request from the person ends a hand-over; app notes (the task's result) belong to it
+      if (!m.text.startsWith(APP_NOTE) && !isFinishCheckNote(m.text)) {
+        taskOpen = false
+        acks = []
+      }
       continue
     }
     if (m.role === 'tool') {
       tools.push(m.id)
+      if (m.text.startsWith('{"kind":"task"')) {
+        taskOpen = true
+        acks = []
+      }
       continue
     }
     if (m.role !== 'assistant') continue
+    if (taskOpen && acks.length) {
+      for (const id of acks) hidden.add(id)
+      replaced.set(m.id, [
+        ...(replaced.get(m.id) ?? []),
+        ...acks.flatMap((a) => [...(replaced.get(a) ?? []), a]),
+      ])
+      for (const a of acks) replaced.delete(a)
+      answers = answers.filter((a) => !acks.includes(a))
+      taskOpen = false
+      acks = []
+    } else if (taskOpen) acks.push(m.id)
     if (notes.length && answers.length) {
       const earlier = [...answers, ...draftTools, ...notes]
       for (const id of earlier) hidden.add(id)

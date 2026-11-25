@@ -427,7 +427,7 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(rt.last?.resumeId).toBe('r1')
   })
 
-  it('끝내기 전 검사: 남은 게 있으면 같은 대화에 이어서 하게 하고, 끝나면 멈춘다 (ADR 0027)', async () => {
+  it('finish check in the conversation: what is left becomes a button under the one answer, not a second reply', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
@@ -437,26 +437,23 @@ describe('대화 하나 (ADR 0015)', () => {
       }
     }
     const rt = new ToolRuntime()
-    const verdicts = [
-      '{"done":false,"why":"보험 1곳만 봤어요","next":"다른 보험사"}',
-      '{"done":true,"why":"다 했어요"}',
-    ]
     const prompts: string[] = []
     const { api } = await boot(rt, {
       finishJudge: async (p) => {
         prompts.push(p)
-        return verdicts.shift()
+        return '{"done":false,"why":"보험 1곳만 봤어요","next":"다른 보험사","offer":"2곳 더 비교해 줘"}'
       },
     })
     const state = async () => (await (await api('/api/conversation')).json()) as State
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"차 보험 3곳 비교해 줘"}' })
-    await until(async () => prompts.length === 2 && !(await state()).busy)
-    expect(rt.inputs).toHaveLength(2)
-    expect(rt.inputs[1]).toContain('보험 1곳만 봤어요')
-    // 두 번째 판정도 처음 부탁을 기준으로 한다
-    expect(prompts[1]).toContain('차 보험 3곳 비교해 줘')
+    await until(async () => prompts.length === 1 && !(await state()).busy)
     await new Promise((r) => setTimeout(r, 50))
-    expect(rt.inputs).toHaveLength(2)
+    // One answer: the judge is asked once and Dool2 is not sent back
+    expect(rt.inputs).toHaveLength(1)
+    const msgs = (await state()).messages
+    expect(msgs.filter((m) => m.role === 'assistant')).toHaveLength(1)
+    const quick = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"quick"'))
+    expect(JSON.parse(quick.at(-1)?.text ?? '{}')).toMatchObject({ replies: ['2곳 더 비교해 줘'] })
   })
 
   it('a claimed booking with no approval and no finished page is sent back by code, and the log says why', async () => {
@@ -527,7 +524,7 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(typeof JSON.parse(turn ?? '{}').ackMs).toBe('number')
   })
 
-  it('the draft design: checking is said before the answer, busy holds between rounds, and the limit leaves [Continue]', async () => {
+  it('the draft design: checking is said before the answer, and busy ends once after it', async () => {
     class ToolRuntime extends EchoRuntime {
       inputs: string[] = []
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
@@ -537,23 +534,19 @@ describe('대화 하나 (ADR 0015)', () => {
       }
     }
     const rt = new ToolRuntime()
-    // The judge writes in the person's language (an English verdict under a Korean chat is replaced, see below)
-    const whys = ['보험사 1곳만 봤어요', '가격표가 없어요', '할인을 확인하지 않았어요']
     const { api } = await boot(rt, {
       finishJudge: async () =>
-        JSON.stringify({ done: false, why: whys.shift() ?? 'x', next: 'compare 2 more insurers' }),
+        JSON.stringify({ done: false, why: '보험사 1곳만 봤어요', next: 'compare 2 more insurers' }),
     })
     const live = await api('/api/conversation/live')
     const reader = live.body?.getReader()
     const state = async () => (await (await api('/api/conversation')).json()) as State
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"compare 3 car insurers"}' })
-    // Two rounds sent back (no new tools: 2 by default), then the third verdict reaches the limit
-    await until(async () => rt.inputs.length === 3 && !(await state()).busy)
+    await until(async () => rt.inputs.length === 1 && !(await state()).busy)
     let seen = ''
     const dec = new TextDecoder()
     const deadline = Date.now() + 2000
-    // The record is JSON inside the message text, so its quotes arrive escaped
-    while (!seen.includes('할인을 확인하지 않았어요') && Date.now() < deadline)
+    while (!seen.includes('"busy":false') && Date.now() < deadline)
       seen += dec.decode((await reader?.read())?.value)
     await reader?.cancel()
     const events = seen
@@ -575,26 +568,10 @@ describe('대화 하나 (ADR 0015)', () => {
     )
     expect(firstCheck).toBeGreaterThanOrEqual(0)
     expect(firstCheck).toBeLessThan(firstAnswer)
-    // Not idle between rounds: after the request, the only busy:false comes after the last answer
-    const start = events.findIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'user')
-    const idle = events
-      .map((e, i) => (i > start && e.kind === 'busy' && e.busy === false ? i : -1))
-      .filter((i) => i >= 0)
-    expect(idle).toHaveLength(1)
-    expect(
-      idle.every(
-        (i) =>
-          i > events.findLastIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'assistant'),
-      ),
-    ).toBe(true)
+    // No offer from the judge: no button and no "still left" card either
     const msgs = (await state()).messages
-    const left = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))
-    expect(left).toHaveLength(1)
-    expect(JSON.parse(left[0]?.text ?? '{}')).toMatchObject({ why: '할인을 확인하지 않았어요' })
-    // [Continue] sends Dool2 back with what is left, once
-    expect(await (await api('/api/conversation/continue', { method: 'POST' })).json()).toEqual({ ok: true })
-    await until(async () => rt.inputs.length === 4)
-    expect(rt.inputs[3]).toContain('Still left: 할인을 확인하지 않았어요')
+    expect(msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))).toHaveLength(0)
+    expect(rt.inputs).toHaveLength(1)
   })
 
   it('take it as is: ends the check, keeps the draft and starts no round', async () => {
