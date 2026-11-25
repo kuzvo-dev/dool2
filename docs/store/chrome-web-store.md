@@ -46,8 +46,8 @@ The store listing text is Korean data (the listing is Korean-language). It is ke
 |---|---|---|
 | 0.2.0 | 2026-11-17 | Published (confirmed 2026-11-23) |
 | 0.3.0 | 2026-11-23 | Published, unlisted (confirmed 2026-11-24). Contents: screen viewing, mouse, tab cleanup, build fingerprint, artwork tile slot (@center), new permission `contentSettings` |
-| 0.3.1 | 2026-11-24 | Submitted, pending review (auto-publish after passing; 0.3.0 was published unlisted by then). Contents: a page is ready when its content shows, not after every ad (#437); no new permission |
-| 0.3.2 | 2026-11-25 | To submit. Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
+| 0.3.1 | 2026-11-24 | Published, unlisted (confirmed 2026-11-25). Contents: a page is ready when its content shows, not after every ad (#437); no new permission |
+| 0.3.2 | 2026-11-25 | Submitted, pending review (auto-publish after passing). Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
 
 ### Permission reason (Privacy practices tab)
 
