@@ -74,6 +74,8 @@ export interface ConversationOptions {
   handoffAfterMs?: number
   /** Work log: a handoff made ahead (or tried and not made), how long it took and the segment's user turns */
   onHandoff?: (x: { made: boolean; ms: number; turns: number }) => void
+  /** Work log: a new segment started, and whether it carried the handoff made ahead (ready), a summary made now, or none */
+  onRotate?: (x: { reason: RotateReason; handoff: 'ready' | 'summary' | 'none' }) => void
 }
 
 /**
@@ -242,6 +244,7 @@ export class ConversationService {
     if (!reason && cur) return { session: cur }
 
     let carry: string | undefined
+    let handoff: 'ready' | 'summary' | 'none' = 'none'
     if (cur) {
       const early = this.early.get(cur.id)
       this.early.delete(cur.id)
@@ -249,6 +252,7 @@ export class ConversationService {
       const summary =
         ready ?? (reason === 'long' ? ((await early) ?? (await threads.summarize(cur.id))) : undefined)
       if (ready) store.setSetting(HANDOFF_KEY, undefined)
+      handoff = ready ? 'ready' : summary ? 'summary' : 'none'
       store.closeSession(cur.id, summary)
       // The closed segment's resident agent program is not needed any more (ADR 0036)
       void threads.release(cur.id)
@@ -257,6 +261,7 @@ export class ConversationService {
     }
     this.rotateNext = false
     this.rotateNote = ''
+    this.opts.onRotate?.({ reason: reason ?? 'first', handoff })
     const next = store.createThread(agent, NEW_THREAD_TITLE.ko, carry)
     store.closeOtherSessions(next.id)
     return { session: next, rotated: reason }
