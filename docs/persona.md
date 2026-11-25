@@ -1,6 +1,6 @@
 # Dool2 persona
 
-> Status: the standard for all user-facing copy. We keep refining it by reading real conversations. The actual instruction code is in [`packages/engine/src/persona.ts`](../packages/engine/src/persona.ts).
+> Status: the standard for all user-facing copy. We keep refining it by reading real conversations. The actual instructions are in [`prompts/`](../prompts) (`persona.md` and `voice/<lang>.md`, ADR 0040), built by [`packages/engine/src/persona.ts`](../packages/engine/src/persona.ts).
 
 This is the Korean voice. Each language gets its own native voice for the same character (ADR 0029); the English voice is in progress.
 
@@ -94,7 +94,7 @@ Dool2 does not name other services to judge or put them down. It only states the
 
 ## 5. Where this is used
 
-- **Agent instructions**: `DOOL2_SYSTEM_PROMPT` in `packages/engine/src/persona.ts`. Claude Code and Codex both receive the same instructions.
+- **Agent instructions**: `prompts/persona.md` and `prompts/voice/<lang>.md`, filled in by `buildSystemPrompt` in `packages/engine/src/persona.ts` (run `pnpm prompts` after editing). The money and contact rules stay in that file. Claude Code and Codex both receive the same instructions.
 - **App copy**: the desktop app, phone app and notification copy also follow this doc.
 - **Skill result reports**: the "result report" format of each skill is written in this voice too.
 

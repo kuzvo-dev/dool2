@@ -1,6 +1,7 @@
 name: Connector packs
 
-# Ships skills/ (service cards and connectors) to installed apps without a new app version (ADR 0039).
+# Ships skills/ (service cards and connectors) and prompts/ (Dool2's instructions) to installed apps without a new
+# app version (ADR 0039, 0040). Instruction changes reach test PCs first: promote after the nightly eval there.
 # - A merge to main that changes skills/ builds and signs a pack for test PCs (pack-beta.json, setting packChannel: beta).
 # - Actions tab -> Connector packs -> Run workflow with promote on gives the test PCs' pack to everyone (pack.json).
 # Files go to the `connectors` release (a prerelease, so it never becomes the app's "latest" release that version.json
@@ -9,7 +10,7 @@ name: Connector packs
 on:
   push:
     branches: [main]
-    paths: ["skills/**"]
+    paths: ["skills/**", "prompts/**"]
   workflow_dispatch:
     inputs:
       promote:

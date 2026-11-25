@@ -1,14 +1,14 @@
-// Builds a connector pack from skills/ and signs it (ADR 0039, .github/workflows/packs.yml).
+// Builds a connector pack from skills/ and prompts/ and signs it (ADR 0039, 0040, .github/workflows/packs.yml).
 //
 //   DOOL2_PACK_KEY="$(cat pack-key.pem)" node scripts/pack-build.mjs --out out/packs --min 0.4.6 [--channel beta]
 //
 // Writes connectors-<pack>.json.gz (every skills/<id>/connect.json and tools.json, _template left out) and the signed
-// feed pack.json (or pack-beta.json for --channel beta). The pack number is the Unix seconds of the last skills/ commit,
+// feed pack.json (or pack-beta.json for --channel beta). The pack number is the Unix seconds of the last skills/ or prompts/ commit,
 // the same number apps/desktop/scripts/package.mjs records for the skills/ an app carries, so an app takes a pack only
 // when it is newer than what it came with. The app checks the feed in apps/daemon/src/packs.ts (openPack)
 import { execFileSync } from 'node:child_process'
 import { createHash, sign } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { gzipSync } from 'node:zlib'
@@ -35,7 +35,10 @@ const root = join(import.meta.dirname, '..')
 const skills = join(root, 'skills')
 const pack = Number(
   values.pack ??
-    execFileSync('git', ['log', '-1', '--format=%ct', '--', 'skills'], { cwd: root, encoding: 'utf8' }),
+    execFileSync('git', ['log', '-1', '--format=%ct', '--', 'skills', 'prompts'], {
+      cwd: root,
+      encoding: 'utf8',
+    }),
 )
 if (!Number.isInteger(pack) || pack <= 0) {
   console.error('Could not tell the pack number (git history of skills/)')
@@ -54,7 +57,22 @@ for (const id of readdirSync(skills).sort()) {
     files[`${id}/${f}`] = text
   }
 }
-const services = new Set(Object.keys(files).map((p) => p.split('/')[0])).size
+// Dool2's instructions (ADR 0040): every .md under prompts/, as prompts/<path>
+const promptsDir = join(root, 'prompts')
+const walk = (d, rel) => {
+  for (const n of readdirSync(d).sort()) {
+    const p = join(d, n)
+    const r = rel ? `${rel}/${n}` : n
+    if (statSync(p).isDirectory()) walk(p, r)
+    else if (n.endsWith('.md')) files[`prompts/${r}`] = readFileSync(p, 'utf8')
+  }
+}
+if (existsSync(promptsDir)) walk(promptsDir, '')
+const services = new Set(
+  Object.keys(files)
+    .filter((p) => !p.startsWith('prompts/'))
+    .map((p) => p.split('/')[0]),
+).size
 const gz = gzipSync(Buffer.from(JSON.stringify({ pack, files }), 'utf8'), { level: 9 })
 const name = `connectors-${pack}.json.gz`
 mkdirSync(values.out, { recursive: true })

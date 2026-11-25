@@ -75,7 +75,7 @@ Details are in [docs/architecture.md](docs/architecture.md) and [docs/open-sourc
   to the AI, only masked values or names. Things that are hard to undo (money, contacting people, deleting)
   go through approval.
 - **Fix by sharpening tools, not by adding instructions.** When Dool2 gets something wrong, do not add a rule
-  to the global prompt (`packages/engine/src/persona.ts`). First ask: "Which tool would have let the AI get this
+  to the global prompt (`prompts/persona.md`, ADR 0040). First ask: "Which tool would have let the AI get this
   right on its own?" Then build or improve that tool. Tool descriptions say when to use the tool. Input fields
   hold what is easy to forget (deadlines, conditions). Results say what to do next, why something got blocked
   and what was not seen. Domain tips live in that tool's or service card's description. Keep code that forces

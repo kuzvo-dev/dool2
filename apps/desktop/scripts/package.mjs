@@ -75,13 +75,13 @@ for (const d of ['cmaps', 'wasm'])
 cpSync(join(pdfjsDir, 'LICENSE'), join(stage, 'dist', 'pdfjs', 'LICENSE'))
 
 // Pack number of the skills/ this app carries (ADR 0039): a connector pack is taken only if it is newer. Unix seconds of
-// the last skills/ commit, the same number scripts/pack-build.mjs gives a pack. Kept outside stage/ (extraResources)
+// the last skills/ or prompts/ commit, the same number scripts/pack-build.mjs gives a pack. Kept outside stage/ (extraResources)
 const meta = join(root, 'release-meta')
 mkdirSync(meta, { recursive: true })
 let skillsPack = 0
 try {
   skillsPack = Number(
-    execFileSync('git', ['log', '-1', '--format=%ct', '--', 'skills'], {
+    execFileSync('git', ['log', '-1', '--format=%ct', '--', 'skills', 'prompts'], {
       cwd: join(root, '..', '..'),
       encoding: 'utf8',
     }).trim(),
