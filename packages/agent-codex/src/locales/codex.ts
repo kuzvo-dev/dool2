@@ -13,6 +13,9 @@ const ko = {
   limit: 'ChatGPT 사용량이 다 찼어요. 한도가 풀리면 다시 할게요.',
   unsafeItem: (type: string) => `두리 도구가 아닌 기능(${type})을 쓰려고 해서 멈췄어요`,
   unsafeTool: (name: string) => `두리 도구가 아닌 도구(${name})를 쓰려고 해서 멈췄어요`,
+  unsafeAgent:
+    '다른 AI를 따로 불러 일을 맡기려고 해서 멈췄어요. 두리가 하는 일은 모두 "일한 과정"에 보여야 해요',
+  notOnlyDool2: 'Codex를 두리 도구만 쓰게 준비하지 못해서 시작하지 않았어요. 잠시 뒤 다시 해 주세요',
   // install
   extractFailed: '압축을 풀지 못했어요',
   noPlatform: '이 컴퓨터에서는 Codex를 쓸 수 없어요',
@@ -36,6 +39,10 @@ const en: typeof ko = {
   limit: "You've hit the ChatGPT usage limit. I'll pick it up again when it resets.",
   unsafeItem: (type) => `Stopped because it tried to use something other than Dool2 tools (${type})`,
   unsafeTool: (name) => `Stopped because it tried to use a tool other than Dool2's (${name})`,
+  unsafeAgent:
+    'Stopped because it tried to hand work to another AI. Everything Dool2 does has to show under "What Dool2 did"',
+  notOnlyDool2:
+    "Codex wasn't started because it couldn't be set up to use only Dool2's tools. Try again in a moment",
   extractFailed: "Couldn't unpack the download",
   noPlatform: "Codex doesn't run on this computer",
   offline: 'Check your internet connection',

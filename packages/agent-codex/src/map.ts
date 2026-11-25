@@ -5,14 +5,22 @@ import { CODEX_TEXT, type CodexText } from './locales/codex.js'
 type Json = Record<string, unknown>
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 
-/** Only Dool2 tools are allowed. Anything else (shell, file changes, web search) stops the turn. */
+/** Only Dool2 tools are allowed. Anything else (shell, file changes, web search, reading a picture file) stops the turn. */
 const UNSAFE_ITEMS = new Set([
   'commandExecution',
   'fileChange',
   'webSearch',
   'dynamicToolCall',
   'imageGeneration',
+  'imageView',
 ])
+
+/**
+ * Another AI agent started or messaged by this one (ADR 0003). Its work runs on its own thread, outside the work log,
+ * so it stops the turn. They are turned off in the config; this is the check behind it (seen on 0.169.0:
+ * fixtures/app-server-other-agents.jsonl)
+ */
+const OTHER_AGENT_ITEMS = new Set(['collabAgentToolCall', 'subAgentActivity'])
 
 /** What a side job may produce: its answer and the program's own bookkeeping. Anything else is a tool and stops it */
 const SIDE_JOB_ITEMS = new Set(['agentMessage', 'reasoning', 'userMessage', 'contextCompaction'])
@@ -42,7 +50,11 @@ export class CodexEventMapper {
   }
 
   map(method: string, params: Json): MapResult {
-    if (typeof params.threadId === 'string' && params.threadId !== this.threadId) return { events: [] }
+    if (typeof params.threadId === 'string' && params.threadId !== this.threadId) {
+      // Work on another thread of this program is a sub-agent's
+      if (method === 'item/started') return this.unsafe(this.t.unsafeAgent)
+      return { events: [] }
+    }
     switch (method) {
       case 'item/agentMessage/delta':
         if (typeof params.delta === 'string' && params.delta) {
@@ -76,6 +88,7 @@ export class CodexEventMapper {
 
   private onItem(item: unknown, phase: 'started' | 'completed'): MapResult {
     if (!isObj(item) || typeof item.type !== 'string') return { events: [] }
+    if (OTHER_AGENT_ITEMS.has(item.type)) return this.unsafe(this.t.unsafeAgent)
     if (UNSAFE_ITEMS.has(item.type) || (this.o.sideJob && !SIDE_JOB_ITEMS.has(item.type))) {
       return {
         abort: true,
@@ -126,6 +139,10 @@ export class CodexEventMapper {
       if (!this.streamed) return { events: [{ type: 'text', delta: item.text }] }
     }
     return { events: [] }
+  }
+
+  private unsafe(message: string): MapResult {
+    return { abort: true, events: [{ type: 'error', code: 'tools_unsafe', message }] }
   }
 
   private onError(params: Json): MapResult {

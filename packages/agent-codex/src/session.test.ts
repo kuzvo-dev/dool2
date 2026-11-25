@@ -338,13 +338,59 @@ describe('CodexSession against the captured app-server lines', () => {
 })
 
 describe('CodexRuntime on the session', () => {
-  const runtime = (spawn: SpawnCodex) =>
+  const runtime = (spawn: SpawnCodex, catalog = async () => '/tmp/dool2-codex-test-home/catalog.json') =>
     new CodexRuntime({
       codexHome: '/tmp/dool2-codex-test-home',
       binPath: '/no/such/codex',
       lang: () => 'en',
       spawn,
+      catalog,
     })
+
+  it("every program starts with Dool2's model catalog and Codex's other tools off", async () => {
+    const { spawn } = scripted()
+    const seen: string[][] = []
+    const spy: SpawnCodex = (cmd, args, opts) => {
+      seen.push(args)
+      return spawn(cmd, args, opts)
+    }
+    let written = 0
+    const rt = runtime(spy, async () => {
+      written++
+      return '/tmp/dool2-codex-test-home/catalog.json'
+    })
+    await collect(rt.runTurn({ ...input, text: 'hi' }))
+    await collect(rt.runTurn({ ...input, text: 'judge', mcpServers: [], sideJob: true }))
+    expect(seen).toHaveLength(2)
+    for (const args of seen) {
+      expect(args).toContain('model_catalog_json="/tmp/dool2-codex-test-home/catalog.json"')
+      expect(args).toContain('features.multi_agent_v2.disable_native_tools=true')
+    }
+    // Written once per run of Dool2
+    expect(written).toBe(1)
+  })
+
+  it('without the catalog Codex is not started at all, and the user is told why (fail closed)', async () => {
+    const { spawn, servers } = scripted()
+    let tries = 0
+    const rt = runtime(spawn, async () => {
+      tries++
+      throw new Error('no catalog')
+    })
+    expect(await rt.openSession(input)).toBeUndefined()
+    const evs = await collect(rt.runTurn({ ...input, text: 'hi' }))
+    expect(evs).toEqual([
+      {
+        type: 'error',
+        code: 'tools_unsafe',
+        message:
+          "Codex wasn't started because it couldn't be set up to use only Dool2's tools. Try again in a moment",
+      },
+    ])
+    expect(servers).toHaveLength(0)
+    // Tried again on the next message
+    expect(tries).toBe(2)
+  })
 
   it('runTurn is one message on a fresh program, closed after', async () => {
     const { spawn, servers } = scripted()
