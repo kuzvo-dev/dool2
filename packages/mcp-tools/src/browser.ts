@@ -208,7 +208,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'upload',
     'Upload PC files',
-    "Attaches PC files to a web page (blog photos, videos, documents for petitions or claims). Find them with file_find and pass the paths as given (a photo sent in chat: its name.jpg). ref is the page's upload button or file field; don't click it yourself. The first time, an approval card (files, site) goes to the phone: say so and end the reply; Dool2 attaches them after approval. Read the page afterwards to confirm, then go on.",
+    "Attaches PC files to a web page (blog photos, videos, documents for petitions or claims). Find them with file_find and pass the paths as given (a photo sent in chat: its name.jpg). ref is the page's upload button or file field; don't click it yourself. The first time, an approval card (files, site) goes to the phone and the turn waits; Dool2 attaches them after approval. Read the page afterwards to confirm, then go on.",
     {
       tabId,
       ref: ref.describe('The upload button or file field'),
@@ -266,7 +266,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_login',
     'Show login card',
-    "Shows a login card on the phone when the site is not in the vault. The ID and password go only to the vault. Say they can put them in the card and end the reply. The card has find-account and sign-up buttons, so don't ask about those, and never sign up on your own.",
+    "Shows a login card on the phone when the site is not in the vault. The ID and password go only to the vault. The result says what is left on the card, and the turn waits. The card has find-account and sign-up buttons, so don't ask about those, and never sign up on your own.",
     {
       tabId,
       site: z.string().max(60).describe('Site name as the user knows it'),
@@ -324,7 +324,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'wait_auth',
     'Wait for authentication app approval',
-    'Use after sending a simple authentication request (KakaoTalk, Naver, Toss, PASS). Public records that need the user\'s own data and logins on public sites go this way before asking the user anything: fill with browser_fill_profile, request it, then this. Right before, write one line on what to approve where. The phone gets a card; Dool2 watches the screen up to 3 minutes: end this reply and don\'t click meanwhile. The changed screen comes back as a new message; judge it and press [OK] if there is one. E.g. {tabId: 2, ref: "e40"}',
+    'Use after sending a simple authentication request (KakaoTalk, Naver, Toss, PASS). Public records that need the user\'s own data and logins on public sites go this way before asking the user anything: fill with browser_fill_profile, request it, then this. Right before, write one line on what to approve where. The phone gets a card; Dool2 watches the screen up to 3 minutes while the turn waits; don\'t click meanwhile. The changed screen comes back as a new message; judge it and press [OK] if there is one. E.g. {tabId: 2, ref: "e40"}',
     {
       tabId,
       ref: ref.optional().describe('[OK] button to press once the user taps the card'),
@@ -335,7 +335,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_code',
     'Get a value on the phone and fill it in (verification code, resident number back digits, CAPTCHA)',
-    'Gets a value only the person has (a verification code, resident number back digits, a payment password, CAPTCHA text) on a phone card and types it straight into the field; you never see it, and never ask for it in chat. Press what Dool2 can (pop-ups, choosing a method) first. pin and captcha take two calls (see their fields). End this reply; when the value is in, press [OK] and go on.',
+    'Gets a value only the person has (a verification code, resident number back digits, a payment password, CAPTCHA text) on a phone card and types it straight into the field; you never see it, and never ask for it in chat. Press what Dool2 can (pop-ups, choosing a method) first. pin and captcha take two calls (see their fields). The turn waits for the card; when the value is in, press [OK] and go on.',
     {
       tabId,
       ref: ref.optional().describe('The input (not for an image keypad)'),
@@ -375,7 +375,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_tap',
     'Solve a picture robot check by tapping',
-    "Solves a picture robot check (tap the spot, pick the squares) through a phone card: give the picture's ref or its box on the screenshot, and the question exactly as written in say; Dool2 taps where the user tapped. Never guess the answer yourself. End this reply; when it is tapped, read the screen and press [OK] or [Submit].",
+    "Solves a picture robot check (tap the spot, pick the squares) through a phone card: give the picture's ref or its box on the screenshot, and the question exactly as written in say; Dool2 taps where the user tapped. Never guess the answer yourself. The turn waits for the card; when it is tapped, read the screen and press [OK] or [Submit].",
     {
       tabId,
       ref: ref.optional().describe('Ref of the robot check picture box, if the page has one (otherwise box)'),
@@ -439,7 +439,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'new_password',
     'Create a new password',
-    'Use to fill the "new password" field on sign-up or password recovery/change screens. Dool2 creates a strong password that fits the field\'s length rules and types it into that field (and the confirm field). You never receive the password (the result has no value). It is saved in the vault after Dool2 sees the screen confirming the sign-up or change. If the user did not choose to sign up or change the password on that site, Dool2 asks on the phone first and types nothing (then end the reply). Give the ID (email) as username, or my info email is used. Never use it for the password field of a login screen (an existing account). ' +
+    'Use to fill the "new password" field on sign-up or password recovery/change screens. Dool2 creates a strong password that fits the field\'s length rules and types it into that field (and the confirm field). You never receive the password (the result has no value). It is saved in the vault after Dool2 sees the screen confirming the sign-up or change. If the user did not choose to sign up or change the password on that site, Dool2 asks on the phone first and types nothing (the result says what is left; the turn waits). Give the ID (email) as username, or my info email is used. Never use it for the password field of a login screen (an existing account). ' +
       "Signing up: the ID is my info email, name and phone come from browser_fill_profile, agree only to required terms. Email verification: find and read the site's email with gmail_search; phone codes: browser_request_code; robot checks: browser_request_code (kind: captcha) for text, browser_request_tap for pictures. Read the screen again after signing up (the vault saves only after the completion screen). If the email is already registered, switch to logging in. " +
       "Resetting a password (hard to undo, so only after the user chose it): open the site's password recovery screen and enter the email to send the reset email; if Gmail is connected, read the link or code in it and open it, then use this with purpose: reset. If identity verification comes up, fill the fields with browser_fill_profile and get it with browser_wait_auth (app approval) or browser_request_code (text message code). If Gmail is not connected so the email cannot be read, show the Gmail connect card with connect_ask and continue once connected.",
     {
@@ -461,7 +461,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     'Request approval',
-    'Approval card for actions that do not spend money: send, delete, apply, cancel, return, change a plan, consent (when browser_click or browser_dialog says it needs approval). Payment goes only through browser_checkout. After approval on the phone Dool2 clicks only that button. Fields the user should pick go in choices; what Dool2 picked itself in chose. Lay out what, where, amount and cancellation terms as written. End this reply; when approved, read the screen to confirm.',
+    'Approval card for actions that do not spend money: send, delete, apply, cancel, return, change a plan, consent (when browser_click or browser_dialog says it needs approval). Payment goes only through browser_checkout. After approval on the phone Dool2 clicks only that button. Fields the user should pick go in choices; what Dool2 picked itself in chose. Lay out what, where, amount and cancellation terms as written. The turn waits for the phone; when approved, read the screen to confirm.',
     {
       tabId,
       ref: ref.optional().describe('The button (omit with dialog)'),
@@ -502,7 +502,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'checkout',
     'Payment card',
-    "The only way to get a payment approved: at the last pay button of the payment screen, after setting address, method and coupons (don't stop earlier to ask; [Order] before it is browser_click with opens_checkout). Fill the fields exactly as on the screen; one card on the phone lets the user pick address and method and approve once. If the same item was found cheaper on another site earlier in this conversation, add one info line. Then say one or two lines and end the reply. After approval finish the same payment through its window (keypad: browser_request_code kind pin), read the order number, call browser_order_done.",
+    "The only way to get a payment approved: at the last pay button of the payment screen, after setting address, method and coupons (don't stop earlier to ask; [Order] before it is browser_click with opens_checkout). Fill the fields exactly as on the screen; one card on the phone lets the user pick address and method and approve once. If the same item was found cheaper on another site earlier in this conversation, add one info line. The turn then waits for the phone. After approval finish the same payment through its window (keypad: browser_request_code kind pin), read the order number, call browser_order_done.",
     {
       tabId,
       ref: ref.describe('The last pay button'),
@@ -595,7 +595,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'handoff',
     'Hand off to the user',
-    'Emergency only (emergency: true): lets the user operate the PC screen from the phone. Everything a person must do goes through phone cards instead: browser_fill_profile, browser_request_code (codes, keypads, CAPTCHA text), browser_request_tap (picture checks), browser_wait_auth, browser_request_login, browser_checkout, browser_request_approval. Use it only for a field none of those can take (a new card number when none is saved). The first call on a screen only reads it again. End this reply after calling.',
+    'Emergency only (emergency: true): lets the user operate the PC screen from the phone. Everything a person must do goes through phone cards instead: browser_fill_profile, browser_request_code (codes, keypads, CAPTCHA text), browser_request_tap (picture checks), browser_wait_auth, browser_request_login, browser_checkout, browser_request_approval. Use it only for a field none of those can take (a new card number when none is saved). The first call on a screen only reads it again; after that, the result says what is left and the turn waits.',
     {
       tabId,
       reason: z.string().max(200).describe('What the user should do'),

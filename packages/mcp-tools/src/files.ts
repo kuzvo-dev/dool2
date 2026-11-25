@@ -109,7 +109,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
         'Moves or renames files and folders on the user\'s PC (many at once). Use for "tidy up my Downloads", "sort the PDFs into receipts, contracts and invoices", "rename the photos by date". ' +
         'First look at what they are with file_find (raise limit to see all) and file_read, decide where each goes, then call this tool once with everything instead of just showing a table. ' +
         'Only inside Desktop, Documents, Downloads, Pictures and Movies; missing folders are created, and if the same name exists it moves as "name (1)" (no overwrite, no delete). ' +
-        'With 2 or more items an approval card (what goes where, as a list) appears for the user, so say so in one or two sentences as the result says and end the reply. After approval the result tells how many were moved, what was skipped and why. ' +
+        'With 2 or more items an approval card (what goes where, as a list) appears for the user; the result says what is left and who acts next, and the turn waits. After approval the result tells how many were moved, what was skipped and why. ' +
         'For "undo what you just moved", use undo: true (reverts the last batch, one at a time).',
       inputSchema: {
         moves: z
@@ -186,7 +186,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       description:
         'Prints a file on a printer connected to the user\'s PC. For "print the worksheet", "print two copies of the contract", find the file with file_find, then call this. ' +
         'Only PDF, photos (jpg, png) and text (txt): for Word, Excel or Hangul files look for a PDF with the same name, and if there is none ask the user to save it as PDF. For HTML, make a PDF with file_render first, then print. For HEIC photos, make a JPG with file_convert first, then print. ' +
-        'Paper comes out, so an approval card (file, copies, printer) appears for the user; say so in one sentence as the result says and end the reply. ' +
+        'Paper comes out, so an approval card (file, copies, printer) appears for the user; the result says what is left and who acts next, and the turn waits. ' +
         'If there is no printer or it is off, the result gives the reason and what to do; pass that on as is. Calling without path only lists printers and their status.',
       inputSchema: {
         path: z
@@ -451,7 +451,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       description:
         'Finds items in the trash by name and restores them. Use for "I deleted my presentation by mistake, get it back", "is that file in the trash?". ' +
         'Searching with query first shows when each was deleted, its original place and its restore value. To restore, pass that value in restore: it goes back to the original place (when inside Desktop, Documents, Downloads, Pictures or Movies), otherwise to the Desktop, with "(1)" if the name exists. ' +
-        'One item is restored right away; with 2 or more an approval card (what goes where) appears for the user, so say so as the result says and end the reply. There is no emptying the trash or permanent delete. ' +
+        'One item is restored right away; with 2 or more an approval card (what goes where) appears for the user; the result says what is left and who acts next, and the turn waits. There is no emptying the trash or permanent delete. ' +
         'If macOS blocks the trash (Full Disk Access), the result gives the reason and how to put items back in Finder; pass that on as is.',
       inputSchema: {
         query: z
@@ -476,7 +476,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
       title: 'Download a file',
       description:
         'Downloads a file from an https address into this PC\'s Downloads folder. Use when there is a file address, e.g. "download this to my home PC", "save this PDF" ("(1)" if the name exists, up to 2 GB). ' +
-        'For executables (.exe, .dmg, .pkg, .app, scripts, etc.) the result says approval is needed first: check that it is the official site, call again with confirm: true to show the approval card, and end the reply. ' +
+        'For executables (.exe, .dmg, .pkg, .app, scripts, etc.) the result says approval is needed first: check that it is the official site, call again with confirm: true to show the approval card; the result says what is left and who acts next, and the turn waits. ' +
         'If the file needs a login or the address is a web page, the result says so; open that page with browser_open and click the download button. If it takes long, the result says "downloading"; check with file_find a little later. ' +
         'Addresses on this PC or the home network, and plain http addresses, are not downloaded.',
       inputSchema: {
@@ -501,7 +501,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Lock or sleep the PC',
       description:
-        'Locks this PC\'s screen or puts it to sleep. Use for "lock my PC", "I\'m stepping away", "turn off the PC when you\'re done". An approval card appears for the user and it happens right after approval, so say so as the result says and end the reply. ' +
+        'Locks this PC\'s screen or puts it to sleep. Use for "lock my PC", "I\'m stepping away", "turn off the PC when you\'re done". An approval card appears for the user and it happens right after approval; the result says what is left and who acts next, and the turn waits. ' +
         'With lock, Dool2 keeps working on what it was doing; sleep stops Dool2 too (if other work is running, the result says to do it after that finishes). ' +
         'Shutting down (off) is never done: calling with off returns a next step suggesting sleep instead. If the user asks for it after a task finishes, finish that task first, then call.',
       inputSchema: {

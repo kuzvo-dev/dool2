@@ -2134,7 +2134,7 @@ describe('간편인증 기다리기는 대화를 붙잡지 않는다', () => {
     const t0 = Date.now()
     const r = await tools.run('wait_auth', { tabId: 3 })
     expect(Date.now() - t0).toBeLessThan(2_000)
-    expect(r.content[0]?.type === 'text' ? r.content[0].text : '').toContain('End this reply now')
+    expect(r.content[0]?.type === 'text' ? r.content[0].text : '').toContain('⏸ Waiting for the person.')
     b.approve()
     for (let i = 0; i < 100 && !delivered.length; i++) await new Promise((r) => setTimeout(r, 100))
     expect(delivered).toHaveLength(1)

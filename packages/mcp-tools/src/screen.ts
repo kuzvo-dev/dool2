@@ -87,7 +87,7 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
     'On the login screen of a PC app (KakaoTalk for PC, etc.) fills in the ID and password from the vault. The Dool2 daemon types the values itself; the AI never sees them. ' +
       'Only uses the site account that matches the app name (KakaoTalk ↔ accounts.kakao.com). After filling, click the login button with screen_click. ' +
       'If the vault has no account, it shows a login card for that site address and receives it on the phone. Never use screen_type on a password field. ' +
-      'Do not tell the user you cannot log in for them. If app control is off or the screen is locked (screen_status), tell the user so and end the reply.',
+      'Do not tell the user you cannot log in for them. If app control is off or the screen is locked (screen_status), the result says what is left and who acts next, and the turn waits.',
     {
       bundleId,
       site: z
@@ -191,7 +191,7 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_app',
     'Ask to allow app control',
-    'Use when you need an app the user has not allowed yet. When the user allows it on the PC or phone, you are told in the next message. After calling, end this reply.',
+    'Use when you need an app the user has not allowed yet. When the user allows it on the PC or phone, you are told in the next message; until then the turn waits.',
     {
       bundleId,
       why: z
@@ -204,7 +204,7 @@ export function registerScreenTools(server: McpServer, client: BrowserClient) {
   tool(
     'request_approval',
     'Request approval in app',
-    'Use for buttons that need approval, like send, pay or delete (or Enter in a messenger, ref "key:Enter"). Put the content to send in place first (screen_type). When the user approves after seeing the screenshot and details, Dool2 does exactly that one action. After calling, end this reply.',
+    'Use for buttons that need approval, like send, pay or delete (or Enter in a messenger, ref "key:Enter"). Put the content to send in place first (screen_type). When the user approves after seeing the screenshot and details, Dool2 does exactly that one action; until then the turn waits.',
     {
       bundleId,
       ref: z

@@ -19,8 +19,8 @@ export function registerTaskTools(server: McpServer, client: BrowserClient) {
         'Starts a task that works on its own while you keep talking with the user. Use it for anything that needs the ' +
         'browser or PC apps (booking, ordering, applying, filling in a form, comparing sites, signing in somewhere, ' +
         'sending a text) or several steps; answer one or two lookups yourself. Write the spec from the conversation so ' +
-        'the task never has to ask again. Returns at once: say in one short sentence that you are on it and end your ' +
-        'answer. The user follows it on a card and its result reaches this conversation by itself; do not repeat it.',
+        'the task never has to ask again. Returns at once and the turn waits: say in one short sentence that you are on ' +
+        'it. The user follows it on a card and its result reaches this conversation by itself; do not repeat it.',
       inputSchema: {
         title: z
           .string()
