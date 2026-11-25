@@ -101,7 +101,7 @@ const conversation: Script = async function* (input, rt) {
   // "look up …": a lookup task, which reads beside a task that drives the browser
   if (/^look up/i.test(ask)) {
     yield* used(input, rt, 'task', 'task_start', {
-      title: 'Weather',
+      title: 'Forecast',
       goal: ask,
       done_when: ['the forecast is read'],
       lookup: true,

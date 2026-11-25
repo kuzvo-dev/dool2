@@ -552,6 +552,42 @@ export class Connectors {
 
   // ── Find a service (service_find) ──
 
+  /**
+   * A lookup tool that does what a task was about to do in the browser (a service named in the request: "Seoul
+   * weather" → weather_forecast). Only tools that run now (no sign-in, or connected), and only when the service's own
+   * name or id is in the words, so a passing word in a description does not count
+   */
+  async quickLookup(text: string): Promise<{ tool: string; card: ConnectCard; title: string } | undefined> {
+    const words = text
+      .toLowerCase()
+      .split(/[\s,.!?·()]+/)
+      .filter((w) => w.length >= 2)
+    for (const { card, connector } of (await this.load()).values()) {
+      if (!connector || card.how === 'device') continue
+      const names = [card.id, card.name.toLowerCase()]
+      // The whole word, or a Korean name with a particle of one or two syllables after it; "ktx" is not "kt"
+      const named = (w: string) =>
+        names.some(
+          (n) => w === n || (/[\uAC00-\uD7A3]$/.test(n) && w.startsWith(n) && w.length - n.length <= 2),
+        )
+      if (!words.some(named)) continue
+      // The tool whose own words match the rest of the request best (a service's first tool may be another job)
+      const rest = words.filter((w) => !named(w))
+      const ranked = connector.tools
+        .filter((t) => t.tier === 'lookup' && this.live(card, t) && (!t.login || this.isConnected(card)))
+        .map((t) => {
+          const own = `${t.title} ${t.description}`.toLowerCase()
+          return { t, n: rest.filter((w) => own.includes(w)).length }
+        })
+        .sort((a, b) => b.n - a.n)
+      const best = ranked[0]
+      // Only the service named is not enough when it has several jobs: one of its tools must match the rest
+      if (best && (ranked.length === 1 || best.n > 0))
+        return { tool: connectorToolName(card.id, best.t.name), card, title: best.t.title }
+    }
+    return undefined
+  }
+
   async find(query: string): Promise<ToolResult> {
     const items = [...(await this.load()).values()].filter((x) => x.card.how !== 'device')
     // A tool name (a second call after a short answer): that tool's input fields in full
