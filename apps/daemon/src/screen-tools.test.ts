@@ -238,3 +238,83 @@ describe('메신저 Enter', () => {
     expect(keys()).toBe(2)
   })
 })
+
+describe('PC app actions give only what changed (as the browser does)', () => {
+  /** An app whose window and lines the test changes */
+  function app() {
+    const lines = [
+      '## Notes',
+      'Shopping list',
+      ...Array.from({ length: 12 }, (_, i) => `item ${i + 1}`),
+      '[e1 버튼 "새 메모"]',
+      '[e2 입력칸 "검색"]',
+      '[e3 버튼 "공유"]',
+    ]
+    const state = { window: 'Shopping', lines }
+    const hands: HandsCaller = {
+      available: () => true,
+      call: async (cmd) => {
+        if (cmd === 'status') return { accessibility: true, screenRecording: true, locked: false }
+        if (cmd === 'snapshot')
+          return { app: 'Notes', window: state.window, text: state.lines.join('\n'), truncated: false }
+        if (cmd === 'click') return { via: 'press' }
+        return {}
+      },
+    }
+    const { tools } = setup(hands as ReturnType<typeof fakeHands>, ['com.apple.Notes'])
+    return { tools, state }
+  }
+  const N = 'com.apple.Notes'
+  const ai = (viewer = 'chat-1') => ({ ai: true, viewer })
+
+  it('after an action in a window the AI saw, only the changed lines; unchanged refs still work', async () => {
+    const { tools, state } = app()
+    expect(text(await tools.run('read', { bundleId: N }, ai()))).toContain('item 7')
+    state.lines = [...state.lines.slice(0, 14), 'item 13', ...state.lines.slice(14)]
+    const r = text(await tools.run('click', { bundleId: N, ref: 'e1' }, ai()))
+    expect(r).toContain('Pressed "새 메모"')
+    expect(r).toContain('[app Notes] window: Shopping')
+    expect(r).toContain('Only what changed since you last saw this window: 1 new or changed lines of 18')
+    expect(r).toContain('item 13')
+    expect(r).not.toContain('item 7')
+    // e3 was not shown again, but is still the same button
+    expect(text(await tools.run('click', { bundleId: N, ref: 'e3' }, ai()))).toContain('Pressed "공유"')
+  })
+
+  it('nothing changed says so; screen_read always gives the whole screen', async () => {
+    const { tools } = app()
+    await tools.run('read', { bundleId: N }, ai())
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain(
+      'The screen text did not change since you last saw this window',
+    )
+    expect(text(await tools.run('read', { bundleId: N }, ai()))).toContain('item 7')
+  })
+
+  it('another window, a mostly new screen, another chat or a new program get the whole screen', async () => {
+    const { tools, state } = app()
+    await tools.run('read', { bundleId: N }, ai())
+    state.window = 'Recipes'
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain('item 7')
+    state.lines = [
+      '## Notes',
+      ...Array.from({ length: 14 }, (_, i) => `step ${i + 1}`),
+      '[e1 버튼 "새 메모"]',
+    ]
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain('step 9')
+    // Each chat keeps its own: chat-2 never saw this app
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai('chat-2')))).toContain('step 9')
+    // A new agent program for chat-1 has not seen it in its context
+    tools.forgetSeen('chat-1')
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain('step 9')
+  })
+
+  it("Dool2's own reads neither give only changes nor count as seen; the switch turns it off", async () => {
+    const { tools } = app()
+    await tools.run('read', { bundleId: N })
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }))).toContain('item 7')
+    // The AI never saw it: its first action gives the whole screen
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain('item 7')
+    tools.changesOnly = false
+    expect(text(await tools.run('key', { bundleId: N, key: 'Escape' }, ai()))).toContain('item 7')
+  })
+})

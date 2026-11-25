@@ -8,14 +8,17 @@
 // - Send, pay and delete buttons, and Enter in messengers, are pressed by the daemon itself after approval (the same
 //   approval gate as the browser)
 // - Password field values are never read or typed
+// - After an action (click, key, login, open) the AI gets only the lines that changed since the screen it last saw in
+//   that app window, the same way the browser does (page-diff.ts); screen_read and a new window give the whole screen
 
 import type { Lang } from '@dool2/i18n'
 import type { ApprovalRecord, Approvals } from './approvals.js'
-import { classifyRisk, parseRefs, type RiskKind, type ToolResult } from './browser-tools.js'
+import { classifyRisk, parseRefs, type RiskKind, SEEN_TTL_MS, type ToolResult } from './browser-tools.js'
 import { handBack } from './hand-back.js'
 import type { HandsCaller } from './hands.js'
 import { KakaoChat } from './kakao.js'
 import { screenCopy } from './locales/screen.js'
+import { pageDiff, type SeenPage } from './page-diff.js'
 import { PASSWORD_ROLE } from './region/kr/screen.js'
 
 export const SCREEN_TOOLS = [
@@ -147,6 +150,13 @@ interface AppInfo {
 export class ScreenTools {
   /** Elements of the last screen read per app (to check button labels against the screen, not the AI's words) */
   private screens = new Map<string, Map<string, { role: string; name: string }>>()
+  /**
+   * Per AI session (the chat whose tool server called, '' when unknown), per app: the last whole screen that AI saw.
+   * The window title is part of its key (url), so another window is a new screen
+   */
+  private seen = new Map<string, Map<string, SeenPage>>()
+  /** Off: actions give the whole screen as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
+  changesOnly = true
   private names = new Map<string, string>()
   /** Enter approvals that must be pressed in one window (a KakaoTalk chat): approval id -> window title */
   private enterWindow = new Map<string, string>()
@@ -281,7 +291,27 @@ export class ScreenTools {
     )
   }
 
-  async run(tool: string, a: Record<string, unknown>): Promise<ToolResult> {
+  /**
+   * Forgets the screens an AI session saw (its agent program is new, or was closed and started again): its next action
+   * in each app gives the whole screen. Without a viewer, every session's screens are forgotten
+   */
+  forgetSeen(viewer?: string) {
+    if (viewer === undefined) this.seen.clear()
+    else this.seen.delete(viewer)
+  }
+
+  /**
+   * ai: a call from an AI tool server (viewer: its chat). Only those calls get "only what changed" and make what the AI
+   * saw; Dool2's own reads (right before pressing an approved button) leave that alone
+   */
+  async run(
+    tool: string,
+    a: Record<string, unknown>,
+    opts: { ai?: boolean; viewer?: string } = {},
+  ): Promise<ToolResult> {
+    const viewer = opts.ai ? (opts.viewer ?? '') : undefined
+    const read = (id: string, maxChars: unknown, note?: string, changes = true) =>
+      this.read(id, maxChars, note, viewer, changes)
     switch (tool) {
       case 'kakao_send':
         return this.kakao.send(a)
@@ -335,14 +365,15 @@ export class ScreenTools {
         const r = await this.ready()
         if (r) return r
         await this.hands.call('open', { bundleId: id }, 30_000)
-        return this.read(id, undefined, 'Opened the app.')
+        return read(id, undefined, 'Opened the app.')
       }
       case 'read': {
         const id = this.gate(a.bundleId)
         if (typeof id !== 'string') return id
         const r = await this.ready()
         if (r) return r
-        return this.read(id, a.maxChars)
+        // The AI asked for the screen: it gets the whole screen, never only what changed
+        return read(id, a.maxChars, undefined, false)
       }
       case 'click': {
         const id = this.gate(a.bundleId)
@@ -356,7 +387,7 @@ export class ScreenTools {
         if (risk) return this.blocked(risk.kind, risk.reason, el.name, ref)
         const res = (await this.hands.call('click', { bundleId: id, ref })) as { via: string }
         await sleep(400)
-        return this.read(
+        return read(
           id,
           undefined,
           res.via === 'open'
@@ -410,7 +441,7 @@ export class ScreenTools {
           30_000,
         )
         await sleep(300)
-        return this.read(
+        return read(
           id,
           undefined,
           `Filled the ID and password with the vault's ${new URL(entry.origin).hostname} account (${entry.username}) (only the daemon sees the values). Press the login button with screen_click, and if device verification or a verification code comes up, get it with a phone card.`,
@@ -433,7 +464,7 @@ export class ScreenTools {
           return this.blocked('contact', this.m.enterSends, 'Enter', 'key:Enter')
         await this.hands.call('key', { bundleId: id, key, modifiers: mods })
         await sleep(300)
-        return this.read(id, undefined, `Pressed ${[...mods, key].join('+')}.`)
+        return read(id, undefined, `Pressed ${[...mods, key].join('+')}.`)
       }
       case 'screenshot': {
         const id = this.gate(a.bundleId)
@@ -545,23 +576,63 @@ export class ScreenTools {
     )
   }
 
-  private async read(bundleId: string, maxChars?: unknown, note?: string): Promise<ToolResult> {
+  /**
+   * Reads the app's front window and makes the result. viewer: the AI session that will see it (undefined: Dool2's own
+   * read, which neither gives only changes nor counts as seen). changes: give only the lines that changed since the
+   * screen this AI last saw in the same window (the whole screen when it is new to the AI or mostly changed)
+   */
+  private async read(
+    bundleId: string,
+    maxChars?: unknown,
+    note?: string,
+    viewer?: string,
+    changes = true,
+  ): Promise<ToolResult> {
     const s = (await this.hands.call('snapshot', {
       bundleId,
       maxChars: Math.min(Math.max(Number(maxChars) || 5_000, 1_000), 40_000),
     })) as { app: string; window: string; text: string; truncated: boolean }
     this.names.set(bundleId, s.app)
+    // Refs always come from the whole screen, so every element stays pressable whatever the AI is shown
     this.screens.set(bundleId, parseRefs(s.text))
+    const now = { url: `${bundleId}\n${s.window}`, text: s.text, truncated: s.truncated }
+    const base = viewer !== undefined && changes && this.changesOnly ? this.base(viewer, bundleId) : undefined
+    const diff = base && s.text ? pageDiff(base, now) : undefined
+    if (viewer !== undefined) {
+      this.pruneSeen()
+      const mine = this.seen.get(viewer) ?? new Map<string, SeenPage>()
+      mine.set(bundleId, { ...now, at: Date.now() })
+      this.seen.set(viewer, mine)
+    }
     return text(
       [
         ...(note ? [note] : []),
         `[app ${s.app}] window: ${s.window || '(untitled)'}`,
         '',
-        s.text ||
-          "(No text to read. This app doesn't expose much accessibility info. Look at the screen with screen_screenshot)",
-        ...(s.truncated ? ['', '(The screen is long, so only the first part was read)'] : []),
+        ...(diff
+          ? screenChangeLines(diff)
+          : [
+              s.text ||
+                "(No text to read. This app doesn't expose much accessibility info. Look at the screen with screen_screenshot)",
+              ...(s.truncated ? ['', '(The screen is long, so only the first part was read)'] : []),
+            ]),
       ].join('\n'),
     )
+  }
+
+  /** The last whole screen this AI saw in the app, while it is fresh */
+  private base(viewer: string, bundleId: string): SeenPage | undefined {
+    const p = this.seen.get(viewer)?.get(bundleId)
+    return p && Date.now() - p.at < SEEN_TTL_MS ? p : undefined
+  }
+
+  /** Screens too old to be a base are dropped (a chat that stopped working keeps nothing) */
+  private pruneSeen() {
+    const old = Date.now() - SEEN_TTL_MS
+    for (const [viewer, apps] of this.seen) {
+      for (const [id, p] of apps) if (p.at < old) apps.delete(id)
+      if (!apps.size) this.seen.delete(viewer)
+    }
   }
 
   /** Does only the one thing the user approved: allow the app, or press the approved button (only if its label is unchanged) or Enter. Messages are for people */
@@ -607,6 +678,18 @@ export class ScreenTools {
       return finish(false, m.failed(rec.label, (e as Error).message))
     }
   }
+}
+
+/** The screen part of a result that shows only what changed, with a line saying so and how to get the whole screen */
+export function screenChangeLines(d: { lines: number; changed: number; text: string }): string[] {
+  if (!d.text)
+    return [
+      '(The screen text did not change since you last saw this window. screen_read shows the whole screen.)',
+    ]
+  return [
+    `(Only what changed since you last saw this window: ${d.changed} new or changed lines of ${d.lines}; the rest is as it was, with the same refs. screen_read shows the whole screen.)`,
+    d.text,
+  ]
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
