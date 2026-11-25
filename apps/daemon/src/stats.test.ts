@@ -24,6 +24,7 @@ describe('사용 통계', () => {
           tools: ['x', 'browser_route'],
           ms: 8000,
           firstMs: 2000,
+          ackMs: 3,
         },
         { at: at(day, 9), kind: 'turn', where: 'feed', answered: true, tools: ['y'], ms: 90000 },
         { at: at(day, 10), kind: 'turn', answered: false },
@@ -46,6 +47,7 @@ describe('사용 통계', () => {
       turnMsP50: 8000,
       turnMsP90: 8000,
       firstMsP50: 2000,
+      ackMsP50: 3,
       toolCalls: 2,
       routes: 1,
     })
@@ -100,6 +102,7 @@ describe('사용 통계', () => {
     // 대화·파일 이름 같은 글은 없다
     expect(Object.keys(first).sort()).toEqual(
       [
+        'ackMsP50',
         'agents',
         'answered',
         'arch',

@@ -195,3 +195,60 @@ export function doneLine(g: WorkGroup, lang: Lang = 'ko'): string {
   const rest = names.length - 3
   return `${names.slice(0, 3).join(' · ')}${lang === 'en' ? ` + ${rest} more` : ` 외 ${rest}개`}`
 }
+
+/**
+ * The return summary (response UX): when the person comes back to the app after a while, what happened meanwhile,
+ * from stored records only (no AI call). Finished tasks since they were last here, approvals and sign-ins waiting for
+ * them, and when a waiting one runs out if they do not answer. undefined when there is nothing to say
+ */
+export interface AwayIn {
+  /** When the person was last looking (ms) */
+  since: number
+  now: number
+  feed: readonly { kind: string; title: string; at: string; ref?: string }[]
+  approvals: readonly {
+    id: string
+    status: string
+    what?: string
+    label: string
+    amount?: string
+    expiresAt: string
+  }[]
+  logins: readonly { id: string; status: string; site: string; expiresAt: string }[]
+}
+
+export interface AwaySummary {
+  /** Tasks finished meanwhile (newest first, up to 3) and how many in all */
+  done: { title: string; at: string; ref?: string }[]
+  doneCount: number
+  /** Waiting for the person: what, and when it runs out if they do not answer (soonest first) */
+  waiting: { kind: 'approval' | 'login'; id: string; title: string; expiresAt: string }[]
+}
+
+export function awaySummary(i: AwayIn): AwaySummary | undefined {
+  const done = i.feed
+    .filter((f) => (f.kind === 'done' || f.kind === 'routine') && Date.parse(f.at) > i.since)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  const live = (x: { status: string; expiresAt: string }) =>
+    x.status === 'pending' && Date.parse(x.expiresAt) > i.now
+  const waiting = [
+    ...i.approvals.filter(live).map((a) => ({
+      kind: 'approval' as const,
+      id: a.id,
+      title: [a.what || a.label, a.amount].filter(Boolean).join(' · '),
+      expiresAt: a.expiresAt,
+    })),
+    ...i.logins
+      .filter(live)
+      .map((l) => ({ kind: 'login' as const, id: l.id, title: l.site, expiresAt: l.expiresAt })),
+  ].sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt))
+  if (!done.length && !waiting.length) return undefined
+  return {
+    done: done.slice(0, 3).map((f) => ({ title: f.title, at: f.at, ...(f.ref ? { ref: f.ref } : {}) })),
+    doneCount: done.length,
+    waiting,
+  }
+}
+
+/** How long the person must be away before the return summary shows */
+export const AWAY_MIN_MS = 20 * 60_000

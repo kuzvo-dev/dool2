@@ -28,3 +28,11 @@ message it greys out.
 ## Voice
 Plain words, Dool2's tone (docs/persona.md): `마무리 확인 중`, `빠진 부분 이어서 하는 중: …`, `여기까지만 받기`,
 `아직 남은 것`, `이어서 하기`. No "AI", "verdict" or "judge".
+
+## Right away and on return
+- **Received**: the moment a message reaches the PC, before the AI is called, the card shows with `생각하는 중…`
+  (live `ack`). The time to it is counted next to the time to the first word (daily stats `ackMsP50`).
+- **Return summary**: opening the app after 20 minutes or more away shows one quiet card at the end of the
+  conversation, made from stored records only (no AI): `자리 비운 사이에`, `끝낸 일 N개` (up to 3 titles), and
+  `기다리는 일` with what happens without an answer (`14:20까지 답이 없으면 하지 않아요`). `확인했어요` or a new message
+  closes it. Code: `awaySummary` in `@dool2/protocol/work-steps`.

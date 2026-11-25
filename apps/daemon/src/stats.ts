@@ -1,7 +1,7 @@
 // Usage stats (only when the user agrees, numbers only). To see whether the beta is used well, daily numbers go to dool2.com/api/stats.
 // What is sent: a random device number (made on this PC, not linked to a name or account), the date, app version and operating system,
 // that day's number of requests, answers, tool successes/failures and pre-finish check results, whether an AI and the extension are connected, and the number of connected services,
-// and how long answers took (median and slowest 10% of a whole answer, median time to the first word), tool calls per day and remembered routes taken.
+// and how long answers took (median and slowest 10% of a whole answer, median time to the first word and to the status line), tool calls per day and remembered routes taken.
 // Conversation content, sites, file names and service names are never sent. While on, today's numbers are re-sent every hour (the same day is overwritten)
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -28,6 +28,8 @@ export interface DayStats {
   turnMsP90: number
   /** Time to the first word or tool (ms, median). 0 = not measured (before 0.4.4) */
   firstMsP50: number
+  /** Time from receiving a message to the status shown on screen (ms, median). 0 = not measured (before 0.5.0) */
+  ackMsP50: number
   /** Tool calls in the day's answers, and how many were remembered routes (ADR 0034) */
   toolCalls: number
   routes: number
@@ -55,6 +57,7 @@ export function countDay(entries: JournalEntry[], day: string) {
   // Answers the person waited for (not feed posts written in the background)
   const turnMs: number[] = []
   const firstMs: number[] = []
+  const ackMs: number[] = []
   let toolCalls = 0
   let routes = 0
   for (const e of entries) {
@@ -65,6 +68,7 @@ export function countDay(entries: JournalEntry[], day: string) {
       if (e.answered === true && e.where !== 'feed') {
         if (typeof e.ms === 'number') turnMs.push(e.ms)
         if (typeof e.firstMs === 'number') firstMs.push(e.firstMs)
+        if (typeof e.ackMs === 'number') ackMs.push(e.ackMs)
         const tools = Array.isArray(e.tools) ? (e.tools as unknown[]) : []
         toolCalls += tools.length
         routes += tools.filter((t) => t === 'browser_route').length
@@ -82,6 +86,7 @@ export function countDay(entries: JournalEntry[], day: string) {
     turnMsP50: percentile(turnMs, 50),
     turnMsP90: percentile(turnMs, 90),
     firstMsP50: percentile(firstMs, 50),
+    ackMsP50: percentile(ackMs, 50),
     toolCalls,
     routes,
   }
