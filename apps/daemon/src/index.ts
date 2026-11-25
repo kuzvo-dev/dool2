@@ -1278,7 +1278,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connected: (id) => Boolean(readSettings().connections?.[id]),
     onSignedIn: (card, who) => {
       if (who) rememberAccount(card.id, who)
+      // The person finished on the screen (picked a Google account, or signed in themselves): tell the chat and carry
+      // on with the task that was waiting, like an automatic sign-in does. A taken-over sign-in reports in connectMark
+      const byPerson = !connectHuman.has(card.id)
+      const tab = loginWatch.tabOf(card.id)
       connectMark(card.id, true)
+      if (byPerson) connectDone(card)
+      // The chooser ends on the service's own page; the tools open their own tab, so close this one
+      if (card.account?.pick && tab !== undefined)
+        void browser.call('close', { tabId: tab }).catch(() => undefined)
       // If it ends while the daemon is shutting down, the store is closed: then nothing is notified
       void skills
         .connections()
@@ -4500,7 +4508,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           handBack({
             done: `a ${card.name} connect card is now in the chat`,
             left: card.account?.pick
-              ? 'tap Pick an account on the card and choose (or add) the account on the screen it opens (never ask for a password)'
+              ? 'tap the button on the card: the provider account chooser opens on the phone, where they pick (or add) the account. Never ask for a password'
               : card.how === 'browser'
                 ? 'enter the ID and password on the card (never in chat; do not ask for the password)'
                 : 'tap the card and connect on the Connect screen',

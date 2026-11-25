@@ -4537,8 +4537,10 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
           { class: 'approve-actions' },
           h('button', {
             class: 'btn',
-            text: mCards.connectDo,
+            // Google and the like: one tap opens the account chooser itself (no sheet in between, ADR 0041)
+            text: c.account?.pick ? mdCred.pickAccount : mCards.connectDo,
             onclick: () => {
+              if (c.account?.pick) return openConnectScreen(c.id)
               if (browser) return openOverlay({ kind: 'connect', id: c.id })
               st.tab = 'connect'
               st.connectDetail = c.id
@@ -7126,19 +7128,21 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
   }
 }
 
+/** The sign-in screen on the PC, watched from the phone (opens it first if it is not open yet) */
+function openConnectScreen(id: string) {
+  const tab = st.connectTabs.get(id)
+  if (tab !== undefined) return openRemote(tab, id)
+  st.opening = id
+  st.overlay = undefined
+  render()
+  void send({ kind: 'connect', id, action: 'open' })
+}
+
 /** Connect a service: after you enter the ID and password, Dool2 signs in on the PC's Chrome for you and reports back */
 function connectSheet(id: string) {
   const it = st.services?.find((x) => x.card.id === id)
   if (!it) return h('section', { class: 'sheet float app-sheet rise' })
-  // The sign-in screen on the PC, watched from the phone (opens it first if it is not open yet)
-  const openScreen = () => {
-    const tab = st.connectTabs.get(id)
-    if (tab !== undefined) return openRemote(tab, id)
-    st.opening = id
-    st.overlay = undefined
-    render()
-    void send({ kind: 'connect', id, action: 'open' })
-  }
+  const openScreen = () => openConnectScreen(id)
   return credSheet({
     key: `connect:${id}`,
     site: it.card.name,

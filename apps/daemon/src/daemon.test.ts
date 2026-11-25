@@ -990,7 +990,7 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     ).json()) as { content: { text: string }[] }
     const text = r.content[0]?.text ?? ''
     expect(text).toContain('connect card is now in the chat')
-    expect(text).toContain('Pick an account')
+    expect(text).toContain('account chooser opens on the phone')
     expect(text).not.toContain('again with the account in the vault')
   })
 
