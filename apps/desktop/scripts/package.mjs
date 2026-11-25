@@ -74,6 +74,24 @@ for (const d of ['cmaps', 'wasm'])
   cpSync(join(pdfjsDir, d), join(stage, 'dist', 'pdfjs', d), { recursive: true })
 cpSync(join(pdfjsDir, 'LICENSE'), join(stage, 'dist', 'pdfjs', 'LICENSE'))
 
+// Pack number of the skills/ this app carries (ADR 0039): a connector pack is taken only if it is newer. Unix seconds of
+// the last skills/ commit, the same number scripts/pack-build.mjs gives a pack. Kept outside stage/ (extraResources)
+const meta = join(root, 'release-meta')
+mkdirSync(meta, { recursive: true })
+let skillsPack = 0
+try {
+  skillsPack = Number(
+    execFileSync('git', ['log', '-1', '--format=%ct', '--', 'skills'], {
+      cwd: join(root, '..', '..'),
+      encoding: 'utf8',
+    }).trim(),
+  )
+} catch {}
+writeFileSync(
+  join(meta, 'skills-pack.json'),
+  JSON.stringify({ pack: Number.isInteger(skillsPack) ? skillsPack : 0 }),
+)
+
 cpSync(join(root, 'dist', 'preload.cjs'), join(stage, 'dist', 'preload.cjs'))
 cpSync(join(root, 'dist', 'renderer'), join(stage, 'dist', 'renderer'), { recursive: true })
 cpSync(join(root, 'assets'), join(stage, 'assets'), { recursive: true })
@@ -122,8 +140,9 @@ await build({
     // The Dool2 Chrome extension (users load it themselves until the web store release)
     extraResources: [
       { from: '../extension/dist', to: 'extension' },
-      // Dool2 skills (CC BY-SA 4.0). A signed skill update channel comes in M5
+      // Dool2 skills (CC BY-SA 4.0). Newer ones arrive as signed connector packs (ADR 0039)
       { from: '../../skills', to: 'skills', filter: ['**/*', '!_template/**'] },
+      { from: 'release-meta/skills-pack.json', to: 'skills-pack.json' },
       // PC screen control helper (Mac, ADR 0013). The Windows helper is separate
       ...(process.platform === 'darwin' ? [{ from: '../hands-mac/dist', to: 'hands' }] : []),
     ],

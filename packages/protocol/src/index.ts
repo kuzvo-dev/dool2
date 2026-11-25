@@ -204,6 +204,8 @@ export const SettingsSchema = z.object({
   taskSessions: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
+  /** Connector packs (ADR 0039): beta takes each pack before everyone (test PCs); off turns automatic packs off */
+  packChannel: z.enum(['beta', 'off']).optional(),
   /** UI language of the desktop app and the language Dool2 answers in by default (ADR 0029). Empty: follow the device */
   language: z.enum(LANGS).optional(),
   /** Region for services and local features (ADR 0029). Empty: guessed from the device */

@@ -127,6 +127,7 @@ import { forAI, indexText } from './locales/index-text.js'
 import { TASKS_TEXT } from './locales/tasks-text.js'
 import { LoopGuard } from './loop-guard.js'
 import { MotionMaker, type MotionRenderer } from './motion.js'
+import { ConnectorPacks } from './packs.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { isSmsApproval, PhoneSms } from './phone-sms.js'
@@ -248,6 +249,12 @@ export interface DaemonOptions {
   nativeHost?: { script?: string; extraDirs?: string[]; defaultTargets?: boolean }
   /** Skills folder (default: skills/ in the repo, inside the app for a packaged app) */
   skillsDir?: string
+  /**
+   * Connector packs (ADR 0039): newer cards and connectors without a new app version. Only the packaged app turns it
+   * on (in development the repo's skills/ is the truth). bundledPack: pack number of skillsDir. betaFeed: test PCs
+   * (setting packChannel: beta) take each pack first
+   */
+  packs?: { feed: string; betaFeed?: string; publicKeys: string[]; bundledPack: number }
   /** The current-time line sent along with each message (on by default, turned off in tests: () => undefined) */
   timeLine?: () => string | undefined
   /** PC screen control helper executable (default: apps/hands-mac/dist/dool2-hands in the repo). Tests pass a fake */
@@ -903,7 +910,25 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .read({ kind: 'turn', days: KEEP_DAYS })
       .flatMap((e) => (Array.isArray(e.tools) ? (e.tools as string[]) : [])),
   )
-  const skillsDir = opts.skillsDir ?? defaultSkillsDir()
+  const bundledSkills = opts.skillsDir ?? defaultSkillsDir()
+  // Connector packs (ADR 0039): the folder in use switches to a newer signed pack when one is taken
+  const packs = opts.packs
+    ? await ConnectorPacks.open({
+        dataDir: paths.dataDir,
+        bundledDir: bundledSkills,
+        bundledPack: opts.packs.bundledPack,
+        appVersion: opts.appVersion ?? '0.0.0',
+        feed: () => {
+          const ch = readSettings().packChannel
+          if (ch === 'off') return undefined
+          return ch === 'beta' ? (opts.packs?.betaFeed ?? opts.packs?.feed) : opts.packs?.feed
+        },
+        publicKeys: opts.packs.publicKeys,
+        log: (kind, data) => journal.write(kind, data),
+      })
+    : undefined
+  packs?.start()
+  const skillsDir = () => packs?.dir() ?? bundledSkills
   // Service tools (connectors, ADR 0018): run the tools.json next to a connect card with the engine
   const connectors = new Connectors({
     dir: skillsDir,
@@ -4590,6 +4615,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     }
 
+    // Connector packs (ADR 0039): which cards are in use, check now, put back the ones that came with the app
+    if (a === 'packs' && !b && req.method === 'GET')
+      return json(res, 200, { packs: packs ? packs.state() : null })
+    if (a === 'packs' && b === 'check' && req.method === 'POST')
+      return json(res, 200, { packs: packs ? await packs.check() : null })
+    if (a === 'packs' && b === 'rollback' && req.method === 'POST')
+      return json(res, 200, { packs: packs ? await packs.rollback() : null })
+
     // Pay-as-you-go mode: install OpenCode, provider, model and API key (ADR 0010)
     if (a === 'agents' && b === 'opencode') {
       if (c === 'catalog' && req.method === 'GET') return json(res, 200, { providers: PAYG_PROVIDERS })
@@ -5170,6 +5203,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           store.setSetting('tasks', tasks.views(30))
         } catch {}
         journal.stop()
+        packs?.stop()
         clearInterval(lifeTimer)
         clearInterval(keepTimer)
         clearTimeout(lifePush)

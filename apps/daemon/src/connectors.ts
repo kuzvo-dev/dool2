@@ -130,7 +130,8 @@ export class Connectors {
 
   constructor(
     private readonly opts: {
-      dir: string | undefined
+      /** skills/ folder, or a function giving the folder in use now (connector packs, ADR 0039) */
+      dir: string | undefined | (() => string | undefined)
       browser: BrowserCaller
       tools: BrowserTools
       /** Connected service id → time */
@@ -200,7 +201,8 @@ export class Connectors {
   async load(): Promise<Map<string, Loaded>> {
     if (this.cache && Date.now() - this.cache.at < 10_000) return this.cache.items
     const items = new Map<string, Loaded>()
-    const dir = this.opts.dir
+    // A function when connector packs (ADR 0039) can switch the folder while running
+    const dir = typeof this.opts.dir === 'function' ? this.opts.dir() : this.opts.dir
     if (dir) {
       const { ConnectCardSchema } = await import('@dool2/protocol/connect')
       for (const n of (await readdir(dir).catch(() => [] as string[])).sort()) {

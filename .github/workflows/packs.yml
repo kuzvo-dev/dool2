@@ -1,0 +1,70 @@
+name: Connector packs
+
+# Ships skills/ (service cards and connectors) to installed apps without a new app version (ADR 0039).
+# - A merge to main that changes skills/ builds and signs a pack for test PCs (pack-beta.json, setting packChannel: beta).
+# - Actions tab -> Connector packs -> Run workflow with promote on gives the test PCs' pack to everyone (pack.json).
+# Files go to the `connectors` release (a prerelease, so it never becomes the app's "latest" release that version.json
+# lives in). The tag is made once by a maintainer (tags are admin-only):
+#   gh release create connectors --prerelease --latest=false --title "Connector packs" --notes "..."
+on:
+  push:
+    branches: [main]
+    paths: ["skills/**"]
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: Give the test PCs' pack (pack-beta.json) to everyone (pack.json)
+        type: boolean
+        default: false
+      min:
+        description: Oldest app version that reads packs (leave empty for the default)
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: packs
+  cancel-in-progress: false
+
+env:
+  # The first app version with connector packs. Raise it when a pack needs something older apps do not have
+  PACK_MIN_APP: ${{ inputs.min || '0.4.6' }}
+
+jobs:
+  beta:
+    name: Build and sign (test PCs)
+    if: ${{ !inputs.promote }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pack number is the time of the last skills/ commit
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Build and sign
+        env:
+          DOOL2_PACK_KEY: ${{ secrets.DOOL2_PACK_KEY }}
+        run: node scripts/pack-build.mjs --out out/packs --min "$PACK_MIN_APP" --channel beta
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload connectors out/packs/* --clobber
+
+  promote:
+    name: Give to everyone
+    if: ${{ inputs.promote }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Copy pack-beta.json to pack.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release download connectors -R "$REPO" -p pack-beta.json -D out
+          cp out/pack-beta.json out/pack.json
+          gh release upload connectors -R "$REPO" out/pack.json --clobber

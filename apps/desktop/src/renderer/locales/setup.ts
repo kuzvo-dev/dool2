@@ -187,6 +187,12 @@ export const setupText = messages({
     checkUpdate: '업데이트 확인',
     updateHint:
       '새 버전은 앱이 켜져 있으면 6시간마다 알아서 확인해요. 업데이트해도 대화·연결·금고는 그대로예요.',
+    packsLabel: '서비스 연결 정보',
+    packsNew: (day: string) => `${day} 판을 받아 쓰는 중이에요`,
+    packsBundled: '앱에 들어 있는 것을 쓰는 중이에요',
+    packsRollback: '되돌리기',
+    packsHint:
+      '사이트 화면이 바뀌어 고친 연결 정보는 앱 업데이트 없이 알아서 받아요. 두리 서명이 맞는 것만 받아요.',
     // PC apps
     screenIntro:
       '카카오톡 PC처럼 앱만 있는 일을 두리가 대신 해요. 허용한 앱만 다루고, 메시지 보내기·결제·삭제는 꼭 승인을 받아요. 화면이 잠겨 있으면 하지 않아요.',
@@ -463,6 +469,12 @@ export const setupText = messages({
     checkUpdate: 'Check for updates',
     updateHint:
       'While the app is on, it checks for new versions every 6 hours. Updating keeps your conversations, connections and vault.',
+    packsLabel: 'Service connection info',
+    packsNew: (day: string) => `Using the ${day} update`,
+    packsBundled: 'Using what came with the app',
+    packsRollback: 'Put back',
+    packsHint:
+      'When a site changes, the fixed connection info arrives on its own, without an app update. Only info signed by Dool2 is taken.',
     screenIntro:
       'Dool2 handles things that only work in apps, like KakaoTalk for PC. It uses only the apps you allow, always asks for approval before sending messages, paying or deleting, and does nothing while the screen is locked.',
     permOn: 'Turn on',
