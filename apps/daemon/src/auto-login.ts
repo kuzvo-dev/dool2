@@ -58,6 +58,7 @@ import {
   LOGIN_LINK,
   LOGIN_OR_JOIN,
   LOGIN_WORD,
+  LOGOUT_LINK,
   MORE_OPTIONS,
   MY_PAGE,
   NAVER_ACCOUNT,
@@ -106,6 +107,11 @@ export interface AutoLoginInput {
   onTab?: (tabId: number) => void
   /** Language of the steps, results and questions people read. Defaults to Korean */
   lang?: Lang
+  /**
+   * The person asked for another account than the one signed in: sign the site out first when it shows signed in.
+   * Without this the typed account was never used: the site looked signed in and the old account stayed (audit 11-26)
+   */
+  signOutFirst?: boolean
 }
 
 /** Asking on the phone's input screen instead of handing the screen to a person (faster and easier than remote view) */
@@ -599,6 +605,18 @@ export async function autoLogin(
 
   // 1) Find the login page: press "login" until a password field shows (up to 3 times)
   let page = await settled(() => snap(tabId), wait)
+  if (input.signOutFirst) {
+    const out = LOGOUT_LINK.exec(page.text)
+    if (out) {
+      step(m.signingOut(input.card.name))
+      await browser.call('click', { tabId, ref: out[1] }, 30_000).catch(() => undefined)
+      await sleep(wait)
+      await browser.call('navigate', { tabId, url: input.url }, 40_000).catch(() => undefined)
+      page = await settled(() => snap(tabId), wait)
+    } else if (looksSignedIn(input.card, page))
+      // Signed in, but no log-out to press on this page (it is in a menu): the person signs out, Dool2 never guesses
+      return { status: 'unknown', tabId, message: m.signOutFirst(input.card.name) }
+  }
   if (looksSignedIn(input.card, page)) return { status: 'ok', tabId }
   if (!hasPassword(page.text)) {
     step(m.findingLogin)

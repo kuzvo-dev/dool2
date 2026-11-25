@@ -3071,8 +3071,10 @@ function chatItems(): Item[] {
       const label = dayLabel(m.createdAt)
       items.push({ key: `day:${day}`, sig: label, make: () => h('p', { class: 'day-sep', text: label }) })
     }
+    // Several connect cards for the same service: only the last one is drawn (it shows the state now). Earlier ones each
+    // became a "connected" line too, three in a row after a retry (audit 11-26)
+    if (m.role === 'tool' && superseded.has(m.id)) continue
     if (m.role === 'tool') {
-      // If there are several connect cards for the same service, only the last stays live (earlier ones collapse to one line)
       // A hand-off closes once the conversation moved on
       const old = superseded.has(m.id) || (m.text.includes('"kind":"handoff"') && !handoffOpen(st.conv, i))
       // Quick replies and multi-select need to know what the user said next, to draw faded and locked
@@ -4558,10 +4560,23 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       h(
         'div',
         {},
-        h('strong', { text: busy ? mCards.loggingIn(c.name) : mCards.connectTitle(c.name) }),
+        // Before a sign-in tab exists Dool2 is only looking (is Chrome signed in, which accounts): no screen to watch yet
+        h('strong', {
+          text: busy
+            ? st.connectLive.has(c.id)
+              ? mCards.loggingIn(c.name)
+              : mCards.lookingAt(c.name)
+            : mCards.connectTitle(c.name),
+        }),
         h('span', {
           class: 'meta',
-          text: busy ? mCards.watchBelow : browser ? connectHow(c) : mCards.turnOnInConnect,
+          text: busy
+            ? st.connectLive.has(c.id)
+              ? mCards.watchBelow
+              : mCards.lookingMeta
+            : browser
+              ? connectHow(c)
+              : mCards.turnOnInConnect,
         }),
       ),
       busy && !st.connectSteps.get(c.id)?.length ? h('span', { class: 'spin' }) : undefined,

@@ -23,6 +23,19 @@ const keep = process.env.DOOL2_LIVE_DIR
 const tmp = keep ?? mkdtempSync(join(tmpdir(), 'dool2-live-'))
 
 const shop = createServer((req, res) => {
+  // Signed-in state kept in a cookie, so "Chrome is already signed in" can be tested (connect looks first, ADR 0041)
+  const sid = /(?:^|;\s*)sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1]
+  if (req.url?.startsWith('/login/do')) {
+    const id = new URL(req.url, 'http://x').searchParams.get('id') || 'guest'
+    res.writeHead(302, { 'set-cookie': `sid=${encodeURIComponent(id)}; Path=/`, location: '/' })
+    res.end()
+    return
+  }
+  if (req.url?.startsWith('/logout')) {
+    res.writeHead(302, { 'set-cookie': 'sid=; Path=/; Max-Age=0', location: '/' })
+    res.end()
+    return
+  }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
   // Login page: a site not in the vault, so it is handed to the person (for testing the remote screen)
   // Unfamiliar shop (DOOL2_SHOP_ODD=1, tests when auto-login cannot read the screen): no word for "login" and the field names differ.
@@ -43,7 +56,7 @@ const shop = createServer((req, res) => {
   }
   if (req.url?.startsWith('/login')) {
     res.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>두리 시험 가게 로그인</title>
-<h1>로그인</h1><form onsubmit="event.preventDefault();document.body.innerHTML='<h1>로그인했어요</h1><p>'+this.id.value+'님 반가워요</p><a href=/>로그아웃</a>'">
+<h1>로그인</h1><form action="/login/do">
 <p><input name="id" placeholder="아이디" style="font-size:20px;padding:8px"></p>
 <p><input name="pw" type="password" placeholder="비밀번호" style="font-size:20px;padding:8px"></p>
 <p><button style="font-size:20px;padding:8px 20px">로그인</button></p></form>`)
@@ -178,7 +191,7 @@ document.title='가입 완료';document.body.insertAdjacentHTML('beforeend','<h2
     res.end(`<!doctype html><title>내 정보</title><h1>홍길동님</h1><a href="/">로그아웃</a>`)
     return
   }
-  res.end(`<!doctype html><title>두리 시험 가게</title><p><a href="/login">로그인</a> · <a href="/pay">결제 흐름 가게</a></p><h1>두리 시험 가게</h1>
+  res.end(`<!doctype html><title>두리 시험 가게</title><p>${sid ? `${decodeURIComponent(sid)}님 · <a href="/logout">로그아웃</a>` : '<a href="/login">로그인</a>'} · <a href="/pay">결제 흐름 가게</a></p><h1>두리 시험 가게</h1>
 <p>오늘의 추천: 제주 귤 3kg <b>15,900원</b> (무료 배송, 배송 전 취소 가능)</p>
 <button onclick="document.title='주문 완료';document.body.insertAdjacentHTML('beforeend','<h2>주문이 완료됐어요</h2>')">바로 구매</button>`)
 })

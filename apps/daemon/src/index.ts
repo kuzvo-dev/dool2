@@ -1347,6 +1347,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       ask: loginAsk(card),
       step: connectStep(card.id),
       onTab: connectTab(card.id),
+      signOutFirst: switching.delete(card.id),
     })
     // If the sign-in screen is on another address (login.site), save it there too (for the next time Doori signs in again)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
@@ -1394,16 +1395,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    *   any extra step (phone approval, code) comes as the usual phone card.
    * reason 'credentials' tells the phone to open the ID and password card
    */
-  const connectStart = async (card: ConnectCard): Promise<ConnectResult> => {
+  const connectStart = async (
+    card: ConnectCard,
+    opts: { another?: boolean } = {},
+  ): Promise<ConnectResult> => {
     if (!browser.status.connected) throw new Error(m().extNotConnectedPc)
     const credentials: ConnectResult = {
       ok: false,
       reason: 'credentials',
       message: m().enterIdPassword(card.name),
     }
-    return card.account?.pick
-      ? connectPickGoogle(card, card.account.pick, credentials)
-      : connectAskSignedIn(card, credentials)
+    if (card.account?.pick) return connectPickGoogle(card, card.account.pick, credentials)
+    // Another account asked for in the chat: straight to its ID and password (the old one is signed out first)
+    if (opts.another) {
+      switching.add(card.id)
+      return credentials
+    }
+    return connectAskSignedIn(card, credentials)
   }
   /** Chrome already signed in to this service? Then ask whether to use that account or sign in with another */
   const connectAskSignedIn = async (
@@ -1433,7 +1441,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       })
       .catch(() => undefined)
     if (!answer) return { ok: false, reason: 'unknown', message: m().pickNotAnswered(card.name) }
-    if (answer.trim() !== yes) return credentials
+    if (answer.trim() !== yes) {
+      switching.add(card.id)
+      return credentials
+    }
     if (who) rememberAccount(card.id, who)
     connectMark(card.id, true)
     return { ok: true, message: shown ? m().connectedAs(card.name, shown) : m().connectedReady(card.name) }
@@ -1599,7 +1610,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const url = connectUrl(card)
     if (!url) return undefined
     // An account added through Connect is stored under the connect address (coupang.com), one added while working under that screen's address (www.coupang.com)
-    const www = card.site && !card.site.startsWith('www.') ? `https://www.${card.site}/` : undefined
+    // Only for domain names: an address like 127.0.0.1 has no www form (new URL threw "Invalid URL" and connect_ask
+    // failed with 500 on the test bench)
+    const www =
+      card.site && !card.site.startsWith('www.') && !/^[\d.]+(:\d+)?$|^localhost(:\d+)?$/.test(card.site)
+        ? `https://www.${card.site}/`
+        : undefined
     let saved: { username: string; password: string } | undefined
     for (const u of [url, card.loginUrl, www].filter(Boolean) as string[])
       saved ??= await vault.findForOrigin(new URL(u).origin)
@@ -1737,6 +1753,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** When Doori put a connect card in the chat (if it connects within 30 minutes after that, the AI is told to continue the stopped task) */
   const connectAsked = new Map<string, number>()
+  /** Services the person is switching to another account on: the next ID and password sign-in signs the old one out first */
+  const switching = new Set<string>()
   /** When a tool last stopped because this service needed a sign-in (a task is waiting on the connection) */
   const loginNeededAt = new Map<string, number>()
   /** The chat that showed each connect card: a task continues there when the connection ends (ADR 0038) */
@@ -1973,7 +1991,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connectStatus()
     void p.then((r) => {
       // Keep the reason for failure in the record (where to look when the user says "it failed")
-      if (!r.ok) console.warn(`[connect] ${card.id} did not finish: ${JSON.stringify(r).slice(0, 300)}`)
+      // Asking for the ID and password is the next step, not a failure
+      if (!r.ok && r.reason !== 'credentials')
+        console.warn(`[connect] ${card.id} did not finish: ${JSON.stringify(r).slice(0, 300)}`)
       connecting.delete(card.id)
       connectSteps.delete(card.id)
       connectTabs.delete(card.id)
@@ -4602,8 +4622,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return reply(r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {
-        const args = (await readJson(req)) as { service?: unknown }
+        const args = (await readJson(req)) as { service?: unknown; another?: unknown }
         const q = String(args.service ?? '').slice(0, 60)
+        // The person wants a different account: never sign the saved one in again (audit 11-26: "switch to my other
+        // account" signed the vault account back in and said "connected")
+        const another = args.another === true
         const text = (t: string, isError = false) =>
           json(res, 200, { ...(isError ? { isError: true } : {}), content: [{ type: 'text', text: t }] })
         const items = await skills.connections()
@@ -4641,6 +4664,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
               who: 'person',
               after: 'when it is connected, a chat note tells you to continue',
               tell: `to tap their account on the ${card.name} card (never ask for a password)`,
+            }),
+          )
+        }
+        // Another account: the phone asks for its ID and password at once; the saved account is not signed in again
+        if (another && browser.status.connected) {
+          connectAsked.set(card.id, Date.now())
+          if (caller) connectThread.set(card.id, caller)
+          void startConnect(card, () => connectStart(card, { another: true }), 'look')
+          return text(
+            handBack({
+              done: `the ${card.name} card on the phone asks for the other account's ID and password (Dool2 signs the current one out first)`,
+              left: 'the person enters the other account on the card',
+              who: 'person',
+              after: 'when it is connected, a chat note says which account it is',
+              tell: `to enter the other ${card.name} account on the card (never ask for a password in chat)`,
             }),
           )
         }

@@ -53,6 +53,35 @@ describe('autoLogin', () => {
     expect(b.calls.some(([m, a]) => m === 'click' && a.ref === 'e7')).toBe(true)
   })
 
+  it('switching to another account signs the old one out first, then signs the typed one in (audit 11-26)', async () => {
+    const signedIn = { url: 'https://shop.test/', text: 'kim님 [e3 링크 "로그아웃"]' }
+    const b = fakeBrowser([
+      signedIn,
+      home,
+      form,
+      { url: 'https://shop.test/', text: 'lee님 [e9 링크 "로그아웃"]' },
+    ])
+    const r = await autoLogin(
+      b,
+      { card, url: 'https://shop.test/', username: 'lee', password: 'pw', signOutFirst: true },
+      { wait: 0 },
+    )
+    expect(r).toMatchObject({ status: 'ok' })
+    const clicks = b.calls.filter(([m]) => m === 'click').map(([, a]) => a.ref)
+    expect(clicks[0]).toBe('e3')
+    expect(b.calls.filter(([m]) => m === 'fill').map(([, a]) => a.value)).toEqual(['lee', 'pw'])
+    // Without signing out, the old account counted as signed in and the typed one was never used
+    const plain = fakeBrowser([signedIn])
+    expect(
+      await autoLogin(
+        plain,
+        { card, url: 'https://shop.test/', username: 'lee', password: 'pw' },
+        { wait: 0 },
+      ),
+    ).toMatchObject({ status: 'ok' })
+    expect(plain.calls.some(([m]) => m === 'fill')).toBe(false)
+  }, 20_000)
+
   it('보안 문자가 뜨면 사람에게', async () => {
     const b = fakeBrowser([form, { ...form, text: `${form.text} 자동입력 방지 문자를 입력해 주세요` }])
     const r = await autoLogin(b, { card, url: form.url, username: 'a', password: 'b' }, { wait: 0 })

@@ -212,7 +212,7 @@ export function vaultSitesText(
   const safe =
     'Passwords are hidden even from Dool2 (the AI), and IDs are masked. Never ask for or tell a password in the chat.'
   const use =
-    "When a login is needed, browser_login fills the vault values directly on that site's login screen (the values never come to Dool2). For services with a connect card, connect_ask logs in again with this account."
+    "When a login is needed, browser_login fills the vault values directly on that site's login screen (the values never come to Dool2). For services with a connect card, connect_ask logs in again with this account; to use a different account, connect_ask with another: true (the card asks for it and the current one is signed out first)."
 
   const q = (opts.query ?? '').replace(/\s+/g, ' ').trim()
   if (!q) {
