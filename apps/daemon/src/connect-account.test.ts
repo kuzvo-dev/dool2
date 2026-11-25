@@ -102,6 +102,15 @@ describe('which account a connection is', () => {
     expect(b.calls[0]).toEqual(['open', { url: 'https://mail.google.com/mail/?authuser=c%40gmail.com' }])
   })
 
+  it('stops looking once a signed-out visit lands on a sign-in page', async () => {
+    const b = browserShowing({
+      url: 'https://accounts.kakao.com/login/?continue=x',
+      text: '[e1 입력칸 "아이디"]',
+    })
+    expect(await readAccount(b, await skill('kakao'), undefined, { wait: 0 })).toEqual({ state: 'unknown' })
+    expect(b.calls.filter(([m]) => m === 'snapshot')).toHaveLength(1)
+  })
+
   it('takes the first account shown for an authuser= address as "the asked one is missing" (Gmail falls back)', async () => {
     // Measured 2026-11-25: /mail/?authuser=<an account not in Chrome> opens the first account's inbox without a word
     expect(
