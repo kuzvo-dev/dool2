@@ -15,6 +15,8 @@ import {
   type ServiceTools,
   serviceToolsPath,
 } from './services.js'
+import { type SessionKind, sessionFence, sessionKind } from './sessions.js'
+import { registerTaskTools } from './tasks.js'
 
 export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
 export {
@@ -26,6 +28,7 @@ export {
   type ServiceTools,
   serviceToolsPath,
 } from './services.js'
+export { type SessionKind, sessionKind, toolInSession } from './sessions.js'
 
 export const SERVER_NAME = 'dool2'
 
@@ -50,6 +53,13 @@ export interface ToolContext {
   toolset?: string
   /** Service tools known before start (the list the daemon wrote for this segment). Registered right away */
   serviceTools?: ServiceToolSpec[]
+  /**
+   * Which session this server serves (DOOL2_SESSION from the daemon by default, ADR 0038): the conversation gets no
+   * browser, PC app or file tools but the task tools; a task gets everything but the task tools. Missing: as before
+   */
+  session?: SessionKind
+  /** Where task tools run */
+  tasks?: BrowserClient
 }
 
 const serviceTools = new WeakMap<McpServer, ServiceTools>()
@@ -88,12 +98,22 @@ export function createServer(ctx: ToolContext = {}) {
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
   const toolset = ctx.toolset ?? process.env.DOOL2_TOOLSET
-  // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033)
-  const od = onDemand(server)
-  registerBrowserTools(od.server, ctx.browser ?? daemonClient())
-  registerScreenTools(od.server, ctx.screen ?? daemonClient(process.env, 'screen'))
-  registerLifeTools(od.server, ctx.life ?? daemonClient(process.env, 'life'))
-  registerFileTools(od.server, ctx.files ?? daemonClient(process.env, 'file'))
+  const session = ctx.session ?? sessionKind(process.env.DOOL2_SESSION)
+  // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033). Tools this
+  // kind of session does not get are not registered at all, so tool_find does not offer them either (ADR 0038)
+  const od = onDemand(
+    server,
+    undefined,
+    session === 'conversation'
+      ? 'The browser, PC apps and KakaoTalk, PC files, pictures, videos, PDFs, printing and texts work in a task: when your instructions or a result name one of those tools, hand the work over with task_start. Never say Dool2 cannot do these.'
+      : undefined,
+  )
+  const tools = sessionFence(od.server, session)
+  registerBrowserTools(tools, ctx.browser ?? daemonClient())
+  registerScreenTools(tools, ctx.screen ?? daemonClient(process.env, 'screen'))
+  registerLifeTools(tools, ctx.life ?? daemonClient(process.env, 'life'))
+  registerFileTools(tools, ctx.files ?? daemonClient(process.env, 'file'))
+  registerTaskTools(tools, ctx.tasks ?? daemonClient(process.env, 'task'))
   serviceTools.set(
     server,
     registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {

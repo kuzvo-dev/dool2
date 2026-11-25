@@ -72,6 +72,11 @@ export interface ThreadServiceOptions {
   resident?: (threadId: string) => boolean
   /** A resident session idle this long is closed; the next message opens it again with --resume (default 30 min) */
   residentIdleMs?: number
+  /**
+   * More settings for this thread's tool servers, e.g. which kind of session it is (DOOL2_SESSION, ADR 0038). Must stay
+   * the same for a segment: the tool list is part of what the provider caches
+   */
+  toolEnv?: (threadId: string) => Record<string, string> | undefined
 }
 
 /** Default time a resident session may sit idle before its program is closed */
@@ -206,7 +211,8 @@ export class ThreadService {
    * service tool list to every turn of the segment and the start of the request stays the same (ADR 0032)
    */
   private serversFor(threadId: string): McpServerSpec[] {
-    return this.opts.mcpServers.map((s) => ({ ...s, env: { ...s.env, DOOL2_TOOLSET: threadId } }))
+    const more = this.opts.toolEnv?.(threadId)
+    return this.opts.mcpServers.map((s) => ({ ...s, env: { ...s.env, ...more, DOOL2_TOOLSET: threadId } }))
   }
 
   /** Instructions pinned per segment, and what the last update note already told (ADR 0032) */

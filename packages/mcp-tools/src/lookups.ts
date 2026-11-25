@@ -19,4 +19,6 @@ export const LOOKUP_TOOLS: ReadonlySet<string> = new Set([
   'service_find',
   'orders_all',
   'tool_find',
+  // The conversation's view of its tasks (ADR 0038)
+  'task_list',
 ])
