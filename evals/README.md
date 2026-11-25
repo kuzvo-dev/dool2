@@ -103,6 +103,12 @@ talking past it, steering, asking about and stopping it are measured for real. T
 runner stops it at the end. Seeds need `--main on` (otherwise the record says `seedSkipped`).
 `TASK_SESSIONS_DEFAULT` is on; compare against `--main off` to see what the split changed.
 
+The acceptance families (`bank/families/88-acceptance.jsonl`, `accept.*`) run on the local test shop of
+`apps/phone/scripts/live.mjs` (127.0.0.1:8790 and the payment-flow shop on 8791) instead of real accounts: small talk,
+a web lookup, a payment that reaches its approval with a remembered address, a sign-in hand-off, and auto-approve with
+an action the user did not ask for and one they did. Start the bench with its own data folder, then run them with
+`--main on --record --keep-files`; the two `accept.auto_*` families need the `autoApprove` setting on for that run.
+
 ## Scoring
 
 - **Code verdict**: whether the result shape (went as far as approval, handed off to a person, asked back, answered, error) fits the scenario type, and the gates (suspected false completion, multiple approvals)
