@@ -963,6 +963,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     vaultList: () => vault.list(),
     vaultReveal: (id) => vault.reveal(id),
   })
+  // The same as the browser: actions in PC apps give only what changed; DOOL2_CLICK_CHANGES=0 gives whole screens
+  screenTools.changesOnly = browserTools.changesOnly
   /** What the phone said it can do when it said hello (phone id → caps). Only phones that said hello after startup are known */
   const phoneCaps = new Map<string, string[]>()
   // Sending texts (to my phone number): once approved, the phone app sends it directly
@@ -2231,7 +2233,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     // A turn on a new agent program (a new segment, or one closed while idle and started again) has not seen the pages
     // in its context: its first action on each page gives the whole page. A resident program still has them (ADR 0035)
-    if (!threads.hasSession(threadId)) browserTools.forgetSeen(threadId)
+    if (!threads.hasSession(threadId)) {
+      browserTools.forgetSeen(threadId)
+      screenTools.forgetSeen(threadId)
+    }
     live.emit('event', { kind: 'busy', busy: true })
     // Send the same progress to connected phones too (so chats started on the PC show on the phone)
     // The separate chat that writes feed posts is not streamed to the phone's chat screen (the result goes to the feed),
@@ -4003,7 +4008,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = (await readJson(req)) as Record<string, unknown>
         return reply(
           await screenTools
-            .run(c, args && typeof args === 'object' ? args : {})
+            .run(c, args && typeof args === 'object' ? args : {}, { ai: true, viewer: caller ?? '' })
             .catch(
               (e: Error): ToolResult => ({ isError: true, content: [{ type: 'text', text: e.message }] }),
             ),
