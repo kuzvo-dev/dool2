@@ -24,6 +24,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
+import { assertMacArch } from './mac-arch-check.mjs'
 import { DISPLAY_NAME } from './region/kr/app-name.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -133,6 +134,8 @@ await build({
     afterPack: async (ctx) => {
       if (ctx.electronPlatformName !== 'darwin') return
       const appPath = join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`)
+      // Every program in the app must be for MAC_ARCH, or macOS warns Apple silicon users about Intel apps (0.4.5)
+      assertMacArch(appPath, MAC_ARCH)
       const identity = process.env.DOOL2_MAC_SIGN_IDENTITY || '-'
       const keychain = process.env.DOOL2_MAC_SIGN_KEYCHAIN
       execFileSync(
