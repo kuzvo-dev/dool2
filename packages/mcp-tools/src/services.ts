@@ -183,6 +183,8 @@ export function registerServiceTools(
   server: McpServer,
   client: BrowserClient,
   opts: { pollMs?: number; toolset?: string; initial?: ServiceToolSpec[] } = {},
+  /** Where service_find, orders_all and service_call go (the session's server, so they can be kept aside per kind) */
+  fixed: McpServer = server,
 ): ServiceTools {
   const registered = new Map<string, { key: string; tool: RegisteredTool }>()
   let syncing: Promise<void> | undefined
@@ -243,7 +245,7 @@ export function registerServiceTools(
     return syncing
   }
 
-  server.registerTool(
+  fixed.registerTool(
     'service_find',
     {
       title: 'Find a service',
@@ -266,7 +268,7 @@ export function registerServiceTools(
       return pass(await client('find', args), false)
     },
   )
-  server.registerTool(
+  fixed.registerTool(
     'orders_all',
     {
       title: 'All my orders',
@@ -280,7 +282,7 @@ export function registerServiceTools(
     },
     async () => pass(await client('orders_all', {}), false),
   )
-  server.registerTool(
+  fixed.registerTool(
     'service_call',
     {
       title: 'Use a service tool',

@@ -33,7 +33,7 @@ import {
 } from '@dool2/engine'
 import { deviceRegion } from '@dool2/i18n'
 import { LOOKUP_TOOLS } from '@dool2/mcp-tools/lookups'
-import type { SessionKind } from '@dool2/mcp-tools/sessions'
+import { CONVERSATION_OWNS, type SessionKind } from '@dool2/mcp-tools/sessions'
 import {
   type AgentId,
   AgentIdSchema,
@@ -3495,6 +3495,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         : undefined
     }
+    // Memory, goals, the library, the feed and what Dool2 knows stay with the conversation (round 2 of the overhaul)
+    if (kind === 'task' && b === 'life' && CONVERSATION_OWNS.test(c))
+      return toolText(
+        'Memory, goals, the library and the feed stay with the conversation: say in your answer what is worth saving or scheduling.',
+        true,
+      )
     if (kind === 'task' && (b === 'browser' || b === 'screen')) {
       const r = tasks.claim(caller)
       if (!r.ok)
