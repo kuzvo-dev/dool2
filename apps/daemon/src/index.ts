@@ -3461,7 +3461,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     let answer = ''
     for (const x of out) {
       if (x.role === 'tool' && x.text.includes('"kind":"work"')) continue
-      if (x.role === 'tool' && /"kind":"(approval|login|connect|handoff)"/.test(x.text)) continue
+      // What waits for a person, and what the finish check left with its [Continue] (that button continues the
+      // conversation, not the task), stay in the task's own chat
+      if (x.role === 'tool' && /"kind":"(approval|login|connect|handoff|left)"/.test(x.text)) continue
       postSaved(cur, store.addMessage(cur, x.role, x.text))
       if (!answer && (x.role === 'assistant' || x.role === 'system')) answer = x.text
     }
@@ -4081,7 +4083,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Attach the separate chats on their own so they are not pushed out of the list even when the main chat has many segments
     const recent = store.listThreads(limit)
     const seen = new Set(recent.map((t) => t.id))
-    const all = [...recent, ...store.listSideThreads(SIDE_THREAD_MAX + 1).filter((t) => !seen.has(t.id))]
+    // A task's own chat is not a side chat: it is reached from its card's Details, and its one result goes to the
+    // conversation (11-25: a task chat was listed under side chats with its answer as the preview)
+    const all = [
+      ...recent.filter((t) => !t.task),
+      ...store.listSideThreads(SIDE_THREAD_MAX + 1).filter((t) => !seen.has(t.id)),
+    ]
     all.sort((x, y) => (x.updatedAt < y.updatedAt ? 1 : x.updatedAt > y.updatedAt ? -1 : 0))
     return all.map((t, i) => {
       const out: ThreadSummary = {

@@ -295,6 +295,12 @@ describe('task sessions (ADR 0038)', () => {
       messages: StoredMessage[]
     }
     expect(detail.messages.some((x) => x.text.includes('Approve the move'))).toBe(true)
+    // Its chat is reached from the card, never listed with the side chats
+    const taskChat = (await view())?.threadId
+    const listed = (await (await api('/api/threads')).json()) as { threads: { id: string }[] }
+    expect(taskChat).toBeTruthy()
+    expect(listed.threads.length).toBeGreaterThan(0)
+    expect(listed.threads.some((x) => x.id === taskChat)).toBe(false)
 
     // 6) The conversation hears the result on its next message
     await send('thanks')
