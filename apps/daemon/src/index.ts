@@ -3713,7 +3713,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           : '',
         running.length
           ? appNote(
-              `Tasks running now (task_steer passes the user's words to one, task_stop stops it, task_list tells more): ${running.map((t) => `${t.id} "${t.spec.title}" (${t.status})`).join(', ')}`,
+              // Said each turn: the answers repeated "the dentist event (t16) still has a card on your phone" under
+              // three unrelated questions (test PC loop 11-26)
+              `Tasks running now (task_steer passes the user's words to one, task_stop stops it, task_list tells more): ${running.map((t) => `${t.id} "${t.spec.title}" (${t.status})`).join(', ')}. The user sees their cards already: bring one up only when this message is about it, and never show task ids like t16.`,
             )
           : '',
       ]
