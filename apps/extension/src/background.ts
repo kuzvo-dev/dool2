@@ -297,14 +297,17 @@ async function ownedTab(args: Record<string, unknown>, watching = true): Promise
   return tabId
 }
 
-/** Dool2 tabs are gathered in one Dool2 window and grouped in a green tab group */
-async function openTab(url: string): Promise<chrome.tabs.Tab> {
+/**
+ * Dool2 tabs are gathered in one Dool2 window and grouped in a green tab group. background: the tab opens behind the
+ * one in front (a lookup reading while another task drives the browser; reading needs no painting)
+ */
+async function openTab(url: string, background = false): Promise<chrome.tabs.Tab> {
   const s = await load()
   let tab: chrome.tabs.Tab | undefined
   if (s.windowId !== undefined) {
     try {
       await chrome.windows.get(s.windowId)
-      tab = await chrome.tabs.create({ windowId: s.windowId, url, active: true })
+      tab = await chrome.tabs.create({ windowId: s.windowId, url, active: !background })
     } catch {
       s.windowId = undefined
     }
@@ -1874,14 +1877,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       if (!url) throw new Error('Only http and https addresses can be opened')
       // Open a blank tab first, turn on dialog catching, then go to the address (so dialogs that appear while opening are caught).
       // With capture, also listen to the responses the page receives from the start
-      const tab = await openTab('about:blank')
+      const background = a.background === true
+      const tab = await openTab('about:blank', background)
       if (tab.id === undefined) throw new Error('Could not open the tab')
       await watch(tab.id)
       if (a.capture) await listen(tab.id)
       await chrome.tabs.update(tab.id, { url })
       await sleep(200)
       await waitLoad(tab.id)
-      return pageState(tab.id)
+      // Says it honored background, so the daemon knows this extension can let a lookup read beside another task
+      return { ...(await pageState(tab.id)), ...(background ? { background: true } : {}) }
     }
     case 'navigate': {
       const tabId = await ownedTab(a)

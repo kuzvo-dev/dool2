@@ -60,7 +60,7 @@ guess is wrong.
 7. **One browser at a time.** There is one Chrome profile, so one task that uses the browser or PC apps runs at a
    time; others wait in line (`task_start` and `task_list` say how many are ahead, and the card shows it). A task
    started with `browser: false` runs at once; if it reaches for the browser while another task holds it, the call
-   says so and the task goes on without it.
+   says so and the task goes on without it. The follow-up "Sharing the browser" below changes who holds it and when.
 8. **Approvals and cards reach the right session.** The tool server names its segment on every call
    (`x-dool2-toolset`, the `DOOL2_TOOLSET` it already had); the daemon runs the call as that chat's, so an approval,
    sign-in, verification code, hand-off or phone card created by a task belongs to that task, and the phone's answer
@@ -204,3 +204,33 @@ session files (`browser_read`, `browser_steps`, `know_save`, `service_call`, `br
 example; the limits that caused most of those errors (`maxChars` minimum, `steps` wait minimum, the notification
 length) were relaxed and are clamped by the daemon instead. The kind and the list are fixed per
 segment (`DOOL2_SESSION`, `DOOL2_TOOLSET`, ADR 0032): turning task sessions on or off rotates to a new segment.
+
+## Follow-up: sharing the browser (WP7 acceptance fixes)
+
+The acceptance run found two ways the one-browser rule made people wait for nothing: a quick lookup asked during a
+running booking queued behind it, and a task waiting on a person's card (sign-in, approval, code) kept the browser for
+as long as the card lives (a sign-in card, 30 minutes).
+
+- **Waiting for the person gives the browser up.** When a task's turn ends waiting for the person, it releases the
+  slot and the next task in line starts. Its tabs stay its own. A hand-over (the person works in the task's tab) and a
+  connection card keep the slot: the person is using the browser then.
+- **Taking it back.** When the person answers, the daemon's own step for the answer runs as before (pressing the
+  approved button or moving the approved files is one action on the waiting task's own tab). The task's next turn
+  needs the slot: if it is free the task takes it at once; otherwise the task waits **first in line** with the answer
+  as its next message, and the task holding the slot gives it over at the end of its current turn (it waits second,
+  with its own next round held, and goes on after). Turns are never cut in the middle, so a sign-in or a payment that
+  continues after the answer is driven by one task at a time.
+- **Lookups read beside.** `task_start({ lookup: true })` is for work that only reads pages (weather, a price, opening
+  hours). A lookup task starts at once, holds no slot and may use only the browser tools that never bring a tab
+  forward (`open`, `navigate`, `read`, `back`, `tabs`, `wait`, `close`; `LOOKUP_READS`), in tabs it opens itself
+  **behind** the tab in front (the extension's `open` takes `background`). Clicking, typing, scrolling, screenshots,
+  signing in, paying, PC apps and service tools (which drive the browser themselves) wait for the slot: if it is free
+  the lookup takes it, otherwise the call says what still works. Its reads do not move the phone's live view, which
+  stays on the task that drives the browser. An older extension that ignores `background` says so in its answer; from
+  then on lookups take turns like the other tasks (the first such open brings its tab forward once).
+- **One task per tab.** A tab belongs to the task that opened or first used it until that task ends. A task's call on
+  another live task's tab is refused, so two tasks never drive the same tab.
+
+Same Chrome profile, same vault and sessions: a lookup sees the sites signed in as the person, which is why it is
+limited to reading. The approval gate, the payment gate and the phone signature are unchanged; every acting step
+still goes through the one holder.

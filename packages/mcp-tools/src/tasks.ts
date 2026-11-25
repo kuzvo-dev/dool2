@@ -57,7 +57,13 @@ export function registerTaskTools(server: McpServer, client: BrowserClient) {
           .boolean()
           .optional()
           .describe(
-            'false only if it needs neither web pages nor PC apps. One task uses the browser at a time; others wait',
+            'false only if it needs neither web pages nor PC apps. Tasks that click, type, sign in or pay take turns with the browser',
+          ),
+        lookup: z
+          .boolean()
+          .optional()
+          .describe(
+            'true when it only reads pages (weather, a price, opening hours, news): it starts at once in its own tab, even while another task uses the browser',
           ),
       },
     },

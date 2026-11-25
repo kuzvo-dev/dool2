@@ -21,6 +21,7 @@ const spec = (o: Partial<TaskSpec> = {}): TaskSpec => ({
   known: [],
   avoid: [],
   browser: true,
+  lookup: false,
   ...o,
 })
 
@@ -35,10 +36,15 @@ describe('task specs', () => {
       known: [],
       avoid: [],
       browser: true,
+      lookup: false,
     })
     expect(parseTaskSpec({ goal: 'Sort files', done_when: ['sorted'], browser: false })).toMatchObject({
       browser: false,
     })
+    // A lookup reads web pages, whatever browser says
+    expect(
+      parseTaskSpec({ goal: 'Weather tomorrow', done_when: ['forecast read'], browser: false, lookup: true }),
+    ).toMatchObject({ browser: true, lookup: true })
   })
 
   it('the brief shows only its title to people and gives the AI the whole spec', () => {
@@ -101,6 +107,93 @@ describe('the browser line', () => {
     b.end(a, 'done')
     expect(b.holder).toBeUndefined()
     expect(b.nextReady()).toBe(c)
+  })
+})
+
+describe('the browser slot: waiting for the person, lookups beside, one task per tab', () => {
+  it('a task waiting for the person gives the slot up; the one the person answers goes first and the holder yields', () => {
+    let now = 0
+    const b = new TaskBoard({ now: () => ++now })
+    const a = b.create('ta', 'seg', spec())
+    const c = b.create('tc', 'seg', spec({ title: 'Hotel' }))
+    const d = b.create('td', 'seg', spec({ title: 'Flights' }))
+    b.start(a)
+    a.begun = true
+    expect(b.canStart(c)).toBe(false)
+    // a waits for a sign-in: the slot is free, c starts
+    a.status = 'needs-you'
+    b.release(a)
+    expect(b.nextReady()).toBe(c)
+    b.start(c)
+    c.begun = true
+    // The person answers a while c drives: a waits first in line, before d that never started
+    a.status = 'waiting'
+    a.answered = true
+    a.resume.push('signed in')
+    expect(b.ahead(a)).toBe(1)
+    expect(b.ahead(d)).toBe(2)
+    expect(b.yieldsTo(c)).toBe(a)
+    expect(b.yieldsTo(a)).toBeUndefined()
+    // c gives the slot over at its turn's end and goes on after a
+    b.release(c)
+    c.status = 'waiting'
+    c.resume.push('next round')
+    expect(b.nextReady()).toBe(a)
+    b.start(a)
+    expect(a.answered).toBeUndefined()
+    expect(b.holder).toBe(a.id)
+    b.end(a, 'done')
+    // c had begun: it goes before d
+    expect(b.nextReady()).toBe(c)
+  })
+
+  it('a lookup reads beside the holder in the background, and acts only when the slot is free', () => {
+    const b = new TaskBoard()
+    const a = b.create('ta', 'seg', spec())
+    const w = b.create('tw', 'seg', spec({ title: 'Weather', lookup: true }))
+    b.start(a)
+    expect(b.canStart(w)).toBe(true)
+    b.start(w)
+    expect(b.holder).toBe(a.id)
+    expect(b.claim('tw', { read: true })).toEqual({ ok: true, background: true })
+    expect(b.readsBeside('tw')).toBe(true)
+    // A click waits for the holder
+    expect(b.claim('tw', { tabId: 9 })).toMatchObject({ ok: false, holder: a })
+    b.end(a, 'done')
+    expect(b.readsBeside('tw')).toBe(false)
+    expect(b.claim('tw', { read: true })).toEqual({ ok: true })
+    expect(b.claim('tw', { tabId: 9 })).toEqual({ ok: true })
+    expect(b.holder).toBe(w.id)
+  })
+
+  it('with an extension that brings every tab forward, a lookup takes turns like the others', () => {
+    let bg = false
+    const b = new TaskBoard({ parallelReads: () => bg })
+    const a = b.create('ta', 'seg', spec())
+    const w = b.create('tw', 'seg', spec({ title: 'Weather', lookup: true }))
+    b.start(a)
+    expect(b.canStart(w)).toBe(false)
+    expect(b.claim('tw', { read: true })).toMatchObject({ ok: false, holder: a })
+    bg = true
+    expect(b.canStart(w)).toBe(true)
+  })
+
+  it('a tab belongs to the task that opened or first used it, until that task ends', () => {
+    const b = new TaskBoard()
+    const a = b.create('ta', 'seg', spec())
+    const w = b.create('tw', 'seg', spec({ title: 'Weather', lookup: true }))
+    b.start(a)
+    b.start(w)
+    b.own(a, 5)
+    expect(b.claim('tw', { read: true, tabId: 5 })).toMatchObject({ ok: false, tab: a })
+    expect(b.claim('ta', { tabId: 5 })).toEqual({ ok: true })
+    // A tab nobody owns becomes the first user's
+    expect(b.claim('tw', { read: true, tabId: 6 })).toMatchObject({ ok: true })
+    expect(b.tabOwner(6)).toBe(w)
+    expect(b.claim('ta', { tabId: 6 })).toMatchObject({ ok: false, tab: w })
+    b.end(w, 'done')
+    expect(b.tabOwner(6)).toBeUndefined()
+    expect(b.claim('ta', { tabId: 6 })).toEqual({ ok: true })
   })
 })
 

@@ -98,6 +98,17 @@ const conversation: Script = async function* (input, rt) {
     yield* say('On it.')
     return
   }
+  // "look up …": a lookup task, which reads beside a task that drives the browser
+  if (/^look up/i.test(ask)) {
+    yield* used(input, rt, 'task', 'task_start', {
+      title: 'Weather',
+      goal: ask,
+      done_when: ['the forecast is read'],
+      lookup: true,
+    })
+    yield* say('Looking it up.')
+    return
+  }
   if (/^make it/i.test(ask)) {
     yield* used(input, rt, 'task', 'task_steer', { id: 't1', said: ask })
     yield* say('Passed on.')
@@ -367,6 +378,84 @@ describe('task sessions (ADR 0038)', () => {
     await until(async () => (await done()).length > 0, 'feed')
     // One entry, the task's: the lookup question and the turn that handed the work over are not jobs done
     expect((await done()).map((f) => f.title)).toEqual(['Train'])
+  })
+
+  it('a task waiting on a card gives the browser up, a lookup starts at once, and the answered task goes first', async () => {
+    const dl = await downloads()
+    const hotel = gate()
+    const order: string[] = []
+    const refused: string[] = []
+    const task: Script = async function* (input, rt) {
+      const goal = /Goal: (.*)/.exec(input.text)?.[1] ?? ''
+      if (/KTX/.test(goal)) {
+        order.push('train')
+        // Something that needs the person: moving two files asks for approval (a card on the phone)
+        yield* used(input, rt, 'file', 'file_move', {
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, 'x') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, 'y') },
+          ],
+        })
+        yield* say('Approve the move on your phone, then I book it.')
+        return
+      }
+      if (/hotel/i.test(goal)) {
+        order.push('hotel')
+        await hotel.wait()
+        yield* say('Booked the hotel, number 77.')
+        return
+      }
+      if (/weather/i.test(goal)) {
+        order.push('weather')
+        // Clicking waits for the task that drives the browser; a service tool (which drives it too) as well
+        const click: Result = yield* used(input, rt, 'browser', 'click', { tabId: 1, ref: 'e1' })
+        const svc: Result = yield* used(input, rt, 'service', 'call', { tool: 'x_search', input: {} })
+        refused.push(textOf(click), textOf(svc))
+        yield* say('Sunny tomorrow, 16 degrees.')
+        return
+      }
+      // The train task after the approval
+      order.push('train again')
+      yield* say('Moved the files and booked the train, ticket 1234.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const {
+      api,
+      send,
+      state,
+      task: view,
+    } = await boot(rt, {
+      fileFolders: { desktop: [], documents: [], downloads: [dl] },
+      finishJudge: async () => '{"done":true,"why":"ok"}',
+    })
+    await send('book a KTX to Busan on Friday')
+    await until(async () => (await view('t1'))?.status === 'needs-you', 'train waits on its card')
+    // Waiting on the card, it does not hold the browser: the hotel booking does not queue behind it
+    await send('book a hotel in Busan')
+    await until(async () => (await view('t2'))?.status === 'working', 'hotel runs')
+    await until(() => order.includes('hotel'), 'hotel turn')
+    // The person approves while the hotel task drives the browser: the train task waits first in line
+    const { approvals } = (await (await api('/api/approvals')).json()) as { approvals: { id: string }[] }
+    await api(`/api/approvals/${approvals[0]?.id}`, { method: 'POST', body: '{"decision":"approve"}' })
+    await until(async () => (await view('t1'))?.status === 'waiting', 'train in line')
+    expect((await view('t1'))?.ahead).toBe(1)
+    // A quick lookup starts at once, beside the hotel task, without waiting for either
+    await send('look up the weather in Busan tomorrow')
+    await until(async () => (await view('t3'))?.status === 'done', 'lookup done')
+    expect((await view('t2'))?.status).toBe('working')
+    expect(order).toEqual(['train', 'hotel', 'weather'])
+    expect(refused[0]).toContain('clicking, typing, signing in, paying and PC apps wait for it')
+    expect(refused[0]).toContain('t2 "Hotel"')
+    expect(refused[1]).toContain('Service tools drive the browser')
+    // The hotel finishes; the train task takes the browser back and goes on with the approval's result
+    hotel.open()
+    await until(async () => (await view('t1'))?.status === 'done', 'train done')
+    expect(order).toEqual(['train', 'hotel', 'weather', 'train again'])
+    const resumed = rt.seen.filter((x) => rt.kind(x) === 'task').at(-1)?.text ?? ''
+    expect(resumed).not.toContain('Goal:')
+    const msgs = (await state()).messages.map((x) => x.text)
+    expect(msgs).toContain('Sunny tomorrow, 16 degrees.')
+    expect(msgs).toContain('Moved the files and booked the train, ticket 1234.')
   })
 
   it("typing in a task's detail is passed on like task_steer, not a raw turn of its chat", async () => {
