@@ -420,10 +420,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     ? new FinishCheck({
         ask: judgeAsk,
         lang: () => lang(),
-        // What the daemon saw since the request began: approval requests (auto-approved too) and pages read
-        evidence: (since) => ({
-          approvals: browserTools.approvals.since(since).length,
-          ...browserTools.readsSince(since),
+        // What the daemon saw in this chat since the request began: approval requests (auto-approved too) and pages
+        // read. Per chat (the tool caller, ADR 0038): two tasks at once do not count each other's approvals or pages
+        evidence: (since, threadId) => ({
+          approvals: browserTools.approvals.since(since).filter((a) => {
+            const owner = approvalThread.get(a.id)
+            return owner === undefined || owner === threadId
+          }).length,
+          ...browserTools.readsSince(since, threadId),
         }),
       })
     : undefined
@@ -635,6 +639,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const vault = new Vault(secrets)
   vault.userLang = lang
   const browserTools = new BrowserTools(browser, vault, () => readSettings().finalStep ?? 'approve')
+  // Pages read are kept per chat, for the finish check's evidence (ADR 0038)
+  browserTools.chatOf = () => callerScope.getStore()
   browserTools.userLang = lang
   // Clicks and typing give only what changed on the page; DOOL2_CLICK_CHANGES=0 gives whole pages (to compare in evals)
   browserTools.changesOnly = process.env.DOOL2_CLICK_CHANGES !== '0'

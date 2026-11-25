@@ -896,14 +896,26 @@ export class BrowserTools {
 
   /** Site of the URL the tab was last read at (when the work log groups steps by site). undefined if unknown */
   /** Pages read lately (title, address without the query, whether it showed a finished action): finish-check evidence */
-  private reads: { at: number; title: string; url: string; done: boolean }[] = []
+  private reads: { at: number; title: string; url: string; done: boolean; chat?: string }[] = []
+  /** The chat whose tool call is running (index.ts sets it from the tool caller, ADR 0038) */
+  chatOf?: () => string | undefined
   private noteRead(s: { url: string; title: string; text: string }) {
-    this.reads.push({ at: Date.now(), title: s.title, url: scrubUrl(s.url), done: donePage(s) })
-    if (this.reads.length > 30) this.reads.shift()
+    const chat = this.chatOf?.()
+    this.reads.push({
+      at: Date.now(),
+      title: s.title,
+      url: scrubUrl(s.url),
+      done: donePage(s),
+      ...(chat ? { chat } : {}),
+    })
+    if (this.reads.length > 60) this.reads.shift()
   }
-  /** The last page read since a time, and whether any page read since then showed a finished action */
-  readsSince(t: number): { lastPage?: { title: string; url: string }; donePage: boolean } {
-    const recent = this.reads.filter((r) => r.at >= t)
+  /**
+   * The last page read since a time, and whether any page read since then showed a finished action. With a chat, only
+   * that chat's reads (and reads no chat claimed), so a task never takes another task's completion page as its own
+   */
+  readsSince(t: number, chat?: string): { lastPage?: { title: string; url: string }; donePage: boolean } {
+    const recent = this.reads.filter((r) => r.at >= t && (!chat || !r.chat || r.chat === chat))
     const last = recent.at(-1)
     return {
       ...(last ? { lastPage: { title: last.title, url: last.url } } : {}),
