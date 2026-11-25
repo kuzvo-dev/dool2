@@ -3891,13 +3891,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return withNotes(noted.result, notes)
         }
         // Replay test: answer from the tape, run nothing
-        if (toolTape.current === 'replay') {
+        // Task tools start and steer task sessions (ADR 0038): the daemon's own work, never answered from a tape or
+        // kept on one, so a replay runs the conversation/task split for real
+        const taped = b !== 'task'
+        if (toolTape.current === 'replay' && taped) {
           resultHooks.set(res, guard)
           return json(res, 200, toolTape.replay(tool, input))
         }
         // Record test: keep the answer the AI gets and the approval requests this call created
         const seen =
-          toolTape.current === 'record' ? new Set(browserTools.approvals.list().map((x) => x.id)) : undefined
+          toolTape.current === 'record' && taped
+            ? new Set(browserTools.approvals.list().map((x) => x.id))
+            : undefined
         resultHooks.set(res, (body) => {
           const result = guard(body)
           if (seen) {
@@ -4186,6 +4191,39 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (body.mode !== 'record' && body.mode !== 'replay') return json(res, 400, { error: m().badRequest })
       toolTape.start(body.mode, Array.isArray(body.entries) ? (body.entries as TapeEntry[]) : [])
       return json(res, 200, { ok: true, mode: body.mode })
+    }
+
+    // Evals on the main conversation (ADR 0038), test PC only: task sessions on, off or back to the default (null), and
+    // a fresh segment for the next message (no carry from earlier scenarios), so the conversation/task split runs as it
+    // does for the user
+    if (req.method === 'POST' && a === 'eval' && b === 'segment' && !c) {
+      if (!devReset) return json(res, 403, { error: m().testPcOnly })
+      const body = (await readJson(req)) as { taskSessions?: unknown }
+      if (
+        body.taskSessions !== undefined &&
+        body.taskSessions !== null &&
+        typeof body.taskSessions !== 'boolean'
+      )
+        return json(res, 400, { error: m().badRequest })
+      if (conversationBusy() || tasks.active().some((t) => t.status !== 'needs-you'))
+        return json(res, 409, { error: m().threadStillAnswering })
+      const before = readSettings().taskSessions
+      if (body.taskSessions !== undefined) {
+        store.setSetting('taskSessions', body.taskSessions ?? undefined)
+        events.emit('settings', readSettings())
+      }
+      // Tasks left waiting for a person by the previous scenario end with it
+      for (const t of tasks.active()) stopTask(t, 'person')
+      const cur = conversation.current()
+      if (cur) {
+        store.closeSession(cur.id)
+        void threads.release(cur.id)
+      }
+      return json(res, 200, {
+        ok: true,
+        ...(before !== undefined ? { before } : {}),
+        taskSessions: taskSessionsOn(),
+      })
     }
 
     // Evals: run the next requests on another model, to compare the same tape per model (ADR 0037). Test PC only
