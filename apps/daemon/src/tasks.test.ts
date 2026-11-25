@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   notesMessage,
   parseTaskSpec,
+  signInSpec,
   TaskBoard,
   type TaskSpec,
+  takeoverTarget,
   taskBrief,
   taskListText,
   withNotes,
@@ -119,5 +121,28 @@ describe('notes passed on while a task works', () => {
     again.restore(views)
     expect(again.frozenView('t1')).toMatchObject({ status: 'stopped' })
     expect(again.create('tb', 'seg', spec()).id).toBe('t2')
+  })
+})
+
+describe('an automatic sign-in that stopped partway (ADR 0038)', () => {
+  it('goes to the task that asked, else to a new sign-in task in task mode, else to the conversation', () => {
+    const b = new TaskBoard()
+    const asker = b.create('ta', 'seg', spec())
+    b.start(asker)
+    expect(takeoverTarget(b, 'ta', 'conversation')).toEqual({ kind: 'task', task: asker })
+    // The conversation of task sessions has no browser: never the conversation
+    expect(takeoverTarget(b, 'seg', 'conversation')).toEqual({ kind: 'new-task' })
+    expect(takeoverTarget(b, undefined, 'conversation')).toEqual({ kind: 'new-task' })
+    b.end(asker, 'done')
+    expect(takeoverTarget(b, 'ta', 'conversation')).toEqual({ kind: 'new-task' })
+    // Without task sessions the conversation has the browser, as before
+    expect(takeoverTarget(b, undefined, undefined)).toEqual({ kind: 'conversation' })
+    const s = signInSpec('Yogiyo', 'Read tab 3 with browser_read', 'en')
+    expect(s).toMatchObject({
+      title: 'Finish signing in to Yogiyo',
+      goal: 'Read tab 3 with browser_read',
+      browser: true,
+    })
+    expect(s.doneWhen[0]).toContain('signed in to Yogiyo')
   })
 })

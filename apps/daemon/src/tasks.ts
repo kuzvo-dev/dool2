@@ -377,3 +377,30 @@ export function taskListText(board: TaskBoard, results: Map<string, string>, now
   }
   return `${views.map(line).join('\n')}\nSteer a running or waiting task with task_steer, stop one with task_stop.`
 }
+
+/**
+ * Where an automatic sign-in that stopped partway goes (it needs the browser, ADR 0038): the task that asked for the
+ * connection while it still runs; otherwise, when the conversation has no browser (task sessions), a new sign-in task;
+ * otherwise the conversation as before
+ */
+export function takeoverTarget(
+  board: TaskBoard,
+  askerThread: string | undefined,
+  conversationKind: 'conversation' | 'task' | undefined,
+): { kind: 'task'; task: Task } | { kind: 'new-task' } | { kind: 'conversation' } {
+  const asker = askerThread ? board.byThread(askerThread) : undefined
+  if (asker && !board.ended(asker)) return { kind: 'task', task: asker }
+  return conversationKind === 'conversation' ? { kind: 'new-task' } : { kind: 'conversation' }
+}
+
+/** A task that finishes a sign-in the automatic one could not (its brief carries the steps for the AI) */
+export function signInSpec(service: string, steps: string, lang: Lang = 'ko'): TaskSpec {
+  return {
+    title: TASKS_TEXT(lang).signInTitle(service).slice(0, 40),
+    goal: steps,
+    doneWhen: [`signed in to ${service}: a page only a signed-in person sees was read`],
+    known: ['The ID and password are in the vault (browser_login)'],
+    avoid: ['asking the user for the password', 'signing up for a new account without the user choosing it'],
+    browser: true,
+  }
+}

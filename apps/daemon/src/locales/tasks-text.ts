@@ -12,6 +12,8 @@ export const TASKS_TEXT = messages({
     failedTitle: (title: string) => `${title} · 하다가 멈췄어요`,
     /** The result line when a task ended with no answer */
     noAnswer: '하던 일을 마쳤어요. 자세한 단계는 카드에서 볼 수 있어요.',
+    /** The card of a task that finishes a sign-in the automatic one could not */
+    signInTitle: (service: string) => `${service} 로그인 마저 하기`,
   },
   en: {
     briefShown: (title: string) => `Working on: ${title}.`,
@@ -19,5 +21,6 @@ export const TASKS_TEXT = messages({
     doneTitle: (title: string) => `Done · ${title}`,
     failedTitle: (title: string) => `${title} · stopped partway`,
     noAnswer: 'The task is finished. The card shows its steps.',
+    signInTitle: (service: string) => `Finish signing in to ${service}`,
   },
 })
