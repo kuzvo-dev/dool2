@@ -4,7 +4,7 @@
     {
       "name": "showtimes",
       "title": "상영 시간 찾기",
-      "description": "로그인 없이 된다. 롯데시네마 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화·관람 등급·상영 형식(2D·자막·관 이름)·회차마다 시작/끝 시각·남은 좌석/전체 좌석·상영관. 예매 화면이 보여 주는 날짜(오늘부터 약 8일)만 된다. 결과에서 사용자가 말한 영화·시간대만 골라 보여 준다. 예매하려면 lotte-cinema_prepare_booking.",
+      "description": "로그인 없이 된다. 롯데시네마 극장 하나의 그 날짜 상영 시간표를 영화마다 돌려준다: 영화·관람 등급·회차마다 시작/끝 시각·남은 좌석·상영관. 예매 화면이 보여 주는 날짜(오늘부터 약 8일)만 된다. 이번 요청에서 영화를 말했으면 movie로 그 영화만 받는다. 영화를 말하지 않았으면 모든 영화를 본다(앞선 대화의 영화로 좁히지 않는다). 예매하려면 lotte-cinema_prepare_booking.",
       "tier": "lookup",
       "status": "검증됨(2026-11-17, 건대입구·월드타워 오늘·토요일 시간표와 남은 좌석)",
       "input": {
@@ -34,6 +34,11 @@
             "type": "string",
             "format": "date",
             "description": "상영 날짜 YYYY-MM-DD (예: 2026-11-21)"
+          },
+          "movie": {
+            "type": "string",
+            "description": "이번 요청에서 말한 영화 제목의 일부 (예: 폭설). 없으면 모든 영화",
+            "maxLength": 40
           }
         },
         "required": [
@@ -53,10 +58,6 @@
               "type": "string",
               "description": "관람 등급 (전체·12·15·청불)"
             },
-            "formats": {
-              "type": "strings",
-              "description": "상영 형식·관 이름 (예: 2D, 자막, 14관 소파석 LASER)"
-            },
             "times": {
               "type": "strings",
               "description": "회차 시작/끝 (예: 20:10/21:59)"
@@ -64,10 +65,6 @@
             "seats_left": {
               "type": "strings",
               "description": "회차마다 남은 좌석 (times와 같은 순서)"
-            },
-            "seats_total": {
-              "type": "strings",
-              "description": "회차마다 전체 좌석"
             },
             "screens": {
               "type": "strings",
@@ -141,10 +138,6 @@
               "grade": {
                 "css": ".time_select_tit .ic_grade"
               },
-              "formats": {
-                "css": ".list_hall li",
-                "list": true
-              },
               "times": {
                 "css": "time.schedule_box--time",
                 "attr": "datetime",
@@ -154,10 +147,6 @@
                 "css": ".schedule_box--seat strong",
                 "list": true
               },
-              "seats_total": {
-                "css": ".schedule_box--seat > span:nth-of-type(4)",
-                "list": true
-              },
               "screens": {
                 "css": ".schedule_box--screen",
                 "list": true,
@@ -165,14 +154,23 @@
               }
             }
           },
-          "as": "movies",
+          "as": "all",
           "min": 0
+        },
+        {
+          "filter": {
+            "from": "all",
+            "where": "movie",
+            "op": "contains",
+            "value": "{{movie}}"
+          },
+          "as": "movies"
         }
       ],
       "result": {
         "movies": "{{movies}}"
       },
-      "next": "목록이 비어 있으면 그날 상영이 아직 없어요. 사용자가 말한 영화·시간대에 맞는 회차를 show_list(pick one)로 붙여요: title은 시각(15:40~18:28), sub는 상영관·남은 좌석, 매진은 state \"매진\"·tone stop. 글로는 추천 회차와 이유만 짧게. 끝 시각 24:10은 다음 날 0:10이에요. 예매하려면 lotte-cinema_prepare_booking. 비었으면 같은 날 다른 극장에서 바로 찾아요: 가까운 다른 롯데시네마, cgv_showtimes, megabox_showtimes. 묻고 끝내지 않아요.",
+      "next": "목록이 비어 있으면 그날 상영이 아직 없어요. 영화를 정하지 않은 시간표 질문이면 모든 영화가 필요하니, 결과가 10편에서 잘렸으면 같은 입력에 offset으로 나머지도 바로 읽고 나서 답해요. 사용자가 말한 영화·시간대에 맞는 회차를 show_list(pick one)로 붙여요: title은 시각(15:40~18:28), sub는 상영관·남은 좌석, 매진은 state \"매진\"·tone stop. 글로는 추천 회차와 이유만 짧게. 끝 시각 24:10은 다음 날 0:10이에요. 예매하려면 lotte-cinema_prepare_booking. 비었으면 같은 날 다른 극장에서 바로 찾아요: 가까운 다른 롯데시네마, cgv_showtimes, megabox_showtimes. 묻고 끝내지 않아요.",
       "minIntervalSec": 300,
       "login": false,
       "cards": false
