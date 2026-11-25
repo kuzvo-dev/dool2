@@ -1,0 +1,379 @@
+// Task sessions (ADR 0038). The conversation hands longer work to a task with task_start and keeps talking; each task
+// runs in its own chat (a task thread). This board keeps the tasks, their line for the one browser, the notes the
+// person passes on while they work, and what the screens show of them. The daemon (index.ts) runs the turns.
+
+import { WorkLog } from '@dool2/engine'
+import type { Lang } from '@dool2/i18n'
+import type { StoredMessage, TaskStatus, TaskView } from '@dool2/protocol'
+import { appNote } from '@dool2/protocol/rich'
+import { forAI } from './locales/index-text.js'
+import { TASKS_TEXT } from './locales/tasks-text.js'
+
+/**
+ * Whether the conversation hands longer work to task sessions when the `taskSessions` setting is empty. Off until a
+ * real-AI replay shows the conversation picks task_start at the right times (ADR 0038, Consequences)
+ */
+export const TASK_SESSIONS_DEFAULT = false
+
+/** What the conversation wrote when it handed the work over (task_start) */
+export interface TaskSpec {
+  title: string
+  goal: string
+  /** What makes it done; the finish check compares the answer with these */
+  doneWhen: string[]
+  /** Values already known, so the task does not ask again */
+  known: string[]
+  /** What must not happen */
+  avoid: string[]
+  /** It needs the browser or PC apps (one task at a time) */
+  browser: boolean
+}
+
+const strings = (v: unknown, max: number, len = 200): string[] =>
+  Array.isArray(v)
+    ? v
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .slice(0, max)
+        .map((x) => x.trim().slice(0, len))
+    : []
+
+/** task_start input → spec, or what is wrong with it (said back to the AI) */
+export function parseTaskSpec(a: Record<string, unknown>): TaskSpec | string {
+  const goal = typeof a.goal === 'string' ? a.goal.trim().slice(0, 1500) : ''
+  if (goal.length < 4) return 'goal is missing: write what to get done, in full.'
+  const doneWhen = strings(a.done_when, 6)
+  if (!doneWhen.length) return 'done_when is missing: write at least one condition that makes the task done.'
+  const title =
+    (typeof a.title === 'string' ? a.title.trim().slice(0, 40) : '') || goal.replace(/\s+/g, ' ').slice(0, 30)
+  return {
+    title,
+    goal,
+    doneWhen,
+    known: strings(a.known, 12),
+    avoid: strings(a.avoid, 8),
+    browser: a.browser !== false,
+  }
+}
+
+/** A task while the daemon runs it */
+export interface Task {
+  /** "t1", "t2" … (what the AI and the screens use) */
+  id: string
+  threadId: string
+  /** The conversation segment it was started from */
+  parentId: string
+  spec: TaskSpec
+  status: TaskStatus
+  createdAt: number
+  startedAt?: number
+  endedAt?: number
+  /** What it is doing now */
+  now?: string
+  /** The finish check sent it back and it is on another round */
+  continuing?: boolean
+  /** The answer being checked */
+  draft?: string
+  /** Notes from the person not yet given to the task */
+  notes: string[]
+  /** Its first message (the brief) was sent */
+  begun: boolean
+  work: WorkLog
+  /** Stop or take-as-is was pressed while a turn ran: the end of the turn decides */
+  stopping?: boolean
+  accepting?: boolean
+  /** What the current turn saved: the answer and the cards below it (the result that goes to the conversation) */
+  turnOut: StoredMessage[]
+  /** The task's card in the conversation */
+  recordId?: string
+  /** The site it worked on last */
+  host?: string
+}
+
+const ENDED: ReadonlySet<TaskStatus> = new Set(['done', 'stopped', 'failed'])
+
+export interface TaskBoardOptions {
+  now?: () => number
+  lang?: () => Lang
+  /** Same helpers as the conversation's work steps */
+  tabHost?: (tabId: number) => string | undefined
+  toolTitle?: (name: string) => string | undefined
+}
+
+export class TaskBoard {
+  private readonly tasks = new Map<string, Task>()
+  /** Tasks from before a restart, only to draw their cards */
+  private readonly frozen = new Map<string, TaskView>()
+  private seq = 0
+  /** The task that has the browser now (one Chrome profile, one task at a time) */
+  holder: string | undefined
+  private readonly now: () => number
+
+  constructor(private readonly o: TaskBoardOptions = {}) {
+    this.now = o.now ?? Date.now
+  }
+
+  create(threadId: string, parentId: string, spec: TaskSpec): Task {
+    const t: Task = {
+      id: `t${++this.seq}`,
+      threadId,
+      parentId,
+      spec,
+      status: 'waiting',
+      createdAt: this.now(),
+      notes: [],
+      begun: false,
+      work: new WorkLog(this.now, this.o.tabHost, this.o.toolTitle, this.o.lang?.() ?? 'ko'),
+      turnOut: [],
+    }
+    this.tasks.set(t.id, t)
+    return t
+  }
+
+  get(id: string): Task | undefined {
+    return this.tasks.get(id.trim())
+  }
+  byThread(threadId: string): Task | undefined {
+    for (const t of this.tasks.values()) if (t.threadId === threadId) return t
+    return undefined
+  }
+  isTask(threadId: string): boolean {
+    return this.byThread(threadId) !== undefined
+  }
+  /** In the order they were started */
+  all(): Task[] {
+    return [...this.tasks.values()]
+  }
+  ended(t: Task): boolean {
+    return ENDED.has(t.status)
+  }
+  active(): Task[] {
+    return this.all().filter((t) => !this.ended(t))
+  }
+
+  /** Whether it may run now: it needs no browser, or the browser is free or already its own */
+  canStart(t: Task): boolean {
+    return !t.spec.browser || this.holder === undefined || this.holder === t.id
+  }
+  /** Tasks ahead of a waiting one: the one holding the browser and the browser tasks waiting since earlier */
+  ahead(t: Task): number {
+    if (t.status !== 'waiting' || !t.spec.browser) return 0
+    const before = this.all().filter(
+      (x) => x !== t && x.status === 'waiting' && x.spec.browser && x.createdAt <= t.createdAt,
+    )
+    return before.length + (this.holder && this.holder !== t.id ? 1 : 0)
+  }
+  /** The first waiting task that may run now */
+  nextReady(): Task | undefined {
+    return this.all().find((t) => t.status === 'waiting' && this.canStart(t))
+  }
+  start(t: Task): void {
+    t.status = 'working'
+    t.startedAt ??= this.now()
+    t.endedAt = undefined
+    if (t.spec.browser) this.holder = t.id
+  }
+  /**
+   * A browser or PC app call from a chat: a task may use them if no other task holds them (it then holds them until it
+   * ends). Chats that are not tasks are not lined up here (side chats, the feed: as before task sessions)
+   */
+  claim(threadId: string): { ok: true } | { ok: false; holder: Task } {
+    const t = this.byThread(threadId)
+    if (!t || this.holder === t.id) return { ok: true }
+    const h = this.holder ? this.tasks.get(this.holder) : undefined
+    if (!h || this.ended(h)) {
+      this.holder = t.id
+      return { ok: true }
+    }
+    return { ok: false, holder: h }
+  }
+  release(t: Task): void {
+    if (this.holder === t.id) this.holder = undefined
+  }
+  end(t: Task, status: 'done' | 'stopped' | 'failed'): void {
+    t.status = status
+    t.endedAt = this.now()
+    t.continuing = undefined
+    t.draft = undefined
+    t.stopping = undefined
+    t.accepting = undefined
+    this.release(t)
+  }
+
+  /** A tool call of the task: one more step on its card */
+  step(t: Task, name: string, input: unknown, before = ''): void {
+    t.work.tool(name, before, input)
+    const rec = t.work.record()
+    const last = rec?.steps.at(-1)
+    if (last) t.now = last.text
+    if (rec?.host) t.host = rec.host
+  }
+
+  note(t: Task, text: string): void {
+    t.notes.push(text.trim().slice(0, 600))
+  }
+  /** Notes for the task's next tool result, taken once */
+  takeNotes(threadId: string): string[] {
+    const t = this.byThread(threadId)
+    if (!t?.notes.length || this.ended(t)) return []
+    return t.notes.splice(0)
+  }
+
+  view(t: Task): TaskView {
+    const rec = t.work.record()
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const ahead = this.ahead(t)
+    return {
+      id: t.id,
+      title: t.spec.title,
+      status: t.status,
+      ...(t.now ? { now: t.now } : {}),
+      ...(t.continuing ? { continuing: true } : {}),
+      steps: rec?.steps ?? [],
+      count: rec?.count ?? 0,
+      createdAt: iso(t.createdAt),
+      ...(t.startedAt ? { startedAt: iso(t.startedAt) } : {}),
+      ...(t.endedAt ? { endedAt: iso(t.endedAt) } : {}),
+      ...(ahead ? { ahead } : {}),
+      ...(t.draft && t.status === 'checking' ? { draft: t.draft } : {}),
+      ...(t.notes.length ? { notes: t.notes.length } : {}),
+      threadId: t.threadId,
+      ...(t.host ? { host: t.host } : {}),
+    }
+  }
+
+  /** Every task the screens may draw: running ones and the last finished, newest first */
+  views(limit = 20): TaskView[] {
+    const live = this.all().map((t) => this.view(t))
+    const old = [...this.frozen.values()].filter((v) => !this.tasks.has(v.id))
+    return [...live, ...old]
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+      .slice(0, limit)
+  }
+
+  /**
+   * Cards of tasks from before the daemon restarted. A task that had not ended lost its program with the daemon: it
+   * shows as stopped
+   */
+  restore(views: unknown): void {
+    if (!Array.isArray(views)) return
+    for (const v of views as TaskView[]) {
+      if (!v || typeof v.id !== 'string' || typeof v.threadId !== 'string') continue
+      const n = Number(v.id.replace(/^t/, ''))
+      if (Number.isFinite(n)) this.seq = Math.max(this.seq, n)
+      const ended = ENDED.has(v.status)
+      this.frozen.set(v.id, {
+        ...v,
+        ...(ended
+          ? {}
+          : { status: 'stopped' as const, endedAt: v.endedAt ?? new Date(this.now()).toISOString() }),
+      })
+    }
+  }
+  /** Start over: no tasks are left (none may be running) */
+  clear(): void {
+    this.tasks.clear()
+    this.frozen.clear()
+    this.holder = undefined
+  }
+  /** A card of a task from before a restart */
+  frozenView(id: string): TaskView | undefined {
+    return this.frozen.get(id)
+  }
+}
+
+/** The task's first message in its own chat: what to do, by when it is done, what is known, what must not happen */
+export function taskBrief(t: Task, lang: Lang = 'ko'): string {
+  const s = t.spec
+  const list = (head: string, xs: string[]) =>
+    xs.length ? `${head}\n${xs.map((x) => `- ${x}`).join('\n')}` : ''
+  const ai = [
+    'This is a task the user handed over in the conversation with Dool2. You work on it here, in its own session, ' +
+      'while the user keeps talking with Dool2 there. Only your final answer reaches the user, as the result of the ' +
+      'task: make it the one complete answer (result first, then what was done, then anything left), in the language ' +
+      'of the goal below.',
+    `Goal: ${s.goal}`,
+    list('Done when:', s.doneWhen),
+    list('Already known (do not ask again):', s.known),
+    list('Must not happen:', s.avoid),
+    list('The user also said, while the task waited to start:', t.notes.splice(0)),
+    'Notes the user sends while you work arrive at the end of a tool result as "Message from the user". Follow them; ' +
+      'where they differ from this spec, they come first.',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  return appNote(forAI(TASKS_TEXT(lang).briefShown(s.title), ai))
+}
+
+/** The person's notes as the next message of a task that is not in a turn (waiting for them, or just done) */
+export function notesMessage(notes: string[], lang: Lang = 'ko'): string {
+  const said = notes.map((n) => `"${n}"`).join(' / ')
+  return appNote(
+    forAI(
+      TASKS_TEXT(lang).noteShown(notes.join(' / ')),
+      `The user sent this through the conversation: ${said}. Continue the task with it; where it differs from the task spec, it comes first. When done, give the one complete answer again.`,
+    ),
+  )
+}
+
+/** What a tool result carries when the person passed something on (ADR 0038 steering) */
+export function steerLines(notes: string[]): string {
+  return notes
+    .map(
+      (n) =>
+        `Message from the user, sent through the conversation while you work (it comes before the task spec where they differ): "${n}"`,
+    )
+    .join('\n')
+}
+
+/** A tool result with the person's notes added at the end, where the AI reads it (text, and the structured next) */
+export function withNotes<T>(result: T, notes: string[]): T {
+  if (!notes.length) return result
+  const r = result as {
+    content?: { type: string; text?: string }[]
+    structuredContent?: unknown
+    hint?: string
+  }
+  if (!r || !Array.isArray(r.content)) return result
+  const line = steerLines(notes)
+  return {
+    ...r,
+    content: [...r.content, { type: 'text', text: line }],
+    // A service tool's structured result is what the AI reads; its next line rides there (mcp-tools pass)
+    ...(r.structuredContent ? { hint: [line, r.hint].filter(Boolean).join('\n') } : {}),
+  } as T
+}
+
+/** task_list for the conversation AI: what each task is doing, waiting on, or came out with */
+export function taskListText(board: TaskBoard, results: Map<string, string>, now = Date.now()): string {
+  const views = board.views(12)
+  if (!views.length) return 'No tasks yet.'
+  const age = (iso?: string) => {
+    if (!iso) return ''
+    const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))
+    return m < 1 ? 'just now' : `${m} min ago`
+  }
+  const line = (v: TaskView) => {
+    const what =
+      v.status === 'waiting'
+        ? `waiting for the browser (${v.ahead ?? 0} ahead)`
+        : v.status === 'working'
+          ? `working${v.continuing ? ' on what the check found missing' : ''}: ${v.now ?? 'starting'}`
+          : v.status === 'checking'
+            ? 'checking its answer before it finishes'
+            : v.status === 'needs-you'
+              ? 'waiting for the user (an approval, a sign-in or a card in the conversation)'
+              : v.status === 'done'
+                ? `done ${age(v.endedAt)}`
+                : v.status === 'stopped'
+                  ? `stopped ${age(v.endedAt)}`
+                  : `stopped by an error ${age(v.endedAt)}`
+    const result = results.get(v.id)
+    return [
+      `- ${v.id} "${v.title}": ${what}; ${v.count} steps${v.notes ? `; ${v.notes} note(s) not read yet` : ''}`,
+      result ? `  Result: ${result.slice(0, 400)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+  return `${views.map(line).join('\n')}\nSteer a running or waiting task with task_steer, stop one with task_stop.`
+}

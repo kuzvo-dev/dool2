@@ -656,9 +656,12 @@ function titleFrom(text: string) {
   return one.length > 30 ? `${one.slice(0, 30)}…` : one
 }
 
-/** Turns that only did housekeeping like organizing or remembering leave no work steps (so not every reply gets a card) */
+/**
+ * Turns that only did housekeeping like organizing or remembering leave no work steps (so not every reply gets a card).
+ * Handing work to a task is one too: the task has its own card (ADR 0038)
+ */
 const QUIET_TOOL =
-  /(goal|memory|library|feed|idea)_|status$|skill_|conversation_search|show_(cards|list|result|draft)/
+  /(goal|memory|library|feed|idea|task)_|status$|skill_|conversation_search|show_(cards|list|result|draft)/
 
 /** Collects what was done in a turn into a work record (WorkRecordMessage). Uses the same names as the step display on the phone and PC screens */
 export class WorkLog {

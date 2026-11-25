@@ -1727,6 +1727,8 @@ function onLive(ev: ConversationLiveEvent) {
     if (state.view === 'talk') renderLive()
     return
   }
+  // Task cards (ADR 0038) are drawn in the next change; a task's own turns never stream into the conversation
+  if (ev.kind === 'task') return
   const e = ev.event
   if (ev.side) {
     onSideTurn(ev.threadId, e)
@@ -2307,7 +2309,7 @@ function connectCard(rec: ConnectRecordMessage): HTMLElement {
             method: 'POST',
             body: JSON.stringify({ provider, background: true }),
           },
-        ).catch((x: Error) => ({ ok: false, message: x.message }))
+        ).catch((x: Error) => ({ ok: false, message: x.message, routed: false }))
         if (r.ok || LOGIN_BUSY_RE.test(r.message)) {
           state.connecting.add(c.id)
           return redraw()
@@ -2450,10 +2452,13 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
       }
       go.disabled = true
       go.textContent = T().saving
-      const res = await api<{ ok: boolean; message: string }>(`/api/logins/${encodeURIComponent(r.id)}`, {
-        method: 'POST',
-        body: JSON.stringify({ username: user.value.trim(), password: pw.value }),
-      }).catch((x: Error) => ({ ok: false, message: x.message }))
+      const res = await api<{ ok: boolean; message: string; routed?: boolean }>(
+        `/api/logins/${encodeURIComponent(r.id)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ username: user.value.trim(), password: pw.value }),
+        },
+      ).catch((x: Error) => ({ ok: false, message: x.message, routed: false }))
       pw.value = ''
       if (!res.ok) {
         go.disabled = false
@@ -2462,8 +2467,8 @@ function loginCard(rec: LoginRecordMessage): HTMLElement {
         return
       }
       render({ ...r, status: 'saved', username: user.value.trim() })
-      // Tell the AI only that it was saved. The values are never sent
-      void send(appNote(T().loginSavedNote(res.message)))
+      // Tell the AI only that it was saved. The values are never sent (a task's sign-in: the daemon told that task)
+      if (!res.routed) void send(appNote(T().loginSavedNote(res.message)))
     }
     const foot = el('p', 'login-foot meta', icon('lock'), T().vaultFoot)
     card.replaceChildren(head, form, foot)
@@ -2612,14 +2617,15 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
       if (decision === 'approve')
         yes.textContent =
           v.kind === 'file' || v.kind === 'pc' ? T().working : v.kind === 'print' ? T().sending : T().pressing
-      const r = await api<{ ok: boolean; message: string }>(`/api/approvals/${encodeURIComponent(v.id)}`, {
-        method: 'POST',
-        body: JSON.stringify({ decision }),
-      }).catch((e: Error) => ({ ok: false, message: e.message }))
+      const r = await api<{ ok: boolean; message: string; routed?: boolean }>(
+        `/api/approvals/${encodeURIComponent(v.id)}`,
+        { method: 'POST', body: JSON.stringify({ decision }) },
+      ).catch((e: Error) => ({ ok: false, message: e.message, routed: false }))
       await fill()
       void loadWaiting()
-      // Tell the AI the result so it continues
-      void send(appNote(decision === 'reject' ? T().rejectedNote(v.label) : T().approvedNote(r.message)))
+      // Tell the AI the result so it continues (a task's approval: the daemon already told that task, ADR 0038)
+      if (!r.routed)
+        void send(appNote(decision === 'reject' ? T().rejectedNote(v.label) : T().approvedNote(r.message)))
     }
     no.onclick = () => void decide('reject')
     yes.onclick = () => void decide('approve')

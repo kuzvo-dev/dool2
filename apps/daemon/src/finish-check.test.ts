@@ -67,6 +67,18 @@ describe('끝내기 전 검사', () => {
     expect(c.current('t')).toBeUndefined()
   })
 
+  it("a task's done-when conditions reach the judge (ADR 0038)", async () => {
+    const j = say('{"done":true,"why":"booked"}')
+    const c = new FinishCheck({ ask: j.ask })
+    c.begin('t', 'Book a KTX to Busan on Friday', {
+      doneWhen: ['a ticket number is read on the completion screen'],
+    })
+    await c.check('t', { answer: 'Booked, ticket 123', tools: ['browser_click'] })
+    expect(j.asked[0]).toContain('Done when')
+    expect(j.asked[0]).toContain('- a ticket number is read on the completion screen')
+    expect(judgePrompt({ ask: 'x', answer: 'y', tools: [], cycle: 0 })).not.toContain('Done when')
+  })
+
   it('진전이 없으면 기본 횟수에서, 있으면 최대까지 간다', async () => {
     const whys = [
       '보험 한 곳만 봤어요',

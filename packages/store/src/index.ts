@@ -133,6 +133,16 @@ export class Store {
     }
   }
 
+  /**
+   * A task session's own chat (ADR 0038). Stored as side = 2: not a segment of the main conversation and not listed
+   * with the side conversations, so it stays out of the history, the search and the side-chat limit
+   */
+  createTaskThread(agent: AgentId, title: string): ThreadRecord {
+    const t = this.createThread(agent, title, undefined, true)
+    this.db.prepare('UPDATE threads SET side = 2 WHERE id = ?').run(t.id)
+    return { ...t, task: true }
+  }
+
   /** Deletes a side conversation (with its messages) */
   deleteThread(id: string) {
     this.db.prepare('DELETE FROM messages WHERE thread_id = ?').run(id)
@@ -358,6 +368,7 @@ function toThread(r: ThreadRow): ThreadRecord {
     ...(r.summary ? { summary: r.summary } : {}),
     ...(r.closed_at ? { closedAt: r.closed_at } : {}),
     ...(r.side ? { side: true } : {}),
+    ...(r.side === 2 ? { task: true } : {}),
   }
 }
 
