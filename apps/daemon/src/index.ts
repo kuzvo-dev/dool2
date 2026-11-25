@@ -1069,6 +1069,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Clear it, so connect_ask shows a real connect card instead of "just connected" (measured 2026-11-25: Gmail stayed
     // marked for 10 minutes while every search met a 404, and no card came back)
     loginLost: (card) => {
+      for (const id of [card.id, card.sameLoginAs]) if (id) loginNeededAt.set(id, Date.now())
       const on = readSettings().connections ?? {}
       const ids = [card.id, card.sameLoginAs].filter((id): id is string => Boolean(id && on[id]))
       if (!ids.length) return
@@ -1736,6 +1737,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** When Doori put a connect card in the chat (if it connects within 30 minutes after that, the AI is told to continue the stopped task) */
   const connectAsked = new Map<string, number>()
+  /** When a tool last stopped because this service needed a sign-in (a task is waiting on the connection) */
+  const loginNeededAt = new Map<string, number>()
   /** The chat that showed each connect card: a task continues there when the connection ends (ADR 0038) */
   const connectThread = new Map<string, string>()
   /** Leaves only a note line in the chat without calling the AI (shown right away on the phone and PC) */
@@ -1880,7 +1883,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     connectAsked.delete(card.id)
     const asker = connectThread.get(card.id)
     connectThread.delete(card.id)
-    if (asked && Date.now() - asked < 30 * 60_000) {
+    // Only a task that a tool stopped for this sign-in is carried on. When the person only asked to connect or switch
+    // the account, saying so is the whole job: sending the AI back to "finish the stopped task" made it search again
+    // and the finish check send that back twice (11-26: three copies of the same mail list)
+    const needed = Math.max(
+      loginNeededAt.get(card.id) ?? 0,
+      card.sameLoginAs ? (loginNeededAt.get(card.sameLoginAs) ?? 0) : 0,
+    )
+    const stopped =
+      asked !== undefined && needed > 0 && needed <= asked + 60_000 && asked - needed < 15 * 60_000
+    loginNeededAt.delete(card.id)
+    if (asked && !stopped && Date.now() - asked < 30 * 60_000) {
+      const who = connectAccounts()[card.id]
+      sayNow(who ? m().connectedAs(card.name, maskAccount(who)) : m().connectedReady(card.name))
+    } else if (asked && Date.now() - asked < 30 * 60_000) {
       // Report first ("connected → continuing"), then the AI continues (people said they could not tell what was happening while waiting)
       sayNow(m().connectedResume(card.name))
       const note = appNote(
@@ -2841,7 +2857,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (r?.kind === 'stop' && (r.reason === 'rounds' || r.reason === 'time')) {
           const ask = askText || lastAsk.get(threadId) || ''
           leftOf.set(threadId, { ask, why: r.why, ...(r.next ? { next: r.next } : {}) })
-          const rec: LeftRecordMessage = { kind: 'left', why: r.why, ...(r.next ? { next: r.next } : {}) }
+          // The judge sometimes answers in English: never show the person another language than theirs (11-26: an
+          // English sentence, cut off, under a Korean chat). The AI still gets the judge's words through leftOf
+          const theirs = (t: string) => lang() !== 'ko' || /[\uAC00-\uD7A3]/.test(t)
+          const rec: LeftRecordMessage = theirs(r.why)
+            ? { kind: 'left', why: r.why, ...(r.next && theirs(r.next) ? { next: r.next } : {}) }
+            : { kind: 'left', why: m().leftGeneric }
           postSaved(threadId, store.addMessage(threadId, 'tool', JSON.stringify(rec)))
         }
         // If a new request or stop came in while judging, do not send it back

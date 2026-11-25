@@ -537,7 +537,8 @@ describe('대화 하나 (ADR 0015)', () => {
       }
     }
     const rt = new ToolRuntime()
-    const whys = ['only 1 insurer seen', 'the price table is missing', 'no discount checked']
+    // The judge writes in the person's language (an English verdict under a Korean chat is replaced, see below)
+    const whys = ['보험사 1곳만 봤어요', '가격표가 없어요', '할인을 확인하지 않았어요']
     const { api } = await boot(rt, {
       finishJudge: async () =>
         JSON.stringify({ done: false, why: whys.shift() ?? 'x', next: 'compare 2 more insurers' }),
@@ -552,7 +553,7 @@ describe('대화 하나 (ADR 0015)', () => {
     const dec = new TextDecoder()
     const deadline = Date.now() + 2000
     // The record is JSON inside the message text, so its quotes arrive escaped
-    while (!seen.includes('no discount checked') && Date.now() < deadline)
+    while (!seen.includes('할인을 확인하지 않았어요') && Date.now() < deadline)
       seen += dec.decode((await reader?.read())?.value)
     await reader?.cancel()
     const events = seen
@@ -589,11 +590,11 @@ describe('대화 하나 (ADR 0015)', () => {
     const msgs = (await state()).messages
     const left = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))
     expect(left).toHaveLength(1)
-    expect(JSON.parse(left[0]?.text ?? '{}')).toMatchObject({ why: 'no discount checked' })
+    expect(JSON.parse(left[0]?.text ?? '{}')).toMatchObject({ why: '할인을 확인하지 않았어요' })
     // [Continue] sends Dool2 back with what is left, once
     expect(await (await api('/api/conversation/continue', { method: 'POST' })).json()).toEqual({ ok: true })
     await until(async () => rt.inputs.length === 4)
-    expect(rt.inputs[3]).toContain('Still left: no discount checked')
+    expect(rt.inputs[3]).toContain('Still left: 할인을 확인하지 않았어요')
   })
 
   it('take it as is: ends the check, keeps the draft and starts no round', async () => {

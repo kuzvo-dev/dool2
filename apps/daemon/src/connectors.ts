@@ -159,8 +159,9 @@ export class Connectors {
        */
       accountFor?: (card: ConnectCard) => Promise<string | undefined>
       /**
-       * A tool met a sign-in screen (stop_if with login): the service is not signed in, whatever the connected mark says.
-       * The daemon takes the mark off so the next connect_ask shows a real card
+       * A tool met a sign-in screen (stop_if with login) or needs a connection it does not have: the service is not
+       * signed in, whatever the connected mark says. The daemon takes the mark off so the next connect_ask shows a real
+       * card, and remembers that a task is waiting on it
        */
       loginLost?: (card: ConnectCard) => void
       /**
@@ -749,11 +750,14 @@ export class Connectors {
     const kept = offset ? this.lists.get(listKey) : undefined
     if (kept && Date.now() - kept.at < LIST_KEEP_MS)
       return this.shape(card, tool, kept.out, kept.scope, kept.tabId, { offset, key: listKey })
-    if (tool.login && !this.isConnected(card))
+    if (tool.login && !this.isConnected(card)) {
+      // A task is waiting on this sign-in (the daemon carries it on once connected)
+      this.opts.loginLost?.(card)
       return text(
         `${card.name} needs to be connected ('${tool.title}' needs login). Done: nothing yet. Left: the person connects ${card.name} on a connect card. Next: call connect_ask('${card.id}') to show that card (its result ends the turn and says what to tell the user). An app notification comes when it is connected; then call this tool again.`,
         true,
       )
+    }
     const key = `${name} ${JSON.stringify(args)}`
     const last = this.recent.get(key)
     if (tool.minIntervalSec && last && Date.now() - last.at < tool.minIntervalSec * 1000) {

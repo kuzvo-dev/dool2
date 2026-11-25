@@ -504,34 +504,52 @@ export function interimAnswers(
   const replaced = new Map<string, string[]>()
   let answers: string[] = []
   let notes: string[] = []
+  // Tool records (lists, work steps) since the request, and those that came before the latest check note: they belong
+  // to the drafts, so they fold with them (11-26: three copies of the same mail list showed while the answers folded)
+  let tools: string[] = []
+  let draftTools: string[] = []
   for (const m of messages) {
     if (m.role === 'user') {
       if (isFinishCheckNote(m.text)) {
         notes.push(m.id)
         hidden.add(m.id)
+        draftTools.push(...tools)
+        tools = []
       } else if (!m.text.startsWith(APP_NOTE) || !notes.length) {
         // A new request, or another app note (sign-in verified, approval result) before any check note: the answers
         // so far were separate steps, not drafts (11-25: the connect card's answer and "connected" were folded
         // into "3 earlier answers" under a task hand-over)
         answers = []
         notes = []
+        tools = []
+        draftTools = []
       }
+      continue
+    }
+    if (m.role === 'tool') {
+      tools.push(m.id)
       continue
     }
     if (m.role !== 'assistant') continue
     if (notes.length && answers.length) {
-      const earlier = [...answers, ...notes]
+      const earlier = [...answers, ...draftTools, ...notes]
       for (const id of earlier) hidden.add(id)
       // an answer that replaced an answer that itself replaced others carries the whole chain
-      replaced.set(m.id, [...answers.flatMap((a) => [...(replaced.get(a) ?? []), a]), ...notes])
+      replaced.set(m.id, [
+        ...answers.flatMap((a) => [...(replaced.get(a) ?? []), a]),
+        ...draftTools,
+        ...notes,
+      ])
       for (const a of answers) replaced.delete(a)
       answers = []
       notes = []
+      draftTools = []
     }
     answers.push(m.id)
   }
-  // Still working after a check note: the earlier answer is a draft, not the answer
-  if (opts.running && notes.length && answers.length) for (const id of answers) hidden.add(id)
+  // Still working after a check note: the earlier answer (and its lists) is a draft, not the answer
+  if (opts.running && notes.length && answers.length)
+    for (const id of [...answers, ...draftTools]) hidden.add(id)
   return { hidden, replaced }
 }
 
