@@ -3,8 +3,8 @@
   "tools": [
     {
       "name": "agenda",
-      "title": "하루 일정",
-      "description": "구글 캘린더에서 그날(없으면 오늘) 일정을 시간순으로 읽는다(시간·제목·장소·참석자 수·화상회의 여부). 로그인해야 한다. '오늘 뭐 있어?', '내일 오후 비어 있어?'에 쓴다. (공식 연동 전 웹 화면 기준)",
+      "title": "일정 보기(하루·한 주)",
+      "description": "구글 캘린더에서 그날(없으면 오늘) 하루나 그 주 일정을 시간순으로 읽는다(시간·제목·장소·참석자 수·화상회의 여부). 로그인해야 한다. '오늘 뭐 있어?', '내일 오후 비어 있어?'는 하루, '이번 주 일정', '다음 주 언제 비어?'는 range=week로 한 번에 본다(하루씩 여러 번 부르지 않는다). (공식 연동 전 웹 화면 기준)",
       "tier": "lookup",
       "login": true,
       "status": "초안",
@@ -14,17 +14,29 @@
             "type": "string",
             "format": "date",
             "description": "날짜 YYYY-MM-DD (없으면 오늘)"
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week"
+            ],
+            "default": "day",
+            "description": "day = 그날 하루, week = 그 날짜가 든 한 주"
           }
         },
         "required": []
       },
       "output": {},
       "examples": [
-        {}
+        {},
+        {
+          "range": "week"
+        }
       ],
       "steps": [
         {
-          "open": "https://calendar.google.com/calendar/r/day{{#date}}/{{date|yyyy}}/{{date|m}}/{{date|d}}{{/date}}?authuser={{account|url}}"
+          "open": "https://calendar.google.com/calendar/r/{{#range}}{{range}}{{/range}}{{^range}}day{{/range}}{{#date}}/{{date|yyyy}}/{{date|m}}/{{date|d}}{{/date}}?authuser={{account|url}}"
         },
         {
           "sleep": 2500
@@ -38,7 +50,7 @@
           "login": true
         },
         {
-          "handoff_to_agent": "구글 캘린더 하루 보기({{date}}, 비었으면 오늘)예요. 종일 일정과 시간 일정을 시간순으로 시간·제목·장소·참석자 수·화상회의 링크 여부로 정리하고, 빈 시간대를 물으면 일정 사이 빈 시간을 계산해요. 일정을 열어 보기만 하고 고치거나 지우지 않아요. 로그인 화면이나 소개 화면이 나오면 connect_ask('google-calendar')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
+          "handoff_to_agent": "구글 캘린더 {{#range}}{{range}}{{/range}}{{^range}}day{{/range}} 보기({{date}}, 비었으면 오늘)예요. 종일 일정과 시간 일정을 날짜·시간순으로 시간·제목·장소·참석자 수·화상회의 링크 여부로 정리하고, 빈 시간대를 물으면 일정 사이 빈 시간을 계산해요. 답은 물은 기간의 캘린더 일정만으로 해요: 대화의 다른 이야기는 넣지 않고, 기억에 있는 약속은 그 기간 안에 있을 때만 '캘린더에는 없는 약속'으로 한 줄 덧붙여요. 일정을 열어 보기만 하고 고치거나 지우지 않아요. 로그인 화면이나 소개 화면이 나오면 connect_ask('google-calendar')(연결한 적이 있으면 두리가 그때 쓴 방법으로 알아서 다시 로그인해요)."
         }
       ],
       "result": {},
