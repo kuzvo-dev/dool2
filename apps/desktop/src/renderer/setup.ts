@@ -27,6 +27,7 @@ import {
   checkHeadline,
   checklist,
   choices,
+  noSubscriptionFound,
   pickDefault,
   SETUP_STEPS,
   type SetupStep,
@@ -487,10 +488,20 @@ export function runSetup(opts: SetupOptions): {
           const canStart = Boolean(pickDefault(choice, agents))
           const startBtn = button('btn', canStart ? m.next : m.doLater, () => void go('awake'))
           if (!canStart) startBtn.className = 'btn-text'
+          // No subscription on this PC: offer the API key route right here, as the main button
+          const paygBtn = noSubscriptionFound(choice, agents)
+            ? button('btn', m.usePayg, () => {
+                choice = 'payg'
+                void go('check')
+              })
+            : undefined
+          // Going on with no AI is allowed, but say plainly what it means (otherwise Dool2 just looks asleep)
+          if (!canStart) card.append(el('p', 'setup-hint', m.noAiYet))
           foot.append(
             button('btn-text', m.back, () => void go('choice')),
             button('btn-text', m.recheck, () => void go('check')),
             startBtn,
+            ...(paygBtn ? [paygBtn] : []),
           )
           card.append(foot)
         }

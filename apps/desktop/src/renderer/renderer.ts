@@ -112,6 +112,7 @@ declare global {
         token: string
         smokeOpen?: string
         smokeSetup?: string
+        smokeNoAi?: boolean
         smokeAsk?: string
         smokeAskWait?: number
       }>
@@ -474,6 +475,12 @@ function extensionRow() {
       )
 }
 
+/** Opens the step that connects an AI: the API key form for pay-as-you-go, else the readiness check */
+function connectAi() {
+  if (state.choice === 'payg') return openSetup({ step: 'settings', tab: 'ai', action: 'payg-key' })
+  return openSetup({ step: 'check', choice: state.choice ?? 'unsure' })
+}
+
 /** "This PC" at the top right + the self-check notice at the top left */
 function renderDevice(settings?: Settings) {
   const ready = readyAgents().length > 0
@@ -486,15 +493,21 @@ function renderDevice(settings?: Settings) {
   const box = $('notice')
   box.hidden = !settings.setupDone || ready
   if (box.hidden) return
-  const fix = button('btn-small', () => void openSetup({ step: 'settings', tab: 'ai' }), A().fix)
+  const fix = button('btn-small', () => void connectAi(), A().fix)
   box.replaceChildren(el('span', 'notice-text', A().noAi), fix)
 }
 
+/** Smoke screenshots of a PC with no AI ready (DOOL2_SMOKE_NO_AI) */
+let smokeNoAi = false
+
 async function loadAgents() {
   const { agents } = await api<{ agents: AgentStatus[] }>('/api/agents')
-  state.agents = agents
+  const wasNoAi = noAiReady()
+  state.agents = smokeNoAi ? agents.map((a) => ({ id: a.id, installed: false, loggedIn: false })) : agents
   renderDevice()
   renderHead()
+  // The empty chat says "connect an AI" while none is ready: redraw it when that changes
+  if (wasNoAi !== noAiReady()) renderTalk()
 }
 
 async function loadExtension() {
@@ -986,8 +999,8 @@ function moodNow(): { mood: string; line: string; cls: string } {
       line: pendingApprovals().length ? A().waitApproval : A().waitLogin,
       cls: 'ask',
     }
-  if (!readyAgents().length && state.agents.length)
-    return { mood: 'sleeping', line: A().noAiShort, cls: 'off' }
+  // Not asleep but waiting for an AI: a sleeping Dool2 here read as "stuck asleep" (mail inquiries)
+  if (noAiReady()) return { mood: 'asking', line: A().noAiShort, cls: 'ask' }
   return { mood: '', line: A().resting, cls: 'off' }
 }
 
@@ -1140,7 +1153,13 @@ function renderPanelTop() {
   if (!top) return
   const m = moodNow()
   const d = liveDoori('panel', m.mood, 96)
-  const status = state.busy ? A().statusWorking : m.mood === 'asking' ? A().statusWaiting : A().statusResting
+  const status = state.busy
+    ? A().statusWorking
+    : noAiReady()
+      ? A().noAiShort
+      : m.mood === 'asking'
+        ? A().statusWaiting
+        : A().statusResting
   top.replaceChildren(
     el('span', 'panel-av', d),
     el('h2', 'title-2', A().doori),
@@ -1266,6 +1285,17 @@ function screenTab(): HTMLElement {
         el('div', 'workcard-head', el('b', '', cut(lt.ask, 28)), el('span', 'done-label', A().finished)),
         el('div', 'panel-log', log),
         el('div', 'workcard-foot', el('span', 'meta', A().didSteps(lt.steps.length, elapsed(lt.seconds)))),
+      ),
+    )
+  } else if (state.agents.length && !readyAgents().length) {
+    // No AI to work with: a sleeping Dool2 with "Resting right now" read as "Dool2 is stuck asleep".
+    // Say what wakes it up and open the step that does it
+    box.append(
+      emptyState(
+        'asking',
+        A().noAiTitle,
+        A().noAiBody,
+        button('btn', () => void connectAi(), A().connectAi),
       ),
     )
   } else {
@@ -1686,7 +1716,24 @@ function renderLive() {
   renderSend()
 }
 
+/** Agents were checked and none is ready to work */
+const noAiReady = () => state.agents.length > 0 && !readyAgents().length
+
 function emptyView() {
+  // With no AI, the example chips only lead to an error: say what wakes Dool2 up instead
+  if (noAiReady())
+    return el(
+      'div',
+      'empty-view',
+      liveDoori('home', 'asking', 120),
+      el('p', 'title-2', A().noAiTitle),
+      el('p', 'cap', A().noAiBody),
+      el(
+        'div',
+        'chips',
+        button('btn', () => void connectAi(), A().connectAi),
+      ),
+    )
   const chips = el('div', 'chips')
   for (const ex of examples()) chips.append(button('chip', () => void send(ex), ex))
   return el(
@@ -2887,6 +2934,7 @@ async function show(view: View, id?: string) {
 
 async function main() {
   const cfg = await window.dool2.config()
+  smokeNoAi = cfg.smokeNoAi === true
   state.url = cfg.url
   state.token = cfg.token
   // Last-used language first (localStorage), settled from settings below

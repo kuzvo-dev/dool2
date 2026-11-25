@@ -149,6 +149,9 @@ export const appText = messages({
     didSteps: (n: number, time: string) => `한 일 ${n}가지 · ${time}`,
     restingTitle: '지금은 쉬고 있어요',
     restingBody: '부탁하면 두리가 이 컴퓨터의 Chrome에서 하는 일을 여기서 한 단계씩 보여 드릴게요.',
+    noAiTitle: 'AI를 연결하면 깨어나요',
+    noAiBody: 'Claude·ChatGPT 구독으로 로그인하거나 AI 회사 API 키를 넣으면 바로 일할 수 있어요.',
+    connectAi: 'AI 연결하기',
     nextUp: '다음 차례',
     nextUpNote: '지금 일이 끝나면 이어서 볼게요',
     thisComputer: '이 컴퓨터',
@@ -310,6 +313,10 @@ export const appText = messages({
     restingTitle: 'Resting right now',
     restingBody:
       "When you ask for something, you'll see what Dool2 does in Chrome on this computer here, step by step.",
+    noAiTitle: 'Connect an AI to wake Dool2 up',
+    noAiBody:
+      'Sign in with a Claude or ChatGPT subscription, or add an AI company API key, and Dool2 can start right away.',
+    connectAi: 'Connect an AI',
     nextUp: 'Up next',
     nextUpNote: "I'll get to it after the current task",
     thisComputer: 'This computer',
