@@ -121,6 +121,7 @@ export class Approvals {
     const r = this.get(id)
     if (!r || r.status !== 'pending') return undefined
     r.status = 'approved'
+    r.decidedAt = new Date(this.now()).toISOString()
     return r
   }
 
@@ -128,6 +129,7 @@ export class Approvals {
     const r = this.get(id)
     if (!r || r.status !== 'pending') return false
     r.status = 'rejected'
+    r.decidedAt = new Date(this.now()).toISOString()
     r.shot = undefined
     return true
   }

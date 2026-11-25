@@ -3150,6 +3150,20 @@ function awayItem(): Item | undefined {
         h('div', { class: 'card-label', text: tChat.awayTitle }),
         s.doneCount > 0 && h('p', { text: tChat.awayDone(s.doneCount) }),
         s.doneCount > 0 && h('ul', {}, ...s.done.map((d) => h('li', { text: d.title }))),
+        s.decidedCount > 0 && h('p', { text: tChat.awayDecided(s.decidedCount) }),
+        s.decidedCount > 0 &&
+          h(
+            'ul',
+            {},
+            ...s.decided.map((d) =>
+              h(
+                'li',
+                {},
+                d.title,
+                h('div', { class: 'away-if', text: d.approved ? tChat.awayApproved : tChat.awayRejected }),
+              ),
+            ),
+          ),
         s.waiting.length > 0 && h('p', { text: tChat.awayWaiting }),
         s.waiting.length > 0 &&
           h(
