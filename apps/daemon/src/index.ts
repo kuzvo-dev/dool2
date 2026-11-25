@@ -146,9 +146,12 @@ import { localDay, StatsReporter } from './stats.js'
 import {
   notesMessage,
   parseTaskSpec,
+  signInSpec,
   TASK_SESSIONS_DEFAULT,
   type Task,
   TaskBoard,
+  type TaskSpec,
+  takeoverTarget,
   taskBrief,
   taskListText,
   withNotes,
@@ -1292,22 +1295,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const resume = connectAsked.has(card.id)
     // Only the first two sentences show on screen (sentences with tool names go to the AI only)
     const why = joinKoreanSentences(r.message.split(/[.!?]/)[0] ?? '').trim()
-    void talk(
-      appNote(
-        forAI(
-          m().takeoverShown(card.name),
-          `Automatic sign-in to ${card.name} stopped partway. Continue the sign-in yourself. ` +
-            `Read tab ${r.tabId} with browser_read (the automatic sign-in's verdict: ${why}. That verdict comes from rules and may be wrong, so look at the screen and decide). ` +
-            `The ID and password are in the vault: enter them only with browser_login and press the sign-in button with browser_click. ` +
-            `If the screen asks you to link a quick sign-in to an existing account, press the link button (this is not a new sign-up). ` +
-            `Anything that needs the person goes to the phone as a card only: robot-check pictures with browser_request_tap, text captchas and verification codes with browser_request_code, authenticator-app approval with browser_wait_auth, identity fields with browser_fill_profile, and choices the user must make, such as signing up, with browser_request_approval. Never hand over the PC screen or tell the user to do it themselves. ` +
-            `Do not ask the user for the password again. Once signed in, leave the tab open but do not mention the tab. ` +
-            (resume
-              ? `If a task stopped because ${card.name} was needed, finish it after signing in (mention the connection in one line).`
-              : 'Report only the result, in one sentence: it is connected.'),
-        ),
-      ),
-    ).catch(() => {})
+    const ai =
+      `Automatic sign-in to ${card.name} stopped partway. Continue the sign-in yourself. ` +
+      `Read tab ${r.tabId} with browser_read (the automatic sign-in's verdict: ${why}. That verdict comes from rules and may be wrong, so look at the screen and decide). ` +
+      `The ID and password are in the vault: enter them only with browser_login and press the sign-in button with browser_click. ` +
+      `If the screen asks you to link a quick sign-in to an existing account, press the link button (this is not a new sign-up). ` +
+      `Anything that needs the person goes to the phone as a card only: robot-check pictures with browser_request_tap, text captchas and verification codes with browser_request_code, authenticator-app approval with browser_wait_auth, identity fields with browser_fill_profile, and choices the user must make, such as signing up, with browser_request_approval. Never hand over the PC screen or tell the user to do it themselves. ` +
+      `Do not ask the user for the password again. Once signed in, leave the tab open but do not mention the tab. ` +
+      (resume
+        ? `If a task stopped because ${card.name} was needed, finish it after signing in (mention the connection in one line).`
+        : 'Report only the result, in one sentence: it is connected.')
+    // The sign-in needs the browser, which the conversation of task sessions does not have (ADR 0038): the task that
+    // asked for the connection takes it over, else a new sign-in task does (it waits in line for the browser)
+    const cur = conversation.current()?.id
+    const where = takeoverTarget(tasks, connectThread.get(card.id), cur ? sessionOf(cur) : undefined)
+    journal.write('connect-takeover-to', { id: card.id, to: where.kind })
+    if (where.kind === 'task') {
+      postNote(m().takeoverShown(card.name))
+      followUp(where.task.threadId, appNote(forAI('', ai)))
+    } else if (where.kind === 'new-task' && cur) {
+      postNote(m().takeoverShown(card.name))
+      void openTask(cur, signInSpec(card.name, ai, lang())).catch(() => {})
+    } else void talk(appNote(forAI(m().takeoverShown(card.name), ai))).catch(() => {})
     return true
   }
   /**
@@ -3358,6 +3367,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     followUp(t.threadId, text)
     return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
   }
+  /** A new task from a spec: its own chat, its card in the conversation segment it came from, then it starts or waits */
+  async function openTask(parentId: string, spec: TaskSpec): Promise<Task> {
+    const agent = store.getThread(parentId)?.agent ?? (await pickAgent(undefined))
+    const thread = store.createTaskThread(agent, spec.title)
+    const t = tasks.create(thread.id, parentId, spec)
+    const rec: TaskRecordMessage = { kind: 'task', id: t.id, title: spec.title }
+    const saved = store.addMessage(parentId, 'tool', JSON.stringify(rec))
+    t.recordId = saved.id
+    postSaved(parentId, saved)
+    journal.write('task', {
+      id: t.id,
+      event: 'start',
+      browser: spec.browser,
+      doneWhen: spec.doneWhen.length,
+      known: spec.known.length,
+      avoid: spec.avoid.length,
+    })
+    startTask(t)
+    return t
+  }
   /** The task tools of the conversation (task_start, task_steer, task_stop, task_list) */
   async function taskTool(caller: string | undefined, name: string, args: Record<string, unknown>) {
     if (!caller || sessionOf(caller) !== 'conversation')
@@ -3366,22 +3395,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (name === 'task_start') {
       const spec = parseTaskSpec(args)
       if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
-      const agent = store.getThread(caller)?.agent ?? (await pickAgent(undefined))
-      const thread = store.createTaskThread(agent, spec.title)
-      const t = tasks.create(thread.id, caller, spec)
-      const rec: TaskRecordMessage = { kind: 'task', id: t.id, title: spec.title }
-      const saved = store.addMessage(caller, 'tool', JSON.stringify(rec))
-      t.recordId = saved.id
-      postSaved(caller, saved)
-      journal.write('task', {
-        id: t.id,
-        event: 'start',
-        browser: spec.browser,
-        doneWhen: spec.doneWhen.length,
-        known: spec.known.length,
-        avoid: spec.avoid.length,
-      })
-      if (startTask(t))
+      const t = await openTask(caller, spec)
+      if (t.status === 'working')
         return toolText(
           `Task ${t.id} ("${spec.title}") started. The user follows it on its card in the conversation, and its result will appear in this conversation by itself. Say in one short sentence that you are on it, and end your answer.`,
         )
