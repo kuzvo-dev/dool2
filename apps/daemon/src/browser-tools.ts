@@ -197,6 +197,16 @@ const CHECKOUT_MARKS: [string, RegExp][] = [
   ['terms consent', CHECKOUT_TERMS],
 ]
 
+/**
+ * The approval card's "what" for a payment: the shop or product title and the goods, each once. The title is often
+ * the one product's name, and the card said the same name twice (WP7 bench)
+ */
+export function payWhatLine(title: string, names: string[]): string {
+  const goods = names.filter(Boolean)
+  const head = title && !goods.some((n) => n.includes(title)) ? title : ''
+  return [head, goods.filter((n) => !head.includes(n)).join('·')].filter(Boolean).join(' · ')
+}
+
 /** If the page looks like a checkout screen (where payment method and booker details are entered), the marks seen (hint). A checkout-step URL also counts */
 export function checkoutScreen(text: string, url: string): string | undefined {
   try {
@@ -1504,7 +1514,10 @@ export class BrowserTools {
           {
             what:
               str(a.what, 200) ||
-              [title, goods.map((g) => g.name).join('·')].filter(Boolean).join(' · ') ||
+              payWhatLine(
+                title,
+                goods.map((g) => g.name),
+              ) ||
               browserText(this.userLang()).payWhat,
             where: str(a.where, 100) || title,
             ...(str(a.total, 60) ? { amount: str(a.total, 60) } : {}),
