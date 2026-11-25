@@ -61,6 +61,8 @@ export const setupText = messages({
     scanningDots: '이 컴퓨터를 살펴보는 중이에요…',
     doLater: '나중에 할게요',
     recheck: '다시 확인',
+    usePayg: 'API 키로 쓸게요',
+    noAiYet: 'AI를 연결하기 전까지 두리는 일을 할 수 없어요. 나중에 연결해도 돼요.',
     codexLoginNote: '브라우저에서 ChatGPT 로그인을 마치면 여기로 돌아와 주세요.',
     // Awake
     awakeTitle: '두리가 쉬지 않게 할까요?',
@@ -331,6 +333,8 @@ export const setupText = messages({
     scanningDots: 'Checking this computer…',
     doLater: "I'll do it later",
     recheck: 'Check again',
+    usePayg: 'Use an API key',
+    noAiYet: "Dool2 can't work until an AI is connected. You can connect one later.",
     codexLoginNote: 'Finish signing in to ChatGPT in your browser, then come back here.',
     awakeTitle: 'Keep Dool2 running?',
     awakeSub:

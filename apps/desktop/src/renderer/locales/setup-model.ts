@@ -41,6 +41,8 @@ export const setupModelText = messages({
     canStartSub: '나머지는 나중에 연결해도 괜찮아요.',
     left: (n: number) => `${COUNT[n] ?? n} 가지만 해 주세요`,
     leftSub: '버튼을 누르면 두리가 이어서 할게요.',
+    noSubTitle: 'Claude·ChatGPT 구독이 안 보여요',
+    noSubSub: '둘 중 하나에 로그인하거나, 구독 없이 AI 회사 API 키로 쓴 만큼만 낼 수 있어요.',
     underOneWon: '1원 미만',
     aboutWon: (won: string) => `약 ${won}원`,
     devBuild: '개발용으로 켠 앱이라 새 버전을 확인하지 않아요',
@@ -94,6 +96,9 @@ export const setupModelText = messages({
     canStartSub: 'You can connect the rest later.',
     left: (n: number) => (n === 1 ? 'Just one thing left' : `Just ${n} things left`),
     leftSub: 'Press a button and Dool2 will take it from there.',
+    noSubTitle: 'No Claude or ChatGPT subscription found',
+    noSubSub:
+      'Sign in to one of them, or skip the subscription and pay only for what you use with an AI company API key.',
     underOneWon: 'under ₩1',
     aboutWon: (won: string) => `about ₩${won}`,
     devBuild: "This is a development build, so it doesn't check for new versions",

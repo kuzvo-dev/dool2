@@ -1,6 +1,14 @@
 import type { AgentStatus } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
-import { checkHeadline, checklist, costLabel, neededAgents, pickDefault, updateLine } from './setup-model.js'
+import {
+  checkHeadline,
+  checklist,
+  costLabel,
+  neededAgents,
+  noSubscriptionFound,
+  pickDefault,
+  updateLine,
+} from './setup-model.js'
 
 const claudeReady: AgentStatus = { id: 'claude', installed: true, loggedIn: true, plan: 'max' }
 const claudeMissing: AgentStatus = { id: 'claude', installed: false, loggedIn: false }
@@ -48,6 +56,15 @@ describe('첫 실행 마법사', () => {
   it('상황에 맞는 제목을 고른다', () => {
     expect(checkHeadline('claude', [claudeReady]).title).toBe('준비가 다 됐어요')
     expect(checkHeadline('both', [claudeReady, codexOut]).title).toBe('바로 시작할 수 있어요')
+    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
+  })
+
+  it("'잘 모르겠어요'인데 구독이 없으면 API 키 길을 알린다", () => {
+    expect(noSubscriptionFound('unsure', [claudeMissing, codexOut])).toBe(true)
+    expect(checkHeadline('unsure', [claudeMissing, codexOut]).title).toBe('Claude·ChatGPT 구독이 안 보여요')
+    // A signed-in subscription, or a different choice, keeps the usual headline
+    expect(noSubscriptionFound('unsure', [claudeReady, codexOut])).toBe(false)
+    expect(noSubscriptionFound('both', [claudeMissing, codexOut])).toBe(false)
     expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
   })
 

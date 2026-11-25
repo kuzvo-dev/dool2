@@ -69,6 +69,15 @@ export function pickDefault(choice: AiChoice, agents: AgentStatus[]): AgentId | 
   return neededAgents(choice).find((id) => ready(agents.find((a) => a.id === id)))
 }
 
+/**
+ * "Not sure" found no subscription on this PC (no Claude or Codex signed in): the wizard offers the
+ * pay-as-you-go API key instead of only listing installs and sign-ins (people without either subscription
+ * otherwise finished setup with no AI and found Dool2 asleep)
+ */
+export function noSubscriptionFound(choice: AiChoice, agents: AgentStatus[]): boolean {
+  return choice === 'unsure' && !pickDefault(choice, agents)
+}
+
 /** "Not sure" shows only the AIs already signed in, if any */
 function visibleAgents(choice: AiChoice, agents: AgentStatus[]): AgentId[] {
   const need = neededAgents(choice)
@@ -216,6 +225,7 @@ export function checkHeadline(
   const left = items.filter((i) => !i.ok).length
   if (left === 0) return { title: m.allReady, sub: m.allReadySub }
   if (pickDefault(choice, agents)) return { title: m.canStart, sub: m.canStartSub }
+  if (noSubscriptionFound(choice, agents)) return { title: m.noSubTitle, sub: m.noSubSub }
   return { title: m.left(left), sub: m.leftSub }
 }
 
