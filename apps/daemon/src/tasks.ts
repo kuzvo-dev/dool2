@@ -364,7 +364,7 @@ export function namesTaskTool(text: string): boolean {
  * flow, a site check, a missing profile field), one line says how to get that done from here, so it never stops at
  * "I can't"
  */
-export function withTaskHint<T>(result: T): T {
+export function withTaskHint<T>(result: T, tool?: string): T {
   const r = result as {
     content?: { type: string; text?: string }[]
     structuredContent?: unknown
@@ -372,13 +372,22 @@ export function withTaskHint<T>(result: T): T {
   }
   if (!r || !Array.isArray(r.content)) return result
   const said = [...r.content.map((x) => x.text ?? ''), r.hint ?? ''].join('\n')
-  if (!namesTaskTool(said)) return result
+  const line = namesTaskTool(said) ? TASK_HINT : tool === 'service/find' ? FIND_HINT : undefined
+  if (!line) return result
   return {
     ...r,
-    content: [...r.content, { type: 'text', text: TASK_HINT }],
-    ...(r.structuredContent ? { hint: [r.hint, TASK_HINT].filter(Boolean).join('\n') } : {}),
+    content: [...r.content, { type: 'text', text: line }],
+    ...(r.structuredContent ? { hint: [r.hint, line].filter(Boolean).join('\n') } : {}),
   } as T
 }
+
+/**
+ * The line under service_find's matches in the conversation of task sessions. A loose match ("Busan" in an airline's
+ * name for "Busan weather tomorrow") left the conversation with no tool that fits and no browser, and it told the
+ * user to search themselves (WP7 bench, twice)
+ */
+export const FIND_HINT =
+  'If none of these answers it, the web does: hand the lookup to a task with task_start (browser: true) and tell the user you are on it; it starts after a task that holds the browser, if any. Do not send the user to look it up themselves.'
 
 /**
  * task_list for the conversation AI: what each task is doing, waiting on, or came out with. waitsOn: the cards a

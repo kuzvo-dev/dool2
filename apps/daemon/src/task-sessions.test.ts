@@ -9,7 +9,7 @@ import type { AgentRuntime, TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus, StoredMessage, TaskView } from '@dool2/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
-import { TASK_HINT, TASK_SESSIONS_DEFAULT, withTaskHint } from './tasks.js'
+import { FIND_HINT, TASK_HINT, TASK_SESSIONS_DEFAULT, withTaskHint } from './tasks.js'
 
 type Result = { isError?: boolean; content: { type: string; text: string }[]; routed?: boolean }
 type Script = (input: TurnInput, rt: TwoSessions) => AsyncGenerator<AgentEvent>
@@ -490,6 +490,10 @@ describe('task sessions (ADR 0038)', () => {
       hint: 'use file_find',
     })
     expect(s.hint).toContain(TASK_HINT)
+    // service_find in the conversation: when nothing listed fits, a web lookup is a task
+    const found = { content: [{ type: 'text', text: '## Air (air) — not connected' }] }
+    expect(withTaskHint(found, 'service/find').content.at(-1)?.text).toBe(FIND_HINT)
+    expect(withTaskHint(found, 'life/goal_list')).toBe(found)
   })
 
   it('evals on a test PC: a fresh main segment per scenario, with task sessions on or off', async () => {
