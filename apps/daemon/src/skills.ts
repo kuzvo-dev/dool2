@@ -80,6 +80,32 @@ export class Skills {
    * The service map for the AI instructions: lets it pick the right service even for requests without a service name ("find a restaurant for our anniversary").
    * One line per service in each category: "name(id)✓: what it can do". ✓ = connected (logged in, so booking and ordering work)
    */
+  /**
+   * The service list of the conversation of task sessions (ADR 0038): one line per service it can look things up in
+   * right now (connected, or lookups that need no login), with those lookup tools. The rest is one service_find away,
+   * and booking, ordering or signing in happens in a task
+   */
+  lookupMap(): string {
+    const lines: string[] = []
+    for (const it of this.last) {
+      if (it.card.how === 'device') continue
+      const c = it.card
+      const on = Boolean(it.connectedAt)
+      const prefix = `${c.id.replace(/-/g, '_')}_`
+      const tools = (it.tools ?? [])
+        .filter((t) => t.tier === 'lookup' && (on || !t.login))
+        .map((t) => (t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name))
+      if (!tools.length) continue
+      lines.push(`- ${c.name}(${c.id})${on ? '✓' : ''} — ${c.summary} [${tools.join(', ')}]`)
+    }
+    if (!lines.length) return ''
+    return [
+      '## Services you can look things up in now (✓ connected; tools named <id>_<tool> with - as _, run with service_call)',
+      '- Pick by the purpose of the request even when no service is named. service_find shows any other service; booking, ordering and signing in go to a task.',
+      ...lines,
+    ].join('\n')
+  }
+
   serviceMap(): string {
     const by = new Map<string, string[]>()
     /** Category → services shown by name only */

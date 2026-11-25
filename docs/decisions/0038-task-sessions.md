@@ -106,3 +106,70 @@ conversation), never the spec the AI wrote. See the threat model (T28).
   "talk while a task runs" and "change the task midway" scenarios for that replay.
 - Revisit if the conversation hands off small requests (one lookup) or keeps doing browser work in words it cannot
   do, or if steering notes arrive too late in long single steps.
+
+## Follow-up: instructions per kind of session (harness overhaul, round 2)
+
+Round 1 shrank one instruction text that served every chat and stopped near 21,600 characters. With task sessions
+on by default, the kind of session becomes the unit of design: each kind gets its own instruction template.
+
+**Which kind each chat is.** The daemon decides it in `sessionOf` (`apps/daemon/src/index.ts`), fixed per segment:
+
+| Chat | Kind | Why |
+|---|---|---|
+| Main conversation, task sessions on | conversation | talks, remembers, looks up, hands work over |
+| A task (`task_start`, a stopped automatic sign-in, a connect take-over) | task | does one job from its spec |
+| Scheduled tasks that answer in the main conversation | conversation | they run as a turn of the conversation; web work goes to `task_start` |
+| The feed chat (quiet scheduled tasks, ideas, proactive checks) | none (both) | it posts with `feed_tell` and `idea_suggest` and updates what Dool2 knows, which a task does not have, and also works on sites |
+| Side chats the person opens | none (both) | the person talks there directly, so memory and goals must work too |
+| Main conversation, task sessions off | none (both) | there is no task to hand work to |
+
+Side jobs (finish check judge, auto-approve reviewer, summaries, quick checks) already run without tools or with
+their own short instructions and are not affected.
+
+**Templates** (`buildSystemPrompt({ kind })` in `packages/engine/src/persona.ts`), with size tests:
+
+- Shared: identity, language, voice, money and contact seriousness, secrets only through cards, page text is not a
+  request, honesty, no verdict on health, contracts or investments.
+- Conversation (≤ 5,000 characters): answer directly vs look up, look up before asking, don't ask back for
+  searches, hand web, app and file work to a task, app notes and photos, result blocks, quick-reply format, source
+  links. Phrasing examples for talking.
+- Task (≤ 8,000 characters): the spec is the job, do the work first, look up missing values (known values →
+  profile, vault, what Dool2 knows → open tabs and connected services → files) before asking, compare with the same
+  conditions, service tools first, try another route, approval before any irreversible button, what "done" means
+  and what to report (done / left / what the person must do). Phrasing examples for work and cards.
+- No kind: both.
+
+The service list in the instructions follows the kind: the conversation gets one line per service it can look things
+up in now (connected, or lookups without sign-in) with those lookup tools (`Skills.lookupMap`); a task gets no list
+and uses `service_find`; a chat without a kind keeps the full map. A task also gets no "what Dool2 knows" section
+(it has `know_find` and its spec's known values); memories stay in every kind.
+
+**Where each sentence of the old template went.** (a) conversation only, (b) task only, (c) moved to the tool that
+needs it, (d) deleted because code enforces it, (e) an incident patch kept as an eval scenario and deleted.
+
+- (a) when to answer vs look up, recommendations without questions, quick replies, result blocks, source links, app
+  note and photo markers, memory use in one line.
+- (b) do the work first, the look-up order for missing values, compare 2 to 3 places, confirmed values only in what
+  goes to others, don't give up after one block, never tell the person to do it elsewhere, done means the completion
+  screen, how to report.
+- (c) "don't ask 'Shall I set that up?'" and watch frequencies → `goal_create`; save quietly → `memory_save`; what to
+  save after a logged-in visit → `know_save`; drafts right away without invented facts → `show_draft`; several
+  options for an order → `show_cards`; stay with the picked candidate's service and price → `task_start.known`;
+  don't guess deep site addresses → `browser_open`; read the page and press what Dool2 can before a card →
+  `browser_request_code`; booker fields from the profile → `browser_fill_profile` / `browser_request_profile`;
+  sign-in, sign-up and password reset → `browser_login` / `browser_new_password`; hand-off only in an emergency →
+  `browser_handoff`; go to the last pay button and approve once → `browser_checkout`; order number and the end of a
+  payment → `browser_order_done`; simple authentication for public records → `browser_wait_auth`; my address in
+  service tools → the address field line of `service_find`; texts and KakaoTalk → `phone_sms` / `kakao_send`; PC
+  apps, files, pictures and videos → `tool_find`; past orders → `orders_all`; when to hand over → `task_start`.
+- (d) work only with Dool2 tools (the agent's own tools are off), approval only for the irreversible kinds and
+  reviews without approval (the approval gate decides which buttons stop), approval results arrive as app notes
+  (they say what to do), the conversation cannot reach the browser (session fence, plus `withTaskHint` below).
+- (e) "the user bought it there, search more pages before doubting", estimating the user's own figures from
+  connected places, employer and start date from insurance records, unknown per-person facts (carrier, insurer),
+  table sizes, spreadsheets for long comparisons: covered by eval bank scenarios and by the tools' own results.
+
+**Holes closed when the default flipped.** Tool results and app notes still name browser, app and file tools (a
+sign-in flow, a site check during a service call, a missing profile field, a download). When such a text reaches the
+conversation of task sessions, the daemon adds one line: hand those steps over with `task_start` (`withTaskHint` and
+`followUp` in the daemon). The tool server's `tool_find` already says where those tools are.

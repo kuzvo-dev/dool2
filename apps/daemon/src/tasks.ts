@@ -347,6 +347,39 @@ export function withNotes<T>(result: T, notes: string[]): T {
   } as T
 }
 
+/** A tool that only a task has, named in a text (mcp-tools TASK_ONLY) */
+const TASK_TOOL = /\b(?:browser|screen|kakao|file|video)_[a-z_]+|\b(?:image_make|pc_screen|phone_sms)\b/
+
+/** The line the conversation gets when a result or app note sends it to a tool only a task has (ADR 0038) */
+export const TASK_HINT =
+  'Those browser, PC app and file steps are done by a task in this conversation: hand them over with task_start (put what you know in known) and tell the user you are on it.'
+
+/** Whether a text points the AI at a tool only a task has */
+export function namesTaskTool(text: string): boolean {
+  return TASK_TOOL.test(text)
+}
+
+/**
+ * A tool result for the conversation of task sessions: when it tells the AI to use a tool only a task has (a sign-in
+ * flow, a site check, a missing profile field), one line says how to get that done from here, so it never stops at
+ * "I can't"
+ */
+export function withTaskHint<T>(result: T): T {
+  const r = result as {
+    content?: { type: string; text?: string }[]
+    structuredContent?: unknown
+    hint?: string
+  }
+  if (!r || !Array.isArray(r.content)) return result
+  const said = [...r.content.map((x) => x.text ?? ''), r.hint ?? ''].join('\n')
+  if (!namesTaskTool(said)) return result
+  return {
+    ...r,
+    content: [...r.content, { type: 'text', text: TASK_HINT }],
+    ...(r.structuredContent ? { hint: [r.hint, TASK_HINT].filter(Boolean).join('\n') } : {}),
+  } as T
+}
+
 /** task_list for the conversation AI: what each task is doing, waiting on, or came out with */
 export function taskListText(board: TaskBoard, results: Map<string, string>, now = Date.now()): string {
   const views = board.views(12)

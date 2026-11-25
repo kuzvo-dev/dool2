@@ -44,7 +44,7 @@ export function registerTaskTools(server: McpServer, client: BrowserClient) {
           .max(12)
           .optional()
           .describe(
-            'Values already known from the conversation, memory or lookups (date, people, budget, the site the user named)',
+            'Values already known from the conversation, memory or lookups (date, people, budget, the site the user named, the service and price of a candidate the user picked: the task stays with it)',
           ),
         avoid: z
           .array(z.string().max(200))

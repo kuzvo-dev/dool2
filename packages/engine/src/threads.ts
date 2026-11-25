@@ -42,7 +42,8 @@ export interface ThreadServiceOptions {
   /** Dool2's own working folder */
   workspaceDir: string
   mcpServers: McpServerSpec[]
-  systemPrompt?: string | (() => string)
+  /** Dool2's instructions; per chat, so each kind of session gets its own (ADR 0038) */
+  systemPrompt?: string | ((threadId: string) => string)
   /** Tab number → that tab's site host (groups the work steps by site) */
   tabHost?: (tabId: number) => string | undefined
   /** Service tool name → a title people read ("find shops, check hours"). Shown in the work steps instead of "working" */
@@ -200,9 +201,9 @@ export class ThreadService {
   }
 
   /** Dool2's instructions + what was carried over from the previous segment (ADR 0015) */
-  private systemFor(thread: { carry?: string }) {
+  private systemFor(threadId: string, thread: { carry?: string }) {
     const sp = this.opts.systemPrompt
-    const base = (typeof sp === 'function' ? sp() : sp) ?? DOOL2_SYSTEM_PROMPT
+    const base = (typeof sp === 'function' ? sp(threadId) : sp) ?? DOOL2_SYSTEM_PROMPT
     return thread.carry ? `${base}\n\n${thread.carry}` : base
   }
 
@@ -224,7 +225,7 @@ export class ThreadService {
    * the same and the provider's cache keeps working. If they changed since, note: the changed sections, sent once
    */
   private promptFor(threadId: string, thread: { carry?: string }): { system: string; note?: string } {
-    const fresh = this.systemFor(thread)
+    const fresh = this.systemFor(threadId, thread)
     const pinned = this.pinned.get(threadId)
     if (pinned === undefined) {
       this.pinned.set(threadId, fresh)
@@ -274,7 +275,7 @@ export class ThreadService {
         resumeId: thread.resumeId,
         // In a copy of the session: the request and the handoff stay out of the conversation the user continues
         fork: true,
-        systemPrompt: this.pinned.get(threadId) ?? this.systemFor(thread),
+        systemPrompt: this.pinned.get(threadId) ?? this.systemFor(threadId, thread),
         mcpServers: this.serversFor(threadId),
         cwd: this.opts.workspaceDir,
         signal: AbortSignal.any([ac.signal, AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
