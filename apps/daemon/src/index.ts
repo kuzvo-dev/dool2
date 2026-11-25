@@ -152,6 +152,7 @@ import {
   notesMessage,
   parseTaskSpec,
   signInSpec,
+  stoppedText,
   TASK_HINT,
   TASK_SESSIONS_DEFAULT,
   type Task,
@@ -3454,11 +3455,27 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     unseenTasks.push(`- The user told ${t.id} "${t.spec.title}" directly: "${text}"`)
     return steerTask(t, text)
   }
+  /** The cards a task waiting for the user has open: approvals and sign-ins it asked for (task_list) */
+  function taskCards(id: string): string[] {
+    const t = tasks.get(id)
+    if (!t) return []
+    const approvals = browserTools.approvals
+      .list()
+      .filter((a) => a.status === 'pending' && approvalThread.get(a.id) === t.threadId)
+      .map(
+        (a) => `an approval card on the phone ("${a.label.slice(0, 60)}"${a.amount ? `, ${a.amount}` : ''})`,
+      )
+    const logins = browserTools.logins
+      .list()
+      .filter((r) => r.status === 'pending' && loginThread.get(r.id) === t.threadId)
+      .map((r) => `a sign-in card for ${r.site}`)
+    return [...approvals, ...logins]
+  }
   /** The task tools of the conversation (task_start, task_steer, task_stop, task_list) */
   async function taskTool(caller: string | undefined, name: string, args: Record<string, unknown>) {
     if (!caller || sessionOf(caller) !== 'conversation')
       return toolText('Task tools work only in the conversation.', true)
-    if (name === 'task_list') return toolText(taskListText(tasks, taskResults))
+    if (name === 'task_list') return toolText(taskListText(tasks, taskResults, Date.now(), taskCards))
     if (name === 'task_start') {
       const spec = parseTaskSpec(args)
       if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
@@ -3485,10 +3502,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       )
     }
     const t = tasks.get(String(args.id ?? ''))
-    if (!t) return toolText(`No task "${String(args.id ?? '')}".\n${taskListText(tasks, taskResults)}`, true)
+    if (!t)
+      return toolText(
+        `No task "${String(args.id ?? '')}".\n${taskListText(tasks, taskResults, Date.now(), taskCards)}`,
+        true,
+      )
     if (name === 'task_stop') {
       stopTask(t, 'ai')
-      return toolText(`Task ${t.id} is stopped; what it already did stays. Tell the user in one sentence.`)
+      const approved = browserTools.approvals
+        .list()
+        .filter(
+          (a) => approvalThread.get(a.id) === t.threadId && (a.status === 'approved' || a.status === 'done'),
+        )
+        .map((a) => [a.label, a.what].filter(Boolean).join(': ').slice(0, 120))
+      return toolText(stoppedText(t, approved))
     }
     if (name === 'task_steer') {
       const note = String(args.note ?? '').trim()

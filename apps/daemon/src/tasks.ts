@@ -380,8 +380,17 @@ export function withTaskHint<T>(result: T): T {
   } as T
 }
 
-/** task_list for the conversation AI: what each task is doing, waiting on, or came out with */
-export function taskListText(board: TaskBoard, results: Map<string, string>, now = Date.now()): string {
+/**
+ * task_list for the conversation AI: what each task is doing, waiting on, or came out with. waitsOn: the cards a
+ * task waiting for the user has open (approval, sign-in), so the AI can say which one instead of guessing (measured on
+ * the WP7 bench: "a login or an approval, I can't tell which")
+ */
+export function taskListText(
+  board: TaskBoard,
+  results: Map<string, string>,
+  now = Date.now(),
+  waitsOn: (id: string) => string[] = () => [],
+): string {
   const views = board.views(12)
   if (!views.length) return 'No tasks yet.'
   const age = (iso?: string) => {
@@ -398,7 +407,7 @@ export function taskListText(board: TaskBoard, results: Map<string, string>, now
           : v.status === 'checking'
             ? 'checking its answer before it finishes'
             : v.status === 'needs-you'
-              ? 'waiting for the user (an approval, a sign-in or a card in the conversation)'
+              ? waitingFor(v, waitsOn(v.id))
               : v.status === 'done'
                 ? `done ${age(v.endedAt)}`
                 : v.status === 'stopped'
@@ -413,6 +422,28 @@ export function taskListText(board: TaskBoard, results: Map<string, string>, now
       .join('\n')
   }
   return `${views.map(line).join('\n')}\nSteer a running or waiting task with task_steer, stop one with task_stop.`
+}
+
+/** What a task waiting for the user waits on: its open cards, else its last step */
+function waitingFor(v: TaskView, cards: string[]): string {
+  if (cards.length) return `waiting for the user: ${cards.join('; ')}`
+  return `waiting for the user (an approval, a sign-in or a card in the conversation)${v.now ? `; last step: ${v.now}` : ''}`
+}
+
+/**
+ * task_stop's result: where the task was when it stopped and whether anything it asked for was approved, so the
+ * conversation can say what did and did not happen (measured: "if you worry the booking went through, tell me")
+ */
+export function stoppedText(t: Task, approved: string[]): string {
+  const steps = t.work.record()?.count ?? 0
+  return [
+    `Task ${t.id} is stopped.`,
+    `It was at: ${t.now ?? 'not started yet'} (${steps} steps).`,
+    approved.length
+      ? `Approved by the user while it ran, so it may have happened: ${approved.join('; ')}.`
+      : 'Nothing it asked for was approved, so nothing was paid, sent or booked by it.',
+    'Tell the user in one sentence.',
+  ].join(' ')
 }
 
 /**
