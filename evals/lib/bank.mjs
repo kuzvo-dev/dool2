@@ -158,7 +158,7 @@ export function serviceIds() {
 
 // 두리는 AI의 기본 도구(셸·파일·웹)를 모두 끄고 두리 도구만 쓴다 (agent-claude --tools '').
 // 웹 검색은 브라우저로 검색 사이트를 열어 하니 있는 것으로 본다. 파일은 두리 도구 file_find·file_read·file_write(ADR 0022)
-const BUILTIN = ['web_search', 'web_fetch']
+export const BUILTIN = ['web_search', 'web_fetch']
 
 /** 지금 AI가 쓸 수 있는 도구 이름 전부: 서비스 도구(skills/<id>/tools.json) + 두리 MCP 도구(목록 시험에 적힌 이름) + 기본 도구 */
 export function toolNames() {

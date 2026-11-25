@@ -1,7 +1,16 @@
 // 1층 시험 (AI 없이): 은행 형식 검사 + 시나리오마다 필요한 도구·서비스 카드가 레포에 있는지.
 // 사용: node evals/static.mjs [--json 파일]   (형식 오류가 있으면 1로 끝난다 → CI에 쓸 수 있다)
 import { writeFileSync } from 'node:fs'
-import { families, gaps, neededTools, perturbs, scenarios, serviceIds, toolNames } from './lib/bank.mjs'
+import {
+  BUILTIN,
+  families,
+  gaps,
+  neededTools,
+  perturbs,
+  scenarios,
+  serviceIds,
+  toolNames,
+} from './lib/bank.mjs'
 
 const TYPES = new Set([
   '조회',
@@ -63,6 +72,20 @@ const rows = all.map((sc) => {
     noService: n.noService,
   }
 })
+// Scenarios that run with task sessions on (a task seeded before the request, the acceptance set): the conversation
+// has only Dool2 tools there, no web search of its own, so every tool they name must be a Dool2 tool that exists
+const TASK_SESSIONS = (sc) => Boolean(sc.seed?.task) || /^(task|accept)\./.test(sc.fid ?? '')
+const reported = new Set()
+for (const sc of all) {
+  if (!TASK_SESSIONS(sc) || reported.has(sc.fid)) continue
+  const n = neededTools(sc, ids)
+  const bad = n.tools.filter((t) => !names.has(t) || BUILTIN.includes(t))
+  if (!bad.length) continue
+  reported.add(sc.fid)
+  errors.push(
+    `${sc.fid}: runs with task sessions on, but names tools Dool2 does not have there: ${bad.join(', ')}`,
+  )
+}
 const ready = (r) => !r.missing.length && !r.noService.length
 const by = (k) => {
   const m = {}
