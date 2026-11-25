@@ -75,6 +75,8 @@ export interface Task {
   draft?: string
   /** Notes from the person not yet given to the task */
   notes: string[]
+  /** Notes already in its chat as the person's own words (typed in its detail): not shown again when delivered */
+  shownNotes: Set<string>
   /** Its first message (the brief) was sent */
   begun: boolean
   work: WorkLog
@@ -121,6 +123,7 @@ export class TaskBoard {
       status: 'waiting',
       createdAt: this.now(),
       notes: [],
+      shownNotes: new Set(),
       begun: false,
       work: new WorkLog(this.now, this.o.tabHost, this.o.toolTitle, this.o.lang?.() ?? 'ko'),
       turnOut: [],
@@ -305,11 +308,12 @@ export function taskBrief(t: Task, lang: Lang = 'ko'): string {
 }
 
 /** The person's notes as the next message of a task that is not in a turn (waiting for them, or just done) */
-export function notesMessage(notes: string[], lang: Lang = 'ko'): string {
+export function notesMessage(notes: string[], lang: Lang = 'ko', shown?: ReadonlySet<string>): string {
   const said = notes.map((n) => `"${n}"`).join(' / ')
+  const fresh = notes.filter((n) => !shown?.has(n))
   return appNote(
     forAI(
-      TASKS_TEXT(lang).noteShown(notes.join(' / ')),
+      fresh.length ? TASKS_TEXT(lang).noteShown(fresh.join(' / ')) : '',
       `The user sent this through the conversation: ${said}. Continue the task with it; where it differs from the task spec, it comes first. When done, give the one complete answer again.`,
     ),
   )
