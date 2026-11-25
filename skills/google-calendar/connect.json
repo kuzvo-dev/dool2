@@ -41,6 +41,11 @@
   "regions": [
     "global"
   ],
+  "account": {
+    "url": "https://calendar.google.com/calendar/r?authuser={{account}}",
+    "pattern": "(?:Google 계정|Google Account): [^\"(]*\\(([^)\\s]+@[^)\\s]+)\\)",
+    "pick": "https://accounts.google.com/AccountChooser?service=cl&continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr"
+  },
   "i18n": {
     "en": {
       "name": "Google Calendar",

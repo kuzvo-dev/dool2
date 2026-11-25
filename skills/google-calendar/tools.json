@@ -24,13 +24,13 @@
       ],
       "steps": [
         {
-          "open": "https://calendar.google.com/calendar/r/day{{#date}}/{{date|yyyy}}/{{date|m}}/{{date|d}}{{/date}}"
+          "open": "https://calendar.google.com/calendar/r/day{{#date}}/{{date|yyyy}}/{{date|m}}/{{date|d}}{{/date}}?authuser={{account|url}}"
         },
         {
           "sleep": 2500
         },
         {
-          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화",
+          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화|계정 선택|Choose an account",
           "say": "구글 캘린더를 보려면 먼저 구글 캘린더를 연결(로그인)해야 해요.",
           "login": true
         },
@@ -68,13 +68,13 @@
       ],
       "steps": [
         {
-          "open": "https://calendar.google.com/calendar/r/search?q={{query|url}}"
+          "open": "https://calendar.google.com/calendar/r/search?q={{query|url}}&authuser={{account|url}}"
         },
         {
           "sleep": 2500
         },
         {
-          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화",
+          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화|계정 선택|Choose an account",
           "say": "구글 캘린더를 찾아보려면 먼저 구글 캘린더를 연결(로그인)해야 해요.",
           "login": true
         },
@@ -149,13 +149,13 @@
       ],
       "steps": [
         {
-          "open": "https://calendar.google.com/calendar/r/eventedit?text={{title|url}}&dates={{date|yyyy}}{{date|mm}}{{date|dd}}T{{start|digits}}00/{{date|yyyy}}{{date|mm}}{{date|dd}}T{{end|digits}}00&ctz=Asia/Seoul{{#location}}&location={{location|url}}{{/location}}{{#details}}&details={{details|url}}{{/details}}"
+          "open": "https://calendar.google.com/calendar/r/eventedit?text={{title|url}}&dates={{date|yyyy}}{{date|mm}}{{date|dd}}T{{start|digits}}00/{{date|yyyy}}{{date|mm}}{{date|dd}}T{{end|digits}}00&ctz=Asia/Seoul{{#location}}&location={{location|url}}{{/location}}{{#details}}&details={{details|url}}{{/details}}&authuser={{account|url}}"
         },
         {
           "sleep": 2500
         },
         {
-          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화",
+          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화|계정 선택|Choose an account",
           "say": "구글 캘린더에 일정을 넣으려면 먼저 구글 캘린더를 연결(로그인)해야 해요.",
           "login": true
         },
@@ -231,13 +231,13 @@
       ],
       "steps": [
         {
-          "open": "https://calendar.google.com/calendar/r/eventedit?text={{title|url}}&dates={{date|yyyy}}{{date|mm}}{{date|dd}}T{{start|digits}}00/{{date|yyyy}}{{date|mm}}{{date|dd}}T{{end|digits}}00&ctz=Asia/Seoul{{#location}}&location={{location|url}}{{/location}}{{#details}}&details={{details|url}}{{/details}}&add={{guests|url}}"
+          "open": "https://calendar.google.com/calendar/r/eventedit?text={{title|url}}&dates={{date|yyyy}}{{date|mm}}{{date|dd}}T{{start|digits}}00/{{date|yyyy}}{{date|mm}}{{date|dd}}T{{end|digits}}00&ctz=Asia/Seoul{{#location}}&location={{location|url}}{{/location}}{{#details}}&details={{details|url}}{{/details}}&add={{guests|url}}&authuser={{account|url}}"
         },
         {
           "sleep": 2500
         },
         {
-          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화",
+          "stop_if": "공유 가능한 온라인 캘린더|Google 계정으로 로그인|이메일 또는 휴대전화|계정 선택|Choose an account",
           "say": "구글 캘린더 초대를 보내려면 먼저 구글 캘린더를 연결(로그인)해야 해요.",
           "login": true
         },

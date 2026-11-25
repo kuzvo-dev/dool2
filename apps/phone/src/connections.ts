@@ -343,7 +343,7 @@ export function serviceView(ctx: ConnectCtx, id: string): HTMLElement {
     go.type = 'button'
     go.disabled = !ctx.online || ctx.opening === c.id || Boolean(busy)
     go.onclick = () => ctx.open(c.id)
-    bar.append(go, el('p', 'cap', m.connectNote))
+    bar.append(go, el('p', 'cap', c.account?.pick ? m.connectNotePick : m.connectNote))
   }
   box.append(bar)
   return box

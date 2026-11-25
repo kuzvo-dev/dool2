@@ -84,7 +84,7 @@
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
-          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 지메일 연결 카드에서 그 계정을 다시 골라야(없으면 추가해야) 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
           "login": true
         },
         {
@@ -187,7 +187,7 @@
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
-          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 지메일 연결 카드에서 그 계정을 다시 골라야(없으면 추가해야) 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
           "login": true
         },
         {
@@ -236,7 +236,7 @@
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
-          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 그 계정으로 다시 연결(로그인)해야 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
+          "say": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아요. 지메일 연결 카드에서 그 계정을 다시 골라야(없으면 추가해야) 메일을 볼 수 있어요. Chrome에 로그인된 다른 Google 계정의 메일함으로 대신 보지 않아요.",
           "login": true
         },
         {

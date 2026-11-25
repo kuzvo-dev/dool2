@@ -34,6 +34,7 @@ export const mainWork = messages({
     howSocialOnly: (list: string) => `${list} 간편 로그인으로 두리가 PC에서 연결해요`,
     howSocialOrId: (list: string) => `아이디·비밀번호나 ${list} 간편 로그인으로 연결해요`,
     howId: '아이디·비밀번호를 넣으면 두리가 PC에서 로그인해요',
+    howPick: 'PC Chrome에 로그인된 계정 중에서 골라요',
     // Finished work
     trimmed: (n: number) => `앞의 ${n}단계는 줄였어요`,
     workedAt: (name: string) => `${name}에서 일했어요`,
@@ -73,6 +74,7 @@ export const mainWork = messages({
     howSocialOnly: (list: string) => `Dool2 connects on your PC with ${list} login`,
     howSocialOrId: (list: string) => `Connect with an ID and password or ${list} login`,
     howId: 'Enter your ID and password and Dool2 logs in on your PC',
+    howPick: 'Pick one of the accounts signed in to Chrome on your PC',
     trimmed: (n: number) => `${n} earlier steps were trimmed`,
     workedAt: (name: string) => `Worked on ${name}`,
     lookedAt: (n: number) => `Looked at ${n} places`,

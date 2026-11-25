@@ -1463,8 +1463,11 @@ export type PcToPhone =
       message: string
       human?: boolean
       tabId?: number
-      /** Why it could not: a person's turn (captcha, identity verification) / wrong ID or password / not knowing the sign-in fields or result */
-      reason?: 'human' | 'wrong' | 'unknown'
+      /**
+       * Why it could not: a person's turn (captcha, identity verification) / wrong ID or password / not knowing the
+       * sign-in fields or result / Chrome is signed in to another account than the one asked for (ADR 0041)
+       */
+      reason?: 'human' | 'wrong' | 'unknown' | 'other-account'
       /** The automatic sign-in stopped, and Dool2 (the AI) is continuing in the conversation while looking at that screen */
       agent?: boolean
     }

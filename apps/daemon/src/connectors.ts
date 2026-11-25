@@ -158,6 +158,11 @@ export class Connectors {
        */
       accountFor?: (card: ConnectCard) => Promise<string | undefined>
       /**
+       * A tool met a sign-in screen (stop_if with login): the service is not signed in, whatever the connected mark says.
+       * The daemon takes the mark off so the next connect_ask shows a real card
+       */
+      loginLost?: (card: ConnectCard) => void
+      /**
        * Address from my info (unmasked). The daemon fills a tool's address field when it is empty or "my address" —
        * the AI only saw the masked address, typed just the neighborhood, and that became the delivery address
        * (measured on Yogiyo: "Sinbong-dong 33")
@@ -891,6 +896,7 @@ export class Connectors {
           read,
           need,
           captcha: (t) => this.captchaStop(card, tool, t),
+          loginLost: () => this.opts.loginLost?.(card),
           open: async (url) => {
             if (!onSites(url, [site, ...(card.alsoSites ?? [])]))
               throw new StepError(`Will not open a URL outside ${site}: ${url}`)
@@ -1140,6 +1146,8 @@ export class Connectors {
       need: () => number
       /** Result to return when stuck on a robot check (solve on a phone card, then call again) */
       captcha: (tabId: number) => ToolResult
+      /** The page needs a sign-in: the connected mark is wrong or expired */
+      loginLost: () => void
       open: (url: string) => Promise<void>
     },
   ): Promise<ToolResult | undefined> {
@@ -1203,11 +1211,13 @@ export class Connectors {
       }
       if (!r.found.hit) return
       const say = f(s.say)
-      if (s.login)
+      if (s.login) {
+        c.loginLost()
         return text(
-          `${say} This page needs login. Call connect_ask. If it was connected before (vault account or social login), the Dool2 daemon logs in again by itself; if it is the first time, a connect card appears. [Tab ${c.need()}]`,
+          `${say} This page needs login, so the connected mark was taken off. Call connect_ask. If it was connected before (vault account or social login), the Dool2 daemon logs in again by itself; otherwise a connect card appears. [Tab ${c.need()}]`,
           true,
         )
+      }
       // A blocking page that is a robot check a person can solve is not a dead end: solve it on a phone card and
       // call the same tool again
       if (s.blocked && (HUMAN_CHECK.test(r.found.hit) || (await this.captchaOn(c.need()))))

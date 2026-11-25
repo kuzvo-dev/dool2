@@ -36,6 +36,8 @@ export const connectionsText = messages({
     openingOnPc: 'PC에서 여는 중…',
     connect: '연결하기',
     connectNote: '대화에서 두리와 연결해요. 아이디·비밀번호나 간편 로그인으로 PC Chrome에 로그인해요.',
+    connectNotePick:
+      '대화에서 두리와 연결해요. PC Chrome에 로그인된 계정 중에서 고르거나 새로 추가해요. 비밀번호는 두리가 받지 않아요.',
   },
   en: {
     otherRegions: 'Other regions',
@@ -74,5 +76,7 @@ export const connectionsText = messages({
     connect: 'Connect',
     connectNote:
       'Connect with Dool2 in the chat. It logs in to Chrome on your PC with your ID and password or a social login.',
+    connectNotePick:
+      'Connect with Dool2 in the chat. Pick one of the accounts signed in to Chrome on your PC, or add one. Dool2 never gets the password.',
   },
 })

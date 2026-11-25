@@ -313,7 +313,8 @@ const st: {
   connectFails: Map<
     string,
     {
-      reason: 'human' | 'wrong' | 'unknown'
+      /** other-account: Chrome is signed in to another account (shown like an unknown failure: its message says what to do) */
+      reason: 'human' | 'wrong' | 'unknown' | 'other-account'
       message: string
       tabId?: number
       agent?: boolean
@@ -1867,6 +1868,8 @@ function agentOn(fail: { agent?: boolean; at?: number }): boolean {
 
 /** Connect card description, matching how the service really works (never say "ID and password" for a social-login-only service) */
 function connectHow(c: ConnectionItem['card']): string {
+  // Google and the like: the person picks an account already in Chrome, no password (ADR 0041)
+  if (c.account?.pick) return mainWork(lang).howPick
   const social = (c.social ?? []).slice(0, 2).map((p) => SOCIAL_LABEL[p])
   const idLogin = ID_LOGIN.test(c.login ?? '')
   if (social.length && !idLogin) return mainWork(lang).howSocialOnly(social.join('·'))
@@ -4410,7 +4413,14 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
   // Connected, but its tools run in the PC's Chrome: while Chrome or the extension is off, say so, not "connected"
   if (it.connectedAt && needsPcChrome(c) && st.pc && !st.pc.extension)
     return h('p', { class: 'done-line connect-line off' }, mark(), mCards.chromeOffFor(c.name))
-  if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), mCards.isConnected(c.name))
+  // Which account it is, when Dool2 read it on the service's page (ADR 0041)
+  if (it.connectedAt)
+    return h(
+      'p',
+      { class: 'done-line connect-line' },
+      mark(),
+      it.signedInAs ? mCards.isConnectedAs(c.name, it.signedInAs) : mCards.isConnected(c.name),
+    )
   if (!live) return h('p', { class: 'done-line connect-line' }, mark(), mCards.cardOf(c.name))
   const busy = st.connecting.has(c.id)
   // Official integrations (Gmail and so on) log in through PC Chrome until they are ready: same card as a browser connection
@@ -6456,6 +6466,11 @@ interface CredTarget {
   signup?: () => void
   /** "I don't know my account, please find it" button (Dool2 recovers the ID or resets the password) */
   forgot?: () => void
+  /**
+   * The person picks an account already signed in to Chrome, or adds one on the provider's own screen (Google, ADR 0041).
+   * No ID or password: the sheet shows only this button
+   */
+  pick?: { text: string; note: string; onclick(): void }
 }
 
 /** ID and password sheet (sign-in card, connect a service). Values go only to the PC vault */
@@ -6522,11 +6537,26 @@ function credSheet(t: CredTarget) {
         h('strong', { class: 'title-2', text: mdCred.signInTitle(t.site) }),
         h('span', {
           class: 'meta',
-          text: mdCred.signInWhere(t.host, st.saved?.pcName ?? mdCred.myPc),
+          text: (t.pick ? mdCred.pickWhere : mdCred.signInWhere)(t.host, st.saved?.pcName ?? mdCred.myPc),
         }),
       ),
     ),
     ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), mdCred.startAfter(t.next))] : []),
+    ...(t.pick ? pickBody(t.pick) : credBody(t, form, d.error)),
+  )
+  return sheet
+}
+
+/** Pick an account (no ID or password fields): one button that opens the provider's account chooser on the PC */
+function pickBody(p: NonNullable<CredTarget['pick']>) {
+  const go = h('button', { class: 'btn lg', text: p.text, onclick: p.onclick })
+  go.type = 'button'
+  return [go, h('p', { class: 'lock-note' }, icon('lock'), p.note)]
+}
+
+/** ID and password (plus social sign-in buttons and the find-account / sign-up links) */
+function credBody(t: CredTarget, form: HTMLElement, error: string | undefined) {
+  return [
     ...(t.social?.length
       ? [
           h(
@@ -6561,11 +6591,10 @@ function credSheet(t: CredTarget) {
       : []),
     h('p', { class: 'lock-note' }, icon('lock'), mdCred.vaultNote),
     // Show "watch the screen" only when sign-in failed or the connection got stuck
-    ...(t.direct && (d.error || t.stuck)
+    ...(t.direct && (error || t.stuck)
       ? [h('button', { class: 'btn-text cred-direct', text: t.direct.text, onclick: t.direct.onclick })]
       : []),
-  )
-  return sheet
+  ]
 }
 
 /** Report a problem: write a line (optional) and send, and what just happened in the app is saved in the PC's activity log */
@@ -7101,6 +7130,15 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
 function connectSheet(id: string) {
   const it = st.services?.find((x) => x.card.id === id)
   if (!it) return h('section', { class: 'sheet float app-sheet rise' })
+  // The sign-in screen on the PC, watched from the phone (opens it first if it is not open yet)
+  const openScreen = () => {
+    const tab = st.connectTabs.get(id)
+    if (tab !== undefined) return openRemote(tab, id)
+    st.opening = id
+    st.overlay = undefined
+    render()
+    void send({ kind: 'connect', id, action: 'open' })
+  }
   return credSheet({
     key: `connect:${id}`,
     site: it.card.name,
@@ -7131,17 +7169,18 @@ function connectSheet(id: string) {
       },
     })),
     stuck: st.connectFails.has(id),
-    direct: {
-      text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.directConnect,
-      onclick: () => {
-        const tab = st.connectTabs.get(id)
-        if (tab !== undefined) return openRemote(tab, id)
-        st.opening = id
-        st.overlay = undefined
-        render()
-        void send({ kind: 'connect', id, action: 'open' })
-      },
-    },
+    direct: { text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.directConnect, onclick: openScreen },
+    // Google and the like: pick one of the accounts signed in to the PC's Chrome (or add one) on Google's own screen,
+    // so no password goes through Dool2 and the connection is the account picked (ADR 0041)
+    ...(it.card.account?.pick
+      ? {
+          pick: {
+            text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.pickAccount,
+            note: mdCred.pickNote(st.saved?.pcName ?? mdCred.myPc),
+            onclick: openScreen,
+          },
+        }
+      : {}),
     // If the user doesn't know the ID or password, Dool2 recovers it: the sign-in card is withdrawn and the request goes to the chat (only identity-check codes use a phone card)
     forgot: () => {
       void send({ kind: 'forgot', site: it.card.site ?? it.card.id })

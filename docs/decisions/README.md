@@ -44,6 +44,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0038](0038-task-sessions.md) | The conversation hands longer work to a task session: split tools, steering through the next tool result, one result per task | Accepted |
 | [0039](0039-connector-packs.md) | Service cards and connectors arrive as signed packs, without a new app version: never older, unreadable files fall back, test PCs first | Accepted |
 | [0040](0040-instructions-as-files.md) | Dool2's instructions live in prompts/ text files and can arrive in a connector pack; the money rules stay in code | Accepted |
+| [0041](0041-connection-is-an-account.md) | A connection is a specific account: Dool2 reads which account a service shows, asks when Chrome holds another one, and lets the person pick Google accounts instead of typing a password | Accepted |
 
 ## How to write a new decision
 

@@ -121,6 +121,7 @@ import {
   type ChromeLaunchReason,
   type LaunchProfile,
 } from './chrome-launch.js'
+import { accountIn, accountName, readAccount } from './connect-account.js'
 import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
@@ -160,7 +161,7 @@ import { RouteBook } from './routes.js'
 import { runQuickCheck } from './routine-check.js'
 import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
-import { Skills } from './skills.js'
+import { maskAccount, Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
 import {
   LOOKUP_READS,
@@ -1046,15 +1047,32 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
     // The account connected for that service (the vault ID): opens places whose address differs per account, like a mailbox, with that account
     accountFor: async (card) => {
+      // The account read on the service's own page when it was connected (ADR 0041) comes first: the vault ID is only
+      // what was typed, which need not be the account signed in to Chrome
+      const read = connectAccounts()
+      const own = read[card.id] ?? (card.sameLoginAs ? read[card.sameLoginAs] : undefined)
+      if (own) return own
       for (const site of [card.site, ...(card.alsoSites ?? [])].filter(Boolean)) {
         const e = await vault.findForOrigin(`https://${String(site).replace(/^https?:\/\//, '')}`)
-        // Google needs the full address to open that mailbox (with only an ID saved, /mail/u/ID/ gives a "temporary error")
-        if (e?.username)
-          return /google\.com|gmail\.com/.test(String(site)) && !e.username.includes('@')
-            ? `${e.username}@gmail.com`
-            : e.username
+        if (e?.username) return accountName(card, e.username)
       }
       return undefined
+    },
+    // A tool met a sign-in screen (or an account that is not in Chrome): the connected mark was wrong or has expired.
+    // Clear it, so connect_ask shows a real connect card instead of "just connected" (measured 2026-11-25: Gmail stayed
+    // marked for 10 minutes while every search met a 404, and no card came back)
+    loginLost: (card) => {
+      const on = readSettings().connections ?? {}
+      const ids = [card.id, card.sameLoginAs].filter((id): id is string => Boolean(id && on[id]))
+      if (!ids.length) return
+      for (const id of ids) {
+        journal.write('connect-lost', { id })
+        connectMark(id, false)
+      }
+      void skills
+        .connections()
+        .then((services) => link.broadcast({ kind: 'connections', services }))
+        .catch(() => {})
     },
   })
   const skills = new Skills(
@@ -1069,6 +1087,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const region = st.region ?? deviceRegion(locale)
       return { lang: lang(), ...(region ? { region } : {}) }
     },
+    () => connectAccounts(),
   )
   // The service map in the instructions uses the list read last: read it once at the start
   void skills.connections().catch(() => undefined)
@@ -1257,7 +1276,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return { url: r.url, text: r.text }
     },
     connected: (id) => Boolean(readSettings().connections?.[id]),
-    onSignedIn: (card) => {
+    onSignedIn: (card, who) => {
+      if (who) rememberAccount(card.id, who)
       connectMark(card.id, true)
       // If it ends while the daemon is shutting down, the store is closed: then nothing is notified
       void skills
@@ -1275,7 +1295,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     },
   })
   const connectOpen = async (card: ConnectCard, forPhone: boolean): Promise<number> => {
-    const url = connectUrl(card)
+    // Services where the person picks the account (Google) open the provider's own account chooser (ADR 0041)
+    const url = card.account?.pick ?? connectUrl(card)
     if (!url) throw new Error(m().phoneOnlyService)
     if (!browser.status.connected)
       throw Object.assign(new Error(m().extNotConnected), { code: 'no-extension' })
@@ -1307,7 +1328,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // If the sign-in screen is on another address (login.site), save it there too (for the next time Doori signs in again)
     if (r.loginOrigin && r.loginOrigin !== new URL(url).origin)
       await vault.add({ url: r.loginOrigin, username, password }).catch(() => undefined)
-    if (r.status === 'ok') rememberVia(card.id, 'vault')
+    if (r.status === 'ok') {
+      const stop = await checkAccount(card, r.tabId, username)
+      if (stop) return stop
+      rememberVia(card.id, 'vault')
+    }
     return connectFinish(card, r)
   }
   /** Connect with quick sign-in: if the provider side is already signed in, only pass the button and consent, otherwise use the vault value or hand it to the person */
@@ -1330,7 +1355,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       step: connectStep(card.id),
       onTab: connectTab(card.id),
     })
-    if (r.status === 'ok') rememberVia(card.id, `social:${provider}`)
+    if (r.status === 'ok') {
+      // The provider picks the account here, so only note which one it was (nothing was typed to compare with)
+      await checkAccount(card, r.tabId)
+      rememberVia(card.id, `social:${provider}`)
+    }
     return connectFinish(card, r)
   }
   /**
@@ -1347,6 +1376,61 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     journal.write('signin-check', { id, state: r.state, why: r.why })
   }
   const connectVia = () => (store.getSetting('connectVia') as Record<string, string> | undefined) ?? {}
+  /** The account each connection is, read on the service's own page (ADR 0041). An email or ID, no secrets */
+  const connectAccounts = () =>
+    (store.getSetting('connectAccounts') as Record<string, string> | undefined) ?? {}
+  const rememberAccount = (id: string, who: string) => {
+    store.setSetting('connectAccounts', { ...connectAccounts(), [id]: who.slice(0, 120) })
+    journal.write('connect-account', { id, who: maskAccount(who) })
+  }
+  /**
+   * After a sign-in that ended "signed in", check which account it is (ADR 0041). Seeing a signed-in page is not
+   * enough: when Chrome was already signed in to another account, the typed one was never used (measured 2026-11-25,
+   * Gmail). Returns the result to stop with, or undefined to go on. `typed`: the ID typed on the card, if any
+   */
+  const checkAccount = async (
+    card: ConnectCard,
+    tabId: number,
+    typed?: string,
+  ): Promise<ConnectResult | undefined> => {
+    if (!card.account || !browser.status.connected) return undefined
+    const expected = typed ? accountName(card, typed) : undefined
+    connectStep(card.id)(m().checkingAccount)
+    const read = await readAccount(browser, card, expected).catch(() => ({ state: 'unknown' }) as const)
+    journal.write('connect-account-read', { id: card.id, state: read.state })
+    if (read.state === 'match') {
+      rememberAccount(card.id, read.who)
+      return undefined
+    }
+    // The page showed no account we could read: go on as before (nothing says it is wrong)
+    if (read.state === 'unknown') return undefined
+    if (read.state === 'other') {
+      // Maybe the ID is written differently on the page (a nickname, a phone number typed): the person decides
+      const who = maskAccount(read.who)
+      const yes = m().useSignedInAccount(who)
+      const a = await loginAsk(card)
+        .info?.({
+          field: 'choice',
+          label: m().otherAccountSignedIn(card.name, who),
+          hint: m().otherAccountHint,
+          host: card.site ?? card.id,
+          options: [yes, m().notThisAccount],
+        })
+        .catch(() => undefined)
+      if (a?.trim() === yes) {
+        rememberAccount(card.id, read.who)
+        return undefined
+      }
+    }
+    await browser.call('close', { tabId }).catch(() => undefined)
+    const message =
+      read.state === 'other'
+        ? m().otherAccountStopped(card.name, maskAccount(read.who))
+        : card.account.pick
+          ? m().accountNotInChromePick(card.name, maskAccount(expected ?? ''))
+          : m().accountNotInChrome(card.name, maskAccount(expected ?? ''))
+    return { ok: false, reason: 'other-account', message }
+  }
   const rememberVia = (id: string, via: string) =>
     store.setSetting('connectVia', { ...connectVia(), [id]: via })
   /** The connect method last tried per service: so the method is remembered even when auto sign-in could not verify and Doori (the AI) took over and finished */
@@ -1397,7 +1481,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     message: string
     human?: boolean
     tabId?: number
-    reason?: 'human' | 'wrong' | 'unknown'
+    reason?: 'human' | 'wrong' | 'unknown' | 'other-account'
     agent?: boolean
   }
   /**
@@ -1560,13 +1644,26 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectVerify = async (card: ConnectCard): Promise<boolean> => {
     let ok = false
     const watched = loginWatch.tabOf(card.id)
-    // If the watched screen has a sure sign, go right away. Otherwise open the site fresh and look as far as My page (never mark by guessing)
-    if (watched !== undefined)
+    // Cards where the person picks the account (Google): only the picked account shown on the service's own page
+    // counts. The site's front page would show whichever account Chrome has first (ADR 0041)
+    if (card.account?.pick) {
+      const who =
+        watched !== undefined
+          ? await browser
+              .call('snapshot', { tabId: watched, maxChars: 30_000 }, 20_000)
+              .then((p) => accountIn(card, p as { url: string; text: string }))
+              .catch(() => undefined)
+          : undefined
+      if (who) {
+        rememberAccount(card.id, who)
+        ok = true
+      }
+    } else if (watched !== undefined)
       ok = await browser
         .call('snapshot', { tabId: watched, maxChars: 20_000 }, 20_000)
         .then((p) => strongSignedIn(card, p as { url: string; text: string }))
         .catch(() => false)
-    if (!ok && card.site && browser.status.connected) {
+    if (!ok && !card.account?.pick && card.site && browser.status.connected) {
       const r = await checkSignedIn(browser, card).catch(() => undefined)
       if (r) rememberCheck(card.id, r)
       ok = r?.state === 'in'
@@ -3137,7 +3234,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const c = await connectors.forUrl(origin)
     if (!c) return undefined
     const card = await skills.card(c.id)
-    if (!card || card.how !== 'browser') return undefined
+    if (!card || card.how !== 'browser' || card.account?.pick) return undefined
     const via = connectVia()[card.id]
     if (via?.startsWith('social:') || (await vaultCreds(card))) return card.id
     return undefined
@@ -4010,7 +4107,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
         // Even if the method was not kept, if the vault has that service's account, sign in again with the vault
         // (measured 11-21: when the session of Shinhan Card, signed in through the vault while Doori worked, expired, the connected mark went off)
-        const creds = via === 'vault' || !provider ? await vaultCreds(card) : undefined
+        // Picked accounts (Google) are never signed in again with a typed password (ADR 0041)
+        const creds =
+          (via === 'vault' || !provider) && !card.account?.pick ? await vaultCreds(card) : undefined
         let ok = false
         if (provider && provider in SOCIAL_PROVIDERS) {
           quietConnect.add(card.id)
@@ -4347,7 +4446,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         // When a sign-in is needed again but there is a vault account or a quick sign-in used before, Doori signs in again without asking.
         // When it ends, connectDone sends "continue the stopped task" to the chat
-        const creds = card.how === 'browser' ? await vaultCreds(card) : undefined
+        // Picked accounts (Google) are never signed in with a typed password: the person picks again on the card (ADR 0041)
+        const creds = card.how === 'browser' && !card.account?.pick ? await vaultCreds(card) : undefined
         const via = connectVia()[card.id]
         const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
         if (creds || (provider && provider in SOCIAL_PROVIDERS)) {
@@ -4399,13 +4499,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return text(
           handBack({
             done: `a ${card.name} connect card is now in the chat`,
-            left:
-              card.how === 'browser'
+            left: card.account?.pick
+              ? 'tap Pick an account on the card and choose (or add) the account on the screen it opens (never ask for a password)'
+              : card.how === 'browser'
                 ? 'enter the ID and password on the card (never in chat; do not ask for the password)'
                 : 'tap the card and connect on the Connect screen',
             who: 'person',
             after:
-              card.how === 'browser'
+              card.how === 'browser' && !card.account?.pick
                 ? 'Dool2 signs in and the result arrives as a chat note; then carry on with the task'
                 : 'a chat note comes when it is connected; then carry on with the task',
             tell: `that the ${card.name} connect card is in the chat and what to do on it`,

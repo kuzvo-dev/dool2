@@ -1,6 +1,7 @@
 // Service connect: checks from the page text whether the user finished signing in (ADR 0014).
 // No AI is called. Only the text of the tab opened for connecting is read on this PC, and if words only a signed-in person sees are present, it is marked connected.
 import type { ConnectCard } from '@dool2/protocol/connect'
+import { accountIn } from './connect-account.js'
 import {
   ACCOUNT_BUTTON,
   ACCOUNT_MENU,
@@ -97,7 +98,8 @@ export interface LoginWatchDeps {
   snapshot(tabId: number): Promise<{ url: string; text: string }>
   /** Stop watching if already marked connected (when the user pressed [I signed in]) */
   connected(id: string): boolean
-  onSignedIn(card: ConnectCard): void
+  /** who: the account the page showed, for cards that say where the account shows (ADR 0041) */
+  onSignedIn(card: ConnectCard, who?: string): void
   /** Do not mark from a guess alone (entry disappeared); confirm up to the my-page. Without this, guesses are not used */
   confirm?(card: ConnectCard): Promise<boolean>
   /** The watched tab closed (a simple-login popup closes itself after confirming): time to open the site anew and check */
@@ -131,6 +133,20 @@ export class LoginWatch {
       if (this.deps.connected(card.id) || Date.now() > until) return
       try {
         const page = await this.deps.snapshot(tabId)
+        // Cards where the person picks the account (Google): only the account itself, shown on the service's own
+        // page, counts. The chooser and sign-in pages around it say nothing about which account it will be
+        if (card.account?.pick) {
+          const who = accountIn(card, page)
+          if (who) {
+            this.deps.onSignedIn(card, who)
+            return
+          }
+          this.timers.set(
+            card.id,
+            setTimeout(() => void tick(), this.every),
+          )
+          return
+        }
         const how = signedInHow(card, page, { sawEntry: entryUrl !== undefined && page.url !== entryUrl })
         if (how === 'strong') {
           this.deps.onSignedIn(card)
