@@ -173,3 +173,26 @@ needs it, (d) deleted because code enforces it, (e) an incident patch kept as an
 sign-in flow, a site check during a service call, a missing profile field, a download). When such a text reaches the
 conversation of task sessions, the daemon adds one line: hand those steps over with `task_start` (`withTaskHint` and
 `followUp` in the daemon). The tool server's `tool_find` already says where those tools are.
+
+## Follow-up: tool lists per kind of session (harness overhaul, round 2)
+
+The two lists are made as disjoint as the work allows, from calls recounted in the work log per kind of turn
+(2026-11-19 to 11-25: 1,607 turns with no browser, app or file tool, 1,195 with one).
+
+- **Conversation** (`DOOL2_SESSION=conversation`): talk, memory, goals, the library, what Dool2 knows, the result
+  blocks, connect cards, lookups and the task tools. Nothing that acts on a site or the PC. Kept aside (tool_find):
+  `status` (the time comes with every message), `memory_forget`, `pay_method_list`, `library_save`, `feed_tell`,
+  `orders_all`, `know_update`, `goal_update` (0 to 12 calls each).
+- **Task** (`DOOL2_SESSION=task`): the browser with its approval, payment, sign-in and hand-off tools, files,
+  services, and one lookup each for saved values (`know_find`, `profile_view`, `vault_find`). Memory, goals, the
+  library, the feed and writing what Dool2 knows are **not registered** in a task (`CONVERSATION_OWNS` in
+  `packages/mcp-tools/src/sessions.ts`), and the daemon refuses those calls from a task too; a task says in its answer
+  what is worth saving and the conversation keeps it. Kept aside: `status`, `browser_back`, `browser_route`,
+  `browser_request_tap`, `show_cards`, `show_result`, `kakao_send`, `phone_sms`, `conversation_search`, `photo_view`,
+  `pay_method_list`, `orders_all` (0 to 22 calls each in work turns).
+- **No kind**: every tool but the task tools, as before.
+
+Descriptions and input fields were shortened at the same time (they say when to use the tool; details only where the
+AI fills a field). Budgets, pinned in `packages/mcp-tools/src/tools.test.ts`: conversation ≤ 25 tools and 30,000 B,
+task ≤ 35 tools and 55,000 B, no kind 78,000 B (Dool2 tools, no service tools). The kind and the list are fixed per
+segment (`DOOL2_SESSION`, `DOOL2_TOOLSET`, ADR 0032): turning task sessions on or off rotates to a new segment.

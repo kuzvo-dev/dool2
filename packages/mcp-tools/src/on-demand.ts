@@ -115,13 +115,15 @@ export function onDemand(
       'tool_find',
       {
         title: 'Find more Dool2 tools',
-        description: elsewhere
-          ? `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. Call this with a name to get its description and input, then run it with tool_call. ${elsewhere}`
-          : `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. ` +
-            'When a request needs one, call this with its name, its group or a few words to get the full description and input, then run it with tool_call: ' +
-            'working in PC apps such as KakaoTalk for PC, Notes or Hancom Office (query "screen" brings every screen_ tool); reading a PC file the user means (file_read), writing a document or spreadsheet (file_write), making a PDF or image from HTML (file_render); ' +
-            'a new password when signing up or resetting one (browser_new_password); a video, a picture made by the image AI, merging or splitting PDFs, printing, moving, converting or restoring files, downloading, locking the PC, a route map, uploading a file to a site, deleting a goal, posting to the feed, suggesting things to do. ' +
-            'When your instructions or another tool\'s description or result name one of these (e.g. "use image_make", "request approval with screen_request_app"), it means this way. Never say Dool2 cannot do these.',
+        description:
+          `Dool2 has more tools than the ones listed, kept aside because they are used less often: ${index}. ` +
+          'Call this with a name, a group (the start of the names) or a few words to get the full description and input, then run it with tool_call' +
+          // Where PC apps and files are (tasks and chats without a kind): the group to ask for
+          (held.has('screen_click') || held.has('file_read')
+            ? ': PC apps such as KakaoTalk for PC, Notes or Hancom Office (query "screen"), reading or writing a PC file, a document or spreadsheet (file_read, file_write), a PDF or image from HTML (file_render). '
+            : '. ') +
+          'When your instructions or a result name one of these, it means this way. Never say Dool2 cannot do these.' +
+          (elsewhere ? ` ${elsewhere}` : ''),
         inputSchema: {
           query: z
             .string()

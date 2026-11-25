@@ -456,7 +456,9 @@ describe('task sessions (ADR 0038)', () => {
 
   it('each kind of session gets its own instructions', async () => {
     const held = gate()
-    const rt = new TwoSessions(conversation, async function* () {
+    const rt = new TwoSessions(conversation, async function* (input, self) {
+      // A task cannot manage memory: the daemon refuses it too (round 2: the conversation owns memory and goals)
+      yield* used(input, self, 'life', 'memory_save', { text: 'likes window seats', origin: 'said' })
       await held.wait()
       yield* say('Booked: ticket 42.')
     })
@@ -469,6 +471,9 @@ describe('task sessions (ADR 0038)', () => {
     expect(conv).not.toContain('## Do the work')
     expect(work).toContain('## Do the work (you are a task)')
     expect(work).not.toContain('## Answer, look up, or hand over')
+    await until(() => Boolean(rt.results.memory_save), 'memory_save')
+    expect(rt.results.memory_save?.[0]?.isError).toBe(true)
+    expect(textOf(rt.results.memory_save?.[0] as Result)).toContain('stay with the conversation')
     held.open()
     await until(async () => (await state()).messages.some((x) => x.text === 'Booked: ticket 42.'), 'result')
   })

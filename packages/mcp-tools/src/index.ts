@@ -6,7 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { type BrowserClient, daemonClient, registerBrowserTools } from './browser.js'
 import { registerFileTools } from './files.js'
 import { registerLifeTools } from './life.js'
-import { onDemand } from './on-demand.js'
+import { ON_DEMAND_TOOLS, onDemand } from './on-demand.js'
 import { registerScreenTools } from './screen.js'
 import {
   readServiceToolsFile,
@@ -15,7 +15,7 @@ import {
   type ServiceTools,
   serviceToolsPath,
 } from './services.js'
-import { type SessionKind, sessionFence, sessionKind } from './sessions.js'
+import { ASIDE_BY_KIND, type SessionKind, sessionFence, sessionKind } from './sessions.js'
 import { registerTaskTools } from './tasks.js'
 
 export { type BrowserClient, daemonClient, registerBrowserTools, type ToolResult } from './browser.js'
@@ -86,7 +86,22 @@ export function statusText(ctx: ToolContext = {}) {
 
 export function createServer(ctx: ToolContext = {}) {
   const server = new McpServer({ name: SERVER_NAME, version: '0.0.0' })
-  server.registerTool(
+  const toolset = ctx.toolset ?? process.env.DOOL2_TOOLSET
+  const session = ctx.session ?? sessionKind(process.env.DOOL2_SESSION)
+  // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033), more of
+  // them per kind of session. Tools this kind of session does not get are not registered at all, so tool_find does
+  // not offer them either (ADR 0038)
+  const od = onDemand(
+    server,
+    session ? [...ON_DEMAND_TOOLS, ...ASIDE_BY_KIND[session]] : ON_DEMAND_TOOLS,
+    session === 'conversation'
+      ? 'The browser, PC apps and KakaoTalk, PC files, pictures, videos, PDFs, printing and texts work in a task: when your instructions or a result name one of those tools, hand the work over with task_start. Never say Dool2 cannot do these.'
+      : session === 'task'
+        ? 'Memory, goals, the library and the feed stay with the conversation: say in your answer what is worth saving.'
+        : undefined,
+  )
+  const tools = sessionFence(od.server, session)
+  tools.registerTool(
     'status',
     {
       title: 'Dool2 status',
@@ -97,18 +112,6 @@ export function createServer(ctx: ToolContext = {}) {
     },
     async () => ({ content: [{ type: 'text', text: statusText(ctx) }] }),
   )
-  const toolset = ctx.toolset ?? process.env.DOOL2_TOOLSET
-  const session = ctx.session ?? sessionKind(process.env.DOOL2_SESSION)
-  // Rarely used tools are kept off the visible list and reached through tool_find / tool_call (ADR 0033). Tools this
-  // kind of session does not get are not registered at all, so tool_find does not offer them either (ADR 0038)
-  const od = onDemand(
-    server,
-    undefined,
-    session === 'conversation'
-      ? 'The browser, PC apps and KakaoTalk, PC files, pictures, videos, PDFs, printing and texts work in a task: when your instructions or a result name one of those tools, hand the work over with task_start. Never say Dool2 cannot do these.'
-      : undefined,
-  )
-  const tools = sessionFence(od.server, session)
   registerBrowserTools(tools, ctx.browser ?? daemonClient())
   registerScreenTools(tools, ctx.screen ?? daemonClient(process.env, 'screen'))
   registerLifeTools(tools, ctx.life ?? daemonClient(process.env, 'life'))
@@ -116,11 +119,16 @@ export function createServer(ctx: ToolContext = {}) {
   registerTaskTools(tools, ctx.tasks ?? daemonClient(process.env, 'task'))
   serviceTools.set(
     server,
-    registerServiceTools(server, ctx.services ?? daemonClient(process.env, 'service'), {
-      ...(ctx.servicePollMs ? { pollMs: ctx.servicePollMs } : {}),
-      ...(toolset ? { toolset } : {}),
-      ...(ctx.serviceTools ? { initial: ctx.serviceTools } : {}),
-    }),
+    registerServiceTools(
+      server,
+      ctx.services ?? daemonClient(process.env, 'service'),
+      {
+        ...(ctx.servicePollMs ? { pollMs: ctx.servicePollMs } : {}),
+        ...(toolset ? { toolset } : {}),
+        ...(ctx.serviceTools ? { initial: ctx.serviceTools } : {}),
+      },
+      tools,
+    ),
   )
   od.finish()
   return server

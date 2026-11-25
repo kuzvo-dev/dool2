@@ -106,7 +106,7 @@ describe('tool list size budget', () => {
     const client = new Client({ name: 'test', version: '0' })
     await client.connect(clientT)
     const { tools } = await client.listTools()
-    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(92_000)
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(78_000)
     await client.close()
   })
 })
@@ -124,27 +124,20 @@ describe('conversation and task sessions (ADR 0038)', () => {
   it('the conversation talks, remembers, looks up and shows; the browser, PC apps and files are in tasks', async () => {
     const { tools, client } = await list('conversation')
     expect(tools.map((t) => t.name)).toEqual([
-      'status',
       'goal_create',
       'goal_list',
-      'goal_update',
-      'library_save',
       'library_find',
       'memory_save',
       'know_save',
       'know_find',
-      'know_update',
-      'memory_forget',
       'photo_view',
       'connect_ask',
       'profile_view',
-      'pay_method_list',
       'vault_find',
       'show_cards',
       'show_list',
       'show_result',
       'show_draft',
-      'feed_tell',
       'feed_find',
       'conversation_search',
       'task_start',
@@ -152,7 +145,6 @@ describe('conversation and task sessions (ADR 0038)', () => {
       'task_stop',
       'task_list',
       'service_find',
-      'orders_all',
       'service_call',
       'tool_find',
       'tool_call',
@@ -160,6 +152,8 @@ describe('conversation and task sessions (ADR 0038)', () => {
     // tool_find offers only what this session has, and says where the rest is
     const find = tools.find((t) => t.name === 'tool_find')?.description ?? ''
     expect(find).toContain('goal_delete')
+    for (const n of ['status', 'memory_forget', 'pay_method_list', 'orders_all', 'goal_update'])
+      expect(find).toContain(n)
     expect(find).not.toContain('screen_')
     expect(find).toContain('task_start')
     const r = await client.callTool({ name: 'tool_call', arguments: { tool: 'file_pdf', input: {} } })
@@ -167,21 +161,76 @@ describe('conversation and task sessions (ADR 0038)', () => {
     await client.close()
   })
 
-  it('a task has every tool but the task tools, like a chat without a kind', async () => {
-    const task = await list('task')
-    const plain = await list()
-    expect(task.tools.map((t) => t.name)).toEqual(plain.tools.map((t) => t.name))
-    expect(task.tools.some((t) => t.name.startsWith('task_'))).toBe(false)
-    expect(task.tools.some((t) => t.name === 'browser_open')).toBe(true)
-    await task.client.close()
-    await plain.client.close()
+  it('a task works: the browser, files and services, approvals and sign-ins; memory, goals and the feed are not its', async () => {
+    const { tools, client } = await list('task')
+    expect(tools.map((t) => t.name)).toEqual([
+      'browser_open',
+      'browser_navigate',
+      'browser_read',
+      'browser_click',
+      'browser_type',
+      'browser_press',
+      'browser_steps',
+      'browser_select',
+      'browser_scroll',
+      'browser_screenshot',
+      'browser_wait',
+      'browser_tabs',
+      'browser_login',
+      'browser_request_login',
+      'browser_fill_profile',
+      'browser_wait_auth',
+      'browser_request_code',
+      'browser_request_profile',
+      'browser_request_approval',
+      'browser_checkout',
+      'browser_order_done',
+      'browser_dialog',
+      'browser_handoff',
+      'browser_close',
+      'know_find',
+      'connect_ask',
+      'profile_view',
+      'vault_find',
+      'show_list',
+      'show_draft',
+      'file_find',
+      'service_find',
+      'service_call',
+      'tool_find',
+      'tool_call',
+    ])
+    const find = tools.find((t) => t.name === 'tool_find')?.description ?? ''
+    for (const n of ['show_cards', 'request_tap', 'conversation_search', 'phone_sms', 'screen_'])
+      expect(find).toContain(n)
+    // Not registered at all: neither listed nor offered by tool_find
+    for (const n of ['goal_create', 'memory_save', 'library_find', 'feed_tell', 'know_save', 'task_start'])
+      expect(find).not.toContain(n)
+    const r = await client.callTool({ name: 'tool_call', arguments: { tool: 'memory_save', input: {} } })
+    expect(r.isError).toBe(true)
+    await client.close()
   })
 
-  it("the conversation's tool list has its own, much smaller budget", async () => {
-    // Every request of the conversation carries it; about half of the full list (Dool2 tools, no service tools)
-    const { tools, client } = await list('conversation')
-    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(46_000)
+  it('a chat without a kind keeps every tool but the task tools', async () => {
+    const { tools, client } = await list()
+    const names = tools.map((t) => t.name)
+    for (const n of ['status', 'goal_create', 'memory_save', 'browser_open', 'browser_back', 'show_cards'])
+      expect(names).toContain(n)
+    expect(names.some((n) => n.startsWith('task_'))).toBe(false)
     await client.close()
+  })
+
+  it('each kind has its own budget: count and size (round 2 targets)', async () => {
+    // Every request of a session carries its list (Dool2 tools, no service tools). Lower these as they shrink; do not
+    // raise them to fit. Targets: conversation 25 tools / 30,000 B, task 35 tools / 55,000 B
+    const conv = await list('conversation')
+    expect(conv.tools.length).toBeLessThanOrEqual(25)
+    expect(JSON.stringify(conv.tools).length).toBeLessThanOrEqual(30_000)
+    await conv.client.close()
+    const task = await list('task')
+    expect(task.tools.length).toBeLessThanOrEqual(35)
+    expect(JSON.stringify(task.tools).length).toBeLessThanOrEqual(55_000)
+    await task.client.close()
   })
 
   it('task tools call the daemon and say when to use them', async () => {
@@ -219,13 +268,13 @@ describe('result blocks (rules moved from the global prompt)', () => {
     await client.connect(clientT)
     const { tools } = await client.listTools()
     const d = (n: string) => tools.find((t) => t.name === n)?.description ?? ''
-    expect(d('show_cards')).toContain('Never include made-up addresses or photos')
-    expect(d('show_cards')).toContain('badge the first card as recommended')
-    expect(d('show_list')).toContain('use pick: one whatever the count')
-    expect(d('show_list')).toContain('more than 5 (all banks, card companies or airlines)')
-    expect(d('show_list')).toContain('set on: false for uncertain ones')
-    expect(d('show_result')).toContain('confirmed by reading the completion screen again')
-    expect(d('show_draft')).toContain('this tool does not send')
+    expect(d('show_cards')).toContain('exactly as the tool result gave them')
+    expect(d('show_cards')).toContain('badge the first as recommended')
+    expect(d('show_list')).toContain('pick one: the user picks one row')
+    expect(d('show_list')).toContain('more than 5 companies')
+    expect(d('show_list')).toContain('on false for uncertain ones')
+    expect(d('show_result')).toContain('only values read on the completion screen')
+    expect(d('show_draft')).toContain('sending asks approval then')
     await client.close()
   })
 
@@ -244,12 +293,13 @@ describe('result blocks (rules moved from the global prompt)', () => {
     expect(d('browser_dialog')).toContain("if it matches the user's request, otherwise [Cancel]")
     expect(d('browser_handoff')).toContain('Everything a person must do goes through phone cards')
     expect(d('memory_save')).toContain('Save quietly')
+    expect(d('goal_create')).toContain('don\'t ask "Shall I set that up?"')
     expect(d('browser_wait_auth')).toContain('before asking the user anything')
     expect(d('orders_all')).toContain('then email')
     expect(d('orders_all')).toContain('seller (owner) pages')
-    expect(d('library_save')).toContain('say briefly in the answer that it is saved to the Library')
-    expect(d('conversation_search')).toContain('say honestly that you do not remember')
-    expect(d('photo_view')).toContain('Do not copy sensitive values')
+    expect(d('library_save')).toContain('say so in a few words')
+    expect(d('conversation_search')).toContain("then say you don't remember")
+    expect(d('photo_view')).toContain("Don't copy card or resident numbers")
     expect(d('browser_read')).toContain("none for the user's own account pages")
     const r = await client.callTool({ name: 'tool_find', arguments: { query: 'browser_new_password' } })
     const pw = (r.content as { text: string }[])[0]?.text ?? ''
