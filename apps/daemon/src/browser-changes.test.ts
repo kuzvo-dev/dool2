@@ -173,4 +173,82 @@ describe('results after clicks and typing', () => {
     const b = text(await tools.run('click', { tabId: 3, ref: 'e22' }, ai))
     expect(a).toBe(b)
   })
+
+  it('keys, hovering and several steps at once give only what changed too', async () => {
+    const b = shop({ 'press:': { text: page('product-options-open') } })
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 }, ai)
+    const pressed = text(await tools.run('press', { tabId: 3, key: 'Enter' }, ai))
+    expect(pressed).toContain('Pressed the Enter key.')
+    expect(pressed).toContain('(Only what changed since the last read: 5 new or changed lines of')
+    expect(pressed).not.toContain('[e20 버튼 "장바구니 담기"]')
+    b.set(page('product-option-chosen'))
+    const hovered = text(await tools.run('hover', { tabId: 3, ref: 'e22' }, ai))
+    expect(hovered).toContain('Only what changed')
+    expect(hovered).not.toContain('[e20 버튼 "장바구니 담기"]')
+    const steps = text(
+      await tools.run(
+        'steps',
+        {
+          tabId: 3,
+          steps: [
+            { do: 'hover', ref: 'e22' },
+            { do: 'wait', ms: 100 },
+          ],
+        },
+        ai,
+      ),
+    )
+    expect(steps).toContain('did not change since the last read')
+  })
+
+  it('another page of the same site gives only the lines that differ (menus stay)', async () => {
+    const b = shop({
+      'click:e6': {
+        text: page('product').replace('## 옵션 선택', '## 옵션 선택\n새 상품 안내'),
+        url: 'https://shop.example/item/2',
+      },
+    })
+    const tools = new BrowserTools(b)
+    await tools.run('read', { tabId: 3 }, ai)
+    const out = text(await tools.run('click', { tabId: 3, ref: 'e6' }, ai))
+    expect(out).toContain('[탭 3] 두리마켓 — https://shop.example/item/2')
+    expect(out).toContain('differs from the last page you read in this tab (another page of the same site)')
+    expect(out).toContain('새 상품 안내')
+    expect(out).not.toContain('[e20 버튼 "장바구니 담기"]')
+    // Another site is new to the AI: whole page
+    b.set(page('product'), 'https://other.example/item/1')
+    const away = text(await tools.run('navigate', { tabId: 3, url: 'https://other.example/item/1' }, ai))
+    expect(away).toContain('[e20 버튼 "장바구니 담기"]')
+  })
+
+  it('a page opened again in a new tab gives only what changed since it was read in the first tab', async () => {
+    let tab = 3
+    const b = shop()
+    const call = b.call
+    b.call = async (cmd, args) => {
+      if (cmd === 'open') return { tabId: ++tab }
+      return call(cmd, args)
+    }
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: ITEM }, ai)
+    const again = text(await tools.run('open', { url: ITEM }, ai))
+    expect(again).toContain('Opened a new tab.')
+    expect(again).toContain('(The page text is the same as the same page you read in tab 4.')
+    expect(again).not.toContain('[e20 버튼 "장바구니 담기"]')
+  })
+
+  it('each AI session has its own seen pages, and forgetting one leaves the others', async () => {
+    const tools = new BrowserTools(shop())
+    const as = (viewer: string) => ({ ai: true, viewer })
+    const whole = async (viewer: string) =>
+      !text(await tools.run('click', { tabId: 3, ref: 'e22' }, as(viewer))).includes('did not change')
+    await tools.run('read', { tabId: 3 }, as('task-a'))
+    // Another task never read this page: it gets it whole
+    expect(await whole('task-b')).toBe(true)
+    expect(await whole('task-a')).toBe(false)
+    tools.forgetSeen('task-a')
+    expect(await whole('task-a')).toBe(true)
+    expect(await whole('task-b')).toBe(false)
+  })
 })

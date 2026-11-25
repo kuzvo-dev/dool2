@@ -2233,9 +2233,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         emitTask(task)
       }
     }
-    // A turn may be a new AI session (a new segment) that has not seen the pages: its first click reads the whole page.
-    // The conversation of task sessions has no browser, so its turns leave a task's pages alone
-    if (sessionOf(threadId) !== 'conversation') browserTools.forgetSeen()
+    // A turn on a new agent program (a new segment, or one closed while idle and started again) has not seen the pages
+    // in its context: its first action on each page gives the whole page. A resident program still has them (ADR 0035)
+    if (!threads.hasSession(threadId)) browserTools.forgetSeen(threadId)
     live.emit('event', { kind: 'busy', busy: true })
     // Send the same progress to connected phones too (so chats started on the PC show on the phone)
     // The separate chat that writes feed posts is not streamed to the phone's chat screen (the result goes to the feed),
@@ -3940,7 +3940,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const args = (await readJson(req)) as Record<string, unknown>
         if (c === 'handoff' && caller && typeof args?.tabId === 'number')
           handoffThread.set(args.tabId, caller)
-        return reply(await browserTools.run(c, args && typeof args === 'object' ? args : {}, { ai: true }))
+        return reply(
+          await browserTools.run(c, args && typeof args === 'object' ? args : {}, {
+            ai: true,
+            viewer: caller ?? '',
+          }),
+        )
       }
       if (req.method === 'POST' && b === 'screen' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
