@@ -190,7 +190,7 @@ async function setup(
     ...(opts.health ? { health: opts.health } : {}),
     ...(opts.recent ? { recentTools: () => new Set(opts.recent) } : {}),
   })
-  return { connectors, calls, tools }
+  return { connectors, calls, tools, dir }
 }
 
 const textOf = (r: { content: { type: string; text?: string }[] }) =>
@@ -343,6 +343,35 @@ describe('서비스 도구 실행기', () => {
     expect(r).toContain(
       "After connecting: 예약. When you reach that step, show the connect card with connect_ask('demo-eats')",
     )
+  })
+
+  it('finding a service gives the best match in full and the others in one line each', async () => {
+    const { connectors, dir } = await setup()
+    await mkdir(join(dir, 'demo-bar'))
+    await writeFile(
+      join(dir, 'demo-bar', 'connect.json'),
+      JSON.stringify({
+        ...CARD,
+        id: 'demo-bar',
+        name: '데모술집',
+        site: 'bar.example',
+        summary: '성수 술집을 찾고 자리를 잡아 줘요.',
+      }),
+    )
+    await writeFile(join(dir, 'demo-bar', 'tools.json'), JSON.stringify({ ...CONNECTOR, id: 'demo-bar' }))
+    const r = textOf(await connectors.find('데모맛집 성수 식당'))
+    expect(r).toContain('## 데모맛집 (demo-eats) — not connected')
+    expect(r).toContain('- demo_eats_search [lookup · no login] 식당 찾기 — input: keyword*')
+    expect(r).toContain(
+      'Other matches:\n- 데모술집 (demo-bar) — not connected: demo_bar_search (식당 찾기), ',
+    )
+    expect(r).not.toContain('demo_bar_search [lookup')
+    expect(r).toContain('call service_find with the tool name to get its input fields')
+    // A second call with a tool name gives that tool's input fields
+    const one = textOf(await connectors.find('demo_bar_search'))
+    expect(one).toContain('## 데모술집 (demo-bar) — not connected')
+    expect(one).toContain('- demo_bar_search [lookup · no login] 식당 찾기 — input: keyword*')
+    expect(one).not.toContain('demo_bar_book')
   })
 
   it('주소로 그 사이트의 도구를 찾는다 (브라우저로 열었을 때 도구를 쓰라고)', async () => {
