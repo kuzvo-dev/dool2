@@ -7,6 +7,7 @@
   ],
   "category": "mail",
   "how": "official",
+  "loginUrl": "https://accounts.google.com/AddSession?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2F",
   "login": "Google 계정",
   "summary": "지메일을 연결하면 매달 새는 구독 찾기부터 택배·항공편 확인, 광고 메일 수신 거부까지 두리에게 맡길 수 있어요.",
   "example": {

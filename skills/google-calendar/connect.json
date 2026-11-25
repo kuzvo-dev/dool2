@@ -4,6 +4,7 @@
   "site": "calendar.google.com",
   "category": "mail",
   "how": "official",
+  "loginUrl": "https://accounts.google.com/AddSession?service=cl&continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr",
   "login": "Google 계정",
   "summary": "구글 캘린더를 연결하면 하루 일정 보기부터 빈 시간 찾기, 일정 잡고 옮기기, 초대 보내기까지 두리에게 맡길 수 있어요.",
   "example": {

@@ -77,9 +77,6 @@ const catalog = messages({
     keepOnPc: 'PC 화면 보면서 마저 하기',
     directConnect: '화면 보면서 직접 로그인할게요',
     pickAccount: '계정 고르기',
-    pickWhere: (host: string, pc: string) => `${host} · ${pc}의 Chrome에서 골라요`,
-    pickNote: (pc: string) =>
-      `${pc}의 Chrome에 로그인된 계정 중에서 고르거나 새로 추가해요. 비밀번호는 두리가 받지 않아요.`,
   },
   en: {
     close: 'Close',
@@ -156,9 +153,6 @@ const catalog = messages({
     keepOnPc: 'Finish on the PC screen',
     directConnect: 'I’ll sign in on the screen',
     pickAccount: 'Pick an account',
-    pickWhere: (host: string, pc: string) => `${host} · pick it in Chrome on ${pc}`,
-    pickNote: (pc: string) =>
-      `Pick one of the accounts signed in to Chrome on ${pc}, or add one. Dool2 never gets the password.`,
   },
 })
 

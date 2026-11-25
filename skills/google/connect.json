@@ -4,7 +4,7 @@
   "site": "myaccount.google.com",
   "category": "account",
   "how": "browser",
-  "loginUrl": "https://accounts.google.com/ServiceLogin",
+  "loginUrl": "https://accounts.google.com/AddSession?continue=https%3A%2F%2Fmyaccount.google.com%2F",
   "login": "Google 계정",
   "summary": "구글 계정을 연결해 두면 구글로 가입한 사이트에 두리가 버튼 한 번으로 로그인해요. 계정이 여럿이면 어느 계정인지 한 번만 물어요.",
   "example": {

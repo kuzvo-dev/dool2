@@ -1328,8 +1328,8 @@ export type PhoneToPc =
    */
   /** chat: leave "Connect ○○" and the connect card in the conversation right away (does not call the AI) */
   /** verify: when [I signed in] is pressed, the core opens the site, checks it is really signed in, and marks it connected */
-  /** pick: choose a Google-style account on the phone (ADR 0041) */
-  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' | 'pick' }
+  /** start: look whether Chrome is signed in first, then ask on the phone (which account, or ID and password; ADR 0041) */
+  | { kind: 'connect'; id: string; action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' | 'start' }
   /** Connecting: put the ID and password in the vault and the Dool2 core signs in for you (the values do not pass through the AI) */
   | { kind: 'connect-login'; id: string; username: string; password: string }
   /** The answer to what the screen asks during sign-in (verification code, etc.). Without value, cancel */
@@ -1466,9 +1466,10 @@ export type PcToPhone =
       tabId?: number
       /**
        * Why it could not: a person's turn (captcha, identity verification) / wrong ID or password / not knowing the
-       * sign-in fields or result / Chrome is signed in to another account than the one asked for (ADR 0041)
+       * sign-in fields or result / Chrome is signed in to another account than the one asked for / the ID and
+       * password are needed: the phone opens that card (ADR 0041)
        */
-      reason?: 'human' | 'wrong' | 'unknown' | 'other-account'
+      reason?: 'human' | 'wrong' | 'unknown' | 'other-account' | 'credentials'
       /** The automatic sign-in stopped, and Dool2 (the AI) is continuing in the conversation while looking at that screen */
       agent?: boolean
     }

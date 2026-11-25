@@ -32,13 +32,18 @@ a script is what its security checks are built to stop.
   signed in as X. Connect with this account?"; no → the connection stops and says how to switch (the AI does not
   take that screen over). The typed account not in Chrome (Gmail's 404) → stops and says to pick or add it. No
   account readable → as before.
-- **Google accounts are picked on the phone, not typed.** Cards with `pick` (Google account, Gmail, Google Calendar)
-  do not show the PC screen. Dool2 opens Google's account chooser in a background tab, reads the accounts signed in to
-  Chrome and asks on the phone which one, as buttons on the connect card (`connect_ask` starts this at once). It then
-  presses that account's row, so Google goes on to the service as that account, and keeps the full address the page
-  shows. An account connected before that is still in Chrome is used again without asking. Only a signed-out or new
-  account needs Google's own sign-in (with its two-step checks), and only that screen goes to the person. Dool2 never
-  types a Google password: re-login with the vault and the keep-connected check skip these cards.
+- **Connecting looks first, then asks on the phone (never the PC screen).** Tapping connect (or `connect_ask` for
+  Google cards) starts a look in a background tab:
+  - Google cards (`pick`: Google account, Gmail, Google Calendar): read the accounts on Google's account chooser and
+    ask which one, as buttons on the connect card, plus "add another account (ID and password)". The picked row is
+    pressed so Google goes on to the service as that account, and the full address that page shows is kept. An
+    account connected before that is still in Chrome is used again without asking.
+  - Other cards: if Chrome is already signed in (the account read with `account`, or the usual sign-in check), ask
+    "Chrome is signed in as X. Connect this account?" [this account] [another account (ID and password)].
+  - Not signed in, a new account, or a signed-out Google account: the phone opens the ID and password card. Dool2
+    signs in with them (Google: on its "add account" page, `loginUrl`), and only the steps a person must do (approve
+    on the phone, a code) come as the usual phone cards. If the typed Gmail account is already in Chrome, it is
+    connected without typing the password.
 - **Tools use the account that was read.** `{{account}}` in a tool comes from `connectAccounts` first, then the
   vault ID. Calendar tools now pass `authuser`, like Gmail's `/mail/u/`.
 - **A tool's sign-in screen beats the connected mark.** When a tool stops at a sign-in screen (`stop_if` with
@@ -56,8 +61,8 @@ a script is what its security checks are built to stop.
 
 ## Alternatives considered
 
-- **Fill in Google's sign-in form with the vault password ("add account").** Google treats scripted password entry
-  as suspicious and asks for identity checks or blocks it; it would also put a Google password through Dool2.
+- **Picking the account on Google's chooser through the PC remote screen** (tried first): it worked, but the
+  person had to watch and tap a PC screen on the phone, which the maintainer found clumsy.
 - **Read the account list from Google's internal endpoints.** Undocumented and can change without notice; the
   chooser screen is Google's supported way for a person to pick.
 - **Keep the boolean mark and only fix Gmail.** The same mistake stays silent on every other site.
