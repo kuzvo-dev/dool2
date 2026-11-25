@@ -118,6 +118,11 @@ export class Connectors {
   private tabs = new Map<string, number>()
   /** Last result for the same input (minIntervalSec) */
   private recent = new Map<string, { at: number; result: ToolResult }>()
+  /** Whole lists of recent results (tool and input → values), so the next rows come without asking the site again */
+  private lists = new Map<
+    string,
+    { at: number; out: Record<string, unknown>; scope: Scope; tabId: number | undefined }
+  >()
   /** One call at a time per service: queue calls so they do not move the same tab at once */
   private lanes = new Map<string, Promise<unknown>>()
   private lastRun = new Map<string, number>()
@@ -718,6 +723,9 @@ export class Connectors {
     for (const [k, p] of Object.entries(tool.input.properties))
       if (p.default !== undefined) args[k] = p.default
     for (const [k, v] of Object.entries(input ?? {})) if (v !== undefined && v !== null) args[k] = v
+    // offset: the next rows of a long list (every tool has it, no tool declares it): not an input of the tool itself
+    const offset = tool.input.properties.offset ? 0 : rowOffset(args.offset)
+    if (!tool.input.properties.offset) delete args.offset
     await this.fillHome(tool, args)
     const bad = checkInput(tool.input, args)
     if (bad.length) return text(`Fix the input: ${bad.join(', ')}`, true)
@@ -725,6 +733,11 @@ export class Connectors {
     // Connected account: only for tools with {{account}} in a URL (none = 0, Chrome's first account)
     if (args.account === undefined && JSON.stringify(tool.steps).includes('{{account'))
       args.account = (await this.opts.accountFor?.(card).catch(() => undefined)) || '0'
+    // The next rows of a list read a moment ago come from what was read then (the site is not asked again)
+    const listKey = `${name} ${JSON.stringify(args)}`
+    const kept = offset ? this.lists.get(listKey) : undefined
+    if (kept && Date.now() - kept.at < LIST_KEEP_MS)
+      return this.shape(card, tool, kept.out, kept.scope, kept.tabId, { offset, key: listKey })
     if (tool.login && !this.isConnected(card))
       return text(
         `${card.name} needs to be connected ('${tool.title}' needs login). Show the connect card with connect_ask('${card.id}'), briefly ask the user to connect on the card, and end the reply. An app notification comes when it is connected. Then call this tool again.`,
@@ -759,7 +772,9 @@ export class Connectors {
         true,
       )
     const startedAt = Date.now()
-    const { outcome, detail, ...ran } = await this.inLane(card.id, () => this.execute(card, tool, args))
+    const { outcome, detail, ...ran } = await this.inLane(card.id, () =>
+      this.execute(card, tool, args, { offset, key: listKey }),
+    )
     const result = withNote(ran, pick)
     // A result came back but a field that should be filled is empty: silent breakage (ADR 0020)
     let final: ToolResult = result
@@ -821,10 +836,15 @@ export class Connectors {
     return next
   }
 
+  /**
+   * Runs the tool's steps. page: give its lists PAGE_ROWS rows at a time from offset, keeping the whole lists under
+   * key for the next rows (without it, as for connector tests, the lists are given whole)
+   */
   private async execute(
     card: ConnectCard,
     tool: ConnectorTool,
     args: Record<string, unknown>,
+    page?: { offset: number; key: string },
   ): Promise<ToolResult & { outcome?: Outcome; detail?: string }> {
     const b = this.opts.browser
     const scope: Scope = { ...args, today: today(this.now()) }
@@ -925,6 +945,26 @@ export class Connectors {
       const field = tool.output[k]
       out[k] = field ? coerce(fillValue(tpl, scope), field) : fillValue(tpl, scope)
     }
+    if (page) {
+      this.lists.set(page.key, { at: Date.now(), out, scope, tabId })
+      for (const [k, v] of this.lists) if (Date.now() - v.at > LIST_KEEP_MS) this.lists.delete(k)
+    }
+    return { ...this.shape(card, tool, out, scope, tabId, page), outcome: 'ok' }
+  }
+
+  /**
+   * The result the AI gets from the values a tool returned: the rows of this page of each list (all when page is
+   * not given), the text, and the notes on what to do next (also apart as hint, for the structured result)
+   */
+  private shape(
+    card: ConnectCard,
+    tool: ConnectorTool,
+    whole: Record<string, unknown>,
+    scope: Scope,
+    tabId: number | undefined,
+    page?: { offset: number; key: string },
+  ): ToolResult & { hint: string } {
+    const { out, more } = page ? pageLists(tool, whole, page.offset) : { out: whole, more: [] }
     const lines = [render(tool, out)]
     // Check time: so "now" in a reply does not reuse a time from earlier in the chat (measured: an 8-minute-old
     // time was called "now")
@@ -963,12 +1003,21 @@ export class Connectors {
     // When the list came back empty, do not keep hitting the same site with reworded queries (measured: opening
     // Coupang orders back to back got Access Denied)
     const lists = Object.entries(tool.output).filter(([, f]) => f.type === 'list')
-    if (lists.length && lists.every(([k]) => Array.isArray(out[k]) && !(out[k] as unknown[]).length))
+    if (
+      !page?.offset &&
+      lists.length &&
+      lists.every(([k]) => Array.isArray(out[k]) && !(out[k] as unknown[]).length)
+    )
       notes.push(
         'The result is empty. Do not call this tool again many times with reworded input (the site may block you). Broaden it once (fewer words, longer period), or look elsewhere (another shop, payment history, mail).',
       )
     if (tool.status === TOOL_STATUS.draft)
       notes.push('(This tool is new. If something looks off, check the screen with the browser tools)')
+    // Rows left out of long lists: how many, and how to get them (read from what was kept, the site is not asked again)
+    if (page && more.length)
+      notes.push(
+        `${more.map((m) => `${m.field}: rows ${m.from}–${m.to} of ${m.total} shown`).join('; ')}. For the next rows, call service_call({ tool: '${connectorToolName(card.id, tool.name)}', input: { …the same input, offset: ${page.offset + PAGE_ROWS} } }). Get them only if the answer needs more than these.`,
+      )
     if (tabId !== undefined) notes.push(`[Tab ${tabId}]`)
     for (const n of notes) lines.push(n.startsWith('[Tab ') ? n : `\n${n}`)
     this.opts.tools.lastTabId = tabId
@@ -976,7 +1025,6 @@ export class Connectors {
       content: [{ type: 'text', text: lines.join('\n') }],
       structuredContent: out,
       hint: notes.join('\n'),
-      outcome: 'ok',
     }
   }
 
@@ -1462,6 +1510,41 @@ export function coerce(v: unknown, field: OutputField): unknown {
 }
 
 /** The result as short text for the AI: lists as numbered lines, the rest as "name: value" */
+/** Rows of a list a service tool result gives at a time; the rest come with offset */
+export const PAGE_ROWS = 10
+/** How long the whole lists of a result are kept for their next rows */
+const LIST_KEEP_MS = 10 * 60_000
+
+/** The offset the AI asked for (0 when none or not a number) */
+function rowOffset(v: unknown): number {
+  const n = typeof v === 'string' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+/** Each list output cut to PAGE_ROWS rows from offset, and which lists had more than that */
+export function pageLists(
+  tool: ConnectorTool,
+  whole: Record<string, unknown>,
+  offset: number,
+): { out: Record<string, unknown>; more: { field: string; from: number; to: number; total: number }[] } {
+  const out: Record<string, unknown> = { ...whole }
+  const more: { field: string; from: number; to: number; total: number }[] = []
+  for (const [k, v] of Object.entries(whole)) {
+    if (tool.output[k]?.type !== 'list' || !Array.isArray(v)) continue
+    if (v.length <= PAGE_ROWS && !offset) continue
+    const rows = v.slice(offset, offset + PAGE_ROWS)
+    out[k] = rows
+    if (offset + PAGE_ROWS < v.length || offset)
+      more.push({
+        field: k,
+        from: rows.length ? offset + 1 : 0,
+        to: offset + rows.length,
+        total: v.length,
+      })
+  }
+  return { out, more }
+}
+
 export function render(tool: ConnectorTool, out: Record<string, unknown>): string {
   const lines: string[] = []
   for (const [k, v] of Object.entries(out)) {
