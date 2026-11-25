@@ -662,10 +662,22 @@ export function runSetup(opts: SetupOptions): {
             m.chosenAi(choice ? aiChoiceLabel(choice) : m.notChosen),
             button('btn-link', m.redoSetup, () => void go('welcome')),
           )
+          // Opening Chrome by itself when Dool2 needs the browser (ADR 0006 follow-up): on unless turned off
+          const chromeOpen = current.chromeAutoOpen !== false
+          const chromeRows = el('ul', 'checks toggles')
+          chromeRows.append(
+            toggleRow(
+              m.chromeAutoOpen,
+              chromeOpen ? m.chromeAutoOpenOn : m.chromeAutoOpenOff,
+              chromeOpen,
+              () => void save({ chromeAutoOpen: !chromeOpen }),
+            ),
+          )
           body.append(
             head(m.tabAi, todo ? m.todoLeft(todo) : m.aiReady),
             sec(m.secReady, undefined, ...checksBlock(choice ?? 'both')),
             ai,
+            sec(m.secChrome, undefined, chromeRows),
           )
         } else if (settingsTab === 'phone')
           body.append(head(m.tabPhone, m.phoneSub), sec(m.secPhone, undefined, phoneBlock()))

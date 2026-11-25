@@ -35,6 +35,13 @@ export const indexText = messages({
     connectedTitle: (name: string) => `${name} 연결됐어요`,
     connectedBody: '이제 부탁만 하면 돼요',
     loginScreenOff: '로그인 화면이 예상과 달라 멈췄어요. 다시 해 보기를 눌러 주세요.',
+    chromeNotInstalled:
+      '이 PC에 Chrome이 없어서 연결하지 못했어요. 설정 > AI · 브라우저에서 Chrome을 설치해 주세요.',
+    chromeClosed: 'Chrome이 꺼져 있어서 연결하지 못했어요. Chrome을 열고 다시 해 보기를 눌러 주세요.',
+    chromeExtensionOff:
+      'Chrome에서 두리 확장 프로그램이 꺼져 있는 것 같아요. 확장 프로그램을 켜고 다시 해 보기를 눌러 주세요.',
+    chromeExtensionOffIn: (profile: string) =>
+      `Chrome의 '${profile}' 프로필을 열고 두리 확장 프로그램이 켜져 있는지 봐 주세요. 그다음 다시 해 보기를 눌러 주세요.`,
     finishConnectTitle: (name: string) => `${name} 연결을 마쳐 주세요`,
     loginFailedTitle: (name: string) => `${name} 로그인이 안 됐어요`,
     loggedInShort: (name: string) => `${name}에 로그인했어요.`,
@@ -195,6 +202,12 @@ export const indexText = messages({
     connectedTitle: (name: string) => `${name} is connected`,
     connectedBody: 'Just ask me whatever you need',
     loginScreenOff: 'The sign-in screen was not what I expected, so I stopped. Tap Try again.',
+    chromeNotInstalled:
+      'Chrome is not on this PC, so I could not connect. Install it from Settings > AI · Browser.',
+    chromeClosed: 'Chrome is closed, so I could not connect. Open Chrome and tap Try again.',
+    chromeExtensionOff: 'The Dool2 extension seems to be off in Chrome. Turn it on and tap Try again.',
+    chromeExtensionOffIn: (profile: string) =>
+      `Open the '${profile}' profile in Chrome and check that the Dool2 extension is on there. Then tap Try again.`,
     finishConnectTitle: (name: string) => `Finish connecting ${name}`,
     loginFailedTitle: (name: string) => `Could not sign in to ${name}`,
     loggedInShort: (name: string) => `Signed in to ${name}.`,

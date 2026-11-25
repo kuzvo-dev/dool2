@@ -931,6 +931,11 @@ export class Connectors {
             outcome: 'stopped',
           }
         if (optional && e instanceof StepError) continue
+        // Chrome closed or the extension off: the tool is not stuck and the site did not change, so pass on what is
+        // wrong and what the person does (the daemon's Chrome opener wrote it) as is
+        const why = (e as Error).message
+        if (EXTENSION_OFFLINE.test(why) || EXTENSION_OFFLINE_EN.test(why))
+          return { ...text(why, true), outcome: 'stopped', detail: why }
         // A step broken by a robot check does not mean the site changed: solve it on a phone card and call again
         // (not counted as a breakage)
         if (tabId !== undefined && (await this.captchaOn(tabId))) {

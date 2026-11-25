@@ -1,12 +1,13 @@
 // Checking and installing Chrome (ADR 0006: Chrome is the one browser, and Dool2 installs it if missing).
 // The installer comes from Google's official URL and is installed only after Google's code signature is verified.
+import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { access, constants, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { access, constants, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, posix, win32 } from 'node:path'
 import { runOnce } from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
-import type { ChromeStatus, InstallPhase, InstallStatus } from '@dool2/protocol'
+import { type ChromeStatus, EXTENSION_IDS, type InstallPhase, type InstallStatus } from '@dool2/protocol'
 import { CHROME_TEXT, type ChromeText } from './locales/chrome.js'
 
 /** Google's Apple developer team ID (checked with codesign) */
@@ -28,6 +29,10 @@ export interface ChromeEnv {
   exists(path: string): Promise<boolean>
   list(dir: string): Promise<string[]>
   exec: Exec
+  /** Starts a program without waiting for it (default: a detached child process) */
+  detach?: Detach
+  /** Reads a text file, undefined when missing (default: the file system) */
+  read?(path: string): Promise<string | undefined>
 }
 
 const exists = (p: string) =>
@@ -93,6 +98,168 @@ export async function detectChrome(e: ChromeEnv = chromeEnv()): Promise<ChromeSt
     return { installed: true, path, ...(version ? { version } : {}) }
   }
   return { installed: false }
+}
+
+/** Starts a program that keeps running after the call (Chrome on Linux). Resolves false when it could not start */
+export type Detach = (cmd: string, args: string[]) => Promise<boolean>
+const defaultDetach: Detach = (cmd, args) =>
+  new Promise((resolve) => {
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+    child.once('error', () => resolve(false))
+    child.once('spawn', () => {
+      child.unref()
+      resolve(true)
+    })
+  })
+
+/** Process name of the user's Chrome per OS (Chrome for Testing, Beta and Canary have other names) */
+const CHROME_PROCESS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: 'Google Chrome',
+  win32: 'chrome.exe',
+  linux: 'chrome',
+}
+
+/**
+ * Whether the user's Chrome is running now (for this user). When it cannot tell, it says running, so Dool2 never
+ * starts a second Chrome
+ */
+export async function chromeRunning(e: ChromeEnv = chromeEnv()): Promise<boolean> {
+  const name = CHROME_PROCESS[e.platform]
+  if (!name) return true
+  if (e.platform === 'win32') {
+    const r = await e
+      .exec('tasklist', ['/FI', `IMAGENAME eq ${name}`, '/FO', 'CSV', '/NH'])
+      .catch(() => undefined)
+    if (!r || r.code !== 0) return true
+    return r.stdout.toLowerCase().includes(`"${name}"`)
+  }
+  const uid = typeof process.getuid === 'function' ? String(process.getuid()) : undefined
+  const r = await e.exec('pgrep', [...(uid ? ['-U', uid] : []), '-x', name]).catch(() => undefined)
+  // pgrep: 0 = found, 1 = none, anything else = could not tell
+  if (!r) return true
+  return r.code !== 1
+}
+
+/** Where the user's Chrome keeps its profiles (its "User Data" folder) */
+export function chromeUserDataDir(e: ChromeEnv): string | undefined {
+  if (e.platform === 'darwin') return posix.join(e.home, 'Library', 'Application Support', 'Google', 'Chrome')
+  if (e.platform === 'win32') {
+    const local = e.env.LOCALAPPDATA ?? win32.join(e.home, 'AppData', 'Local')
+    return win32.join(local, 'Google', 'Chrome', 'User Data')
+  }
+  if (e.platform === 'linux') return posix.join(e.home, '.config', 'google-chrome')
+  return undefined
+}
+
+/** A Chrome profile: its folder name ("Default", "Profile 1") and the name the person sees in Chrome */
+export interface ChromeProfile {
+  dir: string
+  name?: string
+  /** Whether the Dool2 extension is installed in it (false: no profile has it, this is the one last used) */
+  hasExtension: boolean
+}
+
+/** Profile folder names Chrome makes. Anything else is not passed on the command line */
+const PROFILE_DIR = /^[\w-][\w .-]{0,40}$/
+
+interface LocalState {
+  profile?: {
+    last_used?: unknown
+    last_active_profiles?: unknown
+    info_cache?: Record<string, { name?: unknown } | undefined>
+  }
+}
+
+/**
+ * The profile the Dool2 extension lives in, read from Chrome's own files (Local State, and each profile's Extensions
+ * folder or Secure Preferences for an extension loaded from a folder). Prefers the last used profile when it has the
+ * extension; else the first that has it; else the last used one. Undefined when Chrome's files cannot be read
+ */
+export async function findChromeProfile(
+  e: ChromeEnv = chromeEnv(),
+  ids: readonly string[] = EXTENSION_IDS,
+): Promise<ChromeProfile | undefined> {
+  const root = chromeUserDataDir(e)
+  if (!root) return undefined
+  const pj = e.platform === 'win32' ? win32.join : posix.join
+  const read = e.read ?? readText
+  let state: LocalState
+  try {
+    state = JSON.parse((await read(pj(root, 'Local State'))) ?? '') as LocalState
+  } catch {
+    return undefined
+  }
+  const p = state.profile ?? {}
+  const cache = p.info_cache && typeof p.info_cache === 'object' ? p.info_cache : {}
+  const lastUsed = typeof p.last_used === 'string' ? p.last_used : undefined
+  const active = Array.isArray(p.last_active_profiles)
+    ? p.last_active_profiles.filter((x): x is string => typeof x === 'string')
+    : []
+  const dirs = [
+    ...new Set([...(lastUsed ? [lastUsed] : []), ...active, ...Object.keys(cache), 'Default']),
+  ].filter((d) => PROFILE_DIR.test(d) && d !== 'System Profile' && d !== 'Guest Profile')
+  const profile = (dir: string, hasExtension: boolean): ChromeProfile => {
+    const name = cache[dir]?.name
+    return { dir, ...(typeof name === 'string' && name ? { name: name.slice(0, 60) } : {}), hasExtension }
+  }
+  for (const dir of dirs) {
+    for (const id of ids) if (await e.exists(pj(root, dir, 'Extensions', id))) return profile(dir, true)
+    const prefs = await read(pj(root, dir, 'Secure Preferences')).catch(() => undefined)
+    if (prefs && ids.some((id) => prefs.includes(`"${id}"`))) return profile(dir, true)
+  }
+  const fallback = lastUsed && dirs.includes(lastUsed) ? lastUsed : dirs.find((d) => d in cache)
+  return fallback ? profile(fallback, false) : undefined
+}
+
+const readText = (path: string) => readFile(path, 'utf8').catch(() => undefined)
+
+export interface LaunchOptions {
+  /** The profile folder to open (--profile-directory): the one with the Dool2 extension */
+  profile?: string
+  /**
+   * Chrome is already running (stuck on its profile picker, or with no window of that profile): open that profile's
+   * window in it. The running Chrome takes the command line and the new process exits
+   */
+  running?: boolean
+}
+
+/**
+ * Opens the user's own Chrome as a person would, into the profile that has the Dool2 extension (never a test profile
+ * or a new data folder, and no automation flags). macOS opens it behind the current window (`open -g`); Windows starts
+ * it minimized; Linux starts it as is. Resolves whether the OS started it
+ */
+export async function launchChrome(
+  e: ChromeEnv = chromeEnv(),
+  found?: ChromeStatus,
+  o: LaunchOptions = {},
+): Promise<boolean> {
+  const chrome = found ?? (await detectChrome(e))
+  if (!chrome.installed || !chrome.path) return false
+  const profile = o.profile && PROFILE_DIR.test(o.profile) ? o.profile : undefined
+  const flags = profile ? [`--profile-directory=${profile}`] : []
+  if (e.platform === 'darwin' && !o.running) {
+    // .../Google Chrome.app/Contents/MacOS/Google Chrome → the .app
+    const app = chrome.path.replace(/\/Contents\/MacOS\/[^/]+$/, '')
+    const r = await e
+      .exec('/usr/bin/open', ['-g', '-a', app, ...(flags.length ? ['--args', ...flags] : [])])
+      .catch(() => undefined)
+    return r?.code === 0
+  }
+  if (e.platform === 'win32') {
+    const q = (s: string) => `'${s.replace(/'/g, "''")}'`
+    const list = profile ? ` -ArgumentList ${q(`--profile-directory="${profile}"`)}` : ''
+    const r = await e
+      .exec('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Start-Process -FilePath ${q(chrome.path)}${list} -WindowStyle Minimized`,
+      ])
+      .catch(() => undefined)
+    return r?.code === 0
+  }
+  // Linux, and macOS while Chrome runs (open passes no arguments to an app that is already running)
+  return (e.detach ?? defaultDetach)(chrome.path, flags)
 }
 
 export function compareVersions(a: string, b: string): number {

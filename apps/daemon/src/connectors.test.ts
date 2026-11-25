@@ -145,6 +145,8 @@ async function setup(
     open?: boolean
     /** 이 사용자가 요즘 쓴 도구 */
     recent?: string[]
+    /** What every browser call throws (the extension not connected) */
+    offline?: string
   } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
@@ -159,6 +161,7 @@ async function setup(
   const browser = {
     call: async (cmd: string, args?: Record<string, unknown>) => {
       calls.push([cmd, args])
+      if (opts.offline) throw new Error(opts.offline)
       if (cmd === 'open' || cmd === 'navigate') {
         url = String(args?.url)
         return { tabId: 7 }
@@ -247,6 +250,18 @@ describe('서비스 도구 실행기', () => {
     expect(r.isError).toBe(true)
     expect(textOf(r)).toMatch(/step 2 \(wait\).*\[Tab 7\].*browser_read/)
     expect(connectors.breakages[0]).toMatchObject({ tool: 'demo_eats_search', step: 2, kind: 'wait' })
+  })
+
+  it('Chrome closed or the extension off: passes on what to do, not "stuck", and does not count it as broken', async () => {
+    const health = new ConnectorHealth(join(await mkdtemp(join(tmpdir(), 'dool2-health-')), 'h.json'))
+    const why =
+      'Chrome is closed and Dool2 could not open it, so the Dool2 extension is not connected. The service connection itself is fine.'
+    const { connectors } = await setup({ offline: why, health })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toBe(why)
+    expect(connectors.breakages).toEqual([])
+    expect(health.summary().demo_eats_search).toBeUndefined()
   })
 
   it('연결이 필요한 도구는 연결 전이면 실행 대신 연결 안내', async () => {

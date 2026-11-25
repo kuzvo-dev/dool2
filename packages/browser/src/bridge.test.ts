@@ -124,3 +124,22 @@ describe('브라우저 다리', () => {
     expect(ext.received).toEqual([{ event: 'daemon-offline' }])
   })
 })
+
+describe('Bridge while the extension is not connected', () => {
+  it('asks whenOffline first and passes on what it throws (no extension needed)', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dool2-bridge-'))
+    bridge = new BrowserBridge(dir)
+    const asked: string[] = []
+    bridge.whenOffline = async (cmd) => {
+      asked.push(cmd)
+      throw new Error('Chrome is closed')
+    }
+    await expect(bridge.call('open', { url: 'https://example.com' })).rejects.toThrow('Chrome is closed')
+    // Nothing thrown: the call goes on and meets the plain "not connected"
+    bridge.whenOffline = async (cmd) => {
+      asked.push(cmd)
+    }
+    await expect(bridge.call('snapshot')).rejects.toThrow()
+    expect(asked).toEqual(['open', 'snapshot'])
+  })
+})

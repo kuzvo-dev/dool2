@@ -90,8 +90,20 @@ export class BrowserBridge extends EventEmitter<BrowserBridgeEvents> {
     await writeFile(join(this.dataDir, BRIDGE_FILE), JSON.stringify(info), { mode: 0o600 })
   }
 
+  /**
+   * Runs before a command while the extension is not connected, and may throw what is wrong instead. The daemon opens
+   * Chrome here when a call needs the browser (ADR 0006 follow-up)
+   */
+  whenOffline?: (cmd: BrowserCommand) => Promise<void>
+
   /** Sends the extension a command and waits for the answer */
   call(cmd: BrowserCommand, args: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<unknown> {
+    if ((!this.conn || !this.hello) && this.whenOffline)
+      return this.whenOffline(cmd).then(() => this.send(cmd, args, timeoutMs))
+    return this.send(cmd, args, timeoutMs)
+  }
+
+  private send(cmd: BrowserCommand, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
     const conn = this.conn
     if (!conn || !this.hello) return Promise.reject(new BrowserError(T.notConnected))
     const id = ++this.seq

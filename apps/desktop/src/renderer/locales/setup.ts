@@ -117,6 +117,11 @@ export const setupText = messages({
     todoLeft: (n: number) => `할 일이 ${n}개 남았어요. 아래 버튼으로 마저 준비해요.`,
     aiReady: '두리가 일할 준비가 다 됐어요.',
     secReady: '준비 상태',
+    secChrome: 'Chrome',
+    chromeAutoOpen: 'Chrome 자동으로 열기',
+    chromeAutoOpenOn:
+      'Chrome이 꺼져 있으면 두리가 켜요. 확장 프로그램이 있는 프로필로, 지금 보는 창 뒤에서 열어요.',
+    chromeAutoOpenOff: '꺼져 있어요. Chrome이 꺼져 있으면 두리가 켜 달라고 말씀드려요.',
     phoneSub: '밖에서도 폰으로 부탁하고, 결제·보내기는 폰에서 승인해요.',
     secPhone: '이 PC와 폰',
     vaultSub: '로그인이 풀려도 두리가 대신 채울 아이디·비밀번호를 이 PC에만 둬요.',
@@ -398,6 +403,11 @@ export const setupText = messages({
         : `${n} things left. Use the buttons below to finish.`,
     aiReady: 'Dool2 is ready to work.',
     secReady: 'Status',
+    secChrome: 'Chrome',
+    chromeAutoOpen: 'Open Chrome automatically',
+    chromeAutoOpenOn:
+      'If Chrome is closed, Dool2 opens it in the profile with the extension, behind the window you are using.',
+    chromeAutoOpenOff: 'Off. If Chrome is closed, Dool2 asks you to open it.',
     phoneSub: "Ask from your phone when you're out, and approve payments and sends there.",
     secPhone: 'This PC and your phone',
     vaultSub: 'IDs and passwords Dool2 fills in when you get signed out, kept only on this PC.',

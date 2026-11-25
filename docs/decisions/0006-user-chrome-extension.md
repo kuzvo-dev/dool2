@@ -48,3 +48,35 @@ What we take from it is recorded as separate decisions.
 - A vault where Dool2 fills in passwords without showing them to the AI → [ADR 0011](0011-login-vault.md)
 - A screen for choosing the permission level per task (read-only / protected / full) and a "final check" switch → reflected in the approval gate (M3) screen
 - A **dedicated-profile mode** (running Chrome with a separate data folder, no fork) for cases where the extension is not enough stays as an option
+
+## Follow-up (2026-11-25): opening Chrome by itself
+
+Seen on a real PC: with Chrome closed, a mail task gave up with "extension not connected" while the screen said the
+mail service was connected. Another time Chrome was running but stuck on its profile picker, so the extension never
+loaded, and Dool2 could only say "not connected".
+
+**Decision.** When a call that needs the browser (a browser tool, a service tool, or a connect the person or the AI
+started) finds the extension not connected, the daemon fixes it once before failing:
+
+- **Chrome closed**: start the user's own Chrome into the profile that has the Dool2 extension. The profile is read
+  from Chrome's own files: the profile folder whose `Extensions` folder (or `Secure Preferences`, for a folder-loaded
+  extension) has the Dool2 id, preferring the last used one; else the last used profile in `Local State`. macOS:
+  `open -g -a "Google Chrome" --args --profile-directory=<dir>` (behind the current window). Windows: the found
+  `chrome.exe` with `--profile-directory`, minimized. Then wait up to 20 s for the extension and run the call.
+- **Chrome running without the extension** (profile picker, no window of that profile): wait 3 s, then hand
+  `--profile-directory=<dir>` to the running Chrome once, which opens that profile's window, and wait again.
+- **Still nothing**: the call fails with one plain reason about Chrome or the extension and what the person does
+  ("open Chrome's '<profile>' profile and turn on the Dool2 extension"), always saying the service connection itself
+  is fine. Service tools pass it on as is instead of "the tool got stuck", and it never counts against the tool's
+  health.
+- At most one attempt per 2 minutes after one that failed. Background work (thumbnails, keeping connections) never
+  opens Chrome; only calls inside a browser, service or connect scope do. Task sessions own the browser (ADR 0038),
+  so the conversation's fenced calls never get here.
+- The setting **"Open Chrome automatically"** (`chromeAutoOpen`, Settings > AI · Browser) is on by default. Off: Chrome
+  is never started and no window is opened; the answer says Chrome is closed.
+- Each attempt writes a `chrome-launch` journal line (reason, start or window, ok, ms, whether the profile had the
+  extension). Profile names are not logged.
+
+Only plain Chrome flags are used (`--profile-directory`, with the folder name checked against a strict pattern), never
+remote debugging or a separate data folder, so nothing about the extension's trust boundary changes. Only the PC app
+where the native host is registered with the user's Chrome turns this on; check mode and tests use stand-ins.

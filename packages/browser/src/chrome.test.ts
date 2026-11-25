@@ -2,7 +2,16 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type ChromeEnv, compareVersions, detectChrome, type Exec, installChrome } from './chrome.js'
+import {
+  type ChromeEnv,
+  chromeRunning,
+  compareVersions,
+  detectChrome,
+  type Exec,
+  findChromeProfile,
+  installChrome,
+  launchChrome,
+} from './chrome.js'
 
 function env(
   over: Partial<ChromeEnv> & { files?: string[]; dirs?: Record<string, string[]> } = {},
@@ -146,5 +155,158 @@ describe('Chrome 설치', () => {
     await expect(
       installChrome({ downloadDir: dir, env: env({ platform: 'win32', exec: bad }), fetch: okFetch }),
     ).rejects.toThrow('Google 공식 Chrome이 아니에요')
+  })
+})
+
+describe('Opening the user Chrome', () => {
+  const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  const recorder = () => {
+    const calls: [string, string[]][] = []
+    const exec: Exec = async (cmd, args) => {
+      calls.push([cmd, args])
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    const detach = async (cmd: string, args: string[]) => {
+      calls.push([cmd, args])
+      return true
+    }
+    return { calls, exec, detach }
+  }
+
+  it('macOS: opens the app behind the current window, into the profile with the extension', async () => {
+    const r = recorder()
+    const ok = await launchChrome(env(r), { installed: true, path: macChrome }, { profile: 'Profile 1' })
+    expect(ok).toBe(true)
+    expect(r.calls).toEqual([
+      [
+        '/usr/bin/open',
+        ['-g', '-a', '/Applications/Google Chrome.app', '--args', '--profile-directory=Profile 1'],
+      ],
+    ])
+  })
+
+  it('macOS: with no profile known, opens it with no flags', async () => {
+    const r = recorder()
+    await launchChrome(env(r), { installed: true, path: macChrome })
+    expect(r.calls).toEqual([['/usr/bin/open', ['-g', '-a', '/Applications/Google Chrome.app']]])
+  })
+
+  it('macOS while Chrome runs (profile picker): hands the profile to the running Chrome', async () => {
+    const r = recorder()
+    await launchChrome(env(r), { installed: true, path: macChrome }, { profile: 'Default', running: true })
+    expect(r.calls).toEqual([[macChrome, ['--profile-directory=Default']]])
+  })
+
+  it('never passes a profile name that is not a plain folder name', async () => {
+    const r = recorder()
+    await launchChrome(
+      env(r),
+      { installed: true, path: macChrome },
+      { profile: '../x --remote-debugging-port=1' },
+    )
+    expect(r.calls).toEqual([['/usr/bin/open', ['-g', '-a', '/Applications/Google Chrome.app']]])
+  })
+
+  it('Windows: starts the found chrome.exe minimized, in that profile', async () => {
+    const r = recorder()
+    const path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    const ok = await launchChrome(
+      env({ ...r, platform: 'win32' }),
+      { installed: true, path },
+      { profile: 'Profile 2' },
+    )
+    expect(ok).toBe(true)
+    expect(r.calls[0]?.[0]).toBe('powershell.exe')
+    expect(r.calls[0]?.[1].at(-1)).toBe(
+      `Start-Process -FilePath '${path}' -ArgumentList '--profile-directory="Profile 2"' -WindowStyle Minimized`,
+    )
+  })
+
+  it('Linux: starts it detached', async () => {
+    const r = recorder()
+    const ok = await launchChrome(env({ ...r, platform: 'linux' }), {
+      installed: true,
+      path: '/usr/bin/google-chrome',
+    })
+    expect(ok).toBe(true)
+    expect(r.calls).toEqual([['/usr/bin/google-chrome', []]])
+  })
+
+  it('does nothing when Chrome is not installed', async () => {
+    expect(await launchChrome(env(), { installed: false })).toBe(false)
+  })
+
+  it('tells whether Chrome runs, and says running when it cannot tell', async () => {
+    const code = (c: number | null) => env({ exec: async () => ({ code: c, stdout: '', stderr: '' }) })
+    expect(await chromeRunning(code(0))).toBe(true)
+    expect(await chromeRunning(code(1))).toBe(false)
+    expect(await chromeRunning(code(2))).toBe(true)
+    const win = (stdout: string) =>
+      env({ platform: 'win32', exec: async () => ({ code: 0, stdout, stderr: '' }) })
+    expect(await chromeRunning(win('"chrome.exe","1234","Console","1","120,000 K"\r\n'))).toBe(true)
+    expect(
+      await chromeRunning(win('INFO: No tasks are running which match the specified criteria.\r\n')),
+    ).toBe(false)
+  })
+})
+
+describe('Finding the profile with the Dool2 extension', () => {
+  const root = '/Users/u/Library/Application Support/Google/Chrome'
+  const ID = 'a'.repeat(32)
+  const state = (profile: Record<string, unknown>) => JSON.stringify({ profile })
+  const pc = (files: Record<string, string>, dirs: string[] = []) =>
+    env({ files: dirs, read: async (p) => files[p] })
+
+  it('prefers the last used profile when the extension is in it', async () => {
+    const e = pc(
+      {
+        [`${root}/Local State`]: state({
+          last_used: 'Profile 1',
+          info_cache: { Default: { name: 'Home' }, 'Profile 1': { name: 'Work' } },
+        }),
+      },
+      [`${root}/Default/Extensions/${ID}`, `${root}/Profile 1/Extensions/${ID}`],
+    )
+    expect(await findChromeProfile(e, [ID])).toEqual({ dir: 'Profile 1', name: 'Work', hasExtension: true })
+  })
+
+  it('finds the extension in another profile (store folder or loaded from a folder)', async () => {
+    const files = {
+      [`${root}/Local State`]: state({
+        last_used: 'Default',
+        info_cache: { Default: { name: 'Home' }, 'Profile 3': { name: 'Shop' } },
+      }),
+    }
+    expect(await findChromeProfile(pc(files, [`${root}/Profile 3/Extensions/${ID}`]), [ID])).toEqual({
+      dir: 'Profile 3',
+      name: 'Shop',
+      hasExtension: true,
+    })
+    const loaded = {
+      ...files,
+      [`${root}/Profile 3/Secure Preferences`]: `{"extensions":{"settings":{"${ID}":{}}}}`,
+    }
+    expect((await findChromeProfile(pc(loaded), [ID]))?.dir).toBe('Profile 3')
+  })
+
+  it('no profile has it: the last used one; no Local State: nothing', async () => {
+    const files = {
+      [`${root}/Local State`]: state({ last_used: 'Profile 1', info_cache: { 'Profile 1': {} } }),
+    }
+    expect(await findChromeProfile(pc(files), [ID])).toEqual({ dir: 'Profile 1', hasExtension: false })
+    expect(await findChromeProfile(pc({}), [ID])).toBeUndefined()
+    expect(await findChromeProfile(pc({ [`${root}/Local State`]: 'not json' }), [ID])).toBeUndefined()
+  })
+
+  it('Windows: reads the User Data folder under LOCALAPPDATA', async () => {
+    const local = 'C:\\Users\\u\\AppData\\Local'
+    const file = `${local}\\Google\\Chrome\\User Data\\Local State`
+    const e = env({
+      platform: 'win32',
+      env: { LOCALAPPDATA: local },
+      read: async (p) =>
+        p === file ? state({ last_used: 'Default', info_cache: { Default: { name: 'Me' } } }) : undefined,
+    })
+    expect(await findChromeProfile(e, [ID])).toEqual({ dir: 'Default', name: 'Me', hasExtension: false })
   })
 })
