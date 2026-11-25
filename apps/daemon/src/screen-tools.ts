@@ -510,7 +510,7 @@ export class ScreenTools {
   private async read(bundleId: string, maxChars?: unknown, note?: string): Promise<ToolResult> {
     const s = (await this.hands.call('snapshot', {
       bundleId,
-      maxChars: Math.min(Math.max(Number(maxChars) || 12_000, 1_000), 40_000),
+      maxChars: Math.min(Math.max(Number(maxChars) || 5_000, 1_000), 40_000),
     })) as { app: string; window: string; text: string; truncated: boolean }
     this.names.set(bundleId, s.app)
     this.screens.set(bundleId, parseRefs(s.text))

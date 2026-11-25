@@ -14,6 +14,7 @@ import {
   matchOption,
   nearlyEmpty,
   optionFields,
+  PAGE_READ_CHARS,
   PAY_FLOW_TTL_MS,
   parseRefs,
   payNow,
@@ -587,7 +588,7 @@ describe('필요한 부분만 읽기', () => {
       },
     })
     const r = text(await tools.run('read', { tabId: 3, from: '상품 150' }))
-    expect(calls[0]).toEqual({ tabId: 3, maxChars: 8000, from: '상품 150' })
+    expect(calls[0]).toEqual({ tabId: 3, maxChars: PAGE_READ_CHARS, from: '상품 150' })
     expect(r).toContain('Skipped the first 41,000 characters')
     // 잘렸으면 이어 읽을 자리를 알려 준다
     expect(r).toMatch(/skip: \d+/)

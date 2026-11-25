@@ -18,7 +18,7 @@ interface ToolLikeResult {
 /** Tool groups whose results carry outside content (web pages, mail and service results, PC files, app screens) */
 const OUTSIDE = new Set(['browser', 'service', 'file', 'screen'])
 
-/** Text scanned per result (page reads are 8,000 characters by default; long results are cut) */
+/** Text scanned per result (page reads are 5,000 characters by default; long results are cut) */
 const SCAN_MAX = 60_000
 
 const AI_EN = String.raw`(?:ai|a\.i\.|assistant|chat ?bot|language model|llm|agent|gpt|copilot)s?`

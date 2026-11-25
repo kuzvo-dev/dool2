@@ -844,6 +844,12 @@ export const AUTH_FRAME_SITES = [
   'siren24.com',
 ]
 
+/**
+ * Page text per read when the AI does not ask for more (maxChars). With the notes around it a whole page result stays
+ * under the result cap (result-cap.ts); the rest is read with from or skip
+ */
+export const PAGE_READ_CHARS = 5_000
+
 /** How long the last page the AI saw in a tab stays the base for showing only changes */
 export const SEEN_TTL_MS = 10 * 60_000
 
@@ -2579,7 +2585,7 @@ export class BrowserTools {
 
   /**
    * Several actions at once: does only the given actions in order and reads the page once at the end.
-   * Reading and returning the whole page per action is slow and long (up to 8,000 characters at a time), so actions that follow each other, like filling a form, are grouped.
+   * Reading and returning the whole page per action is slow and long (up to 5,000 characters at a time), so actions that follow each other, like filling a form, are grouped.
    * Stops there when the URL changes, a new tab opens, a confirm dialog appears or something is blocked (refs for the remaining actions are from the old screen)
    */
   private async steps(tabId: number, a: Record<string, unknown>): Promise<ToolResult> {
@@ -4107,7 +4113,7 @@ export class BrowserTools {
     scope: { view?: boolean; from?: string; skip?: number } = {},
     changes = true,
   ): Promise<ToolResult> {
-    const max = Number(maxChars) || 8_000
+    const max = Number(maxChars) || PAGE_READ_CHARS
     const partial = Boolean(scope.view || scope.from || scope.skip)
     let s = (await this.browser.call('snapshot', { tabId, maxChars: max, ...scope })) as Snapshot
     const notes = [...(s.dialogNotes ?? [])]
