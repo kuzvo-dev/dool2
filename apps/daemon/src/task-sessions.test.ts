@@ -9,7 +9,7 @@ import type { AgentRuntime, TurnInput } from '@dool2/engine'
 import type { AgentEvent, AgentStatus, StoredMessage, TaskView } from '@dool2/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
-import { TASK_SESSIONS_DEFAULT } from './tasks.js'
+import { TASK_HINT, TASK_SESSIONS_DEFAULT, withTaskHint } from './tasks.js'
 
 type Result = { isError?: boolean; content: { type: string; text: string }[]; routed?: boolean }
 type Script = (input: TurnInput, rt: TwoSessions) => AsyncGenerator<AgentEvent>
@@ -454,6 +454,39 @@ describe('task sessions (ADR 0038)', () => {
     expect(rt.kind(rt.seen[0] as TurnInput)).toBe('conversation')
   })
 
+  it('each kind of session gets its own instructions', async () => {
+    const held = gate()
+    const rt = new TwoSessions(conversation, async function* () {
+      await held.wait()
+      yield* say('Booked: ticket 42.')
+    })
+    const { send, state } = await boot(rt)
+    await send('book a train to Busan')
+    await until(() => rt.seen.some((x) => rt.kind(x) === 'task'), 'task turn')
+    const conv = rt.seen.find((x) => rt.kind(x) === 'conversation')?.systemPrompt ?? ''
+    const work = rt.seen.find((x) => rt.kind(x) === 'task')?.systemPrompt ?? ''
+    expect(conv).toContain('## Answer, look up, or hand over')
+    expect(conv).not.toContain('## Do the work')
+    expect(work).toContain('## Do the work (you are a task)')
+    expect(work).not.toContain('## Answer, look up, or hand over')
+    held.open()
+    await until(async () => (await state()).messages.some((x) => x.text === 'Booked: ticket 42.'), 'result')
+  })
+
+  it('a result that names a tool only a task has tells the conversation to hand it over', () => {
+    const r = withTaskHint({ content: [{ type: 'text', text: 'Read the tab with browser_read and go on.' }] })
+    expect(r.content.at(-1)?.text).toBe(TASK_HINT)
+    const plain = { content: [{ type: 'text', text: 'Found 3 orders.' }] }
+    expect(withTaskHint(plain)).toBe(plain)
+    // A service tool's structured result: the line rides in its hint, where the AI reads it
+    const s = withTaskHint({
+      content: [{ type: 'text', text: 'x' }],
+      structuredContent: {},
+      hint: 'use file_find',
+    })
+    expect(s.hint).toContain(TASK_HINT)
+  })
+
   it('evals on a test PC: a fresh main segment per scenario, with task sessions on or off', async () => {
     const rt = new TwoSessions(conversation, async function* () {
       yield* say('x')
@@ -514,5 +547,9 @@ describe('task sessions (ADR 0038)', () => {
     await send('hello')
     await until(async () => (await state()).messages.some((x) => x.text === 'Sure: hello'), 'answer')
     expect(rt.kind(rt.seen.at(-1) as TurnInput)).toBeUndefined()
+    // A chat that talks and works: both parts of the instructions
+    const sp = rt.seen.at(-1)?.systemPrompt ?? ''
+    expect(sp).toContain('## Answer, look up, or hand over')
+    expect(sp).toContain('## Do the work')
   })
 })

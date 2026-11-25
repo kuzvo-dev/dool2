@@ -98,7 +98,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Create a goal or scheduled task',
       description:
-        'Creates one when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
+        'Create it without asking "Shall I set that up?" when the user describes something Dool2 should do on its own at set times (reminders, morning briefings, weekly summaries, watching prices or cancelled tickets) or a long-term goal (exercise, saving, studying). ' +
         'Examples: "remind me to call the dentist at 10 tomorrow" → once · "remind me about the heartworm pill on the 1st of every month" → monthly day 1 (do not run daily and check the date) · ' +
         '"check my card bill on the last day of each month" → monthly day 31 · ' +
         '"tell me when a cancelled ticket shows up" → every + notify "when_found" + until (show or departure date), with check_tool + check_input when a service lookup tool can see it (then every 1-5 minutes is fine) · "warn me if my shopping this month goes over 300,000 won" → daily + notify "when_found" + until the last day of that month · ' +
@@ -745,7 +745,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Attach a draft to send',
       description:
-        'Attaches text that will be used word for word (text message, KakaoTalk, email, civil petition, review, post) below the answer. The user taps copy or send. ' +
+        'Attaches text that will be used word for word (text message, KakaoTalk, email, civil petition, review, post) below the answer; write a usable one right away from what you know. The user taps copy or send. ' +
         'Tapping send puts a request to send the draft exactly as written into the chat, and approval is asked right before sending then (this tool does not send). ' +
         'Do not include facts the user did not say; leave blanks like [date]. Once attached, do not repeat the text in the answer; just one or two sentences. ' +
         'Reviews: write naturally in 3 to 5 sentences (about 150 Korean characters) with the product name, features and when it is used. Give 5 stars, and fill required questions like thickness, size or taste with a neutral answer (average, just right, satisfied) without asking the user.',

@@ -118,6 +118,11 @@ describe('로그인 없이 되는 도구 알리기', () => {
     // Without the service part of the name: the header says names are <id>_<tool>
     expect(s.serviceMap()).toMatch(/캐치테이블\(catchtable\)⚡ \[.*\(no login: search\)$/m)
     expect(s.serviceMap()).toContain('named <id>_<tool>')
+    // The conversation of task sessions: one line per service it can look things up in now, with only those tools
+    const look = s.lookupMap()
+    expect(look).toMatch(/^- 캐치테이블\(catchtable\) — .* \[search\]$/m)
+    expect(look).not.toContain('catchtable_my')
+    expect(look.length).toBeLessThan(s.serviceMap().length)
   })
 })
 

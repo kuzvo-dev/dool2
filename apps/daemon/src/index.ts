@@ -144,9 +144,11 @@ import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
 import {
+  namesTaskTool,
   notesMessage,
   parseTaskSpec,
   signInSpec,
+  TASK_HINT,
   TASK_SESSIONS_DEFAULT,
   type Task,
   TaskBoard,
@@ -155,6 +157,7 @@ import {
   taskBrief,
   taskListText,
   withNotes,
+  withTaskHint,
 } from './tasks.js'
 import { Thumbs } from './thumbs.js'
 import { type TapeEntry, ToolTape } from './tool-tape.js'
@@ -577,15 +580,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }),
     // Memories are attached to the end of the instructions for each chat
     // Service map: lets requests without a service name still pick a fitting service (connected ones first)
-    systemPrompt: () =>
-      [
-        buildSystemPrompt({ ...life.identity(), lang: lang() }),
-        skills.serviceMap(),
+    // One template per kind of session (ADR 0038): the conversation gets the services it can look things up in now,
+    // a task gets no service list (service_find) and no "what Dool2 knows" (know_find); both keep the memories
+    systemPrompt: (threadId) => {
+      const kind = sessionOf(threadId)
+      return [
+        buildSystemPrompt({ ...life.identity(), lang: lang(), ...(kind ? { kind } : {}) }),
+        kind === 'conversation' ? skills.lookupMap() : kind === 'task' ? '' : skills.serviceMap(),
         life.memoryPrompt(),
-        life.knowPrompt(),
+        kind === 'task' ? '' : life.knowPrompt(),
       ]
         .filter(Boolean)
-        .join('\n\n'),
+        .join('\n\n')
+    },
   })
   /** One conversation (ADR 0015): picking and switching segments */
   const conversation = new ConversationService({
@@ -3096,8 +3103,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    * If that chat is still answering (on the phone the card shows before the answer), do not discard it: send it when the answer ends
    */
   const pendingFollowUps = new Map<string, string[]>()
-  function followUp(threadId: string, text: string) {
+  function followUp(threadId: string, said: string) {
     if (!store.getThread(threadId)) return
+    // An app note telling the conversation of task sessions to use a tool only a task has (ADR 0038)
+    const text =
+      sessionOf(threadId) === 'conversation' && namesTaskTool(said) ? `${said}\n${TASK_HINT}` : said
     // A late answer (a sign-in saved, a code entered) for a task that already ended does not start it again
     const task = tasks.byThread(threadId)
     if (task && tasks.ended(task)) return
@@ -3880,6 +3890,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           // Text aimed at an AI in what was read (page, mail, file, app screen): one warning line on top
           const noted = withInjectionNote(tool, result)
           if (noted.kinds) journal.write('injection-note', { tool, kinds: noted.kinds })
+          // The conversation of task sessions told to use a browser, app or file tool: how to get it done (ADR 0038)
+          if (caller && sessionOf(caller) === 'conversation') return withTaskHint(noted.result)
           // What the person passed on to this task while it works rides at the end of its next result (ADR 0038)
           const notes = caller ? tasks.takeNotes(caller) : []
           if (!notes.length) return noted.result
