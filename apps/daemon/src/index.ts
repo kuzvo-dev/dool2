@@ -1778,6 +1778,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const cur = conversation.current()
     if (!cur) return
     postSaved(cur.id, store.addMessage(cur.id, 'assistant', text))
+    // The AI never saw this line (no turn ran): tell it with the next message. Without it, it said "the account is
+    // still the old one, you did not pick" right after "connected as m***" (test PC loop, 11-26)
+    unseenSaid.push(text)
   }
   /** Streams a saved message to the phone and PC screens right away */
   const postSaved = (threadId: string, message: StoredMessage) => {
@@ -3657,11 +3660,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (o.viaPhone) fromPhone.add(sessionId)
     // Proactive checks did not call the AI and were left only as cards in the chat. If the user continues about it, add it to this turn so it is understood
     const told = unseenTells.splice(0)
+    const said = unseenSaid.splice(0)
     // Tasks that ended since, and the ones still running (ADR 0038): the conversation knows them without a call
     const ended = unseenTasks.splice(0)
     const running = tasks.active()
     const aside =
       [
+        said.length
+          ? appNote(
+              `Dool2 said this to the user in the chat since your last answer (it is true; do not contradict it):\n${said.map((t) => `- ${t}`).join('\n')}`,
+            )
+          : '',
         told.length
           ? appNote(
               `Already shown to the user in the chat (the user may talk about these):\n${told.map((t) => `- ${t.title}${t.body ? ` — ${t.body}` : ''}${t.from ? ` (${t.from})` : ''}`).join('\n')}`,
@@ -3691,6 +3700,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** Proactive checks left as cards in the chat that the AI does not know yet */
   const unseenTells: TellRecordMessage[] = []
+  /** Lines Dool2 posted without an AI turn (connected as …) that the AI does not know yet */
+  const unseenSaid: string[] = []
 
   // ── Task sessions (ADR 0038) ───────────────────────────────────
   /** Tasks that ended, for the conversation AI's next message (it did not see their results being posted) */
@@ -4653,6 +4664,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         // Picked accounts (Google): ask on the phone right away which account, as buttons on this card (ADR 0041).
         // An account connected before that is still in Chrome is used again without asking
+        // Whether a tool just stopped for this sign-in (a task waits on it), so the reply promises only what follows
+        const waiting = Date.now() - (loginNeededAt.get(card.id) ?? 0) < 15 * 60_000
         // Not gated on the extension being connected this second: the look opens Chrome and waits for it (a restart's
         // few seconds without the extension sent this down the old card path and dropped the connection, 11-26)
         if (card.account?.pick) {
@@ -4664,7 +4677,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
               done: `Dool2 is reading the Google accounts in Chrome and asks on the phone which one to connect to ${card.name} (buttons on this card)`,
               left: 'the person taps their account',
               who: 'person',
-              after: 'when it is connected, a chat note tells you to continue',
+              after: waiting
+                ? 'when it is connected, a chat note tells you to continue the task that stopped'
+                : 'when it is connected, Dool2 says which account in the chat; nothing else follows unless the person asks (do not promise to do more)',
               tell: `to tap their account on the ${card.name} card (never ask for a password)`,
             }),
           )
