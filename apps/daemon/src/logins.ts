@@ -39,6 +39,16 @@ export class LoginRequests {
     return [...this.items.keys()].map((id) => this.get(id) as LoginRequestView)
   }
 
+  /** Closes the waiting requests that match (a stopped task's sign-in cards); returns their ids */
+  cancelWhere(match: (id: string) => boolean): string[] {
+    return this.list()
+      .filter((r) => r.status === 'pending' && match(r.id))
+      .map((r) => {
+        r.status = 'cancelled'
+        return r.id
+      })
+  }
+
   finish(id: string, status: 'saved' | 'cancelled', username?: string) {
     const r = this.get(id)
     if (!r || r.status !== 'pending') return false
