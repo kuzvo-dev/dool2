@@ -287,7 +287,7 @@ export function registerServiceTools(
     {
       title: 'Use a service tool',
       description:
-        'Calls a service tool found with service_find (when that tool is not in the directly visible list). ' +
+        'Calls a service tool found with service_find (when that tool is not in the directly visible list); enum inputs take one of the listed values exactly. E.g. {tool: "catchtable_search", input: {query: "Seongsu omakase", date: "2026-12-01"}}. ' +
         "Payments, booking confirmations and sending are never done without the user's approval, through this tool either.",
       inputSchema: {
         tool: z.string().max(60).describe('Tool name (e.g. "catchtable_search")'),
