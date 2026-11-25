@@ -14,7 +14,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type ClaudeInstall, type ClaudeLogin, ClaudeRuntime } from '@dool2/agent-claude'
 import { CodexInstall, CodexRuntime } from '@dool2/agent-codex'
-import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS } from '@dool2/agent-opencode'
+import { OpenCodeInstall, OpenCodeRuntime, PAYG_PROVIDERS, paygProviders } from '@dool2/agent-opencode'
 import {
   BrowserBridge,
   ChromeInstall,
@@ -93,6 +93,7 @@ import {
   withoutPhotoMark,
 } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
+import { aiAccountText } from './ai-account.js'
 import type { Approvals } from './approvals.js'
 import { AutoApprover, autoCovers } from './auto-approve.js'
 import {
@@ -4289,6 +4290,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       // View my payment methods (ADR 0023): masked values only, such as card company, nickname and last 4 digits. Changing is done by a person in the phone settings
       if (req.method === 'POST' && b === 'life' && c === 'pay_method_list' && !d) {
         return json(res, 200, { content: [{ type: 'text', text: payMethodsText(loadPayMethods(store)) }] })
+      }
+      // Which AI Dool2 runs on (pay-as-you-go: company, model, last 4 of the key). The key itself never reaches the AI,
+      // and no tool changes it: the person does in the PC settings
+      if (req.method === 'POST' && b === 'life' && c === 'ai_account_view' && !d) {
+        const agents = agentStatus.size ? [...agentStatus.values()] : await detectAll()
+        const text = aiAccountText(
+          {
+            defaultAgent: readSettings().defaultAgent,
+            agents,
+            payg: await paygView(),
+            providers: paygProviders('en'),
+          },
+          lang(),
+        )
+        return json(res, 200, { content: [{ type: 'text', text }] })
       }
       // View the vault (ADR 0011): only which sites have a sign-in. Passwords are left out (vault.list) and IDs are masked
       if (req.method === 'POST' && b === 'life' && c === 'vault_find' && !d) {
