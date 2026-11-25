@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { BrowserTools } from './browser-tools.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors, thinPage } from './connectors.js'
+import { TASK_HINT, withTaskHint } from './tasks.js'
 
 const REPO_SKILLS = fileURLToPath(new URL('../../../skills', import.meta.url))
 
@@ -372,6 +373,15 @@ describe('서비스 도구 실행기', () => {
     expect(one).toContain('## 데모술집 (demo-bar) — not connected')
     expect(one).toContain('- demo_bar_search [lookup · no login] 식당 찾기 — input: keyword*')
     expect(one).not.toContain('demo_bar_book')
+  })
+
+  it('no matching service points at the browser, which the conversation of task sessions turns into a task', async () => {
+    const { connectors } = await setup()
+    const r = await connectors.find('zzqq weather')
+    expect(textOf(r)).toContain('No matching service. Look it up on the web instead: browser_open')
+    // There is no web-search tool: the result must not send the AI looking for one
+    expect(textOf(r)).not.toMatch(/web search/i)
+    expect(textOf(withTaskHint(r))).toContain(TASK_HINT)
   })
 
   it('a long list gives 10 rows, says how many more, and the next rows come from what was read', async () => {
