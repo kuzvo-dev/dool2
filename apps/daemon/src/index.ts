@@ -1755,6 +1755,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectAsked = new Map<string, number>()
   /** Services the person is switching to another account on: the next ID and password sign-in signs the old one out first */
   const switching = new Set<string>()
+  /** What the AI said it does right after a service is connected (connect_ask afterwards) */
+  const connectThen = new Map<string, string>()
   /** When a tool last stopped because this service needed a sign-in (a task is waiting on the connection) */
   const loginNeededAt = new Map<string, number>()
   /** The chat that showed each connect card: a task continues there when the connection ends (ADR 0038) */
@@ -1911,8 +1913,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       loginNeededAt.get(card.id) ?? 0,
       card.sameLoginAs ? (loginNeededAt.get(card.sameLoginAs) ?? 0) : 0,
     )
+    const then = connectThen.get(card.id)
+    connectThen.delete(card.id)
     const stopped =
-      asked !== undefined && needed > 0 && needed <= asked + 60_000 && asked - needed < 15 * 60_000
+      Boolean(then) ||
+      (asked !== undefined && needed > 0 && needed <= asked + 60_000 && asked - needed < 15 * 60_000)
     loginNeededAt.delete(card.id)
     if (asked && !stopped && Date.now() - asked < 30 * 60_000) {
       const who = connectAccounts()[card.id]
@@ -1923,7 +1928,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const note = appNote(
         forAI(
           '',
-          `${card.name} is connected and Doori has verified the sign-in. Finish the task that stopped because ${card.name} was needed (do not show the connect card or sign-in again). If the task is already done, say so in one sentence.`,
+          `${card.name} is connected and Doori has verified the sign-in. ${then ? `Now do what you said: ${then}.` : `Finish the task that stopped because ${card.name} was needed.`} (Do not show the connect card or sign-in again.) If the task is already done, say so in one sentence.`,
         ),
       )
       // A task that asked for the connection continues itself
@@ -4656,7 +4661,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return reply(r)
       }
       if (req.method === 'POST' && b === 'life' && c === 'connect_ask' && !d) {
-        const args = (await readJson(req)) as { service?: unknown; another?: unknown }
+        const args = (await readJson(req)) as { service?: unknown; another?: unknown; afterwards?: unknown }
         const q = String(args.service ?? '').slice(0, 60)
         // The person wants a different account: never sign the saved one in again (audit 11-26: "switch to my other
         // account" signed the vault account back in and said "connected")
@@ -4687,8 +4692,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           )
         // Picked accounts (Google): ask on the phone right away which account, as buttons on this card (ADR 0041).
         // An account connected before that is still in Chrome is used again without asking
-        // Whether a tool just stopped for this sign-in (a task waits on it), so the reply promises only what follows
-        const waiting = Date.now() - (loginNeededAt.get(card.id) ?? 0) < 15 * 60_000
+        // What follows the connection: a tool that just stopped for this sign-in, or what the AI said it does next (a
+        // calendar question connected the calendar and then never read it when only a tool stop counted, 11-26)
+        const then = typeof args.afterwards === 'string' ? args.afterwards.trim().slice(0, 200) : ''
+        if (then) connectThen.set(card.id, then)
+        else connectThen.delete(card.id)
+        const waiting = Boolean(then) || Date.now() - (loginNeededAt.get(card.id) ?? 0) < 15 * 60_000
         // Not gated on the extension being connected this second: the look opens Chrome and waits for it (a restart's
         // few seconds without the extension sent this down the old card path and dropped the connection, 11-26)
         if (card.account?.pick) {
