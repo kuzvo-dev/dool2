@@ -310,6 +310,12 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
         "Shows a service's connect card when the user asks to connect it or the next step needs their login (booking, ordering, their own history). Do what works without login first. The user signs in on the card (never in chat); a note arrives when done, then continue. The result says what is left on the card, and the turn waits.",
       inputSchema: {
         service: z.string().max(60).describe('Card id or service name (e.g. "coupang")'),
+        another: z
+          .boolean()
+          .optional()
+          .describe(
+            'true when the user wants a different account than the one connected or signed in now ("switch accounts", "use my other account"): no automatic sign-in with the saved account, the card asks for the other one',
+          ),
       },
     },
     call('connect_ask'),

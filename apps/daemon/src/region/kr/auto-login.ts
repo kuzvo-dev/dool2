@@ -180,6 +180,8 @@ export const NEW_WINDOW =
 /** Google account chooser */
 export const ACCOUNT_CHOOSER = /accountchooser|gsi\/select|계정을?\s?선택|choose an account/i
 /** "Switch account" line on the page after choosing */
+/** A visible "log out" link or button (signing out first when the person switches to another account) */
+export const LOGOUT_LINK = /\[(e\d+) (?:링크|버튼) "(?:로그아웃|Logout|Log out|Sign out)"\]/i
 export const ACCOUNT_SWITCH = /계정\s?전환|switch account|선택되었습니다/i
 /** "Change account" / "Another account" */
 export const CHANGE_ACCOUNT = /계정\s?변경|다른\s?계정/

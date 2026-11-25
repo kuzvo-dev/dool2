@@ -28,6 +28,9 @@ export const autoLoginText = messages({
   ko: {
     // Steps on the connect card
     opening: (name: string) => `${name} 여는 중`,
+    signingOut: (name: string) => `다른 계정으로 바꾸려고 ${name}에서 로그아웃하는 중`,
+    signOutFirst: (name: string) =>
+      `${name}에 다른 계정으로 로그인돼 있어요. 화면에서 로그아웃한 뒤 다시 연결해 주세요`,
     findingLogin: '로그인 화면 찾는 중',
     pressing: (label: string) => `"${label}" 누르는 중`,
     enteringId: '아이디 넣는 중',
@@ -121,6 +124,9 @@ export const autoLoginText = messages({
   },
   en: {
     opening: (name) => `Opening ${name}`,
+    signingOut: (name) => `Signing out of ${name} to switch accounts`,
+    signOutFirst: (name) =>
+      `${name} is signed in with another account. Sign out on the screen, then connect again`,
     findingLogin: 'Finding the login page',
     pressing: (label) => `Pressing "${label}"`,
     enteringId: 'Entering the ID',
