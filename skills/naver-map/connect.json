@@ -25,6 +25,11 @@
       "tier": "lookup"
     },
     {
+      "title": "가게 메뉴·영업시간",
+      "say": "그 집 메뉴랑 몇 시까지 하는지 알려 줘",
+      "tier": "lookup"
+    },
+    {
       "title": "전기차 충전소 찾기",
       "say": "횡성휴게소에 급속 충전기 비어 있어?",
       "tier": "lookup"
@@ -50,6 +55,10 @@
         {
           "title": "Find places nearby",
           "say": "Find a brunch cafe in Seongsu"
+        },
+        {
+          "title": "Menu and opening hours",
+          "say": "What is on the menu there, and until when are they open?"
         },
         {
           "title": "Find EV chargers",
