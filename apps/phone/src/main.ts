@@ -310,6 +310,8 @@ const st: {
   /** Steps the daemon reported while connecting (service id -> steps) */
   connectSteps: Map<string, ConnectStep[]>
   /** Why a connection did not finish (the card stays as "finish it yourself" or "enter again") */
+  /** Connections whose look ended in "the ID and password are needed": the card opens the entry directly */
+  needCreds: Set<string>
   connectFails: Map<
     string,
     {
@@ -379,6 +381,7 @@ const st: {
   ideaCat: 'all',
   connecting: new Set(),
   connectSteps: new Map(),
+  needCreds: new Set(),
   connectFails: new Map(),
   work: { web: false },
   ideaQuery: '',
@@ -761,7 +764,11 @@ async function receive(env: Envelope) {
           runAfterConnect(done.card.id)
         }
       }
-      for (const x of msg.services) if (x.connectedAt) st.connectFails.delete(x.card.id)
+      for (const x of msg.services)
+        if (x.connectedAt) {
+          st.connectFails.delete(x.card.id)
+          st.needCreds.delete(x.card.id)
+        }
       break
     }
     case 'life':
@@ -814,10 +821,12 @@ async function receive(env: Envelope) {
     case 'connect-result': {
       st.connecting.delete(msg.id)
       st.connectLive.delete(msg.id)
-      // Not a failure: the ID and password are needed (Chrome is not signed in, or another account was chosen)
+      // Not a failure: the ID and password are needed (Chrome is not signed in, or another account was chosen).
+      // The card's button opens the entry from now on (no second look)
       if (msg.reason === 'credentials') {
         st.connectFails.delete(msg.id)
-        if (st.screen.name === 'app') openOverlay({ kind: 'connect', id: msg.id })
+        st.needCreds.add(msg.id)
+        if (st.screen.name === 'app' && st.tab === 'chat') openOverlay({ kind: 'connect', id: msg.id })
         break
       }
       const d = st.loginDraft
@@ -4594,6 +4603,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
             onclick: () => {
               // Look first: the PC checks whether Chrome is already signed in (or which Google accounts it has) and
               // this card asks; the ID and password card opens only when needed (ADR 0041)
+              if (browser && st.needCreds.has(c.id)) return openOverlay({ kind: 'connect', id: c.id })
               if (browser) return startLook(c.id)
               st.tab = 'connect'
               st.connectDetail = c.id
