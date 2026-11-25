@@ -18,7 +18,8 @@ export class Skills {
   /** The service list read last (the service map for the instructions is synchronous, so it uses this) */
   private last: ConnectionItem[] = []
   constructor(
-    private readonly dir: string | undefined,
+    /** skills/ folder, or a function giving the folder in use now (connector packs, ADR 0039) */
+    private readonly folder: string | undefined | (() => string | undefined),
     /** Connected service id -> time (settings) */
     private readonly connected: () => Record<string, string> = () => ({}),
     /** Summary of the service tools (tools.json) state (ADR 0018) */
@@ -31,10 +32,15 @@ export class Skills {
     private readonly locale: () => { lang: Lang; region?: Region } = () => ({ lang: 'ko', region: 'KR' }),
   ) {}
 
+  private get dir(): string | undefined {
+    return typeof this.folder === 'function' ? this.folder() : this.folder
+  }
+
   /** Connection card (malformed cards are skipped; repo tests catch them beforehand) */
   async card(name: string): Promise<ConnectCard | undefined> {
-    if (!this.dir || !NAME.test(name)) return undefined
-    const raw = await readFile(join(this.dir, name, 'connect.json'), 'utf8').catch(() => undefined)
+    const dir = this.dir
+    if (!dir || !NAME.test(name)) return undefined
+    const raw = await readFile(join(dir, name, 'connect.json'), 'utf8').catch(() => undefined)
     if (!raw) return undefined
     try {
       const r = ConnectCardSchema.safeParse(JSON.parse(raw))
@@ -46,8 +52,9 @@ export class Skills {
 
   /** Connections screen list: every service that has a card (category order, folder order within a category) */
   async connections(): Promise<ConnectionItem[]> {
-    if (!this.dir) return []
-    const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => NAME.test(n)).sort()
+    const dir = this.dir
+    if (!dir) return []
+    const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => NAME.test(n)).sort()
     const connected = this.connected()
     const via = this.via()
     const accounts = this.accounts()

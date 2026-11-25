@@ -1042,12 +1042,45 @@ export function runSetup(opts: SetupOptions): {
       info: null,
       checking: false,
     }
+    /** Connector packs in use (ADR 0039); null when packs are off (development) */
+    let packs: { active: number; note?: string } | null = null
     const loadVersion = async () => {
+      packs = await opts
+        .api<{ packs: { active: number; note?: string } | null }>('/api/packs')
+        .then((r) => r.packs)
+        .catch(() => null)
       if (!opts.update) return
       ;[ver.version, ver.info] = await Promise.all([
         opts.update.version().catch(() => undefined),
         opts.update.state().catch(() => null),
       ])
+    }
+    /** "Service info": the pack in use, with [Put back] to the cards that came with the app */
+    const packRow = () => {
+      if (!packs) return undefined
+      const li = el('li', 'ok')
+      const text = el('div', 'text')
+      const day = packs.active
+        ? new Intl.DateTimeFormat(lang, { month: 'long', day: 'numeric' }).format(
+            new Date(packs.active * 1000),
+          )
+        : ''
+      text.append(
+        el('strong', undefined, m.packsLabel),
+        el('span', undefined, packs.active ? m.packsNew(day) : m.packsBundled),
+      )
+      li.append(el('span', 'mark'), text)
+      if (packs.active)
+        li.append(
+          button('btn-ghost', m.packsRollback, async () => {
+            packs = await opts
+              .api<{ packs: { active: number } | null }>('/api/packs/rollback', { method: 'POST' })
+              .then((r) => r.packs)
+              .catch(() => packs)
+            render()
+          }),
+        )
+      return li
     }
     const versionBlock = () => {
       const box = el('ul', 'checks')
@@ -1080,8 +1113,11 @@ export function runSetup(opts: SetupOptions): {
               }),
         )
       box.append(li)
+      const pr = packRow()
+      if (pr) box.append(pr)
       const hint = el('p', 'setup-hint')
       hint.append(m.updateHint)
+      if (pr) hint.append(' ', m.packsHint)
       const wrap = el('div', 'ver-block')
       wrap.append(box, hint)
       return wrap

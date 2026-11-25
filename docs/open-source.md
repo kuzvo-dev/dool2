@@ -112,7 +112,7 @@ Because this is a "program that runs on my computer", users must be able to trus
 - **Code signing**: Apple notarization on Mac, a code-signing certificate on Windows. Without signing, the OS blocks or warns on install.
 - **Build provenance**: release files carry GitHub artifact attestations, so anyone can verify "this file was built from this commit by this workflow."
 - **Auto-update**: only signed updates are accepted. The app installs only after verifying the update signature.
-- **Skill updates** are delivered separately from app updates. Only signed bundles are accepted, and they take effect after approval on the phone. You can roll back to the previous version.
+- **Skill updates** (connector packs, ADR 0039) are delivered separately from app updates. Only bundles signed with their own key are accepted, never one older than what the PC has, and they cannot change the approval gate. They take effect on their own, and Settings puts back the version that came with the app in one press.
 - **Versions**: the README states that we make no compatibility promises during `v0.x`. Release notes are written in English, with a Korean summary.
 
 ## 6. Security operations

@@ -30,6 +30,7 @@ import {
   Tray,
 } from 'electron'
 import { mainText, smokeAmount } from './locales/main.js'
+import { packOption } from './packs.js'
 import { KeepAwake, loginItemSettings } from './power.js'
 import { renderFile } from './render-file.js'
 import { renderMotion } from './render-motion.js'
@@ -342,6 +343,8 @@ app.whenReady().then(async () => {
     // The phone connects through the official relay. A self-hosted one in settings (relay) or DOOL2_RELAY comes first
     relay: OFFICIAL_RELAY,
     ...packagedPaths(),
+    // Connector packs (ADR 0039): newer cards and connectors without a new app version (packaged app only)
+    ...packOption(app.isPackaged, process.resourcesPath),
     ...nativeHostOption(),
     // The app asks for and checks macOS permissions (Accessibility, Screen Recording) itself, so they show under the Dool2 name
     ...(process.platform === 'darwin'
