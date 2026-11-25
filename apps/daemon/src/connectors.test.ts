@@ -606,9 +606,12 @@ describe('서비스 도구 실행기', () => {
       ],
     }
     await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(login))
+    const cmds: string[] = []
     const browser = {
-      call: async (cmd: string) =>
-        cmd === 'find' ? { url: '', title: '', found: { hit: '로그인해 주세요' } } : { tabId: 7 },
+      call: async (cmd: string) => {
+        cmds.push(cmd)
+        return cmd === 'find' ? { url: '', title: '', found: { hit: '로그인해 주세요' } } : { tabId: 7 }
+      },
     }
     const lost: string[] = []
     const connectors = new Connectors({
@@ -624,6 +627,12 @@ describe('서비스 도구 실행기', () => {
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('connected mark was taken off')
     expect(lost).toEqual(['demo-eats'])
+    // The next call opens a fresh tab instead of moving the one still showing the sign-in or error page (a move that
+    // only changes the part after # does not reload it)
+    cmds.length = 0
+    await connectors.call('demo_eats_search', { keyword: '한남' })
+    expect(cmds[0]).toBe('open')
+    expect(cmds).not.toContain('navigate')
   })
 
   it('막은 화면이 로봇 확인이면 막다른 길 대신 탭을 열어 두고 폰 카드로 풀어 다시 부르게 한다', async () => {

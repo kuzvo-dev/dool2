@@ -896,7 +896,13 @@ export class Connectors {
           read,
           need,
           captcha: (t) => this.captchaStop(card, tool, t),
-          loginLost: () => this.opts.loginLost?.(card),
+          loginLost: () => {
+            // Do not reuse this tab: it still shows the sign-in or error page, and the next open may only change the
+            // part after # (Gmail's /mail/u/<account>/#search/…), which does not reload it. The next call read the old
+            // 404 text and stopped in 0.3 s right after the account was connected (measured 2026-11-25)
+            this.tabs.delete(card.id)
+            this.opts.loginLost?.(card)
+          },
           open: async (url) => {
             if (!onSites(url, [site, ...(card.alsoSites ?? [])]))
               throw new StepError(`Will not open a URL outside ${site}: ${url}`)
