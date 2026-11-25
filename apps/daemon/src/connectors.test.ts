@@ -1015,3 +1015,26 @@ describe('찾은 뒤 바로 주문 준비로 오면 한 줄 붙인다 (판단은
     expect(b.address).toBe('서울 성동구 성수동1가 656')
   })
 })
+
+describe('quick lookup instead of a browser task (test PC loop 11-26)', () => {
+  it('finds the service tool a task was about to do in the browser, only when the service is named', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify({ ...CARD, how: 'open' }))
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(CONNECTOR))
+    const browser = { call: async () => ({}) }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+    })
+    expect(await connectors.quickLookup('데모맛집 성수 식당 찾기')).toMatchObject({
+      tool: 'demo_eats_search',
+    })
+    expect(await connectors.quickLookup('성수 식당 예약해 줘')).toBeUndefined()
+    expect(await connectors.quickLookup('데모맛집이 성수 식당 찾아 줘')).toMatchObject({
+      tool: 'demo_eats_search',
+    })
+  })
+})

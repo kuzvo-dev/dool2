@@ -3698,6 +3698,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })().catch(() => {})
     return { queued: false }
   }
+  /** Task titles already pointed to a quick service tool (the second try starts the task) */
+  const quickPointed = new Set<string>()
   /** Proactive checks left as cards in the chat that the AI does not know yet */
   const unseenTells: TellRecordMessage[] = []
   /** Lines Dool2 posted without an AI turn (connected as …) that the AI does not know yet */
@@ -4000,6 +4002,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (name === 'task_start') {
       const spec = parseTaskSpec(args)
       if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
+      // A service tool answers this in seconds: point to it once instead of a browser task (a weather question went to a
+      // task that opened 8 pages: 2 minutes, test PC loop 11-26). Read from the title only; a second task_start with the same
+      // title goes ahead
+      const quick = await connectors.quickLookup(spec.title).catch(() => undefined)
+      if (quick && !quickPointed.has(spec.title)) {
+        quickPointed.add(spec.title)
+        return toolText(
+          `Not started: ${quick.card.name} has a tool for this that answers in seconds without the browser: service_call({tool: "${quick.tool}", input: {…}}) ("${quick.title}"; service_find "${quick.tool}" shows its inputs). Use it and answer from its result. Start a task only for what it cannot do (call task_start again).`,
+        )
+      }
       const t = await openTask(caller, spec)
       if (t.status === 'working')
         return toolText(
