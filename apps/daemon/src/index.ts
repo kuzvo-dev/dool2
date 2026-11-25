@@ -4007,7 +4007,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // the AI saw "done" with no result and told the user the result never arrived (test PC loop 11-26)
     const resultsNow = () => {
       const all = new Map(taskResults)
-      for (const t of tasks.all())
+      // views, not all(): tasks from before the restart are only kept as their cards (frozen views)
+      for (const t of tasks.views(12))
         if (!all.has(t.id) && (t.status === 'done' || t.status === 'failed')) {
           const answer = lastAnswerOf(t.threadId).find((x) => x.role === 'assistant')?.text
           if (answer) all.set(t.id, answer)
