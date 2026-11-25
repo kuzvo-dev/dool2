@@ -655,6 +655,19 @@ describe('필요한 부분만 읽기', () => {
 })
 
 describe('hand-off needs what was tried', () => {
+  it('is never made while the extension is not connected (that is a PC state, not a task for the person)', async () => {
+    const b = { ...fakeBrowser(), status: { connected: false } }
+    const tools = new BrowserTools(b)
+    for (let i = 0; i < 2; i++) {
+      const r = await tools.run('handoff', { tabId: 3, reason: 'sign in', tried: 'x', emergency: true })
+      expect(r.isError).toBe(true)
+      expect(text(r)).toContain('Not handed off')
+      expect(text(r)).toContain('extension is not connected')
+    }
+    expect(tools.handoffsSince(0)).toEqual([])
+    expect(b.calls.map((c) => c[0])).not.toContain('focus')
+  })
+
   it('a site with service tools is not handed off with nothing tried; with what was tried it goes on', async () => {
     const tools = new BrowserTools(fakeBrowser())
     tools.siteConnector = async () => ({ id: 'shop', name: 'Shop', tools: ['shop_orders'] })

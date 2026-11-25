@@ -72,6 +72,7 @@ import { FEED_THREAD_TITLE, LOGIN_BUSY_RE } from './region/kr/talk.js'
 import {
   appNote,
   finishProgress,
+  handoffRecord,
   interimAnswers,
   narrationLine,
   readAppNote,
@@ -1946,14 +1947,15 @@ function scrollDown() {
 function notifyRecord(raw: string) {
   if (document.hasFocus()) return
   try {
-    const rec = JSON.parse(raw) as HandoffRecord | ApprovalRecordMessage | LoginRecordMessage
+    const rec = JSON.parse(raw) as ApprovalRecordMessage | LoginRecordMessage | { kind?: string }
+    // Only what waits for the person: other records (work log, task card, result blocks) notify nothing
     const body =
       rec.kind === 'approval'
-        ? T().notifyApproval(rec.what)
+        ? T().notifyApproval((rec as ApprovalRecordMessage).what)
         : rec.kind === 'login'
-          ? T().notifyLogin(rec.site)
-          : rec.reason
-    new Notification(T().notifyTitle, { body })
+          ? T().notifyLogin((rec as LoginRecordMessage).site)
+          : handoffRecord(rec)?.reason
+    if (body) new Notification(T().notifyTitle, { body })
   } catch {}
 }
 
@@ -2835,12 +2837,12 @@ function approvalCard(rec: ApprovalRecordMessage): HTMLElement {
 
 /** A task Dool2 handed to the person ("please do this yourself"). When active: [Show in Chrome] [Done] */
 function handoffCard(raw: string, active: boolean) {
-  let rec: HandoffRecord
+  let rec: HandoffRecord | undefined
   try {
-    rec = JSON.parse(raw) as HandoffRecord
-  } catch {
-    return document.createTextNode('')
-  }
+    rec = handoffRecord(JSON.parse(raw))
+  } catch {}
+  // Only a real hand-off with its reason: a record this screen does not know yet draws nothing (never an empty card)
+  if (!rec) return document.createTextNode('')
   const card = el('div', active ? 'card ask handoff' : 'card quiet handoff')
   card.append(
     el('div', 'card-label', doori(active ? 'asking' : '', 24), active ? T().handoffActive : T().handoffDone),

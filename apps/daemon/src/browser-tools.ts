@@ -128,6 +128,8 @@ export interface ToolResult {
 
 export interface BrowserCaller {
   call(cmd: BrowserCommand, args?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>
+  /** Whether the Dool2 extension in Chrome is connected (the bridge has it; test fakes may leave it out) */
+  readonly status?: { connected: boolean }
 }
 
 export const BROWSER_TOOLS = [
@@ -2482,6 +2484,18 @@ export class BrowserTools {
       case 'order_done':
         return this.orderDone(tabId, a)
       case 'handoff': {
+        // Chrome being closed or its extension off is a state of the PC, not something the person does on a screen:
+        // nothing is handed over, so no "please do this yourself" card is left (11-25: an empty card stayed forever)
+        if (this.browser.status && !this.browser.status.connected)
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: 'Not handed off: Chrome on the PC is closed or its Dool2 extension is not connected, so there is no screen to hand over. This is not a task for the person. Tell the user in one sentence that this needs Chrome open on the PC, and carry on once it is connected.',
+              },
+            ],
+          }
         // Things a person must do (login, CAPTCHA, identity verification, final button): bring the Dool2 tab forward; the turn waits for the person.
         // The screen sees this tool call and shows [view in Chrome] [done].
         // The user holds only the phone — handing off the PC screen was almost always something to fix (measured: the mobile number field of a financial certificate window could not be read, so it was handed off).
