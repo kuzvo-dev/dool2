@@ -36,3 +36,23 @@ Plain words, Dool2's tone (docs/persona.md): `마무리 확인 중`, `빠진 부
   conversation, made from stored records only (no AI): `자리 비운 사이에`, `끝낸 일 N개` (up to 3 titles), and
   `기다리는 일` with what happens without an answer (`14:20까지 답이 없으면 하지 않아요`). `확인했어요` or a new message
   closes it. Code: `awaySummary` in `@dool2/protocol/work-steps`.
+
+## Task card (ADR 0038)
+With task sessions on, work the conversation hands over (`task_start`) gets the same card, saved in the conversation
+where it started and redrawn in place while the conversation goes on. Code: `taskCard` (desktop) and `taskInline`
+(phone), state from `TaskView` (`GET /api/tasks`, live `task` events).
+
+| State | Title line | Second line | Buttons |
+| --- | --- | --- | --- |
+| Waiting | the task's name | `차례 기다리는 중 · 앞에 1개` (one browser at a time) | `자세히` · `멈추기` |
+| Working | the task's name | what it does now (`코레일에서 열차 찾는 중…`) + the last 3 steps | `자세히` · `멈추기` |
+| Needs you | the task's name, brand outline | `확인이 필요해요. 아래 카드를 봐 주세요` (the approval or sign-in card is below in the conversation) | `자세히` · `멈추기` |
+| Checking / continuing | the task's name | `마무리 확인 중` / `빠진 부분 이어서 하는 중: …` + `초안 보기` | `여기까지만 받기` · `자세히` · `멈추기` |
+| Done / stopped | one line: name · `N단계 · 42초` / `멈췄어요` / `하다가 멈췄어요` | the steps, on tap | `자세히` |
+
+- The title is the task's name, not the step: several tasks can be on screen at once, and the name tells them apart.
+- A note the person passed on shows as `전한 말 1개, 다음 단계에서 읽어요` until the task reads it.
+- The result is a normal Dool2 message at the end of the conversation, once. The card stays where the task started.
+- `자세히` opens the task's own chat (PC: inside the card; phone: the side-chat screen).
+
+![Task card states, test data](task-card.png)

@@ -18,6 +18,14 @@ export const chatText = messages({
     earlierDraft: '앞서 쓴 초안',
     takeAsIs: '여기까지만 받기',
     stopWork: '멈추기',
+    // Task card (ADR 0038)
+    taskStarting: '시작하는 중',
+    taskWaiting: (n: number) => (n > 0 ? `차례 기다리는 중 · 앞에 ${n}개` : '곧 시작해요'),
+    taskNeedsYou: '확인이 필요해요. 아래 카드를 봐 주세요',
+    taskNotes: (n: number) => `전한 말 ${n}개, 다음 단계에서 읽어요`,
+    taskStopped: '멈췄어요',
+    taskFailed: '하다가 멈췄어요',
+    taskOpen: '자세히',
     leftTitle: '아직 남은 것',
     continueLeft: '이어서 하기',
     // Return summary: what happened while the person was away (from records, no AI)
@@ -63,6 +71,16 @@ export const chatText = messages({
     earlierDraft: 'The earlier draft',
     takeAsIs: 'Take it as is',
     stopWork: 'Stop',
+    taskStarting: 'Starting',
+    taskWaiting: (n: number) => (n > 0 ? `Waiting its turn · ${n} ahead` : 'Starting soon'),
+    taskNeedsYou: 'Needs you: see the card below',
+    taskNotes: (n: number) =>
+      n === 1
+        ? 'Got your note; reading it at the next step'
+        : `Got ${n} notes; reading them at the next step`,
+    taskStopped: 'Stopped',
+    taskFailed: 'Stopped partway',
+    taskOpen: 'Details',
     leftTitle: 'Still left',
     continueLeft: 'Continue',
     awayTitle: 'While you were away',

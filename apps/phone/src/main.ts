@@ -25,6 +25,8 @@ import type {
   PhoneCap,
   PhoneToPc,
   StoredMessage,
+  TaskRecordMessage,
+  TaskView,
   TellRecordMessage,
   WorkRecordMessage,
 } from '@dool2/protocol'
@@ -252,6 +254,8 @@ const st: {
   busy: boolean
   /** The last answer is a draft being checked before it is final (ADR 0027) */
   checking: boolean
+  /** Tasks handed over in the conversation (ADR 0038), by id */
+  tasks: Map<string, TaskView>
   /** When the current request started working (the progress card's elapsed time spans check rounds) */
   workFrom?: number
   queued: string[]
@@ -348,6 +352,7 @@ const st: {
   hasMore: false,
   busy: false,
   checking: false,
+  tasks: new Map(),
   queued: [],
   live: '',
   steps: [],
@@ -554,6 +559,7 @@ async function receive(env: Envelope) {
       }
       st.hasMore = msg.state.hasMore
       if (!msg.before) st.checking = msg.state.checking === true
+      if (!msg.before && msg.state.tasks) st.tasks = new Map(msg.state.tasks.map((t) => [t.id, t]))
       st.busy = msg.state.busy
       st.queued = msg.state.queued
       // Drop from "sending" any message already in the re-fetched record or already queued (otherwise it shows twice)
@@ -569,6 +575,12 @@ async function receive(env: Envelope) {
         st.steps = []
       }
       break
+    // A task changed (ADR 0038): its card redraws in place
+    case 'task':
+      st.tasks.set(msg.task.id, msg.task)
+      for (const c of document.querySelectorAll<HTMLElement>(`.task-card[data-task="${msg.task.id}"]`))
+        c.replaceWith(taskInline({ kind: 'task', id: msg.task.id, title: msg.task.title }))
+      return
     case 'conversation-status':
       st.busy = msg.busy
       st.checking = msg.checking === true
@@ -1895,6 +1907,109 @@ function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
  * After it ends: a folded line above the reply, "icon stack · Looked at 4 places · 41s" (tap to open the per-service rows).
  * Older records (no place info) read "How it worked · N steps"
  */
+/**
+ * A task's card (ProgressCard, ADR 0038): work handed over runs on its own while the conversation goes on. Steps,
+ * elapsed time, stop and take-as-is while it runs; one line when it ended. Details opens the task's own chat
+ */
+function taskInline(rec: TaskRecordMessage): HTMLElement {
+  const v = st.tasks.get(rec.id)
+  const ended = !v || v.status === 'done' || v.status === 'stopped' || v.status === 'failed'
+  const groups = v ? groupSteps(v.steps, placeCards(), lang) : []
+  const open = h('button', {
+    class: 'btn-text sm',
+    text: tChat.taskOpen,
+    onclick: () => v && openSide(v.threadId, rec.title),
+  })
+  if (ended) {
+    const ms = v?.endedAt ? Date.parse(v.endedAt) - Date.parse(v.startedAt ?? v.createdAt) : 0
+    const line = !v
+      ? ''
+      : v.status === 'done'
+        ? `${mainWork(lang).stepCount(v.count)} · ${secs(ms)}`
+        : v.status === 'stopped'
+          ? tChat.taskStopped
+          : tChat.taskFailed
+    const card = h(
+      'div',
+      { class: 'work-panel done task-card' },
+      h(
+        'div',
+        { class: 'wd-head' },
+        h('span', { class: 'wd-ok' }, icon(v?.status === 'done' ? 'check' : 'close', 'i')),
+        h('span', { class: 'wd-title', text: rec.title }),
+        h('span', { class: 'wd-meta', text: line }),
+      ),
+      ...(v ? [h('div', { class: 'wp-foot' }, h('span', { class: 'grow' }), open)] : []),
+    )
+    card.dataset.task = rec.id
+    return card
+  }
+  const now =
+    v.status === 'waiting'
+      ? tChat.taskWaiting(v.ahead ?? 0)
+      : v.status === 'needs-you'
+        ? tChat.taskNeedsYou
+        : v.status === 'checking'
+          ? tChat.checkingTitle
+          : v.continuing && v.now
+            ? tChat.continuingTitle(v.now)
+            : v.now
+              ? `${v.now}…`
+              : tChat.taskStarting
+  const from = Date.parse(v.startedAt ?? v.createdAt)
+  const clock = h('span', { class: 'wp-clock' })
+  const tick = () => {
+    if (!clock.isConnected && clock.textContent) return
+    const s = Math.max(0, Math.floor((Date.now() - from) / 1000))
+    clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    setTimeout(tick, 1000)
+  }
+  tick()
+  const act = (action: 'stop' | 'accept') => () => void send({ kind: 'task', id: v.id, action })
+  const steps = h('ol', { class: 'wp-steps' })
+  for (const g of groups.slice(-3)) steps.append(groupRow(g, 'done'))
+  const parts: HTMLElement[] = [
+    h(
+      'div',
+      { class: 'wp-head' },
+      doori(v.status === 'needs-you' ? '' : 'thinking', 26),
+      h('b', { class: 'wp-title', text: rec.title }),
+      clock,
+    ),
+    h('p', { class: 'wc-now', text: now }),
+    steps,
+  ]
+  if (v.notes) parts.push(h('p', { class: 'wc-notes meta', text: tChat.taskNotes(v.notes) }))
+  if (v.draft)
+    parts.push(
+      h(
+        'details',
+        { class: 'wc-draft' },
+        h('summary', { text: tChat.seeDraft }),
+        h('div', { class: 'rich' }, rich(v.draft)),
+      ),
+    )
+  parts.push(
+    h(
+      'div',
+      { class: 'wp-foot' },
+      ...(v.draft || v.continuing
+        ? [h('button', { class: 'btn-ghost sm', text: tChat.takeAsIs, onclick: act('accept') })]
+        : []),
+      h('span', { class: 'grow' }),
+      open,
+      h('button', { class: 'btn-text sm wc-stop', text: tChat.stopWork, onclick: act('stop') }),
+    ),
+  )
+  const card = h(
+    'div',
+    { class: `work-panel task-card${v.status === 'needs-you' ? ' needs-you' : ''}` },
+    ...parts,
+  )
+  card.dataset.task = rec.id
+  return card
+}
+
 function workDone(rec: WorkRecordMessage): HTMLElement {
   const groups = groupSteps(rec.steps, placeCards(), lang)
   const places = [
@@ -3355,6 +3470,7 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec, live)
   if (rec.kind === 'work') return workDone(rec)
+  if ((rec as { kind?: string }).kind === 'task') return taskInline(rec as unknown as TaskRecordMessage)
   if ((rec as { kind?: string }).kind === 'left') return leftInline(rec as unknown as LeftRecordMessage, live)
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)
