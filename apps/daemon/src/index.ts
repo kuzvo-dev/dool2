@@ -1786,6 +1786,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           await talk(text, { agent, viaPhone: true, receivedAt })
           return conversation.current()?.id ?? ''
         }
+        // Words typed in a task's detail are passed on like task_steer, never a raw turn of its chat (ADR 0038)
+        const task = tasks.byThread(threadId)
+        if (task) {
+          steerFromDetail(task, said)
+          return threadId
+        }
         const id =
           threadId && store.getThread(threadId) ? threadId : store.createThread(await pickAgent(agent)).id
         if (threads.isRunning(id)) throw new Error(m().threadStillAnswering)
@@ -3202,7 +3208,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return false
     }
     tasks.start(t)
-    const text = t.begun ? notesMessage(t.notes.splice(0), lang()) : taskBrief(t, lang())
+    const text = t.begun ? notesMessage(t.notes.splice(0), lang(), t.shownNotes) : taskBrief(t, lang())
     t.begun = true
     // The finish check compares the task's answer with what it was given to get done
     finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
@@ -3292,7 +3298,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (t.notes.length) {
       t.status = 'working'
       finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
-      const text = notesMessage(t.notes.splice(0), lang())
+      const text = notesMessage(t.notes.splice(0), lang(), t.shownNotes)
       emitTask(t)
       setTimeout(() => followUp(t.threadId, text), 0)
       return
@@ -3362,7 +3368,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     t.status = 'working'
     finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
-    const text = notesMessage(t.notes.splice(0), lang())
+    const text = notesMessage(t.notes.splice(0), lang(), t.shownNotes)
     emitTask(t)
     followUp(t.threadId, text)
     return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
@@ -3386,6 +3392,24 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
     startTask(t)
     return t
+  }
+  /**
+   * The person typed in a task's detail (its own chat): passed on the same way as task_steer, and kept in that chat as
+   * what they said so the detail shows it. The conversation AI hears it with its next message
+   */
+  function steerFromDetail(t: Task, said: string): string {
+    const text = said.trim().slice(0, 600)
+    if (!text) return ''
+    // A task that was stopped takes nothing more: the words go to the conversation, which can start a new one
+    if (t.status === 'stopped' || t.status === 'failed') {
+      void talk(text).catch(() => {})
+      return 'sent to the conversation'
+    }
+    const m0 = store.addMessage(t.threadId, 'user', text)
+    void link.broadcast({ kind: 'stream', threadId: t.threadId, event: { type: 'saved', message: m0 } })
+    t.shownNotes.add(text)
+    unseenTasks.push(`- The user told ${t.id} "${t.spec.title}" directly: "${text}"`)
+    return steerTask(t, text)
   }
   /** The task tools of the conversation (task_start, task_steer, task_stop, task_list) */
   async function taskTool(caller: string | undefined, name: string, args: Record<string, unknown>) {
@@ -4777,6 +4801,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (req.method === 'POST' && c === 'messages') {
         const body = SendMessageRequestSchema.parse(await readJson(req, MESSAGE_MAX))
+        // A task's chat: the words are passed on to the task (ADR 0038)
+        const task = tasks.byThread(b)
+        if (task) return json(res, 202, { ok: true, note: steerFromDetail(task, body.text) })
         if (threads.isRunning(b)) return json(res, 409, { error: m().threadStillAnswering })
         // Photo: kept in Doori's work folder like chat and phone, and viewed with photo_view (before, photos were missing from separate chats)
         const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text

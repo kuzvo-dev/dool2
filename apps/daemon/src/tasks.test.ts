@@ -53,6 +53,9 @@ describe('task specs', () => {
     expect(brief).toContain('- window seat')
     expect(t.notes).toEqual([])
     expect(readAppNote(notesMessage(['make it 7 pm'], 'ko'))).toBe('"make it 7 pm" 전해 받았어요.')
+    // Words the person typed in the task's detail are already in its chat: not shown a second time
+    expect(readAppNote(notesMessage(['make it 7 pm'], 'en', new Set(['make it 7 pm'])))).toBe('')
+    expect(notesMessage(['make it 7 pm'], 'en', new Set(['make it 7 pm']))).toContain('"make it 7 pm"')
   })
 })
 

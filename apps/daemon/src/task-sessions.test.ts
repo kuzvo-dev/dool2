@@ -328,6 +328,37 @@ describe('task sessions (ADR 0038)', () => {
     expect(prompts.at(-1)).toContain('Approval requests during this request: none')
   })
 
+  it("typing in a task's detail is passed on like task_steer, not a raw turn of its chat", async () => {
+    const held = gate()
+    const results: string[] = []
+    let turns = 0
+    const task: Script = async function* (input, rt) {
+      turns++
+      await held.wait()
+      const r: Result = yield* used(input, rt, 'life', 'conversation_search', { query: 'train' })
+      results.push(textOf(r))
+      yield* say('Booked the 7 pm train.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const { api, task: view } = await boot(rt, { finishJudge: async () => '{"done":true,"why":"ok"}' })
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"book a train"}' })
+    await until(() => turns === 1, 'task turn')
+    const threadId = (await view())?.threadId ?? ''
+    const r = await api(`/api/threads/${threadId}/messages`, {
+      method: 'POST',
+      body: '{"text":"make it 7 pm"}',
+    })
+    expect(r.status).toBe(202)
+    expect((await view())?.notes).toBe(1)
+    held.open()
+    await until(async () => (await view())?.status === 'done', 'done')
+    // Delivered at the next tool result; no extra turn was started in the task's chat
+    expect(results[0]).toContain('"make it 7 pm"')
+    expect(turns).toBe(1)
+    const detail = (await (await api(`/api/threads/${threadId}`)).json()) as { messages: StoredMessage[] }
+    expect(detail.messages.filter((x) => x.text === 'make it 7 pm')).toHaveLength(1)
+  })
+
   it('stop from the card ends the task, turns down its approvals and posts no result', async () => {
     const held = gate()
     const task: Script = async function* (input) {
