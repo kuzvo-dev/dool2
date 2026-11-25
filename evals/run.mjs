@@ -8,6 +8,9 @@
 // 이미 기록이 있는 시나리오는 건너뛴다 (--again 이면 다시)
 // Agent and model axis (ADR 0037): --agent claude|codex|opencode picks the AI of the test chat, --model <name> runs the
 // requests on that model (test PC daemon only). Replay the same tape per model, then compare with evals/models.mjs
+// Main conversation (ADR 0038): --main on|off sends each scenario to a fresh segment of the main conversation with task
+// sessions on or off (test PC daemon only), so the conversation/task split runs as it does for the user. It follows the
+// tasks the conversation starts until each ends or waits for the person, and records their tools and chats too
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -91,6 +94,102 @@ async function useModel(name) {
   })
   if (r.ok !== true)
     throw new Error(`--model needs a test PC daemon (DOOL2_DEV_RESET=1): ${r.error ?? r.text ?? r.status}`)
+}
+/** --main on|off: the main conversation with task sessions on or off (undefined: a separate chat, as before) */
+const mainMode = arg('main')
+if (mainMode !== undefined && mainMode !== 'on' && mainMode !== 'off') {
+  console.error('--main takes on or off')
+  process.exit(2)
+}
+/** A fresh main segment for the next scenario, task sessions on or off (null: back to the default) */
+async function mainSegment(on) {
+  const r = await api('/api/eval/segment', {
+    method: 'POST',
+    body: JSON.stringify({ taskSessions: on }),
+  })
+  if (r.ok !== true)
+    throw new Error(
+      `--main needs a test PC daemon (DOOL2_DEV_RESET=1) that is not busy: ${r.error ?? r.text ?? r.status}`,
+    )
+  return r
+}
+const ENDED = new Set(['done', 'stopped', 'failed', 'needs-you'])
+/**
+ * One scenario on the main conversation: send it, follow the live events of the conversation and of the tasks it
+ * starts, and stop when the conversation is idle and every task ended or waits for the person
+ */
+async function followMain(sc, rec, started, signal) {
+  const live = await fetch(`${daemon}/api/conversation/live`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal,
+  })
+  const reader = live.body.getReader()
+  const sent = await api('/api/conversation/messages', {
+    method: 'POST',
+    body: JSON.stringify({ text: sc.ask }),
+  })
+  if (sent.queued) rec.errors.push('queued')
+  const taskThreads = new Map()
+  let mainEnded = false
+  const pump = (async () => {
+    const dec = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) return
+      buf += dec.decode(value, { stream: true })
+      let i = buf.indexOf('\n\n')
+      while (i >= 0) {
+        const chunk = buf.slice(0, i)
+        buf = buf.slice(i + 2)
+        i = buf.indexOf('\n\n')
+        const line = chunk.split('\n').find((l) => l.startsWith('data: '))
+        if (!line) continue
+        let ev
+        try {
+          ev = JSON.parse(line.slice(6))
+        } catch {
+          continue
+        }
+        if (ev.kind === 'task') {
+          rec.tasks[ev.task.id] = ev.task
+          taskThreads.set(ev.task.threadId, ev.task.id)
+          continue
+        }
+        if (ev.kind !== 'turn' || ev.posted) continue
+        // Side chats that are not this scenario's tasks (the feed) are not part of it
+        const task = ev.side ? taskThreads.get(ev.threadId) : undefined
+        if (ev.side && !task) continue
+        const d = ev.event
+        if (d.type === 'end' && !ev.side) mainEnded = true
+        const e = d.type === 'agent' ? d.event : d
+        const at = Date.now() - started.getTime()
+        if (e.type === 'tool') rec.tools.push({ name: e.name, input: e.input, at, ...(task ? { task } : {}) })
+        else if (e.type === 'tool_result') {
+          const last = [...rec.tools]
+            .reverse()
+            .find((t) => t.ok === undefined && (!e.name || t.name === e.name) && t.task === task)
+          if (last) last.ok = e.ok
+        } else if (e.type === 'error') rec.errors.push(`${e.code}: ${e.message}`)
+        else if (e.type === 'limit_reached') rec.errors.push(`limit: ${e.message}`)
+        else if (e.type === 'cost') rec.cost = e
+      }
+    }
+  })().catch(() => {})
+  try {
+    for (;;) {
+      if (signal.aborted) break
+      await new Promise((ok) => setTimeout(ok, 1000))
+      if (!mainEnded) continue
+      const s = await api('/api/conversation?limit=1')
+      const mine = (s.tasks ?? []).filter((t) => Date.parse(t.createdAt) >= started.getTime())
+      for (const t of mine) rec.tasks[t.id] = t
+      if (!s.busy && mine.every((t) => ENDED.has(t.status))) break
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+    await pump
+  }
 }
 const timeoutMs = Number(arg('timeout', '420')) * 1000
 mkdirSync(out, { recursive: true })
@@ -217,10 +316,12 @@ async function runOne(sc) {
   // 시험 전부터 떠 있던 카드(인증번호·내 정보)는 이 시나리오 것이 아니다
   const infoBefore = new Set(((await api('/api/info')).requests ?? []).map((q) => q.id))
   const started = new Date()
-  const { thread, error } = await api('/api/threads', {
-    method: 'POST',
-    body: JSON.stringify({ side: true, ...(agent ? { agent } : {}) }),
-  })
+  const { thread, error } = mainMode
+    ? { thread: { id: 'main', agent }, ...(await mainSegment(mainMode === 'on')) }
+    : await api('/api/threads', {
+        method: 'POST',
+        body: JSON.stringify({ side: true, ...(agent ? { agent } : {}) }),
+      })
   if (!thread?.id) throw new Error(`대화를 만들지 못했어요${error ? `: ${error}` : ''}`)
   const rec = {
     id: sc.id,
@@ -229,6 +330,7 @@ async function runOne(sc) {
     ...(model ? { model } : {}),
     startedAt: started.toISOString(),
     thread: thread.id,
+    ...(mainMode ? { main: mainMode, tasks: {} } : {}),
     tools: [],
     text: '',
     errors: [],
@@ -236,51 +338,57 @@ async function runOne(sc) {
   const ctl = new AbortController()
   const timer = setTimeout(() => {
     rec.errors.push('timeout')
-    void api(`/api/threads/${thread.id}/cancel`, { method: 'POST' })
+    if (mainMode) {
+      void api('/api/conversation/cancel', { method: 'POST' })
+      for (const t of Object.values(rec.tasks ?? {})) void api(`/api/tasks/${t.id}/stop`, { method: 'POST' })
+    } else void api(`/api/threads/${thread.id}/cancel`, { method: 'POST' })
     ctl.abort()
   }, timeoutMs)
   if (replayDir) await tape({ mode: 'replay', entries: tapes.get(sc.id) })
   else if (recordTape) await tape({ mode: 'record' })
   try {
-    const r = await fetch(`${daemon}/api/threads/${thread.id}/messages`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ text: sc.ask }),
-      signal: ctl.signal,
-    })
-    const reader = r.body.getReader()
-    const dec = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buf += dec.decode(value, { stream: true })
-      let i = buf.indexOf('\n\n')
-      while (i >= 0) {
-        const chunk = buf.slice(0, i)
-        buf = buf.slice(i + 2)
-        i = buf.indexOf('\n\n')
-        const line = chunk.split('\n').find((l) => l.startsWith('data: '))
-        if (!line) continue
-        let ev
-        try {
-          ev = JSON.parse(line.slice(6))
-        } catch {
-          continue
+    if (mainMode) await followMain(sc, rec, started, ctl.signal)
+    else {
+      const r = await fetch(`${daemon}/api/threads/${thread.id}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ text: sc.ask }),
+        signal: ctl.signal,
+      })
+      const reader = r.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        let i = buf.indexOf('\n\n')
+        while (i >= 0) {
+          const chunk = buf.slice(0, i)
+          buf = buf.slice(i + 2)
+          i = buf.indexOf('\n\n')
+          const line = chunk.split('\n').find((l) => l.startsWith('data: '))
+          if (!line) continue
+          let ev
+          try {
+            ev = JSON.parse(line.slice(6))
+          } catch {
+            continue
+          }
+          const e = ev.event ?? ev
+          const at = Date.now() - started.getTime()
+          if (e.type === 'tool') rec.tools.push({ name: e.name, input: e.input, at })
+          else if (e.type === 'tool_result') {
+            const last = [...rec.tools]
+              .reverse()
+              .find((t) => t.ok === undefined && (!e.name || t.name === e.name))
+            if (last) last.ok = e.ok
+          } else if (e.type === 'text') rec.text += e.delta
+          else if (e.type === 'done') rec.final = e.text
+          else if (e.type === 'error') rec.errors.push(`${e.code}: ${e.message}`)
+          else if (e.type === 'limit_reached') rec.errors.push(`limit: ${e.message}`)
+          else if (e.type === 'cost') rec.cost = e
         }
-        const e = ev.event ?? ev
-        const at = Date.now() - started.getTime()
-        if (e.type === 'tool') rec.tools.push({ name: e.name, input: e.input, at })
-        else if (e.type === 'tool_result') {
-          const last = [...rec.tools]
-            .reverse()
-            .find((t) => t.ok === undefined && (!e.name || t.name === e.name))
-          if (last) last.ok = e.ok
-        } else if (e.type === 'text') rec.text += e.delta
-        else if (e.type === 'done') rec.final = e.text
-        else if (e.type === 'error') rec.errors.push(`${e.code}: ${e.message}`)
-        else if (e.type === 'limit_reached') rec.errors.push(`limit: ${e.message}`)
-        else if (e.type === 'cost') rec.cost = e
       }
     }
   } catch (e) {
@@ -356,13 +464,32 @@ async function runOne(sc) {
   rec.seeded = seeded.map((m) => m.text)
   const s2 = await api('/api/life')
   rec.created.feed = (s2.feed ?? []).filter((x) => !before.feed.has(x.id))
-  const msgs = await api(`/api/threads/${thread.id}`)
-  rec.messages = (msgs.messages ?? []).map((m) => ({ role: m.role, text: m.text ?? m.content }))
+  if (mainMode) {
+    // What the person saw in the conversation since the scenario began (answers, cards, each task's one result), and
+    // each task's own chat apart
+    const conv = await api('/api/conversation?limit=200')
+    const since = (conv.messages ?? []).filter((m) => Date.parse(m.createdAt) >= started.getTime())
+    rec.thread = since[0]?.threadId ?? rec.thread
+    rec.messages = since.map((m) => ({ role: m.role, text: m.text }))
+    const answers = since.filter((m) => m.role === 'assistant')
+    rec.final = answers.at(-1)?.text
+    rec.text = answers.map((m) => m.text).join('\n\n')
+    rec.tasks = Object.values(rec.tasks)
+    rec.taskMessages = {}
+    for (const t of rec.tasks) {
+      const d = await api(`/api/threads/${t.threadId}`)
+      rec.taskMessages[t.id] = (d.messages ?? []).map((m) => ({ role: m.role, text: m.text }))
+    }
+  } else {
+    const msgs = await api(`/api/threads/${thread.id}`)
+    rec.messages = (msgs.messages ?? []).map((m) => ({ role: m.role, text: m.text ?? m.content }))
+  }
   // How many times the before-finishing check sent the work back (its notes are app notes with this marker)
-  rec.sentBack = rec.messages.filter(
-    (m) => m.role === 'user' && String(m.text).includes('(Check before finishing)'),
-  ).length
-  await api(`/api/threads/${thread.id}`, { method: 'DELETE' })
+  rec.sentBack = [rec.messages, ...Object.values(rec.taskMessages ?? {})]
+    .flat()
+    .filter((m) => m.role === 'user' && String(m.text).includes('(Check before finishing)')).length
+  // The main conversation is the test PC's own; each scenario got a fresh segment instead
+  if (!mainMode) await api(`/api/threads/${thread.id}`, { method: 'DELETE' })
   return rec
 }
 
@@ -398,6 +525,10 @@ const retried = new Set()
 // 여러 개를 같이 돌린다 (따로 하는 대화를 동시에 N개). 기본 1
 const concurrency = Math.max(1, Number(arg('concurrency', '1')))
 // The tape is one per daemon, so recording or replaying runs one scenario at a time
+if (mainMode && concurrency > 1) {
+  console.error('--main runs one scenario at a time (there is one main conversation)')
+  process.exit(2)
+}
 if ((recordTape || replayDir) && concurrency > 1) {
   console.error('--record and --replay run one scenario at a time (leave out --concurrency)')
   process.exit(2)
@@ -471,5 +602,7 @@ await Promise.all(
 writeFileSync(join(out, '_picked.json'), JSON.stringify(list.map((s) => s.id)))
 // Leave the daemon on its default model for whatever runs next
 if (model) await useModel(undefined).catch(() => {})
+// …and task sessions as the build's default
+if (mainMode) await mainSegment(null).catch(() => {})
 // 권한 창에 막힌 폴더 읽기가 남아 있으면 프로세스가 끝나지 않는다: 일이 끝났으면 나간다
 process.exit(0)

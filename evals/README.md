@@ -66,6 +66,38 @@ node evals/models.mjs evals/out/replay-sonnet evals/out/replay-haiku evals/out/r
 `models.mjs` prints one row per folder over the scenarios present in all of them: AI score, passes, median time, and
 how often the before-finishing check sent the work back (`sentBack` in each record).
 
+## Main conversation and task sessions (ADR 0038)
+
+By default each scenario goes to a separate chat, which has every tool and never splits into a conversation and tasks.
+`--main on|off` sends each scenario to a **fresh segment of the main conversation** instead, with the `taskSessions`
+setting on or off, so the split runs as it does for the user: the conversation answers or hands work over with
+`task_start`, and the runner follows every task it starts until each ends or waits for the person (an approval card).
+The record keeps the tasks (`tasks`), their own chats (`taskMessages`) and their tools (`tools[].task`); `messages` and
+`final` are what the person saw in the conversation, including each task's one result.
+
+- Test PC daemon only (`DOOL2_DEV_RESET=1`): `POST /api/eval/segment` sets the setting and closes the current segment,
+  so nothing carries over from the previous scenario. The runner puts the setting back to the build's default at the
+  end. It writes into the test PC's main conversation (nothing to delete there), one scenario at a time.
+- Task tools are never answered from or kept on a tool tape: in a replay the tasks run for real, and only the tools they
+  and the conversation call (browser, service tools…) come from the tape.
+
+Replay run-and-approve scenarios with task sessions on and off, on the same tape:
+
+```bash
+# 1) Record once on the main conversation with task sessions on
+node evals/run.mjs --token <screen token> --main on --where type=실행+승인 --n 20 --record --out evals/out/tape-tasks
+# 2) Replay it with the setting on, then off
+node evals/run.mjs --token <screen token> --main on --replay evals/out/tape-tasks --out evals/out/replay-tasks-on
+node evals/run.mjs --token <screen token> --main off --replay evals/out/tape-tasks --out evals/out/replay-tasks-off
+# 3) Score both and compare (off is the baseline)
+node evals/score.mjs evals/out/replay-tasks-on --judge --html evals/out/replay-tasks-on/card.html
+node evals/score.mjs evals/out/replay-tasks-off --judge --html evals/out/replay-tasks-off/card.html
+node evals/compare.mjs evals/out/replay-tasks-off evals/out/replay-tasks-on
+```
+
+The task-session families (`bank/families/87-task-sessions.jsonl`) assume a task is already running; they need
+`--main on`. Turn the `TASK_SESSIONS_DEFAULT` on only when the "on" replay keeps the "off" score.
+
 ## Scoring
 
 - **Code verdict**: whether the result shape (went as far as approval, handed off to a person, asked back, answered, error) fits the scenario type, and the gates (suspected false completion, multiple approvals)

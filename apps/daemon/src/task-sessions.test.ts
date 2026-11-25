@@ -453,6 +453,59 @@ describe('task sessions (ADR 0038)', () => {
     expect(rt.kind(rt.seen[0] as TurnInput)).toBe('conversation')
   })
 
+  it('evals on a test PC: a fresh main segment per scenario, with task sessions on or off', async () => {
+    const rt = new TwoSessions(conversation, async function* () {
+      yield* say('x')
+    })
+    const { api, send, state } = await boot(rt, { devReset: true })
+    await send('hello')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Sure: hello'), 'answer')
+    const first = rt.seen.at(-1)?.mcpServers[0]?.env?.DOOL2_TOOLSET
+    const r = (await (
+      await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":false}' })
+    ).json()) as { ok: boolean; before?: boolean; taskSessions: boolean }
+    expect(r).toEqual({ ok: true, before: true, taskSessions: false })
+    await send('again')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Sure: again'), 'answer 2')
+    const second = rt.seen.at(-1)
+    // A new segment, without the earlier one carried over, and the conversation has every tool again
+    expect(second?.mcpServers[0]?.env?.DOOL2_TOOLSET).not.toBe(first)
+    expect(second?.systemPrompt).not.toContain('Sure: hello')
+    expect(rt.kind(second as TurnInput)).toBeUndefined()
+    // Back to the build's default
+    const back = (await (
+      await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":null}' })
+    ).json()) as { taskSessions: boolean }
+    expect(back.taskSessions).toBe(false)
+  })
+
+  it('a replayed tape never answers the task tools: the task runs for real', async () => {
+    const rt = new TwoSessions(conversation, async function* () {
+      yield* say('done')
+    })
+    const {
+      api,
+      send,
+      task: view,
+    } = await boot(rt, {
+      devReset: true,
+      finishJudge: async () => '{"done":true,"why":"ok"}',
+    })
+    await api('/api/eval/tape', { method: 'POST', body: '{"mode":"replay","entries":[]}' })
+    await send('book a train')
+    await until(async () => (await view())?.status === 'done', 'task done')
+    expect(textOf(rt.results.task_start?.[0] as Result)).toContain('Task t1')
+    await api('/api/eval/tape', { method: 'POST', body: '{"mode":"off"}' })
+  })
+
+  it('the eval segment switch is for test PCs only', async () => {
+    const rt = new TwoSessions(conversation, conversation)
+    const { api } = await boot(rt)
+    expect((await api('/api/eval/segment', { method: 'POST', body: '{"taskSessions":true}' })).status).toBe(
+      403,
+    )
+  })
+
   it('without the setting nothing changes: no session kind, no task tools', async () => {
     const rt = new TwoSessions(conversation, conversation)
     const { api, send, state } = await boot(rt)
