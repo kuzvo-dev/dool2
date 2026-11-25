@@ -578,7 +578,10 @@ export class Connectors {
     ).slice(0, 5)
     if (!hit.length)
       return text(
-        `No matching service. Try a web search or the browser tools. (Services: ${items.map((x) => x.card.id).join(', ')})`,
+        // Dool2 has no web-search tool: the web is read with the browser (in the conversation of task sessions, by a task;
+        // the daemon adds that line). Measured on the WP7 bench: "try a web search" made the conversation tell the user to
+        // search themselves
+        `No matching service. Look it up on the web instead: browser_open with a search page or the site's address. (Services: ${items.map((x) => x.card.id).join(', ')})`,
       )
     // A service that is not connected yet may not be the one the user uses: for "my ..." tasks, ask before deciding
     // (measured 11-22: the catalog had a single carrier, so the AI assumed the user was on it and showed someone
