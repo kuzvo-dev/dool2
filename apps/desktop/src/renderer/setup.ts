@@ -598,9 +598,9 @@ export function runSetup(opts: SetupOptions): {
             // Task sessions (ADR 0038): longer work runs on its own card while the conversation goes on
             toggleRow(
               m.taskSessions,
-              current.taskSessions === true ? m.taskSessionsOn : m.taskSessionsOff,
-              current.taskSessions === true,
-              () => void save({ taskSessions: current.taskSessions !== true }),
+              current.taskSessions !== false ? m.taskSessionsOn : m.taskSessionsOff,
+              current.taskSessions !== false,
+              () => void save({ taskSessions: current.taskSessions === false }),
             ),
           )
           const approve = (current.finalStep ?? 'approve') === 'approve'

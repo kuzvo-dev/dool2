@@ -10,10 +10,10 @@ import { forAI } from './locales/index-text.js'
 import { TASKS_TEXT } from './locales/tasks-text.js'
 
 /**
- * Whether the conversation hands longer work to task sessions when the `taskSessions` setting is empty. Off until a
- * real-AI replay shows the conversation picks task_start at the right times (ADR 0038, Consequences)
+ * Whether the conversation hands longer work to task sessions when the `taskSessions` setting is empty. On: the
+ * conversation talks and hands work over, tasks do it (ADR 0038, round 2). The setting stays as the off switch
  */
-export const TASK_SESSIONS_DEFAULT = false
+export const TASK_SESSIONS_DEFAULT = true
 
 /** What the conversation wrote when it handed the work over (task_start) */
 export interface TaskSpec {
