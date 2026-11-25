@@ -30,8 +30,15 @@ describe('model profiles (ADR 0037)', () => {
     expect(modelForRole('claude', 'summary', 'opus')).toBe('opus')
     expect(modelForRole('claude', 'judge')).toBe('haiku')
     expect(modelForRole('claude', 'watch', 'opus')).toBe('haiku')
-    // Agents that do not take a model per call keep theirs
-    expect(modelForRole('codex', 'judge')).toBeUndefined()
+    expect(modelForRole('claude', 'review')).toBe('haiku')
+    // Codex takes a model per thread: its small one from the pinned catalog
+    expect(modelForRole('codex', 'judge')).toBe('gpt-6-luna')
+    expect(modelForRole('codex', 'task')).toBeUndefined()
+    // Pay-as-you-go: the small model of the provider the user picked, keyed by their model
+    expect(modelForRole('opencode', 'review', 'claude-sonnet-5-5')).toBe('claude-haiku-5-5')
+    expect(modelForRole('opencode', 'judge', 'gpt-5.6')).toBe('gpt-5.4-mini')
+    expect(modelForRole('opencode', 'task', 'gpt-5.6')).toBe('gpt-5.6')
+    // A model with no known small one keeps itself
     expect(modelForRole('opencode', 'watch', 'gpt-x')).toBe('gpt-x')
   })
 

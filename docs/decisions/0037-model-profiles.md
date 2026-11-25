@@ -62,3 +62,25 @@ with nowhere to say that another model needs other values.
   next to it.
 - Revisit when an agent starts taking a model per call (then give it a small model), or when replays show a model needs
   different segment limits or instructions.
+
+## Change (2026-11-25): Codex and pay-as-you-go take a model per call
+
+Both adapters now pass a model when one is given, so side jobs leave the chosen model there too.
+
+- **Codex** passes it in `thread/start`. Its small model is `gpt-6-luna`, the catalog's "fast and affordable model for
+  easier tasks" in the pinned 0.169.0 (`model/list`, captured in `packages/agent-codex/fixtures/model-list-0.169.0.json`;
+  a test pins that the profile's model is in it). Before starting a thread with a model, the adapter checks that the
+  running Codex lists it and otherwise uses Codex's default, so a newer catalog cannot make every side job fail.
+- **OpenCode** passes it when the session is created, inside the provider the user picked. The profile is keyed by
+  the model they chose (`opencode:claude-sonnet-5-5` and `opencode:claude-opus-5-5` → `claude-haiku-5-5`,
+  `opencode:gpt-5.6` → `gpt-5.4-mini`); the daemon passes their pay-as-you-go model as the chosen one. Gemini Flash is
+  already the small one, and OpenRouter has no checked small id, so those keep their model.
+- A new role, `review` (the auto-approve review, ADR 0030), goes to the small model like `judge` and `watch`.
+- Side jobs are marked as such (`TurnInput.sideJob`): no tools at all, their instructions in place of the agent's own
+  where the agent allows (Codex), nothing saved to resume, the lightest thinking. `askSideJob` in `@dool2/engine` is
+  the one way the daemon asks them.
+
+What was checked for real: the Codex catalog, `thread/start` with `model`, `baseInstructions` and `ephemeral`, and
+`turn/start` with `effort: "low"` on the pinned program, without sign-in (the turn then fails at the provider with
+401, which the adapter already reports as "sign in again"). No answer quality was measured on these small models; the
+work log's `finish-check` and `auto-approve` lines are where to watch it.

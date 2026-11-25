@@ -16,28 +16,35 @@ const PERMISSIONS = [
   { action: `${DOOL2_TOOL_PREFIX}*`, resource: '*', effect: 'allow' },
 ] as const
 
+/** A side job (judge, reviewer) has no tools at all: everything is blocked */
+const NO_TOOLS = [{ action: '*', resource: '*', effect: 'deny' }] as const
+
 export interface OpenCodeConfigInput {
   mcpServers: McpServerSpec[]
   systemPrompt: string
+  /** A tool-less side job: no MCP servers and no tool allowed */
+  sideJob?: boolean
 }
 
 export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
+  const permissions = input.sideJob ? NO_TOOLS : PERMISSIONS
+  const servers = input.sideJob ? [] : input.mcpServers
   return {
-    permissions: PERMISSIONS,
+    permissions,
     policies: [
       // OpenCode's own free models send the conversation to that company's servers. Use only the provider the user picked
       { action: 'provider.use', resource: 'opencode', effect: 'deny' },
       { action: 'websearch.use', resource: '*', effect: 'deny' },
       { action: 'skill.use', resource: '*', effect: 'deny' },
       { action: 'mcp.use', resource: '*', effect: 'deny' },
-      ...input.mcpServers.map((s) => ({ action: 'mcp.use', resource: s.name, effect: 'allow' })),
+      ...servers.map((s) => ({ action: 'mcp.use', resource: s.name, effect: 'allow' })),
     ],
     agents: {
       [DOOL2_AGENT]: {
         mode: 'primary',
         description: 'Dool2',
         system: input.systemPrompt,
-        permissions: PERMISSIONS,
+        permissions,
       },
       // The built-in agents use shell and file tools, so turn them off
       build: { disabled: true },
@@ -51,7 +58,7 @@ export function buildOpenCodeConfig(input: OpenCodeConfigInput) {
     snapshots: false,
     mcp: {
       servers: Object.fromEntries(
-        input.mcpServers.map((s) => [
+        servers.map((s) => [
           s.name,
           {
             type: 'local',

@@ -39,6 +39,8 @@ export type ModelRole =
   | 'judge'
   /** A quick check found a change and wakes Dool2 to judge it against the user's condition (ADR 0031) */
   | 'watch'
+  /** The auto-approve review (ADR 0030): the user's own words and the facts of one action, answers one line of JSON */
+  | 'review'
 
 const BASE: ModelProfile = {
   limits: { turns: 40, chars: 60_000, contextTokens: 120_000 },
@@ -46,12 +48,20 @@ const BASE: ModelProfile = {
 
 /**
  * Profiles by `agent` or `agent:model` (the more specific key wins, field by field). Only what is known to differ:
- * - Claude Code takes a model per run (`--model`), so side jobs can use its small model.
- * - Codex and OpenCode run the model the user set up in that program or picked with the key; Dool2 does not pass a
- *   model per call to them, so their side jobs stay on that model.
+ * - Claude Code takes a model per run (`--model`), so side jobs use its small model.
+ * - Codex takes a model per thread (`thread/start`). `gpt-6-luna` is the catalog's "fast and affordable model for
+ *   easier tasks" in the pinned Codex 0.169.0 (`model/list`, 2026-11-25). The adapter drops it when the catalog no
+ *   longer lists it, so a newer Codex falls back to its default model instead of failing.
+ * - OpenCode (pay-as-you-go) takes a model per session, inside the provider the user picked, so the small model is
+ *   keyed by the model they chose (the ids are from the provider list in `@dool2/agent-opencode`). A provider whose
+ *   recommended model is already the small one (Gemini Flash) or whose small id is not checked (OpenRouter) has none.
  */
 export const MODEL_PROFILES: Partial<Record<string, Partial<ModelProfile>>> = {
   claude: { small: 'haiku' },
+  codex: { small: 'gpt-6-luna' },
+  'opencode:claude-sonnet-5-5': { small: 'claude-haiku-5-5' },
+  'opencode:claude-opus-5-5': { small: 'claude-haiku-5-5' },
+  'opencode:gpt-5.6': { small: 'gpt-5.4-mini' },
 }
 
 /** The profile for an agent and model (model undefined: the agent's default model) */
@@ -71,7 +81,7 @@ export function modelProfile(agent: AgentId, model?: string): ModelProfile {
  * - task: the chosen model.
  * - summary: the chosen model too. The summary resumes the session just after a turn, so the provider's cache of the
  *   whole conversation is still warm; a different model has no cache and would read it all again at full price.
- * - judge, watch: the profile's small model, or the chosen model when the agent has none.
+ * - judge, watch, review: the profile's small model, or the chosen model when the agent has none.
  */
 export function modelForRole(agent: AgentId, role: ModelRole, chosen?: string): string | undefined {
   if (role === 'task' || role === 'summary') return chosen

@@ -53,6 +53,15 @@ describe('OpenCode 설정', () => {
     expect(c.default_agent).toBe('dool2')
   })
 
+  it('a side job (judge, reviewer) gets no tool server and no tool at all', () => {
+    const c = buildOpenCodeConfig({ mcpServers: mcp, systemPrompt: 'judge', sideJob: true })
+    expect(c.permissions).toEqual([{ action: '*', resource: '*', effect: 'deny' }])
+    expect(c.agents.dool2.permissions).toEqual(c.permissions)
+    expect(c.mcp.servers).toEqual({})
+    expect(c.policies).toContainEqual({ action: 'mcp.use', resource: '*', effect: 'deny' })
+    expect(c.policies.some((p) => p.effect === 'allow')).toBe(false)
+  })
+
   it('기본 에이전트·무료 제공자·웹 검색·다른 MCP를 끈다', () => {
     const c = buildOpenCodeConfig({ mcpServers: mcp, systemPrompt: '두리' })
     for (const a of ['build', 'plan', 'general', 'explore'] as const)

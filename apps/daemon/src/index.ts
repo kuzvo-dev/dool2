@@ -23,6 +23,7 @@ import {
 } from '@dool2/browser'
 import {
   type AgentRuntime,
+  askSideJob,
   buildSystemPrompt,
   ConversationService,
   type McpServerSpec,
@@ -386,39 +387,43 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }),
     opencode: new OpenCodeRuntime({ dir: paths.opencode, account: paygAccount, lang }),
   }
+  /**
+   * The model the user chose for an agent (ADR 0037): the eval override on a test PC, else the pay-as-you-go model.
+   * Claude Code and Codex: undefined, their default model
+   */
+  const chosenModel = (agent: AgentId) => evalModel ?? (agent === 'opencode' ? savedPayg()?.model : undefined)
+  /**
+   * A side job on the chat's own agent (the user's own sign-in or key): a fresh program with no tools and no Dool2
+   * instructions, on that agent's small model for the role. undefined when it cannot run, so callers fail closed
+   */
+  const askSide = (
+    agent: AgentId,
+    role: ModelRole,
+    systemPrompt: string,
+    text: string,
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const rt = runtimes[agent]
+    if (!rt) return Promise.resolve(undefined)
+    const model = modelForRole(agent, role, chosenModel(agent))
+    return askSideJob(rt, { text, systemPrompt, cwd: paths.workspace, ...(model ? { model } : {}), signal })
+  }
   // Before-finishing check (ADR 0027): a fresh session without tools gives a verdict only, on the agent's small model
-  // (ADR 0035). Turned off 2026-11-24 because sent-back answers vanished and started over; FINISH_CHECK_ON brings it
-  // back once the screens keep the answer as a draft until the verdict
+  // (ADR 0037), on whichever agent the chat runs
   const judgeAsk =
     opts.finishJudge === false
       ? undefined
       : (opts.finishJudge ??
         (opts.runtimes || !FINISH_CHECK_ON
           ? undefined
-          : async (prompt: string, signal: AbortSignal, threadId: string) => {
-              const agent = store.getThread(threadId)?.agent ?? 'claude'
-              const rt = runtimes[agent]
-              if (!rt) return undefined
-              const model = modelForRole(agent, 'judge', evalModel)
-              let text = ''
-              try {
-                for await (const ev of rt.runTurn({
-                  text: prompt,
-                  systemPrompt: JUDGE_SYSTEM,
-                  mcpServers: [],
-                  cwd: paths.workspace,
-                  ...(model ? { model } : {}),
-                  signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
-                })) {
-                  if (ev.type === 'text') text += ev.delta
-                  if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
-                  if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
-                }
-              } catch {
-                return undefined
-              }
-              return text
-            }))
+          : (prompt: string, signal: AbortSignal, threadId: string) =>
+              askSide(
+                store.getThread(threadId)?.agent ?? 'claude',
+                'judge',
+                JUDGE_SYSTEM,
+                prompt,
+                AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+              )))
   const finishCheck = judgeAsk
     ? new FinishCheck({
         ask: judgeAsk,
@@ -563,7 +568,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       return kind ? { DOOL2_SESSION: kind } : undefined
     },
     // Which model each kind of call uses (ADR 0037): requests on the agent's model, side jobs on its small model
-    modelFor: (agent, role) => modelForRole(agent, role, evalModel),
+    modelFor: (agent, role) => modelForRole(agent, role, chosenModel(agent)),
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
     onCache: (threadId, x) =>
       journal.write('cache', {
@@ -1006,8 +1011,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .slice(-4)
       .map((x) => withoutPhotoMark(x.text))
   }
-  // Review before auto-approve: a small Claude call with no tools and no Dool2 instructions. Only for chats that run on
-  // Claude (the user's own sign-in); other agents get a card for every request (fail closed)
+  // Review before auto-approve: a small call with no tools and no Dool2 instructions, on the agent of the chat that
+  // is working (the user's own sign-in or key) and its small model. No chat to compare with: none (fail closed)
   const reviewAsk =
     opts.autoReviewer !== undefined
       ? opts.autoReviewer || undefined
@@ -1015,26 +1020,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ? undefined
         : async (prompt: string, signal: AbortSignal) => {
             const threadId = workingThread()
-            const rt = runtimes.claude
-            if (!rt || !threadId || store.getThread(threadId)?.agent !== 'claude') return undefined
-            let text = ''
-            try {
-              for await (const ev of rt.runTurn({
-                text: prompt,
-                systemPrompt: REVIEW_SYSTEM,
-                mcpServers: [],
-                cwd: paths.workspace,
-                model: 'haiku',
-                signal,
-              })) {
-                if (ev.type === 'text') text += ev.delta
-                if (ev.type === 'done' && !text.trim() && ev.text) text = ev.text
-                if (ev.type === 'error' || ev.type === 'limit_reached') return undefined
-              }
-            } catch {
-              return undefined
-            }
-            return text
+            const agent = threadId ? store.getThread(threadId)?.agent : undefined
+            if (!agent) return undefined
+            return askSide(agent, 'review', REVIEW_SYSTEM, prompt, signal)
           }
   const autoReview = new AutoReview({
     ...(reviewAsk ? { ask: reviewAsk } : {}),
