@@ -22,8 +22,20 @@ export { JsonRpcClient } from './rpc.js'
 
 const toml = (v: unknown) => JSON.stringify(v)
 
-/** Arguments for `codex app-server`. A pure function, pinned by tests. */
-export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
+/**
+ * Settings that leave Codex's own context out of a side job (checked on 0.169.0 with `codex debug prompt-input`: the
+ * permission, environment, apps and collaboration-mode notes go; keys Codex does not know are warned about, so only
+ * known ones are here). The side job's instructions replace Codex's own (`baseInstructions` of `thread/start`)
+ */
+export const SIDE_JOB_CONFIG = [
+  'include_permissions_instructions=false',
+  'include_environment_context=false',
+  'include_apps_instructions=false',
+  'include_collaboration_mode_instructions=false',
+]
+
+/** Arguments for `codex app-server`. A pure function, pinned by tests. sideJob: a tool-less side job (no MCP servers) */
+export function buildCodexArgs(mcpServers: McpServerSpec[], o: { sideJob?: boolean } = {}): string[] {
   const args = [
     'app-server',
     // Turn off the shell command tool
@@ -36,6 +48,7 @@ export function buildCodexArgs(mcpServers: McpServerSpec[]): string[] {
     '-c',
     'approval_policy="never"',
   ]
+  if (o.sideJob) for (const c of SIDE_JOB_CONFIG) args.push('-c', c)
   for (const s of mcpServers) {
     const base = `mcp_servers.${s.name}`
     args.push('-c', `${base}.command=${toml(s.command)}`, '-c', `${base}.args=${toml(s.args)}`)
@@ -131,7 +144,8 @@ export class CodexRuntime implements AgentRuntime {
       return
     }
 
-    const child = spawn(path, buildCodexArgs(input.mcpServers), {
+    const sideJob = input.sideJob === true
+    const child = spawn(path, buildCodexArgs(sideJob ? [] : input.mcpServers, { sideJob }), {
       cwd: input.cwd,
       env: this.env(),
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -196,11 +210,16 @@ export class CodexRuntime implements AgentRuntime {
       })
       rpc.notify('initialized')
 
+      const model = input.model ? await knownModel(rpc, input.model) : undefined
       const threadParams = {
         cwd: input.cwd,
         approvalPolicy: 'never',
         sandbox: 'read-only',
-        developerInstructions: input.systemPrompt,
+        ...(model ? { model } : {}),
+        // A side job's instructions replace Codex's own, and its thread is not saved (nothing resumes it)
+        ...(sideJob
+          ? { baseInstructions: input.systemPrompt, ephemeral: true }
+          : { developerInstructions: input.systemPrompt }),
       }
       const started = input.resumeId
         ? await rpc.request<{ thread: { id: string } }>('thread/resume', {
@@ -209,12 +228,14 @@ export class CodexRuntime implements AgentRuntime {
           })
         : await rpc.request<{ thread: { id: string }; model?: string }>('thread/start', threadParams)
       const threadId = started.thread.id
-      mapper = new CodexEventMapper(threadId, this.lang())
+      mapper = new CodexEventMapper(threadId, this.lang(), { sideJob })
       yield { type: 'started', resumeId: threadId, tools: input.mcpServers.map((s) => `mcp__${s.name}__*`) }
 
       await rpc.request('turn/start', {
         threadId,
         input: [{ type: 'text', text: input.text, text_elements: [] }],
+        // A side job reads a few lines and answers one: the lightest thinking
+        ...(sideJob ? { effort: 'low' } : {}),
       })
 
       while (true) {
@@ -249,6 +270,24 @@ export class CodexRuntime implements AgentRuntime {
       await Promise.race([exited, new Promise((r) => setTimeout(r, 2000))])
       await Promise.race([pumping, new Promise((r) => setTimeout(r, 100))])
     }
+  }
+}
+
+/**
+ * The model if this Codex knows it (`model/list`), else undefined so the thread runs on Codex's default model. The
+ * profile table names models of the pinned version; a newer catalog without them must not make every call fail
+ */
+export async function knownModel(
+  rpc: Pick<JsonRpcClient, 'request'>,
+  model: string,
+): Promise<string | undefined> {
+  try {
+    const r = await rpc.request<{ data?: { id?: unknown; model?: unknown }[] }>('model/list', {
+      includeHidden: true,
+    })
+    return r.data?.some((m) => m.id === model || m.model === model) ? model : undefined
+  } catch {
+    return undefined
   }
 }
 

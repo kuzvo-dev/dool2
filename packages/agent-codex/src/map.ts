@@ -14,6 +14,9 @@ const UNSAFE_ITEMS = new Set([
   'imageGeneration',
 ])
 
+/** What a side job may produce: its answer and the program's own bookkeeping. Anything else is a tool and stops it */
+const SIDE_JOB_ITEMS = new Set(['agentMessage', 'reasoning', 'userMessage', 'contextCompaction'])
+
 export interface MapResult {
   events: AgentEvent[]
   /** Whether the turn is over */
@@ -29,10 +32,11 @@ export class CodexEventMapper {
   private contextTokens = 0
 
   private readonly t: CodexText
-  /** lang: language of the error messages people see */
+  /** lang: language of the error messages people see. sideJob: a tool-less side job, where any tool stops the turn */
   constructor(
     private readonly threadId: string,
     lang: Lang = 'ko',
+    private readonly o: { sideJob?: boolean } = {},
   ) {
     this.t = CODEX_TEXT[lang]
   }
@@ -72,7 +76,7 @@ export class CodexEventMapper {
 
   private onItem(item: unknown, phase: 'started' | 'completed'): MapResult {
     if (!isObj(item) || typeof item.type !== 'string') return { events: [] }
-    if (UNSAFE_ITEMS.has(item.type)) {
+    if (UNSAFE_ITEMS.has(item.type) || (this.o.sideJob && !SIDE_JOB_ITEMS.has(item.type))) {
       return {
         abort: true,
         events: [

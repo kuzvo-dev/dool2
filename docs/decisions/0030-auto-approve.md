@@ -63,9 +63,28 @@ layer goes in front of the auto decision.
 
 - Each auto-approved request costs one small AI call on the user's subscription and adds a few seconds before the
   tool answers. Requests that would have asked anyway (auto-approve off, payments) cost nothing.
-- Users on Codex or pay-as-you-go get a card for every request even with auto-approve on, until a tool-less call is
-  available for those runtimes.
+- Users on Codex or pay-as-you-go got a card for every request even with auto-approve on, until the review ran on
+  every agent (change of 2026-11-25 below).
 - A request that is a clear step of the user's task but is phrased far from their words can come as a card. That
   is the safe direction; the card says why.
 - The work log keeps one line per decision (`auto-approve`: kind, ok, `held`, review time) and the pause
   (`auto-approve-paused`), with no message content.
+
+## Change (2026-11-25): the review runs on every agent
+
+The review no longer needs the chat to run on Claude. It runs on the agent of the chat that is working, with the
+user's own sign-in or key, on that agent's small model (ADR 0037 role `review`), as a side job: a fresh program with
+no tools at all and no Dool2 instructions.
+
+- **Claude Code**: as before (`--tools ""`, no tool server, `haiku`).
+- **Codex**: `codex app-server` with no tool server, the review instructions in place of Codex's own
+  (`baseInstructions`), Codex's permission, environment, apps and collaboration notes left out, a thread that is not
+  saved (`ephemeral`), the lightest thinking, and the catalog's small model (`gpt-6-luna` in the pinned 0.169.0, or
+  Codex's default if the catalog does not list it). Any tool-like item in the answer (a Dool2 tool, a sub-agent, a
+  plan, an image) stops it, and a stopped review is an unchecked one.
+- **Pay-as-you-go (OpenCode)**: a session with every tool denied and no tool server, on the small model of the
+  provider the user picked when one is known (Anthropic and OpenAI keys); otherwise their chosen model. The call is
+  billed to their key like every other call.
+
+The facts sent are the same, and they go to the same AI provider that already runs the chat. Fail closed is
+unchanged: no working chat, an error, no answer in 25 seconds or an unreadable answer is a card on the phone.

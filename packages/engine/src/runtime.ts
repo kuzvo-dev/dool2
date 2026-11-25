@@ -26,11 +26,17 @@ export interface TurnInput {
   cwd: string
   /** Model to use (for Claude, an alias like sonnet, opus or haiku). Each agent's default when missing */
   model?: string
+  /**
+   * A side job (the before-finishing judge, the auto-approve reviewer): one short question with no tools at all.
+   * `systemPrompt` replaces the agent's own instructions where the agent allows it, nothing is kept to resume later,
+   * and the agent thinks as little as it can. `mcpServers` is empty. Anything tool-like stops the turn
+   */
+  sideJob?: boolean
   signal?: AbortSignal
 }
 
 /** What a resident session is opened with: everything of a turn except the message (fixed for the session's life) */
-export type SessionInput = Omit<TurnInput, 'text' | 'signal' | 'fork'>
+export type SessionInput = Omit<TurnInput, 'text' | 'signal' | 'fork' | 'sideJob'>
 
 /**
  * One agent program kept running for a conversation segment (ADR 0035). Messages go in one at a time; the program, its

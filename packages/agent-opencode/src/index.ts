@@ -92,7 +92,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       password,
       provider: account.provider,
       apiKey: account.apiKey,
-      config: buildOpenCodeConfig({ mcpServers: input.mcpServers, systemPrompt: input.systemPrompt }),
+      config: buildOpenCodeConfig({
+        mcpServers: input.mcpServers,
+        systemPrompt: input.systemPrompt,
+        ...(input.sideJob ? { sideJob: true } : {}),
+      }),
     })
     const child = spawn(bin, ['serve', '--stdio', '--hostname', '127.0.0.1', '--port', '0'], {
       cwd: input.cwd,
@@ -152,7 +156,8 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (!sessionId) {
         const created = await call<{ data: { id: string } }>('/api/session', {
           agent: DOOL2_AGENT,
-          model: { providerID: account.provider, id: account.model },
+          // A side job asks for the small model of the same provider (ADR 0037); otherwise the model the user picked
+          model: { providerID: account.provider, id: input.model ?? account.model },
         })
         sessionId = created.data.id
       }
