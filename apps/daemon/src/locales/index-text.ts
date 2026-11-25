@@ -28,6 +28,18 @@ export const indexText = messages({
     chatNotOpen: '대화를 아직 열지 못했어요',
     connectRequest: (name: string) => `${name} 연결해 줘`,
     alreadyLoggedIn: (name: string) => `${name}에 로그인돼 있어요.`,
+    checkingAccount: '어느 계정인지 확인하는 중',
+    otherAccountSignedIn: (name: string, who: string) =>
+      `Chrome에는 ${name}에 ${who} 계정으로 로그인돼 있어요. 이 계정으로 연결할까요?`,
+    otherAccountHint: '넣어 주신 아이디와 달라서 여쭤봐요',
+    useSignedInAccount: (who: string) => `${who} 계정으로 연결`,
+    notThisAccount: '아니요, 넣은 계정으로',
+    otherAccountStopped: (name: string, who: string) =>
+      `Chrome에는 ${name}에 다른 계정(${who})으로 로그인돼 있어서 연결하지 않았어요. 넣어 주신 계정으로 연결하려면 PC Chrome에서 ${name} 로그아웃한 뒤 다시 연결해 주세요.`,
+    accountNotInChrome: (name: string, who: string) =>
+      `PC Chrome에 ${who} 계정으로 ${name}에 로그인돼 있지 않아요. 그 계정으로 로그인한 뒤 다시 연결해 주세요.`,
+    accountNotInChromePick: (name: string, who: string) =>
+      `PC Chrome에 ${who} 계정이 로그인돼 있지 않아요. ${name} 연결 카드에서 계정 고르기를 눌러 그 계정을 고르거나 추가해 주세요.`,
     notLoggedInYet: (name: string) => `아직 ${name}에 로그인이 안 된 것 같아요.`,
     agentContinues: (message: string) => `${message} 두리가 화면을 보고 이어서 할게요.`,
     connectedResume: (name: string) => `${name} 연결됐어요. 이제 하던 일을 이어서 할게요.`,
@@ -195,6 +207,18 @@ export const indexText = messages({
     chatNotOpen: 'The conversation is not open yet',
     connectRequest: (name: string) => `Connect ${name}`,
     alreadyLoggedIn: (name: string) => `You are signed in to ${name}.`,
+    checkingAccount: 'Checking which account it is',
+    otherAccountSignedIn: (name: string, who: string) =>
+      `Chrome is signed in to ${name} as ${who}. Connect with this account?`,
+    otherAccountHint: 'It differs from the ID you entered, so I am asking',
+    useSignedInAccount: (who: string) => `Connect as ${who}`,
+    notThisAccount: 'No, the one I entered',
+    otherAccountStopped: (name: string, who: string) =>
+      `Chrome is signed in to ${name} with another account (${who}), so I did not connect it. To connect the account you entered, sign out of ${name} in Chrome on the PC and connect again.`,
+    accountNotInChrome: (name: string, who: string) =>
+      `Chrome on the PC is not signed in to ${name} as ${who}. Sign in with that account, then connect again.`,
+    accountNotInChromePick: (name: string, who: string) =>
+      `${who} is not signed in to Chrome on the PC. On the ${name} connect card, tap Pick an account to choose or add it.`,
     notLoggedInYet: (name: string) => `It looks like you are not signed in to ${name} yet.`,
     agentContinues: (message: string) => `${message} Doori will look at the screen and continue.`,
     connectedResume: (name: string) => `${name} is connected. Picking up where I left off.`,

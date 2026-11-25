@@ -970,6 +970,30 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     expect(auto).not.toContain('pw-123')
   })
 
+  it('never signs in to a Google account with a typed password: the person picks it on the card (ADR 0041)', async () => {
+    const { api, rt } = await boot()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"구글로 가입한 곳 연결해 줘"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
+    // Even with a Google account in the vault, no automatic password sign-in
+    await api('/api/vault', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://myaccount.google.com', username: 'duri', password: 'pw-123' }),
+    })
+    const r = (await (
+      await fetch(`${daemon?.url}/api/tools/life/connect_ask`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${toolToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ service: 'google' }),
+      })
+    ).json()) as { content: { text: string }[] }
+    const text = r.content[0]?.text ?? ''
+    expect(text).toContain('connect card is now in the chat')
+    expect(text).toContain('Pick an account')
+    expect(text).not.toContain('again with the account in the vault')
+  })
+
   it('연결돼 있다고 기억하는데 다시 로그인할 방법이 없으면 연결 표시를 풀어 진짜 연결 카드가 뜨게 한다', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State

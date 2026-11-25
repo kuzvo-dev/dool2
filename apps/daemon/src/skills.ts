@@ -30,6 +30,8 @@ export class Skills {
     private readonly accounts: () => Record<string, string[]> = () => ({}),
     /** The user's language (card text people read) and region (which services come first), ADR 0029 */
     private readonly locale: () => { lang: Lang; region?: Region } = () => ({ lang: 'ko', region: 'KR' }),
+    /** Service id -> the account read on its own page when connected (setting connectAccounts, ADR 0041) */
+    private readonly signedIn: () => Record<string, string> = () => ({}),
   ) {}
 
   private get dir(): string | undefined {
@@ -58,6 +60,7 @@ export class Skills {
     const connected = this.connected()
     const via = this.via()
     const accounts = this.accounts()
+    const signedIn = this.signedIn()
     const order = Object.keys(CONNECT_CATEGORIES)
     const { region } = this.locale()
     const out: ConnectionItem[] = []
@@ -68,11 +71,13 @@ export class Skills {
       const skill = c.status
       // A service that signs in with the same account (Naver Mail -> Naver) counts as connected when that account is connected
       const at = connected[n] ?? (card.sameLoginAs ? connected[card.sameLoginAs] : undefined)
+      const who = signedIn[n] ?? (card.sameLoginAs ? signedIn[card.sameLoginAs] : undefined)
       out.push({
         card,
         ...(skill ? { skill } : {}),
         ...(c.tools?.length ? { tools: c.tools } : {}),
         ...(at ? { connectedAt: at } : {}),
+        ...(at && who ? { signedInAs: maskAccount(who) } : {}),
         ...(via[n] ? { via: via[n] } : {}),
         ...(accounts[n]?.length ? { account: maskAccount(accounts[n].at(-1) as string) } : {}),
         local: servesRegion(card.regions, region),

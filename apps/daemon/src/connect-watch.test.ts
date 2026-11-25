@@ -206,3 +206,40 @@ describe('지켜보던 탭이 닫히면', () => {
     expect(watch.tabOf('shop')).toBeUndefined()
   })
 })
+
+describe('cards where the person picks the account (ADR 0041)', () => {
+  const pick = {
+    id: 'gmail',
+    account: {
+      url: 'https://mail.google.com/mail/u/{{account}}/',
+      pattern: '(?:Google 계정|Google Account): [^"(]*\\(([^)\\s]+@[^)\\s]+)\\)',
+      pick: 'https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmail.google.com%2Fmail%2F',
+    },
+  } as unknown as ConnectCard
+
+  it('counts only the account shown on the service page, not the chooser', async () => {
+    const pages = [
+      // The chooser lists every account and has no sign-in words to trust
+      {
+        url: 'https://accounts.google.com/v3/signin/accountchooser',
+        text: '계정 선택\n[e3 링크 "쿠즈보 a@gmail.com 로그아웃됨"]\n[e4 링크 "Google 계정: 쿠즈보 (a@gmail.com)"]',
+      },
+      {
+        url: 'https://mail.google.com/mail/u/1/#inbox',
+        text: '[e14 버튼 "Google 계정: 쿠즈보 (b@gmail.com)"]\n[e18 버튼 "편지쓰기"]',
+      },
+    ]
+    const seen: (string | undefined)[] = []
+    const watch = new LoginWatch(
+      {
+        snapshot: async () => pages.shift() ?? { url: 'about:blank', text: '' },
+        connected: () => false,
+        onSignedIn: (_card, who) => seen.push(who),
+      },
+      1,
+    )
+    watch.start(pick, 5)
+    await new Promise((r) => setTimeout(r, 40))
+    expect(seen).toEqual(['b@gmail.com'])
+  })
+})

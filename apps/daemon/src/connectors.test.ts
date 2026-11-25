@@ -586,6 +586,46 @@ describe('서비스 도구 실행기', () => {
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 
+  it('takes the connected mark off when a tool meets a sign-in screen (ADR 0041)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(CARD))
+    const tool = CONNECTOR.tools[0]
+    const login = {
+      ...CONNECTOR,
+      tools: [
+        {
+          ...tool,
+          login: true,
+          steps: [
+            tool.steps[0],
+            { stop_if: '로그인해 주세요', say: '데모맛집에 로그인해야 해요.', login: true },
+            ...tool.steps.slice(1),
+          ],
+        },
+      ],
+    }
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(login))
+    const browser = {
+      call: async (cmd: string) =>
+        cmd === 'find' ? { url: '', title: '', found: { hit: '로그인해 주세요' } } : { tabId: 7 },
+    }
+    const lost: string[] = []
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({ 'demo-eats': '2026-11-25T12:36:45.000Z' }),
+      pollMs: 1,
+      gapMs: 0,
+      loginLost: (card) => lost.push(card.id),
+    })
+    const r = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain('connected mark was taken off')
+    expect(lost).toEqual(['demo-eats'])
+  })
+
   it('막은 화면이 로봇 확인이면 막다른 길 대신 탭을 열어 두고 폰 카드로 풀어 다시 부르게 한다', async () => {
     const health = new ConnectorHealth()
     const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))

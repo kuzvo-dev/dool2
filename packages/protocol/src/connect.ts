@@ -55,6 +55,38 @@ export function needsPcChrome(card: { how: ConnectHow }): boolean {
   return card.how !== 'device'
 }
 
+/** Where a service shows the signed-in account (ADR 0041) */
+export const ConnectAccountSchema = z
+  .object({
+    /**
+     * Page that shows the signed-in account. {{account}} becomes the account being checked, for services that keep
+     * several accounts side by side (Gmail: /mail/u/{{account}}/ opens only that account's mailbox)
+     */
+    url: z.string().url().startsWith('https://'),
+    /**
+     * Pattern (regular expression) around the account in the page text; group 1 is the account as typed on the
+     * sign-in form (an email or an ID, masked is fine)
+     */
+    pattern: z
+      .string()
+      .min(4)
+      .max(200)
+      .refine((p) => {
+        try {
+          return new RegExp(p).source.includes('(')
+        } catch {
+          return false
+        }
+      }, 'A valid regular expression with a group around the account'),
+    /**
+     * Accounts live side by side in one browser (Google): instead of an ID and password, the person picks one of the
+     * accounts already signed in to Chrome, or adds one on the provider's own screen. Address of that screen
+     */
+    pick: z.string().url().startsWith('https://').optional(),
+  })
+  .strict()
+export type ConnectAccount = z.infer<typeof ConnectAccountSchema>
+
 /** One-tap sign-in providers */
 export const SocialProviderSchema = z.enum(['kakao', 'naver', 'google', 'apple', 'facebook', 'payco', 'toss'])
 export type SocialProvider = z.infer<typeof SocialProviderSchema>
@@ -150,6 +182,12 @@ export const ConnectCardSchema = z
      */
     signedIn: z.array(line(30)).min(1).max(5).optional(),
     /**
+     * Where the signed-in account shows (ADR 0041). A connection is a specific account, not "someone is signed in":
+     * after connecting, Dool2 reads the account here, and when Chrome was already signed in to another account it asks
+     * the person instead of quietly using that account
+     */
+    account: ConnectAccountSchema.optional(),
+    /**
      * 1-3 short tips for working with the general browser while the connector (tools.json) does not exist yet (search URL etc., ADR 0018).
      * Delete it once the connector exists
      */
@@ -243,6 +281,8 @@ export interface ConnectionItem {
    * Other services' connect cards show it on that provider button as "Kakao · f***@gmail.com", so you know which account it signs in with before pressing
    */
   account?: string
+  /** The account this connection is, as read on the service's own page (masked, "m***@gmail.com", ADR 0041) */
+  signedInAs?: string
   /** The service is for the user's region or works anywhere (ADR 0029). Others go under "Other regions" */
   local?: boolean
 }

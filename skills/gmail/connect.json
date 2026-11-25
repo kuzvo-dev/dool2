@@ -44,6 +44,11 @@
   "regions": [
     "global"
   ],
+  "account": {
+    "url": "https://mail.google.com/mail/u/{{account}}/",
+    "pattern": "(?:Google 계정|Google Account): [^\"(]*\\(([^)\\s]+@[^)\\s]+)\\)",
+    "pick": "https://accounts.google.com/AccountChooser?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2F"
+  },
   "i18n": {
     "en": {
       "name": "Gmail",

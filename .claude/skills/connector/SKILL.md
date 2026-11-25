@@ -23,6 +23,7 @@ export DOOL2_TEST_CHROME=".../Google Chrome for Testing"   # if you don't have i
 ## 1. Decide what to make into tools
 
 - The `abilities` (what it can do) in `skills/<id>/connect.json` is the starting point. If there is no card, make the card first (check with `pnpm connector check <id>`).
+- While signed in to the real site, also fill the card's `account` (where the signed-in account shows, [ADR 0041](../../../docs/decisions/0041-connection-is-an-account.md)): the page address and a pattern whose group 1 is the ID or email as typed on the sign-in form. Without it Dool2 cannot tell whether Chrome is signed in to the account the person connected or to someone else's. Copy the pattern from a real page read (`browser_read`), and do not guess.
 - A new card also needs `regions` (`KR`, or `global` for services that work anywhere) and `i18n.en` (English name, summary, example and abilities in the same order). See `skills/README.md`.
 - **One user intent = one tool.** Like "find open tables at a restaurant", "prepare a reservation", "view order history". One screen is not one tool.
 - Start with **`lookup` tools that work without login**. Users can use them right away even before connecting, and they are easy to test.

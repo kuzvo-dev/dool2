@@ -27,6 +27,11 @@
   "regions": [
     "global"
   ],
+  "account": {
+    "url": "https://myaccount.google.com/",
+    "pattern": "(?:Google 계정|Google Account): [^\"(]*\\(([^)\\s]+@[^)\\s]+)\\)",
+    "pick": "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmyaccount.google.com%2F"
+  },
   "i18n": {
     "en": {
       "name": "Google Account",
