@@ -181,6 +181,24 @@ const LIBRARY_LABEL: Record<LibraryItem['kind'], string> = {
   place: 'Place',
   file: 'File',
 }
+/**
+ * "Tomorrow morning" said after midnight usually means the coming morning: a reminder for "tomorrow 8 am" asked at
+ * 3 am was set a day late (test PC loop 11-26). Only a note to ask; the AI keeps what the user meant
+ */
+export function lateNightNote(first: Date | undefined, now: Date): string[] {
+  if (!first) return []
+  const kst = (d: Date) => new Date(d.getTime() + 9 * 3_600_000)
+  const n = kst(now)
+  const f = kst(first)
+  if (n.getUTCHours() >= 5) return []
+  const day = (d: Date) => d.toISOString().slice(0, 10)
+  const hm = (d: Date) => d.toISOString().slice(11, 16)
+  if (day(f) !== day(new Date(n.getTime() + 86_400_000)) || f.getUTCHours() >= 12) return []
+  return [
+    `It is ${hm(n)} now, after midnight. If the user said "tomorrow", they most likely meant the coming morning: today ${day(n)} ${hm(f)}, not ${day(f)}. Ask in one line with quick replies (today ${hm(f)} / ${day(f)} ${hm(f)}) and fix it with goal_update if needed.`,
+  ]
+}
+
 export class Life {
   /** Language of the text people read (feed titles); the daemon sets it from settings */
   lang: () => Lang = () => 'ko'
@@ -1016,6 +1034,7 @@ export class Life {
               `What was set: ${ruleSentence(r)}.`,
               ...(check?.note ? [check.note] : []),
               ...ruleGaps(r),
+              ...lateNightNote(first, this.now()),
               'Confirm with the user by telling them "What was set" as it is, in one sentence.',
               // Also give what exists now, so an old reminder from the chat is not trusted ("it already exists") and a requested task left out
               otherRoutines(this.routines(), r.id),

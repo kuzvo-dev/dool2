@@ -1034,3 +1034,17 @@ describe('quick checks (ADR 0031)', () => {
     expect(due).toEqual(['Tickets', 'Tickets'])
   })
 })
+
+describe('late-night "tomorrow" (test PC loop 11-26)', () => {
+  it('asks whether "tomorrow 8 am" said at 3 am meant this morning', async () => {
+    const { lateNightNote } = await import('./life.js')
+    const at3am = new Date('2026-11-25T18:08:00Z') // 03:08 KST on 11-26
+    expect(lateNightNote(new Date('2026-11-26T23:00:00Z'), at3am).join(' ')).toContain(
+      'today 2026-11-26 08:00',
+    )
+    // At 10 pm, tomorrow is tomorrow
+    expect(lateNightNote(new Date('2026-11-26T23:00:00Z'), new Date('2026-11-26T13:00:00Z'))).toEqual([])
+    // An evening time is not "the coming morning"
+    expect(lateNightNote(new Date('2026-11-27T11:00:00Z'), at3am)).toEqual([])
+  })
+})
