@@ -1,0 +1,161 @@
+{
+  "id": "weather",
+  "tools": [
+    {
+      "name": "forecast",
+      "title": "날씨",
+      "description": "날씨를 물으면 먼저 쓴다(브라우저로 날씨 사이트를 열지 않는다). 지역(시·구·동) 하나로 지금 기온·요약, 미세먼지·자외선, 오늘부터 열흘 예보(오전·오후 하늘과 비 올 확률, 최저·최고 기온)를 한 번에 돌려준다. 묻는 날의 줄만 골라 2~3문장으로 답하고 우산·옷차림 한마디를 붙인다. 지역을 안 말하면 기억된 동네나 서울로 본다. 시간대별(몇 시에 비)이 꼭 필요할 때만 브라우저로 더 본다.",
+      "tier": "lookup",
+      "status": "검증됨(2026-11-26, 서울·부산 해운대구·성수동·없는 지역)",
+      "input": {
+        "properties": {
+          "place": {
+            "type": "string",
+            "description": "지역 이름 (예: 서울, 부산 해운대구, 성수동)",
+            "maxLength": 30
+          }
+        },
+        "required": [
+          "place"
+        ]
+      },
+      "output": {
+        "area": {
+          "type": "string",
+          "description": "찾은 지역"
+        },
+        "now": {
+          "type": "string",
+          "description": "지금 기온"
+        },
+        "summary": {
+          "type": "string",
+          "description": "어제와 비교·지금 하늘"
+        },
+        "air": {
+          "type": "strings",
+          "description": "미세먼지·초미세먼지·자외선"
+        },
+        "days": {
+          "type": "list",
+          "description": "오늘부터 날짜별 예보",
+          "fields": {
+            "day": {
+              "type": "string",
+              "description": "오늘·내일·요일"
+            },
+            "date": {
+              "type": "string"
+            },
+            "sky": {
+              "type": "string",
+              "description": "오전·오후 비 올 확률과 하늘"
+            },
+            "low": {
+              "type": "string"
+            },
+            "high": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "place": "서울"
+        },
+        {
+          "place": "부산 해운대구"
+        }
+      ],
+      "steps": [
+        {
+          "open": "https://search.naver.com/search.naver?query={{place|url}}%20%EB%82%A0%EC%94%A8"
+        },
+        {
+          "wait": {
+            "text": "최저기온|검색결과가 없습니다",
+            "timeoutMs": 10000,
+            "soft": true
+          }
+        },
+        {
+          "require": "최저기온",
+          "say": "'{{place}}' 날씨를 찾지 못했어요. 시·구·동 이름으로 다시 찾아볼게요."
+        },
+        {
+          "extract": {
+            "items": ".weather_info",
+            "limit": 1,
+            "fields": {
+              "now": {
+                "css": ".temperature_text"
+              },
+              "summary": {
+                "css": ".summary"
+              },
+              "air": {
+                "css": ".today_chart_list .item_today",
+                "list": true
+              }
+            }
+          },
+          "as": "info"
+        },
+        {
+          "extract": {
+            "items": ".title_area h2, .select_box .btn_select",
+            "limit": 1,
+            "fields": {
+              "name": {}
+            }
+          },
+          "as": "where",
+          "min": 0
+        },
+        {
+          "extract": {
+            "items": ".week_item",
+            "limit": 10,
+            "fields": {
+              "day": {
+                "css": ".day"
+              },
+              "date": {
+                "css": ".date"
+              },
+              "sky": {
+                "css": ".cell_weather"
+              },
+              "low": {
+                "css": ".lowest"
+              },
+              "high": {
+                "css": ".highest"
+              }
+            }
+          },
+          "as": "days"
+        }
+      ],
+      "result": {
+        "area": "{{where.0.name}}",
+        "now": "{{info.0.now}}",
+        "summary": "{{info.0.summary}}",
+        "air": "{{info.0.air}}",
+        "days": "{{days}}"
+      },
+      "next": "묻는 날의 줄로 짧게 답해요. 비 올 확률이 40% 넘으면 우산, 일교차가 크면 겉옷을 한마디로 권해요.",
+      "minIntervalSec": 600,
+      "expect": {
+        "rows": 7,
+        "filled": [
+          "day",
+          "low",
+          "high"
+        ]
+      },
+      "cards": false
+    }
+  ]
+}
