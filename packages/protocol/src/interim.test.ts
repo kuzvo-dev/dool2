@@ -44,6 +44,36 @@ describe('one answer per request', () => {
     expect([...running.hidden].sort()).toEqual(['a1', 'n1', 'r1', 'w1'])
   })
 
+  it('replaces "looking it up now" with the result of the handed-over task (11-26: two replies for one stock price)', () => {
+    const task = '{"kind":"task","id":"t12","title":"x"}'
+    const { hidden, replaced } = interimAnswers([
+      msg('u1', 'user', '삼성전자 주가 지금 얼마야?'),
+      msg('a1', 'assistant'),
+      msg('n1', 'user', check),
+      msg('t1', 'tool', task),
+      msg('a2', 'assistant', '읽어 오고 있어요'),
+      msg('a3', 'assistant', '현재가는 166,900원이에요'),
+      msg('u2', 'user', '고마워'),
+      msg('t2', 'tool', task),
+      msg('a4', 'assistant', '찾아볼게요'),
+      msg('a5', 'assistant', '찾았어요'),
+    ])
+    expect([...hidden].sort()).toEqual(['a1', 'a2', 'a4', 'n1'])
+    expect(replaced.get('a3')).toEqual(['a1', 'n1', 'a2'])
+    expect(replaced.get('a5')).toEqual(['a4'])
+  })
+
+  it('keeps a hand-over reply when the person asks something new before the result', () => {
+    const { hidden } = interimAnswers([
+      msg('u1', 'user', 'x'),
+      msg('t1', 'tool', '{"kind":"task","id":"t1"}'),
+      msg('a1', 'assistant'),
+      msg('u2', 'user', 'y'),
+      msg('a2', 'assistant'),
+    ])
+    expect(hidden.size).toBe(0)
+  })
+
   it('also reads notes saved before the move to English', () => {
     const old = appNote('끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요. (끝내기 전 검사) 아직 남았어요')
     const { hidden } = interimAnswers([

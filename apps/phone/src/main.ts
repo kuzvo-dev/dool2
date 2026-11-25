@@ -3529,7 +3529,15 @@ function loginFor(rec: LoginRecordMessage) {
 function oldConnectCards(): Set<string> {
   const lastFor = new Map<string, string>()
   const out = new Set<string>()
+  // Quick replies the daemon added after the answer (what the check found left, as a button) carry the earlier ones
+  // too: only the last row under one answer is drawn
+  let lastQuick: string | undefined
   for (const m of st.conv) {
+    if (m.role !== 'tool') lastQuick = undefined
+    else if (m.text.includes('"kind":"quick"')) {
+      if (lastQuick) out.add(lastQuick)
+      lastQuick = m.id
+    }
     if (m.role !== 'tool' || !m.text.includes('"kind":"connect"')) continue
     try {
       const rec = JSON.parse(m.text) as ConnectRecordMessage

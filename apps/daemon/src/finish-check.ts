@@ -36,6 +36,8 @@ export interface Verdict {
   done: boolean
   why: string
   next?: string
+  /** Only when not done: the follow-up the person could tap, as they would say it ("find the menu and prices too") */
+  offer?: string
   /** Only when not done */
   kind?: SendBackKind
 }
@@ -119,6 +121,7 @@ export type CheckResult =
       kind: 'again'
       why: string
       next?: string
+      offer?: string
       cycles: number
       note: string
       because: SendBackKind
@@ -137,10 +140,11 @@ export const JUDGE_SYSTEM = [
   'If it ended with "please call", "do it in the app" or "check yourself" while Dool still has a way to try on the web, it is not done.',
   'If something the request asked for is missing (e.g. compare 3 places, up to booking, fill in the application), it is not done. If an approval card is shown and it is waiting, count it as done.',
   "Judge against what the user asked, not against perfection. A minor detail the user did not ask for (one price in a list of options, an extra source, the evening temperature in a weather answer, fine dust they never mentioned) that the answer honestly says it could not find is not a reason to send back; nor is suggesting a call for such a detail. Send back only when the core of the request is missing, wrong or unverified (test PC loop 11-26: four rounds and five minutes over one restaurant's price).",
+  'Every send-back makes the person read one more reply, so a sound first answer stands. When a newer value does not exist yet (the market is not open, today is not counted yet, the site shows nothing newer), the latest value with its time is the complete answer, not a missing part (test PC loop 11-26: a pre-market stock price sent back twice, four replies for one price).',
   'Facts from the daemon (approval requests, the last page read, tool failures) are records, not claims: trust them over the answer.',
   'The person sees "why" and "next" while Dool keeps working: write them in the language of the user request, in plain everyday words, without tool names. "next" says what Dool will do now, like "compare 2 more insurers".',
   `If not done, "kind" is one of: ${SEND_BACK_KINDS.join(', ')}.`,
-  'Answer with one line of JSON only: {"done": true|false, "why": "one sentence on what is left or why it is done", "next": "if not done, what Dool does next", "kind": "if not done"}',
+  'Answer with one line of JSON only: {"done": true|false, "why": "one sentence on what is left or why it is done", "next": "if not done, what Dool does next", "offer": "if not done, the follow-up the person could tap under the answer, as they would say it to Dool, in their language, under 25 characters", "kind": "if not done"}',
 ].join('\n')
 
 export function judgePrompt(i: {
@@ -229,12 +233,19 @@ export function parseVerdict(text: string | undefined): Verdict | undefined {
     if (typeof v.done !== 'boolean') return undefined
     const why = typeof v.why === 'string' ? v.why.trim().slice(0, 200) : ''
     const next = typeof v.next === 'string' && v.next.trim() ? v.next.trim().slice(0, 200) : undefined
+    const offer = typeof v.offer === 'string' && v.offer.trim() ? v.offer.trim().slice(0, 40) : undefined
     const kind = v.done
       ? undefined
       : SEND_BACK_KINDS.includes(v.kind as SendBackKind)
         ? (v.kind as SendBackKind)
         : 'other'
-    return { done: v.done, why, ...(next ? { next } : {}), ...(kind ? { kind } : {}) }
+    return {
+      done: v.done,
+      why,
+      ...(next ? { next } : {}),
+      ...(offer && !v.done ? { offer } : {}),
+      ...(kind ? { kind } : {}),
+    }
   } catch {
     return undefined
   }
@@ -392,6 +403,7 @@ export class FinishCheck {
       kind: 'again',
       why: v.why,
       ...(v.next ? { next: v.next } : {}),
+      ...(v.offer ? { offer: v.offer } : {}),
       cycles: s.cycles,
       note: againNote(v, this.opts.lang?.()),
       because,

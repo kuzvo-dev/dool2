@@ -83,6 +83,7 @@ import {
   type ThreadSummary,
   VaultEntryRequestSchema,
 } from '@dool2/protocol'
+import type { QuickRecordMessage } from '@dool2/protocol/blocks'
 import {
   type ConnectCard,
   connectUrl,
@@ -1785,6 +1786,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     unseenSaid.push(text)
   }
   /** Streams a saved message to the phone and PC screens right away */
+  /** One more quick reply under the latest answer: a new row that carries the answer's own replies too (drawn alone) */
+  const offerBelow = (threadId: string, offer: string) => {
+    const msgs = store.listMessages(threadId)
+    let had: string[] = []
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (!m || m.role !== 'tool') break
+      if (!m.text.includes('"kind":"quick"')) continue
+      try {
+        had = (JSON.parse(m.text) as QuickRecordMessage).replies
+      } catch {}
+      break
+    }
+    const replies = [offer, ...had.filter((x) => x.trim() !== offer.trim())].slice(0, 4)
+    const quick: QuickRecordMessage = { kind: 'quick', replies }
+    postSaved(threadId, store.addMessage(threadId, 'tool', JSON.stringify(quick)))
+  }
   const postSaved = (threadId: string, message: StoredMessage) => {
     const event = { type: 'saved' as const, message }
     void link.broadcast({ kind: 'stream', threadId, event })
@@ -2896,7 +2914,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // If a new request or stop came in while judging, do not send it back
         // (if a message the user sent while judging is queued, that message comes first)
         const spoke = queued.length > 0 && conversation.current()?.id === threadId
-        if (
+        // A question in the conversation gets one answer: what the judge found left becomes a button under it
+        // instead of another reply (11-26: 2–4 replies for one stock price, one box office, one place). Tasks still go
+        // round, and so does an answer the code check caught claiming an action that never happened
+        if (r?.kind === 'again' && r.source === 'judge' && !task && sessionOf(threadId) === 'conversation') {
+          finishCheck.drop(threadId)
+          if (r.offer) offerBelow(threadId, r.offer)
+          journal.write('finish-check', { result: 'offered', offer: Boolean(r.offer) })
+        } else if (
           r?.kind === 'again' &&
           finishCheck.current(threadId) === gen &&
           !threads.isRunning(threadId) &&
