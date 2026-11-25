@@ -814,6 +814,12 @@ async function receive(env: Envelope) {
     case 'connect-result': {
       st.connecting.delete(msg.id)
       st.connectLive.delete(msg.id)
+      // Not a failure: the ID and password are needed (Chrome is not signed in, or another account was chosen)
+      if (msg.reason === 'credentials') {
+        st.connectFails.delete(msg.id)
+        if (st.screen.name === 'app') openOverlay({ kind: 'connect', id: msg.id })
+        break
+      }
       const d = st.loginDraft
       if (d.id === `connect:${msg.id}`) {
         d.busy = false
@@ -4566,8 +4572,9 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
             // Google and the like: one tap opens the account chooser itself (no sheet in between, ADR 0041)
             text: c.account?.pick ? mdCred.pickAccount : mCards.connectDo,
             onclick: () => {
-              if (c.account?.pick) return startPick(c.id)
-              if (browser) return openOverlay({ kind: 'connect', id: c.id })
+              // Look first: the PC checks whether Chrome is already signed in (or which Google accounts it has) and
+              // this card asks; the ID and password card opens only when needed (ADR 0041)
+              if (browser) return startLook(c.id)
               st.tab = 'connect'
               st.connectDetail = c.id
               render()
@@ -6494,11 +6501,6 @@ interface CredTarget {
   signup?: () => void
   /** "I don't know my account, please find it" button (Dool2 recovers the ID or resets the password) */
   forgot?: () => void
-  /**
-   * The person picks an account already signed in to Chrome, or adds one on the provider's own screen (Google, ADR 0041).
-   * No ID or password: the sheet shows only this button
-   */
-  pick?: { text: string; note: string; onclick(): void }
 }
 
 /** ID and password sheet (sign-in card, connect a service). Values go only to the PC vault */
@@ -6565,21 +6567,14 @@ function credSheet(t: CredTarget) {
         h('strong', { class: 'title-2', text: mdCred.signInTitle(t.site) }),
         h('span', {
           class: 'meta',
-          text: (t.pick ? mdCred.pickWhere : mdCred.signInWhere)(t.host, st.saved?.pcName ?? mdCred.myPc),
+          text: mdCred.signInWhere(t.host, st.saved?.pcName ?? mdCred.myPc),
         }),
       ),
     ),
     ...(t.next ? [h('p', { class: 'cred-next' }, icon('idea'), mdCred.startAfter(t.next))] : []),
-    ...(t.pick ? pickBody(t.pick) : credBody(t, form, d.error)),
+    ...credBody(t, form, d.error),
   )
   return sheet
-}
-
-/** Pick an account (no ID or password fields): one button that opens the provider's account chooser on the PC */
-function pickBody(p: NonNullable<CredTarget['pick']>) {
-  const go = h('button', { class: 'btn lg', text: p.text, onclick: p.onclick })
-  go.type = 'button'
-  return [go, h('p', { class: 'lock-note' }, icon('lock'), p.note)]
 }
 
 /** ID and password (plus social sign-in buttons and the find-account / sign-up links) */
@@ -7155,14 +7150,15 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
 }
 
 /**
- * Pick an account (Google, ADR 0041): the PC reads the accounts signed in to its Chrome in the background and this
- * card asks which one, as buttons. No PC screen unless the account is not in Chrome yet
+ * Start connecting by looking first (ADR 0041): the PC checks in the background whether its Chrome is already signed
+ * in (Google: which accounts it has), and the connect card asks "this account, or another one?" as buttons. The ID
+ * and password card opens only when needed (connect-result with reason 'credentials')
  */
-function startPick(id: string) {
+function startLook(id: string) {
   st.overlay = undefined
   st.connecting.add(id)
   render()
-  void send({ kind: 'connect', id, action: 'pick' })
+  void send({ kind: 'connect', id, action: 'start' })
 }
 
 /** The sign-in screen on the PC, watched from the phone (opens it first if it is not open yet) */
@@ -7211,17 +7207,6 @@ function connectSheet(id: string) {
     })),
     stuck: st.connectFails.has(id),
     direct: { text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.directConnect, onclick: openScreen },
-    // Google and the like: pick one of the accounts signed in to the PC's Chrome (or add one) on Google's own screen,
-    // so no password goes through Dool2 and the connection is the account picked (ADR 0041)
-    ...(it.card.account?.pick
-      ? {
-          pick: {
-            text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.pickAccount,
-            note: mdCred.pickNote(st.saved?.pcName ?? mdCred.myPc),
-            onclick: () => (st.connectTabs.has(id) ? openScreen() : startPick(id)),
-          },
-        }
-      : {}),
     // If the user doesn't know the ID or password, Dool2 recovers it: the sign-in card is withdrawn and the request goes to the chat (only identity-check codes use a phone card)
     forgot: () => {
       void send({ kind: 'forgot', site: it.card.site ?? it.card.id })

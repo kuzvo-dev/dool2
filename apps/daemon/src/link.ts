@@ -162,7 +162,7 @@ export interface LinkHost {
   continueConversation(): void
   connect(
     id: string,
-    action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' | 'pick',
+    action: 'open' | 'mark' | 'unmark' | 'chat' | 'verify' | 'start',
   ): Promise<{ tabId?: number }>
   /** Side conversations: create and delete */
   sideNew(): Promise<Extract<PcToPhone, { kind: 'thread' }>>
@@ -526,7 +526,7 @@ export class PhoneLink {
           action !== 'unmark' &&
           action !== 'chat' &&
           action !== 'verify' &&
-          action !== 'pick'
+          action !== 'start'
         )
           return
         try {
@@ -534,7 +534,7 @@ export class PhoneLink {
           if (action === 'open' && r.tabId !== undefined)
             return this.send(phone, { kind: 'connect-opened', id: String(msg.id), tabId: r.tabId })
           // Messages and cards left in the chat already went out through the stream
-          if (action === 'chat' || action === 'verify' || action === 'pick') return
+          if (action === 'chat' || action === 'verify' || action === 'start') return
           return this.send(phone, { kind: 'connections', services: await this.host.connections() })
         } catch (e) {
           return this.send(phone, { kind: 'error', message: (e as Error).message })

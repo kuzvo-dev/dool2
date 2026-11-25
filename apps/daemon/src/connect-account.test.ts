@@ -9,7 +9,6 @@ import {
   chooserAccounts,
   readAccount,
   sameSignIn,
-  useAnotherRef,
 } from './connect-account.js'
 
 const skill = async (id: string): Promise<ConnectCard> =>
@@ -131,7 +130,6 @@ describe("Google's account chooser (picked on the phone)", () => {
       { ref: 'e11', email: 'work@company.com', signedOut: false },
       { ref: 'e12', email: 'old@gmail.com', signedOut: true },
     ])
-    expect(useAnotherRef(chooser)).toBe('e13')
   })
 
   it('does not take the "switch account" line of a confirm page for an account', () => {

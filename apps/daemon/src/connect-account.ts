@@ -6,7 +6,7 @@
 import type { ConnectCard } from '@dool2/protocol/connect'
 import { sameAccount } from './auto-login.js'
 import { ACCOUNT_SWITCH } from './region/kr/auto-login.js'
-import { ROW, SIGNED_OUT, USE_ANOTHER } from './region/kr/connect-account-ui.js'
+import { ROW, SIGNED_OUT } from './region/kr/connect-account-ui.js'
 
 type Card = Pick<ConnectCard, 'id' | 'site' | 'account'>
 
@@ -136,10 +136,4 @@ export function chooserAccounts(text: string): ChooserAccount[] {
     out.push({ ref: m[1] as string, email, signedOut: SIGNED_OUT.test(name) })
   }
   return out
-}
-
-/** The chooser's "Use another account" row (to add an account that is not in Chrome yet) */
-export function useAnotherRef(text: string): string | undefined {
-  for (const m of text.matchAll(ROW)) if (USE_ANOTHER.test(m[2] ?? '')) return m[1]
-  return undefined
 }
