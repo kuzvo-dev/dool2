@@ -586,6 +586,60 @@ describe('서비스 도구 실행기', () => {
     expect(health.summary()).toMatchObject({ demo_eats_search: { last: 'blocked' } })
   })
 
+  it('stops instead of reading another account when the page falls back to it (account_check, ADR 0041)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    const card = {
+      ...CARD,
+      account: { url: 'https://eats.example/my?authuser={{account}}', pattern: '계정: ([^\\s"]+@[^\\s"]+)' },
+    }
+    await writeFile(join(dir, 'demo-eats', 'connect.json'), JSON.stringify(card))
+    const tool = CONNECTOR.tools[0]
+    const checked = {
+      ...CONNECTOR,
+      tools: [
+        {
+          ...tool,
+          login: true,
+          steps: [
+            { open: 'https://eats.example/search?authuser={{account|url}}&q={{keyword|url}}' },
+            { account_check: '연결한 계정이 아니라서 열지 않았어요.' },
+            ...tool.steps.slice(1),
+          ],
+        },
+      ],
+    }
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(checked))
+    let shown = 'other@eats.example'
+    const browser = {
+      call: async (cmd: string) =>
+        cmd === 'snapshot'
+          ? { url: 'https://eats.example/search', text: `[e1 버튼 "계정: ${shown}"]` }
+          : cmd === 'find'
+            ? { url: '', title: '', found: {} }
+            : { tabId: 7, items: [] },
+    }
+    const lost: string[] = []
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({ 'demo-eats': '2026-11-25T12:36:45.000Z' }),
+      pollMs: 1,
+      gapMs: 0,
+      accountFor: async () => 'me@eats.example',
+      loginLost: (c) => lost.push(c.id),
+    })
+    const other = await connectors.call('demo_eats_search', { keyword: '성수' })
+    expect(other.isError).toBe(true)
+    expect(textOf(other)).toContain('another account than the connected one')
+    expect(lost).toEqual(['demo-eats'])
+    // The connected account itself: the tool goes on
+    shown = 'me@eats.example'
+    const same = await connectors.call('demo_eats_search', { keyword: '한남' })
+    expect(textOf(same)).not.toContain('another account')
+  })
+
   it('takes the connected mark off when a tool meets a sign-in screen (ADR 0041)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
     await mkdir(join(dir, 'demo-eats'))

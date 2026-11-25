@@ -73,7 +73,7 @@
       ],
       "steps": [
         {
-          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/{{query|url}}"
+          "open": "https://mail.google.com/mail/?authuser={{account|url}}#search/{{query|url}}"
         },
         {
           "wait": {
@@ -81,6 +81,9 @@
             "timeoutMs": 15000,
             "soft": true
           }
+        },
+        {
+          "account_check": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아서 메일함을 열지 않았어요. 지메일 연결 카드에서 계정을 다시 골라 주세요. Chrome에 로그인된 다른 Google 계정의 메일함은 보지 않아요."
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
@@ -140,7 +143,7 @@
               "snippet": "snippet",
               "date": "date",
               "unread": "unread",
-              "link": "https://mail.google.com/mail/u/{{account|url}}/#all/{{tid}}"
+              "link": "https://mail.google.com/mail/?authuser={{account|url}}#all/{{tid}}"
             },
             "limit": "{{limit}}"
           },
@@ -180,10 +183,13 @@
       ],
       "steps": [
         {
-          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/category%3Apromotions%20newer_than%3A90d"
+          "open": "https://mail.google.com/mail/?authuser={{account|url}}#search/category%3Apromotions%20newer_than%3A90d"
         },
         {
           "sleep": 2500
+        },
+        {
+          "account_check": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아서 메일함을 열지 않았어요. 지메일 연결 카드에서 계정을 다시 골라 주세요. Chrome에 로그인된 다른 Google 계정의 메일함은 보지 않아요."
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",
@@ -229,10 +235,13 @@
       ],
       "steps": [
         {
-          "open": "https://mail.google.com/mail/u/{{account|url}}/#search/from%3A{{sender|url}}"
+          "open": "https://mail.google.com/mail/?authuser={{account|url}}#search/from%3A{{sender|url}}"
         },
         {
           "sleep": 2500
+        },
+        {
+          "account_check": "연결한 Gmail 계정이 지금 Chrome에 로그인돼 있지 않아서 메일함을 열지 않았어요. 지메일 연결 카드에서 계정을 다시 골라 주세요. Chrome에 로그인된 다른 Google 계정의 메일함은 보지 않아요."
         },
         {
           "stop_if": "Temporary Error \\(404\\)|일시적인 오류|account is temporarily unavailable",

@@ -52,8 +52,8 @@ describe('which account a connection is', () => {
 
   it("fills the account into the page address, or the browser's first account", async () => {
     const gmail = await skill('gmail')
-    expect(accountPage(gmail, 'a@gmail.com')).toBe('https://mail.google.com/mail/u/a%40gmail.com/')
-    expect(accountPage(gmail)).toBe('https://mail.google.com/mail/u/0/')
+    expect(accountPage(gmail, 'a@gmail.com')).toBe('https://mail.google.com/mail/?authuser=a%40gmail.com')
+    expect(accountPage(gmail)).toBe('https://mail.google.com/mail/?authuser=0')
   })
 
   it("reads the account only on the service's own site", async () => {
@@ -99,7 +99,18 @@ describe('which account a connection is', () => {
     const gmail = await skill('gmail')
     const b = browserShowing(notInChrome)
     expect(await readAccount(b, gmail, 'c@gmail.com', { wait: 0 })).toEqual({ state: 'none' })
-    expect(b.calls[0]).toEqual(['open', { url: 'https://mail.google.com/mail/u/c%40gmail.com/' }])
+    expect(b.calls[0]).toEqual(['open', { url: 'https://mail.google.com/mail/?authuser=c%40gmail.com' }])
+  })
+
+  it('takes the first account shown for an authuser= address as "the asked one is missing" (Gmail falls back)', async () => {
+    // Measured 2026-11-25: /mail/?authuser=<an account not in Chrome> opens the first account's inbox without a word
+    expect(
+      await readAccount(browserShowing(inbox('m@gmail.com')), await skill('gmail'), 'k@gmail.com', {
+        wait: 0,
+      }),
+    ).toEqual({
+      state: 'none',
+    })
   })
 
   it('reads whoever is signed in when nothing was typed, and stays unsure without a card spec', async () => {
