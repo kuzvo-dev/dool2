@@ -21,7 +21,7 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Find PC files',
       description:
-        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first. Read one with file_read.',
+        'Finds files by name in the Desktop, Documents, Downloads, Pictures and Movies folders of the user\'s PC (most recently changed first, or biggest first with sort: size). Use it first whenever files come up ("the contract I got yesterday", "the Excel settlement file", "the video I shot yesterday"). Separate several words with commas. Narrow photos and videos with folder: pictures or movies, and if the name is unknown, leave query empty to see recent files first. Read one with file_read.',
       inputSchema: {
         query: z
           .string()
@@ -30,6 +30,12 @@ export function registerFileTools(server: McpServer, client: BrowserClient) {
             'Words in the file name, written the way files are named (usually the user\'s language, e.g. the Korean word for "contract"); separate several with commas ("settlement,November"). Empty = recent files',
           ),
         folder: folder.optional(),
+        sort: z
+          .enum(['recent', 'size'])
+          .optional()
+          .describe(
+            'recent = most recently changed first (default); size = biggest first ("what takes up space")',
+          ),
         limit: z
           .number()
           .int()

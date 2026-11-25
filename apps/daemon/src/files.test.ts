@@ -30,6 +30,17 @@ describe('PC 파일 도구', () => {
     expect(text(r)).toContain('보증금 1억 원')
   })
 
+  it('lists the biggest files first with sort: size', async () => {
+    const { home, tools } = setup()
+    writeFileSync(join(home, 'Downloads', 'small.txt'), 'x')
+    writeFileSync(join(home, 'Downloads', 'big.zip'), 'x'.repeat(5000))
+    writeFileSync(join(home, 'Downloads', 'mid.pdf'), 'x'.repeat(2000))
+    const f = text(await tools.run('file_find', { query: '', folder: 'downloads', sort: 'size' }))
+    expect(f).toContain('biggest first')
+    expect(f.indexOf('big.zip')).toBeLessThan(f.indexOf('mid.pdf'))
+    expect(f.indexOf('mid.pdf')).toBeLessThan(f.indexOf('small.txt'))
+  })
+
   it('사용자 폴더 밖·민감한 파일·바로가기로 나가는 경로는 읽지 않는다', async () => {
     const { home, tools } = setup()
     writeFileSync(join(home, 'Secret', 'a.txt'), '비밀')
