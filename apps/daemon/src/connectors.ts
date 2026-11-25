@@ -573,14 +573,19 @@ export class Connectors {
       if (!words.some(named)) continue
       // The tool whose own words match the rest of the request best (a service's first tool may be another job)
       const rest = words.filter((w) => !named(w))
+      const fit = (t: ConnectorTool) => {
+        const own = `${t.title} ${t.description}`.toLowerCase()
+        return rest.filter((w) => own.includes(w)).length
+      }
+      // A task that matches one of the service's actions (prepare an order, book) better is not a lookup: an order
+      // task was pointed to the shop's search tool (test PC loop 11-26)
+      const action = Math.max(0, ...connector.tools.filter((t) => t.tier !== 'lookup').map(fit))
       const ranked = connector.tools
         .filter((t) => t.tier === 'lookup' && this.live(card, t) && (!t.login || this.isConnected(card)))
-        .map((t) => {
-          const own = `${t.title} ${t.description}`.toLowerCase()
-          return { t, n: rest.filter((w) => own.includes(w)).length }
-        })
+        .map((t) => ({ t, n: fit(t) }))
         .sort((a, b) => b.n - a.n)
       const best = ranked[0]
+      if (best && action > best.n) continue
       // Only the service named is not enough when it has several jobs: one of its tools must match the rest
       if (best && (ranked.length === 1 || best.n > 0))
         return { tool: connectorToolName(card.id, best.t.name), card, title: best.t.title }
