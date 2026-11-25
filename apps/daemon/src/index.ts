@@ -1419,14 +1419,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     credentials: ConnectResult,
   ): Promise<ConnectResult> => {
     connectStep(card.id)(m().checkingSignedIn(card.name))
-    let who: string | undefined
-    if (card.account) {
-      const read = await readAccount(browser, card).catch(() => ({ state: 'unknown' }) as const)
-      if (read.state === 'match') who = read.who
-    }
-    const signedIn =
-      Boolean(who) ||
-      (card.site ? (await checkSignedIn(browser, card).catch(() => undefined))?.state === 'in' : false)
+    // Both looks at once (each opens its own background page): the account page names who is signed in, the
+    // first page says whether anyone is. One after the other took 10–20 s on the test PC (11-26)
+    const [read, check] = await Promise.all([
+      card.account ? readAccount(browser, card).catch(() => undefined) : undefined,
+      card.site ? checkSignedIn(browser, card).catch(() => undefined) : undefined,
+    ])
+    const who = read?.state === 'match' ? read.who : undefined
+    const signedIn = Boolean(who) || check?.state === 'in'
     journal.write('connect-look', { id: card.id, signedIn, account: Boolean(who) })
     if (!signedIn) return credentials
     const shown = who ? maskAccount(who) : undefined
