@@ -16,7 +16,7 @@ describe('문자 보내기 (내 폰 번호로)', () => {
     const { approvals, sms } = setup()
     const r = sms.request({ to: '엄마', text: '10분 늦어요' })
     expect(r.isError).toBeFalsy()
-    expect(text(r)).toContain('end this answer')
+    expect(text(r)).toContain('⏸ Waiting for the person.')
     const rec = approvals.list().find((a) => a.url === 'sms:엄마')
     expect(rec).toMatchObject({ kind: 'contact', label: '엄마', what: '10분 늦어요', status: 'pending' })
     // 폰은 보낸 뒤 결과를 승인 서명보다 먼저 보낸다

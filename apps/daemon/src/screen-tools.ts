@@ -8,9 +8,11 @@
 // - Send, pay and delete buttons, and Enter in messengers, are pressed by the daemon itself after approval (the same
 //   approval gate as the browser)
 // - Password field values are never read or typed
+
 import type { Lang } from '@dool2/i18n'
 import type { ApprovalRecord, Approvals } from './approvals.js'
 import { classifyRisk, parseRefs, type RiskKind, type ToolResult } from './browser-tools.js'
+import { handBack } from './hand-back.js'
 import type { HandsCaller } from './hands.js'
 import { KakaoChat } from './kakao.js'
 import { screenCopy } from './locales/screen.js'
@@ -176,7 +178,13 @@ export class ScreenTools {
         })
         this.enterWindow.set(rec.id, window)
         return text(
-          `The message is typed in the "${window}" chat and waits for approval (${rec.id.slice(0, 8)}). Tell the user in one sentence what will be sent to whom, and end this reply. Once approved, Dool2 presses send in that chat only.`,
+          handBack({
+            done: `the message is typed in the "${window}" chat and an approval card (${rec.id.slice(0, 8)}) is on the phone`,
+            left: 'approve sending it',
+            who: 'person',
+            after: 'once approved, Dool2 presses send in that chat only and the next message reports it',
+            tell: 'what will be sent to whom',
+          }),
         )
       },
       selfFinal: () => this.settings.finalStep() === 'self',
@@ -209,7 +217,7 @@ export class ScreenTools {
       return err(
         blocked
           ? `${bundleId} is blocked by default (terminal, settings, file manager). The user has to turn it on in Dool2 settings themselves. Find another way, or ask the user to do it themselves.`
-          : `The user hasn't approved Dool2 controlling this app (${bundleId}) yet. Request approval with screen_request_app and end this reply.`,
+          : `The user hasn't approved Dool2 controlling this app (${bundleId}) yet. Left: the person allows it. Next: call screen_request_app (its result ends the turn and says what to tell the user).`,
       )
     }
     return bundleId
@@ -254,10 +262,22 @@ export class ScreenTools {
     if (p === 'unavailable') return err(UNAVAILABLE)
     if (p === 'locked')
       return err(
-        "The PC screen is locked, so apps can't be controlled. Ask the user to unlock the PC and end this reply.",
+        handBack({
+          done: 'nothing: the PC screen is locked, so apps cannot be controlled',
+          left: 'unlock the PC',
+          who: 'person',
+          after: 'when the user says it is unlocked, try again',
+          tell: 'to unlock the PC',
+        }),
       )
     return err(
-      `The Mac ${p === 'accessibility' ? '"Accessibility"' : '"Screen Recording"'} permission is off. Ask the user to press [Turn on permission] in Dool2 settings → PC app control, and end this reply.`,
+      handBack({
+        done: `nothing: the Mac ${p === 'accessibility' ? '"Accessibility"' : '"Screen Recording"'} permission is off`,
+        left: 'press [Turn on permission] in Dool2 settings → PC app control',
+        who: 'person',
+        after: 'when the user says it is on, try again',
+        tell: 'to turn the permission on in Dool2 settings',
+      }),
     )
   }
 
@@ -453,7 +473,13 @@ export class ScreenTools {
           ...(typeof a.why === 'string' ? { cancel: this.m.purpose(a.why.slice(0, 200)) } : {}),
         })
         return text(
-          `Requested approval (${rec.id.slice(0, 8)}). Ask the user in one sentence whether Dool2 may control ${name}, and end this reply. If they approve, the next message will say so.`,
+          handBack({
+            done: `an approval card (${rec.id.slice(0, 8)}) asking to control ${name} is on the phone`,
+            left: `allow Dool2 to control ${name}`,
+            who: 'person',
+            after: 'if they allow it, the next message says so; then carry on in that app',
+            tell: `whether Dool2 may control ${name}`,
+          }),
         )
       }
       case 'request_approval': {
@@ -467,7 +493,13 @@ export class ScreenTools {
         if (!risk) return err('This button can be pressed without approval. Use screen_click.')
         if (this.settings.finalStep() === 'self')
           return err(
-            'The user chose "always press the last button myself". Do not show an approval card. Sum up in one or two sentences what is ready right up to the last button (what, where, how much), tell the user it is ready, and end this reply. Do not tell the user to go to another app.',
+            handBack({
+              done: 'everything up to the last button (the user chose "always press the last button myself", so no approval card is shown)',
+              left: 'press the last button in the app',
+              who: 'person',
+              after: 'nothing more for Dool2 on this step',
+              tell: 'what is ready right up to the last button (what, where, how much); do not tell them to go to another app',
+            }),
           )
         const shot = await this.hands
           .call('screenshot', { bundleId: id, maxWidth: 1000 }, 30_000)
@@ -488,7 +520,13 @@ export class ScreenTools {
           ...(shot ? { shot } : {}),
         })
         return text(
-          `Requested approval (${rec.id.slice(0, 8)}). Tell the user in one or two sentences what you are asking them to approve, and end this reply here. If they approve, Dool2 does only that one thing and the next message reports the result.`,
+          handBack({
+            done: `an approval card (${rec.id.slice(0, 8)}) with a screenshot is on the phone`,
+            left: 'approve this one action',
+            who: 'person',
+            after: 'once approved, Dool2 does only that one thing and the next message reports the result',
+            tell: 'what you are asking them to approve',
+          }),
         )
       }
     }
@@ -503,7 +541,7 @@ export class ScreenTools {
           ? 'sends something to another person'
           : "can't be undone"
     return err(
-      `"${label}" ${what} (${reason}), so it is never done without approval. Sum up what you want to do, request approval with screen_request_approval(ref: "${ref}"), and end this reply.`,
+      `"${label}" ${what} (${reason}), so it is never done without approval. Left: the person approves it. Next: call screen_request_approval(ref: "${ref}") with what you want to do (its result ends the turn).`,
     )
   }
 

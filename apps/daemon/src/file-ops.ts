@@ -15,6 +15,7 @@ import type { Lang } from '@dool2/i18n'
 import type { Approvals } from './approvals.js'
 import { download } from './download.js'
 import { cleanName, freeName } from './file-names.js'
+import { handBack } from './hand-back.js'
 import { filesCopy } from './locales/files.js'
 import { POWER_LABEL, POWER_OFF_TEXT, type PowerAction, powerCheck, powerDo } from './pc-power.js'
 import { pdfText } from './pdf.js'
@@ -277,7 +278,7 @@ export class FileOps {
           .join('\n') +
         (plan.length > 40 ? `\n… and ${plan.length - 40} more` : '') +
         skipNote +
-        '\nTell the user in one or two sentences what moves where, and end this reply here. Once approved, Dool2 moves only what is on this list and reports the result in the next message.',
+        `\n${handBack({ done: 'an approval card with this list is on the phone', left: 'approve the move', who: 'person', after: 'once approved, Dool2 moves only what is on this list and the next message reports the result', tell: 'what moves where and that the card is waiting' })}`,
     )
   }
 
@@ -657,7 +658,14 @@ export class FileOps {
     })
     return ok(
       `Approval requested (${rec.id.slice(0, 8)}). "${name}", ${copies} copy(ies) on ${printer.name}${sheetsNote}. ` +
-        'Tell the user in one sentence what prints and how many copies, and end this reply here. Once approved, Dool2 sends only that file to the printer and reports the result in the next message.',
+        handBack({
+          done: 'an approval card for this print is on the phone',
+          left: 'approve the print',
+          who: 'person',
+          after:
+            'once approved, Dool2 sends only that file to the printer and the next message reports the result',
+          tell: 'what prints and how many copies',
+        }),
     )
   }
 
@@ -819,7 +827,7 @@ export class FileOps {
     this.pending.set(rec.id, { kind: 'trash', items: plan })
     return ok(
       `Approval requested (${rec.id.slice(0, 8)}). ${plan.length} to restore:\n${lines.map((l) => `- ${l}`).join('\n')}${skipNote}` +
-        '\nTell the user in one or two sentences what is restored where, and end this reply here. Once approved, Dool2 restores only what is on this list and reports the result in the next message.',
+        `\n${handBack({ done: 'an approval card with this list is on the phone', left: 'approve the restore', who: 'person', after: 'once approved, Dool2 restores only what is on this list and the next message reports the result', tell: 'what is restored where' })}`,
     )
   }
 
@@ -909,7 +917,7 @@ export class FileOps {
     })
     this.pending.set(rec.id, { kind: 'download', url, ...(name ? { name } : {}) })
     return ok(
-      `Approval requested (${rec.id.slice(0, 8)}). "${r.name}" from ${r.host}${size}. Tell the user in one sentence what is downloaded from where, and end this reply here. Once approved, Dool2 downloads it to the Downloads folder and reports the result in the next message.`,
+      `Approval requested (${rec.id.slice(0, 8)}). "${r.name}" from ${r.host}${size}. ${handBack({ done: 'an approval card for this download is on the phone', left: 'approve the download', who: 'person', after: 'once approved, Dool2 downloads it to the Downloads folder and the next message reports the result', tell: 'what is downloaded from where' })}`,
     )
   }
 
@@ -973,7 +981,7 @@ export class FileOps {
     })
     this.pending.set(rec.id, { kind: 'power', action })
     return ok(
-      `Approval requested (${rec.id.slice(0, 8)}). Ask the user in one sentence to approve "${label}", and end this reply here. Once approved, Dool2 does it right away.` +
+      `Approval requested (${rec.id.slice(0, 8)}). ${handBack({ done: `an approval card for "${label}" is on the phone`, left: 'approve it', who: 'person', after: 'once approved, Dool2 does it right away', tell: `to approve "${label}" on the phone` })}` +
         (check.note ? ` (${check.note})` : ''),
     )
   }

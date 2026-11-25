@@ -1,5 +1,6 @@
 // dool2d — the Doori core. The PC app window (Electron) starts it, and on a Doori box it runs on its own.
 // M0: takes chats through a local API (127.0.0.1 + token), runs Claude Code and Codex, and keeps a record.
+
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -112,6 +113,7 @@ import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
+import { handBack } from './hand-back.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
@@ -3449,10 +3451,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const t = await openTask(caller, spec)
       if (t.status === 'working')
         return toolText(
-          `Task ${t.id} ("${spec.title}") started. The user follows it on its card in the conversation, and its result will appear in this conversation by itself. Say in one short sentence that you are on it, and end your answer.`,
+          handBack({
+            done: `task ${t.id} ("${spec.title}") started`,
+            left: 'the task itself; the user follows it on its card in the conversation',
+            who: 'dool2',
+            after:
+              'its result appears in this conversation by itself; messages meanwhile can steer it (task_steer) or stop it',
+            tell: 'that you are on it',
+          }),
         )
       return toolText(
-        `Task ${t.id} ("${spec.title}") is in line for the browser (${tasks.ahead(t)} ahead) and starts by itself when the browser is free. Tell the user in one short sentence that it starts after the one running now, and end your answer.`,
+        handBack({
+          done: `task ${t.id} ("${spec.title}") is in line for the browser (${tasks.ahead(t)} ahead)`,
+          left: 'the task; it starts by itself when the browser is free',
+          who: 'dool2',
+          after: 'its result appears in this conversation by itself',
+          tell: 'that it starts after the one running now',
+        }),
       )
     }
     const t = tasks.get(String(args.id ?? ''))
@@ -4053,7 +4068,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ? 'the account in the vault'
             : `the ${SOCIAL_PROVIDERS[provider as SocialProvider].label} quick sign-in used before`
           return text(
-            `Doori is signing in to ${card.name} again with ${how}. When it finishes, a chat note will tell you to continue. Tell the user in one sentence, like "I am signing in to ${card.name} again and will continue", and end your reply.`,
+            handBack({
+              done: `Dool2 is signing in to ${card.name} again with ${how}`,
+              left: 'the sign-in',
+              who: 'dool2',
+              after: 'when it finishes, a chat note tells you to continue',
+              tell: `that you are signing in to ${card.name} again and will continue`,
+            }),
           )
         }
         // If the service was just connected (within 10 minutes), do not show a card again (measured: the connection had just finished and the AI that took over showed the card again)
@@ -4079,9 +4100,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           })
           .catch(() => {})
         return text(
-          card.how === 'browser'
-            ? `A ${card.name} connect card is now in the chat. When the user enters the ID and password on the card, Doori signs in and the result arrives as a chat note. Do not ask for the password: explain in one sentence, then wait.`
-            : `A ${card.name} connect card is now in the chat. Tapping the card opens the Connect screen. Explain in one sentence, then wait.`,
+          handBack({
+            done: `a ${card.name} connect card is now in the chat`,
+            left:
+              card.how === 'browser'
+                ? 'enter the ID and password on the card (never in chat; do not ask for the password)'
+                : 'tap the card and connect on the Connect screen',
+            who: 'person',
+            after:
+              card.how === 'browser'
+                ? 'Dool2 signs in and the result arrives as a chat note; then carry on with the task'
+                : 'a chat note comes when it is connected; then carry on with the task',
+            tell: `that the ${card.name} connect card is in the chat and what to do on it`,
+          }),
         )
       }
       // View my info: masked values only (name H*D, birth date 1990-**-**). The AI sees it before asking about the target conditions

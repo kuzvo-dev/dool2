@@ -3,8 +3,10 @@
 // other app opens). A contact name is looked up in the phone's own contacts, so the number never reaches the PC or
 // the AI. The phone reports the result (sms-result) before its signed approval (decide), and the PC records the
 // result only once the signature checks out.
+
 import type { Approvals } from './approvals.js'
 import type { ToolResult } from './browser-tools.js'
+import { handBack } from './hand-back.js'
 import { PHONE_SMS_TEXT } from './locales/phone-sms.js'
 
 /** Tab slot for text approvals (screen control uses -1, PC files -2) */
@@ -74,7 +76,13 @@ export class PhoneSms {
     })
     return text(
       `The text approval card is on the phone (${rec.id.slice(0, 8)}). The phone finds the number in its contacts and shows it on the card; if several people match, the user picks one. ` +
-        'Tell the user in one sentence to check the recipient and the text on the phone and approve, then end this answer. Once approved, the phone sends it and the result follows.',
+        handBack({
+          done: 'the text is on an approval card on the phone',
+          left: 'check the recipient and the text, and approve',
+          who: 'person',
+          after: 'once approved, the phone sends it and the result follows in the next message',
+          tell: 'to check the recipient and the text on the phone and approve',
+        }),
     )
   }
 

@@ -30,6 +30,7 @@ import {
 import { APPROVAL_TTL_MS, type ApprovalRecord, Approvals, MONEY_APPROVAL_TTL_MS } from './approvals.js'
 import type { UploadFile } from './files.js'
 import { donePage } from './finish-check.js'
+import { handBack } from './hand-back.js'
 import { scrubUrl } from './journal.js'
 import { browserText } from './locales/browser.js'
 import { LoginRequests } from './logins.js'
@@ -1388,7 +1389,7 @@ export class BrowserTools {
         const entry = (await this.vault?.findForOrigin(origin)) ?? (await this.siteLogin?.(tabId, origin))
         if (!entry)
           throw new Error(
-            `This site (${origin}) is not in the Dool2 vault. Show the user a login card with browser_request_login and end this reply.`,
+            `This site (${origin}) is not in the Dool2 vault. Left: the person enters the ID and password on a login card. Next: call browser_request_login (its result ends the turn and says what to tell the user).`,
           )
         // The extension checks the URL again too (if it moved to another page meanwhile, nothing is filled)
         if (userRef) await this.browser.call('fill', { tabId, ref: userRef, value: entry.username, origin })
@@ -1427,7 +1428,7 @@ export class BrowserTools {
           if (risk && !this.inProvider(tabId, d.url) && !this.useSeries(d.url, risk.kind, false))
             throw new Error(
               this.finalStep() === 'self'
-                ? `${GATE_STOP}: ${risk.reason} — this is ${RISK_TEXT[risk.kind]}, so Dool2 does not press [OK]. The user chose "press the final button myself". Sum up what is prepared so far (what, where, how much), tell the user, and end this reply.`
+                ? `${GATE_STOP}: ${risk.reason} — this is ${RISK_TEXT[risk.kind]}, so Dool2 does not press [OK]. ${pressItYourself('[OK] in the confirm dialog')}`
                 : `${GATE_STOP}: ${risk.reason} — this is ${RISK_TEXT[risk.kind]}. Show an approval card with browser_request_approval(dialog: true, what, where, how much). Once approved, Dool2 presses [OK].`,
             )
         }
@@ -1677,7 +1678,7 @@ export class BrowserTools {
         const lines = [
           done.length ? `Filled from my info: ${done.join(', ')}.` : '',
           askedSecret
-            ? `The resident number back digits are not in my info, so they are being collected once with the phone secure keypad (field "${askedSecret}", saved to the vault when received). Tell the user in one sentence "Enter your resident number back digits on the card on your phone" and end this reply. A notification comes when it goes in.`
+            ? `The resident number back digits are not in my info, so they are being collected once with the phone secure keypad (field "${askedSecret}", saved to the vault when received). ${handBack({ done: 'a secure keypad card for the resident number back digits is on the phone', left: 'enter them on that card', who: 'person', after: 'a notification comes when they go in; then carry on with the form', tell: 'to enter the resident number back digits on the card on the phone' })}`
             : '',
           cut.length
             ? `Some fields got cut — ${cut.join('; ')}. Sent like this, a different number or date goes out. Fill again in the format that field takes: a mobile field with the prefix (010) chosen separately takes phone_rest (last 8 digits), three mobile fields take phone_head, phone_mid, phone_last, a 6-digit birth date takes birth6, digits-only fields take phone_digits or birth_digits.`
@@ -1693,7 +1694,7 @@ export class BrowserTools {
               ? 'If there is a field to choose the mobile carrier, do not ask in chat; get it with browser_request_profile(fields: ["carrier"]) (once entered, Dool2 chooses it from then on).'
               : '',
           missing.size
-            ? `My info has no ${[...missing].map((f) => PROFILE_FIELDS[f].label).join('·')}. Do not ask the user; show the my-info card with browser_request_profile, then end the reply.`
+            ? `My info has no ${[...missing].map((f) => PROFILE_FIELDS[f].label).join('·')}. Do not ask the user in chat. Left: the person fills them on a my-info card. Next: call browser_request_profile with those fields and with where you already looked (its result ends the turn).`
             : '',
         ].filter(Boolean)
         return this.read(tabId, undefined, lines.join(' '))
@@ -1929,10 +1930,7 @@ export class BrowserTools {
             throw new Error(
               'Two digits point at the same spot. Look at the image again and point at a different button for each of 0~9.',
             )
-          if (!this.requestPin)
-            throw new Error(
-              'The phone keypad card cannot be shown right now (no phone connection). Tell the user in one line to check the Dool2 app connection on the phone, and end this reply.',
-            )
+          if (!this.requestPin) throw new Error(noPhone('keypad'))
           let host = ''
           try {
             host = new URL(page.url).hostname
@@ -1952,7 +1950,13 @@ export class BrowserTools {
             content: [
               {
                 type: 'text',
-                text: `Showed a secure keypad card on the phone (${len} digits). Tell the user in one sentence, like "enter your PIN on the keypad on your phone", and end this reply. Once entered, the daemon presses the on-screen keypad and tells you in the next message.`,
+                text: handBack({
+                  done: `a secure keypad card (${len} digits) is on the phone`,
+                  left: 'enter the PIN on that keypad',
+                  who: 'person',
+                  after: 'once entered, Dool2 presses the on-screen keypad and tells you in the next message',
+                  tell: 'to enter the PIN on the keypad on the phone',
+                }),
               },
             ],
           }
@@ -2002,10 +2006,7 @@ export class BrowserTools {
             throw new Error(
               'The same button is mapped to two digits. Look at the cropped images again and map 0~9 to different buttons.',
             )
-          if (!this.requestPin)
-            throw new Error(
-              'The phone keypad card cannot be shown right now (no phone connection). Tell the user in one line to check the Dool2 app connection on the phone, and end this reply.',
-            )
+          if (!this.requestPin) throw new Error(noPhone('keypad'))
           let host = ''
           try {
             host = new URL(page.url).hostname
@@ -2024,15 +2025,19 @@ export class BrowserTools {
             content: [
               {
                 type: 'text',
-                text: `Showed a ${len}-digit secure keypad card on the phone. Tell the user in one sentence, like "enter your payment PIN on the keypad on your phone", and end this reply. Once entered, Dool2 presses the mapped buttons in order and tells you. Then read the screen and carry on, and when the order complete screen and order number show, finish with browser_order_done.`,
+                text: handBack({
+                  done: `a ${len}-digit secure keypad card is on the phone`,
+                  left: 'enter the payment PIN on that keypad',
+                  who: 'person',
+                  after:
+                    'once entered, Dool2 presses the mapped buttons in order and tells you; read the screen and carry on, and when the order complete screen and order number show, finish with browser_order_done',
+                  tell: 'to enter the payment PIN on the keypad on the phone',
+                }),
               },
             ],
           }
         }
-        if (!this.requestCode)
-          throw new Error(
-            'The phone verification code card cannot be shown right now (no phone connection). Tell the user in one line to check the Dool2 app connection on the phone, and end this reply.',
-          )
+        if (!this.requestCode) throw new Error(noPhone('verification code'))
         const target = page.refs.get(ref)
         if (!target || !([ROLE.input, ROLE.searchBox] as string[]).includes(target.role))
           throw new Error(
@@ -2101,7 +2106,14 @@ export class BrowserTools {
           content: [
             {
               type: 'text',
-              text: 'Showed a verification code card on the phone. Tell the user in one sentence, like "enter the code you received on the card", and end this reply. When the code goes into the field, you are told in the next message. Then press [OK] and carry on.',
+              text: handBack({
+                done: 'a verification code card is on the phone',
+                left: 'enter the code they received on that card',
+                who: 'person',
+                after:
+                  'when the code goes into the field you are told in the next message; then press [OK] and carry on',
+                tell: 'to enter the code they received on the card',
+              }),
             },
           ],
         }
@@ -2148,7 +2160,16 @@ export class BrowserTools {
           content: [
             {
               type: 'text',
-              text: 'Showed an image card on the phone. Tell the user in one sentence, like "tap the right spot in the image on the phone card", and end this reply. Once tapped, Dool2 taps the same spot on the PC screen and tells you in the next message. Then read the screen again and press [OK] or [Submit] to carry on.',
+              text:
+                'Showed an image card on the phone. ' +
+                handBack({
+                  done: 'the image card is on the phone',
+                  left: 'tap the right spot in the image',
+                  who: 'person',
+                  after:
+                    'once tapped, Dool2 taps the same spot on the PC screen and tells you in the next message; read the screen again and press [OK] or [Submit] to carry on',
+                  tell: 'to tap the right spot in the image on the phone card',
+                }),
             },
           ],
         }
@@ -2225,8 +2246,15 @@ export class BrowserTools {
             {
               type: 'text',
               text:
-                `Showed a login card (${r.id.slice(0, 8)}). Tell the user in one or two sentences to enter their ${site} ID and password on the card, and end this reply. ` +
-                'Entered values are stored only in the Dool2 vault and never come to you. You are told in the next message once saved. Then read the page again, fill with browser_login and press the login button.',
+                `Showed a login card (${r.id.slice(0, 8)}). ` +
+                handBack({
+                  done: 'the login card is on the phone',
+                  left: `enter the ${site} ID and password on it (stored only in the Dool2 vault, never given to you)`,
+                  who: 'person',
+                  after:
+                    'you are told in the next message once saved; read the page again, fill with browser_login and press the login button',
+                  tell: `to enter their ${site} ID and password on the card`,
+                }),
             },
           ],
         }
@@ -2317,7 +2345,7 @@ export class BrowserTools {
           'Judge from the screen below yourself: if it says verification is done or shows the next step, carry on; if there is a button to go on (verification done, confirm verification, OK, next — scroll down with browser_scroll if not visible), press it' +
           `${others.length ? `. The verification window may be another tab (tab ${others.join(', ')}) — look with browser_read` : ''}. ` +
           'Only if the screen says verification is not done yet, call browser_wait_auth again to ask the user again (the card shows again). Before carrying on, write one line like "Verification is done. Now I\'ll do ○○" (it shows on the progress card right away).'
-        const handBack = (main: Snapshot, why: string) => {
+        const backFrom = (main: Snapshot, why: string) => {
           waiting?.cancel()
           this.pages.set(tabId, pageInfo(main.url, main.text))
           return this.read(tabId, undefined, `${why}. ${judge}`)
@@ -2332,7 +2360,7 @@ export class BrowserTools {
             const c = await changed()
             if (c) {
               this.onNote?.('wait-auth', { by: 'screen', why: c.why, url: c.main.url.replace(/[?#].*$/, '') })
-              return handBack(c.main, `The screen changed while waiting for verification (${c.why})`)
+              return backFrom(c.main, `The screen changed while waiting for verification (${c.why})`)
             }
             if (!pressedByUser) continue
             // The user said they approved. If the AI pointed at a button (ref), press only that once, then hand the screen to the AI
@@ -2349,7 +2377,7 @@ export class BrowserTools {
             this.onNote?.('wait-auth', { by: 'user', pressed })
             const main = (await snap(tabId)) ?? first.get(tabId)
             if (!main) break
-            return handBack(
+            return backFrom(
               main,
               `The user approved in the authenticator app and pressed [I've verified].${pressed ? ` Dool2 pressed the pointed-at [${pressed}] once.` : ''}`,
             )
@@ -2360,7 +2388,13 @@ export class BrowserTools {
             content: [
               {
                 type: 'text',
-                text: 'No approval was confirmed for 3 minutes, so waiting stopped (the verification request expires soon too). Do not request again; answer the user briefly, like "Verification timed out, so I stopped. To try again, say \'do it again\'", and end this reply.',
+                text: handBack({
+                  done: 'waited 3 minutes; no approval was confirmed, so waiting stopped (the verification request expires soon too)',
+                  left: 'say "do it again" to try again (do not request again yourself)',
+                  who: 'person',
+                  after: 'if they ask, start the verification again',
+                  tell: 'that the verification timed out, and how to try again',
+                }),
               },
             ],
           }
@@ -2428,9 +2462,14 @@ export class BrowserTools {
           content: [
             {
               type: 'text',
-              text:
-                'Showed a card on the phone with only the fields needed from this screen. Tell the user in one or two sentences what to enter, like "enter just the ○○ field on the card on your phone" (do not tell them to look at the PC screen or the Dool2 tab), and end this reply here. ' +
-                'When the user finishes (the screen changes or [done]), the Dool2 daemon notices and a notification tells you to carry on in the next message. Then read the page again to check and carry on. Do not ask the user to "tell me when done".',
+              text: handBack({
+                done: 'a card with only the fields needed from this screen is on the phone',
+                left: 'enter those fields on the card',
+                who: 'person',
+                after:
+                  'when they finish (the screen changes or [done]) Dool2 notices and the next message tells you to carry on; read the page again to check. Do not ask them to "tell me when done"',
+                tell: 'what to enter on the card on the phone (not to look at the PC screen or the Dool2 tab)',
+              }),
             },
           ],
         }
@@ -2806,9 +2845,7 @@ export class BrowserTools {
         ? { kind: 'contact' as const, reason: m.reasonConsent(target.name) }
         : { kind: 'irreversible' as const, reason: m.reasonAiAsked })
     if (this.finalStep() === 'self')
-      throw new Error(
-        'The user chose "press the final button myself", so Dool2 does not press this button. Sum up what is prepared so far (what, where, how much, cancellation terms), tell the user, and end this reply.',
-      )
+      throw new Error(pressItYourself('the final button (say the cancellation terms too)'))
     // Saved cards and installment months in the checkout dropdowns go on the approval card as lines below (default is what was chosen on screen)
     const subs = page.checkout ? await this.subChoices(tabId, page) : []
     // One tab has one final button to press: if an approval is waiting on the same tab, it is replaced by the new one
@@ -2922,8 +2959,15 @@ export class BrowserTools {
         {
           type: 'text',
           text:
-            `Asked for approval (${rec.id.slice(0, 8)}). Tell the user in one or two sentences what to approve, and end this reply here. ` +
-            'When the user approves, Dool2 presses that button itself and tells you the result in the next message. Then read the page again to check.',
+            `Asked for approval (${rec.id.slice(0, 8)}). ` +
+            handBack({
+              done: 'the approval card is on the phone',
+              left: 'approve it',
+              who: 'person',
+              after:
+                'when approved, Dool2 presses that button itself and the next message has the result; read the page again to check',
+              tell: 'what to approve',
+            }),
         },
       ],
     }
@@ -2956,7 +3000,13 @@ export class BrowserTools {
     }
     if (this.finalStep() === 'self')
       throw new Error(
-        'The user chose "press the final button myself", so Dool2 does not upload their files to sites. Sum up which files to upload where, tell the user, and end this reply.',
+        handBack({
+          done: 'nothing uploaded (the user chose "press the final button myself", so Dool2 does not upload their files to sites)',
+          left: 'upload the files themselves',
+          who: 'person',
+          after: 'nothing more for Dool2 on this step',
+          tell: 'which files to upload where',
+        }),
       )
     const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
       | { data?: string }
@@ -2986,8 +3036,15 @@ export class BrowserTools {
         {
           type: 'text',
           text:
-            `Asked for approval (${rec.id.slice(0, 8)}). Ask the user in one or two sentences whether ${names.join(', ')} may be uploaded to ${host}, and end this reply here. ` +
-            'Once approved, Dool2 puts them in that file field itself and tells you the result in the next message. Then read the page again to see whether the files went up, and carry on.',
+            `Asked for approval (${rec.id.slice(0, 8)}). ` +
+            handBack({
+              done: 'the approval card is on the phone',
+              left: `approve uploading ${names.join(', ')} to ${host}`,
+              who: 'person',
+              after:
+                'once approved, Dool2 puts them in that file field and the next message has the result; read the page again to see whether they went up, and carry on',
+              tell: `whether ${names.join(', ')} may be uploaded to ${host}`,
+            }),
         },
       ],
     }
@@ -3058,10 +3115,7 @@ export class BrowserTools {
       kind: 'irreversible' as const,
       reason: m.reasonAiDialog,
     }
-    if (this.finalStep() === 'self')
-      throw new Error(
-        'The user chose "press the final button myself", so Dool2 does not press this confirm dialog. Sum up what is prepared so far (what, where, how much), tell the user, and end this reply.',
-      )
+    if (this.finalStep() === 'self') throw new Error(pressItYourself('[OK] in the confirm dialog'))
     const rec = this.approvals.create({
       tabId,
       ref: 'dialog',
@@ -3082,8 +3136,15 @@ export class BrowserTools {
         {
           type: 'text',
           text:
-            `Asked for approval (${rec.id.slice(0, 8)}). Tell the user in one or two sentences what to approve, and end this reply here. ` +
-            'When the user approves, Dool2 presses [OK] in the confirm dialog itself and tells you the result in the next message. Then read the page again to check.',
+            `Asked for approval (${rec.id.slice(0, 8)}). ` +
+            handBack({
+              done: 'the approval card is on the phone',
+              left: 'approve it',
+              who: 'person',
+              after:
+                'when approved, Dool2 presses [OK] in the confirm dialog and the next message has the result; read the page again to check',
+              tell: 'what to approve',
+            }),
         },
       ],
     }
@@ -3510,7 +3571,7 @@ export class BrowserTools {
   private gateText(ref: string, name: string, risk: Risk | undefined, declared: boolean): string {
     const what = `[${ref} "${name}"]`
     if (this.finalStep() === 'self')
-      return `${GATE_STOP}: ${what} is ${risk ? RISK_TEXT[risk.kind] : 'the final button'}, so Dool2 does not press it. The user chose "press the final button myself". Sum up what is prepared so far (what, where, how much), tell the user, and end this reply.`
+      return `${GATE_STOP}: ${what} is ${risk ? RISK_TEXT[risk.kind] : 'the final button'}, so Dool2 does not press it. ${pressItYourself(what)}`
     if (!risk)
       return `${GATE_STOP}: you said ${what} is the final button (final). Raise this ref with browser_checkout for a payment, or browser_request_approval for sending or deleting, to show an approval card.`
     if (risk.kind === 'money')
@@ -4261,6 +4322,28 @@ export function changeLines(d: {
     `(Only what ${since ? `differs from ${since}` : 'changed since the last read'}: ${d.changed} new or changed lines of ${d.lines}; the rest is as it was. browser_read shows the whole page.)`,
     d.text,
   ]
+}
+
+/** The user chose "press the final button myself": everything up to it is done, and the turn waits for them */
+function pressItYourself(button: string): string {
+  return handBack({
+    done: 'everything up to the last step (the user chose "press the final button myself", so Dool2 does not press it)',
+    left: `press ${button} themselves`,
+    who: 'person',
+    after: 'nothing more for Dool2 on this step',
+    tell: 'what is prepared so far (what, where, how much) and that the last press is theirs',
+  })
+}
+
+/** No phone connection: a phone card cannot be shown */
+function noPhone(card: string): string {
+  return handBack({
+    done: `nothing: the phone ${card} card cannot be shown right now (no phone connection)`,
+    left: 'check the Dool2 app connection on the phone',
+    who: 'person',
+    after: 'when the phone is connected again, call this again',
+    tell: 'to check the Dool2 app connection on the phone',
+  })
 }
 
 /** Two addresses on the same site (host without www.) */
