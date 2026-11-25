@@ -1465,32 +1465,32 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       await close()
       return credentials
     }
-    // Signed in before with an account that is still in Chrome: use it again without asking
+    // Always ask, even when one was connected before (the person may want another one: "add a Google account" got the
+    // old one silently, measured 2026-11-25). The one connected before comes first
     const known = connectAccounts()[card.id] ?? connectAccounts().google
-    let chosen = known ? accounts.find((a) => !a.signedOut && sameSignIn(known, a.email)) : undefined
-    if (!chosen) {
-      const label = (a: (typeof accounts)[number]) => (a.signedOut ? m().signedOutAccount(a.email) : a.email)
-      const answer = await loginAsk(card)
-        .info?.({
-          field: 'choice',
-          label: m().whichGoogleAccount(card.name),
-          hint: m().whichGoogleAccountHint,
-          host: 'accounts.google.com',
-          options: [...accounts.map(label).slice(0, 4), m().addGoogleAccount],
-        })
-        .catch(() => undefined)
-      if (!answer) {
-        await close()
-        return { ok: false, reason: 'unknown', message: m().pickNotAnswered(card.name) }
-      }
-      const hit = accounts.find((a) => label(a) === answer.trim())
-      // A new account, or one Chrome signed out of: the ID and password card
-      if (!hit || hit.signedOut) {
-        await close()
-        return credentials
-      }
-      chosen = hit
+    if (known)
+      accounts.sort((a, b) => Number(sameSignIn(known, b.email)) - Number(sameSignIn(known, a.email)))
+    const label = (a: (typeof accounts)[number]) => (a.signedOut ? m().signedOutAccount(a.email) : a.email)
+    const answer = await loginAsk(card)
+      .info?.({
+        field: 'choice',
+        label: m().whichGoogleAccount(card.name),
+        hint: m().whichGoogleAccountHint,
+        host: 'accounts.google.com',
+        options: [...accounts.map(label).slice(0, 4), m().addGoogleAccount],
+      })
+      .catch(() => undefined)
+    if (!answer) {
+      await close()
+      return { ok: false, reason: 'unknown', message: m().pickNotAnswered(card.name) }
     }
+    const hit = accounts.find((a) => label(a) === answer.trim())
+    // A new account, or one Chrome signed out of: the ID and password card
+    if (!hit || hit.signedOut) {
+      await close()
+      return credentials
+    }
+    const chosen = hit
     // Press that account's row: Google goes on to the service as that account, whose page shows the full address
     // (the chooser may show it masked). Without a row (Google skipped the chooser), the tab is already there
     step(m().checkingAccount)
@@ -1507,6 +1507,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     journal.write('connect-account-read', { id: card.id, state: who ? 'seen' : 'none', via: 'pick' })
     // The page did not show the picked account (Google asked for its password again): sign in with ID and password
     if (!who || !sameSignIn(chosen.email, who)) return credentials
+    // Open it the way the tools will (authuser=): what matters is that the tools reach this account's page
+    const check = await readAccount(browser, card, who).catch(() => ({ state: 'unknown' }) as const)
+    journal.write('connect-account-read', { id: card.id, state: check.state, via: 'tools-address' })
+    if (check.state === 'none' || check.state === 'other')
+      return {
+        ok: false,
+        reason: 'other-account',
+        message: m().accountNotInChromePick(card.name, maskAccount(who)),
+      }
     rememberAccount(card.id, who)
     connectMark(card.id, true)
     return { ok: true, message: m().connectedAs(card.name, maskAccount(who)) }

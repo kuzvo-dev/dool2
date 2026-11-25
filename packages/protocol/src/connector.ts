@@ -243,6 +243,12 @@ export const StepSchema = z.union([
       ...If,
     })
     .strict(),
+  /**
+   * The page must be the connected account's (ADR 0041). Services that fall back to the browser's first account
+   * without a word (Gmail and Calendar with authuser=) are checked here: when the page shows another account, stop
+   * with this message as a sign-in stop, so nobody else's mailbox is read
+   */
+  z.object({ account_check: Text(300), ...If }).strict(),
   /** The last step of a pay or contact tool: asks the user to approve pressing this button (Dool2 presses it only after approval) */
   z
     .object({
@@ -279,6 +285,7 @@ export const STEP_KINDS = [
   'filter',
   'stop_if',
   'require',
+  'account_check',
   'approve',
   'handoff_to_agent',
 ] as const
@@ -646,6 +653,7 @@ export function checkConnector(
         useAll(s.require, where)
         useAll(s.say, where)
       }
+      if ('account_check' in s) useAll(s.account_check, where)
       if ('capture' in s) {
         useAll(s.capture.url, where)
         try {

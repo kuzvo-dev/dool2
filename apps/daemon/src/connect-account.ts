@@ -18,7 +18,7 @@ export interface AccountBrowser {
  * What the account page showed:
  * - match: the account asked for (or, when nothing was asked for, whoever is signed in: `who`)
  * - other: another account is signed in (`who`)
- * - none: the account asked for is not signed in to Chrome (its own address shows no account)
+ * - none: the account asked for is not signed in to Chrome (its own address shows no account, or falls back to another)
  * - unknown: the page showed no account we could read (page changed, not signed in, or no `account` on the card)
  */
 export type AccountRead =
@@ -106,7 +106,9 @@ export async function readAccount(
     }
     if (!who) return expected && perAccount(card) ? { state: 'none' } : { state: 'unknown' }
     if (!expected || sameSignIn(expected, who)) return { state: 'match', who }
-    return { state: 'other', who }
+    // An address that names the account (authuser=) falls back to the browser's first account when that account is
+    // not in the browser (measured 2026-11-25), so another account there means the asked one is missing
+    return perAccount(card) ? { state: 'none' } : { state: 'other', who }
   } finally {
     await browser.call('close', { tabId: opened.tabId }).catch(() => undefined)
   }

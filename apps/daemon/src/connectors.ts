@@ -38,6 +38,7 @@ import {
   type RiskKind,
   type ToolResult,
 } from './browser-tools.js'
+import { accountIn, sameSignIn } from './connect-account.js'
 import type { ConnectorHealth, Outcome } from './connector-health.js'
 import type { Journal } from './journal.js'
 import {
@@ -896,6 +897,7 @@ export class Connectors {
           read,
           need,
           captcha: (t) => this.captchaStop(card, tool, t),
+          checkAccount: (tab) => this.checkAccount(card, String(scope.account ?? ''), tab),
           loginLost: () => {
             // Do not reuse this tab: it still shows the sign-in or error page, and the next open may only change the
             // part after # (Gmail's /mail/u/<account>/#search/…), which does not reload it. The next call read the old
@@ -1135,6 +1137,27 @@ export class Connectors {
     )
   }
 
+  /**
+   * Whether the page is the connected account's: reads the account the page shows (the card's `account` pattern) for a
+   * few seconds. unknown when the card has no pattern, no account is connected, or none shows yet
+   */
+  private async checkAccount(
+    card: ConnectCard,
+    want: string,
+    tabId: number,
+  ): Promise<'same' | 'other' | 'unknown'> {
+    if (!card.account || !want || want === '0') return 'unknown'
+    for (let i = 0; i < 5; i++) {
+      const page = (await this.opts.browser
+        .call('snapshot', { tabId, maxChars: 30_000 }, 20_000)
+        .catch(() => undefined)) as { url: string; text: string } | undefined
+      const who = page ? accountIn(card, page) : undefined
+      if (who) return sameSignIn(want, who) ? 'same' : 'other'
+      await new Promise((r) => setTimeout(r, this.opts.pollMs ?? 1_500))
+    }
+    return 'unknown'
+  }
+
   /** One step. A final step returns the result to give back */
   private async step(
     s: Step,
@@ -1152,6 +1175,8 @@ export class Connectors {
       need: () => number
       /** Result to return when stuck on a robot check (solve on a phone card, then call again) */
       captcha: (tabId: number) => ToolResult
+      /** Which account the page shows, against the connected one (ADR 0041) */
+      checkAccount: (tabId: number) => Promise<'same' | 'other' | 'unknown'>
       /** The page needs a sign-in: the connected mark is wrong or expired */
       loginLost: () => void
       open: (url: string) => Promise<void>
@@ -1210,6 +1235,14 @@ export class Connectors {
       }
       c.scope[s.as ?? 'found'] = r.found
       return
+    }
+    if ('account_check' in s) {
+      if ((await c.checkAccount(c.need())) !== 'other') return
+      c.loginLost()
+      return text(
+        `${f(s.account_check)} The page shows another account than the connected one, so nothing was read there and the connected mark was taken off. Call connect_ask to pick the account again. [Tab ${c.need()}]`,
+        true,
+      )
     }
     if ('stop_if' in s) {
       const r = (await b.call('find', { tabId: c.need(), patterns: { hit: f(s.stop_if) } })) as {
