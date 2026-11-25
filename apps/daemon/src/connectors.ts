@@ -540,6 +540,14 @@ export class Connectors {
 
   async find(query: string): Promise<ToolResult> {
     const items = [...(await this.load()).values()].filter((x) => x.card.how !== 'device')
+    // A tool name (a second call after a short answer): that tool's input fields in full
+    const named = query.trim()
+    if (/^[a-z0-9_]+$/.test(named)) {
+      const it = items.find(({ card, connector }) =>
+        connector?.tools.some((t) => connectorToolName(card.id, t.name) === named),
+      )
+      if (it) return text(this.describe(it, named))
+    }
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
     const score = ({ card, connector }: Loaded) => {
       const head = [card.id, card.name, card.site ?? ''].join(' ').toLowerCase()
@@ -574,15 +582,48 @@ export class Connectors {
     const caution = unsure
       ? '\n\n⚠️ A "not connected" service may not be the one the user actually uses (it could be another company of the same kind). For tasks that need the user\'s account, like my plan, my coverage or my history, first ask which one they use with quick reply buttons, before settling on this service or showing a connect card. Remember the answer with know_save.'
       : ''
-    return text(hit.map((it) => this.describe(it)).join('\n\n') + caution)
+    // The best match in full; the others one line each (their input fields on a second call with the tool name).
+    // Every service in full was a median 2,795 characters per call, most of it for services the AI did not use
+    const [top, ...rest] = hit as [Loaded, ...Loaded[]]
+    const others = rest.map((it) => this.brief(it))
+    return text(
+      [
+        this.describe(top),
+        ...(others.length
+          ? [
+              `Other matches:\n${others.join('\n')}\nFor one of their tools, call service_find with the tool name to get its input fields.`,
+            ]
+          : []),
+      ].join('\n\n') + caution,
+    )
   }
 
-  /** One service as text for the AI: connection state, tools (tier, input), connection guide */
-  private describe({ card, connector }: Loaded): string {
-    const connected = this.isConnected(card)
-    const state = card.how === 'open' ? 'no login needed' : connected ? 'connected' : 'not connected'
-    const lines = [`## ${card.name} (${card.id}) — ${state}`, card.summary]
+  /** Connection state as the AI reads it */
+  private stateOf(card: ConnectCard): string {
+    return card.how === 'open' ? 'no login needed' : this.isConnected(card) ? 'connected' : 'not connected'
+  }
+
+  /** One service in one line: name, state and its tools by name and title */
+  private brief({ card, connector }: Loaded): string {
     const tools = connector?.tools.filter((t) => this.usable(t)) ?? []
+    return `- ${card.name} (${card.id}) — ${this.stateOf(card)}: ${
+      tools.length
+        ? tools.map((t) => `${connectorToolName(card.id, t.name)} (${t.title})`).join(', ')
+        : 'no Dool2 tools yet, use the browser tools'
+    }`
+  }
+
+  /**
+   * One service as text for the AI: connection state, tools (tier, input), connection guide. only: just that tool
+   * (asked for by name)
+   */
+  private describe({ card, connector }: Loaded, only?: string): string {
+    const connected = this.isConnected(card)
+    const lines = [`## ${card.name} (${card.id}) — ${this.stateOf(card)}`, card.summary]
+    const tools =
+      connector?.tools.filter(
+        (t) => this.usable(t) && (!only || connectorToolName(card.id, t.name) === only),
+      ) ?? []
     if (!tools.length) {
       lines.push(
         'No Dool2 service tools yet. Use the browser tools' + (card.site ? ` (https://${card.site}/).` : '.'),
