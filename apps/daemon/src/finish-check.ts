@@ -76,7 +76,11 @@ export interface FinishCheckOptions {
   /** Language of the note people see (default: Korean) */
   lang?: () => Lang
   /** What the daemon knows since a time (approvals, pages read). Without it the judge gets no evidence */
-  evidence?: (since: number) => Evidence
+  /**
+   * What the daemon saw in this chat since a time (approvals it raised, pages it read). Per chat, so two tasks running
+   * at once never see each other's evidence (ADR 0038). Without it the judge gets no evidence
+   */
+  evidence?: (since: number, threadId: string) => Evidence
 }
 
 interface AskState {
@@ -308,7 +312,7 @@ export class FinishCheck {
     s.lookups += turn.lookups ?? 0
     if (!s.tools.size) return { kind: 'skip', reason: 'no tools used' }
     if (!turn.answer.trim()) return { kind: 'skip', reason: 'no answer' }
-    const evidence = this.opts.evidence?.(s.started)
+    const evidence = this.opts.evidence?.(s.started, threadId)
     const began = this.now()
     // Code check first, without the AI: an answer that says it booked, sent or paid while nothing in this request
     // asked for approval and no page showed it finished is sent back at once (the most dangerous wrong answer)

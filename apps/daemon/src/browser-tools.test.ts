@@ -3114,3 +3114,26 @@ describe('결제 묶음: 승인한 결제부터 주문 완료까지', () => {
     expect(kp).toMatch(/\d/)
   })
 })
+
+describe('pages read, per chat (finish check evidence, ADR 0038)', () => {
+  it("a chat's evidence has only its own reads (and reads no chat claimed)", () => {
+    const tools = new BrowserTools(fakeBrowser())
+    let chat: string | undefined = 'task-a'
+    tools.chatOf = () => chat
+    const note = (url: string, title: string) =>
+      (tools as unknown as { noteRead(s: { url: string; title: string; text: string }) }).noteRead({
+        url,
+        title,
+        text: '',
+      })
+    note('https://a.example/order/complete', 'Order complete')
+    chat = 'task-b'
+    note('https://b.example/list', 'List')
+    expect(tools.readsSince(0, 'task-b')).toEqual({
+      lastPage: { title: 'List', url: 'https://b.example/list' },
+      donePage: false,
+    })
+    expect(tools.readsSince(0, 'task-a').donePage).toBe(true)
+    expect(tools.readsSince(0).lastPage?.title).toBe('List')
+  })
+})

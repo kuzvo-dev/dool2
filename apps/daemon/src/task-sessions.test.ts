@@ -91,6 +91,8 @@ const conversation: Script = async function* (input, rt) {
       done_when: ['a ticket number is read on the completion screen'],
       known: ['2 adults'],
       avoid: ['nothing over 100,000 won'],
+      // "book … offline" needs no browser, so it runs next to another task
+      ...(ask.includes('offline') ? { browser: false } : {}),
     })
     yield* say('On it.')
     return
@@ -275,6 +277,55 @@ describe('task sessions (ADR 0038)', () => {
     expect(rt.seen.at(-1)?.text).toContain('Tasks that ended since your last answer')
     expect(rt.seen.at(-1)?.text).toContain('Booked the 7 pm KTX, ticket 1234.')
     expect(rt.seen.at(-1)?.text).not.toContain('Tasks running now')
+  })
+
+  it("two tasks at once: the finish check sees only its own task's approvals", async () => {
+    const dl = await downloads()
+    const asked = gate()
+    const bStarted = gate()
+    const prompts: string[] = []
+    let bTurns = 0
+    const task: Script = async function* (input, rt) {
+      if (input.text.includes('Goal: book files offline')) {
+        // Task A asks for an approval (while B is already working) and waits for the person
+        await bStarted.wait()
+        yield* used(input, rt, 'file', 'file_move', {
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, 'x') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, 'y') },
+          ],
+        })
+        asked.open()
+        yield* say('Approve the move on your phone.')
+        return
+      }
+      // Task B claims a booking with no approval of its own
+      bStarted.open()
+      await asked.wait()
+      bTurns++
+      yield { type: 'tool', name: 'mcp__dool2__browser_click', input: { tabId: 1, ref: 'e1' } }
+      yield* say(bTurns === 1 ? 'I booked the table for 7 pm.' : 'Not booked yet: pick a time.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const {
+      send,
+      state,
+      task: view,
+    } = await boot(rt, {
+      fileFolders: { desktop: [], documents: [], downloads: [dl] },
+      finishJudge: async (p) => {
+        prompts.push(p)
+        return '{"done":true,"why":"asked the time"}'
+      },
+    })
+    await send('book files offline')
+    await until(async () => !(await state()).busy, 'conversation free')
+    await send('book a table offline')
+    await until(async () => (await view('t1'))?.status === 'needs-you', 't1 needs you')
+    await until(async () => (await view('t2'))?.status === 'done', 't2 done')
+    // A's approval did not count for B: the code check sent B's claim back, and the judge saw no approvals for B
+    expect(bTurns).toBe(2)
+    expect(prompts.at(-1)).toContain('Approval requests during this request: none')
   })
 
   it('stop from the card ends the task, turns down its approvals and posts no result', async () => {
