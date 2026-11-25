@@ -3347,6 +3347,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     for (const ap of browserTools.approvals.list())
       if (ap.status === 'pending' && approvalThread.get(ap.id) === t.threadId)
         browserTools.approvals.reject(ap.id)
+    // Its sign-in card closes too: nothing would use the sign-in, and the screens kept showing "waiting for a sign-in"
+    for (const id of browserTools.logins.cancelWhere((id) => loginThread.get(id) === t.threadId))
+      void link.broadcast({ kind: 'login-done', id, ok: false, message: m().signInClosedStopped })
     pendingFollowUps.delete(t.threadId)
     if (t.status === 'waiting') return endTask(t, 'stopped')
     if (threads.isRunning(t.threadId) || judging.has(t.threadId)) {
