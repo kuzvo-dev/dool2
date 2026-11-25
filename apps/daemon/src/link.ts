@@ -44,7 +44,13 @@ import {
   seal,
   verifyText,
 } from '@dool2/protocol/e2e'
-import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
+import {
+  APP_PAIR_LINK,
+  autoApproveSignText,
+  LinkClient,
+  OFFICIAL_RELAY,
+  resetSignText,
+} from '@dool2/protocol/link'
 import type { Page } from '@dool2/protocol/paging'
 import QRCode from 'qrcode'
 import { linkCopy } from './locales/link.js'
@@ -69,6 +75,18 @@ const FEED_KINDS = new Set<FeedItem['kind']>([
 export interface SecretStoreLike {
   get(key: string): Promise<string | undefined>
   set(key: string, value: string | undefined): Promise<void>
+}
+
+/**
+ * The pairing link (the QR, and the link to send to the phone). The official relay does not serve the phone app,
+ * so a web address there opened a "page not found" (11-25: a link sent as a text). It is the app's own link
+ * instead, which the Android app opens and starts pairing from; its scanner reads the invite out of any link. A
+ * self-hosted relay serves the phone app at /app/, and an app address set for the PC wins over both
+ */
+export function pairLink(relay: string, invite: string, appUrl?: string): string {
+  if (appUrl) return `${appUrl}#p=${invite}`
+  if (new URL(relay).origin === new URL(OFFICIAL_RELAY).origin) return `${APP_PAIR_LINK}#p=${invite}`
+  return `${new URL('/app/', relay).href}#p=${invite}`
 }
 
 /** Daemon features that handle phone requests (index.ts fills them in) */
@@ -281,7 +299,6 @@ export class PhoneLink {
     const relay = this.opts.relay?.()
     if (!relay || !this.keys) throw new Error(this.m.noRelay)
     const secret = b64u(randomBytes(24))
-    const app = this.opts.appUrl?.() || new URL('/app/', relay).href
     // Always put the relay address in the invite: the store app connects to the relay in the invite, not the address it scanned
     const invite: PairInvite = {
       pc: this.keys.id,
@@ -290,7 +307,7 @@ export class PhoneLink {
       n: this.pcName,
       r: relay,
     }
-    const url = `${app}#p=${b64u(new TextEncoder().encode(JSON.stringify(invite)))}`
+    const url = pairLink(relay, b64u(new TextEncoder().encode(JSON.stringify(invite))), this.opts.appUrl?.())
     const qr = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1 })
     this.pairing = { secret, expiresAt: this.now() + PAIR_TTL_MS, url, qr }
     return this.pairStatus()

@@ -5,6 +5,9 @@ import { type DeviceKeys, type Envelope, signText } from './e2e.js'
 /** The official Dool2 relay server (Cloudflare Workers + Durable Objects, apps/relay/src/worker.ts). It cannot read the content */
 export const OFFICIAL_RELAY = 'https://relay.dool2.com'
 
+/** The phone app's own link for pairing (dool2://pair#p=…): the Android app opens it (AndroidManifest intent filter) */
+export const APP_PAIR_LINK = 'dool2://pair'
+
 export interface LinkOptions {
   /** Relay server address (http(s)://…) */
   relay: string
