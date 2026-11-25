@@ -11,6 +11,7 @@ export const LOOKUP_TOOLS: ReadonlySet<string> = new Set([
   'photo_view',
   'profile_view',
   'pay_method_list',
+  'ai_account_view',
   'vault_find',
   'feed_find',
   'conversation_search',

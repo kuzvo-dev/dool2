@@ -1016,6 +1016,15 @@ describe('로그인이 필요해질 때 (connect_ask)', () => {
     // 화면용 토큰으로는 부를 수 없다
     expect(await tool('vault_find', {}, 't0ken')).toBe('HTTP 401')
     expect(await tool('pay_method_list')).toContain('No payment methods saved')
+    // Which AI Dool2 runs on: the pay-as-you-go key shows only its last 4, never the key
+    await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({ provider: 'openai', model: 'gpt-5.6', apiKey: 'sk-test-secret-7788' }),
+    })
+    const ai = await tool('ai_account_view')
+    expect(ai).toContain('OpenAI (GPT), model GPT-5.6')
+    expect(ai).toContain('ends in 7788')
+    expect(ai).not.toContain('secret')
     expect(await tool('vault_find', { site: '쿠팡' })).toContain('No, there is no login for 쿠팡')
     await api('/api/vault', {
       method: 'POST',

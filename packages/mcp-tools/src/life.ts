@@ -337,6 +337,17 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     call('pay_method_list'),
   )
   server.registerTool(
+    'ai_account_view',
+    {
+      title: 'View which AI Dool2 runs on and its API key',
+      description:
+        'Shows which AI Dool2 runs on: subscriptions signed in, and for pay-as-you-go the company, model and last 4 characters of the API key. Use it when the user asks about their AI, plan or API key, or wants to change it; the result says where they change it (never in chat).',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    call('ai_account_view'),
+  )
+  server.registerTool(
     'vault_find',
     {
       title: 'View logins saved in the vault',

@@ -549,6 +549,7 @@ describe('tools on demand (ADR 0033)', () => {
       'browser_new_password',
       'feed_post',
       'idea_suggest',
+      'ai_account_view',
     ])
   })
 
