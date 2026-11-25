@@ -595,6 +595,13 @@ export function runSetup(opts: SetupOptions): {
               current.launchAtLogin === true,
               () => void save({ launchAtLogin: current.launchAtLogin !== true }),
             ),
+            // Task sessions (ADR 0038): longer work runs on its own card while the conversation goes on
+            toggleRow(
+              m.taskSessions,
+              current.taskSessions === true ? m.taskSessionsOn : m.taskSessionsOff,
+              current.taskSessions === true,
+              () => void save({ taskSessions: current.taskSessions !== true }),
+            ),
           )
           const approve = (current.finalStep ?? 'approve') === 'approve'
           const gate = el('ul', 'checks toggles')

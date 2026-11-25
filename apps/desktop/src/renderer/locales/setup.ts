@@ -94,6 +94,9 @@ export const setupText = messages({
     finalStep: '결제·보내기는 승인하면 두리가 누르기',
     finalStepOn: '두리가 화면 캡처와 내용을 보여 드리고, 승인하시면 그 버튼 하나만 눌러요.',
     finalStepOff: '꺼져 있어요. 마지막 버튼은 항상 직접 누르세요. 두리는 바로 앞까지만 준비해요.',
+    taskSessions: '긴 일은 따로 맡기기',
+    taskSessionsOn: '웹에서 하는 일은 카드 하나로 따로 진행해요. 그동안에도 이야기할 수 있어요.',
+    taskSessionsOff: '맡긴 일이 끝날 때까지 다음 말은 기다렸다가 받아요.',
     autoApprove: '자동 승인 (결제만 묻기)',
     autoApproveOn:
       '켜져 있어요. 결제 말고는 승인 카드 없이 두리가 바로 해요. 메시지 보내기·지우기·PC 앱 다루기도 묻지 않아요. 부탁하신 일과 상관없어 보이는 건 그때만 물어봐요.',
@@ -351,6 +354,9 @@ export const setupText = messages({
       'Dool2 shows you a screenshot and the details, and presses only that one button once you approve.',
     finalStepOff:
       'Off. You always press the last button yourself. Dool2 gets everything ready up to that point.',
+    taskSessions: 'Run longer tasks on the side',
+    taskSessionsOn: 'Web tasks run on their own card, and you can keep talking meanwhile.',
+    taskSessionsOff: 'A new message waits until the task at hand is done.',
     autoApprove: 'Auto-approve (ask only for payments)',
     autoApproveOn:
       "On. Except for payments, Dool2 just does it with no approval card, including sending messages, deleting and using PC apps. Anything that doesn't look like what you asked for still asks.",

@@ -1159,6 +1159,36 @@ svg.i.md {
 .wc-stop {
   color: var(--danger);
 }
+/* A task's card (ADR 0038): work running on its own while the conversation goes on */
+.task-card .worklog {
+  margin: 2px 16px 4px;
+}
+.task-card.needs-you {
+  border-color: var(--brand);
+}
+.task-card.needs-you .wc-now {
+  color: var(--ink);
+  font-weight: 600;
+}
+.wc-notes {
+  margin: 0;
+  padding: 0 16px 6px;
+}
+.work-done .task-detail {
+  padding: 4px 12px 10px;
+}
+.task-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.task-card .task-log {
+  margin: 0 12px;
+}
 /* Return summary: what happened while the person was away */
 .away-card {
   max-width: 520px;

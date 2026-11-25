@@ -26,6 +26,8 @@ import type {
   LoginRequestView,
   Settings,
   StoredMessage,
+  TaskRecordMessage,
+  TaskView,
   TellRecordMessage,
   ThreadSummary,
   UsageLimit,
@@ -285,6 +287,8 @@ const state: {
   busy: boolean
   /** The last answer is a draft being checked before it is final (ADR 0027) */
   checking: boolean
+  /** Tasks handed over in the conversation (ADR 0038), by id */
+  tasks: Map<string, TaskView>
   queued: string[]
   turn?: Turn
   /** Last finished turn (kept on the panel while resting) */
@@ -308,6 +312,7 @@ const state: {
   hasMore: false,
   busy: false,
   checking: false,
+  tasks: new Map(),
   queued: [],
   approvals: [],
   logins: [],
@@ -1384,6 +1389,7 @@ async function loadConversation() {
   state.queued = s.queued
   state.busy = s.busy
   state.checking = s.checking === true
+  state.tasks = new Map((s.tasks ?? []).map((t) => [t.id, t]))
   if (state.view === 'talk') renderTalk()
   renderPanel('live')
 }
@@ -1727,8 +1733,13 @@ function onLive(ev: ConversationLiveEvent) {
     if (state.view === 'talk') renderLive()
     return
   }
-  // Task cards (ADR 0038) are drawn in the next change; a task's own turns never stream into the conversation
-  if (ev.kind === 'task') return
+  // A task changed (ADR 0038): its card redraws in place; its own turns never stream into the conversation
+  if (ev.kind === 'task') {
+    state.tasks.set(ev.task.id, ev.task)
+    for (const c of document.querySelectorAll<HTMLElement>(`.task-card[data-task="${ev.task.id}"]`))
+      c.replaceWith(taskCard({ kind: 'task', id: ev.task.id, title: ev.task.title }))
+    return
+  }
   const e = ev.event
   if (ev.side) {
     onSideTurn(ev.threadId, e)
@@ -2030,6 +2041,7 @@ function toolCard(raw: string, active: boolean, used?: string): Node {
     if (rec.kind === 'login') return loginCard(rec as LoginRecordMessage)
     if (rec.kind === 'connect') return connectCard(rec as ConnectRecordMessage)
     if (rec.kind === 'work') return workDoneCard(rec as WorkRecordMessage)
+    if (rec.kind === 'task') return taskCard(rec as TaskRecordMessage)
     if (rec.kind === 'left') return leftCard(rec as LeftRecordMessage, active)
     if (rec.kind === 'tell') return tellCard(rec as TellRecordMessage)
     if (rec.kind === 'cards') return pickCards(rec as CardsRecordMessage)
@@ -2248,6 +2260,115 @@ function workDoneCard(rec: WorkRecordMessage): HTMLElement {
     el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
   )
   return box
+}
+
+/** Task details opened on their cards (the task's own chat, fetched once per opening) */
+const openTasks = new Set<string>()
+
+/**
+ * A task's card (ProgressCard, ADR 0038): one card in the conversation for work running on its own. Steps, elapsed
+ * time, stop and take-as-is while it runs; one line when it ended. Its detail is the task's own chat
+ */
+function taskCard(rec: TaskRecordMessage): HTMLElement {
+  const v = state.tasks.get(rec.id)
+  const ended = !v || v.status === 'done' || v.status === 'stopped' || v.status === 'failed'
+  const groups = v ? groupSteps(v.steps, placeCards(), lang) : []
+  // Its detail: the task's own chat (the brief's line, notes passed on, its answers), fetched when opened
+  const toggle = () =>
+    button(
+      'btn-text sm',
+      () => {
+        if (openTasks.has(rec.id)) openTasks.delete(rec.id)
+        else openTasks.add(rec.id)
+        document.querySelector<HTMLElement>(`.task-card[data-task="${rec.id}"]`)?.replaceWith(taskCard(rec))
+      },
+      openTasks.has(rec.id) ? A().taskClose : A().taskOpen,
+    )
+  const log = () => {
+    const box = el('div', 'task-log')
+    if (!v) return box
+    void api<{ messages: StoredMessage[] }>(`/api/threads/${encodeURIComponent(v.threadId)}`)
+      .then(({ messages }) => {
+        for (const x of messages) {
+          if (x.role === 'tool') continue
+          const note = x.role === 'user' ? readAppNote(x.text) : undefined
+          if (x.role === 'user' && !note) continue
+          box.append(messageEl(x.role, x.text, note, false))
+        }
+      })
+      .catch(() => {})
+    return box
+  }
+  if (ended) {
+    const box = el('details', 'work-done task-card')
+    box.dataset.task = rec.id
+    if (openTasks.has(rec.id)) box.open = true
+    const ms = v?.endedAt ? Date.parse(v.endedAt) - Date.parse(v.startedAt ?? v.createdAt) : 0
+    const line = !v
+      ? ''
+      : v.status === 'done'
+        ? T().stepsTime(v.count, secs(ms))
+        : v.status === 'stopped'
+          ? A().taskStopped
+          : A().taskFailed
+    box.append(
+      el(
+        'summary',
+        '',
+        icon(v?.status === 'done' ? 'check' : 'stop'),
+        el('b', '', rec.title),
+        el('span', 'meta', line),
+      ),
+      el('ul', 'worklog', ...groups.map((g) => groupRow(g, 'done'))),
+      el('div', 'task-detail', toggle(), ...(v && openTasks.has(rec.id) ? [log()] : [])),
+    )
+    return box
+  }
+  const from = Date.parse(v.startedAt ?? v.createdAt)
+  const time = el('span', 'wc-time', clockText(from))
+  time.dataset.from = String(from)
+  const now =
+    v.status === 'waiting'
+      ? A().taskWaiting(v.ahead ?? 0)
+      : v.status === 'needs-you'
+        ? A().taskNeedsYou
+        : v.status === 'checking'
+          ? A().checkingTitle
+          : v.continuing && v.now
+            ? A().continuingTitle(v.now)
+            : v.now
+              ? `${v.now}…`
+              : A().taskStarting
+  const card = el(
+    'article',
+    `workcard wc-progress task-card${v.status === 'needs-you' ? ' needs-you' : ''}`,
+    el(
+      'div',
+      'workcard-head',
+      v.status === 'needs-you' ? icon('bell') : el('span', 'spin'),
+      el('b', '', rec.title),
+      time,
+    ),
+    el('p', `wc-now${v.status === 'needs-you' ? '' : ' shimmer'}`, now),
+  )
+  card.dataset.task = rec.id
+  if (groups.length) card.append(el('ul', 'worklog', ...groups.slice(-3).map((g) => groupRow(g, 'done'))))
+  if (v.notes) card.append(el('p', 'meta wc-notes', A().taskNotes(v.notes)))
+  if (v.draft) {
+    const d = el('details', 'wc-draft')
+    const body = el('div', 'rich')
+    setRich(body, v.draft)
+    d.append(el('summary', '', A().seeDraft), body)
+    card.append(d)
+  }
+  const foot = el('div', 'workcard-foot')
+  const act = (what: 'stop' | 'accept') => () =>
+    void api(`/api/tasks/${encodeURIComponent(v.id)}/${what}`, { method: 'POST' }).catch(() => {})
+  if (openTasks.has(rec.id)) card.append(log())
+  if (v.draft || v.continuing) foot.append(button('btn-ghost sm', act('accept'), A().takeAsIs))
+  foot.append(el('span', 'grow'), toggle(), button('btn-text sm wc-stop', act('stop'), A().stopWork))
+  card.append(foot)
+  return card
 }
 
 /**
