@@ -1,0 +1,55 @@
+{
+  "id": "parcel",
+  "name": "택배 조회",
+  "site": "epost.go.kr",
+  "alsoSites": [
+    "cjlogistics.com",
+    "hanjin.com",
+    "lotteglogis.com",
+    "ilogen.com"
+  ],
+  "category": "life",
+  "how": "open",
+  "summary": "택배사를 몰라도 운송장 번호만 주면 CJ대한통운·우체국·한진·롯데·로젠을 차례로 찾아 어디쯤 왔는지 알려 드려요.",
+  "example": {
+    "ask": "택배 31234567890 어디쯤 왔어?",
+    "working": "택배사 찾는 중",
+    "reply": "로젠택배로 오고 있어요. 오늘 아침 동네 영업소에 도착해서 오늘 안에 배달될 예정이에요."
+  },
+  "abilities": [
+    {
+      "title": "택배사 몰라도 배송 조회",
+      "say": "택배 572023456781 어디쯤 왔어?",
+      "tier": "lookup"
+    },
+    {
+      "title": "어느 택배사인지 찾기",
+      "say": "이 운송장 어느 택배사야?",
+      "tier": "lookup"
+    }
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Parcel tracking",
+      "summary": "With just a tracking number, even without knowing the carrier, Dool2 checks CJ Logistics, Korea Post, Hanjin, Lotte and Logen in turn and tells you where the parcel is.",
+      "example": {
+        "ask": "Where is parcel 31234567890?",
+        "working": "Finding the carrier",
+        "reply": "It is coming with Logen. It reached your local branch this morning and should arrive today."
+      },
+      "abilities": [
+        {
+          "title": "Track any carrier",
+          "say": "Where is parcel 572023456781?"
+        },
+        {
+          "title": "Find the carrier",
+          "say": "Which carrier is this tracking number?"
+        }
+      ]
+    }
+  }
+}
