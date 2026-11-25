@@ -307,7 +307,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Show a service connect card',
       description:
-        "Shows a service's connect card when the user asks to connect it or the next step needs their login (booking, ordering, their own history). Do what works without login first. The user signs in on the card (never in chat); a note arrives when done, then continue. Say they can connect it in the card and end the reply.",
+        "Shows a service's connect card when the user asks to connect it or the next step needs their login (booking, ordering, their own history). Do what works without login first. The user signs in on the card (never in chat); a note arrives when done, then continue. The result says what is left on the card, and the turn waits.",
       inputSchema: {
         service: z.string().max(60).describe('Card id or service name (e.g. "coupang")'),
       },
@@ -521,7 +521,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Send a text (from my phone number)',
       description:
-        "Sends a text (SMS) from the user's phone number after they approve it on the phone. Give the contact name as saved; the phone finds the number, so don't ask for it. Then say to check the phone and end the reply; the result arrives later. KakaoTalk goes through kakao_send.",
+        "Sends a text (SMS) from the user's phone number after they approve it on the phone. Give the contact name as saved; the phone finds the number, so don't ask for it. The result says what is left on the phone and the turn waits; the outcome arrives later. KakaoTalk goes through kakao_send.",
       inputSchema: {
         to: z.string().max(40).describe('Contact name as saved, or a number. One person per call'),
         text: z.string().max(1000).describe('Exactly what is sent; no facts the user did not give'),

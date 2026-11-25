@@ -251,14 +251,15 @@ export function registerServiceTools(
       title: 'Find a service',
       description:
         'Finds services that can handle the request (restaurant booking, parcel tracking, grocery shopping, train tickets, etc.) and their Dool2 tools. ' +
-        'For each service it tells whether it is connected, the tool names, tiers and input fields, and what becomes possible once connected. ' +
+        'The best match comes in full (connected or not, its tools with tiers and input fields, what connecting adds); other matches come in one line each (name, state, tool names). ' +
+        "Called with a tool name, it gives that tool's input fields. " +
         'Use this first when no tool in the directly visible list fits. For a service without tools it gives tips for doing the job with the browser tools.',
       inputSchema: {
         query: z
           .string()
           .max(100)
           .describe(
-            'Service name or task, in the user\'s words (e.g. "CatchTable", "parcel tracking", "dinner booking in Seongsu")',
+            'Service name or task, in the user\'s words (e.g. "CatchTable", "parcel tracking", "dinner booking in Seongsu"), or a tool name from an earlier result for its input fields',
           ),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },

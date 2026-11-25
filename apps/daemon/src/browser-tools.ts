@@ -1778,9 +1778,16 @@ export class BrowserTools {
                 {
                   type: 'text',
                   text:
-                    purpose === 'reset'
-                      ? `Asked on the user's phone whether to set a new ${name} password. Nothing has been entered yet. End this reply briefly with "please choose on your phone". You will be told to carry on once they choose.`
-                      : `Asked on the user's phone whether to sign up for ${name} (or whether they already have an account). Nothing has been entered yet. End this reply briefly with "please choose on your phone". You will be told to carry on once they choose.`,
+                    (purpose === 'reset'
+                      ? `Asked on the user's phone whether to set a new ${name} password. `
+                      : `Asked on the user's phone whether to sign up for ${name} (or whether they already have an account). `) +
+                    handBack({
+                      done: 'the question is on the phone; nothing has been entered yet',
+                      left: 'choose on the phone',
+                      who: 'person',
+                      after: 'once they choose, the next message tells you to carry on',
+                      tell: 'to choose on their phone',
+                    }),
                 },
               ],
             }
@@ -2423,7 +2430,14 @@ export class BrowserTools {
           content: [
             {
               type: 'text',
-              text: 'The card is on the phone and Dool2 is watching the screen. End this reply now with one short line, like "Approve it in the app. I\'ll carry on as soon as it\'s done." Do not call browser_wait_auth again or click anything. When the screen changes or the user taps the card, the screen comes to you as a new message; continue from there.',
+              text: handBack({
+                done: 'the card is on the phone and Dool2 is watching the screen',
+                left: 'approve it in the app named on the card',
+                who: 'person',
+                after:
+                  'when the screen changes or the user taps the card, the screen comes to you as a new message; continue from there. Do not call browser_wait_auth again or click anything meanwhile',
+                tell: 'to approve it in the app and that you will carry on as soon as it is done',
+              }),
             },
           ],
         }
@@ -2431,7 +2445,7 @@ export class BrowserTools {
       case 'order_done':
         return this.orderDone(tabId, a)
       case 'handoff': {
-        // Things a person must do (login, CAPTCHA, identity verification, final button): bring the Dool2 tab forward and end this reply.
+        // Things a person must do (login, CAPTCHA, identity verification, final button): bring the Dool2 tab forward; the turn waits for the person.
         // The screen sees this tool call and shows [view in Chrome] [done].
         // The user holds only the phone — handing off the PC screen was almost always something to fix (measured: the mobile number field of a financial certificate window could not be read, so it was handed off).
         // So the first call on a screen does not hand off; it reads the screen again and returns it. Only the second call hands off
