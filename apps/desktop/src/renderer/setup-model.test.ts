@@ -76,6 +76,14 @@ describe('첫 실행 마법사', () => {
       ['payg-key', false, 'payg-key'],
     ])
     expect(pickDefault('payg', [{ id: 'opencode', installed: true, loggedIn: true }])).toBe('opencode')
+    // A saved key keeps its button: change or remove it in Settings → AI
+    const ready = checklist('payg', [
+      { id: 'opencode', installed: true, loggedIn: true, plan: 'openai · gpt' },
+    ])
+    expect(ready.map((i) => [i.id, i.ok, i.action])).toEqual([
+      ['opencode-app', true, undefined],
+      ['payg-key', true, 'payg-key'],
+    ])
   })
 
   it('비용을 달러와 원화 어림값으로 보여 준다', () => {

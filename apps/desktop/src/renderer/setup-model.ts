@@ -135,6 +135,8 @@ export function checklist(
               label: m.apiKey,
               ok: true,
               detail: a.plan ? m.connectedWith(a.plan) : m.connected,
+              // A saved key can still be changed or removed (Settings → AI)
+              action: 'payg-key',
             }
           : {
               id: 'payg-key',

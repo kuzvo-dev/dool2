@@ -437,7 +437,10 @@ function agentRows() {
           .filter(Boolean)
           .join(' · ') || s.text
       let onClick: (() => void) | undefined
-      if (!a.installed && (a.id === 'claude' || a.id === 'codex')) {
+      if (a.id === 'opencode') {
+        // Add, change or remove the API key (Settings → AI)
+        onClick = () => void openSetup({ step: 'settings', tab: 'ai', action: 'payg-key' })
+      } else if (!a.installed && (a.id === 'claude' || a.id === 'codex')) {
         const which = a.id
         onClick = () => void openSetup({ step: 'check', choice: which, action: `${which}-install` })
       } else if (a.installed && !a.loggedIn) {
