@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { AgentEvent } from '@dool2/protocol'
 import { describe, expect, it } from 'vitest'
 import { buildCodexArgs, CodexEventMapper, JsonRpcClient, resolveBundledCodex } from './index.js'
@@ -17,6 +18,21 @@ describe('buildCodexArgs', () => {
     expect(pairs).toContain('mcp_servers.dool2.command="/app/node"')
     expect(pairs).toContain('mcp_servers.dool2.args=["/app/mcp.js"]')
     expect(pairs).toContain('mcp_servers.dool2.required=true')
+  })
+
+  it("runs Dool2 tools without Codex's own approval step (Dool2 asks the person itself)", () => {
+    expect(pairs).toContain('mcp_servers.dool2.default_tools_approval_mode="approve"')
+    // Captured on the pinned 0.169.0: under approval_policy "never" the default mode fails the call, "approve" runs it
+    const lines = readFileSync(new URL('../fixtures/app-server-tool-approval.jsonl', import.meta.url), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    const done = (c: string) => lines.find((l) => l.case === c && l.method === 'item/completed')?.params.item
+    expect(done('default')).toMatchObject({
+      status: 'failed',
+      error: { message: 'MCP tool call requires approval, but approval policy is never' },
+    })
+    expect(done('approve')).toMatchObject({ status: 'completed', result: { content: [{ text: 'ok' }] } })
   })
 })
 
