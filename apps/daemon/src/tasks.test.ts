@@ -229,7 +229,7 @@ describe('notes passed on while a task works', () => {
     const text = taskListText(b, new Map([[c.id, 'Booked hotel X']]), 61_000)
     expect(text).toContain('t1 "Train": working')
     expect(text).toContain('t2 "Hotel": done 1 min ago')
-    expect(text).toContain('Result: Booked hotel X')
+    expect(text).toContain('do not say it is missing): Booked hotel X')
   })
 
   it('task_list names the card a waiting task has open, or its last step', () => {

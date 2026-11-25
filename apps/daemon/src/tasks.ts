@@ -555,7 +555,10 @@ export function taskListText(
     const result = results.get(v.id)
     return [
       `- ${v.id} "${v.title}": ${what}; ${v.count} steps${v.notes ? `; ${v.notes} note(s) not read yet` : ''}`,
-      result ? `  Result: ${result.slice(0, 400)}` : '',
+      // Said so: the AI read "done" plus a result it had not seen and told the user the result never came (11-26)
+      result
+        ? `  Result (already shown to the user in the chat as your message; do not say it is missing): ${result.slice(0, 400)}`
+        : '',
     ]
       .filter(Boolean)
       .join('\n')
