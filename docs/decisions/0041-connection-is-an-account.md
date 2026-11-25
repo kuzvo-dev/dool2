@@ -32,11 +32,13 @@ a script is what its security checks are built to stop.
   signed in as X. Connect with this account?"; no → the connection stops and says how to switch (the AI does not
   take that screen over). The typed account not in Chrome (Gmail's 404) → stops and says to pick or add it. No
   account readable → as before.
-- **Google accounts are picked, not typed.** Cards with `pick` (Google account, Gmail, Google Calendar) show one
-  button on the phone, [Pick an account], which opens Google's own account chooser on the PC as a remote screen.
-  The person picks an account already in Chrome or adds one there (with Google's own two-step checks). The watcher
-  marks it connected when the service page shows an account, and keeps that account. Dool2 never types a Google
-  password: re-login with the vault and the keep-connected check skip these cards.
+- **Google accounts are picked on the phone, not typed.** Cards with `pick` (Google account, Gmail, Google Calendar)
+  do not show the PC screen. Dool2 opens Google's account chooser in a background tab, reads the accounts signed in to
+  Chrome and asks on the phone which one, as buttons on the connect card (`connect_ask` starts this at once). It then
+  presses that account's row, so Google goes on to the service as that account, and keeps the full address the page
+  shows. An account connected before that is still in Chrome is used again without asking. Only a signed-out or new
+  account needs Google's own sign-in (with its two-step checks), and only that screen goes to the person. Dool2 never
+  types a Google password: re-login with the vault and the keep-connected check skip these cards.
 - **Tools use the account that was read.** `{{account}}` in a tool comes from `connectAccounts` first, then the
   vault ID. Calendar tools now pass `authuser`, like Gmail's `/mail/u/`.
 - **A tool's sign-in screen beats the connected mark.** When a tool stops at a sign-in screen (`stop_if` with

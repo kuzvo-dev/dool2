@@ -1861,6 +1861,31 @@ function connectFailCard(
   )
 }
 
+/**
+ * A short choice (which Google account) answered right on the card: one button per option, no sheet in between.
+ * Long lists still open the sheet
+ */
+function pickChoices(id: string): HTMLElement | undefined {
+  const q = st.infos.get(id)
+  const options = q?.field === 'choice' ? (q.options ?? []) : []
+  if (!options.length || options.length > 5) return undefined
+  return h(
+    'div',
+    { class: 'pick-list' },
+    ...options.map((o, i) =>
+      h('button', {
+        class: i === options.length - 1 && options.length > 1 ? 'btn-ghost' : 'btn',
+        text: o,
+        onclick: () => {
+          void send({ kind: 'info-answer', id, value: o })
+          st.infos.delete(id)
+          render()
+        },
+      }),
+    ),
+  )
+}
+
 /** Whether Dool2 is carrying on after the automatic login stopped (replying, or took over within 20 seconds) */
 function agentOn(fail: { agent?: boolean; at?: number }): boolean {
   return Boolean(fail.agent) && (st.busy || Date.now() - (fail.at ?? 0) < 20_000)
@@ -4472,15 +4497,16 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
         ),
       ),
       connectStepList(c.id, true),
-      h(
-        'div',
-        { class: 'approve-actions' },
-        h('button', {
-          class: 'btn',
-          text: mCards.pick,
-          onclick: () => openOverlay({ kind: 'info', id: wait.id }),
-        }),
-      ),
+      pickChoices(wait.id) ??
+        h(
+          'div',
+          { class: 'approve-actions' },
+          h('button', {
+            class: 'btn',
+            text: mCards.pick,
+            onclick: () => openOverlay({ kind: 'info', id: wait.id }),
+          }),
+        ),
     )
   }
   if (wait) {
@@ -4540,7 +4566,7 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
             // Google and the like: one tap opens the account chooser itself (no sheet in between, ADR 0041)
             text: c.account?.pick ? mdCred.pickAccount : mCards.connectDo,
             onclick: () => {
-              if (c.account?.pick) return openConnectScreen(c.id)
+              if (c.account?.pick) return startPick(c.id)
               if (browser) return openOverlay({ kind: 'connect', id: c.id })
               st.tab = 'connect'
               st.connectDetail = c.id
@@ -7128,6 +7154,17 @@ function loginChoices(cardId: string | undefined): Pick<CredTarget, 'social' | '
   }
 }
 
+/**
+ * Pick an account (Google, ADR 0041): the PC reads the accounts signed in to its Chrome in the background and this
+ * card asks which one, as buttons. No PC screen unless the account is not in Chrome yet
+ */
+function startPick(id: string) {
+  st.overlay = undefined
+  st.connecting.add(id)
+  render()
+  void send({ kind: 'connect', id, action: 'pick' })
+}
+
 /** The sign-in screen on the PC, watched from the phone (opens it first if it is not open yet) */
 function openConnectScreen(id: string) {
   const tab = st.connectTabs.get(id)
@@ -7181,7 +7218,7 @@ function connectSheet(id: string) {
           pick: {
             text: st.connectTabs.has(id) ? mdCred.keepOnPc : mdCred.pickAccount,
             note: mdCred.pickNote(st.saved?.pcName ?? mdCred.myPc),
-            onclick: openScreen,
+            onclick: () => (st.connectTabs.has(id) ? openScreen() : startPick(id)),
           },
         }
       : {}),
