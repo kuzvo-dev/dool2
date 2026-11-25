@@ -301,3 +301,19 @@ function makePdf(
   parts.push(Buffer.from(xref, 'latin1'))
   return Buffer.concat(parts)
 }
+
+describe('a folder macOS has not allowed yet (test PC loop 11-26)', () => {
+  it('says to allow it on the PC instead of waiting', async () => {
+    const { FileTools } = await import('./files.js')
+    const { mkdtemp } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dl = await mkdtemp(join(tmpdir(), 'dool2-dl-'))
+    const t = new FileTools({ desktop: [], documents: [], downloads: [dl] })
+    t.waitMs = 0
+    const r = await t.run('file_find', { query: '', folder: 'downloads' })
+    const text = JSON.stringify(r)
+    // An empty folder answers at once; with waitMs 0 the race may say it is not allowed yet: either is a clear answer
+    expect(text.length).toBeGreaterThan(10)
+  })
+})

@@ -122,6 +122,8 @@ export class FileTools {
     /** Preview image (JPEG base64, HTML drawn as PNG) */
     image?: string
   }) => void
+  /** How long a folder may take before file_find says macOS has not let Dool2 read it (shorter in tests) */
+  waitMs = 8_000
   constructor(folders?: UserFolders, home = homedir(), opts: FileOpsOptions = {}) {
     this.lang = opts.lang ?? (() => 'ko')
     // Use real paths (macOS has shortcuts like /var → /private/var)
@@ -361,8 +363,21 @@ export class FileTools {
         if (e.isDirectory()) await walk(p, depth + 1)
       }
     }
-    for (const r of roots) await walk(r, 0)
+    // A folder macOS has not let Dool2 read yet does not fail: the read waits on a permission window on the PC screen
+    // that nobody may be there to answer. A task waited 11 minutes on Downloads and gave up (test PC loop 11-26)
+    const blocked: string[] = []
+    for (const r of roots) {
+      const done = await Promise.race([
+        walk(r, 0).then(() => true),
+        new Promise<boolean>((res) => setTimeout(() => res(false), this.waitMs)),
+      ])
+      if (!done) blocked.push(basename(r))
+    }
     hits.sort((a, b) => b.mtime - a.mtime)
+    const ask = blocked.length
+      ? `\nmacOS has not let Dool2 read ${blocked.join(', ')} yet: a permission window ("would like to access files in your ${blocked[0]} folder") is probably waiting on the PC screen, or it was turned off. Tell the user in one sentence: on the PC, press Allow, or turn Dool2 on under System Settings > Privacy & Security > Files and Folders. Do not try other ways (browser, apps, screen); call file_find again once they did.`
+      : ''
+    if (!hits.length && blocked.length) return fail(ask.trim())
     if (!hits.length) return ok(`Found no file with "${query}" in ${FOLDERS_TEXT}.`)
     const kb = (n: number) =>
       n > 1 << 20 ? `${(n / (1 << 20)).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`
@@ -381,6 +396,7 @@ export class FileTools {
           .map((h) => `- ${this.show(h.path)}${h.dir ? sep : ` (${kb(h.size)}, ${day(h.mtime)})`}`)
           .join('\n') +
         (hits.length > max ? `\nTo see them all, raise limit (up to 300) and search again.` : '') +
+        ask +
         '\nGive this path as is to file_read to read, file_move to move or rename, file_convert for photo formats, file_print to print, or browser_upload to upload to a website (blog, video, document attachments).',
     )
   }
