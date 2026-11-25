@@ -99,6 +99,9 @@ const chrome = spawn(
     `--load-extension=${join(root, 'dist')}`,
     '--no-first-run',
     '--no-default-browser-check',
+    // macOS: a test profile never asks for the login keychain (a prompt nobody answers blocks the installed app)
+    '--use-mock-keychain',
+    '--password-store=basic',
     '--window-size=1200,900',
     ...(process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
