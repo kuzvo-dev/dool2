@@ -11,6 +11,9 @@
 // Main conversation (ADR 0038): --main on|off sends each scenario to a fresh segment of the main conversation with task
 // sessions on or off (test PC daemon only), so the conversation/task split runs as it does for the user. It follows the
 // tasks the conversation starts until each ends or waits for the person, and records their tools and chats too
+// A scenario's "seed.task" (a task_start spec with status working or needs-you, and what it is doing now) is put in
+// place as a running task before the request, with --main on only. It never runs: what the conversation passes on to
+// it (task_steer) and how it ended (task_stop) are recorded as seedTask
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -118,7 +121,7 @@ const ENDED = new Set(['done', 'stopped', 'failed', 'needs-you'])
  * One scenario on the main conversation: send it, follow the live events of the conversation and of the tasks it
  * starts, and stop when the conversation is idle and every task ended or waits for the person
  */
-async function followMain(sc, rec, started, signal) {
+async function followMain(sc, rec, started, signal, seededIds = new Set()) {
   const live = await fetch(`${daemon}/api/conversation/live`, {
     headers: { authorization: `Bearer ${token}` },
     signal,
@@ -152,6 +155,7 @@ async function followMain(sc, rec, started, signal) {
           continue
         }
         if (ev.kind === 'task') {
+          if (seededIds.has(ev.task.id)) continue
           rec.tasks[ev.task.id] = ev.task
           taskThreads.set(ev.task.threadId, ev.task.id)
           continue
@@ -182,7 +186,9 @@ async function followMain(sc, rec, started, signal) {
       await new Promise((ok) => setTimeout(ok, 1000))
       if (!mainEnded) continue
       const s = await api('/api/conversation?limit=1')
-      const mine = (s.tasks ?? []).filter((t) => Date.parse(t.createdAt) >= started.getTime())
+      const mine = (s.tasks ?? []).filter(
+        (t) => Date.parse(t.createdAt) >= started.getTime() && !seededIds.has(t.id),
+      )
       for (const t of mine) rec.tasks[t.id] = t
       if (!s.busy && mine.every((t) => ENDED.has(t.status))) break
     }
@@ -323,6 +329,14 @@ async function runOne(sc) {
         body: JSON.stringify({ side: true, ...(agent ? { agent } : {}) }),
       })
   if (!thread?.id) throw new Error(`대화를 만들지 못했어요${error ? `: ${error}` : ''}`)
+  // The task the scenario says is already running (only where tasks exist: the main conversation, task sessions on)
+  let seedTask
+  if (sc.seed?.task && mainMode === 'on') {
+    const r = await api('/api/eval/task', { method: 'POST', body: JSON.stringify(sc.seed.task) })
+    if (!r.task?.id)
+      throw new Error(`Could not put the scenario's task in place: ${r.error ?? r.text ?? r.status}`)
+    seedTask = r.task
+  }
   const rec = {
     id: sc.id,
     scenario: sc,
@@ -331,6 +345,9 @@ async function runOne(sc) {
     startedAt: started.toISOString(),
     thread: thread.id,
     ...(mainMode ? { main: mainMode, tasks: {} } : {}),
+    ...(sc.seed?.task && !seedTask
+      ? { seedSkipped: 'the scenario needs a running task: run it with --main on' }
+      : {}),
     tools: [],
     text: '',
     errors: [],
@@ -347,7 +364,7 @@ async function runOne(sc) {
   if (replayDir) await tape({ mode: 'replay', entries: tapes.get(sc.id) })
   else if (recordTape) await tape({ mode: 'record' })
   try {
-    if (mainMode) await followMain(sc, rec, started, ctl.signal)
+    if (mainMode) await followMain(sc, rec, started, ctl.signal, new Set(seedTask ? [seedTask.id] : []))
     else {
       const r = await fetch(`${daemon}/api/threads/${thread.id}/messages`, {
         method: 'POST',
@@ -397,6 +414,18 @@ async function runOne(sc) {
     clearTimeout(timer)
   }
   rec.ms = Date.now() - started.getTime()
+  if (seedTask) {
+    // How the seeded task ended up, and what it was told, then it ends so it does not hold the browser
+    const r = await api(`/api/eval/task/${seedTask.id}`)
+    rec.seedTask = {
+      id: seedTask.id,
+      before: { status: seedTask.status, now: seedTask.now },
+      after: r.task ? { status: r.task.status, notes: r.task.notes ?? 0 } : undefined,
+      told: r.told ?? [],
+    }
+    if (r.task && !['done', 'stopped', 'failed'].includes(r.task.status))
+      await api(`/api/tasks/${seedTask.id}/stop`, { method: 'POST' })
+  }
   let replayApprovals
   if (replayDir || recordTape) {
     const t = await tape({ mode: 'off' })

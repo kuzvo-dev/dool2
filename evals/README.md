@@ -95,8 +95,13 @@ node evals/score.mjs evals/out/replay-tasks-off --judge --html evals/out/replay-
 node evals/compare.mjs evals/out/replay-tasks-off evals/out/replay-tasks-on
 ```
 
-The task-session families (`bank/families/87-task-sessions.jsonl`) assume a task is already running; they need
-`--main on`. `TASK_SESSIONS_DEFAULT` is on; compare against `--main off` to see what the split changed.
+The task-session families (`bank/families/87-task-sessions.jsonl`) assume a task is already running. Their `seed.task`
+(a `task_start` spec, a status `working` or `needs-you`, and what it is doing `now`) is put in place before the request
+with `POST /api/eval/task` (test PC only): the conversation sees it among the running tasks and has its card, so
+talking past it, steering, asking about and stopping it are measured for real. The seeded task never runs; the record's
+`seedTask` keeps its state before and after and what was passed on to it (`told`), the scorer sees the same, and the
+runner stops it at the end. Seeds need `--main on` (otherwise the record says `seedSkipped`).
+`TASK_SESSIONS_DEFAULT` is on; compare against `--main off` to see what the split changed.
 
 ## Scoring
 

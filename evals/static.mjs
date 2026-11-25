@@ -34,6 +34,15 @@ for (const f of families()) {
     Array.isArray(f.perturb) ? Object.fromEntries(f.perturb.map((x) => [x, ''])) : (f.perturb ?? {}),
   ))
     if (!P[k]) errors.push(`${at}: 모르는 교란 '${k}'`)
+  // A task put in place before the request (evals/run.mjs --main on): a task_start spec and its state
+  const seed = f.seed?.task
+  if (f.seed && !seed) errors.push(`${at}: seed has only "task"`)
+  if (seed) {
+    if (!seed.goal || !Array.isArray(seed.done_when) || !seed.done_when.length)
+      errors.push(`${at}: seed.task needs goal and done_when, like task_start`)
+    if (seed.status && !['working', 'needs-you'].includes(seed.status))
+      errors.push(`${at}: seed.task.status is working or needs-you`)
+  }
   for (const g of f.gaps ?? [])
     if (!G.has(g) && !String(g).startsWith('N+')) errors.push(`${at}: 모르는 빈틈 '${g}'`)
 }
