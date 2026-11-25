@@ -13,6 +13,7 @@ import type {
   FeedItem,
   HandoffRecord,
   InfoRequestView,
+  LeftRecordMessage,
   LibraryItem,
   LifeAction,
   LifeState,
@@ -70,6 +71,7 @@ import {
 } from '@dool2/protocol/pay-methods'
 import {
   dropEnglishLines,
+  finishProgress,
   hyphenate,
   interimAnswers,
   josa,
@@ -246,6 +248,10 @@ const st: {
   convLoaded: boolean
   hasMore: boolean
   busy: boolean
+  /** The last answer is a draft being checked before it is final (ADR 0027) */
+  checking: boolean
+  /** When the current request started working (the progress card's elapsed time spans check rounds) */
+  workFrom?: number
   queued: string[]
   /** Text and actions from the current reply */
   live: string
@@ -339,6 +345,7 @@ const st: {
   convLoaded: false,
   hasMore: false,
   busy: false,
+  checking: false,
   queued: [],
   live: '',
   steps: [],
@@ -544,6 +551,7 @@ async function receive(env: Envelope) {
         stickToBottom = true
       }
       st.hasMore = msg.state.hasMore
+      if (!msg.before) st.checking = msg.state.checking === true
       st.busy = msg.state.busy
       st.queued = msg.state.queued
       // Drop from "sending" any message already in the re-fetched record or already queued (otherwise it shows twice)
@@ -561,6 +569,9 @@ async function receive(env: Envelope) {
       break
     case 'conversation-status':
       st.busy = msg.busy
+      st.checking = msg.checking === true
+      if (st.busy) st.workFrom ??= Date.now()
+      else st.workFrom = undefined
       st.queued = msg.queued
       // A message that moved to the queue is dropped from "sending"
       st.pending = st.pending.filter((p) => !msg.queued.includes(p.text))
@@ -881,6 +892,7 @@ function onStream(ev: DaemonStreamEvent) {
     }
   } else if (ev.type === 'agent') {
     st.busy = true
+    st.workFrom ??= Date.now()
     if (ev.event.type === 'text') st.live += ev.event.delta
     else if (ev.event.type === 'tool') {
       // When work on the web starts, show that screen in the chat
@@ -1524,7 +1536,7 @@ function lastNarration(): string | undefined {
 }
 
 function clockText() {
-  const from = stepAt[0]
+  const from = st.workFrom ?? stepAt[0]
   if (!from) return ''
   const s = Math.max(0, Math.floor((Date.now() - from) / 1000))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -1565,12 +1577,30 @@ function workPanel(): HTMLElement {
     setOpen(open)
   })
   const clock = h('span', { class: 'wp-clock' })
+  const draft = h('details', { class: 'wc-draft' }, h('summary', {}), h('div', { class: 'rich' }))
+  const take = h('button', {
+    class: 'btn-ghost sm wp-take',
+    text: tChat.takeAsIs,
+    onclick: () => void send({ kind: 'conversation-accept' }),
+  })
   const card = h(
     'div',
     { class: 'work-panel' },
     h('div', { class: 'wp-head' }, doori('thinking', 26), h('b', { class: 'wp-title' }), clock),
     h('ol', { class: 'wp-steps' }),
+    draft,
     wrap,
+    h(
+      'div',
+      { class: 'wp-foot' },
+      take,
+      h('span', { class: 'grow' }),
+      h('button', {
+        class: 'btn-text sm wc-stop',
+        text: tChat.stopWork,
+        onclick: () => void send({ kind: 'conversation-cancel' }),
+      }),
+    ),
   )
   // Time taken: updated every second only while the card is on screen
   const tick = () => {
@@ -1584,7 +1614,34 @@ function workPanel(): HTMLElement {
 }
 
 function updateWorkPanel(card: HTMLElement) {
-  const title = lastNarration() ?? mainWork(lang).workingTitle
+  const fp = finishProgress(st.conv, { running: st.busy, checking: st.checking })
+  const draftMsg = fp?.draft ? st.conv.find((m) => m.id === fp.draft) : undefined
+  // Text written after tools is the draft of the answer
+  const writing = st.live && st.steps.length ? dropEnglishLines(st.live, lang) : ''
+  const title = st.checking
+    ? tChat.checkingTitle
+    : fp?.rounds
+      ? fp.next
+        ? tChat.continuingTitle(fp.next)
+        : tChat.continuingPlain
+      : writing
+        ? tChat.writingTitle
+        : (lastNarration() ?? mainWork(lang).workingTitle)
+  const draftBox = card.querySelector<HTMLDetailsElement>('.wc-draft')
+  const draftText = writing || draftMsg?.text || ''
+  if (draftBox) {
+    draftBox.hidden = !draftText
+    const sum = draftBox.querySelector('summary')
+    const label = fp?.rounds && !st.checking ? tChat.earlierDraft : tChat.seeDraft
+    if (sum && sum.textContent !== label) sum.textContent = label
+    const body = draftBox.querySelector<HTMLElement>('.rich')
+    if (body && body.dataset.text !== draftText) {
+      body.dataset.text = draftText
+      body.replaceChildren(rich(draftText))
+    }
+  }
+  const take = card.querySelector<HTMLElement>('.wp-take')
+  if (take) take.hidden = !draftMsg
   const t = card.querySelector('.wp-title')
   if (t && t.textContent !== title) t.textContent = title
   // Current screen: only when working on the web and an image has arrived
@@ -2815,6 +2872,9 @@ function chatItems(): Item[] {
   const superseded = oldConnectCards()
   // One answer per request: answers the finish check sent back and replaced are folded (open with "show earlier answers")
   const fold = interimAnswers(st.conv, { running: st.busy })
+  // The answer being checked or continued stays in the progress card as a draft, never as a message first (ADR 0027)
+  const progress = finishProgress(st.conv, { running: st.busy, checking: st.checking })
+  if (progress?.draft) fold.hidden.add(progress.draft)
   const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
   const roleOf = new Map(st.conv.map((m) => [m.id, m.role]))
   for (const [i, m] of st.conv.entries()) {
@@ -2919,10 +2979,12 @@ function chatItems(): Item[] {
   if (st.busy || st.pending.length) {
     const shot = st.work.web && st.busy && st.work.tabId !== undefined && st.work.shot
     // The work process is one card: the screen being viewed + steps (like the landing page's "Looking at ...")
-    if (st.busy && (st.steps.length || shot)) items.push({ key: 'work', sig: '', make: workPanel })
+    // While the answer is a draft (being written after tools, checked, or continued) it lives in this card too
+    const card = st.busy && (st.steps.length || shot || progress)
+    if (card) items.push({ key: 'work', sig: '', make: workPanel })
     // Until the reply text starts streaming, keep "•••" under the work card too, so it feels like it is writing (user request, 11-22)
-    if (st.live) items.push({ key: 'live', sig: '', make: liveBubble })
-    else
+    if (st.live && !card) items.push({ key: 'live', sig: '', make: liveBubble })
+    else if (!progress && !st.live)
       items.push({
         key: 'typing',
         sig: '',
@@ -3220,6 +3282,7 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec, live)
   if (rec.kind === 'work') return workDone(rec)
+  if ((rec as { kind?: string }).kind === 'left') return leftInline(rec as unknown as LeftRecordMessage, live)
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)
   if ((rec as { kind?: string }).kind === 'made') return madeInline(rec as unknown as MadeImageRecordMessage)
@@ -3232,6 +3295,26 @@ function toolCard(raw: string, live = true, used?: string): HTMLElement {
     h('p', { class: 'card-text', text: rec.reason }),
     tabId !== undefined &&
       h('button', { class: 'btn-ghost', text: tChat.openPc, onclick: () => openRemote(tabId) }),
+  )
+}
+
+/** What the before-finishing check left at its limit, with [Continue] (only until the next message) */
+function leftInline(rec: LeftRecordMessage, live: boolean): HTMLElement {
+  const go = h('button', {
+    class: 'btn-ghost sm',
+    text: tChat.continueLeft,
+    onclick: () => {
+      go.setAttribute('disabled', '')
+      void send({ kind: 'conversation-continue' })
+    },
+  })
+  if (!live || st.busy) go.setAttribute('disabled', '')
+  return h(
+    'div',
+    { class: 'card quiet left-card' },
+    h('div', { class: 'card-label', text: tChat.leftTitle }),
+    h('p', { text: rec.why }),
+    go,
   )
 }
 

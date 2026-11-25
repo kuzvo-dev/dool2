@@ -52,6 +52,7 @@ import {
   FILE_CHUNK,
   FILE_MAX,
   FocusTabSchema,
+  type LeftRecordMessage,
   type LifeAction,
   LoginSubmitSchema,
   type MadeImageRecordMessage,
@@ -78,7 +79,14 @@ import {
   SocialProviderSchema,
 } from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
-import { APP_NOTE, appNote, PHOTO_MARK, readAppNote, withoutPhotoMark } from '@dool2/protocol/rich'
+import {
+  APP_NOTE,
+  appNote,
+  isFinishCheckNote,
+  PHOTO_MARK,
+  readAppNote,
+  withoutPhotoMark,
+} from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import type { Approvals } from './approvals.js'
 import { AutoApprover, autoCovers } from './auto-approve.js'
@@ -529,11 +537,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // Also tells the phone the conversation state (answering, queued messages). Only when it changes
   let lastStatus = ''
   live.on('event', (ev) => {
-    if (ev.kind !== 'busy' && ev.kind !== 'queued') return
+    if (ev.kind !== 'busy' && ev.kind !== 'queued' && ev.kind !== 'checking') return
     const status = {
       kind: 'conversation-status' as const,
       busy: conversationBusy() || activeThreads.size > 0,
       queued: [...queued],
+      ...(checkingNow ? { checking: true } : {}),
     }
     const key = JSON.stringify(status)
     if (key === lastStatus) return
@@ -1853,11 +1862,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         return {
           messages,
           busy: conversationBusy(),
+          ...(checkingNow ? { checking: true } : {}),
           queued: [...queued],
           hasMore: messages.length === (limit ?? 60),
         }
       },
       cancelConversation: () => stopConversation(),
+      acceptConversation: () => acceptConversation(),
+      continueConversation: () => void continueConversation(),
       connect: async (id, action) => {
         const card = await skills.card(id)
         if (!card) throw new Error(m().noSuchService)
@@ -1998,6 +2010,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   let running = 0
   /** Chats being judged by the before-finishing check (messages arriving meanwhile are queued) */
   const judging = new Set<string>()
+  /**
+   * The main conversation's last answer is a draft until the check passes (ADR 0027): the screens keep it in the
+   * progress card. Said as soon as the answer is saved, so it never shows as a message first
+   */
+  let checkingNow = false
+  /** Chats sent back by the check whose next round has not started yet (still "working" for the screens) */
+  const continuing = new Set<string>()
+  const setChecking = (threadId: string, on: boolean) => {
+    if (conversation.current()?.id !== threadId || checkingNow === on) return
+    checkingNow = on
+    live.emit('event', { kind: 'checking', checking: on })
+  }
+  /** What the check left when it reached its limit, per chat: [Continue] sends Dool2 back to it */
+  const leftOf = new Map<string, { ask: string; why: string; next?: string }>()
   /** Chat records waiting for a person */
   const WAITING_KINDS = new Set(['approval', 'login', 'connect', 'handoff'])
   /** Authenticator approvals watched off the turn, per chat (stopping ends them) */
@@ -2008,6 +2034,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    */
   function stopThread(threadId: string) {
     finishCheck?.drop(threadId)
+    setChecking(threadId, false)
     authWatches.get(threadId)?.abort()
     authWatches.delete(threadId)
     threads.cancel(threadId)
@@ -2015,6 +2042,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   function stopConversation() {
     const cur = conversation.current()?.id
     if (cur) stopThread(cur)
+  }
+  /**
+   * "Take it as is" (ADR 0027): the draft being checked or continued becomes the result. Judging stops, no further
+   * rounds, and a round already running is stopped without keeping its half-written answer
+   */
+  function acceptConversation() {
+    const cur = conversation.current()?.id
+    if (!cur) return
+    finishCheck?.drop(cur)
+    setChecking(cur, false)
+    if (threads.isRunning(cur)) threads.cancel(cur, { discard: true })
+    journal.write('finish-check', { result: 'accepted' })
+  }
+  /** [Continue] on what the check left: the same request again with a fresh check */
+  function continueConversation(): boolean {
+    const cur = conversation.current()?.id
+    const left = cur ? leftOf.get(cur) : undefined
+    if (!cur || !left || conversationBusy()) return false
+    leftOf.delete(cur)
+    if (left.ask) finishCheck?.begin(cur, left.ask)
+    followUp(
+      cur,
+      appNote(
+        forAI(
+          m().continueLeft,
+          `The user pressed [Continue]. Still left: ${left.why}${left.next ? ` A way to try: ${left.next}` : ''} Continue another way than before, and when done report once: result, what was done, what is left.`,
+        ),
+      ),
+    )
+    return true
   }
   /** The first request of a chat being continued by the before-finishing check (when the verdict ends, the check's record is cleared) */
   const lastAsk = new Map<string, string>()
@@ -2028,6 +2085,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     o: { receivedAt?: number } = {},
   ): AsyncGenerator<DaemonStreamEvent> {
     if (running++ === 0) events.emit('busy', true)
+    continuing.delete(threadId)
     activeThreads.add(threadId)
     // A turn may be a new AI session (a new segment) that has not seen the pages: its first click reads the whole page
     browserTools.forgetSeen()
@@ -2080,8 +2138,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text)) {
           askText = withoutPhotoMark(ev.message.text)
+          // A new request: what an earlier one left is no longer offered
+          leftOf.delete(threadId)
           if (checkable) finishCheck?.begin(threadId, askText)
         }
+        if (ev.type === 'saved' && ev.message.role === 'user' && isFinishCheckNote(ev.message.text))
+          setChecking(threadId, false)
         if (ev.type === 'agent' && (ev.event.type === 'error' || ev.event.type === 'limit_reached'))
           failed = true
         if (
@@ -2093,7 +2155,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // Waiting for an authenticator approval off the turn: the reply ends waiting for the person
         if (ev.type === 'agent' && ev.event.type === 'tool' && ev.event.name.endsWith('browser_wait_auth'))
           asked = true
-        if (ev.type === 'saved' && ev.message.role === 'assistant') answerText = ev.message.text
+        if (ev.type === 'saved' && ev.message.role === 'assistant') {
+          answerText = ev.message.text
+          // Likely to be judged (worked with tools, not waiting for a person, more than one or two lookups): the screens
+          // hold the answer as a draft from the start instead of showing it and then taking it back
+          if (
+            finishCheck &&
+            checkable &&
+            !asked &&
+            !failed &&
+            turnTools.length > 0 &&
+            finishCheck.current(threadId) !== undefined &&
+            !(turnTools.length <= 2 && lookups >= turnTools.length && !finishCheck.rounds(threadId))
+          )
+            setChecking(threadId, true)
+        }
         if (ev.type === 'agent' && ev.event.type === 'tool') {
           const name = ev.event.name.replace(/^(mcp__dool2__|dool2_)/, '')
           if (turnTools.length < 60) {
@@ -2183,6 +2259,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             ...(r.kind !== 'done' ? { because: r.because, source: r.source } : {}),
           })
         else if (r?.reason === 'simple') journal.write('finish-check', { result: 'skip', reason: 'simple' })
+        // Reached the rounds or time limit with something left: say what is left below the answer, with [Continue]
+        if (r?.kind === 'stop' && (r.reason === 'rounds' || r.reason === 'time')) {
+          const ask = askText || lastAsk.get(threadId) || ''
+          leftOf.set(threadId, { ask, why: r.why, ...(r.next ? { next: r.next } : {}) })
+          const rec: LeftRecordMessage = { kind: 'left', why: r.why, ...(r.next ? { next: r.next } : {}) }
+          postSaved(threadId, store.addMessage(threadId, 'tool', JSON.stringify(rec)))
+        }
         // If a new request or stop came in while judging, do not send it back
         // (if a message the user sent while judging is queued, that message comes first)
         const spoke = queued.length > 0 && conversation.current()?.id === threadId
@@ -2194,6 +2277,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         )
           again = r.note
       }
+      // Sent back: the draft stays a draft until the next round's note is saved (then the card says what comes next)
+      if (!again) setChecking(threadId, false)
       // The feed "finished tasks" entry is added once, when there is nothing left to continue (for a continued turn, with the first request)
       const feedAsk = askText || finishCheck?.askOf(threadId) || lastAsk.get(threadId)
       if (usedTool && feedAsk && answerText && !again && !routineThreads.has(threadId)) {
@@ -2219,6 +2304,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // Unless the user pressed stop in the meantime (stopping drops the request)
         setTimeout(() => {
           if (finishCheck?.current(threadId) !== undefined) followUp(threadId, appNote(note))
+          else if (continuing.delete(threadId)) {
+            setChecking(threadId, false)
+            if (running === 0 && !continuing.size) events.emit('busy', false)
+            live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 || continuing.size > 0 })
+          }
         }, 0)
       }
       // Chat: gather messages queued while answering into one turn and send them next
@@ -2227,8 +2317,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         live.emit('event', { kind: 'queued', texts: [] })
         setTimeout(() => void talk(text).catch(() => {}), 0)
       }
-      if (--running === 0) events.emit('busy', false)
-      live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 })
+      // A request sent back keeps "working" until its next round starts, so the draft never shows as the answer between rounds
+      if (again) continuing.add(threadId)
+      if (--running === 0 && !continuing.size) events.emit('busy', false)
+      live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 || continuing.size > 0 })
       // When a task handed over from the phone finishes, notify the phone (even if it ended while the app was closed)
       if (!again && fromPhone.delete(threadId) && !asked) {
         const t = store.getThread(threadId)
@@ -2845,7 +2937,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** Picking a segment (the summary request can take long, so messages arriving meanwhile are queued too) */
   let preparing = false
   const conversationBusy = () =>
-    preparing || conversation.isRunning() || judging.has(conversation.current()?.id ?? '')
+    preparing ||
+    conversation.isRunning() ||
+    judging.has(conversation.current()?.id ?? '') ||
+    continuing.has(conversation.current()?.id ?? '')
   /**
    * Sends one message to the chat. If it is answering, queue it and send it after that turn ends (ADR 0015).
    * Progress goes through GET /api/conversation/live and the phone stream
@@ -4068,6 +4163,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const body: ConversationState = {
         messages,
         busy: conversationBusy(),
+        ...(checkingNow ? { checking: true } : {}),
         queued: [...queued],
         hasMore: messages.length === limit,
       }
@@ -4081,6 +4177,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
       stopConversation()
       return json(res, 200, { ok: true })
+    }
+    if (a === 'conversation' && b === 'accept' && req.method === 'POST') {
+      acceptConversation()
+      return json(res, 200, { ok: true })
+    }
+    if (a === 'conversation' && b === 'continue' && req.method === 'POST') {
+      return json(res, 200, { ok: continueConversation() })
     }
     if (a === 'conversation' && b === 'live' && req.method === 'GET') {
       res.writeHead(200, {

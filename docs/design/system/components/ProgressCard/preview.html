@@ -1,0 +1,22 @@
+<!-- @dsCard group="Agent" height=520 subtitle="One card per request: working, checking the draft, continuing, what is left" -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../bundle.css"><style>
+body{margin:0}.wrap{padding:20px;display:grid;gap:16px;max-width:440px}
+.pc{background:var(--surface);border:.5px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
+.pc-head{display:flex;align-items:center;gap:10px;padding:14px 16px 8px;font:700 15px/21px var(--font-sans)}
+.pc-head b{flex:1}.pc-time{font:500 13px/18px var(--font-sans);color:var(--ink-muted);font-variant-numeric:tabular-nums}
+.pc-draft{margin:0 12px;background:var(--surface-sunken);border-radius:var(--radius-md);padding:10px 12px;font:450 14px/21px var(--font-sans)}
+.pc-draft summary{cursor:pointer;color:var(--ink-muted);font-size:13px}
+.pc-foot{display:flex;gap:8px;padding:10px 16px 14px;align-items:center}.pc-foot .grow{flex:1}
+.stop{color:var(--danger);background:none;border:0;font:600 13px var(--font-sans)}
+</style></head><body class="d-root"><div class="wrap">
+<div class="pc"><div class="pc-head"><span class="d-dot d-dot--work"></span><b>코레일에서 열차 찾는 중</b><span class="pc-time">0:38</span></div>
+<div class="d-log" style="margin:0 12px"><div class="d-log-row"><span><b>letskorail.com</b> 로그인 확인</span></div><div class="d-log-row d-log-row--live"><span><b>검색</b> 서울→부산 · 11/26 09:00</span></div></div>
+<div class="pc-foot"><span class="grow"></span><button class="stop">멈추기</button></div></div>
+<div class="pc"><div class="pc-head"><span class="d-dot d-dot--work"></span><b>마무리 확인 중</b><span class="pc-time">1:12</span></div>
+<details class="pc-draft"><summary>초안 보기</summary><p>보험사 3곳을 비교했어요. 가장 싼 곳은 …</p></details>
+<div class="pc-foot"><button class="d-btn d-btn--secondary d-btn--sm">여기까지만 받기</button><span class="grow"></span><button class="stop">멈추기</button></div></div>
+<div class="pc"><div class="pc-head"><span class="d-dot d-dot--work"></span><b>빠진 부분 이어서 하는 중: 보험사 2곳 더 비교</b><span class="pc-time">1:40</span></div>
+<details class="pc-draft"><summary>앞서 쓴 초안</summary><p>한 곳만 봤어요. 나머지는 …</p></details>
+<div class="pc-foot"><button class="d-btn d-btn--secondary d-btn--sm">여기까지만 받기</button><span class="grow"></span><button class="stop">멈추기</button></div></div>
+<div class="pc" style="padding:14px 16px"><div style="font:600 12.5px var(--font-sans);color:var(--ink-muted)">아직 남은 것</div><p style="margin:6px 0 10px;font:450 14px/21px var(--font-sans)">보험사 1곳은 로그인이 필요해서 못 봤어요.</p><button class="d-btn d-btn--secondary d-btn--sm">이어서 하기</button></div>
+</div></body></html>

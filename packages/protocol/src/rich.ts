@@ -522,6 +522,57 @@ export function interimAnswers(
 }
 
 /**
+ * What the next step after a send-back is, read from the check's note (its "A way to try:" line, or the reason when
+ * there is none). The judge writes both in the user's language (ADR 0027)
+ */
+export function finishNext(note: string): string | undefined {
+  const at = (label: string) => {
+    const i = note.indexOf(label)
+    if (i < 0) return undefined
+    const rest = note.slice(i + label.length)
+    const end = rest.search(/\n| A way to try: | Do not repeat /)
+    return (end < 0 ? rest : rest.slice(0, end)).trim() || undefined
+  }
+  return at('A way to try: ') ?? at('Something is still left: ')
+}
+
+/**
+ * The before-finishing check as the screen shows it (ADR 0027): the answer of the current request is a draft while it
+ * is judged (checking) or while Dool2 continues after a send-back (running with a check note). The draft stays inside
+ * the progress card instead of the conversation, with what Dool2 does next. undefined: nothing to show
+ */
+export function finishProgress(
+  messages: readonly { id: string; role: string; text: string }[],
+  opts: { running?: boolean; checking?: boolean },
+): { draft?: string; next?: string; rounds: number } | undefined {
+  let draft: string | undefined
+  let next: string | undefined
+  let rounds = 0
+  let lastAnswer: string | undefined
+  for (const m of messages) {
+    if (m.role === 'user') {
+      if (isFinishCheckNote(m.text)) {
+        rounds++
+        draft = lastAnswer
+        next = finishNext(m.text)
+        lastAnswer = undefined
+      } else if (!m.text.startsWith(APP_NOTE)) {
+        draft = undefined
+        next = undefined
+        rounds = 0
+        lastAnswer = undefined
+      }
+      continue
+    }
+    if (m.role === 'assistant') lastAnswer = m.id
+  }
+  if (opts.checking && lastAnswer) return { draft: lastAnswer, ...(next ? { next } : {}), rounds }
+  if (opts.running && rounds > 0 && !lastAnswer)
+    return { ...(draft ? { draft } : {}), ...(next ? { next } : {}), rounds }
+  return undefined
+}
+
+/**
  * Removes English inner-thought paragraphs mixed into an answer. Only paragraphs with no Hangul at all and in a thinking tone are dropped
  * (English paragraphs like URLs, product names and code stay). If everything would be dropped, the original text is kept.
  */

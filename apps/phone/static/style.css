@@ -2167,6 +2167,20 @@ select.rform-input {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+/* The draft answer while it is written, checked or continued (ProgressCard, ADR 0027), and take-as-is / stop */
+.work-panel .wc-draft {
+  margin: 0 12px 8px;
+  background: var(--surface);
+}
+.wp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 12px;
+}
+.wp-foot .grow {
+  flex: 1;
+}
 /* The screen Dool2 is looking at: collapsed to one line by default (small preview + now), opens on tap */
 .wp-view {
   margin: 0 12px 10px;

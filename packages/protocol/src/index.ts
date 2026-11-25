@@ -296,6 +296,8 @@ export interface ConversationState {
   messages: StoredMessage[]
   /** Answering now */
   busy: boolean
+  /** The last answer is a draft being checked before it is final (ADR 0027): the screen keeps it in the progress card */
+  checking?: boolean
   /** Messages sent while answering, waiting for their turn */
   queued: string[]
   /** There may be earlier messages (load more with before) */
@@ -315,6 +317,8 @@ export type ConversationLiveEvent =
     }
   | { kind: 'queued'; texts: string[] }
   | { kind: 'busy'; busy: boolean }
+  /** The main conversation's last answer is being checked before it is final (ADR 0027), or no longer */
+  | { kind: 'checking'; checking: boolean }
   /** Goals, library, memory or feed changed (fetch again with GET /api/life) */
   | { kind: 'life' }
   /** Start over (test PC): the conversation and memory were all erased. The screen fetches everything again from the start */
@@ -475,6 +479,18 @@ export interface WorkRecordMessage {
   ms: number
   /** If it worked on the web, the last site it opened (www.catchtable.co.kr) */
   host?: string
+}
+
+/**
+ * The before-finishing check reached its limit (rounds or time) with something left (ADR 0027). Saved below the
+ * answer: what is left, and an [Continue] button that sends Dool2 back to it. Only in this case
+ */
+export interface LeftRecordMessage {
+  kind: 'left'
+  /** What is left, in the user's words (the judge's why) */
+  why: string
+  /** What Dool2 would do next */
+  next?: string
 }
 
 /** One step while connecting. If there is an ask, a person has to provide it before moving on (that request is opened right from the card) */
@@ -1212,6 +1228,10 @@ export type PhoneToPc =
   | { kind: 'conversation'; before?: string; limit?: number }
   /** Stop what is being done in the conversation now */
   | { kind: 'conversation-cancel' }
+  /** Take the draft as the result and stop further rounds of the before-finishing check (ADR 0027) */
+  | { kind: 'conversation-accept' }
+  /** Continue what the check left when it reached its limit (the [Continue] button on a 'left' record) */
+  | { kind: 'conversation-continue' }
   /** Separate conversations: create (-> answered as thread), delete */
   | { kind: 'side-new' }
   | { kind: 'side-delete'; id: string }
@@ -1328,7 +1348,7 @@ export type PcToPhone =
   /** The record of one conversation (if it answers before, before comes with it) */
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** Whether the conversation is answering, and the messages waiting in line (every time it changes) */
-  | { kind: 'conversation-status'; busy: boolean; queued: string[] }
+  | { kind: 'conversation-status'; busy: boolean; queued: string[]; checking?: boolean }
   | { kind: 'life'; state: LifeState }
   /** One page of a long list (returns what was asked as is: the screen knows which list it is) */
   | {

@@ -1,6 +1,6 @@
 # 0027. Dool2 double-checks before finishing a task, and continues on its own if something is left
 
-- Status: Turned off (2026-11-24)
+- Status: Accepted (turned off 2026-11-24, back on 2026-11-25 with the draft design)
 - Date: 2026-11-22
 
 ## Context
@@ -135,3 +135,29 @@ Groundwork for bringing the check back (still off by default until the screens k
   "not done" reasons of 11-19 to 11-25 by hand gave roughly: asked the person for something findable 26%, handed off
   ("call them", "check it yourself") 24%, part missing 21%, stopped at a blocker 15%, claimed without doing or
   checking 13%.
+
+## Back on (2026-11-25): the answer is a draft until the check passes
+
+The check is on again by default for chats with the user (never feed posts or scheduled tasks), with a design that
+never takes back an answer the person already saw. The stop fix (#436) and the 10-minute limit (#442) stay.
+
+- **The answer before the verdict is a draft** inside one progress card titled "마무리 확인 중" ("checking before I
+  finish"); tapping opens the draft. The daemon says "checking" (live `checking` event, `checking` in the
+  conversation state) *before* the answer is sent to the screens, so it never shows as a message first. Text written
+  after tools were used streams into the card too, not into a bubble.
+- **Pass**: the card goes away and the draft becomes the result message as it was.
+- **Sent back**: the draft folds into the card, whose title becomes the judge's `next`, for example "빠진 부분 이어서
+  하는 중: 보험사 2곳 더 비교". The daemon keeps the conversation "working" between rounds (`continuing`), so the
+  draft never flashes as an answer between them. The person receives exactly one result message per request.
+- **"여기까지만 받기" (take it as is)** is always on the card while there is a draft: the draft becomes the result,
+  judging stops, and a round already running stops without keeping its half-written answer
+  (`ThreadService.cancel(…, { discard: true })`). Stop still only stops.
+- **At the round or time limit** the answer stands and a `left` record goes below it: "아직 남은 것" (what is left)
+  and an [이어서 하기] (continue) button, only in this case. Continue starts the same request again with a fresh check.
+- The "done" notification still goes out once, on the final answer.
+- The screen part is the ProgressCard component (`docs/design/system/components/ProgressCard`).
+
+What the person pays: a request that needed no more work is shown as final only after the verdict. The small judge
+(ADR 0037) and skipping simple requests keep that short; the work log keeps the judge time (`ms`) to watch it.
+Revisit when send-backs become rare (the "answer first, judge in parallel" option of the research becomes cheaper),
+or if testers still read the card as "thinking forever".

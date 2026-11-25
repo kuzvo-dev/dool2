@@ -501,6 +501,108 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(checks[1]).toMatchObject({ result: 'done' })
   })
 
+  it('the draft design: checking is said before the answer, busy holds between rounds, and the limit leaves [Continue]', async () => {
+    class ToolRuntime extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'tool', name: 'mcp__dool2__browser_open', input: {} }
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new ToolRuntime()
+    const whys = ['only 1 insurer seen', 'the price table is missing', 'no discount checked']
+    const { api } = await boot(rt, {
+      finishJudge: async () =>
+        JSON.stringify({ done: false, why: whys.shift() ?? 'x', next: 'compare 2 more insurers' }),
+    })
+    const live = await api('/api/conversation/live')
+    const reader = live.body?.getReader()
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"compare 3 car insurers"}' })
+    // Two rounds sent back (no new tools: 2 by default), then the third verdict reaches the limit
+    await until(async () => rt.inputs.length === 3 && !(await state()).busy)
+    let seen = ''
+    const dec = new TextDecoder()
+    const deadline = Date.now() + 2000
+    // The record is JSON inside the message text, so its quotes arrive escaped
+    while (!seen.includes('no discount checked') && Date.now() < deadline)
+      seen += dec.decode((await reader?.read())?.value)
+    await reader?.cancel()
+    const events = seen
+      .split('\n\n')
+      .filter((c) => c.startsWith('data: '))
+      .map(
+        (c) =>
+          JSON.parse(c.slice(6)) as {
+            kind: string
+            busy?: boolean
+            checking?: boolean
+            event?: { type: string; message?: { role: string } }
+          },
+      )
+    // "checking" comes before the answer it is about
+    const firstCheck = events.findIndex((e) => e.kind === 'checking' && e.checking)
+    const firstAnswer = events.findIndex(
+      (e) => e.event?.type === 'saved' && e.event.message?.role === 'assistant',
+    )
+    expect(firstCheck).toBeGreaterThanOrEqual(0)
+    expect(firstCheck).toBeLessThan(firstAnswer)
+    // Not idle between rounds: after the request, the only busy:false comes after the last answer
+    const start = events.findIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'user')
+    const idle = events
+      .map((e, i) => (i > start && e.kind === 'busy' && e.busy === false ? i : -1))
+      .filter((i) => i >= 0)
+    expect(idle).toHaveLength(1)
+    expect(
+      idle.every(
+        (i) =>
+          i > events.findLastIndex((e) => e.event?.type === 'saved' && e.event.message?.role === 'assistant'),
+      ),
+    ).toBe(true)
+    const msgs = (await state()).messages
+    const left = msgs.filter((m) => m.role === 'tool' && m.text.includes('"kind":"left"'))
+    expect(left).toHaveLength(1)
+    expect(JSON.parse(left[0]?.text ?? '{}')).toMatchObject({ why: 'no discount checked' })
+    // [Continue] sends Dool2 back with what is left, once
+    expect(await (await api('/api/conversation/continue', { method: 'POST' })).json()).toEqual({ ok: true })
+    await until(async () => rt.inputs.length === 4)
+    expect(rt.inputs[3]).toContain('Still left: no discount checked')
+  })
+
+  it('take it as is: ends the check, keeps the draft and starts no round', async () => {
+    class ToolRuntime extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'tool', name: 'mcp__dool2__browser_open', input: {} }
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new ToolRuntime()
+    let judged = 0
+    const { api } = await boot(rt, {
+      finishJudge: (_p, signal) => {
+        judged++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => resolve('{"done":false,"why":"x","next":"y"}')),
+        )
+      },
+    })
+    const state = async () =>
+      (await (await api('/api/conversation')).json()) as State & { checking?: boolean }
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"compare 3 car insurers"}' })
+    await until(async () => judged === 1)
+    expect((await state()).checking).toBe(true)
+    await api('/api/conversation/accept', { method: 'POST' })
+    await until(async () => !(await state()).busy)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(rt.inputs).toHaveLength(1)
+    const s = await state()
+    expect(s.checking).toBeUndefined()
+    expect(s.messages.at(-1)).toMatchObject({ role: 'assistant' })
+  })
+
   it('작업 기록에 AI가 뜬 시각, 첫 말까지 걸린 시간, 실패 까닭을 남긴다', async () => {
     class LimitRuntime extends EchoRuntime {
       override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {

@@ -1120,6 +1120,63 @@ svg.i.md {
   gap: 8px;
   padding: 10px 16px 14px;
 }
+/* Progress card in the conversation (ProgressCard): one card per request, elapsed time, the draft until checked */
+.workcard.wc-progress {
+  max-width: 520px;
+}
+.wc-progress .workcard-head {
+  align-items: center;
+}
+.wc-time {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.wc-now {
+  margin: 0;
+  padding: 0 16px 6px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.wc-draft {
+  margin: 4px 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.wc-draft > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.wc-draft > .rich {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 21px;
+}
+.wc-stop {
+  color: var(--danger);
+}
+/* What the check left when it reached its limit: one line + [Continue] */
+.left-card {
+  max-width: 520px;
+  padding: 14px 16px;
+}
+.left-card .card-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.left-card p {
+  margin: 6px 0 10px;
+}
+.left-card .btn-ghost {
+  width: auto;
+  align-self: flex-start;
+  justify-self: start;
+}
 /* Step bar: <span class="stepbar"><i class="on"></i><i class="now"></i><i></i></span> */
 .stepbar {
   flex: 1;

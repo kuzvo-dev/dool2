@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appNote, FINISH_CHECK_MARK, interimAnswers } from './rich.js'
+import { appNote, FINISH_CHECK_MARK, finishNext, finishProgress, interimAnswers } from './rich.js'
 
 const check = appNote(
   `끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요. ${FINISH_CHECK_MARK} Something is left`,
@@ -59,5 +59,62 @@ describe('one answer per request', () => {
         msg('a2', 'assistant'),
       ]).hidden,
     ).toEqual(new Set(['n1']))
+  })
+})
+
+describe('the draft in the progress card (finishProgress)', () => {
+  const note = (why: string, next?: string) =>
+    appNote(
+      [
+        `끝내기 전에 다시 보니 남은 게 있어서 이어서 할게요. ${FINISH_CHECK_MARK}`,
+        `Something is still left: ${why}`,
+        next ? `A way to try: ${next}` : '',
+        'Do not repeat the same method.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+
+  it('reads the next step from the note, or the reason without one', () => {
+    expect(finishNext(note('보험사 1곳만 봤어요', '보험사 2곳 더 비교'))).toBe('보험사 2곳 더 비교')
+    expect(finishNext(note('보험사 1곳만 봤어요'))).toBe('보험사 1곳만 봤어요')
+    // Notes written on one line before the change
+    expect(
+      finishNext(
+        appNote(`x ${FINISH_CHECK_MARK} Something is still left: a A way to try: b Do not repeat it.`),
+      ),
+    ).toBe('b')
+  })
+
+  it('while judging, the last answer is the draft', () => {
+    const list = [
+      msg('u1', 'user', '보험 비교해 줘'),
+      msg('w1', 'tool', '{"kind":"work"}'),
+      msg('a1', 'assistant'),
+    ]
+    expect(finishProgress(list, { checking: true, running: true })).toEqual({ draft: 'a1', rounds: 0 })
+    expect(finishProgress(list, { running: true })).toBeUndefined()
+    expect(finishProgress(list, {})).toBeUndefined()
+  })
+
+  it('after a send-back, the earlier answer is the draft and the note says what comes next', () => {
+    const list = [
+      msg('u1', 'user', '보험 3곳 비교해 줘'),
+      msg('a1', 'assistant'),
+      msg('n1', 'user', note('1곳만 봤어요', '보험사 2곳 더 비교')),
+    ]
+    expect(finishProgress(list, { running: true })).toEqual({
+      draft: 'a1',
+      next: '보험사 2곳 더 비교',
+      rounds: 1,
+    })
+    // The round answered and that answer is judged in turn
+    expect(finishProgress([...list, msg('a2', 'assistant')], { running: true, checking: true })).toEqual({
+      draft: 'a2',
+      next: '보험사 2곳 더 비교',
+      rounds: 1,
+    })
+    // A new request starts over
+    expect(finishProgress([...list, msg('u2', 'user', '고마워')], { running: true })).toBeUndefined()
   })
 })
