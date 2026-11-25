@@ -20,7 +20,8 @@
     "eval:static": "node evals/static.mjs",
     "eval:run": "node evals/run.mjs",
     "eval:score": "node evals/score.mjs",
-    "eval:nightly": "node evals/nightly.mjs"
+    "eval:nightly": "node evals/nightly.mjs",
+    "report:harness": "node apps/daemon/scripts/report-harness.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

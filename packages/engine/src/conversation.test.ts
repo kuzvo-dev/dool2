@@ -37,7 +37,11 @@ async function drain(it: AsyncIterable<DaemonStreamEvent>) {
 
 function setup(
   limits = {},
-  more: { handoffAfterMs?: number; onHandoff?: (x: { made: boolean }) => void } = {},
+  more: {
+    handoffAfterMs?: number
+    onHandoff?: (x: { made: boolean }) => void
+    onRotate?: (x: { reason: string; handoff: string }) => void
+  } = {},
 ) {
   let t = Date.parse('2026-11-15T00:00:00Z')
   const now = () => new Date(t)
@@ -251,7 +255,11 @@ describe('cache-aware segments (ADR 0036)', () => {
 
   it('makes the handoff ahead in a copy of the session, and the switch after the pause uses it at once', async () => {
     const seen: { made: boolean }[] = []
-    const { convo, claude, store, tick } = setup({}, { handoffAfterMs: 5, onHandoff: (x) => seen.push(x) })
+    const rotations: { reason: string; handoff: string }[] = []
+    const { convo, claude, store, tick } = setup(
+      {},
+      { handoffAfterMs: 5, onHandoff: (x) => seen.push(x), onRotate: (x) => rotations.push(x) },
+    )
     await talk(convo, HANDOFF_MIN_TURNS)
     const first = convo.current()
     convo.handoffLater()
@@ -273,6 +281,11 @@ describe('cache-aware segments (ADR 0036)', () => {
       'Handoff from the earlier conversation:\n- 국밥을 좋아함',
     )
     expect(convo.readyHandoff()).toBeUndefined()
+    // The work log counts handoffs made ahead and used (pnpm report:harness)
+    expect(rotations).toEqual([
+      { reason: 'first', handoff: 'none' },
+      { reason: 'idle', handoff: 'ready' },
+    ])
   })
 
   it('a message before the handoff time cancels it, and a handoff older than the last message is not used', async () => {

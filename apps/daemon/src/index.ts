@@ -572,6 +572,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         cached: x.cached,
         share: x.input ? Math.round((x.cached / x.input) * 100) : 0,
         ...(x.noted ? { noted: true } : {}),
+        ...(sessionOf(threadId) ? { session: sessionOf(threadId) } : {}),
         // Time since the segment's previous turn: how long the provider's cache lives decides when to switch segments
         ...(x.gapMs !== undefined ? { gapMs: x.gapMs } : {}),
       }),
@@ -592,6 +593,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     store,
     threads,
     onHandoff: (x) => journal.write('handoff', x),
+    onRotate: (x) => journal.write('segment', x),
   })
   /** Streams what happens in the conversation to the PC screen (GET /api/conversation/live) */
   const live = new EventEmitter<{ event: [ConversationLiveEvent] }>()
@@ -1053,7 +1055,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     browserTools.approvals,
     (id) => approveAny(id),
     (a) => autoReview.check(a),
-    (e) => journal.write('auto-approve', e),
+    // The approval's kind goes in its own field: a field named kind would replace the line's kind
+    ({ kind, ...e }) => journal.write('auto-approve', { ...e, approval: kind }),
   )
 
   // Phone link (M6): takes requests from paired phones and handles them on the PC
@@ -2372,6 +2375,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       activeThreads.delete(threadId)
       journal.write('turn', {
         where: side ? 'side' : threadId === store.getSetting('feedThread') ? 'feed' : 'main',
+        // Kind of session and task, so pnpm report:harness can count per kind and per task (ADR 0038)
+        ...(sessionOf(threadId) ? { session: sessionOf(threadId) } : {}),
+        ...(task ? { task: task.id } : {}),
         ms: Date.now() - turnAt,
         tools: turnTools,
         ...(turnChars.some((c) => c !== null) ? { chars: turnChars } : {}),
