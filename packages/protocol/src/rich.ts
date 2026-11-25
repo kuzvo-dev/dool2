@@ -697,6 +697,8 @@ export function dropEnglishLines(text: string, lang: Lang = 'ko'): string {
       (line) =>
         /[가-힣]/.test(line) ||
         /https?:\/\/|\|/.test(line) ||
+        // Quoted, bold, code or block-quoted English is meant for the person (a translation, a sentence to send)
+        /["“”`]|\*\*|^\s*>/.test(line) ||
         !/[A-Za-z]{2,}[,.]?(?:\s+[A-Za-z'’]+[,.!?]?){3,}/.test(line),
     )
     .join('\n')

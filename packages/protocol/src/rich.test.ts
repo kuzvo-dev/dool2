@@ -239,6 +239,17 @@ describe('영어 속생각 줄 빼기', () => {
   })
 })
 
+describe('English meant for the person', () => {
+  it('keeps a translation in bold or quotes, drops a thought (11-26: the asked translation went missing)', async () => {
+    const { dropEnglishLines } = await import('./rich.js')
+    const t =
+      '**Could we move the meeting to next week?**\nLet me check the page again now.\n- 격식 있게: "Would you mind if we postponed it?"\n> Can we push the meeting to next week?'
+    expect(dropEnglishLines(t)).toBe(
+      '**Could we move the meeting to next week?**\n- 격식 있게: "Would you mind if we postponed it?"\n> Can we push the meeting to next week?',
+    )
+  })
+})
+
 describe('답 속 PC 파일 경로', () => {
   it('`경로`는 파일 이름만 보이는 파일 조각으로', () => {
     expect(inline('- **파일:** `~/Documents/두리/하늘이 생일 영상.mp4` (14초, 세로)')).toEqual([
