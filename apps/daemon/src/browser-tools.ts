@@ -2176,6 +2176,12 @@ export class BrowserTools {
       }
       case 'request_profile': {
         if (!this.profile || !this.requestProfile) throw new Error('The my-info card cannot be shown')
+        // Asking the person for something Dool2 could find was the most common reason answers were sent back
+        const looked = (Array.isArray(a.looked) ? a.looked : []).map(String)
+        if (!looked.length)
+          throw new Error(
+            "Not shown. First look where these values may already be: profile_view (my info, masked), vault_find (saved accounts), know_find (what the user told Dool2), conversation_search (earlier chats), mail, connected services, and the task spec's known values. Then call again with looked set to where you looked.",
+          )
         const all = Object.keys(PROFILE_FIELDS) as ProfileField[]
         const asked = (Array.isArray(a.fields) ? a.fields : [])
           .map(String)
@@ -2434,6 +2440,14 @@ export class BrowserTools {
           where = new URL(this.pages.get(tabId)?.url ?? '').pathname
         } catch {}
         const key = `${tabId}:${where}`
+        // Handing off with nothing tried on a site Dool2 has a way through (its service tools, a remembered route)
+        const skipped = await this.untriedWay(tabId, a.tried)
+        if (skipped) return { isError: true, content: [{ type: 'text', text: skipped }] }
+        this.handoffs.set(tabId, {
+          blocker: String(a.blocker ?? 'other'),
+          tried: String(a.tried ?? '').slice(0, 200),
+          at: Date.now(),
+        })
         // User decision 11-20: no PC screen hand-off — only in an emergency (emergency) that phone cards cannot handle
         if (a.emergency !== true) {
           const again = await this.read(
@@ -3873,6 +3887,40 @@ export class BrowserTools {
   }
 
   /** If a newly entered site has a service tool, tells the AI to use it (faster and more accurate than pressing screens one by one) */
+  /**
+   * Why a hand-off is refused when nothing was tried and the site has a way through: its service tools or a
+   * remembered route (ADR 0034). undefined when the hand-off may go on
+   */
+  private async untriedWay(tabId: number, tried: unknown): Promise<string | undefined> {
+    if (typeof tried === 'string' && tried.trim().length >= 8 && !NOTHING_TRIED.test(tried)) return undefined
+    const url = this.pages.get(tabId)?.url ?? ''
+    const svc = url ? await this.siteConnector?.(url).catch(() => undefined) : undefined
+    let routes: string[] = []
+    try {
+      routes = (this.routes?.forHost(new URL(url).host) ?? []).map((r) => `[${r.id}] ${r.title}`).slice(0, 3)
+    } catch {}
+    if (!svc && !routes.length) return undefined
+    return [
+      'Not handed off: nothing was tried yet, and this site has a way through.',
+      svc
+        ? `Its Dool2 service tools: ${svc.tools.join(', ')} (service_call if not in the visible list).`
+        : '',
+      routes.length ? `Remembered routes (browser_route): ${routes.join(', ')}.` : '',
+      'Try those first. If they fail too, call browser_handoff again with tried saying what you did.',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  /** The last hand-off per tab: what blocked and what was tried (evidence for the before-finishing check) */
+  private handoffs = new Map<number, { blocker: string; tried: string; at: number }>()
+  /** Hand-offs made since a time, with what blocked and what was tried */
+  handoffsSince(since: number): { tabId: number; blocker: string; tried: string }[] {
+    return [...this.handoffs]
+      .filter(([, h]) => h.at >= since)
+      .map(([tabId, { blocker, tried }]) => ({ tabId, blocker, tried }))
+  }
+
   private async guideFor(tabId: number, url: string): Promise<string | undefined> {
     const svc = await this.siteConnector?.(url).catch(() => undefined)
     if (svc) {
@@ -4323,6 +4371,9 @@ export function changeLines(d: {
     d.text,
   ]
 }
+
+/** A "tried" that says nothing was tried */
+const NOTHING_TRIED = /^\s*(?:nothing|none|n\/a|no|not yet|-+)\s*\.?\s*$/i
 
 /** The user chose "press the final button myself": everything up to it is done, and the turn waits for them */
 function pressItYourself(button: string): string {

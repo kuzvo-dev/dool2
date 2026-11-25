@@ -39,6 +39,17 @@ export function daemonClient(env: NodeJS.ProcessEnv = process.env, kind = 'brows
   }
 }
 
+/** Where a value can be looked up before asking the person (browser_request_profile's looked) */
+export const LOOKED = [
+  'profile_view',
+  'vault_find',
+  'conversation_search',
+  'know_find',
+  'mail',
+  'connected_services',
+  'task_spec',
+] as const
+
 const fail = (text: string): ToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
 const tabId = z.number().int().describe('Tab number (the tab N reported by browser_open)')
@@ -418,6 +429,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .optional()
         .describe('auth_app: the app names as on the screen'),
       reason: z.string().max(120).optional().describe('Why it is needed, one line'),
+      looked: z
+        .array(z.enum(LOOKED))
+        .min(1)
+        .describe('Where you already looked for these values before asking (profile_view first)'),
     },
     false,
   )
@@ -584,6 +599,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     {
       tabId,
       reason: z.string().max(200).describe('What the user should do'),
+      blocker: z
+        .enum(['identity_check', 'captcha', 'payment_password', 'site_blocks_automation', 'other'])
+        .describe('What blocks you'),
+      tried: z.string().max(200).describe('What you already tried on this screen (tools, other paths)'),
       emergency: z.boolean().optional().describe('Without it nothing is handed off'),
     },
     false,
