@@ -4,6 +4,7 @@ import {
   notesMessage,
   parseTaskSpec,
   signInSpec,
+  stoppedText,
   TaskBoard,
   type TaskSpec,
   takeoverTarget,
@@ -113,6 +114,38 @@ describe('notes passed on while a task works', () => {
     expect(text).toContain('t1 "Train": working')
     expect(text).toContain('t2 "Hotel": done 1 min ago')
     expect(text).toContain('Result: Booked hotel X')
+  })
+
+  it('task_list names the card a waiting task has open, or its last step', () => {
+    const b = new TaskBoard({ now: () => 1000 })
+    const a = b.create('ta', 'seg', spec())
+    b.start(a)
+    a.status = 'needs-you'
+    a.now = 'Asking for approval'
+    const c = b.create('tc', 'seg', spec({ title: 'Hotel' }))
+    b.start(c)
+    c.status = 'needs-you'
+    const cards = (id: string) => (id === 'tc' ? [] : ['an approval card on the phone ("Pay 14,900 won")'])
+    const text = taskListText(b, new Map(), 2000, (id) => cards(b.get(id)?.threadId ?? ''))
+    expect(text).toContain(
+      't1 "Train": waiting for the user: an approval card on the phone ("Pay 14,900 won")',
+    )
+    expect(text).toContain(
+      't2 "Hotel": waiting for the user (an approval, a sign-in or a card in the conversation)',
+    )
+    expect(text).not.toContain('last step: undefined')
+  })
+
+  it('task_stop says where the task was and whether anything was approved', () => {
+    const b = new TaskBoard({ now: () => 1000 })
+    const t = b.create('ta', 'seg', spec())
+    b.start(t)
+    b.step(t, 'mcp__dool2__browser_open', { url: 'https://www.letskorail.com' })
+    const none = stoppedText(t, [])
+    expect(none).toContain('Task t1 is stopped.')
+    expect(none).toContain('(1 steps)')
+    expect(none).toContain('Nothing it asked for was approved')
+    expect(stoppedText(t, ['Pay: KTX 2 seats'])).toContain('so it may have happened: Pay: KTX 2 seats')
   })
 
   it('cards outlive a restart; a task that was running shows as stopped', () => {
