@@ -190,7 +190,10 @@ async function followMain(sc, rec, started, signal, seededIds = new Set()) {
         (t) => Date.parse(t.createdAt) >= started.getTime() && !seededIds.has(t.id),
       )
       for (const t of mine) rec.tasks[t.id] = t
-      if (!s.busy && mine.every((t) => ENDED.has(t.status))) break
+      // A browser task the scenario started waits in line behind the seeded task, which never runs or ends: that
+      // is as far as it gets (measured: the run waited for its whole timeout)
+      const settled = (t) => ENDED.has(t.status) || (t.status === 'waiting' && seededIds.size > 0)
+      if (!s.busy && mine.every(settled)) break
     }
   } finally {
     await reader.cancel().catch(() => {})
