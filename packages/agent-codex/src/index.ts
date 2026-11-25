@@ -3,22 +3,27 @@
 // CODEX_HOME is a Dool2-only folder so it never mixes with the user's own Codex settings.
 // Shell and web search are off, inside a read-only sandbox. It doesn't start without Dool2 tools (MCP).
 // TODO(M3): switch sign-in to OpenAI "Sign in with ChatGPT" (the open-source app path). M0 uses `codex login`.
-import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { type AgentRuntime, type McpServerSpec, runOnce, type TurnInput } from '@dool2/engine'
+import {
+  type AgentRuntime,
+  type McpServerSpec,
+  runOnce,
+  type SessionInput,
+  type TurnInput,
+} from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
 import type { AgentEvent, AgentStatus } from '@dool2/protocol'
 import { resolveBundledCodex } from './bin.js'
 import { downloadedCodexBin } from './download.js'
 import { CODEX_TEXT } from './locales/codex.js'
-import { CodexEventMapper, rateLimitEvents } from './map.js'
-import { JsonRpcClient } from './rpc.js'
+import { CodexSession, type SpawnCodex } from './session.js'
 
 export { CODEX_VERSION, resolveBundledCodex } from './bin.js'
 export * from './download.js'
 export { CodexEventMapper } from './map.js'
 export { JsonRpcClient } from './rpc.js'
+export { CodexSession, type CodexSessionOptions, knownModel, type SpawnCodex } from './session.js'
 
 const toml = (v: unknown) => JSON.stringify(v)
 
@@ -68,6 +73,8 @@ export interface CodexRuntimeOptions {
   installDir?: string
   /** Language of the status and error messages people see, read each time. Korean when not given */
   lang?: () => Lang
+  /** For tests: starts the program (a fake app-server) */
+  spawn?: SpawnCodex
 }
 
 export class CodexRuntime implements AgentRuntime {
@@ -125,184 +132,58 @@ export class CodexRuntime implements AgentRuntime {
     return r.code
   }
 
+  /** Whether Codex is signed in. Checked first, since Codex takes a long time retrying when signed out */
+  private async signedIn(path: string): Promise<boolean> {
+    const login = await runOnce(path, ['login', 'status'], { env: this.env() }).catch(() => undefined)
+    return !(login && (login.code !== 0 || /not logged in/i.test(login.stdout + login.stderr)))
+  }
+
+  private session(path: string, input: SessionInput, sideJob = false, fork = false): CodexSession {
+    return new CodexSession({
+      ...(fork ? { fork } : {}),
+      bin: path,
+      args: buildCodexArgs(sideJob ? [] : input.mcpServers, { sideJob }),
+      env: this.env(),
+      input,
+      sideJob,
+      lang: this.lang(),
+      ...(this.opts.spawn ? { spawn: this.opts.spawn } : {}),
+    })
+  }
+
+  /**
+   * A resident session (ADR 0035): `codex app-server`, its Dool2 tool server and the thread start now, so they are up
+   * when the first message comes. Undefined when Codex is missing or signed out (runTurn tells the user)
+   */
+  async openSession(input: SessionInput): Promise<CodexSession | undefined> {
+    const path = await this.bin()
+    if (!path) return undefined
+    await mkdir(this.opts.codexHome, { recursive: true })
+    if (!(await this.signedIn(path))) return undefined
+    const session = this.session(path, input)
+    session.start().catch(() => {})
+    return session
+  }
+
+  /** One message in a fresh program: the same session class, opened for one turn and closed */
   async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
     const path = await this.bin()
     if (!path) {
       yield { type: 'error', code: 'not_installed', message: CODEX_TEXT[this.lang()].notFound }
       return
     }
-    const t = CODEX_TEXT[this.lang()]
     await mkdir(this.opts.codexHome, { recursive: true })
-    // Check sign-in first, since Codex takes a long time retrying when signed out
-    const login = await runOnce(path, ['login', 'status'], { env: this.env() }).catch(() => undefined)
-    if (login && (login.code !== 0 || /not logged in/i.test(login.stdout + login.stderr))) {
-      yield {
-        type: 'error',
-        code: 'not_logged_in',
-        message: t.loginFirst,
-      }
+    if (!(await this.signedIn(path))) {
+      yield { type: 'error', code: 'not_logged_in', message: CODEX_TEXT[this.lang()].loginFirst }
       return
     }
-
-    const sideJob = input.sideJob === true
-    const child = spawn(path, buildCodexArgs(sideJob ? [] : input.mcpServers, { sideJob }), {
-      cwd: input.cwd,
-      env: this.env(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-    let stderrTail = ''
-    child.stderr.setEncoding('utf8').on('data', (d: string) => {
-      stderrTail = (stderrTail + d).slice(-4000)
-    })
-    const exited = new Promise<number | null>((resolve) => {
-      child.on('close', resolve)
-      child.on('error', () => resolve(-1))
-    })
-
-    // Collect notifications into the event queue
-    const queue: AgentEvent[] = []
-    let wake: (() => void) | undefined
-    let finished = false
-    let mapper: CodexEventMapper | undefined
-    const push = (evs: AgentEvent[]) => {
-      queue.push(...evs)
-      wake?.()
-    }
-
-    const rpc = new JsonRpcClient(
-      {
-        send: (line) => child.stdin.write(line),
-        lines: readLines(child.stdout),
-      },
-      (method, params) => {
-        if (method === 'account/rateLimits/updated' && !mapper)
-          return push(rateLimitEvents(params.rateLimits))
-        if (!mapper) return
-        const r = mapper.map(method, params)
-        push(r.events)
-        if (r.abort || r.finished) {
-          finished = true
-          if (r.abort) child.kill()
-          wake?.()
-        }
-      },
-      // Shell and files are off, so every approval request except for Dool2 tools is declined
-      (method, params) => {
-        if (method === 'mcpServer/elicitation/request' && params.serverName === 'dool2')
-          return { action: 'accept', content: null }
-        if (method.endsWith('requestApproval')) return { decision: 'decline' }
-        throw new Error(`Request not handled by Dool2: ${method}`)
-      },
-    )
-    const pumping = rpc.pump().then(() => {
-      finished = true
-      wake?.()
-    })
-
-    const onAbort = () => child.kill()
-    input.signal?.addEventListener('abort', onAbort, { once: true })
-
+    const { text, signal, fork, sideJob, ...open } = input
+    // A summary continues in a copy of the thread (a resident program may hold the original)
+    const session = this.session(path, open, sideJob === true, fork === true && Boolean(open.resumeId))
     try {
-      await rpc.request('initialize', {
-        clientInfo: { name: 'dool2', title: 'Dool2', version: '0.0.0' },
-        capabilities: null,
-      })
-      rpc.notify('initialized')
-
-      const model = input.model ? await knownModel(rpc, input.model) : undefined
-      const threadParams = {
-        cwd: input.cwd,
-        approvalPolicy: 'never',
-        sandbox: 'read-only',
-        ...(model ? { model } : {}),
-        // A side job's instructions replace Codex's own, and its thread is not saved (nothing resumes it)
-        ...(sideJob
-          ? { baseInstructions: input.systemPrompt, ephemeral: true }
-          : { developerInstructions: input.systemPrompt }),
-      }
-      const started = input.resumeId
-        ? await rpc.request<{ thread: { id: string } }>('thread/resume', {
-            threadId: input.resumeId,
-            ...threadParams,
-          })
-        : await rpc.request<{ thread: { id: string }; model?: string }>('thread/start', threadParams)
-      const threadId = started.thread.id
-      mapper = new CodexEventMapper(threadId, this.lang(), { sideJob })
-      yield { type: 'started', resumeId: threadId, tools: input.mcpServers.map((s) => `mcp__${s.name}__*`) }
-
-      await rpc.request('turn/start', {
-        threadId,
-        input: [{ type: 'text', text: input.text, text_elements: [] }],
-        // A side job reads a few lines and answers one: the lightest thinking
-        ...(sideJob ? { effort: 'low' } : {}),
-      })
-
-      while (true) {
-        while (queue.length) {
-          const ev = queue.shift() as AgentEvent
-          yield ev
-        }
-        if (finished) break
-        await new Promise<void>((r) => {
-          wake = r
-        })
-        wake = undefined
-      }
-      while (queue.length) yield queue.shift() as AgentEvent
-    } catch (err) {
-      if (input.signal?.aborted) yield { type: 'error', code: 'aborted', message: t.stopped }
-      else {
-        const msg = (err as Error).message
-        const notLoggedIn = /auth|login|unauthorized/i.test(msg + stderrTail)
-        yield notLoggedIn
-          ? {
-              type: 'error',
-              code: 'not_logged_in',
-              message: t.loginAgain,
-            }
-          : { type: 'error', code: 'process_failed', message: t.unfinished(msg) }
-      }
+      yield* session.send(text, signal)
     } finally {
-      input.signal?.removeEventListener('abort', onAbort)
-      child.stdin.end()
-      child.kill()
-      await Promise.race([exited, new Promise((r) => setTimeout(r, 2000))])
-      await Promise.race([pumping, new Promise((r) => setTimeout(r, 100))])
+      await session.close()
     }
   }
-}
-
-/**
- * The model if this Codex knows it (`model/list`), else undefined so the thread runs on Codex's default model. The
- * profile table names models of the pinned version; a newer catalog without them must not make every call fail
- */
-export async function knownModel(
-  rpc: Pick<JsonRpcClient, 'request'>,
-  model: string,
-): Promise<string | undefined> {
-  try {
-    const r = await rpc.request<{ data?: { id?: unknown; model?: unknown }[] }>('model/list', {
-      includeHidden: true,
-    })
-    return r.data?.some((m) => m.id === model || m.model === model) ? model : undefined
-  } catch {
-    return undefined
-  }
-}
-
-async function* readLines(stream: NodeJS.ReadableStream): AsyncGenerator<string> {
-  let buf = ''
-  stream.setEncoding('utf8')
-  for await (const chunk of stream as AsyncIterable<string>) {
-    buf += chunk
-    let nl = buf.indexOf('\n')
-    while (nl >= 0) {
-      const line = buf.slice(0, nl).replace(/\r$/, '')
-      buf = buf.slice(nl + 1)
-      if (line.trim()) yield line
-      nl = buf.indexOf('\n')
-    }
-  }
-  if (buf.trim()) yield buf
 }

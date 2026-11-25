@@ -60,7 +60,7 @@ where the "started without Dool2 tools" retries came from.
   - The daemon serving the tools over local HTTP instead of a child tool server. It would remove the child process
     too, but it depends on CLI support we have not checked. The tool list file already removes the wait.
   - Keeping programs for side chats too. Side chats are short and many; their memory cost is not worth it now.
-  - Codex. Its adapter still starts `codex app-server` per turn; it can implement `openSession` the same way later
+  - Codex. Its adapter started `codex app-server` per turn at first; it has a session since the amendment below
     (`thread/start` once, `turn/start` per message, `turn/interrupt` for stop). OpenCode stays on `runTurn`.
 
 ## Consequences
@@ -72,3 +72,31 @@ where the "started without Dool2 tools" retries came from.
 - Instruction changes still ride on the next message (ADR 0032); a resident program never needs a new system prompt
   within a segment.
 - Revisit when Codex gets a session, or if the journal's `startMs` / `textMs` do not drop for resident turns.
+
+## Amendment (2026-11-25): Codex has a resident session too
+
+With task sessions on (ADR 0038), a running task keeps its program, and Codex users need that as much as Claude users.
+`CodexRuntime.openSession` returns a `CodexSession`: one `codex app-server` per session, the same flags as before
+(shell and web search off, read-only sandbox, approvals declined, the Dool2 tool server required).
+
+- **Open**: the program, its tool server and the thread start at once (`thread/start`, or `thread/resume` with the
+  saved id), before the first message. Signed out: no session, and `runTurn` says "sign in".
+- **Send**: `turn/start` per message; the turn ends at its `turn/completed`. Lines of a turn that already ended (late
+  pieces of a stopped turn) are dropped by turn id.
+- **Stop**: `turn/interrupt` with the turn id. If the turn does not end in 5 s, the program is ended and starts again
+  with `thread/resume` on the next message.
+- **The program ended** between messages: the next message starts it again with `thread/resume`. During a turn: the
+  turn ends as failed (or stopped, after the stop button). A tool Dool2 does not allow ends the program, as before.
+- **runTurn** is the same class, opened for one message and closed, so both paths read the protocol the same way.
+- **Summaries** continue in a copy (`thread/fork`), as Claude's `--fork-session` does, because the resident program may
+  hold the original thread at the same time.
+
+Checked on the pinned Codex 0.169.0, without sign-in (the turn then waits on the provider, which is enough to test the
+protocol): two turns on one program, `turn/interrupt` ending the turn 4–6 ms after the stop, `thread/resume` in a new
+program, `thread/fork` of a saved thread (an ephemeral copy is refused for paginated threads, so the copy is saved).
+Through `CodexSession` with a stub Dool2 tool server: the first turn started 552 ms after the message on a fresh
+program and 0 ms on the running one, the tool server started once for both turns, and closing stdin ended the program
+in 18 ms. An idle program with its thread holds about 95 MB (macOS, without the tool server). Lines are saved in `packages/agent-codex/fixtures/app-server-*.jsonl`, and `session.test.ts` replays them.
+Not checked: a real answer on a signed-in Codex (no sign-in on the test Mac). OpenCode stays on `runTurn`.
+
+`residentAgent: false` in settings still turns resident programs off for every agent.
