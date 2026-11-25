@@ -2076,6 +2076,11 @@ select.rform-input {
 .connect-line {
   padding-left: 7px;
 }
+/* Connected, but Chrome on the PC is off: not "connected" while its tools cannot run */
+.connect-line.off {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
 .connect-card .approve-head .spin {
   margin-left: auto;
 }

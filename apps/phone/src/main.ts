@@ -39,7 +39,12 @@ import {
   type VaultEntry,
 } from '@dool2/protocol'
 import { type BlockEnv, blockView } from '@dool2/protocol/blocks-view'
-import { type ConnectionItem, SOCIAL_LABEL, type SocialProvider } from '@dool2/protocol/connect'
+import {
+  type ConnectionItem,
+  needsPcChrome,
+  SOCIAL_LABEL,
+  type SocialProvider,
+} from '@dool2/protocol/connect'
 import { findCard } from '@dool2/protocol/connect-text'
 import {
   type Envelope,
@@ -3453,7 +3458,8 @@ function toolSig(raw: string) {
         ? ([...st.logins.values()].find((l) => l.status === 'pending' && cardIdFor(l.origin) === it.card.id)
             ?.id ?? '')
         : ''
-      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}:${login}`
+      const chrome = st.pc?.extension === false ? 'off' : ''
+      return `${it?.card.id}:${it?.connectedAt ?? ''}:${it && st.connecting.has(it.card.id)}:${steps}:${wait}:${fail}:${peek}:${login}:${chrome}`
     }
   } catch {}
   return ''
@@ -4401,6 +4407,9 @@ function connectInline(rec: ConnectRecordMessage, live = true): HTMLElement {
       }),
       c.id,
     )
+  // Connected, but its tools run in the PC's Chrome: while Chrome or the extension is off, say so, not "connected"
+  if (it.connectedAt && needsPcChrome(c) && st.pc && !st.pc.extension)
+    return h('p', { class: 'done-line connect-line off' }, mark(), mCards.chromeOffFor(c.name))
   if (it.connectedAt) return h('p', { class: 'done-line connect-line' }, mark(), mCards.isConnected(c.name))
   if (!live) return h('p', { class: 'done-line connect-line' }, mark(), mCards.cardOf(c.name))
   const busy = st.connecting.has(c.id)
