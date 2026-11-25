@@ -32,6 +32,7 @@ import {
 } from '@dool2/engine'
 import { deviceRegion } from '@dool2/i18n'
 import { LOOKUP_TOOLS } from '@dool2/mcp-tools/lookups'
+import type { SessionKind } from '@dool2/mcp-tools/sessions'
 import {
   type AgentId,
   AgentIdSchema,
@@ -69,6 +70,7 @@ import {
   SettingsSchema,
   SIDE_THREAD_MAX,
   type StoredMessage,
+  type TaskRecordMessage,
   type TellRecordMessage,
   type ThreadSummary,
   VaultEntryRequestSchema,
@@ -118,6 +120,7 @@ import { userLang } from './lang.js'
 import { Life, routineAsk, tellDelay, watchPrompt } from './life.js'
 import { PhoneLink } from './link.js'
 import { forAI, indexText } from './locales/index-text.js'
+import { TASKS_TEXT } from './locales/tasks-text.js'
 import { LoopGuard } from './loop-guard.js'
 import { MotionMaker, type MotionRenderer } from './motion.js'
 import { dataPaths, defaultDataDir } from './paths.js'
@@ -140,6 +143,16 @@ import { ScreenTools } from './screen-tools.js'
 import { checkSignedIn, type SigninCheck } from './signin-check.js'
 import { Skills } from './skills.js'
 import { localDay, StatsReporter } from './stats.js'
+import {
+  notesMessage,
+  parseTaskSpec,
+  TASK_SESSIONS_DEFAULT,
+  type Task,
+  TaskBoard,
+  taskBrief,
+  taskListText,
+  withNotes,
+} from './tasks.js'
 import { Thumbs } from './thumbs.js'
 import { type TapeEntry, ToolTape } from './tool-tape.js'
 import { mimeOf } from './upload.js'
@@ -456,7 +469,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // A temporary name per write, so two chats starting at once never rename each other's file away
     const tmp = `${file}.${process.pid}-${++serviceToolsSeq}.tmp`
     try {
-      const tools = await connectors.catalogFor(toolset)
+      const tools = await catalogOf(toolset)
       await mkdir(serviceToolsDir, { recursive: true })
       await writeFile(tmp, JSON.stringify({ tools }))
       await rename(tmp, file)
@@ -481,6 +494,36 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** Evals on a test PC replay the same tape per model (POST /api/eval/model). undefined: each agent's default */
   let evalModel: string | undefined
+  /** Task sessions (ADR 0038): what the conversation handed over, their line for the browser, notes passed on */
+  const tasks = new TaskBoard({
+    lang,
+    tabHost: (tabId) => browserTools.tabHost(tabId),
+    toolTitle: (name) => connectors.titleOf(name),
+  })
+  tasks.restore(store.getSetting('tasks'))
+  const taskSessionsOn = () => readSettings().taskSessions ?? TASK_SESSIONS_DEFAULT
+  /** The kind of each main segment, fixed at its first use so its tool list never changes mid-segment (ADR 0032) */
+  const segmentKinds = new Map<string, SessionKind | undefined>()
+  /**
+   * Which session a chat is: a task, the conversation (main segments while task sessions are on), or neither (side
+   * chats, the feed, the conversation without task sessions: every tool, as before)
+   */
+  function sessionOf(threadId: string): SessionKind | undefined {
+    if (tasks.isTask(threadId)) return 'task'
+    if (segmentKinds.has(threadId)) return segmentKinds.get(threadId)
+    const t = store.getThread(threadId)
+    if (!t || t.side) return undefined
+    const kind = taskSessionsOn() ? ('conversation' as const) : undefined
+    segmentKinds.set(threadId, kind)
+    return kind
+  }
+  /** The service tools a segment sees: lookups only in the conversation of task sessions (ADR 0038) */
+  async function catalogOf(toolset: string) {
+    const all = await connectors.catalogFor(toolset)
+    return sessionOf(toolset) === 'conversation'
+      ? all.filter((x) => connectors.tierOf(x.name) === 'lookup')
+      : all
+  }
   const threads = new ThreadService({
     lang,
     store,
@@ -501,7 +544,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     beforeRun: (threadId) => writeServiceTools(threadId),
     // One agent program kept running per segment of the main conversation (ADR 0035). Side chats, the feed and
     // summaries keep one program per turn. Off with the residentAgent setting
-    resident: (threadId) => readSettings().residentAgent !== false && conversation.current()?.id === threadId,
+    // A running task keeps its program too, and closes it when it ends (ADR 0038)
+    resident: (threadId) => {
+      if (readSettings().residentAgent === false) return false
+      const t = tasks.byThread(threadId)
+      return t ? !tasks.ended(t) : conversation.current()?.id === threadId
+    },
+    // The kind of session tells the tool server which tools it has (ADR 0038)
+    toolEnv: (threadId) => {
+      const kind = sessionOf(threadId)
+      return kind ? { DOOL2_SESSION: kind } : undefined
+    },
     // Which model each kind of call uses (ADR 0037): requests on the agent's model, side jobs on its small model
     modelFor: (agent, role) => modelForRole(agent, role, evalModel),
     // Cache share of each turn's first AI call (ADR 0032: pinned instructions should keep it high)
@@ -541,7 +594,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (ev.kind !== 'busy' && ev.kind !== 'queued' && ev.kind !== 'checking' && ev.kind !== 'ack') return
     const status = {
       kind: 'conversation-status' as const,
-      busy: conversationBusy() || activeThreads.size > 0,
+      // A task working on its own does not make the conversation busy (ADR 0038)
+      busy: conversationBusy() || [...activeThreads].some((id) => !tasks.isTask(id)),
       queued: [...queued],
       ...(checkingNow ? { checking: true } : {}),
     }
@@ -554,6 +608,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const token = opts.token ?? randomBytes(32).toString('hex')
 
   const events = new EventEmitter<DaemonEvents>()
+  // Turning task sessions on or off changes the conversation's tools: the next message starts a new segment with them
+  let taskMode = taskSessionsOn()
+  events.on('settings', () => {
+    if (taskSessionsOn() === taskMode) return
+    taskMode = taskSessionsOn()
+    conversation.rotateSoon()
+  })
 
   // Browser bridge: extension → native messaging host → this socket
   const browser = new BrowserBridge(paths.dataDir)
@@ -915,9 +976,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    */
   const workingThread = () =>
     callerScope.getStore() ?? (activeThreads.size === 1 ? [...activeThreads][0] : undefined)
+  /**
+   * Where the person's own words for a chat are: a task's are in the conversation it came from (its own chat starts
+   * with the spec the AI wrote, which is not the person's words, ADR 0038)
+   */
+  const ownWordsOf = (threadId: string): string => {
+    const t = tasks.byThread(threadId)
+    return t ? (conversation.current()?.id ?? t.parentId) : threadId
+  }
   /** What the user typed in that chat, last few, oldest first (no app notes, no Dool2 answers, no tool results) */
   const recentAsks = (): string[] => {
-    const threadId = workingThread()
+    const working = workingThread()
+    const threadId = working ? ownWordsOf(working) : undefined
     if (!threadId) return []
     return store
       .listMessages(threadId)
@@ -1278,6 +1348,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** When Doori put a connect card in the chat (if it connects within 30 minutes after that, the AI is told to continue the stopped task) */
   const connectAsked = new Map<string, number>()
+  /** The chat that showed each connect card: a task continues there when the connection ends (ADR 0038) */
+  const connectThread = new Map<string, string>()
   /** Leaves only a note line in the chat without calling the AI (shown right away on the phone and PC) */
   const postNote = (text: string) => {
     const cur = conversation.current()
@@ -1405,17 +1477,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectDone = (card: ConnectCard) => {
     const asked = connectAsked.get(card.id)
     connectAsked.delete(card.id)
+    const asker = connectThread.get(card.id)
+    connectThread.delete(card.id)
     if (asked && Date.now() - asked < 30 * 60_000) {
       // Report first ("connected → continuing"), then the AI continues (people said they could not tell what was happening while waiting)
       sayNow(m().connectedResume(card.name))
-      void talk(
-        appNote(
-          forAI(
-            '',
-            `${card.name} is connected and Doori has verified the sign-in. Finish the task that stopped because ${card.name} was needed (do not show the connect card or sign-in again). If the task is already done, say so in one sentence.`,
-          ),
+      const note = appNote(
+        forAI(
+          '',
+          `${card.name} is connected and Doori has verified the sign-in. Finish the task that stopped because ${card.name} was needed (do not show the connect card or sign-in again). If the task is already done, say so in one sentence.`,
         ),
-      ).catch(() => {})
+      )
+      // A task that asked for the connection continues itself
+      const t = asker ? tasks.byThread(asker) : undefined
+      if (t && !tasks.ended(t)) followUp(t.threadId, note)
+      else void talk(note).catch(() => {})
     }
     // If this service's connect card is near the end of the chat, that card turns into "connected". Do not leave the same words again as a note line
     else if (!cardNearEnd(card)) postNote(m().connectedReady(card.name))
@@ -1645,9 +1721,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     phone: string,
     o: { services: boolean },
   ): Promise<{ ok: boolean; message: string }> {
-    if (conversationBusy()) return { ok: false, message: m().busyReset }
+    if (conversationBusy() || tasks.active().length) return { ok: false, message: m().busyReset }
     const before = store.listThreads(100_000).length
     store.clearConversations()
+    tasks.clear()
+    store.setSetting('tasks', undefined)
     for (const k of RESET_KEYS) store.setSetting(k, undefined)
     life.reload()
     if (o.services) store.setSetting('connections', undefined)
@@ -1704,7 +1782,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         })().catch(() => {})
         return id
       },
-      cancel: (id) => stopThread(id),
+      // A task's own chat stops as its task (ADR 0038)
+      cancel: (id) => {
+        const t = tasks.byThread(id)
+        if (t) stopTask(t, 'person')
+        else stopThread(id)
+      },
       approval: (id) => browserTools.approvals.get(id),
       screen: async (tabId, fit) => {
         const s = await browserTools.remoteScreen(tabId, fit)
@@ -1872,7 +1955,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           ...(checkingNow ? { checking: true } : {}),
           queued: [...queued],
           hasMore: messages.length === (limit ?? 60),
+          tasks: tasks.views(),
         }
+      },
+      task: (id, action) => {
+        const t = tasks.get(id)
+        if (!t) return
+        if (action === 'stop') stopTask(t, 'person')
+        else acceptTask(t)
       },
       cancelConversation: () => stopConversation(),
       acceptConversation: () => acceptConversation(),
@@ -2025,6 +2115,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   /** Chats sent back by the check whose next round has not started yet (still "working" for the screens) */
   const continuing = new Set<string>()
   const setChecking = (threadId: string, on: boolean) => {
+    // A task's draft stays in its own card (ADR 0038)
+    const task = tasks.byThread(threadId)
+    if (task) {
+      if (tasks.ended(task)) return
+      if (on) task.status = 'checking'
+      else if (task.status === 'checking') task.status = 'working'
+      emitTask(task)
+      return
+    }
     if (conversation.current()?.id !== threadId || checkingNow === on) return
     checkingNow = on
     live.emit('event', { kind: 'checking', checking: on })
@@ -2094,12 +2193,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (running++ === 0) events.emit('busy', true)
     continuing.delete(threadId)
     activeThreads.add(threadId)
-    // A turn may be a new AI session (a new segment) that has not seen the pages: its first click reads the whole page
-    browserTools.forgetSeen()
+    // A task session (ADR 0038): its steps go to its card, its result to the conversation when it ends
+    const task = tasks.byThread(threadId)
+    if (task) {
+      task.turnOut = []
+      if (task.status !== 'working' && !tasks.ended(task)) {
+        task.status = 'working'
+        emitTask(task)
+      }
+    }
+    // A turn may be a new AI session (a new segment) that has not seen the pages: its first click reads the whole page.
+    // The conversation of task sessions has no browser, so its turns leave a task's pages alone
+    if (sessionOf(threadId) !== 'conversation') browserTools.forgetSeen()
     live.emit('event', { kind: 'busy', busy: true })
     // Send the same progress to connected phones too (so chats started on the PC show on the phone)
-    // The separate chat that writes feed posts is not streamed to the phone's chat screen (the result goes to the feed)
-    const toPhones = threadId === store.getSetting('feedThread') ? () => {} : link.streamer(threadId)
+    // The separate chat that writes feed posts is not streamed to the phone's chat screen (the result goes to the feed),
+    // and neither is a task's own chat (its card is)
+    const toPhones = threadId === store.getSetting('feedThread') || task ? () => {} : link.streamer(threadId)
     // So the PC screen draws the main chat and the separate chats apart
     const side = store.getThread(threadId)?.side === true
     // Whether this answer produced an approval request or a "please do it yourself" (then no separate "done" notification is sent)
@@ -2132,6 +2242,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // For the before-finishing check: calls that only looked something up, and tool calls that failed
     let lookups = 0
     let toolFails = 0
+    // The conversation handed this request to a task (ADR 0038): the task is checked and reports, not this turn
+    let delegated = false
+    // What the judge sent back to do next (a task's card says it)
+    let againNext: string | undefined
     try {
       for await (const ev of inner) {
         if (ev.type === 'agent') {
@@ -2143,7 +2257,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           if (ev.event.type === 'error') failCode ??= ev.event.code
           if (ev.event.type === 'limit_reached') failCode ??= 'limit_reached'
         }
-        if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text)) {
+        // A task's messages are all the daemon's notes; its request is its spec (begun when it starts, ADR 0038)
+        if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text) && !task) {
           askText = withoutPhotoMark(ev.message.text)
           // A new request: what an earlier one left is no longer offered
           leftOf.delete(threadId)
@@ -2156,9 +2271,19 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (
           ev.type === 'agent' &&
           ev.event.type === 'tool' &&
-          !/(goal|memory|library|feed)_|status|skill_/.test(ev.event.name)
+          !/(goal|memory|library|feed|task)_|status|skill_/.test(ev.event.name)
         )
           usedTool = true
+        if (ev.type === 'agent' && ev.event.type === 'tool' && /task_(start|steer|stop)$/.test(ev.event.name))
+          delegated = true
+        if (task && ev.type === 'agent' && ev.event.type === 'tool') {
+          tasks.step(task, ev.event.name, ev.event.input)
+          emitTask(task)
+        }
+        if (task && ev.type === 'saved' && ev.message.role !== 'user') {
+          task.turnOut.push(ev.message)
+          if (ev.message.role === 'assistant') task.draft = ev.message.text
+        }
         // Waiting for an authenticator approval off the turn: the reply ends waiting for the person
         if (ev.type === 'agent' && ev.event.type === 'tool' && ev.event.name.endsWith('browser_wait_auth'))
           asked = true
@@ -2171,6 +2296,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             checkable &&
             !asked &&
             !failed &&
+            !delegated &&
             turnTools.length > 0 &&
             finishCheck.current(threadId) !== undefined &&
             !(turnTools.length <= 2 && lookups >= turnTools.length && !finishCheck.rounds(threadId))
@@ -2206,13 +2332,16 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         // so the "done" notification goes out as usual and the before-finishing check runs (it checks whether a question asked by a quick answer was really needed)
         if (rec?.kind && WAITING_KINDS.has(rec.kind)) {
           asked = true
+          // A task's card for the person also goes in the conversation, where the person is (ADR 0038)
+          const cur = task ? conversation.current()?.id : undefined
+          if (cur && ev.type === 'saved') postSaved(cur, store.addMessage(cur, 'tool', ev.message.text))
           if (rec.kind !== 'approval')
             void link
               .notify({
                 title: rec.kind === 'handoff' ? m().handoffTitle : m().loginNeeded,
                 body: rec.reason ?? m().waitingForHelp,
                 tag: `handoff-${threadId}`,
-                url: `#t=${threadId}`,
+                url: task ? '#tab=chat' : `#t=${threadId}`,
               })
               .catch(() => {})
         }
@@ -2245,6 +2374,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         checkable &&
         !asked &&
         !failed &&
+        !delegated &&
         !next &&
         !(queued.length && conversation.current()?.id === threadId) &&
         answerText
@@ -2281,15 +2411,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           r?.kind === 'again' &&
           finishCheck.current(threadId) === gen &&
           !threads.isRunning(threadId) &&
-          !spoke
-        )
+          // A message to the conversation does not hold back a task's next round
+          (!spoke || task !== undefined)
+        ) {
           again = r.note
+          againNext = r.next
+        }
       }
       // Sent back: the draft stays a draft until the next round's note is saved (then the card says what comes next)
       if (!again) setChecking(threadId, false)
       // The feed "finished tasks" entry is added once, when there is nothing left to continue (for a continued turn, with the first request)
       const feedAsk = askText || finishCheck?.askOf(threadId) || lastAsk.get(threadId)
-      if (usedTool && feedAsk && answerText && !again && !routineThreads.has(threadId)) {
+      if (usedTool && feedAsk && answerText && !again && !routineThreads.has(threadId) && !task) {
         lastAsk.delete(threadId)
         life.feed({
           kind: 'done',
@@ -2327,9 +2460,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // A request sent back keeps "working" until its next round starts, so the draft never shows as the answer between rounds
       if (again) continuing.add(threadId)
+      // A task decides here whether it continues, waits for the person or ends (its result goes to the conversation)
+      if (task)
+        taskTurnEnded(task, {
+          asked,
+          again: again !== undefined,
+          next: next !== undefined,
+          failed,
+          ...(againNext ? { nextStep: againNext } : {}),
+        })
       if (--running === 0 && !continuing.size) events.emit('busy', false)
       live.emit('event', { kind: 'busy', busy: activeThreads.size > 0 || continuing.size > 0 })
       // When a task handed over from the phone finishes, notify the phone (even if it ended while the app was closed)
+      // A task notifies when it ends (taskTurnEnded); a turn that handed work to a task has nothing done to tell yet
+      if (task || delegated) fromPhone.delete(threadId)
       if (!again && fromPhone.delete(threadId) && !asked) {
         const t = store.getThread(threadId)
         const last = store
@@ -2375,7 +2519,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const threadId = workingThread()
     const lastAsk = threadId
       ? (store
-          .listMessages(threadId)
+          .listMessages(ownWordsOf(threadId))
           .filter((m) => m.role === 'user')
           .at(-1)?.text ?? '')
       : ''
@@ -2529,11 +2673,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // A screen handed to a person: when the user taps [Done] or the screen changes (looks finished), Doori continues without making the user write in the chat
   // (user 11-20: "I want it to notice by itself, without me saying I'm done")
   const handoffDoneAt = new Map<number, number>()
+  /** The chat that handed each tab over (a task's hand-off goes back to that task, ADR 0038) */
+  const handoffThread = new Map<number, string>()
   const handoffDone = (tabId: number, why: string) => {
     browserTools.stopHandoffWatch(tabId)
     if (Date.now() - (handoffDoneAt.get(tabId) ?? 0) < 20_000) return
     handoffDoneAt.set(tabId, Date.now())
-    const threadId = conversation.current()?.id
+    const owner = handoffThread.get(tabId)
+    const threadId = owner && tasks.isTask(owner) ? owner : conversation.current()?.id
     if (!threadId) return
     sayNow(m().screenChanged)
     followUp(
@@ -2914,12 +3061,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const message = m().savedLoginInfo(r.site)
     void link.broadcast({ kind: 'login-done', id, ok: true, message })
     const threadId = loginThread.get(id)
-    if (viaPhone && threadId)
+    // A task's sign-in: the daemon tells that task even from the PC screen (which would tell the conversation)
+    const routed = threadId !== undefined && tasks.isTask(threadId)
+    if ((viaPhone || routed) && threadId)
       followUp(
         threadId,
         appNote(forAI(message, 'Fill them in with browser_login, sign in and continue the task.')),
       )
-    return { ok: true, message }
+    return { ok: true, message, ...(routed ? { routed: true } : {}) }
   }
   /**
    * Tells the AI the result of an approval or sign-in done on the phone so it continues.
@@ -2928,6 +3077,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const pendingFollowUps = new Map<string, string[]>()
   function followUp(threadId: string, text: string) {
     if (!store.getThread(threadId)) return
+    // A late answer (a sign-in saved, a code entered) for a task that already ended does not start it again
+    const task = tasks.byThread(threadId)
+    if (task && tasks.ended(task)) return
     if (threads.isRunning(threadId)) {
       pendingFollowUps.set(threadId, [...(pendingFollowUps.get(threadId) ?? []), text])
       return
@@ -2974,11 +3126,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     if (o.viaPhone) fromPhone.add(sessionId)
     // Proactive checks did not call the AI and were left only as cards in the chat. If the user continues about it, add it to this turn so it is understood
     const told = unseenTells.splice(0)
-    const aside = told.length
-      ? appNote(
-          `Already shown to the user in the chat (the user may talk about these):\n${told.map((t) => `- ${t.title}${t.body ? ` — ${t.body}` : ''}${t.from ? ` (${t.from})` : ''}`).join('\n')}`,
-        )
-      : undefined
+    // Tasks that ended since, and the ones still running (ADR 0038): the conversation knows them without a call
+    const ended = unseenTasks.splice(0)
+    const running = tasks.active()
+    const aside =
+      [
+        told.length
+          ? appNote(
+              `Already shown to the user in the chat (the user may talk about these):\n${told.map((t) => `- ${t.title}${t.body ? ` — ${t.body}` : ''}${t.from ? ` (${t.from})` : ''}`).join('\n')}`,
+            )
+          : '',
+        ended.length
+          ? appNote(
+              `Tasks that ended since your last answer. Each result is already shown to the user as your message; do not repeat it, just know it:\n${ended.join('\n')}`,
+            )
+          : '',
+        running.length
+          ? appNote(
+              `Tasks running now (task_steer passes the user's words to one, task_stop stops it, task_list tells more): ${running.map((t) => `${t.id} "${t.spec.title}" (${t.status})`).join(', ')}`,
+            )
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n') || undefined
     void (async () => {
       for await (const _ of tracked(sessionId, threads.send(sessionId, text, aside ? { aside } : {}), {
         receivedAt,
@@ -2990,6 +3160,280 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   }
   /** Proactive checks left as cards in the chat that the AI does not know yet */
   const unseenTells: TellRecordMessage[] = []
+
+  // ── Task sessions (ADR 0038) ───────────────────────────────────
+  /** Tasks that ended, for the conversation AI's next message (it did not see their results being posted) */
+  const unseenTasks: string[] = []
+  /** Each task's result, for task_list */
+  const taskResults = new Map<string, string>()
+  let taskSave: ReturnType<typeof setTimeout> | undefined
+  /** A task changed: the screens redraw its card, and the cards outlive a restart */
+  function emitTask(t: Task) {
+    const task = tasks.view(t)
+    live.emit('event', { kind: 'task', task })
+    void link.broadcast({ kind: 'task', task })
+    clearTimeout(taskSave)
+    taskSave = setTimeout(() => store.setSetting('tasks', tasks.views(30)), 300)
+    taskSave.unref?.()
+  }
+  const toolText = (text: string, isError = false): ToolResult => ({
+    ...(isError ? { isError: true } : {}),
+    content: [{ type: 'text', text }],
+  })
+  /** Starts a task if the browser lets it; otherwise it waits in line. Returns whether it started */
+  function startTask(t: Task): boolean {
+    if (!tasks.canStart(t)) {
+      emitTask(t)
+      return false
+    }
+    tasks.start(t)
+    const text = t.begun ? notesMessage(t.notes.splice(0), lang()) : taskBrief(t, lang())
+    t.begun = true
+    // The finish check compares the task's answer with what it was given to get done
+    finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
+    journal.write('task', { id: t.id, event: 'run' })
+    emitTask(t)
+    followUp(t.threadId, text)
+    return true
+  }
+  /** Starts what waits in line once the browser is free */
+  function startNext() {
+    for (let n = tasks.nextReady(); n; n = tasks.nextReady()) if (!startTask(n)) break
+  }
+  /** Ends a task (its program closes and the next one in line starts) */
+  function endTask(t: Task, status: 'done' | 'stopped' | 'failed') {
+    const ms = Date.now() - (t.startedAt ?? t.createdAt)
+    tasks.end(t, status)
+    void threads.release(t.threadId)
+    pendingFollowUps.delete(t.threadId)
+    journal.write('task', { id: t.id, event: status, ms, steps: t.work.record()?.count ?? 0 })
+    if (status === 'stopped')
+      unseenTasks.push(`- ${t.id} "${t.spec.title}" was stopped. What it had done stays.`)
+    emitTask(t)
+    startNext()
+  }
+  /** What a task answered last, with the cards saved after it (its draft, when the person takes it as is) */
+  function lastAnswerOf(threadId: string) {
+    const msgs = store.listMessages(threadId)
+    const at = msgs.map((x) => x.role).lastIndexOf('assistant')
+    return at < 0 ? [] : msgs.slice(at).filter((x) => x.role !== 'user')
+  }
+  /**
+   * A task ended with an answer: the answer and its result block go into the conversation as the task's one result
+   * (its steps stay on its card, its tool results stay in its own chat). The conversation AI hears it next message
+   */
+  function finishTask(t: Task, status: 'done' | 'failed', fromDraft = false) {
+    const cur = conversation.current()?.id ?? t.parentId
+    const out = fromDraft || !t.turnOut.length ? lastAnswerOf(t.threadId) : t.turnOut
+    let answer = ''
+    for (const x of out) {
+      if (x.role === 'tool' && x.text.includes('"kind":"work"')) continue
+      if (x.role === 'tool' && /"kind":"(approval|login|connect|handoff)"/.test(x.text)) continue
+      postSaved(cur, store.addMessage(cur, x.role, x.text))
+      if (!answer && (x.role === 'assistant' || x.role === 'system')) answer = x.text
+    }
+    if (!answer) {
+      answer = TASKS_TEXT(lang()).noAnswer
+      postSaved(cur, store.addMessage(cur, 'assistant', answer))
+    }
+    taskResults.set(t.id, answer)
+    unseenTasks.push(
+      `- ${t.id} "${t.spec.title}" ${status === 'done' ? 'finished' : 'stopped on an error'}. Its result: ${answer.slice(0, 1500)}`,
+    )
+    if (status === 'done')
+      life.feed({ kind: 'done', title: t.spec.title.slice(0, 60), body: answer.slice(0, 300), ref: cur })
+    void link
+      .notify({
+        title:
+          status === 'done'
+            ? TASKS_TEXT(lang()).doneTitle(t.spec.title)
+            : TASKS_TEXT(lang()).failedTitle(t.spec.title),
+        body: previewText(answer, 120),
+        tag: `task-${t.id}`,
+        url: '#tab=chat',
+      })
+      .catch(() => {})
+    endTask(t, status)
+  }
+  /** After each turn of a task: continue, wait for the person, take the person's notes, or end */
+  function taskTurnEnded(
+    t: Task,
+    r: { asked: boolean; again: boolean; next: boolean; failed: boolean; nextStep?: string },
+  ) {
+    if (tasks.ended(t)) return
+    if (t.stopping) return endTask(t, 'stopped')
+    if (t.accepting) return finishTask(t, 'done', true)
+    if (r.again) {
+      // The finish check sent it back: the card says what it does now, and the next round starts by itself
+      t.status = 'working'
+      t.continuing = true
+      if (r.nextStep) t.now = r.nextStep
+      emitTask(t)
+      return
+    }
+    // An approval or sign-in result arrived meanwhile: that turn starts next
+    if (r.next) return
+    // The person said something while it worked and it has not read it yet: that is its next message
+    if (t.notes.length) {
+      t.status = 'working'
+      finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
+      const text = notesMessage(t.notes.splice(0), lang())
+      emitTask(t)
+      setTimeout(() => followUp(t.threadId, text), 0)
+      return
+    }
+    if (r.asked) {
+      t.status = 'needs-you'
+      emitTask(t)
+      return
+    }
+    finishTask(t, r.failed ? 'failed' : 'done')
+  }
+  /** Stop (the card, the phone, or task_stop): the turn ends, its waiting approvals are turned down */
+  function stopTask(t: Task, by: 'person' | 'ai') {
+    if (tasks.ended(t)) return
+    journal.write('task', { id: t.id, event: 'stop', by })
+    // A late approval must not press a button for a task that was stopped
+    for (const ap of browserTools.approvals.list())
+      if (ap.status === 'pending' && approvalThread.get(ap.id) === t.threadId)
+        browserTools.approvals.reject(ap.id)
+    pendingFollowUps.delete(t.threadId)
+    if (t.status === 'waiting') return endTask(t, 'stopped')
+    if (threads.isRunning(t.threadId) || judging.has(t.threadId)) {
+      t.stopping = true
+      stopThread(t.threadId)
+      emitTask(t)
+      return
+    }
+    stopThread(t.threadId)
+    continuing.delete(t.threadId)
+    endTask(t, 'stopped')
+  }
+  /** "Take it as is" on a task's card: its draft becomes the result (ADR 0027 on a task) */
+  function acceptTask(t: Task): boolean {
+    if (tasks.ended(t) || (t.status !== 'checking' && !t.continuing)) return false
+    finishCheck?.drop(t.threadId)
+    journal.write('finish-check', { result: 'accepted', task: t.id })
+    if (threads.isRunning(t.threadId) || judging.has(t.threadId)) {
+      t.accepting = true
+      if (threads.isRunning(t.threadId)) threads.cancel(t.threadId, { discard: true })
+      return true
+    }
+    continuing.delete(t.threadId)
+    finishTask(t, 'done', true)
+    return true
+  }
+  /** The person's words for a task (task_steer): at its next tool result while it works, else as its next message */
+  function steerTask(t: Task, note: string): string {
+    journal.write('task-steer', { id: t.id, status: t.status })
+    if (t.status === 'stopped' || t.status === 'failed')
+      return `Task ${t.id} has ended (${t.status}). If the user still wants it, start a new one with task_start.`
+    tasks.note(t, note)
+    if (t.status === 'waiting') {
+      emitTask(t)
+      return `Task ${t.id} is still in line for the browser; it starts with this note. Tell the user in one short sentence.`
+    }
+    if (threads.isRunning(t.threadId) || judging.has(t.threadId) || continuing.has(t.threadId)) {
+      emitTask(t)
+      return `Passed to task ${t.id}; it reads it at its next step. Tell the user in one short sentence.`
+    }
+    // Not in a turn: waiting for the person, or done a moment ago. The note is its next message
+    if (t.status === 'done') {
+      t.status = 'waiting'
+      t.endedAt = undefined
+      if (!startTask(t))
+        return `Task ${t.id} had finished; it goes back in line for the browser and continues with this note.`
+      return `Task ${t.id} had finished and now continues with this note. Tell the user in one short sentence.`
+    }
+    t.status = 'working'
+    finishCheck?.begin(t.threadId, t.spec.goal, { doneWhen: t.spec.doneWhen })
+    const text = notesMessage(t.notes.splice(0), lang())
+    emitTask(t)
+    followUp(t.threadId, text)
+    return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
+  }
+  /** The task tools of the conversation (task_start, task_steer, task_stop, task_list) */
+  async function taskTool(caller: string | undefined, name: string, args: Record<string, unknown>) {
+    if (!caller || sessionOf(caller) !== 'conversation')
+      return toolText('Task tools work only in the conversation.', true)
+    if (name === 'task_list') return toolText(taskListText(tasks, taskResults))
+    if (name === 'task_start') {
+      const spec = parseTaskSpec(args)
+      if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
+      const agent = store.getThread(caller)?.agent ?? (await pickAgent(undefined))
+      const thread = store.createTaskThread(agent, spec.title)
+      const t = tasks.create(thread.id, caller, spec)
+      const rec: TaskRecordMessage = { kind: 'task', id: t.id, title: spec.title }
+      const saved = store.addMessage(caller, 'tool', JSON.stringify(rec))
+      t.recordId = saved.id
+      postSaved(caller, saved)
+      journal.write('task', {
+        id: t.id,
+        event: 'start',
+        browser: spec.browser,
+        doneWhen: spec.doneWhen.length,
+        known: spec.known.length,
+        avoid: spec.avoid.length,
+      })
+      if (startTask(t))
+        return toolText(
+          `Task ${t.id} ("${spec.title}") started. The user follows it on its card in the conversation, and its result will appear in this conversation by itself. Say in one short sentence that you are on it, and end your answer.`,
+        )
+      return toolText(
+        `Task ${t.id} ("${spec.title}") is in line for the browser (${tasks.ahead(t)} ahead) and starts by itself when the browser is free. Tell the user in one short sentence that it starts after the one running now, and end your answer.`,
+      )
+    }
+    const t = tasks.get(String(args.id ?? ''))
+    if (!t) return toolText(`No task "${String(args.id ?? '')}".\n${taskListText(tasks, taskResults)}`, true)
+    if (name === 'task_stop') {
+      stopTask(t, 'ai')
+      return toolText(`Task ${t.id} is stopped; what it already did stays. Tell the user in one sentence.`)
+    }
+    if (name === 'task_steer') {
+      const note = String(args.note ?? '').trim()
+      if (!note) return toolText('note is empty: write what to pass on.', true)
+      return toolText(steerTask(t, note.slice(0, 600)))
+    }
+    return toolText(`No such task tool: ${name}`, true)
+  }
+  /**
+   * The same split the tool servers have (ADR 0038), checked on every call: the conversation of task sessions cannot
+   * use the browser, PC apps, files, texting or a service tool that is not a lookup; only the conversation starts tasks;
+   * one task holds the browser at a time
+   */
+  async function fenceCall(caller: string, b: string, c: string, req: IncomingMessage) {
+    const kind = sessionOf(caller)
+    if (b === 'task')
+      return kind === 'conversation' ? undefined : toolText('Task tools work only in the conversation.', true)
+    if (kind === 'conversation') {
+      const away =
+        b === 'browser' || b === 'screen' || b === 'file' || (b === 'life' && c === 'phone_sms')
+          ? 'This works in a task:'
+          : b === 'service' && c === 'call'
+            ? connectors.tierOf(String(((await readJson(req)) as { tool?: unknown } | null)?.tool ?? '')) ===
+              'lookup'
+              ? undefined
+              : 'Only lookups run in the conversation:'
+            : b === 'service' && c === 'try'
+              ? 'This works in a task:'
+              : undefined
+      return away
+        ? toolText(
+            `${away} hand the work over with task_start (goal, done_when, known, avoid), then tell the user you are on it.`,
+            true,
+          )
+        : undefined
+    }
+    if (kind === 'task' && (b === 'browser' || b === 'screen')) {
+      const r = tasks.claim(caller)
+      if (!r.ok)
+        return toolText(
+          `The browser and PC apps are in use by another task (${r.holder.id} "${r.holder.spec.title}"). Go on with the other tools, or finish saying what still needs the browser.`,
+          true,
+        )
+    }
+    return undefined
+  }
   // Goals and automatic tasks: Doori does them at the set time
   /** Chats doing a scheduled task (that turn is not put separately into the feed "finished tasks") */
   const routineThreads = new Set<string>()
@@ -3372,6 +3816,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Address only for the Doori tool server: can be called only with the tool token
     if (parts[0] === 'api' && a === 'tools') {
       if (!authorized(req, toolToken)) return json(res, 401, { error: m().needAuth })
+      // The chat whose tool server called (x-dool2-toolset), and the split between conversation and task sessions
+      const caller = callerScope.getStore()
+      if (caller && req.method === 'POST' && b && c && !d) {
+        const refused = await fenceCall(caller, b, c, req)
+        if (refused) {
+          journal.write('session-fence', { tool: `${b}/${c}`, session: sessionOf(caller) ?? 'none' })
+          return json(res, 200, refused)
+        }
+      }
       // Loop guard: the same call with the same result again gets a "take another route" line (the call still runs)
       if (req.method === 'POST' && b && c && !d) {
         const tool = `${b}/${c}`
@@ -3382,7 +3835,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           // Text aimed at an AI in what was read (page, mail, file, app screen): one warning line on top
           const noted = withInjectionNote(tool, result)
           if (noted.kinds) journal.write('injection-note', { tool, kinds: noted.kinds })
-          return noted.result
+          // What the person passed on to this task while it works rides at the end of its next result (ADR 0038)
+          const notes = caller ? tasks.takeNotes(caller) : []
+          if (!notes.length) return noted.result
+          const t = caller ? tasks.byThread(caller) : undefined
+          if (t) {
+            journal.write('task-steer', { id: t.id, delivered: notes.length })
+            emitTask(t)
+          }
+          return withNotes(noted.result, notes)
         }
         // Replay test: answer from the tape, run nothing
         if (toolTape.current === 'replay') {
@@ -3409,6 +3870,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const reply = async (r: ToolResult) => json(res, 200, await autoApprover.after(pendingBefore, r))
       if (req.method === 'POST' && b === 'browser' && c && !d) {
         const args = (await readJson(req)) as Record<string, unknown>
+        if (c === 'handoff' && caller && typeof args?.tabId === 'number')
+          handoffThread.set(args.tabId, caller)
         return reply(await browserTools.run(c, args && typeof args === 'object' ? args : {}, { ai: true }))
       }
       if (req.method === 'POST' && b === 'screen' && c && !d) {
@@ -3483,6 +3946,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         const provider = via?.startsWith('social:') ? (via.slice(7) as SocialProvider) : undefined
         if (creds || (provider && provider in SOCIAL_PROVIDERS)) {
           connectAsked.set(card.id, Date.now())
+          if (caller) connectThread.set(card.id, caller)
           void startConnect(
             card,
             () =>
@@ -3511,6 +3975,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           connectMark(card.id, false)
         }
         connectAsked.set(card.id, Date.now())
+        if (caller) connectThread.set(card.id, caller)
         void link
           .notify({
             title: m().connectCardTitle(card.name),
@@ -3625,8 +4090,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       // Service tools: catalog (tools shown right away), find (find a service), call (run)
       if (req.method === 'POST' && b === 'service' && c && !d) {
         const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
-        if (c === 'catalog')
-          return json(res, 200, { tools: await connectors.catalogFor(String(args.toolset ?? '')) })
+        if (c === 'catalog') return json(res, 200, { tools: await catalogOf(String(args.toolset ?? '')) })
         if (c === 'find') return json(res, 200, await connectors.find(String(args.query ?? '').slice(0, 100)))
         if (c === 'orders_all') return json(res, 200, await connectors.ordersAll())
         // Test PC only: runs a tool definition not yet installed once in the user's Chrome (pnpm connector try --pc)
@@ -3649,6 +4113,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return reply(await connectors.call(String(args.tool ?? ''), input))
         }
         return json(res, 404, { error: m().noRoute })
+      }
+      // Task tools of the conversation (ADR 0038)
+      if (req.method === 'POST' && b === 'task' && c && !d) {
+        const args = ((await readJson(req)) ?? {}) as Record<string, unknown>
+        return json(res, 200, await taskTool(caller, c, args))
       }
       return json(res, 404, { error: m().noRoute })
     }
@@ -3899,9 +4368,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       if (b && !c && req.method === 'POST') {
         const { decision, choice } = ApprovalDecisionSchema.parse(await readJson(req))
-        if (decision === 'reject')
-          return json(res, 200, { ok: browserTools.approvals.reject(b), message: m().rejected })
-        return json(res, 200, await approveAny(b, choice))
+        const label = rec?.label ?? ''
+        const r =
+          decision === 'reject'
+            ? { ok: browserTools.approvals.reject(b), message: m().rejected }
+            : await approveAny(b, choice)
+        // A task's approval: the daemon tells that task (the screen would tell the conversation), ADR 0038
+        const owner = approvalThread.get(b)
+        if (owner && tasks.isTask(owner)) {
+          followUp(
+            owner,
+            appNote(
+              decision === 'reject'
+                ? forAI('', `The user declined ("${label}"). Do not press it.`)
+                : forAI(
+                    '',
+                    `The user approved it on the PC. ${r.message} Check the result and continue the task.`,
+                  ),
+            ),
+          )
+          return json(res, 200, { ...r, routed: true })
+        }
+        return json(res, 200, r)
       }
     }
 
@@ -4192,8 +4680,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         ...(checkingNow ? { checking: true } : {}),
         queued: [...queued],
         hasMore: messages.length === limit,
+        tasks: tasks.views(),
       }
       return json(res, 200, body)
+    }
+    // Tasks handed over in the conversation (ADR 0038): the list, stop, take the draft as the result
+    if (a === 'tasks' && !b && req.method === 'GET') return json(res, 200, { tasks: tasks.views() })
+    if (a === 'tasks' && b && (c === 'stop' || c === 'accept') && req.method === 'POST') {
+      const t = tasks.get(b)
+      if (!t) return json(res, 404, { error: m().noThread })
+      if (c === 'stop') stopTask(t, 'person')
+      return json(res, 200, { ok: c === 'stop' ? true : acceptTask(t), task: tasks.view(t) })
     }
     if (a === 'conversation' && b === 'messages' && req.method === 'POST') {
       const receivedAt = Date.now()
@@ -4301,6 +4798,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         claudeLogin?.cancel()
         // Resident agent programs end with the daemon (they would otherwise outlive it)
         void threads.releaseAll()
+        // Task cards are kept for the next start (their running tasks show as stopped then)
+        clearTimeout(taskSave)
+        try {
+          store.setSetting('tasks', tasks.views(30))
+        } catch {}
         journal.stop()
         clearInterval(lifeTimer)
         clearInterval(keepTimer)

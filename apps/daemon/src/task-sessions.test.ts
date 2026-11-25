@@ -1,0 +1,382 @@
+// Conversation and task sessions (ADR 0038), end to end through the daemon with stand-in agents. The stand-ins call
+// Dool2's tools over HTTP the way the real tool server does (tool token + x-dool2-toolset), so the split, the notes
+// passed on in tool results, the approvals and the one result per task are the daemon's real paths.
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { AgentRuntime, TurnInput } from '@dool2/engine'
+import type { AgentEvent, AgentStatus, StoredMessage, TaskView } from '@dool2/protocol'
+import { afterEach, describe, expect, it } from 'vitest'
+import { type Daemon, startDaemon } from './index.js'
+
+type Result = { isError?: boolean; content: { type: string; text: string }[]; routed?: boolean }
+type Script = (input: TurnInput, rt: TwoSessions) => AsyncGenerator<AgentEvent>
+
+/** Calls a Dool2 tool the way the tool server does */
+async function tool(input: TurnInput, kind: string, name: string, args: unknown): Promise<Result> {
+  const env = input.mcpServers[0]?.env ?? {}
+  const r = await fetch(`${env.DOOL2_API}/api/tools/${kind}/${name}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${env.DOOL2_TOOL_TOKEN}`,
+      'content-type': 'application/json',
+      'x-dool2-toolset': env.DOOL2_TOOLSET ?? '',
+    },
+    body: JSON.stringify(args),
+  })
+  return (await r.json()) as Result
+}
+const textOf = (r: Result) => r.content.map((c) => c.text).join('\n')
+
+/** A gate a stand-in waits at until the test opens it (or the turn is stopped) */
+function gate() {
+  let open: () => void = () => {}
+  const p = new Promise<void>((r) => {
+    open = r
+  })
+  return {
+    open: () => open(),
+    wait: (signal?: AbortSignal) =>
+      Promise.race([p, new Promise<void>((r) => signal?.addEventListener('abort', () => r()))]),
+  }
+}
+
+/** One agent that plays the conversation or a task, by the kind of session its tool server was given */
+class TwoSessions implements AgentRuntime {
+  readonly id = 'claude' as const
+  seen: TurnInput[] = []
+  results: Record<string, Result[]> = {}
+  constructor(
+    private readonly conv: Script,
+    private readonly task: Script,
+  ) {}
+  async detect(): Promise<AgentStatus> {
+    return { id: 'claude', installed: true, loggedIn: true, version: '9.9.9' }
+  }
+  kind(input: TurnInput) {
+    return input.mcpServers[0]?.env?.DOOL2_SESSION
+  }
+  keep(key: string, r: Result) {
+    this.results[key] = [...(this.results[key] ?? []), r]
+    return r
+  }
+  async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+    this.seen.push(input)
+    const kind = this.kind(input)
+    yield { type: 'started', resumeId: kind === 'task' ? 'r-task' : 'r-conv', tools: ['mcp__dool2__status'] }
+    yield* (kind === 'task' ? this.task : this.conv)(input, this)
+  }
+}
+
+async function* say(text: string): AsyncGenerator<AgentEvent> {
+  yield { type: 'text', delta: text }
+  yield { type: 'done', text }
+}
+async function* used(input: TurnInput, rt: TwoSessions, kind: string, name: string, args: unknown) {
+  const r = rt.keep(name, await tool(input, kind, name, args))
+  const full = kind === 'browser' ? `browser_${name}` : name
+  yield { type: 'tool', name: `mcp__dool2__${full}`, input: args } as AgentEvent
+  yield { type: 'tool_result', name: `mcp__dool2__${full}`, ok: !r.isError } as AgentEvent
+  return r
+}
+
+/** The conversation: hands "book" to a task, passes "make it" on, stops on "stop", answers the rest itself */
+const conversation: Script = async function* (input, rt) {
+  const ask = input.text.split('\n\n').at(-1) ?? ''
+  if (/^book/i.test(ask)) {
+    yield* used(input, rt, 'task', 'task_start', {
+      title: ask.includes('hotel') ? 'Hotel' : 'Train',
+      goal: ask,
+      done_when: ['a ticket number is read on the completion screen'],
+      known: ['2 adults'],
+      avoid: ['nothing over 100,000 won'],
+    })
+    yield* say('On it.')
+    return
+  }
+  if (/^make it/i.test(ask)) {
+    yield* used(input, rt, 'task', 'task_steer', { id: 't1', note: ask })
+    yield* say('Passed on.')
+    return
+  }
+  if (/^open/i.test(ask)) {
+    yield* used(input, rt, 'browser', 'open', { url: 'https://example.com' })
+    yield* say('Hmm.')
+    return
+  }
+  yield* say(`Sure: ${ask}`)
+}
+
+let daemon: Daemon | undefined
+let dir: string | undefined
+let home: string | undefined
+afterEach(async () => {
+  await daemon?.close()
+  daemon = undefined
+  for (const d of [dir, home]) if (d) await rm(d, { recursive: true, force: true })
+  dir = undefined
+  home = undefined
+})
+
+async function boot(rt: AgentRuntime, more: Partial<Parameters<typeof startDaemon>[0]> = {}) {
+  dir = await mkdtemp(join(tmpdir(), 'dool2-task-'))
+  daemon = await startDaemon({
+    timeLine: () => undefined,
+    dataDir: dir,
+    token: 't0ken',
+    runtimes: { claude: rt },
+    chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+    ...more,
+  })
+  const api = (path: string, init: RequestInit = {}) =>
+    fetch(`${daemon?.url}${path}`, {
+      ...init,
+      headers: { authorization: 'Bearer t0ken', 'content-type': 'application/json', ...init.headers },
+    })
+  await api('/api/settings', { method: 'PATCH', body: '{"taskSessions":true}' })
+  type State = { messages: StoredMessage[]; busy: boolean; queued: string[]; tasks?: TaskView[] }
+  const state = async () => (await (await api('/api/conversation')).json()) as State
+  const send = async (text: string) =>
+    (await (
+      await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text }) })
+    ).json()) as {
+      queued: boolean
+    }
+  const task = async (id = 't1') => (await state()).tasks?.find((t) => t.id === id)
+  return { api, state, send, task }
+}
+
+const until = async (f: () => Promise<boolean> | boolean, what = 'condition') => {
+  for (let i = 0; i < 400; i++) {
+    if (await f()) return
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error(`timed out waiting for ${what}`)
+}
+
+async function downloads() {
+  home = await mkdtemp(join(tmpdir(), 'dool2-home-'))
+  const dl = join(home, 'Downloads')
+  mkdirSync(dl)
+  writeFileSync(join(dl, 'a.pdf'), 'a')
+  writeFileSync(join(dl, 'b.pdf'), 'b')
+  return dl
+}
+
+describe('task sessions (ADR 0038)', () => {
+  it('start → talk while it runs → steer → approval in the task → finish check on done-when → one result', async () => {
+    const dl = await downloads()
+    const held = gate()
+    let taskTurns = 0
+    const searched: string[] = []
+    const task: Script = async function* (input, rt) {
+      taskTurns++
+      if (taskTurns === 1) {
+        await held.wait()
+        // The person's note rides on this result
+        const r: Result = yield* used(input, rt, 'life', 'conversation_search', { query: 'train' })
+        searched.push(textOf(r))
+        // Something that needs the person: moving two files asks for approval
+        yield* used(input, rt, 'file', 'file_move', {
+          moves: [
+            { from: join(dl, 'a.pdf'), folder: join(dl, 'x') },
+            { from: join(dl, 'b.pdf'), folder: join(dl, 'y') },
+          ],
+        })
+        yield* say('Approve the move on your phone, then I book it.')
+        return
+      }
+      // A step on a site (not a lookup), so the finish check judges it
+      yield { type: 'tool', name: 'mcp__dool2__browser_click', input: { tabId: 1, ref: 'e1' } }
+      yield* say('Booked the 7 pm KTX, ticket 1234.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const prompts: string[] = []
+    const {
+      api,
+      state,
+      send,
+      task: view,
+    } = await boot(rt, {
+      fileFolders: { desktop: [], documents: [], downloads: [dl] },
+      finishJudge: async (p) => {
+        prompts.push(p)
+        return '{"done":true,"why":"ticket read"}'
+      },
+    })
+
+    // 1) The conversation hands the work over and answers at once
+    expect(await send('book a KTX to Busan on Friday')).toEqual({ queued: false })
+    await until(() => rt.seen.some((x) => rt.kind(x) === 'task'), 'task turn')
+    await until(async () => !(await state()).busy, 'conversation free')
+    const convInput = rt.seen.find((x) => rt.kind(x) === 'conversation')
+    const taskInput = rt.seen.find((x) => rt.kind(x) === 'task')
+    expect(taskInput?.text).toContain('Goal: book a KTX to Busan on Friday')
+    expect(taskInput?.text).toContain('- a ticket number is read on the completion screen')
+    expect(taskInput?.text).toContain('- 2 adults')
+    expect(taskInput?.mcpServers[0]?.env?.DOOL2_TOOLSET).not.toBe(
+      convInput?.mcpServers[0]?.env?.DOOL2_TOOLSET,
+    )
+    let s = await state()
+    // The task's card is saved during the turn, so before the answer; the screens show it below (like approval cards)
+    expect(s.messages.map((x) => x.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(s.messages[1]?.text).toContain('"kind":"task"')
+
+    // 2) Talk while it runs: answered now, not queued
+    expect(await send('what is the weather')).toEqual({ queued: false })
+    await until(
+      async () => (await state()).messages.some((x) => x.text === 'Sure: what is the weather'),
+      'answer',
+    )
+    // The conversation is told what is running
+    expect(rt.seen.at(-1)?.text).toContain('Tasks running now')
+    expect(rt.seen.at(-1)?.text).toContain('t1 "Train"')
+
+    // 3) Change it midway: the note rides on the task's next tool result
+    await send('make it 7 pm')
+    await until(async () => (await view())?.notes === 1, 'note waiting')
+    expect(textOf(rt.results.task_steer?.[0] as Result)).toContain('reads it at its next step')
+    held.open()
+    await until(() => searched.length === 1, 'search')
+    expect(searched[0]).toContain('Message from the user')
+    expect(searched[0]).toContain('"make it 7 pm"')
+
+    // 4) The approval belongs to the task, shows in the conversation, and the approval continues the task
+    await until(async () => (await view())?.status === 'needs-you', 'needs you')
+    s = await state()
+    expect(s.messages.filter((x) => x.text.includes('"kind":"approval"'))).toHaveLength(1)
+    const { approvals } = (await (await api('/api/approvals')).json()) as { approvals: { id: string }[] }
+    const r = (await (
+      await api(`/api/approvals/${approvals[0]?.id}`, { method: 'POST', body: '{"decision":"approve"}' })
+    ).json()) as Result & { ok: boolean }
+    expect(r).toMatchObject({ ok: true, routed: true })
+    expect(existsSync(join(dl, 'x', 'a.pdf'))).toBe(true)
+
+    // 5) The finish check compares with done-when, and the result reaches the conversation once
+    await until(async () => (await view())?.status === 'done', 'task done')
+    expect(prompts.at(-1)).toContain('Done when')
+    expect(prompts.at(-1)).toContain('a ticket number is read on the completion screen')
+    s = await state()
+    const results = s.messages.filter((x) => x.text === 'Booked the 7 pm KTX, ticket 1234.')
+    expect(results).toHaveLength(1)
+    expect(results[0]?.role).toBe('assistant')
+    // The task's tool results and its own messages stay in its chat
+    expect(s.messages.some((x) => x.text.includes('Approve the move'))).toBe(false)
+    expect(s.messages.some((x) => x.text.includes('Goal:'))).toBe(false)
+    const detail = (await (await api(`/api/threads/${(await view())?.threadId}`)).json()) as {
+      messages: StoredMessage[]
+    }
+    expect(detail.messages.some((x) => x.text.includes('Approve the move'))).toBe(true)
+
+    // 6) The conversation hears the result on its next message
+    await send('thanks')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Sure: thanks'), 'thanks')
+    expect(rt.seen.at(-1)?.text).toContain('Tasks that ended since your last answer')
+    expect(rt.seen.at(-1)?.text).toContain('Booked the 7 pm KTX, ticket 1234.')
+    expect(rt.seen.at(-1)?.text).not.toContain('Tasks running now')
+  })
+
+  it('stop from the card ends the task, turns down its approvals and posts no result', async () => {
+    const held = gate()
+    const task: Script = async function* (input) {
+      await held.wait(input.signal)
+      yield* say('half done')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const { api, state, send, task: view } = await boot(rt)
+    await send('book a train')
+    await until(() => rt.seen.some((x) => rt.kind(x) === 'task'), 'task turn')
+    const r = (await (await api('/api/tasks/t1/stop', { method: 'POST' })).json()) as { ok: boolean }
+    expect(r.ok).toBe(true)
+    await until(async () => (await view())?.status === 'stopped', 'stopped')
+    held.open()
+    await new Promise((x) => setTimeout(x, 50))
+    expect((await state()).messages.some((x) => x.text === 'half done')).toBe(false)
+  })
+
+  it('one browser at a time: the second task waits in line and starts when the first ends', async () => {
+    const first = gate()
+    const briefs: string[] = []
+    const task: Script = async function* (input) {
+      briefs.push(input.text)
+      if (briefs.length === 1) await first.wait()
+      yield* say(`done ${briefs.length}`)
+    }
+    const rt = new TwoSessions(conversation, task)
+    const {
+      send,
+      task: view,
+      state,
+    } = await boot(rt, {
+      finishJudge: async () => '{"done":true,"why":"ok"}',
+    })
+    await send('book a train')
+    await until(async () => (await view('t1'))?.status === 'working', 't1 working')
+    await until(async () => !(await state()).busy, 'conversation free')
+    await send('book a hotel')
+    await until(async () => (await view('t2'))?.status === 'waiting', 't2 waiting')
+    expect((await view('t2'))?.ahead).toBe(1)
+    expect(textOf(rt.results.task_start?.[1] as Result)).toContain('in line for the browser (1 ahead)')
+    expect(briefs).toHaveLength(1)
+    first.open()
+    await until(async () => (await view('t2'))?.status === 'done', 't2 done')
+    expect(briefs).toHaveLength(2)
+    expect(briefs[1]).toContain('Goal: book a hotel')
+    const answers = (await state()).messages.filter((x) => /^done \d$/.test(x.text)).map((x) => x.text)
+    expect(answers).toEqual(['done 1', 'done 2'])
+  })
+
+  it('take it as is: the draft being checked becomes the result', async () => {
+    const task: Script = async function* (input, rt) {
+      yield { type: 'tool', name: 'mcp__dool2__browser_click', input: { tabId: 1, ref: 'e1' } }
+      yield* say('Found 2 trains; the 7 pm one is cheapest.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    let judged = 0
+    const {
+      api,
+      state,
+      send,
+      task: view,
+    } = await boot(rt, {
+      finishJudge: (_p, signal) => {
+        judged++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => resolve('{"done":false,"why":"x","next":"y"}')),
+        )
+      },
+    })
+    await send('book a train')
+    await until(() => judged === 1, 'judging')
+    await until(async () => (await view())?.status === 'checking', 'checking')
+    expect((await view())?.draft).toBe('Found 2 trains; the 7 pm one is cheapest.')
+    const r = (await (await api('/api/tasks/t1/accept', { method: 'POST' })).json()) as { ok: boolean }
+    expect(r.ok).toBe(true)
+    await until(async () => (await view())?.status === 'done', 'done')
+    const msgs = (await state()).messages.filter(
+      (x) => x.text === 'Found 2 trains; the 7 pm one is cheapest.',
+    )
+    expect(msgs).toHaveLength(1)
+  })
+
+  it('the conversation has no browser: the daemon refuses it too, and each session gets its kind', async () => {
+    const rt = new TwoSessions(conversation, async function* () {
+      yield* say('x')
+    })
+    const { send, state } = await boot(rt)
+    await send('open the site')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Hmm.'), 'answer')
+    expect(textOf(rt.results.open?.[0] as Result)).toContain('This works in a task')
+    expect(rt.kind(rt.seen[0] as TurnInput)).toBe('conversation')
+  })
+
+  it('without the setting nothing changes: no session kind, no task tools', async () => {
+    const rt = new TwoSessions(conversation, conversation)
+    const { api, send, state } = await boot(rt)
+    await api('/api/settings', { method: 'PATCH', body: '{"taskSessions":false}' })
+    await send('hello')
+    await until(async () => (await state()).messages.some((x) => x.text === 'Sure: hello'), 'answer')
+    expect(rt.kind(rt.seen.at(-1) as TurnInput)).toBeUndefined()
+  })
+})

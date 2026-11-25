@@ -92,6 +92,8 @@ export interface ThreadSummary {
   approval?: { id: string; what: string; amount?: string; label: string }
   /** A separate conversation (not the main conversation) */
   side?: boolean
+  /** A task session's own chat (ADR 0038): its detail, not listed with the separate conversations */
+  task?: boolean
 }
 
 /** For previews: strips markdown symbols and shortens to one line */
@@ -195,6 +197,11 @@ export const SettingsSchema = z.object({
    * message, as before (a fallback if the resident session misbehaves)
    */
   residentAgent: z.boolean().optional(),
+  /**
+   * Hand longer work to task sessions so the conversation keeps talking (ADR 0038). Empty: the default of this build
+   * (TASK_SESSIONS_DEFAULT in the daemon). Applies from the next segment of the conversation
+   */
+  taskSessions: z.boolean().optional(),
   /** Send usage stats (numbers only, apps/daemon/src/stats.ts). Empty means not asked yet */
   usageStats: z.boolean().optional(),
   /** UI language of the desktop app and the language Dool2 answers in by default (ADR 0029). Empty: follow the device */
@@ -302,6 +309,52 @@ export interface ConversationState {
   queued: string[]
   /** There may be earlier messages (load more with before) */
   hasMore: boolean
+  /** Tasks handed over in the conversation (ADR 0038): the running ones and the last few finished. Older PCs omit it */
+  tasks?: TaskView[]
+}
+
+// ── Task sessions (ADR 0038) ──────────────────────────────────────────
+
+/**
+ * waiting: in line for the browser. working: in its session. checking: its answer is a draft before the finish check.
+ * needs-you: waiting for the person (an approval, a sign-in, a card). done, stopped, failed: ended
+ */
+export type TaskStatus = 'waiting' | 'working' | 'checking' | 'needs-you' | 'done' | 'stopped' | 'failed'
+
+/** One task as the screens show it: one progress card in the conversation */
+export interface TaskView {
+  /** Short id the AI uses ("t3") */
+  id: string
+  title: string
+  status: TaskStatus
+  /** What it is doing now (the last step), or what it continues with after the finish check sent it back */
+  now?: string
+  /** The finish check sent it back and it is on another round */
+  continuing?: boolean
+  /** Steps so far (the last 30), with the same fields as a work record */
+  steps: WorkRecordMessage['steps']
+  count: number
+  /** ISO times */
+  createdAt: string
+  startedAt?: string
+  endedAt?: string
+  /** Tasks ahead of it in line for the browser */
+  ahead?: number
+  /** The draft answer while it is checked (take it as is makes it the result) */
+  draft?: string
+  /** Notes from the person the task has not read yet */
+  notes?: number
+  /** The task's own chat (its detail: GET /api/threads/<id>) */
+  threadId: string
+  /** The last site it worked on */
+  host?: string
+}
+
+/** The task's card in the conversation, saved when it starts. The screen draws it from the task's current view */
+export interface TaskRecordMessage {
+  kind: 'task'
+  id: string
+  title: string
 }
 
 /** GET /api/conversation/live: what happens in the conversation (whichever place the turn started from) */
@@ -327,6 +380,8 @@ export type ConversationLiveEvent =
   | { kind: 'reset' }
   /** Connecting: the service being signed in to has changed */
   | { kind: 'connect'; connecting: string[] }
+  /** A task changed (ADR 0038) */
+  | { kind: 'task'; task: TaskView }
 
 // ── Browser hands (ADR 0006): the Dool2 core <-> native messaging <-> the Dool2 extension ──────
 
@@ -1234,6 +1289,8 @@ export type PhoneToPc =
   | { kind: 'conversation-accept' }
   /** Continue what the check left when it reached its limit (the [Continue] button on a 'left' record) */
   | { kind: 'conversation-continue' }
+  /** A task's card (ADR 0038): stop it, or take its draft as the result */
+  | { kind: 'task'; id: string; action: 'stop' | 'accept' }
   /** Separate conversations: create (-> answered as thread), delete */
   | { kind: 'side-new' }
   | { kind: 'side-delete'; id: string }
@@ -1351,6 +1408,8 @@ export type PcToPhone =
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** Whether the conversation is answering, and the messages waiting in line (every time it changes) */
   | { kind: 'conversation-status'; busy: boolean; queued: string[]; checking?: boolean }
+  /** A task changed (ADR 0038) */
+  | { kind: 'task'; task: TaskView }
   | { kind: 'life'; state: LifeState }
   /** One page of a long list (returns what was asked as is: the screen knows which list it is) */
   | {

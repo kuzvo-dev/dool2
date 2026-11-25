@@ -91,6 +91,8 @@ interface AskState {
   calls: number
   lookups: number
   whys: string[]
+  /** A task's done-when conditions (ADR 0038) */
+  doneWhen?: string[]
 }
 
 /** source: the judge AI, or the code check that caught a claimed action with nothing behind it */
@@ -136,6 +138,8 @@ export const JUDGE_SYSTEM = [
 
 export function judgePrompt(i: {
   ask: string
+  /** A task's done-when conditions (ADR 0038): the yardstick instead of the request alone */
+  doneWhen?: string[]
   answer: string
   tools: string[]
   cycle: number
@@ -154,6 +158,12 @@ export function judgePrompt(i: {
   ].filter(Boolean)
   return [
     `User request:\n${i.ask.slice(0, 1500)}`,
+    i.doneWhen?.length
+      ? `Done when (the conditions this task was given; it is done only when each holds, or what is left of it is the person's part):\n${i.doneWhen
+          .slice(0, 6)
+          .map((c) => `- ${c.slice(0, 200)}`)
+          .join('\n')}`
+      : '',
     `Tools Dool has used so far: ${tools}`,
     facts.length ? `Facts from the daemon:\n${facts.map((f) => `- ${f}`).join('\n')}` : '',
     i.cycle > 0
@@ -244,8 +254,11 @@ export class FinishCheck {
     this.now = opts.now ?? Date.now
   }
 
-  /** The user made a new request (a message, not an app notification) */
-  begin(threadId: string, ask: string): void {
+  /**
+   * The user made a new request (a message, not an app notification), or a task session began (ADR 0038): then the
+   * spec's done-when conditions are what the judge compares the answer with
+   */
+  begin(threadId: string, ask: string, o: { doneWhen?: string[] } = {}): void {
     this.asks.set(threadId, {
       gen: ++this.gen,
       ask,
@@ -255,6 +268,7 @@ export class FinishCheck {
       calls: 0,
       lookups: 0,
       whys: [],
+      ...(o.doneWhen?.length ? { doneWhen: o.doneWhen } : {}),
     })
   }
 
@@ -319,6 +333,7 @@ export class FinishCheck {
         said = await this.opts.ask(
           judgePrompt({
             ask: s.ask,
+            ...(s.doneWhen ? { doneWhen: s.doneWhen } : {}),
             answer: turn.answer,
             tools: [...s.tools],
             cycle: s.cycles,

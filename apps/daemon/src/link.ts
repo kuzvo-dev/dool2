@@ -136,6 +136,8 @@ export interface LinkHost {
   /** One conversation (ADR 0015) */
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
+  /** A task's card (ADR 0038): stop it, or take its draft as the result. Older daemons in tests may leave it out */
+  task?(id: string, action: 'stop' | 'accept'): void
   /** Take the draft as the result (ADR 0027) */
   acceptConversation(): void
   /** Continue what the before-finishing check left */
@@ -492,6 +494,10 @@ export class PhoneLink {
         return this.host.acceptConversation()
       case 'conversation-continue':
         return this.host.continueConversation()
+      case 'task':
+        if (typeof msg.id === 'string' && (msg.action === 'stop' || msg.action === 'accept'))
+          this.host.task?.(msg.id.slice(0, 40), msg.action)
+        return
       case 'connect': {
         const action = msg.action
         if (

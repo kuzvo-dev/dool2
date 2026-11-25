@@ -194,3 +194,24 @@ describe('따로 하는 대화', () => {
     expect(db.openSideThread('claude', 2, feed.id)).toBeDefined()
   })
 })
+
+describe('task threads (ADR 0038)', () => {
+  it('stay out of the conversation, its search, the side chats and the current segment', () => {
+    const db = new Store(':memory:')
+    store = db
+    const seg = db.createThread('claude')
+    db.addMessage(seg.id, 'user', 'book a train')
+    const task = db.createTaskThread('claude', 'Train')
+    expect(task).toMatchObject({ side: true, task: true, title: 'Train' })
+    db.addMessage(task.id, 'user', 'train brief')
+    db.addMessage(task.id, 'assistant', 'train booked')
+    expect(db.getThread(task.id)).toMatchObject({ task: true })
+    expect(db.currentSession()?.id).toBe(seg.id)
+    expect(db.listConversation().map((m) => m.text)).toEqual(['book a train'])
+    expect(db.searchConversation('train', { excludeThreadId: 'none' }).map((m) => m.text)).toEqual([
+      'book a train',
+    ])
+    expect(db.listSideThreads()).toEqual([])
+    expect(db.openSideThread('claude', 1)?.id).not.toBe(task.id)
+  })
+})
