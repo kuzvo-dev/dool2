@@ -849,12 +849,16 @@ export const SEEN_TTL_MS = 10 * 60_000
 
 export class BrowserTools {
   private pages = new Map<number, PageInfo>()
-  /** Per tab: the last whole page the AI saw. Clicks and typing on the same page give only what changed since */
-  private seen = new Map<number, SeenPage>()
-  /** Off: clicks and typing give the whole page as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
+  /**
+   * Per AI session (the chat whose tool server called, '' when unknown), per tab: the last whole page that AI saw.
+   * Actions on a page it saw give only what changed since. Each chat keeps its own: a page one task read is not in
+   * another task's context
+   */
+  private seen = new Map<string, Map<number, SeenPage>>()
+  /** Off: actions give the whole page as before (DOOL2_CLICK_CHANGES=0, to compare in evals) */
   changesOnly = true
-  /** Per AI tool call: whole pages read during the call (they become what the AI saw once the call returns) */
-  private call = new AsyncLocalStorage<{ reads: Map<number, SeenPage> }>()
+  /** Per AI tool call: whose call it is and the whole pages read during it (they become what it saw once it returns) */
+  private call = new AsyncLocalStorage<{ reads: Map<number, SeenPage>; viewer: string }>()
   /** Screens where a hand-off was sent back once (tab:URL) — handed off only the second time */
   private handoffChecked = new Set<string>()
   /** Sites (origin) received through a login card that have not logged in successfully yet. On failure the vault entry is removed and the card asked again */
@@ -1158,19 +1162,66 @@ export class BrowserTools {
    * Runs a browser tool. ai: the result goes to the AI as it is (the tool address the AI calls), so the pages it read
    * become what the AI saw. Calls made inside Dool2 (service tool steps) leave that alone and always read whole pages
    */
-  async run(tool: string, args: Record<string, unknown>, opts: { ai?: boolean } = {}): Promise<ToolResult> {
+  async run(
+    tool: string,
+    args: Record<string, unknown>,
+    opts: { ai?: boolean; viewer?: string } = {},
+  ): Promise<ToolResult> {
     // (outside any AI call's record, so a Dool2 call made while serving one does not count as seen)
     if (!opts.ai) return this.call.exit(() => this.runCall(tool, args))
     const reads = new Map<number, SeenPage>()
-    const r = await this.call.run({ reads }, () => this.runCall(tool, args))
+    const viewer = opts.viewer ?? ''
+    const r = await this.call.run({ reads, viewer }, () => this.runCall(tool, args))
     // A failed call may not have shown the pages it read: keep the older base (changes against it are still all there)
-    if (!r.isError) for (const [tabId, page] of reads) this.seen.set(tabId, page)
+    if (!r.isError && reads.size) {
+      this.pruneSeen()
+      const mine = this.seen.get(viewer) ?? new Map<number, SeenPage>()
+      for (const [tabId, page] of reads) mine.set(tabId, page)
+      this.seen.set(viewer, mine)
+    }
     return r
   }
 
-  /** Forgets the pages the AI saw (a new turn may be a new AI session that has not seen them): the next read is whole */
-  forgetSeen() {
-    this.seen.clear()
+  /**
+   * Forgets the pages an AI session saw (its agent program is new, or was closed and started again): its next read of
+   * each page is whole. Without a viewer, every session's pages are forgotten
+   */
+  forgetSeen(viewer?: string) {
+    if (viewer === undefined) this.seen.clear()
+    else this.seen.delete(viewer)
+  }
+
+  /** Pages too old to be a base are dropped (a chat that stopped working keeps nothing) */
+  private pruneSeen() {
+    const old = Date.now() - SEEN_TTL_MS
+    for (const [viewer, tabs] of this.seen) {
+      for (const [tabId, page] of tabs) if (page.at < old) tabs.delete(tabId)
+      if (!tabs.size) this.seen.delete(viewer)
+    }
+  }
+
+  /**
+   * What the page now is compared with, for an AI call: the last page this AI saw in the tab when it is the same
+   * address; else the same address seen in another tab (a tab opened again on a page it read); else the tab's last
+   * page when it moved to another page of the same site (menus, header and footer stay, and only what differs is new)
+   */
+  private baseFor(
+    viewer: string,
+    tabId: number,
+    url: string,
+  ): { page: SeenPage; from?: number; moved?: boolean } | undefined {
+    const mine = this.seen.get(viewer)
+    if (!mine) return undefined
+    const fresh = (p: SeenPage | undefined) => (p && Date.now() - p.at < SEEN_TTL_MS ? p : undefined)
+    const here = fresh(mine.get(tabId))
+    if (here?.url === url) return { page: here }
+    let other: { page: SeenPage; from: number } | undefined
+    for (const [t, p] of mine)
+      if (t !== tabId && p.url === url && fresh(p) && (!other || p.at > other.page.at))
+        other = { page: p, from: t }
+    if (other) return other
+    if (here && sameSite(here.url, url)) return { page: here, moved: true }
+    return undefined
   }
 
   private async runCall(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
@@ -1212,11 +1263,18 @@ export class BrowserTools {
         )
       }
       case 'read':
-        return this.read(tabId, a.maxChars, undefined, {
-          ...(a.view === true ? { view: true } : {}),
-          ...(typeof a.from === 'string' && a.from.trim() ? { from: a.from.trim() } : {}),
-          ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
-        })
+        // The AI asked for the page: it gets the whole page, never only what changed
+        return this.read(
+          tabId,
+          a.maxChars,
+          undefined,
+          {
+            ...(a.view === true ? { view: true } : {}),
+            ...(typeof a.from === 'string' && a.from.trim() ? { from: a.from.trim() } : {}),
+            ...(Number(a.skip) > 0 ? { skip: Math.floor(Number(a.skip)) } : {}),
+          },
+          false,
+        )
       case 'click': {
         // Buttons inside a frame on the page (a small window from another address): frames change late. If unchanged right after the click, wait briefly and read again
         // (measured 11-20 Gmarket adding an address: the form appeared, but reading right away concluded 'no input window' and handed off to the person)
@@ -1239,7 +1297,7 @@ export class BrowserTools {
           this.trails.delete(tabId)
           return this.read(r.newTabId, undefined, `${r.note} A new tab opened, so I read that tab.`)
         }
-        const out = await this.read(tabId, undefined, r.note, {}, true)
+        const out = await this.read(tabId, undefined, r.note)
         this.noteTrail(tabId, was?.url, pressed)
         if (!inFrame || frameSig() !== before) return out
         await new Promise((res) => setTimeout(res, 1_500))
@@ -1247,12 +1305,10 @@ export class BrowserTools {
           tabId,
           undefined,
           `${r.note} (waited briefly for the frame on the page to change and read again)`,
-          {},
-          true,
         )
       }
       case 'type':
-        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note, {}, true)
+        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
       case 'press':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
       case 'hover':
@@ -1300,7 +1356,7 @@ export class BrowserTools {
       case 'close': {
         await this.browser.call('close', { tabId })
         this.pages.delete(tabId)
-        this.seen.delete(tabId)
+        for (const tabs of this.seen.values()) tabs.delete(tabId)
         return { content: [{ type: 'text', text: `Closed tab ${tabId}.` }] }
       }
       case 'login': {
@@ -3734,7 +3790,7 @@ export class BrowserTools {
   /** A tab closed (by the user or tab cleanup): removes its records and expires approvals waiting on it */
   forgetTab(tabId: number) {
     this.pages.delete(tabId)
-    this.seen.delete(tabId)
+    for (const tabs of this.seen.values()) tabs.delete(tabId)
     this.guided.delete(tabId)
     this.handedOff.delete(tabId)
     this.dialogs.delete(tabId)
@@ -4040,15 +4096,16 @@ export class BrowserTools {
   }
 
   /**
-   * Reads the page and makes the result for the AI. changes: after a click or typing, give only the lines that changed
-   * since the last whole page the AI saw in this tab (the whole page when it moved or mostly changed)
+   * Reads the page and makes the result for the AI. changes: give only the lines that changed since the page this AI
+   * saw (see baseFor; the whole page when it is new to the AI or mostly changed). Off for browser_read, which the AI
+   * calls to get the whole page
    */
   private async read(
     tabId: number,
     maxChars?: unknown,
     note?: string,
     scope: { view?: boolean; from?: string; skip?: number } = {},
-    changes = false,
+    changes = true,
   ): Promise<ToolResult> {
     const max = Number(maxChars) || 8_000
     const partial = Boolean(scope.view || scope.from || scope.skip)
@@ -4085,11 +4142,12 @@ export class BrowserTools {
     this.pages.set(tabId, info)
     // Only changes, against the last whole page the AI saw here (while it is fresh)
     const ctx = this.call.getStore()
-    const base = changes && this.changesOnly && ctx && !partial ? this.seen.get(tabId) : undefined
-    const diff =
-      base && Date.now() - base.at < SEEN_TTL_MS
-        ? pageDiff(base, { url: s.url, text: s.text, truncated: s.truncated })
-        : undefined
+    const base =
+      changes && this.changesOnly && ctx && !partial ? this.baseFor(ctx.viewer, tabId, s.url) : undefined
+    const found = base
+      ? pageDiff({ ...base.page, url: s.url }, { url: s.url, text: s.text, truncated: s.truncated })
+      : undefined
+    const diff = found && base ? { ...found, from: base.from, moved: base.moved } : undefined
     if (!partial) ctx?.reads.set(tabId, { url: s.url, text: s.text, truncated: s.truncated, at: Date.now() })
     this.noteRead(s)
     const accountNote = await this.settlePassword(s)
@@ -4166,14 +4224,43 @@ export class BrowserTools {
   }
 }
 
-/** The page text part of a result that shows only what changed (one line says how to get the whole page) */
-export function changeLines(d: { lines: number; changed: number; text: string }): string[] {
+/**
+ * The page text part of a result that shows only what changed (one line says against what, and how to get the whole
+ * page). from: the page was read before in that tab; moved: the tab went to another page of the same site
+ */
+export function changeLines(d: {
+  lines: number
+  changed: number
+  text: string
+  from?: number | undefined
+  moved?: boolean | undefined
+}): string[] {
+  const since =
+    d.from !== undefined
+      ? `the same page you read in tab ${d.from}`
+      : d.moved
+        ? 'the last page you read in this tab (another page of the same site)'
+        : undefined
   if (!d.text)
-    return ['(The page text did not change since the last read. browser_read shows the whole page.)']
+    return [
+      since
+        ? `(The page text is the same as ${since}. browser_read shows the whole page.)`
+        : '(The page text did not change since the last read. browser_read shows the whole page.)',
+    ]
   return [
-    `(Only what changed since the last read: ${d.changed} new or changed lines of ${d.lines}; the rest is as it was. browser_read shows the whole page.)`,
+    `(Only what ${since ? `differs from ${since}` : 'changed since the last read'}: ${d.changed} new or changed lines of ${d.lines}; the rest is as it was. browser_read shows the whole page.)`,
     d.text,
   ]
+}
+
+/** Two addresses on the same site (host without www.) */
+function sameSite(a: string, b: string): boolean {
+  try {
+    const h = (u: string) => new URL(u).host.replace(/^www\./, '')
+    return h(a) === h(b)
+  } catch {
+    return false
+  }
 }
 
 /** Line telling which part was read (view, from, skip) */
