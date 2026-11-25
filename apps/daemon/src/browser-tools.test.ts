@@ -629,6 +629,37 @@ describe('필요한 부분만 읽기', () => {
   })
 })
 
+describe('hand-off needs what was tried', () => {
+  it('a site with service tools is not handed off with nothing tried; with what was tried it goes on', async () => {
+    const tools = new BrowserTools(fakeBrowser())
+    tools.siteConnector = async () => ({ id: 'shop', name: 'Shop', tools: ['shop_orders'] })
+    await tools.run('open', { url: 'https://shop.example/login' })
+    const r = await tools.run('handoff', {
+      tabId: 3,
+      reason: 'sign in',
+      blocker: 'other',
+      tried: 'nothing',
+      emergency: true,
+    })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('Not handed off: nothing was tried yet')
+    expect(text(r)).toContain('shop_orders')
+    expect(tools.handoffsSince(0)).toEqual([])
+    const args = {
+      tabId: 3,
+      reason: 'sign in',
+      blocker: 'identity_check',
+      tried: 'shop_orders stopped at a sign-in check',
+      emergency: true,
+    }
+    await tools.run('handoff', args)
+    const done = await tools.run('handoff', args)
+    expect(done.isError).toBeFalsy()
+    expect(text(done)).toContain('⏸ Waiting for the person.')
+    expect(tools.handoffsSince(0)).toEqual([{ tabId: 3, blocker: 'identity_check', tried: args.tried }])
+  })
+})
+
 describe('원격 화면 (폰)', () => {
   it('두리가 사람에게 넘긴 탭만, 30분 동안 보고 누를 수 있다', async () => {
     const b = fakeBrowser()
@@ -1215,7 +1246,16 @@ describe('내 정보로 예약자 칸 채우기', () => {
     expect(text(r)).toContain('My info has no 이메일')
     expect(text(r)).toContain('browser_request_profile')
     expect(b.calls.filter((c) => c[0] === 'fill')).toHaveLength(1)
-    const card = await tools.run('request_profile', { fields: ['email', 'phone'], reason: '호텔 예약자 칸' })
+    // Not shown before looking where the values may already be
+    const blind = await tools.run('request_profile', { fields: ['email', 'phone'], reason: '호텔 예약자 칸' })
+    expect(blind.isError).toBe(true)
+    expect(text(blind)).toContain('profile_view')
+    expect(asked).toEqual([])
+    const card = await tools.run('request_profile', {
+      fields: ['email', 'phone'],
+      reason: '호텔 예약자 칸',
+      looked: ['profile_view', 'mail'],
+    })
     expect(card.isError).toBeUndefined()
     expect(asked).toEqual([['email', 'phone']])
     // 버튼에는 채우지 않는다
