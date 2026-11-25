@@ -3982,7 +3982,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           // The conversation of task sessions told to use a browser, app or file tool: how to get it done (ADR 0038)
           const talk = caller !== undefined && sessionOf(caller) === 'conversation'
           // No result gives the AI more than 6,000 characters unless it asked for more (everything above read it whole)
-          const capped = capResult(tool, input, talk ? withTaskHint(noted.result) : noted.result)
+          const capped = capResult(tool, input, talk ? withTaskHint(noted.result, tool) : noted.result)
           if (capped.cut) journal.write('result-cap', { tool, ...capped.cut })
           if (talk) return capped.result
           // What the person passed on to this task while it works rides at the end of its next result (ADR 0038)
