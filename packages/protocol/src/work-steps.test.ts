@@ -134,11 +134,41 @@ describe('return summary (awaySummary)', () => {
         },
         { id: 'a2', status: 'pending', label: 'Send', expiresAt: '2026-11-25T11:50:00Z' },
         { id: 'a3', status: 'approved', label: 'x', expiresAt: '2026-11-25T13:00:00Z' },
+        // Answered while away (on the phone, or by auto-approve): reported, newest first
+        {
+          id: 'a4',
+          status: 'done',
+          what: 'Send the reply',
+          label: 'Send',
+          expiresAt: '2026-11-25T13:00:00Z',
+          decidedAt: '2026-11-25T10:30:00Z',
+        },
+        {
+          id: 'a5',
+          status: 'rejected',
+          label: 'Pay',
+          amount: '12,000 won',
+          expiresAt: '2026-11-25T13:00:00Z',
+          decidedAt: '2026-11-25T11:10:00Z',
+        },
+        // Answered before they left: not news
+        {
+          id: 'a6',
+          status: 'approved',
+          label: 'Old',
+          expiresAt: '2026-11-25T13:00:00Z',
+          decidedAt: '2026-11-25T08:30:00Z',
+        },
       ],
       logins: [{ id: 'l1', status: 'pending', site: 'Shop', expiresAt: '2026-11-25T12:10:00Z' }],
     })
     expect(s?.done.map((d) => d.title)).toEqual(['Morning briefing', 'Train tickets'])
     expect(s?.doneCount).toBe(2)
+    expect(s?.decided.map((d) => [d.title, d.approved])).toEqual([
+      ['Pay · 12,000 won', false],
+      ['Send the reply', true],
+    ])
+    expect(s?.decidedCount).toBe(2)
     // a2 already ran out, a3 is decided
     expect(s?.waiting.map((w) => [w.kind, w.title])).toEqual([
       ['login', 'Shop'],
@@ -148,5 +178,28 @@ describe('return summary (awaySummary)', () => {
 
   it('says nothing when nothing happened', () => {
     expect(awaySummary({ since, now, feed: [], approvals: [], logins: [] })).toBeUndefined()
+    // Saved things, ideas and posts are not work done; approvals that ran out or were decided earlier are not news
+    expect(
+      awaySummary({
+        since,
+        now,
+        feed: [
+          { kind: 'saved', title: 'A note', at: '2026-11-25T10:00:00Z' },
+          { kind: 'suggest', title: 'An idea', at: '2026-11-25T10:00:00Z' },
+          { kind: 'post', title: 'Today', at: '2026-11-25T10:00:00Z' },
+        ],
+        approvals: [
+          { id: 'a1', status: 'expired', label: 'Pay', expiresAt: '2026-11-25T10:00:00Z' },
+          {
+            id: 'a2',
+            status: 'approved',
+            label: 'Old',
+            expiresAt: '2026-11-25T13:00:00Z',
+            decidedAt: '2026-11-25T08:30:00Z',
+          },
+        ],
+        logins: [{ id: 'l1', status: 'done', site: 'Shop', expiresAt: '2026-11-25T12:10:00Z' }],
+      }),
+    ).toBeUndefined()
   })
 })

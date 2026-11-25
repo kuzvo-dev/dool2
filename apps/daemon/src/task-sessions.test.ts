@@ -110,6 +110,12 @@ const conversation: Script = async function* (input, rt) {
     yield* say('Passed on.')
     return
   }
+  // A question answered with a lookup: talk, not a job done
+  if (/^is it raining/i.test(ask)) {
+    yield* used(input, rt, 'life', 'conversation_search', { query: 'rain' })
+    yield* say('No rain tomorrow.')
+    return
+  }
   if (/^open/i.test(ask)) {
     yield* used(input, rt, 'browser', 'open', { url: 'https://example.com' })
     yield* say('Hmm.')
@@ -334,6 +340,33 @@ describe('task sessions (ADR 0038)', () => {
     // A's approval did not count for B: the code check sent B's claim back, and the judge saw no approvals for B
     expect(bTurns).toBe(2)
     expect(prompts.at(-1)).toContain('Approval requests during this request: none')
+  })
+
+  it('the finished-jobs feed (and so the return summary) gets the task, never the questions around it', async () => {
+    const task: Script = async function* () {
+      yield { type: 'tool', name: 'mcp__dool2__browser_click', input: { tabId: 1, ref: 'e1' } }
+      yield* say('Booked the 7 pm KTX, ticket 1234.')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const {
+      api,
+      send,
+      state,
+      task: view,
+    } = await boot(rt, {
+      finishJudge: async () => '{"done":true,"why":"ticket read"}',
+    })
+    const done = async () =>
+      ((await (await api('/api/life')).json()) as { feed: { kind: string; title: string }[] }).feed.filter(
+        (f) => f.kind === 'done',
+      )
+    await send('is it raining tomorrow')
+    await until(async () => (await state()).messages.some((x) => x.text === 'No rain tomorrow.'), 'answer')
+    await send('book a KTX to Busan on Friday')
+    await until(async () => (await view())?.status === 'done', 'task done')
+    await until(async () => (await done()).length > 0, 'feed')
+    // One entry, the task's: the lookup question and the turn that handed the work over are not jobs done
+    expect((await done()).map((f) => f.title)).toEqual(['Train'])
   })
 
   it("typing in a task's detail is passed on like task_steer, not a raw turn of its chat", async () => {

@@ -2250,7 +2250,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     let asked = false
     // When this turn began: a tool result since then that waits for the person also means the turn waits
     const turnBegan = Date.now()
-    // Feed "finished tasks": the request and answer of a turn that worked with tools
+    // Feed "finished tasks": the request and answer of a turn that did work with tools (more than looking things up)
     let askText = ''
     let usedTool = false
     let answerText = ''
@@ -2304,12 +2304,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           setChecking(threadId, false)
         if (ev.type === 'agent' && (ev.event.type === 'error' || ev.event.type === 'limit_reached'))
           failed = true
-        if (
-          ev.type === 'agent' &&
-          ev.event.type === 'tool' &&
-          !/(goal|memory|library|feed|task)_|status|skill_/.test(ev.event.name)
-        )
-          usedTool = true
         if (ev.type === 'agent' && ev.event.type === 'tool' && /task_(start|steer|stop)$/.test(ev.event.name))
           delegated = true
         if (task && ev.type === 'agent' && ev.event.type === 'tool') {
@@ -2348,6 +2342,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const inner = (ev.event.input as { tool?: unknown } | undefined)?.tool
           const tool = name === 'service_call' && typeof inner === 'string' ? inner : name
           if (LOOKUP_TOOLS.has(tool) || connectors.tierOf(tool) === 'lookup') lookups++
+          // Looking up, showing, remembering or handing over is not a job done; acting on a site, app or file is
+          else if (!/^(?:goal|memory|know|library|feed|task|show|skill|connect)_|^status$/.test(name))
+            usedTool = true
         }
         if (ev.type === 'agent' && ev.event.type === 'tool_result' && typeof ev.event.chars === 'number')
           noteResultChars(turnTools, turnChars, ev.event.name, ev.event.chars)
@@ -2467,7 +2464,18 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       if (!again) setChecking(threadId, false)
       // The feed "finished tasks" entry is added once, when there is nothing left to continue (for a continued turn, with the first request)
       const feedAsk = askText || finishCheck?.askOf(threadId) || lastAsk.get(threadId)
-      if (usedTool && feedAsk && answerText && !again && !routineThreads.has(threadId) && !task) {
+      // Not the conversation of task sessions: it only talks and looks up, and each task it hands work to writes its own
+      // entry when it finishes (ADR 0038). The return summary counts these entries, so a question is never a job done
+      if (
+        usedTool &&
+        feedAsk &&
+        answerText &&
+        !again &&
+        !routineThreads.has(threadId) &&
+        !task &&
+        !delegated &&
+        sessionOf(threadId) !== 'conversation'
+      ) {
         lastAsk.delete(threadId)
         life.feed({
           kind: 'done',

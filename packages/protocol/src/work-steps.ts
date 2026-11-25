@@ -198,8 +198,10 @@ export function doneLine(g: WorkGroup, lang: Lang = 'ko'): string {
 
 /**
  * The return summary (response UX): when the person comes back to the app after a while, what happened meanwhile,
- * from stored records only (no AI call). Finished tasks since they were last here, approvals and sign-ins waiting for
- * them, and when a waiting one runs out if they do not answer. undefined when there is nothing to say
+ * from stored records only (no AI call). Real work only: tasks and routines that finished since they were last here
+ * (the feed's "done" and "routine" entries; a question answered in the conversation is not one), approvals decided
+ * meanwhile, approvals and sign-ins waiting for them, and when a waiting one runs out if they do not answer.
+ * undefined when there is nothing to say
  */
 export interface AwayIn {
   /** When the person was last looking (ms) */
@@ -213,6 +215,7 @@ export interface AwayIn {
     label: string
     amount?: string
     expiresAt: string
+    decidedAt?: string
   }[]
   logins: readonly { id: string; status: string; site: string; expiresAt: string }[]
 }
@@ -221,6 +224,9 @@ export interface AwaySummary {
   /** Tasks finished meanwhile (newest first, up to 3) and how many in all */
   done: { title: string; at: string; ref?: string }[]
   doneCount: number
+  /** Approvals answered meanwhile, by the person on another screen or by auto-approve (newest first, up to 3) */
+  decided: { id: string; title: string; approved: boolean; at: string }[]
+  decidedCount: number
   /** Waiting for the person: what, and when it runs out if they do not answer (soonest first) */
   waiting: { kind: 'approval' | 'login'; id: string; title: string; expiresAt: string }[]
 }
@@ -231,21 +237,33 @@ export function awaySummary(i: AwayIn): AwaySummary | undefined {
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   const live = (x: { status: string; expiresAt: string }) =>
     x.status === 'pending' && Date.parse(x.expiresAt) > i.now
+  const titleOf = (a: AwayIn['approvals'][number]) =>
+    [a.what || a.label, a.amount].filter(Boolean).join(' · ')
+  const decided = i.approvals
+    .filter((a) => a.decidedAt && a.status !== 'pending' && Date.parse(a.decidedAt) > i.since)
+    .sort((a, b) => Date.parse(b.decidedAt ?? '') - Date.parse(a.decidedAt ?? ''))
   const waiting = [
     ...i.approvals.filter(live).map((a) => ({
       kind: 'approval' as const,
       id: a.id,
-      title: [a.what || a.label, a.amount].filter(Boolean).join(' · '),
+      title: titleOf(a),
       expiresAt: a.expiresAt,
     })),
     ...i.logins
       .filter(live)
       .map((l) => ({ kind: 'login' as const, id: l.id, title: l.site, expiresAt: l.expiresAt })),
   ].sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt))
-  if (!done.length && !waiting.length) return undefined
+  if (!done.length && !decided.length && !waiting.length) return undefined
   return {
     done: done.slice(0, 3).map((f) => ({ title: f.title, at: f.at, ...(f.ref ? { ref: f.ref } : {}) })),
     doneCount: done.length,
+    decided: decided.slice(0, 3).map((a) => ({
+      id: a.id,
+      title: titleOf(a),
+      approved: a.status !== 'rejected',
+      at: a.decidedAt ?? '',
+    })),
+    decidedCount: decided.length,
     waiting,
   }
 }

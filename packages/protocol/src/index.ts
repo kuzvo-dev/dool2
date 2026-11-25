@@ -783,6 +783,8 @@ export interface ApprovalView {
   status: ApprovalStatus
   createdAt: string
   expiresAt: string
+  /** When it was approved or rejected (by the person or auto-approve); none while pending or if it ran out */
+  decidedAt?: string
   /** Approved by auto-approve, not by the user (ADR 0030). A text with this set is sent by the phone on its own */
   auto?: boolean
   /**

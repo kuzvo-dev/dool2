@@ -1616,6 +1616,17 @@ function awayCard(): HTMLElement | undefined {
       el('p', '', A().awayDone(s.doneCount)),
       el('ul', '', ...s.done.map((d) => el('li', '', d.title))),
     )
+  if (s.decidedCount)
+    card.append(
+      el('p', '', A().awayDecided(s.decidedCount)),
+      el(
+        'ul',
+        '',
+        ...s.decided.map((d) =>
+          el('li', '', d.title, el('div', 'away-if', d.approved ? A().awayApproved : A().awayRejected)),
+        ),
+      ),
+    )
   if (s.waiting.length)
     card.append(
       el('p', '', A().awayWaiting),
