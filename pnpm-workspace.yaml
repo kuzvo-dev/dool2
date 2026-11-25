@@ -11,3 +11,8 @@ onlyBuiltDependencies:
 # PDF text extraction (pdfjs-dist) does not render, so skip the native canvas
 ignoredOptionalDependencies:
   - "@napi-rs/canvas"
+
+# minimatch below 11.0.1 can be slowed down by crafted patterns (Dependabot alert #1). The desktop packager pulls
+# 9.x and 10.x in; 11 keeps the same API (minimatch, Minimatch)
+overrides:
+  "minimatch@>=7.0.0 <11.0.1": "^11.0.9"
