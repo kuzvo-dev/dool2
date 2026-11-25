@@ -451,6 +451,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const toolToken = opts.toolToken ?? randomBytes(32).toString('hex')
   /** Notices the same tool call with the same result again and again, and adds "take another route" to it */
   const loopGuard = new LoopGuard()
+  /** Set once the daemon starts closing (timers that fire later do nothing) */
+  let closing: Promise<void> | undefined
   /** Scenario tests on a test PC: records tool answers, or plays them back instead of running tools (evals layer 2) */
   const toolTape = new ToolTape()
   const mcp = dool2McpServer(opts.mcpServerScript)
@@ -3101,7 +3103,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
    */
   const pendingFollowUps = new Map<string, string[]>()
   function followUp(threadId: string, said: string) {
-    if (!store.getThread(threadId)) return
+    // A timer may fire after the daemon closed (its database is closed then): nothing to follow up
+    if (closing || !store.getThread(threadId)) return
     // An app note telling the conversation of task sessions to use a tool only a task has (ADR 0038)
     const text =
       sessionOf(threadId) === 'conversation' && namesTaskTool(said) ? `${said}\n${TASK_HINT}` : said
@@ -4976,7 +4979,6 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     DOOL2_SERVICE_TOOLS: serviceToolsDir,
   }
 
-  let closing: Promise<void> | undefined
   return {
     url: `http://127.0.0.1:${port}`,
     events,
