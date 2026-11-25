@@ -374,6 +374,32 @@ describe('서비스 도구 실행기', () => {
     expect(one).not.toContain('demo_bar_book')
   })
 
+  it('a long list gives 10 rows, says how many more, and the next rows come from what was read', async () => {
+    const rows = Array.from({ length: 23 }, (_, i) => ({ name: `가게 ${i + 1}`, rating: '4.0', times: [] }))
+    const { connectors, calls } = await setup({ rows })
+    const first = await connectors.call('demo_eats_search', { keyword: '성수' })
+    const shops = (first.structuredContent as { shops: { name: string }[] }).shops
+    expect(shops.map((x) => x.name)).toEqual(rows.slice(0, 10).map((x) => x.name))
+    expect(first.hint).toContain('shops: rows 1–10 of 23 shown')
+    expect(first.hint).toContain(
+      "service_call({ tool: 'demo_eats_search', input: { …the same input, offset: 10 } })",
+    )
+    expect(textOf(first)).toContain('가게 (10)')
+    const opened = calls.filter(([c]) => c === 'open').length
+    const next = await connectors.call('demo_eats_search', { keyword: '성수', offset: 20 })
+    expect((next.structuredContent as { shops: { name: string }[] }).shops.map((x) => x.name)).toEqual([
+      '가게 21',
+      '가게 22',
+      '가게 23',
+    ])
+    expect(next.hint).toContain('shops: rows 21–23 of 23 shown')
+    // Not asked again: the rows come from the list read a moment ago
+    expect(calls.filter(([c]) => c === 'open').length).toBe(opened)
+    // A short list says nothing about more rows
+    const { connectors: few } = await setup()
+    expect((await few.call('demo_eats_search', { keyword: '성수' })).hint).not.toContain('rows 1–')
+  })
+
   it('주소로 그 사이트의 도구를 찾는다 (브라우저로 열었을 때 도구를 쓰라고)', async () => {
     const { connectors } = await setup()
     expect(await connectors.forUrl('https://m.eats.example/x')).toEqual({
