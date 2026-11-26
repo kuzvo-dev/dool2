@@ -2554,3 +2554,30 @@ button.lib-thumb:hover .lib-thumb-img {
   margin: 4px 0 -2px;
   color: var(--ink-muted);
 }
+
+/* Work as one line in the chat and its timeline in the panel's Screen tab (line and timeline styles: ui.css) */
+.wline > svg:last-child,
+.wtl-act > svg:last-child {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-faint);
+  transition: transform var(--dur) var(--ease);
+}
+.wtl-act.open > svg:last-child {
+  transform: rotate(90deg);
+}
+.wline:hover {
+  background: var(--raise);
+}
+.work-sheet .ws-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.work-sheet .ws-head b {
+  flex: 1;
+}
+.work-sheet .wtl {
+  margin: 4px 0;
+}
