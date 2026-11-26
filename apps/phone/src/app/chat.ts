@@ -135,6 +135,36 @@ function bubbleTime(i: number): string {
     : d.toLocaleTimeString(tChat.locale, { hour: 'numeric', minute: '2-digit' })
 }
 
+/** A message the PC has not echoed back after this long did not get there */
+const UNSENT_MS = 12_000
+
+function runningTask(raw: string): boolean {
+  try {
+    const v = st.tasks.get((JSON.parse(raw) as TaskRecordMessage).id)
+    return Boolean(v && ['working', 'checking', 'waiting', 'needs-you'].includes(v.status))
+  } catch {
+    return false
+  }
+}
+
+/** [Send again] on a message that did not get to the PC */
+function resend(id: number) {
+  const p = st.pending.find((x) => x.id === id)
+  if (!p) return
+  p.at = Date.now()
+  setTimeout(render, UNSENT_MS + 500)
+  render()
+  void send({ kind: 'ask', text: p.text, ...(p.photo ? { image: p.photo } : {}) })
+}
+
+/** [Cancel] on a message that did not get to the PC: it goes back into the composer, nothing is sent */
+function dropPending(id: number) {
+  const p = st.pending.find((x) => x.id === id)
+  st.pending = st.pending.filter((x) => x.id !== id)
+  if (p && !st.draft.trim()) st.draft = p.text
+  render()
+}
+
 /** What the chat list should contain (key, signature, build). Unchanged if the signature is the same */
 type Item = { key: string; sig: string; make: () => HTMLElement }
 
@@ -165,6 +195,7 @@ function chatItems(): Item[] {
   if (progress?.draft) fold.hidden.add(progress.draft)
   const revealed = new Set([...fold.replaced].filter(([f]) => openEarlier.has(f)).flatMap(([, ids]) => ids))
   const roleOf = new Map(st.conv.map((m) => [m.id, m.role]))
+  const liveTasks: Item[] = []
   for (const [i, m] of st.conv.entries()) {
     if (fold.hidden.has(m.id) && !revealed.has(m.id)) continue
     const earlier = fold.replaced.get(m.id)
@@ -203,6 +234,12 @@ function chatItems(): Item[] {
     // The turn that handed work to a task leaves its own "how it worked" line (task_start, a lookup or two) right after
     // the task's card. The task's line already says what was done: two folded lines in a row read as two places
     if (m.role === 'tool' && m.text.includes('"kind":"work"') && afterTask(i)) continue
+    // A task still at work is live status: it stays at the bottom of the chat, under the newest messages, and goes back to
+    // where it started once it ends (user 11-26: "something in progress should always be at the bottom")
+    if (m.role === 'tool' && m.text.includes('"kind":"task"') && runningTask(m.text)) {
+      liveTasks.push({ key: m.id, sig: toolSig(m.text), make: () => toolCard(m.text, true) })
+      continue
+    }
     if (m.role === 'tool') {
       // A hand-off closes once the conversation moved on
       const old = superseded.has(m.id) || (m.text.includes('"kind":"handoff"') && !handoffOpen(st.conv, i))
@@ -253,12 +290,31 @@ function chatItems(): Item[] {
   }
   const away = awayItem()
   if (away) items.push(away)
-  for (const p of st.pending)
+  for (const p of st.pending) {
+    // Not echoed back by the PC after a while (or the PC is silent): it did not get there. Say so, with [Send again]
+    // and [Cancel], instead of a bubble that waits forever (user 11-26)
+    const stuck = st.pcSilent || Date.now() - p.at > UNSENT_MS
     items.push({
       key: `p${p.id}`,
-      sig: '',
-      make: () => meBubble(p.text, p.photo, 'bubble me sending'),
+      sig: stuck ? 'stuck' : '',
+      make: () => {
+        const b = meBubble(p.text, p.photo, 'bubble me sending')
+        if (!stuck) return b
+        return h(
+          'div',
+          { class: 'queued unsent' },
+          b,
+          h(
+            'span',
+            { class: 'meta' },
+            tChat.notSent,
+            h('button', { class: 'btn-text sm', text: tChat.sendAgain, onclick: () => resend(p.id) }),
+            h('button', { class: 'btn-text sm', text: tChat.cancelSend, onclick: () => dropPending(p.id) }),
+          ),
+        )
+      },
     })
+  }
   st.queued.forEach((q, i) => {
     items.push({
       key: `q${i}`,
@@ -268,10 +324,24 @@ function chatItems(): Item[] {
           'div',
           { class: 'queued' },
           h('div', { class: 'bubble me', text: q }),
-          h('span', { class: 'meta', text: tChat.continued }),
+          h(
+            'span',
+            { class: 'meta' },
+            tChat.continued,
+            h('button', {
+              class: 'btn-text sm',
+              text: tChat.cancelSend,
+              onclick: () => {
+                st.queued = st.queued.filter((x) => x !== q)
+                render()
+                void send({ kind: 'conversation-unqueue', text: q })
+              },
+            }),
+          ),
         ),
     })
   })
+  items.push(...liveTasks)
   if (st.busy || st.pending.length) {
     const shot = st.work.web && st.busy && st.work.tabId !== undefined && st.work.shot
     // The work process is one card: the screen being viewed + steps (like the landing page's "Looking at ...")

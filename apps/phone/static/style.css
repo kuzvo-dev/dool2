@@ -295,6 +295,18 @@ button {
 .queued .bubble {
   opacity: 0.6;
 }
+.queued > .meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.queued > .meta .btn-text {
+  padding: 4px 2px;
+  min-height: 32px;
+}
+.queued.unsent > .meta {
+  color: var(--warn, #f0b35a);
+}
 .step {
   display: flex;
   align-items: center;

@@ -1358,6 +1358,8 @@ export type PhoneToPc =
   | { kind: 'conversation'; before?: string; limit?: number }
   /** Stop what is being done in the conversation now */
   | { kind: 'conversation-cancel' }
+  /** Take back a message still waiting in line (sent while Dool2 was answering, not yet read by the AI) */
+  | { kind: 'conversation-unqueue'; text: string }
   /** Take the draft as the result and stop further rounds of the before-finishing check (ADR 0027) */
   | { kind: 'conversation-accept' }
   /** Continue what the check left when it reached its limit (the [Continue] button on a 'left' record) */

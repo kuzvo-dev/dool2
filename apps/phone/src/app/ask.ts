@@ -16,7 +16,8 @@ export function ask(text: string) {
   const t = text.trim() || (photo ? mainCore(lang).photoDefault : '')
   if (!t || !st.online) return
   chatVars.awayFrom = undefined
-  st.pending.push({ id: ++coreVars.pendingSeq, text: t, ...(photo ? { photo } : {}) })
+  st.pending.push({ id: ++coreVars.pendingSeq, text: t, at: Date.now(), ...(photo ? { photo } : {}) })
+  setTimeout(render, 12_500)
   st.draft = ''
   st.attach = undefined
   st.tab = 'chat'
@@ -46,7 +47,11 @@ export function connectInChat(id: string) {
   })
   st.connectDetail = undefined
   if (near) return setTab('chat')
-  st.pending.push({ id: ++coreVars.pendingSeq, text: mainCore(lang).connectAsk(it.card.name) })
+  st.pending.push({
+    id: ++coreVars.pendingSeq,
+    text: mainCore(lang).connectAsk(it.card.name),
+    at: Date.now(),
+  })
   setTab('chat')
   void send({ kind: 'connect', id, action: 'chat' })
 }
