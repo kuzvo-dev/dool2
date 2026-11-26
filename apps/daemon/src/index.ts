@@ -158,6 +158,7 @@ import { checkPaygKey } from './payg-check.js'
 import { type Priced, priceBook, pricedModels } from './payg-models.js'
 import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
+import { RecipeBook, RequestSteps } from './recipes.js'
 import {
   APP_CONFIRM_ONLY_END,
   APP_CONFIRM_ONLY_END_LOOSE,
@@ -786,6 +787,21 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.changesOnly = process.env.DOOL2_CLICK_CHANGES !== '0'
   // Remembered routes (ADR 0034): clicks that led somewhere on a site, walked again without the AI in between
   browserTools.routes = new RouteBook(join(paths.dataDir, 'routes.json'))
+  // Recipes (ADR 0042): the steps that got a request done, offered on the next request like it
+  const recipes = new RecipeBook(join(paths.dataDir, 'recipes.json'))
+  const requestSteps = new RequestSteps()
+  /** Recipes put on the message talk() is sending, taken by the turn that saves it */
+  const offerFor = new Map<string, string[]>()
+  /** Ready recipes for a request, with the lines for the AI (none when recipes are off) */
+  const recipesFor = (text: string) => {
+    if (readSettings().recipes === false) return { ids: [] as string[], hint: undefined }
+    const list = recipes.match(text)
+    if (list.length) {
+      recipes.offered(list.map((r) => r.id))
+      journal.write('recipe', { event: 'offered', n: list.length })
+    }
+    return { ids: list.map((r) => r.id), hint: recipes.hint(list) }
+  }
   // My info (booker and orderer fields): in the same store as the vault, and the AI only sees masked values (browser_fill_profile)
   const profile = new ProfileStore(secrets)
   browserTools.profile = profile
@@ -2836,6 +2852,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           // A new request: what an earlier one left is no longer offered
           leftOf.delete(threadId)
           if (checkable) finishCheck?.begin(threadId, askText)
+          // A new request: its steps are gathered until it ends (ADR 0042)
+          if (checkable) requestSteps.begin(threadId, askText, offerFor.get(threadId) ?? [])
+          offerFor.delete(threadId)
         }
         if (ev.type === 'saved' && ev.message.role === 'user' && isFinishCheckNote(ev.message.text))
           setChecking(threadId, false)
@@ -2888,6 +2907,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         if (ev.type === 'agent' && ev.event.type === 'tool_result' && typeof ev.event.chars === 'number')
           noteResultChars(turnTools, turnChars, ev.event.name, ev.event.chars)
         if (ev.type === 'agent' && ev.event.type === 'tool_result' && !ev.event.ok) toolFails++
+        if (ev.type === 'agent' && ev.event.type === 'tool')
+          requestSteps.tool(threadId, ev.event.name, ev.event.input)
+        if (ev.type === 'agent' && ev.event.type === 'tool_result')
+          for (const id of requestSteps.result(threadId, ev.event.name, ev.event.ok, recipes))
+            if (recipes.failed(id)) journal.write('recipe', { event: 'forgot', id })
         toPhones(ev)
         live.emit('event', { kind: 'turn', threadId, ...(side ? { side } : {}), event: ev })
         const rec =
@@ -2951,6 +2975,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // Before-finishing check: if it is not waiting for a person, there is no next message, and the turn worked with tools, judge separately whether it is finished
       let again: string | undefined
+      let verdict: string | undefined
       if (
         finishCheck &&
         checkable &&
@@ -2967,6 +2992,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           .check(threadId, { answer: answerText, tools: turnTools, lookups, failures: toolFails })
           .catch(() => undefined)
           .finally(() => judging.delete(threadId))
+        verdict = r?.kind
         // Every verdict with why it sent work back (kind) and who decided (the judge or the code check), so the top
         // reasons can be counted per week (apps/daemon/scripts/finish-reasons.mjs). Simple requests not judged too
         if (r && r.kind !== 'skip')
@@ -3014,6 +3040,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // Sent back: the draft stays a draft until the next round's note is saved (then the card says what comes next)
       if (!again) setChecking(threadId, false)
+      // Recipes (ADR 0042): a request that ended done keeps its steps; one that failed or stopped short is let go. One
+      // that goes on (sent back, waiting for the person, a follow-up next) keeps gathering
+      if (requestSteps.has(threadId)) {
+        const done = !again && !next && !asked && !failed && !delegated && answerText && verdict !== 'stop'
+        if (done) {
+          const req = requestSteps.end(threadId)
+          const kept = req && recipes.record(req.ask, req.steps)
+          const followed = kept !== undefined && req !== undefined && req.offered.includes(kept.recipe.id)
+          if (kept && followed) recipes.followed(kept.recipe.id)
+          if (req)
+            journal.write('recipe', {
+              event: 'done',
+              ms: req.ms,
+              tools: req.tools,
+              steps: req.steps.length,
+              // Times these steps had got a request done before (-1: not kept), to compare the first time with later ones
+              before: kept ? kept.before : -1,
+              offered: req.offered.length,
+              followed,
+              ...(task ? { task: true } : {}),
+            })
+        } else if (failed || verdict === 'stop' || delegated) requestSteps.drop(threadId)
+      }
       // The feed "finished tasks" entry is added once, when there is nothing left to continue (for a continued turn, with the first request)
       const feedAsk = askText || finishCheck?.askOf(threadId) || lastAsk.get(threadId)
       // Not the conversation of task sessions: it only talks and looks up, and each task it hands work to writes its own
@@ -3795,8 +3844,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Tasks that ended since, and the ones still running (ADR 0038): the conversation knows them without a call
     const ended = unseenTasks.splice(0)
     const running = tasks.active()
+    // Steps that got requests like this one done before (ADR 0042)
+    const offer = readAppNote(text) ? { ids: [], hint: undefined } : recipesFor(text)
+    if (offer.ids.length) offerFor.set(sessionId, offer.ids)
     const aside =
       [
+        offer.hint ? appNote(offer.hint) : '',
         said.length
           ? appNote(
               `Dool2 said this to the user in the chat since your last answer (it is true; do not contradict it):\n${said.map((t) => `- ${t}`).join('\n')}`,
@@ -3872,8 +3925,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // card, its own next round, the person's notes
     const held = t.resume.splice(0)
     const notes = t.notes.length ? notesMessage(t.notes.splice(0), lang(), t.shownNotes) : ''
+    // A new task gets the steps that got tasks like it done before (ADR 0042), and its steps are gathered from here
+    const offer = !t.begun ? recipesFor(`${t.spec.title} ${t.spec.goal}`) : undefined
+    if (offer) requestSteps.begin(t.threadId, t.spec.goal, offer.ids)
     const text = !t.begun
-      ? taskBrief(t, lang())
+      ? [taskBrief(t, lang()), offer?.hint ? appNote(offer.hint) : ''].filter(Boolean).join('\n\n')
       : [...held, notes].filter(Boolean).join('\n\n') || notesMessage([], lang(), t.shownNotes)
     const fresh = !t.begun || !held.length
     t.begun = true
@@ -3896,6 +3952,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   function endTask(t: Task, status: 'done' | 'stopped' | 'failed') {
     const ms = Date.now() - (t.startedAt ?? t.createdAt)
     tasks.end(t, status)
+    requestSteps.drop(t.threadId)
     void threads.release(t.threadId)
     pendingFollowUps.delete(t.threadId)
     journal.write('task', { id: t.id, event: status, ms, steps: t.work.record()?.count ?? 0 })
