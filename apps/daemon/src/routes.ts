@@ -43,6 +43,34 @@ export function stepNameOk(name: string): boolean {
   return digits <= 4 && digits * 2 <= n.length
 }
 
+/**
+ * A typing step (ADR 0042 follow-up): typing into a named field, and pressing Enter after it when submit. What was
+ * typed is never kept: the walk takes this time's value (browser_route inputs), so a search route works for any word
+ */
+export const TYPE_MARK = '✎'
+const SUBMIT_MARK = '⏎'
+export function typedStep(field: string, submit: boolean): string {
+  return `${TYPE_MARK}${submit ? SUBMIT_MARK : ''}${field.trim()}`
+}
+export type RouteStep = { kind: 'click'; name: string } | { kind: 'type'; field: string; submit: boolean }
+export function readStep(s: string): RouteStep {
+  if (!s.startsWith(TYPE_MARK)) return { kind: 'click', name: s }
+  const rest = s.slice(TYPE_MARK.length)
+  const submit = rest.startsWith(SUBMIT_MARK)
+  return { kind: 'type', field: submit ? rest.slice(SUBMIT_MARK.length) : rest, submit }
+}
+/** Fields a route types into, in order (each takes one browser_route input) */
+export function routeFields(r: { steps: string[] }): string[] {
+  return r.steps.flatMap((s) => {
+    const x = readStep(s)
+    return x.kind === 'type' ? [x.field] : []
+  })
+}
+const stepOk = (s: string) => {
+  const x = readStep(s)
+  return stepNameOk(x.kind === 'type' ? x.field : x.name)
+}
+
 /** Origin + path of an address (undefined if it is not http(s)) */
 export function routeStart(url: string): string | undefined {
   try {
@@ -89,7 +117,9 @@ export class RouteBook {
   record(r: { start: string; steps: string[]; title: string }, byHand = true): string | undefined {
     const start = routeStart(r.start)
     if (!start || r.steps.length < MIN_STEPS || r.steps.length > MAX_STEPS) return undefined
-    if (!r.steps.every(stepNameOk)) return undefined
+    if (!r.steps.every(stepOk)) return undefined
+    // Typing alone is not a route (a search URL does that); it needs at least one click by name
+    if (!r.steps.some((s) => readStep(s).kind === 'click')) return undefined
     const host = new URL(start).host
     const at = this.now().toISOString()
     const key = (x: { start: string; steps: string[] }) => `${x.start}\n${x.steps.join('\n')}`
@@ -155,9 +185,17 @@ export class RouteBook {
     if (!list.length) return undefined
     return [
       'Routes Dool2 took on this site before (browser_route goes there without asking you at each click):',
-      ...list.map(
-        (r) => `- [${r.id}] ${r.title || '(no title)'}: ${r.steps.map((s) => `'${s}'`).join(' → ')}`,
-      ),
+      ...list.map((r) => {
+        const fields = routeFields(r)
+        const walk = r.steps
+          .map((s) => {
+            const x = readStep(s)
+            return x.kind === 'click' ? `'${x.name}'` : `type in '${x.field}'${x.submit ? ' + Enter' : ''}`
+          })
+          .join(' → ')
+        const needs = fields.length ? ` (inputs: ${fields.map((f) => `'${f}'`).join(', ')})` : ''
+        return `- [${r.id}] ${r.title || '(no title)'}: ${walk}${needs}`
+      }),
     ].join('\n')
   }
 

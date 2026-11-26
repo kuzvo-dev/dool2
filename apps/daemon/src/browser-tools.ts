@@ -111,7 +111,14 @@ import {
   tabTag,
   WORD_CHARS,
 } from './region/kr/browser.js'
-import { MAX_STEPS as ROUTE_MAX_STEPS, type RouteBook, routeStart } from './routes.js'
+import {
+  MAX_STEPS as ROUTE_MAX_STEPS,
+  type RouteBook,
+  readStep,
+  routeFields,
+  routeStart,
+  typedStep,
+} from './routes.js'
 import { notAccepted, sendFiles, sizeText, type UploadReply } from './upload.js'
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
@@ -318,6 +325,8 @@ const TRAIL_KEEPS = new Set([
   'wait',
   'tabs',
   'route',
+  // Typing into a named field joins the walk without its value (ADR 0042 follow-up); other typing ends it in dispatch
+  'type',
 ])
 
 const PAYING_TAB_MOVE =
@@ -1184,7 +1193,8 @@ export class BrowserTools {
   /** Pause before each click of a remembered route, like a person (shorter in tests) */
   routePause: () => number = () => 600 + Math.random() * 1200
   /** Per tab: where Dool2 opened it and the clicks since that each moved to another page */
-  private trails = new Map<number, { start: string; steps: string[] }>()
+  /** The walk on each tab; typed holds what was typed on it, only to keep it out of the route's title (never saved) */
+  private trails = new Map<number, { start: string; steps: string[]; typed?: string[] }>()
   /** Tabs walking a remembered route now (their clicks are not counted as walks by hand) */
   private walking = new Set<number>()
 
@@ -1350,8 +1360,21 @@ export class BrowserTools {
           `${r.note} (waited briefly for the frame on the page to change and read again)`,
         )
       }
-      case 'type':
-        return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+      case 'type': {
+        const was = this.pages.get(tabId)
+        const field = was?.refs.get(String(a.ref ?? ''))
+        const out = await this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'type' })).note)
+        // A search box or a named field joins the walk by its name, never by what was typed. Long text (a post, a
+        // message) ends the walk: that page depends on what was written
+        const name = field?.name?.trim()
+        const fieldOk = name && ([ROLE.input, ROLE.searchBox] as string[]).includes(field?.role ?? '')
+        if (fieldOk && typeof a.text === 'string' && a.text.length <= 100) {
+          const t = this.trails.get(tabId)
+          if (t && a.text.trim()) t.typed = [...(t.typed ?? []), a.text.trim()]
+          this.noteTrail(tabId, was?.url, typedStep(name, a.submit === true))
+        } else this.trails.delete(tabId)
+        return out
+      }
       case 'press':
         return this.read(tabId, undefined, (await this.act(tabId, { ...a, do: 'press' })).note)
       case 'hover':
@@ -1359,7 +1382,11 @@ export class BrowserTools {
       case 'steps':
         return this.steps(tabId, a)
       case 'route':
-        return this.route(tabId, String(a.route ?? ''))
+        return this.route(
+          tabId,
+          String(a.route ?? ''),
+          Array.isArray(a.inputs) ? a.inputs.map((x) => String(x)) : [],
+        )
       case 'scroll': {
         const r = (await this.browser.call('scroll', {
           tabId,
@@ -4212,7 +4239,10 @@ export class BrowserTools {
     t.steps.push(pressed)
     // Kept when a click moved on, and not when the walk came back to where it started (home again)
     if (page.url === before || t.steps.length < 2 || routeStart(page.url) === t.start) return
-    this.routes?.record({ start: t.start, steps: t.steps, title: page.title ?? '' }, !this.walking.has(tabId))
+    // The page a search ends on is often titled with the words searched: they are not kept
+    let title = page.title ?? ''
+    for (const v of t.typed ?? []) title = title.split(v).join('…')
+    this.routes?.record({ start: t.start, steps: t.steps, title }, !this.walking.has(tabId))
   }
 
   /**
@@ -4220,11 +4250,16 @@ export class BrowserTools {
    * between them (no AI step in between). Each click goes through the same approval gate as browser_click. Stops at
    * the first step that is not on the page and returns that page
    */
-  private async route(tabId: number, id: string): Promise<ToolResult> {
+  private async route(tabId: number, id: string, inputs: string[] = []): Promise<ToolResult> {
     const r = this.routes?.get(id)
     if (!r)
       throw new Error(
         `There is no remembered route ${id || '(empty)'}. Use one listed when you open the site.`,
+      )
+    const fields = routeFields(r)
+    if (inputs.length < fields.length)
+      throw new Error(
+        `The route [${r.id}] types into ${fields.map((f) => `'${f}'`).join(', ')}: give what to type this time in inputs, in that order.`,
       )
     if (this.isPaying(tabId)) throw new Error(PAYING_TAB_MOVE)
     if (routeStart(this.pages.get(tabId)?.url ?? '') !== r.start) {
@@ -4233,17 +4268,33 @@ export class BrowserTools {
     }
     this.trails.set(tabId, { start: r.start, steps: [] })
     const stop = (i: number, why: string, out?: ToolResult): ToolResult => {
-      const note = `The route [${r.id}] stopped at step ${i + 1} ('${r.steps[i]}'): ${why}. Carry on yourself from this page.`
+      const st = readStep(r.steps[i] ?? '')
+      const what = st.kind === 'type' ? `typing in '${st.field}'` : `'${st.name}'`
+      const note = `The route [${r.id}] stopped at step ${i + 1} (${what}): ${why}. Carry on yourself from this page.`
       if (!out) return { content: [{ type: 'text', text: note }] }
       return { ...out, content: [{ type: 'text', text: note }, ...out.content] }
     }
     let out: ToolResult | undefined
     this.walking.add(tabId)
     try {
-      for (const [i, step] of r.steps.entries()) {
+      let typed = 0
+      for (const [i, raw] of r.steps.entries()) {
         await new Promise((res) => setTimeout(res, this.routePause()))
+        const step = readStep(raw)
         try {
-          out = await this.dispatch('click', { tabId, text: step })
+          if (step.kind === 'type') {
+            const ref = [...(this.pages.get(tabId)?.refs ?? new Map()).entries()].find(
+              ([, v]) =>
+                v.name?.trim() === step.field && ([ROLE.input, ROLE.searchBox] as string[]).includes(v.role),
+            )?.[0]
+            if (!ref) throw new Error(`the field '${step.field}' is not on the page`)
+            out = await this.dispatch('type', {
+              tabId,
+              ref,
+              text: inputs[typed++] ?? '',
+              ...(step.submit ? { submit: true } : {}),
+            })
+          } else out = await this.dispatch('click', { tabId, text: step.name })
         } catch (e) {
           // The link is gone (the site changed): this route is no longer kept
           this.routes?.forget(r.id)
@@ -4262,7 +4313,7 @@ export class BrowserTools {
       return stop(r.steps.length - 1, 'the clicks went through but the page did not move', out)
     }
     this.routes?.used(r.id)
-    const done = `Took the remembered route [${r.id}] (${r.steps.length} clicks, no AI step in between).`
+    const done = `Took the remembered route [${r.id}] (${r.steps.length} steps, no AI step in between).`
     return out ? { ...out, content: [{ type: 'text', text: done }, ...out.content] } : { content: [] }
   }
 
