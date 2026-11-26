@@ -26,6 +26,7 @@ import {
   scopeLines,
   siteKey,
 } from './browser-tools.js'
+import { waitsForPerson } from './hand-back.js'
 import { ProfileStore } from './profile.js'
 
 const PAGE = `# 두리 시험 가게
@@ -1296,6 +1297,8 @@ describe('내 정보로 예약자 칸 채우기', () => {
     })
     expect(card.isError).toBeUndefined()
     expect(asked).toEqual([['email', 'phone']])
+    // A wait for the person: the task stays open and carries on when the card is saved (11-26 it ended first)
+    expect(waitsForPerson(card)).toBe(true)
     // 버튼에는 채우지 않는다
     expect(
       (await tools.run('fill_profile', { tabId: 3, fields: [{ ref: 'e7', key: 'name' }] })).isError,
