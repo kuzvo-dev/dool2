@@ -4058,9 +4058,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const spec = parseTaskSpec(args)
       if (typeof spec === 'string') return toolText(`Fix the task: ${spec}`, true)
       // A service tool answers this in seconds: point to it once instead of a browser task (a weather question went to a
-      // task that opened 8 pages: 2 minutes, test PC loop 11-26). Read from the title only; a second task_start with the same
-      // title goes ahead
-      const quick = await connectors.quickLookup(spec.title).catch(() => undefined)
+      // task that opened 8 pages: 2 minutes, test PC loop 11-26). Read from the title, then the goal (a flight task titled
+      // "12/5 Gimpo→Jeju morning cheapest" names the flight only in its goal); a second task_start with the same title
+      // goes ahead
+      const quick =
+        (await connectors.quickLookup(spec.title).catch(() => undefined)) ??
+        (await connectors.quickLookup(spec.goal).catch(() => undefined))
       if (quick && !quickPointed.has(spec.title)) {
         quickPointed.add(spec.title)
         return toolText(

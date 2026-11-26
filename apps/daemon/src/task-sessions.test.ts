@@ -411,8 +411,8 @@ describe('task sessions (ADR 0038)', () => {
         yield* say('Booked the hotel, number 77.')
         return
       }
-      if (/weather/i.test(goal)) {
-        order.push('weather')
+      if (/tide times/i.test(goal)) {
+        order.push('tide')
         // Clicking waits for the task that drives the browser; a service tool (which drives it too) as well
         const click: Result = yield* used(input, rt, 'browser', 'click', { tabId: 1, ref: 'e1' })
         const svc: Result = yield* used(input, rt, 'service', 'call', { tool: 'x_search', input: {} })
@@ -446,17 +446,17 @@ describe('task sessions (ADR 0038)', () => {
     await until(async () => (await view('t1'))?.status === 'waiting', 'train in line')
     expect((await view('t1'))?.ahead).toBe(1)
     // A quick lookup starts at once, beside the hotel task, without waiting for either
-    await send('look up the weather in Busan tomorrow')
+    await send('look up tide times in Busan tomorrow')
     await until(async () => (await view('t3'))?.status === 'done', 'lookup done')
     expect((await view('t2'))?.status).toBe('working')
-    expect(order).toEqual(['train', 'hotel', 'weather'])
+    expect(order).toEqual(['train', 'hotel', 'tide'])
     expect(refused[0]).toContain('clicking, typing, signing in, paying and PC apps wait for it')
     expect(refused[0]).toContain('t2 "Hotel"')
     expect(refused[1]).toContain('Service tools drive the browser')
     // The hotel finishes; the train task takes the browser back and goes on with the approval's result
     hotel.open()
     await until(async () => (await view('t1'))?.status === 'done', 'train done')
-    expect(order).toEqual(['train', 'hotel', 'weather', 'train again'])
+    expect(order).toEqual(['train', 'hotel', 'tide', 'train again'])
     const resumed = rt.seen.filter((x) => rt.kind(x) === 'task').at(-1)?.text ?? ''
     expect(resumed).not.toContain('Goal:')
     const msgs = (await state()).messages.map((x) => x.text)
