@@ -8,7 +8,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // A release build can set these from outside: -PversionCode=70 -PversionName=0.3.0 (CI does)
-        versionCode((project.findProperty("versionCode") ?: "72") as Integer)
+        versionCode((project.findProperty("versionCode") ?: "73") as Integer)
         versionName((project.findProperty("versionName") ?: "0.2.0") as String)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

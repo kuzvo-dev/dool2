@@ -68,8 +68,11 @@ guess is wrong.
    Waiting cards (approval, login, connect, hand-off) a task raises are shown in the main conversation too, where the
    person is.
 9. **Screens.** A task is one progress card in the conversation (ProgressCard): its steps, elapsed time, "멈추기"
-   (stop), "여기까지만 받기" when there is a draft, the place in line while waiting, and a way to open the task's
-   detail. The task list is on the screen and in conversation (`task_list`), and a task can be stopped from both.
+   (stop), "여기까지만 받기" when there is a draft, the place in line while waiting. *Amended 2026-11-26:* on screen a
+   task reads like any answer of the one conversation. Once it ends its card becomes the same folded "worked at … ·
+   time" line a normal answer has (it opens to every step), the turn that handed the work over does not add a second
+   line, there is no separate chat to open, and a bar above the composer keeps the running task in sight. People
+   lost the thread when the work lived in a card and a chat of its own. The task list is on the screen and in conversation (`task_list`), and a task can be stopped from both.
 
 ## Why
 
