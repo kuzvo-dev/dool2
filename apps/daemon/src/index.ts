@@ -69,6 +69,7 @@ import {
   PairConfirmSchema,
   type PaygAccount,
   PaygAccountRequestSchema,
+  type PaygProvider,
   previewText,
   type Routine,
   type ScreenControlStatus,
@@ -153,6 +154,7 @@ import { ConnectorPacks } from './packs.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
 import { checkPaygKey } from './payg-check.js'
+import { type Priced, priceBook, pricedModels } from './payg-models.js'
 import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import {
@@ -231,6 +233,8 @@ const RESET_KEYS = [
 ] as const
 
 export interface DaemonOptions {
+  /** OpenRouter's price list for the API key form (tests pass a stand-in) */
+  paygPrices?: () => Promise<Map<string, Priced>>
   /** Checks a pay-as-you-go API key with its company before saving (tests pass a stand-in) */
   checkKey?: typeof checkPaygKey
   /** Draws HTML and returns a JPEG (base64) (the PC app provides it), so pictures and invitations Doori made show in the library and on the phone */
@@ -4603,6 +4607,23 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return { ...DEFAULT_SETTINGS, ...(parsed.success ? parsed.data : {}) }
   }
 
+  /**
+   * Companies and models for the API key form: the runner's own model list with OpenRouter's prices, cheapest first
+   * with Dool2's pick on top (payg-models.ts). Both are kept for a day; the fixed list stands in when neither answers
+   */
+  const prices = opts.paygPrices ?? priceBook()
+  let runnable: { at: number; ids?: Record<string, string[]> } | undefined
+  const paygCatalog = async (): Promise<PaygProvider[]> => {
+    if (!runnable || Date.now() - runnable.at > 24 * 3600_000 || !runnable.ids) {
+      const rt = runtimes.opencode as
+        | { models?: () => Promise<Record<string, string[]> | undefined> }
+        | undefined
+      runnable = { at: Date.now(), ids: await rt?.models?.().catch(() => undefined) }
+    }
+    const book = await prices()
+    return paygProviders(lang()).map((p) => ({ ...p, models: pricedModels(p, runnable?.ids?.[p.id], book) }))
+  }
+
   const server = createServer((req, res) => {
     // A tool call runs as its chat's (workingThread), named by the tool server
     const caller = toolCaller(req)
@@ -5240,7 +5261,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
 
     // Pay-as-you-go mode: install OpenCode, provider, model and API key (ADR 0010)
     if (a === 'agents' && b === 'opencode') {
-      if (c === 'catalog' && req.method === 'GET') return json(res, 200, { providers: PAYG_PROVIDERS })
+      if (c === 'catalog' && req.method === 'GET') return json(res, 200, { providers: await paygCatalog() })
       if (c === 'account' && !d) {
         if (req.method === 'GET') return json(res, 200, { account: await paygView() })
         if (req.method === 'PUT') {

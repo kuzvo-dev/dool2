@@ -261,6 +261,14 @@ export function costLabel(usd: number): string {
   return `$${dollars} · ${won}`
 }
 
+/** A model's price per million tokens, short for a list: won in Korean ("102 won"), dollars otherwise ("$0.07") */
+export function priceLabel(usdPerM: number): string {
+  if (lang !== 'ko') return `$${usdPerM < 0.1 ? usdPerM.toFixed(3) : usdPerM.toFixed(2)}`
+  const krw = usdPerM * KRW_PER_USD
+  const m = setupModelText(lang)
+  return krw < 1 ? m.underOneWon : m.won(Math.round(krw).toLocaleString('ko-KR'))
+}
+
 /** New version state (same shape as UpdateState in apps/desktop/src/update.ts) */
 export interface UpdateInfo {
   status: 'idle' | 'none' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'

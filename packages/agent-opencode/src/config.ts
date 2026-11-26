@@ -126,17 +126,32 @@ export function buildOpenCodeEnv(input: OpenCodeEnvInput): NodeJS.ProcessEnv {
   }
 }
 
-/** Providers and models people can pick on screen (checked against the OpenCode v2.3.0 model list, 2026-11-14) */
+/** Providers and models people can pick on screen when the live list cannot be read (checked against the OpenCode v2.3.0 model list, 2026-11-26) */
 export function paygProviders(lang: Lang = 'ko'): PaygProvider[] {
   const t = OPENCODE_TEXT[lang]
   return [
+    // First: one key for many companies' models, the cheap ones included (Dool2 picks GLM)
+    {
+      id: 'openrouter',
+      label: t.openRouter,
+      keyUrl: 'https://openrouter.ai/keys',
+      // The cheap ones first: people paying per use came for them (first-run test 11-26). The full list with prices
+      // comes from the runner and OpenRouter (apps/daemon/src/payg-models.ts); this is what shows when neither answers
+      models: [
+        { id: '~z-ai/glm-latest', label: `GLM · ${t.recommended}` },
+        { id: '~z-ai/glm-flash-latest', label: `GLM Flash · ${t.cheap}` },
+        { id: '~deepseek/deepseek-flash-latest', label: `DeepSeek Flash · ${t.cheap}` },
+        { id: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5' },
+        { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
+      ],
+    },
     {
       id: 'anthropic',
       label: 'Anthropic (Claude)',
       keyUrl: 'https://console.anthropic.com/settings/keys',
       models: [
-        { id: 'claude-sonnet-5-5', label: `Claude Sonnet 5.5 · ${t.recommended}` },
-        { id: 'claude-haiku-5-5', label: `Claude Haiku 5.5 · ${t.cheap}` },
+        { id: 'claude-haiku-5-5', label: `Claude Haiku 5.5 · ${t.recommended}` },
+        { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
         { id: 'claude-opus-5-5', label: `Claude Opus 5.5 · ${t.smartest}` },
       ],
     },
@@ -145,8 +160,8 @@ export function paygProviders(lang: Lang = 'ko'): PaygProvider[] {
       label: 'OpenAI (GPT)',
       keyUrl: 'https://platform.openai.com/api-keys',
       models: [
-        { id: 'gpt-5.6', label: `GPT-5.6 · ${t.recommended}` },
-        { id: 'gpt-5.4-mini', label: `GPT-5.4 mini · ${t.cheap}` },
+        { id: 'gpt-5.4-mini', label: `GPT-5.4 mini · ${t.recommended}` },
+        { id: 'gpt-5.6', label: 'GPT-5.6' },
       ],
     },
     {
@@ -154,15 +169,6 @@ export function paygProviders(lang: Lang = 'ko'): PaygProvider[] {
       label: 'Google (Gemini)',
       keyUrl: 'https://aistudio.google.com/apikey',
       models: [{ id: 'gemini-3.8-flash', label: `Gemini 3.8 Flash · ${t.recommended}` }],
-    },
-    {
-      id: 'openrouter',
-      label: t.openRouter,
-      keyUrl: 'https://openrouter.ai/keys',
-      models: [
-        { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' },
-        { id: 'openai/gpt-5.2', label: 'GPT-5.2' },
-      ],
     },
   ]
 }

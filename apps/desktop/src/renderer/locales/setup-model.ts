@@ -45,6 +45,7 @@ export const setupModelText = messages({
     noSubTitle: 'Claude·ChatGPT 구독이 안 보여요',
     noSubSub: '둘 중 하나에 로그인하거나, 구독 없이 AI 회사 API 키로 쓴 만큼만 낼 수 있어요.',
     underOneWon: '1원 미만',
+    won: (n: string) => `${n}원`,
     aboutWon: (won: string) => `약 ${won}원`,
     devBuild: '개발용으로 켠 앱이라 새 버전을 확인하지 않아요',
     checkedAgo: (ago: string) => ` · ${ago} 확인`,
@@ -102,6 +103,7 @@ export const setupModelText = messages({
     noSubSub:
       'Sign in to one of them, or skip the subscription and pay only for what you use with an AI company API key.',
     underOneWon: 'under ₩1',
+    won: (n: string) => `₩${n}`,
     aboutWon: (won: string) => `about ₩${won}`,
     devBuild: "This is a development build, so it doesn't check for new versions",
     checkedAgo: (ago: string) => ` · checked ${ago}`,

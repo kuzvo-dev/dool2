@@ -267,6 +267,11 @@ export interface ChromeStatus {
 export interface PaygModel {
   id: string
   label: string
+  /** US dollars per million input and output tokens (from OpenRouter's public price list), when known */
+  inPerM?: number
+  outPerM?: number
+  /** Dool2's pick for the provider: cheap and good enough at using tools */
+  recommended?: boolean
 }
 
 export interface PaygProvider {
