@@ -42,6 +42,10 @@ export const mainWork = messages({
     process: '일한 과정',
     processExpand: '일한 과정 펼치기',
     stepCount: (n: number) => `${n}단계`,
+    // The bar above the composer while a task runs (its card may be scrolled away)
+    nowWaitsYou: '두리가 기다려요',
+    nowInLine: (n: number) => `${n}번째로 기다리는 중`,
+    nowWorking: '하는 중',
   },
   en: {
     now: 'Live',
@@ -81,5 +85,8 @@ export const mainWork = messages({
     process: 'How it worked',
     processExpand: 'Show how it worked',
     stepCount: (n: number) => `${n} steps`,
+    nowWaitsYou: 'Dool2 is waiting for you',
+    nowInLine: (n: number) => `Waiting, ${n} in line`,
+    nowWorking: 'Working',
   },
 })
