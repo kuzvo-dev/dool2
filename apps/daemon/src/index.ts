@@ -1245,7 +1245,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       statsOn = on
     })
   }
+  /** A message the person sent while no AI was ready: answered as soon as one is (see talk) */
+  let waitingForAi: string | undefined
   const detectAll = () =>
+    detectAgents().then((all) => {
+      const pending = waitingForAi
+      if (pending && all.some((a) => a.installed && a.loggedIn)) {
+        waitingForAi = undefined
+        setTimeout(
+          () =>
+            void talk(
+              appNote(
+                forAI(
+                  m().aiConnectedNote,
+                  `An AI is connected now. Answer the message the user sent while none was: ${pending.slice(0, 1500)}`,
+                ),
+              ),
+            ).catch(() => {}),
+          0,
+        )
+      }
+      return all
+    })
+  const detectAgents = () =>
     Promise.all(
       Object.entries(runtimes).map(async ([id, rt]) => {
         const timeout = new Promise<undefined>((ok) => setTimeout(() => ok(undefined), 10_000))
@@ -3686,10 +3708,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     live.emit('event', { kind: 'ack' })
     const ackMs = Date.now() - receivedAt
     let sessionId: string
+    let noAi = false
     try {
-      sessionId = (await conversation.prepare(await pickAgent(o.agent))).session.id
+      const agent = await pickAgent(o.agent).catch(() => undefined)
+      noAi = !agent
+      // No AI ready on this PC: the segment is still opened (with the AI it was or will be on) so the message is kept
+      sessionId = (
+        await conversation.prepare(
+          agent ?? conversation.current()?.agent ?? readSettings().defaultAgent ?? 'claude',
+        )
+      ).session.id
     } finally {
       preparing = false
+    }
+    // Nothing answered before: the message vanished and the screens sat still (first-run test 11-26). Keep it, say how
+    // to connect an AI, and answer it once one is ready (detectAll)
+    if (noAi) {
+      if (!readAppNote(text)) {
+        postSaved(sessionId, store.addMessage(sessionId, 'user', text))
+        waitingForAi = text
+      }
+      postSaved(sessionId, store.addMessage(sessionId, 'assistant', m().noAiReply))
+      live.emit('event', { kind: 'busy', busy: false })
+      return { queued: false }
     }
     if (o.viaPhone) fromPhone.add(sessionId)
     // A new message from the person: the quick-tool pointer may point again
