@@ -4,7 +4,7 @@
     {
       "name": "track",
       "title": "택배 조회(택배사 몰라도)",
-      "description": "택배 운송장 번호로 배송 상황을 볼 때 먼저 쓴다(택배사를 모르거나 CJ대한통운에 없다고 나왔을 때도). CJ대한통운→롯데→로젠→우체국→한진 순서로 한 번에 찾아, 찾은 택배사와 조회 표의 줄(각 줄의 칸 목록: 날짜·시간·장소·상태 등)을 돌려준다. 다섯 곳 모두 없으면 그렇다고 알려 준다. 받는 분 이름은 사이트가 가린 그대로다.",
+      "description": "택배 운송장 번호로 배송 상황을 볼 때 먼저 쓴다(택배사를 모르거나 CJ대한통운에 없다고 나왔을 때도). CJ대한통운→롯데→로젠→우체국→한진 순서로 한 번에 찾아, 찾은 택배사와 처리 기록 줄(시각이 있는 줄만, 각 줄의 칸 목록: 날짜·시간·장소·상태 등)을 돌려준다. 다섯 곳 모두 없으면 그렇다고 알려 준다. 받는 분 이름은 사이트가 가린 그대로다.",
       "tier": "lookup",
       "status": "검증됨(2026-11-26, 다섯 곳 모두 등록 전 번호 안내까지. 배송 중 번호는 아직)",
       "cards": false,
@@ -63,8 +63,18 @@
               }
             }
           },
-          "as": "events",
+          "as": "rows_cj",
           "min": 0
+        },
+        {
+          "filter": {
+            "from": "rows_cj",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_cj.0}}1{{/rows_cj.0}}"
         },
         {
           "find": {
@@ -96,9 +106,19 @@
               }
             }
           },
-          "as": "events",
+          "as": "rows_lotte",
           "min": 0,
           "if": "{{^events.0}}1{{/events.0}}"
+        },
+        {
+          "filter": {
+            "from": "rows_lotte",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_lotte.0}}1{{/rows_lotte.0}}"
         },
         {
           "find": {
@@ -130,9 +150,19 @@
               }
             }
           },
-          "as": "events",
+          "as": "rows_logen",
           "min": 0,
           "if": "{{^events.0}}1{{/events.0}}"
+        },
+        {
+          "filter": {
+            "from": "rows_logen",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_logen.0}}1{{/rows_logen.0}}"
         },
         {
           "find": {
@@ -164,9 +194,19 @@
               }
             }
           },
-          "as": "events",
+          "as": "rows_epost",
           "min": 0,
           "if": "{{^events.0}}1{{/events.0}}"
+        },
+        {
+          "filter": {
+            "from": "rows_epost",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_epost.0}}1{{/rows_epost.0}}"
         },
         {
           "find": {
@@ -198,9 +238,19 @@
               }
             }
           },
-          "as": "events",
+          "as": "rows_hanjin",
           "min": 0,
           "if": "{{^events.0}}1{{/events.0}}"
+        },
+        {
+          "filter": {
+            "from": "rows_hanjin",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_hanjin.0}}1{{/rows_hanjin.0}}"
         },
         {
           "find": {
