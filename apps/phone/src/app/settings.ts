@@ -63,6 +63,10 @@ export function settingsView() {
   // ── General (PC: general) ──
   // Auto-approve (ADR 0030): everything except payments without a card. Turned on with the phone lock and a signed request
   const auto = st.pc?.autoApprove === true
+  // Phone lock for payments (ADR 0043): only in the store app once its chip keys are registered
+  const keys = isNative() && st.pc?.approveKeys
+  const has = st.pc?.payKey === true
+  const payOn = has && st.pc?.payConfirm === true
   sec(
     mSet.secFinal,
     row(
@@ -72,22 +76,16 @@ export function settingsView() {
       toggle(auto),
       () => void setAutoApprove(!auto),
     ),
+    keys
+      ? row(
+          'lock',
+          mSet.payLock,
+          !has ? mSet.payLockNoLock : payOn ? mSet.payLockOnSub : mSet.payLockOffSub,
+          toggle(payOn),
+          has ? () => void setPayConfirm(!payOn) : undefined,
+        )
+      : undefined,
   )
-  // Phone lock for payments (ADR 0043): only in the store app once its chip keys are registered
-  if (isNative() && st.pc?.approveKeys) {
-    const has = st.pc.payKey === true
-    const on = has && st.pc.payConfirm === true
-    sec(
-      mSet.secFinal,
-      row(
-        'lock',
-        mSet.payLock,
-        !has ? mSet.payLockNoLock : on ? mSet.payLockOnSub : mSet.payLockOffSub,
-        toggle(on),
-        has ? () => void setPayConfirm(!on) : undefined,
-      ),
-    )
-  }
   if (isNative()) {
     // Store app (ADR 0042): the phone's own notification permission and FCM
     const a = appPush

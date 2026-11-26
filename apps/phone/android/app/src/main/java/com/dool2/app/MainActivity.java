@@ -16,6 +16,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PushPlugin.class);
         // Approval keys in the security chip; payments sign only after the phone lock (ADR 0043)
         registerPlugin(ApproveKeyPlugin.class);
+        // The phone's own haptics (navigator.vibrate does nothing in the app)
+        registerPlugin(HapticsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

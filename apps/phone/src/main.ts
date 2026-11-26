@@ -34,6 +34,16 @@ window.addEventListener('hashchange', () => {
 })
 
 async function main() {
+  // Like a native app: while the keyboard is up (the visible area got much shorter), the tab bar steps aside
+  // The app window itself shrinks when the keyboard opens, so compare with the tallest height seen
+  const vv = window.visualViewport
+  let tallest = vv?.height ?? window.innerHeight
+  const kb = () => {
+    const now = vv?.height ?? window.innerHeight
+    tallest = Math.max(tallest, now)
+    document.documentElement.classList.toggle('kb-open', now < tallest * 0.75)
+  }
+  vv?.addEventListener('resize', kb)
   // iPhone Safari ignores the viewport's zoom lock, so pinch zoom is blocked separately (the remote screen handles it itself)
   document.addEventListener('gesturestart', (e) => e.preventDefault())
   // Errors inside the app are noted too (they go along when the user reports a problem)

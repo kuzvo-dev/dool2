@@ -1,6 +1,7 @@
 // Phone app: resyncing with the PC after the background or a dropped signal, and pull to refresh
 import { doori, h } from '../dom.js'
 import { Spring, tick } from '../motion.js'
+import { haptic } from '../native.js'
 import { AUTH_DONE_OPTION } from '../region/kr/main-d.js'
 import { checkAway, noteSeen } from './chat.js'
 import { send, st } from './core.js'
@@ -45,7 +46,7 @@ export function startResync() {
     )
     if (auth && st.overlay?.kind !== 'info') {
       openOverlay({ kind: 'info', id: auth.id })
-      navigator.vibrate?.(20)
+      haptic('long')
     }
   })
   // Tell the PC every minute that the app is open (the PC streams replies only to phones that are open)
@@ -118,7 +119,7 @@ export function pullToRefresh(page: HTMLElement) {
       if (over && !armed) {
         armed = true
         POP.v += 5
-        navigator.vibrate?.(6)
+        haptic('tick')
       }
       if (!over) armed = false
       ind.classList.toggle('ready', over)

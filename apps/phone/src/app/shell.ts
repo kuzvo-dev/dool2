@@ -6,6 +6,7 @@ import { lang } from '../lang.js'
 import { feedView, goalsView, libraryView } from '../life-views.js'
 import { mdSide } from '../locales/main-d-side.js'
 import { acceptGhost, playFlip, playSeg, Spring, springTo, tick } from '../motion.js'
+import { haptic } from '../native.js'
 import { createRemote, type RemoteScreen } from '../remote.js'
 import { hostOf } from './approval-cards.js'
 import { ask, keepConv } from './ask.js'
@@ -540,7 +541,7 @@ export function renderTabs() {
         fill: 'backwards',
       },
     )
-  navigator.vibrate?.(8)
+  haptic('tick')
 }
 
 function renderComposer() {
