@@ -8,6 +8,7 @@ import {
   AM_KO,
   BANNED_INSTRUCTIONS,
   PM_KO,
+  SEND_TO_SITE,
   STATUS_PATTERN,
   TODAY_KO,
   TOMORROW_KO,
@@ -716,11 +717,45 @@ export function checkConnector(
           `${at} a forbidden instruction is present: "${m[0]}" - write it as handing over to a person`,
         )
     }
+    // Dool2 does it (prepares, then asks for approval): nothing the person reads sends them to the site
+    const told: [string, string | undefined][] = [
+      ['description', t.description],
+      ['next', t.next],
+      ...t.steps.map((s, i): [string, string | undefined] => [
+        `step ${i + 1} say`,
+        'say' in s ? s.say : undefined,
+      ]),
+    ]
+    for (const [where, v] of told) {
+      if (!v) continue
+      const m = SEND_TO_SITE.map((re) => re.exec(v)).find(Boolean)
+      if (m)
+        problems.push(
+          `${at} ${where} sends the person to the site ("${m[0]}") - offer to prepare it and ask for approval instead`,
+        )
+    }
   }
   return problems
 }
 
 /** Input check (before running). A list of problems */
+/**
+ * Tips that do not fail the check: things that make a working connector slow to be picked.
+ * A card with a lookup tool that runs without sign-in and no aliases is found only by the service's own name
+ * (a two-word name never matches one word, so "flight" went to a 93 s browser task, #586).
+ */
+export function connectorTips(card: { aliases?: string[] }, raw: unknown): string[] {
+  const r = ConnectorSchema.safeParse(raw)
+  if (!r.success) return []
+  const tips: string[] = []
+  const free = r.data.tools.some((t) => t.tier === 'lookup' && !t.login && !t.status.startsWith('막힘'))
+  if (free && !card.aliases?.length)
+    tips.push(
+      'no aliases on the card: add the words people use instead of the service name (e.g. 택배, 운송장) so a request finds the lookup tool at once',
+    )
+  return tips
+}
+
 export function checkInput(input: ConnectorInput, args: Record<string, unknown>): string[] {
   const problems: string[] = []
   for (const k of input.required)

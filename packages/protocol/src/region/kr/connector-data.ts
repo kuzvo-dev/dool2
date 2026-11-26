@@ -24,3 +24,13 @@ export const BANNED_INSTRUCTIONS = [
   /(captcha|security code|identity verification|verification code)[^\n]{0,20}(solve|bypass|enter|type in|automatically)/i,
   /(password|card number|cvc)[^\n]{0,15}(enter|type)(?![^\n]*(person|user|hand|not\b))/i,
 ]
+
+/**
+ * Words that send the person to do it themselves on the site or app ("book it on the site"). Dool2 prepares it and
+ * asks for approval instead; a sentence that says not to (하지 않아요, never) is fine. English and Korean wording.
+ */
+export const SEND_TO_SITE = [
+  /(사이트|앱|홈페이지|웹)에서\s*(직접|바로)?\s*[^\s,.]{0,12}\s*(하세요|해\s?주세요|하시면\s*돼|하라고|하도록|안내해)(?![^\n.]{0,12}(않|말고|마세요))/,
+  /직접\s*(예약|예매|결제|주문|확인|신청|접속)(하세요|해\s?주세요|하라고|하도록)(?![^\n.]{0,12}(않|말고|마세요))/,
+  /(?<!\bnot |\bnever )\b(do|book|order|buy|check|finish) it (yourself )?(on|in) the (site|app|website)\b/i,
+]

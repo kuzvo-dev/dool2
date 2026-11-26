@@ -32,7 +32,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkConnectCard } from '@dool2/protocol/connect'
-import { checkConnector, connectorToolName, healthProblems } from '@dool2/protocol/connector'
+import { checkConnector, connectorTips, connectorToolName, healthProblems } from '@dool2/protocol/connector'
 import { BrowserTools, Connectors, startDaemon } from '../dist/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -58,23 +58,44 @@ const toolsOf = (id) => {
 if (cmd === 'check' || !cmd) {
   let bad = 0
   let count = 0
+  // Tips do not fail the check. Named services show theirs; a whole-repo check sums each tip up in one line
+  const tipped = new Map()
   for (const id of args.length ? args : services()) {
     const card = readJson(join(skillsDir, id, 'connect.json'))
     const problems = checkConnectCard(id, card)
     const c = toolsOf(id)
+    const tips = c ? connectorTips(card, c) : []
     if (c) {
       count++
       problems.push(
         ...checkConnector(id, c, [card.site, ...(card.alsoSites ?? [])].filter(Boolean), card.category),
       )
+      for (const tip of tips) tipped.set(tip, [...(tipped.get(tip) ?? []), id])
     }
     if (problems.length) {
       bad++
       console.log(`✗ ${id}\n  ${problems.join('\n  ')}`)
     } else if (c) console.log(`✓ ${id} (${c.tools.map((t) => `${t.name}:${t.status}`).join(', ')})`)
+    if (args.length) for (const tip of tips) console.log(`  tip: ${tip}`)
   }
+  if (!args.length)
+    for (const [tip, ids] of tipped)
+      console.log(
+        `tip (${ids.length}): ${tip}\n  ${ids.slice(0, 8).join(', ')}${ids.length > 8 ? ', …' : ''}`,
+      )
   console.log(`${count} connectors, ${bad} problems`)
   process.exit(bad ? 1 : 0)
+}
+
+/** How much text the AI gets back, with a warning past what it keeps track of (#571: 17 KB → movies from an earlier question) */
+const RESULT_WARN_KB = 8
+const resultSize = (r) => {
+  const kb = Buffer.byteLength((r.content ?? []).map((c) => c.text ?? '').join('\n')) / 1024
+  const warn =
+    kb > RESULT_WARN_KB
+      ? ` ⚠ over ${RESULT_WARN_KB} KB: drop fields, filter by an input, or let offset read the rest`
+      : ''
+  return `${kb.toFixed(1)} KB${warn}`
 }
 
 // ── routes: connector drafts from remembered routes (ADR 0034 follow-up). Writes files for a person; registers nothing ──
@@ -201,7 +222,7 @@ if (flags.has('--pc')) {
     const r = await run(id, name, json ? JSON.parse(json) : {})
     show(r)
     console.log(
-      `\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s, user Chrome)`,
+      `\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s, ${resultSize(r)}, user Chrome)`,
     )
     exit(r.isError ? 1 : 0)
     await new Promise(() => {})
@@ -235,7 +256,7 @@ if (flags.has('--pc')) {
           error: ok ? undefined : text.slice(0, 300),
         })
         console.log(
-          `${ok ? '✓' : '✗'} ${id}_${t.name} (${((Date.now() - t0) / 1000).toFixed(1)}s, ${rows.length} rows, photos ${pics}, links ${links})${ok ? '' : `\n  ${text.split('\n')[0].slice(0, 200)}`}`,
+          `${ok ? '✓' : '✗'} ${id}_${t.name} (${((Date.now() - t0) / 1000).toFixed(1)}s, ${rows.length} rows, photos ${pics}, links ${links}, ${resultSize(r)})${ok ? '' : `\n  ${text.split('\n')[0].slice(0, 200)}`}`,
         )
       }
     }
@@ -314,7 +335,9 @@ try {
     const t0 = Date.now()
     const r = await connectors.call(connectorToolName(id, name), json ? JSON.parse(json) : {})
     show(r)
-    console.log(`\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s)`)
+    console.log(
+      `\n${r.isError ? '✗ failed' : '✓ ok'} (${((Date.now() - t0) / 1000).toFixed(1)}s, ${resultSize(r)})`,
+    )
     if (flags.has('--hold')) await new Promise((r) => setTimeout(r, 120_000))
     await done(r.isError ? 1 : 0)
   }
@@ -376,7 +399,7 @@ try {
             error: r.isError || blocked ? text.slice(0, 400) : undefined,
           })
           console.log(
-            `${ok ? '✓' : blocked ? '⊘' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}s${rows ? `, ${rows.length} rows` : ''})${ok ? '' : `\n  ${r.isError || blocked ? text.split('\n')[0] : problems.join(' · ')}`}`,
+            `${ok ? '✓' : blocked ? '⊘' : '✗'} ${name} ${JSON.stringify(ex)} (${(ms / 1000).toFixed(1)}s${rows ? `, ${rows.length} rows` : ''}, ${resultSize(r)})${ok ? '' : `\n  ${r.isError || blocked ? text.split('\n')[0] : problems.join(' · ')}`}`,
           )
         }
       }
