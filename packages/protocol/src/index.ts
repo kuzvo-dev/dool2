@@ -200,6 +200,11 @@ export const SettingsSchema = z.object({
    */
   residentAgent: z.boolean().optional(),
   /**
+   * Remember the steps that got requests done and offer them on the next request like it (ADR 0042). Empty: on.
+   * False: nothing is offered (what is kept stays until the person deletes it)
+   */
+  recipes: z.boolean().optional(),
+  /**
    * Hand longer work to task sessions so the conversation keeps talking (ADR 0038). Empty: the default of this build
    * (TASK_SESSIONS_DEFAULT in the daemon). Applies from the next segment of the conversation
    */

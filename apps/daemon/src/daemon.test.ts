@@ -263,6 +263,48 @@ describe('대화 하나 (ADR 0015)', () => {
     await reader?.cancel()
   })
 
+  it('keeps the steps that got a request done and offers them on the next request like it (ADR 0042)', async () => {
+    /** Looks the order tool up the first two times, then answers; records what it was sent */
+    class Shop extends EchoRuntime {
+      inputs: string[] = []
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield { type: 'started', resumeId: 'r1', tools: ['mcp__dool2__status'] }
+        if (/쿠팡/.test(input.text.split('\n\n').at(-1) ?? '')) {
+          yield { type: 'tool', name: 'mcp__dool2__service_find', input: { query: '쿠팡 주문' } }
+          yield { type: 'tool_result', name: 'mcp__dool2__service_find', ok: true }
+          const call = { tool: 'coupang_orders', input: { days: 30 } }
+          yield { type: 'tool', name: 'mcp__dool2__service_call', input: call }
+          yield { type: 'tool_result', name: 'mcp__dool2__service_call', ok: true }
+        }
+        yield { type: 'text', delta: '내일 와요' }
+        yield { type: 'done', resumeId: 'r1', text: '내일 와요' }
+      }
+    }
+    const { api, rt } = await boot(new Shop())
+    const shop = rt as Shop
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const ask = async (text: string, n: number) => {
+      await api('/api/conversation/messages', { method: 'POST', body: JSON.stringify({ text }) })
+      await until(async () => {
+        const s = await state()
+        return s.messages.filter((m) => m.role === 'user').length === n && !s.busy
+      })
+    }
+    await ask('쿠팡 주문 언제 와?', 1)
+    await ask('쿠팡에서 산 거 언제 와', 2)
+    // Twice is not offered yet on the second message; from the third it rides on the message
+    expect(shop.inputs.some((t) => t.includes('Steps that got requests like this one done'))).toBe(false)
+    await ask('쿠팡 택배 언제 와', 3)
+    const last = shop.inputs.filter((t) => !t.includes('judge')).at(-1) ?? ''
+    expect(last).toContain('service_call coupang_orders {"days":30}')
+    expect(existsSync(join(dir ?? '', 'recipes.json'))).toBe(true)
+    // Off in settings: nothing is offered
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ recipes: false }) })
+    await ask('쿠팡 택배 언제 와요', 4)
+    expect(shop.inputs.at(-1)).not.toContain('Steps that got requests like this one done')
+  })
+
   it('도구 서버는 지난 대화를 찾을 수 있다 (도구 토큰으로만)', async () => {
     const { api, rt } = await boot()
     const state = async () => (await (await api('/api/conversation')).json()) as State
