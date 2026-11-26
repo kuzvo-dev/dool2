@@ -53,6 +53,7 @@ import {
 } from '@dool2/protocol/link'
 import type { Page } from '@dool2/protocol/paging'
 import QRCode from 'qrcode'
+import { sendAppPush, validAppPush } from './apppush.js'
 import { linkCopy } from './locales/link.js'
 import { allowedEndpoint, generateVapid, type PushMessage, sendPush, type VapidKeys } from './webpush.js'
 
@@ -231,6 +232,8 @@ export class PhoneLink {
       now?: () => number
       /** For tests: sending push */
       push?: typeof sendPush
+      /** For tests: sending store app notifications (ADR 0042) */
+      appPush?: typeof sendAppPush
       /** Language for messages people read on the phone and the pairing screen (default Korean) */
       lang?: () => Lang
     } = {},
@@ -287,11 +290,11 @@ export class PhoneLink {
       ...(relay ? { relay } : {}),
       connected: Boolean(this.client?.ready),
       ...(this.keys ? { pcId: this.keys.id } : {}),
-      phones: this.phones.map(({ id, name, pairedAt, push }) => ({
+      phones: this.phones.map(({ id, name, pairedAt, push, appPush }) => ({
         id,
         name,
         pairedAt,
-        push: Boolean(push),
+        push: Boolean(push || appPush),
       })),
     }
   }
@@ -495,6 +498,12 @@ export class PhoneLink {
             ? { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }
             : undefined,
         )
+        return this.send(phone, await this.stateFor(phone))
+      }
+      case 'app-push': {
+        if (msg.reg && !validAppPush(msg.reg))
+          return this.send(phone, { kind: 'error', message: this.m.badPushAddress })
+        await this.saveAppPush(phone.id, msg.reg ? { token: msg.reg.token, key: msg.reg.key } : undefined)
         return this.send(phone, await this.stateFor(phone))
       }
       case 'connections':
@@ -805,7 +814,17 @@ export class PhoneLink {
       ...(await this.host.state()),
       ...(this.vapid ? { vapid: this.vapid.publicKey } : {}),
       push: Boolean(now.push),
+      appPush: Boolean(now.appPush),
     }
+  }
+
+  private async saveAppPush(id: string, appPush: PairedPhone['appPush']) {
+    this.phones = this.phones.map((x) => {
+      if (x.id !== id) return x
+      const { appPush: _old, ...rest } = x
+      return appPush ? { ...rest, appPush } : rest
+    })
+    await this.secrets.set(PHONES, JSON.stringify(this.phones))
   }
 
   private async savePush(id: string, push: PairedPhone['push']) {
@@ -824,15 +843,20 @@ export class PhoneLink {
    */
   async notify(msg: PushMessage) {
     const vapid = this.vapid
-    if (!vapid) return
     const send = this.opts.push ?? sendPush
+    const sendApp = this.opts.appPush ?? sendAppPush
     await Promise.all(
-      this.phones
-        .filter((p) => p.push)
-        .map(async (p) => {
-          const r = await send(p.push as NonNullable<PairedPhone['push']>, msg, vapid)
-          if (r === 'gone') await this.savePush(p.id, undefined)
-        }),
+      this.phones.map(async (p) => {
+        // A store app phone gets it through FCM (ADR 0042); the web push address of an older browser pairing is left as is
+        if (p.appPush) {
+          const r = await sendApp(p.appPush, msg)
+          if (r === 'gone') await this.saveAppPush(p.id, undefined)
+          return
+        }
+        if (!p.push || !vapid) return
+        const r = await send(p.push, msg, vapid)
+        if (r === 'gone') await this.savePush(p.id, undefined)
+      }),
     )
   }
 

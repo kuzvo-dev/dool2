@@ -214,3 +214,60 @@ export async function smsSend(
     return { ok: false, reason: 'error', message: (e as Error).message }
   }
 }
+
+/** Store app notifications (ADR 0042, PushPlugin.java) */
+const Push = registerPlugin<{
+  status(): Promise<{ available: boolean; allowed: boolean; denied: boolean }>
+  register(o: { ask?: boolean }): Promise<{ token: string; key: string; allowed: boolean }>
+  unregister(): Promise<void>
+  addListener(event: 'open', f: (e: { url: string }) => void): Promise<{ remove(): Promise<void> }>
+}>('Push')
+
+export interface AppPushStatus {
+  /** Notifications can work in this app build (Firebase set up). False in the web and older apps */
+  available: boolean
+  allowed: boolean
+  /** The user said no to the permission (turn it on in the phone settings) */
+  denied: boolean
+}
+
+export async function appPushStatus(): Promise<AppPushStatus> {
+  if (!isNative()) return { available: false, allowed: false, denied: false }
+  try {
+    return await Push.status()
+  } catch {
+    // Older app (no plugin)
+    return { available: false, allowed: false, denied: false }
+  }
+}
+
+/**
+ * FCM token and this phone's notification key. ask: show the permission dialog if needed (only when the user pressed
+ * [Turn on]). The dialog can lose its callback, so after 60 s it checks again without asking
+ */
+export async function appPushRegister(ask: boolean): Promise<{ token: string; key: string } | undefined> {
+  if (!isNative()) return undefined
+  const once = (a: boolean) =>
+    Push.register({ ask: a }).then(
+      (r) => ({ token: r.token, key: r.key }),
+      () => undefined,
+    )
+  if (!ask) return once(false)
+  const r = await Promise.race([
+    once(true),
+    new Promise<'late'>((res) => setTimeout(() => res('late'), 60_000)),
+  ])
+  return r === 'late' ? once(false) : r
+}
+
+export async function appPushUnregister() {
+  if (isNative()) await Push.unregister().catch(() => {})
+}
+
+/** A notification was tapped: url is where to go (#a=…, #t=…, #tab=…) */
+export function onPushOpen(f: (url: string) => void) {
+  if (!isNative()) return
+  void Push.addListener('open', (e) => {
+    if (typeof e.url === 'string' && /^#/.test(e.url)) f(e.url)
+  }).catch(() => {})
+}

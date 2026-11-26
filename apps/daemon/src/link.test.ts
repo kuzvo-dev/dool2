@@ -509,6 +509,79 @@ describe('폰 알림 (웹 푸시)', () => {
   })
 })
 
+describe('폰 알림 (스토어 앱, ADR 0042)', () => {
+  it('앱이 FCM 토큰과 알림 키를 알리면 그쪽으로 보내고, 토큰이 없어지면(410) 지운다', async () => {
+    const sent: { token: string; title: string; body: string; url?: string }[] = []
+    const web: string[] = []
+    let gone = false
+    const { api } = await boot({
+      push: async (sub) => {
+        web.push(sub.endpoint)
+        return 'sent'
+      },
+      appPush: async (reg, msg) => {
+        sent.push({ token: reg.token, ...msg })
+        return gone ? 'gone' : 'sent'
+      },
+    })
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state'))
+    const first = p.inbox.find((m) => m.kind === 'state') as Extract<PcToPhone, { kind: 'state' }>
+    expect(first.appPush).toBe(false)
+
+    // 키가 32바이트가 아니면 받지 않는다
+    await p.send({ kind: 'app-push', reg: { token: 'x'.repeat(40), key: 'short' } })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'error'))
+
+    const token = `fcm:${'t'.repeat(150)}`
+    const key = Buffer.alloc(32, 7).toString('base64url')
+    await p.send({ kind: 'app-push', reg: { token, key } })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'state' && m.appPush === true))
+    expect((await api('/api/link')).link.phones[0].push).toBe(true)
+
+    daemon?.approvals.create({
+      tabId: 1,
+      ref: 'e2',
+      role: '버튼',
+      label: '결제하기',
+      url: 'https://shop.example/pay',
+      kind: 'money',
+      reason: '"결제"',
+      what: '사과 결제',
+      where: '시험 가게',
+      amount: '9,900원',
+    })
+    await waitFor(() => sent.length === 1)
+    expect(sent[0]).toMatchObject({ token, title: '승인을 기다려요', body: '사과 결제 · 9,900원' })
+    expect(web).toHaveLength(0)
+
+    gone = true
+    daemon?.approvals.create({
+      tabId: 1,
+      ref: 'e3',
+      role: '버튼',
+      label: '결제하기',
+      url: 'https://shop.example/pay',
+      kind: 'money',
+      reason: '"결제"',
+      what: '배 결제',
+      where: '시험 가게',
+    })
+    await waitFor(() => sent.length === 2)
+    for (let i = 0; i < 100 && (await api('/api/link')).link.phones[0].push; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    expect((await api('/api/link')).link.phones[0].push).toBe(false)
+  })
+})
+
 describe('폰에서 서비스 연결', () => {
   it('목록을 받고, 연결 표시·해제하고, 확장이 없으면 열기를 안내한다', async () => {
     const { api } = await boot()

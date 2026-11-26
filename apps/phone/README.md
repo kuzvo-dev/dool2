@@ -27,7 +27,9 @@ pnpm --filter @dool2/relay start             # http://127.0.0.1:8787/app/
 
 - This phone's key is created as **non-extractable** from the browser and kept in IndexedDB.
 - Only the PC and this phone can open what is exchanged. Conversation content is not stored on the phone (the service worker stores only the app shell).
-- Notification permission is asked only when you press [Turn on notifications]. Once on, you get notifications even with the app closed for **approval requests, "please do this yourself" requests, and when a task finishes** (web push, sent directly by the PC). Tapping a notification goes straight to that approval or conversation.
+- Notification permission is asked only when you press [Turn on notifications]. Once on, you get notifications even with the app closed for **approval requests, "please do this yourself" requests, and when a task finishes**. Tapping a notification goes straight to that approval or conversation.
+  - **Store app** ([ADR 0042](../../docs/decisions/0042-store-app-push.md)): the app makes its own notification key (kept wrapped by the Android Keystore) and sends it with its FCM token to the PC. The PC encrypts each notification with that key and the official relay hands the ciphertext to FCM, so neither Google nor the relay can read it. Building with push needs `android/app/google-services.json` from the Dool2 Firebase project; without it the app builds and Settings says notifications are not available.
+  - **Browser** (self-hosted relay): web push, sent directly by the PC.
 - On iPhone, you can get notifications only after Safari Share → Add to Home Screen and opening it from there. The home screen shows this guide.
 - Old browsers (no X25519 support, iOS 16 and earlier, and so on) get a guidance screen.
 

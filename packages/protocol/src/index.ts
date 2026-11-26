@@ -1295,6 +1295,12 @@ export type PhoneToPc =
   | { kind: 'form-fill'; tabId: number; values: RemoteFormValue[]; press?: string }
   /** Web push subscription (null when notifications are turned off). The PC sends notifications directly to this address */
   | { kind: 'push'; sub: PushSubscriptionJSONLike | null }
+  /**
+   * Store app notifications (ADR 0042): the FCM token and this phone's notification key (32 bytes, base64url).
+   * The PC encrypts each notification with the key and the official relay hands it to FCM, so neither Google nor the
+   * relay can read it. null when notifications are turned off
+   */
+  | { kind: 'app-push'; reg: AppPushReg | null }
   /** Ask for the list of service connections (ADR 0014) */
   | { kind: 'connections' }
   /** Ask for the record of one conversation (ADR 0015). With before, the messages before it */
@@ -1348,6 +1354,14 @@ export type PhoneToPc =
   /** Connect with one-tap sign-in (Kakao, Naver…). If sign-in at the provider is needed, hand over to the remote screen */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
+/** Store app notification address (ADR 0042) */
+export interface AppPushReg {
+  /** FCM registration token */
+  token: string
+  /** AES-256-GCM key for the notification content (base64url, 32 bytes). Made on the phone, never sent anywhere but the PC */
+  key: string
+}
+
 /** The PushSubscription.toJSON() fields the PC uses, from the phone browser */
 export interface PushSubscriptionJSONLike {
   endpoint: string
@@ -1376,6 +1390,8 @@ export type PcToPhone =
       vapid?: string
       /** Whether this phone's subscription for notifications is registered on the PC */
       push?: boolean
+      /** Whether this store app's notification address (ADR 0042) is registered on the PC */
+      appPush?: boolean
       /** The service the Dool2 core is signing in to now */
       connecting?: string[]
       /** Test PC: show 'Start over' in the phone settings */
@@ -1501,13 +1517,15 @@ export interface PairedPhone {
   pairedAt: string
   /** Web push subscription. If present, notifications are sent even when the app is off */
   push?: PushSubscriptionJSONLike
+  /** Store app notification address (ADR 0042). If present, notifications go through FCM */
+  appPush?: AppPushReg
 }
 
 export interface LinkStatus {
   relay?: string
   connected: boolean
   pcId?: string
-  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push'> & { push: boolean })[]
+  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push' | 'appPush'> & { push: boolean })[]
 }
 
 export type PairStatus =

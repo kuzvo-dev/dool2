@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FileSavePlugin.class);
         // Send a text from my number (only what was approved on an approval card)
         registerPlugin(SmsPlugin.class);
+        // Store app notifications: FCM token, this phone's notification key, taps (ADR 0042)
+        registerPlugin(PushPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
