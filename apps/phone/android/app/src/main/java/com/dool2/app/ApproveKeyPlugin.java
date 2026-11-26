@@ -124,7 +124,7 @@ public class ApproveKeyPlugin extends Plugin {
             return;
         }
         FragmentActivity activity = getActivity();
-        String title = call.getString("title", "본인 확인");
+        String title = call.getString("title", "Confirm");
         String subtitle = call.getString("subtitle", "");
         activity.runOnUiThread(() -> {
             BiometricPrompt prompt = new BiometricPrompt(
