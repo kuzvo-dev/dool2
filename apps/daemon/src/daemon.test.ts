@@ -263,7 +263,7 @@ describe('대화 하나 (ADR 0015)', () => {
     await reader?.cancel()
   })
 
-  it('keeps the steps that got a request done and offers them on the next request like it (ADR 0042)', async () => {
+  it('keeps the steps that got a request done and offers them on the next request like it (ADR 0044)', async () => {
     /** Looks the order tool up the first two times, then answers; records what it was sent */
     class Shop extends EchoRuntime {
       inputs: string[] = []

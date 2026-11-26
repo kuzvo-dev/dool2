@@ -44,7 +44,7 @@ export function stepNameOk(name: string): boolean {
 }
 
 /**
- * A typing step (ADR 0042 follow-up): typing into a named field, and pressing Enter after it when submit. What was
+ * A typing step (ADR 0044 follow-up): typing into a named field, and pressing Enter after it when submit. What was
  * typed is never kept: the walk takes this time's value (browser_route inputs), so a search route works for any word
  */
 export const TYPE_MARK = '✎'

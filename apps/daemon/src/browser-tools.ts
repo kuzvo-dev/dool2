@@ -325,7 +325,7 @@ const TRAIL_KEEPS = new Set([
   'wait',
   'tabs',
   'route',
-  // Typing into a named field joins the walk without its value (ADR 0042 follow-up); other typing ends it in dispatch
+  // Typing into a named field joins the walk without its value (ADR 0044 follow-up); other typing ends it in dispatch
   'type',
 ])
 

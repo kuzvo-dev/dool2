@@ -121,7 +121,7 @@ describe('harness report', () => {
     expect(row('"End this answer" results without what is left / next')?.[3]).toBe('ok')
   })
 
-  it('splits requests done by whether their steps were new, seen before or offered (ADR 0042)', () => {
+  it('splits requests done by whether their steps were new, seen before or offered (ADR 0044)', () => {
     const n = aggregateHarness([
       e('recipe', { event: 'done', ms: 20_000, tools: 6, before: 0, offered: 0 }),
       e('recipe', { event: 'done', ms: 12_000, tools: 4, before: 1, offered: 0 }),

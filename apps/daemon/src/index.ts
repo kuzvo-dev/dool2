@@ -787,7 +787,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   browserTools.changesOnly = process.env.DOOL2_CLICK_CHANGES !== '0'
   // Remembered routes (ADR 0034): clicks that led somewhere on a site, walked again without the AI in between
   browserTools.routes = new RouteBook(join(paths.dataDir, 'routes.json'))
-  // Recipes (ADR 0042): the steps that got a request done, offered on the next request like it
+  // Recipes (ADR 0044): the steps that got a request done, offered on the next request like it
   const recipes = new RecipeBook(join(paths.dataDir, 'recipes.json'))
   const requestSteps = new RequestSteps()
   /** Recipes put on the message talk() is sending, taken by the turn that saves it */
@@ -2852,7 +2852,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           // A new request: what an earlier one left is no longer offered
           leftOf.delete(threadId)
           if (checkable) finishCheck?.begin(threadId, askText)
-          // A new request: its steps are gathered until it ends (ADR 0042)
+          // A new request: its steps are gathered until it ends (ADR 0044)
           if (checkable) requestSteps.begin(threadId, askText, offerFor.get(threadId) ?? [])
           offerFor.delete(threadId)
         }
@@ -3040,7 +3040,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
       // Sent back: the draft stays a draft until the next round's note is saved (then the card says what comes next)
       if (!again) setChecking(threadId, false)
-      // Recipes (ADR 0042): a request that ended done keeps its steps; one that failed or stopped short is let go. One
+      // Recipes (ADR 0044): a request that ended done keeps its steps; one that failed or stopped short is let go. One
       // that goes on (sent back, waiting for the person, a follow-up next) keeps gathering
       if (requestSteps.has(threadId)) {
         const done = !again && !next && !asked && !failed && !delegated && answerText && verdict !== 'stop'
@@ -3846,7 +3846,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // Tasks that ended since, and the ones still running (ADR 0038): the conversation knows them without a call
     const ended = unseenTasks.splice(0)
     const running = tasks.active()
-    // Steps that got requests like this one done before (ADR 0042)
+    // Steps that got requests like this one done before (ADR 0044)
     const offer = readAppNote(text) ? { ids: [], hint: undefined } : recipesFor(text)
     if (offer.ids.length) offerFor.set(sessionId, offer.ids)
     const aside =
@@ -3927,7 +3927,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     // card, its own next round, the person's notes
     const held = t.resume.splice(0)
     const notes = t.notes.length ? notesMessage(t.notes.splice(0), lang(), t.shownNotes) : ''
-    // A new task gets the steps that got tasks like it done before (ADR 0042), and its steps are gathered from here
+    // A new task gets the steps that got tasks like it done before (ADR 0044), and its steps are gathered from here
     const offer = !t.begun ? recipesFor(`${t.spec.title} ${t.spec.goal}`) : undefined
     if (offer) requestSteps.begin(t.threadId, t.spec.goal, offer.ids)
     const text = !t.begun
@@ -4453,7 +4453,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
   // Proactive checks: every hour from 6 am to 10 pm, look at tasks due for a check and connected services, and post with feed_tell if something needs attention (silent otherwise)
   life.watchSources = () => Object.keys(readSettings().connections ?? {})
-  // The memory screen lists the steps Dool2 remembered and deletes them (ADR 0042)
+  // The memory screen lists the steps Dool2 remembered and deletes them (ADR 0044)
   life.recipes = () =>
     recipes
       .ready()

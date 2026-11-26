@@ -959,7 +959,7 @@ export function memorySeg(ctx: LifeCtx): HTMLElement[] {
         ),
       )
   }
-  // Steps remembered for requests asked more than once (ADR 0042)
+  // Steps remembered for requests asked more than once (ADR 0044)
   const recipes = ctx.life?.recipes ?? []
   if (recipes.length) {
     out.push(h('p', { class: 'meta seg-note', text: L.recipesNote }))

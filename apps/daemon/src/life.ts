@@ -218,7 +218,7 @@ export class Life {
   onWatch?: (lastAt?: string) => void
   /** When a look-ahead item was posted to the feed (the daemon notifies the phone) */
   onTell?: (f: FeedItem) => void
-  /** Remembered steps for the memory screen, and deleting one (ADR 0042; the daemon attaches its recipe book) */
+  /** Remembered steps for the memory screen, and deleting one (ADR 0044; the daemon attaches its recipe book) */
   recipes?: () => RecipeView[]
   recipeForget?: (id: string) => void
   watchBusy = false
