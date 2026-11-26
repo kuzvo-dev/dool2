@@ -871,6 +871,34 @@ describe('Claude 로그인', () => {
   })
 })
 
+describe('pay-as-you-go spend', () => {
+  it("adds each answer's cost to this month and shows it on the runner's status", async () => {
+    class Costly extends EchoRuntime {
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        yield { type: 'cost', usd: 0.012, inputTokens: 1000, outputTokens: 200 }
+        yield* super.runTurn(input)
+      }
+    }
+    class Runner extends EchoRuntime {
+      override async detect(): Promise<AgentStatus> {
+        return { id: 'opencode', installed: true, loggedIn: true, plan: 'openrouter · ~z-ai/glm-latest' }
+      }
+    }
+    const until = async (f: () => Promise<boolean>) => {
+      for (let i = 0; i < 200 && !(await f()); i++) await new Promise((r) => setTimeout(r, 20))
+    }
+    const rt = new Costly()
+    const { api } = await boot(rt, { runtimes: { claude: rt, opencode: new Runner() } })
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    await api('/api/conversation/messages', { method: 'POST', body: '{"text":"hi"}' })
+    await until(async () => (await state()).messages.length === 2 && !(await state()).busy)
+    const { agents } = (await (await api('/api/agents')).json()) as { agents: AgentStatus[] }
+    const oc = agents.find((a) => a.id === 'opencode')
+    expect(oc?.spent?.usd).toBeCloseTo(0.012)
+    expect(oc?.spent?.month).toMatch(/^\d{4}-\d{2}$/)
+  })
+})
+
 describe('종량제 계정', () => {
   it('a key its company rejects is not saved, and the screen says why', async () => {
     const { api } = await boot(undefined, { checkKey: async () => 'rejected' })

@@ -33,6 +33,8 @@ export interface AgentStatus {
   plan?: string
   /** A description of the problem to show the user. None means all is well */
   problem?: string
+  /** Pay as you go: what this month's answers cost, in US dollars (month in Korean time, YYYY-MM) */
+  spent?: { month: string; usd: number }
 }
 
 /** One usage limit slot (e.g. a 5-hour window, a 7-day window) */
