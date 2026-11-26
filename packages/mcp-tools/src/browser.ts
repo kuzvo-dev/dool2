@@ -351,7 +351,7 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .enum(['code', 'rrn_back', 'captcha', 'pin', 'text'])
         .optional()
         .describe(
-          'code (default, digits) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad) · text (words only the person knows that a form asks for, such as a family member\'s name or the registration place; any letters; label says what, e.g. "아버지 성함")',
+          'code (default, digits) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad) · text (words only the person knows that a form asks for, such as a family member\'s name or the registration place; any letters; the label says what is asked, e.g. "father\'s name")',
         ),
       keys: z
         .record(z.string(), z.string())
