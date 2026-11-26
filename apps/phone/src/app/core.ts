@@ -53,8 +53,10 @@ export type Overlay =
   | { kind: 'connect'; id: string }
   | { kind: 'goal'; id: string }
   | { kind: 'item'; id: string }
-  /** On long-press of a reply: save to library, copy */
+  /** On long-press of a reply: save to library, copy, report */
   | { kind: 'msg'; id: string }
+  /** Report an AI answer to the Dool2 team (store AI-content policy) */
+  | { kind: 'report-answer'; id: string }
   /** Report a problem: leaves what just happened in the PC's log */
   | { kind: 'report' }
   /** Settings > My info: view masked values, edit, delete */
@@ -73,6 +75,8 @@ export const st: {
   key?: CryptoKey
   client?: LinkClient
   online: boolean
+  /** Looking around without a PC (review.ts): a pretend PC in the app answers, nothing is saved */
+  demo?: boolean
   /** Connected to the relay but the PC does not answer (the PC is off, or this phone's link was removed on the PC) */
   pcSilent: boolean
   screen: Screen
@@ -221,7 +225,14 @@ export const coreVars = { pendingSeq: 0 }
 // Sending is queued in a single line. If another message slips in while the sequence number is raised and we wait for saving and encryption, it
 // would go out with the same number or in the wrong order, and the PC would take the later one for a resend and drop it
 let sending = Promise.resolve()
+/** The pretend PC of the demo (review.ts) takes what the screens send */
+export const demoHook: { send?: (body: PhoneToPc) => void } = {}
+
 export function send(body: PhoneToPc): Promise<void> {
+  if (st.demo) {
+    demoHook.send?.(body)
+    return Promise.resolve()
+  }
   if (!QUIET_SEND.has(body.kind)) mark(`sent ${body.kind}${'action' in body ? `:${body.action}` : ''}`)
   sending = sending.then(() => sendNow(body)).catch(() => {})
   return sending

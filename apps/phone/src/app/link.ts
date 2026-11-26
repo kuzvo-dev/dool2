@@ -5,6 +5,7 @@ import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/
 import { narrationLine, splitPhoto, toolLabel, toolPlace } from '@dool2/protocol/rich'
 import { lang } from '../lang.js'
 import { mainCore } from '../locales/main-a-core.js'
+import { tReview } from '../locales/review.js'
 import { confirmDevice, defaultRelay } from '../native.js'
 import type { Shot } from '../remote.js'
 import { clear, clearConv, save } from '../store.js'
@@ -128,6 +129,13 @@ async function receive(env: Envelope) {
   }
   heard = true
   if (st.pcSilent) st.pcSilent = false
+  await handle(msg)
+}
+
+/** Everything the PC says, after it was opened (the demo's pretend PC calls this directly) */
+export async function handle(msg: PcToPhone) {
+  const s = st.saved
+  if (!s) return
   markReceived(msg)
   switch (msg.kind) {
     case 'paired':
@@ -257,6 +265,9 @@ async function receive(env: Envelope) {
         ...(msg.payMethods ? { payMethods: msg.payMethods } : {}),
       }
       if (msg.message) toast(msg.message)
+      break
+    case 'answer-reported':
+      toast(msg.ok ? tReview.reportSent(msg.id) : tReview.reportFailed(msg.message))
       break
     case 'reset-done': {
       toast(msg.message)

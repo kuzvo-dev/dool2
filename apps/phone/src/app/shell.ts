@@ -19,6 +19,7 @@ import { connectView } from './login-sheets.js'
 import { renderOverlay } from './overlays.js'
 import { introView, pairingView, unsupportedView } from './pairing.js'
 import { pullToRefresh } from './resync.js'
+import { consented, consentView, demoBar } from './review.js'
 import { settingsView } from './settings.js'
 import { infoWaitBar, sideOverlay, sideView } from './threads.js'
 import { fps, pollConnect, pollWork, remote, remoteFrom } from './work.js'
@@ -81,6 +82,12 @@ export function render() {
   }
   keepConv()
   const s = st.screen
+  // Before the first use: what goes where (review.ts consent, once)
+  if (s.name === 'app' && !consented()) {
+    shell = undefined
+    app.replaceChildren(consentView())
+    return
+  }
   if (s.name !== 'app') {
     shell = undefined
     const view =
@@ -112,6 +119,11 @@ export function render() {
   renderComposer()
   renderTabs()
   renderOverlay()
+  // Demo: a bar on top with the way out
+  const bar = demoBar()
+  const oldBar = app.querySelector(':scope > .demo-bar')
+  if (bar && !oldBar) app.append(bar)
+  else if (!bar) oldBar?.remove()
   if (shell) {
     shell.toast.textContent = st.toast ?? ''
     shell.toast.hidden = !st.toast

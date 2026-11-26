@@ -3,6 +3,7 @@ import { doori, h, type IconName, icon } from '../dom.js'
 import { goalSheet, itemSheet, plain } from '../life-views.js'
 import { mdCred } from '../locales/main-d-cred.js'
 import { mdSheets } from '../locales/main-d-sheets.js'
+import { tReview } from '../locales/review.js'
 import { drawCheck, riseIn, springTo } from '../motion.js'
 import { agentPanel } from './agent-panel.js'
 import { payPicker, shipPicker } from './approval-cards.js'
@@ -12,6 +13,7 @@ import { mark, mSet, send, st, type Tab, trail } from './core.js'
 import { lifeAct, lifeCtx } from './lists.js'
 import { connectSheet, infoSheet, loginSheet } from './login-sheets.js'
 import { payAddSheet, paySheet } from './pay.js'
+import { reportAnswerSheet } from './review.js'
 import { profileSheet, vaultSheet } from './settings.js'
 import { openOverlay, reducedMotion, setTab, shell, toast, typingIn } from './shell.js'
 import { newSide, sideMenu } from './threads.js'
@@ -56,21 +58,23 @@ export function renderOverlay() {
                     ? itemSheet(lifeCtx(), ov.id)
                     : ov.kind === 'msg'
                       ? msgSheet(ov.id)
-                      : ov.kind === 'plus'
-                        ? plusSheet()
-                        : ov.kind === 'info'
-                          ? infoSheet(ov.id)
-                          : ov.kind === 'profile'
-                            ? profileSheet()
-                            : ov.kind === 'vault'
-                              ? vaultSheet()
-                              : ov.kind === 'pay'
-                                ? paySheet()
-                                : ov.kind === 'pay-add'
-                                  ? payAddSheet()
-                                  : ov.kind === 'report'
-                                    ? reportSheet()
-                                    : loginSheet(ov.id)
+                      : ov.kind === 'report-answer'
+                        ? reportAnswerSheet(ov.id)
+                        : ov.kind === 'plus'
+                          ? plusSheet()
+                          : ov.kind === 'info'
+                            ? infoSheet(ov.id)
+                            : ov.kind === 'profile'
+                              ? profileSheet()
+                              : ov.kind === 'vault'
+                                ? vaultSheet()
+                                : ov.kind === 'pay'
+                                  ? paySheet()
+                                  : ov.kind === 'pay-add'
+                                    ? payAddSheet()
+                                    : ov.kind === 'report'
+                                      ? reportSheet()
+                                      : loginSheet(ov.id)
   // While open, this runs every time news arrives from the PC. If the shape is the same, leave it alone:
   // inserting anew replays the rise animation, so sheets and menus bounce two or three times and lose typed text and scroll
   const drawn = body.outerHTML
@@ -300,6 +304,17 @@ function msgSheet(id: string) {
     ),
     h('button', { class: 'btn-ghost wide', text: mdSheets.close, onclick: () => openOverlay(undefined) }),
   )
+  // AI answers can be reported to the Dool2 team (store AI-content policy)
+  if (m.role === 'assistant')
+    sheet.insertBefore(
+      h(
+        'button',
+        { class: 'set-row', onclick: () => openOverlay({ kind: 'report-answer', id: m.id }) },
+        h('span', { class: 'tile sm rose' }, icon('shield', 'i')),
+        h('span', { class: 'row-t', text: tReview.report }),
+      ),
+      sheet.lastElementChild,
+    )
   return sheet
 }
 
