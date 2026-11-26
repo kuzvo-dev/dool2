@@ -162,3 +162,11 @@ Each day it runs a different batch (shuffled by date, higher priority first), pr
 - `evals/out/latest.txt` — the most recent line
 
 Fix PRs are not created automatically. A person reads the report card in the morning and fixes things. (The safe core of harness plan item 6)
+
+## The self-improve loop (test PC, one request at a time)
+
+`evals/loop/scenarios.json` holds requests sent one by one to the test PC's main conversation, the one the
+maintainer watches on the phone: `node scripts/loop/run.mjs` sends a batch and records time, tools, finish-check
+verdicts and how many replies the person sees; `node scripts/loop/report.mjs` makes the before/after page. The whole
+loop (pick scenarios, judge as a paying user, fix tools, ship, re-ask) is the
+[self-improve skill](../.claude/skills/self-improve/SKILL.md).
