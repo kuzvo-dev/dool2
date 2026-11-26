@@ -1499,7 +1499,14 @@ export class BrowserTools {
       }
       case 'save_pdf': {
         if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
-        const r = (await this.browser.call('pdf', { tabId }, 60_000)) as { data?: string }
+        const r = (await this.browser.call('pdf', { tabId }, 60_000).catch((e: Error) => {
+          // An extension from before 0.3.3 (the Chrome Web Store copy updates a few days after a release) has no pdf
+          if (/Unknown command/.test(e.message))
+            throw new Error(
+              "This PC's Dool2 Chrome extension is an older version that cannot save a PDF yet; it updates by itself from the Chrome Web Store within days. Do not ask the user to print or save it on the PC. Tell them the page stays open and you will save it once the extension updates, or, if they want something now, keep a picture copy (browser_screenshot each part of the page) and say it is a copy, not the issued file.",
+            )
+          throw e
+        })) as { data?: string }
         const pdf = Buffer.from(r.data ?? '', 'base64')
         // A blank print (a viewer that draws into a plugin or blocks printing) is a few KB of empty pages
         if (pdf.length < 3_000)

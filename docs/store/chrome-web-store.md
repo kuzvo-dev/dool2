@@ -47,7 +47,8 @@ The store listing text is Korean data (the listing is Korean-language). It is ke
 | 0.2.0 | 2026-11-17 | Published (confirmed 2026-11-23) |
 | 0.3.0 | 2026-11-23 | Published, unlisted (confirmed 2026-11-24). Contents: screen viewing, mouse, tab cleanup, build fingerprint, artwork tile slot (@center), new permission `contentSettings` |
 | 0.3.1 | 2026-11-24 | Published, unlisted (confirmed 2026-11-25). Contents: a page is ready when its content shows, not after every ad (#437); no new permission |
-| 0.3.2 | 2026-11-25 | Submitted, pending review (auto-publish after passing). Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
+| 0.3.2 | 2026-11-25 | Published (installed from the store on the test PC, confirmed 2026-11-27). Contents: `open` can open a tab in the background, so a lookup task reads beside a running task without bringing its tab to the front (#525); no new permission |
+| 0.3.3 | 2026-11-27 | Submitted. Contents: `pdf` prints a tab as a PDF through the existing `debugger` permission (Page.printToPDF) so certificates and statements in a viewer can be kept as files (#617); no new permission |
 
 ### Permission reason (Privacy practices tab)
 
