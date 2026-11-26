@@ -14,7 +14,7 @@
   "apps/phone/capacitor.config.json": 1,
   "apps/phone/scripts/live.mjs": 83,
   "apps/phone/scripts/qa-walkthrough.mjs": 33,
-  "apps/phone/src/main.ts": 1,
+  "apps/phone/src/app/cards.ts": 1,
   "apps/phone/static/index.html": 1,
   "apps/phone/static/manifest.webmanifest": 3,
   "packages/protocol/src/blocks.ts": 61,
