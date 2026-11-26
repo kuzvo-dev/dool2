@@ -137,6 +137,39 @@ function fakeBrowser() {
 const text = (r: { content: { type: string; text?: string }[] }) =>
   r.content.map((c) => c.text ?? '').join('\n')
 
+describe('단계 자세히 (일한 과정 시트)', () => {
+  it('연 주소(물음표 뒤 빼고)·누른 버튼 이름·넣은 칸 이름만, 넣은 값은 절대 안 싣는다', async () => {
+    const b = fakeBrowser()
+    const tools = new BrowserTools(b)
+    await tools.run('open', { url: 'https://shop.example' })
+    expect(
+      tools.stepDetail('mcp__dool2__browser_open', { url: 'https://shop.example/item/1?token=abc' }),
+    ).toEqual([{ k: 'url', v: 'shop.example/item/1' }])
+    expect(tools.stepDetail('mcp__dool2__browser_click', { tabId: 3, ref: 'e4' })).toEqual([
+      { k: 'press', v: '바로 구매' },
+    ])
+    const steps = tools.stepDetail('mcp__dool2__browser_steps', {
+      tabId: 3,
+      steps: [
+        { do: 'type', ref: 'e4', text: '비밀번호1234' },
+        { do: 'click', ref: 'e4' },
+      ],
+    })
+    expect(steps).toEqual([
+      { k: 'field', v: '바로 구매' },
+      { k: 'press', v: '바로 구매' },
+    ])
+    expect(JSON.stringify(steps)).not.toContain('비밀번호1234')
+    expect(
+      tools.stepDetail('mcp__dool2__service_call', {
+        tool: 'catchtable_search',
+        input: { query: '성수 오마카세', date: '2026-12-01' },
+      }),
+    ).toEqual([{ k: 'query', v: '성수 오마카세 · 2026-12-01' }])
+    expect(tools.stepDetail('mcp__dool2__memory_save', { text: 'x' })).toBeUndefined()
+  })
+})
+
 describe('브라우저 도구 실행', () => {
   it('열면 바로 읽어 돌려준다', async () => {
     const b = fakeBrowser()

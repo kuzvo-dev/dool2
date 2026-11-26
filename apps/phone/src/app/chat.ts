@@ -44,15 +44,8 @@ import { connect, forgetPc } from './link.js'
 import { feedPager } from './lists.js'
 import { openOverlay, render, setTab, shell } from './shell.js'
 import { isSms, smsStates } from './sms.js'
-import {
-  agentOn,
-  connectWaiting,
-  openRemote,
-  taskInline,
-  updateWorkPanel,
-  workDone,
-  workPanel,
-} from './work.js'
+import { agentOn, connectWaiting, openRemote } from './work.js'
+import { doneLine, liveLine, taskLine, updateLiveLine } from './work-line.js'
 
 // ── Chat: only changed messages ──
 
@@ -284,7 +277,7 @@ function chatItems(): Item[] {
     // The work process is one card: the screen being viewed + steps (like the landing page's "Looking at ...")
     // While the answer is a draft (being written after tools, checked, or continued) it lives in this card too
     const card = st.busy && (st.steps.length || shot || progress)
-    if (card) items.push({ key: 'work', sig: '', make: workPanel })
+    if (card) items.push({ key: 'work', sig: '', make: liveLine })
     // Until the reply text starts streaming, keep "•••" under the work card too, so it feels like it is writing (user request, 11-22)
     if (st.live && !card) items.push({ key: 'live', sig: '', make: liveBubble })
     else if (!progress && !st.live)
@@ -498,7 +491,7 @@ export function syncChat() {
       riseWords(el)
     } else if (el && it.key === 'work') {
       // The work card only appends new steps (leaving the current screen picture as is)
-      updateWorkPanel(el)
+      updateLiveLine(el)
     } else if (!el || el.dataset.sig !== it.sig) {
       const fresh = it.make()
       fresh.dataset.key = it.key
@@ -698,8 +691,8 @@ export function toolCard(raw: string, live = true, used?: string): HTMLElement {
   if (rec.kind === 'approval') return approvalInline(rec)
   if (rec.kind === 'login') return loginInline(rec)
   if (rec.kind === 'connect') return connectInline(rec, live)
-  if (rec.kind === 'work') return workDone(rec)
-  if ((rec as { kind?: string }).kind === 'task') return taskInline(rec as unknown as TaskRecordMessage)
+  if (rec.kind === 'work') return doneLine(rec)
+  if ((rec as { kind?: string }).kind === 'task') return taskLine(rec as unknown as TaskRecordMessage)
   if ((rec as { kind?: string }).kind === 'left') return leftInline(rec as unknown as LeftRecordMessage, live)
   if (rec.kind === 'tell') return tellInline(rec)
   if (rec.kind === 'cards') return cardsInline(rec)

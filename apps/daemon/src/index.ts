@@ -583,6 +583,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     lang,
     tabHost: (tabId) => browserTools.tabHost(tabId),
     toolTitle: (name) => connectors.titleOf(name),
+    stepDetail: (name, input) => browserTools.stepDetail(name, input),
     // An older extension brings every new tab forward: lookups then take turns like the others
     parallelReads: () => browserTools.backgroundOpens !== false,
   })
@@ -620,6 +621,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     tabHost: (tabId) => browserTools.tabHost(tabId),
     // Title of a service tool in the work steps ("finding shops · checking opening hours")
     toolTitle: (name) => connectors.titleOf(name),
+    // What each step did, for the "how it worked" sheet (address, what was pressed, the field typed into)
+    stepDetail: (name, input) => browserTools.stepDetail(name, input),
     takeMadeImage: () => {
       const m = madeImage
       madeImage = undefined

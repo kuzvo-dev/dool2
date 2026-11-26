@@ -19,6 +19,7 @@ import type {
   RemoteForm,
   RemoteFormValue,
   RemoteInfo,
+  StepDetail,
 } from '@dool2/protocol'
 import {
   PAY_KINDS,
@@ -964,6 +965,78 @@ export class BrowserTools {
       ...(last ? { lastPage: { title: last.title, url: last.url } } : {}),
       donePage: recent.some((r) => r.done),
     }
+  }
+
+  /**
+   * What one work step did, for the "how it worked" sheet on the screens: the address opened (no query), the name of
+   * what was pressed, the field typed into (never the value), the page read. From the tool input and the page Dool2
+   * last read on that tab; undefined when there is nothing to say
+   */
+  stepDetail(name: string, input: unknown): StepDetail[] | undefined {
+    const bare = name.replace(/^(mcp__dool2__|dool2_)/, '').replace(/^browser_/, '')
+    const i = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+    const tabId = typeof i.tabId === 'number' ? i.tabId : this._lastTabId
+    const page = tabId === undefined ? undefined : this.pages.get(tabId)
+    const clip = (v: string) => (v.length > 80 ? `${v.slice(0, 79)}…` : v)
+    const named = (ref: unknown, text: unknown) =>
+      (typeof ref === 'string' ? page?.refs.get(ref)?.name : undefined) ||
+      (typeof text === 'string' ? text : undefined)
+    const out: StepDetail[] = []
+    if ((bare === 'open' || bare === 'navigate') && typeof i.url === 'string') {
+      try {
+        const u = new URL(i.url)
+        out.push({ k: 'url', v: clip(`${u.host}${u.pathname === '/' ? '' : u.pathname}`) })
+      } catch {
+        // not an address
+      }
+    } else if (bare === 'click' || bare === 'select' || bare === 'press') {
+      const n = named(i.ref, i.text)
+      if (n) out.push({ k: 'press', v: clip(n) })
+    } else if (bare === 'type') {
+      const n = named(i.ref, undefined)
+      if (n) out.push({ k: 'field', v: clip(n) })
+    } else if (bare === 'steps' && Array.isArray(i.steps)) {
+      for (const st of i.steps.slice(0, 6) as Record<string, unknown>[]) {
+        if (st?.do !== 'click' && st?.do !== 'type') continue
+        // A typed value is never shown: only the field's name
+        const n = named(st.ref, st.do === 'type' ? undefined : st.text)
+        if (n) out.push({ k: st.do === 'type' ? 'field' : 'press', v: clip(n) })
+      }
+    } else if ((bare === 'read' || bare === 'snapshot' || bare === 'screenshot') && page?.title) {
+      out.push({ k: 'page', v: clip(page.title) })
+    } else if (
+      /_(search|find|track|lookup|list|showtimes|price|prices|status)$/.test(bare) ||
+      bare === 'service_call'
+    ) {
+      // A service lookup: the few words it was asked for (search words, dates, places), never ids or numbers
+      const args = (
+        bare === 'service_call' && i.input && typeof i.input === 'object' ? i.input : i
+      ) as Record<string, unknown>
+      const words = [
+        'query',
+        'keyword',
+        'q',
+        'search',
+        'from',
+        'to',
+        'date',
+        'checkin',
+        'checkout',
+        'region',
+        'area',
+        'place',
+        'title',
+        'movie',
+        'city',
+      ]
+        .map((k) => args[k])
+        .filter(
+          (v): v is string | number => (typeof v === 'string' && v.trim() !== '') || typeof v === 'number',
+        )
+        .map(String)
+      if (words.length) out.push({ k: 'query', v: clip(words.join(' · ')) })
+    }
+    return out.length ? out : undefined
   }
 
   tabHost(tabId: number): string | undefined {

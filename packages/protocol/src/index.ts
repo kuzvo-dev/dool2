@@ -50,7 +50,7 @@ export type AgentEvent =
   | { type: 'started'; resumeId?: string; model?: string; tools: string[] }
   | { type: 'text'; delta: string }
   /** title: the human-readable title of a service tool (added by the engine, for the working indicator) */
-  | { type: 'tool'; name: string; input: unknown; title?: string }
+  | { type: 'tool'; name: string; input: unknown; title?: string; detail?: StepDetail[] }
   /** chars: how many characters of text the result gave the AI (sizes only, for the work log). Missing when unknown */
   | { type: 'tool_result'; name?: string; ok: boolean; chars?: number }
   | { type: 'usage'; limits: UsageLimit[] }
@@ -541,6 +541,16 @@ export const FocusTabSchema = z.object({ tabId: z.number().int() })
  * Work process: for a turn that worked with tools, a 'tool' message is left right before the answer.
  * The screen draws it as a folded card ("Worked on Catchtable · 5 steps · 32 s"), and expanding it shows the steps
  */
+/**
+ * What one work step did, for the "how it worked" sheet: the address opened, what was pressed, which field was filled
+ * (never the value), what a service was asked for, the page read. Made by the daemon from the tool input and the page
+ * it knows; short and already masked
+ */
+export interface StepDetail {
+  k: 'url' | 'press' | 'field' | 'query' | 'page'
+  v: string
+}
+
 export interface WorkRecordMessage {
   kind: 'work'
   /**
@@ -548,7 +558,7 @@ export interface WorkRecordMessage {
    * act: what the tool did ("웹페이지 여는 중"), place: where it worked (toolPlace: site address, "tool:…", "app" or "file").
    * The screen groups steps with the same place into one service line (older records have neither)
    */
-  steps: { text: string; ms: number; act?: string; place?: string }[]
+  steps: { text: string; ms: number; act?: string; place?: string; detail?: StepDetail[] }[]
   /** Total number of steps (the original number even when steps was cut) */
   count: number
   /** Time the whole turn took (ms) */

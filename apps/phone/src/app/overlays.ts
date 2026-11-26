@@ -17,6 +17,7 @@ import { reportAnswerSheet } from './review.js'
 import { profileSheet, vaultSheet } from './settings.js'
 import { openOverlay, reducedMotion, setTab, shell, toast, typingIn } from './shell.js'
 import { newSide, sideMenu } from './threads.js'
+import { workSheet } from './work-line.js'
 
 // ── Overlays: menu drawer, Dool2 panel, approval sheet, login sheet ──
 
@@ -60,21 +61,23 @@ export function renderOverlay() {
                       ? msgSheet(ov.id)
                       : ov.kind === 'report-answer'
                         ? reportAnswerSheet(ov.id)
-                        : ov.kind === 'plus'
-                          ? plusSheet()
-                          : ov.kind === 'info'
-                            ? infoSheet(ov.id)
-                            : ov.kind === 'profile'
-                              ? profileSheet()
-                              : ov.kind === 'vault'
-                                ? vaultSheet()
-                                : ov.kind === 'pay'
-                                  ? paySheet()
-                                  : ov.kind === 'pay-add'
-                                    ? payAddSheet()
-                                    : ov.kind === 'report'
-                                      ? reportSheet()
-                                      : loginSheet(ov.id)
+                        : ov.kind === 'work'
+                          ? workSheet(ov.src)
+                          : ov.kind === 'plus'
+                            ? plusSheet()
+                            : ov.kind === 'info'
+                              ? infoSheet(ov.id)
+                              : ov.kind === 'profile'
+                                ? profileSheet()
+                                : ov.kind === 'vault'
+                                  ? vaultSheet()
+                                  : ov.kind === 'pay'
+                                    ? paySheet()
+                                    : ov.kind === 'pay-add'
+                                      ? payAddSheet()
+                                      : ov.kind === 'report'
+                                        ? reportSheet()
+                                        : loginSheet(ov.id)
   // While open, this runs every time news arrives from the PC. If the shape is the same, leave it alone:
   // inserting anew replays the rise animation, so sheets and menus bounce two or three times and lose typed text and scroll
   const drawn = body.outerHTML

@@ -586,7 +586,15 @@ function onStream(ev: DaemonStreamEvent) {
         }
         st.steps = [...st.steps, label]
         stepAt[n] = Date.now()
-        stepInfo[n] = { act, ...(place ? { place } : {}) }
+        stepInfo[n] = {
+          act,
+          ...(place ? { place } : {}),
+          ...(ev.event.detail ? { detail: ev.event.detail } : {}),
+        }
+      } else if (ev.event.detail) {
+        // The same line again: what it did adds up (the "how it worked" sheet shows it)
+        const cur = stepInfo[n - 1]
+        if (cur) cur.detail = [...(cur.detail ?? []), ...ev.event.detail].slice(-6)
       }
     }
   } else if (ev.type === 'end') {

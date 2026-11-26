@@ -57,6 +57,8 @@ export type Overlay =
   | { kind: 'msg'; id: string }
   /** Report an AI answer to the Dool2 team (store AI-content policy) */
   | { kind: 'report-answer'; id: string }
+  /** The "how it worked" sheet behind a work line (work-line.ts) */
+  | { kind: 'work'; src: import('./work-line.js').SheetSrc }
   /** Report a problem: leaves what just happened in the PC's log */
   | { kind: 'report' }
   /** Settings > My info: view masked values, edit, delete */
