@@ -1,0 +1,49 @@
+{
+  "id": "naver-flight",
+  "name": "네이버 항공권",
+  "site": "flight.naver.com",
+  "category": "travel",
+  "how": "open",
+  "summary": "로그인 없이 국내선 항공권을 여러 항공사 한 번에 비교해 드려요. 제일 싼 편, 원하는 시간대 편을 골라 드릴게요.",
+  "example": {
+    "ask": "다음 달 15일 김포에서 제주 제일 싼 비행기 찾아 줘",
+    "working": "항공권 비교 중",
+    "reply": "12/15 김포→제주 최저가는 진에어 06:05 편 특가석 34,200원이에요."
+  },
+  "abilities": [
+    {
+      "title": "국내선 최저가 비교",
+      "say": "김포에서 제주 가는 제일 싼 비행기 찾아 줘",
+      "tier": "lookup"
+    },
+    {
+      "title": "시간대별 항공편",
+      "say": "금요일 저녁에 부산 가는 비행기 있어?",
+      "tier": "lookup"
+    }
+  ],
+  "regions": [
+    "KR"
+  ],
+  "i18n": {
+    "en": {
+      "name": "Naver Flights",
+      "summary": "Without signing in, Dool2 compares domestic flights across airlines at once and picks the cheapest or the time you want.",
+      "example": {
+        "ask": "Find the cheapest flight from Gimpo to Jeju on the 15th next month",
+        "working": "Comparing flights",
+        "reply": "The cheapest Gimpo→Jeju flight on 12/15 is Jin Air at 06:05, special fare 34,200 won."
+      },
+      "abilities": [
+        {
+          "title": "Compare domestic fares",
+          "say": "Find the cheapest flight from Gimpo to Jeju"
+        },
+        {
+          "title": "Flights by time",
+          "say": "Any flights to Busan on Friday evening?"
+        }
+      ]
+    }
+  }
+}
