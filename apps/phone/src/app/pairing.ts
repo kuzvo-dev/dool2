@@ -4,10 +4,12 @@ import { fromB64u, generateDevice, LINK_VERSION, linkKey, pairCode, seal } from 
 import type { LinkClient } from '@dool2/protocol/link'
 import { h, liveDoori } from '../dom.js'
 import { mdSide } from '../locales/main-d-side.js'
+import { tReview } from '../locales/review.js'
 import { inviteFrom, isNative, scanQr } from '../native.js'
 import { type Saved, save } from '../store.js'
 import { type Screen, st, tShell } from './core.js'
 import { connect } from './link.js'
+import { startDemo } from './review.js'
 import { render, setTab, toast } from './shell.js'
 
 // ── Pairing ──
@@ -90,6 +92,8 @@ export function introView() {
       h('li', { text: isNative() ? mdSide.step3Native : mdSide.step3Web }),
     ),
     isNative() ? h('button', { class: 'btn', text: mdSide.scanQr, onclick: () => void scanInvite() }) : null,
+    // Store review and the curious: the real screens with a pretend PC (review.ts)
+    h('button', { class: 'btn-ghost', text: tReview.tryDemo, onclick: () => void startDemo() }),
     h('p', { class: 'meta', text: mdSide.encrypted }),
   )
 }

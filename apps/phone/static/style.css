@@ -4349,3 +4349,28 @@ textarea.ghosting {
 .kb-open .app-composer {
   bottom: 8px;
 }
+
+/* Demo (review.ts): a slim bar on top with the way out */
+.demo-bar {
+  position: fixed;
+  top: calc(112px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink-muted);
+  font: var(--text-caption);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+/* AI consent (review.ts), once before the first use */
+.consent-page .steps li {
+  text-align: left;
+}
