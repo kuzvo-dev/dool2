@@ -271,3 +271,40 @@ export function onPushOpen(f: (url: string) => void) {
     if (typeof e.url === 'string' && /^#/.test(e.url)) f(e.url)
   }).catch(() => {})
 }
+
+/** Approval keys in the security chip (ADR 0043, ApproveKeyPlugin.java) */
+const ApproveKey = registerPlugin<{
+  keys(): Promise<{ plain: string; pay?: string; lock: boolean }>
+  sign(o: {
+    key: 'pay' | 'plain'
+    text: string
+    title?: string
+    subtitle?: string
+  }): Promise<{ sig?: string; cancel?: boolean; reason?: string }>
+}>('ApproveKey')
+
+/** This phone's chip public keys (made the first time); undefined in the web and older apps */
+export async function approveKeys(): Promise<{ plain: string; pay?: string } | undefined> {
+  if (!isNative()) return undefined
+  try {
+    const k = await ApproveKey.keys()
+    return { plain: k.plain, ...(k.pay ? { pay: k.pay } : {}) }
+  } catch {
+    return undefined
+  }
+}
+
+/** Signs with a chip key. 'pay' shows the phone lock first; 'cancel' if the person backed out */
+export async function approveSign(
+  key: 'pay' | 'plain',
+  text: string,
+  title: string,
+  subtitle?: string,
+): Promise<string | 'cancel' | undefined> {
+  try {
+    const r = await ApproveKey.sign({ key, text, title, ...(subtitle ? { subtitle } : {}) })
+    return r.sig ?? (r.cancel ? 'cancel' : undefined)
+  } catch {
+    return undefined
+  }
+}

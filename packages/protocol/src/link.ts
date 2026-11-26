@@ -131,6 +131,31 @@ export function approvalSignText(
   )
 }
 
+/**
+ * What the phone signs (with its pairing key) to register its security-chip approval keys (ADR 0043).
+ * pay: the key that signs only after a fingerprint, face or PIN; absent on a phone with no screen lock
+ */
+export function approveKeysSignText(keys: { plain: string; pay?: string }, at: number): string {
+  return JSON.stringify([
+    ['at', at],
+    ['pay', keys.pay ?? ''],
+    ['plain', keys.plain],
+    ['t', 'dool2-approve-keys/v1'],
+  ])
+}
+
+/**
+ * What the phone signs to turn "check the phone lock for payment approvals" on or off (ADR 0043).
+ * Turning it off must be signed with the pay key, so it takes a fingerprint, face or PIN too
+ */
+export function payConfirmSignText(on: boolean, at: number): string {
+  return JSON.stringify([
+    ['at', at],
+    ['on', on],
+    ['t', 'dool2-pay-confirm/v1'],
+  ])
+}
+
 /** What the phone signs to turn auto-approve on or off (ADR 0030). `at` keeps an old signature from being replayed */
 export function autoApproveSignText(on: boolean, at: number): string {
   return JSON.stringify([

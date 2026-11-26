@@ -46,6 +46,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0040](0040-instructions-as-files.md) | Dool2's instructions live in prompts/ text files and can arrive in a connector pack; the money rules stay in code | Accepted |
 | [0041](0041-connection-is-an-account.md) | A connection is a specific account: Dool2 reads which account a service shows, asks when Chrome holds another one, and lets the person pick Google accounts instead of typing a password | Accepted |
 | [0042](0042-store-app-push.md) | Store app notifications go through FCM via the official relay, with the content encrypted by the PC with the phone's own key | Accepted |
+| [0043](0043-chip-approval-keys.md) | Approvals are signed by keys in the phone's security chip; payments and transfers only after the phone lock (can be turned off, with the lock) | Accepted |
 
 ## How to write a new decision
 

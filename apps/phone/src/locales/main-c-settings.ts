@@ -67,6 +67,13 @@ export const mainCSettings = messages({
     autoApproveAsk:
       '자동 승인을 켤까요?\n\n결제 말고는 승인 카드 없이 두리가 바로 해요. 메시지 보내기, 지우기, PC 앱 다루기도 묻지 않아요. 부탁하신 일과 상관없어 보이는 건 그때만 물어봐요. 결제는 켜도 늘 물어봐요.',
     autoApproveDevice: '자동 승인 켜기',
+    payLock: '결제·송금 때 본인 확인',
+    payLockOnSub: '켜져 있어요. 결제·송금은 지문·얼굴·PIN을 확인한 뒤에 승인돼요',
+    payLockOffSub: '꺼져 있어요. 결제·송금도 꾹 누르기만으로 승인돼요',
+    payLockNoLock: '폰에 화면 잠금을 설정하면 켤 수 있어요',
+    payLockOffAsk:
+      '결제·송금 때 본인 확인을 끌까요?\n\n끄면 잠금이 풀린 폰을 가진 사람은 누구나 결제를 승인할 수 있어요. 끄려면 지금 한 번 본인 확인이 필요해요.',
+    payLockOffTitle: '결제 본인 확인 바꾸기',
     turnOff: '끄기',
     // sections named as in the PC settings
     secFinal: '마지막 확인',
@@ -215,6 +222,13 @@ export const mainCSettings = messages({
     autoApproveAsk:
       "Turn on auto-approve?\n\nExcept for payments, Dool2 will just do it with no approval card, including sending messages, deleting and using PC apps. Anything that doesn't look like what you asked for still asks, and payments always ask.",
     autoApproveDevice: 'Turn on auto-approve',
+    payLock: 'Confirm it is you for payments',
+    payLockOnSub: 'On. Payments and transfers are approved only after your fingerprint, face or PIN',
+    payLockOffSub: 'Off. Holding the button is enough to approve a payment',
+    payLockNoLock: 'Set a screen lock on this phone to turn it on',
+    payLockOffAsk:
+      'Turn off the check for payments?\n\nAnyone holding your unlocked phone could then approve a payment. Turning it off needs one check now.',
+    payLockOffTitle: 'Change the payment check',
     turnOff: 'Turn off',
     secFinal: 'Final check',
     secAi: 'AI · Browser',

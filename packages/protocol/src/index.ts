@@ -1264,7 +1264,22 @@ export type PhoneToPc =
   | { kind: 'ask'; threadId?: string; agent?: AgentId; text: string; image?: string }
   | { kind: 'cancel'; threadId: string }
   | { kind: 'approval'; id: string }
-  | { kind: 'decide'; id: string; decision: 'approve' | 'reject'; sig: string; choice?: string }
+  /**
+   * key: which security-chip key signed (ADR 0043): 'pay' (after the phone lock) or 'plain'. Absent = the pairing
+   * key (Ed25519, older apps and the browser), which the PC stops accepting once chip keys are registered
+   */
+  | {
+      kind: 'decide'
+      id: string
+      decision: 'approve' | 'reject'
+      sig: string
+      choice?: string
+      key?: ApproveKeyName
+    }
+  /** Registers this phone's security-chip approval keys (SPKI, base64url). Signed with the pairing key (approveKeysSignText) */
+  | { kind: 'approve-keys'; plain: string; pay?: string; at: number; sig: string }
+  /** Phone lock for payment approvals on or off (payConfirmSignText). Off must be signed with the pay key */
+  | { kind: 'pay-confirm'; on: boolean; at: number; sig: string; key: ApproveKeyName }
   /** The ID and password put in the sign-in card (saved only in the PC vault) */
   | { kind: 'login'; id: string; username: string; password: string }
   /** Remote screen: ask for one frame of the tab Dool2 handed over */
@@ -1354,6 +1369,9 @@ export type PhoneToPc =
   /** Connect with one-tap sign-in (Kakao, Naver…). If sign-in at the provider is needed, hand over to the remote screen */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
+/** Security-chip approval keys (ADR 0043): 'pay' signs only after the phone lock, 'plain' signs right away */
+export type ApproveKeyName = 'pay' | 'plain'
+
 /** Store app notification address (ADR 0042) */
 export interface AppPushReg {
   /** FCM registration token */
@@ -1398,6 +1416,12 @@ export type PcToPhone =
       dev?: boolean
       /** Auto-approve is on (ADR 0030): the phone shows it in settings and sends texts without a card */
       autoApprove?: boolean
+      /** This phone's security-chip approval keys are registered (ADR 0043) */
+      approveKeys?: boolean
+      /** Payment approvals need the phone lock (only when a pay key is registered) */
+      payConfirm?: boolean
+      /** A pay key is registered (false: the phone had no screen lock when the keys were made) */
+      payKey?: boolean
     }
   | { kind: 'thread'; thread: ThreadSummary; messages: StoredMessage[] }
   | { kind: 'stream'; threadId: string; event: DaemonStreamEvent }
@@ -1519,13 +1543,22 @@ export interface PairedPhone {
   push?: PushSubscriptionJSONLike
   /** Store app notification address (ADR 0042). If present, notifications go through FCM */
   appPush?: AppPushReg
+  /**
+   * Security-chip approval keys (ADR 0043, SPKI base64url). Once present, approvals signed with the pairing key are
+   * no longer accepted from this phone
+   */
+  approveKeys?: { plain: string; pay?: string }
+  /** Payment approvals need the pay key (default on when a pay key exists). Turned off only with a pay-key signature */
+  payConfirm?: boolean
 }
 
 export interface LinkStatus {
   relay?: string
   connected: boolean
   pcId?: string
-  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push' | 'appPush'> & { push: boolean })[]
+  phones: (Omit<PairedPhone, 'boxPub' | 'signPub' | 'push' | 'appPush' | 'approveKeys' | 'payConfirm'> & {
+    push: boolean
+  })[]
 }
 
 export type PairStatus =
