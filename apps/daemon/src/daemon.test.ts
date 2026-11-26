@@ -498,6 +498,34 @@ describe('대화 하나 (ADR 0015)', () => {
     expect(checks[1]).toMatchObject({ result: 'done' })
   })
 
+  it('with no AI ready, keeps the message, says how to connect one, and answers once one is', async () => {
+    class SignedOut extends EchoRuntime {
+      ready = false
+      inputs: string[] = []
+      override async detect(): Promise<AgentStatus> {
+        return { id: 'claude', installed: true, loggedIn: this.ready }
+      }
+      override async *runTurn(input: TurnInput): AsyncGenerator<AgentEvent> {
+        this.inputs.push(input.text)
+        yield* super.runTurn(input)
+      }
+    }
+    const rt = new SignedOut()
+    const { api } = await boot(rt)
+    const state = async () => (await (await api('/api/conversation')).json()) as State
+    const r = await api('/api/conversation/messages', { method: 'POST', body: '{"text":"오늘 날씨 어때?"}' })
+    expect(r.status).toBe(202)
+    const msgs = (await state()).messages
+    expect(msgs.map((x) => x.role)).toEqual(['user', 'assistant'])
+    expect(msgs[1]?.text).toContain('설정 → AI · 브라우저')
+    expect(rt.inputs).toHaveLength(0)
+    // Signed in: the next look at the AIs answers the waiting message
+    rt.ready = true
+    await api('/api/agents')
+    await until(async () => rt.inputs.length === 1)
+    expect(rt.inputs[0]).toContain('오늘 날씨 어때?')
+  })
+
   it('acknowledges a message before the AI is called, and logs how long that took', async () => {
     const { api } = await boot()
     const live = await api('/api/conversation/live')
