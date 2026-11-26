@@ -205,7 +205,10 @@ function buildShell() {
   )
   const sendBtn = h('button', { class: 'send-btn', label: tShell.send })
   sendBtn.addEventListener('click', () => {
-    if (!st.draft.trim() && !st.attach && st.busy) return void send({ kind: 'conversation-cancel' })
+    if (!st.draft.trim() && !st.attach && working()) {
+      haptic('confirm')
+      return void send({ kind: 'conversation-cancel' })
+    }
     ask(st.draft)
     textarea.value = ''
     autosize(textarea)
@@ -603,7 +606,7 @@ function renderComposer() {
     autosize(textarea)
   }
   const has = Boolean(st.draft.trim() || st.attach)
-  const stop = !has && st.busy
+  const stop = !has && working()
   // Send <-> stop: the old icon spins and shrinks, and the new icon pops in
   const mode = stop ? 'stop' : 'send'
   if (sendBtn.dataset.mode !== mode) {
@@ -617,7 +620,7 @@ function renderComposer() {
   sendBtn.setAttribute('aria-label', stop ? tShell.stop : tShell.send)
   sendBtn.classList.toggle('ready', has)
   sendBtn.classList.toggle('stop', stop)
-  sendBtn.disabled = !st.online || (!has && !st.busy)
+  sendBtn.disabled = !st.online || (!has && !working())
   if (!shell.textarea.classList.contains('ghosting')) updateGhost()
 }
 
@@ -759,6 +762,14 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
 // ── The task that is running, at the bottom ──
 // A task's progress card sits where it started in the chat, so it scrolls away (and the header covers it): this bar
 // above the composer says what is running and takes you to its card. Hidden while the card itself is in sight
+
+/**
+ * Whether Dool2 is doing something the stop button stops: the chat's own turn or a task at work (tasks show as one
+ * conversation, so stop takes them too; one waiting for the person does not turn the button into stop)
+ */
+export function working(): boolean {
+  return st.busy || [...st.tasks.values()].some((t) => ['working', 'checking', 'waiting'].includes(t.status))
+}
 
 /** The task the person most needs to see: waiting for them first, then working, then in line */
 function nowTask(): TaskView | undefined {

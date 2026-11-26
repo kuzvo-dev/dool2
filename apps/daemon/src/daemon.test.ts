@@ -809,7 +809,9 @@ describe('대화 하나 (ADR 0015)', () => {
 describe('설정', () => {
   it('처음에는 기본값을 준다', async () => {
     const { api } = await boot()
-    expect(await (await api('/api/settings')).json()).toEqual({ settings: { setupDone: false } })
+    expect(await (await api('/api/settings')).json()).toEqual({
+      settings: { setupDone: false, autoApprove: true },
+    })
   })
 
   it('바꾼 항목만 저장하고, 다시 켜도 남아 있다', async () => {
@@ -819,7 +821,7 @@ describe('설정', () => {
       body: JSON.stringify({ aiChoice: 'both', defaultAgent: 'codex' }),
     })
     expect(await res.json()).toEqual({
-      settings: { setupDone: false, aiChoice: 'both', defaultAgent: 'codex' },
+      settings: { setupDone: false, autoApprove: true, aiChoice: 'both', defaultAgent: 'codex' },
     })
     await api('/api/settings', { method: 'PATCH', body: '{"setupDone":true}' })
 
@@ -835,7 +837,7 @@ describe('설정', () => {
     dir = keep
     const again = await fetch(`${daemon.url}/api/settings`, { headers: { authorization: 'Bearer t0ken' } })
     expect(await again.json()).toEqual({
-      settings: { setupDone: true, aiChoice: 'both', defaultAgent: 'codex' },
+      settings: { setupDone: true, autoApprove: true, aiChoice: 'both', defaultAgent: 'codex' },
     })
   })
 
@@ -844,7 +846,7 @@ describe('설정', () => {
     const seen: unknown[] = []
     daemon?.events.on('settings', (s) => seen.push(s))
     await api('/api/settings', { method: 'PATCH', body: '{"keepAwake":"working","launchAtLogin":true}' })
-    expect(seen).toEqual([{ setupDone: false, keepAwake: 'working', launchAtLogin: true }])
+    expect(seen).toEqual([{ setupDone: false, autoApprove: true, keepAwake: 'working', launchAtLogin: true }])
     expect(daemon?.settings()).toMatchObject({ keepAwake: 'working' })
   })
 
@@ -1203,6 +1205,8 @@ describe('승인 API', () => {
     writeFileSync(join(dl, 'b.pdf'), 'b')
     const rt = new EchoRuntime()
     const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    // 승인 카드 흐름을 보는 시험: 자동 승인(기본 켜짐, 11-26)을 끈다
+    await api('/api/settings', { method: 'PATCH', body: '{"autoApprove":false}' })
     await api('/api/conversation/messages', { method: 'POST', body: '{"text":"PDF 나눠 줘"}' })
     for (let i = 0; i < 200 && !rt.last; i++) await new Promise((r) => setTimeout(r, 10))
     const toolToken = rt.last?.mcpServers[0]?.env?.DOOL2_TOOL_TOKEN ?? ''
@@ -1251,6 +1255,8 @@ describe('which chat a tool call came from (ADR 0038)', () => {
     }
     const rt = new Held()
     const { api } = await boot(rt, { fileFolders: { desktop: [], documents: [], downloads: [dl] } })
+    // 승인 카드 흐름을 보는 시험: 자동 승인(기본 켜짐, 11-26)을 끈다
+    await api('/api/settings', { method: 'PATCH', body: '{"autoApprove":false}' })
     const until = async (f: () => boolean) => {
       for (let i = 0; i < 300 && !f(); i++) await new Promise((r) => setTimeout(r, 10))
     }

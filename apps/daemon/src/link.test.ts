@@ -561,6 +561,8 @@ describe('처음부터 다시 (시험용 PC)', () => {
 
   it('자동 승인은 이 폰의 새 서명일 때만 켜지고, 폰들에 상태가 간다 (ADR 0030)', async () => {
     const { api, p } = await paired(false)
+    // 기본은 켜짐(11-26): 끈 상태에서 시작
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ autoApprove: false }) })
     const autoState = () =>
       p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'state' }> => m.kind === 'state').at(-1)
         ?.autoApprove

@@ -513,6 +513,24 @@ describe('task sessions (ADR 0038)', () => {
     expect((await state()).messages.some((x) => x.text === 'half done')).toBe(false)
   })
 
+  it("the chat's stop stops its tasks too: one conversation, one brake (11-26)", async () => {
+    const held = gate()
+    const task: Script = async function* (input) {
+      await held.wait(input.signal)
+      yield* say('half done')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const { api, state, send, task: view } = await boot(rt)
+    await send('book a train')
+    await until(() => rt.seen.some((x) => rt.kind(x) === 'task'), 'task turn')
+    const r = (await (await api('/api/conversation/cancel', { method: 'POST' })).json()) as { ok: boolean }
+    expect(r.ok).toBe(true)
+    await until(async () => (await view())?.status === 'stopped', 'stopped')
+    held.open()
+    await new Promise((x) => setTimeout(x, 50))
+    expect((await state()).messages.some((x) => x.text === 'half done')).toBe(false)
+  })
+
   it('one browser at a time: the second task waits in line and starts when the first ends', async () => {
     const first = gate()
     const briefs: string[] = []

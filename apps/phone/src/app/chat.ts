@@ -660,10 +660,21 @@ function oldConnectCards(): Set<string> {
       if (lastQuick) out.add(lastQuick)
       lastQuick = m.id
     }
-    if (m.role !== 'tool' || !m.text.includes('"kind":"connect"')) continue
+    if (m.role !== 'tool') continue
+    const isConnect = m.text.includes('"kind":"connect"')
+    if (!isConnect && !m.text.includes('"kind":"login"')) continue
     try {
-      const rec = JSON.parse(m.text) as ConnectRecordMessage
-      const id = connectFor(rec)?.card.id ?? rec.service
+      let id: string | undefined
+      if (isConnect) {
+        const rec = JSON.parse(m.text) as ConnectRecordMessage
+        id = connectFor(rec)?.card.id ?? rec.service
+      } else {
+        // A login card for a service that is being connected draws as that service's connect card (loginInline): the
+        // connect card above it and this one were the same card twice (Naver, 11-26)
+        const l = loginFor(JSON.parse(m.text) as LoginRecordMessage)
+        id = l?.status === 'pending' ? loginLink(l.origin)?.cid : undefined
+      }
+      if (!id) continue
       const prev = lastFor.get(id)
       if (prev) out.add(prev)
       lastFor.set(id, m.id)

@@ -95,3 +95,14 @@ It waited 25 seconds. In the round 2 acceptance run a request the user had asked
 comment") came back unchecked after 25.0 seconds and became a card. A fresh review program measured 21 s when cold
 and 2.7 to 3 s when warm on the same PC; with a task's own turn running beside it, 25 s was not enough. The wait is
 now 45 seconds (`REVIEW_TIMEOUT_MS`); fail closed is unchanged, only fewer requests the user asked for end up as cards.
+
+## Change (2026-11-26): on by default, and stop stops everything
+
+A card for every message, app and sign-in step was the most tiring part of daily use ("approving is too
+inconvenient now"), so `autoApprove` is now **on by default** (`DEFAULT_SETTINGS`). A user who turned it off keeps it
+off; the switch, the review in front of every auto decision and "payments always ask" are unchanged.
+
+The brake moves to [Stop]. Tasks show as one conversation (ADR 0038), so the chat's stop on the phone and the PC now
+stops the chat's own turn **and every running task**, turns down their pending approvals and closes their sign-in
+cards (`stopConversation` → `stopTask`). The stop button shows while any task is at work, not only while the chat
+itself is answering.

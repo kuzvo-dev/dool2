@@ -190,7 +190,8 @@ export const SettingsSchema = z.object({
     .max(100)
     .optional(),
   /**
-   * Auto-approve: everything except payments runs without an approval card (ADR 0030). Off by default.
+   * Auto-approve: everything except payments runs without an approval card (ADR 0030). On by default since
+   * 2026-11-26 (a card for every step was the most tiring part of using Dool2); turning it off is kept.
    * Turned on from the PC settings or the phone (phone changes are signed, see autoApproveSignText)
    */
   autoApprove: z.boolean().optional(),
@@ -237,7 +238,7 @@ export interface ScreenControlStatus {
 }
 export type Settings = z.infer<typeof SettingsSchema>
 
-export const DEFAULT_SETTINGS: Settings = { setupDone: false }
+export const DEFAULT_SETTINGS: Settings = { setupDone: false, autoApprove: true }
 
 /** Send only the items to change. Unknown items are rejected */
 export const SettingsPatchSchema = SettingsSchema.partial().strict()
