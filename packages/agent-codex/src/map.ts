@@ -219,6 +219,9 @@ export function rateLimitEvents(snapshot: unknown): AgentEvent[] {
 
 function windowName(mins: number) {
   if (mins === 300) return 'five_hour'
+  if (mins === 1440) return 'one_day'
   if (mins === 10080) return 'seven_day'
+  // A month-long window (ChatGPT plans report 43,200 minutes): shown as "this month", not "43200m" (first-run test 11-26)
+  if (mins >= 40_320 && mins <= 44_640) return 'month'
   return `${mins}m`
 }

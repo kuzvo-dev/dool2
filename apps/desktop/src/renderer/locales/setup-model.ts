@@ -1,7 +1,7 @@
 // Copy for the first-run wizard's checklist, headline, pay-as-you-go cost and version line (setup-model.ts)
 import { messages } from '../i18n.js'
 
-const COUNT: Record<number, string> = { 1: '한', 2: '두', 3: '세', 4: '네' }
+const COUNT: Record<number, string> = { 1: '한', 2: '두', 3: '세', 4: '네', 5: '다섯', 6: '여섯' }
 
 export const setupModelText = messages({
   ko: {
@@ -22,6 +22,7 @@ export const setupModelText = messages({
     connectedPlan: (plan: string) => `${plan} 구독으로 연결됐어요`,
     connected: '연결됐어요',
     claudeLoginTodo: 'Claude 계정으로 로그인해 주세요',
+    afterInstall: '설치가 끝나면 여기서 로그인해요',
     paygRunner: '종량제 실행기',
     ready: '준비돼 있어요',
     firstDownload: (mb: number) => `처음 한 번 받아 둘게요 (약 ${mb}MB)`,
@@ -77,6 +78,7 @@ export const setupModelText = messages({
     connectedPlan: (plan: string) => `Connected with the ${plan} plan`,
     connected: 'Connected',
     claudeLoginTodo: 'Sign in with your Claude account',
+    afterInstall: 'Sign in here once the install is done',
     paygRunner: 'Pay-as-you-go runner',
     ready: 'Ready',
     firstDownload: (mb: number) => `Downloads once, the first time (about ${mb} MB)`,

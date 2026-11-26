@@ -175,6 +175,8 @@ export function runSetup(opts: SetupOptions): {
     opencode: { state: 'idle' },
     codex: { state: 'idle' },
   }
+  /** When each download's percent was first seen, for the time left (installPanel) */
+  const seen = new Map<InstallKind, { at: number; pct: number }>()
   const installTimers: Partial<Record<InstallKind, ReturnType<typeof setTimeout>>> = {}
   let codeDraft = ''
   // Pay-as-you-go API key input
@@ -1797,7 +1799,7 @@ export function runSetup(opts: SetupOptions): {
     const checksBlock = (choice: AiChoice): HTMLElement[] => {
       const parts: HTMLElement[] = []
       const list = el('ul', 'checks')
-      for (const item of checklist(choice, agents, chrome, extension)) {
+      for (const item of checklist(choice, agents, chrome, extension, { withKey: step === 'settings' })) {
         const li = el('li', item.ok ? 'ok' : 'todo')
         const mark = el('span', 'mark')
         const text = el('div', 'text')
@@ -1926,8 +1928,29 @@ export function runSetup(opts: SetupOptions): {
       return panel
     }
 
+    /**
+     * Minutes left of a download, from how fast its percent moved since it was first seen (120 MB took 5 minutes on a
+     * slow line with only a percent shown, first-run test 11-26). Undefined until there is enough to tell
+     */
+    const st0 = (kind: InstallKind): number | undefined => {
+      const st = installs[kind]
+      if (st.state !== 'running' || st.phase !== 'download' || st.percent === undefined) {
+        seen.delete(kind)
+        return undefined
+      }
+      const first = seen.get(kind)
+      if (!first) {
+        seen.set(kind, { at: Date.now(), pct: st.percent })
+        return undefined
+      }
+      const moved = st.percent - first.pct
+      const secs = (Date.now() - first.at) / 1000
+      if (moved < 3 || secs < 10) return undefined
+      return Math.floor(((100 - st.percent) * secs) / moved / 60)
+    }
     /** Install progress for a component (Claude Code, Chrome) */
     const installPanel = (kind: InstallKind) => {
+      const left = st0(kind)
       const info = INSTALLS[kind]
       const st = installs[kind]
       const panel = el('div', 'login-panel')
@@ -1944,7 +1967,7 @@ export function runSetup(opts: SetupOptions): {
       if (st.state !== 'running') return panel
       const label: Record<string, string> = {
         prepare: m.phasePrepare,
-        download: m.phaseDownload(st.percent),
+        download: m.phaseDownload(st.percent, left),
         verify: m.phaseVerify,
         setup: m.phaseSetup,
       }

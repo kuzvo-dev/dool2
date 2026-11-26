@@ -7,6 +7,7 @@ import {
   neededAgents,
   noSubscriptionFound,
   pickDefault,
+  planLabel,
   updateLine,
 } from './setup-model.js'
 
@@ -32,6 +33,8 @@ describe('첫 실행 마법사', () => {
     const items = checklist('both', [claudeMissing, codexOut])
     expect(items.map((i) => [i.id, i.ok, i.action])).toEqual([
       ['claude-app', false, 'claude-install'],
+      // Its sign-in shows from the start, without a button until the install is done
+      ['claude-login', false, undefined],
       ['codex-app', true, undefined],
       ['codex-login', false, 'codex-login'],
     ])
@@ -44,6 +47,7 @@ describe('첫 실행 마법사', () => {
     ])
     expect(checklist('unsure', [claudeMissing, codexOut]).map((i) => i.id)).toEqual([
       'claude-app',
+      'claude-login',
       'codex-app',
       'codex-login',
     ])
@@ -56,7 +60,7 @@ describe('첫 실행 마법사', () => {
   it('상황에 맞는 제목을 고른다', () => {
     expect(checkHeadline('claude', [claudeReady]).title).toBe('준비가 다 됐어요')
     expect(checkHeadline('both', [claudeReady, codexOut]).title).toBe('바로 시작할 수 있어요')
-    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
+    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('세 가지만 해 주세요')
   })
 
   it("'잘 모르겠어요'인데 구독이 없으면 API 키 길을 알린다", () => {
@@ -65,7 +69,7 @@ describe('첫 실행 마법사', () => {
     // A signed-in subscription, or a different choice, keeps the usual headline
     expect(noSubscriptionFound('unsure', [claudeReady, codexOut])).toBe(false)
     expect(noSubscriptionFound('both', [claudeMissing, codexOut])).toBe(false)
-    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('두 가지만 해 주세요')
+    expect(checkHeadline('both', [claudeMissing, codexOut]).title).toBe('세 가지만 해 주세요')
   })
 
   it('Chrome이 없으면 설치 버튼을 보여 주지만, 대화 시작은 막지 않는다', () => {
@@ -129,5 +133,31 @@ describe('설정의 두리 버전 한 줄', () => {
       updateLine({ status: 'error', current: '0.3.1', error: '버전 안내를 받지 못했어요 (503)' }, now),
     ).toBe('확인하지 못했어요: 버전 안내를 받지 못했어요 (503)')
     expect(updateLine(null, now)).toBe('개발용으로 켠 앱이라 새 버전을 확인하지 않아요')
+  })
+})
+
+describe('plan names', () => {
+  it('reads like the product people bought', () => {
+    expect(planLabel('max')).toBe('Max')
+    expect(planLabel('chatgpt')).toBe('ChatGPT')
+  })
+})
+
+describe('API key in Settings', () => {
+  const paygReady: AgentStatus = { id: 'opencode', installed: true, loggedIn: true, plan: 'openrouter' }
+  it('stays changeable when another subscription was chosen', () => {
+    const items = checklist('codex', [codexReady, paygReady], undefined, undefined, { withKey: true })
+    expect(items.find((i) => i.id === 'payg-key')).toMatchObject({ ok: true, action: 'payg-key' })
+    // The wizard keeps to the chosen subscription
+    expect(checklist('codex', [codexReady, paygReady]).some((i) => i.id === 'payg-key')).toBe(false)
+  })
+})
+
+describe('how many things are left', () => {
+  it('counts the sign-in that follows an install', () => {
+    const codexMissing: AgentStatus = { id: 'codex', installed: false, loggedIn: false }
+    // Install + sign-in, then the sign-in alone (it was "one thing" and then a new row appeared)
+    expect(checkHeadline('codex', [codexMissing]).title).toBe('두 가지만 해 주세요')
+    expect(checkHeadline('codex', [codexOut]).title).toBe('한 가지만 해 주세요')
   })
 })

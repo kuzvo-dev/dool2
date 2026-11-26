@@ -230,8 +230,16 @@ function renderUpdate(u: UpdateView | null) {
 
 const agentLabel = (id: AgentId): string =>
   id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : A().apiKey
-const limitLabel = (kind: string): string =>
-  kind === 'five_hour' ? A().limit5h : kind === 'seven_day' ? A().limitWeek : kind
+const limitLabel = (kind: string): string => {
+  if (kind === 'five_hour') return A().limit5h
+  if (kind === 'one_day') return A().limitDay
+  if (kind === 'seven_day') return A().limitWeek
+  if (kind === 'month') return A().limitMonth
+  // Other windows come as minutes ("90m"): hours or days for people
+  const mins = Number(/^(\d+)m$/.exec(kind)?.[1])
+  if (!mins) return kind
+  return mins % 1440 === 0 ? A().limitDays(mins / 1440) : A().limitHours(Math.max(1, Math.round(mins / 60)))
+}
 const examples = () => [T().ex1, T().ex2, T().ex3]
 
 /** Five tabs on the left + Connections + side chats + goal detail */

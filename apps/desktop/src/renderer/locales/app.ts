@@ -42,7 +42,11 @@ export const appText = messages({
     // AI agents and usage
     apiKey: 'API 키 (종량제)',
     limit5h: '5시간',
+    limitDay: '오늘',
     limitWeek: '이번 주',
+    limitMonth: '이번 달',
+    limitDays: (n: number) => `${n}일`,
+    limitHours: (n: number) => `${n}시간`,
     usage: (label: string, pct: number) => `${label} 사용량 ${pct}%`,
     needInstall: '설치 필요',
     needLogin: '로그인 필요',
@@ -209,7 +213,11 @@ export const appText = messages({
 
     apiKey: 'API key (pay as you go)',
     limit5h: '5-hour',
+    limitDay: 'Daily',
     limitWeek: 'Weekly',
+    limitMonth: 'Monthly',
+    limitDays: (n: number) => `${n}-day`,
+    limitHours: (n: number) => `${n}-hour`,
     usage: (label: string, pct: number) => `${label} usage ${pct}%`,
     needInstall: 'Needs install',
     needLogin: 'Needs login',
