@@ -176,6 +176,19 @@ function stepText(s: RecipeStep): string {
   return `${name}${s.at ? ` ${s.at}` : ''}${input}${s.times ? ` ×${s.times}` : ''}`
 }
 
+/**
+ * A recipe for the memory screen: the person's words and the services or sites its steps used, by names people know
+ * (nameOf gives the service a tool belongs to; browser opens show their site)
+ */
+export function recipeView(r: Recipe, nameOf: (tool: string) => string | undefined) {
+  const names: string[] = []
+  for (const s of r.steps) {
+    const name = nameOf(s.tool) ?? (s.at ? s.at.split('/')[0]?.replace(/^www\./, '') : undefined)
+    if (name && names[names.length - 1] !== name) names.push(name)
+  }
+  return { id: r.id, ask: r.asks[0] ?? '', steps: names.slice(0, 5), ok: r.ok, lastAt: r.lastAt }
+}
+
 export class RecipeBook {
   private recipes: Recipe[] = []
   private seq = 0

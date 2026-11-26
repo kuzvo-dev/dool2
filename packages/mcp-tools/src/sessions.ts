@@ -25,7 +25,8 @@ export const TASK_CONTROL = /^task_/
  * the feed and what Dool2 knows. A task that needs a saved value gets it in its spec's known values or with one lookup
  * (know_find, profile_view, vault_find)
  */
-export const CONVERSATION_OWNS = /^(goal_|memory_|library_|feed_|idea_suggest$|know_save$|know_update$)/
+export const CONVERSATION_OWNS =
+  /^(goal_|memory_|library_|feed_|idea_suggest$|know_save$|know_update$|recipe_forget$)/
 
 /** Tools only the conversation has */
 export const CONVERSATION_ONLY = new RegExp(`${TASK_CONTROL.source}|${CONVERSATION_OWNS.source}`)
