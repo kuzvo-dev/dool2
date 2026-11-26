@@ -207,6 +207,9 @@ function chatItems(): Item[] {
     // Several connect cards for the same service: only the last one is drawn (it shows the state now). Earlier ones each
     // became a "connected" line too, three in a row after a retry (audit 11-26)
     if (m.role === 'tool' && superseded.has(m.id)) continue
+    // The turn that handed work to a task leaves its own "how it worked" line (task_start, a lookup or two) right after
+    // the task's card. The task's line already says what was done: two folded lines in a row read as two places
+    if (m.role === 'tool' && m.text.includes('"kind":"work"') && afterTask(i)) continue
     if (m.role === 'tool') {
       // A hand-off closes once the conversation moved on
       const old = superseded.has(m.id) || (m.text.includes('"kind":"handoff"') && !handoffOpen(st.conv, i))
@@ -736,4 +739,14 @@ function leftInline(rec: LeftRecordMessage, live: boolean): HTMLElement {
     h('p', { text: rec.why }),
     go,
   )
+}
+
+/** Whether the message at i comes right after a task's card (only tool records in between) */
+function afterTask(i: number): boolean {
+  for (let j = i - 1; j >= 0; j--) {
+    const p = st.conv[j]
+    if (!p || p.role !== 'tool') return false
+    if (p.text.includes('"kind":"task"')) return true
+  }
+  return false
 }

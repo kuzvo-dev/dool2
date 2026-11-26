@@ -18,7 +18,6 @@ import { ID_LOGIN, OPEN_SCREEN_TAIL } from '../region/kr/main-a-chat.js'
 import { cardIdFor } from './approval-cards.js'
 import { mCards, send, st, type Tab, tChat } from './core.js'
 import { openOverlay, remoteUi, render } from './shell.js'
-import { openSide } from './threads.js'
 
 // ── Remote screen: see and tap the PC tab Dool2 handed over, from the phone (turned into a live view in the next step) ──
 
@@ -598,46 +597,42 @@ function stepRow(text: string, state: 'done' | 'doing', ms?: number) {
 }
 
 /**
- * After it ends: a folded line above the reply, "icon stack · Looked at 4 places · 41s" (tap to open the per-service rows).
- * Older records (no place info) read "How it worked · N steps"
- */
-/**
- * A task's card (ProgressCard, ADR 0038): work handed over runs on its own while the conversation goes on. Steps,
- * elapsed time, stop and take-as-is while it runs; one line when it ended. Details opens the task's own chat
+ * A task's card (ProgressCard, ADR 0038). The task runs in its own session, but on screen it reads like any other
+ * answer in the one conversation: while it runs, the working card (steps, time, stop, take-as-is); once it ended,
+ * the same folded "worked at … · 33s" line a normal answer has, which opens to every step. There is no separate chat
+ * to open any more: people lost the thread jumping into it (11-26 feedback)
  */
 export function taskInline(rec: TaskRecordMessage): HTMLElement {
   const v = st.tasks.get(rec.id)
   const ended = !v || v.status === 'done' || v.status === 'stopped' || v.status === 'failed'
   const groups = v ? groupSteps(v.steps, placeCards(), lang) : []
-  const open = h('button', {
-    class: 'btn-text sm',
-    text: tChat.taskOpen,
-    onclick: () => v && openSide(v.threadId, rec.title),
-  })
   if (ended) {
     const ms = v?.endedAt ? Date.parse(v.endedAt) - Date.parse(v.startedAt ?? v.createdAt) : 0
-    const line = !v
-      ? ''
-      : v.status === 'done'
-        ? `${mainWork(lang).stepCount(v.count)} · ${secs(ms)}`
-        : v.status === 'stopped'
-          ? tChat.taskStopped
-          : tChat.taskFailed
-    const card = h(
-      'div',
-      { class: 'work-panel done task-card' },
-      h(
-        'div',
-        { class: 'wd-head' },
-        h('span', { class: 'wd-ok' }, icon(v?.status === 'done' ? 'check' : 'close', 'i')),
-        h('span', { class: 'wd-title', text: rec.title }),
-        h('span', { class: 'wd-meta', text: line }),
-      ),
-      ...(v ? [h('div', { class: 'wp-foot' }, h('span', { class: 'grow' }), open)] : []),
-    )
+    const card = v?.steps.length
+      ? workDone({ kind: 'work', steps: v.steps, count: v.count, ms, ...(v.host ? { host: v.host } : {}) })
+      : h(
+          'div',
+          { class: 'work-panel done' },
+          h(
+            'div',
+            { class: 'wd-head' },
+            h('span', { class: 'wd-ok' }, icon(v?.status === 'done' ? 'check' : 'close', 'i')),
+            h('span', { class: 'wd-title', text: rec.title }),
+          ),
+        )
+    // A task that was stopped or failed says so on its line
+    if (v && v.status !== 'done')
+      card
+        .querySelector('.wd-meta')
+        ?.replaceChildren(v.status === 'stopped' ? tChat.taskStopped : tChat.taskFailed)
     card.dataset.task = rec.id
     return card
   }
+
+  /**
+   * After it ends: a folded line above the reply, "icon stack · Looked at 4 places · 41s" (tap to open the per-service rows).
+   * Older records (no place info) read "How it worked · N steps"
+   */
   const now =
     v.status === 'waiting'
       ? tChat.taskWaiting(v.ahead ?? 0)
@@ -691,7 +686,6 @@ export function taskInline(rec: TaskRecordMessage): HTMLElement {
         ? [h('button', { class: 'btn-ghost sm', text: tChat.takeAsIs, onclick: act('accept') })]
         : []),
       h('span', { class: 'grow' }),
-      open,
       h('button', { class: 'btn-text sm wc-stop', text: tChat.stopWork, onclick: act('stop') }),
     ),
   )
