@@ -42,13 +42,16 @@ import {
   pairCode,
   SeqGuard,
   seal,
+  verifyP256,
   verifyText,
 } from '@dool2/protocol/e2e'
 import {
   APP_PAIR_LINK,
+  approveKeysSignText,
   autoApproveSignText,
   LinkClient,
   OFFICIAL_RELAY,
+  payConfirmSignText,
   resetSignText,
 } from '@dool2/protocol/link'
 import type { Page } from '@dool2/protocol/paging'
@@ -62,7 +65,10 @@ export const PAIR_TTL_MS = 5 * 60_000
  * Size of one envelope the relay accepts (apps/relay MAX_MESSAGE = 512KB). Above that the relay drops the PC
  * connection, so it is blocked before sending (with a little margin)
  */
-export const SEND_MAX = 500 * 1024
+export /** A P-256 public key as SPKI DER in base64url (91 bytes -> 122 chars) */
+const SPKI_RE = /^[\w-]{100,200}$/
+
+const SEND_MAX = 500 * 1024
 const FEED_KINDS = new Set<FeedItem['kind']>([
   'done',
   'routine',
@@ -781,6 +787,45 @@ export class PhoneLink {
         for (const p of this.phones) await this.send(p, await this.stateFor(p)).catch(() => {})
         return
       }
+      case 'approve-keys': {
+        const now = this.phones.find((x) => x.id === phone.id) ?? phone
+        const keys = { plain: String(msg.plain ?? ''), ...(msg.pay ? { pay: String(msg.pay) } : {}) }
+        const at = Number(msg.at)
+        // Registered once: a later request can't swap them (a phone that lost its chip keys pairs again).
+        // Only a missing pay key can be added later (the phone got a screen lock), with the same plain key
+        const fresh = !now.approveKeys
+        const addPay = Boolean(
+          now.approveKeys && !now.approveKeys.pay && keys.pay && keys.plain === now.approveKeys.plain,
+        )
+        if (
+          (fresh || addPay) &&
+          SPKI_RE.test(keys.plain) &&
+          (!keys.pay || SPKI_RE.test(keys.pay)) &&
+          Number.isFinite(at) &&
+          Math.abs(Date.now() - at) <= 120_000 &&
+          typeof msg.sig === 'string' &&
+          (await verifyText(phone.signPub, approveKeysSignText(keys, at), msg.sig))
+        )
+          await this.savePhone(phone.id, { approveKeys: keys, payConfirm: Boolean(keys.pay) })
+        return this.send(phone, await this.stateFor(phone))
+      }
+      case 'pay-confirm': {
+        const now = this.phones.find((x) => x.id === phone.id) ?? phone
+        const keys = now.approveKeys
+        const at = Number(msg.at)
+        const on = msg.on === true
+        // Turning it off takes the pay key (so the phone lock); turning it back on is fine with either
+        const key = msg.key === 'pay' ? keys?.pay : msg.key === 'plain' && on ? keys?.plain : undefined
+        if (
+          key &&
+          Number.isFinite(at) &&
+          Math.abs(Date.now() - at) <= 120_000 &&
+          typeof msg.sig === 'string' &&
+          (await verifyP256(key, payConfirmSignText(on, at), msg.sig))
+        )
+          await this.savePhone(phone.id, { payConfirm: on })
+        return this.send(phone, await this.stateFor(phone))
+      }
       case 'decide': {
         const a = this.host.approval(msg.id)
         if (!a)
@@ -793,7 +838,7 @@ export class PhoneLink {
         // The PC verifies the phone's signature itself. The relay or other devices can't create approvals
         // The chosen payment method is bound to the signature too (it can't be swapped in between)
         const choice = typeof msg.choice === 'string' && msg.choice ? msg.choice : undefined
-        if (!(await verifyText(phone.signPub, approvalSignText(a, msg.decision, choice), msg.sig)))
+        if (!(await this.approvalSigned(phone, a, msg.decision, choice, msg.sig, msg.key)))
           return this.send(phone, { kind: 'decided', id: msg.id, ok: false, message: this.m.badSignature })
         const r = await this.host.decide(msg.id, msg.decision, choice)
         return this.broadcast({ kind: 'decided', id: msg.id, ...r })
@@ -815,7 +860,38 @@ export class PhoneLink {
       ...(this.vapid ? { vapid: this.vapid.publicKey } : {}),
       push: Boolean(now.push),
       appPush: Boolean(now.appPush),
+      approveKeys: Boolean(now.approveKeys),
+      payKey: Boolean(now.approveKeys?.pay),
+      payConfirm: Boolean(now.approveKeys?.pay && now.payConfirm !== false),
     }
+  }
+
+  /**
+   * Checks the phone's signature on an approval (ADR 0043). A phone with security-chip keys must use them (the pairing
+   * key is no longer enough), and a payment needs the pay key, which signs only after the phone lock, unless the
+   * person turned that off with the pay key
+   */
+  private async approvalSigned(
+    phone: PairedPhone,
+    a: ApprovalView,
+    decision: 'approve' | 'reject',
+    choice: string | undefined,
+    sig: string,
+    key: unknown,
+  ): Promise<boolean> {
+    const now = this.phones.find((x) => x.id === phone.id) ?? phone
+    const text = approvalSignText(a, decision, choice)
+    const keys = now.approveKeys
+    if (!keys) return verifyText(now.signPub, text, sig)
+    const needPay =
+      decision === 'approve' && a.kind === 'money' && Boolean(keys.pay) && now.payConfirm !== false
+    const spki = key === 'pay' ? keys.pay : key === 'plain' && !needPay ? keys.plain : undefined
+    return Boolean(spki) && verifyP256(spki as string, text, sig)
+  }
+
+  private async savePhone(id: string, patch: Partial<Pick<PairedPhone, 'approveKeys' | 'payConfirm'>>) {
+    this.phones = this.phones.map((x) => (x.id === id ? { ...x, ...patch } : x))
+    await this.secrets.set(PHONES, JSON.stringify(this.phones))
   }
 
   private async saveAppPush(id: string, appPush: PairedPhone['appPush']) {

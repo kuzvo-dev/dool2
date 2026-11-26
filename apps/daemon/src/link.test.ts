@@ -1,4 +1,5 @@
 // 폰 연결 끝-끝: 진짜 중계 서버 + 진짜 본체 + 폰 흉내(브라우저와 같은 WebCrypto)
+import { generateKeyPairSync, sign as nodeSign } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,7 +18,13 @@ import {
   seal,
   signText,
 } from '@dool2/protocol/e2e'
-import { autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
+import {
+  approveKeysSignText,
+  autoApproveSignText,
+  LinkClient,
+  payConfirmSignText,
+  resetSignText,
+} from '@dool2/protocol/link'
 import { type Relay, startRelay } from '@dool2/relay'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type Daemon, startDaemon } from './index.js'
@@ -250,6 +257,222 @@ describe('폰 연결', () => {
       sig: await signText(p.keys.signPriv, approvalSignText(rec, 'reject')),
     })
     await waitFor(() => daemon?.approvals.get(rec.id)?.status === 'rejected')
+  })
+})
+
+describe('보안칩 승인 키 (ADR 0043)', () => {
+  /** Android Keystore 흉내: P-256, 공개키 SPKI DER, 서명 DER */
+  const chipKey = () => {
+    const k = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    return {
+      spki: k.publicKey.export({ type: 'spki', format: 'der' }).toString('base64url'),
+      sign: (text: string) => nodeSign('sha256', Buffer.from(text), k.privateKey).toString('base64url'),
+    }
+  }
+
+  it('키를 등록하면 짝 맺기 키 서명은 더 안 받고, 결제는 결제용 키(폰 잠금)만, 끄는 것도 결제용 키로만', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    const lastState = () =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'state' }> => m.kind === 'state').at(-1)
+
+    const plain = chipKey()
+    const pay = chipKey()
+    // 짝 맺기 키가 아닌 서명으로는 등록 안 됨
+    const at = Date.now()
+    const other = await generateDevice(false)
+    await p.send({
+      kind: 'approve-keys',
+      plain: plain.spki,
+      pay: pay.spki,
+      at,
+      sig: await signText(other.signPriv, approveKeysSignText({ plain: plain.spki, pay: pay.spki }, at)),
+    })
+    await waitFor(() => lastState()?.approveKeys === false)
+    await p.send({
+      kind: 'approve-keys',
+      plain: plain.spki,
+      pay: pay.spki,
+      at,
+      sig: await signText(p.keys.signPriv, approveKeysSignText({ plain: plain.spki, pay: pay.spki }, at)),
+    })
+    await waitFor(() => lastState()?.approveKeys === true)
+    expect(lastState()).toMatchObject({ payKey: true, payConfirm: true })
+
+    const money = () =>
+      daemon?.approvals.create({
+        tabId: 1,
+        ref: 'e2',
+        role: '버튼',
+        label: '결제하기',
+        url: 'https://shop.example/pay',
+        kind: 'money',
+        reason: '"결제"',
+        what: '사과 결제',
+        where: '시험 가게',
+        amount: '9,900원',
+      })
+    const decided = (id: string) =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'decided' }> => m.kind === 'decided' && m.id === id)
+    const rec = money()
+    if (!rec) throw new Error('no approval')
+    const text = approvalSignText(rec, 'approve')
+    // 짝 맺기 키(Ed25519)는 이제 안 됨
+    await p.send({
+      kind: 'decide',
+      id: rec.id,
+      decision: 'approve',
+      sig: await signText(p.keys.signPriv, text),
+    })
+    await waitFor(() => decided(rec.id).length === 1)
+    expect(decided(rec.id)[0]).toMatchObject({ ok: false, message: '서명이 맞지 않아요' })
+    // 일반 키로는 결제 승인 안 됨
+    await p.send({ kind: 'decide', id: rec.id, decision: 'approve', sig: plain.sign(text), key: 'plain' })
+    await waitFor(() => decided(rec.id).length === 2)
+    expect(decided(rec.id)[1]).toMatchObject({ ok: false })
+    expect(daemon?.approvals.get(rec.id)?.status).toBe('pending')
+    // 거절은 일반 키로도 됨
+    await p.send({
+      kind: 'decide',
+      id: rec.id,
+      decision: 'reject',
+      sig: plain.sign(approvalSignText(rec, 'reject')),
+      key: 'plain',
+    })
+    await waitFor(() => daemon?.approvals.get(rec.id)?.status === 'rejected')
+
+    // 결제용 키 서명 → 처리
+    const rec2 = money()
+    if (!rec2) throw new Error('no approval')
+    await p.send({
+      kind: 'decide',
+      id: rec2.id,
+      decision: 'approve',
+      sig: pay.sign(approvalSignText(rec2, 'approve')),
+      key: 'pay',
+    })
+    await waitFor(() => daemon?.approvals.get(rec2.id)?.status !== 'pending')
+
+    // 일반 키로는 끌 수 없음
+    let t = Date.now()
+    await p.send({
+      kind: 'pay-confirm',
+      on: false,
+      at: t,
+      sig: plain.sign(payConfirmSignText(false, t)),
+      key: 'plain',
+    })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(lastState()?.payConfirm).toBe(true)
+    // 결제용 키로 끄면 결제도 일반 키로 됨
+    t = Date.now()
+    await p.send({
+      kind: 'pay-confirm',
+      on: false,
+      at: t,
+      sig: pay.sign(payConfirmSignText(false, t)),
+      key: 'pay',
+    })
+    await waitFor(() => lastState()?.payConfirm === false)
+    const rec3 = money()
+    if (!rec3) throw new Error('no approval')
+    await p.send({
+      kind: 'decide',
+      id: rec3.id,
+      decision: 'approve',
+      sig: plain.sign(approvalSignText(rec3, 'approve')),
+      key: 'plain',
+    })
+    await waitFor(() => daemon?.approvals.get(rec3.id)?.status !== 'pending')
+    // 다시 켜는 건 일반 키로도 됨
+    t = Date.now()
+    await p.send({
+      kind: 'pay-confirm',
+      on: true,
+      at: t,
+      sig: plain.sign(payConfirmSignText(true, t)),
+      key: 'plain',
+    })
+    await waitFor(() => lastState()?.payConfirm === true)
+
+    // 한 번 등록한 키는 바꿀 수 없음 (결제용 키 덧붙이기만 됨: 아래 시험)
+    const evil = chipKey()
+    t = Date.now()
+    await p.send({
+      kind: 'approve-keys',
+      plain: evil.spki,
+      at: t,
+      sig: await signText(p.keys.signPriv, approveKeysSignText({ plain: evil.spki }, t)),
+    })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(lastState()?.payKey).toBe(true)
+  })
+
+  it('화면 잠금이 없던 폰은 일반 키만 등록하고 결제도 일반 키로, 나중에 결제용 키만 덧붙인다', async () => {
+    const { api } = await boot()
+    const start = await api('/api/link/pair', { method: 'POST' })
+    const p = await phone(start.pair.url)
+    await p.send(
+      { kind: 'pair', secret: p.invite.s, signPub: p.keys.signPub, name: '내 폰' },
+      { kind: 'pair', pub: p.keys.boxPub },
+    )
+    for (let i = 0; i < 100 && (await api('/api/link/pair')).pair.state !== 'confirm'; i++)
+      await new Promise((r) => setTimeout(r, 30))
+    await api('/api/link/pair/confirm', { method: 'POST', body: JSON.stringify({ accept: true }) })
+    await waitFor(() => p.inbox.some((m) => m.kind === 'paired'))
+    const lastState = () =>
+      p.inbox.filter((m): m is Extract<PcToPhone, { kind: 'state' }> => m.kind === 'state').at(-1)
+    const plain = chipKey()
+    let at = Date.now()
+    await p.send({
+      kind: 'approve-keys',
+      plain: plain.spki,
+      at,
+      sig: await signText(p.keys.signPriv, approveKeysSignText({ plain: plain.spki }, at)),
+    })
+    await waitFor(() => lastState()?.approveKeys === true)
+    expect(lastState()).toMatchObject({ payKey: false, payConfirm: false })
+    const rec = daemon?.approvals.create({
+      tabId: 1,
+      ref: 'e2',
+      role: '버튼',
+      label: '결제하기',
+      url: 'https://shop.example/pay',
+      kind: 'money',
+      reason: '"결제"',
+      what: '사과 결제',
+      where: '시험 가게',
+    })
+    if (!rec) throw new Error('no approval')
+    await p.send({
+      kind: 'decide',
+      id: rec.id,
+      decision: 'approve',
+      sig: plain.sign(approvalSignText(rec, 'approve')),
+      key: 'plain',
+    })
+    await waitFor(() => daemon?.approvals.get(rec.id)?.status !== 'pending')
+
+    const pay = chipKey()
+    at = Date.now()
+    await p.send({
+      kind: 'approve-keys',
+      plain: plain.spki,
+      pay: pay.spki,
+      at,
+      sig: await signText(p.keys.signPriv, approveKeysSignText({ plain: plain.spki, pay: pay.spki }, at)),
+    })
+    await waitFor(() => lastState()?.payKey === true)
+    expect(lastState()?.payConfirm).toBe(true)
   })
 })
 

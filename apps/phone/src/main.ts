@@ -65,7 +65,14 @@ import {
   needsConnect,
   searchIdeas,
 } from '@dool2/protocol/ideas'
-import { approvalSignText, autoApproveSignText, LinkClient, resetSignText } from '@dool2/protocol/link'
+import {
+  approvalSignText,
+  approveKeysSignText,
+  autoApproveSignText,
+  LinkClient,
+  payConfirmSignText,
+  resetSignText,
+} from '@dool2/protocol/link'
 import { Pager } from '@dool2/protocol/paging'
 import {
   CARD_ISSUERS,
@@ -163,6 +170,8 @@ import {
   type AppPushStatus,
   appPushRegister,
   appPushStatus,
+  approveKeys,
+  approveSign,
   confirmDevice,
   defaultRelay,
   inviteFrom,
@@ -561,6 +570,7 @@ async function receive(env: Envelope) {
       if (msg.activeTab !== undefined && st.work.tabId === undefined)
         st.work = { ...st.work, tabId: msg.activeTab }
       void syncPush()
+      void syncApproveKeys()
       openPending()
       break
     case 'conversation':
@@ -1196,11 +1206,69 @@ async function decide(a: ApprovalView, decision: 'approve' | 'reject', quiet = f
   if (!s) return
   // The chosen payment method, card and installment are signed too (nobody in between can swap them)
   const choice = decision === 'approve' ? choiceString(a) : undefined
-  // The approval content is signed with this phone's key. The PC verifies it with the public key it received at pairing
-  const sig = await signText(s.keys.signPriv, approvalSignText(a, decision, choice))
+  const text = approvalSignText(a, decision, choice)
+  let sig: string
+  let key: 'pay' | 'plain' | undefined
+  if (isNative() && st.pc?.approveKeys) {
+    // Security-chip keys (ADR 0043): a payment or transfer is signed only after the phone lock, unless turned off
+    key = decision === 'approve' && a.kind === 'money' && st.pc.payConfirm ? 'pay' : 'plain'
+    const r = await approveSign(
+      key,
+      text,
+      tAppr.payCheckTitle,
+      [a.what, a.amount].filter(Boolean).join(' · '),
+    )
+    // Throwing rolls the hold button back, so the approval stays open
+    if (r === 'cancel') throw new Error(tAppr.payCheckCancel)
+    if (!r) {
+      toast(tAppr.signFailed)
+      throw new Error(tAppr.signFailed)
+    }
+    sig = r
+  }
+  // Older app or browser: the pairing key. The PC verifies it with the public key it received at pairing
+  else sig = await signText(s.keys.signPriv, text)
   // Hold-to-approve folds the card after showing the check (markDecided is called later)
   if (!quiet) markDecided(a, decision)
-  await send({ kind: 'decide', id: a.id, decision, sig, ...(choice ? { choice } : {}) })
+  await send({
+    kind: 'decide',
+    id: a.id,
+    decision,
+    sig,
+    ...(choice ? { choice } : {}),
+    ...(key ? { key } : {}),
+  })
+}
+
+/**
+ * Store app: registers this phone's security-chip approval keys with the PC (ADR 0043), signed with the pairing key.
+ * Also adds the pay key later if the phone got a screen lock after the keys were first sent
+ */
+let keysSyncing = false
+async function syncApproveKeys() {
+  const s = st.saved
+  if (keysSyncing || !isNative() || !s || !st.pc || (st.pc.approveKeys && st.pc.payKey)) return
+  keysSyncing = true
+  try {
+    const k = await approveKeys()
+    if (!k || (st.pc.approveKeys && !k.pay)) return
+    const at = Date.now()
+    const sig = await signText(s.keys.signPriv, approveKeysSignText(k, at))
+    await send({ kind: 'approve-keys', plain: k.plain, ...(k.pay ? { pay: k.pay } : {}), at, sig })
+  } finally {
+    keysSyncing = false
+  }
+}
+
+/** Phone lock for payment approvals on or off (ADR 0043). Off is signed with the pay key, so it takes the lock too */
+async function setPayConfirm(on: boolean) {
+  if (!on && !confirm(mSet.payLockOffAsk)) return
+  const at = Date.now()
+  const key = on ? 'plain' : 'pay'
+  const sig = await approveSign(key, payConfirmSignText(on, at), mSet.payLockOffTitle)
+  if (!sig || sig === 'cancel') return
+  mark(`pay confirm ${on ? 'on' : 'off'}`)
+  await send({ kind: 'pay-confirm', on, at, sig, key })
 }
 
 /** Final button label that follows the chosen payment method ("Pay by card" becomes "Pay with Naver Pay" when that is picked) */
@@ -5574,6 +5642,21 @@ function settingsView() {
       () => void setAutoApprove(!auto),
     ),
   )
+  // Phone lock for payments (ADR 0043): only in the store app once its chip keys are registered
+  if (isNative() && st.pc?.approveKeys) {
+    const has = st.pc.payKey === true
+    const on = has && st.pc.payConfirm === true
+    sec(
+      mSet.secFinal,
+      row(
+        'lock',
+        mSet.payLock,
+        !has ? mSet.payLockNoLock : on ? mSet.payLockOnSub : mSet.payLockOffSub,
+        toggle(on),
+        has ? () => void setPayConfirm(!on) : undefined,
+      ),
+    )
+  }
   if (isNative()) {
     // Store app (ADR 0042): the phone's own notification permission and FCM
     const a = appPush

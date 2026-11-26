@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SmsPlugin.class);
         // Store app notifications: FCM token, this phone's notification key, taps (ADR 0042)
         registerPlugin(PushPlugin.class);
+        // Approval keys in the security chip; payments sign only after the phone lock (ADR 0043)
+        registerPlugin(ApproveKeyPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
