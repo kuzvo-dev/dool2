@@ -60,7 +60,9 @@ export function neededAgents(choice: AiChoice): AgentId[] {
 }
 
 /** Plan name for people: max → Max */
-export const planLabel = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice(1)
+export const planLabel = (plan: string) =>
+  // Codex signed in with a ChatGPT account reports the plan as "chatgpt" (first-run test 11-26: "Chatgpt")
+  plan.toLowerCase() === 'chatgpt' ? 'ChatGPT' : plan.charAt(0).toUpperCase() + plan.slice(1)
 
 const ready = (a?: AgentStatus) => Boolean(a?.installed && a.loggedIn)
 
@@ -92,6 +94,8 @@ export function checklist(
   agents: AgentStatus[],
   chrome?: ChromeStatus,
   extension?: ExtensionStatus,
+  /** withKey: Settings also shows the API key of a set-up pay-as-you-go runner when another AI was chosen */
+  opts: { withKey?: boolean } = {},
 ): CheckItem[] {
   const m = setupModelText(lang)
   const items: CheckItem[] = []
@@ -106,6 +110,9 @@ export function checklist(
           detail: m.notOnPc,
           action: 'claude-install',
         })
+        // The sign-in that follows shows from the start, so "two things" does not turn into three after the install
+        // (first-run test 11-26)
+        items.push({ id: 'claude-login', label: m.claudeLogin, ok: false, detail: m.afterInstall })
         continue
       }
       items.push({ id: 'claude-app', label: 'Claude Code', ok: true, detail: m.installed })
@@ -164,6 +171,7 @@ export function checklist(
           detail: m.firstDownload(120),
           action: 'codex-install',
         })
+        items.push({ id: 'codex-login', label: m.chatgptLogin, ok: false, detail: m.afterInstall })
         continue
       }
       items.push({ id: 'codex-app', label: 'Codex', ok: true, detail: m.ready })
@@ -180,6 +188,17 @@ export function checklist(
       )
     }
   }
+  // A key saved before (or a runner set up) stays changeable in Settings whatever subscription was chosen
+  // (beta report 11-25: "the button to edit the API key is not there")
+  const payg = agents.find((a) => a.id === 'opencode')
+  if (opts.withKey && payg?.installed && !visibleAgents(choice, agents).includes('opencode'))
+    items.push({
+      id: 'payg-key',
+      label: m.apiKey,
+      ok: payg.loggedIn,
+      detail: payg.loggedIn ? (payg.plan ? m.connectedWith(payg.plan) : m.connected) : m.apiKeyTodo,
+      action: 'payg-key',
+    })
   // Browser work runs in Chrome (ADR 0006). Chat works without it, so it does not block starting
   if (chrome)
     items.push(

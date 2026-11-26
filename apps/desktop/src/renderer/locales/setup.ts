@@ -308,7 +308,8 @@ export const setupText = messages({
     retry: '다시 시도',
     manualInstall: '직접 설치하는 방법',
     phasePrepare: '설치를 준비하는 중이에요',
-    phaseDownload: (pct?: number) => `내려받는 중이에요${pct !== undefined ? ` · ${pct}%` : ''}`,
+    phaseDownload: (pct?: number, minsLeft?: number) =>
+      `내려받는 중이에요${pct !== undefined ? ` · ${pct}%` : ''}${minsLeft !== undefined ? ` · ${minsLeft < 1 ? '1분 안에 끝나요' : `약 ${minsLeft}분 남았어요`}` : ''}`,
     phaseVerify: '공식 파일이 맞는지 확인하는 중이에요',
     phaseSetup: '설치를 마무리하는 중이에요',
     // Claude sign-in
@@ -593,7 +594,8 @@ export const setupText = messages({
     retry: 'Try again',
     manualInstall: 'Install it yourself',
     phasePrepare: 'Getting ready to install',
-    phaseDownload: (pct?: number) => `Downloading${pct !== undefined ? ` · ${pct}%` : ''}`,
+    phaseDownload: (pct?: number, minsLeft?: number) =>
+      `Downloading${pct !== undefined ? ` · ${pct}%` : ''}${minsLeft !== undefined ? ` · ${minsLeft < 1 ? 'under a minute left' : `about ${minsLeft} min left`}` : ''}`,
     phaseVerify: 'Checking that the files are official',
     phaseSetup: 'Finishing the install',
     claudeLoginFailed: "Couldn't finish signing in to Claude",
