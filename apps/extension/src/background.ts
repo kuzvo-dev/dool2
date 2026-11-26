@@ -2523,6 +2523,16 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       }
       return { shots }
     }
+    case 'pdf': {
+      // The page as a PDF, the way Chrome prints it (certificates and statements open in a viewer page): Dool2 keeps
+      // it as a file. Only a tab Dool2 opened
+      const tabId = await ownedTab(a)
+      const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
+        printBackground: true,
+        preferCSSPageSize: true,
+      })
+      return { data: r.data }
+    }
     case 'screenshot': {
       const tabId = await ownedTab(a)
       await frontTab(tabId)

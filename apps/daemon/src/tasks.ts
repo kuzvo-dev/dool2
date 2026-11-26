@@ -81,6 +81,8 @@ export interface Task {
   draft?: string
   /** Notes from the person not yet given to the task */
   notes: TaskNote[]
+  /** The question it last put in the conversation while waiting for the person in words (posted once) */
+  askedShown?: string
   /**
    * The same job tried a little earlier and stopped or failed: its id, how it ended and its last answer, so this one
    * starts from what that found instead of from scratch (family certificate 11-26: the second try redid every step

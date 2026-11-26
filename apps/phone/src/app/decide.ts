@@ -9,6 +9,7 @@ import { approveKeys, approveSign, isNative } from '../native.js'
 import { PREFERRED_INSTALLMENT } from '../region/kr/main-a-chat.js'
 import { cardIdFor } from './approval-cards.js'
 import { mark, mSet, send, st, tAppr } from './core.js'
+import { resumeTasks } from './resume.js'
 import { render, toast } from './shell.js'
 
 /** Option picked when approving (payment method). If none, the card's default */
@@ -148,6 +149,7 @@ export async function decide(a: ApprovalView, decision: 'approve' | 'reject', qu
     ...(choice ? { choice } : {}),
     ...(key ? { key } : {}),
   })
+  resumeTasks()
 }
 
 /**

@@ -54,7 +54,7 @@ export function readRun(r: Pick<Routine, 'notify' | 'until'>, answer: string) {
 export function routineAsk(r: Pick<Routine, 'prompt' | 'notify' | 'until' | 'lastTold'>): string {
   const lines = [
     r.prompt,
-    'If the task covers several things, split the answer into "Done" (one or two lines of result per item) and "Needs your decision" (what the user must choose or confirm; leave it out if nothing).',
+    'If the task covers several things, split the answer into two parts: what was done (one or two lines of result per item) and what the user must choose or confirm (leave it out if nothing). Write both headings in the language of the answer, never in English unless the answer is in English.',
   ]
   if (r.notify === 'when_found') {
     lines.push(

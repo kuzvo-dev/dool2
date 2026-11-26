@@ -242,6 +242,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
     { tabId },
     true,
   )
+  tool(
+    'save_pdf',
+    'Save the page as a PDF',
+    'Keeps the page as a PDF file the way Chrome prints it, without a print window or a printer: certificates, statements, receipts and tickets that open in a viewer. Point it at the tab that shows the document (a viewer often opens its own tab or pop-up: browser_tabs). It goes to the Doori folder in Documents and the library. Never ask the user to print or save it on the PC.',
+    {
+      tabId,
+      name: z
+        .string()
+        .max(80)
+        .optional()
+        .describe("File name without .pdf, in the user's language (what it is and the date)"),
+    },
+    true,
+  )
   tool('back', 'Back', 'Presses back in the tab and returns the page read as text.', { tabId }, true)
   tool(
     'wait',

@@ -490,6 +490,8 @@ export const BrowserCommandSchema = z.enum([
   'dialog',
   /** Only moves the mouse to that spot (menus that open on hover) */
   'hover',
+  /** The tab printed as a PDF {tabId} → {data: base64}, the way Chrome prints it (certificates in a viewer) */
+  'pdf',
   /**
    * Excludes tabs waiting for a person or approval from tab cleanup (sleeping, closing) for a set time (ms: 0 releases).
    * Only 3 tabs are kept, and a tab waiting for payment approval was closed when another tab opened (measured: Lotte Cinema)

@@ -9,6 +9,7 @@ import { springTo } from '../motion.js'
 import { ID_LOGIN, OPEN_SCREEN_TAIL } from '../region/kr/main-a-chat.js'
 import { cardIdFor } from './approval-cards.js'
 import { mCards, send, st, type Tab } from './core.js'
+import { resumeTasks } from './resume.js'
 import { openOverlay, remoteUi, render } from './shell.js'
 
 // ── Remote screen: see and tap the PC tab Dool2 handed over, from the phone (turned into a live view in the next step) ──
@@ -273,6 +274,7 @@ export function pickChoices(id: string, cardId: string): HTMLElement | undefined
         onclick: () => {
           void send({ kind: 'info-answer', id, value: o })
           st.infos.delete(id)
+          resumeTasks()
           // Show it moving at once (a step with a spinner) until the PC's next step arrives
           const steps = st.connectSteps.get(cardId) ?? []
           st.connectSteps.set(cardId, [...steps, { text: mCards.goingWith(o), at: Date.now() }])
