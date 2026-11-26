@@ -13,6 +13,7 @@ import { cardIdFor, hostOf } from './approval-cards.js'
 import { ask, connectInChat } from './ask.js'
 import { loginLink } from './cards.js'
 import { mSet, send, st } from './core.js'
+import { resumeTasks } from './resume.js'
 import { openOverlay, pageSettled, render, setTab, shell, toast } from './shell.js'
 import { openRemote } from './work.js'
 
@@ -218,6 +219,7 @@ export function infoSheet(id: string) {
     st.overlay = undefined
     render()
     if (value) toast(mdCred.filled)
+    if (value) resumeTasks()
   }
   const head = h(
     'div',
@@ -649,7 +651,10 @@ export function loginSheet(id: string) {
     ...(brandOf(r.origin) ? { brand: brandOf(r.origin) } : {}),
     busyText: mdCred.saving,
     submitText: mdCred.signIn,
-    submit: (username, password) => void send({ kind: 'login', id: r.id, username, password }),
+    submit: (username, password) => {
+      void send({ kind: 'login', id: r.id, username, password })
+      resumeTasks()
+    },
     direct: { text: mdCred.directLogin, onclick: () => openRemote(r.tabId) },
     stuck: Boolean(loginLink(r.origin)?.fail),
     // If the user doesn't know the ID or password, Dool2 recovers it: the sign-in card is withdrawn and the request goes to the chat (only identity-check codes use a phone card)

@@ -27,6 +27,8 @@ export const ON_DEMAND_TOOLS = [
   'pc_screen',
   'browser_hover',
   'browser_upload',
+  // A page kept as a PDF (certificates and statements in a viewer): tool_find("pdf") or ("save") brings it
+  'browser_save_pdf',
   'show_route',
   'goal_delete',
   // PC app control (screen_*, 5 to 47 calls each). One tool_find("screen") brings the whole group

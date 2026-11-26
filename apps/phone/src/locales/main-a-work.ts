@@ -44,6 +44,7 @@ export const mainWork = messages({
     stepCount: (n: number) => `${n}단계`,
     // The bar above the composer while a task runs (its card may be scrolled away)
     nowWaitsYou: '두리가 기다려요',
+    resuming: '받았어요 · 이어서 하는 중',
     nowInLine: (n: number) => `${n}번째로 기다리는 중`,
     nowWorking: '하는 중',
     // The "how it worked" line and sheet (work-line.ts)
@@ -100,6 +101,7 @@ export const mainWork = messages({
     processExpand: 'Show how it worked',
     stepCount: (n: number) => `${n} steps`,
     nowWaitsYou: 'Dool2 is waiting for you',
+    resuming: 'Got it · carrying on',
     nowInLine: (n: number) => `Waiting, ${n} in line`,
     nowWorking: 'Working',
     workedAtHead: 'Worked on ',

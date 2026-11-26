@@ -136,6 +136,7 @@ import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
+import { cleanName, freeName } from './file-names.js'
 import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { handBack, waitsForPerson } from './hand-back.js'
@@ -3297,6 +3298,31 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return 'asked'
   }
   // My info card: receive only once and keep it in the vault, and when saved, tell the chat to continue
+  // A page kept as a PDF (browser_save_pdf: certificates and statements in a viewer): the Doori folder and the library
+  browserTools.savePdf = async (name, pdf, preview) => {
+    const docs = fileTools.dir('documents')
+    // Documents first; macOS may not have let Dool2 into it yet, then Downloads
+    const dirs = [docs ? join(docs, DOORI_FOLDER) : undefined, fileTools.dir('downloads')].filter(
+      (d): d is string => Boolean(d),
+    )
+    let path = ''
+    let file = ''
+    for (const dir of dirs) {
+      try {
+        await mkdir(dir, { recursive: true })
+        file = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.pdf`)
+        await writeFile(join(dir, file), pdf)
+        path = join(dir, file)
+        break
+      } catch {}
+    }
+    if (!path)
+      throw new Error('Could not write to Documents or Downloads (macOS may not have allowed it yet)')
+    const shown = fileTools.shown(path)
+    fileTools.onWritten?.({ name: file, kind: 'pdf', path: shown, ...(preview ? { image: preview } : {}) })
+    journal.write('file-tool', { tool: 'browser_save_pdf', ok: true })
+    return shown
+  }
   browserTools.requestCode = (tabId, field, label, hint, host, kind, firstRef, image) => {
     const threadId = workingThread()
     // The last digits of the ID number: not stored, only put into this field
@@ -4084,6 +4110,40 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       .catch(() => {})
     endTask(t, status)
   }
+  /**
+   * A task waiting for the person in words only (no approval, sign-in or info card): its question goes into the
+   * conversation, where the person sees it and answers (the conversation passes it on with task_steer). It stayed in
+   * the task's own chat and the card said only "Dool2 is waiting" (PDF save 11-27)
+   */
+  function askInConversation(t: Task) {
+    const card =
+      browserTools.approvals
+        .list()
+        .some((a) => a.status === 'pending' && approvalThread.get(a.id) === t.threadId) ||
+      browserTools.logins
+        .list()
+        .some((l) => l.status === 'pending' && loginThread.get(l.id) === t.threadId) ||
+      infoRequests.pending().length > 0
+    if (card) return
+    const question = lastAnswerOf(t.threadId)
+      .find((x) => x.role === 'assistant')
+      ?.text?.trim()
+    if (!question || question === t.askedShown) return
+    t.askedShown = question
+    const cur = conversation.current()?.id ?? t.parentId
+    postSaved(cur, store.addMessage(cur, 'assistant', question))
+    unseenTasks.push(
+      `- ${t.id} "${t.spec.title}" is waiting for the user and asked them (shown in the conversation): ${question.slice(0, 800)}. Pass their answer on with task_steer.`,
+    )
+    void link
+      .notify({
+        title: t.spec.title,
+        body: previewText(question, 120),
+        tag: `task-${t.id}`,
+        url: '#tab=chat',
+      })
+      .catch(() => {})
+  }
   /** After each turn of a task: continue, wait for the person, take the person's notes, or end */
   function taskTurnEnded(
     t: Task,
@@ -4113,6 +4173,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     }
     if (r.asked) {
       t.status = 'needs-you'
+      askInConversation(t)
       // Waiting for the person does not hold the browser (it could be half an hour): the next task in line starts. Its
       // tabs stay its own, and it takes the browser back when the person answers. A hand-over (the person works in its
       // tab) or a connection keeps it: the person is using the browser then

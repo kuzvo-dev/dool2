@@ -158,6 +158,7 @@ export const BROWSER_TOOLS = [
   'request_profile',
   'request_code',
   'request_tap',
+  'save_pdf',
   'wait_auth',
   'new_password',
   'select',
@@ -1107,6 +1108,11 @@ export class BrowserTools {
     image?: string,
   ) => string | undefined
   /** Tap-to-solve image card (phone). The daemon taps the same spot inside rect where the user tapped the image (0~1000) */
+  /**
+   * Keeps a PDF of a page (the tab printed the way Chrome prints it) in the Doori folder and the library; returns where.
+   * preview: a picture of the page for the library
+   */
+  savePdf?: (name: string, pdf: Buffer, preview?: string) => Promise<string>
   requestTap?: (
     tabId: number,
     say: string,
@@ -1488,6 +1494,32 @@ export class BrowserTools {
           content: [
             { type: 'text', text: `${tabTag(tabId)} ${r.title} — ${r.url}` },
             { type: 'image', data: r.data, mimeType: r.mime },
+          ],
+        }
+      }
+      case 'save_pdf': {
+        if (!this.savePdf) throw new Error('Saving a PDF is not available on this PC')
+        const r = (await this.browser.call('pdf', { tabId }, 60_000)) as { data?: string }
+        const pdf = Buffer.from(r.data ?? '', 'base64')
+        // A blank print (a viewer that draws into a plugin or blocks printing) is a few KB of empty pages
+        if (pdf.length < 3_000)
+          throw new Error(
+            'The page printed empty (the viewer may draw the document where printing cannot reach). Look for the document inside a frame or its own tab (browser_tabs) and try that tab, or a download button on the viewer.',
+          )
+        const shot = (await this.browser.call('screenshot', { tabId }).catch(() => undefined)) as
+          | { data?: string }
+          | undefined
+        const page = (await this.browser.call('snapshot', { tabId, maxChars: 200 }).catch(() => undefined)) as
+          | { title?: string }
+          | undefined
+        const name = String(a.name ?? '').trim() || page?.title || 'document'
+        const path = await this.savePdf(name, pdf, shot?.data)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Saved the page as a PDF (${Math.round(pdf.length / 1024)} KB, the way Chrome prints it): ${path}. It is in the library too. Tell the user where it is; no print window and no printer were used.`,
+            },
           ],
         }
       }
