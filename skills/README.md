@@ -186,6 +186,7 @@ Of 95 services and 332 tools, **113 tools have been verified on real sites**. Th
 | Telecom | [KT M Mobile](kt-mmobile/tools.json) | 5 | `plans` |
 | Telecom | [LG U+](lguplus/tools.json) | 5 | `plans` |
 | Telecom | [SKT T World](skt/tools.json) | 5 | `plans` |
+| Travel | [Naver Flights](naver-flight/tools.json) | 1 | `search` |
 | Life | [CJ Logistics](cj-logistics/tools.json) | 1 | `track` |
 | Life | [Parcel tracking (any carrier)](parcel/tools.json) | 1 | `track` |
 | Life | [Weather](weather/tools.json) | 1 | `forecast` |
