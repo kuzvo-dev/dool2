@@ -101,7 +101,8 @@ export const st: {
   live: string
   steps: string[]
   /** Messages sent but not yet confirmed by the PC (shown on screen right away) */
-  pending: { id: number; text: string; photo?: string }[]
+  /** at: when it was sent (a message the PC has not echoed back after a while did not get there) */
+  pending: { id: number; text: string; photo?: string; at: number }[]
   /** Photo to send (shrunk JPEG, base64) */
   attach?: string
   approvals: Map<string, ApprovalView & { shot?: string }>

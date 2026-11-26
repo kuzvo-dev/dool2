@@ -348,10 +348,10 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
       ref: ref.optional().describe('The input (not for an image keypad)'),
       label: z.string().max(40).optional().describe('Field name on the card'),
       kind: z
-        .enum(['code', 'rrn_back', 'captcha', 'pin'])
+        .enum(['code', 'rrn_back', 'captcha', 'pin', 'text'])
         .optional()
         .describe(
-          'code (default) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad)',
+          'code (default, digits) · rrn_back (saved to the vault) · captcha (text robot check) · pin (payment keypad) · text (words only the person knows that a form asks for, such as a family member\'s name or the registration place; any letters; the label says what is asked, e.g. "father\'s name")',
         ),
       keys: z
         .record(z.string(), z.string())

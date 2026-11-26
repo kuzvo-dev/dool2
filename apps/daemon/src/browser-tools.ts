@@ -1101,7 +1101,7 @@ export class BrowserTools {
     label: string,
     hint: string,
     host: string,
-    kind?: 'code' | 'rrn_back' | 'captcha',
+    kind?: 'code' | 'rrn_back' | 'captcha' | 'text',
     ref?: string,
     /** CAPTCHA image (jpeg base64) */
     image?: string,
@@ -2241,7 +2241,7 @@ export class BrowserTools {
           String(a.label ?? '') || target.name || browserText(this.userLang()).codeLabel,
           hint,
           host,
-          a.kind === 'rrn_back' ? 'rrn_back' : a.kind === 'captcha' ? 'captcha' : 'code',
+          a.kind === 'rrn_back' || a.kind === 'captcha' || a.kind === 'text' ? a.kind : 'code',
           ref,
           image,
         )

@@ -166,6 +166,8 @@ export interface LinkHost {
   /** One conversation (ADR 0015) */
   conversation(o: { before?: string; limit?: number }): ConversationState
   cancelConversation(): void
+  /** Takes back a message waiting in line (not yet read by the AI) */
+  unqueue?(text: string): void
   /** A task's card (ADR 0038): stop it, or take its draft as the result. Older daemons in tests may leave it out */
   task?(id: string, action: 'stop' | 'accept'): void
   /** Take the draft as the result (ADR 0027) */
@@ -530,6 +532,9 @@ export class PhoneLink {
       }
       case 'conversation-cancel':
         return this.host.cancelConversation()
+      case 'conversation-unqueue':
+        if (typeof msg.text === 'string') this.host.unqueue?.(msg.text.slice(0, 20_000))
+        return
       case 'conversation-accept':
         return this.host.acceptConversation()
       case 'conversation-continue':

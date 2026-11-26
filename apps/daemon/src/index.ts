@@ -2540,6 +2540,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         else acceptTask(t)
       },
       cancelConversation: () => stopConversation(),
+      unqueue: (text) => unqueue(text),
       acceptConversation: () => acceptConversation(),
       continueConversation: () => void continueConversation(),
       connect: async (id, action) => {
@@ -3288,7 +3289,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       {
         site: host || m().siteAuth,
         host,
-        field: kind === 'rrn_back' ? 'secret' : kind === 'captcha' ? 'text' : 'otp',
+        field: kind === 'rrn_back' ? 'secret' : kind === 'captcha' || kind === 'text' ? 'text' : 'otp',
         ...(kind === 'captcha' && image ? { image } : {}),
         ...(kind === 'rrn_back' ? { pattern: '^[1-4]\\d{6}$', patternHint: m().rrnPattern } : {}),
         label,
@@ -3299,7 +3300,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const id = infoRequests.pending().at(-1)?.id
     void answer.then(async (code) => {
       if (!code) return
-      sayNow(kind === 'rrn_back' ? m().gotRrn : kind === 'captcha' ? m().gotCaptcha : m().gotCode)
+      sayNow(
+        kind === 'rrn_back'
+          ? m().gotRrn
+          : kind === 'captcha'
+            ? m().gotCaptcha
+            : kind === 'text'
+              ? m().gotText
+              : m().gotCode,
+      )
       // The last digits of the ID number are saved in the vault (my info) so they are not asked again
       if (kind === 'rrn_back') await profile.update({ rrn_back: code }).catch(() => undefined)
       // The screen may have been read again while entering and the markers changed: find the field with the same name again and enter it (the number is kept out of the record and the AI)
@@ -3335,8 +3344,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           forAI(
             '',
             ok
-              ? `The user entered the ${kind === 'rrn_back' ? 'last digits of the ID number' : kind === 'captcha' ? 'captcha' : 'verification code'} on the phone and it went into the "${field}" field. Read the page, press the confirm/verify button and continue the task.`
-              : `The user entered the verification code, but the "${field}" field could not be found on the screen, so it was not entered. Read the page, check the field and call browser_request_code again.`,
+              ? `The user entered the ${kind === 'rrn_back' ? 'last digits of the ID number' : kind === 'captcha' ? 'captcha' : kind === 'text' ? `"${label}"` : 'verification code'} on the phone and it went into the "${field}" field. Read the page, check it went into the right field, press the confirm/next button and continue the task.`
+              : `The user entered the ${kind === 'text' ? `"${label}"` : 'verification code'}, but the "${field}" field could not be found on the screen, so it was not entered. Read the page, check the field and call browser_request_code again.`,
           ),
         ),
       )
@@ -3805,6 +3814,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const fromPhone = new Set<string>()
   /** Chat: messages that arrived while Doori was answering and wait for their turn */
   const queued: string[] = []
+  /** A message waiting in line taken back by the person (it never reaches the AI) */
+  function unqueue(text: string): boolean {
+    const i = queued.indexOf(text)
+    if (i < 0) return false
+    queued.splice(i, 1)
+    live.emit('event', { kind: 'queued', texts: [...queued] })
+    journal.write('unqueue', {})
+    return true
+  }
   /** Picking a segment (the summary request can take long, so messages arriving meanwhile are queued too) */
   let preparing = false
   const conversationBusy = () =>
@@ -5872,6 +5890,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const body = SendMessageRequestSchema.parse(await readJson(req, MESSAGE_MAX))
       const text = body.image ? `${body.text}\n\n${await savePhoto(body.image)}` : body.text
       return json(res, 202, await talk(text, { receivedAt }))
+    }
+    if (a === 'conversation' && b === 'unqueue' && req.method === 'POST') {
+      const text = ((await readJson(req, MESSAGE_MAX)) as { text?: unknown } | null)?.text
+      return json(res, 200, { ok: typeof text === 'string' && unqueue(text) })
     }
     if (a === 'conversation' && b === 'cancel' && req.method === 'POST') {
       stopConversation()
