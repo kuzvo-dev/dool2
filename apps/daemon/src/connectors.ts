@@ -198,6 +198,11 @@ export class Connectors {
   titleOf(name: string): string | undefined {
     return this.titles.get(name)
   }
+  /** Service tool name → the service's name people know (for the memory screen's remembered steps) */
+  private services = new Map<string, string>()
+  serviceOf(name: string): string | undefined {
+    return this.services.get(name)
+  }
   /** Service tool name → tier (after loading): the before-finishing check counts lookups */
   private tiers = new Map<string, ConnectorTool['tier']>()
   tierOf(name: string): ConnectorTool['tier'] | undefined {
@@ -245,6 +250,13 @@ export class Connectors {
       [...items.values()].flatMap(({ card, connector }) =>
         (connector?.tools ?? []).map(
           (t) => [connectorToolName(card.id, t.name), t.title] as [string, string],
+        ),
+      ),
+    )
+    this.services = new Map(
+      [...items.values()].flatMap(({ card, connector }) =>
+        (connector?.tools ?? []).map(
+          (t) => [connectorToolName(card.id, t.name), card.name] as [string, string],
         ),
       ),
     )

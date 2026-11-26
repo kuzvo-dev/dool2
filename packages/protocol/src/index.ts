@@ -1021,6 +1021,18 @@ export interface MemoryItem {
  * What Dool2 has noted (lookup memory and a ledger of things done). Facts about me seen after signing in (fact) and applications, payments, bookings, deliveries and signups Dool2 did or confirmed (done).
  * Whether it is still usable is judged by the AI from today's date and the reference point, with no fixed validity period
  */
+/** A recipe as the memory screen shows it (ADR 0042): what was asked, and the services or sites its steps used */
+export interface RecipeView {
+  id: string
+  /** The person's last words for a request these steps got done */
+  ask: string
+  /** Services or sites the steps used, in order (names people know, not tool names) */
+  steps: string[]
+  /** Requests these steps got done */
+  ok: number
+  lastAt: string
+}
+
 export interface KnowItem {
   id: string
   kind: 'fact' | 'done'
@@ -1184,6 +1196,8 @@ export interface LifeState {
   memory: MemoryItem[]
   /** What Dool2 has noted (lookup memory and a ledger of things done), newest first */
   know?: KnowItem[]
+  /** Steps Dool2 remembered for requests asked more than once (ADR 0042), most recent first */
+  recipes?: RecipeView[]
   /** Feed first page (the latest 30). More with GET /api/life/feed?before= via feedNext, life-page on the phone */
   feed: FeedItem[]
   /** The next feed page cursor (none means the end) */
@@ -1217,6 +1231,7 @@ export type LifeAction =
   | { action: 'memory-add'; text: string }
   | { action: 'memory-delete'; id: string }
   | { action: 'know-delete'; id: string }
+  | { action: 'recipe-delete'; id: string }
   | ({ action: 'identity' } & Identity)
   | { action: 'ideas-refresh' }
   | { action: 'watch'; on: boolean }

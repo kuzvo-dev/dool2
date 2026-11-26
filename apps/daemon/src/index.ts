@@ -158,7 +158,7 @@ import { checkPaygKey } from './payg-check.js'
 import { type Priced, priceBook, pricedModels } from './payg-models.js'
 import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
-import { RecipeBook, RequestSteps } from './recipes.js'
+import { MIN_OK, RecipeBook, RequestSteps, recipeView } from './recipes.js'
 import {
   APP_CONFIRM_ONLY_END,
   APP_CONFIRM_ONLY_END_LOOSE,
@@ -3049,6 +3049,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const kept = req && recipes.record(req.ask, req.steps)
           const followed = kept !== undefined && req !== undefined && req.offered.includes(kept.recipe.id)
           if (kept && followed) recipes.followed(kept.recipe.id)
+          // Just became ready: the memory screen shows it
+          if (kept && kept.before + 1 === MIN_OK) life.onChange?.()
           if (req)
             journal.write('recipe', {
               event: 'done',
@@ -4451,6 +4453,17 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     })
   // Proactive checks: every hour from 6 am to 10 pm, look at tasks due for a check and connected services, and post with feed_tell if something needs attention (silent otherwise)
   life.watchSources = () => Object.keys(readSettings().connections ?? {})
+  // The memory screen lists the steps Dool2 remembered and deletes them (ADR 0042)
+  life.recipes = () =>
+    recipes
+      .ready()
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt))
+      .slice(0, 30)
+      .map((r) => recipeView(r, (t) => connectors.serviceOf(t)))
+  life.recipeForget = (id) => {
+    recipes.forget(id)
+    journal.write('recipe', { event: 'deleted' })
+  }
   life.onWatch = (lastWatch) =>
     void (async () => {
       const threadId = await feedThreadId()

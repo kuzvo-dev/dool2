@@ -8,6 +8,7 @@ import {
   MIN_OK,
   RecipeBook,
   RequestSteps,
+  recipeView,
   signature,
   stepOf,
   worthKeeping,
@@ -146,5 +147,35 @@ describe('RecipeBook', () => {
     expect(r.result('t', 'service_call', false, book)).toEqual([id])
     r.tool('t', 'service_call', { tool: 'coupang_orders', input: {} })
     expect(r.result('t', 'service_call', false, book)).toEqual([])
+  })
+})
+
+describe('recipeView', () => {
+  it('shows the services and sites people know, not tool names', () => {
+    const v = recipeView(
+      {
+        id: 'k1',
+        steps: [
+          { tool: 'coupang_orders', via: 'service_call' },
+          { tool: 'browser_open', at: 'www.apti.co.kr/apti' },
+          { tool: 'browser_click', times: 2 },
+          { tool: 'show_cards' },
+        ],
+        asks: ['쿠팡에서 산 거 언제 와'],
+        ok: 3,
+        fails: 0,
+        offered: 1,
+        followed: 1,
+        lastAt: '2026-11-26T00:00:00.000Z',
+      },
+      (t) => (t === 'coupang_orders' ? '쿠팡' : undefined),
+    )
+    expect(v).toEqual({
+      id: 'k1',
+      ask: '쿠팡에서 산 거 언제 와',
+      steps: ['쿠팡', 'apti.co.kr'],
+      ok: 3,
+      lastAt: '2026-11-26T00:00:00.000Z',
+    })
   })
 })
