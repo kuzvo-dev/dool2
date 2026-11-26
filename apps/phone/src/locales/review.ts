@@ -83,3 +83,38 @@ export const tReview = catalog(lang)
 /** Words in a demo request that get the parcel answer or the order with an approval card (any language) */
 export const DEMO_PARCEL = /택배|배송|parcel|deliver/i
 export const DEMO_ORDER = /주문|사과|결제|order|buy|apple/i
+
+/** Step lines the demo's pretend PC sends while it "works" (review.ts) */
+const DEMO_STEPS = {
+  ko: {
+    parcel1: '택배 조회 페이지를 열어 볼게요',
+    parcel2: '운송장 번호를 넣고 조회할게요',
+    parcelField: '운송장 번호',
+    parcelPress: '조회',
+    parcelPage: '배송 조회 결과',
+    order1: '사과를 찾아볼게요',
+    order2: '후기 많은 5kg 상자를 골랐어요',
+    orderPress: '사과 1박스 (5kg)',
+    order3: '장바구니에 담을게요',
+    orderCart: '장바구니 담기',
+    actOpen: '웹페이지 여는 중',
+    actPress: '누르는 중',
+    actRead: '페이지 읽는 중',
+  },
+  en: {
+    parcel1: 'Opening the parcel tracking page',
+    parcel2: 'Entering the tracking number and looking it up',
+    parcelField: 'Tracking number',
+    parcelPress: 'Track',
+    parcelPage: 'Tracking result',
+    order1: 'Looking for apples',
+    order2: 'Picked the 5 kg box with the most reviews',
+    orderPress: 'Apples, 1 box (5 kg)',
+    order3: 'Adding it to the cart',
+    orderCart: 'Add to cart',
+    actOpen: 'Opening a web page',
+    actPress: 'Pressing',
+    actRead: 'Reading the page',
+  },
+}
+export const demoSteps = DEMO_STEPS[lang === 'en' ? 'en' : 'ko']

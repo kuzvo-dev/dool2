@@ -10,6 +10,7 @@ import {
   type HandoffRecord,
   type LoginRecordMessage,
   type MadeImageRecordMessage,
+  type StepDetail,
   type WorkRecordMessage,
 } from '@dool2/protocol'
 import {
@@ -48,6 +49,8 @@ export interface ThreadServiceOptions {
   tabHost?: (tabId: number) => string | undefined
   /** Service tool name → a title people read ("find shops, check hours"). Shown in the work steps instead of "working" */
   toolTitle?: (name: string) => string | undefined
+  /** What a work step did, for the "how it worked" sheet (the daemon knows the pages and their buttons) */
+  stepDetail?: (name: string, input: unknown) => StepDetail[] | undefined
   /** The current-time line sent with each message (nowLine by default, off in tests) */
   timeLine?: () => string | undefined
   /** The picture the image AI just made (taken once when image_make succeeds, and attached below the reply) */
@@ -328,7 +331,7 @@ export class ThreadService {
       let failed: AgentEvent | undefined
       // Save the reply and send it to the screens as soon as 'done' arrives. Don't wait the ~0.5 s the official CLI spends cleaning up (closing tool servers and so on)
       let saved = false
-      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle, lang)
+      const work = new WorkLog(Date.now, this.opts.tabHost, this.opts.toolTitle, lang, this.opts.stepDetail)
       // Result block for the reply (show_cards, show_list, show_result, show_draft, show_route): saved right after the reply so it shows below it.
       // One result block per reply. Called several times, only the last one stays (photo cards are joined)
       let block: CardsRecordMessage | BlockRecordMessage | undefined
@@ -434,7 +437,14 @@ export class ThreadService {
         // (the screens add the "in progress" word themselves, so it is removed here)
         const svc = ev.type === 'tool' ? serviceAct(ev.name, ev.input, this.opts.toolTitle, lang) : undefined
         const title = svc ? t.stripAct(svc) : undefined
-        yield { type: 'agent', event: title && ev.type === 'tool' ? { ...ev, title } : ev }
+        const detail = ev.type === 'tool' ? work.lastDetail() : undefined
+        yield {
+          type: 'agent',
+          event:
+            ev.type === 'tool' && (title || detail)
+              ? { ...ev, ...(title ? { title } : {}), ...(detail ? { detail } : {}) }
+              : ev,
+        }
         if (ev.type === 'done' && answer && !saved) {
           saved = true
           if (resumeId && resumeId !== thread.resumeId) store.updateThread(threadId, { resumeId })
@@ -667,7 +677,8 @@ const QUIET_TOOL =
 /** Collects what was done in a turn into a work record (WorkRecordMessage). Uses the same names as the step display on the phone and PC screens */
 export class WorkLog {
   private readonly started: number
-  private steps: { text: string; act: string; place?: string; at: number }[] = []
+  private steps: { text: string; act: string; place?: string; detail?: StepDetail[]; at: number }[] = []
+  private lastD: StepDetail[] | undefined
   private worked = false
   private host: string | undefined
   constructor(
@@ -675,8 +686,13 @@ export class WorkLog {
     private readonly tabHost?: (tabId: number) => string | undefined,
     private readonly toolTitle?: (name: string) => string | undefined,
     private readonly lang: Lang = 'ko',
+    private readonly describe?: (name: string, input: unknown) => StepDetail[] | undefined,
   ) {
     this.started = now()
+  }
+  /** The detail of the step the last tool call made (sent along with the live tool event) */
+  lastDetail(): StepDetail[] | undefined {
+    return this.lastD
   }
   /** On a tool call: the one line said before it, else the tool name ("opening a web page"). Also records where (place) */
   tool(name: string, before: string, input?: unknown) {
@@ -691,9 +707,24 @@ export class WorkLog {
     const act =
       serviceAct(name, input, this.toolTitle, this.lang) ?? THREAD_TEXT[this.lang].toolAct(toolLabel(name))
     const text = narrationLine(before) ?? act
+    let detail: StepDetail[] | undefined
+    try {
+      detail = this.describe?.(name, input)?.slice(0, 6)
+    } catch {
+      detail = undefined
+    }
+    this.lastD = detail?.length ? detail : undefined
     const last = this.steps.at(-1)
     if (last?.text !== text || last.place !== place)
-      this.steps.push({ text, act, ...(place ? { place } : {}), at: this.now() })
+      this.steps.push({
+        text,
+        act,
+        ...(place ? { place } : {}),
+        ...(this.lastD ? { detail: this.lastD } : {}),
+        at: this.now(),
+      })
+    // The same line again (another click on that site): its details add up, the newest last, a few at most
+    else if (last && this.lastD) last.detail = [...(last.detail ?? []), ...this.lastD].slice(-6)
   }
   record(): WorkRecordMessage | undefined {
     if (!this.worked || !this.steps.length) return undefined

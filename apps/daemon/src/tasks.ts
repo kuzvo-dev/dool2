@@ -4,7 +4,7 @@
 
 import { WorkLog } from '@dool2/engine'
 import type { Lang } from '@dool2/i18n'
-import type { StoredMessage, TaskStatus, TaskView } from '@dool2/protocol'
+import type { StepDetail, StoredMessage, TaskStatus, TaskView } from '@dool2/protocol'
 import { appNote } from '@dool2/protocol/rich'
 import { forAI } from './locales/index-text.js'
 import { TASKS_TEXT } from './locales/tasks-text.js'
@@ -154,6 +154,7 @@ export interface TaskBoardOptions {
   /** Same helpers as the conversation's work steps */
   tabHost?: (tabId: number) => string | undefined
   toolTitle?: (name: string) => string | undefined
+  stepDetail?: (name: string, input: unknown) => StepDetail[] | undefined
   /** Lookup tasks may read beside the holder (the browser extension opens tabs in the background). Default yes */
   parallelReads?: () => boolean
 }
@@ -187,7 +188,13 @@ export class TaskBoard {
       notes: [],
       shownNotes: new Set(),
       begun: false,
-      work: new WorkLog(this.now, this.o.tabHost, this.o.toolTitle, this.o.lang?.() ?? 'ko'),
+      work: new WorkLog(
+        this.now,
+        this.o.tabHost,
+        this.o.toolTitle,
+        this.o.lang?.() ?? 'ko',
+        this.o.stepDetail,
+      ),
       turnOut: [],
       resume: [],
     }

@@ -9,11 +9,13 @@ import type {
   ConversationState,
   PcToPhone,
   PhoneToPc,
+  StepDetail,
   StoredMessage,
+  WorkRecordMessage,
 } from '@dool2/protocol'
 import { generateDevice } from '@dool2/protocol/e2e'
 import { h } from '../dom.js'
-import { DEMO_ORDER, DEMO_PARCEL, tReview } from '../locales/review.js'
+import { DEMO_ORDER, DEMO_PARCEL, demoSteps, tReview } from '../locales/review.js'
 import { demoHook, send, st } from './core.js'
 import { handle } from './link.js'
 import { openOverlay, render, toast } from './shell.js'
@@ -129,6 +131,118 @@ function orderApproval(): ApprovalView {
   }
 }
 
+interface DemoStep {
+  say: string
+  name: string
+  input: Record<string, unknown>
+  detail: StepDetail[]
+}
+
+function parcelSteps(): DemoStep[] {
+  const t = demoSteps
+  return [
+    {
+      say: t.parcel1,
+      name: 'mcp__dool2__browser_open',
+      input: { url: 'https://www.cjlogistics.com/ko/tool/parcel/tracking' },
+      detail: [{ k: 'url', v: 'www.cjlogistics.com/ko/tool/parcel/tracking' }],
+    },
+    {
+      say: t.parcel2,
+      name: 'mcp__dool2__browser_click',
+      input: { tabId: 1, ref: 'e3' },
+      detail: [
+        { k: 'field', v: t.parcelField },
+        { k: 'press', v: t.parcelPress },
+      ],
+    },
+    {
+      say: '',
+      name: 'mcp__dool2__browser_read',
+      input: { tabId: 1 },
+      detail: [{ k: 'page', v: t.parcelPage }],
+    },
+  ]
+}
+
+function orderSteps(): DemoStep[] {
+  const t = demoSteps
+  return [
+    {
+      say: t.order1,
+      name: 'mcp__dool2__browser_open',
+      input: { url: 'https://shop.example/search?q=apple' },
+      detail: [{ k: 'url', v: 'shop.example/search' }],
+    },
+    {
+      say: t.order2,
+      name: 'mcp__dool2__browser_click',
+      input: { tabId: 2, ref: 'e8' },
+      detail: [{ k: 'press', v: t.orderPress }],
+    },
+    {
+      say: t.order3,
+      name: 'mcp__dool2__browser_click',
+      input: { tabId: 2, ref: 'e12' },
+      detail: [{ k: 'press', v: t.orderCart }],
+    },
+  ]
+}
+
+/** Sends the steps one by one like a real turn, then returns the turn's work record */
+async function playWork(steps: DemoStep[]): Promise<WorkRecordMessage | undefined> {
+  const from = Date.now()
+  const at: number[] = []
+  for (const s of steps) {
+    await new Promise((r) => setTimeout(r, 1300))
+    at.push(Date.now())
+    if (s.say)
+      await handle({
+        kind: 'stream',
+        threadId: 'demo',
+        event: { type: 'agent', event: { type: 'text', delta: s.say } },
+      } as PcToPhone)
+    await handle({
+      kind: 'stream',
+      threadId: 'demo',
+      event: { type: 'agent', event: { type: 'tool', name: s.name, input: s.input, detail: s.detail } },
+    } as PcToPhone)
+    render()
+  }
+  await new Promise((r) => setTimeout(r, steps.length ? 1300 : 900))
+  if (!steps.length) return undefined
+  const end = Date.now()
+  const host = (u: unknown) => {
+    try {
+      return new URL(String(u)).host
+    } catch {
+      return undefined
+    }
+  }
+  let place: string | undefined
+  return {
+    kind: 'work',
+    steps: steps.map((s, i) => {
+      place = host(s.input.url) ?? place
+      const act = s.name.endsWith('open')
+        ? demoSteps.actOpen
+        : s.name.endsWith('read')
+          ? demoSteps.actRead
+          : demoSteps.actPress
+      return {
+        text: s.say || act,
+        act,
+        ...(place ? { place } : {}),
+        ms: (at[i + 1] ?? end) - (at[i] ?? from),
+        detail: s.detail,
+      }
+    }),
+    count: steps.length,
+    ms: end - from,
+    ...(place ? { host: place } : {}),
+  }
+}
+
 /** The pretend PC: answers a few kinds of message the way a real PC would */
 function reply(body: PhoneToPc) {
   const later = (f: () => void, ms = 900) => setTimeout(() => void Promise.resolve(f()).then(render), ms)
@@ -142,9 +256,13 @@ function reply(body: PhoneToPc) {
     case 'ask': {
       say('user', body.text)
       void handle(conv(true)).then(render)
-      later(async () => {
-        if (DEMO_PARCEL.test(body.text)) say('assistant', tReview.demoParcel)
-        else if (DEMO_ORDER.test(body.text)) {
+      const parcel = DEMO_PARCEL.test(body.text)
+      const order = !parcel && DEMO_ORDER.test(body.text)
+      // The real screens show work as it happens: the pretend PC sends the same step events a real one does
+      void playWork(parcel ? parcelSteps() : order ? orderSteps() : []).then(async (rec) => {
+        if (rec) say('tool', JSON.stringify(rec))
+        if (parcel) say('assistant', tReview.demoParcel)
+        else if (order) {
           say('assistant', tReview.demoOrder)
           const a = orderApproval()
           approvals.push(a)
@@ -153,8 +271,10 @@ function reply(body: PhoneToPc) {
           // Opened at once, the way tapping its notification does
           openOverlay({ kind: 'approval', id: a.id })
         } else say('assistant', tReview.demoGeneric)
+        await handle({ kind: 'stream', threadId: 'demo', event: { type: 'end' } } as PcToPhone)
         await handle(conv())
-      }, 1200)
+        render()
+      })
       return
     }
     case 'decide': {
