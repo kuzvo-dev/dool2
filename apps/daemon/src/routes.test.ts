@@ -172,7 +172,7 @@ function searchShop() {
   }
 }
 
-describe('길에 입력 칸 (ADR 0042)', { timeout: 30_000 }, () => {
+describe('길에 입력 칸 (ADR 0044)', { timeout: 30_000 }, () => {
   it('검색칸에 넣은 말은 남기지 않고 칸 이름만 남겨, 다음엔 이번 검색어로 같은 길을 간다', async () => {
     const b = searchShop()
     const tools = new BrowserTools(b as never)

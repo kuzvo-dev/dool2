@@ -1,4 +1,4 @@
-// Recipes (ADR 0042): the steps that got a request done, kept per PC so the next request like it is faster.
+// Recipes (ADR 0044): the steps that got a request done, kept per PC so the next request like it is faster.
 // A request that ends done (answered, not waiting for the person, not sent back or failed) leaves its useful steps:
 // the tools that worked, in order, with short inputs. The same steps seen twice become a recipe. When the person
 // asks something that reads like a request a recipe got done, the steps ride on the message for the AI, which judges

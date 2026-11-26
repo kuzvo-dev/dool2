@@ -1,4 +1,4 @@
-# 0042. Recipes: keep the steps that got a request done, and offer them on the next request like it
+# 0044. Recipes: keep the steps that got a request done, and offer them on the next request like it
 
 - Status: Accepted
 - Date: 2026-11-26

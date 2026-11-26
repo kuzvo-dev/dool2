@@ -59,7 +59,7 @@ export interface HarnessNumbers {
   approvals: { asked: number; askedInTasks: number; auto: number; autoHeld: number }
   handoffs: { made: number; notMade: number; used?: number }
   /**
-   * Recipes (ADR 0042): requests that ended done, split by how many times their steps had got a request done before
+   * Recipes (ADR 0044): requests that ended done, split by how many times their steps had got a request done before
    * (first = new steps, again = seen before, offered = a recipe was on the message), with time and tool calls per request
    */
   recipes: {
@@ -522,7 +522,7 @@ export function renderHarness(n: HarnessNumbers, s: HarnessStatic, o: RenderOpti
   )
 
   out.push('')
-  out.push('Recipes (requests that ended done, ADR 0042)')
+  out.push('Recipes (requests that ended done, ADR 0044)')
   const r = n.recipes
   if (r) {
     for (const [k, label] of [

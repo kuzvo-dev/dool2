@@ -264,7 +264,7 @@ export function registerLifeTools(server: McpServer, client: BrowserClient) {
     {
       title: 'Forget steps',
       description:
-        'Deletes steps Dool2 remembered for a kind of request (the [k…] lines that ride on a message, ADR 0042), when the user asks not to do it that way again or the steps are wrong.',
+        'Deletes steps Dool2 remembered for a kind of request (the [k…] lines that ride on a message, ADR 0044), when the user asks not to do it that way again or the steps are wrong.',
       inputSchema: {
         id: z.string().max(20).describe('Recipe id from the note, e.g. "k3"'),
       },

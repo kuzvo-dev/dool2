@@ -967,7 +967,7 @@ export function memoryTab(ctx: LifeCtx): HTMLElement {
   )
 }
 
-/** Steps Dool2 remembered for requests asked more than once (ADR 0042): the words, the services used, how often */
+/** Steps Dool2 remembered for requests asked more than once (ADR 0044): the words, the services used, how often */
 function recipesBlock(ctx: LifeCtx): HTMLElement[] {
   const list = ctx.life().recipes ?? []
   if (!list.length) return []
