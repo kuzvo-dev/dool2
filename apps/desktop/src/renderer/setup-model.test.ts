@@ -161,3 +161,17 @@ describe('how many things are left', () => {
     expect(checkHeadline('codex', [codexOut]).title).toBe('한 가지만 해 주세요')
   })
 })
+
+describe("this month's spend", () => {
+  it('shows on the API key row', () => {
+    const payg: AgentStatus = {
+      id: 'opencode',
+      installed: true,
+      loggedIn: true,
+      plan: 'openrouter · glm',
+      spent: { month: '2026-11', usd: 0.05 },
+    }
+    const row = checklist('payg', [payg]).find((i) => i.id === 'payg-key')
+    expect(row?.detail).toContain('이번 달 약 73원 썼어요')
+  })
+})

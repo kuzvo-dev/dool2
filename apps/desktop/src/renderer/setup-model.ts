@@ -150,7 +150,7 @@ export function checklist(
               id: 'payg-key',
               label: m.apiKey,
               ok: true,
-              detail: a.plan ? m.connectedWith(a.plan) : m.connected,
+              detail: withSpent(a.plan ? m.connectedWith(a.plan) : m.connected, a),
               // A saved key can still be changed or removed (Settings → AI)
               action: 'payg-key',
             }
@@ -196,7 +196,9 @@ export function checklist(
       id: 'payg-key',
       label: m.apiKey,
       ok: payg.loggedIn,
-      detail: payg.loggedIn ? (payg.plan ? m.connectedWith(payg.plan) : m.connected) : m.apiKeyTodo,
+      detail: payg.loggedIn
+        ? withSpent(payg.plan ? m.connectedWith(payg.plan) : m.connected, payg)
+        : m.apiKeyTodo,
       action: 'payg-key',
     })
   // Browser work runs in Chrome (ADR 0006). Chat works without it, so it does not block starting
@@ -267,6 +269,19 @@ export function priceLabel(usdPerM: number): string {
   const krw = usdPerM * KRW_PER_USD
   const m = setupModelText(lang)
   return krw < 1 ? m.underOneWon : m.won(Math.round(krw).toLocaleString('ko-KR'))
+}
+
+/** What pay-as-you-go answers cost this month, short: "about 72 won" in Korean, dollars otherwise */
+export function spentLabel(usd: number): string {
+  const m = setupModelText(lang)
+  if (lang !== 'ko') return `$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)}`
+  const krw = usd * KRW_PER_USD
+  return krw < 1 && usd > 0 ? m.underOneWon : m.aboutWon(Math.round(krw).toLocaleString('ko-KR'))
+}
+
+/** A connected line plus this month's spend, when the runner reports one */
+function withSpent(detail: string, a: AgentStatus): string {
+  return a.spent ? `${detail} · ${setupModelText(lang).spentMonth(spentLabel(a.spent.usd))}` : detail
 }
 
 /** New version state (same shape as UpdateState in apps/desktop/src/update.ts) */

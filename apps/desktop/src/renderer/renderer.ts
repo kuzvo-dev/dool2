@@ -88,6 +88,7 @@ import {
   planLabel,
   SETUP_STEPS,
   type SetupStep,
+  spentLabel,
 } from './setup-model.js'
 import {
   AWAY_MIN_MS,
@@ -513,6 +514,7 @@ async function loadAgents() {
   const { agents } = await api<{ agents: AgentStatus[] }>('/api/agents')
   const wasNoAi = noAiReady()
   state.agents = smokeNoAi ? agents.map((a) => ({ id: a.id, installed: false, loggedIn: false })) : agents
+  renderSpend()
   renderDevice()
   renderHead()
   // The empty chat says "connect an AI" while none is ready: redraw it when that changes
@@ -1025,6 +1027,18 @@ function renderHead() {
   $('head-tag').replaceChildren(A().doori, el('span', m.cls, cut(m.line, 22)))
   $('agent').setAttribute('aria-expanded', String(state.panelOpen))
   if (state.panelOpen) renderPanelTop()
+}
+
+/**
+ * Pay as you go has no usage window to fill: the strip says what this month's answers cost instead (first-run test
+ * 11-26: people asked to see what they spend)
+ */
+function renderSpend() {
+  if (state.choice !== 'payg') return
+  const spent = state.agents.find((a) => a.id === 'opencode' && a.loggedIn)?.spent
+  const box = $('usage')
+  box.hidden = !spent
+  if (spent) box.replaceChildren(el('div', 'u', el('span', '', A().spentMonth(spentLabel(spent.usd)))))
 }
 
 function renderUsage(limits: UsageLimit[]) {
@@ -1893,8 +1907,13 @@ function onAgent(ev: AgentEvent) {
     t.activity = label
   } else if (ev.type === 'tool_result') t.activity = T().tidying
   else if (ev.type === 'usage') renderUsage(ev.limits)
-  else if (ev.type === 'cost') t.usd += ev.usd
-  else return
+  else if (ev.type === 'cost') {
+    t.usd += ev.usd
+    // The month's spend on the strip moves with each answer (the daemon adds the same cost)
+    const oc = state.agents.find((a) => a.id === 'opencode')
+    if (oc?.spent) oc.spent = { ...oc.spent, usd: oc.spent.usd + ev.usd }
+    renderSpend()
+  } else return
   renderHead()
   renderNow()
   renderPanel('live')

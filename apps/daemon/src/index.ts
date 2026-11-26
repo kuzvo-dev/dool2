@@ -1252,6 +1252,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       statsOn = on
     })
   }
+  /**
+   * What pay-as-you-go answers cost this month (Korean time), from the runner's cost per answer. Kept in the settings
+   * so it survives restarts; a new month starts at zero. People asked to see what they spend (first-run test 11-26)
+   */
+  const spendMonth = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7)
+  const spendNow = (): { month: string; usd: number } | undefined => {
+    const s = store.getSettings().paygSpend as { month?: string; usd?: number } | undefined
+    const month = spendMonth()
+    return s?.month === month && typeof s.usd === 'number' ? { month, usd: s.usd } : { month, usd: 0 }
+  }
+  const addSpend = (usd: number) => {
+    const now = spendNow()
+    store.setSetting('paygSpend', { month: now?.month ?? spendMonth(), usd: (now?.usd ?? 0) + usd })
+  }
   /** A message the person sent while no AI was ready: answered as soon as one is (see talk) */
   let waitingForAi: string | undefined
   const detectAll = () =>
@@ -2794,6 +2808,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         }
         if (ev.type === 'saved' && ev.message.role === 'user' && isFinishCheckNote(ev.message.text))
           setChecking(threadId, false)
+        // Pay as you go: each answer's cost adds up per month, for "spent this month" on the screens
+        if (ev.type === 'agent' && ev.event.type === 'cost' && ev.event.usd > 0) addSpend(ev.event.usd)
         if (ev.type === 'agent' && (ev.event.type === 'error' || ev.event.type === 'limit_reached'))
           failed = true
         if (ev.type === 'agent' && ev.event.type === 'tool' && /task_(start|steer|stop)$/.test(ev.event.name))
@@ -5235,7 +5251,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
 
     if (req.method === 'GET' && a === 'agents' && !b) {
       const list = await detectAll()
-      return json(res, 200, { agents: list })
+      const spent = spendNow()
+      return json(res, 200, {
+        agents: list.map((x) => (x.id === 'opencode' && x.installed && spent ? { ...x, spent } : x)),
+      })
     }
 
     // Codex: downloaded from the official npm registry on first use and verified with a pinned SHA-512 (download.ts)
