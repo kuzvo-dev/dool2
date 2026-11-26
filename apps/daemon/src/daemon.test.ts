@@ -809,7 +809,9 @@ describe('대화 하나 (ADR 0015)', () => {
 describe('설정', () => {
   it('처음에는 기본값을 준다', async () => {
     const { api } = await boot()
-    expect(await (await api('/api/settings')).json()).toEqual({ settings: { setupDone: false, autoApprove: true } })
+    expect(await (await api('/api/settings')).json()).toEqual({
+      settings: { setupDone: false, autoApprove: true },
+    })
   })
 
   it('바꾼 항목만 저장하고, 다시 켜도 남아 있다', async () => {
