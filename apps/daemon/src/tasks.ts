@@ -81,6 +81,17 @@ export interface Task {
   draft?: string
   /** Notes from the person not yet given to the task */
   notes: TaskNote[]
+  /**
+   * The same job tried a little earlier and stopped or failed: its id, how it ended and its last answer, so this one
+   * starts from what that found instead of from scratch (family certificate 11-26: the second try redid every step
+   * and never asked the one thing the first had found missing)
+   */
+  earlier?: { id: string; status: string; answer: string }
+  /**
+   * Basic items of my info not saved yet (field keys, never values), for a browser task: identity checks and sign-ups
+   * need them, so the task asks once at the start instead of stopping halfway (Shinhan card 11-26: three tries)
+   */
+  missingInfo?: string[]
   /** Notes already in its chat as the person's own words (typed in its detail): not shown again when delivered */
   shownNotes: Set<string>
   /** Its first message (the brief) was sent */
@@ -435,6 +446,12 @@ export function taskBrief(t: Task, lang: Lang = 'ko'): string {
     list('Already known (do not ask again):', s.known),
     list('Must not happen:', s.avoid),
     list('The user also said, while the task waited to start:', t.notes.splice(0).map(noteText)),
+    t.missingInfo?.length
+      ? `My info has nothing saved yet for: ${t.missingInfo.join(', ')}. If this job will need them (an identity check, a sign-up, a booking in the user's name), ask for them first with one browser_request_profile card, before the steps that need them, and do the parts that do not need them meanwhile.`
+      : '',
+    t.earlier
+      ? `An earlier try of this job (${t.earlier.id}, ${t.earlier.status}) ended with this answer:\n---\n${t.earlier.answer}\n---\nStart from what it found: do not redo what it already learned. If it stopped on something only the user can give, ask for that first.`
+      : '',
     'Notes the user sends while you work arrive at the end of a tool result as "Message from the user". Follow them; ' +
       'where they differ from this spec, they come first.',
   ]

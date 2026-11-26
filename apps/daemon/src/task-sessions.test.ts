@@ -513,6 +513,38 @@ describe('task sessions (ADR 0038)', () => {
     expect((await state()).messages.some((x) => x.text === 'half done')).toBe(false)
   })
 
+  it('booking the same thing again after a stop starts from what the first try found (11-26)', async () => {
+    let tries = 0
+    const held = gate()
+    const task: Script = async function* (input) {
+      tries++
+      if (tries === 1) {
+        yield* say("Stopped: the site needs the father's name.")
+        return
+      }
+      await held.wait(input.signal)
+      yield* say('done')
+    }
+    const rt = new TwoSessions(conversation, task)
+    const { api, send } = await boot(rt)
+    await send('book a train')
+    await until(() => rt.seen.some((x) => rt.kind(x) === 'task'), 'first try')
+    await new Promise((x) => setTimeout(x, 100))
+    await api('/api/tasks/t1/stop', { method: 'POST' })
+    await send('book a train again')
+    await until(() => rt.seen.filter((x) => rt.kind(x) === 'task').length >= 2, 'second try')
+    const second = rt.seen.filter((x) => rt.kind(x) === 'task')[1]
+    expect(second?.text).toContain('An earlier try of this job (t1')
+    expect(second?.text).toContain("the site needs the father's name")
+    // Stop it before the test ends (the gate opens on the stop's abort)
+    await api('/api/tasks/t2/stop', { method: 'POST' })
+    const status = async () =>
+      ((await (await api('/api/tasks')).json()) as { tasks: { id: string; status: string }[] }).tasks.find(
+        (x) => x.id === 't2',
+      )?.status
+    await until(async () => (await status()) === 'stopped', 'second stopped')
+  })
+
   it("the chat's stop stops its tasks too: one conversation, one brake (11-26)", async () => {
     const held = gate()
     const task: Script = async function* (input) {
