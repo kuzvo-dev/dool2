@@ -80,7 +80,7 @@ Write this for each tool. The AI sees only the name, description, input fields, 
 
 Filling: `{{keyword}}`, only when there is a value `{{#max_price}}&toPrice={{max_price}}{{/max_price}}`, only when there is none `{{^id}}…{{/id}}` (a group can contain groups of other names), filters `|url` `|digits` `|json` `|re` `|yymmdd` (261127) `|yyyy` `|mm`·`|m` (03·3) `|dd`·`|d` (07·7) `|ms` (milliseconds of Korean midnight that day) `|mmdd` (11.27) `|dow` (금, Friday) `|kday` (오늘·내일·11.27: today, tomorrow, 11.27) `|ampm` (오후 7:30: 7:30 PM) `|dec` (subtract 1 from a number: `{{today|yyyy|dec}}` = last year). The always-present name is `today`.
 
-Every action can take an `if`: if the filled text is empty, that step is skipped. Example: `"if": "{{#item}}{{^found.0}}1{{/found.0}}{{/item}}"` = only when there is a search term and nothing was found earlier (Coupang order search looks through the last 6 months → this year → last year … and stops at the year where it finds it).
+Every action can take an `if`: if the filled text is empty, that step is skipped. With `ifMatch` (a regular expression) the step also needs the filled text to match it: `"if": "{{invoice|digits}}", "ifMatch": "^\\d{13}$"` runs only for 13-digit numbers (parcel tracking opens only the carriers whose numbers have that length). Example: `"if": "{{#item}}{{^found.0}}1{{/found.0}}{{/item}}"` = only when there is a search term and nothing was found earlier (Coupang order search looks through the last 6 months → this year → last year … and stops at the year where it finds it).
 
 ## Safety rules (checked by tests)
 

@@ -928,7 +928,7 @@ export class Connectors {
     }
     for (const [i, step] of tool.steps.entries()) {
       // if: skip this step when the filled text is empty (e.g. do not open older periods once found in an earlier one)
-      if (step.if !== undefined && !fill(step.if, scope).trim()) continue
+      if (step.if !== undefined && !stepWanted(fill(step.if, scope).trim(), step.ifMatch)) continue
       const kind = stepKind(step)
       try {
         const done = await this.step(step, {
@@ -1688,4 +1688,15 @@ function toolPrint(t: ConnectorTool): string {
     prints.set(t, v)
   }
   return v
+}
+
+/** A step's if: run when the filled text is not empty and, with ifMatch, matches it (a bad regex never matches) */
+export function stepWanted(filled: string, ifMatch?: string): boolean {
+  if (!filled) return false
+  if (ifMatch === undefined) return true
+  try {
+    return new RegExp(ifMatch).test(filled)
+  } catch {
+    return false
+  }
 }

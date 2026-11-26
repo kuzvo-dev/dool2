@@ -91,7 +91,11 @@ const Optional = { optional: z.boolean().optional() }
  * Whether to do this step: skipped if the filled text is empty. Example: "{{^found.0}}1{{/found.0}}" = only when nothing was found before
  * (used for things like not opening older periods when an earlier period had results)
  */
-const If = { if: z.string().max(400).optional() }
+const If = {
+  if: z.string().max(400).optional(),
+  /** With if: the step runs only when the filled if text matches this regex (e.g. "^\\d{13}$" for 13-digit numbers) */
+  ifMatch: z.string().max(200).optional(),
+}
 /** For a list: appends to the list collected earlier under the same name (several periods or pages as one list) */
 const Append = { append: z.boolean().optional() }
 
