@@ -140,6 +140,7 @@ import { DOORI_FOLDER, ensureLocal, FileTools, htmlText, type UserFolders } from
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { handBack, waitsForPerson } from './hand-back.js'
 import { type HandsCaller, HandsProcess } from './hands.js'
+import { HealthMonitor } from './health.js'
 import { ImageMaker } from './image-make.js'
 import { InfoRequests } from './info-requests.js'
 import { withInjectionNote } from './injection-note.js'
@@ -387,6 +388,8 @@ export interface Daemon {
   browser: BrowserBridge
   /** Approval gate (also used by the check screen) */
   approvals: Approvals
+  /** The PC is going to sleep (true) or woke up (false): the phones are told at once (health.ts) */
+  setSleeping(on: boolean): void
   close(): Promise<void>
 }
 
@@ -679,8 +682,35 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     store,
     threads,
     onHandoff: (x) => journal.write('handoff', x),
-    onRotate: (x) => journal.write('segment', x),
+    onRotate: (x) => {
+      journal.write('segment', x)
+      // The segment left behind keeps no AI program open (it waited 30 minutes idle before, user 11-26: resources)
+      setTimeout(() => void releaseIdleResidents(), 0)
+    },
   })
+  /** Closes resident AI programs no chat needs now (not the current segment, not a running task, not answering) */
+  async function releaseIdleResidents() {
+    const cur = conversation.current()?.id
+    for (const id of threads.residentIds()) {
+      if (id === cur || threads.isRunning(id)) continue
+      const t = tasks.byThread(id)
+      if (t && !tasks.ended(t)) continue
+      await threads.release(id)
+    }
+  }
+  /** How the PC is doing, for the phones (health.ts) */
+  const health = new HealthMonitor({
+    dataDir: paths.dataDir,
+    extension: () => Boolean(browser.status.connected),
+    agents: () => threads.residentIds().length,
+    send: (h, changed) => {
+      if (changed && h.issues.length)
+        journal.write('health', { issues: h.issues, lagMs: h.lagMs, load: h.load })
+      // Every half minute to phones seen lately (a heartbeat), and to all at once when something changed
+      void linkRef?.broadcast({ kind: 'health', health: h }, changed ? {} : { live: true })
+    },
+  })
+  let linkRef: { broadcast: PhoneLink['broadcast'] } | undefined
   /** Streams what happens in the conversation to the PC screen (GET /api/conversation/live) */
   const live = new EventEmitter<{ event: [ConversationLiveEvent] }>()
   // Also tells the phone the conversation state (answering, queued messages). Only when it changes
@@ -2845,6 +2875,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     let textMs: number | undefined
     let firstMs: number | undefined
     let failCode: string | undefined
+    let limitResetsAt: string | undefined
     // For the before-finishing check: calls that only looked something up, and tool calls that failed
     let lookups = 0
     let toolFails = 0
@@ -2861,7 +2892,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           if (ev.event.type === 'text') textMs ??= at
           if (ev.event.type === 'text' || ev.event.type === 'tool') firstMs ??= at
           if (ev.event.type === 'error') failCode ??= ev.event.code
-          if (ev.event.type === 'limit_reached') failCode ??= 'limit_reached'
+          if (ev.event.type === 'limit_reached') {
+            failCode ??= 'limit_reached'
+            limitResetsAt ??= ev.event.resetsAt
+          }
         }
         // A task's messages are all the daemon's notes; its request is its spec (begun when it starts, ADR 0038)
         if (ev.type === 'saved' && ev.message.role === 'user' && !readAppNote(ev.message.text) && !task) {
@@ -2963,6 +2997,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       }
     } finally {
       activeThreads.delete(threadId)
+      health.turnEnded(failCode, limitResetsAt)
       journal.write('turn', {
         where: side ? 'side' : threadId === store.getSetting('feedThread') ? 'feed' : 'main',
         // Kind of session and task, so pnpm report:harness can count per kind and per task (ADR 0038)
@@ -5980,9 +6015,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     DOOL2_SERVICE_TOOLS: serviceToolsDir,
   }
 
+  linkRef = link
+  health.start()
   return {
     url: `http://127.0.0.1:${port}`,
     events,
+    setSleeping: (on: boolean) => health.setSleeping(on),
     get busy() {
       return running > 0
     },
@@ -6003,6 +6041,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           store.setSetting('tasks', tasks.views(30))
         } catch {}
         journal.stop()
+        health.stop()
         packs?.stop()
         clearInterval(lifeTimer)
         clearInterval(keepTimer)

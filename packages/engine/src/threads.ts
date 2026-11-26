@@ -137,6 +137,11 @@ export class ThreadService {
     return this.sessions.has(threadId)
   }
 
+  /** Threads with a resident program open now (resource cleanup, the PC health count) */
+  residentIds(): string[] {
+    return [...this.sessions.keys()]
+  }
+
   /** Closes the thread's resident session (segment closed, idle, AI changed). The next message opens it again */
   async release(threadId: string) {
     const e = this.sessions.get(threadId)
