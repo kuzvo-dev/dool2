@@ -308,3 +308,12 @@ export async function approveSign(
     return undefined
   }
 }
+
+/** Phone haptics (HapticsPlugin.java); a short buzz in a browser */
+export type HapticKind = 'tick' | 'key' | 'long' | 'confirm' | 'reject'
+const Haptics = registerPlugin<{ tap(o: { kind: HapticKind }): Promise<void> }>('Haptics')
+const BUZZ: Record<HapticKind, number> = { tick: 6, key: 8, long: 10, confirm: 18, reject: 24 }
+export function haptic(kind: HapticKind) {
+  if (isNative()) void Haptics.tap({ kind }).catch(() => navigator.vibrate?.(BUZZ[kind]))
+  else navigator.vibrate?.(BUZZ[kind])
+}

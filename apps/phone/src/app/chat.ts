@@ -27,6 +27,7 @@ import { doori, h, type IconName, icon, rich } from '../dom.js'
 import { lang } from '../lang.js'
 import { gooFilter } from '../motion.js'
 import { rollNumbers } from '../motion-cards.js'
+import { haptic } from '../native.js'
 import { approvalInline, cardIdFor, connectFor } from './approval-cards.js'
 import { ask } from './ask.js'
 import {
@@ -412,7 +413,7 @@ function onLongPress(el: HTMLElement, fn: () => void) {
     x = e.clientX
     y = e.clientY
     timer = setTimeout(() => {
-      navigator.vibrate?.(10)
+      haptic('long')
       fn()
     }, 480)
   })

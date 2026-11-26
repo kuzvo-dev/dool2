@@ -3,6 +3,7 @@
 // 2) Spring + tick(): follows every frame like being pushed by hand (press and hold, etc.)
 import { lang } from './lang.js'
 import { motionText } from './locales/motion.js'
+import { haptic } from './native.js'
 
 /** Springs in use (k stiffness, c damping) */
 export const SPRING = {
@@ -219,7 +220,7 @@ export function holdButton(o: {
           finished = true
           holding = false
           btn.classList.remove('holding')
-          navigator.vibrate?.(18)
+          haptic('confirm')
           complete()
         }
       } else p.step(dt)
@@ -624,7 +625,7 @@ export function otpBoxes(o: {
         },
       )
       drawCheck(ok.querySelector('svg') as Element)
-      navigator.vibrate?.(12)
+      haptic('tick')
       o.onDone(val)
     }, 520)
   }

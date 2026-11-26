@@ -3,6 +3,7 @@
 import { lang } from './lang.js'
 import { motionText } from './locales/motion.js'
 import { reduced, SPRING, Spring, springTo, tick } from './motion.js'
+import { haptic } from './native.js'
 import { KR_AMOUNT } from './region/kr/motion-cards.js'
 
 // ── Number roll: money and percents in a new reply roll from 0 at each digit and settle on their value (reference: count-roll 320 24) ──
@@ -287,7 +288,7 @@ export function swipeDeck(items: DeckItem[], o: { onTake(text: string): void }):
     c.x.v = dir * Math.max(Math.abs(vx), 1500)
     c.x.t = dir * (innerWidth / 2 + 360)
     order = [...order.slice(1), c]
-    navigator.vibrate?.(8)
+    haptic('tick')
     if (dir > 0) o.onTake(c.it.text)
     setTimeout(() => {
       c.flying = false

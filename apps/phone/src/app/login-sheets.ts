@@ -7,6 +7,7 @@ import { h, icon, withLogo } from '../dom.js'
 import { lang } from '../lang.js'
 import { mdCred } from '../locales/main-d-cred.js'
 import { otpBoxes } from '../motion.js'
+import { haptic } from '../native.js'
 import { DIGITS_RE, ID_PASSWORD_LOGIN_RE, PAY_SECRET_RE } from '../region/kr/main-d.js'
 import { cardIdFor, hostOf } from './approval-cards.js'
 import { ask, connectInChat } from './ask.js'
@@ -553,7 +554,7 @@ function securePad(
       k.classList.add('pressed')
       setTimeout(() => k.classList.remove('pressed'), 160)
     }
-    navigator.vibrate?.(8)
+    haptic('key')
   }
   const key = (label: string | Element, on: (el: HTMLElement) => void, cls: string, aria?: string) => {
     const b = h('button', { class: `pad-key ${cls}` })

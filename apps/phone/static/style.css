@@ -28,6 +28,13 @@ body {
 button {
   text-align: inherit;
 }
+/* Long press on a message opens Dool2's own menu (save, copy, report): no web text selection bar over it */
+.bubble,
+.bubble * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 [hidden] {
   display: none !important;
 }
@@ -4333,4 +4340,12 @@ textarea.ghosting {
   padding: 4px 8px;
   font-size: 13px;
   color: var(--ink-muted);
+}
+
+/* Keyboard up: the tab bar steps aside so the input sits right on the keyboard (main.ts kb-open) */
+.kb-open .app-tabs {
+  visibility: hidden;
+}
+.kb-open .app-composer {
+  bottom: 8px;
 }
