@@ -133,3 +133,16 @@ export async function sendReport(
     return { ok: false, error: REPORT_TEXT[lang].failed((e as Error).message) }
   }
 }
+
+/**
+ * Text of an AI answer report (store AI-content policy). A marker the Dool2 team filters on, the reason and the
+ * person's note, then the answer itself (cut so the whole fits the 2,000 characters the receiver keeps)
+ */
+export function answerReportText(
+  reason: 'harmful' | 'wrong' | 'other',
+  answer: string,
+  note?: string,
+): string {
+  const head = `[AI answer report] reason: ${reason}${note ? ` · note: ${note}` : ''}`
+  return `${head}\n---\n${answer.slice(0, 1_990 - head.length)}`
+}

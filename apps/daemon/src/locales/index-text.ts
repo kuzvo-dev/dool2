@@ -182,6 +182,7 @@ export const indexText = messages({
     testPcOnly: '시험용 PC에서만 돼요',
     noRoute: '없는 주소예요',
     writeWhatHappened: '무슨 일이 있었는지 한 줄 적어 주세요',
+    answerNotFound: '신고할 답을 PC 기록에서 찾지 못했어요',
     unsupportedProvider: '지원하지 않는 AI 제공자예요',
     needApiKey: 'API 키를 넣어 주세요',
     apiKeyRejected: (company: string) =>
@@ -385,6 +386,7 @@ export const indexText = messages({
     testPcOnly: 'Only works on a test PC',
     noRoute: 'No such address',
     writeWhatHappened: 'Write one line about what happened',
+    answerNotFound: "Couldn't find that answer in the PC's record",
     unsupportedProvider: 'That AI provider is not supported',
     needApiKey: 'Enter the API key',
     apiKeyRejected: (company: string) =>

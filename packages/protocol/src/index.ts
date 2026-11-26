@@ -1239,6 +1239,11 @@ export type PhoneToPc =
    */
   | { kind: 'report'; note?: string; trail: { at: number; what: string }[]; app?: string }
   /**
+   * Report an AI answer (store AI-content policy): which answer and why. The PC looks up the answer text in its own
+   * record and sends it to the Dool2 team with the reason; the phone shows what goes before sending
+   */
+  | { kind: 'report-answer'; messageId: string; threadId?: string; reason: AnswerReportReason; note?: string }
+  /**
    * Start over (test PC only): erases the PC's conversations, memory, goals and library. The PC verifies the phone signature (resetSignText).
    * With services, it also erases the connected-service marks (vault passwords and phone pairing stay)
    */
@@ -1369,6 +1374,9 @@ export type PhoneToPc =
   /** Connect with one-tap sign-in (Kakao, Naver…). If sign-in at the provider is needed, hand over to the remote screen */
   | { kind: 'connect-social'; id: string; provider: SocialProvider }
 
+/** Why an AI answer is reported: harmful or offensive, wrong, or something else */
+export type AnswerReportReason = 'harmful' | 'wrong' | 'other'
+
 /** Security-chip approval keys (ADR 0043): 'pay' signs only after the phone lock, 'plain' signs right away */
 export type ApproveKeyName = 'pay' | 'plain'
 
@@ -1461,6 +1469,8 @@ export type PcToPhone =
     }
   /** The result of Start over */
   | { kind: 'reset-done'; ok: boolean; message: string }
+  /** Result of reporting an AI answer: id is the report number the Dool2 team got */
+  | { kind: 'answer-reported'; messageId: string; ok: boolean; id?: string; message?: string }
   /** The record of one conversation (if it answers before, before comes with it) */
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** Whether the conversation is answering, and the messages waiting in line (every time it changes) */

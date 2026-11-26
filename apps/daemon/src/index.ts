@@ -167,7 +167,7 @@ import {
   SNAPSHOT_VALUE_MASKED,
 } from './region/kr/index-matchers.js'
 import type { HtmlRenderer } from './render.js'
-import { buildReport, sendReport } from './report.js'
+import { answerReportText, buildReport, sendReport } from './report.js'
 import { capResult } from './result-cap.js'
 import { RouteBook } from './routes.js'
 import { runQuickCheck } from './routine-check.js'
@@ -2467,6 +2467,33 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         })
         for (const t of r.trail)
           journal.write('phone-trail', { t: new Date(t.at).toISOString(), what: t.what })
+      },
+      reportAnswer: async (phone, r) => {
+        const pick = (list: StoredMessage[]) =>
+          list.find((x) => x.id === r.messageId && x.role === 'assistant')
+        const found =
+          pick(conversation.history({ limit: 2_000 })) ??
+          (r.threadId && store.getThread(r.threadId) ? pick(store.listMessages(r.threadId)) : undefined)
+        if (!found) return { ok: false, message: m().answerNotFound }
+        const payload = buildReport(
+          { text: answerReportText(r.reason, found.text, r.note), includeLogs: false },
+          {
+            version: opts.appVersion ?? 'dev',
+            agents: await detectAll().catch(() => []),
+            extension: browser.status as { connected?: boolean; version?: string },
+            entries: [],
+          },
+        )
+        const sent = await sendReport(payload, fetch, undefined, userLang(readSettings()))
+        journal.write('answer-report', {
+          phone,
+          reason: r.reason,
+          ok: sent.ok,
+          ...(sent.id ? { id: sent.id } : {}),
+        })
+        return sent.ok
+          ? { ok: true, ...(sent.id ? { id: sent.id } : {}) }
+          : { ok: false, message: sent.error ?? '' }
       },
       connections: () => skills.connections(),
       conversation: ({ before, limit }) => {
