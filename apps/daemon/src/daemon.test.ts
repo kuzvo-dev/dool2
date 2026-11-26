@@ -58,6 +58,8 @@ async function boot(
     token: 't0ken',
     runtimes: { claude: rt },
     chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
+    // Tests never ask an AI company about a key
+    checkKey: async () => 'ok',
     ...more,
   })
   const api = (path: string, init: RequestInit = {}) =>
@@ -869,8 +871,23 @@ describe('Claude 로그인', () => {
 })
 
 describe('종량제 계정', () => {
+  it('a key its company rejects is not saved, and the screen says why', async () => {
+    const { api } = await boot(undefined, { checkKey: async () => 'rejected' })
+    const r = await api('/api/agents/opencode/account', {
+      method: 'PUT',
+      body: JSON.stringify({
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-5.5',
+        apiKey: 'undefined',
+      }),
+    })
+    expect(r.status).toBe(400)
+    expect(((await r.json()) as { error: string }).error).toContain('OpenRouter')
+    expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
+  })
+
   it('제공자·모델은 설정에, 키는 비밀값 보관소에 두고, 키는 끝 4자리만 보여 준다', async () => {
-    const { api } = await boot()
+    const { api } = await boot(undefined, { checkKey: async () => 'ok' })
     expect(await (await api('/api/agents/opencode/account')).json()).toEqual({ account: null })
     const cat = (await (await api('/api/agents/opencode/catalog')).json()) as { providers: { id: string }[] }
     expect(cat.providers.map((p) => p.id)).toContain('anthropic')
