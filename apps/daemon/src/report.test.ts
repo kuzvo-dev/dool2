@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { buildReport, reportEntry, sendReport } from './report.js'
+import { answerReportText, buildReport, reportEntry, sendReport } from './report.js'
 
 describe('문제 알리기 기록', () => {
   it('정해 둔 칸만 남기고 대화·파일 이름·주소·이유 글은 뺀다', () => {
@@ -65,5 +65,14 @@ describe('문제 알리기 기록', () => {
     expect(await sendReport(payload, ok, 'https://example.com/r')).toEqual({ ok: true, id: 'A1B2' })
     const bad = (async () => new Response('{}', { status: 500 })) as typeof fetch
     expect((await sendReport(payload, bad, 'https://example.com/r')).ok).toBe(false)
+  })
+})
+
+describe('AI answer report', () => {
+  it('keeps the marker, reason and note, and cuts the answer to fit', () => {
+    const t = answerReportText('harmful', '가'.repeat(5_000), '말투가 무례해요')
+    expect(t.startsWith('[AI answer report] reason: harmful · note: 말투가 무례해요\n---\n')).toBe(true)
+    expect(t.length).toBeLessThanOrEqual(2_000)
+    expect(answerReportText('other', 'short')).toBe('[AI answer report] reason: other\n---\nshort')
   })
 })

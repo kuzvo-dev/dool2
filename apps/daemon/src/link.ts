@@ -123,6 +123,11 @@ export interface LinkHost {
   smsResult?(id: string, r: { ok: boolean; message: string }): void
   /** Report a problem: saves the phone app's recent trail to the activity log */
   report?(phone: string, r: { note?: string; trail: { at: number; what: string }[]; app?: string }): void
+  /** Report an AI answer to the Dool2 team (the PC finds the answer text itself) */
+  reportAnswer?(
+    phone: string,
+    r: { messageId: string; threadId?: string; reason: 'harmful' | 'wrong' | 'other'; note?: string },
+  ): Promise<{ ok: boolean; id?: string; message?: string }>
   /** Settings > My info and payment methods (values are returned masked only) */
   profile?(
     action:
@@ -695,6 +700,21 @@ export class PhoneLink {
           ...(typeof msg.app === 'string' ? { app: msg.app.slice(0, 200) } : {}),
         })
         return
+      }
+      case 'report-answer': {
+        const messageId = String(msg.messageId ?? '').slice(0, 80)
+        const reason = msg.reason === 'harmful' || msg.reason === 'wrong' ? msg.reason : 'other'
+        if (!this.host.reportAnswer || !messageId)
+          return this.send(phone, { kind: 'answer-reported', messageId, ok: false })
+        const r = await this.host.reportAnswer(phone.name, {
+          messageId,
+          reason,
+          ...(typeof msg.threadId === 'string' && msg.threadId
+            ? { threadId: msg.threadId.slice(0, 80) }
+            : {}),
+          ...(typeof msg.note === 'string' && msg.note.trim() ? { note: msg.note.trim().slice(0, 300) } : {}),
+        })
+        return this.send(phone, { kind: 'answer-reported', messageId, ...r })
       }
       case 'vault-get':
       case 'vault-reveal':
