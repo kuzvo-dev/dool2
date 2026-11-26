@@ -61,7 +61,7 @@ export function capResult(
     if (i < 0) break
     const part = content[i] as Part
     const text = part.text ?? ''
-    const line = `\n\n(Cut here to keep the result short: ${(total - cap).toLocaleString('en-US')} more characters were not shown. ${hint})`
+    const line = `\n\n(Cut here to keep the result short: ${(total - cap).toLocaleString('en-US')} more characters were not shown. ${hint} If you answer without reading the rest, say in the answer that you saw only part of it.)`
     const keep = Math.max(0, text.length - over - line.length)
     // At a line end when there is one in the last fifth, so a line (and its ref) is not cut in the middle
     const end = text.lastIndexOf('\n', keep)

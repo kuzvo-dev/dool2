@@ -4194,6 +4194,38 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return `Task ${t.id} continues with this note. Tell the user in one short sentence.`
   }
   /** A new task from a spec: its own chat, its card in the conversation segment it came from, then it starts or waits */
+  /**
+   * The same job tried within the last two hours: a task whose title starts with the same word (the thing it is about:
+   * "Shinhan card …", "family certificate …") that stopped or failed, or ended less than 30 minutes ago, with what it answered
+   * last. A new task for it starts from there (Task.earlier). Shinhan card 11-26: four tasks in a row with slightly
+   * different titles each began from scratch
+   */
+  /** My info a browser task most often needs on the way (identity checks, sign-ups) */
+  const BASIC_INFO: readonly string[] = ['name', 'birth', 'phone', 'carrier']
+  function earlierTry(title: string, except: string): Task['earlier'] {
+    const head = (x: string) =>
+      x
+        .trim()
+        .split(/[\s·,/]+/)[0]
+        ?.replace(/[^\p{L}\p{N}]/gu, '') ?? ''
+    const key = head(title)
+    if (key.length < 2) return undefined
+    const now = Date.now()
+    const prev = tasks
+      .all()
+      .filter((x) => {
+        if (x.id === except || head(x.spec.title) !== key || !x.endedAt) return false
+        if (x.status === 'stopped' || x.status === 'failed') return now - x.endedAt < 2 * 3600_000
+        return x.status === 'done' && now - x.endedAt < 30 * 60_000
+      })
+      .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0]
+    if (!prev) return undefined
+    const answer = lastAnswerOf(prev.threadId)
+      .find((x) => x.role === 'assistant')
+      ?.text?.trim()
+    if (!answer) return undefined
+    return { id: prev.id, status: prev.status, answer: answer.slice(0, 1500) }
+  }
   async function openTask(
     parentId: string,
     spec: TaskSpec,
@@ -4202,6 +4234,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const agent = store.getThread(parentId)?.agent ?? (await pickAgent(undefined))
     const thread = store.createTaskThread(agent, spec.title)
     const t = tasks.create(thread.id, parentId, spec)
+    const before = earlierTry(spec.title, t.id)
+    if (before) t.earlier = before
+    if (spec.browser && !spec.lookup) {
+      const { missing } = await profile.masked().catch(() => ({ missing: [] as string[] }))
+      const basics = missing.filter((f) => BASIC_INFO.includes(f))
+      if (basics.length) t.missingInfo = basics
+    }
     const rec: TaskRecordMessage = { kind: 'task', id: t.id, title: spec.title }
     const saved = store.addMessage(parentId, 'tool', JSON.stringify(rec))
     t.recordId = saved.id
@@ -4296,7 +4335,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         quickPointed.add(quick.tool)
         quickPointed.add(`title:${spec.title}`)
         return toolText(
-          `Not started: ${quick.card.name} has a tool for this that answers in seconds without the browser: service_call({tool: "${quick.tool}", input: {…}}) ("${quick.title}"; service_find "${quick.tool}" shows its inputs). Use it and answer from its result. Start a task only for what it cannot do (call task_start again).`,
+          `Not started: ${quick.card.name} has a tool for this that answers in seconds without the browser: service_call({tool: "${quick.tool}", input: {…}}) ("${quick.title}"; service_find "${quick.tool}" shows its inputs). Use it and answer from its result. Start a task only for what it cannot do (call task_start again). If the user named where to look or how to do it (a site, an app: "on Naver"), that comes first: call task_start again as they asked.`,
         )
       }
       const t = await openTask(caller, spec)
@@ -4308,7 +4347,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
             who: 'dool2',
             after:
               'its result appears in this conversation by itself; messages meanwhile can steer it (task_steer) or stop it',
-            tell: 'that you are on it',
+            tell: 'that you are on it, in one sentence. Do not guess what the user will have to do (a verification, an approval, a code): the task finds that out and asks on the phone when it comes',
           }),
         )
       return toolText(
