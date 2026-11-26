@@ -160,12 +160,16 @@ import {
 } from './motion.js'
 import { rollNumbers, swipeDeck } from './motion-cards.js'
 import {
+  type AppPushStatus,
+  appPushRegister,
+  appPushStatus,
   confirmDevice,
   defaultRelay,
   inviteFrom,
   isNative,
   launchInvite,
   listenNative,
+  onPushOpen,
   type SmsPerson,
   saveFile,
   scanQr,
@@ -2161,9 +2165,38 @@ function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
   return x.length === b.length && x.every((v, i) => v === b[i])
 }
 
-/** If notifications are allowed, subscribe to push with this PC's key and tell the PC */
+/** Store app notifications (ADR 0042): what the phone allows, and the address last sent to the PC */
+let appPush: AppPushStatus | undefined
 let syncing = false
+const APP_PUSH_SENT = 'dool2-app-push'
+
+/**
+ * Store app: get the FCM token and this phone's notification key and tell the PC when it changed or the PC lost it.
+ * ask only when the user pressed [Turn on] (shows the permission dialog)
+ */
+async function syncAppPush(ask = false) {
+  if (syncing || !st.saved?.paired || !st.online) return
+  syncing = true
+  try {
+    appPush = await appPushStatus()
+    if (!appPush.available || (!appPush.allowed && !ask)) return
+    const reg = await appPushRegister(ask)
+    appPush = await appPushStatus()
+    if (!reg) return
+    const sig = `${reg.token}|${reg.key}`
+    if (localStorage.getItem(APP_PUSH_SENT) !== sig || !st.pc?.appPush) {
+      await send({ kind: 'app-push', reg })
+      localStorage.setItem(APP_PUSH_SENT, sig)
+    }
+  } finally {
+    syncing = false
+    if (ask) render()
+  }
+}
+
+/** If notifications are allowed, subscribe to push with this PC's key and tell the PC */
 async function syncPush() {
+  if (isNative()) return syncAppPush()
   const vapid = st.pc?.vapid
   if (syncing || !vapid || !pushReady() || Notification.permission !== 'granted') return
   syncing = true
@@ -5541,23 +5574,45 @@ function settingsView() {
       () => void setAutoApprove(!auto),
     ),
   )
-  const perm = 'Notification' in window ? Notification.permission : 'denied'
-  sec(
-    mSet.notifications,
-    row(
-      'bell',
-      mSet.phoneNotif,
-      perm === 'granted' ? mSet.notifOn : perm === 'denied' ? mSet.notifBlocked : mSet.notifOff,
-      toggle(perm === 'granted'),
-      perm === 'default'
-        ? () =>
-            void Notification.requestPermission().then(() => {
-              void syncPush()
-              render()
-            })
-        : undefined,
-    ),
-  )
+  if (isNative()) {
+    // Store app (ADR 0042): the phone's own notification permission and FCM
+    const a = appPush
+    const on = Boolean(a?.allowed && st.pc?.appPush)
+    sec(
+      mSet.notifications,
+      row(
+        'bell',
+        mSet.phoneNotif,
+        !a?.available
+          ? mSet.notifUnavailable
+          : on
+            ? mSet.notifOn
+            : a.denied
+              ? mSet.notifBlockedApp
+              : mSet.notifOff,
+        toggle(on),
+        a?.available && !on && !a.denied ? () => void syncAppPush(true) : undefined,
+      ),
+    )
+  } else {
+    const perm = 'Notification' in window ? Notification.permission : 'denied'
+    sec(
+      mSet.notifications,
+      row(
+        'bell',
+        mSet.phoneNotif,
+        perm === 'granted' ? mSet.notifOn : perm === 'denied' ? mSet.notifBlocked : mSet.notifOff,
+        toggle(perm === 'granted'),
+        perm === 'default'
+          ? () =>
+              void Notification.requestPermission().then(() => {
+                void syncPush()
+                render()
+              })
+          : undefined,
+      ),
+    )
+  }
   const theme = document.documentElement.dataset.theme ?? 'auto'
   const seg = h('div', { class: 'seg' })
   for (const [id, label] of [
@@ -7856,6 +7911,10 @@ async function main() {
   // The app doesn't use a service worker (the app code is already inside the app)
   if (!isNative() && 'serviceWorker' in navigator)
     void navigator.serviceWorker.register('sw.js').catch(() => {})
+  // A tapped notification (ADR 0042) goes where the PC said, the same way as a web push notification
+  onPushOpen((url) => {
+    location.hash = url
+  })
   listenNative({
     open: (url) => {
       const invite = inviteFrom(url)

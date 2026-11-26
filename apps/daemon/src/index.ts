@@ -102,6 +102,7 @@ import {
 } from '@dool2/protocol/rich'
 import { Store } from '@dool2/store'
 import { aiAccountText } from './ai-account.js'
+import type { sendAppPush } from './apppush.js'
 import type { Approvals } from './approvals.js'
 import { AutoApprover, autoCovers } from './auto-approve.js'
 import {
@@ -328,6 +329,8 @@ export interface DaemonOptions {
   appVersion?: string
   /** For tests: sends web push */
   push?: typeof sendPush
+  /** For tests: sends store app notifications (ADR 0042) */
+  appPush?: typeof sendAppPush
   /** For tests: swaps out the agents */
   runtimes?: Partial<Record<AgentId, AgentRuntime>>
   /** The judge AI for the before-finishing check (ADR 0027). Off by default since 2026-11-24; only tests pass one */
@@ -2602,6 +2605,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
         events.emit('settings', readSettings())
       },
       ...(opts.push ? { push: opts.push } : {}),
+      ...(opts.appPush ? { appPush: opts.appPush } : {}),
       lang,
     },
   )
