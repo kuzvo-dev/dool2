@@ -12,9 +12,12 @@ import type { HeldWhy, ReviewResult } from './auto-review.js'
 import type { ToolResult } from './browser-tools.js'
 import { handBack } from './hand-back.js'
 
-/** Money leaves the user's account: always asks, whatever the setting */
+/**
+ * Money leaves the user's account: always asks, whatever the setting. An amount counts only with a number above zero:
+ * "free" or "0 won" written in the amount is not a payment (a free certificate came as a card, 11-27)
+ */
 export function isPayment(a: Pick<ApprovalView, 'kind' | 'amount'>): boolean {
-  return a.kind === 'money' || Boolean(a.amount?.trim())
+  return a.kind === 'money' || /[1-9]/.test(a.amount ?? '')
 }
 
 const isSms = (url: string) => url.startsWith('sms:')
