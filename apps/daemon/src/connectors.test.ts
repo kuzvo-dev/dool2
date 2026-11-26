@@ -357,7 +357,7 @@ describe('서비스 도구 실행기', () => {
       '- demo_eats_search [lookup · no login] 식당 찾기 — input: keyword*(지역이나 가게 이름), date(날짜 YYYY-MM-DD)',
     )
     expect(r).toContain(
-      "After connecting: 예약. When you reach that step, call connect_ask('demo-eats'): connecting on that card is the person's step",
+      "After connecting: 예약. When you reach that step, call connect_ask('demo-eats') with afterwards = what the user asked (also when its card is already open), so it carries on by itself once connected: connecting on that card is the person's step",
     )
   })
 
