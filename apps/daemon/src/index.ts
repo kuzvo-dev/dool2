@@ -3692,6 +3692,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       preparing = false
     }
     if (o.viaPhone) fromPhone.add(sessionId)
+    // A new message from the person: the quick-tool pointer may point again
+    if (!readAppNote(text)) quickPointed.clear()
     // Proactive checks did not call the AI and were left only as cards in the chat. If the user continues about it, add it to this turn so it is understood
     const told = unseenTells.splice(0)
     const said = unseenSaid.splice(0)
@@ -3735,6 +3737,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     return { queued: false }
   }
   /** Task titles already pointed to a quick service tool (the second try starts the task) */
+  /** Tools (and task titles) the quick-tool pointer pointed to since the person's last message, so it points once */
   const quickPointed = new Set<string>()
   /** Proactive checks left as cards in the chat that the AI does not know yet */
   const unseenTells: TellRecordMessage[] = []
@@ -4064,8 +4067,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       const quick =
         (await connectors.quickLookup(spec.title).catch(() => undefined)) ??
         (await connectors.quickLookup(spec.goal).catch(() => undefined))
-      if (quick && !quickPointed.has(spec.title)) {
-        quickPointed.add(spec.title)
+      // Once per tool for each request of the person: tasks with new titles were pointed to the same flight tool again
+      // and again, and the conversation went round task_start → service_call five times (117 s, test PC loop 11-26)
+      if (quick && !quickPointed.has(quick.tool) && !quickPointed.has(`title:${spec.title}`)) {
+        quickPointed.add(quick.tool)
+        quickPointed.add(`title:${spec.title}`)
         return toolText(
           `Not started: ${quick.card.name} has a tool for this that answers in seconds without the browser: service_call({tool: "${quick.tool}", input: {…}}) ("${quick.title}"; service_find "${quick.tool}" shows its inputs). Use it and answer from its result. Start a task only for what it cannot do (call task_start again).`,
         )
