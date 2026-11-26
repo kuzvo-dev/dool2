@@ -715,7 +715,7 @@ export class Connectors {
     const locked = tools.filter((t) => t.login && !connected)
     if (locked.length)
       lines.push(
-        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, call connect_ask('${card.id}'): connecting on that card is the person's step, and its result ends the turn. Looking things up first with tools that need no login is fine.`,
+        `After connecting: ${locked.map((t) => t.title).join(', ')}. When you reach that step, call connect_ask('${card.id}') with afterwards = what the user asked (also when its card is already open), so it carries on by itself once connected: connecting on that card is the person's step, and its result ends the turn. Looking things up first with tools that need no login is fine.`,
       )
     lines.push(
       connected

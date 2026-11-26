@@ -1706,7 +1706,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       followUp(where.task.threadId, appNote(forAI('', ai)))
     } else if (where.kind === 'new-task' && cur) {
       postNote(m().takeoverShown(card.name))
-      void openTask(cur, signInSpec(card.name, ai, lang())).catch(() => {})
+      void openTask(cur, signInSpec(card.name, ai, lang()))
+        .then((t) => signInTasks.set(t.id, card.id))
+        .catch(() => {})
     } else void talk(appNote(forAI(m().takeoverShown(card.name), ai))).catch(() => {})
     return true
   }
@@ -1760,6 +1762,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   const connectThen = new Map<string, string>()
   /** When a tool last stopped because this service needed a sign-in (a task is waiting on the connection) */
   const loginNeededAt = new Map<string, number>()
+  /** Sign-in tasks a stopped automatic sign-in handed over (task id → card id) */
+  const signInTasks = new Map<string, string>()
   /** The chat that showed each connect card: a task continues there when the connection ends (ADR 0038) */
   const connectThread = new Map<string, string>()
   /** Leaves only a note line in the chat without calling the AI (shown right away on the phone and PC) */
@@ -1933,9 +1937,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     )
     const then = connectThen.get(card.id)
     connectThen.delete(card.id)
-    const stopped =
-      Boolean(then) ||
-      (asked !== undefined && needed > 0 && needed <= asked + 60_000 && asked - needed < 15 * 60_000)
+    // A tool stopped for this sign-in shortly before the card was asked for, or while the card waited (11-26: "show my
+    // Naver Pay orders" asked while the Naver card was open was not carried on once it connected)
+    const stopped = Boolean(then) || (asked !== undefined && needed > 0 && needed > asked - 15 * 60_000)
     loginNeededAt.delete(card.id)
     if (asked && !stopped && Date.now() - asked < 30 * 60_000) {
       const who = connectAccounts()[card.id]
@@ -3815,8 +3819,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   function finishTask(t: Task, status: 'done' | 'failed', fromDraft = false) {
     const cur = conversation.current()?.id ?? t.parentId
     const out = fromDraft || !t.turnOut.length ? lastAnswerOf(t.threadId) : t.turnOut
+    // A sign-in task that made the connection: the chat already says "connected" (connectDone), so its own report
+    // ("signed in; the main page shows mail 99+, notes 72 ...") is not a second reply (test PC loop 11-26)
+    const signedInFor = signInTasks.get(t.id)
+    signInTasks.delete(t.id)
+    const quiet =
+      status === 'done' && signedInFor !== undefined && Boolean(readSettings().connections?.[signedInFor])
     let answer = ''
-    for (const x of out) {
+    for (const x of quiet ? [] : out) {
       if (x.role === 'tool' && x.text.includes('"kind":"work"')) continue
       // What waits for a person, and what the finish check left with its [Continue] (that button continues the
       // conversation, not the task), stay in the task's own chat
@@ -3824,7 +3834,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
       postSaved(cur, store.addMessage(cur, x.role, x.text))
       if (!answer && (x.role === 'assistant' || x.role === 'system')) answer = x.text
     }
-    if (!answer) {
+    if (quiet) answer = out.find((x) => x.role === 'assistant')?.text ?? ''
+    else if (!answer) {
       answer = TASKS_TEXT(lang()).noAnswer
       postSaved(cur, store.addMessage(cur, 'assistant', answer))
     }
@@ -4710,8 +4721,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           return text(
             `${card.name} is a phone permission. Tell the user to turn it on from the Connect screen on the phone.`,
           )
-        if (connecting.has(card.id))
-          return text(`Signing in to ${card.name} right now. A note will arrive in the chat when it is done.`)
+        // What follows is kept even while the sign-in is under way, so a request asked meanwhile is carried on
+        const thenNow = typeof args.afterwards === 'string' ? args.afterwards.trim().slice(0, 200) : ''
+        if (connecting.has(card.id)) {
+          if (thenNow) connectThen.set(card.id, thenNow)
+          return text(
+            `Signing in to ${card.name} right now. A note will arrive in the chat when it is done${thenNow ? `, and then you carry on: ${thenNow}` : ''}.`,
+          )
+        }
         // If the same account (Naver mail → Naver) is connected, do not show a card
         const parent = card.sameLoginAs ? items.find((x) => x.card.id === card.sameLoginAs) : undefined
         if (parent?.connectedAt)
