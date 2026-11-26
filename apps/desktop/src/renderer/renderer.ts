@@ -2466,7 +2466,8 @@ function nowParts(steps: WStep[]): (HTMLElement | string)[] {
   const place = g && (g.kind === 'web' || g.kind === 'service') ? g.title : ''
   const specific = last.detail?.some((d) => d.k === 'press' || d.k === 'field')
   const what = specific ? actText(last, true) : last.text && last.text !== last.act ? last.text : last.act
-  return place ? [el('b', '', place), ` · ${what}`] : [what]
+  // A step that already names its place goes alone ("Weather · checking the weather" said it twice)
+  return place && !what.includes(place) ? [el('b', '', place), ` · ${what}`] : [what]
 }
 
 const DETAIL_LABEL: Record<StepDetail['k'], () => string> = {
