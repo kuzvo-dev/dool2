@@ -87,3 +87,15 @@ site and stop at the first typed word. Nothing kept how a whole request got done
 - Revisit when the work log shows how often recipes are offered and followed and how much time requests with one take.
   Next steps: a screen to see and delete recipes, inputs as slots in remembered routes (search words), and running a
   recipe's lookup steps without the AI.
+
+## Follow-up (2026-11-26): typing in remembered routes
+
+Remembered routes (ADR 0034) stopped at the first typed word, so a search walk (home → type in the search box + Enter
+→ a sort or filter) was never kept. Now typing into a named text or search field (not a password field, up to 100
+characters) joins the walk as a step that holds the field's name and whether Enter was pressed, never what was typed.
+The page title a route is named after has the typed words cut out. `browser_route` takes this request's words in
+`inputs`, in the order of the route's fields, and refuses to start without them; on the walk it finds each field by its
+name, types, and presses Enter where the walk did. A route still needs at least one click by name (typing alone is a
+search address), and routes that type are not turned into connector drafts yet. The page read lists such a route with
+its inputs: `[r3] … 검색: type in '상품 검색' + Enter → '낮은 가격순' (inputs: '상품 검색')`.
+

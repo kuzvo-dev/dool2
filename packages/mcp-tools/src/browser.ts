@@ -184,13 +184,20 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
   tool(
     'route',
     'Take a remembered route',
-    "Goes to a page by a route Dool2 took on this site before (opening the site lists them as [r3]): Dool2 presses the same links itself at a person's pace and returns the last page. If a link is gone it stops there; carry on yourself. Gated as in browser_click.",
+    "Goes to a page by a route Dool2 took on this site before (opening the site lists them as [r3]): Dool2 presses the same links and types into the same fields itself at a person's pace and returns the last page. A route that types (it lists its inputs, e.g. a search box) takes this request's words in inputs. If a link or field is gone it stops there; carry on yourself. Gated as in browser_click.",
     {
       tabId,
       route: z
         .string()
         .regex(/^r\d+$/)
         .describe('E.g. r3'),
+      inputs: z
+        .array(z.string().max(100))
+        .max(4)
+        .optional()
+        .describe(
+          'What to type this time, in the order of the route\'s inputs (e.g. ["wool coat"] for a search box)',
+        ),
     },
     false,
   )
