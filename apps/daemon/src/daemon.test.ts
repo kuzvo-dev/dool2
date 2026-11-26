@@ -58,8 +58,9 @@ async function boot(
     token: 't0ken',
     runtimes: { claude: rt },
     chrome: { detect: async () => ({ installed: true, version: '157.0.8103.79' }) },
-    // Tests never ask an AI company about a key
+    // Tests never ask an AI company about a key, or OpenRouter for prices
     checkKey: async () => 'ok',
+    paygPrices: async () => new Map(),
     ...more,
   })
   const api = (path: string, init: RequestInit = {}) =>

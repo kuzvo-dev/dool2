@@ -10,6 +10,7 @@ import type {
   LinkStatus,
   PairStatus,
   PaygAccount,
+  PaygModel,
   PaygProvider,
   ScreenControlStatus,
   Settings,
@@ -29,6 +30,7 @@ import {
   choices,
   noSubscriptionFound,
   pickDefault,
+  priceLabel,
   SETUP_STEPS,
   type SetupStep,
   type UpdateInfo,
@@ -191,6 +193,8 @@ export function runSetup(opts: SetupOptions): {
     account?: PaygAccount | null
     /** Asking "remove the saved key?" */
     removing?: boolean
+    /** Words typed to narrow a long model list */
+    find?: string
   } = { open: false, providers: [], provider: 'anthropic', model: '', key: '', saving: false }
   // Choices on the "keep Dool2 running" step (both on by default, the user can turn them off)
   let awakeWorking = current.keepAwake ? current.keepAwake !== 'off' : true
@@ -1682,15 +1686,43 @@ export function runSetup(opts: SetupOptions): {
         render()
       }
       const prov = payg.providers.find((p) => p.id === payg.provider)
+      // Each model with its price per million tokens, in won for Korean (people paying per use pick by price)
+      const money = (usd: number) => (usd === 0 ? m.modelFree : priceLabel(usd))
+      const optionText = (x: PaygModel) =>
+        [
+          x.recommended && !x.label.includes(m.modelPick) ? `${x.label} · ${m.modelPick}` : x.label,
+          x.inPerM !== undefined && x.outPerM !== undefined
+            ? m.modelPrice(money(x.inPerM), money(x.outPerM))
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' — ')
+      const find = (payg.find ?? '').trim().toLowerCase()
+      const models = (prov?.models ?? []).filter(
+        (x) => !find || x.id === payg.model || `${x.label} ${x.id}`.toLowerCase().includes(find),
+      )
       const modelSel = el('select')
-      for (const m of prov?.models ?? []) {
-        const o = el('option', undefined, m.label)
-        o.value = m.id
-        o.selected = m.id === payg.model
+      for (const x of models) {
+        const o = el('option', undefined, optionText(x))
+        o.value = x.id
+        o.selected = x.id === payg.model
         modelSel.append(o)
       }
       modelSel.onchange = () => {
         payg.model = modelSel.value
+      }
+      const findBox = el('input')
+      findBox.type = 'search'
+      findBox.placeholder = m.modelFind
+      findBox.value = payg.find ?? ''
+      findBox.oninput = () => {
+        payg.find = findBox.value
+        const first = (prov?.models ?? []).find((x) =>
+          `${x.label} ${x.id}`.toLowerCase().includes(findBox.value.trim().toLowerCase()),
+        )
+        if (first && findBox.value.trim()) payg.model = first.id
+        render()
+        document.querySelector<HTMLInputElement>('.key-form input[type=search]')?.focus()
       }
       const key = el('input')
       key.id = 'payg-key'
@@ -1709,7 +1741,14 @@ export function runSetup(opts: SetupOptions): {
         l.append(input)
         return l
       }
-      form.append(label(m.aiCompany, provSel), label(m.model, modelSel), label(m.apiKey, key))
+      const long = (prov?.models.length ?? 0) > 12
+      form.append(
+        label(m.aiCompany, provSel),
+        ...(long ? [findBox] : []),
+        label(m.model, modelSel),
+        el('p', 'setup-hint', m.modelPriceHint),
+        label(m.apiKey, key),
+      )
       form.onsubmit = (e) => {
         e.preventDefault()
         void savePayg()
