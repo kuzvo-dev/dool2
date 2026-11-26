@@ -1839,6 +1839,7 @@ function onLive(ev: ConversationLiveEvent) {
     for (const c of document.querySelectorAll<HTMLElement>(`.task-card[data-task="${ev.task.id}"]`))
       c.replaceWith(taskCard({ kind: 'task', id: ev.task.id, title: ev.task.title }))
     if (state.workSrc?.kind === 'task' && state.workSrc.id === ev.task.id) renderPanel('live')
+    renderSend()
     return
   }
   const e = ev.event
@@ -2107,6 +2108,16 @@ async function send(text: string) {
   }
 }
 
+/**
+ * The chat's own turn or a task at work: stop takes both (tasks show as one conversation, and with auto-approve on by
+ * default stop is the one brake). A task waiting for the person does not turn the button into stop
+ */
+function mainWorking(): boolean {
+  return (
+    state.busy || [...state.tasks.values()].some((t) => ['working', 'checking', 'waiting'].includes(t.status))
+  )
+}
+
 /** Send button: sends if there is text, stops if empty while working */
 function renderSend() {
   const input = $<HTMLTextAreaElement>('input')
@@ -2114,7 +2125,7 @@ function renderSend() {
   const hasText = input.value.trim().length > 0 || photo !== undefined
   // Side chats take one message at a time, no queue (only stop while answering)
   const inSide = state.view === 'thread'
-  const busy = inSide ? side?.busy === true : state.busy
+  const busy = inSide ? side?.busy === true : mainWorking()
   const stop = busy && (!hasText || inSide)
   btn.className = `send-btn${stop ? ' stop' : hasText ? ' ready' : ''}`
   btn.replaceChildren(icon(stop ? 'stop' : 'send', 'i md'))
@@ -3088,7 +3099,7 @@ async function main() {
       return
     }
     if (!text.trim() && !photo) {
-      if (state.busy) void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {})
+      if (mainWorking()) void api('/api/conversation/cancel', { method: 'POST' }).catch(() => {})
       return
     }
     input.value = ''

@@ -1751,13 +1751,20 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const resume = connectAsked.has(card.id)
     // Only the first two sentences show on screen (sentences with tool names go to the AI only)
     const why = joinKoreanSentences(r.message.split(/[.!?]/)[0] ?? '').trim()
+    // "Wrong ID or password": the vault holds the wrong one, so typing it again only counts toward the site's lock
+    // (Naver 11-26: two more tries with the same password, then the card). Look once; if the screen says the same, ask
+    const wrong = r.reason === 'wrong'
+    const note = wrong ? m().takeoverWrong(card.name) : m().takeoverShown(card.name)
     const ai =
       `Automatic sign-in to ${card.name} stopped partway. Continue the sign-in yourself. ` +
       `Read tab ${r.tabId} with browser_read (the automatic sign-in's verdict: ${why}. That verdict comes from rules and may be wrong, so look at the screen and decide). ` +
       `The ID and password are in the vault: enter them only with browser_login and press the sign-in button with browser_click. ` +
       `If the screen asks you to link a quick sign-in to an existing account, press the link button (this is not a new sign-up). ` +
       `Anything that needs the person goes to the phone as a card only: robot-check pictures with browser_request_tap, text captchas and verification codes with browser_request_code, authenticator-app approval with browser_wait_auth, identity fields with browser_fill_profile, and choices the user must make, such as signing up, with browser_request_approval. Never hand over the PC screen or tell the user to do it themselves. ` +
-      `Do not ask the user for the password again. Once signed in, leave the tab open but do not mention the tab. ` +
+      (wrong
+        ? `The automatic sign-in reported a wrong ID or password. If the screen says so too, do not enter the vault password again (more wrong tries can lock the account): call browser_request_login once so the user can enter the right one on the phone, and say in one sentence that the saved password did not work. If the screen says something else, continue as above. `
+        : 'Do not ask the user for the password again. ') +
+      `Once signed in, leave the tab open but do not mention the tab. ` +
       (resume
         ? `If a task stopped because ${card.name} was needed, finish it after signing in (mention the connection in one line).`
         : 'Report only the result, in one sentence: it is connected.')
@@ -1767,14 +1774,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     const where = takeoverTarget(tasks, connectThread.get(card.id), cur ? sessionOf(cur) : undefined)
     journal.write('connect-takeover-to', { id: card.id, to: where.kind })
     if (where.kind === 'task') {
-      postNote(m().takeoverShown(card.name))
+      postNote(note)
       followUp(where.task.threadId, appNote(forAI('', ai)))
     } else if (where.kind === 'new-task' && cur) {
-      postNote(m().takeoverShown(card.name))
+      postNote(note)
       void openTask(cur, signInSpec(card.name, ai, lang()))
         .then((t) => signInTasks.set(t.id, card.id))
         .catch(() => {})
-    } else void talk(appNote(forAI(m().takeoverShown(card.name), ai))).catch(() => {})
+    } else void talk(appNote(forAI(note, ai))).catch(() => {})
     return true
   }
   /**
@@ -2730,9 +2737,15 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
     authWatches.delete(threadId)
     threads.cancel(threadId)
   }
+  /**
+   * [Stop] in the chat stops everything Dool2 is doing for the person: the chat's own turn and every task (they show
+   * as one conversation, ADR 0038), with their pending approvals and sign-in cards. With auto-approve on by default,
+   * stop is the one brake, so it must not leave a task clicking on in the background (user decision 11-26)
+   */
   function stopConversation() {
     const cur = conversation.current()?.id
     if (cur) stopThread(cur)
+    for (const t of tasks.all()) if (!tasks.ended(t)) stopTask(t, 'person')
   }
   /**
    * "Take it as is" (ADR 0027): the draft being checked or continued becomes the result. Judging stops, no further
