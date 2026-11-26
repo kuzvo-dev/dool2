@@ -47,6 +47,9 @@ export const chatText = messages({
     pcSilentTitle: (pc: string) => `${pc}가 답하지 않아요`,
     pcSilentBody:
       'PC가 켜져 있고 두리가 실행 중인지 확인해 주세요. PC에서 이 폰 연결을 지웠다면 다시 연결해야 해요.',
+    silentWhySleeping: 'PC가 잠자기에 들어가서 답이 없어요. PC를 깨우면 하던 일을 이어서 해요.',
+    silentWhySlow: 'PC에서 두리가 한동안 멈춰 있었어요. 조금 기다려도 그대로면 PC에서 두리를 다시 켜 주세요.',
+    silentWhyBusy: 'PC가 다른 프로그램 때문에 많이 바빠요. 무거운 프로그램을 끄면 빨라져요.',
     retry: '다시 시도',
     reconnect: '다시 연결하기',
     hello: (pc: string) => `안녕하세요, 두리예요. ${pc}에서 일해요.`,
@@ -108,6 +111,10 @@ export const chatText = messages({
     pcSilentTitle: (pc: string) => `${pc} isn't answering`,
     pcSilentBody:
       'Check that your PC is on and Dool2 is running. If you removed this phone on the PC, connect again.',
+    silentWhySleeping:
+      'Your PC went to sleep, so it cannot answer. Wake it and Dool2 picks up where it left off.',
+    silentWhySlow: 'Dool2 stalled on the PC for a while. If it stays like this, restart Dool2 on the PC.',
+    silentWhyBusy: 'Your PC is very busy with other programs. Closing heavy ones speeds it up.',
     retry: 'Try again',
     reconnect: 'Connect again',
     hello: (pc: string) => `Hi, I'm Dool2. I work on ${pc}.`,

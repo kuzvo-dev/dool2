@@ -170,7 +170,8 @@ type Item = { key: string; sig: string; make: () => HTMLElement }
 
 function chatItems(): Item[] {
   const items: Item[] = []
-  if (st.pcSilent) items.push({ key: 'silent', sig: st.saved?.pcName ?? '', make: silentCard })
+  if (st.pcSilent)
+    items.push({ key: 'silent', sig: `${st.saved?.pcName ?? ''}:${silentWhy() ?? ''}`, make: silentCard })
   const first = st.conv[0]
   if (st.hasMore && first)
     items.push({
@@ -580,6 +581,14 @@ export function syncChat() {
   for (const [k, el] of have) if (!keep.has(k)) el.remove()
 }
 
+/** Why the PC went quiet, from the last health it sent (sleep, a stall, a busy PC), if it said */
+function silentWhy(): string | undefined {
+  const issues = st.health?.issues ?? []
+  const why = (['sleeping', 'slow', 'busy'] as const).find((x) => issues.includes(x))
+  if (!why) return undefined
+  return { sleeping: tChat.silentWhySleeping, slow: tChat.silentWhySlow, busy: tChat.silentWhyBusy }[why]
+}
+
 /** When the PC is not answering: the reason and what to do, instead of a blank screen */
 function silentCard() {
   const pc = st.saved?.pcName ?? 'PC'
@@ -589,7 +598,7 @@ function silentCard() {
     h('div', { class: 'card-label' }, doori('sleeping', 22), tChat.pcSilentTitle(pc)),
     h('p', {
       class: 'card-text',
-      text: tChat.pcSilentBody,
+      text: silentWhy() ?? tChat.pcSilentBody,
     }),
     h(
       'div',

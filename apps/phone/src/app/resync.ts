@@ -35,6 +35,8 @@ export function startResync() {
       return
     }
     checkAway()
+    // The PC sends its health only to phones seen lately: give it a fresh half minute before calling it silent
+    if (st.healthAt !== undefined) st.healthAt = Date.now()
     if (st.client && !st.online) connect()
     else resync()
     // Start fetching the screen being watched (working screen, connecting screen) again

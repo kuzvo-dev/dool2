@@ -5,6 +5,7 @@ import type {
   InfoRequestView,
   LifeState,
   LoginRequestView,
+  PcHealth,
   PcToPhone,
   PhoneToPc,
   StoredMessage,
@@ -81,6 +82,9 @@ export const st: {
   demo?: boolean
   /** Connected to the relay but the PC does not answer (the PC is off, or this phone's link was removed on the PC) */
   pcSilent: boolean
+  /** How the PC said it is doing last, and when it arrived (phone clock) */
+  health?: PcHealth
+  healthAt?: number
   screen: Screen
   tab: Tab
   overlay: Overlay

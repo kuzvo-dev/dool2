@@ -1428,6 +1428,42 @@ export interface PushSubscriptionJSONLike {
 }
 
 /** PC -> phone */
+/**
+ * How the PC is doing, sent to the phones every 30 s while one is around and at once when it changes, so the phone can
+ * say why the PC is slow or silent instead of only "the PC is not answering" (user 11-26)
+ */
+export type PcHealthIssue =
+  /** Dool2 itself is stalled (its work loop answered late) */
+  | 'slow'
+  /** The PC as a whole is busy (other programs) */
+  | 'busy'
+  /** Little disk space left */
+  | 'low-disk'
+  /** The Chrome extension is not connected */
+  | 'no-extension'
+  /** The AI subscription or key hit its usage limit */
+  | 'ai-limit'
+  /** The AI program is signed out */
+  | 'ai-signed-out'
+  /** The PC is going to sleep */
+  | 'sleeping'
+
+export interface PcHealth {
+  /** When the PC sent it (PC clock) */
+  at: number
+  issues: PcHealthIssue[]
+  /** How late Dool2's work loop answered at worst in the last half minute (ms) */
+  lagMs: number
+  /** Load on the PC: 1 = every core busy */
+  load: number
+  /** Free disk space where Dool2 keeps its data (GB) */
+  diskGb?: number
+  /** AI programs Dool2 keeps running now */
+  agents: number
+  /** When the AI usage limit resets, if known */
+  limitResetsAt?: string
+}
+
 export type PcToPhone =
   | { kind: 'paired'; pcName: string }
   | { kind: 'pair-rejected' }
@@ -1508,6 +1544,8 @@ export type PcToPhone =
   | { kind: 'conversation'; state: ConversationState; before?: string }
   /** Whether the conversation is answering, and the messages waiting in line (every time it changes) */
   | { kind: 'conversation-status'; busy: boolean; queued: string[]; checking?: boolean }
+  /** How the PC is doing (PcHealth) */
+  | { kind: 'health'; health: PcHealth }
   /** A task changed (ADR 0038) */
   | { kind: 'task'; task: TaskView }
   | { kind: 'life'; state: LifeState }

@@ -353,6 +353,28 @@ export function setTab(tab: Tab) {
 
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
+/** The PC's most urgent health issue as one short line (empty when all is well) */
+export function healthLine(): string {
+  const h = st.health
+  const top = h?.issues[0]
+  if (!h || !top) return ''
+  const reset = top === 'ai-limit' && h.limitResetsAt ? new Date(h.limitResetsAt) : undefined
+  const at =
+    reset && !Number.isNaN(reset.getTime())
+      ? tShell.limitUntil(reset.toLocaleTimeString(lang, { hour: 'numeric', minute: '2-digit' }))
+      : ''
+  const text: Record<typeof top, string> = {
+    sleeping: tShell.healthSleeping,
+    'ai-signed-out': tShell.healthAiSignedOut,
+    'ai-limit': tShell.healthAiLimit,
+    slow: tShell.healthSlow,
+    busy: tShell.healthBusy,
+    'low-disk': tShell.healthLowDisk,
+    'no-extension': tShell.healthNoExtension,
+  }
+  return text[top] + at
+}
+
 /** Header: menu · Dool2 (what it is doing now) · my PC */
 function renderTop() {
   const t = shell?.top
@@ -376,7 +398,7 @@ function renderTop() {
           : tShell.waitLogin
         : st.busy || st.pending.length
           ? (st.steps.at(-1) ?? tShell.answering)
-          : ''
+          : healthLine()
   const pcOn = st.online && !st.pcSilent
   const pcName = shortPc(st.saved?.pcName)
   // Leave it alone if nothing changed. Rebuilding the buttons on every update while a reply streams in

@@ -85,6 +85,19 @@ export async function forgetPc() {
   render()
 }
 
+/**
+ * A PC that sends its health every half minute and then goes quiet has stopped answering (sleep, stall, network):
+ * say so without waiting for the next reconnect. Only once it has sent one (older PCs never do)
+ */
+const HEALTH_SILENT_MS = 100_000
+setInterval(() => {
+  if (!st.online || st.pcSilent || st.healthAt === undefined || document.hidden) return
+  if (Date.now() - st.healthAt < HEALTH_SILENT_MS) return
+  st.pcSilent = true
+  mark('pc silent (no health)')
+  render()
+}, 20_000)
+
 export function connect() {
   const s = st.saved
   if (!s) return
@@ -210,6 +223,10 @@ export async function handle(msg: PcToPhone) {
     // redraw added the card again and the old one stayed
     case 'task':
       st.tasks.set(msg.task.id, msg.task)
+      break
+    case 'health':
+      st.health = msg.health
+      st.healthAt = Date.now()
       break
     case 'conversation-status':
       st.busy = msg.busy
