@@ -152,6 +152,7 @@ import { MotionMaker, type MotionRenderer } from './motion.js'
 import { ConnectorPacks } from './packs.js'
 import { dataPaths, defaultDataDir } from './paths.js'
 import { loadPayMethods, payMethodsText, savePayMethods } from './pay-methods.js'
+import { checkPaygKey } from './payg-check.js'
 import { isSmsApproval, PhoneSms } from './phone-sms.js'
 import { PROFILE_FIELDS, ProfileStore } from './profile.js'
 import {
@@ -230,6 +231,8 @@ const RESET_KEYS = [
 ] as const
 
 export interface DaemonOptions {
+  /** Checks a pay-as-you-go API key with its company before saving (tests pass a stand-in) */
+  checkKey?: typeof checkPaygKey
   /** Draws HTML and returns a JPEG (base64) (the PC app provides it), so pictures and invitations Doori made show in the library and on the phone */
   renderHtml?: (html: string) => Promise<string | undefined>
   /** Shrinks a picture file to a JPEG (base64) of the given width (the PC app provides it): previews of pictures made by the image AI */
@@ -5245,7 +5248,13 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
           const provider = PAYG_PROVIDERS.find((p) => p.id === body.provider)
           if (!provider) return json(res, 400, { error: m().unsupportedProvider })
           if (!body.apiKey && !(await secrets.get(PAYG_KEY))) return json(res, 400, { error: m().needApiKey })
-          if (body.apiKey) await secrets.set(PAYG_KEY, body.apiKey)
+          if (body.apiKey) {
+            const check = await (opts.checkKey ?? checkPaygKey)(body.provider, body.apiKey)
+            journal.write('payg-key-check', { provider: body.provider, result: check })
+            if (check === 'rejected')
+              return json(res, 400, { error: m().apiKeyRejected(provider.label.replace(/ *\(.*\)$/, '')) })
+            await secrets.set(PAYG_KEY, body.apiKey)
+          }
           store.setSetting('payg', { provider: body.provider, model: body.model })
           events.emit('settings', readSettings())
           return json(res, 200, { account: await paygView() })

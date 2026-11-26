@@ -184,6 +184,8 @@ export const indexText = messages({
     writeWhatHappened: '무슨 일이 있었는지 한 줄 적어 주세요',
     unsupportedProvider: '지원하지 않는 AI 제공자예요',
     needApiKey: 'API 키를 넣어 주세요',
+    apiKeyRejected: (company: string) =>
+      `${company}에서 이 키를 받아 주지 않았어요. 키를 다시 복사해 붙여 넣어 주세요. 키 받는 곳에서 새로 만들 수도 있어요.`,
     cannotInstallChrome: '이 컴퓨터에서는 Chrome을 설치할 수 없어요',
     cannotInstallClaude: '이 컴퓨터에서는 Claude Code를 설치할 수 없어요',
     installClaudeFirst: '먼저 Claude Code를 설치해 주세요',
@@ -385,6 +387,8 @@ export const indexText = messages({
     writeWhatHappened: 'Write one line about what happened',
     unsupportedProvider: 'That AI provider is not supported',
     needApiKey: 'Enter the API key',
+    apiKeyRejected: (company: string) =>
+      `${company} did not accept this key. Copy it again and paste it, or make a new one where you get keys.`,
     cannotInstallChrome: 'Chrome cannot be installed on this computer',
     cannotInstallClaude: 'Claude Code cannot be installed on this computer',
     installClaudeFirst: 'Install Claude Code first',
