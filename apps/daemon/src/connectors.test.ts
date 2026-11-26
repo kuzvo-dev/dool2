@@ -1039,6 +1039,28 @@ describe('quick lookup instead of a browser task (test PC loop 11-26)', () => {
   })
 })
 
+describe('quick lookup by a word people use for the service (aliases)', () => {
+  it('a flight question goes to the flight tool without naming the service', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))
+    await mkdir(join(dir, 'demo-eats'))
+    await writeFile(
+      join(dir, 'demo-eats', 'connect.json'),
+      JSON.stringify({ ...CARD, how: 'open', aliases: ['맛집', '식당'] }),
+    )
+    await writeFile(join(dir, 'demo-eats', 'tools.json'), JSON.stringify(CONNECTOR))
+    const browser = { call: async () => ({}) }
+    const connectors = new Connectors({
+      dir,
+      browser,
+      tools: new BrowserTools(browser),
+      connected: () => ({}),
+    })
+    expect(await connectors.quickLookup('성수 맛집 찾기')).toMatchObject({ tool: 'demo_eats_search' })
+    expect(await connectors.quickLookup('성수 식당이 찾기 되나')).toMatchObject({ tool: 'demo_eats_search' })
+    expect(await connectors.quickLookup('성수 식당 예약해 줘')).toBeUndefined()
+  })
+})
+
 describe('quick lookup leaves actions alone (test PC loop 11-26)', () => {
   it('does not point an order or booking task to the search tool', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dool2-conn-'))

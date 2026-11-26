@@ -564,7 +564,7 @@ export class Connectors {
       .filter((w) => w.length >= 2)
     for (const { card, connector } of (await this.load()).values()) {
       if (!connector || card.how === 'device') continue
-      const names = [card.id, card.name.toLowerCase()]
+      const names = [card.id, card.name.toLowerCase(), ...(card.aliases ?? []).map((x) => x.toLowerCase())]
       // The whole word, or a Korean name with a particle of one or two syllables after it; "ktx" is not "kt"
       const named = (w: string) =>
         names.some(
@@ -605,7 +605,7 @@ export class Connectors {
     }
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
     const score = ({ card, connector }: Loaded) => {
-      const head = [card.id, card.name, card.site ?? ''].join(' ').toLowerCase()
+      const head = [card.id, card.name, card.site ?? '', ...(card.aliases ?? [])].join(' ').toLowerCase()
       const body = [
         card.summary,
         CONNECT_CATEGORIES[card.category],
