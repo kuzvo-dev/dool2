@@ -1,0 +1,81 @@
+name: Android
+
+# The phone app (apps/phone, Capacitor). Two jobs:
+# - On a pull request that touches the phone app or the shared packages it bundles: build the debug APK, so Java and
+#   Gradle mistakes are caught before merge (the main CI only type-checks the screen code)
+# - By hand (Actions tab -> Android -> Run workflow): build the signed release AAB (for Google Play) and APK with the
+#   upload key from the repo secrets ANDROID_KEYSTORE_B64 and ANDROID_KEYSTORE_PASSWORD. The files are attached to the
+#   run. Play re-signs the AAB for users (Play App Signing)
+on:
+  pull_request:
+    paths:
+      - apps/phone/**
+      - packages/protocol/**
+      - packages/ui/**
+      - packages/i18n/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: versionCode (must be higher than the last one uploaded to Play)
+        required: true
+      version_name:
+        description: versionName shown to people (e.g. 0.3.0)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'Release AAB' || 'Debug APK' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: pnpm turbo run build --filter=@dool2/phone
+      - run: pnpm exec cap sync android
+        working-directory: apps/phone
+      - name: Debug APK
+        if: github.event_name != 'workflow_dispatch'
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: apps/phone/android
+      - name: Release AAB and APK (signed with the upload key)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: apps/phone/android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          DOOL2_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::error::ANDROID_KEYSTORE_B64 secret is missing"; exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export DOOL2_ANDROID_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          ./gradlew bundleRelease assembleRelease --no-daemon "-PversionCode=$VERSION_CODE" "-PversionName=$VERSION_NAME"
+          rm -f "$RUNNER_TEMP/upload.jks"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ github.event_name == 'workflow_dispatch' && format('dool2-android-{0}', inputs.version_name) || 'dool2-android-debug' }}
+          path: |
+            apps/phone/android/app/build/outputs/bundle/release/*.aab
+            apps/phone/android/app/build/outputs/apk/release/*.apk
+            apps/phone/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'workflow_dispatch' && 90 || 7 }}

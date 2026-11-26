@@ -42,3 +42,26 @@ DOOL2_TEST_CHROME="<Chrome for Testing>" pnpm --filter @dool2/phone live
 ```
 
 This starts the relay (including the phone app), the Dool2 daemon (real AI), a test Chrome (the Dool2 extension), and a test shop together. Instead of a phone, it opens a browser at phone size for testing.
+
+## Android builds
+
+```bash
+pnpm turbo run build --filter=@dool2/phone && (cd apps/phone && pnpm exec cap sync android)
+cd apps/phone/android
+./gradlew assembleDebug                      # test APK (debug key), what testers install from a link
+```
+
+**Release** (Google Play): Actions tab → **Android** → Run workflow with a `versionCode` higher than the last upload
+and a `versionName`. It builds the AAB and APK signed with the upload key (repo secrets `ANDROID_KEYSTORE_B64`,
+`ANDROID_KEYSTORE_PASSWORD`) and attaches them to the run. Play re-signs the AAB for users (Play App Signing), so
+losing the upload key can be fixed through Play support; keep it backed up anyway. Locally:
+
+```bash
+DOOL2_ANDROID_KEYSTORE=<upload.jks> DOOL2_ANDROID_KEYSTORE_PASSWORD=<password> \
+  ./gradlew bundleRelease assembleRelease -PversionCode=70 -PversionName=0.3.0
+```
+
+A phone with the debug-signed test app cannot update to a release-signed one (different signature): uninstall first,
+which also drops the PC pairing.
+
+Every pull request that touches the phone app also builds the debug APK in CI (`.github/workflows/android.yml`).
