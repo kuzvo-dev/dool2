@@ -142,7 +142,8 @@ function nowText(steps: Step[], fallback: string): (HTMLElement | string)[] {
   // A bare act ("pressing") says little: Dool2's own line about it says more
   const specific = last.detail?.some((d) => d.k === 'press' || d.k === 'field')
   const what = specific ? actText(last, true) : last.text && last.text !== last.act ? last.text : last.act
-  return place ? [h('b', { text: place }), ` · ${what}`] : [what]
+  // "Weather · checking the weather" says the name twice: a step that already names its place goes alone
+  return place && !what.includes(place) ? [h('b', { text: place }), ` · ${what}`] : [what]
 }
 
 /** The newest finished work record in the chat (a live sheet shows it once the turn ended) */
