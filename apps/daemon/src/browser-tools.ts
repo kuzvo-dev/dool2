@@ -2243,13 +2243,25 @@ export class BrowserTools {
           .filter(Boolean)
         const id = this.requestProfile(fields, String(a.reason ?? '').slice(0, 120), options)
         if (!id) throw new Error('Could not show the my-info card')
+        const labels = fields.map((f) => PROFILE_FIELDS[f].label).join('·')
+        // A wait for the person like the other phone cards (hand-back.ts): the turn is counted as waiting, so a task stays
+        // open ('needs you') and carries on when the card is saved. Before, the result read like a normal step: the
+        // finish check sent the task round twice and ended it seconds before the person filled the card, and the
+        // saved values reached a task that was over (measured 11-26, Shinhan Card ID recovery)
         return {
           content: [
             {
               type: 'text',
               text:
-                `Showed the my-info card (${fields.map((f) => PROFILE_FIELDS[f].label).join('·')}). While the card waits for an answer, finish now what works without this info (checking eligibility, researching prices and candidates, reading documents, candidates based on Seoul, a prep list), put the results in the reply, and end it with one sentence like "enter it on the card once and I'll fill it in myself from then on". Do not end with only a note about the card. ` +
-                'Entered values are stored only in the PC vault and you get only masked values. You are told in the next message once saved. Then fill with browser_fill_profile.',
+                'If part of the request works without this info (checking eligibility, researching prices and candidates, reading documents, a prep list), do it in this same reply first and put the results in it. ' +
+                handBack({
+                  done: `the my-info card (${labels}) is on the phone`,
+                  left: `enter ${labels} on that card once (kept only in the PC vault; you only ever get masked values)`,
+                  who: 'person',
+                  after:
+                    'you are told in the next message once saved; then fill the fields with browser_fill_profile and carry on',
+                  tell: 'to enter it on the card once, and that Dool2 fills it in by itself from then on',
+                }),
             },
           ],
         }

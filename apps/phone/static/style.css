@@ -4374,3 +4374,45 @@ textarea.ghosting {
 .consent-page .steps li {
   text-align: left;
 }
+
+/* A waiting input card that was closed (threads.ts infoWaitBar): a pill right above the composer to reopen it.
+   It lived inside the composer row with no style, squeezed to the left of the + button (measured 11-26) */
+.info-wait-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.info-wait-slot:empty {
+  display: none;
+}
+.info-wait-bar {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 10px 8px 16px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font: var(--text-caption);
+}
+.info-wait-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.info-wait-bar strong {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--ink-inverse);
+}
