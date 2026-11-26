@@ -4,7 +4,7 @@
     {
       "name": "track",
       "title": "택배 조회(택배사 몰라도)",
-      "description": "택배 운송장 번호로 배송 상황을 볼 때 먼저 쓴다(택배사를 모르거나 CJ대한통운에 없다고 나왔을 때도). CJ대한통운→롯데→로젠→우체국→한진 순서로 한 번에 찾아, 찾은 택배사와 처리 기록 줄(시각이 있는 줄만, 각 줄의 칸 목록: 날짜·시간·장소·상태 등)을 돌려준다. 다섯 곳 모두 없으면 그렇다고 알려 준다. 받는 분 이름은 사이트가 가린 그대로다.",
+      "description": "택배 운송장 번호로 배송 상황을 볼 때 먼저 쓴다(택배사를 모르거나 CJ대한통운에 없다고 나왔을 때도). 번호 자릿수에 맞는 택배사만(13자리 우체국, 10~11자리 로젠, 10·12자리 CJ대한통운·한진, 12자리 롯데) 차례로 한 번에 찾아, 찾은 택배사와 처리 기록 줄(시각이 있는 줄만, 각 줄의 칸 목록: 날짜·시간·장소·상태 등)을 돌려준다. 다섯 곳 모두 없으면 그렇다고 알려 준다. 받는 분 이름은 사이트가 가린 그대로다.",
       "tier": "lookup",
       "status": "검증됨(2026-11-26, 다섯 곳 모두 등록 전 번호 안내까지. 배송 중 번호는 아직)",
       "cards": false,
@@ -43,18 +43,22 @@
       ],
       "steps": [
         {
-          "open": "https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo={{invoice|digits}}"
+          "open": "https://service.epost.go.kr/trace.RetrieveDomRigiTraceList.comm?sid1={{invoice|digits}}",
+          "if": "{{invoice|digits}}",
+          "ifMatch": "^\\d{13}$"
         },
         {
           "wait": {
-            "text": "운송장이 등록되지 않았거나|상품상태",
+            "text": "배달정보를 찾지 못했습니다|처리현황",
             "timeoutMs": 10000,
             "soft": true
-          }
+          },
+          "if": "{{invoice|digits}}",
+          "ifMatch": "^\\d{13}$"
         },
         {
           "extract": {
-            "items": "#statusDetail tr:has(td:nth-child(4))",
+            "items": "tr:has(td:nth-child(4)):not(:has(td:nth-child(5)))",
             "limit": 40,
             "fields": {
               "cells": {
@@ -63,73 +67,32 @@
               }
             }
           },
-          "as": "rows_cj",
-          "min": 0
+          "as": "rows_epost",
+          "min": 0,
+          "if": "{{invoice|digits}}",
+          "ifMatch": "^\\d{13}$"
         },
         {
           "filter": {
-            "from": "rows_cj",
+            "from": "rows_epost",
             "where": "cells",
             "op": "contains",
             "value": ":"
           },
           "as": "events",
-          "if": "{{#rows_cj.0}}1{{/rows_cj.0}}"
+          "if": "{{#rows_epost.0}}1{{/rows_epost.0}}"
         },
         {
           "find": {
-            "name": "(CJ대한통운)"
+            "name": "(우체국)"
           },
           "as": "carrier",
           "if": "{{#events.0}}1{{/events.0}}"
         },
         {
-          "open": "https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo={{invoice|digits}}",
-          "if": "{{^events.0}}1{{/events.0}}"
-        },
-        {
-          "wait": {
-            "text": "처리현황",
-            "timeoutMs": 10000,
-            "soft": true
-          },
-          "if": "{{^events.0}}1{{/events.0}}"
-        },
-        {
-          "extract": {
-            "items": "tr:has(td:nth-child(3))",
-            "limit": 40,
-            "fields": {
-              "cells": {
-                "css": "td",
-                "list": true
-              }
-            }
-          },
-          "as": "rows_lotte",
-          "min": 0,
-          "if": "{{^events.0}}1{{/events.0}}"
-        },
-        {
-          "filter": {
-            "from": "rows_lotte",
-            "where": "cells",
-            "op": "contains",
-            "value": ":"
-          },
-          "as": "events",
-          "if": "{{#rows_lotte.0}}1{{/rows_lotte.0}}"
-        },
-        {
-          "find": {
-            "name": "(롯데)"
-          },
-          "as": "carrier",
-          "if": "{{#events.0}}{{^carrier.name}}1{{/carrier.name}}{{/events.0}}"
-        },
-        {
           "open": "https://www.ilogen.com/web/personal/trace/{{invoice|digits}}",
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{10,11}$"
         },
         {
           "wait": {
@@ -137,7 +100,8 @@
             "timeoutMs": 10000,
             "soft": true
           },
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{10,11}$"
         },
         {
           "extract": {
@@ -152,7 +116,8 @@
           },
           "as": "rows_logen",
           "min": 0,
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{10,11}$"
         },
         {
           "filter": {
@@ -172,20 +137,22 @@
           "if": "{{#events.0}}{{^carrier.name}}1{{/carrier.name}}{{/events.0}}"
         },
         {
-          "open": "https://service.epost.go.kr/trace.RetrieveDomRigiTraceList.comm?sid1={{invoice|digits}}",
-          "if": "{{^events.0}}1{{/events.0}}"
+          "open": "https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo={{invoice|digits}}",
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "wait": {
-            "text": "배달정보를 찾지 못했습니다|처리현황",
+            "text": "운송장이 등록되지 않았거나|상품상태",
             "timeoutMs": 10000,
             "soft": true
           },
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "extract": {
-            "items": "tr:has(td:nth-child(4)):not(:has(td:nth-child(5)))",
+            "items": "#statusDetail tr:has(td:nth-child(4))",
             "limit": 40,
             "fields": {
               "cells": {
@@ -194,30 +161,79 @@
               }
             }
           },
-          "as": "rows_epost",
+          "as": "rows_cj",
           "min": 0,
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "filter": {
-            "from": "rows_epost",
+            "from": "rows_cj",
             "where": "cells",
             "op": "contains",
             "value": ":"
           },
           "as": "events",
-          "if": "{{#rows_epost.0}}1{{/rows_epost.0}}"
+          "if": "{{#rows_cj.0}}1{{/rows_cj.0}}"
         },
         {
           "find": {
-            "name": "(우체국)"
+            "name": "(CJ대한통운)"
+          },
+          "as": "carrier",
+          "if": "{{#events.0}}{{^carrier.name}}1{{/carrier.name}}{{/events.0}}"
+        },
+        {
+          "open": "https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo={{invoice|digits}}",
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{12}$"
+        },
+        {
+          "wait": {
+            "text": "처리현황",
+            "timeoutMs": 10000,
+            "soft": true
+          },
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{12}$"
+        },
+        {
+          "extract": {
+            "items": "tr:has(td:nth-child(3))",
+            "limit": 40,
+            "fields": {
+              "cells": {
+                "css": "td",
+                "list": true
+              }
+            }
+          },
+          "as": "rows_lotte",
+          "min": 0,
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^\\d{12}$"
+        },
+        {
+          "filter": {
+            "from": "rows_lotte",
+            "where": "cells",
+            "op": "contains",
+            "value": ":"
+          },
+          "as": "events",
+          "if": "{{#rows_lotte.0}}1{{/rows_lotte.0}}"
+        },
+        {
+          "find": {
+            "name": "(롯데)"
           },
           "as": "carrier",
           "if": "{{#events.0}}{{^carrier.name}}1{{/carrier.name}}{{/events.0}}"
         },
         {
           "open": "https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&schLang=KR&wblnumText2={{invoice|digits}}",
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "wait": {
@@ -225,7 +241,8 @@
             "timeoutMs": 10000,
             "soft": true
           },
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "extract": {
@@ -240,7 +257,8 @@
           },
           "as": "rows_hanjin",
           "min": 0,
-          "if": "{{^events.0}}1{{/events.0}}"
+          "if": "{{^events.0}}{{invoice|digits}}{{/events.0}}",
+          "ifMatch": "^(\\d{10}|\\d{12})$"
         },
         {
           "filter": {

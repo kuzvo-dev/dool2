@@ -1076,3 +1076,14 @@ describe('quick lookup leaves actions alone (test PC loop 11-26)', () => {
     expect(await connectors.quickLookup('데모맛집 예약 준비')).toBeUndefined()
   })
 })
+
+describe('step conditions', () => {
+  it('ifMatch runs a step only when the filled if text matches (parcel carriers by digit count)', async () => {
+    const { stepWanted } = await import('./connectors.js')
+    expect(stepWanted('6012345678901', '^\\d{13}$')).toBe(true)
+    expect(stepWanted('572023456781', '^\\d{13}$')).toBe(false)
+    expect(stepWanted('572023456781')).toBe(true)
+    expect(stepWanted('', '^.*$')).toBe(false)
+    expect(stepWanted('x', '(')).toBe(false)
+  })
+})
