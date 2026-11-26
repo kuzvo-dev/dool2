@@ -4416,3 +4416,21 @@ textarea.ghosting {
   background: var(--ink);
   color: var(--ink-inverse);
 }
+
+/* The running task above the composer (shell.ts nowBar): same pill as the waiting-input bar, with a live dot */
+.now-bar .now-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mint, #3ccf91);
+  animation: now-pulse 1.4s ease-in-out infinite;
+}
+.now-bar.ask .now-dot {
+  background: var(--butter, #f5c84c);
+}
+@keyframes now-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

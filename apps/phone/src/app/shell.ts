@@ -1,9 +1,12 @@
 // Phone app: the toast, rendering (shell, header, tabs, composer, page), the continuation suggestion and the remote screen view
+
+import type { TaskView } from '@dool2/protocol'
 import { ideaCatalog } from '@dool2/protocol/ideas'
 import { doori, h, type IconName, icon } from '../dom.js'
 import { matchTextBox, recentTalk, ghostRest as suggestRest } from '../ghost.js'
 import { lang } from '../lang.js'
 import { feedView, goalsView, libraryView } from '../life-views.js'
+import { mainWork } from '../locales/main-a-work.js'
 import { mdSide } from '../locales/main-d-side.js'
 import { acceptGhost, playFlip, playSeg, Spring, springTo, tick } from '../motion.js'
 import { haptic } from '../native.js'
@@ -155,6 +158,7 @@ function buildShell() {
     () => {
       // The bottom tabs are not hidden on scroll: hidden, there was no visible way to other tabs (user feedback)
       if (st.tab === 'chat') {
+        syncNowBar()
         shellVars.stickToBottom = page.scrollHeight - page.scrollTop - page.clientHeight < 80
         const label = dayAtTop(page, chat)
         dayPill.textContent = label
@@ -566,7 +570,9 @@ function renderComposer() {
     slot = h('div', { class: 'info-wait-slot' })
     composerBox.prepend(slot)
   }
-  slot.replaceChildren(...infoWaitBar())
+  // A waiting input card wins; otherwise the task that is running, while its card is out of sight
+  const wait = infoWaitBar()
+  slot.replaceChildren(...(wait.length ? wait : nowBar()))
   const attachBox = composerBox.querySelector('.attach-preview') as HTMLElement
   if (st.attach) {
     const img = h('img')
@@ -748,4 +754,61 @@ function remoteView(v: Extract<Screen, { name: 'remote' }>) {
   }
   remoteUi.update(st.screenShot, fps())
   return remoteUi.el
+}
+
+// ── The task that is running, at the bottom ──
+// A task's progress card sits where it started in the chat, so it scrolls away (and the header covers it): this bar
+// above the composer says what is running and takes you to its card. Hidden while the card itself is in sight
+
+/** The task the person most needs to see: waiting for them first, then working, then in line */
+function nowTask(): TaskView | undefined {
+  const live = [...st.tasks.values()].filter((t) =>
+    ['needs-you', 'working', 'checking', 'waiting'].includes(t.status),
+  )
+  const rank = (t: TaskView) => (t.status === 'needs-you' ? 0 : t.status === 'waiting' ? 2 : 1)
+  return live.sort((a, b) => rank(a) - rank(b))[0]
+}
+
+function cardInSight(id: string): boolean {
+  const card = shell?.page.querySelector<HTMLElement>(`[data-task="${id}"]`)
+  if (!card) return false
+  const r = card.getBoundingClientRect()
+  return r.bottom > 120 && r.top < window.innerHeight - 180
+}
+
+function nowBar(): HTMLElement[] {
+  const t = nowTask()
+  if (!t || st.tab !== 'chat' || cardInSight(t.id)) return []
+  const w = mainWork(lang)
+  const what =
+    t.status === 'needs-you'
+      ? w.nowWaitsYou
+      : t.status === 'waiting' && t.ahead
+        ? w.nowInLine(t.ahead)
+        : (t.now ?? w.nowWorking)
+  const bar = h(
+    'button',
+    {
+      class: `info-wait-bar now-bar${t.status === 'needs-you' ? ' ask' : ''}`,
+      onclick: () => {
+        const card = shell?.page.querySelector<HTMLElement>(`[data-task="${t.id}"]`)
+        card?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      },
+    },
+    h('i', { class: 'now-dot' }),
+    h('span', { text: `${t.title} · ${what}` }),
+  )
+  bar.dataset.task = t.id
+  return [bar]
+}
+
+/** On scroll: show or hide the bar as the task's card leaves or comes into sight */
+function syncNowBar() {
+  const slot = shell?.composerBox.querySelector<HTMLElement>(':scope > .info-wait-slot')
+  if (!slot || slot.querySelector('.info-wait-bar:not(.now-bar)')) return
+  const next = nowBar()
+  const cur = slot.querySelector<HTMLElement>('.now-bar')
+  if (!next.length) cur?.remove()
+  else if (!cur || cur.dataset.task !== next[0]?.dataset.task || cur.textContent !== next[0]?.textContent)
+    slot.replaceChildren(...next)
 }
