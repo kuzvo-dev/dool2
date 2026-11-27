@@ -139,7 +139,7 @@ import { LoginWatch, strongSignedIn } from './connect-watch.js'
 import { ConnectorHealth } from './connector-health.js'
 import { Connectors } from './connectors.js'
 import { EXEC_EXT } from './download.js'
-import { cleanName, freeName } from './file-names.js'
+import { writeNewFile } from './file-names.js'
 import { ensureLocal, FileTools, htmlText, type UserFolders } from './files.js'
 import { FINISH_CHECK_ON, FinishCheck, JUDGE_SYSTEM } from './finish-check.js'
 import { handBack, waitsForPerson } from './hand-back.js'
@@ -3328,18 +3328,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<Daemon> {
   // then Downloads, and the library
   const keepPageFile = async (name: string, ext: string, data: Buffer, tool: string, preview?: string) => {
     const dirs = [fileTools.dooriDir(), fileTools.dir('downloads')].filter((d): d is string => Boolean(d))
-    let path = ''
-    let file = ''
-    for (const dir of dirs) {
-      try {
-        await mkdir(dir, { recursive: true })
-        file = freeName(dir, `${cleanName(name).slice(0, 80) || 'document'}.${ext}`)
-        await writeFile(join(dir, file), data)
-        path = join(dir, file)
-        break
-      } catch {}
-    }
-    if (!path) throw new Error("Could not write to Dool2's folder or Downloads")
+    const { path, file } = await writeNewFile(dirs, name, ext, data)
     const shown = fileTools.shown(path)
     fileTools.onWritten?.({ name: file, kind: ext, path: shown, ...(preview ? { image: preview } : {}) })
     journal.write('file-tool', { tool, ok: true })
