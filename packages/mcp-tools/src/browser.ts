@@ -255,6 +255,13 @@ export function registerBrowserTools(server: McpServer, client: BrowserClient) {
         .max(80)
         .optional()
         .describe("File name without .pdf, in the user's language (what it is and the date)"),
+      ref: z
+        .string()
+        .optional()
+        .describe(
+          "The element that is the document, when it is not found by itself (a viewer's page area). By default the document's pages are found and printed one per A4 sheet without the viewer's toolbar",
+        ),
+      whole: z.boolean().optional().describe('Print the whole tab as it is, viewer and all'),
     },
     true,
   )

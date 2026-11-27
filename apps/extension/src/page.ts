@@ -2893,3 +2893,85 @@ export function pageUploadState(
     multiple: input.multiple,
   }
 }
+
+/**
+ * browser_save_pdf prints only the document a viewer shows, not the viewer (ADR 0045 follow-up). A certificate viewer
+ * drew the page on one canvas between a toolbar and a [Close] button, and printing the whole tab put both into the
+ * PDF (test PC 11-27). This lays copies of the document's page elements (the canvases, images or SVGs that make up
+ * the pages, or the element `ref` names) one per A4 sheet in a box only the print view shows. pagePrintCleanup takes
+ * it away again. Returns how many pages went in (0: nothing that looks like a document, print the whole page)
+ */
+export function pagePrintPrepare(ref: string | null): { count: number; what: string } {
+  type State = { refs: Map<string, WeakRef<Element>> }
+  const st = (globalThis as unknown as { __dool2?: State }).__dool2
+  const shown = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    const cs = getComputedStyle(e)
+    return r.width > 80 && r.height > 80 && cs.visibility !== 'hidden' && cs.display !== 'none'
+  }
+  const area = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return r.width * r.height
+  }
+  let picks: Element[] = []
+  if (ref) {
+    const el = st?.refs.get(ref)?.deref()
+    if (el) picks = [el]
+  } else {
+    const all = [...document.querySelectorAll('canvas, img, svg, embed, object')].filter(shown)
+    const big = [...all].sort((a, b) => area(b) - area(a))[0]
+    if (big && area(big) >= 0.2 * innerWidth * innerHeight) {
+      const w = big.getBoundingClientRect().width
+      // A document of several pages: the elements like the biggest one (same kind and width), in page order
+      picks = all.filter(
+        (e) =>
+          e.tagName === big.tagName &&
+          Math.abs(e.getBoundingClientRect().width - w) <= w * 0.1 &&
+          area(e) >= area(big) * 0.5,
+      )
+    }
+  }
+  if (!picks.length) return { count: 0, what: '' }
+  document.getElementById('dool2-print-only')?.remove()
+  document.getElementById('dool2-print-style')?.remove()
+  const box = document.createElement('div')
+  box.id = 'dool2-print-only'
+  for (const el of picks) {
+    let copy: Element
+    if (el instanceof HTMLCanvasElement) {
+      // A copied canvas is blank: draw the original's pixels into it at full resolution
+      const c = document.createElement('canvas')
+      c.width = el.width
+      c.height = el.height
+      c.getContext('2d')?.drawImage(el, 0, 0)
+      copy = c
+    } else copy = el.cloneNode(true) as Element
+    const sheet = document.createElement('div')
+    sheet.className = 'dool2-print-page'
+    sheet.appendChild(copy)
+    box.appendChild(sheet)
+  }
+  const style = document.createElement('style')
+  style.id = 'dool2-print-style'
+  style.textContent = [
+    '@media screen { #dool2-print-only { display: none !important } }',
+    '@media print {',
+    '@page { size: A4; margin: 0 }',
+    'html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: auto !important; overflow: visible !important }',
+    'body > *:not(#dool2-print-only) { display: none !important }',
+    '#dool2-print-only { display: block !important }',
+    '.dool2-print-page { width: 210mm; height: 296mm; display: flex; align-items: center; justify-content: center; overflow: hidden; break-after: page }',
+    '.dool2-print-page:last-child { break-after: auto }',
+    '.dool2-print-page > * { max-width: 100% !important; max-height: 100% !important; width: auto !important; height: auto !important; object-fit: contain }',
+    '}',
+  ].join('\n')
+  document.head.appendChild(style)
+  document.body.appendChild(box)
+  return { count: picks.length, what: picks[0]?.tagName.toLowerCase() ?? '' }
+}
+
+/** Takes away what pagePrintPrepare added */
+export function pagePrintCleanup(): void {
+  document.getElementById('dool2-print-only')?.remove()
+  document.getElementById('dool2-print-style')?.remove()
+}

@@ -41,6 +41,8 @@ import {
   pageMutArm,
   pageMutRead,
   pageOptionPoint,
+  pagePrintCleanup,
+  pagePrintPrepare,
   pageReadOpens,
   pageRememberShown,
   pageRemoteInfo,
@@ -2563,11 +2565,29 @@ async function run(cmd: BrowserCommand, a: Record<string, unknown>): Promise<unk
       // The page as a PDF, the way Chrome prints it (certificates and statements open in a viewer page): Dool2 keeps
       // it as a file. Only a tab Dool2 opened
       const tabId = await ownedTab(a)
-      const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
-        printBackground: true,
-        preferCSSPageSize: true,
-      })
-      return { data: r.data }
+      // Only the document the viewer shows (its page canvases or images, or the element ref names), one per A4 sheet;
+      // the whole tab only when nothing looks like a document or the caller asks for it (only: 'page')
+      const prepared =
+        a.only === 'page'
+          ? { count: 0, what: '' }
+          : await inPage(tabId, pagePrintPrepare, typeof a.ref === 'string' ? a.ref : null).catch(() => ({
+              count: 0,
+              what: '',
+            }))
+      try {
+        const r = await cdp<{ data: string }>(tabId, 'Page.printToPDF', {
+          printBackground: true,
+          preferCSSPageSize: true,
+        })
+        return {
+          data: r.data,
+          part: prepared.count ? 'document' : 'page',
+          pages: prepared.count,
+          what: prepared.what,
+        }
+      } finally {
+        if (prepared.count) await inPage(tabId, pagePrintCleanup).catch(() => undefined)
+      }
     }
     case 'eval': {
       // A script on a page Dool2 opened, evaluated side-effect free by V8 (ADR 0045, T31): it can read and compute,
