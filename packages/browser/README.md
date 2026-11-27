@@ -30,3 +30,13 @@ Dool2 daemon BrowserBridge (bridge.ts)                ← decisions and approval
   - Windows: `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.dool2.host`
   - Chromium and Edge are registered too, only when installed.
 - The distributed app registers every time it starts. During development, it registers in the user's Chrome only when `DOOL2_REGISTER_HOST=1`, and smoke mode does not register. To put it only in a test Chrome profile, use `DOOL2_HOST_DIRS=<profile>/NativeMessagingHosts`.
+
+## Dool2's own browser (ADR 0046)
+
+Dool2 is moving to a Chromium of its own, hidden, with no extension ([ADR 0046](../../docs/decisions/0046-built-in-browser.md)). This package has the first part; nothing uses it yet.
+
+- `installChromium()`, `ChromiumInstall`: downloads the pinned open-source Chromium snapshot from `chromium-manifest.ts` into `<data>/chromium/<revision>` on first use. The zip must match the pinned size and SHA-256 before it is unpacked; network trouble is retried (3 tries), a wrong file is not. macOS: unpacked with `ditto`, and the quarantine attribute is cleared only on that folder. Progress uses the same `InstallStatus` as the AI runners.
+- `launchChromium()`: starts it with its own profile `<data>/browser-profile` (0700), DevTools over a pipe (no port), no window at start, no automation flag, and on macOS a mock keychain, basic password store and no OS notification center (each of these popped something on the test Mac). Pages open in their own inactive window pushed to the screen corner behind other windows. The browser closes after 5 idle minutes.
+- `CdpPipe`, `ChromiumPage`: a small DevTools client over the pipe (flat sessions): open a page, wait for its text, evaluate an expression.
+- Real run: `DOOL2_CHROMIUM_IT=1 pnpm --filter @dool2/browser test` downloads (~180 MB) and opens example.com. `DOOL2_CHROMIUM_IT_DIR=<folder>` keeps the download between runs.
+- Moving the build forward: pick a snapshot position that exists on every platform, download each zip once, and write its size and `shasum -a 256` in `chromium-manifest.ts`.
