@@ -19,6 +19,7 @@ import { FileOps, type FileOpsOptions } from './file-ops.js'
 import { filesCopy } from './locales/files.js'
 import { styleGuide } from './motion-kit.js'
 import { type PdfText, pdfScanImages, pdfText } from './pdf.js'
+import { renderPdfPages } from './pdf-render.js'
 import { DOORI_FOLDER_NAME, KR_SENSITIVE_WORDS, KR_USER_FOLDERS, SENT_PHOTO_RE } from './region/kr/files.js'
 
 export interface FileToolResult {
@@ -482,9 +483,15 @@ export class FileTools {
       if (!text) {
         // Scanned PDF: show the pictures inside (scanned business registration, tax certificates). JPEG as is,
         // otherwise decoded to PNG
-        let imgs = pdfImages(buf)
-          .slice(0, 3)
-          .map((data) => ({ data, mimeType: 'image/jpeg' }))
+        // The pages as drawn come first: a PDF made by printing draws its letters as shapes, and its embedded
+        // pictures may be only a watermark (a certificate looked empty, test PC 11-27)
+        let imgs = (await renderPdfPages(buf).catch(() => []))
+          .filter((data) => data.length <= IMAGE_MAX)
+          .map((data) => ({ data, mimeType: 'image/png' }))
+        if (!imgs.length)
+          imgs = pdfImages(buf)
+            .slice(0, 3)
+            .map((data) => ({ data, mimeType: 'image/jpeg' }))
         if (!imgs.length && pdf)
           imgs = (await pdfScanImages(buf).catch(() => []))
             .filter((data) => data.length <= IMAGE_MAX)
@@ -500,7 +507,7 @@ export class FileTools {
               })),
               {
                 type: 'text',
-                text: `${this.show(p)}: a scanned PDF with no text, so here are ${of}page images (${imgs.length}). Answer from what the images show, and never copy sensitive values such as resident registration or card numbers.`,
+                text: `${this.show(p)}: a PDF whose text does not come out (scanned, or printed with letters drawn as shapes), so here are ${of}page images (${imgs.length}). Judge what it holds from these images. Answer from what the images show, and never copy sensitive values such as resident registration or card numbers.`,
               },
             ],
           }

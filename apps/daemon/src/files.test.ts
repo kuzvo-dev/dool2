@@ -170,7 +170,7 @@ describe('PC 파일 도구', () => {
     writeFileSync(join(home, 'Documents', '사업자등록증.pdf'), pdf)
     const s = await tools.run('file_read', { path: '~/Documents/사업자등록증.pdf' })
     expect(s.content[0]).toMatchObject({ type: 'image' })
-    expect(text(s as never)).toContain('scanned PDF')
+    expect(text(s as never)).toContain('text does not come out')
   })
 
   it('PDF: 글꼴마다 다른 ToUnicode, 한글 CID 글꼴(UniKS-UCS2-H), 표 칸, 쪽 나눔', async () => {
@@ -234,8 +234,9 @@ describe('PC 파일 도구', () => {
     expect(r.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
     const png = Buffer.from((r.content[0] as { data: string }).data, 'base64')
     expect(png.subarray(1, 4).toString()).toBe('PNG')
-    expect(png.readUInt32BE(16)).toBe(w)
-    expect(text(r as never)).toContain('scanned PDF')
+    // macOS draws the whole page (its own size); elsewhere the picture inside comes out at its size
+    if (process.platform !== 'darwin') expect(png.readUInt32BE(16)).toBe(w)
+    expect(text(r as never)).toContain('text does not come out')
   })
 })
 
