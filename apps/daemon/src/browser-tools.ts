@@ -3656,12 +3656,15 @@ export class BrowserTools {
     if (!this.printViaChrome) return click
     // The click itself does not come back while the print window is open (window.print holds the page), so the
     // print window is handled alongside it. A click that fails at once (a stale ref) is said as it is
-    const early = await Promise.race([click, new Promise<undefined>((res) => setTimeout(res, 2_500))])
+    const early = await Promise.race([
+      click,
+      new Promise<undefined>((res) => setTimeout(() => res(undefined), 2_500)),
+    ])
     if (early?.isError) return early
     const r = await this.printViaChrome(name.trim() || page?.title || 'document').catch((e: Error) => ({
       error: e.message,
     }))
-    await Promise.race([click.catch(() => undefined), new Promise((res) => setTimeout(res, 5_000))])
+    await Promise.race([click.catch(() => undefined), new Promise<void>((res) => setTimeout(res, 5_000))])
     const text =
       'path' in r && r.path
         ? `Pressed the site's print button and saved its print as a PDF, the way print → Save as PDF does (no paper, nothing sent to a printer): ${r.path}. It is in the library too. Tell the user where it is.`
