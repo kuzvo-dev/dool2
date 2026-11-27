@@ -13,7 +13,14 @@ describe('Doori drawing and look', () => {
   })
 
   it('wears what the look says and every mood draws', () => {
-    const svg = drawDoori({ color: 'sky', hat: 'crown', face: 'round', neck: 'tie', cheeks: true, pattern: 'spots' })
+    const svg = drawDoori({
+      color: 'sky',
+      hat: 'crown',
+      face: 'round',
+      neck: 'tie',
+      cheeks: true,
+      pattern: 'spots',
+    })
     expect(svg).toContain('#58a8f0')
     expect(svg).toContain('#f2c94c') // crown
     expect(svg).toContain('#2f5fd0') // tie
