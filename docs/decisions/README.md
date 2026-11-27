@@ -9,7 +9,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0003](0003-dool2-tools-only.md) | Turn off the agents' built-in tools and allow only Dool2 tools | Accepted |
 | [0004](0004-electron.md) | Build the desktop app with Electron | Accepted |
 | [0005](0005-no-containers.md) | Install as an all-in-one app, without containers | Accepted |
-| [0006](0006-user-chrome-extension.md) | Use the browser through the user's own Chrome plus the Dool2 extension | Accepted |
+| [0006](0006-user-chrome-extension.md) | Use the browser through the user's own Chrome plus the Dool2 extension | Superseded by 0046 |
 | [0007](0007-pc-first.md) | Finish the PC side first and attach the phone last | Accepted |
 | [0008](0008-skills-cc-by-sa.md) | Publish skills under CC BY-SA 4.0 | Accepted |
 | [0009](0009-node-sqlite.md) | Store records in Node's built-in SQLite | Accepted |
@@ -49,6 +49,7 @@ We record decisions that affect the structure of the project, together with why 
 | [0043](0043-chip-approval-keys.md) | Approvals are signed by keys in the phone's security chip; payments and transfers only after the phone lock (can be turned off, with the lock) | Accepted |
 | [0044](0044-recipes.md) | Recipes: keep the steps that got a request done, and offer them on the next request like it | Accepted |
 | [0045](0045-tools-are-shortcuts.md) | Dool2 thinks for itself: broad hands, tools as shortcuts, safety at the action | Accepted |
+| [0046](0046-built-in-browser.md) | Dool2's own browser: a downloaded Chromium, hidden, no extension | Accepted |
 
 ## How to write a new decision
 

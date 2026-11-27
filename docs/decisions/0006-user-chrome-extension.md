@@ -1,6 +1,6 @@
 # 0006. Use the browser through the user's own Chrome plus the Dool2 extension
 
-- Status: Accepted
+- Status: Superseded by [0046](0046-built-in-browser.md)
 - Date: 2026-11-14
 
 ## Context
